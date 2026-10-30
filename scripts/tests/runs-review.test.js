@@ -1751,3 +1751,63 @@ test('P1 Escape_LosNombresSePidenUnaVez_NoPorComando', () => {
     assert.ok(llamadas <= 1, `el mapa se consultó ${llamadas} veces para 4000 pedidos`);
   } finally { LN.envNames = original; }
 });
+
+// T17 RunsReview_SinPedidos_NoLlamaALaPlataforma @story-8.145 @ac-21
+// 🔴 Falla con: que el ensayo de la noche (efectos: false) cree un pedido o comente en uno. El paso corre con `az`
+//    conectado con la cuenta del buzón: sin el token, `az boards` usaría esa cuenta, así que el corte va en la revisión.
+test('T17 RunsReview_SinPedidos_NoLlamaALaPlataforma @story-8.145 @ac-21', async () => {
+  const lineas = [];
+  const escribir = process.stderr.write;
+  const correrCallado = async (...a) => {
+    process.stderr.write = (t) => { lineas.push(String(t)); return true; };
+    try { return await correr(...a); } finally { process.stderr.write = escribir; }
+  };
+  // un arreglo decidido sin pedido: sin el corte, la noche lo pide (el control de que el caso ejerce la plataforma)
+  for (const sinPedidos of [false, true]) {
+    const { mb } = buzonDeUnaCausa();
+    const op = opsConPedidos();
+    await correrCallado(mb, op, { today: '2026-10-19' });
+    moverFicha(op, { veredicto: 'arreglo' }, 'promoted');
+    const p = plataformaFalsa();
+    const r = await correrCallado(mb, op, { today: '2026-10-20', plataforma: p.run, noWorkItems: sinPedidos });
+    assert.strictEqual(r.codigo, 0);
+    if (sinPedidos) assert.deepStrictEqual(p.llamados, [], 'con el corte, ni un llamado');
+    else assert.deepStrictEqual(p.llamados.map((x) => x.op), ['work-item.create'], 'sin el corte, pide');
+  }
+  // una que volvió con pedido, y una con su pedido cerrado y la falla viva: ni el comentario ni la lectura
+  for (const [cambio, carpeta, dias] of [
+    [{ estado: 'resuelta', resuelta_el: '2026-10-20', veredicto: 'arreglo', pedido: 901 }, 'archived', ['2026-10-21']],
+    [{ veredicto: 'arreglo', pedido: 901 }, 'pending', ['2026-10-20', '2026-10-21']],
+  ]) {
+    const { mb } = buzonDeUnaCausa();
+    const op = opsConPedidos();
+    await correrCallado(mb, op, { today: '2026-10-19' });
+    moverFicha(op, cambio, carpeta);
+    const p = plataformaFalsa((o, args) => (o === 'work-item.read' ? { ok: true, value: { id: args.id, estado: 'Closed', cerrado: true } } : { ok: true, value: { id: args.id, changed: false, commented: true } }));
+    for (const [i, dia] of dias.entries()) {
+      otraEjecucion(mb, dia, i + 2);
+      await correrCallado(mb, op, { today: dia, plataforma: p.run, noWorkItems: true });
+    }
+    assert.deepStrictEqual(p.llamados, [], `${carpeta}: ni un llamado`);
+  }
+  assert.ok(lineas.some((l) => /^pedidos de ejecuciones: ensayo sin efectos, no se pidió ni se avisó en ningún pedido$/m.test(l)), 'lo dice en una línea');
+  // por la línea de comandos, como la llama la noche: `run --no-work-items` llega a la revisión (sin él, pide)
+  const reales = { pedirTrabajo: CYCLE.pedirTrabajo, avisarQueVolvio: CYCLE.avisarQueVolvio, avisarCerradoConFallaViva: CYCLE.avisarCerradoConFallaViva };
+  const salida = process.stdout.write;
+  try {
+    for (const flag of [[], ['--no-work-items']]) {
+      const { mb } = buzonDeUnaCausa();
+      const op = opsConPedidos();
+      await correrCallado(mb, op, { today: '2026-10-19', plataforma: plataformaFalsa().run });
+      moverFicha(op, { veredicto: 'arreglo' }, 'promoted');
+      const pedidos = [];
+      for (const k of Object.keys(reales)) CYCLE[k] = async () => { pedidos.push(k); return { creados: [], avisados: [], warnings: [] }; };
+      process.stdout.write = () => true;
+      try {
+        await (async () => { process.stderr.write = (t) => { lineas.push(String(t)); return true; }; try { return await RR.main(['run', '--mailbox', mb, '--operations', op, '--today', '2026-10-20', '--no-download', ...flag]); } finally { process.stderr.write = escribir; } })();
+      } finally { process.stdout.write = salida; }
+      if (flag.length) assert.deepStrictEqual(pedidos, [], 'con --no-work-items, ni un pedido ni un aviso');
+      else assert.ok(pedidos.includes('pedirTrabajo'), 'sin la opción, pide');
+    }
+  } finally { Object.assign(CYCLE, reales); }
+});

@@ -127,16 +127,21 @@ jobs:
                 export TYCON_MAILBOX_JSON="$MBX"
                 DAY=$(date -u +%Y-%m-%d)
                 mkdir -p "$(Agent.TempDirectory)/buzon/corridas-buzon"
+                # El ensayo (efectos: false) no crea pedidos ni comenta en ninguno. Sacarle el token no alcanza: `az` queda
+                # conectado con la cuenta de esta conexión, y los pedidos de trabajo se crearían con ella.
+                NWI=(); [ "${{ parameters.efectos }}" = "True" ] || NWI=(--no-work-items)
                 node scripts/nightly/runs-review/runs-review.js run --mailbox "$(Agent.TempDirectory)/buzon/corridas-buzon" \
-                  --operations "$(Build.SourcesDirectory)" --today "$DAY"
+                  --operations "$(Build.SourcesDirectory)" --today "$DAY" ${NWI[@]+"${NWI[@]}"}
                 RC=$?
                 if [ "$RC" -ne 0 ]; then
                   echo "##vso[task.logissue type=warning]La revisión de las ejecuciones fue parcial o no pudo correr (salió $RC): last-run.json lo dice"
                   exit 1
                 fi
             env:
-              # el pedido de trabajo de cada arreglo decidido: la cuenta de build necesita poder crear work items
-              AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
+              # el pedido de trabajo de cada arreglo decidido: la cuenta de build necesita poder crear work items. Sólo con
+              # efectos: el ensayo no pide ni comenta nada.
+              ${{ if eq(parameters.efectos, true) }}:
+                AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
 
       - script: |
           set -eu

@@ -164,6 +164,36 @@ jobs:
 
       - template: pipelines/operations/templates/check-tree.yml@harness
 
+      # El perfil de la organización, como lo baja la revisión de dependencias: su team-repos.json trae la unidad de las
+      # estimaciones que edita el sitio, y la foto por proyecto la lee de ahí. Si el de operaciones difiere, o si el perfil
+      # no se pudo leer, la corrida queda naranja (nunca roja) y lo dice; sin perfil, la foto usa el team-repos.json del
+      # árbol. Con el del perfil leído deja TEAM_REPOS_PROFILE para el paso de medir. Necesita permiso de lectura sobre el
+      # repo del perfil.
+      - script: |
+          set -u
+          PERFIL="$(Agent.TempDirectory)/perfil"
+          SALIDA=$(node scripts/ci/team-repos-diff.js --team-repos "$(Build.SourcesDirectory)/team-repos.json" \
+            --clone-dir "$(Agent.TempDirectory)/perfil-clon" --profile-out "$PERFIL" 2>&1)
+          RC=$?
+          # si el comparador se cayó, el motivo es la línea del error, no la última (la versión de Node)
+          LINEA=$( { printf '%s\n' "$SALIDA" | grep -m1 -E '^[A-Za-z]*Error\b' || printf '%s\n' "$SALIDA" | grep -v '^[[:space:]]*$' | tail -n 1; } | sed 's/##vso/## vso/g')
+          if [ "$RC" = 0 ]; then
+            echo "$LINEA"
+          else
+            echo "##vso[task.logissue type=warning]$LINEA"
+            echo "##vso[task.complete result=SucceededWithIssues;]"
+          fi
+          # el del perfil, sólo si el comparador terminó (0 o 1): con otra salida, lo que haya en la carpeta no vale
+          if { [ "$RC" = 0 ] || [ "$RC" = 1 ]; } && [ -f "$PERFIL/team-repos.json" ]; then
+            echo "##vso[task.setvariable variable=TEAM_REPOS_PROFILE]$PERFIL/team-repos.json"
+          else
+            echo "la foto por proyecto mide con el team-repos.json de operaciones"
+          fi
+          exit 0
+        displayName: 'El perfil de la organización y su team-repos.json'
+        env:
+          CLONE_TOKEN: $(System.AccessToken)
+
       - script: |
           set -eu
           # El buscador oficial de stories vive en las skills del propio arnés (scripts/lib/skills-dir.js). Sin esa carpeta,
@@ -187,12 +217,14 @@ jobs:
           echo "⏱  medición: $(expr "$(date +%s)" - "$INICIO") s"
           # La foto por repo, sobre los MISMOS clones: copia las métricas del snapshot de HOY (por su nombre, no «el más
           # nuevo»: si el de hoy no está, el más nuevo sería el de ayer). Una foto que falla avisa y no apaga el snapshot.
+          # La unidad de las estimaciones, del team-repos.json del perfil si el paso anterior lo leyó.
           SDLC="$(Build.SourcesDirectory)/.dashboard/sdlc-stage-$(date -u +%Y-%m-%d).json"
+          OC=(); [ -n "${TEAM_REPOS_PROFILE:-}" ] && [ -f "$TEAM_REPOS_PROFILE" ] && OC=(--org-config "$TEAM_REPOS_PROFILE")
           node scripts/nightly/projects/snapshot.js \
             --scan "$(Agent.TempDirectory)/repos" \
             --only-harness \
             --sdlc "$SDLC" \
-            --out "$(Build.SourcesDirectory)/.dashboard/proyectos" \
+            --out "$(Build.SourcesDirectory)/.dashboard/proyectos" ${OC[@]+"${OC[@]}"} \
             || echo "##vso[task.logissue type=warning]La foto por repo falló (exit $?) — el snapshot sigue"
           # La concentración por persona, sobre las MISMAS copias y en este mismo paso: por producto, sin
           # nombres ni correos (lee git log en memoria). Los productos, del repos.json de la organización; sin él, la ficha
