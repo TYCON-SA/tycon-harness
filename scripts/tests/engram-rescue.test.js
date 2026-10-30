@@ -586,3 +586,15 @@ test('8.131 T33 Rescue_LocalIndex_NoIndexIsNormal: en índice local, chunks sin 
   assert.match(`${r2.stdout}${r2.stderr}`, /NO hay manifest\.json/);
   fs.rmSync(L2.raiz, { recursive: true, force: true });
 });
+
+test('8.131 T33b Rescue_LocalIndexDryRun_NotGreen: en seco, un índice local al que le faltan chunks no se da por bueno', SKIP, () => {
+  const L = lab();
+  db(L, [{ id: 'o1', project: 'p', sync_id: 's1' }]);
+  const d = repoGit(L, 'Local', { local: true });
+  const api = fakeApi(L, 'ok'); fakeEngram(L, 'exports', []);
+  const r = correr(L, api, ['--reindex', '--repo', 'Local']); api.close();
+  assert.doesNotMatch(r.stdout, /Todo chunk en disco está en el índice/, 'el verde no puede salir con chunks sin índice');
+  assert.match(r.stdout, /2 chunk\(s\) fuera del índice/);
+  assert.equal(fs.existsSync(path.join(d, '.engram', 'manifest.json')), false, 'en seco no se escribe nada');
+  fs.rmSync(L.raiz, { recursive: true, force: true });
+});

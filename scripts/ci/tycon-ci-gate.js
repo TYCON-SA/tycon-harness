@@ -574,7 +574,9 @@ function revisarIndiceDeMemoria(repo, base, staged) {
   catch (e) { return { avisos: [{ archivo: '.engram/manifest.json', regla: 'indice-de-memoria-no-comparable', mensaje: `no pude comparar el índice de memoria: falta el criterio (${e.message})` }] }; }
 
   // En «índice local» el índice no está en el árbol: no hay nada que comparar, y se dice.
-  if (criterio.indiceLocal && criterio.indiceLocal(repo)) return { engram: { estado: 'indice-local', motivo: 'índice local: no viaja por git' } };
+  const modo = criterio.modoDelIndice ? criterio.modoDelIndice(repo) : { modo: null, problema: null };
+  if (modo.problema) return { avisos: [{ archivo: '.engram/manifest.json', regla: 'indice-de-memoria-no-comparable', mensaje: `no pude comparar el índice de memoria: ${modo.problema}` }] };
+  if (modo.modo === 'local') return { engram: { estado: 'indice-local', motivo: 'índice local: no viaja por git' } };
 
   // 🔴 «Lo de antes» es la BASE DE MERGE, no la punta de `--base`.
   // `tocaEngram` y `mdDelDiff` ya usan `base...HEAD` (tres puntos = desde donde se separó la rama);

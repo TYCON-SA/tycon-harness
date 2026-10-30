@@ -218,6 +218,14 @@ if corre T131; then
     && printf '%s' "$SALIDA16" | grep 'no pude rehacer el índice de memoria' >/dev/null && grep -q 'no pude rehacer el índice de memoria' "$(LOG)" \
     && ok "T16 Startup_RebuildFails_ImportsAndSays: con un chunk roto la importación corre igual, y la línea y el registro lo dicen" \
     || mal "T16 Startup_RebuildFails_ImportsAndSays: rc=$RC16 · llamadas=[$(cat "$LAB/engram-calls.log" 2>&1)] · salida=[$SALIDA16] · registro=[$(tail -2 "$(LOG)" 2>&1)]"
+  # T16b · Startup_RebuildWarns_SaysIt: lo que la reconstrucción avisa (un chunk sin fecha) sale aunque termine bien
+  repo131 "$LAB/r-sinfecha" local d1
+  node -e 'process.stdout.write(JSON.stringify({sessions:null,observations:[{sync_id:"obs-sin"}],prompts:null})+"\n")' | gzip -c > "$LAB/r-sinfecha/.engram/chunks/sinfecha.jsonl.gz"
+  git -C "$LAB/r-sinfecha" add -A && git -C "$LAB/r-sinfecha" commit -qm sinfecha
+  SALIDA16B="$(cd "$LAB/r-sinfecha" && TYCON_ENGRAM=1 harness startup 2>&1)"
+  printf '%s' "$SALIDA16B" | grep 'sin una fecha legible' >/dev/null && grep 'sin una fecha legible' "$(LOG)" >/dev/null \
+    && ok "T16b Startup_RebuildWarns_SaysIt: el aviso de la reconstrucción sale en la línea y en el registro" \
+    || mal "T16b Startup_RebuildWarns_SaysIt: salida=[$SALIDA16B] · registro=[$(tail -2 "$(LOG)" 2>&1)]"
   export PATH="$ORIG_PATH"
 fi
 

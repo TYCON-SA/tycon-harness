@@ -1521,7 +1521,10 @@ function engramOn(ctx, tree) {
 function rebuildLocalEngramIndex(cwd) {
   try {
     const r = require(path.join(__dirname, '..', 'lib', 'manifest-engram.js')).rehacerSiLocal(cwd);
-    return r.aplica && r.problema ? `no pude rehacer el índice de memoria: ${r.problema}` : null;
+    if (!r.aplica) return null;
+    if (r.problema) return `no pude rehacer el índice de memoria: ${r.problema}`;
+    // lo que la reconstrucción avisa (un chunk sin fecha, un índice ilegible rehecho entero) también se dice
+    return (r.avisos || []).length ? `índice de memoria rehecho, con avisos: ${r.avisos.join(' · ')}` : null;
   } catch (e) {
     return `no pude rehacer el índice de memoria: ${String((e && e.message) || e).split('\n')[0]}`;
   }
@@ -3127,7 +3130,7 @@ function cmdStartup(ctx) {
     // 1. engram, sólo con la integración prendida
     if (engramOn(ctx, tree) && findInPath('engram', ctx.env)) {
       const rehecho = rebuildLocalEngramIndex(process.cwd());
-      if (rehecho) { log(`startup: ${rehecho}`); line = line || rehecho; }
+      if (rehecho) { log(`startup: ${rehecho}`); line = line ? `${line} · ${rehecho}` : rehecho; }
       const e = spawnSync('engram', ['sync', '--import'], { windowsHide: true, encoding: 'utf8', env: ctx.env, timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'] });
       if (e.status !== 0) log(`startup: engram sync --import salió ${e.status === null ? 'matado' : e.status}`);
     }

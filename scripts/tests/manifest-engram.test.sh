@@ -739,6 +739,18 @@ rebuild
   && ok "8.131 T4 Rebuild_UnreadableChunk_NotInvented: el chunk roto no entra, se nombra con su motivo y sale 1" \
   || no "8.131 T4 Rebuild_UnreadableChunk_NotInvented: rc=$RC · roto=$(entrada roto77) · noAgregadas=$(j noAgregadas)"
 
+# ---------------------------------------------------------------- 8.131 T4b. Rebuild_UnreadableChunk_NeverSaysAllDeclared
+# Con un chunk ilegible afuera, la salida de texto nunca dice que el índice declara todos sus archivos: ni la primera
+# vez (rehecho) ni la siguiente (sin nada nuevo).
+repo_local z1aa z2bb
+printf 'xx' > "$R/.engram/chunks/z9roto.jsonl.gz"; commitear "roto"
+(cd "$R" && node "$LIB" rebuild --repo "$R") >"$TMP/t4b-1" 2>&1; RC1=$?
+(cd "$R" && node "$LIB" rebuild --repo "$R") >"$TMP/t4b-2" 2>&1; RC2=$?
+[ "$RC1" -eq 1 ] && [ "$RC2" -eq 1 ] && ! grep '✅' "$TMP/t4b-1" >/dev/null && ! grep '✅' "$TMP/t4b-2" >/dev/null \
+  && grep 'z9roto' "$TMP/t4b-2" >/dev/null && grep '2 de 3' "$TMP/t4b-2" >/dev/null \
+  && ok "8.131 T4b Rebuild_UnreadableChunk_NeverSaysAllDeclared: con un chunk afuera no hay ✅, y dice cuántos declara" \
+  || no "8.131 T4b Rebuild_UnreadableChunk_NeverSaysAllDeclared: rc=$RC1/$RC2 · [$(tr '\n' ' ' < "$TMP/t4b-1")] · [$(tr '\n' ' ' < "$TMP/t4b-2")]"
+
 # ---------------------------------------------------------------- 8.131 T5. Rebuild_TrackedIndex_NotApplicable
 nuevo_repo; chunk v1aa; chunk v2bb; indice 'v1aa'; commitear "versionado"
 SUMA_T5="$(cksum < "$R/.engram/manifest.json")"
@@ -818,6 +830,45 @@ STAGED_T9="$(git -C "$R" diff --cached --name-only | tr '\n' ' ')"
   && ! grep -q 'PERDIÓ' "$TMP/t9.err" && ! grep -q 'manifest.json' "$TMP/t9.err" \
   && ok "8.131 T9 PreCommit_LocalIndex_StagesChunksOnly: el exportador ve las 3 entradas, se prepara sólo el chunk nuevo y nada se queja del índice" \
   || no "8.131 T9 PreCommit_LocalIndex_StagesChunksOnly: rc=$RC · engram vio [$(cat "$TMP/t9.calls")] · preparado=[$STAGED_T9] · $(head -c 400 "$TMP/t9.err")"
+
+# ---------------------------------------------------------------- 8.131 T9b. PreCommit_LocalIndex_SaysWhatItCouldNot
+# Lo que la reconstrucción avisa (un chunk sin fecha) sale aunque termine bien, y un chunk que no se pudo preparar se
+# nombra: el commit sigue, pero no en silencio.
+repo_local w1aa; printf 'p9b\n' > "$R/.engram-project"; chunk w2sin; commitear "proyecto y un chunk sin fecha"
+: > "$TMP/t9b.calls"
+printf '{"tool_name":"Bash","tool_input":{"command":"git commit -m x"}}' \
+  | (cd "$R" && TYCON_ENGRAM_HOOK=1 ENGRAM_BIN="$TMP/bin-t9/engram" ENGRAM_CALLS="$TMP/t9b.calls" bash "$HOOK_PC") >"$TMP/t9b.out" 2>"$TMP/t9b.err"; RC=$?
+[ "$RC" -eq 0 ] && grep 'sin una fecha legible' "$TMP/t9b.err" >/dev/null \
+  && ok "8.131 T9b PreCommit_LocalIndex_SaysWhatItCouldNot: el aviso de la reconstrucción sale aunque termine bien" \
+  || no "8.131 T9b PreCommit_LocalIndex_SaysWhatItCouldNot (aviso): rc=$RC · $(head -c 300 "$TMP/t9b.err")"
+repo_local x1aa; printf 'p9c\n' > "$R/.engram-project"; commitear "proyecto"
+mkdir -p "$TMP/bin-t9c"
+printf '#!/bin/sh\nfor a in "$@"; do [ "$a" = add ] && case "$*" in *nuevo9*) echo "fatal: no se pudo agregar" >&2; exit 128 ;; esac; done\nexec "%s" "$@"\n' "$GITREAL" > "$TMP/bin-t9c/git"; chmod +x "$TMP/bin-t9c/git"
+printf '{"tool_name":"Bash","tool_input":{"command":"git commit -m x"}}' \
+  | (cd "$R" && PATH="$TMP/bin-t9c:$PATH" TYCON_ENGRAM_HOOK=1 ENGRAM_BIN="$TMP/bin-t9/engram" ENGRAM_CALLS="$TMP/t9b.calls" bash "$HOOK_PC") >"$TMP/t9c.out" 2>"$TMP/t9c.err"; RC=$?
+[ "$RC" -eq 0 ] && grep 'nuevo9' "$TMP/t9c.err" >/dev/null && grep 'no se preparó' "$TMP/t9c.err" >/dev/null \
+  && ok "8.131 T9b PreCommit_LocalIndex_SaysWhatItCouldNot: un chunk que no se pudo preparar se nombra" \
+  || no "8.131 T9b PreCommit_LocalIndex_SaysWhatItCouldNot (preparar): rc=$RC · $(head -c 300 "$TMP/t9c.err")"
+
+# ---------------------------------------------------------------- 8.131 T5b. LocalIndex_GitFails_Says
+# git que no contesta no es «índice versionado»: se dice, y no se rehace nada a ciegas.
+repo_local y1aa
+mkdir -p "$TMP/bin-t5b"
+printf '#!/bin/sh\nfor a in "$@"; do [ "$a" = check-ignore ] && { echo "fatal: detected dubious ownership" >&2; exit 128; }; done\nexec "%s" "$@"\n' "$GITREAL" > "$TMP/bin-t5b/git"; chmod +x "$TMP/bin-t5b/git"
+P5B="$(cd "$R" && PATH="$TMP/bin-t5b:$PATH" node -e 'const r=require(process.argv[1]).rehacerSiLocal(process.argv[2]);process.stdout.write(JSON.stringify({aplica:r.aplica,problema:r.problema||null}))' "$LIB" "$R" 2>&1)"
+printf '%s' "$P5B" | grep '"aplica":true' >/dev/null && printf '%s' "$P5B" | grep 'dubious ownership' >/dev/null \
+  && ok "8.131 T5b LocalIndex_GitFails_Says: git que falla se dice como problema, no se lee como versionado" \
+  || no "8.131 T5b LocalIndex_GitFails_Says: $P5B"
+(cd "$R" && PATH="$TMP/bin-t5b:$PATH" node "$LIB" rebuild --repo "$R") >"$TMP/t5b-cli" 2>&1; RC=$?
+[ "$RC" -eq 3 ] && grep 'git no contestó' "$TMP/t5b-cli" >/dev/null && ! grep 'viaja por git' "$TMP/t5b-cli" >/dev/null \
+  && ok "8.131 T5b LocalIndex_GitFails_Says: rebuild dice que git no contestó, no «no aplica: viaja por git»" \
+  || no "8.131 T5b LocalIndex_GitFails_Says (rebuild): rc=$RC · $(head -c 300 "$TMP/t5b-cli")"
+raiz_falsa 85; repo_en gitroto; printf '.engram/manifest.json\n' > "$R/.gitignore"; chunk g1aa; commitear "chunks"
+(PATH="$TMP/bin-t5b:$PATH" node -e 'const a=require(process.argv[1]);process.stdout.write(JSON.stringify(a.engramChunksSinIndexar(process.argv[2]).map(({dir,...x})=>x)))' "$AUDIT" "$RAIZ") >"$TMP/t5b-audit" 2>&1
+grep '"error"' "$TMP/t5b-audit" >/dev/null && grep 'git no contestó' "$TMP/t5b-audit" >/dev/null \
+  && ok "8.131 T5b LocalIndex_GitFails_Says: la auditoría lo da como no medido, con el motivo" \
+  || no "8.131 T5b LocalIndex_GitFails_Says (auditoría): $(head -c 300 "$TMP/t5b-audit")"
+unset TYCON_REPOS_ROOT
 
 # ---------------------------------------------------------------- 8.131 T10. PreCommit_TrackedIndex_StillBlocks
 # Con el índice versionado nada cambia: un commit que pierde una entrada frena como hoy.

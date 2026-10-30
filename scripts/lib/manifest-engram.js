@@ -297,7 +297,7 @@ function leerChunk(f) {
       }
     }
     return { obs, ses, prompts, fecha };
-  } catch { return null; }
+  } catch (e) { return { error: String((e && e.message) || e).split('\n')[0] }; }
 }
 
 // Las entradas de engram tienen sus claves en este orden. Se respeta al reconstruir para que el
@@ -484,8 +484,27 @@ function reparar(dir, opciones) {
  * siempre.
  */
 function indiceLocal(dir) {
-  if (!gitOk(dir, ['check-ignore', '-q', '--', REL_INDICE]).ok) return false;
-  return !gitOk(dir, ['ls-files', '--error-unmatch', '--', REL_INDICE]).ok;
+  return modoDelIndice(dir).modo === 'local';
+}
+
+// El modo con su motivo cuando git no contesta: `{ modo: 'local'|'versionado'|null, problema }`. `check-ignore` sale 1
+// si no está ignorado y `ls-files --error-unmatch` sale 1 si no está en git; cualquier otra salida es git que no
+// contestó (un repo con dueño dudoso, un .git roto), y eso no es «versionado».
+function modoDelIndice(dir) {
+  const correr = (args) => {
+    // LC_ALL=C: el «not a git repository» de abajo se lee en inglés, en cualquier idioma de la máquina
+    try { execFileSync('git', ['-C', dir, ...args], { stdio: ['ignore', 'ignore', 'pipe'], env: { ...process.env, LC_ALL: 'C' } }); return { rc: 0 }; }
+    catch (e) { return { rc: typeof e.status === 'number' ? e.status : null, motivo: String((e && e.stderr) || (e && e.message) || e).trim().split('\n')[0] }; }
+  };
+  const ignorado = correr(['check-ignore', '-q', '--', REL_INDICE]);
+  // una carpeta que no es un repo de git no tiene índice local: es «no aplica», no git que falla
+  if (ignorado.rc !== 0 && ignorado.rc !== 1 && /not a git repository/i.test(ignorado.motivo || '')) return { modo: 'versionado', problema: null };
+  if (ignorado.rc !== 0 && ignorado.rc !== 1) return { modo: null, problema: `git no contestó si el índice está ignorado: ${ignorado.motivo || 'sin motivo'}` };
+  if (ignorado.rc === 1) return { modo: 'versionado', problema: null };
+  const enGit = correr(['ls-files', '--error-unmatch', '--', REL_INDICE]);
+  if (enGit.rc === 0) return { modo: 'versionado', problema: null };
+  if (enGit.rc === 1) return { modo: 'local', problema: null };
+  return { modo: null, problema: `git no contestó si el índice está en git: ${enGit.motivo || 'sin motivo'}` };
 }
 
 // Autor y fecha de cada chunk en UNA pasada de `git log` (la última vez que un commit lo tocó, como
@@ -558,7 +577,7 @@ function rehacer(dir) {
   for (const id of faltantes) {
     const f = path.join(dir, REL_CHUNKS, id + SUFIJO);
     const c = leerChunk(f);
-    if (!c) { res.noAgregadas.push({ id, motivo: 'el chunk no se puede leer (¿no es gzip, o está truncado?): no se inventa una entrada' }); continue; }
+    if (c.error) { res.noAgregadas.push({ id, motivo: `el chunk no se puede leer (${c.error}): no se inventa una entrada` }); continue; }
     let { autor, fecha: fechaCommit } = mapa.get(id) || {};
     if (!autor) {
       if (autorDelClon === null) { const cfg = gitOk(dir, ['config', 'user.name']); autorDelClon = (cfg.ok && cfg.out.trim()) || 'desconocido'; }
@@ -680,6 +699,11 @@ function imprimirRehecho(r) {
   for (const a of r.avisos) console.error(`   ⚠️  ${a}`);
   for (const x of r.noAgregadas) console.error(`   🔴 ${x.id}: ${x.motivo}`);
   if (r.fantasmas.length) console.log(`   (no se borra nada) entradas cuyo archivo no está: ${r.fantasmas.join(', ')}`);
+  // con algo afuera no hay ✅: el índice no declara todos sus archivos, y se dice cuántos sí
+  if (r.noAgregadas.length) {
+    console.log(`⚠️  ${r.repo}: el índice local declara ${r.declarados} de ${r.archivos} archivo(s)${r.agregadas.length ? ` (${r.agregadas.length} agregada(s) ahora)` : ''}; ${r.noAgregadas.length} quedaron afuera.`);
+    return;
+  }
   console.log(r.agregadas.length
     ? `✅ ${r.repo}: índice local rehecho (${r.agregadas.length} entrada(s) agregada(s); ninguna borrada; no viaja por git).`
     : `✅ ${r.repo}: el índice local declara sus ${r.archivos} archivo(s).`);
@@ -698,7 +722,13 @@ function main(argv) {
   const json = tiene('--json');
 
   if (cmd === 'rebuild') {
-    if (!indiceLocal(dir)) {
+    const modo = modoDelIndice(dir);
+    if (modo.problema) {
+      const r = { repo: dir, estado: 'no-medido', motivo: modo.problema };
+      if (json) console.log(JSON.stringify(r, null, 2)); else console.error(`⚠️  no pude saber si ${dir} está en índice local: ${modo.problema}`);
+      return SALIDA.NO_MEDIDO;
+    }
+    if (modo.modo !== 'local') {
       const r = { repo: dir, estado: 'no-aplica', motivo: `no aplica: el índice viaja por git en ${dir}, usar repair` };
       if (json) console.log(JSON.stringify(r, null, 2)); else console.error(`ℹ️  ${r.motivo} (${comandoDeReparacion(dir)})`);
       return SALIDA.NO_MEDIDO;
@@ -737,7 +767,9 @@ function rehacerSiLocal(dir) {
   const top = gitOk(dir, ['rev-parse', '--show-toplevel']);
   if (!top.ok) return { aplica: false };
   const raiz = top.out.trim();
-  if (!indiceLocal(raiz)) return { aplica: false };
+  const modo = modoDelIndice(raiz);
+  if (modo.problema) return { aplica: true, estado: 'no-medido', motivo: modo.problema, problema: modo.problema, avisos: [], noAgregadas: [] };
+  if (modo.modo !== 'local') return { aplica: false };
   const r = rehacer(raiz);
   const problema = r.estado === 'no-medido' ? r.motivo
     : r.noAgregadas.length ? `${r.noAgregadas.length} chunk(s) ilegible(s) quedaron afuera: ${r.noAgregadas.map((x) => x.id).join(', ')}`
@@ -754,7 +786,7 @@ function comandoDeArreglo(dir) {
   return indiceLocal(dir) ? comandoDeRehacer(dir) : comandoDeReparacion(dir);
 }
 
-module.exports = { cruzar, serializar, reparar, contarChunk, parsearIndice, insertarPorFecha, comandoDeReparacion, indiceLocal, rehacer, rehacerSiLocal, comandoDeRehacer, comandoDeArreglo, REL_INDICE, REL_CHUNKS };
+module.exports = { cruzar, serializar, reparar, contarChunk, parsearIndice, insertarPorFecha, comandoDeReparacion, indiceLocal, modoDelIndice, rehacer, rehacerSiLocal, comandoDeRehacer, comandoDeArreglo, REL_INDICE, REL_CHUNKS };
 
 if (require.main === module) {
   // El subcomando y la opción viejos siguen andando. Viejo y nuevo juntos: 3, el «no se pudo
