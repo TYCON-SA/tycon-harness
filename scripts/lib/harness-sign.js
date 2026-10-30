@@ -60,8 +60,13 @@ function entrada(id) {
   return l ? { level: l.level, approves: l.approves } : null;
 }
 
-/** El nivel que rige: el mayor entre el del catálogo y el que sube el perfil. Un valor menor no lo baja. null si el id no está. */
+/**
+ * El nivel que rige: el mayor entre el del catálogo y el que sube el perfil. Un valor menor no lo baja. null si el id no
+ * está. Para un id de la tabla de niveles es el mismo cálculo que el sitio (signatures.js, effectiveLevel); una firma de
+ * hoy, con su nivel.
+ */
 function nivelEfectivo(id, levels) {
+  if (typeof cat.effectiveLevel === 'function' && cat.LEVELS.some((l) => l.id === id)) return cat.effectiveLevel(id, levels);
   const e = entrada(id);
   if (!e) return null;
   const subido = levels && Number.isInteger(levels[id]) ? levels[id] : 0;
