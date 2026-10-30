@@ -83,11 +83,12 @@ test('T7 PreCommitAnotaSoloElArgumentoDeGit', (t) => {
 test('T8 PreCommitLeeLasComillasYLasCortas', (t) => {
   // stable-data: los `git commit …` de esta prueba son el texto del evento que lee el freno; no se corre ningún commit
   for (const cmd of [`git commit -m "a; b" ${OPCION}`, `git commit -m "a | b" ${OPCION}`, `git commit -m "a\nb" ${OPCION}`,
-    `git commit $'${OPCION}' -m a`, 'git commit -n -m a', 'git commit -an -m a', `git commit --trailer x ${OPCION}`]) {
+    `git commit $'${OPCION}' -m a`, `git commit --trailer x ${OPCION}`, `git commit -am ${OPCION.slice(0, 2)} ${OPCION}`]) {
     assert.strictEqual(correr(t, cmd).length, 1, cmd);
   }
-  for (const cmd of [`git commit --trailer ${OPCION} -m a`, `git commit --mess ${OPCION}`, `git commit -nm${OPCION}`.replace('-nm', '-m'),
-    `echo "x; git commit ${OPCION}"`]) {
+  // `-n` y sus grupos no cuentan como salteo: el control del commit corre igual, como antes
+  for (const cmd of ['git commit -n -m x', 'git commit -an -m x', `git commit --trailer ${OPCION} -m a`, `git commit --mess ${OPCION}`,
+    `git commit -m${OPCION}`, `git commit -am ${OPCION}`, `echo "x; git commit ${OPCION}"`]) {
     assert.strictEqual(correr(t, cmd).length, 0, cmd);
   }
 });

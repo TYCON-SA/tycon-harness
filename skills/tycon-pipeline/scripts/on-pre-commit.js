@@ -358,12 +358,11 @@ function usaNoVerify(command) {
   return commitsDelShell(command).some((ps) => {
     for (let i = 0; i < ps.length; i += 1) {
       if (/^--no-veri(?:fy?)?$/.test(ps[i])) return true;
-      // un grupo de cortas (`-an`): la `n` es el salteo; desde una que lleva valor, lo que sigue es su valor
+      // `-n` no se cuenta como salteo: con ella el control del commit corre igual. Un grupo de cortas (`-am`) termina en
+      // la que lleva valor, y lo que sigue es su valor
       const corta = /^-([a-zA-Z]+)$/.exec(ps[i]);
       if (corta) {
         const k = corta[1].search(/[mFCct]/);
-        const flags = k < 0 ? corta[1] : corta[1].slice(0, k);
-        if (flags.includes('n')) return true;
         if (k === corta[1].length - 1) i += 1;
         continue;
       }
