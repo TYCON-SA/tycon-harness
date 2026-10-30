@@ -1409,10 +1409,15 @@ function cmdCompleteStep(nRaw, flags) {
     }
     // un guion de medición del repo que la story no declara no es el primer código
     let declarados = [];
-    try {
-      const storyAbs = marker.storyPath ? path.resolve(marker.repoPath || '', marker.storyPath) : null;
-      if (storyAbs) declarados = require('./lib/run-size.js').declaredFiles(fs.readFileSync(storyAbs, 'utf8'));
-    } catch { /* sin story legible, ningún guion de medición cuenta */ }
+    const storyDeclarada = marker.storyPath ? path.resolve(marker.repoPath || '', marker.storyPath) : null;
+    if (storyDeclarada) {
+      let texto = null;
+      try { texto = fs.readFileSync(storyDeclarada, 'utf8'); } catch (e) {
+        // sin story legible, ningún guion de medición cuenta: se dice, para que la lista vacía no pase callada
+        console.error(`⚠️  freno ATDD: no pude leer la historia (${storyDeclarada}: ${e.code || e.message}); cuento sin la lista de archivos declarados.`);
+      }
+      if (texto !== null) declarados = require('./lib/run-size.js').declaredFiles(texto);
+    }
     const r = computeAtddOrder(marker.fileEvents, raices, { declarados });
     if (hermanosError) {
       r.reason = `${r.reason} (repos hermanos: ${hermanosError}; esos no se miraron)`;

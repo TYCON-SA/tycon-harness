@@ -107,7 +107,9 @@ function revisar(texto, ctx, out) {
   const enSubshell = /\(\s*(?:export\s+)?TYCON_FULL_SUITE=/.test(texto);
   // con agrupaciones o control de flujo el corte aplana el texto (`(cd x) && npm test` queda como `cd x`, `npm test`):
   // no se sabe en qué carpeta corre cada tramo
-  if (AGRUPA.test(texto)) ctx.carpeta.valor = null;
+  // el cuerpo de un heredoc que va a un shell corre comandos que el corte no sigue: tampoco se sabe la carpeta
+  const sinCuerpos = sp.sinHeredocs(texto, { salvoShell: true });
+  if (sinCuerpos !== sp.sinHeredocs(texto) || agrupa(sinCuerpos)) ctx.carpeta.valor = null;
   for (let k = 0; k < segs.length; k++) {
     const seg = segs[k].texto.trim();
     if (!seg) continue;
@@ -222,7 +224,67 @@ function proyectoPropio(carpeta) {
   // una que no se puede leer cuenta como de varios proyectos: frena
   if (nombres.some((n) => /^(?:jest|vitest|vite)\.config\./.test(n) && (leer(path.join(carpeta, n)) ?? 'projects:').match(VARIOS_PROYECTOS))) return false;
   const test = pkg.scripts && pkg.scripts.test;
-  return !(typeof test === 'string' && RECORRE_PAQUETES.test(test));
+  return !(typeof test === 'string' && (RECORRE_PAQUETES.test(test) || saleDeLaCarpeta(test)));
+}
+
+// lo que no se lee a ojo en un script: comillas, escapes, variables y sustituciones
+const SCRIPT_RARO = /["'\\$`]/;
+// el nombre de una opción que lleva la ruta de un reporte
+const OPCION_DE_REPORTE = /output|report|coverage|junit|log/i;
+/**
+ * ¿El script `test` sale de la carpeta del proyecto? Cualquier `..` cuenta como salida, salvo en el valor pegado de una
+ * opción de reporte que no es de carpeta (`--outputFile=../r.xml`), y sólo en un script sin comillas, escapes ni
+ * sustituciones: en uno así, cualquier `..` sale.
+ */
+function saleDeLaCarpeta(test) {
+  if (!test.includes('..')) return false;
+  if (SCRIPT_RARO.test(test)) return true;
+  const deCarpeta = new RegExp(OTRA_CARPETA.source, 'i');
+  return test.split(/[\s;&|()<>]+/).some((w) => {
+    if (!w.includes('..')) return false;
+    const op = /^(--?[A-Za-z][\w.-]*)=(\S+)$/.exec(w);
+    return !(op && OPCION_DE_REPORTE.test(op[1]) && !deCarpeta.test(op[1]));
+  });
+}
+
+// palabras de control del shell: agrupan sólo en posición de comando
+const CONTROL = new Set(['if', 'then', 'else', 'elif', 'fi', 'for', 'while', 'until', 'do', 'done', 'case', 'esac',
+  'function', 'select', 'coproc']);
+// cualquier paréntesis, llave o palabra de control, en cualquier lugar del texto
+const AGRUPA = /[(){}]|(?:^|[\s;&|])(?:if|then|else|elif|fi|for|while|until|do|done|case|esac|function|select|coproc)(?=[\s;]|$)/;
+// lo que el recorrido de abajo no sigue: sustituciones, `$'…'`, comillas invertidas, escapes y heredocs
+const TEXTO_RARO = /\$[({']|`|\\|<</;
+// palabras que dejan la que sigue en posición de comando
+const PREFIJO = new Set(['!', 'time']);
+/**
+ * ¿El texto tiene una agrupación o control de flujo de verdad? Sólo en un texto simple (sin `TEXTO_RARO`) se recorre
+ * fuera de comillas y comentarios, y se miran los `(`, `)`, `{`, `}` sueltos y las palabras de control en posición de
+ * comando. Cualquier otro texto se lee como antes: frena con cualquier paréntesis, llave o palabra de control.
+ */
+function agrupa(texto) {
+  // una sustitución entre comillas invertidas corre en otra shell, como `$( … )`: un `cd` adentro no cambia la carpeta
+  if (texto.includes('`')) return true;
+  if (TEXTO_RARO.test(texto)) return AGRUPA.test(texto);
+  let q = null; let posComando = true;
+  for (let i = 0; i < texto.length; i++) {
+    const c = texto[i];
+    if (q) { if (c === q) q = null; continue; }
+    if (c === '#' && (i === 0 || /[\s;&|]/.test(texto[i - 1]))) { const f = texto.indexOf('\n', i); if (f < 0) break; i = f - 1; continue; }
+    if (c === '"' || c === "'") { q = c; posComando = false; continue; }
+    if (/[(){}]/.test(c)) return true;
+    if (/[;&|\n]/.test(c)) { posComando = true; continue; }
+    if (/[\s<>]/.test(c)) continue;
+    // una palabra: se lee hasta un blanco, una comilla o un operador
+    let j = i;
+    while (j < texto.length && !/[\s;&|(){}<>"']/.test(texto[j])) j++;
+    const w = texto.slice(i, j);
+    if (posComando && CONTROL.has(w)) return true;
+    // `X=1 cmd`, `! cmd` o `time cmd`: la palabra que sigue queda en posición de comando
+    posComando = posComando && (PREFIJO.has(w) || /^[A-Za-z_][A-Za-z0-9_]*=/.test(w)) && j < texto.length && /\s/.test(texto[j]);
+    i = j - 1;
+  }
+  // una comilla sin cerrar: no se sabe dónde termina, frena
+  return q !== null;
 }
 /** ¿El comando corre en la carpeta de un proyecto propio, sin opciones que lo manden a otra carpeta u otros proyectos? */
 function enSuProyecto(seg, ctx) {
@@ -232,13 +294,12 @@ function enSuProyecto(seg, ctx) {
 }
 // `yarn workspace …`, `pnpm recursive …`: corren en otra carpeta o en varias
 const sinCarpeta = (ctx) => ({ ...ctx, carpeta: { valor: null } });
-const AGRUPA = /[(){}]|(?:^|[\s;&|])(?:if|then|else|elif|fi|for|while|until|do|done|case|esac|function|select)(?=[\s;]|$)/;
 // opciones que corren la suite de otra carpeta o de otros proyectos (`npm --prefix ..`, `vitest --root ..`, `pnpm -r`)
 // (`env --chdir`, `sudo -D` y `jest --roots` también)
 const OTRA_CARPETA = /^(?:--prefix|-C|--dir|--cwd|--chdir|-D|--root|--roots|--rootDir|--config|-c|--project|--projects|--workspace|--workspaces|-w|-ws|--filter|-F|-r|--recursive)(?:=|$)/;
 const MARCAS_DE_RAIZ = ['pnpm-workspace.yaml', 'lerna.json', 'nx.json', 'turbo.json'];
-// un script `test` que corre los de otros paquetes, o que sale de la carpeta
-const RECORRE_PAQUETES = /\b(?:turbo|nx|lerna)\b|--workspaces?\b|(?:^|\s)--?ws\b|\byarn\s+workspaces\b|\bpnpm\b[^;&|]*\s(?:-r|--recursive|-F|--filter)(?:[\s=]|$)|\.\.(?:[\\/]|\s|$)/;
+// un script `test` que corre los de otros paquetes (el que sale de la carpeta lo dice `saleDeLaCarpeta`)
+const RECORRE_PAQUETES = /\b(?:turbo|nx|lerna)\b|--workspaces?\b|(?:^|\s)--?ws\b|\byarn\s+workspaces\b|\bpnpm\b[^;&|]*\s(?:-r|--recursive|-F|--filter)(?:[\s=]|$)/;
 const VARIOS_PROYECTOS = /\b(?:projects|workspace)\s*:/;
 const leer = (f) => { try { return require('fs').readFileSync(f, 'utf8'); } catch { return null; } };
 
