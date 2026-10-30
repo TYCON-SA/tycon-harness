@@ -296,6 +296,10 @@
  },
  "historicos": [
   {
+   "id": "--auto-approved",
+   "motivo": "story 1.29 (2026-10-30): ningún plan se aprueba solo. La regla de riesgo bajo (`complete-step approve-plan --auto-approved`) salió: el comando sale 2 sin aprobar, y el plan lo aprueba una persona o la coordinadora con la revisión automática (step-04-approve-plan.md §«Quién aprueba el plan»)."
+  },
+  {
    "id": "DOTNET-W3",
    "motivo": "story 8.2 (2026-09-26): era el ejemplo del findings.json del step-06 y nombraba al revisor de convenciones .NET, que desde la 8.2 vive en el paquete bizuit (packs/), no en el núcleo. El ejemplo pasó a SEC-W1 (revisor del núcleo). La regla sigue en el catálogo y en su agente."
   },

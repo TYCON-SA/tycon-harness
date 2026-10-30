@@ -675,7 +675,7 @@ test('computeRiskClass: story chica sin firmas ni SQL → LOW', () => {
   try {
     const r = computeRiskClass({ story: tmp, files: [] });
     assert.equal(r.risk, 'LOW');
-    assert.equal(r.auto_approve_plan, true);
+    assert.ok(!('auto_approve_plan' in r), 'con LOW el plan no se aprueba solo (story 1.29)');
   } finally { fs.unlinkSync(tmp); }
 });
 

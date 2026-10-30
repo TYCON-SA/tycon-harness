@@ -6,7 +6,7 @@
  * POR QUÉ EXISTE: zsh no word-splitea
  * `$VAR` sin comillas, así que los N paths del diff llegaban como UN argumento con espacios.
  * `computeRiskClass` contaba 1 archivo → `superficie-chica` ✅ → LOW. Y LOW hace DOS cosas a la
- * vez: `auto_approve_plan: true` (se saltea el checkpoint donde el dev aprueba el plan) y
+ * vez: se saltea la revisión adversarial de la story y
  * `deep-review-gate → run:false` (se saltea el pase adversarial, sellando `deepReviewDone`).
  * Ninguna de las dos deja rastro de que se apagó por un error de parseo. El validador
  * (`validateFilesExist`) tiene que correr también en esos dos gates, no sólo en `advisors` y `smart-reloop`.
@@ -104,7 +104,7 @@ test('un path REAL con espacios no dispara el guard (falso positivo de macOS)', 
 test('el mensaje explica QUÉ apaga un LOW falso (los dos frenos, no sólo el 5b)', () => {
   const repo = mkRepo();
   const r = run('risk-class', repo, ['src/a.cs src/b.cs']);
-  assert.match(r.stderr, /auto_approve_plan/, 'tiene que decir que apaga el checkpoint del plan');
+  assert.match(r.stderr, /revisión adversarial de la story/, 'tiene que decir que apaga la revisión de la story');
   assert.match(r.stderr, /deep-review-gate/, 'y que apaga el pase adversarial');
   assert.match(r.stderr, /\$\{=VAR\}/, 'y cómo se arregla');
 });

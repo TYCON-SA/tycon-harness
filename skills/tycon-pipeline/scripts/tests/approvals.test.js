@@ -168,7 +168,12 @@ test('T4 Marker_AprobacionesQueYaExisten_SeAnotan @story-2.43 @ac-3', () => {
   fs.mkdirSync(path.join(home, '.claude', 'projects', '-repo'), { recursive: true });
   fs.writeFileSync(path.join(home, '.claude', 'projects', '-repo', 's-auto.jsonl'),
     `${JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: `El plan:\n${planAuto}` }] } })}\n`);
+  // ningún plan se aprueba solo: la regla de riesgo bajo sale 2 sin anotar nada
   r = markerCli(home, 's-auto', repo, ['complete-step', '3', '--auto-approved', 'LOW: superficie chica']);
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /el plan no se aprueba solo/);
+  // la cita sin nombrar a nadie queda automática «sin nombrar»
+  r = markerCli(home, 's-auto', repo, ['complete-step', '3', '--approved', 'dale']);
   assert.equal(r.status, 0, r.stderr);
 
   const runDir = runDirDe();
@@ -188,7 +193,7 @@ test('T4 Marker_AprobacionesQueYaExisten_SeAnotan @story-2.43 @ac-3', () => {
   assert.deepEqual([deleg.que, deleg.tipo, deleg.delegacion], ['plan', 'automatica', 'ana@example.com']);
   assert.match(deleg.quien, /coordinadora/);
   assert.deepEqual([auto.que, auto.tipo], ['plan', 'automatica']);
-  assert.match(auto.quien, /^regla /);
+  assert.match(auto.quien, /sin nombrar/);
   for (const l of ls) assert.match(l.commit || '', /^[0-9a-f]{7,40}$/);
 });
 

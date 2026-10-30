@@ -625,7 +625,8 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   delegada, subirla la saca de la delegación en el mismo cambio. Si el perfil la trae delegada igual, el arnés la saca al
   leerlo y lo avisa como ignorada; lo demás se sigue delegando. Volver al nivel de fábrica saca la firma de
   `approvals.levels`. Proponer niveles pide que la capa del equipo exija una versión del arnés que ya sepa leerlos.
-  Quién firma cada nivel: el 1, la coordinadora sola si el perfil se lo delega, y si no el dev en la ventana; el 2,
+  Quién firma cada nivel: el 1, la coordinadora si el perfil se lo delega (el plan, sólo con el veredicto aprobado de la
+  revisión automática que ella lanza), y si no el dev en la ventana; el 2,
   siempre una persona en la ventana; el 3, una persona, y la emergencia en su terminal. Sin nadie que conteste, todo lo
   que no está delegado espera: el sistema no mira la hora, pide la firma igual y, si nadie contesta, la sesión queda
   frenada en ese paso. Con Codex, que no tiene ventana, todo se firma en la terminal. La matriz completa
@@ -633,19 +634,20 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
 
   **¿Quién firma? En corto.** Para saber quién firma algo en tu máquina, se mira esto:
 
-  | Lo que hay que firmar | Sin coordinadora, estás | Sin coordinadora, no estás | Con coordinadora, estás | Con coordinadora, no estás |
-  |---|---|---|---|---|
-  | Guardar el trabajo · 1 | vos | espera | la coordinadora \* | la coordinadora \* |
-  | Pedir otra revisión · 1 | vos | espera | la coordinadora \* | la coordinadora \* |
-  | Aprobar el plan · 1 | vos \*\* | espera \*\* | la coordinadora \* | la coordinadora \* |
-  | Saltear un control · 2 | vos | espera | vos | espera |
-  | Aceptar un criterio imposible de probar en vivo · 2 | vos | espera | vos | espera |
-  | Marcar un criterio como probado a mano · 2 | vos | espera | vos | espera |
-  | La emergencia · 3 | vos, en tu terminal | espera | vos, en tu terminal | espera |
+  | Lo que hay que firmar | Sin coordinadora, estás | Sin coordinadora, no estás | Con coordinadora, estás | Con coordinadora, no estás | La revisión automática |
+  |---|---|---|---|---|---|
+  | Guardar el trabajo · 1 | vos | espera | la coordinadora \* | la coordinadora \* | no aplica |
+  | Pedir otra revisión · 1 | vos | espera | la coordinadora \* | la coordinadora \* | no aplica |
+  | Aprobar el plan · 1 | vos | espera | la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | obligatoria para la coordinadora |
+  | Aprobar el plan de una story delicada · 2 | vos | espera | vos | espera | ataca y avisa, nunca aprueba |
+  | Saltear un control · 2 | vos | espera | vos | espera | no aplica |
+  | Aceptar un criterio imposible de probar en vivo · 2 | vos | espera | vos | espera | no aplica |
+  | Marcar un criterio como probado a mano · 2 | vos | espera | vos | espera | no aplica |
+  | La emergencia · 3 | vos, en tu terminal | espera | vos, en tu terminal | espera | no aplica |
 
   \* Sólo si esa firma está en «Delegada a la coordinadora» y tu máquina está en «En qué máquinas vale lo delegado»;
-  si no, es igual que sin coordinadora. \*\* El plan de una story de riesgo bajo hoy se puede aprobar sin firma, desde
-  la misma sesión. Por qué cada rutina es rutina, y las notas, en `guides/firmas-del-arnes.md`.
+  si no, es igual que sin coordinadora. \*\* La coordinadora lanza la revisión automática del plan y aprueba sólo si
+  dice «aprobado»; ningún plan se aprueba solo, y el de una story delicada lo aprueba siempre el dev. Por qué cada rutina es rutina, y las notas, en `guides/firmas-del-arnes.md`.
 
   **Dónde se configura**, todo en esta sección:
   - **A · si hay coordinadora**: «¿Quién pasa la autorización para saltarse un control grave?», con «¿Cómo la llaman?»

@@ -1422,7 +1422,8 @@ test('OwnerWindow_CadaFirmaPorTerminal_AbreLaVentanaEnWindows', (t) => {
   // Windows simulado, sin cmd.exe y en la terminal del dueño (sin variable de sesión): cada firma intenta abrir la ventana
   // (la vuelta extra pide una corrida con el tope ya avisado; llega a la misma `exigir` que las de acá)
   const env = { ...process.env, HOME: home, USERPROFILE: home, TYCON_HOME: '', TYCON_WAIVER_PLATFORM: 'win32', TYCON_WAIVER_IN_WINDOW: '', TYCON_LANE_LLM: '0' };
-  for (const k of ['CLAUDE_CODE_SESSION_ID', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID']) delete env[k];
+  // sin las variables de la CI: en la CI la firma por la terminal se corta antes de abrir la ventana
+  for (const k of ['CLAUDE_CODE_SESSION_ID', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID', 'CI', 'TF_BUILD', 'GITHUB_ACTIONS']) delete env[k];
   const casos = [
     ['plan-approval', process.execPath, [MARKER, 'complete-step', 'approve-plan', '--terminal', '--for-session', 'ses-w']],
     ['lost-run', process.execPath, [MARKER, 'clear-session', 'ses-w', '--lost', '--terminal', '--for-session', 'ses-w']],
@@ -1443,7 +1444,8 @@ test('OwnerWindow_MarcaDeLaVentanaPuestaAMano_NoFirma', (t) => {
   const { home, repo } = laboratorioWindows(t);
   // lo que haría el agente para saltear la ventana: la marca puesta y la respuesta por la entrada
   const env = { ...process.env, HOME: home, USERPROFILE: home, TYCON_HOME: '', TYCON_WAIVER_PLATFORM: 'win32', TYCON_WAIVER_IN_WINDOW: '1', TYCON_LANE_LLM: '0' };
-  for (const k of ['CLAUDE_CODE_SESSION_ID', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID']) delete env[k];
+  // sin las variables de la CI: en la CI la firma por la terminal se corta antes de abrir la ventana
+  for (const k of ['CLAUDE_CODE_SESSION_ID', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID', 'CI', 'TF_BUILD', 'GITHUB_ACTIONS']) delete env[k];
   const plan = spawnSync(process.execPath, [MARKER, 'complete-step', 'approve-plan', '--terminal', '--for-session', 'ses-w'], { cwd: repo, env, encoding: 'utf8', input: 'gato luna reloj\n', timeout: 60000 });
   assert.strictEqual(plan.status, 2, `${plan.stdout}${plan.stderr}`);
   assert.ok(!fs.readFileSync(path.join(home, '.claude', '.tycon-pipeline', 'gates.log'), 'utf8').includes('plan-approval-signed'), 'no firmó el plan');

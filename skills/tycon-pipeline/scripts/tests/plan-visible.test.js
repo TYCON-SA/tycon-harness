@@ -1,10 +1,11 @@
 'use strict';
 /**
- * plan-visible.test.js — el plan que se aprueba solo (riesgo bajo) se muestra igual.
+ * plan-visible.test.js — la persona ve el plan que aprueba.
  *
  * Lo que no se puede perder:
- *   - `complete-step 3 --auto-approved` no cierra sin el plan escrito en la carpeta de la corrida
- *     (`step-02-bmad-plan.md`), y al cerrar lo imprime para que el agente se lo muestre a la persona tal cual.
+ *   - Con riesgo bajo, `complete-step 3 --approved` no cierra si la conversación se lee y el plan no está en lo que vio
+ *     la persona (`step-02-bmad-plan.md`), y lo imprime para que el agente se lo muestre tal cual. Ningún plan se aprueba
+ *     solo: la regla de riesgo bajo de antes sale 2.
  *   - Las instrucciones de los pasos 2 y 3 y la nota de `risk-class` lo dicen; el renglón de pendientes del cierre
  *     (paso 8) está en llano.
  *
@@ -62,20 +63,21 @@ const paso3Cerrado = (home, sid, repo) => {
   return (m.stepsCompleted || []).map(String).includes('3');
 };
 
-test('PlanVisible_SinPlan_NoSeApruebaSolo @story-8.62 @ac-7', () => {
+test('PlanVisible_SinPlan_NoSeApruebaSolo @story-8.62 @ac-7 @story-1.29 @ac-21', () => {
+  // ningún plan se aprueba solo: con riesgo bajo, con el plan escrito y mostrado o sin él, sale 2
   const { repo, story } = repoConStory();
   const home = tmp('plan-vis-home-');
   hasta3(home, 's-sin', repo, story);
   const r = markerCli(home, 's-sin', repo, ['complete-step', '3', '--auto-approved', 'LOW: superficie chica']);
-  assert.notEqual(r.status, 0, r.stdout);
-  assert.match(r.stderr, new RegExp(PLAN.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  assert.match(r.stderr, /escrib/i, 'dice que primero se escribe el plan');
+  assert.equal(r.status, 2, r.stdout);
+  assert.match(r.stderr, /el plan no se aprueba solo/);
   assert.equal(paso3Cerrado(home, 's-sin', repo), false, 'el paso 3 sigue abierto');
-  // un plan vacío tampoco alcanza
   const runDir = require(path.join(SCRIPTS, 'pipeline.js')).resolveRunDir(repo, '9.92', true, story);
-  fs.writeFileSync(path.join(runDir, PLAN), '  \n');
+  fs.writeFileSync(path.join(runDir, PLAN), PLAN_JUGUETE);
+  conversacion(home, 's-sin', [PLAN_JUGUETE]);
   const v = markerCli(home, 's-sin', repo, ['complete-step', '3', '--auto-approved', 'LOW: superficie chica']);
-  assert.notEqual(v.status, 0, v.stdout);
+  assert.equal(v.status, 2, v.stdout);
+  assert.equal(paso3Cerrado(home, 's-sin', repo), false);
 });
 
 /** La conversación de la sesión como la guarda Claude Code: un renglón JSON por mensaje, en ~/.claude/projects/<x>/<sid>.jsonl. */
@@ -101,7 +103,7 @@ test('PlanVisible_ConPlanMostrado_SeApruebaSolo @story-8.62 @ac-8', () => {
   const { repo, home } = conPlanEscrito('s-con');
   // el agente se lo mostró a la persona en su respuesta (con otro formato: negritas, sin el número)
   conversacion(home, 's-con', ['Voy con el plan.', `El plan se aprobó solo (riesgo bajo):\n\n- **La prueba primero, en rojo, en tests/readme.test.js.**\n- El cambio en README.md: el título nuevo del proyecto.`]);
-  const r = markerCli(home, 's-con', repo, ['complete-step', '3', '--auto-approved', 'LOW: superficie chica']);
+  const r = markerCli(home, 's-con', repo, ['complete-step', '3', '--approved', 'sí, dale, aprobado el plan']);
   assert.equal(r.status, 0, r.stderr);
   assert.equal(paso3Cerrado(home, 's-con', repo), true);
 });
@@ -110,17 +112,15 @@ test('PlanVisible_PlanNoMostrado_NoSeApruebaSolo @story-8.62 @ac-8', () => {
   const { repo, home } = conPlanEscrito('s-nomostro');
   // la conversación se lee, pero el plan no está en ninguna respuesta (el caso medido)
   conversacion(home, 's-nomostro', ['Escribo el plan en la carpeta de la corrida.', 'Task 1 listo: los archivos no existen.']);
-  const r = markerCli(home, 's-nomostro', repo, ['complete-step', '3', '--auto-approved', 'LOW: superficie chica']);
+  const r = markerCli(home, 's-nomostro', repo, ['complete-step', '3', '--approved', 'sí, dale, aprobado el plan']);
   assert.notEqual(r.status, 0, r.stdout);
-  assert.match(r.stderr, /mensaje con el plan TAL CUAL/);
-  // dice qué ve la persona: medido, el agente creía que la salida del comando contaba
-  assert.match(r.stderr, /no ve la salida de este comando, ni el archivo del plan, ni lo que pensaste/);
-  assert.ok(r.stderr.includes('El cambio en README.md'), `trae el plan para mostrarlo:\n${r.stderr}`);
+  assert.match(r.stderr, /sin ver el plan/);
+  assert.ok(r.stdout.includes('El cambio en README.md'), `trae el plan para mostrarlo:\n${r.stdout}`);
   assert.equal(paso3Cerrado(home, 's-nomostro', repo), false);
   // el plan en un mensaje de un subagente (la persona no lo ve) tampoco cuenta
   const dir = path.join(home, '.claude', 'projects', '-repo');
   fs.writeFileSync(path.join(dir, 's-nomostro.jsonl'), `${JSON.stringify({ type: 'assistant', isSidechain: true, message: { role: 'assistant', content: [{ type: 'text', text: PLAN_JUGUETE }] } })}\n`);
-  const sub = markerCli(home, 's-nomostro', repo, ['complete-step', '3', '--auto-approved', 'LOW: superficie chica']);
+  const sub = markerCli(home, 's-nomostro', repo, ['complete-step', '3', '--approved', 'sí, dale, aprobado el plan']);
   assert.notEqual(sub.status, 0, sub.stdout);
 });
 
@@ -130,13 +130,13 @@ test('PlanVisible_PlanSinTexto_NoSeApruebaSolo @story-8.62 @ac-8', () => {
   const runDir = require(path.join(SCRIPTS, 'pipeline.js')).resolveRunDir(repo, '9.92', true, path.join(repo, 'specs', 'story-9.92-juguete.md'));
   fs.writeFileSync(path.join(runDir, PLAN), '***\n> \n#\n');
   conversacion(home, 's-simbolos', ['Sigo.']);
-  const r = markerCli(home, 's-simbolos', repo, ['complete-step', '3', '--auto-approved', 'LOW: superficie chica']);
+  const r = markerCli(home, 's-simbolos', repo, ['complete-step', '3', '--approved', 'sí, dale, aprobado el plan']);
   assert.notEqual(r.status, 0, r.stdout);
   assert.equal(paso3Cerrado(home, 's-simbolos', repo), false);
   // un plan de dos letras aparece en cualquier conversación: tampoco cuenta como visto
   fs.writeFileSync(path.join(runDir, PLAN), 'ok\n');
   conversacion(home, 's-simbolos', ['ok, sigo con las pruebas.']);
-  const corto = markerCli(home, 's-simbolos', repo, ['complete-step', '3', '--auto-approved', 'LOW: superficie chica']);
+  const corto = markerCli(home, 's-simbolos', repo, ['complete-step', '3', '--approved', 'sí, dale, aprobado el plan']);
   assert.notEqual(corto.status, 0, corto.stdout);
 });
 
@@ -144,8 +144,8 @@ test('PlanVisible_SinConversacion_PreguntaALaPersona @story-8.62 @ac-8', () => {
   // sin conversación que leer (Codex, u otra herramienta que no la deja en disco): falla cerrado, se le pregunta a la persona
   const { repo, home } = conPlanEscrito('s-sinconv');
   const r = markerCli(home, 's-sinconv', repo, ['complete-step', '3', '--auto-approved', 'LOW: superficie chica']);
-  assert.notEqual(r.status, 0, r.stdout);
-  assert.match(r.stderr, /no puedo leer la conversación/);
+  assert.equal(r.status, 2, r.stdout);
+  assert.match(r.stderr, /el plan no se aprueba solo/);
   assert.match(r.stderr, /--approved/);
   assert.equal(paso3Cerrado(home, 's-sinconv', repo), false);
   // con la aprobación de la persona, cierra
@@ -162,7 +162,7 @@ test('PlanVisible_InstruccionesLoDicen @story-8.62 @ac-9 @ac-10', () => {
   const { story } = repoConStory();
   const rc = computeRiskClass({ story });
   assert.equal(rc.risk, 'LOW');
-  assert.match(rc.note, /se muestra siempre/);
+  assert.match(rc.note, /lo aprueba una persona/);
   const paso8 = fs.readFileSync(path.join(STEPS, 'step-11-prepare-commit.md'), 'utf8');
   const pendiente = paso8.split('\n').filter((l) => /^Pendiente tuyo:/.test(l));
   assert.equal(pendiente.length, 1, 'un solo renglón de pendientes en la plantilla del cierre');
@@ -197,17 +197,15 @@ test('PlanVisible_FrenoPorSalidaNormal @story-8.65 @ac-1', () => {
   const { repo, home } = conPlanEscrito('s-salida');
   // el caso medido: el agente cree que ya lo mostró, pero ninguno de sus mensajes lo trae
   conversacion(home, 's-salida', ['El cierre sigue bloqueado aunque el plan ya está en mis mensajes.']);
-  const r = markerCli(home, 's-salida', repo, ['complete-step', '3', '--auto-approved', 'LOW: superficie chica']);
+  const r = markerCli(home, 's-salida', repo, ['complete-step', '3', '--approved', 'sí, dale, aprobado el plan']);
   assert.equal(r.status, 1, r.stderr);
   assert.match(r.stdout, /Mostrale esto a la persona/);
   assert.ok(r.stdout.includes('El cambio en README.md: el título nuevo del proyecto.'), `la salida normal trae el plan:\n${r.stdout}`);
   assert.match(r.stdout, /no alcanza/);
-  // sin conversación legible, también por la salida normal
+  // sin conversación legible no hay cómo saber: la cita de la persona alcanza
   const otro = conPlanEscrito('s-salida-sin');
-  const s = markerCli(otro.home, 's-salida-sin', otro.repo, ['complete-step', '3', '--auto-approved', 'LOW: superficie chica']);
-  assert.equal(s.status, 1, s.stderr);
-  assert.match(s.stdout, /Mostrale esto a la persona/);
-  assert.ok(s.stdout.includes('La prueba primero, en rojo'), s.stdout);
+  const s = markerCli(otro.home, 's-salida-sin', otro.repo, ['complete-step', '3', '--approved', 'sí, dale, aprobado el plan']);
+  assert.equal(s.status, 0, s.stderr);
 });
 
 test('PlanVisible_PreguntaConElPlan_Cuenta @story-8.65 @ac-2', () => {
@@ -285,7 +283,7 @@ function puertaBash(home, sid, repo, command) {
 }
 
 test('PlanVisible_ElArnesLoMuestra @story-8.65 @ac-6', () => {
-  const cierre = `node ${path.join(SCRIPTS, 'marker.js')} complete-step 3 --auto-approved "LOW: superficie chica" 2>&1 | head -4`;
+  const cierre = `node ${path.join(SCRIPTS, 'marker.js')} complete-step 3 --approved "sí, dale, aprobado el plan" 2>&1 | head -4`;
   // el plan escrito, el paso 3 abierto y la conversación sin el plan: el arnés se lo muestra a la persona
   const { repo, home } = conPlanEscrito('s-arnes');
   conversacion(home, 's-arnes', ['Sigo con la aprobación del plan.']);
@@ -297,7 +295,7 @@ test('PlanVisible_ElArnesLoMuestra @story-8.65 @ac-6', () => {
   const gates = fs.readFileSync(path.join(home, '.claude', '.tycon-pipeline', 'gates.log'), 'utf8');
   assert.match(gates, /"name":"plan-shown"[^\n]*"sessionId":"s-arnes"|"sessionId":"s-arnes"[^\n]*"name":"plan-shown"/);
   // con esa constancia, el paso cierra aunque el agente no lo haya escrito
-  const r = markerCli(home, 's-arnes', repo, ['complete-step', '3', '--auto-approved', 'LOW: superficie chica']);
+  const r = markerCli(home, 's-arnes', repo, ['complete-step', '3', '--approved', 'sí, dale, aprobado el plan']);
   assert.equal(r.status, 0, r.stderr);
   assert.equal(paso3Cerrado(home, 's-arnes', repo), true);
   // con el paso cerrado, ya no muestra nada
@@ -328,7 +326,7 @@ test('PlanVisible_ElArnesLoMuestra @story-8.65 @ac-6', () => {
   assert.match(fs.readFileSync(path.join(otro.home, '.claude', '.tycon-pipeline', 'gates.log'), 'utf8'), /"plan-shown"/, 'la primera pasada dejó la constancia');
   const runDir = require(path.join(SCRIPTS, 'pipeline.js')).resolveRunDir(otro.repo, '9.92', true, path.join(otro.repo, 'specs', 'story-9.92-juguete.md'));
   fs.writeFileSync(path.join(runDir, PLAN), `${PLAN_JUGUETE}3. Un paso nuevo que se agregó después de mostrarlo a la persona.\n`);
-  const o = markerCli(otro.home, 's-otro', otro.repo, ['complete-step', '3', '--auto-approved', 'LOW: superficie chica']);
+  const o = markerCli(otro.home, 's-otro', otro.repo, ['complete-step', '3', '--approved', 'sí, dale, aprobado el plan']);
   assert.equal(o.status, 1, o.stderr);
   // un comando que no cierra el paso 3 no muestra nada (tampoco el 30 ni un 3.1)
   const nada = conPlanEscrito('s-nada');
@@ -366,7 +364,7 @@ test('PlanVisible_AlEscribirloLoMuestra @story-8.65 @ac-6', () => {
   const salida = JSON.parse(d.stdout);
   assert.match(salida.systemMessage, /El plan de la historia 9\.92 \(te lo muestra el arnés\): «Plan»/);
   assert.ok(salida.systemMessage.includes(path.join(runDir, PLAN)), salida.systemMessage);
-  const r = markerCli(home, 's-escrito', repo, ['complete-step', '3', '--auto-approved', 'LOW: superficie chica']);
+  const r = markerCli(home, 's-escrito', repo, ['complete-step', '3', '--approved', 'sí, dale, aprobado el plan']);
   assert.equal(r.status, 0, r.stderr);
   // con el paso cerrado, otra edición del plan ya no lo muestra
   assert.doesNotMatch(despachar(path.join(runDir, PLAN), 'Edit').stdout, /te lo muestra el arnés/);
@@ -386,7 +384,7 @@ test('PlanVisible_AlEscribirloLoMuestra @story-8.65 @ac-6', () => {
   assert.match(conOtro.stdout, /salida de otro control[\s\S]*<system-reminder>[\s\S]*te lo muestra el arnés/);
   const gOtro = path.join(otro.home, '.claude', '.tycon-pipeline', 'gates.log');
   assert.doesNotMatch(fs.existsSync(gOtro) ? fs.readFileSync(gOtro, 'utf8') : '', /"plan-shown"/, 'un aviso que no salió no deja constancia');
-  const noCierra = markerCli(otro.home, 's-aparte', otro.repo, ['complete-step', '3', '--auto-approved', 'LOW: superficie chica']);
+  const noCierra = markerCli(otro.home, 's-aparte', otro.repo, ['complete-step', '3', '--approved', 'sí, dale, aprobado el plan']);
   assert.equal(noCierra.status, 1, noCierra.stderr);
 });
 
@@ -429,7 +427,7 @@ test('PlanVisible_ConMaqueta_TambienSeMuestra @story-8.65 @ac-3 @ac-6', () => {
     env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: 's-maqueta', TYCON_LANE_LLM: '0' },
   });
   assert.match(JSON.parse(d.stdout).systemMessage, /te lo muestra el arnés/);
-  const ok = markerCli(home, 's-maqueta', repo, ['complete-step', '3', '--auto-approved', 'LOW: superficie chica', ...cita]);
+  const ok = markerCli(home, 's-maqueta', repo, ['complete-step', '3', '--approved', 'sí, dale, aprobado el plan', ...cita]);
   assert.equal(ok.status, 0, ok.stderr);
   assert.equal(paso3Cerrado(home, 's-maqueta', repo), true);
 });
@@ -443,7 +441,7 @@ test('PlanVisible_AvisoEnTresRenglones: título, cuántos pasos y la ruta absolu
     '', '## Riesgos', '', '- Ninguno.', ''].join('\n');
   fs.writeFileSync(path.join(runDir, PLAN), largo);
   conversacion(home, 's-corto', ['Sigo.']);
-  const p = puertaBash(home, 's-corto', repo, `node ${path.join(SCRIPTS, 'marker.js')} complete-step 3 --auto-approved "LOW: superficie chica"`);
+  const p = puertaBash(home, 's-corto', repo, `node ${path.join(SCRIPTS, 'marker.js')} complete-step 3 --approved "sí, dale, aprobado el plan"`);
   assert.equal(p.status, 0, p.stderr);
   const aviso = JSON.parse(p.stdout).systemMessage;
   const renglones = aviso.split('\n');
@@ -456,14 +454,14 @@ test('PlanVisible_AvisoEnTresRenglones: título, cuántos pasos y la ruta absolu
   const pd = require(path.join(SCRIPTS, 'lib', 'plan-display.js'));
   const gates = fs.readFileSync(path.join(home, '.claude', '.tycon-pipeline', 'gates.log'), 'utf8');
   assert.ok(gates.includes(`"sha":"${pd.huella(largo)}"`), gates);
-  assert.equal(markerCli(home, 's-corto', repo, ['complete-step', '3', '--auto-approved', 'LOW: superficie chica']).status, 0);
+  assert.equal(markerCli(home, 's-corto', repo, ['complete-step', '3', '--approved', 'sí, dale, aprobado el plan']).status, 0);
 
   // sin sección de pasos, cuenta los numerados del plan; sin título, el primer renglón con texto
   const otro = conPlanEscrito('s-corto2');
   const run2 = require(path.join(SCRIPTS, 'pipeline.js')).resolveRunDir(otro.repo, '9.92', true, path.join(otro.repo, 'specs', 'story-9.92-juguete.md'));
   fs.writeFileSync(path.join(run2, PLAN), 'Lo que hago:\n\n1. Uno.\n2. Dos.\n   1. Un subpaso que no cuenta.\n3. Tres.\n');
   conversacion(otro.home, 's-corto2', ['Sigo.']);
-  const a2 = JSON.parse(puertaBash(otro.home, 's-corto2', otro.repo, `node ${path.join(SCRIPTS, 'marker.js')} complete-step 3 --auto-approved "LOW"`).stdout).systemMessage;
+  const a2 = JSON.parse(puertaBash(otro.home, 's-corto2', otro.repo, `node ${path.join(SCRIPTS, 'marker.js')} complete-step 3 --approved "dale"`).stdout).systemMessage;
   assert.ok(a2.split('\n').length <= 3, a2);
   assert.match(a2, /«Lo que hago:»/);
   assert.match(a2, /Tiene 3 pasos\./);

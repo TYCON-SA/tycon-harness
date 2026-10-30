@@ -555,6 +555,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 1.29: la revisión automática del plan — qué es delicado, el modo plan del pase, la revisión que lanza la coordinadora y su constancia, la aprobación por delegación sólo con el veredicto aprobado, el corte sin persona en la CI y que ningún plan se aprueba solo.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/plan-review.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la oferta de la prueba con navegador: la muestra el arnés sólo con pantalla y sin navegador; preparar y declarar la deuda piden la respuesta de la persona; la deuda afloja el cierre sólo con sus dos marcas.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/browser-test-offer.test.js",

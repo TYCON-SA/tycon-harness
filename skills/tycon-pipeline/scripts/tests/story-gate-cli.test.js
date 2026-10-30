@@ -100,9 +100,9 @@ test('complete-step: orden (3←1,2 · 4←3 · 5←4 · 8←5), --out-of-order 
   // 3 sin aprobación → bloqueado
   r = markerCli(home, sid, ['complete-step', '3']);
   assert.notEqual(r.status, 0); assert.match(r.stderr, /falta la aprobación del plan/);
-  // 3 auto-aprobado en story que NO es LOW (signed_for_sprint → NORMAL) → bloqueado
+  // 3 «auto-aprobado» → bloqueado: ningún plan se aprueba solo
   r = markerCli(home, sid, ['complete-step', '3', '--auto-approved', 'criterios']);
-  assert.notEqual(r.status, 0); assert.match(r.stderr, /risk-class/);
+  assert.equal(r.status, 2); assert.match(r.stderr, /el plan no se aprueba solo/);
   // 3 con cita → ok y queda planApproval
   r = markerCli(home, sid, ['complete-step', '3', '--approved', 'dale, aprobado']);
   assert.equal(r.status, 0, r.stderr);
@@ -693,20 +693,23 @@ test('7.30-T13 CompleteStep3_RiesgoBajoConPantalla_IgualPideLaMaqueta @story-7.3
   const s = story730(repo, ['src/components/Facturas.tsx', 'src/components/Detalle.tsx']);
   maqueta730(s);
   marker730(home, 's13', s, repo);
+  // con riesgo bajo el plan ya no se aprueba solo; con su aprobación, la maqueta se pide igual
   let r = markerCli(home, 's13', ['complete-step', '3', '--auto-approved', 'LOW: 2 archivos']);
-  assert.equal(r.status, 1, r.stderr);
-  assert.match(r.stderr, /el plan se aprueba solo; la maqueta no: una pantalla la ve una persona antes/);
-  // el plan aprobado solo se muestra igual: escrito, y en la respuesta del agente (plan-visible.test.js)
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /el plan no se aprueba solo/);
   const runDir = require(path.join(__dirname, '..', 'pipeline.js')).resolveRunDir(repo, '1.1', true, s);
   const planAuto = '1. La pantalla de facturas con su detalle.\n';
   fs.writeFileSync(path.join(runDir, 'step-02-bmad-plan.md'), planAuto);
   fs.mkdirSync(path.join(home, '.claude', 'projects', '-repo'), { recursive: true });
   fs.writeFileSync(path.join(home, '.claude', 'projects', '-repo', 's13.jsonl'),
     `${JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: `El plan:\n${planAuto}` }] } })}\n`);
-  r = markerCli(home, 's13', ['complete-step', '3', '--auto-approved', 'LOW: 2 archivos', '--mockup-approved', 'la vio el dueño']);
+  r = markerCli(home, 's13', ['complete-step', '3', '--approved', 'dale']);
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /mostrale la maqueta/);
+  r = markerCli(home, 's13', ['complete-step', '3', '--approved', 'dale', '--mockup-approved', 'la vio el dueño']);
   assert.equal(r.status, 0, r.stderr);
   const m = leerMarker730(home, 's13');
-  assert.equal(m.planApproval.mode, 'auto-low-risk');
+  assert.equal(m.planApproval.mode, 'user');
   assert.equal(m.mockupApproval.mode, 'user');
 });
 
@@ -877,10 +880,11 @@ test('7.30-T28 PipelineNextRiskClassYPortonDePlan_NombranLaMaqueta @story-7.30 @
     assert.match(n.stdout, /complete-step approve-plan/);
     if (conMaqueta) assert.match(n.stdout, /--mockup-approved/); else assert.doesNotMatch(n.stdout, /--mockup-approved/);
     const rc = JSON.parse(pipe(sid, ['risk-class', '--story', s]).stdout);
-    assert.equal(rc.auto_approve_plan, true);
+    assert.equal(rc.risk, 'LOW');
+    assert.ok(!('auto_approve_plan' in rc), 'ningún plan se aprueba solo (story 1.29)');
     if (conMaqueta) {
       assert.equal(rc.mockup_required, true);
-      assert.match(rc.note, /el plan se aprueba solo; la maqueta no/);
+      assert.match(rc.note, /la maqueta la aprueba quien aprueba el plan/);
     } else {
       assert.equal(rc.mockup_required, undefined);
       assert.doesNotMatch(rc.note, /maqueta/);
