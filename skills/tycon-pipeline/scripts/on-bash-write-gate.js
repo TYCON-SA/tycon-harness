@@ -477,7 +477,27 @@ const CORRE_ARCHIVO = /^(?:node|nodejs|python[0-9.]*|perl|ruby|bun|deno|tsx|ts-n
 // lo que el guion escribe se lee entero hasta este tamaño; más grande, cuenta si nombra una historia o una constancia
 const GUION_TOPE = 256 * 1024;
 const GUION_TOPE_DURO = 64 * 1024 * 1024;
-const MENCIONA_HISTORIA = /control-changes|stor(?:y|ies)|historia/i;
+// la palabra entera: «historial», «storage» o «restore» no nombran una historia
+const MENCIONA_HISTORIA = /control-changes|\bstor(?:y|ies)\b|\bhistorias?\b/i;
+// en un repo sin historias, la palabra suelta no alcanza: cuenta una constancia o la ruta de una historia (de otro repo),
+// también armada por partes (`Path('specs') / n`, `os.path.join('stories', f)`, `'specs/' + n + '.md'`)
+const NOMBRA_RUTA_DE_HISTORIA = /control-changes|(?:^|[\\/'"`\s])(?:\.?specs?|stories)[\\/][^\s'"`]*\.md\b|\bstory-[\w.-]*\.md\b|['"`](?:\.\/)?(?:\.?specs?|stories)\/?['"`]/i;
+
+/**
+ * ¿La carpeta está en un repo con historias? Su raíz de git (sin git, la carpeta misma) con `.tycon/`, o con alguna
+ * historia que encuentre el descubridor del arnés (el mismo de los demás frenos). Sin su caché: un «ninguna» de hace
+ * una hora no ve la primera historia recién escrita. Un escaneo que no terminó, o que falló, cuenta como que sí: no se
+ * sabe.
+ */
+function repoConHistorias(carpeta) {
+  try {
+    const sd = require('./lib/story-discovery.js');
+    const raiz = sd.findRepoRoot(carpeta) || carpeta;
+    if (fs.existsSync(path.join(raiz, '.tycon'))) return true;
+    const r = sd.discoverStories(raiz, { cache: false });
+    return r.partial || r.stories.length > 0;
+  } catch (e) { logHookError(e); return true; }
+}
 const EXTENSION_DE = { python: /\.py$/i, node: /\.(?:[cm]?js|[cm]?ts)$/i, perl: /\.p[lm]$/i, ruby: /\.rb$/i };
 const familiaDe = (interprete) => (/^python/.test(interprete) ? 'python' : interprete === 'perl' ? 'perl' : interprete === 'ruby' ? 'ruby' : 'node');
 
@@ -3007,9 +3027,11 @@ function handleCarrilEHistoria(event, opts = {}) {
   {
     for (const g of guionesEnArchivo(cmd, [...new Set([cwd, baseCwd])], installedRoots)) {
       const via = `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 100)} (el guion ${path.basename(g.archivo)})`;
-      // uno muy grande no se lee entero: si escribe y nombra una historia o una constancia, frena
+      // uno muy grande no se lee entero: si escribe y nombra una historia o una constancia, frena. Donde corre y donde
+      // vive sin historias, la palabra suelta no cuenta: sí la ruta de una historia y la constancia
       if (g.grande) {
-        if (!g.texto || (GUION_ESCRIBE.test(g.texto) && MENCIONA_HISTORIA.test(g.texto))) {
+        const nombra = () => (repoConHistorias(cwd) || repoConHistorias(path.dirname(g.archivo)) ? MENCIONA_HISTORIA : NOMBRA_RUTA_DE_HISTORIA).test(g.texto);
+        if (!g.texto || (GUION_ESCRIBE.test(g.texto) && nombra())) {
           return { block: `⛔ tycon-pipeline — GUION QUE NO SE PUEDE LEER ENTERO\n\n  ${g.archivo}\n  (detectado en ${via})\n  Es demasiado grande para ver qué escribe, y nombra una historia o una constancia. Una historia se edita con\n  la herramienta de edición (Edit/Write); una constancia la firma una persona.\n` };
         }
         continue;
