@@ -415,3 +415,18 @@ test('T23 InheritedRed_UnreadableSnapshot_AsBefore — con la foto ilegible no s
   assert.notEqual(r.status, 0, r.out);
   assert.deepEqual(lista(l), [B], r.out);
 });
+
+test('T24 InheritedRed_SuiteAlone_Forgiven — repetida sola, la que ya estaba roja en el nocturno avisa, no frena y sale de la lista', () => {
+  // 🔴 mutación: juzgar sólo en la corrida completa → la repetición sola de b sale 1, queda en la lista y la completa
+  // sigue negándose (76) por un rojo que el pedido no frena.
+  const l = conRojo();
+  conFoto(l, ['b.test.sh']);
+  const r = puerta(l, ['--suite', B]);
+  assert.equal(r.status, 0, r.out);
+  assert.match(r.out, /ya estaba rojo/, r.out);
+  assert.deepEqual(lista(l), [A], r.out);
+  assert.match(String(marcador(l).checks['tests-suite']), /^green/, r.out);
+  const a = puerta(l, ['--suite', A]);
+  assert.notEqual(a.status, 0, 'un rojo nuevo, repetido solo, sigue frenando');
+  assert.deepEqual(lista(l), [A], a.out);
+});
