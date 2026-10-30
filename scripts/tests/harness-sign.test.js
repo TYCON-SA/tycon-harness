@@ -277,6 +277,37 @@ test('T15 · la emergencia queda en el registro común de firmas de verdad', (t)
     [['emergency', 3, 'command', 'rm -rf /tmp/x', 'borrar la carpeta colgada', 'harness sign']]);
 });
 
+// La firma en la terminal mira que haya una terminal y que alguien escriba «firmo»: un agente que se abre una terminal
+// propia (`script`, un pty de python, `expect`) pasaría. Por eso el agente no corre `sign` nunca: lo frena el freno de
+// seguridad, sin ventana, y lo corre la persona en su terminal, donde no hay freno.
+// 🔴 rojo: sin la regla, el agente se firma la emergencia solo.
+test('T16 · el freno de seguridad no deja que el agente corra sign ni la biblioteca de la emergencia', () => {
+  const HOOK = path.join(RAIZ, 'scripts', 'hooks', 'safety-guard-pre.sh');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-sign-agente-'));
+  try {
+    const freno = (comando) => spawnSync('bash', [HOOK], {
+      input: JSON.stringify({ session_id: 's-sign', tool_name: 'Bash', tool_input: { command: comando }, cwd: home }),
+      env: { ...process.env, HOME: home }, encoding: 'utf8',
+    });
+    for (const comando of [
+      "node ~/.claude/tycon-harness/scripts/setup/harness.js sign emergency --reason x -- 'ls'",
+      'node scripts/setup/harness.js sign plan-approval',
+      "script -q /dev/null node ~/.tycon/harness/scripts/setup/harness.js sign emergency --reason x -- 'ls'",
+      "python3 -c 'import pty; pty.spawn([\"node\", \"harness.js\", \"sign\", \"critical-waiver\"])'",
+      "node ~/.tycon/harness/scripts/lib/harness-sign.js consume <<< 'ls'",
+      "node scripts/setup/harness.js 'si''gn' emergency --reason x -- 'ls'",
+    ]) {
+      const r = freno(comando);
+      assert.strictEqual(r.status, 2, `${comando}: ${r.stderr}`);
+      assert.match(r.stderr, /lo corre la persona en su terminal/, comando);
+    }
+    // los demás subcomandos del arnés pasan
+    for (const comando of ['node ~/.claude/tycon-harness/scripts/setup/harness.js doctor', 'node scripts/setup/harness.js version --json']) {
+      assert.strictEqual(freno(comando).status, 0, comando);
+    }
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});
+
 test('T12 · por la consola: un id desconocido sale 2 y la ayuda nombra sign', () => {
   const r = spawnSync(process.execPath, [HARNESS, 'sign', 'no-existe', '--reason', 'x'], { encoding: 'utf8', env: { ...process.env, HOME: os.tmpdir() } });
   assert.strictEqual(r.status, 2, r.stdout + r.stderr);

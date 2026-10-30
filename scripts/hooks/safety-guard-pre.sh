@@ -495,6 +495,20 @@ if command -v tr >/dev/null 2>&1; then
 else
   _esc_cmd="${_esc_fuente//[\"\'\\\`]/}"
 fi
+
+# ESC-C3, `harness.js sign`: la firma en la terminal mira que haya una terminal y que alguien escriba «firmo», y un agente
+# que se abre una terminal propia (`script`, un pty, `expect`) pasaría. La corre sólo la persona en su terminal, donde
+# no hay freno: acá se niega siempre, sin ventana (la emergencia nunca va por la ventana), igual que la biblioteca de la
+# emergencia (lib/harness-sign.js), que la consumiría. Mira el comando sin comillas (`si''gn` es `sign`). Lo que no ve:
+# el nombre armado en una variable.
+_sign_re='harness(\.js)?[^;&|]*[][[:space:],(]sign([][[:space:],)]|$)'
+if [[ "$_esc_cmd" == *harness-sign* || "$_esc_cmd" =~ $_sign_re ]]; then
+  ESC_CARTEL="Esto lo corre la persona en su terminal, no el agente: explicale qué hay que firmar y por qué, y el comando exacto."
+  block "ESC-C3" \
+    "Firmar con harness.js sign, o usar la biblioteca de la emergencia, lo hace la persona en su terminal: un agente no, ni abriéndose una terminal propia." \
+    "Si un freno te para, mostrale a la persona el comando y el cartel: la emergencia la firma ella."
+fi
+
 # `TYCON_PROD_LINT=0` ya no apaga la revisión del catálogo de producción (la salida es la emergencia del commit): no se
 # mira, porque escrita no hace nada.
 for _esc in TYCON_NEW_NAMES TYCON_TEST_GATE DOD_BYPASS TYCON_NO_DEEP_REVIEW TYCON_STATUS_GATE; do
