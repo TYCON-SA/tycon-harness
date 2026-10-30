@@ -74,9 +74,14 @@ function repoDe(cwd) {
   return real(r.status === 0 && r.stdout.trim() ? r.stdout.trim() : cwd);
 }
 
+// En Windows la terminal no se lee: el comando se corre otra vez en una ventana de consola nueva y ahí se firma, con
+// tres palabras al azar (runtime-waiver.js, igual que las demás firmas por terminal de owner-window.js)
 function ttyDeVerdad() {
   const rw = require(path.join(LIB, 'runtime-waiver.js'));
-  return { hay: rw.hasTty, preguntar: rw.promptTty };
+  return {
+    windows: rw.esWindows(), hay: rw.hasTty, preguntar: rw.promptTty, confirmarFrase: rw.confirmarFrase,
+    enVentana: () => process.env[rw.MARCA_VENTANA] === '1', abrir: (o) => rw.abrirVentana(o), dentro: () => rw.dentroDeLaVentana(),
+  };
 }
 
 function appendDeVerdad(renglon) {
@@ -155,8 +160,9 @@ function pedidoVigente({ casa, numero, ahora }) {
  * La emergencia lleva `request` (el número del cartel del freno) o `commit`.
  * `levels`: lo que sube el perfil (`approvals.levels`); null si el perfil no se pudo leer (se pide motivo igual).
  * `via`: por dónde llega el pedido; en esta etapa, sólo `terminal` firma.
+ * `argv`: el comando entero (el guion y sus argumentos), para correrlo otra vez en la ventana nueva de Windows.
  */
-function sign({ id, reason = '', request = null, commit = false, target = null, orderedBy = null, signer, via = 'terminal', tty, append, levels = {}, casa, cwd = process.cwd(), ahora = Date.now() } = {}) {
+function sign({ id, reason = '', request = null, commit = false, target = null, orderedBy = null, signer, via = 'terminal', tty, append, levels = {}, casa, cwd = process.cwd(), ahora = Date.now(), argv = process.argv.slice(1) } = {}) {
   const no = (code, ...lines) => ({ code, lines });
   const e = entrada(id);
   if (!e) return no(2, `harness sign: «${id}» no es un id del catálogo de firmas (guides/firmas-del-arnes.md)`);
@@ -184,12 +190,24 @@ function sign({ id, reason = '', request = null, commit = false, target = null, 
     } else comando = COMMIT;
   }
   const t = tty || ttyDeVerdad();
+  if (t.windows && t.enVentana && !t.enVentana()) {
+    // el proceso de afuera no firma nada: sale con el código de la ventana, donde el comando corre otra vez entero
+    const v = t.abrir({ programa: process.execPath, script: argv[0], args: argv.slice(1), titulo: 'Firma de la emergencia' });
+    if (v.estado === 'vencida') return no(1, `harness sign: la ventana venció a los ${v.tope} s sin firmar`);
+    if (v.estado !== 'cerrada') return no(1, `harness sign: no pude abrir la ventana para firmar (${v.motivo})`);
+    return { code: v.codigo === 0 ? 0 : (v.codigo || 1), lines: [v.codigo === 0 ? '✅ firmado en la ventana nueva' : 'harness sign: no se firmó en la ventana nueva'] };
+  }
+  if (t.windows && t.dentro) t.dentro();
   if (!t.hay()) return no(2, 'harness sign: esta firma se da en tu terminal, y aquí no hay una: corré el comando vos, en tu terminal');
   const sobre = !comando ? '' : commit ? `.\nPara: el próximo commit en ${repoDe(cwd)}` : `.\nComando: ${comando}`;
   const que = `Firma: ${e.approves} (nivel ${nivel})${motivo ? `. Motivo: ${una(motivo, 300)}` : ''}${sobre}.`;
-  let dicho;
-  try { dicho = t.preguntar(`\n${que}\nPara firmar, escribí «firmo»: `); } catch (err) { return no(2, `harness sign: no pude leer tu terminal (${err.message})`); }
-  if (String(dicho || '').trim().toLowerCase() !== 'firmo') return no(1, 'harness sign: no se firmó');
+  let ok;
+  try {
+    // en Windows la ventana dice qué se firma antes de pedir las tres palabras
+    if (t.windows) { process.stderr.write(`\n${que}\n`); ok = t.confirmarFrase({}); }
+    else ok = String(t.preguntar(`\n${que}\nPara firmar, escribí «firmo»: `) || '').trim().toLowerCase() === 'firmo';
+  } catch (err) { return no(2, `harness sign: no pude leer tu terminal (${err.message})`); }
+  if (!ok) return no(1, 'harness sign: no se firmó');
 
   const firmante = signer || (() => { try { return os.userInfo().username; } catch (_) { return null; } })();
   const r = (append || appendDeVerdad)({

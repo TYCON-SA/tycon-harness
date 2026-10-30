@@ -363,6 +363,31 @@ test('T16 · el freno de seguridad no deja que el agente corra sign ni la biblio
   } finally { fs.rmSync(home, { recursive: true, force: true }); }
 });
 
+// En Windows la terminal no se lee: el comando se corre otra vez en una ventana nueva y ahí se firma con tres palabras.
+// 🔴 rojo: sin este camino, en Windows `sign` contesta siempre «aquí no hay una terminal» y la emergencia no se firma.
+test('T18 · en Windows la firma se da en una ventana nueva, con tres palabras', (t) => {
+  const casa = casaNueva(t);
+  const reg = registro();
+  const n = pedido(casa, 'Remove-Item -Recurse -Force C:\\proj\\bin');
+  // afuera: abre la ventana con el mismo comando y no firma nada por su cuenta
+  const abiertas = [];
+  const afuera = (estado, codigo) => ({ windows: true, enVentana: () => false, hay: () => false, abrir: (o) => { abiertas.push(o); return { estado, codigo, tope: 300 }; } });
+  const argv = ['/arnes/scripts/setup/harness.js', 'sign', 'emergency', '--reason', 'limpiar', '--request', n];
+  let r = firmar(casa, { id: 'emergency', reason: 'limpiar', request: n, append: reg.append, tty: afuera('cerrada', 0), argv });
+  assert.strictEqual(r.code, 0, r.lines.join('\n'));
+  assert.deepStrictEqual([abiertas[0].script, abiertas[0].args], [argv[0], argv.slice(1)], 'corre el mismo comando en la ventana');
+  assert.deepStrictEqual([reg.renglones.length, sign.permisos(casa).length], [0, 0], 'afuera no se firma');
+  r = firmar(casa, { id: 'emergency', reason: 'limpiar', request: n, append: reg.append, tty: afuera('vencida'), argv });
+  assert.strictEqual(r.code, 1);
+  // adentro: dice qué se firma y pide las tres palabras
+  const adentro = (ok) => ({ windows: true, enVentana: () => true, hay: () => true, dentro: () => {}, confirmarFrase: () => ok });
+  r = firmar(casa, { id: 'emergency', reason: 'limpiar', request: n, append: reg.append, tty: adentro(false) });
+  assert.strictEqual(r.code, 1, 'sin las tres palabras no firma');
+  r = firmar(casa, { id: 'emergency', reason: 'limpiar', request: n, append: reg.append, tty: adentro(true) });
+  assert.strictEqual(r.code, 0, r.lines.join('\n'));
+  assert.ok(sign.consumir({ casa, comando: 'Remove-Item -Recurse -Force C:\\proj\\bin', ahora: AHORA + MIN }).ok);
+});
+
 test('T12 · por la consola: un id desconocido sale 2 y la ayuda nombra sign', () => {
   const r = spawnSync(process.execPath, [HARNESS, 'sign', 'no-existe', '--reason', 'x'], { encoding: 'utf8', env: { ...process.env, HOME: os.tmpdir() } });
   assert.strictEqual(r.status, 2, r.stdout + r.stderr);
