@@ -28,6 +28,7 @@ const RAIZ = path.join(SCRIPTS, '..', '..', '..');
 const MARKER = path.join(SCRIPTS, 'marker.js');
 const GUARD = path.join(RAIZ, 'scripts', 'hooks', 'safety-guard-pre.sh');
 const { conVentana } = require(path.join(RAIZ, 'scripts', 'tests', 'lib', 'window-passed.js'));
+const { inHarnessCopy } = require(path.join(RAIZ, 'scripts', 'tests', 'lib', 'harness-copy.js'));
 const TUID = 'toolu_8121';
 const FRASE = 'autorizo cerrar la ejecución';
 const PERDIDA = /EJECUCIÓN PERDIDA/;
@@ -125,7 +126,15 @@ function entorno() {
     return { status: r.status, out: (r.stderr || '') + (r.stdout || '') };
   };
   const editar = (sid, archivo = 'src/a.js', extra) => gancho('on-story-gate.js', sid, { tool_name: 'Edit', tool_input: { file_path: path.join(repo, archivo) } }, extra);
-  const consola = (sid, command, tool_name = 'Bash', extra) => gancho('on-bash-write-gate.js', sid, { tool_name, tool_input: { command } }, extra);
+  // la puerta de la consola corre desde una copia propia del arnés, igual que el guion que nombra el comando: el freno
+  // reconoce un guion del arnés según el estado de git del clon
+  const consola = (sid, command, tool_name = 'Bash', extra) => {
+    const r = spawnSync(process.execPath, [inHarnessCopy(path.join(SCRIPTS, 'on-bash-write-gate.js'))], {
+      input: JSON.stringify({ ...(sid ? { session_id: sid } : {}), tool_use_id: TUID, cwd: repo, tool_name, tool_input: { command: inHarnessCopy(command) } }),
+      env: env(null, extra), encoding: 'utf8',
+    });
+    return { status: r.status, out: (r.stderr || '') + (r.stdout || '') };
+  };
   const turno = (sid) => gancho('on-stop-dod-gate.js', sid, { hook_event_name: 'Stop' });
   const commit = (sid) => gancho('on-pre-commit.js', sid, { tool_name: 'Bash', tool_input: { command: 'git commit -m x' } });
   const freno = (sid, command) => {
