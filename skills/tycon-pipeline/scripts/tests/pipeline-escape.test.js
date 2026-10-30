@@ -495,8 +495,9 @@ test('Guion_ForSession_Delegada_SeisLlaves (T7) @story-8.142 @ac-4', (t) => {
   const PR = require(path.join(SCRIPTS, 'lib', 'plan-review.js'));
   const runDir = require(path.join(SCRIPTS, 'pipeline.js')).resolveRunDir(lab.repo, '9.91', true, lab.stories[DESTINO]);
   fs.writeFileSync(path.join(runDir, 'step-02-bmad-plan.md'), '1. Cambiar el README.\n');
-  assert.strictEqual(PR.preparar({ lanza: COORD, destino: DESTINO, estado: lab.estadoDir, home: lab.home, delegacion: delegacion() }).codigo, 0);
-  PR.anotar({ lanza: COORD, destino: DESTINO, estado: lab.estadoDir, resultado: { modo: 'plan', medido: true, confirmed: [], hallazgos_sin_veredicto: 0, a_verificar_aparte: 0, lentes_sin_medir: [] } });
+  const preparado = PR.preparar({ lanza: COORD, destino: DESTINO, estado: lab.estadoDir, home: lab.home, delegacion: delegacion() });
+  assert.strictEqual(preparado.codigo, 0);
+  PR.anotar({ lanza: COORD, destino: DESTINO, estado: lab.estadoDir, resultado: { pedido: preparado.args.pedido, modo: 'plan', medido: true, confirmed: [], hallazgos_sin_veredicto: 0, a_verificar_aparte: 0, lentes_sin_medir: [] } });
   r = lab.correr(APROBAR);
   assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
   const destino = JSON.parse(lab.leer(DESTINO));
