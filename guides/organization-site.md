@@ -599,9 +599,11 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   mantiene. Una herramienta que no está en la lista se pide con «Pedíselo a tu agente» (abajo, §Tu tecnología).
 - **Quién autoriza saltarse un control**: si la organización trabaja con una sesión coordinadora que le pasa el ok de un dev
   a la sesión que implementa, para eximir un crítico de los revisores o firmar un criterio que no se puede probar en
-  vivo. «No» (de fábrica): el ok lo escribe el dev en el chat de su sesión. Acá se dice sólo sí o no, y vale sólo desde
-  acá, nunca desde una máquina. Cuál sesión es la coordinadora se designa en cada máquina: el dev escribe en el chat de
-  esa sesión «Esta sesión es la coordinadora», y la sesión lo anota con
+  vivo. La pregunta es «¿Quién pasa la autorización para saltarse un control grave?»: «Cada programador (de fábrica)»
+  quiere decir que el ok lo escribe el dev en el chat de su sesión; con «Una sesión coordinadora» aparece «¿Cómo la
+  llaman?» (se guarda en `approvals.relay_session`, de fábrica «coordinadora»). Vale sólo desde acá, nunca desde una
+  máquina. Cuál sesión es la coordinadora se designa en cada máquina: el dev escribe en el chat de esa sesión «Esta
+  sesión es la <nombre>», con el nombre de arriba, y la sesión lo anota con
   `marker.js designate-relay --approved-by "<el dev>" --quote "<su frase>"`. Se la reconoce por su conversación, no por
   su nombre: sigue valiendo si la sesión se reinicia, y hay que volver a designarla si se abre un chat nuevo o se hace
   `/clear`. Una sesión que se llama igual no puede reenviar.
@@ -628,6 +630,32 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   que no está delegado espera: el sistema no mira la hora, pide la firma igual y, si nadie contesta, la sesión queda
   frenada en ese paso. Con Codex, que no tiene ventana, todo se firma en la terminal. La matriz completa
   está en `guides/firmas-del-arnes.md`, «Quién firma cada nivel».
+
+  **¿Quién firma? En corto.** Para saber quién firma algo en tu máquina, se mira esto:
+
+  | Lo que hay que firmar | Sin coordinadora, estás | Sin coordinadora, no estás | Con coordinadora, estás | Con coordinadora, no estás |
+  |---|---|---|---|---|
+  | Guardar el trabajo · 1 | vos | espera | la coordinadora \* | la coordinadora \* |
+  | Pedir otra revisión · 1 | vos | espera | la coordinadora \* | la coordinadora \* |
+  | Aprobar el plan · 1 | vos \*\* | espera \*\* | la coordinadora \* | la coordinadora \* |
+  | Saltear un control · 2 | vos | espera | vos | espera |
+  | La emergencia · 3 | vos, en tu terminal | espera | vos, en tu terminal | espera |
+
+  \* Sólo si esa firma está en «Delegada a la coordinadora» y tu máquina está en «En qué máquinas vale lo delegado»;
+  si no, es igual que sin coordinadora. \*\* El plan de una story de riesgo bajo hoy se puede aprobar sin firma, desde
+  la misma sesión. Por qué cada rutina es rutina, y las notas, en `guides/firmas-del-arnes.md`.
+
+  **Dónde se configura**, todo en esta sección:
+  - **A · si hay coordinadora**: «¿Quién pasa la autorización para saltarse un control grave?», con «¿Cómo la llaman?»
+    si es «Una sesión coordinadora».
+  - **B · en qué máquinas**: «En qué máquinas vale lo delegado», cada una por su huella.
+  - **C · quién firma cada cosa y su nivel**: «Quién firma cada cosa» (la lista la trae el arnés, igual para todos;
+    el equipo no agrega ni saca filas) y «El nivel de cada firma» (se sube, nunca se baja; sólo la rutina se delega).
+  - **En cada máquina**, la designación: «Esta sesión es la <nombre>» en el chat de la sesión elegida. Para que firme
+    lo delegado, además, el dueño la confirma en su terminal con `node scripts/lib/delegated-signing.js
+    confirm-designation` (ver `guides/firmas-del-arnes.md`, «Aprobar en nombre del dueño»). Se la reconoce por su
+    conversación, sigue valiendo si se reinicia, y hay que repetirla tras un chat nuevo o un `/clear`. Si nadie la
+    designó, nadie confirmó la designación, o la sesión está cerrada, no hay coordinadora: todo le llega al dev.
 - **Prueba a mano de cada punto**: si, además de lo que prueba el arnés, una persona tiene que marcar cada criterio de
   la guía del tester antes de cerrar la historia. «No» (de fábrica): la guía dice qué probó el arnés. «Sí»: el cierre
   frena hasta que una persona marque cada criterio contestando en el chat de su sesión, nombrándolo; el arnés le muestra

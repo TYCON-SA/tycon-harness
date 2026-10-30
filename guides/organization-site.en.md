@@ -613,9 +613,11 @@ be, to copy it and open the request by hand.
 - **Who relays a developer's OK**: whether the organization works with a
   coordinating session that passes a developer's OK on to the session doing the work, to waive a reviewer's critical
   finding or sign off a criterion that cannot be tested live. «No» (the default): the developer writes the OK in their
-  own session's chat. Here you only say yes or no, and it only counts from here, never from a machine. Which session is
-  the coordinator is designated on each machine: in that session's chat, the developer writes a sentence that names the
-  role and says it is this session, and the session records it with
+  own session's chat. The question is "Who passes on the authorization to skip a serious check?": "Each developer
+  (default)" means the developer writes the OK in their own session's chat; with "A coordinating session", "What do you
+  call it?" appears (stored in `approvals.relay_session`, by default «coordinadora»). It only counts from here, never from
+  a machine. Which session is the coordinator is designated on each machine: in that session's chat, the developer
+  writes a sentence that names the role (the name above) and says it is this session, and the session records it with
   `marker.js designate-relay --approved-by "<the developer>" --quote "<their sentence>"`. It is recognized by its
   conversation, not by its name: it keeps counting after the session restarts, and has to be designated again after a
   new chat or a `/clear`. A session with the same name cannot relay.
@@ -644,6 +646,34 @@ be, to copy it and open the request by hand.
   delegated waits: the system does not look at the time, it asks for the signature anyway and, if nobody answers, the
   session stays stopped at that step. With Codex, which has no window, everything is signed at the terminal. The full matrix
   is in `guides/firmas-del-arnes.md`.
+
+  **Who signs? In short.** To know who signs something on your machine, look here:
+
+  | What has to be signed | No coordinator, you are there | No coordinator, you are away | Coordinator, you are there | Coordinator, you are away |
+  |---|---|---|---|---|
+  | Save the work · 1 | you | waits | the coordinator \* | the coordinator \* |
+  | Ask for another review · 1 | you | waits | the coordinator \* | the coordinator \* |
+  | Approve the plan · 1 | you \*\* | waits \*\* | the coordinator \* | the coordinator \* |
+  | Skip a control · 2 | you | waits | you | waits |
+  | The emergency · 3 | you, at your terminal | waits | you, at your terminal | waits |
+
+  \* Only if that signature is "Delegated to the coordinator" and your machine is in "On which machines delegation
+  applies"; otherwise it is the same as without a coordinator. \*\* Today the plan of a low-risk story can be approved
+  without a signature, from the same session. Why each routine is routine, and the notes, in
+  `guides/firmas-del-arnes.md`.
+
+  **Where it is configured**, all in this section:
+  - **A · whether there is a coordinator**: "Who passes on the authorization to skip a serious check?", with "What do
+    you call it?" when it is "A coordinating session".
+  - **B · on which machines**: "On which machines delegation applies", each one by its fingerprint.
+  - **C · who signs each thing and its level**: "Who signs each thing" (the harness brings the list, the same for
+    everyone; the team does not add or remove rows) and "The level of each signature" (it goes up, never down; only
+    routine is delegated).
+  - **On each machine**, the designation: the sentence in the chosen session's chat. For it to sign what is delegated,
+    the owner also confirms it at their terminal with `node scripts/lib/delegated-signing.js confirm-designation` (see
+    `guides/firmas-del-arnes.md`, «Aprobar en nombre del dueño»). It is recognized by its conversation, keeps counting
+    after a restart, and has to be repeated after a new chat or a `/clear`. If nobody designated it, nobody confirmed
+    the designation, or the session is closed, there is no coordinator: everything goes to the developer.
 - **Hand-testing each criterion**: whether, besides what the harness tests, a person
   has to mark each criterion of the tester guide before the story is closed. «No» (the default): the guide says what the
   harness tested. «Yes»: closing stops until a person marks each criterion by answering in their own session's chat,
