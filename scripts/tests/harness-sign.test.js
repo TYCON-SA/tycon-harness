@@ -317,7 +317,10 @@ test('T14 · los frenos de escritura cuidan el permiso igual que los registros d
     // la consola: redirección, copia y un intérprete
     for (const comando of [`echo x > ${archivo}`, `cp /tmp/x ${archivo}`, `node -e "require('fs').writeFileSync('${archivo}','x')"`]) {
       const ev = JSON.stringify({ session_id: 's-sign', tool_name: 'Bash', tool_input: { command: comando }, cwd: os.tmpdir() });
-      const c = spawnSync(process.execPath, [path.join(SCRIPTS, 'on-bash-write-gate.js')], { input: ev, encoding: 'utf8' });
+      // el freno de escritura cuida la carpeta de estado del HOME con que corre la herramienta, que en una sesión es la
+      // casa de la cuenta (donde vive el permiso); con otro HOME no la ve: límite declarado en guides/safety-guard.md
+      const casa = require('../lib/real-home.js').casaDeLaCuenta();
+      const c = spawnSync(process.execPath, [path.join(SCRIPTS, 'on-bash-write-gate.js')], { input: ev, encoding: 'utf8', env: { ...process.env, HOME: casa, USERPROFILE: casa } });
       assert.strictEqual(c.status, 2, `${comando}: ${c.stdout}${c.stderr}`);
       assert.match(c.stdout + c.stderr, /ESCRITURA DIRECTA AL ESTADO/, comando);
     }
