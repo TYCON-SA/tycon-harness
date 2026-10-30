@@ -481,12 +481,6 @@
       "bad_max": 0.5,
       "direction": "mayor_es_mejor",
       "_note": "vista de ejecuciones (2.14): qué fracción llega al paso 8"
-    },
-    "corridas_con_error": {
-      "ok_max": 0.4,
-      "bad_min": 0.8,
-      "direction": "menor_es_mejor",
-      "_note": "vista de ejecuciones (2.14): ejecuciones donde un control encontró un error — es el control funcionando, así que el rojo recién con 8 de 10"
     }
   },
   "params": {

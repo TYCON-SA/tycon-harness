@@ -33,6 +33,8 @@ const ORG = require('../../lib/org-config.js');
 const RP = require('../../lib/repo-proposal.js');
 const OPS = require('../../lib/operations-config.js');
 const SOURCES = require('../../nightly/findings/sources.js');
+// el proyecto declarado de un repo, con la misma regla que la noche usa para pedir las tareas
+const DEP_PROJECT = require('../../lib/dependency-project.js');
 const CYCLE = require('../../nightly/findings/cycle.js');
 const { APARTE } = require('../../nightly/findings/cause-names.js');
 const views = require('../views.js');
@@ -377,11 +379,30 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     return { ...base, estado: 'se_crea', tarea: null, asignado: null, motivo: null };
   }
 
-  function vulnerabilidadDe(f, destino) {
+  /** La lista de repos de dependencias del repo de operaciones (`{ repos }`), o `null` si no está o no se lee. */
+  function reposDeDependencias(dir) {
+    try {
+      const d = JSON.parse(fs.readFileSync(path.join(dir, 'scripts', 'nightly', 'dependencies', 'repos.json'), 'utf8'));
+      return d && Array.isArray(d.repos) ? d : null;
+    } catch { return null; }
+  }
+
+  const avisadosSinProyectos = new Set();
+  function vulnerabilidadDe(f, destino, reposCfg) {
     const severidad = String(f.severidad || '').toLowerCase() || null;
+    // una tarea es vigente si el paquete sigue en su proyecto, con la misma regla que la noche usa para pedirlas;
+    // si un repo no dice su proyecto, no se sabe dónde vive el paquete y todas son vigentes
+    const etiquetas = Array.isArray(f.repos_etiquetas) ? f.repos_etiquetas : null;
+    const proyectos = etiquetas && reposCfg ? etiquetas.map((r) => DEP_PROJECT.declaredProject(r, reposCfg)) : null;
+    const donde = proyectos && proyectos.every(Boolean) ? new Set(proyectos.map((p) => String(p).toLowerCase())) : null;
+    if (!donde && (f.pedidos || []).length) {
+      const motivo = !etiquetas ? 'la ficha no trae en qué repos sigue el paquete' : !reposCfg ? 'no se pudo leer la lista de repos de dependencias' : 'un repo de la ficha no declara su proyecto';
+      if (!avisadosSinProyectos.has(motivo)) { avisadosSinProyectos.add(motivo); log(`mantenimiento: ${motivo}: las tareas de esas vulnerabilidades se muestran vigentes`); }
+    }
     return {
       id: f.id, paquete: f.contexto.paquete || f.nombre, severidad, repos: Number.isInteger(f.repos) ? f.repos : 0, desde: f.primera_vez, volvio: f.reaparecido,
-      tareas: (f.pedidos || []).map((t) => ({ proyecto: t.proyecto, numero: t.id, enlace: enlaceDeTarea(destino, t.proyecto, t.id), asignado: nombreDePersona(t.asignado), sinAsignar: t.sin_asignar === true, sinNombre: t.asignada_sin_nombre === true })),
+      tareas: (f.pedidos || []).map((t) => ({ proyecto: t.proyecto, numero: t.id, enlace: enlaceDeTarea(destino, t.proyecto, t.id), asignado: nombreDePersona(t.asignado), sinAsignar: t.sin_asignar === true, sinNombre: t.asignada_sin_nombre === true,
+        vigente: !donde || donde.has(String(t.proyecto).toLowerCase()) })),
       motivo: f.pedido_motivo || null,
     };
   }
@@ -500,9 +521,10 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     const fallidas = new Map();
     const arreglos = [];
     const vulnerabilidades = [];
+    const reposCfg = dir ? reposDeDependencias(dir) : null;
     for (const f of l.fichas) {
       // una vulnerabilidad se sigue en su tarea y, mientras está pendiente, además se decide su pull request
-      if (f.fuente === 'dependencias') { if (['pendiente', 'arreglo'].includes(f.veredicto)) vulnerabilidades.push(vulnerabilidadDe(f, destino)); }
+      if (f.fuente === 'dependencias') { if (['pendiente', 'arreglo'].includes(f.veredicto)) vulnerabilidades.push(vulnerabilidadDe(f, destino, reposCfg)); }
       else if (f.veredicto === 'arreglo') { arreglos.push(arregloDe(f, destino, deLaNoche || (deLaNoche = destinoDeLaNoche()), idioma)); continue; }
       if (!porDecidir(f)) continue;
       const enMain = decisionEnMain(dir, f);
@@ -656,15 +678,23 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       const sev = NOMBRE_SEVERIDAD[v.severidad] || null;
       const meta = [T(idioma, v.repos === 1 ? 'mant.vuln.filaUno' : 'mant.vuln.fila', { n: v.repos, dia: dia(v.desde) })];
       if (v.volvio) meta.push(T(idioma, 'mant.vuln.volvio', { dia: dia(v.volvio) }));
-      const tareas = v.tareas.length === 1 ? tareaDeVuln(v.tareas[0])
-        : v.tareas.length ? `<details class="m-tareas"><summary>${esc(T(idioma, 'mant.marcha.tareas', { n: v.tareas.length }))}</summary><ul>${v.tareas.map((t) => `<li>${tareaDeVuln(t)}</li>`).join('')}</ul></details>`
+      // las tareas de proyectos donde el paquete ya no está esperan su cierre: van aparte, después de las vigentes
+      const vigentes = v.tareas.filter((t) => t.vigente !== false);
+      const enCierre = v.tareas.filter((t) => t.vigente === false);
+      const cierre = enCierre.length ? `<div class="m-cierre">${esc(T(idioma, 'mant.vuln.esperanCierre'))}<ul>${enCierre.map((t) => `<li>${tareaDeVuln(t)}</li>`).join('')}</ul></div>` : '';
+      const tareas = v.tareas.length === 1 && !cierre ? tareaDeVuln(v.tareas[0])
+        : v.tareas.length ? `<details class="m-tareas"><summary>${esc(T(idioma, 'mant.marcha.tareas', { n: v.tareas.length }))}</summary><ul>${vigentes.map((t) => `<li>${tareaDeVuln(t)}</li>`).join('')}</ul>${cierre}</details>`
           : esc(v.motivo ? T(idioma, 'mant.vuln.sinTarea', { motivo: T(idioma, `mant.sinTarea.${v.motivo}`) }) : T(idioma, 'mant.vuln.sinTareaSinMotivo'));
       return `<li class="m-vuln">${sev ? `<span class="m-sev sev-${sev}">${esc(T(idioma, `mant.vuln.${sev}`))}</span> ` : ''}<b>${esc(v.paquete)}</b> <span class="m-meta">${esc(meta.join(' · '))}</span> <span class="m-tarea">${tareas}</span></li>`;
     };
     const vs = m.marcha.vulnerabilidades;
     const masVieja = vs.map((v) => v.desde).filter(Boolean).sort()[0];
+    // el encabezado no dice que todas tienen tarea si alguna no la tiene: cuenta las que faltan, también las que sólo
+    // tienen tareas que esperan su cierre (ninguna en los proyectos donde vive hoy)
+    const sinTarea = vs.filter((v) => !v.tareas.some((t) => t.vigente !== false)).length;
     const vulns = vs.length
-      ? `<details class="m-vulns"><summary>${esc(T(idioma, 'mant.vuln.resumen', { n: vs.length, c: vs.filter((v) => v.severidad === 'critical').length, a: vs.filter((v) => v.severidad === 'high').length, dia: dia(masVieja) }))}</summary><ul class="m-lista">${vs.map(vuln).join('')}</ul></details>`
+      ? `<details class="m-vulns"><summary>${esc(T(idioma, 'mant.vuln.resumen', { n: vs.length, c: vs.filter((v) => v.severidad === 'critical').length, a: vs.filter((v) => v.severidad === 'high').length, dia: dia(masVieja),
+        tareas: sinTarea ? T(idioma, 'mant.vuln.sinTareaCuenta', { k: sinTarea }) : T(idioma, 'mant.vuln.todasConTarea') }))}</summary><ul class="m-lista">${vs.map(vuln).join('')}</ul></details>`
         + `<p class="m-deuda q-note">${esc(T(idioma, 'mant.vuln.deuda'))} ${ayuda('deuda')}</p>`
       : '';
     const marcha = m.cuentas.marcha

@@ -102,8 +102,9 @@ the language you chose.
 
 **What you see the first time** depends on who you are for the site:
 
-- **A maintainer** sees the five tabs, and in Home what is waiting for a decision across the organization.
-- **A confirmed person** sees three tabs (Home, Runs and Projects), with their own things.
+- **A maintainer** sees every tab (Home, Runs, Maintenance, Projects, Harness, How it works, Configuration and Help),
+  and in Home what is waiting for a decision across the organization.
+- **A confirmed person** sees Home, Runs, Projects and Help, with their own things.
 - **Someone who is not in the list** sees only a page saying which account they signed in with, that the account is
   not in the list, whom to ask and how to sign in with another one. They see neither the menu on the left nor any data.
 
@@ -202,7 +203,7 @@ its own. Each run's changes come back when the new view finishes building. The s
 ### Maintenance (Mantenimiento)
 
 Only for **maintainers**: what the night found, ordered by who has the ball. Next to the name, in the menu, goes how
-many findings wait for your decision, for example "Maintenance (12)"; with none, just the name. The screen has three
+many findings wait for your decision, for example "Maintenance (12)"; with none, just the name. The screen has four
 blocks:
 
 - **Your decision**: what the production watcher and the review of the runs found, and the pending package
@@ -211,6 +212,8 @@ blocks:
 - **Waiting for approval**: what you already sent and someone else has to approve, grouped by pull request, with its
   link (with `site.auto_apply` on, it only shows up when the repo policy did not let the site approve it itself). Once approved, it is applied that night. If the platform does not answer, a sentence says so and the findings
   stay to decide, but nothing is sent until it answers: that way no duplicate pull request is opened.
+- **Already decided** (closed at first): what was decided in the last 30 days, with what was chosen, when and by whom.
+  Each night's review applies what was decided that day; if it could not, the row says so.
 - **In progress** (closed at first): what was already decided and someone is doing, with its work item number and who
   it is assigned to, and the package vulnerabilities. Each team follows its own in its work item and, if it cannot
   update the package, declares the debt in its repo, with a deadline.
@@ -342,8 +345,8 @@ If the card calculation fails, every card says so with its own reason: «the car
 
 At the top, **Your organization**: the integrations that are on and off (crossed out), the active reviewer packs and the
 rules (how tests are named, which screens need an end-to-end test, which language the app uses). Below, the steps of the
-run in order, and apart the two that are outside the main path (another round of reviewers and the closing in Azure
-DevOps). Choosing a step shows:
+run in order; apart, under "Outside the main path", "Close the story" (the closing in Azure DevOps), and at the end,
+under "At any step", what acts throughout the run. Choosing a step shows:
 
 - **Guides it cites:** the step file and the guides it names.
 - **Depending on the story:** what is added only for some stories, with its condition. For example, for a story that
@@ -758,7 +761,7 @@ What the person sees in the section, and what the agent does when asked for a to
 By default, both new options are at the safest setting: delegated signing off and the guard with the password.
 
 Below is **Which harness version each machine has** (*Qué versión del arnés tiene cada máquina*), the one each machine
-reported with its last run. It is view only: the machines update themselves on start.
+reported in its latest daily upload, with or without runs. It is view only: the machines update themselves on start.
 
 ![Installation and updates](sitio-de-la-organizacion/capturas/configuracion-instalacion.png)
 

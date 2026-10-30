@@ -139,6 +139,8 @@ else if (op === 'impossible-filter') { nodos['f-desde'].value = '2030-01-01'; no
 else if (op === 'usage-filter') { nodos['fc'].checked = true; window.__aplicar(); console.log(nodos['fichas'].innerHTML); }
 else if (op === 'machine-filter') { nodos['f-maquina'].value = arg; window.__aplicar(); console.log(nodos['fichas'].innerHTML + '\n' + nodos['cuenta'].textContent); }
 else if (op === 'link') console.log(JSON.stringify(window.__enlace()));
+// preset-then «hoy|semana|mes» <contenedor>: aprieta el atajo y devuelve lo dibujado en el contenedor
+else if (op === 'preset-then') { window.__atajo(arg); console.log(nodos[process.argv[5]] ? nodos[process.argv[5]].innerHTML : ''); }
 else if (op === 'table-dates') { window.__atajo('hoy'); console.log(nodos.cuerpo.rows.map((r) => r._td.firstChild.nodeValue + (r.hidden ? ':oculta' : ':visible')).join(',')); }
 else if (['state', 'set', 'change', 'preset', 'clear'].includes(op)) {
   // set «campo=valor;campo=valor» cambia campos y aplica; preset «hoy|semana|mes»; clear «limpiar»; state sólo lo lee.
@@ -312,7 +314,7 @@ grep -q 'n=1 de 2 ejecuciones' <<< "${F}" && ok "T5 la ficha de agentes dice n=1
 J="$(modelo_json "${T}/r")"
 IDX="$(python3 -c "import json,sys; c=json.loads(sys.argv[1])['corridas']; print([i for i,x in enumerate(c) if x['costo'] is None][0])" "${J}")"
 D="$(cliente "${T}/o.html" detail "${IDX}")"
-grep -q 'no registra' <<< "${D}" && ok "T5 el detalle dice que no registra agentes" || mal "T5 el detalle calla la ausencia de costo"
+grep -qE 'no registra|no trae el conteo' <<< "${D}" && ok "T5 el detalle dice que no registra agentes" || mal "T5 el detalle calla la ausencia de costo"
 grep -q '0 agentes' <<< "${D}" && mal "T5 el detalle dice «0 agentes»" || ok "T5 el detalle no dice «0 agentes»"
 rm -rf "${T}"
 
@@ -324,7 +326,7 @@ generar "${T}/r" "${T}/o.html" "${T}/log"
 J="$(modelo_json "${T}/r")"
 IDX="$(python3 -c "import json,sys; c=json.loads(sys.argv[1])['corridas']; print([i for i,x in enumerate(c) if x['controles'] is None][0])" "${J}")"
 D="$(cliente "${T}/o.html" detail "${IDX}")"
-grep -q 'no registró controles' <<< "${D}" && ok "T6 el detalle dice que no registró controles" || mal "T6 el detalle no declara la ausencia de controles"
+grep -q 'no registró evaluaciones de controles' <<< "${D}" && ok "T6 el detalle dice que no registró controles" || mal "T6 el detalle no declara la ausencia de controles"
 grep -q '0 con error' <<< "${D}" && mal "T6 el detalle pinta «0 con error»" || ok "T6 no dice «0 con error»"
 F="$(cliente "${T}/o.html" container fichas)"
 grep -q 'de 1 ejecuciones con controles' <<< "${F}" && ok "T6 la ficha de errores cuenta sólo la ejecución con controles" || mal "T6 la ficha de errores no dice «de 1 ejecuciones con controles»"
@@ -2134,6 +2136,128 @@ volcado "${T}/r" "${S1}" "2026-08-20T01:30:00Z" '{"marker":{"storyId":"F1"}}'
 generar "${T}/r" "${T}/o.html" "${T}/log"
 R="$(CL_NOW="2026-08-19T23:00:00Z" TZ="America/Argentina/Buenos_Aires" cliente "${T}/o.html" table-dates)"
 [ "${R}" = "2026-08-19:visible" ] && ok "FechaLocal la fila dice el día local (19/08) y entra en «hoy»" || mal "FechaLocal la tabla y el filtro no dicen el mismo día: ${R}"
+rm -rf "${T}"
+
+# ── 2.79-T9 · 2.79-Corridas_SemanaDelGrafico_UsaElDiaLocalComoElFiltro @story-2.79 @ac-8 ──
+# 🔴 Falla con: la barra con la semana UTC del servidor (la del domingo 22 h de Argentina cae en la semana siguiente).
+T=$(mktemp -d)
+volcado "${T}/r" "${S1}" "2026-10-26T01:00:00Z" '{"marker":{"storyId":"D1"}}'   # domingo 25/10 22 h en Buenos Aires
+volcado "${T}/r" "${S2}" "2026-10-27T15:00:00Z" '{"marker":{"storyId":"M1"}}'   # martes 27/10
+volcado "${T}/r" "${S3}" "2026-10-20T15:00:00Z" '{"marker":{"storyId":"M0"}}'   # martes de la semana anterior
+generar "${T}/r" "${T}/o.html" "${T}/log"
+BAR="$(CL_NOW="2026-10-28T15:00:00Z" TZ="America/Argentina/Buenos_Aires" cliente "${T}/o.html" preset-then semana gsem | grep -o '<title>[^<]*</title>' | tr '\n' ' ')"
+VIS="$(estado "2026-10-28T15:00:00Z" "" "America/Argentina/Buenos_Aires" preset semana | python3 -c "import json,sys; print(json.load(sys.stdin)['vistas'])")"
+grep -q '2026-S44: 1 ' <<< "${BAR}" && ! grep -q '2026-S44: 2' <<< "${BAR}" && [ "${VIS}" = "n=1 de 1" ] \
+  && ok "2.79-T9 la barra de esta semana y el filtro «esta semana» dicen 1 (el domingo 22 h local queda en la anterior)" || mal "2.79-T9 la barra y el filtro no coinciden: barras «${BAR}» · filtro «${VIS}»"
+TODAS="$(CL_NOW="2026-10-28T15:00:00Z" TZ="America/Argentina/Buenos_Aires" cliente "${T}/o.html" container gsem | grep -o '<title>[^<]*</title>' | tr '\n' ' ')"
+grep -q '2026-S43: 2 ' <<< "${TODAS}" && ok "2.79-T9 sin filtro, la semana del domingo local junta las dos de esa semana" || mal "2.79-T9 las semanas sin filtro: ${TODAS}"
+rm -rf "${T}"
+
+# ── 2.79-T10 · 2.79-Corridas_FichaConError_NoLlamaOtrasALasQueSeSuperponen @story-2.79 @ac-9 ──
+# 🔴 Falla con: «En otras M el control frenó» (las frenadas también pueden tener error: no son «otras»).
+T=$(mktemp -d)
+ROJO='{"ts":"2026-08-15T06:10:00.000Z","check":"tests","status":"red:exit=1","cmd":"x","exit":1}'
+FRENO='{"ts":"2026-08-15T06:12:00.000Z","check":"atdd-preedit","status":"blocked","cmd":"x"}'
+volcado "${T}/r" "${S1}" "2026-08-15T05:53:47Z" "{\"marker\":{\"storyId\":\"E1\"},\"gates\":[${ROJO}]}"
+volcado "${T}/r" "${S2}" "2026-08-15T05:53:47Z" "{\"marker\":{\"storyId\":\"E2\"},\"gates\":[${ROJO}]}"
+volcado "${T}/r" "${S3}" "2026-08-15T05:53:47Z" "{\"marker\":{\"storyId\":\"F1\"},\"gates\":[${FRENO}]}"
+volcado "${T}/r" "44444444-4444-4444-8444-444444444444" "2026-08-15T05:53:47Z" "{\"marker\":{\"storyId\":\"EF\"},\"gates\":[${ROJO},${FRENO}]}"
+generar "${T}/r" "${T}/o.html" "${T}/log"
+TILE="$(cliente "${T}/o.html" container fichas | python3 -c "import re,sys; h=sys.stdin.read(); m=[t for t in re.findall(r'<div class=\"tile[^\"]*\">.*?</div></div>', h, re.S) if 'Ejecuciones donde un control' in t]; print(re.sub(r'<[^>]+>', '', m[0]) if m else 'SIN-FICHA')")"
+grep -q '2 con error, 1 frenadas por un control, 1 con las dos' <<< "${TILE}" && ok "2.79-T10 la ficha dice «2 con error, 1 frenadas por un control, 1 con las dos»" || mal "2.79-T10 la ficha dice: $(head -c 400 <<< "${TILE}")"
+grep -qw 'otras' <<< "${TILE}" && mal "2.79-T10 la ficha todavía dice «otras»" || ok "2.79-T10 sin «otras»"
+rm -rf "${T}"
+
+# ── 2.79-T11 · 2.79-Corridas_PieDeEspera_DiceLoMismoQueLaFicha @story-2.79 @ac-10 ──
+# 🔴 Falla con: el pie que habla sólo de los dos pasos y la ficha que suma las preguntas de la conversación.
+R11="$(node -e "
+const r = require(process.argv[1]);
+const M = { corridas: [], multi: false, varias_maquinas: false };
+const out = [];
+for (const I of ['es', 'en']) {
+  const def = r.textosDelCliente(I).esperaDefinicion;
+  const pie = r.pie(M, { idioma: I }).replace(/<[^>]+>/g, '');
+  out.push(I + ':' + (def && pie.includes(def) ? 'igual' : 'distinta'));
+}
+console.log(out.join(' '));" "${RAIZ}/scripts/nightly/dashboard/runs.js" 2>&1)"
+[ "${R11}" = "es:igual en:igual" ] && ok "2.79-T11 el pie da la misma definición de espera que la ficha, en los dos idiomas" || mal "2.79-T11 dio: ${R11}"
+T=$(mktemp -d)
+volcado "${T}/r" "${S1}" "" "${ARRANQUES}"
+generar "${T}/r" "${T}/o.html" "${T}/log"
+DEF="$(node -e "console.log(require(process.argv[1]).textosDelCliente('es').esperaDefinicion)" "${RAIZ}/scripts/nightly/dashboard/runs.js")"
+FICHA="$(cliente "${T}/o.html" container fichas)"
+grep -qF "${DEF}" <<< "${FICHA}" && ok "2.79-T11 la ficha dibujada usa esa definición" || mal "2.79-T11 la ficha dibujada no trae la definición «${DEF}»"
+rm -rf "${T}"
+
+# ── 2.79-T12 · 2.79-Corridas_DetalleSinEvaluaciones_DiceSinDatosNoCero @story-2.79 @ac-11 ──
+# 🔴 Falla con: «ningún control encontró un error» para una ejecución sin una sola evaluación, y contarla «con controles».
+T=$(mktemp -d)
+volcado "${T}/r" "${S1}" "" '{"gates":[]}'
+volcado "${T}/r" "${S2}" "2026-08-16T05:53:47Z" '{"marker":{"storyId":"3.1"}}'
+generar "${T}/r" "${T}/o.html" "${T}/log"
+DET="$(cliente "${T}/o.html" all)"
+grep -q 'no registró evaluaciones de controles' <<< "${DET}" && ok "2.79-T12 el detalle dice «no registró evaluaciones de controles»" || mal "2.79-T12 el detalle no lo dice"
+grep -q 'ningún control encontró un error' <<< "$(cliente "${T}/o.html" detail 0)" && mal "2.79-T12 dice «ningún control encontró un error» sin evaluaciones" || ok "2.79-T12 no dice que ningún control encontró un error"
+TILE="$(cliente "${T}/o.html" container fichas | python3 -c "import re,sys; h=sys.stdin.read(); m=[t for t in re.findall(r'<div class=\"tile[^\"]*\">.*?</div></div>', h, re.S) if 'Ejecuciones donde un control' in t]; print(re.sub(r'<[^>]+>', '', m[0]) if m else 'SIN-FICHA')")"
+grep -q '1 de 1 ejecuciones con controles' <<< "${TILE}" && ok "2.79-T12 la ejecución sin evaluaciones no cuenta «con controles»" || mal "2.79-T12 la ficha cuenta: $(head -c 300 <<< "${TILE}")"
+rm -rf "${T}"
+
+# ── 2.79-T13 · 2.79-Corridas_SinCostoReciente_NoDiceAnteriorAlConteo @story-2.79 @ac-11 ──
+# 🔴 Falla con: «es anterior al conteo mecánico» para una ejecución posterior a otra que sí lo trae.
+T=$(mktemp -d)
+volcado "${T}/r" "${S1}" "2026-08-10T05:53:47Z" '{"marker":{"storyId":"V1"},"costo":null}'
+volcado "${T}/r" "${S2}" "2026-08-15T05:53:47Z" '{"marker":{"storyId":"C1"}}'
+volcado "${T}/r" "${S3}" "2026-08-20T05:53:47Z" '{"marker":{"storyId":"N1"},"costo":null}'
+generar "${T}/r" "${T}/o.html" "${T}/log"
+I_N="$(node -e "const h=require('fs').readFileSync(process.argv[1],'utf8');const M=JSON.parse(h.match(/<script id=\"modelo\" type=\"application\/json\">([\s\S]*?)<\/script>/)[1]);console.log(M.corridas.findIndex(c=>c.story==='N1'), M.corridas.findIndex(c=>c.story==='V1'))" "${T}/o.html")"
+DN="$(cliente "${T}/o.html" detail "${I_N% *}")"; DV="$(cliente "${T}/o.html" detail "${I_N#* }")"
+grep -q 'el registro de la ejecución no trae el conteo de agentes' <<< "${DN}" && ! grep -q 'es anterior al conteo' <<< "${DN}" && ok "2.79-T13 la posterior sin conteo dice que el registro no lo trae" || mal "2.79-T13 la posterior dice otra cosa"
+grep -q 'es anterior al conteo' <<< "${DV}" && ok "2.79-T13 la anterior sigue diciendo que es anterior" || mal "2.79-T13 la anterior perdió su motivo"
+rm -rf "${T}"
+
+# ── 2.79-T18 · 2.79-Corridas_ConteosDelDesplegable_SiguenElFiltroDeFechas @story-2.79 @ac-15 ──
+# 🔴 Falla con: los conteos del desplegable armados una vez, con todas las ejecuciones.
+T=$(mktemp -d)
+volcado "${T}/r" "${S1}" "2026-10-05T15:00:00Z" '{"marker":{"storyId":"A","repoPath":"/Users/dev/SourceCode/Totora/FrontEnd"}}'
+volcado "${T}/r" "${S2}" "2026-09-05T15:00:00Z" '{"marker":{"storyId":"B","repoPath":"/Users/dev/SourceCode/Totora/FrontEnd"}}'
+volcado "${T}/r" "${S3}" "2026-09-06T15:00:00Z" '{"marker":{"storyId":"C","repoPath":"/Users/dev/SourceCode/Totora/FrontEnd"}}'
+generar "${T}/r" "${T}/o.html" "${T}/log"
+ANTES="$(CL_NOW="2026-10-20T15:00:00Z" cliente "${T}/o.html" container f-repo | grep -o '>[^<]*([0-9]*)<' | tr '\n' ' ')"
+DESP="$(CL_NOW="2026-10-20T15:00:00Z" cliente "${T}/o.html" preset-then mes f-repo | grep -o '>[^<]*([0-9]*)<' | tr '\n' ' ')"
+grep -q 'todos (3)' <<< "${ANTES}" && grep -q 'Totora · FrontEnd (3)' <<< "${ANTES}" && grep -q 'todos (1)' <<< "${DESP}" && grep -q 'Totora · FrontEnd (1)' <<< "${DESP}" \
+  && ok "2.79-T18 con «este mes» el desplegable cuenta 1, no 3" || mal "2.79-T18 antes «${ANTES}» · con el mes «${DESP}»"
+rm -rf "${T}"
+
+# ── 2.79-T24 · 2.79-Corridas_DesplegableSinRepetidosNiWorktrees @story-2.79 @ac-21 ──
+# 🔴 Falla con: «(sin producto)» y el repo del arnés dos veces (en «otros repos» y en «laboratorio»), y la carpeta
+# `worktrees/<nombre>` como si fuera un repo.
+T=$(mktemp -d)
+volcado "${T}/r" "${S1}" "2026-08-15T05:53:47Z" '{"marker":{"storyId":"A","repoPath":"/Users/dev/SourceCode/tycon-claude-guides"}}'
+volcado "${T}/r" "${S2}" "2026-08-15T05:53:47Z" '{"marker":{"storyId":"B","repoPath":"/private/tmp/lab-x/tycon-claude-guides"}}'
+volcado "${T}/r" "${S3}" "2026-08-15T05:53:47Z" '{"marker":{"storyId":"C","repoPath":"."}}'
+volcado "${T}/r" "44444444-4444-4444-8444-444444444444" "2026-08-15T05:53:47Z" '{"marker":{"storyId":"D","repoPath":"/private/tmp"}}'
+volcado "${T}/r" "55555555-5555-4555-8555-555555555555" "2026-08-15T05:53:47Z" '{"marker":{"storyId":"E","repoPath":"/Users/dev/SourceCode/worktrees/th-63"}}'
+volcado "${T}/r" "66666666-6666-4666-8666-666666666666" "2026-08-15T05:53:47Z" '{"marker":{"storyId":"F","repoPath":"/Users/dev/SourceCode/worktrees/hm-64"},"repo":{"path":"/Users/dev/SourceCode/Totora/FrontEnd"}}'
+volcado "${T}/r" "77777777-7777-4777-8777-777777777777" "2026-08-15T05:53:47Z" '{"marker":{"storyId":"G","repoPath":"/Users/dev/SourceCode/Totora/frontend"}}'
+generar "${T}/r" "${T}/o.html" "${T}/log"
+ETQ="$(cliente "${T}/o.html" container f-repo | grep -o '<option value="[^"]*">[^<]*</option>' | sed -E 's/<option value="[^"]*">//; s/ \([0-9]+\)<\/option>//' | sort)"
+[ -z "$(uniq -d <<< "${ETQ}")" ] && ok "2.79-T24 el desplegable no repite etiquetas" || mal "2.79-T24 etiquetas repetidas: $(uniq -d <<< "${ETQ}" | tr '\n' ',')"
+grep -q 'worktrees' <<< "${ETQ}" && mal "2.79-T24 el desplegable muestra una carpeta de worktree" || ok "2.79-T24 ninguna carpeta de worktree"
+CUENTA="$(cliente "${T}/o.html" container f-repo | grep -io '>Totora · frontend ([0-9]*)<' | tr '\n' ' ')"
+[ "$(tr '[:upper:]' '[:lower:]' <<< "${CUENTA}")" = ">totora · frontend (2)< " ] && ok "2.79-T24 el worktree con su repo cuenta como el repo, y la mayúscula distinta se une" || mal "2.79-T24 Totora/FrontEnd: «${CUENTA}» · etiquetas: $(tr '\n' ',' <<< "${ETQ}")"
+grep -q 'Totora/' <<< "${ETQ}" && mal "2.79-T24 el desplegable muestra «producto/repo» en vez de «producto · repo»" || ok "2.79-T24 el desplegable rotula «producto · repo», como Proyectos y Configuración"
+rm -rf "${T}"
+
+# ── 2.79-T36 · 2.79-Corridas_TokensSinMedir_MuestraElMotivo @story-2.79 @ac-32 ──
+# 🔴 Falla con: el motivo sólo en el «title» (hay que pasar el mouse) y nombrando `cleanupPeriodDays`.
+T=$(mktemp -d)
+volcado "${T}/r" "${S1}" "" '{"consumo":{"estado":"borrada","motivo":"la conversación de esta ejecución ya no está (Claude Code las borra según cleanupPeriodDays); se buscó x.jsonl en las 3 carpetas de conversaciones","tokens":null}}'
+generar "${T}/r" "${T}/o.html" "${T}/log"
+CELDA="$(python3 -c "import re,sys; h=open(sys.argv[1]).read(); m=re.search(r'<td class=\"tk\">(.*?)</td>', h, re.S); print(m.group(1) if m else 'SIN-CELDA')" "${T}/o.html")"
+VISIBLE="$(sed -E 's/title="[^"]*"//g; s/<[^>]+>/ /g' <<< "${CELDA}")"
+grep -q 'ya no está' <<< "${VISIBLE}" && ok "2.79-T36 el motivo se ve en la celda, sin pasar el mouse" || mal "2.79-T36 la celda muestra: ${VISIBLE}"
+grep -q 'cleanupPeriodDays' "${T}/o.html" && mal "2.79-T36 la página nombra cleanupPeriodDays" || ok "2.79-T36 sin cleanupPeriodDays"
+grep -q 'cleanupPeriodDays' "${RAIZ}/scripts/metrics/tokens-digest.js" && mal "2.79-T36 el medidor sigue escribiendo cleanupPeriodDays en el motivo" || ok "2.79-T36 el medidor ya no lo escribe"
 rm -rf "${T}"
 
 # ── T15 · esta suite NO toca los entregables commiteados (gemelo del C-27) ─────────────────────

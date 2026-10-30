@@ -90,6 +90,8 @@ const TOPE_CONVERSACIONES_BYTES = 300 * 1024 * 1024;
 // 159 MB que cada máquina volvía a subir con otra huella): bajarla de nuevo cada vez llenaba la tanda entera y la pestaña
 // no terminaba nunca de leer el buzón. Por arriba de esto la corrida queda en la tabla sin su conversación, y lo dice
 const TOPE_CONVERSACION_BYTES = 50 * 1024 * 1024;
+// lo más que una bajada espera a que termine el armado de Ejecuciones: el corte del armado en su hilo (tabs/runs.js)
+const ESPERA_ARMADO_MS = 10 * 60 * 1000;
 const SOURCES_DEL_ARNES = path.join(__dirname, '..', 'nightly', 'dashboard', 'sources.json');
 
 /** La regla de operations.json: la de people.js, la única. */
@@ -469,7 +471,7 @@ function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin
       productos[texto(k, 120)] = {
         estado: ['medido', 'parcial', 'no_medido'].includes(p.estado) ? p.estado : 'no_medido', motivo: codigoDe(p.motivo),
         staging: lado(p.staging), produccion: lado(p.produccion), produccion_atrasada: typeof p.produccion_atrasada === 'boolean' ? p.produccion_atrasada : null,
-        aprobacion: typeof apr === 'string' ? { estado: codigoDe(apr) } : (isObject(apr) ? { estado: codigoDe(apr.estado) } : null),
+        aprobacion: typeof apr === 'string' ? { estado: codigoDe(apr) } : (isObject(apr) ? { estado: codigoDe(apr.estado), motivo: codigoDe(apr.motivo) } : null),
         main: codigoDe(p.main),
       };
     }
@@ -556,7 +558,7 @@ function estadoDeGit(stderr) {
 /** Saca los caracteres de control de una línea que va al registro (saltos, escape de la consola). */
 function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}, ahora = Date.now, spawn = correr, urlBuzon, git = 'git', nubes: nubesDadas, presupuestoBuzonMs = 120000,
   topeConversacionesBytes = TOPE_CONVERSACIONES_BYTES, topeConversacionBytes = TOPE_CONVERSACION_BYTES, resumir = (o) => require('./summaries.js').resumirEnWorker({ ...o, skillsDir: process.env.TYCON_SKILLS_DIR || null }),
-  leerEspejo = (o) => require('./summaries.js').leerEspejoEnWorker(o), calcularFichasEn = (o) => require('./summaries.js').fichasEnWorker(o), almacenCopia = null, urlCopia = null, opcionesPodaCopia = {}, version = null }) {
+  leerEspejo = (o) => require('./summaries.js').leerEspejoEnWorker(o), calcularFichasEn = (o) => require('./summaries.js').fichasEnWorker(o), almacenCopia = null, urlCopia = null, opcionesPodaCopia = {}, version = null, esperaArmadoMs = ESPERA_ARMADO_MS }) {
   // 🔴 todo lo que este módulo registra puede traer texto del repo de operaciones o del buzón (valores de operations.json,
   //    stderr de git, nombres de archivo): sale sin caracteres de control
   const log = (l) => logCrudo(limpiarLinea(l));
@@ -785,7 +787,33 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
   // ── El buzón ───────────────────────────────────────────────────────────────────────────────────────────────────
   const ESTADO_BUZON = { llave_con_escritura: 'credencial_rechazada', sin_permiso: 'credencial_rechazada', sin_permiso_a_mitad: 'credencial_rechazada', credencial_rechazada: 'credencial_rechazada', sin_red: 'sin_red', servicio_fallo: 'sin_red', parcial: 'parcial', sin_tiempo: 'parcial', bajado: 'parcial', al_dia: 'parcial', sin_contenedor: 'sin_configurar', config_rota: 'sin_configurar', sin_configurar: 'sin_configurar' };
 
+  // el armado de Ejecuciones lee el espejo: la bajada no lo escribe mientras se arma (2.79). La pestaña dice si arma
+  const armando = [];
+  /** Con un armado en curso, la bajada espera hasta `esperaArmadoMs`; vencida, esta pasada no baja y lo registra. */
+  async function esperarAlArmado() {
+    // una pestaña que no puede decir si arma cuenta como armando (no se escribe el espejo a ciegas): espera y lo registra
+    // el registro sale una vez por espera: la pregunta se repite cada segundo
+    let avisado = false;
+    const hay = () => armando.some((fn) => { try { return Boolean(fn()); } catch (e) { if (!avisado) { avisado = true; log(`buzón: la pestaña de Ejecuciones no pudo decir si arma (${String((e && (e.code || e.name)) || 'error').slice(0, 40)}): se la espera como si armara`); } return true; } });
+    const hasta = Date.now() + esperaArmadoMs;
+    while (hay()) {
+      if (Date.now() >= hasta) return false;
+      await new Promise((r) => setTimeout(r, Math.max(10, Math.min(1000, Math.floor(esperaArmadoMs / 10)))));
+    }
+    return true;
+  }
+
   async function leerBuzon(conf, previo, t) {
+    if (!(await esperarAlArmado())) {
+      log(`buzón: el armado de Ejecuciones sigue en curso después de ${Math.round(esperaArmadoMs / 1000)} s: esta pasada no baja, para no escribir el espejo que se está leyendo; se sirve la vista que hay`);
+      // lo que había, con su estado y su motivo; sin nada antes, «parcial»
+      return previo || noMedida('parcial');
+    }
+    st.buzon.bajando = true;
+    try { return await leerBuzonSinArmado(conf, previo, t); } finally { st.buzon.bajando = false; }
+  }
+
+  async function leerBuzonSinArmado(conf, previo, t) {
     const mb = conf && isObject(conf.site) && isObject(conf.site.mailbox) ? conf.site.mailbox : null;
     const nube = mb ? lasNubes().find((n) => Array.isArray(n.PROVEEDORES_DE_BUZON) && n.PROVEEDORES_DE_BUZON.includes(mb.provider)) : null;
     if (!mb) { st.fallas.buzon = null; st.personas.informados = null; return noMedida('sin_buzon'); }
@@ -848,6 +876,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     st.buzon.completo = r.codigo === 0 && r.res.completo === true;
     st.buzon.armable = st.buzon.completo || (r.codigo === 0 && r.res.registros_enteros === true);
     st.buzon.pendientes = st.buzon.armable && !st.buzon.completo ? r.res.sin_tiempo || 0 : 0;
+    if (st.buzon.armable && !st.buzon.completo && !(Number.isInteger(r.res.sin_tiempo) && r.res.sin_tiempo >= 0)) log(`buzón: la pasada quedó a medias sin decir cuántos archivos faltan (sin_tiempo: ${JSON.stringify(r.res.sin_tiempo)}): la banda de pendientes no se muestra`);
     // la pasada cortó por TIEMPO pero avanzó: la siguiente va enseguida y retoma donde quedó, en vez de
     // esperar el refresco de los minutos de siempre. Sin avance, no: sería un lazo.
     st.buzon.seguir = r.codigo === 0 && !st.buzon.completo && r.res.sin_tiempo > 0 && r.res.bajados > 0;
@@ -1056,7 +1085,9 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     // `armable`: la pestaña puede armar (entera, o con todos los volcados y registros); `pendientes`: archivos de
     // conversaciones que esa pasada dejó para la siguiente
     // `siguiendo`: la última pasada cortó por tiempo y la siguiente ya está en camino (la pestaña dice «cargando»)
-    buzonEstado: () => ({ completo: st.buzon.completo, armable: st.buzon.armable, generacion: st.buzon.generacion, siguiendo: st.buzon.seguir, pendientes: st.buzon.pendientes || 0 }),
+    buzonEstado: () => ({ completo: st.buzon.completo, armable: st.buzon.armable, generacion: st.buzon.generacion, siguiendo: st.buzon.seguir, pendientes: st.buzon.pendientes || 0, bajando: st.buzon.bajando === true }),
+    /** La pestaña de Ejecuciones dice si está armando: mientras arma, la bajada espera (2.79). */
+    alArmar(fn) { if (typeof fn === 'function') armando.push(fn); },
     /** La generación del espejo (ver «La memoria del espejo»): igual número, mismo contenido. La pestaña Corridas no lo recorre para saberlo. */
     espejoGeneracion: () => memoria.generacion,
     /** En cuántos ms va el próximo refresco (las pruebas lo miran). */

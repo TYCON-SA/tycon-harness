@@ -1645,3 +1645,60 @@ test('HowItWorks_CloseChecks_BrokenRow_Said @story-8.127 @ac-9 — una fila que 
   assert.strictEqual(delCierre(nula).length, 1, 'la fila que no es una fila se dice');
   assert.deepStrictEqual(nula.steps.find((s) => s.id === 'a').closeChecks.map((c) => c.key), ['plan'], 'las filas sanas se siguen mostrando');
 });
+
+// ════════════════════════ las mismas palabras que Configuración y que el guion ════════════════════════
+
+const franjaDe = (html) => { const i = html.indexOf('class="ct-org card"'); return html.slice(i, html.indexOf('</section>', i)); };
+
+// 🔴 Falla con: Cómo trabaja diciendo «pantallas: ui» mientras Configuración ofrece «Sin definir (todas)»: la misma
+// regla con dos palabras, y ninguna dice que es la de fábrica.
+test('T28 2.79-HowItWorks_Rules_SameWordsAsConfig @story-2.79 @ac-25 — la regla de pantallas dice lo mismo que Configuración, con «de fábrica»', () => conCasa(() => {
+  const REPOS = (rules) => ({ version: 1, public: { platform: 'github', org: 'acme', repo: 'arnes' }, profile: { platform: 'github', org: 'acme', repo: 'perfil' }, operations: { platform: 'github', org: 'acme', repo: 'operaciones' }, stack: { rules } });
+  const sinElegir = HIW().buildModel({ treeDir: ROOT, profileDir: carpeta(perfilCon({ repos: REPOS({}) })) });
+  assert.strictEqual(sinElegir.org.rules.screen_test.source, 'por_defecto');
+  const elegida = HIW().buildModel({ treeDir: ROOT, profileDir: carpeta(perfilCon({ repos: REPOS({ screen_test: 'react' }) })) });
+  // Configuración: la opción vacía del selector de pantallas es la que se ve cuando no se eligió
+  assert.match(fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'org-config.js'), 'utf8'), /reglas\.screen_test, \[\['', T\('pantalla\.tecSinDeclararTodas'\)\], \['ui', T\('pantalla\.tecTodas'\)\], \['react', T\('pantalla\.tecSoloReact'\)\], \['off', T\('pantalla\.tecNinguna'\)\]\]/);
+  for (const idioma of ['es', 'en']) {
+    const deFabrica = TX().t(idioma, 'pantalla.tecSinDeclararTodas');
+    assert.match(deFabrica, idioma === 'es' ? /de fábrica/ : /default/, `${idioma}: Configuración dice que es la de fábrica`);
+    const pagina = (m) => franjaDe(TAB().renderPage(m, { idioma, publicRepo: PUBLICO, version: 'v' }));
+    assert.ok(pagina(sinElegir).includes(TX().t(idioma, 'comoTrabaja.reglaPantallas', { valor: deFabrica })), `${idioma}: sin elegir, Cómo trabaja dice «${deFabrica}»`);
+    assert.ok(pagina(elegida).includes(TX().t(idioma, 'comoTrabaja.reglaPantallas', { valor: TX().t(idioma, 'pantalla.tecSoloReact') })), `${idioma}: elegida, la misma opción que Configuración`);
+    assert.doesNotMatch(pagina(sinElegir), /pantallas: ui|screens: ui/, `${idioma}: nunca el valor crudo`);
+  }
+}));
+
+// 🔴 Falla con: la leyenda diciendo «anota: sólo lo registra» de controles que actúan por su cuenta, y on-advisor-run
+// en «Anotan» con un texto que dice que frena, cuando su guion le muestra un aviso al asistente.
+test('T29 2.79-HowItWorks_Controles_EfectoComoElGuion @story-2.79 @ac-26 — la leyenda de «Anotan» y on-advisor-run en «Avisan»', () => {
+  const FRASE = { es: 'anota o actúa por su cuenta: no frena ni avisa al asistente', en: 'records or acts on its own: does not block or warn the assistant' };
+  for (const idioma of ['es', 'en']) assert.ok(TX().t(idioma, 'comoTrabaja.leyendaControles').includes(FRASE[idioma]), `${idioma}: la leyenda nueva`);
+  const spec = 'tycon-pipeline/scripts/on-advisor-run.js';
+  assert.match(fs.readFileSync(path.join(SCRIPTS, 'on-advisor-run.js'), 'utf8'), /systemMessage/, 'su guion le muestra un aviso al asistente');
+  const texto = TX().t('es', `control.${spec}`);
+  assert.match(texto, /^Avisa|avisa/, 'el texto dice que avisa');
+  assert.doesNotMatch(texto, /fren/i, 'el texto no dice que frena');
+  assert.doesNotMatch(TX().t('en', `control.${spec}`), /block/i, 'en: tampoco');
+  const sec = seccionDe(paginaEs(), 'reviewers');
+  const bloque = sec.slice(sec.indexOf(`<h3>${TX().t('es', 'comoTrabaja.controles')}</h3>`));
+  const avisan = bloque.indexOf(`<p class="ct-grupo">${TX().t('es', 'comoTrabaja.grupoAvisan')}</p>`);
+  assert.ok(avisan >= 0, 'el paso de los revisores tiene «Avisan»');
+  const siguiente = bloque.indexOf('<p class="ct-grupo">', avisan + 1);
+  const li = ITEMS(bloque.slice(avisan, siguiente < 0 ? undefined : siguiente)).find((x) => x.includes('on-advisor-run.js')) || '';
+  assert.ok(li && tieneChip(li, 'avisa'), 'on-advisor-run sale en «Avisan», con «avisa»');
+});
+
+// 🔴 Falla con: junto a «Editar», «(no se edita acá)»: parece que el revisor entero no se puede tocar.
+test('T30 2.79-HowItWorks_CondicionEscrita_DiceQueSiSeEdita @story-2.79 @ac-27 — junto a «Editar», la condición no se cambia acá y el resto sí', () => conCasa(() => {
+  const cuando = { any: [{ added: { pattern: ':\\s*IBackendPlugin\\b', extensions: ['.cs'] } }, { detection: 'csModified' }] };
+  const perfil = perfilDosUsos({ paquete: PAQUETE_DOS_USOS({ cuando }) });
+  const DICE = { es: [/la condición no se cambia acá/, /el resto, sí/], en: [/the condition is not changed here/, /the rest is/] };
+  for (const idioma of ['es', 'en']) {
+    const html = TAB().renderPage(HIW().buildModel({ treeDir: ROOT, profileDir: perfil }), { idioma, publicRepo: PUBLICO, version: 'v' });
+    const li = ITEMS(seccionDe(html, 'reviewers')).find((x) => x.includes('acme-hermanos-reviewer') && x.includes('data-action="edit"')) || '';
+    assert.ok(li, `${idioma}: el revisor con condición especial tiene «Editar»`);
+    for (const rx of DICE[idioma]) assert.match(li, rx, `${idioma}: ${rx}`);
+    assert.doesNotMatch(li, /no se edita acá|not edited here/, `${idioma}: no dice que no se edita`);
+  }
+}));

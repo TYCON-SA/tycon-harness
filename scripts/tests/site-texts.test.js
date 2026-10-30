@@ -268,8 +268,8 @@ test('T9b Textos_LaTraduccionDeMensajes_NoTocaDatos @story-2.42 @ac-4 — el cas
   assert.strictEqual(T.traducirMensaje('en', 'el lector dice otra cosa'), 'el lector dice otra cosa');
   assert.strictEqual(T.traducirMensaje('es', 'al día'), 'al día');
   // los datos de la organización no se traducen aunque coincidan con un molde: una máquina «medido», una persona «nada»
-  const r = T.traducirRespuesta('en', { versiones: [{ maquina: 'medido', persona: 'nada', texto: 'al día', diaTexto: 'sin fecha' }], borrador: { x: 'al día' }, oid: 'al día' });
-  assert.deepStrictEqual(r.versiones[0], { maquina: 'medido', persona: 'nada', texto: 'up to date', diaTexto: 'no date' });
+  const r = T.traducirRespuesta('en', { versiones: [{ maquina: 'medido', persona: 'nada', texto: 'al día: igual o más nueva que la de este sitio (2026.10.15.48)', diaTexto: 'sin fecha' }], borrador: { x: 'al día' }, oid: 'al día' });
+  assert.deepStrictEqual(r.versiones[0], { maquina: 'medido', persona: 'nada', texto: "up to date: the same as or newer than this site's (2026.10.15.48)", diaTexto: 'no date' });
   assert.deepStrictEqual([r.borrador, r.oid], [{ x: 'al día' }, 'al día'], 'el borrador y la versión del archivo no se tocan');
   // el texto de un archivo (termina con un salto) tampoco
   assert.strictEqual(T.traducirRespuesta('en', { texto: 'al día\n' }).texto, 'al día\n');
@@ -431,4 +431,21 @@ test('Textos_EncabezadosEnUnRenglon_ConfiguracionConSuComoFunciona', () => {
   const codigo = fs.readFileSync(path.join(H.SITE, 'tabs', 'config.js'), 'utf8');
   assert.match(codigo, /<details class="mas-info como-funciona">/);
   assert.doesNotMatch(codigo, /<details class="mas-info como-funciona" open/);
+});
+
+// T21 2.79-Textos_Hilos_NoPrometeLeerLaConversacion @story-2.79 @ac-18
+// 🔴 Falla con: Configuración prometiendo «leer esas conversaciones» y el pie de una ejecución diciendo otra cosa: el
+//    sitio baja la conversación sólo para sacar archivos, cambios y esperas, y la página no muestra su texto.
+test('T21 2.79-Textos_Hilos_NoPrometeLeerLaConversacion @story-2.79 @ac-18 — Configuración y el pie dicen la misma frase', () => {
+  const { t } = TEXTS();
+  const FRASE = {
+    es: 'el sitio baja la conversación para sacar los archivos tocados, los cambios y las esperas, y la página no muestra su texto',
+    en: 'the site downloads the conversation to extract the touched files, the changes and the waits, and the page does not show its text',
+  };
+  for (const idioma of ['es', 'en']) {
+    for (const k of ['pantalla.para.hilos', 'corridas.v.pieHiloTexto']) assert.ok(t(idioma, k).includes(FRASE[idioma]), `${k} (${idioma}) lleva la frase: ${t(idioma, k)}`);
+    for (const k of ['pantalla.para.hilos', 'pantalla.siBajaTambienLoQue', 'pantalla.hilosDeFabrica', 'pantalla.noSoloLosNumerosDe', 'corridas.v.pieHiloTexto']) {
+      assert.doesNotMatch(t(idioma, k), /leer (esas|las|la) conversaci|revisarlo después|texto de lo que hablaron|read (those|the) conversations?|review it later|text of what the agents said/i, `${k} (${idioma}) no promete leerla`);
+    }
+  }
 });

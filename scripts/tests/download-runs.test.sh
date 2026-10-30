@@ -875,6 +875,40 @@ echo "macbook-pro-1a2b3c4d/9.2-2026-10-15T0900.json" > "${T}/b/corromper"
 bajar "${T}" "${T}/bin/az"
 [ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "parcial" ] && echo "$(uniones "${T}")" | grep '"estado": "unida"' > /dev/null \
   && ok "2.28-T35 la bajada parcial también deja el archivo" || mal "2.28-T35 parcial: rc=${RC} estado=$(campo "${T}" estado) uniones=$(uniones "${T}")"
+# ── 2.79-T1 · Uniones_PasadaCortadaAntesDeLosVolcados_DejaLaAnterior ── con la carpeta vieja a medio bajar, su huella
+# no coincide y la unión cambiaría: la pasada que cortó antes de bajar todos los volcados deja el archivo anterior.
+# 🔴 Falla con: escribir la unión en toda pasada que leyó el listado.
+T="${BASE}/t279-1"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+volcado228 "${T}/b" macbook-pro "9.1-2026-10-14T0900" 2026-10-14
+place228 "${T}/b" macbook-pro-1a2b3c4d macbook-pro 2026-10-15
+mkdir -p "${T}/estado/corridas-buzon"; echo '{"schema":1,"carpetas":{"previa":{"estado":"unida","nueva":"otra"}},"no_leidas":[],"regeneradas":{}}' > "${T}/estado/corridas-buzon/.carpetas-de-maquina.json"
+bajar "${T}" "${T}/bin/az" --no-threads --budget-ms 1
+[ "$(campo "${T}" registros_enteros)" = "false" ] && echo "$(uniones "${T}")" | grep '"previa"' > /dev/null \
+  && ok "2.79-T1 la pasada cortada antes de los volcados deja la unión anterior" || mal "2.79-T1 cortada: registros_enteros=$(campo "${T}" registros_enteros) uniones=$(uniones "${T}")"
+# la que falla al bajar los volcados (lista pero no lee) tampoco la reescribe
+echo 403 > "${T}/b/modo-get"; bajar "${T}" "${T}/bin/az" --no-threads; rm -f "${T}/b/modo-get"
+[ "${RC}" -eq 1 ] && [ "$(campo "${T}" registros_enteros)" = "false" ] && echo "$(uniones "${T}")" | grep '"previa"' > /dev/null \
+  && ok "2.79-T1 la pasada que falla antes de bajar los volcados deja la unión anterior" || mal "2.79-T1 fallida: rc=${RC} registros_enteros=$(campo "${T}" registros_enteros) uniones=$(uniones "${T}")"
+bajar "${T}" "${T}/bin/az" --no-threads
+echo "$(uniones "${T}")" | grep '"estado": "unida"' | grep -v '"previa"' > /dev/null \
+  && ok "2.79-T1 la pasada con todos los volcados la reescribe" || mal "2.79-T1 entera: rc=${RC} uniones=$(uniones "${T}")"
+# con los registros enteros, un volcado que no baja o un corte en la fase de los volcados tampoco la reescriben
+# 🔴 Falla con: mirar sólo los cortes de las fases de registros (pase adversarial, 2.79).
+T="${BASE}/t279-1b"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+# más volcados que bajadas a la vez (8), para que el corte por tiempo caiga entre ellos
+for i in $(seq 10 21); do volcado228 "${T}/b" macbook-pro "9.${i}-2026-10-14T${i}00" 2026-10-14; done
+place228 "${T}/b" macbook-pro-1a2b3c4d macbook-pro 2026-10-15
+mkdir -p "${T}/estado/corridas-buzon"; echo '{"schema":1,"carpetas":{"previa":{"estado":"unida","nueva":"otra"}},"no_leidas":[],"regeneradas":{}}' > "${T}/estado/corridas-buzon/.carpetas-de-maquina.json"
+echo "macbook-pro/9.12-2026-10-14T1200.json" > "${T}/b/falla-get"; bajar "${T}" "${T}/bin/az" --no-threads; rm -f "${T}/b/falla-get"
+[ "${RC}" -eq 1 ] && [ "$(campo "${T}" registros_enteros)" = "true" ] && campo "${T}" uniones | grep 'macbook-pro no bajó entera' > /dev/null && echo "$(uniones "${T}")" | grep '"previa"' > /dev/null \
+  && ok "2.79-T1 un volcado de la carpeta vieja que no baja deja la unión anterior" || mal "2.79-T1 volcado sin bajar: rc=${RC} res.uniones=$(campo "${T}" uniones) uniones=$(uniones "${T}")"
+rm -rf "${T}/estado/corridas-buzon/macbook-pro"; echo 400 > "${T}/b/demora"
+bajar "${T}" "${T}/bin/az" --no-threads --budget-ms 300; rm -f "${T}/b/demora"
+[ "$(campo "${T}" registros_enteros)" = "true" ] && [ "$(campo "${T}" volcados_enteros)" = "false" ] && echo "$(uniones "${T}")" | grep '"previa"' > /dev/null \
+  && ok "2.79-T1 la pasada cortada entre los volcados deja la unión anterior" || mal "2.79-T1 corte en volcados: registros_enteros=$(campo "${T}" registros_enteros) volcados_enteros=$(campo "${T}" volcados_enteros) uniones=$(uniones "${T}")"
+bajar "${T}" "${T}/bin/az" --no-threads
+[ "$(campo "${T}" volcados_enteros)" = "true" ] && echo "$(uniones "${T}")" | grep '"estado": "unida"' | grep -v '"previa"' > /dev/null \
+  && ok "2.79-T1 con todos los volcados la reescribe" || mal "2.79-T1 entera tras el corte: rc=${RC} uniones=$(uniones "${T}")"
 
 # «no pude mirar» no es «no recibió nada»: una carpeta vieja que no se deja listar no se une y queda nombrada
 # 🔴 Falla con: que el listado fallido dé «último día vacío» y la vieja quede unida.

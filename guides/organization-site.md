@@ -99,8 +99,9 @@ repos, productos y máquinas, lo que escribió cada uno) se ve como está. La ay
 
 **Lo que ves la primera vez** depende de quién sos para el sitio:
 
-- **Quien mantiene** ve las cinco pestañas, y en Inicio lo que espera una decisión de toda la organización.
-- **Una persona confirmada** ve tres pestañas (Inicio, Ejecuciones y Proyectos), con lo suyo.
+- **Quien mantiene** ve todas las pestañas (Inicio, Ejecuciones, Mantenimiento, Proyectos, Arnés, Cómo trabaja,
+  Configuración y Ayuda), y en Inicio lo que espera una decisión de toda la organización.
+- **Una persona confirmada** ve Inicio, Ejecuciones, Proyectos y Ayuda, con lo suyo.
 - **Alguien que no está en la lista** ve sólo una página que dice con qué cuenta entró, que esa cuenta no está en la
   lista, a quién pedírselo y cómo entrar con otra. No ve el menú de la izquierda ni ningún dato.
 
@@ -200,7 +201,7 @@ disco del sitio (`SITE_DATA_DIR`): **sin disco**, después de un reinicio la pes
 
 Sólo para **quien mantiene**: lo que encontró la noche, ordenado por quién tiene la pelota. Al lado del nombre, en el
 menú, va cuántas fichas esperan tu decisión, por ejemplo «Mantenimiento (12)»; sin ninguna, el nombre solo. La pantalla
-tiene tres bloques:
+tiene cuatro bloques:
 
 - **Te toca decidir**: lo que encontraron el vigilante de producción y la revisión de las ejecuciones, y las
   vulnerabilidades de paquetes pendientes. Primero lo de producción, porque son clientes reales. Dentro de cada grupo,
@@ -210,6 +211,8 @@ tiene tres bloques:
   (con `site.auto_apply` prendida, sólo aparece si la política del repo no dejó que el sitio lo apruebe solo).
   Aprobado, se aplica esa noche. Si la plataforma no contesta, lo dice una frase y las fichas quedan para decidir,
   pero no se envía nada hasta que conteste: así no se abre un pedido repetido.
+- **Ya decididas** (cerrado de entrada): lo decidido en los últimos 30 días, con qué se eligió, cuándo y quién. La
+  revisión de cada noche aplica lo que se decidió ese día; si no pudo, la fila lo dice.
 - **En marcha** (cerrado de entrada): lo ya decidido que alguien está haciendo, con el número de su tarea y a quién
   está asignada, y las vulnerabilidades de paquetes. Cada equipo sigue la suya en su tarea y, si no puede actualizar el
   paquete, declara la deuda en su repo, con plazo.
@@ -340,8 +343,8 @@ Si el cálculo de las fichas se cae, todas lo dicen con su propio motivo: «el c
 
 Arriba, **Tu organización**: las integraciones prendidas y apagadas (tachadas), los paquetes de revisores activos y las
 reglas (cómo se nombran las pruebas, qué pantallas piden prueba de punta a punta, en qué idioma está la aplicación).
-Debajo, los pasos del recorrido en orden, y aparte los dos que quedan fuera (otra vuelta de revisores y el cierre en
-Azure DevOps). Al elegir un paso se ve:
+Debajo, los pasos del recorrido en orden; aparte, bajo «Fuera del recorrido», «Cerrar la historia» (el cierre en Azure
+DevOps), y al final, bajo «En cualquier paso», lo que actúa en todo el recorrido. Al elegir un paso se ve:
 
 - **Guías que cita:** el archivo del paso y las guías que nombra.
 - **Según la historia:** lo que se suma sólo en algunas historias, con su condición. Por ejemplo, en una historia que
@@ -732,7 +735,7 @@ Lo que la persona ve en la sección y lo que hace el agente cuando le piden una 
 
 De fábrica, las dos opciones nuevas están en lo más seguro: la firma delegada apagada y el freno con la contraseña.
 
-Debajo está **Qué versión del arnés tiene cada máquina**, la que informó cada una con su última ejecución. Es para mirar:
+Debajo está **Qué versión del arnés tiene cada máquina**, la que informó cada una en su última subida diaria, con o sin ejecuciones. Es para mirar:
 las máquinas se actualizan solas al arrancar.
 
 ![Instalación y actualización](sitio-de-la-organizacion/capturas/configuracion-instalacion.png)

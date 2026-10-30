@@ -362,7 +362,7 @@ test('2.23-R7 Inicio_SuitesNoMedidas_PrSinFecha_MaquinaUnida', () => {
   assert.deepStrictEqual(m.suites.rojas, ['a.test.js'], 'una suite no medida no es una roja');
   const filas = filasDe(m);
   assert.match(fila(filas, 'prs_trabados').detalle || '', /1 sin fecha/, 'el PR sin fecha se cuenta aparte');
-  assert.strictEqual(views.filasArnes(access.filtrar(m, { rol: 'maintainer' }, access.crearReglas({})), {}).find((l) => l.clave === 'suites').texto, '1 rojas · 1 sin medir, de 10');
+  assert.strictEqual(views.filasArnes(access.filtrar(m, { rol: 'maintainer' }, access.crearReglas({})), {}).find((l) => l.clave === 'suites').texto, '1 nuevas desde anoche, de 1 rojas · 1 sin medir, de 10', 'con la foto de ayer, las nuevas (2.79 AC 3)');
   // el vigilante, para una persona, con el nombre del producto en otra forma (minúsculas, espacios)
   const cfg = { version: 1, owners: { default: LEAD }, site: { maintainers: [LEAD] }, people: { machines: { 'maq-a-11111111': { person: A } }, projects: { [A]: { add: ['Producto X'] } } } };
   const conVig = { ...m, productos: [{ producto: 'Producto X', proyectos: [], rutas: [] }] };
@@ -518,4 +518,151 @@ test('T11 Inicio_Vulnerabilidades_DicenSeguimiento — las por decidir dicen «d
   assert.match(recuadro('Dependencias por decidir'), /href="\/mantenimiento"/, 'y «dónde se decide» lleva ahí');
   assert.match(recuadro('Dependencias por decidir'), />4</, 'con el número de Mantenimiento');
   assert.match(recuadro('Pull requests abiertos hace más de 2 días'), />decidir</, 'los demás siguen diciendo decidir');
+});
+
+// ── el sitio coherente: cada cuenta dice de cuándo es y qué cuenta, y cada gris dice qué falta ──────────────────────
+const deMantenedor = (modelo) => access.filtrar(modelo, { rol: 'maintainer', email: LEAD }, access.crearReglas({}));
+const sinEtiquetas = (html) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+const tarjetaDe = (html, titulo) => html.split('<div class="tile ').find((x) => x.includes(`<div class="t-label">${titulo}</div>`)) || '';
+
+// T3 2.79-Arnes_SuitesRojas_DiceCuantasNuevasYCuales @story-2.79 @ac-3
+// 🔴 Falla con: Arnés diciendo sólo «N rojas» cuando Inicio cuenta las nuevas, o sin la lista con las nuevas marcadas.
+test('T3 2.79-Arnes_SuitesRojas_DiceCuantasNuevasYCuales @story-2.79 @ac-3 — el mismo N que Inicio, y la lista', () => {
+  const modelo = modeloCompleto({ suites: leida({ rojas: ['a.test.js', 'b.test.js', 'c.test.js'], sin_medir: 1, total: 300, ayer: { fecha: '2026-10-14', rojas: ['a.test.js'] } }) });
+  const linea = views.filasArnes(deMantenedor(modelo), { ahora: AHORA }).find((l) => l.clave === 'suites');
+  assert.strictEqual(linea.texto, '2 nuevas desde anoche, de 3 rojas · 1 sin medir, de 300');
+  assert.deepStrictEqual(linea.lista, [{ nombre: 'a.test.js', nueva: false }, { nombre: 'b.test.js', nueva: true }, { nombre: 'c.test.js', nueva: true }]);
+  assert.strictEqual(fila(filasDe(modelo), 'suites_rojas_nuevas').valor, 2, 'Inicio cuenta las mismas dos');
+  const html = views.paginaArnes({ modelo: deMantenedor(modelo), quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA });
+  assert.match(html, /<li class="nueva">b\.test\.js <b>nueva<\/b><\/li>/, 'la nueva, marcada');
+  assert.match(html, /<li>a\.test\.js<\/li>/, 'la de ayer, sin marca');
+});
+
+// T4 2.79-Vulnerabilidades_CadaCuentaDiceQueCuenta @story-2.79 @ac-4
+// 🔴 Falla con: las tres cuentas de vulnerabilidades sin decir de cuándo son ni qué cuentan (Mantenimiento lo prueba
+//    en su HTML T5 de site-findings; acá, su texto).
+test('T4 2.79-Vulnerabilidades_CadaCuentaDiceQueCuenta @story-2.79 @ac-4 — Inicio «de la noche del», Mantenimiento «al momento», Proyectos «por proyecto»', () => {
+  const m = deMantenedor(modeloCompleto({ generado: AHORA }));
+  const inicio = views.paginaInicio({ modelo: m, quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA });
+  assert.match(tarjetaDe(inicio, 'Dependencias aceptadas sin resolver'), /de la noche del 2026-10-15/);
+  const textos = require(path.join(H.SITE, 'texts.js'));
+  assert.match(textos.t('es', 'mant.vuln.resumen'), /al momento/);
+  const proyectos = views.paginaProyectos({ modelo: m, quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA });
+  assert.match(proyectos, /por proyecto: un paquete cuenta en cada proyecto donde aparece/);
+});
+
+// T14 2.79-Arnes_UltimaPublicada_DiceCuandoSeMiro @story-2.79 @ac-12
+// 🔴 Falla con: «Última publicada» sin decir contra qué (stable) ni cuándo se miró; o la vigía perdiendo la hora.
+test('T14 2.79-Arnes_UltimaPublicada_DiceCuandoSeMiro @story-2.79 @ac-12 — «stable (mirada HH:MM)»', async () => {
+  const ultima = { estado: 'medido', version: '2026.10.15.3', creada: '2026-10-14T20:00:00Z', mirado: Date.parse('2026-10-15T09:41:00Z') };
+  const l = views.filasArnes({}, { version: '2026.10.15.1', ultima }).find((x) => x.clave === 'ultima');
+  assert.match(l.texto, /^2026\.10\.15\.3 \(del 2026-10-14\) · última publicada en stable \(mirada 09:41 UTC\)$/);
+  // la vigía guarda cuándo miró y lo devuelve con lo medido
+  const LR = require(path.join(H.SITE, 'latest-release.js'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ultima-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'ultima-publicada.json'), JSON.stringify(ultima));
+    const v = LR.crearVigia({ imagen: 'ghcr.io/acme/arnes', dataDir: dir, ahora: () => ultima.mirado + 60000 });
+    assert.strictEqual(v.estado().mirado, ultima.mirado);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// T17 2.79-Proyectos_Filtro_FilasLlevanSusNumerosParaElTotal @story-2.79 @ac-14
+// En el navegador fijo del arnés (scripts/lib/pinned-playwright.js); sin él se saltea con constancia, salvo con la llave
+// exigente (E2E_REQUIRED=1).
+// 🔴 Falla con: filtrar Proyectos y que el total y Estimaciones sigan siendo los de todos los productos.
+const PINNED_PW = require('../lib/pinned-playwright.js');
+const PLAYWRIGHT = PINNED_PW.load();
+const SIN_NAVEGADOR = process.env.E2E_REQUIRED === '1' ? false : (!PLAYWRIGHT && PINNED_PW.locate().why);
+test('T17 2.79-Proyectos_Filtro_FilasLlevanSusNumerosParaElTotal @story-2.79 @ac-14', { skip: SIN_NAVEGADOR, timeout: 120000 }, async () => {
+  assert.ok(PLAYWRIGHT, `con la llave exigente prendida, Playwright tiene que estar: ${PINNED_PW.locate().why}`);
+  const st = (grupo, canonico, dias) => ({ grupo, canonico, dias_en_estado: dias });
+  const modelo = modeloCompleto({
+    productos: [{ producto: 'Producto X', proyectos: ['Proyecto X', 'Compartido'] }, { producto: 'Producto Y', proyectos: ['Compartido'] }],
+    proyectos: leida({ lista: [
+      { proyecto: 'Proyecto X', repo: 'Repo X', fecha: HOY, stories: [st('en_curso', 'in-progress', 45), st('en_curso', 'review', 10), st('en_curso', 'in-progress', null)] },
+      { proyecto: 'Compartido', repo: 'Repo C', fecha: HOY, stories: [st('en_curso', 'in-progress', 1), st('en_curso', 'in-progress', 2)] },
+    ] }),
+  });
+  // cada fila lleva sus números, por proyecto (lo compartido se suma una vez)
+  const html = views.paginaProyectos({ modelo: deMantenedor(modelo), quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA });
+  assert.match(html, /<tr data-producto="Producto Y" data-por-proyecto="[^"]*Compartido/);
+  await conSitio(modelo, CONFIG, async ({ h, entrar }) => {
+    const lead = await entrar(LEAD);
+    const navegador = await PLAYWRIGHT.chromium.launch();
+    try {
+      const ctx = await navegador.newContext();
+      await ctx.setExtraHTTPHeaders({ cookie: lead });
+      const page = await ctx.newPage();
+      await page.goto(`${h.base}/proyectos`);
+      const total = page.locator('#proyectos-totales');
+      assert.match(await total.innerText(), /5 en curso, 1 paradas/, 'sin filtro, el total de todos');
+      await page.locator('input[data-filtro="proyectos"]').fill('producto y');
+      assert.match(await total.innerText(), /2 en curso, 0 paradas/, 'filtrado, el total del producto que queda');
+      const visibles = await page.locator('#tabla-estimaciones tbody tr:not([hidden])').evaluateAll((trs) => trs.map((tr) => tr.getAttribute('data-producto')));
+      assert.ok(visibles.length && visibles.every((p) => p === 'Producto Y'), `Estimaciones, sólo el producto que queda: ${visibles}`);
+      await page.locator('input[data-filtro="proyectos"]').fill('');
+      assert.match(await total.innerText(), /5 en curso, 1 paradas/, 'sin filtro otra vez, el de todos');
+    } finally { await navegador.close(); }
+  });
+});
+
+// T19 2.79-Inicio_CadaFichaDiceDeCuandoEs @story-2.79 @ac-16
+// 🔴 Falla con: una ficha de Inicio con «fuente del» suelto, sin decir si es de la noche o del momento.
+test('T19 2.79-Inicio_CadaFichaDiceDeCuandoEs @story-2.79 @ac-16 — «al momento» para lo vivo, la noche para lo declarado', () => {
+  const m = deMantenedor(modeloCompleto({ generado: AHORA }));
+  const html = views.paginaInicio({ modelo: m, quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA, esperan: () => 3 });
+  assert.match(tarjetaDe(html, 'Dependencias por decidir'), /al momento/);
+  assert.match(tarjetaDe(html, 'Datos declarados que vencen en 7 días'), /de la noche del 2026-10-15/);
+  assert.doesNotMatch(html, /fuente del/, 'ninguna ficha dice «fuente del» suelto');
+});
+
+// T20 2.79-Inicio_MaquinasSinConfirmar_Cargando_NoDiceNoMedido @story-2.79 @ac-17
+// 🔴 Falla con: la ficha de máquinas en NO MEDIDO mientras el sitio carga, sin recargarse sola, o con «fuente del» cuando
+//    la cuenta es de lo leído recién.
+test('T20 2.79-Inicio_MaquinasSinConfirmar_Cargando_NoDiceNoMedido @story-2.79 @ac-17 — «cargando», recarga sola, después «leído HH:MM»', () => {
+  // con lo que informó cada máquina (como filasDe): sin eso, la cuenta no se sabe
+  const reglas = (modelo) => access.crearReglas({ config: {}, modelo, personas: { informados: H.informados({ 'maq-x-12345678': null }), repos: null } });
+  const pagina = (modelo) => views.paginaInicio({ modelo: access.filtrar(modelo, { rol: 'maintainer', email: LEAD }, reglas(modelo)), quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA });
+  const cargando = pagina(modeloCompleto({ corridas: noMedida('cargando'), generado: AHORA }));
+  const t = tarjetaDe(cargando, 'Máquinas sin confirmar con ejecuciones');
+  assert.ok(t.startsWith('cargando'), `la ficha está cargando, no gris: ${t.slice(0, 40)}`);
+  assert.doesNotMatch(t, /no medido|buzón/i);
+  assert.match(cargando, /<meta http-equiv="refresh" content="\d+">/, 'Inicio se recarga sola mientras carga');
+  const leido = pagina(modeloCompleto({ generado: Date.parse('2026-10-15T11:58:00Z') }));
+  assert.match(tarjetaDe(leido, 'Máquinas sin confirmar con ejecuciones'), /leído 11:58 UTC/);
+  assert.doesNotMatch(leido, /<meta http-equiv="refresh"/, 'leído, ya no se recarga');
+});
+
+// T27 2.79-Sello_NoPrometeSeisPreguntas @story-2.79 @ac-24
+// 🔴 Falla con: Arnés prometiendo «seis preguntas» que no están en la pantalla.
+test('T27 2.79-Sello_NoPrometeSeisPreguntas @story-2.79 @ac-24 — «El tablero de la noche», con las fichas repartidas', () => {
+  const html = views.paginaArnes({ modelo: deMantenedor(modeloCompleto()), quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA });
+  assert.doesNotMatch(html, /seis preguntas/i);
+  assert.match(html, /El tablero de la noche/);
+  assert.match(html, /repartidas entre Arnés, Proyectos y Ejecuciones/);
+});
+
+// T35 2.79-Grises_CadaMotivoDiceQueFaltaYQueHacer @story-2.79 @ac-32
+// 🔴 Falla con: «no medido: no medido», un código crudo (no_medido, sin_declarar), «N sin medir» sin decir qué falta, o
+//    una fuente vieja que no nombra el proceso que la produce.
+test('T35 2.79-Grises_CadaMotivoDiceQueFaltaYQueHacer @story-2.79 @ac-32 — motivos llanos, sin códigos', () => {
+  const st = (grupo, canonico, dias) => ({ grupo, canonico, dias_en_estado: dias });
+  const modelo = modeloCompleto({
+    productos: [{ producto: 'Producto X', proyectos: ['Proyecto X'] }, { producto: 'Producto Z', proyectos: [] }],
+    proyectos: leida({ lista: [{ proyecto: 'Proyecto X', repo: 'Repo X', fecha: HOY, stories: [st('en_curso', 'in-progress', null)] }] }),
+    despliegues: leida({ productos: {
+      'Producto X': { estado: 'medido', motivo: 'ok', staging: { fecha: '2026-10-14' }, produccion: null, produccion_atrasada: null, aprobacion: { estado: 'no_medido', motivo: 'az_fallo' }, main: 'ok' },
+      'Producto Z': { estado: 'no_medido', motivo: 'sin_declarar', staging: null, produccion: null, produccion_atrasada: null, aprobacion: { estado: 'no_medido', motivo: 'sin_declarar' }, main: 'no_medido' },
+    } }),
+    examen: { estado: 'no_medido', codigo: 'fuente_vieja', motivo: null, fecha: '2026-10-11' },
+  });
+  const proyectos = sinEtiquetas(views.paginaProyectos({ modelo: deMantenedor(modelo), quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA }));
+  assert.doesNotMatch(proyectos, /no medido: no medido/);
+  assert.match(proyectos, /sin despliegue declarado en Configuración → Despliegues/);
+  assert.doesNotMatch(proyectos, /\b(no_medido|sin_declarar|az_fallo)\b/, 'sin códigos crudos');
+  assert.match(proyectos, /sin despliegue a producción para comparar/, 'el atraso con su motivo');
+  assert.match(proyectos, /1 sin la fecha en que entraron a su estado/);
+  const arnes = sinEtiquetas(views.paginaArnes({ modelo: deMantenedor(modelo), quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA }));
+  assert.match(arnes, /más vieja que su antigüedad máxima[^·]*· la deja el proceso de la noche del tablero/, 'la fuente vieja nombra el proceso');
 });
