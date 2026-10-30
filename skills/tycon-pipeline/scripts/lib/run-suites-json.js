@@ -251,8 +251,11 @@ function resolveSkillsRoot(repo, given, env) {
     return { dir: d.skills, source: d.source || (env.TYCON_SKILLS_DIR ? 'variable' : 'installed') };
   }
   if (env.TYCON_SKILLS_DIR) return { dir: env.TYCON_SKILLS_DIR, source: 'variable' };
-  return { dir: path.join(os.homedir(), '.claude', 'agent-skills', 'skills'), source: 'installed' };
+  return { dir: path.join(installedSkillsIn(os.homedir()), 'skills'), source: 'installed' };
 }
+
+/** Dónde quedan las skills instaladas dentro de una carpeta personal: la real o la vacía de una suite portable. */
+const installedSkillsIn = (home) => path.join(home, '.claude', 'agent-skills');
 
 const isDir = (p) => { try { return fs.statSync(p).isDirectory(); } catch (_) { return false; } };
 const realOf = (p) => { try { return fs.realpathSync(p); } catch (_) { return path.resolve(p); } };
@@ -571,12 +574,13 @@ function main(argv, env = process.env) {
   const skillsAbs = path.resolve(skills);
   const emptyHome = (p) => {
     const h = path.join(homesDir, `h${p.idx}`);
-    fs.mkdirSync(path.join(h, '.claude'), { recursive: true });
+    const installed = installedSkillsIn(h);
+    fs.mkdirSync(path.dirname(installed), { recursive: true });
     fs.mkdirSync(path.join(h, 'tmp'), { recursive: true });
     const agentSkills = path.dirname(skillsAbs);
     const tipo = process.platform === 'win32' ? 'junction' : 'dir';
-    if (isDir(skillsAbs)) fs.symlinkSync(agentSkills, path.join(h, '.claude', 'agent-skills'), tipo);
-    if (isDir(path.join(agentSkills, 'agents'))) fs.symlinkSync(path.join(agentSkills, 'agents'), path.join(h, '.claude', 'agents'), tipo);
+    if (isDir(skillsAbs)) fs.symlinkSync(agentSkills, installed, tipo);
+    if (isDir(path.join(agentSkills, 'agents'))) fs.symlinkSync(path.join(agentSkills, 'agents'), path.join(path.dirname(installed), 'agents'), tipo);
     return h;
   };
   const removeHomes = () => fs.rmSync(homesDir, { recursive: true, force: true });
