@@ -160,7 +160,8 @@ test('T2 SetFlag_OtrasBanderas_SiguenAndando @story-1.8 @ac-2', () => {
   const home = casa(); const SID = 't2';
   writeFakeMarker(home, SID);
   for (const f of ['atddBypass', 'waitingForHuman']) {
-    const r = correr(home, SID, ['set-flag', f, 'true']);
+    // el escape del freno de pruebas primero pide su motivo
+    const r = correr(home, SID, ['set-flag', f, 'true', ...(f === 'atddBypass' ? ['--reason', 'refactor sobre red existente'] : [])]);
     assert.equal(r.status, 0, `${f}: ${r.stderr}`);
     assert.equal(r.stdout.trim(), `${f}: true`);
     assert.equal(leerMarker(home, SID)[f], true);

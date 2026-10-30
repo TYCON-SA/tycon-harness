@@ -170,18 +170,23 @@ fi
 
 # Override explícito por comando: la full-suite legítima (portón del merge o pedido del dev).
 # (también `$env:TYCON_FULL_SUITE="1"`, con el 1 entre comillas, como se escribe en PowerShell)
-if [[ "$CMD" =~ TYCON_FULL_SUITE=[\"\']?1 ]]; then
-  STATE_DIR="$HOME/.claude/.tycon-pipeline"
-  mkdir -p "$STATE_DIR" 2>/dev/null || true
+# La línea `FULL_SUITE_RUN` de `bypass.log` se escribe cuando el escape hizo falta: con el veredicto `escape` del lector,
+# o en el corte simple sin Node. Un prefijo de más (el comando pasaría sin él) o un texto que lo nombra no la escriben.
+# La revisión nocturna cuenta el prefijo leyendo la conversación, no esta línea.
+anotar_full_suite() {
+  local dir="$HOME/.claude/.tycon-pipeline"
+  mkdir -p "$dir" 2>/dev/null || true
   printf '{"ts":"%s","type":"FULL_SUITE_RUN","command":%s}\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(echo "$CMD" | head -c 300 | to_json_text)" \
-    >> "$STATE_DIR/bypass.log" 2>/dev/null || true
+    >> "$dir/bypass.log" 2>/dev/null || true
+}
+# El aviso va por stderr con salida 0: lo ve la persona en la terminal.
+aviso_sobra() {
+  echo "ℹ️  TYCON test-scope-guard: el prefijo de suite completa sobra: este comando pasa sin él. No se anota como escape." >&2
+}
+if [[ "$CMD" =~ TYCON_FULL_SUITE=[\"\']?1 ]]; then
   # 🔴 NO se sale acá ni se anota todavía. El escape se reconoce por el TEXTO, así que un mensaje de
-  #    commit, un heredoc o un `grep` que MENCIONEN la variable lo disparan: sobre el registro
-  #    real, buena parte de las entradas no son escapes de verdad. La línea del registro nuevo se
-  #    escribe al final, cuando ya se sabe si algún segmento era realmente un comando de pruebas.
-  #    El `bypass.log` de arriba NO se toca: su ruido es conocido y cambiarlo movería un número que
-  #    cuenta otra medición.
+  #    commit, un heredoc o un `grep` que MENCIONEN la variable lo disparan. Lo decide el lector.
   HUBO_ESCAPE=1
 fi
 HUBO_ESCAPE="${HUBO_ESCAPE:-0}"
@@ -219,8 +224,13 @@ EOF
 # Puerta rápida: este freno corre en cada comando, y casi ninguno nombra una herramienta de pruebas. Sin nombrarla no
 # hay nada que decidir y se sale sin arrancar Node. La lista es la misma que NOMBRA en scripts/lib/test-scope.js.
 NOMBRA_PRUEBAS='dotnet|npm|pnpm|pnpx|yarn|bunx?|npx|vitest|jest|pytest|py\.test|(pwsh|powershell).*[[:space:]]-e'
+# Con el escape en el texto y Node, no se sale acá: el lector dice si el prefijo sobra (`bash smoke-run.sh` no es una
+# suite). Sin Node se anota como antes.
 shopt -s nocasematch
-if ! [[ "$CMD" =~ $NOMBRA_PRUEBAS ]]; then exit 0; fi
+if ! [[ "$CMD" =~ $NOMBRA_PRUEBAS ]] && ! [[ "${HUBO_ESCAPE:-0}" == "1" && "$HAS_NODE" == "1" ]]; then
+  [[ "${HUBO_ESCAPE:-0}" == "1" ]] && anotar_full_suite
+  exit 0
+fi
 shopt -u nocasematch
 
 # El lector en Node corta el comando como el shell: prefijos, agrupaciones, envoltorios (`bash -c`, `ssh`, `docker
@@ -229,18 +239,23 @@ shopt -u nocasematch
 _LECTOR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/test-scope.js"
 if [[ "$HAS_NODE" == "1" && -f "$_LECTOR" ]]; then
   _HERRAMIENTA="$(read_field tool_name 2>/dev/null)" || _HERRAMIENTA=""
-  if _R="$(printf '%s' "$CMD" | "$HNODE" "$_LECTOR" --tool "${_HERRAMIENTA:-Bash}" 2>/dev/null)"; then
+  _CWD="$(read_field cwd 2>/dev/null)" || _CWD=""
+  if _R="$(printf '%s' "$CMD" | "$HNODE" "$_LECTOR" --tool "${_HERRAMIENTA:-Bash}" --cwd "$_CWD" 2>/dev/null)"; then
     _VEREDICTO="${_R%%$'\n'*}"; _QUE="${_R#*$'\n'}"; _QUE="${_QUE%$'\n'}"
     case "$_VEREDICTO" in
       frena) HUBO_ESCAPE=0; block "$_QUE" ;;
-      escape) constancia suite-completa escape; exit 0 ;;
+      escape) anotar_full_suite; constancia suite-completa escape; exit 0 ;;
+      sobra-pasa) aviso_sobra; constancia suite-completa paso; exit 0 ;;
+      sobra-nada) aviso_sobra; exit 0 ;;
       pasa) constancia suite-completa paso; exit 0 ;;
       nada) exit 0 ;;
     esac
   fi
 fi
 
-# Sin Node (o con el lector roto): cada segmento del comando (manejo de && ; |), con un corte simple.
+# Sin Node (o con el lector roto): cada segmento del comando (manejo de && ; |), con un corte simple. El escape se
+# anota como antes de leer: este camino frena de más.
+[[ "${HUBO_ESCAPE:-0}" == "1" ]] && anotar_full_suite
 IFS=$'\n'
 # ¿Alguno de los segmentos era un comando de pruebas? Sólo entonces este freno «tuvo algo que
 # decidir» y anota un `paso` (el denominador no son todos los comandos).

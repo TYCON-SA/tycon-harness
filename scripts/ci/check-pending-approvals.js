@@ -17,6 +17,7 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *
  * Con `--staged` lee la lista y el registro del índice, y las líneas que el commit agrega al registro tienen que tener
  * su renglón firmado en el registro del arnés de esta cuenta. Un repo sin lista no tiene nada que revisar.
+ * En un merge en curso, lo que ya traía el otro padre (sus líneas del registro y sus pendientes aprobados) no es nuevo.
  *
  * `--no-local-signature` es para el servidor, que corre el pre-commit sobre un pedido entero y no tiene el registro del
  * arnés de la máquina que firmó: ahí una aprobación vale con su forma y su huella. Es un límite conocido: una línea
@@ -52,6 +53,17 @@ function opciones(argv) {
 }
 
 /** Un archivo de git (`:ruta` el índice, `HEAD:ruta` el último commit): su texto, o null si no está. */
+/** Los otros padres de un merge en curso (`MERGE_HEAD`, uno por renglón); fuera de un merge, ninguno. */
+function padresDelMerge(repo) {
+  let gitDir;
+  try {
+    gitDir = execFileSync('git', ['-C', repo, 'rev-parse', '--absolute-git-dir'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  } catch (_) { return []; }
+  let texto;
+  try { texto = fs.readFileSync(path.join(gitDir, 'MERGE_HEAD'), 'utf8'); } catch (_) { return []; }
+  return texto.split('\n').map((l) => l.trim()).filter((l) => /^[0-9a-f]{40,64}$/.test(l));
+}
+
 function deGit(repo, ref) {
   try {
     return execFileSync('git', ['-C', repo, 'show', ref], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 });
@@ -126,7 +138,8 @@ function main(argv) {
       const todoAntes = deGit(o.repo, `HEAD:${PA.TODO}`) || '';
       // sólo se lee el registro del arnés si el commit agrega líneas y la firma se busca: sin eso no hay qué leer
       const leer = registro !== antes && !o.sinFirmaLocal;
-      nuevas = PA.revisarNuevas({ antes, despues: registro, renglones: leer ? renglonesDeLaCuenta() : [], todoAntes, todoDespues: todo, sinFirmaLocal: o.sinFirmaLocal });
+      const otrosPadres = padresDelMerge(o.repo).map((ref) => ({ registro: deGit(o.repo, `${ref}:${PA.RECORD}`) || '', todo: deGit(o.repo, `${ref}:${PA.TODO}`) || '' }));
+      nuevas = PA.revisarNuevas({ antes, despues: registro, renglones: leer ? renglonesDeLaCuenta() : [], todoAntes, todoDespues: todo, sinFirmaLocal: o.sinFirmaLocal, otrosPadres });
     }
   } catch (e) {
     console.error(`⛔ check-pending-approvals: ${e.message}. Sin leerlo no sé si hay pendientes nuevos sin aprobar.`);

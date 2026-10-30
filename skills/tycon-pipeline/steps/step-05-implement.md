@@ -142,13 +142,16 @@ Si la fase de código pasó sin chequeo previo (por ejemplo un spike o un arregl
 > de test: la edición no ocurre, sin importar qué skill esté ejecutando. Por qué: con las tareas ya implementadas antes
 > de ningún test, el gate del cierre avisa cuando el trabajo ya está hecho. (El clasificador no cuenta la story `.md`
 > bajo `specs/` como «test»: contarla dejaba el gate del cierre verde en todas las ejecuciones.) Escape consciente para
-> refactors sobre red preexistente: `marker.js set-flag atddBypass true` (queda en `bypass.log`).
+> refactors sobre red preexistente: `marker.js set-flag atddBypass true --reason "<por qué>"` (sin motivo se niega; el
+> motivo queda en `bypass.log`). Un guion de medición de `tasks/measurement-<algo>/` que la story no declara no cuenta
+> como código, y uno de `scripts/ci/pruebas/` o `scripts/ci/tests/` cuenta como prueba.
 >
 > **Qué NO bloquea** (calibrado para no dar falsos positivos): una story sin código (docs/specs) pasa; un refactor que
 > toca código y ningún test **avisa pero pasa** (la red son los tests preexistentes); un marcador sin `fileEvents`
 > avisa `unknown` y pasa. Los tres casos quedan medidos en `gates.log`.
 >
-> **Escape consciente**: `marker.js complete-step implement --no-atdd` — queda en `bypass.log` con el detalle.
+> **Escape consciente**: `marker.js complete-step implement --no-atdd --reason "<por qué>"` — queda en `bypass.log` con
+> el detalle y el motivo.
 >
 > **Por qué existe**: el ATDD era la ÚNICA regla del pipeline sin gate mecánico, y por eso era la que se salteaba. Sin
 > gate, escribir código y después test, tarea por tarea, sólo lo detecta una persona leyendo el transcript. Y un test

@@ -947,8 +947,8 @@ function checkMap(args) {
   const rootOf = (e) => {
     if (e.repo !== 'agent-skills') return repo;
     if (skillsRoot === null) {
-      // en el repo unido agent-skills está en esta misma raíz, con sus rutas de siempre
-      const o = nn.unifiedCheckout(repo) ? { dir: repo } : nn.otherRepo('arnes');
+      // en el repo unido (y en el adelgazado con el público encima) agent-skills está en esta misma raíz
+      const o = bothSourcesHere(repo) ? { dir: repo } : nn.otherRepo('arnes');
       skillsRoot = !o.missing && o.dir && fs.existsSync(o.dir) ? o.dir : '';
     }
     return skillsRoot || null;
@@ -1367,6 +1367,11 @@ const ignoresOldFolder = (rel, line, e) => e.kind === 'folder' && path.posix.bas
 function thinLayout(repo) {
   try { return JSON.parse(fs.readFileSync(path.join(repo, '.tycon', 'internal-forms.json'), 'utf8')).layout === 'thin'; } catch { return false; }
 }
+/** ¿Las dos fuentes viven en esta raíz? El repo unido con el perfil del equipo, o el adelgazado con el público encima
+ * (el árbol que arma el portón), que puede venir sin el perfil. */
+function bothSourcesHere(repo) {
+  return nn.unifiedCheckout(repo) || (thinLayout(repo) && require('../lib/canonical-path.js').isSingleRepo(repo));
+}
 function staleMentions(args) {
   const legacy = require('../lib/legacy-names.js');
   const startDir = args.repo ? path.resolve(args.repo) : process.cwd();
@@ -1384,7 +1389,7 @@ function staleMentions(args) {
   // arnés, que son referencias entre fuentes — o, sin «el otro repo» a mano, no miraría.
   // El repo de mantenimiento adelgazado con el público encima (su lista de lo que repite dice `layout: "thin"`) también
   // tiene las dos fuentes en esta raíz, aunque ya no traiga el perfil del equipo: se recorre una sola vez.
-  const unified = nn.unifiedCheckout(repo) || (thinLayout(repo) && require('../lib/canonical-path.js').isSingleRepo(repo));
+  const unified = bothSourcesHere(repo);
   const other = unified ? { dir: repo } : nn.otherRepo('arnes');
   if (other.missing) throw new CouldNotLook(`no encontré agent-skills (${other.dir}): sin el otro repo no sé si quedan nombres viejos allá — seteá TYCON_SKILLS_DIR`);
   const repos = { arnes: repo, 'agent-skills': other.dir };

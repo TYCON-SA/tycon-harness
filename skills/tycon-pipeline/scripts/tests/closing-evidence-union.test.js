@@ -44,11 +44,12 @@ function stateDirDe(home) {
 }
 
 const DECL_3 = 'el envío real lo hace un servicio externo';
-function storyMd(status, { decl3 = DECL_3, conAc4 = false } = {}) {
+function storyMd(status, { decl3 = DECL_3, conAc4 = false, pantalla = false } = {}) {
   return [
     '---',
     'story: 9.9',
     `status: ${status}`,
+    ...(pantalla ? ['files_to_modify:', '  - src/Pantalla.tsx'] : []),
     'runtime_not_verifiable:',
     '  - ac: 3',
     `    reason: "${decl3}"`,
@@ -97,6 +98,13 @@ function armar(t, opts = {}) {
   const dod = path.join(repo, '.advisors', 'dod-runtime');
   fs.mkdirSync(dod, { recursive: true });
   const ahora = new Date(Date.now() - 60 * 1000);
+  if (opts.pantalla) {
+    const pantalla = path.join(repo, 'src', 'Pantalla.tsx');
+    fs.mkdirSync(path.dirname(pantalla), { recursive: true });
+    fs.writeFileSync(pantalla, 'export const P = () => <p>Catálogos</p>;\n');
+    const antes = new Date(ahora.getTime() - 60 * 1000);
+    fs.utimesSync(pantalla, antes, antes);
+  }
   // 1. pruebas de humo: AC 1 (salida 0, o la que diga el caso), con su copia en gates.log como la escribe smoke-run.sh.
   const ts = SIN_MS(ahora);
   const exit = opts.smokeExit === undefined ? 0 : opts.smokeExit;
@@ -107,7 +115,10 @@ function armar(t, opts = {}) {
   fs.writeFileSync(path.join(dod, `9.9-e2e-gate-${COMPACTO(ahora)}.md`), [
     '# DoD Runtime Evidence — Story 9.9 — Playwright Gate (scoped)',
     '**Spec filter**: story-9-9.spec.ts', '```', 'verdict=PASS', 'total=1', 'passed=1', '```', '- skipped: 0', '',
+    ...(opts.pantalla && !opts.playwrightFalla ? ['## Playwright Run', '- verdict: PASS', '- total: 1', '- passed: 1', '- failed: 0', ''] : []),
+    ...(opts.playwrightFalla ? ['## Playwright Run', '- verdict: FAIL', '- failed: 1', '', '## Otra corrida', '- verdict: PASS', '- failed: 0', ''] : []),
   ].join('\n'));
+  fs.utimesSync(path.join(dod, `9.9-e2e-gate-${COMPACTO(ahora)}.md`), ahora, ahora);
   fs.appendFileSync(gatesLog, JSON.stringify({ ts: new Date().toISOString(), check: 'dod', status: 'green',
     provenance: 'run-check', cmd: 'bash e2e-gate.sh /fe 9.9 /dir story-9-9.spec.ts', exit: 0 }) + '\n');
   // AC 3: lo cubre un test (suite verde) y lo firmó el dev desde su terminal, anclado a su declaración.
@@ -164,6 +175,30 @@ test('4. una firma vencida (la declaración cambió después de firmar) no cuent
 test('5. un -cierre.md que nombra todo sigue contando (no hace falta, pero no se rompe)', (t) => {
   const r = correrHook(armar(t, { cierre: '# Cierre 9.9\n- AC #1 verificado\n- AC #2 verificado\n- AC #3 verificado\n' }));
   assert.equal(r.code, 0, r.err);
+});
+
+const CIERRE_TODO = '# Cierre 9.9\n- AC #1 verificado\n- AC #2 verificado\n- AC #3 verificado\n';
+
+// los dos casos de pantalla miran sólo el freno de Playwright: la matriz pide además capturas que este repo no arma
+test('6. pantalla: el gate E2E verde y después un -cierre.md sin Playwright → el freno de Playwright no frena', (t) => {
+  const r = correrHook(armar(t, { pantalla: true, cierre: CIERRE_TODO }));
+  assert.doesNotMatch(r.err, /DODRT-C5\.1/, r.err);
+});
+
+test('7. pantalla: el gate E2E es anterior al último cambio de código → no cuenta', (t) => {
+  const f = armar(t, { pantalla: true, cierre: CIERRE_TODO });
+  const ahora = new Date();
+  fs.utimesSync(path.join(f.repo, 'src', 'Pantalla.tsx'), ahora, ahora);
+  fs.utimesSync(path.join(f.repo, '.advisors', 'dod-runtime', '9.9-cierre.md'), ahora, ahora);
+  const r = correrHook(f);
+  assert.equal(r.code, 2, r.err);
+  assert.match(r.err, /DODRT-C5\.1/, r.err);
+});
+
+test('8. pantalla: Playwright en FAIL y otro bloque en PASS en el mismo archivo → no cuenta', (t) => {
+  const r = correrHook(armar(t, { pantalla: true, playwrightFalla: true, cierre: CIERRE_TODO }));
+  assert.equal(r.code, 2, r.err);
+  assert.match(r.err, /DODRT-C5\.1/, r.err);
 });
 
 test('la unión lee el veredicto de la matriz, no texto: sin matriz no cubre nada', () => {
