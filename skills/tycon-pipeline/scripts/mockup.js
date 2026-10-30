@@ -525,6 +525,22 @@ function mockupTexts(html) {
 }
 
 /**
+ * Las capas de una maqueta armada por este guion: `[{ screen, name, trigger, over, texts }]`, o null si el archivo no es
+ * de mockup.js. `texts` son los de la ventana; los de la pantalla de abajo, dibujada detrás, no cuentan.
+ */
+function mockupLayers(html) {
+  const s = String(html);
+  const textos = mockupTexts(s);
+  if (!textos) return null;
+  const out = [];
+  for (const m of s.matchAll(/<section class="screen layer" data-screen-index="(\d+)" data-screen-name="([^"]*)" data-presentation="layer">[\s\S]*?<p class="layer-how">Se abre al tocar «([^»]*)» en «([^»]*)»\.<\/p>/g)) {
+    const screen = Number(m[1]);
+    out.push({ screen, name: decode(m[2]), trigger: decode(m[3]), over: decode(m[4]), texts: textos.filter((t) => t.screen === screen).map((t) => t.text) });
+  }
+  return out;
+}
+
+/**
  * ¿La story tiene pantalla? Con la MISMA detección que la guía de QA (`qa-guide.js#isUiStory` con la raíz del
  * repo de la STORY), no la de `markerStoryIsUi` (raíz del repo del código). Una story ilegible TIRA: «no pude mirar»
  * nunca es «no hay pantalla».
@@ -873,7 +889,7 @@ function main() {
 }
 
 module.exports = {
-  renderMockup, mockupEsc, validateMockupHtml, mockupTexts, mockupHash, mockupPaths, screenStory, readApproval,
+  renderMockup, mockupEsc, validateMockupHtml, mockupTexts, mockupLayers, mockupHash, mockupPaths, screenStory, readApproval,
   writeApproval, compareWithScreens, qaGuideCheckArgs, mockupStep8, validateModel, modelWarnings, declaredDiffs, GENERATOR, CSP,
 };
 

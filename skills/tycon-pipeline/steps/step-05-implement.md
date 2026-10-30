@@ -214,9 +214,11 @@ El skill BMAD se encarga de:
 
 **Con una maqueta aprobada** (story con pantalla, «Aprobar el plan»): la maqueta fija el contenido y los estados, no la
 forma de presentarlos. La forma sale de la story y de la guía del stack del producto. Donde la maqueta marca una capa
-(`presentation: "layer"`, «Se abre encima de … con …»), se construye una capa que se abre con ese botón o enlace;
-donde no marca nada, la story y la guía dicen si va en la página o encima. Agregá esto a los `args` del skill cuando la
-story tiene maqueta.
+(`presentation: "layer"`, «Se abre encima de … con …»), **se construye como capa**, que se abre con ese botón o enlace y
+tiene `role="dialog"` o `aria-modal="true"`. Sólo la contradice una story que diga literalmente
+«en la página» o «no modal», y entonces la maqueta se corrige y se aprueba de nuevo antes de construir. Palabras como
+«panel» o «sección» no la contradicen. Donde no marca nada, la story y la guía dicen si va en la página o encima. Agregá esto a los `args`
+del skill cuando la story tiene maqueta.
 
 ## Si la historia termina por su salida prevista
 

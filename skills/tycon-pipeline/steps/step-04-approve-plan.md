@@ -113,8 +113,10 @@ compara lo construido contra ella.
    la guía del stack del producto pida como modal, va como otra pantalla con `presentation: "layer"`, el nombre de la
    pantalla de abajo en `over` y el texto del botón o enlace que la abre en `trigger`. Lo que dice la story manda sobre
    la convención («en la página, no modal» va en la página). La maqueta fija el contenido y los estados, no la forma de
-   presentarlos: la forma sale de la story y de la guía del stack, y donde la maqueta marca una capa, se construye una
-   capa.
+   presentarlos: la forma sale de la story y de la guía del stack. Donde la maqueta aprobada marca una capa,
+   **se construye como capa**. Sólo la contradice una story que diga literalmente «en la página» o «no modal»; entonces se
+   corrige la maqueta y se aprueba de nuevo. Palabras como «panel» o «sección» no la contradicen: un panel puede abrirse
+   encima. La prueba en vivo lo comprueba (capa 12).
 3. **Presentarla con el plan, en el chat**: la ruta del archivo y la lista de `mockup.js texts <ruta>` por pantalla. El
    navegador puede no abrirse (sesión remota, Linux sin escritorio, la jaula de Codex) o estar en otra máquina: la lista
    en el chat es lo que se aprueba seguro.

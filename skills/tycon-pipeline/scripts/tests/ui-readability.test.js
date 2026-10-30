@@ -377,6 +377,178 @@ function checkCon(storyPath, extra = []) {
   return { rc: r.status, out: `${r.stdout}\n${r.stderr}` };
 }
 const UI_730 = (extra = '') => `${UI_OK([PANTALLA_730])}mockup: 1.1-mockup.html\n${extra}`;
+
+// ── una capa de la maqueta se construye como capa: la evidencia de la prueba en vivo lo muestra ──────────────────
+const LAYER_PROBE = path.join(SK, 'lib', 'layer-probe.js');
+const SMOKE_RUN = path.join(SK, 'smoke-run.sh');
+// la maqueta de ejemplo: «Probar» es una capa sobre «Editar plantilla»
+const CAPA_EDITAR = { name: 'Editar plantilla', elements: [{ kind: 'heading', text: 'Editar plantilla' }, { kind: 'button', text: 'Probar' }, { kind: 'button', text: 'Guardar' }] };
+const CAPA_PROBAR = { name: 'Probar', presentation: 'layer', over: 'Editar plantilla', trigger: 'Probar', elements: [{ kind: 'heading', text: 'Probar la plantilla' }, { kind: 'button', text: 'Generar' }] };
+const PANTALLA_CAPA = 'export const P = () => <div><h1>Editar plantilla</h1><button>Probar</button><button>Guardar</button><h2>Probar la plantilla</h2><button>Generar</button></div>;\n';
+function mundoConCapa(screens = [CAPA_EDITAR, CAPA_PROBAR]) {
+  const repo = mundo();
+  escribir(path.join(repo, PANTALLA_730), PANTALLA_CAPA);
+  const s = story(repo, [PANTALLA_730]);
+  const qa = guiaLista(repo);
+  const model = JSON.stringify({ title: 'Plantillas', screens });
+  const r = spawnSync('node', [MOCKUP, 'render', '--data', '-', '--story', s], { encoding: 'utf8', input: model, env: { ...process.env, HOME } });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const out = JSON.parse(r.stdout);
+  escribir(path.join(qa, '1.1-mockup-approval.json'), JSON.stringify({ schema: 1, story: '1.1', file: '1.1-mockup.html', sha256: out.sha256, approvedAt: '2026-10-16T12:00:00Z' }));
+  escribir(path.join(qa, '1.1-legibilidad-ui.md'), UI_730());
+  return { repo, s, qa, dod: path.join(repo, '.advisors', 'dod-runtime') };
+}
+// el humo de la prueba en vivo, corrido por smoke-run.sh (lo único que cuenta como evidencia): escribe la línea del probe
+function humoDeCapa(m, resultado, { sale = 0 } = {}) {
+  const js = `console.log(require(${JSON.stringify(LAYER_PROBE)}).linea(${JSON.stringify(resultado)})); process.exit(${sale})`;
+  const r = spawnSync('bash', [SMOKE_RUN, m.dod, '1.1', '--acs', '1', '--pass-if', 'layer-check', '--', 'node', '-e', js],
+    { env: { ...process.env, HOME }, cwd: m.repo, encoding: 'utf8' });
+  if (sale === 0) assert.strictEqual(r.status, 0, `${r.stdout}\n${r.stderr}`);
+}
+
+test('Capa_ConstruidaEnLaPagina_Frena (el caso de Probar sobre Editar plantilla) @capa-de-la-maqueta', () => {
+  const m = mundoConCapa();
+  humoDeCapa(m, { screen: 'Probar', trigger: 'Probar', dialog: false, texts: [] });
+  const r = checkCon(m.s);
+  assert.strictEqual(r.rc, 2, r.out);
+  assert.match(r.out, /\(12\) «Probar» se abrió en la página, no encima de «Editar plantilla»/);
+  assert.match(r.out, /«en la página» o «no modal»/);
+});
+
+test('Capa_SinEvidencia_DiceQueFaltaYComoDarla_ConYSinNavegador @capa-de-la-maqueta', () => {
+  const m = mundoConCapa();
+  const r = checkCon(m.s);
+  assert.strictEqual(r.rc, 2, r.out);
+  assert.match(r.out, /\(12\) la maqueta marca «Probar» como capa sobre «Editar plantilla» y ninguna prueba en vivo muestra que se abra encima/);
+  assert.match(r.out, /smoke-run\.sh/);
+  assert.match(r.out, /probeLayer\(page/, 'con Playwright: el ayudante que toca el botón');
+  assert.match(r.out, /sin navegador/i);
+  assert.match(r.out, /probeDocument\(document/, 'sin Playwright: la prueba de componente escribe la misma línea');
+});
+
+test('Capa_AbiertaEncimaConSusTextos_Pasa @capa-de-la-maqueta', () => {
+  const m = mundoConCapa();
+  humoDeCapa(m, { screen: 'Probar', trigger: 'Probar', dialog: true, texts: ['Probar la plantilla', 'Generar'] });
+  const r = checkCon(m.s);
+  assert.strictEqual(r.rc, 0, r.out);
+});
+
+test('Capa_AbiertaSinUnTextoAdentro_Frena @capa-de-la-maqueta', () => {
+  const m = mundoConCapa();
+  humoDeCapa(m, { screen: 'Probar', trigger: 'Probar', dialog: true, texts: ['Probar la plantilla'] });
+  const r = checkCon(m.s);
+  assert.strictEqual(r.rc, 2, r.out);
+  assert.match(r.out, /\(12\) la capa «Probar» se abrió encima, pero sin «Generar» adentro/);
+});
+
+test('Capa_SalidaDelHumoCambiadaDespues_NoCuenta @capa-de-la-maqueta', () => {
+  const m = mundoConCapa();
+  humoDeCapa(m, { screen: 'Probar', trigger: 'Probar', dialog: false, texts: [] });
+  // alguien reescribe la salida del humo para que diga que se abrió encima
+  const outs = path.join(m.dod, '1.1-smoke-outputs');
+  for (const f of fs.readdirSync(outs)) {
+    const p = path.join(outs, f);
+    fs.writeFileSync(p, fs.readFileSync(p, 'utf8').replace('"dialog":false,"texts":[]', '"dialog":true,"texts":["Probar la plantilla","Generar"]'));
+  }
+  const r = checkCon(m.s);
+  assert.strictEqual(r.rc, 2, r.out);
+  assert.match(r.out, /ninguna prueba en vivo muestra que se abra encima/);
+});
+
+test('Capa_HumoEnRojo_NoCuentaAunqueDigaEncima @capa-de-la-maqueta', () => {
+  const m = mundoConCapa();
+  humoDeCapa(m, { screen: 'Probar', trigger: 'Probar', dialog: true, texts: ['Probar la plantilla', 'Generar'] }, { sale: 1 });
+  const r = checkCon(m.s);
+  assert.strictEqual(r.rc, 2, r.out);
+  assert.match(r.out, /ninguna prueba en vivo muestra que se abra encima/);
+});
+
+test('Capa_VariasLecturas_CuentaLaMejor @capa-de-la-maqueta', () => {
+  const m = mundoConCapa();
+  // una corrida vieja en la página y una incompleta: no alcanzan solas, pero la buena manda
+  humoDeCapa(m, { screen: 'Probar', trigger: 'Probar', dialog: false, texts: [] });
+  humoDeCapa(m, { screen: 'probar', trigger: 'Probar', dialog: true, texts: ['Generar'] });
+  let r = checkCon(m.s);
+  assert.strictEqual(r.rc, 2, r.out);
+  assert.match(r.out, /sin «Probar la plantilla» adentro/, 'la incompleta dice lo que falta; el nombre de la pantalla no distingue mayúsculas');
+  humoDeCapa(m, { screen: 'Probar', trigger: 'Probar', dialog: true, texts: ['probar  la plantilla', 'Generar'] });
+  r = checkCon(m.s);
+  assert.strictEqual(r.rc, 0, r.out);
+});
+
+test('Capa_MaquetaCambiada_LaDiceLaCapa9YNoLa12 @capa-de-la-maqueta', () => {
+  const m = mundoConCapa();
+  const ap = path.join(m.qa, '1.1-mockup-approval.json');
+  fs.writeFileSync(ap, JSON.stringify({ ...JSON.parse(fs.readFileSync(ap, 'utf8')), sha256: 'f'.repeat(64) }));
+  const r = checkCon(m.s);
+  assert.strictEqual(r.rc, 2, r.out);
+  assert.match(r.out, /\(9\) la maqueta cambió después de aprobada/);
+  assert.doesNotMatch(r.out, /\(12\)/, 'sin maqueta aprobada e intacta, la capa 12 no repite lo de la 9');
+});
+
+test('LayerProbe_ConNavegador_TocaElBotonYMiraLaVentana @capa-de-la-maqueta', async () => {
+  const lp = require(LAYER_PROBE);
+  // un `page` de Playwright falso: anota los clics, y la ventana aparece o no
+  const pagina = ({ aparece, textos = [] }) => {
+    const clics = [];
+    const boton = (rol, o) => ({ or: (otro) => ({ first: () => ({ click: async () => clics.push([rol, o.name, otro.rol]) }) }), rol });
+    return {
+      clics,
+      getByRole: (rol, o) => boton(rol, o),
+      locator: (sel) => ({ filter: () => ({
+        first: () => ({ waitFor: async () => { if (!aparece) throw new Error('timeout'); } }),
+        allInnerTexts: async () => textos, sel,
+      }) }),
+    };
+  };
+  let p = pagina({ aparece: true, textos: ['Probar la plantilla\nGenerar'] });
+  let r = await lp.probeLayer(p, { screen: 'Probar', trigger: 'Probar', texts: ['Probar la plantilla', 'Generar', 'Cerrar'], timeout: 10 });
+  assert.deepStrictEqual(p.clics, [['button', 'Probar', 'link']], 'toca el botón (o el enlace) con ese texto');
+  assert.deepStrictEqual(r, { screen: 'Probar', trigger: 'Probar', dialog: true, texts: ['Probar la plantilla', 'Generar'] });
+  p = pagina({ aparece: false });
+  r = await lp.probeLayer(p, { screen: 'Probar', trigger: 'Probar', texts: ['Generar'], timeout: 10 });
+  assert.deepStrictEqual([r.dialog, r.texts], [false, []], 'si no aparece una ventana, dialog false');
+  // sin navegador: aria-hidden no cuenta; un <dialog open> sí
+  const el = (attrs, text) => ({ getAttribute: (k) => attrs[k] ?? null, textContent: text, hidden: false });
+  r = lp.probeDocument({ querySelectorAll: () => [el({ role: 'dialog', 'aria-hidden': 'true' }, 'Generar')] }, { screen: 'Probar', trigger: 'Probar', texts: ['Generar'] });
+  assert.strictEqual(r.dialog, false);
+  assert.match(lp.SELECTOR, /dialog\[open\]/);
+});
+
+test('Capa_MaquetaSinCapas_NoPideNada @capa-de-la-maqueta', () => {
+  const m = mundoConCapa([{ ...CAPA_EDITAR, elements: [...CAPA_EDITAR.elements, { kind: 'heading', text: 'Probar la plantilla' }, { kind: 'button', text: 'Generar' }] }]);
+  const r = checkCon(m.s);
+  assert.strictEqual(r.rc, 0, r.out);
+});
+
+test('LayerProbe_DocumentoYLinea_IdaYVuelta @capa-de-la-maqueta', () => {
+  const lp = require(LAYER_PROBE);
+  // un documento mínimo: la ventana con role="dialog" y un texto que quedó afuera
+  const el = (attrs, text, visible = true) => ({ getAttribute: (k) => attrs[k] ?? null, textContent: text, hidden: !visible, open: attrs.open });
+  const doc = (els) => ({ querySelectorAll: () => els });
+  let r = lp.probeDocument(doc([el({ role: 'dialog' }, 'Probar la plantilla Generar')]), { screen: 'Probar', trigger: 'Probar', texts: ['Probar la plantilla', 'Generar', 'Cerrar'] });
+  assert.deepStrictEqual(r, { screen: 'Probar', trigger: 'Probar', dialog: true, texts: ['Probar la plantilla', 'Generar'] });
+  r = lp.probeDocument(doc([]), { screen: 'Probar', trigger: 'Probar', texts: ['Generar'] });
+  assert.deepStrictEqual([r.dialog, r.texts], [false, []], 'sin ventana encima: dialog false y ningún texto adentro');
+  r = lp.probeDocument(doc([el({ 'aria-modal': 'true' }, 'Generar', false)]), { screen: 'Probar', trigger: 'Probar', texts: ['Generar'] });
+  assert.strictEqual(r.dialog, false, 'una ventana escondida no cuenta');
+  const linea = lp.linea({ screen: 'Probar', trigger: 'Probar', dialog: true, texts: ['Generar'] });
+  assert.match(linea, /^layer-check /);
+  assert.deepStrictEqual(lp.leer(`otra cosa\n${linea}\n`), [{ screen: 'Probar', trigger: 'Probar', dialog: true, texts: ['Generar'] }]);
+  assert.deepStrictEqual(lp.leer('layer-check {roto'), []);
+});
+
+test('Pasos4y5_LaCapaDeLaMaquetaSeConstruyeCapa @capa-de-la-maqueta', () => {
+  for (const f of ['step-04-approve-plan.md', 'step-05-implement.md']) {
+    const t = fs.readFileSync(path.join(SK, '..', 'steps', f), 'utf8');
+    assert.match(t, /se construye como capa/, f);
+    assert.match(t, /«en la página» o «no modal»/, f);
+    assert.match(t, /«panel» o «sección»/, f);
+  }
+  const p10 = fs.readFileSync(path.join(SK, '..', 'steps', 'step-10-live-check.md'), 'utf8');
+  assert.match(p10, /layer-check/);
+  assert.match(p10, /lib\/layer-probe\.js/);
+});
 const BASICOS_730 = [{ kind: 'heading', text: 'Facturas pendientes' }, { kind: 'button', text: 'Pagar seleccionadas' }];
 function mundoMaqueta(pantalla, elements, uiExtra) {
   const repo = mundo();

@@ -1631,7 +1631,7 @@ function main() {
 // `acEsDeAccion` se exporta para poder testear la heurística de DODRT-C8 como función PURA
 // (mismo criterio que lib/atdd-order.js): sus falsos positivos se miden con texto de ACs
 // reales, no armando un workspace entero.
-module.exports = { isCodeFile, compute, renderMd, storyIdFrom, discoverRepoRoot, acEsDeAccion, parseExencionC8, avisoFirmasDescartadas, esDePantalla, VISUAL_EVIDENCE_FROM };
+module.exports = { isCodeFile, compute, renderMd, storyIdFrom, discoverRepoRoot, acEsDeAccion, parseExencionC8, avisoFirmasDescartadas, esDePantalla, VISUAL_EVIDENCE_FROM, readSmokeLedger, defaultGatesLog };
 
 if (require.main === module) {
   main();
