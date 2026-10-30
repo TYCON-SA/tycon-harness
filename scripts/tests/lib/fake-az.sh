@@ -27,6 +27,8 @@
 #                                          argumentos o en los archivos leídos)
 #   TYCON_AZ_GARBAGE=<paso>[:<patrón>][,…]  ese paso sale 0 con texto que no es JSON
 # Pasos: version identidad wiql wi revisiones estados categorias campos grupo miembros equipo iteracion crear comentario actualizar prs lote
+#        grupos-agentes pedidos-agentes (la cola de la organización)
+#        pr-listar pr-crear pr-actualizar pr-ver (los pedidos de cambio de un repo: `repos pr list|create|update|show`)
 #
 # · `categorias`: `devops invoke --area wit --resource workitemtypecategories --route-parameters project=P` →
 #   `categorias-P.json`; sin fixture, un proceso cuyo elemento de backlog por defecto es el Bug.
@@ -56,6 +58,13 @@
 # · `corrida`: `pipelines runs show --id N --project P` → `corrida-N.json` (sin fixture sale 1).
 # · `timeline`: `devops invoke --area build --resource timeline --route-parameters project=P buildId=N`
 #   → `timeline-N.json` (sin fixture: `{records:[]}`, como una corrida que no llegó a correr nada).
+#
+# ── LA CI Y LA COLA ─────────────────────────────────────────────────────────────────────────────
+# · `builds` sin `--pipeline-ids`: `pipelines runs list --project P [--branch B] [--top N]` → `runs-P.json`, filtrada por
+#   rama (con o sin `refs/heads/`) y cortada en N.
+# · `grupos-agentes`: `devops invoke --area distributedtask --resource pools` → `pools.json` (sin fixture: ninguno).
+# · `pedidos-agentes`: `devops invoke --area distributedtask --resource jobrequests --route-parameters poolId=N` →
+#   `jobrequests-N.json` (sin fixture sale 1, como un grupo que no existe).
 #
 # ── LA FAMILIA DE LA INSTALACIÓN DEL SITIO EN AZURE CONTAINER APPS ──────────────────────────────────────
 # Una familia aparte, que NO pasa por las trampas de `--org` ni de `-o json` (son de `devops`/`boards`): `account`,
@@ -131,6 +140,12 @@ else if (tiene('devops', 'invoke') && String(arg('--area')).toLowerCase() === 'w
 else if (tiene('devops', 'invoke') && String(arg('--area')).toLowerCase() === 'git' && String(arg('--resource')).toLowerCase() === 'pullrequests') paso = 'prs';
 else if (tiene('devops', 'invoke') && String(arg('--area')).toLowerCase() === 'wit' && String(arg('--resource')).toLowerCase() === 'workitemsbatch') paso = 'lote';
 else if (tiene('devops', 'invoke') && String(arg('--area')).toLowerCase() === 'build' && String(arg('--resource')).toLowerCase() === 'timeline') paso = 'timeline';
+else if (tiene('devops', 'invoke') && String(arg('--area')).toLowerCase() === 'distributedtask' && String(arg('--resource')).toLowerCase() === 'pools') paso = 'grupos-agentes';
+else if (tiene('devops', 'invoke') && String(arg('--area')).toLowerCase() === 'distributedtask' && String(arg('--resource')).toLowerCase() === 'jobrequests') paso = 'pedidos-agentes';
+else if (tiene('repos', 'pr', 'list')) paso = 'pr-listar';
+else if (tiene('repos', 'pr', 'create')) paso = 'pr-crear';
+else if (tiene('repos', 'pr', 'update')) paso = 'pr-actualizar';
+else if (tiene('repos', 'pr', 'show')) paso = 'pr-ver';
 else if (tiene('pipelines', 'runs', 'list')) paso = 'builds';
 else if (tiene('pipelines', 'runs', 'show')) paso = 'corrida';
 else if (tiene('pipelines', 'list')) paso = 'definiciones';
@@ -289,6 +304,41 @@ if (familia) {
   // create / update / set: queda creado (la clave no lleva el verbo: `show` la encuentra)
   estado[clave] = true; guardar(); process.exit(0);
 }
+// Los pedidos de cambio de un repo (`repos pr`): `list`, `create`, `update` y `show`. Recuerda los pedidos en
+// `$FIXAZ/repos-pr.json` (`[{pullRequestId, sourceRefName, targetRefName, status, title, description, mergeStatus,
+// autoCompleteSetBy, completionOptions}]`; una suite lo siembra con uno ya abierto o en conflicto). `update` y `show`
+// van sin `--org`, como el az de verdad dentro del clon (la organización sale del remoto); `list` y `create`, con ella.
+//   TYCON_AZ_PR_WITHOUT_AUTO=1   `update` no deja el auto-completar puesto (la verificación con `show` lo ve)
+if (/^pr-/.test(paso)) {
+  const EST = path.join(FIX, 'repos-pr.json');
+  const pedidos = (() => { try { return JSON.parse(fs.readFileSync(EST, 'utf8')); } catch { return []; } })();
+  const guardar = () => fs.writeFileSync(EST, JSON.stringify(pedidos, null, 2));
+  if ((paso === 'pr-listar' || paso === 'pr-crear') && !args.includes('--org') && !args.includes('--organization')) falla('sin --org: el default de `az devops configure` apunta a un proyecto que ya no existe');
+  if (arg('-o') !== 'json' && arg('--output') !== 'json') falla('sin -o json: la salida por defecto depende de la configuración de cada máquina');
+  const ref = (r) => `refs/heads/${r}`;
+  const conUrl = (p) => ({ ...p, url: `https://dev.azure.com/acme/_apis/git/pullRequests/${p.pullRequestId}` });
+  if (paso === 'pr-listar') {
+    out(pedidos.filter((p) => p.status === (arg('--status') || 'active') && p.sourceRefName === ref(arg('--source-branch'))
+      && p.targetRefName === ref(arg('--target-branch'))).map(conUrl));
+  }
+  if (paso === 'pr-crear') {
+    const p = { pullRequestId: 100 + pedidos.length + 1, status: 'active', sourceRefName: ref(arg('--source-branch')), targetRefName: ref(arg('--target-branch')),
+      title: arg('--title'), description: arg('--description'), mergeStatus: 'queued', autoCompleteSetBy: null, completionOptions: {} };
+    pedidos.push(p); guardar(); out(conUrl(p));
+  }
+  const p = pedidos.find((x) => String(x.pullRequestId) === String(arg('--id')));
+  if (!p) falla(`TF401180: The requested pull request was not found (${arg('--id')})`);
+  if (paso === 'pr-actualizar') {
+    if (arg('--title') !== undefined) p.title = arg('--title');
+    if (arg('--description') !== undefined) p.description = arg('--description');
+    if (arg('--merge-commit-message') !== undefined) p.completionOptions = { ...p.completionOptions, mergeCommitMessage: arg('--merge-commit-message') };
+    if (arg('--auto-complete') === 'true' && process.env.TYCON_AZ_PR_WITHOUT_AUTO !== '1') p.autoCompleteSetBy = { id: 'quien-pide' };
+    guardar(); out(conUrl(p));
+  }
+  // `show --query "{ac:autoCompleteSetBy.id, msg:completionOptions.mergeCommitMessage}"`: lo que verifica el paso
+  if (/ac:autoCompleteSetBy\.id/.test(String(arg('--query') || ''))) out({ ac: (p.autoCompleteSetBy && p.autoCompleteSetBy.id) || null, msg: p.completionOptions.mergeCommitMessage || null });
+  out(conUrl(p));
+}
 if (paso === 'desconocido') falla(`doble-az: comando no reconocido: ${args.join(' ')}`, 2);
 if (!args.includes('--org') && !args.includes('--organization')) {
   falla('sin --org: el default de `az devops configure` apunta a un proyecto que ya no existe');
@@ -389,7 +439,23 @@ switch (paso) {
   }
   case 'builds': {
     const top = Number(arg('--top') || 100);
-    out(fixJson(`builds-${arg('--pipeline-ids')}.json`, []).slice(0, top));
+    if (arg('--pipeline-ids')) out(fixJson(`builds-${arg('--pipeline-ids')}.json`, []).slice(0, top));
+    const rama = String(arg('--branch') || '').replace(/^refs\/heads\//, '');
+    // una respuesta que no es lista sale tal cual: es lo que la prueba quiere ver leído
+    const corridas = fixJson(`runs-${arg('--project')}.json`, []);
+    if (!Array.isArray(corridas)) out(corridas);
+    out(corridas.filter((r) => !rama || String(r.sourceBranch).replace(/^refs\/heads\//, '') === rama).slice(0, top));
+    break;
+  }
+  case 'grupos-agentes': {
+    out(fixJson('pools.json', { count: 0, value: [] }));
+    break;
+  }
+  case 'pedidos-agentes': {
+    const id = kv('--route-parameters').poolId;
+    const f = fixJson(`jobrequests-${id}.json`, null);
+    if (f) out(f);
+    falla(`el grupo de agentes ${id} no existe`);
     break;
   }
   case 'corrida': {

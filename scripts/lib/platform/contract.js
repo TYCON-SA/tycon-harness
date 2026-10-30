@@ -38,6 +38,20 @@ function shapeProblem(r) {
   return typeof r.detail === 'string' && r.detail.trim() ? null : 'dice que no sin «detail»';
 }
 
+const VEREDICTO = Object.freeze({ succeeded: 'verde', failed: 'rojo', running: 'corriendo', none: 'ninguna' });
+
+/**
+ * Lo que un control puede concluir de una lectura de `ci.read` o `queue.read`: `verde`, `rojo`, `corriendo` o `ninguna`
+ * (la CI), `medido` (la cola), y `no_medido` para todo lo demás. Cualquier «no» (también `no_soportado`: la plataforma
+ * no lo atiende) y cualquier respuesta sin forma es `no_medido`: verde sólo con una corrida que terminó bien.
+ */
+function verdictOf(r) {
+  if (!r || r.ok !== true || !Object.prototype.hasOwnProperty.call(r, 'value')) return 'no_medido';
+  if (Array.isArray(r.value)) return 'medido';
+  const state = r.value && typeof r.value === 'object' ? r.value.state : undefined;
+  return Object.prototype.hasOwnProperty.call(VEREDICTO, state) ? VEREDICTO[state] : 'no_medido';
+}
+
 // Las operaciones que llevan la estimación vigente de la historia (`estimate`); las demás la ignoran.
 const ESTIMATE_OPERATIONS = Object.freeze(['work-item.create', 'work-item.update']);
 const ESTIMATE_UNITS = Object.freeze(['hours', 'days', 'points']);
@@ -61,4 +75,32 @@ function estimateProblem(e) {
   return null;
 }
 
-module.exports = { OPERATIONS, REASONS, REPO_OPERATIONS, AREAS, AREA_OF, ESTIMATE_OPERATIONS, ESTIMATE_UNITS, areaOf, shapeProblem, estimateProblem };
+// una rama que llega a la línea de comandos de la plataforma: sin opciones disfrazadas (`-x`), sin `..` ni espacios
+const RAMA = /^(?!-)(?!.*\.\.)(?!\/)[A-Za-z0-9._\/-]{1,200}$/;
+const noNegativo = (n) => typeof n === 'number' && Number.isFinite(n) && n >= 0;
+
+/**
+ * Si los argumentos de `change-request.open` tienen la forma del contrato: `{ sourceBranch, targetBranch, text,
+ * deleteSourceBranch, title?, check?, waitMinutes?, pollSeconds?, repoDir? }`. `text` es el mensaje entero (su primera
+ * línea es el título si no viene `title`); `check`, el nombre del control que se espera en una plataforma sin entrada
+ * automática; `waitMinutes` y `pollSeconds`, los topes de esa espera. Devuelve el problema en texto, o null.
+ */
+function openProblem(a) {
+  if (a === null || typeof a !== 'object' || Array.isArray(a)) return 'los argumentos no son un objeto';
+  for (const k of ['sourceBranch', 'targetBranch']) if (!(typeof a[k] === 'string' && RAMA.test(a[k]))) return `${k} tiene que ser el nombre de una rama (es ${JSON.stringify(a[k])})`;
+  if (!(typeof a.text === 'string' && a.text.trim())) return 'falta text: el mensaje del pedido (su primera línea es el título)';
+  if (typeof a.deleteSourceBranch !== 'boolean') return 'deleteSourceBranch tiene que ser true o false: si la rama se borra al entrar';
+  if (presente(a.title) && !(typeof a.title === 'string' && a.title.trim())) return 'title, si viene, es un texto';
+  if (!presente(a.title) && !a.text.split('\n', 1)[0].trim()) return 'sin title, la primera línea de text es el título: no puede estar en blanco';
+  // el título y el texto van sueltos a la línea de comandos de la plataforma: no pueden parecer una opción («-») ni un
+  // archivo para leer («@», que `az` reemplaza por el contenido de ese archivo de la máquina)
+  for (const [k, nombre] of [['title', 'el título'], ['text', 'el texto']]) {
+    if (presente(a[k]) && /^[-@]/.test(a[k])) return `${nombre} no puede empezar con «${a[k][0]}»: la plataforma lo tomaría como ${a[k][0] === '-' ? 'una opción' : 'un archivo para leer'}`;
+  }
+  if (presente(a.check) && !(typeof a.check === 'string' && /^[^\n]{1,200}$/.test(a.check))) return 'check, si viene, es el nombre de un control';
+  for (const k of ['waitMinutes', 'pollSeconds']) if (presente(a[k]) && !noNegativo(a[k])) return `${k}, si viene, es un número mayor o igual que 0`;
+  if (presente(a.repoDir) && typeof a.repoDir !== 'string') return 'repoDir, si viene, es una carpeta';
+  return null;
+}
+
+module.exports = { OPERATIONS, REASONS, REPO_OPERATIONS, AREAS, AREA_OF, ESTIMATE_OPERATIONS, ESTIMATE_UNITS, areaOf, shapeProblem, verdictOf, estimateProblem, openProblem };

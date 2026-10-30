@@ -115,16 +115,21 @@ jobs:
           fi
           echo "${OUT}"
 
-      # Lo que deja la noche para el sitio de la organización. En GitHub, los pull requests y los
-      # pedidos todavía no se leen: los dos archivos dicen `no_medido` con su frase, y el sitio lo muestra así.
+      # Lo que deja la noche para el sitio de la organización: los pull requests abiertos y lo asignado de los repos de
+      # GitHub, leídos por la capa de plataforma. Corren con la credencial propia del workflow, que no lee los repos de
+      # producto: hasta que la organización le dé una que los lea, salen «no medido» con su motivo. Cada uno sale 1
+      # cuando no pudo medir todo, pero escribe igual su archivo con lo que no se midió: el paso lo anota como aviso y
+      # sigue, para que el otro productor y la página del tablero corran igual.
       - name: Lo que deja la noche para el sitio (pull requests y pedidos asignados)
         working-directory: harness
         run: |
           set -uo pipefail
           DAY=$(date -u +%Y-%m-%d)
           mkdir -p .dashboard/open-prs .dashboard/assigned
-          node scripts/nightly/open-prs/open-prs.js --today "${DAY}" --provider github --json ".dashboard/open-prs/open-prs-${DAY}.json" 2>&1 | bash pipelines/operations/github/annotate.sh
-          node scripts/nightly/assigned/assigned-items.js --today "${DAY}" --provider github --out .dashboard/assigned 2>&1 | bash pipelines/operations/github/annotate.sh
+          node scripts/nightly/open-prs/open-prs.js --today "${DAY}" --provider github --json ".dashboard/open-prs/open-prs-${DAY}.json" 2>&1 | bash pipelines/operations/github/annotate.sh \
+            || echo "::warning::los pull requests abiertos no se midieron enteros: el archivo dice qué faltó"
+          node scripts/nightly/assigned/assigned-items.js --today "${DAY}" --provider github --out .dashboard/assigned 2>&1 | bash pipelines/operations/github/annotate.sh \
+            || echo "::warning::lo asignado no se midió entero: el archivo dice qué faltó"
 
       # La foto de despliegues: lee los deployments y environments de los repos de producto declarados en
       # `operations.json → deployments`, con un token de la GitHub App de operaciones (sólo lectura: Deployments y

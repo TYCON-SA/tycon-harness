@@ -48,13 +48,13 @@ Del JSON: con `step: "9c"` y `version.action: "bump"`, agregar al resumen una l�
 `version.json`). Es el plan: el número final se calcula al empujar, con la rama ya al día, y puede ser mayor si entró
 otro pedido en el medio. Con `version.action: "none"`, o con `version` en `null`, no hay nada que mostrar. Si el plan
 trae `notes` (por ejemplo, falta declarar `merge.check`), van en el resumen: el dev tiene que saber, antes de aprobar,
-que el pedido se va a crear y no se va a mergear. El plan dice también de dónde leyó el modo y el control
+que el pedido no se va a abrir. El plan dice también de dónde leyó el modo y el control
 (`configFrom`): del repo o, en un clon del repo público del arnés, del clon de mantenimiento que declara la máquina. Si
 el plan sale 2 no hay modo que suponer: mostrar su motivo y parar.
 
 ### 8.2 — Manejar respuesta
 
-**Si elige (a)**: pasar al Step 9 (en modo `pr`: al 9b con un remoto de Azure DevOps, al 9c con uno de GitHub).
+**Si elige (a)**: pasar al Step 9 (en modo `pr`: al 9b, con un remoto de Azure DevOps o de GitHub).
 
 **Si elige (b) — cancelar push**:
 - Output al usuario:

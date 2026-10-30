@@ -6,7 +6,7 @@
  * que todavía no terminaron.
  *
  * POR QUÉ: la organización tiene 4 carriles y varias sesiones validando ramas a la vez.
- * Cada sesión encola con `az pipelines run --id 170 --branch <rama>`; si después empuja otro commit y vuelve a
+ * Cada sesión encola con `az pipelines run --id <validación> --branch <rama>`; si después empuja otro commit y vuelve a
  * encolar, la validación vieja sigue ocupando la fila sobre un código que ya nadie va a mergear (dos
  * validaciones de la misma rama, una de un commit ya superado, ocupan ~40 min de carril cada una). La nueva prueba lo mismo
  * que la vieja y más: la vieja se corta.
@@ -25,7 +25,7 @@
  * validación es otra definición, atada a ese repo. Este guion viaja en el público: la organización, el proyecto y el
  * número de esa definición NO se escriben acá; salen de las opciones o de la configuración de la máquina
  * (`TYCON_VALIDATION_ORG`, `TYCON_VALIDATION_PROJECT`, `TYCON_VALIDATION_PIPELINE`). Sin definición, sale 2: no inventa
- * la 170, que es la del interno. Y si la rama ya tiene un pedido abierto en GitHub, NO encola: el pedido ya dispara la
+ * la del clon de Azure, que es otra. Y si la rama ya tiene un pedido abierto en GitHub, NO encola: el pedido ya dispara la
  * validación (y Azure corta las corridas viejas de ese pedido), y otra a mano serían dos corridas por cambio sobre los
  * mismos carriles. Lo mira con `gh pr list`; si no puede mirar, sale 2 sin tocar nada.
  *
@@ -34,7 +34,9 @@
  *   --branch     por defecto, la rama actual del clon (`git rev-parse --abbrev-ref HEAD`).
  *   --all        la validación completa: corren todas las suites (parámetro `runAll` de pipelines/azure-pipelines-maintainers-pr.yml).
  *                Sin él, la validación corre lo que la rama toca.
- *   --pipeline   o `TYCON_VALIDATION_PIPELINE`; con un origin de Azure, por defecto 170 (la validación del interno).
+ *   --pipeline   o `TYCON_VALIDATION_PIPELINE` (sólo un clon de GitHub); con un origin de Azure, por defecto la que
+ *                declara team-repos.json para ese repo (`merge_suites.repos[].full_tests_pipeline`, el número de la
+ *                definición). Sin ninguna, sale 2 con la línea que hay que declarar: el número no se escribe acá.
  *   --org/--project  o `TYCON_VALIDATION_ORG`/`TYCON_VALIDATION_PROJECT`; con un origin de Azure, por defecto los suyos
  *                (https://dev.azure.com/<org>/<proyecto>/_git/<repo>).
  *   --dry-run    dice qué cortaría y qué encolaría, sin tocar nada.
@@ -44,9 +46,9 @@
  *      3 encolada, pero una vieja no se pudo cortar (se nombra) · 4 la rama tiene un pedido abierto: no se encola.
  */
 
+const path = require('path');
 const { execFileSync } = require('child_process');
 
-const DEFAULT_PIPELINE = '170';
 const POOL_NAME = 'Azure Pipelines';
 const EMPTY_LOCK = '00000000-0000-0000-0000-000000000000';
 
@@ -66,24 +68,55 @@ function git(args) {
  *   …ssh.dev.azure.com:v3/<org>/<proyecto>/<repo>              …vs-ssh.visualstudio.com:v3/<org>/<proyecto>/<repo>
  */
 function fromOrigin(url) {
+  const p = partsOfOrigin(url);
+  return p && { org: p.org, project: p.project };
+}
+
+/** La identidad del repo del `origin` de Azure DevOps, como en team-repos.json (`{ platform, org, project, repo }`), o null. */
+function identityOfOrigin(url) {
+  const p = partsOfOrigin(url);
+  return p && p.repo ? { platform: 'azure', ...p } : null;
+}
+
+/** org, proyecto y repo (`''` si la dirección no lo trae) del `origin` de Azure DevOps; null si no tiene una de sus formas. */
+function partsOfOrigin(url) {
   const p = serverAndPath(url);
   if (!p) return null;
   let found = null;
   if (p.server === 'dev.azure.com') {
-    const m = /^([^/]+)\/([^/]+)\/_git\//.exec(p.path);
-    found = m && [m[1], m[2]];
+    const m = /^([^/]+)\/([^/]+)\/_git\/([^/?#]*)/.exec(p.path);
+    found = m && [m[1], m[2], m[3]];
   } else if (p.server === 'ssh.dev.azure.com' || p.server === 'vs-ssh.visualstudio.com') {
-    const m = /^v3\/([^/]+)\/([^/]+)\//.exec(p.path);
-    found = m && [m[1], m[2]];
+    const m = /^v3\/([^/]+)\/([^/]+)\/([^/?#]*)/.exec(p.path);
+    found = m && [m[1], m[2], m[3]];
   } else if (/^[^.]+\.visualstudio\.com$/.test(p.server)) {
-    const m = /^(?:DefaultCollection\/)?([^/]+)\/_git\//.exec(p.path);
-    found = m && [p.server.split('.')[0], m[1]];
+    const m = /^(?:DefaultCollection\/)?([^/]+)\/_git\/([^/?#]*)/.exec(p.path);
+    found = m && [p.server.split('.')[0], m[1], m[2]];
   }
   if (!found) return null;
-  const [org, project] = found.map(decoded);
+  const [org, project, repo] = found.map(decoded);
   // un `.` o un `..` escondido tras un `%2e` no es un nombre: vuelve a la ruta de la API tal cual y la cambia
   if ([org, project].some((x) => /^\.{1,2}$/.test(x))) return null;
-  return { org, project };
+  return { org, project, repo: /^\.{1,2}$/.test(repo) ? '' : repo };
+}
+
+/**
+ * La definición que valida un repo de Azure según team-repos.json (`merge_suites.repos[].full_tests_pipeline`):
+ * `{ value }` con su número, o `{ problem }` con lo que falta declarar. El árbol es `TYCON_TREE` o el de este guion.
+ */
+function declaredPipeline(identity) {
+  const where = `${identity.org}/${identity.project}/${identity.repo}`;
+  const line = `team-repos.json → merge_suites.repos[] { "repo": { "platform": "azure", "org": "${identity.org}", "project": "${identity.project}", "repo": "${identity.repo}" }, "full_tests_pipeline": <número de la definición> }, o pasala con --pipeline`;
+  let TR;
+  try { TR = require('../lib/team-repos.js'); } catch (e) { return { problem: `no pude cargar el lector de team-repos.json (${e.code || e.message}): pasá la definición con --pipeline` }; }
+  const file = path.join(process.env.TYCON_TREE || path.join(__dirname, '..', '..'), 'team-repos.json');
+  const t = TR.load(file);
+  if (t.couldNotRead || !t.data) return { problem: `no sé qué definición de Azure valida ${where}: no pude leer team-repos.json. Declarala: ${line}` };
+  const p = TR.mergeSuitesFor(t.data, identity).pipeline;
+  if (Number.isInteger(p) && p >= 1) return { value: String(p) };
+  if (typeof p === 'string' && /^\d+$/.test(p.trim()) && Number(p) >= 1) return { value: p.trim() };
+  if (p !== null && p !== undefined) return { problem: `${where} declara full_tests_pipeline «${p}»: es un nombre, y para encolar hace falta el número de la definición de Azure. Declaralo: ${line}` };
+  return { problem: `no sé qué definición de Azure valida ${where}: declarala en ${line}` };
 }
 
 /**
@@ -170,7 +203,7 @@ async function call(base, auth, method, path, body) {
 
 async function main(argv) {
   const dry = argv.includes('--dry-run');
-  // `--all`: la validación completa de la rama — el parámetro `runAll` de la 170 corre todas las suites
+  // `--all`: la validación completa de la rama — el parámetro `runAll` de la validación corre todas las suites
   const all = argv.includes('--all');
   const allNote = all ? ', corre todo' : '';
   const branch = arg(argv, '--branch') || git(['rev-parse', '--abbrev-ref', 'HEAD']);
@@ -185,12 +218,14 @@ async function main(argv) {
   // también cae acá: `gh` no lo encuentra y el guion sale 2 sin tocar nada. «De Azure» es por el servidor, en sus cuatro
   // formas (`isAzure`): el agente de Azure clona con la de `visualstudio.com`, y ese clon es el interno.
   const github = !!originUrl && !isAzure(originUrl);
-  // Con un clon de GitHub no hay definición por defecto: la 170 es la del interno de Azure. La
-  // configuración de la máquina (`TYCON_VALIDATION_*`) es la del PÚBLICO: vale sólo para un clon de GitHub. Desde un clon
-  // de Azure manda su origin y la 170 —si no, una máquina configurada para el público encolaría esa definición sobre
-  // una rama del interno.
+  // La configuración de la máquina (`TYCON_VALIDATION_*`) es la del PÚBLICO: vale sólo para un clon de GitHub. Desde un
+  // clon de Azure manda su origin y la definición que team-repos.json declara para ese repo —si no, una máquina
+  // configurada para el público encolaría esa definición sobre una rama del clon de Azure.
   const cfg = (name) => (github ? process.env[name] || '' : '');
-  const pipeline = arg(argv, '--pipeline') || cfg('TYCON_VALIDATION_PIPELINE') || (github ? '' : DEFAULT_PIPELINE);
+  const given = arg(argv, '--pipeline') || cfg('TYCON_VALIDATION_PIPELINE');
+  const identity = (given || github) ? null : identityOfOrigin(originUrl);
+  const declared = identity ? declaredPipeline(identity) : null;
+  const pipeline = given || (declared && declared.value) || '';
   const origin = fromOrigin(originUrl);
   const org = arg(argv, '--org') || cfg('TYCON_VALIDATION_ORG') || (origin && origin.org);
   const project = arg(argv, '--project') || cfg('TYCON_VALIDATION_PROJECT') || (origin && origin.project);
@@ -199,7 +234,9 @@ async function main(argv) {
   const fail = (code, l) => { process.stderr.write(`queue-validation: ${l}\n`); return code; };
 
   if (!branch || branch === 'HEAD') return fail(2, 'no sé qué rama validar (pasala con --branch)');
-  if (!pipeline) return fail(2, 'el clon es de GitHub y no sé qué definición de Azure lo valida: pasala con --pipeline o con TYCON_VALIDATION_PIPELINE (la 170 es la del interno, no la del público)');
+  if (!pipeline && declared) return fail(2, declared.problem);
+  if (!pipeline && github) return fail(2, 'el clon es de GitHub y no sé qué definición de Azure lo valida: pasala con --pipeline o con TYCON_VALIDATION_PIPELINE (la del clon de Azure no es la del público)');
+  if (!pipeline) return fail(2, 'no sé qué definición de Azure validar: el origin no es de un repo de Azure DevOps (pasala con --pipeline)');
   if (!/^\d+$/.test(pipeline)) return fail(2, `--pipeline tiene que ser el número del pipeline («${pipeline}»)`);
   if (!org || !project) return fail(2, `no sé la organización o el proyecto de Azure: ${github ? 'el clon es de GitHub' : 'el origin no es de Azure DevOps'} (pasalos con --org y --project, o con TYCON_VALIDATION_ORG y TYCON_VALIDATION_PROJECT)`);
   if (!pat) return fail(2, 'falta AZURE_DEVOPS_EXT_PAT: no pude mirar nada, no se cortó ni se encoló nada');
@@ -263,4 +300,4 @@ async function main(argv) {
 }
 
 if (require.main === module) main(process.argv.slice(2)).then((c) => process.exit(c), (e) => { process.stderr.write(`queue-validation: ${e.stack || e}\n`); process.exit(2); });
-module.exports = { fromOrigin, isAzure, main };
+module.exports = { fromOrigin, identityOfOrigin, declaredPipeline, isAzure, main };

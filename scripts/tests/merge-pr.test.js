@@ -21,7 +21,6 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const crypto = require('crypto');
 const { execFileSync, spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..', '..');
@@ -245,73 +244,66 @@ const commandsOf = (blocks, re) => blocks.flatMap((b) => b.split('\n')).reduce((
   return acc;
 }, { list: [], open: false }).list;
 
-test('T18 — el paso 9c: crea el pedido de la forma que el freno lee, mergea con commit de merge atado a la punta, y nunca aplasta', () => {
-  const text = fs.readFileSync(path.join(SKILL, 'steps', 'step-09c-create-pr-github.md'), 'utf8');
+test('T18 — el paso 9b abre el pedido por la capa: sola en su llamada, con auto-completar, y nunca aplasta', () => {
+  const text = fs.readFileSync(path.join(SKILL, 'steps', 'step-09b-create-change-request.md'), 'utf8');
   const blocks = codeBlocks(text);
-  const creates = commandsOf(blocks, /^\s*gh pr create\b/);
-  const merges = commandsOf(blocks, /^\s*gh pr merge\b/);
-  assert.ok(creates.length >= 1, 'el 9c trae el gh pr create');
-  assert.ok(merges.length >= 1, 'el 9c trae el gh pr merge');
-  for (const c of creates) for (const opt of ['--repo', '--base', '--head', '--title', '--body-file']) assert.ok(c.includes(opt), `gh pr create con ${opt}: ${c}`);
-  for (const c of merges) for (const opt of ['--repo', '--merge', '--match-head-commit', '--subject', '--body-file']) assert.ok(c.includes(opt), `gh pr merge con ${opt}: ${c}`);
-  // cada gh que publica va solo en su llamada: el freno no deja salir uno con archivo acompañado de otro comando
-  for (const b of blocks.filter((x) => /^\s*gh pr (create|merge|edit)\b/m.test(x))) {
+  const opens = commandsOf(blocks, /platform\.js" change-request open\b/);
+  assert.ok(opens.length >= 1, 'el 9b abre el pedido por la capa');
+  for (const c of opens) for (const opt of ['--repo', '--auto-complete', "--args '@<argsFile>'"]) assert.ok(c.includes(opt), `change-request open con ${opt}: ${c}`);
+  // la llamada a la capa va sola en su bloque: los frenos la leen entera, sin nada que la terminal tenga que armar
+  for (const b of blocks.filter((x) => /change-request open\b/.test(x))) {
     const lines = b.split('\n').filter((l) => l.trim() && !/^\s*#/.test(l));
-    assert.ok(/^\s*gh pr (create|merge|edit)\b/.test(lines[0]), `el bloque empieza por el gh: ${b}`);
+    assert.strictEqual(lines.length, 1, `la llamada a la capa sola en su bloque: ${b}`);
     assert.ok(!/&&|\|\||;|\|/.test(b.replace(/'[^']*'/g, "''").replace(/"[^"]*"/g, '""')), `un solo comando en el bloque: ${b}`);
     assert.ok(!/\$\(|`/.test(b), `nada que la terminal tenga que armar: ${b}`);
-    // el texto de afuera (el título, el asunto, las ramas, el repo, los archivos) va entre comillas SIMPLES: adentro la
-    // terminal no expande nada. Entre comillas dobles, un asunto con `$(…)` correría esa orden antes de llegar a gh
-    assert.ok(!b.includes('"'), `ninguna comilla doble en un gh que publica: ${b}`);
-    for (const opt of ['--repo', '--title', '--subject', '--base', '--head', '--body-file']) {
-      if (b.includes(`${opt} `)) assert.match(b, new RegExp(`${opt} '<[^'>]+>'`), `${opt} con su valor entre comillas simples: ${b}`);
-    }
   }
-  // …y en los demás bloques, lo que sale de un nombre de rama también va entre comillas simples
+  // lo que sale de un nombre de rama o de una ruta va entre comillas simples
   for (const b of blocks) {
     if (!/^\s*(git|gh|node)\s/m.test(b)) continue;   // el bloque del reporte final no es un comando
     const outside = b.replace(/'[^'\n]*'/g, "''");
-    for (const m of outside.matchAll(/<(source|target|dueño\/repo|bodyFile|mergeBodyFile)>/g)) assert.fail(`<${m[1]}> fuera de comillas simples en: ${b}`);
+    for (const m of outside.matchAll(/<(source|target|argsFile|repo en JSON)>/g)) assert.fail(`<${m[1]}> fuera de comillas simples en: ${b}`);
   }
-  // ni aplastado, ni reordenado, ni salteando la regla, ni delegado al servidor, ni borrando la rama local — en NINGÚN bloque
+  // el pedido lo abre y lo mergea la capa: ni un comando crudo de la plataforma, ni aplastado, ni reordenado, ni salteando la regla
   const all = blocks.join('\n');
-  for (const banned of ['--squash', '--rebase', '--admin', '--auto', '--delete-branch']) assert.ok(!all.includes(banned), `ningún bloque del 9c usa ${banned}`);
-  // la ruta del cuerpo la da el plan: una fija bajo /tmp no es la misma para bash y para Node en Windows
-  assert.ok(!all.includes('/tmp/'), 'ningún bloque del 9c nombra /tmp/');
-  // el orden: al día, versión, empujar, pedido, latido, espera, merge
-  const order = ['merge-pr.js" plan', 'merge-pr.js" update-branch', 'merge-pr.js" bump-version', "push origin '<source>'", 'gh pr create', 'retro-heartbeat.js', 'merge-pr.js" wait-checks', 'merge-pr.js" message', 'gh pr merge'];
+  for (const crudo of [/\baz repos pr\b/, /\bgh pr (create|merge|edit)\b/]) assert.ok(!crudo.test(all), `ningún bloque del 9b trae ${crudo}`);
+  for (const banned of ['--squash', '--rebase', '--admin', '--delete-branch']) assert.ok(!all.includes(banned), `ningún bloque del 9b usa ${banned}`);
+  assert.ok(!/--auto(?!-complete)/.test(all), 'ningún bloque del 9b usa --auto suelto');
+  // la ruta de los argumentos la da el plan: una fija bajo /tmp no es la misma para bash y para Node en Windows
+  assert.ok(!all.includes('/tmp/'), 'ningún bloque del 9b nombra /tmp/');
+  // el orden: el plan, al día, versión, empujar, abrir, latido, verificar la versión
+  const order = ['merge-pr.js" plan', 'merge-pr.js" update-branch', 'merge-pr.js" bump-version', "push origin '<source>'", 'change-request open', 'retro-heartbeat.js', 'merge-pr.js" check-version'];
   let at = -1;
   for (const step of order) {
     const found = all.indexOf(step, at + 1);
-    assert.ok(found > at, `el 9c trae «${step}» después de lo anterior`);
+    assert.ok(found > at, `el 9b trae «${step}» después de lo anterior`);
     at = found;
   }
   assert.match(all, /git -C <repo> commit [^\n]*-- version\.json/, 'el commit de versión nombra la ruta: no arrastra nada ya preparado');
   // después del merge: relee la rama destino y avisa si el número quedó igual
   assert.match(text, /qued[óo] igual/);
-  // sin el control declarado, hasta el pedido —con su latido— y no más
+  // sin el control declarado en GitHub, el pedido no se abre
   assert.match(text, /merge\.check/);
-  assert.match(text, /hasta el 9c\.7 inclusive/);
-  // un empuje rechazado no se arregla con un rebase: desarmaría el merge de la destino que la rama ya trae
+  assert.match(text, /el pedido \*\*no se abre\*\*/);
+  // un empuje rechazado en GitHub no se arregla con un rebase: desarmaría el merge de la destino que la rama ya trae
   assert.match(text, /\*\*no\*\* se hace `pull --rebase`/);
-  // cada desenlace de la espera tiene su renglón
-  for (const code of [1, 2, 3, 4, 5, 6, 7, 8, 9]) assert.match(text, new RegExp(`\\|\\s*${code}\\s*\\|`), `el 9c dice qué hacer con el código ${code}`);
+  // cada desenlace de la capa tiene su renglón
+  for (const r of ['modo: auto', 'modo: espera-y-mergea', 'rechazado', 'no_medido', 'sin_credencial', 'red', 'sin_plataforma']) assert.match(text, new RegExp(`\\|\\s*\`${r}\``), `el 9b dice qué hacer con ${r}`);
+  // la lista de ramas de larga vida vive acá y en ningún otro lado
+  assert.match(text, /`dev`, `develop`, `main` y `master`/);
 });
 
-test('T18 — el paso 9b manda al 9c sólo con GitHub, y sus comandos de Azure son los de antes', () => {
-  const text = fs.readFileSync(path.join(SKILL, 'steps', 'step-09b-create-pr.md'), 'utf8');
+test('T18 — los pasos viejos de Azure y de GitHub ya no están: queda uno solo', () => {
+  for (const viejo of ['step-09b-create-pr.md', 'step-09c-create-pr-github.md']) assert.ok(!fs.existsSync(path.join(SKILL, 'steps', viejo)), `${viejo} se borró`);
+  const text = fs.readFileSync(path.join(SKILL, 'steps', 'step-09b-create-change-request.md'), 'utf8');
   assert.match(text, /merge-pr\.js/);
-  assert.match(text, /step-09c-create-pr-github\.md/);
-  const az = codeBlocks(text).filter((b) => /\baz repos pr\b/.test(b));
-  const print = crypto.createHash('sha256').update(az.join('\n---\n')).digest('hex');
-  const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'merge-skill-azure-commands.json'), 'utf8'));
-  assert.strictEqual(az.length, fixture.blocks, 'la cantidad de bloques con comandos de Azure del 9b');
-  assert.strictEqual(print, fixture.sha256, 'los comandos de Azure del 9b cambiaron: si fue a propósito, actualizar la huella (ver el archivo)');
+  assert.match(text, /Azure DevOps/);
+  assert.match(text, /GitHub/);
 });
 
-test('T18 — SKILL.md y el paso 8 nombran el camino de GitHub', () => {
+test('T18 — SKILL.md y el paso 8 nombran el paso único', () => {
   const skill = fs.readFileSync(path.join(SKILL, 'SKILL.md'), 'utf8');
-  assert.match(skill, /step-09c-create-pr-github\.md/);
+  assert.match(skill, /step-09b-create-change-request\.md/);
+  assert.ok(!/step-09c|step-09b-create-pr\.md/.test(skill), 'SKILL.md no nombra los pasos viejos');
   assert.match(skill, /version\.json/);
   assert.match(skill, /retro-heartbeat\.js/);
   // El nombre viejo se arma por partes: escrito entero, el control de menciones viejas lo cuenta como una más.
@@ -1438,14 +1430,14 @@ test(`${T78} — por la línea de comandos: con el público que ESTE árbol decl
 
 test(`${T78} — los textos del skill dicen dónde se declara el modo, y el paso 9b se lo pregunta al plan en vez de leer el archivo por su cuenta`, () => {
   const read = (...parts) => fs.readFileSync(path.join(SKILL, ...parts), 'utf8');
-  const step9b = read('steps', 'step-09b-create-pr.md');
+  const step9b = read('steps', 'step-09b-create-change-request.md');
   // 🔴 el 9b no lee el modo con un grep sobre el archivo del repo: en un clon del público diría «push»
   for (const b of codeBlocks(step9b)) assert.ok(!/(grep|cat|sed)[^\n]*advisors\.yaml/.test(b), `el 9b no lee el archivo por su cuenta: ${b}`);
   assert.match(step9b, /merge-pr\.js" plan/);
-  for (const [name, text] of [['SKILL.md', read('SKILL.md')], ['el paso 8', read('steps', 'step-08-hitl-push.md')], ['el paso 9b', step9b], ['el paso 9c', read('steps', 'step-09c-create-pr-github.md')]]) {
+  for (const [name, text] of [['SKILL.md', read('SKILL.md')], ['el paso 8', read('steps', 'step-08-hitl-push.md')], ['el paso 9b', step9b]]) {
     assert.match(text, /clon\s+de\s+mantenimiento/, `${name} dice de dónde sale la configuración en un clon del público`);
   }
-  assert.match(read('steps', 'step-09c-create-pr-github.md'), /configFrom/);
+  assert.match(step9b, /configFrom/);
 });
 
 // ── T79: el número lo pone el merge ──────────────────────────────────────────────────────────────────────────────────
@@ -1932,12 +1924,12 @@ test('T21 Skill_Texts_SuitesDecisionInSteps @story-7.28 @ac-13', () => {
   const pushAt = s73.search(/En modo `push`, para amendar/);
   assert.ok(pushAt >= 0, 'el 7.3 dice que el --amend es sólo del modo push');
   assert.ok(amendAt > pushAt && s73.indexOf('git commit --amend', amendAt + 1) < 0, 'el único `git commit --amend` está bajo «En modo push»');
-  for (const n of ['08', '09b', '09c']) {
+  for (const n of ['08', '09b']) {
     const text = step(n);
     assert.match(text, /merge-pr\.js" plan [^\n]*--keep-mode <mode del Step 0\.7>/, `el paso ${n} pide el plan con --keep-mode en el comando`);
     assert.match(text, /bajó[\s\S]{0,120}volver al 7\.2/i, `el paso ${n} vuelve al 7.2 si las suites bajaron a la máquina`);
   }
-  assert.match(step('09c'), /wait-checks [^\n]*--check '<check del plan del 9c\.1>'/, 'el 9c espera el control del plan');
+  assert.match(step('09b'), /`check`: el `check` del plan del 9b\.1/, 'el 9b espera el control del plan');
   // SKILL.md: los Inputs, «Los dos modos» y la nota del Step 7
   const skill = read('SKILL.md');
   assert.match(section(skill, '## Inputs', '## Los dos modos'), /\| `suites` \|[\s\S]*merge_suites/);

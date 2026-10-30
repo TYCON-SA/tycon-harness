@@ -1,5 +1,0 @@
-{
-  "__doc": "La huella de los comandos de Azure del paso 9b del skill de merge (skills/tycon-merge-to-main/steps/step-09b-create-pr.md): los bloques de código que traen un `az repos pr`, unidos con una línea `---`, en sha256. La fijó la story 8.26 (tanda E) al sumar el camino de GitHub: ese cambio no tenía que tocar el de Azure. Si se cambia un comando de Azure del 9b A PROPÓSITO, se actualiza acá en el mismo commit; la prueba (scripts/tests/merge-pr.test.js) dice cómo se calcula.",
-  "blocks": 8,
-  "sha256": "5459e17fb2d10e4dfa25df4c194f319c8a575a411d14345c99141dd8b2a22c0a"
-}

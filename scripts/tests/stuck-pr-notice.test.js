@@ -15,6 +15,7 @@ const { spawnSync, execFileSync } = require('child_process');
 const ROOT = path.resolve(__dirname, '..', '..');
 const HOOK = path.join(ROOT, 'scripts', 'hooks', 'stuck-pr-notice.js');
 const FAKE_AZ = path.join(ROOT, 'scripts', 'tests', 'lib', 'fake-az.sh');
+const FAKE_GH = path.join(ROOT, 'scripts', 'tests', 'lib', 'fake-gh.js');
 const { stateDir } = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js'));
 const HARNESS_URL = 'https://dev.azure.com/acme/Harness/_git/harness';
 const HACE_61 = () => new Date(Date.now() - 61 * 60000).toISOString();
@@ -53,7 +54,10 @@ function mundo(prs, teamRepos) {
   const az = path.join(tmp('spn-az-'), 'az');
   fs.copyFileSync(FAKE_AZ, az);
   fs.chmodSync(az, 0o755);
-  const w = { tree, home, fix, az, cwd: repoGit(HARNESS_URL) };
+  // el repo público vive en GitHub: su gh de mentira no tiene pedidos abiertos
+  const ghState = path.join(tmp('spn-gh-'), 'estado.json');
+  fs.writeFileSync(ghState, '{}');
+  const w = { tree, home, fix, az, ghState, cwd: repoGit(HARNESS_URL) };
   ponerPedidos(w, prs);
   return w;
 }
@@ -68,6 +72,7 @@ const llamadas = (w) => { try { return fs.readFileSync(path.join(w.fix, 'llamada
 function correr(w, extra = {}, cwd = w.cwd) {
   const env = {
     PATH: process.env.PATH, HOME: w.home, TYCON_TREE: w.tree, TYCON_ADO_CMD: w.az, FIXAZ: w.fix, TYCON_PROFILE: '0',
+    TYCON_GH_CMD: FAKE_GH, FAKE_GH_STATE: w.ghState,
     TYCON_HARNESS_IDENTITIES: HARNESS_URL, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', ...extra,
   };
   const t0 = Date.now();

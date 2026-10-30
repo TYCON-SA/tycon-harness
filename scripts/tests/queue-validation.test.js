@@ -61,7 +61,7 @@ function run(url, extra = [], env = {}) {
     // Parado fuera de cualquier clon y sin la configuración de la máquina: estos casos pasan organización, proyecto y
     // rama por opción, y no pueden depender del origin de quien corre la suite (en el agente de Azure es otro que en una
     // máquina del equipo).
-    const p = spawn(process.execPath, [SCRIPT, '--org', 'acme', '--project', 'lab', '--branch', 'fix/mia', ...extra], {
+    const p = spawn(process.execPath, [SCRIPT, '--org', 'acme', '--project', 'lab', '--branch', 'fix/mia', ...(extra.includes('--pipeline') ? [] : ['--pipeline', '170']), ...extra], {
       cwd: require('os').tmpdir(),
       env: Object.assign({}, process.env, { AZURE_DEVOPS_EXT_PAT: 'llave-de-laboratorio', TYCON_ADO_BASE_URL: url,
         TYCON_VALIDATION_ORG: '', TYCON_VALIDATION_PROJECT: '', TYCON_VALIDATION_PIPELINE: '' }, env),
@@ -222,6 +222,16 @@ function githubClone(prs) {
   return { dir, clone: path.join(dir, 'clone'), gh };
 }
 
+/** Un árbol cuyo team-repos.json declara la 170 como la validación de acme/lab/harness (para `TYCON_TREE`). */
+function declaring170() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'queue-tree-'));
+  labs.push(dir);
+  const harness = { platform: 'azure', org: 'acme', project: 'lab', repo: 'harness' };
+  fs.writeFileSync(path.join(dir, 'team-repos.json'), JSON.stringify({ version: 1, public: { platform: 'github', org: 'acme', repo: 'harness' },
+    profile: harness, operations: harness, merge_suites: { repos: [{ repo: harness, full_tests_pipeline: 170 }] } }));
+  return dir;
+}
+
 function runIn(cwd, url, extra = [], env = {}) {
   return new Promise((resolve) => {
     const p = spawn(process.execPath, [SCRIPT, ...extra], {
@@ -299,7 +309,7 @@ test('T10 QueueValidation_AnyNonAzureOrigin_IsThePublicClone_BranchPrefixStrippe
 test('T10 QueueValidation_EveryAzureOriginForm_IsTheInternalClone', async () => {
   // En el agente de Azure el origin es `https://<org>.visualstudio.com/<proyecto>/_git/<repo>`, que
   // también es Azure. Con «todo origin que no es dev.azure.com es el clon del público», ese clon pediría la definición del
-  // público y saldría 2. Las cuatro formas de una dirección de Azure son el interno: sin `gh`, con la 170 y su origin.
+  // público y saldría 2. Las cuatro formas de una dirección de Azure son el interno: sin `gh`, con la definición que team-repos.json declara para su repo (acá, la 170) y su origin.
   const { isAzure } = require(SCRIPT);
   const at = (user, rest) => [user, rest].join('@');
   const forms = [
@@ -327,7 +337,7 @@ test('T10 QueueValidation_EveryAzureOriginForm_IsTheInternalClone', async () => 
     execFileSync('git', ['init', '-q', '-b', 'fix/mia', dir], { env });
     execFileSync('git', ['-C', dir, 'remote', 'add', 'origin', 'https://acme.visualstudio.com/lab/_git/harness'], { env });
     execFileSync('git', ['-C', dir, '-c', 'user.email=lab@lab', '-c', 'user.name=lab', 'commit', '-q', '--allow-empty', '-m', 'uno'], { env });
-    const r = await runIn(dir, az.url, [], { TYCON_GH: path.join(dir, 'no-such-gh'), TYCON_VALIDATION_PIPELINE: '184' });
+    const r = await runIn(dir, az.url, [], { TYCON_GH: path.join(dir, 'no-such-gh'), TYCON_VALIDATION_PIPELINE: '184', TYCON_TREE: declaring170() });
     assert.strictEqual(r.code, 0, r.err);
     const q = of(az.calls, 'POST', /builds$/);
     assert.deepStrictEqual(q[0].body, { definition: { id: 170 }, sourceBranch: MINE });
@@ -336,7 +346,7 @@ test('T10 QueueValidation_EveryAzureOriginForm_IsTheInternalClone', async () => 
 });
 
 test('T10 QueueValidation_AzureClone_IgnoresThePublicDefinitionConfig', async () => {
-  // La configuración de la máquina es la del público: desde un origin de Azure (el interno) manda el origin y la 170,
+  // La configuración de la máquina es la del público: desde un origin de Azure (el interno) manda el origin y la definición de team-repos.json (acá, la 170),
   // aunque la máquina tenga cargada la definición de GitHub.
   const az = await fakeAzure({});
   try {
@@ -347,7 +357,7 @@ test('T10 QueueValidation_AzureClone_IgnoresThePublicDefinitionConfig', async ()
     execFileSync('git', ['init', '-q', '-b', 'fix/mia', dir], { env });
     execFileSync('git', ['-C', dir, 'remote', 'add', 'origin', 'https://dev.azure.com/acme/lab/_git/harness'], { env });
     execFileSync('git', ['-C', dir, '-c', 'user.email=lab@lab', '-c', 'user.name=lab', 'commit', '-q', '--allow-empty', '-m', 'uno'], { env });
-    const r = await runIn(dir, az.url, [], { TYCON_VALIDATION_ORG: 'otra', TYCON_VALIDATION_PROJECT: 'otro', TYCON_VALIDATION_PIPELINE: '184' });
+    const r = await runIn(dir, az.url, [], { TYCON_VALIDATION_ORG: 'otra', TYCON_VALIDATION_PROJECT: 'otro', TYCON_VALIDATION_PIPELINE: '184', TYCON_TREE: declaring170() });
     assert.strictEqual(r.code, 0, r.err);
     const q = of(az.calls, 'POST', /builds$/);
     assert.deepStrictEqual(q[0].body, { definition: { id: 170 }, sourceBranch: MINE });
@@ -421,15 +431,15 @@ test('T10 QueueValidation_OriginThatCouldNotBeRead_IsNotAMissingOrigin', async (
     const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' };
     for (const k of ['GIT_DIR', 'GIT_INDEX_FILE', 'GIT_WORK_TREE']) delete env[k];
     execFileSync('git', ['init', '-q', '-b', 'fix/mia', bare], { env });
-    r = await runIn(bare, az.url, ['--org', 'acme', '--project', 'lab', '--branch', 'fix/mia', '--dry-run']);
+    r = await runIn(bare, az.url, ['--org', 'acme', '--project', 'lab', '--branch', 'fix/mia', '--pipeline', '170', '--dry-run']);
     assert.strictEqual(r.code, 0, r.err);
     assert.match(r.out, /encolaría: pipeline 170 sobre fix\/mia/);
   } finally { await az.close(); }
 });
 
 test('T10 QueueValidation_TheScriptNamesNoAzureOrganizationForGithub', () => {
-  // El guion viaja en el público: ningún nombre de organización ni de proyecto de Azure escrito en él. La 170 sí: es la
-  // validación del interno, la de un origin de Azure (el número no nombra a nadie).
+  // El guion viaja en el público: ningún nombre de organización ni de proyecto de Azure escrito en él, ni el número de
+  // ninguna definición (la de un origin de Azure sale de team-repos.json).
   const src = fs.readFileSync(SCRIPT, 'utf8');
   assert.doesNotMatch(src, /dev\.azure\.com\/[A-Za-z]/, 'ninguna organización escrita en una dirección');
   assert.match(src, /TYCON_VALIDATION_ORG/);

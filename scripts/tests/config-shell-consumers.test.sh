@@ -70,8 +70,9 @@ rm -f "$BASE/home/.claude/tycon.json"
 SIN_NODE="$BASE/bin-sin-node"; mkdir -p "$SIN_NODE"; ln -sf "$BASE/bin/curl" "$SIN_NODE/curl"
 for b in bash sh mktemp cat tr head rm sed grep dirname python3; do p="$(command -v "$b" 2>/dev/null)"; [ -n "$p" ] && ln -sf "$p" "$SIN_NODE/$b"; done
 salida="$(env -i PATH="$SIN_NODE" HOME="$BASE/home" AZURE_DEVOPS_EXT_PAT=de-mentira TYCON_PROFILE=0 bash "$VALIDAR" --project Proy --pipeline 7 2>&1)"; rc=$?
-if [ "$rc" -eq 2 ] && printf '%s' "$salida" | grep -qi 'no pude leer' && ! printf '%s' "$salida" | grep -qi 'apagad' && [ ! -s "$LOG" ]; then
-  ok "T3b sin node el lector no contesta: sale 2 con «no pude leer», no «apagado», y no consulta nada"
+# la primera pregunta que no se puede hacer sin node es la de la plataforma: «no pude preguntar» vale lo mismo
+if [ "$rc" -eq 2 ] && printf '%s' "$salida" | grep -qiE 'no pude (leer|preguntar)' && ! printf '%s' "$salida" | grep -qi 'apagad' && [ ! -s "$LOG" ]; then
+  ok "T3b sin node el lector no contesta: sale 2 con «no pude leer» o «no pude preguntar», no «apagado», y no consulta nada"
 else bad "T3b sin node (rc=$rc): $salida"; fi
 
 # ── T3 · sin variable y sin nada configurado: Azure DevOps APAGADO — lo dice en una línea, sale 0 y no consulta ──

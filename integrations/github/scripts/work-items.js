@@ -13,44 +13,11 @@
 // Dónde: `repo: dueño/nombre` en la configuración del repo de historias (scripts/lib/platform/work-items-config.js).
 // Habla por `gh api` (TYCON_GH_CMD lo reemplaza: un ejecutable, o un `.js` que corre con node).
 
-const fs = require('fs');
-const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { gh, no, esRepoGithub } = require('./gh-api.js');
 
-const no = (reason, detail) => ({ ok: false, reason, detail });
 const idValido = (id) => /^\d+$/.test(String(id == null ? '' : id).trim());
 const noSoportado = (field, detail) => ({ field, reason: 'no_soportado', detail });
-
-function gh(ctx, method, ruta, body) {
-  const cmd = ctx.env.TYCON_GH_CMD || 'gh';
-  const [bin, pre] = /\.js$/.test(cmd) ? [process.execPath, [cmd]] : [cmd, []];
-  const args = [...pre, 'api', '--method', method, '-H', 'Accept: application/vnd.github+json', ruta];
-  let dir = null;
-  if (body) {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gh-cuerpo-'));
-    fs.writeFileSync(path.join(dir, 'cuerpo.json'), JSON.stringify(body));
-    args.push('--input', path.join(dir, 'cuerpo.json'));
-  }
-  let r;
-  try { r = spawnSync(bin, args, { env: ctx.env, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, timeout: 120000 }); } finally {
-    if (dir) fs.rmSync(dir, { recursive: true, force: true });
-  }
-  if (r.error) return { problem: no('no_medido', `${cmd} no se pudo ejecutar (${r.error.code || r.error.message})`) };
-  if (r.status !== 0) {
-    // el texto de gh, recortado: el detalle llega a la salida (la capa lo limpia de credenciales y direcciones)
-    const t = `${r.stderr || ''} ${r.stdout || ''}`.trim().replace(/\s+/g, ' ').slice(0, 500);
-    // un 403 por el tope de pedidos no es una credencial que falta: se dice como lo que es
-    if (/rate limit/i.test(t)) return { problem: no('rechazado', `GitHub frenó por el tope de pedidos; reintentar más tarde: ${t}`) };
-    if (/HTTP 401|gh auth login|Bad credentials|HTTP 403.*(SAML|SSO|Resource not accessible)/i.test(t)) return { problem: no('sin_credencial', `GitHub no aceptó la sesión de gh de esta máquina (gh auth login, o GH_TOKEN): ${t}`) };
-    if (/HTTP (404|410)/.test(t)) return { problem: no('no_encontrado', t) };
-    if (/HTTP (403|422)/.test(t)) return { problem: no('rechazado', t) };
-    if (/ENOTFOUND|ETIMEDOUT|ECONNREFUSED|ECONNRESET|getaddrinfo|could not resolve|error connecting to/i.test(t)) return { problem: no('red', t) };
-    return { problem: no('rechazado', t || `gh salió ${r.status}`) };
-  }
-  // una escritura que salió 0 se hizo aunque la respuesta no se entienda (tomarla por fallada invitaría a repetirla)
-  try { return { value: JSON.parse(r.stdout) }; } catch (_) { return method === 'GET' ? { problem: no('no_medido', 'gh contestó algo que no es JSON') } : { value: null }; }
-}
 
 /** El repo de los issues y la configuración: `{c, repo}` o `{problem}`. */
 function destino(args, ctx) {
@@ -60,8 +27,7 @@ function destino(args, ctx) {
   const c = leido.config || {};
   // el pedido de la noche trae el suyo (el repo del producto): gana sobre el de la configuración del repo
   const repo = String(args.repo || c.repo || (String(c.project || '').includes('/') ? c.project : '')).trim();
-  // dueño/nombre, sin segmentos que empiecen con punto: «../..» armaría otra ruta de la API
-  if (!/^[\w-][\w.-]*\/[\w-][\w.-]*$/.test(repo)) return { problem: no('sin_plataforma', 'el repo no dice en qué repo de GitHub van sus issues: repo: dueño/nombre en .tycon/work-items.yaml') };
+  if (!esRepoGithub(repo)) return { problem: no('sin_plataforma', 'el repo no dice en qué repo de GitHub van sus issues: repo: dueño/nombre en .tycon/work-items.yaml') };
   const warnings = (leido.unknown || []).length ? [`${path.basename(leido.file)} trae claves que no conozco: ${leido.unknown.join(', ')}`] : [];
   return { c, repo, warnings };
 }

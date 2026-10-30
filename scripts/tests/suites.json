@@ -2332,6 +2332,18 @@
       "requiere": []
     },
     {
+      "__nota": "Los pedidos de cambio por la capa de plataforma: abrir uno en Azure DevOps y en GitHub contra el az y el gh de mentira (reusar el abierto, releerlo por rama si la respuesta no trae el número, lo que no abre), listar los de GitHub, el freno de un pedido por repo y los nocturnos que leen las dos plataformas.",
+      "raiz": "arnes",
+      "ruta": "tests/platform-change-request.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "La CI de un commit y la cola de la organización por la capa de plataforma, contra el az y el gh de mentira: las etapas de la corrida, la cola de los dos lados con quién y desde cuándo, la validación con el pipeline declarado, y los guiones sólo de Azure DevOps que en GitHub dicen no_soportado (o no_medido si no pudieron preguntar).",
+      "raiz": "arnes",
+      "ruta": "tests/platform-ci-queue.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "La foto de cómo habla hoy el arnés con Azure DevOps (scripts/tests/lib/record-platform-golden.js): la normalización, qué cuenta como núcleo y que la foto grabada siga valiendo para el árbol, sin escribir nada.",
       "raiz": "arnes",
       "ruta": "tests/platform-golden.test.js",

@@ -46,14 +46,25 @@ rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" corre "$CREAR")
 grep -q "2845" "$TMP/err.txt" && ok "…y dice CUÁL está abierto, para poder sumarle el cambio" || no "no nombró el pull request abierto"
 grep -q "Esperá a que esa construcción termine" "$TMP/err.txt" && ok "…y dice qué hacer en vez de sólo prohibir" || no "no dijo la salida"
 
-# ---------------------------------------------------------------- 1b. un pedido de GitHub no es asunto de este freno
-# Este freno cuida los pedidos de Azure de los repos de producto. Un `gh pr create` solo pasa sin que el freno pregunte
-# nada; y si la misma línea trae además uno de Azure, decide el de Azure, igual que sin el `gh` adelante.
+# ---------------------------------------------------------------- 1b. un pedido de GitHub y uno de Azure en la misma línea
+# Los pedidos de GitHub los mira la capa de plataforma (lo prueba platform-change-request.test.js). Acá, sin sesión de
+# gh, el de GitHub no se puede mirar: pasa y lo dice; y si la misma línea trae además uno de Azure, ése se sigue frenando.
 GH='gh pr create --repo acme/widgets --base main --head feat/x --title t --body b'
 rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" corre "$GH")
-{ [ "$rc" -eq 0 ] && [ ! -s "$TMP/err.txt" ]; } && ok "un pedido de GitHub solo pasa callado, aun con uno de Azure construyendo" || no "🔴 el freno de Azure se metió con un pedido de GitHub ($rc): $(head -c 200 "$TMP/err.txt")"
+{ [ "$rc" -eq 0 ] && grep -q "NO verifiqué" "$TMP/err.txt"; } && ok "un pedido de GitHub que no se puede mirar pasa y dice que no verificó" || no "🔴 el pedido de GitHub sin mirar no lo dijo ($rc): $(head -c 200 "$TMP/err.txt")"
 rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" corre "$GH && $CREAR")
 { [ "$rc" -eq 2 ] && grep -q "2845" "$TMP/err.txt"; } && ok "🔴 con un pedido de GitHub en la misma línea, el de Azure se sigue frenando" || no "🔴 el gh de adelante tapó el pedido de Azure ($rc)"
+
+# ---------------------------------------------------------------- 1c. 🔴 un pedido de Azure abierto por la capa de plataforma
+# El paso del merge abre los pedidos de Azure con `platform.js change-request open`, no con `az repos pr create`: el freno
+# los mira con `az`, igual que al crear a mano, y frena con otro construyendo.
+CAPA="node platform.js change-request open --repo '{\"platform\":\"azure\",\"org\":\"acme\",\"project\":\"Totora\",\"repo\":\"FrontEnd\"}' --auto-complete --args '{\"sourceBranch\":\"ci/nueva\",\"targetBranch\":\"main\",\"text\":\"t\",\"deleteSourceBranch\":true}'"
+rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" corre "$CAPA")
+{ [ "$rc" -eq 2 ] && grep -q "2845" "$TMP/err.txt"; } && ok "🔴 un pedido de Azure por la capa, con otro CONSTRUYENDO, BLOQUEA" || no "🔴 el pedido de Azure por la capa pasó sin frenar ($rc): $(head -c 200 "$TMP/err.txt")"
+rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/terminada.json" corre "$CAPA")
+[ "$rc" -eq 0 ] && ok "…y con el otro ya construido, deja pasar" || no "frenó un pedido de Azure por la capa sin nada construyendo ($rc)"
+rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" AZ_EXIT=1 corre "$CAPA")
+{ [ "$rc" -eq 0 ] && grep -q "NO verifiqué" "$TMP/err.txt"; } && ok "…y si az no contesta, pasa y dice que no verificó" || no "🔴 sin az, el pedido por la capa no lo dijo ($rc)"
 
 # ---------------------------------------------------------------- 2. sin ninguno abierto, deja pasar
 echo '[]' > "$TMP/vacio.json"

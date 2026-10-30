@@ -377,11 +377,15 @@ comparar** (no poder mirar nunca se reporta como limpio).
 ### Validar una rama del arnés en Azure (2026-10-05)
 
 ```bash
-node scripts/ci/queue-validation.js              # la rama actual, pipeline 170
+node scripts/ci/queue-validation.js              # la rama actual, con el pipeline declarado para el repo
 node scripts/ci/queue-validation.js --dry-run    # qué cortaría y qué encolaría, sin tocar nada
 ```
 
-En lugar de `az pipelines run --id 170 --branch <rama>`: antes de encolar, corta las validaciones de **esa misma
+El pipeline sale de la configuración: el `full_tests_pipeline` del repo en `team-repos.json`
+(`merge_suites.repos[]`, el número de la definición de Azure), o `--pipeline <número>`. Sin ninguno de los dos no
+encola nada y sale 2 con la línea que hay que declarar.
+
+En lugar de `az pipelines run --id <número> --branch <rama>`: antes de encolar, corta las validaciones de **esa misma
 rama** que todavía no terminaron (la nueva prueba lo mismo y más) y borra sus pedidos que esperan carril. Las de otras
 ramas no las toca. Si no puede leer la lista, no corta ni encola nada (sale 2). Por qué: con 4 carriles para toda
 la organización, varias sesiones validando a la vez traban la fila de Azure.
