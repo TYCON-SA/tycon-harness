@@ -371,3 +371,47 @@ test('T20 SuiteAlone_Red_KeepsFailedCase — una suite roja por la puerta guarda
   assert.match(resumen.fallas[0].casos.join('\n'), /carpeta global de hooks/);
   assert.equal(resumen.ambiente.run_check, 'tests-suite');
 });
+
+/** Pone en el repo el juez de la validación de cada pedido y la foto nocturna con esas suites rojas. */
+function conFoto(l, rojas) {
+  const ci = path.join(l.repo, 'scripts', 'ci');
+  fs.mkdirSync(ci, { recursive: true });
+  const origen = path.resolve(SCRIPTS, '..', '..', '..', 'scripts', 'ci');
+  for (const f of ['pr-verdict.js', 'legacy-options.js']) fs.copyFileSync(path.join(origen, f), path.join(ci, f));
+  fs.mkdirSync(path.join(l.repo, 'scripts', 'controls-bench'), { recursive: true });
+  fs.writeFileSync(path.join(l.repo, 'scripts', 'controls-bench', 'ultimo-suites.json'),
+    JSON.stringify({ kind: 'bash-tests', ts: new Date().toISOString(), build: '1', failures: rojas }));
+  // La foto llega commiteada en el árbol, como en el privado: una con cambios sin commitear no perdona.
+  git(l.repo, 'add', '-A'); git(l.repo, 'commit', '-q', '-m', 'foto nocturna');
+}
+
+test('T21 InheritedRed_InSnapshot_GateGreen — lo rojo que ya estaba en el nocturno avisa, no frena y no pide repetirse', () => {
+  // 🔴 mutación: juzgar contra cero → sale 1, check en rojo y b en la lista de «repetir primero».
+  const l = lab({ a: 0, b: 1 });
+  conFoto(l, ['b.test.sh']);
+  const r = puerta(l);
+  assert.equal(r.status, 0, r.out);
+  assert.match(r.out, /ya estaba rojo/, r.out);
+  assert.match(r.out, /b\.test\.sh/, 'no nombra lo heredado');
+  assert.deepEqual(lista(l), [], r.out);
+  assert.match(String(marcador(l).checks.tests), /^green/, r.out);
+  assert.equal(JSON.parse(fs.readFileSync(artefacto(l), 'utf8')).suite_green, true);
+});
+
+test('T22 InheritedRed_WithNewRed_StillStops — un rojo nuevo sigue frenando, y sólo él queda para repetir primero', () => {
+  const l = lab({ a: 1, b: 1 });
+  conFoto(l, ['b.test.sh']);
+  const r = puerta(l);
+  assert.notEqual(r.status, 0, r.out);
+  assert.deepEqual(lista(l), [A], r.out);
+  assert.match(String(marcador(l).checks.tests), /^red/, r.out);
+});
+
+test('T23 InheritedRed_UnreadableSnapshot_AsBefore — con la foto ilegible no se perdona nada', () => {
+  const l = lab({ a: 0, b: 1 });
+  conFoto(l, ['b.test.sh']);
+  fs.writeFileSync(path.join(l.repo, 'scripts', 'controls-bench', 'ultimo-suites.json'), '{ roto');
+  const r = puerta(l);
+  assert.notEqual(r.status, 0, r.out);
+  assert.deepEqual(lista(l), [B], r.out);
+});

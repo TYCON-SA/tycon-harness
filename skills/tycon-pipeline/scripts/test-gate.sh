@@ -993,6 +993,19 @@ if [[ "$SUITE_EXIT" == "75" ]]; then
   echo "🟡 [test-gate] no corrí nada: otra corrida de las pruebas está en marcha en este repo (arriba, desde cuándo y de quién). Esperá su resultado; no quedó tests-result.json." >&2
   exit 75
 fi
+# Lo que ya estaba rojo en el nocturno de esa mañana avisa y no frena, con el juez de la validación de cada pedido y la
+# foto que viaja en el árbol (lib/inherited-reds.js): sale del resumen antes de la lista y del informe. Sin foto, como
+# siempre; si el juez no puede decidir, también.
+if [[ "$RUNNER" == "suites-json" && "$SUITE_EXIT" == "1" && -f "$RESULTS_DIR/suites.json" ]]; then
+  _tg_her=0
+  node "$SCRIPT_DIR/lib/inherited-reds.js" apply "$REPO_RUN" "$RESULTS_DIR/suites.json" || _tg_her=$?
+  if [[ "$_tg_her" == "0" ]]; then
+    echo "🟡 [test-gate] todo lo rojo ya estaba rojo en el nocturno de esta mañana (arriba, cuáles): avisa y no frena, igual que en la validación del pedido" >&2
+    ( cd "$REPO" && TYCON_TEST_GATE_MARK=1 node "$MARKER_JS" run-check tests -- node -e 'console.error("test-gate: lo rojo ya estaba rojo en el nocturno: avisa, no frena")' ) >&2 \
+      || echo "[test-gate] ⚠️  no pude dejar en verde el check tests: queda como lo dejó la corrida" >&2
+    SUITE_EXIT=0
+  fi
+fi
 # La corrida completa reemplaza la lista de las que fallaron: roja, con sus fallas; verde (o sin fallas con su entrada), vacía.
 if [[ "$TG_TOP_FULL" == "1" ]]; then
   ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" tests-failed record --summary "$RESULTS_DIR/suites.json" --repo "$REPO_STORY" ) \
