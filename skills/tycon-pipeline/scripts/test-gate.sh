@@ -879,6 +879,18 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
     # fallaron y la salida entera de cada suite (la cola de run-check sola deja afuera el caso del medio).
     ( cd "$REPO" && node "$MARKER_JS" run-check tests-suite -- \
         node "$SCRIPT_DIR/lib/run-suites-json.js" "$REPO_RUN" "$RESULTS_DIR/suites.json" --suite "$SUITE_ONLY" ${_TG_ONE_ARGS[@]+"${_TG_ONE_ARGS[@]}"} --coverage "$RESULTS_DIR/coverage" --run-check tests-suite ) || _tg_rc=$?
+    # El mismo juez que en la completa: si ya estaba roja en el nocturno de esta mañana, avisa, no frena y sale de la
+    # lista. Sin él, la completa se seguiría negando por un rojo que el pedido no frena.
+    if [[ "$_tg_rc" == "1" && -f "$RESULTS_DIR/suites.json" ]]; then
+      _tg_her=0
+      node "$SCRIPT_DIR/lib/inherited-reds.js" apply "$REPO_RUN" "$RESULTS_DIR/suites.json" || _tg_her=$?
+      if [[ "$_tg_her" == "0" ]]; then
+        echo "🟡 [test-gate] $SUITE_ONLY ya estaba roja en el nocturno de esta mañana: avisa y no frena, igual que en la validación del pedido" >&2
+        ( cd "$REPO" && TYCON_TEST_GATE_MARK=1 node "$MARKER_JS" run-check tests-suite -- node -e 'console.error(`test-gate: ${process.argv[1]} ya estaba roja en el nocturno: avisa, no frena`)' "$SUITE_ONLY" ) >&2 \
+          || echo "[test-gate] ⚠️  no pude dejar en verde el check tests-suite: queda como lo dejó la corrida" >&2
+        _tg_rc=0
+      fi
+    fi
     if [[ "$_tg_rc" == "0" ]]; then
       ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" tests-failed clear --path "$SUITE_ONLY" --repo "$REPO_STORY" ) \
         || echo "[test-gate] ⚠️  $SUITE_ONLY salió verde pero no pude sacarla de la lista de las que fallaron: la corrida completa la va a seguir pidiendo" >&2
