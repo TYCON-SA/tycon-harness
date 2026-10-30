@@ -376,7 +376,7 @@ if (!marker && matches(prompt, INTENT_PATTERNS)) {
       `No es un aviso: es un portón.\n\n` +
       `🔒 Este prompt es un pedido de STORY: no lo conviertas en un ad-hoc (el anti-pattern del 2026-08-24). ` +
       `Las instrucciones operativas del pedido (tasks en orden, tests scoped) NO son un procedimiento manual: se ` +
-      `pasan al pipeline como restricciones. El atajo (\`marker.js adhoc set\`) lo aprueba el dueño en la ventana ` +
+      `pasan al pipeline como restricciones. El atajo (\`marker.js adhoc set\`) lo aprueba una persona en la ventana ` +
       `de permiso, y sólo si él lo pide.\n\n` +
       `Ver SKILL.md sección "ANTI-PATTERN — NO bypass del orchestrator".` +
       freshSessionBlock,

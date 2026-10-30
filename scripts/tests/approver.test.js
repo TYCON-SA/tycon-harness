@@ -68,3 +68,43 @@ test('aprobador T4 Approver_NoSePuedeJuzgar_Vos', () => {
   assert.strictEqual(a.maintainers, false);
   assert.strictEqual(a.label, 'Lo aprobás vos');
 });
+
+// Los guiones del pipeline cuyos mensajes lee el agente. «El dueño» ahí dice quién firma sólo en los repos del arnés;
+// en los demás confunde, y «vos» lo leería el agente como propio. Dicen «una persona».
+const GUIONES = path.resolve(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts');
+// lo que nombra al dueño y no es un mensaje: el campo `quien` de la constancia del salteo (es del registro) y el dueño de
+// un candado, que es el proceso que lo tiene
+const NO_ES_MENSAJE = [/quien: 'dueño'/, /quien !== 'dueño'/, /no tiene dueño escrito/];
+
+/** Los textos entre comillas de un renglón de código (sin los comentarios de renglón entero). */
+function textos(renglon) {
+  if (/^\s*(\/\/|\*|\/\*)/.test(renglon)) return [];
+  return [...renglon.matchAll(/'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|`(?:[^`\\]|\\.)*`?/g)].map((m) => m[0]);
+}
+
+// aprobador T7 Mensajes_AlAgente_SinElDueno
+// 🔴 Falla con: un mensaje de los guiones del pipeline que todavía dice que algo lo firma «el dueño».
+test('aprobador T7 Mensajes_AlAgente_SinElDueno', () => {
+  const malos = [];
+  for (const dir of [GUIONES, path.join(GUIONES, 'lib')]) {
+    for (const f of fs.readdirSync(dir).filter((n) => n.endsWith('.js'))) {
+      fs.readFileSync(path.join(dir, f), 'utf8').split('\n').forEach((r, i) => {
+        if (NO_ES_MENSAJE.some((re) => re.test(r))) return;
+        if (textos(r).some((t) => /dueño/.test(t))) malos.push(`${path.relative(GUIONES, path.join(dir, f))}:${i + 1}`);
+      });
+    }
+  }
+  // el freno de seguridad: sus carteles también los lee el agente
+  const freno = path.resolve(__dirname, '..', 'hooks', 'safety-guard-pre.sh');
+  fs.readFileSync(freno, 'utf8').split('\n').forEach((r, i) => {
+    if (!/^\s*#/.test(r) && /"[^"]*dueño[^"]*"/.test(r)) malos.push(`safety-guard-pre.sh:${i + 1}`);
+  });
+  assert.deepStrictEqual(malos, [], 'mensajes que nombran al dueño');
+});
+
+// aprobador T8 Mensajes_LaCoordinadoraTampoco
+// 🔴 Falla con: el ok de guardar que la coordinadora no puede dar, con un mensaje que ya no dice que ella tampoco firma.
+test('aprobador T8 Mensajes_LaCoordinadoraTampoco', () => {
+  const t = fs.readFileSync(path.join(GUIONES, 'lib', 'save-ok.js'), 'utf8');
+  assert.match(t, /Lo firma una persona: ni el agente ni la coordinadora/);
+});

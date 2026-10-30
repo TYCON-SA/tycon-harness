@@ -3658,7 +3658,7 @@ function computeRunSize(args) {
     if (forzado.size !== 'liviana' || args.runSize.firmado) return forzado;
     const real = computeRunSize({ ...args, runSize: null });
     if (real.size === 'liviana') return forzado;
-    return { ...real, reason: `forzada a liviana sin la firma del dueño, y el cambio toca código: no vale · ${real.reason}`, forced_ignored: true };
+    return { ...real, reason: `forzada a liviana sin la firma de una persona, y el cambio toca código: no vale · ${real.reason}`, forced_ignored: true };
   }
   const content = args.story && fs.existsSync(args.story) ? readText(args.story) : '';
   const repo = args.repo && fs.existsSync(args.repo) ? args.repo : null;
@@ -4457,7 +4457,7 @@ function computeDeepReviewGate(args) {
   }
   const porque = (constancia && constancia.motivo) || 'no hay constancia firmada';
   r.skip_request = { camino: pedido, firmado: false, motivo: porque };
-  r.reason = `${pedido} es un pedido de saltear sin la firma del dueño (${porque}): el pase sigue el criterio de siempre · ${r.reason}`;
+  r.reason = `${pedido} es un pedido de saltear sin la firma de una persona (${porque}): el pase sigue el criterio de siempre · ${r.reason}`;
   return r;
 }
 
@@ -4619,7 +4619,7 @@ function criterioDelPase(args) {
         + 'archivos de código no hay nada que contar, y un «0 líneas» acá sería un número que nadie '
         + 'calculó — se usaría para saltear el pase adversarial sin haber mirado. Pasá los archivos '
         + 'del diff (ver la guía del pase adversarial §Lanzamiento temprano), o pedí el pase con '
-        + '`--deep-review` (saltearlo lo firma el dueño: `marker.js sign-adversarial-skip`).',
+        + '`--deep-review` (saltearlo lo firma una persona: `marker.js sign-adversarial-skip`).',
     };
   }
   const densidad = densidadDelDiff(args.repo, args.files, { allowMissing: Boolean(args.allowMissingFiles) });
@@ -4647,7 +4647,7 @@ function criterioDelPase(args) {
         + `(${densidad.noMedidos.map((n) => `${n.file}: ${n.motivo}`).join(' · ')}); lo medido da `
         + `${densidad.lineas} líneas agregadas (umbral ${densidad.umbral}), pero lo que no se midió no cuenta `
         + 'como 0. Pasá rutas que estén dentro de un repo git (el de la story o un companion), o pedí '
-        + 'el pase con `--deep-review` (saltearlo lo firma el dueño: `marker.js sign-adversarial-skip`).',
+        + 'el pase con `--deep-review` (saltearlo lo firma una persona: `marker.js sign-adversarial-skip`).',
     };
   }
   // Constancia de que se decidió A CIEGAS.
@@ -5552,7 +5552,7 @@ function paraOtraSesion(cmd, args, argv) {
   const pedida = i >= 0 ? argv[i + 1] : null;
   if (!pedida || pedida === PROPIA) return null;
   // sin variable de sesión y sin terminal no hay quién pida la firma para otra sesión
-  if (PROPIA === '_nosession' && !argv.includes('--terminal')) return '🛑 Sin variable de sesión, la firma para una sesión se da en la terminal del dueño (--terminal). No escribí nada.\n';
+  if (PROPIA === '_nosession' && !argv.includes('--terminal')) return '🛑 Sin variable de sesión, la firma para una sesión se da en la terminal de la persona (--terminal). No escribí nada.\n';
   const contar = cmd === 'check-count';
   if (contar && !args.trustRan) return '🛑 --for-session en check-count va sólo con --trust-ran: contar los revisores de otra sesión sin firma no es una firma. No escribí nada.\n';
   if (!contar && (!['smart-reloop', 'advisors'].includes(cmd) || !args.extraRound)) {
@@ -7131,7 +7131,7 @@ function main() {
       if (ej) {
         process.stderr.write(require('./lib/adversarial-skip.js').muestra({ story: ej.story, carpeta: ej.carpeta, ejecucion: ej.ejecucion, camino: pedido }).texto);
       } else {
-        process.stderr.write(`🔒 ${pedido} es un pedido de saltear el pase adversarial, no un salteo: sin la firma del dueño el pase corre.\n`
+        process.stderr.write(`🔒 ${pedido} es un pedido de saltear el pase adversarial, no un salteo: sin la firma de una persona el pase corre.\n`
           + '   Todavía no hay una corrida abierta de esta story: la firma se pide cuando el portón del pase lo mire dentro de la corrida (pipeline.js deep-review-gate), que dice los comandos.\n');
       }
     }

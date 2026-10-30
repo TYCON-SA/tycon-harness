@@ -105,7 +105,7 @@
         "model": "opus",
         "model_reason": "story pesada (2 señales model-hint) → hunters escalan a Opus (anunciar)",
         "early_launch": true,
-        "reason": "TYCON_NO_DEEP_REVIEW=1 es un pedido de saltear sin la firma del dueño (no hay una ejecución abierta de esta story): el pase sigue el criterio de siempre · risk-class NORMAL → deep-review corre (criterios NORMAL: superficie-chica)",
+        "reason": "TYCON_NO_DEEP_REVIEW=1 es un pedido de saltear sin la firma de una persona (no hay una ejecución abierta de esta story): el pase sigue el criterio de siempre · risk-class NORMAL → deep-review corre (criterios NORMAL: superficie-chica)",
         "skip_request": {
           "camino": "TYCON_NO_DEEP_REVIEW=1",
           "firmado": false,
