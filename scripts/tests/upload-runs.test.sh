@@ -1675,5 +1675,17 @@ subir_desde "${T}" "${T}/casa" "${T}/casa/arnes"
   && python3 -c "import json,sys; s=json.load(open(sys.argv[1]))['merges']['salteados']; assert s['en_la_historia']==1, s" "${T}/out.json" 2>/dev/null \
   && ok "T11 lo que ya está en la historia no sube como merge nuevo de la máquina" || mal "T11 historia: rc=${RC} merges=$(campo "${T}" merges) $(head -c 200 "${T}/err.txt")"
 
+# ── T35 · FormaRegistro_EscapaTodosLosMetacaracteres ── 🔴 Atrapa: escapar sólo el punto (un «+» o un paréntesis en el
+#    nombre de un registro dejaría pasar otros nombres, o no reconocería el propio).
+node -e '
+const { formaRegistro, FORMA_REGISTRO, REGISTROS } = require(process.argv[1]);
+const f = formaRegistro(["a+b(1).log"]);
+const bien = f.test("a+b(1).log.gz") && !f.test("aab1.log.gz") && !f.test("aaab(1).log.gz") && !f.test("a+b(1)xlog.gz");
+const todos = REGISTROS.every((r) => FORMA_REGISTRO.test(`${r}.gz`)) && !FORMA_REGISTRO.test("gatesxlog.gz");
+process.exit(bien && todos ? 0 : 1);
+' "${SUBIR}"
+RC=$?
+[ "${RC}" -eq 0 ] && ok "T35 la forma de los registros escapa todos los metacaracteres y reconoce los de siempre" || mal "T35 formaRegistro: rc=${RC}"
+
 echo
 [ "${FALLOS}" -eq 0 ] && { echo "subir-corridas: todo verde"; exit 0; } || { echo "${FALLOS} fallo(s)"; exit 1; }
