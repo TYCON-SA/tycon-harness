@@ -1531,9 +1531,51 @@
       "requiere": []
     },
     {
-      "__nota": "los escapes del freno de seguridad (y los de la revisión de producción y de nombres) los autoriza la persona con su frase en el chat; el agente no se los pone solo.",
+      "__nota": "Parte 1 de 8 de tests/safety-escape.test.js (ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). Los escapes del freno de seguridad (y los de la revisión de producción y de nombres) los autoriza la persona con su frase en el chat; el agente no se los pone solo.",
       "raiz": "arnes",
-      "ruta": "tests/safety-escape.test.js",
+      "ruta": "tests/safety-escape.p1.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 2 de 8 de tests/safety-escape.test.js (ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). Los escapes del freno de seguridad (y los de la revisión de producción y de nombres) los autoriza la persona con su frase en el chat; el agente no se los pone solo.",
+      "raiz": "arnes",
+      "ruta": "tests/safety-escape.p2.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 3 de 8 de tests/safety-escape.test.js (ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). Los escapes del freno de seguridad (y los de la revisión de producción y de nombres) los autoriza la persona con su frase en el chat; el agente no se los pone solo.",
+      "raiz": "arnes",
+      "ruta": "tests/safety-escape.p3.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 4 de 8 de tests/safety-escape.test.js (ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). Los escapes del freno de seguridad (y los de la revisión de producción y de nombres) los autoriza la persona con su frase en el chat; el agente no se los pone solo.",
+      "raiz": "arnes",
+      "ruta": "tests/safety-escape.p4.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 5 de 8 de tests/safety-escape.test.js (ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). Los escapes del freno de seguridad (y los de la revisión de producción y de nombres) los autoriza la persona con su frase en el chat; el agente no se los pone solo.",
+      "raiz": "arnes",
+      "ruta": "tests/safety-escape.p5.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 6 de 8 de tests/safety-escape.test.js (ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). Los escapes del freno de seguridad (y los de la revisión de producción y de nombres) los autoriza la persona con su frase en el chat; el agente no se los pone solo.",
+      "raiz": "arnes",
+      "ruta": "tests/safety-escape.p6.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 7 de 8 de tests/safety-escape.test.js (ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). Los escapes del freno de seguridad (y los de la revisión de producción y de nombres) los autoriza la persona con su frase en el chat; el agente no se los pone solo.",
+      "raiz": "arnes",
+      "ruta": "tests/safety-escape.p7.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 8 de 8 de tests/safety-escape.test.js (ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). Los escapes del freno de seguridad (y los de la revisión de producción y de nombres) los autoriza la persona con su frase en el chat; el agente no se los pone solo.",
+      "raiz": "arnes",
+      "ruta": "tests/safety-escape.p8.test.js",
       "requiere": []
     },
     {

@@ -12,7 +12,8 @@
  * Correr: node --test scripts/tests/safety-escape.test.js
  */
 
-const test = require('node:test');
+// Partida en suites de menos de 45 s (scripts/tests/lib/suite-parts.js): corrida a mano corre todo.
+const test = require('./lib/suite-parts.js').test;
 const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
