@@ -77,8 +77,8 @@ frontmatter (`git log`) y ofrecer: **retomar** (resumen de engram, `git status`,
   vigente, sólo se pierde la detección entre sesiones.
 - **PIPE-C6 — modo autónomo** (viene PRENDIDO; se apaga con `--no-autonomous` o `TYCON_PIPELINE_NO_AUTONOMOUS=1`, que
   gana sobre cualquier flag): el Stop-hook no deja terminar el turno con un control mecánico registrado en rojo
-  (build, tests, revisores, DoD), lo que fuerza el ciclo prueba-arreglo-prueba. Frenos: 6 iteraciones y 3 vueltas sin
-  avance escalan a la persona; pánico: `touch ~/.claude/.tycon-pipeline/STOP_AUTONOMY` (o `STOP_AUTONOMY=1`). NO
+  (build, tests, revisores, DoD), lo que fuerza el ciclo prueba-arreglo-prueba. Frenos: 6 iteraciones, o la primera
+  vuelta que no resuelve ninguno de los fallos de la anterior, escalan a la persona con el rojo tal cual; pánico: `touch ~/.claude/.tycon-pipeline/STOP_AUTONOMY` (o `STOP_AUTONOMY=1`). NO
   automatiza lo que decide una persona: aprobar el plan, aprobar o eximir hallazgos, `git commit`, `git push` ni un
   cambio de alcance firmado. Si `marker.js set-autonomous true` falla, avisar y seguir en modo con persona.
 - **Tamaño de la ejecución**: `start --brief` trae `tamano`, `tamano_por`, `estimado_min` y `estimado_de` (liviana =

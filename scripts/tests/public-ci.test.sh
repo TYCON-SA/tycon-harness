@@ -82,6 +82,9 @@ is() { if [ "$2" = "$3" ]; then ok "$1"; else no "$1 — esperaba «${2}» y dio
 # has <etiqueta> <archivo> <texto literal> · lacks: lo contrario
 has() { if grep -qF -- "$3" "$2" 2>/dev/null; then ok "$1"; else no "$1 — no aparece «${3}» en ${2#${T}/}: $(tail -n 6 "$2" 2>/dev/null | tr '\n' ' ')"; fi; }
 lacks() { if grep -qF -- "$3" "$2" 2>/dev/null; then no "$1 — aparece «${3}» en ${2#${T}/}"; else ok "$1"; fi; }
+# ninguna suite anotó su renglón: mira el comienzo de cada renglón, no las rutas de los otros (la carpeta temporal del
+# portón se llama suite-tmps-…, y aparece adentro de los renglones de las portables)
+no_suite_ran() { if grep -qE '^suite-' "$2" 2>/dev/null; then no "$1 — una suite anotó su renglón en ${2#${T}/}: $(grep -E '^suite-' "$2" | head -n 1)"; else ok "$1"; fi; }
 # los pasos, en el orden en que salieron (sólo las líneas de veredicto: «✅ public-ci: <paso> …» / «❌ public-ci: <paso> …»)
 steps_of() { sed -n 's/^[^ ][^ ]* public-ci: \([a-z][a-z-]*\) .*$/\1/p' "$1" | tr '\n' ' ' | sed 's/ $//'; }
 # las llamadas que anotaron los guiones de mentira, sin las de las suites (que corren a la vez y no tienen orden)
@@ -408,7 +411,7 @@ is "T21 sin skills a la vista sale 1" 1 "${RC}"
 has "T21 sin skills a la vista las suites son «no pude correr»" "${R}.out" "❌ public-ci: agent-skills-suites — no pude correr: "
 has "T21 sin skills a la vista el motivo es que no están (la biblioteca contestó, y ahí no hay skills)" "${R}.out" "no pude correr: no encuentro las skills"
 lacks "T21 sin skills a la vista no se dice «no pude resolver»: eso es otra cosa" "${R}.out" "no pude resolver la carpeta de skills"
-lacks "T21 sin skills a la vista no corre ninguna suite" "${R}/.calls" "suite-"
+no_suite_ran "T21 sin skills a la vista no corre ninguna suite" "${R}/.calls"
 if [ -f "${R}.ci/agent-skills-suites.tsv" ]; then no "T21 sin skills a la vista quedó un agent-skills-suites.tsv (de la corrida anterior): un veredicto viejo no es un veredicto"
 else ok "T21 una ejecución no deja en pie el .tsv de la anterior"; fi
 # la biblioteca que ubica las skills NO PUDO contestar (su vecina está y rompe al cargarse): no es «no hay skills». El
@@ -424,7 +427,7 @@ is "T21 con la biblioteca de las skills rota sale 1" 1 "${RC}"
 has "T21 con la biblioteca rota el guion dice que no pudo resolver, con la causa" "${R}.out" "public-ci: no pude resolver la carpeta de skills: biblioteca rota a propósito"
 has "T21 con la biblioteca rota las suites son «no pude correr» por esa causa" "${R}.out" "❌ public-ci: agent-skills-suites — no pude correr: no pude resolver la carpeta de skills: biblioteca rota a propósito"
 lacks "T21 con la biblioteca rota no se dice «no encuentro las skills»: no es que no estén" "${R}.out" "no encuentro las skills"
-lacks "T21 con la biblioteca rota no corre ninguna suite" "${R}/.calls" "suite-"
+no_suite_ran "T21 con la biblioteca rota no corre ninguna suite" "${R}/.calls"
 is "T21 con la biblioteca rota los siete pasos figuran igual (no corta, no saltea)" "${SEVEN}" "$(steps_of "${R}.out")"
 # cero suites que pidan exactamente agent-skills: cero no es verde
 variant nosuites; printf '%s\n' '{ "diarias": [ { "raiz": "arnes", "ruta": "tests/portable.test.js", "requiere": [] } ], "semanales": [] }' > "${R}/scripts/tests/suites.json"
@@ -505,7 +508,7 @@ variant partsuites; export TYCON_PUBLIC_CI_PART=suites-2-of-3; run_ci --range 'H
 is "T24 (a) una parte de las suites, todo verde, sale 0" 0 "${RC}"
 is "T24 (a) la parte suites-2-of-3 corre sólo las portables" "portable-suites" "$(steps_of "${R}.out")"
 is "T24 (a) …con su parte: TYCON_PORTABLE_SHARD=2/3, y nada más" "portable-suites skills=${R}/skills guides=${R} git=${R} shard=2/3" "$(calls_of "${R}" | tr '\n' '|' | sed 's/|$//')"
-lacks "T24 (a) …sin las suites que piden agent-skills (van en checks)" "${R}/.calls" "suite-"
+no_suite_ran "T24 (a) …sin las suites que piden agent-skills (van en checks)" "${R}/.calls"
 is "T24 (a) el resumen dice que es sólo una parte" "✅ public-ci: 1 pasos verdes (sólo la parte suites-2-of-3)" "$(tail -n 1 "${R}.out")"
 # shellcheck disable=SC2086
 is "T24 (a) checks, el banco y una parte de las suites son los once pasos de la corrida entera, ninguno dos veces" \
