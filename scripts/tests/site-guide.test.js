@@ -427,3 +427,39 @@ test('2.76-Guia_SitioDemo @story-2.76 @ac-11 — qué es, qué no hace, cómo se
   // el instalador trae la fase que la guía nombra
   assert.match(fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'deploy', 'azure-container-apps.js'), 'utf8'), /FASES = \['ambiente', 'sitio', 'demo'/);
 });
+
+// T26 2.79-Guia_PestanasYBloquesComoElSitio @story-2.79 @ac-23
+// 🔴 Falla con: la Ayuda contando «cinco pestañas» o «tres bloques» que el sitio ya no tiene, sin «Ya decididas», o
+//    con fuera del recorrido «otra vuelta de revisores» en vez de «Cerrar la historia» y «En cualquier paso».
+test('T26 2.79-Guia_PestanasYBloquesComoElSitio @story-2.79 @ac-23 — pestañas, bloques y pasos aparte con los nombres del sitio, en los dos idiomas', () => {
+  const { t } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  // la sub-sección `### <título>` hasta la próxima `### ` o `## `
+  const sub = (txt, titulo) => { const i = txt.indexOf(`\n### ${titulo}`); if (i < 0) return null; const r = txt.slice(i + 5); const j = r.search(/\n##+ /); return j < 0 ? r : r.slice(0, j); };
+  // las pestañas de quien mantiene y las de una persona, como las arman las rutas del sitio (server.js y tabs/*.js)
+  const MANTIENE_VE = ['inicio', 'corridas', 'mantenimiento', 'proyectos', 'arnes', 'comoTrabaja', 'configuracion', 'ayuda'];
+  const PERSONA_VE = ['inicio', 'corridas', 'proyectos', 'ayuda'];
+  const LADOS = [
+    { idioma: 'es', guia: GUIA, ingreso: 'El primer ingreso', mant: 'Mantenimiento', como: 'Cómo trabaja', viejo: /cinco pestañas|tres pestañas|tres bloques|otra vuelta de revisores/i },
+    { idioma: 'en', guia: GUIA_EN, ingreso: 'Signing in for the first time', mant: 'Maintenance', como: 'How it works', viejo: /five tabs|three tabs|three blocks|another round of reviewers/i },
+  ];
+  for (const l of LADOS) {
+    const g = leer(l.guia);
+    const ingreso = seccion(g, l.ingreso).replace(/\s+/g, ' ');
+    const mant = sub(g, l.mant).replace(/\s+/g, ' ');
+    const como = sub(g, l.como).replace(/\s+/g, ' ');
+    for (const [nombre, s] of [['ingreso', ingreso], ['mantenimiento', mant], ['cómo trabaja', como]]) assert.doesNotMatch(s, l.viejo, `${l.idioma} · ${nombre}: sin lo que el sitio ya no tiene`);
+    const renglon = (rx) => (ingreso.match(rx) || [''])[0];
+    const deMantiene = renglon(l.idioma === 'es' ? /\*\*Quien mantiene\*\*[^-]*/ : /\*\*A maintainer\*\*[^-]*/);
+    const dePersona = renglon(l.idioma === 'es' ? /\*\*Una persona confirmada\*\*[^-]*/ : /\*\*A confirmed person\*\*[^-]*/);
+    for (const id of MANTIENE_VE) assert.ok(deMantiene.includes(t(l.idioma, `pestana.${id}`)), `${l.idioma}: quien mantiene ve «${t(l.idioma, `pestana.${id}`)}»: ${deMantiene}`);
+    for (const id of PERSONA_VE) assert.ok(dePersona.includes(t(l.idioma, `pestana.${id}`)), `${l.idioma}: una persona ve «${t(l.idioma, `pestana.${id}`)}»: ${dePersona}`);
+    for (const id of MANTIENE_VE.filter((x) => !PERSONA_VE.includes(x))) assert.ok(!dePersona.includes(t(l.idioma, `pestana.${id}`)), `${l.idioma}: una persona no ve «${t(l.idioma, `pestana.${id}`)}»`);
+    // los bloques de Mantenimiento, con su título del sitio y en el orden de la página
+    const bloques = ['mant.toca.titulo', 'mant.espera.titulo', 'mant.decididas.titulo', 'mant.marcha.titulo'].map((k) => t(l.idioma, k, { n: '' }).replace(/\s*\(\)$/, ''));
+    const donde = bloques.map((b) => mant.indexOf(`**${b}**`));
+    assert.ok(donde.every((i) => i >= 0), `${l.idioma}: Mantenimiento nombra ${bloques.join(', ')} en negrita`);
+    assert.deepStrictEqual([...donde].sort((a, b) => a - b), donde, `${l.idioma}: en el orden de la página`);
+    // los pasos aparte de Cómo trabaja
+    for (const k of ['paso.close-work-item', 'comoTrabaja.fueraDelRecorrido', 'comoTrabaja.enCualquierPaso']) assert.ok(como.includes(t(l.idioma, k)), `${l.idioma}: Cómo trabaja nombra «${t(l.idioma, k)}»`);
+  }
+});

@@ -713,7 +713,7 @@ function ubicarTranscripcion(sessionId, projectsDir) {
   }
   return {
     estado: 'borrada',
-    motivo: `la conversación de esta ejecución ya no está (Claude Code las borra según cleanupPeriodDays); se buscó ${sessionId}.jsonl en las ${total} carpetas de conversaciones`,
+    motivo: `la conversación de esta ejecución ya no está (Claude Code borra las conversaciones viejas); se buscó ${sessionId}.jsonl en las ${total} carpetas de conversaciones`,
   };
 }
 

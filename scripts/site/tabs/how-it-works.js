@@ -125,7 +125,10 @@ function renderPage(model, { idioma, publicRepo, version }) {
     const activos = o.packs.active && o.packs.active.length ? o.packs.active.join(', ') : T('comoTrabaja.ninguno');
     const r = o.rules || {};
     const valor = (x) => (x && x.value != null ? String(x.value) : T('comoTrabaja.ninguno'));
-    const reglas = [T('comoTrabaja.reglaNombres', { valor: valor(r.test_names) }), T('comoTrabaja.reglaPantallas', { valor: valor(r.screen_test) }), T('comoTrabaja.reglaIdioma', { valor: valor(r.ui_language) })].join(' · ');
+    // la regla de pantallas con las palabras del selector de Configuración; sin elegir, la de fábrica
+    const OPCION_PANTALLAS = { ui: 'pantalla.tecTodas', react: 'pantalla.tecSoloReact', off: 'pantalla.tecNinguna' };
+    const pantallas = (x) => (x && x.source === 'por_defecto' ? T('pantalla.tecSinDeclararTodas') : x && OPCION_PANTALLAS[x.value] ? T(OPCION_PANTALLAS[x.value]) : valor(x));
+    const reglas = [T('comoTrabaja.reglaNombres', { valor: valor(r.test_names) }), T('comoTrabaja.reglaPantallas', { valor: pantallas(r.screen_test) }), T('comoTrabaja.reglaIdioma', { valor: valor(r.ui_language) })].join(' · ');
     const problemas = (o.problems || []).length ? `<div class="ct-fila"><b>${esc(T('comoTrabaja.orgProblemas'))}</b><span>${o.problems.map(esc).join(' · ')}</span></div>` : '';
     franja = `<section class="ct-org card" aria-label="${esc(T('comoTrabaja.orgTitulo'))}"><h2>${esc(T('comoTrabaja.orgTitulo'))}</h2><div class="ct-fila"><b>${esc(T('comoTrabaja.orgIntegraciones'))}</b><span>${integ} <span class="ct-nota">${esc(T('comoTrabaja.orgIntegracionesAyuda'))} ${esc(T('comoTrabaja.telegramDeCadaMaquina'))}</span></span></div><div class="ct-fila"><b>${esc(T('comoTrabaja.orgPaquetes'))}</b><span>${esc(activos)}</span></div><div class="ct-fila"><b>${esc(T('comoTrabaja.orgReglas'))}</b><span>${esc(reglas)}</span></div>${problemas}</section>`;
   } else {
@@ -178,7 +181,7 @@ function renderPage(model, { idioma, publicRepo, version }) {
     for (const r of s.reviewers.packs) { if (!porPaquete.has(r.pack)) porPaquete.set(r.pack, []); porPaquete.get(r.pack).push(r); }
     for (const [pack, rs] of porPaquete) {
       const items2 = rs.map((r) => {
-        const cuando = r.when && typeof r.when.detection === 'string' && Object.keys(r.when).length === 1 ? (() => { try { return T(`bandera.${r.when.detection}`); } catch { return r.when.detection; } })() : (r.group === 'base' && !r.when ? T('comoTrabaja.grupoBase') : T('comoTrabaja.condicionEscrita'));
+        const cuando = r.when && typeof r.when.detection === 'string' && Object.keys(r.when).length === 1 ? (() => { try { return T(`bandera.${r.when.detection}`); } catch { return r.when.detection; } })() : (r.group === 'base' && !r.when ? T('comoTrabaja.grupoBase') : T(r.origin === 'organization' && r.editable ? 'comoTrabaja.condicionEscritaEditable' : 'comoTrabaja.condicionEscrita'));
         const chips = [r.origin === 'organization' ? deLaOrg : delArnes, r.active === false ? chip('off', T('comoTrabaja.noActivo')) : ''];
         const acciones = r.origin === 'organization'
           ? (r.editable ? `<button type="button" class="btn" data-action="edit" data-pack="${esc(pack)}" data-agent="${esc(r.agent)}" data-use="${esc(r.use)}" aria-expanded="false">${esc(T('comoTrabaja.editar'))}</button>` : `<span class="ct-nota">${esc(porque(r))}</span>`)

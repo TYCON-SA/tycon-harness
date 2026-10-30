@@ -525,6 +525,50 @@ test('8.101-Poda_SinExamenComoHoy_ConExamenSeVe', () => {
     for (const id of ['reglas_candidatas', 'reglas_probadas']) {
       assert.strictEqual(sin[id].estado, 'no_medido', `${id} sin examen`);
       assert.strictEqual(sin[id].valor, null);
+      // 2.79 AC 32: el motivo dice que falta un examen del banco que se pueda usar, no «la fuente no trae este dato»
+      assert.strictEqual(sin[id].motivo, 'examen_inutilizable', `${id}: el motivo del examen`);
     }
   } finally { fs.rmSync(raiz, { recursive: true, force: true }); }
+});
+
+// T22 2.79-SinProd_MotivoNombraLaFuente @story-2.79 @ac-19
+// 🔴 Falla con: la ficha «Productos sin pipeline de producción» diciendo «la fuente no trae este dato» cuando falta
+//    pipeline-debt.json, sin llevar a Configuración → Despliegues, o sin contar con los despliegues que ya dicen qué
+//    productos no tienen producción.
+test('T22 2.79-SinProd_MotivoNombraLaFuente @story-2.79 @ac-19 — sin la deuda, el motivo nombra el archivo y lleva a Despliegues; con despliegues, cuenta', () => {
+  const D = require(TABLERO);
+  const dash = tmp('sinprod-dash-');
+  const raiz = tmp('sinprod-raiz-');
+  try {
+    fs.mkdirSync(path.join(raiz, 'scripts', 'nightly', 'dependencies'), { recursive: true });
+    fs.writeFileSync(path.join(raiz, 'scripts', 'nightly', 'dependencies', 'repos.json'), JSON.stringify({ repos: [
+      { producto: 'Alfa', ado: 'Alfa/Back' }, { producto: 'Beta', ado: 'Beta/Back' }, { producto: 'Gama', ado: 'Gama/Back' }] }));
+    const def = fichas.FICHAS.find((x) => x.id === 'sin_pipeline_de_prod');
+    const ficha = () => fichas.proyectar(def, D.colectar({ dir: dash, raiz }).paneles.extra.sin_prod, {});
+    // sin pipeline-debt.json ni despliegues declarados: el motivo dice qué archivo falta y adónde ir
+    let f = ficha();
+    assert.strictEqual(f.estado, 'no_medido');
+    assert.strictEqual(f.motivo, 'sin_deuda_pipelines');
+    const html = fichas.tile(f);
+    assert.match(html, /pipeline-debt\.json/, 'nombra el archivo que falta');
+    assert.match(html, /href="\/configuracion#seccion-despliegues"/, 'lleva a Configuración → Despliegues');
+    assert.doesNotMatch(html, /la fuente no trae este dato/);
+    // con despliegues en operations.json: Beta sin producción y Gama sin declarar cuentan; Alfa tiene la suya
+    fs.writeFileSync(path.join(raiz, 'operations.json'), JSON.stringify({ deployments: { provider: 'azure', products: {
+      alfa: { staging: [{ pipeline: 'Alfa/CD', stages: ['stg'] }], production: [{ pipeline: 'Alfa/CD', stages: ['prod'] }] },
+      Beta: { staging: [{ pipeline: 'Beta/CD', stages: ['stg'] }] } } } }));
+    f = ficha();
+    assert.strictEqual(f.estado, 'medido', JSON.stringify(f));
+    assert.strictEqual(f.valor, 2, 'Beta sin producción y Gama sin despliegues declarados');
+    assert.strictEqual(f.total, 3);
+    const det = D.colectar({ dir: dash, raiz }).paneles.extra.sin_prod.detalle;
+    assert.match(det, /sin producción: Beta/, 'el declarado sin producción, nombrado aparte');
+    assert.match(det, /sin declarar en Despliegues: Gama/, 'el que no se declaró, nombrado aparte');
+    // con despliegues declarados pero sin la lista de productos, lo que falta es la lista, no los despliegues
+    fs.writeFileSync(path.join(raiz, 'scripts', 'nightly', 'dependencies', 'repos.json'), JSON.stringify({ repos: [{ ruta: 'a' }] }));
+    const sinLista = D.colectar({ dir: dash, raiz }).paneles.extra.sin_prod;
+    assert.strictEqual(sinLista.estado, 'no_medido');
+    assert.doesNotMatch(sinLista.motivo, /no hay despliegues declarados|pipeline-debt/, sinLista.motivo);
+    assert.match(sinLista.motivo, /producto/, 'nombra la lista de productos que falta');
+  } finally { fs.rmSync(dash, { recursive: true, force: true }); fs.rmSync(raiz, { recursive: true, force: true }); }
 });

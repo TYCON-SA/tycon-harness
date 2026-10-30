@@ -5357,3 +5357,151 @@ test('Configuracion_AplicaSolo_EncabezadoSinOtraPersona', async () => {
     });
   }
 });
+
+// ── el mismo dato dice lo mismo en Configuración ────────────────────────────────────────────────────
+
+// T15 2.79-Versiones_AlDia_NombraLaVersionDeReferencia @story-2.79 @ac-12
+// 🔴 Falla con: «al día» sin decir contra qué versión se compara.
+test('T15 2.79-Versiones_AlDia_NombraLaVersionDeReferencia @story-2.79 @ac-12 — «al día: igual o más nueva que la de este sitio (X)»', () => {
+  const espejo = tmp('site-config-aldia-');
+  const d = path.join(espejo, 'maq-n', 'registros', 'v20261015T100000000Z');
+  fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(path.join(d, 'place.json'), JSON.stringify({ install: { version: '2026.10.16.2' } }));
+  const [f] = ORG.versionesDeMaquinas({ espejo, versionImagen: '2026.10.15.48', ahora: Date.parse('2026-10-16T12:00:00Z') });
+  assert.strictEqual(f.estado, 'al_dia');
+  assert.strictEqual(f.texto, 'al día: igual o más nueva que la de este sitio (2026.10.15.48)');
+});
+
+// T16 2.79-Versiones_MaquinaSinEjecuciones_TextoNoDiceUltimaEjecucion @story-2.79 @ac-13
+// 🔴 Falla con: «la que informó con su última ejecución» para una máquina que informa sin ejecuciones.
+test('T16 2.79-Versiones_MaquinaSinEjecuciones_TextoNoDiceUltimaEjecucion @story-2.79 @ac-13 — la versión es la de la subida diaria', () => {
+  const { t } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  assert.match(t('es', 'pantalla.laQueInformoCadaUna'), /última subida diaria, con o sin ejecuciones/);
+  assert.doesNotMatch(t('es', 'pantalla.laQueInformoCadaUna'), /última ejecución/);
+  assert.match(t('en', 'pantalla.laQueInformoCadaUna'), /latest daily upload, with or without runs/);
+});
+
+// T23 2.79-Paridad_CuentaProductosNoRepos @story-2.79 @ac-20
+// 🔴 Falla con: «N productos» contando repos cuando una entrada de la lista no trae `producto`.
+test('T23 2.79-Paridad_CuentaProductosNoRepos @story-2.79 @ac-20 — «repos» cuando falta el producto; con todos, el número de productos', async () => {
+  const resultado = { estado: 'medido', fecha: '2026-10-16', divergencias: [], declaradas: [], vencidas: [], por_ruta: [] };
+  const sinProducto = ORG.paridadPorProducto({ lista: { grupos: { web: { repos: [{ ruta: 'a/front', producto: 'A' }, { ruta: 'b/front' }] } } }, resultado, hoy: '2026-10-16' });
+  assert.strictEqual(sinProducto.unidad, 'repos');
+  const conProducto = ORG.paridadPorProducto({ lista: { grupos: { web: { repos: [{ ruta: 'a/front', producto: 'A' }, { ruta: 'a/back', producto: 'A' }, { ruta: 'b/front', producto: 'B' }] } } }, resultado, hoy: '2026-10-16' });
+  assert.strictEqual(conProducto.unidad, 'productos');
+  assert.strictEqual(conProducto.productos.length, 2, 'dos productos, no tres repos');
+  const seccion = (vista) => ({ id: 'paridad', titulo: 'paridad', repo: 'operaciones', estado: 'cargado', soloLectura: false, motivo: null, borrador: {}, problems: [], avisos: [], vista });
+  const p = await pantallaFalsa([seccion(sinProducto)]);
+  assert.strictEqual(p.error, null);
+  assert.match(p.textoDe('paridad'), /Los 2 repos coinciden con los demás/);
+  assert.doesNotMatch(p.textoDe('paridad'), /productos coinciden/);
+  const q = await pantallaFalsa([seccion(conProducto)]);
+  assert.match(q.textoDe('paridad'), /Los 2 productos coinciden con los demás/);
+});
+
+// T25 2.79-Repos_EspacioYPorciento20_UnaFila @story-2.79 @ac-21 @ac-22
+// 🔴 Falla con: el mismo repo dos veces (con espacio y con %20), o Productos sin la ruta de cada entrada ni el aviso de
+//    las repetidas; o dos carpetas o dos tipos del mismo repo marcados como repetidos.
+test('T25 2.79-Repos_EspacioYPorciento20_UnaFila @story-2.79 @ac-21 @ac-22 — una fila por repo; Productos con su ruta y las repetidas avisadas', async () => {
+  const ops = clon({ 'operations.json': opsBase(), 'scripts/nightly/dependencies/repos.json': { repos: [
+    { producto: 'Zeta Pago', ruta: 'Zeta/Back', ado: 'Zeta Pago/back', tipo: 'nuget' },
+    { producto: 'Zeta Pago', ruta: 'Zeta/Back', ado: 'Zeta%20Pago/back', tipo: 'nuget' },
+    { producto: 'Zeta Pago', ruta: 'Zeta/Back', ado: 'Zeta Pago/back', tipo: 'npm' },
+    { producto: 'Zeta Pago', ruta: 'Zeta/Back', ado: 'Zeta Pago/back', tipo: 'nuget', subruta: 'web' },
+  ] } });
+  // la sección de tecnología trae la lista de repos sólo con el repo del perfil configurado
+  const perfil = clon({ 'team-repos.json': TR_BASE, 'team-layer.json': { requires: { harness: `>= ${ORG.TEAM_REPOS_SINCE}` } } });
+  const remotos = { operaciones: { platform: 'azure', org: 'acme', project: 'Ops', repo: 'ops', web: 'https://dev.azure.example/acme/Ops/_git/ops' } };
+  await conPestana({ fuentes: fuentesCon({ ops, perfil }), env: { SITE_PROFILE_REPO: 'https://git.acme.example/perfil.git', SITE_PROFILE_TOKEN: ['tok', 'perfil'].join('-') }, opciones: { remotos } }, async ({ h, entrar }) => {
+    const r = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json;
+    const tec = r.secciones.find((s) => s.id === 'tecnologia');
+    const zeta = tec.extras.repos.filter((x) => /zeta/i.test(x.project || ''));
+    assert.deepStrictEqual(zeta.map((x) => `${x.project}/${x.repo}`), ['Zeta Pago/back'], 'una sola fila, sin %20');
+    const prods = r.productos.filter((p) => p.producto === 'Zeta Pago');
+    assert.deepStrictEqual(prods.map((p) => [p.ruta, p.repo, Boolean(p.repetida)]), [
+      ['Zeta/Back', 'Zeta Pago/back', false], ['Zeta/Back', 'Zeta Pago/back', true], ['Zeta/Back', 'Zeta Pago/back', false], ['Zeta/Back', 'Zeta Pago/back', false]],
+    'la segunda repite ruta, carpeta y tipo; otro tipo u otra carpeta no es repetida');
+  });
+  // un nombre con un «%» ilegible queda anotado una vez y en un solo renglón, aunque traiga un salto de línea
+  const registro = [];
+  const opsRaro = clon({ 'operations.json': opsBase(), 'scripts/nightly/dependencies/repos.json': { repos: [
+    { producto: 'Raro', ruta: 'Raro/Back', ado: 'Raro%zz\nfalso: línea/back', tipo: 'npm' }] } });
+  await conPestana({ fuentes: fuentesCon({ ops: opsRaro }), opciones: { log: (l) => registro.push(l) } }, async ({ h, entrar }) => {
+    await h.pedir('/api/config', { cookie: await entrar(LEAD) });
+    await h.pedir('/api/config', { cookie: await entrar(LEAD) });
+  });
+  const raros = registro.filter((l) => /trae un «%» que no se pudo leer/.test(l));
+  assert.strictEqual(raros.length, 1, `una vez por nombre: ${raros.length}`);
+  assert.doesNotMatch(raros[0], /[\n\r]/, 'el nombre no parte el renglón del registro');
+  // en la pantalla: la ruta de cada entrada y el aviso de la repetida
+  const p = await pantallaConPestanas({ secciones: [], extras: { productos: [{ producto: 'Zeta Pago', origen: 'dependencias', ruta: 'Zeta/Back', repo: 'Zeta Pago/back', activo: true, repetida: false }, { producto: 'Zeta Pago', origen: 'dependencias', ruta: 'Zeta/Back', repo: 'Zeta Pago/back', activo: true, repetida: true }] } });
+  const texto = p.creados.map((n) => n.textContent || '').join(' | ');
+  assert.match(texto, /Zeta\/Back/, 'la ruta de cada entrada');
+  assert.match(texto, /Zeta Pago · back/, 'el repo con el mismo rótulo «producto · repo» de Proyectos y Ejecuciones');
+  assert.doesNotMatch(texto, /Zeta Pago\/back/, 'sin la forma «proyecto/repo» de Azure');
+  assert.match(texto, /repetida: repite ruta, carpeta y tipo de otra entrada/);
+});
+
+// T31 2.79-Umbrales_ParaQue_NoDiceSoloMirar @story-2.79 @ac-28
+// 🔴 Falla con: el «Para qué» de Umbrales diciendo «Sólo se puede mirar» a quien puede cambiarlo.
+test('T31 2.79-Umbrales_ParaQue_NoDiceSoloMirar @story-2.79 @ac-28 — «sólo mirar» sólo para quien no puede cambiarlo', async () => {
+  const umbrales = (soloLectura) => ({ ...secOps('umbrales', { thresholds: {} }), lector: 'thresholds', soloLectura, motivo: soloLectura ? 'tu nocturno todavía no lee este archivo' : null });
+  const mantiene = await pantallaFalsa([umbrales(false)]);
+  assert.strictEqual(mantiene.error, null);
+  assert.match(mantiene.textoDe('umbrales'), /Para qué: a partir de qué valor/);
+  assert.doesNotMatch(mantiene.textoDe('umbrales'), /s[óo]lo se puede mirar|se puede mirar, pero no cambiar/i);
+  const lectura = await pantallaFalsa([umbrales(true)]);
+  assert.match(lectura.textoDe('umbrales'), /se puede mirar, pero no cambiar/);
+});
+
+// T32 2.79-Revisores_UnaVezPorPaqueteYDelArnesConNombre @story-2.79 @ac-29
+// 🔴 Falla con: un revisor dos veces en su paquete (y contado dos veces), o uno del arnés rotulado «propio de tu organización».
+test('T32 2.79-Revisores_UnaVezPorPaqueteYDelArnesConNombre @story-2.79 @ac-29 — una vez con aviso; el del arnés no es «propio»', async () => {
+  const sec = { ...secModelos({}), extras: { hoy: MOD_DEFAULTS, revisores: [], porPaquete: [
+    { paquete: null, revisores: [{ id: 'arnes-sin-nombre-x', fabrica: null }] },
+    { paquete: 'clientes', revisores: [{ id: 'clientes-revisor', fabrica: null }, { id: 'clientes-revisor', fabrica: null }] },
+  ] } };
+  const p = await compacta(sec);
+  const t = p.textoDe('modelos');
+  assert.strictEqual((t.match(/clientes-revisor/g) || []).length, 1, 'una vez');
+  assert.match(t, /el paquete lo nombra dos veces: se muestra una/);
+  assert.match(t, /Ver los 2 revisores|2 revisores/, 'el total no lo cuenta dos veces');
+  assert.doesNotMatch(t, /arnes-sin-nombre-x \| revisor propio de tu organización/);
+  assert.match(t, /revisor del arnés \(sin nombre en castellano\)/);
+});
+
+// T33 2.79-Personas_DosFilasMismoDueno_Avisa @story-2.79 @ac-30
+// 🔴 Falla con: dos correos que comparten una máquina, cada uno en su fila sin ningún aviso.
+test('T33 2.79-Personas_DosFilasMismoDueno_Avisa @story-2.79 @ac-30 — dos correos que comparten máquina: pueden ser la misma persona', async () => {
+  const OTRO = 'dev.b@otra.example';
+  const config = opsBase({ site: { access: [{ role: 'maintainer', emails: [LEAD] }, { role: 'dev', emails: [DEV] }, { role: 'dev', emails: [OTRO] }] }, people: { machines: { 'maq-comun-12345678': { person: DEV, confirmed_by: LEAD, confirmed_on: '2026-10-10' } } } });
+  const ops = clon({ 'operations.json': config });
+  await conPestana({ fuentes: fuentesCon({ ops, config, informados: H.informados({ 'maq-comun-12345678': OTRO }) }) }, async ({ h, entrar }) => {
+    const p = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json.secciones.find((s) => s.id === 'personas');
+    const por = Object.fromEntries(p.extras.personas.map((x) => [x.correo, x]));
+    assert.deepStrictEqual(por[DEV].comparteCon, [OTRO]);
+    assert.deepStrictEqual(por[OTRO].comparteCon, [DEV]);
+  });
+  const seccion = { id: 'personas', titulo: 'personas', repo: 'operaciones', estado: 'cargado', soloLectura: false, motivo: null, problems: [], avisos: [], borrador: { people: {} },
+    extras: { personas: [{ correo: DEV, sugeridos: [], caida: false, comparteCon: [OTRO] }, { correo: OTRO, sugeridos: [], caida: false, comparteCon: [DEV] }] } };
+  const pa = await pantallaFalsa([seccion]);
+  assert.match(pa.textoDe('personas'), /puede ser la misma persona que dev\.b@otra\.example: comparten una máquina/);
+});
+
+// T34 2.79-Umbrales_SinCorridasConError_EnElArbol @story-2.79 @ac-31
+// 🔴 Falla con: el umbral retirado `corridas_con_error` todavía en la copia por defecto, el ejemplo, el mapa o su texto.
+test('T34 2.79-Umbrales_SinCorridasConError_EnElArbol @story-2.79 @ac-31 — ni en el árbol ni en la lista de Umbrales', async () => {
+  for (const f of ['scripts/lib/org-config.js', 'scripts/site/texts.js', 'scripts/nightly/dashboard/sources.json', 'pipelines/operations/examples/sources.json', 'scripts/tests/fixtures/runs-2.60/noche.html']) {
+    assert.ok(fs.existsSync(path.join(ROOT, f)), `${f} existe (si se mudó, la prueba se actualiza; no se saltea)`);
+    const t = texto(f);
+    assert.doesNotMatch(t, /corridas_con_error/, `${f} no nombra corridas_con_error`);
+    assert.doesNotMatch(t, /corridasDondeUnControlEncontro/, `${f} no trae su texto`);
+  }
+  // la sección real de Umbrales, con un operaciones sin umbrales propios: lo que lista sale de la copia por defecto
+  await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': opsBase() }) }) }, async ({ h, entrar }) => {
+    const r = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json;
+    const umbrales = r.secciones.find((s) => s.id === 'umbrales');
+    assert.ok(umbrales, 'la sección de Umbrales está');
+    assert.doesNotMatch(JSON.stringify(umbrales), /corridas_con_error|corridasDondeUnControlEncontro/, 'Umbrales no la lista');
+  });
+});

@@ -167,7 +167,7 @@ test('T31 Mantenimiento_TresBloques_PorQuienTienePelota — te toca decidir, esp
       tarea: { numero: '77', enlace: 'https://dev.acme.example/acme/_workitems/edit/77' }, asignado: null, motivo: null }]);
     // y la vulnerabilidad, con la tarea de su proyecto armada con la organización de operations.json
     assert.deepStrictEqual(j.marcha.vulnerabilidades, [{ id: 'dep-uno', paquete: 'pkg-uno', severidad: 'high', repos: 1, desde: '2026-10-19', volvio: null,
-      tareas: [{ proyecto: 'Producto X', numero: '5002', enlace: 'https://dev.azure.com/acme/Producto%20X/_workitems/edit/5002', asignado: null, sinAsignar: false, sinNombre: false }], motivo: null }]);
+      tareas: [{ proyecto: 'Producto X', numero: '5002', enlace: 'https://dev.azure.com/acme/Producto%20X/_workitems/edit/5002', asignado: null, sinAsignar: false, sinNombre: false, vigente: true }], motivo: null }]);
     // la página: tarjetas, no tabla; los números son enlaces; nada de lo que no se muestra
     const p = await h.pedir('/mantenimiento', { cookie: lead });
     assert.strictEqual(p.status, 200);
@@ -488,7 +488,8 @@ test('T66 Mantenimiento_Vulnerabilidades_Seguimiento — paquetes: severidad, re
     const p = await h.pedir('/mantenimiento', { cookie: lead });
     const bloque = (/<details class="m-vulns"[\s\S]*?<\/details>\s*<p class="m-deuda/.exec(p.texto) || [''])[0];
     assert.ok(bloque, 'el bloque de vulnerabilidades, cerrado');
-    assert.match(p.texto, /Vulnerabilidades de paquetes: 2 \(0 críticas, 2 altas\)\. Cada equipo ya tiene su tarea\. La más vieja, desde el 09\/09\./);
+    // dep-sin no tiene tarea: el encabezado lo cuenta (2.79 AC 5), y dice que la cuenta es al momento (AC 4)
+    assert.match(p.texto, /Vulnerabilidades de paquetes, al momento: 2 \(0 críticas, 2 altas\)\. 1 todavía sin tarea\. La más vieja, desde el 09\/09\./);
     assert.match(bloque, /en 2 repos · desde 09\/09/);
     assert.match(bloque, /en 1 repo · desde 19\/10 · volvió el 22\/10/);
     assert.match(bloque, /<summary>5 tareas<\/summary>/);
@@ -1278,5 +1279,65 @@ test('T91 Mantenimiento_Dependencia_QueEsYSugerencia — la carta dice qué es l
     assert.match(sin, /No se pudo leer el aviso de seguridad: sin él, el modelo no sugiere nada\./);
     assert.doesNotMatch(sin, /m-propuesta|Una razón sin el aviso/);
     assert.doesNotMatch(cartaDe(p, 'dependencias/dep-vieja'), /m-aviso|m-propuesta/);
+  });
+});
+
+// ── 2.79 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+// 2.79-Mantenimiento_VulnSinTarea_ResumenNoDiceQueTodasTienen @story-2.79 @ac-5 @ac-4
+// 🔴 Falla con: «Cada equipo ya tiene su tarea» arriba de una fila que dice «Todavía sin tarea».
+test('T5 2.79-Mantenimiento_VulnSinTarea_ResumenNoDiceQueTodasTienen @story-2.79 @ac-5 @ac-4 — con una sin tarea, el encabezado lo cuenta; con todas, la frase de hoy', { timeout: 60000 }, async () => {
+  const resumen = (texto) => ((/<details class="m-vulns"><summary>([^<]*)<\/summary>/.exec(texto) || [])[1] || '');
+  const extra = { 'inbox/dependencies/pending/dep-sin.yaml': 'id: dep-sin\ndetectado: 2026-09-09\nveredicto: pendiente\npaquete: pkg-sin\nseveridad: high\nnoches: 9\npedido_motivo: sin-proyecto\nrepos:\n  - A/x\n' };
+  await conSitio({ extra }, async ({ h, lead }) => {
+    const r = resumen((await h.pedir('/mantenimiento', { cookie: lead })).texto);
+    assert.match(r, /1 todavía sin tarea\./);
+    assert.doesNotMatch(r, /Cada equipo ya tiene su tarea/);
+    // la cuenta de Mantenimiento dice que es al momento (las otras dos dicen de cuándo son: AC 4)
+    assert.match(r, /al momento/);
+  });
+  await conSitio({}, async ({ h, lead }) => {
+    const r = resumen((await h.pedir('/mantenimiento', { cookie: lead })).texto);
+    assert.match(r, /Cada equipo ya tiene su tarea\./);
+    assert.doesNotMatch(r, /todavía sin tarea/);
+  });
+});
+
+// 2.79-Mantenimiento_TareasDeProyectosSinElPaquete_SeMuestranAparte @story-2.79 @ac-6
+// 🔴 Falla con: «3 tareas» juntas cuando dos son de proyectos donde el paquete ya no vive (esperan su cierre).
+test('T6 2.79-Mantenimiento_TareasDeProyectosSinElPaquete_SeMuestranAparte @story-2.79 @ac-6 — las tareas vigentes y las que esperan su cierre, aparte y con su estado', { timeout: 60000 }, async () => {
+  const extra = { 'inbox/dependencies/pending/dep-uno.yaml': `${FICHAS['inbox/dependencies/pending/dep-uno.yaml']}  - Producto Y: 5003\n  - Producto Z: 5004\nasignados:\n  - "5002: Ana Pérez"\n  - "5003: <nadie>"\n`,
+    'scripts/nightly/dependencies/repos.json': JSON.stringify({ repos: [{ producto: 'Producto X', ruta: 'X/FrontEnd', ado: 'Producto X/FrontEnd', tipo: 'npm' }] }) };
+  await conSitio({ extra }, async ({ h, lead, lista }) => {
+    const v = (await lista()).json.marcha.vulnerabilidades.find((x) => x.id === 'dep-uno');
+    assert.deepStrictEqual(v.tareas.map((t) => [t.numero, t.vigente]), [['5002', true], ['5003', false], ['5004', false]]);
+    const p = await h.pedir('/mantenimiento', { cookie: lead });
+    const fila = (/<li class="m-vuln">[\s\S]*?pkg-uno[\s\S]*?<\/li>(?=<li class="m-vuln">|<\/ul><\/details>)/.exec(p.texto) || [''])[0];
+    const [vigentes, cierre] = fila.split('m-cierre');
+    assert.ok(cierre, 'las que esperan su cierre van aparte');
+    assert.match(vigentes, /Tarea 5002 \(Producto X\)<\/a> · asignada a Ana Pérez/);
+    assert.doesNotMatch(vigentes, /5003|5004/);
+    assert.match(cierre, /esperan su cierre: el paquete ya no está en sus proyectos/);
+    assert.match(cierre, /Tarea 5003 \(Producto Y\)<\/a> · sin asignar/);
+    assert.match(cierre, /Tarea 5004 \(Producto Z\)<\/a> · asignada a: no se sabe todavía/);
+  });
+  // el producto no es el proyecto: la tarea va al proyecto de Azure que declara repos.json (`ado`), con su %20
+  const ficha = 'id: dep-uno\ndetectado: 2026-10-19\nveredicto: pendiente\npaquete: pkg-uno\nseveridad: high\nnoches: 3\nrepos:\n  - Producto X/FrontEnd\npedidos:\n  - Equipo X: 5002\n  - Producto X: 5003\n';
+  const repos = JSON.stringify({ repos: [{ producto: 'Producto X', ruta: 'X/FrontEnd', ado: 'Equipo%20X/FrontEnd', tipo: 'npm' }] });
+  await conSitio({ extra: { 'inbox/dependencies/pending/dep-uno.yaml': ficha, 'scripts/nightly/dependencies/repos.json': repos } }, async ({ lista }) => {
+    const v = (await lista()).json.marcha.vulnerabilidades.find((x) => x.id === 'dep-uno');
+    assert.deepStrictEqual(v.tareas.map((t) => [t.numero, t.vigente]), [['5002', true], ['5003', false]], 'vigente la del proyecto de Azure, no la del producto');
+  });
+  // una vulnerabilidad con todas sus tareas esperando cierre no tiene tarea donde vive hoy: el encabezado la cuenta
+  const soloViejas = ficha.replace('  - Equipo X: 5002\n', '');
+  await conSitio({ extra: { 'inbox/dependencies/pending/dep-uno.yaml': soloViejas, 'scripts/nightly/dependencies/repos.json': repos } }, async ({ h, lead }) => {
+    const texto = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
+    const r = (/<details class="m-vulns"><summary>([^<]*)<\/summary>/.exec(texto) || [])[1] || '';
+    assert.match(r, /todavía sin tarea/, r);
+  });
+  // un repo que repos.json no declara no dice dónde vive el paquete: ninguna tarea se da por cerrada
+  await conSitio({ extra: { 'inbox/dependencies/pending/dep-uno.yaml': ficha, 'scripts/nightly/dependencies/repos.json': JSON.stringify({ repos: [] }) } }, async ({ lista }) => {
+    const v = (await lista()).json.marcha.vulnerabilidades.find((x) => x.id === 'dep-uno');
+    assert.deepStrictEqual(v.tareas.map((t) => [t.numero, t.vigente]), [['5002', true], ['5003', true]], 'sin el proyecto del repo, todas vigentes');
   });
 });

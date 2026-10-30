@@ -297,7 +297,11 @@ function comoFicha(fuente, txt) {
       ultima_vez: null, apariciones: entero(e.noches), resuelto: fecha(e.resuelto), reaparecido: fecha(e.reaparecido), aviso_volvio: null, aviso_cerrado: null, ...comun,
       pedido: ultimo ? { id: ultimo.id, enlace: null } : null, pedido_de_la_noche: null, noches: entero(e.noches),
       pedidos, pedido_motivo: MOTIVOS_SIN_TAREA.includes(e.pedido_motivo) ? e.pedido_motivo : null,
-      repos: fi.listas.repos.length, severidad: /^[a-z]{1,20}$/.test(String(e.severidad || '')) ? e.severidad : null,
+      repos: fi.listas.repos.length,
+      // los repos donde vive hoy el paquete, con su etiqueta «producto/repo»: el proyecto de Azure de cada uno lo
+      // declara repos.json, y lo resuelve quien lo lee (el producto no es el proyecto)
+      repos_etiquetas: fi.listas.repos.map((r) => String(r).trim()).filter(Boolean),
+      severidad: /^[a-z]{1,20}$/.test(String(e.severidad || '')) ? e.severidad : null,
       aviso, analisis: null, analisis_motivo: null, hechos: null };
   }
   return { fuente, id: e.id || null, causa: e.causa || e.huella || null, nombre: nombreDe('vigilante', e), primera_vez: fecha(e.fecha),

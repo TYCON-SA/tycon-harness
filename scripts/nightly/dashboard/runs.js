@@ -416,6 +416,7 @@ function limpio(txt, alternativa) {
  *    sesión, que es el que se clonó;
  *  - el sufijo de worktree o de clon (`--wt-x`, `--merge`, `--7.2`, `-wt-127`, `-wt-mant`) no es parte del nombre, y la
  *    carpeta de implementación de un commit (`c825a2c-impl`) se salta como una genérica;
+ *  - una carpeta de worktree (`…/worktrees/<nombre>`) no nombra su repo: null (el repo real del volcado, si lo trae, manda);
  *  - una carpeta genérica (`Codigo`, `src`…) no es el repo ni lo distingue: se salta;
  *  - lo que cuelga de una carpeta temporal no tiene producto adelante (`/tmp/atk-vector4/CeiboBackend` →
  *    `CeiboBackend`);
@@ -434,6 +435,8 @@ function producto(repoPath) {
     return cod || null;
   }
   const segs = ruta.split(/[\\/]/).filter(Boolean);
+  // una carpeta de worktree (`…/worktrees/<nombre>`) no dice de qué repo es: sin el repo real del volcado, no hay producto
+  if (segs.slice(0, -1).some((x) => /^\.?worktrees?$/i.test(x))) return null;
   const temporal = /^(private|tmp|var)$/.test(segs[0] || '') && (segs.includes('tmp') || (segs.includes('var') && segs.includes('folders')));
   const iHome = segs.findIndex((x, i) => i <= 1 && (x === 'Users' || x === 'home'));
   // `--wt-x`, `--merge`, `--7.2` y los worktrees numerados o con nombre (`<repo>-wt-127`, `<repo>-wt-mant`)
@@ -450,6 +453,11 @@ function producto(repoPath) {
   // El ancestro no cuenta si es el usuario, `Users`/`home`, o la carpeta de proyectos directa bajo el usuario.
   const tope = iHome >= 0 ? iHome + 2 : 0;
   return (j >= tope && j >= 0 && !(iHome >= 0 && j <= iHome + 2)) ? `${limpio(segs[j])}/${repo}` : repo;
+}
+
+/** Cómo se lee un producto en la pantalla: «producto · repo», el mismo rótulo que Proyectos y Configuración. */
+function rotuloProducto(p) {
+  return String(p).replace('/', ' · ');
 }
 
 /** Junta el mismo repo escrito distinto: mayúsculas (`MIRepo`/`MiRepo`) y el nombre
@@ -529,6 +537,16 @@ function agruparRepos(corridas, repos) {
       || (nombre && !nombre.includes('/') && porTramo[nombre])
       || null;
   }
+}
+
+/**
+ * Una ejecución sin el conteo de agentes no siempre es anterior al conteo: si otra que arrancó antes ya lo trae, el
+ * conteo existía y es su registro el que no lo tiene (`c.sin_conteo`). Las de antes de la primera con conteo, no se marcan.
+ */
+function marcarSinConteo(corridas) {
+  const conConteo = corridas.filter((c) => c.costo && c.inicio).map((c) => Date.parse(c.inicio)).filter(Number.isFinite);
+  const primera = conConteo.length ? Math.min(...conConteo) : Infinity;
+  for (const c of corridas) if (!c.costo && Date.parse(c.inicio || '') > primera) c.sin_conteo = true;
 }
 
 function semanaIso(iso) {
@@ -696,6 +714,8 @@ function modeloDeCorrida(d, nombresPasos) {
       eventos.push({ t, control: k, cls, ms: Number.isFinite(g.durationMs) ? g.durationMs : null, exit: Number.isFinite(g.exit) ? g.exit : null, mensaje, mensaje_estado: mensajeEstado, nota: adv ? adv.nota : notaDelSalteo(g) });
     }
     eventos.sort((a, b) => (a.t === null) - (b.t === null) || (a.t || 0) - (b.t || 0));
+    // cero evaluaciones dentro de la ejecución no es «ningún control encontró nada»: es que no hay registro, y así se dice
+    if (!controles.total) controles = null;
   }
   const vueltas = Object.values(m.iterations || {}).map((it) => off(it && it.ts)).filter((t) => t !== null && t >= 0);
 
@@ -711,7 +731,8 @@ function modeloDeCorrida(d, nombresPasos) {
   const c = d.consumo && typeof d.consumo === 'object' ? d.consumo : null;
   let consumo;
   if (!c) consumo = { estado: 'no_medido', motivo: 'esta ejecución es anterior al rescate del consumo (story 2.13): no se registró' };
-  else if (c.estado !== 'medido' || !c.tokens) consumo = { estado: String(c.estado || 'no_medido'), motivo: limpio(c.motivo, 'el volcado no trae el consumo medido') };
+  // los volcados viejos nombran el ajuste de Claude Code que borra las conversaciones: la página dice lo que pasó, sin el nombre
+  else if (c.estado !== 'medido' || !c.tokens) consumo = { estado: String(c.estado || 'no_medido'), motivo: limpio(c.motivo, 'el volcado no trae el consumo medido').replace(/ \(Claude Code las borra según cleanupPeriodDays\)/, ' (Claude Code borra las conversaciones viejas)') };
   else {
     const tk = c.tokens;
     consumo = {
@@ -1288,6 +1309,7 @@ function modelo(runsDir, opts = {}) {
   // El sitio unifica los productos sobre lo que cada persona ve, nunca sobre todo
   if (!opts.sinUnificar) unificarProductos(reg.corridas);
   agruparRepos(reg.corridas, opts.repos);
+  marcarSinConteo(reg.corridas);
   // Qué máquinas cubre lo que se leyó, y cuántas corridas de cada una: el sello sale de ACÁ, no de una
   // bandera. Una sola máquina y es ésta → «esta máquina», como siempre.
   let maquinas = null;
@@ -1585,10 +1607,11 @@ function tabla(M, opts = {}) {
   const filas = C.map((c, idx) => {
     const tk = c.consumo.estado === 'medido'
       ? miles(c.consumo.tokens.out + c.consumo.tokens.in + c.consumo.tokens.cache_new, I)
-      : `<span class="nd" title="${esc(enIdioma(I, c.consumo.motivo))}">${x(c.consumo.estado === 'borrada' ? 'v.borrada' : 'v.noMedido')}</span>`;
+      // el motivo se ve en la celda, sin pasar el mouse; el completo queda en el título
+      : `<span class="nd" title="${esc(enIdioma(I, c.consumo.motivo))}">${x(c.consumo.estado === 'borrada' ? 'v.borrada' : 'v.noMedido')}</span><small>${c.consumo.estado === 'borrada' ? x('v.borradaMotivo') : esc(enIdioma(I, c.consumo.motivo))}</small>`;
     return `<tr data-i="${idx}" data-id="${esc(c.id || '')}" id="c-${idx}">
       <td class="fecha">${esc((c.inicio || '').slice(0, 10) || L(I, 'v.sinFecha'))}<small>${esc(c.semana || '')}</small></td>
-      <td class="story"><b>${esc(c.story || '—')}</b>${c.descripcion ? `<span class="desc" title="${esc(c.descripcion.texto)}">${esc(c.descripcion.texto)}</span>` : ''}<small>${esc(c.producto || L(I, 'v.productoSinRegistrar'))}</small></td>${M.varias_maquinas ? `
+      <td class="story"><b>${esc(c.story || '—')}</b>${c.descripcion ? `<span class="desc" title="${esc(c.descripcion.texto)}">${esc(c.descripcion.texto)}</span>` : ''}<small>${esc(c.producto ? rotuloProducto(c.producto) : L(I, 'v.productoSinRegistrar'))}</small></td>${M.varias_maquinas ? `
       <td class="maq-td">${c.maquina ? `<span class="maq">${esc(c.maquina)}</span>${c.maquina_nota ? `<small>${esc(enIdioma(I, c.maquina_nota))}</small>` : ''}` : `<span class="nd" title="${esc(enIdioma(I, c.maquina_motivo || ''))}">${x('v.sinDeclarar')}</span>`}</td>` : ''}
       <td class="barra">${barraTramos(c, escala, I, M.pasos.nombres)}</td>
       <td class="dur">${dur(c.dur_ms, I)}</td>
@@ -1630,7 +1653,7 @@ function pie(M, opts = {}) {
   ${nota('v.pieHilo', x('v.pieHiloTexto'))}
   ${nota('v.pieTokens', x('v.pieTokensTexto'))}
   ${nota('v.pieRevisor', x('v.pieRevisorTexto'))}
-  ${nota('v.pieTrabajo', `${x('v.pieTrabajo1')} <b>${x('v.pieTrabajo2')}</b>${x('v.pieTrabajo3')} <b>${x('v.pieTrabajo4')}</b>${x('v.pieTrabajo5')} <b>${x('v.pieTrabajo6')}</b>${x('v.pieTrabajo7')}`)}
+  ${nota('v.pieTrabajo', `${x('v.pieTrabajo1')} <b>${x('v.pieTrabajo2')}</b>${x('v.pieTrabajo3')} ${x('c.esperaDefinicion')}; <b>${x('v.pieTrabajo4')}</b>${x('v.pieTrabajo5')} <b>${x('v.pieTrabajo6')}</b>${x('v.pieTrabajo7')}`)}
 </div></footer>`;
 }
 
@@ -1861,6 +1884,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
   };
   var RAMPA = ['#BEE0DE','#9CD0CE','#79BFBE','#57ADAE','#3D9799','#348C8E','#2C8084','#1E6A70','#14555C','#0D4148'];
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); };
+  var rotulo = function (p) { return String(p).replace('/', ' · '); };
   var n1 = function (x) { return (Math.round(x * 10) / 10).toString().replace('.', T('sepDecimal')); };
   var miles = function (n) { return n == null ? '—' : n >= 1e6 ? n1(n / 1e6) + ' M' : n >= 1e3 ? Math.round(n / 1e3) + ' k' : String(n); };
   var dt = function (min) { return min < 90 ? Math.round(min) + ' min' : n1(min / 60) + ' h'; };
@@ -2079,7 +2103,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
   }
 
   function tarjetaAgentes(c) {
-    if (!c.costo) return '<div class="mini blind"><h4>' + T('revisores') + '</h4><p>' + T('sinAgentes') + '</p>' + loQueGastaron(c) + delValidador(c) + '</div>';
+    if (!c.costo) return '<div class="mini blind"><h4>' + T('revisores') + '</h4><p>' + T(c.sin_conteo ? 'sinConteoAgentes' : 'sinAgentes') + '</p>' + loQueGastaron(c) + delValidador(c) + '</div>';
     var t = c.costo.por_tipo, ks = Object.keys(t).sort(function (a, b) { return t[b] - t[a]; });
     var mx = Math.max.apply(null, [1].concat(ks.map(function (k) { return t[k]; })));
     return '<div class="mini"><h4>' + T('revTitulo', { n: c.costo.agentes }) + (c.costo.vueltas !== null ? T('revEnVueltas', { n: c.costo.vueltas }) : '') + (c.costo.calculos_del_set !== null && c.costo.calculos_del_set !== undefined ? ' <span class="rev-nd">(' + T('revSetCalculado', { n: c.costo.calculos_del_set }) + ')</span>' : '') + '</h4>'
@@ -2340,7 +2364,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
       + (c.dod ? '<span class="chip ' + (c.dod === 'PASS' ? 'ok' : 'bad') + '"><span class="g">' + (c.dod === 'PASS' ? '●' : '▲') + '</span>DoD ' + esc(c.dod) + '</span>' : '');
     var tl = timeline(c);
     return '<div class="det">'
-      + '<div class="det-head"><div><b>Story ' + esc(c.story || '—') + '</b> <span class="mono">' + esc(c.producto || T('productoSinRegistrar')) + '</span>'
+      + '<div class="det-head"><div><b>Story ' + esc(c.story || '—') + '</b> <span class="mono">' + esc(c.producto ? rotulo(c.producto) : T('productoSinRegistrar')) + '</span>'
       + (M.multi ? ' <span class="mono">· ' + (c.maquina ? esc(c.maquina) + (c.maquina_nota ? ' (' + esc(c.maquina_nota) + ')' : '') : T('maquinaSinDeclarar') + ' ' + esc(c.maquina_motivo || '')) + '</span>' : '')
       + (c.descripcion ? '<div class="det-desc">' + esc(c.descripcion.texto) + ' <span class="nd">— ' + esc(c.descripcion.fuente) + '</span></div>' : '<div class="det-desc nd">' + T('sinDescripcion') + '</div>')
       + '<div class="mono sub">' + esc((c.inicio || '').slice(0, 16).replace('T', ' ')) + ' UTC · ' + (c.dur_ms ? dt(c.dur_ms / 60000) : T('sinDuracion')) + '</div></div>'
@@ -2487,7 +2511,9 @@ const CLIENTE_FUENTE = String.raw`(function () {
     var fin = F.filter(function (c) { return c.llego_al_final; });
     var gz = F.filter(function (c) { return c.controles; });
     var roj = gz.filter(function (c) { return c.controles.error > 0; });
-    var fre = gz.filter(function (c) { return c.controles.freno > 0; });
+    // las tres partes no se superponen: sólo con error, sólo frenadas y con las dos
+    var ambas = roj.filter(function (c) { return c.controles.freno > 0; }).length;
+    var soloFre = gz.filter(function (c) { return c.controles.freno > 0; }).length - ambas;
     var cc = F.filter(function (c) { return c.costo; });
     var ag = cc.map(function (c) { return c.costo.agentes; });
     var vu = cc.filter(function (c) { return c.costo.vueltas !== null; }).map(function (c) { return c.costo.vueltas; });
@@ -2544,31 +2570,35 @@ const CLIENTE_FUENTE = String.raw`(function () {
     return [
       ficha(T('fAlFinal'), med(Math.round(pf * 100) + '%', T('nDeEjecuciones', { n: fin.length, t: N }), { est: juzgar('corridas_al_final', pf).est, palabra: juzgar('corridas_al_final', pf).palabra, detalle: '<b>' + (N - fin.length) + '</b> ' + T('aMitad') + (juzgar('corridas_al_final', pf).nota ? ' · <b>' + esc(juzgar('corridas_al_final', pf).nota) + '</b>' : '') })),
       ficha(T('fDuracion'), dur.length ? med(n1(mediana(dur.map(function (c) { return c.dur_ms; })) / 3600000) + ' h', T('nEqDeEjecuciones', { n: dur.length, t: N }), { detalle: T('laMasLarga', { d: n1(Math.max.apply(null, dur.map(function (c) { return c.dur_ms; })) / 3600000) + ' h' }) }) : gris(T('sinDuracionFiltro'))),
-      ficha(T('fConError'), gz.length ? med(Math.round((roj.length / gz.length) * 100) + '%', T('nDeConControles', { n: roj.length, t: gz.length }), { est: 'neutro', palabra: T('medido'), detalle: T('errorDetalle1') + ' <b>' + fre.length + '</b> ' + T('errorDetalle2') + (N - gz.length ? ' ' + T('noRegistraronControles', { n: N - gz.length }) : '') }) : gris(T('sinControlesFiltro'))),
+      ficha(T('fConError'), gz.length ? med(Math.round((roj.length / gz.length) * 100) + '%', T('nDeConControles', { n: roj.length, t: gz.length }), { est: 'neutro', palabra: T('medido'), detalle: T('errorDetalle', { e: '<b>' + (roj.length - ambas) + '</b>', f: '<b>' + soloFre + '</b>', k: '<b>' + ambas + '</b>' }) + (N - gz.length ? ' ' + T('noRegistraronControles', { n: N - gz.length }) : '') }) : gris(T('sinControlesFiltro'))),
       ficha(T('fAgentes'), ag.length ? med(String(mediana(ag)), T('nEqDeEjecuciones', { n: ag.length, t: N }), { detalle: T('maximo', { n: Math.max.apply(null, ag) }) + ' · ' + T('noLoRegistran', { n: N - ag.length }) }) : gris(T('sinAgentesFiltro'))),
       ficha(T('fVueltas'), vu.length ? med(String(mediana(vu)), T('nEqDeEjecuciones', { n: vu.length, t: N }), { detalle: T('maximo', { n: Math.max.apply(null, vu) }) + ' · ' + T('vueltasDetalle') }) : gris(T('sinVueltasFiltro'))),
       ficha(T('fValidador'), fichaValidador),
       ficha(T('fRevisionPrevia'), fichaRevisionPrevia),
       ficha(T('fTrabajo'), tMed.length ? med(dt(mediana(tMed.map(function (c) { return c.tiempos.trabajo_ms; })) / 60000), T('nEqDeEjecuciones', { n: tMed.length, t: N }), { detalle: T('trabajoDetalle') + (M.sin_hilos ? ' (' + T('incluyeEsperas') + ' ' + esc(M.sin_hilos) + ')' : '') }) : gris(sinArranque + sinHilo)),
-      ficha(T('fEspera'), eMed.length ? med(dt(mediana(eMed.map(function (c) { return c.tiempos.espera_humana_ms; })) / 60000), T('nEqDeEjecuciones', { n: eMed.length, t: N }), { detalle: T('esperaDetalle') + pisoEspera }) : gris(sinArranque + pisoEspera)),
+      ficha(T('fEspera'), eMed.length ? med(dt(mediana(eMed.map(function (c) { return c.tiempos.espera_humana_ms; })) / 60000), T('nEqDeEjecuciones', { n: eMed.length, t: N }), { detalle: T('esperaDefinicion') + pisoEspera }) : gris(sinArranque + pisoEspera)),
       ficha(T('fPasos'), pa.length ? med(String(Math.round(mediana(pa))), T('nEqDeEjecuciones', { n: pa.length, t: N }), { detalle: (N - pa.length ? '<b>' + (N - pa.length) + '</b> ' + T('pasosSinMedir') + ' ' : '') + T('tokensConsecuencia') + (LB ? ' ' + T('lineaBaseDelFicha', { f: esc(LB.fecha) }) + ' <b>' + LB.mediana + '</b>' + (LB.corridas ? ' (n=' + LB.corridas + ')' : '') + '.' : ' <b>' + sinLB + '</b>.') }) : gris(T('sinPasosFiltro'))),
       ficha(T('fTokens'), tk.length ? med(miles(Math.round(mediana(tk))), T('nEqDeEjecuciones', { n: tk.length, t: N }), { detalle: T('deOtras') + ' <b>' + (N - tk.length) + '</b> ' + T('sinConsumoDetalle') }) : gris(T('sinConsumoFiltro')))
     ].join('');
   }
 
+  // La semana de cada ejecución sale de su día LOCAL, como el filtro: el domingo 22 h de Argentina ya es lunes en UTC, y la
+  // barra de «esta semana» tiene que dar lo mismo que el atajo. El día local se lleva a medianoche UTC para la cuenta ISO.
+  var diaComoUtc = function (iso) { var d = new Date(iso); return isNaN(d.getTime()) ? null : new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); };
+  var lunesDe = function (t) { var x = new Date(t.getTime()); var dn = x.getUTCDay() || 7; x.setUTCDate(x.getUTCDate() - dn + 1); return x; };
+  var semanaDe = function (t) { var x = new Date(t.getTime()); var dn = x.getUTCDay() || 7; x.setUTCDate(x.getUTCDate() + 4 - dn); var a0 = new Date(Date.UTC(x.getUTCFullYear(), 0, 1)); return x.getUTCFullYear() + '-S' + String(Math.ceil(((x - a0) / 86400000 + 1) / 7)).padStart(2, '0'); };
+  var semanaLocal = function (c) { var t = c.inicio ? diaComoUtc(c.inicio) : null; return t ? semanaDe(t) : null; };
   // Todas las semanas del rango, aunque valgan 0: una barra ausente y una en cero no son lo mismo.
   function semanasDelRango(F) {
-    var fechas = F.map(function (c) { return c.inicio; }).filter(Boolean).sort();
-    if (!fechas.length) return [];
-    var lunes = function (iso) { var d = new Date(iso); var t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())); var dn = t.getUTCDay() || 7; t.setUTCDate(t.getUTCDate() - dn + 1); return t; };
-    var semana = function (t) { var x = new Date(t.getTime()); var dn = x.getUTCDay() || 7; x.setUTCDate(x.getUTCDate() + 4 - dn); var a0 = new Date(Date.UTC(x.getUTCFullYear(), 0, 1)); return x.getUTCFullYear() + '-S' + String(Math.ceil(((x - a0) / 86400000 + 1) / 7)).padStart(2, '0'); };
-    var ks = [], t = lunes(fechas[0]), fin = lunes(fechas[fechas.length - 1]);
-    while (t <= fin && ks.length < 400) { ks.push(semana(t)); t.setUTCDate(t.getUTCDate() + 7); }
+    var dias = F.map(function (c) { return c.inicio ? diaComoUtc(c.inicio) : null; }).filter(Boolean).sort(function (a, b) { return a - b; });
+    if (!dias.length) return [];
+    var ks = [], t = lunesDe(dias[0]), fin = lunesDe(dias[dias.length - 1]);
+    while (t <= fin && ks.length < 400) { ks.push(semanaDe(t)); t.setUTCDate(t.getUTCDate() + 7); }
     return ks;
   }
   function graficoSemanas(F) {
     var porSem = {};
-    F.forEach(function (c) { if (c.semana) porSem[c.semana] = (porSem[c.semana] || 0) + 1; });
+    F.forEach(function (c) { var s = semanaLocal(c); if (s) porSem[s] = (porSem[s] || 0) + 1; });
     var ks = semanasDelRango(F);
     if (!ks.length) return '<p class="tlnota">' + T('sinEjecucionesFiltro') + '</p>';
     var max = Math.max.apply(null, [1].concat(ks.map(function (k) { return porSem[k] || 0; })));
@@ -2625,25 +2655,49 @@ const CLIENTE_FUENTE = String.raw`(function () {
   // Un grupo por producto, después los repos sin producto conocido y al final el laboratorio. El valor es el repo, como
   // siempre (los enlaces guardados siguen andando); el del laboratorio lleva «laboratorio/» adelante, para no juntarse
   // con el repo de verdad del mismo nombre.
-  var nombreRepo = function (c) { return c.producto || '(' + T('sinProducto') + ')'; };
-  var claveRepo = function (c) { return (c.grupo === 'laboratorio' ? 'laboratorio/' : '') + nombreRepo(c); };
+  // Sin producto hay UNA opción, en «otros repos», venga del laboratorio o no. El mismo producto escrito con otra mayúscula
+  // es una sola opción (gana la forma más usada). Una opción del laboratorio dice que lo es: así ninguna etiqueta se repite.
+  var SIN_PRODUCTO = '(' + T('sinProducto') + ')';
+  var formaDe = {};
+  (function () {
+    var usos = {};
+    C.forEach(function (c) { if (c.producto) usos[c.producto] = (usos[c.producto] || 0) + 1; });
+    var mejor = {};
+    Object.keys(usos).forEach(function (p) { var k = p.toLowerCase(); if (!(k in mejor) || usos[p] > usos[mejor[k]] || (usos[p] === usos[mejor[k]] && p < mejor[k])) mejor[k] = p; });
+    Object.keys(usos).forEach(function (p) { formaDe[p] = mejor[p.toLowerCase()]; });
+  })();
+  var claveRepo = function (c) { return !c.producto ? SIN_PRODUCTO : (c.grupo === 'laboratorio' ? 'laboratorio/' : '') + formaDe[c.producto]; };
   var grupoRepo = {}, reposDeGrupo = {};
   C.forEach(function (c) {
-    var k = claveRepo(c), g = c.grupo || '';
+    var k = claveRepo(c), g = c.producto ? c.grupo || '' : '';
     cuentaRepo[k] = (cuentaRepo[k] || 0) + 1;
     if (!(k in grupoRepo)) { grupoRepo[k] = g; (reposDeGrupo[g] = reposDeGrupo[g] || []).push(k); }
   });
   var ordenGrupo = function (a, b) { var pa = a === 'laboratorio' ? 2 : a === '' ? 1 : 0, pb = b === 'laboratorio' ? 2 : b === '' ? 1 : 0; return (pa - pb) || alfabetico(a, b); };
-  var opcion = function (k) { var etiqueta = k.indexOf('laboratorio/') === 0 ? k.slice(12) : k; return '<option value="' + esc(k) + '">' + esc(etiqueta) + ' (' + cuentaRepo[k] + ')</option>'; };
-  elRepo.innerHTML = '<option value="">' + T('todos', { n: C.length }) + '</option>' + Object.keys(reposDeGrupo).sort(ordenGrupo).map(function (g) {
-    var etiqueta = g === 'laboratorio' ? T('laboratorio') : g === '' ? T('otrosRepos') : g;
-    return '<optgroup label="' + esc(etiqueta) + '">' + reposDeGrupo[g].sort(alfabetico).map(opcion).join('') + '</optgroup>';
-  }).join('');
   var cuentaMaq = {};
-  if (elMaq) {
-    C.forEach(function (c) { cuentaMaq[maqDe(c)] = (cuentaMaq[maqDe(c)] || 0) + 1; });
-    elMaq.innerHTML = '<option value="">' + T('todas', { n: C.length }) + '</option>' + Object.keys(cuentaMaq).sort(alfabetico).map(function (r) { return '<option value="' + esc(r) + '">' + esc(r) + ' (' + cuentaMaq[r] + ')</option>'; }).join('');
+  if (elMaq) C.forEach(function (c) { cuentaMaq[maqDe(c)] = (cuentaMaq[maqDe(c)] || 0) + 1; });
+  // Los conteos de los desplegables siguen el filtro de fechas (no el de producto ni el de máquina): «todos (N)» es lo que
+  // hay en esas fechas. Se rearman en cada aplicar(), con la elección de la persona intacta.
+  function rotularDesplegables(enFechas) {
+    var nRepo = {}, nMaq = {};
+    enFechas.forEach(function (c) { var k = claveRepo(c); nRepo[k] = (nRepo[k] || 0) + 1; if (elMaq) nMaq[maqDe(c)] = (nMaq[maqDe(c)] || 0) + 1; });
+    var opcion = function (k) {
+      var etiqueta = k === SIN_PRODUCTO ? k : k.indexOf('laboratorio/') === 0 ? rotulo(k.slice(12)) + ' (' + T('laboratorio') + ')' : rotulo(k);
+      return '<option value="' + esc(k) + '">' + esc(etiqueta) + ' (' + (nRepo[k] || 0) + ')</option>';
+    };
+    var elegido = elRepo.value;
+    elRepo.innerHTML = '<option value="">' + T('todos', { n: enFechas.length }) + '</option>' + Object.keys(reposDeGrupo).sort(ordenGrupo).map(function (g) {
+      var etiqueta = g === 'laboratorio' ? T('laboratorio') : g === '' ? T('otrosRepos') : g;
+      return '<optgroup label="' + esc(etiqueta) + '">' + reposDeGrupo[g].sort(alfabetico).map(opcion).join('') + '</optgroup>';
+    }).join('');
+    elRepo.value = elegido;
+    if (elMaq) {
+      var maq = elMaq.value;
+      elMaq.innerHTML = '<option value="">' + T('todas', { n: enFechas.length }) + '</option>' + Object.keys(cuentaMaq).sort(alfabetico).map(function (r) { return '<option value="' + esc(r) + '">' + esc(r) + ' (' + (nMaq[r] || 0) + ')</option>'; }).join('');
+      elMaq.value = maq;
+    }
   }
+  rotularDesplegables(C);
   elDesde.min = elHasta.min = RANGO[0]; elDesde.max = elHasta.max = RANGO[1]; elDesde.value = RANGO[0]; elHasta.value = RANGO[1];
 
   // '?solo=N': la ficha de UNA corrida — se esconden las otras filas y la capa ejecutiva (que con una
@@ -2680,11 +2734,13 @@ const CLIENTE_FUENTE = String.raw`(function () {
   if (elMaq && esta(cuentaMaq, qMaq)) elMaq.value = ENLACE.maquina = qMaq;
   if (typeof window !== 'undefined') window.__enlace = function () { return ENLACE; };
   if (SOLO !== null && typeof document !== 'undefined' && document.body && document.body.classList) document.body.classList.add('solo');
+  function enFechas(c) {
+    var f = diaLocal(c.inicio);
+    return !(elDesde.value && f && f < elDesde.value) && !(elHasta.value && f && f > elHasta.value);
+  }
   function pasa(c) {
     if (SOLO !== null && C.indexOf(c) !== SOLO) return false;
-    var f = diaLocal(c.inicio);
-    if (elDesde.value && f && f < elDesde.value) return false;
-    if (elHasta.value && f && f > elHasta.value) return false;
+    if (!enFechas(c)) return false;
     if (elRepo.value && claveRepo(c) !== elRepo.value) return false;
     if (elMaq && elMaq.value && maqDe(c) !== elMaq.value) return false;
     if (elFc.checked && c.consumo.estado !== 'medido') return false;
@@ -2692,6 +2748,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
     return true;
   }
   function aplicar() {
+    rotularDesplegables(C.filter(enFechas));
     var F = C.filter(pasa);
     $('fichas').innerHTML = resumen(F);
     $('gsem').innerHTML = graficoSemanas(F);

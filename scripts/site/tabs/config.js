@@ -41,12 +41,15 @@ const TX = require('../texts.js');
 // los mensajes se arman en castellano (así los guarda el caché y los compara la página local) y se dicen en el idioma
 // del pedido al salir de cada ruta (texts.js, `traducirRespuesta`)
 const M = (clave, valores) => TX.t('es', clave, valores);
-const { dentroDe } = require('../sources.js');
+const { dentroDe, limpiarLinea } = require('../sources.js');
 const LANG = require('../language.js');
 
 const TREE = path.join(__dirname, '..', '..', '..');
 const CUERPO_MAX = 256 * 1024;
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
+// un nombre de proyecto o repo escrito con %20 (como en una URL) es el mismo que con espacio; uno mal codificado queda
+// igual, y quien llama puede anotarlo
+const decodificar = (s, alFallar = null) => { try { return decodeURIComponent(s); } catch { if (alFallar) alFallar(s); return s; } };
 // lo armado de la pestaña vale, a lo sumo, lo que el refresco de fondo de los datos
 const VIGENCIA_MS = 15 * 60 * 1000;
 const norm = (c) => String(c || '').trim().toLowerCase();
@@ -544,13 +547,24 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       }
       correos.sort();
       const declarados = (base2 && isObject(base2.people) && isObject(base2.people.projects)) ? base2.people.projects : {};
+      // una máquina confirmada a un correo que informa otro: las dos filas pueden ser la misma persona
+      const comparten = new Map();
+      const juntar = (a, b) => { if (!comparten.has(a)) comparten.set(a, new Set()); comparten.get(a).add(b); };
+      for (const [m, e] of Object.entries(c.machines)) {
+        const inf = c.informados.maquinas[m];
+        if (!isObject(e) || !isObject(inf) || inf.estado !== 'informa' || typeof inf.correo !== 'string') continue;
+        const a = norm(e.person); const b = norm(inf.correo);
+        if (!a || !b || a === b || people.correosDe(a, c).includes(b)) continue;
+        juntar(a, b); juntar(b, a);
+      }
       extras.personas = correos.map((correo) => {
         // todos sus correos: sus máquinas y lo declarado pueden estar a nombre de cualquiera de ellos
         const suyos = new Set([correo, ...people.correosDe(correo, c)]);
         const suyas = Object.entries(c.machines).filter(([, e]) => isObject(e) && suyos.has(norm(e.person))).map(([m]) => m);
         // la pantalla edita la clave que ya existe (con su grafía), así no crea una segunda para la misma persona
         const clave = Object.keys(declarados).find((k) => !k.startsWith('_') && suyos.has(norm(k))) || correo;
-        return { correo, clave, sugeridos: reglas.sugeridosDe(correo), caida: suyas.length > 0 && suyas.every((m) => people.estadoDeMaquina(m, c).estado !== 'confirmada') };
+        const comparteCon = [...new Set([...suyos].flatMap((x) => [...(comparten.get(x) || [])]))].filter((x) => !suyos.has(x)).sort();
+        return { correo, clave, sugeridos: reglas.sugeridosDe(correo), caida: suyas.length > 0 && suyas.every((m) => people.estadoDeMaquina(m, c).estado !== 'confirmada'), comparteCon };
       });
       v.extras = extras;
     }
@@ -587,6 +601,10 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     return { ...r, porArchivo };
   }
 
+  // un nombre con un «%» que no es de URL se muestra tal cual y queda anotado (una vez por nombre)
+  const malCodificados = new Set();
+  const anotarMalCodificado = (s) => { if (!malCodificados.has(s)) { malCodificados.add(s); log(`configuración: «${limpiarLinea(String(s).slice(0, 80))}» trae un «%» que no se pudo leer como espacio: se muestra tal cual`); } };
+
   /** Los productos: `{ lista, motivo }` — una lista que no se pudo leer lo dice; no es «ningún producto». */
   function productos(dirOps, opsDoc) {
     const out = [];
@@ -594,9 +612,16 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     const d = r.estado === 'leido' ? docDe(r.texto) : null;
     let motivo = null;
     if (r.estado === 'ilegible' || (r.estado === 'leido' && (!d || !Array.isArray(d.repos)))) motivo = M('config.reposIlegible');
+    // una entrada repetida repite ruta, carpeta y tipo de otra: otro tipo u otra carpeta del mismo repo es otra revisión
+    const vistas = new Set();
     for (const x of (d && Array.isArray(d.repos) ? d.repos : [])) {
       if (!isObject(x) || typeof x.producto !== 'string') continue;
-      out.push({ producto: x.producto, origen: 'dependencias', repo: x.ado || x.github || x.ruta || null, activo: x.activo !== false, motivo: typeof x.motivo === 'string' ? x.motivo : null });
+      const ruta = typeof x.ruta === 'string' ? x.ruta : null;
+      const repo = x.ado || x.github || ruta;
+      const clave = [decodificar(ruta || repo || '').toLowerCase(), x.subruta || '', x.tipo || ''].join('\0');
+      const repetida = vistas.has(clave);
+      vistas.add(clave);
+      out.push({ producto: x.producto, origen: 'dependencias', ruta, repo: typeof repo === 'string' ? decodificar(repo, anotarMalCodificado) : null, activo: x.activo !== false, motivo: typeof x.motivo === 'string' ? x.motivo : null, repetida });
     }
     // la forma de `deployments` es la del lector de despliegues: { provider, products: { "<producto>": { staging, production } } }
     const dep = opsDoc && isObject(opsDoc.deployments) && isObject(opsDoc.deployments.products) ? opsDoc.deployments.products : {};
@@ -613,7 +638,8 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     const sumar = (x) => {
       if (!isObject(x) || typeof x.platform !== 'string' || typeof x.org !== 'string' || typeof x.repo !== 'string' || !x.org || !x.repo) return false;
       // la forma de cada plataforma (con proyecto o sin él) la juzga el lector al revisar; acá sólo se arma la identidad
-      const e = typeof x.project === 'string' && x.project ? { platform: x.platform, org: x.org, project: x.project, repo: x.repo } : { platform: x.platform, org: x.org, repo: x.repo };
+      // «Dar%20Prest» y «Dar Prest» son el mismo proyecto: se guarda decodificado, así no aparece dos veces
+      const e = typeof x.project === 'string' && x.project ? { platform: x.platform, org: x.org, project: decodificar(x.project, anotarMalCodificado), repo: decodificar(x.repo, anotarMalCodificado) } : { platform: x.platform, org: x.org, repo: decodificar(x.repo, anotarMalCodificado) };
       out.set([e.platform, e.org, e.project || '', e.repo].join('\0').toLowerCase(), e);
       return true;
     };

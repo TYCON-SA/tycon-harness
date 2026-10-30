@@ -461,3 +461,44 @@ test('Bajada_ConfiandoEnElIndice_NoMiraElDisco_YSinConfiarRepone', async () => {
     assert.ok(fs.existsSync(path.join(dir, 'maq-a', 'r1.json')), 'sin confiar, lo que faltaba en el disco vuelve');
   } finally { await buzon.cerrar(); }
 });
+
+test('T2 2.79-Espejo_BajadaYArmado_NoSePisan @story-2.79 @ac-2', { skip: SIN_BACKEND }, async () => {
+  // el armado lee el espejo: la bajada no lo escribe mientras se arma. Con un armado en curso, la bajada espera; vencida
+  // la espera, no baja (se sirve la vista que hay) y lo registra. La marca de la bajada se suelta también si falla
+  const buzon = await H.arrancarBuzon({ blobs: blobsDe(2) });
+  const raiz = tmp('mbx-pisan-');
+  const ops = { version: 1, owners: { default: 'lead@acme.example' }, site: { maintainers: ['lead@acme.example'], mailbox: { provider: 'azure-blob', account: 'cuentax', container: 'runs', threads: true } } };
+  repoConArchivos(raiz, 'ops.git', H.archivosDeOperaciones({ config: ops }), path.join(raiz, 'trabajo'));
+  const git = await arrancarRepoHttp({ raiz, cabecera: CABECERA });
+  const datos = tmp('mbx-pisan-datos-');
+  const env = H.envBase({ SITE_OPERATIONS_REPO: git.url('ops.git'), SITE_OPERATIONS_TOKEN: TOKEN, SITE_MAILBOX_SAS: H.sas(), SITE_DATA_DIR: datos });
+  const v = validarConfiguracion(env);
+  assert.ok(v.ok, JSON.stringify(v.problemas));
+  const registro = [];
+  const pedidas = () => buzon.pedidos.length;
+  let armando = true;
+  let vioBajando = false;
+  const fuentes = crearFuentes({ cfg: v.cfg, dataDir: datos, log: (l) => registro.push(l), urlBuzon: buzon.base, esperaArmadoMs: 300 });
+  try {
+    fuentes.alArmar(() => { if (fuentes.buzonEstado().bajando) vioBajando = true; return armando; });
+    // con el armado colgado, la bajada espera y, vencida la espera, no baja
+    await fuentes.refrescar();
+    assert.strictEqual(pedidas(), 0, 'con un armado en curso no se baja nada');
+    assert.strictEqual(fuentes.buzonEstado().generacion, 0);
+    assert.ok(registro.some((l) => /armado .*en curso/.test(l)), `registra el motivo: ${registro.slice(-3).join(' | ')}`);
+    assert.strictEqual(fuentes.buzonEstado().bajando, false, 'la marca no queda puesta');
+    // el armado termina durante la espera: la bajada sigue
+    setTimeout(() => { armando = false; }, 100);
+    await fuentes.refrescar();
+    assert.ok(pedidas() > 0, 'terminado el armado, baja');
+    assert.ok(fuentes.buzonEstado().generacion > 0);
+    assert.strictEqual(fuentes.buzonEstado().bajando, false, 'y suelta la marca al terminar');
+    assert.strictEqual(vioBajando, false, 'nadie vio la marca de la bajada mientras se esperaba al armado');
+  } finally { fuentes.detener(); await buzon.cerrar(); }
+  // una bajada que falla (el buzón no contesta) también suelta la marca
+  const caida = crearFuentes({ cfg: v.cfg, dataDir: tmp('mbx-pisan-caida-'), log: () => {}, urlBuzon: buzon.base, esperaArmadoMs: 300 });
+  try {
+    await caida.refrescar();
+    assert.strictEqual(caida.buzonEstado().bajando, false, 'la marca se suelta tras el fallo');
+  } finally { caida.detener(); await git.cerrar(); }
+});
