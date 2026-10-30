@@ -573,9 +573,29 @@ function runCase(tool, hookDef, caseDef, ctx) {
     if (e instanceof NotMeasured) return { pass: false, nomedido: true, failures: [e.message], exit: null };
     failures.push(`ERROR: ${e.message}`);
   } finally {
-    try { fs.rmSync(sandbox, { recursive: true, force: true }); } catch (_) {}
+    // un caso que arma su situación con `chmod 000` deja carpetas a las que no se puede entrar: sin devolverles los
+    // permisos el borrado falla y la carpeta del caso queda. Un archivo todavía abierto (Windows) se reintenta. Si igual
+    // no se puede borrar, se dice por stderr (los caminos que ya devolvieron su resultado no ven este `failures`) y el
+    // caso sale rojo
+    restorePermissions(sandbox);
+    try { fs.rmSync(sandbox, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }); } catch (e) {
+      const why = `no pude borrar la carpeta del caso (${sandbox}): ${(e && (e.code || e.message)) || e}`;
+      process.stderr.write(`⚠ banco: ${why}\n`);
+      failures.push(why);
+    }
   }
   return { pass: failures.length === 0, failures, exit: res.status };
+}
+
+/** Devuelve a cada carpeta de `dir` el permiso de entrar y escribir (sin seguir enlaces). Nunca tira. */
+function restorePermissions(dir) {
+  let st;
+  try { st = fs.lstatSync(dir); } catch (_) { return; }
+  if (!st.isDirectory()) return;
+  try { fs.chmodSync(dir, 0o700); } catch (_) { /* si no se puede, el borrado lo dice */ }
+  let names = [];
+  try { names = fs.readdirSync(dir); } catch (_) { return; }
+  for (const n of names) restorePermissions(path.join(dir, n));
 }
 
 // ---------- main ----------
