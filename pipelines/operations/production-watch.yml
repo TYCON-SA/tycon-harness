@@ -199,7 +199,8 @@ jobs:
             echo "##vso[task.logissue type=warning]$LINEA"
             echo "##vso[task.complete result=SucceededWithIssues;]"
           fi
-          if [ -f "$PERFIL/team-profile.json" ]; then echo "##vso[task.setvariable variable=TEAM_PROFILE]$PERFIL/team-profile.json"; fi
+          # el perfil, sólo si el comparador terminó (0, 1 o 3): con 4 no pudo dejarlo, y lo que haya en la carpeta no vale
+          if [ "$RC" != 4 ] && [ -f "$PERFIL/team-profile.json" ]; then echo "##vso[task.setvariable variable=TEAM_PROFILE]$PERFIL/team-profile.json"; fi
           exit 0
         displayName: 'El perfil de la organización y su team-repos.json'
         env:

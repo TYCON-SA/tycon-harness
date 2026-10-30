@@ -110,8 +110,9 @@ Los pipelines corren con la identidad de compilación del proyecto, `<proyecto> 
   guardar y abrir pull requests salen en rojo.
 - **Sobre los repos que se miden**: *Read*. Si están en otros proyectos, también ahí.
 - **Sobre el repo del perfil del equipo** (el que declara `team-repos.json → profile`): *Read*. De ahí saca la noche los
-  canales del aviso que eligió la organización (`integrations.notify.channels`). Sin ese permiso el resumen sale igual,
-  por el canal de `operations.json → notify.channel`, y dice «no se pudo leer el perfil del equipo».
+  canales del aviso que eligió la organización (`integrations.notify.channels`) y la unidad de las estimaciones que mide
+  la foto por proyecto. Sin ese permiso el resumen sale igual, por el canal de `operations.json → notify.channel`, y dice
+  «no se pudo leer el perfil del equipo»; la foto usa la unidad del `team-repos.json` del árbol.
 
 Y en *Project settings → Pipelines → Settings* del proyecto donde corren los pipelines:
 
@@ -216,8 +217,9 @@ y el tenant también sale de ella. Sin buzón, las fichas del equipo salen «no 
 la ejecución avisa «el buzón no está declarado».
 
 **El perfil y `team-repos.json`, en dos lados.** La noche lee `team-repos.json` del repo de operaciones; las máquinas del
-equipo, el del perfil. Si tu organización tiene perfil, el archivo va en los dos, igual. La revisión de dependencias y el
-vigilante bajan el perfil (para los canales del aviso) y los comparan: si difieren, la ejecución queda naranja nombrando
+equipo, el del perfil. Si tu organización tiene perfil, el archivo va en los dos, igual. La revisión de dependencias, el
+vigilante y las métricas bajan el perfil (los dos primeros, para los canales del aviso; las métricas, para la unidad de
+las estimaciones, que el sitio edita en el del perfil) y los comparan: si difieren, la ejecución queda naranja nombrando
 las claves que difieren, sin sus valores; si no pudo leer el perfil, lo dice, y el aviso sale por el canal de
 `operations.json → notify`.
 
@@ -229,8 +231,8 @@ dos pasos que hablan con Azure Boards no corren.
 
 Es el primer paso con cada pipeline nuevo, y también antes de cambiar uno que ya corre de noche. Corré cada pipeline a
 mano con el parámetro **efectos** destildado (*Run pipeline → efectos*, o `az pipelines run --id <N> --branch <rama>
---parameters efectos=false`). Mide y escribe en el disco del agente, pero no guarda nada, no abre pull requests y no
-avisa. La primera vez Azure pide permiso para usar el repo del arnés (*This pipeline needs permission to access a
+--parameters efectos=false`). Mide y escribe en el disco del agente, pero no guarda nada, no abre pull requests, no
+crea pedidos de trabajo ni comenta en ellos, y no manda avisos. La primera vez Azure pide permiso para usar el repo del arnés (*This pipeline needs permission to access a
 resource*): *Permit*.
 
 **El ensayo deja a la vista lo que habría guardado**: la ejecución publica el artefacto `ensayo-datos` (*la ejecución →

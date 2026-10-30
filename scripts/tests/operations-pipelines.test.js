@@ -1090,6 +1090,65 @@ test('TeamRepos_DistintoDelPerfil_Avisa: iguales, nada; distintos, las claves si
     assert.match(s.stdout, /##vso\[task\.complete result=SucceededWithIssues;\]/, model);
     assert.doesNotMatch(s.stdout, /variable=TEAM_PROFILE/, `${model}: sin perfil no lo anuncia`);
   }
+  // no pudo dejar el perfil (sale 4): no anuncia el que haya quedado, que puede estar a medias o ser de antes
+  for (const model of ['dependency-audit.yml', PW]) {
+    lab = profileLab({ opsTeamRepos: tr, profileFiles: { 'team-repos.json': JSON.stringify(tr), 'team-profile.json': '{}\n' } });
+    const viejo = path.join(lab.tmp, 'perfil', 'team-profile.json');
+    fs.mkdirSync(path.dirname(viejo), { recursive: true });
+    fs.writeFileSync(viejo, '{ a medias');
+    // la carpeta de sólo lectura: el viejo no se puede sacar ni pisar
+    fs.chmodSync(path.dirname(viejo), 0o555);
+    const { body } = namedStep(model, 'El perfil de la organización y su team-repos.json', { 'Build.SourcesDirectory': lab.job, 'Agent.TempDirectory': lab.tmp, 'System.AccessToken': 'token-de-prueba' });
+    const s = spawnSync('bash', ['-c', body], { cwd: lab.job, env: cleanEnv(lab.env), encoding: 'utf8' });
+    fs.chmodSync(path.dirname(viejo), 0o755);
+    assert.strictEqual(s.status, 0, `${model}: ${s.stdout}${s.stderr}`);
+    assert.match(s.stdout, /task\.logissue type=warning\]no pude dejar el perfil en [^\n]*: EACCES$/m, `${model}: lo dice, con el código`);
+    assert.doesNotMatch(s.stdout, /variable=TEAM_PROFILE/, `${model}: no anuncia el que no pudo escribir`);
+  }
+});
+
+test('TeamRepos_PerfilQueNoVale_NoDejaNadaViejo: lo que queda en --profile-out es de esta noche y pasa el lector', () => {
+  const tr = teamRepos({ maintainers: azRepo('Harness', 'maintainers') });
+  const out = (lab, f) => path.join(lab.tmp, 'perfil', f);
+  const seedOld = (lab) => {
+    fs.mkdirSync(path.join(lab.tmp, 'perfil'), { recursive: true });
+    for (const f of ['team-repos.json', 'team-profile.json']) fs.writeFileSync(out(lab, f), '{"de":"antes"}\n');
+  };
+  // es JSON pero el lector no lo acepta: no lo deja (las métricas miden con el de operaciones), y nombra dónde, sin valores
+  let lab = profileLab({ opsTeamRepos: tr, profileFiles: { 'team-repos.json': JSON.stringify({ ...tr, clave_inventada: 'valor-secreto' }), 'team-profile.json': '{}\n' } });
+  let r = runDiff(lab);
+  assert.strictEqual(r.status, 1, `${r.stdout}${r.stderr}`);
+  assert.match(r.stdout, /team-repos\.json: el del perfil no vale para el lector \(en: clave_inventada\)/);
+  assert.doesNotMatch(`${r.stdout}${r.stderr}`, /valor-secreto/, 'sin valores');
+  assert.ok(!fs.existsSync(out(lab, 'team-repos.json')), 'no deja uno que el lector rechaza');
+  assert.ok(fs.existsSync(out(lab, 'team-profile.json')), 'el perfil sí');
+  // el perfil ya no trae team-repos.json: no queda el de una corrida anterior
+  lab = profileLab({ opsTeamRepos: tr, profileFiles: { 'team-profile.json': '{"nuevo":true}\n' } });
+  seedOld(lab);
+  r = runDiff(lab);
+  assert.strictEqual(r.status, 1, `${r.stdout}${r.stderr}`);
+  assert.ok(!fs.existsSync(out(lab, 'team-repos.json')), 'el team-repos.json viejo no queda');
+  assert.strictEqual(fs.readFileSync(out(lab, 'team-profile.json'), 'utf8'), '{"nuevo":true}\n');
+  // no se pudo bajar el perfil (sale 3): tampoco queda el team-profile.json viejo, que dependencias anunciaría
+  lab = profileLab({ opsTeamRepos: tr, profileFiles: null });
+  seedOld(lab);
+  r = runDiff(lab);
+  assert.strictEqual(r.status, 3, `${r.stdout}${r.stderr}`);
+  for (const f of ['team-repos.json', 'team-profile.json']) assert.ok(!fs.existsSync(out(lab, f)), `${f} viejo no queda`);
+  // una falla que no es de escribir el perfil no se le atribuye a --profile-out: es no poder leerlo (3)
+  lab = profileLab({ opsTeamRepos: tr, profileFiles: { 'team-repos.json': JSON.stringify(tr), 'team-profile.json': '{}\n' } });
+  fs.writeFileSync(path.join(lab.tmp, 'clones'), 'un archivo, no una carpeta');
+  r = runDiff(lab);
+  assert.strictEqual(r.status, 3, `${r.stdout}${r.stderr}`);
+  assert.match(r.stdout, /no pude leer el perfil: [^\n]*EEXIST/);
+  assert.doesNotMatch(r.stdout, /no pude dejar el perfil/);
+});
+
+test('TeamRepos_ClaveProtoDelPerfil_SeVeComoDiferencia', () => {
+  const { canonical, differingKeys } = require(path.join(ROOT, 'scripts', 'ci', 'team-repos-diff.js'));
+  assert.strictEqual(typeof canonical, 'function');
+  assert.deepStrictEqual(differingKeys({ repos: [] }, JSON.parse('{"__proto__":{},"repos":[]}')), ['__proto__'], 'una clave que operaciones no tiene');
+  assert.deepStrictEqual(differingKeys({ b: 1, a: { x: 1, y: 2 } }, { a: { y: 2, x: 1 }, b: 1 }), [], 'el orden no cuenta');
 });
 
 test('Perfil_Ilegible_AvisaYSigue: el resumen y el aviso usan el perfil sólo si se leyó; si no, el canal por defecto', () => {
@@ -1331,4 +1390,117 @@ test('RunsReview_BuzonSinDeclarar_Rojo: el control del buzón va en un paso prop
     assert.strictEqual(r.status, rc, `${r.stdout}${r.stderr}`);
     if (msg) assert.match(r.stdout, msg);
   }
+});
+
+// ── la unidad de las estimaciones, del perfil; y el ensayo de la revisión de ejecuciones, sin pedidos (T15, T16) ───────
+test('StageMetrics_FotoPorProyecto_UnidadDelPerfil: baja el perfil como dependencias; la foto por proyecto lleva --org-config sólo si el perfil trajo su team-repos.json', () => {
+  const M = 'stage-metrics.yml';
+  const PASO = 'El perfil de la organización y su team-repos.json';
+  const MEDIR = 'Medir y escribir el punto del día';
+  const y = read(M);
+  const perfil = named(y, PASO);
+  assert.ok(perfil >= 0 && perfil < named(y, MEDIR), 'el perfil, antes de medir');
+  assert.doesNotMatch(condOf(namedStep(M, PASO).block), /efectos/, 'leer el perfil no es un efecto: corre también en el ensayo');
+  const { block } = namedStep(M, MEDIR);
+  assert.match(block, /OC=\(\); \[ -n "\$\{TEAM_REPOS_PROFILE:-\}" \] && \[ -f "\$TEAM_REPOS_PROFILE" \] && OC=\(--org-config "\$TEAM_REPOS_PROFILE"\)/, 'la unidad, sólo si se leyó');
+  const foto = block.slice(block.indexOf('node scripts/nightly/projects/snapshot.js')).split('||')[0];
+  assert.match(foto, /\$\{OC\[@\]\+"\$\{OC\[@\]\}"\}/, 'la foto por proyecto la recibe');
+  // el paso corre: con un team-repos.json legible en el perfil lo deja y lo anuncia; sin él, o roto, no
+  const tr = teamRepos({ maintainers: azRepo('Harness', 'maintainers') });
+  for (const [caso, files, anuncia] of [
+    ['con el del perfil', { 'team-repos.json': JSON.stringify(tr), 'team-profile.json': '{}\n' }, true],
+    ['el perfil sin uno', { 'team-profile.json': '{}\n' }, false],
+    ['el del perfil roto', { 'team-repos.json': '{ roto', 'team-profile.json': '{}\n' }, false],
+    ['el perfil no se baja', null, false],
+  ]) {
+    const lab = profileLab({ opsTeamRepos: tr, profileFiles: files });
+    const body = stepScript(M, PASO, { 'Build.SourcesDirectory': lab.job, 'Agent.TempDirectory': lab.tmp });
+    const s = spawnSync('bash', ['-c', body], { cwd: lab.job, env: cleanEnv(lab.env), encoding: 'utf8' });
+    assert.strictEqual(s.status, 0, `${caso}: ${s.stdout}${s.stderr}`);
+    const dejado = path.join(lab.tmp, 'perfil', 'team-repos.json');
+    if (anuncia) {
+      assert.ok(s.stdout.includes(`##vso[task.setvariable variable=TEAM_REPOS_PROFILE]${dejado}`), `${caso}: lo anuncia`);
+      assert.deepStrictEqual(JSON.parse(fs.readFileSync(dejado, 'utf8')), tr, `${caso}: el del perfil, tal cual`);
+    } else {
+      assert.doesNotMatch(s.stdout, /variable=TEAM_REPOS_PROFILE/, `${caso}: no lo anuncia`);
+      assert.ok(!fs.existsSync(dejado), `${caso}: no deja uno`);
+      assert.ok(s.stdout.includes('la foto por proyecto mide con el team-repos.json de operaciones'), `${caso}: dice con qué unidad mide`);
+    }
+  }
+  // si no pudo dejar el del perfil, no anuncia el que haya quedado (uno a medias o de antes): la foto vuelve al de operaciones
+  const lab = profileLab({ opsTeamRepos: tr, profileFiles: { 'team-repos.json': JSON.stringify(tr), 'team-profile.json': '{}\n' } });
+  const viejo = path.join(lab.tmp, 'perfil', 'team-repos.json');
+  fs.mkdirSync(path.dirname(viejo), { recursive: true });
+  fs.writeFileSync(viejo, '{ a medias');
+  // la carpeta de sólo lectura: el viejo no se puede sacar ni pisar
+  fs.chmodSync(path.dirname(viejo), 0o555);
+  const body = stepScript(M, PASO, { 'Build.SourcesDirectory': lab.job, 'Agent.TempDirectory': lab.tmp });
+  const s = spawnSync('bash', ['-c', body], { cwd: lab.job, env: cleanEnv(lab.env), encoding: 'utf8' });
+  fs.chmodSync(path.dirname(viejo), 0o755);
+  assert.strictEqual(s.status, 0, `${s.stdout}${s.stderr}`);
+  assert.doesNotMatch(s.stdout, /variable=TEAM_REPOS_PROFILE/, 'no anuncia el que no pudo escribir');
+  assert.match(s.stdout, /task\.logissue type=warning\]no pude dejar el perfil en /, 'y lo dice');
+  // la línea de la unidad corre: con el del perfil, la foto recibe --org-config; sin él, o con uno que no existe, nada
+  const oc = block.split('\n').find((l) => l.trim().startsWith('OC=();')).trim();
+  for (const [perfilVar, args] of [[viejo, `--org-config|${viejo}|`], [undefined, ''], [path.join(lab.tmp, 'no-esta.json'), '']]) {
+    const env = cleanEnv({});
+    if (perfilVar !== undefined) env.TEAM_REPOS_PROFILE = perfilVar;
+    const r = spawnSync('bash', ['-c', `set -u; ${oc}; for a in \${OC[@]+"\${OC[@]}"}; do printf '%s|' "$a"; done`], { env, encoding: 'utf8' });
+    assert.strictEqual(r.stdout, args, `TEAM_REPOS_PROFILE=${perfilVar}`);
+  }
+});
+
+/** La tarea AzureCLI@2 de un modelo, por su nombre: desde su `- task:` hasta el paso que sigue. */
+function azureCliBlock(model, name) {
+  const lines = read(model).split('\n');
+  const at = lines.findIndex((l) => l.includes(`displayName: '${name}'`));
+  assert.ok(at > 0, `${model}: falta la tarea «${name}»`);
+  let start = at;
+  while (start > 0 && !/^\s*- task: AzureCLI@2/.test(lines[start])) start -= 1;
+  const indent = lines[start].match(/^ */)[0].length;
+  let end = start + 1;
+  while (end < lines.length && (!lines[end].trim() || lines[end].match(/^ */)[0].length > indent)) end += 1;
+  return lines.slice(start, end).join('\n');
+}
+/** Las variables que llegan a una tarea con `efectos` en un valor: resuelve los `${{ if eq(parameters.efectos, …) }}` de su `env:`. */
+function envFor(block, efectos) {
+  const lines = block.split('\n');
+  const i = lines.findIndex((l) => /^\s+env:\s*$/.test(l));
+  if (i < 0) return {};
+  const base = lines[i].match(/^ */)[0].length;
+  const out = {};
+  let fuera = null;
+  for (const l of lines.slice(i + 1)) {
+    if (!l.trim() || /^\s*#/.test(l)) continue;
+    const ind = l.match(/^ */)[0].length;
+    if (ind <= base) break;
+    if (fuera !== null && ind > fuera) continue;
+    fuera = null;
+    const cond = l.match(/^\s*\$\{\{ if eq\(parameters\.efectos, (true|false)\) \}\}:\s*$/);
+    if (cond) { if (String(efectos) !== cond[1]) fuera = ind; continue; }
+    assert.doesNotMatch(l, /\$\{\{/, `una expresión que la prueba no sabe resolver: ${l.trim()}`);
+    const kv = l.match(/^\s*([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/);
+    if (kv) out[kv[1]] = kv[2];
+  }
+  return out;
+}
+
+test('RunsReview_SinEfectos_SinToken: el token llega a la revisión sólo con efectos; sin efectos, la revisión no pide ni avisa', () => {
+  const M = 'runs-review.yml';
+  const block = azureCliBlock(M, 'Revisar las ejecuciones del buzón');
+  assert.strictEqual(envFor(block, true).AZURE_DEVOPS_EXT_PAT, '$(System.AccessToken)', 'con efectos, el token');
+  assert.ok(!('AZURE_DEVOPS_EXT_PAT' in envFor(block, false)), 'sin efectos, ningún token');
+  assert.strictEqual((read(M).match(/AZURE_DEVOPS_EXT_PAT/g) || []).length, 1, 'el token no llega por otro lado');
+  // sacar el token no alcanza (`az` queda conectado con la cuenta del buzón): el guion le dice a la revisión que no pida
+  const linea = 'NWI=(); [ "${{ parameters.efectos }}" = "True" ] || NWI=(--no-work-items)';
+  assert.ok(block.includes(linea), 'el corte, según efectos');
+  const llamado = block.slice(block.indexOf('runs-review.js run'));
+  assert.match(llamado.split('\n').slice(0, 2).join('\n'), /\$\{NWI\[@\]\+"\$\{NWI\[@\]\}"\}/, 'la revisión lo recibe');
+  for (const [valor, args] of [['True', ''], ['False', '--no-work-items']]) {
+    const r = spawnSync('bash', ['-c', `set -u; ${linea.split('${{ parameters.efectos }}').join(valor)}; printf '%s' "\${NWI[@]+"\${NWI[@]}"}"`], { encoding: 'utf8' });
+    assert.strictEqual(r.stdout, args, `efectos ${valor}`);
+  }
+  // la revisión conoce la opción: `run --no-work-items` no es «uso»
+  const RR = fs.readFileSync(path.join(ROOT, 'scripts', 'nightly', 'runs-review', 'runs-review.js'), 'utf8');
+  assert.match(RR, /noWorkItems: argv\.includes\('--no-work-items'\)/);
 });

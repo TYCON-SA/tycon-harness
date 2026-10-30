@@ -334,9 +334,11 @@ async function run(opts) {
   // las decisiones confirmadas en el sitio que otra persona aprobó, antes de revisar; sólo renglones a la
   // salida de error: last-run.json conserva su forma
   for (const l of CYCLE.aplicarDecisiones({ base: opsDir, fuente: 'ejecuciones' }).lineas) process.stderr.write(`${l}\n`);
+  // el ensayo de la noche (`--no-work-items`) no crea pedidos ni comenta en ninguno: lo dice una vez y la revisión sigue
+  if (opts.noWorkItems) process.stderr.write('pedidos de ejecuciones: ensayo sin efectos, no se pidió ni se avisó en ningún pedido\n');
   // el pedido de trabajo de cada arreglo decidido que todavía no lo tiene
   // un error del paso no corta la revisión de la noche: se dice y la noche siguiente vuelve a pedir
-  try {
+  if (!opts.noWorkItems) try {
     const pedidos = await CYCLE.pedirTrabajo({ base: opsDir, fuente: 'ejecuciones', operations: path.join(opsDir, 'operations.json'), run: opts.plataforma || null, repoDir: opsDir });
     for (const l of pedidos.lineas) process.stderr.write(`${l}\n`);
   } catch (e) { process.stderr.write(`pedidos de ejecuciones: el paso falló (${(e && e.constructor && /^[A-Za-z_]{1,30}$/.test(e.constructor.name) ? e.constructor.name : 'error')}); esta noche no se pidió ninguno\n`); }
@@ -552,12 +554,12 @@ async function run(opts) {
     if (estado.ilegibles) { estado.completo = false; if (!estado.motivo) estado.motivo = `${estado.ilegibles} archivo(s) o línea(s) ilegible(s)`; }
     if (estado.completo) contarNoches();
     // el aviso a su pedido de cada ficha que volvió; como el pedido, un error no corta la noche
-    try {
+    if (!opts.noWorkItems) try {
       const avisos = await CYCLE.avisarQueVolvio({ base: opsDir, fuente: 'ejecuciones', operations: opsJson, hoy: today, run: opts.plataforma || null, repoDir: opsDir });
       for (const l of avisos.lineas) process.stderr.write(`${l}\n`);
     } catch (e) { process.stderr.write(`avisos de ejecuciones: el paso falló (${(e && e.constructor && /^[A-Za-z_]{1,30}$/.test(e.constructor.name) ? e.constructor.name : 'error')}); se avisa mañana\n`); }
     // y a su pedido cerrado, que la falla sigue
-    try {
+    if (!opts.noWorkItems) try {
       const cerrados = await CYCLE.avisarCerradoConFallaViva({ base: opsDir, fuente: 'ejecuciones', operations: opsJson, hoy: today, run: opts.plataforma || null, repoDir: opsDir, vistas: conCasoNuevo });
       for (const l of cerrados.lineas) process.stderr.write(`${l}\n`);
     } catch (e) { process.stderr.write(`pedidos cerrados de ejecuciones: el paso falló (${(e && e.constructor && /^[A-Za-z_]{1,30}$/.test(e.constructor.name) ? e.constructor.name : 'error')}); se mira mañana\n`); }
@@ -583,13 +585,13 @@ function main(argv) {
     process.stdout.write(`${JSON.stringify(r, null, 2)}\n`);
     return Promise.resolve(r.ilegibles ? 1 : 0);
   }
-  if (argv[0] !== 'run') { process.stderr.write('uso: runs-review.js run --mailbox <dir> --operations <dir> --today <AAAA-MM-DD> [--days 7] [--no-download]\n       runs-review.js migrate --operations <dir> --today <AAAA-MM-DD> [--dry-run]\n'); return Promise.resolve(2); }
+  if (argv[0] !== 'run') { process.stderr.write('uso: runs-review.js run --mailbox <dir> --operations <dir> --today <AAAA-MM-DD> [--days 7] [--no-download] [--no-work-items]\n       runs-review.js migrate --operations <dir> --today <AAAA-MM-DD> [--dry-run]\n'); return Promise.resolve(2); }
   const days = val('--days') === undefined ? undefined : Number(val('--days'));
-  return run({ mailbox: val('--mailbox'), ops: val('--operations'), today: val('--today'), days, noDownload: argv.includes('--no-download') })
+  return run({ mailbox: val('--mailbox'), ops: val('--operations'), today: val('--today'), days, noDownload: argv.includes('--no-download'), noWorkItems: argv.includes('--no-work-items') })
     .then((r) => { process.stdout.write(`${JSON.stringify(r.estado || { motivo: r.motivo }, null, 2)}\n`); return r.codigo; });
 }
 
-module.exports = { run, migrar, leerFicha, diaDelNombre, causaDe, enlaceDeCaso, MOTIVOS };
+module.exports = { run, main, migrar, leerFicha, diaDelNombre, causaDe, enlaceDeCaso, MOTIVOS };
 
 if (require.main === module) {
   main(process.argv.slice(2)).then((c) => { process.exitCode = c; }, (e) => { process.stderr.write(`runs-review: ${e && e.stack ? e.stack : e}\n`); process.exitCode = 1; });
