@@ -89,7 +89,7 @@ test('T7 Textos_CadaClaveEnLosDosIdiomas @story-2.42 @ac-5 @ac-9 @story-2.60 @ac
   // rojo: una clave sin «en», otra con valores distintos, otra con HTML; la prueba nombra cada una
   const rota = { ...T.TEXTOS, 'prueba.sinIngles': { es: 'hola' }, 'prueba.valores': { es: '{n} días', en: '{dias} days' }, 'prueba.html': { es: 'a <b>b</b>', en: 'a <b>b</b>' }, 'prueba.vacio': { es: 'x', en: '  ' } };
   const p = T.problemasDeLaTabla(rota).join('\n');
-  for (const k of ['prueba.sinIngles', 'prueba.valores', 'prueba.html', 'prueba.vacio']) assert.match(p, new RegExp(k.replace('.', '\\.')), `la prueba nombra ${k}`);
+  for (const k of ['prueba.sinIngles', 'prueba.valores', 'prueba.html', 'prueba.vacio']) assert.match(p, new RegExp(k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `la prueba nombra ${k}`);
   // t(): los valores con nombre se reemplazan; un idioma desconocido cae a castellano; una clave inexistente tira
   const una = claves.find((k) => T.valoresDe(T.TEXTOS[k].es).length === 0);
   assert.strictEqual(T.t('en', una), T.TEXTOS[una].en);

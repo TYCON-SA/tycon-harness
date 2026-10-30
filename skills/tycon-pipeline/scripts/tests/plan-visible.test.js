@@ -68,7 +68,7 @@ test('PlanVisible_SinPlan_NoSeApruebaSolo @story-8.62 @ac-7', () => {
   hasta3(home, 's-sin', repo, story);
   const r = markerCli(home, 's-sin', repo, ['complete-step', '3', '--auto-approved', 'LOW: superficie chica']);
   assert.notEqual(r.status, 0, r.stdout);
-  assert.match(r.stderr, new RegExp(PLAN.replace(/\./g, '\\.')));
+  assert.match(r.stderr, new RegExp(PLAN.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(r.stderr, /escrib/i, 'dice que primero se escribe el plan');
   assert.equal(paso3Cerrado(home, 's-sin', repo), false, 'el paso 3 sigue abierto');
   // un plan vacío tampoco alcanza

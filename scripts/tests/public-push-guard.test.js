@@ -377,7 +377,7 @@ test('T22_ForbiddenPaths_EveryPrivateFolderAndTheListOnes_Blocked_NewGuidePasses
   const cases = ['.engram/x.jsonl.gz', 'specs/story-1.md', 'tasks/todo.md', 'inbox/a.md', '.advisors/r.md', '.dashboard/m.json', 'interno/notas/a.md', 'perfil-de-prueba.json'];
   cases.forEach((rel, i) => {
     commitOn(fx, `vedada-${i}`, { [rel]: 'contenido limpio\n' });
-    assertBlocked(fx, guard(fx, branchLine(fx, `vedada-${i}`)), { category: 'ruta-vedada', place: new RegExp(rel.replace(/[.]/g, '\\.')), secret: [] });
+    assertBlocked(fx, guard(fx, branchLine(fx, `vedada-${i}`)), { category: 'ruta-vedada', place: new RegExp(rel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), secret: [] });
   });
   // agregada y sacada en la misma rama: sigue en la historia
   commitOn(fx, 'vedada-neta', { 'specs/story-2.md': 'x\n' });

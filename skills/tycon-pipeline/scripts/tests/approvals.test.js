@@ -518,7 +518,7 @@ test('Aprobar_ProyeccionFalla_AvisaYSigue @story-8.133 @ac-7', () => {
 // El cierre: un marcador en «Preparar el commit» con la corrida abierta en el repo del código. Los demás frenos del
 // cierre pueden frenar también; cada prueba mira la línea y el mensaje de éste.
 const CORRIDA = '9.95-20991231120000';
-const CORRIDA_RE = CORRIDA.replace('.', '\\.');
+const CORRIDA_RE = CORRIDA.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const SIN_DEL_ENTORNO = ['TYCON_NO_DEEP_REVIEW', 'DOD_BYPASS', 'TYCON_5B_EARLY', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID', 'STOP_AUTONOMY'];
 function marcadorDelCierre(home, { story, codeRepo, extra = {} }) {
   const activo = path.join(home, '.claude', '.tycon-pipeline', 'active');
@@ -615,7 +615,7 @@ test('Cierre_CorridaVieja_SeProyectaONombra @story-8.133 @ac-11', () => {
   fs.writeFileSync(path.join(sola, 'review-roster.json'), '{"registro_aprobaciones":1}');
   r = cerrar(c.home, repos.codeRepo);
   assert.equal(r.status, 2, r.stderr);
-  assert.match(r.stderr, new RegExp(VIEJA.replace('.', '\\.')));
+  assert.match(r.stderr, new RegExp(VIEJA.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.doesNotMatch(r.stderr, new RegExp(`${CORRIDA_RE}.*sin-`), 'la abierta está al día');
   assert.equal(r.freno[0].status, 'blocked');
 });
@@ -649,7 +649,7 @@ test('Cierre_RosterIlegible_Frena @story-8.133 @ac-16', () => {
   fs.writeFileSync(path.join(vieja, 'review-roster.json'), '{ esto no es json');
   const r = cerrar(home, repos.codeRepo);
   assert.equal(r.status, 2, r.stderr);
-  assert.match(r.stderr, new RegExp(`${VIEJA.replace('.', '\\.')}: review-roster-ilegible`));
+  assert.match(r.stderr, new RegExp(`${VIEJA.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: review-roster-ilegible`));
   assert.equal(r.freno[0].status, 'blocked');
 });
 
@@ -802,7 +802,7 @@ test('Cierre_CorridaVieja_ArregloDeCorridaVieja @story-8.133 @ac-20', () => {
   corridaEn(repos.storyRepo, VIEJA);
   const r = cerrar(c.home, repos.codeRepo);
   assert.equal(r.status, 2, r.stderr);
-  assert.match(r.stderr, new RegExp(`${VIEJA.replace('.', '\\.')}: sin-registro-de-aprobaciones`));
+  assert.match(r.stderr, new RegExp(`${VIEJA.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: sin-registro-de-aprobaciones`));
   assert.match(r.stderr, /corrida vieja/);
   assert.match(r.stderr, /advisors_exempt/);
   assert.doesNotMatch(r.stderr, /complete-step approve-plan/, 'approve-plan anota en la abierta, no en la vieja');

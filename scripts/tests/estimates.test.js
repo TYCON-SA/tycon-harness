@@ -788,8 +788,8 @@ test('T36 Censo @story-2.75 @ac-33', () => {
   const guia = fs.readFileSync(path.join(ROOT, 'guides', 'piezas-del-arnes.md'), 'utf8');
   const detalle = fs.readFileSync(path.join(ROOT, 'guides', 'maintaining', 'piezas-en-detalle.md'), 'utf8');
   for (const p of piezas) {
-    assert.match(guia, new RegExp(`^## ${p.replace(/[.]/g, '\\.')}$`, 'm'), `${p}: sin ficha en piezas-del-arnes.md`);
-    assert.match(detalle, new RegExp(`^## ${p.replace(/[.]/g, '\\.')}$`, 'm'), `${p}: sin detalle en piezas-en-detalle.md`);
+    assert.match(guia, new RegExp(`^## ${p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'), `${p}: sin ficha en piezas-del-arnes.md`);
+    assert.match(detalle, new RegExp(`^## ${p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'), `${p}: sin detalle en piezas-en-detalle.md`);
   }
   const suites = JSON.stringify(JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'tests', 'suites.json'), 'utf8')));
   for (const ruta of ['tests/estimates.test.js', 'tests/similar-stories.test.js', 'tycon-pipeline/scripts/tests/estimate-real.test.js', 'tests/platform-estimate.test.js']) {

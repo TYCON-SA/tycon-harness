@@ -678,7 +678,7 @@ test('T61 — en verde, pero la versión quedó atrás de la destino: 7 (se comp
   git(t.work, ['update-ref', 'refs/remotes/origin/main', git(t.work, ['rev-parse', 'origin/main~1'])]);
   const r = wait(Object.assign(t, { head }), [view(head, {}, [run(CHECK, 'SUCCESS')])]);
   assert.deepStrictEqual([r.code, r.outcome], [7, 'version-behind']);
-  assert.match(r.reason, new RegExp(`${DAY.replace(/\./g, '\\.')}\\.2`));
+  assert.match(r.reason, new RegExp(`${DAY.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.2`));
   // un repo que no numera versiones no tiene qué comparar
   const plain = toy({ version: null });
   branch(plain.work, 'feat/a');

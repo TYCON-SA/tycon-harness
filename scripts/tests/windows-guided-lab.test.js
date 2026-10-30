@@ -249,7 +249,7 @@ test('GuidedInstall_LabRun_ToyPublishedTree_FollowsThePage', { skip: SKIP }, () 
   const md = fs.readFileSync(path.join(onboarding.out, 'windows-report.md'), 'utf8');
   // la respuesta de la persona, dicha en una línea: no se lee como un verde total (pedido de la coordinadora, pedido 3)
   assert.match(md, /- la respuesta de la persona: en el paso install se sumó `--yes`/);
-  for (const said of [/## El alta, siguiendo la página pública/, /\| Paso \| Quién \| Comando \| Salió \| Esperado contra medido \|/, /\| install \| la máquina \| .*npx @tyconsa\/harness@latest.* \| 0 \|/, /\*\*La capa del equipo\*\*/, /Cómo quedó la máquina con la capa puesta: \d+ hook\(s\)/, /## Lo que el laboratorio cambió/, /- onboarding · guided: carpeta de usuario /, /## No ensayado/, new RegExp(`\\| una copia publicada del arnés \\| .* \\| ${TOY.version.replace(/\./g, '\\.')} \\|`)]) assert.match(md, said);
+  for (const said of [/## El alta, siguiendo la página pública/, /\| Paso \| Quién \| Comando \| Salió \| Esperado contra medido \|/, /\| install \| la máquina \| .*npx @tyconsa\/harness@latest.* \| 0 \|/, /\*\*La capa del equipo\*\*/, /Cómo quedó la máquina con la capa puesta: \d+ hook\(s\)/, /## Lo que el laboratorio cambió/, /- onboarding · guided: carpeta de usuario /, /## No ensayado/, new RegExp(`\\| una copia publicada del arnés \\| .* \\| ${TOY.version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\|`)]) assert.match(md, said);
   assert.ok(!md.includes(config.azure.token));
   assert.match(md, /- TYCON_GITHUB_TOKEN: no se pone en ningún paso/, 'el reporte dice que ningún paso llevó un permiso de GitHub');
 });
@@ -437,7 +437,7 @@ test('GuidedUpdate_LabRun_Auto_ReachesTheNewVersionByItself', { skip: SKIP }, ()
   const finished = node([path.join(DIR, 'rehearse.js'), 'finish', '--out', update.out]);
   assert.strictEqual(finished.status, 0, finished.stderr || finished.stdout);
   const md = fs.readFileSync(path.join(update.out, 'windows-report.md'), 'utf8');
-  const rx = (number) => number.replace(/\./g, '\\.');
+  const rx = (number) => number.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   for (const said of [
     /## La actualización, sobre una máquina instalada con la página/,
     new RegExp(`\\| auto — .* \\| ${rx(before)} \\| ${rx(published)} \\| ${rx(published)} \\| sí \\|`),

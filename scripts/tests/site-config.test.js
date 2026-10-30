@@ -70,7 +70,7 @@ test('T6 Revisar_MismoLector_ProblemasConRuta @story-2.29 @ac-6 — el lector de
 test('T17 Perfil_SinVersionMinima_NoPropone @story-2.29 @ac-17 — la parte común del texto, sin la cola del clon', () => {
   const bajo = ORG.profileGateProblem(JSON.stringify({ requires: { harness: '>= 2026.10.01.1' } }));
   assert.match(bajo, /todavía no se puede proponer/);
-  assert.match(bajo, new RegExp(ORG.TEAM_REPOS_SINCE.replace(/\./g, '\\.')));
+  assert.match(bajo, new RegExp(ORG.TEAM_REPOS_SINCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.doesNotMatch(bajo, /quedó guardado en tu clon/);
   assert.strictEqual(ORG.profileGateProblem(JSON.stringify({ requires: { harness: `>= ${ORG.TEAM_REPOS_SINCE}` } })), null);
   assert.match(ORG.profileGateProblem('no es json'), /no pude leer team-layer\.json/);
@@ -1328,7 +1328,7 @@ test('7.29-T23 Config_Modelos_PortonDeVersion @story-7.29 @ac-5 — con varias c
   assert.strictEqual(g(ORG.MODELS_SINCE, { ...conModelos, ...SUITES_OK }), null);
   await conPerfil({ layer: capa(ORG.MERGE_SUITES_SINCE) }, async ({ revisar, proponer }) => {
     const r = await revisar('modelos', { models: { reviewers: 'opus' } });
-    assert.match((await proponer('modelos', r.texto)).message, new RegExp(`todavía no se puede proponer.*>= ${ORG.MODELS_SINCE.replace(/\./g, '\\.')}`));
+    assert.match((await proponer('modelos', r.texto)).message, new RegExp(`todavía no se puede proponer.*>= ${ORG.MODELS_SINCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   });
 });
 
@@ -2499,7 +2499,7 @@ test('T27 TeamRepos_StackKey_SinceVersion @story-8.48 @ac-27 @ac-33 — `stack` 
   assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.idCorto], ['team-repos.json', 'perfil', 'team-repos.js', ['stack'], 'repos']);
   assert.ok(ORG.versionAtLeast(ORG.STACK_SINCE, ORG.COVERAGE_SINCE) && ORG.STACK_SINCE !== ORG.COVERAGE_SINCE, 'la versión de `stack` es posterior a la de cobertura');
   const borrador = { stack: { code_extensions: ['.ex'], rules: { test_names: 'snake' } } };
-  for (const [v, espera] of [[ORG.COVERAGE_SINCE, new RegExp(`todavía no se puede proponer.*stack.*${ORG.STACK_SINCE.replace(/\./g, '\\.')}`)], [ORG.STACK_SINCE, PASO_EL_PORTON]]) {
+  for (const [v, espera] of [[ORG.COVERAGE_SINCE, new RegExp(`todavía no se puede proponer.*stack.*${ORG.STACK_SINCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)], [ORG.STACK_SINCE, PASO_EL_PORTON]]) {
     await conPerfil({ layer: capa(v) }, async ({ seccion, revisar, proponer }) => {
       const sec = await seccion('tecnologia');
       assert.strictEqual(sec.estado, 'cargado');
@@ -4546,7 +4546,7 @@ test('T13b Modelos_CodexReviewersInherit_PideSuVersion · se revisa con el lecto
   assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { codex_reviewers: 'inherit' } }).version, ORG.CODEX_REVIEWERS_SINCE);
   assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { reviewers: 'balanced', codex_reviewers: 'inherit' } }).version, ORG.CODEX_REVIEWERS_SINCE, 'con niveles, la mayor');
   assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { reviewers: 'balanced' } }).version, ORG.MODEL_LEVELS_SINCE, 'sin la clave, como hoy');
-  assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODEL_LEVELS_SINCE)), { ...TR_BASE, models: { codex_reviewers: 'inherit' } })), new RegExp(ORG.CODEX_REVIEWERS_SINCE.replace(/\./g, '\\.')));
+  assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODEL_LEVELS_SINCE)), { ...TR_BASE, models: { codex_reviewers: 'inherit' } })), new RegExp(ORG.CODEX_REVIEWERS_SINCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   const ok = ORG.revisar({ seccion: 'modelos', texto: ORG.formatJson(TR_BASE), borrador: { models: { codex_reviewers: 'inherit' } }, lectores: { 'team-repos.js': TEAM } });
   assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
   assert.match(ok.texto, /"codex_reviewers": "inherit"/);
@@ -4580,7 +4580,7 @@ test('T13 Modelos_NivelesPidenSuVersion @story-2.70 @ac-11', async () => {
   assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { reviewers: 'sonnet' } }).version, ORG.MODELS_SINCE, 'con nombres, la de siempre');
   assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { reviewers: 'balanced' } }).version, ORG.MODEL_LEVELS_SINCE);
   assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { session: { heavy: 'max' } } }).version, ORG.MODEL_LEVELS_SINCE, 'un nivel adentro de un objeto');
-  assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODELS_SINCE)), { ...TR_BASE, models: { reviewers: 'balanced' } })), new RegExp(ORG.MODEL_LEVELS_SINCE.replace(/\./g, '\\.')));
+  assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODELS_SINCE)), { ...TR_BASE, models: { reviewers: 'balanced' } })), new RegExp(ORG.MODEL_LEVELS_SINCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.strictEqual(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODEL_LEVELS_SINCE)), { ...TR_BASE, models: { reviewers: 'balanced' } }), null);
   assert.strictEqual(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODELS_SINCE)), { ...TR_BASE, models: { reviewers: 'sonnet' } }), null);
   // un comentario cuyo texto es un nivel no es un nivel: ni pide la versión ni se traduce
@@ -4711,7 +4711,7 @@ test('T40 Proveedores_PidenSuVersion @story-2.73 @ac-32', () => {
   assert.notStrictEqual(ORG.MODEL_PROVIDERS_SINCE, ORG.CODEX_REVIEWERS_SINCE);
   for (const models of [{ providers: { ollama: { economy: 'x' } } }, { allowed: { ollama: ['x'] } }, { nightly: { provider: 'anthropic' } }]) {
     assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models }).version, ORG.MODEL_PROVIDERS_SINCE, JSON.stringify(models));
-    assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.CODEX_REVIEWERS_SINCE)), { ...TR_BASE, models })), new RegExp(ORG.MODEL_PROVIDERS_SINCE.replace(/\./g, '\\.')));
+    assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.CODEX_REVIEWERS_SINCE)), { ...TR_BASE, models })), new RegExp(ORG.MODEL_PROVIDERS_SINCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
   assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { reviewers: 'balanced' } }).version, ORG.MODEL_LEVELS_SINCE);
   assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { reviewers: 'sonnet' } }).version, ORG.MODELS_SINCE);
@@ -5107,7 +5107,7 @@ test('2.75-T25 Estimates_PideSuVersion @story-2.75 @ac-22 — con la clave, el p
   assert.strictEqual(con.version, ORG.ESTIMATES_SINCE);
   assert.ok(con.claves.includes('estimates'));
   assert.strictEqual(ORG.versionQuePide({ ...TR_BASE }).version, ORG.TEAM_REPOS_SINCE, 'sin la clave, la de siempre');
-  assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODEL_PROVIDERS_SINCE)), { ...TR_BASE, estimates: { unit: 'days' } })), new RegExp(ORG.ESTIMATES_SINCE.replace(/\./g, '\\.')));
+  assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODEL_PROVIDERS_SINCE)), { ...TR_BASE, estimates: { unit: 'days' } })), new RegExp(ORG.ESTIMATES_SINCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 });
 
 test('2.75-T26 Textos_EnEsYEn @story-2.75 @ac-26 — los textos de la sección y de la vista existen en castellano y en inglés', () => {
