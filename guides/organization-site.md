@@ -1176,9 +1176,11 @@ Con eso la noche empuja directo, y el sitio abre su pedido, lo aprueba con su id
 «Aplicado»). Una persona no puede empujar a `main` (rebota con `TF402455`): entra por un pedido, que puede aprobar ella
 misma.
 
-**En GitHub** la noche entra sola; el sitio, todavía no: quien abre un pull request no puede aprobarlo. La regla es la de
-empuje por ruta del README de GitHub: el sitio valida y descarga `operations.json`, y quien mantiene abre el pull
-request a mano.
+**En GitHub** la noche entra sola. Quien abre un pull request no puede aprobarlo, así que el sitio no vota: une su
+pedido directo cuando su identidad puede saltear la revisión; si el repo pide la aprobación de otra persona, le prende la
+**unión automática** (*Allow auto-merge*) y entra cuando alguien lo apruebe; y si GitHub no deja la unión automática, el
+pedido queda abierto para que alguien lo apruebe y lo una a mano. Con la regla de empuje por ruta del README de GitHub,
+el sitio no propone cambios a `operations.json`: los valida y descarga, y quien mantiene abre el pull request a mano.
 
 **Lo que se resigna.** Nadie revisa esos cambios antes de que entren. Queda la constancia: cada cambio del sitio es un
 pedido con quien lo pidió, y el registro del sitio anota `cambio aplicado: <archivo>, pedido <enlace>`.

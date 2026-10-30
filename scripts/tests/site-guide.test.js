@@ -37,7 +37,9 @@ const PARTES = [
 const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 
 // La huella de la parte de instalación (desde «Qué hace falta antes» hasta el final). Si la instalación cambia a
-// propósito, se cambia acá con el motivo en el mismo commit. La de hoy suma que una organización puede no pedir el
+// propósito, se cambia acá con el motivo en el mismo commit. La de hoy dice cómo entra el sitio en GitHub (une directo,
+// prende la unión automática o el pedido queda para aprobar a mano), donde antes decía que todavía no entraba solo;
+// antes sumaba que una organización puede no pedir el
 // revisor en sus repos de producto, y entonces «Proponer» queda apagado ahí; antes sumaba «Invitar a alguien» y «El permiso de
 // invitar» (el botón, sus estados, revocar, el permiso User.Invite.All con su riesgo, cómo se da y se saca);
 // antes sumaba la regla «todo automático» de la rama de operaciones (la política de Azure DevOps con el voto del autor, lo que se resigna y cómo volver a pedir aprobación); antes sumaba que «Salir» no pasa por el candado ni por Microsoft y deja la marca de «salió», y que la página «Saliste» libre del candado se ve aunque el candado haya vencido; antes sumaba que sin disco «Salir» avisa que no pudo invalidar la sesión, y de dónde lee operaciones (la copia en un
@@ -53,8 +55,8 @@ const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 // SITE_PRODUCTS_WRITE_TOKEN de los repos de producto, en la tabla de secretos y en «El permiso para Proponer»; y la
 // línea «cambio aplicado» del registro, que ya no lleva el correo de quien propone.
 const HUELLA_INSTALACION = {
-  es: '56b7d9d4c0a6e0f555fd120d0f7d85119e7d6f3981f3c650a86dd30402ddef00',
-  en: '704f9c72caad1c9fc3d54aaee0f774565f758d2ddbef0d7c065f523be1808265',
+  es: '66471b67e90e80c6fd5c216893b9a73e696867a2a2ea44d4c2d799f6e0873bc3',
+  en: '4dd1fa9709d147a581114d79a848bbc8de83da0d8c675a961fb2111381fe70be',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {
@@ -188,8 +190,9 @@ test('T9 Capturas_SinNombresReales @story-2.32 @ac-13', (t) => {
   if (!fs.existsSync(lista)) { t.skip('NO MEDIDO: esta copia no trae la lista privada (scripts/publishing/denylist.json); los correos sí se midieron'); return; }
   const detector = require(path.join(ROOT, 'scripts', 'publishing', 'detector.js'));
   const cfg = detector.cargarConfig(lista);
-  const hallazgos = textos.flatMap(([n, h]) => detector.reviewText(cfg, h, `capturas/${n}.html`).hallazgos.map((x) => `${n}: ${x.regla} (línea ${x.linea})`));
-  // el mensaje no trae el texto encontrado: la regla y la línea alcanzan para buscarlo
+  // el mensaje no trae el término encontrado: `regla` y `texto` del detector lo nombran, así que sólo van la categoría
+  // y la línea, que alcanzan para buscarlo
+  const hallazgos = textos.flatMap(([n, h]) => detector.reviewText(cfg, h, `capturas/${n}.html`).hallazgos.map((x) => `${n}: ${x.categoria} (línea ${x.linea})`));
   assert.deepStrictEqual(hallazgos, [], 'el HTML de una captura trae un término de la lista privada');
 });
 
