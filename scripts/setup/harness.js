@@ -129,6 +129,8 @@ const COMMANDS = {
   // pasa a `install` tal cual, que es quien las valida (`passthrough`: `parse` entrega los argumentos sin mirarlos)
   npx:       { opts: {}, passthrough: true, help: 'lo que sigue a la bajada de `npx @tyconsa/harness@latest` (el paquete baja este árbol y lo corre con el commit en TYCON_NPX_COMMIT): revisa los requisitos (Node, tar; bash y python3, o pwsh 7 en Windows) y que haya Claude Code o Codex, y dice lo que falta sin instalar nada; sin preguntas, es para mí (--team <repo> para sumarte a un equipo, --audience team|org para elegir, org da de alta tu organización), con la instalación mínima, ninguna conexión opcional y sin paquete; después corre install --version latest --defaults de este árbol: muestra un plan de cinco renglones y pregunta una sola vez «¿Instalo? [s/N]». Con el arnés ya instalado no lo reinstala: dice si está al día, o pregunta «¿Actualizo? [s/N]» y corre el update de este árbol. Sin nadie delante, --yes acepta el plan. Sale 0 bien o nada que hacer, 1 si falta algo, 2 por un uso mal hecho o una confirmación pendiente' },
   layer:     { opts: { '--check': 'flag', '--list': 'flag', '--json': 'flag', '--public': 'value', '--harness-clone': 'value' }, help: 'la capa privada, sólo leyendo: qué agregó, qué pisó, qué está editado a mano (--check sale 0 si está entera, 1 si falta o sobra algo, 3 si no hay capa; --list nombra cada archivo; --public <copia> y --harness-clone <clon> calculan contra esa copia y ese clon sin tocar el estado)' },
+  // `extraPositional`: el id de la firma lo valida el catálogo, no la tabla
+  sign:      { opts: { '--reason': 'value', '--request': 'value', '--commit': 'flag', '--target': 'value', '--ordered-by': 'value' }, extraPositional: () => true, help: 'firma un id del catálogo (guides/firmas-del-arnes.md) en tu terminal y lo anota en el registro común de firmas; una excepción (nivel 2) o más pide --reason, y el nivel es el mayor entre el catálogo y lo que sube el perfil del equipo (approvals.levels). La emergencia, la única salida de un freno: `sign emergency --reason "<por qué>" --request <número>` deja pasar una vez el comando que frenó el freno con ese número (la terminal lo muestra antes de firmar); `--commit` en vez de --request deja pasar el próximo commit de este repo. Los dos valen 30 minutos y una sola vez. --target dice sobre qué, --ordered-by quién la pidió. Sale 0 firmó, 1 no firmó o el registro no escribió, 2 uso mal hecho o sin terminal' },
 };
 
 function usage() {
@@ -5033,7 +5035,25 @@ function cmdTeamInit(ctx) {
 /** `npx`: lo que sigue a la bajada del paquete de npm (scripts/setup/harness/npx.js), siempre con el código de ESTE árbol. */
 function cmdNpx(ctx) { return mod('npx').run(ctx); }
 
+/** `sign <firma>`: la firma en la terminal y su renglón en el registro común (lib/harness-sign.js). */
+function cmdSign(ctx) {
+  const [id, ...sobra] = ctx.args;
+  if (!id) return { code: 2, lines: ['harness.js sign: falta el id de la firma (guides/firmas-del-arnes.md)'] };
+  if (sobra.length) return { code: 2, lines: [`harness.js sign: una firma por vez (sobra «${sobra[0]}»)`] };
+  // lo que sube la organización; sin poder leerlo, null: se pide motivo también para la rutina
+  let levels = null;
+  try {
+    const r = require('../lib/tycon-config.js').cargar({ env: ctx.env, home: ctx.home });
+    const roto = (r.errores || []).some((e) => e.clave == null || /^approvals(\.|$)/.test(String(e.clave)));
+    if (!roto) levels = (r.valores && r.valores.approvals && r.valores.approvals.levels) || {};
+  } catch (_) { levels = null; }
+  return require('../lib/harness-sign.js').sign({
+    id, reason: ctx.opts.reason, request: ctx.opts.request, commit: ctx.opts.commit === true, target: ctx.opts.target, orderedBy: ctx.opts['ordered-by'], levels,
+  });
+}
+
 const HANDLERS = {
+  sign: cmdSign,
   install: cmdInstall,
   startup: cmdStartup,
   config: cmdConfig,

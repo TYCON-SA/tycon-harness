@@ -68,7 +68,13 @@ en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.
 | `escape:TYCON_SAFETY_OFF` | 3 · irreversible | dev y mantenimiento | apagar el freno de seguridad para un comando | `escape:TYCON_SAFETY_OFF` |
 | `escape:TYCON_PROD_LINT` | 3 · irreversible | dev y mantenimiento | apagar el control de consultas a producción | `escape:TYCON_PROD_LINT` |
 | `escape:TYCON_NEW_NAMES` | 3 · irreversible | sólo mantenimiento | apagar el control de nombres en lo que se publica | `escape:TYCON_NEW_NAMES` |
+| `emergency` | 3 · irreversible | dev y mantenimiento | la salida de emergencia: dejar pasar un comando que un freno para, con motivo y para ese comando solo | todavía no se pide |
 <!-- fin: niveles -->
+
+`emergency` todavía no tiene una firma de hoy que la pida: se da con `harness.js sign emergency --reason "<por qué>"
+--request <número>` (el número lo da el cartel del freno) o `--commit`, en la terminal de la persona
+(guides/safety-guard.md, «Saltear el freno»). `escape:TYCON_SAFETY_OFF` y
+`escape:TYCON_PROD_LINT` siguen en la tabla, pero ya nada las pide: se retiran en una tanda aparte.
 
 ## Quién firma cada nivel
 
@@ -86,7 +92,8 @@ depende de si la sesión trabaja sola o con una coordinadora, y de si hay alguie
 - **Espera** quiere decir que nadie firma. El sistema no mira la hora: pide la firma igual y, si nadie contesta, la
   sesión queda frenada en ese paso.
 - **La emergencia** (`emergency`) es la única salida para pasar por encima del freno de seguridad: la persona la firma en
-  su terminal con `harness.js sign emergency`, con su motivo. El agente no la puede correr.
+  su terminal con `harness.js sign emergency`, con su motivo (cómo, en el párrafo de arriba). El agente no la puede
+  correr.
 - En los repos del arnés, el dueño ocupa el lugar del dev (ver «Quién aprueba»).
 - «En la ventana» vale para Claude Code. Codex no tiene ventana de permiso: ahí todo se firma en la terminal
   (`guides/safety-guard.md`).

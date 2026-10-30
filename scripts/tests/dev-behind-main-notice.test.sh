@@ -159,13 +159,15 @@ C="$(repo t16)"; run "$C" PATH="$BASE/bin16:$PATH"
 [ "$RC" = 0 ] && grep -q "dev: no pude mirar si está al día (" <<<"$OUT" && ok "T16 GitFallaDespuesDeAplicar_NoPudeMirar" || bad "T16 GitFallaDespuesDeAplicar_NoPudeMirar (rc=$RC $OUT)"
 
 # ═══ T17 · git lento → tope y «no pude mirar» ════════════════════════════════════════════════════════════════════
-mkdir -p "$BASE/bin17"; printf '#!/bin/sh\ncase "$*" in *cherry-pick*) sleep 5;; esac\nexec "%s" "$@"\n' "$REAL_GIT" > "$BASE/bin17/git"; chmod +x "$BASE/bin17/git"
+# el git colgado duerme 30 s y el aviso lo corta a los 3: si lo esperara, la corrida pasaría de 30 s. El margen (15 s)
+# sobra para el arranque de node y los git reales con la máquina cargada, y queda lejos de los 30 s del colgado
+mkdir -p "$BASE/bin17"; printf '#!/bin/sh\ncase "$*" in *cherry-pick*) sleep 30;; esac\nexec "%s" "$@"\n' "$REAL_GIT" > "$BASE/bin17/git"; chmod +x "$BASE/bin17/git"
 t0="$(node -e 'console.log(Date.now())')"; run "$C" PATH="$BASE/bin17:$PATH"; t1="$(node -e 'console.log(Date.now())')"
 o17="$OUT"; r17="$RC"
 # el tope también vale al mirar si existe origin/dev: un git que se cuelga ahí no se lee como «no hay dev»
-mkdir -p "$BASE/bin17b"; printf '#!/bin/sh\ncase "$*" in *origin/dev*) sleep 5;; esac\nexec "%s" "$@"\n' "$REAL_GIT" > "$BASE/bin17b/git"; chmod +x "$BASE/bin17b/git"
+mkdir -p "$BASE/bin17b"; printf '#!/bin/sh\ncase "$*" in *origin/dev*) sleep 30;; esac\nexec "%s" "$@"\n' "$REAL_GIT" > "$BASE/bin17b/git"; chmod +x "$BASE/bin17b/git"
 run "$C" PATH="$BASE/bin17b:$PATH"
-[ "$r17" = 0 ] && grep -q "dev: no pude mirar si está al día (" <<<"$o17" && [ $((t1 - t0)) -lt 4500 ] \
+[ "$r17" = 0 ] && grep -q "dev: no pude mirar si está al día (git tardó más de 3 s)" <<<"$o17" && [ $((t1 - t0)) -lt 15000 ] \
   && [ "$RC" = 0 ] && grep -q "dev: no pude mirar si está al día (git tardó" <<<"$OUT" \
   && ok "T17 GitLento_TopeYNoPudeMirar" || bad "T17 GitLento_TopeYNoPudeMirar (rc=$r17, $((t1 - t0)) ms, $o17 | origin/dev: rc=$RC $OUT)"
 

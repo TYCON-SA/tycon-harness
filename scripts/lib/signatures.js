@@ -65,6 +65,7 @@ const LEVELS_EN = Object.freeze({
   'escape:TYCON_SAFETY_OFF': 'turn off the safety guard for one command',
   'escape:TYCON_PROD_LINT': 'turn off the production query control',
   'escape:TYCON_NEW_NAMES': 'turn off the names check on what is published',
+  emergency: 'the emergency exit: let one command that a brake stops go through, with a reason and for that command only',
 });
 
 // id, nivel, perfiles, qué aprueba
@@ -95,6 +96,7 @@ const LEVELS = Object.freeze([
   ['escape:TYCON_SAFETY_OFF', 3, AMBOS, 'apagar el freno de seguridad para un comando'],
   ['escape:TYCON_PROD_LINT', 3, AMBOS, 'apagar el control de consultas a producción'],
   ['escape:TYCON_NEW_NAMES', 3, MANT, 'apagar el control de nombres en lo que se publica'],
+  ['emergency', 3, AMBOS, 'la salida de emergencia: dejar pasar un comando que un freno para, con motivo y para ese comando solo'],
 ].map(([id, level, profiles, approves]) => Object.freeze({ id, level, profiles, approves, approvesEn: LEVELS_EN[id] || null })));
 
 // lo que cubre cada firma de hoy que no es su propio id de la tabla: las dos que juntan dos cosas de distinto peso y
