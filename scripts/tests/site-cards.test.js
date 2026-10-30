@@ -122,14 +122,15 @@ test('2.36-ListaBlanca_SoloCamposPermitidos: del modelo del tablero llegan el n�
   const medida = { estado: 'medido', valor: 7, medidos: 7, total: 9, unidad: 'conteo', den_etiqueta: 'stories', fecha: '2026-10-17T05:00:00Z',
     detalle: 'repo-del-cliente-secreto/story-9', titulo: `Diagnóstico con ${casa}/proyecto`, motivo: null, extra: { repos: ['cliente-x'] } };
   const p = fichas.proyectar(def, medida, {});
-  assert.deepStrictEqual(Object.keys(p).sort(), ['den_etiqueta', 'estado', 'fecha', 'formato', 'id', 'medidos', 'motivo', 'nivel', 'pestana', 'pregunta', 'total', 'unidad', 'valor'].sort());
+  assert.deepStrictEqual(Object.keys(p).sort(), ['den', 'estado', 'fecha', 'formato', 'id', 'medidos', 'motivo', 'nivel', 'pestana', 'pregunta', 'total', 'unidad', 'valor'].sort());
   assert.ok(!/cliente|Users|Diagn/.test(JSON.stringify(p)), 'un texto de la fuente llegó al modelo');
   assert.strictEqual(p.valor, 7);
   const n = fichas.proyectar(def, { estado: 'no_medido', valor: null, motivo: `no se pudo leer la carpeta de la fuente «x» (${casa}/dash): no existe`, fecha: null }, {});
   assert.ok(fichas.MOTIVOS.includes(n.motivo), `motivo fuera de la lista cerrada: ${n.motivo}`);
   assert.ok(!JSON.stringify(n).includes(casa));
-  // un denominador con forma de texto libre no pasa
-  assert.strictEqual(fichas.proyectar(def, { ...medida, den_etiqueta: '<script>alert(1)</script>' }, {}).den_etiqueta, null);
+  // el denominador viaja como su código; uno con forma de texto libre no pasa
+  assert.strictEqual(p.den, 'stories');
+  assert.strictEqual(fichas.proyectar(def, { ...medida, den_etiqueta: '<script>alert(1)</script>' }, {}).den, null);
 });
 
 test('2.36-NoMedido_SinFotoOVieja: sin la foto, o con una más vieja que su antigüedad máxima, la ficha sale no medida con su motivo (nunca cero)', () => {

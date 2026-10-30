@@ -63,7 +63,7 @@ test('Decisiones_FichaSinPr_ApareceConElPorQue', () => {
     assert.ok(d.sinLugar, d.id);
   }
   assert.strictEqual(decisions.decisiones(modelo(), { operationsRepo: 'https://git.example.com/acme/operaciones' })[0].sinLugar, 'plataforma_desconocida');
-  assert.match(decisions.fraseSinLugar('sin_pedido', 'es'), /pedido/);
+  assert.match(decisions.fraseSinLugar('sin_pedido', 'es'), /pull request/);
 });
 
 // una aceptada ya se decidió y la noche no le abre otro pedido: no dice «la noche lo abre», lleva a su tarea

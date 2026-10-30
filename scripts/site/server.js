@@ -484,7 +484,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
   };
   async function cambiarIdioma(req, res, cookies) {
     if (req.method !== 'POST') return enviar(res, { status: 405, cuerpo: '', extra: { Allow: 'POST' } });
-    if (!delSitio(req)) { registrar('idioma: cambio rechazado, el pedido viene de otro origen'); return enviar(res, { status: 403, tipo: 'text/plain; charset=utf-8', cuerpo: '' }); }
+    if (!delSitio(req)) { registrar('idioma: cambio rechazado, la solicitud viene de otro origen'); return enviar(res, { status: 403, tipo: 'text/plain; charset=utf-8', cuerpo: '' }); }
     const form = await leerFormulario(req);
     const pedida = String(form.get('volver') || '');
     // sólo una ruta propia, en caracteres que una cabecera admite: nada de otra dirección (`//x`, `/\x`), de controles ni

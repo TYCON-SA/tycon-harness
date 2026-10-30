@@ -1074,7 +1074,7 @@ function huecosDelJson(v, ruta = '$', out = []) {
 test('8.101-Demo_Recorrido_SinHuecos', async () => {
   // el detector mismo: la página de Arnés con una fuente vieja y sin versión tiene líneas no medidas, y las ve
   const conHuecos = require(path.join(SITE, 'views.js')).paginaArnes({ quien: { rol: 'maintainer', nombre: 'x' }, modelo: { sources: { lista: [{ id: 'sdlc-stage', estado: 'viejo', fecha: '2026-10-20', motivo: 'la foto es de hace 3 días' }] } }, version: null, ahora: AHORA_FIJO, idioma: 'es' });
-  assert.ok(huecosDelHtml(conHuecos, 'es').some((x) => /línea no medida: Fuente sdlc-stage/.test(x)), 'el detector ve las líneas no medidas de Arnés');
+  assert.ok(huecosDelHtml(conHuecos, 'es').some((x) => /línea no medida: Fuente etapas de la entrega/.test(x)), 'el detector ve las líneas no medidas de Arnés');
   const h = await arrancarDemo();
   const huecos = [];
   try {

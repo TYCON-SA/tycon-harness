@@ -53,10 +53,11 @@ const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 // SITE_OPERATIONS_REPO sigue siendo obligatoria; y la imagen ya publicada como alternativa a armarla, el emisor de un
 // inquilino como única puerta, la página «Saliste» y las rutas que el candado deja libres para que «Salir» no reabra la sesión; y, en «Por dentro», la tabla de textos en dos idiomas; y «ejecución» donde decía «corrida»; y el secreto
 // SITE_PRODUCTS_WRITE_TOKEN de los repos de producto, en la tabla de secretos y en «El permiso para Proponer»; y la
-// línea «cambio aplicado» del registro, que ya no lleva el correo de quien propone.
+// línea «cambio aplicado» del registro, que ya no lleva el correo de quien propone; y, en inglés, sin el nombre castellano
+// de los botones entre paréntesis.
 const HUELLA_INSTALACION = {
   es: '66471b67e90e80c6fd5c216893b9a73e696867a2a2ea44d4c2d799f6e0873bc3',
-  en: '4dd1fa9709d147a581114d79a848bbc8de83da0d8c675a961fb2111381fe70be',
+  en: 'b46ac8e6ae271b4cf17a01aaa2c9ba7b03aaf4a2258eefc3e69e3ba26dfda641',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {
@@ -461,5 +462,16 @@ test('T26 2.79-Guia_PestanasYBloquesComoElSitio @story-2.79 @ac-23 — pestañas
     assert.deepStrictEqual([...donde].sort((a, b) => a - b), donde, `${l.idioma}: en el orden de la página`);
     // los pasos aparte de Cómo trabaja
     for (const k of ['paso.close-work-item', 'comoTrabaja.fueraDelRecorrido', 'comoTrabaja.enCualquierPaso']) assert.ok(como.includes(t(l.idioma, k)), `${l.idioma}: Cómo trabaja nombra «${t(l.idioma, k)}»`);
+  }
+});
+
+test('T52 2.79-Guia_SinElIdDeLaFicha @story-2.79 @ac-42 — las dos guías no muestran el id «corridas» como texto; la dirección /corridas se queda', () => {
+  // 🔴 rojo: vuelve «(`corridas`)» junto a la ficha de la duración de una ejecución, en cualquiera de las dos guías.
+  for (const guia of [GUIA, GUIA_EN]) {
+    const t = leer(guia);
+    assert.doesNotMatch(t, /`corridas`/, `${path.basename(guia)}: el id de la ficha como texto`);
+    // lo que queda con «corridas» es una dirección, un archivo de captura o el nombre de una sección en castellano
+    const sueltas = t.split('\n').filter((l) => /\bcorridas\b/.test(l.replace(/\([^)]*\.png\)/g, '').replace(/\/corridas\b/g, '').replace(/\*[^*]*corridas[^*]*\*/g, '')));
+    assert.deepStrictEqual(sueltas, [], `${path.basename(guia)}: «corridas» suelto`);
   }
 });

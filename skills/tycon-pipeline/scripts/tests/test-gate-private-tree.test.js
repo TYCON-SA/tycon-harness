@@ -178,23 +178,21 @@ test('PrivateTree_UsesStoryBranchPublic @story-7.36 @ac-2', () => {
   assert.notStrictEqual(r.code, 0, `midió el worktree de la rama (con la skill rota): rojo\n${r.salida}`);
 });
 
-// La superposición deja el público en un commit local del árbol: sin una rama del servidor con su punta, el freno de
-// guiones toma el orquestador del árbol por uno escrito por quien llama y frena las suites que lo corren. La punta es la
-// de lo commiteado, no la foto de lo que el disco tiene sin commit.
-// 🔴 Falla con: no declarar la punta (el freno frena al orquestador del árbol), o declarar la foto con lo sin commit.
-test('PrivateTree_PublicTip_IsAServerBranch', () => {
+// La superposición deja el público en un commit local del árbol, y el árbol no declara su punta como rama del servidor:
+// esa punta puede ser la rama del pedido, y el freno de guiones reconoce un guion del arnés sólo si está en main. Las
+// suites que pasan un guion del arnés por el freno arman su propia copia (scripts/tests/lib/harness-copy.js).
+// 🔴 Falla con: declarar la punta del público como rama del servidor (un guion reescrito en la rama del pedido pasa por
+//    publicado).
+test('PrivateTree_PublicTip_IsNotAServerBranch', () => {
   const lab = laboratorio();
-  fs.appendFileSync(path.join(lab.pub, 'scripts/lib/otra.js'), '// sin commit\n');
   const dir = tmp('privado-arbol-');
   const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'lib', 'private-tree.js'), 'build', lab.priv, lab.story, dir],
     { encoding: 'utf8', env: entorno(lab.home) });
   assert.strictEqual(r.status, 0, r.stderr);
   const arbol = JSON.parse(r.stdout).tree;
-  assert.strictEqual(git(arbol, 'rev-parse', 'refs/remotes/publico/punta'), git(lab.pub, 'rev-parse', 'HEAD'));
-  assert.strictEqual(git(arbol, 'rev-parse', 'refs/remotes/publico/punta:scripts/lib/pub-lib.js'),
-    git(arbol, 'rev-parse', 'HEAD:scripts/lib/pub-lib.js'), 'lo commiteado del público, igual a la punta');
-  assert.notStrictEqual(git(arbol, 'rev-parse', 'refs/remotes/publico/punta:scripts/lib/otra.js'),
-    git(arbol, 'rev-parse', 'HEAD:scripts/lib/otra.js'), 'lo sin commit, distinto');
+  const ramas = git(arbol, 'for-each-ref', '--format=%(refname)', 'refs/remotes').split('\n').filter(Boolean);
+  assert.deepStrictEqual(ramas.filter((ref) => !ref.startsWith('refs/remotes/origin/')), [], 'sólo las ramas del servidor del privado');
+  assert.ok(!ramas.some((ref) => git(arbol, 'rev-parse', ref) === git(lab.pub, 'rev-parse', 'HEAD')), 'ninguna apunta a la punta del público');
 });
 
 // Las suites que miden «lo propio de la rama» lo cortan con `merge-base origin/main HEAD`. Un clon de un repo local toma

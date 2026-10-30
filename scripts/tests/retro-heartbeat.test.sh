@@ -196,7 +196,7 @@ t5() { # t5 <story> <expresión esperada sobre m> <nombre>
   [ "${r}" = "true" ] && ok "T5 $3" || bad "T5 $3" "$(campo "${f}" 'd.metrics.advisor_rerun_loop_iterations')"
 }
 t5 5.1 'm.value === null && /ilegible/.test(m.unavailable_reason)' "JSON roto: null «volcado ilegible», archivo escrito"
-t5 5.2 'm.value === null && /no registra vueltas/.test(m.unavailable_reason)' "iterations vacío y sin revisores: null «no registra vueltas»"
+t5 5.2 'm.value === null && /no anota vueltas/.test(m.unavailable_reason)' "iterations vacío y sin revisores: null «no anota vueltas»"
 t5 5.3 'm.value === 3 && /iterations/.test(m.detail)' "sin revisores por vuelta pero con fotos {1,3}: 3 desde marker.iterations"
 t5 5.4 'm.value === null && /ilegible/.test(m.unavailable_reason)' "el más nuevo ilegible NO se salta para tomar uno más viejo"
 

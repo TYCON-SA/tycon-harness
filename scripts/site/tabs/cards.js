@@ -13,7 +13,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { juzgar, esc, chip } = require('../../nightly/dashboard/common.js');
+const { juzgar, esc, chip, DENOMINADORES } = require('../../nightly/dashboard/common.js');
 const { t } = require('../texts.js');
 
 /** Las seis preguntas del tablero; la ficha dice a cuál pertenece por su posición. */
@@ -90,14 +90,16 @@ function motivoCerrado(texto) {
   if (/deuda declarada de pipelines|pipeline-debt/i.test(t)) return 'sin_deuda_pipelines';
   if (/no hay ningún archivo|no se pudo leer la carpeta|no está la carpeta|no está declarada|sin_foto/i.test(t)) return 'sin_foto';
   if (/disco de cada máquina|no aplica en el nocturno|esta máquina/i.test(t)) return 'solo_en_la_maquina';
-  if (/buzón/i.test(t)) return 'sin_buzon';
+  if (/buzón|depósito/i.test(t)) return 'sin_buzon';
   if (/ilegible|no tiene la forma|no se pudo cargar|no pudo cargar/i.test(t)) return 'ilegible';
   return 'sin_datos';
 }
 
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const fechaCorta = (v) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : null);
-const etiqueta = (v) => (typeof v === 'string' && /^[a-záéíóúñ ]{1,30}$/i.test(v) ? v : null);
+// el denominador viaja como su código (`den.<código>` en la tabla de textos); uno que el tablero no lista, no viaja
+const CODIGO_DEN = new Map(Object.entries(DENOMINADORES).map(([k, v]) => [v, k]));
+const codigoDen = (v) => (typeof v === 'string' && CODIGO_DEN.has(v) ? CODIGO_DEN.get(v) : null);
 
 /**
  * Una ficha para el sitio: sólo lo de la lista blanca. `m` es la métrica del tablero (medida / noMedida).
@@ -106,10 +108,10 @@ const etiqueta = (v) => (typeof v === 'string' && /^[a-záéíóúñ ]{1,30}$/i.
 function proyectar(def, m, cfg) {
   const base = { id: def.id, pregunta: def.pregunta, pestana: def.pestana, formato: def.formato };
   if (!m || typeof m !== 'object' || m.estado !== 'medido') {
-    return { ...base, estado: 'no_medido', nivel: '', valor: null, medidos: null, total: null, den_etiqueta: null, fecha: fechaCorta(m && m.fecha), motivo: motivoCerrado(m && m.motivo) };
+    return { ...base, estado: 'no_medido', nivel: '', valor: null, medidos: null, total: null, den: null, fecha: fechaCorta(m && m.fecha), motivo: motivoCerrado(m && m.motivo) };
   }
   if (num(m.valor) === null) {
-    return { ...base, estado: 'no_medido', nivel: '', valor: null, medidos: null, total: null, den_etiqueta: null, fecha: fechaCorta(m.fecha), motivo: 'sin_datos' };
+    return { ...base, estado: 'no_medido', nivel: '', valor: null, medidos: null, total: null, den: null, fecha: fechaCorta(m.fecha), motivo: 'sin_datos' };
   }
   const nivel = juzgar(cfg || {}, def.clave, m);
   return {
@@ -117,7 +119,7 @@ function proyectar(def, m, cfg) {
     estado: m.prov === 'declarada' ? 'declarado' : 'medido',
     nivel: nivel === 'ok' || nivel === 'warn' || nivel === 'bad' ? nivel : '',
     valor: num(m.valor), medidos: num(m.medidos), total: num(m.total),
-    den_etiqueta: etiqueta(m.den_etiqueta), unidad: m.unidad === 'ratio' ? 'ratio' : 'conteo',
+    den: codigoDen(m.den_etiqueta), unidad: m.unidad === 'ratio' ? 'ratio' : 'conteo',
     fecha: fechaCorta(m.fecha), motivo: null,
   };
 }
@@ -192,7 +194,7 @@ function fichasDelClon({ clon, dirBuzon = null, buzonLeido = false, ocultas = []
       examen: delBanco('ultimo-examen.json', false), casos: delBanco(path.join('cases', 'advisors'), true),
       hoy: new Date(ahora).toISOString().slice(0, 10),
       mailbox: dirBuzon || undefined,
-      estadoBuzon: buzonLeido && dirBuzon ? { estado: 'leido' } : { estado: 'no_leido', motivo: 'el sitio no tiene el buzón de ejecuciones' },
+      estadoBuzon: buzonLeido && dirBuzon ? { estado: 'leido' } : { estado: 'no_leido', motivo: 'el sitio no tiene el depósito de ejecuciones' },
     });
     return modeloDeFichas(d.paneles, { cfg: d.cfg, ocultas });
   } catch (e) {
@@ -218,8 +220,8 @@ function tile(f, idioma = 'es') {
     return `<div class="tile blind" data-ficha="${esc(f.id)}">${chip('blind', T('fichas.noMedido'))}<div class="t-label">${esc(titulo)}</div><div class="t-val">${esc(T('fichas.falta'))}</div><div class="t-den">${esc(motivo)}${f.fecha ? ` ${esc(T('fichas.fuenteDelParen', { fecha: f.fecha }))}` : ''}</div>${ENLACE_MOTIVO[f.motivo] ? `<a class="t-link" href="${ENLACE_MOTIVO[f.motivo]}">${esc(T('ficha.motivo.irAConfiguracion'))}</a>` : ''}</div>`;
   }
   const est = f.estado === 'declarado' ? 'decl' : f.nivel;
-  // la etiqueta del denominador sale del tablero de la noche: va tal cual
-  const etiq = f.den_etiqueta ? ` ${esc(f.den_etiqueta)}` : '';
+  // el denominador llega como su código y sale en el idioma de la página
+  const etiq = f.den ? ` ${esc(T(`den.${f.den}`))}` : '';
   const de = (a, b) => esc(T('fichas.de', { medidos: a, total: b }));
   const den = f.unidad === 'ratio' ? `${de(f.medidos, f.total)}${etiq}` : `n=${f.total && f.total !== f.medidos ? de(f.medidos, f.total) : esc(f.medidos)}${etiq}`;
   return `<div class="tile ${est}" data-ficha="${esc(f.id)}">${chip(est, T(f.estado === 'declarado' ? 'fichas.declarado' : `fichas.${PALABRA[f.nivel] || 'medido'}`))}<div class="t-label">${esc(titulo)}</div><div class="t-val">${esc(formatear(f, idioma))}</div><div class="t-den">${den}</div>${f.fecha ? `<div class="t-den">${esc(T('fichas.fuenteDel', { fecha: f.fecha }))}</div>` : ''}</div>`;
