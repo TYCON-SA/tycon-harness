@@ -230,6 +230,79 @@ test('PrivateTree_OriginMain_IsTheSourceServerBranch', () => {
   assert.strictEqual(git(dest, 'rev-parse', 'refs/remotes/origin/main'), git(solo, 'rev-parse', 'main'));
 });
 
+// Sin una rama de la story en el público, el hermano declarado es la carpeta que esté al lado: el main local de un clon
+// que nadie pone al día, o la rama de otra sesión con sus cambios sin commit. Lo que va debajo es la versión del
+// servidor (el origin/main del público), sin copiar su disco, y lo de esa carpeta no cuenta como tocado por la story.
+// 🔴 Falla con: el armado de siempre (HEAD de la carpeta vecina y su disco encima).
+test('PrivateTree_PublicNotOfStory_UsesServerVersion', () => {
+  const lab = laboratorio();
+  const servidor = git(lab.pub, 'rev-parse', 'HEAD');
+  git(lab.pub, 'update-ref', 'refs/remotes/origin/main', servidor);
+  git(lab.priv, 'checkout', '-q', '-b', 'story/9.36-lab');
+  // la carpeta vecina: en la rama de otra sesión, con un commit propio y un cambio sin commit, los dos rompen la skill
+  git(lab.pub, 'checkout', '-q', '-b', 'fix/otra-sesion');
+  escribir(lab.pub, 'skills/demo/lib.js', SKILL_ROTA);
+  git(lab.pub, 'commit', '-q', '-am', 'otra sesión rompe la skill');
+  escribir(lab.pub, 'scripts/lib/otra.js', 'module.exports = 2;\n');
+  const arbol = (story) => {
+    const dir = tmp('privado-arbol-');
+    const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'lib', 'private-tree.js'), 'build', lab.priv, story, dir],
+      { encoding: 'utf8', env: entorno(lab.home) });
+    assert.strictEqual(r.status, 0, r.stderr);
+    return { dir, j: JSON.parse(r.stdout) };
+  };
+  const { dir, j } = arbol(lab.story);
+  assert.strictEqual(j.base.source, 'server', JSON.stringify(j.base));
+  assert.strictEqual(j.base.commit, servidor);
+  assert.strictEqual(j.base.uncommitted, false);
+  assert.strictEqual(git(path.join(dir, 'publico'), 'rev-parse', 'HEAD'), servidor, 'debajo va el origin/main del público');
+  assert.strictEqual(fs.readFileSync(path.join(j.tree, 'skills/demo/lib.js'), 'utf8'), SKILL_SANA, 'ni el commit de la otra rama');
+  assert.strictEqual(fs.readFileSync(path.join(j.tree, 'scripts/lib/otra.js'), 'utf8'), 'module.exports = 1;\n', 'ni su disco');
+  // el portón lo dice, y lo de la carpeta vecina no cuenta como tocado: la story no tocó nada (sin acotar, 7), y nada
+  // de lo roto en esa carpeta se mide
+  const r = portón(lab);
+  assert.match(r.salida, /público debajo: versión del servidor/, r.salida);
+  assert.strictEqual(r.code, 7, r.salida);
+  assert.ok(!/ROJO\(/.test(r.salida) && !nombra(r, 'otra.test.js') && !nombra(r, 'demo.test.js'), `lo de la carpeta vecina no es de la story\n${r.salida}`);
+  // con el público en la rama de la story, se mide esa rama con su disco, como siempre
+  git(lab.pub, 'checkout', '-q', '-b', 'story/9.36-lab');
+  const deLaStory = arbol(lab.story).j;
+  assert.strictEqual(deLaStory.base.source, 'story', JSON.stringify(deLaStory.base));
+  assert.strictEqual(deLaStory.base.uncommitted, true);
+  // sin servidor conocido (un público sin origin/main), lo que hay, como siempre
+  git(lab.pub, 'checkout', '-q', 'fix/otra-sesion');
+  git(lab.pub, 'update-ref', '-d', 'refs/remotes/origin/main');
+  assert.strictEqual(arbol(lab.story).j.base.source, 'disk');
+});
+
+// El origin/main de una carpeta que nadie pone al día está tan atrás como su main: antes de usarlo, se trae.
+// 🔴 Falla con: leer el origin/main tal como quedó en la última traída.
+test('PrivateTree_ServerVersion_FetchedFirst', () => {
+  const lab = laboratorio();
+  const servidor = path.join(lab.raiz, 'servidor.git');
+  git(lab.raiz, 'clone', '-q', '--bare', lab.pub, servidor);
+  git(lab.pub, 'remote', 'add', 'origin', servidor);
+  git(lab.pub, 'fetch', '-q', 'origin');
+  // en el servidor entra algo después de la última traída de la carpeta
+  const otro = path.join(lab.raiz, 'otro-clon');
+  git(lab.raiz, 'clone', '-q', servidor, otro);
+  escribir(otro, 'entro-despues.txt', 'nuevo\n');
+  git(otro, 'add', '-A');
+  git(otro, '-c', 'user.email=prueba@ejemplo.invalid', '-c', 'user.name=prueba', 'commit', '-q', '-m', 'entró al servidor');
+  git(otro, 'push', '-q', 'origin', 'HEAD:main');
+  const nuevo = git(otro, 'rev-parse', 'HEAD');
+  git(lab.priv, 'checkout', '-q', '-b', 'story/9.36-lab');
+  git(lab.pub, 'checkout', '-q', '-b', 'fix/otra-sesion');
+  const dir = tmp('privado-arbol-');
+  const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'lib', 'private-tree.js'), 'build', lab.priv, lab.story, dir],
+    { encoding: 'utf8', env: entorno(lab.home) });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const j = JSON.parse(r.stdout);
+  assert.strictEqual(j.base.source, 'server');
+  assert.strictEqual(j.base.commit, nuevo, 'lo que está hoy en el servidor');
+  assert.ok(j.base.date, 'con su fecha');
+});
+
 // ── Lo que se mide ─────────────────────────────────────────────────────────────────────────────────────────────
 
 test('PrivateTree_SkillsFromTree_NeverInstalled @story-7.36 @ac-3', () => {

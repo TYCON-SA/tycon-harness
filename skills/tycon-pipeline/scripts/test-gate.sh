@@ -844,7 +844,14 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
                else _tg_capa="sin capa del equipo: $(_tg_tree_field teamProblem)"; fi ;;
       *) _tg_capa='sin capa del equipo (ni HARNESS_TEAM_DIR ni paths.team en la configuración de la máquina)' ;;
     esac
-    echo "[test-gate] árbol armado del privado adelgazado — público debajo: $_TG_PUB_ROOT (rama ${_tg_rama:-suelta}, commit $(_tg_tree_field base.commit | cut -c1-12)$([[ "$(_tg_tree_field base.uncommitted)" == "true" ]] && echo ', con cambios sin commit')) · $_tg_capa · armado en $(_tg_tree_field seconds) s"
+    # Sin la rama de la story en el público, debajo va la versión del servidor y lo tocado es sólo del privado.
+    _TG_PUB_TOUCHED="$_TG_PUB_ROOT"
+    if [[ "$(_tg_tree_field base.source)" == "server" ]]; then
+      _TG_PUB_TOUCHED="-"
+      echo "[test-gate] árbol armado del privado adelgazado — público debajo: versión del servidor (origin/main de $_TG_PUB_ROOT, commit $(_tg_tree_field base.commit | cut -c1-12) del $(_tg_tree_field base.date | cut -c1-16)): esa carpeta está en ${_tg_rama:-un commit suelto}, que no es la rama del privado ni nombra la story ·$_tg_capa · armado en $(_tg_tree_field seconds) s"
+    else
+      echo "[test-gate] árbol armado del privado adelgazado — público debajo: $_TG_PUB_ROOT (rama ${_tg_rama:-suelta}, commit $(_tg_tree_field base.commit | cut -c1-12)$([[ "$(_tg_tree_field base.uncommitted)" == "true" ]] && echo ', con cambios sin commit')) · $_tg_capa · armado en $(_tg_tree_field seconds) s"
+    fi
     REPO_RUN="$(_tg_tree_field tree)"
     TG_TREE_ARGS=(--skills "$(_tg_tree_field skills)" --only-touched)
     echo "[test-gate] en la máquina corren sólo las suites que leen lo tocado; las otras quedan diferidas (las corre la CI del pedido y el nocturno)"
@@ -906,7 +913,7 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
   TOUCHED_ARGS=()
   if [[ -n "${TG_PRIVATE_TREE_DIR:-}" ]]; then
     # en el árbol armado, lo tocado es lo de los dos repos (las rutas del árbol son las de cada uno)
-    if node "$SCRIPT_DIR/lib/private-tree.js" touched "$REPO" "$_TG_PUB_ROOT" "$_TG_STORY_ARG" "$RESULTS_DIR/touched.json" 2>"$RESULTS_DIR/touched.err"; then
+    if node "$SCRIPT_DIR/lib/private-tree.js" touched "$REPO" "$_TG_PUB_TOUCHED" "$_TG_STORY_ARG" "$RESULTS_DIR/touched.json" 2>"$RESULTS_DIR/touched.err"; then
       TOUCHED_ARGS=(--touched "$RESULTS_DIR/touched.json")
       # el informe cuenta las líneas tocadas en cada repo contra su base (no el árbol contra la base del privado). Va
       # sólo al informe, en su línea: exportada, la heredaban las suites que corren su propio portón de juguete.
