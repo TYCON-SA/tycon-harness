@@ -1,0 +1,37 @@
+{
+  "hooks": [
+    {
+      "hook": "on-bash-write-gate.js",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-bash-write-gate.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "guion-grande-que-nombra-la-ruta-de-una-historia-frena",
+          "type": "must-block",
+          "_por_que": "Un guion de más de 256 KB no se lee entero: si escribe y nombra la ruta de una historia, frena, también en un repo que no tiene historias (la ruta puede ser de otro repo).",
+          "setup": [
+            "git init -q -b main . && mkdir -p scripts",
+            "{ printf \"open('salida.csv', 'w').write('x')\\np = '/otro/repo/specs/story-1.1.md'\\n\"; yes '# xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' | head -n 6000; } > scripts/barrido.py",
+            "test \"$(wc -c < scripts/barrido.py)\" -gt 262144"
+          ],
+          "stdin": { "session_id": "bench-guion-grande", "tool_name": "Bash", "tool_input": { "command": "python3 scripts/barrido.py datos.csv" } },
+          "expect": { "exit": 2, "stderr_re": ["GUION QUE NO SE PUEDE LEER ENTERO", "barrido\\.py"] }
+        },
+        {
+          "id": "guion-grande-en-un-repo-con-spec-stories-que-nombra-la-historia-frena",
+          "type": "must-block",
+          "_por_que": "En un repo de producto con sus historias en spec/stories/ (la carpeta la encuentra el descubridor del arnés, no una lista), un guion grande que escribe y dice «historia» frena.",
+          "setup": [
+            "git init -q -b main . && mkdir -p scripts spec/stories",
+            "printf -- '---\\nstory: \"1.1\"\\nepic: \"1\"\\ntitle: \"x\"\\nstatus: in-progress\\n---\\n\\n# x\\n' > spec/stories/story-1.1.md",
+            "{ printf \"# cambia el estado de la historia\\nopen('salida.csv', 'w').write('x')\\n\"; yes '# xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' | head -n 6000; } > scripts/barrido.py",
+            "test \"$(wc -c < scripts/barrido.py)\" -gt 262144"
+          ],
+          "stdin": { "session_id": "bench-guion-grande", "tool_name": "Bash", "tool_input": { "command": "python3 scripts/barrido.py datos.csv" } },
+          "expect": { "exit": 2, "stderr_re": ["GUION QUE NO SE PUEDE LEER ENTERO"] }
+        }
+      ]
+    }
+  ]
+}
