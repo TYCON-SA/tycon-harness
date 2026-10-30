@@ -348,11 +348,11 @@ const DELEGATED_LIST_SINCE = '2026.10.24.14';
  */
 const OWNER_ONLY_SINCE = '2026.10.27.7';
 /**
- * 🔴 La primera versión del arnés cuyo lector conoce `approvals.levels`. Un lector anterior la leería como una clave
- * desconocida, y una clave rota de `approvals` deja sin ninguna firma delegada. Mientras el pedido que la trae no tenga
- * etiqueta, va una que todavía no existe: pide de más, nunca de menos.
+ * 🔴 La primera versión del arnés cuyo lector conoce `approvals.levels`: la etiqueta del merge que lo trae, como
+ * OWNER_ONLY_SINCE. Un lector anterior la leería como una clave desconocida, y una clave rota de `approvals` deja sin
+ * ninguna firma delegada.
  */
-const LEVELS_SINCE = '2026.10.31.1';
+const LEVELS_SINCE = '2026.10.30.30';
 /**
  * 🔴 La primera versión del arnés cuyo lector conoce `integrations.timeTracking` (la etiqueta del merge que trajo ese
  * lector). El selector de la herramienta de horas saca la llave vieja `integrations.clockify` del perfil: una máquina
