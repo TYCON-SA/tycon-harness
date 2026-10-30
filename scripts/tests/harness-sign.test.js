@@ -265,6 +265,18 @@ test('T14 · los frenos de escritura cuidan el permiso igual que los registros d
   }
 });
 
+// Con el registro común de verdad (signature-log.js), no uno de mentira: el id `emergency` está en el catálogo y su
+// renglón dice el nivel, la vía y el motivo.
+test('T15 · la emergencia queda en el registro común de firmas de verdad', (t) => {
+  const casa = casaNueva(t);
+  const r = sign.sign({ id: 'emergency', reason: 'borrar la carpeta colgada', command: 'rm -rf /tmp/x', casa, ahora: AHORA, signer: 'el-dev', cwd: casa, tty: terminal(), levels: {} });
+  assert.strictEqual(r.code, 0, r.lines.join('\n'));
+  const log = require('../lib/signature-log.js');
+  const renglones = fs.readFileSync(log.logPath(casa), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepStrictEqual(renglones.map((x) => [x.signature, x.level, x.via, x.target, x.reason, x.source]),
+    [['emergency', 3, 'command', 'rm -rf /tmp/x', 'borrar la carpeta colgada', 'harness sign']]);
+});
+
 test('T12 · por la consola: un id desconocido sale 2 y la ayuda nombra sign', () => {
   const r = spawnSync(process.execPath, [HARNESS, 'sign', 'no-existe', '--reason', 'x'], { encoding: 'utf8', env: { ...process.env, HOME: os.tmpdir() } });
   assert.strictEqual(r.status, 2, r.stdout + r.stderr);
