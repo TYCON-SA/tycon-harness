@@ -1,0 +1,328 @@
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# Vigilante de producción — MODELO para cualquier organización en Azure DevOps
+#
+# Cómo darlo de alta: pipelines/operations/README.md. Se copia a `pipelines/` del repo de operaciones y se cambia el
+# `name:` del recurso `harness` (marcado abajo).
+#
+# POR QUÉ EXISTE. Los incidentes de producción los suele detectar una persona, y muchas veces el dato ya estaba en el
+# registro del host antes de que alguien avisara. El vigilante mira producción todas las noches, agrupa lo que huele mal y
+# deja un borrador por hallazgo para que a la mañana una PERSONA decida. No toca nada: sólo lee la API de administración
+# de cada host y escribe en el repo de operaciones.
+#
+# QUÉ MIRA Y A QUIÉN AVISA — todo en el repo de operaciones, nada en este YAML:
+#   · `scripts/nightly/watcher/hosts.json` — qué hosts, con qué umbrales y con qué variables de credenciales (cada producto
+#     NOMBRA las suyas en `env_user`/`env_pass`; nunca las trae). Sin él, el vigilante no tiene qué mirar y la corrida sale
+#     roja. Ejemplo: pipelines/operations/examples/hosts.json del arnés. La rampa se maneja con `activo` por producto.
+#   · `operations.json` — quiénes revisan los pull requests por hallazgo (`reviewers.watcher`) y el canal del aviso.
+#   · Lo que deja: `.dashboard/vigilante/` (la foto de cada noche) e `inbox/watcher/` (un borrador por hallazgo). Cada
+#     hallazgo nuevo abre un PULL REQUEST en el repo de operaciones: ahí se decide.
+#
+# LAS CREDENCIALES DE LOS HOSTS. Van en un grupo de variables del proyecto, marcadas como secretas, y se nombran en dos
+# parámetros: `hostsVariableGroup` (el grupo) y `hostsSecrets` (los nombres de las variables que nombra hosts.json). Azure
+# no pasa una variable secreta al entorno de un paso si no se la nombra: sin `hostsSecrets`, el vigilante no la ve. Sin
+# grupo, el vigilante corre igual contra los hosts que no piden credenciales, y la corrida lo avisa. Los dos se ponen
+# como valor por defecto en la copia de la organización: así la noche por horario los usa.
+#
+# Permisos (una vez): la identidad de compilación del proyecto con «Contribute» y «Contribute to pull requests» sobre el
+# repo de operaciones (un hallazgo sin pull request es un hallazgo que nadie va a mirar: sin ese permiso, rojo), y LECTURA
+# sobre el repo del perfil si la organización tiene uno (los canales del resumen y del aviso).
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+trigger: none   # nunca por push: el repo de operaciones no cambia; producción sí
+pr: none
+
+schedules:
+  - cron: '0 8 * * *'   # 08:00 UTC: después de las métricas (06:00) y antes del tablero (08:30)
+    displayName: 'Vigilante de producción (nocturno)'
+    branches:
+      include: [main]
+    always: true
+
+parameters:
+  - name: efectos
+    displayName: 'Con efectos fuera de la ejecución (registrar lo decidido, resumen, guardar, pull requests y aviso)'
+    type: boolean
+    default: true
+  - name: hostsVariableGroup
+    displayName: 'Grupo de variables con las credenciales de los hosts (vacío: sólo los hosts que no las piden)'
+    type: string
+    default: ''
+  - name: hostsSecrets
+    displayName: 'Nombres de las variables secretas del grupo que nombra hosts.json (env_user, env_pass)'
+    type: object
+    default: []
+  - name: quiet
+    displayName: 'Sin aviso por hallazgo (el pull request alcanza); el resumen diario sale igual'
+    type: boolean
+    default: true
+
+resources:
+  repositories:
+    - repository: harness
+      type: git                         # o `github`, con `endpoint: <conexión de servicio de GitHub>`
+      name: my-project/harness          # ← CAMBIAR: dónde está el arnés (en GitHub, la organización/repo público)
+      ref: refs/heads/main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - ${{ if ne(parameters.hostsVariableGroup, '') }}:
+      - group: ${{ parameters.hostsVariableGroup }}
+
+jobs:
+  - job: Watch
+    displayName: 'Mirar producción y dejar el borrador'
+    steps:
+      - template: pipelines/operations/templates/fetch-harness.yml@harness
+      - template: pipelines/operations/templates/ops-data.yml@harness
+
+      - script: |
+          set -euo pipefail
+          # Los revisores de los pull requests, de operations.json (reviewers.watcher). Sin el archivo o sin la clave: el
+          # pull request se abre igual, sin revisores. Con un operations.json que no valida: rojo, no se adivina.
+          cd "$(Build.SourcesDirectory)"
+          if [ -f operations.json ]; then
+            REV=$(node -e 'const c = require("./scripts/lib/operations-config.js").load("operations.json"); if (!c.ok) { for (const p of c.problems) console.error(`operations.json: ${p.path || "(el archivo)"}: ${p.message}`); process.exit(1); } process.stdout.write(((c.data.reviewers || {}).watcher || []).join(" "));') \
+              || { echo "##vso[task.logissue type=error]operations.json del repo de operaciones no es válido (motivo arriba)"; exit 1; }
+          else
+            REV=""
+          fi
+          echo "revisores de los pull requests: ${REV:-(ninguno)}"
+          echo "##vso[task.setvariable variable=OPS_REVIEWERS_WATCHER]$REV"
+          [ -f scripts/nightly/watcher/hosts.json ] || { echo "##vso[task.logissue type=error]El repo de operaciones no trae scripts/nightly/watcher/hosts.json: el vigilante no tiene qué mirar (ejemplo: pipelines/operations/examples/hosts.json del arnés)"; exit 1; }
+          # La primera noche no hay cola: se crea con sus tres carpetas (y su .gitkeep, que guardar lleva al repo de
+          # operaciones). Una cola que existe a medias NO se completa acá: el guion de los pull requests la frena.
+          if [ ! -e inbox/watcher ]; then
+            for D in pending promoted archived; do mkdir -p "inbox/watcher/$D" && : > "inbox/watcher/$D/.gitkeep"; done
+            echo "primera noche: se crea la cola inbox/watcher (pending, promoted, archived)"
+          fi
+        displayName: 'Leer la configuración de la organización (operations.json y hosts.json)'
+
+      - script: |
+          # Lo que una persona decidió AYER en un pull request se registra ANTES de mirar la noche: un borrador rechazado
+          # no puede contarse como pendiente un día tarde. Si Azure no contesta, la noche se mira igual y queda naranja.
+          set -uo pipefail
+          cd "$(Build.SourcesDirectory)"
+          bash scripts/ci/open-pr-per-finding.sh --record-only \
+            --queue inbox/watcher \
+            --branch vigilante \
+            --script scripts/nightly/watcher/vigilante.js \
+            --org "$(System.CollectionUri)" \
+            --project "$(System.TeamProject)" \
+            --repo "$(Build.Repository.Name)"
+        displayName: 'Registrar lo que se decidió en los pull requests'
+        continueOnError: true
+        # empuja a main por dentro (abandona pedidos, borra ramas, guarda): sólo desde main y con efectos
+        condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq('${{ parameters.efectos }}', 'true'))
+        env:
+          AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
+
+      - template: pipelines/operations/templates/check-tree.yml@harness
+
+      - script: |
+          # `pipefail` no es decorativo: sin él, el código del paso es el de `tee` (siempre 0) y un vigilante caído
+          # quedaría verde, igual que una noche tranquila.
+          set -uo pipefail
+          HOY=$(date -u +%Y-%m-%d)
+          if [ -z "${TYCON_WATCHER_HOSTS_GROUP:-}" ]; then
+            echo "##vso[task.logissue type=warning]sin hostsVariableGroup: el vigilante mira sólo los hosts que no piden credenciales (los demás salen «no medido»)"
+          fi
+          # Un nombre de hostsSecrets que no está en el grupo NO llega vacío: Azure deja el literal `$(NOMBRE)`. Usado como
+          # credencial sería un intento de entrada fallido contra la cuenta real; se desarma (el host sale «no medido»
+          # por falta de credenciales) y se dice cuál falta.
+          NOMBRES="${TYCON_WATCHER_SECRET_NAMES:-}"
+          for N in ${NOMBRES//,/ }; do
+            case "${!N:-}" in *'$('*) unset "$N"; echo "##vso[task.logissue type=warning]$N no está en el grupo ${TYCON_WATCHER_HOSTS_GROUP:-}: su host sale «no medido»" ;; esac
+          done
+          if [ "${{ parameters.quiet }}" = "True" ]; then export TYCON_WATCHER_QUIET=1; fi
+          node scripts/nightly/watcher/vigilante.js run \
+            --config "$(Build.SourcesDirectory)/scripts/nightly/watcher/hosts.json" \
+            --out "$(Build.SourcesDirectory)/.dashboard/vigilante" \
+            --pending "$(Build.SourcesDirectory)/inbox/watcher" \
+            | tee "$(Agent.TempDirectory)/vigilante-salida.txt"
+          CODIGO=${PIPESTATUS[0]}
+          # Sale 0 aunque haya hallazgos: un problema de producción no es un pipeline roto. Otro código es que NO PUDO MIRAR.
+          if [ "$CODIGO" != "0" ]; then
+            echo "##vso[task.logissue type=error]El vigilante terminó con código $CODIGO: la noche NO fue mirada"
+            exit 1
+          fi
+          # La prueba de vida es la foto: si no está, la noche no se miró, dijera lo que dijera.
+          if [ ! -f "$(Build.SourcesDirectory)/.dashboard/vigilante/vigilante-$HOY.json" ]; then
+            echo "##vso[task.logissue type=error]No quedó la foto de $HOY: la noche no se miró"
+            exit 1
+          fi
+          echo "##vso[task.setvariable variable=HOY_NOCTURNO]$HOY"
+          if grep -q 'NO MEDIDO' "$(Agent.TempDirectory)/vigilante-salida.txt"; then
+            echo "##vso[task.logissue type=warning]Hubo productos que no se pudieron consultar (ver la salida): ¿credenciales rotadas o que faltan en hostsSecrets? ¿host caído?"
+          fi
+        displayName: 'Correr el vigilante'
+        env:
+          TYCON_WATCHER_HOSTS_GROUP: ${{ parameters.hostsVariableGroup }}
+          TYCON_WATCHER_SECRET_NAMES: ${{ join(',', parameters.hostsSecrets) }}
+          ${{ each name in parameters.hostsSecrets }}:
+            ${{ name }}: $(${{ name }})
+
+      - script: |
+          # Los pull requests abiertos hace más de dos días: sólo LEE, y deja una sección que el resumen pega al final. Si
+          # Azure no contesta, la sección lo dice y el paso queda naranja: el resumen se entrega igual.
+          set -uo pipefail
+          HOY="${HOY_NOCTURNO:-}"
+          if [ -z "$HOY" ]; then
+            echo "##vso[task.logissue type=warning]Falta HOY_NOCTURNO (la fecha del paso del vigilante): los pull requests abiertos no se consultaron."
+            exit 1
+          fi
+          if ! node scripts/nightly/open-prs/open-prs.js --today "$HOY" --org "$(System.CollectionUri)" --out "$(Agent.TempDirectory)/prs-abiertos.txt"; then
+            echo "##vso[task.logissue type=warning]Los pull requests abiertos no se pudieron consultar: el resumen lo va a decir."
+            exit 1
+          fi
+        displayName: 'Listar los pull requests abiertos'
+        continueOnError: true
+        env:
+          AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
+
+      # El perfil de la organización, para los canales del resumen y del aviso, y si su team-repos.json es el de operaciones
+      # (la noche lee el de operaciones; las máquinas, el del perfil). Si difieren, o si el perfil no se pudo leer, la
+      # corrida queda naranja (nunca roja) y lo dice; sin perfil, el aviso sale por el canal de operations.json → notify.
+      # Con el perfil leído deja TEAM_PROFILE para los pasos que siguen. Necesita LECTURA sobre el repo del perfil.
+      - script: |
+          set -u
+          PERFIL="$(Agent.TempDirectory)/perfil"
+          SALIDA=$(node scripts/ci/team-repos-diff.js --team-repos "$(Build.SourcesDirectory)/team-repos.json" \
+            --clone-dir "$(Agent.TempDirectory)/retro-sweep" --profile-out "$PERFIL" 2>&1)
+          RC=$?
+          # si el comparador se cayó, el motivo es la línea del error, no la última (la versión de Node)
+          LINEA=$( { printf '%s\n' "$SALIDA" | grep -m1 -E '^[A-Za-z]*Error\b' || printf '%s\n' "$SALIDA" | grep -v '^[[:space:]]*$' | tail -n 1; } | sed 's/##vso/## vso/g')
+          if [ "$RC" = 0 ]; then
+            echo "$LINEA"
+          else
+            echo "##vso[task.logissue type=warning]$LINEA"
+            echo "##vso[task.complete result=SucceededWithIssues;]"
+          fi
+          if [ -f "$PERFIL/team-profile.json" ]; then echo "##vso[task.setvariable variable=TEAM_PROFILE]$PERFIL/team-profile.json"; fi
+          exit 0
+        displayName: 'El perfil de la organización y su team-repos.json'
+        env:
+          CLONE_TOKEN: $(System.AccessToken)
+
+      - script: |
+          # El resumen diario, parte del vigilante: edita el mensaje que mandó dependencias a las 04:00 (su identificador
+          # está en la foto de dependencias de hoy) agregando esta sección; si dependencias no entregó, manda uno nuevo y lo
+          # dice. Va antes de guardar, para que la constancia viaje con la foto. No entregado: naranja, nunca rojo.
+          set -uo pipefail
+          HOY="${HOY_NOCTURNO:-}"
+          if [ -z "$HOY" ]; then
+            echo "##vso[task.logissue type=warning]Falta HOY_NOCTURNO (la fecha del paso del vigilante): el resumen NO se intentó."
+            exit 1
+          fi
+          # Una variable que no está en la definición NO llega vacía: Azure deja el literal `$(NOMBRE)`. Se trata como ausente.
+          case "${TELEGRAM_BOT_TOKEN:-}" in *'$('*) unset TELEGRAM_BOT_TOKEN ;; esac
+          case "${TYCON_TELEGRAM_CHAT_ID:-}" in *'$('*) unset TYCON_TELEGRAM_CHAT_ID ;; esac
+          case "${TYCON_NOTIFY_WEBHOOK_URL:-}" in *'$('*) unset TYCON_NOTIFY_WEBHOOK_URL ;; esac
+          # el perfil que bajó el paso del perfil; sin él, daily-summary lo intenta bajar y, si no puede, lo dice
+          PF=(); [ -n "${TEAM_PROFILE:-}" ] && [ -f "$TEAM_PROFILE" ] && PF=(--profile "$TEAM_PROFILE")
+          EX=(); [ -f "$(Agent.TempDirectory)/prs-abiertos.txt" ] && EX=(--extra "$(Agent.TempDirectory)/prs-abiertos.txt")
+          ERR=$(mktemp)
+          node scripts/nightly/dependencies/daily-summary.js deliver --source vigilante --today "$HOY" ${PF[@]+"${PF[@]}"} ${EX[@]+"${EX[@]}"} \
+            --operations "$(Build.SourcesDirectory)/operations.json" \
+            --team-repos "$(Build.SourcesDirectory)/team-repos.json" --clone-dir "$(Agent.TempDirectory)/retro-sweep" \
+            --out "$(Build.SourcesDirectory)/.dashboard/vigilante" \
+            --pending "$(Build.SourcesDirectory)/inbox/watcher" \
+            --deps-out "$(Build.SourcesDirectory)/.dashboard/dependencias" 2> "$ERR"
+          CODIGO=$?
+          cat "$ERR" >&2
+          if [ "$CODIGO" != "0" ]; then
+            echo "##vso[task.logissue type=warning]El resumen NO se entregó (código $CODIGO): $(tail -n 1 "$ERR" | sed 's/##vso/## vso/g')"
+            exit 1
+          fi
+        displayName: 'Entregar el resumen del arnés'
+        continueOnError: true
+        condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq('${{ parameters.efectos }}', 'true'))
+        env:
+          TELEGRAM_BOT_TOKEN: $(TELEGRAM_BOT_TOKEN)
+          TYCON_TELEGRAM_CHAT_ID: $(TYCON_TELEGRAM_CHAT_ID)
+          TYCON_NOTIFY_WEBHOOK_URL: $(TYCON_NOTIFY_WEBHOOK_URL)
+          TYCON_SLACK_WEBHOOK_URL: $(TYCON_SLACK_WEBHOOK_URL)
+          TYCON_TEAMS_WEBHOOK_URL: $(TYCON_TEAMS_WEBHOOK_URL)
+          TYCON_MAIL_USER: $(TYCON_MAIL_USER)
+          TYCON_MAIL_PASSWORD: $(TYCON_MAIL_PASSWORD)
+          CLONE_TOKEN: $(System.AccessToken)
+
+      - script: |
+          set -eu
+          cd "$(Build.SourcesDirectory)"
+          # A main del repo de operaciones llega SÓLO lo que la noche escribió en estas dos carpetas, sobre la punta recién
+          # traída y con reintento. El checkout no se mueve. La foto de hoy tiene que estar: es la línea base de mañana.
+          DAY=$(date -u +%Y-%m-%d)
+          node scripts/ci/push-nightly-data.js save \
+            --message "chore(vigilante): mirada de producción $DAY [nocturno]" \
+            --require-daily '.dashboard/vigilante/vigilante-{day}.json' \
+            -- .dashboard/vigilante inbox/watcher
+        displayName: 'Guardar la foto y los borradores en el repo de operaciones'
+        condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq('${{ parameters.efectos }}', 'true'))
+
+      - script: |
+          set -uo pipefail
+          cd "$(Build.SourcesDirectory)"
+          # Abre un pull request SÓLO por un borrador que nunca tuvo uno; el que una persona rechazó se convierte en la
+          # decisión que esta cola prevé. Si no se pudo preguntar a Azure, no se abre nada y la noche termina en rojo.
+          bash scripts/ci/open-pr-per-finding.sh \
+            --queue inbox/watcher \
+            --branch vigilante \
+            --script scripts/nightly/watcher/vigilante.js \
+            --org "$(System.CollectionUri)" \
+            --project "$(System.TeamProject)" \
+            --repo "$(Build.Repository.Name)" \
+            --reviewers "${OPS_REVIEWERS_WATCHER:-}"
+        displayName: 'Abrir un pull request por hallazgo (ahí se decide)'
+        condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq('${{ parameters.efectos }}', 'true'))
+        env:
+          AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
+
+      - script: |
+          set -u
+          if [ "${{ parameters.quiet }}" = "True" ]; then
+            echo "Sin aviso por hallazgo (quiet): el borrador quedó guardado y su pull request, abierto."
+            exit 0
+          fi
+          # El aviso lo arma el propio vigilante (un mensaje por noche, sólo si hay algo que decir).
+          AVISO=$(sed -n '/^--- aviso ---$/,$p' "$(Agent.TempDirectory)/vigilante-salida.txt" | tail -n +2)
+          if [ -z "$AVISO" ]; then
+            echo "Noche sin novedades: no se manda nada."
+            exit 0
+          fi
+          case "${TELEGRAM_BOT_TOKEN:-}" in *'$('*) unset TELEGRAM_BOT_TOKEN ;; esac
+          case "${TYCON_TELEGRAM_CHAT_ID:-}" in *'$('*) unset TYCON_TELEGRAM_CHAT_ID ;; esac
+          case "${TYCON_NOTIFY_WEBHOOK_URL:-}" in *'$('*) unset TYCON_NOTIFY_WEBHOOK_URL ;; esac
+          PF=(); [ -n "${TEAM_PROFILE:-}" ] && [ -f "$TEAM_PROFILE" ] && PF=(--profile "$TEAM_PROFILE")
+          # sólo cantidades (sin producto, endpoint ni diagnóstico: el detalle, en los borradores)
+          if ! node scripts/lib/notify.js --operations "$(Build.SourcesDirectory)/operations.json" ${PF[@]+"${PF[@]}"} -- "$AVISO"; then
+            echo "##vso[task.logissue type=error]Había algo que avisar y el aviso NO salió (¿falta notify en operations.json, o el secreto de su canal?). El borrador ya quedó guardado."
+            exit 1
+          fi
+        displayName: 'Avisar (una vez por noche, y sólo si hay algo)'
+        condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq('${{ parameters.efectos }}', 'true'))
+        env:
+          TELEGRAM_BOT_TOKEN: $(TELEGRAM_BOT_TOKEN)
+          TYCON_TELEGRAM_CHAT_ID: $(TYCON_TELEGRAM_CHAT_ID)
+          TYCON_NOTIFY_WEBHOOK_URL: $(TYCON_NOTIFY_WEBHOOK_URL)
+          TYCON_SLACK_WEBHOOK_URL: $(TYCON_SLACK_WEBHOOK_URL)
+          TYCON_TEAMS_WEBHOOK_URL: $(TYCON_TEAMS_WEBHOOK_URL)
+          TYCON_MAIL_USER: $(TYCON_MAIL_USER)
+          TYCON_MAIL_PASSWORD: $(TYCON_MAIL_PASSWORD)
+
+      # El ensayo (efectos: false): lo que este nocturno habría guardado, con las mismas rutas que su guardado, como
+      # artefacto de la corrida (`ensayo-datos`), con la salida del vigilante como resumen. Ver «El ensayo» en
+      # pipelines/operations/README.md.
+      - script: |
+          set -u
+          node scripts/ci/rehearsal-index.js --out "$(Build.ArtifactStagingDirectory)/ensayo-datos" --summary "$(Agent.TempDirectory)/vigilante-salida.txt" \
+            -- .dashboard/vigilante inbox/watcher
+        displayName: 'El ensayo: lo que se habría guardado'
+        condition: and(succeededOrFailed(), eq('${{ parameters.efectos }}', 'false'))
+      - task: PublishPipelineArtifact@1
+        displayName: 'El ensayo: publicar lo que se habría guardado'
+        condition: and(succeededOrFailed(), eq('${{ parameters.efectos }}', 'false'))
+        inputs:
+          targetPath: $(Build.ArtifactStagingDirectory)/ensayo-datos
+          artifact: ensayo-datos

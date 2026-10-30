@@ -46,6 +46,7 @@ lee el arnés (los ejemplos están en `pipelines/operations/examples/` del arné
 | `scripts/nightly/dependencies/repos.json` | Qué repos mira la revisión de dependencias (`ado`: `<proyecto>/<repo>`; `tipo`: `npm`, `nuget` o `pip`). En un repo cuya raíz es `npm`, la noche mira también cada carpeta con `package-lock.json` (un formulario, por ejemplo); para no mirar una, `exclude: [{ "path": "<carpeta>", "reason": "<motivo>" }]` en esa entrada, y sin `reason` la noche sale con error | Sí, para la revisión de dependencias |
 | `team-repos.json` | Opcional. Dónde vive cada repo del arnés de tu organización (forma: `scripts/lib/team-repos.js`). Si está, tiene que validar: con `operations.platform: github` los avisos de dependencias son issues de GitHub, no pedidos de trabajo; y si tu organización tiene copias del repo del arnés con stories, van en `harness_copies` (las métricas no las miden, salvo la de `maintainers` si está en la lista) | No |
 | `scripts/nightly/dashboard/sources.json` | Qué fuentes espera el tablero. Usá el ejemplo: el del arnés espera fuentes que tu organización no tiene | Sí, para el tablero |
+| `scripts/nightly/watcher/hosts.json` | Opcional. Qué hosts mira el vigilante de producción (punto 8). Sin él, el vigilante no tiene qué mirar | Sí, para el vigilante |
 | `scripts/ci/product-parity.json` | Opcional. Los productos que tienen que hacer lo mismo en su pipeline, qué se compara y las diferencias declaradas (ejemplo: `pipelines/operations/examples/product-parity.json`). Un repo que la revisión de dependencias no clona lleva `ado: "<proyecto>/<repo>"`. Sin el archivo, la paridad sale «sin productos» | No |
 | `pipelines/stage-metrics.yml`, `pipelines/dependency-audit.yml`, `pipelines/team-dashboard.yml` | Copias de los tres modelos de esta carpeta | Sí |
 
@@ -209,17 +210,37 @@ definición de `stage-metrics` todavía tiene `HARNESS_COPIES` o `HARNESS_MEASUR
 sale en rojo mientras `team-repos.json` no declare las copias.
 
 El tablero tiene un parámetro opcional, `mailboxConnection`: la conexión de servicio de Azure con lectura sobre un buzón
-de ejecuciones, si tu organización junta los registros de las máquinas. Sin buzón, las fichas del equipo salen «no leído».
+de ejecuciones, si tu organización junta los registros de las máquinas. Dónde está el buzón lo dice `operations.json →
+site.mailbox` (la cuenta y el contenedor, lo mismo que lee el sitio; nunca una llave): la credencial es la de la conexión,
+y el tenant también sale de ella. Sin buzón, las fichas del equipo salen «no leído»; con la conexión y sin `site.mailbox`,
+la ejecución avisa «el buzón no está declarado».
+
+**El perfil y `team-repos.json`, en dos lados.** La noche lee `team-repos.json` del repo de operaciones; las máquinas del
+equipo, el del perfil. Si tu organización tiene perfil, el archivo va en los dos, igual. La revisión de dependencias y el
+vigilante bajan el perfil (para los canales del aviso) y los comparan: si difieren, la ejecución queda naranja nombrando
+las claves que difieren, sin sus valores; si no pudo leer el perfil, lo dice, y el aviso sale por el canal de
+`operations.json → notify`.
 
 Los pedidos de trabajo (un Bug por proyecto con hallazgos) se prenden en `repos.json`, `azure.pedidos_activos: true`.
 Antes, la identidad necesita en esos proyectos permiso para crear y comentar work items y para leer grupos. Apagados, los
 dos pasos que hablan con Azure Boards no corren.
 
-## 5. La primera ejecución: sin efectos
+## 5. La primera ejecución: sin efectos (el ensayo)
 
-Corré cada pipeline a mano con el parámetro **efectos** destildado (*Run pipeline → efectos*). Mide y escribe en el
-disco del agente, pero no guarda nada ni abre pull requests. La primera vez Azure pide permiso para usar el repo del
-arnés (*This pipeline needs permission to access a resource*): *Permit*.
+Es el primer paso con cada pipeline nuevo, y también antes de cambiar uno que ya corre de noche. Corré cada pipeline a
+mano con el parámetro **efectos** destildado (*Run pipeline → efectos*, o `az pipelines run --id <N> --branch <rama>
+--parameters efectos=false`). Mide y escribe en el disco del agente, pero no guarda nada, no abre pull requests y no
+avisa. La primera vez Azure pide permiso para usar el repo del arnés (*This pipeline needs permission to access a
+resource*): *Permit*.
+
+**El ensayo deja a la vista lo que habría guardado**: la ejecución publica el artefacto `ensayo-datos` (*la ejecución →
+Related → Published*). Trae `index.json` —los archivos que la noche escribió en las rutas de su guardado, cada uno con su
+tamaño; los que quedaron vacíos, los que habría borrado y los `.gitkeep` de las carpetas que crea la primera noche,
+aparte—, una copia de cada archivo en `files/` y, si la hay, la salida de la ejecución en `summary/`. Son los mismos
+archivos que va a guardar la noche de verdad, contados desde la misma base que el guardado: un archivo vacío, o uno que
+falta, es lo que hay que mirar antes de dejarla correr sola; si no aparece ninguno, la ejecución lo avisa (puede ser una
+ruta mal escrita). Nada de lo que guarda la noche lleva credenciales; la salida de `summary/` es la misma que muestra el
+registro de la ejecución, con el mismo acceso. Con efectos, el artefacto no se publica.
 
 Mirá que termine en verde. Si sale «NO MEDIDO» o «Repos NO medidos», es un permiso de lectura que falta (punto 3).
 
@@ -259,14 +280,20 @@ El cuarto nocturno, `scripts/nightly/watcher/vigilante.js`, mira la API de admin
 Extensions de la organización, agrupa lo que huele mal por debajo de las alertas de la nube y deja un borrador por
 hallazgo en `inbox/watcher/pending/` para que una persona decida (`/tycon-vigilante`). **No toca nada.**
 
-Viene apagado: sin configuración no mira nada, lo dice en una línea y sale 0. Para prenderlo:
+Viene apagado: sin configuración no mira nada. Para prenderlo:
 
-- copiá `examples/hosts.json` a `scripts/nightly/watcher/hosts.json` del repo de operaciones, con un producto por host
-  (`env_user`/`env_pass` NOMBRAN las variables de entorno con las credenciales; nunca las traen);
-- en el pipeline que lo corra, pasale `--config` con esa ruta, `--out .dashboard/vigilante` y
-  `--pending inbox/watcher`, y las credenciales como variables secretas.
-
-El modelo de ese pipeline todavía no está en esta carpeta: es lo siguiente.
+1. Copiá `examples/hosts.json` a `scripts/nightly/watcher/hosts.json` del repo de operaciones, con un producto por host
+   (`env_user`/`env_pass` NOMBRAN las variables de entorno con las credenciales; nunca las traen). La rampa se maneja
+   con `activo` por producto: prendé uno, mirá unas noches los borradores y recién después sumá los demás.
+2. Las credenciales, en un grupo de variables del proyecto (*Pipelines → Library*), marcadas como secretas.
+3. Copiá `production-watch.yml` a `pipelines/` del repo de operaciones, cambiá la línea marcada y poné como valor por
+   defecto de dos parámetros el nombre del grupo (`hostsVariableGroup`) y la lista de nombres de las variables que nombra
+   `hosts.json` (`hostsSecrets`). Azure no le pasa una variable secreta a un paso si no se la nombra: sin la lista, el
+   vigilante no ve las credenciales. Sin grupo, el vigilante mira sólo los hosts que no las piden, y lo avisa. Un nombre
+   de la lista que no está en el grupo no se usa como credencial: la ejecución avisa cuál falta y su host sale «no medido».
+4. Dalo de alta como los demás (nombre sugerido: `production-watch`), con su ensayo primero (punto 5). Corre a las 08:00
+   UTC. Quiénes revisan sus pull requests: `operations.json → reviewers.watcher`. El aviso por hallazgo viene apagado
+   (`quiet`): el pull request alcanza; el resumen del día lleva su sección igual.
 
 ## 9. La copia para el sitio de la organización (opcional)
 

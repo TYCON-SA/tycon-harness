@@ -90,7 +90,6 @@
     "scripts/tests/nightly-dod-notice.test.sh",
     "scripts/tests/no-hardcoded-paths.test.js",
     "scripts/tests/operations-github-workflows.test.js",
-    "scripts/tests/operations-pipelines.test.js",
     "scripts/tests/periodic-exam.test.js",
     "scripts/tests/plugin-manifests.test.sh",
     "scripts/tests/pr-suites-shards.test.js",
