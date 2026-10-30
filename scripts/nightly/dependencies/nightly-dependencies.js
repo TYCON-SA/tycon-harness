@@ -156,7 +156,10 @@ const diasEntre = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 8640000
 // plugin y un borrador abierto de uno taparía al otro. La etiqueta suma la subruta SÓLO cuando la
 // hay: la de las entradas que ya existen no cambia (si cambiara, la noche siguiente todo parecería
 // nuevo y se comería el presupuesto de ruido).
-const etiqueta = (r) => `${r.producto}/${path.basename(r.ruta)}${r.subruta ? `/${r.subruta}` : ''}`;
+// La etiqueta y el proyecto declarado viven en scripts/lib/dependency-project.js: la pestaña Mantenimiento del sitio
+// usa la misma regla para saber si una tarea sigue vigente.
+const DEP_PROJECT = require('../../lib/dependency-project.js');
+const etiqueta = DEP_PROJECT.repoLabel;
 const rutaCompleta = (r) => (r.subruta ? `${r.ruta}/${r.subruta}` : r.ruta);
 
 /**
@@ -566,15 +569,7 @@ function agruparPresencias(repos) {
  * `js-yaml` en Globex y en Acme son dos fichas porque el pedido de trabajo es uno por
  * proyecto). La reusa work-items.js — por eso va en `module.exports`.
  */
-/**
- * La entrada de repos.json de una etiqueta. Una carpeta descubierta no está en la lista: es de la
- * entrada npm de la raíz de su repo, y su proyecto es ése. Sin esto, sus pedidos irían a un proyecto inventado.
- */
-function entradaDe(etiquetaRepo, cfg) {
-  const repos = (cfg && cfg.repos) || [];
-  return repos.find((r) => etiqueta(r) === etiquetaRepo)
-    || repos.find((r) => r.tipo === 'npm' && !r.subruta && String(etiquetaRepo).startsWith(`${etiqueta(r)}/`));
-}
+const entradaDe = DEP_PROJECT.entryFor;
 
 function proyectoDe(etiquetaRepo, cfg) {
   const e = entradaDe(etiquetaRepo, cfg);
@@ -593,17 +588,10 @@ function proyectoDe(etiquetaRepo, cfg) {
  * `proyectoDe` cae en el `producto` cuando la etiqueta no está en `repos.json`, y para decidir si dos
  * hallazgos son la misma ficha eso sirve. Para PEDIRLE algo a Azure no: el producto no es el proyecto
  * (Acme → «Acme Web», Globex → GlobexCore), y un repo que salió de la config generaría un pedido a un
- * proyecto inexistente que fallaría todas las noches.
+ * proyecto inexistente que fallaría todas las noches. El nombre se conserva: lo usan los guiones de pedidos de las dos
+ * plataformas, y cada uno rechaza la entrada ajena.
  */
-function proyectoAzureDe(etiquetaRepo, cfg) {
-  const e = entradaDe(etiquetaRepo, cfg);
-  // El lugar al que se le PIDE, también en GitHub (el repo `<dueño>/<repo>`, donde se abre el issue). El
-  // nombre se conserva: lo usan los guiones de pedidos de las dos plataformas, y cada uno rechaza la entrada ajena.
-  if (e && !e.ado && e.github) return String(e.github);
-  if (!e || !e.ado) return null;
-  const crudo = String(e.ado).split('/')[0];
-  try { return decodeURIComponent(crudo); } catch { return crudo; }
-}
+const proyectoAzureDe = DEP_PROJECT.declaredProject;
 
 /**
  * El snapshot completo más reciente ANTERIOR a `hoy`. Si no hay, la corrida es la línea base.

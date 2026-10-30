@@ -13,7 +13,8 @@
  *   {"ts":"…","freno":"test-scope-guard","regla":"suite-completa","veredicto":"bloqueo","sha256":"…"}
  *
  * Un `escape` puede llevar además por qué camino se autorizó (`via`: persona, reenvio o ambiente) y, si vino por
- * relevo, la sesión que lo reenvió (`relevo`). Los dos son de una forma cerrada, no texto libre.
+ * relevo, la sesión que lo reenvió (`relevo`). Los dos son de una forma cerrada, no texto libre. Un `bloqueo` de una
+ * regla que frena por causas distintas lleva además su `motivo`, un código de la lista `MOTIVOS`.
  *
  * 🔴 LA LÍNEA NO LLEVA EL CONTENIDO. El registro sube al buzón y lo que el reductor publica lo ve
  *    todo el equipo. Del comando va su HUELLA, nunca su texto — el patrón es el de `registrar()` del
@@ -147,6 +148,18 @@ const FRENOS = {
 
 const REGLA_DESCONOCIDA = 'otra';
 
+// El motivo de un bloqueo, para las reglas que frenan por causas distintas: medirlas juntas mezcla un freno que acierta
+// con uno que molesta. Lista cerrada por regla; un motivo fuera de la lista no se escribe y la línea sale igual.
+const MOTIVOS = {
+  'safety-guard': {
+    'ESC-C3': ['trust-ran', 'force-manual', 'no-deep-review', 'set-autonomous', 'cerrar-la-ejecucion',
+      'firma-fuera-de-la-ventana', 'ejecucion-perdida', 'lector-caido'],
+  },
+  'prod-access-guard': {
+    produccion: ['escritura-protegida', 'nombre-armado', 'servidor-no-literal', 'base-de-produccion', 'llavero'],
+  },
+};
+
 function casaDelPipeline(home) {
   // la carpeta del estado la sabe scripts/setup/harness/tycon-home.js: se carga si está al lado
   // (en el repo, y en /opt/tycon/setup/harness/ por el instalador del freno); si no, la de siempre
@@ -203,7 +216,7 @@ const ESCAPES_CON_NOMBRE = ['TYCON_SAFETY_OFF', 'TYCON_PROD_LINT', 'TYCON_NEW_NA
   'TYCON_NO_DEEP_REVIEW', 'no-deep-review', 'TYCON_STATUS_GATE', 'cambiar-el-estado'];
 const SESION = /^[\w-]{1,80}$/;
 
-function anotar({ freno, regla, veredicto, cmd, home, via, relevo, sesion, escape } = {}) {
+function anotar({ freno, regla, veredicto, cmd, home, via, relevo, sesion, escape, motivo } = {}) {
   try {
     if (!FRENOS[freno]) {
       anotarFallo(home, `freno desconocido: ${String(freno).slice(0, 40)}`);
@@ -226,6 +239,11 @@ function anotar({ freno, regla, veredicto, cmd, home, via, relevo, sesion, escap
       if (typeof relevo === 'string' && RELEVO.test(relevo)) linea.relevo = relevo;
       // la línea se escribe igual, sin quién lo reenvió: que quede dicho por qué
       else anotarFallo(home, `relevo fuera de forma en un escape de ${freno}: no se anotó quién lo reenvió`);
+    }
+    if (motivo !== undefined && veredicto === 'bloqueo') {
+      const lista = (MOTIVOS[freno] || {})[linea.regla] || [];
+      if (lista.includes(motivo)) linea.motivo = motivo;
+      else anotarFallo(home, `motivo fuera de la lista en ${freno} ${linea.regla}: no se anotó`);
     }
     if (typeof sesion === 'string' && SESION.test(sesion)) linea.sesion = sesion;
     if (escape !== undefined) {
@@ -256,7 +274,7 @@ function main(argv) {
     return i >= 0 && i + 1 < argv.length ? argv[i + 1] : undefined;
   };
   const cmd = argv.includes('--cmd-stdin') ? leerStdin() : undefined;
-  anotar({ freno: val('--guard'), regla: val('--rule'), veredicto: val('--verdict'), cmd, via: val('--via'), relevo: val('--relay'), sesion: val('--session'), escape: val('--escape') });
+  anotar({ freno: val('--guard'), regla: val('--rule'), veredicto: val('--verdict'), cmd, via: val('--via'), relevo: val('--relay'), sesion: val('--session'), escape: val('--escape'), motivo: val('--reason') });
   return 0; // SIEMPRE 0: el freno que nos llamó decide su propio código de salida
 }
 
@@ -267,4 +285,4 @@ if (require.main === module) {
   process.exit(main(process.argv.slice(2)));
 }
 
-module.exports = { anotar, reglaNormalizada, veredictoValido, FRENOS, REGLA_DESCONOCIDA };
+module.exports = { anotar, reglaNormalizada, veredictoValido, FRENOS, MOTIVOS, REGLA_DESCONOCIDA };

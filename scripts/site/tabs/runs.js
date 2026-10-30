@@ -317,6 +317,9 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
     return { ...b, armable: b.armable === undefined ? b.completo : b.armable };
   };
 
+  /** ¿Armar ahora dejaría a medias una vista servida? (la bajada trae los registros, no todas las conversaciones) */
+  const aMedias = () => Boolean(st.M) && !bajada().completo;
+
   function asegurar() {
     if (!fuentes.estado().cargado) return;
     st.sinBuzon = !conBuzon();
@@ -325,6 +328,16 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
     // por las máquinas, y una máquina que cambió de dueño mostraría corridas nuevas a su dueño anterior. Mientras tanto
     // se sirve el último armado, y la respuesta dice que puede faltar alguna corrida.
     if (!bajada().armable) return;
+    // con una vista servida, un armado con conversaciones pendientes no la reemplaza: sin la conversación, el título, los
+    // tiempos y el consumo de una ejecución irían y volverían entre recargas. Se espera a la pasada entera; sólo en
+    // frío, sin vista, se arma a medias (2.77)
+    if (aMedias()) {
+      if (!st.esperaAvisada) { st.esperaAvisada = true; log('ejecuciones: la bajada trae conversaciones pendientes; se sigue sirviendo la vista anterior hasta la pasada entera, y la respuesta dice que puede faltar alguna ejecución'); }
+      return;
+    }
+    st.esperaAvisada = false;
+    // la bajada escribe el espejo: se arma cuando termine (avisa con el refresco)
+    if (bajada().bajando) return;
     const umbralesArchivo = umbralesDeLaOrganizacion();
     // las conversaciones sólo cuentan con un disco del sitio: sin SITE_DATA_DIR, lo del hilo es «no medido»
     const sinHilos = !(typeof fuentes.hilos === 'function' && fuentes.hilos() && cfg.dataDir);
@@ -346,9 +359,14 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
 
   function armarSiCambio(huella, { sinHilos, umbralesArchivo }) {
     // la huella tardó: si mientras tanto la bajada quedó a medias, no se arma (la misma regla de asegurar)
-    if (st.armando || !bajada().armable) return;
+    if (st.armando || !bajada().armable || aMedias() || bajada().bajando) return;
     // el espejo volvió a ser el del modelo que se sirve: lo que falló después ya no vale para la banda
-    if (huella === st.huella) { st.error = null; st.huellaFallida = null; return; }
+    if (huella === st.huella) {
+      st.error = null; st.huellaFallida = null;
+      // el espejo no cambió, pero la bajada sí puede: una entera que no trajo nada nuevo deja de deber pendientes
+      if (st.guardada === null) { st.pendientes = bajada().completo ? 0 : bajada().pendientes || 0; st.generacion = bajada().generacion; }
+      return;
+    }
     // el mismo espejo ya fallado: no se repite (un armado que falla por memoria no se reintenta en cada pedido)
     if (huella === st.huellaFallida) return;
     const textosDir = path.join(base, `${ahora()}-${crypto.randomBytes(4).toString('hex')}`);
@@ -357,6 +375,8 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
     const personas = typeof fuentes.personas === 'function' ? fuentes.personas() : null;
     const informados = personas && isObject(personas.informados) ? personas.informados : null;
     const t0 = ahora();
+    const pendientes = bajada().completo ? 0 : bajada().pendientes || 0;
+    const generacion = bajada().generacion;
     const borrar = (dir, para) => fs.rm(dir, { recursive: true, force: true }, (e) => { if (e) log(`ejecuciones: no se pudieron borrar los textos ${para} (${codigoDe(e)}): quedan en el disco del sitio`); });
     st.armando = (async () => {
       if (demora) await new Promise((r) => setTimeout(r, demora));
@@ -364,6 +384,7 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
     })().then((r) => {
       const viejo = st.textosDir;
       st.M = r.M; st.textosDir = textosDir; st.huella = huella; st.error = null; st.huellaFallida = null; st.guardada = null;
+      st.pendientes = pendientes; st.generacion = generacion;
       // la guardada pasa a ser esta: el temporal se pone en su lugar (un rename, atómico). Si falla (o el hilo no la pudo
       // escribir), el armado igual se sirve
       const sinGuardar = (codigo) => {
@@ -396,6 +417,8 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
   }
 
   if (typeof fuentes.alRefrescar === 'function') fuentes.alRefrescar(asegurar);
+  // mientras se arma (y se calcula la huella del espejo), la bajada no escribe el espejo
+  if (typeof fuentes.alArmar === 'function') fuentes.alArmar(() => Boolean(st.armando || st.huellaEnCurso));
   asegurar();
 
   return {
@@ -420,6 +443,10 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
     /** La vista guardada que se sirve (`{ generado, informados }`), o null si lo que se sirve es un armado de este arranque. */
     guardada: () => st.guardada,
     bajada,
+    /** Las conversaciones que le faltaban al armado que se sirve (la guardada: 0, no se sabe de su bajada). */
+    pendientes: () => (st.M && st.guardada === null ? st.pendientes || 0 : 0),
+    /** ¿La vista servida es de una bajada anterior y espera una entera para rearmarse? (mientras, puede faltar alguna corrida) */
+    esperaLaBajada: () => aMedias() && st.generacion !== bajada().generacion,
     /** La carpeta de los textos del modelo que se sirve (las pruebas la miran). */
     textosDir: () => st.textosDir,
     /** La carpeta de los textos bajados a demanda (las pruebas la miran). */
@@ -524,8 +551,9 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
     // se reemplazan enteros al refrescar, y de las personas cambian sus dos partes
     const config = fuentes.config(); const modeloFondo = fuentes.modelo();
     const personas = personasPara(typeof fuentes.personas === 'function' ? fuentes.personas() : null, vista.guardada());
-    const completo = Boolean(vista.bajada().armable);
-    const pendientes = completo ? vista.bajada().pendientes || 0 : 0;
+    // la vista servida que espera una bajada entera dice, como la bajada a medias, que puede faltar alguna corrida
+    const completo = Boolean(vista.bajada().armable) && !(typeof vista.esperaLaBajada === 'function' && vista.esperaLaBajada());
+    const pendientes = completo ? vista.pendientes() : 0;
     const deps = [config, modeloFondo, personas, personas && personas.informados, personas && personas.repos, completo, pendientes];
     let porPersona = guardados.get(M);
     if (!porPersona) { porPersona = new Map(); guardados.set(M, porPersona); }
@@ -577,7 +605,7 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
         const [grilla] = esQuienMantiene ? require('./cards.js').seccionesDe(modeloFondo.fichas, 'corridas', { sinPreguntas: true, idioma }) : [];
         const fichasTablero = !esQuienMantiene ? ''
           : modeloFondo.fichas == null ? `<p class="q-note" id="fichas-calculando">${runsEsc(tx(idioma, 'fichas.calculando'))}</p>`
-            : (grilla ? `<div id="fichas-corridas">${grilla.html}</div>` : '');
+            : (grilla ? `<div id="fichas-corridas"><p class="q-note">${runsEsc(tx(idioma, 'corridas.fichasDeLaNoche'))}</p>${grilla.html}</div>` : '');
         const cuerpo = `<link rel="stylesheet" href="/corridas/vista.css"><div class="corridas">${rearmado}${runs.cabecera(V, opts)}\n${runs.ejecutiva(V, opts)}\n${fichasTablero}${runs.tabla(V, opts)}\n${runs.pie(V, opts)}</div>`
           + `<div id="fuente-corridas" data-api="/api/corridas" data-generado="${runsEsc(V.generado)}" hidden></div>${runs.bloqueDeTextos(idioma)}<script src="/corridas/cliente.js"></script>`;
         r.salidas[llave] = cuerpo;

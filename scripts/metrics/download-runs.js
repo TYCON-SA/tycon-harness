@@ -503,10 +503,13 @@ function carpetasDeMaquina(espejoDir, opts = {}) {
 }
 
 /** Deja la unión en el espejo: `.carpetas-de-maquina.json`. Devuelve null si pudo, o el motivo. */
-function escribirCarpetasDeMaquina(espejoDir) {
+function escribirCarpetasDeMaquina(espejoDir, aMedias = null) {
   const u = carpetasDeMaquina(espejoDir);
   // sin poder mirar el espejo no se escribe: un archivo con cero uniones pisaría uno bueno y diría «medidas»
   if (u.no_medido) return `no se escribió .carpetas-de-maquina.json: ${u.no_medido}`;
+  // una carpeta vieja con un archivo que no bajó tiene una huella que no se puede confiar: queda la unión anterior
+  const tocada = aMedias ? Object.keys(u.carpetas).find((v) => aMedias.has(v)) : null;
+  if (tocada) return `no se escribió .carpetas-de-maquina.json: la carpeta ${tocada} no bajó entera (queda la anterior)`;
   try { escribirAtomico(path.join(espejoDir, '.carpetas-de-maquina.json'), `${JSON.stringify(u, null, 1)}\n`); return null; }
   catch (e) { return `no se pudo escribir .carpetas-de-maquina.json (${e.code || 'error'})`; }
 }
@@ -690,13 +693,17 @@ async function bajarUnaCorrida(opts = {}) {
 }
 
 async function bajar(opts = {}) {
-  const res = { bajado: false, estado: null, motivo: null, codigo: null, completo: false, blobs: 0, bajados: 0, bytes: 0, al_dia: 0, ignorados: 0, ignorados_nombres: [], omitidos: 0, versiones_viejas: 0, versiones_incompletas: 0, sin_tiempo: 0, aviso: null, resumidos: 0, por_tope: 0, podados: 0, hilos_grandes: 0, registros_enteros: true };
+  const res = { bajado: false, estado: null, motivo: null, codigo: null, completo: false, blobs: 0, bajados: 0, bytes: 0, al_dia: 0, ignorados: 0, ignorados_nombres: [], omitidos: 0, versiones_viejas: 0, versiones_incompletas: 0, sin_tiempo: 0, aviso: null, resumidos: 0, por_tope: 0, podados: 0, hilos_grandes: 0, registros_enteros: true, volcados_enteros: true };
   const log = (m) => { if (opts.log) opts.log(m); };
-  // Desde que el listado se leyó, toda pasada —también la parcial— deja la unión de carpetas en el espejo
+  // Desde que el listado se leyó, toda pasada —también la parcial— deja la unión de carpetas en el espejo, salvo la que
+  // cortó antes de bajar todos los volcados, o la que no pudo bajar un archivo de una carpeta vieja: con la vieja a medio
+  // bajar su huella no coincide y la unión cambiaría de una pasada a otra. Ésas dejan la anterior.
   let espejoParaUniones = null;
+  let aMedias = null;   // las carpetas con un archivo que no bajó o no se pudo comparar
   // Una pasada que no terminó bien nunca dice «bajado»: lo que sí bajó queda en disco y contado en `bajados`.
   const fin = (codigo, estado, motivo) => {
-    if (espejoParaUniones) { const m = escribirCarpetasDeMaquina(espejoParaUniones); res.uniones = m || 'escritas'; if (m) log(m); }
+    if (espejoParaUniones && !(res.registros_enteros && res.volcados_enteros)) res.uniones = 'no escritas: la pasada cortó antes de bajar todos los volcados';
+    else if (espejoParaUniones) { const m = escribirCarpetasDeMaquina(espejoParaUniones, aMedias); res.uniones = m || 'escritas'; if (m) log(m); }
     if (espejoParaUniones && opts.mergesA) {
       try { res.merges = mergesDelEspejo(espejoParaUniones, opts.mergesA); }
       catch (e) { res.merges = null; log(`no se pudieron dejar los merges en ${opts.mergesA} (${e.code || e.message})`); if (codigo === 0) { codigo = 1; estado = 'error_merges'; motivo = `los merges bajados no se pudieron escribir (${e.code || e.message})`; } }
@@ -897,7 +904,8 @@ async function bajar(opts = {}) {
     let elegido = null;
     for (const v of versiones) {
       const r = await juegoCompleto(maquina, vs.get(v));
-      if (r.estado) return fin(1, r.estado, `${r.motivo}${res.bajados ? ` — ${res.bajados} sí bajaron` : ''}`);
+      // cortó antes de bajar los volcados: no deja la unión de carpetas (la misma regla que la pasada sin tiempo)
+      if (r.estado) { res.registros_enteros = false; return fin(1, r.estado, `${r.motivo}${res.bajados ? ` — ${res.bajados} sí bajaron` : ''}`); }
       if (r.completo) { elegido = v; break; }
       if (!r.ilegible) res.versiones_incompletas += 1;   // la ilegible ya quedó en no_leidos: no es «incompleta»
     }
@@ -1081,14 +1089,17 @@ async function bajar(opts = {}) {
       }
     };
     await Promise.all(Array.from({ length: Math.min(conc, cola.length) }, trabajador));
-    if (fatal) return fin(...fatal);
-    if (corto) { res.sin_tiempo = pendientes.length - tomados; if (fase < 2) res.registros_enteros = false; break; }
+    // un corte en cualquier fase deja volcados sin bajar; en las de registros, además, registros
+    if (fatal) { res.volcados_enteros = false; if (fase < 2) res.registros_enteros = false; return fin(...fatal); }
+    if (corto) { res.sin_tiempo = pendientes.length - tomados; res.volcados_enteros = false; if (fase < 2) res.registros_enteros = false; break; }
   }
   // lo que quedó por el tope es trabajo pendiente, como lo que quedó sin tiempo: la pasada no está entera, y la
   // siguiente sigue (sources.js → buzon.seguir)
   res.sin_tiempo += res.por_tope;
 
   if (noLeidos.length || malos.length) {
+    // un archivo que no bajó puede ser un volcado: la huella de su carpeta no se puede confiar
+    aMedias = new Set([...noLeidos, ...malos].map((x) => x.split('/')[0]));
     if (noLeidos.length) res.no_leidos = noLeidos;
     if (malos.length) res.no_bajados = malos;
     return fin(1, 'parcial', `${[...noLeidos, ...malos].length} archivo(s) no se pudieron bajar o comparar: ${[...noLeidos, ...malos].slice(0, 3).join(', ')}${res.bajados ? ` — ${res.bajados} sí bajaron` : ''}`);

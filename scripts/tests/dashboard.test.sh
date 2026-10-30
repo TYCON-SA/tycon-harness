@@ -2097,6 +2097,30 @@ else
   echo "  ⚠️   — T42b NO MEDIDO: como root, chmod 000 no impide leer. No es un verde."
 fi
 
+# ── 2.79-T7 · 2.79-Fichas_CorridasDelBuzon_CuentaEjecucionesNoArchivos @story-2.79 @ac-7 ──
+# 🔴 rojo previo: la ficha contaba archivos: la misma ejecución en dos carpetas (la vieja y la nueva) contaba dos veces.
+T=$(mktemp -d); montar_sano "$T"; bajada_ok "$T/bajada.json"
+volcado "$T/buzon" maq-uno 1 2026-10-01T10:00:00Z 2026-10-01T12:00:00Z 10 2
+volcado "$T/buzon" maq-uno 2 2026-10-02T10:00:00Z 2026-10-02T14:00:00Z 20 3
+python3 - "$T/buzon" <<'PY'
+import json, os, sys, glob
+b = sys.argv[1]
+for i, f in enumerate(sorted(glob.glob(os.path.join(b, 'maq-uno', '*.json')))):
+    d = json.load(open(f)); d['marker']['sessionId'] = 'sesion-%d' % i; json.dump(d, open(f, 'w'))
+    if i == 0:
+        # la copia vieja de la misma ejecución, en otra carpeta: archivada antes y con otra duración
+        v = json.loads(json.dumps(d)); v['archivedAt'] = '2026-10-01T11:00:00Z'; v['marker']['lastTouch'] = '2026-10-01T20:00:00Z'
+        os.makedirs(os.path.join(b, 'maq-vieja'), exist_ok=True); json.dump(v, open(os.path.join(b, 'maq-vieja', os.path.basename(f)), 'w'))
+PY
+node "$TABLERO" --nightly --dir "$T" --mailbox "$T/buzon" --mailbox-state "$T/bajada.json" --output "$T/o.html" --json > "$T/j.out" 2>/dev/null
+python3 - "$(jpanel "$T/j.out" local corridas)" <<'PY' && ok "2.79-T7 la misma ejecución en dos carpetas cuenta una, con la copia más nueva" || mal "2.79-T7 $(jpanel "$T/j.out" local corridas)"
+import json, sys
+c = json.loads(sys.argv[1])
+assert c['estado'] == 'medido' and c['total'] == 2 and c['medidos'] == 2, c
+assert c['valor'] == 3, c   # mediana de 2 h (la copia nueva) y 4 h; con la vieja (10 h) sería otra
+PY
+rm -rf "$T"
+
 echo
 if [ "$FALLOS" -gt 0 ]; then echo "FALLARON $FALLOS chequeo(s)"; exit 1; fi
 echo "todo verde"

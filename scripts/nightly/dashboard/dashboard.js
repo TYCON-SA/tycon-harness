@@ -383,11 +383,22 @@ function leerCorridas(archivos, opts = {}) {
   try { tiempos = require('../../metrics/step-times.js'); }
   // el código o la clase del error, nunca su mensaje: trae rutas del disco y la página del nocturno se commitea
   catch (e) { sinTiempos = `scripts/metrics/step-times.js no se pudo cargar (${e.code || e.name || 'error'}): trabajo y espera no se miden`; }
+  // Se cuentan EJECUCIONES, no archivos, con la clave de la tabla de Ejecuciones (sesión + arranque): de dos copias de la
+  // misma ejecución (la carpeta vieja y la nueva de una máquina) queda la archivada más tarde. Sin sesión, cada archivo es una.
+  const porEjecucion = new Map();
+  const { runKey } = require('./runs');
   for (const a of archivos) {
     const ruta = typeof a === 'string' ? a : a.ruta;
     let o; try { o = JSON.parse(fs.readFileSync(ruta, 'utf8')); } catch (e) { total += 1; ilegibles += 1; if (a.grupo) grupos.add(a.grupo); continue; }
     if (!o || typeof o !== 'object' || !o.marker || typeof o.marker !== 'object') continue;
-    total += 1; if (a.grupo) grupos.add(a.grupo);
+    if (a.grupo) grupos.add(a.grupo);
+    const sid = typeof o.marker.sessionId === 'string' && o.marker.sessionId ? o.marker.sessionId : null;
+    const clave = sid ? runKey(sid, o.marker) : `archivo\n${ruta}`;
+    const prev = porEjecucion.get(clave);
+    if (!prev || String(o.archivedAt || '') > String(prev.archivedAt || '')) porEjecucion.set(clave, o);
+  }
+  for (const o of porEjecucion.values()) {
+    total += 1;
     const mk = o.marker, co = o.costo || {};
     if (typeof o.archivedAt === 'string' && (!ultima || o.archivedAt > ultima)) ultima = o.archivedAt;
     const ini = Date.parse(mk.startedAt || ''), fin = Date.parse(mk.lastTouch || '');
@@ -958,7 +969,10 @@ function contexto() {
   const reposMotivo = rj === null
     ? (fs.existsSync(path.join(AMB.raiz, ...REPOS_JSON.split('/'))) ? `${REPOS_JSON} no se lee (no es JSON)` : `falta ${REPOS_JSON}: la organización no declaró sus productos (la lista de productos del equipo no viene con la copia pública; la trae el repo de operaciones)`)
     : (repos.length ? null : `${REPOS_JSON} no declara ningún repo`);
-  return { repos, productos, debt, declarados: (declarados && declarados.declared) || [], reposMotivo };
+  // los despliegues que la organización declaró en Configuración: dicen qué productos tienen producción
+  const ops = datoDelArbol('operations.json');
+  const despliegues = ops && ops.deployments && ops.deployments.products && typeof ops.deployments.products === 'object' ? ops.deployments.products : null;
+  return { repos, productos, debt, declarados: (declarados && declarados.declared) || [], reposMotivo, despliegues };
 }
 
 /**
@@ -1299,7 +1313,21 @@ function extra(por, ctx, cfg) {
   });
 
   m.sin_prod = (() => {
-    if (!ctx.debt || !Array.isArray(ctx.debt.debt)) return noMedida('no se pudo leer la deuda declarada de pipelines');
+    if (!ctx.debt || !Array.isArray(ctx.debt.debt)) {
+      // sin la deuda, los despliegues declarados ya dicen qué productos no tienen producción (o no declararon ninguno)
+      if (ctx.despliegues && ctx.productos.length) {
+        const declarados = new Map(Object.entries(ctx.despliegues).map(([k, v]) => [k.toLowerCase(), v]));
+        // dos casos distintos, que cuentan los dos y se nombran aparte: el declarado sin producción y el que no se declaró
+        const sinDeclarar = ctx.productos.filter((p) => !declarados.has(String(p).toLowerCase()));
+        const sinProd = ctx.productos.filter((p) => { const d = declarados.get(String(p).toLowerCase()); return d && (!Array.isArray(d.production) || !d.production.length); });
+        const partes = [sinProd.length ? `sin producción: ${sinProd.join(' · ')}` : '', sinDeclarar.length ? `sin declarar en Despliegues: ${sinDeclarar.join(' · ')}` : ''].filter(Boolean);
+        return medida(sinProd.length + sinDeclarar.length, ctx.productos.length, ctx.productos.length, { unidad: 'conteo', den_etiqueta: 'productos declarados',
+          detalle: `${partes.join(' — ')} · de los despliegues declarados en Configuración` });
+      }
+      // con despliegues declarados, lo que falta es la lista de productos
+      if (ctx.despliegues) return noMedida(sinProductos(ctx));
+      return noMedida('falta scripts/ci/pipeline-debt.json (la deuda declarada de pipelines) y no hay despliegues declarados en Configuración → Despliegues');
+    }
     if (!ctx.productos.length) return noMedida(sinProductos(ctx));
     const abiertas = ctx.debt.debt.filter((x) => /^PROD-PIPELINE-/.test(String(x.id)));
     const nombres = abiertas.map((x) => String(x.id).replace(/^PROD-PIPELINE-/, '').replace(/-\d+$/, '').toLowerCase());

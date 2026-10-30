@@ -75,13 +75,19 @@ function exprDelTablero(def) {
 }
 
 // `calculo_caido`: el cálculo común del tablero tiró, y ninguna ficha se pudo saber (no es una foto ilegible)
-const MOTIVOS = Object.freeze(['sin_foto', 'vieja', 'sin_buzon', 'solo_en_la_maquina', 'ilegible', 'sin_datos', 'calculo_caido']);
+// `examen_inutilizable`: el examen del banco no se puede usar; `sin_deuda_pipelines`: falta la deuda declarada de
+// pipelines y no hay despliegues declarados; `sin_declarar`: la organización no declaró de dónde sale el dato
+const MOTIVOS = Object.freeze(['sin_foto', 'vieja', 'sin_buzon', 'solo_en_la_maquina', 'ilegible', 'sin_datos', 'calculo_caido', 'examen_inutilizable', 'sin_deuda_pipelines', 'sin_declarar']);
+// el motivo que se arregla en Configuración lleva ahí
+const ENLACE_MOTIVO = Object.freeze({ sin_deuda_pipelines: '/configuracion#seccion-despliegues' });
 
 /** El motivo del tablero es texto libre; el sitio manda sólo uno de la lista cerrada. */
 function motivoCerrado(texto) {
   const t = String(texto || '');
   if (MOTIVOS.includes(t)) return t;
   if (/sin medición desde/i.test(t)) return 'vieja';
+  if (/examen del banco/i.test(t)) return 'examen_inutilizable';
+  if (/deuda declarada de pipelines|pipeline-debt/i.test(t)) return 'sin_deuda_pipelines';
   if (/no hay ningún archivo|no se pudo leer la carpeta|no está la carpeta|no está declarada|sin_foto/i.test(t)) return 'sin_foto';
   if (/disco de cada máquina|no aplica en el nocturno|esta máquina/i.test(t)) return 'solo_en_la_maquina';
   if (/buzón/i.test(t)) return 'sin_buzon';
@@ -209,7 +215,7 @@ function tile(f, idioma = 'es') {
   const titulo = tituloDe(f.id, idioma);
   if (f.estado === 'no_medido') {
     const motivo = T(`ficha.motivo.${MOTIVOS.includes(f.motivo) ? f.motivo : 'sin_datos'}`);
-    return `<div class="tile blind" data-ficha="${esc(f.id)}">${chip('blind', T('fichas.noMedido'))}<div class="t-label">${esc(titulo)}</div><div class="t-val">${esc(T('fichas.falta'))}</div><div class="t-den">${esc(motivo)}${f.fecha ? ` ${esc(T('fichas.fuenteDelParen', { fecha: f.fecha }))}` : ''}</div></div>`;
+    return `<div class="tile blind" data-ficha="${esc(f.id)}">${chip('blind', T('fichas.noMedido'))}<div class="t-label">${esc(titulo)}</div><div class="t-val">${esc(T('fichas.falta'))}</div><div class="t-den">${esc(motivo)}${f.fecha ? ` ${esc(T('fichas.fuenteDelParen', { fecha: f.fecha }))}` : ''}</div>${ENLACE_MOTIVO[f.motivo] ? `<a class="t-link" href="${ENLACE_MOTIVO[f.motivo]}">${esc(T('ficha.motivo.irAConfiguracion'))}</a>` : ''}</div>`;
   }
   const est = f.estado === 'declarado' ? 'decl' : f.nivel;
   // la etiqueta del denominador sale del tablero de la noche: va tal cual

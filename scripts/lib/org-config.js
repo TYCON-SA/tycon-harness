@@ -900,7 +900,7 @@ function versionesDeMaquinas({ espejo, versionImagen, ahora = Date.now(), person
     else if (!doc) { fila.texto = M('org.placeIlegible'); }
     else if (!version) { fila.texto = M('org.placeSinVersion'); }
     else if (dia && (Date.parse(`${dia}T00:00:00Z`) < ahora - SIN_NOTICIAS_DIAS * 86400000)) { fila.estado = 'sin_noticias'; fila.texto = M('org.sinNoticias', { dia }); }
-    else if (versionAtLeast(version, versionImagen)) { fila.estado = 'al_dia'; fila.texto = M('org.alDia'); }
+    else if (versionAtLeast(version, versionImagen)) { fila.estado = 'al_dia'; fila.texto = M('org.alDia', { version: versionImagen }); }
     else if (versionParts(version)) { fila.estado = 'atrasada'; fila.texto = M('org.atrasada', { version: versionImagen }); }
     else { fila.texto = M('org.sinFormaDeVersion', { version }); }
     out.push(fila);
@@ -922,11 +922,15 @@ function paridadPorProducto({ lista, resultado, hoy, resultadoIlegible = false }
   const definicion = { grupos: clone(grupos), rasgos: Array.isArray(lista.rasgos) ? clone(lista.rasgos) : [] };
   const porProducto = new Map();
   const rutaDe = new Map();   // ruta → { producto, grupo }
+  // una entrada sin `producto` se cuenta por su ruta: con una sola así, lo que se cuenta son repos, no productos
+  let unidad = 'productos';
   for (const [grupo, def] of Object.entries(grupos)) {
     const repos = Array.isArray(def) ? def : (isObject(def) && Array.isArray(def.repos) ? def.repos : []);
     for (const r of repos) {
       if (!isObject(r) || typeof r.ruta !== 'string') continue;
-      const producto = typeof r.producto === 'string' && r.producto ? r.producto : r.ruta;
+      const conProducto = typeof r.producto === 'string' && r.producto;
+      const producto = conProducto ? r.producto : r.ruta;
+      if (!conProducto) unidad = 'repos';
       if (!porProducto.has(producto)) porProducto.set(producto, { producto, grupos: new Set(), rutas: new Set(), faltan: [], tiene: [], declaradas: [], vencidas: [] });
       const p = porProducto.get(producto); p.grupos.add(grupo); p.rutas.add(r.ruta);
       // el control nombra cada repo en divergencias[] por su producto, o «producto (ruta)» si el grupo lo repite
@@ -956,7 +960,7 @@ function paridadPorProducto({ lista, resultado, hoy, resultadoIlegible = false }
   }
   const textos = { medido: M('org.paridadMedido'), parcial: M('org.paridadParcial'), no_medido: M('org.paridadNoMedido'), sin_productos: M('org.paridadSinProductosCorto'), sin_resultado: M('org.paridadSinResultado'), resultado_ilegible: M('org.paridadIlegible') };
   return {
-    estado, texto: textos[estado] || estado, fecha: isObject(resultado) ? resultado.fecha || null : null, definicion,
+    estado, texto: textos[estado] || estado, fecha: isObject(resultado) ? resultado.fecha || null : null, definicion, unidad,
     productos: [...porProducto.values()].map((p) => ({ ...p, grupos: [...p.grupos], rutas: [...p.rutas] })),
     declaradas: Array.isArray(lista.diferencias_declaradas) ? clone(lista.diferencias_declaradas) : [],
   };
@@ -1929,6 +1933,7 @@ function pantalla(idioma = 'es') {
       acciones.appendChild(el('button', { class: 'sec', type: 'button', text: T('pantalla.agregar'), onclick: function () { var v = agregar.value.trim(); if (!v) return; var f = deLaPersona(); if (f.add.indexOf(v) < 0) f.add.push(v); render(); } }));
       var queVe = declarados.length ? el('span', { class: 'dato' }, el('span', { text: T('pantalla.ve') }), etiquetas) : el('span', { class: 'dato', text: T('pantalla.todaviaNoVeNingun') });
       if (p.caida) queVe.appendChild(el('span', { text: T('pantalla.susMaquinasNoMandanNoticias') }));
+      if ((p.comparteCon || []).length) queVe.appendChild(el('span', { class: 'warn', text: T('pantalla.puedeSerLaMismaPersona', { correos: p.comparteCon.join(', ') }) }));
       donde.appendChild(el('li', {}, el('span', { class: 'quien', text: p.correo }), queVe, acciones));
     });
     var sub = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.enQueProyectosTrabajaCada') }), el('p', { class: 'sub-d', text: T('pantalla.mantenedoresVenTodo') }), el('p', { class: 'sub-d', text: T('pantalla.elSitioLoDeduceDe') }));
@@ -1943,7 +1948,7 @@ function pantalla(idioma = 'es') {
     cobertura_tocada_evaluo: T('pantalla.corridasQueMidieronLaCobertura'), qa_guia: T('pantalla.cierresConLaGuiaPara'), estilo: T('pantalla.respuestasDentroDelLargoPedido'),
     bloqueo: T('pantalla.turnosSinPasosLargosQue'), vigilados: T('pantalla.productosConSuProduccionVigilada'), bus_factor_productos_en_riesgo: T('pantalla.productosQueHizoCasiUna'),
     escapes_regla_dominante: T('pantalla.escapesConcentradosEnUnaSola'), banco_rojos: T('pantalla.casosRojosDelBancoDe'), suites_rojas: T('pantalla.suitesDelArnesEnRojo'),
-    deps_hallazgos: T('pantalla.hallazgosDeDependencias'), contrato_v2: T('pantalla.registrosPorMergeConEl'), corridas_al_final: T('pantalla.corridasQueLleganAlUltimo'), corridas_con_error: T('pantalla.corridasDondeUnControlEncontro'),
+    deps_hallazgos: T('pantalla.hallazgosDeDependencias'), contrato_v2: T('pantalla.registrosPorMergeConEl'), corridas_al_final: T('pantalla.corridasQueLleganAlUltimo'),
   };
   var CANTIDADES = { bus_factor_productos_en_riesgo: 1, banco_rojos: 1, suites_rojas: 1, deps_hallazgos: 1 };
   function editorUmbrales(s, d, pr) {
@@ -1983,7 +1988,8 @@ function pantalla(idioma = 'es') {
     // sólo los productos con algo para mirar; los que coinciden (salvo lo aceptado) van en una línea
     var conAlgo = (v.productos || []).filter(function (p) { return (p.faltan || []).length || (p.tiene || []).length || (p.vencidas || []).length; });
     var enOrden = (v.productos || []).length - conAlgo.length;
-    if ((v.productos || []).length) box.appendChild(el('div', { class: 'msg ' + (conAlgo.length ? 'warn' : 'ok') }, el('b', { text: conAlgo.length ? conAlgo.length + T('pantalla.producto3') + (conAlgo.length === 1 ? '' : 's') + T('pantalla.conAlgoParaMirar') + (enOrden ? T('pantalla.losOtros') + enOrden + T('pantalla.coincidenConLosDemas') : '') + '.' : T('pantalla.los') + enOrden + T('pantalla.productosCoincidenConLosDemas') })));
+    var porRepo = v.unidad === 'repos';
+    if ((v.productos || []).length) box.appendChild(el('div', { class: 'msg ' + (conAlgo.length ? 'warn' : 'ok') }, el('b', { text: conAlgo.length ? conAlgo.length + T(porRepo ? 'pantalla.repo3' : 'pantalla.producto3') + (conAlgo.length === 1 ? '' : 's') + T('pantalla.conAlgoParaMirar') + (enOrden ? T('pantalla.losOtros') + enOrden + T('pantalla.coincidenConLosDemas') : '') + '.' : T('pantalla.los') + enOrden + T(porRepo ? 'pantalla.reposCoincidenConLosDemas' : 'pantalla.productosCoincidenConLosDemas') })));
     var prods = el('ul', { class: 'renglones' });
     conAlgo.forEach(function (p) {
       prods.appendChild(el('li', {}, el('span', { class: 'quien', text: p.producto + ' · ' + p.grupos.join(', ') }),
@@ -2769,7 +2775,12 @@ function pantalla(idioma = 'es') {
     var rv = esObjeto(m.reviewer) ? m.reviewer : null;
     if (m.reviewer !== undefined && !rv) box.appendChild(editorGenerico(s, m, pr, 'reviewer', T('pantalla.revisorYModeloComoTexto')));
     else {
-      var grupos = ((s.extras && s.extras.porPaquete) || []).map(function (g) { return { paquete: g.paquete, propios: !!g.propios, ilegible: !!g.ilegible, revisores: (g.revisores || []).slice() }; });
+      // un paquete que nombra dos veces al mismo revisor: se muestra y se cuenta una, con su aviso
+      var grupos = ((s.extras && s.extras.porPaquete) || []).map(function (g) {
+        var vistos = {}; var dobles = []; var revisores = [];
+        (g.revisores || []).forEach(function (r) { if (vistos[r.id]) { if (dobles.indexOf(r.id) < 0) dobles.push(r.id); } else { vistos[r.id] = true; revisores.push(r); } });
+        return { paquete: g.paquete, propios: !!g.propios, ilegible: !!g.ilegible, revisores: revisores, dobles: dobles };
+      });
       if (!grupos.length) grupos = [{ paquete: null, revisores: ((s.extras && s.extras.revisores) || []).map(function (id) { return { id: id, fabrica: null }; }) }];
       // un revisor que la organización declaró y esta versión no trae se ve igual, para poder sacarlo
       var conocidos = {}; grupos.forEach(function (g) { g.revisores.forEach(function (r) { conocidos[r.id] = true; }); });
@@ -2801,7 +2812,8 @@ function pantalla(idioma = 'es') {
           var origen = m.reviewers ? T('pantalla.origenVueltaOrg') : deFabrica ? T('pantalla.origenFabricaPropio') : r.ilegible ? T('pantalla.origenIlegible') : T('pantalla.origenVuelta');
           var opciones = [['', T(!m.reviewers && deFabrica ? 'pantalla.elSuyoSinCambiar' : 'pantalla.igualQueSuVuelta', { nivel: nombreNivel(base) })]].concat(NIVELES.map(function (x) { return [x, T('pantalla.nivel.' + x)]; }));
           var que = [el('span', { text: nombre })];
-          que.push(el('small', { class: 'glosa', text: nombre !== id ? id : T('pantalla.revisorSinNombre') }));
+          que.push(el('small', { class: 'glosa', text: nombre !== id ? id : T(g.propios || g.sueltos ? 'pantalla.revisorSinNombre' : 'pantalla.revisorDelArnesSinNombre') }));
+          if ((g.dobles || []).indexOf(id) >= 0) que.push(el('small', { class: 'glosa', text: T('pantalla.revisorNombradoDosVeces') }));
           var f = fila(t, que, nombre, 'reviewer', id, opciones, propio || base, null, true, base, propio ? T('pantalla.origenOrg') : origen);
           if (propio) f.setAttribute('class', (f.getAttribute ? f.getAttribute('class') : f.attrs.class) + ' cambiado');
           renglones.push({ fila: f, texto: (nombre + ' ' + id).toLowerCase() });
@@ -3779,7 +3791,7 @@ function pantalla(idioma = 'es') {
       kpi(aCorregir.length ? 'st-warn' : 'st-good', aCorregir.length ? '#seccion-' + aCorregir[0].id : null, T('pantalla.seccionesConAlgoParaArreglar'), aCorregir.length, aCorregir.length ? aCorregir.map(function (s) { return plano(s).corto; }).join(', ') : T('pantalla.ninguna2')),
       kpi('st-good', null, T('pantalla.seccionesAlDia'), alDia + T('pantalla.de2') + S.secciones.length, T('pantalla.sinNadaPendiente')),
       kpi(viejas ? 'st-warn' : '', '#versiones', T('pantalla.maquinasConUnaVersionVieja'), viejas, T('pantalla.de') + (ex.versiones || []).length + T('pantalla.queInforman'))));
-    var prod = tablaDeMirar(T('pantalla.productos'), T('pantalla.losQueRevisaLaNoche'), (ex.productos || []).map(function (p) { return { producto: p.producto, origen: p.origen === 'deployments' ? T('pantalla.despliegues') : T('pantalla.revisionDeDependencias'), repo: p.repo || p.ruta, estado: p.activo === false ? T('pantalla.apagado') + (p.motivo ? ' (' + p.motivo + ')' : '') : T('pantalla.activo'), edita: p.origen === 'deployments' ? T('pantalla.siEnDespliegues') : T('pantalla.no') }; }), [['producto', T('pantalla.producto')], ['origen', T('pantalla.deDondeSale')], ['repo', T('pantalla.repo2')], ['estado', T('pantalla.estado')], ['edita', T('pantalla.seCambiaAca')]], 'productos');
+    var prod = tablaDeMirar(T('pantalla.productos'), T('pantalla.losQueRevisaLaNoche'), (ex.productos || []).map(function (p) { return { producto: p.producto, origen: p.origen === 'deployments' ? T('pantalla.despliegues') : T('pantalla.revisionDeDependencias'), ruta: p.ruta || '—', repo: p.repo ? (p.producto ? p.producto + ' · ' : '') + String(p.repo).split('/').pop() : p.ruta, estado: (p.activo === false ? T('pantalla.apagado') + (p.motivo ? ' (' + p.motivo + ')' : '') : T('pantalla.activo')) + (p.repetida ? ' · ' + T('pantalla.entradaRepetida') : ''), edita: p.origen === 'deployments' ? T('pantalla.siEnDespliegues') : T('pantalla.no') }; }), [['producto', T('pantalla.producto')], ['origen', T('pantalla.deDondeSale')], ['ruta', T('pantalla.rutaDeLaEntrada')], ['repo', T('pantalla.repo2')], ['estado', T('pantalla.estado')], ['edita', T('pantalla.seCambiaAca')]], 'productos');
     if (ex.productosMotivo) prod.appendChild(aviso('bad', T('pantalla.laListaDeProductosNo'), ex.productosMotivo));
     if (ex.productosEnlace) prod.appendChild(el('p', {}, el('a', { class: 'enlace-fuerte', href: ex.productosEnlace, text: T('pantalla.abrirLaListaDeLa') })));
     var ver = tablaDeMirar(T('pantalla.queVersionDelArnesTiene'), T('pantalla.laQueInformoCadaUna'), (ex.versiones || []).map(function (v) { return { maquina: v.maquina, persona: v.persona || T('pantalla.sinConfirmar'), version: v.version, dia: v.diaTexto, texto: v.texto }; }), [['maquina', T('pantalla.maquina')], ['persona', T('pantalla.persona2')], ['version', T('pantalla.version2')], ['dia', T('pantalla.ultimaNoticia2')], ['texto', T('pantalla.estado')]], 'versiones');

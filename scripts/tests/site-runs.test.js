@@ -2111,3 +2111,94 @@ test('T15 2.77-Guardada_CambioDeDueno_HastaLaBajadaEntera @story-2.77 @ac-15', a
   });
 });
 
+test('T1 2.79-Corridas_VistaServida_NoSeReemplazaAMedias @story-2.79 @ac-1', async () => {
+  // el caso de la Task 0.1: con la vista entera servida, una pasada con conversaciones pendientes no la reemplaza (sin
+  // la conversación, el título, los tiempos y el consumo de una ejecución van y vuelven). Se espera a la pasada entera.
+  const espejo = mundo({ marcadores: false });
+  const fuentes = fuentesCon({ espejo });
+  await conPestana({ fuentes }, async ({ h, entrar, vista }) => {
+    const lead = await entrar(LEAD);
+    const antes = (await h.pedir('/api/corridas', { cookie: lead })).json;
+    escribir(path.join(espejo, 'maq-a'), 'a7.json', volcado('aaaaaaaa-0000-4000-8000-000000000007', '2026-08-22T09:00:00.000Z', { marker: { storyId: '3.7' } }));
+    fuentes.bajada = { completo: false, armable: true, generacion: 2, pendientes: 3 };
+    fuentes.avisar(); await vista.listo();
+    const l = (await h.pedir('/api/corridas', { cookie: lead })).json;
+    assert.strictEqual(l.generado, antes.generado, 'la vista entera sigue servida');
+    assert.deepStrictEqual(l.corridas.map((c) => [c.id, c.maquina, c.repo, c.story]), antes.corridas.map((c) => [c.id, c.maquina, c.repo, c.story]), 'mismos ids, máquinas y productos');
+    assert.ok(!(l.buzon && l.buzon.pendientes), 'la vista servida es entera: no dice que le faltan conversaciones');
+    assert.strictEqual(l.buzon && l.buzon.parcial, true, 'pero dice que puede faltar alguna ejecución: espera la pasada entera');
+    // la pasada entera sí la reemplaza
+    fuentes.bajada = { completo: true, armable: true, generacion: 3 };
+    fuentes.avisar(); await vista.listo();
+    assert.strictEqual((await h.pedir('/api/corridas', { cookie: lead })).json.corridas.length, antes.corridas.length + 1);
+  });
+  // en frío, sin vista: se arma con los registros enteros y se dice cuántas faltan (2.77); la pasada entera la reemplaza
+  const espejoFrio = mundo({ marcadores: false });
+  const frio = fuentesCon({ espejo: espejoFrio });
+  frio.bajada = { completo: false, armable: true, generacion: 1, pendientes: 2 };
+  await conPestana({ fuentes: frio }, async ({ h, entrar, vista }) => {
+    const lead = await entrar(LEAD);
+    const l = (await h.pedir('/api/corridas', { cookie: lead })).json;
+    assert.ok(l.corridas.length > 0, 'arma en frío');
+    assert.strictEqual(l.buzon.pendientes, 2, 'y dice cuántas faltan');
+    // una pasada entera que no cambia el espejo (lo que faltaba ya no estaba en el buzón): no le falta nada
+    frio.bajada = { completo: true, armable: true, generacion: 2 };
+    frio.avisar(); await vista.listo();
+    const igual = (await h.pedir('/api/corridas', { cookie: lead })).json;
+    assert.ok(!(igual.buzon && igual.buzon.pendientes), `la entera sin cambios no arrastra los pendientes: ${JSON.stringify(igual.buzon)}`);
+    frio.bajada = { completo: false, armable: true, generacion: 3, pendientes: 2 };
+    frio.avisar(); await vista.listo();
+    // la pasada entera trae lo que faltaba (acá, una ejecución más: cambia el espejo como cambia con las conversaciones)
+    escribir(path.join(espejoFrio, 'maq-a'), 'a8.json', volcado('aaaaaaaa-0000-4000-8000-000000000008', '2026-08-23T09:00:00.000Z', { marker: { storyId: '3.8' } }));
+    frio.bajada = { completo: true, armable: true, generacion: 2 };
+    frio.avisar(); await vista.listo();
+    const l2 = (await h.pedir('/api/corridas', { cookie: lead })).json;
+    assert.strictEqual(l2.corridas.length, l.corridas.length + 1, 'la pasada entera reemplaza la vista armada a medias');
+    assert.ok(!(l2.buzon && l2.buzon.pendientes));
+  });
+});
+
+test('T2 2.79-Espejo_BajadaYArmado_NoSePisan (la pestaña) @story-2.79 @ac-2', async () => {
+  // con la bajada escribiendo el espejo no se arma; al terminar (el refresco avisa), sí. Y la pestaña le dice a las
+  // fuentes cuándo arma, para que la bajada espere
+  const espejo = mundo({ marcadores: false });
+  const fuentes = fuentesCon({ espejo });
+  const armandoDe = [];
+  fuentes.alArmar = (fn) => armandoDe.push(fn);
+  await conPestana({ fuentes }, async ({ h, entrar, vista }) => {
+    assert.strictEqual(armandoDe.length, 1, 'la pestaña se anota');
+    assert.strictEqual(armandoDe[0](), false, 'sin armado en curso');
+    const lead = await entrar(LEAD);
+    const antes = (await h.pedir('/api/corridas', { cookie: lead })).json;
+    escribir(path.join(espejo, 'maq-a'), 'a7.json', volcado('aaaaaaaa-0000-4000-8000-000000000007', '2026-08-22T09:00:00.000Z', { marker: { storyId: '3.7' } }));
+    fuentes.bajada = { completo: true, armable: true, generacion: 2, bajando: true };
+    fuentes.avisar(); await vista.listo();
+    assert.strictEqual((await h.pedir('/api/corridas', { cookie: lead })).json.corridas.length, antes.corridas.length, 'con la bajada escribiendo, no arma');
+    fuentes.bajada = { completo: true, armable: true, generacion: 2 };
+    fuentes.avisar(); await vista.listo();
+    assert.strictEqual((await h.pedir('/api/corridas', { cookie: lead })).json.corridas.length, antes.corridas.length + 1, 'terminada la bajada, arma');
+  });
+  // un armado que falla suelta la marca: la bajada no queda esperando un armado que ya no existe
+  const fallido = fuentesCon({ espejo: mundo({ marcadores: false }) });
+  const armandoFallido = [];
+  fallido.alArmar = (fn) => armandoFallido.push(fn);
+  await conPestana({ fuentes: fallido, opciones: { armar: async () => { throw Object.assign(new Error('memoria'), { code: 'ERR_WORKER_OUT_OF_MEMORY' }); } } }, async ({ vista }) => {
+    await vista.listo();
+    assert.strictEqual(armandoFallido[0](), false, 'tras el fallo, la pestaña no dice que arma');
+  });
+});
+
+test('T8 2.79-Corridas_FichasDeLaNoche_DicenQueNoSiguenElFiltro @story-2.79 @ac-7 — las fichas de la noche dicen de cuándo son y que el filtro no las cambia', async () => {
+  const cards = require(path.join(H.SITE, 'tabs', 'cards.js'));
+  const f = fuentesCon({ espejo: mundo() });
+  f.st.modelo = { ...f.st.modelo, fichas: cards.modeloDeFichas({ local: {
+    corridas: { estado: 'medido', valor: 1.25, medidos: 5, total: 5, unidad: 'conteo', fecha: '2026-08-10' },
+  } }) };
+  await conPestana({ fuentes: f }, async ({ h, entrar }) => {
+    for (const [idioma, frase] of [['es', /son de la noche y no siguen el filtro/], ['en', /are from last night and do not follow the filter/]]) {
+      const p = (await h.pedir('/corridas?desde=2026-08-10&hasta=2026-08-10', { cookie: `${await entrar(LEAD)}; sitio-idioma=${idioma}` })).texto;
+      const grilla = p.slice(p.indexOf('id="fichas-corridas"'), p.indexOf('<table'));
+      assert.match(grilla, frase, `${idioma}: la grilla de la noche lo dice`);
+    }
+  });
+});
