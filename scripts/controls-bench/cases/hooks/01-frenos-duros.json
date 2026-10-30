@@ -5890,7 +5890,7 @@
           "stdin": {
             "tool_name": "Bash",
             "tool_input": {
-              "command": "TYCON_FULL_SUITE=1 npm test -- \"a b\""
+              "command": "echo \"a b\" && TYCON_FULL_SUITE=1 npm test"
             }
           },
           "expect": {
@@ -5898,7 +5898,7 @@
             "file_contains": [
               {
                 "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/bypass.log",
-                "re": "^\\{\"ts\":\"[0-9TZ:-]+\",\"type\":\"FULL_SUITE_RUN\",\"command\":\"TYCON_FULL_SUITE=1 npm test -- \\\\\"a b\\\\\"\\\\n\"\\}$"
+                "re": "^\\{\"ts\":\"[0-9TZ:-]+\",\"type\":\"FULL_SUITE_RUN\",\"command\":\"echo \\\\\"a b\\\\\" && TYCON_FULL_SUITE=1 npm test\\\\n\"\\}$"
               },
               {
                 "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",

@@ -526,7 +526,7 @@ function cmdSet(payloadJson) {
       cerrarEjecucion(SID, existing, { estado: 'abortada', motivo: `reemplazada por la historia ${payload.storyId}; no pude calcular su estado (${e.message})` });
     }
     const {
-      adversarial, deepReviewDone, workSignalStarted, clockiStarted, adoMarkedActive, atddBypass,
+      adversarial, deepReviewDone, workSignalStarted, clockiStarted, adoMarkedActive, atddBypass, atddBypassReason,
       checks, checksProvenance, dodRuntimeChecked, iterations, fileEvents, filesTouched, filesTouchedAt,
       stepsCompleted, stepsPending, startedAt, evidenceDir, baseSha,
       // el esquema de los pasos y los avisos del Arranque son de la corrida
@@ -1407,7 +1407,13 @@ function cmdCompleteStep(nRaw, flags) {
         if (faltan.length) hermanosError = `declarados y no están en disco: ${faltan.join(', ')}`;
       } catch (e) { hermanosError = e.message; }
     }
-    const r = computeAtddOrder(marker.fileEvents, raices);
+    // un guion de medición del repo que la story no declara no es el primer código
+    let declarados = [];
+    try {
+      const storyAbs = marker.storyPath ? path.resolve(marker.repoPath || '', marker.storyPath) : null;
+      if (storyAbs) declarados = require('./lib/run-size.js').declaredFiles(fs.readFileSync(storyAbs, 'utf8'));
+    } catch { /* sin story legible, ningún guion de medición cuenta */ }
+    const r = computeAtddOrder(marker.fileEvents, raices, { declarados });
     if (hermanosError) {
       r.reason = `${r.reason} (repos hermanos: ${hermanosError}; esos no se miraron)`;
       console.error(`⚠️  freno ATDD: repos hermanos — ${hermanosError}; esos no se miraron.`);
@@ -1431,7 +1437,8 @@ function cmdCompleteStep(nRaw, flags) {
     }
     if (r.verdict === 'blocked' && bypass) {
       // El bypass NO es silencioso: queda en bypass.log con el detalle, igual que DOD_BYPASS.
-      appendLog('bypass.log', { kind: 'ATDD_BYPASS', story: marker.storyId, firstTest: r.firstTest, firstImpl: r.firstImpl });
+      appendLog('bypass.log', { kind: 'ATDD_BYPASS', story: marker.storyId, firstTest: r.firstTest, firstImpl: r.firstImpl,
+        reason: marker.atddBypassReason || motivoDe(opts) || null });
       console.error('⚠️  ATDD saltado con --no-atdd (queda en bypass.log).');
       console.error(`   código primero: ${r.firstImpl} · test después: ${r.firstTest}`);
     }
@@ -2777,7 +2784,14 @@ const { VALID_FLAGS, EXTERNAL_FLAGS, HARNESS_COMMAND } = require('./lib/external
 // El nombre viejo de la bandera del reloj, de cuando el paso era el reloj de una herramienta.
 const OLD_FLAGS = { clockiStarted: 'workSignalStarted' };
 
-function cmdSetFlag(flag, valRaw) {
+/** El valor de `--reason` en una lista de argumentos, sin espacios a los costados ('' si no está). */
+function motivoDe(args) {
+  const lista = Array.isArray(args) ? args : [];
+  const i = lista.indexOf('--reason');
+  return i >= 0 ? String(nn(lista[i + 1], '')).trim().slice(0, 300) : '';
+}
+
+function cmdSetFlag(flag, valRaw, extra = []) {
   if (flag === 'deepReviewDone') {
     // Antes de leer el marker: el comando no escribe NADA, ni el `lastTouch`.
     console.error('marker.js set-flag: `deepReviewDone` ya no se escribe a mano — cierra el pase adversarial uno de estos dos comandos:');
@@ -2797,12 +2811,23 @@ function cmdSetFlag(flag, valRaw) {
     console.error(`marker.js set-flag: flag inválido '${flag}' — válidos: ${VALID_FLAGS.join(' | ')}`);
     process.exit(2);
   }
+  const valor = valRaw === 'true' || valRaw === '1';
+  // El escape de las pruebas primero lleva su motivo: sin él, la constancia dice que se saltó, no por qué.
+  const motivo = flag === 'atddBypass' && valor ? motivoDe(extra) : '';
+  if (flag === 'atddBypass' && valor && !motivo) {
+    console.error('marker.js set-flag: el escape de las pruebas primero pide el motivo — uso: set-flag atddBypass true --reason "<por qué>"');
+    process.exit(2);
+  }
   const marker = readMarker();
   if (!marker) {
     console.error('marker.js set-flag: no hay marker activo para esta sesión');
     process.exit(1);
   }
-  marker[flag] = valRaw === 'true' || valRaw === '1';
+  marker[flag] = valor;
+  if (flag === 'atddBypass') {
+    if (valor) marker.atddBypassReason = motivo;
+    else delete marker.atddBypassReason;
+  }
   marker.lastTouch = nowIso();
   writeMarker(marker);
   process.stdout.write(`${flag}: ${marker[flag]}\n`);
@@ -5420,7 +5445,7 @@ switch (cmd) {
     cmdMarkTestsNotMeasured(arg1);
     break;
   case 'set-flag':
-    cmdSetFlag(arg1, arg2);
+    cmdSetFlag(arg1, arg2, process.argv.slice(5));
     break;
   case 'start-warning':
     cmdStartWarning(arg1, arg2);

@@ -1059,7 +1059,8 @@ function main() {
 
     if (repoRoot) {
       const events = atddCommit.eventsForRepo(stateDir, sessionId, repoRoot);
-      const verdict = computeAtddOrder(events);
+      // sin story a mano: un guion de medición del repo nunca cuenta como código
+      const verdict = computeAtddOrder(events, repoRoot);
       const mode = atddCommit.resolveMode(repoRoot, process.env);
       const decision = atddCommit.computeCommitGate({ verdict, mode });
 
