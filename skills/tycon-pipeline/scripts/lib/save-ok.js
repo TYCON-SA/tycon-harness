@@ -417,11 +417,11 @@ function antesDeFirmar({ via, marker, repos, findings = [], firmasDeLaCorrida = 
   if (via !== 'delegacion') return { codigo: 0, huellas: hs };
   // lo sensible primero: el motivo nombra el archivo aunque además falte algo para estar limpia
   const s = sensibles({ repos });
-  if (s.length) return { codigo: 2, motivo: `la coordinadora no puede dar el ok: el cambio toca ${s.map((x) => `${x.archivo} (${path.basename(x.repo)}: ${x.motivo})`).join(', ')}. Lo firma el dueño` };
+  if (s.length) return { codigo: 2, motivo: `la coordinadora no puede dar el ok: el cambio toca ${s.map((x) => `${x.archivo} (${path.basename(x.repo)}: ${x.motivo})`).join(', ')}. Lo firma una persona: ni el agente ni la coordinadora` };
   const l = limpia({ marker, repos, ahora: hs, findings, firmasDeLaCorrida });
-  if (l.falta) return { codigo: 2, motivo: `la coordinadora no puede dar el ok: ${l.falta}. Lo firma el dueño` };
+  if (l.falta) return { codigo: 2, motivo: `la coordinadora no puede dar el ok: ${l.falta}. Lo firma una persona: ni el agente ni la coordinadora` };
   const a = avisar({ texto: lineaDelAviso({ marker, repos, resumen: l.resumen }), canales, mandar });
-  if (!a.ok) return { codigo: 1, motivo: `sin aviso al dueño no hay ok: ${a.motivo}` };
+  if (!a.ok) return { codigo: 1, motivo: `sin aviso a la persona no hay ok: ${a.motivo}` };
   return { codigo: 0, huellas: hs, canales: a.canales };
 }
 

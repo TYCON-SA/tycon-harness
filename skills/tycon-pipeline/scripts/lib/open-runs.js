@@ -231,7 +231,7 @@ function cartel(r, { markerJs = 'marker.js' } = {}) {
   return [
     `🔴 EJECUCIÓN PERDIDA — la ejecución de la story ${r.story || '?'} (sesión ${r.sesion}), abierta ${r.desde || 'en una hora que no se pudo leer'}: ${FALTA[r.falta] || r.falta}.`,
     'Hasta resolverla no se edita, no se escribe por consola, no se cierra el turno ni se commitea. Leer sí: cat, ls, grep, head, tail, git status/diff/log, marker.js get.',
-    'La salida la decide el dueño: la firma en la ventana de permiso o en su terminal (--terminal), con uno de estos comandos:',
+    'La salida la decide una persona, no el agente: la firma en la ventana de permiso o en su terminal (--terminal), con uno de estos comandos:',
     `  node ${markerJs} clear-session ${r.sesion} --lost   (la cierra como perdida)`,
     `  node ${markerJs} restore ${r.sesion}                (la reabre desde la copia de la apertura)`,
   ].join('\n');

@@ -153,7 +153,7 @@ test('un override explícito decide SIN necesitar la densidad: forzar el pase, o
 
   const pedido = gateCrudo(repo, { TYCON_NO_DEEP_REVIEW: '1' }, []);
   assert.equal(pedido.status, 2, 'sin la firma, el pedido no decide: falta la densidad');
-  assert.match(pedido.stderr, /saltearlo lo firma el dueño/);
+  assert.match(pedido.stderr, /saltearlo lo firma una persona/);
 
   const { computeDeepReviewGate } = require(PIPELINE);
   const firmado = computeDeepReviewGate({ repo, story: path.join(repo, 'story.md'), files: [], noDeepReview: true,

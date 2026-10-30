@@ -332,8 +332,8 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
       '⛔ una constancia de cambio de control no se escribe a mano',
       viaLine.replace(/\n$/, ''),
       `  ${f}`,
-      '  La escribe `bash scripts/ci/run-base-controls.sh approve`: el dueño en su terminal, o la sesión designada con',
-      '  la frase del dueño (`--relayed-by`). `pending` da los dos comandos.',
+      '  La escribe `bash scripts/ci/run-base-controls.sh approve`: una persona en su terminal, o la sesión designada con',
+      '  la frase de la persona (`--relayed-by`). `pending` da los dos comandos.',
     ].filter((l) => l !== '').join('\n');
   }
   if (r.kind === 'adversarial-skip-record') {
@@ -341,7 +341,7 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
       '⛔ la constancia del salteo del pase adversarial no se escribe a mano',
       viaLine.replace(/\n$/, ''),
       `  ${f}`,
-      '  La escribe `marker.js sign-adversarial-skip --story <S> --reason "<motivo>"`, con la firma del dueño en la',
+      '  La escribe `marker.js sign-adversarial-skip --story <S> --reason "<motivo>"`, con la firma de una persona en la',
       '  ventana de permiso o en su terminal (`--terminal`). Sin ella, el pase corre.',
     ].filter((l) => l !== '').join('\n');
   }
@@ -389,7 +389,7 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
       '       `Skill(skill="tycon-pipeline", args="implementemos la story X.Y")`.',
       '   (b) El user confirma que sigue siendo un ajuste acotado → re-declará con cupo mayor y motivo:',
       `        node ${MARKER_JS} adhoc set '{"reason":"<qué y por qué>","maxFiles":<N>}'`,
-      '       El dueño lo aprueba en la ventana de permiso (queda en adhoc.log con el cupo anterior y el nuevo).',
+      '       Lo aprueba una persona en la ventana de permiso (queda en adhoc.log con el cupo anterior y el nuevo).',
     ].join('\n');
   }
   // no-lane
@@ -417,7 +417,7 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
     '',
     '   (b) HOTFIX / AJUSTE CHICO SIN STORY (bug puntual, refactor acotado, cleanup) → carril ad-hoc:',
     `         node ${MARKER_JS} adhoc set '{"reason":"<qué y por qué>"}'`,
-    '       Lo aprueba el dueño en la ventana de permiso, que le muestra el motivo y el cupo: corré el comando solo, en',
+    '       Lo aprueba una persona en la ventana de permiso, que le muestra el motivo y el cupo: corré el comando solo, en',
     `       su forma exacta. Cupo por default: ${DEFAULT_ADHOC_MAX_FILES} archivos de implementación distintos (ajustable con "maxFiles"). Queda en adhoc.log.`,
     ...resume,
     '',

@@ -12,6 +12,16 @@ Las dos listas se escriben sólo en el perfil del equipo: ni el archivo de la m�
 tablas de esta guía salen de `scripts/lib/signatures.js` con `node scripts/tools/signatures-guide.js --write`, y una
 prueba falla si no coinciden.
 
+## Quién aprueba
+
+Depende del repo, no de la máquina:
+
+- En los repos del arnés, las firmas son del dueño, y la ventana dice «Firma del dueño».
+- En cualquier otro repo, las aprueba el dev, y la ventana dice «Lo aprobás vos». Vale también en la máquina del dueño.
+
+El repo se reconoce por su remoto (`scripts/lib/harness-repo.js`), no por el nombre de la carpeta. La firma se pide igual
+en los dos casos: lo que cambia es quién la da.
+
 ## Los niveles
 
 Cada firma tiene un nivel, según cuánto pesa lo que aprueba:
