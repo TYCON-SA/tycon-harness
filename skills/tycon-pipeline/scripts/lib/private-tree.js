@@ -83,6 +83,28 @@ function detectThin(repo) {
 }
 const isThinPrivate = (repo) => detectThin(repo).thin;
 
+const comillas = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
+
+/**
+ * El comando de la corrida cruzada, listo para copiar. El público es la carpeta de al lado en la misma rama que el
+ * privado (fuera de main): con una sola, va su ruta; con ninguna o varias, el hueco a llenar, porque elegir a ciegas
+ * mediría otra rama.
+ */
+function corridaCruzada(repo, story) {
+  const { ramaDe } = require('./companion-repos.js');
+  const rama = ramaDe(repo);
+  let publico = null;
+  if (rama && rama !== 'main') {
+    const padre = path.dirname(repo);
+    let hermanos = [];
+    try { hermanos = fs.readdirSync(padre, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => path.join(padre, d.name)); } catch (_e) { hermanos = []; }
+    const deLaRama = hermanos.filter((h) => h !== repo && fs.existsSync(path.join(h, '.git'))
+      && fs.existsSync(path.join(h, 'version.json')) && fs.existsSync(path.join(h, 'scripts')) && ramaDe(h) === rama);
+    if (deLaRama.length === 1) publico = deLaRama[0];
+  }
+  return `bash ${comillas(path.join(__dirname, '..', 'test-gate.sh'))} ${comillas(publico || '<clon o worktree del público>')} ${comillas(story || '<story del privado>')}`;
+}
+
 /** El público que va debajo: el primer hermano declarado (en la rama de la story) que trae version.json y scripts/. */
 function findPublic(repo, story) {
   const { companionRoots } = require('./companion-repos.js');
@@ -91,7 +113,7 @@ function findPublic(repo, story) {
   const base = roots.find((r) => fs.existsSync(path.join(r, 'version.json')) && fs.existsSync(path.join(r, 'scripts')));
   if (!base) {
     const visto = roots.length ? `los hermanos declarados (${roots.join(', ')}) no traen version.json y scripts/` : 'no hay un repo hermano declarado';
-    throw new NoPublic(`no encontré el público para poner debajo del privado adelgazado: ${visto}${faltan.length ? `; declarados y no en disco: ${faltan.join(', ')}` : ''} (.tycon/advisors.yaml → evidence.companion_repos). Sin él, medir el privado solo da ausentes y lee el arnés instalado: no corro nada`);
+    throw new NoPublic(`no encontré el público para poner debajo del privado adelgazado: ${visto}${faltan.length ? `; declarados y no en disco: ${faltan.join(', ')}` : ''} (.tycon/advisors.yaml → evidence.companion_repos). Sin él, medir el privado solo da ausentes y lee el arnés instalado: no corro nada. Desde un worktree del privado, la salida es la corrida cruzada, el portón sobre el público con esta story: ${corridaCruzada(repo, story)}`);
   }
   let rama = null;
   try { rama = git(base, ['symbolic-ref', '-q', '--short', 'HEAD']).trim() || null; } catch (_e) { rama = null; }
