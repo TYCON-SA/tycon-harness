@@ -2316,7 +2316,7 @@ function pantalla(idioma = 'es') {
   // tabla, así que sólo deja subir. Volver al de la tabla saca el id del perfil. Subir una firma a 2 o más la saca de lo
   // delegado en el mismo cambio, como hace el lector al leerlo
   function editorNiveles(NIVELES, subidos, efectivo, nivelDelegado, CAT, firmas, abre, d, pr) {
-    var box = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.nivelesTitulo') }), el('p', { class: 'sub-d', text: T('pantalla.nivelesAyuda') }));
+    var box = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.nivelesTitulo') }), el('p', { class: 'sub-d', text: T('pantalla.nivelesAyuda') }), el('p', { class: 'muted', text: T('pantalla.nivelesQuienFirma') }));
     problemasEn(pr, 'approvals.levels').forEach(function (x) { box.appendChild(el('p', { class: 'err', text: x.message })); });
     if (!NIVELES.length) return box;
     var t = tabla('niveles', T('pantalla.nivelesTitulo'), [T('pantalla.firmasColFirma'), T('pantalla.nivelesColNivel')]);

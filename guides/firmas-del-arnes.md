@@ -37,7 +37,7 @@ algo de lo sensible, así que por delegación vale 1.
 
 La columna «Quién la ve» dice si la firma le llega al dev de producto o sólo a quien mantiene el arnés. La columna «Se
 pide hoy con» dice con qué firma de la tabla siguiente se pide hoy. Varias de hoy se juntan en una sola, y una se parte
-en dos. Los nombres de esta tabla todavía no se escriben en el perfil: llegan cuando cambie cómo se pide una firma.
+en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.levels`, para subir el nivel de una firma.
 
 <!-- generado: niveles -->
 | Firma | Nivel | Quién la ve | Qué aprueba | Se pide hoy con |
@@ -75,6 +75,28 @@ en dos. Los nombres de esta tabla todavía no se escriben en el perfil: llegan c
 --request <número>` (el número lo da el cartel del freno) o `--commit`, en la terminal de la persona
 (guides/safety-guard.md, «Saltear el freno»). `escape:TYCON_SAFETY_OFF` y
 `escape:TYCON_PROD_LINT` siguen en la tabla, pero ya nada las pide: se retiran en una tanda aparte.
+
+## Quién firma cada nivel
+
+El nivel que rige es el mayor entre la tabla de arriba y lo que suba el perfil (`approvals.levels`). Quién lo firma
+depende de si la sesión trabaja sola o con una coordinadora, y de si hay alguien para contestar:
+
+| Nivel | Con alguien que conteste, sesión sola | Con alguien que conteste, con coordinadora | Sin nadie que conteste, sesión sola | Sin nadie que conteste, con coordinadora |
+|---|---|---|---|---|
+| 1 · rutina | el dev, en la ventana | la coordinadora sola, si el perfil la delega; si no, la ventana | espera | la coordinadora sola, si el perfil la delega |
+| 2 · excepción | el dev, en la ventana | el dev: la coordinadora puede pedir algunas, pero las contesta una persona | espera | espera |
+| 3 · irreversible | el dev; la emergencia, en su terminal | el dev, igual | espera | espera |
+
+- **La coordinadora sola** firma sólo lo que el perfil pone en `approvals.delegated_signing`, en las máquinas de
+  `approvals.delegated_machines` (ver «Aprobar en nombre del dueño»). Lo que queda en 2 o más sale de esa lista.
+- **Espera** quiere decir que nadie firma. El sistema no mira la hora: pide la firma igual y, si nadie contesta, la
+  sesión queda frenada en ese paso.
+- **La emergencia** (`emergency`) es la única salida para pasar por encima del freno de seguridad: la persona la firma en
+  su terminal con `harness.js sign emergency`, con su motivo (cómo, en el párrafo de arriba). El agente no la puede
+  correr.
+- En los repos del arnés, el dueño ocupa el lugar del dev (ver «Quién aprueba»).
+- «En la ventana» vale para Claude Code. Codex no tiene ventana de permiso: ahí todo se firma en la terminal
+  (`guides/safety-guard.md`).
 
 ## Las firmas
 
