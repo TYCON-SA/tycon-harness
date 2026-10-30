@@ -51,6 +51,9 @@
 #   T55 BaseControls_SignOnChangeRule_NoPassReadsIt_AsksForSignature — una regla que ninguna pasada lee (el alcance del
 #       portón) con «sign_on_change»: cambiarla es rojo sin la constancia aunque la base y el pedido pasen, verde con
 #       ella; sin la marca, el mismo cambio entraba sin constancia
+#   T57 BaseControls_JudgeFiles_SignOnEveryChange — el inventario real marca con «sign_on_change» lo que decide la
+#       revisión (el juez, el inventario, el clasificador de la refirma, las bibliotecas de la firma y su ventana en
+#       Windows), y un pedido que cambia el juez o la ventana sin poner a prueba lo que afloja es rojo sin la constancia
 #
 # T12, T13 y T14 están en public-ci.test.sh (el workflow y el guion de la CI) y en la prueba de la 170 del repo de
 # mantenimiento (el yml que sólo existe ahí).
@@ -1095,6 +1098,33 @@ printf 'PROHIBIDO\n' > "${R}/docs/malo.txt"; commit "${R}"
 env -u TYCON_CHECKS_ON_PR bash "${SCRIPT}" run --root "${R}" --base main --range main...pedido > "${T}/t56b.out" 2>&1; RC=$?
 is "T56 en modo pedido el control frena igual: rojo" "1" "${RC}"
 has "T56 …con el motivo del control" "${T}/t56b.out" "toy: PROHIBIDO en docs/malo.txt"
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# T57 · lo que decide la revisión (el juez, el inventario, el clasificador de la refirma, las bibliotecas de la firma y
+#       su ventana en Windows) pide la constancia en cada cambio, aunque el pedido no ponga a prueba lo que afloja
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# 🔴 mutación: sin la marca en el inventario real, el pedido que cambia el juez sale «entra sin constancia»
+JUDGE_FILES="scripts/ci/run-base-controls.sh scripts/ci/controls-from-base.json scripts/lib/refresh-after-main.js scripts/lib/owner-window.js scripts/lib/delegated-signing.js scripts/ci/run-base-controls-window.js"
+for p in ${JUDGE_FILES}; do
+  MARKED="$(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const c=j.controls.find(x=>x.name==="base-controls");console.log((c.rules||[]).some(r=>r&&r.path===process.argv[2]&&r.sign_on_change===true)?"si":"no")' "${ROOT}/scripts/ci/controls-from-base.json" "${p}")"
+  is "T57 el inventario real marca ${p} con «sign_on_change»" "si" "${MARKED}"
+done
+R="${T}/t57"; make_base "${R}"
+mkdir -p "${R}/scripts/lib"
+for p in refresh-after-main owner-window delegated-signing; do printf 'module.exports = {};\n' > "${R}/scripts/lib/${p}.js"; done
+printf 'module.exports = {};\n' > "${R}/scripts/ci/run-base-controls-window.js"
+node -e 'const fs=require("fs");const real=JSON.parse(fs.readFileSync(process.argv[1],"utf8")).controls.find(x=>x.name==="base-controls");const f=process.argv[2];const j=JSON.parse(fs.readFileSync(f,"utf8"));j.controls.find(x=>x.name==="base-controls").rules=real.rules.filter(r=>typeof r==="object"&&r.path!==".test-gate.yaml");fs.writeFileSync(f,JSON.stringify(j,null,2))' "${ROOT}/scripts/ci/controls-from-base.json" "${R}/scripts/ci/controls-from-base.json"
+commit "${R}" "el juez con las marcas del inventario real"
+pr "${R}"; printf '\n// un cambio del juez que este pedido no pone a prueba\n' >> "${R}/scripts/ci/run-base-controls.sh"; commit "${R}"
+run "${R}" "${T}/t57.out"
+is "T57 cambiar el juez sin pendiente nuevo y sin constancia: rojo" "1" "${RC}"
+has "T57 …pide la firma del dueño" "${T}/t57.out" "afloja un control sin la constancia del dueño: scripts/ci/run-base-controls.sh"
+# la ventana de la firma en Windows, la pareja de owner-window.js: cambiarla sola también pide la constancia
+lab_git -C "${R}" checkout -q -b ventana main
+printf '\n// la ventana de la firma, cambiada sin ponerla a prueba\n' >> "${R}/scripts/ci/run-base-controls-window.js"; commit "${R}"
+bash "${SCRIPT}" run --root "${R}" --base main --range main...ventana > "${T}/t57w.out" 2>&1; RC=$?
+is "T57 cambiar la ventana de la firma sin constancia: rojo" "1" "${RC}"
+has "T57 …pide la firma del dueño" "${T}/t57w.out" "afloja un control sin la constancia del dueño: scripts/ci/run-base-controls-window.js"
 
 echo
 if [ "${FAILS}" -eq 0 ]; then echo "✅ base-controls: ${TOTAL} verificaciones verdes"; exit 0; fi
