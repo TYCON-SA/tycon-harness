@@ -2322,7 +2322,9 @@ function pantalla(idioma = 'es') {
     var t = tabla('niveles', T('pantalla.nivelesTitulo'), [T('pantalla.firmasColFirma'), T('pantalla.nivelesColNivel')]);
     NIVELES.forEach(function (l) {
       var opciones = [1, 2, 3].filter(function (n) { return n >= l.level; }).map(function (n) { return [String(n), T('pantalla.nivel' + n)]; });
-      var c = corto(l.approves, String(efectivo(l.id)), opciones, function (x) {
+      var que = T('pantalla.nivelQue.' + l.id);
+      if (que === 'pantalla.nivelQue.' + l.id) que = l.approves;
+      var c = corto(que, String(efectivo(l.id)), opciones, function (x) {
         var n = numOTexto(x);
         var nuevo = {};
         Object.keys(subidos).forEach(function (k) { if (k !== l.id) nuevo[k] = subidos[k]; });
@@ -2341,7 +2343,7 @@ function pantalla(idioma = 'es') {
         if (salio) hoja(d, 'approvals', 'delegated_signing', quedan.length ? quedan : '');
         render();
       }, 'approvals.nivel.' + l.id, pr);
-      t.appendChild(renglon([el('div', { class: 'que', role: 'cell' }, el('b', { text: l.approves }), el('span', { class: 'muted', text: ' · ' + l.id })), el('div', { class: 'sel', role: 'cell' }, c.sel)], c.mios));
+      t.appendChild(renglon([el('div', { class: 'que', role: 'cell' }, el('b', { text: que }), el('span', { class: 'muted', text: ' · ' + l.id })), el('div', { class: 'sel', role: 'cell' }, c.sel)], c.mios));
     });
     box.appendChild(t);
     return box;

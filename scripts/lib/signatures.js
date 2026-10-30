@@ -37,6 +37,36 @@
 const AMBOS = Object.freeze(['dev', 'mant']);
 const MANT = Object.freeze(['mant']);
 
+// qué aprueba cada id de la tabla, en inglés: la pantalla del sitio lo muestra en ese idioma
+const LEVELS_EN = Object.freeze({
+  'plan-approval': 'approve the plan (rises to 2 if the story is sensitive)',
+  'extra-round': 'one more round of reviewers',
+  'pending-approval': 'open a new item in the pending list',
+  'save': 'save: commit, push and pull requests, if no commit touches anything sensitive',
+  'browser-test:prepare': 'prepare the browser test',
+  'adhoc-lane': 'open a quick fix without a story, within the quota',
+  'refresh-after-main': 're-sign the controls after pulling main, with no change of your own',
+  'save:sensible': 'save when a commit touches something sensitive',
+  'adhoc-lane:sobre-cupo': 'open a quick fix when the quota is already used up',
+  'escape:DOD_BYPASS': 'skip every control of the commit',
+  'critical-waiver': 'waive a critical finding',
+  'runtime-waiver': 'accept a criterion that cannot be tested live, or exempt the whole story',
+  'manual-test': 'mark a criterion as tested by hand',
+  'browser-test:no': 'say no to the browser test',
+  'adversarial-skip': 'skip the adversarial pass',
+  'lost-run': 'give up on a run as lost and close it',
+  'escape:force-manual': "mark a control's result by hand",
+  'escape:trust-ran': 'count reviewers with no record that they ran',
+  'escape:TYCON_TEST_GATE': 'skip only the test gate of the commit',
+  'escape:TYCON_STATUS_GATE': "change a story's status by hand",
+  'escape:story-skill-bypass': 'write a story without the story skill',
+  'escape:set-autonomous': 'change the autonomous mode of a run',
+  'control-change': 'any change to a control',
+  'escape:TYCON_SAFETY_OFF': 'turn off the safety guard for one command',
+  'escape:TYCON_PROD_LINT': 'turn off the production query check',
+  'escape:TYCON_NEW_NAMES': 'turn off the names check on what is published',
+});
+
 // id, nivel, perfiles, qué aprueba
 const LEVELS = Object.freeze([
   ['plan-approval', 1, AMBOS, 'aprobar el plan (sube a 2 si la historia es delicada)'],
@@ -65,7 +95,7 @@ const LEVELS = Object.freeze([
   ['escape:TYCON_SAFETY_OFF', 3, AMBOS, 'apagar el freno de seguridad para un comando'],
   ['escape:TYCON_PROD_LINT', 3, AMBOS, 'apagar el control de consultas a producción'],
   ['escape:TYCON_NEW_NAMES', 3, MANT, 'apagar el control de nombres en lo que se publica'],
-].map(([id, level, profiles, approves]) => Object.freeze({ id, level, profiles, approves })));
+].map(([id, level, profiles, approves]) => Object.freeze({ id, level, profiles, approves, approvesEn: LEVELS_EN[id] || null })));
 
 // lo que cubre cada firma de hoy que no es su propio id de la tabla: las dos que juntan dos cosas de distinto peso y
 // los siete escapes que hacen lo mismo que otra firma

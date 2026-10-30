@@ -2259,6 +2259,12 @@ try {
     if (TEXTOS[k]) throw new Error(`texts.js: la clave «${k}» está dos veces`);
     TEXTOS[k] = { es: f.approves, en: f.approvesEn || f.approves };
   }
+  // y qué aprueba cada id de la tabla de niveles (`pantalla.nivelQue.<id>`)
+  for (const l of require('../lib/signatures.js').LEVELS) {
+    const k = `pantalla.nivelQue.${l.id}`;
+    if (TEXTOS[k]) throw new Error(`texts.js: la clave «${k}» está dos veces`);
+    TEXTOS[k] = { es: l.approves, en: l.approvesEn || l.approves };
+  }
 } catch (e) { if (/está dos veces/.test(e.message)) throw e; }
 
 /** Los valores con nombre de un texto, ordenados: `{n}`, `{fecha}`. */
