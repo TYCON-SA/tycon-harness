@@ -39,9 +39,9 @@ correcto en repos sin protección de rama.
 
 **`pr`** — para repos donde el target exige Pull Request (política de rama). Cambia sólo el final
 del flujo: **se saltean los Steps 5 y 6** (no hay checkout ni merge local — no se puede pushear el
-target) y el Step 9 se reemplaza por **step-09b-create-pr.md**, que pushea la source y crea el PR
-con auto-complete, usando el mensaje del Step 2 como descripción. Detección del modo y edge cases:
-ver ese step.
+target) y el Step 9 se reemplaza por **step-09b-create-change-request.md**, que pushea la source y
+abre el pedido de cambio con auto-completar por la capa de plataforma del arnés, usando el mensaje
+del Step 2 como texto. Detección del modo y edge cases: ver ese step.
 
 **El modo y dónde corren las suites salen del plan**. El paso 0 corre
 `merge-pr.js plan` una sola vez (0.7) y guarda `mode`, `step`, `suites`, `suitesReason` y
@@ -51,19 +51,19 @@ la rama exige el pipeline de pruebas completas que declaró la organización, y 
 corre el servidor), `siempre-en-la-maquina` o `confiar-en-el-servidor` (igual exige pedido). Sin
 `merge_suites`, `merge.mode: pr` del repo vale como `confiar-en-el-servidor` y el plan avisa que
 esa forma es vieja (`legacyNote`). «No pude preguntar» nunca deja las suites al servidor con
-`automatico`. Los planes de los pasos 8, 9b y 9c se piden con `--keep-mode <modo del paso 0>`: el
+`automatico`. Los planes de los pasos 8 y 9b se piden con `--keep-mode <modo del paso 0>`: el
 modo no cambia, y si `suites` bajó a `machine` el skill vuelve al 7.2 antes de empujar o crear el
 pedido.
 
-**`pr` con el repo en GitHub** — el mismo modo, otro servidor: el Step 9 se reemplaza por
-**step-09c-create-pr-github.md**. Cuál de los dos corre lo decide el remoto `origin` (lo dice
-`scripts/tools/merge-pr.js plan` del arnés), no una suposición. Lo que cambia allá: el servidor no
-siempre mergea solo, así que el skill **espera el control que el repo declara** en
+**`pr` con el repo en GitHub** — el mismo modo y el mismo paso, **step-09b-create-change-request.md**.
+La plataforma la dice el remoto `origin` (lo dice `scripts/tools/merge-pr.js plan` del arnés), no
+una suposición. Lo que cambia allá: el servidor no siempre mergea solo. Si el repo permite el
+auto-merge, la capa lo prende; si no, **espera el control que el repo declara** en
 `.tycon/advisors.yaml → merge.check` y recién entonces mergea, con un commit de merge titulado
-«asunto (#N)»; antes pone la rama al día con el target; y si el repo numera versiones por pedido
+«asunto (#N)». Antes, el skill pone la rama al día con el target; y si el repo numera versiones por pedido
 (`version.json` en la raíz, sin `"numbering": "merge-tag"`), deja en la rama un commit que sube el número. Con esa
 marca el número lo pone el merge (una etiqueta) y el pedido no toca `version.json`. Sin `merge.check`
-declarado, crea el pedido y no lo mergea.
+declarado, no abre el pedido.
 
 🔴 **Step 7 con `suites: "server"`: las SUITES COMPLETAS locales SE SALTEAN** (la validación del PR
 corre esas mismas suites —jest de forms en FrontEnd, unit + integración con cobertura en Backend—
@@ -179,25 +179,22 @@ Seguí EN ORDEN los 10 steps definidos en `steps/`:
 8. **step-08-hitl-push.md** — HITL #2: confirmar push. Cancelar deja merge local sin push.
    (En modo `pr` no hay merge local: cancelar acá simplemente no pushea la source ni crea el PR.)
 9. **step-09-push.md** — push + retry una vez si race condition. **(modo `push`)**
-9b. **step-09b-create-pr.md** — **(modo `pr`)** push de la source + PR con auto-complete y el
-    mensaje del Step 2 como descripción. `--squash false` es obligatorio: con squash se rompen
-    las notas de versión de plugins y forms. `org`, `proyecto` y
-    `repo` se **derivan del remoto `origin`** con `identidadAzure()` del arnés, nunca a ojo ni del
-    nombre de la carpeta. Y la **rama source se borra al completar** salvo que sea de larga vida: la
-    lista está declarada en 9b y en ningún otro lado — no se repite acá a propósito, porque dos copias
-    de la misma lista se separan solas.
-9c. **step-09c-create-pr-github.md** — **(modo `pr`, remoto de GitHub)** pone la rama al día con el
-    target, sube `version.json` si el repo numera versiones, pushea la source y crea el pedido con
-    `gh` (el título literal y el cuerpo por archivo: es la forma que lee el freno antes de publicar);
-    corre el latido del 10b; espera **en segundo plano** el control declarado en `merge.check` y, con
-    ese control en verde, mergea con un commit de merge atado a la punta validada. Nunca aplasta ni
-    reordena commits. Las partes mecánicas las hace `scripts/tools/merge-pr.js` del arnés.
+9b. **step-09b-create-change-request.md** — **(modo `pr`, Azure DevOps o GitHub)** push de la
+    source y el pedido de cambio con auto-completar por `platform.js change-request open`, con el
+    mensaje del Step 2 como texto. Nunca aplasta ni reordena commits: con squash se rompen las notas
+    de versión de plugins y forms. El repo se **deriva del remoto `origin`** (lo da el plan), nunca
+    a ojo ni del nombre de la carpeta. En GitHub, antes pone la rama al día con el target y sube
+    `version.json` si el repo numera versiones; la llamada corre **en segundo plano** porque, sin
+    auto-merge, espera el control declarado en `merge.check` y mergea con un commit de merge atado a
+    la punta validada. Corre el latido del 10b mientras espera. Y la **rama source se borra al
+    completar** salvo que sea de larga vida: la lista está declarada en 9b y en ningún otro lado — no
+    se repite acá a propósito, porque dos copias de la misma lista se separan solas.
 10. **step-10-summary.md** — `git checkout <source>` + resumen final. (En modo `pr` nunca se
     salió de la source: el checkout es un no-op, solo va el resumen.)
     **10b — Latido de la retrospectiva (post-push — sin modelo desde 2026-09-16)**: 🔴 **por CADA repo mergeado en la sesión** (con dos repos mergeados, una sola retrospectiva deja a uno sin la suya). El hook `retro-pending.js` registra cada push a main y su Stop-gate no deja cerrar el turno hasta que **cada merge tenga su archivo de métricas** (`.dashboard/metrics-*.json` con ese repo y ese commit); el aviso de arranque reclama los que quedaron sin cubrir. Por cada repo, en este orden:
     (a) **Preguntar si hace falta — SÓLO en modo `push`**: `node <arnés>/scripts/hooks/retro-pending.js --judge <repo>` (`<arnés>` = `~/.claude/tycon-harness`, o `TYCON_GUIDES_DIR`). Si `exento` no es null (el push trajo sólo tests/docs sin cerrar story), decirlo en UNA línea y no correr nada más para ese repo — el hook ya dejó la constancia. 🔴 **En modo `pr` NO se pregunta**: la exención se calcula sobre el rango que movió el push a `main`, y en modo `pr` esta máquina nunca pushea `main` (el merge lo hace Azure). `--judge` termina leyendo la ventana del último `fetch` — medido sobre un checkout real: 334 commits, ninguno de este merge —, y un `exento` salido de ahí saltearía el latido con la deuda viva. En modo `pr` lo que decide es si el hook dejó entrada en el ledger: si la dejó, va (b).
     (b) **Correr el latido**: `node <arnés>/scripts/metrics/retro-heartbeat.js --repo <repo> --merge <sha> [--story <id>]` — un segundo, sin modelo; `--story` si el merge cierra una story (así cuenta sus vueltas de revisión).
-        🔴 **Qué sha va en `--merge` — NO es el mismo en los dos modos.** El archivo paga la deuda sólo si su `merge_commit` es **el que anotó el ledger** (`retro-pending.js` empareja repo + sha). En modo `push` ese sha es el del merge que acabás de pushear. En modo **`pr` es LA PUNTA DE LA SOURCE** al crear el PR: el merge lo hace Azure después y su sha todavía no existe. (Con el repo en GitHub vale lo mismo —el registro anota la punta al crear el pedido— y el latido corre en el 9c.7, ANTES de la espera del control, que termina el turno: acá no se repite.) Con el sha del merge de Azure el gate **sigue bloqueando** hasta agotar los 3 bloqueos y queda un `metrics-*.json` de más en la serie que leen el nocturno SDLC (`first_pass_ratio`) y la vista de corridas (reproducido sobre un clon real). Tampoco sirve `git rev-parse HEAD`: si commiteaste algo en la source después de crear el PR, la punta se movió y el ledger no. El sha correcto ya viene impreso en el aviso que el hook dejó al crear el PR y en el bloqueo del Stop; si no lo tenés a mano, sale del ledger:
+        🔴 **Qué sha va en `--merge` — NO es el mismo en los dos modos.** El archivo paga la deuda sólo si su `merge_commit` es **el que anotó el ledger** (`retro-pending.js` empareja repo + sha). En modo `push` ese sha es el del merge que acabás de pushear. En modo **`pr` es LA PUNTA DE LA SOURCE** al crear el PR: el merge lo hace Azure después y su sha todavía no existe. (Con el repo en GitHub vale lo mismo —el registro anota la punta al crear el pedido— y el latido corre en el 9b.6, mientras espera el control, que puede terminar el turno: acá no se repite.) Con el sha del merge de Azure el gate **sigue bloqueando** hasta agotar los 3 bloqueos y queda un `metrics-*.json` de más en la serie que leen el nocturno SDLC (`first_pass_ratio`) y la vista de corridas (reproducido sobre un clon real). Tampoco sirve `git rev-parse HEAD`: si commiteaste algo en la source después de crear el PR, la punta se movió y el ledger no. El sha correcto ya viene impreso en el aviso que el hook dejó al crear el PR y en el bloqueo del Stop; si no lo tenés a mano, sale del ledger:
         ```bash
         node -e 'const fs=require("fs"),os=require("os"),p=require("path");const r=fs.realpathSync(process.argv[1]);const e=fs.readFileSync(p.join(os.homedir(),".claude/.tycon-pipeline/retro-pending.jsonl"),"utf8").split("\n").filter(Boolean).map(JSON.parse).filter(x=>!x.exento&&(()=>{try{return fs.realpathSync(x.repoPath)===r}catch{return false}})()).pop();if(!e){console.error("sin entrada en el ledger para "+r);process.exit(3)}console.log(e.sha)' <repo>
         ```
@@ -213,8 +210,8 @@ Seguí EN ORDEN los 10 steps definidos en `steps/`:
 - ❌ NO saltea build+tests gate (los BLOQUEANTES: build + unit/vitest).
 - ❌ NO pushea si hay tests rojos en los gates bloqueantes (la suite E2E completa no se lanza en el merge — ver 7b-2).
 - ❌ NO deja al user esperando un proceso largo en foreground (E2E full, CI, deploys → background + notificación; regla anti-espera del 7b).
-- ❌ NO resuelve conflicts automáticamente — paraliza y pide intervención manual. Única excepción, en el 9c: un choque **sólo** en `version.json` al traer el target (todo pedido cambia ese renglón) se resuelve tomando el del target, y el número se sube de nuevo.
-- ❌ NO modifica `.gitignore`, `package.json`, ni ningún archivo del repo durante el merge (excepto los que vengan del source branch). Única excepción, en el 9c: el número de `version.json`, en un repo de GitHub que numera versiones.
+- ❌ NO resuelve conflicts automáticamente — paraliza y pide intervención manual. Única excepción, en el 9b con GitHub: un choque **sólo** en `version.json` al traer el target (todo pedido cambia ese renglón) se resuelve tomando el del target, y el número se sube de nuevo.
+- ❌ NO modifica `.gitignore`, `package.json`, ni ningún archivo del repo durante el merge (excepto los que vengan del source branch). Única excepción, en el 9b con GitHub: el número de `version.json`, en un repo de GitHub que numera versiones.
 - ❌ NO ejecuta `git push --force` ni nada que pueda reescribir historia.
 - ❌ NO manda notificaciones a Telegram/Slack/email durante el flujo HITL normal. Excepción (2026-06-10): cuando un resultado ASYNC (E2E full / CI post-push) llega después de que el user siguió con otra cosa, avisar por el canal disponible (chat + Telegram si la espera fue larga).
 

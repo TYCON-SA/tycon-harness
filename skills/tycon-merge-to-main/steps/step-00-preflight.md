@@ -131,7 +131,7 @@ Sale 0 con un JSON (sale 2 sólo si no pudo leer el repo o su configuración del
 - `legacyNote`: si no es `null`, el repo deja las suites al servidor por `merge.mode: pr` (la forma
   vieja). Se muestra en el HITL #1 como aviso de una línea.
 
-`check` y `canMerge` son del Step 9c: los vuelve a dar su propio plan.
+`check` y `canMerge` son del Step 9b con GitHub: los vuelve a dar su propio plan.
 
 ## Output del step
 

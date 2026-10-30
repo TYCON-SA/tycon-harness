@@ -108,7 +108,7 @@ function gitAnswer(cwd, args) {
 
 /** (org, proyecto, repo) de una URL de Azure DevOps en cualquiera de sus formas, o null.
  *  `_git/<repo>` sin proyecto es la forma corta que Azure acepta cuando se llaman igual.
- *  Queda para quien parsea remotos de PRODUCTO en Azure (step-09b-create-pr.md arma la PR con esto). */
+ *  Queda para quien parsea remotos de PRODUCTO en Azure (el plan de merge-pr.js arma con esto el repo del pedido). */
 function identidadAzure(url) {
   const u = String(url || '').trim().replace(/\/+$/, '').replace(/\.git$/i, '');
   const crudo = (s) => { try { return decodeURIComponent(s); } catch { return String(s); } };

@@ -2074,7 +2074,7 @@ _scripts/hooks/public-push-guard.js + scripts/hooks/git-pre-push-global.sh + .gi
 
 ## scripts/tools/merge-pr.js
 
-_scripts/tools/merge-pr.js + scripts/tests/merge-pr.test.js + skills/tycon-merge-to-main/steps/step-09c-create-pr-github.md + scripts/setup/harness/version-order.js_
+_scripts/tools/merge-pr.js + scripts/tests/merge-pr.test.js + skills/tycon-merge-to-main/steps/step-09b-create-change-request.md + scripts/setup/harness/version-order.js_
 
 **Qué es:** Herramienta con seis órdenes (`plan`, `update-branch`, `bump-version`, `wait-checks`, `message`, `check-version`) que el skill de merge usa cuando el repo vive en GitHub. No crea ni mergea el pedido.
 

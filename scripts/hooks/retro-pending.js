@@ -186,6 +186,9 @@ const MACHINE_DASHBOARD_DIRS = (() => {
   try { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); const TH = require(lib); return typeof TH.dashboardDir === 'function' ? [TH.dashboardDir(os.homedir(), MAINTAINED_TREE || path.resolve(__dirname, '..', '..'))].filter(Boolean) : []; } catch { return []; }
 })();
 const MAX_BLOCKS = 3;
+// Una rama escrita como referencia completa (`refs/heads/main`) es la misma rama: se compara por su nombre corto.
+const ramaCorta = (r) => String(r || '').replace(/^refs\/heads\//, '');
+const esPrincipal = (r) => /^(main|master)$/.test(ramaCorta(r));
 const LATIDO = path.resolve(__dirname, '..', 'metrics', 'retro-heartbeat.js');
 
 function readJsonl(file) {
@@ -407,8 +410,8 @@ function record(event) {
   // `… create -t dev && … create -r R2 -t main` no registraría el merge. Mismo patrón
   // que pr-auto-complete-guard.js, que recorre todos los segmentos.
   const creates = az.pareceAzPr(cmd) ? az.segmentos(cmd).filter((seg) => az.verboDePr(seg) === 'create') : [];
-  const prTarget = creates.map((seg) => String(az.flagDe(seg, 'target-branch', 't') || '')).find((t) => /^(main|master)$/.test(t)) || '';
-  const isPrCreate = /^(main|master)$/.test(prTarget);
+  const prTarget = ramaCorta(creates.map((seg) => String(az.flagDe(seg, 'target-branch', 't') || '')).find(esPrincipal));
+  const isPrCreate = esPrincipal(prTarget);
   // El filtro grueso se le pregunta al comando CON LO CITADO TAPADO: un `git push` entre comillas es
   // texto, no un push. Sin esto, cualquier `grep -rn "git push origin main" …` o `node -e` con
   // strings caería en el aviso de "no pude resolver" + exit 2, y un control ruidoso termina en
@@ -420,8 +423,9 @@ function record(event) {
   // Sólo el camino del push lo usa; el del PR ya corta sus segmentos sin heredocs (az-pr.js).
   const cmdShell = sinHeredocs(cmd, { salvoShell: true });
   const cwd = event.cwd || process.cwd();
-  // Los pedidos de GitHub (`gh pr create` hacia la rama principal): la entrega de un repo que vive ahí.
-  const pedidosGh = pedidosDeGh(cmd, cwd, /powershell|pwsh/i.test(String(event.tool_name || '')));
+  // Los pedidos de GitHub (`gh pr create` hacia la rama principal) y los que abre la capa de plataforma: la entrega de
+  // un repo que vive ahí.
+  const pedidosGh = [...pedidosDeGh(cmd, cwd, /powershell|pwsh/i.test(String(event.tool_name || ''))), ...pedidosDeCapa(cmd, cwd)];
   const hayPush = /\bgit\b[^|;&\n]*\bpush\b/.test(sinLoCitado(cmdShell));
   if (!isPrCreate && !hayPush && !pedidosGh.length) return;
 
@@ -606,7 +610,7 @@ function pedidoDeUnaSentencia(s) {
     if (s.esCd || !az.pareceAzPr(s.st)) return null;
     const seg = az.segmentos(s.st).find((x) => az.verboDePr(x) === 'create');
     if (!seg) return null;
-    if (!/^(main|master)$/.test(String(az.flagDe(seg, 'target-branch', 't') || ''))) return null;
+    if (!esPrincipal(az.flagDe(seg, 'target-branch', 't'))) return null;
     if (!s.dir) return { resuelto: false, st: s.st, motivo: 'un cd que no se pudo seguir' };
     const repoFlag = az.flagDe(seg, 'repository', 'r');
     const escrito = repoFlag && !/[$`]/.test(repoFlag) && repoFlag !== 'true' ? repoFlag : null;
@@ -727,6 +731,46 @@ function pedidosDeGh(cmd, cwd, powershell) {
       target = porDefecto || 'main';
     }
     out.push({ resuelto: true, dir: root, target, sha: refDeLaRama ? git(root, ['rev-parse', refDeLaRama]) : null });
+  }
+  return out;
+}
+
+/**
+ * Los pedidos que abre la capa de plataforma (`platform.js change-request open`) hacia la rama principal, con la misma
+ * forma que `pedidosDeGh`. El repo de `--repo` tiene que ser el `origin` de la carpeta: si no, o si un `cd` lo arma la
+ * terminal, el pedido queda «sin ubicar».
+ */
+function pedidosDeCapa(cmd, cwd) {
+  if (!/platform\.js/.test(cmd)) return [];
+  const out = [];
+  let dir = cwd;
+  let dirIncierto = false;
+  for (const seg of az.segmentos(cmd)) {
+    const t = seg.map((x) => x.texto);
+    if (t[0] === 'cd') {
+      if (seg.length === 2 && !seg[1].expande) dir = path.resolve(dir, String(t[1]).replace(/^~(?=$|[\\/])/, os.homedir()));
+      else dirIncierto = true;
+      continue;
+    }
+    const i = t.findIndex((x) => /(^|[\\/])platform\.js$/.test(x));
+    if (i < 0 || !(t[i + 1] === 'change-request.open' || (t[i + 1] === 'change-request' && t[i + 2] === 'open'))) continue;
+    const valor = (n) => { const k = t.indexOf(n, i); return k >= 0 ? t[k + 1] : undefined; };
+    let args = null;
+    const a = valor('--args');
+    try { args = a ? JSON.parse(a.startsWith('@') ? fs.readFileSync(path.resolve(dir, a.slice(1)), 'utf8') : a) : null; } catch { args = null; }
+    if (!args || typeof args.targetBranch !== 'string') { out.push({ resuelto: false }); continue; }
+    if (!esPrincipal(args.targetBranch)) continue;
+    const root = !dirIncierto && git(dir, ['rev-parse', '--show-toplevel']);
+    if (!root) { out.push({ resuelto: false }); continue; }
+    let repo = null;
+    const crudo = valor('--repo');
+    try { repo = crudo && crudo.trim().startsWith('{') ? JSON.parse(crudo) : null; } catch { repo = null; }
+    const quiere = (repo ? [repo.org, repo.project, repo.repo].filter(Boolean).join('/') : String(crudo || '')).toLowerCase();
+    const origen = identidadRemoto(git(root, ['remote', 'get-url', 'origin']));
+    if (!quiere || !origen || origen.ruta !== quiere) { out.push({ resuelto: false }); continue; }
+    const rama = typeof args.sourceBranch === 'string' ? ramaCorta(args.sourceBranch) : null;
+    const ref = rama && [`refs/heads/${rama}`, `refs/remotes/origin/${rama}`].find((r) => git(root, ['rev-parse', '--verify', '--quiet', r]));
+    out.push({ resuelto: true, dir: root, target: ramaCorta(args.targetBranch), sha: ref ? git(root, ['rev-parse', ref]) : null });
   }
   return out;
 }

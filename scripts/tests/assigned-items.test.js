@@ -89,15 +89,18 @@ test('T27 Asignados_ListaBlancaYNoMedido', () => {
     assert.deepStrictEqual(d.pedidos, []);
   } finally { fs.rmSync(f.d, { recursive: true, force: true }); }
 
-  // una organización en GitHub: no_medido con su frase, sin consultar nada
+  // una organización en GitHub: lee sus repos por la capa de plataforma (lo prueba platform-change-request.test.js),
+  // nunca Azure
   const g = mundo();
   try {
     const r = correr(g, ['--provider', 'github']);
-    assert.strictEqual(r.status, 0);
     const d = leer(g);
-    assert.strictEqual(d.estado, 'no_medido');
-    assert.match(d.motivo, /los pull requests y los pedidos de GitHub todavía no se leen/);
+    // este mundo no declara repos de GitHub: no medido con su motivo, nunca una lista vacía
+    assert.ok(!/todavía no se leen/.test(String(d.motivo)), `GitHub se mide: ${d.motivo}`);
     assert.ok(!fs.existsSync(path.join(g.fix, 'llamadas.log')), 'no consulta Azure');
+    assert.strictEqual(r.status, 1);
+    assert.strictEqual(d.estado, 'no_medido');
+    assert.match(d.motivo, /ningún repo de GitHub/);
   } finally { fs.rmSync(g.d, { recursive: true, force: true }); }
 });
 

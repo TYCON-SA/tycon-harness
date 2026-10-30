@@ -6786,46 +6786,36 @@ test('10b: el comando que rescata el sha del ledger CORRE — devuelve la entrad
 // Y `org`/`proyecto`/`repo` escritos a ojo son como se termina apuntando `az` al proyecto
 // equivocado (`Acme` contra `Acme Logistica`).
 // El texto es lo único que el agente lee, así que el texto es lo que se prueba.
-const PASO_9B = path.join(__dirname, '..', '..', '..', 'tycon-merge-to-main', 'steps', 'step-09b-create-pr.md');
+const PASO_9B = path.join(__dirname, '..', '..', '..', 'tycon-merge-to-main', 'steps', 'step-09b-create-change-request.md');
 const leer9b = () => fs.readFileSync(PASO_9B, 'utf8');
 
 test('9b: la rama source efímera se borra al completar, y la lista de larga vida está en UN solo lugar', () => {
-  // 🔴 Si los tres `--delete-source-branch` dijeran `false` y no existiera ninguna lista, las cuatro aserciones fallarían.
   const s = leer9b();
-  assert.ok(!/--delete-source-branch false/.test(s),
-    '9b sigue con `--delete-source-branch false` fijo: una rama efímera queda viva después del merge');
-  assert.match(s, /RAMAS_DE_LARGA_VIDA="[^"]*\bdev\b[^"]*"/,
-    '9b no declara la lista de ramas de larga vida');
-  // Los TRES puntos donde `az` manda la opción usan la variable: si uno se olvida, el `az` que
-  // gana es el último y la rama sobrevive sin que nada avise.
-  assert.equal((s.match(/--delete-source-branch "\$BORRAR_SOURCE"/g) || []).length, 3,
-    '9b no usa $BORRAR_SOURCE en los tres --delete-source-branch (update de 9b.2, create y update de 9b.3)');
+  assert.ok(!/--delete-source-branch false|"deleteSourceBranch":\s*false/.test(s),
+    '9b fija deleteSourceBranch en false: una rama efímera queda viva después del merge');
+  assert.match(s, /`dev`, `develop`, `main` y `master`/, '9b no declara la lista de ramas de larga vida');
+  assert.match(s, /`deleteSourceBranch`: `false` si la rama de origen es de larga vida, `true` si no/,
+    '9b no dice cómo sale deleteSourceBranch de la lista');
   // Un solo lugar: la lista no puede estar también en el SKILL.md.
   const skill = fs.readFileSync(MERGE_SKILL, 'utf8');
-  assert.ok(!/RAMAS_DE_LARGA_VIDA|dev develop main/.test(skill),
+  assert.ok(!/RAMAS_DE_LARGA_VIDA|dev develop main|`dev`, `develop`, `main`/.test(skill),
     'la lista de ramas de larga vida quedó duplicada en el SKILL.md: dos copias se separan solas');
 });
 
-test('9b: org/proyecto/repo se derivan del remoto origin con identidadAzure(), no a ojo', () => {
-  // 🔴 Un step que escribe `--org <org> --project <proj>` como marcadores y sólo dice, en un edge case, que «sale de
-  // git remote get-url origin» —sin comando— no pasa.
+test('9b: el repo del pedido sale del plan, que lo deriva del remoto origin, no a ojo', () => {
   const s = leer9b();
-  assert.match(s, /identidadAzure/, '9b no usa el parser del arnés');
+  assert.match(s, /Salen del remoto `origin`,\s+nunca del nombre de la carpeta/, '9b no dice de dónde sale el repo');
   assert.ok(!/--org <org>|--project <proj>|--repository <repo-name>/.test(s),
     '9b todavía tiene org/proyecto/repo como marcadores para completar a ojo');
-  assert.match(s, /read -r ORG; read -r PROJ; read -r REPO_NAME/,
-    '9b no lee los tres valores del parser');
-  // La URL del remoto es texto de afuera: no se evalúa como comando.
-  assert.ok(!/eval "\$\(node/.test(s), '9b evalúa la salida del parser: la URL del remoto es texto de afuera');
-  assert.match(s, /exit 3/, '9b no dice qué pasa si el remoto no es de Azure DevOps');
+  for (const k of ['org', 'project', 'name', 'ghRepo']) assert.match(s, new RegExp(`\`${k}\``), `9b no nombra el campo ${k} del plan`);
 });
 
-test('9b: el PR con conflictos tiene su edge case, y se verifica leyendo mergeStatus', () => {
+test('9b: el pedido con conflictos tiene su edge case, y el skill propone cómo destrabarlo', () => {
   const s = leer9b();
-  assert.match(s, /CONFLICTOS con el target/, '9b no cubre el PR con conflictos');
-  assert.match(s, /mergeStatus/, '9b no dice cómo se detecta un PR que no puede mergear');
-  assert.match(s, /git -C <repo> merge origin\/<target>/, '9b no propone cómo destrabarlo');
-  assert.match(s, /queued/, '9b no dice cómo verificar que se destrabó (ADO recalcula la mezcla)');
+  assert.match(s, /Conflictos con la destino/, '9b no cubre el pedido con conflictos');
+  assert.match(s, /`conflict: true`/, '9b no dice cómo se detecta un pedido que no puede mergear');
+  assert.match(s, /git -C <repo> merge 'origin\/<target>'/, '9b no propone cómo destrabarlo');
+  assert.match(s, /re-encola la validación/, '9b no avisa que destrabarlo re-encola la validación');
 });
 
 // El parser que el step manda usar tiene que existir y entender las tres formas de remoto del equipo.

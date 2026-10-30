@@ -1,0 +1,8 @@
+{ "count": 3, "value": [
+  { "pullRequestId": 41, "isDraft": false, "status": "active", "title": "arreglo viejo", "sourceRefName": "refs/heads/fix/viejo", "creationDate": "2026-10-20T09:00:00Z",
+    "createdBy": { "uniqueName": "Ana.Dev@Acme.Example", "displayName": "Ana" }, "repository": { "name": "Back", "project": { "name": "Proyecto X" } } },
+  { "pullRequestId": 42, "isDraft": true, "status": "active", "title": "borrador", "sourceRefName": "refs/heads/story/1", "creationDate": "2026-10-01T09:00:00Z",
+    "createdBy": { "uniqueName": "beto@acme.example", "displayName": "Beto" }, "repository": { "name": "Back", "project": { "name": "Proyecto X" } } },
+  { "pullRequestId": 43, "isDraft": false, "status": "active", "title": "nuevo", "sourceRefName": "refs/heads/story/2", "creationDate": "2026-10-29T09:00:00Z",
+    "createdBy": { "uniqueName": "beto@acme.example", "displayName": "Beto" }, "repository": { "name": "Back", "project": { "name": "Proyecto X" } } }
+] }

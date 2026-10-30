@@ -195,8 +195,8 @@ else no "T26b rc=$RC · $(head -c 300 "$D/prs.json" 2>/dev/null)"; fi
 
 D="$TMP/t26c"; mundo "$D"
 RC=$(FIXAZ="$D/fixaz" TYCON_ADO_CMD="$DOBLE" node "$GUION" --today "$HOY" --provider github --json "$D/prs.json" > "$D/out.txt" 2>&1; echo $?)
-if [ "$RC" = 0 ] && [ ! -s "$D/fixaz/llamadas.log" ] && node -e 'const d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); process.exit(d.estado === "no_medido" && /los pull requests y los pedidos de GitHub todavía no se leen/.test(d.motivo) ? 0 : 1);' "$D/prs.json"; then
-  ok "T26 en GitHub: no_medido con su frase, sale 0 y no consulta Azure"
+if [ ! -s "$D/fixaz/llamadas.log" ] && node -e 'const d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); process.exit(!/todavía no se leen/.test(String(d.motivo)) && Array.isArray(d.prs) ? 0 : 1);' "$D/prs.json"; then
+  ok "T26 en GitHub: lee los repos por la capa de plataforma y no consulta Azure"
 else no "T26c rc=$RC · $(head -c 300 "$D/prs.json" 2>/dev/null) · $(head -c 200 "$D/out.txt")"; fi
 
 # T24 OpenPrs_SeccionComoCantidad — lo que va al aviso es sólo la cantidad: ni repo, ni título, ni

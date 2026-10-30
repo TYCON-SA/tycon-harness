@@ -68,6 +68,120 @@ try { cmd = ((JSON.parse(payload || '{}').tool_input) || {}).command || ''; } ca
 // porque un regex de una línea falla con facilidad.
 const az = require('../lib/az-pr.js');
 const constancia = require('../lib/guard-record.js');
+let cwdDelEvento = ''; try { cwdDelEvento = String(JSON.parse(payload || '{}').cwd || ''); } catch { /* sin cwd */ }
+
+// Un `gh pr create`, o la capa de plataforma abriendo un pedido (`platform.js change-request open`). En GitHub la lista
+// de pedidos del repo la pide la capa, que dice de cada uno si la validación de su punta está corriendo; un pedido de
+// Azure abierto por la capa se mira con `az`, como un `az repos pr create`. Los `az repos pr create` de la misma línea
+// se revisan después, igual que sin los otros.
+const pedidosGh = pedidosDeGitHub(cmd, cwdDelEvento);
+if (pedidosGh.length) revisarGitHub(pedidosGh).then(() => revisarAzure(), (e) => {
+  console.error(`[pr-uno-por-repo] no pude mirar los pedidos de GitHub (${String((e && e.message) || e).slice(0, 80)}). No bloqueo, pero NO verifiqué.`);
+  revisarAzure();
+});
+else revisarAzure();
+
+/** Los pedidos que el comando abre en GitHub: `[{ repo, rama, donde }]` (repo null si no se sabe a qué repo va). */
+function pedidosDeGitHub(comando, cwd) {
+  const out = [];
+  if (/\bgh\b/.test(comando)) {
+    let lista = [];
+    try { lista = require('../lib/gh-pr.js').comandosGh(comando, 0, {}); } catch (e) {
+      // no se pudo leer el `gh`: el pedido va sin repo, y la revisión dice que no verificó
+      if (/\bpr\s+create\b/.test(comando)) out.push({ repo: null, rama: null, donde: `un gh pr create que no pude leer (${String((e && e.message) || e).slice(0, 60)})` });
+    }
+    for (const c of lista) {
+      if (c.grupo !== 'pr' || c.verbo !== 'create') continue;
+      let repo = c.repo && !c.repoDesconocido ? c.repo : null;
+      if (!repo && !c.repoDesconocido && !c.cwdDesconocido) repo = repoDeLaCarpeta(c.cds.length ? require('path').resolve(cwd || process.cwd(), ...c.cds) : (cwd || process.cwd()));
+      const [org, nombre] = repo ? repo.split('/') : [];
+      out.push({ repo: repo ? { platform: 'github', org, repo: nombre } : null, rama: c.head || null, donde: repo || '(el repo de la carpeta)' });
+    }
+  }
+  if (/platform\.js/.test(comando)) {
+    for (const seg of az.segmentos(comando)) {
+      const t = seg.map((x) => x.texto);
+      const i = t.findIndex((x) => /(^|[\\/])platform\.js$/.test(x));
+      if (i < 0 || !(t[i + 1] === 'change-request.open' || (t[i + 1] === 'change-request' && t[i + 2] === 'open'))) continue;
+      const valor = (n) => { const k = t.indexOf(n, i); return k >= 0 ? t[k + 1] : undefined; };
+      let repo = null;
+      const crudo = valor('--repo');
+      try { repo = crudo && crudo.trim().startsWith('{') ? JSON.parse(crudo) : (crudo ? { org: crudo.split('/')[0], repo: crudo.split('/')[1] } : null); } catch { repo = null; }
+      let args = {};
+      const a = valor('--args');
+      try { args = a ? JSON.parse(a.startsWith('@') ? fs.readFileSync(require('path').resolve(cwd || process.cwd(), a.slice(1)), 'utf8') : a) : {}; } catch {
+        // sin los argumentos no se sabe la rama propia: cualquier pedido abierto contaría como otro
+        args = null;
+      }
+      const donde = repo && repo.org && repo.repo ? `${repo.org}/${repo.repo}` : '(un repo que no pude leer)';
+      if (!args) out.push({ repo: null, rama: null, donde: `${donde}, cuyos argumentos (${String(a).slice(0, 80)}) no pude leer` });
+      else out.push({ repo, rama: args.sourceBranch || null, donde });
+    }
+  }
+  return out;
+}
+
+/** `dueño/nombre` de GitHub del origin de una carpeta, o null. */
+function repoDeLaCarpeta(dir) {
+  try {
+    const url = execFileSync('git', ['-C', dir, 'remote', 'get-url', 'origin'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10000 }).trim();
+    const m = url.match(/github\.com[:/]([\w.-]+)\/([\w.-]+?)(?:\.git)?$/);
+    return m ? `${m[1]}/${m[2]}` : null;
+  } catch { return null; }
+}
+
+async function revisarGitHub(pedidos) {
+  const platform = require('../lib/platform/platform.js');
+  let noPudeMirar = false;
+  const bloqueos = [];
+  for (const p of pedidos) {
+    if (!p.repo) {
+      console.error(`[pr-uno-por-repo] no sé a qué repo va el pedido de ${p.donde}: no bloqueo, pero NO verifiqué que no haya otro construyendo.`);
+      noPudeMirar = true;
+      continue;
+    }
+    if (p.repo.platform === 'azure') {
+      // un pedido de Azure abierto por la capa se mira como un `az repos pr create`: la lista de la capa no dice si la
+      // validación de un pedido de Azure está corriendo, y las políticas del pedido sí
+      const nombre = (x) => typeof x === 'string' && x.trim() && !x.startsWith('-');
+      if (!(typeof p.repo.org === 'string' && /^[\w.-]+$/.test(p.repo.org) && !p.repo.org.startsWith('-') && nombre(p.repo.project) && nombre(p.repo.repo))) {
+        console.error(`[pr-uno-por-repo] el repo de Azure de ${p.donde} no trae org, proyecto y repo legibles: no bloqueo, pero NO verifiqué.`);
+        noPudeMirar = true;
+        continue;
+      }
+      const org = `https://dev.azure.com/${p.repo.org}`;
+      let abiertos;
+      try {
+        abiertos = JSON.parse(execFileSync('az', ['repos', 'pr', 'list', '--status', 'active', '-o', 'json', '--org', org, '--project', p.repo.project, '--repository', p.repo.repo], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 30000 }) || '[]');
+      } catch (e) {
+        console.error(`[pr-uno-por-repo] no pude consultar los pull requests de ${p.donde} (${String((e && e.message) || e).slice(0, 80)}). No bloqueo, pero NO verifiqué.`);
+        noPudeMirar = true;
+        continue;
+      }
+      const enCurso = revisar(abiertos, org, p.rama);
+      if (enCurso.length) bloqueos.push({ donde: p.donde, enCurso });
+      continue;
+    }
+    const r = await platform.run('change-request.list', {}, { env: process.env, repo: p.repo });
+    if (!r.ok) {
+      console.error(`[pr-uno-por-repo] no pude consultar los pedidos de ${p.donde} (${String(r.detail).slice(0, 80)}). No bloqueo, pero NO verifiqué.`);
+      noPudeMirar = true;
+      continue;
+    }
+    const otros = r.value.filter((x) => !p.rama || x.sourceBranch !== p.rama);
+    for (const x of otros.filter((o) => o.ciRunning === null)) {
+      console.error(`[pr-uno-por-repo] no pude ver los controles del PR ${x.number} de ${p.donde}: no sé si construye, no lo cuento.`);
+      noPudeMirar = true;
+    }
+    const enCurso = otros.filter((x) => x.ciRunning === true).map((x) => ({ pullRequestId: x.number, title: x.title, sourceRefName: `refs/heads/${x.sourceBranch}` }));
+    if (enCurso.length) bloqueos.push({ donde: p.donde, enCurso });
+  }
+  if (bloqueos.length) bloquear(bloqueos);
+  if (!noPudeMirar) constancia.anotar({ freno: 'pr-uno-por-repo', regla: 'pr-duplicado', veredicto: 'paso', cmd });
+  return 0;
+}
+
+function revisarAzure() {
 if (!az.pareceAzPr(cmd)) process.exit(0);
 // 🔴 TODOS los `pr create` de la cadena, no el primero: con
 // `az … create -r R1 … && az … create -r R2 …` sólo se miraría R1. Es el patrón que ya usa
@@ -115,6 +229,7 @@ if (!bloqueos.length) {
   process.exit(0);
 }
 bloquear(bloqueos);
+}
 
 function revisar(abiertos, org, rama) {
 

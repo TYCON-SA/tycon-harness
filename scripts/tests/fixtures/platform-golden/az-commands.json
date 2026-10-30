@@ -95,8 +95,10 @@
   ],
   "scripts/hooks/pr-one-per-repo-guard.js": [
     "* QUÉ HACE. Antes de que `az repos pr create` se ejecute, pregunta si ese repositorio ya tiene un",
+    "// Azure abierto por la capa se mira con `az`, como un `az repos pr create`. Los `az repos pr create` de la misma línea",
     "// de los `az repos pr create` reales del equipo van sin `--org`,",
-    "// porque el CLAUDE.md recomienda `az devops configure --defaults` — y `az` resuelve por esos"
+    "// porque el CLAUDE.md recomienda `az devops configure --defaults` — y `az` resuelve por esos",
+    "// un pedido de Azure abierto por la capa se mira como un `az repos pr create`: la lista de la capa no dice si la"
   ],
   "scripts/hooks/prod-access-guard.js": [
     "// Las banderas largas de `az resource delete` y de `az rest`, para decidir si una abreviatura es ambigua.",
@@ -137,17 +139,9 @@
     "const bad = list.ok && !Array.isArray(list.json) ? 'az pipelines list no devolvió una lista' : null;",
     "if (!runs.ok || !Array.isArray(runs.json)) { fail(label, `runs list ${p.id}`, runs.error || 'az pipelines runs list no devolvió una lista', extra); continue; }"
   ],
-  "skills/tycon-merge-to-main/steps/step-09b-create-pr.md": [
-    "`$BORRAR_SOURCE` en `true`, `az repos pr show` devolvió `autoCompleteSetBy` con el usuario,",
-    "`az repos pr list --project totora --repository backend` contesta igual que con `Totora`/`Backend`",
-    "az repos pr create \\",
-    "az repos pr list --org \"$ORG_URL\" --project \"$PROJ\" --repository \"$REPO_NAME\" \\",
-    "az repos pr show --id \"$PR_ID\" --query \"{ac:autoCompleteSetBy.id, msg:completionOptions.mergeCommitMessage}\" -o json",
-    "az repos pr show --org \"$ORG_URL\" --project \"$PROJ\" --id \"$PR_ID\" --query 'mergeStatus' -o tsv",
-    "az repos pr show --org \"$ORG_URL\" --project \"$PROJ\" --id \"$PR_ID\" \\",
-    "az repos pr show --org \"$ORG_URL\" --project \"$PROJ\" --id <id> --query 'status' -o tsv",
-    "az repos pr update --id \"$PR_ID\" \\",
-    "az repos pr update --id <id> \\"
+  "skills/tycon-merge-to-main/steps/step-09b-create-change-request.md": [
+    "- **Azure DevOps**: la misma secuencia de `az repos pr` de siempre (reusa el pedido abierto de ese par de ramas o lo",
+    "publicar miran esta línea igual que un `az repos pr create` o un `gh pr create`: uno por repo con el control de otro"
   ],
   "skills/tycon-pipeline/steps/close-work-item.md": [
     "az pipelines runs list --organization https://dev.azure.com/<org> --project <project> \\"
@@ -164,7 +158,11 @@
     "process=$(az devops project show \\"
   ],
   "integrations/azure-devops/scripts/change-requests.js": [
-    "//   az devops invoke --area git --resource pullRequests --route-parameters project=<proyecto>"
+    "//   az devops invoke --area git --resource pullRequests --route-parameters project=<proyecto>",
+    "//   az repos pr create --org <org> --project <proyecto> --repository <repo> --source-branch <rama> --target-branch <destino>",
+    "//   az repos pr list --org <org> --project <proyecto> --repository <repo> --source-branch <rama> --target-branch <destino>",
+    "//   az repos pr show --id <n> --query \"{ac:autoCompleteSetBy.id, msg:completionOptions.mergeCommitMessage}\" -o json",
+    "//   az repos pr update --id <n> [--title <título> --description <texto>] --merge-commit-message \"Merged PR <n>: <asunto>\""
   ],
   "integrations/azure-devops/scripts/work-items.js": [
     "//            az boards work-item relation add --organization <org> --id <id> --relation-type parent --target-id <Epic> --output json",

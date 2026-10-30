@@ -573,6 +573,19 @@ fi
   anotado main && ok "T20 una base que arma la terminal se anota (de más, nunca de menos)" || bad "T20 base armada" "$(cat "${LED20}" 2>/dev/null)"
   pedir Bash 'gh pr create --repo acme/producto --base main --title t --body b'
   anotado main && ok "T20 con --repo, si es el origin de esa carpeta, se anota" || bad "T20 --repo propio" "$(cat "${LED20}" 2>/dev/null)"
+  # RetroPending_RecordsLayerOpenTowardMain @story-8.85 @ac-15: el pedido que abre la capa de plataforma hacia main es
+  # una entrega igual que el `gh pr create`; hacia otra rama, no
+  pedir Bash "node scripts/lib/platform/platform.js change-request open --repo acme/producto --auto-complete --args '{\"sourceBranch\":\"dev\",\"targetBranch\":\"main\",\"text\":\"t\",\"deleteSourceBranch\":false}'"
+  anotado main && grep -q "\"sha\":\"${TIP20:0:12}\"" "${LED20}" && ok "T20 la llamada a la capa hacia main se anota con la punta de su rama" || bad "T20 capa hacia main" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null) · $(head -c 200 "${T20}/stderr")"
+  printf '%s' '{"sourceBranch":"dev","targetBranch":"master","text":"t","deleteSourceBranch":false}' > "${T20}/args.json"
+  pedir Bash "node scripts/lib/platform/platform.js change-request open --repo acme/producto --auto-complete --args @${T20}/args.json"
+  anotado master && ok "T20 con los argumentos en un archivo (@archivo) se anota igual" || bad "T20 capa con @archivo" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null)"
+  # la rama escrita como referencia completa (refs/heads/main) es la misma rama: se anota con su nombre corto y con la
+  # punta de la rama de origen, también escrita entera
+  pedir Bash "node scripts/lib/platform/platform.js change-request open --repo acme/producto --auto-complete --args '{\"sourceBranch\":\"refs/heads/dev\",\"targetBranch\":\"refs/heads/main\",\"text\":\"t\",\"deleteSourceBranch\":false}'"
+  anotado main && grep -q "\"sha\":\"${TIP20:0:12}\"" "${LED20}" && ok "T20 la capa hacia refs/heads/main se anota como hacia main" || bad "T20 capa hacia refs/heads/main" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null) · $(head -c 200 "${T20}/stderr")"
+  pedir Bash "node scripts/lib/platform/platform.js change-request open --repo acme/producto --auto-complete --args '{\"sourceBranch\":\"otra\",\"targetBranch\":\"dev\",\"text\":\"t\",\"deleteSourceBranch\":true}'"
+  callado && ok "T20 la llamada a la capa hacia otra rama no se anota" || bad "T20 capa hacia dev" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null)"
   pedir PowerShell 'gh pr create --base main --head dev --title t --body b'
   anotado main && ok "T20 por la herramienta de PowerShell, igual que por bash" || bad "T20 PowerShell" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null)"
 
@@ -673,6 +686,9 @@ fi
   pedir Bash 'az repos pr create --source-branch dev --target-branch main'
   dicho && grep -q "no pude saber de qué repo es" "${T20}/stderr" \
     && ok "T20 lo mismo sin --repository" || bad "T20 Azure desde GitHub, sin --repository" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null) · $(head -c 300 "${T20}/stderr")"
+  pedir Bash 'az repos pr create --source-branch dev --target-branch refs/heads/main'
+  dicho && grep -q "no pude saber de qué repo es" "${T20}/stderr" \
+    && ok "T20 un --target-branch refs/heads/main es hacia main" || bad "T20 Azure hacia refs/heads/main" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null) · $(head -c 300 "${T20}/stderr")"
   # con algo que no se pudo mirar en el camino (la carpeta de arriba no se lista), el aviso sigue diciendo lo mismo
   chmod 300 "${T20}"
   pedir Bash 'az repos pr create --repository R --source-branch dev --target-branch main'

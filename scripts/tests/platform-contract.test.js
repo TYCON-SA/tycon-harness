@@ -509,7 +509,7 @@ test('AdoList_MapsFields @story-8.131 @ac-12', async () => {
   assert.strictEqual(r.ok, true, JSON.stringify(r));
   assert.deepStrictEqual(r.value.map((p) => p.number), [7, 8, 9, 11], 'el pedido de otro repo del proyecto queda afuera; el nombre no distingue mayúsculas');
   const [a, b, c] = r.value;
-  assert.deepStrictEqual(a, { number: 7, draft: true, autoComplete: true, mergeState: 'conflict', sourceBranch: 'story/7', sourceCommit: '7'.padStart(40, 'a'), createdAt: '2026-10-25T10:00:00Z', title: 'pedido 7' });
+  assert.deepStrictEqual(a, { number: 7, draft: true, autoComplete: true, mergeState: 'conflict', sourceBranch: 'story/7', sourceCommit: '7'.padStart(40, 'a'), createdAt: '2026-10-25T10:00:00Z', title: 'pedido 7', author: null, ciRunning: null });
   assert.strictEqual(b.mergeState, 'pending');
   assert.strictEqual(b.autoComplete, false);
   assert.strictEqual(c.mergeState, 'unknown');

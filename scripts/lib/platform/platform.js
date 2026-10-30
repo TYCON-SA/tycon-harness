@@ -17,6 +17,9 @@
 // Uso: node scripts/lib/platform/platform.js <operación> [--repo <org/repo | JSON de la identidad>] [--args <JSON | @archivo>]
 //   La operación va en una palabra o en dos (`work-item.close` o `work-item close`).
 //   node scripts/lib/platform/platform.js choose <operación> [--repo …]: qué conector la atendería, sin pedirle nada.
+//   node scripts/lib/platform/platform.js raw-command '<comando>': qué conector reconoce ese comando crudo (sale 1 si
+//     ninguno, y 2 si lo reconoce más de uno o si alguna integración no se puede leer).
+//   `change-request open` pide `--auto-complete` en la línea, y acepta `--wait-minutes` y `--poll-seconds`.
 //   Imprime el resultado en JSON y sale 0 siempre que el contrato se cumplió (aunque diga que no); 2 si se usó mal. Las
 //   operaciones del pedido de trabajo traen además `summary`: la línea que el paso muestra y lleva al cierre.
 //
@@ -28,7 +31,7 @@ const os = require('os');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..', '..', '..');
-const { OPERATIONS, REASONS, REPO_OPERATIONS, ESTIMATE_OPERATIONS, areaOf, shapeProblem, estimateProblem } = require('./contract.js');
+const { OPERATIONS, REASONS, REPO_OPERATIONS, ESTIMATE_OPERATIONS, areaOf, shapeProblem, estimateProblem, openProblem } = require('./contract.js');
 const INT = require('../integrations.js');
 const TEAM_REPOS = require('../team-repos.js');
 
@@ -215,6 +218,11 @@ async function call(manifest, operation, args, opts) {
     const mala = estimateProblem(args.estimate);
     if (mala) return no('rechazado', `estimación sin forma: ${mala}`);
   }
+  // un pedido de cambio sin forma no llega a la plataforma: una rama que empieza con `-` sería una opción de su CLI
+  if (operation === 'change-request.open') {
+    const malo = openProblem(args);
+    if (malo) return no('rechazado', `pedido de cambio sin forma: ${malo}`);
+  }
   let mod;
   try { mod = require(path.join(manifest.dir, manifest.connector)); } catch (e) {
     return no('no_medido', `el conector ${manifest.name} no carga (${(e && e.code) || String((e && e.message) || e).split('\n')[0]})`);
@@ -294,7 +302,11 @@ async function conformance(name, opts = {}) {
   const c = connector(name, env);
   if (c.problem) return { problems: [c.problem] };
   const problems = [];
-  const PRUEBA = { entrada: { pipeline: 'Proyecto/publicar', stages: ['Prod'], repo: 'acme/portal', environment: 'production' }, entorno: 'production' };
+  // el pedido de prueba tiene forma, para que llegue al conector, y no espera nada
+  const PRUEBA = {
+    entrada: { pipeline: 'Proyecto/publicar', stages: ['Prod'], repo: 'acme/portal', environment: 'production' }, entorno: 'production',
+    sourceBranch: 'prueba/conformidad', targetBranch: 'main', text: 'prueba de conformidad', deleteSourceBranch: true, waitMinutes: 0, pollSeconds: 0,
+  };
   for (const op of c.manifest.operations) {
     const r = await call(c.manifest, op, PRUEBA, { ...opts, repo: opts.repo || { org: 'acme', repo: 'portal' } });
     const mal = shapeProblem(r);
@@ -304,7 +316,57 @@ async function conformance(name, opts = {}) {
   return { problems };
 }
 
+/**
+ * Qué conector reconoce un comando crudo de su plataforma (el `gh pr create` de GitHub, el pedido de Azure DevOps): el nombre, o null si
+ * ninguno lo declara en `rawCommands`. Mira el binario de cada tramo del comando (después de `env` y de las variables) y
+ * sus palabras, salteando las opciones; un texto entre comillas no es un comando.
+ * Lanza si alguna integración no se puede leer (sin ella no se sabe qué comandos declara, y «ninguno» sería adivinar) y
+ * si lo reconoce más de un conector.
+ */
+function rawCommandOf(cmd, opts = {}) {
+  if (typeof cmd !== 'string' || !cmd.trim()) return null;
+  const leidas = INT.listManifests({ env: opts.env || process.env });
+  if (leidas.problems.length) {
+    throw new Error(`no pude leer ${leidas.problems.map((p) => `${p.name} (${p.reasons.join('; ')})`).join(' · ')}`);
+  }
+  const dichos = leidas.manifests.filter((m) => m.kind === 'platform')
+    .flatMap((m) => (m.rawCommands || []).map((c) => ({ name: m.name, words: c.trim().split(/\s+/) })));
+  const hallados = new Set();
+  for (const seg of require('../az-pr.js').segmentos(cmd)) {
+    let i = 0;
+    while (i < seg.length && seg[i].esBandera && (/^[A-Za-z_][A-Za-z0-9_]*=/.test(seg[i].texto) || seg[i].texto === 'env' || seg[i].texto === 'command')) i++;
+    if (i >= seg.length || !seg[i].esBandera) continue;
+    const binario = path.basename(seg[i].texto.replace(/\\/g, '/')).replace(/\.(exe|cmd)$/i, '');
+    for (const d of dichos) {
+      if (d.words[0] !== binario) continue;
+      let j = i + 1;
+      let ok = true;
+      for (const w of d.words.slice(1)) {
+        // las opciones antes de la palabra se saltean, con su valor si lo traen (`gh -R acme/x pr merge`)
+        while (j < seg.length && seg[j].texto !== w && seg[j].texto.startsWith('-')) {
+          j++;
+          if (j < seg.length && seg[j].texto !== w && !seg[j].texto.startsWith('-')) j++;
+        }
+        if (j < seg.length && seg[j].esBandera && seg[j].texto === w) j++;
+        else { ok = false; break; }
+      }
+      if (ok) hallados.add(d.name);
+    }
+  }
+  // dos conectores que dicen el mismo comando no es «ninguno»: no se sabe cuál lo mira
+  if (hallados.size > 1) throw new Error(`lo reconocen ${[...hallados].sort().join(' y ')}: no elijo a ciegas`);
+  return hallados.size === 1 ? [...hallados][0] : null;
+}
+
 function main(argv) {
+  // `raw-command <comando>`: qué conector reconoce ese comando crudo (lo usan los frenos de otra herramienta)
+  if (argv[0] === 'raw-command') {
+    if (!argv[1]) { process.stderr.write('uso: platform.js raw-command <comando>\n'); return Promise.resolve(2); }
+    let name;
+    try { name = rawCommandOf(argv[1]); } catch (e) { process.stderr.write(`${limpiar(e.message)}\n`); return Promise.resolve(2); }
+    if (name) process.stdout.write(`${name}\n`);
+    return Promise.resolve(name ? 0 : 1);
+  }
   // `choose <operación>`: qué conector la atendería, sin pedirle nada (un paso que tiene un camino propio de una
   // plataforma lo pregunta antes de tomarlo)
   if (argv[0] === 'choose') {
@@ -329,9 +391,19 @@ function main(argv) {
     const crudo = opt('--args');
     try { args = JSON.parse(crudo.startsWith('@') ? fs.readFileSync(crudo.slice(1), 'utf8') : crudo); } catch (e) { process.stderr.write(`--args no es JSON (${e.message})\n`); return Promise.resolve(2); }
   }
+  if (operation === 'change-request.open') {
+    // abrir un pedido es pedir que entre solo: quien lo llama lo dice en la línea, donde el freno lo lee
+    if (!rest.includes('--auto-complete')) { process.stderr.write('change-request open pide --auto-complete: el pedido se abre para entrar solo cuando su control da verde\n'); return Promise.resolve(2); }
+    for (const [flag, k] of [['--wait-minutes', 'waitMinutes'], ['--poll-seconds', 'pollSeconds']]) {
+      if (opt(flag) === undefined) continue;
+      const n = Number(opt(flag));
+      if (!Number.isFinite(n) || n < 0) { process.stderr.write(`${flag} es un número mayor o igual que 0\n`); return Promise.resolve(2); }
+      args = { ...args, [k]: n };
+    }
+  }
   return run(operation, args, { repo: opt('--repo') }).then((r) => { process.stdout.write(`${JSON.stringify(r)}\n`); return 0; });
 }
 
 if (require.main === module) main(process.argv.slice(2)).then((code) => { process.exitCode = code; });
 
-module.exports = { choose, run, call, conformance, connector, identityFromRemote, limpiar, summary, main, OPERATIONS, REASONS };
+module.exports = { choose, run, call, conformance, connector, identityFromRemote, limpiar, summary, rawCommandOf, main, OPERATIONS, REASONS };

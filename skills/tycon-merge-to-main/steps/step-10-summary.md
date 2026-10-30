@@ -64,7 +64,7 @@ Volviste a `<current_branch_at_start>`.
 ```
 
 La línea de las suites completas repite el `suitesReason` del último plan (el del Step 0.7, o el de
-8/9b/9c si bajó a `machine`): sin ella nadie sabe si las suites se corrieron, ni dónde.
+8/9b si bajó a `machine`): sin ella nadie sabe si las suites se corrieron, ni dónde.
 Si el plan trajo `legacyNote`, va como una línea de aviso al final.
 
 Si hubo race retry en Step 9, agregar nota:

@@ -713,16 +713,16 @@ test('T14 GitHub_PrepareTreeTraeLaLista @story-2.25 @ac-9: con lista en operacio
   }
 });
 
-// T32: en GitHub los dos productores del sitio declaran «no medido» (los pull requests y los pedidos de
-// GitHub todavía no se leen), corren antes de generar la página y se guardan con ella.
+// T32: en GitHub los dos productores del sitio corren antes de generar la página y se guardan con ella; un
+// productor que sale 1 (no midió todo) no corta al otro ni a la página.
 test('T32 TeamDashboard_ProductoresDelSitio', () => {
   const y = read('team-dashboard.yml');
   const traer = y.search(/- name: Traer de main del repo de operaciones/);
   const prod = y.search(/- name: Lo que deja la noche para el sitio/);
   const generar = y.search(/- name: Generar la página del tablero/);
   assert.ok(traer >= 0 && prod > traer && generar > prod, 'traer → productores → generar');
-  assert.match(y, /open-prs\.js --today "\$\{DAY\}" --provider github --json "\.dashboard\/open-prs\/open-prs-\$\{DAY\}\.json"/);
-  assert.match(y, /assigned-items\.js --today "\$\{DAY\}" --provider github --out \.dashboard\/assigned/);
+  assert.match(y, /open-prs\.js --today "\$\{DAY\}" --provider github --json "\.dashboard\/open-prs\/open-prs-\$\{DAY\}\.json" 2>&1 \| bash pipelines\/operations\/github\/annotate\.sh \\\n\s+\|\| echo "::warning::/);
+  assert.match(y, /assigned-items\.js --today "\$\{DAY\}" --provider github --out \.dashboard\/assigned 2>&1 \| bash pipelines\/operations\/github\/annotate\.sh \\\n\s+\|\| echo "::warning::/);
   assert.match(y, /-- artifacts\/tablero-del-arnes\.html \.dashboard\/open-prs \.dashboard\/assigned \.dashboard\/deployments \.dashboard\/applied-config\.json 2>&1/, 'se guardan con la página (la marca de la configuración aplicada, tanda C de la 2.29)');
 });
 

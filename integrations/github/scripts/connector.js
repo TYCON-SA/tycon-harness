@@ -20,7 +20,7 @@ function leerDespliegues(args, ctx) {
   }
 }
 
-const OPERACIONES = { ...require('./work-items.js'), 'deployments.read': leerDespliegues };
+const OPERACIONES = { ...require('./work-items.js'), ...require('./change-requests.js'), 'deployments.read': leerDespliegues };
 
 function run(operacion, args, ctx) {
   const f = OPERACIONES[operacion];
