@@ -34,6 +34,8 @@ function repo() {
   g('config', 'user.email', 'prueba@example.com');
   g('config', 'user.name', 'Prueba');
   g('config', 'commit.gpgsign', 'false');
+  // sin convertir fines de línea: un caso de abajo compara CRLF contra LF, y la conversión los igualaría al commitear
+  g('config', 'core.autocrlf', 'false');
   const write = (files) => { for (const [f, t] of Object.entries(files)) fs.writeFileSync(path.join(dir, f), t); };
   const commit = (files, msg) => { write(files); g('add', '-A'); g('commit', '-q', '--no-verify', '-m', msg); return g('rev-parse', 'HEAD'); };
   return { dir, commit, write, g };
@@ -91,6 +93,55 @@ test('T10c CommentOnlyDiff_AgainstWorkTree_AndBadArgs @story-8.43 @ac-10 — con
   assert.strictEqual(run(r.dir, '--against', 'HEAD').status, 1);
   assert.strictEqual(run(r.dir).status, 2, 'sin --range ni --against no hay nada que comparar');
   assert.strictEqual(run(r.dir, '--range', 'no-existe...HEAD').status, 2, 'una referencia que no existe es «no pude mirar»');
+});
+
+// Un caso por hueco: lo que antes el comparador daba por «sólo comentarios» con el código cambiado. Cada cambio
+// tiene que salir 1 (el archivo, `differs`).
+const DIFIERE = [
+  ['heredoc.sh', 'cat <<EOF\nuno\nEOF\n', 'cat <<EOF\nuno\n\nEOF\n', 'una línea en blanco dentro de un heredoc es dato'],
+  ['plantilla.js', 'const t = `uno\ndos`;\n', 'const t = `uno\n\ndos`;\n', 'una línea en blanco dentro de una plantilla es dato'],
+  ['continua.sh', 'ls \\\n  -l\n', 'ls \\ \n  -l\n', 'un espacio después de la barra corta la continuación'],
+  ['pegado.js', 'const a = b - /**/ -c;\n', 'const a = b --c;\n', 'un comentario que separa dos signos'],
+  ['asi.js', 'function f() { return/*\n*/ 1; }\n', 'function f() { return 1; }\n', 'un comentario con salto de línea después de return'],
+  ['Dockerfile', '# escape=`\nFROM x\n', 'FROM x\n', 'la directiva escape de un Dockerfile'],
+  ['codif.py', '# -*- coding: latin-1 -*-\nx = 1\n', '# -*- coding: utf-8 -*-\nx = 1\n', 'la codificación de Python'],
+  ['tipos.ts', '// @ts-ignore\nconst x: number = "a";\n', 'const x: number = "a";\n', 'una directiva de TypeScript'],
+  ['chequeo.sh', '# shellcheck disable=SC2086\nls $X\n', 'ls $X\n', 'una directiva de shellcheck'],
+  ['flujo.yml', 'steps:\n  - run: |\n      # una línea del guion\n      echo hola\n', 'steps:\n  - run: |\n      # otra línea del guion\n      echo hola\n', 'un # dentro de un bloque | de YAML es dato'],
+  ['fin.sh', 'echo hola\r\n', 'echo hola\n', 'pasar de CRLF a LF'],
+];
+
+test('T10e CommentOnlyDiff_HiddenCodeChanges @story-8.43 @ac-10 — cada hueco conocido sale 1, nunca «sólo comentarios»', () => {
+  for (const [file, antes, despues, que] of DIFIERE) {
+    const r = repo();
+    const base = r.commit({ [file]: antes }, 'base');
+    const tip = r.commit({ [file]: despues }, 'cambio');
+    const out = run(r.dir, '--range', `${base}...${tip}`, '--json');
+    assert.strictEqual(out.status, 1, `${que} (${file}): ${out.stdout}${out.stderr}`);
+    assert.strictEqual(JSON.parse(out.stdout).files[0].result, 'differs', que);
+  }
+});
+
+test('T10f CommentOnlyDiff_JsxAndFileMode @story-8.43 @ac-10 — el texto de JSX no se compara; un cambio de permisos cuenta', () => {
+  const r = repo();
+  const base = r.commit({ 'p.tsx': 'export const P = () => <a>http://x.com</a>;\n', 'x.sh': '#!/bin/sh\necho 1\n' }, 'base');
+  const jsx = r.commit({ 'p.tsx': 'export const P = () => <a>http://otro.com</a>;\n' }, 'jsx');
+  const j = JSON.parse(run(r.dir, '--range', `${base}...${jsx}`, '--json').stdout);
+  assert.strictEqual(j.files[0].result, 'differs', 'el // dentro del texto de JSX no es un comentario');
+  fs.chmodSync(path.join(r.dir, 'x.sh'), 0o755);
+  r.g('add', 'x.sh');
+  r.g('commit', '-q', '--no-verify', '-m', 'permisos');
+  const modo = JSON.parse(run(r.dir, '--range', `${jsx}...HEAD`, '--json').stdout);
+  assert.deepStrictEqual(modo.files.map((f) => [f.file, f.result]), [['x.sh', 'differs']]);
+  assert.match(modo.files[0].reason, /permisos/);
+});
+
+test('T10g CommentOnlyDiff_StillComments @story-8.43 @ac-10 — un comentario común de YAML, Python o shell sigue siendo comentario', () => {
+  const r = repo();
+  const base = r.commit({ 'c.yml': '# viejo\nclave: valor # al lado\n', 'c.py': '# viejo\nx = 1  # al lado\n', 'c.sh': 'cat <<EOF\nuno\nEOF\n# viejo\nls\n' }, 'base');
+  const tip = r.commit({ 'c.yml': '# nuevo\n\nclave: valor\n', 'c.py': '# nuevo\nx = 1\n', 'c.sh': 'cat <<EOF\nuno\nEOF\n\n# nuevo\nls\n' }, 'comentarios');
+  const out = run(r.dir, '--range', `${base}...${tip}`);
+  assert.strictEqual(out.status, 0, out.stdout + out.stderr);
 });
 
 test('T10d CommentOnlyDiff_ProductionGuardCopy @story-8.43 @ac-10 — un archivo que se copia al freno de producción sale 1, aunque cambie sólo un comentario', () => {
