@@ -146,7 +146,8 @@ const REGISTROS = ['bypass.log', 'carriles.jsonl', 'frenos.jsonl', 'gates.log', 
 // 🔴 Se DERIVA de REGISTROS, no se escribe otra vez: con dos listas de lo mismo, un registro nuevo
 // (por ejemplo `frenos.jsonl`) subiría y la bajada lo filtraría, así que llegaría al buzón y no lo
 // bajaría nadie, en verde.
-const FORMA_REGISTRO = new RegExp(`^(${REGISTROS.map((r) => `${r.replace(/\./g, '\\.')}\\.gz`).join('|')}|cobertura\\.json|place\\.json)$`);
+const formaRegistro = (registros) => new RegExp(`^(${registros.map((r) => `${r.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.gz`).join('|')}|cobertura\\.json|place\\.json)$`);
+const FORMA_REGISTRO = formaRegistro(REGISTROS);
 // Un día de instintos (`scripts/instincts/instinct-upload.js`): sube como `<maquina>/instincts/v<versión>/<día>`. La bajada
 // importa esta forma: una sola definición.
 const FORMA_INSTINTO = /^\d{4}-\d{2}-\d{2}\.jsonl\.gz$/;
@@ -1441,7 +1442,7 @@ async function chequearSoloCrear(opts = {}) {
   return fin(1, 'no_medido', `no medido: ningún blob confirmado de esta máquina tiene todavía su archivo local con el mismo sha256 (${candidatos.length} anotado(s)): no se manda nada distinto de lo confirmado`);
 }
 
-module.exports = { placeFactsForMailbox, holdForMailbox, FORMA_DESHECHA, FORMA_MOMENTO, subir, prepararSinCerrar, chequearSoloCrear, motivoDeLaboratorio, MARCAS_DE_CI, respuestaDelBuzon, versionDe, msDeVersion, FORMA_VERSION, nombreDeMaquina, nombreBaseDeMaquina, carpetaDeMaquina, leerCodigoDeMaquina, rutaCodigoDeMaquina, correoDeGitGlobal, huellaDeCorridas, FORMA_CODIGO, normalizarNombreDeMaquina, leerConfig, integracionBuzon, negativaDeLaLlave, rutaConfig, urlBase, FORMA_MAQUINA, FORMA_ARCHIVO, FORMA_REGISTRO, FORMA_INSTINTO, REGISTROS, prepararRegistros, usosParaElBuzon, X_MS_VERSION };
+module.exports = { placeFactsForMailbox, holdForMailbox, FORMA_DESHECHA, FORMA_MOMENTO, subir, prepararSinCerrar, chequearSoloCrear, motivoDeLaboratorio, MARCAS_DE_CI, respuestaDelBuzon, versionDe, msDeVersion, FORMA_VERSION, nombreDeMaquina, nombreBaseDeMaquina, carpetaDeMaquina, leerCodigoDeMaquina, rutaCodigoDeMaquina, correoDeGitGlobal, huellaDeCorridas, FORMA_CODIGO, normalizarNombreDeMaquina, leerConfig, integracionBuzon, negativaDeLaLlave, rutaConfig, urlBase, FORMA_MAQUINA, FORMA_ARCHIVO, FORMA_REGISTRO, formaRegistro, FORMA_INSTINTO, REGISTROS, prepararRegistros, usosParaElBuzon, X_MS_VERSION };
 
 /**
  * `--log <archivo>`: la salida (la estándar y la de error) se AGREGA a ese archivo, que pasado ~512 KB se mueve a `.1`.
