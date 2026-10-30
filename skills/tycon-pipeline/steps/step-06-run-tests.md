@@ -84,6 +84,12 @@ story causó en otro lado. Cuesta ~2 min; aparecer todas juntas recién en el me
 | `130` | la corrida se cortó con Ctrl-C mientras medía el repo privado adelgazado; lo mismo que el `129` | re-correr el gate |
 | `143` | la corrida se cortó con una señal de terminación mientras medía el repo privado adelgazado; lo mismo que el `129` | re-correr el gate |
 
+Una suite roja que ya estaba roja en el nocturno de esa mañana avisa y no frena, con la misma regla que la validación
+de cada pedido: el portón pasa su resumen por el juez de los pedidos con la foto nocturna que viaja en el árbol armado
+(`lib/inherited-reds.js`). Lo heredado sale de la lista de «repetir primero» y queda escrito en `inherited`; lo nuevo
+frena como siempre. Lo mismo al repetir una sola con `--suite`: si ya estaba roja en la foto, sale de la lista y deja
+en verde `tests-suite`. Sin foto (el repo público solo), o si el juez no puede decidir, se juzga como antes.
+
 El `4`, el `5` y el `6` dejan además el check `tests` del marcador en **rojo** con su código: un verde de una corrida
 anterior no queda en pie cuando esta corrida no pudo correr o no contó nada.
 

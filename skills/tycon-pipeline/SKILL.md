@@ -152,7 +152,7 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   el primer Edit/Write de código si no se tocó ningún test (story con tabla `### Tests`, marker activo,
   implementación abierta); `implement` bloquea si el primer test es posterior al primer código (evidencia:
   `marker.fileEvents` + `file-events/<sid>.jsonl`). Sin código → pasa; código sin tests → avisa. Escape
-  único: `marker.js set-flag atddBypass true` (auditado). Fuera del pipeline, `on-pre-commit.js` avisa
+  único: `marker.js set-flag atddBypass true --reason "<por qué>"` (auditado). Fuera del pipeline, `on-pre-commit.js` avisa
   (`.tycon/atdd-gate` con `block` para frenar). La guía de QA se pide sólo si hay superficie operable a
   mano (`qa_guide: auto|off|always`). Un smoke corrido a mano no cuenta: va por `smoke-run.sh`.
 - **I.ii — mutantes**: `run-tests` corre `scripts/mutation-check.js` sobre los archivos que la story

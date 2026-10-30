@@ -387,3 +387,36 @@ test('T3 SmartReloop_JsRealMasInformes_SoloLoDelJs @story-8.102 @ac-3', () => {
   assert.ok(solo.rerun.length > 0, 'el arreglo del .cs repite a quien lo audita');
   assert.deepEqual(con.rerun, solo.rerun, `con informes al lado, los mismos revisores que con el arreglo solo — delta: ${JSON.stringify(con.delta_files)}`);
 });
+
+test('SmartReloop_SinCodigoEnElCambio_NadieRepite — la historia y su carpeta qa sola no repiten revisores; queda anotado', () => {
+  const repo = mkRepoGit();
+  const real = path.join(repo, 'src', 'PluginManager.cs');
+  const story = path.join(repo, 'story.md');
+  const pasos = path.join(repo, 'qa', '9.3.1-pasos.md');
+  fs.mkdirSync(path.dirname(pasos), { recursive: true });
+  const base = Date.now() - 120000;
+  const t = (s) => new Date(base + s * 1000).toISOString();
+  const seg = (s) => (base + s * 1000) / 1000;
+  fs.utimesSync(real, seg(-10), seg(-10));
+  fs.appendFileSync(story, 'runtime_not_verifiable: x\n');
+  fs.writeFileSync(pasos, '## AC 1\n');
+  for (const f of [story, pasos]) fs.utimesSync(f, seg(40), seg(40));
+  const home = mkHome({
+    storyId: '9.3.1', repoPath: repo, filesTouched: [real, story, pasos],
+    fileEvents: [{ path: story, ts: t(40), code: false }, { path: pasos, ts: t(41), code: false }],
+    iterations: { 1: { ts: t(30.3), filesSnapshot: [real] } },
+  });
+  escribirRegistro(home, [
+    { ts: t(0), event: 'step5-start', iter: 1, expected: [], mode: 'advisors' },
+    { ts: t(30.2), event: 'auto-snapshot', iter: 1 },
+  ]);
+  const out = reloop(repo, home);
+  assert.ok(out.delta_files.includes(story), JSON.stringify(out.delta_files));
+  assert.deepEqual(out.rerun, [], `sin código en el cambio no se repite nadie: ${JSON.stringify(out.rerun_reasons)}`);
+  assert.notEqual(out.suspect_empty_delta, true);
+  assert.equal(out.no_code_delta, true);
+  const log = fs.readFileSync(path.join(home, '.claude', '.tycon-pipeline', 'gates.log'), 'utf8');
+  const entry = log.trim().split('\n').map((l) => JSON.parse(l)).find((e) => e.check === 'smart-reloop-sin-codigo');
+  assert.ok(entry, 'la vuelta que se cierra sola queda anotada');
+  assert.equal(entry.iter, 2);
+});

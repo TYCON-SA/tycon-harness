@@ -770,7 +770,7 @@ test('T7 ProcesoAzure_InstalaSegunRepos @story-8.50 @ac-5: el paso de la configu
 });
 
 // La regla de `main` del repo de operaciones es una sola («todo automático»), y la dicen igual el README de Azure
-// DevOps y la guía del sitio en sus dos idiomas; el de GitHub dice que ahí el sitio todavía no entra solo.
+// DevOps y la guía del sitio en sus dos idiomas; el de GitHub y la guía dicen cómo entra el sitio en GitHub.
 function seccion(texto, desde, hasta) {
   const i = texto.indexOf(desde);
   assert.ok(i >= 0, `falta la sección «${desde}»`);
@@ -798,12 +798,69 @@ test('T1 8.58-UnaSolaRegla_AzureYSitio @story-8.58: el README de Azure y la guí
   }
 });
 
-test('T2 8.58-UnaSolaRegla_GitHub @story-8.58: el README de GitHub dice la regla, que el sitio todavía no entra solo, y qué se resigna', () => {
-  const s = seccion(read(path.join('github', 'README.md')), '**La protección de `operations.json` y de los workflows.**', 'Y en *Settings → Actions → General*');
-  assert.match(s, /todo automático/);
-  assert.match(s, /la noche entra sola; el sitio, todavía no/);
-  assert.match(s, /Lo que se resigna/);
-  assert.match(s, /Volver a pedir aprobación/);
+// Cómo entra el sitio en GitHub (`aplicarEnGithub` de repo-proposal.js): une su pedido directo, o le prende la unión
+// automática, o el pedido queda abierto para aprobarlo a mano. Devuelve lo que le falta o le sobra a un texto.
+function faltasDeGithub(texto, lado) {
+  // los renglones de las guías se cortan a ~120 columnas: una frase partida en dos tiene que contar igual
+  const s = String(texto).replace(/\s+/g, ' ');
+  const es = lado === 'es';
+  const reglas = es
+    ? [[/el sitio,? todavía no/, false, 'dice que el sitio todavía no entra'], [/une su pedido directo/, true, 'falta la unión directa'], [/unión automática/, true, 'falta la unión automática'], [/queda abierto[^.]*a mano/, true, 'falta el pedido abierto para aprobar a mano']]
+    : [[/the site,? not yet/, false, 'dice que el sitio todavía no entra'], [/merges its pull request directly/, true, 'falta la unión directa'], [/auto-merge/, true, 'falta la unión automática'], [/stays open[^.]*by hand/, true, 'falta el pedido abierto para aprobar a mano']];
+  return reglas.filter(([re, debe]) => re.test(s) !== debe).map(([, , que]) => que);
+}
+
+test('T2 8.58-UnaSolaRegla_GitHub @story-8.58 @ac-3: el README de GitHub y la guía (es y en) dicen cómo entra hoy el sitio en GitHub', () => {
+  const guia = (f) => fs.readFileSync(path.join(ROOT, 'guides', f), 'utf8');
+  const readme = seccion(read(path.join('github', 'README.md')), '**La protección de `operations.json` y de los workflows.**', 'Y en *Settings → Actions → General*');
+  const textos = {
+    'README de GitHub': [readme, 'es'],
+    'guía es': [seccion(guia('organization-site.md'), '### La política de rama del repo de operaciones', '### El permiso para'), 'es'],
+    'guía en': [seccion(guia('organization-site.en.md'), '### The branch policy of the operations repo', '### The permission for'), 'en'],
+  };
+  for (const [donde, [s, lado]] of Object.entries(textos)) assert.deepStrictEqual(faltasDeGithub(s, lado), [], donde);
+  assert.match(readme, /todo automático/);
+  assert.match(readme, /Allow auto-merge/, 'el README pide prender la unión automática');
+  assert.match(readme, /Lo que se resigna/);
+  assert.match(readme, /Volver a pedir aprobación/);
+  // 🔴 rojo: la frase vieja vuelve, o falta uno de los caminos
+  assert.deepStrictEqual(faltasDeGithub(`${readme} el sitio, todavía no`, 'es'), ['dice que el sitio todavía no entra']);
+  assert.deepStrictEqual(faltasDeGithub(`${readme} el sitio,\ntodavía no`, 'es'), ['dice que el sitio todavía no entra'], 'partida en dos renglones');
+  assert.deepStrictEqual(faltasDeGithub(readme.replace(/unión automática/g, 'x'), 'es'), ['falta la unión automática']);
+  assert.deepStrictEqual(faltasDeGithub(textos['guía en'][0].replace(/stays open/g, 'x'), 'en'), ['falta el pedido abierto para aprobar a mano']);
+});
+
+// Lo que `repo-proposal.js` rechaza (AC 4) y los nombres de la lista privada (AC 5), en las cuatro guías de la regla.
+const FRASES_QUE_EL_CODIGO_RECHAZA = [
+  /el voto de quien crea el pedido no (puede contar|cuenta)/i,
+  /entran sólo cuando alguien los aprueba/i,
+  /the vote of whoever creates the request (cannot|can't|does not) count/i,
+  /only go in when someone approves them/i,
+];
+function frasesRechazadas(texto) {
+  return FRASES_QUE_EL_CODIGO_RECHAZA.filter((re) => re.test(texto.replace(/\s+/g, ' '))).map((re) => re.source);
+}
+
+test('T3 8.58-NingunaGuiaDiceLoQueElCodigoRechaza @story-8.58 @ac-4 @ac-5: ninguna de las cuatro guías dice lo que el código rechaza ni un nombre real', (t) => {
+  const guias = {
+    'README de Azure': read('README.md'),
+    'README de GitHub': read(path.join('github', 'README.md')),
+    'guía es': fs.readFileSync(path.join(ROOT, 'guides', 'organization-site.md'), 'utf8'),
+    'guía en': fs.readFileSync(path.join(ROOT, 'guides', 'organization-site.en.md'), 'utf8'),
+  };
+  for (const [donde, texto] of Object.entries(guias)) assert.deepStrictEqual(frasesRechazadas(texto), [], `${donde}: dice algo que repo-proposal.js rechaza`);
+  // 🔴 rojo: cada frase plantada en una copia de la guía sale
+  const plantadas = ['el voto de quien crea el pedido no puede contar', 'entran sólo cuando alguien los aprueba', "the vote of whoever creates the request can't count", 'only go in when someone approves them'];
+  for (const [i, f] of plantadas.entries()) assert.strictEqual(frasesRechazadas(`${guias['guía es']}\n${f}`).length, 1, `la frase ${i + 1} plantada no sale`);
+  // AC 5: la lista privada de nombres viaja sólo en el repo del equipo; en la copia pública no se mide
+  const lista = path.join(ROOT, 'scripts', 'publishing', 'denylist.json');
+  if (!fs.existsSync(lista)) { t.skip('NO MEDIDO: esta copia no trae la lista privada (scripts/publishing/denylist.json); el AC 4 sí se midió'); return; }
+  const detector = require(path.join(ROOT, 'scripts', 'publishing', 'detector.js'));
+  const cfg = detector.cargarConfig(lista);
+  // el mensaje no trae el término encontrado: `regla` y `texto` del detector lo nombran, así que sólo van la categoría
+  // y la línea, que alcanzan para buscarlo
+  const hallazgos = Object.entries(guias).flatMap(([donde, texto]) => detector.reviewText(cfg, texto, donde).hallazgos.map((x) => `${donde}: ${x.categoria} (línea ${x.linea})`));
+  assert.deepStrictEqual(hallazgos, [], 'una guía trae un término de la lista privada');
 });
 
 test('D3 SitioDemo_UnPasoMasConLaMismaPlantilla (Azure) — el demo va por la plantilla del sitio, con su prueba y su carpeta', () => {

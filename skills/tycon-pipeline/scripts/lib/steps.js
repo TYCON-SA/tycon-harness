@@ -255,17 +255,19 @@ function startWarningLines(marker) {
 
 /**
  * ¿Hay que volver a los revisores? Con Hallazgos cerrado, una edición de código posterior al último cierre de los
- * revisores es un arreglo: toca otra vuelta. → `{ round }` o `null`. `isCode(path)` decide qué es código.
+ * revisores es un arreglo: toca otra vuelta. → `{ round }` o `null`. Qué edición cuenta lo decide lib/reloop-code.js.
  */
-function reviewersRound(marker, isCode) {
+function reviewersRound(marker) {
   if (!marker || schemeOf(marker) !== 2 || !isDone(marker, 'findings')) return null;
   const t = (marker.stepTimings || {}).reviewers || {};
   // el ÚLTIMO cierre de los revisores: `completedAt` guarda el de la primera vuelta (la que miden los tiempos)
   const cierre = Date.parse(t.lastCompletedAt || t.completedAt || '');
   if (!Number.isFinite(cierre)) return null;
+  const { pideOtraVuelta } = require('./reloop-code.js');
   const arreglo = (Array.isArray(marker.fileEvents) ? marker.fileEvents : [])
-    // la marca `code` del evento (la pone on-edit) gana: el cartel decide con ella y tiene que decidir igual
-    .some((e) => e && Date.parse(e.ts || '') > cierre && (typeof e.code === 'boolean' ? e.code : (!isCode || isCode(e.path))));
+    // la marca `code` en falso (la pone on-edit) gana: el cartel decide con ella y tiene que decidir igual; en verdadero
+    // no alcanza, porque un marcador de antes la ponía también en lo que el arnés escribe en .advisors
+    .some((e) => e && Date.parse(e.ts || '') > cierre && e.code !== false && pideOtraVuelta(e.path, { storyPath: marker.storyPath }));
   if (!arreglo) return null;
   return { round: (Number(t.rounds) || 1) + 1 };
 }

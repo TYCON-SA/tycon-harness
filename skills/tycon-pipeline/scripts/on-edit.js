@@ -139,10 +139,10 @@ function handle(event) {
     // Sin estos eventos, todo marker llega sin fileEvents, smart-reloop degrada a names-only, pierde los
     // fixes sobre archivos existentes, y el orquestador cae al set COMPLETO de advisors en cada re-loop.
     if (!Array.isArray(marker.fileEvents)) marker.fileEvents = []; // marker corrupto → normalizar (no romper el "exit 0 siempre")
-    // `code`: si es código o prueba. Lo leen `next` y el cartel para decidir lo mismo si una edición pide otra vuelta de
-    // revisores (el cartel corre sin el clasificador del arnés)
+    // `code`: si la edición pide otra vuelta de revisores (lib/reloop-code.js). Lo leen `next` y el cartel para decidir
+    // lo mismo (el cartel corre sin el clasificador del arnés)
     let code;
-    try { const { isImplPath, isTestPath } = require('./lib/atdd-order.js'); code = isImplPath(filePath) || isTestPath(filePath); } catch (_) { code = undefined; }
+    try { code = require('./lib/reloop-code.js').pideOtraVuelta(filePath, { storyPath: marker.storyPath }); } catch (_) { code = undefined; }
     marker.fileEvents.push({ path: filePath, ts: new Date().toISOString(), ...(typeof code === 'boolean' ? { code } : {}) });
     if (marker.fileEvents.length > 500) {
       marker.fileEvents = marker.fileEvents.slice(-500);

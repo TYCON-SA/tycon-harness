@@ -656,6 +656,13 @@ function informe(argv) {
             workers: get(r, 'workers', null),
             wall_ms: get(r, 'wall_ms', null),
           };
+          // Lo que ya estaba rojo en el nocturno salió de las fallas: acá queda cuáles, para que la cuenta cierre.
+          const heredadas = get(get(r, 'inherited', {}) || {}, 'suites', []);
+          if (pyLen(heredadas)) {
+            result.totals.inherited = pyLen(heredadas);
+            result.totals.inherited_suites = heredadas.map((s) => path.basename(s.ruta));
+            result.totals.inherited_snapshot_ts = get(r.inherited, 'snapshot_ts', null);
+          }
           // Las no medidas ya cuentan como ausentes; acá va su motivo (sólo si hay alguna: el informe de siempre no cambia).
           const noMedidas = get(r, 'unmeasured_suites', []);
           if (pyLen(noMedidas)) Object.assign(result.totals, { unmeasured: pyLen(noMedidas), unmeasured_suites: noMedidas });

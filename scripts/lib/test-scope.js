@@ -21,9 +21,13 @@
  * El escape `TYCON_FULL_SUITE=1` cuenta cuando acompaña al comando de pruebas (como prefijo, con `env`, exportado o con
  * `$env:` en un comando anterior), no cuando sólo se nombra en un texto.
  *
+ * Un proyecto con su propio `package.json` (no la raíz de su repo, sin `workspaces` ni otras marcas de raíz de varios
+ * proyectos) es un alcance: su suite entera es la de ese proyecto. La carpeta sale del `cwd` y de un `cd <ruta literal>`.
+ *
  * CLI: el comando por la entrada estándar; `--tool <herramienta>` con la que lo corre el asistente (`Bash` o
- * `PowerShell`: en PowerShell también se leen sus bloques entre paréntesis). Imprime dos renglones:
- * el veredicto (`frena`, `escape`, `pasa` o `nada`) y el comando que lo decidió, o el motivo cuando no se pudo leer.
+ * `PowerShell`: en PowerShell también se leen sus bloques entre paréntesis); `--cwd <carpeta>` donde corre. Imprime dos
+ * renglones: el veredicto (`frena`, `escape`, `sobra-pasa`, `sobra-nada`, `pasa` o `nada`) y el comando que lo decidió,
+ * o el motivo cuando no se pudo leer.
  */
 const path = require('path');
 const sp = require('./shell-parse.js');
@@ -81,7 +85,9 @@ function comillasAbiertas(texto) {
  */
 function revisar(texto, ctx, out) {
   texto = String(texto);
-  if (!NOMBRA.test(texto)) return out;
+  // con el escape en el texto se recorre igual: si es una asignación delante de un comando que no es una suite, el
+  // prefijo sobra y el freno lo dice
+  if (!NOMBRA.test(texto) && !(ctx.prof === 0 && /TYCON_FULL_SUITE/.test(texto))) return out;
   if (ctx.prof > PROFUNDIDAD) { out.push({ tipo: 'opaco', comando: texto, motivo: 'demasiados envoltorios anidados', escape: ctx.escape }); return out; }
   // cada texto anidado se vuelve a cortar: lo cortado en toda la lectura no pasa del tope
   ctx.trabajo.leido += sp.sinHeredocs(texto, { salvoShell: true }).length;
@@ -99,6 +105,9 @@ function revisar(texto, ctx, out) {
   let declarado = ctx.escape;
   // adentro de una subshell `( … )` la variable no sale: así declarada, no vale para lo que sigue
   const enSubshell = /\(\s*(?:export\s+)?TYCON_FULL_SUITE=/.test(texto);
+  // con agrupaciones o control de flujo el corte aplana el texto (`(cd x) && npm test` queda como `cd x`, `npm test`):
+  // no se sabe en qué carpeta corre cada tramo
+  if (AGRUPA.test(texto)) ctx.carpeta.valor = null;
   for (let k = 0; k < segs.length; k++) {
     const seg = segs[k].texto.trim();
     if (!seg) continue;
@@ -123,7 +132,16 @@ function revisar(texto, ctx, out) {
       k++;
       continue;
     }
-    comando(seg, p, { ...ctx, escape: declarado }, out);
+    // un tramo después de `||` puede no correr, y uno en un `|` corre aparte: su `cd` no se sabe si cambió la carpeta
+    const previo = k > 0 ? segs[k - 1].sep : null;
+    // `cd` no corre pruebas: cambia la carpeta de lo que sigue (lo de adentro de sus `$(…)` se revisa abajo igual)
+    if (p.words[0] === 'cd' || p.words[0] === 'pushd' || p.words[0] === 'popd') {
+      if (previo === '||' || previo === '|') ctx.carpeta.valor = null;
+      else cambiarCarpeta(ctx.carpeta, p, segs[k].sep);
+    } else {
+      if (cambiaCarpetaSinDecir(p.words)) ctx.carpeta.valor = null;
+      comando(seg, p, { ...ctx, escape: declarado }, out);
+    }
     // lo de adentro de `$(…)` y de las comillas invertidas corre aunque vaya entre comillas dobles
     for (const sub of sp.substitutions(seg)) revisar(sub, hijo(ctx, declarado), out);
     // un bloque entre llaves después de un programa (`Measure-Command { npm test }`, `try { … }`, `ForEach-Object { … }`)
@@ -149,7 +167,80 @@ function bloques(seg, ps) {
   return out.filter((x) => NOMBRA.test(x));
 }
 
-const hijo = (ctx, escape) => ({ ...ctx, escape, prof: ctx.prof + 1 });
+// lo de adentro de un envoltorio o de una sustitución no hereda la carpeta: no se sabe dónde corre
+const hijo = (ctx, escape) => ({ ...ctx, escape, prof: ctx.prof + 1, carpeta: { valor: null } });
+
+/**
+ * Un `cd` cambia la carpeta de los tramos que siguen sólo si es `cd <ruta literal>` encadenado con `&&`: con `;` o `||`,
+ * si el `cd` falla el comando corre en la de antes. Una ruta relativa necesita la carpeta de antes. Cualquier otra forma
+ * (`cd $X`, `cd -`, `cd` solo, `cd -P x`, `pushd`, `popd`) la deja desconocida.
+ */
+/**
+ * ¿El tramo puede cambiar la carpeta por un camino que el lector no sigue? `builtin cd`, `command cd`, `eval`, `source`,
+ * `.` y los de PowerShell (`Set-Location`, `sl`, `Push-Location`, `Pop-Location`, `chdir`).
+ */
+function cambiaCarpetaSinDecir(words) {
+  const w = words.map((x) => String(x || ''));
+  // los prefijos (`builtin`, `command`, `noglob`, `nocorrect`) y sus opciones no cambian qué programa corre
+  let i = 0;
+  while (i < w.length && (/^(?:builtin|command|noglob|nocorrect)$/.test(w[i]) || (i > 0 && /^-/.test(w[i])))) i++;
+  const prog = (w[i] || '').toLowerCase();
+  if (i > 0 && ['cd', 'pushd', 'popd'].includes(prog)) return true;
+  return ['eval', 'source', '.', 'set-location', 'sl', 'push-location', 'pop-location', 'chdir'].includes(prog);
+}
+
+function cambiarCarpeta(carpeta, p, sep) {
+  const w = p.words.map(palabra);
+  const destino = w.length === 2 && w[0].texto === 'cd' && !w[1].dinamica && !/^[-~]/.test(w[1].texto) ? w[1].texto : null;
+  if (!destino || sep !== '&&') { carpeta.valor = null; return; }
+  if (path.isAbsolute(destino)) carpeta.valor = path.resolve(destino);
+  else carpeta.valor = carpeta.valor ? path.resolve(carpeta.valor, destino) : null;
+}
+
+/**
+ * ¿La carpeta es un proyecto con su propio `package.json`, que no es la raíz de su repo ni la de varios proyectos? Su
+ * suite entera es la de un proyecto chico: cuenta como acotada. La raíz es la carpeta más cercana con `.git` (carpeta, o
+ * archivo en un worktree); sin repo, no.
+ */
+function proyectoPropio(carpeta) {
+  if (!carpeta) return false;
+  const fs = require('fs');
+  let raiz = null;
+  for (let d = carpeta; ; d = path.dirname(d)) {
+    if (fs.existsSync(path.join(d, '.git'))) { raiz = d; break; }
+    if (path.dirname(d) === d) break;
+  }
+  if (!raiz || path.resolve(raiz) === path.resolve(carpeta)) return false;
+  let pkg;
+  try { pkg = JSON.parse(fs.readFileSync(path.join(carpeta, 'package.json'), 'utf8').replace(/^\uFEFF/, '')); } catch { return false; }
+  if (!pkg || typeof pkg !== 'object' || Array.isArray(pkg)) return false;
+  if (pkg.workspaces || (pkg.jest && pkg.jest.projects)) return false;
+  let nombres;
+  try { nombres = fs.readdirSync(carpeta); } catch { return false; }
+  if (nombres.some((n) => MARCAS_DE_RAIZ.includes(n) || /^vitest\.workspace\./.test(n))) return false;
+  // la configuración de la herramienta también puede declarar varios proyectos (`projects` de jest y de vitest)
+  // una que no se puede leer cuenta como de varios proyectos: frena
+  if (nombres.some((n) => /^(?:jest|vitest|vite)\.config\./.test(n) && (leer(path.join(carpeta, n)) ?? 'projects:').match(VARIOS_PROYECTOS))) return false;
+  const test = pkg.scripts && pkg.scripts.test;
+  return !(typeof test === 'string' && RECORRE_PAQUETES.test(test));
+}
+/** ¿El comando corre en la carpeta de un proyecto propio, sin opciones que lo manden a otra carpeta u otros proyectos? */
+function enSuProyecto(seg, ctx) {
+  if (!ctx.carpeta || !ctx.carpeta.valor) return false;
+  if (sp.parseSimpleCommand(seg).words.some((w) => OTRA_CARPETA.test(palabra(w).texto))) return false;
+  return proyectoPropio(ctx.carpeta.valor);
+}
+// `yarn workspace …`, `pnpm recursive …`: corren en otra carpeta o en varias
+const sinCarpeta = (ctx) => ({ ...ctx, carpeta: { valor: null } });
+const AGRUPA = /[(){}]|(?:^|[\s;&|])(?:if|then|else|elif|fi|for|while|until|do|done|case|esac|function|select)(?=[\s;]|$)/;
+// opciones que corren la suite de otra carpeta o de otros proyectos (`npm --prefix ..`, `vitest --root ..`, `pnpm -r`)
+// (`env --chdir`, `sudo -D` y `jest --roots` también)
+const OTRA_CARPETA = /^(?:--prefix|-C|--dir|--cwd|--chdir|-D|--root|--roots|--rootDir|--config|-c|--project|--projects|--workspace|--workspaces|-w|-ws|--filter|-F|-r|--recursive)(?:=|$)/;
+const MARCAS_DE_RAIZ = ['pnpm-workspace.yaml', 'lerna.json', 'nx.json', 'turbo.json'];
+// un script `test` que corre los de otros paquetes, o que sale de la carpeta
+const RECORRE_PAQUETES = /\b(?:turbo|nx|lerna)\b|--workspaces?\b|(?:^|\s)--?ws\b|\byarn\s+workspaces\b|\bpnpm\b[^;&|]*\s(?:-r|--recursive|-F|--filter)(?:[\s=]|$)|\.\.(?:[\\/]|\s|$)/;
+const VARIOS_PROYECTOS = /\b(?:projects|workspace)\s*:/;
+const leer = (f) => { try { return require('fs').readFileSync(f, 'utf8'); } catch { return null; } };
 
 /** `bash`, `sh -s`, sin `-c` ni guion: lee los comandos de la entrada. */
 function esShellSinTexto(seg) {
@@ -160,6 +251,8 @@ function esShellSinTexto(seg) {
 
 /** Un comando simple ya cortado. */
 function comando(seg, p, ctx, out) {
+  // el prefijo de verdad: una asignación delante de un programa, no un texto que lo nombra
+  if (escape(p.assignments) && p.words.length) ctx.trabajo.prefijo = true;
   let esc = ctx.escape || escape(p.assignments);
   let w = p.words.map(palabra);
   // en PowerShell, `& prog` y `. prog` llaman al programa
@@ -566,6 +659,7 @@ function herramienta(cual, args, ctx, out, seg) {
   let i = 0;
   if (cual === 'vitest' && args[0] && SUBCOMANDOS_VITEST.includes(args[0].texto)) i = 1;
   const acotada = acotadoJs(args.slice(i), ctx, cual === 'jest');
+  if (acotada === false && cual !== 'bun' && enSuProyecto(seg, ctx)) return hallazgo(true);
   return acotada === null ? undefined : hallazgo(acotada);
 }
 
@@ -608,12 +702,12 @@ function gestor(prog, args, ctx, out, seg) {
   const resto = args.slice(i + 1);
   // `yarn workspace web test`, `yarn workspaces foreach -A run test`, `yarn workspaces run test`, `pnpm recursive test`:
   // lo que sigue es el comando
-  if (prog === 'yarn' && sub === 'workspace') return gestor(prog, resto.slice(1), ctx, out, seg);
+  if (prog === 'yarn' && sub === 'workspace') return gestor(prog, resto.slice(1), sinCarpeta(ctx), out, seg);
   if (prog === 'yarn' && sub === 'workspaces' && resto[0] && resto[0].texto === 'foreach') {
-    return gestor(prog, resto.slice(saltarOpciones(resto, 1, ['--include', '--exclude', '-j', '--jobs', '--from', '--since'])), ctx, out, seg);
+    return gestor(prog, resto.slice(saltarOpciones(resto, 1, ['--include', '--exclude', '-j', '--jobs', '--from', '--since'])), sinCarpeta(ctx), out, seg);
   }
-  if (prog === 'yarn' && sub === 'workspaces' && resto[0] && resto[0].texto === 'run') return gestor(prog, resto, ctx, out, seg);
-  if (prog === 'pnpm' && (sub === 'recursive' || sub === 'multi' || sub === 'm')) return gestor(prog, resto, ctx, out, seg);
+  if (prog === 'yarn' && sub === 'workspaces' && resto[0] && resto[0].texto === 'run') return gestor(prog, resto, sinCarpeta(ctx), out, seg);
+  if (prog === 'pnpm' && (sub === 'recursive' || sub === 'multi' || sub === 'm')) return gestor(prog, resto, sinCarpeta(ctx), out, seg);
   if (prog === 'bun' && sub === 'test') return herramienta('bun', resto, ctx, out, seg);
   if (['exec', 'x', 'dlx'].includes(sub)) return programa(resto.slice(saltarOpciones(resto, 0, ['-c', '--package', '-p'])), ctx, out, seg);
   let script = null; let pasados = resto;
@@ -631,22 +725,33 @@ function gestor(prog, args, ctx, out, seg) {
   // el gestor le pasa al script lo que sigue (npm también los argumentos sueltos, sin `--`); un subcomando de vitest
   // adelante (`npm test -- run`) no es alcance
   const lista = pasados.filter((x, k) => !(k === pasados.findIndex((y) => y.texto !== '--') && SUBCOMANDOS_VITEST.includes(x.texto)));
-  out.push({ tipo: acotadoJs(lista, ctx, false) ? 'acotada' : 'suite', comando: seg, escape: ctx.escape });
+  const acotada = acotadoJs(lista, ctx, false) || (script === 'test' && enSuProyecto(seg, ctx));
+  out.push({ tipo: acotada ? 'acotada' : 'suite', comando: seg, escape: ctx.escape });
 }
 
-/** El veredicto de un comando entero: {veredicto: 'frena'|'escape'|'pasa'|'nada', comando, motivo}. */
+/**
+ * El veredicto de un comando entero: {veredicto: 'frena'|'escape'|'sobra-pasa'|'sobra-nada'|'pasa'|'nada', comando,
+ * motivo}. `opciones.cwd`: la carpeta donde corre (absoluta), para reconocer un proyecto con su propio `package.json`.
+ */
 function analizar(cmd, opciones = {}) {
   cmd = String(cmd || '');
   // el largo se mira antes que nada: un texto enorme no se recorre, ni siquiera para ver si nombra una herramienta
   if (cmd.length > TOPE) return { veredicto: 'frena', comando: cmd.slice(0, 200), motivo: 'el comando es demasiado largo para leerlo' };
-  if (!NOMBRA.test(cmd)) return { veredicto: 'nada' };
-  const out = revisar(cmd, { ps: !!opciones.powershell, escape: false, prof: 0, trabajo: { leido: 0 } }, []);
+  if (!NOMBRA.test(cmd) && !/TYCON_FULL_SUITE/.test(cmd)) return { veredicto: 'nada' };
+  const trabajo = { leido: 0, prefijo: false };
+  const carpeta = { valor: typeof opciones.cwd === 'string' && path.isAbsolute(opciones.cwd) ? path.resolve(opciones.cwd) : null };
+  const out = revisar(cmd, { ps: !!opciones.powershell, escape: false, prof: 0, trabajo, carpeta }, []);
   const malo = out.find((h) => (h.tipo === 'suite' || h.tipo === 'opaco') && !h.escape);
   if (malo) return { veredicto: 'frena', comando: malo.comando, motivo: malo.tipo === 'opaco' ? malo.motivo : '' };
-  // con el escape junto a un comando de pruebas (acotado o no) se anota como escape, como siempre
-  const conEscape = out.find((h) => h.escape);
-  if (conEscape) return { veredicto: 'escape', comando: conEscape.comando };
-  if (out.some((h) => h.tipo === 'acotada')) return { veredicto: 'pasa', comando: out[0].comando };
+  // el escape se anota sólo si cubre algo que sin él frenaría; si no, el prefijo sobra: `sobra-pasa` con una prueba
+  // acotada, `sobra-nada` si no corre ninguna suite
+  const necesario = out.find((h) => (h.tipo === 'suite' || h.tipo === 'opaco') && h.escape);
+  if (necesario) return { veredicto: 'escape', comando: necesario.comando };
+  const acotada = out.find((h) => h.tipo === 'acotada');
+  if (trabajo.prefijo || out.some((h) => h.escape)) {
+    return acotada ? { veredicto: 'sobra-pasa', comando: acotada.comando } : { veredicto: 'sobra-nada', comando: cmd };
+  }
+  if (acotada) return { veredicto: 'pasa', comando: out[0].comando };
   return { veredicto: 'nada' };
 }
 
@@ -657,7 +762,8 @@ if (require.main === module) {
   // un error del lector (una forma que rompe el recorrido) frena y lo dice: el guion no cae al corte simple
   let r;
   const herramienta = process.argv[process.argv.indexOf('--tool') + 1] || '';
-  try { r = analizar(cmd, { powershell: process.argv.includes('--tool') && herramienta === 'PowerShell' }); } catch (e) {
+  const cwd = process.argv.includes('--cwd') ? process.argv[process.argv.indexOf('--cwd') + 1] : undefined;
+  try { r = analizar(cmd, { powershell: process.argv.includes('--tool') && herramienta === 'PowerShell', cwd }); } catch (e) {
     r = { veredicto: 'frena', comando: cmd.slice(0, 200), motivo: `el lector falló (${(e && e.message) || e})` };
   }
   const una = (s) => String(s || '').replace(/\s+/g, ' ').trim().slice(0, 300);
