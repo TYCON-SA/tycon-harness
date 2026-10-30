@@ -872,6 +872,12 @@
       "requiere": []
     },
     {
+      "__nota": "Un guion en archivo demasiado grande para leerlo entero frena si escribe y nombra una historia (la palabra entera) o una constancia; en un repo sin historias, sólo por una constancia o la ruta de una historia.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-write-big-script.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/bash-write-gate-failures-logged.test.js",
       "requiere": []
