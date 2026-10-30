@@ -117,7 +117,7 @@ function paraOtraSesion(cmd, argv) {
   const pedida = opcion(argv, '--for-session');
   if (!pedida || pedida === PROPIA) return null;
   // sin variable de sesión y sin terminal no hay quién pida la firma para otra sesión
-  if (PROPIA === '_nosession' && !argv.includes('--terminal')) return 'sin variable de sesión, la firma para una sesión se da en la terminal del dueño (--terminal). No escribí nada.';
+  if (PROPIA === '_nosession' && !argv.includes('--terminal')) return 'sin variable de sesión, la firma para una sesión se da en la terminal de la persona (--terminal). No escribí nada.';
   // en la terminal del dueño, --for-session dice la sesión de su agente, que puede preparar fuera de una corrida: no
   // la pide otra sesión, así que no se exige la ejecución abierta
   if (PROPIA === '_nosession') return null;

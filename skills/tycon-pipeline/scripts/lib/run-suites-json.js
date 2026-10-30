@@ -258,6 +258,20 @@ function resolveSkillsRoot(repo, given, env) {
 const installedSkillsIn = (home) => path.join(home, '.claude', 'agent-skills');
 
 const isDir = (p) => { try { return fs.statSync(p).isDirectory(); } catch (_) { return false; } };
+// Borra una carpeta aunque una suite le haya sacado los permisos a algo de adentro (el banco de controles prueba así un
+// ~/.claude/skills al que no se puede entrar, y no los devuelve). Si igual no se puede, devuelve el error: quien llama
+// lo avisa con la ruta y sigue, porque una carpeta que queda no cambia el resultado de ninguna suite.
+function removeTree(dir) {
+  try { fs.rmSync(dir, { recursive: true, force: true }); return null; } catch (_) { /* se reabre y se reintenta */ }
+  const reopen = (d) => {
+    try { fs.chmodSync(d, 0o700); } catch (_) { return; }
+    let entries = [];
+    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch (_) { return; }
+    for (const e of entries) if (e.isDirectory()) reopen(path.join(d, e.name));
+  };
+  reopen(dir);
+  try { fs.rmSync(dir, { recursive: true, force: true }); return null; } catch (e) { return e; }
+}
 const realOf = (p) => { try { return fs.realpathSync(p); } catch (_) { return path.resolve(p); } };
 
 /**
@@ -551,8 +565,10 @@ function main(argv, env = process.env) {
   process.on('SIGTERM', onSignal);
 
   if (covDir) {
-    // la carpeta es de esta corrida: un lcov de una corrida anterior no puede sumarse a éste
-    fs.rmSync(covDir, { recursive: true, force: true });
+    // la carpeta es de esta corrida: un lcov de una corrida anterior no puede sumarse a éste (por eso, si igual no se
+    // borra, la corrida no sigue)
+    const e = removeTree(covDir);
+    if (e) throw e;
     fs.mkdirSync(covDir, { recursive: true });
     console.log(`[suites.json] con cobertura: cada suite bajo el medidor de Node, lcov en ${covDir}`);
   }
@@ -561,39 +577,59 @@ function main(argv, env = process.env) {
   // instalación a las skills que se miden. Con la HOME real pasaban acá y fallaban allá, o al revés. Las que piden
   // herramientas siguen con la real: la sesión de esas herramientas vive ahí. Las HOME van bajo `.advisors/` del repo
   // (git la ignora) y no bajo la carpeta temporal, como en la CI: hay suites que tratan esa carpeta como «de prueba».
+  // La carpeta temporal de cada una, al revés, va fuera del repo, también como en la CI: hay suites que arman ahí un
+  // repo de juguete o suponen estar fuera de todo repo, y dentro del árbol git les contesta la raíz de ese árbol.
   const homesRoot = path.join(repo, '.advisors');
   const homesDir = path.join(homesRoot, `suite-homes-${process.pid}`);
-  // Las de una corrida anterior que murió sin limpiar (un kill -9): las de un proceso que ya no vive.
+  let tmpsDir = null;
+  // Las HOME y las carpetas temporales de una corrida anterior que murió sin limpiar (un kill -9): las de un proceso
+  // que ya no vive.
   try {
     for (const d of fs.readdirSync(homesRoot)) {
       const m = /^suite-homes-(\d+)$/.exec(d);
       if (!m || Number(m[1]) === process.pid) continue;
-      try { process.kill(Number(m[1]), 0); } catch (e) { if (e.code === 'ESRCH') fs.rmSync(path.join(homesRoot, d), { recursive: true, force: true }); }
+      try { process.kill(Number(m[1]), 0); } catch (e) { if (e.code === 'ESRCH') removeTree(path.join(homesRoot, d)); }
     }
   } catch (_) { /* sin .advisors todavía: no hay nada viejo */ }
+  try {
+    for (const d of fs.readdirSync(os.tmpdir())) {
+      const m = /^suite-tmps-(\d+)-/.exec(d);
+      if (!m || Number(m[1]) === process.pid) continue;
+      try { process.kill(Number(m[1]), 0); } catch (e) { if (e.code === 'ESRCH') removeTree(path.join(os.tmpdir(), d)); }
+    }
+  } catch (_) { /* la carpeta temporal no se deja leer: queda lo viejo, no frena la corrida */ }
   const skillsAbs = path.resolve(skills);
   const emptyHome = (p) => {
     const h = path.join(homesDir, `h${p.idx}`);
     const installed = installedSkillsIn(h);
     fs.mkdirSync(path.dirname(installed), { recursive: true });
-    fs.mkdirSync(path.join(h, 'tmp'), { recursive: true });
+    if (!tmpsDir) tmpsDir = fs.mkdtempSync(path.join(os.tmpdir(), `suite-tmps-${process.pid}-`));
+    fs.mkdirSync(path.join(tmpsDir, `t${p.idx}`), { recursive: true });
     const agentSkills = path.dirname(skillsAbs);
     const tipo = process.platform === 'win32' ? 'junction' : 'dir';
     if (isDir(skillsAbs)) fs.symlinkSync(agentSkills, installed, tipo);
     if (isDir(path.join(agentSkills, 'agents'))) fs.symlinkSync(path.join(agentSkills, 'agents'), path.join(path.dirname(installed), 'agents'), tipo);
     return h;
   };
-  const removeHomes = () => fs.rmSync(homesDir, { recursive: true, force: true });
+  const removeHomes = () => {
+    for (const dir of [homesDir, tmpsDir]) {
+      if (!dir) continue;
+      const e = removeTree(dir);
+      if (!e) continue;
+      console.error(`[suites.json] ⚠️  no pude borrar ${dir}: ${e.message} — queda en el disco; el resultado de las suites no cambia`);
+      (resumen.not_removed = resumen.not_removed || []).push(dir);
+    }
+  };
   // El resto de lo que la CI le pone a cada portable (`casaVacia` de scripts/tests/portable-suites.test.sh), salvo el
   // PATH: acá las herramientas de la máquina siguen a mano. Y la configuración de git de quien corre tampoco llega: un
   // gancho global de la máquina (rechazar un merge sin mensaje propio) frenaba acá lo que en la CI pasa. Git la lee de
   // la HOME, pero también de estas variables.
-  const isolatedEnv = (home) => {
+  const isolatedEnv = (home, p) => {
     const e = { ...env };
     for (const k of Object.keys(e)) {
       if (k === 'GIT_CONFIG_GLOBAL' || k === 'XDG_CONFIG_HOME' || k === 'GIT_CONFIG_PARAMETERS' || /^GIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+)$/.test(k)) delete e[k];
     }
-    const tmp = path.join(home, 'tmp');
+    const tmp = path.join(tmpsDir, `t${p.idx}`);
     return Object.assign(e, {
       HOME: home, USERPROFILE: home, TMPDIR: tmp, GIT_CONFIG_NOSYSTEM: '1',
       TYCON_PROFILE: '0', TYCON_CHROME: '0', TYCON_GUIDES_DIR: path.resolve(repo), TYCON_SKILLS_DIR: skillsAbs,
@@ -608,7 +644,7 @@ function main(argv, env = process.env) {
       // Sin su HOME vacía la suite corre igual, con la real, y lo dice: una falla al armarla no tumba la corrida.
       try { home = emptyHome(p); } catch (e) { console.log(`[suites.json] ${p.ruta}: no pude armarle la HOME vacía (${e.code || e.message}); corre con la real`); }
     }
-    const [ej, args, childEnv] = launch(p, covDir, home ? isolatedEnv(home) : env);
+    const [ej, args, childEnv] = launch(p, covDir, home ? isolatedEnv(home, p) : env);
     const t0 = Date.now();
     // detached = grupo de proceso propio: al cortar se mata el grupo entero (la suite y sus hijos).
     const c = spawn(ej, args, { cwd: repo, detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: childEnv });
@@ -627,7 +663,7 @@ function main(argv, env = process.env) {
       if (settled) return;
       settled = true;
       live.delete(c);
-      if (home) fs.rmSync(home, { recursive: true, force: true });
+      if (home) removeTree(home);   // lo que quede, lo vuelve a intentar removeHomes al final
       const ms = Date.now() - t0;
       const exit = status === null ? 124 : status;   // null = murió por señal: se cuenta como rojo
       const salida = spawnError ? `${spawnError.message}\n` : Buffer.concat(chunks).toString('utf8');

@@ -263,6 +263,50 @@ más**: un `project: "TotoraBackend"` explícito hoy re-fragmenta la memoria que
 juntar — con el pin puesto, lo correcto es no pasar override o pasar `totora`.
 
 
+## Índice local: el índice de memoria no viaja por git
+
+**Qué es.** La memoria viaja en dos piezas: los chunks (`.engram/chunks/<id>.jsonl.gz`, los datos) y el índice
+(`.engram/manifest.json`, la lista de cuáles existen). Cada pedido que suma memoria agrega una línea al final del
+índice, y dos pedidos así chocan por esas mismas líneas. En un repo en **índice local** el índice no se commitea: los
+chunks siguen en git y cada clon arma su índice desde ellos. Dos pedidos que suman chunks distintos se unen solos.
+
+**Quién lo rehace.** El arnés, sin que nadie lo pida: al abrir la sesión (antes de `engram sync --import`) y en el
+chequeo previo al commit (antes de exportar). Agrega una entrada por cada chunk que falta y no borra ninguna. Cada
+entrada va por la fecha más nueva que trae su chunk adentro: el importador aplica los chunks en el orden del índice y
+gana la última escritura. Un chunk sin fecha va al final y se avisa; uno ilegible queda afuera con su motivo. A mano:
+
+```bash
+node <arnés>/scripts/lib/manifest-engram.js rebuild --repo <repo>      # 0 sano · 1 algo quedó afuera · 3 no aplica
+```
+
+**Cómo se pasa un repo.** Dos líneas en el mismo commit, sin borrar el archivo local:
+
+```bash
+printf '.engram/manifest.json\n' >> .gitignore
+git rm --cached .engram/manifest.json
+```
+
+Un repo está en índice local cuando `git check-ignore -q .engram/manifest.json` sale 0 y el índice no está en
+`git ls-files`. El chequeo previo al commit, el portón de CI y la auditoría lo detectan solos: no cruzan entradas
+perdidas y dicen «índice local: no viaja por git». La maniobra de abajo (conflicto en el índice) sigue valiendo para
+los repos con el índice versionado.
+
+**La transición.** Los pedidos abiertos cuando entra el cambio chocan UNA última vez: su rama modifica el índice y
+`main` lo borró. Se resuelve en la rama:
+
+```bash
+git merge origin/main
+git rm --cached .engram/manifest.json      # el choque «modificado contra borrado» se resuelve borrándolo de git
+git commit
+```
+
+Para saber cuáles van a chocar antes de mergear el cambio, por cada pedido abierto:
+
+```bash
+git merge-tree --write-tree origin/main origin/<rama-del-pedido>   # sale ≠ 0 si choca, y nombra el archivo
+```
+
+
 ## Conflicto en `.engram/manifest.json` — la maniobra correcta (ENGRAM-MANIFEST-1, 2026-08-22)
 
 El manifest es una lista donde cada rama/sesión que sincroniza agrega su entrada al final — dos

@@ -623,6 +623,9 @@ function engramChunksSinIndexar(rootOverride) {
     // Si el criterio no está, se DICE y se corta: devolver la lista a medias (o vacía) se leería
     // como «miré y está todo bien», que es exactamente la mentira que no se puede publicar.
     if (!criterio) criterio = require('./manifest-engram.js');
+    // git que no contesta si el índice es local no es «versionado»: el repo queda como no medido, con el motivo
+    const modo = criterio.modoDelIndice ? criterio.modoDelIndice(dir) : { modo: null, problema: null };
+    if (modo.problema) { out.push({ repo, dir, error: modo.problema, sinIndexar: [], fantasma: [] }); continue; }
     // Sin referencia de git: el aviso diario mira el estado del checkout, no lo que rompió un commit.
     const r = criterio.cruzar(dir, { contra: null });
     if (r.estado === 'no-medido') {
@@ -647,6 +650,9 @@ function engramChunksSinIndexar(rootOverride) {
     }
     if (r.huerfanos.length || r.fantasmas.length) out.push({ repo, dir, sinIndexar: r.huerfanos, fantasma: r.fantasmas });
   }
+  // En «índice local» el índice no viaja por git y el arreglo es rehacerlo, no repararlo: la fila lo dice
+  // para que el aviso nombre el comando que corresponde.
+  for (const fila of out) if (criterio && !fila.error && criterio.indiceLocal(fila.dir)) fila.indiceLocal = true;
   return out;
 }
 

@@ -1250,7 +1250,7 @@ test('T20 RunSuites_PortableSuite_CiEnvironment — el resto del ambiente de la 
   assert.strictEqual(a.chrome, '0', 'sin navegador');
   assert.strictEqual(a.profile, '0', 'sin el perfil del equipo');
   assert.strictEqual(a.guides, path.resolve(f.repo), 'las guías del árbol que se mide');
-  assert.ok(a.tmp.startsWith(a.home), `la carpeta temporal es suya: ${a.tmp}`);
+  assert.ok(!a.tmp.startsWith(path.resolve(f.repo)), `la carpeta temporal queda fuera del repo, como en la CI: ${a.tmp}`);
   assert.ok(!fs.existsSync(muerta), 'la carpeta de una corrida muerta se borra');
   // Un archivo donde tiene que ir la carpeta de las HOME: no se puede armar ninguna.
   fs.rmSync(path.join(f.root, 'amb.json'));
@@ -1260,4 +1260,59 @@ test('T20 RunSuites_PortableSuite_CiEnvironment — el resto del ambiente de la 
   assert.strictEqual(r2.status, 0, r2.stdout + r2.stderr);
   assert.match(r2.stdout, /no pude armarle la HOME vacía/, 'lo dice');
   assert.ok(fs.existsSync(path.join(f.root, 'amb.json')), 'y la suite corrió igual');
+});
+
+// La carpeta temporal de una portable queda fuera de todo repo, como en la CI: hay suites que arman ahí un repo de
+// juguete o suponen estar «fuera de un repo git». Dentro del árbol que se mide, git contesta la raíz de ese árbol.
+// 🔴 mutación: la carpeta temporal dentro de la HOME vacía (bajo `.advisors/` del repo) → git la encuentra dentro del repo.
+test('T20b RunSuites_PortableSuite_TmpOutsideRepo — la carpeta temporal de cada portable no está dentro del repo, es suya y se borra', () => {
+  const f = armar({ diarias: [
+    { raiz: 'arnes', ruta: 'tests/tmp-a.test.js', requiere: [] },
+    { raiz: 'arnes', ruta: 'tests/tmp-b.test.js', requiere: [] },
+  ] });
+  spawnSync('git', ['init', '-q', f.repo]);
+  const informe = (nombre) => `const os=require('os'),fs=require('fs'),{spawnSync}=require('child_process');const r=spawnSync('git',['-C',os.tmpdir(),'rev-parse','--show-toplevel'],{encoding:'utf8'});fs.writeFileSync(${JSON.stringify(path.join(f.root, nombre))},JSON.stringify({tmp:os.tmpdir(),status:r.status,top:r.stdout.trim()}));`;
+  f.escribir('arnes', 'tests/tmp-a.test.js', informe('a.json'));
+  f.escribir('arnes', 'tests/tmp-b.test.js', informe('b.json'));
+  const r = runWith(f);
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  const a = JSON.parse(fs.readFileSync(path.join(f.root, 'a.json'), 'utf8'));
+  const b = JSON.parse(fs.readFileSync(path.join(f.root, 'b.json'), 'utf8'));
+  assert.notStrictEqual(a.status, 0, `git no encuentra un repo desde la carpeta temporal (contestó ${a.top})`);
+  assert.ok(![os.tmpdir(), fs.realpathSync(os.tmpdir())].includes(path.resolve(a.tmp)), 'no es la carpeta temporal de la máquina entera');
+  assert.notStrictEqual(a.tmp, b.tmp, 'cada portable con la suya');
+  assert.ok(!fs.existsSync(a.tmp) && !fs.existsSync(b.tmp), 'se borran al terminar');
+});
+
+// La carpeta temporal de una corrida que murió sin limpiar (un kill -9) la barre la corrida siguiente, como las HOME.
+// 🔴 mutación: sin el barrido de `suite-tmps-<pid>-` → la carpeta del proceso muerto queda para siempre.
+test('T20c RunSuites_PortableSuite_OrphanTmpSwept — la carpeta temporal de un proceso que ya no vive se borra; la de uno vivo, no', () => {
+  const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/nada.test.js', requiere: [] }] });
+  f.escribir('arnes', 'tests/nada.test.js', '');
+  const muerta = fs.mkdtempSync(path.join(os.tmpdir(), 'suite-tmps-999999-'));
+  const viva = fs.mkdtempSync(path.join(os.tmpdir(), `suite-tmps-${process.pid}-`));
+  try {
+    const r = runWith(f);
+    assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+    assert.ok(!fs.existsSync(muerta), 'la del proceso muerto se barre');
+    assert.ok(fs.existsSync(viva), 'la de un proceso vivo queda');
+  } finally {
+    fs.rmSync(muerta, { recursive: true, force: true });
+    fs.rmSync(viva, { recursive: true, force: true });
+  }
+});
+
+// Una suite que deja, dentro de su carpeta temporal, una carpeta sin permisos (el banco de controles prueba así un
+// ~/.claude/skills al que no se puede entrar) no tumba la corrida: el borrado le devuelve los permisos y el resumen se
+// escribe igual.
+// 🔴 mutación: borrar sin devolver los permisos → ENOTEMPTY, el corredor se cae y no hay resumen.
+test('T20d RunSuites_PortableSuite_LockedTmpRemoved — una carpeta sin permisos en la temporal no tumba la corrida', () => {
+  const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/cerrada.test.js', requiere: [] }] });
+  f.escribir('arnes', 'tests/cerrada.test.js', `const os=require('os'),fs=require('fs'),path=require('path');const d=path.join(os.tmpdir(),'sandbox','home','.claude','skills');fs.mkdirSync(d,{recursive:true});fs.chmodSync(d,0);fs.writeFileSync(${JSON.stringify(path.join(f.root, 'tmp.json'))},JSON.stringify({tmp:os.tmpdir()}));`);
+  const r = runWith(f);
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  assert.ok(r.resumen, `el resumen se escribe: ${r.stderr}`);
+  assert.strictEqual(r.resumen.verdes, 1);
+  const { tmp } = JSON.parse(fs.readFileSync(path.join(f.root, 'tmp.json'), 'utf8'));
+  assert.ok(!fs.existsSync(tmp), 'la carpeta temporal se borra');
 });

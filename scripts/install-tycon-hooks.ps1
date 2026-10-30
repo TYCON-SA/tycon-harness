@@ -186,7 +186,7 @@ function Get-ErrText($ErrorRecord) {
     return ("$($e.Message)" -replace '\s+', ' ').Trim()
 }
 
-# ── La tanda de Node (story 8.36) ─────────────────────────────────────────────────────────────────────────────────
+# ── La tanda de Node ──────────────────────────────────────────────────────────────────────────────────────────────
 # Este aplicador corre en cada arranque y lanzaría unos 16 procesos sueltos de Node; PowerShell gasta ~50-100 ms en lanzar cada
 # uno. scripts/setup/applier-batch.js corre varios pasos en UN proceso y devuelve de cada uno su código y lo que
 # escribió, cada trozo con su canal (`o` la salida, `e` la de error) y en orden. Cada llamada de más abajo usa ese
@@ -971,7 +971,7 @@ elseif ($ProfileState -ne 'ok') { Write-Host "! tycon: sin scripts/lib/tycon-con
 $ProfileFull = ($ProfileState -eq 'ok') -and -not $ProfileIsMinimal
 $ProfileOff = @()   # lo que se saca por el perfil (su línea lo dice)
 
-# ── Los nombres viejos (story 8.9, AC 21; espejo del .sh, la misma lista y el mismo guion) ───────────────────
+# ── Los nombres viejos (espejo del .sh, la misma lista y el mismo guion) ────────────────────────────────────────
 # Las rutas de archivos renombrados a inglés, a su nombre nuevo, en settings.json (hooks y permisos),
 # settings.local.json, ~/.codex/hooks.json y ~/.git-hooks/*, comparando la ruta COMPLETA. Va antes de cargar
 # settings.json, así el bloque de hooks encuentra el nuevo ya registrado y no lo duplica. Con el mapa vacío no toca nada.

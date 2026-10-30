@@ -834,6 +834,7 @@ const TEXTOS = {
   'org.capaPideRepos': { es: 'todavía no se puede proponer: el perfil pide «{req}» en team-layer.json, y una máquina con una versión anterior a la {version} no sabe leer {claves} de team-repos.json y rechazaría la capa entera. Primero se sube requires.harness a «>= {version}» (o más)', en: 'it cannot be proposed yet: the profile requires "{req}" in team-layer.json, and a machine with a version older than {version} cannot read {claves} from team-repos.json and would reject the whole layer. First raise requires.harness to ">= {version}" (or higher)' },
   'org.capaSinRepos': { es: 'todavía no se puede proponer: el perfil pide «{req}» en team-layer.json, y una máquina con una versión anterior a la {version} rechazaría la capa entera si trae team-repos.json. Primero se sube requires.harness a «>= {version}» (o más)', en: 'it cannot be proposed yet: the profile requires "{req}" in team-layer.json, and a machine with a version older than {version} would reject the whole layer if it brings team-repos.json. First raise requires.harness to ">= {version}" (or higher)' },
   'org.capaSinListaDeFirmas': { es: 'todavía no se puede proponer: el perfil pide «{req}» en team-layer.json, y una máquina con una versión anterior a la {version} no sabe leer approvals.delegated_signing en lista ni approvals.delegated_machines, leería la clave como rota y perdería la firma delegada que ya tenía. Primero se sube requires.harness a «>= {version}» (o más)', en: 'it cannot be proposed yet: the profile requires "{req}" in team-layer.json, and a machine with a version older than {version} cannot read approvals.delegated_signing as a list or approvals.delegated_machines, would read the key as broken and lose the delegated signing it already had. First raise requires.harness to ">= {version}" (or higher)' },
+  'org.capaSinNiveles': { es: 'todavía no se puede proponer: el perfil pide «{req}» en team-layer.json, y una máquina con una versión anterior a la {version} no sabe leer approvals.levels: la leería como rota y se quedaría sin ninguna firma delegada. Primero se sube requires.harness a «>= {version}» (o más)', en: 'it cannot be proposed yet: the profile requires "{req}" in team-layer.json, and a machine with a version older than {version} cannot read approvals.levels: it would read it as broken and lose every delegated signing. First raise requires.harness to ">= {version}" (or higher)' },
   'org.capaSinSoloDelDueno': { es: 'todavía no se puede proponer: el perfil pide «{req}» en team-layer.json, y una máquina con una versión anterior a la {version} no sabe leer approvals.owner_only ni los ids del catálogo de firmas en approvals.delegated_signing, leería la clave como rota y perdería la firma delegada que ya tenía. Primero se sube requires.harness a «>= {version}» (o más)', en: 'it cannot be proposed yet: the profile requires "{req}" in team-layer.json, and a machine with a version older than {version} cannot read approvals.owner_only or the signature catalog ids in approvals.delegated_signing, would read the key as broken and lose the delegated signing it already had. First raise requires.harness to ">= {version}" (or higher)' },
   'org.capaSinGuard': { es: 'todavía no se puede proponer: el perfil pide «{req}» en team-layer.json, y una máquina con una versión anterior a la {version} no sabe leer guard ni approvals.delegated_signing de team-profile.json y rechazaría el perfil entero. Primero se sube requires.harness a «>= {version}» (o más)', en: 'it cannot be proposed yet: the profile requires "{req}" in team-layer.json, and a machine with a version older than {version} cannot read guard or approvals.delegated_signing from team-profile.json and would reject the whole profile. First raise requires.harness to ">= {version}" (or higher)' },
   'org.capaSinQa': { es: 'todavía no se puede proponer: el perfil pide «{req}» en team-layer.json, y una máquina con una versión anterior a la {version} no sabe leer qa de team-profile.json y rechazaría el perfil entero. Primero se sube requires.harness a «>= {version}» (o más)', en: 'it cannot be proposed yet: the profile requires "{req}" in team-layer.json, and a machine with a version older than {version} cannot read qa from team-profile.json and would reject the whole profile. First raise requires.harness to ">= {version}" (or higher)' },
@@ -1079,6 +1080,13 @@ const TEXTOS = {
   'pantalla.firmaSoloDuenoCosto': { es: "va a la ventana del dueño, como de fábrica, y además queda trabada: el sitio no ofrece delegarla, y el perfil que la delegue igual se lee como roto.", en: "it goes to the owner's window, as by default, and is also locked: the site does not offer to delegate it, and a profile that delegates it anyway is read as broken." },
   'pantalla.firmaSoloDuenoNoSeDelega': { es: "para delegarla, primero pasala a la ventana", en: "to delegate it, first move it to the window" },
   'pantalla.firmaNoDesdeOtraSesion': { es: "no se firma desde la pestaña de otra sesión: no se puede delegar", en: "it cannot be signed from another session's tab: it cannot be delegated" },
+  'pantalla.firmaNoRutina': { es: "es de nivel {nivel}: no se delega, la firma una persona", en: "it is level {nivel}: it is not delegated, a person signs it" },
+  'pantalla.nivelesTitulo': { es: "El nivel de cada firma", en: "The level of each signature" },
+  'pantalla.nivelesAyuda': { es: "Cada firma viene con su nivel de fábrica: 1, rutina; 2, excepción (da algo por bueno sin verificarlo); 3, irreversible o afloja un freno. La organización puede subir un nivel, nunca bajarlo. Lo que queda en 2 o más no se delega: lo firma una persona.", en: "Each signature comes with its default level: 1, routine; 2, exception (accepts something without checking it); 3, irreversible or loosens a guard. The organization can raise a level, never lower it. Anything at 2 or more is not delegated: a person signs it." },
+  'pantalla.nivelesColNivel': { es: "Nivel", en: "Level" },
+  'pantalla.nivel1': { es: "1 · rutina", en: "1 · routine" },
+  'pantalla.nivel2': { es: "2 · excepción", en: "2 · exception" },
+  'pantalla.nivel3': { es: "3 · irreversible", en: "3 · cannot be undone" },
   'pantalla.firmaDelegadaNoDesdeOtraSesion': { es: "está delegada, pero no se firma desde la pestaña de otra sesión: la coordinadora no puede firmarla", en: "it is delegated, but it cannot be signed from another session's tab: the coordinator cannot sign it" },
   'pantalla.firmasSinCatalogo': { es: "El sitio no pudo leer el catálogo de firmas: no se puede elegir quién firma cada cosa.", en: "The site could not read the signature catalog: who signs each thing cannot be chosen." },
   'pantalla.firmasSinCatalogoPor': { es: "El sitio no pudo leer el catálogo de firmas ({motivo}): no se puede elegir quién firma cada cosa.", en: "The site could not read the signature catalog ({motivo}): who signs each thing cannot be chosen." },
@@ -1721,7 +1729,7 @@ const TEXTOS = {
   'pantalla.proveedor.openai': { es: 'OpenAI', en: 'OpenAI' },
   'pantalla.proveedor.ollama': { es: 'Ollama', en: 'Ollama' },
   'pantalla.proveedor.cursor': { es: 'Cursor', en: 'Cursor' },
-  'pantalla.nivel2': { es: 'Nivel', en: 'Level' },
+  'pantalla.columnaNivel': { es: 'Nivel', en: 'Level' },
   'pantalla.elDelDev': { es: 'el del dev', en: 'the dev’s' },
   'pantalla.anthropicFija': { es: 'La de Anthropic es fija: cada nivel es su alias.', en: 'Anthropic’s is fixed: each level is its alias.' },
   'pantalla.cursorNoSeAplica': { es: 'Cursor está en prueba: la tabla se guarda pero todavía no se aplica.', en: 'Cursor is in trial: the table is saved but not applied yet.' },
@@ -2138,7 +2146,7 @@ const TEXTOS = {
   'control.@tcg:blocking-meter.js': { es: 'Mide cuánto tiempo quedó trabada la conversación esperando un paso largo.', en: 'Measures how long the conversation was stuck waiting on one long step.' },
   'control.@tcg:blocking-notice.js': { es: 'Te dice si el turno anterior se quedó esperando demasiado en un paso largo.', en: 'Tells you if the previous turn waited too long on a single long step.' },
   'control.@tcg:branch-guard-notice.js': { es: 'Avisa si los repos compartidos del arnés no están en main, están atrasados o trabados.', en: 'Warns if the harness\'s shared repos are off main, behind, or stuck.' },
-  'control.@tcg:coordination-notice.js': { es: 'Sólo en la sesión coordinadora: avisa cuando la máquina está en el tope de sesiones trabajando o lo pasó.', en: 'Only in the coordinator session: warns when the machine is at or over its cap of working sessions.' },
+  'control.@tcg:coordination-notice.js': { es: 'Sólo en la sesión coordinadora: avisa cuando la máquina está en el tope de sesiones trabajando o lo pasó, y una vez por día de las firmas que esperan hace más de un día.', en: 'Only in the coordinator session: warns when the machine is at or over its cap of working sessions, and once a day about signatures that have waited more than a day.' },
   'control.@tcg:dashboard-notice.js': { es: 'Te dice de cuándo es el tablero del arnés y si salió completo o desactualizado.', en: 'Tells you how recent the harness dashboard is and whether it is complete or stale.' },
   'control.@tcg:dependencies-notice.js': { es: 'Avisa si la revisión nocturna de dependencias dejó de correr o no pudo medir algo.', en: 'Warns if the nightly dependency review stopped running or could not measure something.' },
   'control.@tcg:engram-drift-notice.js': { es: 'Avisa si la memoria de algún repo está partida en varios nombres o sin subir.', en: 'Warns if a repo\'s memory is split across several names or never pushed.' },
@@ -2329,6 +2337,12 @@ try {
     const k = `pantalla.firmaQue.${f.id}`;
     if (TEXTOS[k]) throw new Error(`texts.js: la clave «${k}» está dos veces`);
     TEXTOS[k] = { es: f.approves, en: f.approvesEn || f.approves };
+  }
+  // y qué aprueba cada id de la tabla de niveles (`pantalla.nivelQue.<id>`)
+  for (const l of require('../lib/signatures.js').LEVELS) {
+    const k = `pantalla.nivelQue.${l.id}`;
+    if (TEXTOS[k]) throw new Error(`texts.js: la clave «${k}» está dos veces`);
+    TEXTOS[k] = { es: l.approves, en: l.approvesEn || l.approves };
   }
 } catch (e) { if (/está dos veces/.test(e.message)) throw e; }
 

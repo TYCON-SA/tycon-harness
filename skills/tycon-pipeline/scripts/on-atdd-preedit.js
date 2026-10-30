@@ -89,9 +89,14 @@ function handle(event, opts = {}) {
     storyAbs = path.join(marker.repoPath, storyAbs);
   }
   // Story ilegible → '' → storyDeclaresTests=false → pass. Fail-open deliberado: un portón que
-  // frena por no poder leer un archivo es un portón que se apaga.
+  // frena por no poder leer un archivo es un portón que se apaga. Se dice en cada edición que juzga (cada una es un
+  // proceso aparte); sin story en el marcador no hay nada que decir.
   let storyText = '';
-  try { storyText = fs.readFileSync(storyAbs, 'utf8'); } catch { /* fail-open */ }
+  if (storyAbs) {
+    try { storyText = fs.readFileSync(storyAbs, 'utf8'); } catch (e) {
+      process.stderr.write(`⚠️  freno ATDD previo: no pude leer la historia (${storyAbs}: ${e.code || e.message}); sin su tabla de pruebas no juzgo esta edición.\n`);
+    }
+  }
 
   // Evidencia previa = fileEvents del marker ∪ .jsonl de la sesión (ediciones pre-marker).
   const priorPaths = (Array.isArray(marker.fileEvents) ? marker.fileEvents : [])

@@ -11,7 +11,7 @@
  *
  * Frenos (sin esto = loop infinito / thrashing):
  *   - CAP de iteraciones → escala a humano.
- *   - No-progreso (mismos fallos N veces) → escala a humano.
+ *   - No-progreso (una vuelta que no resuelve ninguno de los fallos de la anterior) → escala a humano con el rojo crudo.
  *   - Hard-escape (env STOP_AUTONOMY=1 o archivo STOP_AUTONOMY) → botón de pánico.
  *
  * Scoping: SOLO actúa si `marker.autonomous === true`. Sesión normal / HITL → deja parar al
@@ -32,7 +32,7 @@ const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // La carpeta 
 const { resolveSessionId } = require('./lib/session-id.js');
 
 const CAP = 6;               // máx iteraciones del loop antes de escalar
-const MAX_NO_PROGRESS = 3;   // máx vueltas consecutivas sin resolver ningún fallo
+const MAX_NO_PROGRESS = 1;   // la primera vuelta que no resuelve ningún fallo escala: repetir el mismo intento no aprende nada
 const STATE_DIR = path.join(stateDirOf(os.homedir()));
 const ACTIVE_DIR = path.join(STATE_DIR, 'active');
 
@@ -115,6 +115,18 @@ function pendingStepsLine(marker, event) {
     'Lo dicho en el mensaje no cierra ningún paso: cada uno se cierra con su constancia (`pipeline.js next` dice cuál sigue).';
 }
 
+// Cuántas pruebas quedaron en rojo según el resultado que escribe el portón de pruebas, o null si `tests` no está en rojo,
+// no hay repo, o el archivo no trae la cantidad (otra herramienta): null hace caer a la regla del rótulo.
+function testsFailedCount(marker) {
+  const st = marker.checks && marker.checks.tests;
+  if (!st || !/^red/.test(String(st)) || !marker.repoPath) return null;
+  try {
+    const r = JSON.parse(fs.readFileSync(path.join(marker.repoPath, '.advisors', 'tests-result.json'), 'utf8'));
+    const n = r && r.totals && r.totals.failed;
+    return Number.isInteger(n) && n >= 0 ? n : null;
+  } catch { return null; }
+}
+
 function hardEscape() {
   if (process.env.STOP_AUTONOMY === '1') return true;
   try { return fs.existsSync(path.join(STATE_DIR, 'STOP_AUTONOMY')); } catch { return false; }
@@ -125,6 +137,9 @@ function escalate(sessionId, marker, reason, failures) {
   marker.needs_human = true;
   marker.escalation_reason = reason;
   writeMarker(sessionId, marker);
+  // La persona ve el rojo tal como quedó registrado, sin depender de que el agente lo transcriba.
+  const crudo = `🛑 El modo autónomo se detuvo: ${reason}. Sigue en rojo, tal cual:\n${failures.map((f) => `  - ${f}`).join('\n')}`;
+  toPerson = toPerson ? `${toPerson}\n${crudo}` : crudo;
   // Un block de un solo tiro: fuerza a Claude a relayear al humano ANTES de cerrar; como
   // autonomous ya es false, el próximo intento de stop se permite.
   blockStop(
@@ -217,20 +232,32 @@ function main() {
   // Botón de pánico.
   if (hardEscape()) return escalate(sessionId, marker, 'hard-escape (STOP_AUTONOMY)', ['(detenido manualmente)']);
 
-  const gate = computeGate(marker);
-  if (gate.green) return allowStop();   // objetivo cumplido → deja cerrar
-
-  // Rojo. ¿Progresó vs la vuelta anterior? (al menos un fallo previo desaparece)
   const last = Array.isArray(marker.lastFailures) ? marker.lastFailures : [];
-  const progressed = last.length > 0 && last.some((f) => !gate.failures.includes(f));
-  marker.noProgressStreak = progressed ? 0 : (marker.noProgressStreak || 0) + 1;
+  const gate = computeGate(marker);
+  if (gate.green) {                     // objetivo cumplido → deja cerrar
+    // Un verde cierra el lazo: el próximo rojo es un primer rojo, aunque repita uno de antes.
+    if (last.length || marker.noProgressStreak || 'lastTestsFailed' in marker) {
+      marker.lastFailures = []; marker.noProgressStreak = 0; delete marker.lastTestsFailed; writeMarker(sessionId, marker);
+    }
+    return allowStop();
+  }
+
+  // Rojo. Sin vuelta anterior no hay con qué comparar: el primer rojo es el intento, no una vuelta sin progreso.
+  // Con vuelta anterior, progresa si al menos un fallo previo desapareció, o si bajó la cantidad de pruebas en rojo
+  // (el rótulo de `tests` es sólo el código de salida: arreglar 9 de 10 no lo cambia). Sin cantidad, vale el rótulo.
+  const failedNow = testsFailedCount(marker);
+  const failedBefore = Number.isInteger(marker.lastTestsFailed) ? marker.lastTestsFailed : null;
+  const fewerTests = failedNow !== null && failedBefore !== null && failedNow < failedBefore;
+  const progressed = last.some((f) => !gate.failures.includes(f)) || fewerTests;
+  marker.noProgressStreak = (last.length === 0 || progressed) ? 0 : (marker.noProgressStreak || 0) + 1;
+  if (failedNow !== null) marker.lastTestsFailed = failedNow; else delete marker.lastTestsFailed;
   marker.iter = (marker.iter || 0) + 1;
   marker.lastFailures = gate.failures;
 
   // Frenos.
   if (marker.iter >= CAP) return escalate(sessionId, marker, `cap de ${CAP} iteraciones`, gate.failures);
   if (marker.noProgressStreak >= MAX_NO_PROGRESS) {
-    return escalate(sessionId, marker, `${MAX_NO_PROGRESS} vueltas sin resolver ningún fallo (thrashing)`, gate.failures);
+    return escalate(sessionId, marker, 'la vuelta no resolvió ninguno de los fallos de la anterior', gate.failures);
   }
 
   // Hay margen → forzar otra vuelta del loop.

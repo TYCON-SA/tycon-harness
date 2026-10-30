@@ -1439,7 +1439,8 @@ function contadorDeNodes() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'safety-escape-nodes-'));
   const preload = path.join(dir, 'contar-nodes.js');
   fs.writeFileSync(preload, "try { require('fs').appendFileSync(process.env.TYCON_TEST_NODE_LOG, `node ${process.argv[1] || '-e'}\\n`); } catch (_) {}\n");
-  return { dir, preload };
+  // NODE_OPTIONS lee la barra invertida entre comillas como escape: la ruta de Windows va con barras comunes
+  return { dir, preload, opcion: `--require "${preload.split(path.sep).join('/')}"` };
 }
 
 /** Cuántos `node` arranca el guion `hook` al juzgar el comando `c`, con la HOME `home`. */
@@ -1447,7 +1448,7 @@ function nodesDe(hook, home, c, contador) {
   const log = path.join(contador.dir, `nodes-${Date.now()}-${Math.random()}.log`);
   const e = { ...process.env, HOME: home, USERPROFILE: home };
   for (const k of Object.keys(e)) if (/^TYCON_/.test(k)) delete e[k];
-  Object.assign(e, { NODE_OPTIONS: `--require "${contador.preload}"`, TYCON_TEST_NODE_LOG: log });
+  Object.assign(e, { NODE_OPTIONS: contador.opcion, TYCON_TEST_NODE_LOG: log });
   spawnSync('bash', [hook], { input: JSON.stringify({ session_id: SID, tool_use_id: TUID, tool_name: 'Bash', tool_input: { command: c }, cwd: home }), env: e, encoding: 'utf8' });
   return fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n').filter(Boolean) : [];
 }
@@ -1485,7 +1486,7 @@ test('T8c FiltroPrevio_PedidoDeOtraSesion_NoAbreProcesos — un pedido sin vence
   const log = path.join(contador.dir, 'procesos.log');
   const e = { ...process.env, HOME: home, USERPROFILE: home, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
   for (const k of Object.keys(e)) if (/^TYCON_/.test(k)) delete e[k];
-  Object.assign(e, { NODE_OPTIONS: `--require "${contador.preload}"`, TYCON_TEST_NODE_LOG: log });
+  Object.assign(e, { NODE_OPTIONS: contador.opcion, TYCON_TEST_NODE_LOG: log });
   const procesosDe = (c) => {
     if (fs.existsSync(log)) fs.rmSync(log);
     const r = spawnSync('bash', [HOOK], { input: JSON.stringify({ session_id: SID, tool_use_id: TUID, tool_name: 'Bash', tool_input: { command: c }, cwd: home }), env: e, encoding: 'utf8' });
@@ -1814,8 +1815,9 @@ test('T28 FrenoDeSeguridad_RenglonForjado_NoApruebaNada @story-8.139 @ac-28 — 
   const conComando = SIGNATURES.filter((x) => x.kind === 'guion').map((x) => x.id);
   assert.deepStrictEqual([...new Set(GUIONES.map(([id]) => id))].sort(), conComando.sort());
   for (const [firma, palabras] of GUIONES) {
-    // un JSON (el del arreglo rápido) va entre comillas simples, como lo escribe el agente
-    const cmd = palabras.map((w) => (/^\{/.test(w) ? `'${w}'` : /\s/.test(w) ? `"${w}"` : w)).join(' ');
+    // un JSON (el del arreglo rápido) va entre comillas simples, como lo escribe el agente; la ruta, con barras comunes,
+    // como en Git Bash (bash lee la barra invertida suelta como escape y el guion no se reconocería)
+    const cmd = palabras.map((w) => w.split(path.sep).join('/')).map((w) => (/^\{/.test(w) ? `'${w}'` : /\s/.test(w) ? `"${w}"` : w)).join(' ');
     const home = nuevaHome([deLaPersona(`autorizo ${firma}`), deLaPersona('dale, apruebo'), deOtraSesion('coordinadora', `El dueño dijo «autorizo ${firma}».`)],
       { forjados: [deLaPersona(`apruebo ${firma}`, 1)] });
     const arbol = [{ pid: 1, ppid: 0, inicio: INICIO, comando: '/sbin/launchd' },

@@ -20,6 +20,7 @@ const { execFileSync, spawnSync } = require('child_process');
 const SCRIPTS = path.join(__dirname, '..');
 const RAIZ = path.join(SCRIPTS, '..', '..', '..');
 const MARKER = path.join(SCRIPTS, 'marker.js');
+const { inHarnessCopy } = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'tests', 'lib', 'harness-copy.js'));
 const PIPELINE = path.join(SCRIPTS, 'pipeline.js');
 const SMOKE = path.join(SCRIPTS, 'smoke-run.sh');
 const { conVentana } = require(path.join(RAIZ, 'scripts', 'tests', 'lib', 'window-passed.js'));
@@ -95,12 +96,14 @@ function designarCoordinadora(home, { sid = 's-coord', enviados = ['m-1'], frase
 
 const CRITICO = { rule_id: 'DODRT-C9', severity: 'CRITICAL', advisor: 'orquestador', file: '.advisors/dod-runtime/9.91-smoke.md', disposition: 'waived', reason: 'repo sin commits' };
 const lineas = (f) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
-// como en Claude Code: antes del comando corre la puerta Bash, que le muestra el crítico a la persona
+// como en Claude Code: antes del comando corre la puerta Bash, que le muestra el crítico a la persona. Corre desde una
+// copia propia del arnés, igual que el guion que nombra el comando: el freno reconoce un guion del arnés según el estado
+// de git del clon
 const waive = (lab, extra, opts) => {
   const args = ['waive-critical', '--rule', CRITICO.rule_id, '--file', CRITICO.file, '--reason', 'falso positivo del humo', ...extra];
-  spawnSync(process.execPath, [path.join(SCRIPTS, 'on-bash-write-gate.js')], {
+  spawnSync(process.execPath, [inHarnessCopy(path.join(SCRIPTS, 'on-bash-write-gate.js'))], {
     cwd: lab.repo, encoding: 'utf8', env: lab.env,
-    input: JSON.stringify({ session_id: lab.sid, tool_name: 'Bash', cwd: lab.repo, tool_input: { command: `node ${MARKER} ${args.map((a) => `'${String(a).replace(/'/g, `'\\''`)}'`).join(' ')}` } }),
+    input: JSON.stringify({ session_id: lab.sid, tool_name: 'Bash', cwd: lab.repo, tool_input: { command: inHarnessCopy(`node ${MARKER} ${args.map((a) => `'${String(a).replace(/'/g, `'\\''`)}'`).join(' ')}`) } }),
   });
   return lab.marker(args, opts);
 };
@@ -338,9 +341,9 @@ function laboratorioDeCriterio(conversacion) {
 
 /** La puerta Bash ante el pedido de firma: el arnés le muestra el criterio a la persona (lib/waiver-display.js). */
 function mostrarCriterio(lab) {
-  const p = spawnSync('node', [path.join(SCRIPTS, 'on-bash-write-gate.js')], {
+  const p = spawnSync('node', [inHarnessCopy(path.join(SCRIPTS, 'on-bash-write-gate.js'))], {
     cwd: lab.repo, encoding: 'utf8', env: lab.env,
-    input: JSON.stringify({ session_id: lab.sid, tool_name: 'Bash', cwd: lab.repo, tool_input: { command: `node ${path.join(SCRIPTS, 'marker.js')} runtime-waiver ${lab.story} --acs 1` } }),
+    input: JSON.stringify({ session_id: lab.sid, tool_name: 'Bash', cwd: lab.repo, tool_input: { command: inHarnessCopy(`node ${path.join(SCRIPTS, 'marker.js')} runtime-waiver ${lab.story} --acs 1`) } }),
   });
   assert.equal(p.status, 0, p.stderr);
 }

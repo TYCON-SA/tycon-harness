@@ -15,6 +15,8 @@
 //   activo:  az boards work-item show --organization <org> --id <id> --query fields."System.State" --output tsv
 //            az boards work-item update --organization <org> --id <id> --state <activo> --output json
 //            az boards work-item update --organization <org> --id <id> --assigned-to <correo> --output json   (con auto_assign)
+//   estimación (después de crear, y en update también por el camino de sólo comentar; un campo que falta es un aviso):
+//            az boards work-item update --organization <org> --id <id> --fields <campo>=<valor> --output json
 //   cerrar:  az boards work-item update --organization <org> --id <id> --discussion <comentario> --output json
 //            az boards work-item update --organization <org> --id <id> --state <cerrado> --fields Microsoft.VSTS.Scheduling.CompletedWork=<horas> --output json
 //   buscar:  az devops invoke --organization <org> --area wit --resource wiql --route-parameters project=<proyecto> --http-method POST --in-file <consulta> --api-version 7.1 --output json
@@ -36,6 +38,9 @@ const INICIALES = ['To Do', 'New', 'Approved', 'Proposed'];
 const ACTIVOS = ['Active', 'Doing', 'Committed', 'In Progress'];
 const CERRADOS = ['Closed', 'Resolved', 'Done', 'Removed'];
 const HORAS = 'Microsoft.VSTS.Scheduling.CompletedWork';
+// la estimación sin campo declarado: las horas van a OriginalEstimate y los puntos a StoryPoints
+const ESTIMACION_HORAS = 'Microsoft.VSTS.Scheduling.OriginalEstimate';
+const ESTIMACION_PUNTOS = 'Microsoft.VSTS.Scheduling.StoryPoints';
 
 const no = (reason, detail) => ({ ok: false, reason, detail });
 
@@ -146,6 +151,33 @@ function camposConArchivos(pares, porArchivo) {
   });
   return { salida, limpiar: () => { if (dir) fs.rmSync(dir, { recursive: true, force: true }); } };
 }
+/**
+ * El campo y el valor de la estimación vigente: `{ campo, valor }`, `{ aviso }` si no se puede cargar, o null sin
+ * estimación. El campo declarado (`fields.estimate`) recibe el valor tal como se escribió; sin declarar, las horas o los
+ * días van a OriginalEstimate con las horas y los puntos a StoryPoints. Sin las horas no se adivina la tasa.
+ */
+function estimacion(args, c) {
+  const e = args.estimate;
+  if (!e) return null;
+  const declarado = c.fields && typeof c.fields === 'object' ? c.fields.estimate : undefined;
+  if (declarado) return { campo: declarado, valor: e.value };
+  if (e.unit === 'points') return { campo: ESTIMACION_PUNTOS, valor: e.value };
+  if (e.hours === undefined || e.hours === null) return { aviso: `la estimación (${e.value} ${e.unit === 'days' ? 'días' : 'h'}) vino sin las horas: no se cargó en OriginalEstimate` };
+  return { campo: ESTIMACION_HORAS, valor: e.hours };
+}
+
+/** Carga la estimación con un update propio y lo anota en `value` (o en sus avisos, si no se pudo). */
+function cargarEstimacion(ctx, org, id, est, value) {
+  if (!est) return;
+  if (est.aviso) { value.warnings.push(est.aviso); return; }
+  const campos = camposConArchivos([[est.campo, est.valor]], []);
+  let u;
+  try { u = azJson(ctx, ['boards', 'work-item', 'update', '--organization', org, '--id', id, '--fields', ...campos.salida, '--output', 'json']); } finally { campos.limpiar(); }
+  if (u.problem) { value.warnings.push(`la estimación no se cargó en el pedido #${id}: ${u.problem.detail}`); return; }
+  value.estimateAs = 'field';
+  value.estimateField = est.campo;
+}
+
 // el nombre de un campo propio: el nombre de referencia de Azure DevOps (`Custom.Probabilidad`, o el que Azure arma con
 // un GUID, con guiones después del punto), nunca algo que az lea como opción
 const camposMalos = (fields) => Object.keys(fields && typeof fields === 'object' ? fields : {}).filter((k) => !/^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_-]+)*$/.test(k));
@@ -221,7 +253,9 @@ function create(args, ctx) {
     ['Microsoft.VSTS.Common.Priority', args.priority], ['System.AreaPath', c.area_path], ['System.IterationPath', iteracion],
     ['System.Tags', tags.join('; ')],
   ].filter(([, v]) => v !== undefined && v !== null && String(v) !== '');
-  const todos = camposConArchivos([...campos, ...extras(args.fields)], ['System.Description', 'Microsoft.VSTS.Common.AcceptanceCriteria', 'Microsoft.VSTS.TCM.ReproSteps']);
+  // la estimación va en un update propio después de crear: un campo que el proceso no tiene no frena la creación
+  const est = estimacion(args, c);
+  const todos = camposConArchivos([...campos, ...extras(args.fields)],['System.Description', 'Microsoft.VSTS.Common.AcceptanceCriteria', 'Microsoft.VSTS.TCM.ReproSteps']);
   const pedido = ['boards', 'work-item', 'create', '--organization', org, '--project', valor(project), '--type', valor(type), '--title', valor(args.title)];
   if (todos.salida.length) pedido.push('--fields', ...todos.salida);
   // auto_assign decide si el pedido de una story va a quien la crea; el de la noche no tiene autor y va siempre al
@@ -245,6 +279,7 @@ function create(args, ctx) {
     }
   }
   const value = { id, url: `${org}/${encodeURIComponent(String(project))}/_workitems/edit/${id}`, warnings, unsupported: [] };
+  cargarEstimacion(ctx, org, String(id), est, value);
   if (asignar) value.assigned = String(args.assignTo);
   if (args.typeOrBacklog === true) {
     value.type = String(type);
@@ -263,11 +298,14 @@ function update(args, ctx) {
   if (d.problem) return d.problem;
   const { c, org } = d;
   const id = String(args.id).trim();
+  const est = estimacion(args, c);
   // con un comentario y sin estado, sólo se comenta: el estado no se lee ni se cambia, y uno cerrado no se reabre
   if (typeof args.comment === 'string' && args.comment.trim() && !args.state) {
     const k = azJson(ctx, ['boards', 'work-item', 'update', '--organization', org, '--id', id, '--discussion', valor(args.comment), '--output', 'json']);
     if (k.problem) return k.problem;
-    return { ok: true, value: { id: Number(id), changed: false, commented: true, warnings: [...d.warnings] } };
+    const value = { id: Number(id), changed: false, commented: true, warnings: [...d.warnings] };
+    cargarEstimacion(ctx, org, id, est, value);
+    return { ok: true, value };
   }
   const s = az(ctx, ['boards', 'work-item', 'show', '--organization', org, '--id', id, '--query', 'fields."System.State"', '--output', 'tsv']);
   if (s.problem) return s.problem;
@@ -277,9 +315,14 @@ function update(args, ctx) {
   const estado = args.state || c.state_active || ACTIVO[previo] || (ACTIVOS.includes(previo) ? previo : 'Active');
   const warnings = [...d.warnings];
   const base = { id: Number(id), estado: previo, previo };
-  if (previo === estado) return { ok: true, value: { ...base, changed: false, warnings } };
+  if (previo === estado) {
+    const value = { ...base, changed: false, warnings };
+    cargarEstimacion(ctx, org, id, est, value);
+    return { ok: true, value };
+  }
   if ((CERRADOS.includes(previo) || previo === c.state_closed) && args.reopen !== true) {
     warnings.push(`el pedido #${id} está en ${previo}: reabrir a ${estado} lo decide una persona (puede romper la trazabilidad)`);
+    if (est) warnings.push('la estimación no se cargó: el pedido está cerrado');
     // el aviso lo dice en texto; el campo es para el núcleo, que pide la confirmación
     return { ok: true, value: { ...base, changed: false, pideReabrir: true, warnings } };
   }
@@ -290,7 +333,9 @@ function update(args, ctx) {
     const a = azJson(ctx, ['boards', 'work-item', 'update', '--organization', org, '--id', id, '--assigned-to', valor(args.assignTo), '--output', 'json']);
     if (a.problem) warnings.push(`no se pudo asignar el pedido #${id}: ${a.problem.detail}`);
   }
-  return { ok: true, value: { id: Number(id), estado, previo, changed: true, warnings } };
+  const value = { id: Number(id), estado, previo, changed: true, warnings };
+  cargarEstimacion(ctx, org, id, est, value);
+  return { ok: true, value };
 }
 
 function close(args, ctx) {

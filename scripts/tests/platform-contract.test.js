@@ -579,3 +579,28 @@ test('AdoList_PageCap_NoMedido @story-8.131 @ac-12', async () => {
   assert.match(r.detail, /tope/);
   assert.strictEqual(r.value, undefined, 'nunca la lista cortada');
 });
+
+test('T30 Contrato_EstimateEnCreateYUpdate @story-2.75 @ac-27', async () => {
+  const { estimateProblem, ESTIMATE_OPERATIONS } = C();
+  assert.deepStrictEqual([...ESTIMATE_OPERATIONS], ['work-item.create', 'work-item.update']);
+  assert.strictEqual(estimateProblem({ value: 16, unit: 'hours', hours: 16, level: 'historia', version: 2 }), null);
+  assert.strictEqual(estimateProblem({ value: 5, unit: 'points' }), null, 'hours, level y version son opcionales');
+  for (const malo of [{ value: 0, unit: 'hours' }, { value: 3, unit: 'weeks' }, '16 h', null, [16], { value: 2, unit: 'days', hours: -1 }, { value: 2, unit: 'days', version: 1.5 }]) {
+    assert.strictEqual(typeof estimateProblem(malo), 'string', `sin forma: ${JSON.stringify(malo)}`);
+  }
+  // la capa contesta rechazado sin llamar al conector; en una operación que no lleva estimación, la ignora
+  const m = mundo({ platform: { default: 'fake-platform' } });
+  m.env.TYCON_FAKE_PLATFORM_TOKEN = ['tok', 'falso'].join('-');
+  m.env.FAKE_PLATFORM_LOG = path.join(tmp('log-'), 'llamadas.log');
+  const r = await P().run('work-item.create', { title: 'x', estimate: { value: 0, unit: 'hours' } }, { env: m.env });
+  assert.deepStrictEqual([r.ok, r.reason], [false, 'rechazado'], JSON.stringify(r));
+  assert.match(r.detail, /estimación/);
+  const u = await P().run('work-item.update', { id: 1, estimate: { value: 3, unit: 'weeks' } }, { env: m.env });
+  assert.deepStrictEqual([u.ok, u.reason], [false, 'rechazado']);
+  assert.strictEqual(fs.existsSync(m.env.FAKE_PLATFORM_LOG), false, 'el conector no se llamó');
+  const k = await P().run('work-item.close', { id: 1, estimate: { value: 0, unit: 'weeks' } }, { env: m.env });
+  assert.strictEqual(k.ok, true, 'cerrar no lleva estimación: se ignora');
+  // el núcleo no nombra campos de ninguna herramienta
+  const texto = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'platform', 'contract.js'), 'utf8');
+  assert.doesNotMatch(texto, /Microsoft\.VSTS|OriginalEstimate|StoryPoints|ProjectV2/);
+});

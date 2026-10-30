@@ -805,8 +805,8 @@ Primero lo que no necesita a la persona: lo de «Alternativa». Si no se puede, 
         "Aprobar el plan es una firma de la persona, y este comando no la puede pedir en la ventana de permiso." \
         "Mostrale el plan a la persona y corré la aprobación en su forma exacta, sola, para que la apruebe en la ventana; o que la firme ella en su terminal." ;;
     control-change|refresh-after-main) block "ESC-C7" \
-        "Aprobar un cambio de los controles del repo es una firma del dueño, y este comando no la puede pedir en la ventana de permiso." \
-        "Corré run-base-controls.sh approve en su forma exacta, sola, para que el dueño lo apruebe en la ventana; o que lo firme él en su terminal." ;;
+        "Aprobar un cambio de los controles del repo es una firma de una persona, y este comando no la puede pedir en la ventana de permiso." \
+        "Corré run-base-controls.sh approve en su forma exacta, sola, para que la persona lo apruebe en la ventana; o que lo firme en su terminal." ;;
     *) [ "$regla" = "ESC-C3" ] && BLOCK_MOTIVO="firma-fuera-de-la-ventana"; block "$regla" \
         "Esto lo firma la persona, y este comando no la puede pedir en la ventana de permiso." \
         "Corré el comando de la firma en su forma exacta, solo, para que la persona lo apruebe en la ventana; o que lo firme ella en su terminal." ;;
@@ -833,11 +833,11 @@ if [[ "$_ow_mira" == "1" && "${SAFETY_OFF:-0}" != "1" ]]; then
       # la salida de una ejecución perdida que la ventana no reconoce como su firma (otro subcomando): no se firma acá
       if [[ -n "$_c3_perdida" ]]; then
         IFS=$'\t' read -r _c3_sub _c3_a1 <<< "$_c3_perdida" || true
-        ESC_CARTEL="Esto lo decide el dueño: la salida de una ejecución perdida se firma con marker.js clear-session <sesión> --lost, en la ventana de permiso o en su terminal (--terminal)."
+        ESC_CARTEL="Esto lo decide una persona, no el agente: la salida de una ejecución perdida se firma con marker.js clear-session <sesión> --lost, en la ventana de permiso o en su terminal (--terminal)."
         BLOCK_MOTIVO="ejecucion-perdida"
         block "ESC-C3" \
           "Sacar una ejecución perdida (marker.js ${_c3_sub} ${_c3_a1}) la cierra o la rearma sin la pieza que le falta." \
-          "Explicale al dueño qué pieza falta y que la firme con marker.js clear-session <sesión> --lost."
+          "Explicale a la persona qué pieza falta y que la firme con marker.js clear-session <sesión> --lost."
       fi ;;
   esac
 fi

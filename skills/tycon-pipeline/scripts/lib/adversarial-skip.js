@@ -89,7 +89,7 @@ function muestra({ story, carpeta: dada, ejecucion, camino, casa, userInfo, ahor
   const carpeta = dada == null ? dada : carpetaReal(dada);
   const renglon = { ts: new Date(ahora).toISOString(), name: MOSTRADA, status: 'ok', story: valor(story), carpeta: valor(carpeta), ejecucion: valor(ejecucion), camino: valor(camino) };
   renglon.huella = huellaCorta(renglon);
-  const cabeza = `🔒 ${camino} es un pedido de saltear el pase adversarial, no un salteo: sin la firma del dueño el pase corre.\n`
+  const cabeza = `🔒 ${camino} es un pedido de saltear el pase adversarial, no un salteo: sin la firma de una persona el pase corre.\n`
     + `   Muestra ${renglon.huella} · story ${story} · ejecución ${ejecucion} · ${carpeta}\n`;
   let error = null;
   try {
@@ -100,8 +100,8 @@ function muestra({ story, carpeta: dada, ejecucion, camino, casa, userInfo, ahor
   } catch (e) { error = (e && e.message) || String(e); }
   const texto = error
     ? `${cabeza}   No pude anotar la muestra (${error}): sin ella no hay firma posible, y el pase corre.\n`
-      + `   Con la muestra anotada, el dueño firma con: ${cmds[0]}  (o en su terminal: ${cmds[1]})\n`
-    : `${cabeza}   Para saltearlo, que lo firme el dueño:\n     en la ventana de permiso: ${cmds[0]}\n     en su terminal:           ${cmds[1]}\n`;
+      + `   Con la muestra anotada, una persona firma con: ${cmds[0]}  (o en su terminal: ${cmds[1]})\n`
+    : `${cabeza}   Para saltearlo, que lo firme una persona, no el agente:\n     en la ventana de permiso: ${cmds[0]}\n     en su terminal:           ${cmds[1]}\n`;
   return { renglon, texto, comandos: cmds, ...(error ? { error } : {}) };
 }
 
@@ -154,7 +154,7 @@ function motivoDe(l, { story, carpeta, ejecucion, renglones }) {
   if (!['ventana', 'terminal'].includes(l.via) || l.quien !== 'dueño' || !l.camino || !l.motivo || !l.ts) return 'le falta un campo (vía, quién, camino, motivo u hora)';
   if (l.huella !== huella(l)) return 'su huella no coincide con lo que dice (se cambió después de firmarla)';
   const ok = renglones.some((g) => g.name === FIRMADA && g.status === 'ok' && g.via === l.via && String(g.resumen || '').startsWith(`huella ${l.huella} `));
-  if (!ok) return 'no tiene su renglón adversarial-skip-signed en el registro del arnés de esta cuenta (no la firmó el dueño en esta máquina)';
+  if (!ok) return 'no tiene su renglón adversarial-skip-signed en el registro del arnés de esta cuenta (no la firmó una persona en esta máquina)';
   return null;
 }
 
@@ -242,7 +242,7 @@ function reverificar({ marker, carpeta, casa, userInfo } = {}) {
  */
 function firmarSalteo({ story, motivo, argv = [], sesion = null, casa, userInfo, ahora = Date.now(), maquina, exigir, aprobar } = {}) {
   const prohibida = PROHIBIDAS.find((b) => argv.some((w) => w === b || String(w).startsWith(`${b}=`)));
-  if (prohibida) return { codigo: 1, motivo: `${prohibida} no firma: el salteo lo firma el dueño en la ventana de permiso (este comando sin ${prohibida}) o en su terminal (--terminal)` };
+  if (prohibida) return { codigo: 1, motivo: `${prohibida} no firma: el salteo lo firma una persona en la ventana de permiso (este comando sin ${prohibida}) o en su terminal (--terminal)` };
   if (!story || !String(motivo || '').trim()) return { codigo: 2, motivo: 'faltan --story <S> y --reason "<motivo>"' };
   let c;
   try { c = casaDe(casa, userInfo); } catch (e) { return { codigo: 2, motivo: e.message }; }

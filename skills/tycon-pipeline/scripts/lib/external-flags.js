@@ -41,30 +41,54 @@ const isNil = (v) => v === undefined || v === null;
  * activo, y dice si se puede marcar. El núcleo no habla con ninguna plataforma: lee la respuesta de la capa.
  * → `{ code, marked, line }`: 0 marcado (pasó a activo o ya lo estaba), 3 cerrado (`pideReabrir`: lo decide una
  * persona), 1 la capa dijo que no o no contestó.
+ * Con `storyId`, manda también la estimación vigente de la historia (`estimates.js work-item`); sin vigente no la manda,
+ * y si no la pudo leer (o `estimateMotivo` dice por qué no hay `storyId`) lo agrega a la línea, también cuando el paso
+ * falla: la estimación nunca frena el paso.
  */
-function adoMarkActive({ workItem, repoDir, reopen = false, assignTo = null, platformJs, env = process.env }) {
+function adoMarkActive({ workItem, repoDir, reopen = false, assignTo = null, platformJs, storyId = null, estimateMotivo = null, estimatesJs = null, orgConfig = null, env = process.env }) {
   const salida = 'si no se puede, marker.js start-warning ado "<motivo>"';
   if (!workItem) return { code: 1, marked: false, line: `ado-mark-active: la historia no tiene pedido de trabajo (work_item:); ${salida}` };
   if (!platformJs || !fs.existsSync(platformJs)) return { code: 1, marked: false, line: `ado-mark-active: el arnés que corre no trae la capa de plataforma (${platformJs}); ${salida}` };
   const args = { repoDir, id: Number(workItem), ...(reopen ? { reopen: true } : {}), ...(assignTo ? { assignTo } : {}) };
+  const est = storyId
+    ? estimacionVigente({ repoDir, storyId, estimatesJs: estimatesJs || path.join(path.dirname(platformJs), '..', 'estimates.js'), orgConfig, env })
+    : (estimateMotivo ? { motivo: estimateMotivo } : {});
+  if (est.estimate) args.estimate = est.estimate;
+  const conAviso = (line) => {
+    if (!est.motivo) return line;
+    return est.estimate ? `${line} · estimación: se mandó con aviso (${est.motivo})` : `${line} · estimación: no se mandó (${est.motivo})`;
+  };
   const p = spawnSync(process.execPath, [platformJs, 'work-item', 'update', '--args', JSON.stringify(args)], { encoding: 'utf8', env, windowsHide: true, timeout: 120000 });
   let r = null;
   try { r = JSON.parse(String(p.stdout || '').trim().split('\n').pop()); } catch (_) { r = null; }
   if (!r || typeof r !== 'object') {
     const detalle = String(p.stderr || '').trim().split('\n')[0] || (p.error ? p.error.code : `salió ${p.status}`);
-    return { code: 1, marked: false, line: `ado-mark-active: la capa de plataforma no contestó (${detalle}); ${salida}` };
+    return { code: 1, marked: false, line: conAviso(`ado-mark-active: la capa de plataforma no contestó (${detalle}); ${salida}`) };
   }
   const resumen = typeof r.summary === 'string' && r.summary ? r.summary : null;
-  if (r.ok !== true) return { code: 1, marked: false, line: `ado-mark-active: ${resumen || `${r.reason}: ${r.detail}`}; ${salida}` };
+  if (r.ok !== true) return { code: 1, marked: false, line: conAviso(`ado-mark-active: ${resumen || `${r.reason}: ${r.detail}`}; ${salida}`) };
   const v = r.value || {};
   // un «sí» sin estado, o de un proceso que salió mal, no prueba que el pedido quedó activo
   if (p.status !== 0 || typeof v.estado !== 'string' || !v.estado) {
-    return { code: 1, marked: false, line: `ado-mark-active: la capa contestó sin el estado del pedido (salió ${p.status}); ${salida}` };
+    return { code: 1, marked: false, line: conAviso(`ado-mark-active: la capa contestó sin el estado del pedido (salió ${p.status}); ${salida}`) };
   }
   if (v.pideReabrir === true) {
-    return { code: 3, marked: false, line: `ado-mark-active: el pedido #${workItem} está en ${v.estado}: pide confirmación de la persona antes de reabrirlo; con su ok, ado-mark-active --reopen` };
+    return { code: 3, marked: false, line: conAviso(`ado-mark-active: el pedido #${workItem} está en ${v.estado}: pide confirmación de la persona antes de reabrirlo; con su ok, ado-mark-active --reopen`) };
   }
-  return { code: 0, marked: true, line: resumen || `pedido de trabajo #${workItem}: ${v.previo} → ${v.estado}` };
+  return { code: 0, marked: true, line: conAviso(resumen || `pedido de trabajo #${workItem}: ${v.previo} → ${v.estado}`) };
+}
+
+/** La estimación vigente de la historia para el pedido: `{ estimate, motivo? }`, `{}` sin vigente, o `{ motivo }`. */
+function estimacionVigente({ repoDir, storyId, estimatesJs, orgConfig, env }) {
+  if (!fs.existsSync(estimatesJs)) return { motivo: `el arnés que corre no trae ${estimatesJs}` };
+  const a = [estimatesJs, 'work-item', '--repo', repoDir, '--story', String(storyId), ...(orgConfig ? ['--org-config', orgConfig] : []), '--json'];
+  const p = spawnSync(process.execPath, a, { encoding: 'utf8', env, windowsHide: true, timeout: 60000 });
+  let r = null;
+  try { r = JSON.parse(String(p.stdout || '')); } catch (_) { r = null; }
+  if (!r || typeof r !== 'object') return { motivo: String(p.stderr || '').trim().split('\n')[0] || `estimates.js salió ${p.status}` };
+  if (r.ok !== true) return { motivo: r.reason || 'estimates.js no la pudo leer' };
+  if (r.estimate) return r.motivo ? { estimate: r.estimate, motivo: r.motivo } : { estimate: r.estimate };
+  return r.motivo ? { motivo: r.motivo } : {};
 }
 
 // ── la acción de la herramienta de horas ─────────────────────────────────────────────────────────────────────────────

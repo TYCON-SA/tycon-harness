@@ -359,8 +359,8 @@ EOF
     { printf '$ErrorActionPreference = "Stop"; $Check = $false; $ClaudeDir = "%s"\n' "$H4/.claude"
       printf '%s\n' '$LegacyNames = Join-Path (Join-Path $PSScriptRoot "lib") "legacy-names.js"' \
         '$lnArgs = @("--migrate-machine", "--guides", (Split-Path -Parent $PSScriptRoot), "--skills", $AgentSkillsRepo)'
-      sed -n '/^# ── La tanda de Node (story 8.36)/,/^# ── fin de la tanda de Node/p' "$PS_I"
-      sed -n '/^# ── Los nombres viejos (story 8.9/,/^# Load settings.json/p' "$PS_I" | sed '$d'
+      sed -n '/^# ── La tanda de Node ─/,/^# ── fin de la tanda de Node/p' "$PS_I"
+      sed -n '/^# ── Los nombres viejos (espejo/,/^# Load settings.json/p' "$PS_I" | sed '$d'
     } > "$T/ps/frag.ps1"
     for caso in cae:lab-caida nota:lab-nota; do
       o="$(env PATH="$T/bin-ln:$PATH" LN_LAB="${caso%%:*}" pwsh -NoProfile -File "$T/ps/frag.ps1" 2>&1)"

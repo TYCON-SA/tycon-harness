@@ -5,13 +5,15 @@
 //
 // Las claves (en el archivo viejo, con `ado_` adelante; `type` era `ado_wi_type`):
 //   org, project (o `repo: dueño/nombre` en GitHub), type, area_path, iteration_path, iteration_root,
-//   iteration_auto_from_frontmatter, state_active, state_closed, auto_assign, default_tags, epic_links
+//   iteration_auto_from_frontmatter, state_active, state_closed, auto_assign, default_tags, epic_links,
+//   fields (`estimate`: el campo de Azure DevOps de la estimación) y github (`project: { owner, number, field }`: el
+//   campo numérico del proyecto de GitHub que recibe la estimación)
 //
 // Lee el YAML que escriben estos archivos: `clave: valor` con comentarios, textos con o sin comillas, `true`/`false`,
-// números, `{}` y un bloque de un nivel (`epic_links:` con sus `clave: valor` sangrados). Lo que no entiende lo dice con
-// el número de línea; nunca lo saltea.
+// números, `{}` y un bloque de un nivel (`epic_links:` con sus `clave: valor` sangrados; un valor del bloque puede ser
+// un `{}` en una línea). Lo que no entiende lo dice con el número de línea; nunca lo saltea.
 //
-// Casos: scripts/tests/platform-work-item.test.js.
+// Casos: scripts/tests/platform-work-item.test.js y scripts/tests/platform-estimate.test.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -19,7 +21,10 @@ const path = require('path');
 const FILES = Object.freeze(['work-items.yaml', 'ado-config.yaml']);
 // las claves que se conocen (con su nombre de hoy); las demás vuelven en `unknown` para que el conector las diga
 const KEYS = Object.freeze(['org', 'project', 'repo', 'type', 'area_path', 'iteration_path', 'iteration_root',
-  'iteration_auto_from_frontmatter', 'state_active', 'state_closed', 'auto_assign', 'default_tags', 'epic_links']);
+  'iteration_auto_from_frontmatter', 'state_active', 'state_closed', 'auto_assign', 'default_tags', 'epic_links', 'fields', 'github']);
+// el nombre de referencia de un campo de Azure DevOps (`Custom.Estimacion`, o el que Azure arma con un GUID): nunca algo
+// que az lea como opción
+const NOMBRE_DE_REFERENCIA = /^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_-]+)*$/;
 
 /** Un valor escalar: sin el comentario, sin comillas, booleanos y números como tales. */
 function escalar(texto, linea) {
@@ -79,7 +84,7 @@ function parse(texto) {
     if (sangrada) {
       if (!bloque) throw new Error(`línea ${n}: sangría sin un bloque arriba`);
       if (out[bloque] === null) out[bloque] = {};
-      out[bloque][clave] = escalar(valor, n);
+      out[bloque][clave] = /^\s*\{/.test(valor) ? mapaEnLinea(valor, n) : escalar(valor, n);
       return;
     }
     bloque = null;
@@ -104,6 +109,30 @@ function desdeViejo(o) {
 }
 
 /**
+ * Dónde va la estimación, si el repo lo declara: `fields.estimate` (Azure DevOps, un nombre de referencia) y
+ * `github.project` (`{ owner, number, field }`). El problema con la ruta de la clave, o null.
+ */
+function destinosDeLaEstimacion(config) {
+  const esMapa = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
+  if (config.fields !== undefined && config.fields !== '') {
+    if (!esMapa(config.fields)) return 'fields tiene que ser un bloque de clave: valor (fields: { estimate: Custom.Nombre })';
+    const e = config.fields.estimate;
+    if (e !== undefined && !(typeof e === 'string' && NOMBRE_DE_REFERENCIA.test(e))) return `fields.estimate tiene que ser el nombre de referencia de un campo (Custom.Nombre), es ${JSON.stringify(e)}`;
+  }
+  if (config.github !== undefined && config.github !== '') {
+    if (!esMapa(config.github)) return 'github tiene que ser un bloque de clave: valor (github: con project: { owner, number, field })';
+    const p = config.github.project;
+    if (p !== undefined) {
+      if (!esMapa(p)) return 'github.project tiene que ser { owner: <dueño>, number: <número>, field: <campo> }, en una línea';
+      if (!(typeof p.owner === 'string' && /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(p.owner))) return `github.project.owner tiene que ser el dueño del proyecto (una organización o un usuario), es ${JSON.stringify(p.owner)}`;
+      if (!(Number.isInteger(p.number) && p.number > 0)) return `github.project.number tiene que ser el número del proyecto, es ${JSON.stringify(p.number)}`;
+      if (!(typeof p.field === 'string' && p.field.trim())) return `github.project.field tiene que ser el nombre del campo numérico del proyecto, es ${JSON.stringify(p.field)}`;
+    }
+  }
+  return null;
+}
+
+/**
  * La configuración del pedido de trabajo de un repo: `{config, file, legacy}`; `{config: null}` si el repo no tiene
  * ninguno de los dos archivos; `{problem}` si el que manda no se puede leer o no se entiende.
  */
@@ -119,6 +148,8 @@ function read(repoDir) {
     try { o = parse(texto); } catch (e) { return { problem: `.tycon/${nombre}: ${e.message}`, file }; }
     const legacy = nombre === 'ado-config.yaml';
     const config = legacy ? desdeViejo(o) : o;
+    const mal = destinosDeLaEstimacion(config);
+    if (mal) return { problem: `.tycon/${nombre}: ${mal}`, file };
     const unknown = Object.keys(config).filter((k) => !KEYS.includes(k));
     // las dos claves de sí o no: entre comillas o como 1/0 también valen; otra cosa se dice (apagarlas callado no)
     for (const k of ['auto_assign', 'iteration_auto_from_frontmatter']) {

@@ -3472,7 +3472,7 @@ test('T4 Repos_QueHace_HojaConTema @story-2.59.2 @ac-4', () => {
 test('8.63 Seccion_ReenvioDelOk @story-8.63 @ac-12 — la sección valida con el lector de la máquina y va en «Cómo trabaja el agente»', () => {
   const s = ORG.seccionPorId('aprobaciones');
   assert.ok(s, 'la sección existe');
-  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.rutas], ['team-profile.json', 'perfil', 'harness-config', ['approvals'], ['approvals.relay_session', 'approvals.delegated_signing', 'approvals.owner_only', 'approvals.delegated_machines']]);
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.rutas], ['team-profile.json', 'perfil', 'harness-config', ['approvals'], ['approvals.relay_session', 'approvals.delegated_signing', 'approvals.owner_only', 'approvals.delegated_machines', 'approvals.levels']]);
   const rev = (borrador) => ORG.revisar({ seccion: 'aprobaciones', texto: ORG.formatJson(PERFIL_TYCON), borrador, lectores: { 'harness-config': TC } });
   const ok = rev({ approvals: { relay_session: 'coordinadora' } });
   assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
@@ -3718,12 +3718,14 @@ test('8.116 T36 SiteConfig_SelectorDe888_LeeLaLista', async () => {
 // una firma que no se corre desde otra sesión: delegada, dice que no rinde; a la ventana, que no se puede delegar
 test('SiteConfig_Firma_DelegadaSinOtraSesion_DiceQueNoRinde', async () => {
   const nota = (p) => (p.textoDe('aprobaciones').split(' | ').find((x) => x.startsWith(' · adversarial-skip')) || '');
+  // las firmas que no se corren desde otra sesión son todas de nivel 2 o más: la nota dice su nivel, delegada o no, porque
+  // la coordinadora no las firma por ninguna de las dos razones
   const delegada = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: ['adversarial-skip'] } })]);
   assert.strictEqual(delegada.error, null);
-  assert.match(nota(delegada), /está delegada, pero no se firma desde la pestaña de otra sesión: la coordinadora no puede firmarla/);
-  assert.doesNotMatch(nota(delegada), /no se puede delegar/);
+  assert.match(nota(delegada), /es de nivel 2: no se delega, la firma una persona/);
+  assert.doesNotMatch(nota(delegada), /está delegada/);
   const ventana = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora' } })]);
-  assert.match(nota(ventana), /no se firma desde la pestaña de otra sesión: no se puede delegar/);
+  assert.match(nota(ventana), /es de nivel 2: no se delega/);
 });
 
 // T44 SiteConfig_SelectorDe888_ConservaLaLista @story-8.116 @ac-43
@@ -3778,7 +3780,8 @@ test('8.116 T29 SiteConfig_Aprobaciones_FirmasYMaquinas', async () => {
     const sel = selectorDeFirma(p, f.id);
     assert.ok(sel, `la firma ${f.id} tiene su fila`);
     assert.strictEqual(sel.value || '', '', `${f.id}: de fábrica, a la ventana`);
-    assert.deepStrictEqual(opciones(p, f.id), f.otherSession === 'yes' ? ['', 'delegada', 'dueno'] : ['', 'dueno'], f.id);
+    // se ofrece delegar sólo la rutina que se firma desde otra sesión
+    assert.deepStrictEqual(opciones(p, f.id), f.otherSession === 'yes' && SIG.delegatedLevel(f.id) === 1 ? ['', 'delegada', 'dueno'] : ['', 'dueno'], f.id);
   }
   assert.match(p.textoDe('aprobaciones'), /Lo delegado no está protegido contra un agente/);
   assert.match(p.textoDe('aprobaciones'), /Ninguna máquina todavía\./);
@@ -4718,7 +4721,7 @@ test('T41 Textos_ProveedoresEnEsYEn @story-2.73 @ac-33', () => {
   const { TEXTOS } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
   const src = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'org-config.js'), 'utf8');
   const claves = ['pantalla.porProveedor', 'pantalla.porProveedorAyuda', 'pantalla.proveedor.anthropic', 'pantalla.proveedor.openai', 'pantalla.proveedor.ollama',
-    'pantalla.proveedor.cursor', 'pantalla.nivel2', 'pantalla.elDelDev', 'pantalla.anthropicFija', 'pantalla.cursorNoSeAplica', 'pantalla.permitidos',
+    'pantalla.proveedor.cursor', 'pantalla.columnaNivel', 'pantalla.elDelDev', 'pantalla.anthropicFija', 'pantalla.cursorNoSeAplica', 'pantalla.permitidos',
     'pantalla.permitidosAyuda', 'pantalla.elProcesoDeLaNoche', 'pantalla.nocheProveedor', 'pantalla.nocheSinConfigurar', 'pantalla.nocheHoy',
     'pantalla.nocheSinModelo', 'pantalla.nocheLlave', 'pantalla.equivalenciaDelNivel', 'org.nocheSinModelo'];
   for (const k of claves) {
@@ -5529,4 +5532,45 @@ test('T48 2.79-Corridas_DatosCrudosEnLlano @story-2.79 @ac-39 — en Configuraci
   }
   // la opción con texto propio se ve sólo con su texto: el valor técnico entre paréntesis («avisa (warn)») no vuelve
   assert.doesNotMatch(ORG.pantalla(), /TX\['repoOpcion_' \+ o\] \+ ' \('/, 'la opción no lleva su valor técnico al lado');
+});
+
+// niveles T8 SiteConfig_Niveles_SoloSubeYProponePedido
+// 🔴 Falla con: un selector que deja bajar el nivel de la tabla, un nivel en la base escrito igual en el perfil, una
+// firma que queda en 2 o más y se sigue ofreciendo para delegar, o un pedido que el lector rechazaría.
+test('niveles T8 SiteConfig_Niveles_SoloSubeYProponePedido', async () => {
+  const nivel = (p, id) => p.todo(p.sec('aprobaciones')).find((n) => n.tag === 'select' && n.attrs['data-path'] === `approvals.nivel.${id}`);
+  const valores = (sel) => sel.hijos.map((o) => o.attrs.value);
+  const p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: ['plan-approval', 'extra-round'] } })]);
+  for (const l of require(path.join(ROOT, 'scripts', 'lib', 'signatures.js')).LEVELS) {
+    assert.deepStrictEqual(valores(nivel(p, l.id)), ['1', '2', '3'].slice(l.level - 1), `${l.id}: sólo desde su nivel para arriba`);
+  }
+  assert.ok(valores(selectorDeFirma(p, 'plan-approval')).includes('delegada'), 'la rutina se ofrece para delegar');
+  nivel(p, 'plan-approval').on.change({ target: { value: '2' } });
+  let b = await borradorAlRevisar(p);
+  assert.deepStrictEqual(b.approvals.levels, { 'plan-approval': 2 });
+  assert.deepStrictEqual(b.approvals.delegated_signing, ['extra-round'], 'subirla a 2 la saca de la delegación');
+  assert.ok(!valores(selectorDeFirma(p, 'plan-approval')).includes('delegada'), 'y ya no se ofrece para delegar');
+  const rev = ORG.revisar({ seccion: 'aprobaciones', texto: ORG.formatJson(PERFIL_TYCON), borrador: b, lectores: { 'harness-config': TC } });
+  assert.strictEqual(rev.ok, true, JSON.stringify(rev.problems));
+  assert.deepStrictEqual(JSON.parse(rev.texto).approvals.levels, { 'plan-approval': 2 });
+  // volver al nivel de la tabla saca la clave: el perfil no repite lo que ya dice la tabla
+  nivel(p, 'plan-approval').on.change({ target: { value: '1' } });
+  b = await borradorAlRevisar(p);
+  assert.ok(!('levels' in b.approvals) || b.approvals.levels === '', JSON.stringify(b.approvals));
+  // una firma que la tabla pone en 2 no se ofrece para delegar
+  assert.ok(!valores(selectorDeFirma(p, 'escape:trust-ran')).includes('delegada'), 'una excepción no se delega');
+  // el lector rechaza bajar un nivel aunque llegue escrito a mano
+  const bajo = ORG.revisar({ seccion: 'aprobaciones', texto: ORG.formatJson(PERFIL_TYCON), borrador: { approvals: { levels: { 'control-change': 1 } } }, lectores: { 'harness-config': TC } });
+  assert.strictEqual(bajo.ok, false);
+  // una capa cuyo lector todavía no conoce los niveles no los recibe: los leería como rotos y perdería lo delegado
+  const capaCon = (v) => JSON.stringify({ requires: { harness: `>= ${v}` } });
+  const gate = (v) => ORG.teamProfileGateProblem({ layerText: capaCon(v), versionImagen: '2026.10.15.48', doc: { ...PERFIL_TYCON, approvals: { levels: { 'plan-approval': 2 } } } });
+  assert.match(String(gate(ORG.OWNER_ONLY_SINCE)), /todavía no se puede proponer/);
+  assert.ok(String(gate(ORG.OWNER_ONLY_SINCE)).includes(`>= ${ORG.LEVELS_SINCE}`));
+  assert.strictEqual(gate(ORG.LEVELS_SINCE), null, 'con la capa al día pasa');
+  const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  for (const k of ['pantalla.nivelesTitulo', 'pantalla.nivelesAyuda', 'pantalla.nivel1', 'pantalla.nivel2', 'pantalla.nivel3']) {
+    const es = textos.t('es', k); const en = textos.t('en', k);
+    assert.ok(es && en && es !== k && en !== k && es !== en, `${k} existe y está traducida`);
+  }
 });

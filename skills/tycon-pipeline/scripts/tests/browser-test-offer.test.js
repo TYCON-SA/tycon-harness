@@ -33,6 +33,7 @@ const STEPS = path.join(SCRIPTS, '..', 'steps');
 const HARNESS = path.join(SCRIPTS, '..', '..', '..');
 const bt = require(path.join(SCRIPTS, 'lib', 'browser-test.js'));
 const { conVentana } = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'tests', 'lib', 'window-passed.js'));
+const { inHarnessCopy } = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'tests', 'lib', 'harness-copy.js'));
 
 const tmp = (prefijo) => fs.mkdtempSync(path.join(os.tmpdir(), prefijo));
 const GIT_ENV = { ...process.env, GIT_AUTHOR_DATE: '2026-10-19T12:00:00Z', GIT_COMMITTER_DATE: '2026-10-19T12:00:00Z' };
@@ -89,11 +90,14 @@ function conversacion(home, sid, { persona = [], agente = ['Sigo.'], otra = [], 
   fs.writeFileSync(path.join(dir, `${sid}.jsonl`), `${r.map((x) => JSON.stringify(x)).join('\n')}\n`);
 }
 
-/** La puerta Bash del portón de carril, como la corre Claude Code antes de un comando. */
+/**
+ * La puerta Bash del portón de carril, como la corre Claude Code antes de un comando. Corre desde una copia propia del
+ * arnés, igual que el guion que nombra el comando: el freno reconoce un guion del arnés según el estado de git del clon.
+ */
 function puertaBash(home, sid, repo, command) {
-  return spawnSync('node', [path.join(SCRIPTS, 'on-bash-write-gate.js')], {
+  return spawnSync('node', [inHarnessCopy(path.join(SCRIPTS, 'on-bash-write-gate.js'))], {
     cwd: repo, encoding: 'utf8',
-    input: JSON.stringify({ session_id: sid, tool_name: 'Bash', cwd: repo, tool_input: { command } }),
+    input: JSON.stringify({ session_id: sid, tool_name: 'Bash', cwd: repo, tool_input: { command: inHarnessCopy(command) } }),
     env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, TYCON_LANE_LLM: '0' },
   });
 }

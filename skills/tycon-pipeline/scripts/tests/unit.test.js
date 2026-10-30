@@ -7823,3 +7823,55 @@ test('T11 EscapeAtdd_PideMotivo @story-1.32 @ac-10', () => {
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
+
+test('T15 StoryIlegible_Avisa @story-1.32 @ac-13', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atdd-ilegible-'));
+  const SID = 'atdd-ilegible';
+  const stateDir = path.join(home, '.claude', '.tycon-pipeline');
+  const markerPath = path.join(stateDir, 'active', `${SID}.json`);
+  const correr = (args) => require('node:child_process').spawnSync(process.execPath, [MARKER, ...args], markerEnv(SID, home));
+  const repo = path.join(home, 'repo');
+  const carpeta = path.join(repo, 'specs', 'una-carpeta.md');
+  fs.mkdirSync(carpeta, { recursive: true });
+  // una story sin permiso de lectura (como root se lee igual: ahí el caso no aplica)
+  const sinPermiso = path.join(repo, 'specs', 'sin-permiso.md');
+  fs.writeFileSync(sinPermiso, '# story\n'); fs.chmodSync(sinPermiso, 0o000);
+  const conPermiso = process.getuid && process.getuid() === 0 ? [] : [sinPermiso];
+  const handler = require(path.join(SCRIPTS, 'on-atdd-preedit.js'));
+  // el freno previo corre en el mismo proceso: su stderr se junta reemplazando la escritura un momento
+  const stderrDe = (fn) => {
+    const original = process.stderr.write; let dicho = '';
+    process.stderr.write = (t) => { dicho += String(t); return true; };
+    try { return { r: fn(), dicho }; } finally { process.stderr.write = original; }
+  };
+  try {
+    for (const storyPath of [carpeta, path.join(repo, 'specs', 'no-existe.md'), ...conPermiso, undefined]) {
+      writeFakeMarker(home, SID, { storyId: '9.9', storyPath, repoPath: repo, stepScheme: 2,
+        stepsCompleted: ['start', 'validate-story', 'plan', 'approve-plan'], stepsPending: ['implement'],
+        fileEvents: [{ path: path.join(repo, 'tests', 'ATests.cs'), ts: '2026-10-30T12:01:00.000Z' },
+          { path: path.join(repo, 'src', 'a.cs'), ts: '2026-10-30T12:02:00.000Z' }] });
+      const marcador = fs.readFileSync(markerPath, 'utf8');
+      const previo = stderrDe(() => handler.handle({ hook_event_name: 'PreToolUse', tool_name: 'Edit', session_id: SID,
+        tool_input: { file_path: path.join(repo, 'src', 'b.cs') } }, { stateDir }));
+      assert.equal(previo.r, null, 'el freno previo deja pasar, como hoy');
+      fs.writeFileSync(markerPath, marcador);
+      const cierre = correr(['complete-step', 'implement']);
+      assert.equal(cierre.status, 0, cierre.stderr);
+      const avisos = cierre.stderr.split('\n').filter((l) => /no pude leer la historia/.test(l));
+      if (storyPath) {
+        assert.equal(avisos.length, 1, `complete-step avisa una vez: ${cierre.stderr}`);
+        assert.ok(avisos[0].includes(storyPath), 'el aviso nombra la ruta');
+        assert.match(avisos[0], /lista de archivos declarados/);
+        assert.match(previo.dicho, /no pude leer la historia/);
+        assert.ok(previo.dicho.includes(storyPath), 'el aviso del freno previo nombra la ruta');
+        assert.match(previo.dicho, /no juzgo esta edición/);
+      } else {
+        assert.equal(avisos.length, 0, `sin storyPath, complete-step no avisa: ${cierre.stderr}`);
+        assert.equal(previo.dicho, '', 'sin storyPath, el freno previo no avisa');
+      }
+    }
+  } finally {
+    fs.chmodSync(sinPermiso, 0o600);
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});

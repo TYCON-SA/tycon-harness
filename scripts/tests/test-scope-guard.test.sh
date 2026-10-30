@@ -290,5 +290,139 @@ for caso in \
   [ "$dio" = "2" ] && ok "T8 sigue frenando: $cmd (en ${dir#$T/})" || mal "T8 dejó pasar (salió $dio): $cmd (en ${dir#$T/})"
 done
 
+mkdir -p "$R/forms/Baja"
+printf '{"name":"baja","scripts":{"test":"vitest run"}}' > "$R/forms/Baja/package.json"
+
+# AgrupaFueraDeComillas_NoBorraCarpeta @story-1.32 @ac-11 — un paréntesis, una llave o una palabra de control dentro de
+# comillas, de un comentario o de un argumento no hace perder la carpeta; cada caso tiene su gemelo, que sigue frenando
+n=0
+pasa_y_gemelo() { # $1 comando · $2 carpeta que pasa · $3 comando gemelo · $4 carpeta del gemelo
+  n=$((n + 1)); local casa="$T/casa-t13-$n" dio
+  dio="$(frena_en "$1" "$2" "$casa")"
+  if [ "$dio" = "0" ] && grep -q '"veredicto":"paso"' "$casa/.claude/.tycon-pipeline/frenos.jsonl" 2>/dev/null; then
+    ok "T13 pasa: $1 (en ${2#$T/})"
+  else mal "T13 frenó (salió $dio) o no dejó «paso»: $1 (en ${2#$T/})"; fi
+  dio="$(frena_en "$3" "$4" "$T/casa-t13-gemelo")"
+  [ "$dio" = "2" ] && ok "T13 el gemelo frena: $3 (en ${4#$T/})" || mal "T13 el gemelo pasó (salió $dio): $3 (en ${4#$T/})"
+}
+for c in 'npm test && echo done' 'npm test 2>&1 | grep -E "(fail|pass)"' 'npm test # (rápido)' \
+  'npm test -- -t "suma (con IVA)"'; do
+  pasa_y_gemelo "$c" "$R/forms/Baja" "$c" "$R"
+done
+pasa_y_gemelo 'cd forms/Baja && npm test; echo "fin (ok)"' "$R" 'cd forms && npm test; echo "fin (ok)"' "$R"
+# las agrupaciones de verdad siguen borrando la carpeta: desde la raíz, con el `cd` al proyecto adentro, y en el proyecto
+# con un `cd ..` adentro
+for caso in \
+  "(cd forms/Baja) && npm test|$R" \
+  "{ cd forms/Baja; } && npm test|$R" \
+  "if true; then cd forms/Baja && npm test; fi|$R" \
+  "for x in 1; do cd forms/Baja && npm test; done|$R" \
+  "while true; do cd forms/Baja && npm test; break; done|$R" \
+  "case x in x) cd forms/Baja && npm test;; esac|$R" \
+  "function f { cd forms/Baja; }; f && npm test|$R" \
+  "until false; do cd forms/Baja && npm test; break; done|$R" \
+  "select x in a; do cd forms/Baja && npm test; break; done|$R" \
+  "coproc { cd forms/Baja; }; npm test|$R" \
+  "bash <<EOF
+(cd forms/Baja) && npm test
+EOF|$R" \
+  "if true; then cd ..; fi; npm test|$R/forms/Baja" \
+  "(cd ..) && npm test|$R/forms/Baja"; do
+  cmd="${caso%|*}"; dir="${caso##*|}"
+  dio="$(frena_en "$cmd" "$dir" "$T/casa-t13-agrupa")"
+  [ "$dio" = "2" ] && ok "T13 la agrupación frena: $cmd (en ${dir#$T/})" || mal "T13 la agrupación pasó (salió $dio): $cmd (en ${dir#$T/})"
+done
+# las formas que la lectura simple no sigue (sustituciones, `$'…'`, comillas invertidas, escapes, continuaciones de
+# renglón, heredocs a un shell) se leen como antes: con el `cd` al proyecto adentro, desde la raíz, siguen frenando.
+# Cada caso termina en un renglón `---`.
+n=0; cmd=""
+while IFS= read -r -u 3 linea; do
+  if [ "$linea" != "---" ]; then cmd="${cmd:+$cmd
+}$linea"; continue; fi
+  n=$((n + 1))
+  dio="$(frena_en "$cmd" "$R" "$T/casa-t13-raro-$n")"
+  [ "$dio" = "2" ] && ok "T13 la forma rara frena: $cmd" || mal "T13 la forma rara pasó (salió $dio): $cmd"
+  cmd=""
+done 3<<'CASOS'
+y=$(echo $'it\'s') && (cd forms/Baja) && npm test
+---
+y=$(echo a # it's
+) && (cd forms/Baja) && echo 'b' && npm test
+---
+bash <<'EOF'
+cd forms/Baja && true
+EOF
+npm test
+---
+x=$(cd forms/Baja && pwd) && npm test
+---
+echo `cd forms/Baja && true` && npm test
+---
+true; \
+if false; \
+then cd forms/Baja && :; \
+fi; npm test
+---
+echo \ #; (cd forms/Baja) && npm test
+---
+x=$(echo a #(
+); (cd forms/Baja) && npm test
+---
+x=$(echo $'\'') ; (cd forms/Baja) && npm test
+---
+CASOS
+
+# PuntoPuntoDeReporte_NoEsSalida @story-1.32 @ac-12 — un `..` en el valor pegado de una opción que no es de carpeta (la
+# ruta de un reporte) no saca al script `test` de su proyecto; cualquier otro `..` sigue frenando
+n=0
+for caso in \
+  "vitest run --reporter=junit --outputFile=../reports/alta.xml|0" \
+  "vitest run --coverage.reportsDirectory=../c|0" \
+  "cd .. && vitest run|2" \
+  "cd ./.. && vitest run|2" \
+  "cd a/../.. && vitest run|2" \
+  "pushd .. && vitest run|2" \
+  "vitest run --root ..|2" \
+  "vitest --dir ../otro|2" \
+  "vitest --workspace ../ws.ts|2" \
+  "npm --prefix ../x test|2" \
+  "vitest run ../otro|2" \
+  "vitest run --outputFile ../r.xml|2"; do
+  n=$((n + 1)); script="${caso%|*}"; sale="${caso##*|}"; d="$R/punto/p$n"; casa="$T/casa-t14-$n"
+  mkdir -p "$d"
+  node -e 'process.stdout.write(JSON.stringify({ name: "p", scripts: { test: process.argv[1] } }))' "$script" > "$d/package.json"
+  dio="$(frena_en "npm test" "$d" "$casa")"
+  if [ "$sale" = "0" ]; then
+    if [ "$dio" = "0" ] && grep -q '"veredicto":"paso"' "$casa/.claude/.tycon-pipeline/frenos.jsonl" 2>/dev/null; then
+      ok "T14 el reporte no sale del proyecto: $script"
+    else mal "T14 frenó (salió $dio) o no dejó «paso»: $script"; fi
+  else
+    [ "$dio" = "2" ] && ok "T14 sigue frenando: $script" || mal "T14 dejó pasar (salió $dio): $script"
+  fi
+done
+# un `..` entre comillas, pegado a un operador o en una opción que no es de reporte sigue saliendo de la carpeta
+while IFS= read -r -u 3 script; do
+  n=$((n + 1)); d="$R/punto/p$n"; casa="$T/casa-t14-$n"
+  mkdir -p "$d"
+  node -e 'process.stdout.write(JSON.stringify({ name: "p", scripts: { test: process.argv[1] } }))' "$script" > "$d/package.json"
+  dio="$(frena_en "npm test" "$d" "$casa")"
+  [ "$dio" = "2" ] && ok "T14 sigue frenando: $script" || mal "T14 dejó pasar (salió $dio): $script"
+done 3<<'CASOS'
+cd '../..' && vitest run
+cd "../.." && vitest run
+cd "../x" && vitest run
+pushd "../app" && vitest run
+vitest run --dir "../"
+vitest run --root="../x"
+cd ..;vitest run
+cd ..&&vitest run
+cd '..' && vitest run
+vitest run --rootdir=..
+vitest run --directory=..
+jest --root-dir=..
+mocha --spec=../**/*.test.js
+jest --test-path-pattern=../
+CASOS
+
 echo "test-scope-guard: $PASA ok, $FALLA mal"
 [ "$FALLA" = "0" ]

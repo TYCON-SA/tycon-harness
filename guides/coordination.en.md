@@ -107,13 +107,18 @@ Then she asks for it with `coordination.js signature --kind <topic> --title <wha
   line, goes into the folder, runs the command and waits for a key. If there is already a file with the same command,
   it does not write another one and says so. Without a folder, it writes nothing: it prints the command for the chat
   notice.
-- **By delegation.** A signature the organization lets be signed by delegation is asked for in the chat, without a
-  file: the owner gives their ok with their quote and the signature is made under the delegated signing rules. Today
-  `signature` does not take this path yet: every signature goes through the terminal.
+- **By delegation.** A signature the organization lets be signed by delegation does not go through `signature`: it is
+  given from the coordinator's tab, in the permission window, under the delegated signing rules. It is signed on the
+  spot and leaves no pending entry.
 
 What asks for a password always goes through the terminal: only the owner types the password. Once the owner signed,
 `coordination.js signature-done <id>` deletes the file and the pending entry. An empty folder and no pending entries
 mean nothing is left to sign.
+
+A terminal signature that has waited more than a day is brought up to the coordinator: on the first turn of the day
+with something to say, one line says how many are waiting and which is the oldest, with its date. Once a day, even if
+the count changes. A pending entry whose file is gone does not count: the owner signed it and deleted it. Without a
+signatures folder there are no pending entries, and the notice never shows.
 
 ## The order of the requests
 
@@ -185,7 +190,7 @@ work, not one per session. The style meter that already exists measures this; th
 | No more sessions working than the cap | freno | `open` does not open at the cap. Nothing stops a session the owner opens by hand; `status` counts it and, at the cap, so does the coordinator's notice on each turn. |
 | Adversarial passes one at a time | aviso | The coordinator gives the turn. The pass's gate tells the session another one is in flight and to ask for its turn; it does not stop it. |
 | Confirm a signature is missing before asking for it | nadie | How to confirm depends on each signature; `signature` only avoids two files with the same command. |
-| One file per signature, deleted once signed | aviso | `status` counts the pending signatures; `signature` does not write a second file with the same command. |
+| One file per signature, deleted once signed | aviso | `status` counts the pending signatures; `signature` does not write a second file with the same command. One that has waited more than a day is brought up to the coordinator, once a day. |
 | Requests in order | nadie | No data on the machine says which request pairs with which without asking the network on every turn. |
 | Short and plain notices | aviso | The style meter that already exists. |
 | Codex does not coordinate | aviso | `/coordinate` says so in Codex and stops. Codex can send messages with codex queue, but that command does not go through a tool the harness can see. |

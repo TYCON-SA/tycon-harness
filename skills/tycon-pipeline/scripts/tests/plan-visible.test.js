@@ -271,11 +271,15 @@ test('PlanVisible_OkConRiesgoNormal_NoCambia @story-8.65 @ac-3', () => {
   assert.doesNotMatch(r.stdout, /Mostrale esto a la persona/);
 });
 
-/** La puerta Bash del portón de carril, como la corre Claude Code antes de un comando. */
+/**
+ * La puerta Bash del portón de carril, como la corre Claude Code antes de un comando. Corre desde una copia propia del
+ * arnés, igual que el guion que nombra el comando: el freno reconoce un guion del arnés según el estado de git del clon.
+ */
 function puertaBash(home, sid, repo, command) {
-  return spawnSync('node', [path.join(SCRIPTS, 'on-bash-write-gate.js')], {
+  const { inHarnessCopy } = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'tests', 'lib', 'harness-copy.js'));
+  return spawnSync('node', [inHarnessCopy(path.join(SCRIPTS, 'on-bash-write-gate.js'))], {
     cwd: repo, encoding: 'utf8',
-    input: JSON.stringify({ session_id: sid, tool_name: 'Bash', cwd: repo, tool_input: { command } }),
+    input: JSON.stringify({ session_id: sid, tool_name: 'Bash', cwd: repo, tool_input: { command: inHarnessCopy(command) } }),
     env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, TYCON_LANE_LLM: '0' },
   });
 }

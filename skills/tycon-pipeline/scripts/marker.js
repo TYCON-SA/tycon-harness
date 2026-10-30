@@ -200,7 +200,7 @@ function paraOtraSesion(argv) {
   const no = (m) => { console.error(`🔒 marker.js: --for-session ${PEDIDA}: ${m}. No se escribió nada.`); process.exit(2); };
   // en la terminal del dueño --for-session dice su sesión; sin variable de sesión y sin terminal no hay quién la pida
   if (PROPIA === '_nosession') {
-    if (!process.argv.includes('--terminal')) no('sin variable de sesión, la firma para una sesión se da en la terminal del dueño (--terminal)');
+    if (!process.argv.includes('--terminal')) no('sin variable de sesión, la firma para una sesión se da en la terminal de la persona (--terminal)');
     // en la terminal, el marcador de la sesión nombrada se escribe sólo con la firma dada, y la salida de una ejecución
     // perdida nombra esa misma sesión
     const t = PARA_OTRA_SESION[argv[2]];
@@ -266,7 +266,7 @@ function pruneStale() {
       if (m && m.lastTouch && new Date(m.lastTouch).getTime() < cutoff) {
         // una ejecución perdida no se poda: sale sólo por la salida del dueño
         if (perdidaSinFrenar(m.sessionId || f.replace(/\.json$/, ''), m.repoPath)) {
-          process.stderr.write(`[marker] no podé el marcador de ${m.sessionId || f}: su ejecución está perdida y sale sólo por la salida del dueño (clear-session --lost o restore).\n`);
+          process.stderr.write(`[marker] no podé el marcador de ${m.sessionId || f}: su ejecución está perdida y sale sólo por la salida que firma una persona (clear-session --lost o restore).\n`);
           continue;
         }
         fs.unlinkSync(full);
@@ -425,7 +425,7 @@ function frenarSiPerdida(sesion, comando, cwd) {
   }
   if (!p) return;
   console.error(`marker.js ${comando}: la ejecución de la sesión ${sesion} está perdida (${p.caso}: ${p.falta}).`);
-  console.error(`  Sale sólo con marker.js clear-session ${sesion} --lost o marker.js restore ${sesion}: lo firma el dueño en la ventana de permiso o en su terminal (--terminal).`);
+  console.error(`  Sale sólo con marker.js clear-session ${sesion} --lost o marker.js restore ${sesion}: lo firma una persona en la ventana de permiso o en su terminal (--terminal).`);
   process.exit(3);
 }
 
@@ -927,7 +927,7 @@ function mensajeDelPaseAdversarial(v) {
     e('    node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-launched <runId nuevo> 5b --relaunch');
     e('    node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-result <N> --type 5b --result <RUN_DIR>/step-05b-adversarial.json …');
     e(`  Si Codex no contesta y no hay herramienta Workflow: ${SALIDA_APROBADA}.`);
-    e('  Abandonarlo lo firma el dueño, no el agente: `mark-adversarial-skipped --files …` anota el pedido y da los comandos de `marker.js sign-adversarial-skip`.');
+    e('  Abandonarlo lo firma una persona, no el agente: `mark-adversarial-skipped --files …` anota el pedido y da los comandos de `marker.js sign-adversarial-skip`.');
     return;
   }
   if (v.motivo === 'resultado-de-otro-lanzamiento') {
@@ -937,7 +937,7 @@ function mensajeDelPaseAdversarial(v) {
   }
   e('  Cada confirmado va a la suite (prueba promovida o prueba propia) o se difiere con motivo:');
   e(`    ${cmdResultado}`);
-  e('  Abandonarlo lo firma el dueño, no el agente: `mark-adversarial-skipped --files …` anota el pedido y da los comandos de `marker.js sign-adversarial-skip`.');
+  e('  Abandonarlo lo firma una persona, no el agente: `mark-adversarial-skipped --files …` anota el pedido y da los comandos de `marker.js sign-adversarial-skip`.');
 }
 
 // Cada aprobación que el pipeline ya pide queda en `approvals.jsonl`, en la carpeta de la corrida, como
@@ -1229,7 +1229,7 @@ function cmdCompleteStep(nRaw, flags) {
       try { html = fs.readFileSync(p.mockup, 'utf8'); } catch (_e) {
         bloquear3(`story con pantalla: falta su maqueta (${p.mockup}).`, [
           `Armala: node ${path.join(__dirname, 'mockup.js')} render --data <modelo.json> --story ${sc.story}   (la forma: mockup.js schema)`,
-          'Mostrásela al dueño con el plan (la ruta y la lista de mockup.js texts) y cerrá con --mockup-approved "<cita>". Ver la guía del paso «Aprobar el plan».',
+          'Mostrásela a la persona que aprueba con el plan (la ruta y la lista de mockup.js texts) y cerrá con --mockup-approved "<cita>". Ver la guía del paso «Aprobar el plan».',
         ]);
       }
       const v = mk.validateMockupHtml(html);
@@ -1238,7 +1238,7 @@ function cmdCompleteStep(nRaw, flags) {
         bloquear3(auto && !approved
           ? 'el plan se aprueba solo; la maqueta no: una pantalla la ve una persona antes (decisión 8).'
           : `story con pantalla: mostrale la maqueta (${p.mockup}) y pasá su aprobación con --mockup-approved`, [
-          `Mostrale la maqueta (${p.mockup}) al dueño —o a quien tenga su delegación— y cerrá con --mockup-approved "<cita: quién aprobó y por qué vía>".`,
+          `Mostrale la maqueta (${p.mockup}) a la persona que aprueba —o a quien tenga su delegación— y cerrá con --mockup-approved "<cita: quién aprobó y por qué vía>".`,
         ]);
       }
       mockupPlan = { p, sha: mk.mockupHash(html) };
@@ -1409,10 +1409,15 @@ function cmdCompleteStep(nRaw, flags) {
     }
     // un guion de medición del repo que la story no declara no es el primer código
     let declarados = [];
-    try {
-      const storyAbs = marker.storyPath ? path.resolve(marker.repoPath || '', marker.storyPath) : null;
-      if (storyAbs) declarados = require('./lib/run-size.js').declaredFiles(fs.readFileSync(storyAbs, 'utf8'));
-    } catch { /* sin story legible, ningún guion de medición cuenta */ }
+    const storyDeclarada = marker.storyPath ? path.resolve(marker.repoPath || '', marker.storyPath) : null;
+    if (storyDeclarada) {
+      let texto = null;
+      try { texto = fs.readFileSync(storyDeclarada, 'utf8'); } catch (e) {
+        // sin story legible, ningún guion de medición cuenta: se dice, para que la lista vacía no pase callada
+        console.error(`⚠️  freno ATDD: no pude leer la historia (${storyDeclarada}: ${e.code || e.message}); cuento sin la lista de archivos declarados.`);
+      }
+      if (texto !== null) declarados = require('./lib/run-size.js').declaredFiles(texto);
+    }
     const r = computeAtddOrder(marker.fileEvents, raices, { declarados });
     if (hermanosError) {
       r.reason = `${r.reason} (repos hermanos: ${hermanosError}; esos no se miraron)`;
@@ -1548,7 +1553,7 @@ function cmdCompleteStep(nRaw, flags) {
       const noVale = rd ? skLib.reverificar({ marker, carpeta: rd }) : (motivo || 'no encontré la carpeta de la corrida');
       if (noVale) {
         appendLog('gates.log', { name: 'adversarial-skip-recheck', status: 'blocked', story: marker.storyId, step: n, error: noVale });
-        console.error(`marker.js complete-step ${n} BLOQUEADO — el pase adversarial se salteó con una constancia que ya no vale: ${noVale}. Se lanza el pase, o el dueño lo vuelve a firmar.`);
+        console.error(`marker.js complete-step ${n} BLOQUEADO — el pase adversarial se salteó con una constancia que ya no vale: ${noVale}. Se lanza el pase, o una persona lo vuelve a firmar.`);
         process.exit(1);
       }
     }
@@ -3214,7 +3219,7 @@ function cmdMarkAdversarialSkipped(argsGate) {
     if (!p.ok) {
       console.error(`marker.js mark-adversarial-skipped: el pase adversarial YA se lanzó (runId ${lanzado.runId || '?'}, ${lanzado.launchedAt || 'sin fecha'}) — un pase lanzado se cierra con su resultado:`);
       console.error('    marker.js mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run <runId> --model <modelo> --tests <k> …');
-      console.error(`  Abandonarlo lo firma el dueño (${p.motivo}), y queda en bypass.log como ADVERSARIAL_ABANDONADO.`);
+      console.error(`  Abandonarlo lo firma una persona, no el agente (${p.motivo}), y queda en bypass.log como ADVERSARIAL_ABANDONADO.`);
       process.stderr.write(p.texto);
       process.exit(2);
     }
@@ -3239,7 +3244,7 @@ function cmdMarkAdversarialSkipped(argsGate) {
   if (gate.run !== false) {
     console.error(`marker.js mark-adversarial-skipped: el portón dice que el pase CORRE — ${gate.reason || '(sin reason)'}`);
     if (Array.isArray(gate.sign_commands) && gate.sign_commands.length) {
-      console.error('  El pedido de saltear no alcanza: lo firma el dueño, y después se repite este comando:');
+      console.error('  El pedido de saltear no alcanza: lo firma una persona, no el agente, y después se repite este comando:');
       console.error(`    en la ventana de permiso: ${gate.sign_commands[0]}`);
       if (gate.sign_commands[1]) console.error(`    en su terminal:           ${gate.sign_commands[1]}`);
     }
@@ -3279,7 +3284,7 @@ function cmdMarkAdversarialSkipped(argsGate) {
   if (salteo.firmado) anotarSalteoEnElRegistro(marker, salteo.firmado);
   if (abandonado) {
     appendLog('bypass.log', { kind: 'ADVERSARIAL_ABANDONADO', storyId: marker.storyId, runId, motivo: salteo.motivo, firmado: salteo.firmado });
-    console.error(`⚠️  pase adversarial ABANDONADO (runId ${runId || '?'}) con la constancia firmada por el dueño — queda en bypass.log.`);
+    console.error(`⚠️  pase adversarial ABANDONADO (runId ${runId || '?'}) con la constancia firmada por una persona — queda en bypass.log.`);
   } else if (salteo.firmado) {
     appendLog('bypass.log', { kind: 'ADVERSARIAL_SKIP_FIRMADO', storyId: marker.storyId, motivo: salteo.motivo, firmado: salteo.firmado });
     console.error(`⚠️  pase adversarial salteado con la constancia firmada por el ${salteo.firmado.quien} (huella ${salteo.firmado.huella}) — queda en bypass.log.`);
@@ -4131,7 +4136,7 @@ function cmdClearSession(sid, rest = []) {
   const p = path.join(ACTIVE_DIR, `${safe}.json`);
   if (!fs.existsSync(p)) {
     console.error(`marker.js clear-session: no había marcador de esa sesión (${safe}): no se borró nada.`);
-    console.error('  Si su ejecución quedó perdida (frena con «EJECUCIÓN PERDIDA»), la salida es clear-session <sesión> --lost, con la frase del dueño.');
+    console.error('  Si su ejecución quedó perdida (frena con «EJECUCIÓN PERDIDA»), la salida es clear-session <sesión> --lost, con la firma de una persona.');
     process.exit(1);
   }
   let m = null;
@@ -4805,9 +4810,9 @@ function cmdApproveSave(argv) {
       const rd = carpetaDeLaCorrida(m);
       let findings;
       try { findings = rd ? JSON.parse(fs.readFileSync(path.join(rd, 'findings.json'), 'utf8')) : null; } catch (e) { findings = null; }
-      if (!Array.isArray(findings)) return { codigo: 2, motivo: 'la coordinadora no puede dar el ok: no pude leer el findings.json de la corrida. Lo firma el dueño' };
+      if (!Array.isArray(findings)) return { codigo: 2, motivo: 'la coordinadora no puede dar el ok: no pude leer el findings.json de la corrida. Lo firma una persona: ni el agente ni la coordinadora' };
       let firmas;
-      try { firmas = firmasDeLaCorrida(m); } catch (e) { return { codigo: 2, motivo: `la coordinadora no puede dar el ok: no pude leer el registro de firmas (${e.code || e.message}). Lo firma el dueño` }; }
+      try { firmas = firmasDeLaCorrida(m); } catch (e) { return { codigo: 2, motivo: `la coordinadora no puede dar el ok: no pude leer el registro de firmas (${e.code || e.message}). Lo firma una persona: ni el agente ni la coordinadora` }; }
       const notify = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'notify.js'));
       datos = { findings, firmasDeLaCorrida: firmas, canales: () => notify.canalesDeLaSesion(), mandar: (o) => notify.avisar(o) };
     }
@@ -4870,7 +4875,7 @@ function cmdDesignateRelay(argv) {
     console.error(`🚫 marker.js designate-relay: no pude dejar la designación en el registro del arnés${quedo && quedo.error ? ` (${quedo.error})` : ''}.`);
     process.exit(2);
   }
-  console.error(`✅ Esta sesión (${e.sesion}) es la «${e.rol}» de esta máquina, designada por ${e.quien}. Vale cuando el dueño la confirma en su terminal: node scripts/lib/delegated-signing.js confirm-designation`);
+  console.error(`✅ Esta sesión (${e.sesion}) es la «${e.rol}» de esta máquina, designada por ${e.quien}. Vale cuando una persona la confirma en su terminal: node scripts/lib/delegated-signing.js confirm-designation`);
   process.exit(0);
 }
 
@@ -5184,12 +5189,12 @@ function cmdAdhoc(sub, payloadJson) {
     }
     const reason = String((payload && payload.reason) || '').trim();
     if (reason.length < 8) {
-      console.error('marker.js adhoc set: "reason" requerido (≥8 caracteres): qué se arregla y por qué, para que el dueño lo lea en la ventana.');
+      console.error('marker.js adhoc set: "reason" requerido (≥8 caracteres): qué se arregla y por qué, para que la persona lo lea en la ventana.');
       process.exit(2);
     }
     // la ventana y la terminal muestran el motivo hasta 200 caracteres y el cupo: lo que se guarda es lo que el dueño ve
     if (reason.length > ADHOC_MOTIVO_MAX) {
-      console.error(`marker.js adhoc set: "reason" de hasta ${ADHOC_MOTIVO_MAX} caracteres: la ventana no muestra más, y el dueño firmaría un recorte.`);
+      console.error(`marker.js adhoc set: "reason" de hasta ${ADHOC_MOTIVO_MAX} caracteres: la ventana no muestra más, y la persona firmaría un recorte.`);
       process.exit(2);
     }
     if (payload.maxFiles !== undefined && !(Number.isInteger(payload.maxFiles) && payload.maxFiles >= 1 && payload.maxFiles <= ADHOC_CUPO_MAX)) {
@@ -5215,11 +5220,11 @@ function cmdAdhoc(sub, payloadJson) {
       propia: PROPIA, anotar: (renglon) => appendLog('gates.log', renglon) });
     if (r.codigo !== 0) {
       const json = String(payloadJson).replace(/'/g, "'\\''");
-      console.error(`🔒 marker.js adhoc set: el dueño no lo aprobó — ${r.motivo}`);
-      console.error('   El arreglo rápido lo aprueba el dueño: en la ventana de permiso, corriendo este comando solo y en su forma');
+      console.error(`🔒 marker.js adhoc set: la persona no lo aprobó — ${r.motivo}`);
+      console.error('   El arreglo rápido lo aprueba una persona, no el agente: en la ventana de permiso, corriendo este comando solo y en su forma');
       console.error('   exacta (la ventana le muestra el motivo y el cupo), o en su terminal:');
       console.error(`     node ${__filename} adhoc set '${json}' --terminal --for-session ${destino}`);
-      console.error('   Si el dueño no lo pidió, preguntale en castellano llano si lo quiere como ajuste puntual o con story.');
+      console.error('   Si la persona no lo pidió, preguntale en castellano llano si lo quiere como ajuste puntual o con story.');
       process.exit(r.codigo === 2 ? 2 : 1);
     }
     // una vía que este guion no conoce no se cuenta como ventana: no se declara
@@ -5252,7 +5257,7 @@ function cmdAdhoc(sub, payloadJson) {
     if (!gateOn) appendLog('bypass.log', { kind: 'STORY_GATE_OFF_ADHOC', reason, cwd: process.cwd() });
     if (maxFiles < pedido) {
       const antes = Number(payload.maxFiles) > 0 ? `pediste ${pedido}` : `tenía ${pedido}`;
-      console.error(`⚠ marker.js adhoc set: por la delegación el cupo queda en hasta ${ADHOC_TOPE_DELEGADO} archivos (${antes}); uno mayor lo aprueba el dueño en su ventana.`);
+      console.error(`⚠ marker.js adhoc set: por la delegación el cupo queda en hasta ${ADHOC_TOPE_DELEGADO} archivos (${antes}); uno mayor lo aprueba una persona en su ventana.`);
     }
     process.stdout.write(JSON.stringify(obj, null, 2) + '\n');
     process.exit(0);

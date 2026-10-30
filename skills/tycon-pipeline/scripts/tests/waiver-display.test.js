@@ -63,10 +63,13 @@ const delDev = (texto, ts = T(1)) => ({ type: 'user', timestamp: ts, message: { 
 const delAgente = (texto, ts = T(0)) => ({ type: 'assistant', timestamp: ts, message: { role: 'assistant', content: [{ type: 'text', text: texto }] } });
 
 const pedirFirma = (lab) => `node ${MARKER} runtime-waiver ${lab.story} --acs 1`;
+// la puerta corre desde una copia propia del arnés, igual que el guion que nombra el comando: el freno reconoce un guion
+// del arnés según el estado de git del clon
 function puertaBash(lab, command) {
-  return spawnSync('node', [path.join(SCRIPTS, 'on-bash-write-gate.js')], {
+  const { inHarnessCopy } = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'tests', 'lib', 'harness-copy.js'));
+  return spawnSync('node', [inHarnessCopy(path.join(SCRIPTS, 'on-bash-write-gate.js'))], {
     cwd: lab.repo, encoding: 'utf8', env: lab.env,
-    input: JSON.stringify({ session_id: lab.sid, tool_name: 'Bash', cwd: lab.repo, tool_input: { command } }),
+    input: JSON.stringify({ session_id: lab.sid, tool_name: 'Bash', cwd: lab.repo, tool_input: { command: inHarnessCopy(command) } }),
   });
 }
 function despachar(lab, file_path, content) {

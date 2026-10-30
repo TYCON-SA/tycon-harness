@@ -8,8 +8,67 @@ firmas, con el nombre que lleva cada una en el perfil del equipo. Sirve para dec
 - `approvals.owner_only`: qué firmas son sólo del dueño. Una firma no puede estar en las dos listas: si lo está, la
   lista de delegadas se lee rota y no delega nada.
 
-Las dos listas se escriben sólo en el perfil del equipo: ni el archivo de la máquina ni una variable las cambian. La
-lista sale de `scripts/lib/signatures.js`, y una prueba verifica que esta tabla diga lo mismo.
+Las dos listas se escriben sólo en el perfil del equipo: ni el archivo de la máquina ni una variable las cambian. Las
+tablas de esta guía salen de `scripts/lib/signatures.js` con `node scripts/tools/signatures-guide.js --write`, y una
+prueba falla si no coinciden.
+
+## Quién aprueba
+
+Depende del repo, no de la máquina:
+
+- En los repos del arnés, las firmas son del dueño, y la ventana dice «Firma del dueño».
+- En cualquier otro repo, las aprueba el dev, y la ventana dice «Lo aprobás vos». Vale también en la máquina del dueño.
+
+El repo se reconoce por su remoto (`scripts/lib/harness-repo.js`), no por el nombre de la carpeta. La firma se pide igual
+en los dos casos: lo que cambia es quién la da.
+
+## Los niveles
+
+Cada firma tiene un nivel, según cuánto pesa lo que aprueba:
+
+- **1 · rutina**: una decisión normal, que se deshace.
+- **2 · excepción**: da por bueno algo sin verificarlo y deja deuda.
+- **3 · irreversible**: no se deshace, o afloja un freno.
+
+La coordinadora firma sola sólo la rutina. Un perfil que pone en `approvals.delegated_signing` una firma de nivel 2 o
+más, por su id o por un grupo, no pasa la validación (`scripts/ci/check-profile-levels.js`). Una firma de hoy que junta
+dos cosas de distinto peso cuenta con la mayor. Hay una excepción: el ok de guardar delegado no firma un cambio que toca
+algo de lo sensible, así que por delegación vale 1.
+
+La columna «Quién la ve» dice si la firma le llega al dev de producto o sólo a quien mantiene el arnés. La columna «Se
+pide hoy con» dice con qué firma de la tabla siguiente se pide hoy. Varias de hoy se juntan en una sola, y una se parte
+en dos. Los nombres de esta tabla todavía no se escriben en el perfil: llegan cuando cambie cómo se pide una firma.
+
+<!-- generado: niveles -->
+| Firma | Nivel | Quién la ve | Qué aprueba | Se pide hoy con |
+| --- | --- | --- | --- | --- |
+| `plan-approval` | 1 · rutina | dev y mantenimiento | aprobar el plan (sube a 2 si la historia es delicada) | `plan-approval` |
+| `extra-round` | 1 · rutina | dev y mantenimiento | una vuelta más de revisores | `extra-round` |
+| `pending-approval` | 1 · rutina | dev y mantenimiento | abrir un pendiente nuevo en la lista | `pending-approval` |
+| `save` | 1 · rutina | dev y mantenimiento | guardar: commit, push y pull requests, si ningún commit toca algo de lo sensible | `save` |
+| `browser-test:prepare` | 1 · rutina | dev y mantenimiento | preparar la prueba con navegador | `browser-test` |
+| `adhoc-lane` | 1 · rutina | dev y mantenimiento | abrir un arreglo rápido sin historia, dentro del cupo | `adhoc-lane` |
+| `refresh-after-main` | 1 · rutina | sólo mantenimiento | refirmar los controles tras traer main, sin cambio propio | `refresh-after-main` |
+| `save:sensible` | 2 · excepción | dev y mantenimiento | guardar cuando un commit toca algo de lo sensible | `save` |
+| `adhoc-lane:sobre-cupo` | 2 · excepción | dev y mantenimiento | abrir un arreglo rápido cuando ya se pasó el cupo | todavía no se pide |
+| `escape:DOD_BYPASS` | 2 · excepción | dev y mantenimiento | saltear todos los controles del commit | `escape:DOD_BYPASS` |
+| `critical-waiver` | 2 · excepción | dev y mantenimiento | eximir un hallazgo crítico | `critical-waiver` |
+| `runtime-waiver` | 2 · excepción | dev y mantenimiento | aceptar un criterio imposible de probar en vivo, o eximir la historia entera | `runtime-waiver`, `escape:dod_runtime_exempt` |
+| `manual-test` | 2 · excepción | dev y mantenimiento | marcar un criterio como probado a mano | `manual-test`, `escape:ALLOW_DOD_EVIDENCE_WRITE` |
+| `browser-test:no` | 2 · excepción | dev y mantenimiento | decir que no a la prueba con navegador | `browser-test` |
+| `adversarial-skip` | 2 · excepción | dev y mantenimiento | saltear el pase adversarial | `adversarial-skip`, `escape:TYCON_NO_DEEP_REVIEW`, `escape:no-deep-review` |
+| `lost-run` | 2 · excepción | dev y mantenimiento | dar por perdida una ejecución y cerrarla | `lost-run`, `escape:cerrar-la-ejecucion`, `escape:cerrar-como-deuda` |
+| `escape:force-manual` | 2 · excepción | dev y mantenimiento | marcar a mano el estado de un control | `escape:force-manual` |
+| `escape:trust-ran` | 2 · excepción | dev y mantenimiento | contar revisores sin constancia de que corrieron | `escape:trust-ran` |
+| `escape:TYCON_TEST_GATE` | 2 · excepción | dev y mantenimiento | saltear sólo el portón de pruebas del commit | `escape:TYCON_TEST_GATE` |
+| `escape:TYCON_STATUS_GATE` | 2 · excepción | dev y mantenimiento | cambiar a mano el estado de una historia | `escape:TYCON_STATUS_GATE`, `escape:cambiar-el-estado` |
+| `escape:story-skill-bypass` | 2 · excepción | dev y mantenimiento | escribir una historia sin la skill de historias | `escape:story-skill-bypass` |
+| `escape:set-autonomous` | 2 · excepción | dev y mantenimiento | cambiar el modo autónomo de una ejecución | `escape:set-autonomous` |
+| `control-change` | 3 · irreversible | sólo mantenimiento | cualquier cambio de control | `control-change` |
+| `escape:TYCON_SAFETY_OFF` | 3 · irreversible | dev y mantenimiento | apagar el freno de seguridad para un comando | `escape:TYCON_SAFETY_OFF` |
+| `escape:TYCON_PROD_LINT` | 3 · irreversible | dev y mantenimiento | apagar el control de consultas a producción | `escape:TYCON_PROD_LINT` |
+| `escape:TYCON_NEW_NAMES` | 3 · irreversible | sólo mantenimiento | apagar el control de nombres en lo que se publica | `escape:TYCON_NEW_NAMES` |
+<!-- fin: niveles -->
 
 ## Las firmas
 
@@ -21,8 +80,9 @@ desde otra sesión van con `--for-session <D>`.
 En Windows la terminal no se lee: cada comando de la columna «Firmarla en la terminal» abre una ventana nueva con el
 mismo comando, y ahí firmás escribiendo tres palabras al azar. La ventana vence a los 5 minutos sin firmar nada.
 
+<!-- generado: firmas -->
 | Firma | Qué aprueba | Comando que la pide | ¿Desde otra sesión? | Firmarla en la terminal |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `plan-approval` | aprobar el plan de una story | `marker.js complete-step approve-plan --approved` | sí | `marker.js complete-step approve-plan --terminal` |
 | `extra-round` | una vuelta más de revisores | `pipeline.js smart-reloop --extra-round` | sí | `pipeline.js smart-reloop --extra-round --terminal` |
 | `refresh-after-main` | refirmar los controles tras traer main, sin cambio propio | `run-base-controls.sh approve` | sí | `run-base-controls.sh approve --terminal` |
@@ -53,6 +113,7 @@ mismo comando, y ahí firmás escribiendo tres palabras al azar. La ventana venc
 | `escape:dod_runtime_exempt` | eximir una story de la prueba en vivo | `marker.js sign-file dod_runtime_exempt <archivo>` | no, por la terminal | `marker.js sign-file dod_runtime_exempt <archivo> --terminal` |
 | `escape:no-deep-review` | saltear el pase adversarial de una ejecución | `pipeline.js start --no-deep-review` | no, por la terminal | `el mismo comando` |
 | `escape:cambiar-el-estado` | cambiar a mano el estado de una story | `marker.js sign-file cambiar-el-estado <archivo>` | no, por la terminal | `marker.js sign-file cambiar-el-estado <archivo> --terminal` |
+<!-- fin: firmas -->
 
 ## Los grupos de la 8.116
 
@@ -64,8 +125,9 @@ delega nada: saltear el pase lo firma sólo el dueño.
 para otra sesión, y se delegan sólo nombrándolas. `approvals.owner_only` no acepta grupos: cada firma que el dueño se
 reserva va por su id.
 
+<!-- generado: grupos -->
 | Grupo | Firmas |
-|---|---|
+| --- | --- |
 | `refresh-after-main` | `refresh-after-main` |
 | `adversarial-skip` | `adversarial-skip` |
 | `critical-waiver` | `critical-waiver` |
@@ -77,6 +139,7 @@ reserva va por su id.
 | `extra-round` | `extra-round` |
 | `control-change` | `control-change` |
 | `lost-run` | `lost-run` |
+<!-- fin: grupos -->
 
 ## Lo que la ventana no ve
 
@@ -92,6 +155,13 @@ frena los errores y los atajos: un archivo copiado, escrito suelto o dejado por 
 frena a un agente que esquive el freno de la carpeta de estado: el agente corre con el mismo usuario que la persona, y
 quien escribe el archivo por una vía que el freno no ve escribe también el renglón. La barrera contra eso es el freno de
 la carpeta de estado, que niega toda escritura ahí que no sea de los guiones del arnés.
+
+Además, cada firma que da un guion deja un renglón en un registro común, `signatures.jsonl`, en la misma carpeta que
+`gates.log`. Lo escribe `scripts/lib/signature-log.js`. El renglón dice quién firmó y por qué vía (la ventana, la
+terminal o la delegación); si fue delegada, quién la pidió y sobre qué sesión; también el id y el nivel de la firma en el
+catálogo, la huella de la máquina, la hora y el motivo. Los registros de cada guion siguen como están. Si el registro
+común no se puede escribir, la firma igual vale y el guion lo avisa. Los escapes del freno de seguridad no pasan por
+ahí: su constancia se escribe al pedir la ventana, antes de que la persona conteste.
 
 ## Lo delegado no está protegido
 

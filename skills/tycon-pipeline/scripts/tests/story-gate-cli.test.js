@@ -277,7 +277,7 @@ test('8.141 T9 AdhocSet_SinFirma_NoEscribe', () => {
   const SET = ['adhoc', 'set', '{"reason":"arreglo del sp de deudas","maxFiles":3}'];
   let r = markerSinVentana(home, sid, SET);
   assert.equal(r.status, 1, r.stderr);
-  assert.match(r.stderr, /el dueño no lo aprobó/);
+  assert.match(r.stderr, /la persona no lo aprobó/);
   assert.match(r.stderr, /adhoc set '\{"reason":"arreglo del sp de deudas","maxFiles":3\}' --terminal --for-session sess-t9/, 'dice el comando de la terminal entero');
   assert.equal(declaracion(home, sid), null, 'sin firma no escribe');
   assert.equal(adhocLog(home).filter((e) => e.kind === 'ADHOC_SET').length, 0);

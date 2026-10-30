@@ -415,6 +415,34 @@ foto_engram() {
 # Se cuentan los ARCHIVOS previos, no si la carpeta existía. Un `.engram/` recién creado —o con
 # `chunks/` vacío— da una foto vacía que es CORRECTA, y confundirla con "no pude sacar la foto"
 # haría que el hook se negara a stagear justo en el caso normal del primer sync.
+# ── Índice local ─────────────────────────────────────────────────────────
+# Un repo que ignora `.engram/manifest.json` y no lo versiona está en «índice local»: el índice no viaja por git y cada
+# clon lo rehace desde sus chunks. Acá se rehace ANTES de la foto y del sync: el exportador nunca ve un índice ausente o
+# a medias (sin índice dejaría uno de una sola entrada), y el índice rehecho no figura como cambio del sync. No se
+# prepara nunca ni se cruza contra HEAD: no hay índice en el commit. Si no se pudo rehacer, se dice y el commit sigue.
+INDICE_LOCAL=0
+git -C "$REPO" check-ignore -q -- .engram/manifest.json 2>/dev/null; IGNORADO_RC=$?
+# 1 es «no está ignorado»; otra salida es git que no contestó, y eso se dice (el commit sigue como con el índice versionado)
+if [ "$IGNORADO_RC" -gt 1 ]; then
+  echo "⚠️  tycon: no pude saber si el índice de memoria es local (git check-ignore salió $IGNORADO_RC); sigo como si viajara por git." >&2
+fi
+if [ "$IGNORADO_RC" -eq 0 ] \
+   && ! git -C "$REPO" ls-files --error-unmatch -- .engram/manifest.json >/dev/null 2>&1; then
+  INDICE_LOCAL=1
+  if [ -f "$LIB_MANIFEST" ] && command -v "$HNODE" >/dev/null 2>&1; then
+    REHECHO_ERR=$("$HNODE" "$LIB_MANIFEST" rebuild --repo "$REPO" 2>&1 >/dev/null); REHECHO_RC=$?
+    log "índice local: rebuild rc=$REHECHO_RC"
+    if [ "$REHECHO_RC" != "0" ]; then
+      echo "⚠️  tycon: no pude rehacer el índice de memoria antes de exportar (el commit sigue): $(printf '%s' "$REHECHO_ERR" | tr '\n' ' ' | cut -c1-300)" >&2
+    elif [ -n "$REHECHO_ERR" ]; then
+      # rehecho, pero con avisos (un chunk sin fecha, un índice ilegible rehecho entero): también se dicen
+      echo "⚠️  tycon: rehice el índice de memoria, con avisos: $(printf '%s' "$REHECHO_ERR" | tr '\n' ' ' | cut -c1-300)" >&2
+    fi
+  else
+    echo "⚠️  tycon: no pude rehacer el índice de memoria antes de exportar (falta node o $LIB_MANIFEST); el commit sigue." >&2
+  fi
+fi
+
 ARCHIVOS_ANTES=$(find "$REPO/.engram" -type f 2>/dev/null | wc -l | tr -d ' ')
 ANTES_FOTO=$(foto_engram)
 
@@ -445,10 +473,17 @@ stagear_lo_nuevo() {
   # una ruta con espacios se cortaría en el primero y el `git add` fallaría callado: el sync exportaría y
   # nada quedaría preparado.
   NUEVOS=$(comm -13 <(printf '%s\n' "$ANTES_FOTO") <(printf '%s\n' "$AHORA_FOTO") 2>/dev/null | awk 'NF' | sed 's/ [^ ]*$//')
+  # En índice local el sync también escribe el índice, que no viaja: fuera de la lista (un `git add` de un archivo
+  # ignorado falla, y acá el error va a /dev/null).
+  [ "${INDICE_LOCAL:-0}" = "1" ] && NUEVOS=$(printf '%s\n' "$NUEVOS" | grep -v '/\.engram/manifest\.json$')
   if [ -z "$NUEVOS" ]; then log "el sync no cambió nada en .engram/"; return 0; fi
-  printf '%s\n' "$NUEVOS" | while IFS= read -r f; do
-    [ -n "$f" ] && git add -- "$f" 2>/dev/null
-  done
+  # lo que no se pudo preparar se nombra: esa memoria quedó exportada pero no viaja en este commit
+  NO_PREPARADOS=$(printf '%s\n' "$NUEVOS" | while IFS= read -r f; do
+    [ -n "$f" ] && { git add -- "$f" 2>/dev/null || printf '%s\n' "$f"; }
+  done)
+  if [ -n "$NO_PREPARADOS" ]; then
+    echo "⚠️  tycon: no se preparó para el commit (git add falló), esa memoria no viaja en este commit: $(printf '%s' "$NO_PREPARADOS" | tr '\n' ' ')" >&2
+  fi
   log "staged (sólo lo del sync): $(printf '%s' "$NUEVOS" | tr '\n' ' ')"
 }
 
@@ -589,7 +624,10 @@ cruzar_indice() {
 }
 
 if [ "$ES_COMMIT" = "1" ]; then
-    if [ -d "$REPO/.engram" ]; then
+    if [ -d "$REPO/.engram" ] && [ "$INDICE_LOCAL" = "1" ]; then
+      # Índice local: ni la validación del índice ni el cruce de entradas perdidas (no hay índice en el commit).
+      stagear_lo_nuevo
+    elif [ -d "$REPO/.engram" ]; then
       # Un `git add` incondicional dejaría pasar un
       # manifest con MARCADORES DE CONFLICTO adentro — no valida contenido,
       # solo saca el path de la lista de unmerged, y el commit pasaría con JSON roto. Antes de

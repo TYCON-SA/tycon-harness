@@ -218,7 +218,7 @@ _`packs/<paquete>/pack.json` (en el perfil del equipo) · `skills/tycon-pipeline
 
 ## scripts/lib/tycon-config.js + team-profile.json — la configuración del arnés
 
-_`scripts/lib/tycon-config.js` · el perfil del equipo · `~/.claude/tycon.json` · el enlace `~/.claude/tycon-harness` (`scripts/lib/canonical-path.js --ensure-link`) · agent-skills `skills/tycon-pipeline/scripts/lib/harness-path.js` · `scripts/lib/repos-root.js` · `scripts/lib/harness-repo.js` · `scripts/publishing/profile-equivalence.js` · INSTALL.md §4b_
+_`scripts/lib/tycon-config.js` · el perfil · `~/.claude/tycon.json` · el enlace `~/.claude/tycon-harness` · más, en el detalle_
 
 **Qué es:** La configuración del arnés en una cadena: entorno, `~/.claude/tycon.json`, perfil del equipo, apagado.
 
@@ -1892,8 +1892,6 @@ _guides/wiki-topics.md + scripts/tools/lint-wiki.sh_
 
 **Dónde se prueba:** sin suite propia
 
-**Guía:** [wiki-topics.md](wiki-topics.md)
-
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guideswiki-topicsmd)
 
 ## scripts/hooks/engram-pre-commit.sh
@@ -1934,8 +1932,6 @@ _guides/ci-gate.md + scripts/ci/tycon-ci-gate.js_
 
 **Dónde se prueba:** sin suite propia
 
-**Guía:** [ci-gate.md](ci-gate.md)
-
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesci-gatemd)
 
 ## scripts/hooks/lane-llm-notice.js
@@ -1961,8 +1957,6 @@ _guides/maintaining/controls-bench.md + scripts/controls-bench/_
 **Quién la usa:** Quien mantiene el arnés; el instalador lo chequea a diario y `bench-notice.js` avisa al arranque.
 
 **Dónde se prueba:** `scripts/controls-bench/`
-
-**Guía:** [controls-bench.md](maintaining/controls-bench.md)
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesmaintainingcontrols-benchmd)
 
@@ -2020,8 +2014,6 @@ _scripts/publishing/ + guides/maintaining/publicacion-espejo.md_
 
 **Dónde se prueba:** `third-party-skills.test.js`, `install-third-party.test.sh`, `third-party-real.test.sh` y `third-party-origin.test.sh`
 
-**Guía:** [publicacion-espejo.md](maintaining/publicacion-espejo.md)
-
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptspublishingthird-party-skillsjson)
 
 ## scripts/publishing/export.js
@@ -2035,8 +2027,6 @@ _scripts/publishing/ + guides/maintaining/publicacion-espejo.md_
 **Quién la usa:** `mirror.js` y la CI del repo público.
 
 **Dónde se prueba:** `scripts/tests/export.test.js`
-
-**Guía:** [publicacion-espejo.md](maintaining/publicacion-espejo.md)
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptspublishingexportjs)
 
@@ -2052,8 +2042,6 @@ _scripts/publishing/ + guides/maintaining/publicacion-espejo.md_
 
 **Dónde se prueba:** `scripts/tests/mirror.test.js`
 
-**Guía:** [publicacion-espejo.md](maintaining/publicacion-espejo.md)
-
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptspublishingmirrorjs)
 
 ## pipelines/azure-pipelines-public-leak-check.yml
@@ -2068,8 +2056,6 @@ _pipelines/azure-pipelines-public-leak-check.yml + scripts/tests/mirror-pipeline
 
 **Dónde se prueba:** `scripts/tests/mirror-pipeline.test.sh`
 
-**Guía:** [publicacion-espejo.md](maintaining/publicacion-espejo.md)
-
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#pipelinesazure-pipelines-public-leak-checkyml)
 
 ## scripts/hooks/public-push-guard.js
@@ -2083,8 +2069,6 @@ _scripts/hooks/public-push-guard.js + scripts/hooks/git-pre-push-global.sh + .gi
 **Quién la usa:** Git en cada empuje (hook global), el freno de `gh` y la validación de cada pedido, en modo `range`.
 
 **Dónde se prueba:** `scripts/tests/public-push-guard.test.js`, `scripts/tests/githook-pre-push.test.sh` y `scripts/tests/gh-pr.test.js`
-
-**Guía:** [publicacion-espejo.md](maintaining/publicacion-espejo.md)
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshookspublic-push-guardjs)
 
@@ -2202,8 +2186,6 @@ _scripts/publishing/ + guides/maintaining/publicacion-espejo.md_
 
 **Dónde se prueba:** `scripts/tests/new-names.test.js`
 
-**Guía:** [publicacion-espejo.md](maintaining/publicacion-espejo.md)
-
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptspublishingnew-namesjs)
 
 ## scripts/lib/legacy-names.js
@@ -2217,8 +2199,6 @@ _scripts/lib/legacy-names.js/.sh/.ps1 + scripts/lib/renames.json + guides/mainta
 **Quién la usa:** Los guiones renombrados y el instalador, que reescribe las rutas viejas de la máquina con `--migrate-machine`.
 
 **Dónde se prueba:** `scripts/tests/legacy-names.test.js` y `scripts/tests/legacy-names-install.test.sh`
-
-**Guía:** [nombres-en-ingles.md](maintaining/nombres-en-ingles.md)
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsliblegacy-namesjs)
 
@@ -2234,8 +2214,6 @@ _scripts/ci/legacy-options.sh/.js + guides/maintaining/nombres-en-ingles.md_
 
 **Dónde se prueba:** sin suite propia
 
-**Guía:** [nombres-en-ingles.md](maintaining/nombres-en-ingles.md)
-
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscilegacy-optionssh-y-legacy-optionsjs)
 
 ## scripts/publishing/spanish-names.js
@@ -2249,8 +2227,6 @@ _scripts/publishing/ + scripts/lib/spanish-words.json + guides/maintaining/nombr
 **Quién la usa:** El pre-commit del arnés y de agent-skills, y el diff de cada pedido.
 
 **Dónde se prueba:** `scripts/tests/spanish-names.test.js`
-
-**Guía:** [nombres-en-ingles.md](maintaining/nombres-en-ingles.md)
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptspublishingspanish-namesjs)
 
@@ -2266,6 +2242,40 @@ _scripts/publishing/internal-history.js + internal-history.json + guides/maintai
 
 **Dónde se prueba:** `scripts/tests/internal-history-guard.test.js` y `scripts/tests/code-comments.test.js`
 
-**Guía:** [publicacion-espejo.md](maintaining/publicacion-espejo.md)
-
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptspublishinginternal-historyjs)
+
+## scripts/lib/estimates.js
+
+**Qué es:** El registro de estimaciones de cada repo: sólo crece y vale el último renglón.
+
+**Por qué existe:** Sin él, el error de una estimación no se mide.
+
+**Quién la usa:** `tycon-create-story`, el pipeline, el sitio y el pedido.
+
+**Dónde se prueba:** `scripts/tests/estimates.test.js`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptslibestimatesjs)
+
+## scripts/lib/similar-stories.js
+
+**Qué es:** Historias cerradas parecidas a una nueva, con sus horas reales.
+
+**Por qué existe:** Dan con qué comparar al estimar; sin horas medidas, nada.
+
+**Quién la usa:** `tycon-create-story`.
+
+**Dónde se prueba:** `scripts/tests/similar-stories.test.js`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptslibsimilar-storiesjs)
+
+## skills/tycon-pipeline/scripts/lib/real-hours.js
+
+**Qué es:** Las horas reales de una historia, según el reloj.
+
+**Por qué existe:** El error se mide contra horas registradas, nunca adivinadas.
+
+**Quién la usa:** `pipeline.js estimate-real`.
+
+**Dónde se prueba:** `skills/tycon-pipeline/scripts/tests/estimate-real.test.js`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptslibreal-hoursjs)

@@ -63,7 +63,7 @@ const SECCIONES = Object.freeze([
   // como estaba (Telegram, de cada máquina, no se edita desde la sección de integraciones).
   // si la organización usa una sesión que reenvía el ok de un dev (approvals.relay_session; vale sólo desde el perfil;
   // cuál sesión es, se designa en cada máquina)
-  Object.freeze({ id: 'aprobaciones', titulo: 'Quién reenvía el ok de un dev', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['approvals'], rutas: Object.freeze(['approvals.relay_session', 'approvals.delegated_signing', 'approvals.owner_only', 'approvals.delegated_machines']), idCorto: 'profile', necesita: ['approvals'] }),
+  Object.freeze({ id: 'aprobaciones', titulo: 'Quién reenvía el ok de un dev', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['approvals'], rutas: Object.freeze(['approvals.relay_session', 'approvals.delegated_signing', 'approvals.owner_only', 'approvals.delegated_machines', 'approvals.levels']), idCorto: 'profile', necesita: ['approvals'] }),
   Object.freeze({ id: 'pruebaAMano', titulo: 'Prueba a mano de cada criterio', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['qa'], rutas: Object.freeze(['qa.manual_check']), idCorto: 'profile', necesita: ['qa'] }),
   // los frenos y medidores de todas las máquinas (switches): un freno sólo se enciende desde acá (apagarlo es de cada
   // máquina, con su variable); un medidor se enciende o se apaga. La variable puesta en una máquina gana
@@ -348,6 +348,12 @@ const DELEGATED_LIST_SINCE = '2026.10.24.14';
  */
 const OWNER_ONLY_SINCE = '2026.10.27.7';
 /**
+ * 🔴 La primera versión del arnés cuyo lector conoce `approvals.levels`: la etiqueta del merge que lo trae, como
+ * OWNER_ONLY_SINCE. Un lector anterior la leería como una clave desconocida, y una clave rota de `approvals` deja sin
+ * ninguna firma delegada.
+ */
+const LEVELS_SINCE = '2026.10.30.30';
+/**
  * 🔴 La primera versión del arnés cuyo lector conoce `integrations.timeTracking` (la etiqueta del merge que trajo ese
  * lector). El selector de la herramienta de horas saca la llave vieja `integrations.clockify` del perfil: una máquina
  * anterior no entiende la clave nueva y se quedaría sin Clockify en silencio. Por eso el pedido que la cambia sube
@@ -433,6 +439,9 @@ function teamProfileGateProblem({ layerText, versionImagen, doc, actual }) {
   const soloDueno = isObject(doc) && isObject(doc.approvals) ? doc.approvals.owner_only : undefined;
   const soloDuenoAntes = isObject(actual) && isObject(actual.approvals) ? actual.approvals.owner_only : undefined;
   if (soloDueno !== undefined && (!isObject(actual) || canonico(soloDueno) !== canonico(soloDuenoAntes))) pedidas.push(['approvals.owner_only', OWNER_ONLY_SINCE, 'org.capaSinSoloDelDueno']);
+  const niveles = isObject(doc) && isObject(doc.approvals) ? doc.approvals.levels : undefined;
+  const nivelesAntes = isObject(actual) && isObject(actual.approvals) ? actual.approvals.levels : undefined;
+  if (niveles !== undefined && (!isObject(actual) || canonico(niveles) !== canonico(nivelesAntes))) pedidas.push(['approvals.levels', LEVELS_SINCE, 'org.capaSinNiveles']);
   const maquinas = isObject(doc) && isObject(doc.approvals) ? doc.approvals.delegated_machines : undefined;
   const maquinasAntes = isObject(actual) && isObject(actual.approvals) ? actual.approvals.delegated_machines : undefined;
   if (maquinas !== undefined && (!isObject(actual) || canonico(maquinas) !== canonico(maquinasAntes))) pedidas.push(['approvals.delegated_machines', DELEGATED_LIST_SINCE, 'org.capaSinListaDeFirmas']);
@@ -580,10 +589,13 @@ function rutasDeHoras() {
  * `firmas: []` con su motivo: la pantalla lo dice y no ofrece nada.
  */
 function extrasDeAprobaciones(informados) {
-  let firmas = []; let grupos = {}; let firmasMotivo = null;
+  let firmas = []; let grupos = {}; let niveles = []; let firmasMotivo = null;
   try {
     const SIG = require(path.join(__dirname, 'signatures.js'));
-    firmas = SIG.SIGNATURES.map((f) => ({ id: f.id, approves: f.approves, otherSession: f.otherSession }));
+    // `covers`: lo que la firma alcanza por delegación (sin lo que la delegación no firma), para medir su nivel con lo
+    // que suba el perfil
+    firmas = SIG.SIGNATURES.map((f) => ({ id: f.id, approves: f.approves, otherSession: f.otherSession, covers: f.covers.filter((c) => !SIG.NOT_DELEGATED.includes(c)) }));
+    niveles = SIG.LEVELS.map((l) => ({ id: l.id, level: l.level, approves: l.approves }));
     grupos = Object.fromEntries(Object.entries(SIG.GROUPS).map(([g, ids]) => [g, [...ids]]));
   } catch (e) { firmasMotivo = (e && (e.code || e.message)) || 'error'; }
   // La huella y la carpeta las manda cada máquina: dos carpetas con la misma huella se muestran como choque (una
@@ -605,7 +617,7 @@ function extrasDeAprobaciones(informados) {
   const maquinas = [...porHuella].map(([id, carpetas]) => ({
     id, carpeta: carpetas[0], nombre: nombreDeMaquina(carpetas[0]), ...(carpetas.length > 1 ? { choque: carpetas } : {}),
   }));
-  return { firmas, grupos, ...(firmasMotivo ? { firmasMotivo } : {}), maquinas, sinHuella, buzonMedido: isObject(informados) && !informados.no_medido };
+  return { firmas, grupos, niveles, ...(firmasMotivo ? { firmasMotivo } : {}), maquinas, sinHuella, buzonMedido: isObject(informados) && !informados.no_medido };
 }
 /** La carpeta como nombre de máquina en la forma que pide el lector de la configuración (hasta 40, letras, números, ` ._()-`). */
 function nombreDeMaquina(carpeta) {
@@ -2238,6 +2250,12 @@ function pantalla(idioma = 'es') {
     var delegadas = [];
     firmas.forEach(function (v) { abre(v).forEach(function (id) { if (delegadas.indexOf(id) < 0) delegadas.push(id); }); });
     var soloDueno = Array.isArray(ap.owner_only) ? ap.owner_only : [];
+    // el nivel que rige: el mayor entre la tabla (signatures.js, LEVELS) y lo que sube el perfil (approvals.levels). La
+    // coordinadora firma sola sólo la rutina: una firma que por lo que cubre llega a 2 o más no se ofrece para delegar
+    var NIVELES = ex.niveles || [];
+    var subidos = ap.levels && typeof ap.levels === 'object' && !Array.isArray(ap.levels) ? ap.levels : {};
+    var efectivo = function (id, sub) { var l = NIVELES.filter(function (x) { return x.id === id; })[0]; if (!l) return 3; var n = (sub || subidos)[id]; return typeof n === 'number' && n > l.level ? n : l.level; };
+    var nivelDelegado = function (f, sub) { return Math.max.apply(null, (f.covers || [f.id]).map(function (c) { return efectivo(c, sub); })); };
     // agrega en el orden del catálogo sin mover lo que ya estaba: prender y apagar deja el mismo archivo
     function enSuLugar(lista, id) {
       var i = 0;
@@ -2270,8 +2288,10 @@ function pantalla(idioma = 'es') {
     else {
       var t = tabla('firmas', T('pantalla.firmasTitulo'), [T('pantalla.firmasColFirma'), T('pantalla.firmasColQuien')]);
       CAT.forEach(function (f) {
-        var estado = soloDueno.indexOf(f.id) >= 0 ? 'dueno' : (delegadas.indexOf(f.id) >= 0 ? 'delegada' : '');
-        var delegable = estado === 'delegada' || (estado === '' && f.otherSession === 'yes');
+        var rutina = nivelDelegado(f) === 1;
+        // una delegada que ya no es rutina el lector la saca de la delegación: se muestra a la ventana, con su nivel
+        var estado = soloDueno.indexOf(f.id) >= 0 ? 'dueno' : (delegadas.indexOf(f.id) >= 0 && rutina ? 'delegada' : '');
+        var delegable = rutina && (estado === 'delegada' || (estado === '' && f.otherSession === 'yes'));
         var opciones = [['', T('pantalla.firmaVentana')]].concat(delegable ? [['delegada', T('pantalla.firmaDelegadaOpcion')]] : []).concat([['dueno', T('pantalla.firmaSoloDueno')]]);
         var que = T('pantalla.firmaQue.' + f.id);
         if (que === 'pantalla.firmaQue.' + f.id) que = f.approves;
@@ -2281,14 +2301,51 @@ function pantalla(idioma = 'es') {
           render();
         }, 'approvals.firma.' + f.id, pr);
         // una delegada que no se corre desde otra sesión no dice «no se puede delegar» al lado de «Delegada»: dice que no rinde
-        var nota = estado === 'dueno' ? T('pantalla.firmaSoloDuenoNoSeDelega') : (f.otherSession !== 'yes' ? T(estado === 'delegada' ? 'pantalla.firmaDelegadaNoDesdeOtraSesion' : 'pantalla.firmaNoDesdeOtraSesion') : '');
+        var nota = estado === 'dueno' ? T('pantalla.firmaSoloDuenoNoSeDelega') : (!rutina ? T('pantalla.firmaNoRutina', { nivel: nivelDelegado(f) }) : (f.otherSession !== 'yes' ? T(estado === 'delegada' ? 'pantalla.firmaDelegadaNoDesdeOtraSesion' : 'pantalla.firmaNoDesdeOtraSesion') : ''));
         t.appendChild(renglon([el('div', { class: 'que', role: 'cell' }, el('b', { text: que }), el('span', { class: 'muted', text: ' · ' + f.id + (nota ? ' · ' + nota : '') })), el('div', { class: 'sel', role: 'cell' }, c.sel)], c.mios));
       });
       box.appendChild(t);
     }
+    box.appendChild(editorNiveles(NIVELES, subidos, efectivo, nivelDelegado, CAT, firmas, abre, d, pr));
     if (delegadas.indexOf('refresh-after-main') >= 0) box.appendChild(el('p', { class: 'muted', text: T('pantalla.firmaDelegadaCosto') }));
     if (delegadas.length && !rol) box.appendChild(el('p', { class: 'err', text: T('pantalla.firmaDelegadaSinSesion') }));
     box.appendChild(editorMaquinasDelegadas(ap, ex, d, pr, delegadas.length > 0));
+    return box;
+  }
+  // el nivel de cada firma (approvals.levels): una fila por id de la tabla, con un selector que empieza en el nivel de la
+  // tabla, así que sólo deja subir. Volver al de la tabla saca el id del perfil. Subir una firma a 2 o más la saca de lo
+  // delegado en el mismo cambio, como hace el lector al leerlo
+  function editorNiveles(NIVELES, subidos, efectivo, nivelDelegado, CAT, firmas, abre, d, pr) {
+    var box = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.nivelesTitulo') }), el('p', { class: 'sub-d', text: T('pantalla.nivelesAyuda') }));
+    problemasEn(pr, 'approvals.levels').forEach(function (x) { box.appendChild(el('p', { class: 'err', text: x.message })); });
+    if (!NIVELES.length) return box;
+    var t = tabla('niveles', T('pantalla.nivelesTitulo'), [T('pantalla.firmasColFirma'), T('pantalla.nivelesColNivel')]);
+    NIVELES.forEach(function (l) {
+      var opciones = [1, 2, 3].filter(function (n) { return n >= l.level; }).map(function (n) { return [String(n), T('pantalla.nivel' + n)]; });
+      var que = T('pantalla.nivelQue.' + l.id);
+      if (que === 'pantalla.nivelQue.' + l.id) que = l.approves;
+      var c = corto(que, String(efectivo(l.id)), opciones, function (x) {
+        var n = numOTexto(x);
+        var nuevo = {};
+        Object.keys(subidos).forEach(function (k) { if (k !== l.id) nuevo[k] = subidos[k]; });
+        if (n > l.level) nuevo[l.id] = n;
+        hoja(d, 'approvals', 'levels', Object.keys(nuevo).length ? nuevo : '');
+        // lo delegado que deja de ser rutina sale de la lista; el resto queda en su forma
+        var porId = {}; CAT.forEach(function (f) { porId[f.id] = f; });
+        var quedan = []; var salio = false;
+        firmas.forEach(function (v) {
+          var ids = abre(v);
+          var malos = ids.filter(function (id) { return porId[id] && nivelDelegado(porId[id], nuevo) >= 2; });
+          if (!malos.length) { quedan.push(v); return; }
+          salio = true;
+          ids.forEach(function (id) { if (malos.indexOf(id) < 0 && quedan.indexOf(id) < 0) quedan.push(id); });
+        });
+        if (salio) hoja(d, 'approvals', 'delegated_signing', quedan.length ? quedan : '');
+        render();
+      }, 'approvals.nivel.' + l.id, pr);
+      t.appendChild(renglon([el('div', { class: 'que', role: 'cell' }, el('b', { text: que }), el('span', { class: 'muted', text: ' · ' + l.id })), el('div', { class: 'sel', role: 'cell' }, c.sel)], c.mios));
+    });
+    box.appendChild(t);
     return box;
   }
   // en qué máquinas vale lo delegado (approvals.delegated_machines): de fábrica, en ninguna. Las que el buzón de corridas
@@ -2866,7 +2923,7 @@ function pantalla(idioma = 'es') {
     box.appendChild(el('p', { class: 'sub-d', text: T('pantalla.porProveedorAyuda') }));
     PROVEEDORES.forEach(function (p) {
       var nombreP = T('pantalla.proveedor.' + p);
-      var t = tabla('modelos proveedores', nombreP, [T('pantalla.nivel2'), T('pantalla.porDefecto2'), T('pantalla.tuOrganizacionUsa')]);
+      var t = tabla('modelos proveedores', nombreP, [T('pantalla.columnaNivel'), T('pantalla.porDefecto2'), T('pantalla.tuOrganizacionUsa')]);
       t.setAttribute('data-proveedor', p);
       var permitidos = permitidosDe(p);
       var listaId = 'permitidos-' + p;
@@ -2901,7 +2958,7 @@ function pantalla(idioma = 'es') {
     // el proceso de la noche: su proveedor y su nivel; el modelo sale de la misma tabla. Sin modelo para ese nivel, el
     // servidor no deja proponer (en la noche «inherit» no vale)
     var secretos = prov.secretos || {};
-    var tn = tabla('modelos noche', T('pantalla.elProcesoDeLaNoche'), [T('pantalla.trabajo'), T('pantalla.nocheProveedor'), T('pantalla.nivel2')]);
+    var tn = tabla('modelos noche', T('pantalla.elProcesoDeLaNoche'), [T('pantalla.trabajo'), T('pantalla.nocheProveedor'), T('pantalla.columnaNivel')]);
     var lineaNoche = el('small', { class: 'glosa noche-hoy' });
     function pintarNoche() {
       var n0 = esObjeto(m.nightly) ? m.nightly : null;
@@ -2921,7 +2978,7 @@ function pantalla(idioma = 'es') {
       else { m.nightly = esObjeto(m.nightly) ? m.nightly : {}; m.nightly.provider = v; if (!m.nightly.level) m.nightly.level = 'economy'; }
       pintarNoche();
     }, 'models.nightly.provider', pr);
-    var selN = corto(T('pantalla.nivel2'), noche && noche.level ? noche.level : 'economy', NIVELES.map(function (x) { return [x, T('pantalla.nivel.' + x)]; }), function (v) { if (esObjeto(m.nightly)) m.nightly.level = v; pintarNoche(); }, 'models.nightly.level', pr);
+    var selN = corto(T('pantalla.columnaNivel'), noche && noche.level ? noche.level : 'economy', NIVELES.map(function (x) { return [x, T('pantalla.nivel.' + x)]; }), function (v) { if (esObjeto(m.nightly)) m.nightly.level = v; pintarNoche(); }, 'models.nightly.level', pr);
     pintarNoche();
     tn.appendChild(renglon([el('div', { class: 'que', role: 'cell' }, el('span', { text: T('pantalla.elProcesoDeLaNoche') }), lineaNoche),
       el('div', { class: 'acc', role: 'cell' }, selP.sel), el('div', { class: 'acc', role: 'cell' }, selN.sel)], problemasEn(pr, 'models.nightly').concat(selP.mios, selN.mios)));
@@ -3889,7 +3946,7 @@ function pantalla(idioma = 'es') {
 
 module.exports = {
   extrasDeAprobaciones, nombreDeMaquina,
-  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, ESTIMATES_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, COORDINATION_SINCE, SWITCHES_SINCE, WAIT_NOTICE_ENABLED_SINCE, DELEGATED_LIST_SINCE, OWNER_ONLY_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
+  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, ESTIMATES_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, COORDINATION_SINCE, SWITCHES_SINCE, WAIT_NOTICE_ENABLED_SINCE, DELEGATED_LIST_SINCE, OWNER_ONLY_SINCE, LEVELS_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
   problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy, estimacionesDeHoy, modelosEnNiveles, equivalenciasDe, proveedoresDe,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia, reaplicar, versionDeTexto,
   SIN_NOTICIAS_DIAS, CLAVES_DEL_REPO, lectorDeClave, reemplazarBloque, revisarClaveDelRepo, idDeRepo, urlDeRepo,

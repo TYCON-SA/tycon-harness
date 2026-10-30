@@ -663,7 +663,7 @@ test('AdversarialSkip_LivianaSinFirma_ConCodigoTocado_ElPaseCorre', (t) => {
   assert.strictEqual(pipeline.computeRunSize({ story, repo }).size, 'liviana', 'lo declarado solo es liviano');
   const sinFirma = pipeline.computeRunSize({ story, repo, files, runSize: { size: 'liviana', reason: 'sólo docs' } });
   assert.strictEqual(sinFirma.size, 'completa', sinFirma.reason);
-  assert.match(sinFirma.reason, /sin la firma del dueño/);
+  assert.match(sinFirma.reason, /sin la firma de una persona/);
   const g = pipeline.computeDeepReviewGate({ story, repo, files, runSize: { size: 'liviana', reason: 'sólo docs' } });
   assert.strictEqual(g.run, true, g.reason);
   // con la firma, el forzado vale; sin código tocado, también

@@ -5,6 +5,6 @@
   "kind": "platform",
   "connector": "scripts/connector.js",
   "operations": ["work-item.create", "work-item.update", "work-item.close", "work-item.find", "work-item.read", "deployments.read"],
-  "capabilities": { "completedHours": "comment", "workItemType": "label", "autoComplete": "auto-or-wait" },
+  "capabilities": { "completedHours": "comment", "estimate": "project-or-comment","workItemType": "label", "autoComplete": "auto-or-wait" },
   "rawCommands": ["gh pr create", "gh pr merge", "gh issue create", "gh issue edit", "gh issue close"]
 }

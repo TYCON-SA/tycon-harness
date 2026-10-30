@@ -69,7 +69,10 @@ function arbolDelGuion(casa, cmd, { consola, padre = 100, tool = herramienta(), 
 const evento = (command, extra = {}) => ({ session_id: 'ses-a', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, ...extra });
 // sin `delegacion`, ninguna firma se delega: la delegación de verdad lee el perfil y la huella de esta máquina
 const SIN_DELEGACION = () => ({ ok: false, motivo: 'sin delegación en la prueba' });
-const pedir = (casa, cmd, o = {}) => ow.decidir({ evento: evento(cmd, o.evento), escapes: o.escapes || [], arbol: o.arbol || arbolDelFreno(), pid: 201, casa, ahora: o.ahora || AHORA, delegacion: o.delegacion || SIN_DELEGACION, clasificar: o.clasificar || (() => null) });
+// sin `aprobador`, el texto de un repo del arnés: el de verdad mira el remoto de la carpeta del evento
+const { APPROVERS } = require(path.join(__dirname, '..', 'lib', 'approver.js'));
+const DEL_ARNES = () => APPROVERS.maintainers;
+const pedir = (casa, cmd, o = {}) => ow.decidir({ evento: evento(cmd, o.evento), escapes: o.escapes || [], arbol: o.arbol || arbolDelFreno(), pid: 201, casa, ahora: o.ahora || AHORA, delegacion: o.delegacion || SIN_DELEGACION, clasificar: o.clasificar || (() => null), aprobador: o.aprobador || DEL_ARNES });
 const registros = (casa) => { try { return fs.readdirSync(ow.carpeta(casa)); } catch (_) { return []; } };
 const vigentes = (casa) => registros(casa).filter((f) => f.endsWith('.json'));
 const gates = (casa) => { try { return fs.readFileSync(path.join(casa, '.claude', '.tycon-pipeline', 'gates.log'), 'utf8').split('\n').filter(Boolean).map(JSON.parse); } catch (_) { return []; } };
@@ -1386,7 +1389,7 @@ test('OwnerWindow_VentanaDeWindows_DiceQueSeFirmaAntesDeLasTresPalabras', (t) =>
   const original = console.error;
   console.error = (...a) => { dicho.push(a.join(' ')); };
   try {
-    ow.exigir({ firma: 'plan-approval', argv, propia: '_nosession', resumen: 'el plan de la story 9.97', casa, ahora: AHORA, salir: () => {},
+    ow.exigir({ firma: 'plan-approval', argv, propia: '_nosession', resumen: 'el plan de la story 9.97', casa, ahora: AHORA, salir: () => {}, aprobador: DEL_ARNES,
       tty: { windows: true, enVentana: () => true, hay: () => true, dentro: () => {}, confirmarFrase: () => { alPreguntar = dicho.join('\n'); return true; } } });
   } finally { console.error = original; }
   // sin esto el dueño escribe las tres palabras sin saber qué firma: el agente elige el plan, la vuelta o el salteo
@@ -1753,4 +1756,41 @@ test('OwnerWindow_RestoreDeOtraSesion_FirmaParaQuienLoTrae', (t) => {
   const e = ow.exigir({ firma: 'lost-run', argv: [MARKER, 'restore', 'ses-b'], pid: 301, arbol: arbolDelGuion(casa, cmd), casa, ahora: AHORA + 60000, propia: 'ses-a' });
   assert.strictEqual(e.codigo, 0, e.motivo);
   assert.strictEqual(e.destino, 'ses-a');
+});
+
+// --- quién aprueba: el dueño en los repos del arnés, vos en los demás -----------------------------------------------
+
+// aprobador T5 OwnerWindow_RepoDeProducto_LoAprobasVos
+// 🔴 Falla con: la ventana de un repo de producto que dice «Firma del dueño», o el freno que no mira la carpeta del
+// evento para decidirlo.
+test('aprobador T5 OwnerWindow_RepoDeProducto_LoAprobasVos', (t) => {
+  const vistas = [];
+  const r = pedir(casaNueva(t), ADHOC, { evento: { cwd: '/repos/producto' }, aprobador: (cwd) => { vistas.push(cwd); return APPROVERS.dev; } });
+  assert.strictEqual(r.decision, 'ask', r.texto);
+  assert.match(r.texto, /^Lo aprobás vos: abrir el arreglo rápido de una sesión, sin historia\. Story 9\.99, sesión ses-a\./);
+  assert.doesNotMatch(r.texto, /dueño/);
+  assert.match(r.texto, /firmala en tu terminal/);
+  assert.deepStrictEqual(vistas, ['/repos/producto'], 'decide con la carpeta del evento');
+  // en el repo del arnés, el dueño
+  assert.match(pedir(casaNueva(t), ADHOC).texto, /^Firma del dueño: /);
+});
+
+// aprobador T6 OwnerWindow_Terminal_LoAprobasVos
+// 🔴 Falla con: la firma en la terminal o la ventana nueva de Windows de un repo de producto que dicen «el dueño».
+test('aprobador T6 OwnerWindow_Terminal_LoAprobasVos', (t) => {
+  const casa = casaNueva(t);
+  const argv = [MARKER, 'complete-step', 'approve-plan', '--terminal', '--for-session', 'ses-a'];
+  const DEV = () => APPROVERS.dev;
+  let pregunta = null;
+  const r = ow.exigir({ firma: 'plan-approval', argv, propia: '_nosession', casa, ahora: AHORA, aprobador: DEV,
+    tty: { windows: false, hay: () => true, preguntar: (p) => { pregunta = p; return 'no'; } } });
+  assert.strictEqual(r.codigo, 1);
+  assert.match(pregunta, /Lo aprobás vos: aprobar el plan de una story, sesión ses-a\./);
+  const sinTerminal = ow.exigir({ firma: 'plan-approval', argv, propia: '_nosession', casa, ahora: AHORA, aprobador: DEV, tty: { windows: false, hay: () => false } });
+  assert.strictEqual(sinTerminal.codigo, 2);
+  assert.match(sinTerminal.motivo, /en tu terminal/);
+  let titulo = null;
+  ow.exigir({ firma: 'plan-approval', argv, propia: '_nosession', casa, ahora: AHORA, aprobador: DEV, salir: () => {},
+    tty: { windows: true, enVentana: () => false, abrir: (o) => { titulo = o.titulo; return { estado: 'cerrada', codigo: 1 }; } } });
+  assert.strictEqual(titulo, 'Lo aprobás vos');
 });
