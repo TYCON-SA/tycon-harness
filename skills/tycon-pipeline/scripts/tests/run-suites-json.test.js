@@ -1301,3 +1301,18 @@ test('T20c RunSuites_PortableSuite_OrphanTmpSwept — la carpeta temporal de un 
     fs.rmSync(viva, { recursive: true, force: true });
   }
 });
+
+// Una suite que deja, dentro de su carpeta temporal, una carpeta sin permisos (el banco de controles prueba así un
+// ~/.claude/skills al que no se puede entrar) no tumba la corrida: el borrado le devuelve los permisos y el resumen se
+// escribe igual.
+// 🔴 mutación: borrar sin devolver los permisos → ENOTEMPTY, el corredor se cae y no hay resumen.
+test('T20d RunSuites_PortableSuite_LockedTmpRemoved — una carpeta sin permisos en la temporal no tumba la corrida', () => {
+  const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/cerrada.test.js', requiere: [] }] });
+  f.escribir('arnes', 'tests/cerrada.test.js', `const os=require('os'),fs=require('fs'),path=require('path');const d=path.join(os.tmpdir(),'sandbox','home','.claude','skills');fs.mkdirSync(d,{recursive:true});fs.chmodSync(d,0);fs.writeFileSync(${JSON.stringify(path.join(f.root, 'tmp.json'))},JSON.stringify({tmp:os.tmpdir()}));`);
+  const r = runWith(f);
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  assert.ok(r.resumen, `el resumen se escribe: ${r.stderr}`);
+  assert.strictEqual(r.resumen.verdes, 1);
+  const { tmp } = JSON.parse(fs.readFileSync(path.join(f.root, 'tmp.json'), 'utf8'));
+  assert.ok(!fs.existsSync(tmp), 'la carpeta temporal se borra');
+});
