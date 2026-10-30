@@ -2147,6 +2147,28 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
     return out;
   }
 
+  // ── Sin código en el cambio, la vuelta se cierra sola ─────────────────────────────────
+  // Lo que pide otra vuelta lo decide lib/reloop-code.js, igual que `next`: la historia (sus marcas, su
+  // `runtime_not_verifiable:`) y su carpeta qa no repiten revisores. Un delta vacío del todo sigue abajo: ése es
+  // una foto mal fechada.
+  if (delta.length && !delta.some((f) => require('./lib/reloop-code.js').pideOtraVuelta(f, { storyPath: story }))) {
+    logGate({ repoPath: repo, name: 'smart-reloop', check: 'smart-reloop-sin-codigo', status: 'closed', iter, delta });
+    return {
+      ...fullSet,
+      iter,
+      mode: 'smart-reloop',
+      all_iter1: fullSet.all,
+      rerun_count: 0,
+      rerun: [],
+      rerun_reasons: [],
+      skipped_count: fullSet.all.length,
+      skipped: fullSet.all.map((name) => ({ name, reason: 'el cambio no trae código: la vuelta se cierra sola' })),
+      delta_files: delta,
+      delta_source: deltaSource,
+      no_code_delta: true,
+    };
+  }
+
   // ── La versión del cambio que vio CADA revisor ─────────────────────────────────────
   // 🔴 El delta de arriba es de la VUELTA: mira desde la foto, y la foto se toma sola al lanzar el
   // último revisor. Un arreglo hecho mientras corrían los demás, antes de ese último lanzamiento, queda
@@ -3047,9 +3069,8 @@ function computeNext() {
   });
   const warnings = STEPS_TABLE.startWarningLines(marker);
 
-  // Un arreglo después de Hallazgos (una edición posterior al último cierre de los revisores) pide otra vuelta.
-  const { isTestPath, isImplPath } = require('./lib/atdd-order.js');
-  const reloop = STEPS_TABLE.reviewersRound(marker, (p) => isImplPath(p) || isTestPath(p));
+  // Un arreglo después de Hallazgos (una edición de código posterior al último cierre de los revisores) pide otra vuelta.
+  const reloop = STEPS_TABLE.reviewersRound(marker);
 
   const stepState = [];
   let nextStep = null;

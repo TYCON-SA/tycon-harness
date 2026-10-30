@@ -844,7 +844,14 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
                else _tg_capa="sin capa del equipo: $(_tg_tree_field teamProblem)"; fi ;;
       *) _tg_capa='sin capa del equipo (ni HARNESS_TEAM_DIR ni paths.team en la configuración de la máquina)' ;;
     esac
-    echo "[test-gate] árbol armado del privado adelgazado — público debajo: $_TG_PUB_ROOT (rama ${_tg_rama:-suelta}, commit $(_tg_tree_field base.commit | cut -c1-12)$([[ "$(_tg_tree_field base.uncommitted)" == "true" ]] && echo ', con cambios sin commit')) · $_tg_capa · armado en $(_tg_tree_field seconds) s"
+    # Sin la rama de la story en el público, debajo va la versión del servidor y lo tocado es sólo del privado.
+    _TG_PUB_TOUCHED="$_TG_PUB_ROOT"
+    if [[ "$(_tg_tree_field base.source)" == "server" ]]; then
+      _TG_PUB_TOUCHED="-"
+      echo "[test-gate] árbol armado del privado adelgazado — público debajo: versión del servidor (origin/main de $_TG_PUB_ROOT, commit $(_tg_tree_field base.commit | cut -c1-12) del $(_tg_tree_field base.date | cut -c1-16)): esa carpeta está en ${_tg_rama:-un commit suelto}, que no es la rama del privado ni nombra la story ·$_tg_capa · armado en $(_tg_tree_field seconds) s"
+    else
+      echo "[test-gate] árbol armado del privado adelgazado — público debajo: $_TG_PUB_ROOT (rama ${_tg_rama:-suelta}, commit $(_tg_tree_field base.commit | cut -c1-12)$([[ "$(_tg_tree_field base.uncommitted)" == "true" ]] && echo ', con cambios sin commit')) · $_tg_capa · armado en $(_tg_tree_field seconds) s"
+    fi
     REPO_RUN="$(_tg_tree_field tree)"
     TG_TREE_ARGS=(--skills "$(_tg_tree_field skills)" --only-touched)
     echo "[test-gate] en la máquina corren sólo las suites que leen lo tocado; las otras quedan diferidas (las corre la CI del pedido y el nocturno)"
@@ -872,6 +879,18 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
     # fallaron y la salida entera de cada suite (la cola de run-check sola deja afuera el caso del medio).
     ( cd "$REPO" && node "$MARKER_JS" run-check tests-suite -- \
         node "$SCRIPT_DIR/lib/run-suites-json.js" "$REPO_RUN" "$RESULTS_DIR/suites.json" --suite "$SUITE_ONLY" ${_TG_ONE_ARGS[@]+"${_TG_ONE_ARGS[@]}"} --coverage "$RESULTS_DIR/coverage" --run-check tests-suite ) || _tg_rc=$?
+    # El mismo juez que en la completa: si ya estaba roja en el nocturno de esta mañana, avisa, no frena y sale de la
+    # lista. Sin él, la completa se seguiría negando por un rojo que el pedido no frena.
+    if [[ "$_tg_rc" == "1" && -f "$RESULTS_DIR/suites.json" ]]; then
+      _tg_her=0
+      node "$SCRIPT_DIR/lib/inherited-reds.js" apply "$REPO_RUN" "$RESULTS_DIR/suites.json" || _tg_her=$?
+      if [[ "$_tg_her" == "0" ]]; then
+        echo "🟡 [test-gate] $SUITE_ONLY ya estaba roja en el nocturno de esta mañana: avisa y no frena, igual que en la validación del pedido" >&2
+        ( cd "$REPO" && TYCON_TEST_GATE_MARK=1 node "$MARKER_JS" run-check tests-suite -- node -e 'console.error(`test-gate: ${process.argv[1]} ya estaba roja en el nocturno: avisa, no frena`)' "$SUITE_ONLY" ) >&2 \
+          || echo "[test-gate] ⚠️  no pude dejar en verde el check tests-suite: queda como lo dejó la corrida" >&2
+        _tg_rc=0
+      fi
+    fi
     if [[ "$_tg_rc" == "0" ]]; then
       ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" tests-failed clear --path "$SUITE_ONLY" --repo "$REPO_STORY" ) \
         || echo "[test-gate] ⚠️  $SUITE_ONLY salió verde pero no pude sacarla de la lista de las que fallaron: la corrida completa la va a seguir pidiendo" >&2
@@ -906,7 +925,7 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
   TOUCHED_ARGS=()
   if [[ -n "${TG_PRIVATE_TREE_DIR:-}" ]]; then
     # en el árbol armado, lo tocado es lo de los dos repos (las rutas del árbol son las de cada uno)
-    if node "$SCRIPT_DIR/lib/private-tree.js" touched "$REPO" "$_TG_PUB_ROOT" "$_TG_STORY_ARG" "$RESULTS_DIR/touched.json" 2>"$RESULTS_DIR/touched.err"; then
+    if node "$SCRIPT_DIR/lib/private-tree.js" touched "$REPO" "$_TG_PUB_TOUCHED" "$_TG_STORY_ARG" "$RESULTS_DIR/touched.json" 2>"$RESULTS_DIR/touched.err"; then
       TOUCHED_ARGS=(--touched "$RESULTS_DIR/touched.json")
       # el informe cuenta las líneas tocadas en cada repo contra su base (no el árbol contra la base del privado). Va
       # sólo al informe, en su línea: exportada, la heredaban las suites que corren su propio portón de juguete.
@@ -992,6 +1011,19 @@ if [[ "$SUITE_EXIT" == "75" ]]; then
   rm -f "$OUT_FILE"
   echo "🟡 [test-gate] no corrí nada: otra corrida de las pruebas está en marcha en este repo (arriba, desde cuándo y de quién). Esperá su resultado; no quedó tests-result.json." >&2
   exit 75
+fi
+# Lo que ya estaba rojo en el nocturno de esa mañana avisa y no frena, con el juez de la validación de cada pedido y la
+# foto que viaja en el árbol (lib/inherited-reds.js): sale del resumen antes de la lista y del informe. Sin foto, como
+# siempre; si el juez no puede decidir, también.
+if [[ "$RUNNER" == "suites-json" && "$SUITE_EXIT" == "1" && -f "$RESULTS_DIR/suites.json" ]]; then
+  _tg_her=0
+  node "$SCRIPT_DIR/lib/inherited-reds.js" apply "$REPO_RUN" "$RESULTS_DIR/suites.json" || _tg_her=$?
+  if [[ "$_tg_her" == "0" ]]; then
+    echo "🟡 [test-gate] todo lo rojo ya estaba rojo en el nocturno de esta mañana (arriba, cuáles): avisa y no frena, igual que en la validación del pedido" >&2
+    ( cd "$REPO" && TYCON_TEST_GATE_MARK=1 node "$MARKER_JS" run-check tests -- node -e 'console.error("test-gate: lo rojo ya estaba rojo en el nocturno: avisa, no frena")' ) >&2 \
+      || echo "[test-gate] ⚠️  no pude dejar en verde el check tests: queda como lo dejó la corrida" >&2
+    SUITE_EXIT=0
+  fi
 fi
 # La corrida completa reemplaza la lista de las que fallaron: roja, con sus fallas; verde (o sin fallas con su entrada), vacía.
 if [[ "$TG_TOP_FULL" == "1" ]]; then

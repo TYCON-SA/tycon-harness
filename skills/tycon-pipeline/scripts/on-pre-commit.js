@@ -228,8 +228,14 @@ function getHeadFileContent(cwd, file) {
 // verifica que el primer token no-flag sea `commit`. Un regex del tipo `\bgit\s+...commit\b`
 // matchea el substring en cualquier posición → falsos positivos que dispararían toda la
 // maquinaria del gate sobre comandos que no son commits.
-function isGitCommit(command, _depth = 0) {
-  if (!command || typeof command !== 'string') return false;
+function isGitCommit(command) {
+  return argumentosDeCommit(command).length > 0;
+}
+
+// Lo que sigue a `commit` en cada `git commit` de verdad del comando, uno por commit (la misma lectura que isGitCommit).
+function argumentosDeCommit(command, _depth = 0) {
+  const commits = [];
+  if (!command || typeof command !== 'string') return commits;
   const segments = command.split(/&&|\|\||[;&|\n]/);
   for (let seg of segments) {
     seg = seg.trim();
@@ -252,7 +258,7 @@ function isGitCommit(command, _depth = 0) {
       const wrapM = seg.match(/^(?:\S*\/)?(?:ba|z|da)?sh\s+(?:-\w+\s+)*-c\s+("([^"]*)"|'([^']*)')/);
       if (wrapM) {
         const inner = wrapM[2] !== undefined ? wrapM[2] : wrapM[3];
-        if (isGitCommit(inner, 1)) return true;
+        commits.push(...argumentosDeCommit(inner, 1));
       }
     }
     const m = seg.match(/^(?:\S*\/)?git\b(.*)$/s);
@@ -265,9 +271,105 @@ function isGitCommit(command, _depth = 0) {
       if (t.startsWith('-')) { i += 1; continue; }
       break; // primer token no-flag
     }
-    if (tokens[i] === 'commit') return true;
+    if (tokens[i] === 'commit') commits.push(tokens.slice(i + 1).join(' '));
   }
-  return false;
+  return commits;
+}
+
+// Los tramos de un comando de shell: corta en `;`, `&`, `|` y el salto de línea que están fuera de comillas.
+function tramosDelShell(texto) {
+  const out = [];
+  let cur = '';
+  for (let i = 0; i < texto.length;) {
+    const c = texto[i];
+    if (c === "'" || c === '"') {
+      let j = i + 1;
+      while (j < texto.length && texto[j] !== c) j += (c === '"' && texto[j] === '\\') ? 2 : 1;
+      cur += texto.slice(i, j + 1); i = j + 1; continue;
+    }
+    if (c === '\\' && i + 1 < texto.length) { cur += texto.slice(i, i + 2); i += 2; continue; }
+    if (/[;&|\n]/.test(c)) { out.push(cur); cur = ''; i += 1; continue; }
+    cur += c; i += 1;
+  }
+  out.push(cur);
+  return out.map((s) => s.trim()).filter(Boolean);
+}
+
+// Las palabras de cada `git commit` de verdad del comando (lo que sigue a `commit`), leídas como las arma el shell.
+function commitsDelShell(command, depth = 0) {
+  const out = [];
+  for (const tramo of tramosDelShell(String(command || ''))) {
+    let ps = palabrasDelShell(tramo.replace(/^(?:\$\(|[`(){}\s])+/, ''));
+    while (ps.length && /^\w+=/.test(ps[0])) ps = ps.slice(1);
+    if (!ps.length) continue;
+    const cmd = ps[0].replace(/^.*\//, '');
+    if (depth === 0 && /^(?:ba|z|da)?sh$/.test(cmd)) {
+      const c = ps.indexOf('-c');
+      if (c > 0 && c + 1 < ps.length) out.push(...commitsDelShell(ps[c + 1], 1));
+      continue;
+    }
+    if (cmd !== 'git') continue;
+    let i = 1;
+    while (i < ps.length && ps[i].startsWith('-')) i += ['-c', '-C', '--git-dir', '--work-tree'].includes(ps[i]) ? 2 : 1;
+    if (ps[i] === 'commit') out.push(ps.slice(i + 1));
+  }
+  return out;
+}
+
+// Las palabras de un texto como las arma el shell: las comillas agrupan y se sacan, la barra escapa el carácter siguiente.
+function palabrasDelShell(texto) {
+  const out = [];
+  let cur = null;
+  for (let i = 0; i < texto.length;) {
+    const c = texto[i];
+    if (/\s/.test(c)) { if (cur !== null) { out.push(cur); cur = null; } i += 1; continue; }
+    // `$'…'` se lee como comillas simples
+    if (c === '$' && texto[i + 1] === "'") { i += 1; continue; }
+    if (c === "'") {
+      const fin = texto.indexOf("'", i + 1);
+      const hasta = fin < 0 ? texto.length : fin;
+      cur = (cur || '') + texto.slice(i + 1, hasta); i = hasta + 1; continue;
+    }
+    if (c === '"') {
+      let j = i + 1; let buf = '';
+      while (j < texto.length && texto[j] !== '"') {
+        if (texto[j] === '\\' && j + 1 < texto.length) { buf += texto[j + 1]; j += 2; } else { buf += texto[j]; j += 1; }
+      }
+      cur = (cur || '') + buf; i = j + 1; continue;
+    }
+    if (c === '\\' && i + 1 < texto.length) { cur = (cur || '') + texto[i + 1]; i += 2; continue; }
+    cur = (cur || '') + c; i += 1;
+  }
+  if (cur !== null) out.push(cur);
+  return out;
+}
+
+// ¿Algún `git commit` del comando lleva `--no-verify` (o la abreviada que git acepta, `--no-veri`, `--no-verif`) como
+// argumento? Nombrarla en un mensaje, un heredoc o un grep no es usarla. El valor de `-m`/`-F` es texto, no opción; una
+// opción larga abreviada (`--mess`) se lee como la entera, igual que git.
+const CON_VALOR_CORTAS = new Set(['-m', '-F', '-C', '-c', '-t']);
+const CON_VALOR_LARGAS = ['--message', '--file', '--author', '--date', '--template', '--trailer', '--fixup', '--squash',
+  '--reuse-message', '--cleanup'];
+function llevaValor(p) {
+  if (CON_VALOR_CORTAS.has(p)) return true;
+  return p.length > 3 && !p.includes('=') && CON_VALOR_LARGAS.some((l) => l.startsWith(p));
+}
+function usaNoVerify(command) {
+  return commitsDelShell(command).some((ps) => {
+    for (let i = 0; i < ps.length; i += 1) {
+      if (/^--no-veri(?:fy?)?$/.test(ps[i])) return true;
+      // `-n` no se cuenta como salteo: con ella el control del commit corre igual. Un grupo de cortas (`-am`) termina en
+      // la que lleva valor, y lo que sigue es su valor
+      const corta = /^-([a-zA-Z]+)$/.exec(ps[i]);
+      if (corta) {
+        const k = corta[1].search(/[mFCct]/);
+        if (k === corta[1].length - 1) i += 1;
+        continue;
+      }
+      if (llevaValor(ps[i])) i += 1;
+    }
+    return false;
+  });
 }
 
 // CF-4 — gap residual conocido: `git commit <pathspec>` commitea paths del working-tree que
@@ -310,6 +412,28 @@ function storyRequiresRuntimeEvidence(specContent) {
 // que el commit cambie un archivo de pantalla (`changed`, lo preparado para commitear).
 function storyIsUiStory(specContent, repoRoot, changed) {
   return require('./lib/ui-signal.js').screenScope(specContent, repoRoot, { changed }).active;
+}
+
+// ¿Alguna evidencia de la story, posterior al último cambio de código, trae el bloque «## Playwright Run» con veredicto
+// PASS y ningún fallo? Sin la hora del código (la matriz no corrió) no se acepta nada.
+function playwrightVerdeDespuesDelCodigo(cwd, specAbs, storyId, codeMtime) {
+  // Sin hora de código (la historia no declara archivos) no hay contra qué fechar la corrida: no se acepta ninguna.
+  if (!Number.isFinite(codeMtime) || codeMtime <= 0) return false;
+  const k = require('./lib/evidence-key.js').keyOr(specAbs, storyId);
+  const prefijo = `${k.key || storyId}-`;
+  return dodEvidenceDirsFor(cwd).some((dir) => {
+    let nombres = [];
+    try { nombres = fs.readdirSync(dir); } catch { return false; }
+    return nombres.filter((f) => f.startsWith(prefijo) && f.endsWith('.md')).some((f) => {
+      try {
+        const full = path.join(dir, f);
+        if (fs.statSync(full).mtimeMs < codeMtime) return false;
+        // El veredicto y los fallidos se leen DENTRO del bloque de Playwright, hasta el próximo título `## `.
+        const bloques = fs.readFileSync(full, 'utf8').split(/^(?=##\s)/m).filter((b) => /^##\s*Playwright Run/i.test(b));
+        return bloques.some((b) => /verdict(?:=|:\s*)PASS\b/.test(b) && /failed(?:=|:\s*)0\b/.test(b));
+      } catch { return false; }
+    });
+  });
 }
 
 // La baja de pantalla se dice al cerrar: una línea por stderr y por story, sin
@@ -1015,7 +1139,7 @@ function main() {
   // lo usa explícitamente, dejamos pasar pero queda rastro DURABLE en bypass.log
   // (solo stderr efímero: imposible auditar bypasses). También su prefijo inequívoco (`--no-veri`, `--no-verif`), que
   // git acepta igual; `--no-ver` choca con `--no-verbose` y git lo rechaza.
-  if (/--no-verify\b|--no-verif?(?=[\s;&|"')]|$)/.test(command)) {
+  if (usaNoVerify(command)) {
     console.error('⚠ tycon-dod-runtime: --no-verify detected, skipping DoD gate (had_dod_bypass=true, logueado en bypass.log)');
     try {
       const stateDir = path.join(stateDirOf(os.homedir()));
@@ -1059,7 +1183,8 @@ function main() {
 
     if (repoRoot) {
       const events = atddCommit.eventsForRepo(stateDir, sessionId, repoRoot);
-      const verdict = computeAtddOrder(events);
+      // sin story a mano: un guion de medición del repo nunca cuenta como código
+      const verdict = computeAtddOrder(events, repoRoot);
       const mode = atddCommit.resolveMode(repoRoot, process.env);
       const decision = atddCommit.computeCommitGate({ verdict, mode });
 
@@ -1522,8 +1647,11 @@ function main() {
     // DODRT-C5.1 — para una story de UI, la evidencia DoD debe venir de un E2E
     // Playwright REAL (no curl/unit). Cierra el agujero de "probada en runtime" con solo curl al
     // backend (una story de UI puede declararse probada sin correr el Playwright de sus ACs).
+    // Cuenta también un bloque «## Playwright Run» en verde de CUALQUIER evidencia de la story posterior al último cambio
+    // de código: un `-cierre.md` más nuevo que el gate E2E no lo tapa.
     // La prueba con navegador que la persona dejó pendiente, con sus dos marcas (lib/browser-test.js): no frena, se dice.
     const deudaNavegador = storyIsUiStory(staged, cwd, diffFiles) && !/playwright|tests\/e2e\/|@story-/i.test(evidence.content)
+      && !playwrightVerdeDespuesDelCodigo(cwd, specAbs, storyId, (matrizDe(specRel, staged).matrix || {}).codeMtime)
       ? require('./lib/browser-test.js').debtDeclared({ stateDir: stateDirOf(os.homedir()), storyPath: path.resolve(cwd, specRel), content: staged })
       : null;
     if (deudaNavegador && deudaNavegador.declared) {
@@ -1825,7 +1953,7 @@ function main() {
 // require() desde tests NO ejecuta main() (gate require.main).
 module.exports = {
   prepararIndiceConLosAdd,
-  isGitCommit, parseAcsFromSpec, parseAcsFromEvidence, findDodEvidence, evidenciaDeclaraFail, findAdvisorsEvidence,
+  isGitCommit, usaNoVerify, parseAcsFromSpec, parseAcsFromEvidence, findDodEvidence, evidenciaDeclaraFail, findAdvisorsEvidence,
   looksLikeStorySpec, selectStorySpecs, revisarRosterLocal, checkSelfAudit, REGLA_DE_MOTIVO, storyIsUiStory,
 };
 

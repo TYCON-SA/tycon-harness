@@ -596,6 +596,40 @@ test('T27 CartelYNext_LaMismaVuelta @story-7.23 @ac-9 @ac-16 — el cartel y nex
   }
 });
 
+test('T27b OtraVuelta_SoloConCodigo — la historia, la carpeta qa y lo que el arnés escribe en .advisors no piden otra vuelta', async () => {
+  const E = entorno();
+  const base = arrancar(E, 's-t27b');
+  const { readRun } = await import(require('url').pathToFileURL(path.join(RAIZ, 'mods', 'harness-mods', 'hooks', 'run.mjs')).href);
+  const qa = path.join(E.repo, 'specs', 'qa');
+  const dod = path.join(E.repo, '.advisors', 'dod-runtime');
+  fs.mkdirSync(qa, { recursive: true });
+  fs.mkdirSync(dod, { recursive: true });
+  // la vuelta 2 de los revisores cerró en verde; todo lo de abajo pasa después
+  const m = nuevo(base, 'live-check', { deepReviewDone: true, dodRuntimeChecked: true,
+    stepTimings: { reviewers: { completedAt: '2026-01-01T10:00:00Z', lastCompletedAt: '2026-01-01T12:00:00Z', rounds: 2 }, findings: { completedAt: '2026-01-01T12:10:00Z' } } });
+  const editar = (abs) => E.correr('on-edit.js', [], 's-t27b', JSON.stringify({ tool_name: 'Edit', session_id: 's-t27b', tool_input: { file_path: abs } }));
+  const sinCodigo = [E.story, path.join(qa, '9.9-pasos.md'), path.join(dod, '9.9-smokes.py'), path.join(dod, '9.9-ui-smoke.cjs')];
+  for (const f of sinCodigo) fs.writeFileSync(f, '# x\n');
+  E.escribir('s-t27b', m);
+  for (const f of sinCodigo) editar(f);
+  const conEventos = E.leer('s-t27b');
+  for (const f of sinCodigo) assert.strictEqual(conEventos.fileEvents.find((e) => e.path === f).code, false, `on-edit marca ${path.basename(f)} como no código`);
+  let n = next(E, 's-t27b');
+  assert.strictEqual(n.next_step, 'prepare-commit', `sin código después de la vuelta 2 sigue el commit: ${n.step_name}`);
+  assert.notStrictEqual(readRun(JSON.stringify(conEventos), Date.now()).current.id, 'reviewers', 'el cartel tampoco pide otra vuelta');
+  // un marcador de antes, con la marca `code` vieja en lo de .advisors, tampoco pide otra vuelta
+  const viejoCode = { ...m, fileEvents: sinCodigo.map((f) => ({ path: f, ts: '2026-01-01T13:00:00Z', code: !f.endsWith('.md') })) };
+  E.escribir('s-t27b', viejoCode);
+  assert.strictEqual(next(E, 's-t27b').next_step, 'prepare-commit', 'la marca vieja de .advisors no gana');
+  assert.notStrictEqual(readRun(JSON.stringify(viejoCode), Date.parse('2026-01-01T14:00:00Z')).current.id, 'reviewers', 'ni en el cartel');
+  // un archivo de código sí: vuelta 3
+  E.escribir('s-t27b', m);
+  editar(path.join(E.repo, 'src', 'a.js'));
+  n = next(E, 's-t27b');
+  assert.strictEqual(n.next_step, 'reviewers');
+  assert.strictEqual(n.step_name, 'Revisores, vuelta 3');
+});
+
 test('T28 RetireCheck_VersionMalEscrita @story-7.23 @ac-7 — un --since que no es una versión no da «llegó a todas»', () => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'steps-retire-mal-'));
   const espejo = path.join(base, 'b');

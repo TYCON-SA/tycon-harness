@@ -125,6 +125,7 @@ function marcador(r, tag, extra = {}) {
 /** La guía del tester lista, en la carpeta qa/ que busca el chequeo. */
 function guiaLista(r) {
   const qa = path.join(path.dirname(r.storyPath), 'qa');
+  escribir(path.join(qa, 'story-9.26-panel-guia-qa.html'), '<!doctype html><title>guía</title>\n');
   escribir(path.join(qa, '9.26-pasos.md'), [
     'Usuario por defecto: administrador',
     '',

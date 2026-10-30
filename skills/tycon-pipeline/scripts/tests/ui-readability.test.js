@@ -58,9 +58,10 @@ function story(repo, archivos) {
   ].join('\n'));
   return p;
 }
-// guía lista: pasos en llano + legibilidad de la guía OK (así lo único que puede fallar es lo nuevo).
+// guía lista: la guía HTML, pasos en llano + legibilidad de la guía OK (así lo único que puede fallar es lo nuevo).
 function guiaLista(repo, legibilidad = 'veredicto: OK\n') {
   const qa = path.join(repo, 'specs', 'qa');
+  escribir(path.join(qa, 'story-1.1-x-guia-qa.html'), '<!doctype html><title>guía</title>\n');
   escribir(path.join(qa, '1.1-pasos.md'), 'Usuario por defecto: cliente\n\n## AC 1\nAbrir la lista de facturas.\n→ Ver cuántas faltan pagar.\n');
   escribir(path.join(qa, '1.1-legibilidad.md'), legibilidad);
   return qa;

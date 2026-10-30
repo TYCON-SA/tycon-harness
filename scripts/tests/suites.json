@@ -886,6 +886,11 @@
       "requiere": []
     },
     {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/reloop-code.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 7.26: una story de dos repos — el pipeline sigue al repo hermano en los revisores, el contexto, el test-gate, las vueltas y el pase adversarial.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/companion-repos.test.js",
@@ -910,6 +915,11 @@
     {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/test-gate-failed-first.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/inherited-reds.test.js",
       "requiere": []
     },
     {
@@ -1524,6 +1534,12 @@
       "__nota": "los escapes del freno de seguridad (y los de la revisión de producción y de nombres) los autoriza la persona con su frase en el chat; el agente no se los pone solo.",
       "raiz": "arnes",
       "ruta": "tests/safety-escape.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "quién firmó un cambio de control: «coordinadora» sólo si la sesión que lo aprobó es la designada vigente; si no, el dueño.",
+      "raiz": "arnes",
+      "ruta": "tests/control-signer.test.js",
       "requiere": []
     },
     {

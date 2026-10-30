@@ -346,3 +346,41 @@ test('T24 --no-local-signature (la validación de pedidos): una aprobación con 
   assert.strictEqual(r.status, 0, r.stderr);
   assert.strictEqual(check(d, '--no-local-signature').status, 2, 'sin --staged no hay firma que saltear');
 });
+
+test('T25 un merge que trae de la otra rama un pendiente ya aprobado allá no lo trata como nuevo', (t) => {
+  const l = firmada('DEF-de-main');
+  const todoMain = `${LISTA}- [ ] [DEF-de-main] aprobado en la otra rama\n`;
+  const registroMain = `${BASE}${JSON.stringify(l)}\n`;
+  const otrosPadres = [{ registro: registroMain, todo: todoMain }];
+  assert.deepStrictEqual(PA.revisarNuevas({ antes: BASE, despues: registroMain, renglones: [], todoAntes: LISTA, todoDespues: todoMain }).map((x) => x.id), ['DEF-de-main', 'DEF-de-main'], 'sin el otro padre, frena');
+  assert.deepStrictEqual(PA.revisarNuevas({ antes: BASE, despues: registroMain, renglones: [], todoAntes: LISTA, todoDespues: todoMain, otrosPadres }), []);
+  // abierto en la otra rama pero sin su línea allá: sigue siendo nuevo
+  const sinLinea = PA.revisarNuevas({ antes: BASE, despues: BASE, renglones: [], todoAntes: LISTA, todoDespues: todoMain, otrosPadres: [{ registro: BASE, todo: todoMain }] });
+  assert.deepStrictEqual(sinLinea.map((x) => x.id), ['DEF-de-main']);
+  // lo que el merge agrega por su cuenta se mira igual
+  const propio = PA.revisarNuevas({ antes: BASE, despues: registroMain, renglones: [], todoAntes: LISTA, todoDespues: `${todoMain}- [ ] [DEF-propio] x\n`, otrosPadres });
+  assert.deepStrictEqual(propio.map((x) => x.id), ['DEF-propio']);
+
+  // el control del commit lo lee de MERGE_HEAD
+  const { d, git } = repo(LISTA, BASE);
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  const rama = git('rev-parse', '--abbrev-ref', 'HEAD').stdout.trim();
+  git('checkout', '-q', '-b', 'otra');
+  fs.writeFileSync(path.join(d, PA.TODO), todoMain);
+  fs.writeFileSync(path.join(d, PA.RECORD), registroMain);
+  git('add', '-A');
+  git('commit', '-q', '-m', 'aprobado en la otra rama');
+  git('checkout', '-q', rama);
+  fs.writeFileSync(path.join(d, 'otro.txt'), 'x');
+  git('add', '-A');
+  git('commit', '-q', '-m', 'trabajo propio');
+  const m = git('merge', '-q', '--no-ff', '--no-commit', 'otra');
+  assert.strictEqual(m.status, 0, m.stderr);
+  const r = check(d, '--staged');
+  assert.strictEqual(r.status, 0, r.stderr);
+  git('merge', '--abort');
+  fs.writeFileSync(path.join(d, PA.TODO), todoMain);
+  fs.writeFileSync(path.join(d, PA.RECORD), registroMain);
+  git('add', '-A');
+  assert.strictEqual(check(d, '--staged').status, 1, 'fuera de un merge, la misma línea frena');
+});

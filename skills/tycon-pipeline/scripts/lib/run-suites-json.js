@@ -139,7 +139,8 @@ function gateEnvironment(env, runCheck, workers) {
 function describeEnvironment(a) {
   const marks = Object.entries(a.marks).map(([k, v]) => `${k}=${v}`).join(' ');
   return `${a.run_check ? `run-check ${a.run_check}` : 'sin run-check'} · ${a.workers} a la vez`
-    + ` · marcas: ${marks || 'ninguna'}${a.removed.length ? ` · quitadas a las suites: ${a.removed.join(' ')}` : ''}`;
+    + ` · marcas: ${marks || 'ninguna'}${a.removed.length ? ` · quitadas a las suites: ${a.removed.join(' ')}` : ''}`
+    + `${a.empty_home ? ` · las portables (${a.empty_home}) con su HOME vacía, como en la CI` : ''}`;
 }
 
 const ANSI = /\u001b\[[0-9;?]*[A-Za-z]/g;
@@ -250,8 +251,11 @@ function resolveSkillsRoot(repo, given, env) {
     return { dir: d.skills, source: d.source || (env.TYCON_SKILLS_DIR ? 'variable' : 'installed') };
   }
   if (env.TYCON_SKILLS_DIR) return { dir: env.TYCON_SKILLS_DIR, source: 'variable' };
-  return { dir: path.join(os.homedir(), '.claude', 'agent-skills', 'skills'), source: 'installed' };
+  return { dir: path.join(installedSkillsIn(os.homedir()), 'skills'), source: 'installed' };
 }
+
+/** Dónde quedan las skills instaladas dentro de una carpeta personal: la real o la vacía de una suite portable. */
+const installedSkillsIn = (home) => path.join(home, '.claude', 'agent-skills');
 
 const isDir = (p) => { try { return fs.statSync(p).isDirectory(); } catch (_) { return false; } };
 const realOf = (p) => { try { return fs.realpathSync(p); } catch (_) { return path.resolve(p); } };
@@ -428,7 +432,8 @@ function main(argv, env = process.env) {
       if (Array.isArray(g) && g.length && g.every(isValidPattern)) gate = g;
       else console.error(`[suites.json] ⚠️  ${name}: «gate_only_when_touching» no es una lista de «<carpeta>/**» (${JSON.stringify(g)}) — no la difiero`);
     }
-    return { idx, ruta, name, exclusive, gate, fromSkills: s.raiz === 'agent-skills', entrada: { raiz: s.raiz, ruta: s.ruta } };
+    return { idx, ruta, name, exclusive, gate, fromSkills: s.raiz === 'agent-skills', entrada: { raiz: s.raiz, ruta: s.ruta },
+      portable: Array.isArray(s.requiere) && s.requiere.length === 0 };
   });
 
   const resumen = { corridas: 0, verdes: 0, fallas: [], ausentes: [], suites: [], workers, wall_ms: 0, deferred_suites: [], unmeasured_suites: [], skills_root: skillsRoot, ...(light ? { light: true } : {}) };
@@ -532,7 +537,8 @@ function main(argv, env = process.env) {
     return Promise.resolve(resumen.ausentes.length ? 1 : 3);
   }
 
-  console.log(`[suites.json] workers: ${workers} · en paralelo: ${parallel.length} · solas al final: ${exclusives.length} · diferidas: ${resumen.deferred_suites.length}`);
+  const portables = [...parallel, ...exclusives].filter((p) => p.portable).length;
+  console.log(`[suites.json] workers: ${workers} · en paralelo: ${parallel.length} · solas al final: ${exclusives.length} · diferidas: ${resumen.deferred_suites.length}${portables ? ` · ${portables} portables con su HOME vacía, como en la CI` : ''}`);
 
   const live = new Set();
   let interrupted = null;
@@ -551,8 +557,58 @@ function main(argv, env = process.env) {
     console.log(`[suites.json] con cobertura: cada suite bajo el medidor de Node, lcov en ${covDir}`);
   }
 
+  // Las portables (`requiere: []`) corren como en la CI: cada una con su HOME vacía, con sólo los dos enlaces de
+  // instalación a las skills que se miden. Con la HOME real pasaban acá y fallaban allá, o al revés. Las que piden
+  // herramientas siguen con la real: la sesión de esas herramientas vive ahí. Las HOME van bajo `.advisors/` del repo
+  // (git la ignora) y no bajo la carpeta temporal, como en la CI: hay suites que tratan esa carpeta como «de prueba».
+  const homesRoot = path.join(repo, '.advisors');
+  const homesDir = path.join(homesRoot, `suite-homes-${process.pid}`);
+  // Las de una corrida anterior que murió sin limpiar (un kill -9): las de un proceso que ya no vive.
+  try {
+    for (const d of fs.readdirSync(homesRoot)) {
+      const m = /^suite-homes-(\d+)$/.exec(d);
+      if (!m || Number(m[1]) === process.pid) continue;
+      try { process.kill(Number(m[1]), 0); } catch (e) { if (e.code === 'ESRCH') fs.rmSync(path.join(homesRoot, d), { recursive: true, force: true }); }
+    }
+  } catch (_) { /* sin .advisors todavía: no hay nada viejo */ }
+  const skillsAbs = path.resolve(skills);
+  const emptyHome = (p) => {
+    const h = path.join(homesDir, `h${p.idx}`);
+    const installed = installedSkillsIn(h);
+    fs.mkdirSync(path.dirname(installed), { recursive: true });
+    fs.mkdirSync(path.join(h, 'tmp'), { recursive: true });
+    const agentSkills = path.dirname(skillsAbs);
+    const tipo = process.platform === 'win32' ? 'junction' : 'dir';
+    if (isDir(skillsAbs)) fs.symlinkSync(agentSkills, installed, tipo);
+    if (isDir(path.join(agentSkills, 'agents'))) fs.symlinkSync(path.join(agentSkills, 'agents'), path.join(path.dirname(installed), 'agents'), tipo);
+    return h;
+  };
+  const removeHomes = () => fs.rmSync(homesDir, { recursive: true, force: true });
+  // El resto de lo que la CI le pone a cada portable (`casaVacia` de scripts/tests/portable-suites.test.sh), salvo el
+  // PATH: acá las herramientas de la máquina siguen a mano. Y la configuración de git de quien corre tampoco llega: un
+  // gancho global de la máquina (rechazar un merge sin mensaje propio) frenaba acá lo que en la CI pasa. Git la lee de
+  // la HOME, pero también de estas variables.
+  const isolatedEnv = (home) => {
+    const e = { ...env };
+    for (const k of Object.keys(e)) {
+      if (k === 'GIT_CONFIG_GLOBAL' || k === 'XDG_CONFIG_HOME' || k === 'GIT_CONFIG_PARAMETERS' || /^GIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+)$/.test(k)) delete e[k];
+    }
+    const tmp = path.join(home, 'tmp');
+    return Object.assign(e, {
+      HOME: home, USERPROFILE: home, TMPDIR: tmp, GIT_CONFIG_NOSYSTEM: '1',
+      TYCON_PROFILE: '0', TYCON_CHROME: '0', TYCON_GUIDES_DIR: path.resolve(repo), TYCON_SKILLS_DIR: skillsAbs,
+      TYCON_MAILBOX_JSON: path.join(home, 'no-hay-llave.json'), TYCON_PARITY_BENCH_DIR: path.join(tmp, 'parity-bench'),
+      GIT_CONFIG_COUNT: '2', GIT_CONFIG_KEY_0: 'gc.auto', GIT_CONFIG_VALUE_0: '0', GIT_CONFIG_KEY_1: 'maintenance.auto', GIT_CONFIG_VALUE_1: 'false',
+    });
+  };
+
   const runOne = (p) => new Promise((resolve) => {
-    const [ej, args, childEnv] = launch(p, covDir, env);
+    let home = null;
+    if (p.portable) {
+      // Sin su HOME vacía la suite corre igual, con la real, y lo dice: una falla al armarla no tumba la corrida.
+      try { home = emptyHome(p); } catch (e) { console.log(`[suites.json] ${p.ruta}: no pude armarle la HOME vacía (${e.code || e.message}); corre con la real`); }
+    }
+    const [ej, args, childEnv] = launch(p, covDir, home ? isolatedEnv(home) : env);
     const t0 = Date.now();
     // detached = grupo de proceso propio: al cortar se mata el grupo entero (la suite y sus hijos).
     const c = spawn(ej, args, { cwd: repo, detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: childEnv });
@@ -571,6 +627,7 @@ function main(argv, env = process.env) {
       if (settled) return;
       settled = true;
       live.delete(c);
+      if (home) fs.rmSync(home, { recursive: true, force: true });
       const ms = Date.now() - t0;
       const exit = status === null ? 124 : status;   // null = murió por señal: se cuenta como rojo
       const salida = spawnError ? `${spawnError.message}\n` : Buffer.concat(chunks).toString('utf8');
@@ -594,10 +651,11 @@ function main(argv, env = process.env) {
   return (async () => {
     await pool(parallel, workers);
     await pool(exclusives, 1);
+    removeHomes();
     process.removeListener('SIGINT', onSignal);
     process.removeListener('SIGTERM', onSignal);
     resumen.wall_ms = Date.now() - t0;
-    resumen.ambiente = gateEnvironment(env, runCheck, workers);
+    resumen.ambiente = { ...gateEnvironment(env, runCheck, workers), empty_home: portables };
     const outputBudget = { left: RUN_OUTPUT_MAX };
 
     for (const r of results) {

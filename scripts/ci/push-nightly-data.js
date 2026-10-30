@@ -504,4 +504,6 @@ function main(argv, { env = process.env, log = (m) => console.log(m) } = {}) {
 
 if (require.main === module) process.exit(main(process.argv.slice(2)));
 
-module.exports = { main, save, sync, changedOutside, BASE_REF };
+// readState, stepCommit, cleanPaths y withIdentity también los usa el ensayo sin efectos (rehearsal-index.js): lo que
+// habría guardado es lo que arma este mismo commit desde la misma base, no una copia de su regla
+module.exports = { main, save, sync, changedOutside, readState, stepCommit, cleanPaths, withIdentity, Red, Usage, BASE_REF };

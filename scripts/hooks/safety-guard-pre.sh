@@ -358,7 +358,8 @@ mkdir -p "$(dirname "$LOGFILE")" 2>/dev/null || true
 # salida ni lo que este freno decide. El comando va por STDIN — por argv lo vería cualquier
 # `ps` — y de él sólo se guarda la huella.
 constancia() { # $1 = regla (id del catálogo)  $2 = veredicto  [$3 = camino del escape  $4 = sesión que lo reenvió
-               #  $5 = sesión del comando  $6 = nombre del escape (set-autonomous, cerrar-la-ejecucion)]
+               #  $5 = sesión del comando  $6 = nombre del escape (set-autonomous, cerrar-la-ejecucion)
+               #  $7 = motivo del bloqueo, de la lista de su regla en guard-record.js]
   local lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/guard-record.js"
   [[ -f "$lib" ]] || return 0
   command -v "$HNODE" >/dev/null 2>&1 || return 0
@@ -367,6 +368,7 @@ constancia() { # $1 = regla (id del catálogo)  $2 = veredicto  [$3 = camino del
   [[ -n "${4:-}" ]] && extra+=(--relay "$4")
   [[ -n "${5:-}" ]] && extra+=(--session "$5")
   [[ -n "${6:-}" ]] && extra+=(--escape "$6")
+  [[ -n "${7:-}" ]] && extra+=(--reason "$7")
   printf '%s' "$CMD_SHOWN" | "$HNODE" "$lib" --guard safety-guard --rule "$1" --verdict "$2" ${extra[@]+"${extra[@]}"} --cmd-stdin >/dev/null 2>&1 || true
   return 0
 }
@@ -430,7 +432,7 @@ block() {
     echo "Apagar este hook del todo lo decide el dev (guides/safety-guard.md)."
   } >&2
 
-  constancia "$rule" bloqueo
+  constancia "$rule" bloqueo "" "" "" "" "${BLOCK_MOTIVO:-}"
   exit 2
 }
 
@@ -462,6 +464,7 @@ cmd_c1_motivo() { # $1 = comando · $2 = herramienta → por stdout, qué carác
 }
 # --- fin CMD-C1 ----------------------------------------------------------------
 ESC_VARIABLE=""; ESC_VALOR=""; ESC_CARTEL=""   # las lee block(); acá todavía no hay escape de la línea del comando
+BLOCK_MOTIVO=""   # lo lee block(): el motivo de un bloqueo de ESC-C3, de la lista de guard-record.js
 _herramienta=""; tool_is_ps && _herramienta="PowerShell"
 _cmd_c1="$(cmd_c1_motivo "$CMD" "$_herramienta")"
 if [[ -n "$_cmd_c1" ]]; then
@@ -695,7 +698,7 @@ if [[ "$_esc_cmd" == *[Mm][Aa][Rr][Kk][Ee][Rr]* || "$_esc_cmd" == *[Pp][Ii][Pp][
   # 🔴 Sin el lector (no está el intérprete del arnés, falta run-close.js o se cayó) no se sabe qué escape trae el comando:
   # frena. No cuesta nada: los guiones del pipeline corren con ese mismo intérprete y sin él no andan.
   if [[ "$_c3_leido" == "0" ]]; then
-    ESC_CARTEL=""
+    ESC_CARTEL=""; BLOCK_MOTIVO="lector-caido"
     block "ESC-C3" \
       "No pude leer el comando: el intérprete del arnés no está o el lector de comandos se cayó. Un comando que corre los guiones del pipeline puede traer un escape que lo decide la persona." \
       "Revisá el intérprete del arnés (el comando del arnés que muestra su versión dice si está bien instalado). Si el comando no corre el pipeline, escribilo sin nombrar marker ni pipeline."
@@ -724,6 +727,7 @@ if [[ "$_esc_cmd" == *[Mm][Aa][Rr][Kk][Ee][Rr]* || "$_esc_cmd" == *[Pp][Ii][Pp][
     # no se sabe de qué ejecución es lo que se firmaría. Frena sin ventana.
     if [[ "$_c3_desde" == "-" ]]; then
       ESC_CARTEL="Escribí la sesión tal cual (marker.js ${_c3_sub} <sesión>), sin variables ni comandos: sin ella no se sabe de qué ejecución es ni cuándo se abrió."
+      BLOCK_MOTIVO="ejecucion-perdida"
       block "ESC-C3" \
         "Sacar una ejecución perdida (marker.js ${_c3_sub} ${_c3_a1}) sin que se vea de qué sesión es ni cuándo se abrió." \
         "Repetí el comando con la sesión escrita literal."
@@ -778,19 +782,19 @@ Primero lo que no necesita a la persona: lo de «Alternativa». Si no se puede, 
       cerrar-como-deuda) block "ESC-C4" \
           "Cerrar la historia como deuda (marker.js ${sub}) deja lo que no se pudo hacer como el final de la ejecución, con su deuda anotada." \
           "Si se puede terminar, terminá. Si no, explicale a la persona qué quedó pendiente y por qué." ;;
-      force-manual) block "ESC-C3" \
+      force-manual) BLOCK_MOTIVO="force-manual"; block "ESC-C3" \
           "Declarar un control a mano (marker.js set-check … --force-manual) lo da por pasado sin correrlo; así escrito (escondido, en una variable o en una envoltura) no se firma." \
           "Corré el control de verdad: marker.js run-check <nombre> -- <comando>. Si no se puede, decíselo a la persona: si lo decide ella, la firma va en su forma exacta, sola: marker.js set-check <control> <estado> --force-manual [--for-session <D>]." ;;
-      trust-ran) block "ESC-C3" \
+      trust-ran) BLOCK_MOTIVO="trust-ran"; block "ESC-C3" \
           "Confiar en la lista de revisores que da el agente (pipeline.js check-count --trust-ran) deja la constancia de revisores que el arnés no vio correr; así escrito (escondido, en una variable o en una envoltura) no se firma." \
           "Lanzá los revisores que faltan y volvé a correr check-count. Si no se puede, decíselo a la persona: si lo decide ella, la firma va en su forma exacta, sola: pipeline.js check-count --repo <r> --story <s> --trust-ran [--for-session <D>]." ;;
-      no-deep-review) block "ESC-C3" \
+      no-deep-review) BLOCK_MOTIVO="no-deep-review"; block "ESC-C3" \
           "--no-deep-review en ${sub} apaga el pase adversarial, la revisión que corre el código y más bugs encuentra." \
           "Si el portón dice que corre, lanzalo de fondo y avisá cuánto tarda; no se pregunta si correrlo. Apagarlo lo decide la persona, en la ventana de permiso." ;;
-      set-autonomous) block "ESC-C3" \
+      set-autonomous) BLOCK_MOTIVO="set-autonomous"; block "ESC-C3" \
           "Apagar el modo autónomo (marker.js set-autonomous ${a1}) saca el lazo que no deja cerrar el turno con un control en rojo.${_c3_motivo:+ Hoy: ${_c3_motivo}.}" \
           "Arreglá lo que está en rojo y volvé a correr el control. Si no se puede, decíselo a la persona." ;;
-      *) block "ESC-C3" \
+      *) BLOCK_MOTIVO="cerrar-la-ejecucion"; block "ESC-C3" \
           "Cerrar la ejecución ahora (marker.js ${sub}) la archiva como si hubiera terminado, y no terminó: ${_c3_motivo:-tiene algo pendiente}." \
           "Terminá lo pendiente. Si no se puede, decíselo a la persona." ;;
     esac
@@ -803,7 +807,7 @@ Primero lo que no necesita a la persona: lo de «Alternativa». Si no se puede, 
     control-change|refresh-after-main) block "ESC-C7" \
         "Aprobar un cambio de los controles del repo es una firma del dueño, y este comando no la puede pedir en la ventana de permiso." \
         "Corré run-base-controls.sh approve en su forma exacta, sola, para que el dueño lo apruebe en la ventana; o que lo firme él en su terminal." ;;
-    *) block "$regla" \
+    *) [ "$regla" = "ESC-C3" ] && BLOCK_MOTIVO="firma-fuera-de-la-ventana"; block "$regla" \
         "Esto lo firma la persona, y este comando no la puede pedir en la ventana de permiso." \
         "Corré el comando de la firma en su forma exacta, solo, para que la persona lo apruebe en la ventana; o que lo firme ella en su terminal." ;;
   esac
@@ -830,6 +834,7 @@ if [[ "$_ow_mira" == "1" && "${SAFETY_OFF:-0}" != "1" ]]; then
       if [[ -n "$_c3_perdida" ]]; then
         IFS=$'\t' read -r _c3_sub _c3_a1 <<< "$_c3_perdida" || true
         ESC_CARTEL="Esto lo decide el dueño: la salida de una ejecución perdida se firma con marker.js clear-session <sesión> --lost, en la ventana de permiso o en su terminal (--terminal)."
+        BLOCK_MOTIVO="ejecucion-perdida"
         block "ESC-C3" \
           "Sacar una ejecución perdida (marker.js ${_c3_sub} ${_c3_a1}) la cierra o la rearma sin la pieza que le falta." \
           "Explicale al dueño qué pieza falta y que la firme con marker.js clear-session <sesión> --lost."

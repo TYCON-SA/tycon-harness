@@ -122,6 +122,13 @@ jobs:
               TOTAL=$((TOTAL+1))
               if is_copy "$PROJ/$RNAME" && [ "$(lower "$PROJ/$RNAME")" != "$MEASURED" ]; then
                 SKIPPED="$SKIPPED $PROJ/$RNAME"
+                # Su foto por proyecto, si quedó de cuando ese repo se medía, se borra acá: nada más la borra (el paso de
+                # la foto sólo escribe) y quedaría para siempre con la fecha del último día. El guardado la lleva borrada.
+                OLD_PHOTO="$(Build.SourcesDirectory)/.dashboard/proyectos/${PROJ}__${RNAME}.json"
+                if [ -f "$OLD_PHOTO" ]; then
+                  if rm -f "$OLD_PHOTO"; then echo "   · $PROJ/$RNAME: se borra su foto por proyecto de antes (${PROJ}__${RNAME}.json)"
+                  else echo "##vso[task.logissue type=warning]No se pudo borrar la foto por proyecto de $PROJ/$RNAME, que ya no se mide: queda con la fecha vieja"; fi
+                fi
                 continue
               fi
               DEST="$CLONES/${PROJ}__${RNAME}"
@@ -233,3 +240,18 @@ jobs:
         displayName: 'Guardar el punto del día en el repo de operaciones'
         # Sólo desde main (encolado sobre otra rama, guardar la subiría entera) y sólo con efectos.
         condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq('${{ parameters.efectos }}', 'true'))
+
+      # El ensayo (efectos: false): lo que este nocturno habría guardado, con las mismas rutas que su guardado, como
+      # artefacto de la corrida (`ensayo-datos`). Ver «El ensayo» en pipelines/operations/README.md.
+      - script: |
+          set -u
+          node scripts/ci/rehearsal-index.js --out "$(Build.ArtifactStagingDirectory)/ensayo-datos" \
+            -- '.dashboard/sdlc-stage-*.json' '.dashboard/proyectos/*.json' '.dashboard/author-concentration-*.json' '.dashboard/story-reference-*.json'
+        displayName: 'El ensayo: lo que se habría guardado'
+        condition: and(succeededOrFailed(), eq('${{ parameters.efectos }}', 'false'))
+      - task: PublishPipelineArtifact@1
+        displayName: 'El ensayo: publicar lo que se habría guardado'
+        condition: and(succeededOrFailed(), eq('${{ parameters.efectos }}', 'false'))
+        inputs:
+          targetPath: $(Build.ArtifactStagingDirectory)/ensayo-datos
+          artifact: ensayo-datos

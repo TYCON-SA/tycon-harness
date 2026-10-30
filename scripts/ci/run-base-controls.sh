@@ -464,7 +464,8 @@ function readApprovalDir(root, rev, dir) {
   return out;
 }
 const approvedEntry = (approvals, p, blob) => approvals.some((a) => a && Array.isArray(a.rules) && a.rules.some((r) => r && r.path === p && r.blob === blob));
-const approvalLine = (entries) => JSON.stringify({ hash: hashOf(entries), rules: entries, at: new Date().toISOString().slice(0, 10), by: 'dueño' });
+// `by`: quién firmó — el dueño en su terminal o su ventana, la coordinadora en la ventana de la sesión designada
+const approvalLine = (entries, by = 'dueño') => JSON.stringify({ hash: hashOf(entries), rules: entries, at: new Date().toISOString().slice(0, 10), by });
 // la refirma tras traer main, firmada por la sesión designada: la anterior del dueño, la máquina y la sesión del registro
 const refreshLine = (entries, refirmaDe, maquina, sesion) => JSON.stringify({ hash: hashOf(entries), rules: entries, at: new Date().toISOString().slice(0, 10), by: 'refirma', via: 'delegacion', clase: REFRESH, refirma_de: refirmaDe, maquina, signed_by_session: sesion });
 // los hashes de las constancias de la base, en cualquiera de las rutas de su inventario y sin mirar la forma: una
@@ -938,7 +939,12 @@ function approveByWindow(root, out, entries, c) {
   const firma = c && c.clase === REFRESH ? REFRESH : 'control-change';
   const r = ow.exigir({ firma, argv, resumen: entries.map((e) => e.path).join(', '), propia: sesion });
   if (r.codigo !== 0) { console.error(`run-base-controls approve: ${r.motivo}: no se firmó nada.`); process.exit(1); }
-  if (r.via !== 'delegacion') { writeApproval(root, out, entries, approvalLine(entries)); return; }
+  if (r.via !== 'delegacion') {
+    let by = 'dueño';
+    try { by = require(path.join(process.env.BASE_CONTROLS_SELF_DIR, '..', 'lib', 'delegated-signing.js')).signerOf(r); } catch (_) { /* sin la biblioteca, el de siempre */ }
+    writeApproval(root, out, entries, approvalLine(entries, by));
+    return;
+  }
   const reg = r.registro || {};
   if (firma !== REFRESH || reg.firma !== REFRESH || reg.refirma_de !== c.refirma_de || typeof reg.maquina !== 'string' || !reg.maquina || typeof reg.sesion !== 'string' || !reg.sesion) {
     console.error(`run-base-controls approve: la refirma no da lo mismo que el registro de la ventana (${safe(c ? c.motivo : 'sin clase')}): no se firmó nada. Va a la ventana del dueño, o a su terminal: ${terminal}`);

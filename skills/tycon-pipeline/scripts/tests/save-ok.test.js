@@ -349,6 +349,16 @@ test('PrepareCommit_OkDeGuardar_PorConstancia (T15) @story-8.143 @ac-9', () => {
   assert.match(texto, /marker\.js clear[^\n]*después del último push/i);
 });
 
+test('Sensible_NombreConCaracteresEspeciales_SeEscapa (T25) @story-8.143 @ac-5', () => {
+  // cada nombre entra a la expresión escapado entero: la barra invertida, el punto y los demás valen por sí mismos
+  assert.strictEqual(SO.requiereSensible("require('./a\\b.js')", ['a\\b.js']), true, 'con barra invertida');
+  assert.strictEqual(SO.requiereSensible("require('./ab.js')", ['a\\b.js']), false, 'la barra no se come la letra');
+  assert.strictEqual(SO.requiereSensible("require('./notifyxjs')", ['notify.x.js']), false, 'el punto no es cualquier carácter');
+  assert.strictEqual(SO.requiereSensible("require('./a+b')", ['a+b.js']), true, 'el más, literal');
+  assert.strictEqual(SO.requiereSensible("require('./aab')", ['a+b.js']), false, 'el más no repite');
+  assert.strictEqual(SO.requiereSensible("require('../lib/notify')"), true, 'con la lista del catálogo, sin .js');
+});
+
 test('Guiones_SaveCheckYApproveSave_SusSalidas (T24) @story-8.143 @ac-1 @ac-3', (t) => {
   const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'save-ok-guion-'));
   t.after(() => fs.rmSync(casa, { recursive: true, force: true }));

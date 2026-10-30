@@ -137,11 +137,21 @@ function renglonesDeFirma(texto) {
  * pendiente que se abre en el commit necesita una línea firmada nueva, válida, con su código. Con `sinFirmaLocal` (la
  * validación de pedidos del servidor, que no tiene el registro del arnés de la máquina que firmó) la línea firmada vale
  * con su forma y su huella, sin buscar su renglón: lo demás se mira igual.
+ *
+ * `otrosPadres` (`[{ registro, todo }]`) son los otros padres de un commit de merge: lo que ya estaba en ellos se
+ * revisó en su rama, así que no es nuevo. Una línea del registro que ya estaba en otro padre no se mira, y un pendiente
+ * abierto allí con su línea en ese mismo registro cuenta como abierto antes.
  */
-function revisarNuevas({ antes, despues, renglones, todoAntes = '', todoDespues = '', sinFirmaLocal = false }) {
+function revisarNuevas({ antes, despues, renglones, todoAntes = '', todoDespues = '', sinFirmaLocal = false, otrosPadres = [] }) {
   const previas = new Set(leerRegistro(antes).lineas.map((x) => x.texto));
   const nacimiento = !leerRegistro(antes).lineas.length;
   const abiertosAntes = new Set(pendientesAbiertos(todoAntes).map((p) => p.clave));
+  for (const o of otrosPadres) {
+    const lineas = leerRegistro(o.registro || '').lineas;
+    for (const x of lineas) previas.add(x.texto);
+    const aprobados = new Set(lineas.filter((x) => !motivoDe(x.valor)).map((x) => x.valor.id));
+    for (const p of pendientesAbiertos(o.todo || '')) if (aprobados.has(p.clave)) abiertosAntes.add(p.clave);
+  }
   const malas = [];
   const firmadasNuevas = new Set();
   for (const x of leerRegistro(despues).lineas) {

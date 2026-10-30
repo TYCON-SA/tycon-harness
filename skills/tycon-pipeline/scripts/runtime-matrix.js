@@ -1385,6 +1385,8 @@ function compute(opts) {
     exencionesC8: exenciones, sinImagen, avisos,
     hash, warnings, green, evidenceDirs, wsRoot, waivedAcs: [...waived], chainOk: chain.ok, waiverDiscarded,
     repoRoot,
+    // la hora del último cambio de código declarado: la evidencia anterior no cuenta
+    codeMtime: maxCodeMtime,
     stats: {
       total: acs.length,
       runtime: acs.filter((n) => perAc[n].verdict === 'RUNTIME').length,
