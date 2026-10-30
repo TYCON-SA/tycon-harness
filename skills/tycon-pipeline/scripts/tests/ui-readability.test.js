@@ -541,7 +541,7 @@ test('LayerProbe_DocumentoYLinea_IdaYVuelta @capa-de-la-maqueta', () => {
 test('Pasos4y5_LaCapaDeLaMaquetaSeConstruyeCapa @capa-de-la-maqueta', () => {
   for (const f of ['step-04-approve-plan.md', 'step-05-implement.md']) {
     const t = fs.readFileSync(path.join(SK, '..', 'steps', f), 'utf8');
-    assert.match(t, /se construye como capa/, f);
+    assert.match(t.replace(/\s+/g, ' '), /donde la maqueta marca una capa[^.]*, se construye una capa/i, f);
     assert.match(t, /«en la página» o «no modal»/, f);
     assert.match(t, /«panel» o «sección»/, f);
   }
