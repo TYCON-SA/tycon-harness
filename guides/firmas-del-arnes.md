@@ -146,6 +146,13 @@ frena a un agente que esquive el freno de la carpeta de estado: el agente corre 
 quien escribe el archivo por una vía que el freno no ve escribe también el renglón. La barrera contra eso es el freno de
 la carpeta de estado, que niega toda escritura ahí que no sea de los guiones del arnés.
 
+Además, cada firma que da un guion deja un renglón en un registro común, `signatures.jsonl`, en la misma carpeta que
+`gates.log`. Lo escribe `scripts/lib/signature-log.js`. El renglón dice quién firmó y por qué vía (la ventana, la
+terminal o la delegación); si fue delegada, quién la pidió y sobre qué sesión; también el id y el nivel de la firma en el
+catálogo, la huella de la máquina, la hora y el motivo. Los registros de cada guion siguen como están. Si el registro
+común no se puede escribir, la firma igual vale y el guion lo avisa. Los escapes del freno de seguridad no pasan por
+ahí: su constancia se escribe al pedir la ventana, antes de que la persona conteste.
+
 ## Lo delegado no está protegido
 
 La sesión de la coordinadora es un agente. Si decide aprobar una firma delegada por su cuenta,
