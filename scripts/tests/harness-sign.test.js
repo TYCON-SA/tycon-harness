@@ -415,6 +415,12 @@ test('T19 · sign no firma si lo lanzó la herramienta del agente, ni sin poder 
   assert.match(r.lines.join('\n'), /herramienta del agente/);
   r = conArbol(null);
   assert.strictEqual(r.code, 2, 'sin árbol no se sabe: no firma');
+  // 🔴 rojo: con el proceso propio fuera del árbol, o la cadena cortada antes de llegar al sistema, el bucle no veía
+  // nada y firmaba
+  r = conArbol(arbol('/Applications/iTerm.app/Contents/MacOS/iTerm2').filter((p) => p.pid !== yo));
+  assert.strictEqual(r.code, 2, 'el proceso propio no está en el árbol');
+  r = conArbol(arbol('/Applications/iTerm.app/Contents/MacOS/iTerm2').filter((p) => p.pid !== 50));
+  assert.strictEqual(r.code, 2, 'la cadena de padres se corta antes de llegar al sistema');
   assert.strictEqual(reg.renglones.length, 0);
   r = conArbol(arbol('/Applications/iTerm.app/Contents/MacOS/iTerm2'));
   assert.strictEqual(r.code, 0, 'desde una terminal de la persona, firma');
@@ -436,6 +442,12 @@ test('T20 · la terminal muestra el comando entero, con lo que no se ve escrito 
   // y el permiso es del texto real, no del que se mostró
   assert.ok(sign.consumir({ casa, comando: escondido, ahora: AHORA + MIN }).ok);
   assert.deepStrictEqual(sign.aLaVista('git push'), { visto: 'git push', raro: false });
+  // los de ancho cero y los que dan vuelta el texto también (disfrazan una palabra sin que se vea)
+  for (const cp of [0x061c, 0x00ad, 0x200b, 0x200c, 0x200d, 0x2060, 0x2064, 0xfeff]) {
+    const v = sign.aLaVista(`git pu${String.fromCodePoint(cp)}sh`);
+    assert.strictEqual(v.raro, true, `U+${cp.toString(16)}`);
+    assert.ok(v.visto.includes(`\\u{${cp.toString(16)}}`), `U+${cp.toString(16)} escrito`);
+  }
 });
 
 test('T12 · por la consola: un id desconocido sale 2 y la ayuda nombra sign', () => {

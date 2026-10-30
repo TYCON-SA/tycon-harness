@@ -94,12 +94,19 @@ function origenDeVerdad({ pid = process.pid, arbol } = {}) {
   const a = arbol === undefined ? ow.leerArbol() : arbol;
   if (!a) return { ok: false, motivo: 'no pude ver qué procesos lanzaron este comando, y sin eso no firmo: probá de nuevo en tu terminal' };
   const m = new Map(a.map((p) => [p.pid, p]));
+  const cortada = { ok: false, motivo: 'no pude seguir la cadena de procesos que lanzó este comando, y sin eso no firmo: probá de nuevo en tu terminal' };
+  // la cadena tiene que llegar al sistema (el proceso sin padre); si se corta antes, no se sabe quién la lanzó
   const vistos = new Set();
-  for (let p = m.get(pid); p && !vistos.has(p.pid); p = m.get(p.ppid)) {
-    vistos.add(p.pid);
+  let p = m.get(pid);
+  if (!p) return cortada;
+  while (true) {
     if (ow.esHerramienta(p)) return { ok: false, motivo: 'lo lanzó la herramienta del agente: se firma en una terminal tuya, fuera de la herramienta' };
+    vistos.add(p.pid);
+    if (p.ppid === 0 || p.ppid === p.pid) return { ok: true };
+    const padre = m.get(p.ppid);
+    if (!padre || vistos.has(padre.pid)) return cortada;
+    p = padre;
   }
-  return { ok: true };
 }
 
 /**
@@ -107,7 +114,7 @@ function origenDeVerdad({ pid = process.pid, arbol } = {}) {
  * los que dan vuelta el texto) quedan escritos como `\u{…}`. Así lo que la persona lee es el texto entero que firma.
  */
 // armada con códigos y no con los caracteres: dos de ellos cortan la línea del fuente
-const INVISIBLES = new RegExp(`[${['0000-001f', '007f-009f', '200e', '200f', '2028', '2029', '202a-202e', '2066-2069']
+const INVISIBLES = new RegExp(`[${['0000-001f', '007f-009f', '00ad', '061c', '200b-200f', '2028-202e', '2060-2064', '2066-2069', 'feff']
   .map((r) => r.split('-').map((h) => `\\u${h}`).join('-')).join('')}]`, 'g');
 
 function aLaVista(texto) {
