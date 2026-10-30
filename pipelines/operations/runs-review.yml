@@ -128,7 +128,7 @@ jobs:
                 DAY=$(date -u +%Y-%m-%d)
                 mkdir -p "$(Agent.TempDirectory)/buzon/corridas-buzon"
                 # El ensayo (efectos: false) no crea pedidos ni comenta en ninguno. Sacarle el token no alcanza: `az` queda
-                # conectado con la cuenta de esta conexión, y `az boards` la usaría.
+                # conectado con la cuenta de esta conexión, y los pedidos de trabajo se crearían con ella.
                 NWI=(); [ "${{ parameters.efectos }}" = "True" ] || NWI=(--no-work-items)
                 node scripts/nightly/runs-review/runs-review.js run --mailbox "$(Agent.TempDirectory)/buzon/corridas-buzon" \
                   --operations "$(Build.SourcesDirectory)" --today "$DAY" ${NWI[@]+"${NWI[@]}"}
