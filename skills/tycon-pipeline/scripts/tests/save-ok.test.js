@@ -561,3 +561,60 @@ test('ApproveSave_PapeleoAnidado_NoEsPapeleo (T29)', (t) => {
   escribir(a, 'app/specs/datos.json', '{}\n');
   assert.strictEqual(SO.vigente({ saveOk, repoActual: a }).ok, false);
 });
+
+/** Un `git init` sin ningún commit en una carpeta temporal: el repo de juguete que una corrida usa para medir algo. */
+function juguete(t) {
+  const d = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'save-ok-juguete-')));
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  sh(d, 'init', '-q', '-b', 'main');
+  escribir(d, 'medir.js', 'module.exports = 1;\n');
+  return d;
+}
+
+// T30 Firma_RepoSinMedir_FrenaEnTodaVia
+// 🔴 Falla con: un ok firmado en la ventana o en la terminal con un repo que no se pudo medir, que después no valida
+// nunca, o un motivo que no nombra el repo.
+test('ApproveSave_RepoSinMedir_FrenaEnTodaVia (T30)', (t) => {
+  const a = repo(t);
+  const roto = juguete(t);
+  for (const via of ['ventana', 'terminal', 'delegacion']) {
+    const r = SO.antesDeFirmar({ via, marker: corridaLimpia([a]), repos: [a, roto], canales: canalQueEntrega, mandar: entrega([]) });
+    assert.strictEqual(r.codigo, 2, `${via}: no firma`);
+    assert.match(r.motivo, new RegExp(`${roto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: no pude medirlo`), `${via}: nombra el repo`);
+  }
+});
+
+// T31 Repos_GitInitEnCarpetaTemporal_NoEntra
+// 🔴 Falla con: el repo de juguete de una carpeta temporal en el ok, sólo porque una edición de la corrida lo tocó; o un
+// hermano declarado que queda afuera por vivir en una carpeta temporal.
+test('Repos_GitInitEnCarpetaTemporal_NoEntra (T31)', (t) => {
+  const a = repo(t, { 'LEEME.md': 'hola\n', 'specs/story-9.99.md': '---\nstory_id: "9.99"\n---\n' });
+  const toy = juguete(t);
+  const marker = corridaLimpia([a], { fileEvents: [{ path: path.join(a, 'LEEME.md'), ts: ANTES, code: true }, { path: path.join(toy, 'medir.js'), ts: ANTES, code: true }] });
+  assert.deepStrictEqual(SO.reposDeLaCorrida({ marker, hermanos: [] }), [a], 'el de la story sí; el de juguete no');
+  // declarado como hermano, entra aunque viva en una carpeta temporal
+  const hermano = repo(t);
+  escribir(hermano, 'LEEME.md', 'cambiado\n');
+  assert.deepStrictEqual(SO.reposDeLaCorrida({ marker, hermanos: [hermano] }).sort(), [a, hermano].sort());
+});
+
+// T32 Ok_NoCubreElRepoTemporal
+// 🔴 Falla con: el repo que quedó afuera de la corrida cubierto por su ok: mover el trabajo a una carpeta temporal
+// saltearía el ok de guardar. Un commit o un push ahí pide su propio ok.
+test('ApproveSave_ElRepoTemporal_PideSuPropioOk (T32)', (t) => {
+  const a = repo(t, { 'LEEME.md': 'hola\n', 'specs/story-9.99.md': '---\nstory_id: "9.99"\n---\n' });
+  const toy = repo(t);
+  escribir(toy, 'trabajo.js', 'module.exports = 2;\n');
+  const marker = corridaLimpia([a], { fileEvents: [{ path: path.join(a, 'LEEME.md'), ts: ANTES, code: true }, { path: path.join(toy, 'trabajo.js'), ts: ANTES, code: true }] });
+  const repos = SO.reposDeLaCorrida({ marker, hermanos: [] });
+  assert.ok(!repos.includes(toy), 'el repo temporal no entra en la corrida');
+  const r = SO.antesDeFirmar({ via: 'ventana', marker, repos });
+  assert.strictEqual(r.codigo, 0, r.motivo);
+  const saveOk = SO.constancia({ marker, via: 'ventana', previo: r, ahora: DESPUES });
+  assert.strictEqual(SO.vigente({ saveOk, repoActual: a }).ok, true, 'el ok vale para el repo de la story');
+  const commit = SO.vigente({ saveOk, repoActual: toy });
+  assert.strictEqual(commit.ok, false, 'un commit en el repo temporal no lo cubre el ok');
+  assert.match(commit.motivo, /no está en el ok de guardar/);
+  const push = SO.vigente({ saveOk, repoActual: toy, push: { remoto: 'origin', rama: 'story/la-prueba' } });
+  assert.strictEqual(push.ok, false, 'un push desde el repo temporal tampoco');
+});
