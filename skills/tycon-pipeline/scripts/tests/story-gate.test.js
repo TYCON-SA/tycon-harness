@@ -64,7 +64,7 @@ test('adhoc-sensitive: el carril delegado no toca lo sensible, en ningún repo',
     const r = gate.computeStoryGate({ ...BASE, repoRoot: repo, filePath: `${repo}/${archivo}`, adhoc: delegado, isHarness: harness });
     assert.equal(r.action, 'block', `${archivo}: ${r.reason}`);
     assert.equal(r.kind, 'adhoc-sensitive', archivo);
-    assert.match(r.reason, new RegExp(archivo.replace(/[.*]/g, '\\$&')), 'el motivo nombra el archivo');
+    assert.ok(r.reason.includes(archivo), `el motivo nombra el archivo: ${r.reason}`);
   }
   // lo que no es sensible, por delegación: pasa
   assert.equal(gate.computeStoryGate({ ...BASE, adhoc: delegado }).action, 'pass');
