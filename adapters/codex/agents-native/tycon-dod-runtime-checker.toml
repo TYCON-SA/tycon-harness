@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-dod-runtime-checker.md
-# source_sha256: aafdc50e902f005f5a61f3d3a7fe3fd0476571cfae0519e55eaba55a6f761d9a
+# source_sha256: 8150566f2d905caec79c5f645f11ccd96b6e8fe4dee69597e50ce20bb936e259
 # Formato SUBAGENTE NATIVO: se despliega como $CODEX_HOME/agents/tycon-dod-runtime-checker.toml y una
 # sesión codex lo spawnea (collaborationspawn_agent → tool_input.agent_type = "tycon-dod-runtime-checker").
 # El ledger de check-count lo registra on-advisor-run.js por agent_type (sonda G-1).
@@ -460,7 +460,7 @@ Sin engram entry → el waive es ilegítimo + el advisor lo levantará en próxi
 
 ## Referencias
 
-- `~/.claude/tycon-harness/guides/definition-of-done.md` — DoD canónico TYCON.
+- `guides/definition-of-done.md` del arnés (la ruta completa, arriba) — DoD canónico TYCON.
 - `~/.claude/CLAUDE.md` — Regla del trigger de CI de un backend (el trigger ADO no se dispara con merge commits sin `.cs`).
 
 ## 🔴 Cómo se devuelve un reporte (regla dura del harness — 2026-07-27)

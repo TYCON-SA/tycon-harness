@@ -447,7 +447,7 @@ Sin engram entry → el waive es ilegítimo + el advisor lo levantará en próxi
 
 ## Referencias
 
-- `~/.claude/tycon-harness/guides/definition-of-done.md` — DoD canónico TYCON.
+- `guides/definition-of-done.md` del arnés (la ruta completa, arriba) — DoD canónico TYCON.
 - `~/.claude/CLAUDE.md` — Regla del trigger de CI de un backend (el trigger ADO no se dispara con merge commits sin `.cs`).
 
 ## 🔴 Cómo se devuelve un reporte (regla dura del harness — 2026-07-27)
