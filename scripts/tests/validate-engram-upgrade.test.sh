@@ -38,9 +38,18 @@ ln -s "$(command -v node)" "$T/bin/node"
 mkdir -p "$T/repo-bueno" "$T/carpeta-suelta"
 git -C "$T/repo-bueno" init -q
 
+lab_harness() { # <carpeta> → un arnés de laboratorio: el guion, sus bibliotecas y un repo git vacío
+  mkdir -p "$1/scripts/setup"
+  cp "$GUION" "$1/scripts/setup/"; cp -R "$RAIZ/scripts/lib" "$1/scripts/lib"
+  git -C "$1" init -q
+}
+# Los casos de los repos extra corren el guion desde un arnés de laboratorio sin memoria: el árbol de donde sale esta
+# prueba puede declarar memoria (`.engram-project`) sin traer su índice, y el paso 4 los pondría en ROJO por otro motivo.
+lab_harness "$T/arnes-base"
 correr() { # <repos extra> → corre el guion en el laboratorio; deja SAL y RC
   SAL="$(env -i HOME="$T/home" PATH="$T/bin:/usr/bin:/bin" LLAMADAS="$LLAMADAS" TYCON_ENGRAM=1 \
-    TYCON_NO_NIGHTLY_EXAM=1 TARGET=9.9.9 TYCON_ENGRAM_TEST_REPOS="$1" bash "$GUION" 2>&1)"; RC=$?
+    TYCON_NO_NIGHTLY_EXAM=1 TARGET=9.9.9 TYCON_ENGRAM_TEST_REPOS="$1" \
+    bash "$T/arnes-base/scripts/setup/validate-engram-upgrade.sh" 2>&1)"; RC=$?
 }
 
 # ── control positivo: con un repo extra que existe, verde ─────────────────────────────────────────
@@ -83,11 +92,6 @@ fi
 # lleva memoria: se dice, no se sincroniza nada adentro (eso le crearía una memoria) y no cuenta como rojo.
 # El espejo: un arnés que SÍ declara memoria y no tiene el índice sigue en ROJO.
 # Rojo que atrapa: el arnés sin memoria sale 1 con «manifest cambió a version».
-lab_harness() { # <carpeta> → un arnés de laboratorio: el guion, sus bibliotecas y un repo git vacío
-  mkdir -p "$1/scripts/setup"
-  cp "$GUION" "$1/scripts/setup/"; cp -R "$RAIZ/scripts/lib" "$1/scripts/lib"
-  git -C "$1" init -q
-}
 run_lab() { # <arnés de laboratorio> → corre SU guion, sin repos extra; deja SAL y RC
   SAL="$(env -i HOME="$T/home" PATH="$T/bin:/usr/bin:/bin" LLAMADAS="$LLAMADAS" TYCON_ENGRAM=1 \
     TYCON_NO_NIGHTLY_EXAM=1 TARGET=9.9.9 bash "$1/scripts/setup/validate-engram-upgrade.sh" 2>&1)"; RC=$?
