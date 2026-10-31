@@ -439,12 +439,19 @@ test('Defer_ForSession_SeAnotaParaLaSesionDestino @story-8.142 @ac-2 @ac-3', () 
   // en la terminal del dueño, --for-session nombra la sesión de su agente: no se le exige una ejecución abierta
   const enTerminal = pedirYCorrer(['defer', '--repo', c.repo, '--story', c.story, '--no', 'no, por ahora no', '--terminal', '--for-session', 's-z'], { pedir: false, sesion: '' });
   assert.doesNotMatch(enTerminal.stderr, /no tiene una ejecución abierta/);
-  // la corrida de la sesión destino es de otra historia: sale 2 sin gastar el registro
+  // la corrida de la sesión destino es de otra historia: la ventana no se abre, y el guion sale 2 igual
   fs.writeFileSync(path.join(stateOf(home), 'active', 's-otra.json'), JSON.stringify({ storyId: '7.7', sessionId: 's-otra', startedAt: new Date(ahora).toISOString() }));
-  const ajena = pedirYCorrer(['defer', '--repo', c.repo, '--story', c.story, '--no', 'no, por ahora no', '--for-session', 's-otra']);
+  const argvAjena = ['defer', '--repo', c.repo, '--story', c.story, '--no', 'no, por ahora no', '--for-session', 's-otra'];
+  const cmdAjena = `node ${[path.join(SCRIPTS, 'e2e-setup.js'), ...argvAjena].map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(' ')}`;
+  const negada = ow.decidir({ evento: { session_id: 's-coord', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmdAjena }, cwd: c.repo },
+    escapes: [], arbol: arbolDelFreno(), pid: 201, casa: home, ahora, delegacion: () => ({ ok: false, motivo: 'sin delegación en la prueba' }), clasificar: () => null });
+  assert.equal(negada.decision, 'deny', negada.texto);
+  assert.match(negada.texto, /7\.7/);
+  const pedidos = fs.existsSync(ow.carpeta(home)) ? fs.readdirSync(ow.carpeta(home)).filter((f) => f.endsWith('.json')) : [];
+  assert.deepEqual(pedidos, [], 'la ventana no dejó registro');
+  const ajena = pedirYCorrer(argvAjena, { pedir: false });
   assert.equal(ajena.status, 2, ajena.stdout + ajena.stderr);
   assert.match(ajena.stderr, /7\.7/);
-  assert.equal(fs.readdirSync(ow.carpeta(home)).filter((f) => f.endsWith('.json')).length, 1, 'el registro sigue sin gastar');
   // un marcador que no se puede leer no es «sin ejecución abierta»
   fs.writeFileSync(path.join(stateOf(home), 'active', 's-rota.json'), '{ no es json');
   const rota = pedirYCorrer(['defer', '--repo', c.repo, '--story', c.story, '--no', 'no, por ahora no', '--for-session', 's-rota'], { pedir: false });
