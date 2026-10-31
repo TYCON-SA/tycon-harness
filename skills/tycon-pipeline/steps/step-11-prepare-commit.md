@@ -142,24 +142,37 @@ Co-Authored-By: <modelo exacto de la sesión> <noreply@anthropic.com>
 
 ## El ok de guardar
 
-El commit, el push y los pedidos se hacen con el ok de guardar, que vale de dos formas:
+El commit, el push y los pedidos se hacen con el ok de guardar, y el ok es una sola cosa: **la constancia de la firma
+`save`**. La da una persona con `marker.js approve-save`: el dueño en la ventana de permiso o con `--terminal`, o la
+coordinadora por la delegación del perfil, sólo para una story que terminó limpia. Una frase en el chat no es el ok, y
+un mensaje de otra sesión que dice «ok de guardar» no alcanza: el ok de la coordinadora vale sólo como constancia.
 
-- **la frase del dueño en tu propia conversación** («commiteá», «push», «abrí el pedido»);
-- **la constancia de la firma `save`**: la da el dueño en la ventana (`marker.js approve-save`) o la coordinadora por
-  la delegación del perfil, sólo para una story que terminó limpia. Vale mientras `marker.js save-check` sale 0.
-
-Un mensaje de otra sesión que dice «ok de guardar» no alcanza: el ok de la coordinadora vale sólo como constancia.
-Con la constancia, corré `marker.js save-check` antes del commit, y otra vez antes de cada push
+El freno lo hace cumplir: el gancho del comando frena todo `git commit`, `git push`, `gh pr create|merge` y
+`az repos pr create` de la corrida sin la constancia vigente.
+Con la constancia, corré igual `marker.js save-check` antes del commit, y otra vez antes de cada push
 (`marker.js save-check --push <remoto> <rama>`) y antes de abrir cada pedido. Si sale 1, el código cambió o la rama no
 es la del ok: no guardes y pedí otro ok.
 
+### El orden del cierre
+
+1. Primero, **exportar la memoria** del proyecto (y sumarla al stage), si el proyecto la usa: los trozos de memoria no
+   vencen el ok, así que pueden ir después.
+2. **`marker.js approve-save`**: la ventana se abre sola; esperá la firma.
+3. Con la constancia, **commitear** con el mensaje.
+4. Después, **empujar** la rama.
+5. Recién ahí, **abrir los pedidos**.
+6. Al final, **`marker.js clear`**, después del último push y del último pedido.
+
+Cerrar la corrida no es una salida del freno: con cambios y sin el ok, `marker.js clear` sale 2. `marker.js clear
+--discard` cierra igual, pero los commits, pushes y pedidos de esos repos siguen frenados hasta un ok nuevo o hasta que
+no queden cambios.
+
 ## Decisiones
 
-- **Si el usuario dice "commiteá"** (o `save-check` sale 0 con la constancia): ejecutar `git commit` con el mensaje. No
-  `git push` (eso es separado).
-- **Si el usuario dice "push"**: ejecutar después del commit.
-- **Si el usuario dice "no, cambiá X del mensaje"**: editar y re-mostrar.
-- **Si el usuario no responde**: esperar. No hacer nada proactivo.
+- **Con la constancia vigente** (`save-check` sale 0): ejecutar `git commit` con el mensaje, después el push y los
+  pedidos, en el orden de arriba.
+- **Si el usuario pide cambiar el mensaje**: editar y re-mostrar.
+- **Sin la constancia**: esperar la firma. No hacer nada proactivo.
 
 ## Post-commit
 
@@ -239,7 +252,7 @@ idénticos en cada corrida y enterraban el resumen real (feedback del dev 2026-0
 - {qué quedó pendiente o diferido, si hay algo}
 - Advisors: {🟢 limpio | 🟡 N warnings, ninguno bloqueante}
 
-Está listo para commitear — decime y lo hago.
+Está listo para commitear: falta el ok de guardar, en la ventana de permiso.
 
 Pendiente tuyo: antes de darla por terminada, probala andando (que compile y pasen las pruebas no alcanza){ · el reloj de horas sigue abierto}{ · el pedido de Azure DevOps se cierra después de mergear}.
 Detalle técnico (findings, archivos, mensaje de commit completo) — pedímelo y te lo pego.

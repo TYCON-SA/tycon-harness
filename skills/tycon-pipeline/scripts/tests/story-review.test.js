@@ -361,7 +361,7 @@ function cerrarCorrida(l) {
   const set = spawnSync(process.execPath, [MARKER, 'set', JSON.stringify({ storyId: '9.4', storyPath: l.story, repoPath: l.repo, startedAt: new Date().toISOString() })],
     { encoding: 'utf8', env: e, cwd: l.repo });
   assert.equal(set.status, 0, `${set.stdout}\n${set.stderr}`);
-  const c = spawnSync(process.execPath, [MARKER, 'clear'], { encoding: 'utf8', env: e, cwd: l.repo });
+  const c = spawnSync(process.execPath, [MARKER, 'clear', '--discard'], { encoding: 'utf8', env: e, cwd: l.repo });
   assert.equal(c.status, 0, `${c.stdout}\n${c.stderr}`);
   const { stateDir } = require(path.join(SCRIPTS, 'lib', 'state-dir.js'));
   const dir = path.join(stateDir(l.home), 'timing-history');

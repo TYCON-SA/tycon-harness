@@ -591,6 +591,12 @@
       "requiere": []
     },
     {
+      "__nota": "el freno del ok de guardar: el gancho del comando frena el commit, el push y los pedidos de una corrida sin la constancia vigente, y los de una corrida que cerró sin ella; clear sin el ok sale 2.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/save-brake.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 7.46: una persona marca cada criterio de la guía como probado a mano — la opción de la organización, la muestra, la marca con el ok de la persona y el freno del cierre.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/manual-checks.test.js",

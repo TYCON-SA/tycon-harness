@@ -196,7 +196,7 @@ test('T2 RunClose_CadaCaminoLegitimo_LoAnota @story-8.121 @ac-2 — clear, clear
   };
   let E = entorno();
   E.arrancar('s-t2a');
-  assert.strictEqual(E.correr('marker.js', ['clear'], 's-t2a').status, 0);
+  assert.strictEqual(E.correr('marker.js', ['clear', '--discard'], 's-t2a').status, 0);
   sano(E, 's-t2a', 'clear');
 
   E = entorno();
@@ -441,7 +441,7 @@ test('T15 CopiaEditada_Frena @story-8.121 @ac-17 — la copia con otra sesión, 
   E.arrancar('s-t15-git');
   const c = E.copiaDe('s-t15-git');
   const guardada = fs.readFileSync(c, 'utf8');
-  assert.strictEqual(E.correr('marker.js', ['clear'], 's-t15-git').status, 0);
+  assert.strictEqual(E.correr('marker.js', ['clear', '--discard'], 's-t15-git').status, 0);
   fs.writeFileSync(c, guardada);
   assert.doesNotMatch(E.editar('s-t15-git').out, PERDIDA);
 });

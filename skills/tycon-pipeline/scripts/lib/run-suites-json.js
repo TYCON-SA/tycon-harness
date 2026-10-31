@@ -102,7 +102,7 @@ const WRAPPER = path.join(__dirname, 'coverage-wrapper.js');
 // con que run-check anota la procedencia del check `tests`: heredada, la suite del freno de cierre cambiaría de conducta
 // (roja dentro del portón, verde sola; casos: tests/run-suites-json.test.js T15b).
 const DEL_PORTON = ['TYCON_EVIDENCE_KEY', 'TYCON_EVIDENCE_KEY_FAILED', 'TYCON_TEST_GATE_COMPANION', 'TYCON_TEST_GATE_STORY_REPO',
-  'TYCON_TEST_GATE_CROSS_REPO', 'TYCON_TEST_GATE', 'TYCON_TEST_GATE_TREE_TOUCHED'];
+  'TYCON_TEST_GATE_CROSS_REPO', 'TYCON_TEST_GATE', 'TYCON_TEST_GATE_TREE_TOUCHED', 'TYCON_SUITE_HOMES_ROOT'];
 
 function launch(p, covDir, env0) {
   const ej = p.ruta.endsWith('.js') ? process.execPath : 'bash';
@@ -579,7 +579,9 @@ function main(argv, env = process.env) {
   // (git la ignora) y no bajo la carpeta temporal, como en la CI: hay suites que tratan esa carpeta como «de prueba».
   // La carpeta temporal de cada una, al revés, va fuera del repo, también como en la CI: hay suites que arman ahí un
   // repo de juguete o suponen estar fuera de todo repo, y dentro del árbol git les contesta la raíz de ese árbol.
-  const homesRoot = path.join(repo, '.advisors');
+  // Un repo que vive él mismo en la carpeta temporal (el árbol armado del privado) declara otra raíz para las HOME con
+  // TYCON_SUITE_HOMES_ROOT: bajo el repo quedarían en la carpeta temporal.
+  const homesRoot = process.env.TYCON_SUITE_HOMES_ROOT ? path.resolve(process.env.TYCON_SUITE_HOMES_ROOT) : path.join(repo, '.advisors');
   const homesDir = path.join(homesRoot, `suite-homes-${process.pid}`);
   let tmpsDir = null;
   // Las HOME y las carpetas temporales de una corrida anterior que murió sin limpiar (un kill -9): las de un proceso
