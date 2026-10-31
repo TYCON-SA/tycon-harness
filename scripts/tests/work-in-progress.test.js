@@ -367,7 +367,8 @@ test('T22 ConsultaFalla_SeDiceYQuedaOcupada: una consulta que falla o se pasa de
   assert.ok(Date.now() - t0 < 3000, 'no espera al gh colgado');
   assert.match(res.error, /tope/);
   const { PER_QUERY_MS, ALL_QUERIES_MS } = require(WIP);
-  assert.deepStrictEqual([PER_QUERY_MS, ALL_QUERIES_MS], [5000, 6000], 'los topes de la story');
+  // az tarda más de 5 s cuando renueva su permiso: con ese tope, una story entrada salía «sin poder consultar»
+  assert.deepStrictEqual([PER_QUERY_MS, ALL_QUERIES_MS], [15000, 20000], 'los topes');
   const q = [{ kind: 'github', slug: 'acme/x', branch: 'story/x', name: 'x', root: m.root }];
   const withBin = (b) => ({ env: { ...process.env, PATH: b } });
   const missing = fs.mkdtempSync(path.join(m.root, 'empty-'));
@@ -445,7 +446,7 @@ test('T25 SinPasoOcho_OSesionMuerta_ComoAntes: sin el 8 cerrado o con la sesión
   assert.deepStrictEqual(r.halfway, []);
   assert.deepStrictEqual(r.free, ['libre']);
   // a closed run untouched for two days: with its session dead it is finished and not counted; with its session
-  // alive it is counted at the foot, so it does not vanish
+  // alive it is counted at the foot, and the session shows what it does today (here nothing: free)
   const old = toyMachine();
   const twoDaysAgo = '2026-10-16T10:00:00.000Z';
   marker(old, 'ent00000-8', { storyId: '5.4', storyPath: story(old.root, '5.4', 't'), repoPath: repo, stepsCompleted: [0, 8], stepsPending: [], lastTouch: twoDaysAgo });
@@ -454,7 +455,7 @@ test('T25 SinPasoOcho_OSesionMuerta_ComoAntes: sin el 8 cerrado o con la sesión
   assert.deepStrictEqual([o.rows, o.unreadable, asked], [[], [], 0]);
   session(old, process.pid, 'ent00000-8', 'vieja');
   const v = run(old, { prs: () => { asked += 1; return { prs: [{ number: 1, draft: false }] }; } });
-  assert.deepStrictEqual([v.rows, v.free, asked], [[], [], 0]);
+  assert.deepStrictEqual([v.rows, v.free, asked], [[], ['vieja'], 0]);
   assert.ok(v.unreadable.some((u) => /1 story\(s\) con el pipeline cerrado hace más de 24 h y la sesión viva/.test(u)), v.unreadable.join(' | '));
 });
 
@@ -474,7 +475,9 @@ test('T26 ConsultaReal_GhFalso: el programa le pregunta a gh por la rama y el re
   const out = execFileSync('node', [WIP, '--state-dir', m.state, '--sessions-dir', m.sessions, '--now', NOW, '--json'],
     { input: '', env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
   const args = JSON.parse(fs.readFileSync(path.join(bin, 'args.json'), 'utf8'));
-  for (const a of ['pr', 'list', '--head', 'story/x', '--state', 'open', '--repo', 'acme/x']) assert.ok(args.includes(a), args.join(' '));
+  // por GraphQL, que dice si el pedido está en la cola de merge
+  for (const a of ['api', 'graphql', 'o=acme', 'n=x', 'h=story/x']) assert.ok(args.includes(a), args.join(' '));
+  assert.ok(args.some((a) => /mergeQueueEntry/.test(a) && /states:OPEN/.test(a)), args.join(' '));
   assert.strictEqual(JSON.parse(out).rows[0].state, 'Entrando a los repos · x #236');
 });
 
@@ -743,9 +746,9 @@ test('T41 Fin_SumaLaEntradaALosRepos: la hora suma la mediana de entrada; la que
   entering(w, 'ent00000-9', { repoPath: mergesRepo(w.root, 'x', [20, 30, 40]), stepTimings: { 8: { startedAt: '2026-10-18T13:40:00.000Z', completedAt: '2026-10-18T13:50:00.000Z' } } });
   const rw = run(w, { prs: () => ({ prs: [{ number: 7, draft: false }] }) });
   assert.strictEqual(rw.rows[0].end, `${localHhmm(Date.parse('2026-10-18T14:20:00.000Z'))} (con la entrada a los repos)`, rw.text);
-  // past that hour it says so, with the same fixed hour
+  // past that hour it says since when it waits, with the same fixed hour
   const late = run(w, { now: '2026-10-18T15:00:00.000Z', prs: () => ({ prs: [{ number: 7, draft: false }] }) });
-  assert.strictEqual(late.rows[0].end, `atrasada (estimado ${localHhmm(Date.parse('2026-10-18T14:20:00.000Z'))})`);
+  assert.strictEqual(late.rows[0].end, `esperando entrar desde ${localHhmm(Date.parse('2026-10-18T13:50:00.000Z'))} (estimado ${localHhmm(Date.parse('2026-10-18T14:20:00.000Z'))})`);
   // a repo without measured merges: the hour leaves it out and says so
   const n = toyMachine();
   history(n, 'a', { 0: 1, 4: 20, 5: 10, 8: 4 });
@@ -1465,4 +1468,141 @@ test('T23 Wip_NameFromSessionFile @story-8.122 @ac-23: cada fila lleva el name d
   db.close();
   marker(m, 'cdx00000-3333', { storyId: '6.1', storyPath: story(m.root, '6.1', 'De Codex'), stepsCompleted: [0], stepsPending: [4], lastTouch: NOW });
   assert.ok(runP(m, { home: m.root, codexHome: codex }).halfway.some((h) => h.includes('· DeCodex ·')));
+});
+
+// ── Lo que hace cada sesión ahora: el trabajo principal con su estado, y lo que hace mientras tanto ──────────────────
+
+test('wip · Entrando_PasadoElEstimado_DiceDesdeCuandoEspera: una story que espera entrar no queda «atrasada» para siempre', () => {
+  const w = toyMachine();
+  entering(w, 'esp00000-1', { repoPath: mergesRepo(w.root, 'x', [20, 30, 40]), stepTimings: { 8: { startedAt: '2026-10-18T13:40:00.000Z', completedAt: '2026-10-18T13:50:00.000Z' } } });
+  const late = run(w, { now: '2026-10-18T15:00:00.000Z', prs: () => ({ prs: [{ number: 7, draft: false }] }) });
+  assert.strictEqual(late.rows[0].end, `esperando entrar desde ${localHhmm(Date.parse('2026-10-18T13:50:00.000Z'))} (estimado ${localHhmm(Date.parse('2026-10-18T14:20:00.000Z'))})`);
+});
+
+test('wip · Principal_YMientrasTanto: la story sale con su estado; el arreglo rápido, la nota o el otro repo, como «mientras tanto»', () => {
+  const m = toyMachine();
+  entering(m, 'mie00000-1', { repoPath: gitRepo(m.root, 'x', 'story/x', GH) });
+  fs.writeFileSync(path.join(m.state, 'adhoc', 'mie00000-1.json'), JSON.stringify({ reason: 'el comando del sitio', declaredAt: new Date(minsBefore(5)).toISOString() }));
+  const r = run(m, { prs: () => ({ prs: [{ number: 12, draft: false }] }) });
+  assert.strictEqual(r.rows.length, 1, r.text);
+  assert.strictEqual(r.rows[0].state, 'Entrando a los repos · x #12');
+  assert.strictEqual(r.rows[0].meanwhile, 'arreglo rápido «el comando del sitio»');
+  assert.match(r.text, /Entrando a los repos · x #12 · mientras tanto: arreglo rápido «el comando del sitio»/);
+  // una nota de la sesión, con una corrida en curso
+  const n = toyMachine();
+  marker(n, 'mie00000-2', { storyId: '9.1', storyPath: story(n.root, '9.1', 'Una'), stepsCompleted: [0], stepsPending: [4], lastTouch: NOW });
+  session(n, process.pid, 'mie00000-2', 'con-nota');
+  fs.mkdirSync(path.join(n.state, 'doing'), { recursive: true });
+  fs.writeFileSync(path.join(n.state, 'doing', 'mie00000-2.json'), JSON.stringify({ text: 'mido el disco del sitio', at: new Date(minsBefore(3)).toISOString() }));
+  const rn = run(n);
+  assert.strictEqual(rn.rows.length, 1, rn.text);
+  assert.deepStrictEqual([rn.rows[0].state, rn.rows[0].meanwhile], ['Implementar + pruebas', 'mido el disco del sitio']);
+  // lo último que tocó está en otro repo, en una rama que no es la de la story
+  const a = toyMachine();
+  const suyo = gitRepo(a.root, 'x', 'story/9.2-los-nocturnos', GH);
+  const otro = gitRepo(a.root, 'th-sitio', 'fix/el-comando', 'https://github.com/acme/th.git');
+  marker(a, 'mie00000-3', { storyId: '9.2', storyPath: story(a.root, '9.2', 'Los nocturnos'), repoPath: suyo, stepsCompleted: [0], stepsPending: [4], lastTouch: NOW });
+  session(a, process.pid, 'mie00000-3', 'sesion-a', busyAt(suyo));
+  touched(a, 'mie00000-3', [[inRepo(suyo, 'a.js'), 30], [inRepo(otro, 'scripts/b.js'), 2]]);
+  const ra = run(a);
+  assert.strictEqual(ra.rows.length, 1, ra.text);
+  assert.strictEqual(ra.rows[0].meanwhile, 'th-sitio · fix/el-comando', ra.text);
+  // lo último que tocó es de la story: no hay «mientras tanto»
+  touched(a, 'mie00000-3', [[inRepo(otro, 'scripts/b.js'), 30], [inRepo(suyo, 'a.js'), 2]]);
+  assert.strictEqual(run(a).rows[0].meanwhile, undefined);
+});
+
+test('wip · RepoDeOtraStory_NoSeLeAtribuye: un repo que tocó la corrida y hoy está en la rama de otra story no se consulta', () => {
+  const m = toyMachine();
+  const x = gitRepo(m.root, 'x', 'story/x', GH);
+  const ajeno = gitRepo(m.root, 'z', 'story/9.9-otra', 'https://github.com/acme/z.git');
+  const hermano = gitRepo(m.root, 'w', 'story/5.1-la-misma', 'https://github.com/acme/w.git');
+  entering(m, 'aje00000-1', { repoPath: x, filesTouched: [inRepo(ajeno, 'a.js'), inRepo(hermano, 'b.js')] });
+  const asked = [];
+  const r = run(m, { prs: (q) => { asked.push(q.name); return { prs: [{ number: q.name === 'z' ? 99 : 5, draft: false }] }; } });
+  assert.deepStrictEqual(asked.sort(), ['w', 'x']);
+  assert.ok(!r.rows[0].state.includes('#99'), r.text);
+});
+
+test('wip · CerradoHaceMasDe24h_NoEscondeLaSesion: un cierre viejo no la esconde: sale con lo que hace, o libre', () => {
+  const m = toyMachine();
+  const wt = gitRepo(m.root, 'mi-arreglo', 'fix/el-aviso', GH);
+  marker(m, 'vie00000-1', { storyId: '5.1', storyPath: story(m.root, '5.1', 'Vieja'), stepsCompleted: [0, 1, 2, 3, 4, 5, 6, 8], stepsPending: [], lastTouch: new Date(minsBefore(25 * 60)).toISOString() });
+  session(m, process.pid, 'vie00000-1', 'sesion-b', busyAt(wt));
+  const r = runP(m);
+  assert.strictEqual(r.rows.length, 1, r.text);
+  assert.strictEqual(r.rows[0].session, 'sesion-b');
+  assert.match(r.rows[0].state, /^Trabajando sin pipeline/);
+  session(m, process.pid, 'vie00000-1', 'sesion-b');
+  assert.deepStrictEqual(runP(m).free, ['sesion-b']);
+});
+
+test('wip · PasoConBandera_EsElQueSigue: con «Probar en vivo» sin hacer, el estado es ése y no «Preparar el commit»', () => {
+  const m = toyMachine();
+  const base = { storyId: '9.3', storyPath: story(m.root, '9.3', 't'), stepScheme: 2, deepReviewDone: true, lastTouch: NOW,
+    stepsCompleted: ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers', 'findings'], stepsPending: ['prepare-commit'] };
+  marker(m, 'viv00000-1', base);
+  session(m, process.pid, 'viv00000-1', 'x');
+  assert.strictEqual(run(m).rows[0].state, 'Probar en vivo');
+  marker(m, 'viv00000-1', { ...base, dodRuntimeChecked: true });
+  assert.strictEqual(run(m).rows[0].state, 'Preparar el commit');
+});
+
+test('wip · PedidoFueraDeLaCola_NoSigueEntrando: con todos los pedidos fuera de la cola o en borrador, espera que lo encolen', { skip: onWindows }, () => {
+  const m = toyMachine();
+  entering(m, 'col00000-1', { repoPath: gitRepo(m.root, 'x', 'story/x', GH) });
+  const pr = (number, extra) => ({ number, isDraft: false, mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', autoMergeRequest: null, mergeQueueEntry: null, ...extra });
+  const gql = (nodes) => JSON.stringify({ data: { repository: { pullRequests: { nodes } } } });
+  const runGh = (out) => {
+    const bin = fakeBin(m.root, 'gh', `process.stdout.write(${JSON.stringify(out)});`);
+    return JSON.parse(execFileSync('node', [WIP, '--state-dir', m.state, '--sessions-dir', m.sessions, '--now', NOW, '--json'],
+      { input: '', env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } })).rows[0];
+  };
+  const off = runGh(gql([pr(842)]));
+  assert.strictEqual(off.state, 'Pedidos sin encolar · x #842 (fuera de la cola)');
+  assert.match(off.end, /ningún pedido está en la cola/);
+  // en la cola, o con auto-merge: sigue entrando, sin marca
+  assert.strictEqual(runGh(gql([pr(846, { mergeQueueEntry: { state: 'AWAITING_CHECKS' } })])).state, 'Entrando a los repos · x #846');
+  assert.strictEqual(runGh(gql([pr(847, { autoMergeRequest: { enabledAt: NOW } })])).state, 'Entrando a los repos · x #847');
+  // uno en camino alcanza para que esté entrando; el de afuera se marca igual
+  assert.strictEqual(runGh(gql([pr(1, { mergeQueueEntry: { state: 'QUEUED' } }), pr(2)])).state, 'Entrando a los repos · x #1 · x #2 (fuera de la cola)');
+  // un error de GraphQL se dice, no se toma como «sin pedidos»
+  assert.match(runGh(JSON.stringify({ errors: [{ message: 'Could not resolve to a Repository' }] })).state, /no se pudo consultar/);
+  // Azure: sin auto-completar está fuera de la cola; con auto-completar, no
+  const n = toyMachine();
+  entering(n, 'col00000-2', { repoPath: gitRepo(n.root, 'y', 'story/x', AZ) });
+  const runAz = (list) => {
+    const bin = fakeBin(n.root, 'az', `process.stdout.write(${JSON.stringify(JSON.stringify(list))});`);
+    return JSON.parse(execFileSync('node', [WIP, '--state-dir', n.state, '--sessions-dir', n.sessions, '--now', NOW, '--json'],
+      { input: '', env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } })).rows[0].state;
+  };
+  assert.strictEqual(runAz([{ pullRequestId: 6008, isDraft: false, autoCompleteSetBy: null }]), 'Pedidos sin encolar · y !6008 (fuera de la cola)');
+  assert.strictEqual(runAz([{ pullRequestId: 6011, isDraft: false, autoCompleteSetBy: { displayName: 'acme' } }]), 'Entrando a los repos · y !6011');
+  assert.strictEqual(runAz([{ pullRequestId: 6012, isDraft: true, autoCompleteSetBy: null }]), 'Entrando a los repos · y !6012 (borrador)');
+});
+
+test('wip · SinMarcador_ConArchivoReciente_NoEstaLibre: quieta, pero con un archivo tocado hace poco, trabaja sin marcador', () => {
+  const m = toyMachine();
+  const wt = gitRepo(m.root, 'th-tanda', 'story/9.4-la-tanda', GH);
+  session(m, process.pid, 'sin00000-1', 'sesion-b', { cwd: wt });
+  touched(m, 'sin00000-1', [[inRepo(wt, 'scripts/a.js'), 10]]);
+  const r = run(m);
+  assert.strictEqual(r.rows.length, 1, r.text);
+  assert.match(r.rows[0].state, /^Trabajando sin marcador · story 9\.4 en preparación · última actividad \d\d:\d\d · último archivo \d\d:\d\d$/);
+  assert.deepStrictEqual(r.free, []);
+  // pasada la media hora sin tocar nada, vuelve a estar libre
+  touched(m, 'sin00000-1', [[inRepo(wt, 'scripts/a.js'), 40]]);
+  assert.deepStrictEqual(run(m).free, ['sesion-b']);
+});
+
+test('wip · MientrasTantoViejo_DiceDesdeCuando: un arreglo rápido o una nota sin tocar hace más de 1 h lo dicen', () => {
+  const m = toyMachine();
+  entering(m, 'vij00000-1', { repoPath: gitRepo(m.root, 'x', 'story/x', GH) });
+  fs.writeFileSync(path.join(m.state, 'adhoc', 'vij00000-1.json'), JSON.stringify({ reason: 'la roja de la noche', declaredAt: new Date(minsBefore(90)).toISOString() }));
+  const r = run(m, { prs: () => ({ prs: [{ number: 12, draft: false }] }) });
+  assert.strictEqual(r.rows[0].meanwhile, `arreglo rápido «la roja de la noche» (sin tocar desde ${localHhmm(minsBefore(90))})`);
+  fs.rmSync(path.join(m.state, 'adhoc', 'vij00000-1.json'));
+  fs.mkdirSync(path.join(m.state, 'doing'), { recursive: true });
+  fs.writeFileSync(path.join(m.state, 'doing', 'vij00000-1.json'), JSON.stringify({ text: 'mido el disco', at: new Date(minsBefore(70)).toISOString() }));
+  assert.strictEqual(run(m, { prs: () => ({ prs: [{ number: 12, draft: false }] }) }).rows[0].meanwhile, `mido el disco (sin tocar desde ${localHhmm(minsBefore(70))})`);
 });

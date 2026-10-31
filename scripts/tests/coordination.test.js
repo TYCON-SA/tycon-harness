@@ -90,6 +90,18 @@ const MEASURES = {
   'Pedidos en orden': 'nadie',
   'Avisos cortos y llanos': 'aviso',
   'Codex no coordina': 'aviso',
+  'Una firma del dueño en un mensaje aparte': 'nadie',
+  'Ensayar lo que viene antes de pasar un comando de firma': 'nadie',
+  'El comando de firma con su carpeta': 'nadie',
+  'La hora del trabajo terminado': 'nadie',
+  'Un número de historia nunca solo': 'nadie',
+  'Una pestaña que no pide permisos no firma por la ventana': 'freno',
+  'Lo pesado de a uno, con turno': 'nadie',
+  'Mirar el diff antes de aprobar un pedido ajeno': 'nadie',
+  'Una sesión que espera anota qué hace': 'nadie',
+  'Comprobar que un pedido sigue en la cola': 'nadie',
+  'Las decisiones del dueño con su contexto': 'nadie',
+  'Lo que ve el dueño, sin jerga': 'aviso',
 };
 const COMMAND = path.join(ROOT, 'commands', 'coordinate.md');
 const headings = (file) => fs.readFileSync(file, 'utf8').split('\n').filter((l) => /^## /.test(l));

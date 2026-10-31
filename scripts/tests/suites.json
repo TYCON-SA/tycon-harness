@@ -1674,6 +1674,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/office.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/coordination.test.js",
       "requiere": []
     },
