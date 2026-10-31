@@ -119,12 +119,20 @@ function instinctHash(trigger, action) {
   return crypto.createHash('sha1').update(`${trigger}::${action}`).digest('hex').slice(0, 10);
 }
 
-function existingHashes() {
+/**
+ * La carpeta `sub` de cada lugar de lectura. `lugares` (las bases de buzón, `<…>/inbox/instincts`) reemplaza a los que
+ * resuelve instinct-dirs.js: la noche de la organización corre en un agente sin casa de usuario y le dice dónde leer.
+ */
+function carpetasDe(sub, lugares) {
+  return Array.isArray(lugares) ? lugares.map((l) => path.join(l, sub)) : dondeLeer(sub);
+}
+
+function existingHashes({ lugares } = {}) {
   const hashes = new Set();
   // lo propuesto o decidido en CUALQUIER lugar de lectura: lo que ya se rechazó en el clon no se vuelve a proponer acá
   // Una carpeta que existe y no se deja leer se DICE: callada, lo decidido ahí se volvería a proponer sin que nadie
   // sepa por qué.
-  for (const d of [...dondeLeer('pending'), ...dondeLeer('promoted'), ...dondeLeer('archived')]) {
+  for (const d of [...carpetasDe('pending', lugares), ...carpetasDe('promoted', lugares), ...carpetasDe('archived', lugares)]) {
     for (const f of DIRS.listDir(d, (m) => log(`${m} — lo ya propuesto o decidido ahí puede volver a proponerse`))) {
       const m = f.match(/-([a-f0-9]{10})\.yaml$/);
       if (m) hashes.add(m[1]);
@@ -540,7 +548,9 @@ function catalogoDetallado() {
   const leer = (archivo) => {
     try { return fs.readFileSync(archivo, 'utf-8'); } catch (_) { return ''; }
   };
-  const agentSkills = path.join(os.homedir(), '.claude', 'agent-skills');
+  // los revisores y las skills de la máquina; sin esa carpeta (el agente de la noche no la tiene), los del árbol
+  const enCasa = path.join(os.homedir(), '.claude', 'agent-skills');
+  const agentSkills = fs.existsSync(enCasa) ? enCasa : REPO_ROOT;
   const revisores = listar(path.join(agentSkills, 'agents'), /^(.+)\.md$/).filter((n) => n !== 'README')
     .map((n) => [n, descripcionDeRevisor(leer(path.join(agentSkills, 'agents', `${n}.md`)))]);
   const hooks = [...new Set([
@@ -585,8 +595,11 @@ function topeDecididos(executor) {
  * crecería con cada semana de decisiones — 156 decididos son ~39.000 caracteres.
  *
  * Fail-open: sin carpetas, sin archivos legibles o sin triggers, texto vacío.
+ *
+ * opts (los usa la noche de la organización): `lugares`, las bases de buzón donde leer (ver `carpetasDe`), y
+ * `propuestas`, la carpeta de las propuestas del sitio: la aprobada cuenta como aprobada y la rechazada con su motivo.
  */
-function instintosYaDecididos(candidatos, tope = topeDecididos()) {
+function instintosYaDecididos(candidatos, tope = topeDecididos(), { lugares, propuestas } = {}) {
   const proyectosConCandidato = new Set((candidatos || [])
     .map((c) => String((c && c.key) || '').split('|')[0].trim().toLowerCase())
     .filter(Boolean));
@@ -618,7 +631,32 @@ function instintosYaDecididos(candidatos, tope = topeDecididos()) {
   };
   // lo decidido en todos los lugares de lectura; el mismo instinto en dos lugares entra una vez (el primero que aparece)
   const vistos = new Set();
-  const todos = [...dondeLeer('promoted').flatMap((d) => leerCarpeta(d, true)), ...dondeLeer('archived').flatMap((d) => leerCarpeta(d, false))]
+  // las propuestas que el sitio decidió (un JSON por huella): la regla que se aprobó es el texto que confirmó quien
+  // aprobó, si lo hay; la rechazada, con su motivo
+  const delSitio = () => {
+    let archivos;
+    try { archivos = fs.readdirSync(propuestas).filter((f) => f.endsWith('.json')).sort(); } catch (_) { return []; }
+    const out = [];
+    for (const f of archivos) {
+      let p;
+      try { p = JSON.parse(fs.readFileSync(path.join(propuestas, f), 'utf-8')); } catch (_) { continue; }
+      if (!p || (p.estado !== 'aprobada' && p.estado !== 'rechazada') || !p.redaccion || !p.redaccion.trigger) continue;
+      const aprobado = p.estado === 'aprobada';
+      const d = p.decision && typeof p.decision === 'object' ? p.decision : {};
+      const proyecto = typeof p.repo === 'string' && p.repo ? p.repo : null;
+      const proyectos = proyecto ? [proyecto.toLowerCase()] : [];
+      out.push({
+        aprobado, trigger: String(p.redaccion.trigger), proyectos, proyecto: proyecto || 'global',
+        accion: aprobado ? String(d.texto || p.redaccion.action || '') || null : null,
+        hash: String(p.huella || ''), motivo: aprobado ? null : (d.motivo ? String(d.motivo) : null),
+        fecha: String(d.el || d.fecha || p.propuesta_el || ''),
+        relevante: !proyectos.length || proyectos.some((x) => proyectosConCandidato.has(x)),
+      });
+    }
+    return out;
+  };
+  const todos = [...carpetasDe('promoted', lugares).flatMap((d) => leerCarpeta(d, true)), ...carpetasDe('archived', lugares).flatMap((d) => leerCarpeta(d, false)),
+    ...(propuestas ? delSitio() : [])]
     .filter((x) => { const k = `${x.aprobado}|${x.hash || x.trigger}`; if (vistos.has(k)) return false; vistos.add(k); return true; });
   if (!todos.length) return { texto: '', hashes: [], proyectosPorHash: new Map() };
   todos.sort((a, b) => (Number(b.relevante) - Number(a.relevante))
@@ -655,9 +693,9 @@ function instintosYaDecididos(candidatos, tope = topeDecididos()) {
 // El prompt de la revisión y lo que una cita puede nombrar (los hashes y las piezas que ese prompt muestra,
 // en minúscula; también sin extensión, y por su nombre de archivo cuando tiene guion: «build/check.js» se
 // cita por su ruta, pero «check» solo no descarta nada). Prompt vacío si no hay nada contra qué revisar.
-function promptDeRevision(propuestas, candidatos, executor) {
+function promptDeRevision(propuestas, candidatos, executor, lectura = {}) {
   const catalogo = catalogoDetallado();
-  const decididos = instintosYaDecididos(candidatos, topeDecididos(executor));
+  const decididos = instintosYaDecididos(candidatos, topeDecididos(executor), lectura);
   const conocidas = new Set(decididos.hashes.map((h) => h.toLowerCase()));
   for (const nombre of catalogo.nombres) {
     const n = nombre.toLowerCase();
@@ -1035,7 +1073,7 @@ function main() {
   const executor = resolveExecutor();
   if (!executor) {
     log('Sin ejecutor de modelo disponible (ni claude, ni codex, ni ollama). Exit 0.');
-    log('Instalá Claude Code o Codex, o corré Ollama; o exportá TYCON_INSTINCT_MINING=0.');
+    log('Instalá Claude Code o Codex, o corré Ollama; o exportá TYCON_INSTINCTS=0.');
     process.exit(0);
   }
   const proposedBy = executorLabel(executor);
@@ -1150,10 +1188,12 @@ function main() {
 }
 
 // Se exporta lo que arma y lee la revisión para probarlo sin modelo
-// (scripts/tests/instinct-observer-catalog.test.sh); requerir el archivo no corre el observador.
+// (scripts/tests/instinct-observer-catalog.test.sh), y lo que reutiliza la noche de la organización
+// (scripts/instincts/instinct-nightly.js); requerir el archivo no corre el observador.
 module.exports = {
   buildPrompt, catalogoDetallado, instintosYaDecididos, topeDecididos, promptDeRevision, leerRevision,
   citaVerificada, decidirDescarte, contextoOllama, migrarDescartadosViejos, maybeNotify,
+  extractYamlArray, instinctHash, existingHashes,
 };
 
 if (require.main === module) main();

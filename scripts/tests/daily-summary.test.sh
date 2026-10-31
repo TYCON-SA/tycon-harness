@@ -1524,6 +1524,55 @@ armar "$D" dependencias "$HOY" > "$D/a.json" 2> "$D/a.err"
 [ "$(q "$D/a.json" '/decisiones del sitio que no se aplicaron: 1/.test(j.texto) && !/secreto/.test(j.texto)')" = true ] \
   && ok "T49 el mensaje lo dice con la cantidad, sin el porqué" || no "T49 texto: $(q "$D/a.json" 'j.texto')"
 
+# 4.7-T30 DailySummary_AprendizajesLine_SurvivesTheEdit_AndNotMeasured @story-4.7 @ac-28
+# 🔴 Falla con: la línea que nombra un repo o un patrón, el enlace sin que el sitio haya pasado la prueba, un «0» donde
+#    la noche no midió, o la línea que desaparece cuando el vigilante edita el mensaje a las 08:00.
+aprendizajes() { # <archivo> <json que pisa claves>  — el informe de la noche de aprendizajes
+  node -e '
+const [f, extra] = process.argv.slice(1);
+const base = { fecha: "'"$HOY"'", estado: "medido", motivo: null, parcial: false, nuevas: 5, pendientes_total: 9, maquinas_sin_reportar: 0,
+  sin_redaccion: { tope: 2, fallo: 0, sin_modelo: 0, sin_llave: 0 }, patron_de_prueba: "acme/secreto npm run deploy" };
+require("fs").writeFileSync(f, JSON.stringify(Object.assign(base, JSON.parse(extra))) + "\n");' "$1" "$2"
+}
+linea_apr() { grep '^aprendizajes:' <<<"$(ultimo 'j.text')" || true; }
+D="$TMP/t30"; mundo "$D"; snap "$D" "$HOY" '{}'
+echo '{ "version": 1, "owners": { "default": "lead@acme.example" }, "notify": { "channel": "telegram" }, "site": { "url": "https://sitio.acme.test" } }' > "$D/operations.json"
+echo '{ "hora": "'"$HOY"'T04:10:00Z", "resultado": "paso" }' > "$D/check.json"
+aprendizajes "$D/inf.json" '{}'
+reset_srv ok:555; entregar "$D" dependencias "$HOY" --site-check "$D/check.json" --instincts "$D/inf.json" >/dev/null
+L=$(linea_apr)
+[ "$L" = "aprendizajes: 5 propuestas nuevas (2 sin redactar: por el tope), 9 esperando decisión · https://sitio.acme.test/aprendizajes" ] \
+  && ok "4.7-T30 la línea con las cantidades y el enlace" || no "4.7-T30 línea: «${L}»"
+! grep -q 'secreto' <<<"$(ultimo 'j.text')" && ok "4.7-T30 ningún repo ni patrón en el mensaje" || no "4.7-T30 el mensaje nombra el patrón"
+[ "$(ultimo 'j.text.split("\n").length <= 40 && j.text.length <= 3500')" = true ] && ok "4.7-T30 dentro del tope del mensaje" || no "4.7-T30 fuera de tope"
+# la edición del vigilante a las 08:00 la conserva
+vsnap "$D" "$HOY" '{}'; reset_srv ok:555; RC=$(entregar "$D" vigilante "$HOY")
+[ "$RC" = 0 ] && [ "$(ultimo 'j.ruta')" = "/bot<token>/editMessageText" ] && [ "$(linea_apr)" = "$L" ] \
+  && ok "4.7-T30 la línea sobrevive a la edición de las 08:00" || no "4.7-T30 edición: rc=$RC ruta=$(ultimo 'j.ruta') línea «$(linea_apr)»"
+# sin la prueba del sitio de esa mañana: sin enlace
+D="$TMP/t30b"; mundo "$D"; snap "$D" "$HOY" '{}'
+aprendizajes "$D/inf.json" '{"nuevas":0,"sin_redaccion":{"tope":0,"fallo":0,"sin_modelo":0,"sin_llave":0},"maquinas_sin_reportar":2}'
+reset_srv ok:1; entregar "$D" dependencias "$HOY" --instincts "$D/inf.json" >/dev/null
+[ "$(linea_apr)" = "aprendizajes: sin propuestas nuevas, 9 esperando decisión · 2 máquinas sin reportar en 7 días · en la pestaña Aprendizajes del sitio" ] \
+  && ok "4.7-T30 sin novedades, sin enlace si el sitio no pasó, y las máquinas calladas" || no "4.7-T30 sin novedades: «$(linea_apr)»"
+aprendizajes "$D/inf.json" '{"parcial":true,"sin_redaccion":{"tope":0,"fallo":1,"sin_modelo":0,"sin_llave":3},"nuevas":4}'
+reset_srv ok:1; entregar "$D" dependencias "$HOY" --instincts "$D/inf.json" >/dev/null
+[ "$(linea_apr)" = "aprendizajes: 4 propuestas nuevas (4 sin redactar: sin llave, el modelo falló), 9 esperando decisión · lectura parcial del buzón · en la pestaña Aprendizajes del sitio" ] \
+  && ok "4.7-T30 parcial y las causas sin redactar" || no "4.7-T30 parcial: «$(linea_apr)»"
+aprendizajes "$D/inf.json" '{"estado":"no_medido","motivo":"sin_az","nuevas":null,"pendientes_total":null}'
+reset_srv ok:1; entregar "$D" dependencias "$HOY" --instincts "$D/inf.json" >/dev/null
+[ "$(linea_apr)" = "aprendizajes: ? (la noche no pudo leer el buzón)" ] && ok "4.7-T30 no_medido es «?», nunca 0" || no "4.7-T30 no_medido: «$(linea_apr)»"
+reset_srv ok:1; entregar "$D" dependencias "$HOY" --instincts "$D/no-existe.json" >/dev/null
+[ "$(linea_apr)" = "aprendizajes: ? (la noche no dejó su informe)" ] && ok "4.7-T30 sin informe de hoy lo dice" || no "4.7-T30 sin informe: «$(linea_apr)»"
+aprendizajes "$D/inf.json" '{"fecha":"'"$AYER"'"}'
+reset_srv ok:1; entregar "$D" dependencias "$HOY" --instincts "$D/inf.json" >/dev/null
+[ "$(linea_apr)" = "aprendizajes: ? (la noche no dejó su informe)" ] && ok "4.7-T30 el informe de ayer no es el de hoy" || no "4.7-T30 informe viejo: «$(linea_apr)»"
+aprendizajes "$D/inf.json" '{"estado":"apagado"}'
+reset_srv ok:1; entregar "$D" dependencias "$HOY" --instincts "$D/inf.json" >/dev/null
+[ -z "$(linea_apr)" ] && ok "4.7-T30 con la integración apagada, sin línea" || no "4.7-T30 apagado: «$(linea_apr)»"
+reset_srv ok:1; entregar "$D" dependencias "$HOY" >/dev/null
+[ -z "$(linea_apr)" ] && ok "4.7-T30 sin la opción, sin línea" || no "4.7-T30 sin opción: «$(linea_apr)»"
+
 echo
 if [ "$FALLOS" -eq 0 ]; then echo "✅ resumen-diario: $TOTAL/$TOTAL"; exit 0; fi
 echo "❌ resumen-diario: $FALLOS de $TOTAL en rojo"; exit 1
