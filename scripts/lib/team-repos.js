@@ -94,7 +94,7 @@ const ESTIMATES_HOURS_PER_DAY = [1, 24];
 // El plazo del aviso de espera: minutos enteros de 1 a 120. Lo lee scripts/hooks/wait-notice.js.
 // `minutes`: el plazo; `enabled`: si el aviso de espera corre en las máquinas de la organización (sin valor, sí; la
 // variable TYCON_WAIT_NOTICE de una máquina, si está puesta, gana).
-const WAIT_NOTICE_KEYS = ['minutes', 'enabled'];
+const WAIT_NOTICE_KEYS = ['minutes', 'owner_minutes', 'enabled'];
 const WAIT_NOTICE_MAX = 120;
 // El umbral de cobertura de las líneas tocadas: un entero de 1 a 100. Lo lee
 // skills/tycon-pipeline/scripts/lib/test-gate-report.js, después de TYCON_COVERAGE_MIN de la máquina y antes del 75.
@@ -512,9 +512,12 @@ function waitNoticeProblems(value) {
   if (!isObject(value)) return [{ path: 'wait_notice', message: 'tiene que ser un objeto (el plazo del aviso de espera)' }];
   const out = [];
   for (const k of Object.keys(value)) if (!fieldComment(k, value[k]) && !WAIT_NOTICE_KEYS.includes(k)) out.push({ path: `wait_notice.${k}`, message: 'clave desconocida' });
-  const m = value.minutes;
-  if (m !== undefined && !(Number.isInteger(m) && m >= 1 && m <= WAIT_NOTICE_MAX)) {
-    out.push({ path: 'wait_notice.minutes', message: `tiene que ser un número entero de minutos, de 1 a ${WAIT_NOTICE_MAX} (es ${JSON.stringify(m)})` });
+  // `minutes`: el plazo del primer aviso; `owner_minutes`: el del dueño cuando hay coordinadora, contado desde la apertura
+  for (const k of ['minutes', 'owner_minutes']) {
+    const m = value[k];
+    if (m !== undefined && !(Number.isInteger(m) && m >= 1 && m <= WAIT_NOTICE_MAX)) {
+      out.push({ path: `wait_notice.${k}`, message: `tiene que ser un número entero de minutos, de 1 a ${WAIT_NOTICE_MAX} (es ${JSON.stringify(m)})` });
+    }
   }
   if (value.enabled !== undefined && typeof value.enabled !== 'boolean') {
     out.push({ path: 'wait_notice.enabled', message: `tiene que ser true o false (es ${JSON.stringify(value.enabled)})` });

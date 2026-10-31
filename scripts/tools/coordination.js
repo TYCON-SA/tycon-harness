@@ -263,6 +263,35 @@ function coordinatorRole(opts, sid) {
 }
 const sessionOf = (opts) => opts.sessionId || (opts.env || process.env).CLAUDE_CODE_SESSION_ID || null;
 
+// La coordinadora que recibe primero la espera de otra sesión (scripts/hooks/wait-notice.js): `{ sid, name, role,
+// waitingName }`, o null sin rol, sin designación, con la designada cerrada o si la que espera es ella misma.
+function liveCoordinator(opts, waitingSid) {
+  const env = opts.env || process.env;
+  const home = opts.home || require('os').homedir();
+  const d = designacionVigente({ home });
+  if (!d || d.error || d.sesion === waitingSid) return null;
+  const rol = sesionQueReenvia({ env, home, arnes: opts.arnes });
+  if (!rol.valor) return null;
+  const sessions = sessionsBySid(path.join(claudeDir(home), 'sessions'), [], null);
+  const s = sessions.get(d.sesion);
+  if (!s || !s.alive) return null;
+  const w = sessions.get(waitingSid);
+  return {
+    sid: d.sesion, name: (s.name && label(s.name)) || String(d.sesion).slice(0, 8), role: rol.valor,
+    waitingName: (w && w.name && label(w.name)) || String(waitingSid).slice(0, 8),
+  };
+}
+
+// Las esperas de otras sesiones que le llegaron a la coordinadora y todavía no vio, una línea cada una.
+function waitLines(opts, sid, problems) {
+  try {
+    return require(path.join(__dirname, '..', 'hooks', 'wait-notice.js')).coordinatorLines({ home: opts.home || require('os').homedir(), coordinatorSid: sid });
+  } catch (e) {
+    problems.push(`las esperas de las otras sesiones (${e.message})`);
+    return [];
+  }
+}
+
 const OLD_SIGNATURE_MS = 24 * 3600000;
 const oldSignaturesFile = (home) => path.join(coordinationDir(home), 'old-signatures-notice.json');
 const ddmm = (ms) => { const d = new Date(ms); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`; };
@@ -312,6 +341,7 @@ function capNotice(opts = {}) {
   }
   const signatures = oldSignatures(opts, opts.now == null ? Date.now() : Number(opts.now), problems);
   if (signatures) lines.push(signatures);
+  lines.push(...waitLines(opts, sid, problems));
   if (problems.length) lines.push(`Coordinación: No pude leer ${oneLine(problems.join(' · ')).slice(0, 300)}.`);
   return lines.length ? lines.join('\n') : null;
 }
@@ -535,4 +565,4 @@ function main(argv) {
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { status, statusText, capNotice, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, coordinationDir };
+module.exports = { status, statusText, capNotice, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, coordinationDir };

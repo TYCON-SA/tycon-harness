@@ -1649,6 +1649,23 @@ test('2.31-T21 Espera_SeccionConSuPorton @story-2.31 @story-7.20 — el plazo de
   }
 });
 
+test('Espera_PlazoDelDueno_ConElMismoLectorYSuVersion — el plazo del dueño se edita en la misma sección, lo valida el lector y pide la versión que lo lee', async () => {
+  // 🔴 rojo: el campo no está en la pantalla, un valor fuera de rango pasa, o se propone a una capa que no lo lee.
+  const malo = ORG.revisar({ seccion: 'espera', texto: ORG.formatJson(TR_BASE), borrador: { wait_notice: { owner_minutes: 121 } }, lectores: { 'team-repos.js': TR } });
+  assert.strictEqual(malo.ok, false);
+  assert.deepStrictEqual(malo.problems.map((p) => p.path), ['wait_notice.owner_minutes']);
+  const bien = ORG.revisar({ seccion: 'espera', texto: ORG.formatJson(TR_BASE), borrador: { wait_notice: { minutes: 5, owner_minutes: 45 } }, lectores: { 'team-repos.js': TR } });
+  assert.strictEqual(bien.ok, true, JSON.stringify(bien.problems));
+  assert.ok(ORG.versionAtLeast(ORG.WAIT_NOTICE_OWNER_SINCE, ORG.WAIT_NOTICE_ENABLED_SINCE) && ORG.WAIT_NOTICE_OWNER_SINCE !== ORG.WAIT_NOTICE_ENABLED_SINCE);
+  assert.strictEqual(ORG.versionQuePide({ wait_notice: { owner_minutes: 45 } }).version, ORG.WAIT_NOTICE_OWNER_SINCE);
+  const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  for (const idioma of ['es', 'en']) for (const k of ['pantalla.minutosHastaElDueno', 'pantalla.esperaDelDuenoDeFabrica', 'pantalla.minutosAlDueno']) assert.ok(textos.t(idioma, k) && textos.t(idioma, k) !== k, `${idioma} ${k}`);
+  const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('espera', { repo: 'perfil', borrador: {} })] });
+  const caja = r.creados.filter((n) => n.attrs.id === 'seccion-espera').pop();
+  const out = []; const walk = (x) => { if (x.tag === 'input' && x.attrs['data-path'] === 'wait_notice.owner_minutes') out.push(x); (x.hijos || []).forEach(walk); }; walk(caja);
+  assert.strictEqual(out.length, 1, 'el campo del plazo del dueño está en la sección');
+});
+
 test('T12 7.31-Cobertura_SeccionConSuPorton @story-7.31 @ac-11 @ac-12 — el umbral de cobertura se edita en team-repos.json, con el lector y la versión que lo leen', async () => {
   // 🔴 rojo: la sección no existe, se propone con una capa que no la sabe leer, o cambia otra cosa del archivo.
   const s = ORG.seccionPorId('cobertura');

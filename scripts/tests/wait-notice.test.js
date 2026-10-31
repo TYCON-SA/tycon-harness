@@ -667,6 +667,117 @@ test('T27 ErrorPaths_LeaveTheirLine — configuración rota, edición rechazada,
   } finally { await new Promise((r) => server.close(r)); }
 });
 
+// ── La coordinadora primero, el dueño a su plazo ────────────────────────────────────────────────────────────────
+const COORDINATION = path.join(ROOT, 'scripts', 'tools', 'coordination.js');
+// La máquina con una coordinadora designada: el perfil con el rol, el renglón de la designación y su archivo de sesión,
+// viva (el pid de esta prueba) salvo `dead`. El rol sale sólo del perfil del árbol del arnés, que a un proceso hijo no se
+// le puede pasar por una variable: el proceso del plazo lo recibe con un `--require` de la prueba que le da a
+// `liveCoordinator` el árbol de juguete.
+function withCoordinator(w, sid, { dead = false, name = 'Coordinadora' } = {}) {
+  w.arnes = path.join(w.home, 'arnes');
+  fs.mkdirSync(w.arnes, { recursive: true });
+  fs.writeFileSync(path.join(w.arnes, 'perfil-equipo.json'), JSON.stringify({ approvals: { relay_session: 'coordinadora' } }));
+  const preload = path.join(w.home, 'toy-tree.js');
+  fs.writeFileSync(preload, `const C = require(${JSON.stringify(COORDINATION)}); const live = C.liveCoordinator;\nC.liveCoordinator = (o, s) => live({ ...o, arnes: ${JSON.stringify(w.arnes)} }, s);\n`);
+  w.env.NODE_OPTIONS = `--require ${preload}`;
+  fs.mkdirSync(w.sd, { recursive: true });
+  fs.appendFileSync(path.join(w.sd, 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), name: 'relay-designation', status: 'ok', sesion: sid, rol: 'coordinadora', quien: 'el dueño', cita: 'Esta sesión es la coordinadora' })}\n`);
+  session(w, sid, name, { pid: dead ? 2147483646 : process.pid });
+}
+function session(w, sid, name, extra = {}) {
+  const d = path.join(w.home, '.claude', 'sessions');
+  fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(path.join(d, `${sid}.json`), JSON.stringify({ pid: process.pid, sessionId: sid, name, nameSource: 'user', status: 'idle', statusUpdatedAt: Date.now(), cwd: w.home, ...extra }));
+}
+const coordinatorNotice = (w, sid) => require(COORDINATION).capNotice({ sessionId: sid, home: w.home, env: {}, arnes: w.arnes });
+
+test('T29 Coordinator_FirstThenOwner — con coordinadora viva: a su plazo, la línea en su turno y no Telegram; al del dueño, Telegram', async () => {
+  const tg = await fakeTelegram();
+  try {
+    const w = world({ api: tg.url, extraEnv: { TYCON_WAIT_NOTICE_OWNER_MS: '3000' } });
+    withCoordinator(w, 'coord');
+    session(w, 'c1', 'Beto');
+    marker(w, 'c1');
+    stop(w, 'c1', transcript(w, 'c1', [userRec('implementemos'), agentRec('¿Sigo con los revisores?')]));
+    const line = await waitFor(() => logLines(w).find((l) => l.event === 'coordinator-notified'));
+    assert.ok(line, 'la espera le llega primero a la coordinadora, con su línea en el registro');
+    assert.strictEqual(line.coordinator, 'Coordinadora');
+    assert.strictEqual(tg.calls.length, 0, 'el dueño todavía no');
+    const notice = coordinatorNotice(w, 'coord');
+    assert.ok(notice, 'su próximo turno trae la espera');
+    const mine = notice.split('\n').filter((l) => /Beto/.test(l));
+    assert.strictEqual(mine.length, 1, `una línea: ${notice}`);
+    assert.match(mine[0], /¿Sigo con los revisores\?/);
+    assert.match(mine[0], /9\.9/);
+    assert.match(mine[0], /desde las \d\d:\d\d/);
+    assert.ok(!/Beto/.test(coordinatorNotice(w, 'coord') || ''), 'una vez por espera');
+    assert.strictEqual(coordinatorNotice(w, 'c1'), null, 'otra sesión no la ve');
+    const sent = await waitFor(() => tg.calls.find((c) => c.method === 'sendMessage'));
+    assert.ok(sent, 'sin resolver al plazo del dueño, Telegram');
+    assert.match(sent.text, /9\.9/);
+    const after = await waitFor(() => (waitFile(w, 'c1') || {}).notified);
+    assert.ok(after);
+  } finally { await tg.close(); }
+});
+
+test('T30 Coordinator_ResolvedBeforeOwner_NoTelegram — contestada después de la coordinadora y antes del plazo del dueño: nada al dueño', async () => {
+  const tg = await fakeTelegram();
+  try {
+    const w = world({ api: tg.url, extraEnv: { TYCON_WAIT_NOTICE_OWNER_MS: '2500' } });
+    withCoordinator(w, 'coord');
+    marker(w, 'c2');
+    const tp = transcript(w, 'c2', [userRec('x'), agentRec('¿c2?')]);
+    stop(w, 'c2', tp);
+    assert.ok(await waitFor(() => logLines(w).find((l) => l.event === 'coordinator-notified')));
+    hook(w, { hook_event_name: 'UserPromptSubmit', session_id: 'c2', transcript_path: tp, prompt: 'dale' });
+    const closed = logLines(w).find((l) => l.session === 'c2' && l.result === 'answered');
+    assert.ok(closed && closed.coordinatorAt, 'la línea de la espera dice que pasó por la coordinadora');
+    await sleep(3500);
+    assert.strictEqual(tg.calls.length, 0, 'resuelta a tiempo: el dueño no recibe nada');
+  } finally { await tg.close(); }
+});
+
+test('T31 Coordinator_AbsentDeadOrSelf_Unchanged — sin coordinadora, con la designada cerrada o si la que espera es ella: Telegram al primer plazo', async () => {
+  const tg = await fakeTelegram();
+  try {
+    const cases = [['sin', null], ['muerta', { dead: true }], ['ella', 'self']];
+    for (const [sid, how] of cases) {
+      const w = world({ api: tg.url, extraEnv: { TYCON_WAIT_NOTICE_OWNER_MS: '60000' } });
+      if (how === 'self') withCoordinator(w, sid);
+      else if (how) withCoordinator(w, 'coord', how);
+      marker(w, sid);
+      const before = tg.calls.length;
+      stop(w, sid, transcript(w, sid, [userRec('x'), agentRec(`¿${sid}?`)]));
+      const sent = await waitFor(() => tg.calls.length > before);
+      assert.ok(sent, `${sid}: Telegram al primer plazo, como siempre`);
+      assert.ok(!logLines(w).some((l) => l.event === 'coordinator-notified'), sid);
+    }
+  } finally { await tg.close(); }
+});
+
+test('T32 OwnerMinutes_FromTeamRepos — el plazo del dueño: owner_minutes de la organización; inválido da 30 y el problema; la variable gana', () => {
+  const { ownerThresholdMs } = require(HOOK);
+  const TR = require(path.join(ROOT, 'scripts', 'lib', 'team-repos.js'));
+  const base = { version: 1, public: { platform: 'github', org: 'acme', repo: 'h' }, profile: { platform: 'github', org: 'acme', repo: 'p' }, operations: { platform: 'github', org: 'acme', repo: 'o' } };
+  const tree = (wn) => {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'wait-notice-tree-'));
+    fs.writeFileSync(path.join(d, 'team-repos.json'), JSON.stringify(wn === undefined ? base : { ...base, wait_notice: wn }));
+    return d;
+  };
+  const d = tree({ minutes: 5, owner_minutes: 45 });
+  assert.ok(TR.parse(fs.readFileSync(path.join(d, 'team-repos.json'), 'utf8')).ok);
+  assert.strictEqual(ownerThresholdMs({ env: {}, tree: d }).ms, 45 * 60000);
+  for (const malo of [{ owner_minutes: 0 }, { owner_minutes: 'x' }, { owner_minutes: 121 }, { owner_minutes: 2.5 }]) {
+    const t = tree(malo);
+    const p = TR.parse(fs.readFileSync(path.join(t, 'team-repos.json'), 'utf8'));
+    assert.ok(p.ok && p.sectionProblems && p.sectionProblems.wait_notice.some((x) => x.path === 'wait_notice.owner_minutes'), JSON.stringify(malo));
+    const r = ownerThresholdMs({ env: {}, tree: t });
+    assert.strictEqual(r.ms, 30 * 60000); assert.ok(r.problem);
+  }
+  assert.strictEqual(ownerThresholdMs({ env: {}, tree: tree(undefined) }).ms, 30 * 60000);
+  assert.strictEqual(ownerThresholdMs({ env: { TYCON_WAIT_NOTICE_OWNER_MS: '1234' }, tree: d }).ms, 1234);
+});
+
 test('T25 RedactBeforeCut — una credencial partida por el corte de 200 caracteres no se escapa', () => {
   const { buildMessage } = require(HOOK);
   const tok = 'ghp_' + 'A'.repeat(36);

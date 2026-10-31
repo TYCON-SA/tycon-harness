@@ -524,8 +524,10 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   quien mantiene.
 - **Aviso de espera**: si el aviso corre y cuántos minutos espera una ejecución a una persona antes de avisar. Llega a
   todas las máquinas. Sin valor, corre, como de fábrica; «Apagado en todas las máquinas» lo apaga, salvo en la máquina
-  que puso `TYCON_WAIT_NOTICE` (la variable gana). Queda en `team-repos.json` → `wait_notice`, en el repo del perfil. Lo
-  revisa quien mantiene.
+  que puso `TYCON_WAIT_NOTICE` (la variable gana). Con una coordinadora designada y viva, al primer plazo la espera le
+  llega a ella, en su próximo turno, y al dueño recién al segundo: los minutos desde que empezó la espera (30 de
+  fábrica), si sigue sin resolver. Sin coordinadora, el aviso va al dueño al primer plazo. Queda en `team-repos.json` →
+  `wait_notice`, en el repo del perfil. Lo revisa quien mantiene.
 - **Umbrales: cuándo algo se pinta verde o rojo**: los límites con que el tablero colorea cada número; entre los dos,
   amarillo. Queda en `scripts/nightly/dashboard/sources.json`, en el repo de operaciones. Lo revisa quien mantiene.
 - **Fichas que muestra el sitio**: una casilla por cada ficha del tablero de la noche que el sitio muestra en Arnés,

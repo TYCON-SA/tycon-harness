@@ -175,6 +175,9 @@ const WAIT_NOTICE_SINCE = '2026.10.17.8';
 // `wait_notice.enabled` (la organización apaga el aviso de espera): un lector anterior la ve como clave desconocida y
 // descarta la sección. Provisoria hasta la etiqueta del merge que la trae al lector: frena de más, no de menos
 const WAIT_NOTICE_ENABLED_SINCE = '2026.10.30.1';
+// `wait_notice.owner_minutes` (el plazo del dueño cuando la espera ya le llegó a la coordinadora): igual que `enabled`,
+// un lector anterior la ve como clave desconocida. Provisoria hasta la etiqueta del merge que la trae al lector
+const WAIT_NOTICE_OWNER_SINCE = '2026.11.01.1';
 // `coverage`: la etiqueta del merge que lo trajo al lector
 const COVERAGE_SINCE = '2026.10.17.45';
 // `review`: la etiqueta del merge que lo trajo al lector
@@ -210,6 +213,7 @@ function versionQuePide(doc) {
   if (isObject(doc) && isObject(doc.models) && doc.models.codex_reviewers !== undefined && !versionAtLeast(version, CODEX_REVIEWERS_SINCE)) version = CODEX_REVIEWERS_SINCE;
   if (isObject(doc) && isObject(doc.models) && CLAVES_DE_PROVEEDORES.some((k) => doc.models[k] !== undefined) && !versionAtLeast(version, MODEL_PROVIDERS_SINCE)) version = MODEL_PROVIDERS_SINCE;
   if (isObject(doc) && isObject(doc.wait_notice) && doc.wait_notice.enabled !== undefined && !versionAtLeast(version, WAIT_NOTICE_ENABLED_SINCE)) version = WAIT_NOTICE_ENABLED_SINCE;
+  if (isObject(doc) && isObject(doc.wait_notice) && doc.wait_notice.owner_minutes !== undefined && !versionAtLeast(version, WAIT_NOTICE_OWNER_SINCE)) version = WAIT_NOTICE_OWNER_SINCE;
   return { version, claves };
 }
 /** ¿`models` trae algún nivel (en cualquier clave, también adentro de un objeto)? Un comentario («_…») no cuenta. */
@@ -1498,7 +1502,7 @@ function pantalla(idioma = 'es') {
     work_items: T('pantalla.pedidosDeTrabajo'), type: T('pantalla.pedidosTipo'), fixed_fields: T('pantalla.pedidosCamposFijos'), by_severity: T('pantalla.pedidosPorGravedad'),
     notify: T('pantalla.avisoDiario2'), channel: T('pantalla.palabraCanal'), thresholds: T('pantalla.palabraUmbrales'), direction: T('pantalla.mejorSiEs'), ok_min: T('pantalla.verdeDesde'), ok_max: T('pantalla.verdeHasta'), bad_max: T('pantalla.rojoHasta'), bad_min: T('pantalla.rojoDesde'),
     merge_suites: T('pantalla.pruebasAlMergear2'), rule: T('pantalla.regla'), full_tests_pipeline: T('pantalla.pipelineDeLasPruebasCompletas'), models: T('pantalla.palabraModelos'), mandatory_ceiling: T('pantalla.techoObligatorio'), ceiling: T('pantalla.techo'), reviewer: T('pantalla.revisor'), reviewers_reloop: T('pantalla.revisoresDeLaSegundaVuelta'), adversarial: T('pantalla.paseAdversarial'), helpers: T('pantalla.ayudantes'), session: T('pantalla.sesion'), model: T('pantalla.modelo'), heavy: T('pantalla.pesado'), fable_question: T('pantalla.preguntaAntesDeUsarFable'), low: T('pantalla.liviano'), normal: T('pantalla.normal'), codex_reviewers: T('pantalla.losRevisoresEnCodex'),
-    wait_notice: T('pantalla.avisoDeEspera2'), minutes: T('pantalla.minutos'), coverage: T('pantalla.coberturaDeLasPruebas2'), min_touched_lines_pct: T('pantalla.porcentajeMinimoDeLasLineas'), review: T('pantalla.vueltasDeRevisores2'), max_rounds: T('pantalla.topeDeVueltas'), estimates: T('pantalla.estimaciones2'), unit: T('pantalla.unidadDeLasEstimaciones2'), hours_per_day: T('pantalla.horasPorDia2'), hours_per_point: T('pantalla.horasPorPunto2'), blocking_prefixes: T('pantalla.prefijosDeSeguridadODatos'), public: T('pantalla.repoPublico'), profile: T('pantalla.repoDelEquipo'), operations: T('pantalla.repoDeOperaciones'), org: T('pantalla.organizacion'), project: T('pantalla.proyecto'), repo: T('pantalla.repo'), repos: T('pantalla.palabraRepos'), platform: T('pantalla.plataforma'),
+    wait_notice: T('pantalla.avisoDeEspera2'), minutes: T('pantalla.minutos'), owner_minutes: T('pantalla.minutosAlDueno'), coverage: T('pantalla.coberturaDeLasPruebas2'), min_touched_lines_pct: T('pantalla.porcentajeMinimoDeLasLineas'), review: T('pantalla.vueltasDeRevisores2'), max_rounds: T('pantalla.topeDeVueltas'), estimates: T('pantalla.estimaciones2'), unit: T('pantalla.unidadDeLasEstimaciones2'), hours_per_day: T('pantalla.horasPorDia2'), hours_per_point: T('pantalla.horasPorPunto2'), blocking_prefixes: T('pantalla.prefijosDeSeguridadODatos'), public: T('pantalla.repoPublico'), profile: T('pantalla.repoDelEquipo'), operations: T('pantalla.repoDeOperaciones'), org: T('pantalla.organizacion'), project: T('pantalla.proyecto'), repo: T('pantalla.repo'), repos: T('pantalla.palabraRepos'), platform: T('pantalla.plataforma'),
     // las hojas de «Cómo contesta Claude» y «Cómo se actualizan»: con el nombre de su campo, también en un valor que se pisó
     style: T('pantalla.estilo'), language: T('pantalla.idioma'), max_chars: T('pantalla.largoMaximoDeProsaEn').split(' (')[0], apply: T('pantalla.comoSeAplica'),
     stack: T('pantalla.tecTuTecnologia2'), code_extensions: T('pantalla.tecTerminaciones'), test_runners: T('pantalla.tecHerramientasDePrueba'), rules: T('pantalla.tecReglas'), test_names: T('pantalla.tecEstiloDeNombres2'), screen_test: T('pantalla.tecPantallasConPrueba'), ui_language: T('pantalla.tecIdiomaDeLaApp2'), name: T('pantalla.tecNombre2'), detect: T('pantalla.tecArchivoQueLaDetecta2'), command: T('pantalla.tecComando2'), results: T('pantalla.tecReporte'), format: T('pantalla.tecFormato'), path: T('pantalla.tecRuta'),
@@ -3151,6 +3155,12 @@ function pantalla(idioma = 'es') {
       if (!esObjeto(d.wait_notice)) d.wait_notice = {};
       d.wait_notice.minutes = numOTexto(v);
     }, 'wait_notice.minutes', pr, { inputmode: 'numeric', placeholder: T('pantalla.esperaDeFabrica') }));
+    // con una coordinadora designada y viva, la espera le llega a ella al primer plazo y al dueño a éste: 1 a 120, vacío 30
+    box.appendChild(campo(T('pantalla.minutosHastaElDueno'), w.owner_minutes, function (v) {
+      if (v === '') { if (esObjeto(d.wait_notice)) { delete d.wait_notice.owner_minutes; if (!Object.keys(d.wait_notice).length) delete d.wait_notice; } return; }
+      if (!esObjeto(d.wait_notice)) d.wait_notice = {};
+      d.wait_notice.owner_minutes = numOTexto(v);
+    }, 'wait_notice.owner_minutes', pr, { inputmode: 'numeric', placeholder: T('pantalla.esperaDelDuenoDeFabrica') }));
     return box;
   }
   // los pedidos de vulnerabilidades, según la maqueta que aprobó el dueño: arriba el tipo y los campos fijos, abajo una
@@ -4106,7 +4116,7 @@ function pantalla(idioma = 'es') {
 
 module.exports = {
   extrasDeAprobaciones, nombreDeMaquina,
-  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, ESTIMATES_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, COORDINATION_SINCE, SWITCHES_SINCE, WAIT_NOTICE_ENABLED_SINCE, DELEGATED_LIST_SINCE, OWNER_ONLY_SINCE, LEVELS_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
+  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, ESTIMATES_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, COORDINATION_SINCE, SWITCHES_SINCE, WAIT_NOTICE_ENABLED_SINCE, WAIT_NOTICE_OWNER_SINCE, DELEGATED_LIST_SINCE, OWNER_ONLY_SINCE, LEVELS_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
   problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy, estimacionesDeHoy, modelosEnNiveles, equivalenciasDe, proveedoresDe,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia, reaplicar, versionDeTexto,
   SIN_NOTICIAS_DIAS, CLAVES_DEL_REPO, lectorDeClave, reemplazarBloque, revisarClaveDelRepo, idDeRepo, urlDeRepo,
