@@ -8,8 +8,11 @@
  *   · huellas           por repo, la rama, la base (`origin/main`) y el árbol que produciría su cambio, armado con un
  *                       índice temporal: entran los archivos sin seguimiento y el índice de la persona no se toca;
  *   · vigente           si cada repo sigue en la rama y con el árbol de la huella (o ya commiteado);
- *   · antesDeFirmar     por delegación, si la corrida terminó limpia, si el cambio no toca nada sensible y el aviso
- *                       al dueño; corre con el pedido de la ventana sin gastar (owner-window.js `exigir({ antes })`);
+ *   · controlesDelCommit el gancho pre-commit de cada repo sobre lo que guardaría el commit, en sólo lectura: lo que lo
+ *                       frenaría después del ok se ve antes de firmar;
+ *   · antesDeFirmar     en toda vía, los controles del commit; por delegación, además, si la corrida terminó limpia, si
+ *                       el cambio no toca nada sensible y el aviso al dueño; corre con el pedido de la ventana sin gastar
+ *                       (owner-window.js `exigir({ antes })`);
  *   · constancia        el `saveOk` que se escribe después de la firma.
  *
  * Todo lo de afuera (los canales, el envío del aviso, los hallazgos, las firmas de la corrida) entra por parámetro.
@@ -186,6 +189,70 @@ function huella(repo) {
   }
 }
 function huellas(repos) { return repos.map(huella); }
+
+// lo que pueden tardar los controles del commit de todos los repos antes de darlos por colgados: los del arnés, ~30 s; con
+// un revisor tocado, su chequeo de vida suma ~40 s, y hasta ~2 min si confirma un rojo. Debajo del plazo con que la
+// ventana espera al chequeo (owner-window.js, 240 s)
+const CONTROLES_MS = 210000;
+const ultimas = (texto, max = 1200) => {
+  const l = String(texto || '').split('\n').map((x) => x.trim()).filter(Boolean);
+  const frenos = l.filter((x) => /^(⛔|🔴|✖)/.test(x));
+  const s = (frenos.length ? frenos : l.slice(-12)).join(' · ');
+  return s.length > max ? `${s.slice(0, max)}…` : s;
+};
+
+/**
+ * Los controles del commit de cada repo (el gancho pre-commit que git correría) sobre lo que guardaría el commit de todo:
+ * un índice aparte desde HEAD con todo lo del disco, como la huella; el índice de la persona no se toca. Corren con
+ * `TYCON_PRECOMMIT_READ_ONLY=1`: un control que escribe (regenerar un archivo, exportar la memoria) no escribe y frena si
+ * hacía falta. Si el árbol cambió igual, el ok nacería vencido y no se firma. Colgados o sin poder correrlos, tampoco:
+ * no poder mirar no es verde. `{ codigo: 0 }` o `{ codigo: 2, motivo }`.
+ */
+function controlesDelCommit({ repos, timeoutMs = CONTROLES_MS }) {
+  const limite = Date.now() + timeoutMs;
+  for (const repo of repos) {
+    const nombre = path.basename(repo);
+    const no = (m) => ({ codigo: 2, motivo: `${nombre}: ${m}` });
+    const gitDir = git(repo, ['rev-parse', '--absolute-git-dir']);
+    if (!gitDir.ok) return no(`no pude correr los controles del commit (${gitDir.err || 'no es un repo de git'})`);
+    const antes = huella(repo);
+    if (antes.error) return no(`no pude medirlo antes de los controles del commit (${antes.error})`);
+    // un chequeo cortado de afuera (el plazo de la ventana) deja su índice: los de más de una hora se borran acá
+    try {
+      for (const f of fs.readdirSync(gitDir.out)) {
+        const p = path.join(gitDir.out, f);
+        if (f.startsWith('save-ok-controls-') && Date.now() - fs.statSync(p).mtimeMs > 3600000) fs.rmSync(p, { force: true });
+      }
+    } catch (_) { /* barrer es de cortesía: no cambia el veredicto */ }
+    const indice = path.join(gitDir.out, `save-ok-controls-${process.pid}-${Date.now()}`);
+    try {
+      const env = { GIT_INDEX_FILE: indice, TYCON_PRECOMMIT_READ_ONLY: '1' };
+      const tieneHead = git(repo, ['rev-parse', '--verify', '--quiet', 'HEAD']).ok;
+      for (const p of [tieneHead ? ['read-tree', 'HEAD'] : ['read-tree', '--empty'], ['add', '-A']]) {
+        const r = git(repo, p, env);
+        if (!r.ok) return no(`no pude armar lo que guardaría el commit (git ${p[0]}: ${r.err})`);
+      }
+      const queda = limite - Date.now();
+      const r = queda <= 0 ? { error: { code: 'ETIMEDOUT' }, status: null } : spawnSync('git', ['-C', repo, 'hook', 'run', '--ignore-missing', 'pre-commit'], {
+        cwd: repo, encoding: 'utf8', timeout: queda, env: { ...process.env, ...env }, maxBuffer: 16 * 1024 * 1024,
+      });
+      if (r.error || r.status === null) {
+        return no(`los controles del commit no terminaron en ${Math.round(timeoutMs / 1000)} s (${r.error ? r.error.code || r.error.message : r.signal}): no se firma sin saber si el commit pasa. Probá \`git hook run pre-commit\` en ${repo} y volvé a pedir la firma`);
+      }
+      if (r.status !== 0) {
+        return no(`los controles del commit lo frenarían, y arreglarlo después vencería el ok. Lo que dijeron: ${ultimas(`${r.stderr}\n${r.stdout}`)}. Arreglá eso y volvé a pedir la firma`);
+      }
+    } finally {
+      try { fs.unlinkSync(indice); } catch (_) { /* no llegó a existir */ }
+    }
+    const despues = huella(repo);
+    if (despues.error || despues.arbol !== antes.arbol) {
+      const cambios = despues.error ? despues.error : git(repo, ['diff-tree', '-r', '--name-only', antes.arbol, despues.arbol]).out.split('\n').filter(Boolean).join(', ');
+      return no(`los controles del commit cambiaron el repo (${cambios || 'no sé qué'}), y el ok nacería vencido. Commiteá o descartá eso y volvé a pedir la firma`);
+    }
+  }
+  return { codigo: 0 };
+}
 
 /**
  * ¿El ok sigue valiendo? `{ ok, motivo }`. Cada repo de la huella, en su rama y con su árbol (sin commitear, o ya
@@ -427,11 +494,15 @@ function avisar({ texto, canales, mandar }) {
  * avisar ni escribir. Por delegación: limpia (2), nada sensible (2) y el aviso entregado (1). Por la ventana o la
  * terminal, sólo las huellas: el dueño decide.
  */
-function antesDeFirmar({ via, marker, repos, findings = [], firmasDeLaCorrida = [], canales, mandar }) {
+function antesDeFirmar({ via, marker, repos, findings = [], firmasDeLaCorrida = [], canales, mandar, controles = controlesDelCommit }) {
   const hs = huellas(repos);
   // en toda vía: un ok con un repo que no se puede medir no valida nunca después (`vigente` no lo puede comparar)
   const sinMedir = hs.find((h) => h.error);
   if (sinMedir) return { codigo: 2, motivo: `${sinMedir.repo}: no pude medirlo (${sinMedir.error}): no se firma un ok que después no se puede comprobar` };
+  // en toda vía: un control del commit que lo frenaría vence el ok al arreglarlo (el examen de un revisor tocado, los
+  // datos estables, la versión pública del mapa): se ve antes de firmar
+  const c = controles({ repos });
+  if (c.codigo) return c;
   if (via !== 'delegacion') return { codigo: 0, huellas: hs };
   // lo sensible primero: el motivo nombra el archivo aunque además falte algo para estar limpia
   const s = sensibles({ repos });
@@ -451,4 +522,4 @@ function constancia({ marker, via, por = null, previo, ahora }) {
   };
 }
 
-module.exports = { FIRMA: 'save', raizDe, tieneCambios, esPapeleoDeLaHuella, rutasDeclaradas, reposDeLaCorrida, exencionesDeLaCorrida, requiereSensible, huella, huellas, vigente, sensibles, limpia, lineaDelAviso, avisar, antesDeFirmar, constancia };
+module.exports = { FIRMA: 'save', raizDe, tieneCambios, esPapeleoDeLaHuella, rutasDeclaradas, reposDeLaCorrida, exencionesDeLaCorrida, requiereSensible, huella, huellas, controlesDelCommit, vigente, sensibles, limpia, lineaDelAviso, avisar, antesDeFirmar, constancia };

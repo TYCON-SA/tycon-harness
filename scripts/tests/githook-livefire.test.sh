@@ -866,6 +866,31 @@ else
   mal "C-27 un cambio sano del mapa fue frenado (exit $RC, commits ${ANTES}→$DESPUES)"; sed -n '1,12p' "$T/out.txt"
 fi
 rm -rf "$T"
+# C-27b · en sólo lectura (el chequeo antes de una firma) la pública vieja frena y dice cómo regenerarla, sin escribirla
+T=$(mktemp -d); montar "$T"; mapa_lab "$T"
+printf '\n<!-- cambio de prueba -->\n' >> "$T/repo/artifacts/mapa-arnes.html"
+( cd "$T/repo" && git add artifacts/mapa-arnes.html )
+PUB_ANTES=$(git -C "$T/repo" hash-object onboarding/mini-class/mapa-del-arnes.html)
+IDX="$T/repo/.git/save-ok-controls-1"; cp "$T/repo/.git/index" "$IDX"
+( fake_home_create "$T/casa" && cd "$T/repo" \
+    && GIT_INDEX_FILE="$IDX" TYCON_PRECOMMIT_READ_ONLY=1 git -c core.hooksPath="$T/hooks-globales" hook run pre-commit ) > "$T/out.txt" 2>&1; RC=$?
+if [ "$RC" != 0 ] && grep -q "Regenerala antes" "$T/out.txt" \
+   && [ "$(git -C "$T/repo" hash-object onboarding/mini-class/mapa-del-arnes.html)" = "$PUB_ANTES" ] \
+   && ! GIT_INDEX_FILE="$IDX" git -C "$T/repo" diff --cached --name-only | grep mapa-del-arnes >/dev/null; then
+  ok "C-27b en sólo lectura la pública vieja frena con el comando y no se escribe (exit $RC)"
+else
+  mal "C-27b en sólo lectura la pública se regeneró o no frenó (exit $RC)"; sed -n '1,12p' "$T/out.txt"
+fi
+# C-27c · el espejo: en un commit de verdad la variable no vale, y la pública se regenera y entra como en C-27
+ANTES=$(cuantos "$T")
+( fake_home_create "$T/casa" && cd "$T/repo" && TYCON_PRECOMMIT_READ_ONLY=1 \
+    git -c core.hooksPath="$T/hooks-globales" -c user.email=b@b -c user.name=b commit -q -m "mapa con la variable" ) > "$T/out.txt" 2>&1; RC=$?
+if [ "$RC" = 0 ] && [ "$(cuantos "$T")" = "$((ANTES + 1))" ] && grep -q "no vale en un commit" "$T/out.txt"; then
+  ok "C-27c en un commit de verdad la variable de sólo lectura no apaga nada (exit 0, la pública entra)"
+else
+  mal "C-27c con la variable puesta, un commit de verdad se salteó controles o frenó (exit $RC)"; sed -n '1,12p' "$T/out.txt"
+fi
+rm -rf "$T"
 fi
 
 # ── C-28 · T26 R3_DashboardSeries_PipelinesAndCapturerShim ──────────────

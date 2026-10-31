@@ -5705,6 +5705,8 @@ function readSessionMarkerStrict() {
 // sólo lee la corrida de <D>; la firma la pide la sesión que corre el guion (PROPIA, la de antes de cambiar nada), y
 // recién después `fijarDestino` deja el proceso, y los guiones que lance, trabajando sobre <D>.
 const PROPIA = sessionIdFileKey();
+// el chequeo antes de la ventana de firma (owner-window.js): comprueba lo que la firma exige sin hacer lo que autoriza
+const PRECHEQUEO = 'TYCON_SIGN_PRECHECK';
 let paraOtra = null;   // { pedida, storyId } mientras el guion trabaja para otra sesión
 const ownerWindow = () => require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
 function paraOtraSesion(cmd, args, argv) {
@@ -5760,6 +5762,7 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId }) {
   }
   if (iter <= tope.value) {
     if (paraOtra) return sinFirmaPendiente;
+    if (args.extraRound) return `🛑 La vuelta ${iter} no necesita la vuelta extra ni la firma: está dentro del tope de ${tope.value}. Pedí el set sin --extra-round.\n`;
     // la variable de la máquina puede subir el tope por encima del de la organización y el repo: pasa, pero queda anotado
     if (tope.source === 'maquina') {
       const sinMaquina = rr.tope({ repo: repoAbs, sinMaquina: true });
@@ -5770,7 +5773,10 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId }) {
     }
     return null;
   }
-  if (rr.extras({ stateDir, story: storyId }).some((e) => e.iter === iter)) return paraOtra ? sinFirmaPendiente : null;
+  if (rr.extras({ stateDir, story: storyId }).some((e) => e.iter === iter)) {
+    if (paraOtra) return sinFirmaPendiente;
+    return args.extraRound ? `🛑 La vuelta extra ${iter} ya está autorizada: pedí el set sin --extra-round, sin otra firma.\n` : null;
+  }
   const h = rr.hallazgosDe(runDir);
   const pre = rr.prefijos();
   const ab = rr.abiertos(h.lista, { prefijos: pre });
@@ -5788,9 +5794,18 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId }) {
     const aviso = rr.avisoDelTope({ stateDir, story: storyId, iter });
     if (!aviso || !aviso.ts) return `🛑 No se autorizó la vuelta extra ${iter}: todavía no se avisó el tope de esta vuelta. Pedí el set sin --extra-round, el arnés dice qué quedó abierto, y recién ahí vale la aprobación.\n`;
     if (args.quote) return `🛑 No se autorizó la vuelta extra ${iter}: la cita ya no la autoriza. La aprueba la persona en la ventana de permiso (este comando sin --quote) o en su terminal (--terminal).\n`;
+    // desde la tercera vuelta, la nota de repensar se pide antes de gastar la firma: sin ella el set no se sirve igual
+    const rt = require('./lib/rethink.js');
+    const antes = () => {
+      if (iter < rt.FIRST_ITER) return null;
+      const leida = rt.readNote(runDir, iter);
+      if (leida.ok) return null;
+      const why = leida.reason === 'no existe' || leida.reason === 'no hay carpeta de corrida' ? null : leida.reason;
+      return { codigo: 3, motivo: rt.blockMessage({ iter, runDir, repeated: rt.repeatedFindings(runDir), why }).trim() };
+    };
     const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
     const r = ow.exigir({ firma: 'extra-round', argv: process.argv.slice(1), resumen: `vuelta extra ${iter} de revisores de la story ${storyId}`,
-      propia: PROPIA, anotar: (g) => anotar(g) });
+      propia: PROPIA, anotar: (g) => anotar(g), antes });
     if (r.codigo !== 0) return `🛑 No se autorizó la vuelta extra ${iter}: ${r.motivo}.\n`;
     const f = ow.fijarDestino({ r, propia: PROPIA, necesitaMarcador: !!paraOtra, leerMarcador: (sid) => ow.marcadorEn(path.join(stateDir, 'active', `${sid}.json`)) });
     if (f.codigo !== 0) { process.stderr.write(`🛑 No se sirvió la vuelta extra ${iter}: ${f.motivo}. No escribí nada.\n`); process.exit(f.codigo); }
@@ -6690,6 +6705,7 @@ function main() {
     if (emptyWork) { process.stderr.write(emptyWork); process.exit(2); }
     const rethinkBlock = rethinkGate(args);
     if (rethinkBlock) { process.stderr.write(rethinkBlock); process.exit(3); }
+    if (process.env[PRECHEQUEO] === '1') process.exit(0);
     const set = computeAdvisorSet(args);
     // Descuento automático de advisors cubiertos por mech-check (coherente
     // con el expected[] que se persiste abajo — check-count valida contra el set
@@ -6814,6 +6830,8 @@ function main() {
     if (emptyWork) { process.stderr.write(emptyWork); process.exit(2); }
     const rethinkBlock = rethinkGate(args);
     if (rethinkBlock) { process.stderr.write(rethinkBlock); process.exit(3); }
+    // el chequeo antes de la ventana termina en la firma (owner-window.js): si llegó acá sin pasar por ella, no dice que sí
+    if (process.env[PRECHEQUEO] === '1') process.exit(0);
     const conModelos = conModelosDeLaCorrida(args);
     const result = computeSmartReloop(conModelos);
     const avisosModelos = result._avisos || [];

@@ -76,7 +76,7 @@ NO COMMIT sin consentimiento, formato HEREDOC, Co-Authored-By, `/tycon-merge-to-
 
 ## guides/agent-architecture.md
 
-Arquitectura de advisors TYCON (wrappers sobre BMAD) con pipeline HITL, severity levels, shadow mode, dashboard
+Arquitectura de advisors TYCON (wrappers sobre BMAD) con pipeline HITL y severity levels
 
 ## packs/ (agent-skills) — paquetes de revisores
 
