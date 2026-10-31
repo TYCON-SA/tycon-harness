@@ -312,6 +312,130 @@ test('Notice_ThresholdUnderHour_SaysMinutes @story-8.131 @ac-9', () => {
   assert.match(r.out, /pedido 8 \(harness-maintainers\) en choque hace 16 min · story\/8/);
 });
 
+// GitHub: los pedidos del repo público, de una sola consulta. `ghPull` es uno como lo guarda el gh de mentira.
+const HACE = (min) => new Date(Date.now() - min * 60000).toISOString();
+function ghPull(n, o = {}) {
+  return {
+    number: n, state: 'open', draft: false, mergeable: true, mergeable_state: 'clean', title: `pedido ${n}`,
+    head: { ref: `fix/${n}`, sha: `${n}`.padStart(40, 'b') }, created_at: '2026-10-25T10:00:00Z', user: { login: 'quien' },
+    auto_merge: null, merge_queue: null, ...o,
+  };
+}
+function ponerGh(w, pulls) { fs.writeFileSync(w.ghState, JSON.stringify({ pulls: { 'acme/harness': pulls } })); }
+const claveGh = (n) => `acme/harness#${n}`;
+
+test('Notice_GithubDroppedFromQueue_SaysWhy', () => {
+  const w = mundo([]);
+  ponerGh(w, [
+    ghPull(842, { queue_drop: { kind: 'removed', reason: 'failed_checks', at: HACE(30) } }),
+    ghPull(843, { mergeable: false, mergeable_state: 'dirty', queue_drop: { kind: 'removed', reason: 'merge_conflict', at: HACE(125) } }),
+    ghPull(844, { queue_drop: { kind: 'auto_merge_disabled', reason: 'MERGE_CONFLICT', at: HACE(10) } }),
+    ghPull(845, { queue_drop: { kind: 'removed', reason: 'dequeued_manually', at: HACE(5) } }),
+  ]);
+  const r = correr(w);
+  assert.strictEqual(r.rc, 0, r.err);
+  // una caída es un hecho: sale enseguida, sin esperar la hora, con el motivo de GitHub en castellano
+  assert.match(r.out, /pedido 842 \(harness\) se cayó de la cola hace 30 min: la CI combinada salió en rojo · fix\/842/);
+  assert.match(r.out, /pedido 843 \(harness\) se cayó de la cola hace 2 h: choca con main · fix\/843/);
+  assert.match(r.out, /pedido 844 \(harness\) se cayó de la cola hace 10 min: choca con main · fix\/844/);
+  assert.match(r.out, /pedido 845 \(harness\) se cayó de la cola hace 5 min: la plataforma dice «dequeued_manually» · fix\/845/);
+  assert.doesNotMatch(r.out, /no medido/, r.out);
+});
+
+test('Notice_GithubDroppedButBack_Silent', () => {
+  const w = mundo([]);
+  ponerGh(w, [
+    // volvió a pedir el auto-merge, o ya está en la cola: no está caído
+    ghPull(1, { auto_merge: { merge_method: 'merge' }, queue_drop: { kind: 'removed', reason: 'failed_checks', at: HACE(30) } }),
+    ghPull(2, { merge_queue: { state: 'QUEUED' }, queue_drop: { kind: 'removed', reason: 'failed_checks', at: HACE(30) } }),
+    // un borrador caído no se manda a entrar
+    ghPull(3, { draft: true, queue_drop: { kind: 'removed', reason: 'failed_checks', at: HACE(30) } }),
+    // sin auto-merge y sin caída: nadie pidió que entre
+    ghPull(4),
+  ]);
+  const r = correr(w);
+  assert.strictEqual(r.rc, 0, r.err);
+  assert.strictEqual(r.out, '', r.out);
+});
+
+test('Notice_GithubAutoMergeWithoutQueueEntry_Shown', () => {
+  const w = mundo([]);
+  ponerGh(w, [ghPull(850, { auto_merge: { merge_method: 'merge' } })]);
+  escribirEstado(w, { [claveGh(850)]: { estado: 'clean', punta: '850'.padStart(40, 'b'), vistoDesde: HACE_61() } });
+  const r = correr(w);
+  assert.strictEqual(r.rc, 0, r.err);
+  assert.match(r.out, /pedido 850 \(harness\) con auto-completar no entró hace 1 h \(clean, sin lugar en la cola\) · fix\/850/);
+  // en la cola no está trabado por esto: espera su turno
+  ponerGh(w, [ghPull(850, { auto_merge: { merge_method: 'merge' }, merge_queue: { state: 'AWAITING_CHECKS' } })]);
+  fs.rmSync(fotoArchivo(w), { force: true });
+  assert.doesNotMatch(correr(w).out, /sin lugar en la cola/);
+});
+
+test('Notice_GithubUnknownMergeState_KeepsClock', () => {
+  // GitHub contesta UNKNOWN hasta que calcula si choca: eso no es un cambio de estado y no vuelve el reloj a cero
+  const w = mundo([]);
+  ponerGh(w, [ghPull(851, { auto_merge: { merge_method: 'merge' }, mergeable: undefined, mergeable_state: undefined })]);
+  const desde = HACE_61();
+  escribirEstado(w, { [claveGh(851)]: { estado: 'conflict', punta: '851'.padStart(40, 'b'), vistoDesde: desde } });
+  const r = correr(w);
+  assert.strictEqual(r.rc, 0, r.err);
+  assert.strictEqual(leerEstado(w)[claveGh(851)].vistoDesde, desde);
+  assert.match(r.out, /pedido 851 \(harness\) en choque hace 1 h/);
+});
+
+test('Notice_GithubOneQueryPerRepo_NoChecksRead', () => {
+  const w = mundo([]);
+  ponerGh(w, [ghPull(1), ghPull(2, { auto_merge: { merge_method: 'merge' } }), ghPull(3)]);
+  const log = path.join(tmp('spn-ghlog-'), 'gh.log');
+  const r = correr(w, { FAKE_GH_LOG: log });
+  assert.strictEqual(r.rc, 0, r.err);
+  const rutas = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l).ruta);
+  // una consulta, sin la lista REST ni una lectura de controles por pedido (eso agotaba el tope de 5 s)
+  assert.deepStrictEqual(rutas, ['graphql'], rutas.join(' · '));
+});
+
+test('Notice_SlowRead_FinishesInBackground_NextStartUsesIt', async () => {
+  // un az que tarda 6 s: el arranque corta a los 5 y lo dice; la lectura sigue de fondo y deja la foto para el próximo
+  const w = mundo([pr(7, { mergeStatus: 'conflicts' })]);
+  escribirEstado(w, { [clave(7)]: { estado: 'conflict', punta: '7'.padStart(40, 'a'), vistoDesde: HACE_61() } });
+  const lento = path.join(tmp('spn-azlento-'), 'az');
+  fs.writeFileSync(lento, `#!/bin/sh\nsleep 6\nexec "${w.az}" "$@"\n`);
+  fs.chmodSync(lento, 0o755);
+  const extra = { TYCON_ADO_CMD: lento, TYCON_STUCK_PR_REFRESH_MS: '30000' };
+  const r = correr(w, extra);
+  assert.strictEqual(r.rc, 0, r.err);
+  assert.match(r.out, /no medido \(.*tope.*sigue midiendo de fondo: sale en el próximo arranque/, r.out);
+  assert.ok(r.ms < 5000 + 3000, `el arranque no espera la lectura de fondo: tardó ${r.ms} ms`);
+  const limite = Date.now() + 25000;
+  while (!fs.existsSync(fotoArchivo(w)) && Date.now() < limite) await new Promise((ok) => setTimeout(ok, 200));
+  assert.ok(fs.existsSync(fotoArchivo(w)), 'la lectura de fondo dejó la foto');
+  const s = correr(w, extra);
+  assert.strictEqual(s.rc, 0, s.err);
+  assert.match(s.out, /pedido 7 \(harness-maintainers\) en choque hace 1 h/, s.out);
+  assert.doesNotMatch(s.out, /no medido/, s.out);
+});
+
+test('Notice_SlowRead_UsesOldPhotoWithItsAge', () => {
+  // la lectura de ahora no llega, pero hay una foto de hace 2 h con ese repo leído: vale, y se dice su edad
+  const w = mundo([]);
+  fs.writeFileSync(w.az, '#!/bin/sh\nsleep 30\n');
+  fs.chmodSync(w.az, 0o755);
+  const repos = ['acme/harness', 'acme/Harness/harness-team-profile', 'acme/Harness/harness-team-operations', 'acme/Harness/harness-maintainers'];
+  const prOk = { number: 4, draft: false, autoComplete: true, mergeState: 'conflict', sourceBranch: 'story/4', sourceCommit: 'c4', createdAt: '', title: '' };
+  const vacio = { ok: true, value: [] };
+  fs.mkdirSync(stateDir(w.home), { recursive: true });
+  fs.writeFileSync(fotoArchivo(w), JSON.stringify({ at: HACE(120), repos, lecturas: {
+    'acme/harness': vacio, 'acme/Harness/harness-team-profile': vacio, 'acme/Harness/harness-team-operations': vacio,
+    'acme/Harness/harness-maintainers': { ok: true, value: [prOk] },
+  } }));
+  escribirEstado(w, { [clave(4)]: { estado: 'conflict', punta: 'c4', vistoDesde: HACE_61() } });
+  const r = correr(w, { TYCON_STUCK_PR_REFRESH_MS: '2000' });
+  assert.strictEqual(r.rc, 0, r.err);
+  assert.match(r.out, /pedido 4 \(harness-maintainers\) en choque hace 1 h/, r.out);
+  assert.match(r.out, /con la foto de hace 2 h \(la lectura de ahora no llegó a tiempo y sigue de fondo\)/, r.out);
+  assert.doesNotMatch(r.out, /no medido/, r.out);
+});
+
 test('Notice_Registered_BothTools @story-8.131 @ac-8', () => {
   const lista = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'hooks-list.json'), 'utf8'));
   const hooks = Array.isArray(lista) ? lista : lista.hooks;

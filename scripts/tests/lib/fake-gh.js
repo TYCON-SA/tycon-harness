@@ -330,6 +330,30 @@ if (method === 'POST' && base === 'graphql') {
     if (st.autoMerge === 'funciona') { x.p.auto_merge = { merge_method: String(vars.mergeMethod || '').toLowerCase(), enabled_by: { login: st.user } }; save(); }
     out({ data: { enablePullRequestAutoMerge: { pullRequest: { number: x.p.number } } } });
   }
+  // los abiertos de un repo de una sola vez (`pullRequests(states:OPEN`), con su lugar en la cola y su última caída:
+  // `queue_drop` (`{ kind: 'removed' | 'auto_merge_disabled', reason, at }`) es el último evento de GitHub que lo sacó
+  // de la cola o le apagó el auto-merge. `mergeable` sin decir sale UNKNOWN, como GitHub antes de calcularlo
+  if (/pullRequests\(states:OPEN/.test(qy)) {
+    if (st.queue_error) gqlErr('FORBIDDEN', 'Resource not accessible by integration');
+    const repo = `${vars.owner}/${vars.name}`;
+    const nodes = (st.pulls && st.pulls[repo] || []).filter((p) => (p.state || 'open') === 'open').map((p) => {
+      const d = p.queue_drop;
+      const evento = !d ? [] : [d.kind === 'auto_merge_disabled'
+        ? { __typename: 'AutoMergeDisabledEvent', reason: d.reason, reasonCode: d.reason, createdAt: d.at }
+        : { __typename: 'RemovedFromMergeQueueEvent', reason: d.reason, createdAt: d.at }];
+      return {
+        number: p.number, isDraft: p.draft === true,
+        mergeable: p.mergeable === false ? 'CONFLICTING' : p.mergeable === true ? 'MERGEABLE' : 'UNKNOWN',
+        mergeStateStatus: String(p.mergeable_state || 'unknown').toUpperCase(),
+        headRefName: p.head && p.head.ref, headRefOid: p.head && p.head.sha, createdAt: p.created_at, title: p.title,
+        author: p.user ? { login: p.user.login } : null,
+        autoMergeRequest: p.auto_merge ? { enabledAt: p.auto_merge.enabled_at || null } : null,
+        mergeQueueEntry: p.merge_queue || null,
+        timelineItems: { nodes: evento },
+      };
+    });
+    out({ data: { repository: { pullRequests: { nodes, pageInfo: { hasNextPage: false, endCursor: null } } } } });
+  }
   // si cada pull request está en la cola de merge: `nodes(ids:)` con su `merge_queue` (`{ state }` o nada); "queue_error":
   // true contesta el error de GitHub
   if (/nodes\(ids:/.test(qy) && /mergeQueueEntry/.test(qy)) {

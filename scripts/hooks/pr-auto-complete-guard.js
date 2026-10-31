@@ -30,6 +30,12 @@
  * comando, nunca desde el entorno (exportarla en el rc la volvería permanente y silenciosa); deja
  * constancia en stderr y en el mismo `bypass.log` que ya usa el freno de tests.
  *
+ * LAS PORTABLES ANTES DE ENCOLAR. Además, un pedido bien armado que ENCOLA (`gh pr merge`, o un create/update con
+ * `--auto-complete true`) desde un checkout del arnés cuya rama toca el instalador necesita la constancia de las
+ * portables en verde para el árbol de HEAD (scripts/lib/portable-stamp.js, que deja
+ * scripts/tests/portable-suites.test.sh): un rojo en la cola saca al pedido y frena a los de atrás. Salida propia:
+ * `TYCON_PORTABLE_BY_HAND=1` pegado al comando; el prefijo de arriba no la saltea. Constancia: `pr-sin-portables`.
+ *
  * Salida: exit 2 bloquea (el comando no corre) · exit 0 deja pasar.
  * Apagar del todo: TYCON_PR_AUTO_COMPLETE_GUARD=0 (la variable tuvo un nombre en castellano, que sigue
  * valiendo hasta el retiro del mapa de renombres).
@@ -53,8 +59,11 @@ try { payload = fs.readFileSync(0, 'utf8'); } catch { process.exit(0); }
 if (require('../lib/legacy-names.js').readEnv('TYCON_PR_AUTO_COMPLETE_GUARD', { where: 'scripts/hooks/pr-auto-complete-guard.js' }) === '0') process.exit(0);
 
 let cmd = '';
+let cwdEvento = '';
 try {
-  cmd = ((JSON.parse(payload || '{}').tool_input) || {}).command || '';
+  const evento = JSON.parse(payload || '{}');
+  cmd = (evento.tool_input || {}).command || '';
+  cwdEvento = typeof evento.cwd === 'string' ? evento.cwd : '';
 } catch {
   // No pudo leer: no frena —un freno que rompe la sesión por un bug propio se apaga— pero lo dice.
   console.error(`${TAG} no pude leer la entrada del hook: no freno, pero tampoco miré.`);
@@ -127,6 +136,63 @@ function faltasGh(seg) {
   return faltas;
 }
 
+/** ¿El tramo corre un `gh pr merge`? (las mismas dos primeras palabras que lee `faltasGh`) */
+function esGhMerge(seg) {
+  const programa = seg.find((f) => !(f.esBandera && /^[A-Za-z_][A-Za-z0-9_]*=/.test(f.texto)));
+  if (programa && SOLO_ESCRIBEN.has(programa.texto)) return false;
+  for (let i = 0; i < seg.length; i++) {
+    if (!esGhBin(seg[i].texto)) continue;
+    const palabras = [];
+    for (let j = i + 1; j < seg.length && palabras.length < 2; j++) {
+      const t = seg[j].texto;
+      if (t === '-R' || t === '--repo') { j++; continue; }
+      if (t.startsWith('-')) continue;
+      palabras.push(t);
+    }
+    if (palabras.join(' ') === 'pr merge') return true;
+  }
+  return false;
+}
+
+/**
+ * LAS PORTABLES ANTES DE ENCOLAR. Un pedido del arnés que toca el instalador no entra a la cola sin la constancia de
+ * las portables en verde para el árbol de HEAD (scripts/lib/portable-stamp.js): un rojo en la cola saca al pedido y
+ * frena a los que venían detrás. Se juzga la rama del checkout donde corre el comando (el `cwd` del evento): es la que
+ * se encola. Sin `cwd` en el evento, o fuera de un repo del arnés, no aplica. Si no se puede saber, frena y lo dice.
+ * Salida para el caso puntual: `TYCON_PORTABLE_BY_HAND=1` pegado al comando, con constancia.
+ */
+function portablesAntesDeEncolar() {
+  if (!encolan.length || !cwdEvento) return;
+  const escape = encolan.find((seg) => az.tieneEscape(seg, 'TYCON_PORTABLE_BY_HAND'));
+  let v;
+  try { v = require('../lib/portable-stamp.js').veredicto(cwdEvento, os.homedir()); } catch (e) { v = { problem: String((e && e.message) || e).split('\n')[0] }; }
+  if (v.notHarness || (!v.problem && !v.needed)) return;
+  if (!v.problem && v.ok) {
+    constanciaFreno.anotar({ freno: 'pr-sin-portables', regla: 'sin-portables', veredicto: 'paso', cmd });
+    return;
+  }
+  if (escape) {
+    constancia('PORTABLE_A_MANO', 'TYCON_PORTABLE_BY_HAND=1: dejo encolar sin la constancia de las portables. Queda dicho.', az.textoDe(escape));
+    constanciaFreno.anotar({ freno: 'pr-sin-portables', regla: 'sin-portables', veredicto: 'escape', cmd });
+    return;
+  }
+  constanciaFreno.anotar({ freno: 'pr-sin-portables', regla: 'sin-portables', veredicto: 'bloqueo', cmd });
+  const porque = v.problem
+    ? `no pude saber si el cambio toca el instalador o si las portables dieron verde (${v.problem}) — y lo que no pude mirar no está aprobado`
+    : `${v.why}, y el cambio toca lo que miden ${v.suites.length} suite(s) del instalador (${v.suites.slice(0, 3).join(', ')}${v.suites.length > 3 ? '…' : ''})`;
+  console.error(`🔴 Este pedido toca el instalador y se encola sin las portables en verde:
+  ${porque}
+
+En la cola, un rojo de las portables saca al pedido y frena a los que vienen detrás. Correlas antes, con todo
+commiteado (unos 6 minutos; dejan la constancia del árbol al terminar en verde):
+
+  bash scripts/tests/portable-suites.test.sh
+
+Para saber qué pide: node scripts/lib/portable-stamp.js check
+Para encolar sin ellas una sola vez, a propósito, el prefijo va PEGADO al comando: TYCON_PORTABLE_BY_HAND=1 …`);
+  process.exit(2);
+}
+
 /** ¿El comando corre un `gh pr merge` que no se puede leer (adentro de otro intérprete, o el programa en una variable)? */
 function ghMergeIlegible(comando) {
   if (!/\bmerge\b/.test(comando)) return null;
@@ -155,6 +221,8 @@ let huboEscape = false;   // ¿ya se anotó el escape de este comando?
 let huboJuicio = false;
 const problemas = [];
 const problemasGh = [];
+// los tramos que ENCOLAN un pedido bien armado: un `gh pr merge`, o un create/update con `--auto-complete true`
+const encolan = [];
 for (const seg of az.segmentos(cmd)) {
   if (az.pideAyuda(seg)) continue;
 
@@ -168,9 +236,11 @@ for (const seg of az.segmentos(cmd)) {
       if (az.tieneEscape(seg)) {
         constancia('PR_A_MANO', 'TYCON_PR_BY_HAND=1: dejo mergear el pedido a mano. Queda dicho.', az.textoDe(seg));
         huboEscape = true;
+        if (esGhMerge(seg)) encolan.push(seg);   // el prefijo es de este freno, no de las portables
       } else problemasGh.push({ seg, faltas });
       continue;
     }
+    if (esGhMerge(seg)) encolan.push(seg);
   }
   if (!esAz) continue;
 
@@ -193,6 +263,7 @@ for (const seg of az.segmentos(cmd)) {
     if (faltas.length) {
       constancia('PR_A_MANO', `TYCON_PR_BY_HAND=1: dejo armar el PR a mano. Queda dicho.`, az.textoDe(seg));
       huboEscape = true;
+      if (az.esCierto(az.flagDe(seg, 'auto-complete'))) encolan.push(seg);
       continue;
     }
     sobra = true;
@@ -207,6 +278,7 @@ for (const seg of az.segmentos(cmd)) {
   if (!juzgado) continue;
   huboJuicio = true;
   if (faltas.length) problemas.push({ seg, verbo, faltas });
+  else if (az.esCierto(az.flagDe(seg, 'auto-complete'))) encolan.push(seg);
 }
 
 // 🔴 UNA DECISIÓN, UNA LÍNEA — y el veredicto es el que tuvo EL COMANDO, no cada segmento.
@@ -236,6 +308,7 @@ retrospectiva y las notas de versión los identifican uno por uno. Lo abre y lo 
 A mano: \`gh pr merge <n> --merge\` (o \`--merge --auto\`). Para saltear este freno una sola vez, a propósito, el
 prefijo va PEGADO al comando: TYCON_PR_BY_HAND=1 gh pr merge …`);
 }
+if (!problemas.length && !problemasGh.length) portablesAntesDeEncolar();
 if (!problemas.length) process.exit(problemasGh.length ? 2 : 0);
 
 const rama = problemas.map((p) => (p.verbo === 'create' ? az.flagDe(p.seg, 'source-branch', 's') : null)).find(Boolean) || '<rama>';

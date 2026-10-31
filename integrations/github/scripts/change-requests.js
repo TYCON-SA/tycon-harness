@@ -16,6 +16,9 @@
 // no se pudieron leer). Con `sourceBranch`, además si cada uno está en la cola de merge (`inQueue`: null si no se supo). Una lectura que no terminó es un «no», nunca una lista vacía ni una cortada. Con `sourceBranch`,
 // los abiertos de esa rama (por `head.ref`, también desde un fork), y cada uno se lee entero (`GET pulls/<n>`) para saber si choca con su
 // destino: la lista no trae `mergeable`. Sin él, las llamadas de siempre.
+// Con `queue: true` (y sin rama), una sola consulta GraphQL por cada 100: si choca, si está en la cola (`inQueue`), si
+// GitHub todavía no calculó el choque (`mergeStateComputing`) y la última caída de la cola (`lastQueueDrop`: `{ cause:
+// ci | conflict | other, reason, at }`, o null), sin leer los controles de cada uno (`ciRunning: null`).
 
 const fs = require('fs');
 const os = require('os');
@@ -210,9 +213,63 @@ function enCola(ctx, prs) {
   return out;
 }
 
+// Los abiertos con su lugar en la cola y su última caída, de a 100 por consulta. La caída es el último evento que lo
+// sacó de la cola o le apagó el auto-merge.
+const CONSULTA_ABIERTOS = 'query($owner:String!,$name:String!,$after:String){repository(owner:$owner,name:$name){'
+  + 'pullRequests(states:OPEN,first:100,after:$after){pageInfo{hasNextPage endCursor} nodes{number isDraft mergeable '
+  + 'mergeStateStatus headRefName headRefOid createdAt title author{login} autoMergeRequest{enabledAt} mergeQueueEntry{state} '
+  + 'timelineItems(last:1,itemTypes:[REMOVED_FROM_MERGE_QUEUE_EVENT,AUTO_MERGE_DISABLED_EVENT]){nodes{__typename '
+  + '... on RemovedFromMergeQueueEvent{reason createdAt} ... on AutoMergeDisabledEvent{reason reasonCode createdAt}}}}}}}';
+
+/** La causa de una caída: `ci` (controles en rojo), `conflict` (choca con su destino) u `other`. */
+function causaDeCaida(motivo) {
+  if (/conflict/i.test(motivo)) return 'conflict';
+  if (/check|fail/i.test(motivo)) return 'ci';
+  return 'other';
+}
+
+function deGraphql(p) {
+  const ev = p.timelineItems && Array.isArray(p.timelineItems.nodes) ? p.timelineItems.nodes[0] : null;
+  const motivo = ev ? String(ev.reasonCode || ev.reason || '') : '';
+  return {
+    number: Number(p.number),
+    draft: p.isDraft === true,
+    autoComplete: Boolean(p.autoMergeRequest),
+    inQueue: Boolean(p.mergeQueueEntry),
+    mergeState: p.mergeable === 'CONFLICTING' ? 'conflict' : ESTADO[String(p.mergeStateStatus || '').toLowerCase()] || 'unknown',
+    // GitHub calcula si choca recién cuando alguien lo pregunta: UNKNOWN es «todavía no lo sé», no un estado
+    mergeStateComputing: p.mergeable === 'UNKNOWN',
+    sourceBranch: String(p.headRefName || ''),
+    sourceCommit: String(p.headRefOid || ''),
+    createdAt: String(p.createdAt || ''),
+    title: String(p.title || ''),
+    author: p.author && p.author.login ? String(p.author.login).toLowerCase() : null,
+    ciRunning: null,
+    lastQueueDrop: ev ? { cause: causaDeCaida(motivo), reason: motivo, at: String(ev.createdAt || '') } : null,
+  };
+}
+
+/** Con `queue: true` y sin rama: los abiertos de una sola consulta GraphQL, sin leer los controles de cada uno. */
+function listaConCola(ctx, repo) {
+  const [owner, name] = repo.split('/');
+  const value = [];
+  let after = null;
+  for (let page = 1; page <= MAX_PAGINAS; page++) {
+    const g = gh(ctx, 'POST', 'graphql', { query: CONSULTA_ABIERTOS, variables: { owner, name, after } });
+    if (g.problem) return g.problem;
+    const prs = g.value && g.value.data && g.value.data.repository && g.value.data.repository.pullRequests;
+    if (!prs || !Array.isArray(prs.nodes)) return no('no_medido', 'GitHub contestó los pedidos abiertos sin forma');
+    for (const p of prs.nodes) if (p && Number.isInteger(p.number)) value.push(deGraphql(p));
+    if (!prs.pageInfo || !prs.pageInfo.hasNextPage) return { ok: true, value };
+    after = prs.pageInfo.endCursor;
+  }
+  return no('no_medido', `tope de ${MAX_PAGINAS} páginas: la lista no se leyó entera`);
+}
+
 function listarPedidos(args, ctx) {
   const repo = repoDe(ctx);
   if (!repo) return no('rechazado', 'el repo no trae dueño/nombre de GitHub (team-repos.json)');
+  if (args.queue === true && !args.sourceBranch) return listaConCola(ctx, repo);
   // con `sourceBranch`, los abiertos de esa rama, cada uno leído entero: la lista de GitHub no trae `mergeable`. Se
   // filtra por `head.ref` y no con `head=<dueño>:<rama>`: con un repo transferido o una organización renombrada, el
   // dueño del origin es el viejo y GitHub contesta ese filtro con una lista vacía, sin error (la sesión saldría libre);

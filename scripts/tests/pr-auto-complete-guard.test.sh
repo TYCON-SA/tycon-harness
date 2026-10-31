@@ -287,5 +287,84 @@ az repos pr update $ORG --id 5024 --draft false --auto-complete true --delete-so
 az repos pr update $ORG --id 5187 --draft false --description "algo"
 EOF
 
+# ---------------------------------------------------------------- LAS PORTABLES ANTES DE ENCOLAR
+# Un repo del arnés de juguete: el criterio del instalador es el de verdad (heavy-suites.json y suites-for-change.js),
+# la rama trae un cambio sobre origin/main y el freno juzga el checkout del `cwd` del evento.
+correEn(){ # <cwd> <comando>
+  node -e 'process.stdout.write(JSON.stringify({cwd:process.argv[1],tool_input:{command:process.argv[2]}}))' "$1" "$2" \
+    | node "$HOOK" >"$TMP/out.txt" 2>"$TMP/err.txt"
+  echo $?
+}
+STAMP="$AQUI/scripts/lib/portable-stamp.js"
+JUG="$TMP/arnes-de-juguete"
+mkdir -p "$JUG/scripts/ci" "$JUG/scripts/setup" "$JUG/docs"
+cp "$AQUI/scripts/ci/heavy-suites.json" "$AQUI/scripts/ci/suites-for-change.js" "$JUG/scripts/ci/"
+echo base > "$JUG/scripts/setup/instalar.js"; echo base > "$JUG/docs/nota.md"
+g(){ GIT_AUTHOR_DATE="2026-01-01T00:00:00Z" GIT_COMMITTER_DATE="2026-01-01T00:00:00Z" git -C "$JUG" -c maintenance.auto=false -c user.name=prueba -c user.email=prueba@example.invalid "$@" >/dev/null 2>&1; }
+g init -q -b main; g add -A; g commit -qm base; g update-ref refs/remotes/origin/main HEAD; g checkout -qb fix/instalador
+echo cambio > "$JUG/scripts/setup/instalar.js"; g commit -qam "toca el instalador"
+GH_AUTO='gh pr merge 77 --merge --auto'
+AZ_AC="$BIEN"
+
+# P1 — toca el instalador y no hay constancia: frena, y dice cómo correrlas
+limpia; rc=$(correEn "$JUG" "$GH_AUTO")
+[ "$rc" -eq 2 ] && grep -q "portable-suites.test.sh" "$TMP/err.txt" && grep -q "TYCON_PORTABLE_BY_HAND=1" "$TMP/err.txt" \
+  && ok "P1 encolar con gh un cambio del instalador sin portables frena y dice cómo correrlas" || no "P1 no frenó el gh sin portables ($rc): $(head -c 200 "$TMP/err.txt")"
+grep -q '"freno":"pr-sin-portables".*"veredicto":"bloqueo"' "$ST/frenos.jsonl" 2>/dev/null \
+  && ok "P1 …y anota el bloqueo en la constancia de los frenos" || no "P1 no anotó el bloqueo"
+limpia; rc=$(correEn "$JUG" "$AZ_AC")
+[ "$rc" -eq 2 ] && grep -q "toca el instalador" "$TMP/err.txt" \
+  && ok "P1 el create bien armado de Azure también frena sin portables" || no "P1 el create de Azure pasó sin portables ($rc)"
+
+# P2 — con la constancia del árbol de HEAD, pasa
+node "$STAMP" record "$JUG" >/dev/null 2>&1
+limpia; rc=$(correEn "$JUG" "$GH_AUTO")
+[ "$rc" -eq 0 ] && ok "P2 con las portables en verde para ese árbol, encola" || no "P2 frenó con la constancia puesta ($rc): $(head -c 200 "$TMP/err.txt")"
+
+# P3 — la constancia es del árbol: otro commit que cambia el contenido la pide de nuevo
+echo otro > "$JUG/scripts/setup/instalar.js"; g commit -qam "otro cambio"
+limpia; rc=$(correEn "$JUG" "$GH_AUTO")
+[ "$rc" -eq 2 ] && ok "P3 un árbol nuevo pide su propia constancia" || no "P3 dejó pasar un árbol sin constancia ($rc)"
+
+# P4 — con cambios sin commitear, record no anota: lo medido no es lo que va en el commit
+echo sucio > "$JUG/scripts/setup/instalar.js"
+node "$STAMP" record "$JUG" > "$TMP/rec.txt" 2>&1
+g checkout -q -- scripts/setup/instalar.js
+limpia; rc=$(correEn "$JUG" "$GH_AUTO")
+[ "$rc" -eq 2 ] && grep -q "sin commitear" "$TMP/rec.txt" && ok "P4 con cambios sin commitear no queda constancia" || no "P4 anotó con el árbol sucio ($rc): $(cat "$TMP/rec.txt")"
+# …y un árbol distinto del del principio, tampoco
+node "$STAMP" record "$JUG" 0000000000000000000000000000000000000000 > "$TMP/rec.txt" 2>&1
+limpia; rc=$(correEn "$JUG" "$GH_AUTO")
+[ "$rc" -eq 2 ] && grep -q "cambió mientras corrían" "$TMP/rec.txt" && ok "P4 si el árbol cambió mientras corrían, no queda constancia" || no "P4 anotó con el árbol cambiado ($rc)"
+
+# P5 — el prefijo deja encolar una vez, con constancia
+limpia; rc=$(correEn "$JUG" "TYCON_PORTABLE_BY_HAND=1 $GH_AUTO")
+[ "$rc" -eq 0 ] && grep -q "PORTABLE_A_MANO" "$ST/bypass.log" 2>/dev/null && grep -q '"freno":"pr-sin-portables".*"veredicto":"escape"' "$ST/frenos.jsonl" 2>/dev/null \
+  && ok "P5 TYCON_PORTABLE_BY_HAND=1 encola y deja constancia" || no "P5 el prefijo no funcionó o no dejó constancia ($rc)"
+# …y el otro prefijo no lo saltea: son dos frenos
+limpia; rc=$(correEn "$JUG" "TYCON_PR_BY_HAND=1 $GH_AUTO")
+[ "$rc" -eq 2 ] && ok "P5 TYCON_PR_BY_HAND=1 no saltea las portables" || no "P5 el prefijo del otro freno salteó las portables ($rc)"
+
+limpia; rc=$(correEn "$JUG" "TYCON_PR_BY_HAND=1 gh pr merge 77 --squash --auto")
+[ "$rc" -eq 2 ] && grep -q "toca el instalador" "$TMP/err.txt" && ok "P5 un merge mal armado con el prefijo del otro freno igual pide las portables" || no "P5 el prefijo del otro freno salteó las portables en un mal armado ($rc)"
+
+# P6 — un cambio que no toca el instalador no pide constancia
+g checkout -q main; g checkout -qb docs/nota; echo cambio > "$JUG/docs/nota.md"; g commit -qam "sólo una nota"
+limpia; rc=$(correEn "$JUG" "$GH_AUTO")
+[ "$rc" -eq 0 ] && ok "P6 un cambio que no toca el instalador encola sin portables" || no "P6 frenó un cambio que no toca el instalador ($rc): $(head -c 200 "$TMP/err.txt")"
+
+# P7 — no poder saber frena (sin origin/main no se sabe qué trae la rama)
+g update-ref -d refs/remotes/origin/main
+limpia; rc=$(correEn "$JUG" "$GH_AUTO")
+[ "$rc" -eq 2 ] && grep -q "no pude saber" "$TMP/err.txt" && ok "P7 sin poder listar el cambio frena y lo dice" || no "P7 no frenó sin poder mirar ($rc)"
+
+# P8 — fuera de un repo del arnés, o sin cwd en el evento, no aplica; tampoco a lo que no encola
+limpia; rc=$(correEn "$TMP" "$GH_AUTO")
+[ "$rc" -eq 0 ] && ok "P8 fuera de un repo del arnés no aplica" || no "P8 frenó fuera del arnés ($rc)"
+limpia; rc=$(corre "$GH_AUTO")
+[ "$rc" -eq 0 ] && ok "P8 sin cwd en el evento no aplica" || no "P8 frenó sin cwd ($rc)"
+limpia; rc=$(correEn "$JUG" "gh pr view 77 && echo gh pr merge 77 --auto")
+[ "$rc" -eq 0 ] && ok "P8 ver un pedido, o escribir el comando con echo, no encola" || no "P8 frenó algo que no encola ($rc)"
+
 echo "─────────────"
 [ "$fallos" -eq 0 ] && { echo "✅ pr-sin-auto-complete: todo verde ($casos casos)"; exit 0; } || { echo "❌ pr-sin-auto-complete: $fallos falla(s) de $casos"; exit 1; }
