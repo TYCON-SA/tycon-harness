@@ -881,6 +881,10 @@ function aplicarEsperasDelHilo(c, marker) {
   c.tiempos.espera_del_hilo_ms = t.espera_del_hilo_ms || 0;
 }
 
+/** El texto hasta `max` caracteres, y si era más largo, cortado ahí con «…». */
+// por caracteres, no por unidades de UTF-16: un emoji en el corte no se parte a la mitad
+const recortar = (s, max) => { const c = Array.from(s); return c.length > max ? `${c.slice(0, max).join('').trimEnd()}…` : s; };
+
 /**
  * De qué fue la corrida, en una frase. En orden: el título de la story (del frontmatter, cuando la corrida
  * lo tuvo a la vista), el asunto de su primer commit, y si no hay hilo,
@@ -1621,7 +1625,7 @@ function tabla(M, opts = {}) {
       : `<span class="nd" title="${esc(enIdioma(I, c.consumo.motivo))}">${x(c.consumo.estado === 'borrada' ? 'v.borrada' : 'v.noMedido')}</span><small>${c.consumo.estado === 'borrada' ? x('v.borradaMotivo') : esc(enIdioma(I, c.consumo.motivo))}</small>`;
     return `<tr data-i="${idx}" data-id="${esc(c.id || '')}" id="c-${idx}">
       <td class="fecha">${esc((c.inicio || '').slice(0, 10) || L(I, 'v.sinFecha'))}<small>${esc(semanaVisible(c.semana, I))}</small></td>
-      <td class="story"><b>${esc(c.story || '—')}</b>${c.descripcion ? `<span class="desc" title="${esc(c.descripcion.texto)}">${esc(c.descripcion.texto)}</span>` : ''}<small>${esc(c.producto ? rotuloProducto(c.producto) : L(I, 'v.productoSinRegistrar'))}</small></td>${M.varias_maquinas ? `
+      <td class="story"><b>${esc(c.story || '—')}</b>${c.descripcion ? `<span class="desc" title="${esc(c.descripcion.texto)}">${esc(recortar(c.descripcion.texto, 240))}</span>` : ''}<small>${esc(c.producto ? rotuloProducto(c.producto) : L(I, 'v.productoSinRegistrar'))}</small></td>${M.varias_maquinas ? `
       <td class="maq-td">${c.maquina ? `<span class="maq">${esc(c.maquina)}</span>${c.maquina_nota ? `<small>${esc(enIdioma(I, c.maquina_nota))}</small>` : ''}` : `<span class="nd" title="${esc(enIdioma(I, c.maquina_motivo || ''))}">${x('v.sinDeclarar')}</span>`}</td>` : ''}
       <td class="barra">${barraTramos(c, escala, I, M.pasos.nombres)}</td>
       <td class="dur">${dur(c.dur_ms, I)}</td>
@@ -1833,9 +1837,14 @@ const CLIENTE_FUENTE = String.raw`(function () {
     catch (e) { if (typeof console !== 'undefined') console.warn('ejecuciones: los textos de la página no se pudieron leer; quedan en castellano', e); return null; }
   })() || ES_TXT;
   // una clave que falta en el bloque de la página (una página de otra versión) sale en castellano, nunca como la clave
+  // con {n} = 1, la clave en singular (la misma con un 1 al final) si existe; y «1 ejecuciones» de cualquier texto sale en singular
   function T(k, v) {
+    var tiene = function (x) { return Object.prototype.hasOwnProperty.call(TXT, x) || Object.prototype.hasOwnProperty.call(ES_TXT, x); };
+    if (v && v.n === 1 && tiene(k + '1')) k = k + '1';
     var s = Object.prototype.hasOwnProperty.call(TXT, k) ? TXT[k] : Object.prototype.hasOwnProperty.call(ES_TXT, k) ? ES_TXT[k] : k;
-    return v ? s.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, function (m, n) { return Object.prototype.hasOwnProperty.call(v, n) ? String(v[n]) : m; }) : s;
+    if (!v) return s;
+    return s.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, function (m, n) { return Object.prototype.hasOwnProperty.call(v, n) ? String(v[n]) : m; })
+      .replace(/(^|[^0-9.,])1 ejecuciones/g, '$11 ejecución').replace(/(^|[^0-9.,])1 runs([^a-z]|$)/g, '$11 run$2');
   }
   // story 2.27: la FUENTE de los datos. Embebida en la página local (el modelo en #modelo y los textos en cz-N/cg-N,
   // sin red); por la red en la pestaña del sitio (#fuente-corridas: la lista, el detalle al abrir una corrida y los
@@ -1930,12 +1939,13 @@ const CLIENTE_FUENTE = String.raw`(function () {
   function timeline(c) {
     var notas = []; c._notas = notas;
     if (c.consumo.estado === 'medido' && c.consumo.fuera_de_ventana) notas.push('+' + miles(c.consumo.fuera_de_ventana) + ' ' + T('fueraVentana1') + ' <b>' + T('fueraVentana2') + '</b> ' + T('fueraVentana3'));
-    if (c.eventos_previos) notas.push(c.eventos_previos + ' ' + T('previos1') + ' <b>' + T('previos2') + '</b> ' + T('previos3'));
+    var nPrev = { n: c.eventos_previos };
+    if (c.eventos_previos) notas.push(c.eventos_previos + ' ' + T('previos1', nPrev) + ' <b>' + T('previos2', nPrev) + '</b> ' + T('previos3', nPrev));
     var durMin = c.dur_ms ? c.dur_ms / 60000 : null;
     var finTramos = c.tramos.reduce(function (a, t) { return a + t.ms / 60000; }, 0);
     var conT = c.eventos.filter(function (e) { return e.t !== null; });
     var sinT = c.eventos.length - conT.length;
-    if (sinT) notas.push(sinT + ' ' + T('sinMinuto1') + ' <b>' + T('sinMinuto2') + '</b>' + T('sinMinuto3'));
+    if (sinT) notas.push(sinT + ' ' + T('sinMinuto1', { n: sinT }) + ' <b>' + T('sinMinuto2') + '</b>' + T('sinMinuto3', { n: sinT }));
     var eds = (c.cambios && c.cambios.estado === 'leido') ? c.cambios.lista.filter(function (e) { return e.t !== null && e.t >= 0; }) : [];
     var maxT = Math.max(durMin || 0, finTramos,
       conT.reduce(function (a, e) { return Math.max(a, e.t); }, 0),
@@ -2519,8 +2529,8 @@ const CLIENTE_FUENTE = String.raw`(function () {
     var rev = de('revisada'), salt = de('saltada').length, sinRev = de('sin_revision').length, noMed = de('no_medido').length;
     var conocidas = rev.length + salt + sinRev;
     var b = function (n) { return '<b>' + n + '</b> '; };
-    var aparte = (salt ? ' · ' + b(salt) + T('rpSaltadas') : '') + (sinRev ? ' · ' + b(sinRev) + T('rpSinRevision') : '')
-      + (noMed ? ' · ' + b(noMed) + T('rpNoMedidas') : '') + (viejas ? ' · ' + b(viejas) + T('rpAnteriores') : '');
+    var aparte = (salt ? ' · ' + b(salt) + T('rpSaltadas', { n: salt }) : '') + (sinRev ? ' · ' + b(sinRev) + T('rpSinRevision') : '')
+      + (noMed ? ' · ' + b(noMed) + T('rpNoMedidas') : '') + (viejas ? ' · ' + b(viejas) + T('rpAnteriores', { n: viejas }) : '');
     if (!conocidas) return gris(T('rpSinDatoFiltro') + aparte.replace(/<\/?b>/g, '').replace(/^ · /, ': '));
     var seg = function (ms) { return ms < 90000 ? Math.round(ms / 1000) + ' s' : dt(ms / 60000); };
     var tk = rev.filter(function (r) { return num(r.tokens); }).map(function (r) { return r.tokens; });
@@ -2530,14 +2540,18 @@ const CLIENTE_FUENTE = String.raw`(function () {
         + ' · ' + (du.length ? T('rpDuracion') + ' ' + b(seg(mediana(du))).trim() + ' (n=' + du.length + ')' : T('rpSinDuracion'));
     var corregidas = rev.filter(function (r) { return r.corregida === true; }).length;
     return med(T('rpRevisadasDe', { n: rev.length, t: conocidas }), T('nEqDeEjecuciones', { n: F.length - viejas, t: F.length }), {
-      detalle: b(corregidas) + T('rpCorregidas') + ' · ' + costo + aparte });
+      detalle: b(corregidas) + T('rpCorregidas', { n: corregidas }) + ' · ' + costo + aparte });
   }
 
   function resumen(F) {
     var N = F.length;
     // story 2.27 (AC 11): quien todavía no tiene corridas en el buzón no ve «0 corridas» como una medida
     if (!C.length && M.vacio_motivo) return ficha(T('todaviaNo'), gris(M.vacio_motivo));
-    if (!N) return ficha(T('filtroVacio'), gris(M.registro.estado !== 'medido' && M.registro.motivo ? M.registro.motivo : T('filtroVacioMotivo')));
+    if (!N && M.registro.estado !== 'medido' && M.registro.motivo) return ficha(T('filtroVacio'), gris(M.registro.motivo));
+    // un filtro que no deja nada es una medida —cero— y dice qué cambiar: las casillas marcadas, la máquina o el
+    // producto puestos, o el rango
+    if (!N) return ficha(T('filtroVacio'), { estado: 'medido', est: 'neutro', texto: esc(T('nEjecuciones', { n: 0 })),
+      den: T((elFc && elFc.checked) || (elFf && elFf.checked) ? 'filtroVacioCasillas' : elMaq && elMaq.value ? 'filtroVacioMaquina' : elRepo.value ? 'filtroVacioProducto' : 'filtroVacioRango') });
     var dur = F.filter(function (c) { return c.dur_ms; });
     var fin = F.filter(function (c) { return c.llego_al_final; });
     var gz = F.filter(function (c) { return c.controles; });
@@ -2609,7 +2623,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
       ficha(T('fTrabajo'), tMed.length ? med(dt(mediana(tMed.map(function (c) { return c.tiempos.trabajo_ms; })) / 60000), T('nEqDeEjecuciones', { n: tMed.length, t: N }), { detalle: T('trabajoDetalle') + (M.sin_hilos ? ' (' + T('incluyeEsperas') + ' ' + esc(M.sin_hilos) + ')' : '') }) : gris(sinArranque + sinHilo)),
       ficha(T('fEspera'), eMed.length ? med(dt(mediana(eMed.map(function (c) { return c.tiempos.espera_humana_ms; })) / 60000), T('nEqDeEjecuciones', { n: eMed.length, t: N }), { detalle: T('esperaDefinicion') + pisoEspera }) : gris(sinArranque + pisoEspera)),
       ficha(T('fPasos'), pa.length ? med(String(Math.round(mediana(pa))), T('nEqDeEjecuciones', { n: pa.length, t: N }), { detalle: (N - pa.length ? '<b>' + (N - pa.length) + '</b> ' + T('pasosSinMedir') + ' ' : '') + T('tokensConsecuencia') + (LB ? ' ' + T('lineaBaseDelFicha', { f: esc(LB.fecha) }) + ' <b>' + LB.mediana + '</b>' + (LB.corridas ? ' (n=' + LB.corridas + ')' : '') + '.' : ' <b>' + sinLB + '</b>.') }) : gris(T('sinPasosFiltro'))),
-      ficha(T('fTokens'), tk.length ? med(miles(Math.round(mediana(tk))), T('nEqDeEjecuciones', { n: tk.length, t: N }), { detalle: T('deOtras') + ' <b>' + (N - tk.length) + '</b> ' + T('sinConsumoDetalle') }) : gris(T('sinConsumoFiltro')))
+      ficha(T('fTokens'), tk.length ? med(miles(Math.round(mediana(tk))), T('nEqDeEjecuciones', { n: tk.length, t: N }), { detalle: N - tk.length === 0 ? '' : N - tk.length === 1 ? T('deOtra') + ' ' + T('sinConsumoDetalle') : T('deOtras') + ' <b>' + (N - tk.length) + '</b> ' + T('sinConsumoDetalle') }) : gris(T('sinConsumoFiltro')))
     ].join('');
   }
 
@@ -2676,10 +2690,15 @@ const CLIENTE_FUENTE = String.raw`(function () {
   var diaLocal = function (iso) { if (!iso) return ''; var d = new Date(iso); return isNaN(d.getTime()) ? '' : ymd(d); };
   var fechas = C.map(function (c) { return diaLocal(c.inicio); }).filter(Boolean).sort();
   var RANGO = [fechas[0] || '', fechas[fechas.length - 1] || ''];
-  // la columna de la fecha, también en la del navegador: la tabla y el filtro dicen el mismo día (llega en UTC)
+  // la columna de la fecha, también en la del navegador: la tabla y el filtro dicen el mismo día (llega en UTC), y con el
+  // formato del navegador, el mismo que muestran los campos de fecha del filtro
+  var diaVisible = function (iso) {
+    var d = new Date(iso); if (isNaN(d.getTime())) return '';
+    try { return new Date(d.getFullYear(), d.getMonth(), d.getDate()).toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: 'numeric' }); } catch (e) { return ymd(d); }
+  };
   for (var fi = 0; fi < cuerpo.rows.length; fi++) {
     var fr = cuerpo.rows[fi], fk = fr.classList.contains('fila-det') ? null : enC(fr);
-    var fd = fk !== null && C[fk] ? diaLocal(C[fk].inicio) : '', ftd = fd ? fr.querySelector('td.fecha') : null;
+    var fd = fk !== null && C[fk] && C[fk].inicio ? diaVisible(C[fk].inicio) : '', ftd = fd ? fr.querySelector('td.fecha') : null;
     if (ftd && ftd.firstChild && ftd.firstChild.nodeType === 3) ftd.firstChild.nodeValue = fd;
   }
   var cuentaRepo = {};
@@ -2765,6 +2784,9 @@ const CLIENTE_FUENTE = String.raw`(function () {
   if (esta(cuentaRepo, qRepo)) elRepo.value = qRepo;
   else if (qRepo && esta(cuentaRepo, 'laboratorio/' + qRepo)) elRepo.value = 'laboratorio/' + qRepo;
   if (elMaq && esta(cuentaMaq, qMaq)) elMaq.value = ENLACE.maquina = qMaq;
+  // las casillas «sin consumo» y «llegaron» viajan en la dirección como los demás filtros
+  if (leer('sin-consumo') === '1') elFc.checked = true;
+  if (leer('llegaron') === '1') elFf.checked = true;
   if (typeof window !== 'undefined') window.__enlace = function () { return ENLACE; };
   if (SOLO !== null && typeof document !== 'undefined' && document.body && document.body.classList) document.body.classList.add('solo');
   function enFechas(c) {
@@ -2798,7 +2820,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
     var dentro = 0, fuera = 0;
     cs.forEach(function (c) { fuera += c.consumo.fuera_de_ventana; Object.keys(c.consumo.por_paso).forEach(function (k) { dentro += c.consumo.por_paso[k]; }); });
     $('nota-tokens').innerHTML = cs.length
-      ? T('notaTokens1') + ' <b>' + cs.length + '</b> ' + T('notaTokens2') + ' <b>' + T('notaTokens3', { p: n1((fuera / Math.max(1, fuera + dentro)) * 100) }) + '</b> ' + T('notaTokens4')
+      ? T(cs.length === 1 ? 'notaTokens1Una' : 'notaTokens1') + ' <b>' + cs.length + '</b> ' + T(cs.length === 1 ? 'notaTokens2Una' : 'notaTokens2') + ' <b>' + T('notaTokens3', { p: n1((fuera / Math.max(1, fuera + dentro)) * 100) }) + '</b> ' + T('notaTokens4')
       : T('notaTokensSin1') + ' <b>' + T('notaTokensSin2') + '</b>.';
     var n = 0;
     for (var i = 0; i < cuerpo.rows.length; i++) {
@@ -2812,11 +2834,13 @@ const CLIENTE_FUENTE = String.raw`(function () {
   // Escribe en la dirección los filtros que difieren de su valor por defecto; lo demás (solo, abrir, ver, git) queda como estaba.
   function escribirDireccion() {
     if (typeof history === 'undefined' || !history || typeof history.replaceState !== 'function' || typeof location === 'undefined') return;
-    var resto = qs.replace(/^\?/, '').split('&').filter(function (x) { return x && !/^(desde|hasta|producto|maquina)=/.test(x); });
+    var resto = qs.replace(/^\?/, '').split('&').filter(function (x) { return x && !/^(desde|hasta|producto|maquina|sin-consumo|llegaron)=/.test(x); });
     if (elDesde.value && (FIJADA.desde || elDesde.value !== RANGO[0])) resto.push('desde=' + encodeURIComponent(elDesde.value));
     if (elHasta.value && (FIJADA.hasta || elHasta.value !== RANGO[1])) resto.push('hasta=' + encodeURIComponent(elHasta.value));
     if (elRepo.value) resto.push('producto=' + encodeURIComponent(elRepo.value));
     if (elMaq && elMaq.value) resto.push('maquina=' + encodeURIComponent(elMaq.value));
+    if (elFc.checked) resto.push('sin-consumo=1');
+    if (elFf.checked) resto.push('llegaron=1');
     try { history.replaceState(null, '', (location.pathname || '') + (resto.length ? '?' + resto.join('&') : '') + (location.hash || '')); } catch (e) { /* sin historial, el filtro sigue andando */ }
   }
   function alCambiar() { aplicar(); escribirDireccion(); }

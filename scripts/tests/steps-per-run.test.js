@@ -251,7 +251,7 @@ t('@story-7.12 @ac-5 BuzonVacioNoEsCero — «no medido» con su motivo; ningún
   const sinMedir = pasosPorCorrida(cfgReal(), { estado: 'no_aplica' }, { dir: path.join(tmp, 'sin-medir'), hoy: HOY });
   assert.strictEqual(sinMedir.estado, 'no_medido');
   assert.strictEqual(sinMedir.valor, null);
-  assert.ok(/2 ejecución/.test(sinMedir.motivo), `dice cuántas hay sin medir — dice: ${sinMedir.motivo}`);
+  assert.ok(/2 ejecuciones/.test(sinMedir.motivo), `dice cuántas hay sin medir — dice: ${sinMedir.motivo}`);
 
   // Y el tercero: la carpeta del buzón ni existe (una máquina sin permiso de lectura).
   const ausente = pasosPorCorrida(cfgReal(), { estado: 'no_aplica' }, { dir: path.join(tmp, 'no-existe'), hoy: HOY });

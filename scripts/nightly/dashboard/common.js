@@ -84,7 +84,7 @@ function chip(estado, palabra) {
 function ficha(cfg, clave, titulo, m, fmt, palabras = {}, pie = null) {
   const est = juzgar(cfg, clave, m);
   if (est === 'blind') {
-    return `<div class="tile blind">${chip('blind', 'no medido')}<div class="t-label">${esc(titulo)}</div><div class="t-val">falta</div><div class="t-den">${esc((m && m.motivo) || 'sin motivo declarado — es un error del colector')}</div>${pie ? `<div class="t-foot">${pie}</div>` : ''}</div>`;
+    return `<div class="tile blind">${chip('blind', 'no medido')}<div class="t-label">${esc(titulo)}</div><div class="t-val">sin dato</div><div class="t-den">${esc((m && m.motivo) || 'sin motivo declarado — es un error del colector')}</div>${pie ? `<div class="t-foot">${pie}</div>` : ''}</div>`;
   }
   const et = m.den_etiqueta ? ` ${esc(m.den_etiqueta)}` : '';
   const den = m.unidad === 'ratio'

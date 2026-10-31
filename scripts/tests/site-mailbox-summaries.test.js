@@ -110,7 +110,7 @@ test('T48 Sitio_ConConversacionesNuncaPasaDelTope @story-2.30 @ac-25', { skip: S
     assert.deepStrictEqual(conversacionesEn(path.join(datos, 'buzon')), [], 'ninguna conversación quedó en el disco');
     const resumenes = fs.readdirSync(path.join(datos, 'buzon', 'maq-a')).filter((f) => f.endsWith(runs.RESUMEN.sufijo));
     assert.strictEqual(resumenes.length, N, 'cada ejecución, con su resumen');
-    assert.ok(registro.some((l) => /ejecución\(es\) resumida\(s\)/.test(l)), 'el registro dice que resumió');
+    assert.ok(registro.some((l) => /(1 ejecución resumida|\d+ ejecuciones resumidas)/.test(l)), 'el registro dice que resumió');
     // y con el disco del tamaño de hoy: el espejo entero (volcados y resúmenes) es chico
     // el espejo entero: los volcados, los resúmenes (unos kilos cada uno) y lo chico de la bajada; nunca una conversación
     const volcados = Object.entries(blobs).filter(([n]) => n.endsWith('.json')).reduce((t, [, b]) => t + Buffer.from(b).length, 0);

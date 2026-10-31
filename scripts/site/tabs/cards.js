@@ -20,6 +20,8 @@ const { t } = require('../texts.js');
 const PREGUNTAS = Object.freeze([0, 1, 2, 3, 4, 5].map((n) => t('es', `ficha.pregunta${n}`)));
 
 const PESTANAS = Object.freeze(['arnes', 'proyectos', 'corridas']);
+// las causas con nombre propio en «por qué volvió» (scripts/metrics/rework-causes.json, más la que no declaró)
+const CAUSAS = Object.freeze(['defecto-propio', 'cambio-de-requisito', 'deuda-declarada', 'descubrimiento', 'sin-declarar']);
 
 /**
  * `id` fijo (es lo que `site.hidden_cards` nombra: no se renombra), `pregunta` (posición en PREGUNTAS), `pestana`, `titulo` y
@@ -31,7 +33,7 @@ const DEFINICIONES = [
   { id: 'fechas_declaradas', pregunta: 0, pestana: 'arnes', de: ['extra', 'fechas_declaradas'], formato: 'pct', clave: '' },
   { id: 'backlog', pregunta: 1, pestana: 'proyectos', de: ['extra', 'backlog'], formato: 'entero', clave: '' },
   { id: 'estados_sin_diccionario', pregunta: 1, pestana: 'proyectos', de: ['extra', 'estados_sin_diccionario'], formato: 'entero', clave: '' },
-  { id: 'tiempo_por_etapa', pregunta: 1, pestana: 'proyectos', de: ['extra', 'tiempo_por_etapa'], formato: 'num1', clave: '' },
+  { id: 'tiempo_por_etapa', pregunta: 1, pestana: 'proyectos', de: ['extra', 'tiempo_por_etapa'], formato: 'num1', clave: '', unidadDelValor: 'dias' },
   { id: 'edad_estado', pregunta: 1, pestana: 'proyectos', de: ['extra', 'edad_estado'], formato: 'entero', clave: '' },
   { id: 'sin_historia', pregunta: 1, pestana: 'proyectos', de: ['extra', 'sin_historia'], formato: 'pct', clave: '' },
   { id: 'dod', pregunta: 2, pestana: 'arnes', de: ['mejora', 'dod'], formato: 'pct', clave: 'dod' },
@@ -41,7 +43,7 @@ const DEFINICIONES = [
   { id: 'mutacion', pregunta: 3, pestana: 'arnes', de: ['local', 'mutacion'], formato: 'pct', clave: 'mutacion' },
   { id: 'cobertura_tocada_evaluo', pregunta: 3, pestana: 'arnes', de: ['local', 'cobertura_tocada'], formato: 'pct', clave: 'cobertura_tocada_evaluo' },
   { id: 'qa_guia', pregunta: 3, pestana: 'arnes', de: ['local', 'qa_guia'], formato: 'pct', clave: 'qa_guia' },
-  { id: 'gates_dur', pregunta: 3, pestana: 'arnes', de: ['local', 'gates_dur'], formato: 'num1', clave: '' },
+  { id: 'gates_dur', pregunta: 3, pestana: 'arnes', de: ['local', 'gates_dur'], formato: 'num1', clave: '', unidadDelValor: 'segundos' },
   { id: 'bloqueos', pregunta: 4, pestana: 'corridas', de: ['local', 'bloqueos'], formato: 'entero', clave: '' },
   { id: 'frenos', pregunta: 4, pestana: 'arnes', de: ['local', 'frenos'], formato: 'entero', clave: '' },
   { id: 'evidencia_cierre', pregunta: 4, pestana: 'arnes', de: ['local', 'evidencia_cierre'], formato: 'pct', clave: '' },
@@ -106,7 +108,7 @@ const codigoDen = (v) => (typeof v === 'string' && CODIGO_DEN.has(v) ? CODIGO_DE
  * `nivel` es el color que le da sources.json (ok / warn / bad), o '' si no tiene juicio.
  */
 function proyectar(def, m, cfg) {
-  const base = { id: def.id, pregunta: def.pregunta, pestana: def.pestana, formato: def.formato };
+  const base = { id: def.id, pregunta: def.pregunta, pestana: def.pestana, formato: def.formato, ...(def.unidadDelValor ? { unidadDelValor: def.unidadDelValor } : {}) };
   if (!m || typeof m !== 'object' || m.estado !== 'medido') {
     return { ...base, estado: 'no_medido', nivel: '', valor: null, medidos: null, total: null, den: null, fecha: fechaCorta(m && m.fecha), motivo: motivoCerrado(m && m.motivo) };
   }
@@ -121,7 +123,21 @@ function proyectar(def, m, cfg) {
     valor: num(m.valor), medidos: num(m.medidos), total: num(m.total),
     den: codigoDen(m.den_etiqueta), unidad: m.unidad === 'ratio' ? 'ratio' : 'conteo',
     fecha: fechaCorta(m.fecha), motivo: null,
+    // de cuántos días habla «empezadas que llevan más de N días», y la cuenta de cada causa de «Por qué volvió»: sólo
+    // números y las claves del vocabulario cerrado de causas
+    ...(def.id === 'edad_estado' && m.edad && Array.isArray(m.edad.dias) && num(m.edad.dias[0]) !== null ? { umbralDias: num(m.edad.dias[0]) } : {}),
+    ...(def.id === 'rework_por_causa' && Array.isArray(m.barras)
+      ? { causas: m.barras.filter((b) => b && typeof b.clave === 'string' && /^[a-z][a-z-]{0,39}$/.test(b.clave) && num(b.n) !== null).slice(0, 12).map((b) => ({ clave: b.clave, n: num(b.n) }))
+        // las que el tablero cuenta aparte, fuera del vocabulario: una sola cuenta, sin sus claves
+        .concat(fueraDelVocabulario(m.fuera_de_vocabulario)) }
+      : {}),
   };
+}
+
+/** La suma de las causas fuera del vocabulario (`[[clave, n], …]` del tablero) como una causa más, o ninguna. */
+function fueraDelVocabulario(lista) {
+  const n = (Array.isArray(lista) ? lista : []).reduce((a, x) => a + (Array.isArray(x) && num(x[1]) !== null ? num(x[1]) : 0), 0);
+  return n > 0 ? [{ clave: 'fuera-del-vocabulario', n }] : [];
 }
 
 /** Lo de `de` dentro de los paneles del tablero, sin romper si el panel falta. */
@@ -224,7 +240,12 @@ function tile(f, idioma = 'es') {
   const etiq = f.den ? ` ${esc(T(`den.${f.den}`))}` : '';
   const de = (a, b) => esc(T('fichas.de', { medidos: a, total: b }));
   const den = f.unidad === 'ratio' ? `${de(f.medidos, f.total)}${etiq}` : `n=${f.total && f.total !== f.medidos ? de(f.medidos, f.total) : esc(f.medidos)}${etiq}`;
-  return `<div class="tile ${est}" data-ficha="${esc(f.id)}">${chip(est, T(f.estado === 'declarado' ? 'fichas.declarado' : `fichas.${PALABRA[f.nivel] || 'medido'}`))}<div class="t-label">${esc(titulo)}</div><div class="t-val">${esc(formatear(f, idioma))}</div><div class="t-den">${den}</div>${f.fecha ? `<div class="t-den">${esc(T('fichas.fuenteDel', { fecha: f.fecha }))}</div>` : ''}</div>`;
+  // el número con su unidad («6,4 días», «1 segundo»); el singular sale del número que se muestra, ya redondeado
+  const valor = formatear(f, idioma);
+  const unidad = f.unidadDelValor ? ` ${T(`fichas.unidad.${f.unidadDelValor}${valor === '1' ? '1' : ''}`)}` : '';
+  const extra = (Number.isFinite(f.umbralDias) ? `<div class="t-den">${esc(T(f.umbralDias === 1 ? 'fichas.masDeUnDia' : 'fichas.masDeDias', { d: f.umbralDias }))}</div>` : '')
+    + (Array.isArray(f.causas) && f.causas.length ? `<div class="t-den">${esc(f.causas.map((c) => `${T(CAUSAS.includes(c.clave) ? `fichas.causa.${c.clave}` : 'fichas.causa.otra')} ${c.n}`).join(' · '))}</div>` : '');
+  return `<div class="tile ${est}" data-ficha="${esc(f.id)}">${chip(est, T(f.estado === 'declarado' ? 'fichas.declarado' : `fichas.${PALABRA[f.nivel] || 'medido'}`))}<div class="t-label">${esc(titulo)}</div><div class="t-val">${esc(valor + unidad)}</div><div class="t-den">${den}</div>${extra}${f.fecha ? `<div class="t-den">${esc(T('fichas.fuenteDel', { fecha: f.fecha }))}</div>` : ''}</div>`;
 }
 
 /** Las fichas de una pestaña, en una grilla por pregunta (o en una sola, sin título, si `sinPreguntas`). */

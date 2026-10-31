@@ -856,7 +856,7 @@ function pasosPorCorrida(cfg, buzon = { estado: 'no_aplica' }, opts = {}) {
   // Un volcado cortado puede ser una corrida: se queda en el denominador, como las sin medir.
   const N = r.corridas + r.sin_medir + r.ilegibles;
   if (!N) return noMedida('el buzón de ejecuciones está vacío: no hay ninguna ejecución que contar');
-  if (!r.corridas) return noMedida(`ninguna de las ${N} ejecución(es) del buzón tiene su consumo medido: los pasos no se estiman`);
+  if (!r.corridas) return noMedida(N === 1 ? 'la única ejecución del buzón no tiene su consumo medido: sus pasos no se estiman' : `ninguna de las ${N} ejecuciones del buzón tiene su consumo medido: los pasos no se estiman`);
   // La fecha del número es la de la corrida MEDIDA más nueva (`filas` viene ordenada por inicio).
   const fecha = r.filas[r.filas.length - 1].inicio || null;
   const edad = edadDias(fecha, opts.hoy || ahoraMs());
@@ -889,9 +889,9 @@ function denominadorPoda(c) {
   const sinMedir = c.hallazgos.maquinas_sin_medir || [];
   return `hallazgos y oportunidades de ${c.hallazgos.maquinas} máquina(s) con los hallazgos medidos; `
     + `el denominador sale de ${c.corridas.con_denominador} de ${c.corridas.total} ejecuciones`
-    + (c.corridas.no_leidas ? ` (${c.corridas.no_leidas} ejecución(es) más no cuentan: el recolector no pudo leer sus hallazgos)` : '')
+    + (c.corridas.no_leidas ? (c.corridas.no_leidas === 1 ? ' (1 ejecución más no cuenta: el recolector no pudo leer sus hallazgos)' : ` (${c.corridas.no_leidas} ejecuciones más no cuentan: el recolector no pudo leer sus hallazgos)`) : '')
     + (sinMedir.length ? `; sin medir: ${sinMedir.map((m) => `${m.alias} (${m.motivo})`).join(' · ')}` : '')
-    + (c.corridas.descartadas_sin_hallazgos ? `; ${c.corridas.descartadas_sin_hallazgos} ejecución(es) de las máquinas sin medir no se cuentan` : '');
+    + (c.corridas.descartadas_sin_hallazgos ? (c.corridas.descartadas_sin_hallazgos === 1 ? '; 1 ejecución de las máquinas sin medir no se cuenta' : `; ${c.corridas.descartadas_sin_hallazgos} ejecuciones de las máquinas sin medir no se cuentan`) : '');
 }
 function podaPanel(buzon = { estado: 'no_aplica' }) {
   if (AMB.nocturno && buzon.estado !== 'leido') {
@@ -1453,7 +1453,7 @@ function filaFuente(f) {
 }
 
 function grafico(lm) {
-  if (!lm || lm.estado !== 'medido') return `<div class="tile blind">${chip('blind', 'no medido')}<div class="t-label">Vida de una story por mes de cierre</div><div class="t-val">falta</div><div class="t-den">${esc((lm && lm.motivo) || '')}</div></div>`;
+  if (!lm || lm.estado !== 'medido') return `<div class="tile blind">${chip('blind', 'no medido')}<div class="t-label">Vida de una story por mes de cierre</div><div class="t-val">sin dato</div><div class="t-den">${esc((lm && lm.motivo) || '')}</div></div>`;
   const meses = lm.meses.slice(-8);
   // el mes UTC de hoy todavía no cerró. Se dibuja, con la palabra «en curso»; la nota habla del último
   // mes ANTERIOR. Llamarlo cerrado con quince días de datos era lo que engañaba.
@@ -1499,7 +1499,7 @@ function tablaPoda(P) {
     .sort((a, b) => orden.indexOf(a.estado) - orden.indexOf(b.estado) || (a.dueno < b.dueno ? -1 : a.dueno > b.dueno ? 1 : (a.regla < b.regla ? -1 : 1)));
   const c = P.cobertura;
   const colision = (P.colisiones || []).length
-    ? ` <b>${P.colisiones.length} identificador(es) tienen dos dueños</b> (${P.colisiones.map((x) => esc(x.regla)).join(', ')}): la tabla cuenta por (dueño, regla), no por identificador.`
+    ? ` <b>${P.colisiones.length === 1 ? '1 identificador tiene' : `${P.colisiones.length} identificadores tienen`} dos dueños</b> (${P.colisiones.map((x) => esc(x.regla)).join(', ')}): la tabla cuenta por (dueño, regla), no por identificador.`
     : '';
   return `<details><summary>Hallazgos por regla, con su denominador — ${P.total} reglas, del ${esc(P.ventana.desde)} al ${esc(P.ventana.hasta)}</summary>
     <table><tr><th>Estado</th><th>Reglas</th></tr>

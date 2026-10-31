@@ -500,7 +500,8 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     // con una capa que pide una versión que no lee `approvals`, se muestra y no se propone (como `response`)
     if (s.id === 'aprobaciones') {
       // el catálogo de firmas y las huellas que vio el buzón: la pantalla arma una fila por firma y la lista de máquinas
-      v.extras = ORG.extrasDeAprobaciones(contextoPersonas(doc).informados);
+      // y, con el lector de la sección, qué valor guardado rechaza en cada lista de firmas
+      v.extras = ORG.extrasDeAprobaciones(contextoPersonas(doc).informados, { lector: lec, approvals: doc && doc.approvals });
       const capa = leerDe(dir, 'team-layer.json');
       const gate = ORG.teamProfileGateProblem({ layerText: capa.estado === 'leido' ? capa.texto : '', versionImagen, doc: { approvals: {} } });
       if (gate) { v.soloLectura = true; v.motivo = gate; }

@@ -59,6 +59,7 @@ main{min-width:0;box-sizing:border-box;padding:30px 40px 80px;max-width:1240px;w
 .s-head h1{margin:0;font:600 34px/1.05 var(--serif);letter-spacing:-.015em}
 .s-head p{margin:6px 0 0;color:var(--ink-2)}
 .lede{font-size:16px;color:var(--ink-2);margin:0}
+main>.aviso{margin:0 0 18px}
 .banda{margin:0 0 18px;padding:12px 16px;border-radius:12px;border:1px solid color-mix(in srgb,var(--bad) 45%,transparent);background:color-mix(in srgb,var(--bad) 9%,var(--surface));color:var(--ink);font-weight:600}
 
 /* ── secciones ── */
@@ -97,6 +98,10 @@ h3.block{margin:34px 0 12px;display:flex;gap:10px;align-items:baseline;flex-wrap
 .lista{margin:0;padding:4px 20px;list-style:none;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}
 .lista li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;align-items:center;margin:0;padding:11px 0;border-bottom:1px solid var(--line);font-size:14px}
 .lista li:last-child{border-bottom:0}
+/* las listas de Inicio: el enlace (o su lugar vacío) y el texto, en dos columnas parejas */
+.lista.dos li{grid-template-columns:auto minmax(0,1fr)}
+.lista.dos .li-marca:empty{display:none}
+.lista.dos .li-marca:empty + span{grid-column:1/-1}
 .lista li.nm{color:var(--nm-ink)}
 .lista .pieza{font-weight:600}.lista .estado{grid-column:1;font-size:13px;color:var(--ink-2)}
 .lista .marca{grid-row:1/span 2;grid-column:2}
@@ -235,6 +240,27 @@ select.corto.bad{border-color:var(--bad);color:var(--bad-ink)}
 .tabla2 .edit .listo{justify-self:end}
 /* Integraciones: el nombre y qué hace · el selector */
 .tabla2.integ{grid-template-columns:minmax(0,1fr) max-content}
+/* Personas: el estado de una invitación y su «Revocar» separados; el campo de productos muestra su ejemplo entero */
+.invitado{display:inline-flex;flex-wrap:wrap;align-items:center;gap:8px}
+.invitar input.productos{min-width:36ch}
+@media (max-width:560px){.invitar input.productos{min-width:0;width:100%}}
+/* Quién firma cada cosa: la firma y, al lado, cada una de sus formas con cómo se pide y su selector */
+.tabla2.firmas{grid-template-columns:minmax(0,1fr) minmax(0,1.6fr)}
+.tabla2.firmas .r > .formas{display:grid;grid-template-columns:minmax(0,1fr) minmax(9em,14em);gap:4px 10px;align-items:center}
+.tabla2.firmas .r > .formas .forma{display:contents}
+.tabla2.firmas .r > .formas .muted{font-size:12.5px;overflow-wrap:anywhere}
+/* «Quién firma cada cosa» por nivel (story 2.79): la cabeza de cada bloque ocupa el renglón entero, con su frase abajo */
+.tabla2.firmas .r.nivel-cab > .nivel-t{grid-column:1/-1;flex-direction:column;align-items:flex-start;gap:2px;padding:14px 0 6px;border-bottom:1px solid var(--line-strong)}
+.tabla2.firmas .r.nivel-cab .muted{font-size:13px}
+.tabla2.niveles{grid-template-columns:minmax(0,1fr) minmax(9em,14em)}
+/* la matriz corta de la guía: cinco columnas; más ancha que un teléfono, se corre dentro de su caja */
+.matriz-scroll{max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;margin:6px 0}
+.matriz{display:grid;grid-template-columns:minmax(12em,1.6fr) repeat(5,minmax(7.5em,1fr));min-width:48em;font-size:13.5px;border-top:1px solid var(--line)}
+.matriz .r{display:contents}
+.matriz .r > *{padding:6px 10px 6px 0;border-bottom:1px solid var(--line);min-width:0}
+.matriz .h > span{font-size:12px;font-weight:600;color:var(--muted);overflow-wrap:anywhere}
+.matriz [role=rowheader]{color:var(--ink);font-weight:600}
+.matriz [role=cell]{color:var(--ink-2)}
 /* los pedidos de vulnerabilidades (story 4.9): el tipo y los campos fijos en un recuadro, una tabla por gravedad (más ancha que un teléfono: se corre dentro de su caja) y el aviso sin las listas */
 #config-app .pedidos-arriba{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 16px;padding:14px 16px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2)}
 .pedidos-arriba .campo{min-width:140px;flex:0 1 auto}
@@ -362,6 +388,8 @@ pre{margin:0;padding:12px 14px;border-radius:10px;background:var(--surface-2);bo
   .tabla2.pedidos .h{display:contents}
   .tabla2.modelos{grid-template-columns:max-content minmax(0,1fr)}
   .tabla2.modelos select.corto{width:12em}
+  /* la equivalencia del modelo se parte en el teléfono: entera, corría la página de costado */
+  .tabla2.modelos .equiv{white-space:normal}
   .tabla2.modelos .r > .que{grid-column:1/-1;border-bottom:0;padding-bottom:0}
   .tabla2.repos{display:block}
   .tabla2.repos .r{display:grid;grid-template-columns:22px auto minmax(0,1fr) max-content;grid-template-areas:"d t t a" "g g p p";column-gap:8px;border-bottom:1px solid var(--line);padding:4px 0}
@@ -371,6 +399,11 @@ pre{margin:0;padding:12px 14px;border-radius:10px;background:var(--surface-2);bo
   .tabla2.repos .r > .edit,.tabla2.repos .r > .err-fila{grid-area:auto;grid-column:1/-1}
   .tabla2 .edit .fila.repo{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
   .tabla2.integ{grid-template-columns:minmax(0,1fr)}
+  /* las firmas y sus niveles, a una columna: qué se firma arriba, cada forma con su selector abajo */
+  .tabla2.firmas,.tabla2.niveles{grid-template-columns:minmax(0,1fr)}
+  .tabla2.firmas .r > .que,.tabla2.niveles .r > .que{border-bottom:0;padding-bottom:0}
+  .tabla2.firmas .r > .formas{grid-template-columns:minmax(0,1fr)}
+  .tabla2.firmas .r > .formas .muted{padding-top:4px}
   .tabla2.integ .r > .que{border-bottom:0;padding-bottom:0}
   .tabla2.integ .r > .sel{justify-content:flex-end}
   .thr{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.thr > :first-child{grid-column:1/-1;font-weight:600}.thr.h{display:none}
@@ -574,7 +607,7 @@ body.demo .side{top:calc(var(--barra) + 36px);height:calc(100vh - var(--barra) -
 .m-sin-analisis .m-acciones{margin-top:8px}
 .m-detalle p{color:var(--ink-2);font-size:13px}
 .m-q{display:inline-grid;place-items:center;width:20px;height:20px;padding:0;border-radius:50%;border:1px solid var(--line-strong);background:transparent;color:var(--ink-2);font:600 11.5px var(--sans);cursor:pointer;vertical-align:middle}
-.m-pop{max-width:min(420px,calc(100vw - 32px));padding:14px 16px;border:1px solid var(--line-strong);border-radius:12px;background:var(--surface);color:var(--ink);box-shadow:var(--shadow);font-size:14px;line-height:1.5}
+.m-pop{position:fixed;margin:0;inset:auto;max-width:min(420px,calc(100vw - 32px));padding:14px 16px;border:1px solid var(--line-strong);border-radius:12px;background:var(--surface);color:var(--ink);box-shadow:var(--shadow);font-size:14px;line-height:1.5}
 .m-pop p{margin:0}
 .m-pedido{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 16px;margin:0 0 10px}
 .m-pedido-cab{margin:0 0 4px;font-weight:600;font-size:14px}

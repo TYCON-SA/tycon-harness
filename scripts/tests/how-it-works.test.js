@@ -1702,3 +1702,29 @@ test('T30 2.79-HowItWorks_CondicionEscrita_DiceQueSiSeEdita @story-2.79 @ac-27 �
     assert.doesNotMatch(li, /no se edita acá|not edited here/, `${idioma}: no dice que no se edita`);
   }
 }));
+
+// T74 2.79-Lector_ProblemaConEnlace @story-2.79 @ac-67
+// 🔴 Falla con: el problema del lector con la clave cruda adelante («integrations.timeTracking: …») y sin llevar a la
+//    sección de Configuración donde se corrige, o un revisor cuya condición no tiene texto mostrando su id crudo.
+test('T74 2.79-Lector_ProblemaConEnlace @story-2.79 @ac-67 — el problema en llano con su sección; una marca sin texto no muestra su id', () => {
+  const perfil = carpeta(perfilCon());
+  const m = HIW().buildModel({ treeDir: ROOT, profileDir: perfil });
+  assert.ok(m.org, 'el perfil se leyó');
+  m.org.problems = ['integrations.timeTracking: «relojito» no es una herramienta de horas de este árbol', 'algo que el lector dijo sin clave',
+    'site.claveQueNingunaTiene: no se sabe de qué sección es', 'site.auto_apply: tiene que ser sí o no'];
+  const pagos = m.steps.find((s) => s.id === 'reviewers').reviewers.packs.find((r) => r.agent === 'acme-pagos-reviewer');
+  pagos.when = { detection: 'banderaQueNoTieneTexto' };
+  for (const idioma of ['es', 'en']) {
+    const html = TAB().renderPage(m, { idioma, publicRepo: PUBLICO, version: 'v' });
+    const fila = (html.split(TX().t(idioma, 'comoTrabaja.orgProblemas'))[1] || '').split('</section>')[0];
+    assert.match(fila, /href="\/configuracion#seccion-integraciones"/, `${idioma}: lleva a la sección donde se corrige`);
+    assert.ok(fila.includes(TX().t(idioma, 'pantalla.integraciones')), `${idioma}: nombra la sección`);
+    assert.doesNotMatch(fila, /integrations\.timeTracking/, `${idioma}: sin la clave cruda`);
+    assert.match(fila, /«relojito» no es una herramienta de horas/, `${idioma}: el motivo queda`);
+    assert.match(fila, /algo que el lector dijo sin clave[\s\S]*href="\/configuracion"/, `${idioma}: el que no nombra clave lleva a Configuración`);
+    // `site` la tienen varias secciones: sin ruta propia no se elige una al azar, va a Configuración
+    assert.match(fila, /site\.claveQueNingunaTiene: no se sabe de qué sección es <a href="\/configuracion">/, `${idioma}: clave compartida, a Configuración`);
+    assert.match(fila, /tiene que ser sí o no <a href="\/configuracion#seccion-aplicar">/, `${idioma}: con ruta propia, a su sección`);
+    assert.doesNotMatch(html, /banderaQueNoTieneTexto/, `${idioma}: sin el id crudo de la marca`);
+  }
+});

@@ -302,7 +302,7 @@ test('T2 CapaEjecutiva_FiltrosYDiezFichas @story-2.27 @ac-2', async () => {
     // con las corridas viejas contadas, nunca un cero
     const rp = fichas.slice(fichas.lastIndexOf('<div class="tile', fichas.indexOf('La historia revisada antes de programar')));
     assert.match(rp, /^<div class="tile blind"/, 'la ficha de la revisión previa sale gris sin constancias');
-    assert.match(rp, /anterior\(es\) a la revisión previa/, 'y cuenta las viejas aparte');
+    assert.match(rp, /anteriores? a la revisión previa/, 'y cuenta las viejas aparte');
     assert.match(fichas, /n=\d+ de \d+/, 'las medianas llevan n=');
     assert.match(c.pagina.texto, /id="f-maquina"/, 'el filtro por máquina para quien ve varias');
     c.nodos.fc.checked = true; c.w.__aplicar();

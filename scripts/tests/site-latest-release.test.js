@@ -149,7 +149,7 @@ test('T10 2.33-Sitio_CartelSoloMantenedores @story-2.33 @ac-7 — quien mantiene
       for (const ruta of ['/', '/arnes']) {
         const r = await h.pedir(ruta, { cookie: lead });
         assert.strictEqual(r.status, 200, ruta);
-        assert.match(r.texto, /hay una versión nueva del sitio: 2026\.10\.18\.9 \(la tuya: 2026\.10\.15\.48\)/, `${ruta}: el cartel`);
+        assert.match(r.texto, /Hay una versión nueva del sitio: 2026\.10\.18\.9 \(la tuya: 2026\.10\.15\.48\)/, `${ruta}: el cartel`);
         // sin site.update, el modo es sólo aviso: el enlace a cómo se actualiza (la receta de la guía, del repo de la imagen)
         assert.match(r.texto, /cómo se actualiza: <a href="https:\/\/github\.example\/acme\/arnes\/blob\/main\/guides\/organization-site\.md#c%C3%B3mo-se-mantiene-al-d%C3%ADa">/, `${ruta}: el modo`);
       }
@@ -204,4 +204,21 @@ test('T7b 2.33-Ultima_TokenDondeLoAnunciaElRegistro @story-2.33 @ac-8 — el tok
     assert.strictEqual(r.ok, false);
     assert.strictEqual(r.codigo, 'ilegible');
   } finally { await ajeno.cerrar(); }
+});
+
+// 2.79-Cartel_EsAvisoYConMayuscula
+// 🔴 Falla con: el aviso de versión nueva en la caja roja de los errores (`.banda`), que asusta como si algo estuviera
+//    roto, o una frase que empieza en minúscula.
+test('T66 2.79-Cartel_EsAvisoYConMayuscula @story-2.79 @ac-55 — la versión nueva es un aviso, no un error, y empieza con mayúscula', async () => {
+  const reg = await registro();
+  try {
+    await conSitio({ reg, config: CONFIG }, async ({ h, entrar }) => {
+      const r = await h.pedir('/', { cookie: await entrar(LEAD) });
+      const cartel = (/<div class="([^"]+)"[^>]*>([^<]*versión nueva del sitio[^]*?)<\/div>/.exec(r.texto) || []);
+      assert.ok(cartel[0], 'el cartel');
+      assert.ok(!/\bbanda\b/.test(cartel[1]), `no es la caja de error: ${cartel[1]}`);
+      assert.match(cartel[1], /\baviso\b/, 'es un aviso');
+      assert.match(cartel[2], /^Hay una versión nueva del sitio/, 'empieza con mayúscula');
+    });
+  } finally { await reg.cerrar(); }
 });

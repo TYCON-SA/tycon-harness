@@ -632,7 +632,7 @@ function main() {
   const un = c.hallazgos.uniones_de_carpetas;
   if (un && un.estado === 'no_medidas') console.log(`  uniones de carpetas no medidas (${un.motivo}): cada carpeta del buzón cuenta como una máquina`);
   else if (un && un.viejas_no_contadas) console.log(`  ${un.viejas_no_contadas} carpeta(s) vieja(s) del buzón no se cuentan aparte: lo suyo está en las carpetas nuevas`);
-  if (c.corridas.descartadas_sin_hallazgos) console.log(`  ${c.corridas.descartadas_sin_hallazgos} ejecución(es) descartadas: son de máquinas sin hallazgos medidos`);
+  if (c.corridas.descartadas_sin_hallazgos) console.log(c.corridas.descartadas_sin_hallazgos === 1 ? '  1 ejecución descartada: es de una máquina sin hallazgos medidos' : `  ${c.corridas.descartadas_sin_hallazgos} ejecuciones descartadas: son de máquinas sin hallazgos medidos`);
   console.log(c.examen.estado === 'medido'
     ? `Banco: ${c.banco.con_caso} con caso · ${c.banco.examinadas} examinadas · ${c.banco.rotas} rotas · ${c.banco.huerfanos} caso(s) huérfano(s) · examen del ${c.examen.fecha}`
     : `Banco: ${c.banco.con_caso} con caso · examen NO MEDIDO — ${c.examen.motivo}`);

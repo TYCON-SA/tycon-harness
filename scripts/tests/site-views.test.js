@@ -444,7 +444,7 @@ test('T28b Inicio_Mantenedor_PrsTrabados_LlevaASuLista — la ficha dice dónde 
   const html = views.paginaInicio({ modelo: access.filtrar(m, { rol: 'maintainer' }, access.crearReglas({})), quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA });
   assert.match(html, /<a href="#prs-trabados">ver cuáles \(cada una lleva a donde se decide\)<\/a>/, 'lleva a una lista de esta página, no a donde se decide');
   assert.match(html, /<section class="q" id="prs-trabados">/);
-  assert.match(html, /<a href="https:\/\/dev\.example\/pr\/7">#7<\/a> · Proyecto X \/ Repo X · 5 días/);
+  assert.match(html, /<a href="https:\/\/dev\.example\/pr\/7">#7<\/a><span>Proyecto X \/ Repo X · 5 días<\/span>/);
   assert.doesNotMatch(html, /pr\/8/, 'el de un día no está trabado');
   assert.match(html, /#9 · Proyecto Y \/ Repo Y · sin fecha/, 'el sin fecha se lista, sin enlace que no sea http');
   assert.doesNotMatch(html, /javascript:/);
@@ -596,13 +596,13 @@ test('T17 2.79-Proyectos_Filtro_FilasLlevanSusNumerosParaElTotal @story-2.79 @ac
       const page = await ctx.newPage();
       await page.goto(`${h.base}/proyectos`);
       const total = page.locator('#proyectos-totales');
-      assert.match(await total.innerText(), /5 en curso, 1 paradas/, 'sin filtro, el total de todos');
+      assert.match(await total.innerText(), /5 en curso, paradas: 1,/, 'sin filtro, el total de todos');
       await page.locator('input[data-filtro="proyectos"]').fill('producto y');
-      assert.match(await total.innerText(), /2 en curso, 0 paradas/, 'filtrado, el total del producto que queda');
+      assert.match(await total.innerText(), /2 en curso, paradas: 0,/, 'filtrado, el total del producto que queda');
       const visibles = await page.locator('#tabla-estimaciones tbody tr:not([hidden])').evaluateAll((trs) => trs.map((tr) => tr.getAttribute('data-producto')));
       assert.ok(visibles.length && visibles.every((p) => p === 'Producto Y'), `Estimaciones, sólo el producto que queda: ${visibles}`);
       await page.locator('input[data-filtro="proyectos"]').fill('');
-      assert.match(await total.innerText(), /5 en curso, 1 paradas/, 'sin filtro otra vez, el de todos');
+      assert.match(await total.innerText(), /5 en curso, paradas: 1,/, 'sin filtro otra vez, el de todos');
     } finally { await navegador.close(); }
   });
 });
@@ -662,7 +662,7 @@ test('T35 2.79-Grises_CadaMotivoDiceQueFaltaYQueHacer @story-2.79 @ac-32 — mot
   assert.match(proyectos, /sin despliegue declarado en Configuración → Despliegues/);
   assert.doesNotMatch(proyectos, /\b(no_medido|sin_declarar|az_fallo)\b/, 'sin códigos crudos');
   assert.match(proyectos, /sin despliegue a producción para comparar/, 'el atraso con su motivo');
-  assert.match(proyectos, /1 sin la fecha en que entraron a su estado/);
+  assert.match(proyectos, /sin la fecha en que entraron a su estado: 1/);
   const arnes = sinEtiquetas(views.paginaArnes({ modelo: deMantenedor(modelo), quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA }));
   assert.match(arnes, /más vieja que su antigüedad máxima[^·]*· la deja el proceso de la noche del tablero/, 'la fuente vieja nombra el proceso');
 });
@@ -689,4 +689,70 @@ test('T59 2.79-Proyectos_FechasSinPartir @story-2.79 @ac-48 — las fechas no pa
       assert.ok(lede.includes(col), `${idioma}: la entrada nombra «${col}»: ${lede}`);
     }
   }
+});
+
+// T67 2.79-Prolijidad_ListasSingularYSinFalta @story-2.79 @ac-56 @ac-57 @ac-58
+// 🔴 Falla con: una fila de las listas de Inicio con texto suelto o con un solo hijo (la grilla la corre de columna),
+//    «1 días» o «1 paradas», «Ninguno.» en una lista de dependencias, «(es)», o una ficha sin dato que dice «falta».
+test('T67 2.79-Prolijidad_ListasSingularYSinFalta @story-2.79 @ac-56 @ac-57 @ac-58 — filas parejas, singular y «sin dato»', () => {
+  const { t } = require(path.join(H.SITE, 'texts.js'));
+  // los hijos de primer nivel de un renglón; el texto suelto entre ellos cuenta como hijo y rompe la grilla
+  const hijos = (adentro) => {
+    const out = [];
+    let prof = 0;
+    for (const trozo of adentro.split(/(<\/?[a-z][^>]*>)/i).filter((x) => x !== '')) {
+      if (/^<\//.test(trozo)) { prof -= 1; continue; }
+      if (/^</.test(trozo)) { if (prof === 0) out.push(trozo); prof += 1; continue; }
+      if (prof === 0 && trozo.trim()) out.push(`texto suelto: ${trozo}`);
+    }
+    return out;
+  };
+  const renglones = (html) => [...html.matchAll(/<ul class="lista[^"]*">([\s\S]*?)<\/ul>/g)].flatMap((u) => [...u[1].matchAll(/<li[^>]*>([\s\S]*?)<\/li>/g)].map((l) => l[1]));
+  const parejas = (html, donde) => {
+    const filas = renglones(html);
+    assert.ok(filas.length > 0, `${donde}: hay renglones para mirar`);
+    for (const f of filas) {
+      const h = hijos(f);
+      assert.strictEqual(h.length, 2, `${donde}: dos hijos por renglón, no ${JSON.stringify(h)}`);
+      assert.match(h[0], /^<a |^<span class="li-marca">/, `${donde}: primero el enlace o el marcador vacío: ${h[0]}`);
+    }
+  };
+  const modelo = modeloCompleto({
+    prs: leida({ lista: [
+      { numero: 7, proyecto: 'Proyecto X', repo: 'Repo X', dias: 5, autor: A, enlace: 'https://dev.example/pr/7' },
+      { numero: 9, proyecto: 'Proyecto X', repo: 'Repo X', dias: 4, autor: A, enlace: null },
+      { numero: 8, proyecto: 'Proyecto X', repo: 'Repo X', dias: 1, autor: A, enlace: 'https://dev.example/pr/8' },
+    ] }),
+    decisiones: leida({ items: [{ fuente: 'vigilante', rubro: 'pendientes', id: 'vig-uno', titulo: 'Errores 500', pr: 12 }] }),
+    vigilante: noMedida('sin_foto'),
+    proyectos: leida({ lista: [{ proyecto: 'Proyecto X', repo: 'Repo X', fecha: HOY, stories: [{ grupo: 'en_curso', canonico: 'in-progress', dias_en_estado: 45 }] }] }),
+    // ninguno vence en 7 días: la lista sale vacía
+    declarados: leida({ lista: [{ id: 'dato-dos', review_before: '2026-12-31' }] }),
+  });
+  const ctxM = { modelo: deMantenedor(modelo), quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA, enlaceOperaciones: 'https://dev.example/org/proj/_git/ops' };
+  const inicioM = views.paginaInicio(ctxM);
+  parejas(inicioM, 'Inicio de quien mantiene');
+  const quienA = access.quienPide({ email: A, sub: 'x' }, { config: CONFIG });
+  const inicioB = views.paginaInicio({ modelo: access.filtrar(modelo, quienA, access.crearReglas({ config: CONFIG, modelo })), quien: quienA, pestanas: [], ahora: AHORA });
+  parejas(inicioB, 'Inicio de un dev');
+  // singular con 1, y el femenino en las listas de dependencias vacías
+  const textoM = sinEtiquetas(inicioM);
+  const textoB = sinEtiquetas(inicioB);
+  assert.doesNotMatch(textoB, /\b1 días/, 'un día en singular');
+  assert.match(textoB, /\b1 día\b/);
+  const seccionDe = (html, id) => sinEtiquetas((html.split(`id="${id}"`)[1] || '').split('</section>')[0]);
+  assert.match(seccionDe(inicioM, 'decidir-dependencias_aceptadas_sin_resolver'), /Ninguna\./, 'las dependencias son femeninas');
+  assert.match(seccionDe(inicioM, 'decidir-declarados_por_vencer'), /Ninguno\./, 'los datos declarados, masculinos');
+  const proyectos = sinEtiquetas(views.paginaProyectos({ modelo: deMantenedor(modelo), quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA }));
+  assert.doesNotMatch(proyectos, /\b1 paradas/, 'una parada no va en plural');
+  for (const html of [textoM, textoB, proyectos]) assert.doesNotMatch(html, /\((es|s)\)/, 'sin «(es)» ni «(s)»');
+  // la ficha sin dato: «sin dato» con su motivo, nunca «falta»
+  assert.doesNotMatch(textoM, /\bfalta\b/);
+  assert.match(inicioM, /<div class="t-val">sin dato<\/div><div class="t-den">[^<]+<\/div>/, 'sin dato y su motivo');
+  for (const idioma of ['es', 'en']) {
+    for (const k of ['vista.falta', 'fichas.falta', 'corridas.falta']) {
+      assert.doesNotMatch(t(idioma, k), /falta|missing/i, `${idioma} ${k}`);
+    }
+  }
+  assert.strictEqual(t('es', 'fichas.falta'), 'sin dato');
 });

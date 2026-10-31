@@ -335,10 +335,11 @@ function cartelVersionNueva(ctx) {
   const T = (k, v) => t(idioma, k, v);
   const u = ctx.ultima;
   const que = esc(T('cartel.versionNueva', { nueva: u.version, tuya: ctx.version }));
-  if (ctx.modoActualizacion === 'auto') return `<div class="banda">${que}${esc(T('cartel.seInstalaSola'))}</div>`;
+  // es un aviso, no un error: la caja de `.banda` es la de lo que está roto
+  if (ctx.modoActualizacion === 'auto') return `<div class="aviso">${que}${esc(T('cartel.seInstalaSola'))}</div>`;
   const guia = idioma === 'en' ? 'organization-site.en.md#how-it-keeps-itself-up-to-date' : 'organization-site.md#c%C3%B3mo-se-mantiene-al-d%C3%ADa';
   const receta = u.fuente ? `<a href="${esc(`${u.fuente}/blob/main/guides/${guia}`)}">${esc(T('cartel.laReceta'))}</a>` : esc(T('cartel.laRecetaSinEnlace'));
-  return `<div class="banda">${que}${esc(T('cartel.comoSeActualiza'))}${receta}</div>`;
+  return `<div class="aviso">${que}${esc(T('cartel.comoSeActualiza'))}${receta}</div>`;
 }
 
 /** El selector de tema: lo atiende site.js (sin él, la página queda con el tema del sistema). */
@@ -399,14 +400,22 @@ function layout(ctx, titulo, cuerpo, lede = null) {
 
 function seccion(titulo, html, aparte = null, id = null) { return `<section class="q"${id ? ` id="${esc(id)}"` : ''}><div class="q-head"><h2>${esc(titulo)}</h2>${aparte ? `<span class="aside">${esc(aparte)}</span>` : ''}</div>${html}</section>`; }
 
+/**
+ * Un renglón de las listas de Inicio, siempre con dos partes para que la grilla no lo corra de columna: el enlace (o un
+ * marcador vacío en su lugar) y el texto. `marca` y `texto` ya vienen escapados.
+ */
+const renglonDeLista = (marca, texto) => `<li>${marca || '<span class="li-marca"></span>'}<span>${texto}</span></li>`;
+/** «1 día» y «N días». */
+const dias = (n, idioma) => t(idioma, n === 1 ? 'vista.dia' : 'vista.dias', { n });
+
 /** La lista de los PR abiertos hace más de 2 días (y los sin fecha), a donde lleva su ficha del Inicio de quien mantiene. */
 function prsTrabados(prs, idioma) {
   const T = (k, v) => t(idioma, k, v);
   const titulo = T('inicio.prs_trabados');
   if (!medida(prs)) return seccion(titulo, `<p class="q-note">${esc(conFecha(prs, idioma))}</p>`, null, 'prs-trabados');
   const lista = (prs.lista || []).filter((p) => !Number.isFinite(p.dias) || p.dias > 2).sort((a, b) => (Number.isFinite(b.dias) ? b.dias : -1) - (Number.isFinite(a.dias) ? a.dias : -1));
-  const fila = (p) => `<li>${enlace(p.enlace) ? `<a href="${esc(p.enlace)}">#${esc(p.numero)}</a>` : `#${esc(p.numero)}`} · ${esc(p.proyecto)} / ${esc(p.repo)} · ${esc(Number.isFinite(p.dias) ? T('vista.dias', { n: p.dias }) : T('vista.sinFecha'))}</li>`;
-  return seccion(titulo, lista.length ? `<ul class="lista">${lista.map(fila).join('')}</ul>` : `<p class="q-note">${esc(T('vista.ninguno'))}</p>`, T('vista.deLaNocheDel', { fecha: prs.fecha }), 'prs-trabados');
+  const fila = (p) => renglonDeLista(enlace(p.enlace) ? `<a href="${esc(p.enlace)}">#${esc(p.numero)}</a>` : null, `${enlace(p.enlace) ? '' : `#${esc(p.numero)} · `}${esc(p.proyecto)} / ${esc(p.repo)} · ${esc(Number.isFinite(p.dias) ? dias(p.dias, idioma) : T('vista.sinFecha'))}`);
+  return seccion(titulo, lista.length ? `<ul class="lista dos">${lista.map(fila).join('')}</ul>` : `<p class="q-note">${esc(T('vista.ninguno'))}</p>`, T('vista.deLaNocheDel', { fecha: prs.fecha }), 'prs-trabados');
 }
 
 /**
@@ -419,7 +428,8 @@ function listasDeDecision(m, { enlaceOperaciones = null, remotoOperaciones = nul
   const DEC = require('./decisions.js');
   const todas = DEC.decisiones(m, { operationsRepo: enlaceOperaciones, remoto: remotoOperaciones });
   const medidas = m.decisiones && m.decisiones.estado === 'medido';
-  const ul = (items) => (items.length ? `<ul class="lista">${items.join('')}</ul>` : `<p class="q-note">${esc(T('vista.ninguno'))}</p>`);
+  // las listas de dependencias, del vigilante y de tareas son femeninas («Ninguna.»); la de datos declarados, no
+  const ul = (items, vacia = 'vista.ninguna') => (items.length ? `<ul class="lista dos">${items.join('')}</ul>` : `<p class="q-note">${esc(T(vacia))}</p>`);
   const out = [];
   for (const [clave, def] of Object.entries(LISTAS_DE_DECISION)) {
     const titulo = T(`inicio.${clave}`);
@@ -427,7 +437,7 @@ function listasDeDecision(m, { enlaceOperaciones = null, remotoOperaciones = nul
       const dec = m.declarados;
       const vencen = medida(dec) ? (dec.lista || []).filter((d) => { const x = Date.parse(`${d.review_before}T00:00:00Z`); return Number.isFinite(x) && x - ahora <= 7 * DIA; }) : [];
       const cuerpo = medida(dec)
-        ? `<p class="q-note">${esc(T('decidir.declaradosDonde'))}</p>${ul(vencen.map((d) => `<li>${esc(d.id)} · ${esc(T('decidir.vence', { fecha: d.review_before }))}</li>`))}`
+        ? `<p class="q-note">${esc(T('decidir.declaradosDonde'))}</p>${ul(vencen.map((d) => renglonDeLista(null, `${esc(d.id)} · ${esc(T('decidir.vence', { fecha: d.review_before }))}`)), 'vista.ninguno')}`
         : `<p class="q-note">${esc(conFecha(dec, idioma))}</p>`;
       out.push(seccion(titulo, cuerpo, null, `decidir-${clave}`));
       continue;
@@ -437,9 +447,9 @@ function listasDeDecision(m, { enlaceOperaciones = null, remotoOperaciones = nul
     const fila = (d) => {
       const nombre = [esc(d.id), d.titulo ? esc(d.titulo) : null].filter(Boolean).join(' · ');
       return d.enlace && enlace(d.enlace)
-        ? `<li><a href="${esc(d.enlace)}">${esc(T('decidir.pedido', { n: d.pr }))}</a> · ${nombre}</li>`
-        : d.sinLugar === 'en_su_tarea' ? `<li>${nombre} · <a href="/mantenimiento">${esc(DEC.fraseSinLugar(d.sinLugar, idioma))}</a></li>`
-          : `<li>${nombre} · ${esc(DEC.fraseSinLugar(d.sinLugar, idioma))}</li>`;
+        ? renglonDeLista(`<a href="${esc(d.enlace)}">${esc(T('decidir.pedido', { n: d.pr }))}</a>`, nombre)
+        : d.sinLugar === 'en_su_tarea' ? renglonDeLista(`<a href="/mantenimiento">${esc(DEC.fraseSinLugar(d.sinLugar, idioma))}</a>`, nombre)
+          : renglonDeLista(null, `${nombre} · ${esc(DEC.fraseSinLugar(d.sinLugar, idioma))}`);
     };
     out.push(seccion(titulo, ul(suyas.map(fila)), T('vista.deLaNocheDel', { fecha: m.decisiones.fecha }), `decidir-${clave}`));
   }
@@ -461,15 +471,16 @@ function paginaInicio(ctx) {
   const corr = d.corridas.estado === 'medido'
     ? `<div class="tile">${chip('', T('inicio.tuyas'))}<div class="t-label">${esc(T('inicio.tusCorridas'))}</div><div class="t-val">${esc(T('inicio.corridasEn7', { n: d.corridas.en7dias }))}</div><div class="t-den">${esc(d.corridas.ultima ? T('inicio.laUltima', { fecha: d.corridas.ultima }) : T('inicio.ningunaTodavia'))}</div>${corridasPestana ? `<div class="t-foot"><a href="/corridas">${esc(T('inicio.verEnCorridas'))}</a></div>` : ''}</div>`
     : filaNo(T('inicio.tusCorridas'), d.corridas.motivo);
-  const lista = (items, fmt) => (items.length ? `<ul class="lista">${items.map((x) => `<li>${fmt(x)}</li>`).join('')}</ul>` : `<p class="q-note">${esc(T('vista.ninguno'))}</p>`);
-  const link = (u, texto) => (enlace(u) ? `<a href="${esc(u)}">${texto}</a>` : texto);
+  // cada renglón: el enlace (o el marcador vacío) y el texto; sin enlace, el número va con el texto
+  const lista = (items, fmt) => (items.length ? `<ul class="lista dos">${items.map((x) => renglonDeLista(...fmt(x))).join('')}</ul>` : `<p class="q-note">${esc(T('vista.ninguno'))}</p>`);
+  const conNumero = (u, numero, resto) => (enlace(u) ? [`<a href="${esc(u)}">${numero}</a>`, resto] : [null, `${numero} ${resto}`]);
   const prs = d.prs.estado === 'medido'
-    ? lista(d.prs.lista, (p) => `${link(p.enlace, `#${esc(p.numero)}`)} · ${esc(p.repo)} · ${esc(T('vista.dias', { n: p.dias }))}`)
+    ? lista(d.prs.lista, (p) => conNumero(p.enlace, `#${esc(p.numero)}`, `· ${esc(p.repo)} · ${esc(dias(p.dias, idioma))}`))
     : filaNo(T('inicio.tusPrs'), d.prs.motivo);
   const ped = d.pedidos.estado === 'medido'
-    ? lista(d.pedidos.lista, (p) => `${link(p.enlace, `#${esc(p.id)}`)}${p.titulo ? ` ${esc(p.titulo)}` : ''} · ${esc(p.tipo)} · ${esc(p.estado)} · ${esc(T('vista.dias', { n: p.dias }))}${p.dependencias ? ` · <b>${esc(T('inicio.dependencias'))}</b>` : ''}`)
+    ? lista(d.pedidos.lista, (p) => conNumero(p.enlace, `#${esc(p.id)}`, `${p.titulo ? `${esc(p.titulo)} ` : ''}· ${esc(p.tipo)} · ${esc(p.estado)} · ${esc(dias(p.dias, idioma))}${p.dependencias ? ` · <b>${esc(T('inicio.dependencias'))}</b>` : ''}`))
     : filaNo(T('inicio.loAsignado'), d.pedidos.motivo);
-  const proy = d.proyectos.estado === 'medido' ? lista(d.proyectos.lista, (p) => esc(p)) : filaNo(T('inicio.tusProyectos'), d.proyectos.motivo);
+  const proy = d.proyectos.estado === 'medido' ? lista(d.proyectos.lista, (p) => [null, esc(p)]) : filaNo(T('inicio.tusProyectos'), d.proyectos.motivo);
   return layout(ctx, T('pestana.inicio'), [
     seccion(T('inicio.tusCorridas'), `<div class="grid">${corr}</div>`),
     seccion(T('inicio.tusPrs'), prs),
