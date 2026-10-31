@@ -236,8 +236,10 @@ No entra en ninguno de los grupos de la 8.116: para delegarla, el perfil la nomb
 
 Un pendiente nuevo de otra sesión (`pending-approval`) se aprueba así desde la sesión designada, con
 `marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --for-session <sesión>`. La delegación vale sólo si la
-carpeta es de esa sesión: el repo de su ejecución abierta, o el de un arreglo rápido que declaró ella misma. Tampoco
-puede ser un repo de la coordinadora: ni su checkout, ni el de su marcador, ni el de su arreglo rápido. Los repos se
+carpeta es de esa sesión: el repo de su ejecución abierta, el worktree donde vive la story de esa ejecución (suele
+ser el privado; el clon principal no cuenta, porque lo comparten varias stories), o el de un arreglo rápido que declaró
+ella misma. Tampoco puede ser un repo de la coordinadora: ni su checkout, ni los de su ejecución abierta y su story, ni
+el de su arreglo rápido. Si uno de los repos de ella no se encuentra, la delegación se niega. Los repos se
 comparan por la carpeta real, así que otra forma de escribir la ruta no cambia el resultado.
 
 **Límite declarado:** el arnés no sabe quién escribió el pendiente, sólo de quién es el repo. Si la coordinadora
