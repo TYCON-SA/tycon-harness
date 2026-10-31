@@ -26,9 +26,11 @@
 #   hay story, del diff real. Si no se puede deducir, FRENA (exit 4) en vez de
 #   elegir mal. Ver `lib/test-scope.js`.
 #   Pasar la RUTA de la story en $2 (en vez del id) habilita la deducción por
-#   declaración y saca el id del frontmatter.
+#   declaración y saca el id del frontmatter. Una ruta que no se encuentra frena (2): una relativa se lee desde la
+#   carpeta en que se lanza el portón.
 #
-# Exit: el exit code REAL de la suite (0 verde, !=0 rojo) · 3 «sin medir»: no reconoce ninguna herramienta de pruebas
+# Exit: el exit code REAL de la suite (0 verde, !=0 rojo) · 2 la story del argumento no está (no se corrió NADA)
+#       · 3 «sin medir»: no reconoce ninguna herramienta de pruebas
 #       (deja tests-result.json con `no_stack` y el motivo en llano, y el check `tests` en `sin-medir`)
 #       · 4 alcance ambiguo (no se corrió NADA) · 5 falta la herramienta que corre las
 #       pruebas, `npx`, `dotnet` o `npm` (no se corrió NADA)
@@ -130,6 +132,15 @@ marcar_tests_en_rojo() {
   ( cd "$REPO" && TYCON_TEST_GATE=1 TYCON_TEST_GATE_MARK=1 node "$MARKER_JS" run-check tests -- \
       node -e 'console.error("test-gate: " + process.argv[1]); process.exit(Number(process.argv[2]))' "$motivo" "$codigo" ) >&2 || true
 }
+
+# Una story pasada como ruta que no se encuentra: sin ella el portón no sabe qué tocó la story ni qué rama del hermano
+# medir, y seguir sin story daría un verde que no dice nada de ella. Una ruta relativa se lee desde la carpeta en que
+# se lanza el portón, no desde el repo.
+if [[ "$STORY_ARG" == *.md && ! -f "$STORY_ARG" ]]; then
+  echo "[test-gate] 🔴 no encontré la story «${STORY_ARG}» desde $(pwd): sin ella no sé qué tocó ni qué rama medir, y no corro nada. Pasá la ruta absoluta de la story." >&2
+  marcar_tests_en_rojo 2 "no encontré la story $STORY_ARG: no corrí nada"
+  exit 2
+fi
 
 # --- El repo hermano ----------------------------------------------
 # Una story que vive en este repo y cambia otro declarado en `.tycon/advisors.yaml → evidence.companion_repos` (el repo
