@@ -531,7 +531,8 @@ function identityOf(q) {
 }
 
 // Fuera de la cola: no es borrador, no tiene auto-completar y la plataforma dice que no está en la cola (`inQueue:
-// false`) o no tiene cola (sin `inQueue`). Con `inQueue: null` la plataforma no supo decirlo, y no se marca.
+// false`) o no tiene cola (sin `inQueue`). Con `inQueue: null` la plataforma no supo decirlo: no se marca afuera, y
+// el pedido sale con «(cola sin verificar)».
 const offQueueOf = (p) => p.draft !== true && !p.autoComplete && (p.inQueue === false || !('inQueue' in p));
 
 // Mata una consulta y lo que ella lanzó (el gh o el az del conector): fuera de Windows corre en su propio grupo.
@@ -568,6 +569,8 @@ function runQuery(q, perMs, env, children) {
       const prs = r.value.map((p) => ({
         number: p && p.number, draft: Boolean(p && p.draft === true), conflict: Boolean(p && p.mergeState === 'conflict'),
         offQueue: Boolean(p && typeof p === 'object' && offQueueOf(p)),
+        // sin borrador ni auto-completar, la plataforma no supo si está en la cola: se dice, no se da por encolado
+        queueUnknown: Boolean(p && typeof p === 'object' && p.draft !== true && !p.autoComplete && p.inQueue === null),
       }));
       if (!prs.every((p) => Number.isInteger(p.number))) { fail('respuesta ilegible (un pedido sin número)'); return; }
       done({ prs });
@@ -709,7 +712,7 @@ function enteringState(m, prsOf, unreadable, wanted, ctx, found = []) {
     for (const p of res.prs) {
       const ref = `${q.kind === 'github' ? '#' : '!'}${p.number}`;
       found.push({ repo: q.name, ref, draft: p.draft, conflict: p.conflict, offQueue: p.offQueue });
-      shown.push(`${q.name} ${ref}${p.draft ? ' (borrador)' : ''}${p.conflict ? ' (choca con main)' : ''}${p.offQueue ? ' (fuera de la cola)' : ''}`);
+      shown.push(`${q.name} ${ref}${p.draft ? ' (borrador)' : ''}${p.conflict ? ' (choca con main)' : ''}${p.offQueue ? ' (fuera de la cola)' : ''}${p.queueUnknown ? ' (cola sin verificar)' : ''}`);
       if (!p.draft && !p.offQueue) queued += 1;
       if (p.offQueue) off += 1;
     }

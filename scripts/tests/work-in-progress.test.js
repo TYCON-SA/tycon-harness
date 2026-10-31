@@ -1576,8 +1576,10 @@ test('wip · PedidoFueraDeLaCola_NoSigueEntrando: con todos los pedidos fuera de
   assert.strictEqual(runGh([pull(847)]).state, 'Entrando a los repos · x #847');
   // uno en camino alcanza para que esté entrando; el de afuera se marca igual
   assert.strictEqual(runGh([pull(1, { ...sinAuto, merge_queue: { state: 'QUEUED' } }), pull(2, sinAuto)]).state, 'Entrando a los repos · x #1 · x #2 (fuera de la cola)');
-  // si GitHub no dice si está en la cola, no se marca: no saber no es estar afuera
-  assert.strictEqual(runGh([pull(3, sinAuto)], { queueError: true }).state, 'Entrando a los repos · x #3');
+  // si GitHub no dice si está en la cola, no se marca afuera (no saber no es estar afuera), pero se dice que no se sabe;
+  // con auto-merge puesto no hace falta saberlo
+  assert.strictEqual(runGh([pull(3, sinAuto)], { queueError: true }).state, 'Entrando a los repos · x #3 (cola sin verificar)');
+  assert.strictEqual(runGh([pull(4)], { queueError: true }).state, 'Entrando a los repos · x #4');
   // Azure: sin auto-completar está fuera de la cola; con auto-completar, no
   const n = toyMachine();
   entering(n, 'col00000-2', { repoPath: gitRepo(n.root, 'y', 'story/x', AZ) });

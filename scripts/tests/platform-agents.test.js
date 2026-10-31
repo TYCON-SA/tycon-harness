@@ -189,8 +189,8 @@ test('T36 Installers_AndWip_UseLayer @story-8.85 @ac-21: los pedidos de la rama 
   const [gh, az] = await queryAll(QUERIES.map((q) => ({ ...q, root: w.tree })), { env: w.env });
   // el de la rama abierto desde un fork también cuenta: la sesión no sale libre con un pedido suyo abierto
   // sin auto-completar y, en GitHub, sin lugar en la cola de merge: fuera de la cola (el borrador, no)
-  assert.deepStrictEqual(gh, { prs: [{ number: 236, draft: true, conflict: true, offQueue: false }, { number: 240, draft: false, conflict: false, offQueue: true }] });
-  assert.deepStrictEqual(az, { prs: [{ number: 4920, draft: false, conflict: true, offQueue: true }] });
+  assert.deepStrictEqual(gh, { prs: [{ number: 236, draft: true, conflict: true, offQueue: false, queueUnknown: false }, { number: 240, draft: false, conflict: false, offQueue: true, queueUnknown: false }] });
+  assert.deepStrictEqual(az, { prs: [{ number: 4920, draft: false, conflict: true, offQueue: true, queueUnknown: false }] });
   assert.deepStrictEqual(spy.calls(), [], 'nadie llamó a az ni a gh directo');
   // el az de mentira anota la rama en la búsqueda; el gh, la lista de abiertos y la lectura de cada pedido de la rama.
   // La lista de GitHub va sin `head=<dueño>:<rama>`: con un origin que todavía nombra al dueño viejo, GitHub contesta
