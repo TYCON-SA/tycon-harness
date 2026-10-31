@@ -184,7 +184,7 @@ function portablesAntesDeEncolar() {
   ${porque}
 
 En la cola, un rojo de las portables saca al pedido y frena a los que vienen detrás. Correlas antes, con todo
-commiteado (unos 6 minutos; dejan la constancia del árbol al terminar en verde):
+commiteado (cerca de una hora: piden turno pesado; dejan la constancia del árbol al terminar en verde):
 
   bash scripts/tests/portable-suites.test.sh
 

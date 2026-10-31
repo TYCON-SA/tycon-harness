@@ -24,7 +24,7 @@
 # Dice cuántas corrió: CERO portables es un rojo, no un verde (una lista sin `requiere` daría 0 y silencio).
 # Las entradas de agent-skills se declaran NO MEDIDAS si el árbol no está; nunca se cuentan como verdes.
 # Se excluye a sí misma (correrse adentro de sí misma sería infinito).
-# Costo: una segunda pasada de las portables (~100 suites, 5-6 min con 4 en paralelo). Por eso NO está en suites.json
+# Costo: una segunda pasada de las portables (~600 suites, cerca de una hora con 4 en paralelo). Por eso NO está en suites.json
 # (para el equipo no puede haber más espera en el portón ni en el nocturno): se corre a
 # mano, y en el gate del commit de toda story que toque suites.json o el instalador. suites-coverage.test.js la lista
 # como excepción declarada, con este motivo.

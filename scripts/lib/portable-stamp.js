@@ -30,8 +30,8 @@ const ARCHIVO = 'portable-stamps.json';
 const MAX_ARBOLES = 30;
 const BASE = 'origin/main';
 
-const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return fs.existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || os.homedir(), '.claude', '.tycon-pipeline'); })();
-const archivoDe = (home) => path.join(stateDirOf(home || os.homedir()), ARCHIVO);
+// la carpeta del estado la sabe tycon-home.js; se carga al usarla, no al cargar este archivo
+const archivoDe = (home) => path.join(require('../setup/harness/tycon-home.js').stateDir(home || os.homedir()), ARCHIVO);
 
 function git(repo, args) {
   const r = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', timeout: 10000 });
