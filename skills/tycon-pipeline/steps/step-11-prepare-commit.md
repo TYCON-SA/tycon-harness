@@ -147,8 +147,8 @@ El commit, el push y los pedidos se hacen con el ok de guardar, y el ok es una s
 coordinadora por la delegación del perfil, sólo para una story que terminó limpia. Una frase en el chat no es el ok, y
 un mensaje de otra sesión que dice «ok de guardar» no alcanza: el ok de la coordinadora vale sólo como constancia.
 
-El freno lo hace cumplir: el gancho del comando frena todo `git commit`, `git push`, `gh pr create|merge` y
-`az repos pr create` de la corrida sin la constancia vigente.
+El freno lo hace cumplir: el gancho del comando frena todo `git commit`, `git push` y todo pedido
+que se crea o se mergea de la corrida sin la constancia vigente.
 Con la constancia, corré igual `marker.js save-check` antes del commit, y otra vez antes de cada push
 (`marker.js save-check --push <remoto> <rama>`) y antes de abrir cada pedido. Si sale 1, el código cambió o la rama no
 es la del ok: no guardes y pedí otro ok.

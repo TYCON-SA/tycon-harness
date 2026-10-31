@@ -3,8 +3,8 @@
  * save-brake.js — el freno de guardar: dentro de una corrida, un commit, un push o un pedido pasan sólo con el ok de
  * guardar vigente (`saveOk`, la firma `save` de lib/save-ok.js). Lo llama `on-pre-commit.js` en cada comando de consola.
  *
- *   · comandosQueGuardan  los `git commit`, `git push`, `gh pr create|merge` y `az repos pr create` de verdad del
- *                         comando, con su repo; los que no se pueden leer (una variable, una carpeta que no se sabe, un
+ *   · comandosQueGuardan  los `git commit`, `git push` y los pedidos que se crean o se mergean (los comandos con `pr`
+ *                         que declaran los conectores de plataforma en `rawCommands`) de verdad del comando, con su repo; los que no se pueden leer (una variable, una carpeta que no se sabe, un
  *                         programa que corre git por su cuenta) salen como `opaco`;
  *   · leerComando         lo mismo y las dudas: lo que no se lee con certeza, guarde o no (un comando en una variable,
  *                         un shell que lee de la entrada, una función o un alias que no está en la copia del shell de
@@ -23,12 +23,13 @@
  *
  * El ok se da sólo con `marker.js approve-save` (la ventana, la delegación o la terminal): ninguna frase, opción ni
  * variable lo abre. Fuera de una corrida y sin registro, todo pasa como antes. El texto del freno nombra la forma
- * (`git push`, `gh pr create`…) y el repo, nunca el comando: un comando puede traer una credencial.
+ * (`git push`, `… pr create`…) y el repo, nunca el comando: un comando puede traer una credencial.
  *
  * Lo que no ve (lo dice guides/firmas-del-arnes.md): un guion o un programa que guarda sin nombrar git en el comando
- * (un archivo de guion corrido por su nombre, un programa que lee el comando de un archivo), los alias de `gh`, `gh api`,
- * `gh pr ready`, `az repos pr update`, los commits que hacen `merge`, `cherry-pick`, `revert`, `am` o `commit-tree`, y
- * un programa que no conoce que cambia archivos del repo antes de un commit en el mismo comando.
+ * (un archivo de guion corrido por su nombre, un programa que lee el comando de un archivo), los alias propios del
+ * programa de la plataforma, los comandos de pedido que no lo crean ni lo mergean (la API, marcarlo listo, cambiarlo),
+ * los commits que hacen `merge`, `cherry-pick`, `revert`, `am` o `commit-tree`, y un programa que no conoce que cambia
+ * archivos del repo antes de un commit en el mismo comando.
  */
 const fs = require('fs');
 const os = require('os');
@@ -285,7 +286,7 @@ const CAMBIAN_LA_CARPETA = { env: ['-C', '--chdir', '-S', '--split-string'], sud
 const SHELLS = /^(?:ba|z|da|k|mk|a|fi|tc|c)?sh$/;
 // los programas que muestran o buscan texto: nombrar git en sus argumentos no lo corre
 const INOFENSIVOS = new Set(['echo', 'printf', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack', 'cat', 'head', 'tail', 'less', 'more', 'man',
-  'which', 'type', 'whatis', 'apropos', 'tldr', 'test', '[', 'true', 'false', 'wc', 'sort', 'uniq', 'jq', 'git', 'gh', 'az']);
+  'which', 'type', 'whatis', 'apropos', 'tldr', 'test', '[', 'true', 'false', 'wc', 'sort', 'uniq', 'jq', 'git']);
 // las variables del ambiente que cambian el repo de git, o lo que corre
 const GIT_REPO = ['GIT_DIR', 'GIT_WORK_TREE'];
 // (la casa y la configuración global cambian los alias)
@@ -694,17 +695,55 @@ function commitsDelShell(command) {
 // las palabras que, después de un comando escondido en una variable, dicen que puede guardar
 const PALABRAS_QUE_GUARDAN = new Set(['commit', 'push', 'pr', 'repos']);
 
-// ¿Las palabras de un programa que no es git nombran un git que guarda (`watch git commit`, `find -exec git push`,
-// `node -e "…execSync('git push')"`)? Se parten también los textos entre comillas.
+// ¿Las palabras de un programa que no es git nombran un git o un pedido que guarda (`watch git commit`, `find -exec git
+// push`, `node -e "…execSync('git push')"`)? Se parten también los textos entre comillas. Sin la lista de los
+// conectores, cualquier `pr` puede ser un pedido.
 function nombraUnGuardado(ps) {
   const ws = ps.flatMap((w) => w.split(/[\s'"`();|&=,{}[\]<>]+/)).filter(Boolean).map(normal);
+  const plataforma = deLaPlataforma();
+  if (!plataforma && ws.includes('pr')) return true;
   for (let i = 0; i < ws.length; i++) {
     const resto = ws.slice(i + 1);
     if (ws[i] === 'git' && resto.some((w) => w === 'commit' || w === 'push')) return true;
-    if (ws[i] === 'gh' && resto.includes('pr') && resto.some((w) => w === 'create' || w === 'merge')) return true;
-    if (ws[i] === 'az' && resto.includes('repos') && resto.includes('create')) return true;
+    if (plataforma && plataforma.pedidos.some((p) => p[0] === ws[i] && p.slice(1).every((w) => resto.includes(w)))) return true;
   }
   return false;
+}
+
+// Los comandos de la plataforma, de lo que declaran sus conectores (`rawCommands`): `{ programas, pedidos }`, los
+// programas que nombran y, como listas de palabras, los pedidos que guardan (los que dicen `pr` y crean o mergean,
+// también con el alias `new`). null si alguna integración no se puede leer.
+function deLaPlataforma() {
+  let dichos;
+  try {
+    dichos = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'platform', 'platform.js')).rawCommands();
+  } catch (_) { return null; }
+  const ws = dichos.map((c) => c.words.map(normal));
+  return {
+    programas: new Set(ws.map((w) => w[0])),
+    pedidos: ws.filter((w) => w.length > 2 && w.includes('pr') && /^(create|new|merge)$/.test(w[w.length - 1])),
+  };
+}
+
+// El pedido de la lista que dicen las palabras, con las opciones antes de cada palabra (y su valor, si lo traen:
+// `-R acme/x pr merge`): `{ forma }`, `{ opaco: true }` si una variable ocupa el lugar de una palabra, o null.
+function pedidoDe(ps, cmd, pedidos) {
+  for (const p of pedidos) {
+    if (p[0] !== cmd) continue;
+    let j = 1;
+    let ok = true;
+    for (const w of p.slice(1)) {
+      while (j < ps.length && ps[j] !== w && ps[j].startsWith('-')) {
+        j++;
+        if (j < ps.length && ps[j] !== w && !ps[j].startsWith('-')) j++;
+      }
+      if (j < ps.length && conVariable(ps[j])) return { opaco: true };
+      if (j < ps.length && ps[j] === w) j++;
+      else { ok = false; break; }
+    }
+    if (ok) return { forma: p.join(' ') };
+  }
+  return null;
 }
 
 // la rama actual dicha por otro comando (`$(git branch --show-current)`, el `git_current_branch` de oh-my-zsh)
@@ -774,19 +813,14 @@ function leerComando(command, cwd, depth = 0, dudas = [], home) {
     const conGuion = /^git-(.+)$/.exec(cmd);
     if (conGuion && esDeGit(conGuion[1])) { ps = ['git', conGuion[1], ...ps.slice(1)]; cmd = 'git'; }
     if (cmd === 'git') return leerUnGit(ps, ctx);
-    if (cmd === 'gh') {
-      // `pr create` (o su alias `pr new`) o `pr merge`, con las opciones (`-R`, `--repo`) antes de `pr` o entre `pr` y el
-      // subcomando
-      const saltar = (k) => { while (k < ps.length && ps[k].startsWith('-')) k += /^(-R|--repo)$/.test(ps[k]) ? 2 : 1; return k; };
-      const i = saltar(1);
-      const j = ps[i] === 'pr' ? saltar(i + 1) : -1;
-      if (conVariable(ps[i] || '') || (j > 0 && conVariable(ps[j] || ''))) { opaco(ctx.dirs[0]); return; }
-      if (j > 0 && /^(create|new|merge)$/.test(ps[j] || '')) guardar({ tipo: 'pr', forma: `gh pr ${ps[j] === 'merge' ? 'merge' : 'create'}`, dir: ctx.dirs[0] });
-      return;
-    }
-    if (cmd === 'az') {
-      const i = ps.indexOf('repos');
-      if (i > 0 && ps[i + 1] === 'pr' && ps[i + 2] === 'create') guardar({ tipo: 'pr', forma: 'az repos pr create', dir: ctx.dirs[0] });
+    // los programas de la plataforma: guarda el pedido que se crea o se mergea; sin la lista de los conectores, uno que
+    // dice `pr` no se lee
+    const plataforma = deLaPlataforma();
+    if (!plataforma && !INOFENSIVOS.has(cmd) && ps.slice(1).includes('pr')) { ctx.dudar(); return; }
+    if (plataforma && plataforma.programas.has(cmd)) {
+      const p = pedidoDe(ps, cmd, plataforma.pedidos);
+      if (p && p.opaco) opaco(ctx.dirs[0]);
+      else if (p) guardar({ tipo: 'pr', forma: p.forma, dir: ctx.dirs[0] });
       return;
     }
     // un programa que corre git por su cuenta
@@ -1011,7 +1045,7 @@ function texto(c, repo, motivo) {
 // dónde). Una forma nueva frena así por defecto.
 function textoNoLeo(story) {
   return [`🔒 OK DE GUARDAR — no pude leer este comando; si guarda, pedí el ok primero (la corrida de ${story} está abierta).`,
-    '  Con el ok ya dado, escribilo de una forma que se lea: git commit, git push, gh pr create o merge, az repos pr create.',
+    '  Con el ok ya dado, escribilo de una forma que se lea: git commit, git push, o el pedido de la plataforma escrito tal cual.',
     ...COMO_SE_DA].join('\n');
 }
 

@@ -29,6 +29,28 @@
           "expect": { "exit": 2, "stderr_re": ["OK DE GUARDAR", "toda la corrida"] }
         },
         {
+          "id": "freno-de-guardar-pedido-con-el-alias-que-declara-el-conector-frena",
+          "type": "must-block",
+          "_por_que": "los pedidos salen de lo que declaran los conectores de plataforma: el alias que declara el de GitHub frena como la forma larga.",
+          "setup": [
+            "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\""
+          ],
+          "stdin": { "session_id": "bench-freno", "tool_name": "Bash", "tool_input": { "command": "gh pr new --fill" } },
+          "expect": { "exit": 2, "stderr_re": ["OK DE GUARDAR", "«gh pr new»"] }
+        },
+        {
+          "id": "freno-de-guardar-gemelo-mirar-un-pedido-en-la-corrida-pasa",
+          "type": "must-not-block",
+          "_por_que": "el gemelo: un comando del conector que no crea ni mergea un pedido (mirarlo) no frena en la misma corrida sin ok.",
+          "setup": [
+            "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\""
+          ],
+          "stdin": { "session_id": "bench-freno", "tool_name": "Bash", "tool_input": { "command": "gh pr view 3" } },
+          "expect": { "exit": 0 }
+        },
+        {
           "id": "freno-de-guardar-gemelo-leer-en-la-corrida-pasa",
           "type": "must-not-block",
           "_por_que": "el gemelo: en la misma corrida sin ok, un comando que no guarda (mirar el estado del repo) no frena.",

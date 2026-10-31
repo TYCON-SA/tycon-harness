@@ -248,16 +248,18 @@ El ok de guardar (`save`) suma tres límites cuando va por delegación, y los co
 
 Si falta una, el guion lo dice y no firma: el ok lo da el dueño.
 
-El ok lo hace cumplir el gancho del comando, no la memoria del agente. En una corrida, todo `git commit`, `git push`,
-`gh pr create|merge` y `az repos pr create` sin la constancia vigente frena, también escondido en `bash -c`, con `-C`
-o desde una variable. Una frase en el chat no es el ok. Cerrar la corrida tampoco es una salida: con cambios y sin el
+El ok lo hace cumplir el gancho del comando, no la memoria del agente. En una corrida, todo `git commit`, `git push`
+y todo pedido que se crea o se mergea sin la constancia vigente frena, también escondido en `bash -c`, con `-C`
+o desde una variable. Los comandos de pedido son los que declaran los conectores de plataforma (`rawCommands` de su
+`integration.json`) con `pr` y que terminan en `create`, `new` o `merge`; si alguna integración no se puede leer, un
+comando que dice `pr` es una duda. Una frase en el chat no es el ok. Cerrar la corrida tampoco es una salida: con cambios y sin el
 ok, `marker.js clear` sale 2, y `marker.js clear --discard` cierra pero deja anotados esos repos, que siguen frenados
 hasta un ok nuevo o hasta que no queden cambios. Lo mismo pasa cuando la corrida se cierra desde otra sesión, se
 reemplaza, se poda por vieja o se cierra como perdida. Si ese registro no se puede escribir, el cierre no se hace y el
 marcador queda. Un marcador que no se puede leer no lo borra ni lo pisa ningún cierre, ni con `--discard` ni desde otra
 sesión: sale 2, el freno sigue frenando esa sesión, y lo saca una persona después de mirarlo.
 
-El texto del freno nombra la forma (`git push`, `gh pr create`…) y el repo, nunca el comando, que puede traer una
+El texto del freno nombra la forma (`git push`, `… pr create`…) y el repo, nunca el comando, que puede traer una
 credencial; tampoco la rama escrita en el comando. Dentro de una corrida, lo que el freno no puede leer con certeza
 frena, guarde o no, y aunque haya ok: «no pude leer este comando; si guarda, pedí el ok primero». Entran el comando
 entero en una variable, un shell que lee de un tubo, `<<<` o un heredoc, una función o un alias que no está en la
@@ -273,8 +275,8 @@ ok es del estado de antes, y se guarda en un comando aparte. Fuera de una corrid
 Si el freno mismo no carga, frena dentro de una corrida, y fuera deja pasar con un aviso.
 
 Lo que no ve: un guion o un programa que guarda sin nombrar git en el comando (`node guardar.js`, `bash guion.sh`,
-un programa que lee el comando de un archivo), los alias de `gh`,
-`gh api`, `gh pr ready` y `gh pr edit`, `az repos pr update`, los commits que hacen `merge`, `cherry-pick`, `revert`,
+un programa que lee el comando de un archivo), los alias propios del programa de la plataforma,
+los comandos de pedido que no lo crean ni lo mergean (la API, marcarlo listo, cambiarlo), los commits que hacen `merge`, `cherry-pick`, `revert`,
 `am` o `commit-tree`, un programa que no conoce que cambia archivos del repo antes de un commit en el mismo comando, y
 un alias o una función de la sesión que se llama como un programa del PATH (`ls`) y guarda por dentro sin decirlo.
 Frena de más: un alias o una función que dos copias del shell definen distinto, o cuyo cuerpo no se lee entero (son

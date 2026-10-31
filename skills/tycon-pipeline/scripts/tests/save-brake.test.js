@@ -273,7 +273,8 @@ test('Freno_PushYPedidos_SinOk (T2) @story-8.151 @ac-2', (t) => {
     assert.strictEqual(r.status, 2, `«${cmd}» frena: ${r.stderr}`);
     assert.match(r.stderr, FRENO, cmd);
     assert.match(r.stderr, /approve-save/, cmd);
-    assert.match(r.stderr, /«(git push|gh pr create|gh pr merge|az repos pr create)»/, `«${cmd}» nombra la forma`);
+    // la forma es la que declara el conector: el alias `pr new` es una forma propia
+    assert.match(r.stderr, /«(git push|gh pr create|gh pr new|gh pr merge|az repos pr create)»/, `«${cmd}» nombra la forma`);
   }
   // el texto nombra la forma y el repo, nunca el comando: un comando puede traer una credencial
   const MARCA = 'MARCA-QUE-NO-SALE';
@@ -883,4 +884,40 @@ test('PrepareCommit_SinOkDelChat_ConOrden (T12) @story-8.151 @ac-12', () => {
     desde = j;
   }
   assert.match(texto, /lo hace cumplir el gancho|el freno lo hace cumplir/i);
+});
+
+// T13 Freno_PedidosDeLosConectores
+// 🔴 Falla con: un freno que reconoce los pedidos por un nombre de herramienta escrito en el núcleo y no por lo que
+// declaran los conectores de plataforma, o una lista de conectores que no se lee y deja pasar el pedido.
+test('Freno_PedidosDeLosConectores (T13)', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  abrir(h, corrida(a));
+  const conectores = tmp(t, 'freno-conectores-');
+  escribir(conectores, 'otra/integration.json', JSON.stringify({ __doc: 'de prueba', name: 'otra', label: 'Otra', kind: 'platform',
+    connector: 'scripts/connector.js', operations: ['ci.read'], capabilities: {}, rawCommands: ['otra pr create', 'otra pr merge', 'otra pr list', 'otra issue create'] }));
+  const env = { TYCON_INTEGRATIONS_DIR: conectores };
+  // el pedido que el conector declara frena, con las opciones antes de cada palabra y su valor
+  for (const [cmd, forma] of [['otra pr create --fill', 'otra pr create'], ['otra -R acme/x pr merge 3', 'otra pr merge'],
+    ['otra pr --repo=acme/x create', 'otra pr create'], ["bash -c 'otra pr create --title x'", 'otra pr create']]) {
+    const r = gancho(h, cmd, { cwd: a, env });
+    assert.strictEqual(r.status, 2, `«${cmd}» frena: ${r.stderr}`);
+    assert.match(r.stderr, new RegExp(`«${forma}»`), `«${cmd}» nombra la forma`);
+  }
+  // un programa que corre el pedido por su cuenta no se lee
+  let r = gancho(h, `node -e "require('child_process').execSync('otra pr create')"`, { cwd: a, env });
+  assert.strictEqual(r.status, 2, `el pedido escondido frena: ${r.stderr}`);
+  // lo que el conector declara y no crea ni mergea un pedido pasa
+  for (const cmd of ['otra pr list', 'otra issue create --title x']) {
+    r = gancho(h, cmd, { cwd: a, env });
+    assert.strictEqual(r.status, 0, `«${cmd}» pasa: ${r.stderr}`);
+    assert.doesNotMatch(r.stderr, FRENO, cmd);
+  }
+  // con una integración que no se lee no se sabe qué comandos son pedidos: uno que dice `pr` frena, el resto pasa
+  escribir(conectores, 'rota/integration.json', '{ no es json');
+  r = gancho(h, 'otra pr create --fill', { cwd: a, env });
+  assert.strictEqual(r.status, 2, `sin la lista de los conectores, el pedido frena: ${r.stderr}`);
+  assert.match(r.stderr, NO_LEO);
+  r = gancho(h, 'git status', { cwd: a, env });
+  assert.strictEqual(r.status, 0, `lo que no guarda pasa igual: ${r.stderr}`);
 });
