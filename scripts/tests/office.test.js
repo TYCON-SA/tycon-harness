@@ -82,13 +82,65 @@ test('T10 EnLlano: sin números de historia ni de pedidos, y una oración por se
   assert.strictEqual(a.titulo, 'El núcleo dice qué hace');
   assert.strictEqual(a.mientras, 'portables como la CI');
   assert.strictEqual(a.haciendo, 'Terminó, pero sus pedidos no están en la cola y su pedido choca con main.');
-  assert.strictEqual(a.termina, 'cuando se encolen sus pedidos');
+  assert.strictEqual(a.termina, 'sin hora estimada');
   assert.strictEqual(byName(data, 'sesion-b').haciendo, 'Va por el paso «Correr las pruebas».');
   assert.strictEqual(byName(data, 'sesion-c').titulo, null);
   assert.strictEqual(byName(data, 'sesion-c').haciendo, 'Trabaja sin pipeline.');
   assert.deepStrictEqual(data.meta.teToca, ['Firmar: saltar el pase de 5.2 en el pedido']);
   const seen = JSON.stringify({ agents: data.agents.map(({ pasos, ...rest }) => rest), items: data.items, rows: data.rows, meta: data.meta });
   assert.doesNotMatch(seen, /[!#]\d+|\b\d+\.\d+\s*[·:]|8\.85-E|\d+\.\d+ ·/);
+});
+
+test('T11 ComoElTablero: la nota es la oración, sin hora dice «sin hora estimada», orden fijo y sin resumen', () => {
+  const { data } = buildOffice({
+    wip: wip([
+      { session: 'Zeta', work: 'espero turno para el ba…', meanwhile: 'arreglo rápido «Guía de…»', extra: { kind: 'note', text: 'espero turno para el banco contra la base !6008', meanwhile: 'Guía de coordinación: las lecciones del día' } },
+      { session: 'Beto', sid: 'coord', extra: { kind: 'activity' } },
+      { session: 'Alfa', extra: { kind: 'loose', text: 'arreglos rápidos de la oficina' } },
+      { session: 'Mona', extra: { kind: 'entering' } },
+    ]),
+    coordinatorSid: 'coord',
+    nowMs: NOW,
+  });
+  assert.deepStrictEqual(data.agents.map((a) => a.nombre), ['Beto', 'Alfa', 'Mona', 'Zeta'], 'la coordinadora primero; después, por nombre');
+  assert.deepStrictEqual(data.agents.map((a) => a.orden), [0, 1, 2, 3]);
+  const z = byName(data, 'Zeta');
+  assert.strictEqual(z.haciendo, 'espero turno para el banco contra la base');
+  assert.strictEqual(z.mientras, 'Guía de coordinación: las lecciones del día', 'el texto entero, sin cortar');
+  assert.strictEqual(byName(data, 'Alfa').haciendo, 'arreglos rápidos de la oficina');
+  assert.strictEqual(byName(data, 'Mona').termina, 'sin hora estimada');
+  assert.strictEqual(byName(data, 'Beto').termina, undefined, 'la coordinadora no termina');
+  assert.strictEqual(data.meta.resumen, undefined);
+  const html = page(data);
+  assert.doesNotMatch(html, /class="side"><\/span>|y mientras tanto: /, 'el mientras tanto va en la etiqueta, como en el tablero');
+});
+
+// The page's own time helpers (from DAYS to finTxt), run outside the browser.
+function pageTimeHelpers() {
+  const html = page({ agents: [], items: [], meta: { teToca: [] }, rows: [], free: [], unreadable: [] });
+  const code = html.slice(html.indexOf('const DAYS='), html.indexOf('function renderTop'));
+  return new Function(`${code.replace(/^const (AST|SHIRT|agents)=.*$/gm, '')}; return { finTxt };`)();
+}
+
+test('T12 HoraPasada: si la hora de fin ya pasó dice el atraso real en rojo; si es vieja, «sin hora estimada»; nunca «en hora»', () => {
+  const { data } = buildOffice({
+    wip: wip([
+      { session: 'Muñe', extra: { kind: 'entering', endAt: NOW - 5 * 3600000 } },
+      { session: 'Vieja', extra: { kind: 'entering', endAt: NOW - 13 * 3600000 } },
+      { session: 'Justa', extra: { kind: 'pipeline', endAt: NOW + 10 * 60000 } },
+    ]),
+    nowMs: NOW,
+  });
+  const late = byName(data, 'Muñe');
+  assert.strictEqual(late.atrasoMin, 300);
+  assert.strictEqual(late.atrasada, true);
+  const old = byName(data, 'Vieja');
+  assert.strictEqual(old.termina, 'sin hora estimada');
+  assert.strictEqual(old.pronosticoIso, undefined, 'una hora vieja no se muestra');
+  const { finTxt } = pageTimeHelpers();
+  assert.deepStrictEqual(finTxt(late), { hora: finTxt(late).hora, dif: '+5 h 00 tarde', cls: 'late' });
+  assert.deepStrictEqual(finTxt(old), { hora: 'sin hora estimada', dif: '', cls: '' });
+  assert.strictEqual(finTxt(byName(data, 'Justa')).dif, 'en hora', 'la que todavía no llegó a su hora sigue en hora');
 });
 
 test('T4 HoraPrometida: la primera hora vista se guarda y la de ahora se compara contra ella', () => {

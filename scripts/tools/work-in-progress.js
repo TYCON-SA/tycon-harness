@@ -918,6 +918,7 @@ function buildWip(opts = {}) {
       const last = [a.lastTouch, a.declaredAt].map((v) => Date.parse(v)).find(Number.isFinite);
       const old = last !== undefined && nowMs - last > LOOSE_STALE_MS ? ` (sin tocar desde ${hhmm(last)})` : '';
       rows[pipe.i].meanwhile = `arreglo rápido «${work}»${old}`;
+      extra[pipe.i].meanwhile = String(a.reason || '');
       continue;
     }
     const label = liveName(sid);
@@ -927,7 +928,7 @@ function buildWip(opts = {}) {
       const parts = ['Trabajo suelto'];
       if (last !== undefined) parts.push(`sin tocar desde ${hhmm(last)}`);
       if (last !== undefined && nowMs - last > LOOSE_STALE_MS) parts.push(`¿terminó? cerralo desde su sesión: node ${MARKER_JS} adhoc clear`);
-      addRow({ work, state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label, folder: folderOf(sid) }, sid, { kind: 'loose' });
+      addRow({ work, state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label, folder: folderOf(sid) }, sid, { kind: 'loose', text: String(a.reason || '') });
     }
     else {
       // Se limpia con `adhoc clear-orphan`, que sólo borra pasadas las 24 h sin tocarse: antes, se dice desde cuándo.
@@ -958,7 +959,7 @@ function buildWip(opts = {}) {
     const at = Date.parse(d.at);
     if (pipe) {
       const old = Number.isFinite(at) && nowMs - at > LOOSE_STALE_MS ? ` (sin tocar desde ${hhmm(at)})` : '';
-      if (!rows[pipe.i].meanwhile) rows[pipe.i].meanwhile = `${work}${old}`;
+      if (!rows[pipe.i].meanwhile) { rows[pipe.i].meanwhile = `${work}${old}`; extra[pipe.i].meanwhile = String(d.text || ''); }
       continue;
     }
     const label = liveName(sid);
@@ -974,7 +975,7 @@ function buildWip(opts = {}) {
     const parts = ['Anotado por la sesión'];
     if (Number.isFinite(at)) parts.push(`sin tocar desde ${hhmm(at)}`);
     if (Number.isFinite(at) && nowMs - at > LOOSE_STALE_MS) parts.push(`¿terminó? borrala desde su sesión: node ${MARKER_JS} doing clear`);
-    addRow({ work, state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label, folder: folderOf(sid) }, sid, { kind: 'note' });
+    addRow({ work, state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label, folder: folderOf(sid) }, sid, { kind: 'note', text: String(d.text || '') });
   }
 
   // sin arreglo ni nota: si lo último que tocó la sesión está en un repo que no es de su story, eso hace mientras tanto
