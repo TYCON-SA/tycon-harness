@@ -3568,6 +3568,33 @@ test('7.46 Config_PruebaAMano_SeccionYPedido @story-7.46 @ac-7 @ac-15 — la sec
   assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.QA_SINCE)), versionImagen: '2026.10.15.48', doc: CON }), null);
 });
 
+// ── La dirección del sitio en cada máquina (site.url del perfil), la que abre el comando de barra org-site ───────────
+test('org-site · Config_DireccionSitio_SeccionYPedido — la sección, sus textos en dos lenguas, lo que propone y la versión que pide', async () => {
+  const s = ORG.seccionPorId('direccionSitio');
+  assert.ok(s, 'la sección existe');
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.rutas, s.necesita], ['team-profile.json', 'perfil', 'harness-config', ['site'], ['site.url'], ['site']]);
+  const rev = (borrador) => ORG.revisar({ seccion: 'direccionSitio', texto: ORG.formatJson(PERFIL_TYCON), borrador, lectores: { 'harness-config': TC } });
+  const ok = rev({ site: { url: 'https://sitio.acme.example' } });
+  assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
+  assert.strictEqual(ok.texto, ORG.formatJson({ ...PERFIL_TYCON, site: { url: 'https://sitio.acme.example' } }));
+  assert.strictEqual(rev({ site: { url: 'http://sitio.acme.example' } }).ok, false, 'sin https no');
+  const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  for (const idioma of ['es', 'en']) {
+    for (const k of ['pantalla.direccionSitioTitulo', 'pantalla.direccionSitioDescripcion', 'pantalla.direccionSitioAyuda', 'pantalla.para.direccionSitio', 'org.capaSinSite']) assert.ok(textos.t(idioma, k) && textos.t(idioma, k) !== k, `${idioma} ${k}`);
+    // sin «https://» escrito: el código de la pantalla no lleva direcciones (T4a)
+    assert.match(textos.t(idioma, 'pantalla.direccionSitioAyuda'), /https\)/);
+    assert.match(ORG.pantalla(idioma), /direccionSitio: editorDireccionSitio/);
+  }
+  const p = await pantallaFalsa([seccionPerfil('direccionSitio', {})]);
+  assert.strictEqual(p.error, null);
+  assert.ok(p.todo(p.sec('direccionSitio')).some((n) => n.tag === 'input'), 'hay un campo');
+  // con site en el perfil, la capa tiene que pedir la versión que la lee
+  const CON = { ...PERFIL_TYCON, site: { url: 'https://sitio.acme.example' } };
+  const bajo = ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.SWITCHES_SINCE)), versionImagen: '2026.10.15.48', doc: CON });
+  assert.match(bajo, /todavía no se puede proponer/); assert.match(bajo, /site/); assert.ok(bajo.includes(`>= ${ORG.SITE_SINCE}`), bajo);
+  assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.SITE_SINCE)), versionImagen: '2026.10.15.48', doc: CON }), null);
+});
+
 // ── Cuántas sesiones trabajan a la vez (coordination.max_working) ──────────────────────────────────────────────────────
 // El tope es del equipo y va en la pestaña; la carpeta de las firmas del dueño es de cada máquina y no aparece.
 test('8.122 T9 · Config_CoordinationCap_SectionAndRequest @story-8.122 @ac-9', async () => {

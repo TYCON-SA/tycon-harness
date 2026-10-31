@@ -1904,7 +1904,7 @@ test('8.63 · RelaySession_SoloDesdeElPerfil @story-8.63 @ac-11', () => {
   const r = cli(['set', 'approvals.relay_session', 'yo-mismo'], { home: casa() });
   assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /sólo desde el perfil del equipo/);
-  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels']);
+  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url']);
 });
 
 // ── Una persona marca cada criterio como probado a mano (qa.manual_check) ──────────────────────────────
@@ -1936,6 +1936,31 @@ test('7.46 · Config_QaManualCheck_SoloPerfil @story-7.46 @ac-6', () => {
   c = cargar({ env: { TYCON_PROFILE: otro }, home: casa(), arnes: arnesCon({ qa: { manual_check: 'required' } }) });
   assert.equal(c.valores.qa.manual_check, 'required', 'el del árbol, no el de la variable');
   const r = cli(['set', 'qa.manual_check', 'off'], { home: casa() });
+  assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /sólo desde el perfil del equipo/);
+});
+
+// ── La dirección del sitio de la organización (site.url), la que abre el comando de barra org-site ──────────────
+// Una dirección https (o http://localhost para probar) y sólo desde el perfil: si la máquina o una variable pudieran
+// decirla, el agente podría mandar a la persona a otra página.
+test('org-site · Config_SiteUrl_ValoresYSoloPerfil', () => {
+  let c = cargar({ home: casa(), arnes: arnesCon(null) });
+  assert.deepEqual(c.errores, []);
+  assert.deepEqual([c.valores.site.url, c.origenes['site.url']], [null, 'sin-valor'], 'sin valor: el comando dice cómo cargarla');
+  c = cargar({ home: casa(), arnes: arnesCon({ site: { url: 'https://sitio.acme.example' } }) });
+  assert.deepEqual(c.errores, []);
+  assert.deepEqual([c.valores.site.url, c.origenes['site.url']], ['https://sitio.acme.example', 'perfil']);
+  for (const malo of ['http://sitio.acme.example', 'sitio.acme.example', 'javascript:alert(1)', '']) {
+    c = cargar({ home: casa(), arnes: arnesCon({ site: { url: malo } }) });
+    assert.ok(c.errores.some((e) => e.clave === 'site.url'), `${malo}: ${JSON.stringify(c.errores)}`);
+  }
+  const home = casa();
+  maquina(home, { site: { url: 'https://otra.example' } });
+  c = cargar({ home, arnes: arnesCon(null) });
+  assert.equal(c.valores.site.url, null);
+  assert.deepEqual(c.shadowed['site.url'], { value: 'https://otra.example', origin: 'maquina', by: 'solo-perfil' });
+  assert.equal(lib().VARIABLES['site.url'], undefined);
+  const r = cli(['set', 'site.url', 'https://otra.example'], { home: casa() });
   assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /sólo desde el perfil del equipo/);
 });
@@ -1996,7 +2021,7 @@ test('8.88 T47 · Config_DelegatedSigning_MachineFileSetAndExplain @story-8.88 @
   assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /sólo desde el perfil del equipo/);
   assert.match(lib().explicar({ env: {}, home, arnes: arnesCon(null) }), /approvals\.delegated_signing = (off|sin valor).*vale sólo desde el perfil del equipo/);
-  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels']);
+  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url']);
 });
 
 // ── Qué firmas se delegan y en qué máquinas (approvals.delegated_signing en lista, approvals.delegated_machines) ──────
