@@ -587,14 +587,19 @@ function rutasDeHoras() {
  * sus grupos de antes, y las huellas que el buzón de corridas vio, una por huella con la primera carpeta que la trae.
  * `informados` es lo de `people.leerCorreosInformados`; sin él, ninguna huella y `buzonMedido: false`. Sin el catálogo,
  * `firmas: []` con su motivo: la pantalla lo dice y no ofrece nada.
+ * Con `{ lector, approvals }`, `rechazadas` dice, por lista, qué valor guardado rechaza el lector (su `validarTipo`,
+ * no una copia de la regla) y por qué: la pantalla pone una fila con el error y «Quitar» por cada uno. Sin lector,
+ * `rechazadas: null` y la pantalla no marca nada: el lector lo juzga al revisar.
  */
-function extrasDeAprobaciones(informados) {
+function extrasDeAprobaciones(informados, { lector, approvals } = {}) {
   let firmas = []; let grupos = {}; let niveles = []; let firmasMotivo = null;
   try {
     const SIG = require(path.join(__dirname, 'signatures.js'));
     // `covers`: lo que la firma alcanza por delegación (sin lo que la delegación no firma), para medir su nivel con lo
     // que suba el perfil
-    firmas = SIG.SIGNATURES.map((f) => ({ id: f.id, approves: f.approves, otherSession: f.otherSession, covers: f.covers.filter((c) => !SIG.NOT_DELEGATED.includes(c)) }));
+    // `grupo`: las formas que cubren lo mismo (el guion y su frase de escape) son una sola firma y van en una fila;
+    // `kind` dice cómo se pide cada una
+    firmas = SIG.SIGNATURES.map((f) => ({ id: f.id, kind: f.kind, grupo: f.covers.join(','), approves: f.approves, otherSession: f.otherSession, covers: f.covers.filter((c) => !SIG.NOT_DELEGATED.includes(c)) }));
     niveles = SIG.LEVELS.map((l) => ({ id: l.id, level: l.level, approves: l.approves }));
     grupos = Object.fromEntries(Object.entries(SIG.GROUPS).map(([g, ids]) => [g, [...ids]]));
   } catch (e) { firmasMotivo = (e && (e.code || e.message)) || 'error'; }
@@ -617,7 +622,33 @@ function extrasDeAprobaciones(informados) {
   const maquinas = [...porHuella].map(([id, carpetas]) => ({
     id, carpeta: carpetas[0], nombre: nombreDeMaquina(carpetas[0]), ...(carpetas.length > 1 ? { choque: carpetas } : {}),
   }));
-  return { firmas, grupos, niveles, ...(firmasMotivo ? { firmasMotivo } : {}), maquinas, sinHuella, buzonMedido: isObject(informados) && !informados.no_medido };
+  return { firmas, grupos, niveles, ...(firmasMotivo ? { firmasMotivo } : {}), maquinas, sinHuella, buzonMedido: isObject(informados) && !informados.no_medido, rechazadas: rechazadasPorElLector(lector, approvals) };
+}
+/**
+ * Por lista de firmas, cada valor guardado que el lector rechaza solo, con su motivo: { delegated_signing: { v: motivo },
+ * owner_only: {…} }. Si cada valor vale solo pero la lista entera no («off» junto a otro), `enteras[lista]` trae la lista
+ * juzgada y los valores que, quitados, dejan una lista que el lector acepta.
+ */
+function rechazadasPorElLector(lector, approvals) {
+  const tipos = lector && typeof lector.validarTipo === 'function' && isObject(lector.VOCABULARIO) && isObject(lector.VOCABULARIO.approvals) ? lector.VOCABULARIO.approvals : null;
+  if (!tipos) return null;
+  const out = { enteras: {} };
+  for (const clave of ['delegated_signing', 'owner_only']) {
+    out[clave] = {};
+    const v = isObject(approvals) ? approvals[clave] : undefined;
+    if (v === undefined || v === '' || !tipos[clave]) continue;
+    const lista = Array.isArray(v) ? v : [v];
+    for (const x of lista) {
+      const motivo = lector.validarTipo(tipos[clave], [x]);
+      if (motivo) out[clave][String(x)] = motivo;
+    }
+    if (Object.keys(out[clave]).length || lista.length < 2 || !lector.validarTipo(tipos[clave], lista)) continue;
+    out.enteras[clave] = {
+      lista: lista.map(String),
+      quitar: lista.filter((x, i) => !lector.validarTipo(tipos[clave], lista.filter((_, j) => j !== i))).map(String),
+    };
+  }
+  return out;
 }
 /** La carpeta como nombre de máquina en la forma que pide el lector de la configuración (hasta 40, letras, números, ` ._()-`). */
 function nombreDeMaquina(carpeta) {
@@ -1603,7 +1634,7 @@ function pantalla(idioma = 'es') {
     }
     caja.appendChild(el('p', { class: 'sub-d', text: T('pantalla.invitarAyuda') }));
     var correo = el('input', { type: 'email', value: INVITAR.correo, placeholder: T('pantalla.correo'), 'aria-label': T('pantalla.correoAInvitar'), oninput: function (ev) { INVITAR.correo = ev.target.value; } });
-    var productos = el('input', { value: INVITAR.productos, placeholder: T('pantalla.productosSeparados'), 'aria-label': T('pantalla.productosDeLaPersona'), oninput: function (ev) { INVITAR.productos = ev.target.value; } });
+    var productos = el('input', { class: 'productos', value: INVITAR.productos, placeholder: T('pantalla.productosSeparados'), 'aria-label': T('pantalla.productosDeLaPersona'), oninput: function (ev) { INVITAR.productos = ev.target.value; } });
     var boton = el('button', { type: 'button', text: INVITAR.enviando ? T('pantalla.invitando') : T('pantalla.invitar'), disabled: INVITAR.enviando ? 'disabled' : undefined, onclick: function () { invitar(textoDelCampo(correo), textoDelCampo(productos)); } });
     caja.appendChild(el('div', { class: 'bar' }, correo, productos, boton));
     var n = INVITAR.nota;
@@ -1820,14 +1851,22 @@ function pantalla(idioma = 'es') {
     var sel = el('input', { placeholder: T('pantalla.numeroDelPipelineODueno'), 'aria-label': T('pantalla.pipeline3') });
     var nombrePipeline = el('input', { placeholder: T('pantalla.proyectoNombreDelPipeline', { plataforma: 'Azure' }), 'aria-label': T('pantalla.nombreDelPipeline') });
     var nota = el('div', {});
-    // con la lista del proyecto de operaciones, el pipeline se elige por su nombre y completa los dos campos de abajo
+    // el producto puede vivir en otro proyecto que el de operaciones: el campo arranca en el de operaciones y, al
+    // cambiarlo, la lista trae los pipelines de ese proyecto. Con la lista, el pipeline se elige por su nombre y completa
+    // los dos campos de abajo
     var ex = s.extras || {};
-    var lista = ex.plataforma === 'azure' ? listaDePipelines(pipelinesDe(ex.org, ex.proyecto)) : null;
+    var proyecto = S.proyectoDelProducto || ex.proyecto || '';
+    var campoProyecto = ex.plataforma === 'azure' ? el('div', { class: 'campo' }, el('label', { text: T('pantalla.proyectoDelProducto') }), el('input', { value: proyecto, 'aria-label': T('pantalla.proyectoDelProducto'), 'data-path': 'deployments.proyectoDelProducto', onchange: function (e) {
+      S.proyectoDelProducto = String(e.target.value).trim();
+      render();
+    } })) : null;
+    var lista = ex.plataforma === 'azure' ? listaDePipelines(pipelinesDe(ex.org, proyecto)) : null;
     var eleccion = lista ? selector(T('pantalla.pipeline3'), '', [['', T('pantalla.elegiElPipeline')]].concat(lista.map(function (x) { return [String(x.id), x.nombre]; })), function (v) {
       var x = lista.filter(function (y) { return String(y.id) === v; })[0];
-      sel.value = x ? ex.proyecto + '/' + x.id : ''; nombrePipeline.value = x ? ex.proyecto + '/' + x.nombre : '';
+      sel.value = x ? proyecto + '/' + x.id : ''; nombrePipeline.value = x ? proyecto + '/' + x.nombre : '';
     }, 'deployments.pipeline', pr) : null;
     var agregar = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.agregarUnProducto') }), el('p', { class: 'sub-d', text: T('pantalla.elegisElPipelineYEl') }),
+      campoProyecto,
       eleccion,
       el('div', { class: 'fila' }, producto, lista ? el('details', { class: 'mas-info' }, el('summary', { text: T('pantalla.escribirloAMano') }), sel, nombrePipeline) : sel, lista ? null : nombrePipeline, el('button', { class: 'sec', type: 'button', text: T('pantalla.verSusPasos'), onclick: function () {
         api('/stages', { pipeline: sel.value }).then(function (r) {
@@ -2293,23 +2332,87 @@ function pantalla(idioma = 'es') {
     problemasEn(pr, 'approvals.delegated_signing').concat(problemasEn(pr, 'approvals.owner_only')).forEach(function (x) { box.appendChild(el('p', { class: 'err', text: x.message })); });
     if (!CAT.length) box.appendChild(el('p', { class: 'err', text: ex.firmasMotivo ? T('pantalla.firmasSinCatalogoPor', { motivo: ex.firmasMotivo }) : T('pantalla.firmasSinCatalogo') }));
     else {
+      box.appendChild(matrizCorta());
       var t = tabla('firmas', T('pantalla.firmasTitulo'), [T('pantalla.firmasColFirma'), T('pantalla.firmasColQuien')]);
+      var queDe = function (f) { var q = T('pantalla.firmaQue.' + f.id); return q === 'pantalla.firmaQue.' + f.id ? f.approves : q; };
+      // una fila por firma: sus formas (el guion y la frase del freno que cubren lo mismo) adentro, cada una con cómo se
+      // pide y su propio selector, porque cada forma se delega o se reserva por separado
+      var grupos = [];
       CAT.forEach(function (f) {
-        var rutina = nivelDelegado(f) === 1;
-        // una delegada que ya no es rutina el lector la saca de la delegación: se muestra a la ventana, con su nivel
-        var estado = soloDueno.indexOf(f.id) >= 0 ? 'dueno' : (delegadas.indexOf(f.id) >= 0 && rutina ? 'delegada' : '');
-        var delegable = rutina && (estado === 'delegada' || (estado === '' && f.otherSession === 'yes'));
-        var opciones = [['', T('pantalla.firmaVentana')]].concat(delegable ? [['delegada', T('pantalla.firmaDelegadaOpcion')]] : []).concat([['dueno', T('pantalla.firmaSoloDueno')]]);
-        var que = T('pantalla.firmaQue.' + f.id);
-        if (que === 'pantalla.firmaQue.' + f.id) que = f.approves;
-        var c = corto(que, estado, opciones, function (x) {
-          if ((x === 'delegada') !== (estado === 'delegada')) ponerDelegada(f.id, x === 'delegada');
-          if ((x === 'dueno') !== (estado === 'dueno')) ponerSoloDueno(f.id, x === 'dueno');
+        var g = f.grupo || f.id;
+        var ya = grupos.filter(function (x) { return x.clave === g; })[0];
+        if (ya) ya.formas.push(f); else grupos.push({ clave: g, formas: [f] });
+      });
+      // por nivel, como la matriz: cada firma en el bloque del mayor nivel de sus formas, y cada bloque con su frase
+      grupos.forEach(function (g) { g.nivel = Math.max.apply(null, g.formas.map(function (f) { return nivelDelegado(f); })); });
+      var bloque = 0;
+      grupos.slice().sort(function (a, b) { return a.nivel - b.nivel; }).forEach(function (g) {
+        if (g.nivel !== bloque) {
+          bloque = g.nivel;
+          t.appendChild(el('div', { class: 'r nivel-cab', role: 'row', 'data-nivel-bloque': String(bloque) }, el('div', { class: 'nivel-t', role: 'cell' }, el('b', { text: T('pantalla.firmasNivel' + bloque) }), el('span', { class: 'muted', text: T('pantalla.firmasNivel' + bloque + 'Frase') }))));
+        }
+        var cabeza = g.formas.filter(function (f) { return f.id === g.clave; })[0] || g.formas[0];
+        var formas = el('div', { class: 'formas', role: 'cell' });
+        var mios = [];
+        g.formas.forEach(function (f) {
+          var rutina = nivelDelegado(f) === 1;
+          // una delegada que ya no es rutina el lector la saca de la delegación: se muestra a la ventana, con su nivel
+          var estado = soloDueno.indexOf(f.id) >= 0 ? 'dueno' : (delegadas.indexOf(f.id) >= 0 && rutina ? 'delegada' : '');
+          var delegable = rutina && (estado === 'delegada' || (estado === '' && f.otherSession === 'yes'));
+          var opciones = [['', T('pantalla.firmaVentana')]].concat(delegable ? [['delegada', T('pantalla.firmaDelegadaOpcion')]] : []).concat([['dueno', T('pantalla.firmaSoloDueno')]]);
+          var como = T(f.kind === 'freno' ? 'pantalla.firmaComoFrase' : 'pantalla.firmaComoGuion');
+          var c = corto(queDe(f) + ' · ' + como, estado, opciones, function (x) {
+            if ((x === 'delegada') !== (estado === 'delegada')) ponerDelegada(f.id, x === 'delegada');
+            if ((x === 'dueno') !== (estado === 'dueno')) ponerSoloDueno(f.id, x === 'dueno');
+            render();
+          }, 'approvals.firma.' + f.id, pr);
+          mios = mios.concat(c.mios);
+          // una delegada que no se corre desde otra sesión no dice «no se puede delegar» al lado de «Delegada»: dice que no rinde.
+          // «Pasala a la ventana para delegarla» sólo en la rutina, y el nivel sólo si no es el de su bloque
+          var nota = estado === 'dueno' ? (rutina ? T('pantalla.firmaSoloDuenoNoSeDelega') : '') : (!rutina ? (nivelDelegado(f) !== g.nivel ? T('pantalla.firmaNoRutina', { nivel: nivelDelegado(f) }) : '') : (f.otherSession !== 'yes' ? T(estado === 'delegada' ? 'pantalla.firmaDelegadaNoDesdeOtraSesion' : 'pantalla.firmaNoDesdeOtraSesion') : ''));
+          formas.appendChild(el('div', { class: 'forma' }, el('span', { class: 'muted', text: como + (nota ? ' · ' + nota : '') }), c.sel));
+        });
+        var fila = renglon([el('div', { class: 'que', role: 'cell' }, el('b', { text: queDe(cabeza) })), formas], mios);
+        fila.setAttribute('data-firma-grupo', g.clave);
+        t.appendChild(fila);
+      });
+      // lo guardado que el lector rechaza en su lista (su veredicto, que manda el servidor): su fila, con el error y cómo
+      // quitarlo. «off» o un grupo valen en las delegadas y no en sólo del dueño, donde tumban la lista entera
+      var rech = ex.rechazadas || {};
+      var rechazada = function (lista, v) { return Object.prototype.hasOwnProperty.call(rech[lista] || {}, String(v)); };
+      // «Quitar» saca el valor sólo de la lista donde el lector lo rechaza: un grupo vale en las delegadas aunque sobre
+      // en sólo del dueño
+      var raras = [];
+      firmas.forEach(function (v) { if (rechazada('delegated_signing', v) && raras.indexOf(v) < 0) raras.push(v); });
+      soloDueno.forEach(function (v) { if (rechazada('owner_only', v) && raras.indexOf(v) < 0) raras.push(v); });
+      raras.forEach(function (v) {
+        var fila = renglon([el('div', { class: 'que', role: 'cell' }, el('p', { class: 'err', text: T('pantalla.firmaDesconocida', { valor: String(v) }) })), el('div', { class: 'sel', role: 'cell' }, el('button', { class: 'sec', type: 'button', text: T('pantalla.quitar'), onclick: function () {
+          var quedan = firmas.filter(function (x) { return x !== v || !rechazada('delegated_signing', x); });
+          if (quedan.length !== firmas.length) hoja(d, 'approvals', 'delegated_signing', !quedan.length ? '' : (quedan.length === 1 && !Array.isArray(firma) ? quedan[0] : quedan));
+          var sigue = soloDueno.filter(function (x) { return x !== v || !rechazada('owner_only', x); });
+          if (sigue.length !== soloDueno.length) hoja(d, 'approvals', 'owner_only', sigue.length ? sigue : '');
           render();
-        }, 'approvals.firma.' + f.id, pr);
-        // una delegada que no se corre desde otra sesión no dice «no se puede delegar» al lado de «Delegada»: dice que no rinde
-        var nota = estado === 'dueno' ? T('pantalla.firmaSoloDuenoNoSeDelega') : (!rutina ? T('pantalla.firmaNoRutina', { nivel: nivelDelegado(f) }) : (f.otherSession !== 'yes' ? T(estado === 'delegada' ? 'pantalla.firmaDelegadaNoDesdeOtraSesion' : 'pantalla.firmaNoDesdeOtraSesion') : ''));
-        t.appendChild(renglon([el('div', { class: 'que', role: 'cell' }, el('b', { text: que }), el('span', { class: 'muted', text: ' · ' + f.id + (nota ? ' · ' + nota : '') })), el('div', { class: 'sel', role: 'cell' }, c.sel)], c.mios));
+        } }))], []);
+        fila.setAttribute('data-firma-desconocida', String(v));
+        t.appendChild(fila);
+      });
+      // la lista que el lector rechaza entera aunque cada valor valga solo: su fila, mientras la lista siga siendo la
+      // que juzgó, con un botón por cada valor que, quitado, la deja aceptable
+      ['delegated_signing', 'owner_only'].forEach(function (clave) {
+        var e = (rech.enteras || {})[clave];
+        var cruda = ap[clave];
+        var hoy = (Array.isArray(cruda) ? cruda : (cruda === undefined || cruda === '' ? [] : [cruda])).map(String);
+        if (!e || JSON.stringify(hoy) !== JSON.stringify(e.lista)) return;
+        var botones = e.quitar.map(function (v) {
+          return el('button', { class: 'sec', type: 'button', 'data-quitar': v, text: T('pantalla.quitar') + ' «' + v + '»', onclick: function () {
+            var resto = hoy.filter(function (x) { return x !== v; });
+            hoja(d, 'approvals', clave, resto.length ? resto : '');
+            render();
+          } });
+        });
+        var fila = renglon([el('div', { class: 'que', role: 'cell' }, el('p', { class: 'err', text: T('pantalla.firmaListaRechazada', { valores: e.lista.join(', ') }) })), el.apply(null, ['div', { class: 'sel', role: 'cell' }].concat(botones))], []);
+        fila.setAttribute('data-firma-lista', clave);
+        t.appendChild(fila);
       });
       box.appendChild(t);
     }
@@ -2318,6 +2421,31 @@ function pantalla(idioma = 'es') {
     if (delegadas.length && !rol) box.appendChild(el('p', { class: 'err', text: T('pantalla.firmaDelegadaSinSesion') }));
     box.appendChild(editorMaquinasDelegadas(ap, ex, d, pr, delegadas.length > 0));
     return box;
+  }
+  // la matriz «¿Quién firma? En corto» de la guía del sitio, arriba de la lista: quién firma cada cosa según haya o no
+  // coordinadora y estés o no. Sus celdas son las de la guía, y la prueba las compara
+  var CORTO = [
+    ['guardar', 'vos', 'espera', 'coordinadora', 'coordinadora', 'noAplica'],
+    ['otraRevision', 'vos', 'espera', 'coordinadora', 'coordinadora', 'noAplica'],
+    ['plan', 'vos', 'espera', 'coordinadoraPlan', 'coordinadoraPlan', 'revisionObligatoria'],
+    ['planDelicado', 'vos', 'espera', 'vos', 'espera', 'revisionAvisa'],
+    ['saltear', 'vos', 'espera', 'vos', 'espera', 'noAplica'],
+    ['imposible', 'vos', 'espera', 'vos', 'espera', 'noAplica'],
+    ['aMano', 'vos', 'espera', 'vos', 'espera', 'noAplica'],
+    ['emergencia', 'terminal', 'espera', 'terminal', 'espera', 'noAplica'],
+  ];
+  function matrizCorta() {
+    var C = function (k) { return T('pantalla.corto.' + k); };
+    var m = el('div', { class: 'matriz', role: 'table', 'aria-label': C('titulo'), 'data-matriz': 'corta' });
+    var h = el('div', { class: 'r h', role: 'row' });
+    [0, 1, 2, 3, 4, 5].forEach(function (i) { h.appendChild(el('span', { role: 'columnheader', text: C('col' + i) })); });
+    m.appendChild(h);
+    CORTO.forEach(function (f) {
+      var r = el('div', { class: 'r', role: 'row' }, el('span', { role: 'rowheader', text: C(f[0]) }));
+      f.slice(1).forEach(function (k) { r.appendChild(el('span', { role: 'cell', text: C(k) })); });
+      m.appendChild(r);
+    });
+    return el('div', { class: 'sub matriz-caja' }, el('p', { class: 'sub-t', text: C('titulo') }), el('p', { class: 'muted', text: C('intro') }), el('div', { class: 'matriz-scroll' }, m), el('p', { class: 'muted', text: C('nota') }));
   }
   // el nivel de cada firma (approvals.levels): una fila por id de la tabla, con un selector que empieza en el nivel de la
   // tabla, así que sólo deja subir. Volver al de la tabla saca el id del perfil. Subir una firma a 2 o más la saca de lo
@@ -2350,7 +2478,7 @@ function pantalla(idioma = 'es') {
         if (salio) hoja(d, 'approvals', 'delegated_signing', quedan.length ? quedan : '');
         render();
       }, 'approvals.nivel.' + l.id, pr);
-      t.appendChild(renglon([el('div', { class: 'que', role: 'cell' }, el('b', { text: que }), el('span', { class: 'muted', text: ' · ' + l.id })), el('div', { class: 'sel', role: 'cell' }, c.sel)], c.mios));
+      t.appendChild(renglon([el('div', { class: 'que', role: 'cell' }, el('b', { text: que })), el('div', { class: 'sel', role: 'cell' }, c.sel)], c.mios));
     });
     box.appendChild(t);
     return box;
@@ -3030,6 +3158,23 @@ function pantalla(idioma = 'es') {
   // su nombre para personas y cada valor se elige; sin ellas se escribe, y lo valida el lector al revisar. Los
   // comentarios «_…» del archivo se conservan y no se muestran
   var GRAVEDADES = [['critical', T('pantalla.gravedadCritica')], ['high', T('pantalla.gravedadAlta')], ['moderate', T('pantalla.gravedadMedia')], ['low', T('pantalla.gravedadBaja')]];
+  // la raíz de la primera palabra, sin tildes ni la vocal del final: «Alto» y «Alta» son la misma gravedad. Este texto
+  // es un String.raw: la clase lleva UNA barra, que el navegador lee como el escape de las marcas de tilde
+  function raizDeGravedad(texto) {
+    var m = /[a-z]+/.exec(String(texto).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase());
+    return m ? m[0].replace(/[aoe]$/, '') : '';
+  }
+  // los valores guardados se escriben en el idioma del proceso, no en el de quien mira: cada gravedad se reconoce por su
+  // nombre en los dos
+  var NOMBRES_DE_GRAVEDAD = { critical: ['Crítica', 'Critical'], high: ['Alta', 'High'], moderate: ['Media', 'Moderate'], low: ['Baja', 'Low'] };
+  /** El nombre de la otra gravedad que nombra un valor guardado en la gravedad g, o null si no nombra ninguna o nombra la suya. */
+  function gravedadCruzada(g, valor) {
+    if (typeof valor !== 'string' || !valor.trim()) return null;
+    var r = raizDeGravedad(valor);
+    if (!r) return null;
+    var otra = GRAVEDADES.filter(function (x) { return NOMBRES_DE_GRAVEDAD[x[0]].some(function (n) { return raizDeGravedad(n) === r; }); })[0];
+    return otra && otra[0] !== g ? otra[1] : null;
+  }
   // lo último que se quitó, para deshacerlo antes de guardar: { d, campo, volver }. Vale para el borrador en que se quitó
   var PEDIDOS_QUITADO = null;
   var RESERVADOS = ${reservados};
@@ -3136,7 +3281,11 @@ function pantalla(idioma = 'es') {
       var celdas = [celdaNombre];
       GRAVEDADES.forEach(function (g) {
         var m = esObjeto(gs[g[0]]) ? gs[g[0]] : {};
-        celdas.push(valorDePedido(nombre + ', ' + g[1], m[k], c ? c.valores : null, function (v) { if (v === '') sacar(g[0], ref.k); else poner(g[0], ref.k, v); }, 'work_items.by_severity.' + g[0] + '.' + k, pr, true));
+        var celda = valorDePedido(nombre + ', ' + g[1], m[k], c ? c.valores : null, function (v) { if (v === '') sacar(g[0], ref.k); else poner(g[0], ref.k, v); }, 'work_items.by_severity.' + g[0] + '.' + k, pr, true);
+        // un valor que nombra otra gravedad («Crítica» guardada como «Alto») se avisa en su celda; no se corrige solo
+        var otra = gravedadCruzada(g[0], m[k]);
+        if (otra) celda.appendChild(el('div', { class: 'err', 'data-path': 'work_items.by_severity.' + g[0] + '.' + k + '.gravedad', text: T('pantalla.pedidosGravedadCruzada', { valor: String(m[k]), otra: otra }) }));
+        celdas.push(celda);
       });
       celdas.push(el('div', { class: 'acc' }, quitarDePedido(d, nombre, function () { GRAVEDADES.forEach(function (g) { sacar(g[0], ref.k); }); })));
       var fila = renglon(celdas, [], null); fila.setAttribute('data-fila', k);

@@ -121,7 +121,7 @@ function crearDecididas({ dataDir = null, ahora = Date.now, log = () => {} } = {
   // quién y cuándo, si tienen forma: lo demás no se guarda
   const datos = (x) => ({ ...(typeof x.quien === 'string' && x.quien ? { quien: norm(x.quien) } : {}), ...(DIA.test(String(x.el || '')) ? { el: x.el } : {}),
     ...(typeof x.nombre === 'string' && x.nombre ? { nombre: x.nombre.slice(0, 300) } : {}), ...(DIA.test(String(x.vio || '')) ? { vio: x.vio } : {}),
-    ...(nombresDe(x.nombres) ? { nombres: nombresDe(x.nombres) } : {}) });
+    ...(nombresDe(x.nombres) ? { nombres: nombresDe(x.nombres) } : {}), ...(typeof x.donde === 'string' && x.donde ? { donde: x.donde.slice(0, 300) } : {}) });
   // el título en cada idioma del sitio, para que «Ya decididas» salga en el de quien mira
   const nombresDe = (n) => {
     if (!isObject(n)) return null;
@@ -351,6 +351,18 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
   const reglaDe = (f) => (f.fuente === 'vigilante' ? (REGLAS.includes(f.hechos && f.hechos.regla) ? f.hechos.regla : 'otra') : null);
 
   /**
+   * De dónde es la ficha, para «Ya decididas»: el producto del vigilante, los repos de la vulnerabilidad, o las máquinas
+   * y stories donde pasó lo de las ejecuciones. null si la ficha no lo trae.
+   */
+  function dondeDe(f) {
+    const lista = (xs) => (Array.isArray(xs) ? xs.filter((x) => typeof x === 'string' && x) : []);
+    const partes = f.fuente === 'vigilante' ? [f.hechos && f.hechos.producto].filter((x) => typeof x === 'string' && x)
+      : f.fuente === 'dependencias' ? lista(f.repos_etiquetas)
+        : [...lista(f.contexto && f.contexto.maquinas), ...lista(f.contexto && f.contexto.stories)];
+    return partes.length ? partes.join(', ').slice(0, 300) : null;
+  }
+
+  /**
    * El título en llano: el de ejecuciones ya lo es; el del vigilante se arma con el producto, el plugin (o el endpoint),
    * qué pasó según la regla y cuántas veces. Nunca la clave de la regla ni el diagnóstico.
    */
@@ -552,7 +564,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       const enMain = decisionEnMain(dir, f);
       if (enMain === 'ilegible') { ilegibles.add(f.fuente); continue; }
       if (fallidaDe(f)) fallidas.set(clave(f), fallidaDe(f));
-      if (enMain) decididas.olvidar(clave(f), { ...enMain, nombre: tituloDe(f, LANG.POR_DEFECTO), nombres: titulosDe(f) });
+      if (enMain) decididas.olvidar(clave(f), { ...enMain, nombre: tituloDe(f, LANG.POR_DEFECTO), nombres: titulosDe(f), donde: dondeDe(f) });
       const yaDecidida = enMain ? enMain.accion : decididas.accionDe(clave(f), fallidaDe(f));
       if (enMain || yaDecidida) { aprobadas.push({ clave: clave(f), nombre: tituloDe(f, idioma) }); continue; }
       const p = enPedido.get(clave(f));
@@ -595,7 +607,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       const estado = decididas.noAplicada(x, fallidas.get(x.clave)) ? 'no_aplicada' : pendientes.has(x.clave) ? 'esta_noche' : 'aplicada';
       const guardado = (x.nombres && x.nombres[idioma]) || x.nombre;
       return { fuente: x.clave.slice(0, i), id: x.clave.slice(i + 1), nombre: pendientes.get(x.clave) || guardado || x.clave.slice(i + 1), accion: x.accion,
-        quien: alias(x.quien), el: x.el || null, estado };
+        quien: alias(x.quien), el: x.el || null, donde: x.donde || null, estado };
     });
   }
 
@@ -658,7 +670,8 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       return filas.length ? `<h3 class="m-sub" data-fuente="${esc(fuente)}" data-t="${esc(T(idioma, sub, { n: '{n}' }))}">${esc(T(idioma, sub, { n: filas.length }))}</h3>${filas.map(carta).join('')}` : '';
     }).join('');
     const toca = `<div class="m-bloque m-toca" data-t-vacio="${esc(T(idioma, 'mant.vacio'))}"><h2 data-t="${esc(T(idioma, 'mant.toca.titulo', { n: '{n}' }))}">${esc(T(idioma, 'mant.toca.titulo', { n: m.toca.length }))}</h2>`
-      + `<p class="m-intro">${esc(T(idioma, m.aplicaSolo ? 'mant.toca.introSolo' : 'mant.toca.intro'))} ${ayuda('aceptar')} ${ayuda('arreglar')} ${ayuda('enviar')}</p>`
+      // cada «?» va pegado a la palabra que explica, donde la marca el texto
+      + `<p class="m-intro">${esc(T(idioma, m.aplicaSolo ? 'mant.toca.introSolo' : 'mant.toca.intro')).replace(/\{(aceptar|arreglar|enviar)\}/g, (_, k) => ` ${ayuda(k)}`)}</p>`
       + (m.toca.length ? subgrupos : `<p class="q-note">${esc(T(idioma, 'mant.vacio'))}</p>`) + '</div>';
 
     // esperando aprobación
@@ -675,8 +688,8 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
 
     // ya decididas: va en la página aunque esté vacía, para que lo enviado pase ahí sin recargar
     const estadoDe = (e) => T(idioma, { aplicada: 'mant.decididas.aplicada', no_aplicada: 'mant.decididas.noAplicada' }[e] || 'mant.decididas.estaNoche');
-    const decidida = (x) => `<li data-ficha="${esc(`${x.fuente}/${x.id}`)}"><b>${esc(x.nombre)}</b> <span class="m-tarea">${esc([x.accion ? accion(x.accion, x.fuente) : '?', dia(x.el), x.quien, estadoDe(x.estado)].filter(Boolean).join(' · '))}</span></li>`;
-    const ya = `<details class="m-bloque m-decididas"${m.decididas.length ? '' : ' hidden'} data-t-esta-noche="${esc(estadoDe('esta_noche'))}">`
+    const decidida = (x) => `<li data-ficha="${esc(`${x.fuente}/${x.id}`)}"><b>${esc(x.nombre)}</b> <span class="m-tarea">${esc([x.donde || T(idioma, 'mant.decididas.sinDonde'), x.accion ? accion(x.accion, x.fuente) : '?', dia(x.el), x.quien, estadoDe(x.estado)].filter(Boolean).join(' · '))}</span></li>`;
+    const ya = `<details class="m-bloque m-decididas"${m.decididas.length ? '' : ' hidden'} data-t-esta-noche="${esc(estadoDe('esta_noche'))}" data-t-sin-donde="${esc(T(idioma, 'mant.decididas.sinDonde'))}">`
       + `<summary data-t="${esc(T(idioma, 'mant.decididas.titulo', { n: '{n}' }))}">${esc(T(idioma, 'mant.decididas.titulo', { n: m.decididas.length }))}</summary>`
       + `<p class="m-intro">${esc(T(idioma, 'mant.decididas.intro'))}</p><ul class="m-lista">${m.decididas.map(decidida).join('')}</ul></details>`;
 
@@ -781,7 +794,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       if (!f || f.id !== x.id || f.estado === 'resuelta' || !porDecidir(f)) { omitidas.push(clave(x)); continue; }
       const enMain = decisionEnMain(dir, x);
       if (enMain === 'ilegible') return json(200, { ok: false, codigo: 'decision_ilegible', message: T(idioma, 'hallazgos.decisionIlegible') });
-      nombres.set(clave(x), { nombre: tituloDe(f, LANG.POR_DEFECTO), nombres: titulosDe(f) });
+      nombres.set(clave(x), { nombre: tituloDe(f, LANG.POR_DEFECTO), nombres: titulosDe(f), donde: dondeDe(f) });
       vistas.set(clave(x), fallidaDe(f));
       if (enMain) previas.push({ clave: clave(x), ...enMain });
       if (enMain || decididas.accionDe(clave(x), fallidaDe(f)) || enPedido.has(clave(x))) { omitidas.push(clave(x)); continue; }
@@ -793,7 +806,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     const quien = norm((ctx.sesion && ctx.sesion.email) || (ctx.quien && ctx.quien.email));
     const el = new Date(ahora()).toISOString().slice(0, 10);
     // lo que la pantalla pasa a «Ya decididas» en el momento, sin el correo
-    const paraLaPantalla = (xs) => xs.map((x) => ({ clave: x.clave, accion: x.accion, quien: alias(x.quien), el: x.el || null }));
+    const paraLaPantalla = (xs) => xs.map((x) => ({ clave: x.clave, accion: x.accion, quien: alias(x.quien), el: x.el || null, donde: (nombres.get(x.clave) || {}).donde || null }));
     for (const x of previas) decididas.olvidar(x.clave, { ...x, ...nombres.get(x.clave) });
     if (!van.length) return json(200, { ok: false, codigo: 'nada_que_enviar', message: T(idioma, 'mant.envio.nadaQueEnviar'), omitidas, decididas: paraLaPantalla(previas) });
     const conForma = (lista) => lista.map((x) => ({ fuente: x.fuente, id: x.id, accion: x.accion, quien, el,
@@ -918,6 +931,18 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
 // recuerda en el navegador), seguir las recomendaciones y enviar todo junto. Un rechazo sin motivo no se envía. Sin «Enviar para aprobar» no se escribe nada. Lo enviado pasa a «Esperando aprobación» o a «Ya
 // decididas» sin recargar, y cada número de la pantalla se recuenta.
 const CLIENTE = `(function () {
+  // la ventanita de ayuda se abre junto al «?» que la abrió, no en el centro de la pantalla
+  document.addEventListener('toggle', function (e) {
+    var pop = e.target;
+    if (!pop || !pop.classList || !pop.classList.contains('m-pop') || e.newState !== 'open') return;
+    var boton = document.querySelector('[popovertarget="' + pop.id + '"]');
+    if (!boton) return;
+    var r = boton.getBoundingClientRect(), p = pop.getBoundingClientRect();
+    var izq = Math.max(16, Math.min(r.left, window.innerWidth - p.width - 16));
+    var arriba = r.bottom + 6 + p.height > window.innerHeight - 16 ? Math.max(16, r.top - 6 - p.height) : r.bottom + 6;
+    pop.style.left = izq + 'px';
+    pop.style.top = arriba + 'px';
+  }, true);
   var s = document.getElementById('hallazgos');
   var barra = s && s.querySelector('.m-barra');
   if (!s || !barra) return;
@@ -1038,7 +1063,7 @@ const CLIENTE = `(function () {
         var b = document.createElement('b'); b.textContent = c.querySelector('.m-nombre').textContent; li.appendChild(b);
         var el = /^\\d{4}-\\d{2}-\\d{2}$/.test(x.el || '') ? x.el.slice(8, 10) + '/' + x.el.slice(5, 7) : '';
         var sp = document.createElement('span'); sp.className = 'm-tarea';
-        sp.textContent = [etiqueta(k, x.accion) || '?', el, x.quien || '', ya.getAttribute('data-t-esta-noche') || ''].filter(Boolean).join(' · ');
+        sp.textContent = [x.donde || ya.getAttribute('data-t-sin-donde') || '', etiqueta(k, x.accion) || '?', el, x.quien || '', ya.getAttribute('data-t-esta-noche') || ''].filter(Boolean).join(' · ');
         li.appendChild(document.createTextNode(' ')); li.appendChild(sp);
         ul.insertBefore(li, ul.firstChild);
       }

@@ -1351,7 +1351,7 @@ test('T37 Modelos_ProblemaDeSeccion_NoSePropone @story-2.29 @ac-4 — el lector 
 
 // ── lo que la pantalla de las dos secciones (suites y modelos) tiene que aguantar ─────────────────
 /** La pantalla real sobre un documento mínimo con eventos: `click(texto, seccion)` aprieta un botón; `pedidos` anota cada fetch. */
-async function pantallaFalsa(secciones, respuestas = {}) {
+async function pantallaFalsa(secciones, respuestas = {}, idioma = 'es') {
   const creados = [];
   const nodo = (tag) => { const n = { tag, hijos: [], textContent: '', attrs: {}, on: {}, setAttribute(k, v) { n.attrs[k] = v; }, appendChild(c) { n.hijos.push(c); return c; }, addEventListener(e, f) { n.on[e] = f; }, replaceChildren(...cs) { n.hijos = cs; } }; creados.push(n); return n; };
   const app = nodo('div');
@@ -1360,7 +1360,7 @@ async function pantallaFalsa(secciones, respuestas = {}) {
   const respuesta = { ok: true, secciones, proponer: {}, versiones: [], productos: [] };
   const fetch = (ruta, o) => { pedidos.push({ ruta, cuerpo: o && o.body ? JSON.parse(o.body) : null }); return Promise.resolve({ status: 200, json: () => Promise.resolve(ruta === '/api/config' ? respuesta : respuestas[ruta] ? respuestas[ruta](o && o.body ? JSON.parse(o.body) : null) : { ok: false, problems: [] }) }); };
   let error = null;
-  try { new Function('document', 'fetch', ORG.pantalla())(document, fetch); } catch (e) { error = e; }
+  try { new Function('document', 'fetch', ORG.pantalla(idioma))(document, fetch); } catch (e) { error = e; }
   const esperar = async () => { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)); };
   await esperar();
   const todo = (n) => { const out = []; const walk = (x) => { out.push(x); (x.hijos || []).forEach(walk); }; walk(n); return out; };
@@ -1369,7 +1369,7 @@ async function pantallaFalsa(secciones, respuestas = {}) {
   const click = async (texto, id) => { const b = todo(sec(id)).find((n) => n.tag === 'button' && n.textContent === texto); assert.ok(b, `hay «${texto}» en ${id}`); b.on.click({}); await esperar(); };
   return { error, sec, textoDe, todo, click, pedidos, app };
 }
-const seccionPerfil = (id, borrador, problems = []) => ({ id, titulo: id, repo: 'perfil', estado: 'cargado', soloLectura: false, motivo: null, borrador, problems, avisos: [], extras: id === 'modelos' ? { hoy: { reviewers: 'sonnet' } } : (id === 'aprobaciones' ? ORG.extrasDeAprobaciones(null) : undefined) });
+const seccionPerfil = (id, borrador, problems = []) => ({ id, titulo: id, repo: 'perfil', estado: 'cargado', soloLectura: false, motivo: null, borrador, problems, avisos: [], extras: id === 'modelos' ? { hoy: { reviewers: 'sonnet' } } : (id === 'aprobaciones' ? ORG.extrasDeAprobaciones(null, { lector: TC, approvals: borrador && borrador.approvals }) : undefined) });
 
 test('T41 Pantalla_SuitesYModelos_TodoProblemaSeVe_YSeEditaComoTexto @story-2.29 @ac-4 (tanda C, pase adversarial) — ningún problema del lector queda sin dibujar', async () => {
   const pm = [['models.ceiling', 'un techo sin techo'], ['models.foo', 'clave desconocida foo'], ['models.session.huge', 'subclave huge'], ['models.adversarial', 'adversarial no es objeto']];
@@ -3717,15 +3717,23 @@ test('8.116 T36 SiteConfig_SelectorDe888_LeeLaLista', async () => {
 
 // una firma que no se corre desde otra sesión: delegada, dice que no rinde; a la ventana, que no se puede delegar
 test('SiteConfig_Firma_DelegadaSinOtraSesion_DiceQueNoRinde', async () => {
-  const nota = (p) => (p.textoDe('aprobaciones').split(' | ').find((x) => x.startsWith(' · adversarial-skip')) || '');
-  // las firmas que no se corren desde otra sesión son todas de nivel 2 o más: la nota dice su nivel, delegada o no, porque
-  // la coordinadora no las firma por ninguna de las dos razones
+  // las firmas que no se corren desde otra sesión son todas de nivel 2 o más: van en el bloque de la excepción, que dice
+  // que no se delega, delegadas o no, y su selector no ofrece delegarlas
+  const enSuBloque = (p) => {
+    const nodos = p.todo(p.sec('aprobaciones')).filter((n) => n.attrs['data-nivel-bloque'] || n.attrs['data-firma-grupo']);
+    const i = nodos.findIndex((n) => n.attrs['data-firma-grupo'] === 'adversarial-skip');
+    const bloque = nodos.slice(0, i).reverse().find((n) => n.attrs['data-nivel-bloque']);
+    return { fila: nodos[i], bloque };
+  };
   const delegada = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: ['adversarial-skip'] } })]);
   assert.strictEqual(delegada.error, null);
-  assert.match(nota(delegada), /es de nivel 2: no se delega, la firma una persona/);
-  assert.doesNotMatch(nota(delegada), /está delegada/);
-  const ventana = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora' } })]);
-  assert.match(nota(ventana), /es de nivel 2: no se delega/);
+  for (const p of [delegada, await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora' } })])]) {
+    const { fila, bloque } = enSuBloque(p);
+    assert.strictEqual(bloque.attrs['data-nivel-bloque'], '2');
+    assert.match(p.todo(bloque).map((n) => n.textContent || '').join(' '), /no se delega/);
+    assert.doesNotMatch(p.todo(fila).map((n) => n.textContent || '').join(' '), /está delegada/);
+    assert.ok(!selectorDeFirma(p, 'adversarial-skip').hijos.some((o) => o.attrs.value === 'delegada'), 'no ofrece delegarla');
+  }
 });
 
 // T44 SiteConfig_SelectorDe888_ConservaLaLista @story-8.116 @ac-43
@@ -4106,8 +4114,8 @@ const WI_TABLA = { type: 'Riesgo', fixed_fields: { 'Custom.Categoria': 'Segurida
 const LISTAS_RIESGO = { '/api/config/tipos-de-pedido': () => ({ ok: true, tipos: ['Bug', 'Riesgo'] }), '/api/config/campos-de-pedido': () => ({ ok: true, proyecto: 'Ventas', campos: CAMPOS_RIESGO }) };
 const GRAVEDADES_4 = ['critical', 'high', 'moderate', 'low'];
 /** La sección de los pedidos sobre la pantalla de mentira, con las listas que contesta el sitio. */
-async function tablaDePedidos(work_items, respuestas = LISTAS_RIESGO) {
-  const p = await pantallaFalsa([SEC('pedidos', { titulo: 'Pedidos de vulnerabilidades', borrador: { work_items: JSON.parse(JSON.stringify(work_items)) } })], respuestas);
+async function tablaDePedidos(work_items, respuestas = LISTAS_RIESGO, idioma = 'es') {
+  const p = await pantallaFalsa([SEC('pedidos', { titulo: 'Pedidos de vulnerabilidades', borrador: { work_items: JSON.parse(JSON.stringify(work_items)) } })], respuestas, idioma);
   const esperar = async () => { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)); };
   await esperar();
   const nodos = () => p.todo(p.sec('pedidos'));
@@ -5709,4 +5717,287 @@ test('T61 2.79-Celular_SoloLaBarraFija @story-2.79 @ac-50 — a 390 px sólo que
     assert.deepStrictEqual(fijos.map((f) => f.que), ['header.barra'], `lo fijo arriba: ${JSON.stringify(fijos)}`);
     assert.ok(fijos[0].alto < alto / 4, `la barra mide ${fijos[0].alto} de ${alto}`);
   });
+});
+
+// 2.79-Gravedades_ValorCruzado_Avisa
+// 🔴 Falla con: una gravedad guardada con el valor de otra («Crítica» como «Alto (15-20)») que la tabla muestra sin
+//    decir nada, el sitio que lo corrige solo (decisión 11), o un aviso sobre un valor del mismo nombre en otro género
+//    («Alta» como «Alto») o sobre un valor que no nombra ninguna gravedad (un número, un texto libre).
+test('T73 2.79-Gravedades_ValorCruzado_Avisa @story-2.79 @ac-66 — la fila avisa el valor que nombra otra gravedad, y sólo ése', async () => {
+  const cruzado = JSON.parse(JSON.stringify(WI_TABLA));
+  cruzado.by_severity.high['Custom.PrioridadDelRiesgo'] = '🟠 Alto (15-20)';
+  const t = await tablaDePedidos(cruzado);
+  const aviso = (g, campo) => t.en(`work_items.by_severity.${g}.${campo}.gravedad`);
+  assert.ok(aviso('critical', 'Custom.PrioridadDelRiesgo'), '«Crítica» guardada como «Alto (15-20)»: avisa');
+  assert.match(aviso('critical', 'Custom.PrioridadDelRiesgo').textContent, /Alto \(15-20\)/, 'el aviso nombra el valor guardado');
+  assert.strictEqual(aviso('high', 'Custom.PrioridadDelRiesgo'), undefined, '«Alta» como «Alto»: es la misma gravedad');
+  for (const [g, campo] of [['critical', 'Custom.Impacto'], ['moderate', 'Custom.Impacto'], ['low', 'Custom.Disparador']]) assert.strictEqual(aviso(g, campo), undefined, `${g} ${campo}: sin nombre de gravedad, sin aviso`);
+  assert.deepStrictEqual(await t.revisado(), cruzado, 'avisa sin corregir nada');
+  // pase adversarial: el valor en minúscula, en mayúsculas o con otra tilde avisa igual, y con la página en inglés
+  // también (los valores se guardan en el idioma del proceso, no en el de quien mira); un texto que sólo se parece, no
+  for (const [g, valor, avisa] of [['critical', 'alto', true], ['critical', 'ALTO', true], ['low', 'crítico', true], ['high', 'Critica', true], ['critical', 'medio', true], ['moderate', 'Raja', false], ['high', 'alta', false]]) {
+    for (const idioma of ['es', 'en']) {
+      const w = JSON.parse(JSON.stringify(WI_TABLA));
+      w.by_severity[g]['Custom.PrioridadDelRiesgo'] = valor;
+      const u = await tablaDePedidos(w, LISTAS_RIESGO, idioma);
+      const a = u.en(`work_items.by_severity.${g}.Custom.PrioridadDelRiesgo.gravedad`);
+      assert.strictEqual(Boolean(a), avisa, `${idioma}: «${valor}» guardado en ${g} ${avisa ? 'avisa' : 'no avisa'}`);
+    }
+  }
+});
+
+// 2.79-Firmas_UnaFilaPorFirmaYValorDesconocido
+// 🔴 Falla con: las formas de pedir una misma firma (el guion y su frase de escape) en filas sueltas que parecen firmas
+//    distintas, una fila que mezcla sus estados en uno, una forma que no dice cómo se pide, o un valor guardado fuera del
+//    catálogo —en la delegación o en sólo del dueño— que la tabla no muestra y por eso no se puede quitar.
+test('T64 2.79-Firmas_UnaFilaPorFirmaYValorDesconocido @story-2.79 @ac-53 — una fila por firma, cada forma con su estado; el desconocido, con su error y Quitar', async () => {
+  const SIGS = require(path.join(ROOT, 'scripts', 'lib', 'signatures.js'));
+  const grupos = new Map();
+  for (const f of SIGS.SIGNATURES) { const k = f.covers.join(','); grupos.set(k, [...(grupos.get(k) || []), f.id]); }
+  const nodos = (p) => p.todo(p.sec('aprobaciones'));
+  let p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', owner_only: ['escape:no-deep-review'] } })]);
+  assert.strictEqual(p.error, null);
+  const filas = nodos(p).filter((n) => n.attrs['data-firma-grupo']);
+  assert.strictEqual(filas.length, grupos.size, 'una fila por firma, no por forma');
+  const fila = filas.find((n) => n.attrs['data-firma-grupo'] === 'adversarial-skip');
+  assert.ok(fila, 'la fila del pase adversarial');
+  const dentro = p.todo(fila);
+  const estado = (id) => (dentro.find((n) => n.tag === 'select' && n.attrs['data-path'] === `approvals.firma.${id}`) || {}).value;
+  assert.deepStrictEqual(grupos.get('adversarial-skip').map((id) => estado(id) || ''), ['', '', 'dueno'], 'cada forma con su propio estado, sin mezclarlos');
+  const texto = dentro.map((n) => n.textContent || '').join(' ');
+  assert.match(texto, /con su comando/, 'dice cómo se pide el guion');
+  assert.match(texto, /con la frase/, 'y cómo se pide la frase del freno');
+  // prender y apagar una forma de la fila deja el archivo igual
+  const sel = () => nodos(p).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'approvals.firma.escape:no-deep-review');
+  sel().on.change({ target: { value: '' } });
+  sel().on.change({ target: { value: 'dueno' } });
+  assert.deepStrictEqual((await borradorAlRevisar(p)).approvals.owner_only, ['escape:no-deep-review']);
+  // lo guardado que no está en el catálogo: su fila, con el error y el botón para quitarlo, en las dos listas
+  p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: ['refresh-after-main', 'firma-que-no-existe'], owner_only: ['otra-que-no-existe'] } })]);
+  for (const v of ['firma-que-no-existe', 'otra-que-no-existe']) {
+    const f = nodos(p).find((n) => n.attrs['data-firma-desconocida'] === v);
+    assert.ok(f, `la fila de ${v}`);
+    assert.ok(p.todo(f).some((n) => n.attrs.class === 'err' && n.textContent.includes(v)), `${v}: el error`);
+    assert.ok(p.todo(f).some((n) => n.tag === 'button' && n.textContent === 'Quitar'), `${v}: el botón para quitarlo`);
+  }
+  p.todo(nodos(p).find((n) => n.attrs['data-firma-desconocida'] === 'firma-que-no-existe')).find((n) => n.tag === 'button' && n.textContent === 'Quitar').on.click();
+  p.todo(nodos(p).find((n) => n.attrs['data-firma-desconocida'] === 'otra-que-no-existe')).find((n) => n.tag === 'button' && n.textContent === 'Quitar').on.click();
+  const ap = (await borradorAlRevisar(p)).approvals;
+  assert.deepStrictEqual(ap.delegated_signing, ['refresh-after-main'], 'quitar saca sólo el desconocido');
+  assert.strictEqual(ap.owner_only, undefined, 'la lista que queda vacía se saca');
+});
+
+// 2.79-Firmas_LoQueElLectorRechaza: la pantalla no deja guardar en las listas de firmas lo que el lector rechazaría
+// 🔴 Falla con: un «off» o un nombre de grupo en «sólo del dueño» que la pantalla da por bueno (el lector descarta la
+//    lista entera y se cae la delegación en todas las máquinas), o un id con espacios que la pantalla marca como
+//    desconocido aunque el lector lo acepta. El veredicto es el del lector (validarTipo), no una copia de su regla.
+test('T64 2.79-Firmas_LoQueElLectorRechaza @story-2.79 @ac-53 — la fila de error sale por cada valor que el lector rechaza en su lista, y sólo por ésos', async () => {
+  const nodos = (p) => p.todo(p.sec('aprobaciones'));
+  const SIGS = require(path.join(ROOT, 'scripts', 'lib', 'signatures.js'));
+  // un grupo que no es también el id de una firma (la mayoría se llaman como su única firma)
+  const grupo = Object.keys(SIGS.GROUPS).find((g) => !SIGS.SIGNATURES.some((s) => s.id === g));
+  const id = SIGS.SIGNATURES[0].id;
+  const approvals = { relay_session: 'coordinadora', delegated_signing: [grupo], owner_only: ['off', grupo, ` ${id} `] };
+  // el lector, con la lista entera: rechaza «sólo del dueño» y acepta las delegadas
+  const tipo = (k) => TC.VOCABULARIO.approvals[k];
+  assert.ok(TC.validarTipo(tipo('owner_only'), approvals.owner_only), 'el lector rechaza la lista de sólo del dueño');
+  assert.strictEqual(TC.validarTipo(tipo('delegated_signing'), approvals.delegated_signing), null, 'y acepta las delegadas');
+  let p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals })]);
+  assert.strictEqual(p.error, null);
+  const filas = () => nodos(p).filter((n) => n.attrs['data-firma-desconocida']).map((n) => n.attrs['data-firma-desconocida']);
+  assert.deepStrictEqual(filas().sort(), ['off', grupo].sort(), 'avisa «off» y el grupo (en sólo del dueño), no el id con espacios');
+  for (const v of ['off', grupo]) p.todo(nodos(p).find((n) => n.attrs['data-firma-desconocida'] === v)).find((n) => n.tag === 'button' && n.textContent === 'Quitar').on.click();
+  const ap = (await borradorAlRevisar(p)).approvals;
+  // lo que se guarda pasa por el mismo lector
+  assert.strictEqual(TC.validarTipo(tipo('owner_only'), ap.owner_only), null, `lo que queda en sólo del dueño lo acepta el lector: ${JSON.stringify(ap.owner_only)}`);
+  assert.deepStrictEqual(ap.owner_only, [` ${id} `], 'el id con espacios se queda');
+  // «Quitar» el grupo de sólo del dueño no lo saca de las delegadas, donde vale
+  assert.deepStrictEqual(ap.delegated_signing, [grupo], 'el grupo sigue en las delegadas, donde vale');
+  // sin el lector, la pantalla no inventa el veredicto: no marca nada y el lector lo juzga al revisar
+  p = await pantallaFalsa([{ ...seccionPerfil('aprobaciones', { approvals }), extras: ORG.extrasDeAprobaciones(null) }]);
+  assert.deepStrictEqual(filas(), [], 'sin el lector, ninguna fila de error inventada');
+  // cada valor vale solo, pero la lista entera no: «off» junto a un grupo en las delegadas. La fila sale por la lista y
+  // ofrece quitar uno; lo que queda lo acepta el lector
+  const juntos = { relay_session: 'coordinadora', delegated_signing: ['off', grupo] };
+  assert.ok(TC.validarTipo(tipo('delegated_signing'), juntos.delegated_signing), 'el lector rechaza la combinación');
+  p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: juntos })]);
+  const lista = nodos(p).find((n) => n.attrs['data-firma-lista'] === 'delegated_signing');
+  assert.ok(lista, 'la fila de la lista que el lector rechaza');
+  const quitarOff = p.todo(lista).find((n) => n.tag === 'button' && n.attrs['data-quitar'] === 'off');
+  assert.ok(quitarOff, 'ofrece quitar «off»');
+  quitarOff.on.click();
+  const queda = (await borradorAlRevisar(p)).approvals.delegated_signing;
+  assert.strictEqual(TC.validarTipo(tipo('delegated_signing'), Array.isArray(queda) ? queda : [queda]), null, `lo que queda lo acepta el lector: ${JSON.stringify(queda)}`);
+  assert.ok(!nodos(p).some((n) => n.attrs['data-firma-lista']), 'con la lista cambiada, la fila ya no sale');
+});
+
+// 2.79-AgregarProducto_PipelinesDelProyecto
+// 🔴 Falla con: «Agregar un producto» que ofrece siempre los pipelines del proyecto de operaciones, aunque el producto
+//    viva en otro, o un campo de proyecto que no arranca en el de operaciones o que al cambiarlo no recarga la lista.
+test('T65 2.79-AgregarProducto_PipelinesDelProyecto @story-2.79 @ac-54 — el proyecto del producto arranca en operaciones y elige de qué proyecto son los pipelines', async () => {
+  const sec = { id: 'despliegues', titulo: 'despliegues', repo: 'operaciones', estado: 'cargado', soloLectura: false, problems: [], avisos: [], extras: { plataforma: 'azure', org: 'acme', proyecto: 'Ops' }, borrador: { deployments: { provider: 'azure', products: {} } } };
+  const POR_PROYECTO = { Ops: [{ id: 7, nombre: 'Ops-Noche', carpeta: null }], Ventas: [{ id: 41, nombre: 'Ventas-CD', carpeta: null }] };
+  const p = await pantallaFalsa([sec], { '/api/config/pipelines': (c) => ({ ok: true, pipelines: POR_PROYECTO[c.project] || [] }) });
+  assert.strictEqual(p.error, null);
+  const esperar = async () => { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)); };
+  await esperar();
+  const nodos = () => p.todo(p.sec('despliegues'));
+  const proyecto = () => nodos().find((n) => n.tag === 'input' && n.attrs['data-path'] === 'deployments.proyectoDelProducto');
+  const opciones = () => (nodos().find((n) => n.tag === 'select' && n.attrs['data-path'] === 'deployments.pipeline') || { hijos: [] }).hijos.map((o) => o.textContent);
+  assert.ok(proyecto(), 'el campo «Proyecto del producto»');
+  assert.strictEqual(proyecto().value || proyecto().attrs.value, 'Ops', 'arranca en el proyecto de operaciones');
+  assert.ok(opciones().includes('Ops-Noche'), 'con los pipelines de operaciones');
+  proyecto().on.change({ target: { value: 'Ventas' } });
+  await esperar();
+  assert.deepStrictEqual(p.pedidos.filter((x) => x.ruta === '/api/config/pipelines').map((x) => x.cuerpo.project), ['Ops', 'Ventas'], 'al cambiarlo, pide la lista de ese proyecto');
+  assert.ok(opciones().includes('Ventas-CD') && !opciones().includes('Ops-Noche'), `el desplegable trae los del producto: ${opciones()}`);
+  assert.strictEqual(proyecto().value || proyecto().attrs.value, 'Ventas', 'el campo queda en el proyecto elegido');
+});
+
+// 2.79-Personas_Prolijas
+// 🔴 Falla con: el estado de una invitación pegado a su «Revocar» («todavía no entróRevocar»), el ejemplo del campo de
+//    productos cortado, o el rol que se llama «dev» en un lado y «Programador» en la lista.
+test('T70 2.79-Personas_Prolijas @story-2.79 @ac-63 — el estado separado del botón, el ejemplo entero y «programador» en todos lados', async () => {
+  const sec = { id: 'sitio', titulo: 'sitio', repo: 'operaciones', estado: 'cargado', soloLectura: false, problems: [], avisos: [], borrador: { site: { access: [{ role: 'maintainer', emails: [LEAD] }, { role: 'dev', emails: [DEV] }] } },
+    extras: { conAcceso: true, invitaciones: { boton: true, permiso: { ok: true }, estados: { [DEV]: { estado: 'enviada', texto: 'invitación enviada, todavía no entró' } } } } };
+  const p = await pantallaFalsa([sec]);
+  assert.strictEqual(p.error, null);
+  const nodos = p.todo(p.sec('sitio'));
+  const invitado = nodos.find((n) => n.attrs.class === 'invitado');
+  assert.ok(invitado, 'el estado de la invitación');
+  const css = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'static', 'site.css'), 'utf8');
+  assert.match(css, /\.invitado\{[^}]*gap:/, 'el estado y «Revocar» con espacio entre los dos');
+  const productos = nodos.find((n) => n.tag === 'input' && n.attrs.class === 'productos');
+  assert.ok(productos, 'el campo de productos con su clase');
+  const ancho = Number((/\.invitar input\.productos\{[^}]*min-width:(\d+)ch/.exec(css) || [])[1]);
+  assert.ok(ancho >= productos.attrs.placeholder.length, `el ejemplo («${productos.attrs.placeholder}») entra en el campo (${ancho}ch)`);
+  const texto = p.textoDe('sitio');
+  assert.doesNotMatch(texto, /como dev\b/, 'el rol no se llama «dev» en la ayuda');
+  assert.match(texto, /como programador/, 'se llama como en la lista');
+  assert.match(texto, /Programador/, 'la lista dice Programador');
+});
+
+// 2.79-Cerrar_DosNombres
+// 🔴 Falla con: «Cerrar» que pliega el panel de un repo con el mismo nombre que «Cerrar» la diferencia aceptada, que
+//    sí cambia algo: es fácil confundirlos.
+test('T71 2.79-Cerrar_DosNombres @story-2.79 @ac-64 — «Dar por cerrada» para la diferencia aceptada, «Plegar» para el panel del repo', () => {
+  const TX = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  assert.strictEqual(TX.t('es', 'pantalla.cerrar'), 'Dar por cerrada');
+  assert.strictEqual(TX.t('es', 'pantalla.repoCerrar'), 'Plegar');
+  assert.notStrictEqual(TX.t('en', 'pantalla.cerrar'), TX.t('en', 'pantalla.repoCerrar'), 'distintos también en inglés');
+  const src = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'org-config.js'), 'utf8');
+  assert.match(src, /text: T\('pantalla\.cerrar'\), onclick: function \(\) \{ revisarSeccion\(s, \{ accion: 'close'/, 'la diferencia aceptada usa «Dar por cerrada»');
+  assert.match(src, /r\.abierto \? T\('pantalla\.repoCerrar'\)/, 'el panel del repo, «Plegar»');
+});
+
+// 2.79-AyudaAprobaciones_OpcionExiste
+// 🔴 Falla con: la ayuda de «Quién autoriza saltarse un control» que dice «si no, dejá «No»» cuando las opciones son
+//    otras: la persona busca una opción que no está.
+test('T72 2.79-AyudaAprobaciones_OpcionExiste @story-2.79 @ac-65 — la opción que cita la ayuda está en la lista', async () => {
+  const TX = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  for (const idioma of ['es', 'en']) {
+    const ayuda = TX.t(idioma, 'pantalla.para.aprobaciones');
+    const citadas = [...ayuda.matchAll(/(?:dejá|leave) «([^»]+)»/g)].map((m) => m[1]);
+    assert.ok(citadas.length, `${idioma}: la ayuda cita la opción por defecto`);
+    const opciones = [TX.t(idioma, 'pantalla.quienReenviaElOkNo'), TX.t(idioma, 'pantalla.quienReenviaElOkSi')];
+    for (const c of citadas) assert.ok(opciones.some((o) => o.startsWith(c)), `${idioma}: «${c}» es una de ${JSON.stringify(opciones)}`);
+  }
+});
+
+// 2.79-Firmas_PorNivelConMatrizYSinIds
+// 🔴 Falla con: las firmas en una sola lista sin su nivel, un bloque sin la frase de quién lo firma, una fila en el bloque
+//    de un nivel que no es el mayor de sus formas, la matriz corta ausente o distinta de la de la guía, un nombre interno
+//    del catálogo («plan-approval», «extra-round») a la vista, «pasala a la ventana» en una firma de nivel 2 que no se
+//    delega, los encabezados apilados en vez de en columnas, o la página que se corre de costado a 390 px.
+const SIGS_79 = () => require(path.join(ROOT, 'scripts', 'lib', 'signatures.js'));
+/** La matriz «¿Quién firma? En corto» de la guía del sitio en ese idioma: sus renglones, celda por celda. */
+function matrizDeLaGuia(idioma) {
+  const texto = fs.readFileSync(path.join(ROOT, 'guides', idioma === 'en' ? 'organization-site.en.md' : 'organization-site.md'), 'utf8').split('\n');
+  const desde = texto.findIndex((l) => l.includes(idioma === 'en' ? '**Who signs? In short.**' : '**¿Quién firma? En corto.**'));
+  assert.ok(desde >= 0, `${idioma}: la guía tiene la matriz corta`);
+  const filas = [];
+  for (let i = desde + 1; i < texto.length; i++) {
+    const l = texto[i].trim();
+    if (!l) { if (filas.length) break; continue; }
+    if (!l.startsWith('|')) break;
+    if (/^\|[-|\s]+\|$/.test(l)) continue;
+    filas.push(l.split('|').slice(1, -1).map((c) => c.trim().replace(/\\\*/g, '*')));
+  }
+  return filas;
+}
+test('T76 2.79-Firmas_PorNivelConMatrizYSinIds @story-2.79 @ac-69 — por nivel, con la matriz de la guía arriba, sin ids y sin ofrecer delegar lo que no se delega', async () => {
+  const SIG = SIGS_79();
+  const nivelDe = new Map(SIG.LEVELS.map((l) => [l.id, l.level]));
+  // como el sitio: lo que nunca se delega (guardar algo sensible) no sube el nivel de su firma, que es rutina
+  const nivelDeForma = (f) => Math.max(...f.covers.filter((c) => !SIG.NOT_DELEGATED.includes(c)).map((c) => nivelDe.get(c) || 3));
+  const grupos = new Map();
+  for (const f of SIG.SIGNATURES) { const k = f.covers.join(','); grupos.set(k, Math.max(grupos.get(k) || 0, nivelDeForma(f))); }
+  for (const idioma of ['es', 'en']) {
+    const p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', owner_only: ['critical-waiver'] } })], {}, idioma);
+    assert.strictEqual(p.error, null);
+    const nodos = p.todo(p.sec('aprobaciones'));
+    // los tres bloques, en orden, cada uno con su frase
+    const bloques = nodos.filter((n) => n.attrs['data-nivel-bloque']);
+    assert.deepStrictEqual(bloques.map((b) => b.attrs['data-nivel-bloque']), ['1', '2', '3'], `${idioma}: los tres bloques en orden`);
+    for (const b of bloques) assert.ok(p.todo(b).some((n) => (n.textContent || '').length > 20), `${idioma}: el bloque ${b.attrs['data-nivel-bloque']} dice qué es y quién lo firma`);
+    // cada fila en el bloque del mayor nivel de sus formas, y los bloques en el orden de la tabla
+    const enOrden = nodos.filter((n) => n.attrs['data-nivel-bloque'] || n.attrs['data-firma-grupo']);
+    let actual = 0;
+    for (const n of enOrden) {
+      if (n.attrs['data-nivel-bloque']) { actual = Number(n.attrs['data-nivel-bloque']); continue; }
+      assert.strictEqual(actual, grupos.get(n.attrs['data-firma-grupo']), `${idioma}: ${n.attrs['data-firma-grupo']} va en el bloque de su nivel`);
+    }
+    assert.strictEqual(enOrden.filter((n) => n.attrs['data-firma-grupo']).length, grupos.size, `${idioma}: todas las firmas`);
+    // la matriz corta, igual a la de la guía
+    const matriz = nodos.find((n) => n.attrs['data-matriz'] === 'corta');
+    assert.ok(matriz, `${idioma}: la matriz corta está arriba de los bloques`);
+    assert.ok(nodos.indexOf(matriz) < nodos.indexOf(bloques[0]), `${idioma}: la matriz va antes que los bloques`);
+    const filas = p.todo(matriz).filter((n) => n.attrs.role === 'row').map((r) => p.todo(r).filter((c) => ['cell', 'columnheader', 'rowheader'].includes(c.attrs.role)).map((c) => c.textContent));
+    assert.deepStrictEqual(filas, matrizDeLaGuia(idioma), `${idioma}: la matriz del sitio es la de la guía`);
+    // ningún nombre interno del catálogo a la vista
+    const visible = nodos.map((n) => n.textContent || '').join(' \n ');
+    // los que tienen guion o dos puntos: «save» o «emergency» son también palabras del texto en inglés
+    const ids = new Set([...SIG.SIGNATURES.map((f) => f.id), ...SIG.LEVELS.map((l) => l.id)].filter((id) => /[-:]/.test(id)));
+    for (const id of ids) assert.ok(!visible.includes(id), `${idioma}: «${id}» no se ve`);
+    // una firma de nivel 2 en «Sólo el dueño» no invita a delegarla
+    const exime = nodos.find((n) => n.attrs['data-firma-grupo'] === 'critical-waiver');
+    assert.ok(exime, `${idioma}: la fila de eximir un crítico`);
+    const suTexto = p.todo(exime).map((n) => n.textContent || '').join(' ');
+    assert.doesNotMatch(suTexto, /pasala a la ventana|move it to the window/, `${idioma}: no ofrece delegar una firma de nivel 2`);
+  }
+});
+
+// la parte con navegador: a 1280 los encabezados en columnas; a 390, en los dos temas, sin desplazarse de costado
+test('T76 2.79-Firmas_PorNivelConMatrizYSinIds @story-2.79 @ac-69 — en el navegador: encabezados en columnas y sin desplazamiento a 390 px', { skip: SIN_PLAYWRIGHT, timeout: 180000 }, async () => {
+  assert.ok(PLAYWRIGHT, `con la llave exigente prendida, Playwright tiene que estar: ${PINNED_PW.locate().why}`);
+  const SERVER = require(path.join(ROOT, 'scripts', 'site', 'server.js'));
+  const sitio = SERVER.crearSitioDemo({ env: { SITE_DEMO: '1' }, dir: tmp('demo-firmas-'), log: () => {} });
+  await sitio.iniciar();
+  await new Promise((r) => sitio.server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${sitio.server.address().port}`;
+  const navegador = await PLAYWRIGHT.chromium.launch();
+  try {
+    for (const [ancho, tema] of [[1280, 'light'], [390, 'light'], [390, 'dark']]) {
+      const ctx = await navegador.newContext({ viewport: { width: ancho, height: 900 }, colorScheme: tema });
+      const page = await ctx.newPage();
+      await page.goto(`${base}/configuracion#seccion-aprobaciones`);
+      await page.locator('.tabla2.firmas').first().waitFor({ state: 'attached', timeout: 60000 });
+      await page.locator('#seccion-aprobaciones').scrollIntoViewIfNeeded();
+      const m = await page.evaluate(() => {
+        const cab = (sel) => [...document.querySelectorAll(`${sel} [role=columnheader]`)].filter((x) => x.getBoundingClientRect().height > 0).map((x) => Math.round(x.getBoundingClientRect().top));
+        return { firmas: cab('.tabla2.firmas'), niveles: cab('.tabla2.niveles'), ancho: document.documentElement.scrollWidth, vista: document.documentElement.clientWidth };
+      });
+      assert.ok(m.ancho <= m.vista, `${ancho} ${tema}: la página mide ${m.ancho} de ancho contra ${m.vista} visibles`);
+      if (ancho === 1280) {
+        for (const t of ['firmas', 'niveles']) {
+          assert.strictEqual(m[t].length, 2, `${t}: dos encabezados a la vista`);
+          assert.strictEqual(new Set(m[t]).size, 1, `${t}: los encabezados en columnas, a la misma altura (${m[t]})`);
+        }
+      }
+      await ctx.close();
+    }
+  } finally {
+    await navegador.close();
+    await sitio.cerrar();
+  }
 });

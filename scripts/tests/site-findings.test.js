@@ -454,11 +454,11 @@ test('T58 Sitio_DecisionEnMain_AprobadoSeAplicaEstaNoche — con la decisión en
     const j = (await lista()).json;
     assert.ok(!j.toca.some((x) => x.id === 'vig-uno'));
     assert.deepStrictEqual(j.espera, [], 'nadie más tiene que aprobarla');
-    assert.deepStrictEqual(j.decididas, [{ fuente: 'vigilante', id: 'vig-uno', nombre: 'Acme: un error que la noche marcó', accion: 'aceptar', quien: 'lead', el: '2026-10-24', estado: 'esta_noche' }]);
+    assert.deepStrictEqual(j.decididas, [{ fuente: 'vigilante', id: 'vig-uno', nombre: 'Acme: un error que la noche marcó', accion: 'aceptar', quien: 'lead', el: '2026-10-24', donde: 'acme', estado: 'esta_noche' }]);
     const p = await h.pedir('/mantenimiento', { cookie: lead });
     assert.doesNotMatch(p.texto, /<div class="m-bloque m-espera">|Aprobado: se aplica/);
     assert.match(p.texto, /<summary data-t="Ya decididas \(\{n\}\)">Ya decididas \(1\)<\/summary>/);
-    assert.match(p.texto, /<li data-ficha="vigilante\/vig-uno"><b>Acme: un error que la noche marcó<\/b> <span class="m-tarea">Archivar · 24\/10 · lead · la aplica la revisión de esta noche<\/span><\/li>/);
+    assert.match(p.texto, /<li data-ficha="vigilante\/vig-uno"><b>Acme: un error que la noche marcó<\/b> <span class="m-tarea">acme · Archivar · 24\/10 · lead · la aplica la revisión de esta noche<\/span><\/li>/);
     // y un envío tardío no abre otro pedido
     const r = await enviar(['vigilante', 'vig-uno', 'arreglar']);
     assert.strictEqual(r.json.codigo, 'nada_que_enviar');
@@ -1008,9 +1008,9 @@ test('T81 Mantenimiento_YaDecididas_QueQuienCuandoYSiSeAplico — qué se decidi
     assert.match(antes, /<details class="m-bloque m-decididas" hidden/, 'sin nada decidido, la sección está y no se ve: lo enviado pasa ahí sin recargar');
     const r = await enviar(['vigilante', 'vig-uno', 'aceptar']);
     assert.strictEqual(r.json.codigo, 'aplicado', r.texto);
-    assert.deepStrictEqual(r.json.decididas, [{ clave: 'vigilante/vig-uno', accion: 'aceptar', quien: 'lead', el: '2026-10-25' }], 'la respuesta trae lo que pasa a «Ya decididas»');
+    assert.deepStrictEqual(r.json.decididas, [{ clave: 'vigilante/vig-uno', accion: 'aceptar', quien: 'lead', el: '2026-10-25', donde: 'acme' }], 'la respuesta trae lo que pasa a «Ya decididas»');
     const esta = (await lista()).json;
-    assert.deepStrictEqual(esta.decididas, [{ fuente: 'vigilante', id: 'vig-uno', nombre: 'Acme: un error que la noche marcó', accion: 'aceptar', quien: 'lead', el: '2026-10-25', estado: 'esta_noche' }]);
+    assert.deepStrictEqual(esta.decididas, [{ fuente: 'vigilante', id: 'vig-uno', nombre: 'Acme: un error que la noche marcó', accion: 'aceptar', quien: 'lead', el: '2026-10-25', donde: 'acme', estado: 'esta_noche' }]);
     assert.strictEqual(esta.cuentas.decididas, 1);
     // el pedido entra en main, el sitio trae la foto nueva, y la noche aplica la decisión y borra su archivo
     const noche = path.join(ops.raiz, 'noche');
@@ -1025,9 +1025,9 @@ test('T81 Mantenimiento_YaDecididas_QueQuienCuandoYSiSeAplico — qué se decidi
     g(ops.clon, 'pull', '-q', '--no-rebase');
     assert.ok(!fs.existsSync(path.join(ops.clon, 'inbox', 'watcher', 'decisions', 'vig-uno.json')), 'la noche borró el archivo de la decisión');
     const despues = (await lista()).json;
-    assert.deepStrictEqual(despues.decididas, [{ fuente: 'vigilante', id: 'vig-uno', nombre: 'Acme: un error que la noche marcó', accion: 'aceptar', quien: 'lead', el: '2026-10-25', estado: 'aplicada' }], 'quién y cuándo siguen aunque el archivo ya no esté');
+    assert.deepStrictEqual(despues.decididas, [{ fuente: 'vigilante', id: 'vig-uno', nombre: 'Acme: un error que la noche marcó', accion: 'aceptar', quien: 'lead', el: '2026-10-25', donde: 'acme', estado: 'aplicada' }], 'quién y cuándo siguen aunque el archivo ya no esté');
     const p = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
-    assert.match(p, /<span class="m-tarea">Archivar · 25\/10 · lead · la noche ya guardó la decisión<\/span>/);
+    assert.match(p, /<span class="m-tarea">acme · Archivar · 25\/10 · lead · la noche ya guardó la decisión<\/span>/);
     // el correo de la sesión está en la cabecera de la página; en la sección y en la lista, no
     const seccion = p.slice(p.indexOf('<details class="m-bloque m-decididas"'), p.indexOf('</details>', p.indexOf('<details class="m-bloque m-decididas"')));
     assert.ok(!seccion.includes(LEAD) && !JSON.stringify(despues).includes(LEAD), 'sin el correo entero');
@@ -1045,7 +1045,7 @@ test('T82 Mantenimiento_Numeros_CambianSinRecargar — cada número trae su mold
     const p = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
     assert.match(p, /<button type="button" class="btn m-seguir" data-t="Seguir las recomendaciones \(\{n\}\)"/);
     assert.match(p, /<div class="m-bloque m-toca" data-t-vacio="Nada para decidir hoy\.">/);
-    assert.match(p, /<details class="m-bloque m-decididas"[^>]* data-t-esta-noche="la aplica la revisión de esta noche"><summary data-t="Ya decididas \(\{n\}\)">/);
+    assert.match(p, /<details class="m-bloque m-decididas"[^>]* data-t-esta-noche="la aplica la revisión de esta noche" data-t-sin-donde="sin dato de dónde"><summary data-t="Ya decididas \(\{n\}\)">/);
     const cli = (await h.pedir('/hallazgos/cliente.js', { cookie: lead })).texto;
     assert.match(cli, /function aDecididas\(/, 'lo decidido pasa a «Ya decididas»');
     // la fecha de la fila nueva: la expresión llega entera al navegador (en el molde, `\d` sin duplicar se pierde)
@@ -1420,4 +1420,57 @@ test('T41 2.79-Mantenimiento_EnInglesSinCastellano @story-2.79 @ac-35 — los bl
     const es = (await h.pedir('/api/hallazgos', { cookie: lead })).json;
     assert.strictEqual(es.decididas.find((x) => x.id === EJ1.id).nombre, 'pase adversarial salteado');
   });
+});
+
+// ── T62 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+// 2.79-Decididas_CadaFilaDiceDeDonde
+// 🔴 Falla con: dos filas de «Ya decididas» con el mismo nombre y sin decir de qué producto, repo, máquina o story es
+//    cada una, o una decisión guardada antes de esta versión (sin el lugar) que no lo dice.
+test('T62 2.79-Decididas_CadaFilaDiceDeDonde @story-2.79 @ac-51 — cada decisión dice de dónde es; la vieja, que no lo sabe', { timeout: 60000 }, async () => {
+  const datos = tmp('site-findings-t62-');
+  const extra = { 'inbox/watcher/pending/vig-tres.yaml': 'id: vig-tres\nfuente: vigilante\ncausa: globex:errores-500\nfecha: 2026-10-22\nproducto: globex\nregla: errores-500\nveredicto: pendiente\npropuesta_accion: aceptar\npropuesta_razon: Es ruido de un cliente de prueba\n' };
+  await conSitio({ autoApply: true, dataDir: datos, extra }, async ({ h, lead, lista, enviar }) => {
+    const r = await enviar(['vigilante', 'vig-uno', 'aceptar'], ['vigilante', 'vig-tres', 'aceptar']);
+    assert.strictEqual(r.json.ok, true, r.texto);
+    const d = (await lista()).json.decididas;
+    const de = (id) => d.find((x) => x.id === id);
+    assert.strictEqual(de('vig-uno').donde, 'acme');
+    assert.strictEqual(de('vig-tres').donde, 'globex');
+    const p = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
+    const seccion = p.slice(p.indexOf('<details class="m-bloque m-decididas"'), p.indexOf('</details>', p.indexOf('<details class="m-bloque m-decididas"')));
+    assert.match(seccion, /data-ficha="vigilante\/vig-uno">[^]*?acme[^]*?<\/li>/, 'la fila de acme dice acme');
+    assert.match(seccion, /data-ficha="vigilante\/vig-tres">[^]*?globex[^]*?<\/li>/, 'la de globex dice globex');
+  });
+  // lo guardado antes de esta versión no trae el lugar: lo dice, no lo inventa
+  const viejo = tmp('site-findings-t62-viejo-');
+  fs.writeFileSync(path.join(viejo, 'mantenimiento-decididas.json'), JSON.stringify({ 'vigilante/vig-uno': { accion: 'aceptar', en: AHORA - 3600 * 1000, quien: 'lead', el: '2026-10-25', nombre: 'Acme: un error que la noche marcó', visto: true } }));
+  await conSitio({ autoApply: true, dataDir: viejo }, async ({ h, lead, lista }) => {
+    assert.strictEqual((await lista()).json.decididas.find((x) => x.id === 'vig-uno').donde, null);
+    const p = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
+    assert.match(p, /data-ficha="vigilante\/vig-uno">[^]*?sin dato de dónde[^]*?<\/li>/);
+  });
+});
+
+// ── T63 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+// 2.79-Ayudas_CadaUnaJuntoASuPalabra
+// 🔴 Falla con: los «?» de la instrucción amontonados al final del renglón, lejos de la palabra que explican, o la
+//    ventanita que se abre en el medio de la pantalla tapando el texto en vez de junto a su botón.
+test('T63 2.79-Ayudas_CadaUnaJuntoASuPalabra @story-2.79 @ac-52 — cada «?» sigue a su palabra y la ventanita se abre junto a él', { timeout: 60000 }, async () => {
+  await conSitio({}, async ({ h, lead }) => {
+    const p = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
+    const intro = (/<p class="m-intro">([^]*?)<\/p>/.exec(p) || [])[1] || '';
+    assert.ok(intro, 'la instrucción de «Te toca decidir»');
+    assert.ok(!/<\/button>\s*<button type="button" class="m-q"/.test(intro), `ninguna «?» seguida de otra: ${intro}`);
+    for (const [palabra, k] of [['Arreglar', 'arreglar'], ['Archivar', 'aceptar'], ['Enviar para aprobar»', 'enviar']]) {
+      const i = intro.indexOf(palabra);
+      assert.ok(i >= 0, `la instrucción dice «${palabra}»`);
+      assert.ok(new RegExp(`^${palabra.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s?<button type="button" class="m-q" popovertarget="m-ayuda-${k}"`).test(intro.slice(i)), `el «?» de ${k} va pegado a «${palabra}»`);
+    }
+  });
+  // la ventanita se ubica junto a su botón cuando se abre: el cliente la mueve al lado del «?» que la abrió
+  const C = FINDINGS().CLIENTE;
+  assert.match(C, /addEventListener\('toggle'/, 'el cliente escucha la apertura de cada ventanita');
+  assert.match(C, /getBoundingClientRect\(\)/, 'y la ubica según dónde está su botón');
 });

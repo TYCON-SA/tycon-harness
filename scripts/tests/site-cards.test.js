@@ -310,7 +310,7 @@ test('2.36-Proyectos_GrillaArribaDeLaTabla: quien mantiene ve las siete fichas d
     const desde = html.indexOf(`data-ficha="${f.id}"`);
     const trozo = html.slice(html.lastIndexOf('<div class="tile', desde), desde + 600);
     if (f.estado === 'no_medido') { assert.match(trozo, /^<div class="tile blind"/, `${f.id} no medida`); assert.doesNotMatch(trozo.split('</div></div>')[0], /t-val">0</); }
-    else assert.ok(trozo.includes(`t-val">${fichas.formatear(f)}<`), `${f.id} con su número`);
+    else assert.ok(trozo.includes(`t-val">${fichas.formatear(f)}<`) || trozo.includes(`t-val">${fichas.formatear(f)} `), `${f.id} con su número`);
   }
   // una persona ve su Proyectos sin las fichas de la organización
   const persona = access.filtrar(m, { rol: 'person', email: PERSONA }, access.crearReglas({}));
@@ -572,4 +572,44 @@ test('T22 2.79-SinProd_MotivoNombraLaFuente @story-2.79 @ac-19 — sin la deuda,
     assert.doesNotMatch(sinLista.motivo, /no hay despliegues declarados|pipeline-debt/, sinLista.motivo);
     assert.match(sinLista.motivo, /producto/, 'nombra la lista de productos que falta');
   } finally { fs.rmSync(dash, { recursive: true, force: true }); fs.rmSync(raiz, { recursive: true, force: true }); }
+});
+
+// T69 2.79-Fichas_ConUnidadYDesglose @story-2.79 @ac-62
+// 🔴 Falla con: «Tiempo por etapa» o «Cuánto tarda verificar» con un número sin unidad, «Stories empezadas…» sin decir
+//    de cuántos días habla, o «Por qué volvió» con el total sin la cuenta de cada causa.
+test('T69 2.79-Fichas_ConUnidadYDesglose @story-2.79 @ac-62 — días o segundos en tres fichas, y la cuenta de cada causa', () => {
+  const def = (id) => fichas.FICHAS.find((x) => x.id === id);
+  const texto = (id, m, idioma) => fichas.tile(fichas.proyectar(def(id), { estado: 'medido', fecha: HOY, ...m }, {}), idioma).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+  const etapa = { valor: 6.4, medidos: 402, total: 402, unidad: 'dias', den_etiqueta: 'stories que pasaron por review' };
+  assert.match(texto('tiempo_por_etapa', etapa, 'es'), /6,4 días/);
+  assert.match(texto('tiempo_por_etapa', etapa, 'en'), /6\.4 days/);
+  const suite = { valor: 12.3, medidos: 40, total: 40 };
+  assert.match(texto('gates_dur', suite, 'es'), /12,3 segundos/);
+  assert.match(texto('gates_dur', suite, 'en'), /12\.3 seconds/);
+  // pase adversarial: el singular sale del número que se muestra, no del crudo (0,96 se ve «1»)
+  for (const [valor, es, en] of [[0.96, /\b1 segundo\b/, /\b1 second\b/], [1.04, /\b1 segundo\b/, /\b1 second\b/], [1, /\b1 segundo\b/, /\b1 second\b/], [1.2, /1,2 segundos/, /1\.2 seconds/]]) {
+    assert.match(texto('gates_dur', { ...suite, valor }, 'es'), es, `es ${valor}`);
+    assert.match(texto('gates_dur', { ...suite, valor }, 'en'), en, `en ${valor}`);
+  }
+  const edad = { valor: 3, medidos: 20, total: 22, edad: { dias: [30, 60] } };
+  assert.match(texto('edad_estado', edad, 'es'), /más de 30 días/);
+  assert.match(texto('edad_estado', edad, 'en'), /more than 30 days/);
+  const causas = { valor: 9, medidos: 9, total: 9, unidad: 'conteo', barras: [{ clave: 'defecto-propio', n: 3 }, { clave: 'cambio-de-requisito', n: 2 }, { clave: 'sin-declarar', n: 4 }] };
+  // cada causa con su nombre en el idioma de la página, nunca con la clave interna
+  const porIdioma = {
+    es: [['defecto propio', 3], ['cambio de requisito', 2], ['sin declarar', 4]],
+    en: [['own defect', 3], ['requirement change', 2], ['not declared', 4]],
+  };
+  for (const idioma of ['es', 'en']) {
+    const c = texto('rework_por_causa', causas, idioma);
+    for (const [k, n] of porIdioma[idioma]) assert.match(c, new RegExp(`${k} ${n}\\b`), `${idioma}: «Por qué volvió» muestra ${k} ${n}: ${c}`);
+    assert.doesNotMatch(c, /defecto-propio|cambio-de-requisito|sin-declarar/, `${idioma}: sin la clave interna: ${c}`);
+  }
+  const rara = texto('rework_por_causa', { ...causas, barras: [{ clave: 'causa-nueva', n: 1 }] }, 'es');
+  assert.match(rara, /fuera del vocabulario 1\b/, `una causa que no está en la lista no muestra su clave: ${rara}`);
+  assert.doesNotMatch(rara, /causa-nueva/, rara);
+  // pase adversarial: las causas que el tablero cuenta aparte, fuera del vocabulario, también suman (sin su clave)
+  const fuera = texto('rework_por_causa', { ...causas, fuera_de_vocabulario: [['bug-raro', 2], ['otra-cosa', 1]] }, 'es');
+  assert.match(fuera, /fuera del vocabulario 3\b/, `las que quedaron fuera del vocabulario se cuentan: ${fuera}`);
+  assert.doesNotMatch(fuera, /bug-raro|otra-cosa/, fuera);
 });

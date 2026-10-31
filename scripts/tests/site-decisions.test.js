@@ -79,7 +79,8 @@ test('Decisiones_AceptadaSinPr_SeSigueEnSuTarea', () => {
   assert.strictEqual(decisions.decisiones(m, { operationsRepo: ADO }).find((x) => x.id === '171bed99').sinLugar, 'sin_pedido');
   const html = views.listasDeDecision(m, { enlaceOperaciones: ADO, ahora: AHORA });
   const seccion = html.split('id="decidir-dependencias_aceptadas_sin_resolver"')[1].split('</section>')[0];
-  assert.match(seccion, /9abc1234 · paquete-c · <a href="\/mantenimiento">ya decidida: se sigue en su tarea, en Mantenimiento<\/a>/);
+  // la fila en dos partes, para que la grilla alinee todas: el enlace adelante y el texto después
+  assert.match(seccion, /<li><a href="\/mantenimiento">ya decidida: se sigue en su tarea, en Mantenimiento<\/a><span>9abc1234 · paquete-c<\/span><\/li>/);
   assert.doesNotMatch(seccion, /la noche lo abre/);
 });
 
