@@ -390,7 +390,8 @@ test('Defer_FirmadoEnLaTerminalSinSesion_QuedaDeclarado (pase adversarial)', (t)
     '    if not respondido and "«firmo»".encode() in buf:', '        os.write(fd, b"firmo\\n")', '        respondido = True',
     '_, st = os.waitpid(pid, 0)', 'sys.stdout.write(buf.decode("utf8", "replace"))', 'sys.exit(os.WEXITSTATUS(st))'].join('\n'));
   const env = { ...process.env, HOME: home, USERPROFILE: home, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
-  for (const v of ['CLAUDE_CODE_SESSION_ID', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID']) delete env[v];
+  // la firma por la terminal se niega dentro de la CI: la terminal simulada no hereda sus variables
+  for (const v of ['CLAUDE_CODE_SESSION_ID', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID', 'CI', 'TF_BUILD', 'GITHUB_ACTIONS']) delete env[v];
   for (const extra of [[], ['--for-session', 's-term']]) {
     fs.writeFileSync(c.story, fs.readFileSync(c.story, 'utf8').replace(/^browser_test(_reason)?:.*\n/gm, ''));
     const r = spawnSync('python3', ['-I', guion, process.execPath, path.join(SCRIPTS, 'e2e-setup.js'), 'defer', '--repo', c.repo, '--story', c.story, '--no', 'no, por ahora no', ...extra, '--terminal'],
