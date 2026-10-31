@@ -43,6 +43,8 @@ const VENCE_MIN = 30;
 const SESION = /^[\w-]+$/;
 // el nombre con que los guiones dicen «sin variable de sesión»: no es una sesión a la que pedirle una firma
 const SIN_SESION = '_nosession';
+// los modos de permiso de la herramienta en los que un pedido de la ventana le llega a una persona
+const MODOS_QUE_PREGUNTAN = new Set(['default', 'acceptEdits', 'plan']);
 const NO_ES_SESION = '«_nosession» es el nombre de «sin sesión», no una sesión: la firma se pide para la sesión destino por su id';
 const VARIABLES_DE_SESION = /(^|[^\w])(CLAUDE_CODE_SESSION_ID|TYCON_SESSION_ID|CODEX_SESSION_ID)(?![\w])/;
 // los guiones de las firmas `guion`, por su nombre de archivo
@@ -560,6 +562,12 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
     // una firma que el perfil delega y no se delegó lleva su motivo a la ventana; la que no se delega, no (es lo normal)
     else sinDelegar = rs.map((r) => r && !r.ok && r.motivo).find((m) => m && !/no delega|sólo del dueño|la sesión que implementa/.test(m)) || null;
   } catch (e) { return negar(`no se pudo consultar la delegación del perfil (${e.message})`, pendientes); }
+  // una pestaña que no pide permisos aprueba sola lo que se manda a la ventana: el renglón quedaría a nombre del dueño
+  // sin su Sí. Sólo los modos que preguntan llevan a la ventana; uno desconocido niega. Sin el dato, la de siempre
+  const modo = evento.permission_mode == null ? null : String(evento.permission_mode);
+  if (!delegada && modo !== null && !MODOS_QUE_PREGUNTAN.has(modo)) {
+    return negar(`esta pestaña no pide permisos (${una(modo, 40)}): la ventana se aprobaría sola, sin el Sí del dueño`, pendientes);
+  }
   let detalle = detalleDe(pendientes[0], comando, can && can.palabras, evento.cwd);
   if (guion === 'runtime-waiver') {
     const c = criteriosDelPedido(can.palabras, evento.cwd, { casa, destino, sesion });
