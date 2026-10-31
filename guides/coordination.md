@@ -147,8 +147,8 @@ y el guion los comprueba antes de firmar:
    pase adversarial posteriores al último cambio, ningún crítico (ni eximido) y ninguna exención en la corrida.
 2. Nunca un cambio que toca firmas, frenos, avisos, permisos, el perfil o el poder de la coordinadora (la lista de lo
    sensible de `scripts/lib/signatures.js`).
-3. Cada ok le llega al dueño en una línea, por un canal de la lista del perfil, antes de la constancia: sin entrega, no
-   hay ok.
+3. Cada ok le llega al dueño en una línea antes de la constancia, por los canales de los avisos (los que elige el sitio;
+   sin elegir, Telegram): sin entrega, no hay ok.
 4. Se apaga desde el perfil: `save` fuera de `approvals.delegated_signing`, o dentro de `approvals.owner_only`. El
    pedido que la prende lo aprueba el dueño, nunca la coordinadora.
 
@@ -167,7 +167,7 @@ El arreglo rápido (un cambio de código sin historia) es la firma `adhoc-lane`:
   la ventana en la pestaña de la designada. Por esta vía tiene tres límites, y el guion y el freno de edición los
   comprueban: el cupo queda en 5 archivos como mucho; el arreglo nunca toca lo sensible (la lista de
   `scripts/lib/signatures.js`: firmas, frenos, avisos, permisos, el perfil), que va con la firma del dueño; y antes de
-  abrirlo le llega al dueño una línea por un canal de la lista del perfil, con la sesión, el motivo y el cupo: sin
+  abrirlo le llega al dueño una línea por los canales de los avisos, con la sesión, el motivo y el cupo: sin
   entrega, no hay arreglo. La designada no se lo declara a sí misma.
 - **Desde otra máquina.** La coordinadora de otra máquina se lo pide, por mensaje, a la designada de la máquina destino,
   que lo declara como arriba. El mensaje es un pedido, no una autorización: lo que autoriza es el perfil del equipo y la

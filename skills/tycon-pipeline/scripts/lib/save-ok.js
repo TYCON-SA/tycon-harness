@@ -407,15 +407,15 @@ function lineaDelAviso({ marker, repos, resumen }) {
 }
 
 /**
- * El aviso por los canales de la lista del perfil, nunca el de la máquina: `{ ok, canales, motivo }`. Vale sólo con
- * una entrega real de al menos un canal. `canales()`: notify.canalesDeLaSesion; `mandar(o)`: notify.avisar.
+ * El aviso por los mismos canales que el resto del arnés: la lista del perfil o, sin lista, el de siempre (Telegram):
+ * `{ ok, canales, motivo }`. Lo que protege es la entrega: vale sólo con una entrega real de al menos un canal, y la
+ * lista vacía no avisa. `canales()`: notify.canalesDeLaSesion; `mandar(o)`: notify.avisar.
  */
 function avisar({ texto, canales, mandar }) {
   const no = (motivo) => ({ ok: false, motivo });
   let c;
   try { c = canales(); } catch (e) { return no(`no pude leer los canales de aviso (${e.message})`); }
   if (!c || c.problema) return no(`los canales de aviso no se pudieron leer${c && c.problema ? ` (${c.problema})` : ''}`);
-  if (c.origen !== 'perfil') return no('el perfil del equipo no trae la lista de canales de aviso (integrations.notify.channels)');
   if (!Array.isArray(c.canales) || !c.canales.length) return no('la lista de canales de aviso del perfil está vacía');
   let r;
   try { r = mandar({ canales: c.canales, texto, lado: 'sesion', mail: c.mail || null, chat: c.chat || null }); } catch (e) { return no(`el aviso falló (${e.message})`); }

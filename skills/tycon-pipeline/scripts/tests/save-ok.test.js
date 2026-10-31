@@ -283,16 +283,20 @@ test('Delegada_SinCanal_Sale1 (T9) @story-8.143 @ac-6', (t) => {
   const a = repo(t);
   escribir(a, 'LEEME.md', 'cambiado\n');
   const m = corridaLimpia([a]);
-  const casos = [
-    ['sin lista en el perfil', () => ({ canales: ['telegram'], origen: 'antes', problema: null })],
-    ['la lista vacía', () => ({ canales: [], origen: 'perfil', problema: null })],
-  ];
-  for (const [nombre, canales] of casos) {
-    let llamado = false;
-    const r = porDelegacion(m, { repos: [a], canales, mandar: () => { llamado = true; return { resultados: [], entregado: true }; } });
-    assert.strictEqual(r.codigo, 1, nombre);
-    assert.strictEqual(llamado, false, `${nombre}: no manda nada`);
-  }
+  // la lista vacía (el perfil eligió «ninguno»): no hay por dónde avisar, y no se manda nada
+  let llamado = false;
+  const vacia = porDelegacion(m, { repos: [a], canales: () => ({ canales: [], origen: 'perfil', problema: null }), mandar: () => { llamado = true; return { resultados: [], entregado: true }; } });
+  assert.strictEqual(vacia.codigo, 1, 'la lista vacía');
+  assert.strictEqual(llamado, false, 'la lista vacía: no manda nada');
+  // sin lista en el perfil: el canal de siempre del arnés (Telegram), como el resto de los avisos; vale sólo si entrega
+  const porDefecto = () => ({ canales: ['telegram'], origen: 'antes', problema: null });
+  const orden = [];
+  const entregado = porDelegacion(m, { repos: [a], canales: porDefecto, orden });
+  assert.strictEqual(entregado.codigo, 0, `sin lista en el perfil, entregado: ${entregado.motivo}`);
+  assert.deepStrictEqual(entregado.canales, ['telegram']);
+  assert.deepStrictEqual(orden.map((x) => x[0]), ['aviso'], 'avisó por el canal de siempre');
+  const sinEntrega = porDelegacion(m, { repos: [a], canales: porDefecto, mandar: () => ({ resultados: [{ canal: 'telegram', entregado: false, motivo: 'sin bot' }], entregado: false }) });
+  assert.strictEqual(sinEntrega.codigo, 1, 'sin lista en el perfil y sin entrega: no hay ok');
   const falla = porDelegacion(m, { repos: [a], mandar: () => ({ resultados: [{ canal: 'telegram', entregado: false, motivo: 'sin red' }], entregado: false }) });
   assert.strictEqual(falla.codigo, 1, 'el canal que falla');
   const ninguno = porDelegacion(m, { repos: [a], mandar: () => ({ resultados: [], entregado: true }) });
