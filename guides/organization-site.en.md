@@ -483,6 +483,9 @@ The sections, in the order of the screen:
 - **"How the site is updated"**: whether the site brings itself up to date with the new
   harness version or only notifies (`site.update` in `operations.json`). Undeclared, notice only. Automatic needs the
   update nightly and its permission: the recipe, in "How it keeps itself up to date".
+- **The site's address on each machine**: the page that the `/org-site` command opens on each team member's machine
+  (`site.url`). It must start with `https`. It only counts from the team profile: a machine cannot change it. Without
+  an address, the command explains how to set it. It lives in `team-profile.json`, in the profile repo.
 - **People and machines**: whose each machine that sends runs is, and which projects each
   person works on. A new machine shows up in "To confirm" with the email it claims; **Confirm**
   puts it in that person's name. It lives in `operations.json`, in the operations repo. A maintainer

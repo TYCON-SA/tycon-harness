@@ -219,6 +219,8 @@ const VOCABULARIO = Object.freeze({
   models: Object.freeze({ provider: 'aceptada' }),
   // la receta de la coordinadora (el tope de sesiones y la carpeta de firmas): el freno no las usa, pero las acepta
   coordination: Object.freeze({ max_working: 'aceptada', owner_folder: 'aceptada' }),
+  // la dirección del sitio de la organización (la abre el comando de barra org-site): el freno no la usa, pero la acepta
+  site: Object.freeze({ url: 'aceptada' }),
   // los interruptores que la organización enciende desde el sitio: el freno no los usa, pero los acepta
   switches: Object.freeze({
     test_scope_guard: 'aceptada', session_guard: 'aceptada', pr_one_per_repo: 'aceptada',

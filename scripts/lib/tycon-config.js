@@ -251,6 +251,10 @@ const VOCABULARIO = Object.freeze({
   // donde la coordinadora deja un ejecutable por firma que el dueño hace en su terminal. Es de la máquina: en el perfil
   // del equipo es un error. Sin valor, las firmas van en el aviso del chat y nada se escribe en disco.
   coordination: Object.freeze({ max_working: 'entero:1-20', owner_folder: 'ruta' }),
+  // La dirección del sitio de la organización, la que abre el comando de barra org-site. Vale SÓLO desde el perfil del
+  // equipo (PROFILE_ONLY): es una para toda la organización, y si la máquina pudiera decirla, el agente podría mandar a
+  // la persona a otra página. Sin valor, el comando dice cómo cargarla (desde el sitio o con un pedido al perfil).
+  site: Object.freeze({ url: 'url' }),
   // Los interruptores de la organización (la sección «Frenos y medidores» del sitio). Hoy cada uno se cambia también por
   // máquina con su variable (SWITCHES dice cuál), y la variable puesta sigue ganando. Los frenos (`freno`) sólo se
   // ENCIENDEN desde acá: «on» (en cualquier mayúscula) o `true`; un valor que dice apagado se ignora y se nombra
@@ -309,7 +313,7 @@ const RETIRADAS = Object.freeze({
 // perfil es versionado y se cambia con un pedido; la variable y el archivo de la máquina los puede escribir el agente que
 // implementa, y esta clave abre la puerta a eximir un crítico: si las leyera, el agente se la abriría solo. Lo que el
 // archivo de la máquina tenga escrito queda en `shadowed` con `by: 'solo-perfil'` y `explain` lo dice; `set` no la escribe.
-const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels']);
+const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url']);
 /** Los paquetes que activa la organización (tipo `paquetes`): `all`, `none` o una lista de nombres de paquete. */
 const NOMBRE_DE_PAQUETE = /^[a-z0-9][a-z0-9-]*$/;
 // Los canales por los que sale un aviso; la misma lista que `CANALES` del módulo de avisos (lo fija T27).
