@@ -86,21 +86,44 @@ function integrationEntries(mode) {
   } catch (e) { return warn(`falló al leerla: ${(e && (e.code || e.message)) || e}`); }
 }
 
-// Azure DevOps (la copia para un dev de otra organización): la hoja que pide el work item de una story nueva
-// corre sólo si la máquina tiene la integración ado prendida (ado.org o TYCON_ADO_ORG) o si el repo de la story declara
-// su Azure DevOps (`.tycon/ado-config.yaml`, la primera fuente de la skill). Sin ninguna de las dos, la skill se
-// saltea sola después de un turno de aviso: ruido para quien no usa Azure DevOps. Sin arnés: fail-open.
-function repoDeclaresAdo(filePath) {
+// La hoja que pide el pedido de trabajo de una story nueva corre sólo si hay dónde crearlo: el repo de la story declara
+// sus pedidos de trabajo (los archivos que lee work-items-config.js, con el nombre nuevo y el viejo), la máquina tiene
+// la llave de la integración prendida, o la capa de plataforma tiene un conector elegido para crearlos. Sin ninguna de
+// las tres, la skill se saltea sola después de un turno de aviso: ruido para quien no tiene dónde crearlos. Sin arnés:
+// fail-open. Un arnés sin la pieza no es una falla; una pieza que está y no carga se dice, para que el aviso que no
+// salió deje rastro.
+function platformPiece(file) {
+  const p = path.join(ARNES_DIR, 'scripts', 'lib', 'platform', file);
+  if (!fs.existsSync(p)) return null;
+  try { return require(p); } catch (e) {
+    process.stderr.write(`despachador: el aviso del pedido de trabajo no mira ${file}: no carga (${oneLineError(e)})\n`);
+    return null;
+  }
+}
+const oneLineError = (e) => String((e && e.message) || e).split('\n')[0].slice(0, 200);
+function repoDeclaresWorkItems(filePath) {
+  const files = platformPiece('work-items-config.js')?.FILES;
+  if (!Array.isArray(files)) return false;
   let dir = path.dirname(path.resolve(String(filePath || '.')));
   for (;;) {
-    if (fs.existsSync(path.join(dir, '.tycon', 'ado-config.yaml'))) return true;
+    if (files.some((f) => fs.existsSync(path.join(dir, '.tycon', f)))) return true;
     if (fs.existsSync(path.join(dir, '.git'))) return false;
     const up = path.dirname(dir);
     if (up === dir) return false;
     dir = up;
   }
 }
-const adoForStory = (event) => repoDeclaresAdo(event?.tool_input?.file_path) || integrationOn('ado');
+// la capa elige un conector para crear el pedido de trabajo (el perfil, o la plataforma del repo de operaciones). Sin
+// árbol fijo: la capa lo resuelve como cuando crea el pedido (`TYCON_TREE` de la máquina, o el suyo)
+function layerChoosesWorkItems() {
+  const platform = platformPiece('platform.js');
+  if (!platform) return false;
+  try { return platform.choose('work-item.create').ok === true; } catch (e) {
+    process.stderr.write(`despachador: el aviso del pedido de trabajo no supo si la capa elige dónde crearlo (${oneLineError(e)})\n`);
+    return false;
+  }
+}
+const workItemsForStory = (event) => !ARNES_DIR || repoDeclaresWorkItems(event?.tool_input?.file_path) || integrationOn('ado') || layerChoosesWorkItems();
 
 // Las tres formas de una ruta de Windows: el evento llega a los portones con su ruta ya
 // nativa. Sin la lib (un skill a medias): el evento tal cual.
@@ -204,7 +227,7 @@ const CHAINS = {
     // Una historia con pantalla en un repo sin prueba con navegador: el arnés le ofrece a la persona prepararla
     { name: 'browser-test-offer', path: path.join(PIPELINE_SCRIPTS, 'lib', 'browser-test.js'), steps: ['plan', 'approve-plan'], effect: 'warns' },
     // crea el pedido de trabajo en ADO: `integration` lo dice para «Cómo trabaja» (lo apagado en la organización no se muestra)
-    { name: 'ado-story-create', path: path.join(INTEGRATIONS_DIR, 'azure-devops', 'scripts', 'on-story-create.js'), spawn: true, spawnIf: (event) => isStoryWrite(event) && adoForStory(event), steps: ['validate-story'], effect: 'records', integration: 'ado' },
+    { name: 'ado-story-create', path: path.join(INTEGRATIONS_DIR, 'azure-devops', 'scripts', 'on-story-create.js'), spawn: true, spawnIf: (event) => isStoryWrite(event) && workItemsForStory(event), steps: ['validate-story'], effect: 'records', integration: 'ado' },
     { name: 'followup-story-create', path: path.join(SKILLS_DIR, 'tycon-story-followup-link', 'scripts', 'on-story-create.js'), spawn: true, spawnIf: isStoryWrite, steps: ['validate-story'], effect: 'records' },
   ],
 };

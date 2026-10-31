@@ -2427,6 +2427,12 @@
       "requiere": []
     },
     {
+      "__nota": "Los revisores y los agentes por la capa de plataforma: el revisor de DoD lee la CI con la capa y sus dos copias de Codex son las generadas, el despachador avisa del pedido de trabajo sin nombrar una plataforma (y dice si la configuración o la capa no cargan), y work-in-progress lista los pedidos de GitHub por rama, también desde forks.",
+      "raiz": "arnes",
+      "ruta": "tests/platform-agents.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "La foto de cómo habla hoy el arnés con Azure DevOps (scripts/tests/lib/record-platform-golden.js): la normalización, qué cuenta como núcleo y que la foto grabada siga valiendo para el árbol, sin escribir nada.",
       "raiz": "arnes",
       "ruta": "tests/platform-golden.test.js",

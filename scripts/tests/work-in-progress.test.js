@@ -360,39 +360,36 @@ test('T22 ConsultaFalla_SeDiceYQuedaOcupada: una consulta que falla o se pasa de
   const capped = run(m, { prs: () => ({ prs: [{ number: 7, draft: false }] }), repoBudgetMs: -1 });
   assert.strictEqual(capped.rows[0].state, 'Entrando a los repos · x #7');
   assert.ok(!capped.unreadable.some((u) => /se pasó del tope de 3 s leyendo los repos/.test(u)), capped.unreadable.join(' | '));
-  // the real query, against a gh that takes longer than its cap: it gives up instead of hanging
-  const bin = fakeBin(m.root, 'gh', 'setTimeout(() => {}, 5000);');
+  // the real query, through the platform layer, against a gh that takes longer than its cap: it gives up instead of hanging
+  const env = layer(m);
+  const q = [{ kind: 'github', slug: 'acme/x', branch: 'story/x', name: 'x', root: m.root }];
+  const withGh = (body) => { const f = path.join(fs.mkdtempSync(path.join(m.root, 'bin-')), 'gh.js'); fs.writeFileSync(f, body); return { ...env, TYCON_GH_CMD: f }; };
   const t0 = Date.now();
-  const [res] = await queryAll([{ kind: 'github', slug: 'acme/x', branch: 'story/x', name: 'x', root: m.root }], { perMs: 300, totalMs: 600, env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
+  const [res] = await queryAll(q, { perMs: 300, totalMs: 600, env: withGh('setTimeout(() => {}, 5000);') });
   assert.ok(Date.now() - t0 < 3000, 'no espera al gh colgado');
   assert.match(res.error, /tope/);
   const { PER_QUERY_MS, ALL_QUERIES_MS } = require(WIP);
   // az tarda más de 5 s cuando renueva su permiso: con ese tope, una story entrada salía «sin poder consultar»
   assert.deepStrictEqual([PER_QUERY_MS, ALL_QUERIES_MS], [15000, 20000], 'los topes');
-  const q = [{ kind: 'github', slug: 'acme/x', branch: 'story/x', name: 'x', root: m.root }];
-  const withBin = (b) => ({ env: { ...process.env, PATH: b } });
-  const missing = fs.mkdtempSync(path.join(m.root, 'empty-'));
-  assert.match((await queryAll(q, withBin(missing)))[0].error, /gh: no está instalado/);
-  for (const [out, why] of [['basura', /respuesta ilegible/], ['{"number":1}', /no es una lista/], ['[{"isDraft":false}]', /sin número/]]) {
-    const b = fakeBin(m.root, 'gh', `process.stdout.write(${JSON.stringify(out)});`);
-    assert.match((await queryAll(q, { ...withBin(`${b}${path.delimiter}${process.env.PATH}`) }))[0].error, why);
+  // a gh that is not there, or that answers something that is not a list: the layer's «no», with its reason
+  assert.match((await queryAll(q, { env: { ...env, TYCON_GH_CMD: path.join(m.root, 'no-existe') } }))[0].error, /^la capa de plataforma: no_medido/);
+  for (const out of ['basura', '{"number":1}']) {
+    assert.match((await queryAll(q, { env: withGh(`process.stdout.write(${JSON.stringify(out)});`) }))[0].error, /^la capa de plataforma: no_medido/, out);
   }
-  // a gh that ignores SIGTERM and hangs: the total cap kills it with SIGKILL, which it cannot ignore, so the command
-  // can end
-  const stubborn = fakeBin(m.root, 'gh', `require('fs').writeFileSync(__dirname + '/pid', String(process.pid)); process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);`);
+  // a gh that ignores SIGTERM and hangs: the total cap kills the layer and its gh with SIGKILL, which they cannot
+  // ignore, so the command can end
+  const pidFile = path.join(fs.mkdtempSync(path.join(m.root, 'pid-')), 'pid');
   const t1 = Date.now();
-  const [hung] = await queryAll(q, { perMs: 20000, totalMs: 2000, env: { ...process.env, PATH: `${stubborn}${path.delimiter}${process.env.PATH}` } });
+  const [hung] = await queryAll(q, { perMs: 20000, totalMs: 2000, env: withGh(`require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);`) });
   assert.ok(Date.now() - t1 < 5000);
   assert.match(hung.error, /tope de 2 s para todas/);
-  const pidFile = path.join(stubborn, 'pid');
   assert.ok(fs.existsSync(pidFile), 'el gh colgado llegó a arrancar en 2 s');
   const pid = Number(fs.readFileSync(pidFile, 'utf8'));
   const alive = () => { try { process.kill(pid, 0); return true; } catch { return false; } };
   for (let i = 0; i < 40 && alive(); i += 1) await new Promise((r) => setTimeout(r, 50));
   assert.strictEqual(alive(), false, 'el gh colgado quedó muerto');
-  // a gh that answers with an error (no login, say): its message is the reason
-  const denied = fakeBin(m.root, 'gh', `process.stderr.write('gh auth login required'); process.exit(1);`);
-  assert.match((await queryAll(q, withBin(`${denied}${path.delimiter}${process.env.PATH}`)))[0].error, /gh: gh auth login required/);
+  // a gh that answers with an error (no login, say): the layer's reason
+  assert.match((await queryAll(q, { env: withGh(`process.stderr.write('gh: HTTP 401: Bad credentials'); process.exit(1);`) }))[0].error, /^la capa de plataforma: sin_credencial/);
 });
 
 test('T23 DosRepos_GitHubYAzure_ConBorrador: los dos repos de la story, cada uno con su pedido', () => {
@@ -468,37 +465,60 @@ function fakeBin(root, name, body) {
 const { queryAll } = require(WIP);
 const onWindows = process.platform === 'win32' ? 'los gh/az falsos son scripts de node con #!, que Windows no corre' : false;
 
-test('T26 ConsultaReal_GhFalso: el programa le pregunta a gh por la rama y el repo de origin', { skip: onWindows }, () => {
+// The platform layer pointed at the fake gh and az of the suites, with an empty profile and an empty home: the pull
+// requests of GitHub (`pulls` of acme/x, the shape of fake-gh.js) and of Azure DevOps (`prs`, what the project lists).
+// `calls()` gives what each fake was asked: `{ gh: [routes], az: [args joined] }`.
+const FAKE_GH = path.join(__dirname, 'lib', 'fake-gh.js');
+const FAKE_AZ = path.join(__dirname, 'lib', 'fake-az.sh');
+function layer(m, { pulls = [], prs = [] } = {}) {
+  const d = fs.mkdtempSync(path.join(m.root, 'capa-'));
+  for (const sub of ['arbol', 'casa', 'fixaz']) fs.mkdirSync(path.join(d, sub));
+  fs.writeFileSync(path.join(d, 'arbol', 'team-profile.json'), '{}');
+  fs.writeFileSync(path.join(d, 'gh.json'), JSON.stringify({ user: 'arnes-bot', now: NOW, pulls: { 'acme/x': pulls } }));
+  fs.writeFileSync(path.join(d, 'fixaz', 'prs-0.json'), JSON.stringify({ count: prs.length, value: prs }));
+  fs.copyFileSync(FAKE_AZ, path.join(d, 'az'));
+  fs.chmodSync(path.join(d, 'az'), 0o755);
+  const env = {};
+  for (const [k, v] of Object.entries(process.env)) if (!/^TYCON_|^AZURE_DEVOPS|^GH_(TOKEN|REPO|HOST)$|^FAKE_GH_|^FIXAZ$/.test(k)) env[k] = v;
+  const home = path.join(d, 'casa');
+  return Object.assign(env, { HOME: home, USERPROFILE: home, TYCON_HOME: path.join(home, '.tycon'), TYCON_TREE: path.join(d, 'arbol'),
+    TYCON_GH_CMD: FAKE_GH, FAKE_GH_STATE: path.join(d, 'gh.json'), FAKE_GH_LOG: path.join(d, 'gh.log'),
+    TYCON_ADO_CMD: path.join(d, 'az'), FIXAZ: path.join(d, 'fixaz') });
+}
+const lines = (f) => { try { return fs.readFileSync(f, 'utf8').trim().split('\n').filter(Boolean); } catch { return []; } };
+const calls = (env) => ({
+  gh: lines(env.FAKE_GH_LOG).map((l) => JSON.parse(l).ruta),
+  az: lines(path.join(env.FIXAZ, 'llamadas.log')).map((l) => JSON.parse(l.split('\t')[1]).args.join(' ')),
+});
+// with auto-complete set, as a pull request that is entering; the off-queue test takes it away
+const pull = (n, o = {}) => ({ number: n, state: 'open', title: `pedido ${n}`, body: '', created_at: '2026-10-17T10:00:00Z', head: { ref: 'story/x' }, base: { ref: 'main' }, user: { login: 'ana' }, auto_merge: { merge_method: 'merge' }, ...o });
+const prAz = (n, o = {}) => ({ pullRequestId: n, status: 'active', isDraft: false, sourceRefName: 'refs/heads/story/x', targetRefName: 'refs/heads/main', mergeStatus: 'succeeded', repository: { name: 'y' }, creationDate: '2026-10-17T10:00:00Z', title: 't', autoCompleteSetBy: { id: 'acme' }, ...o });
+const wip = (m, env) => JSON.parse(execFileSync('node', [WIP, '--state-dir', m.state, '--sessions-dir', m.sessions, '--now', NOW, '--json'], { input: '', env }));
+
+test('T26 ConsultaReal_GhFalso: el programa le pregunta a la capa por la rama y el repo de origin', { skip: onWindows }, () => {
   const m = toyMachine();
   entering(m, 'ent00000-8', { repoPath: gitRepo(m.root, 'x', 'story/x', GH) });
-  const bin = fakeBin(m.root, 'gh', `process.stdout.write(JSON.stringify([{ number: 236, isDraft: false }]));`);
-  const out = execFileSync('node', [WIP, '--state-dir', m.state, '--sessions-dir', m.sessions, '--now', NOW, '--json'],
-    { input: '', env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
-  const args = JSON.parse(fs.readFileSync(path.join(bin, 'args.json'), 'utf8'));
-  // por GraphQL, que dice si el pedido está en la cola de merge
-  for (const a of ['api', 'graphql', 'o=acme', 'n=x', 'h=story/x']) assert.ok(args.includes(a), args.join(' '));
-  assert.ok(args.some((a) => /mergeQueueEntry/.test(a) && /states:OPEN/.test(a)), args.join(' '));
-  assert.strictEqual(JSON.parse(out).rows[0].state, 'Entrando a los repos · x #236');
+  const env = layer(m, { pulls: [pull(236, { auto_merge: { merge_method: 'merge' } }), pull(9, { head: { ref: 'otra' } })] });
+  assert.strictEqual(wip(m, env).rows[0].state, 'Entrando a los repos · x #236');
+  const asked = calls(env).gh;
+  assert.ok(asked.some((r) => r.startsWith('repos/acme/x/pulls?')), asked.join(' | '));
+  assert.ok(asked.includes('repos/acme/x/pulls/236') && !asked.includes('repos/acme/x/pulls/9'), asked.join(' | '));
+  // y a GraphQL, que es lo único que dice si el pedido está en la cola de merge
+  assert.ok(asked.includes('graphql'), asked.join(' | '));
 });
 
-test('T27 ConsultaReal_AzFalso: el programa le pregunta a az con la organización, el proyecto y el repo', { skip: onWindows }, () => {
+test('T27 ConsultaReal_AzFalso: el programa le pregunta a la capa con la organización, el proyecto y el repo', { skip: onWindows }, () => {
   const m = toyMachine();
   entering(m, 'ent00000-9', { repoPath: gitRepo(m.root, 'y', 'story/x', AZ) });
-  const bin = fakeBin(m.root, 'az', `process.stdout.write(JSON.stringify([{ pullRequestId: 4920, isDraft: false }]));`);
-  const out = execFileSync('node', [WIP, '--state-dir', m.state, '--sessions-dir', m.sessions, '--now', NOW, '--json'],
-    { input: '', env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
-  const args = JSON.parse(fs.readFileSync(path.join(bin, 'args.json'), 'utf8'));
-  for (const a of ['repos', 'pr', 'list', '--org', 'https://dev.azure.com/acme', '--project', 'Proyecto Uno', '--repository', 'y', '--source-branch', 'story/x', '--status', 'active']) {
-    assert.ok(args.includes(a), args.join(' '));
-  }
-  assert.strictEqual(JSON.parse(out).rows[0].state, 'Entrando a los repos · y !4920');
-  const { parseRemote, shellSafe } = require(WIP);
+  const env = layer(m, { prs: [prAz(4920), prAz(4921, { repository: { name: 'otro' } })] });
+  assert.strictEqual(wip(m, env).rows[0].state, 'Entrando a los repos · y !4920');
+  const [asked] = calls(env).az;
+  for (const a of ['--org https://dev.azure.com/acme', 'project=Proyecto Uno', 'searchCriteria.sourceRefName=refs/heads/story/x']) assert.ok(asked.includes(a), asked);
+  const { parseRemote } = require(WIP);
   assert.deepStrictEqual(parseRemote(`https://${at('acme', 'dev.azure.com')}/acme/Proyecto Uno/_git/y`), { kind: 'azure', org: 'acme', project: 'Proyecto Uno', repo: 'y', name: 'y' });
   assert.deepStrictEqual(parseRemote('https://acme.visualstudio.com/DefaultCollection/Proyecto/_git/y'), { kind: 'azure', org: 'acme', project: 'Proyecto', repo: 'y', name: 'y' });
   assert.strictEqual(parseRemote('https://dev.azure.com/a%2F..%2Fb/P/_git/y').kind, null, 'una organización rara no arma la dirección');
   assert.deepStrictEqual(parseRemote('git@ssh.dev.azure.com:v3/acme/Proyecto%20Uno/y'), { kind: 'azure', org: 'acme', project: 'Proyecto Uno', repo: 'y', name: 'y' });
-  assert.strictEqual(shellSafe(['Proyecto Año', 'story/x', 'https://dev.azure.com/acme']), true);
-  assert.strictEqual(shellSafe(['a" & calc']), false);
 });
 
 test('T28 ServidorDesconocido_SeDice: un origin que no es GitHub ni Azure DevOps se dice y no se consulta', () => {
@@ -662,14 +682,12 @@ test('T36 Origin_CuatroFormasNuevas: puerto, ssh.github.com, «@» en la ruta y 
 test('T37 GitFalso_SePasaDelTope: un git que no contesta no cuelga el comando; el repo se ubica igual y sus pedidos se consultan', { skip: onWindows }, () => {
   const m = toyMachine();
   entering(m, 'ent00000-g', { repoPath: gitRepo(m.root, 'x', 'story/x', GH) });
-  // git hangs (it is only used for the history of merges); gh answers one open pull request, without the network
+  // git hangs (it is only used for the history of merges); the layer answers one open pull request, without the network
   const bin = fakeBin(m.root, 'git', 'setTimeout(() => {}, 10000);');
-  fs.writeFileSync(path.join(bin, 'gh'), "#!/usr/bin/env node\nprocess.stdout.write('[{\"number\":5,\"isDraft\":false}]');\n", { mode: 0o755 });
+  const env = layer(m, { pulls: [pull(5)] });
   const start = Date.now();
-  const out = execFileSync('node', [WIP, '--state-dir', m.state, '--sessions-dir', m.sessions, '--now', NOW, '--json'],
-    { input: '', env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
+  const r = wip(m, { ...env, PATH: `${bin}${path.delimiter}${env.PATH}` });
   assert.ok(Date.now() - start < 9000, 'el tope cortó a git');
-  const r = JSON.parse(out);
   assert.strictEqual(r.rows[0].state, 'Entrando a los repos · x #5');
   assert.match(r.rows[0].end, /sin merges medidos/);
 });
@@ -903,33 +921,26 @@ const doing = (h, sid, ...args) => execFileSync('node', [MARKER, 'doing', ...arg
   { encoding: 'utf8', input: '', env: { ...process.env, HOME: h.home, USERPROFILE: h.home, CLAUDE_CODE_SESSION_ID: sid } });
 const doingFile = (h, sid) => path.join(h.state, 'doing', `${sid}.json`);
 
-test('T1 PedidoEnConflicto_DiceChocaConMain @story-2.49.2 @ac-1: GitHub DIRTY y Azure conflicts dicen «choca con main»', { skip: onWindows }, () => {
+test('T1 PedidoEnConflicto_DiceChocaConMain @story-2.49.2 @ac-1: GitHub en conflicto y Azure conflicts dicen «choca con main»', { skip: onWindows }, () => {
   const m = toyMachine();
   entering(m, 'cho00000-1', { repoPath: gitRepo(m.root, 'x', 'story/x', GH) });
-  const gh = fakeBin(m.root, 'gh', `process.stdout.write(JSON.stringify([{ number: 236, isDraft: false, mergeable: 'CONFLICTING', mergeStateStatus: 'DIRTY' }]));`);
-  const out = execFileSync('node', [WIP, '--state-dir', m.state, '--sessions-dir', m.sessions, '--now', NOW, '--json'],
-    { input: '', env: { ...process.env, PATH: `${gh}${path.delimiter}${process.env.PATH}` } });
-  assert.strictEqual(JSON.parse(out).rows[0].state, 'Entrando a los repos · x #236 (choca con main)');
-  const args = JSON.parse(fs.readFileSync(path.join(gh, 'args.json'), 'utf8'));
-  assert.ok(args.some((a) => /mergeStateStatus/.test(a)), args.join(' '));
+  const env = layer(m, { pulls: [pull(236, { mergeable: false })] });
+  assert.strictEqual(wip(m, env).rows[0].state, 'Entrando a los repos · x #236 (choca con main)');
+  // GitHub lo dice al leer el pedido entero: su lista no trae `mergeable`
+  assert.ok(calls(env).gh.includes('repos/acme/x/pulls/236'), calls(env).gh.join(' | '));
   const n = toyMachine();
   entering(n, 'cho00000-2', { repoPath: gitRepo(n.root, 'y', 'story/x', AZ) });
-  const az = fakeBin(n.root, 'az', `process.stdout.write(JSON.stringify([{ pullRequestId: 4920, isDraft: false, mergeStatus: 'conflicts' }]));`);
-  const outAz = execFileSync('node', [WIP, '--state-dir', n.state, '--sessions-dir', n.sessions, '--now', NOW, '--json'],
-    { input: '', env: { ...process.env, PATH: `${az}${path.delimiter}${process.env.PATH}` } });
-  assert.strictEqual(JSON.parse(outAz).rows[0].state, 'Entrando a los repos · y !4920 (choca con main)');
+  assert.strictEqual(wip(n, layer(n, { prs: [prAz(4920, { mergeStatus: 'conflicts' })] })).rows[0].state, 'Entrando a los repos · y !4920 (choca con main)');
 });
 
-test('T2 ConflictoYBorrador_DosMarcas_UnknownSinMarca @story-2.49.2 @ac-1 @ac-2: borrador en conflicto, UNKNOWN y sin dato', { skip: onWindows }, () => {
+test('T2 ConflictoYBorrador_DosMarcas_UnknownSinMarca @story-2.49.2 @ac-1 @ac-2: borrador en conflicto, sin calcular y sin dato', { skip: onWindows }, () => {
   const m = toyMachine();
   entering(m, 'cho00000-3', { repoPath: gitRepo(m.root, 'x', 'story/x', GH) });
-  const gh = fakeBin(m.root, 'gh', `process.stdout.write(JSON.stringify([
-    { number: 1, isDraft: true, mergeable: 'CONFLICTING', mergeStateStatus: 'DIRTY' },
-    { number: 2, isDraft: false, mergeable: 'UNKNOWN', mergeStateStatus: 'UNKNOWN' },
-    { number: 3, isDraft: false }]));`);
-  const out = execFileSync('node', [WIP, '--state-dir', m.state, '--sessions-dir', m.sessions, '--now', NOW, '--json'],
-    { input: '', env: { ...process.env, PATH: `${gh}${path.delimiter}${process.env.PATH}` } });
-  assert.strictEqual(JSON.parse(out).rows[0].state, 'Entrando a los repos · x #1 (borrador) (choca con main) · x #2 · x #3');
+  const env = layer(m, { pulls: [
+    pull(1, { draft: true, mergeable: false }),
+    pull(2, { mergeable: null, mergeable_state: 'unknown' }),
+    pull(3)] });
+  assert.strictEqual(wip(m, env).rows[0].state, 'Entrando a los repos · x #1 (borrador) (choca con main) · x #2 · x #3');
 });
 
 test('T3 Doing_LaFilaDiceLaNota @story-2.49.2 @ac-3: una sesión viva sin pipeline muestra lo que anotó', () => {
@@ -1551,34 +1562,31 @@ test('wip · PasoConBandera_EsElQueSigue: con «Probar en vivo» sin hacer, el e
 test('wip · PedidoFueraDeLaCola_NoSigueEntrando: con todos los pedidos fuera de la cola o en borrador, espera que lo encolen', { skip: onWindows }, () => {
   const m = toyMachine();
   entering(m, 'col00000-1', { repoPath: gitRepo(m.root, 'x', 'story/x', GH) });
-  const pr = (number, extra) => ({ number, isDraft: false, mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', autoMergeRequest: null, mergeQueueEntry: null, ...extra });
-  const gql = (nodes) => JSON.stringify({ data: { repository: { pullRequests: { nodes } } } });
-  const runGh = (out) => {
-    const bin = fakeBin(m.root, 'gh', `process.stdout.write(${JSON.stringify(out)});`);
-    return JSON.parse(execFileSync('node', [WIP, '--state-dir', m.state, '--sessions-dir', m.sessions, '--now', NOW, '--json'],
-      { input: '', env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } })).rows[0];
+  const runGh = (pulls, extra = {}) => {
+    const env = layer(m, { pulls });
+    if (extra.queueError) fs.writeFileSync(env.FAKE_GH_STATE, JSON.stringify({ ...JSON.parse(fs.readFileSync(env.FAKE_GH_STATE, 'utf8')), queue_error: true }));
+    return wip(m, env).rows[0];
   };
-  const off = runGh(gql([pr(842)]));
+  const sinAuto = { auto_merge: null };
+  const off = runGh([pull(842, sinAuto)]);
   assert.strictEqual(off.state, 'Pedidos sin encolar · x #842 (fuera de la cola)');
   assert.match(off.end, /ningún pedido está en la cola/);
   // en la cola, o con auto-merge: sigue entrando, sin marca
-  assert.strictEqual(runGh(gql([pr(846, { mergeQueueEntry: { state: 'AWAITING_CHECKS' } })])).state, 'Entrando a los repos · x #846');
-  assert.strictEqual(runGh(gql([pr(847, { autoMergeRequest: { enabledAt: NOW } })])).state, 'Entrando a los repos · x #847');
+  assert.strictEqual(runGh([pull(846, { ...sinAuto, merge_queue: { state: 'AWAITING_CHECKS' } })]).state, 'Entrando a los repos · x #846');
+  assert.strictEqual(runGh([pull(847)]).state, 'Entrando a los repos · x #847');
   // uno en camino alcanza para que esté entrando; el de afuera se marca igual
-  assert.strictEqual(runGh(gql([pr(1, { mergeQueueEntry: { state: 'QUEUED' } }), pr(2)])).state, 'Entrando a los repos · x #1 · x #2 (fuera de la cola)');
-  // un error de GraphQL se dice, no se toma como «sin pedidos»
-  assert.match(runGh(JSON.stringify({ errors: [{ message: 'Could not resolve to a Repository' }] })).state, /no se pudo consultar/);
+  assert.strictEqual(runGh([pull(1, { ...sinAuto, merge_queue: { state: 'QUEUED' } }), pull(2, sinAuto)]).state, 'Entrando a los repos · x #1 · x #2 (fuera de la cola)');
+  // si GitHub no dice si está en la cola, no se marca afuera (no saber no es estar afuera), pero se dice que no se sabe;
+  // con auto-merge puesto no hace falta saberlo
+  assert.strictEqual(runGh([pull(3, sinAuto)], { queueError: true }).state, 'Entrando a los repos · x #3 (cola sin verificar)');
+  assert.strictEqual(runGh([pull(4)], { queueError: true }).state, 'Entrando a los repos · x #4');
   // Azure: sin auto-completar está fuera de la cola; con auto-completar, no
   const n = toyMachine();
   entering(n, 'col00000-2', { repoPath: gitRepo(n.root, 'y', 'story/x', AZ) });
-  const runAz = (list) => {
-    const bin = fakeBin(n.root, 'az', `process.stdout.write(${JSON.stringify(JSON.stringify(list))});`);
-    return JSON.parse(execFileSync('node', [WIP, '--state-dir', n.state, '--sessions-dir', n.sessions, '--now', NOW, '--json'],
-      { input: '', env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } })).rows[0].state;
-  };
-  assert.strictEqual(runAz([{ pullRequestId: 6008, isDraft: false, autoCompleteSetBy: null }]), 'Pedidos sin encolar · y !6008 (fuera de la cola)');
-  assert.strictEqual(runAz([{ pullRequestId: 6011, isDraft: false, autoCompleteSetBy: { displayName: 'acme' } }]), 'Entrando a los repos · y !6011');
-  assert.strictEqual(runAz([{ pullRequestId: 6012, isDraft: true, autoCompleteSetBy: null }]), 'Entrando a los repos · y !6012 (borrador)');
+  const runAz = (prs) => wip(n, layer(n, { prs })).rows[0].state;
+  assert.strictEqual(runAz([prAz(6008, { autoCompleteSetBy: null })]), 'Pedidos sin encolar · y !6008 (fuera de la cola)');
+  assert.strictEqual(runAz([prAz(6011)]), 'Entrando a los repos · y !6011');
+  assert.strictEqual(runAz([prAz(6012, { isDraft: true, autoCompleteSetBy: null })]), 'Entrando a los repos · y !6012 (borrador)');
 });
 
 test('wip · SinMarcador_ConArchivoReciente_NoEstaLibre: quieta, pero con un archivo tocado hace poco, trabaja sin marcador', () => {

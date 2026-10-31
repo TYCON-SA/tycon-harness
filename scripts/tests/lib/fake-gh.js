@@ -38,7 +38,8 @@
 // pide revisores (422 si el repo declara `collaborators` y alguno no está). PUT pulls/N/merge junta la rama en la base del
 // repo bare de `remotes` con un solo commit (405 si no está abierto, 409 si `sha` no es la punta de la rama).
 // Para los pedidos de cambio por la capa: "allow_auto_merge": { "<o>/<r>": true } (GET repos/o/r lo trae), los pulls con
-// `node_id` (`PR_<o>/<r>#<n>`), `mergeable` (false = en conflicto), `auto_merge`, `draft` y `assignees`; "shas":
+// `node_id` (`PR_<o>/<r>#<n>`), `mergeable` (false = en conflicto), `auto_merge`, `draft`, `assignees` y `merge_queue`
+// (`{ state }` si está en la cola de merge: sólo lo ve GraphQL, como en GitHub); "shas":
 // { "<rama>": "<sha>" } es la punta de cada rama; "checks", "autoMerge", "merge_falla", "merge_sin_git" e
 // "issuesConPulls" se explican donde se usan. Un fallo `{ "red": true }` es la red caída (sin cuerpo, sale 1).
 const fs = require('fs');
@@ -328,6 +329,13 @@ if (method === 'POST' && base === 'graphql') {
     if (!x) gqlErr('NOT_FOUND', `Could not resolve to a node with the global id of '${vars.pullRequestId}'`);
     if (st.autoMerge === 'funciona') { x.p.auto_merge = { merge_method: String(vars.mergeMethod || '').toLowerCase(), enabled_by: { login: st.user } }; save(); }
     out({ data: { enablePullRequestAutoMerge: { pullRequest: { number: x.p.number } } } });
+  }
+  // si cada pull request está en la cola de merge: `nodes(ids:)` con su `merge_queue` (`{ state }` o nada); "queue_error":
+  // true contesta el error de GitHub
+  if (/nodes\(ids:/.test(qy) && /mergeQueueEntry/.test(qy)) {
+    if (st.queue_error) gqlErr('FORBIDDEN', 'Resource not accessible by integration');
+    const todos = Object.entries(st.pulls || {}).flatMap(([repo, l]) => l.map((p) => ({ id: p.node_id || `PR_${repo}#${p.number}`, p })));
+    out({ data: { nodes: (vars.ids || []).map((id) => { const x = todos.find((t) => t.id === id); return x ? { id, mergeQueueEntry: x.p.merge_queue || null } : null; }) } });
   }
   const projs = st.projects || {};
   const porId = (pid) => Object.values(projs).find((x) => x.id === pid);
