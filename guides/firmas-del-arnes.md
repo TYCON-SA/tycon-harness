@@ -230,7 +230,9 @@ ventana sólo si se cumple todo esto:
 - la sesión destino no es la propia, ni trabaja la misma story que una ejecución abierta de la sesión designada.
 
 El arreglo rápido de otra pestaña (`adhoc-lane`) se declara así desde la sesión designada de la misma máquina, con
-`marker.js adhoc set '<json>' --for-session <sesión>`; por esta vía el cupo queda en 8 archivos como mucho. La
+`marker.js adhoc set '<json>' --for-session <sesión>`; por esta vía el cupo queda en 5 archivos como mucho, el arreglo
+nunca toca lo sensible de `scripts/lib/signatures.js` y, antes de abrirlo, al dueño le llega una línea por un canal de
+la lista del perfil (sin entrega, no hay arreglo). La
 coordinadora de otra máquina no lo declara: se lo pide a la designada de la máquina destino (`guides/coordination.md`).
 No entra en ninguno de los grupos de la 8.116: para delegarla, el perfil la nombra.
 

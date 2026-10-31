@@ -164,8 +164,11 @@ El arreglo rápido (un cambio de código sin historia) es la firma `adhoc-lane`:
 - **En la misma máquina.** La sesión designada lo declara por la pestaña a la que le dio el trabajo, con
   `marker.js adhoc set '<json>' --for-session <sesión>`. Corre sin ventana sólo si el perfil delega `adhoc-lane` (no
   entra en ningún grupo: hay que nombrarla), la máquina está en la lista y el dueño confirmó la designación; si no, sale
-  la ventana en la pestaña de la designada. Por esta vía el cupo queda en 8 archivos como mucho, y la designada no se
-  lo declara a sí misma.
+  la ventana en la pestaña de la designada. Por esta vía tiene tres límites, y el guion y el freno de edición los
+  comprueban: el cupo queda en 5 archivos como mucho; el arreglo nunca toca lo sensible (la lista de
+  `scripts/lib/signatures.js`: firmas, frenos, avisos, permisos, el perfil), que va con la firma del dueño; y antes de
+  abrirlo le llega al dueño una línea por un canal de la lista del perfil, con la sesión, el motivo y el cupo: sin
+  entrega, no hay arreglo. La designada no se lo declara a sí misma.
 - **Desde otra máquina.** La coordinadora de otra máquina se lo pide, por mensaje, a la designada de la máquina destino,
   que lo declara como arriba. El mensaje es un pedido, no una autorización: lo que autoriza es el perfil del equipo y la
   designación que el dueño confirmó. Sin designada en la máquina destino, el atajo se aprueba en la ventana de la

@@ -259,9 +259,13 @@ function requiereSensible(texto, lista = catalogo().REQUIERE_SENSIBLE) {
  * Lo sensible que toca el cambio: `[{ repo, archivo, motivo }]`. Cada repo contra `origin/main`; las rutas sin
  * mayúsculas, también la ruta real del archivo (un enlace a un sensible cuenta), y la clausura de un nivel por `require`.
  */
+/** ¿La ruta (relativa al repo) está en la lista de lo sensible del catálogo? Sin distinguir mayúsculas. */
+function esSensible(rel) {
+  return catalogo().SENSITIVE.map(patron).some((re) => re.test(String(rel).replace(/\\/g, '/').toLowerCase()));
+}
+
 function sensibles({ repos = [] } = {}) {
-  const pats = catalogo().SENSITIVE.map(patron);
-  const es = (rel) => pats.some((re) => re.test(String(rel).replace(/\\/g, '/').toLowerCase()));
+  const es = esSensible;
   const out = [];
   for (const repo of repos) {
     const c = cambiados(repo);
@@ -451,4 +455,4 @@ function constancia({ marker, via, por = null, previo, ahora }) {
   };
 }
 
-module.exports = { FIRMA: 'save', raizDe, tieneCambios, esPapeleoDeLaHuella, rutasDeclaradas, reposDeLaCorrida, exencionesDeLaCorrida, requiereSensible, huella, huellas, vigente, sensibles, limpia, lineaDelAviso, avisar, antesDeFirmar, constancia };
+module.exports = { FIRMA: 'save', raizDe, tieneCambios, esPapeleoDeLaHuella, rutasDeclaradas, reposDeLaCorrida, exencionesDeLaCorrida, requiereSensible, huella, huellas, vigente, esSensible, sensibles, limpia, lineaDelAviso, avisar, antesDeFirmar, constancia };

@@ -54,6 +54,36 @@ test('pass: no-código / harness / gate apagado / sin repo / repo=home / repo si
   assert.equal(gate.computeStoryGate({ ...BASE, repoHasTycon: false, repoHasStories: false }).action, 'pass');
 });
 
+// Un arreglo rápido que abrió la coordinadora por delegación nunca toca lo sensible (firmas, frenos, avisos, permisos, el
+// perfil): eso va con la firma del dueño. Vale también en los repos del arnés, que es donde están esos archivos; el
+// arreglo rápido que firmó una persona sigue como siempre.
+// 🔴 mutación: sin mirar la vía del carril → la coordinadora edita scripts/lib/signatures.js con su propio arreglo.
+test('adhoc-sensitive: el carril delegado no toca lo sensible, en ningún repo', () => {
+  const delegado = { reason: 'x fix', maxFiles: 5, files: [], via: 'delegacion' };
+  for (const [repo, archivo, harness] of [[REPO, 'scripts/lib/signatures.js', false], ['/w/arnes', 'scripts/lib/owner-window.js', true], [REPO, 'scripts/production/guard.sh', false]]) {
+    const r = gate.computeStoryGate({ ...BASE, repoRoot: repo, filePath: `${repo}/${archivo}`, adhoc: delegado, isHarness: harness });
+    assert.equal(r.action, 'block', `${archivo}: ${r.reason}`);
+    assert.equal(r.kind, 'adhoc-sensitive', archivo);
+    assert.match(r.reason, new RegExp(archivo.replace(/[.*]/g, '\\$&')), 'el motivo nombra el archivo');
+  }
+  // lo que no es sensible, por delegación: pasa
+  assert.equal(gate.computeStoryGate({ ...BASE, adhoc: delegado }).action, 'pass');
+  // el mismo archivo con el carril que firmó una persona: lo de siempre
+  for (const via of ['terminal', 'ventana', undefined]) {
+    const r = gate.computeStoryGate({ ...BASE, filePath: `${REPO}/scripts/lib/signatures.js`, adhoc: { ...delegado, via } });
+    assert.equal(r.action, 'pass', `${via}: ${r.reason}`);
+  }
+  // y con el portón del repo apagado, el delegado tampoco
+  assert.equal(gate.computeStoryGate({ ...BASE, filePath: `${REPO}/scripts/lib/signatures.js`, adhoc: delegado, gateEnabled: false }).kind, 'adhoc-sensitive');
+});
+
+// El cupo de un arreglo rápido delegado: hasta 5 archivos, pida lo que pida.
+// 🔴 mutación: el tope de antes (8) → un pedido de 8 queda en 8.
+test('cupoDelegado: el arreglo rápido delegado queda en 5 archivos como mucho', () => {
+  assert.equal(gate.DELEGATED_ADHOC_MAX_FILES, 5);
+  for (const [pedido, queda] of [[1, 1], [5, 5], [6, 5], [8, 5], [50, 5]]) assert.equal(gate.cupoDelegado(pedido), queda, String(pedido));
+});
+
 test('no-lane: repo con .tycon/ (o con stories) sin marker ni ad-hoc → block', () => {
   const a = gate.computeStoryGate(BASE);
   assert.equal(a.action, 'block'); assert.equal(a.kind, 'no-lane');

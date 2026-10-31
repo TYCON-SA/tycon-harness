@@ -169,8 +169,12 @@ The quick fix (a code change with no story) is the `adhoc-lane` signature: the t
 - **On the same machine.** The designated session declares it for the tab it gave the work to, with
   `marker.js adhoc set '<json>' --for-session <session>`. It runs with no window only if the profile delegates
   `adhoc-lane` (it is in no group: it has to be named), the machine is on the list and the owner confirmed the
-  designation; otherwise the window opens in the designated session's tab. Through this path the quota is at most 8
-  files, and the designated session does not declare it for itself.
+  designation; otherwise the window opens in the designated session's tab. Through this path it has three limits, and
+  the script and the edit guard check them: the quota is at most 5 files; the fix never touches anything sensitive
+  (the list in `scripts/lib/signatures.js`: signatures, guards, notices, permissions, the profile), which goes with the
+  owner's signature; and before it opens, one line reaches the owner through a channel of the profile's list, with the
+  session, the reason and the quota: with no delivery, there is no fix. The designated session does not declare it
+  for itself.
 - **From another machine.** The coordinator on another machine asks the designated session of the target machine for it,
   by message, and that session declares it as above. The message is a request, not an authorization: what authorizes
   it is the team profile and the designation the owner confirmed. With no designated session on the target machine, the
