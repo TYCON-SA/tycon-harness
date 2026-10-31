@@ -39,6 +39,17 @@ const FALSO = new Set(['false', 'f', 'no', 'n', '0']);
  * escrito, no lo que va a llegar: quien necesita el texto de verdad (scripts/lib/gh-pr.js) lo da por ilegible. Los
  * lectores de `az` no lo miran.
  */
+const FIN_DE_LINEA = new Set(['\n', '\r', ' ', ' ']);
+
+/** La línea sin los espacios ni tabs de sus costados (sólo esos dos: así lee la terminal el cierre de un bloque). */
+function sinBordes(linea) {
+  let a = 0;
+  let b = linea.length;
+  while (a < b && (linea[a] === ' ' || linea[a] === '\t')) a++;
+  while (b > a && (linea[b - 1] === ' ' || linea[b - 1] === '\t')) b--;
+  return linea.slice(a, b);
+}
+
 function fichas(cmd, opts = {}) {
   // `powershell`: el comando lo escribió la herramienta de PowerShell. Ahí la barra invertida NO escapa nada (es parte
   // de las rutas: `C:\tools\gh.exe`) y el renglón se continúa con una comilla invertida, no con una barra.
@@ -74,10 +85,17 @@ function fichas(cmd, opts = {}) {
     if (finLinea === -1) continue;
     const antes = s.slice(s.lastIndexOf('\n', m.index) + 1, m.index);
     if (antes.split('((').length > antes.split('))').length) continue;
-    const cierre = new RegExp(`^[\\t ]*${m[2].replace(/[.\\-]/g, '\\$&')}[\\t ]*$`, 'm');
-    const resto = s.slice(finLinea + 1);
-    const fin = resto.search(cierre);
-    candidatos.set(m.index, [finLinea + 1, fin === -1 ? s.length : finLinea + 1 + fin]);
+    // el cierre es la primera línea que, sin espacios ni tabs a los costados, es el delimitador: se compara el texto,
+    // sin armar una expresión con él (el delimitador viene del comando). Una línea termina en \n, \r, U+2028 o U+2029,
+    // así que `FIN\r\n` (un comando escrito en Windows) cierra
+    let fin = -1;
+    for (let a = finLinea + 1; a <= s.length;) {
+      let b = a;
+      while (b < s.length && !FIN_DE_LINEA.has(s[b])) b++;
+      if (sinBordes(s.slice(a, b)) === m[2]) { fin = a; break; }
+      a = b + 1;
+    }
+    candidatos.set(m.index, [finLinea + 1, fin === -1 ? s.length : fin]);
   }
   const cuerpos = [];
   const enHeredoc = (i) => cuerpos.some(([a, b]) => i >= a && i < b);
