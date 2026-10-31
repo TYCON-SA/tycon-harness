@@ -11,8 +11,13 @@
  * entrada {p, B2} así: un commit C del pedido (en `merge-base(punta, base)..punta`) tiene p con el blob firmado B1; el
  * ancestro O1 = blob(merge-base(C, base), p) y lo traído O2 = blob(merge-base(punta, base), p) los calcula este módulo
  * desde el historial; `git merge-file` (actual O2, ancestro O1, otro B1) no tiene conflictos y da exactamente B2; y p es
- * un archivo común con el mismo modo en C y en la punta. Una ruta ausente en algún lado, un archivo nuevo, un conflicto,
- * un commit que no está (clon superficial) o cualquier error de git es cambio de control.
+ * un archivo común con el mismo modo en C y en la punta. Una entrada que quedó tal cual la firmó el dueño (B1 = B2, con
+ * el mismo modo que en C) también cuadra, siempre que al menos otra sea lo que trajo main: todo tal cual ya tiene su
+ * firma. Una ruta ausente en algún lado, un archivo nuevo, un conflicto, un commit que no está (clon superficial) o
+ * cualquier error de git es cambio de control.
+ *
+ * El control de la base acepta la refirma sin firma nueva (`run-base-controls.sh run`): la constancia del dueño cubre lo
+ * que trajo main con fusión limpia. La línea delegada `refresh-after-main` sigue valiendo para los pedidos que la traen.
  *
  * Lo usan el freno (por el guion), `run-base-controls.sh approve` y la CI; la CI carga la copia de la base. Por eso sólo
  * usa módulos de Node: se puede cargar desde un archivo suelto.
@@ -71,24 +76,27 @@ function anteriores(approvals, baseHashes) {
   return (approvals || []).filter((a) => a && a.via === undefined && typeof a.hash === 'string' && Array.isArray(a.rules) && !enBase.has(a.hash));
 }
 
-// ¿la entrada {p, B2} es lo que da traer main sobre lo que firmó la constancia? null si sí; el motivo si no
+// ¿la entrada {p, B2} es lo que firmó la constancia, tal cual o con main traído encima? `{ tal: true }` si quedó tal cual,
+// `{ tal: false }` si es lo que da traer main, `{ no: <motivo> }` si no es ninguna de las dos
 function porQueNo(ctx, anterior, e) {
   const { root, mb, baseC, tipC, commits, tmp } = ctx;
+  const no = (motivo) => ({ no: motivo });
   const regla = anterior.rules.find((r) => r && r.path === e.path);
-  if (!regla || typeof regla.blob !== 'string') return `${e.path} no está en la constancia anterior`;
+  if (!regla || typeof regla.blob !== 'string') return no(`${e.path} no está en la constancia anterior`);
   const punta = entradaDe(root, tipC, e.path);
-  if (!punta) return `${e.path} no está en la punta del pedido`;
-  if (!comun(punta)) return `${e.path} no es un archivo común en la punta`;
-  if (punta.blob !== e.blob) return `${e.path} en la punta no es el blob que se firma`;
-  if (regla.blob === e.blob) return `${e.path} ya está firmado tal cual`;
-  const c = commits.find((h) => { const x = entradaDe(root, h, e.path); return x && x.blob === regla.blob; });
-  if (!c) return `ningún commit del pedido tiene ${e.path} como lo firmó el dueño`;
+  if (!punta) return no(`${e.path} no está en la punta del pedido`);
+  if (!comun(punta)) return no(`${e.path} no es un archivo común en la punta`);
+  if (punta.blob !== e.blob) return no(`${e.path} en la punta no es el blob que se firma`);
+  // el más viejo con ese blob: un cambio de modo posterior deja el mismo blob y no es lo que se firmó
+  const c = [...commits].reverse().find((h) => { const x = entradaDe(root, h, e.path); return x && x.blob === regla.blob; });
+  if (!c) return no(`ningún commit del pedido tiene ${e.path} como lo firmó el dueño`);
   const enC = entradaDe(root, c, e.path);
-  if (!comun(enC) || enC.modo !== punta.modo) return `${e.path} cambió de modo o de tipo desde lo firmado`;
+  if (!comun(enC) || enC.modo !== punta.modo) return no(`${e.path} cambió de modo o de tipo desde lo firmado`);
+  if (regla.blob === e.blob) return { tal: true };
   const o1 = entradaDe(root, mergeBase(root, c, baseC), e.path);
   const o2 = entradaDe(root, mb, e.path);
-  if (!comun(o1) || !comun(o2)) return `${e.path} no está como archivo común en main (nuevo, borrado o renombrado)`;
-  if (o1.blob === o2.blob) return `main no cambió ${e.path}: no hay nada que traer`;
+  if (!comun(o1) || !comun(o2)) return no(`${e.path} no está como archivo común en main (nuevo, borrado o renombrado)`);
+  if (o1.blob === o2.blob) return no(`main no cambió ${e.path}: no hay nada que traer`);
   const archivo = (nombre, blob) => {
     const f = path.join(tmp, nombre);
     const r = git(root, ['cat-file', 'blob', blob]);
@@ -100,11 +108,11 @@ function porQueNo(ctx, anterior, e) {
   const ancestro = archivo('ancestro', o1.blob);
   const otro = archivo('otro', regla.blob);
   const m = spawnSync('git', ['merge-file', '-p', '-q', actual, ancestro, otro], { encoding: 'buffer', env: GIT_ENV, maxBuffer: 256 * 1024 * 1024 });
-  if (m.error || m.status !== 0) return `traer main sobre ${e.path} no es limpio (conflicto o archivo que git no fusiona)`;
+  if (m.error || m.status !== 0) return no(`traer main sobre ${e.path} no es limpio (conflicto o archivo que git no fusiona)`);
   const h = git(root, ['hash-object', '--stdin'], m.stdout);
   if (h.status !== 0) throw new NoSe('no pude calcular el blob de la fusión');
-  if (h.stdout.trim() !== e.blob) return `${e.path} no es lo que da traer main sobre lo firmado`;
-  return null;
+  if (h.stdout.trim() !== e.blob) return no(`${e.path} no es lo que da traer main sobre lo firmado`);
+  return { tal: false };
 }
 
 /**
@@ -133,9 +141,11 @@ function classify({ root, base, tip = 'HEAD', entries, approvals, baseHashes } =
     const ctx = { root, mb, baseC, tipC, commits: lista, tmp };
     let motivo = null;
     for (const anterior of candidatas) {
-      const no = entries.map((e) => porQueNo(ctx, anterior, e)).find((x) => x !== null);
-      if (no === undefined) return { clase: REFIRMA, refirma_de: anterior.hash, motivo: 'es lo que da traer main sobre lo que el dueño firmó' };
-      motivo = motivo || no;
+      const cada = entries.map((e) => porQueNo(ctx, anterior, e));
+      const no = cada.find((x) => x.no);
+      // todo tal cual no es traer main: esas entradas ya las firmó el dueño con ese mismo hash
+      if (!no && cada.some((x) => !x.tal)) return { clase: REFIRMA, refirma_de: anterior.hash, motivo: 'es lo que da traer main sobre lo que el dueño firmó' };
+      motivo = motivo || (no ? no.no : `${entries.map((e) => e.path).join(', ')} ya está firmado tal cual`);
     }
     return control(motivo);
   } catch (e) {

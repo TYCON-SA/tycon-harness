@@ -1,0 +1,1 @@
+{"hash":"2cf52b5e791f9568fa7f8af8ef24f11dc81d7f3398ccba1962a5467c76cd5cd1","rules":[{"path":"scripts/ci/run-base-controls.sh","blob":"abd4776755a281991aee82110f65b51fd4b65088"},{"path":"scripts/lib/refresh-after-main.js","blob":"b724f3cd97a3b2cd3ad9cfdfad2a1e353e6d522c"}],"at":"2026-10-31","by":"dueño"}

@@ -126,6 +126,11 @@ desde otra sesión van con `--for-session <D>`.
 En Windows la terminal no se lee: cada comando de la columna «Firmarla en la terminal» abre una ventana nueva con el
 mismo comando, y ahí firmás escribiendo tres palabras al azar. La ventana vence a los 5 minutos sin firmar nada.
 
+Traer main a un pedido con un cambio de control ya firmado no pide otra firma. Si cada archivo de control es lo que firmó
+el dueño, tal cual o con lo de main fusionado sin conflictos, el control de la base acepta la constancia que ya está y
+`pending` dice que no hace falta firmar. Un conflicto resuelto a mano, o cualquier cambio propio después de la firma,
+vuelve a pedir la firma del dueño.
+
 <!-- generado: firmas -->
 | Firma | Qué aprueba | Comando que la pide | ¿Desde otra sesión? | Firmarla en la terminal |
 | --- | --- | --- | --- | --- |
