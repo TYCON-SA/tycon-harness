@@ -234,6 +234,16 @@ El arreglo rápido de otra pestaña (`adhoc-lane`) se declara así desde la sesi
 coordinadora de otra máquina no lo declara: se lo pide a la designada de la máquina destino (`guides/coordination.md`).
 No entra en ninguno de los grupos de la 8.116: para delegarla, el perfil la nombra.
 
+Un pendiente nuevo de otra sesión (`pending-approval`) se aprueba así desde la sesión designada, con
+`marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --for-session <sesión>`. La delegación vale sólo si la
+carpeta es de esa sesión: el repo de su ejecución abierta, o el de un arreglo rápido que declaró ella misma. Tampoco
+puede ser un repo de la coordinadora: ni su checkout, ni el de su marcador, ni el de su arreglo rápido. Los repos se
+comparan por la carpeta real, así que otra forma de escribir la ruta no cambia el resultado.
+
+**Límite declarado:** el arnés no sabe quién escribió el pendiente, sólo de quién es el repo. Si la coordinadora
+escribe un pendiente en el repo de otra sesión, se lo puede aprobar sola. Esa vía no se usa: un pendiente que abre la
+coordinadora lo aprueba el dueño.
+
 Si falta algo, sale la ventana en la pestaña de la designada. El guion firma con `via: delegacion`. Un escape es siempre
 de la sesión que lo corre, así que nunca se delega. Refirmar los controles tras traer `main` se delega sólo cuando el
 clasificador comprueba que es eso; si no, es un cambio de control, que es sólo del dueño.
