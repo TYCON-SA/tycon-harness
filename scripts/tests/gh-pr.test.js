@@ -788,3 +788,25 @@ test('T60 GhPr_CreateExposesBaseAndHead — lo que el lector NO pudo leer se dic
   assert.deepStrictEqual([launched.porOtroPrograma, launched.loLanzaOtro], [true, true]);
   assert.deepStrictEqual([create('--base main').porOtroPrograma, create('--base main').loLanzaOtro], [false, false]);
 });
+
+test('HeredocCierre_DelimitadorConPuntoYGuion_CierraSoloLaLineaIgual', () => {
+  // el cierre es la línea que dice el delimitador, con espacios o tabs a los costados: lo que sigue se vuelve a leer
+  const after = gh.comandosGh("cat > n.md <<'FIN.1-a'\ngh pr create --title x --body y\n \tFIN.1-a\t \ngh pr create --title a --body b");
+  assert.deepStrictEqual(after.map((c) => c.resumen), ['gh pr create']);
+  assert.ok(!after.some((c) => JSON.stringify(c).includes('--title x')), JSON.stringify(after));
+  // escrito en Windows (\r\n) cierra igual: si no, el bloque se tragaría el `gh` de abajo
+  const crlf = gh.comandosGh("cat > n.md <<'FIN.1-a'\r\ngh pr create --title x --body y\r\nFIN.1-a\r\ngh pr create --title a --body b");
+  assert.strictEqual(crlf.length, 1, JSON.stringify(crlf));
+  assert.ok(!JSON.stringify(crlf).includes('--title x'), JSON.stringify(crlf));
+  // una línea parecida no cierra: el `.` y el `-` del delimitador no valen por otra letra, ni sobra ni falta nada
+  for (const parecida of ['FINx1-a', 'FIN.1xa', 'FIN.1-ab', 'xFIN.1-a', 'FIN.1-a;']) {
+    const adentro = gh.comandosGh(`cat > n.md <<'FIN.1-a'\n${parecida}\ngh pr create --title a --body b\n`);
+    assert.deepStrictEqual(adentro, [], `«${parecida}» cerró el bloque: ${JSON.stringify(adentro)}`);
+  }
+});
+
+test('HeredocCierre_SinExpresionArmadaConTextoDeAfuera', () => {
+  // el delimitador sale del comando: armar una expresión con él es inyectarle texto de afuera (alerta js/regex-injection)
+  const fuente = require('fs').readFileSync(path.resolve(__dirname, '..', 'lib', 'az-pr.js'), 'utf8');
+  assert.strictEqual(/new RegExp\s*\(/.test(fuente), false, 'az-pr.js arma una RegExp con texto');
+});
