@@ -944,15 +944,31 @@ refirma_base() {
   lab_git -C "${r}" checkout -q main
   regla "${r}" block '"docs/permitido.txt"' dos; commit "${r}" "main cambia la nota"
   lab_git -C "${r}" checkout -q pedido; lab_git -C "${r}" merge -q --no-edit main > /dev/null 2>&1
-  bash "${SCRIPT}" pending --root "${r}" --base main --range main...pedido > "${r}.p2" 2>&1
-  ENTRIES="$(sed -n "s/^.* --entries '\(.*\)'\$/\1/p" "${r}.p2" | head -n 1)"
+  # lo traído de main ya no da un comando de firma: las entradas salen del blob de la punta
+  ENTRIES="[{\"path\":\"scripts/ci/toy-rules.json\",\"blob\":\"$(lab_git -C "${r}" rev-parse pedido:scripts/ci/toy-rules.json)\"}]"
 }
 # refirma '<entradas json>' <refirma_de> '<campos que se sacan>': la línea de la refirma, como la escribe approve
 refirma() { node -e 'const l=JSON.parse(process.argv[1]);Object.assign(l,{by:"refirma",via:"delegacion",clase:"refresh-after-main",refirma_de:process.argv[2],maquina:"a1b2c3d4e5f60718",signed_by_session:"sesion-designada"});for(const k of process.argv[3].split(",").filter(Boolean))delete l[k];console.log(JSON.stringify(l))' "$(firma "$1")" "$2" "$3"; }
 R="${T}/t36"; refirma_base "${R}"; H="$(hash_de "${ENTRIES}")"
 [ -n "${ENTRIES}" ] && [ "${H}" != "${H1}" ] && ok "T36 traer main pide firmar otra vez" || no "T36 traer main no cambió lo que se firma: ${ENTRIES}"
+# BaseControls_TraerMainSobreLoFirmado_SinFirmaNueva: lo firmado por el dueño más lo que trajo main con fusión limpia
+# 🔴 Falla con: el dueño que tiene que volver a firmar sólo porque el pedido trajo main.
 bash "${SCRIPT}" run --root "${R}" --base main --range main...pedido > "${T}/t36-sin.out" 2>&1; RC=$?
-is "T36 sin la refirma: rojo" "1" "${RC}"
+is "T36 sin la refirma, lo firmado más main: verde" "0" "${RC}"
+has "T36 …y dice que no hizo falta firmar otra vez" "${T}/t36-sin.out" "más lo que trajo main: sin firma nueva"
+has "T36 …nombrando la constancia del dueño" "${T}/t36-sin.out" "${H1:0:12}"
+bash "${SCRIPT}" pending --root "${R}" --base main --range main...pedido > "${T}/t36-sin.p" 2>&1
+has "T36 pending: no hace falta firmar" "${T}/t36-sin.p" "no hace falta firmar"
+lacks "T36 pending: …y no da el comando" "${T}/t36-sin.p" "--entries"
+# lo que el pedido cambia a mano después de traer main sí pide la firma del dueño
+lab_git -C "${R}" checkout -q -b t36-mano pedido
+regla "${R}" block '"docs/permitido.txt", "docs/malo.txt", "docs/otro.txt"' dos; commit "${R}" "afloja más, sin firma"
+bash "${SCRIPT}" run --root "${R}" --base main --range main...t36-mano > "${T}/t36-mano.out" 2>&1; RC=$?
+is "T36 lo cambiado a mano después de traer main: rojo" "1" "${RC}"
+has "T36 …pide la constancia del dueño" "${T}/t36-mano.out" "sin la constancia del dueño"
+bash "${SCRIPT}" pending --root "${R}" --base main --range main...t36-mano > "${T}/t36-mano.p" 2>&1
+has "T36 pending: …y da el comando de la firma" "${T}/t36-mano.p" "--entries"
+lab_git -C "${R}" checkout -q pedido
 lab_git -C "${R}" checkout -q -b t36-ok pedido; refirma "${ENTRIES}" "${H1}" "" > "${R}/${CARPETA}${H}.json"; commit "${R}" "refirma"
 bash "${SCRIPT}" run --root "${R}" --base main --range main...t36-ok > "${T}/t36-ok.out" 2>&1; RC=$?
 is "T36 la refirma que el clasificador de la base comprueba: verde" "0" "${RC}"
@@ -967,19 +983,28 @@ lab_git -C "${R}" checkout -q -b t36-de pedido; refirma "${ENTRIES}" "$(printf '
 bash "${SCRIPT}" run --root "${R}" --base main --range main...t36-de > "${T}/t36-de.out" 2>&1; RC=$?
 is "T36 una refirma de una constancia que no es la del dueño: rojo" "1" "${RC}"
 has "T36 …con el motivo de la nueva" "${T}/t36-de.out" "${NUEVA}"
-# la refirma sin uno de sus campos no firma, y no lleva la frase
+# la refirma sin uno de sus campos, o con frase, no firma nada y se dice; lo aprueba la constancia del dueño, no ella
 for falta in clase refirma_de maquina signed_by_session; do
   lab_git -C "${R}" checkout -q pedido; lab_git -C "${R}" checkout -q -b "t36-sin-${falta}"
   refirma "${ENTRIES}" "${H1}" "${falta}" > "${R}/${CARPETA}${H}.json"; commit "${R}" "refirma sin ${falta}"
   bash "${SCRIPT}" run --root "${R}" --base main --range "main...t36-sin-${falta}" > "${T}/t36-${falta}.out" 2>&1; RC=$?
-  is "T36 la refirma sin ${falta}: rojo" "1" "${RC}"
+  is "T36 la refirma sin ${falta}: verde por la constancia del dueño" "0" "${RC}"
+  has "T36 la refirma sin ${falta}: no firma nada" "${T}/t36-${falta}.out" "no firma nada"
+  has "T36 la refirma sin ${falta}: …y aprueba lo que trajo main" "${T}/t36-${falta}.out" "más lo que trajo main: sin firma nueva"
 done
 has "T36 sin maquina: dice qué le falta" "${T}/t36-maquina.out" "es una refirma sin maquina"
 lab_git -C "${R}" checkout -q -b t36-quote pedido
 node -e 'const l=JSON.parse(process.argv[1]);l.quote="Firmá el cambio, lo leí";console.log(JSON.stringify(l))' "$(refirma "${ENTRIES}" "${H1}" "")" > "${R}/${CARPETA}${H}.json"; commit "${R}" "refirma con frase"
 bash "${SCRIPT}" run --root "${R}" --base main --range main...t36-quote > "${T}/t36-quote.out" 2>&1; RC=$?
-is "T36 la refirma con frase no firma (rojo)" "1" "${RC}"
-has "T36 …y lo dice" "${T}/t36-quote.out" "una refirma no lleva quote"
+is "T36 la refirma con frase: verde por la constancia del dueño" "0" "${RC}"
+has "T36 …y dice que no firma" "${T}/t36-quote.out" "una refirma no lleva quote"
+has "T36 …y aprueba lo que trajo main" "${T}/t36-quote.out" "más lo que trajo main: sin firma nueva"
+# la refirma mal armada tampoco firma lo que el pedido aflojó a mano después de traer main
+lab_git -C "${R}" checkout -q -b t36-mano-sin t36-mano
+refirma "${ENTRIES}" "${H1}" "maquina" > "${R}/${CARPETA}${H}.json"; commit "${R}" "refirma sin maquina sobre lo aflojado"
+bash "${SCRIPT}" run --root "${R}" --base main --range main...t36-mano-sin > "${T}/t36-mano-sin.out" 2>&1; RC=$?
+is "T36 la refirma sin maquina sobre lo aflojado a mano: rojo" "1" "${RC}"
+has "T36 …y pide la constancia del dueño" "${T}/t36-mano-sin.out" "sin la constancia del dueño"
 # BaseControls_RefirmaQueNoCuadra_Rojo: el pedido cambia la regla después de traer main; la refirma la firma igual
 lab_git -C "${R}" checkout -q -b t36-cambio pedido
 regla "${R}" block '"docs/permitido.txt", "docs/malo.txt", "docs/otro.txt"' dos; commit "${R}" "afloja más"
