@@ -289,6 +289,12 @@ function forSessionDe(palabras) {
   return conIgual ? conIgual.slice('--for-session='.length) : null;
 }
 
+/** El valor de `--repo` del comando canónico (la carpeta del pendiente que se aprueba); null si no está. */
+function repoDe(palabras) {
+  const i = palabras ? palabras.indexOf('--repo') : -1;
+  return i >= 0 ? palabras[i + 1] || null : null;
+}
+
 /**
  * La sesión destino: la que nombra el comando si la firma actúa sobre ella; si no, `--for-session <id>` en el comando
  * canónico, o la del pedido. `--for-session=<id>` no la elige (el guion no lo lee así), sólo tiene que coincidir.
@@ -549,7 +555,7 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   if (delegacion === undefined) delegacion = (o) => require('./delegated-signing.js').delegaSinVentana(o);
   try {
     const estado = stateDir(casa);
-    const rs = pendientes.map((id) => delegacion({ firma: id, sesion, destino, home: casa, estado }));
+    const rs = pendientes.map((id) => delegacion({ firma: id, sesion, destino, home: casa, estado, cwd: evento.cwd, repo: repoDe(can && can.palabras) }));
     if (rs.every((r) => r && r.ok)) delegada = rs[0];
     // una firma que el perfil delega y no se delegó lleva su motivo a la ventana; la que no se delega, no (es lo normal)
     else sinDelegar = rs.map((r) => r && !r.ok && r.motivo).find((m) => m && !/no delega|sólo del dueño|la sesión que implementa/.test(m)) || null;

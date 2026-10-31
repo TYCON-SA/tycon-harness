@@ -90,15 +90,20 @@ function profileLists({ env = process.env, home, arnes } = {}) {
  * ¿La firma `firma` corre sin ventana (AC 22-25)? `{ ok, motivo?, maquina? }`. Todas las llaves: el id en
  * `approvals.delegated_signing` (los grupos, expandidos) y no en `approvals.owner_only`; esta máquina en
  * `approvals.delegated_machines`; `sesion` es la designada y el dueño confirmó la designación; el destino no es `sesion`
- * ni la story de una ejecución abierta de `sesion`. `estado`: la carpeta del estado de la casa. Inyectables:
+ * ni la story de una ejecución abierta de `sesion`; en una firma sobre un repo (aprobar un pendiente), `repo` (relativo a
+ * `cwd`, la carpeta del pedido) es de `destino` y no de `sesion`. `estado`: la carpeta del estado de la casa. Inyectables:
  * `perfil()` → las listas (`{ delegated_signing, owner_only, delegated_machines }`), `huella()` → `{ huella }` o `{ error }`.
  */
-function delegaSinVentana({ firma, sesion, destino, home, estado, env, arnes, perfil, huella } = {}) {
+function delegaSinVentana({ firma, sesion, destino, home, estado, env, arnes, perfil, huella, repo, cwd, raiz = raizDelRepo } = {}) {
   const no = (motivo) => ({ ok: false, motivo });
   if (!sesion || !destino) return no('sin la sesión del pedido y la destino no se delega');
   // su constancia nombra al dueño en la huella: aunque el perfil la liste, no tiene vía delegada
   if (firma === 'adversarial-skip') return no('saltear el pase adversarial es sólo del dueño: no se delega');
-  if (destino === sesion) return no('la sesión que implementa no se firma sola sin ventana');
+  if (destino === sesion) {
+    // la coordinadora que aprueba un pendiente sin nombrar la sesión que lo abrió ve por qué le toca la ventana
+    if (SOBRE_UN_REPO.has(firma) && esLaDesignada(estado, sesion)) return no('un pendiente se aprueba por delegación con --for-session <la sesión que lo abrió>');
+    return no('la sesión que implementa no se firma sola sin ventana');
+  }
   let a;
   try {
     a = perfil ? perfil() : profileLists({ env, home, arnes }).approvals;
@@ -127,7 +132,72 @@ function delegaSinVentana({ firma, sesion, destino, home, estado, env, arnes, pe
   const suya = propia ? storyDe(destino) : null;
   if (suya === undefined) return no('no pude leer el marcador de la sesión destino');
   if (propia && suya === propia) return no('la sesión destino trabaja la misma story que la ejecución abierta de la sesión del pedido');
+  if (SOBRE_UN_REPO.has(firma)) {
+    const m = motivoDelRepo({ repo, cwd, estado, sesion, destino, raiz });
+    if (m) return no(m);
+  }
   return { ok: true, maquina: fp.huella };
+}
+
+// las firmas que actúan sobre un repo y no sobre la ejecución de una sesión: la delegación vale sólo sobre el repo de la
+// sesión destino, y nunca sobre uno de la coordinadora (lo que abre ella lo aprueba el dueño)
+const SOBRE_UN_REPO = new Set(['pending-approval']);
+
+/**
+ * La raíz de un repo de git (`{ ruta, clave }`), o null. Dos rutas son el mismo repo si tienen la misma `clave` (el
+ * dispositivo y el nodo de la carpeta): la cadena no alcanza en un disco que no distingue mayúsculas.
+ */
+function raizDelRepo(dir) {
+  try {
+    const r = require('child_process').execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    if (!r) return null;
+    const st = fs.statSync(r);
+    return { ruta: fs.realpathSync(r), clave: `${st.dev}:${st.ino}` };
+  } catch (_) { return null; }
+}
+
+/** ¿`sesion` es la designada, con la confirmación del dueño? Sólo elige el motivo: nunca decide la firma. */
+function esLaDesignada(estado, sesion) {
+  try {
+    const d = confirmedDesignation({ state: estado, gates: path.join(estado, 'gates.log') });
+    return d.ok && d.designacion.sesion === sesion;
+  } catch (_) { return false; }
+}
+
+/**
+ * Las claves de los repos donde trabaja la sesión `sid`: el de su ejecución abierta y la carpeta de su arreglo rápido.
+ * El arreglo rápido cuenta sólo si lo declaró la propia sesión: el que otra pidió para ella (`by`) guarda la carpeta de
+ * quien lo pidió. undefined si uno de los dos existe y no se puede leer.
+ */
+function reposDe(estado, sid, raiz) {
+  const repos = [];
+  for (const [dir, campo] of [['active', 'repoPath'], ['adhoc', 'cwd']]) {
+    let m;
+    try { m = JSON.parse(fs.readFileSync(path.join(estado, dir, `${safeSid(sid)}.json`), 'utf8')); } catch (e) {
+      if (e.code === 'ENOENT') continue;
+      return undefined;
+    }
+    if (dir === 'adhoc' && m && m.by != null && m.by !== sid) continue;
+    const r = m && typeof m[campo] === 'string' && m[campo] ? raiz(m[campo]) : null;
+    if (r) repos.push(r.clave);
+  }
+  return repos;
+}
+
+/** Por qué el repo del pendiente no admite la delegación, o null: tiene que ser de `destino` y no de `sesion`. */
+function motivoDelRepo({ repo, cwd, estado, sesion, destino, raiz }) {
+  // sin la carpeta del pedido no se sabe cuál es el checkout de la coordinadora
+  if (!cwd) return 'el pedido no dice desde qué carpeta se corre';
+  const delPendiente = raiz(path.resolve(cwd, repo || '.'));
+  if (!delPendiente) return `${repo || cwd} no es un repo de git`;
+  const suyos = reposDe(estado, sesion, raiz);
+  if (suyos === undefined) return 'no pude leer el marcador o el arreglo rápido de la sesión del pedido';
+  const checkout = raiz(cwd);
+  if ((checkout && checkout.clave === delPendiente.clave) || suyos.includes(delPendiente.clave)) return `${delPendiente.ruta} es un repo de la coordinadora: un pendiente suyo lo aprueba el dueño`;
+  const delDestino = reposDe(estado, destino, raiz);
+  if (delDestino === undefined) return `no pude leer el marcador o el arreglo rápido de la sesión ${destino}`;
+  if (!delDestino.includes(delPendiente.clave)) return `${delPendiente.ruta} no es un repo donde trabaja la sesión ${destino} (ni su ejecución abierta ni su arreglo rápido)`;
+  return null;
 }
 
 /**

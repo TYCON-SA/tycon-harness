@@ -190,6 +190,8 @@ const PARA_OTRA_SESION = {
   'restore': { firma: 'lost-run', nombra: 3 },
   // el arreglo rápido de otra pestaña: se escribe en adhoc/<destino>.json, no en un marcador
   'adhoc': { firma: 'adhoc-lane', si: (a) => a[3] === 'set' },
+  // el pendiente que abrió otra sesión: la firma se escribe en su repo, que el freno comprueba que es de esa sesión
+  'approve-pending': { firma: 'pending-approval' },
 };
 
 const ownerWindow = () => require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
@@ -4728,10 +4730,11 @@ function cmdSignAdversarialSkip(argv) {
   process.exit(0);
 }
 
-// `approve-pending --id <CÓDIGO> [--repo <carpeta>] [--terminal]`: la aprobación de un pendiente nuevo de la lista de
-// pendientes (scripts/lib/pending-approvals.js). El pendiente tiene que estar abierto en la lista del repo; la firma va
-// por la delegación del perfil (la coordinadora, desde su pestaña), la ventana de permiso o la terminal del dueño, y
-// recién con ella se escribe la línea del registro. Actúa sobre el repo, no sobre una sesión: no lleva --for-session.
+// `approve-pending --id <CÓDIGO> [--repo <carpeta>] [--for-session <sesión>] [--terminal]`: la aprobación de un pendiente
+// nuevo de la lista de pendientes (scripts/lib/pending-approvals.js). El pendiente tiene que estar abierto en la lista del
+// repo; la firma va por la ventana de permiso, la terminal del dueño o la delegación del perfil: la coordinadora, desde
+// su pestaña, con --for-session <la sesión que lo abrió> y sólo sobre un repo de esa sesión (delegated-signing.js).
+// Recién con la firma se escribe la línea del registro.
 function cmdApprovePending(argv) {
   const PA = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'pending-approvals.js'));
   const { val, tiene } = opcionesDe(argv);

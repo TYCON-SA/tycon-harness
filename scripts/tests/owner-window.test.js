@@ -1796,3 +1796,134 @@ test('aprobador T6 OwnerWindow_Terminal_LoAprobasVos', (t) => {
     tty: { windows: true, enVentana: () => false, abrir: (o) => { titulo = o.titulo; return { estado: 'cerrada', codigo: 1 }; } } });
   assert.strictEqual(titulo, 'Lo aprobás vos');
 });
+
+// --- aprobar un pendiente por delegación: sobre el repo de la sesión que lo abrió, nunca el de la coordinadora ---------
+
+const CON_PENDIENTES = { ...PERFIL, delegated_signing: [...PERFIL.delegated_signing, 'pending-approval'] };
+/** Un repo de git de prueba, con su ruta real (la que devuelve git). */
+function repoDePrueba(t) {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'pendiente-repo-'));
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  spawnSync('git', ['init', '-q', d]);
+  return fs.realpathSync(d);
+}
+/** La casa con la coordinadora designada, ses-a trabajando en `ajeno` y la coordinadora con su checkout `propio`. */
+function casaConPendiente(t, o = {}) {
+  const casa = casaConDesignada(t, o);
+  const activos = path.join(casa, '.claude', '.tycon-pipeline', 'active');
+  const ajeno = repoDePrueba(t);
+  const propio = repoDePrueba(t);
+  fs.writeFileSync(path.join(activos, 'ses-a.json'), JSON.stringify({ sessionId: 'ses-a', storyId: '9.99', storyPath: `${ajeno}/specs/story-9.99.md`, repoPath: ajeno }));
+  return { casa, ajeno, propio };
+}
+const aprobarPendiente = (repo, extra = '') => `node ${MARKER} approve-pending --id DEF-nuevo --repo ${repo}${extra}`;
+const pedirPendiente = (casa, cmd, cwd, delegacion = delegacionReal({ perfil: CON_PENDIENTES })) => pedir(casa, cmd, { evento: { ...DE_LA_COORD, cwd }, delegacion });
+
+test('Pendiente_CoordinadoraDesignada_RepoDeOtraSesion_FirmaSinVentana (a)', (t) => {
+  const { casa, ajeno, propio } = casaConPendiente(t);
+  const cmd = aprobarPendiente(ajeno, ' --for-session ses-a');
+  const r = pedirPendiente(casa, cmd, propio);
+  assert.strictEqual(r.decision, 'allow', r.texto);
+  assert.strictEqual(r.via, 'delegacion');
+  const reg = registroVigente(casa);
+  assert.strictEqual(reg.destino, 'ses-a');
+  assert.strictEqual(reg.sesion, 'ses-coord');
+  // el guion de la coordinadora firma con via: delegacion, y la constancia dice que fue ella por delegación
+  const argv = [MARKER, 'approve-pending', '--id', 'DEF-nuevo', '--repo', ajeno, '--for-session', 'ses-a'];
+  const e = ow.exigir({ firma: 'pending-approval', argv, pid: 301, arbol: arbolDelGuion(casa, cmd), casa, ahora: AHORA + 60000, propia: undefined });
+  assert.strictEqual(e.codigo, 0, e.motivo);
+  assert.strictEqual(e.via, 'delegacion');
+  const q = ow.quienFirmo(e, 'el-dev');
+  assert.match(q.quien, /^coordinadora/);
+  assert.strictEqual(q.delegacion, 'el-dev');
+  // también vale el arreglo rápido de la sesión: su carpeta es su repo
+  const otra = casaConPendiente(t);
+  const adhoc = path.join(otra.casa, '.claude', '.tycon-pipeline', 'adhoc');
+  fs.mkdirSync(adhoc, { recursive: true });
+  fs.writeFileSync(path.join(otra.casa, '.claude', '.tycon-pipeline', 'active', 'ses-a.json'), JSON.stringify({ sessionId: 'ses-a', storyId: '9.99' }));
+  fs.writeFileSync(path.join(adhoc, 'ses-a.json'), JSON.stringify({ reason: 'x', maxFiles: 2, files: [], cwd: otra.ajeno }));
+  assert.strictEqual(pedirPendiente(otra.casa, aprobarPendiente(otra.ajeno, ' --for-session ses-a'), otra.propio).decision, 'allow');
+});
+
+test('Pendiente_RepoDeLaCoordinadora_Ventana (b)', (t) => {
+  const { casa, ajeno, propio } = casaConPendiente(t);
+  // su checkout, aunque nombre otra sesión
+  let r = pedirPendiente(casa, aprobarPendiente(propio, ' --for-session ses-a'), propio);
+  assert.strictEqual(r.decision, 'ask', r.texto);
+  assert.match(r.texto, /No se firmó por delegación: .*coordinadora/);
+  // un worktree de su ejecución abierta, aunque sea también el de la otra sesión
+  fs.writeFileSync(path.join(casa, '.claude', '.tycon-pipeline', 'active', 'ses-coord.json'), JSON.stringify({ sessionId: 'ses-coord', storyId: '7.77', repoPath: ajeno }));
+  r = pedirPendiente(casa, aprobarPendiente(ajeno, ' --for-session ses-a'), propio);
+  assert.strictEqual(r.decision, 'ask', r.texto);
+  assert.match(r.texto, /No se firmó por delegación: .*coordinadora/);
+  // su checkout escrito con otras mayúsculas, en un disco que no las distingue, sigue siendo suyo
+  const otraForma = propio.replace(/pendiente-repo-/, 'PENDIENTE-REPO-');
+  if (fs.existsSync(otraForma)) {
+    const limpia = casaConPendiente(t);
+    const mayus = limpia.propio.replace(/pendiente-repo-/, 'PENDIENTE-REPO-');
+    r = pedirPendiente(limpia.casa, aprobarPendiente(mayus, ' --for-session ses-a'), limpia.propio);
+    assert.strictEqual(r.decision, 'ask', r.texto);
+  }
+  // el arreglo rápido que la coordinadora pidió para la otra sesión guarda la carpeta de ella: no hace suyo ese repo
+  const fabricado = casaConPendiente(t);
+  const adhoc = path.join(fabricado.casa, '.claude', '.tycon-pipeline', 'adhoc');
+  fs.mkdirSync(adhoc, { recursive: true });
+  const trucho = repoDePrueba(t);
+  fs.writeFileSync(path.join(adhoc, 'ses-a.json'), JSON.stringify({ reason: 'x', maxFiles: 2, files: [], cwd: trucho, via: 'delegacion', by: 'ses-coord' }));
+  r = pedirPendiente(fabricado.casa, aprobarPendiente(trucho, ' --for-session ses-a'), fabricado.propio);
+  assert.strictEqual(r.decision, 'ask', r.texto);
+  // sin la carpeta del pedido no se sabe cuál es su checkout
+  r = pedir(fabricado.casa, aprobarPendiente(fabricado.ajeno, ' --for-session ses-a'), { evento: DE_LA_COORD, delegacion: delegacionReal({ perfil: CON_PENDIENTES }) });
+  assert.strictEqual(r.decision, 'ask', r.texto);
+  // sin --for-session el destino es ella misma: ventana, con el motivo a la vista
+  const sola = casaConPendiente(t);
+  r = pedirPendiente(sola.casa, aprobarPendiente(sola.ajeno), sola.propio);
+  assert.strictEqual(r.decision, 'ask', r.texto);
+  assert.match(r.texto, /No se firmó por delegación: .*--for-session/);
+});
+
+test('Pendiente_ForSessionDeUnaSesionSinEseRepo_SeNiega (c)', (t) => {
+  const { casa, ajeno, propio } = casaConPendiente(t);
+  const lejos = repoDePrueba(t);
+  fs.writeFileSync(path.join(casa, '.claude', '.tycon-pipeline', 'active', 'ses-b.json'), JSON.stringify({ sessionId: 'ses-b', storyId: '5.55', repoPath: lejos }));
+  const r = pedirPendiente(casa, aprobarPendiente(ajeno, ' --for-session ses-b'), propio);
+  assert.strictEqual(r.decision, 'ask', r.texto);
+  assert.notStrictEqual(r.via, 'delegacion');
+  assert.match(r.texto, /No se firmó por delegación: .*ses-b/);
+  // una sesión sin marcador ni arreglo rápido, igual
+  assert.strictEqual(pedirPendiente(casa, aprobarPendiente(ajeno, ' --for-session ses-z'), propio).decision, 'ask');
+});
+
+test('Pendiente_SesionNoDesignada_Ventana (d)', (t) => {
+  const { casa, ajeno, propio } = casaConPendiente(t, { designada: 'ses-otra' });
+  const r = pedirPendiente(casa, aprobarPendiente(ajeno, ' --for-session ses-a'), propio);
+  assert.strictEqual(r.decision, 'ask', r.texto);
+  assert.match(r.texto, /no es la designada/);
+  // el pendiente de un dev sin coordinadora, en su propio repo: la ventana de siempre, sin ruido de la delegación
+  const dev = casaConPendiente(t, { designada: 'ses-otra' });
+  const propia = pedir(dev.casa, aprobarPendiente(dev.ajeno), { evento: { cwd: dev.ajeno }, delegacion: delegacionReal({ perfil: CON_PENDIENTES }) });
+  assert.strictEqual(propia.decision, 'ask', propia.texto);
+  assert.doesNotMatch(propia.texto, /No se firmó por delegación/);
+});
+
+test('Plan_ForSession_DesignacionDeOtraSesion_Ventana: la confirmación de una designación vieja no delega a la sesión nueva', (t) => {
+  // la designada es otra sesión (la de hace días), confirmada: la coordinadora de hoy firma con ventana
+  const casa = casaConDesignada(t, { designada: 'ses-coord-vieja' });
+  const r = pedir(casa, PLAN, { evento: DE_LA_COORD, delegacion: delegacionReal() });
+  assert.strictEqual(r.decision, 'ask', r.texto);
+  assert.match(r.texto, /No se firmó por delegación: la sesión del pedido no es la designada/);
+});
+
+test('Pendiente_MarkerAcepta_ForSession: approve-pending se pide para otra sesión', (t) => {
+  const d = repoDePrueba(t);
+  fs.mkdirSync(path.join(d, 'tasks'), { recursive: true });
+  fs.writeFileSync(path.join(d, 'tasks', 'todo.md'), '# Pendientes\n\n- [ ] [DEF-nuevo] algo\n');
+  const casa = casaNueva(t);
+  const env = { ...process.env, HOME: casa, CLAUDE_SESSION_ID: 'ses-coord', CLAUDE_CODE_SESSION_ID: 'ses-coord' };
+  const r = spawnSync(process.execPath, [MARKER, 'approve-pending', '--id', 'DEF-nuevo', '--repo', d, '--for-session', 'ses-a'], { encoding: 'utf8', env, cwd: d });
+  assert.doesNotMatch(r.stderr, /no es una firma que se pida para otra sesión/);
+  // sin el «Sí» de la ventana, no aprueba ni escribe
+  assert.notStrictEqual(r.status, 0, r.stderr);
+  assert.match(r.stderr, /no se aprobó DEF-nuevo/);
+  assert.strictEqual(fs.existsSync(path.join(d, 'tasks', 'pending-approvals.jsonl')), false);
+});
