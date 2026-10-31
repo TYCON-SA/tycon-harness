@@ -6909,7 +6909,17 @@ function main() {
       const ow = ownerWindow();
       const stateDir = stateDirOf(os.homedir());
       const anotar = (g) => { fs.mkdirSync(stateDir, { recursive: true }); fs.appendFileSync(path.join(stateDir, 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), ...g })}\n`); };
-      const r = ow.exigir({ firma: 'escape:trust-ran', argv: process.argv.slice(1), propia: PROPIA, anotar,
+      // lo que haría inútil la firma, antes de pedirla: sin lista no hay qué confiar, y con los revisores en el registro se
+      // cuentan esos. El registro de otra sesión se lee recién con la firma, así que para ella sólo se mira la lista
+      const antes = () => {
+        if (!args.ran.length) return { codigo: 2, motivo: '--trust-ran confía en la lista de --ran, y el comando no trae --ran: no habría nada que contar' };
+        if (paraOtra) return null;
+        const s = advisorsRunSinceStart();
+        if (s.nuevaCorrida) return { codigo: 2, motivo: 'esta ejecución todavía no lanzó revisores: corré `pipeline.js advisors` y lanzá los que devuelve' };
+        if (s.sawStart && s.ran.length) return { codigo: 2, motivo: 'el registro ya tiene los revisores lanzados: se cuentan sin --trust-ran, sin firma' };
+        return null;
+      };
+      const r = ow.exigir({ firma: 'escape:trust-ran', argv: process.argv.slice(1), propia: PROPIA, anotar, antes,
         resumen: `contar los revisores de ${args.story ? path.basename(args.story) : 'la corrida'} sin la constancia de que corrieron` });
       // lo firma la persona: sin su firma no se cuenta
       const noSeConto = (motivo, codigo) => { process.stderr.write(`🛑 check-count: no se contó sin la firma de la persona — ${motivo}.\n`); process.exit(codigo); };
@@ -7917,6 +7927,8 @@ module.exports = {
   // se exporta la función en vez de duplicar el criterio de scoring, para que las dos capas no
   // puedan elegir carpetas distintas (pieza "revisor ≠ autor").
   resolveRunDir,
+  // la clave de la carpeta sin crearla: el chequeo antes de la ventana de firma (marker.js)
+  runDirKey,
   // El portón con la constancia del salteo de la corrida: tests/adversarial-skip-signed.test.js.
   deepReviewGateDeLaCorrida,
   // PIPE-C2 — tests: tests/unit.test.js "PipeC2_*".

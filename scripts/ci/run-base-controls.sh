@@ -939,7 +939,9 @@ function approveByWindow(root, out, entries, c) {
   const argv = [path.join(process.env.BASE_CONTROLS_SELF_DIR, 'run-base-controls.sh'), cmd, ...rest];
   const sesion = process.env.CLAUDE_CODE_SESSION_ID || process.env.TYCON_SESSION_ID || process.env.CODEX_SESSION_ID || undefined;
   const firma = c && c.clase === REFRESH ? REFRESH : 'control-change';
-  const r = ow.exigir({ firma, argv, resumen: entries.map((e) => e.path).join(', '), propia: sesion });
+  // la constancia que ya está en la carpeta se mira antes de la firma: después, el «Sí» del dueño no escribiría nada
+  const antes = () => { const y = yaEnLaCarpeta(root, out, entries); return y ? { codigo: 1, motivo: y } : null; };
+  const r = ow.exigir({ firma, argv, resumen: entries.map((e) => e.path).join(', '), propia: sesion, antes });
   if (r.codigo !== 0) { console.error(`run-base-controls approve: ${r.motivo}: no se firmó nada.`); process.exit(1); }
   if (r.via !== 'delegacion') {
     let by = 'dueño';
@@ -953,6 +955,19 @@ function approveByWindow(root, out, entries, c) {
     process.exit(1);
   }
   writeApproval(root, out, entries, refreshLine(entries, c.refirma_de, reg.maquina, reg.sesion));
+}
+
+// por qué la firma no escribiría nada en la carpeta de constancias (la de este cambio ya está, o algo con su nombre), o null
+function yaEnLaCarpeta(root, out, entries) {
+  if (!isApprovalDir(out)) return null;
+  const rel = `${out}${hashOf(entries)}.json`;
+  let st;
+  try { st = fs.lstatSync(path.join(root, rel)); } catch (_) { return null; }
+  if (!st.isFile()) return `${safe(rel)} ya existe y no es un archivo común: no hace falta firmar, hay que mirarlo`;
+  let prev = null;
+  try { prev = JSON.parse(fs.readFileSync(path.join(root, rel), 'utf8')); } catch (_) { prev = null; }
+  if (prev && holdsUp(prev) && prev.hash === hashOf(entries)) return `${safe(rel)} ya trae esta misma firma: no hace falta firmar de nuevo`;
+  return `${safe(rel)} ya existe y no es esta firma: miralo antes de pedir la firma`;
 }
 
 // la constancia en un .jsonl, o un archivo por firma en una carpeta

@@ -84,7 +84,9 @@ const arbolDelGuion = (casa, cmd, consola) => [...BASE, herramienta(),
   { pid: 300, ppid: 100, inicio: INICIO, comando: consola || envolver(casa, cmd) },
   { pid: 301, ppid: 300, inicio: INICIO, comando: cmd }];
 const evento = (command) => ({ session_id: 'ses-a', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command } });
-const pedir = (casa, cmd, escapes = []) => ow.decidir({ evento: evento(cmd), escapes, arbol: arbolDelFreno(), pid: 201, casa, ahora: AHORA });
+// el chequeo antes de la ventana corre el guion de verdad, que lee la casa de la cuenta y no la de la prueba: acá se
+// prueba la ventana (el chequeo tiene sus pruebas en owner-window.test.js)
+const pedir = (casa, cmd, escapes = []) => ow.decidir({ evento: evento(cmd), escapes, arbol: arbolDelFreno(), pid: 201, casa, ahora: AHORA, comprobar: () => null });
 
 const MOTIVO = 'sólo cambia un texto de ayuda';
 const firmaCmd = (motivo = MOTIVO, extra = '') => `node ${MARKER} sign-adversarial-skip --story 9.99 --reason "${motivo}"${extra}`;
