@@ -625,3 +625,26 @@ test('ApproveSave_ElRepoTemporal_PideSuPropioOk (T32)', (t) => {
   const push = SO.vigente({ saveOk, repoActual: toy, push: { remoto: 'origin', rama: 'story/la-prueba' } });
   assert.strictEqual(push.ok, false, 'un push desde el repo temporal tampoco');
 });
+
+// T11 Huella_TrozosDeMemoria_SonPapeleo
+// 🔴 Falla con: el ok vencido por la memoria que el gancho exporta después del ok (cada commit pediría otro ok), o la
+// configuración de la memoria tratada como papeleo (un cambio que carga algo pasaría sin ok).
+test('Huella_TrozosDeMemoria_SonPapeleo (T11) @story-8.151 @ac-11', (t) => {
+  const a = repo(t, { 'LEEME.md': 'hola\n', '.engram/config.json': '{"project":"acme"}\n', '.engram/chunks/a.jsonl.gz': 'uno' });
+  const saveOk = { storyId: '9.99', startedAt: ANTES, huellas: SO.huellas([a]) };
+  escribir(a, '.engram/chunks/a.jsonl.gz', 'dos');
+  escribir(a, '.engram/chunks/b.jsonl.gz', 'nuevo');
+  let r = SO.vigente({ saveOk, repoActual: a });
+  assert.strictEqual(r.ok, true, `un trozo de memoria no vence el ok: ${r.motivo}`);
+  // sólo los trozos: otro archivo en la carpeta de los trozos es otra cosa
+  escribir(a, '.engram/chunks/c.js', 'module.exports = 1;\n');
+  assert.strictEqual(SO.vigente({ saveOk, repoActual: a }).ok, false, 'un .js entre los trozos vence el ok');
+  fs.rmSync(path.join(a, '.engram', 'chunks', 'c.js'));
+  escribir(a, '.engram/config.json', '{"project":"otro"}\n');
+  r = SO.vigente({ saveOk, repoActual: a });
+  assert.strictEqual(r.ok, false, 'la configuración de la memoria vence el ok');
+  assert.ok(SO.esPapeleoDeLaHuella('.engram/chunks/x.jsonl.gz', '100644'));
+  assert.ok(!SO.esPapeleoDeLaHuella('.engram/chunks/x.jsonl.gz', '120000'), 'un enlace no es papeleo');
+  assert.ok(!SO.esPapeleoDeLaHuella('.engram/config.json', '100644'));
+  assert.strictEqual(typeof SO.tieneCambios, 'function', 'tieneCambios se exporta');
+});

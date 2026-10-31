@@ -188,8 +188,9 @@ test('T36 Installers_AndWip_UseLayer @story-8.85 @ac-21: los pedidos de la rama 
   const { queryAll } = require(WIP);
   const [gh, az] = await queryAll(QUERIES.map((q) => ({ ...q, root: w.tree })), { env: w.env });
   // el de la rama abierto desde un fork también cuenta: la sesión no sale libre con un pedido suyo abierto
-  assert.deepStrictEqual(gh, { prs: [{ number: 236, draft: true, conflict: true }, { number: 240, draft: false, conflict: false }] });
-  assert.deepStrictEqual(az, { prs: [{ number: 4920, draft: false, conflict: true }] });
+  // sin auto-completar y, en GitHub, sin lugar en la cola de merge: fuera de la cola (el borrador, no)
+  assert.deepStrictEqual(gh, { prs: [{ number: 236, draft: true, conflict: true, offQueue: false }, { number: 240, draft: false, conflict: false, offQueue: true }] });
+  assert.deepStrictEqual(az, { prs: [{ number: 4920, draft: false, conflict: true, offQueue: true }] });
   assert.deepStrictEqual(spy.calls(), [], 'nadie llamó a az ni a gh directo');
   // el az de mentira anota la rama en la búsqueda; el gh, la lista de abiertos y la lectura de cada pedido de la rama.
   // La lista de GitHub va sin `head=<dueño>:<rama>`: con un origin que todavía nombra al dueño viejo, GitHub contesta
@@ -201,6 +202,7 @@ test('T36 Installers_AndWip_UseLayer @story-8.85 @ac-21: los pedidos de la rama 
   assert.ok(ghRoutes.every((r) => !/head=/.test(r)), ghRoutes.join(' | '));
   assert.ok(ghRoutes.includes('repos/acme/x/pulls/236'), ghRoutes.join(' | '));
   assert.ok(!ghRoutes.includes('repos/acme/x/pulls/9'), 'el pedido de otra rama no se lee');
+  assert.strictEqual(ghRoutes.filter((r) => r === 'graphql').length, 1, 'la cola de merge, de una sola consulta');
 });
 
 test('T36 Installers_AndWip_UseLayer @story-8.85 @ac-21: con la capa que no contesta, el pie dice «no se pudo consultar» y la sesión no queda libre', { skip: onWindows }, async () => {

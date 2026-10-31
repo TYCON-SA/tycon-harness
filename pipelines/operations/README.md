@@ -358,3 +358,25 @@ Para prenderla:
    deja a éste en rojo. Sin buzón, la ejecución sale en rojo: no hay qué revisar.
 3. Nada más: desde que existe `inbox/runs-review/`, el resumen de la mañana (`dependency-audit.yml`, 04:00) suma la línea
    de las ejecuciones, agrupada por causa. Si una noche la revisión no corrió, el resumen lo dice en vez de «0 con fallas».
+
+## 12. La noche que propone aprendizajes (opcional)
+
+Si tu organización prende la grabadora de instintos (`integrations.instincts: true` en el perfil del equipo), cada máquina
+sube al buzón lo que hace el agente, un día por vez. `instinct-proposals.yml` lo baja cada noche a las 02:00 UTC, cuenta
+sin modelo lo que se repite en el equipo y le pide al modelo de la noche que escriba cada propuesta (como mucho 20 por
+noche; las demás salen sólo con los números). Deja un archivo por propuesta en `inbox/instincts/propuestas/` y el informe
+de la noche en `.dashboard/instincts/`; las propuestas se deciden en la pestaña Aprendizajes del sitio.
+
+Para prenderla:
+
+1. Copiá `instinct-proposals.yml` a `pipelines/` del repo de operaciones y cambiá la línea marcada, como los otros.
+2. Dalo de alta como los demás (nombre sugerido: `instinct-proposals`) y pasale el parámetro `mailboxConnection`: la
+   misma conexión de sólo lectura sobre el buzón que usa el tablero, autorizada también para este pipeline. Sin buzón,
+   la noche sale «no medido».
+3. El modelo de la noche se elige en el sitio (la fila «El proceso de la noche»). La llave va como **variable secreta** de
+   esta definición: `OLLAMA_API_KEY` con Ollama, `ANTHROPIC_API_KEY` con Anthropic. Sin modelo o sin llave, las
+   propuestas salen sólo con los números y el resumen lo dice.
+4. Nada más: desde que existe `.dashboard/instincts/`, el resumen de la mañana (`dependency-audit.yml`, 04:00) suma la
+   línea «aprendizajes: …». Si una noche no dejó su informe, el resumen lo dice en vez de «sin propuestas nuevas».
+
+El modelo es sólo para Azure DevOps: una organización en GitHub todavía no tiene la variante de esta noche.

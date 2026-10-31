@@ -42,9 +42,14 @@ function nn(v, d) { return v === undefined || v === null ? d : v; }
  * cola, un pedido en borrador). Se buscan sus repos (`repoPath` y la raíz git de cada archivo tocado, salvo los que
  * están en su rama principal) y se pregunta por los pedidos abiertos de su rama a la capa de plataforma
  * (`platform.js change-request list`, lanzada como proceso, con la identidad del repo que sale de `origin`). Con alguno
- * abierto, o con una consulta que no contestó, sale como «Entrando a los repos» y la sesión no cuenta como libre. Las
- * consultas corren en paralelo, 5 s cada una y 6 s todas juntas: lo que no contesta, o un «no» de la capa con su
- * motivo, se dice al pie y la tabla sale igual.
+ * abierto, o con una consulta que no contestó, sale como «Entrando a los repos» y la sesión no cuenta como libre; pasada
+ * la hora estimada, dice desde cuándo espera. Un repo tocado cuenta si está en la rama del repo de la story o en una que
+ * la nombra: una carpeta compartida que hoy está en la rama de otra story no es de ésta. Las consultas corren en
+ * paralelo, 15 s cada una y 20 s todas juntas (`az` tarda cuando renueva su permiso): lo que no contesta, o un «no» de
+ * la capa con su motivo, se dice al pie y la tabla sale igual.
+ *
+ * Una fila por sesión: con una story en curso o esperando entrar, esa story es lo principal, y lo otro que hace la
+ * sesión sale como «mientras tanto»: su arreglo rápido, su nota, o el repo de lo último que tocó si no es de la story.
  *
  * Sólo lee. No toca marcadores ni sesiones y no lee el contenido de ninguna transcripción; la configuración de la
  * organización la lee la capa, no este programa.
@@ -63,7 +68,7 @@ const { spawn, spawnSync } = require('child_process');
 const ROOT = path.join(__dirname, '..', '..');
 const PLATFORM = path.join(ROOT, 'scripts', 'lib', 'platform', 'platform.js');
 const { stateDir, claudeDir } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
-const { stepName, isDone, byId } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'steps.js'));
+const { stepName, isDone, byId, schemeOf, pendingSteps, STEPS } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'steps.js'));
 const { tiempos } = require(path.join(ROOT, 'scripts', 'metrics', 'step-times.js'));
 
 const TITLE_MAX = 50;
@@ -74,6 +79,8 @@ const WORKING_MS = 5 * 60 * 1000;
 const IDLE_MS = 3 * 3600 * 1000;
 // un trabajo suelto sin tocar hace más que esto pregunta si terminó
 const LOOSE_STALE_MS = 3600 * 1000;
+// una sesión quieta que tocó un archivo hace menos que esto sigue con algo: no está libre
+const RECENT_FILE_MS = 30 * 60 * 1000;
 const MARKER_JS = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
 const shortId = (sid) => String(sid || '').slice(0, 8) || '?';
 const oneLine = (s) => String(s).replace(/\s+/g, ' ').trim();
@@ -256,7 +263,8 @@ function entryNote(entry) {
 // La hora es fija: arranque del paso en curso + su mediana + las de los pasos que faltan + la entrada a los repos.
 // Pasado el estimado del paso en curso, dice «atrasada» con esa hora; nunca corre con el reloj (si corriera, un paso
 // pasado de su mediana mostraría la hora actual y escondería el atraso).
-function estimateEnd(marker, medians, nowMs, entry) {
+// En `info`, si viene, quedan la hora en milisegundos (`at`) y si está atrasada (`late`).
+function estimateEnd(marker, medians, nowMs, entry, info = {}) {
   // los pasos que se dan por hechos con una bandera (el pase adversarial, la prueba en vivo) no tienen mediana propia:
   // su tiempo cae en el paso que acompañan, como los sub-pasos viejos
   const pending = (marker.stepsPending || []).map(String).filter((s) => !(byId(s) && (byId(s).flag || !byId(s).number)));
@@ -277,12 +285,14 @@ function estimateEnd(marker, medians, nowMs, entry) {
   let fixed = currentEnd;
   for (const s of pending.slice(1)) fixed += medians[s];
   fixed += entry ? entry.ms : 0;
+  info.at = fixed;
+  info.late = nowMs > currentEnd;
   if (nowMs > currentEnd) return `atrasada (estimado ${hhmm(fixed)}${approx ? ', aprox.' : ''})`;
   return `${hhmm(fixed)}${approx ? ' (aprox.)' : ''}${entryNote(entry)}`;
 }
 
 // La story que cerró el paso 8 y espera sus pedidos: el cierre del 8 más la entrada a los repos.
-function enteringEnd(marker, entry, nowMs) {
+function enteringEnd(marker, entry, nowMs, info = {}) {
   if (!entry || !entry.repos || entry.missing.length) {
     return `sin estimación (espera la CI o la cola; sin merges medidos en ${entry && entry.missing.length ? entry.missing.join(', ') : 'sus repos'})`;
   }
@@ -290,13 +300,26 @@ function enteringEnd(marker, entry, nowMs) {
   const done = Date.parse(t8 && t8.completedAt);
   if (!Number.isFinite(done)) return 'sin estimación (espera la CI o la cola; sin la hora de cierre de «Preparar el commit»)';
   const fixed = done + entry.ms;
-  return nowMs > fixed ? `atrasada (estimado ${hhmm(fixed)})` : `${hhmm(fixed)}${entryNote(entry)}`;
+  info.at = fixed;
+  info.late = nowMs > fixed;
+  // pasada la hora, no está atrasada: espera la CI o la cola, y se dice desde cuándo
+  return nowMs > fixed ? `esperando entrar desde ${hhmm(done)} (estimado ${hhmm(fixed)})` : `${hhmm(fixed)}${entryNote(entry)}`;
 }
 
 const ENTERING = 'Entrando a los repos';
+const STALLED = 'Pedidos sin encolar';
+// el fin de una story con el paso 8 cerrado: sin un pedido en la cola no hay hora que estimar
+const closedEnd = (state, m, entry, nowMs, info) => (state.startsWith(STALLED) ? 'sin estimación (ningún pedido está en la cola: hay que encolarlo)' : enteringEnd(m, entry, nowMs, info));
+
+// Los pasos de una corrida, en orden, con los hechos marcados: para quien la dibuja (el comando /office).
+function stagesOf(m) {
+  const steps = STEPS.map((s) => ({ id: s.id, name: s.name, done: isDone(m, s.id) }));
+  const current = steps.find((s) => !s.done);
+  return { steps, current: current ? current.id : null, progress: Math.round((100 * steps.filter((s) => s.done).length) / steps.length) };
+}
 const MAIN_BRANCHES = ['main', 'master'];
-const PER_QUERY_MS = 5000;
-const ALL_QUERIES_MS = 6000;
+const PER_QUERY_MS = 15000;
+const ALL_QUERIES_MS = 20000;
 const GIT_MS = 2000;
 const GIT_BUDGET_MS = 3000;
 
@@ -507,6 +530,10 @@ function identityOf(q) {
   return { platform: 'azure', org: q.org, project: q.project, repo: q.repo };
 }
 
+// Fuera de la cola: no es borrador, no tiene auto-completar y la plataforma dice que no está en la cola (`inQueue:
+// false`) o no tiene cola (sin `inQueue`). Con `inQueue: null` la plataforma no supo decirlo, y no se marca.
+const offQueueOf = (p) => p.draft !== true && !p.autoComplete && (p.inQueue === false || !('inQueue' in p));
+
 // Mata una consulta y lo que ella lanzó (el gh o el az del conector): fuera de Windows corre en su propio grupo.
 function killQuery(child) {
   try {
@@ -538,7 +565,10 @@ function runQuery(q, perMs, env, children) {
       try { r = JSON.parse(out); } catch { fail(`respuesta ilegible (${oneLine(err || out).slice(0, 200) || `salió ${code}`})`); return; }
       if (!r || r.ok !== true) { fail(`${(r && r.reason) || 'no_medido'}: ${oneLine((r && r.detail) || 'sin detalle').slice(0, 200)}`); return; }
       if (!Array.isArray(r.value)) { fail('respuesta ilegible (no es una lista)'); return; }
-      const prs = r.value.map((p) => ({ number: p && p.number, draft: Boolean(p && p.draft === true), conflict: Boolean(p && p.mergeState === 'conflict') }));
+      const prs = r.value.map((p) => ({
+        number: p && p.number, draft: Boolean(p && p.draft === true), conflict: Boolean(p && p.mergeState === 'conflict'),
+        offQueue: Boolean(p && typeof p === 'object' && offQueueOf(p)),
+      }));
       if (!prs.every((p) => Number.isInteger(p.number))) { fail('respuesta ilegible (un pedido sin número)'); return; }
       done({ prs });
     });
@@ -618,6 +648,7 @@ function lastTouched(sdir, sid, home, nowMs, unreadable) {
     if (!path.isAbsolute(p) || !Number.isFinite(ts)) continue;
     if (nowMs - ts > IDLE_MS) break;
     if (/[\\/]scratchpad[\\/]/.test(p) || p.startsWith(memory) || out.includes(p)) continue;
+    if (!out.length) out.newest = ts;
     out.push(p);
   }
   return out;
@@ -646,7 +677,18 @@ function touchedPlace(file, ctx, unreadable) {
   const parts = rel.split(/[\\/]/);
   const base = path.basename(root);
   const work = branch && !MAIN_BRANCHES.includes(branch) ? `${base} · ${branch}` : parts.length > 1 ? `${base} · ${parts[0]}` : base;
-  return { work, root, story: (fromBranch && fromBranch[1]) || (fromSpec && fromSpec[1]) || null };
+  return { work, root, branch, story: (fromBranch && fromBranch[1]) || (fromSpec && fromSpec[1]) || null };
+}
+
+// ¿Es de la story un repo (su raíz y su rama)? El de su repoPath, uno en la misma rama, o uno en una rama que nombra la
+// story (`story/<id>-…`).
+function ofStory(m, ctx) {
+  const own = typeof m.repoPath === 'string' && path.isAbsolute(m.repoPath) && fs.existsSync(m.repoPath) ? repoOf(m.repoPath, ctx) : null;
+  const ownHead = own && !own.err ? branchOf(own) : null;
+  const ownRoot = own && !own.err ? own.root : null;
+  const ownBranch = ownHead && !ownHead.err ? ownHead.branch : '';
+  const id = m.storyId ? String(m.storyId) : '';
+  return (root, branch) => root === ownRoot || (Boolean(branch) && (branch === ownBranch || (Boolean(id) && branch.split(/[\\/_-]/).includes(id))));
 }
 
 // El estado de una story con el paso 8 cerrado: `null` si ya entró (nada abierto y todo contestado). En `found`, si
@@ -654,20 +696,27 @@ function touchedPlace(file, ctx, unreadable) {
 function enteringState(m, prsOf, unreadable, wanted, ctx, found = []) {
   const shown = [];
   const failures = [];
+  let queued = 0;
+  let off = 0;
+  const mine = ofStory(m, ctx);
   for (const root of storyRepos(m, failures, ctx)) {
     const q = repoQuery(root, failures, ctx);
-    if (!q) continue;
+    if (!q || !mine(q.root, q.branch)) continue;
     if (!q.kind) { failures.push(`pedidos de ${path.basename(root)} (${q.branch}): no sé consultar pedidos en ${q.host}`); continue; }
     wanted.push(q);
     const res = prsOf ? prsOf(q) : { error: 'no se consultó' };
     if (!res || res.error) { failures.push(`pedidos de ${q.name} (${q.branch}): ${res ? res.error : 'sin respuesta'}`); continue; }
     for (const p of res.prs) {
       const ref = `${q.kind === 'github' ? '#' : '!'}${p.number}`;
-      found.push({ repo: q.name, ref, draft: p.draft, conflict: p.conflict });
-      shown.push(`${q.name} ${ref}${p.draft ? ' (borrador)' : ''}${p.conflict ? ' (choca con main)' : ''}`);
+      found.push({ repo: q.name, ref, draft: p.draft, conflict: p.conflict, offQueue: p.offQueue });
+      shown.push(`${q.name} ${ref}${p.draft ? ' (borrador)' : ''}${p.conflict ? ' (choca con main)' : ''}${p.offQueue ? ' (fuera de la cola)' : ''}`);
+      if (!p.draft && !p.offQueue) queued += 1;
+      if (p.offQueue) off += 1;
     }
   }
   unreadable.push(...failures.map((f) => `story ${m.storyId || '?'}: ${f}`));
+  // ninguno en camino (todos en borrador o fuera de la cola, alguno fuera): no está entrando, espera que lo encolen
+  if (shown.length && !queued && off && !failures.length) return `${STALLED} · ${shown.join(' · ')}`;
   if (shown.length) return `${ENTERING} · ${shown.join(' · ')}`;
   return failures.length ? `${ENTERING} (no se pudo consultar los pedidos)` : null;
 }
@@ -732,8 +781,12 @@ function buildWip(opts = {}) {
   const rows = [];
   // la sesión de cada fila, en el mismo orden: el --json la suma a la fila
   const rowSids = [];
-  const addRow = (row, sid) => { rows.push(row); rowSids.push(sid); };
+  // lo que cada fila sabe además del texto (qué clase de trabajo es, la hora en milisegundos, los pasos): para /office
+  const extra = [];
+  const addRow = (row, sid, x = {}) => { rows.push(row); rowSids.push(sid); extra.push(x); };
   const busy = new Set();
+  // la fila de la story de cada sesión, para sumarle lo que hace mientras tanto
+  const pipeRows = new Map();
   const wanted = [];
   const gitCtx = opts.gitCtx || { until: Date.now() + nn(opts.repoBudgetMs, GIT_BUDGET_MS), cache: new Map() };
 
@@ -790,11 +843,11 @@ function buildWip(opts = {}) {
       try { touched = fs.statSync(file).mtimeMs; } catch (e) { unreadable.push(`${file}: sin fecha legible (${e.message})`); continue; }
     }
     // un cerrado viejo con la sesión muerta es una corrida terminada; con la sesión viva no se sabe si sus pedidos
-    // entraron: la sesión cuenta como ocupada y se dice al pie
+    // entraron: se dice al pie, y la sesión sale con lo que hace hoy (o libre)
     if (nowMs - touched > STALE_MS) {
       const sid = m.sessionId || path.basename(file, '.json');
       if (!closed) stale += 1;
-      else if (liveName(sid)) { staleWaiting += 1; busy.add(sid); }
+      else if (liveName(sid)) staleWaiting += 1;
       continue;
     }
     const sid = m.sessionId || path.basename(file, '.json');
@@ -811,12 +864,18 @@ function buildWip(opts = {}) {
       title = '(título ilegible)';
       unreadable.push(`${m.storyPath || '(sin ruta de story)'}: ${e.code === 'ENOENT' ? 'no existe' : e.message}`);
     }
-    const step = entering || stateOf(m.stepsPending[0]);
+    // con el esquema por nombre, el que sigue incluye los pasos de bandera («Probar en vivo»), que stepsPending no lista
+    const step = entering || stateOf((schemeOf(m) === 2 && pendingSteps(m)[0]) || m.stepsPending[0]);
     const work = `${m.storyId || '?'} · ${cut(title, TITLE_MAX)}`;
     const label = liveName(sid);
     if (label) {
       const entry = storyEntry(m, gitCtx);
-      addRow({ work, state: step, end: entering ? enteringEnd(m, entry, nowMs) : estimateEnd(m, medians, nowMs, entry), session: label, folder: folderOf(sid, m.repoPath) }, sid);
+      pipeRows.set(sid, { i: rows.length, m });
+      const info = {};
+      const end = entering ? closedEnd(entering, m, entry, nowMs, info) : estimateEnd(m, medians, nowMs, entry, info);
+      const kind = !entering ? 'pipeline' : entering.startsWith(STALLED) ? 'stalled' : 'entering';
+      addRow({ work, state: step, end, session: label, folder: folderOf(sid, m.repoPath) }, sid,
+        { kind, storyId: m.storyId ? String(m.storyId) : null, endAt: info.at == null ? null : info.at, late: Boolean(info.late), ...stagesOf(m) });
     }
     else halfway.push(`${work} · ${nameOf(sid)} · quedó en: ${step} · limpiar: node ${MARKER_JS} clear-session ${sid}`);
   }
@@ -837,11 +896,15 @@ function buildWip(opts = {}) {
       title = '(título ilegible)';
       unreadable.push(`${m.storyPath || '(sin ruta de story)'}: ${e.code === 'ENOENT' ? 'no existe' : e.message}`);
     }
-    addRow({ work: `${m.storyId || '?'} · ${cut(title, TITLE_MAX)}`, state: entering, end: enteringEnd(m, storyEntry(m, gitCtx), nowMs), session: liveName(sid), folder: folderOf(sid, m.repoPath) }, sid);
+    pipeRows.set(sid, { i: rows.length, m });
+    const info = {};
+    const end = closedEnd(entering, m, storyEntry(m, gitCtx), nowMs, info);
+    addRow({ work: `${m.storyId || '?'} · ${cut(title, TITLE_MAX)}`, state: entering, end, session: liveName(sid), folder: folderOf(sid, m.repoPath) }, sid,
+      { kind: entering.startsWith(STALLED) ? 'stalled' : 'entering', storyId: m.storyId ? String(m.storyId) : null, endAt: info.at == null ? null : info.at, late: Boolean(info.late), ...stagesOf(m) });
   }
 
   if (stale) unreadable.push(`${stale} marcador(es) sin tocar hace más de 24 h: no cuentan (marker.js list-all los descarta)`);
-  if (staleWaiting) unreadable.push(`${staleWaiting} story(s) con el pipeline cerrado hace más de 24 h y la sesión viva: no consulté sus pedidos, la sesión cuenta como ocupada`);
+  if (staleWaiting) unreadable.push(`${staleWaiting} story(s) con el pipeline cerrado hace más de 24 h y la sesión viva: no consulté sus pedidos`);
 
   for (const file of jsonFiles(path.join(sdir, 'adhoc'), unreadable)) {
     const sid = path.basename(file, '.json');
@@ -849,6 +912,15 @@ function buildWip(opts = {}) {
     try { a = readObject(file); } catch (e) { unreadable.push(`${file}: ${e.message}`); continue; }
     busy.add(sid);
     const work = cut(String(a.reason || '(sin motivo)'), TITLE_MAX);
+    // con una story en curso, el arreglo rápido es lo que hace mientras tanto: no abre otra fila
+    const pipe = pipeRows.get(sid);
+    if (pipe) {
+      // sin tocar hace más de 1 h puede haber terminado: se dice desde cuándo
+      const last = [a.lastTouch, a.declaredAt].map((v) => Date.parse(v)).find(Number.isFinite);
+      const old = last !== undefined && nowMs - last > LOOSE_STALE_MS ? ` (sin tocar desde ${hhmm(last)})` : '';
+      rows[pipe.i].meanwhile = `arreglo rápido «${work}»${old}`;
+      continue;
+    }
     const label = liveName(sid);
     if (label) {
       // Desde cuándo no se toca: pasada 1 h, pregunta si terminó y dice cómo cerrarlo desde su sesión (no lo borra).
@@ -856,7 +928,7 @@ function buildWip(opts = {}) {
       const parts = ['Trabajo suelto'];
       if (last !== undefined) parts.push(`sin tocar desde ${hhmm(last)}`);
       if (last !== undefined && nowMs - last > LOOSE_STALE_MS) parts.push(`¿terminó? cerralo desde su sesión: node ${MARKER_JS} adhoc clear`);
-      addRow({ work, state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label, folder: folderOf(sid) }, sid);
+      addRow({ work, state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label, folder: folderOf(sid) }, sid, { kind: 'loose' });
     }
     else {
       // Se limpia con `adhoc clear-orphan`, que sólo borra pasadas las 24 h sin tocarse: antes, se dice desde cuándo.
@@ -875,15 +947,21 @@ function buildWip(opts = {}) {
     }
   }
 
-  // Lo que anota una sesión sin story (`marker.js doing`): no es un permiso, sólo dice qué hace. Un marcador o un ad-hoc
-  // de la misma sesión mandan sobre la nota.
+  // Lo que anota una sesión sin story (`marker.js doing`): no es un permiso, sólo dice qué hace. Con una story en curso
+  // es lo que hace mientras tanto, si un ad-hoc no lo dijo antes; sin story, un ad-hoc de la misma sesión manda.
   for (const file of jsonFiles(path.join(sdir, 'doing'), unreadable)) {
     const sid = path.basename(file, '.json');
-    if (busy.has(sid)) continue;
+    const pipe = pipeRows.get(sid);
+    if (busy.has(sid) && !pipe) continue;
     let d;
     try { d = readObject(file); } catch (e) { unreadable.push(`${file}: ${e.message}`); continue; }
     const work = cut(String(d.text || '(sin texto)'), TITLE_MAX);
     const at = Date.parse(d.at);
+    if (pipe) {
+      const old = Number.isFinite(at) && nowMs - at > LOOSE_STALE_MS ? ` (sin tocar desde ${hhmm(at)})` : '';
+      if (!rows[pipe.i].meanwhile) rows[pipe.i].meanwhile = `${work}${old}`;
+      continue;
+    }
     const label = liveName(sid);
     if (!label) {
       // como el ad-hoc: se borra con `doing clear-orphan`, que sólo borra pasadas las 24 h sin tocarse
@@ -897,7 +975,15 @@ function buildWip(opts = {}) {
     const parts = ['Anotado por la sesión'];
     if (Number.isFinite(at)) parts.push(`sin tocar desde ${hhmm(at)}`);
     if (Number.isFinite(at) && nowMs - at > LOOSE_STALE_MS) parts.push(`¿terminó? borrala desde su sesión: node ${MARKER_JS} doing clear`);
-    addRow({ work, state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label, folder: folderOf(sid) }, sid);
+    addRow({ work, state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label, folder: folderOf(sid) }, sid, { kind: 'note' });
+  }
+
+  // sin arreglo ni nota: si lo último que tocó la sesión está en un repo que no es de su story, eso hace mientras tanto
+  for (const [sid, { i, m }] of pipeRows) {
+    if (rows[i].meanwhile) continue;
+    let place = null;
+    for (const file of touchedOf(sid)) { place = touchedPlace(file, gitCtx, unreadable); if (place) break; }
+    if (place && !ofStory(m, gitCtx)(place.root, place.branch) && place.story !== String(m.storyId || '')) rows[i].meanwhile = place.work;
   }
 
   const free = [];
@@ -908,10 +994,14 @@ function buildWip(opts = {}) {
     if (s.alive && s.internal && !busy.has(sid)) { internal += 1; continue; }
     if (!s.alive || busy.has(sid)) continue;
     const label = s.name || shortId(sid);
-    if (s.busy || (s.last != null && nowMs - s.last < WORKING_MS)) {
+    const active = s.busy || (s.last != null && nowMs - s.last < WORKING_MS);
+    // quieta, pero con un archivo tocado hace poco: sigue con algo (espera una prueba de fondo, pone al día una rama)
+    // y no está libre
+    const files = touchedOf(sid);
+    const recentFile = files.newest != null && nowMs - files.newest < RECENT_FILE_MS;
+    if (active || recentFile) {
       // lo que hace sale del último archivo que tocó dentro de un repo; sin uno, de la carpeta donde arrancó
       let place = null;
-      const files = touchedOf(sid);
       for (const file of files) {
         place = touchedPlace(file, gitCtx, unreadable);
         if (place) break;
@@ -922,8 +1012,9 @@ function buildWip(opts = {}) {
       const startBranch = s.cwd ? branchAt(s.cwd, gitCtx, unreadable) : '';
       const unknown = !place && !story && MAIN_BRANCHES.includes(startBranch);
       const why = unknown && (files.length ? 'los archivos que tocó no están en un repo' : `no tocó archivos en las últimas ${IDLE_MS / 3600000} h`);
-      const parts = ['Trabajando sin pipeline', why, story && `story ${story} en preparación`, s.last != null && `última actividad ${hhmm(s.last)}`].filter(Boolean);
-      addRow({ work: place ? place.work : unknown ? 'no se ve qué hace' : sessionPlace(s.cwd, gitCtx, unreadable), state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label, folder: place ? tilde(place.root) : tilde(s.cwd) }, sid);
+      const parts = [active ? 'Trabajando sin pipeline' : 'Trabajando sin marcador', why, story && `story ${story} en preparación`,
+        s.last != null && `última actividad ${hhmm(s.last)}`, !active && `último archivo ${hhmm(files.newest)}`].filter(Boolean);
+      addRow({ work: place ? place.work : unknown ? 'no se ve qué hace' : sessionPlace(s.cwd, gitCtx, unreadable), state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label, folder: place ? tilde(place.root) : tilde(s.cwd) }, sid, { kind: active ? 'activity' : 'nomarker' });
     } else if (s.last == null) { free.push(label); noData.push(label); }
     else if (nowMs - s.last > IDLE_MS) idle.push(`${label} (desde ${hhmm(s.last)})`);
     else free.push(label);
@@ -932,14 +1023,14 @@ function buildWip(opts = {}) {
     const s = sessions.get(sid);
     return { sid, status: s ? s.status : null, nameSource: s ? s.nameSource : null };
   });
-  return { rows, details, free, idle, halfway, unreadable, wanted, internal, text: render(rows, free, noData, idle, halfway, unreadable, internal) };
+  return { rows, details, extra, free, idle, halfway, unreadable, wanted, internal, text: render(rows, free, noData, idle, halfway, unreadable, internal) };
 }
 
 function render(rows, free, noData, idle, halfway, unreadable, internal = 0) {
   const esc = (s) => oneLine(s).replace(/\|/g, '\\|');
   const lines = ['| Trabajo | Estado | Fin estimado | Sesión | Carpeta |', '|---|---|---|---|---|'];
   if (!rows.length) lines.push('| (nada en curso) | | | | |');
-  for (const r of rows) lines.push(`| ${esc(r.work)} | ${esc(r.state)} | ${esc(r.end)} | ${esc(r.session)} | ${esc(r.folder || '')} |`);
+  for (const r of rows) lines.push(`| ${esc(r.work)} | ${esc(r.meanwhile ? `${r.state} · mientras tanto: ${r.meanwhile}` : r.state)} | ${esc(r.end)} | ${esc(r.session)} | ${esc(r.folder || '')} |`);
   const freeText = free.map((f) => (noData.includes(f) ? `${f} (sin dato de actividad)` : f));
   lines.push('', `Libres: ${freeText.length ? freeText.join(', ') : 'ninguna'}`);
   if (idle.length) lines.push(`Sin uso hace más de ${IDLE_MS / 3600000} h: ${idle.join(', ')}`);
@@ -962,6 +1053,20 @@ async function storyEntering(m, { query = queryAll, budgetMs = GIT_BUDGET_MS } =
   const prs = [];
   enteringState(m, (q) => byRoot.get(q.root), unreadable, [], ctx, prs);
   return { prs, failed: unreadable.length > 0, unreadable };
+}
+
+// El trabajo en curso de ahora, con los pedidos ya preguntados: primero se ve qué preguntar, las preguntas van todas
+// juntas y la tabla se arma otra vez con las respuestas.
+async function wipNow(opts = {}) {
+  const o = { ...opts, gitCtx: opts.gitCtx || { until: Date.now() + GIT_BUDGET_MS, cache: new Map() } };
+  let r = buildWip(o);
+  if (r.wanted.length) {
+    const unique = [...new Map(r.wanted.map((q) => [q.root, q])).values()];
+    const answers = await (opts.queryAll || queryAll)(unique);
+    const byRoot = new Map(unique.map((q, i) => [q.root, answers[i]]));
+    r = buildWip({ ...o, prs: (q) => byRoot.get(q.root) });
+  }
+  return r;
 }
 
 async function main(argv) {
@@ -989,18 +1094,10 @@ async function main(argv) {
     process.stdout.write(`${JSON.stringify(await storyEntering(m && typeof m === 'object' ? m : {}))}\n`);
     return 0;
   }
-  opts.gitCtx = { until: Date.now() + GIT_BUDGET_MS, cache: new Map() };
   let r;
-  try { r = buildWip(opts); } catch (e) {
+  try { r = await wipNow(opts); } catch (e) {
     if (e.code === 'NO_STATE' || e.code === 'BAD_ARG') { process.stderr.write(`work-in-progress.js: ${e.message}\n`); return 2; }
     throw e;
-  }
-  // Primero se ve qué preguntar; las preguntas van todas juntas y la tabla se arma otra vez con las respuestas.
-  if (r.wanted.length) {
-    const unique = [...new Map(r.wanted.map((q) => [q.root, q])).values()];
-    const answers = await queryAll(unique);
-    const byRoot = new Map(unique.map((q, i) => [q.root, answers[i]]));
-    r = buildWip({ ...opts, prs: (q) => byRoot.get(q.root) });
   }
   process.stdout.write(opts.json ? `${JSON.stringify(jsonOf(r), null, 2)}\n` : `${r.text}\n`);
   return 0;
@@ -1019,4 +1116,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { buildWip, jsonOf, sessionsBySid, storyEntering, median, queryAll, parseRemote, PER_QUERY_MS, ALL_QUERIES_MS };
+module.exports = { buildWip, wipNow, stagesOf, jsonOf, sessionsBySid, storyEntering, median, queryAll, parseRemote, offQueueOf, PER_QUERY_MS, ALL_QUERIES_MS };

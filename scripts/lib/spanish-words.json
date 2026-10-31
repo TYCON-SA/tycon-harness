@@ -1008,6 +1008,18 @@
       "reason": "variable de entorno del propio Python (PYTHONDONTWRITEBYTECODE): no se puede renombrar; decidido por el dueño el 2026-10-28"
     },
     {
+      "words": ["attr"],
+      "reason": "parte de la opción --attr-source de git: no se puede renombrar; decidido por la coordinadora el 2026-10-31"
+    },
+    {
+      "words": ["pathext"],
+      "reason": "variable de entorno de Windows (PATHEXT) con las extensiones de los programas: no se puede renombrar; decidido por la coordinadora el 2026-10-31"
+    },
+    {
+      "words": ["perl"],
+      "reason": "nombre del programa perl: no se puede renombrar; decidido por la coordinadora el 2026-10-31"
+    },
+    {
       "words": [
         "abbrev",
         "ac",

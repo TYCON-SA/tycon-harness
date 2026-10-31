@@ -114,7 +114,12 @@ function darPorPasada(ow) {
     const destino = pedida || o.propia || null;
     const via = delegadaPor ? 'delegacion' : 'ventana';
     const sesion = delegadaPor || destino;
-    ow.firmar({ firma: o.firma, via, sesion, destino, resumen: o.resumen || '', casa: os.homedir(), anotar: o.anotar });
+    // como la ventana de verdad: lo que el guion comprueba antes de firmar, y los campos que suma a la firma
+    if (o.antes) {
+      const n = o.antes(via, { via, sesion, destino });
+      if (n && n.codigo) return { codigo: n.codigo, motivo: n.motivo };
+    }
+    ow.firmar({ firma: o.firma, via, sesion, destino, resumen: o.resumen || '', casa: os.homedir(), anotar: o.anotar, extra: o.extra });
     return { codigo: 0, via, destino, sesion };
   };
   porPasada.porPasada = true;

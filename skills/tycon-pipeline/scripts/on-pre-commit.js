@@ -276,73 +276,9 @@ function argumentosDeCommit(command, _depth = 0) {
   return commits;
 }
 
-// Los tramos de un comando de shell: corta en `;`, `&`, `|` y el salto de línea que están fuera de comillas.
-function tramosDelShell(texto) {
-  const out = [];
-  let cur = '';
-  for (let i = 0; i < texto.length;) {
-    const c = texto[i];
-    if (c === "'" || c === '"') {
-      let j = i + 1;
-      while (j < texto.length && texto[j] !== c) j += (c === '"' && texto[j] === '\\') ? 2 : 1;
-      cur += texto.slice(i, j + 1); i = j + 1; continue;
-    }
-    if (c === '\\' && i + 1 < texto.length) { cur += texto.slice(i, i + 2); i += 2; continue; }
-    if (/[;&|\n]/.test(c)) { out.push(cur); cur = ''; i += 1; continue; }
-    cur += c; i += 1;
-  }
-  out.push(cur);
-  return out.map((s) => s.trim()).filter(Boolean);
-}
-
-// Las palabras de cada `git commit` de verdad del comando (lo que sigue a `commit`), leídas como las arma el shell.
-function commitsDelShell(command, depth = 0) {
-  const out = [];
-  for (const tramo of tramosDelShell(String(command || ''))) {
-    let ps = palabrasDelShell(tramo.replace(/^(?:\$\(|[`(){}\s])+/, ''));
-    while (ps.length && /^\w+=/.test(ps[0])) ps = ps.slice(1);
-    if (!ps.length) continue;
-    const cmd = ps[0].replace(/^.*\//, '');
-    if (depth === 0 && /^(?:ba|z|da)?sh$/.test(cmd)) {
-      const c = ps.indexOf('-c');
-      if (c > 0 && c + 1 < ps.length) out.push(...commitsDelShell(ps[c + 1], 1));
-      continue;
-    }
-    if (cmd !== 'git') continue;
-    let i = 1;
-    while (i < ps.length && ps[i].startsWith('-')) i += ['-c', '-C', '--git-dir', '--work-tree'].includes(ps[i]) ? 2 : 1;
-    if (ps[i] === 'commit') out.push(ps.slice(i + 1));
-  }
-  return out;
-}
-
-// Las palabras de un texto como las arma el shell: las comillas agrupan y se sacan, la barra escapa el carácter siguiente.
-function palabrasDelShell(texto) {
-  const out = [];
-  let cur = null;
-  for (let i = 0; i < texto.length;) {
-    const c = texto[i];
-    if (/\s/.test(c)) { if (cur !== null) { out.push(cur); cur = null; } i += 1; continue; }
-    // `$'…'` se lee como comillas simples
-    if (c === '$' && texto[i + 1] === "'") { i += 1; continue; }
-    if (c === "'") {
-      const fin = texto.indexOf("'", i + 1);
-      const hasta = fin < 0 ? texto.length : fin;
-      cur = (cur || '') + texto.slice(i + 1, hasta); i = hasta + 1; continue;
-    }
-    if (c === '"') {
-      let j = i + 1; let buf = '';
-      while (j < texto.length && texto[j] !== '"') {
-        if (texto[j] === '\\' && j + 1 < texto.length) { buf += texto[j + 1]; j += 2; } else { buf += texto[j]; j += 1; }
-      }
-      cur = (cur || '') + buf; i = j + 1; continue;
-    }
-    if (c === '\\' && i + 1 < texto.length) { cur = (cur || '') + texto[i + 1]; i += 2; continue; }
-    cur = (cur || '') + c; i += 1;
-  }
-  if (cur !== null) out.push(cur);
-  return out;
-}
+// Las palabras de cada `git commit` de verdad del comando, leídas como las arma el shell (las comparte el freno de guardar)
+// (se carga al usarlo: si el freno no carga, el gancho sigue y su bloque decide)
+const commitsDelShell = (command) => require('./lib/save-brake.js').commitsDelShell(command);
 
 // ¿Algún `git commit` del comando lleva `--no-verify` (o la abreviada que git acepta, `--no-veri`, `--no-verif`) como
 // argumento? Nombrarla en un mensaje, un heredoc o un grep no es usarla. El valor de `-m`/`-F` es texto, no opción; una
@@ -1101,6 +1037,34 @@ function main() {
   }
 
   const command = event.tool_input?.command || '';
+
+  // El ok de guardar (lib/save-brake.js): en una corrida, el commit, el push y los pedidos van con el ok vigente; fuera,
+  // los repos de una corrida que cerró sin él. Va antes de mirar si es un commit, porque frena también push y pedidos.
+  // Si el freno no carga o falla, un comando que parece guardar frena dentro de una corrida (o sin poder saberlo) y fuera
+  // pasa con un aviso.
+  {
+    let sid = null;
+    let freno;
+    try {
+      sid = resolveSessionId(event.session_id);
+      freno = require('./lib/save-brake.js').decidir({ command, cwd: event.cwd || process.cwd(), sid });
+    } catch (e) {
+      // sin el lector: lo que nombra git, gh o az (sus alias también), o lo que no se podría leer (una variable, un
+      // shell cualquiera, eval, source, una función o un alias del shell, un prefijo que corre otro comando, lo que el
+      // shell expande)
+      const pareceGuardar = /\b(git|gh|az|commit|push|pr|repos|eval|alias|function|source|exec|xargs|env|sudo|doas|[a-z]*sh)\b|(^|[\s;&|(])\.\s|[$`*?{<]|\w\s*\(\s*\)/i.test(command);
+      let enCorrida = true;
+      try { if (sid) enCorrida = fs.existsSync(require('./lib/open-runs.js').markerPath(sid)); } catch { /* sin saber, frena */ }
+      freno = null;
+      if (pareceGuardar && enCorrida) freno = { texto: `🔒 OK DE GUARDAR: el freno de guardar no pudo correr (${e.message}); dentro de una corrida, el comando no pasa.` };
+      else if (pareceGuardar) process.stderr.write(`⚠️  el freno de guardar no pudo correr (${e.message}): fuera de una corrida, el comando pasa.\n`);
+    }
+    if (freno) {
+      process.stderr.write(freno.texto + '\n');
+      process.exit(2);
+    }
+  }
+
   // Detectar `git commit` (no amend a un commit existente, no log, no status).
   // Atrapamos: `git commit`, `git commit -m`, `git commit -F`, `git -C ... commit ...`.
   // Excluimos: `git commit --amend` (es modificación, no transición), aunque
@@ -1138,7 +1102,7 @@ function main() {
   // Escape hatch estándar de git: --no-verify saltea hooks. Si user/agente
   // lo usa explícitamente, dejamos pasar pero queda rastro DURABLE en bypass.log
   // (solo stderr efímero: imposible auditar bypasses). También su prefijo inequívoco (`--no-veri`, `--no-verif`), que
-  // git acepta igual; `--no-ver` choca con `--no-verbose` y git lo rechaza.
+  // git acepta igual; uno más corto choca con `--no-verbose` y git lo rechaza.
   if (usaNoVerify(command)) {
     console.error('⚠ tycon-dod-runtime: --no-verify detected, skipping DoD gate (had_dod_bypass=true, logueado en bypass.log)');
     try {

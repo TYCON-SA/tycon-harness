@@ -281,9 +281,14 @@ function pruneStale() {
           process.stderr.write(`[marker] no podé el marcador de ${m.sessionId || f}: su ejecución está perdida y sale sólo por la salida que firma una persona (clear-session --lost o restore).\n`);
           continue;
         }
+        // el cierre es de la sesión podada, no de la que poda; sin poder anotar el cierre sin ok, el marcador se queda
+        const podada = m.sessionId || f.replace(/\.json$/, '');
+        if (!registrarCierreSinOk(podada, m)) {
+          process.stderr.write(`[marker] no podé el marcador de ${podada}: no pude anotar su cierre sin ok de guardar.\n`);
+          continue;
+        }
         fs.unlinkSync(full);
-        // el cierre es de la sesión podada, no de la que poda
-        cerrarEjecucion(m.sessionId || f.replace(/\.json$/, ''), m, { estado: 'abandonada', motivo: `podada: más de ${STALE_HOURS} h sin tocarse`, soloAbierta: true });
+        cerrarEjecucion(podada, m, { registrar: false, estado: 'abandonada', motivo: `podada: más de ${STALE_HOURS} h sin tocarse`, soloAbierta: true });
       }
     } catch (_e) { /* ignore */ }
   }
@@ -414,8 +419,10 @@ function clearMarker() {
 
 // El cierre de la ejecución de `sesion` en el registro, con su carpeta, y la copia de la apertura borrada
 // (lib/open-runs.js). Todo camino que borra un marcador pasa por acá: sin el cierre, la sesión quedaría con su apertura
-// sin marcador y frenaría como perdida. Que falle no frena el comando: se dice.
-function cerrarEjecucion(sesion, m, { extra, ...campos } = {}) {
+// sin marcador y frenaría como perdida. Que falle no frena el comando: se dice. Una corrida que cierra con cambios y sin
+// el ok de guardar queda en el registro de su sesión (lib/save-brake.js), salvo la que sigue en otra sesión (`registrar`).
+function cerrarEjecucion(sesion, m, { extra, registrar = true, ...campos } = {}) {
+  if (registrar) registrarCierreSinOk(sesion, m);
   try {
     require('./lib/open-runs.js').cerrar({
       sid: SID, sesion, runDir: (m && m.runDir) || null, story: m && m.storyId != null ? String(m.storyId) : null,
@@ -426,6 +433,50 @@ function cerrarEjecucion(sesion, m, { extra, ...campos } = {}) {
     process.stderr.write(`[marker] no pude anotar el cierre de la ejecución de la sesión ${sesion} (${e.message})\n`);
     return false;
   }
+}
+
+// Devuelve si quedó anotada (o no hacía falta).
+function registrarCierreSinOk(sesion, m) {
+  try { require('./lib/save-brake.js').registrarCierreSinOk({ marker: m, sesion }); return true; } catch (e) {
+    process.stderr.write(`[marker] no pude anotar que la corrida de la sesión ${sesion} cerró sin ok de guardar (${e.message})\n`);
+    return false;
+  }
+}
+
+// Antes de borrar el marcador de una corrida: su cierre sin ok queda anotado, o el comando sale 1 y el marcador se queda
+// (sin marcador ni registro, nada frenaría el commit de esos repos).
+function anotarAntesDeCerrar(sesion, m, comando) {
+  if (registrarCierreSinOk(sesion, m)) return;
+  console.error(`marker.js ${comando}: no pude anotar el cierre sin ok de guardar; el marcador de la sesión ${sesion} se queda.`);
+  process.exit(1);
+}
+
+// Un marcador que existe y no es el de una corrida (no se lee, o no dice de qué story es): ningún cierre lo borra ni lo
+// pisa, ni con `--discard` ni desde otra sesión, porque no se puede anotar lo que deja sin guardar. Sale 2; mientras esté,
+// el freno de guardar frena esa sesión, y lo saca una persona.
+function frenarSiIlegible(archivo, sesion, comando) {
+  let crudo;
+  try { crudo = fs.readFileSync(archivo, 'utf8'); } catch (e) { if (e.code === 'ENOENT') return; crudo = null; }
+  let m = null;
+  try { m = crudo === null ? null : JSON.parse(crudo); } catch (_e) { m = null; }
+  if (m && typeof m === 'object' && !Array.isArray(m) && m.storyId) return;
+  console.error(`🔒 marker.js ${comando}: el marcador de la sesión ${sesion} no se puede leer o no dice de qué story es: no sé qué deja sin guardar ni lo puedo anotar, así que no lo borro ni lo piso.`);
+  console.error(`  Mientras esté, el commit, el push y los pedidos de esa sesión frenan. Lo saca una persona, después de mirarlo: ${archivo}`);
+  process.exit(2);
+}
+
+// Cerrar la corrida propia no es la salida del ok de guardar: con cambios y sin el ok vigente, `clear` sale 2. `--discard`
+// cierra igual y deja el registro, que sigue frenando el commit, el push y los pedidos de esos repos.
+function frenarSinOkDeGuardar(m, comando, rest) {
+  if (rest.includes('--discard')) return;
+  if (!m || !m.storyId) return;
+  let s;
+  try { s = require('./lib/save-brake.js').sinOk({ marker: m }); } catch (e) { s = { repos: [m.repoPath].filter(Boolean), error: e.message }; }
+  if (!s) return;
+  console.error(`🔒 marker.js ${comando}: la corrida de ${m.storyId} tiene cambios sin el ok de guardar (${s.repos.join(', ')}${s.error ? `; ${s.error}` : ''}).`);
+  console.error(`  Para guardarlos: node ${__filename} approve-save, y después el commit, el push y los pedidos.`);
+  console.error(`  Para cerrar sin guardar: marker.js ${comando} --discard. El commit, el push y los pedidos de esos repos siguen frenados hasta un ok nuevo o hasta que no queden cambios.`);
+  process.exit(2);
 }
 
 // Una ejecución perdida sale sólo por `clear-session <sesión> --lost` o `restore <sesión>`, con la frase del dueño:
@@ -473,6 +524,8 @@ function cmdSet(payloadJson) {
   for (const k of ['mockupApproval', 'mockupDecision']) {
     if (payload[k] !== undefined) console.error(`marker.js set: «${k}» no se acepta en el payload (lo escriben sólo complete-step approve-plan y approve-mockup): descartado.`);
   }
+  // `set` (y `set --replace`) pisa el marcador: si el que hay no se lee, no se puede anotar lo que deja
+  frenarSiIlegible(markerFilePath(SID), SID, 'set');
   let existing = readMarker();
   // un marcador escrito a mano sobre una ejecución perdida la daría por sana
   frenarSiPerdida(SID, 'set', (existing && existing.repoPath) || payload.repoPath);
@@ -518,6 +571,7 @@ function cmdSet(payloadJson) {
       console.error('  Si la de antes terminó o se abandona: marker.js clear y volvé a pedirlo, o el mismo set con --replace (deja una copia del marcador anterior).');
       process.exit(3);
     }
+    if (existing.storyId) anotarAntesDeCerrar(SID, existing, 'set --replace');
     const copia = path.join(STATE_DIR, 'replaced', `${SID}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
     fs.mkdirSync(path.dirname(copia), { recursive: true });
     fs.writeFileSync(copia, JSON.stringify(existing, null, 2) + '\n', 'utf8');
@@ -531,11 +585,11 @@ function cmdSet(payloadJson) {
       // una con `cierre` escrito (la deuda) ya dijo cómo terminó
       const abierta = !existing.cierre && rc.abierta(rc.estado(existing));
       const c = rc.cierreDe(existing, { sid: SID });
-      cerrarEjecucion(SID, existing, { estado: c.estado, via: c.via || null,
+      cerrarEjecucion(SID, existing, { registrar: false, estado: c.estado, via: c.via || null,
         motivo: abierta ? `reemplazada por la historia ${payload.storyId} sin cerrarla: ${c.motivo || ''}` : `reemplazada por la historia ${payload.storyId}` });
       if (abierta) console.error(`marker.js set: la ejecución de ${existing.storyId} no había terminado (${c.motivo}): queda anotada como ${c.estado}.`);
     } catch (e) {
-      cerrarEjecucion(SID, existing, { estado: 'abortada', motivo: `reemplazada por la historia ${payload.storyId}; no pude calcular su estado (${e.message})` });
+      cerrarEjecucion(SID, existing, { registrar: false, estado: 'abortada', motivo: `reemplazada por la historia ${payload.storyId}; no pude calcular su estado (${e.message})` });
     }
     const {
       adversarial, deepReviewDone, workSignalStarted, clockiStarted, adoMarkedActive, atddBypass, atddBypassReason,
@@ -3896,7 +3950,7 @@ function avisarCierreSinPasos(marker) {
   } catch { /* el aviso nunca frena el cierre */ }
 }
 
-function cmdClear() {
+function cmdClear(rest = []) {
   // Timing dump automático: el cierre del
   // pipeline archiva el marker completo + los gates de la sesión ANTES de borrar —
   // es la única fuente de la curva de costo por run (stepTimings, iteraciones,
@@ -3905,8 +3959,11 @@ function cmdClear() {
   // un fallo acá JAMÁS bloquea el clear.
   let cerradaEnClear = false;
   let marcadorAntes = null;
+  frenarSiIlegible(markerFilePath(SID), SID, 'clear');
   try { marcadorAntes = readMarker(); } catch (_e) { marcadorAntes = null; }
   frenarSiPerdida(SID, 'clear', marcadorAntes && marcadorAntes.repoPath);
+  frenarSinOkDeGuardar(marcadorAntes, 'clear', rest);
+  if (marcadorAntes && marcadorAntes.storyId) anotarAntesDeCerrar(SID, marcadorAntes, 'clear');
   try {
     const marker = readMarker();
     if (marker && marker.storyId) {
@@ -3973,7 +4030,7 @@ function cmdClear() {
       try {
         marker.cierre = require('./lib/run-close.js').cierreDe(marker, { sid: SID });
         const c = marker.cierre;
-        cerradaEnClear = cerrarEjecucion(SID, marker, { estado: c.estado, motivo: c.motivo || null, via: c.via || null, ...(c.deuda ? { extra: { deuda: c.deuda } } : {}) });
+        cerradaEnClear = cerrarEjecucion(SID, marker, { registrar: false, estado: c.estado, motivo: c.motivo || null, via: c.via || null, ...(c.deuda ? { extra: { deuda: c.deuda } } : {}) });
       } catch (e) {
         // sin poder calcularlo, la ejecución no cuenta como terminada: queda abortada y el motivo lo dice
         marker.cierre = { estado: 'abortada', motivo: `no pude determinar cómo terminó (${e.message})`, via: 'sin-registro', at: nowIso() };
@@ -4051,7 +4108,7 @@ function cmdClear() {
   } catch { /* best-effort */ }
   // el archivo falló antes de anotar el cierre: se anota igual, para que la sesión no quede con su apertura sin marcador
   if (!cerradaEnClear && marcadorAntes && marcadorAntes.storyId) {
-    cerrarEjecucion(SID, marcadorAntes, { estado: 'abortada', motivo: 'clear: no pude archivar la ejecución ni calcular cómo terminó' });
+    cerrarEjecucion(SID, marcadorAntes, { registrar: false, estado: 'abortada', motivo: 'clear: no pude archivar la ejecución ni calcular cómo terminó' });
   }
   clearMarker();
 }
@@ -4114,14 +4171,17 @@ function cmdClearSession(sid, rest = []) {
     console.error('  Si su ejecución quedó perdida (frena con «EJECUCIÓN PERDIDA»), la salida es clear-session <sesión> --lost, con la firma de una persona.');
     process.exit(1);
   }
-  let m = null;
-  try { m = JSON.parse(fs.readFileSync(p, 'utf8')); } catch (_e) { m = null; }
-  frenarSiPerdida(safe, 'clear-session', m && m.repoPath);
+  frenarSiIlegible(p, safe, `clear-session ${safe}`);
+  const m = JSON.parse(fs.readFileSync(p, 'utf8'));
+  frenarSiPerdida(safe, 'clear-session', m.repoPath);
+  // desde otra sesión cierra igual (la corrida ajena puede estar muerta): queda el registro
+  if (SID === safe) frenarSinOkDeGuardar(m, `clear-session ${safe}`, rest);
+  anotarAntesDeCerrar(safe, m, 'clear-session');
   try { fs.unlinkSync(p); } catch (e) {
     console.error(`marker.js clear-session: no pude borrar ${p}: ${e.message}`);
     process.exit(1);
   }
-  cerrarEjecucion(safe, m, { estado: 'abortada', motivo: SID === safe ? 'clear-session de la propia sesión' : `clear-session desde la sesión ${SID}` });
+  cerrarEjecucion(safe, m, { registrar: false, estado: 'abortada', motivo: SID === safe ? 'clear-session de la propia sesión' : `clear-session desde la sesión ${SID}` });
   process.stdout.write(`cleared: ${safe}.json\n`);
 }
 
@@ -4140,6 +4200,9 @@ function cmdSalidaPerdida(modo, sesion) {
     console.error(`marker.js ${nombre}: la sesión ${sesion} no tiene una ejecución abierta (ni apertura en el registro ni copia en este repo): no hay nada que ${modo === 'lost' ? 'cerrar' : 'restaurar'}.`);
     process.exit(1);
   }
+  // restore pisa el marcador propio y --lost borra el de la sesión perdida: si el que se toca no se lee, no se puede
+  // anotar lo que deja (antes de pedir la firma)
+  frenarSiIlegible(markerFilePath(modo === 'lost' ? sesion : SID), modo === 'lost' ? sesion : SID, nombre);
   // una apertura sin hora legible está dañada: no se cierra ni se rearma a ciegas
   if (!Number.isFinite(Date.parse(apertura.ts))) {
     console.error(`marker.js ${nombre}: la apertura de la sesión ${sesion} no trae una hora legible (${apertura.ts}): está dañada, y no se ${modo === 'lost' ? 'cierra' : 'rearma'} a ciegas.`);
@@ -4152,6 +4215,11 @@ function cmdSalidaPerdida(modo, sesion) {
   // pedida para otra sesión, la constancia dice cuál la pidió (SID ya es la destino)
   const desde = (firma.constancia && firma.constancia.por) || SID;
   if (modo === 'lost') {
+    // el marcador de la sesión, si sigue y es de la misma story, sabe más que la apertura (los repos que tocó, el ok)
+    let real = null;
+    try { real = JSON.parse(fs.readFileSync(markerFilePath(sesion), 'utf8')); } catch (_e) { real = null; }
+    const mismo = real && typeof real === 'object' && String(real.storyId) === String(apertura.story);
+    anotarAntesDeCerrar(sesion, mismo ? real : { storyId: apertura.story, repoPath: apertura.repo, ...(apertura.storyPath ? { storyPath: apertura.storyPath } : {}) }, nombre);
     try { fs.unlinkSync(markerFilePath(sesion)); } catch (_e) { /* ya no estaba: es lo perdido */ }
     or.cerrar({ sid: SID, sesion, runDir: apertura.runDir, story: apertura.story, estado: 'perdida', via, cita, extra: porDe(firma),
       motivo: `cerrada como perdida desde la sesión ${desde}` });
@@ -4162,11 +4230,14 @@ function cmdSalidaPerdida(modo, sesion) {
   let copia = null;
   try { copia = JSON.parse(fs.readFileSync(path.join(apertura.runDir, 'run-open.json'), 'utf8')); } catch (_e) { copia = null; }
   const base = copia && copia.sesion === sesion ? copia : apertura;
-  or.cerrar({ sid: SID, sesion, runDir: base.runDir, story: base.story, estado: 'perdida', via, cita, extra: porDe(firma), motivo: `restaurada en la sesión ${SID}${desde !== SID ? ` (pedido desde la sesión ${desde})` : ''}` });
-  // la ejecución propia de otra carpeta no se pisa callada: se cierra como reemplazada, como en `set`
+  // la ejecución propia de otra carpeta no se pisa callada: se cierra como reemplazada, como en `set`, con su cierre sin
+  // ok anotado antes de tocar nada
   let previo = readMarker();
-  if (previo && previo.storyId && !(previo.runDir && or.mismaRuta(previo.runDir, base.runDir))) {
-    cerrarEjecucion(SID, previo, { estado: 'abortada', motivo: `reemplazada por restore ${sesion} (story ${base.story})`, extra: porDe(firma) });
+  const reemplaza = previo && previo.storyId && !(previo.runDir && or.mismaRuta(previo.runDir, base.runDir));
+  if (reemplaza) anotarAntesDeCerrar(SID, previo, nombre);
+  or.cerrar({ sid: SID, sesion, runDir: base.runDir, story: base.story, estado: 'perdida', via, cita, extra: porDe(firma), motivo: `restaurada en la sesión ${SID}${desde !== SID ? ` (pedido desde la sesión ${desde})` : ''}` });
+  if (reemplaza) {
+    cerrarEjecucion(SID, previo, { registrar: false, estado: 'abortada', motivo: `reemplazada por restore ${sesion} (story ${base.story})`, extra: porDe(firma) });
     previo = null;
   }
   const sigue = previo && String(previo.storyId) === String(base.story);
@@ -4344,7 +4415,7 @@ function cmdAdoptSession(sid) {
     const or = require('./lib/open-runs.js');
     const ult = or.vigente(safe);
     const runDir = other.runDir || (ult && ult.name === 'run-open' ? ult.runDir : null);
-    if (!cerrarEjecucion(safe, { ...other, runDir }, { estado: 'abortada', motivo: `adoptada por la sesión ${SID}` })) {
+    if (!cerrarEjecucion(safe, { ...other, runDir }, { estado: 'abortada', motivo: `adoptada por la sesión ${SID}`, registrar: false })) {
       throw new Error(`no pude anotar el cierre de la sesión ${safe}`);
     }
     if (runDir) or.abrir({ sid: SID, story: other.storyId, storyPath: other.storyPath, repo: other.repoPath, runDir, motivo: `adoptada de la sesión ${safe}` });
@@ -4846,6 +4917,10 @@ function cmdApproveSave(argv) {
   fresco.saveOk = ok;
   fresco.lastTouch = nowIso();
   writeMarker(fresco);
+  // los repos que cubre el ok nuevo salen del registro de corridas cerradas sin ok
+  try { require('./lib/save-brake.js').olvidarCubiertos({ sesion: SID, repos: ok.huellas.map((h) => h.repo) }); } catch (e) {
+    process.stderr.write(`[marker] approve-save: no pude actualizar el registro de corridas cerradas sin ok (${e.message})\n`);
+  }
   const persona = process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona';
   const q = quienFirmo(firma, persona);
   anotarAprobacion(fresco, { que: 'el ok de guardar la story (commit, push y los pedidos)', via: q.via, tipo: q.tipo, quien: q.quien, ...porDe(firma), ...(q.delegacion ? { delegacion: q.delegacion } : {}) });
@@ -5415,7 +5490,7 @@ switch (cmd) {
     cmdAppendFile(arg1);
     break;
   case 'clear':
-    cmdClear();
+    cmdClear(process.argv.slice(3));
     break;
   case 'is-active':
     cmdIsActive();

@@ -236,8 +236,10 @@ No entra en ninguno de los grupos de la 8.116: para delegarla, el perfil la nomb
 
 Un pendiente nuevo de otra sesión (`pending-approval`) se aprueba así desde la sesión designada, con
 `marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --for-session <sesión>`. La delegación vale sólo si la
-carpeta es de esa sesión: el repo de su ejecución abierta, o el de un arreglo rápido que declaró ella misma. Tampoco
-puede ser un repo de la coordinadora: ni su checkout, ni el de su marcador, ni el de su arreglo rápido. Los repos se
+carpeta es de esa sesión: el repo de su ejecución abierta, el worktree donde vive la story de esa ejecución (suele
+ser el privado; el clon principal no cuenta, porque lo comparten varias stories), o el de un arreglo rápido que declaró
+ella misma. Tampoco puede ser un repo de la coordinadora: ni su checkout, ni los de su ejecución abierta y su story, ni
+el de su arreglo rápido. Si uno de los repos de ella no se encuentra, la delegación se niega. Los repos se
 comparan por la carpeta real, así que otra forma de escribir la ruta no cambia el resultado.
 
 **Límite declarado:** el arnés no sabe quién escribió el pendiente, sólo de quién es el repo. Si la coordinadora
@@ -257,6 +259,41 @@ El ok de guardar (`save`) suma tres límites cuando va por delegación, y los co
 - el aviso le llegó al dueño por un canal de la lista del perfil (`integrations.notify.channels`).
 
 Si falta una, el guion lo dice y no firma: el ok lo da el dueño.
+
+El ok lo hace cumplir el gancho del comando, no la memoria del agente. En una corrida, todo `git commit`, `git push`
+y todo pedido que se crea o se mergea sin la constancia vigente frena, también escondido en `bash -c`, con `-C`
+o desde una variable. Los comandos de pedido son los que declaran los conectores de plataforma (`rawCommands` de su
+`integration.json`) con `pr` y que terminan en `create`, `new` o `merge`; si alguna integración no se puede leer, un
+comando que dice `pr` es una duda. Una frase en el chat no es el ok. Cerrar la corrida tampoco es una salida: con cambios y sin el
+ok, `marker.js clear` sale 2, y `marker.js clear --discard` cierra pero deja anotados esos repos, que siguen frenados
+hasta un ok nuevo o hasta que no queden cambios. Lo mismo pasa cuando la corrida se cierra desde otra sesión, se
+reemplaza, se poda por vieja o se cierra como perdida. Si ese registro no se puede escribir, el cierre no se hace y el
+marcador queda. Un marcador que no se puede leer no lo borra ni lo pisa ningún cierre, ni con `--discard` ni desde otra
+sesión: sale 2, el freno sigue frenando esa sesión, y lo saca una persona después de mirarlo.
+
+El texto del freno nombra la forma (`git push`, `… pr create`…) y el repo, nunca el comando, que puede traer una
+credencial; tampoco la rama escrita en el comando. Dentro de una corrida, lo que el freno no puede leer con certeza
+frena, guarde o no, y aunque haya ok: «no pude leer este comando; si guarda, pedí el ok primero». Entran el comando
+entero en una variable, un shell que lee de un tubo, `<<<` o un heredoc, una función o un alias que no está en la
+copia del shell de la sesión, un programa que no se encuentra y dice `commit`, `push` o `pr`, un subcomando de git que no es de git (un alias que no se resuelve en cuatro pasos, la corrección automática), más de
+cuatro niveles de anidación, una ruta de Windows sin sus barras, la carpeta que sale de una variable, un programa armado
+de un texto (`env -S`, `sudo -s`), una comilla o un heredoc sin cerrar, y el programa escrito con comodines o llaves.
+Así, una forma nueva frena por defecto. Un git que falla al buscar un alias también frena. Los comentarios y el
+mensaje de un heredoc con comillas se leen como el shell: no corren. Los alias y las funciones de la copia del shell
+que guarda la sesión se leen como lo que corren: `ll` o `gst` no frenan, y un alias que empuja frena como el push. Las
+redirecciones de la salida (`2>&1`, `> log`, `2>/dev/null`) no son una duda. Con el ok vigente, frena igual el commit
+o el push que el mismo comando hace después de cambiar archivos del repo, la rama, la configuración o el destino: el
+ok es del estado de antes, y se guarda en un comando aparte. Fuera de una corrida, nada de esto cambia.
+Si el freno mismo no carga, frena dentro de una corrida, y fuera deja pasar con un aviso.
+
+Lo que no ve: un guion o un programa que guarda sin nombrar git en el comando (`node guardar.js`, `bash guion.sh`,
+un programa que lee el comando de un archivo), los alias propios del programa de la plataforma,
+los comandos de pedido que no lo crean ni lo mergean (la API, marcarlo listo, cambiarlo), los commits que hacen `merge`, `cherry-pick`, `revert`,
+`am` o `commit-tree`, un programa que no conoce que cambia archivos del repo antes de un commit en el mismo comando, y
+un alias o una función de la sesión que se llama como un programa del PATH (`ls`) y guarda por dentro sin decirlo.
+Frena de más: un alias o una función que dos copias del shell definen distinto, o cuyo cuerpo no se lee entero (son
+pocos y no de uso diario). El push a la rama actual armada por otro comando (`$(git branch --show-current)`) se lee
+como `HEAD`; una rama que sale de otro comando o de una variable frena con el ok, como destino incierto.
 
 ### La ejecución trabada de otra sesión
 

@@ -1857,7 +1857,7 @@ test('post-revision: END-TO-END — el hook de commit avisa, no frena, y lo mide
   git('init', '-q', '.');
   git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init');
   const SID = 'sess-postrev';
-  writeFakeMarker(fakeHome, SID, { repoPath: repo, storyId: '7.7', iterations: { 1: { ts: '2026-09-10T21:39:39.000Z', filesSnapshot: [] } } });
+  writeFakeMarker(fakeHome, SID, { repoPath: repo, storyPath: undefined, storyId: '7.7', iterations: { 1: { ts: '2026-09-10T21:39:39.000Z', filesSnapshot: [] } } });
   fs.writeFileSync(path.join(repo, 'database', '054_Cleanup.sql'), 'PRINT (SELECT 1);\n');
   execFileSync(process.execPath, [path.join(SCRIPTS, 'on-edit.js')], {
     input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Write', session_id: SID,
@@ -1865,6 +1865,8 @@ test('post-revision: END-TO-END — el hook de commit avisa, no frena, y lo mide
     env: { ...process.env, ...fakeHomeEnv(fakeHome) }, encoding: 'utf8', stdio: 'pipe',
   });
   git('add', 'database/054_Cleanup.sql');
+  // el commit de la corrida va con el ok de guardar
+  require('./lib/save-ok-lab.js').firmarGuardado(path.join(fakeHome, '.claude', '.tycon-pipeline', 'active', `${SID}.json`), [repo]);
   const res = spawnSync(process.execPath, [path.join(SCRIPTS, 'on-pre-commit.js')], {
     input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', session_id: SID, cwd: repo,
       tool_input: { command: 'git commit -m "x"' } }),
@@ -7577,8 +7579,9 @@ test('Step9_SumsSecondsFromStop @story-7.40 @ac-2', () => {
 function cerrarSinPasos(extra) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'cierre-sin-pasos-'));
   const sid = 'sid-cierre-sin-pasos';
-  writeFakeMarker(home, sid, { storyId: 'S9', repoPath: path.join(home, 'no-existe'), stepsCompleted: [0], stepsPending: [1, 2, 3], ...extra });
-  const r = require('child_process').spawnSync(process.execPath, [MARKER, 'clear'],
+  // sin story en el disco y con cambios sin el ok de guardar: el cierre es `clear --discard`
+  writeFakeMarker(home, sid, { storyId: 'S9', storyPath: undefined, repoPath: path.join(home, 'no-existe'), stepsCompleted: [0], stepsPending: [1, 2, 3], ...extra });
+  const r = require('child_process').spawnSync(process.execPath, [MARKER, 'clear', '--discard'],
     { env: { ...process.env, ...fakeHomeEnv(home), CLAUDE_CODE_SESSION_ID: sid, TYCON_NO_RUN_CHANGE: '1' }, encoding: 'utf8' });
   const state = path.join(home, '.claude', '.tycon-pipeline');
   let bypass = '';

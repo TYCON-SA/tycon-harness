@@ -1304,6 +1304,43 @@ function semanalDetalle(archivo) {
     merges_no_leidos: Array.isArray(r.merges_no_leidos) ? r.merges_no_leidos.length : null, repos_sin_mirar: Number.isInteger(r.repos_sin_mirar) ? r.repos_sin_mirar : null };
 }
 
+/**
+ * La línea de los aprendizajes (casos: scripts/tests/daily-summary.test.sh 4.7-T30), del informe que deja la noche que
+ * los propone (scripts/instincts/instinct-nightly.js, `--instincts`). Sólo cantidades y el enlace a la pestaña, y el
+ * enlace sólo si el sitio pasó la prueba sin sesión de esta mañana. Un informe que no es de hoy es uno que la noche no
+ * dejó; uno que no midió es «?», nunca 0. Con la integración apagada, `null`: sin línea.
+ */
+const APR_CAUSAS = [['tope', 'por el tope'], ['sin_llave', 'sin llave'], ['sin_modelo', 'sin modelo configurado'], ['fallo', 'el modelo falló']];
+const APR_FORMA = /^aprendizajes: [^\n]{1,300}$/;
+function lineaAprendizajes(archivo, hoy, { url, sitioPaso }) {
+  const sinInforme = 'aprendizajes: ? (la noche no dejó su informe)';
+  const noMidio = 'aprendizajes: ? (la noche no pudo leer el buzón)';
+  let r;
+  try { r = JSON.parse(fs.readFileSync(archivo, 'utf8')); } catch (e) { return e && e.code === 'ENOENT' ? sinInforme : 'aprendizajes: ? (su informe no se pudo leer)'; }
+  if (!r || typeof r !== 'object' || r.fecha !== hoy) return sinInforme;
+  if (r.estado === 'apagado') return null;
+  const n = (x) => (Number.isInteger(x) && x >= 0 ? x : null);
+  const nuevas = n(r.nuevas);
+  const esperando = n(r.pendientes_total);
+  if (r.estado !== 'medido' || nuevas === null || esperando === null) return noMidio;
+  const sin = r.sin_redaccion && typeof r.sin_redaccion === 'object' ? r.sin_redaccion : {};
+  const causas = APR_CAUSAS.filter(([k]) => n(sin[k])).map(([, t]) => t);
+  const sinRedactar = APR_CAUSAS.reduce((s, [k]) => s + (n(sin[k]) || 0), 0);
+  const s = nuevas === 1 ? '' : 's';
+  const cabeza = nuevas ? `${nuevas} propuesta${s} nueva${s}${sinRedactar ? ` (${sinRedactar} sin redactar: ${causas.join(', ')})` : ''}` : 'sin propuestas nuevas';
+  const partes = [`aprendizajes: ${cabeza}, ${esperando} esperando decisión`];
+  if (r.parcial === true) partes.push('lectura parcial del buzón');
+  const calladas = n(r.maquinas_sin_reportar);
+  if (calladas) partes.push(`${calladas} máquina${calladas === 1 ? '' : 's'} sin reportar en 7 días`);
+  partes.push(sitioPaso && url ? `${String(url).replace(/\/+$/, '')}/aprendizajes` : 'en la pestaña Aprendizajes del sitio');
+  return partes.join(' · ');
+}
+
+/** La línea de los aprendizajes que dejó la constancia de las 04:00, para la edición de las 08:00; null si no hay. */
+function aprendizajesDeLaConstancia(r) {
+  return r && typeof r.aprendizajes === 'string' && APR_FORMA.test(r.aprendizajes) ? r.aprendizajes : null;
+}
+
 function entregar(a) {
   let res;
   try { res = armar(a); } catch (e) {
@@ -1322,6 +1359,13 @@ function entregar(a) {
   let editarId = null;
   let notaArmado = null;
   let sitio = a.fuente === 'dependencias' ? lineaSitio(a) : null;
+  // la línea de los aprendizajes: la arma la mañana con --instincts; la edición de las 08:00 la rearma de la constancia
+  let aprendizajes = null;
+  if (a.instincts !== null) {
+    const ops = OPS.load(a.operations);
+    const url = ops.ok && ops.data.site && typeof ops.data.site.url === 'string' ? ops.data.site.url : null;
+    aprendizajes = lineaAprendizajes(a.instincts, a.hoy, { url, sitioPaso: !!(sitio && sitio.resultado === 'paso') });
+  }
   // la línea de las ejecuciones: la arma la mañana con --runs-review; la edición de las 08:00 la rearma de la constancia
   let ejecuciones = a.runsReview !== null ? lineaEjecuciones(a.runsReview, a.hoy) : null;
   // y debajo, los renglones de fichas del clon, que también se guardan y se rearman
@@ -1346,6 +1390,7 @@ function entregar(a) {
       final = `${d.seccion}\n\n${res.texto}`;
       if (ejecuciones === null) ejecuciones = ejecucionesDeLaConstancia(r);
       if (fichasClon === null) fichasClon = fichasDeLaConstancia(r);
+      if (aprendizajes === null) aprendizajes = aprendizajesDeLaConstancia(r);
       // los otros canales no editan: ya recibieron la sección de dependencias a la mañana, así que les va sólo la del
       // vigilante, diciéndolo, como cuando Telegram no está
       const otros = canales.filter((c) => c !== 'telegram');
@@ -1379,6 +1424,7 @@ function entregar(a) {
   if (ejecuciones !== null || (fichasClon && fichasClon.length)) cola = `${cola}${MARCA_EJ}`;
   const semanal = a.weekly !== null ? lineaSemanal(a.weekly, a.hoy) : null;
   if (semanal) cola = `${cola}\n${semanal}`;
+  if (aprendizajes) cola = `${cola}\n${aprendizajes}`;
   // la versión del sitio, en su lugar fijo: antes de la línea del sitio, que sigue siendo la última
   if (a.siteUpdate) {
     let actualizacion = null;
@@ -1440,6 +1486,7 @@ function entregar(a) {
     sitio: { linea: sitio.linea, resultado: sitio.resultado, motivo: sitio.motivo, hora: sitio.hora },
     ...(ejecuciones !== null ? { ejecuciones } : {}),
     ...(fichasClon !== null ? { fichas: fichasClon } : {}),
+    ...(aprendizajes ? { aprendizajes } : {}),
   };
   const nota = [notaArmado, intento.nota].filter(Boolean).join(' · ');
   if (nota) resumen.nota = nota;
@@ -1518,7 +1565,7 @@ function perfilDeLaNoche(a) {
 function parseArgs(argv) {
   const a = { cmd: argv[0], fuente: null, hoy: null, out: null, pending: null, config: null, resumenConfig: null,
     vigOut: null, depsOut: null, extra: null, retros: null, pruebasSinCi: null, runsReview: null, weekly: null, runs: null, operations: null, profile: null, teamRepos: null, cloneDir: null,
-    siteCheck: null, siteUpdate: null, json: false, dryRun: false, ayuda: false, error: null };
+    siteCheck: null, siteUpdate: null, instincts: null, json: false, dryRun: false, ayuda: false, error: null };
   const valor = (i) => { if (i >= argv.length || String(argv[i]).startsWith('--')) { a.error = `falta el valor de ${argv[i - 1]}`; return null; } return argv[i]; };
   for (let i = 1; i < argv.length; i++) {
     const v = argv[i];
@@ -1542,6 +1589,7 @@ function parseArgs(argv) {
     else if (v === '--clone-dir') a.cloneDir = valor(++i);
     else if (v === '--site-check') a.siteCheck = valor(++i);
     else if (v === '--site-update') a.siteUpdate = valor(++i);
+    else if (v === '--instincts') a.instincts = valor(++i);
     else if (v === '--json') a.json = true;
     else if (v === '--dry-run') a.dryRun = true;
     else if (v === '-h' || v === '--help') a.ayuda = true;
@@ -1554,6 +1602,7 @@ function uso() {
   console.error('uso: daily-summary.js build|deliver --source dependencies|vigilante --today <YYYY-MM-DD> [--json] [--dry-run]\n' +
     '       [--out <dir>] [--pending <dir>] [--config <repos.json>] [--summary-config <summary.json>] [--watcher-out <dir>] [--deps-out <dir>] [--extra <archivo>] [--retros <informe de retro-sweep.js>] [--tests-without-ci <informe de check-tests-without-ci.js --json>] [--runs-review <clon de operaciones>] [--weekly <informe de weekly-review.js>] [--runs <.advisors/pipeline-runs>]\n' +
     '       [--operations <operations.json>] [--site-check <resultado de check-deploy.js>] [--site-update <resultado de update-site.js>]\n' +
+    '       [--instincts <informe de instinct-nightly.js de hoy>]\n' +
     '       [--profile <team-profile.json> | --team-repos <team-repos.json> --clone-dir <dir>]');
 }
 

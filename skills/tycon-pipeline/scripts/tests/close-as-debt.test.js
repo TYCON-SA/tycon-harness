@@ -224,7 +224,7 @@ test('T24 Deuda_LlegaAlCommit @story-8.93 @ac-12 — la línea Deuda: sale al pr
   assert.match(r.stderr, /Deuda: DEF-9\.9-angular — la librería no tiene versión compatible/);
   assert.strictEqual(E.leer('s-t24').cierre.estado, 'deuda', 'preparar el commit no toca el cierre');
   // `clear` conserva el cierre escrito: el volcado dice deuda, nunca completa
-  const c = E.correr('marker.js', ['clear'], 's-t24');
+  const c = E.correr('marker.js', ['clear', '--discard'], 's-t24');
   assert.strictEqual(c.status, 0, c.stderr);
   const hist = path.join(E.dir(), 'timing-history');
   const volcados = fs.readdirSync(hist).filter((f) => /^9\.9-[\dT-]+\.json$/.test(f));

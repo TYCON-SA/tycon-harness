@@ -73,6 +73,18 @@
       "requiere": []
     },
     {
+      "__nota": "story 4.7, tanda C: la noche que propone aprendizajes (scripts/instincts/instinct-nightly.js) — cuenta sin modelo lo que se repite en el equipo con las máquinas resueltas, «no medido» con null y nunca 0, los topes de 20 con modelo y 50 nuevas, lo decidido no se toca ni se vuelve a pedir, el saneado de lo que escribe el modelo y el modelo del pipeline; y lo que se apaga en cada máquina (el disparador, el comando y el aviso). Sin red: el buzón, el modelo y el guardado son funciones de prueba.",
+      "raiz": "arnes",
+      "ruta": "tests/instinct-nightly.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 4.7, tanda C: la llamada al modelo de la noche (scripts/instincts/instinct-model.js) — Ollama por HTTPS con la llave en Authorization y el nombre sin -cloud, Anthropic por la CLI con la llave en el ambiente del hijo, y cada fallo con un código de lista cerrada, sin la llave. Sin red: fetch de prueba y un claude de prueba en el PATH.",
+      "raiz": "arnes",
+      "ruta": "tests/instinct-model.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.27: el observador, el comando de revisión y el disparador del arranque sobre un árbol que NO trae su buzón (una versión bajada, la copia pública) — nada se crea por ensayar o listar, se escribe en la casa, se lee en todos los lugares. Con un claude de mentira en el PATH.",
       "raiz": "arnes",
       "ruta": "tests/instinct-outside-tree.test.sh",
@@ -588,6 +600,12 @@
       "__nota": "el ok de guardar una story es la firma «save»: las huellas de cada repo, si el ok sigue valiendo, la story limpia, lo sensible y el aviso al dueño antes de la constancia.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/save-ok.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el freno del ok de guardar: el gancho del comando frena el commit, el push y los pedidos de una corrida sin la constancia vigente, y los de una corrida que cerró sin ella; clear sin el ok sale 2.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/save-brake.test.js",
       "requiere": []
     },
     {
@@ -1652,6 +1670,11 @@
     {
       "raiz": "arnes",
       "ruta": "tests/work-in-progress.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/office.test.js",
       "requiere": []
     },
     {

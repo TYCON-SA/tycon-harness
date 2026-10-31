@@ -1,10 +1,15 @@
 ---
-description: Revisar y accionar instincts propuestos por instinct-observer (review/list/show/approve/reject/status/run)
-argument-hint: "[review | show <hash> | approve <hash> | reject <hash> --reason \"...\" | status | run]"
+description: Revisar y accionar las propuestas de instincts de antes (review/list/show/approve/reject/status); las del equipo se deciden en la pestaña Aprendizajes del sitio
+argument-hint: "[review | show <hash> | approve <hash> | reject <hash> --reason \"...\" | status]"
 allowed-tools: Bash(node:*), Bash(engram:*), Bash(ls:*), Bash(wc:*), Read
 ---
 
 Gestioná los instincts del sistema `instinct-mining`. Subcomando + args en: `$ARGUMENTS`
+
+**Las propuestas del equipo ya no salen de esta máquina**: las arma cada noche el proceso de la organización, con lo que
+suben las máquinas y con el modelo que elige la organización, y se aprueban o se rechazan en la **pestaña Aprendizajes
+del sitio**. Este comando queda para las propuestas de antes (las de `pending/` y `promoted/`). Si piden correr el
+observador o «proponer ahora», decí eso: no hay corrida por máquina.
 
 **Repo** (override con `$TYCON_GUIDES_DIR`): `~/.claude/tycon-harness`
 **Script**: `<repo>/scripts/instincts/instinct-promote.js`
@@ -20,7 +25,6 @@ Dispatch según el PRIMER token de `$ARGUMENTS` (si está vacío → `review`):
 | `approve <hash>` | `node <repo>/scripts/instincts/instinct-promote.js approve <hash>` → el script imprime un bloque `mem_save(...)`. **Traducilo y EJECUTALO con la CLI de engram**: `engram save "<title=trigger>" "<msg=action + Domain/Evidence/Confidence/Reasoning>" --type decision --project <project|TYCON-Global> --scope <scope>`. Si el YAML tenía `tycon_artifact_suggestion`, avisá que se generó un draft y mostrá la ruta que imprime el script en «Archivo:» (queda en `drafts/` del mismo lugar donde estaba la propuesta; si está dentro del repo se commitea a mano, si está en la carpeta de usuario no va por git). |
 | `reject <hash> --reason "..."` | `node <repo>/scripts/instincts/instinct-promote.js reject <hash> --reason "..."`. Si falta `--reason`, pedíselo al usuario antes de correr. |
 | `status` | `node <repo>/scripts/instincts/instinct-promote.js status` — una línea por lugar con cuántos hay en `pending`, `promoted`, `archived`, `drafts` y `descartados`, y cuál es el lugar donde se escribe (marcado con `*`). Un «?» en vez de un número es una carpeta que existe y no se pudo leer; un renglón que empieza con «!» dice un lugar que quedó sin mirar y por qué. Mostrala tal cual, con esos renglones. |
-| `run` | Forzá una corrida del observer ahora (salta el throttle de 12h del hook SessionStart): `node <repo>/scripts/instincts/instinct-observer.js`. Avisá que tarda (llama al modelo una o dos veces: propone, y revisa lo que pasó el umbral contra lo ya decidido) y que escribe a `pending/` del lugar donde se escribe + Telegram notify si hay nuevos, y a `descartados/` lo que la revisión descarta. |
 
 **Reglas duras**
 - NUNCA `approve`/`reject` sin que el usuario lo haya pedido explícito en `$ARGUMENTS`. `approve` emite memoria a engram (acción persistente) y `reject` mueve archivos.

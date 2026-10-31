@@ -1563,6 +1563,31 @@ test('Freno_ApproveSave_FormaCanonica (T12) @story-8.143 @ac-1', (t) => {
   }
 });
 
+// Una pestaña que no pide permisos (bypass y parecidos) aprueba sola lo que el freno manda a la ventana: el renglón
+// quedaría a nombre del dueño sin que nadie haya dicho Sí. Ahí la firma se niega con el comando de la terminal; en una
+// pestaña que pregunta, la ventana de siempre; la delegación no usa ventana y sigue valiendo.
+// 🔴 mutación: sin mirar el modo de permisos → en bypass sale 'ask' y la ventana se aprueba sola.
+test('Freno_PestanaSinPermisos_NiegaLaVentana_ConElComandoDeLaTerminal', (t) => {
+  for (const modo of ['bypassPermissions', 'dontAsk', 'auto', 'un-modo-nuevo']) {
+    const casa = casaNueva(t);
+    const r = pedir(casa, SAVE, { evento: { ...DE_LA_COORD, permission_mode: modo } });
+    assert.strictEqual(r.decision, 'deny', `${modo}: ${r.texto}`);
+    assert.match(r.texto, /no pide permisos/, modo);
+    assert.match(r.texto, /approve-save --terminal .*con --for-session ses-a/, `${modo}: el comando de la terminal`);
+    assert.strictEqual(registros(casa).length, 0, `${modo}: sin registro de ventana`);
+  }
+  for (const modo of ['default', 'acceptEdits', 'plan', undefined]) {
+    const casa = casaNueva(t);
+    const ev = modo === undefined ? DE_LA_COORD : { ...DE_LA_COORD, permission_mode: modo };
+    assert.strictEqual(pedir(casa, SAVE, { evento: ev }).decision, 'ask', String(modo));
+  }
+  // la delegación no pasa por la ventana: en una pestaña sin permisos sigue firmando
+  const conSave = { ...PERFIL, delegated_signing: ['save'] };
+  const r = pedir(casaConDesignada(t), SAVE, { evento: { ...DE_LA_COORD, permission_mode: 'bypassPermissions' }, delegacion: delegacionReal({ perfil: conSave }) });
+  assert.strictEqual(r.decision, 'allow', r.texto);
+  assert.strictEqual(r.via, 'delegacion');
+});
+
 test('ApproveSave_SeisLlaves (T13) @story-8.143 @ac-8', (t) => {
   const conSave = { ...PERFIL, delegated_signing: ['save'] };
   const casa = casaConDesignada(t);
@@ -1904,6 +1929,68 @@ test('Pendiente_SesionNoDesignada_Ventana (d)', (t) => {
   const propia = pedir(dev.casa, aprobarPendiente(dev.ajeno), { evento: { cwd: dev.ajeno }, delegacion: delegacionReal({ perfil: CON_PENDIENTES }) });
   assert.strictEqual(propia.decision, 'ask', propia.texto);
   assert.doesNotMatch(propia.texto, /No se firmó por delegación/);
+});
+
+/** Un worktree agregado (`git worktree add`) de un repo de prueba, con su carpeta `specs/`. */
+function worktreeDePrueba(t) {
+  const base = repoDePrueba(t);
+  spawnSync('git', ['-C', base, '-c', 'user.name=prueba', '-c', 'user.email=prueba@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'base']);
+  const d = `${base}-wt`;
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  spawnSync('git', ['-C', base, 'worktree', 'add', '-q', '-b', 'wt', d]);
+  fs.mkdirSync(path.join(d, 'specs'));
+  return fs.realpathSync(d);
+}
+
+test('Pendiente_RepoDeLaStoryDeOtraSesion_FirmaSinVentana (e): el worktree privado de su story también es suyo', (t) => {
+  const { casa, ajeno, propio } = casaConPendiente(t);
+  const privado = worktreeDePrueba(t);
+  fs.writeFileSync(path.join(casa, '.claude', '.tycon-pipeline', 'active', 'ses-a.json'), JSON.stringify({ sessionId: 'ses-a', storyId: '9.99', storyPath: `${privado}/specs/story-9.99.md`, repoPath: ajeno }));
+  const r = pedirPendiente(casa, aprobarPendiente(privado, ' --for-session ses-a'), propio);
+  assert.strictEqual(r.decision, 'allow', r.texto);
+  assert.strictEqual(r.via, 'delegacion');
+  // la story en un clon principal no suma ese repo: lo comparten varias stories
+  const clon = repoDePrueba(t);
+  fs.mkdirSync(path.join(clon, 'specs'));
+  fs.writeFileSync(path.join(casa, '.claude', '.tycon-pipeline', 'active', 'ses-a.json'), JSON.stringify({ sessionId: 'ses-a', storyId: '9.99', storyPath: `${clon}/specs/story-9.99.md`, repoPath: ajeno }));
+  const c = pedirPendiente(casa, aprobarPendiente(clon, ' --for-session ses-a'), propio);
+  assert.strictEqual(c.decision, 'ask', c.texto);
+  assert.match(c.texto, /No se firmó por delegación: .*no es un repo donde trabaja la sesión ses-a/);
+  // la carpeta de la story que todavía no existe, o una ruta relativa, no suman repo
+  for (const storyPath of [`${privado}/no-existe/story-9.99.md`, 'specs/story-9.99.md']) {
+    fs.writeFileSync(path.join(casa, '.claude', '.tycon-pipeline', 'active', 'ses-a.json'), JSON.stringify({ sessionId: 'ses-a', storyId: '9.99', storyPath, repoPath: ajeno }));
+    const n = pedirPendiente(casa, aprobarPendiente(privado, ' --for-session ses-a'), propio);
+    assert.strictEqual(n.decision, 'ask', `${storyPath}: ${n.texto}`);
+  }
+});
+
+test('Pendiente_RepoDeLaStoryDeLaCoordinadora_Ventana (f): el repo de su story es de ella, aunque también sea el de otra', (t) => {
+  const { casa, ajeno, propio } = casaConPendiente(t);
+  const activos = path.join(casa, '.claude', '.tycon-pipeline', 'active');
+  const privado = worktreeDePrueba(t);
+  fs.writeFileSync(path.join(activos, 'ses-a.json'), JSON.stringify({ sessionId: 'ses-a', storyId: '9.99', storyPath: `${privado}/specs/story-9.99.md`, repoPath: ajeno }));
+  fs.writeFileSync(path.join(activos, 'ses-coord.json'), JSON.stringify({ sessionId: 'ses-coord', storyId: '7.77', storyPath: `${privado}/specs/story-7.77.md`, repoPath: repoDePrueba(t) }));
+  let r = pedirPendiente(casa, aprobarPendiente(privado, ' --for-session ses-a'), propio);
+  assert.strictEqual(r.decision, 'ask', r.texto);
+  assert.match(r.texto, /No se firmó por delegación: .*coordinadora/);
+  // del lado de ella, un repo declarado que no se encuentra niega: no se abre por un dato que falta
+  for (const suyo of [
+    { storyPath: `${privado}/no-existe/story-7.77.md`, repoPath: repoDePrueba(t) },
+    { storyPath: 'specs/story-7.77.md', repoPath: repoDePrueba(t) },
+    { storyPath: `${repoDePrueba(t)}/story-7.77.md`, repoPath: path.join(os.tmpdir(), 'no-es-un-repo-de-git') },
+  ]) {
+    fs.writeFileSync(path.join(activos, 'ses-coord.json'), JSON.stringify({ sessionId: 'ses-coord', storyId: '7.77', ...suyo }));
+    r = pedirPendiente(casa, aprobarPendiente(privado, ' --for-session ses-a'), propio);
+    assert.strictEqual(r.decision, 'ask', `${JSON.stringify(suyo)}: ${r.texto}`);
+    assert.match(r.texto, /No se firmó por delegación: .*no pude leer/);
+  }
+  // la story de la otra sesión vive en el checkout de la coordinadora: ese repo sigue siendo de ella
+  const otra = casaConPendiente(t);
+  fs.mkdirSync(path.join(otra.propio, 'specs'));
+  fs.writeFileSync(path.join(otra.casa, '.claude', '.tycon-pipeline', 'active', 'ses-a.json'), JSON.stringify({ sessionId: 'ses-a', storyId: '9.99', storyPath: `${otra.propio}/specs/story-9.99.md`, repoPath: otra.ajeno }));
+  r = pedirPendiente(otra.casa, aprobarPendiente(otra.propio, ' --for-session ses-a'), otra.propio);
+  assert.strictEqual(r.decision, 'ask', r.texto);
+  assert.match(r.texto, /No se firmó por delegación: .*coordinadora/);
 });
 
 test('Plan_ForSession_DesignacionDeOtraSesion_Ventana: la confirmación de una designación vieja no delega a la sesión nueva', (t) => {

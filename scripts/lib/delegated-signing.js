@@ -145,14 +145,17 @@ const SOBRE_UN_REPO = new Set(['pending-approval']);
 
 /**
  * La raíz de un repo de git (`{ ruta, clave }`), o null. Dos rutas son el mismo repo si tienen la misma `clave` (el
- * dispositivo y el nodo de la carpeta): la cadena no alcanza en un disco que no distingue mayúsculas.
+ * dispositivo y el nodo de la carpeta): la cadena no alcanza en un disco que no distingue mayúsculas. `enlazado` dice si
+ * es un worktree agregado (`git worktree add`), no el clon principal.
  */
 function raizDelRepo(dir) {
   try {
-    const r = require('child_process').execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-    if (!r) return null;
+    const salida = require('child_process').execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel', '--absolute-git-dir', '--git-common-dir'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const [r, gitDir, comun] = salida.split(/\r?\n/);
+    if (!r || !gitDir || !comun) return null;
     const st = fs.statSync(r);
-    return { ruta: fs.realpathSync(r), clave: `${st.dev}:${st.ino}` };
+    const enlazado = fs.realpathSync(gitDir) !== fs.realpathSync(path.resolve(dir, comun));
+    return { ruta: fs.realpathSync(r), clave: `${st.dev}:${st.ino}`, enlazado };
   } catch (_) { return null; }
 }
 
@@ -165,12 +168,17 @@ function esLaDesignada(estado, sesion) {
 }
 
 /**
- * Las claves de los repos donde trabaja la sesión `sid`: el de su ejecución abierta y la carpeta de su arreglo rápido.
- * El arreglo rápido cuenta sólo si lo declaró la propia sesión: el que otra pidió para ella (`by`) guarda la carpeta de
- * quien lo pidió. undefined si uno de los dos existe y no se puede leer.
+ * Las claves de los repos donde trabaja la sesión `sid`: el de su ejecución abierta, el de la story de esa ejecución y
+ * la carpeta de su arreglo rápido. El arreglo rápido cuenta sólo si lo declaró la propia sesión: el que otra pidió para
+ * ella (`by`) guarda la carpeta de quien lo pidió. undefined si uno de los dos existe y no se puede leer.
+ *
+ * `estricto` es el lado de la coordinadora, donde cada repo suyo es una negación: una ruta declarada que no resuelve a
+ * un repo devuelve undefined, para que la delegación no se abra por un dato que falta. Del otro lado sólo achica lo
+ * permitido, y la story suma su repo sólo si es un worktree agregado: el clon principal lo comparten varias stories.
  */
-function reposDe(estado, sid, raiz) {
+function reposDe(estado, sid, raiz, { estricto = false } = {}) {
   const repos = [];
+  const sumar = (r) => { if (!repos.includes(r.clave)) repos.push(r.clave); };
   for (const [dir, campo] of [['active', 'repoPath'], ['adhoc', 'cwd']]) {
     let m;
     try { m = JSON.parse(fs.readFileSync(path.join(estado, dir, `${safeSid(sid)}.json`), 'utf8')); } catch (e) {
@@ -178,8 +186,16 @@ function reposDe(estado, sid, raiz) {
       return undefined;
     }
     if (dir === 'adhoc' && m && m.by != null && m.by !== sid) continue;
-    const r = m && typeof m[campo] === 'string' && m[campo] ? raiz(m[campo]) : null;
-    if (r) repos.push(r.clave);
+    if (m && typeof m[campo] === 'string' && m[campo]) {
+      const r = raiz(m[campo]);
+      if (r) sumar(r);
+      else if (estricto) return undefined;
+    }
+    // la story de una ejecución suele vivir en otro worktree (el privado): ese repo también es de la sesión
+    if (dir === 'active' && m && typeof m.storyPath === 'string' && m.storyPath) {
+      const s = path.isAbsolute(m.storyPath) ? raiz(path.dirname(m.storyPath)) : null;
+      if (estricto) { if (!s) return undefined; sumar(s); } else if (s && s.enlazado) sumar(s);
+    }
   }
   return repos;
 }
@@ -190,8 +206,8 @@ function motivoDelRepo({ repo, cwd, estado, sesion, destino, raiz }) {
   if (!cwd) return 'el pedido no dice desde qué carpeta se corre';
   const delPendiente = raiz(path.resolve(cwd, repo || '.'));
   if (!delPendiente) return `${repo || cwd} no es un repo de git`;
-  const suyos = reposDe(estado, sesion, raiz);
-  if (suyos === undefined) return 'no pude leer el marcador o el arreglo rápido de la sesión del pedido';
+  const suyos = reposDe(estado, sesion, raiz, { estricto: true });
+  if (suyos === undefined) return 'no pude leer el marcador o el arreglo rápido de la sesión del pedido, o uno de sus repos no se encuentra';
   const checkout = raiz(cwd);
   if ((checkout && checkout.clave === delPendiente.clave) || suyos.includes(delPendiente.clave)) return `${delPendiente.ruta} es un repo de la coordinadora: un pendiente suyo lo aprueba el dueño`;
   const delDestino = reposDe(estado, destino, raiz);

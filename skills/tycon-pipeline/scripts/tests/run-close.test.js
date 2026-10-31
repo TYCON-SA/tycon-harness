@@ -39,7 +39,7 @@ function corral(marcador, frenos = []) {
 }
 
 function cerrar({ raiz, estado }) {
-  const r = spawnSync(process.execPath, [MARKER, 'clear'], {
+  const r = spawnSync(process.execPath, [MARKER, 'clear', '--discard'], {
     encoding: 'utf8',
     env: { ...process.env, HOME: path.join(raiz, 'home'), USERPROFILE: path.join(raiz, 'home'), CLAUDE_CODE_SESSION_ID: SID, TYCON_LANE_LLM: '0' },
   });

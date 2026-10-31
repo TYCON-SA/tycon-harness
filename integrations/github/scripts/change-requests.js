@@ -13,7 +13,7 @@
 // La rama no se borra desde acá: lo decide la regla del repo («borrar la rama al mergear»).
 //
 // Listar: los abiertos, con su autor y si la validación de su punta está corriendo (`ciRunning`: null si los controles
-// no se pudieron leer). Una lectura que no terminó es un «no», nunca una lista vacía ni una cortada. Con `sourceBranch`,
+// no se pudieron leer). Con `sourceBranch`, además si cada uno está en la cola de merge (`inQueue`: null si no se supo). Una lectura que no terminó es un «no», nunca una lista vacía ni una cortada. Con `sourceBranch`,
 // los abiertos de esa rama (por `head.ref`, también desde un fork), y cada uno se lee entero (`GET pulls/<n>`) para saber si choca con su
 // destino: la lista no trae `mergeable`. Sin él, las llamadas de siempre.
 
@@ -193,6 +193,23 @@ function corriendo(ctx, repo, sha) {
   return c.problem ? null : c.value.some((x) => x && x.status !== 'completed');
 }
 
+/**
+ * Si cada pedido está en la cola de merge, de una sola consulta (la API REST no lo dice): un mapa node_id → true/false.
+ * Lo que no se pudo leer no entra al mapa: queda como no sabido, nunca como «fuera de la cola».
+ */
+function enCola(ctx, prs) {
+  const ids = prs.map((p) => String((p && p.node_id) || '')).filter(Boolean);
+  const out = new Map();
+  if (!ids.length) return out;
+  const g = gh(ctx, 'POST', 'graphql', {
+    query: 'query($ids:[ID!]!){nodes(ids:$ids){... on PullRequest{id mergeQueueEntry{state}}}}',
+    variables: { ids },
+  });
+  const nodes = g.value && g.value.data && Array.isArray(g.value.data.nodes) ? g.value.data.nodes : [];
+  for (const n of nodes) if (n && typeof n.id === 'string' && 'mergeQueueEntry' in n) out.set(n.id, Boolean(n.mergeQueueEntry));
+  return out;
+}
+
 function listarPedidos(args, ctx) {
   const repo = repoDe(ctx);
   if (!repo) return no('rechazado', 'el repo no trae dueño/nombre de GitHub (team-repos.json)');
@@ -214,12 +231,15 @@ function listarPedidos(args, ctx) {
     }
     abiertos = enteros;
   }
+  const cola = rama ? enCola(ctx, abiertos) : null;
   const value = abiertos.map((p) => {
     const sha = String((p.head && p.head.sha) || '');
     return {
       number: Number(p.number),
       draft: p.draft === true,
       autoComplete: Boolean(p.auto_merge),
+      // con la rama: si está en la cola de merge (null si GitHub no lo dijo). Uno en la cola puede no tener auto_merge
+      ...(cola ? { inQueue: cola.has(String(p.node_id)) ? cola.get(String(p.node_id)) : null } : {}),
       mergeState: p.mergeable === false ? 'conflict' : ESTADO[p.mergeable_state] || 'unknown',
       sourceBranch: String((p.head && p.head.ref) || ''),
       sourceCommit: sha,

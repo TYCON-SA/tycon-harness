@@ -30,7 +30,7 @@ const TEST_GATE = path.join(SCRIPTS, 'test-gate.sh');
 const DEL_ENTORNO = ['NODE_TEST_CONTEXT', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'DOD_BYPASS',
   'TYCON_TEST_SCOPE', 'TYCON_TEST_GATE', 'TYCON_TEST_GATE_COMPANION', 'TYCON_TEST_GATE_PART', 'TYCON_EVIDENCE_DIR',
   'TYCON_EVIDENCE_KEY', 'TYCON_EVIDENCE_KEY_FAILED', 'TYCON_COVERAGE_BASE', 'STOP_AUTONOMY', 'TYCON_SKILLS_DIR',
-  'HARNESS_TEAM_DIR', 'TYCON_PRIVATE_TREE_TMP', 'TF_BUILD', 'TYCON_HOME'];
+  'HARNESS_TEAM_DIR', 'TYCON_PRIVATE_TREE_TMP', 'TYCON_SUITE_HOMES_ROOT', 'TF_BUILD', 'TYCON_HOME'];
 
 function entorno(home, extra) {
   const env = { ...process.env };
@@ -200,7 +200,8 @@ test('PrivateTree_PublicTip_IsNotAServerBranch', () => {
 // a main se veía como propio de la rama. El árbol trae el origin/main del repo de origen; sin él, el de siempre.
 // 🔴 Falla con: el árbol y su público con origin/main igual a la rama main local de su repo de origen.
 test('PrivateTree_OriginMain_IsTheSourceServerBranch', () => {
-  const lab = laboratorio();
+  // una story sólo del privado: el público suelto va en su versión del servidor
+  const lab = laboratorio({ modificar: ['specs/s.md'] });
   const servidor = {};
   for (const [repo, nombre] of [[lab.priv, 'priv'], [lab.pub, 'pub']]) {
     const local = git(repo, 'rev-parse', 'main');
@@ -233,7 +234,8 @@ test('PrivateTree_OriginMain_IsTheSourceServerBranch', () => {
 // servidor (el origin/main del público), sin copiar su disco, y lo de esa carpeta no cuenta como tocado por la story.
 // 🔴 Falla con: el armado de siempre (HEAD de la carpeta vecina y su disco encima).
 test('PrivateTree_PublicNotOfStory_UsesServerVersion', () => {
-  const lab = laboratorio();
+  // una story sólo del privado: con la del público, la versión del servidor no mide lo suyo (la prueba de abajo)
+  const lab = laboratorio({ modificar: ['specs/s.md'] });
   const servidor = git(lab.pub, 'rev-parse', 'HEAD');
   git(lab.pub, 'update-ref', 'refs/remotes/origin/main', servidor);
   git(lab.priv, 'checkout', '-q', '-b', 'story/9.36-lab');
@@ -273,10 +275,50 @@ test('PrivateTree_PublicNotOfStory_UsesServerVersion', () => {
   assert.strictEqual(arbol(lab.story).j.base.source, 'disk');
 });
 
+// Una story que declara archivos del público y el público fuera de su rama: la versión del servidor no trae esos
+// cambios, y medirla daba un verde que no decía nada de la story. No se arma el árbol y el portón no sale verde.
+// 🔴 Falla con: armar sobre la versión del servidor y avisar en un renglón informativo.
+test('PrivateTree_ServerVersion_StoryDeclaresPublic_Red', () => {
+  const lab = laboratorio({ modificar: ['Pub/skills/demo/lib.js', 'Pub/skills/demo/nuevo.js'] });
+  git(lab.pub, 'update-ref', 'refs/remotes/origin/main', git(lab.pub, 'rev-parse', 'HEAD'));
+  git(lab.priv, 'checkout', '-q', '-b', 'story/9.36-lab');
+  git(lab.pub, 'checkout', '-q', '-b', 'fix/otra-sesion');
+  const dir = tmp('privado-arbol-');
+  const b = spawnSync(process.execPath, [path.join(SCRIPTS, 'lib', 'private-tree.js'), 'build', lab.priv, lab.story, dir],
+    { encoding: 'utf8', env: entorno(lab.home) });
+  assert.strictEqual(b.status, 4, b.stdout + b.stderr);
+  assert.match(b.stderr, /declara archivos del público/, b.stderr);
+  const r = portón(lab);
+  assert.strictEqual(r.code, 4, r.salida);
+  assert.match(r.salida, /fix\/otra-sesion/, `nombra la rama en que está el público\n${r.salida}`);
+  assert.ok(!nombra(r, 'demo.test.js') && !nombra(r, 'pub-lib.test.js'), `no corrió nada\n${r.salida}`);
+  // un archivo nuevo que todavía no existe en ninguna carpeta también es del público
+  const solo = laboratorio({ modificar: ['Pub/skills/demo/nuevo.js'] });
+  git(solo.pub, 'update-ref', 'refs/remotes/origin/main', git(solo.pub, 'rev-parse', 'HEAD'));
+  git(solo.priv, 'checkout', '-q', '-b', 'story/9.36-lab');
+  git(solo.pub, 'checkout', '-q', '-b', 'fix/otra-sesion');
+  assert.strictEqual(portón(solo).code, 4);
+});
+
+// La ruta de la story no se encuentra (relativa, lanzada desde otra carpeta): sin ella el portón no sabe qué público
+// medir ni qué tocó la story. Frena con un mensaje claro y no corre nada.
+// 🔴 Falla con: seguir como si no hubiera story.
+test('TestGate_StoryNotFound_Stops', () => {
+  const lab = laboratorio();
+  const r = spawnSync('bash', [TEST_GATE, lab.priv, 'specs/s.md'], { encoding: 'utf8', cwd: lab.raiz,
+    env: entorno(lab.home, { TYCON_PRIVATE_TREE_TMP: path.join(lab.raiz, 'tmp') }), timeout: 120000 });
+  const salida = `${r.stdout}\n${r.stderr}`;
+  assert.strictEqual(r.status, 2, salida);
+  assert.match(salida, /no encontré la story «specs\/s\.md»/, salida);
+  assert.ok(salida.includes(fs.realpathSync(lab.raiz)) || salida.includes(lab.raiz), `dice desde qué carpeta\n${salida}`);
+  assert.match(salida, /ruta absoluta/, salida);
+  assert.ok(!/árbol armado/.test(salida) && !/ok {7}/.test(salida), `no corrió nada\n${salida}`);
+});
+
 // El origin/main de una carpeta que nadie pone al día está tan atrás como su main: antes de usarlo, se trae.
 // 🔴 Falla con: leer el origin/main tal como quedó en la última traída.
 test('PrivateTree_ServerVersion_FetchedFirst', () => {
-  const lab = laboratorio();
+  const lab = laboratorio({ modificar: ['specs/s.md'] });
   const servidor = path.join(lab.raiz, 'servidor.git');
   git(lab.raiz, 'clone', '-q', '--bare', lab.pub, servidor);
   git(lab.pub, 'remote', 'add', 'origin', servidor);
@@ -466,6 +508,21 @@ test('PrivateTree_OnlyTouchedSuitesRun @story-7.36 @ac-13', () => {
   // el público que fue debajo no se vuelve a correr como repo hermano: ya se midió en el árbol
   assert.match(r.salida, /repo hermano Pub: se midió dentro del árbol armado/, r.salida);
   assert.doesNotMatch(r.salida, /repo hermano Pub: la story declara ahí/, r.salida);
+});
+
+// El árbol armado vive en la carpeta temporal: las HOME vacías de las portables van bajo `.advisors/` del privado de
+// verdad, fuera de ella, porque hay suites que tratan la carpeta temporal como «de prueba».
+// 🔴 mutación: no declarar TYCON_SUITE_HOMES_ROOT → la HOME queda bajo el árbol, dentro de la carpeta temporal.
+test('PrivateTree_SuiteHomes_OutsideTheTree', () => {
+  const lab = laboratorio({ modificar: ['Pub/scripts/lib/pub-lib.js'] });
+  const anota = path.join(lab.raiz, 'casa.txt');
+  fs.appendFileSync(path.join(lab.pub, 'scripts/lib/pub-lib.js'), '// tocado\n');
+  fs.appendFileSync(path.join(lab.pub, 'scripts/tests/pub-lib.test.js'), `require('fs').writeFileSync(${JSON.stringify(anota)}, process.env.HOME);\n`);
+  const r = portón(lab);
+  assert.strictEqual(r.code, 0, r.salida);
+  const casa = fs.readFileSync(anota, 'utf8');
+  assert.ok(casa.startsWith(path.join(lab.priv, '.advisors', 'suite-homes-')), `la HOME bajo .advisors del privado: ${casa}`);
+  assert.ok(!casa.startsWith(path.join(lab.raiz, 'tmp')), `y no bajo el árbol armado: ${casa}`);
 });
 
 // ── Sin efectos ────────────────────────────────────────────────────────────────────────────────────────────────

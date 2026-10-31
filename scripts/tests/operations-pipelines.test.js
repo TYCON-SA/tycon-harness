@@ -1177,7 +1177,7 @@ test('Buzon_DesdeOperations_SinLlave: la ubicación de operations.json y el tena
     for (const [caso, ops] of [['declarado', conBuzon], ['sin declarar', sinBuzon]]) {
       const j = jobDir({ 'operations.json': ops, 'scripts/metrics/download-runs.js': fakeDownload, 'scripts/nightly/runs-review/runs-review.js': fakeReview });
       fs.writeFileSync(path.join(j.bin, 'az'), '#!/usr/bin/env bash\n[ "$1 $2" = "account show" ] && { echo "00000000-1111-2222-3333-444444444444"; exit 0; }\nexit 1\n', { mode: 0o755 });
-      const body = azureCliScript(model, name, { 'Agent.TempDirectory': j.tmp, 'Build.SourcesDirectory': j.job });
+      const body = azureCliScript(model, name, { 'Agent.TempDirectory': j.tmp, 'Build.SourcesDirectory': j.job, 'System.CollectionUri': 'https://dev.azure.com/acme/' });
       const out = path.join(j.tmp, 'visto.json');
       const r = spawnSync('bash', ['-c', body], { cwd: j.job, env: cleanEnv({ LAB_OUT: out, PATH: `${j.bin}${path.delimiter}${process.env.PATH}` }), encoding: 'utf8' });
       const all = `${r.stdout}${r.stderr}`;
@@ -1196,7 +1196,20 @@ test('Buzon_DesdeOperations_SinLlave: la ubicación de operations.json y el tena
   }
 });
 
-test('Modelos_SinEfectos_PublicanLoQueGuardarian: con efectos false, cada modelo publica ensayo-datos con las rutas de su guardado', () => {
+test('Buzon_ConLaOrganizacionDeLaCorrida: sin perfil en el árbol, la bajada y la revisión reciben la organización de la corrida', () => {
+  const fake = 'require("fs").writeFileSync(process.env.LAB_OUT, String(process.env.TYCON_ADO_ORG || "SIN")); process.stdout.write(JSON.stringify({ completo: true }));\n';
+  const ops = '{"version":1,"owners":{"default":"lider@acme.example"},"site":{"mailbox":{"provider":"azure-blob","account":"acmeruns","container":"runs"}}}\n';
+  for (const [model, name] of [['team-dashboard.yml', 'Bajar del buzón los registros y los volcados (sin conversaciones)'], ['runs-review.yml', 'Revisar las ejecuciones del buzón']]) {
+    const j = jobDir({ 'operations.json': ops, 'scripts/metrics/download-runs.js': fake, 'scripts/nightly/runs-review/runs-review.js': fake });
+    fs.writeFileSync(path.join(j.bin, 'az'), '#!/usr/bin/env bash\n[ "$1 $2" = "account show" ] && { echo "00000000-1111-2222-3333-444444444444"; exit 0; }\nexit 1\n', { mode: 0o755 });
+    const body = azureCliScript(model, name, { 'Agent.TempDirectory': j.tmp, 'Build.SourcesDirectory': j.job, 'System.CollectionUri': 'https://dev.azure.com/acme/' });
+    const out = path.join(j.tmp, 'org.txt');
+    const r = spawnSync('bash', ['-c', body], { cwd: j.job, env: cleanEnv({ LAB_OUT: out, PATH: `${j.bin}${path.delimiter}${process.env.PATH}` }), encoding: 'utf8' });
+    assert.strictEqual(fs.readFileSync(out, 'utf8'), 'https://dev.azure.com/acme/', `${model}: la organización de la corrida\n${r.stdout}${r.stderr}`);
+  }
+});
+
+test('Modelos_SinEfectos_PublicanLoQueGuardarian:con efectos false, cada modelo publica ensayo-datos con las rutas de su guardado', () => {
   for (const m of ALL_MODELS) {
     const y = read(m);
     const saves = [...y.matchAll(/push-nightly-data\.js save[\s\S]*?\s--\s+([^\n]+)/g)].map((g) => g[1].trim());

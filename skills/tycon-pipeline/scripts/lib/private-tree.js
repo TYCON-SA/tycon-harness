@@ -14,7 +14,8 @@
  *      rama de la story si existe (el criterio de lib/companion-repos.js), que traiga `version.json` y `scripts/`. Si la
  *      carpeta encontrada no está en la rama de la story (la que está al lado: el main local de un clon que nadie pone al
  *      día, la rama de otra sesión), debajo va la versión del servidor, su `origin/main`, sin su disco, y la story no
- *      tocó nada del público (`source: server`). Sin `origin/main` en esa carpeta, lo que hay (`source: disk`).
+ *      tocó nada del público (`source: server`). Si la story declara archivos del público, la versión del servidor no
+ *      trae esos cambios: no se arma y sale 4. Sin `origin/main` en esa carpeta, lo que hay (`source: disk`).
  *   2. Cada repo se clona ahí (`git clone --shared`, con su historia: varias suites comparan contra commits viejos) en su
  *      HEAD, y lo que su disco tiene sin commitear (cambiado, nuevo sin ignorar, borrado) se copia encima y queda en un
  *      commit local: el portón corre antes del commit, y desde HEAD mediría lo viejo. Nunca se superpone sobre el
@@ -105,6 +106,26 @@ function corridaCruzada(repo, story) {
   return `bash ${comillas(path.join(__dirname, '..', 'test-gate.sh'))} ${comillas(publico || '<clon o worktree del público>')} ${comillas(story || '<story del privado>')}`;
 }
 
+/**
+ * Si la story declara algún archivo del público `base`: uno que existe en esa carpeta, o uno nuevo cuya ruta nombra el
+ * público (`<nombre>/…` o `../<nombre>/…`).
+ */
+function declaraDelPublico(repo, story, base) {
+  const { resolveDeclared, label, real } = require('./companion-repos.js');
+  const { parseDeclaredFiles } = require('./test-scope.js');
+  const raiz = real(base);
+  const nombre = label(base);
+  const dentro = (p) => { const rel = path.relative(raiz, p); return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel); };
+  for (const decl of parseDeclaredFiles(fs.readFileSync(story, 'utf8'))) {
+    const r = resolveDeclared(decl, repo, [base]);
+    if (r.where === 'companion' && r.root === raiz) return true;
+    if (r.where === 'repo') continue;
+    const d = String(decl).replace(/\\/g, '/').replace(/^\.\//, '');
+    if (d.startsWith(`${nombre}/`) || dentro(path.resolve(repo, d))) return true;
+  }
+  return false;
+}
+
 /** El público que va debajo: el primer hermano declarado (en la rama de la story) que trae version.json y scripts/. */
 function findPublic(repo, story) {
   const { companionRoots } = require('./companion-repos.js');
@@ -133,6 +154,10 @@ function findPublic(repo, story) {
     servidor = leer();
   }
   if (servidor) {
+    // La versión del servidor no trae lo que la story cambia en el público: medirla daría un verde que no dice nada.
+    if (story && declaraDelPublico(repo, story, base)) {
+      throw new NoPublic(`la story declara archivos del público y ${base} está en ${rama || 'un commit suelto'}, que no es la rama del privado ni nombra la story: la versión del servidor no trae esos cambios, y no corro nada. Poné esa carpeta (o un worktree del público) en la rama de la story, o corré el portón sobre el público con esta story: ${corridaCruzada(repo, story)}`);
+    }
     let fecha = null;
     try { fecha = git(base, ['log', '-1', '--format=%cI', servidor]).trim() || null; } catch (_e) { fecha = null; }
     return { root: base, branch: rama, commit: servidor, date: fecha, source: 'server' };

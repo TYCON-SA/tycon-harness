@@ -1,0 +1,43 @@
+{
+ "__doc": "El portón de pruebas con una story que no se encuentra. Lanzado desde otra carpeta con la ruta relativa de la story, el portón no la encontraba y seguía como si no hubiera story: sin ella no buscaba la rama del repo hermano, medía la versión del servidor y la constancia podía salir verde sin probar lo que la story cambia. Ahora frena (exit 2), dice desde qué carpeta la buscó y pide la ruta absoluta.",
+ "hooks": [
+  {
+   "hook": "test-gate.sh (la story del argumento)",
+   "script": "${FIXTURE}/correr.sh",
+   "controles": [
+    "${SKILLS}/skills/tycon-pipeline/scripts/test-gate.sh"
+   ],
+   "__controles": "El caso corre el portón desde el setup y el guion del caso devuelve su salida y su código: el auditor de vacuidad lo neutraliza.",
+   "event": "PreToolUse",
+   "matcher": "Bash",
+   "cases": [
+    {
+     "id": "porton-story-que-no-existe-frena",
+     "type": "must-block",
+     "_por_que": "sin la story el portón no sabe qué tocó ni qué rama del hermano medir: seguir daría un verde que no dice nada de ella.",
+     "setup": [
+      "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base",
+      "bash ${SKILLS}/skills/tycon-pipeline/scripts/test-gate.sh . specs/no-existe.md > porton.out 2> porton.err; echo $? > porton.rc"
+     ],
+     "stdin": {
+      "session_id": "bench-porton",
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "echo"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "no encontré la story «specs/no-existe\\.md»",
+       "ruta absoluta"
+      ]
+     },
+     "files": {
+      "correr.sh": "#!/bin/sh\ncat porton.err >&2\nexit \"$(cat porton.rc)\"\n"
+     }
+    }
+   ]
+  }
+ ]
+}
