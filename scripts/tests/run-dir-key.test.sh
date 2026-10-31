@@ -285,7 +285,7 @@ else no "T10 ConstanciaDeGatesLog_LlevaLaRuta — la línea de gates.log trae: $
 M11="$(mundo m11)"; S11="$M11/.specs/a/stories/1-1-x.md"; story "$S11" 1.1; story "$M11/.specs/b/stories/1-1-y.md" 1.1
 corrida "$M11" "a__1.1-20261006100000"; corrida "$M11" "b__1.1-20261006110000"
 printf '{"sessionId":"s11","storyId":"1.1","storyPath":"%s","repoPath":"%s","stepsCompleted":[0],"checks":{}}\n' "$S11" "$M11" > "$HOME/.claude/.tycon-pipeline/active/s11.json"
-(cd "$M11" && CLAUDE_CODE_SESSION_ID=s11 node "$SK/marker.js" clear >/dev/null 2>&1)
+(cd "$M11" && CLAUDE_CODE_SESSION_ID=s11 node "$SK/marker.js" clear --discard >/dev/null 2>&1)
 t11a="$(ls "$M11/.advisors/pipeline-runs/a__1.1-20261006100000" | grep -c '^timing-dump-')"
 t11b="$(ls "$M11/.advisors/pipeline-runs/b__1.1-20261006110000" | grep -c '^timing-dump-')"
 rm -f "$HOME/.claude/.tycon-pipeline/active/s11.json"

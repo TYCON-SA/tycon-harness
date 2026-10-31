@@ -1568,6 +1568,19 @@
     "on-bash-write-gate.js::bloquea-sed-sobre-un-borrador-sin-validador": true,
     "on-bash-write-gate.js::rojo-el-mismo-sed-pasa-con-solo-este-freno-apagado": true,
     "on-stop-dod-gate.js::cierre-insiste-con-borrador-sin-validar": true,
-    "on-stop-dod-gate.js::rojo-el-mismo-cierre-pasa-con-solo-este-freno-apagado": true
+    "on-stop-dod-gate.js::rojo-el-mismo-cierre-pasa-con-solo-este-freno-apagado": true,
+    "on-pre-commit.js::freno-de-guardar-commit-de-la-corrida-sin-ok-frena": true,
+    "on-pre-commit.js::freno-de-guardar-pedido-de-la-corrida-sin-ok-frena": true,
+    "on-pre-commit.js::freno-de-guardar-gemelo-leer-en-la-corrida-pasa": true,
+    "on-pre-commit.js::freno-de-guardar-push-de-la-corrida-sin-ok-frena": true,
+    "on-pre-commit.js::freno-de-guardar-merge-del-pedido-sin-ok-frena": true,
+    "on-pre-commit.js::freno-de-guardar-pedido-de-azure-sin-ok-frena": true,
+    "on-pre-commit.js::freno-de-guardar-commit-desde-otra-carpeta-frena": true,
+    "on-pre-commit.js::freno-de-guardar-commit-dentro-de-otro-shell-frena": true,
+    "on-pre-commit.js::freno-de-guardar-comando-desde-una-variable-frena": true,
+    "on-pre-commit.js::freno-de-guardar-shell-que-lee-de-un-tubo-frena": true,
+    "on-pre-commit.js::freno-de-guardar-el-texto-no-repite-el-comando": true,
+    "on-pre-commit.js::freno-de-guardar-cerrada-sin-ok-frena-fuera-de-la-corrida": true,
+    "on-pre-commit.js::freno-de-guardar-gemelo-fuera-de-una-corrida-pasa": true
   }
 }

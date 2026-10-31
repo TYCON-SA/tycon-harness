@@ -1262,6 +1262,29 @@ test('T20 RunSuites_PortableSuite_CiEnvironment — el resto del ambiente de la 
   assert.ok(fs.existsSync(path.join(f.root, 'amb.json')), 'y la suite corrió igual');
 });
 
+// El árbol armado del privado vive en la carpeta temporal: las HOME bajo su `.advisors/` quedarían en ella, y hay suites
+// que tratan esa carpeta como «de prueba» (un destino «fuera de lo temporal» bajo la HOME dejaría de serlo). El portón
+// declara otra raíz para las HOME, fuera de la carpeta temporal; sin declararla, van bajo el repo como siempre.
+// La variable es del portón: la suite no la hereda, o un corredor que ella misma lance pondría sus HOME en la raíz ajena.
+// 🔴 mutación: ignorar TYCON_SUITE_HOMES_ROOT → la HOME de la suite queda bajo `.advisors/` del árbol.
+// 🔴 mutación: sacarla de DEL_PORTON → la suite la ve.
+test('T20e RunSuites_PortableSuite_HomesRootDeclared — la HOME vacía va bajo la raíz que declara el portón, y se borra', () => {
+  const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/casa.test.js', requiere: [] }] });
+  f.escribir('arnes', 'tests/casa.test.js', `const fs=require('fs');fs.writeFileSync(${JSON.stringify(path.join(f.root, 'casa.txt'))},process.env.HOME);fs.writeFileSync(${JSON.stringify(path.join(f.root, 'heredada.txt'))},String('TYCON_SUITE_HOMES_ROOT' in process.env));`);
+  const raiz = fs.mkdtempSync(path.join(os.tmpdir(), 'raiz-casas-'));
+  const r = runWith(f, { env: { TYCON_SUITE_HOMES_ROOT: raiz } });
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  assert.strictEqual(fs.readFileSync(path.join(f.root, 'heredada.txt'), 'utf8'), 'false', 'la suite no hereda la raíz del portón');
+  const casa = fs.readFileSync(path.join(f.root, 'casa.txt'), 'utf8');
+  assert.ok(casa.startsWith(path.join(raiz, 'suite-homes-')), `la HOME bajo la raíz declarada: ${casa}`);
+  assert.ok(!casa.startsWith(path.resolve(f.repo)), 'y no bajo el árbol');
+  assert.deepStrictEqual(fs.readdirSync(raiz), [], 'la carpeta de la corrida se borra al terminar');
+  // sin declararla, bajo el repo
+  const r2 = runWith(f);
+  assert.strictEqual(r2.status, 0, r2.stdout + r2.stderr);
+  assert.ok(fs.readFileSync(path.join(f.root, 'casa.txt'), 'utf8').startsWith(path.join(path.resolve(f.repo), '.advisors', 'suite-homes-')), 'sin raíz declarada, bajo .advisors del repo');
+});
+
 // La carpeta temporal de una portable queda fuera de todo repo, como en la CI: hay suites que arman ahí un repo de
 // juguete o suponen estar «fuera de un repo git». Dentro del árbol que se mide, git contesta la raíz de ese árbol.
 // 🔴 mutación: la carpeta temporal dentro de la HOME vacía (bajo `.advisors/` del repo) → git la encuentra dentro del repo.

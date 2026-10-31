@@ -114,7 +114,7 @@ test('T11 · marker.js clear deja <volcado>.cambio.json.gz y anota sólo el resu
   git(r, ['commit', '-qam', 'feat: la corrida']);
   fs.writeFileSync(path.join(r, 'b.js'), 'PARCHE_SEMBRADO_SIN_COMMITEAR\n');
 
-  const c = correrMarker(['clear'], raiz, GUIAS_REALES);
+  const c = correrMarker(['clear', '--discard'], raiz, GUIAS_REALES);
   assert.strictEqual(c.status, 0, `el clear no debe fallar: ${c.stderr}`);
   const vs = volcados(raiz);
   assert.strictEqual(vs.length, 1, 'el volcado existe');
@@ -158,7 +158,7 @@ for (const caso of CASOS) {
     if (caso.otro) fs.writeFileSync(path.join(raiz, 'guides', 'scripts', 'metrics', caso.otro.nombre), caso.otro.guion);
     marcarCorrida(raiz, r);
     const t0 = Date.now();
-    const c = correrMarker(['clear'], raiz, path.join(raiz, 'guides'), caso.env);
+    const c = correrMarker(['clear', '--discard'], raiz, path.join(raiz, 'guides'), caso.env);
     assert.strictEqual(c.status, 0, `el clear no debe fallar: ${c.stderr}`);
     assert.ok(Date.now() - t0 < 15000, 'el cierre no se cuelga esperando al guion');
     const vs = volcados(raiz);
@@ -213,7 +213,7 @@ function closeWith(script, text, env) {
   const r = repo(raiz);
   fs.writeFileSync(path.join(raiz, 'guides', 'scripts', 'metrics', script), text);
   marcarCorrida(raiz, r);
-  const c = correrMarker(['clear'], raiz, path.join(raiz, 'guides'), env);
+  const c = correrMarker(['clear', '--discard'], raiz, path.join(raiz, 'guides'), env);
   assert.strictEqual(c.status, 0, `el clear no debe fallar: ${c.stderr}`);
   const vs = volcados(raiz);
   assert.strictEqual(vs.length, 1, 'el volcado TIENE que existir');
@@ -299,7 +299,7 @@ test('T17 MarkerClear_Worktree_DumpCarriesRealRepoWithoutCredentials', () => {
   const wt = path.join(raiz, 'repo-wt-127');
   git(r, ['worktree', 'add', '-q', '-b', 'tanda', wt]);
   marcarCorrida(raiz, wt);
-  const c = correrMarker(['clear'], raiz, path.join(raiz, 'guides'));
+  const c = correrMarker(['clear', '--discard'], raiz, path.join(raiz, 'guides'));
   assert.strictEqual(c.status, 0, `el clear no debe fallar: ${c.stderr}`);
   const vs = volcados(raiz);
   assert.strictEqual(vs.length, 1, 'el volcado existe');

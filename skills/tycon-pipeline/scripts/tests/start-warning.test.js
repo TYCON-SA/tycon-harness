@@ -93,7 +93,7 @@ test('T13 StartWarning_HorasYAdo_ConMotivo @story-8.93 @ac-7 — cada parte caí
   assert.ok(!(j.start_parts || []).length, 'las partes avisadas ya no se piden');
   assert.strictEqual(j.next_step, 'validate-story');
   // el volcado de la ejecución lo trae
-  assert.strictEqual(E.correr('marker.js', ['clear'], sid).status, 0);
+  assert.strictEqual(E.correr('marker.js', ['clear', '--discard'], sid).status, 0);
   const hist = path.join(E.estado(), 'timing-history');
   const v = fs.readdirSync(hist).filter((f) => /^9\.9-[\dT-]+\.json$/.test(f));
   assert.strictEqual(v.length, 1, v.join(', '));

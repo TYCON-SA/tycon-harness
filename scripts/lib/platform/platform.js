@@ -317,6 +317,20 @@ async function conformance(name, opts = {}) {
 }
 
 /**
+ * Los comandos crudos que declaran los conectores de plataforma en `rawCommands`: `[{ name, words }]`, con las palabras
+ * del comando (`['gh', 'pr', 'create']`). Lanza si alguna integración no se puede leer: sin ella no se sabe qué comandos
+ * declara.
+ */
+function rawCommands(opts = {}) {
+  const leidas = INT.listManifests({ env: opts.env || process.env });
+  if (leidas.problems.length) {
+    throw new Error(`no pude leer ${leidas.problems.map((p) => `${p.name} (${p.reasons.join('; ')})`).join(' · ')}`);
+  }
+  return leidas.manifests.filter((m) => m.kind === 'platform')
+    .flatMap((m) => (m.rawCommands || []).map((c) => ({ name: m.name, words: c.trim().split(/\s+/) })));
+}
+
+/**
  * Qué conector reconoce un comando crudo de su plataforma (el `gh pr create` de GitHub, el pedido de Azure DevOps): el nombre, o null si
  * ninguno lo declara en `rawCommands`. Mira el binario de cada tramo del comando (después de `env` y de las variables) y
  * sus palabras, salteando las opciones; un texto entre comillas no es un comando.
@@ -325,12 +339,7 @@ async function conformance(name, opts = {}) {
  */
 function rawCommandOf(cmd, opts = {}) {
   if (typeof cmd !== 'string' || !cmd.trim()) return null;
-  const leidas = INT.listManifests({ env: opts.env || process.env });
-  if (leidas.problems.length) {
-    throw new Error(`no pude leer ${leidas.problems.map((p) => `${p.name} (${p.reasons.join('; ')})`).join(' · ')}`);
-  }
-  const dichos = leidas.manifests.filter((m) => m.kind === 'platform')
-    .flatMap((m) => (m.rawCommands || []).map((c) => ({ name: m.name, words: c.trim().split(/\s+/) })));
+  const dichos = rawCommands(opts);
   const hallados = new Set();
   for (const seg of require('../az-pr.js').segmentos(cmd)) {
     let i = 0;
@@ -406,4 +415,4 @@ function main(argv) {
 
 if (require.main === module) main(process.argv.slice(2)).then((code) => { process.exitCode = code; });
 
-module.exports = { choose, run, call, conformance, connector, identityFromRemote, limpiar, summary, rawCommandOf, main, OPERATIONS, REASONS };
+module.exports = { choose, run, call, conformance, connector, identityFromRemote, limpiar, summary, rawCommands, rawCommandOf, main, OPERATIONS, REASONS };

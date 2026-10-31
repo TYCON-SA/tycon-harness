@@ -30,7 +30,7 @@ const TEST_GATE = path.join(SCRIPTS, 'test-gate.sh');
 const DEL_ENTORNO = ['NODE_TEST_CONTEXT', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'DOD_BYPASS',
   'TYCON_TEST_SCOPE', 'TYCON_TEST_GATE', 'TYCON_TEST_GATE_COMPANION', 'TYCON_TEST_GATE_PART', 'TYCON_EVIDENCE_DIR',
   'TYCON_EVIDENCE_KEY', 'TYCON_EVIDENCE_KEY_FAILED', 'TYCON_COVERAGE_BASE', 'STOP_AUTONOMY', 'TYCON_SKILLS_DIR',
-  'HARNESS_TEAM_DIR', 'TYCON_PRIVATE_TREE_TMP', 'TF_BUILD', 'TYCON_HOME'];
+  'HARNESS_TEAM_DIR', 'TYCON_PRIVATE_TREE_TMP', 'TYCON_SUITE_HOMES_ROOT', 'TF_BUILD', 'TYCON_HOME'];
 
 function entorno(home, extra) {
   const env = { ...process.env };
@@ -466,6 +466,21 @@ test('PrivateTree_OnlyTouchedSuitesRun @story-7.36 @ac-13', () => {
   // el público que fue debajo no se vuelve a correr como repo hermano: ya se midió en el árbol
   assert.match(r.salida, /repo hermano Pub: se midió dentro del árbol armado/, r.salida);
   assert.doesNotMatch(r.salida, /repo hermano Pub: la story declara ahí/, r.salida);
+});
+
+// El árbol armado vive en la carpeta temporal: las HOME vacías de las portables van bajo `.advisors/` del privado de
+// verdad, fuera de ella, porque hay suites que tratan la carpeta temporal como «de prueba».
+// 🔴 mutación: no declarar TYCON_SUITE_HOMES_ROOT → la HOME queda bajo el árbol, dentro de la carpeta temporal.
+test('PrivateTree_SuiteHomes_OutsideTheTree', () => {
+  const lab = laboratorio({ modificar: ['Pub/scripts/lib/pub-lib.js'] });
+  const anota = path.join(lab.raiz, 'casa.txt');
+  fs.appendFileSync(path.join(lab.pub, 'scripts/lib/pub-lib.js'), '// tocado\n');
+  fs.appendFileSync(path.join(lab.pub, 'scripts/tests/pub-lib.test.js'), `require('fs').writeFileSync(${JSON.stringify(anota)}, process.env.HOME);\n`);
+  const r = portón(lab);
+  assert.strictEqual(r.code, 0, r.salida);
+  const casa = fs.readFileSync(anota, 'utf8');
+  assert.ok(casa.startsWith(path.join(lab.priv, '.advisors', 'suite-homes-')), `la HOME bajo .advisors del privado: ${casa}`);
+  assert.ok(!casa.startsWith(path.join(lab.raiz, 'tmp')), `y no bajo el árbol armado: ${casa}`);
 });
 
 // ── Sin efectos ────────────────────────────────────────────────────────────────────────────────────────────────

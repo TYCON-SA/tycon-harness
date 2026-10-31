@@ -852,6 +852,9 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
     else
       echo "[test-gate] árbol armado del privado adelgazado — público debajo: $_TG_PUB_ROOT (rama ${_tg_rama:-suelta}, commit $(_tg_tree_field base.commit | cut -c1-12)$([[ "$(_tg_tree_field base.uncommitted)" == "true" ]] && echo ', con cambios sin commit')) · $_tg_capa · armado en $(_tg_tree_field seconds) s"
     fi
+    # el árbol vive en la carpeta temporal: las HOME vacías de las portables van bajo `.advisors/` del privado de verdad
+    # (git la ignora), fuera de ella, porque hay suites que tratan esa carpeta como «de prueba»
+    export TYCON_SUITE_HOMES_ROOT="${TYCON_SUITE_HOMES_ROOT:-$REPO_RUN/.advisors}"
     REPO_RUN="$(_tg_tree_field tree)"
     TG_TREE_ARGS=(--skills "$(_tg_tree_field skills)" --only-touched)
     echo "[test-gate] en la máquina corren sólo las suites que leen lo tocado; las otras quedan diferidas (las corre la CI del pedido y el nocturno)"

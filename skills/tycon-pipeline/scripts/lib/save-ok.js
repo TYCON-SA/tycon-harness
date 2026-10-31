@@ -33,10 +33,16 @@ const esEvidencia = (rel) => rel.startsWith(`${EVIDENCIA}/`) && /\.(json|jsonl|m
 // sólo en sus datos y sus informes. Nunca una carpeta oculta, un enlace, lo de la lista sensible ni la configuración de
 // una herramienta (`package.json`, `tsconfig.json`): ésos cargan o deciden algo, y cambiarlos pide otro ok
 const PAPELEO_DE_LA_HUELLA = ['specs', 'tasks'];
+// los trozos de memoria que exporta el cierre antes del commit, después del ok: sólo los comprimidos, sin subcarpetas,
+// y el índice que los lista (el exportador lo reescribe con cada trozo)
+const MEMORIA = '.engram/chunks';
+const INDICE_DE_MEMORIA = '.engram/manifest.json';
+const esTrozoDeMemoria = (rel) => rel === INDICE_DE_MEMORIA || new RegExp(`^${MEMORIA.replace('.', '\\.')}/[^/]+\\.jsonl\\.gz$`).test(rel);
 const CONFIGURACION = /^(package(-lock)?|npm-shrinkwrap|tsconfig[\w.-]*|jsconfig)\.json$/;
 function esPapeleoDeLaHuella(rel, modo) {
   if (modo === '120000') return false;
   if (rel.startsWith(`${EVIDENCIA}/`)) return /\.(json|jsonl|md)$/.test(rel);
+  if (rel.startsWith(`${MEMORIA}/`) || rel === INDICE_DE_MEMORIA) return esTrozoDeMemoria(rel);
   if (!PAPELEO_DE_LA_HUELLA.some((d) => rel.startsWith(`${d}/`)) || !/\.(json|jsonl|md)$/.test(rel)) return false;
   if (rel.split('/').some((p) => p.startsWith('.')) || CONFIGURACION.test(path.posix.basename(rel))) return false;
   const pats = catalogo().SENSITIVE.map(patron);
@@ -163,7 +169,7 @@ function huella(repo) {
       const r = git(repo, p, env);
       if (!r.ok) return falla(p[0], r);
     }
-    const ls = git(repo, ['ls-files', '-s', '-z', '--', EVIDENCIA, ...PAPELEO_DE_LA_HUELLA], env);
+    const ls = git(repo, ['ls-files', '-s', '-z', '--', EVIDENCIA, MEMORIA, INDICE_DE_MEMORIA, ...PAPELEO_DE_LA_HUELLA], env);
     if (!ls.ok) return falla('ls-files', ls);
     // cada entrada: «<modo> <blob> <etapa>\t<ruta>»
     const fuera = ls.crudo.split('\0').filter(Boolean).map((e) => { const t = e.indexOf('\t'); return [e.slice(0, 6), e.slice(t + 1)]; })
@@ -445,4 +451,4 @@ function constancia({ marker, via, por = null, previo, ahora }) {
   };
 }
 
-module.exports = { FIRMA: 'save', raizDe, rutasDeclaradas, reposDeLaCorrida, exencionesDeLaCorrida, requiereSensible, huella, huellas, vigente, sensibles, limpia, lineaDelAviso, avisar, antesDeFirmar, constancia };
+module.exports = { FIRMA: 'save', raizDe, tieneCambios, esPapeleoDeLaHuella, rutasDeclaradas, reposDeLaCorrida, exencionesDeLaCorrida, requiereSensible, huella, huellas, vigente, sensibles, limpia, lineaDelAviso, avisar, antesDeFirmar, constancia };
