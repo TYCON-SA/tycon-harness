@@ -1,7 +1,7 @@
 {
   "agent": "tycon-dod-runtime-checker",
   "file": "agents/tycon-dod-runtime-checker.md",
-  "hash": "7634f015009e7a06ebac8a2cfa916f87d5086d61",
+  "hash": "56fd12603f6aa2ec3fd2541631660d4da5c065ff",
   "passed": 12,
   "total": 12,
   "score": 1,

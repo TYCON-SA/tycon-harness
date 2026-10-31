@@ -85,19 +85,21 @@ Ningún otro advisor tiene en su scope verificar estos gates. Resultado: una sto
 3. Parse `azure-pipelines.yml` trigger.branches.include (o GH equivalent).
 4. **Si branch NO está en triggers** → WAIVE + log: "DODRT-C2 waived: branch '<branch>' not in CI triggers '<trigger-branches>'. Re-run post-merge to '<target-branch>'."
 5. **Si branch SÍ está en triggers** + SHA pusheado:
-   - Buscar evidencia de CI verde:
-     - **Azure DevOps**: `az pipelines runs list --branch <branch> --query "[?triggerInfo.\"ci.sourceSha\"=='<sha>'].{id:id, status:status, result:result}" --output tsv`
-     - **GitHub Actions**: `gh run list --commit <sha> --json status,conclusion --jq '.[].conclusion'`
-   - Si retorna `completed succeeded` (ADO) o `success` (GH) → OK.
-   - Si retorna `inProgress` o `running` → WARNING (esperar a que termine).
-   - Si retorna `failed` o `canceled` → CRITICAL (fix antes de transicionar).
-   - Si no encuentra run → CRITICAL (puede que el trigger no se haya disparado — hay pipelines que no disparan con merge commits sin `.cs`; si el proyecto tiene esa regla, está en `~/.claude/CLAUDE.md`).
+   - Buscar evidencia de CI verde con la capa de plataforma, que sabe en qué plataforma vive el repo y cómo preguntarle:
+     `node ~/.claude/tycon-harness/scripts/lib/platform/platform.js ci read --repo <identidad> --args '{"commit":"<sha>","branch":"<rama>"}'`
+     La `<identidad>` es el JSON `{"platform","org","project","repo"}` del `origin` del repo (`project` sólo donde la plataforma lo usa).
+   - La respuesta es `{"ok":true,"value":{"state":…}}` o `{"ok":false,"reason":…}`. El estado (`succeeded`, `running`, `failed`, `none`) se lee como `verde`, `corriendo`, `rojo` o `ninguna`; otro estado es «no medido»:
+     - `verde` (la corrida de ese commit terminó bien) → OK.
+     - `corriendo` (todavía no terminó) → WARNING (esperar a que termine).
+     - `rojo` (falló o la cancelaron) → CRITICAL (fix antes de transicionar).
+     - `ninguna` (no hay corrida de ese commit) → CRITICAL (puede que el trigger no se haya disparado — hay pipelines que no disparan con merge commits sin `.cs`; si el proyecto tiene esa regla, está en `~/.claude/CLAUDE.md`).
+   - Un «no» de la capa (`no_soportado`, `sin_plataforma`, `sin_credencial`, `red`, `no_medido`) → CRITICAL «no medido: <motivo>». No saber si el CI está verde no es verde.
 
 **Output ejemplo**:
 
 ```
 [DODRT-C2] Commit <sha> pusheado a dev pero CI run no verificado.
-  Azure Pipelines: az pipelines runs list --branch dev --query "[?triggerInfo.\"ci.sourceSha\"=='<sha>']" → vacío.
+  Capa de plataforma: ci read del commit <sha> en la rama dev → verdict `ninguna`.
   Probable causa: trigger no disparado (review CLAUDE.md regla FRESNO para repos similares).
   Fix: (a) verificar `azure-pipelines.yml` triggers — debe matchear el path de los files cambiados; (b) si correspondiera, agregar commit trivial sobre `.cs` (mismo patrón FRESNO) para forzar trigger; (c) re-correr este advisor cuando el CI run termine.
 ```
@@ -362,7 +364,7 @@ correr; esta regla juzga si el texto y la salida sostienen el AC.
 1. Identificar story + commit SHA + branch.
 2. Listar `modified_files` por el diff entre `commit_sha~1..commit_sha`.
 3. **DODRT-C1**: identificar endpoints/features nuevos del diff. Cross-check con `.advisors/pipeline-runs/<story>/smoke-check.md` o equivalente.
-4. **DODRT-C2**: chequear que el SHA está pusheado + verificar CI run via `az pipelines runs list` o `gh run list`.
+4. **DODRT-C2**: chequear que el SHA está pusheado + verificar la corrida del CI con `platform.js ci read` (la capa de plataforma).
 5. **DODRT-C3**: grep patterns transaccionales en files modificados. Para cada match, buscar test de rollback en tests del feature.
 6. **DODRT-C4**: leer frontmatter `pipelines:` block. Por cada E2E name en `tests_done` listas, localizar el spec en `tests/e2e/*.spec.ts` y aplicar reglas de `tycon-e2e-realness-checker` (REAL-C1..C3). Si algún spec falla → emit DODRT-C4.
 7. **DODRT-C5**: si el diff cablea UI nueva (`.tsx` montados) Y sus E2E están diferidos (`tests_pending`), verificar que exista un smoke DRIVEN por-AC (`.advisors/dod-runtime/<story>-ui-smoke-*.md`) real (no mocks) que asserte CADA AC de UI. Cruzar lo AFIRMADO por el orquestador (narración / guía "cómo probar") vs lo EJECUTADO (sub-check anti pre-claim). Ausente / parcial / mockeado / claim-sin-ejecución → emit DODRT-C5.

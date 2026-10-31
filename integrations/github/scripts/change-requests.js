@@ -13,7 +13,9 @@
 // La rama no se borra desde acá: lo decide la regla del repo («borrar la rama al mergear»).
 //
 // Listar: los abiertos, con su autor y si la validación de su punta está corriendo (`ciRunning`: null si los controles
-// no se pudieron leer). Una lectura que no terminó es un «no», nunca una lista vacía ni una cortada.
+// no se pudieron leer). Una lectura que no terminó es un «no», nunca una lista vacía ni una cortada. Con `sourceBranch`,
+// los abiertos de esa rama (por `head.ref`, también desde un fork), y cada uno se lee entero (`GET pulls/<n>`) para saber si choca con su
+// destino: la lista no trae `mergeable`. Sin él, las llamadas de siempre.
 
 const fs = require('fs');
 const os = require('os');
@@ -194,9 +196,25 @@ function corriendo(ctx, repo, sha) {
 function listarPedidos(args, ctx) {
   const repo = repoDe(ctx);
   if (!repo) return no('rechazado', 'el repo no trae dueño/nombre de GitHub (team-repos.json)');
+  // con `sourceBranch`, los abiertos de esa rama, cada uno leído entero: la lista de GitHub no trae `mergeable`. Se
+  // filtra por `head.ref` y no con `head=<dueño>:<rama>`: con un repo transferido o una organización renombrada, el
+  // dueño del origin es el viejo y GitHub contesta ese filtro con una lista vacía, sin error (la sesión saldría libre);
+  // así entran también los abiertos desde un fork con esa rama
+  const rama = args.sourceBranch ? String(args.sourceBranch) : null;
   const l = todas(ctx, `repos/${repo}/pulls?state=open`);
   if (l.problem) return l.problem;
-  const value = l.value.filter((p) => p && p.state === 'open').map((p) => {
+  let abiertos = l.value.filter((p) => p && p.state === 'open');
+  if (rama) {
+    const enteros = [];
+    for (const p of abiertos.filter((x) => x.head && x.head.ref === rama)) {
+      const g = gh(ctx, 'GET', `repos/${repo}/pulls/${Number(p.number)}`);
+      if (g.problem) return g.problem;
+      if (!g.value || typeof g.value !== 'object') return no('no_medido', `GitHub contestó el pedido #${p.number} sin forma`);
+      enteros.push(g.value);
+    }
+    abiertos = enteros;
+  }
+  const value = abiertos.map((p) => {
     const sha = String((p.head && p.head.sha) || '');
     return {
       number: Number(p.number),
