@@ -125,6 +125,9 @@ jobs:
                 fi
                 [ -n "$TENANT" ] || echo "##vso[task.logissue type=warning]La conexión no dijo su tenant: la bajada lo va a decir"
                 export TYCON_MAILBOX_JSON="$MBX"
+                # La bajada exige también la organización de Azure DevOps (la integración «ado»). En una máquina sale del
+                # perfil; acá el árbol no trae perfil, y sin ella la bajada se da por apagada: es la de esta corrida.
+                export TYCON_ADO_ORG="$(System.CollectionUri)"
                 DAY=$(date -u +%Y-%m-%d)
                 mkdir -p "$(Agent.TempDirectory)/buzon/corridas-buzon"
                 # El ensayo (efectos: false) no crea pedidos ni comenta en ninguno. Sacarle el token no alcanza: `az` queda
