@@ -105,7 +105,8 @@ Después la pide con `coordination.js signature --kind <tema> --title <qué se f
   nada: imprime el comando para el aviso del chat.
 - **Por delegación.** Una firma que la organización deja firmar por delegación no pasa por `signature`: se da desde la
   pestaña de la coordinadora, en la ventana de permiso, con las reglas de la firma delegada. Se firma en el momento y
-  no deja pendiente.
+  no deja pendiente. Si la delegación no aplica y la pestaña de la coordinadora no pide permisos, la ventana no se abre:
+  la firma se niega con el comando de la terminal, porque en esa pestaña nadie diría Sí.
 
 Lo que pide contraseña va siempre por la terminal: la contraseña la escribe sólo el dueño. Cuando el dueño firmó,
 `coordination.js signature-done <id>` borra el archivo y el pendiente. Carpeta vacía y ningún pendiente quiere decir
@@ -132,7 +133,8 @@ sesión?». Entre ellas, marcar un control a mano (`marker.js set-check <control
 <D>`), contar los revisores sin la constancia de que corrieron (`pipeline.js check-count --repo <r> --story <s>
 --trust-ran --for-session <D>`) y aceptar un criterio imposible de probar en vivo (`marker.js runtime-waiver <historia>
 --acs <n> --for-session <D>`). La historia es la de la corrida abierta de `<D>`: si no, el guion sale sin escribir. La
-ventana se le abre al dueño en la pestaña de la coordinadora. Ninguna de las tres se delega sin nombrarla en el perfil;
+ventana se le abre al dueño en la pestaña de la coordinadora (si esa pestaña no pide permisos, se niega con el comando de
+la terminal). Ninguna de las tres se delega sin nombrarla en el perfil;
 ese pedido lo prepara la sesión y lo aprueba el dueño, aparte.
 
 ## El ok de guardar
@@ -174,6 +176,42 @@ El arreglo rápido (un cambio de código sin historia) es la firma `adhoc-lane`:
 Cortos y llanos: qué pasó, qué falta y qué decide él, en ese orden. Un aviso por tanda de trabajo, no uno por sesión.
 Lo mide el medidor de estilo que ya existe; esta receta no agrega otro.
 
+## Las reglas del día a día
+
+Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y por qué.
+
+- **Una firma del dueño va en un mensaje aparte.** Qué se firma, en una línea, y el comando; nada más. Si a los 15
+  minutos sigue pendiente, se recuerda también aparte. Por qué: una firma al final de un mensaje con otras cosas se
+  pierde, y el trabajo queda parado esperándola.
+- **Antes de pasar un comando de firma, se ensaya lo que viene después.** El commit, sus controles y el empuje se
+  prueban en seco, y la firma es lo último. Si no hay forma de ensayarlo, se dice. Por qué: un ok que vence por un
+  control que corre después hace firmar dos veces.
+- **El comando va con su carpeta.** `cd <carpeta> && …`, nunca el comando suelto, y nunca una carpeta que ya se
+  borró (un worktree mergeado). Por qué: el dueño lo corre en su terminal, que no está parada donde trabaja la sesión.
+- **La hora que se da es la del trabajo terminado.** La del trabajo entero en `main`, no la de un paso o una tanda, con
+  la condición que la sostiene (por ejemplo, las firmas a tiempo). Después se compara contra lo prometido. Por qué: la
+  hora de un paso hace creer que algo terminó cuando todavía falta.
+- **Un número de historia nunca va solo.** El número puede ir, siempre con lo que hace dicho en palabras. Por qué: el
+  número solo no le dice nada a quien no lo tiene en la cabeza.
+- **Una firma delegada se confirma por su vía.** Después de firmar, el renglón tiene que decir «delegación». Si dice otra
+  vía (por ejemplo, la ventana a nombre del dueño), se le avisa al dueño enseguida y se rehace. Por qué: una firma a
+  nombre del dueño que él no dio es una constancia falsa. Una pestaña que no pide permisos ya no firma por la ventana:
+  el arnés lo niega.
+- **Lo pesado, de a uno, y con turno.** La suite completa, el banco de controles, el examen de revisores y el portón
+  corren de a uno en la máquina, y el turno se le pide a la coordinadora. La historia que el dueño marcó como prioridad
+  pasa adelante en la fila. Por qué: dos a la vez saturan la máquina y los dos tardan más.
+- **Antes de aprobar un pedido ajeno, se mira el diff.** Y un ok que cubre archivos sensibles que nadie revisó no se da:
+  primero se separan. Por qué: aprobar sin mirar es firmar lo que no se vio.
+- **Una sesión «libre» puede estar esperando algo.** Cuando corre algo sin tocar archivos, anota qué hace con
+  `marker.js doing`. Por qué: sin eso, `/wip` la muestra libre y se le da otro trabajo encima.
+- **Un pedido «en la cola» puede haberse caído.** Si pasó el tiempo esperado, se mira si sigue encolado, si tiene un
+  choque o si su compilación espera un agente. No se supone. Por qué: un pedido que salió de la cola no entra solo.
+- **Una decisión del dueño va con su contexto.** La recomendación, qué gana y qué cuesta cada opción, y la pregunta.
+  Lo de rutina lo decide la coordinadora y lo informa en una línea. Por qué: el dueño decide sin tener que ir a buscar
+  nada.
+- **Lo que ve el dueño va sin jerga.** El estado se cuenta como qué está hecho, qué falta y qué decide él. Por qué: el
+  dueño lee para decidir, no para seguir el trabajo por dentro.
+
 ## Qué mide cada regla
 
 | Regla | Mide | Por qué |
@@ -189,3 +227,15 @@ Lo mide el medidor de estilo que ya existe; esta receta no agrega otro.
 | Pedidos en orden | nadie | Ningún dato de la máquina dice qué pedido es par de cuál sin preguntarle a la red en cada turno. |
 | Avisos cortos y llanos | aviso | El medidor de estilo que ya existe. |
 | Codex no coordina | aviso | `/coordinate` lo dice en Codex y no sigue. Codex sí manda mensajes con codex queue, pero ese comando no pasa por una herramienta que el arnés pueda mirar. |
+| Una firma del dueño en un mensaje aparte | nadie | Es la forma del mensaje: ningún dato de la máquina la ve. |
+| Ensayar lo que viene antes de pasar un comando de firma | nadie | Cada repo tiene sus controles: el ensayo lo hace la sesión. |
+| El comando de firma con su carpeta | nadie | El comando lo escribe la sesión; `signature` ya lo arma con su carpeta. |
+| La hora del trabajo terminado | nadie | Qué es «terminado» depende de cada trabajo. |
+| Un número de historia nunca solo | nadie | Va en los mensajes, que no pasan por un control de texto. |
+| Una pestaña que no pide permisos no firma por la ventana | freno | El freno de la ventana niega la firma y da el comando de la terminal. Que la vía diga «delegación» lo confirma la coordinadora. |
+| Lo pesado de a uno, con turno | nadie | El pase adversarial tiene su aviso (arriba); la suite completa, el banco, el examen y el portón no. |
+| Mirar el diff antes de aprobar un pedido ajeno | nadie | Es criterio de quien aprueba. |
+| Una sesión que espera anota qué hace | nadie | Lo anota la sesión con `marker.js doing`; nada la obliga. |
+| Comprobar que un pedido sigue en la cola | nadie | Mirarlo cada turno sería preguntarle a la red todo el tiempo. |
+| Las decisiones del dueño con su contexto | nadie | Es criterio; el medidor de estilo mide el largo, no el contenido. |
+| Lo que ve el dueño, sin jerga | aviso | El medidor de estilo que ya existe. |

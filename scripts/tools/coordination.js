@@ -535,4 +535,4 @@ function main(argv) {
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { status, statusText, capNotice, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, coordinationDir };
+module.exports = { status, statusText, readPending, capNotice, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, coordinationDir };
