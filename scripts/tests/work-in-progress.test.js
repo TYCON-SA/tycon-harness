@@ -475,7 +475,9 @@ test('T26 ConsultaReal_GhFalso: el programa le pregunta a gh por la rama y el re
   const out = execFileSync('node', [WIP, '--state-dir', m.state, '--sessions-dir', m.sessions, '--now', NOW, '--json'],
     { input: '', env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
   const args = JSON.parse(fs.readFileSync(path.join(bin, 'args.json'), 'utf8'));
-  for (const a of ['pr', 'list', '--head', 'story/x', '--state', 'open', '--repo', 'acme/x']) assert.ok(args.includes(a), args.join(' '));
+  // por GraphQL, que dice si el pedido está en la cola de merge
+  for (const a of ['api', 'graphql', 'o=acme', 'n=x', 'h=story/x']) assert.ok(args.includes(a), args.join(' '));
+  assert.ok(args.some((a) => /mergeQueueEntry/.test(a) && /states:OPEN/.test(a)), args.join(' '));
   assert.strictEqual(JSON.parse(out).rows[0].state, 'Entrando a los repos · x #236');
 });
 
@@ -1544,4 +1546,63 @@ test('wip · PasoConBandera_EsElQueSigue: con «Probar en vivo» sin hacer, el e
   assert.strictEqual(run(m).rows[0].state, 'Probar en vivo');
   marker(m, 'viv00000-1', { ...base, dodRuntimeChecked: true });
   assert.strictEqual(run(m).rows[0].state, 'Preparar el commit');
+});
+
+test('wip · PedidoFueraDeLaCola_NoSigueEntrando: con todos los pedidos fuera de la cola o en borrador, espera que lo encolen', { skip: onWindows }, () => {
+  const m = toyMachine();
+  entering(m, 'col00000-1', { repoPath: gitRepo(m.root, 'x', 'story/x', GH) });
+  const pr = (number, extra) => ({ number, isDraft: false, mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', autoMergeRequest: null, mergeQueueEntry: null, ...extra });
+  const gql = (nodes) => JSON.stringify({ data: { repository: { pullRequests: { nodes } } } });
+  const runGh = (out) => {
+    const bin = fakeBin(m.root, 'gh', `process.stdout.write(${JSON.stringify(out)});`);
+    return JSON.parse(execFileSync('node', [WIP, '--state-dir', m.state, '--sessions-dir', m.sessions, '--now', NOW, '--json'],
+      { input: '', env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } })).rows[0];
+  };
+  const off = runGh(gql([pr(842)]));
+  assert.strictEqual(off.state, 'Pedidos sin encolar · x #842 (fuera de la cola)');
+  assert.match(off.end, /ningún pedido está en la cola/);
+  // en la cola, o con auto-merge: sigue entrando, sin marca
+  assert.strictEqual(runGh(gql([pr(846, { mergeQueueEntry: { state: 'AWAITING_CHECKS' } })])).state, 'Entrando a los repos · x #846');
+  assert.strictEqual(runGh(gql([pr(847, { autoMergeRequest: { enabledAt: NOW } })])).state, 'Entrando a los repos · x #847');
+  // uno en camino alcanza para que esté entrando; el de afuera se marca igual
+  assert.strictEqual(runGh(gql([pr(1, { mergeQueueEntry: { state: 'QUEUED' } }), pr(2)])).state, 'Entrando a los repos · x #1 · x #2 (fuera de la cola)');
+  // un error de GraphQL se dice, no se toma como «sin pedidos»
+  assert.match(runGh(JSON.stringify({ errors: [{ message: 'Could not resolve to a Repository' }] })).state, /no se pudo consultar/);
+  // Azure: sin auto-completar está fuera de la cola; con auto-completar, no
+  const n = toyMachine();
+  entering(n, 'col00000-2', { repoPath: gitRepo(n.root, 'y', 'story/x', AZ) });
+  const runAz = (list) => {
+    const bin = fakeBin(n.root, 'az', `process.stdout.write(${JSON.stringify(JSON.stringify(list))});`);
+    return JSON.parse(execFileSync('node', [WIP, '--state-dir', n.state, '--sessions-dir', n.sessions, '--now', NOW, '--json'],
+      { input: '', env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } })).rows[0].state;
+  };
+  assert.strictEqual(runAz([{ pullRequestId: 6008, isDraft: false, autoCompleteSetBy: null }]), 'Pedidos sin encolar · y !6008 (fuera de la cola)');
+  assert.strictEqual(runAz([{ pullRequestId: 6011, isDraft: false, autoCompleteSetBy: { displayName: 'acme' } }]), 'Entrando a los repos · y !6011');
+  assert.strictEqual(runAz([{ pullRequestId: 6012, isDraft: true, autoCompleteSetBy: null }]), 'Entrando a los repos · y !6012 (borrador)');
+});
+
+test('wip · SinMarcador_ConArchivoReciente_NoEstaLibre: quieta, pero con un archivo tocado hace poco, trabaja sin marcador', () => {
+  const m = toyMachine();
+  const wt = gitRepo(m.root, 'th-tanda', 'story/9.4-la-tanda', GH);
+  session(m, process.pid, 'sin00000-1', 'sesion-b', { cwd: wt });
+  touched(m, 'sin00000-1', [[inRepo(wt, 'scripts/a.js'), 10]]);
+  const r = run(m);
+  assert.strictEqual(r.rows.length, 1, r.text);
+  assert.match(r.rows[0].state, /^Trabajando sin marcador · story 9\.4 en preparación · última actividad \d\d:\d\d · último archivo \d\d:\d\d$/);
+  assert.deepStrictEqual(r.free, []);
+  // pasada la media hora sin tocar nada, vuelve a estar libre
+  touched(m, 'sin00000-1', [[inRepo(wt, 'scripts/a.js'), 40]]);
+  assert.deepStrictEqual(run(m).free, ['sesion-b']);
+});
+
+test('wip · MientrasTantoViejo_DiceDesdeCuando: un arreglo rápido o una nota sin tocar hace más de 1 h lo dicen', () => {
+  const m = toyMachine();
+  entering(m, 'vij00000-1', { repoPath: gitRepo(m.root, 'x', 'story/x', GH) });
+  fs.writeFileSync(path.join(m.state, 'adhoc', 'vij00000-1.json'), JSON.stringify({ reason: 'la roja de la noche', declaredAt: new Date(minsBefore(90)).toISOString() }));
+  const r = run(m, { prs: () => ({ prs: [{ number: 12, draft: false }] }) });
+  assert.strictEqual(r.rows[0].meanwhile, `arreglo rápido «la roja de la noche» (sin tocar desde ${localHhmm(minsBefore(90))})`);
+  fs.rmSync(path.join(m.state, 'adhoc', 'vij00000-1.json'));
+  fs.mkdirSync(path.join(m.state, 'doing'), { recursive: true });
+  fs.writeFileSync(path.join(m.state, 'doing', 'vij00000-1.json'), JSON.stringify({ text: 'mido el disco', at: new Date(minsBefore(70)).toISOString() }));
+  assert.strictEqual(run(m, { prs: () => ({ prs: [{ number: 12, draft: false }] }) }).rows[0].meanwhile, `mido el disco (sin tocar desde ${localHhmm(minsBefore(70))})`);
 });
