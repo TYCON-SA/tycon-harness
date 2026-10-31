@@ -28,6 +28,10 @@
 #                          ["agent-skills"]: de a varias a la vez, cada una en su proceso, con su propia HOME vacía y su
 #                          TMPDIR, y sin las herramientas del vocabulario en el PATH, como las portables
 #   7 controls-bench       node scripts/controls-bench/runner.js --tool both --baseline check --json <salida>/bench.json
+#   7b controls-bench-base sólo con --base: node scripts/ci/bench-against-base.js DE LA BASE (sale de la base con `git show`)
+#                          --root <root> --base <base> --tip <punta>: los casos, la línea de base y el corredor de la base
+#                          sobre los ganchos de la punta; un freno que se afloja pide la firma del dueño. Si la base todavía
+#                          no trae el guion (el pedido que lo introduce), no aplica y lo dice
 #   8 spanish-names        sólo con --range: node scripts/publishing/spanish-names.js --range <rango>
 #   9 repo-lint            sólo con --range: los controles del pre-commit (.githooks/pre-commit-checks, con la punta
 #                          como arnés y sin el chequeo de vida de un revisor tocado, que pide una sesión) sobre lo que trae el
@@ -74,10 +78,13 @@
 # VARIABLES (todas opcionales):
 #   TYCON_PUBLIC_CI_PART=<parte>    corre sólo una PARTE de los pasos, para repartirlos en trabajos que corren a la vez
 #                                   (la CI de GitHub, con una matriz Node × parte). Sin la variable (o vacía), todos:
-#                                     checks            todos los pasos menos el 5 (portable-suites) y el 7
-#                                                       (controls-bench)
+#                                     checks            todos los pasos menos el 5 (portable-suites) y el 7 y el 7b
+#                                                       (controls-bench, controls-bench-base)
 #                                     controls-bench    sólo el paso 7: el banco tarda unos 5 minutos y en su propio
 #                                                       trabajo corre a la vez que los demás pasos de checks
+#                                     controls-bench-base
+#                                                       sólo el paso 7b: el banco con los casos de la base, en su propio
+#                                                       trabajo por lo mismo
 #                                     suites-<i>-of-<n> sólo el paso 5, con la parte <i> de <n> de las portables: las
 #                                                       reparte scripts/ci/suites-shard.js por peso (juego `pr`, ver
 #                                                       portable-suites.test.sh, TYCON_PORTABLE_SHARD)
@@ -86,7 +93,8 @@
 #                                                       acepta el instalador; no es parte de la corrida entera. Con
 #                                                       --range, un cambio que no toca la instalación sale verde sin
 #                                                       correrlas («no toca la instalación: salteado»; floor_untouched)
-#                                   Las n+2 partes juntas son la corrida entera: `checks`, `controls-bench` y
+#                                   Las n+3 partes juntas son la corrida entera: `checks`, `controls-bench`,
+#                                   `controls-bench-base` y
 #                                   `suites-1-of-<n>` … `suites-<n>-of-<n>`. Una parte sola NO es el veredicto: el resumen
 #                                   la nombra, y en la CI lo da el job `public-ci`, que junta todas. Un valor que no sea uno
 #                                   de ésos: 2, con el uso.
@@ -156,6 +164,8 @@ PART="${TYCON_PUBLIC_CI_PART:-}"; PORTABLE_SHARD=""; PORTABLE_ONLY=""
 FLOOR_SUITES="tests/harness-bootstrap.test.sh,tests/harness-update.test.sh,tests/harness-node.test.sh,tests/harness-release.test.sh,tests/harness-release-links.test.sh,tests/version-by-merge.test.js"
 case "${PART}" in
   ""|checks|controls-bench) ;;
+  # la CI reconoce que la base conoce esta parte buscando «controls-bench-base)» en este guion (.github/workflows/ci.yml)
+  controls-bench-base) ;;
   installer-floor) PORTABLE_ONLY="${FLOOR_SUITES}" ;;
   suites-*-of-*)
     # sólo dígitos, i entre 1 y n: «suites-0-of-3», «suites-4-of-3», «suites-1-of-3x» o «suites-1-of-2-of-3» no son una parte
@@ -163,17 +173,18 @@ case "${PART}" in
     if [[ "${PART}" =~ ${PART_RE} ]] && [ "${BASH_REMATCH[1]}" -le "${BASH_REMATCH[2]}" ]; then
       SHARD_I="${BASH_REMATCH[1]}"; SHARD_N="${BASH_REMATCH[2]}"
     else
-      echo "public-ci: TYCON_PUBLIC_CI_PART=${PART} no es una parte: checks, controls-bench, installer-floor o suites-<i>-of-<n>, con i entre 1 y n" >&2; usage 2
+      echo "public-ci: TYCON_PUBLIC_CI_PART=${PART} no es una parte: checks, controls-bench, controls-bench-base, installer-floor o suites-<i>-of-<n>, con i entre 1 y n" >&2; usage 2
     fi
     PORTABLE_SHARD="${SHARD_I}/${SHARD_N}" ;;
-  *) echo "public-ci: TYCON_PUBLIC_CI_PART=${PART} no es una parte: checks, controls-bench, installer-floor o suites-<i>-of-<n>, con i entre 1 y n" >&2; usage 2 ;;
+  *) echo "public-ci: TYCON_PUBLIC_CI_PART=${PART} no es una parte: checks, controls-bench, controls-bench-base, installer-floor o suites-<i>-of-<n>, con i entre 1 y n" >&2; usage 2 ;;
 esac
 # wants <paso> → 0 si el paso le toca a esta parte
 wants() {
   case "${PART}" in
     "") return 0 ;;
-    checks) [ "$1" != portable-suites ] && [ "$1" != controls-bench ] ;;
+    checks) [ "$1" != portable-suites ] && [ "$1" != controls-bench ] && [ "$1" != controls-bench-base ] ;;
     controls-bench) [ "$1" = controls-bench ] ;;
+    controls-bench-base) [ "$1" = controls-bench-base ] ;;
     *) [ "$1" = portable-suites ] ;;   # suites-<i>-of-<n> e installer-floor: sólo las portables
   esac
 }
@@ -242,6 +253,8 @@ run_step() {
     echo "✅ public-ci: ${name} ($((SECONDS - t0))s)"
     # lo que avisa la revisión desde la base se ve también en verde: lo que se suma a las reglas, la alarma, la constancia
     [ "${name}" != repo-lint ] || grep -E '^(⚠️ base-controls|✅ base-controls: cambio de control aprobado|base-controls: reglas que cambia|   [^ ]|      [-+~] )' "${log}" | ci_neutral | sed 's/^/     /'
+    # el banco de la base en verde dice si no aplicó, o qué aflojamiento quedó firmado
+    [ "${name}" != controls-bench-base ] || grep -E '^(controls-bench-base:|✅ con la constancia del dueño)' "${log}" | ci_neutral | sed 's/^/     /'
   elif [ "${kind}" = "own" ] && [ "${rc}" -eq "${BLOCKED_EXIT}" ]; then
     blocked "${name}" "$(tail -n 1 "${log}" | sed 's/^no pude correr: //')"
   else
@@ -548,6 +561,25 @@ repo_lint_from_base() {
   bash "${rbc}" run --root "${ROOT}" --base "${BASE_ARG}" --range "${RANGE}" --out "${OUT}/base-controls" < /dev/null
 }
 
+# ── paso 7b · el banco con los casos de la base ──────────────────────────────────────────────────────────────────────
+# Casos: scripts/tests/public-ci.test.sh (T10) y scripts/tests/bench-against-base.test.js
+# El guion sale de la base (`git show`), como el de la revisión: un pedido que lo vacía no lo saltea. Lo que el pedido
+# cambie en él lo frena la revisión de la base (es regla de controls-from-base.json, con sign_on_change).
+bench_against_base() {
+  local bab
+  range_ends || return $?
+  git -C "${ROOT}" rev-parse --verify --quiet "${BASE_ARG}^{commit}" >/dev/null 2>&1 \
+    || { echo "no pude correr: la base ${BASE_ARG} no resuelve a un commit en ${ROOT}"; return "${BLOCKED_EXIT}"; }
+  if ! git -C "${ROOT}" cat-file -e "${BASE_ARG}:scripts/ci/bench-against-base.js" 2>/dev/null; then
+    echo "controls-bench-base: la base ${BASE_ARG} todavía no trae scripts/ci/bench-against-base.js: no aplica (lo mide desde el pedido siguiente)"
+    return 0
+  fi
+  bab="${WORK}/bench-against-base.js"
+  git -C "${ROOT}" show "${BASE_ARG}:scripts/ci/bench-against-base.js" > "${bab}" \
+    || { echo "no pude correr: no pude sacar scripts/ci/bench-against-base.js de la base ${BASE_ARG}"; return "${BLOCKED_EXIT}"; }
+  node "${bab}" --root "${ROOT}" --base "${BASE_ARG}" --tip "${RANGE_TIP}" --out "${OUT}/bench-base" < /dev/null
+}
+
 # ── paso 10 · la versión ──────────────────────────────────────────────────────────────────────────
 # Con la marca `numbering: "merge-tag"` en el version.json de la base, el número lo pone la etiqueta del merge y el pedido
 # no lo toca; sin la marca (antes de la transición), el número de la punta tiene que ser mayor. La regla vive en
@@ -597,6 +629,9 @@ case "${PART}" in
   "") ;;
   checks) echo "public-ci: parte checks — todos los pasos menos portable-suites y controls-bench (las portables van en las partes suites-<i>-of-<n>, el banco en la suya)" ;;
   controls-bench) echo "public-ci: parte controls-bench — sólo el banco de controles (los demás pasos van en la parte checks)" ;;
+  controls-bench-base)
+    echo "public-ci: parte controls-bench-base — sólo el banco con los casos de la base (los demás pasos van en la parte checks)"
+    [ -n "${BASE_ARG}" ] || echo "controls-bench-base: sin --base no aplica (corre en un pedido y en la cola, contra los casos de su base)" ;;
   installer-floor) echo "public-ci: parte installer-floor — sólo las portables de la instalación y la actualización, con el Node de esta máquina ($(node --version 2>/dev/null || echo 'sin node'))" ;;
   *) echo "public-ci: parte ${PART} — sólo portable-suites, con la parte ${SHARD_I} de ${SHARD_N} de las portables (los demás pasos van en la parte checks)" ;;
 esac
@@ -615,6 +650,7 @@ wants portable-suites && run_step portable-suites file scripts/tests/portable-su
   env TYCON_PORTABLE_SHARD="${PORTABLE_SHARD}" TYCON_PORTABLE_ONLY="${PORTABLE_ONLY}" TYCON_PORTABLE_SKIP="${PORTABLE_SKIP}" bash scripts/tests/portable-suites.test.sh
 wants agent-skills-suites && run_step agent-skills-suites own scripts/tests/suites.json "bash node" agent_skills_suites
 wants controls-bench && run_step controls-bench file scripts/controls-bench/runner.js "node" node scripts/controls-bench/runner.js --tool both --baseline check --json "${OUT}/bench.json"
+[ -z "${BASE_ARG}" ] || ! wants controls-bench-base || run_step controls-bench-base own "" "git node" bench_against_base
 [ "${WITH_RANGE}" -eq 0 ] || ! wants spanish-names || run_step spanish-names own scripts/publishing/spanish-names.js "git node" spanish_names
 if [ -n "${BASE_ARG}" ]; then
   # con --base el pre-commit del árbol puede faltar (el pedido lo borró): lo que tiene que existir es la base

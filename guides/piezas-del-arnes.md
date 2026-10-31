@@ -540,11 +540,11 @@ _scripts/ci/public-ci.sh + scripts/ci/check-public-workflow.js + el `ci.yml` de 
 
 ## scripts/ci/run-base-controls.sh
 
-_(scripts/ci/run-base-controls.sh + scripts/ci/controls-from-base.json + el paso `repo-lint` de public-ci.sh con `--base`)_
+_(scripts/ci/run-base-controls.sh + scripts/ci/controls-from-base.json + scripts/ci/bench-against-base.js + el paso `repo-lint` de public-ci.sh con `--base`)_
 
-**Qué es:** El guion que revisa un pedido con los controles de la base y no con los que trae el propio pedido, según el inventario `scripts/ci/controls-from-base.json`.
+**Qué es:** El guion que revisa un pedido con los controles de la base, según `scripts/ci/controls-from-base.json`, y el banco con los casos de la base.
 
-**Por qué existe:** Un pedido podía vaciar o aflojar el control que lo tenía que frenar y así saltearlo. Aflojar un control exige la constancia del dueño; si no se puede correr, es rojo.
+**Por qué existe:** Un pedido podía aflojar el control que lo frenaba y saltearlo. Aflojarlo exige la constancia del dueño; si no se puede correr, es rojo.
 
 **Quién la usa:** La CI de GitHub (`ci.yml` vía `public-ci.sh --base`) y la validación de pedidos del repo de mantenimiento.
 

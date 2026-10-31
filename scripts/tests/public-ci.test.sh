@@ -23,6 +23,10 @@
 #         con su parte (TYCON_PORTABLE_SHARD=<i>/<n>); un valor que no es una parte sale 2 sin correr nada. Y
 #         portable-suites.test.sh, sobre un repo de mentira: las <n> partes juntas son todas las portables, ninguna en dos,
 #         cada parte con alguna, las más pesadas primero; una parte mal escrita o un reparto imposible es rojo.
+#   T10 (8.152) · PublicCi_ControlsBenchBase — la parte controls-bench-base corre sólo el banco de la base con el guion
+#         DE LA BASE (`git show`), sobre la punta del rango; sin --base, o con una base que todavía no trae el guion, dice
+#         que no aplica y no corre nada; checks y controls-bench no lo corren. Y en `ci.yml` la parte está en la matriz,
+#         corre en cada pedido y tiene su guarda para una base que no la conoce (T22).
 #   T25 · PublicCi_InstallerSuites_OnlyWhenTheChangeTouchesThem — con --range, las portables del grupo `installer` de
 #         heavy-suites.json que el cambio no toca se pasan a portable-suites.test.sh para saltear (TYCON_PORTABLE_SKIP),
 #         con el mismo criterio que la validación de Azure (suites-for-change.js --groups-alone). Si el cambio toca el
@@ -315,7 +319,8 @@ commit_all "la base con su inventario"; lab_git -C "${R}" tag base-ref
 ( cd "${R}" && printf 'un documento\n' > leeme.txt && printf '{ "version": "2026.01.01.3" }\n' > version.json ) ; commit_all "el pedido"
 run_ci --range 'base-ref...HEAD' --base base-ref
 is "T14 con --base, un pedido que no toca controles: el mismo veredicto" 0 "${RC}"
-is "T14 con --base, los mismos pasos" "${NOBASE_STEPS}" "$(steps_of "${R}.out")"
+# con --base se suma el banco con los casos de la base (8.152), después del banco: acá la base no trae su guion y no aplica
+is "T14 con --base, los mismos pasos y el banco de la base" "${NOBASE_STEPS/controls-bench /controls-bench controls-bench-base }" "$(steps_of "${R}.out")"
 LINT_LOG="$(ls "${R}.ci"/*-repo-lint.log | head -n 1)"
 has "T14 con --base el repo-lint dice de dónde salen los controles" "${LINT_LOG}" "los controles y su regla salen de la base base-ref"
 has "T14 con --base corrió la revisión desde la base, en verde" "${LINT_LOG}" "✅ base-controls: verde"
@@ -527,6 +532,39 @@ for bad in suites-0-of-3 suites-4-of-3 suites-1-of-2-of-3 suites-1-of-3x all Che
   if [ "${RC}" -eq 2 ] && grep -qF "uso: bash scripts/ci/public-ci.sh" "${R}.out" && grep -qF "no es una parte" "${R}.out" && [ ! -f "${R}/.calls" ]; then ok "T24 (a) TYCON_PUBLIC_CI_PART=${bad} sale 2 con el uso y no corre nada"
   else no "T24 (a) TYCON_PUBLIC_CI_PART=${bad} esperaba exit 2 con el uso y sin correr nada, y dio exit ${RC}: $(tail -n 2 "${R}.out" | tr '\n' ' ')"; fi
 done
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# T10 (8.152) · la parte controls-bench-base: el banco de la base, con el guion DE LA BASE, sólo con --base
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# el guion de la base, de mentira: anota su llamada (relativa a la raíz) y sale verde
+bab_variant() { # <nombre>
+  variant "$1"; fake_js "${R}/scripts/ci/bench-against-base.js" bench-against-base; commit_all "el banco de la base"
+  echo "// el pedido" >> "${R}/build/check.js"; commit_all "el pedido"
+}
+bab_variant partbab; export TYCON_PUBLIC_CI_PART=controls-bench-base; run_ci --range 'HEAD~1...HEAD' --base HEAD~1; unset TYCON_PUBLIC_CI_PART
+is "T10 la parte controls-bench-base, verde, sale 0" 0 "${RC}"
+is "T10 la parte controls-bench-base corre sólo el banco de la base" "controls-bench-base" "$(steps_of "${R}.out")"
+is "T10 …con el guion de la base, sobre la punta del rango y con su salida" "bench-against-base --root ${R} --base HEAD~1 --tip HEAD --out ${R}.ci/bench-base" "$(calls_of "${R}" | tr '\n' '|' | sed 's/|$//')"
+has "T10 …y lo dice al arrancar" "${R}.out" "public-ci: parte controls-bench-base — sólo el banco con los casos de la base"
+variant partbab-pr; fake_js "${R}/scripts/ci/bench-against-base.js" bench-against-base; commit_all "el guion llega con el pedido"
+export TYCON_PUBLIC_CI_PART=controls-bench-base; run_ci --range 'HEAD~1...HEAD' --base HEAD~1; unset TYCON_PUBLIC_CI_PART
+is "T10 una base sin el guion (el pedido que lo trae): verde" 0 "${RC}"
+has "T10 …y dice que no aplica" "${R}.out" "la base HEAD~1 todavía no trae scripts/ci/bench-against-base.js: no aplica"
+lacks "T10 …sin correr el guion del pedido" "${R}/.calls" "bench-against-base"
+bab_variant partbab-nobase; export TYCON_PUBLIC_CI_PART=controls-bench-base; run_ci --range 'HEAD~1...HEAD'; unset TYCON_PUBLIC_CI_PART
+is "T10 sin --base la parte sale 0" 0 "${RC}"
+has "T10 …y dice que no aplica" "${R}.out" "controls-bench-base: sin --base no aplica"
+lacks "T10 …sin correr el guion" "${R}/.calls" "bench-against-base"
+bab_variant partbab-checks; export TYCON_PUBLIC_CI_PART=checks; run_ci --range 'HEAD~1...HEAD' --base HEAD~1; unset TYCON_PUBLIC_CI_PART
+lacks "T10 la parte checks, con --base, no corre el banco de la base" "${R}/.calls" "bench-against-base"
+bab_variant partbab-bench; export TYCON_PUBLIC_CI_PART=controls-bench; run_ci --range 'HEAD~1...HEAD' --base HEAD~1; unset TYCON_PUBLIC_CI_PART
+lacks "T10 la parte controls-bench, con --base, no corre el banco de la base" "${R}/.calls" "bench-against-base"
+variant partbab-red; mkdir -p "${R}/scripts/ci"
+printf '%s\n' "require('fs').appendFileSync('.calls', 'bench-against-base\\n'); process.exitCode = 1;" > "${R}/scripts/ci/bench-against-base.js"
+commit_all "el banco de la base en rojo"; echo "// el pedido" >> "${R}/build/check.js"; commit_all "el pedido"
+export TYCON_PUBLIC_CI_PART=controls-bench-base; run_ci --range 'HEAD~1...HEAD' --base HEAD~1; unset TYCON_PUBLIC_CI_PART
+is "T10 el banco de la base en rojo: la parte sale 1" 1 "${RC}"
+is "T10 …y el resumen nombra el paso" "❌ public-ci: 1 de 1 pasos en rojo (sólo la parte controls-bench-base): controls-bench-base" "$(tail -n 1 "${R}.out")"
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # T25 (a) · con --range, las portables del instalador que el cambio no toca se pasan para saltear
@@ -793,7 +831,12 @@ else
   altered "con la parte fija en vez de la de la matriz" "parts" 'return t.replace("TYCON_PUBLIC_CI_PART: ${{ matrix.part }}", "TYCON_PUBLIC_CI_PART: checks");'
   altered "sin pasarle la parte al guion" "parts" 'return t.replace(/^          TYCON_PUBLIC_CI_PART: .*\n/m, "");'
   # otra cuenta de partes, completa, cumple la regla con nombre: la frena sólo la forma exacta (cambiarla es cambiar SHAPE)
-  altered "con cuatro partes de las suites, todas" "=shape" 'return t.replace("part: [checks, controls-bench, suites-1-of-5, suites-2-of-5, suites-3-of-5, suites-4-of-5, suites-5-of-5]", "part: [checks, controls-bench, suites-1-of-4, suites-2-of-4, suites-3-of-4, suites-4-of-4]");'
+  altered "con cuatro partes de las suites, todas" "=shape" 'return t.replace("part: [checks, controls-bench, controls-bench-base, suites-1-of-5, suites-2-of-5, suites-3-of-5, suites-4-of-5, suites-5-of-5]", "part: [checks, controls-bench, controls-bench-base, suites-1-of-4, suites-2-of-4, suites-3-of-4, suites-4-of-4]");'
+  # T10 (8.152) · la parte del banco de la base: en la matriz, en cada pedido y con su guarda para una base que no la conoce
+  altered "sin la parte del banco de la base" "parts" 'return t.replace("controls-bench, controls-bench-base, ", "controls-bench, ");'
+  altered "con el banco de la base antes del banco" "parts" 'return t.replace("controls-bench, controls-bench-base, ", "controls-bench-base, controls-bench, ");'
+  altered "en un pedido se saltea el banco de la base" "=shape" 'return t.replace(" && [ \"${TYCON_PUBLIC_CI_PART}\" != \"controls-bench-base\" ]", "");'
+  altered "el banco de la base sale verde aunque la base lo conozca" "=shape" 'return t.replace(" && ! grep -q -- \x27controls-bench-base)\x27 \"${RUNNER_TEMP}/public-ci-base.sh\"", "");'
   # en un pedido corre sólo `checks` y la corrida entera va en la cola: cada una de estas falla si un ci.yml vuelve a
   # pagar las suites en el pedido, o si deja el pedido sin `checks`
   altered "en un pedido corren también las suites" "=shape" 'return t.replace(/^ *if \[ "\$\{GITHUB_EVENT_NAME\}" = "pull_request" \] && \[ "\$\{TYCON_PUBLIC_CI_PART\}" != "checks" \].*; then\n.*\n *exit 0\n *fi\n/m, "");'
@@ -802,7 +845,7 @@ else
   # una base que no conoce la parte del banco lo corre dentro de checks: la salida verde de esa parte vale sólo para ella
   altered "el banco sale verde aunque la base lo conozca" "=shape" 'return t.replace(" && ! grep -q -- \x27|controls-bench)\x27 \"${RUNNER_TEMP}/public-ci-base.sh\"", "");'
   altered "en main un push corta la corrida del anterior" "=shape" 'return t.replace("cancel-in-progress: ${{ github.ref != \x27refs/heads/main\x27 }}", "cancel-in-progress: true");'
-  altered "en un pedido corre también el piso del instalador" "=shape" 'return t.replace(/^ *if \[ "\$\{GITHUB_EVENT_NAME\}" = "pull_request" \]; then\n *echo "en un pedido corren sólo las partes checks y controls-bench: installer-floor.*\n *exit 0\n *fi\n/m, "");'
+  altered "en un pedido corre también el piso del instalador" "=shape" 'return t.replace(/^ *if \[ "\$\{GITHUB_EVENT_NAME\}" = "pull_request" \]; then\n *echo "en un pedido corren sólo las partes checks, controls-bench y controls-bench-base: installer-floor.*\n *exit 0\n *fi\n/m, "");'
   # el push a main que hace la cola al entrar un pedido no corre nada (la cola ya probó ese commit), y sólo
   # ése: cualquier otro push a main —el merge directo de un administrador— corre entero, y un pedido o la cola, igual
   altered "sin la condición de la cola en el job de la matriz" "after-queue" 'return t.replace(/^    if: github\.event_name .*\n/m, "");'
@@ -818,6 +861,8 @@ else
   # guion deja de tenerlo, la parte del banco sale verde sin correrlo y checks tampoco lo corre
   if grep -qF -- "grep -q -- '|controls-bench)'" "${CI_YML}" && grep -qF -- '|controls-bench)' "${SCRIPT}"; then ok "T24 el texto con el que la CI reconoce la parte del banco está en public-ci.sh"
   else no "T24 la CI busca «|controls-bench)» en el guion de la base y public-ci.sh no lo tiene: la parte del banco saldría verde sin correrlo"; fi
+  if grep -qF -- "grep -q -- 'controls-bench-base)'" "${CI_YML}" && grep -qF -- 'controls-bench-base)' "${SCRIPT}"; then ok "T10 el texto con el que la CI reconoce la parte del banco de la base está en public-ci.sh"
+  else no "T10 la CI busca «controls-bench-base)» en el guion de la base y public-ci.sh no lo tiene: la parte saldría verde sin correrlo"; fi
   case "${BASE_CALL}" in *'--base "${BASE}"'*) ok "T12 en un pedido y en la cola corre el public-ci.sh de la base, con --base" ;;
     *) no "T12 no hay una llamada al public-ci.sh de la base con --base: «${BASE_CALL}»" ;; esac
   grep -qF 'git show "${BASE}:scripts/ci/public-ci.sh"' "${CI_YML}" && ok "T12 el guion que corre sale de la base (git show), no del checkout del pedido" \
