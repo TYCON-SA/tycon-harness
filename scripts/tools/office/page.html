@@ -21,7 +21,6 @@ header{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-be
 h1{font:700 1.7rem/1.1 var(--display);margin:0;letter-spacing:-.01em}
 h2{font:700 .8rem var(--display);text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 8px}
 .stamp{font:500 .85rem var(--mono);color:var(--muted)}
-.summary{margin:0;max-width:65ch}
 .you{background:var(--surface);border:1px solid #a8640b;border-left:6px solid #a8640b;border-radius:6px;padding:12px 16px}
 .you h2{color:#a8640b}.you ul{margin:4px 0 0;padding-left:18px}
 .empty{color:var(--muted);padding:18px;background:var(--surface);border:1px dashed var(--line);border-radius:6px;margin:0}
@@ -45,16 +44,13 @@ h2{font:700 .8rem var(--display);text-transform:uppercase;letter-spacing:.08em;c
 .tag .bar i{display:block;height:100%;background:var(--c)}
 .tag .fx{position:absolute;top:-11px;right:-9px;min-width:22px;height:22px;padding:0 5px;border-radius:11px;display:grid;place-items:center;font:700 12px var(--body);background:var(--c);color:#14101c;box-shadow:0 0 12px var(--c)}
 .tag .fx:empty{display:none}
-/* la segunda burbuja, más chica: lo que hace mientras tanto */
-.tag .side{position:absolute;left:10px;bottom:calc(100% + 4px);max-width:230px;overflow:hidden;text-overflow:ellipsis;background:rgba(24,20,34,.88);border:1px solid rgba(255,255,255,.12);border-radius:9px;padding:3px 8px;font-size:10.5px;color:#d9d0ea}
-.tag .side:empty{display:none}
 .tag.alert{border-color:var(--c);animation:pulso 1.2s ease-in-out infinite}
 @keyframes pulso{50%{box-shadow:0 0 0 4px rgba(255,165,61,.35),0 6px 18px rgba(0,0,0,.45)}}
 @media (prefers-reduced-motion:reduce){.tag.alert{animation:none}}
 .tag.sel{border-color:var(--c)}
 .compact .tag{padding:4px 8px 4px 5px;gap:5px}
 .compact .tag .bot{width:18px;height:18px}
-.compact .tag .es,.compact .tag .more,.compact .tag .side{display:none}
+.compact .tag .es,.compact .tag .more{display:none}
 .compact .tag b{font-size:12px}
 .panel3{position:absolute;z-index:5000;right:12px;top:12px;width:min(330px,calc(100% - 24px));max-height:calc(100% - 24px);overflow:auto;background:rgba(24,20,34,.95);border:1px solid rgba(255,255,255,.14);border-radius:14px;padding:14px 16px;box-shadow:0 12px 30px rgba(0,0,0,.5);color:#f4eefc}
 .panel3 h3{margin:0 0 6px;font:700 1.05rem var(--display);padding-right:20px}
@@ -85,7 +81,6 @@ h2{font:700 .8rem var(--display);text-transform:uppercase;letter-spacing:.08em;c
 .card .dot{width:10px;height:10px;border-radius:50%;flex:none}
 .card .st{align-self:flex-start;font:500 .74rem var(--body);padding:1px 9px;border-radius:999px;border:1px solid}
 .card p{margin:0;font-size:.9rem;line-height:1.45;overflow-wrap:anywhere}
-.card p.ttl{font-weight:600}
 .card .side{font-size:.85rem;color:var(--muted)} .card .side b{font-weight:600;color:var(--fg)}
 .card .eta{font:500 .82rem var(--mono);color:var(--muted)}
 details.tablewrap summary{cursor:pointer;font:700 .8rem var(--display);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
@@ -103,7 +98,6 @@ footer{color:var(--muted);font-size:.85rem}
     <h1>Oficina del arnés</h1>
     <span class="stamp" id="stamp"></span>
   </header>
-  <p class="summary" id="summary"></p>
   <div class="you" id="you" hidden><h2>Te toca a vos</h2><ul id="youList"></ul></div>
   <section class="office" id="office">
     <div class="stage" id="stage" role="img" aria-label="Las sesiones trabajando en la oficina"><div class="labels" id="labels"></div><p class="ovl" id="ovl" hidden></p><div class="hint">Arrastrá para girar · rueda para acercar · tocá a alguien o el panel de la pared para ver el detalle</div><aside class="panel3" id="panel" hidden></aside></div>
@@ -123,13 +117,12 @@ const difTxt=m=>{const s=m>0?"+":m<0?"−":"";const a=Math.abs(m);return a<60?s+
 const AST={trabajando:["Trabajando","#3ddc84"],prueba:["Corriendo pruebas","#5aa9ff"],espera:["Esperando entrar","#a59fc4"],firma:["Espera tu firma","#ffa53d"],libre:["Libre","#9aa3a0"],coordina:["Coordinando","#ff6fc0"]};
 const SHIRT=["#c2569b","#2f9e6a","#3b7ddd","#e08a1e","#7a5cc7","#d65a4a"];
 const agents=DATA.agents||[],items=DATA.items||[],meta=DATA.meta||null;
-// el fin: la hora de ahora con su diferencia contra la prometida; sin hora, lo que dice /wip
-const finTxt=a=>{const fin=a.pronosticoIso||a.estimadaIso;if(!fin||(a.atrasada&&a.tipo!=="pipeline"))return a.termina?{hora:a.termina,dif:"",cls:""}:null;
-  const dd=dif(a.estimadaIso,a.pronosticoIso);
+// el fin: la hora de ahora con su diferencia contra la prometida; si ya pasó, el atraso real; sin hora, «sin hora estimada»
+const finTxt=a=>{const dd=a.atrasoMin>0?a.atrasoMin:dif(a.estimadaIso,a.pronosticoIso),fin=a.pronosticoIso||a.estimadaIso;if(!fin)return a.termina?{hora:a.termina,dif:"",cls:""}:null;
+  if(a.atrasoMin>0)return {hora:fmt(fin),dif:difTxt(dd)+" tarde",cls:"late"};
   return {hora:fmt(fin),dif:dd==null?"":dd>15?difTxt(dd)+" tarde":dd<-15?difTxt(dd).replace("−","")+" antes":"en hora",cls:dd==null?"":dd>15?"late":dd<-15?"early":"ontime"}};
 function renderTop(){
   document.getElementById("stamp").textContent=meta?"Foto de las "+meta.actualizado:"";
-  document.getElementById("summary").textContent=meta?meta.resumen:"";
   const you=(meta&&meta.teToca)||[],ul=document.getElementById("youList");you.forEach(t=>ul.appendChild(el("li",null,t)));document.getElementById("you").hidden=!you.length;
   const tb=document.getElementById("rows");(DATA.rows||[]).forEach(r=>{const tr=el("tr");[r.work,r.state,r.end,r.session,r.folder].forEach(v=>tr.appendChild(el("td",null,v||"")));tb.appendChild(tr)});
   if(!(DATA.rows||[]).length){const tr=el("tr");const td=el("td",null,"Nadie trabaja en esta máquina.");td.colSpan=5;tr.appendChild(td);tb.appendChild(tr)}
@@ -140,7 +133,6 @@ function renderCrew(){const c=document.getElementById("crew");c.replaceChildren(
   agents.forEach((a,i)=>{const s=AST[a.estado]||[a.estado||"","#999"];const k=el("div","card");
     const h=el("h3");const d=el("span","dot");d.style.background=SHIRT[i%SHIRT.length];h.appendChild(d);h.appendChild(document.createTextNode(a.nombre||""));k.appendChild(h);
     const st=el("span","st",s[0]);st.style.color=s[1];st.style.borderColor=s[1];k.appendChild(st);
-    if(a.titulo)k.appendChild(el("p","ttl",a.titulo));
     if(a.haciendo)k.appendChild(el("p",null,a.haciendo));
     if(a.mientras){const m=el("p","side");m.appendChild(el("b",null,"Mientras tanto: "));m.appendChild(document.createTextNode(a.mientras));k.appendChild(m)}
     const f=finTxt(a);if(f)k.appendChild(el("span","eta","Termina "+f.hora+(f.dif?" · "+f.dif:"")));
@@ -374,11 +366,9 @@ function animar(d,t){const {up,head,arms}=d.person.userData,e=d.agent.estado,k=t
 let desks=[],sel=null;
 const BOT='<svg class="bot" viewBox="0 0 24 24" fill="none" stroke="#c9b6ff" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="4" y="8" width="16" height="11" rx="4"/><path d="M12 8V4.5"/><circle cx="12" cy="3.5" r="1.2"/><circle cx="9" cy="13" r="1.3" fill="#c9b6ff"/><circle cx="15" cy="13" r="1.3" fill="#c9b6ff"/><path d="M2 12.5v3M22 12.5v3"/></svg>';
 const FX={firma:"!",espera:"⌛",coordina:"→",prueba:"✓",libre:"z"};
-function nuevoTag(d){const e=document.createElement("button");e.type="button";e.className="tag";e.innerHTML=BOT+'<div class="tx"><b></b><span class="st"><span class="dot"></span><span class="es"></span></span><span class="more"><span class="fin"></span><span class="bar"><i></i></span></span></div><span class="fx"></span><span class="side"></span>';e.onclick=()=>abrir(d.agent.nombre);labelsEl.appendChild(e);d.el=e}
+function nuevoTag(d){const e=document.createElement("button");e.type="button";e.className="tag";e.innerHTML=BOT+'<div class="tx"><b></b><span class="st"><span class="dot"></span><span class="es"></span></span><span class="more"><span class="fin"></span><span class="bar"><i></i></span></span></div><span class="fx"></span>';e.onclick=()=>abrir(d.agent.nombre);labelsEl.appendChild(e);d.el=e}
 function pintarTag(d){const a=d.agent,s=T.AST[a.estado]||[a.estado||"","#999"];d.el.style.setProperty("--c",s[1]);d.el.style.setProperty("--ropa",d.ropa);d.el.querySelector("b").textContent=a.nombre||"";
-  d.el.querySelector(".es").textContent=s[0];d.el.querySelector(".side").textContent=a.mientras?"y mientras tanto: "+a.mientras:"";
-  // en la etiqueta, sin hora va una frase corta; la entera está en el detalle
-  const f=a.pronosticoIso&&!(a.atrasada&&a.tipo!=="pipeline")?T.finTxt(a):{hora:a.tipo==="stalled"?"hay que encolarlo":a.tipo==="entering"?"esperando entrar":"",dif:""},fin=d.el.querySelector(".fin");fin.replaceChildren();
+  d.el.querySelector(".es").textContent=s[0]+(a.mientras?" · y algo más":"");const f=T.finTxt(a),fin=d.el.querySelector(".fin");fin.replaceChildren();
   if(f){fin.append(f.hora);if(f.dif){const x=document.createElement("em");x.className=f.cls;x.textContent=" · "+f.dif;fin.append(x)}}
   const bar=d.el.querySelector(".bar");bar.hidden=a.avance==null;bar.firstChild.style.width=(a.avance||0)+"%";
   const fx=d.el.querySelector(".fx");fx.textContent=FX[a.estado]||"";d.el.classList.toggle("alert",a.estado==="firma");d.el.classList.toggle("sel",sel===a.nombre);d.el.setAttribute("aria-label",(a.nombre||"")+": "+s[0])}
