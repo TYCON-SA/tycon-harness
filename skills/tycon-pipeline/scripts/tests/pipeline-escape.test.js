@@ -591,13 +591,15 @@ test('ForceManual_Canonica_PideFirma (T8) @story-8.142 @ac-5 @ac-8', (t) => {
   assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
   const c = JSON.parse(lab.leer(COORD));
   assert.deepStrictEqual([c.checks.tests, c.checksProvenance.tests], ['red:x', 'manual-forced']);
-  // otra sesión sin ejecución abierta: sale 2 sin gastar el registro
+  // otra sesión sin ejecución abierta: la ventana no se abre, y el guion sale 2 igual
   const sinMarcador = ['set-check', 'dod', 'green', '--force-manual', '--for-session', 'ses-z'];
-  assert.strictEqual(lab.pedir(lab.comando(sinMarcador)).decision, 'ask');
+  const negada = lab.pedir(lab.comando(sinMarcador));
+  assert.strictEqual(negada.decision, 'deny', negada.texto);
+  assert.match(negada.texto, /ses-z/);
+  assert.strictEqual(lab.vigentes().length, 0, 'la ventana no dejó registro');
   r = correrGuion(lab, MARKER, sinMarcador);
   assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /ses-z/);
-  assert.strictEqual(lab.vigentes().length, 1, 'el registro sigue sin gastar');
   // la propia sesión sin ejecución abierta: sale 2 (no 0 callado) y no firma
   r = correrGuion(lab, MARKER, ['set-check', 'dod', 'green', '--force-manual'], 'ses-sin');
   assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
@@ -646,7 +648,8 @@ test('TrustRan_Canonica_PideFirma (T9) @story-8.142 @ac-6 @ac-8', (t) => {
     assert.strictEqual(r.status, 2, `${que}: ${r.stdout}${r.stderr}`);
     assert.doesNotMatch(r.stdout, /check-count OK/, que);
   }
-  assert.strictEqual(lab.vigentes().length, antes + 2, "ningún registro gastado: los dos pedidos siguen");
+  // los dos que piden firma no abren la ventana (el chequeo los niega antes): no queda registro
+  assert.strictEqual(lab.vigentes().length, antes, 'ninguna ventana abierta para un comando que se niega');
   assert.strictEqual(lab.gates().filter((g) => g.name === 'escape:trust-ran-signed').length, 1, 'ninguna firma nueva');
   // la corrida de ses-a cambia entre el pedido y el guion: sale 2 sin contar
   const otra = laboratorioOtraSesion(t);

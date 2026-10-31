@@ -386,6 +386,14 @@ function readMarker() {
   return null;
 }
 
+// La carpeta de la corrida, creada si falta. En el chequeo antes de la ventana no se crea: alcanza con que la story dé
+// su clave (la crea el comando de verdad, después de la firma). Null si la story no da clave.
+function carpetaParaLaFirma(repo, storyId, storyAbs) {
+  const pl = require('./pipeline.js');
+  if (!PREVIO) return pl.resolveRunDir(repo, storyId, true, storyAbs);
+  return pl.resolveRunDir(repo, storyId, false, storyAbs) || (pl.runDirKey(storyId, storyAbs).key ? path.join(repo, '.advisors', 'pipeline-runs') : null);
+}
+
 function sinFirmaNoSeEscribe() {
   // en el chequeo antes de la ventana no se escribe: si llegó a escribir sin pasar por la firma, no dice que sí
   if (PREVIO) process.exit(0);
@@ -4705,7 +4713,7 @@ function cmdWaiveCritical(argv) {
   let runDir = null;
   try {
     const storyAbs = resolveStoryPath(m.storyPath, m) || undefined;
-    runDir = require('./pipeline.js').resolveRunDir(m.repoPath || process.cwd(), String(m.storyId), true, storyAbs);
+    runDir = carpetaParaLaFirma(m.repoPath || process.cwd(), String(m.storyId), storyAbs);
   } catch (e) { console.error(`marker.js waive-critical: no pude calcular la carpeta de la corrida (${e.message})`); process.exit(2); }
   if (!runDir) { console.error('marker.js waive-critical: la story no da una clave para su carpeta de corrida'); process.exit(2); }
   let entrada;
@@ -4840,7 +4848,8 @@ function cmdApprovePending(argv) {
   if (!pendiente) { console.error(`marker.js approve-pending: ${id} no es un pendiente abierto (\`- [ ] [${id}] …\`) en ${path.join(repo, PA.TODO)}: se aprueba lo que está escrito.`); process.exit(1); }
   const leido = PA.leerRegistro(registro);
   if (leido.ilegibles.length) { console.error(`marker.js approve-pending: ${PA.RECORD} tiene renglones que no se leen (${leido.ilegibles.join(', ')}): no se firma sobre un archivo roto.`); process.exit(1); }
-  if (leido.lineas.some((x) => !PA.motivoDe(x.valor) && x.valor.id === id)) { console.error(`✅ ${id} ya estaba aprobado: no escribí nada.`); process.exit(0); }
+  // en el chequeo antes de la ventana sale 1: sin eso la ventana se abre para una firma que no escribe nada
+  if (leido.lineas.some((x) => !PA.motivoDe(x.valor) && x.valor.id === id)) { console.error(`✅ ${id} ya estaba aprobado: no escribí nada.`); process.exit(PREVIO ? 1 : 0); }
   let maquina = null;
   try { maquina = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'machine-id.js')).huella().huella || null; } catch (_) { /* va sin máquina */ }
   const linea = PA.lineaNueva({ id, maquina });
@@ -4998,7 +5007,7 @@ function cmdMarkTested(argv) {
   const storyAbs = resolveStoryPath(m.storyPath, m);
   if (!storyAbs) { console.error('marker.js mark-tested: no encontré la story de la corrida'); process.exit(2); }
   let runDir = null;
-  try { runDir = require('./pipeline.js').resolveRunDir(m.repoPath || process.cwd(), String(m.storyId), true, storyAbs); } catch (e) {
+  try { runDir = carpetaParaLaFirma(m.repoPath || process.cwd(), String(m.storyId), storyAbs); } catch (e) {
     console.error(`marker.js mark-tested: no pude calcular la carpeta de la corrida (${e.message})`); process.exit(2);
   }
   if (!runDir) { console.error('marker.js mark-tested: la story no da una clave para su carpeta de corrida'); process.exit(2); }

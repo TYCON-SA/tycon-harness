@@ -477,7 +477,9 @@ function clasificarConElGuion(palabras, cwd) {
 // rechaza después es una firma perdida.
 const PRECHEQUEO = 'TYCON_SIGN_PRECHECK';
 const PRECHEQUEO_OK = 'tycon-sign-precheck: ok';
-const CON_PRECHEQUEO = new Set(['extra-round', 'save', 'plan-approval']);
+// las firmas de guion con requisitos propios; el carril y las firmas sobre un archivo no comprueban nada antes de firmar
+const CON_PRECHEQUEO = new Set(['extra-round', 'save', 'plan-approval', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver',
+  'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran']);
 // lo que espera el chequeo: el ok de guardar corre además los controles del commit de cada repo, con su propio plazo de
 // 210 s (lib/save-ok.js)
 const PLAZO_DEL_CHEQUEO = { save: 240000 };
@@ -488,8 +490,11 @@ const PLAZO_DEL_CHEQUEO = { save: 240000 };
  * `{ niega: <lo que dijo> }` si se negó antes, null si no contestó (y la ventana se abre como siempre).
  */
 function comprobarConElGuion({ firma, palabras, cwd, sesion, casa, env }) {
-  const guion = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', base(palabras[0]));
-  const r = require('child_process').spawnSync(process.execPath, [guion, ...palabras.slice(1)], { cwd: cwd || process.cwd(), encoding: 'utf8', timeout: PLAZO_DEL_CHEQUEO[firma] || 20000,
+  // el de los controles de la base vive en scripts/ci y es de la consola; los demás, al lado del pipeline y de node
+  const nombre = base(palabras[0]);
+  const sh = nombre.endsWith('.sh');
+  const guion = sh ? path.join(__dirname, '..', 'ci', nombre) : path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', nombre);
+  const r = require('child_process').spawnSync(sh ? 'bash' : process.execPath, [guion, ...palabras.slice(1)], { cwd: cwd || process.cwd(), encoding: 'utf8', timeout: PLAZO_DEL_CHEQUEO[firma] || 20000,
     env: { ...(env || process.env), ...(casa ? { HOME: casa, USERPROFILE: casa } : {}), [PRECHEQUEO]: '1', ...(sesion ? { CLAUDE_CODE_SESSION_ID: sesion } : {}) } });
   if (r.error || r.status === null) return null;
   if (r.status === 0) return String(r.stdout).split('\n').includes(PRECHEQUEO_OK) ? { ok: true } : null;
