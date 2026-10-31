@@ -102,6 +102,9 @@ const NEVER_CODE_SEGMENTS = new Set([
 const HARNESS_REPO_SEGMENTS = new Set(['agent-skills', 'tycon-claude-guides', 'tycon-harness']);
 
 const DEFAULT_ADHOC_MAX_FILES = 8;
+// el arreglo rápido que abre la coordinadora por delegación: más chico que el que firma una persona
+const DELEGATED_ADHOC_MAX_FILES = 5;
+const cupoDelegado = (pedido) => Math.min(pedido, DELEGATED_ADHOC_MAX_FILES);
 const MARKER_JS = '~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js';
 
 function norm(p) {
@@ -216,6 +219,15 @@ function computeStoryGate({
   }
   if (isPendingApprovalsRecord(filePath) || isPendingApprovalsRecord(real)) {
     return { action: 'block', kind: 'pending-approvals', reason: 'escritura a mano del registro de aprobaciones de pendientes' };
+  }
+  // El arreglo rápido que abrió la coordinadora por delegación no toca lo sensible: eso lo firma el dueño. Antes del
+  // portón apagado y del pase de los repos del arnés, que es donde están esos archivos
+  if (adhoc && adhoc.reason && adhoc.via === 'delegacion' && repoRoot) {
+    const { esSensible } = require('./save-ok.js');
+    const sensible = [filePath, real].map((f) => norm(path.relative(repoRoot, f))).find((rel) => !rel.startsWith('..') && esSensible(rel));
+    if (sensible) {
+      return { action: 'block', kind: 'adhoc-sensitive', reason: `el arreglo rápido delegado no toca lo sensible (${sensible}): ese cambio lo firma una persona` };
+    }
   }
 
   if (gateEnabled === false) return { action: 'pass', reason: 'gate apagado (env o config commiteada del repo)' };
@@ -516,5 +528,5 @@ module.exports = {
   markerDeleteMessage, storyByConsoleMessage,
   computeStoryGate, blockMessage, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
   STORY_INTENT_PATTERNS,
-  DEFAULT_ADHOC_MAX_FILES, EXTRA_CODE_EXTS, NEVER_CODE_SEGMENTS, HARNESS_REPO_SEGMENTS, MARKER_JS,
+  DEFAULT_ADHOC_MAX_FILES, DELEGATED_ADHOC_MAX_FILES, cupoDelegado, EXTRA_CODE_EXTS, NEVER_CODE_SEGMENTS, HARNESS_REPO_SEGMENTS, MARKER_JS,
 };
