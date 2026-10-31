@@ -15,6 +15,8 @@ const os = require('os');
 const path = require('path');
 
 const SEAL = 'instincts-notice.json';
+// 2: el aviso dice que las propuestas las arma la noche de la organización (antes decía la máquina del mantenedor)
+const SCHEMA = 2;
 const LEGACY_VARS = ['TYCON_INSTINCT_MINING', 'TYCON_INSTINCT_OBSERVER'];
 
 const TEXT_ON = [
@@ -23,7 +25,8 @@ const TEXT_ON = [
   '     ayudantes y el nombre de las skills; de las demás herramientas, sólo el nombre (todo saneado de secretos);',
   '   · lo grabado sube al buzón de la organización y sólo lo leen los mantenedores con el rol de lectura;',
   '   · queda atribuido a vos: tu máquina informa tu correo de git;',
-  '   · el modelo que propone no corre en esta máquina, sino en la del mantenedor que revisa.',
+  '   · las propuestas las arma el proceso de la noche de la organización, con un modelo que elige la organización,',
+  '     a partir de lo que suben las máquinas: ese modelo ve unas pocas líneas de ejemplo de cada patrón repetido.',
   '   Para bajarte: TYCON_INSTINCTS=0 (o integrations.instincts=false en ~/.claude/tycon.json).',
 ].join('\n');
 
@@ -45,16 +48,20 @@ function decide({ prendida, env, stateDir, now, mailbox }) {
   const day = at.toISOString().slice(0, 10);
   if (prendida) {
     const texts = [];
-    const next = { ...prev, schema: 1 };
+    const next = { ...prev, schema: SCHEMA };
     if (!prev.said_on) {
       texts.push(TEXT_ON);
       Object.assign(next, { said_on: day, said_at: at.toISOString(), state: 'prendida' });
+    } else if (!(prev.schema >= SCHEMA)) {
+      // el texto cambió (quién arma las propuestas): una máquina ya avisada lo ve una vez más, sin mover el día desde el
+      // que sube lo grabado
+      texts.push(TEXT_ON);
     }
     if (mailbox && prev.mailbox !== mailbox) {
       next.mailbox = mailbox;
       if (mailbox === 'sin_buzon') texts.push(TEXT_NO_MAILBOX);
     }
-    if (next.said_on === prev.said_on && next.mailbox === prev.mailbox) return { text: null, seal: null };
+    if (next.said_on === prev.said_on && next.mailbox === prev.mailbox && next.schema === prev.schema) return { text: null, seal: null };
     return { text: texts.length ? texts.join('\n') : null, seal: next };
   }
   const legacy = LEGACY_VARS.some((v) => String((env || {})[v] || '') === '1');

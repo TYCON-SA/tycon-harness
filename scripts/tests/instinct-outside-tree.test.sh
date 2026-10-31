@@ -15,10 +15,9 @@
 #        repetido se lee de cualquier lugar sin borrar nada fuera del lugar de escritura
 #   T12  list, bulk-list, show y status ven todos los lugares y no crean nada
 #   T13  approve y reject mueven el archivo dentro del lugar donde estaba
-#   T14  el disparador manda el registro adonde se escribe y nunca crea inbox/ en un árbol que no la trae
+#   T14  el disparador ya no lanza el observador ni crea nada (las propuestas las arma la noche de la organización)
 #   T15  sin tycon-home.js nadie cae al árbol: el observador lo dice y sale 0, el comando de revisión sale 1
-# Además: una carpeta que existe y no se deja leer se DICE (nunca se muestra como vacía); el
-# disparador deja un registro de reserva con el motivo cuando no puede usar el suyo; la mudanza de descartados de la
+# Además: una carpeta que existe y no se deja leer se DICE (nunca se muestra como vacía); la mudanza de descartados de la
 # carpeta anterior no corre en un árbol sin buzón; un borrado que falla al aprobar no pierde la decisión.
 #
 # Cómo corre: los guiones se COPIAN a un árbol de prueba (su raíz es ese árbol) y HOME es una carpeta de usuario de
@@ -407,61 +406,25 @@ if [ "$ES_ROOT" = 1 ]; then echo "⏭️  T13 borrado que falla: NO MEDIDO — c
   else bad "T13 borrado que falla al rechazar" "rc=$RC $(echo "$SAL" | head -4 | tr '\n' '|' | cut -c1-300)"; fi
 fi
 
-# ═══ T14 · el disparador manda el registro adonde se escribe ════════════════════════════════════════════════════
+# ═══ T14 · el disparador no lanza el observador ni crea nada ══════════════════════════════════════════════════
+# Las propuestas las arma la noche de la organización: con la variable vieja prendida, en un árbol con buzón o sin él, el
+# disparador no corre node, no deja sello ni registro, y no crea inbox/ ni en el árbol ni en la casa.
 observador_de_mentira() { cat > "$1/scripts/instincts/instinct-observer.js" <<'EOF'
 require('fs').writeFileSync(require('path').join(__dirname, '..', '..', 'corrio.txt'), process.argv.slice(2).join(' '));
-console.log('LINEA-DEL-OBSERVADOR');
 EOF
 }
 disparar() { con_limite env -i HOME="$2" PATH="$LAB/bin:/usr/bin:/bin" TMPDIR="$LAB/tmp" TYCON_INSTINCT_OBSERVER=1 TYCON_NO_BOOTSTRAP_HEAL=1 bash "$1/scripts/hooks/instinct-trigger.sh" < /dev/null > /dev/null 2>&1; RC=$?; }
-esperar() { for _ in $(seq 1 100); do grep -qF -- "$2" "$1" 2>/dev/null && return 0; sleep 0.1; done; return 1; }
-A=$(arbol t14); casa casa-t14; observador_de_mentira "$A"
-disparar "$A" "$H"; esperar "$CASA/observer.log" LINEA-DEL-OBSERVADOR; esperar "$A/corrio.txt" "--notify"
-if [ "$RC" = 0 ] && grep -qF LINEA-DEL-OBSERVADOR "$CASA/observer.log" 2>/dev/null && [ "$(cat "$A/corrio.txt" 2>/dev/null)" = "--notify" ] && [ ! -e "$A/inbox" ] \
-  && [ ! -e "$H/.claude/instinct-observer.fallback.log" ]; then
-  ok "T14 Trigger_LogGoesWhereItWrites — árbol sin buzón: el registro del observador queda en la casa y el árbol no gana inbox/"
-else bad "T14 sin buzón" "rc=$RC casa=[$(ls "$CASA" 2>&1 | tr '\n' ' ')] árbol=[$(primer_nivel "$A")]"; fi
-A=$(arbol t14-buzon buzon); casa casa-t14-buzon; observador_de_mentira "$A"
-disparar "$A" "$H"; esperar "$A/inbox/instincts/observer.log" LINEA-DEL-OBSERVADOR
-if [ "$RC" = 0 ] && grep -qF LINEA-DEL-OBSERVADOR "$A/inbox/instincts/observer.log" 2>/dev/null && sin_inbox_en_casa "$H" \
-  && [ ! -e "$H/.claude/instinct-observer.fallback.log" ]; then
-  ok "T14 con buzón: el registro en el árbol, como siempre, y la casa no se crea"
-else bad "T14 con buzón" "rc=$RC árbol=[$(ls "$A/inbox/instincts" 2>&1 | tr '\n' ' ')]"; fi
-# Tres formas de no poder usar el registro: la pieza no está, la pieza sale 1 (aunque imprima algo), y la pieza da una
-# ruta que bash no puede abrir (una carpeta). En las tres el observador corre igual, nada se crea en el árbol, y el
-# registro va a uno de RESERVA al lado del sello, con el motivo: nunca se pierde callado.
-for forma in sin-la-pieza pieza-que-falla registro-que-no-abre; do
-  A=$(arbol "t14-$forma"); casa "casa-t14-$forma"; observador_de_mentira "$A"
-  RESERVA="$H/.claude/instinct-observer.fallback.log"
-  case "$forma" in
-    sin-la-pieza) rm -f "$A/scripts/instincts/instinct-dirs.js"; MOTIVO="instinct-dirs.js" ;;
-    pieza-que-falla) printf 'process.stderr.write("MOTIVO-DE-LA-PIEZA\\n"); process.stdout.write("una/ruta/que/no/vale\\n"); process.exit(1);\n' > "$A/scripts/instincts/instinct-dirs.js"; MOTIVO="MOTIVO-DE-LA-PIEZA" ;;
-    registro-que-no-abre) mkdir -p "$LAB/soy-una-carpeta-$forma"; printf 'process.stdout.write(process.argv[1] ? %s + "\\n" : "");\n' "'$LAB/soy-una-carpeta-$forma'" > "$A/scripts/instincts/instinct-dirs.js"; MOTIVO="no pude abrir $LAB/soy-una-carpeta-$forma" ;;
-  esac
-  disparar "$A" "$H"; esperar "$A/corrio.txt" "--notify"; esperar "$RESERVA" LINEA-DEL-OBSERVADOR
-  if [ "$RC" = 0 ] && [ "$(cat "$A/corrio.txt" 2>/dev/null)" = "--notify" ] && [ ! -e "$A/inbox" ] && [ ! -e "$A/una" ] && sin_inbox_en_casa "$H" \
-    && grep -F "de reserva" "$RESERVA" 2>/dev/null | grep -F -- "$MOTIVO" >/dev/null && grep -qF LINEA-DEL-OBSERVADOR "$RESERVA"; then
-    ok "T14 $forma: el observador corre igual, nada se crea en el árbol, y el registro de reserva trae el motivo y lo que dijo el observador"
-  else bad "T14 $forma" "rc=$RC corrió=$(cat "$A/corrio.txt" 2>/dev/null || echo no) árbol=[$(primer_nivel "$A")] reserva=[$(head -c 300 "$RESERVA" 2>&1 | tr '\n' '|')]"; fi
+for forma in sin-buzon buzon; do
+  if [ "$forma" = buzon ]; then A=$(arbol t14-buzon buzon); else A=$(arbol t14); fi
+  casa "casa-t14-$forma"; observador_de_mentira "$A"; ANTES=$(primer_nivel "$A")
+  disparar "$A" "$H"
+  # el observador corría desprendido: la ausencia se mira varias veces
+  APARECIO=0; for _ in $(seq 1 20); do [ -e "$A/corrio.txt" ] && { APARECIO=1; break; }; sleep 0.1; done
+  if [ "$RC" = 0 ] && [ "$APARECIO" = 0 ] && [ "$(primer_nivel "$A")" = "$ANTES" ] && [ ! -e "$A/inbox/instincts/observer.log" ] && sin_inbox_en_casa "$H" \
+    && [ ! -e "$H/.claude/instinct-observer.last" ] && [ ! -e "$H/.claude/instinct-observer.fallback.log" ]; then
+    ok "T14 Trigger_NeverLaunchesObserver ($forma): no corre el observador, no deja sello ni registro, y no crea nada"
+  else bad "T14 $forma" "rc=$RC corrió=$([ -e "$A/corrio.txt" ] && echo sí || echo no) árbol=[$(primer_nivel "$A")] casa=[$(find "$H" -mindepth 1 | head -3 | tr '\n' ' ')]"; fi
 done
-# ni el registro ni el de reserva se pueden abrir (el de reserva es una carpeta): recién ahí el registro se descarta —
-# y el observador corre igual, sale 0 y nada se crea en el árbol
-A=$(arbol t14-sin-reserva); casa casa-t14-sin-reserva; observador_de_mentira "$A"
-rm -f "$A/scripts/instincts/instinct-dirs.js"; mkdir -p "$H/.claude/instinct-observer.fallback.log"
-disparar "$A" "$H"; esperar "$A/corrio.txt" "--notify"
-if [ "$RC" = 0 ] && [ "$(cat "$A/corrio.txt" 2>/dev/null)" = "--notify" ] && [ ! -e "$A/inbox" ] && sin_inbox_en_casa "$H" \
-  && [ -d "$H/.claude/instinct-observer.fallback.log" ] && [ -z "$(ls -A "$H/.claude/instinct-observer.fallback.log")" ]; then
-  ok "T14 sin registro y sin reserva: el observador corre igual, sale 0 y nada se crea en el árbol"
-else bad "T14 sin reserva" "rc=$RC corrió=$(cat "$A/corrio.txt" 2>/dev/null || echo no) árbol=[$(primer_nivel "$A")]"; fi
-# con el freno de 12 horas sin vencer no se lanza nada: ni node, ni la casa. La ausencia se mira varias veces (el
-# observador corre desprendido: con la máquina cargada, una sola mirada temprana daría verde aunque después apareciera)
-A=$(arbol t14-freno); casa casa-t14-freno; observador_de_mentira "$A"
-mkdir -p "$H/.claude"; date +%s > "$H/.claude/instinct-observer.last"
-disparar "$A" "$H"
-APARECIO=0; for _ in $(seq 1 20); do [ -e "$A/corrio.txt" ] && { APARECIO=1; break; }; sleep 0.1; done
-if [ "$RC" = 0 ] && [ "$APARECIO" = 0 ] && [ ! -e "$A/corrio.txt" ] && [ ! -e "$A/inbox" ] && sin_inbox_en_casa "$H"; then
-  ok "T14 con el freno sin vencer: no corre el observador y no se crea ni la casa"
-else bad "T14 freno sin vencer" "rc=$RC corrió=$([ -e "$A/corrio.txt" ] && echo sí || echo no) casa=[$(find "$H" -name inbox | head -2 | tr '\n' ' ')]"; fi
 
 # ═══ T15 · sin tycon-home.js nadie cae al árbol ═════════════════════════════════════════════════════════════════
 A=$(arbol t15 limpio sin-estado); casa casa-t15; B=$(modelo t15 las-dos); ANTES=$(primer_nivel "$A")

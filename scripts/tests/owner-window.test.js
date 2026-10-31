@@ -1563,6 +1563,31 @@ test('Freno_ApproveSave_FormaCanonica (T12) @story-8.143 @ac-1', (t) => {
   }
 });
 
+// Una pestaña que no pide permisos (bypass y parecidos) aprueba sola lo que el freno manda a la ventana: el renglón
+// quedaría a nombre del dueño sin que nadie haya dicho Sí. Ahí la firma se niega con el comando de la terminal; en una
+// pestaña que pregunta, la ventana de siempre; la delegación no usa ventana y sigue valiendo.
+// 🔴 mutación: sin mirar el modo de permisos → en bypass sale 'ask' y la ventana se aprueba sola.
+test('Freno_PestanaSinPermisos_NiegaLaVentana_ConElComandoDeLaTerminal', (t) => {
+  for (const modo of ['bypassPermissions', 'dontAsk', 'auto', 'un-modo-nuevo']) {
+    const casa = casaNueva(t);
+    const r = pedir(casa, SAVE, { evento: { ...DE_LA_COORD, permission_mode: modo } });
+    assert.strictEqual(r.decision, 'deny', `${modo}: ${r.texto}`);
+    assert.match(r.texto, /no pide permisos/, modo);
+    assert.match(r.texto, /approve-save --terminal .*con --for-session ses-a/, `${modo}: el comando de la terminal`);
+    assert.strictEqual(registros(casa).length, 0, `${modo}: sin registro de ventana`);
+  }
+  for (const modo of ['default', 'acceptEdits', 'plan', undefined]) {
+    const casa = casaNueva(t);
+    const ev = modo === undefined ? DE_LA_COORD : { ...DE_LA_COORD, permission_mode: modo };
+    assert.strictEqual(pedir(casa, SAVE, { evento: ev }).decision, 'ask', String(modo));
+  }
+  // la delegación no pasa por la ventana: en una pestaña sin permisos sigue firmando
+  const conSave = { ...PERFIL, delegated_signing: ['save'] };
+  const r = pedir(casaConDesignada(t), SAVE, { evento: { ...DE_LA_COORD, permission_mode: 'bypassPermissions' }, delegacion: delegacionReal({ perfil: conSave }) });
+  assert.strictEqual(r.decision, 'allow', r.texto);
+  assert.strictEqual(r.via, 'delegacion');
+});
+
 test('ApproveSave_SeisLlaves (T13) @story-8.143 @ac-8', (t) => {
   const conSave = { ...PERFIL, delegated_signing: ['save'] };
   const casa = casaConDesignada(t);
