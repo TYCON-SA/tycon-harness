@@ -357,7 +357,7 @@ test('8.141 T11 AdhocSet_ForSession_Delegada_SinAviso_NoDeclara', () => {
   const env = conVentana({ ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: coord }, { delegadaPor: coord });
   const r = spawnSync('node', [path.join(SCRIPTS, 'marker.js'), ...args], { encoding: 'utf8', env });
   assert.equal(r.status, 1, `${r.stdout}${r.stderr}`);
-  assert.match(r.stderr, /sin aviso al dueño, la coordinadora no abre el arreglo rápido/);
+  assert.match(r.stderr, /sin aviso a la persona, la coordinadora no abre el arreglo rápido/);
   assert.equal(declaracion(home, destino), null, 'la destino sin declaración');
   assert.equal(declaracion(home, coord), null, 'la designada sin declaración');
   assert.deepStrictEqual(adhocLog(home).map((e) => e.kind), [], 'ningún renglón');

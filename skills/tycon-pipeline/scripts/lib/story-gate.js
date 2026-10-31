@@ -226,7 +226,7 @@ function computeStoryGate({
     const { esSensible } = require('./save-ok.js');
     const sensible = [filePath, real].map((f) => norm(path.relative(repoRoot, f))).find((rel) => !rel.startsWith('..') && esSensible(rel));
     if (sensible) {
-      return { action: 'block', kind: 'adhoc-sensitive', reason: `el arreglo rápido delegado no toca lo sensible (${sensible}): ese cambio lo firma el dueño` };
+      return { action: 'block', kind: 'adhoc-sensitive', reason: `el arreglo rápido delegado no toca lo sensible (${sensible}): ese cambio lo firma una persona` };
     }
   }
 

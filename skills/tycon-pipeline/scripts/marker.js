@@ -5325,7 +5325,7 @@ function cmdAdhoc(sub, payloadJson) {
       const cupo = cupoDelegado(payload.maxFiles !== undefined ? payload.maxFiles : 8);
       const a = so.avisar({ texto: `Arreglo rápido: la coordinadora abrió el de la sesión ${destino}: «${reason}» · hasta ${cupo} archivos, sin tocar lo sensible.`,
         canales: () => notify.canalesDeLaSesion(), mandar: (o) => notify.avisar(o) });
-      return a.ok ? null : { codigo: 1, motivo: `sin aviso al dueño, la coordinadora no abre el arreglo rápido (${a.motivo})` };
+      return a.ok ? null : { codigo: 1, motivo: `sin aviso a la persona, la coordinadora no abre el arreglo rápido (${a.motivo})` };
     };
     const r = ow.exigir({ firma: 'adhoc-lane', argv: process.argv.slice(1), resumen: `arreglo rápido de la sesión ${destino}: «${reason}» · ${cupoPedido}`,
       propia: PROPIA, anotar: (renglon) => appendLog('gates.log', renglon), antes });
