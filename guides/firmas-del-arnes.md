@@ -230,7 +230,9 @@ ventana sólo si se cumple todo esto:
 - la sesión destino no es la propia, ni trabaja la misma story que una ejecución abierta de la sesión designada.
 
 El arreglo rápido de otra pestaña (`adhoc-lane`) se declara así desde la sesión designada de la misma máquina, con
-`marker.js adhoc set '<json>' --for-session <sesión>`; por esta vía el cupo queda en 8 archivos como mucho. La
+`marker.js adhoc set '<json>' --for-session <sesión>`; por esta vía el cupo queda en 5 archivos como mucho, el arreglo
+nunca toca lo sensible de `scripts/lib/signatures.js` y, antes de abrirlo, al dueño le llega una línea por los canales
+de los avisos, como el ok de guardar (sin entrega, no hay arreglo). La
 coordinadora de otra máquina no lo declara: se lo pide a la designada de la máquina destino (`guides/coordination.md`).
 No entra en ninguno de los grupos de la 8.116: para delegarla, el perfil la nombra.
 
@@ -256,7 +258,9 @@ El ok de guardar (`save`) suma tres límites cuando va por delegación, y los co
   adversarial posteriores al último cambio, ningún crítico (ni eximido) y ninguna exención en la corrida;
 - el cambio no toca nada de la lista de lo sensible de `scripts/lib/signatures.js` (firmas, frenos, avisos, permisos,
   el perfil, el poder de la coordinadora);
-- el aviso le llegó al dueño por un canal de la lista del perfil (`integrations.notify.channels`).
+- el aviso le llegó al dueño por los mismos canales que el resto del arnés: los que elige el sitio en Configuración,
+  «Avisos» (`integrations.notify.channels`), o Telegram si no se eligió ninguno. Lo que protege es la entrega: si el
+  aviso no sale por ningún canal, no hay ok; con «ninguno» elegido, tampoco.
 
 Si falta una, el guion lo dice y no firma: el ok lo da el dueño.
 

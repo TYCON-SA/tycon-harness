@@ -72,7 +72,7 @@ const SIN_DELEGACION = () => ({ ok: false, motivo: 'sin delegación en la prueba
 // sin `aprobador`, el texto de un repo del arnés: el de verdad mira el remoto de la carpeta del evento
 const { APPROVERS } = require(path.join(__dirname, '..', 'lib', 'approver.js'));
 const DEL_ARNES = () => APPROVERS.maintainers;
-const pedir = (casa, cmd, o = {}) => ow.decidir({ evento: evento(cmd, o.evento), escapes: o.escapes || [], arbol: o.arbol || arbolDelFreno(), pid: 201, casa, ahora: o.ahora || AHORA, delegacion: o.delegacion || SIN_DELEGACION, clasificar: o.clasificar || (() => null), aprobador: o.aprobador || DEL_ARNES });
+const pedir = (casa, cmd, o = {}) => ow.decidir({ evento: evento(cmd, o.evento), escapes: o.escapes || [], arbol: o.arbol || arbolDelFreno(), pid: 201, casa, ahora: o.ahora || AHORA, delegacion: o.delegacion || SIN_DELEGACION, clasificar: o.clasificar || (() => null), comprobar: o.comprobar || (() => null), aprobador: o.aprobador || DEL_ARNES });
 const registros = (casa) => { try { return fs.readdirSync(ow.carpeta(casa)); } catch (_) { return []; } };
 const vigentes = (casa) => registros(casa).filter((f) => f.endsWith('.json'));
 const gates = (casa) => { try { return fs.readFileSync(path.join(casa, '.claude', '.tycon-pipeline', 'gates.log'), 'utf8').split('\n').filter(Boolean).map(JSON.parse); } catch (_) { return []; } };
@@ -502,7 +502,7 @@ test('OwnerWindow_CasaFalsa_NoVale (T20)', (t) => {
   t.after(() => { for (const [k, v] of Object.entries(antes)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } });
   process.env.HOME = falsa; process.env.USERPROFILE = falsa; process.env.TYCON_HOME = path.join(falsa, '.tycon');
   const userInfo = () => ({ homedir: real });
-  const r = ow.decidir({ evento: evento(cmd), arbol: arbolDelFreno(), pid: 201, ahora: AHORA, userInfo });
+  const r = ow.decidir({ evento: evento(cmd), arbol: arbolDelFreno(), pid: 201, ahora: AHORA, userInfo, comprobar: () => null });
   assert.strictEqual(r.decision, 'ask');
   assert.strictEqual(vigentes(real).length, 1, 'escribió en la casa de la cuenta');
   assert.strictEqual(vigentes(falsa).length, 0, 'nada en la casa falsa');
@@ -870,7 +870,7 @@ test('OwnerWindow_PedidosRepetidos_GanaElUltimo (pase adversarial)', (t) => {
   const cmd = `node ${MARKER} mark-tested --acs 3 --for-session ses-m`;
   const argv = [MARKER, 'mark-tested', '--acs', '3', '--for-session', 'ses-m'];
   for (const [sesion, ahora] of [['ses-zzz', AHORA], ['ses-aaa', AHORA + 1000]]) {
-    ow.decidir({ evento: evento(cmd, { session_id: sesion }), arbol: arbolDelFreno(), pid: 201, casa, ahora });
+    ow.decidir({ evento: evento(cmd, { session_id: sesion }), arbol: arbolDelFreno(), pid: 201, casa, ahora, comprobar: () => null });
   }
   const v = ow.verificar({ firma: 'manual-test', argv, pid: 301, arbol: arbolDelGuion(casa, cmd), casa, ahora: AHORA + 2000, destino: 'ses-m' });
   assert.ok(v.ok, v.motivo);
@@ -1427,7 +1427,8 @@ test('OwnerWindow_CadaFirmaPorTerminal_AbreLaVentanaEnWindows', (t) => {
   const casos = [
     ['plan-approval', process.execPath, [MARKER, 'complete-step', 'approve-plan', '--terminal', '--for-session', 'ses-w']],
     ['lost-run', process.execPath, [MARKER, 'clear-session', 'ses-w', '--lost', '--terminal', '--for-session', 'ses-w']],
-    ['browser-test', process.execPath, [E2E, 'prepare', '--repo', repo, '--story', story, '--terminal', '--for-session', 'ses-w']],
+    // con la dirección de la app: lo que prepare comprueba va antes de la firma
+    ['browser-test', process.execPath, [E2E, 'prepare', '--repo', repo, '--story', story, '--url', 'http://localhost:4173', '--terminal', '--for-session', 'ses-w']],
     ['control-change', 'bash', [CONTROLES, 'approve', '--root', repo, '--file', 'specs/story-9.97-ventana.md', '--terminal']],
   ];
   for (const [firma, prog, args] of casos) {
@@ -1561,6 +1562,31 @@ test('Freno_ApproveSave_FormaCanonica (T12) @story-8.143 @ac-1', (t) => {
     assert.strictEqual(pedir(otra, cmd, { evento: DE_LA_COORD }).decision, 'deny', cmd);
     assert.strictEqual(registros(otra).length, 0, `${cmd}: sin registro`);
   }
+});
+
+// Una pestaña que no pide permisos (bypass y parecidos) aprueba sola lo que el freno manda a la ventana: el renglón
+// quedaría a nombre del dueño sin que nadie haya dicho Sí. Ahí la firma se niega con el comando de la terminal; en una
+// pestaña que pregunta, la ventana de siempre; la delegación no usa ventana y sigue valiendo.
+// 🔴 mutación: sin mirar el modo de permisos → en bypass sale 'ask' y la ventana se aprueba sola.
+test('Freno_PestanaSinPermisos_NiegaLaVentana_ConElComandoDeLaTerminal', (t) => {
+  for (const modo of ['bypassPermissions', 'dontAsk', 'auto', 'un-modo-nuevo']) {
+    const casa = casaNueva(t);
+    const r = pedir(casa, SAVE, { evento: { ...DE_LA_COORD, permission_mode: modo } });
+    assert.strictEqual(r.decision, 'deny', `${modo}: ${r.texto}`);
+    assert.match(r.texto, /no pide permisos/, modo);
+    assert.match(r.texto, /approve-save --terminal .*con --for-session ses-a/, `${modo}: el comando de la terminal`);
+    assert.strictEqual(registros(casa).length, 0, `${modo}: sin registro de ventana`);
+  }
+  for (const modo of ['default', 'acceptEdits', 'plan', undefined]) {
+    const casa = casaNueva(t);
+    const ev = modo === undefined ? DE_LA_COORD : { ...DE_LA_COORD, permission_mode: modo };
+    assert.strictEqual(pedir(casa, SAVE, { evento: ev }).decision, 'ask', String(modo));
+  }
+  // la delegación no pasa por la ventana: en una pestaña sin permisos sigue firmando
+  const conSave = { ...PERFIL, delegated_signing: ['save'] };
+  const r = pedir(casaConDesignada(t), SAVE, { evento: { ...DE_LA_COORD, permission_mode: 'bypassPermissions' }, delegacion: delegacionReal({ perfil: conSave }) });
+  assert.strictEqual(r.decision, 'allow', r.texto);
+  assert.strictEqual(r.via, 'delegacion');
 });
 
 test('ApproveSave_SeisLlaves (T13) @story-8.143 @ac-8', (t) => {
@@ -1988,4 +2014,236 @@ test('Pendiente_MarkerAcepta_ForSession: approve-pending se pide para otra sesi�
   assert.notStrictEqual(r.status, 0, r.stderr);
   assert.match(r.stderr, /no se aprobó DEF-nuevo/);
   assert.strictEqual(fs.existsSync(path.join(d, 'tasks', 'pending-approvals.jsonl')), false);
+});
+
+// --- el chequeo antes de la ventana -----------------------------------------------------------------------------------
+//
+// Una ventana que el guion rechaza después del «Sí» es una firma perdida: el freno corre antes el guion en modo de
+// chequeo y, si se negaría, no la abre.
+
+const EXTRA = GUIONES.find((g) => g[0] === 'extra-round');
+
+// 🔴 Falla con: la ventana abierta (o su registro escrito) para un comando que el guion iba a rechazar.
+test('Precheck_GuionQueSeNegaria_NoAbreLaVentana', (t) => {
+  for (const [firma, cmd] of GUIONES.filter((g) => ow.CON_PRECHEQUEO.has(g[0]))) {
+    const casa = casaNueva(t);
+    let visto = null;
+    const r = pedir(casa, cmd, { comprobar: (o) => { visto = o; return { niega: '🛑 falta la nota de la tercera vuelta' }; } });
+    assert.strictEqual(r.decision, 'deny', `${cmd}: ${r.texto}`);
+    assert.match(r.texto, /No abrí la ventana/);
+    assert.match(r.texto, /falta la nota de la tercera vuelta/, 'dice lo que contestó el guion');
+    assert.strictEqual(vigentes(casa).length, 0, `${cmd}: sin registro`);
+    assert.strictEqual(visto.firma, firma);
+    assert.strictEqual(visto.sesion, 'ses-a');
+    assert.strictEqual(visto.casa, casa);
+    assert.deepStrictEqual(visto.palabras, ow.canonica(cmd));
+  }
+});
+
+// 🔴 Falla con: un chequeo que no contesta (o se cae) cerrando la ventana: ante la duda se abre como siempre.
+test('Precheck_GuionEnRegla_SinRespuestaOCaido_AbreLaVentana', (t) => {
+  for (const comprobar of [() => ({ ok: true }), () => null, () => { throw new Error('se cayó'); }]) {
+    const casa = casaNueva(t);
+    const r = pedir(casa, EXTRA[1], { comprobar });
+    assert.strictEqual(r.decision, 'ask', r.texto);
+    assert.strictEqual(vigentes(casa).length, 1);
+  }
+});
+
+// 🔴 Falla con: el chequeo corrido para una firma sin chequeo o para la que ya delegó el perfil.
+test('Precheck_SoloParaSusFirmasYSinDelegar', (t) => {
+  let llamado = 0;
+  const comprobar = () => { llamado++; return { niega: 'no' }; };
+  for (const cmd of [ADHOC, SIGN_FILE('dod_runtime_exempt', '/r/specs/story-9.99.md')]) {
+    const r = pedir(casaNueva(t), cmd, { comprobar });
+    assert.strictEqual(r.decision, 'ask', `${cmd}: ${r.texto}`);
+  }
+  const casa = casaConDesignada(t);
+  const r = pedir(casa, PLAN, { evento: DE_LA_COORD, delegacion: delegacionReal(), comprobar });
+  assert.strictEqual(r.decision, 'allow', r.texto);
+  assert.strictEqual(llamado, 0);
+});
+
+// 🔴 Falla con: el guion en modo de chequeo que firma, gasta el pedido o no lo dice por la salida.
+test('Precheck_ExigirEnModoDeChequeo_NoFirmaNiGasta', (t) => {
+  const casa = casaNueva(t);
+  assert.strictEqual(pedir(casa, PLAN, { evento: DE_LA_COORD }).decision, 'ask');
+  let salida = '';
+  let codigo = null;
+  const base = { firma: 'plan-approval', argv: PLAN_ARGV, pid: 301, arbol: arbolDelGuion(casa, PLAN), casa, ahora: AHORA + 60000, propia: 'ses-coord',
+    env: { [ow.PRECHEQUEO]: '1' }, escribir: (s) => { salida += s; }, salir: (c) => { codigo = c; } };
+  const e = ow.exigir(base);
+  assert.strictEqual(codigo, 0);
+  assert.strictEqual(e.prechequeo, true);
+  assert.ok(salida.split('\n').includes(ow.PRECHEQUEO_OK), salida);
+  assert.strictEqual(vigentes(casa).length, 1, 'el pedido sigue sin gastar');
+  assert.strictEqual(gates(casa).length, 0, 'sin renglón de firma');
+  // lo que el guion comprueba antes de la firma corre también en el chequeo, y su negativa vuelve tal cual
+  salida = '';
+  codigo = null;
+  let via = null;
+  const n = ow.exigir({ ...base, antes: (v) => { via = v; return { codigo: 2, motivo: 'la corrida no está limpia' }; } });
+  assert.deepStrictEqual([n.codigo, n.motivo, via, codigo, salida], [2, 'la corrida no está limpia', 'ventana', null, '']);
+  assert.strictEqual(vigentes(casa).length, 1);
+  // con --terminal, el chequeo no pregunta nada en la terminal
+  const tty = { windows: false, hay: () => { throw new Error('preguntó'); }, preguntar: () => { throw new Error('preguntó'); } };
+  ow.exigir({ ...base, argv: [...PLAN_ARGV, '--terminal'], tty, antes: (v) => { via = v; return null; } });
+  assert.strictEqual(via, 'terminal');
+  assert.strictEqual(codigo, 0);
+  assert.strictEqual(gates(casa).length, 0);
+});
+
+// 🔴 Falla con: el chequeo de verdad que no corre el guion, o que lo deja escribir.
+test('Precheck_ElGuionDeVerdad_NiegaSinCorridaYNoEscribe', (t) => {
+  const casa = casaNueva(t);
+  const rd = fs.mkdtempSync(path.join(os.tmpdir(), 'owner-window-pre-'));
+  t.after(() => fs.rmSync(rd, { recursive: true, force: true }));
+  const estado = path.join(casa, '.claude', '.tycon-pipeline');
+  const foto = () => fs.readdirSync(estado, { recursive: true }).sort();
+  const antes = foto();
+  for (const cmd of [`node ${MARKER} approve-save`, `node ${MARKER} complete-step approve-plan --approved "dale"`]) {
+    const c = ow.comprobarConElGuion({ palabras: ow.canonica(cmd), cwd: rd, sesion: 'ses-sin-corrida', casa });
+    assert.ok(c && c.niega, `${cmd}: ${JSON.stringify(c)}`);
+    assert.match(c.niega, /ses-sin-corrida|ejecución|marker/i, cmd);
+  }
+  assert.deepStrictEqual(foto(), antes, 'las negativas no escribieron nada en la casa');
+  // con la corrida abierta, el ok de guardar llega a la firma: el chequeo dice que sí, sin firmar ni escribir
+  const git = (...a) => spawnSync('git', ['-C', rd, '-c', 'user.email=t@example.com', '-c', 'user.name=t', ...a], { encoding: 'utf8' });
+  fs.writeFileSync(path.join(rd, 'story.md'), '---\nstory: 9.99\n---\n');
+  git('init', '-q'); git('add', '.'); git('commit', '-qm', 'base');
+  fs.writeFileSync(path.join(estado, 'active', 'ses-ok.json'), JSON.stringify({ sessionId: 'ses-ok', storyId: '9.99', storyPath: path.join(rd, 'story.md'), repoPath: rd,
+    startedAt: new Date(AHORA).toISOString() }));
+  const antesDelOk = foto();
+  const ok = ow.comprobarConElGuion({ palabras: ow.canonica(`node ${MARKER} approve-save`), cwd: rd, sesion: 'ses-ok', casa });
+  assert.deepStrictEqual(ok, { ok: true });
+  assert.deepStrictEqual(foto(), antesDelOk, 'el chequeo no escribió nada en la casa');
+  assert.ok(!fs.readFileSync(path.join(estado, 'active', 'ses-ok.json'), 'utf8').includes('saveOk'), 'ni el ok en el marcador');
+});
+
+// 🔴 Falla con: aprobar el plan fuera de orden con la ventana abierta, o el chequeo que deja su renglón cuando pasa.
+test('Precheck_AprobarElPlan_FueraDeOrdenNiegaYEnOrdenNoEscribe', (t) => {
+  const casa = casaNueva(t);
+  const rd = fs.mkdtempSync(path.join(os.tmpdir(), 'owner-window-plan-'));
+  t.after(() => fs.rmSync(rd, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(rd, 'story.md'), '---\nstory: 9.99\n---\n\n## Acceptance Criteria\n- AC1: x\n');
+  const estado = path.join(casa, '.claude', '.tycon-pipeline');
+  const marcador = (pendientes) => fs.writeFileSync(path.join(estado, 'active', 'ses-p.json'), JSON.stringify({ sessionId: 'ses-p', storyId: '9.99',
+    storyPath: path.join(rd, 'story.md'), repoPath: rd, startedAt: new Date(AHORA).toISOString(), stepScheme: 2, stepsCompleted: ['validate-story', 'plan'].filter((s) => !pendientes.includes(s)),
+    stepsPending: [...pendientes, 'approve-plan', 'implement'] }));
+  const palabras = ow.canonica(`node ${MARKER} complete-step approve-plan --approved "dale, seguí"`);
+  const gatesLog = path.join(estado, 'gates.log');
+  const renglones = () => { try { return fs.readFileSync(gatesLog, 'utf8').split('\n').filter(Boolean).map(JSON.parse); } catch (_) { return []; } };
+  marcador(['plan']);
+  const no = ow.comprobarConElGuion({ palabras, cwd: rd, sesion: 'ses-p', casa });
+  assert.ok(no && no.niega, JSON.stringify(no));
+  assert.match(no.niega, /pendiente/);
+  assert.strictEqual(renglones().filter((g) => g.name === 'step-order' && g.status === 'blocked').length, 1, 'la negativa queda anotada una vez');
+  // fuera de orden a conciencia: el chequeo pasa y el renglón del desvío lo deja el comando de verdad, no el chequeo
+  const desvio = ow.comprobarConElGuion({ palabras: [...palabras, '--out-of-order'], cwd: rd, sesion: 'ses-p', casa });
+  assert.deepStrictEqual(desvio, { ok: true });
+  assert.ok(!fs.existsSync(path.join(estado, 'bypass.log')), 'el chequeo no anotó el desvío');
+  marcador([]);
+  const antes = fs.readFileSync(path.join(estado, 'active', 'ses-p.json'), 'utf8');
+  const n = renglones().length;
+  const si = ow.comprobarConElGuion({ palabras, cwd: rd, sesion: 'ses-p', casa });
+  assert.deepStrictEqual(si, { ok: true });
+  assert.strictEqual(renglones().length, n, 'el chequeo que pasa no anota nada');
+  assert.strictEqual(fs.readFileSync(path.join(estado, 'active', 'ses-p.json'), 'utf8'), antes, 'ni aprueba el plan');
+});
+
+// Las otras firmas de guion con requisitos propios pasan por el mismo chequeo. Quedan sin chequeo el carril, que no
+// tiene requisitos antes de la firma, y las cuatro firmas sobre un archivo.
+const CON_REQUISITOS = ['plan-approval', 'extra-round', 'save', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver',
+  'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran'];
+
+// 🔴 Falla con: una firma de guion con requisitos que abre la ventana sin preguntarle antes al guion.
+test('Precheck_LasFirmasConRequisitos_NoAbrenLaVentanaSiElGuionSeNiega', (t) => {
+  assert.deepStrictEqual([...ow.CON_PRECHEQUEO].sort(), [...CON_REQUISITOS].sort());
+  const otras = [
+    ['adversarial-skip', `node ${MARKER} sign-adversarial-skip --story /r/specs/story-9.99.md --reason "sin código"`],
+    ['pending-approval', `node ${MARKER} approve-pending --id DEF-nuevo --repo /r`],
+    ['escape:force-manual', `node ${MARKER} set-check dod green --force-manual`],
+    ['escape:trust-ran', `node ${PIPELINE} check-count --repo /r --story /r/specs/story-9.99.md --trust-ran --ran a`],
+  ];
+  const vistas = new Set();
+  for (const [firma, cmd] of [...GUIONES, ...otras]) {
+    const casa = casaNueva(t);
+    let visto = null;
+    const r = pedir(casa, cmd, { comprobar: (o) => { visto = o; return { niega: 'falta un requisito' }; } });
+    assert.strictEqual(r.decision, 'deny', `${cmd}: ${r.texto}`);
+    assert.match(r.texto, /No abrí la ventana.*falta un requisito/);
+    assert.strictEqual(vigentes(casa).length, 0, `${cmd}: sin registro`);
+    assert.strictEqual(visto && visto.firma, firma, cmd);
+    vistas.add(firma);
+  }
+  // la refirma tras traer main la dice el clasificador, y su chequeo es el de esa firma
+  let visto = null;
+  const r = pedir(casaNueva(t), `bash ${CONTROLES} approve --base origin/main`, { clasificar: () => ({ clase: 'refresh-after-main', refirma_de: 'abc' }),
+    comprobar: (o) => { visto = o; return { niega: 'falta un requisito' }; } });
+  assert.strictEqual(r.decision, 'deny', r.texto);
+  vistas.add(visto.firma);
+  // el ok de guardar tiene sus pruebas arriba
+  assert.deepStrictEqual(CON_REQUISITOS.filter((f) => !vistas.has(f)), ['save'], 'cada firma con su comando');
+});
+
+/** Una foto de lo que hay en las carpetas: cada archivo con su contenido. */
+function fotoDe(...carpetas) {
+  const out = {};
+  for (const c of carpetas) {
+    let lista = [];
+    try { lista = fs.readdirSync(c, { recursive: true }); } catch (_) { /* no existe */ }
+    for (const f of lista.sort()) {
+      const p = path.join(c, String(f));
+      if (p.includes(`${path.sep}.git${path.sep}`)) continue;
+      try { out[p] = fs.statSync(p).isDirectory() ? 'carpeta' : fs.readFileSync(p, 'utf8'); } catch (_) { out[p] = '?'; }
+    }
+  }
+  return out;
+}
+
+// 🔴 Falla con: un requisito que el guion mira después de la firma (el «Sí» se pierde), o el chequeo que escribe.
+test('Precheck_LosGuionesDeVerdad_NieganLoQueAntesNegabanDespuesDeLaFirma', (t) => {
+  const casa = casaNueva(t);
+  const estado = path.join(casa, '.claude', '.tycon-pipeline');
+  const rd = repoDePrueba(t);
+  const git = (...a) => spawnSync('git', ['-C', rd, '-c', 'user.email=t@example.com', '-c', 'user.name=t', ...a], { encoding: 'utf8' });
+  fs.writeFileSync(path.join(rd, 'a.txt'), 'a\n');
+  fs.mkdirSync(path.join(rd, 'specs'));
+  fs.writeFileSync(path.join(rd, 'specs', 'story-9.97.md'), '---\nstory: "9.97"\n---\n\n# Story 9.97\n');
+  fs.mkdirSync(path.join(rd, 'tasks'));
+  fs.writeFileSync(path.join(rd, 'tasks', 'todo.md'), '# Pendientes\n\n- [ ] [DEF-viejo] algo\n');
+  git('add', '.'); git('commit', '-qm', 'base');
+  const blob = git('rev-parse', 'HEAD:a.txt').stdout.trim();
+  const chequear = (cmd, sesion = 'ses-a') => ow.comprobarConElGuion({ palabras: ow.canonica(cmd), cwd: rd, sesion, casa });
+  const niega = (cmd, re, sesion) => {
+    const antes = fotoDe(estado, rd);
+    const c = chequear(cmd, sesion);
+    assert.ok(c && c.niega, `${cmd}: ${JSON.stringify(c)}`);
+    assert.match(c.niega, re, cmd);
+    assert.deepStrictEqual(fotoDe(estado, rd), antes, `${cmd}: la negativa no escribió nada`);
+  };
+  // el guion de los controles es de la consola: corre con bash, y lo que niega es suyo
+  niega(`bash ${CONTROLES} approve --root ${rd} --entries '[{"path":"a.txt","blob":"0000000"}]'`, /no coinciden con la punta/);
+  // la constancia que ya está en la carpeta: igual o distinta, firmar de nuevo no escribe nada
+  const carpeta = path.join(rd, '.github', 'control-changes');
+  fs.mkdirSync(carpeta, { recursive: true });
+  const hash = crypto.createHash('sha256').update(`a.txt\t${blob}\n`).digest('hex');
+  fs.writeFileSync(path.join(carpeta, `${hash}.json`), '{"no":"es esta firma"}\n');
+  niega(`bash ${CONTROLES} approve --root ${rd} --out .github/control-changes/ --entries '[{"path":"a.txt","blob":"${blob}"}]'`, /ya existe/);
+  fs.rmSync(path.join(rd, '.github'), { recursive: true, force: true });
+  // contar sin la constancia de que corrieron los revisores, sin la lista que se confía: no cuenta nada
+  niega(`node ${PIPELINE} check-count --repo ${rd} --story ${path.join(rd, 'specs', 'story-9.97.md')} --trust-ran`, /--ran/);
+  // un pendiente ya aprobado no se vuelve a firmar
+  const PA = require('../lib/pending-approvals.js');
+  fs.writeFileSync(path.join(rd, PA.RECORD), `${JSON.stringify({ id: 'DEF-viejo', via: 'base' })}\n`);
+  niega(`node ${MARKER} approve-pending --id DEF-viejo --repo ${rd}`, /ya estaba aprobado/);
+  fs.rmSync(path.join(rd, PA.RECORD));
+  // preparar la prueba con navegador con una dirección que no sirve
+  niega(`node ${E2E} prepare --repo ${rd} --story specs/story-9.97.md --url ftp://x`, /no es una dirección http/);
+  // eximir un crítico en una corrida sin carpeta: el chequeo llega a la firma sin crearla
+  fs.writeFileSync(path.join(estado, 'active', 'ses-w.json'), JSON.stringify({ sessionId: 'ses-w', storyId: '9.97', storyPath: path.join(rd, 'specs', 'story-9.97.md'),
+    repoPath: rd, startedAt: new Date(AHORA).toISOString() }));
+  const antes = fotoDe(estado, rd);
+  assert.deepStrictEqual(chequear(`node ${MARKER} waive-critical --rule SEC-C1 --reason "lo cubre otra capa"`, 'ses-w'), { ok: true });
+  assert.deepStrictEqual(fotoDe(estado, rd), antes, 'el chequeo no creó la carpeta de la corrida');
 });

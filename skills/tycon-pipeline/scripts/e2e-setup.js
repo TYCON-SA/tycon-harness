@@ -250,8 +250,7 @@ function cmdPrepare(argv) {
   const id = bt.storyIdDe(content, h.path);
   const ajena = historiaAjena(id);
   if (ajena) { process.stderr.write(`e2e-setup.js prepare: ${ajena}\n`); return 2; }
-  const ok = firmaDeLaPersona(argv, `preparar la prueba con navegador de la historia ${id} en ${repo}`);
-  if (ok.codigo !== 0) { process.stderr.write(`e2e-setup.js prepare: no preparo nada — ${ok.motivo}\n`); return 2; }
+  // todo lo que se comprueba va antes de la firma: después, una negativa pierde el «Sí» de la persona
   if (fs.existsSync(path.join(repo, MANIFEST))) { process.stderr.write('e2e-setup.js prepare: este repo ya tiene una preparación anotada (.tycon/e2e-setup.json)\n'); return 1; }
   if (bt.repoReady(repo).ready) { process.stdout.write('El repo ya tiene la prueba con navegador: no hace falta preparar nada.\n'); return 1; }
   const clave = bt.claveDe(h.path, content);
@@ -265,6 +264,8 @@ function cmdPrepare(argv) {
   if (paginaRel && !CARPETA_SEGURA.test(paginaRel)) { process.stderr.write(`e2e-setup.js prepare: la carpeta de la página (${paginaRel}) tiene caracteres que no puedo poner en un comando\n`); return 2; }
   // el lector del bloque e2e: corta en el primer espacio: una carpeta con espacios quedaría mal leída
   if (!CARPETA_SEGURA.test(rel(repo, pkg))) { process.stderr.write(`e2e-setup.js prepare: la carpeta del package.json (${rel(repo, pkg)}) tiene caracteres que .tycon/advisors.yaml no puede leer\n`); return 2; }
+  const ok = firmaDeLaPersona(argv, `preparar la prueba con navegador de la historia ${id} en ${repo}`);
+  if (ok.codigo !== 0) { process.stderr.write(`e2e-setup.js prepare: no preparo nada — ${ok.motivo}\n`); return 2; }
   const advisors = path.join(repo, '.tycon', 'advisors.yaml');
   const yaTeniaE2e = fs.existsSync(advisors) && /^e2e\s*:/m.test(fs.readFileSync(advisors, 'utf8'));
 
@@ -380,10 +381,10 @@ function cmdDefer(argv) {
   if (!/\bno\b/i.test(cita)) { process.stderr.write(`e2e-setup.js defer: «${cita}» no dice que no: poné en --no la respuesta de la persona a la oferta.\n`); return 2; }
   // en la terminal del dueño no hay variable de sesión: el «no» contesta la oferta, y la firma es para su sesión
   const propia = PROPIA === '_nosession' && oferta.sessionId ? oferta.sessionId : PROPIA;
-  const ok = firmaDeLaPersona(argv, `dejar pendiente la prueba con navegador de la historia ${id}: «${cita}»`, propia);
-  if (ok.codigo !== 0) { process.stderr.write(`e2e-setup.js defer: no anoto nada — ${ok.motivo}\n`); return 2; }
   const m = txt.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!m) { process.stderr.write('e2e-setup.js defer: la historia no tiene frontmatter\n'); return 2; }
+  const ok = firmaDeLaPersona(argv, `dejar pendiente la prueba con navegador de la historia ${id}: «${cita}»`, propia);
+  if (ok.codigo !== 0) { process.stderr.write(`e2e-setup.js defer: no anoto nada — ${ok.motivo}\n`); return 2; }
   const fecha = new Date().toISOString().slice(0, 10);
   const motivo = `${fecha} — la persona: «${cita}»`.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   const fm = m[1].split(/\r?\n/).filter((l) => !/^browser_test(_reason)?\s*:/.test(l));

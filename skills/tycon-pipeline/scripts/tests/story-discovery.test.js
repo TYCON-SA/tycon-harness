@@ -888,6 +888,8 @@ test('declaresStoryIdentity: la identidad la declara el frontmatter, jamás la r
 
 // El ambiente de una máquina SIN configuración (la copia para un dev de otra organización): HOME vacía,
 // sin el perfil del equipo y sin ninguna variable de Azure DevOps de quien corre; el arnés, el de este mismo árbol.
+// La capa de plataforma lee la organización de un árbol vacío: en una máquina instalada el árbol trae team-repos.json
+// con la plataforma de las operaciones, que elige dónde crear el pedido de trabajo aunque no haya perfil.
 const HARNESS_HERE = path.resolve(SCRIPTS, '..', '..', '..');
 function adoEnv(extra = {}) {
   const env = {};
@@ -895,6 +897,7 @@ function adoEnv(extra = {}) {
   env.HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'sd-home-'));
   env.USERPROFILE = env.HOME;
   env.TYCON_PROFILE = '0';
+  env.TYCON_TREE = fs.mkdtempSync(path.join(os.tmpdir(), 'sd-tree-'));
   if (fs.existsSync(path.join(HARNESS_HERE, 'scripts', 'lib', 'tycon-config.js'))) env.TYCON_GUIDES_DIR = HARNESS_HERE;
   return Object.assign(env, extra);
 }

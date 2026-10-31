@@ -153,6 +153,12 @@ Con la constancia, corré igual `marker.js save-check` antes del commit, y otra 
 (`marker.js save-check --push <remoto> <rama>`) y antes de abrir cada pedido. Si sale 1, el código cambió o la rama no
 es la del ok: no guardes y pedí otro ok.
 
+Antes de pedir la firma, por cualquier vía, `approve-save` corre los controles del commit de cada repo en sólo lectura
+(el gancho `pre-commit`, sobre un índice aparte con lo que guardaría el commit). Si alguno frenaría el commit, si
+escribiría en el repo o si no termina a tiempo, no hay ventana: se dice qué arreglar. Así el ok no se firma para un commit
+que después no entra, ni vence porque el arreglo cambió el código. Con un revisor tocado incluye su chequeo de vida, que
+consulta al modelo: puede tardar hasta unos minutos.
+
 ### El orden del cierre
 
 1. Primero, **exportar la memoria** del proyecto (y sumarla al stage), si el proyecto la usa: los trozos de memoria no

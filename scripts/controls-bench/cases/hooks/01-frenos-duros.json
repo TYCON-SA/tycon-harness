@@ -5760,9 +5760,9 @@
           }
         },
         {
-          "id": "sin-jq-ni-node-deja-pasar-y-lo-dice",
-          "type": "must-run",
-          "_por_que": "Sin `jq` NI `node` el freno no puede leer el comando. No frena (dejaría a la persona sin poder correr nada) y no calla (el silencio es el defecto): sale 1 —error que no bloquea— con el motivo y el arreglo en la PRIMERA línea de stderr. Decisión a confirmar: ver el encabezado del hook.",
+          "id": "sin-jq-ni-node-frena-y-dice-el-arreglo",
+          "type": "must-block",
+          "_por_que": "Sin `jq` NI `node` el freno no puede leer el comando, y un comando que no se leyó no se deja pasar: el `rm -rf /` correría sin que nada lo mire. Sale 2 —frena y le llega al agente— con el motivo y el arreglo en la PRIMERA línea de stderr.",
           "setup": [
             "mkdir -p lab && for t in bash cat date mkdir dirname grep; do ln -s \"$(command -v $t)\" lab/$t || exit 1; done"
           ],
@@ -5773,10 +5773,9 @@
             }
           },
           "expect": {
-            "exit": 1,
+            "exit": 2,
             "stderr_re": [
-              "^.*safety-guard.*NO REVIS.*node",
-              "ni jq ni node"
+              "^.*safety-guard.*no pudo leer.*lo fren[oó].*ni jq ni node.*Arreglo: .*node"
             ],
             "file_absent": [
               "${SANDBOX_HOME}/.claude/safety-guard.log"
@@ -5784,9 +5783,9 @@
           }
         },
         {
-          "id": "sin-jq-ni-node-con-la-variable-vieja-igual-avisa",
-          "type": "must-run",
-          "_por_que": "Etapa D de las firmas: `TYCON_SAFETY_OFF=1` en el ambiente ya no apaga el freno, así que tampoco calla el aviso de que no pudo leer el comando.",
+          "id": "sin-jq-ni-node-con-la-variable-vieja-igual-frena",
+          "type": "must-block",
+          "_por_que": "Etapa D de las firmas: `TYCON_SAFETY_OFF=1` en el ambiente ya no apaga el freno, así que tampoco deja pasar el comando que no pudo leer.",
           "setup": [
             "mkdir -p lab && for t in bash cat date mkdir dirname grep; do ln -s \"$(command -v $t)\" lab/$t || exit 1; done"
           ],
@@ -5800,9 +5799,9 @@
             }
           },
           "expect": {
-            "exit": 1,
+            "exit": 2,
             "stderr_re": [
-              "NO REVIS"
+              "no pudo leer"
             ]
           }
         }
@@ -5934,13 +5933,13 @@
       "_por_que": "🔴 EL CASO (revisor de fallos silenciosos, 2026-10-03). `INPUT=\"$(cat || true)\"; [[ -z \"$INPUT\" ]] && exit 0` corría ANTES del lector nuevo: si el `cat` fallaba o la entrada llegaba vacía, el freno salía 0 mudo — la misma familia que el `exit 0` sin `jq`. Una entrada vacía no es «nada que frenar»: es «no pude leer». Lo que SÍ es «nada que frenar» es una entrada válida sin comando, y ésa sigue callando. El corredor siempre manda un objeto JSON por stdin; por eso estos casos traen su lanzador (`script` del caso), que corre el hook REAL con la entrada vacía (`< /dev/null`) o ilegible (stdin es una carpeta: el `cat` falla al leer).",
       "cases": [
         {
-          "id": "entrada-vacia-deja-pasar-y-lo-dice",
-          "type": "must-run",
+          "id": "entrada-vacia-frena-y-dice-el-arreglo",
+          "type": "must-block",
           "stdin": {},
           "expect": {
-            "exit": 1,
+            "exit": 2,
             "stderr_re": [
-              "^.*safety-guard.*NO REVIS.*vac[ií]a"
+              "^.*safety-guard.*no pudo leer.*lo fren[oó].*vac[ií]a.*Arreglo: "
             ]
           },
           "files": {
@@ -5949,14 +5948,14 @@
           "script": "${FIXTURE}/sin-entrada.sh"
         },
         {
-          "id": "entrada-ilegible-deja-pasar-y-lo-dice",
-          "type": "must-run",
-          "_por_que": "Con una carpeta como stdin el `cat` FALLA (no devuelve vacío): es el otro camino al mismo silencio. El aviso tiene que ser la primera línea de stderr, no el error del `cat`.",
+          "id": "entrada-ilegible-frena-y-dice-el-arreglo",
+          "type": "must-block",
+          "_por_que": "Con una carpeta como stdin el `cat` FALLA (no devuelve vacío): es el otro camino al mismo hueco. El motivo tiene que ser la primera línea de stderr, no el error del `cat`.",
           "stdin": {},
           "expect": {
-            "exit": 1,
+            "exit": 2,
             "stderr_re": [
-              "^.*safety-guard.*NO REVIS.*vac[ií]a"
+              "^.*safety-guard.*no pudo leer.*lo fren[oó].*vac[ií]a.*Arreglo: "
             ],
             "stderr_not_re": [
               "^cat:"
@@ -5985,17 +5984,17 @@
           }
         },
         {
-          "id": "entrada-vacia-con-la-variable-vieja-igual-avisa",
-          "type": "must-run",
-          "_por_que": "Etapa D de las firmas: `TYCON_SAFETY_OFF=1` en el ambiente ya no apaga el freno ni calla su aviso.",
+          "id": "entrada-vacia-con-la-variable-vieja-igual-frena",
+          "type": "must-block",
+          "_por_que": "Etapa D de las firmas: `TYCON_SAFETY_OFF=1` en el ambiente ya no apaga el freno ni deja pasar lo que no pudo leer.",
           "env": {
             "TYCON_SAFETY_OFF": "1"
           },
           "stdin": {},
           "expect": {
-            "exit": 1,
+            "exit": 2,
             "stderr_re": [
-              "NO REVIS"
+              "no pudo leer"
             ]
           },
           "files": {

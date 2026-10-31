@@ -13,7 +13,9 @@
 // La rama no se borra desde acá: lo decide la regla del repo («borrar la rama al mergear»).
 //
 // Listar: los abiertos, con su autor y si la validación de su punta está corriendo (`ciRunning`: null si los controles
-// no se pudieron leer). Una lectura que no terminó es un «no», nunca una lista vacía ni una cortada.
+// no se pudieron leer). Con `sourceBranch`, además si cada uno está en la cola de merge (`inQueue`: null si no se supo). Una lectura que no terminó es un «no», nunca una lista vacía ni una cortada. Con `sourceBranch`,
+// los abiertos de esa rama (por `head.ref`, también desde un fork), y cada uno se lee entero (`GET pulls/<n>`) para saber si choca con su
+// destino: la lista no trae `mergeable`. Sin él, las llamadas de siempre.
 
 const fs = require('fs');
 const os = require('os');
@@ -191,17 +193,53 @@ function corriendo(ctx, repo, sha) {
   return c.problem ? null : c.value.some((x) => x && x.status !== 'completed');
 }
 
+/**
+ * Si cada pedido está en la cola de merge, de una sola consulta (la API REST no lo dice): un mapa node_id → true/false.
+ * Lo que no se pudo leer no entra al mapa: queda como no sabido, nunca como «fuera de la cola».
+ */
+function enCola(ctx, prs) {
+  const ids = prs.map((p) => String((p && p.node_id) || '')).filter(Boolean);
+  const out = new Map();
+  if (!ids.length) return out;
+  const g = gh(ctx, 'POST', 'graphql', {
+    query: 'query($ids:[ID!]!){nodes(ids:$ids){... on PullRequest{id mergeQueueEntry{state}}}}',
+    variables: { ids },
+  });
+  const nodes = g.value && g.value.data && Array.isArray(g.value.data.nodes) ? g.value.data.nodes : [];
+  for (const n of nodes) if (n && typeof n.id === 'string' && 'mergeQueueEntry' in n) out.set(n.id, Boolean(n.mergeQueueEntry));
+  return out;
+}
+
 function listarPedidos(args, ctx) {
   const repo = repoDe(ctx);
   if (!repo) return no('rechazado', 'el repo no trae dueño/nombre de GitHub (team-repos.json)');
+  // con `sourceBranch`, los abiertos de esa rama, cada uno leído entero: la lista de GitHub no trae `mergeable`. Se
+  // filtra por `head.ref` y no con `head=<dueño>:<rama>`: con un repo transferido o una organización renombrada, el
+  // dueño del origin es el viejo y GitHub contesta ese filtro con una lista vacía, sin error (la sesión saldría libre);
+  // así entran también los abiertos desde un fork con esa rama
+  const rama = args.sourceBranch ? String(args.sourceBranch) : null;
   const l = todas(ctx, `repos/${repo}/pulls?state=open`);
   if (l.problem) return l.problem;
-  const value = l.value.filter((p) => p && p.state === 'open').map((p) => {
+  let abiertos = l.value.filter((p) => p && p.state === 'open');
+  if (rama) {
+    const enteros = [];
+    for (const p of abiertos.filter((x) => x.head && x.head.ref === rama)) {
+      const g = gh(ctx, 'GET', `repos/${repo}/pulls/${Number(p.number)}`);
+      if (g.problem) return g.problem;
+      if (!g.value || typeof g.value !== 'object') return no('no_medido', `GitHub contestó el pedido #${p.number} sin forma`);
+      enteros.push(g.value);
+    }
+    abiertos = enteros;
+  }
+  const cola = rama ? enCola(ctx, abiertos) : null;
+  const value = abiertos.map((p) => {
     const sha = String((p.head && p.head.sha) || '');
     return {
       number: Number(p.number),
       draft: p.draft === true,
       autoComplete: Boolean(p.auto_merge),
+      // con la rama: si está en la cola de merge (null si GitHub no lo dijo). Uno en la cola puede no tener auto_merge
+      ...(cola ? { inQueue: cola.has(String(p.node_id)) ? cola.get(String(p.node_id)) : null } : {}),
       mergeState: p.mergeable === false ? 'conflict' : ESTADO[p.mergeable_state] || 'unknown',
       sourceBranch: String((p.head && p.head.ref) || ''),
       sourceCommit: sha,

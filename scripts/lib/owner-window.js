@@ -43,6 +43,8 @@ const VENCE_MIN = 30;
 const SESION = /^[\w-]+$/;
 // el nombre con que los guiones dicen «sin variable de sesión»: no es una sesión a la que pedirle una firma
 const SIN_SESION = '_nosession';
+// los modos de permiso de la herramienta en los que un pedido de la ventana le llega a una persona
+const MODOS_QUE_PREGUNTAN = new Set(['default', 'acceptEdits', 'plan']);
 const NO_ES_SESION = '«_nosession» es el nombre de «sin sesión», no una sesión: la firma se pide para la sesión destino por su id';
 const VARIABLES_DE_SESION = /(^|[^\w])(CLAUDE_CODE_SESSION_ID|TYCON_SESSION_ID|CODEX_SESSION_ID)(?![\w])/;
 // los guiones de las firmas `guion`, por su nombre de archivo
@@ -470,13 +472,43 @@ function clasificarConElGuion(palabras, cwd) {
   try { return JSON.parse(String(r.stdout).trim().split('\n').pop()); } catch (_) { return null; }
 }
 
+// El chequeo antes de la ventana: el freno corre el guion de la firma con esta variable, y el guion comprueba todo lo que
+// exige sin escribir nada y sin usar la firma. Si se negaría, la ventana no se abre: un «Sí» del dueño que el guion
+// rechaza después es una firma perdida.
+const PRECHEQUEO = 'TYCON_SIGN_PRECHECK';
+const PRECHEQUEO_OK = 'tycon-sign-precheck: ok';
+// las firmas de guion con requisitos propios; el carril y las firmas sobre un archivo no comprueban nada antes de firmar
+const CON_PRECHEQUEO = new Set(['extra-round', 'save', 'plan-approval', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver',
+  'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran']);
+// lo que espera el chequeo: el ok de guardar corre además los controles del commit de cada repo, con su propio plazo de
+// 210 s (lib/save-ok.js)
+const PLAZO_DEL_CHEQUEO = { save: 240000 };
+
+/**
+ * Corre en modo de chequeo el guion de este mismo árbol que nombran las `palabras` (las de la forma canónica), en la
+ * carpeta del evento, con la sesión del evento y la casa de la cuenta: `{ ok: true }` si el guion llegó a la firma con todo en regla,
+ * `{ niega: <lo que dijo> }` si se negó antes, null si no contestó (y la ventana se abre como siempre).
+ */
+function comprobarConElGuion({ firma, palabras, cwd, sesion, casa, env }) {
+  // el de los controles de la base vive en scripts/ci y es de la consola; los demás, al lado del pipeline y de node
+  const nombre = base(palabras[0]);
+  const sh = nombre.endsWith('.sh');
+  const guion = sh ? path.join(__dirname, '..', 'ci', nombre) : path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', nombre);
+  const r = require('child_process').spawnSync(sh ? 'bash' : process.execPath, [guion, ...palabras.slice(1)], { cwd: cwd || process.cwd(), encoding: 'utf8', timeout: PLAZO_DEL_CHEQUEO[firma] || 20000,
+    env: { ...(env || process.env), ...(casa ? { HOME: casa, USERPROFILE: casa } : {}), [PRECHEQUEO]: '1', ...(sesion ? { CLAUDE_CODE_SESSION_ID: sesion } : {}) } });
+  if (r.error || r.status === null) return null;
+  if (r.status === 0) return String(r.stdout).split('\n').includes(PRECHEQUEO_OK) ? { ok: true } : null;
+  return { niega: String(r.stderr || r.stdout || `salió ${r.status}`).trim() };
+}
+
 /**
  * Lo que decide el freno ante un evento: `{ decision: 'ask' | 'deny' | 'allow' | 'none', texto, firmas, via? }`.
  * `escapes`: las firmas `freno` que el freno de seguridad vio en el comando (los escapes por variable y con nombre).
  * `delegacion(opciones)`: si la firma corre sin ventana (delegated-signing.js, las dos listas del perfil);
- * `clasificar(palabras, cwd)`: la clase de un `approve` con `--base`; `arbol` y `casa` se leen si faltan.
+ * `clasificar(palabras, cwd)`: la clase de un `approve` con `--base`; `comprobar(opciones)`: el chequeo antes de la
+ * ventana (`comprobarConElGuion`); `arbol` y `casa` se leen si faltan.
  */
-function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ahora = Date.now(), delegacion, clasificar = clasificarConElGuion, userInfo, aprobador = approverOf } = {}) {
+function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ahora = Date.now(), delegacion, clasificar = clasificarConElGuion, comprobar = comprobarConElGuion, userInfo, aprobador = approverOf } = {}) {
   const comando = String((evento.tool_input && evento.tool_input.command) || '');
   const sesion = evento.session_id == null ? '' : String(evento.session_id);
   // la terminal firma para la sesión destino en cuanto se conoce: antes, para la del evento
@@ -560,6 +592,20 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
     // una firma que el perfil delega y no se delegó lleva su motivo a la ventana; la que no se delega, no (es lo normal)
     else sinDelegar = rs.map((r) => r && !r.ok && r.motivo).find((m) => m && !/no delega|sólo del dueño|la sesión que implementa/.test(m)) || null;
   } catch (e) { return negar(`no se pudo consultar la delegación del perfil (${e.message})`, pendientes); }
+  // una pestaña que no pide permisos aprueba sola lo que se manda a la ventana: el renglón quedaría a nombre del dueño
+  // sin su Sí. Sólo los modos que preguntan llevan a la ventana; uno desconocido niega. Sin el dato, la de siempre
+  const modo = evento.permission_mode == null ? null : String(evento.permission_mode);
+  if (!delegada && modo !== null && !MODOS_QUE_PREGUNTAN.has(modo)) {
+    return negar(`esta pestaña no pide permisos (${una(modo, 40)}): la ventana se aprobaría sola, sin el Sí del dueño`, pendientes);
+  }
+  // el guion dice antes si se negaría: entonces no hay ventana ni registro (sin respuesta, la ventana se abre como siempre)
+  if (guion && !delegada && CON_PRECHEQUEO.has(firmaGuion)) {
+    let c = null;
+    try { c = comprobar({ firma: firmaGuion, palabras: can.palabras, cwd: evento.cwd, sesion, casa }); } catch (_) { c = null; }
+    if (c && c.niega) {
+      return { decision: 'deny', firmas: pendientes, texto: `No abrí la ventana: el comando se iba a negar antes de usar la firma, y el «Sí» se perdería. Lo que dijo: ${una(c.niega, 800)}. Arreglá eso y volvé a pedirla` };
+    }
+  }
   let detalle = detalleDe(pendientes[0], comando, can && can.palabras, evento.cwd);
   if (guion === 'runtime-waiver') {
     const c = criteriosDelPedido(can.palabras, evento.cwd, { casa, destino, sesion });
@@ -844,7 +890,7 @@ function porTerminal({ firma, sesion = null, destino = null, resumen = '', casa,
  * (`{ codigo, motivo }` para no firmar; null para seguir). `extra`: campos más para el renglón `-signed` (o una función
  * que los da, llamada al firmar con `{ via, sesion, destino }`).
  */
-function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = process.pid, arbol, casa, ahora, tty, anotar, propia, salir, antes, extra, aprobador, env } = {}) {
+function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = process.pid, arbol, casa, ahora, tty, anotar, propia, salir, antes, extra, aprobador, env, escribir } = {}) {
   // sin variable de sesión (la terminal del dueño) el guion no tiene sesión propia: la dice --for-session
   if (propia === '_nosession') propia = null;
   const i = argv.indexOf('--for-session');
@@ -856,6 +902,17 @@ function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = proce
     return { codigo: 1, motivo: `este guion actúa sobre la sesión ${propia}: firmar para otra sesión (--for-session ${pedida}) se corre desde la sesión destino` };
   }
   const destino = sesionNombrada(firma, argv) || pedida || propia || null;
+  // el chequeo antes de la ventana (`comprobarConElGuion`): lo que el guion comprueba antes de la firma, y sale sin
+  // firmar, sin gastar el pedido y sin hacer lo que la firma autoriza
+  if ((env !== undefined ? env : process.env)[PRECHEQUEO] === '1') {
+    if (antes) {
+      const n = antes(argv.includes('--terminal') ? 'terminal' : 'ventana', null);
+      if (n && n.codigo) return { codigo: n.codigo, motivo: n.motivo, destino, sesion: propia || null };
+    }
+    (escribir || ((t) => process.stdout.write(t)))(`${PRECHEQUEO_OK}\n`);
+    (salir || process.exit)(0);
+    return { codigo: 0, prechequeo: true, destino };
+  }
   if (argv.includes('--terminal')) {
     // sin persona (la CI): no hay terminal que esperar, ni ventana nueva que abrir en Windows. La variable sólo niega: que
     // hay una persona lo dice la terminal de verdad. Con la terminal inyectada (las pruebas), el ambiente es el que se
@@ -922,7 +979,7 @@ function quienFirmo({ via, sesion } = {}, persona) {
   return { tipo: 'manual', quien: persona, via: via === 'terminal' ? 'terminal' : 'ventana' };
 }
 
-module.exports = { VENCE_MIN, carpeta, quienFirmo, leerArbol, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
+module.exports = { VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
   rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma };
 
 if (require.main === module) {

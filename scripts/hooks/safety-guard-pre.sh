@@ -32,8 +32,8 @@
 # Output:
 #   - exit 0: comando OK, dejar pasar.
 #   - exit 2: BLOCK + mensaje al stderr (Claude lo ve y reconsidera).
-#   - exit 1: NO PUDE LEER la entrada; el comando pasa SIN revisar y se dice (ver abajo). También sale 1,
-#     con su línea, cuando GIT-C4 no pudo mirar el árbol de las skills instaladas: el
+#     También sale 2 cuando NO PUDO LEER la entrada: el comando no se revisó y no pasa (ver abajo).
+#   - exit 1: GIT-C4 no pudo mirar el árbol de las skills instaladas, con su línea: el
 #     comando pasa, porque sin árbol resuelto no se sabe si es el lugar, y se dice.
 #
 # 🔴 La entrada se lee SIN depender de `jq`: con `command -v jq || exit 0`, una máquina sin `jq` dejaría
@@ -42,24 +42,14 @@
 # resultado es el mismo con los dos (casos `sin-jq-…` del banco, que corren el hook con un PATH sin
 # `jq`).
 #
-# 🟡 Qué hace si no hay NI `jq` NI `node` (o la entrada llega vacía, no se
-# pudo leer o no es JSON):
-# deja pasar, AVISANDO en cada llamada, y sale 1. Por qué así y no de las otras dos formas:
-#   - Frenar (exit 2) frenaría TODOS los comandos, también un `ls`: sin `node` el agente no podría
-#     correr nada, ni siquiera para ayudar a arreglarlo. Y la falta de `node` suele ser del PATH con
-#     el que arrancó la herramienta (un editor abierto desde el Dock no ve el `node` de nvm), no de
-#     la máquina: un bloqueo total por eso enseña a apagar el freno.
-#   - Salir 0 con un aviso por stderr es lo mismo que callar: con exit 0 la herramienta manda el
-#     stderr de un PreToolUse al registro de depuración, y el silencio es justo el defecto.
-#   - Con exit 1 la herramienta lo trata como error que NO bloquea: el comando corre y a la persona
-#     le aparece el error del hook con la PRIMERA línea de stderr. Por eso el aviso es una sola línea.
-# 🔴 Límite conocido: que con exit 1 el comando corre y el aviso se ve sale de la documentación de hooks de Claude
-# Code; no está medido en vivo, ni en Claude Code ni en Codex. Lo único medido en las dos es que `exit 2` frena y
-# llega al modelo (guides/maintaining/codex-divergence-inventory.md). Se mediría con
-# `scripts/controls-bench/live-fire.js` contra un `PreToolUse` real.
-# El costo, dicho: sin `jq` ni `node`, nada frena un comando destructivo, y el agente no se entera (sólo
-# `exit 2` le llega al modelo). Para frenar en ese caso, se cambia el `exit 1` de
-# `cannot_read` por `exit 2` y los dos casos `sin-jq-ni-node-…` del banco.
+# 🔴 Qué hace si no hay NI `jq` NI `node` (o la entrada llega vacía, no se
+# pudo leer o no es JSON): FRENA (exit 2), con el motivo y el arreglo en una sola línea. Un comando que no se
+# leyó no se deja pasar: dejarlo pasar es dejar pasar también el `rm -rf /`, y con exit 1 el agente ni se entera
+# (sólo `exit 2` le llega al modelo, medido en Claude Code y en Codex:
+# guides/maintaining/codex-divergence-inventory.md). El costo, dicho: mientras falte `node`, el agente no puede
+# correr ningún comando, tampoco un `ls`. La falta suele ser del PATH con el que arrancó la herramienta (un editor
+# abierto desde el Dock no ve el `node` de nvm), por eso el arreglo nombra ese PATH. Casos del banco:
+# `sin-jq-ni-node-…` y `entrada-…-frena-…`.
 #
 # Límite conocido de «el mismo resultado con `jq` y con `node`»: vale para toda entrada que sea JSON
 # del estándar (lo que manda la herramienta) y para la que no es JSON (las dos no pueden leerla).
@@ -180,14 +170,18 @@ read_field() {
   return 1
 }
 
-# No se pudo leer la entrada: el comando pasa SIN revisar, y se DICE (decisión a confirmar: ver el
-# encabezado). Una sola línea: la herramienta le muestra a la persona la primera de stderr.
+# No se pudo leer la entrada: el comando se FRENA, con el motivo y el arreglo (ver el encabezado). Una sola
+# línea: es la que le llega al agente y la que ve la persona.
 cannot_read() {
   local reason="la entrada no se pudo leer como UN documento JSON"
+  local fix="reiniciá la sesión; si sigue, /tycon-harness dice si el arnés quedó bien instalado"
   if [[ -z "$INPUT" ]]; then reason="la entrada llegó vacía o no se pudo leer"
-  elif [[ "$HAS_JQ" == "0" && "$HAS_NODE" == "0" ]]; then reason="no hay ni jq ni node en el PATH de este hook"; fi
-  echo "⚠️ TYCON safety-guard NO REVISÓ este comando y lo dejó pasar: ${reason}. Mientras siga así NADA frena un rm -rf / ni un push forzado a main. Arreglo: que node (requisito del arnés) esté en el PATH con el que arranca la herramienta." >&2
-  exit 1
+  elif [[ "$HAS_JQ" == "0" && "$HAS_NODE" == "0" ]]; then
+    reason="no hay ni jq ni node en el PATH de este hook"
+    fix="que node (requisito del arnés) esté en el PATH con el que arranca la herramienta: abrila desde una terminal donde ande node -v, o sumá la carpeta de node al PATH de tu perfil, y reiniciá la sesión"
+  fi
+  echo "⛔ TYCON safety-guard no pudo leer este comando y lo frenó: ${reason}. Sin leerlo no sabe si es un rm -rf / o un push forzado a main. Arreglo: ${fix}." >&2
+  exit 2
 }
 
 if [[ -z "$INPUT" ]]; then cannot_read; fi

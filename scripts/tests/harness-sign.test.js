@@ -21,6 +21,7 @@
  *   T15 · la emergencia queda en el registro común de verdad.
  *   T16 · el agente no corre `sign` ni la biblioteca de la emergencia.
  *   T17 · un número de pedido usado o vencido no sirve.
+ *   T21 · mirar si hay una emergencia de commit vigente no la gasta.
  */
 const test = require('node:test');
 const assert = require('node:assert');
@@ -246,6 +247,20 @@ test('T10 · --commit vale para el próximo commit de ese repo, no el de otro, u
   // y un pedido del freno de un `git commit` no es el permiso del control de producción
   assert.strictEqual(firmar(casa, { id: 'emergency', reason: 'commitear igual', request: pedido(casa, 'git commit -m x'), cwd: repo, append: reg.append }).code, 0);
   assert.strictEqual(sign.consumirCommit({ casa, repo, ahora: AHORA + MIN }), null);
+});
+
+// 🔴 Falla con: el chequeo de sólo lectura que gasta la emergencia que necesita el commit de después.
+test('T21 · mirar si hay emergencia de commit no la gasta', (t) => {
+  const casa = casaNueva(t);
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-sign-repo-'));
+  t.after(() => fs.rmSync(repo, { recursive: true, force: true }));
+  assert.strictEqual(sign.hayPermisoDeCommit({ casa, repo, ahora: AHORA }), false, 'sin firma, no hay');
+  assert.strictEqual(firmar(casa, { id: 'emergency', reason: 'el catálogo tiene un servidor de baja', commit: true, cwd: repo, append: registro().append }).code, 0);
+  assert.strictEqual(sign.hayPermisoDeCommit({ casa, repo, ahora: AHORA + MIN }), true);
+  assert.strictEqual(sign.hayPermisoDeCommit({ casa, repo, ahora: AHORA + MIN }), true, 'mirar dos veces no la gasta');
+  assert.strictEqual(sign.hayPermisoDeCommit({ casa, repo, ahora: AHORA + 31 * MIN }), false, 'vencida no cuenta');
+  assert.ok(sign.consumirCommit({ casa, repo, ahora: AHORA + 2 * MIN }).ok, 'el commit la sigue teniendo');
+  assert.strictEqual(sign.hayPermisoDeCommit({ casa, repo, ahora: AHORA + 3 * MIN }), false, 'gastada ya no está');
 });
 
 test('T11 · la emergencia la firma sólo la terminal, nunca la ventana ni la delegación', (t) => {

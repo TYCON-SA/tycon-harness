@@ -478,6 +478,9 @@ Las secciones, en el orden de la pantalla:
 - **Cómo se actualiza el sitio**: si el sitio se pone al día solo con la versión nueva del arnés o sólo avisa (`site.update`
   de `operations.json`). Sin declarar, sólo aviso. «Automático» pide el nocturno de actualización y su permiso: la receta,
   en «Cómo se mantiene al día».
+- **La dirección del sitio en cada máquina**: la página que abre el comando `/org-site` en la máquina de cada persona
+  del equipo (`site.url`). Tiene que empezar con `https`. Vale sólo desde el perfil del equipo: una máquina no la puede
+  cambiar. Sin dirección, el comando explica cómo cargarla. Queda en `team-profile.json`, en el repo del perfil.
 - **Personas y máquinas**: de quién es cada máquina que manda ejecuciones, y en qué proyectos trabaja cada persona. Una
   máquina nueva aparece en «Por confirmar» con el correo que dice ser; **Confirmar** la pone a nombre de esa persona.
   Queda en `operations.json`, en el repo de operaciones. Lo revisa quien mantiene.

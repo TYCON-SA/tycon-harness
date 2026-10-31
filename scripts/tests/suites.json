@@ -1674,6 +1674,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/office.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/coordination.test.js",
       "requiere": []
     },
@@ -2302,6 +2307,12 @@
       "requiere": []
     },
     {
+      "__nota": "la tabla de controles de la máquina (scripts/metrics/controls-table.js): cuenta por freno y regla y las firmas por vía con los registros de una casa de prueba; un registro que no está sale «no medido», los renglones sin fecha se cuentan aparte y el guion no escribe en la carpeta de estado. Segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/controls-table.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el registro común de las firmas (scripts/lib/signature-log.js): cada firma de guion deja un renglón con quién firmó, la vía, si fue delegada, quién la pidió, su id y su nivel del catálogo, la máquina, la hora y el motivo; si no se puede escribir, la firma sigue y avisa.",
       "raiz": "arnes",
       "ruta": "tests/signature-log.test.js",
@@ -2419,6 +2430,12 @@
       "__nota": "La CI de un commit y la cola de la organización por la capa de plataforma, contra el az y el gh de mentira: las etapas de la corrida, la cola de los dos lados con quién y desde cuándo, la validación con el pipeline declarado, y los guiones sólo de Azure DevOps que en GitHub dicen no_soportado (o no_medido si no pudieron preguntar).",
       "raiz": "arnes",
       "ruta": "tests/platform-ci-queue.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Los revisores y los agentes por la capa de plataforma: el revisor de DoD lee la CI con la capa y sus dos copias de Codex son las generadas, el despachador avisa del pedido de trabajo sin nombrar una plataforma (y dice si la configuración o la capa no cargan), y work-in-progress lista los pedidos de GitHub por rama, también desde forks.",
+      "raiz": "arnes",
+      "ruta": "tests/platform-agents.test.js",
       "requiere": []
     },
     {

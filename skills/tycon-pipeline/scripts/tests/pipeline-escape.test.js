@@ -347,13 +347,15 @@ test('Guion_ForSession_EscribeElMarcadorDestino (T5) @story-8.142 @ac-2 @ac-3', 
 test('Guion_ForSession_DestinoSinMarcador_Sale2 (T6) @story-8.142 @ac-2', (t) => {
   const lab = laboratorioOtraSesion(t);
   const antes = { [DESTINO]: lab.leer(DESTINO), [COORD]: lab.leer(COORD) };
-  // una sesión sin marcador abierto: sale 2 antes de la firma, sin gastar el registro
+  // una sesión sin marcador abierto: el chequeo antes de la ventana no la abre, y el guion sale 2 antes de la firma
   const sinMarcador = ['complete-step', 'approve-plan', '--for-session', 'ses-z', '--approved', 'dale'];
-  assert.strictEqual(lab.pedir(lab.comando(sinMarcador)).decision, 'ask');
+  const p = lab.pedir(lab.comando(sinMarcador));
+  assert.strictEqual(p.decision, 'deny', p.texto);
+  assert.match(p.texto, /No abrí la ventana[\s\S]*ses-z/);
   let r = lab.correr(sinMarcador);
   assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /ses-z/);
-  assert.strictEqual(lab.vigentes().length, 1, 'el registro sigue sin gastar');
+  assert.strictEqual(lab.vigentes().length, 0, 'sin pedido');
   assert.strictEqual(lab.leer('ses-z'), null, 'no creó el marcador de ses-z');
   // un subcomando que no es una firma, para otra sesión
   r = lab.correr(['set-check', 'dod', 'green', '--manual', '--for-session', DESTINO]);
@@ -364,7 +366,7 @@ test('Guion_ForSession_DestinoSinMarcador_Sale2 (T6) @story-8.142 @ac-2', (t) =>
   assert.strictEqual(lab.pedir(lab.comando(ajena)).decision, 'deny');
   r = lab.correr(ajena);
   assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
-  assert.strictEqual(lab.vigentes().length, 1, 'ningún registro gastado ni pedido');
+  assert.strictEqual(lab.vigentes().length, 0, 'ningún registro pedido');
   // sin variable de sesión y sin --terminal: sale 2 sin pasar por la firma
   r = lab.marker('', APROBAR, {});
   assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
@@ -379,11 +381,13 @@ test('Guion_ForSession_DestinoSinMarcador_Sale2 (T6) @story-8.142 @ac-2', (t) =>
   // un marcador que no se puede leer no es «sin ejecución abierta»
   fs.writeFileSync(lab.marcador('ses-rota'), '{ no es json');
   const rota = ['complete-step', 'approve-plan', '--for-session', 'ses-rota', '--approved', 'dale'];
-  assert.strictEqual(lab.pedir(lab.comando(rota)).decision, 'ask');
+  const pr = lab.pedir(lab.comando(rota));
+  assert.strictEqual(pr.decision, 'deny', pr.texto);
+  assert.match(pr.texto, /no pude leer/);
   r = lab.correr(rota);
   assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /no pude leer/);
-  assert.strictEqual(lab.vigentes().length, 2, 'ningún registro gastado');
+  assert.strictEqual(lab.vigentes().length, 0, 'ningún registro pedido');
   // el plan con la regla de riesgo bajo no pide firma: para otra sesión sale 2 sin anotar nada en su corrida
   const aprobacionesAntes = lab.aprobaciones(DESTINO).length;
   const gatesAntes = lab.gates().length;
@@ -587,13 +591,15 @@ test('ForceManual_Canonica_PideFirma (T8) @story-8.142 @ac-5 @ac-8', (t) => {
   assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
   const c = JSON.parse(lab.leer(COORD));
   assert.deepStrictEqual([c.checks.tests, c.checksProvenance.tests], ['red:x', 'manual-forced']);
-  // otra sesión sin ejecución abierta: sale 2 sin gastar el registro
+  // otra sesión sin ejecución abierta: la ventana no se abre, y el guion sale 2 igual
   const sinMarcador = ['set-check', 'dod', 'green', '--force-manual', '--for-session', 'ses-z'];
-  assert.strictEqual(lab.pedir(lab.comando(sinMarcador)).decision, 'ask');
+  const negada = lab.pedir(lab.comando(sinMarcador));
+  assert.strictEqual(negada.decision, 'deny', negada.texto);
+  assert.match(negada.texto, /ses-z/);
+  assert.strictEqual(lab.vigentes().length, 0, 'la ventana no dejó registro');
   r = correrGuion(lab, MARKER, sinMarcador);
   assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /ses-z/);
-  assert.strictEqual(lab.vigentes().length, 1, 'el registro sigue sin gastar');
   // la propia sesión sin ejecución abierta: sale 2 (no 0 callado) y no firma
   r = correrGuion(lab, MARKER, ['set-check', 'dod', 'green', '--force-manual'], 'ses-sin');
   assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
@@ -642,7 +648,8 @@ test('TrustRan_Canonica_PideFirma (T9) @story-8.142 @ac-6 @ac-8', (t) => {
     assert.strictEqual(r.status, 2, `${que}: ${r.stdout}${r.stderr}`);
     assert.doesNotMatch(r.stdout, /check-count OK/, que);
   }
-  assert.strictEqual(lab.vigentes().length, antes + 2, "ningún registro gastado: los dos pedidos siguen");
+  // los dos que piden firma no abren la ventana (el chequeo los niega antes): no queda registro
+  assert.strictEqual(lab.vigentes().length, antes, 'ninguna ventana abierta para un comando que se niega');
   assert.strictEqual(lab.gates().filter((g) => g.name === 'escape:trust-ran-signed').length, 1, 'ninguna firma nueva');
   // la corrida de ses-a cambia entre el pedido y el guion: sale 2 sin contar
   const otra = laboratorioOtraSesion(t);

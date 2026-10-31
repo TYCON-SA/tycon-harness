@@ -283,16 +283,20 @@ test('Delegada_SinCanal_Sale1 (T9) @story-8.143 @ac-6', (t) => {
   const a = repo(t);
   escribir(a, 'LEEME.md', 'cambiado\n');
   const m = corridaLimpia([a]);
-  const casos = [
-    ['sin lista en el perfil', () => ({ canales: ['telegram'], origen: 'antes', problema: null })],
-    ['la lista vacía', () => ({ canales: [], origen: 'perfil', problema: null })],
-  ];
-  for (const [nombre, canales] of casos) {
-    let llamado = false;
-    const r = porDelegacion(m, { repos: [a], canales, mandar: () => { llamado = true; return { resultados: [], entregado: true }; } });
-    assert.strictEqual(r.codigo, 1, nombre);
-    assert.strictEqual(llamado, false, `${nombre}: no manda nada`);
-  }
+  // la lista vacía (el perfil eligió «ninguno»): no hay por dónde avisar, y no se manda nada
+  let llamado = false;
+  const vacia = porDelegacion(m, { repos: [a], canales: () => ({ canales: [], origen: 'perfil', problema: null }), mandar: () => { llamado = true; return { resultados: [], entregado: true }; } });
+  assert.strictEqual(vacia.codigo, 1, 'la lista vacía');
+  assert.strictEqual(llamado, false, 'la lista vacía: no manda nada');
+  // sin lista en el perfil: el canal de siempre del arnés (Telegram), como el resto de los avisos; vale sólo si entrega
+  const porDefecto = () => ({ canales: ['telegram'], origen: 'antes', problema: null });
+  const orden = [];
+  const entregado = porDelegacion(m, { repos: [a], canales: porDefecto, orden });
+  assert.strictEqual(entregado.codigo, 0, `sin lista en el perfil, entregado: ${entregado.motivo}`);
+  assert.deepStrictEqual(entregado.canales, ['telegram']);
+  assert.deepStrictEqual(orden.map((x) => x[0]), ['aviso'], 'avisó por el canal de siempre');
+  const sinEntrega = porDelegacion(m, { repos: [a], canales: porDefecto, mandar: () => ({ resultados: [{ canal: 'telegram', entregado: false, motivo: 'sin bot' }], entregado: false }) });
+  assert.strictEqual(sinEntrega.codigo, 1, 'sin lista en el perfil y sin entrega: no hay ok');
   const falla = porDelegacion(m, { repos: [a], mandar: () => ({ resultados: [{ canal: 'telegram', entregado: false, motivo: 'sin red' }], entregado: false }) });
   assert.strictEqual(falla.codigo, 1, 'el canal que falla');
   const ninguno = porDelegacion(m, { repos: [a], mandar: () => ({ resultados: [], entregado: true }) });
@@ -647,4 +651,59 @@ test('Huella_TrozosDeMemoria_SonPapeleo (T11) @story-8.151 @ac-11', (t) => {
   assert.ok(!SO.esPapeleoDeLaHuella('.engram/chunks/x.jsonl.gz', '120000'), 'un enlace no es papeleo');
   assert.ok(!SO.esPapeleoDeLaHuella('.engram/config.json', '100644'));
   assert.strictEqual(typeof SO.tieneCambios, 'function', 'tieneCambios se exporta');
+});
+
+/** El gancho pre-commit del repo, en una carpeta fuera de él (`core.hooksPath` local): `cuerpo` es bash. */
+function gancho(t, d, cuerpo) {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'save-ok-gancho-')));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(dir, 'pre-commit'), `#!/usr/bin/env bash\n${cuerpo}\n`, { mode: 0o755 });
+  sh(d, 'config', 'core.hooksPath', dir);
+}
+
+// 🔴 Falla con: un control del commit que frena después del ok (el «Sí» se pierde y hay que firmar otra vez), o un
+// chequeo que mira el índice de la persona en vez de lo que guardaría el commit (lo sin seguimiento incluido).
+test('ControlesDelCommit_UnControlQueFrena_NoSeFirma', (t) => {
+  const a = repo(t);
+  gancho(t, a, 'if git diff --cached -U0 | grep -q PROHIBIDO; then echo "datos estables: PROHIBIDO en lo que se guarda" >&2; exit 1; fi');
+  escribir(a, 'nuevo.js', '// PROHIBIDO\n');            // sin seguimiento: el commit de todo lo lleva
+  const indice = fs.readFileSync(path.join(a, '.git', 'index'));
+  for (const via of ['ventana', 'terminal']) {
+    const r = SO.antesDeFirmar({ via, marker: corridaLimpia([a]), repos: [a] });
+    assert.strictEqual(r.codigo, 2, `${via}: ${r.motivo}`);
+    assert.match(r.motivo, /los controles del commit[\s\S]*datos estables: PROHIBIDO/);
+  }
+  assert.deepStrictEqual(fs.readFileSync(path.join(a, '.git', 'index')), indice, 'el índice de la persona no se tocó');
+  escribir(a, 'nuevo.js', '// permitido\n');
+  const r = SO.antesDeFirmar({ via: 'ventana', marker: corridaLimpia([a]), repos: [a] });
+  assert.strictEqual(r.codigo, 0, r.motivo);
+});
+
+// 🔴 Falla con: un control que escribe en el repo durante el chequeo (el ok nacería vencido), o el aviso de sólo
+// lectura que no le llega al gancho.
+test('ControlesDelCommit_SoloLectura_YLoQueEscribeNoSeFirma', (t) => {
+  const a = repo(t);
+  escribir(a, 'LEEME.md', 'cambiado\n');
+  gancho(t, a, '[ "${TYCON_PRECOMMIT_READ_ONLY:-}" = 1 ] || { echo regenerado > generado.html; git add generado.html; }');
+  const antes = SO.huella(a).arbol;
+  let r = SO.antesDeFirmar({ via: 'ventana', marker: corridaLimpia([a]), repos: [a] });
+  assert.strictEqual(r.codigo, 0, r.motivo);
+  assert.ok(!fs.existsSync(path.join(a, 'generado.html')), 'con el aviso de sólo lectura el gancho no escribe');
+  assert.strictEqual(SO.huella(a).arbol, antes);
+  gancho(t, a, 'echo regenerado > generado.html');
+  r = SO.antesDeFirmar({ via: 'ventana', marker: corridaLimpia([a]), repos: [a] });
+  assert.strictEqual(r.codigo, 2);
+  assert.match(r.motivo, /cambiaron el repo \(generado\.html\)/);
+});
+
+// 🔴 Falla con: un control colgado tomado por verde, o un repo sin gancho que no se puede firmar.
+test('ControlesDelCommit_ColgadoNiega_SinGanchoPasa', (t) => {
+  const a = repo(t);
+  escribir(a, 'LEEME.md', 'cambiado\n');
+  sh(a, 'config', 'core.hooksPath', path.join(a, '.git', 'sin-ganchos'));
+  assert.strictEqual(SO.controlesDelCommit({ repos: [a] }).codigo, 0, 'sin gancho no hay nada que frene');
+  gancho(t, a, 'sleep 5');
+  const r = SO.controlesDelCommit({ repos: [a], timeoutMs: 500 });
+  assert.strictEqual(r.codigo, 2);
+  assert.match(r.motivo, /no terminaron/);
 });

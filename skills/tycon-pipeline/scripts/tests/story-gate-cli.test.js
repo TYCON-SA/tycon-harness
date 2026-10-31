@@ -344,36 +344,24 @@ test('8.141 T10 AdhocSet_ElChatNoAutoriza', () => {
   }
 });
 
-// 8.141 T11 AdhocSet_ForSession_Delegada_SinVentana (el guion) @story-8.141 @ac-6
-// 🔴 Falla con: la declaración escrita en la designada en vez de la destino, el cupo sin tope, o dos renglones por una
-// declaración.
-test('8.141 T11 AdhocSet_ForSession_Delegada_SinVentana', () => {
+// 8.141 T11 AdhocSet_ForSession_Delegada_SinAviso_NoDeclara (el guion) @story-8.141 @ac-6
+// Por delegación, el dueño se entera antes de la constancia por los canales del perfil. Sin la lista de canales del
+// perfil (como en esta casa de prueba) no hay aviso, y sin aviso no hay arreglo rápido: no se escribe ninguna
+// declaración ni renglón, ni en la destino ni en la designada. El camino con un canal que entrega lo prueban
+// la biblioteca de los avisos (save-ok.test.js) y el cupo delegado (story-gate.test.js, cupoDelegado).
+// 🔴 Falla con: la declaración escrita sin aviso al dueño (lo que hacía antes), o escrita en la designada.
+test('8.141 T11 AdhocSet_ForSession_Delegada_SinAviso_NoDeclara', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
   const coord = 'sess-coord';
   const destino = 'sess-dest';
   const args = ['adhoc', 'set', '{"reason":"arreglo del sp de deudas","maxFiles":20}', '--for-session', destino];
   const env = conVentana({ ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: coord }, { delegadaPor: coord });
-  let r = spawnSync('node', [path.join(SCRIPTS, 'marker.js'), ...args], { encoding: 'utf8', env });
-  assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stderr, /hasta 8/, 'dice que el cupo quedó en 8');
-  const d = declaracion(home, destino);
-  assert.equal(d.via, 'delegacion');
-  assert.equal(d.by, coord);
-  assert.equal(d.maxFiles, 8);
-  assert.equal(declaracion(home, coord), null, 'la designada no queda con declaración propia');
-  let log = adhocLog(home);
-  assert.deepStrictEqual(log.map((e) => e.kind), ['ADHOC_SET']);
-  assert.equal(log[0].via, 'delegacion');
-  assert.equal(log[0].by, coord);
-  assert.equal(log[0].destino, destino);
-  // la destino ya tiene declaración con un archivo: la segunda vez es un cambio, y el archivo sigue
-  io.writeAdhoc(estadoDe(home), destino, { ...d, files: ['src/a.js'] });
-  r = spawnSync('node', [path.join(SCRIPTS, 'marker.js'), ...args], { encoding: 'utf8', env });
-  assert.equal(r.status, 0, r.stderr);
-  assert.deepStrictEqual(declaracion(home, destino).files, ['src/a.js']);
-  log = adhocLog(home);
-  assert.deepStrictEqual(log.map((e) => e.kind), ['ADHOC_SET', 'ADHOC_UPDATE']);
-  assert.equal(log[1].via, 'delegacion');
+  const r = spawnSync('node', [path.join(SCRIPTS, 'marker.js'), ...args], { encoding: 'utf8', env });
+  assert.equal(r.status, 1, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /sin aviso a la persona, la coordinadora no abre el arreglo rápido/);
+  assert.equal(declaracion(home, destino), null, 'la destino sin declaración');
+  assert.equal(declaracion(home, coord), null, 'la designada sin declaración');
+  assert.deepStrictEqual(adhocLog(home).map((e) => e.kind), [], 'ningún renglón');
 });
 
 // 8.141 T14 AdhocSet_PortonApagado_SigueFirmando @story-8.141 @ac-12
