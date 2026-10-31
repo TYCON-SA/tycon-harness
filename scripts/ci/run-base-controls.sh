@@ -494,6 +494,15 @@ function classifierOfBase(root, base, work) {
   // sin clasificador ninguna refirma vale: se dice por qué, para que el rojo no parezca una firma mal hecha
   try { return require(file); } catch (e) { console.log(`     ⚠️ no pude cargar el clasificador de la refirma de la base: ${e.message}`); return null; }
 }
+// el hash de la constancia del dueño si lo que pide firma es lo que firmó más lo que trajo main con fusión limpia (lo
+// comprueba el clasificador de la base sobre el pedido); null si no, o si no se puede comprobar
+function refreshedFrom(a, work, approvals, baseHashes) {
+  if (!baseHashes || !a.entries.length) return null;
+  const classifier = classifierOfBase(a.root, a.base, work);
+  if (!classifier || typeof classifier.classify !== 'function') return null;
+  const c = classifier.classify({ root: a.root, base: a.base, tip: a.prHead || a.tip, entries: a.entries, approvals, baseHashes });
+  return c && c.clase === REFRESH && typeof c.refirma_de === 'string' ? c.refirma_de : null;
+}
 function classifierHere() {
   try { return require(path.join(process.env.BASE_CONTROLS_SELF_DIR || '', '..', 'lib', 'refresh-after-main.js')); } catch (_) { return null; }
 }
@@ -747,12 +756,16 @@ function cmdRun() {
     if (unproven.length && !inBase) reasons.push(`no pude leer las constancias de la base ${short(a.base)}: una aprobación por delegación no se da por buena sin compararla (${unproven.map((x) => short(x.hash)).join(', ')})`);
     else if (unproven.length) reasons.push(`una aprobación por delegación nueva ya no vale: el dueño la firma en la ventana o en su terminal (${unproven.map((x) => short(x.hash)).join(', ')})`);
     let approved = false;
+    let refreshedOf = null;
     const mustSign = a.changed.filter((p) => a.signOnChange.has(p));
     if ((baseRed || mustSign.length) && !prRed) {
       if (a.changed.length) {
         // la línea tiene que cuadrar entera: el hash del cambio, y sus reglas son las que dan ese hash
         const signed = approvals.some((x) => x && x.hash === a.hash && Array.isArray(x.rules) && hashOf(x.rules) === a.hash && !unproven.includes(x));
-        if (!signed) {
+        // sin línea para este hash: la constancia del dueño cubre lo que trajo main, si el clasificador de la base lo comprueba
+        const viaMain = signed ? null : refreshedFrom(a, work, approvals.filter((x) => !unproven.includes(x)), inBase);
+        if (viaMain) refreshedOf = viaMain;
+        if (!signed && !viaMain) {
           reasons.push(`el pedido afloja un control sin la constancia del dueño: ${a.changed.join(', ')}. La firma, desde una terminal (con el arnés instalado si el repo no trae este guion): ${signCommand('<repo>', a.entries, a.approvalsOut, a.baseArg)}`);
         } else {
           // con la constancia: la regla de la base menos lo aprobado, que va en su versión del pedido; tiene que dar verde
@@ -772,6 +785,8 @@ function cmdRun() {
     if (reasons.length) {
       for (const r of reasons) console.log(`❌ base-controls: rojo — ${r}`);
       process.exitCode = 1;
+    } else if (approved && refreshedOf) {
+      console.log(`✅ base-controls: cambio de control aprobado: ${a.changed.join(', ')} (constancia del dueño ${refreshedOf.slice(0, 12)} más lo que trajo main: sin firma nueva)`);
     } else if (approved) {
       console.log(`✅ base-controls: cambio de control aprobado: ${a.changed.join(', ')} (constancia del dueño ${a.hash.slice(0, 12)})`);
     } else if (a.changed.length) {
@@ -793,6 +808,11 @@ function cmdPending() {
   printChanges(a);
   if (!a.changed.length) { console.log('base-controls: no hay nada que firmar'); return; }
   console.log(`hash: ${a.hash}`);
+  // lo firmado más lo que trajo main: la revisión lo acepta con la constancia que ya está, sin firma nueva
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'base-controls-'));
+  let deMain = null;
+  try { deMain = refreshedFrom(a, work, readApprovals(a.root, a.prHead || a.tip, approvalFiles(a.inv)).filter((x) => x.via === undefined), baseApprovalHashes(a.root, a.base)); } finally { fs.rmSync(work, { recursive: true, force: true }); }
+  if (deMain) { console.log(`base-controls: no hace falta firmar: es lo que el dueño firmó (${deMain.slice(0, 12)}) más lo que trajo main, con fusión limpia`); return; }
   const firma = signCommand(a.root, a.entries, a.approvalsOut, a.baseArg);
   console.log(`la firma, desde la sesión (el dueño la aprueba en la ventana de permiso): ${firma}`);
   console.log(`o desde tu terminal: ${firma} --terminal`);
