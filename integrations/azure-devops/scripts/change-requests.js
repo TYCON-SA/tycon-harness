@@ -31,6 +31,8 @@
 // Las páginas se pisan en un pedido (`$skip` avanza de a 99): la lista está viva, y si entre una página y la otra se
 // cierra un pedido más nuevo, todo corre un lugar y el del borde no aparece en ninguna. Con el pisado, la página
 // siguiente tiene que empezar por uno ya visto; si no, la lista cambió y la lectura es no_medido.
+// Con `sourceBranch`, sólo los de esa rama: la búsqueda suma `searchCriteria.sourceRefName=refs/heads/<rama>` y lo que
+// vuelve se filtra igual por la rama. Sin él, las llamadas de siempre.
 // Una lectura que no terminó es no_medido: nunca una lista vacía ni una cortada.
 
 const fs = require('fs');
@@ -77,11 +79,11 @@ function correrAz(ctx, args, { timeout = 120000, cwd, vacio } = {}) {
   try { return { value: JSON.parse(r.stdout) }; } catch (_) { return { problem: no('no_medido', 'az contestó algo que no es JSON') }; }
 }
 
-function pagina(ctx, org, project, skip, deadlineMs) {
+function pagina(ctx, org, project, skip, deadlineMs, rama) {
   const timeout = deadlineMs ? deadlineMs - Date.now() : 120000;
   if (timeout <= 0) return { problem: no('no_medido', 'tope: se acabó el tiempo antes de leer los pedidos') };
   const r = correrAz(ctx, ['devops', 'invoke', '--area', 'git', '--resource', 'pullRequests', '--route-parameters', `project=${project}`,
-    '--query-parameters', 'searchCriteria.status=active', `$top=${POR_PAGINA}`, `$skip=${skip}`,
+    '--query-parameters', 'searchCriteria.status=active', ...(rama ? [`searchCriteria.sourceRefName=refs/heads/${rama}`] : []), `$top=${POR_PAGINA}`, `$skip=${skip}`,
     '--api-version', '7.1', '--org', org, '-o', 'json'], { timeout });
   if (r.problem) return r;
   if (!r.value || !Array.isArray(r.value.value)) return { problem: no('no_medido', 'la respuesta no trae la lista de pedidos (value)') };
@@ -89,11 +91,11 @@ function pagina(ctx, org, project, skip, deadlineMs) {
 }
 
 /** Todos los pedidos activos del proyecto: `{value}` o `{problem}`. */
-function delProyecto(ctx, org, project, maxPaginas, deadlineMs) {
+function delProyecto(ctx, org, project, maxPaginas, deadlineMs, rama) {
   const todos = [];
   const vistos = new Set();
   for (let i = 0; i < maxPaginas; i++) {
-    const p = pagina(ctx, org, project, i * (POR_PAGINA - 1), deadlineMs);
+    const p = pagina(ctx, org, project, i * (POR_PAGINA - 1), deadlineMs, rama);
     if (p.problem) return p;
     if (i > 0 && !(p.value[0] && vistos.has(p.value[0].pullRequestId))) {
       return { problem: no('no_medido', 'la lista de pedidos cambió mientras se leía (se cerró uno entre dos páginas)') };
@@ -137,10 +139,11 @@ function listarPedidos(args, ctx) {
   const org = o.value;
   const maxPaginas = Number.isInteger(args.maxPages) && args.maxPages > 0 ? args.maxPages : MAX_PAGINAS;
   const deadlineMs = Number.isFinite(args.deadlineMs) ? args.deadlineMs : null;
-  const clave = deadlineMs ? `${ctx.env.TYCON_ADO_CMD || 'az'}|${org}|${String(repo.project).toLowerCase()}|${deadlineMs}|${maxPaginas}` : null;
+  const rama = args.sourceBranch ? String(args.sourceBranch) : null;
+  const clave = deadlineMs ? `${ctx.env.TYCON_ADO_CMD || 'az'}|${org}|${String(repo.project).toLowerCase()}|${deadlineMs}|${maxPaginas}|${rama || ''}` : null;
   let leido = clave && recordadas.get(clave);
   if (!leido) {
-    leido = delProyecto(ctx, org, repo.project, maxPaginas, deadlineMs);
+    leido = delProyecto(ctx, org, repo.project, maxPaginas, deadlineMs, rama);
     if (clave) recordadas.set(clave, leido);
   }
   if (leido.problem) return leido.problem;
@@ -149,6 +152,7 @@ function listarPedidos(args, ctx) {
   const value = [];
   for (const p of leido.value) {
     if (!p || String((p.repository && p.repository.name) || '').toLowerCase() !== nombre) continue;
+    if (rama && p.sourceRefName !== `refs/heads/${rama}`) continue;
     // el pedido del pisado viene en dos páginas, y uno nuevo puede correr la lista hacia abajo
     if (vistos.has(p.pullRequestId)) continue;
     vistos.add(p.pullRequestId);

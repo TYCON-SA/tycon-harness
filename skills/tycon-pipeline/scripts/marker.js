@@ -169,6 +169,17 @@ const PEDIDA = (() => { const i = process.argv.indexOf('--for-session'); return 
 let SID = PROPIA === '_nosession' && process.argv.includes('--terminal') && PEDIDA && /^[\w-]+$/.test(PEDIDA) ? PEDIDA : PROPIA;
 // sin firma todavía, el marcador de otra sesión no se escribe
 let SOLO_LECTURA = false;
+// El chequeo antes de la ventana de firma (owner-window.js): el guion comprueba lo que la firma exige y sale en la
+// firma, sin escribir. Los renglones de los logs quedan sólo si se negó (la negativa es la que vale); si sigue, los
+// escribe el comando de verdad.
+const PREVIO = process.env.TYCON_SIGN_PRECHECK === '1';
+const LOGS_DEL_CHEQUEO = [];
+if (PREVIO) {
+  process.on('exit', (codigo) => {
+    if (codigo === 0) return;
+    for (const [archivo, linea] of LOGS_DEL_CHEQUEO) { try { fs.appendFileSync(archivo, linea, 'utf8'); } catch (_e) { /* logging nunca rompe el comando */ } }
+  });
+}
 let NECESITA_MARCADOR = false;
 
 // Los subcomandos que firman para otra sesión: la firma del catálogo, si trabajan sobre la ejecución del destino
@@ -342,11 +353,9 @@ function appendLog(fileName, obj) {
     if (!repoPath) {
       try { repoPath = require('./lib/repo-attrib.js').gitRoot(process.cwd()); } catch (_e) { /* sin git */ }
     }
-    fs.appendFileSync(
-      path.join(STATE_DIR, fileName),
-      JSON.stringify({ ts: nowIso(), sessionId: SID, repoPath, ...(storyPath ? { storyPath } : {}), ...obj }) + '\n',
-      'utf8',
-    );
+    const linea = JSON.stringify({ ts: nowIso(), sessionId: SID, repoPath, ...(storyPath ? { storyPath } : {}), ...obj }) + '\n';
+    if (PREVIO) { LOGS_DEL_CHEQUEO.push([path.join(STATE_DIR, fileName), linea]); return; }
+    fs.appendFileSync(path.join(STATE_DIR, fileName), linea, 'utf8');
   } catch (_e) { /* logging nunca rompe el comando */ }
 }
 
@@ -378,6 +387,8 @@ function readMarker() {
 }
 
 function sinFirmaNoSeEscribe() {
+  // en el chequeo antes de la ventana no se escribe: si llegó a escribir sin pasar por la firma, no dice que sí
+  if (PREVIO) process.exit(0);
   if (!SOLO_LECTURA) return;
   console.error(`🔒 marker.js: el marcador de la sesión ${SID} se escribe sólo después de la firma. No se escribió nada.`);
   process.exit(2);

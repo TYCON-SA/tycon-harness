@@ -3,8 +3,6 @@
 > Guía de referencia para combinar skills BMAD con subagentes custom TYCON en un pipeline HITL.
 > Resultado de mesa redonda con 5 agentes BMAD + pre-mortem + red team adversarial.
 
-> **⚠️ Nota importante (2026-04-18)**: el equipo adoptó el **Camino B** — uso informal de advisors sin governance formal. Ver `tasks/todo.md` sección "Items descartados explícitamente". Elementos como Sprint 0 baseline, DRI rotativo con capacity, dashboard obligatorio de 7 métricas, shadow mode y kill switch automático **NO están en vigor**. Los advisors existen, se invocan cuando aportan valor, y se ajustan empíricamente. Las secciones de este documento sobre governance quedan como **referencia** por si el equipo crece y adopta Camino A en el futuro.
-
 ---
 
 ## TL;DR
@@ -13,10 +11,8 @@ El equipo usa BMAD v6.3.0 como framework canónico. Los **advisors** (subagentes
 
 - **Un solo concepto: `ADVISOR`** con dos tags: `phase` y `severity`
 - **CRITICAL bloquea merge** (no commit local). WARNING/INFO son advisory puro.
-- **5 advisors Core de arranque** (4 de ellos activos en shadow mode hasta tener baseline)
+- **5 advisors Core de arranque**
 - **Pipeline YAML declarativo por story**: core advisors no excluibles, optional advisors se agregan
-- **1 DRI rotativo trimestral** con 10% capacity formal
-- **Kill switch**: advisor con `warnings_actioned_ratio < 40%` a 8 semanas se retira
 
 ---
 
@@ -69,8 +65,6 @@ Qué autoridad tiene su output:
 ---
 
 ## Los 5 advisors Core de arranque
-
-**NOTA**: todos arrancan en **shadow mode** — corren, loggean, NO muestran output al dev — hasta completar Sprint 0 de baseline (4 semanas). Después de baseline se activan con severity real según data.
 
 ### 1. `tycon-story-validator` (pre, WARNING/CRITICAL)
 
@@ -150,7 +144,7 @@ No se promueve a CRITICAL porque hay casos legítimos donde un AC no tiene test 
 - Trackea métrica `warnings_actioned_ratio` por advisor
 - Health check: si no corrió exitoso en 48h, el hook post-merge lo reporta en el próximo PR
 
-**Severity:** `INFO` siempre. Nunca emite al dev directamente. Produce el dashboard de métricas que el DRI revisa quincenalmente.
+**Severity:** `INFO` siempre. Nunca emite al dev directamente.
 
 **Core advisor**: no excluible. Es el **único observer** del sistema.
 
@@ -306,7 +300,7 @@ equivalencia manda; corregirlo es otra story.
 ```
 1. /tycon-create-story → story draft
          ↓
-2. [tycon-story-validator]  ← advisor pre, shadow en Sprint 0
+2. [tycon-story-validator]  ← advisor pre
          ↓
 3. [humano aprueba la story]  ← HITL checkpoint #1
          ↓
@@ -399,63 +393,6 @@ _abrir el detalle completo en `.advisors/story-<N.M>-report.md`_
 
 ---
 
-## Shadow mode (Sprint 0)
-
-**Durante las primeras 4 semanas**, todos los advisors corren en shadow:
-
-- Ejecutan su lógica completa
-- Loggean output a `.advisors/shadow-logs/<story-id>-<advisor>.md`
-- **NO muestran warnings al dev**
-- **NO bloquean merge** aunque detecten CRITICAL
-
-**Propósito**: capturar baseline sin interferir con velocidad del equipo:
-
-- Warnings por story (¿genera ruido o señal?)
-- Ratio warnings por severity (¿CRITICAL es raro, WARNING es común?)
-- Tiempo que agrega cada advisor al pipeline
-- Falsos positivos identificables en post-hoc review
-
-**Criterio de salida de shadow**:
-
-Cada advisor se activa (sale de shadow) cuando:
-- DRI revisa manualmente muestra de 20 stories
-- Calcula `warnings_actioned_ratio` hipotético (¿si el dev hubiera visto este warning, habría hecho algo?)
-- Si ratio > 60% → el advisor se activa
-- Si ratio < 40% → el advisor se re-calibra antes de activarse
-- Si ratio entre 40-60% → otra semana de shadow
-
----
-
-## Métricas y dashboard
-
-El retrospective-capturer emite estas métricas (threshold = alerta):
-
-| Métrica | Threshold alerta | Significa |
-|---|---|---|
-| `advisor_warnings_per_story` (media móvil 4 sem) | > 4 | Ruido, alert fatigue inminente |
-| `advisor_warnings_actioned_ratio` | < 50% | El advisor grita y nadie hace caso |
-| `advisor_pipeline_runtime_failures` | > 1/sem | Drift de BMAD/engram/guías |
-| `retrospective_capturer_last_successful_run` | > 48h | **Canario del sistema. Crítico.** |
-| `consolidated_report_open_rate` | < 80% | El reporte no se lee |
-| `time_from_report_to_approval` | mediana < 30s | HITL fantasma (rubber-stamping) |
-| `advisor_config_local_overrides` | > 1 dev con hook off | Abandono silencioso |
-| `advisor_rerun_loop_iterations` (media por story) | > 3 | Stories arrancan menos listas de lo declarado — Step 1 validator subestima gaps |
-| `step_8_commit_skipped_rerun` | > 0/mes | **Regla D.i violada — commits con código sin re-auditar. Bug del pipeline.** |
-
-Revisión: **standup quincenal del DRI, 15 min fijos**. No opcional.
-
----
-
-## Regla de kill switch (anti-zombie)
-
-Un advisor se retira automáticamente si:
-
-- `warnings_actioned_ratio < 40%` sostenido durante 8 semanas consecutivas
-
-**Sin excepciones.** Sin esto, el sistema acumula zombies. Si el equipo cree que el advisor "vale igual", hay que recalibrarlo — no mantenerlo por fe.
-
----
-
 ## Proliferación (regla anti-creep)
 
 **No se agrega un advisor Core sin evidencia del retrospective-capturer que lo justifique.**
@@ -463,38 +400,9 @@ Un advisor se retira automáticamente si:
 Proceso para proponer un advisor nuevo:
 
 1. Mini-story en el sprint: "Advisor X porque el capturer mostró patrón Y en Z stories"
-2. Shadow mode 2 sprints obligatorio
-3. Review de data: ¿warnings_actioned_ratio > 60%? Sí → activar. No → descartar.
+2. Review de data: ¿el patrón se repite y el advisor lo habría encontrado? Sí → activar. No → descartar.
 
 Los **Optional advisors** (los que cada story agrega en su YAML) no siguen este proceso — son experimentales por naturaleza.
-
----
-
-## Ownership y DRI
-
-### El rol del DRI
-
-Una persona, rotada cada trimestre. Owner de:
-
-- Dashboard de métricas (tabla en §Métricas y dashboard)
-- Triage de issues/PRs en el arnés y advisors
-- Health check del retrospective-capturer
-- Decisiones de shadow → activo → kill
-- Review manual mensual de 5 commits random vs lo que el capturer reportó
-
-### Capacity formal
-
-**10% del sprint** (4h/semana) asignado como capacity formal en el sprint plan. No voluntarismo. No "cuando pueda". Si no hay capacity, no hay sistema.
-
-### Checklist quincenal del DRI
-
-- [ ] Dashboard revisado, anomalías registradas
-- [ ] Triage de issues nuevos del repo
-- [ ] `retrospective_capturer_last_successful_run` < 48h confirmado
-- [ ] Revisión manual de 5 stories recientes vs output del capturer
-- [ ] Review de `warnings_actioned_ratio` por advisor — marcar candidatos a kill
-
-Si se saltea 2 veces seguidas → escalate al lead del equipo.
 
 ---
 
@@ -543,8 +451,6 @@ Todo dev nuevo al equipo debe:
 3. Primera semana: observar 3 pipelines completos antes de intentar uno solo
 4. Primer PR: debe ir con un pair del equipo
 
-**Red flag**: si un dev nuevo no pregunta sobre los advisors en su primera semana, significa que no los vio o no los entendió. El DRI debe chequear esto en su primera 1:1.
-
 ---
 
 ## Anti-patterns a evitar
@@ -555,8 +461,7 @@ Todo dev nuevo al equipo debe:
 4. **Advisory "suave" sin ningún CRITICAL** — si literalmente nada bloquea, el sistema es decorativo y muere por defecto.
 5. **Skills BMAD forked** — te bloquea en v6.3.0. Si necesitás comportamiento distinto, wrapper.
 6. **Delegar entendimiento al advisor** — el advisor detecta y reporta. El humano decide. Nunca "el advisor decidió que está bien".
-7. **Sin kill switch** — los advisors zombie son lo que mata el sistema. Kill si `warnings_actioned_ratio < 40%` a 8 semanas, sin excepciones.
-8. **Agregar un "tycon-azdo-pr-creator" o similar** — `az`/`gh` CLI + un prompt hacen el 90%. Esperá a tener dolor real antes de construir wrappers.
+7. **Agregar un "tycon-azdo-pr-creator" o similar** — `az`/`gh` CLI + un prompt hacen el 90%. Esperá a tener dolor real antes de construir wrappers.
 
 ---
 

@@ -23,6 +23,14 @@ set -uo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 
+# sólo lectura: el chequeo antes de la firma del ok de guardar, que corre este gancho con su índice propio. Ahí no se
+# escribe, no se gasta la emergencia y los avisos que nunca rechazan no corren. En un commit de verdad (el índice del
+# repo o su .lock) la variable no apaga nada
+SOLO_LECTURA=0
+if [ "${TYCON_PRECOMMIT_READ_ONLY:-}" = 1 ]; then
+  case "${GIT_INDEX_FILE:-}" in */save-ok-controls-*|save-ok-controls-*) SOLO_LECTURA=1 ;; esac
+fi
+
 # El pre-commit global que el dev ya tenía sigue corriendo: el instalador lo conserva como
 # `pre-commit.local` al lado de éste, se invoca PRIMERO, y si rechaza, el commit se rechaza.
 # Mandarlo a un .bak lo dejaría de correr sin aviso.
@@ -131,7 +139,7 @@ if [ -f "$_LEGACY_SH" ] && . "$_LEGACY_SH" 2>/dev/null && command -v legacy_env 
   legacy_env TYCON_REVIEWER_RULES
 fi
 SQL_COMPILA="$_TCG_DIR/scripts/ci/sql-compile.js"
-if [ "${TYCON_SQL_COMPILE:-1}" != "0" ] && [ -f "$SQL_COMPILA" ] && command -v "$HNODE" >/dev/null 2>&1; then
+if [ "$SOLO_LECTURA" = 0 ] && [ "${TYCON_SQL_COMPILE:-1}" != "0" ] && [ -f "$SQL_COMPILA" ] && command -v "$HNODE" >/dev/null 2>&1; then
   "$HNODE" "$SQL_COMPILA" --staged --repo "$REPO_ROOT" || true
 fi
 # ── 1b'. Reglas del CLAUDE.md fuera de «Reglas para revisores»: AVISAR ──
@@ -140,7 +148,7 @@ fi
 # lo dice al commitear. Con TYPESAFE_API_KEY filtra por probabilidad (tachando antes de mandar);
 # sin llave avisa toda línea nueva fuera de la sección. Nunca rechaza. Off: TYCON_REVIEWER_RULES=0.
 REGLAS_REV="$_TCG_DIR/scripts/ci/reviewer-rules.js"
-if [ "${TYCON_REVIEWER_RULES:-1}" != "0" ] && [ -f "$REGLAS_REV" ] && command -v "$HNODE" >/dev/null 2>&1; then
+if [ "$SOLO_LECTURA" = 0 ] && [ "${TYCON_REVIEWER_RULES:-1}" != "0" ] && [ -f "$REGLAS_REV" ] && command -v "$HNODE" >/dev/null 2>&1; then
   "$HNODE" "$REGLAS_REV" --staged --repo "$REPO_ROOT" || true
 fi
 # ── 1c. El catálogo de producción: forma verificada, y RECHAZA ───────
@@ -158,7 +166,15 @@ if [ "${TYCON_PROD_LINT:-1}" = "0" ]; then
 fi
 if [ -f "$LINT_PROD" ] && command -v "$HNODE" >/dev/null 2>&1; then
   if ! "$HNODE" "$LINT_PROD" --staged --repo "$REPO_ROOT"; then
-    if [ -f "$SIGN_LIB" ] && _emerg="$("$HNODE" "$SIGN_LIB" consume-commit --repo "$REPO_ROOT" 2>/dev/null)"; then
+    # en el chequeo de sólo lectura la emergencia se mira sin gastarla: la necesita el commit que viene después
+    if [ "$SOLO_LECTURA" = 1 ]; then
+      if [ -f "$SIGN_LIB" ] && "$HNODE" "$SIGN_LIB" has-commit --repo "$REPO_ROOT" 2>/dev/null; then
+        echo "⚠ el catálogo de producción rechaza el commit; hay una emergencia firmada, y se gasta al commitear" >&2
+      else
+        echo "⛔ el catálogo de producción rechazaría el commit (.tycon/production.json): arreglalo, o que la persona firme la emergencia del commit" >&2
+        exit 1
+      fi
+    elif [ -f "$SIGN_LIB" ] && _emerg="$("$HNODE" "$SIGN_LIB" consume-commit --repo "$REPO_ROOT" 2>/dev/null)"; then
       echo "⚠ el catálogo de producción rechazó el commit y pasa por la emergencia firmada: ${_emerg}" >&2
     else
       echo "⛔ el catálogo de producción rechazó el commit (.tycon/production.json)" >&2
@@ -203,6 +219,8 @@ revisar_memoria() {
 }
 revisar_memoria
 
+# en sólo lectura no se exporta la memoria: escribe en el repo, y corre al commitear
+[ "$SOLO_LECTURA" = 1 ] && exit 0
 [ -d "$REPO_ROOT/.engram" ] || exit 0
 [ -f "$REPO_ROOT/.engram-project" ] || exit 0
 

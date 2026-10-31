@@ -40,18 +40,19 @@ function nn(v, d) { return v === undefined || v === null ? d : v; }
  *
  * Excepción: si cerró el paso 8 y su sesión sigue viva (de sus cierres cuenta el que cerró último), la story puede estar esperando entrar a los repos (la CI, la
  * cola, un pedido en borrador). Se buscan sus repos (`repoPath` y la raíz git de cada archivo tocado, salvo los que
- * están en su rama principal) y se pregunta por los pedidos abiertos de su rama: a GitHub con `gh`, a Azure DevOps
- * con `az`. Con alguno abierto, o con una consulta que no contestó, sale como «Entrando a los repos» y la sesión no
- * cuenta como libre; pasada la hora estimada, dice desde cuándo espera. Un repo tocado cuenta si está en la rama del
- * repo de la story o en una que la nombra: una carpeta compartida que hoy está en la rama de otra story no es de ésta.
- * Las consultas corren en paralelo, 15 s cada una y 20 s todas juntas (`az` tarda cuando renueva su permiso): lo que
- * no contesta se dice al pie y la tabla sale igual.
+ * están en su rama principal) y se pregunta por los pedidos abiertos de su rama a la capa de plataforma
+ * (`platform.js change-request list`, lanzada como proceso, con la identidad del repo que sale de `origin`). Con alguno
+ * abierto, o con una consulta que no contestó, sale como «Entrando a los repos» y la sesión no cuenta como libre; pasada
+ * la hora estimada, dice desde cuándo espera. Un repo tocado cuenta si está en la rama del repo de la story o en una que
+ * la nombra: una carpeta compartida que hoy está en la rama de otra story no es de ésta. Las consultas corren en
+ * paralelo, 15 s cada una y 20 s todas juntas (`az` tarda cuando renueva su permiso): lo que no contesta, o un «no» de
+ * la capa con su motivo, se dice al pie y la tabla sale igual.
  *
  * Una fila por sesión: con una story en curso o esperando entrar, esa story es lo principal, y lo otro que hace la
  * sesión sale como «mientras tanto»: su arreglo rápido, su nota, o el repo de lo último que tocó si no es de la story.
  *
- * Sólo lee. No toca marcadores ni sesiones, no lee el contenido de ninguna transcripción ni la configuración de la
- * organización.
+ * Sólo lee. No toca marcadores ni sesiones y no lee el contenido de ninguna transcripción; la configuración de la
+ * organización la lee la capa, no este programa.
  *
  * Uso:  node scripts/tools/work-in-progress.js [--json] [--state-dir <dir>] [--sessions-dir <dir>] [--projects-dir <dir>] [--now <iso>]
  *       node scripts/tools/work-in-progress.js --marker <archivo>   (los pedidos abiertos de esa story, en JSON:
@@ -62,9 +63,10 @@ function nn(v, d) { return v === undefined || v === null ? d : v; }
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFile, spawnSync } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..', '..');
+const PLATFORM = path.join(ROOT, 'scripts', 'lib', 'platform', 'platform.js');
 const { stateDir, claudeDir } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
 const { stepName, isDone, byId, schemeOf, pendingSteps, STEPS } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'steps.js'));
 const { tiempos } = require(path.join(ROOT, 'scripts', 'metrics', 'step-times.js'));
@@ -522,55 +524,57 @@ function repoQuery(root, failures, ctx) {
   return { root, branch: head.branch, ...parseRemote(origin.url) };
 }
 
-// A GitHub se le pregunta por GraphQL: la lista de pedidos de `gh` no dice si un pedido está en la cola de merge.
-const GH_QUERY = 'query($o:String!,$n:String!,$h:String!){repository(owner:$o,name:$n){pullRequests(headRefName:$h,states:OPEN,first:20)'
-  + '{nodes{number isDraft mergeable mergeStateStatus autoMergeRequest{enabledAt} mergeQueueEntry{state}}}}}';
-function commandFor(q) {
-  if (q.kind === 'github') {
-    const [owner, name] = q.slug.split('/');
-    return ['gh', ['api', 'graphql', '-f', `query=${GH_QUERY}`, '-f', `o=${owner}`, '-f', `n=${name}`, '-f', `h=${q.branch}`]];
-  }
-  return ['az', ['repos', 'pr', 'list', '--org', `https://dev.azure.com/${encodeURIComponent(q.org)}`, '--project', q.project,
-    '--repository', q.repo, '--source-branch', q.branch, '--status', 'active', '--output', 'json']];
+// La identidad del repo para la capa de plataforma, sacada de su origin.
+function identityOf(q) {
+  if (q.kind === 'github') { const [org, repo] = q.slug.split('/'); return { platform: 'github', org, repo }; }
+  return { platform: 'azure', org: q.org, project: q.project, repo: q.repo };
 }
 
-// En Windows `az` es az.cmd, que node sólo corre por la consola: sólo con letras, números y . _ : / - y espacio.
-const shellSafe = (args) => args.every((a) => /^[\p{L}\p{N}_ .:/-]+$/u.test(a));
+// Fuera de la cola: no es borrador, no tiene auto-completar y la plataforma dice que no está en la cola (`inQueue:
+// false`) o no tiene cola (sin `inQueue`). Con `inQueue: null` la plataforma no supo decirlo: no se marca afuera, y
+// el pedido sale con «(cola sin verificar)».
+const offQueueOf = (p) => p.draft !== true && !p.autoComplete && (p.inQueue === false || !('inQueue' in p));
 
+// Mata una consulta y lo que ella lanzó (el gh o el az del conector): fuera de Windows corre en su propio grupo.
+function killQuery(child) {
+  try {
+    if (process.platform === 'win32') child.kill('SIGKILL');
+    else process.kill(-child.pid, 'SIGKILL');
+  } catch { /* ya terminó */ }
+}
+
+// Los pedidos abiertos de la rama, con `change-request list` de la capa lanzada como proceso: `{ prs }` o `{ error }`.
+// Un «no» de la capa trae su motivo; choca con main lo dice el conector (`mergeState: 'conflict'`).
 function runQuery(q, perMs, env, children) {
   return new Promise((resolve) => {
-    let [cmd, args] = commandFor(q);
-    const options = { encoding: 'utf8', windowsHide: true, timeout: perMs, killSignal: 'SIGKILL', env };
-    if (process.platform === 'win32' && cmd === 'az') {
-      if (!shellSafe(args)) { resolve({ error: 'az: argumentos con caracteres no seguros para la consola' }); return; }
-      args = args.map((a) => `"${a}"`);
-      options.shell = true;
-    }
-    children.push(execFile(cmd, args, options, (err, stdout, stderr) => {
-      if (err) {
-        const why = err.killed ? `se pasó del tope de ${perMs / 1000} s`
-          : err.code === 'ENOENT' ? 'no está instalado' : oneLine(stderr || err.message).slice(0, 200);
-        resolve({ error: `${cmd}: ${why}` });
-        return;
-      }
-      try {
-        const body = JSON.parse(stdout);
-        const nodes = body && body.data && body.data.repository && body.data.repository.pullRequests && body.data.repository.pullRequests.nodes;
-        const list = Array.isArray(body) ? body : nodes;
-        if (!Array.isArray(list)) throw new Error(body && Array.isArray(body.errors) && body.errors.length ? oneLine(String(body.errors[0].message)).slice(0, 200) : 'no es una lista');
-        // choca con main: lo dice el servidor (GitHub DIRTY o CONFLICTING, Azure `conflicts`); UNKNOWN o sin el dato, nada.
-        // Fuera de la cola: no es borrador y no tiene auto-merge ni lugar en la cola (GitHub) ni auto-completar (Azure);
-        // si la respuesta no trae esos datos no se sabe, y no se marca.
-        const queueKnown = (p) => ['autoMergeRequest', 'mergeQueueEntry', 'autoCompleteSetBy'].some((k) => k in p);
-        const prs = list.map((p) => ({
-          number: p && nn(p.number, p.pullRequestId), draft: Boolean(p && p.isDraft === true),
-          conflict: Boolean(p && (p.mergeStateStatus === 'DIRTY' || p.mergeable === 'CONFLICTING' || p.mergeStatus === 'conflicts')),
-          offQueue: Boolean(p && typeof p === 'object' && queueKnown(p) && p.isDraft !== true && !p.autoMergeRequest && !p.mergeQueueEntry && !p.autoCompleteSetBy),
-        }));
-        if (!prs.every((p) => Number.isInteger(p.number))) throw new Error('un pedido sin número');
-        resolve({ prs });
-      } catch (e) { resolve({ error: `${cmd}: respuesta ilegible (${e.message})` }); }
-    }));
+    const args = [PLATFORM, 'change-request', 'list', '--repo', JSON.stringify(identityOf(q)),
+      '--args', JSON.stringify({ sourceBranch: q.branch, checks: false, deadlineMs: Date.now() + perMs })];
+    const child = spawn(process.execPath, args, { env, windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'] });
+    children.push(child);
+    let out = '';
+    let err = '';
+    let late = false;
+    child.stdout.on('data', (d) => { out += d; });
+    child.stderr.on('data', (d) => { err += d; });
+    const timer = setTimeout(() => { late = true; killQuery(child); }, perMs);
+    const done = (r) => { clearTimeout(timer); resolve(r); };
+    const fail = (why) => done({ error: `la capa de plataforma: ${why}` });
+    child.on('error', (e) => fail(`no arrancó (${e.code || e.message})`));
+    child.on('close', (code) => {
+      if (late) { fail(`se pasó del tope de ${perMs / 1000} s`); return; }
+      let r;
+      try { r = JSON.parse(out); } catch { fail(`respuesta ilegible (${oneLine(err || out).slice(0, 200) || `salió ${code}`})`); return; }
+      if (!r || r.ok !== true) { fail(`${(r && r.reason) || 'no_medido'}: ${oneLine((r && r.detail) || 'sin detalle').slice(0, 200)}`); return; }
+      if (!Array.isArray(r.value)) { fail('respuesta ilegible (no es una lista)'); return; }
+      const prs = r.value.map((p) => ({
+        number: p && p.number, draft: Boolean(p && p.draft === true), conflict: Boolean(p && p.mergeState === 'conflict'),
+        offQueue: Boolean(p && typeof p === 'object' && offQueueOf(p)),
+        // sin borrador ni auto-completar, la plataforma no supo si está en la cola: se dice, no se da por encolado
+        queueUnknown: Boolean(p && typeof p === 'object' && p.draft !== true && !p.autoComplete && p.inQueue === null),
+      }));
+      if (!prs.every((p) => Number.isInteger(p.number))) { fail('respuesta ilegible (un pedido sin número)'); return; }
+      done({ prs });
+    });
   });
 }
 
@@ -581,7 +585,7 @@ function queryAll(queries, { perMs = PER_QUERY_MS, totalMs = ALL_QUERIES_MS, env
   let timer;
   const late = new Promise((resolve) => {
     timer = setTimeout(() => {
-      for (const c of children) c.kill('SIGKILL');
+      for (const c of children) killQuery(c);
       resolve({ error: `se pasó del tope de ${totalMs / 1000} s para todas las consultas` });
     }, totalMs);
   });
@@ -708,7 +712,7 @@ function enteringState(m, prsOf, unreadable, wanted, ctx, found = []) {
     for (const p of res.prs) {
       const ref = `${q.kind === 'github' ? '#' : '!'}${p.number}`;
       found.push({ repo: q.name, ref, draft: p.draft, conflict: p.conflict, offQueue: p.offQueue });
-      shown.push(`${q.name} ${ref}${p.draft ? ' (borrador)' : ''}${p.conflict ? ' (choca con main)' : ''}${p.offQueue ? ' (fuera de la cola)' : ''}`);
+      shown.push(`${q.name} ${ref}${p.draft ? ' (borrador)' : ''}${p.conflict ? ' (choca con main)' : ''}${p.offQueue ? ' (fuera de la cola)' : ''}${p.queueUnknown ? ' (cola sin verificar)' : ''}`);
       if (!p.draft && !p.offQueue) queued += 1;
       if (p.offQueue) off += 1;
     }
@@ -918,6 +922,7 @@ function buildWip(opts = {}) {
       const last = [a.lastTouch, a.declaredAt].map((v) => Date.parse(v)).find(Number.isFinite);
       const old = last !== undefined && nowMs - last > LOOSE_STALE_MS ? ` (sin tocar desde ${hhmm(last)})` : '';
       rows[pipe.i].meanwhile = `arreglo rápido «${work}»${old}`;
+      extra[pipe.i].meanwhile = String(a.reason || '');
       continue;
     }
     const label = liveName(sid);
@@ -927,7 +932,7 @@ function buildWip(opts = {}) {
       const parts = ['Trabajo suelto'];
       if (last !== undefined) parts.push(`sin tocar desde ${hhmm(last)}`);
       if (last !== undefined && nowMs - last > LOOSE_STALE_MS) parts.push(`¿terminó? cerralo desde su sesión: node ${MARKER_JS} adhoc clear`);
-      addRow({ work, state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label, folder: folderOf(sid) }, sid, { kind: 'loose' });
+      addRow({ work, state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label, folder: folderOf(sid) }, sid, { kind: 'loose', text: String(a.reason || '') });
     }
     else {
       // Se limpia con `adhoc clear-orphan`, que sólo borra pasadas las 24 h sin tocarse: antes, se dice desde cuándo.
@@ -958,7 +963,7 @@ function buildWip(opts = {}) {
     const at = Date.parse(d.at);
     if (pipe) {
       const old = Number.isFinite(at) && nowMs - at > LOOSE_STALE_MS ? ` (sin tocar desde ${hhmm(at)})` : '';
-      if (!rows[pipe.i].meanwhile) rows[pipe.i].meanwhile = `${work}${old}`;
+      if (!rows[pipe.i].meanwhile) { rows[pipe.i].meanwhile = `${work}${old}`; extra[pipe.i].meanwhile = String(d.text || ''); }
       continue;
     }
     const label = liveName(sid);
@@ -974,7 +979,7 @@ function buildWip(opts = {}) {
     const parts = ['Anotado por la sesión'];
     if (Number.isFinite(at)) parts.push(`sin tocar desde ${hhmm(at)}`);
     if (Number.isFinite(at) && nowMs - at > LOOSE_STALE_MS) parts.push(`¿terminó? borrala desde su sesión: node ${MARKER_JS} doing clear`);
-    addRow({ work, state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label, folder: folderOf(sid) }, sid, { kind: 'note' });
+    addRow({ work, state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label, folder: folderOf(sid) }, sid, { kind: 'note', text: String(d.text || '') });
   }
 
   // sin arreglo ni nota: si lo último que tocó la sesión está en un repo que no es de su story, eso hace mientras tanto
@@ -1115,4 +1120,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { buildWip, wipNow, stagesOf, jsonOf, sessionsBySid, storyEntering, median, queryAll, parseRemote, shellSafe, PER_QUERY_MS, ALL_QUERIES_MS };
+module.exports = { buildWip, wipNow, stagesOf, jsonOf, sessionsBySid, storyEntering, median, queryAll, parseRemote, offQueueOf, PER_QUERY_MS, ALL_QUERIES_MS };

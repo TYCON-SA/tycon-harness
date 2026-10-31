@@ -1,24 +1,9 @@
 {
-  "adapters/codex/agents-native/tycon-dod-runtime-checker.toml": [
-    "- **Azure DevOps**: `az pipelines runs list --branch <branch> --query \\\"[?triggerInfo.\\\\\\\"ci.sourceSha\\\\\\\"=='<sha>'].{id:id, status:status, result:result}\\\" --output tsv`",
-    "4. **DODRT-C2**: chequear que el SHA está pusheado + verificar CI run via `az pipelines runs list` o `gh run list`.",
-    "Azure Pipelines: az pipelines runs list --branch dev --query \\\"[?triggerInfo.\\\\\\\"ci.sourceSha\\\\\\\"=='<sha>']\\\" → vacío."
-  ],
   "adapters/codex/agents-native/tycon-retrospective-capturer.toml": [
     "- si el repo expone el estado de su CI (`az pipelines runs list`, `gh run list`): un run **failed**"
   ],
-  "adapters/codex/agents/tycon-dod-runtime-checker.toml": [
-    "- **Azure DevOps**: `az pipelines runs list --branch <branch> --query \\\"[?triggerInfo.\\\\\\\"ci.sourceSha\\\\\\\"=='<sha>'].{id:id, status:status, result:result}\\\" --output tsv`",
-    "4. **DODRT-C2**: chequear que el SHA está pusheado + verificar CI run via `az pipelines runs list` o `gh run list`.",
-    "Azure Pipelines: az pipelines runs list --branch dev --query \\\"[?triggerInfo.\\\\\\\"ci.sourceSha\\\\\\\"=='<sha>']\\\" → vacío."
-  ],
   "adapters/codex/agents/tycon-retrospective-capturer.toml": [
     "- si el repo expone el estado de su CI (`az pipelines runs list`, `gh run list`): un run **failed**"
-  ],
-  "agents/tycon-dod-runtime-checker.md": [
-    "- **Azure DevOps**: `az pipelines runs list --branch <branch> --query \"[?triggerInfo.\\\"ci.sourceSha\\\"=='<sha>'].{id:id, status:status, result:result}\" --output tsv`",
-    "4. **DODRT-C2**: chequear que el SHA está pusheado + verificar CI run via `az pipelines runs list` o `gh run list`.",
-    "Azure Pipelines: az pipelines runs list --branch dev --query \"[?triggerInfo.\\\"ci.sourceSha\\\"=='<sha>']\" → vacío."
   ],
   "agents/tycon-retrospective-capturer.md": [
     "- si el repo expone el estado de su CI (`az pipelines runs list`, `gh run list`): un run **failed**"
@@ -157,19 +142,19 @@
     "falta enumerarlos: `az devops invoke --area wit --resource workitemtypes --route-parameters",
     "process=$(az devops project show \\"
   ],
-  "integrations/azure-devops/scripts/ci-queue.js": [
-    "//   az devops invoke --area build --resource timeline --route-parameters project=<proyecto> buildId=<n>",
-    "//   az devops invoke --area distributedtask --resource jobrequests --route-parameters poolId=<id> --api-version 7.1",
-    "//   az devops invoke --area distributedtask --resource pools --api-version 7.1 --org <org> -o json",
-    "//   az pipelines runs list --project <proyecto> [--branch <rama>] --top 100 --org <org> -o json",
-    "//   az pipelines runs show --id <n> --project <proyecto> --org <org> -o json   (por cada pedido sin terminar)"
-  ],
   "integrations/azure-devops/scripts/change-requests.js": [
     "//   az devops invoke --area git --resource pullRequests --route-parameters project=<proyecto>",
     "//   az repos pr create --org <org> --project <proyecto> --repository <repo> --source-branch <rama> --target-branch <destino>",
     "//   az repos pr list --org <org> --project <proyecto> --repository <repo> --source-branch <rama> --target-branch <destino>",
     "//   az repos pr show --id <n> --query \"{ac:autoCompleteSetBy.id, msg:completionOptions.mergeCommitMessage}\" -o json",
     "//   az repos pr update --id <n> [--title <título> --description <texto>] --merge-commit-message \"Merged PR <n>: <asunto>\""
+  ],
+  "integrations/azure-devops/scripts/ci-queue.js": [
+    "//   az devops invoke --area build --resource timeline --route-parameters project=<proyecto> buildId=<n>",
+    "//   az devops invoke --area distributedtask --resource jobrequests --route-parameters poolId=<id> --api-version 7.1",
+    "//   az devops invoke --area distributedtask --resource pools --api-version 7.1 --org <org> -o json",
+    "//   az pipelines runs list --project <proyecto> [--branch <rama>] --top 100 --org <org> -o json",
+    "//   az pipelines runs show --id <n> --project <proyecto> --org <org> -o json   (por cada pedido sin terminar)"
   ],
   "integrations/azure-devops/scripts/work-items.js": [
     "//            az boards work-item relation add --organization <org> --id <id> --relation-type parent --target-id <Epic> --output json",

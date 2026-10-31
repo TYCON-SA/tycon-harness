@@ -54,6 +54,7 @@ const TESTING_STEPS = new Set(['run-tests', 'reviewers', 'adversarial-pass', 'li
 // Una sesión que espera a una persona (un permiso, una respuesta) pide la firma con la mano levantada.
 const WAITING_STATUS = /wait|input|permission/i;
 const PROMISE_KEEP_MS = 24 * 3600000;
+const STALE_END_MS = 12 * 3600000;
 const DESKS = 5;
 
 const pad = (n) => String(n).padStart(2, '0');
@@ -81,18 +82,13 @@ function sentenceOf(estado, x, row) {
       ? 'Terminó, pero sus pedidos no están en la cola y su pedido choca con main.'
       : 'Terminó, pero sus pedidos no están en la cola.';
   }
+  // el trabajo suelto y la nota dicen con sus palabras qué hacen
+  if ((x.kind === 'loose' || x.kind === 'note') && plain(x.text)) return plain(x.text);
   if (x.kind === 'loose') return 'Hace un trabajo suelto, sin pasos fijos.';
   if (x.kind === 'note') return 'Trabaja en algo de fondo.';
   if (x.kind === 'activity') return 'Trabaja sin pipeline.';
   if (x.kind === 'nomarker') return 'Sigue con algo: tocó archivos hace poco.';
   return 'Trabaja.';
-}
-
-// El fin sin hora, en llano; con hora lo arma la página.
-function endWithoutHour(x) {
-  if (x.kind === 'stalled') return 'cuando se encolen sus pedidos';
-  if (x.kind === 'entering') return 'cuando entre a los repos';
-  return null;
 }
 
 function stateOf(x, status, isCoordinator) {
@@ -119,16 +115,23 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     const x = (wip.extra && wip.extra[i]) || {};
     const estado = stateOf(x, d.status, Boolean(coordinatorSid) && d.sid === coordinatorSid);
     const titulo = row.work === 'no se ve qué hace' ? null : plain(row.work) || null;
-    const a = { nombre: row.session, estado, titulo, haciendo: sentenceOf(estado, x, row), termina: endWithoutHour(x), carpeta: row.folder || null, orden: agents.length };
-    if (row.meanwhile) { a.mientras = plain(row.meanwhile); a.mientrasEstado = 'trabajando'; }
+    const a = { nombre: row.session, estado, titulo, haciendo: sentenceOf(estado, x, row), carpeta: row.folder || null };
+    // una hora de fin que pasó hace más de STALE_END_MS ya no dice nada: se trata como si no hubiera hora
+    const endAt = Number.isFinite(x.endAt) && nowMs - x.endAt <= STALE_END_MS ? x.endAt : null;
+    // sin hora, se dice que no la hay: un texto en el lugar de la hora parece una hora
+    if (estado !== 'coordina' && endAt == null) a.termina = 'sin hora estimada';
+    const meanwhile = plain(x.meanwhile) || plain(row.meanwhile);
+    if (meanwhile) { a.mientras = meanwhile; a.mientrasEstado = 'trabajando'; }
     if (x.steps) { a.pasos = x.steps; a.avance = x.progress; }
-    if (Number.isFinite(x.endAt)) {
+    if (endAt != null) {
       const key = `${d.sid || row.session}|${x.storyId || ''}`;
-      if (!kept[key]) kept[key] = { at: x.endAt, seen: nowMs };
+      if (!kept[key]) kept[key] = { at: endAt, seen: nowMs };
       kept[key].seen = nowMs;
       a.estimadaIso = localIso(kept[key].at);
-      a.pronosticoIso = localIso(x.endAt);
+      a.pronosticoIso = localIso(endAt);
       if (x.late) a.atrasada = true;
+      // la hora pasó y no terminó: el atraso es el de ahora contra la prometida, no el de la hora vieja
+      if (endAt < nowMs) { a.atrasoMin = Math.round((nowMs - kept[key].at) / 60000); a.atrasada = true; }
     }
     a.tipo = x.kind || null;
     agents.push(a);
@@ -136,9 +139,12 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
   // la coordinadora quieta no está libre: coordina a las demás
   for (const name of wip.free || []) {
     agents.push(name === coordinatorName
-      ? { nombre: name, estado: 'coordina', haciendo: 'Coordina las sesiones de esta máquina', orden: agents.length }
-      : { nombre: name, estado: 'libre', haciendo: 'Sin trabajo', orden: agents.length });
+      ? { nombre: name, estado: 'coordina', haciendo: 'Coordina las sesiones de esta máquina' }
+      : { nombre: name, estado: 'libre', haciendo: 'Sin trabajo' });
   }
+  // un orden fijo para las tarjetas y los escritorios: la coordinadora primero y después por nombre
+  agents.sort((p, q) => (q.estado === 'coordina') - (p.estado === 'coordina') || String(p.nombre).localeCompare(String(q.nombre), 'es'));
+  agents.forEach((a, i) => { a.orden = i; });
 
   // lo pendiente es el trabajo de las filas de /wip, no la coordinadora quieta
   const items = agents.filter((a) => a.tipo).map((a) => ({
@@ -152,10 +158,8 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
   for (const h of wip.halfway || []) items.push({ titulo: plain(String(h).split(' · limpiar:')[0]), quien: '—', estado: 'riesgo', estimadaIso: null, pronosticoIso: null });
   // «te toca» es sólo lo que pide una firma o una decisión del dueño: lo demás lo hace cada sesión
   const teToca = signatures.filter((s) => s && s.title).map((s) => `Firmar: ${plain(s.title)}`);
-  const busy = agents.filter((a) => a.estado !== 'libre').length;
   const meta = {
     actualizado: hhmm(nowMs),
-    resumen: `${busy} sesión(es) trabajando y ${agents.length - busy} libre(s). Foto de las ${hhmm(nowMs)}: volvé a correr /office para verla al día.`,
     teToca,
     extra: Math.max(0, agents.length - DESKS),
   };
