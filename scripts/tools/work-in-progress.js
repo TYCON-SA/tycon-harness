@@ -77,6 +77,8 @@ const WORKING_MS = 5 * 60 * 1000;
 const IDLE_MS = 3 * 3600 * 1000;
 // un trabajo suelto sin tocar hace más que esto pregunta si terminó
 const LOOSE_STALE_MS = 3600 * 1000;
+// una sesión quieta que tocó un archivo hace menos que esto sigue con algo: no está libre
+const RECENT_FILE_MS = 30 * 60 * 1000;
 const MARKER_JS = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
 const shortId = (sid) => String(sid || '').slice(0, 8) || '?';
 const oneLine = (s) => String(s).replace(/\s+/g, ' ').trim();
@@ -298,6 +300,9 @@ function enteringEnd(marker, entry, nowMs) {
 }
 
 const ENTERING = 'Entrando a los repos';
+const STALLED = 'Pedidos sin encolar';
+// el fin de una story con el paso 8 cerrado: sin un pedido en la cola no hay hora que estimar
+const closedEnd = (state, m, entry, nowMs) => (state.startsWith(STALLED) ? 'sin estimación (ningún pedido está en la cola: hay que encolarlo)' : enteringEnd(m, entry, nowMs));
 const MAIN_BRANCHES = ['main', 'master'];
 const PER_QUERY_MS = 15000;
 const ALL_QUERIES_MS = 20000;
@@ -505,8 +510,14 @@ function repoQuery(root, failures, ctx) {
   return { root, branch: head.branch, ...parseRemote(origin.url) };
 }
 
+// A GitHub se le pregunta por GraphQL: la lista de pedidos de `gh` no dice si un pedido está en la cola de merge.
+const GH_QUERY = 'query($o:String!,$n:String!,$h:String!){repository(owner:$o,name:$n){pullRequests(headRefName:$h,states:OPEN,first:20)'
+  + '{nodes{number isDraft mergeable mergeStateStatus autoMergeRequest{enabledAt} mergeQueueEntry{state}}}}}';
 function commandFor(q) {
-  if (q.kind === 'github') return ['gh', ['pr', 'list', '--repo', q.slug, '--head', q.branch, '--state', 'open', '--json', 'number,isDraft,mergeable,mergeStateStatus']];
+  if (q.kind === 'github') {
+    const [owner, name] = q.slug.split('/');
+    return ['gh', ['api', 'graphql', '-f', `query=${GH_QUERY}`, '-f', `o=${owner}`, '-f', `n=${name}`, '-f', `h=${q.branch}`]];
+  }
   return ['az', ['repos', 'pr', 'list', '--org', `https://dev.azure.com/${encodeURIComponent(q.org)}`, '--project', q.project,
     '--repository', q.repo, '--source-branch', q.branch, '--status', 'active', '--output', 'json']];
 }
@@ -531,12 +542,18 @@ function runQuery(q, perMs, env, children) {
         return;
       }
       try {
-        const list = JSON.parse(stdout);
-        if (!Array.isArray(list)) throw new Error('no es una lista');
-        // choca con main: lo dice el servidor (GitHub DIRTY o CONFLICTING, Azure `conflicts`); UNKNOWN o sin el dato, nada
+        const body = JSON.parse(stdout);
+        const nodes = body && body.data && body.data.repository && body.data.repository.pullRequests && body.data.repository.pullRequests.nodes;
+        const list = Array.isArray(body) ? body : nodes;
+        if (!Array.isArray(list)) throw new Error(body && Array.isArray(body.errors) && body.errors.length ? oneLine(String(body.errors[0].message)).slice(0, 200) : 'no es una lista');
+        // choca con main: lo dice el servidor (GitHub DIRTY o CONFLICTING, Azure `conflicts`); UNKNOWN o sin el dato, nada.
+        // Fuera de la cola: no es borrador y no tiene auto-merge ni lugar en la cola (GitHub) ni auto-completar (Azure);
+        // si la respuesta no trae esos datos no se sabe, y no se marca.
+        const queueKnown = (p) => ['autoMergeRequest', 'mergeQueueEntry', 'autoCompleteSetBy'].some((k) => k in p);
         const prs = list.map((p) => ({
           number: p && nn(p.number, p.pullRequestId), draft: Boolean(p && p.isDraft === true),
           conflict: Boolean(p && (p.mergeStateStatus === 'DIRTY' || p.mergeable === 'CONFLICTING' || p.mergeStatus === 'conflicts')),
+          offQueue: Boolean(p && typeof p === 'object' && queueKnown(p) && p.isDraft !== true && !p.autoMergeRequest && !p.mergeQueueEntry && !p.autoCompleteSetBy),
         }));
         if (!prs.every((p) => Number.isInteger(p.number))) throw new Error('un pedido sin número');
         resolve({ prs });
@@ -618,6 +635,7 @@ function lastTouched(sdir, sid, home, nowMs, unreadable) {
     if (!path.isAbsolute(p) || !Number.isFinite(ts)) continue;
     if (nowMs - ts > IDLE_MS) break;
     if (/[\\/]scratchpad[\\/]/.test(p) || p.startsWith(memory) || out.includes(p)) continue;
+    if (!out.length) out.newest = ts;
     out.push(p);
   }
   return out;
@@ -665,6 +683,8 @@ function ofStory(m, ctx) {
 function enteringState(m, prsOf, unreadable, wanted, ctx, found = []) {
   const shown = [];
   const failures = [];
+  let queued = 0;
+  let off = 0;
   const mine = ofStory(m, ctx);
   for (const root of storyRepos(m, failures, ctx)) {
     const q = repoQuery(root, failures, ctx);
@@ -675,11 +695,15 @@ function enteringState(m, prsOf, unreadable, wanted, ctx, found = []) {
     if (!res || res.error) { failures.push(`pedidos de ${q.name} (${q.branch}): ${res ? res.error : 'sin respuesta'}`); continue; }
     for (const p of res.prs) {
       const ref = `${q.kind === 'github' ? '#' : '!'}${p.number}`;
-      found.push({ repo: q.name, ref, draft: p.draft, conflict: p.conflict });
-      shown.push(`${q.name} ${ref}${p.draft ? ' (borrador)' : ''}${p.conflict ? ' (choca con main)' : ''}`);
+      found.push({ repo: q.name, ref, draft: p.draft, conflict: p.conflict, offQueue: p.offQueue });
+      shown.push(`${q.name} ${ref}${p.draft ? ' (borrador)' : ''}${p.conflict ? ' (choca con main)' : ''}${p.offQueue ? ' (fuera de la cola)' : ''}`);
+      if (!p.draft && !p.offQueue) queued += 1;
+      if (p.offQueue) off += 1;
     }
   }
   unreadable.push(...failures.map((f) => `story ${m.storyId || '?'}: ${f}`));
+  // ninguno en camino (todos en borrador o fuera de la cola, alguno fuera): no está entrando, espera que lo encolen
+  if (shown.length && !queued && off && !failures.length) return `${STALLED} · ${shown.join(' · ')}`;
   if (shown.length) return `${ENTERING} · ${shown.join(' · ')}`;
   return failures.length ? `${ENTERING} (no se pudo consultar los pedidos)` : null;
 }
@@ -832,7 +856,7 @@ function buildWip(opts = {}) {
     if (label) {
       const entry = storyEntry(m, gitCtx);
       pipeRows.set(sid, { i: rows.length, m });
-      addRow({ work, state: step, end: entering ? enteringEnd(m, entry, nowMs) : estimateEnd(m, medians, nowMs, entry), session: label, folder: folderOf(sid, m.repoPath) }, sid);
+      addRow({ work, state: step, end: entering ? closedEnd(entering, m, entry, nowMs) : estimateEnd(m, medians, nowMs, entry), session: label, folder: folderOf(sid, m.repoPath) }, sid);
     }
     else halfway.push(`${work} · ${nameOf(sid)} · quedó en: ${step} · limpiar: node ${MARKER_JS} clear-session ${sid}`);
   }
@@ -854,7 +878,7 @@ function buildWip(opts = {}) {
       unreadable.push(`${m.storyPath || '(sin ruta de story)'}: ${e.code === 'ENOENT' ? 'no existe' : e.message}`);
     }
     pipeRows.set(sid, { i: rows.length, m });
-    addRow({ work: `${m.storyId || '?'} · ${cut(title, TITLE_MAX)}`, state: entering, end: enteringEnd(m, storyEntry(m, gitCtx), nowMs), session: liveName(sid), folder: folderOf(sid, m.repoPath) }, sid);
+    addRow({ work: `${m.storyId || '?'} · ${cut(title, TITLE_MAX)}`, state: entering, end: closedEnd(entering, m, storyEntry(m, gitCtx), nowMs), session: liveName(sid), folder: folderOf(sid, m.repoPath) }, sid);
   }
 
   if (stale) unreadable.push(`${stale} marcador(es) sin tocar hace más de 24 h: no cuentan (marker.js list-all los descarta)`);
@@ -868,7 +892,13 @@ function buildWip(opts = {}) {
     const work = cut(String(a.reason || '(sin motivo)'), TITLE_MAX);
     // con una story en curso, el arreglo rápido es lo que hace mientras tanto: no abre otra fila
     const pipe = pipeRows.get(sid);
-    if (pipe) { rows[pipe.i].meanwhile = `arreglo rápido «${work}»`; continue; }
+    if (pipe) {
+      // sin tocar hace más de 1 h puede haber terminado: se dice desde cuándo
+      const last = [a.lastTouch, a.declaredAt].map((v) => Date.parse(v)).find(Number.isFinite);
+      const old = last !== undefined && nowMs - last > LOOSE_STALE_MS ? ` (sin tocar desde ${hhmm(last)})` : '';
+      rows[pipe.i].meanwhile = `arreglo rápido «${work}»${old}`;
+      continue;
+    }
     const label = liveName(sid);
     if (label) {
       // Desde cuándo no se toca: pasada 1 h, pregunta si terminó y dice cómo cerrarlo desde su sesión (no lo borra).
@@ -904,8 +934,12 @@ function buildWip(opts = {}) {
     let d;
     try { d = readObject(file); } catch (e) { unreadable.push(`${file}: ${e.message}`); continue; }
     const work = cut(String(d.text || '(sin texto)'), TITLE_MAX);
-    if (pipe) { if (!rows[pipe.i].meanwhile) rows[pipe.i].meanwhile = work; continue; }
     const at = Date.parse(d.at);
+    if (pipe) {
+      const old = Number.isFinite(at) && nowMs - at > LOOSE_STALE_MS ? ` (sin tocar desde ${hhmm(at)})` : '';
+      if (!rows[pipe.i].meanwhile) rows[pipe.i].meanwhile = `${work}${old}`;
+      continue;
+    }
     const label = liveName(sid);
     if (!label) {
       // como el ad-hoc: se borra con `doing clear-orphan`, que sólo borra pasadas las 24 h sin tocarse
@@ -938,10 +972,14 @@ function buildWip(opts = {}) {
     if (s.alive && s.internal && !busy.has(sid)) { internal += 1; continue; }
     if (!s.alive || busy.has(sid)) continue;
     const label = s.name || shortId(sid);
-    if (s.busy || (s.last != null && nowMs - s.last < WORKING_MS)) {
+    const active = s.busy || (s.last != null && nowMs - s.last < WORKING_MS);
+    // quieta, pero con un archivo tocado hace poco: sigue con algo (espera una prueba de fondo, pone al día una rama)
+    // y no está libre
+    const files = touchedOf(sid);
+    const recentFile = files.newest != null && nowMs - files.newest < RECENT_FILE_MS;
+    if (active || recentFile) {
       // lo que hace sale del último archivo que tocó dentro de un repo; sin uno, de la carpeta donde arrancó
       let place = null;
-      const files = touchedOf(sid);
       for (const file of files) {
         place = touchedPlace(file, gitCtx, unreadable);
         if (place) break;
@@ -952,7 +990,8 @@ function buildWip(opts = {}) {
       const startBranch = s.cwd ? branchAt(s.cwd, gitCtx, unreadable) : '';
       const unknown = !place && !story && MAIN_BRANCHES.includes(startBranch);
       const why = unknown && (files.length ? 'los archivos que tocó no están en un repo' : `no tocó archivos en las últimas ${IDLE_MS / 3600000} h`);
-      const parts = ['Trabajando sin pipeline', why, story && `story ${story} en preparación`, s.last != null && `última actividad ${hhmm(s.last)}`].filter(Boolean);
+      const parts = [active ? 'Trabajando sin pipeline' : 'Trabajando sin marcador', why, story && `story ${story} en preparación`,
+        s.last != null && `última actividad ${hhmm(s.last)}`, !active && `último archivo ${hhmm(files.newest)}`].filter(Boolean);
       addRow({ work: place ? place.work : unknown ? 'no se ve qué hace' : sessionPlace(s.cwd, gitCtx, unreadable), state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label, folder: place ? tilde(place.root) : tilde(s.cwd) }, sid);
     } else if (s.last == null) { free.push(label); noData.push(label); }
     else if (nowMs - s.last > IDLE_MS) idle.push(`${label} (desde ${hhmm(s.last)})`);
