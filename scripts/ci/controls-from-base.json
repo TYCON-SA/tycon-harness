@@ -53,7 +53,7 @@
     { "name": "version", "script": "scripts/ci/version-tag.js", "rules": [] },
     { "name": "npm-package-version", "script": "scripts/ci/npm-package-version.js", "rules": [] },
     { "name": "workflow-shape", "script": "scripts/ci/check-public-workflow.js", "rules": [] },
-    { "name": "base-controls", "script": "scripts/ci/run-base-controls.sh", "rules": [{ "path": ".test-gate.yaml", "optional": true, "sign_on_change": true }, { "path": "scripts/ci/run-base-controls.sh", "sign_on_change": true }, { "path": "scripts/ci/controls-from-base.json", "sign_on_change": true }, { "path": "scripts/lib/refresh-after-main.js", "sign_on_change": true }, { "path": "scripts/lib/owner-window.js", "sign_on_change": true }, { "path": "scripts/lib/delegated-signing.js", "sign_on_change": true }, { "path": "scripts/ci/run-base-controls-window.js", "sign_on_change": true }] }
+    { "name": "base-controls", "script": "scripts/ci/run-base-controls.sh", "rules": [{ "path": ".test-gate.yaml", "optional": true, "sign_on_change": true }, { "path": "scripts/ci/run-base-controls.sh", "sign_on_change": true }, { "path": "scripts/ci/controls-from-base.json", "sign_on_change": true }, { "path": "scripts/lib/refresh-after-main.js", "sign_on_change": true }, { "path": "scripts/lib/owner-window.js", "sign_on_change": true }, { "path": "scripts/lib/delegated-signing.js", "sign_on_change": true }, { "path": "scripts/ci/run-base-controls-window.js", "sign_on_change": true }, { "path": "scripts/ci/bench-against-base.js", "sign_on_change": true }] }
   ],
   "content": [
     ".engram/config.json",

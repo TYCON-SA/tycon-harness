@@ -70,7 +70,7 @@ jobs:
       fail-fast: false
       matrix:
         node: [24]
-        part: [checks, controls-bench, suites-1-of-5, suites-2-of-5, suites-3-of-5, suites-4-of-5, suites-5-of-5]
+        part: [checks, controls-bench, controls-bench-base, suites-1-of-5, suites-2-of-5, suites-3-of-5, suites-4-of-5, suites-5-of-5]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -86,9 +86,10 @@ jobs:
           BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}
           BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
-          # en un pedido corren sólo `checks` y el banco: las suites las corre la cola, y nada entra a main sin pasarlas
-          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "${TYCON_PUBLIC_CI_PART}" != "checks" ] && [ "${TYCON_PUBLIC_CI_PART}" != "controls-bench" ]; then
-            echo "en un pedido corren sólo las partes checks y controls-bench: ${TYCON_PUBLIC_CI_PART} corre en la cola de merge"
+          # en un pedido corren sólo `checks` y los dos bancos: las suites las corre la cola, y nada entra a main sin pasarlas.
+          # El banco de la base corre en el pedido porque es ahí donde el dueño firma un aflojamiento
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "${TYCON_PUBLIC_CI_PART}" != "checks" ] && [ "${TYCON_PUBLIC_CI_PART}" != "controls-bench" ] && [ "${TYCON_PUBLIC_CI_PART}" != "controls-bench-base" ]; then
+            echo "en un pedido corren sólo las partes checks, controls-bench y controls-bench-base: ${TYCON_PUBLIC_CI_PART} corre en la cola de merge"
             exit 0
           fi
           # en un pedido BASE_REF es «main»; en la cola es «refs/heads/main»: se le saca el prefijo
@@ -104,6 +105,11 @@ jobs:
             # una base que no conoce la parte del banco lo corre dentro de `checks`: acá no queda nada que correr
             if [ "${TYCON_PUBLIC_CI_PART}" = "controls-bench" ] && ! grep -q -- '|controls-bench)' "${RUNNER_TEMP}/public-ci-base.sh"; then
               echo "la base todavía corre el banco de controles dentro de la parte checks: esta parte no tiene nada que correr"
+              exit 0
+            fi
+            # una base que no conoce la parte del banco de la base (el pedido que la introduce) no tiene con qué correrla
+            if [ "${TYCON_PUBLIC_CI_PART}" = "controls-bench-base" ] && ! grep -q -- 'controls-bench-base)' "${RUNNER_TEMP}/public-ci-base.sh"; then
+              echo "la base todavía no conoce la parte del banco de la base: esta parte no tiene nada que correr"
               exit 0
             fi
             bash "${RUNNER_TEMP}/public-ci-base.sh" --root . --clean-machine --range "${BASE}...HEAD" --base "${BASE}"
@@ -144,7 +150,7 @@ jobs:
         run: |
           # en un pedido no corre: el piso lo corre la cola, y en la cola y en el push a main corre siempre, entero
           if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
-            echo "en un pedido corren sólo las partes checks y controls-bench: installer-floor corre en la cola de merge"
+            echo "en un pedido corren sólo las partes checks, controls-bench y controls-bench-base: installer-floor corre en la cola de merge"
             exit 0
           fi
           bash scripts/ci/public-ci.sh --clean-machine

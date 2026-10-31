@@ -27,10 +27,11 @@
  *                        `--base`, y en la cola la base es la del grupo
  *   clean-machine        toda llamada a `public-ci.sh` lleva `--clean-machine`
  *   aggregate-job        el job `public-ci` corre siempre, depende de todos los demás y falla si alguno no terminó bien
- *   parts                la matriz parte la corrida en `checks`, `controls-bench` y `suites-1-of-<n>` … `suites-<n>-of-<n>`,
- *                        todas, en orden y una vez, y la parte llega a public-ci.sh desde la matriz
- *                        (`TYCON_PUBLIC_CI_PART: ${{ matrix.part }}`): una parte que falta deja pasos sin correr —sin
- *                        `controls-bench`, el banco de controles— y el veredicto igual verde. La única
+ *   parts                la matriz parte la corrida en `checks`, `controls-bench`, `controls-bench-base` y
+ *                        `suites-1-of-<n>` … `suites-<n>-of-<n>`, todas, en orden y una vez, y la parte llega a
+ *                        public-ci.sh desde la matriz (`TYCON_PUBLIC_CI_PART: ${{ matrix.part }}`): una parte que falta
+ *                        deja pasos sin correr —sin `controls-bench`, el banco de controles; sin `controls-bench-base`, el
+ *                        banco con los casos de la base— y el veredicto igual verde. La única
  *                        otra parte es la fija `installer-floor`, del job del mismo nombre
  *   after-queue          cada job se saltea en el push a main que hace la cola de merge, y SÓLO en ése: la cola ya probó
  *                        ese commit. La condición es exacta: una que saltea más (todo push, o un pedido) deja
@@ -120,7 +121,7 @@ const SHAPE = [
   '      fail-fast: false',
   '      matrix:',
   '        node: [24]',
-  '        part: [checks, controls-bench, suites-1-of-5, suites-2-of-5, suites-3-of-5, suites-4-of-5, suites-5-of-5]',
+  '        part: [checks, controls-bench, controls-bench-base, suites-1-of-5, suites-2-of-5, suites-3-of-5, suites-4-of-5, suites-5-of-5]',
   '    steps:',
   pinned('      - uses: ', 'actions/checkout'),
   '        with:',
@@ -136,8 +137,8 @@ const SHAPE = [
   '          BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}',
   '          BASE_SHA: ${{ github.event.merge_group.base_sha }}',
   '        run: |',
-  '          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "${TYCON_PUBLIC_CI_PART}" != "checks" ] && [ "${TYCON_PUBLIC_CI_PART}" != "controls-bench" ]; then',
-  '            echo "en un pedido corren sólo las partes checks y controls-bench: ${TYCON_PUBLIC_CI_PART} corre en la cola de merge"',
+  '          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "${TYCON_PUBLIC_CI_PART}" != "checks" ] && [ "${TYCON_PUBLIC_CI_PART}" != "controls-bench" ] && [ "${TYCON_PUBLIC_CI_PART}" != "controls-bench-base" ]; then',
+  '            echo "en un pedido corren sólo las partes checks, controls-bench y controls-bench-base: ${TYCON_PUBLIC_CI_PART} corre en la cola de merge"',
   '            exit 0',
   '          fi',
   '          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] || [ "${GITHUB_EVENT_NAME}" = "merge_group" ]; then',
@@ -147,6 +148,10 @@ const SHAPE = [
   '            git show "${BASE}:scripts/ci/public-ci.sh" > "${RUNNER_TEMP}/public-ci-base.sh"',
   '            if [ "${TYCON_PUBLIC_CI_PART}" = "controls-bench" ] && ! grep -q -- \'|controls-bench)\' "${RUNNER_TEMP}/public-ci-base.sh"; then',
   '              echo "la base todavía corre el banco de controles dentro de la parte checks: esta parte no tiene nada que correr"',
+  '              exit 0',
+  '            fi',
+  '            if [ "${TYCON_PUBLIC_CI_PART}" = "controls-bench-base" ] && ! grep -q -- \'controls-bench-base)\' "${RUNNER_TEMP}/public-ci-base.sh"; then',
+  '              echo "la base todavía no conoce la parte del banco de la base: esta parte no tiene nada que correr"',
   '              exit 0',
   '            fi',
   '            bash "${RUNNER_TEMP}/public-ci-base.sh" --root . --clean-machine --range "${BASE}...HEAD" --base "${BASE}"',
@@ -183,7 +188,7 @@ const SHAPE = [
   '          TYCON_PUBLIC_CI_PART: installer-floor',
   '        run: |',
   '          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then',
-  '            echo "en un pedido corren sólo las partes checks y controls-bench: installer-floor corre en la cola de merge"',
+  '            echo "en un pedido corren sólo las partes checks, controls-bench y controls-bench-base: installer-floor corre en la cola de merge"',
   '            exit 0',
   '          fi',
   '          bash scripts/ci/public-ci.sh --clean-machine',
@@ -667,10 +672,11 @@ const RULES = [
         return decl.length ? `hay más de una lista \`part:\` (línea ${at(decl)})` : 'falta la lista `part:` de la matriz: la ejecución no se reparte en partes que juntas sean la entera';
       }
       const parts = listAt(lines, lines.indexOf(decl[0]));
-      const n = parts.filter((p) => p !== 'checks' && p !== 'controls-bench').length;
-      const want = ['checks', 'controls-bench', ...Array.from({ length: n }, (_, k) => `suites-${k + 1}-of-${n}`)];
+      const fixedParts = ['checks', 'controls-bench', 'controls-bench-base'];
+      const n = parts.filter((p) => !fixedParts.includes(p)).length;
+      const want = [...fixedParts, ...Array.from({ length: n }, (_, k) => `suites-${k + 1}-of-${n}`)];
       if (!n || parts.join(',') !== want.join(',')) {
-        return `la matriz parte la ejecución en \`checks\`, \`controls-bench\` y \`suites-1-of-<n>\` … \`suites-<n>-of-<n>\`, todas, en orden y una vez (una que falta deja pasos sin correr: sin \`controls-bench\`, el banco de controles), y dice: ${parts.join(', ') || 'nada'} (línea ${decl[0].n})`;
+        return `la matriz parte la ejecución en \`checks\`, \`controls-bench\`, \`controls-bench-base\` y \`suites-1-of-<n>\` … \`suites-<n>-of-<n>\`, todas, en orden y una vez (una que falta deja pasos sin correr: sin \`controls-bench\`, el banco de controles; sin \`controls-bench-base\`, el banco con los casos de la base), y dice: ${parts.join(', ') || 'nada'} (línea ${decl[0].n})`;
       }
       const all = lines.filter((l) => l.code && /^TYCON_PUBLIC_CI_PART\s*:/.test(l.body));
       // la única parte fija es la del piso del instalador, dentro de su job

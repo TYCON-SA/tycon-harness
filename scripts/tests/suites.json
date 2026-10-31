@@ -1804,6 +1804,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.152: el banco de un pedido corre los casos, la línea de base y el corredor de la BASE contra los ganchos del pedido (scripts/ci/bench-against-base.js), sobre repos de juguete con git de verdad y el corredor real del banco, sin red: aflojar un gancho pide la firma del dueño aunque el pedido cambie también su caso, su línea de base o el corredor; endurecer o sumar casos no; la firma del dueño anclada al blob pasa y la delegación no; lo que no se pudo medir es rojo. ~1 min. Viaja.",
+      "raiz": "arnes",
+      "ruta": "tests/bench-against-base.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.7 (tanda C): la máquina limpia — instala el arnés en un contenedor que trae sólo lo que la portada pública declara, con el bloque de instalación de la portada tal cual, y corre el esqueleto del pipeline sobre un repo de ejemplo y sobre el plugin de ejemplo. Mide en el nocturno, en la CI pública (public-ci.sh --clean-machine) o con TYCON_CLEAN_MACHINE=1; en la máquina de un dev y en el control de cada cambio corre sólo lo que no usa docker (T34 y la lectura de la portada, segundos) y sale NO MEDIDO con su motivo. Sola: construye imágenes y levanta contenedores.",
       "raiz": "arnes",
       "ruta": "tests/clean-machine.test.sh",

@@ -54,6 +54,8 @@
 #   T57 BaseControls_JudgeFiles_SignOnEveryChange — el inventario real marca con «sign_on_change» lo que decide la
 #       revisión (el juez, el inventario, el clasificador de la refirma, las bibliotecas de la firma y su ventana en
 #       Windows), y un pedido que cambia el juez o la ventana sin poner a prueba lo que afloja es rojo sin la constancia
+#   T9 (8.152) BaseControls_BenchAgainstBase_IsARule — el inventario real tiene el guion del banco de la base como regla
+#       con «sign_on_change», y un pedido que lo cambia sin la constancia es rojo
 #
 # T12, T13 y T14 están en public-ci.test.sh (el workflow y el guion de la CI) y en la prueba de la 170 del repo de
 # mantenimiento (el yml que sólo existe ahí).
@@ -1113,6 +1115,7 @@ R="${T}/t57"; make_base "${R}"
 mkdir -p "${R}/scripts/lib"
 for p in refresh-after-main owner-window delegated-signing; do printf 'module.exports = {};\n' > "${R}/scripts/lib/${p}.js"; done
 printf 'module.exports = {};\n' > "${R}/scripts/ci/run-base-controls-window.js"
+printf 'module.exports = {};\n' > "${R}/scripts/ci/bench-against-base.js"
 node -e 'const fs=require("fs");const real=JSON.parse(fs.readFileSync(process.argv[1],"utf8")).controls.find(x=>x.name==="base-controls");const f=process.argv[2];const j=JSON.parse(fs.readFileSync(f,"utf8"));j.controls.find(x=>x.name==="base-controls").rules=real.rules.filter(r=>typeof r==="object"&&r.path!==".test-gate.yaml");fs.writeFileSync(f,JSON.stringify(j,null,2))' "${ROOT}/scripts/ci/controls-from-base.json" "${R}/scripts/ci/controls-from-base.json"
 commit "${R}" "el juez con las marcas del inventario real"
 pr "${R}"; printf '\n// un cambio del juez que este pedido no pone a prueba\n' >> "${R}/scripts/ci/run-base-controls.sh"; commit "${R}"
@@ -1125,6 +1128,18 @@ printf '\n// la ventana de la firma, cambiada sin ponerla a prueba\n' >> "${R}/s
 bash "${SCRIPT}" run --root "${R}" --base main --range main...ventana > "${T}/t57w.out" 2>&1; RC=$?
 is "T57 cambiar la ventana de la firma sin constancia: rojo" "1" "${RC}"
 has "T57 …pide la firma del dueño" "${T}/t57w.out" "afloja un control sin la constancia del dueño: scripts/ci/run-base-controls-window.js"
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# T9 (8.152) · el banco de la base es una regla del inventario: cambiar su guion pide la firma del dueño
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# 🔴 mutación: sin la marca, un pedido que vacía el guion del banco de la base entra sin constancia
+MARKED="$(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const c=j.controls.find(x=>x.name==="base-controls");console.log((c.rules||[]).some(r=>r&&r.path==="scripts/ci/bench-against-base.js"&&r.sign_on_change===true)?"si":"no")' "${ROOT}/scripts/ci/controls-from-base.json")"
+is "T9 el inventario real tiene scripts/ci/bench-against-base.js como regla, con «sign_on_change»" "si" "${MARKED}"
+lab_git -C "${R}" checkout -q -b banco main
+printf '\n// el banco de la base, aflojado\n' >> "${R}/scripts/ci/bench-against-base.js"; commit "${R}"
+bash "${SCRIPT}" run --root "${R}" --base main --range main...banco > "${T}/t9b.out" 2>&1; RC=$?
+is "T9 cambiar el guion del banco de la base sin constancia: rojo" "1" "${RC}"
+has "T9 …pide la firma del dueño" "${T}/t9b.out" "afloja un control sin la constancia del dueño: scripts/ci/bench-against-base.js"
 
 echo
 if [ "${FAILS}" -eq 0 ]; then echo "✅ base-controls: ${TOTAL} verificaciones verdes"; exit 0; fi
