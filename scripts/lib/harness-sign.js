@@ -26,6 +26,7 @@
  *                                             stdout); si no, deja o reusa el pedido y sale 1 con `pedido=<número>`, o 3
  *                                             si el permiso venció (con `motivo=`).
  *   node harness-sign.js consume-commit --repo <carpeta>   0 consumido, 1 sin permiso, 3 vencido.
+ *   node harness-sign.js has-commit --repo <carpeta>       0 hay un permiso de commit vigente, 1 no; no gasta nada.
  */
 const fs = require('fs');
 const os = require('os');
@@ -306,8 +307,8 @@ function consumir({ casa, comando, ahora = Date.now() } = {}) {
   return gastar(archivo, permiso, ahora);
 }
 
-/** Consume el permiso de commit firmado en ese repo: el más nuevo. Igual que `consumir`. */
-function consumirCommit({ casa, repo, ahora = Date.now() } = {}) {
+/** El permiso de commit más nuevo firmado en ese repo, sin gastarlo: `{ archivo, permiso }` o null. */
+function permisoDeCommit({ casa, repo }) {
   const dir = carpeta(casa);
   const donde = real(repo);
   let archivos = [];
@@ -315,8 +316,22 @@ function consumirCommit({ casa, repo, ahora = Date.now() } = {}) {
   const candidatos = archivos.map((f) => ({ archivo: path.join(dir, f), permiso: leer(path.join(dir, f)) }))
     .filter((c) => c.permiso && c.permiso.comando === COMMIT && c.permiso.repo === donde)
     .sort((a, b) => Date.parse(b.permiso.ts) - Date.parse(a.permiso.ts));
-  if (!candidatos.length) return null;
-  return gastar(candidatos[0].archivo, candidatos[0].permiso, ahora);
+  return candidatos[0] || null;
+}
+
+/** Consume el permiso de commit firmado en ese repo: el más nuevo. Igual que `consumir`. */
+function consumirCommit({ casa, repo, ahora = Date.now() } = {}) {
+  const c = permisoDeCommit({ casa, repo });
+  return c ? gastar(c.archivo, c.permiso, ahora) : null;
+}
+
+/**
+ * ¿Hay un permiso de commit vigente en ese repo? Lo mira sin gastarlo ni moverlo: es para el chequeo de sólo lectura,
+ * que corre antes del commit y no puede dejarlo sin la emergencia.
+ */
+function hayPermisoDeCommit({ casa, repo, ahora = Date.now() } = {}) {
+  const c = permisoDeCommit({ casa, repo });
+  return Boolean(c && vigente(c.permiso.ts, ahora));
 }
 
 /** Los permisos sin gastar (para las pruebas y el diagnóstico). */
@@ -324,7 +339,7 @@ function permisos(casa) {
   try { return fs.readdirSync(carpeta(casa)).filter((f) => f.endsWith('.json')).map((f) => leer(path.join(carpeta(casa), f))).filter(Boolean); } catch (_) { return []; }
 }
 
-module.exports = { EMERGENCIA, VENCE_MIN, carpeta, entrada, nivelEfectivo, sign, pedir, consumir, consumirCommit, permisos, esCommit, origenDeVerdad, aLaVista };
+module.exports = { EMERGENCIA, VENCE_MIN, carpeta, entrada, nivelEfectivo, sign, pedir, consumir, consumirCommit, hayPermisoDeCommit, permisos, esCommit, origenDeVerdad, aLaVista };
 
 if (require.main === module) {
   const argv = process.argv.slice(2);
@@ -342,8 +357,10 @@ if (require.main === module) {
     const r = consumirCommit({ repo: argv[2] });
     if (r) process.stdout.write(`${r.ok ? r.permiso.motivo : r.motivo}\n`);
     process.exitCode = !r ? 1 : (r.ok ? 0 : 3);
+  } else if (argv[0] === 'has-commit' && argv[1] === '--repo' && argv[2]) {
+    process.exitCode = hayPermisoDeCommit({ repo: argv[2] }) ? 0 : 1;
   } else {
-    process.stderr.write('uso: harness-sign.js consume (el comando por stdin) | consume-commit --repo <carpeta>\n');
+    process.stderr.write('uso: harness-sign.js consume (el comando por stdin) | consume-commit --repo <carpeta> | has-commit --repo <carpeta>\n');
     process.exitCode = 2;
   }
 }

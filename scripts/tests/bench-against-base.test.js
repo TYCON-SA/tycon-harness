@@ -319,7 +319,6 @@ test('T6b LaFirmaCubreTodoElPedido @story-8.152 @ac-6 — un gancho que corre po
 
 test('T6c MergeDeGitHub_FirmaLaRamaYMideContraLaBaseQueVio @story-8.152 @ac-6 — la firma se ancla a la rama del pedido, y main que avanzó no inventa un aflojamiento', () => {
   const lab = makeLab();
-  const base0 = lab.base;
   git(lab.dir, ['checkout', '-q', '-b', 'pedido']);
   pr(lab, { [HOOK]: LOOSE_HOOK, [LIB]: LIB_TEXT + '// el pedido\n' });
   const prHead = git(lab.dir, ['rev-parse', 'HEAD']);

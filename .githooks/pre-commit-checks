@@ -40,6 +40,16 @@ harness_dir() {
   printf '%s' "${HOME:-}/.claude/tycon-harness"
 }
 
+# Sólo lectura: el chequeo antes de la firma del ok de guardar (lib/save-ok.js) corre estos controles con
+# TYCON_PRECOMMIT_READ_ONLY=1 sobre un índice propio (save-ok-controls-*). Lo que escribe no escribe y lo que consulta al
+# modelo no corre. Vale sólo con ese índice: en un commit de verdad (el índice del repo o su .lock) corre todo.
+solo_lectura() {
+  [ "${TYCON_PRECOMMIT_READ_ONLY:-}" = 1 ] || return 1
+  case "${GIT_INDEX_FILE##*/}" in save-ok-controls-*) return 0 ;; esac
+  echo "▸ pre-commit: TYCON_PRECOMMIT_READ_ONLY no vale en un commit: corren todos los controles." >&2
+  return 1
+}
+
 checks_harness() (
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 cd "$REPO_ROOT" || exit 0
@@ -360,7 +370,12 @@ if [ -n "$MAPA_TOCADO" ]; then
     fi
     MAPA_PUB="onboarding/mini-class/mapa-del-arnes.html"
     if ! git show ":$MAPA_PUB" 2>/dev/null | cmp -s - "$MAPA_TMP/publica.html"; then
-      if echo "$MAPA_TOCADO" | grep -qvE "^$MAPA_PUB\$"; then
+      if echo "$MAPA_TOCADO" | grep -qvE "^$MAPA_PUB\$" && solo_lectura; then
+        # sólo lectura (el chequeo antes de una firma): regenerarla acá cambiaría el repo; se dice cómo dejarla al día
+        rm -rf "$MAPA_TMP"
+        echo "⛔ COMMIT RECHAZADO — la versión pública del mapa ($MAPA_PUB) quedó vieja y el commit la regeneraría. Regenerala antes: node $MAPA_GEN --input artifacts/mapa-arnes.html --config scripts/tools/harness-map/publica.json --output $MAPA_PUB" >&2
+        exit 1
+      elif echo "$MAPA_TOCADO" | grep -qvE "^$MAPA_PUB\$"; then
         if ! { cp "$MAPA_TMP/publica.html" "$REPO_ROOT/$MAPA_PUB" && git add "$MAPA_PUB"; }; then
           rm -rf "$MAPA_TMP"
           echo "⛔ COMMIT RECHAZADO — la versión pública del mapa se regeneró pero no pude ponerla en este commit ($MAPA_PUB)." >&2
@@ -507,6 +522,8 @@ if node "$CHECK" >"$LOG" 2>&1; then
   # plomería (sin red, sin sesión, el corral que se escapa: avisa y deja pasar). Apagado: TYCON_NO_LIVENESS_PRECOMMIT=1
   VIDA="$TCG/scripts/hooks/advisor-liveness-on-change.js"
   [ -f "$VIDA" ] || VIDA="$TCG/scripts/hooks/advisor-liveness-on-change.js"
+  # en el chequeo antes de la firma del ok de guardar corre igual: no escribe en el repo, y si frenara al commitear el
+  # arreglo vencería el ok recién firmado
   if [ -f "$VIDA" ]; then
     # shellcheck disable=SC2086
     node "$VIDA" $cambiados || exit 1

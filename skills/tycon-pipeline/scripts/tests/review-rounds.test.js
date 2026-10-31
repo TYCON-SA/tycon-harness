@@ -320,7 +320,7 @@ function vueltaParaOtra(lab, iter, extra, { pedir = true, sesion = COORD } = {})
   const cmd = `node ${args.join(' ')}`;
   if (pedir) {
     const p = ow.decidir({ evento: { session_id: COORD, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd } },
-      escapes: [], arbol: arbolDelFreno(), pid: 201, casa: lab.home, ahora: AHORA, delegacion: () => ({ ok: false, motivo: 'sin delegación en la prueba' }), clasificar: () => null });
+      escapes: [], arbol: arbolDelFreno(), pid: 201, casa: lab.home, ahora: AHORA, delegacion: () => ({ ok: false, motivo: 'sin delegación en la prueba' }), clasificar: () => null, comprobar: () => null });
     assert.equal(p.decision, 'ask', p.texto);
   }
   return spawnSync(process.execPath, args, { encoding: 'utf8',
@@ -382,4 +382,73 @@ test('VueltaExtra_ForSession_SinFirmaPendiente_NoSirve @story-8.142 @ac-2', () =
   assert.match(ajena.stderr, /7\.7/);
   assert.equal(vigentes(tope).length, 2, 'ningún pedido gastado');
   assert.ok(!gates(tope).some((g) => g.name === 'extra-round'));
+});
+
+// ── El chequeo antes de la ventana ────────────────────────────────────────────────────────────────────────────────────
+//
+// El freno corre el guion en modo de chequeo antes de abrir la ventana: si se negaría, no la abre. Cada requisito de la
+// vuelta extra con su prueba: dentro del tope, ya autorizada y, desde la tercera, sin su nota de repensar.
+
+/** El pedido de la ventana de la sesión de la corrida, con el chequeo de verdad en la HOME del laboratorio. */
+function pedirConChequeo(lab, iter, extra = []) {
+  const cmd = `node ${[PIPELINE, 'smart-reloop', '--iter', String(iter), '--repo', lab.repo, '--story', lab.story, '--files', 'src/a.js', '--extra-round', ...extra].join(' ')}`;
+  return ow.decidir({ evento: { session_id: SID, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd }, cwd: lab.repo },
+    escapes: [], arbol: arbolDelFreno(), pid: 201, casa: lab.home, ahora: AHORA, delegacion: () => ({ ok: false, motivo: 'sin delegación en la prueba' }), clasificar: () => null,
+    comprobar: (o) => ow.comprobarConElGuion({ ...o, env: lab.env }) });
+}
+const NOTA = ['--repeated', 'El mismo hallazgo de seguridad en las dos vueltas sobre el mismo archivo',
+  '--change', 'Cambia el enfoque: la validación pasa a la entrada del endpoint, antes de tocar la base'];
+
+// 🔴 Falla con: la ventana para una vuelta que no necesita firma (dentro del tope), o el guion que la sirve igual.
+test('Precheck_VueltaExtraDentroDelTope_NoAbreLaVentana', () => {
+  const lab = laboratorio({ fotos: [1], servidas: [1] });
+  const p = pedirConChequeo(lab, 2);
+  assert.equal(p.decision, 'deny', p.texto);
+  assert.match(p.texto, /No abrí la ventana/);
+  assert.match(p.texto, /no necesita la vuelta extra/);
+  assert.equal(vigentes(lab).length, 0, 'sin pedido');
+  // el guion solo, aunque llegue la firma, tampoco la gasta
+  const r = lab.reloop(2, ['--extra-round'], {}, { ventana: true });
+  assert.notEqual(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stderr, /no necesita la vuelta extra/);
+  assert.deepEqual(lab.servidas(), [1]);
+  assert.ok(!gates(lab).some((g) => /^extra-round/.test(g.name)), 'sin firma ni vuelta anotada');
+});
+
+// 🔴 Falla con: la ventana de la tercera vuelta abierta sin su nota de repensar (el guion la rechazaba después del «Sí»).
+test('Precheck_TerceraVueltaSinNota_NoAbreLaVentana', () => {
+  const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings: [hallazgo('SEC-C1', 'CRITICAL', 'open')] });
+  assert.equal(lab.reloop(3).status, 3, 'el aviso del tope');
+  const p = pedirConChequeo(lab, 3);
+  assert.equal(p.decision, 'deny', p.texto);
+  assert.match(p.texto, /No abrí la ventana/);
+  assert.match(p.texto, /rethink/);
+  assert.equal(vigentes(lab).length, 0, 'sin pedido');
+  // con la ventana aprobada igual, la nota se pide antes de gastar la firma
+  const r = lab.reloop(3, ['--extra-round'], {}, { ventana: true });
+  assert.equal(r.status, 3, r.stdout + r.stderr);
+  assert.match(r.stderr, /rethink/);
+  assert.ok(!gates(lab).some((g) => /^extra-round/.test(g.name)), 'la firma no se usó');
+  // con la nota, el chequeo pasa: la ventana se abre, y el chequeo no firmó ni sirvió nada
+  assert.equal(lab.cmd(MARKER, ['rethink', '--iter', '3', ...NOTA, '--repo', lab.repo, '--story', lab.story]).status, 0);
+  const ok = pedirConChequeo(lab, 3);
+  assert.equal(ok.decision, 'ask', ok.texto);
+  assert.equal(vigentes(lab).length, 1);
+  assert.ok(!gates(lab).some((g) => /^extra-round/.test(g.name)), 'el chequeo no firmó');
+  assert.deepEqual(lab.servidas(), [1, 2], 'el chequeo no sirvió la vuelta');
+});
+
+// 🔴 Falla con: otra firma pedida para una vuelta extra que ya está autorizada.
+test('Precheck_VueltaExtraYaAutorizada_NoAbreLaVentana', () => {
+  const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings: [hallazgo('SEC-C1', 'CRITICAL', 'open')] });
+  assert.equal(lab.reloop(3).status, 3);
+  assert.equal(lab.cmd(MARKER, ['rethink', '--iter', '3', ...NOTA, '--repo', lab.repo, '--story', lab.story]).status, 0);
+  const primera = lab.reloop(3, ['--extra-round'], {}, { ventana: true });
+  assert.equal(primera.status, 0, primera.stderr);
+  const p = pedirConChequeo(lab, 3);
+  assert.equal(p.decision, 'deny', p.texto);
+  assert.match(p.texto, /ya está autorizada/);
+  // sin --extra-round, la vuelta autorizada se sirve sin otra firma
+  const sin = lab.reloop(3);
+  assert.equal(sin.status, 0, sin.stderr);
 });

@@ -72,7 +72,7 @@ const SIN_DELEGACION = () => ({ ok: false, motivo: 'sin delegación en la prueba
 // sin `aprobador`, el texto de un repo del arnés: el de verdad mira el remoto de la carpeta del evento
 const { APPROVERS } = require(path.join(__dirname, '..', 'lib', 'approver.js'));
 const DEL_ARNES = () => APPROVERS.maintainers;
-const pedir = (casa, cmd, o = {}) => ow.decidir({ evento: evento(cmd, o.evento), escapes: o.escapes || [], arbol: o.arbol || arbolDelFreno(), pid: 201, casa, ahora: o.ahora || AHORA, delegacion: o.delegacion || SIN_DELEGACION, clasificar: o.clasificar || (() => null), aprobador: o.aprobador || DEL_ARNES });
+const pedir = (casa, cmd, o = {}) => ow.decidir({ evento: evento(cmd, o.evento), escapes: o.escapes || [], arbol: o.arbol || arbolDelFreno(), pid: 201, casa, ahora: o.ahora || AHORA, delegacion: o.delegacion || SIN_DELEGACION, clasificar: o.clasificar || (() => null), comprobar: o.comprobar || (() => null), aprobador: o.aprobador || DEL_ARNES });
 const registros = (casa) => { try { return fs.readdirSync(ow.carpeta(casa)); } catch (_) { return []; } };
 const vigentes = (casa) => registros(casa).filter((f) => f.endsWith('.json'));
 const gates = (casa) => { try { return fs.readFileSync(path.join(casa, '.claude', '.tycon-pipeline', 'gates.log'), 'utf8').split('\n').filter(Boolean).map(JSON.parse); } catch (_) { return []; } };
@@ -502,7 +502,7 @@ test('OwnerWindow_CasaFalsa_NoVale (T20)', (t) => {
   t.after(() => { for (const [k, v] of Object.entries(antes)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } });
   process.env.HOME = falsa; process.env.USERPROFILE = falsa; process.env.TYCON_HOME = path.join(falsa, '.tycon');
   const userInfo = () => ({ homedir: real });
-  const r = ow.decidir({ evento: evento(cmd), arbol: arbolDelFreno(), pid: 201, ahora: AHORA, userInfo });
+  const r = ow.decidir({ evento: evento(cmd), arbol: arbolDelFreno(), pid: 201, ahora: AHORA, userInfo, comprobar: () => null });
   assert.strictEqual(r.decision, 'ask');
   assert.strictEqual(vigentes(real).length, 1, 'escribió en la casa de la cuenta');
   assert.strictEqual(vigentes(falsa).length, 0, 'nada en la casa falsa');
@@ -1988,4 +1988,139 @@ test('Pendiente_MarkerAcepta_ForSession: approve-pending se pide para otra sesi�
   assert.notStrictEqual(r.status, 0, r.stderr);
   assert.match(r.stderr, /no se aprobó DEF-nuevo/);
   assert.strictEqual(fs.existsSync(path.join(d, 'tasks', 'pending-approvals.jsonl')), false);
+});
+
+// --- el chequeo antes de la ventana -----------------------------------------------------------------------------------
+//
+// Una ventana que el guion rechaza después del «Sí» es una firma perdida: el freno corre antes el guion en modo de
+// chequeo y, si se negaría, no la abre.
+
+const EXTRA = GUIONES.find((g) => g[0] === 'extra-round');
+
+// 🔴 Falla con: la ventana abierta (o su registro escrito) para un comando que el guion iba a rechazar.
+test('Precheck_GuionQueSeNegaria_NoAbreLaVentana', (t) => {
+  for (const [firma, cmd] of GUIONES.filter((g) => ow.CON_PRECHEQUEO.has(g[0]))) {
+    const casa = casaNueva(t);
+    let visto = null;
+    const r = pedir(casa, cmd, { comprobar: (o) => { visto = o; return { niega: '🛑 falta la nota de la tercera vuelta' }; } });
+    assert.strictEqual(r.decision, 'deny', `${cmd}: ${r.texto}`);
+    assert.match(r.texto, /No abrí la ventana/);
+    assert.match(r.texto, /falta la nota de la tercera vuelta/, 'dice lo que contestó el guion');
+    assert.strictEqual(vigentes(casa).length, 0, `${cmd}: sin registro`);
+    assert.strictEqual(visto.firma, firma);
+    assert.strictEqual(visto.sesion, 'ses-a');
+    assert.strictEqual(visto.casa, casa);
+    assert.deepStrictEqual(visto.palabras, ow.canonica(cmd));
+  }
+});
+
+// 🔴 Falla con: un chequeo que no contesta (o se cae) cerrando la ventana: ante la duda se abre como siempre.
+test('Precheck_GuionEnRegla_SinRespuestaOCaido_AbreLaVentana', (t) => {
+  for (const comprobar of [() => ({ ok: true }), () => null, () => { throw new Error('se cayó'); }]) {
+    const casa = casaNueva(t);
+    const r = pedir(casa, EXTRA[1], { comprobar });
+    assert.strictEqual(r.decision, 'ask', r.texto);
+    assert.strictEqual(vigentes(casa).length, 1);
+  }
+});
+
+// 🔴 Falla con: el chequeo corrido para una firma sin chequeo o para la que ya delegó el perfil.
+test('Precheck_SoloParaSusFirmasYSinDelegar', (t) => {
+  let llamado = 0;
+  const comprobar = () => { llamado++; return { niega: 'no' }; };
+  for (const [firma, cmd] of GUIONES.filter((g) => !ow.CON_PRECHEQUEO.has(g[0]))) {
+    const r = pedir(casaNueva(t), cmd, { comprobar });
+    assert.strictEqual(r.decision, 'ask', `${firma}: ${r.texto}`);
+  }
+  const casa = casaConDesignada(t);
+  const r = pedir(casa, PLAN, { evento: DE_LA_COORD, delegacion: delegacionReal(), comprobar });
+  assert.strictEqual(r.decision, 'allow', r.texto);
+  assert.strictEqual(llamado, 0);
+});
+
+// 🔴 Falla con: el guion en modo de chequeo que firma, gasta el pedido o no lo dice por la salida.
+test('Precheck_ExigirEnModoDeChequeo_NoFirmaNiGasta', (t) => {
+  const casa = casaNueva(t);
+  assert.strictEqual(pedir(casa, PLAN, { evento: DE_LA_COORD }).decision, 'ask');
+  let salida = '';
+  let codigo = null;
+  const base = { firma: 'plan-approval', argv: PLAN_ARGV, pid: 301, arbol: arbolDelGuion(casa, PLAN), casa, ahora: AHORA + 60000, propia: 'ses-coord',
+    env: { [ow.PRECHEQUEO]: '1' }, escribir: (s) => { salida += s; }, salir: (c) => { codigo = c; } };
+  const e = ow.exigir(base);
+  assert.strictEqual(codigo, 0);
+  assert.strictEqual(e.prechequeo, true);
+  assert.ok(salida.split('\n').includes(ow.PRECHEQUEO_OK), salida);
+  assert.strictEqual(vigentes(casa).length, 1, 'el pedido sigue sin gastar');
+  assert.strictEqual(gates(casa).length, 0, 'sin renglón de firma');
+  // lo que el guion comprueba antes de la firma corre también en el chequeo, y su negativa vuelve tal cual
+  salida = '';
+  codigo = null;
+  let via = null;
+  const n = ow.exigir({ ...base, antes: (v) => { via = v; return { codigo: 2, motivo: 'la corrida no está limpia' }; } });
+  assert.deepStrictEqual([n.codigo, n.motivo, via, codigo, salida], [2, 'la corrida no está limpia', 'ventana', null, '']);
+  assert.strictEqual(vigentes(casa).length, 1);
+  // con --terminal, el chequeo no pregunta nada en la terminal
+  const tty = { windows: false, hay: () => { throw new Error('preguntó'); }, preguntar: () => { throw new Error('preguntó'); } };
+  ow.exigir({ ...base, argv: [...PLAN_ARGV, '--terminal'], tty, antes: (v) => { via = v; return null; } });
+  assert.strictEqual(via, 'terminal');
+  assert.strictEqual(codigo, 0);
+  assert.strictEqual(gates(casa).length, 0);
+});
+
+// 🔴 Falla con: el chequeo de verdad que no corre el guion, o que lo deja escribir.
+test('Precheck_ElGuionDeVerdad_NiegaSinCorridaYNoEscribe', (t) => {
+  const casa = casaNueva(t);
+  const rd = fs.mkdtempSync(path.join(os.tmpdir(), 'owner-window-pre-'));
+  t.after(() => fs.rmSync(rd, { recursive: true, force: true }));
+  const estado = path.join(casa, '.claude', '.tycon-pipeline');
+  const foto = () => fs.readdirSync(estado, { recursive: true }).sort();
+  const antes = foto();
+  for (const cmd of [`node ${MARKER} approve-save`, `node ${MARKER} complete-step approve-plan --approved "dale"`]) {
+    const c = ow.comprobarConElGuion({ palabras: ow.canonica(cmd), cwd: rd, sesion: 'ses-sin-corrida', casa });
+    assert.ok(c && c.niega, `${cmd}: ${JSON.stringify(c)}`);
+    assert.match(c.niega, /ses-sin-corrida|ejecución|marker/i, cmd);
+  }
+  assert.deepStrictEqual(foto(), antes, 'las negativas no escribieron nada en la casa');
+  // con la corrida abierta, el ok de guardar llega a la firma: el chequeo dice que sí, sin firmar ni escribir
+  const git = (...a) => spawnSync('git', ['-C', rd, '-c', 'user.email=t@example.com', '-c', 'user.name=t', ...a], { encoding: 'utf8' });
+  fs.writeFileSync(path.join(rd, 'story.md'), '---\nstory: 9.99\n---\n');
+  git('init', '-q'); git('add', '.'); git('commit', '-qm', 'base');
+  fs.writeFileSync(path.join(estado, 'active', 'ses-ok.json'), JSON.stringify({ sessionId: 'ses-ok', storyId: '9.99', storyPath: path.join(rd, 'story.md'), repoPath: rd,
+    startedAt: new Date(AHORA).toISOString() }));
+  const antesDelOk = foto();
+  const ok = ow.comprobarConElGuion({ palabras: ow.canonica(`node ${MARKER} approve-save`), cwd: rd, sesion: 'ses-ok', casa });
+  assert.deepStrictEqual(ok, { ok: true });
+  assert.deepStrictEqual(foto(), antesDelOk, 'el chequeo no escribió nada en la casa');
+  assert.ok(!fs.readFileSync(path.join(estado, 'active', 'ses-ok.json'), 'utf8').includes('saveOk'), 'ni el ok en el marcador');
+});
+
+// 🔴 Falla con: aprobar el plan fuera de orden con la ventana abierta, o el chequeo que deja su renglón cuando pasa.
+test('Precheck_AprobarElPlan_FueraDeOrdenNiegaYEnOrdenNoEscribe', (t) => {
+  const casa = casaNueva(t);
+  const rd = fs.mkdtempSync(path.join(os.tmpdir(), 'owner-window-plan-'));
+  t.after(() => fs.rmSync(rd, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(rd, 'story.md'), '---\nstory: 9.99\n---\n\n## Acceptance Criteria\n- AC1: x\n');
+  const estado = path.join(casa, '.claude', '.tycon-pipeline');
+  const marcador = (pendientes) => fs.writeFileSync(path.join(estado, 'active', 'ses-p.json'), JSON.stringify({ sessionId: 'ses-p', storyId: '9.99',
+    storyPath: path.join(rd, 'story.md'), repoPath: rd, startedAt: new Date(AHORA).toISOString(), stepScheme: 2, stepsCompleted: ['validate-story', 'plan'].filter((s) => !pendientes.includes(s)),
+    stepsPending: [...pendientes, 'approve-plan', 'implement'] }));
+  const palabras = ow.canonica(`node ${MARKER} complete-step approve-plan --approved "dale, seguí"`);
+  const gatesLog = path.join(estado, 'gates.log');
+  const renglones = () => { try { return fs.readFileSync(gatesLog, 'utf8').split('\n').filter(Boolean).map(JSON.parse); } catch (_) { return []; } };
+  marcador(['plan']);
+  const no = ow.comprobarConElGuion({ palabras, cwd: rd, sesion: 'ses-p', casa });
+  assert.ok(no && no.niega, JSON.stringify(no));
+  assert.match(no.niega, /pendiente/);
+  assert.strictEqual(renglones().filter((g) => g.name === 'step-order' && g.status === 'blocked').length, 1, 'la negativa queda anotada una vez');
+  // fuera de orden a conciencia: el chequeo pasa y el renglón del desvío lo deja el comando de verdad, no el chequeo
+  const desvio = ow.comprobarConElGuion({ palabras: [...palabras, '--out-of-order'], cwd: rd, sesion: 'ses-p', casa });
+  assert.deepStrictEqual(desvio, { ok: true });
+  assert.ok(!fs.existsSync(path.join(estado, 'bypass.log')), 'el chequeo no anotó el desvío');
+  marcador([]);
+  const antes = fs.readFileSync(path.join(estado, 'active', 'ses-p.json'), 'utf8');
+  const n = renglones().length;
+  const si = ow.comprobarConElGuion({ palabras, cwd: rd, sesion: 'ses-p', casa });
+  assert.deepStrictEqual(si, { ok: true });
+  assert.strictEqual(renglones().length, n, 'el chequeo que pasa no anota nada');
+  assert.strictEqual(fs.readFileSync(path.join(estado, 'active', 'ses-p.json'), 'utf8'), antes, 'ni aprueba el plan');
 });

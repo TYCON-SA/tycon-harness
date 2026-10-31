@@ -334,7 +334,7 @@ Cada bloqueo se loggea en `~/.claude/safety-guard.log`:
    ```
 2. Verificá que Claude Code lo cargó (los hooks se leen al inicio de la sesión — reiniciá si no).
 3. Probá el script directamente (ver "Activación" paso 5).
-4. Si aparece el aviso «NO REVISÓ este comando y lo dejó pasar», el hook no pudo leer su entrada: no necesita `jq` (lee con `jq` si está y, si no, con `node`), pero sin ninguno de los dos en el PATH con el que arrancó la herramienta deja pasar avisando en cada comando. Arreglo: que `node` esté en ese PATH. Lo mismo vale para `test-scope-guard-pre.sh`.
+4. Si aparece «safety-guard no pudo leer este comando y lo frenó», el hook no pudo leer su entrada: no necesita `jq` (lee con `jq` si está y, si no, con `node`), pero sin ninguno de los dos en el PATH con el que arrancó la herramienta frena cada comando, porque sin leerlo no sabe si es destructivo. Arreglo: que `node` esté en ese PATH y reiniciar la sesión. `test-scope-guard-pre.sh` en el mismo caso deja pasar avisando («NO REVISÓ este comando»), con el mismo arreglo.
 
 **El hook bloquea algo legítimo (false positive):**
 
