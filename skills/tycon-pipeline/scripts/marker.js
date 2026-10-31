@@ -386,6 +386,14 @@ function readMarker() {
   return null;
 }
 
+// La carpeta de la corrida, creada si falta. En el chequeo antes de la ventana no se crea: alcanza con que la story dé
+// su clave (la crea el comando de verdad, después de la firma). Null si la story no da clave.
+function carpetaParaLaFirma(repo, storyId, storyAbs) {
+  const pl = require('./pipeline.js');
+  if (!PREVIO) return pl.resolveRunDir(repo, storyId, true, storyAbs);
+  return pl.resolveRunDir(repo, storyId, false, storyAbs) || (pl.runDirKey(storyId, storyAbs).key ? path.join(repo, '.advisors', 'pipeline-runs') : null);
+}
+
 function sinFirmaNoSeEscribe() {
   // en el chequeo antes de la ventana no se escribe: si llegó a escribir sin pasar por la firma, no dice que sí
   if (PREVIO) process.exit(0);
@@ -4705,7 +4713,7 @@ function cmdWaiveCritical(argv) {
   let runDir = null;
   try {
     const storyAbs = resolveStoryPath(m.storyPath, m) || undefined;
-    runDir = require('./pipeline.js').resolveRunDir(m.repoPath || process.cwd(), String(m.storyId), true, storyAbs);
+    runDir = carpetaParaLaFirma(m.repoPath || process.cwd(), String(m.storyId), storyAbs);
   } catch (e) { console.error(`marker.js waive-critical: no pude calcular la carpeta de la corrida (${e.message})`); process.exit(2); }
   if (!runDir) { console.error('marker.js waive-critical: la story no da una clave para su carpeta de corrida'); process.exit(2); }
   let entrada;
@@ -4840,7 +4848,8 @@ function cmdApprovePending(argv) {
   if (!pendiente) { console.error(`marker.js approve-pending: ${id} no es un pendiente abierto (\`- [ ] [${id}] …\`) en ${path.join(repo, PA.TODO)}: se aprueba lo que está escrito.`); process.exit(1); }
   const leido = PA.leerRegistro(registro);
   if (leido.ilegibles.length) { console.error(`marker.js approve-pending: ${PA.RECORD} tiene renglones que no se leen (${leido.ilegibles.join(', ')}): no se firma sobre un archivo roto.`); process.exit(1); }
-  if (leido.lineas.some((x) => !PA.motivoDe(x.valor) && x.valor.id === id)) { console.error(`✅ ${id} ya estaba aprobado: no escribí nada.`); process.exit(0); }
+  // en el chequeo antes de la ventana sale 1: sin eso la ventana se abre para una firma que no escribe nada
+  if (leido.lineas.some((x) => !PA.motivoDe(x.valor) && x.valor.id === id)) { console.error(`✅ ${id} ya estaba aprobado: no escribí nada.`); process.exit(PREVIO ? 1 : 0); }
   let maquina = null;
   try { maquina = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'machine-id.js')).huella().huella || null; } catch (_) { /* va sin máquina */ }
   const linea = PA.lineaNueva({ id, maquina });
@@ -4998,7 +5007,7 @@ function cmdMarkTested(argv) {
   const storyAbs = resolveStoryPath(m.storyPath, m);
   if (!storyAbs) { console.error('marker.js mark-tested: no encontré la story de la corrida'); process.exit(2); }
   let runDir = null;
-  try { runDir = require('./pipeline.js').resolveRunDir(m.repoPath || process.cwd(), String(m.storyId), true, storyAbs); } catch (e) {
+  try { runDir = carpetaParaLaFirma(m.repoPath || process.cwd(), String(m.storyId), storyAbs); } catch (e) {
     console.error(`marker.js mark-tested: no pude calcular la carpeta de la corrida (${e.message})`); process.exit(2);
   }
   if (!runDir) { console.error('marker.js mark-tested: la story no da una clave para su carpeta de corrida'); process.exit(2); }
@@ -5259,7 +5268,7 @@ function cmdRuntimeWaiver(storyArg, argv = []) {
 // tiene prioridad sobre él aunque siga existiendo.
 // ============================================================
 // el cupo más grande que declara la designada por otra pestaña: uno mayor lo aprueba el dueño en su ventana
-const ADHOC_TOPE_DELEGADO = 8;
+const { DELEGATED_ADHOC_MAX_FILES: ADHOC_TOPE_DELEGADO, cupoDelegado } = require('./lib/story-gate.js');
 const ADHOC_MOTIVO_MAX = 200;
 const ADHOC_CUPO_MAX = 50;
 
@@ -5317,8 +5326,18 @@ function cmdAdhoc(sub, payloadJson) {
     const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
     // en la terminal el dueño ve este resumen: el motivo y el cupo, como en la ventana
     const cupoPedido = payload.maxFiles !== undefined ? `hasta ${payload.maxFiles} archivos` : 'el cupo de siempre (8 archivos, o el que ya tenía)';
+    // por delegación, el dueño se entera antes de la constancia, por los canales del perfil: sin entrega, no hay arreglo
+    const antes = (viaPedida) => {
+      if (viaPedida !== 'delegacion') return null;
+      const so = require('./lib/save-ok.js');
+      const notify = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'notify.js'));
+      const cupo = cupoDelegado(payload.maxFiles !== undefined ? payload.maxFiles : 8);
+      const a = so.avisar({ texto: `Arreglo rápido: la coordinadora abrió el de la sesión ${destino}: «${reason}» · hasta ${cupo} archivos, sin tocar lo sensible.`,
+        canales: () => notify.canalesDeLaSesion(), mandar: (o) => notify.avisar(o) });
+      return a.ok ? null : { codigo: 1, motivo: `sin aviso a la persona, la coordinadora no abre el arreglo rápido (${a.motivo})` };
+    };
     const r = ow.exigir({ firma: 'adhoc-lane', argv: process.argv.slice(1), resumen: `arreglo rápido de la sesión ${destino}: «${reason}» · ${cupoPedido}`,
-      propia: PROPIA, anotar: (renglon) => appendLog('gates.log', renglon) });
+      propia: PROPIA, anotar: (renglon) => appendLog('gates.log', renglon), antes });
     if (r.codigo !== 0) {
       const json = String(payloadJson).replace(/'/g, "'\\''");
       console.error(`🔒 marker.js adhoc set: la persona no lo aprobó — ${r.motivo}`);
@@ -5338,7 +5357,7 @@ function cmdAdhoc(sub, payloadJson) {
     const existing = io.readAdhoc(STATE_DIR, destino);
     let maxFiles = payload.maxFiles !== undefined ? payload.maxFiles : (existing ? existing.maxFiles : 8);
     const pedido = maxFiles;
-    if (via === 'delegacion' && maxFiles > ADHOC_TOPE_DELEGADO) maxFiles = ADHOC_TOPE_DELEGADO;
+    if (via === 'delegacion') maxFiles = cupoDelegado(maxFiles);
     const obj = {
       reason, maxFiles,
       files: existing ? (existing.files || []) : [],

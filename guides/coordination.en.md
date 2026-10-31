@@ -151,8 +151,8 @@ script checks them before signing:
    adversarial pass after the last change, no critical finding (not even waived) and no waiver in the run.
 2. Never a change that touches signatures, guards, notices, permissions, the profile or the coordinator's power (the
    sensitive list in `scripts/lib/signatures.js`).
-3. Each ok reaches the owner in one line, through a channel of the profile's list, before the record: with no delivery,
-   there is no ok.
+3. Each ok reaches the owner in one line before the record, through the notice channels (the ones the site chooses;
+   with none chosen, Telegram): with no delivery, there is no ok.
 4. It is turned off from the profile: `save` out of `approvals.delegated_signing`, or in `approvals.owner_only`. The
    request that turns it on is approved by the owner, never by the coordinator.
 
@@ -169,8 +169,12 @@ The quick fix (a code change with no story) is the `adhoc-lane` signature: the t
 - **On the same machine.** The designated session declares it for the tab it gave the work to, with
   `marker.js adhoc set '<json>' --for-session <session>`. It runs with no window only if the profile delegates
   `adhoc-lane` (it is in no group: it has to be named), the machine is on the list and the owner confirmed the
-  designation; otherwise the window opens in the designated session's tab. Through this path the quota is at most 8
-  files, and the designated session does not declare it for itself.
+  designation; otherwise the window opens in the designated session's tab. Through this path it has three limits, and
+  the script and the edit guard check them: the quota is at most 5 files; the fix never touches anything sensitive
+  (the list in `scripts/lib/signatures.js`: signatures, guards, notices, permissions, the profile), which goes with the
+  owner's signature; and before it opens, one line reaches the owner through the notice channels, with the
+  session, the reason and the quota: with no delivery, there is no fix. The designated session does not declare it
+  for itself.
 - **From another machine.** The coordinator on another machine asks the designated session of the target machine for it,
   by message, and that session declares it as above. The message is a request, not an authorization: what authorizes
   it is the team profile and the designation the owner confirmed. With no designated session on the target machine, the
