@@ -616,8 +616,8 @@ else
   bad "T18 observer + tycon-config" "rc=$RC $(echo "$AVISO" | head -3 | tr '\n' ' ' | head -c 300)"
 fi
 
-# El hook del arranque: se ubica por su carpeta (scripts/hooks/ → la raíz) y lanza el observador de la ruta nueva,
-# con el log en inbox/instincts/observer.log. Un observador de mentira deja su marca y una línea en el log.
+# El hook del arranque no lanza el observador en ninguna máquina: las propuestas las arma la noche
+# de la organización. Con la variable vieja prendida, un observador de mentira no deja su marca ni su log.
 H=$(arbol hook)
 cp "$TCG/scripts/hooks/instinct-trigger.sh" "$H/scripts/hooks/"
 cat > "$H/scripts/instincts/instinct-observer.js" <<'EOF'
@@ -626,10 +626,9 @@ console.log('LINEA-DEL-OBSERVADOR');
 EOF
 con_limite env -i HOME="$H/home" PATH="$LAB/bin:/usr/bin:/bin" TYCON_INSTINCT_OBSERVER=1 TYCON_NO_BOOTSTRAP_HEAL=1 \
   bash "$H/scripts/hooks/instinct-trigger.sh" < /dev/null > /dev/null 2>&1; RC=$?
-for _ in $(seq 1 100); do grep -qF "LINEA-DEL-OBSERVADOR" "$H/inbox/instincts/observer.log" 2>/dev/null && break; sleep 0.1; done
-if [ "$RC" = 0 ] && [ "$(cat "$H/corrio.txt" 2>/dev/null)" = "--notify" ] \
-  && grep -qF "LINEA-DEL-OBSERVADOR" "$H/inbox/instincts/observer.log" 2>/dev/null && [ ! -e "$H/instincts" ]; then
-  ok "T18 instinct-trigger.sh lanza scripts/instincts/instinct-observer.js y escribe el log en inbox/instincts/observer.log"
+sleep 1
+if [ "$RC" = 0 ] && [ ! -e "$H/corrio.txt" ] && [ ! -e "$H/inbox/instincts/observer.log" ] && [ ! -e "$H/instincts" ]; then
+  ok "T18 instinct-trigger.sh ya no lanza scripts/instincts/instinct-observer.js (lo propone la noche) ni crea su log"
 else
   bad "T18 hook del arranque" "rc=$RC corrió=$(cat "$H/corrio.txt" 2>/dev/null || echo no) log=$(ls "$H/inbox/instincts/" 2>&1 | tr '\n' ' ')"
 fi

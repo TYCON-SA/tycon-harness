@@ -478,7 +478,10 @@ jobs:
           WO=(); [ -d "$(Build.SourcesDirectory)/.dashboard/vigilante" ] && WO=(--watcher-out "$(Build.SourcesDirectory)/.dashboard/vigilante")
           # el perfil que bajó el paso del perfil; sin él, daily-summary lo intenta bajar y, si no puede, lo dice
           PF=(); [ -n "${TEAM_PROFILE:-}" ] && [ -f "$TEAM_PROFILE" ] && PF=(--profile "$TEAM_PROFILE")
-          node scripts/nightly/dependencies/daily-summary.js deliver --source dependencies --today "$HOY" ${SU[@]+"${SU[@]}"} ${SEM[@]+"${SEM[@]}"} ${RR[@]+"${RR[@]}"} ${WO[@]+"${WO[@]}"} ${PF[@]+"${PF[@]}"} \
+          # los aprendizajes, si la organización tiene la noche que los propone (instinct-proposals.yml, 02:00): el informe de
+          # hoy; si esa noche no dejó el suyo, el resumen lo dice. Sin su carpeta, el resumen no los nombra
+          AP=(); [ -d "$(Build.SourcesDirectory)/.dashboard/instincts" ] && AP=(--instincts "$(Build.SourcesDirectory)/.dashboard/instincts/instintos-$HOY.json")
+          node scripts/nightly/dependencies/daily-summary.js deliver --source dependencies --today "$HOY" ${SU[@]+"${SU[@]}"} ${SEM[@]+"${SEM[@]}"} ${RR[@]+"${RR[@]}"} ${WO[@]+"${WO[@]}"} ${PF[@]+"${PF[@]}"} ${AP[@]+"${AP[@]}"} \
             --out "$(Build.SourcesDirectory)/.dashboard/dependencias" \
             --pending "$(Build.SourcesDirectory)/inbox/dependencies" \
             --operations "$(Build.SourcesDirectory)/operations.json" \

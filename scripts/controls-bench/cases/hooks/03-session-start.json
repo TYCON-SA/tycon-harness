@@ -212,8 +212,8 @@
           }
         },
         {
-          "id": "dispara-con-optin-y-deja-throttle",
-          "type": "must-run",
+          "id": "quiet-con-optin-no-lanza-el-observador",
+          "type": "must-stay-quiet",
           "env": {
             "TYCON_INSTINCT_OBSERVER": "1",
             "TYCON_GUIDES_DIR": "${FIXTURE}/tcg"
@@ -227,38 +227,10 @@
             "source": "startup"
           },
           "expect": {
-            "file_exists": [
-              "${SANDBOX_HOME}/.claude/instinct-observer.last",
-              "${SANDBOX_HOME}/.claude/.tycon-pipeline/inbox/instincts/observer.log"
-            ],
             "file_absent": [
+              "${SANDBOX_HOME}/.claude/instinct-observer.last",
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/inbox/instincts/observer.log",
               "${FIXTURE}/tcg/inbox"
-            ]
-          }
-        },
-        {
-          "id": "dispara-con-buzon-registra-en-el-arbol",
-          "type": "must-run",
-          "env": {
-            "TYCON_INSTINCT_OBSERVER": "1",
-            "TYCON_GUIDES_DIR": "${FIXTURE}/tcg"
-          },
-          "setup": [
-            "mkdir -p tcg/scripts/instincts tcg/scripts/setup/harness tcg/inbox/instincts",
-            "printf '# el buzon del arbol de prueba\\n' > tcg/inbox/instincts/README.md",
-            "cp $TCG/scripts/instincts/instinct-dirs.js tcg/scripts/instincts/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
-            "printf 'process.exit(0)\\n' > tcg/scripts/instincts/instinct-observer.js"
-          ],
-          "stdin": {
-            "source": "startup"
-          },
-          "expect": {
-            "file_exists": [
-              "${SANDBOX_HOME}/.claude/instinct-observer.last",
-              "${FIXTURE}/tcg/inbox/instincts/observer.log"
-            ],
-            "file_absent": [
-              "${SANDBOX_HOME}/.claude/.tycon-pipeline/inbox"
             ]
           }
         }

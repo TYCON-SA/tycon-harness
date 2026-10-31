@@ -1,0 +1,153 @@
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# La noche que propone aprendizajes — MODELO para cualquier organización en Azure DevOps
+#
+# Cómo darlo de alta: pipelines/operations/README.md. Se copia a `pipelines/` del repo de operaciones y se cambia el
+# `name:` del recurso `harness` (marcado abajo).
+#
+# POR QUÉ EXISTE. Cada máquina del equipo graba lo que hace el agente y sube un día por vez al buzón de la organización.
+# Esta noche baja esos días, cuenta sin modelo lo que se repite en el equipo y le pide al modelo de la noche que escriba
+# cada propuesta (como mucho 20 por noche; las demás salen sólo con los números). Deja un archivo por propuesta en
+# `inbox/instincts/propuestas/` y el informe de la noche en `.dashboard/instincts/`: las propuestas se deciden en la
+# pestaña Aprendizajes del sitio, y el resumen de la mañana (dependency-audit.yml) cuenta las nuevas.
+#
+# QUÉ NECESITA:
+#   · La integración `instincts` prendida en el perfil del equipo (`integrations.instincts: true`). Apagada, la noche lo
+#     anota y no lee el buzón.
+#   · El BUZÓN DE CORRIDAS: el nombre de la conexión de servicio de Azure en el parámetro `mailboxConnection` (de sólo
+#     lectura sobre ese almacenamiento, autorizada para este pipeline), y dónde está, en operations.json → site.mailbox.
+#     Sin la conexión, la noche no puede leer y su informe sale «no medido».
+#   · El modelo de la noche, que se elige en el sitio (`models.nightly` de team-repos.json). La llave va como VARIABLE
+#     SECRETA de esta definición: `OLLAMA_API_KEY` con Ollama, `ANTHROPIC_API_KEY` con Anthropic. Nunca en este YAML ni en
+#     un archivo. Una variable que no existe llega como el literal `$(NOMBRE)`, y se toma como ausente: sin llave o sin
+#     modelo, las propuestas salen sólo con los números y el resumen lo dice. Con Anthropic, el agente necesita la CLI
+#     `claude` (el paso la instala sólo en ese caso).
+#
+# A las 02:00 UTC: antes del resumen de las 04:00, sin pisar los otros nocturnos. Si pasa de 60 minutos, choca con el de
+# las 03:00.
+#
+# Permisos (una vez): la identidad de compilación del proyecto con «Contribute» sobre el repo de operaciones, y LECTURA
+# sobre el repo del perfil.
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+trigger: none   # nunca por push: lo que cambia es lo que subieron las máquinas
+pr: none
+
+schedules:
+  - cron: '0 2 * * *'   # 02:00 UTC: antes del resumen de las 04:00
+    displayName: 'Las propuestas de aprendizajes (nocturno)'
+    branches:
+      include: [main]
+    always: true
+
+# Una corrida de prueba va con efectos=false: lee el buzón, llama al modelo y escribe en el disco, pero no guarda nada.
+parameters:
+  - name: efectos
+    displayName: 'Con efectos fuera de la ejecución (guardar las propuestas y el informe)'
+    type: boolean
+    default: true
+  - name: mailboxConnection
+    displayName: 'Conexión de servicio de Azure con lectura sobre el buzón de ejecuciones (vacío: la noche sale «no medido»)'
+    type: string
+    default: ''
+
+resources:
+  repositories:
+    - repository: harness
+      type: git                         # o `github`, con `endpoint: <conexión de servicio de GitHub>`
+      name: my-project/harness          # ← CAMBIAR: dónde está el arnés (en GitHub, la organización/repo público)
+      ref: refs/heads/main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - ${{ if eq(parameters.efectos, false) }}:
+      - name: SIN_GUARDAR
+        value: '--no-push'
+  - ${{ else }}:
+      - name: SIN_GUARDAR
+        value: ''
+
+jobs:
+  - job: Propose
+    displayName: 'Contar lo que se repite y escribir las propuestas'
+    timeoutInMinutes: 55
+    steps:
+      - template: pipelines/operations/templates/fetch-harness.yml@harness
+      - template: pipelines/operations/templates/ops-data.yml@harness
+
+      # El perfil de la organización: si la integración está prendida. Sin él, la noche sale «no medido» (perfil ilegible).
+      - script: |
+          set -u
+          PERFIL="$(Agent.TempDirectory)/perfil"
+          SALIDA=$(node scripts/ci/team-repos-diff.js --team-repos "$(Build.SourcesDirectory)/team-repos.json" \
+            --clone-dir "$(Agent.TempDirectory)/perfil-clon" --profile-out "$PERFIL" 2>&1)
+          RC=$?
+          LINEA=$(printf '%s\n' "$SALIDA" | grep -v '^[[:space:]]*$' | tail -n 1 | sed 's/##vso/## vso/g')
+          [ "$RC" = 0 ] || echo "##vso[task.logissue type=warning]$LINEA"
+          if [ "$RC" != 4 ] && [ -f "$PERFIL/team-profile.json" ]; then echo "##vso[task.setvariable variable=TEAM_PROFILE]$PERFIL/team-profile.json"; fi
+          exit 0
+        displayName: 'El perfil de la organización'
+        env:
+          CLONE_TOKEN: $(System.AccessToken)
+
+      # Con Anthropic, la llamada va por la CLI `claude` (resuelve el alias de la tabla); con Ollama no hace falta nada.
+      - script: |
+          set -u
+          PROV=$(node -e 'const r = require("./scripts/lib/nightly-model.js").resolveNightly({ orgConfig: process.argv[1], env: {} }); process.stdout.write(String(r.provider || ""))' "$(Build.SourcesDirectory)/team-repos.json" 2>/dev/null || true)
+          if [ "$PROV" = anthropic ]; then
+            npm install -g @anthropic-ai/claude-code > /dev/null 2>&1 || echo "##vso[task.logissue type=warning]No pude instalar la CLI de claude: las propuestas salen sólo con los números"
+          fi
+          exit 0
+        displayName: 'La CLI del modelo, si el proveedor es Anthropic'
+
+      # La noche entera, con la credencial de la conexión del buzón. Tolerante a propósito: una noche que no pudo leer, o
+      # cuyo guardado no viajó, queda naranja con su informe «no medido», nunca verde muda.
+      - ${{ if ne(parameters.mailboxConnection, '') }}:
+          - task: AzureCLI@2
+            displayName: 'Bajar los días de instintos y proponer'
+            inputs:
+              azureSubscription: ${{ parameters.mailboxConnection }}
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -u
+                MBX="$(Agent.TempDirectory)/mailbox-location.json"
+                TENANT="$(az account show --query tenantId -o tsv 2>/dev/null || true)"
+                node -e 'const c = require("./scripts/lib/operations-config.js").load("operations.json"); if (!c.ok) process.exit(3); const m = c.data.site && c.data.site.mailbox; if (!m) process.exit(4); require("fs").writeFileSync(process.argv[1], JSON.stringify({ cuenta: m.account, contenedor: m.container, tenant: process.argv[2] }) + "\n");' "$MBX" "$TENANT" \
+                  || echo "##vso[task.logissue type=warning]No sé dónde está el buzón (operations.json → site.mailbox): la noche sale «no medido»"
+                export TYCON_MAILBOX_JSON="$MBX"
+                # la bajada pide la organización de Azure DevOps (ado.org): en el agente sale del perfil que bajó el paso
+                # del perfil; el árbol de la noche no trae uno
+                [ -n "${TEAM_PROFILE:-}" ] && export TYCON_PROFILE="$TEAM_PROFILE"
+                mkdir -p "$(Agent.TempDirectory)/buzon"
+                node scripts/instincts/instinct-nightly.js --profile "${TEAM_PROFILE:-$(Agent.TempDirectory)/sin-perfil.json}" \
+                  --team-repos "$(Build.SourcesDirectory)/team-repos.json" --mailbox "$(Agent.TempDirectory)/buzon/corridas-buzon" \
+                  --operations "$(Build.SourcesDirectory)" --today "$(date -u +%Y-%m-%d)" $(SIN_GUARDAR)
+                RC=$?
+                if [ "$RC" != 0 ]; then
+                  echo "##vso[task.logissue type=warning]La noche de aprendizajes no midió o su guardado no viajó (salió $RC): el informe lo dice"
+                  echo "##vso[task.complete result=SucceededWithIssues;]"
+                fi
+                exit 0
+            env:
+              OLLAMA_API_KEY: $(OLLAMA_API_KEY)
+              ANTHROPIC_API_KEY: $(ANTHROPIC_API_KEY)
+      - ${{ else }}:
+          - script: |
+              set -u
+              echo "##vso[task.logissue type=warning]Sin la conexión del buzón (parámetro mailboxConnection): la noche sale «no medido»"
+              [ -n "${TEAM_PROFILE:-}" ] && export TYCON_PROFILE="$TEAM_PROFILE"
+              node scripts/instincts/instinct-nightly.js --profile "${TEAM_PROFILE:-$(Agent.TempDirectory)/sin-perfil.json}" \
+                --team-repos "$(Build.SourcesDirectory)/team-repos.json" --mailbox "$(Agent.TempDirectory)/buzon/corridas-buzon" \
+                --operations "$(Build.SourcesDirectory)" --today "$(date -u +%Y-%m-%d)" $(SIN_GUARDAR)
+              echo "##vso[task.complete result=SucceededWithIssues;]"
+              exit 0
+            displayName: 'Proponer sin buzón (queda «no medido»)'
+            env:
+              OLLAMA_API_KEY: $(OLLAMA_API_KEY)
+              ANTHROPIC_API_KEY: $(ANTHROPIC_API_KEY)
+
+      - script: rm -rf "$(Agent.TempDirectory)/buzon" "$(Agent.TempDirectory)/mailbox-location.json"
+        displayName: 'Borrar la copia del buzón'
+        condition: always()
