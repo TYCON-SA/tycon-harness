@@ -261,7 +261,8 @@ Guardar se autoriza en la ventana de permiso, no con una firma: autorización si
 y lo que no se deshace ya tiene su firma de control. La firma `save` y `marker.js approve-save` siguen en el catálogo,
 pero el freno ya no las pide.
 
-El gancho del comando lo hace cumplir, no la memoria del agente. En una corrida, antes de todo `git commit`, `git push`
+El gancho del comando lo hace cumplir, no la memoria del agente. En una corrida o en un camino rápido (el carril
+firmado de `marker.js adhoc set`, sin vencer), antes de todo `git commit`, `git push`
 y todo pedido que se crea o se mergea, el gancho le pregunta a la persona en la ventana de permiso de siempre; con el
 sí, guarda. Lo lee también escondido en `bash -c`, con `-C` o desde una variable. Los comandos de pedido son los que
 declaran los conectores de plataforma (`rawCommands` de su `integration.json`) con `pr` y que terminan en `create`,
@@ -271,7 +272,9 @@ gancho guarda sin preguntar y lo dice en pantalla. Cerrar la corrida ya no pide 
 controles, producción) lo cubre la firma de control del pedido, que es del dueño y no cambia.
 
 La pregunta nombra la forma (`git push`, `… pr create`…) y el repo, nunca el comando, que puede traer una credencial;
-tampoco la rama escrita en el comando. Dentro de una corrida, lo que el gancho no puede leer con certeza pregunta igual,
+tampoco la rama escrita en el comando; en un camino rápido, también su motivo. Un camino rápido es del repo de los
+archivos que anotó (si todavía no anotó ninguno, de cualquiera); un pedido pregunta siempre. Dentro de una corrida o de
+un camino rápido, lo que el gancho no puede leer con certeza pregunta igual,
 guarde o no: «no pude leer este comando». Entran el comando entero en una variable, un shell que lee de un tubo, `<<<`
 o un heredoc, una función o un alias que no está en la copia del shell de la sesión, un programa que no se encuentra y
 dice `commit`, `push` o `pr`, un subcomando de git que no es de git (un alias que no se resuelve en cuatro pasos, la
@@ -280,7 +283,7 @@ una variable, un programa armado de un texto (`env -S`, `sudo -s`), una comilla 
 escrito con comodines o llaves. Así, una forma nueva pregunta por defecto. Los comentarios y el mensaje de un heredoc
 con comillas se leen como el shell: no corren. Los alias y las funciones de la copia del shell que guarda la sesión se
 leen como lo que corren: `ll` o `gst` no preguntan, y un alias que empuja pregunta como el push. Las redirecciones de la
-salida (`2>&1`, `> log`, `2>/dev/null`) no son una duda. Fuera de una corrida, nada de esto pasa. Si el gancho mismo
+salida (`2>&1`, `> log`, `2>/dev/null`) no son una duda. Sin corrida ni camino rápido, nada de esto pasa. Si el gancho mismo
 no carga, frena dentro de una corrida, y fuera deja pasar con un aviso.
 
 Lo que no ve: un guion o un programa que guarda sin nombrar git en el comando (`node guardar.js`, `bash guion.sh`,

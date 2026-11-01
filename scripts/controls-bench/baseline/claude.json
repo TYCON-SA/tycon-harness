@@ -1583,6 +1583,8 @@
     "on-pre-commit.js::freno-de-guardar-shell-que-lee-de-un-tubo-pregunta": true,
     "on-pre-commit.js::freno-de-guardar-el-texto-no-repite-el-comando": true,
     "on-pre-commit.js::freno-de-guardar-registro-viejo-ya-no-frena-fuera-de-la-corrida": true,
-    "on-pre-commit.js::freno-de-guardar-gemelo-fuera-de-una-corrida-pasa": true
+    "on-pre-commit.js::freno-de-guardar-gemelo-fuera-de-una-corrida-pasa": true,
+    "on-pre-commit.js::freno-de-guardar-commit-del-camino-rapido-pregunta": true,
+    "on-pre-commit.js::freno-de-guardar-gemelo-carril-sin-firma-pasa": true
   }
 }

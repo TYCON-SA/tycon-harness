@@ -1,6 +1,7 @@
 'use strict';
 /**
- * save-brake.js — el freno de guardar: dentro de una corrida, antes de un commit, un push o un pedido, la sesión le
+ * save-brake.js — el freno de guardar: dentro de una corrida o de un camino rápido (el carril firmado de `marker.js
+ * adhoc set`), antes de un commit, un push o un pedido, la sesión le
  * pregunta a la persona en la ventana de permiso, y con el sí guarda. Lo llama `on-pre-commit.js` en cada comando de
  * consola; en una pestaña que no pide permisos (la ventana se aprobaría sola) guarda sin preguntar y lo dice en pantalla.
  * No hay firma ni constancia del ok: lo delicado (frenos, firmas, controles, producción) lo cubre la firma de control del
@@ -18,8 +19,8 @@
  *                         del shell (`~/.claude/shell-snapshots`) se leen como lo que corren. Los comentarios y los
  *                         heredocs con comillas no corren: se sacan antes de leer. Las redirecciones de la salida no
  *                         son una duda. Durante una corrida, una duda pregunta;
- *   · decidir             null (pasa) o `{ pregunta }` (el texto de la ventana). Sin una corrida, o sin un comando que
- *                         guarda ni una duda, no lee nada.
+ *   · decidir             null (pasa) o `{ pregunta }` (el texto de la ventana). Sin una corrida ni un camino rápido
+ *                         abierto, o sin un comando que guarda ni una duda, no lee nada.
  *
  * Ninguna frase, opción ni variable saltea la ventana. El texto nombra la forma (`git push`, `… pr create`…) y el repo,
  * nunca el comando: un comando puede traer una credencial.
@@ -916,14 +917,15 @@ function preguntaNoLeo(story) {
 /**
  * ¿Pregunta? null (pasa) o `{ pregunta }`: el texto de la ventana de permiso. Dentro de una corrida (el marcador de la
  * sesión), un commit o un push sobre un repo de la corrida, todo pedido y lo que no se puede leer con certeza preguntan.
- * Un marcador que existe y no es el de una corrida también pregunta. Fuera de una corrida nada pregunta. No hay ok que
+ * Un marcador que existe y no es el de una corrida también pregunta. Sin corrida, pregunta un camino rápido abierto
+ * (`decidirCarril`); sin ninguno de los dos, nada pregunta. No hay ok que
  * guardar: lo que toca algo delicado lo cubre la firma de control del pedido.
  */
 function decidir({ command, cwd, sid, home }) {
-  // fuera de una corrida nada pregunta: no hace falta leer el comando
+  // sin una corrida, pregunta sólo un camino rápido abierto
   let crudo = null;
   try { crudo = fs.readFileSync(require('./open-runs.js').markerPath(sid, home), 'utf8'); } catch (e) {
-    if (e.code === 'ENOENT') return null;
+    if (e.code === 'ENOENT') return decidirCarril({ command, cwd, sid, home });
   }
   const { cs, dudas } = leerComando(command, cwd || process.cwd(), 0, [], home);
   if (!cs.length && !dudas.length) return null;
@@ -943,6 +945,45 @@ function decidir({ command, cwd, sid, home }) {
     // la carpeta sale del comando: no vuelve en el texto
     try { r = SO().raizDe(c.dir); } catch (_) { return { pregunta: pregunta(c, null, m.storyId) }; }
     if (r && repos.includes(r)) return { pregunta: pregunta(c, r, m.storyId) };
+  }
+  return null;
+}
+
+/**
+ * El carril de un camino rápido de la sesión, si está abierto: declarado con `marker.js adhoc set`, con su firma y sin
+ * vencer, lo mismo que pide el portón para dejar editar código. Sin carril, null.
+ */
+function carrilAbierto(sid, home) {
+  const io = require('./story-gate-io.js');
+  const dir = path.dirname(path.dirname(require('./open-runs.js').markerPath(sid, home)));
+  const a = io.readAdhoc(dir, sid);
+  return a && io.adhocFirmado(dir, sid, a) ? a : null;
+}
+
+/**
+ * Sin corrida, con un camino rápido abierto: pregunta como una corrida. Su repo es el de los archivos que el carril
+ * anotó; si todavía no anotó ninguno, cualquier repo pregunta. Un pedido y lo que no se lee con certeza preguntan.
+ * Sin carril, nada pregunta, como siempre fuera de una corrida.
+ */
+function decidirCarril({ command, cwd, sid, home }) {
+  let a = null;
+  try { a = carrilAbierto(sid, home); } catch (_) { a = null; }
+  if (!a) return null;
+  const { cs, dudas } = leerComando(command, cwd || process.cwd(), 0, [], home);
+  if (!cs.length && !dudas.length) return null;
+  const de = `del camino rápido «${String(a.reason).slice(0, 160)}»`;
+  if (dudas.length || cs.some((c) => c.opaco)) return { pregunta: `¿GUARDO? no pude leer este comando; si guarda, es ${de}. ${COMO_SE_AUTORIZA}` };
+  const repos = [];
+  for (const f of Array.isArray(a.files) ? a.files : []) {
+    let r = null;
+    try { r = SO().raizDe(path.dirname(String(f))); } catch (_) { r = null; }
+    if (r && !repos.includes(r)) repos.push(r);
+  }
+  for (const c of cs) {
+    if (c.tipo === 'pr') return { pregunta: `¿GUARDO? «${c.forma}», ${de}. ${COMO_SE_AUTORIZA}` };
+    let r = null;
+    try { r = SO().raizDe(c.dir); } catch (_) { return { pregunta: `¿GUARDO? «${c.forma}», ${de}. ${COMO_SE_AUTORIZA}` }; }
+    if (!repos.length || (r && repos.includes(r))) return { pregunta: `¿GUARDO? «${c.forma}»${r ? ` sobre ${r}` : ''}, ${de}. ${COMO_SE_AUTORIZA}` };
   }
   return null;
 }

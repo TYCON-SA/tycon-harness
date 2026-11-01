@@ -333,6 +333,44 @@
           }
         },
         {
+          "id": "freno-de-guardar-commit-del-camino-rapido-pregunta",
+          "type": "must-emit",
+          "_por_que": "con un camino rápido abierto y firmado, guardar pregunta en la ventana como en una corrida, con el motivo del carril.",
+          "setup": [
+            "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && echo x > app.js",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre completo\",\"maxFiles\":5,\"files\":[],\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-freno.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-freno\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\""
+          ],
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git add -A && git commit -m 'fix: x'"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "\"permissionDecision\":\"ask\"",
+              "camino rápido «el combo muestra el nombre completo»"
+            ]
+          }
+        },
+        {
+          "id": "freno-de-guardar-gemelo-carril-sin-firma-pasa",
+          "type": "must-not-block",
+          "_por_que": "el gemelo: una declaración de carril sin su firma no es un carril abierto, y el commit pasa como fuera de una corrida.",
+          "setup": [
+            "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && echo x > app.js",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre completo\",\"maxFiles\":5,\"files\":[],\"declaredAt\":\"%s\",\"lastTouch\":\"%s\"}' \"$T\" \"$T\" > \"$S/adhoc/bench-freno.json\""
+          ],
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git add -A && git commit -m 'fix: x'"
+            }
+          }
+        },
+        {
           "id": "freno-de-guardar-comun-ls-en-la-corrida-pasa",
           "type": "must-not-block",
           "_por_que": "lo común dentro de una corrida no frena: no guarda nada.",

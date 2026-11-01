@@ -342,6 +342,7 @@ test('Freno_RepoAjeno_Pasa_PedidoPregunta (T5) @story-8.151 @ac-5', (t) => {
 });
 
 // T6 Freno_SinCorrida_O_Adhoc_IgualQueHoy
+// El adhoc de esta prueba no trae su firma: no es un carril abierto. El carril firmado pregunta (T15).
 // 🔴 Falla con: el freno cambiando lo que pasa fuera de una corrida (un aviso, una salida distinta o una pregunta nueva
 // para quien trabaja sin pipeline).
 test('Freno_SinCorrida_O_Adhoc_IgualQueHoy (T6) @story-8.151 @ac-6', (t) => {
@@ -555,4 +556,55 @@ test('CambioAUnControl_SiguePidiendoLaFirmaDeControl (T14)', (t) => {
   const salida = `${r.stdout}${r.stderr}`;
   assert.match(salida, new RegExp(`${freno.replace(/[.]/g, '\\.')} \\(código que corre un control\\)`), salida);
   assert.match(salida, /approve --root/, `da el comando de la firma: ${salida}`);
+});
+
+/** El carril de un camino rápido, firmado como lo deja `marker.js adhoc set`: la declaración con la hora de su firma y
+ *  el renglón `adhoc-lane-signed` de esa hora en gates.log. Sin `firmado`, la declaración sola (no abre nada). */
+function carril(h, { files = [], firmado = true, lastTouch, sid = SID } = {}) {
+  const ahora = new Date().toISOString();
+  fs.mkdirSync(path.join(estado(h), 'adhoc'), { recursive: true });
+  fs.writeFileSync(path.join(estado(h), 'adhoc', `${sid}.json`), JSON.stringify({
+    reason: 'el combo muestra el nombre completo', maxFiles: 5, files, declaredAt: lastTouch || ahora, lastTouch: lastTouch || ahora,
+    ...(firmado ? { firmadaEn: ahora } : {}),
+  }));
+  if (firmado) fs.appendFileSync(path.join(estado(h), 'gates.log'), `${JSON.stringify({ name: 'adhoc-lane-signed', status: 'ok', destino: sid, ts: ahora })}\n`);
+}
+
+// T15 CaminoRapido_PreguntaComoUnaCorrida
+// 🔴 Falla con: un camino rápido que guarda sin preguntar (el freno mira sólo el marcador de una corrida), o un carril
+// sin firma o vencido que hace preguntar a quien trabaja sin pipeline.
+test('CaminoRapido_PreguntaComoUnaCorrida (T15)', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  const ajeno = repoConOrigin(t, 'ajeno');
+  escribir(a, 'app.js', 'module.exports = 1;\n');
+  carril(h);
+  // con el carril abierto y firmado, commit, push y pedido preguntan en la ventana, con el motivo del carril
+  for (const cmd of ['git commit -m x', `git push origin ${RAMA}`, 'gh pr create --fill']) {
+    const r = gancho(h, cmd, { cwd: a, modo: 'default' });
+    assert.strictEqual(r.status, 0, `${cmd}: ${r.stderr}`);
+    assert.match(r.stdout, VENTANA, `«${cmd}» abre la ventana`);
+    assert.match(r.stdout, /camino rápido «el combo muestra el nombre completo»/, `«${cmd}» dice de qué camino rápido es`);
+  }
+  // lo que no se lee con certeza también pregunta
+  assert.match(gancho(h, 'G=git; $G push', { cwd: a, modo: 'default' }).stdout, VENTANA);
+  // en una pestaña que no pide permisos guarda y lo dice
+  const b = gancho(h, `git push origin ${RAMA}`, { cwd: a, modo: 'bypassPermissions' });
+  assert.strictEqual(b.status, 0, b.stderr);
+  assert.strictEqual(b.stdout, '', 'no abre la ventana');
+  assert.match(b.stderr, /no pide permisos/);
+  // un comando que no guarda no pregunta
+  assert.strictEqual(brake().decidir({ command: 'git status', cwd: a, sid: SID, home: h }), null);
+  // con archivos anotados, el carril es de su repo: el trabajo de otro repo pasa, el pedido pregunta
+  carril(h, { files: [path.join(a, 'app.js')] });
+  assert.ok(brake().decidir({ command: 'git commit -m x', cwd: a, sid: SID, home: h }), 'el repo del carril pregunta');
+  assert.strictEqual(brake().decidir({ command: 'git commit -m x', cwd: ajeno, sid: SID, home: h }), null, 'otro repo pasa');
+  assert.ok(brake().decidir({ command: 'gh pr create --fill', cwd: ajeno, sid: SID, home: h }), 'el pedido pregunta');
+  // sin firma, o vencido, no es un carril: no pregunta
+  const h2 = home(t);
+  carril(h2, { firmado: false });
+  assert.strictEqual(brake().decidir({ command: 'git commit -m x', cwd: a, sid: SID, home: h2 }), null, 'sin firma no pregunta');
+  const h3 = home(t);
+  carril(h3, { lastTouch: '2026-01-01T00:00:00.000Z' });
+  assert.strictEqual(brake().decidir({ command: 'git commit -m x', cwd: a, sid: SID, home: h3 }), null, 'vencido no pregunta');
 });
