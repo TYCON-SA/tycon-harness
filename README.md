@@ -35,10 +35,22 @@ open models through [Ollama](guides/integrations/ollama.en.md), and with
 **The right measure.** When a product starts it is specified in full, once —product document, architecture, epics
 and stories—; then, story by story.
 
-- **Size decides: story or quick path.** Is it a small change? You ask for it in one sentence and, when it is done,
-  you see it came out right just by looking at the result and its tests. Then it goes by quick path: the reason in one
-  line and the list of files. If not, it goes by story: criteria, named tests, the plan approved before coding and the
-  review at the end. What needs several sessions or waits on someone outside also goes by story.
+- **Size decides: story or quick path.** The question: is it a small change?
+  - **It is small** if you ask for it in one sentence and, when it is done, you see it came out right by looking at the
+    result and running its tests. Example: "the province dropdown shows the full name instead of the abbreviation". It
+    goes by **quick path**.
+  - **It is not small** if knowing it is complete takes a list of criteria, if it takes more than one session or if it
+    waits on someone outside. Example: "the dropdown loads its options from the database and remembers the last
+    choice". It goes by **story**.
+  - **If it bundles several topics**, it is not small: it is several quick paths, or a story.
+
+  **Who decides and who checks.** Whoever opens the work judges the size, but does not decide alone: the quick path is
+  approved by the coordinator or the owner. And what follows does not depend on anyone's good faith. The harness
+  enforces it:
+  - Without an open quick path or a story, the harness **does not let you write code**.
+  - The quick path has a **file cap**: 5 if the coordinator approved it, 8 if the owner did. Past it, the harness
+    **closes it** and asks for a story.
+  - A quick path with several topics in its reason **cannot be approved by the coordinator**.
 - **Risk decides who approves.** It is high if the change touches something sensitive in the repo, such as
   production, a migration or security, or if it brings a decision for the owner: scope, security, a new dependency,
   money, customers or other people. When in doubt, high. With normal risk the coordinator approves, and when opening a

@@ -35,10 +35,20 @@ El ciclo de desarrollo con IA (AI SDLC), paso por paso:
 **La medida justa.** Al arrancar un producto se especifica entero, una vez —documento de producto, arquitectura,
 épicos e historias—; después, historia por historia.
 
-- **El tamaño decide: historia o camino rápido.** ¿Es un cambio chico? Lo pedís en una frase y, al terminar, ves que
-  quedó con sólo mirar el resultado y sus pruebas. Entonces va por camino rápido: el motivo en una línea y la lista de
-  archivos. Si no, va por historia: criterios, pruebas con nombre, el plan aprobado antes de programar y la revisión al
-  cerrar. También va por historia lo que necesita varias sesiones o espera a alguien de afuera.
+- **El tamaño decide: historia o camino rápido.** La pregunta: ¿es un cambio chico?
+  - **Es chico** si lo pedís en una frase y, al terminar, ves que quedó bien mirando el resultado y corriendo sus
+    pruebas. Ejemplo: «el combo de provincia muestra el nombre completo en vez de la sigla». Va por **camino rápido**.
+  - **No es chico** si para saber que quedó completo hace falta una lista de criterios, si lleva más de una sesión o si
+    espera a alguien de afuera. Ejemplo: «el combo trae las opciones de la base y recuerda la última elección». Va por
+    **historia**.
+  - **Si junta varios temas**, no es chico: son varios caminos rápidos, o una historia.
+
+  **Quién decide y quién controla.** El tamaño lo juzga quien abre el trabajo, pero no lo decide solo: el camino rápido
+  lo aprueba la coordinadora o el dueño. Y lo que sigue no depende de la buena fe de nadie. Lo hace cumplir el arnés:
+  - Sin un camino rápido abierto o una historia, el arnés **no deja escribir código**.
+  - El camino rápido tiene un **tope de archivos**: 5 si lo aprobó la coordinadora, 8 si lo aprobó el dueño. Al pasarlo,
+    el arnés **lo cierra** y pide una historia.
+  - Un camino rápido con varios temas en el motivo **no lo puede aprobar la coordinadora**.
 - **El riesgo decide quién aprueba.** Es alto si el cambio toca algo sensible del repo, como producción, una migración
   o seguridad, o si trae una decisión del dueño: alcance, seguridad, una dependencia nueva, plata, clientes u otras
   personas. Ante la duda, alto. Con riesgo normal aprueba la coordinadora, que al abrir un camino rápido le avisa al dueño; con
