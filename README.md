@@ -22,12 +22,22 @@ open models through [Ollama](guides/integrations/ollama.en.md), and with
 
 1. **Request and story:** you say what you want and the agent writes it as a story: what has to be done and how it is
    tested. For a small fix, asking for it in your own words is enough.
-2. **Approved plan:** the agent makes the plan and shows it to you; in a small story it approves it on its own, in the others it waits for your go-ahead.
+2. **Approved plan:** the agent makes the plan and shows it to you; someone approves it before any code is written: you, or, in a team, the coordinator session on your behalf when the risk is normal.
 3. **Tests and code:** it writes the tests and the code, and runs the tests.
 4. **Review:** specialized reviewers (security, conventions, coverage) check the change before the commit.
 5. **Delivery:** the commit and the merge go through checks. Nothing is committed or pushed without your permission.
 6. **Operation and measurement:** every merge to main leaves its metrics file, and your organization's nightly jobs
    review the dependencies and build the cycle dashboard.
+
+**The right measure.** When a product starts it is specified in full, once —product document, architecture, epics
+and stories—; then, story by story. Two questions before touching code. Story or quick path? The real size decides:
+what fits in one sentence and is verified by looking at the result and its tests goes by quick path, with the reason
+written down, a file cap and a signature; what needs criteria to know it is complete goes by story, which is the
+specification. Who signs? The risk decides: what touches a guard, something sensitive or a decision of yours is
+signed by you; the rest, in a team, can be signed on your behalf by the coordinator (an agent session the team
+designates for routine signatures). No plan approves itself, and production is always a person's. Each team sets
+the measure from its site, with a floor that cannot be lowered:
+[The right measure](guides/que-hace-el-arnes.md#la-medida-justa-cuánto-papel-lleva-cada-cambio) (in Spanish).
 
 The checks are one part of the cycle: they guard every step. There are two ways to start it: [on your own, on your
 machine](#start-on-your-own), or [for your team](#for-teams).
@@ -139,7 +149,7 @@ A story is your request in writing, with its criteria and its tests: the agent f
 3. **If the idea is big, the stories come first.** Your agent takes it through stages —understanding the problem, the PRD, the architecture, the epics— until it leaves the stories; you review each stage, and each artifact is committed to the repo, next to the code. A small change does not need it: ask for the story directly. · [▶ video](https://github.com/user-attachments/assets/24124d87-ebca-4069-8d82-d0b498f09518)
 4. **Ask for the story in your own words**, so the change is written down before any code: "create a story to add a date filter".
 5. **Review the story.** The agent builds it from your request, answering three plain questions (what it must do, how you can tell it works, and what it must not touch), and marks what it assumed. It shows it to you and writes it on your "yes". If your repo already has a `_bmad/` folder, it builds it with what is there.
-6. **Ask "implementemos la story" (let's implement the story)**, to start the run: the phrase stays in Spanish. If there is no git, it initializes it; if you are on `main`, it creates the branch. It validates the story and, if something is missing, asks whether to fix it. In a small story it shows you the plan and approves it on its own; in the others, you approve it. Then it writes the tests and the code, runs the tests and the reviewers, and checks each criterion by running it.
+6. **Ask "implementemos la story" (let's implement the story)**, to start the run: the phrase stays in Spanish. If there is no git, it initializes it; if you are on `main`, it creates the branch. It validates the story and, if something is missing, asks whether to fix it. It shows you the plan and waits for your "yes" before any code. Then it writes the tests and the code, runs the tests and the reviewers, and checks each criterion by running it.
 7. **Read the summary and say "commit it".** It leaves the message ready and never commits or pushes without your permission. When the first story closes, it offers you the full install.
 8. **A story with a screen.** The agent builds a mockup for you to approve before any code; if your repo has no way to test in a browser, it offers to set it up; and it leaves a guide for testing it by hand. · [▶ video](https://github.com/user-attachments/assets/8aa2c03a-03d7-42ab-b4ae-daf90a53e3c9)
 9. **Your project's own rules.** Ask your agent for a reviewer that checks a rule of yours (for example, "a customer's email is never shown in full"): it lives in your rules repo and reviews every story along with the harness's own. · [▶ video](https://github.com/user-attachments/assets/1ef473c6-f088-413f-8560-9d801e6a0c75)
