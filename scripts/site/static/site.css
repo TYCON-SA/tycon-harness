@@ -600,11 +600,15 @@ body.demo .side{top:calc(var(--barra) + 36px);height:calc(100vh - var(--barra) -
 .m-elegir{padding:6px 14px;border-radius:8px;border:1px solid var(--line-strong);background:var(--surface-2);color:var(--ink);font:13px var(--sans);cursor:pointer;min-height:36px}
 .m-elegir:hover{background:var(--wash)}
 .m-elegir.recomendada{border-color:var(--ink);border-width:2px}
+/* lo que propone el modelo en una ficha sin análisis: el mismo resaltado que lo recomendado */
+.m-propuesto{border-color:var(--ink);border-width:2px;font-weight:600}
 .m-elegir[aria-pressed="true"]{background:var(--ink);color:var(--page);border-color:var(--ink)}
 .m-elegir:focus-visible,.m-q:focus-visible,.m-barra .btn:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
-.m-sin-analisis,.m-detalle{margin-top:8px;font-size:13.5px}
-.m-sin-analisis>summary,.m-detalle>summary,.m-vulns>summary,.m-tareas>summary{cursor:pointer;color:var(--ink-2)}
-.m-sin-analisis .m-acciones{margin-top:8px}
+.m-detalle{margin-top:8px;font-size:13.5px}
+/* dónde se decide una ficha sin análisis: un título que lo dice y los botones a la vista */
+.m-decidir{margin-top:10px;font-size:13.5px}
+.m-decidir-tit{margin:0 0 6px;font-weight:600;color:var(--ink)}
+.m-detalle>summary,.m-vulns>summary,.m-tareas>summary{cursor:pointer;color:var(--ink-2)}
 .m-detalle p{color:var(--ink-2);font-size:13px}
 .m-q{display:inline-grid;place-items:center;width:20px;height:20px;padding:0;border-radius:50%;border:1px solid var(--line-strong);background:transparent;color:var(--ink-2);font:600 11.5px var(--sans);cursor:pointer;vertical-align:middle}
 .m-pop{position:fixed;margin:0;inset:auto;max-width:min(420px,calc(100vw - 32px));padding:14px 16px;border:1px solid var(--line-strong);border-radius:12px;background:var(--surface);color:var(--ink);box-shadow:var(--shadow);font-size:14px;line-height:1.5}
@@ -630,6 +634,7 @@ body.demo .side{top:calc(var(--barra) + 36px);height:calc(100vh - var(--barra) -
 .m-cuenta{font-weight:600;font-size:13.5px;min-width:72px}
 .m-estado{flex-basis:100%;color:var(--ink-2);font-size:13px}
 .m-estado:empty{display:none}
+.m-estado .m-sigue{display:block;margin-top:2px}
 .m-estado code{font:12px var(--mono)}
 @media (max-width:640px){
   .m-carta{padding:12px}

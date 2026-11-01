@@ -238,7 +238,7 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
       .then((g) => {
         const u = vistaUsable(g, fuentes.dirBuzon);
         if (!u.ok) { log(`ejecuciones: la vista guardada no se puede usar (${u.motivo}): se espera el armado`); return; }
-        if (u.descartadas) log(`ejecuciones: la vista guardada trae ${u.descartadas} ruta(s) a demanda fuera del buzón: se descartan`);
+        if (u.descartadas) log(`ejecuciones: la vista guardada trae ${u.descartadas === 1 ? '1 ruta a demanda fuera del buzón: se descarta' : `${u.descartadas} rutas a demanda fuera del buzón: se descartan`}`);
         if (st.M) return;
         st.M = u.vista.M; st.aDemanda = u.vista.aDemanda; st.textosDir = null;
         st.guardada = { generado: u.vista.generado, informados: u.vista.informados };

@@ -211,11 +211,20 @@ blocks:
 - **Waiting for approval**: what you already sent and someone else has to approve, grouped by pull request, with its
   link (with `site.auto_apply` on, it only shows up when the repo policy did not let the site approve it itself). Once approved, it is applied that night. If the platform does not answer, a sentence says so and the findings
   stay to decide, but nothing is sent until it answers: that way no duplicate pull request is opened.
-- **Already decided** (closed at first): what was decided in the last 30 days, with what was chosen, when and by whom.
-  Each night's review applies what was decided that day; if it could not, the row says so.
-- **In progress** (closed at first): what was already decided and someone is doing, with its work item number and who
-  it is assigned to, and the package vulnerabilities. Each team follows its own in its work item and, if it cannot
-  update the package, declares the debt in its repo, with a deadline.
+- **Fixes in progress** (closed at first): what was already decided and someone is doing, with its work item number and
+  who it is assigned to, and the package vulnerabilities. Each team follows its own in its work item and, if it cannot
+  update the package, declares the debt in its repo, with a deadline. A finding can be both here and in the history.
+- **Decision history** (closed at first, at the bottom): what was decided in the last 30 days, with what was chosen, by
+  whom and the day it was decided. Each row says its state: tonight's review applies it, the night could not apply it,
+  or "applied, seen on" the day of the operations snapshot in which the site saw it applied, with its work item if it
+  has one. A row from before the site recorded that date only says the day it was decided.
+
+When you send, the site says what comes next in a single line: "Your decisions are in a pull request. Once someone
+approves it, they are applied in the next nightly review, by 05:00 at the latest, and that is when the work item is
+created." The time is the last night review among the sources sent, from the cron of its pipeline in the operations repo
+(`pipelines/` or `.github/workflows/`), shown in the viewer's own time. If it cannot read a source's cron, it gives no
+time. With `site.auto_apply` there is no pull request to approve. If a finding does not create its work item, one more
+line says why (for example, that it already has one).
 
 A package vulnerability is decided with **Accept** or **Reject**. Accept merges its pull request, which upgrades the
 package. Reject closes it and asks for a one-line reason, which stays as a comment on the pull request and in the
@@ -223,10 +232,12 @@ finding. A finding without a pull request is decided too: Accept moves it to be 
 it. The night applies it, and only if the pull request is still the finding's. If it could not, the morning summary says
 so and the row comes back to "Your decision" with the reason. The work item type does not change.
 
-Each card says **what happened** with the finding's data, for example "It happened 4 times, from 21/10 to 24/10". With
-an analysis, it says **why** it happens, what it **recommends** and what fixing it would do, and whether the night's model
-or a person wrote it (the analysis is in Spanish). Without one, it says why, and the buttons stay behind "Decide without
-analysis".
+Each card says **what happened** in plain words, with the finding's data. For a runs finding, for example: "Between 21/10
+and 24/10, 4 runs ended without the adversarial pass, the review that tries to break what was already approved. Stories:
+4.1, 4.3. Machines: mac-a, mac-b." With an analysis, it says **why** it happens, what it **recommends** and what
+fixing it would do, and whether the night's model or a person wrote it (the analysis is in Spanish). Without one, it
+says why. If the night left a proposal, it says the AI model that reviews every night wrote it, and its button is
+highlighted. The buttons to decide are always in view, under the heading **Decide**.
 
 **Archive** means "this is normal, nothing to touch". **Fix** means the night creates a work item to correct it. You
 mark an option on each card (or "Follow the recommendations" for all the analyzed ones) and then **Send for approval**:

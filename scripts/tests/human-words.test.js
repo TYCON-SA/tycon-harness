@@ -304,3 +304,40 @@ test('T51 2.79-HumanWords_UnaPalabraPorConcepto @story-2.79 @ac-41', () => {
   }
   assert.deepStrictEqual(malas, [], 'una palabra por concepto (decisión 5)');
 });
+
+// 2.79-Textos_SinPluralesAMedias
+// 🔴 Falla con: «1 paso(s)», «2 repo(s)» o «conversación(es)» en un texto del sitio, de la vista de ejecuciones o de
+//    sus registros, o el sello que dice «1 no se pudieron leer».
+test('T82 2.79-Textos_SinPluralesAMedias @story-2.79 @ac-75 — ningún texto lleva «(s)» ni «(es)»; el sello conjuga cada parte', () => {
+  const MEDIAS = /\w\((s|es|y\/ies)\)|\bel\/los\b/;
+  // el molde que reconoce la frase como la escribían las ejecuciones de antes: sin él, esos registros no se traducen
+  const DE_REGISTROS_VIEJOS = new Set(['corridas.m.gitNingunRepoAntes']);
+  const malas = [];
+  for (const [k, v] of entradas().filter(([c]) => !DE_REGISTROS_VIEJOS.has(c))) {
+    for (const idioma of ['es', 'en']) if (typeof v[idioma] === 'string' && MEDIAS.test(v[idioma])) malas.push(`${k} [${idioma}]: ${v[idioma].slice(0, 80)}`);
+  }
+  // los registros del sitio (todo su código, también el del navegador) y las frases que arma la vista de ejecuciones
+  const delSitio = (dir) => fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap((e) => (e.isDirectory()
+    ? delSitio(`${dir}/${e.name}`) : e.name.endsWith('.js') ? [`${dir}/${e.name}`] : []));
+  const archivos = [...delSitio('scripts/site'), 'scripts/nightly/dashboard/runs.js', 'scripts/metrics/run-change.js'];
+  assert.ok(archivos.includes('scripts/site/tabs/findings.js') && archivos.length > 10, `control: el recorrido del sitio encontró ${archivos.length} archivos`);
+  for (const rel of archivos) {
+    for (const s of cadenas(leer(rel))) if (MEDIAS.test(s)) malas.push(`${rel}: ${s.slice(0, 80)}`);
+  }
+  assert.deepStrictEqual(malas, [], 'plurales a medias');
+  // el sello: con 1 ilegible y 2 duplicados, cada parte con su número
+  const RUNS = require(path.join(ROOT, 'scripts', 'nightly', 'dashboard', 'runs.js'));
+  const os = require('os');
+  const vacia = fs.mkdtempSync(path.join(os.tmpdir(), 'hw-t82-'));
+  try {
+    const M = RUNS.modelo(vacia, { buzon: vacia, soloBuzon: true, sinUnificar: true });
+    Object.assign(M, { archivos: 5, duplicados: 2, ilegibles: 1 });
+    assert.match(RUNS.cabecera(M, { sitio: { rol: 'maintainer', version: '1' } }), /0 de 5 archivos · 2 duplicados · 1 no se pudo leer/);
+    Object.assign(M, { duplicados: 1, ilegibles: 3 });
+    assert.match(RUNS.cabecera(M, { sitio: { rol: 'maintainer', version: '1' } }), /0 de 5 archivos · 1 duplicado · 3 no se pudieron leer/);
+    Object.assign(M, { archivos: 1, duplicados: 0, ilegibles: 0 });
+    assert.match(RUNS.cabecera(M, { sitio: { rol: 'maintainer', version: '1' } }), /0 de 1 archivo · 0 duplicados · 0 no se pudieron leer/);
+  } finally { fs.rmSync(vacia, { recursive: true, force: true }); }
+  // con {n} = 1, la vista elige el singular, como ya hace su navegador
+  assert.strictEqual(TEXTS.t('es', 'corridas.v.pasosSinMarca1', { n: 1 }), '1 paso sin marca');
+});

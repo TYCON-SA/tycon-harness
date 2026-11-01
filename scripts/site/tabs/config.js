@@ -477,7 +477,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       const lista = conAcceso && doc && !(isObject(doc.site) && Array.isArray(doc.site.access)) ? people.listaDeAcceso(doc) : null;
       // lo que no se pudo leer queda afuera de la lista: se dice, para que nadie quede sin entrar sin saberlo (también si
       // no quedó nadie y no hay lista para proponer)
-      const ojo = lista && lista.descartados ? M('config.ojoCorreos', { n: lista.descartados }) : '';
+      const ojo = lista && lista.descartados ? M(lista.descartados === 1 ? 'config.ojoCorreos1' : 'config.ojoCorreos', { n: lista.descartados }) : '';
       if (lista && lista.entradas.length) {
         const site = clone(isObject(doc.site) ? doc.site : {});
         delete site.maintainers;
@@ -661,7 +661,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       const okGh = gh.length === 2 && sumar({ platform: 'github', org: gh[0], repo: gh[1] });
       if (!okAdo && !okGh) ignoradas++;
     }
-    if (ignoradas) motivos.push(M('config.reposIgnorados', { n: ignoradas }));
+    if (ignoradas) motivos.push(M(ignoradas === 1 ? 'config.reposIgnorados1' : 'config.reposIgnorados', { n: ignoradas }));
     if (isObject(doc)) {
       for (const k of ['public', 'profile', 'operations']) sumar(doc[k]);
       if (isObject(doc.merge_suites) && Array.isArray(doc.merge_suites.repos)) for (const e of doc.merge_suites.repos) sumar(isObject(e) ? e.repo : null);

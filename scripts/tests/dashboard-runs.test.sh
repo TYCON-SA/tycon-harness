@@ -529,9 +529,9 @@ for CASO in '4|Implementar + pruebas' 'implement|Implementar'; do
   volcado "${T}/r" "${S1}" "" '{"marker":{"startedAt":"2026-10-22T14:10:37.000Z","stepsCompleted":[0,1,2,3],"stepTimings":{"0":{"startedAt":"2026-10-22T14:10:37.000Z","completedAt":"2026-10-22T14:11:16.000Z"},"1":{"completedAt":"2026-10-22T14:13:46.000Z"},"2":{"startedAt":"2026-10-22T14:14:03.000Z","completedAt":"2026-10-22T14:49:12.000Z"},"3":{"completedAt":"2026-10-22T14:50:03.000Z"},"4":null,"5":null,"6":null,"7":null,"8":null,"'"${PASO}"'":{"startedAt":"2026-10-22T14:50:03.600Z","completedAt":null},"0b":{"startedAt":"2026-10-22T14:10:45.000Z"}}}}'
   generar "${T}/r" "${T}/o.html" "${T}/log"
   grep -q "quedó en ${NOMBRE}<" "${T}/o.html" && ok "T22b (${PASO}) la fila dice «quedó en ${NOMBRE}»" || mal "T22b (${PASO}) la fila no dice «quedó en ${NOMBRE}»: $(grep -o 'quedó en [^<]*' "${T}/o.html" | head -1)"
-  grep -q "${NOMBRE} quedó sin terminar; [1-9] paso(s) no se llegaron a correr\"" "${T}/o.html" && ok "T22b (${PASO}) la trama dice qué quedó sin terminar y cuántos no corrieron" || mal "T22b (${PASO}) la trama no lo dice: $(grep -o 'title="[^"]*sin terminar[^"]*"' "${T}/o.html" | head -1)"
+  grep -Fq "${NOMBRE} quedó sin terminar; " "${T}/o.html" && grep -Eq "sin terminar; ([2-9] pasos no se llegaron|1 paso no se llegó) a correr\"" "${T}/o.html" && ok "T22b (${PASO}) la trama dice qué quedó sin terminar y cuántos no corrieron" || mal "T22b (${PASO}) la trama no lo dice: $(grep -o 'title="[^"]*sin terminar[^"]*"' "${T}/o.html" | head -1)"
   D="$(cliente "${T}/o.html" detail 0)"
-  grep -q "quedó en ${NOMBRE}" <<< "${D}" && grep -q "${NOMBRE} quedó sin terminar; [1-9] paso(s) no se llegaron a correr" <<< "${D}" && ok "T22b (${PASO}) el detalle dice lo mismo" || mal "T22b (${PASO}) el detalle no lo dice"
+  grep -q "quedó en ${NOMBRE}" <<< "${D}" && grep -Fq "${NOMBRE} quedó sin terminar; " <<< "${D}" && grep -Eq "sin terminar; ([2-9] pasos no se llegaron|1 paso no se llegó) a correr" <<< "${D}" && ok "T22b (${PASO}) el detalle dice lo mismo" || mal "T22b (${PASO}) el detalle no lo dice"
   rm -rf "${T}"
 done
 
@@ -547,17 +547,17 @@ caso_22c() {  # $1 nombre · $2 parche del marcador · $3 «quedó en» esperado
 }
 BASE22='"stepsCompleted":[0,1,2,3],"stepTimings":{"0":{"startedAt":"2026-10-22T14:10:37.000Z","completedAt":"2026-10-22T14:11:16.000Z"},"1":{"completedAt":"2026-10-22T14:13:46.000Z"},"2":{"startedAt":"2026-10-22T14:14:03.000Z","completedAt":"2026-10-22T14:49:12.000Z"},"3":{"completedAt":"2026-10-22T14:50:03.000Z"},"4":null,"5":null,"6":null,"7":null,"8":null'
 caso_22c 'sin paso a medias: «no se llegaron a correr», sin nombrar ninguno' \
-  '{"marker":{"startedAt":"2026-10-22T14:10:37.000Z",'"${BASE22}"'}}}' 'Aprobar el plan' '4 paso(s) no se llegaron a correr'
+  '{"marker":{"startedAt":"2026-10-22T14:10:37.000Z",'"${BASE22}"'}}}' 'Aprobar el plan' '4 pasos no se llegaron a correr'
 caso_22c 'un arranque viejo sin cierre, anterior a lo terminado, no es el paso en curso' \
-  '{"marker":{"startedAt":"2026-10-22T14:10:37.000Z",'"${BASE22}"',"1":{"startedAt":"2026-10-22T14:12:00.000Z","completedAt":null}}}}' 'Aprobar el plan' '4 paso(s) no se llegaron a correr; 1 paso(s) sin marca'
+  '{"marker":{"startedAt":"2026-10-22T14:10:37.000Z",'"${BASE22}"',"1":{"startedAt":"2026-10-22T14:12:00.000Z","completedAt":null}}}}' 'Aprobar el plan' '4 pasos no se llegaron a correr; 1 paso sin marca'
 caso_22c 'una fecha de arranque inválida no cuenta como arrancado' \
-  '{"marker":{"startedAt":"2026-10-22T14:10:37.000Z",'"${BASE22}"',"4":{"startedAt":"ayer"}}}}' 'Aprobar el plan' '3 paso(s) no se llegaron a correr'
+  '{"marker":{"startedAt":"2026-10-22T14:10:37.000Z",'"${BASE22}"',"4":{"startedAt":"ayer"}}}}' 'Aprobar el plan' '3 pasos no se llegaron a correr'
 caso_22c 'otra vuelta de revisores, arrancada después de cerrar Hallazgos' \
-  '{"marker":{"startedAt":"2026-10-22T14:10:37.000Z","stepsCompleted":[0,1,2,3,4,5,6],"stepTimings":{"5":{"startedAt":"2026-10-22T16:00:00.000Z","completedAt":"2026-10-22T15:00:00.000Z"},"6":{"completedAt":"2026-10-22T15:30:00.000Z"},"7":null,"8":null}}}' 'Revisores' 'Revisores quedó sin terminar; 1 paso(s) no se llegaron a correr'
+  '{"marker":{"startedAt":"2026-10-22T14:10:37.000Z","stepsCompleted":[0,1,2,3,4,5,6],"stepTimings":{"5":{"startedAt":"2026-10-22T16:00:00.000Z","completedAt":"2026-10-22T15:00:00.000Z"},"6":{"completedAt":"2026-10-22T15:30:00.000Z"},"7":null,"8":null}}}' 'Revisores' 'Revisores quedó sin terminar; 1 paso no se llegó a correr'
 # la ejecución que llegó al final, con una fila sin marca: corrió, así que sigue diciendo «sin marca»
 T=$(mktemp -d); volcado "${T}/r" "${S1}" "" '{"marker":{"stepTimings":{"2":null}}}'
 generar "${T}/r" "${T}/o.html" "${T}/log"
-grep -q 'class="falta" style="width:6px" title="1 paso(s) sin marca"' "${T}/o.html" && ok "T22c la ejecución que llegó al final sigue diciendo «sin marca»" || mal "T22c la que llegó al final: $(grep -o 'class="falta"[^>]*title="[^"]*"' "${T}/o.html" | head -1)"
+grep -q 'class="falta" style="width:6px" title="1 paso sin marca"' "${T}/o.html" && ok "T22c la ejecución que llegó al final sigue diciendo «sin marca»" || mal "T22c la que llegó al final: $(grep -o 'class="falta"[^>]*title="[^"]*"' "${T}/o.html" | head -1)"
 rm -rf "${T}"
 
 # ── T23 · sin hora de inicio, las evaluaciones NO desaparecen ─────────────────────────────────
@@ -611,7 +611,7 @@ done
 # una tabla que nombra sólo algunos pasos: los que tiene, por nombre; los demás por número, y el motivo dice cuáles
 printf "module.exports = { stepName: (i) => (i === 'implement' ? 'Cuatro' : null) };\n" > "${T}/parcial.js"
 R="$(node -e "const p=require('${CORR}').nombresDePasos('${T}/parcial.js');console.log(p.fuente+' · '+p.nombres.join(',')+' · '+p.motivo)" 2>&1)"
-grep -q '^tabla · 0,1,2,3,Cuatro,5,6,7,8,9 · la tabla de pasos no nombra el/los paso(s) 0, 1, 2, 3, 5, 6, 7, 8, 9' <<< "${R}" && ok "T26 tabla parcial → los nombres que tiene y el motivo de los que faltan" || mal "T26 tabla parcial dio: ${R}"
+grep -q '^tabla · 0,1,2,3,Cuatro,5,6,7,8,9 · la tabla de pasos no nombra estos pasos: 0, 1, 2, 3, 5, 6, 7, 8, 9; van por número' <<< "${R}" && ok "T26 tabla parcial → los nombres que tiene y el motivo de los que faltan" || mal "T26 tabla parcial dio: ${R}"
 rm -rf "${T}"
 
 # ── T27 · el umbral de la ficha sale de sources.json, no del cliente ──────────────────────────

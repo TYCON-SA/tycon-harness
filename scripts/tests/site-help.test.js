@@ -291,7 +291,7 @@ test('T3b Ayuda_RegistroYBajadaPorRol @story-2.41 @ac-2 @ac-5', async () => {
     const mantiene = await h.pedir('/ayuda', { cookie: await entrar(MANTIENE) });
     assert.ok(mantiene.texto.includes(HELP.TEXTOS.ledeMantiene('es')), 'la bajada de quien mantiene');
     assert.ok(registro.some((l) => /secciones que la tabla no conoce.*Una sección nueva/.test(l)), registro.join('\n'));
-    assert.ok(registro.some((l) => /no se muestran: enlace que no es https ni un ancla: otra-guia\.md/.test(l)), registro.join('\n'));
+    assert.ok(registro.some((l) => /1 enlace o imagen de la guía no se muestra: enlace que no es https ni un ancla: otra-guia\.md/.test(l)), registro.join('\n'));
     const c = await entrar(PERSONA);
     assert.ok((await h.pedir('/ayuda', { cookie: c })).texto.includes(HELP.TEXTOS.ledePersona('es')), 'la bajada de una persona');
     const img = await h.pedir(`/ayuda/capturas/${una}`, { cookie: c });

@@ -453,7 +453,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     // una poda que no pudo (el archivo ilegible, el disco) se vuelve a probar en el próximo pedido
     if (borradas < 0) return;
     configPodada = config;
-    if (borradas) registrar(`idioma: se borró la preferencia de ${borradas} persona(s) que salieron de la lista del sitio`);
+    if (borradas) registrar(`idioma: se borró la preferencia de ${borradas === 1 ? '1 persona que salió' : `${borradas} personas que salieron`} de la lista del sitio`);
   }
   /** El candado de origen de las escrituras: el `Origin` del sitio; sin él, un `Referer` del sitio o `Sec-Fetch-Site`. */
   function delSitio(req) {

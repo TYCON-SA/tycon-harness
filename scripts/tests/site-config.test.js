@@ -2040,7 +2040,7 @@ test('T6 2.40-Personas_EditaLaLista @story-2.40 @ac-6 @ac-5', async () => {
   const basura = { version: 1, owners: { default: LEAD }, site: { maintainers: ['no es un correo'] } };
   await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': basura }), config: opsBase() }) }, async ({ h, entrar }) => {
     const s = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json.secciones.find((x) => x.id === 'sitio');
-    assert.match(String(s.extras.migracion), /1 correo\(s\) .*quedaron afuera/, JSON.stringify(s.extras));
+    assert.match(String(s.extras.migracion), /1 correo .*quedó afuera/, JSON.stringify(s.extras));
   });
   // la pantalla: sumar a alguien, sumar un correo y elegir el rol, sin JSON a mano
   const sec = { id: 'sitio', titulo: 'sitio', repo: 'operaciones', estado: 'cargado', soloLectura: false, problems: [], avisos: [],
@@ -2717,7 +2717,7 @@ test('Config_ReposDeLaOrganizacion_DeLosLectoresDelSitio — los de la revisión
     // las terminaciones que ya reconoce, del lector del árbol (code-files.js), no escritas en el sitio
     assert.deepStrictEqual([tec.extras.reconocidas, tec.extras.reconocidasMotivo], [CODE_FILES.byLanguage(), null]);
     // la entrada «C» (ado sin la forma proyecto/repo) no se ofrece, y se dice
-    assert.strictEqual(tec.extras.reposMotivo, '1 entrada(s) de repos.json no nombran un repo («ado» o «github») y no se ofrecen');
+    assert.strictEqual(tec.extras.reposMotivo, '1 entrada de repos.json no nombra un repo («ado» o «github») y no se ofrece');
   });
   // sin copia de operaciones, o con la lista ilegible: lo dice, y ofrece los de team-repos.json
   const opsRota = clon({ 'operations.json': opsBase(), 'scripts/nightly/dependencies/repos.json': '{ roto' });

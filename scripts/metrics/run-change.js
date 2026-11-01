@@ -575,7 +575,7 @@ function armar({ volcado, estado }) {
   if (salida.length && !medidos.length) {
     return {
       version: VERSION, estado: 'no_medido',
-      motivo: `no se pudo mirar ninguno de los ${salida.length} repo(s) de la ejecución: ${salida.map((r) => `${r.nombre} (${r.motivo || 'sin motivo'})`).join(' · ')}`,
+      motivo: `${salida.length === 1 ? 'no se pudo mirar el repo de la ejecución' : `no se pudo mirar ninguno de los ${salida.length} repos de la ejecución`}: ${salida.map((r) => `${r.nombre} (${r.motivo || 'sin motivo'})`).join(' · ')}`,
       medido_en: new Date().toISOString(), ventana, repos: salida,
     };
   }

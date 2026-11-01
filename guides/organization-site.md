@@ -211,11 +211,20 @@ tiene cuatro bloques:
   (con `site.auto_apply` prendida, sólo aparece si la política del repo no dejó que el sitio lo apruebe solo).
   Aprobado, se aplica esa noche. Si la plataforma no contesta, lo dice una frase y las fichas quedan para decidir,
   pero no se envía nada hasta que conteste: así no se abre un pedido repetido.
-- **Ya decididas** (cerrado de entrada): lo decidido en los últimos 30 días, con qué se eligió, cuándo y quién. La
-  revisión de cada noche aplica lo que se decidió ese día; si no pudo, la fila lo dice.
-- **En marcha** (cerrado de entrada): lo ya decidido que alguien está haciendo, con el número de su tarea y a quién
-  está asignada, y las vulnerabilidades de paquetes. Cada equipo sigue la suya en su tarea y, si no puede actualizar el
-  paquete, declara la deuda en su repo, con plazo.
+- **Arreglos en curso** (cerrado de entrada): lo ya decidido que alguien está haciendo, con el número de su tarea y a
+  quién está asignada, y las vulnerabilidades de paquetes. Cada equipo sigue la suya en su tarea y, si no puede
+  actualizar el paquete, declara la deuda en su repo, con plazo. Una ficha puede estar acá y en el historial.
+- **Historial de decisiones** (cerrado de entrada, al fondo): lo decidido en los últimos 30 días, con qué se eligió,
+  quién y el día en que se decidió. Cada fila dice su estado: la aplica la revisión de esta noche, la noche no la pudo
+  aplicar, o «aplicada, vista el» día de la foto de operaciones en que el sitio la vio aplicada, con su tarea si la
+  tiene. Una fila de antes de que el sitio anotara esa fecha dice sólo el día en que se decidió.
+
+Al enviar, el sitio dice qué sigue en una sola línea: «Tus decisiones quedaron en un pull request. Cuando alguien lo
+apruebe, se aplican en la próxima revisión de la noche, a más tardar a las 05:00, y ahí se crea la tarea.» La hora es la
+de la última revisión de la noche entre las fuentes enviadas, según el cron de su pipeline en el repo de operaciones
+(`pipelines/` o `.github/workflows/`), y sale en la hora de quien mira. Si no puede leer el cron de alguna, no dice hora.
+Con `site.auto_apply` no hay pull request que aprobar. Si una ficha no crea su tarea, un renglón más dice por qué (por
+ejemplo, que ya tiene la suya).
 
 Una vulnerabilidad de paquetes se decide con **Aceptar** o **Rechazar**. Aceptar mergea su pull request, que sube el
 paquete. Rechazar lo cierra y pide un motivo de una línea, que queda como comentario del pull request y en la ficha. Una
@@ -223,9 +232,12 @@ ficha sin pull request también se decide: Aceptar la pasa a arreglar en su tare
 noche, y sólo si el pull request sigue siendo el de la ficha. Si no lo pudo aplicar, el resumen de la mañana lo dice y
 la fila vuelve a «Te toca decidir» con el porqué. El tipo del pedido de trabajo no cambia.
 
-Cada tarjeta dice **qué pasó** con los datos de la ficha, por ejemplo «Pasó 4 veces, del 21/10 al 24/10». Si hay
-análisis, dice **por qué** pasa, qué **recomienda** y qué se haría si se arregla, y aclara si lo escribió el modelo de la
-noche o una persona. Sin análisis, dice por qué no lo tiene y los botones quedan detrás de «Decidir sin análisis».
+Cada tarjeta dice **qué pasó** en llano, con los datos de la ficha. En una de ejecuciones, por ejemplo: «Entre el 21/10 y
+el 24/10, 4 ejecuciones terminaron sin el pase adversarial, la revisión que intenta romper lo que ya se aprobó.
+Historias: 4.1, 4.3. Máquinas: mac-a, mac-b.» Si hay análisis, dice **por qué** pasa, qué **recomienda** y qué
+se haría si se arregla, y aclara si lo escribió el modelo de la noche o una persona. Sin análisis, dice por qué no lo
+tiene. Si la noche dejó una propuesta, dice que la escribió el modelo de IA que revisa cada noche, y su botón queda
+resaltado. Los botones para decidir están siempre a la vista, bajo el título **Decidir**.
 
 **Archivar** quiere decir «es normal, no hay que tocar nada». **Arreglar** quiere decir que la noche crea una tarea para
 corregirlo. Marcás una opción en cada tarjeta (o «Seguir las recomendaciones» para todas las que tienen análisis) y al

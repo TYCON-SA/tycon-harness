@@ -279,7 +279,7 @@ test('Bajar_PodaLasCopiasViejas — tras un reinicio (sin «previo») la carpeta
   // se quedan: la abierta, las dos más nuevas de las otras (la reciente y la vieja más nueva), lo que se está abriendo
   // ahora y lo que no es una copia
   assert.deepStrictEqual(quedan, [path.basename(abriendoAhora), path.basename(r.carpeta), path.basename(reciente), path.basename(viejas[0]), path.basename(ajeno)].sort());
-  assert.ok(lineas.some((l) => /borradas 5 carpeta\(s\) viejas de la copia/.test(l)), lineas.join('\n'));
+  assert.ok(lineas.some((l) => /borradas 5 carpetas viejas de la copia/.test(l)), lineas.join('\n'));
   // otro reinicio con el mismo commit: abre otra y la carpeta sigue acotada
   const r2 = await COPIA.bajar({ almacen: al, dir, previo: null, log: sinLog, opcionesPoda: { demoraMs: 0, pausaMs: 0 } });
   assert.strictEqual(r2.ok, true, r2.motivo);
@@ -329,7 +329,7 @@ test('PodarCopias_PorPartes_TopePorPasada — una pasada borra hasta el tope, de
   assert.strictEqual(p.borradas.length, 5, 'hasta el tope');
   assert.strictEqual(p.quedan, 7, '15 - 3 que se conservan - 5 borradas');
   assert.ok(Date.now() - t0 >= 4 * 20 - 10, 'con la pausa entre carpeta y carpeta');
-  assert.ok(lineas.some((l) => /borradas 5 carpeta\(s\) viejas de la copia; quedan 7 para la próxima pasada/.test(l)), lineas.join('\n'));
+  assert.ok(lineas.some((l) => /borradas 5 carpetas viejas de la copia; quedan 7 para la próxima pasada/.test(l)), lineas.join('\n'));
   // la carpeta que este proceso dejó de usar se borra sin esperar la gracia
   const previo = path.join(dir, `copia-${'d'.repeat(12)}-000001`); fs.mkdirSync(previo);
   const q = await COPIA.podarCopias({ dir, actual: null, previo, log: sinLog, tope: 1, pausaMs: 0 });
@@ -637,7 +637,7 @@ test('T7c 2.34-Subir_LineaDeOrdenes @story-2.34 @ac-2 @ac-3 — la orden del tra
   const repo = repoDeJuguete();
   const ensayo = correr(['subir', '--repo', repo, '--dry-run']);
   assert.strictEqual(ensayo.status, 0, ensayo.stderr);
-  assert.match(ensayo.stdout, /prueba: \d+ archivo\(s\)/);
+  assert.match(ensayo.stdout, /prueba: \d+ archivos, /);
   const sinAz = correr(['subir', '--repo', repo, '--account', 'acmecopia', '--container', 'copia', '--url-base', 'http://127.0.0.1:9'], { TYCON_AZ_CMD: process.execPath }); // node con «account …» sale 1: un az sin sesión, también en Windows
   assert.strictEqual(sinAz.status, 1, 'sin sesión de az: rojo');
   assert.match(sinAz.stderr, /\[copia\] /);
@@ -861,7 +861,7 @@ test('T3 2.54-Bajar_IgnoraLoQueNoConoce @story-2.54 @ac-2 — una ruta sana que 
   // una foto en la que todo se ignora no se abre, y el motivo dice que hubo archivos ignorados (no «ningún archivo»)
   const nada = COPIA.leerFoto(fotoCon([{ nombre: 'pipelines/acme.yml', datos: 'x' }, { nombre: 'inbox/acme.md', datos: 'x' }]));
   assert.strictEqual(nada.ok, false);
-  assert.match(nada.motivo, /ningún archivo que el sitio lea \(2 ignorado\(s\)\)/);
+  assert.match(nada.motivo, /ningún archivo que el sitio lea \(2 ignorados\)/);
 });
 
 test('T4 2.54-Bajar_ElLogoLlegaAlSitio @story-2.54 @ac-4 — el sitio abre la foto con el logo y lo deja donde /marca/logo lo lee', async () => {
@@ -1001,4 +1001,20 @@ test('T6 2.55-Subir_ReSubidaNoPisaLaFoto @story-2.55 @ac-1 @ac-2 — la re-subid
     const c = await COPIA.bajar({ almacen: mal, dir: tmp(), previo: null, log: sinLog });
     assert.deepStrictEqual([c.ok, c.codigo], [false, 'ilegible'], `foto ${JSON.stringify(raro)}: ${c.motivo}`);
   }
+});
+
+// 2.79-Rutas_TraenLosPipelinesDeCadaFuente
+// 🔴 Falla con: la copia sin los pipelines de la noche: el sitio no sabe a qué hora corre cada revisión y no puede
+//    decir cuándo se aplica una decisión.
+test('T80 2.79-Rutas_TraenLosPipelinesDeCadaFuente @story-2.79 @ac-73 — la copia trae el pipeline de cada fuente, en Azure y en GitHub', () => {
+  for (const nombre of ['runs-review.yml', 'dependency-audit.yml', 'production-watch.yml']) {
+    for (const carpeta of ['pipelines', '.github/workflows']) {
+      assert.ok(COPIA.RUTAS.includes(`${carpeta}/${nombre}`), `${carpeta}/${nombre} no está en RUTAS`);
+    }
+  }
+  // y la foto los trae de verdad, con el resto
+  const repo = repoDeJuguete({ 'operations.json': '{"version":1}\n', 'pipelines/runs-review.yml': "schedules:\n  - cron: '0 3 * * *'\n", 'pipelines/otro.yml': 'x: 1\n' });
+  const nombres = COPIA.juntar(repo).archivos.map((a) => a.rel);
+  assert.ok(nombres.includes('pipelines/runs-review.yml'), nombres.join(', '));
+  assert.ok(!nombres.includes('pipelines/otro.yml'), 'sólo los de la noche, no la carpeta entera');
 });

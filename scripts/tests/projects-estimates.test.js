@@ -83,7 +83,7 @@ test('2.75-T29 Snapshot_SinRegistroOIlegible @story-2.75 @ac-24 — sin registro
   const sec = (h) => h.slice(h.indexOf('id="estimaciones"'));
   assert.match(sec(html(una({ estado: 'sin_registro', motivo: null, ilegibles: 0, unidad: 'hours' }))), /sin estimaciones/);
   assert.doesNotMatch(sec(html(una({ estado: 'sin_registro', motivo: null, ilegibles: 0, unidad: 'hours' }))), /0 h/, 'no ceros');
-  assert.match(sec(html(una({ estado: 'medido', motivo: null, ilegibles: 2, unidad: 'hours' }))), /2 línea\(s\) ilegible\(s\)/);
+  assert.match(sec(html(una({ estado: 'medido', motivo: null, ilegibles: 2, unidad: 'hours' }))), /2 líneas ilegibles/);
   const anterior = sec(html(una(null)));
   assert.match(anterior, /no medido/i);
   assert.doesNotMatch(anterior, /sin estimaciones/, 'una foto que no lo midió no dice «sin estimaciones»');
