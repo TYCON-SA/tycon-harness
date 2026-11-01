@@ -66,8 +66,8 @@ test('adhoc-sensitive: el carril delegado no toca lo sensible, en ningún repo',
     assert.equal(r.kind, 'adhoc-sensitive', archivo);
     assert.ok(r.reason.includes(archivo), `el motivo nombra el archivo: ${r.reason}`);
   }
-  // lo que no es sensible, por delegación: pasa
-  assert.equal(gate.computeStoryGate({ ...BASE, adhoc: delegado }).action, 'pass');
+  // lo que no es sensible, por delegación: pasa (con la lista que se le da: unas skills instaladas aparte no la alcanzan)
+  assert.equal(gate.computeStoryGate({ ...BASE, adhoc: delegado, sensitiveCheck: () => false }).action, 'pass');
   // el mismo archivo con el carril que firmó una persona: lo de siempre
   for (const via of ['terminal', 'ventana', undefined]) {
     const r = gate.computeStoryGate({ ...BASE, filePath: `${REPO}/scripts/lib/signatures.js`, adhoc: { ...delegado, via } });
@@ -75,6 +75,19 @@ test('adhoc-sensitive: el carril delegado no toca lo sensible, en ningún repo',
   }
   // y con el portón del repo apagado, el delegado tampoco
   assert.equal(gate.computeStoryGate({ ...BASE, filePath: `${REPO}/scripts/lib/signatures.js`, adhoc: delegado, gateEnabled: false }).kind, 'adhoc-sensitive');
+});
+
+// Unas skills instaladas aparte del arnés no alcanzan la lista de lo sensible: el portón no se cae, y el carril delegado
+// no toca nada. El de una persona, sin la lista, sigue como siempre.
+// 🔴 mutación: sin el resguardo → «Cannot find module» y el portón se cae en cada escritura del carril delegado.
+test('adhoc-sensitive: sin la lista de lo sensible, el carril delegado se niega y el portón no se cae', () => {
+  const delegado = { reason: 'x fix', maxFiles: 5, files: [], via: 'delegacion' };
+  const sinLista = () => { throw new Error("Cannot find module 'scripts/lib/signatures.js'"); };
+  const r = gate.computeStoryGate({ ...BASE, adhoc: delegado, sensitiveCheck: sinLista });
+  assert.equal(r.action, 'block', r.reason);
+  assert.equal(r.kind, 'adhoc-sensitive');
+  assert.ok(r.reason.includes('src/Foo.cs') && r.reason.includes('signatures.js'), `el motivo nombra el archivo y la lista: ${r.reason}`);
+  assert.equal(gate.computeStoryGate({ ...BASE, adhoc: { ...delegado, via: 'terminal' }, sensitiveCheck: sinLista }).action, 'pass');
 });
 
 // El cupo de un arreglo rápido delegado: hasta 5 archivos, pida lo que pida.
