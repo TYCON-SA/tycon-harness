@@ -1004,6 +1004,10 @@
   ],
   "allowed": [
     {
+      "words": ["arreglar"],
+      "reason": "valor de la acción «Arreglar» guardado en las decisiones del repo de operaciones, que lee la noche: no se puede renombrar; decidido por el dueño el 2026-11-01"
+    },
+    {
       "words": ["pythondontwritebytecode"],
       "reason": "variable de entorno del propio Python (PYTHONDONTWRITEBYTECODE): no se puede renombrar; decidido por el dueño el 2026-10-28"
     },
