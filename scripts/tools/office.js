@@ -62,11 +62,37 @@ const pad = (n) => String(n).padStart(2, '0');
 const localIso = (ms) => { const d = new Date(ms); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 const hhmm = (ms) => { const d = new Date(ms); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 
-// Lo que lee el dueño va sin números de historia ni de pedidos: «8.85 · », «8.85-E: », «!6008», «#842» se sacan.
-const plain = (t) => (typeof t === 'string' ? t : '')
+const DAYS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+// La hora como la dice la página: «sáb 19:36».
+const dayHhmm = (ms) => `${DAYS[new Date(ms).getDay()]} ${hhmm(ms)}`;
+const difTxt = (m) => { const a = Math.abs(m); return a < 60 ? `${a} min` : `${Math.floor(a / 60)} h ${pad(a % 60)}`; };
+
+// Lo que lee el dueño va sin números de historia ni de pedidos: «8.85 · », «8.85-E: », «!6008», «#842» se sacan. El
+// título de una historia o de una tanda lo escribió una persona: queda así, entero.
+const unnumbered = (t) => (typeof t === 'string' ? t : '')
   .replace(/^\s*\d+(?:\.\d+)+[A-Za-z]?(?:-[A-Za-z0-9]+)?\s*[·:]\s*/, '')
   .replace(/\s*[!#]\d+\b/g, '')
   .trim();
+// El texto que escribe una sesión, además, va sin nombres de archivos, rutas, ramas ni identificadores; la preposición
+// que los presentaba se va con ellos. El castellano queda: «10-12», «teórico-práctico», «y/o», «ad-hoc», «Node.js».
+const CUT = '\u0000';
+const FILE_EXT = /\.(?:c?js|mjs|tsx?|jsx|json|md|ya?ml|sh|ps1|cs|csproj|sql|html?|css|txt|log|py|lock|xml|toml|ini|env)$/i;
+const technical = (w) =>
+  (w.includes('/') && (/\/.*\//.test(w) || /^[.~/]/.test(w) || /[._-]/.test(w)))
+  || /^\.[\w][\w.-]*$/.test(w)
+  || (FILE_EXT.test(w) && /^[\w.-]+$/.test(w) && !/^[A-Z][a-z]+\.js$/.test(w))
+  || (/^[a-z0-9_]+(?:-[a-z0-9_]+)+$/.test(w) && !/^\d+(?:-\d+)+$/.test(w) && (/\d|_/.test(w) || /-.*-/.test(w)));
+const plain = (t) => unnumbered(t)
+  .split(/(\s+)/)
+  .map((tok) => {
+    const core = tok.replace(/^[«"'(]+|[»"'),;:]+$|\.$/g, '');
+    return core && technical(core) ? CUT : tok;
+  })
+  .join('')
+  .replace(new RegExp(`\\s+(?:en|de|del|a|al|con|desde|para)\\s+${CUT}`, 'g'), CUT)
+  .replace(new RegExp(`\\s*(?:${CUT}\\s*[·,:]?\\s*)+`, 'g'), ' ')
+  .replace(/\s+/g, ' ')
+  .replace(/^[\s·,:]+|[\s·,:]+$/g, '');
 
 // Una oración llana por sesión: qué está haciendo, sin el detalle técnico de /wip.
 function sentenceOf(estado, x, row) {
@@ -114,24 +140,40 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     const d = (wip.details && wip.details[i]) || {};
     const x = (wip.extra && wip.extra[i]) || {};
     const estado = stateOf(x, d.status, Boolean(coordinatorSid) && d.sid === coordinatorSid);
-    const titulo = row.work === 'no se ve qué hace' ? null : plain(row.work) || null;
+    // el título es el de la tanda que corre, entero; sin tanda, el de la historia. Sin carril ni nota no hay título.
+    const blind = row.work === 'no se ve qué hace' || x.kind === 'activity' || x.kind === 'nomarker';
+    const titulo = blind ? null : unnumbered(x.batch) || unnumbered(x.title) || plain(row.work) || null;
     const a = { nombre: row.session, estado, titulo, haciendo: sentenceOf(estado, x, row), carpeta: row.folder || null };
+    if (titulo && unnumbered(x.batch) && unnumbered(x.title)) a.historia = unnumbered(x.title);
     // una hora de fin que pasó hace más de STALE_END_MS ya no dice nada: se trata como si no hubiera hora
     const endAt = Number.isFinite(x.endAt) && nowMs - x.endAt <= STALE_END_MS ? x.endAt : null;
+    // lo que terminó y espera la cola no está atrasado: su hora pasada no se muestra. Los pedidos sin encolar no esperan
+    // la cola: siguen con su atraso.
+    // se mira la hora sin el corte de STALE_END_MS: esperar la cola más de 12 h sigue siendo esperar
+    const waiting = Number.isFinite(x.endAt) && x.endAt < nowMs && x.kind === 'entering';
     // sin hora, se dice que no la hay: un texto en el lugar de la hora parece una hora
-    if (estado !== 'coordina' && endAt == null) a.termina = 'sin hora estimada';
-    const meanwhile = plain(x.meanwhile) || plain(row.meanwhile);
+    if (waiting) a.termina = 'esperando entrar';
+    else if (estado !== 'coordina' && endAt == null) a.termina = 'sin hora estimada';
+    const meanwhile = plain(x.meanwhile);
     if (meanwhile) { a.mientras = meanwhile; a.mientrasEstado = 'trabajando'; }
     if (x.steps) { a.pasos = x.steps; a.avance = x.progress; }
-    if (endAt != null) {
-      const key = `${d.sid || row.session}|${x.storyId || ''}`;
+    a.fin = a.termina ? { hora: a.termina, dif: '', cls: '' } : null;
+    if (endAt != null && !waiting) {
+      // sin historia, la promesa es del trabajo que se declaró: otro arreglo u otra nota de la misma sesión no la hereda
+      const key = `${d.sid || row.session}|${x.storyId || `${x.kind || ''}:${x.text || ''}`}`;
       if (!kept[key]) kept[key] = { at: endAt, seen: nowMs };
       kept[key].seen = nowMs;
       a.estimadaIso = localIso(kept[key].at);
       a.pronosticoIso = localIso(endAt);
       if (x.late) a.atrasada = true;
       // la hora pasó y no terminó: el atraso es el de ahora contra la prometida, no el de la hora vieja
-      if (endAt < nowMs) { a.atrasoMin = Math.round((nowMs - kept[key].at) / 60000); a.atrasada = true; }
+      // (o contra la hora vieja, si la prometida todavía no llegó: una hora pasada nunca está en hora)
+      if (endAt < nowMs) { a.atrasoMin = Math.max(1, Math.round((nowMs - Math.min(kept[key].at, endAt)) / 60000)); a.atrasada = true; }
+      // la hora y su diferencia contra la prometida se calculan acá, una vez: todas las partes de la página dicen esto
+      const dd = a.atrasoMin > 0 ? a.atrasoMin : Math.round((endAt - kept[key].at) / 60000);
+      a.fin = a.atrasoMin > 0 || dd > 15 ? { hora: dayHhmm(endAt), dif: `+${difTxt(dd)} tarde`, cls: 'late' }
+        : dd < -15 ? { hora: dayHhmm(endAt), dif: `${difTxt(dd)} antes`, cls: 'early' }
+          : { hora: dayHhmm(endAt), dif: 'en hora', cls: 'ontime' };
     }
     a.tipo = x.kind || null;
     agents.push(a);
@@ -148,14 +190,21 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
 
   // lo pendiente es el trabajo de las filas de /wip, no la coordinadora quieta
   const items = agents.filter((a) => a.tipo).map((a) => ({
-    titulo: a.titulo || a.haciendo, quien: a.nombre, estimadaIso: a.estimadaIso || null, pronosticoIso: a.pronosticoIso || null,
+    titulo: a.titulo || a.haciendo, quien: a.nombre, estimadaIso: a.estimadaIso || null, pronosticoIso: a.pronosticoIso || null, fin: a.fin,
     estado: a.tipo === 'stalled' ? 'riesgo' : a.estado === 'espera' ? 'espera' : a.estado === 'firma' ? 'firma' : 'curso',
   }));
   for (const s of signatures) {
     if (!s || !s.title) continue;
-    items.push({ titulo: `Firma: ${plain(s.title)}`, quien: 'vos', estado: 'firma', estimadaIso: Number.isFinite(s.at) ? localIso(s.at) : null, pronosticoIso: null });
+    const at = Number.isFinite(s.at) ? s.at : null;
+    items.push({ titulo: `Firma: ${plain(s.title)}`, quien: 'vos', estado: 'firma', estimadaIso: at == null ? null : localIso(at), pronosticoIso: null, fin: at == null ? null : { hora: dayHhmm(at), dif: '', cls: '' } });
   }
-  for (const h of wip.halfway || []) items.push({ titulo: plain(String(h).split(' · limpiar:')[0]), quien: '—', estado: 'riesgo', estimadaIso: null, pronosticoIso: null });
+  // lo que quedó a medio camino: qué era, en llano, y qué hacer con eso
+  for (const h of wip.halfwayItems || []) {
+    const accion = h.cleanAfter === 'unknown' ? 'No se sabe desde cuándo se puede limpiar: preguntale a la coordinadora'
+      : Number.isFinite(h.cleanAfter) ? `Se puede limpiar después de las ${hhmm(h.cleanAfter)}` : 'Ya se puede limpiar: pedíselo a la coordinadora';
+    // el de una corrida es el título de su historia: lo escribió una persona y queda entero
+    items.push({ titulo: (h.kind === 'run' ? unnumbered(h.text) : plain(h.text)) || 'Un trabajo sin nombre', quien: '—', estado: 'riesgo', estimadaIso: null, pronosticoIso: null, fin: null, accion });
+  }
   // «te toca» es sólo lo que pide una firma o una decisión del dueño: lo demás lo hace cada sesión
   const teToca = signatures.filter((s) => s && s.title).map((s) => `Firmar: ${plain(s.title)}`);
   const meta = {
@@ -164,7 +213,7 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     extra: Math.max(0, agents.length - DESKS),
   };
   // la tabla dice lo mismo que las tarjetas, en llano
-  const rows = agents.filter((a) => a.tipo).map((a) => ({ work: a.titulo || '', state: a.mientras ? `${a.haciendo} Mientras tanto: ${a.mientras}.` : a.haciendo, end: a.pronosticoIso ? a.pronosticoIso.slice(11) : a.termina || '', session: a.nombre, folder: a.carpeta || '' }));
+  const rows = agents.filter((a) => a.tipo).map((a) => ({ work: a.titulo || '', state: a.mientras ? `${a.haciendo} Mientras tanto: ${a.mientras}.` : a.haciendo, end: a.fin ? a.fin.hora + (a.fin.dif ? ` · ${a.fin.dif}` : '') : '', session: a.nombre, folder: a.carpeta || '' }));
   return { data: { agents, items, meta, rows, free: wip.free || [], unreadable: wip.unreadable || [] }, promises: kept };
 }
 

@@ -588,6 +588,11 @@ test('parsePipelinesBlock: forma de LISTA (story-format §1.1) — antes devolv�
   assert.deepEqual(b.acsPending, [8]);
 });
 
+test('parsePipelinesBlock: el título de cada tanda, y la lista sin sangría', () => {
+  const p = checks.parsePipelinesBlock('---\nstory: "1.1"\npipelines:\n- name: A\n  title: "Con # adentro"\n  status: done\n- name: B\n  title: Sin comillas   # comentario\n  status: in-progress  # hoy\nother: x\n---\n');
+  assert.deepEqual(p.map((x) => [x.name, x.title, x.status]), [['A', 'Con # adentro', 'done'], ['B', 'Sin comillas', 'in-progress']]);
+});
+
 test('deferredAcs: AC en acs_pending de un pipeline no-done cuenta como diferido', () => {
   assert.deepEqual([...checks.deferredAcs(SAMPLE_STORY_LIST)], [8]);
   // un pipeline `done` NO difiere sus acs

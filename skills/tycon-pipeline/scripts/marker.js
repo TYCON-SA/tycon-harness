@@ -4296,6 +4296,25 @@ function sessionLiveness(sid) {
 // `doing "<qué hago>"`: lo que hace una sesión sin story (un video, una medición), para que /wip lo diga. No es un
 // permiso: no toca el portón de carril ni el ad-hoc. Otro `doing` la reemplaza; `doing clear` la borra;
 // `doing clear-orphan <sid>` borra la nota de otra sesión que ya no vive. Archivo: doing/<sid>.json { text, at }; doing.log.
+// La hora de fin que declara una sesión, «HH:MM», como fecha completa: la de hoy; la de mañana si quedaría más de 12 h
+// antes de ahora (a las 23:00, «01:30» es de mañana); la de ayer si quedaría más de 18 h después (a las 00:10, «23:30» es
+// de anoche, y ya pasó). Una hora mal escrita es null.
+function untilIso(text) {
+  const m = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(String(text || '').trim());
+  if (!m) return null;
+  const now = Date.now();
+  const d = new Date(now);
+  d.setHours(Number(m[1]), Number(m[2]), 0, 0);
+  if (d.getTime() < now - 12 * 3600 * 1000) d.setDate(d.getDate() + 1);
+  else if (d.getTime() > now + 18 * 3600 * 1000) d.setDate(d.getDate() - 1);
+  return d.toISOString();
+}
+
+// Una hora declarada que ya pasó se anota igual (puede ser a propósito), pero se avisa: /office la va a mostrar atrasada.
+function warnPastUntil(cmd, iso) {
+  if (Date.parse(iso) < Date.now()) console.error(`marker.js ${cmd}: esa hora ya pasó hoy; quedó anotada y la oficina la va a mostrar atrasada`);
+}
+
 function cmdDoing(sub, arg) {
   const dir = path.join(STATE_DIR, 'doing');
   const safe = (s) => String(s).replace(/[/\\]/g, '_');
@@ -4336,10 +4355,18 @@ function cmdDoing(sub, arg) {
     console.error('marker.js doing: el texto va de 8 a 200 caracteres — uso: marker.js doing "<qué hago>" | doing clear');
     process.exit(2);
   }
+  // `--until HH:MM`: la hora a la que la sesión dice que termina, para /wip y /office
+  const u = process.argv.indexOf('--until');
+  const endAt = u >= 0 ? untilIso(process.argv[u + 1]) : null;
+  if (u >= 0 && !endAt) {
+    console.error('marker.js doing: --until va con una hora HH:MM (por ejemplo 19:30)');
+    process.exit(2);
+  }
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(file, JSON.stringify({ text, at: new Date().toISOString() }));
-  appendLog('doing.log', { kind: 'DOING_SET', text });
-  process.stdout.write(`doing: ${text}\n`);
+  fs.writeFileSync(file, JSON.stringify({ text, at: new Date().toISOString(), ...(endAt ? { endAt } : {}) }));
+  appendLog('doing.log', { kind: 'DOING_SET', text, ...(endAt ? { endAt } : {}) });
+  if (endAt) warnPastUntil('doing', endAt);
+  process.stdout.write(`doing: ${text}${endAt ? ` (termina ${process.argv[u + 1]})` : ''}\n`);
 }
 
 function cmdAdhocClearOrphan(sid) {
@@ -4840,14 +4867,13 @@ function cmdApprovePending(argv) {
   } catch (_) { console.error(`marker.js approve-pending: ${repo || process.cwd()} no es un repo de git.`); process.exit(2); }
   let todo; let registro;
   try { todo = fs.readFileSync(path.join(repo, PA.TODO), 'utf8'); } catch (e) { console.error(`marker.js approve-pending: no pude leer ${PA.TODO} de ${repo} (${e.code || e.message}).`); process.exit(2); }
-  try { registro = fs.readFileSync(path.join(repo, PA.RECORD), 'utf8'); } catch (e) {
-    if (e.code !== 'ENOENT') { console.error(`marker.js approve-pending: no pude leer ${PA.RECORD} (${e.code || e.message}).`); process.exit(2); }
-    registro = '';
+  try { registro = PA.registroDelDisco(repo) || ''; } catch (e) {
+    console.error(`marker.js approve-pending: no pude leer el registro de aprobaciones (${e.code || e.message}).`); process.exit(2);
   }
   const pendiente = PA.pendientesAbiertos(todo).find((p) => p.codigo === id);
   if (!pendiente) { console.error(`marker.js approve-pending: ${id} no es un pendiente abierto (\`- [ ] [${id}] …\`) en ${path.join(repo, PA.TODO)}: se aprueba lo que está escrito.`); process.exit(1); }
   const leido = PA.leerRegistro(registro);
-  if (leido.ilegibles.length) { console.error(`marker.js approve-pending: ${PA.RECORD} tiene renglones que no se leen (${leido.ilegibles.join(', ')}): no se firma sobre un archivo roto.`); process.exit(1); }
+  if (leido.ilegibles.length) { console.error(`marker.js approve-pending: el registro de aprobaciones tiene renglones que no se leen (${leido.ilegibles.join(', ')}): no se firma sobre un registro roto.`); process.exit(1); }
   // en el chequeo antes de la ventana sale 1: sin eso la ventana se abre para una firma que no escribe nada
   if (leido.lineas.some((x) => !PA.motivoDe(x.valor) && x.valor.id === id)) { console.error(`✅ ${id} ya estaba aprobado: no escribí nada.`); process.exit(PREVIO ? 1 : 0); }
   let maquina = null;
@@ -4861,11 +4887,13 @@ function cmdApprovePending(argv) {
   const persona = process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona';
   const q = r.via === 'terminal' ? { tipo: 'manual', quien: persona } : quienFirmo(r, persona);
   const escrita = { ...linea, via: r.via, quien: q.quien, ...(q.delegacion ? { delegacion: q.delegacion } : {}), ...(r.sesion ? { sesion: r.sesion } : {}) };
+  // cada aprobación en su archivo: dos ramas que aprueban a la vez no chocan en el merge
+  const archivo = PA.archivoDe(escrita);
   try {
-    fs.mkdirSync(path.dirname(path.join(repo, PA.RECORD)), { recursive: true });
-    fs.appendFileSync(path.join(repo, PA.RECORD), `${JSON.stringify(escrita)}\n`);
-  } catch (e) { console.error(`🔒 marker.js approve-pending: la firma se dio, pero no pude escribir ${PA.RECORD} (${e.code || e.message}).`); process.exit(2); }
-  console.error(`✅ ${id} aprobado (${r.via}, ${escrita.quien}). Queda en ${PA.RECORD}: commitealo junto con la lista.`);
+    fs.mkdirSync(path.join(repo, PA.RECORD_DIR), { recursive: true });
+    fs.writeFileSync(path.join(repo, archivo), `${JSON.stringify(escrita)}\n`, { flag: 'wx' });
+  } catch (e) { console.error(`🔒 marker.js approve-pending: la firma se dio, pero no pude escribir ${archivo} (${e.code || e.message}).`); process.exit(2); }
+  console.error(`✅ ${id} aprobado (${r.via}, ${escrita.quien}). Queda en ${archivo}: commitealo junto con la lista.`);
   process.exit(0);
 }
 
@@ -5280,6 +5308,19 @@ function cmdAdhoc(sub, payloadJson) {
     process.stdout.write(JSON.stringify(existing, null, 2) + '\n');
     process.exit(existing ? 0 : 1);
   }
+  // `adhoc until HH:MM`: la hora a la que termina el arreglo rápido de esta sesión. No abre ni agranda el carril, así que
+  // no pide firma; sin carril no hay dónde anotarla.
+  if (sub === 'until') {
+    const until = untilIso(payloadJson);
+    if (!until) { console.error('marker.js adhoc until: va con una hora HH:MM (por ejemplo 19:30)'); process.exit(2); }
+    const existing = io.readAdhoc(STATE_DIR, SID);
+    if (!existing) { console.error('marker.js adhoc until: esta sesión no tiene un arreglo rápido abierto: no hay dónde anotar la hora'); process.exit(1); }
+    io.writeAdhoc(STATE_DIR, SID, { ...existing, until });
+    appendLog('adhoc.log', { kind: 'ADHOC_UNTIL', until });
+    warnPastUntil('adhoc until', until);
+    process.stdout.write(`adhoc: termina ${String(payloadJson).trim()}\n`);
+    process.exit(0);
+  }
   if (sub === 'clear') {
     const existing = io.readAdhoc(STATE_DIR, SID);
     try { fs.unlinkSync(io.adhocPath(STATE_DIR, SID)); } catch (e) {
@@ -5367,6 +5408,8 @@ function cmdAdhoc(sub, payloadJson) {
       via, by,
       // la hora de la firma: el portón acepta la declaración sólo con el renglón `adhoc-lane-signed` de esta hora
       firmadaEn: nowIso(),
+      // la hora de fin que declaró la sesión con `adhoc until` sigue valiendo al agrandar el carril
+      ...(existing && existing.until ? { until: existing.until } : {}),
     };
     io.writeAdhoc(STATE_DIR, destino, obj);
     // el portón de edición apagado no apaga la firma; queda igual en bypass.log, que la revisión de la noche cuenta

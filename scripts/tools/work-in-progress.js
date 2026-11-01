@@ -70,6 +70,7 @@ const PLATFORM = path.join(ROOT, 'scripts', 'lib', 'platform', 'platform.js');
 const { stateDir, claudeDir } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
 const { stepName, isDone, byId, schemeOf, pendingSteps, STEPS } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'steps.js'));
 const { tiempos } = require(path.join(ROOT, 'scripts', 'metrics', 'step-times.js'));
+const { parsePipelinesBlock } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'story-checks.js'));
 
 const TITLE_MAX = 50;
 const STALE_MS = 24 * 3600 * 1000;
@@ -119,6 +120,24 @@ function storyTitle(storyPath) {
   const line = fm && /^title:[ \t]*(.+?)\r?$/m.exec(fm[1]);
   if (!line) throw new Error('sin title: en el frontmatter');
   return line[1].trim().replace(/^["']|["']$/g, '');
+}
+
+// La tanda que corre de una story con tandas: el `title:` de la única entrada `status: in-progress` del bloque
+// `pipelines:`. Sin una sola en curso, o sin `title:`, null (la tarjeta dice el título de la story).
+function storyBatch(storyPath) {
+  let text;
+  try { text = fs.readFileSync(storyPath, 'utf8'); } catch { return null; }
+  // el bloque `pipelines:` se lee con el mismo lector que el resto del arnés: lista o mapa, con comentarios y renglones
+  // en blanco
+  const running = parsePipelinesBlock(text).filter((p) => p.status === 'in-progress');
+  return running.length === 1 && running[0].title ? running[0].title : null;
+}
+
+// La columna «Fin estimado» del arreglo rápido y de la nota: la hora que declaró la sesión (`raw`, ya leída en `ms`).
+// Una hora escrita que no se puede leer se dice; no se confunde con no haber declarado ninguna.
+function declaredEnd(raw, ms) {
+  if (Number.isFinite(ms)) return `${hhmm(ms)} (la declaró la sesión)`;
+  return raw == null || raw === '' ? 'sin estimación (no tiene pasos)' : 'hora declarada ilegible';
 }
 
 // Medianas en ms por id de paso, de los pasos medidos y sin fusionar de las corridas archivadas.
@@ -794,6 +813,9 @@ function buildWip(opts = {}) {
   const gitCtx = opts.gitCtx || { until: Date.now() + nn(opts.repoBudgetMs, GIT_BUDGET_MS), cache: new Map() };
 
   const halfway = [];
+  // lo mismo que `halfway`, como datos, para quien lo dice en llano (el comando /office): qué quedó y desde cuándo se
+  // puede limpiar (null: ya se puede)
+  const halfwayItems = [];
   const liveName = (sid) => {
     const s = sessions.get(sid);
     return s && s.alive ? (s.name || shortId(sid)) : null;
@@ -878,9 +900,12 @@ function buildWip(opts = {}) {
       const end = entering ? closedEnd(entering, m, entry, nowMs, info) : estimateEnd(m, medians, nowMs, entry, info);
       const kind = !entering ? 'pipeline' : entering.startsWith(STALLED) ? 'stalled' : 'entering';
       addRow({ work, state: step, end, session: label, folder: folderOf(sid, m.repoPath) }, sid,
-        { kind, storyId: m.storyId ? String(m.storyId) : null, endAt: info.at == null ? null : info.at, late: Boolean(info.late), ...stagesOf(m) });
+        { kind, storyId: m.storyId ? String(m.storyId) : null, title, batch: storyBatch(m.storyPath), endAt: info.at == null ? null : info.at, late: Boolean(info.late), ...stagesOf(m) });
     }
-    else halfway.push(`${work} · ${nameOf(sid)} · quedó en: ${step} · limpiar: node ${MARKER_JS} clear-session ${sid}`);
+    else {
+      halfway.push(`${work} · ${nameOf(sid)} · quedó en: ${step} · limpiar: node ${MARKER_JS} clear-session ${sid}`);
+      halfwayItems.push({ kind: 'run', text: title, cleanAfter: null });
+    }
   }
 
   // Después del cierre: `marker.js clear` borra el marcador y deja el cierre en timing-history/. Una sesión viva sin
@@ -903,7 +928,7 @@ function buildWip(opts = {}) {
     const info = {};
     const end = closedEnd(entering, m, storyEntry(m, gitCtx), nowMs, info);
     addRow({ work: `${m.storyId || '?'} · ${cut(title, TITLE_MAX)}`, state: entering, end, session: liveName(sid), folder: folderOf(sid, m.repoPath) }, sid,
-      { kind: entering.startsWith(STALLED) ? 'stalled' : 'entering', storyId: m.storyId ? String(m.storyId) : null, endAt: info.at == null ? null : info.at, late: Boolean(info.late), ...stagesOf(m) });
+      { kind: entering.startsWith(STALLED) ? 'stalled' : 'entering', storyId: m.storyId ? String(m.storyId) : null, title, batch: storyBatch(m.storyPath), endAt: info.at == null ? null : info.at, late: Boolean(info.late), ...stagesOf(m) });
   }
 
   if (stale) unreadable.push(`${stale} marcador(es) sin tocar hace más de 24 h: no cuentan (marker.js list-all los descarta)`);
@@ -932,7 +957,10 @@ function buildWip(opts = {}) {
       const parts = ['Trabajo suelto'];
       if (last !== undefined) parts.push(`sin tocar desde ${hhmm(last)}`);
       if (last !== undefined && nowMs - last > LOOSE_STALE_MS) parts.push(`¿terminó? cerralo desde su sesión: node ${MARKER_JS} adhoc clear`);
-      addRow({ work, state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label, folder: folderOf(sid) }, sid, { kind: 'loose', text: String(a.reason || '') });
+      const until = Date.parse(a.until);
+      const declared = Number.isFinite(until);
+      addRow({ work, state: parts.join(' · '), end: declaredEnd(a.until, until), session: label, folder: folderOf(sid) }, sid,
+        { kind: 'loose', text: String(a.reason || ''), endAt: declared ? until : null });
     }
     else {
       // Se limpia con `adhoc clear-orphan`, que sólo borra pasadas las 24 h sin tocarse: antes, se dice desde cuándo.
@@ -941,6 +969,7 @@ function buildWip(opts = {}) {
         try { touched = fs.statSync(file).mtimeMs; } catch (e) {
           unreadable.push(`${file}: sin fecha legible (${e.message})`);
           halfway.push(`ad-hoc «${work}» · ${nameOf(sid)} · fecha ilegible: no se sabe desde cuándo se puede limpiar`);
+          halfwayItems.push({ kind: 'adhoc', text: String(a.reason || ''), cleanAfter: 'unknown' });
           continue;
         }
       }
@@ -948,6 +977,7 @@ function buildWip(opts = {}) {
         ? `limpiar: node ${MARKER_JS} adhoc clear-orphan ${sid}`
         : `se podrá limpiar después de las ${hhmm(touched + STALE_MS)}`;
       halfway.push(`ad-hoc «${work}» · ${nameOf(sid)} · ${how}`);
+      halfwayItems.push({ kind: 'adhoc', text: String(a.reason || ''), cleanAfter: nowMs - touched > STALE_MS ? null : touched + STALE_MS });
     }
   }
 
@@ -973,13 +1003,17 @@ function buildWip(opts = {}) {
       if (!Number.isFinite(touched)) { try { touched = fs.statSync(file).mtimeMs; } catch { touched = nowMs; } }
       const how = nowMs - touched > STALE_MS ? `borrar: node ${MARKER_JS} doing clear-orphan ${sid}` : `se podrá borrar después de las ${hhmm(touched + STALE_MS)}`;
       halfway.push(`nota «${work}» · ${nameOf(sid)} · ${how}`);
+      halfwayItems.push({ kind: 'note', text: String(d.text || ''), cleanAfter: nowMs - touched > STALE_MS ? null : touched + STALE_MS });
       continue;
     }
     busy.add(sid);
     const parts = ['Anotado por la sesión'];
     if (Number.isFinite(at)) parts.push(`sin tocar desde ${hhmm(at)}`);
     if (Number.isFinite(at) && nowMs - at > LOOSE_STALE_MS) parts.push(`¿terminó? borrala desde su sesión: node ${MARKER_JS} doing clear`);
-    addRow({ work, state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label, folder: folderOf(sid) }, sid, { kind: 'note', text: String(d.text || '') });
+    const until = Date.parse(d.endAt);
+    const declared = Number.isFinite(until);
+    addRow({ work, state: parts.join(' · '), end: declaredEnd(d.endAt, until), session: label, folder: folderOf(sid) }, sid,
+      { kind: 'note', text: String(d.text || ''), endAt: declared ? until : null });
   }
 
   // sin arreglo ni nota: si lo último que tocó la sesión está en un repo que no es de su story, eso hace mientras tanto
@@ -1027,7 +1061,7 @@ function buildWip(opts = {}) {
     const s = sessions.get(sid);
     return { sid, status: s ? s.status : null, nameSource: s ? s.nameSource : null };
   });
-  return { rows, details, extra, free, idle, halfway, unreadable, wanted, internal, text: render(rows, free, noData, idle, halfway, unreadable, internal) };
+  return { rows, details, extra, free, idle, halfway, halfwayItems, unreadable, wanted, internal, text: render(rows, free, noData, idle, halfway, unreadable, internal) };
 }
 
 function render(rows, free, noData, idle, halfway, unreadable, internal = 0) {

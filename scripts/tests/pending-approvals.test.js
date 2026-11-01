@@ -384,3 +384,86 @@ test('T25 un merge que trae de la otra rama un pendiente ya aprobado allá no lo
   git('add', '-A');
   assert.strictEqual(check(d, '--staged').status, 1, 'fuera de un merge, la misma línea frena');
 });
+
+// Cada aprobación nueva en su propio archivo de la carpeta: el registro es el archivo de antes más los de la carpeta.
+// 🔴 mutación: sin leer la carpeta → una aprobación en su archivo no aprueba, y el pendiente frena.
+test('T26 el registro unido: el archivo de antes y los de la carpeta, por nombre; sin ninguno de los dos, null', (t) => {
+  const a = JSON.stringify(firmada('DEF-a'));
+  const b = JSON.stringify(firmada('DEF-b'));
+  assert.strictEqual(PA.unirRegistro(BASE, [`${b}\n`, a]), `${BASE}${b}\n${a}\n`);
+  assert.strictEqual(PA.unirRegistro('', []), '');
+  assert.strictEqual(PA.archivoDe(firmada('DEF-a')), `${PA.RECORD_DIR}/DEF-a.${firmada('DEF-a').huella}.json`);
+  assert.ok(PA.esArchivoDeLaCarpeta(PA.archivoDe(firmada('DEF-a'))));
+  for (const r of [PA.RECORD, `${PA.RECORD_DIR}/sub/x.json`, `${PA.RECORD_DIR}/x.txt`, 'otra/pending-approvals/x.json']) assert.ok(!PA.esArchivoDeLaCarpeta(r), r);
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'pendientes-'));
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  assert.strictEqual(PA.registroDelDisco(d), null);
+  fs.mkdirSync(path.join(d, PA.RECORD_DIR), { recursive: true });
+  fs.writeFileSync(path.join(d, PA.RECORD_DIR, 'z.json'), `${b}\n`);
+  fs.writeFileSync(path.join(d, PA.RECORD_DIR, 'a.json'), `${a}\n`);
+  fs.writeFileSync(path.join(d, PA.RECORD_DIR, 'nota.txt'), 'no es una aprobación');
+  assert.strictEqual(PA.registroDelDisco(d), `${a}\n${b}\n`, 'sólo los .json, en el orden de sus nombres');
+  fs.writeFileSync(path.join(d, PA.RECORD), BASE);
+  assert.strictEqual(PA.registroDelDisco(d), `${BASE}${a}\n${b}\n`);
+});
+
+test('T27 el control lee la carpeta: en el árbol y en el commit; un archivo cambiado después de firmar se nombra', (t) => {
+  const { d, git } = repo(`${LISTA}- [ ] [DEF-nuevo] algo\n`, BASE);
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  assert.strictEqual(check(d).status, 1, 'sin su aprobación frena');
+  const l = firmada('DEF-nuevo');
+  fs.mkdirSync(path.join(d, PA.RECORD_DIR));
+  fs.writeFileSync(path.join(d, PA.archivoDe(l)), `${JSON.stringify(l)}\n`);
+  const ok = check(d);
+  assert.strictEqual(ok.status, 0, ok.stderr);
+  assert.strictEqual(check(d, '--staged').status, 1, 'sin agregar, el commit no la lleva');
+  git('add', '-A');
+  const r = check(d, '--staged', '--no-local-signature');
+  assert.strictEqual(r.status, 0, r.stderr);
+  fs.writeFileSync(path.join(d, PA.archivoDe(l)), `${JSON.stringify({ ...l, id: 'DEF-otro' })}\n`);
+  const mala = check(d);
+  assert.strictEqual(mala.status, 1);
+  assert.match(mala.stderr, /huella/);
+});
+
+// El caso que lo pide: dos ramas que aprueban a la vez chocaban en el archivo de antes, y el merge pedía resolverlo a mano.
+// 🔴 mutación: approve-pending que agrega al archivo de antes → el merge de las dos ramas choca.
+test('T28 dos ramas que aprueban cada una su pendiente se mergean sin choque, y el merge pasa el control', (t) => {
+  const { d, git } = repo(LISTA, BASE);
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  const rama = git('rev-parse', '--abbrev-ref', 'HEAD').stdout.trim();
+  const abrir = (nombre, todo, l) => {
+    git('checkout', '-q', '-b', nombre, rama);
+    fs.writeFileSync(path.join(d, PA.TODO), todo);
+    fs.mkdirSync(path.join(d, PA.RECORD_DIR), { recursive: true });
+    fs.writeFileSync(path.join(d, PA.archivoDe(l)), `${JSON.stringify(l)}\n`);
+    git('add', '-A');
+    git('commit', '-q', '-m', nombre);
+  };
+  // los renglones nuevos de la lista, en lugares distintos: lo que se mide es el registro
+  abrir('una', LISTA.replace('# Pendientes\n', '# Pendientes\n- [ ] [DEF-a] de una rama\n'), firmada('DEF-a'));
+  abrir('otra', `${LISTA}- [ ] [DEF-b] de la otra\n`, firmada('DEF-b'));
+  const m = git('merge', '-q', '--no-ff', '--no-commit', 'una');
+  assert.strictEqual(m.status, 0, `el merge chocó: ${m.stdout}${m.stderr}`);
+  const r = check(d, '--staged', '--no-local-signature');
+  assert.strictEqual(r.status, 0, r.stderr);
+  git('merge', '--abort');
+  // la vara: con el archivo de antes, las mismas dos aprobaciones chocan
+  git('checkout', '-q', '-b', 'vieja-una', rama);
+  fs.appendFileSync(path.join(d, PA.RECORD), `${JSON.stringify(firmada('DEF-a'))}\n`);
+  git('commit', '-q', '-am', 'vieja-una');
+  git('checkout', '-q', '-b', 'vieja-otra', rama);
+  fs.appendFileSync(path.join(d, PA.RECORD), `${JSON.stringify(firmada('DEF-b'))}\n`);
+  git('commit', '-q', '-am', 'vieja-otra');
+  assert.notStrictEqual(git('merge', '-q', '--no-commit', 'vieja-una').status, 0, 'el archivo de antes choca: la vara está viva');
+  git('merge', '--abort');
+});
+
+test('T29 la carpeta tampoco se escribe a mano: el freno de edición para sus archivos y la carpeta misma', () => {
+  for (const f of ['/r/tasks/pending-approvals/DEF-a.0123456789abcdef.json', '/r/tasks/pending-approvals', '/r/tasks/pending-approvals/']) {
+    assert.strictEqual(sg.signedRecordKind(f), 'pending-approvals', f);
+  }
+  for (const f of ['/r/tasks/pending-approvals-notas.md', '/r/otra/pending-approvals/x.json']) assert.strictEqual(sg.signedRecordKind(f), null, f);
+  const r = sg.computeStoryGate({ filePath: '/r/tasks/pending-approvals/DEF-a.0123456789abcdef.json', gateEnabled: false, marker: null, adhoc: null });
+  assert.strictEqual(r.kind, 'pending-approvals');
+});

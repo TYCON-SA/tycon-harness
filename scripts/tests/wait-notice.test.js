@@ -778,6 +778,87 @@ test('T32 OwnerMinutes_FromTeamRepos — el plazo del dueño: owner_minutes de l
   assert.strictEqual(ownerThresholdMs({ env: { TYCON_WAIT_NOTICE_OWNER_MS: '1234' }, tree: d }).ms, 1234);
 });
 
+// ── la espera de otra sesión: un turno pedido a la coordinadora ───────────────────────────────────────────
+const sendRec = (to, message) => ({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: 'sm1', name: 'SendMessage', input: { to, message } }] }, timestamp: new Date().toISOString() });
+const toolResultRec = (id = 'sm1') => ({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: 'ok' }] }, timestamp: new Date().toISOString() });
+const peerTurn = () => [userRec('implementemos'), sendRec('Coordinadora', '¿Me das turno para el banco?\nTarda unos 6 minutos.'), toolResultRec(), agentRec('Pedí turno; espero.')];
+
+test('T33 PeerWait_Detected — el turno que termina con un mensaje a otra sesión es una espera de otra sesión', () => {
+  // 🔴 rojo: tomar como espera de otra sesión un turno que siguió trabajando después del mensaje, o uno viejo.
+  const { peerWait } = require(HOOK);
+  const w = world({});
+  const p = peerWait(transcript(w, 'p0', peerTurn()));
+  assert.ok(p, 'el turno terminó esperando a la coordinadora');
+  assert.strictEqual(p.to, 'Coordinadora');
+  assert.match(p.line, /Coordinadora: ¿Me das turno para el banco\?/);
+  assert.strictEqual(peerWait(transcript(w, 'p1', [...peerTurn().slice(0, 3), agentToolRec(), agentRec('listo')])), null, 'siguió con otra herramienta');
+  assert.strictEqual(peerWait(transcript(w, 'p2', [...peerTurn(), userRec('seguí con otra cosa'), agentRec('¿Cuál?')])), null, 'el mensaje es de un turno anterior');
+  assert.strictEqual(peerWait(transcript(w, 'p3', [userRec('x'), agentRec('¿Sigo?')])), null, 'sin mensaje a otra sesión');
+});
+
+test('T34 PeerWait_CoordinatorUntilItsOwnDeadline — con coordinadora viva, la espera de otra sesión no va al dueño al plazo del dueño sino al suyo', async () => {
+  // 🔴 rojo: avisar al dueño al plazo de siempre (30 min) una espera que es de un turno.
+  const tg = await fakeTelegram();
+  try {
+    const w = world({ api: tg.url, extraEnv: { TYCON_WAIT_NOTICE_OWNER_MS: '1500', TYCON_WAIT_NOTICE_PEER_OWNER_MS: '60000' } });
+    withCoordinator(w, 'coord');
+    session(w, 'p4', 'Beto');
+    marker(w, 'p4');
+    stop(w, 'p4', transcript(w, 'p4', peerTurn()));
+    assert.ok(await waitFor(() => logLines(w).find((l) => l.event === 'coordinator-notified')), 'le llega a la coordinadora');
+    const wf = waitFile(w, 'p4');
+    assert.strictEqual(wf.kind, 'peer');
+    assert.ok(Date.parse(wf.ownerAt) - Date.parse(wf.openedAt) >= 59000, `el plazo del dueño es el de la espera de otra sesión: ${wf.ownerAt}`);
+    const line = (coordinatorNotice(w, 'coord') || '').split('\n').find((l) => /Beto/.test(l));
+    assert.match(String(line), /Coordinadora: ¿Me das turno/);
+    await sleep(3000);
+    assert.strictEqual(tg.calls.length, 0, 'al plazo de siempre, el dueño no recibe nada');
+  } finally { await tg.close(); }
+});
+
+test('T35 PeerWait_EscalatesAtItsDeadline_NoCoordinatorUnchanged — a su plazo va al dueño; sin coordinadora, como siempre', async () => {
+  // 🔴 rojo: que la espera de otra sesión no llegue nunca al dueño, o que sin coordinadora espere de más.
+  const tg = await fakeTelegram();
+  try {
+    const w = world({ api: tg.url, extraEnv: { TYCON_WAIT_NOTICE_OWNER_MS: '60000', TYCON_WAIT_NOTICE_PEER_OWNER_MS: '2000' } });
+    withCoordinator(w, 'coord');
+    marker(w, 'p5');
+    stop(w, 'p5', transcript(w, 'p5', peerTurn()));
+    const sent = await waitFor(() => tg.calls.find((c) => c.method === 'sendMessage'));
+    assert.ok(sent, 'sin resolver a su plazo, el dueño');
+    assert.ok(logLines(w).some((l) => l.event === 'coordinator-notified'), 'antes pasó por la coordinadora');
+
+    const w2 = world({ api: tg.url, extraEnv: { TYCON_WAIT_NOTICE_PEER_OWNER_MS: '60000' } });
+    marker(w2, 'p6');
+    const before = tg.calls.length;
+    stop(w2, 'p6', transcript(w2, 'p6', peerTurn()));
+    assert.ok(await waitFor(() => tg.calls.length > before), 'sin coordinadora: Telegram al primer plazo');
+  } finally { await tg.close(); }
+});
+
+test('T36 PeerOwnerMinutes_FromTeamRepos — el plazo de la espera de otra sesión: peer_owner_minutes de la organización; inválido da 120 y el problema; la variable gana', () => {
+  const { peerOwnerThresholdMs } = require(HOOK);
+  const TR = require(path.join(ROOT, 'scripts', 'lib', 'team-repos.js'));
+  const base = { version: 1, public: { platform: 'github', org: 'acme', repo: 'h' }, profile: { platform: 'github', org: 'acme', repo: 'p' }, operations: { platform: 'github', org: 'acme', repo: 'o' } };
+  const tree = (wn) => {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'wait-notice-tree-'));
+    fs.writeFileSync(path.join(d, 'team-repos.json'), JSON.stringify(wn === undefined ? base : { ...base, wait_notice: wn }));
+    return d;
+  };
+  const d = tree({ peer_owner_minutes: 240 });
+  assert.ok(TR.parse(fs.readFileSync(path.join(d, 'team-repos.json'), 'utf8')).ok);
+  assert.strictEqual(peerOwnerThresholdMs({ env: {}, tree: d }).ms, 240 * 60000);
+  for (const malo of [{ peer_owner_minutes: 0 }, { peer_owner_minutes: 'x' }, { peer_owner_minutes: TR.WAIT_NOTICE_PEER_MAX + 1 }, { peer_owner_minutes: 2.5 }]) {
+    const t = tree(malo);
+    const p = TR.parse(fs.readFileSync(path.join(t, 'team-repos.json'), 'utf8'));
+    assert.ok(p.ok && p.sectionProblems && p.sectionProblems.wait_notice.some((x) => x.path === 'wait_notice.peer_owner_minutes'), JSON.stringify(malo));
+    const r = peerOwnerThresholdMs({ env: {}, tree: t });
+    assert.strictEqual(r.ms, 120 * 60000); assert.ok(r.problem);
+  }
+  assert.strictEqual(peerOwnerThresholdMs({ env: {}, tree: tree(undefined) }).ms, 120 * 60000);
+  assert.strictEqual(peerOwnerThresholdMs({ env: { TYCON_WAIT_NOTICE_PEER_OWNER_MS: '1234' }, tree: d }).ms, 1234);
+});
+
 test('T25 RedactBeforeCut — una credencial partida por el corte de 200 caracteres no se escapa', () => {
   const { buildMessage } = require(HOOK);
   const tok = 'ghp_' + 'A'.repeat(36);

@@ -12,12 +12,20 @@
 #       Remueve <parent>/<RepoName>--wt-<slug>. Se niega si tiene cambios sin commitear.
 #   tycon-worktree.sh list
 #       git worktree list
+#   tycon-worktree.sh slot ensure|list|take|release|pending-trust [...]
+#       Los puestos fijos del repo: atajo a work-slots.js, que también corre en Windows (guides/git-worktrees.md §8).
 #
 # bash 3.2-safe (macOS). En Windows: los comandos git crudos de la guía (idénticos).
 
 set -euo pipefail
 
 die() { echo "tycon-worktree: $*" >&2; exit 1; }
+
+# los puestos los resuelve work-slots.js, con sus propias reglas de qué repo los lleva
+if [ "${1:-}" = "slot" ]; then
+  shift
+  exec node "$(cd "$(dirname "$0")" && pwd)/work-slots.js" "$@"
+fi
 
 REPO="$(git rev-parse --show-toplevel 2>/dev/null)" || die "el cwd no es un repo git"
 NAME="$(basename "$REPO")"
@@ -33,7 +41,7 @@ case "$REPO" in
 esac
 
 CMD="${1:-}"
-[ -n "$CMD" ] || die "falta subcomando: new | merge-tree | rm | list"
+[ -n "$CMD" ] || die "falta subcomando: new | merge-tree | rm | list | slot"
 shift || true
 
 sanitize_slug() {

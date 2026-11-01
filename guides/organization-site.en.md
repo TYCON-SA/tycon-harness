@@ -537,8 +537,9 @@ be, to copy it and open the request by hand.
   giving notice. It reaches every machine. Empty, it runs, as by default; "Off for every machine" turns it off, except
   on a machine that set `TYCON_WAIT_NOTICE` (the variable wins). With a coordinator designated and alive, at the first
   deadline the wait reaches her, on her next turn, and the owner only at the second one: the minutes since the wait
-  started (30 by default), if it is still unresolved. With no coordinator, the owner gets the notice at the first
-  deadline. It lives in `team-repos.json` → `wait_notice`, in the profile repo. A maintainer reviews it.
+  started (30 by default), if it is still unresolved. When the session waits for another session (a turn it asked the
+  coordinator for), the owner hears about it at a deadline of its own (120 minutes by default). With no coordinator,
+  the owner gets the notice at the first deadline. It lives in `team-repos.json` → `wait_notice`, in the profile repo. A maintainer reviews it.
 - **Thresholds: when something is painted green or red**: the limits
   the dashboard uses to color each number; in between, yellow. It lives in `scripts/nightly/dashboard/sources.json`, in
   the operations repo. A maintainer reviews it.

@@ -6,7 +6,8 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  * ¿La lista de pendientes tiene un pendiente abierto sin aprobación?
  *
  * Abrir un pendiente lo decide la coordinadora (o la persona): un renglón `- [ ]` nuevo en `tasks/todo.md` sin su
- * aprobación firmada en `tasks/pending-approvals.jsonl` frena. La regla y el formato del registro están en
+ * aprobación firmada en el registro (`tasks/pending-approvals.jsonl` y la carpeta `tasks/pending-approvals/`, leídos
+ * juntos) frena. La regla y el formato del registro están en
  * `scripts/lib/pending-approvals.js`.
  *
  * Uso:
@@ -75,6 +76,26 @@ function deGit(repo, ref) {
   }
 }
 
+/**
+ * El registro de aprobaciones en git, unido (el archivo de antes y los de la carpeta): `commit` null es el índice, si no
+ * un commit (`HEAD`, un padre). null si no hay ni el archivo ni la carpeta.
+ */
+function registroDeGit(repo, commit) {
+  const prefijo = commit ? `${commit}:` : ':';
+  let nombres;
+  try {
+    const args = commit ? ['ls-tree', '-r', '-z', '--name-only', commit, '--', `${PA.RECORD_DIR}/`] : ['ls-files', '-z', '--', `${PA.RECORD_DIR}/`];
+    nombres = execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).split('\0').filter(PA.esArchivoDeLaCarpeta).sort();
+  } catch (e) {
+    const err = String((e && e.stderr) || '');
+    if (!/invalid object name|bad revision|unknown revision|not a valid object name/i.test(err)) throw new Error(`git: no pude listar ${PA.RECORD_DIR} (${err.trim().split('\n')[0] || (e && e.message)})`);
+    nombres = [];
+  }
+  const viejo = deGit(repo, `${prefijo}${PA.RECORD}`);
+  if (viejo == null && !nombres.length) return null;
+  return PA.unirRegistro(viejo, nombres.map((n) => deGit(repo, `${prefijo}${n}`)));
+}
+
 function delDisco(repo, rel) {
   try { return fs.readFileSync(path.join(repo, rel), 'utf8'); } catch (e) {
     if (e && e.code === 'ENOENT') return null;
@@ -110,7 +131,7 @@ function crearBase(repo) {
   try {
     const todoAntes = deGit(repo, `HEAD:${PA.TODO}`);
     if (todoAntes == null) { console.error(`⛔ check-pending-approvals: no hay ${PA.TODO} commiteado (o el repo no tiene commits): la base sale de la lista commiteada.`); return 1; }
-    r = PA.registroDelNacimiento({ antes: deGit(repo, `HEAD:${PA.RECORD}`) || '', registro: delDisco(repo, PA.RECORD) || '', todoAntes });
+    r = PA.registroDelNacimiento({ antes: registroDeGit(repo, 'HEAD') || '', registro: delDisco(repo, PA.RECORD) || '', todoAntes });
     if (r.error) { console.error(`⛔ check-pending-approvals: ${r.error}. No escribí nada.`); return 1; }
     fs.mkdirSync(path.dirname(path.join(repo, PA.RECORD)), { recursive: true });
     fs.writeFileSync(path.join(repo, PA.RECORD), r.texto);
@@ -132,13 +153,13 @@ function main(argv) {
   try {
     todo = o.staged ? deGit(o.repo, `:${PA.TODO}`) : delDisco(o.repo, PA.TODO);
     if (todo == null) { console.log(`check-pending-approvals: no hay ${PA.TODO}: nada que revisar`); return 0; }
-    registro = (o.staged ? deGit(o.repo, `:${PA.RECORD}`) : delDisco(o.repo, PA.RECORD)) || '';
+    registro = (o.staged ? registroDeGit(o.repo, null) : PA.registroDelDisco(o.repo)) || '';
     if (o.staged) {
-      const antes = deGit(o.repo, `HEAD:${PA.RECORD}`) || '';
+      const antes = registroDeGit(o.repo, 'HEAD') || '';
       const todoAntes = deGit(o.repo, `HEAD:${PA.TODO}`) || '';
       // sólo se lee el registro del arnés si el commit agrega líneas y la firma se busca: sin eso no hay qué leer
       const leer = registro !== antes && !o.sinFirmaLocal;
-      const otrosPadres = padresDelMerge(o.repo).map((ref) => ({ registro: deGit(o.repo, `${ref}:${PA.RECORD}`) || '', todo: deGit(o.repo, `${ref}:${PA.TODO}`) || '' }));
+      const otrosPadres = padresDelMerge(o.repo).map((ref) => ({ registro: registroDeGit(o.repo, ref) || '', todo: deGit(o.repo, `${ref}:${PA.TODO}`) || '' }));
       nuevas = PA.revisarNuevas({ antes, despues: registro, renglones: leer ? renglonesDeLaCuenta() : [], todoAntes, todoDespues: todo, sinFirmaLocal: o.sinFirmaLocal, otrosPadres });
     }
   } catch (e) {
@@ -167,7 +188,7 @@ function main(argv) {
     for (const p of r.repetidos) out.push(`   · ${p.codigo || p.clave} (renglón ${p.numero})`);
   }
   if (r.rotas.length) {
-    out.push(`⛔ ${PA.RECORD} tiene línea(s) que no valen:`);
+    out.push(`⛔ el registro de aprobaciones (${PA.RECORD} y ${PA.RECORD_DIR}/) tiene línea(s) que no valen:`);
     for (const x of r.rotas) out.push(`   · línea ${x.numero}${x.id ? ` (${x.id})` : ''}: ${x.motivo}`);
   }
   if (nuevas.length) {

@@ -60,6 +60,13 @@ tope.
 cada worktree nuevo pide su propia aprobación. En la práctica, la primera vez que la coordinadora abre una sesión en un worktree nuevo, `open` contesta
 que falta aprobar la carpeta.
 
+**Por eso, los puestos fijos.** Con `--repo <repo>` en lugar de `--cwd`, `open` no usa una carpeta nueva: toma un puesto
+libre del repo y abre la sesión ahí, en la rama del trabajo (`--branch <rama>`, o `wt/<nombre>`). Hay tantos puestos
+como el tope y siempre son las mismas carpetas, así que el dueño los aprueba una sola vez:
+`node scripts/tools/work-slots.js pending-trust` le lista los que faltan, cada uno con su `cd`. Sin puesto libre, `open`
+lo dice y no abre. El encargo le dice a la sesión cómo soltar el puesto al terminar; si el lanzador falla, el puesto
+vuelve a quedar libre. Cómo son los puestos: `guides/git-worktrees.md` §8.
+
 **Sin medir todavía, queda como prueba del dueño:** cuánto tarda en aparecer una sesión abierta de fondo, y qué título
 muestra la pestaña del editor después de `/rename`. La guía no da por hecho ninguna de las dos.
 

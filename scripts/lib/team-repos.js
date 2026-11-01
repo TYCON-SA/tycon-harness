@@ -94,8 +94,10 @@ const ESTIMATES_HOURS_PER_DAY = [1, 24];
 // El plazo del aviso de espera: minutos enteros de 1 a 120. Lo lee scripts/hooks/wait-notice.js.
 // `minutes`: el plazo; `enabled`: si el aviso de espera corre en las máquinas de la organización (sin valor, sí; la
 // variable TYCON_WAIT_NOTICE de una máquina, si está puesta, gana).
-const WAIT_NOTICE_KEYS = ['minutes', 'owner_minutes', 'enabled'];
+const WAIT_NOTICE_KEYS = ['minutes', 'owner_minutes', 'peer_owner_minutes', 'enabled'];
 const WAIT_NOTICE_MAX = 120;
+// la espera de otra sesión (un turno pedido a la coordinadora) llega al dueño mucho más tarde: hasta un día de trabajo
+const WAIT_NOTICE_PEER_MAX = 480;
 // El umbral de cobertura de las líneas tocadas: un entero de 1 a 100. Lo lee
 // skills/tycon-pipeline/scripts/lib/test-gate-report.js, después de TYCON_COVERAGE_MIN de la máquina y antes del 75.
 const COVERAGE_KEYS = ['min_touched_lines_pct'];
@@ -519,6 +521,11 @@ function waitNoticeProblems(value) {
       out.push({ path: `wait_notice.${k}`, message: `tiene que ser un número entero de minutos, de 1 a ${WAIT_NOTICE_MAX} (es ${JSON.stringify(m)})` });
     }
   }
+  // `peer_owner_minutes`: el del dueño cuando la sesión espera a otra sesión (un turno) y hay coordinadora
+  const peer = value.peer_owner_minutes;
+  if (peer !== undefined && !(Number.isInteger(peer) && peer >= 1 && peer <= WAIT_NOTICE_PEER_MAX)) {
+    out.push({ path: 'wait_notice.peer_owner_minutes', message: `tiene que ser un número entero de minutos, de 1 a ${WAIT_NOTICE_PEER_MAX} (es ${JSON.stringify(peer)})` });
+  }
   if (value.enabled !== undefined && typeof value.enabled !== 'boolean') {
     out.push({ path: 'wait_notice.enabled', message: `tiene que ser true o false (es ${JSON.stringify(value.enabled)})` });
   }
@@ -750,7 +757,7 @@ function privateRepoRef(data) {
   return `${m.project}/_git/${m.repo}`;
 }
 
-module.exports = { VERSION, PLATFORMS, CONNECTORS, connectorOf, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, MODEL_LEVELS, PROVIDERS, NIGHTLY_PROVIDERS, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, modelsProblems, reviewProblems, modelsAboveCeiling, modelsOutsideAllowed, nightlyLevel, suitesWithoutPipeline, suitesWithRule, stackProblems, weeklyReviewProblems, estimatesProblems, ESTIMATES_UNITS, ESTIMATES_HOURS_PER_DAY, parse, load, url, privateRepoRef, repoProblems, identityKey, harnessCopies, mergeSuitesFor };
+module.exports = { VERSION, PLATFORMS, CONNECTORS, connectorOf, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, MODEL_LEVELS, PROVIDERS, NIGHTLY_PROVIDERS, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, modelsProblems, reviewProblems, modelsAboveCeiling, modelsOutsideAllowed, nightlyLevel, suitesWithoutPipeline, suitesWithRule, stackProblems, weeklyReviewProblems, estimatesProblems, ESTIMATES_UNITS, ESTIMATES_HOURS_PER_DAY, WAIT_NOTICE_PEER_MAX, parse, load, url, privateRepoRef, repoProblems, identityKey, harnessCopies, mergeSuitesFor };
 
 if (require.main === module) {
   const args = process.argv.slice(2);
