@@ -157,13 +157,13 @@ Cada artefacto **se commitea al repo**, al lado del código: versionado, con his
 cada punto de revisión se puede lanzar una pasada adversarial que verifica la concordancia entre los
 tres niveles — que un cambio en una story no rompa la arquitectura ni el PRD, y al revés.
 
-No todo pasa por la ceremonia completa: para un arreglo urgente o un cambio chico con alcance claro
-está la **rama corta**, sin PRD ni arquitectura formal. **La ceremonia escala con el riesgo.**
+No todo pasa por la ceremonia completa: para un cambio chico está el **camino rápido** (abajo). El papel lo decide
+el tamaño; quién aprueba, el riesgo.
 
 ### La medida justa: cuánto papel lleva cada cambio
 
 **El tamaño y el riesgo definen el flujo:** el tamaño decide si va por historia o por camino rápido; el riesgo decide
-quién firma y cuánta revisión lleva cada parte. La medida la fija cada equipo.
+quién aprueba.
 
 Lo que leíste arriba es SDD: la spec antes que el código. Nuestra opinión, después de usarlo, es que hace falta
 **exactamente cuando el resultado no se puede juzgar mirándolo**: cuando necesitás una lista de criterios para
@@ -179,63 +179,40 @@ historia por historia, con la medida justa**: cada historia es su propia especif
 se escribe en la historia, y el documento de producto y la arquitectura no se vuelven a tocar salvo que una historia
 los cambie de verdad. Son **dos preguntas**, independientes, que se contestan **antes de tocar código**:
 
-**1. ¿Historia o camino rápido? Lo decide el tamaño real.** Si lo que tiene que quedar se dice en una frase, se
-verifica mirando el resultado y las pruebas, y entra en una sesión, va por **camino rápido**: un cambio sin historia,
-con el motivo escrito, una firma y un cupo de archivos que escribe quien firma (8 de fábrica; 5 como mucho cuando
-firma la coordinadora —una sesión de agente que el equipo designa, y a la que el perfil le delega sólo las firmas de
-rutina—). El camino rápido es lo que la guía de firmas llama arreglo rápido (la firma `adhoc-lane`); la
-rama corta de BMAD es cómo se escribe ese cambio. Si necesita criterios para saber si está completo, o varias
-sesiones, o varias partes, va por **historia**: criterios de aceptación, pruebas con nombre, archivos que toca. La
-historia es la especificación; se valida antes de programar, manda sobre el código y al cerrar se cruza criterio por
-criterio. El documento de producto y la arquitectura, escritos al arrancar, son el punto de partida: no se reescriben
-con cada cambio, sólo cuando una historia los cambia de verdad. Lo juzga quien abre el trabajo, porque un programa no
-puede medir un cambio que todavía no existe; lo que el programa verifica después es lo mecánico: que no se toque
-código sin historia ni camino rápido declarado, y que el cambio respete su cupo.
+**1. ¿Historia o camino rápido? Lo decide el tamaño.** La pregunta es si es un cambio chico: lo pedís en una frase y,
+al terminar, ves que quedó con sólo mirar el resultado y sus pruebas, sin una lista de criterios.
 
-**2. ¿Quién firma? Lo decide el riesgo.** Lo que no es rutina lo firma **el dueño**: vos, o quien responde por el
-repo en un equipo. Riesgo alto es tocar un freno, un control, producción o un archivo de la lista de lo sensible —eso
-lo mide un programa—, o traer una decisión del dueño —eso lo juzga quien abre el trabajo, y lo escribe—. Sin ninguna
-señal, riesgo normal. Ante la duda, la casilla más estricta. En un equipo, las firmas de rutina las puede dar en
-nombre del dueño **la coordinadora**, si el perfil se las delega.
+- **Sí: camino rápido.** El papel es el motivo en una línea y la lista de archivos. Un motivo con varios temas no es
+  un camino rápido: son varios, o es una historia.
+- **No: historia.** Lleva criterios, pruebas con nombre, el plan aprobado antes de programar y la revisión al cerrar.
+  También va por historia lo que necesita varias sesiones o espera a alguien de afuera.
+- **Si el camino rápido crece**, se cierra el carril, el código queda en su rama y se escribe la historia que lo
+  retoma.
 
-| | Riesgo normal (si el perfil lo delega) | Riesgo alto |
+**2. ¿Quién aprueba? Lo decide el riesgo.** El riesgo es **alto** cuando el cambio toca algo sensible del repo, como
+producción, una migración o seguridad. También cuando trae una decisión del dueño: alcance, seguridad, una dependencia
+nueva, plata, clientes u otras personas. Ante la duda, riesgo alto. **El dueño** es la persona que tu organización
+designa para aprobar lo delicado. Si trabajás solo, el dueño sos vos.
+
+| | Riesgo normal | Riesgo alto |
 |---|---|---|
-| **Camino rápido** | Firma la coordinadora, con el motivo y el cupo, y avisa al dueño | Firma el dueño |
-| **Historia** | El plan lo aprueba la coordinadora, sólo con el «aprobado» de la revisión automática | El plan lo aprueba el dueño |
+| **Camino rápido** | Lo abre la coordinadora, con la lista de archivos, y le avisa al dueño. Hasta 5 archivos | Lo abre el dueño. Corren los revisores que aplican y el pase adversarial. Hasta 8 archivos |
+| **Historia** | El plan lo aprueba la coordinadora, sólo si la revisión automática del plan dio «aprobado» | El plan lo aprueba el dueño |
 
-**El plan aprobado antes de programar se queda, siempre.** Ningún plan se aprueba solo: lo aprueba una persona, o la
-coordinadora con la revisión automática en «aprobado». Y hay cosas que son **siempre de una persona**, sin importar
-el tamaño ni el riesgo: cada pase a producción, un criterio que ninguna prueba puede correr, apagar un control o
-saltear una revisión. El commit y el push los firma una persona o, en un equipo, la coordinadora en nombre del dueño,
-sólo si nada de lo tocado es sensible, la corrida terminó limpia y el aviso le llegó.
+Sin coordinadora, porque trabajás solo o tu organización no la usa, lo de la coordinadora lo hace el dueño. El plan
+nunca se aprueba solo.
 
-**Cuánta revisión lleva cada parte.** Los revisores que corren los elige un programa mirando qué tocó el cambio, no
-el modelo. El pase adversarial —un segundo grupo que intenta romper lo que el primero aprobó— corre en toda historia
-salvo en las chicas (hasta seis archivos, sin base de datos, sin rutas sensibles, sin tandas, sin alcance firmado con
-un cliente y con pocas líneas nuevas) y en las de sólo documentación o pruebas; cada repo puede forzarlo siempre para sus rutas compartidas.
-Saltearlo cuando corresponde lo firma el dueño y deja constancia.
+**3. Guardar.** Siempre es un sí en la ventana de permiso, en los dos caminos. Antes de cada commit, push y pull
+request el agente pregunta «¿guardo?», y con un sí guarda. No hay firma ni comando.
 
-**Qué queda en la persona y qué en el arnés.** La persona decide el camino y juzga el riesgo que no es mecánico,
-aprueba el plan y cada pase a producción, firma el commit y el push —o deja que la coordinadora lo haga en su nombre
-cuando nada es sensible— y decide ante un hallazgo crítico. El arnés niega el código sin carril, exige la prueba
-antes que el código, elige y cuenta los revisores, mide el riesgo mecánico, cruza cada criterio al cerrar y deja
-constancia de cada firma: quién, por qué vía y cuándo.
+**4. La revisión.** En una historia corren los revisores que elige un script según lo que toca el cambio, y el pase
+adversarial. El pase también corre en las partes chicas de una historia grande. No corre en una historia chica de
+riesgo bajo, de hasta 6 archivos, ni en un cambio que es sólo documentación o pruebas. En un camino rápido también
+hay pruebas: se escribe la prueba antes del código y se corren antes de guardar, porque el cambio se verifica
+mirando el resultado y sus pruebas. No hay revisores ni pase, salvo con riesgo alto. Las pruebas van antes del código: en una historia, el arnés frena el primer
+archivo de código si antes no se tocó una prueba; en un camino rápido, avisa al guardar si fue al revés.
 
-**Un ejemplo, con un combo (una lista desplegable).** *«El combo de provincia tiene que mostrar el nombre completo
-en vez de la sigla»*: se dice en una frase, se verifica abriendo el combo y con una prueba, entra en una sesión, no
-toca nada sensible. **Camino rápido, riesgo normal**: la coordinadora firma el permiso con el motivo y los dos o tres
-archivos, y avisa. *«El combo trae las opciones de la base por un servicio nuevo, filtra mientras escribís y recuerda
-la última elección»*: ¿qué muestra sin resultados?, ¿cuántas trae?, ¿dónde recuerda y por cuánto tiempo?, ¿quién
-puede verlas? Eso son criterios, y hay pruebas con nombre para cada uno. **Historia**: plan aprobado antes de
-programar; si recordar la elección pide una migración de base o toca permisos, la historia es de riesgo alto y ese
-plan lo aprueba el dueño.
-
-**Cada equipo fija la medida.** La proporción no viene fija: desde el sitio de la organización (pestaña
-Configuración, con un pedido de cambio) cada equipo dice qué firma su dueño y qué delega, en qué máquinas, y los
-plazos de los avisos; y en cada repo, qué rutas fuerzan el pase adversarial (su archivo `.tycon/advisors.yaml`). Con
-un **piso que no se baja**: lo delegado es sólo rutina (una firma de excepción puesta como delegada no pasa la
-validación del perfil); saltear una revisión, apagar un control y producción nunca se delegan; el commit y el push,
-sólo si nada de lo tocado es sensible; el plan nunca se aprueba solo; y las constancias no se escriben a mano.
+Los frenos, los controles y las firmas de control del arnés son de quien lo mantiene.
 
 ### La story: la unidad que el arnés sabe leer
 
@@ -347,18 +324,18 @@ Pasan dos cosas. La primera: te cobran el turno anterior — los dos medidores a
 fui de largo y cuánto te dejé esperando, y lo entregan ahora *(`response-style-notice.js` ·
 `blocking-notice.js`)*.
 
-La segunda es la que gobierna el resto del día: se decide el **carril**. Hay dos, y cambian todo lo
+La segunda es la que gobierna el resto del día: se decide el **camino**. Hay dos, y cambian todo lo
 que sigue:
 
-- **Carril de story** — esto es trabajo de una story con spec. Se abre el **marcador** (un archivo
+- **Historia** — esto es trabajo de una story con spec. Se abre el **marcador** (un archivo
   de estado que dice *"hay una story en curso, es ésta"*), arranca el timer, y de ahí en más los
   frenos de edición saben contra qué verificar.
-- **Carril de ajuste puntual** — un arreglo chico, declarado como tal y con constancia. Menos
-  ceremonia, pero deja rastro.
+- **Camino rápido** — un cambio chico: se abre el **carril**, con el motivo en una línea y la lista de
+  archivos. Menos ceremonia, pero deja rastro.
 
 Sin uno de los dos, no se toca código. Ése es el portón del Momento 4.
 
-**Por qué**: decidir el carril por **expresiones regulares** sobre lo que escribís no funciona. El castellano
+**Por qué**: decidir el camino por **expresiones regulares** sobre lo que escribís no funciona. El castellano
 no se deja regexear — *"no quiero saltear el pipeline"* se lee como *"salteemos el pipeline"*, y
 cada arreglo produce la falla opuesta (medido: tres fallas en tres días, con ~120 líneas de
 patrones). Por eso decide un modelo barato 🧠 leyendo tus prompts reales. Y como toda pieza que
@@ -383,14 +360,14 @@ Arranque               → ¿sesión fresca? ¿repo limpio? ¿qué esfuerzo pide
                          arranca el reloj y la tarea pasa a Activa en Azure DevOps
 Validar la historia    → ¿está bien escrita? ¿los ACs son verificables?
 Armar el plan          → BMAD planifica la implementación
-⏸ Aprobar el plan      → VOS APROBÁS EL PLAN
+⏸ Aprobar el plan      → la coordinadora o el dueño, según el riesgo
 Implementar            → con portón de build
 Correr las pruebas
 Revisores              → en paralelo; el set se computa mecánicamente según qué tocó el diff
                          (si hubo arreglos, vuelven a correr: «Revisores, otra vuelta»)
 Pase adversarial       → un segundo grupo intenta romper lo que el primero aprobó;
                          la prueba con la que lo rompió entra a la suite como regresión
-⏸ Hallazgos            → reporte consolidado; VOS APROBÁS LOS HALLAZGOS
+⏸ Hallazgos            → reporte consolidado; un hallazgo crítico lo decide una persona
 Probar en vivo         → portón de "listo" de verdad: ¿esto ANDA, o sólo compila?
 Preparar el commit     → no lo ejecuta
 Cierre en ADO          → cierra el work item (aparte, después del merge)
@@ -406,9 +383,8 @@ después permite contestar *"¿y cómo sabés que corrieron de verdad?"*.
 la cosa anda —un llamado real contra el backend, una matriz por cada criterio de aceptación— y
 verifica **contra qué backend corrió** y si ese commit está en el servidor.
 
-**Y hay un cuarto modo, opt-in**: `--autonomous`. No cambia quién aprueba (el plan, el commit y
-producción siguen siendo de una persona, o de la coordinadora en su nombre donde el perfil lo
-delega): agrega un portón que **no deja que el turno termine** mientras el "listo" esté en rojo,
+**Y hay un cuarto modo, opt-in**: `--autonomous`. No cambia quién aprueba (el plan, según el riesgo; guardar,
+siempre tu sí en la ventana de permiso; producción, de una persona): agrega un portón que **no deja que el turno termine** mientras el "listo" esté en rojo,
 obligando a iterar probar→arreglar→volver a probar. Con tres frenos para que no sea un loop infinito: tope de
 iteraciones, detección de no-progreso (los mismos fallos N veces → escala a humano) y un botón de
 pánico. Sólo actúa si lo pediste explícitamente.
@@ -417,7 +393,7 @@ pánico. Sólo actúa si lo pediste explícitamente.
 saltear los otros tres **en silencio**. Si la lista canónica vive en un archivo, no siempre lo lee
 entero, y nada avisa. Por eso el set lo computa un script y un hook cuenta las invocaciones reales.
 
-**Cómo se cuenta**: *"pido una story, apruebo el plan, apruebo los hallazgos. Todo lo del medio lo
+**Cómo se cuenta**: *"pido una story, alguien aprueba el plan antes de programar, y con mi sí se guarda. Todo lo del medio lo
 hace solo, y hay revisores especializados que miran el código antes que yo — y no los elige el
 modelo, los elige un script."*
 
@@ -429,7 +405,7 @@ Cada edición de archivo pasa por una cadena de seis frenos, en este orden:
 
 | El freno | Qué impide | (script) |
 |---|---|---|
-| **el portón de carril** | tocar código sin una story ni un marcador de ajuste puntual | `on-story-gate` |
+| **el portón de carril** | tocar código sin una historia ni un carril de camino rápido | `on-story-gate` |
 | **el que no te deja fabricar la evidencia** | inventar la prueba que después desbloquea el cierre de la story | `on-dod-evidence-guard` |
 | **el que custodia el "listo"** | marcar una story como terminada sin cumplir el listado de cierre | `on-frontmatter-write` |
 | **el que exige el test primero** | escribir el primer archivo de código antes que su test | `on-atdd-preedit` |
@@ -715,7 +691,7 @@ https://www.bizuit.com/sdd-harness/more/
 
 ## Qué NO hace el arnés — la pregunta que siempre sigue
 
-- **No decide por vos.** Los tres puntos de aprobación del pipeline son bloqueantes, y las reglas
+- **No decide por vos.** El plan lo aprueba una persona, o la coordinadora con riesgo normal; guardar pide tu sí; y las reglas
   que la minería propone se aprueban de a una.
 - **No garantiza que el código esté bien.** Garantiza que lo que aprendimos a la mala no se vuelva a
   olvidar, y que cuando algo sale mal quede el rastro de por dónde pasó.
@@ -755,14 +731,14 @@ frase.
 | **marcador** | archivo de estado que dice "hay una story en curso, es ésta" |
 | **AC** | criterio de aceptación (*acceptance criteria*), en formato dado/cuando/entonces |
 | **encabezado** (*frontmatter*) | el bloque de metadatos del principio de un archivo de story |
-| **carril** | por dónde va el trabajo: story completa o ajuste puntual |
+| **carril** | el permiso para editar código sin historia en un camino rápido: el motivo en una línea y la lista de archivos |
 | **DoD** | *definition of done*: la lista explícita de qué significa "listo" para esta story, escrita para que un script pueda verificar cada ítem |
 | **desvío** (*drift*) | cuando el código y la spec quedan desincronizados |
 | **SDD** | *spec-driven development*: la spec antes que el código, y el código la sirve |
 | **BMAD** | el framework de agentes que produce y mantiene las specs |
-| **dueño** | quien responde por el repo y firma lo que no es rutina |
-| **coordinadora** | la sesión de agente que el equipo designa; firma en nombre del dueño sólo lo que el perfil le delega |
-| **camino rápido** | un cambio chico sin historia, con motivo escrito, cupo de archivos y firma; la guía de firmas lo llama arreglo rápido |
+| **dueño** | la persona que tu organización designa para aprobar lo delicado; si trabajás solo, el dueño sos vos |
+| **coordinadora** | la sesión de agente que el equipo designa: con riesgo normal abre el camino rápido (hasta 5 archivos, avisándole al dueño) y aprueba el plan si la revisión automática dio «aprobado»; sin coordinadora, lo hace el dueño |
+| **camino rápido** | un cambio chico sin historia: el motivo en una línea y la lista de archivos |
 | **ADO** | Azure DevOps, donde viven los work items |
 | **banco de pruebas** | los casos que disparan los controles reales para verificar que bloquean lo que dicen |
 | **smoke** | prueba mínima contra el sistema corriendo de verdad, no contra el build |
