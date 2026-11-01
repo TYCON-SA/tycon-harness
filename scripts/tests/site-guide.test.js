@@ -37,7 +37,10 @@ const PARTES = [
 const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 
 // La huella de la parte de instalación (desde «Qué hace falta antes» hasta el final). Si la instalación cambia a
-// propósito, se cambia acá con el motivo en el mismo commit. La de hoy dice cómo entra el sitio en GitHub (une directo,
+// propósito, se cambia acá con el motivo en el mismo commit. La de hoy dice cuándo sale la invitación de Microsoft (en el
+// primer ciclo del sitio, o cuando alguien entra si está dormido), que Microsoft no reenvía el correo a una dirección
+// invitada hace poco y qué hacer entonces, y que el correo puede caer en spam, con su remitente;
+// antes decía cómo entra el sitio en GitHub (une directo,
 // prende la unión automática o el pedido queda para aprobar a mano), donde antes decía que todavía no entraba solo;
 // antes sumaba que una organización puede no pedir el
 // revisor en sus repos de producto, y entonces «Proponer» queda apagado ahí; antes sumaba «Invitar a alguien» y «El permiso de
@@ -56,8 +59,8 @@ const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 // línea «cambio aplicado» del registro, que ya no lleva el correo de quien propone; y, en inglés, sin el nombre castellano
 // de los botones entre paréntesis.
 const HUELLA_INSTALACION = {
-  es: '66471b67e90e80c6fd5c216893b9a73e696867a2a2ea44d4c2d799f6e0873bc3',
-  en: 'b46ac8e6ae271b4cf17a01aaa2c9ba7b03aaf4a2258eefc3e69e3ba26dfda641',
+  es: '44cf95df5b1c1629a8adf07a09452c30074f61f5fbe08f6b3a445303b1057c84',
+  en: 'a797bef610885d43ff463206a5c2890b800ebfd3d46f3f98377ca6b7af8bd3f0',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {
