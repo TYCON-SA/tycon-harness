@@ -14,6 +14,9 @@
  * Con una coordinadora designada y viva (y que no sea la sesión que espera), al plazo la espera le llega a ella, una
  * línea en su próximo turno (scripts/hooks/coordination-notice.js), y a los canales recién al plazo del dueño
  * (30 minutos desde la apertura; `wait_notice.owner_minutes`; `TYCON_WAIT_NOTICE_OWNER_MS`), si sigue sin resolver.
+ * Si el turno terminó con un mensaje a otra sesión (un turno pedido a la coordinadora), la espera es de esa sesión y no
+ * de la persona: con coordinadora viva, al dueño recién a su propio plazo (120 minutos; `wait_notice.peer_owner_minutes`;
+ * `TYCON_WAIT_NOTICE_PEER_OWNER_MS`). Sin coordinadora, como cualquier otra espera.
  *
  *   Stop (también con stop_hook_active) · PreToolUse de las tres herramientas que esperan a la persona ·
  *   Notification con permission_prompt                                        → abre la espera
@@ -46,6 +49,7 @@ const SKILL_LIB = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib');
 const NOTIFY = path.join(ROOT, 'scripts', 'lib', 'notify.js');
 const DEFAULT_MINUTES = 5;
 const DEFAULT_OWNER_MINUTES = 30;
+const DEFAULT_PEER_OWNER_MINUTES = 120;
 const STALE_MS = 12 * 3600 * 1000;
 const ALIVE_MARGIN_MS = 2 * 60 * 1000;
 const LINE_MAX = 200;
@@ -199,6 +203,26 @@ function backgroundPending(tp) {
   return [...launched].some((id) => !done.has(id));
 }
 
+/**
+ * `{ to, line }` si el turno terminó esperando a otra sesión: la última herramienta del agente desde el último prompt
+ * de la persona es un mensaje a otra sesión. Si después usó otra herramienta, siguió trabajando; null.
+ */
+function peerWait(tp) {
+  const recs = readRecords(tp);
+  let last = null;
+  for (let i = recs.length - 1; i >= 0; i--) {
+    if (isGenuineUserPrompt(recs[i])) break;
+    const msg = recs[i].message || recs[i];
+    if ((msg.role || recs[i].type) !== 'assistant' || !Array.isArray(msg.content)) continue;
+    const uses = msg.content.filter((b) => b && b.type === 'tool_use');
+    if (uses.length) { last = uses[uses.length - 1]; break; }
+  }
+  if (!last || last.name !== 'SendMessage' || !last.input || !String(last.input.to || '').trim()) return null;
+  const to = String(last.input.to).trim();
+  const first = usefulLines(last.input.message)[0];
+  return { to, line: `la respuesta de ${to}${first ? `: ${first}` : ''}` };
+}
+
 // ── el plazo ─────────────────────────────────────────────────────────────────────────────────────────────────────
 /** `{ data, problem }`: la sección `wait_notice` de `team-repos.json` de la organización, o `data: null` si no hay. Un
  *  problema de la sección se devuelve con `data: null`: quien pregunta sigue con lo de fábrica, y lo dice. */
@@ -233,17 +257,29 @@ function thresholdMs({ env = process.env, tree, homeDir } = {}) {
   return Number.isInteger(m) ? { ms: m * 60000, problem: null } : def;
 }
 
+/** `{ ms, problem }`: un plazo del dueño desde la apertura: la variable de la máquina, si no la clave de la organización,
+ *  si no los minutos de fábrica. */
+function ownerDeadlineMs({ env, tree, homeDir, variable, key, minutes }) {
+  const def = { ms: minutes * 60000, problem: null };
+  const v = env[variable];
+  if (v !== undefined && /^\d+$/.test(String(v)) && Number(v) > 0) return { ms: Number(v), problem: null };
+  if (v !== undefined && String(v) !== '') return { ms: def.ms, problem: `${variable}: tiene que ser un número de milisegundos (es ${JSON.stringify(String(v)).slice(0, 40)})` };
+  const org = orgWaitNotice({ env, tree, homeDir });
+  if (org.problem) return { ms: def.ms, problem: org.problem };
+  const m = org.data && org.data[key];
+  return Number.isInteger(m) ? { ms: m * 60000, problem: null } : def;
+}
+
 /** `{ ms, problem }`: el plazo del dueño cuando la espera ya le llegó a la coordinadora, contado desde la apertura. La
  *  variable de la máquina, si no `wait_notice.owner_minutes` de la organización, si no 30 minutos. */
 function ownerThresholdMs({ env = process.env, tree, homeDir } = {}) {
-  const def = { ms: DEFAULT_OWNER_MINUTES * 60000, problem: null };
-  const v = env.TYCON_WAIT_NOTICE_OWNER_MS;
-  if (v !== undefined && /^\d+$/.test(String(v)) && Number(v) > 0) return { ms: Number(v), problem: null };
-  if (v !== undefined && String(v) !== '') return { ms: def.ms, problem: `TYCON_WAIT_NOTICE_OWNER_MS: tiene que ser un número de milisegundos (es ${JSON.stringify(String(v)).slice(0, 40)})` };
-  const org = orgWaitNotice({ env, tree, homeDir });
-  if (org.problem) return { ms: def.ms, problem: org.problem };
-  const m = org.data && org.data.owner_minutes;
-  return Number.isInteger(m) ? { ms: m * 60000, problem: null } : def;
+  return ownerDeadlineMs({ env, tree, homeDir, variable: 'TYCON_WAIT_NOTICE_OWNER_MS', key: 'owner_minutes', minutes: DEFAULT_OWNER_MINUTES });
+}
+
+/** `{ ms, problem }`: lo mismo cuando la sesión espera a otra sesión: `TYCON_WAIT_NOTICE_PEER_OWNER_MS`, si no
+ *  `wait_notice.peer_owner_minutes`, si no 120 minutos. */
+function peerOwnerThresholdMs({ env = process.env, tree, homeDir } = {}) {
+  return ownerDeadlineMs({ env, tree, homeDir, variable: 'TYCON_WAIT_NOTICE_PEER_OWNER_MS', key: 'peer_owner_minutes', minutes: DEFAULT_PEER_OWNER_MINUTES });
 }
 
 /** `{ on, problem }`: si el aviso corre en esta máquina. La variable TYCON_WAIT_NOTICE, si está puesta, gana (`0` lo
@@ -458,8 +494,8 @@ function timer(sid, openedAt) {
   if (!w) return;
   const coord = coordinatorFor(sid);
   if (coord) {
-    const owner = ownerThresholdMs({});
-    if (owner.problem) logLine({ session: sid, event: 'config-problem', problem: owner.problem });   // usa 30 min, y lo dice
+    const owner = w.kind === 'peer' ? peerOwnerThresholdMs({}) : ownerThresholdMs({});
+    if (owner.problem) logLine({ session: sid, event: 'config-problem', problem: owner.problem });   // usa el de fábrica, y lo dice
     const opened = Date.parse(openedAt);
     const coordinatorAt = new Date().toISOString();
     const cur = readWait(sid);
@@ -547,7 +583,10 @@ function handle(d) {
   if (!sid) return;
   const ev = d.hook_event_name;
   const tp = d.transcript_path;
-  if (ev === 'Stop') return openWait(sid, tp, 'stop', lastAgentLine(tp));
+  if (ev === 'Stop') {
+    const peer = peerWait(tp);
+    return peer ? openWait(sid, tp, 'peer', peer.line) : openWait(sid, tp, 'stop', lastAgentLine(tp));
+  }
   if (ev === 'PreToolUse' && WAIT_TOOLS.has(d.tool_name)) return openWait(sid, tp, 'question', questionLine(d.tool_name, d.tool_input || {}));
   if (ev === 'Notification') {
     if (d.notification_type && d.notification_type !== 'permission_prompt') return;
@@ -586,7 +625,7 @@ function noteFindingsWait(sid, which = 'noteFindingsWait') {
   return true;
 }
 
-module.exports = { WAIT_TOOLS, stepLabel, currentStep, buildMessage, thresholdMs, ownerThresholdMs, coordinatorLines, noticeEnabled, orgWaitNotice, timerSpawnOptions, countRecords, isGenuineUserPrompt, backgroundPending, noteFindingsWait };
+module.exports = { WAIT_TOOLS, stepLabel, currentStep, buildMessage, thresholdMs, ownerThresholdMs, peerOwnerThresholdMs, peerWait, coordinatorLines, noticeEnabled, orgWaitNotice, timerSpawnOptions, countRecords, isGenuineUserPrompt, backgroundPending, noteFindingsWait };
 
 if (require.main === module) {
   try {
