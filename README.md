@@ -25,7 +25,7 @@ open models through [Ollama](guides/integrations/ollama.en.md), and with
 
 1. **Request and story:** you say what you want and the agent writes it as a story: what has to be done and how it is
    tested. A small change goes by quick path: the reason in one line and the list of files.
-2. **Approved plan:** the agent builds the plan and shows it to you; it is approved before any code is written, never by itself: with normal risk, the coordinator, only if the automatic review of the plan said "approved"; with high risk, the owner.
+2. **Approved plan:** the agent builds the plan and shows it to you; it is approved before any code is written, never by itself. Who approves depends on the risk (below).
 3. **Tests and code:** it writes the tests and the code, and runs the tests.
 4. **Review:** on a story, specialized reviewers (security, conventions, coverage) check the change before the commit; on a quick path, only with high risk.
 5. **Delivery:** the commit and the merge go through checks. Nothing is committed or pushed without your permission.
@@ -35,16 +35,30 @@ open models through [Ollama](guides/integrations/ollama.en.md), and with
 **The right measure.** When a product starts it is specified in full, once —product document, architecture, epics
 and stories—; then, story by story.
 
-- **Size decides: story or quick path.** Is it a small change? You ask for it in one sentence and, when it is done,
-  you see it came out right just by looking at the result and its tests. Then it goes by quick path: the reason in one
-  line and the list of files. If not, it goes by story: criteria, named tests, the plan approved before coding and the
-  review at the end. What needs several sessions or waits on someone outside also goes by story.
-- **Risk decides who approves.** It is high if the change touches something sensitive in the repo, such as
-  production, a migration or security, or if it brings a decision for the owner: scope, security, a new dependency,
-  money, customers or other people. When in doubt, high. With normal risk the coordinator approves, and when opening a
-  quick path it notifies the owner; with high risk, the owner. The owner is the person your organization designates to
-  approve delicate work; if you work alone, it is
-  you. Without a coordinator, the owner does the coordinator's part. The plan never approves itself.
+- **Size decides: story or quick path.** The question: is it a small change?
+  - **It is small** if you ask for it in one sentence and, when it is done, you see it came out right by looking at the
+    result and running its tests. Example: "the province dropdown shows the full name instead of the abbreviation". It
+    goes by **quick path**.
+  - **It is not small** if knowing it is complete takes a list of criteria, if it takes more than one session or if it
+    waits on someone outside. Example: "the dropdown loads its options from the database and remembers the last
+    choice". It goes by **story**.
+  - **If it bundles several topics**, it is not small: it is several quick paths, or a story.
+
+  **Who decides and who checks.** Whoever opens the work judges the size, but if you work with a coordinating session,
+  you do not decide alone: the quick path is approved by the coordinating session or you. The harness enforces it:
+  - Without an open quick path or a story, the harness **does not let you write code**.
+  - The quick path has a **file cap**: 5 if the coordinating session approved it, 8 if you did. Past it, the harness
+    **closes it** and asks for a story.
+  - A quick path with several topics in its reason **cannot be approved by the coordinating session**.
+- **Risk decides who approves.**
+  - **High risk** is when the change touches something sensitive in the repo, such as production, a migration or
+    security. Also when it brings a decision for you or your organization: scope, security, a new dependency, money,
+    customers or other people. When in doubt, high risk.
+  - **The coordinating session** is an agent session your team can use to approve routine work; it is not a person.
+  - **Who approves what:** you always approve the delicate work. With normal risk, the
+    coordinating session opens the quick path with the list of files and tells you, and approves the plan if the
+    automatic review said "approved". With high risk, you approve it. Without a coordinating session, you approve its
+    part. The plan never approves itself.
 - **Saving is the yes in the permission window, on both paths.** Before every commit, push and pull request the agent
   asks "save?", and with a yes it saves. There is no signature and no command.
 
@@ -58,14 +72,14 @@ flowchart TB
   chico -- "No · Story" --> h1
   subgraph rapido [" "]
     direction TB
-    r1["<b>Open the lane</b><br/>with the list of files<br/>normal risk: the coordinator, up to 5<br/>high risk: the owner, up to 8"] --> r2["<b>Code with the test first</b><br/>at saving, the harness warns if it was the other way round"]
+    r1["<b>Open the lane</b><br/>with the list of files<br/>normal risk: the coordinating session, up to 5<br/>high risk: you, up to 8"] --> r2["<b>Code with the test first</b><br/>at saving, the harness warns if it was the other way round"]
     r2 --> r3["<b>Run its tests</b>"]
     r3 --> r4["<b>Reviewers and adversarial pass</b><br/>only with high risk"]
   end
   subgraph historia [" "]
     direction TB
     h1["<b>Validate the story</b>"] --> h2["<b>Build the plan</b>"]
-    h2 --> h3["<b>Approve the plan</b><br/>normal risk: the coordinator, if the automatic review said «approved»<br/>high risk: the owner"]
+    h2 --> h3["<b>Approve the plan</b><br/>normal risk: the coordinating session, if the automatic review said «approved»<br/>high risk: you"]
     h3 --> h4["<b>Code with the tests first</b>"]
     h4 --> h5["<b>Run the tests</b>"]
     h5 --> h6["<b>Reviewers</b><br/>picked based on the change"]
@@ -81,7 +95,7 @@ flowchart TB
   class r4,h4,h5,h6,h7,h8,g2 control
 ```
 
-<sub>🟦 Someone decides: a person, or the coordinator with normal risk · 🟧 A control that is not skipped</sub>
+<sub>🟦 Someone decides: you, or the coordinating session with normal risk · 🟧 A control that is not skipped</sub>
 
 The checks are one part of the cycle: they guard every step. There are two ways to start it: [on your own, on your
 machine](#start-on-your-own), or [for your team](#for-teams).
