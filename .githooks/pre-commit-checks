@@ -269,10 +269,10 @@ else
 fi
 
 # ── Los pendientes nuevos de la lista, con la aprobación de la coordinadora ──
-# Un renglón `- [ ]` nuevo en tasks/todo.md entra sólo con su aprobación firmada en tasks/pending-approvals.jsonl
-# (scripts/lib/pending-approvals.js). Corre si el commit toca la lista o el registro: en el arnés no hay lista, y el
-# repo privado corre el mismo bloque. Casos: scripts/tests/pending-approvals.test.js
-if grep -qxE 'tasks/(todo\.md|pending-approvals\.jsonl)' <<<"$STAGED_ALL"; then
+# Un renglón `- [ ]` nuevo en tasks/todo.md entra sólo con su aprobación firmada en el registro: tasks/pending-approvals.jsonl
+# y un archivo por aprobación en tasks/pending-approvals/ (scripts/lib/pending-approvals.js). Corre si el commit toca la
+# lista o el registro: en el arnés no hay lista, y el repo privado corre el mismo bloque. Casos: scripts/tests/pending-approvals.test.js
+if grep -qE '^tasks/(todo\.md|pending-approvals\.jsonl|pending-approvals/)' <<<"$STAGED_ALL"; then
   echo "▸ pre-commit: pendientes nuevos de la lista…"
   if ! node "$REPO_ROOT/scripts/ci/check-pending-approvals.js" --staged --repo "$REPO_ROOT"; then
     echo "⛔ COMMIT RECHAZADO — la lista de pendientes trae un pendiente sin la aprobación de la coordinadora (motivo arriba)." >&2

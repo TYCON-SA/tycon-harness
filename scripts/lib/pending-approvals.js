@@ -3,12 +3,14 @@
  * pending-approvals.js — un pendiente nuevo en la lista de pendientes lleva una aprobación firmada.
  *
  * La lista (`tasks/todo.md`) tiene un renglón `- [ ] [CÓDIGO] …` por pendiente abierto, al principio de la línea. Un
- * pendiente abierto vale sólo si su código está en el registro de aprobaciones (`tasks/pending-approvals.jsonl`), y un
- * código va abierto una sola vez. Las líneas son de dos clases:
+ * pendiente abierto vale sólo si su código está en el registro de aprobaciones, y un código va abierto una sola vez. El
+ * registro es `tasks/pending-approvals.jsonl` (la base y las aprobaciones de antes) más un archivo por aprobación nueva en
+ * `tasks/pending-approvals/` (`<CÓDIGO>.<huella>.json`), leídos juntos. Las líneas son de dos clases:
  *   · de base (`via: "base"`): los pendientes que ya estaban abiertos cuando nació el registro. La base sólo se achica:
  *     el commit frena una línea de base nueva, salvo en el commit que crea el registro, y ahí sólo para un pendiente
  *     que ya estaba abierto antes de ese commit. La base la arma `check-pending-approvals.js --create-base`.
- *   · firmadas: las escribe `marker.js approve-pending --id <CÓDIGO>` después de la firma `pending-approval` (la
+ *   · firmadas: las escribe `marker.js approve-pending --id <CÓDIGO>`, cada una en su archivo de la carpeta, después de
+ *     la firma `pending-approval` (la
  *     coordinadora por la delegación del perfil, o la persona en la ventana de permiso o en su terminal). La huella de
  *     la línea va en el renglón `pending-approval-signed` del registro del arnés de la cuenta.
  * Un renglón abierto sin código no tiene cómo aprobarse: se le pone uno. Los cuatro sin código que ya estaban entran a
@@ -29,9 +31,15 @@
  * `open()` desde un intérprete, no.
  */
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
 const TODO = 'tasks/todo.md';
 const RECORD = 'tasks/pending-approvals.jsonl';
+// cada aprobación firmada nueva va en su propio archivo de esta carpeta: dos ramas que aprueban a la vez no tocan el
+// mismo archivo, y el merge no choca. El registro es el archivo de antes más los de la carpeta, leídos juntos
+const RECORD_DIR = 'tasks/pending-approvals';
+const ARCHIVO = /^[A-Za-z0-9._-]+\.json$/;
 const FIRMA = 'pending-approval';
 const FIRMADA = `${FIRMA}-signed`;
 const VIAS = ['delegacion', 'ventana', 'terminal'];
@@ -79,6 +87,33 @@ function lineaNueva({ id, maquina = null, ahora = Date.now() }) {
   const l = { id: String(id), ts: new Date(ahora).toISOString(), maquina: maquina || null };
   l.huella = huella(l);
   return l;
+}
+
+/** El archivo de la carpeta de una línea firmada: el código y la huella, que no se repiten. */
+const archivoDe = (l) => `${RECORD_DIR}/${l.id}.${l.huella}.json`;
+
+/** ¿La ruta (relativa al repo) es un archivo de aprobación de la carpeta? */
+const esArchivoDeLaCarpeta = (rel) => {
+  const r = String(rel || '').replace(/\\/g, '/');
+  return r.startsWith(`${RECORD_DIR}/`) && ARCHIVO.test(r.slice(RECORD_DIR.length + 1));
+};
+
+/** El registro entero en un solo texto: el archivo de antes y los de la carpeta, en el orden de sus nombres. */
+function unirRegistro(viejo, archivos = []) {
+  const partes = [String(viejo || '').replace(/\n*$/, '')];
+  for (const t of archivos) partes.push(String(t || '').replace(/\n*$/, ''));
+  const texto = partes.filter(Boolean).join('\n');
+  return texto ? `${texto}\n` : '';
+}
+
+/** El registro del disco del repo, unido; null si no hay ni el archivo de antes ni la carpeta. Lanza si no puede leer. */
+function registroDelDisco(repo) {
+  let viejo = null;
+  try { viejo = fs.readFileSync(path.join(repo, RECORD), 'utf8'); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+  let nombres = null;
+  try { nombres = fs.readdirSync(path.join(repo, RECORD_DIR)).filter((n) => ARCHIVO.test(n)).sort(); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+  if (viejo == null && nombres == null) return null;
+  return unirRegistro(viejo, (nombres || []).map((n) => fs.readFileSync(path.join(repo, RECORD_DIR, n), 'utf8')));
 }
 
 /** Por qué una línea del registro no vale, o null. */
@@ -199,6 +234,6 @@ function comandos(id, repo) {
 }
 
 module.exports = {
-  TODO, RECORD, FIRMA, FIRMADA, VIAS, claveSinCodigo, pendientesAbiertos, leerRegistro, huella, lineaNueva, motivoDe,
+  TODO, RECORD, RECORD_DIR, FIRMA, FIRMADA, VIAS, archivoDe, esArchivoDeLaCarpeta, unirRegistro, registroDelDisco, claveSinCodigo, pendientesAbiertos, leerRegistro, huella, lineaNueva, motivoDe,
   revisar, revisarNuevas, renglonesDeFirma, firmadaEnElRegistro, registroDelNacimiento, comandos,
 };

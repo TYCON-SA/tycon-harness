@@ -2014,6 +2014,7 @@ test('Pendiente_MarkerAcepta_ForSession: approve-pending se pide para otra sesi�
   assert.notStrictEqual(r.status, 0, r.stderr);
   assert.match(r.stderr, /no se aprobó DEF-nuevo/);
   assert.strictEqual(fs.existsSync(path.join(d, 'tasks', 'pending-approvals.jsonl')), false);
+  assert.strictEqual(fs.existsSync(path.join(d, 'tasks', 'pending-approvals')), false, 'ni la carpeta de un archivo por aprobación');
 });
 
 // --- el chequeo antes de la ventana -----------------------------------------------------------------------------------
@@ -2238,6 +2239,12 @@ test('Precheck_LosGuionesDeVerdad_NieganLoQueAntesNegabanDespuesDeLaFirma', (t) 
   fs.writeFileSync(path.join(rd, PA.RECORD), `${JSON.stringify({ id: 'DEF-viejo', via: 'base' })}\n`);
   niega(`node ${MARKER} approve-pending --id DEF-viejo --repo ${rd}`, /ya estaba aprobado/);
   fs.rmSync(path.join(rd, PA.RECORD));
+  // …y uno aprobado en su archivo de la carpeta, tampoco
+  const enCarpeta = { ...PA.lineaNueva({ id: 'DEF-viejo', maquina: 'abc', ahora: AHORA }), via: 'terminal', quien: 'alguien' };
+  fs.mkdirSync(path.join(rd, PA.RECORD_DIR), { recursive: true });
+  fs.writeFileSync(path.join(rd, PA.archivoDe(enCarpeta)), `${JSON.stringify(enCarpeta)}\n`);
+  niega(`node ${MARKER} approve-pending --id DEF-viejo --repo ${rd}`, /ya estaba aprobado/);
+  fs.rmSync(path.join(rd, PA.RECORD_DIR), { recursive: true });
   // preparar la prueba con navegador con una dirección que no sirve
   niega(`node ${E2E} prepare --repo ${rd} --story specs/story-9.97.md --url ftp://x`, /no es una dirección http/);
   // eximir un crítico en una corrida sin carpeta: el chequeo llega a la firma sin crearla

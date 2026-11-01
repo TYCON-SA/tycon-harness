@@ -180,7 +180,8 @@ function isControlApproval(p) {
 const ADVERSARIAL_SKIP_FILE = /(^|\/)adversarial-skips\.jsonl$/i;
 function isAdversarialSkipRecord(p) { return ADVERSARIAL_SKIP_FILE.test(norm(String(p || ''))); }
 // El registro de aprobaciones de la lista de pendientes: lo escribe sólo `marker.js approve-pending`, con la firma.
-const PENDING_APPROVALS_FILE = /(^|\/)tasks\/pending-approvals\.jsonl$/i;
+// El archivo de antes y la carpeta de un archivo por aprobación (la carpeta misma también: `cp x tasks/pending-approvals/`)
+const PENDING_APPROVALS_FILE = /(^|\/)tasks\/pending-approvals(\.jsonl$|\/|$)/i;
 function isPendingApprovalsRecord(p) { return PENDING_APPROVALS_FILE.test(norm(String(p || ''))); }
 /** ¿Es una constancia firmada que no se escribe a mano? `control-approvals`, `adversarial-skip-record`, `pending-approvals` o null. */
 function signedRecordKind(p) {

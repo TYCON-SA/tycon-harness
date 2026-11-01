@@ -4840,14 +4840,13 @@ function cmdApprovePending(argv) {
   } catch (_) { console.error(`marker.js approve-pending: ${repo || process.cwd()} no es un repo de git.`); process.exit(2); }
   let todo; let registro;
   try { todo = fs.readFileSync(path.join(repo, PA.TODO), 'utf8'); } catch (e) { console.error(`marker.js approve-pending: no pude leer ${PA.TODO} de ${repo} (${e.code || e.message}).`); process.exit(2); }
-  try { registro = fs.readFileSync(path.join(repo, PA.RECORD), 'utf8'); } catch (e) {
-    if (e.code !== 'ENOENT') { console.error(`marker.js approve-pending: no pude leer ${PA.RECORD} (${e.code || e.message}).`); process.exit(2); }
-    registro = '';
+  try { registro = PA.registroDelDisco(repo) || ''; } catch (e) {
+    console.error(`marker.js approve-pending: no pude leer el registro de aprobaciones (${e.code || e.message}).`); process.exit(2);
   }
   const pendiente = PA.pendientesAbiertos(todo).find((p) => p.codigo === id);
   if (!pendiente) { console.error(`marker.js approve-pending: ${id} no es un pendiente abierto (\`- [ ] [${id}] …\`) en ${path.join(repo, PA.TODO)}: se aprueba lo que está escrito.`); process.exit(1); }
   const leido = PA.leerRegistro(registro);
-  if (leido.ilegibles.length) { console.error(`marker.js approve-pending: ${PA.RECORD} tiene renglones que no se leen (${leido.ilegibles.join(', ')}): no se firma sobre un archivo roto.`); process.exit(1); }
+  if (leido.ilegibles.length) { console.error(`marker.js approve-pending: el registro de aprobaciones tiene renglones que no se leen (${leido.ilegibles.join(', ')}): no se firma sobre un registro roto.`); process.exit(1); }
   // en el chequeo antes de la ventana sale 1: sin eso la ventana se abre para una firma que no escribe nada
   if (leido.lineas.some((x) => !PA.motivoDe(x.valor) && x.valor.id === id)) { console.error(`✅ ${id} ya estaba aprobado: no escribí nada.`); process.exit(PREVIO ? 1 : 0); }
   let maquina = null;
@@ -4861,11 +4860,13 @@ function cmdApprovePending(argv) {
   const persona = process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona';
   const q = r.via === 'terminal' ? { tipo: 'manual', quien: persona } : quienFirmo(r, persona);
   const escrita = { ...linea, via: r.via, quien: q.quien, ...(q.delegacion ? { delegacion: q.delegacion } : {}), ...(r.sesion ? { sesion: r.sesion } : {}) };
+  // cada aprobación en su archivo: dos ramas que aprueban a la vez no chocan en el merge
+  const archivo = PA.archivoDe(escrita);
   try {
-    fs.mkdirSync(path.dirname(path.join(repo, PA.RECORD)), { recursive: true });
-    fs.appendFileSync(path.join(repo, PA.RECORD), `${JSON.stringify(escrita)}\n`);
-  } catch (e) { console.error(`🔒 marker.js approve-pending: la firma se dio, pero no pude escribir ${PA.RECORD} (${e.code || e.message}).`); process.exit(2); }
-  console.error(`✅ ${id} aprobado (${r.via}, ${escrita.quien}). Queda en ${PA.RECORD}: commitealo junto con la lista.`);
+    fs.mkdirSync(path.join(repo, PA.RECORD_DIR), { recursive: true });
+    fs.writeFileSync(path.join(repo, archivo), `${JSON.stringify(escrita)}\n`, { flag: 'wx' });
+  } catch (e) { console.error(`🔒 marker.js approve-pending: la firma se dio, pero no pude escribir ${archivo} (${e.code || e.message}).`); process.exit(2); }
+  console.error(`✅ ${id} aprobado (${r.via}, ${escrita.quien}). Queda en ${archivo}: commitealo junto con la lista.`);
   process.exit(0);
 }
 
