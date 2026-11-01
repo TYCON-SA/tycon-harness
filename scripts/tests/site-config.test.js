@@ -2415,7 +2415,7 @@ test('T17 2.36-Seccion_FichasQueMuestraElSitio @story-2.36 @ac-2 — la sección
   const vuelta = ORG.revisar({ seccion: 'fichas', texto: r.texto, borrador: { site: { maintainers: [LEAD], refresh_minutes: 15 } }, lectores: { 'operations-config.js': OPS } });
   assert.strictEqual(vuelta.texto, ORG.formatJson(base));
   const codigo = pantallaEnCastellano();
-  assert.match(codigo, /\['avisos', 'Avisos y la noche', \['canal', 'espera', 'umbrales', 'fichas', 'pedidos'\]/);
+  assert.match(codigo, /\['avisos', 'Avisos y la noche', \['canal', 'espera', 'umbrales', 'fichas', 'pedidos', 'contexto'\]/);
   assert.match(codigo, /fichas: editorFichas/);
   // en el sitio, la sección llega con las 25 fichas y su casilla
   const ops = clon({ 'operations.json': opsBase() });
@@ -4051,7 +4051,7 @@ test('T16 Config_SeccionPedidosMuestraTipoCamposYTabla_EsEn @story-4.9 @ac-10 �
   assert.deepStrictEqual([s.titulo, s.archivo, s.repo, s.lector, s.claves, s.idCorto, s.necesita], ['Pedidos de trabajo', 'operations.json', 'operaciones', 'operations-config.js', ['work_items'], 'operations', ['work_items']]);
   assert.strictEqual(ORG.lectorSabe(OPS, s), true, 'el lector de hoy conoce la clave');
   assert.strictEqual(ORG.lectorSabe({ ...OPS, KEYS: OPS.KEYS.filter((k) => k !== 'work_items') }, s), false, 'uno anterior deja la sección en «todavía no sabe leer»');
-  assert.match(pantallaEnCastellano(), /\['avisos', 'Avisos y la noche', \['canal', 'espera', 'umbrales', 'fichas', 'pedidos'\]/);
+  assert.match(pantallaEnCastellano(), /\['avisos', 'Avisos y la noche', \['canal', 'espera', 'umbrales', 'fichas', 'pedidos', 'contexto'\]/);
   for (const idioma of ['es', 'en']) {
     const sec = SEC('pedidos', { borrador: { work_items: WI_RIESGO } });
     const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), sec], idioma, hash: '#seccion-pedidos' });
@@ -6061,4 +6061,59 @@ test('T76 2.79-Firmas_PorNivelConMatrizYSinIds @story-2.79 @ac-69 — en el nave
     await navegador.close();
     await sitio.cerrar();
   }
+});
+
+test('ContextNotice_EditableOnSite @story-7.54 @ac-3 — el umbral del aviso de contexto se edita en team-repos.json, con su campo, su validación y su texto', async () => {
+  // 🔴 rojo: la sección no existe, no tiene su campo, no está en «Avisos», o un valor fuera de rango pasa sin motivo.
+  const s = ORG.seccionPorId('contexto');
+  assert.ok(s, 'hay una sección del aviso de contexto');
+  assert.deepStrictEqual([s.titulo, s.archivo, s.repo, s.lector, s.claves, s.idCorto], ['Aviso de contexto', 'team-repos.json', 'perfil', 'team-repos.js', ['context_notice'], 'repos']);
+  const rev = (cn) => ORG.revisar({ seccion: 'contexto', texto: ORG.formatJson(TR_BASE), borrador: { context_notice: cn }, lectores: { 'team-repos.js': TR } });
+  const bien = rev({ tokens: 250000 });
+  assert.strictEqual(bien.ok, true, JSON.stringify(bien.problems));
+  assert.deepStrictEqual(JSON.parse(bien.texto), { ...TR_BASE, context_notice: { tokens: 250000 } }, 'el resto del archivo igual');
+  for (const n of [50000, 950000, '300000']) {
+    const malo = rev({ tokens: n });
+    assert.strictEqual(malo.ok, false, `tokens ${JSON.stringify(n)}`);
+    assert.deepStrictEqual(malo.problems.map((p) => p.path), ['context_notice.tokens']);
+  }
+  // el perfil tiene que pedir la versión del lector que conoce la clave
+  assert.ok(ORG.CONTEXT_NOTICE_SINCE && ORG.versionAtLeast(ORG.CONTEXT_NOTICE_SINCE, ORG.ESTIMATES_SINCE));
+  assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, context_notice: { tokens: 250000 } }).version, ORG.CONTEXT_NOTICE_SINCE);
+  // el campo está en la pantalla, en «Avisos y la noche», con su texto
+  const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('contexto', { repo: 'perfil', borrador: {} })] });
+  const caja = r.creados.filter((n) => n.attrs.id === 'seccion-contexto').pop();
+  const hallados = []; const walk = (x) => { if (x.tag === 'input' && x.attrs['data-path'] === 'context_notice.tokens') hallados.push(x); (x.hijos || []).forEach(walk); }; walk(caja);
+  assert.strictEqual(hallados.length, 1, 'la sección trae el campo del umbral');
+  assert.strictEqual(r.panelDe('seccion-contexto').attrs.id, 'pestana-avisos');
+  const { TEXTOS } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  assert.ok(TEXTOS['pantalla.avisoDeContexto'] && TEXTOS['pantalla.avisoDeContextoAyuda'] && TEXTOS['pantalla.avisoDeContextoCampo'], 'los textos de la sección');
+});
+
+test('DeepReviewDefault_EditableOnSite_NoOff @story-7.54 @ac-6 — la política del pase adversarial se elige en el sitio, con dos valores y sin off', async () => {
+  // 🔴 rojo: la sección no existe, el selector ofrece «off», o un off se propone sin el motivo de la firma.
+  const s = ORG.seccionPorId('paseAdversarial');
+  assert.ok(s, 'hay una sección del pase adversarial');
+  assert.deepStrictEqual([s.titulo, s.archivo, s.repo, s.lector, s.claves, s.idCorto], ['Pase adversarial', 'team-repos.json', 'perfil', 'team-repos.js', ['deep_review'], 'repos']);
+  const rev = (dr) => ORG.revisar({ seccion: 'paseAdversarial', texto: ORG.formatJson(TR_BASE), borrador: { deep_review: dr }, lectores: { 'team-repos.js': TR } });
+  for (const v of ['always', 'auto']) {
+    const bien = rev({ default: v });
+    assert.strictEqual(bien.ok, true, JSON.stringify(bien.problems));
+    assert.deepStrictEqual(JSON.parse(bien.texto), { ...TR_BASE, deep_review: { default: v } });
+  }
+  const off = rev({ default: 'off' });
+  assert.strictEqual(off.ok, false, 'un off no se propone');
+  assert.match(off.problems.map((p) => p.message).join(' '), /firma/);
+  assert.ok(ORG.DEEP_REVIEW_SINCE && ORG.versionAtLeast(ORG.DEEP_REVIEW_SINCE, ORG.ESTIMATES_SINCE));
+  assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, deep_review: { default: 'always' } }).version, ORG.DEEP_REVIEW_SINCE);
+  // el selector: vacío (de fábrica), always y auto; nunca off
+  const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('paseAdversarial', { repo: 'perfil', borrador: {} })] });
+  const caja = r.creados.filter((n) => n.attrs.id === 'seccion-paseAdversarial').pop();
+  const selects = []; const walk = (x) => { if (x.tag === 'select' && x.attrs['data-path'] === 'deep_review.default') selects.push(x); (x.hijos || []).forEach(walk); }; walk(caja);
+  assert.strictEqual(selects.length, 1, 'la sección trae el selector');
+  const valores = selects[0].hijos.filter((h) => h.tag === 'option').map((o) => (o.attrs.value !== undefined ? o.attrs.value : o.value));
+  assert.deepStrictEqual(valores, ['', 'always', 'auto'], 'dos valores y el de fábrica; sin off');
+  assert.strictEqual(r.panelDe('seccion-paseAdversarial').attrs.id, 'pestana-claude');
+  const { TEXTOS } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  assert.ok(TEXTOS['pantalla.paseAdversarialTitulo'] && TEXTOS['pantalla.paseAdversarialAyuda'], 'los textos de la sección');
 });

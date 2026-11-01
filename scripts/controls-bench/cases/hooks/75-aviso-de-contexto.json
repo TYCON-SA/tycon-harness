@@ -1,0 +1,49 @@
+{
+  "hooks": [
+    {
+      "hook": "context-size-notice.js (el aviso de contexto: pasado el umbral de tokens, pide recomendar /clear al terminar el paso; no frena)",
+      "script": "${FIXTURE}/tcg/scripts/hooks/context-size-notice.js",
+      "event": "UserPromptSubmit",
+      "matcher": "*",
+      "env": {
+        "TYCON_CONTEXT_NOTICE_TOKENS": "300000"
+      },
+      "cases": [
+        {
+          "id": "avisa-al-cruzar-el-umbral",
+          "type": "must-emit",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/context-size-notice.js tcg/scripts/hooks/",
+            "printf '%s\\n' '{\"type\":\"user\",\"timestamp\":\"2026-01-01T10:00:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"segui\"}}' '{\"type\":\"assistant\",\"timestamp\":\"2026-01-01T10:00:05.000Z\",\"message\":{\"role\":\"assistant\",\"usage\":{\"input_tokens\":1000,\"cache_creation_input_tokens\":2000,\"cache_read_input_tokens\":307000}}}' > sesion.jsonl"
+          ],
+          "stdin": {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "bench-ctx-avisa",
+            "transcript_path": "${FIXTURE}/sesion.jsonl",
+            "prompt": "segui"
+          },
+          "expect": {
+            "stdout_re": [
+              "310 mil",
+              "/clear"
+            ]
+          }
+        },
+        {
+          "id": "quiet-debajo-del-umbral",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/context-size-notice.js tcg/scripts/hooks/",
+            "printf '%s\\n' '{\"type\":\"assistant\",\"timestamp\":\"2026-01-01T10:00:05.000Z\",\"message\":{\"role\":\"assistant\",\"usage\":{\"input_tokens\":1000,\"cache_creation_input_tokens\":2000,\"cache_read_input_tokens\":296999}}}' > sesion.jsonl"
+          ],
+          "stdin": {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "bench-ctx-calla",
+            "transcript_path": "${FIXTURE}/sesion.jsonl",
+            "prompt": "segui"
+          }
+        }
+      ]
+    }
+  ]
+}

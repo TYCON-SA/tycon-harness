@@ -91,6 +91,10 @@
           {
             "type": "command",
             "command": "node ${TCG}/scripts/hooks/guard-update-notice.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/context-size-notice.js"
           }
         ]
       }
@@ -101,6 +105,10 @@
           {
             "type": "command",
             "command": "node ${SKILLS}/skills/tycon-pipeline/scripts/on-prompt.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/context-size-notice.js"
           },
           {
             "type": "command",
