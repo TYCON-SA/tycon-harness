@@ -275,7 +275,8 @@ test('T37 LooseAndNote_DeclaredEnd_Shown: el arreglo rápido y la nota dicen su 
   for (const iso of [until, endAt]) {
     const d = new Date(iso);
     assert.deepStrictEqual([d.getHours(), d.getMinutes()], [19, 30]);
-    assert.ok(Date.parse(iso) > Date.now() - 12 * 3600000 && Date.parse(iso) <= Date.now() + 12 * 3600000, 'la de más de 12 h atrás pasa a mañana');
+    // hoy, mañana si quedaría más de 12 h atrás, ayer si quedaría más de 18 h adelante
+    assert.ok(Date.parse(iso) > Date.now() - 12 * 3600000 && Date.parse(iso) <= Date.now() + 18 * 3600000, `${iso} cae entre 12 h atrás y 18 h adelante`);
   }
   // la de más de 12 h atrás pasa a mañana: una hora 13 h antes de ahora queda en el futuro
   const back = new Date(Date.now() - 13 * 3600000);
