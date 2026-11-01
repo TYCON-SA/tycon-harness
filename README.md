@@ -44,20 +44,21 @@ and stories—; then, story by story.
     choice". It goes by **story**.
   - **If it bundles several topics**, it is not small: it is several quick paths, or a story.
 
-  **Who decides and who checks.** Whoever opens the work judges the size, but does not decide alone: the quick path is
-  approved by the coordinating session or by you. And what follows does not depend on anyone's good faith. The harness
-  enforces it:
+  **Who decides and who checks.** Whoever opens the work judges the size, but if you work with a coordinating session,
+  you do not decide alone: the quick path is approved by the coordinating session or by you. The harness enforces it:
   - Without an open quick path or a story, the harness **does not let you write code**.
   - The quick path has a **file cap**: 5 if the coordinating session approved it, 8 if you did. Past it, the harness
     **closes it** and asks for a story.
   - A quick path with several topics in its reason **cannot be approved by the coordinating session**.
-- **Risk decides who approves.** It is high if the change touches something sensitive in the repo, such as
-  production, a migration or security. Also if it brings a decision for you or your organization: scope, security, a
-  new dependency, money, customers or other people. When in doubt, high. **You always approve the delicate work**, the
-  dev who is working. The **coordinating session** is an agent session your team can use to approve routine work; it
-  is not a person. With normal risk, it opens the quick path with the list of files and lets you know; with high risk,
-  you open it. Without a coordinating session, because you work alone or your team does not use one, you approve its
-  part. The plan never approves itself.
+- **Risk decides who approves.**
+  - **High risk** is when the change touches something sensitive in the repo, such as production, a migration or
+    security. Also when it brings a decision for you or your organization: scope, security, a new dependency, money,
+    customers or other people. When in doubt, high risk.
+  - **The coordinating session** is an agent session your team can use to approve routine work; it is not a person.
+  - **Who approves what:** you always approve the delicate work, the dev who is working. With normal risk, the
+    coordinating session opens the quick path with the list of files and lets you know, and approves the plan if the
+    automatic review said "approved". With high risk, you approve it. Without a coordinating session, you approve its
+    part. The plan never approves itself.
 - **Saving is the yes in the permission window, on both paths.** Before every commit, push and pull request the agent
   asks "save?", and with a yes it saves. There is no signature and no command.
 

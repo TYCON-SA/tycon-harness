@@ -189,18 +189,21 @@ al terminar, ves que quedó con sólo mirar el resultado y sus pruebas, sin una 
 - **Si el camino rápido crece**, se cierra el carril, el código queda en su rama y se escribe la historia que lo
   retoma.
 
-**2. ¿Quién aprueba? Lo decide el riesgo.** El riesgo es **alto** cuando el cambio toca algo sensible del repo, como
-producción, una migración o seguridad. También cuando trae una decisión tuya o de tu organización: alcance, seguridad,
-una dependencia nueva, plata, clientes u otras personas. Ante la duda, riesgo alto. **Lo delicado lo aprobás siempre
-vos**, el dev que trabaja. La **sesión coordinadora** es una sesión de agente que tu equipo puede usar para aprobar lo de
-rutina; no es una persona.
+**2. ¿Quién aprueba? Lo decide el riesgo.**
+
+- **Riesgo alto** es cuando el cambio toca algo sensible del repo, como producción, una migración o seguridad. También
+  cuando trae una decisión tuya o de tu organización: alcance, seguridad, una dependencia nueva, plata, clientes u otras
+  personas. Ante la duda, riesgo alto.
+- **La sesión coordinadora** es una sesión de agente que tu equipo puede usar para aprobar lo de rutina; no es una
+  persona.
+- **Quién aprueba qué:** lo delicado lo aprobás siempre vos, el dev que trabaja. El cruce de tamaño y riesgo:
 
 | | Riesgo normal | Riesgo alto |
 |---|---|---|
 | **Camino rápido** | Lo abre la sesión coordinadora, con la lista de archivos, y te avisa. Hasta 5 archivos | Lo abrís vos. Corren los revisores que aplican y el pase adversarial. Hasta 8 archivos |
 | **Historia** | El plan lo aprueba la sesión coordinadora, sólo si la revisión automática del plan dio «aprobado» | El plan lo aprobás vos |
 
-Sin sesión coordinadora, porque trabajás solo o tu equipo no la usa, lo de la coordinadora lo aprobás vos. El plan
+Sin sesión coordinadora, porque trabajás solo o tu equipo no la usa, lo de la sesión coordinadora lo aprobás vos. El plan
 nunca se aprueba solo.
 
 **3. Guardar.** Siempre es un sí en la ventana de permiso, en los dos caminos. Antes de cada commit, push y pull

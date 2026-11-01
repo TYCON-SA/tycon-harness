@@ -43,18 +43,22 @@ El ciclo de desarrollo con IA (AI SDLC), paso por paso:
     **historia**.
   - **Si junta varios temas**, no es chico: son varios caminos rápidos, o una historia.
 
-  **Quién decide y quién controla.** El tamaño lo juzga quien abre el trabajo, pero no lo decide solo: el camino rápido
-  lo aprueba la sesión coordinadora o vos. Y lo que sigue no depende de la buena fe de nadie. Lo hace cumplir el arnés:
+  **Quién decide y quién controla.** El tamaño lo juzga quien abre el trabajo, pero si trabajás con una sesión
+  coordinadora, no lo decidís solo: el camino rápido lo aprueba la sesión coordinadora o vos. Lo hace cumplir el arnés:
   - Sin un camino rápido abierto o una historia, el arnés **no deja escribir código**.
   - El camino rápido tiene un **tope de archivos**: 5 si lo aprobó la sesión coordinadora, 8 si lo aprobaste vos. Al pasarlo,
     el arnés **lo cierra** y pide una historia.
   - Un camino rápido con varios temas en el motivo **no lo puede aprobar la sesión coordinadora**.
-- **El riesgo decide quién aprueba.** Es alto si el cambio toca algo sensible del repo, como producción, una migración
-  o seguridad. También si trae una decisión tuya o de tu organización: alcance, seguridad, una dependencia nueva, plata,
-  clientes u otras personas. Ante la duda, alto. **Lo delicado lo aprobás siempre vos**, el dev que trabaja. La **sesión
-  coordinadora** es una sesión de agente que tu equipo puede usar para aprobar lo de rutina; no es una persona. Con
-  riesgo normal, abre el camino rápido con la lista de archivos y te avisa; con riesgo alto, lo abrís vos. Sin sesión
-  coordinadora, porque trabajás solo o tu equipo no la usa, lo suyo lo aprobás vos. El plan nunca se aprueba solo.
+- **El riesgo decide quién aprueba.**
+  - **Riesgo alto** es cuando el cambio toca algo sensible del repo, como producción, una migración o seguridad.
+    También cuando trae una decisión tuya o de tu organización: alcance, seguridad, una dependencia nueva, plata,
+    clientes u otras personas. Ante la duda, riesgo alto.
+  - **La sesión coordinadora** es una sesión de agente que tu equipo puede usar para aprobar lo de rutina; no es una
+    persona.
+  - **Quién aprueba qué:** lo delicado lo aprobás siempre vos, el dev que trabaja. Con riesgo normal, la sesión
+    coordinadora abre el camino rápido con la lista de archivos y te avisa, y aprueba el plan si la revisión automática
+    dio «aprobado». Con riesgo alto, lo aprobás vos. Sin sesión coordinadora, lo suyo lo aprobás vos. El plan nunca se
+    aprueba solo.
 - **Guardar es un sí en la ventana de permiso, en los dos caminos.** Antes de cada commit, push y pull request el
   agente pregunta «¿guardo?», y con un sí guarda. No hay firma ni comando.
 
