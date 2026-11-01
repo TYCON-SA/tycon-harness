@@ -1038,10 +1038,11 @@ function main() {
 
   const command = event.tool_input?.command || '';
 
-  // El ok de guardar (lib/save-brake.js): en una corrida, el commit, el push y los pedidos van con el ok vigente; fuera,
-  // los repos de una corrida que cerró sin él. Va antes de mirar si es un commit, porque frena también push y pedidos.
-  // Si el freno no carga o falla, un comando que parece guardar frena dentro de una corrida (o sin poder saberlo) y fuera
-  // pasa con un aviso.
+  // Guardar se autoriza en la ventana de permiso (lib/save-brake.js): en una corrida, antes del commit, el push y los
+  // pedidos, la persona dice que sí. Va antes de mirar si es un commit, porque pregunta también por push y pedidos. La
+  // pregunta sale por la salida estándar y el gancho sigue: si otro control frena después, frena. En una pestaña que no
+  // pide permisos la ventana se aprobaría sola: guarda sin preguntar y lo dice. Si el freno no carga o falla, un comando
+  // que parece guardar frena dentro de una corrida (o sin poder saberlo) y fuera pasa con un aviso.
   {
     let sid = null;
     let freno;
@@ -1056,12 +1057,21 @@ function main() {
       let enCorrida = true;
       try { if (sid) enCorrida = fs.existsSync(require('./lib/open-runs.js').markerPath(sid)); } catch { /* sin saber, frena */ }
       freno = null;
-      if (pareceGuardar && enCorrida) freno = { texto: `🔒 OK DE GUARDAR: el freno de guardar no pudo correr (${e.message}); dentro de una corrida, el comando no pasa.` };
+      if (pareceGuardar && enCorrida) freno = { texto: `🔒 GUARDAR: el freno de guardar no pudo correr (${e.message}); dentro de una corrida, el comando no pasa.` };
       else if (pareceGuardar) process.stderr.write(`⚠️  el freno de guardar no pudo correr (${e.message}): fuera de una corrida, el comando pasa.\n`);
     }
-    if (freno) {
+    if (freno && freno.texto) {
       process.stderr.write(freno.texto + '\n');
       process.exit(2);
+    }
+    if (freno && freno.pregunta) {
+      // los modos de la herramienta en los que la ventana le llega a una persona; sin el dato, se pregunta
+      const modo = event.permission_mode == null ? null : String(event.permission_mode);
+      if (modo === null || ['default', 'acceptEdits', 'plan'].includes(modo)) {
+        fs.writeSync(1, JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: freno.pregunta } }));
+      } else {
+        process.stderr.write(`⚠️  ${freno.pregunta}\n   Esta pestaña no pide permisos (${modo.slice(0, 40)}): guarda sin preguntar.\n`);
+      }
     }
   }
 

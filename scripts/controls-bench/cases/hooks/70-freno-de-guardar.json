@@ -7,37 +7,70 @@
       "matcher": "Bash",
       "cases": [
         {
-          "id": "freno-de-guardar-commit-de-la-corrida-sin-ok-frena",
-          "type": "must-block",
-          "_por_que": "el ok de guardar lo da una persona con su firma: un commit de la corrida sin la constancia vigente frena en el gancho, no en lo que el agente se acuerde de correr.",
+          "id": "freno-de-guardar-commit-de-la-corrida-pregunta",
+          "type": "must-emit",
+          "_por_que": "antes de guardar en una corrida, el gancho pregunta en la ventana de permiso, y la pregunta nombra la forma.",
           "setup": [
             "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && echo x > app.js",
             "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\""
           ],
-          "stdin": { "session_id": "bench-freno", "tool_name": "Bash", "tool_input": { "command": "git add -A && git commit -m 'feat: x'" } },
-          "expect": { "exit": 2, "stderr_re": ["OK DE GUARDAR", "approve-save"] }
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git add -A && git commit -m 'feat: x'"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "\"permissionDecision\":\"ask\"",
+              "«git commit»"
+            ]
+          }
         },
         {
-          "id": "freno-de-guardar-pedido-de-la-corrida-sin-ok-frena",
-          "type": "must-block",
-          "_por_que": "un pedido se juzga contra toda la corrida: sin la constancia, abrirlo frena igual que el commit.",
+          "id": "freno-de-guardar-pedido-de-la-corrida-pregunta",
+          "type": "must-emit",
+          "_por_que": "antes de guardar en una corrida, el gancho pregunta en la ventana de permiso, y la pregunta nombra la forma.",
           "setup": [
             "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base",
             "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\""
           ],
-          "stdin": { "session_id": "bench-freno", "tool_name": "Bash", "tool_input": { "command": "gh pr create --fill" } },
-          "expect": { "exit": 2, "stderr_re": ["OK DE GUARDAR", "toda la corrida"] }
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "gh pr create --fill"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "\"permissionDecision\":\"ask\"",
+              "«gh pr create»"
+            ]
+          }
         },
         {
-          "id": "freno-de-guardar-pedido-con-el-alias-que-declara-el-conector-frena",
-          "type": "must-block",
-          "_por_que": "los pedidos salen de lo que declaran los conectores de plataforma: el alias que declara el de GitHub frena como la forma larga.",
+          "id": "freno-de-guardar-pedido-con-el-alias-que-declara-el-conector-pregunta",
+          "type": "must-emit",
+          "_por_que": "antes de guardar en una corrida, el gancho pregunta en la ventana de permiso, y la pregunta nombra la forma.",
           "setup": [
             "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base",
             "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\""
           ],
-          "stdin": { "session_id": "bench-freno", "tool_name": "Bash", "tool_input": { "command": "gh pr new --fill" } },
-          "expect": { "exit": 2, "stderr_re": ["OK DE GUARDAR", "«gh pr new»"] }
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "gh pr new --fill"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "\"permissionDecision\":\"ask\"",
+              "«gh pr new»"
+            ]
+          }
         },
         {
           "id": "freno-de-guardar-gemelo-mirar-un-pedido-en-la-corrida-pasa",
@@ -47,8 +80,16 @@
             "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base",
             "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\""
           ],
-          "stdin": { "session_id": "bench-freno", "tool_name": "Bash", "tool_input": { "command": "gh pr view 3" } },
-          "expect": { "exit": 0 }
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "gh pr view 3"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
         },
         {
           "id": "freno-de-guardar-gemelo-leer-en-la-corrida-pasa",
@@ -58,107 +99,220 @@
             "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && echo x > app.js",
             "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\""
           ],
-          "stdin": { "session_id": "bench-freno", "tool_name": "Bash", "tool_input": { "command": "git status --short" } },
-          "expect": { "exit": 0 }
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git status --short"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
         },
         {
-          "id": "freno-de-guardar-push-de-la-corrida-sin-ok-frena",
-          "type": "must-block",
-          "_por_que": "el push de la corrida va con el mismo ok que el commit: sin la constancia, frena.",
+          "id": "freno-de-guardar-push-de-la-corrida-pregunta",
+          "type": "must-emit",
+          "_por_que": "antes de guardar en una corrida, el gancho pregunta en la ventana de permiso, y la pregunta nombra la forma.",
           "setup": [
             "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && echo x > app.js",
             "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\""
           ],
-          "stdin": { "session_id": "bench-freno", "tool_name": "Bash", "tool_input": { "command": "git push origin HEAD" } },
-          "expect": { "exit": 2, "stderr_re": ["OK DE GUARDAR", "git push"] }
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin HEAD"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "\"permissionDecision\":\"ask\"",
+              "git push"
+            ]
+          }
         },
         {
-          "id": "freno-de-guardar-merge-del-pedido-sin-ok-frena",
-          "type": "must-block",
-          "_por_que": "mergear un pedido también guarda: sin la constancia de la corrida, frena.",
+          "id": "freno-de-guardar-merge-del-pedido-pregunta",
+          "type": "must-emit",
+          "_por_que": "antes de guardar en una corrida, el gancho pregunta en la ventana de permiso, y la pregunta nombra la forma.",
           "setup": [
             "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base",
             "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\""
           ],
-          "stdin": { "session_id": "bench-freno", "tool_name": "Bash", "tool_input": { "command": "gh pr merge 3 --squash" } },
-          "expect": { "exit": 2, "stderr_re": ["OK DE GUARDAR", "gh pr merge"] }
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "gh pr merge 3 --squash"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "\"permissionDecision\":\"ask\"",
+              "gh pr merge"
+            ]
+          }
         },
         {
-          "id": "freno-de-guardar-pedido-de-azure-sin-ok-frena",
-          "type": "must-block",
-          "_por_que": "el pedido de Azure DevOps cuenta igual que el de GitHub.",
+          "id": "freno-de-guardar-pedido-de-azure-pregunta",
+          "type": "must-emit",
+          "_por_que": "antes de guardar en una corrida, el gancho pregunta en la ventana de permiso, y la pregunta nombra la forma.",
           "setup": [
             "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base",
             "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\""
           ],
-          "stdin": { "session_id": "bench-freno", "tool_name": "Bash", "tool_input": { "command": "az repos pr create --title t --source-branch b" } },
-          "expect": { "exit": 2, "stderr_re": ["OK DE GUARDAR", "az repos pr create"] }
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --title t --source-branch b"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "\"permissionDecision\":\"ask\"",
+              "az repos pr create"
+            ]
+          }
         },
         {
-          "id": "freno-de-guardar-commit-desde-otra-carpeta-frena",
-          "type": "must-block",
-          "_por_que": "cambiar de carpeta o apuntar git a otra no saca el commit de la corrida.",
+          "id": "freno-de-guardar-commit-desde-otra-carpeta-pregunta",
+          "type": "must-emit",
+          "_por_que": "antes de guardar en una corrida, el gancho pregunta en la ventana de permiso, y la pregunta nombra la forma.",
           "setup": [
             "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && echo x > app.js && mkdir -p sub",
             "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\""
           ],
-          "stdin": { "session_id": "bench-freno", "tool_name": "Bash", "tool_input": { "command": "cd sub && git -C .. commit -am x" } },
-          "expect": { "exit": 2, "stderr_re": ["OK DE GUARDAR", "git commit"] }
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cd sub && git -C .. commit -am x"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "\"permissionDecision\":\"ask\"",
+              "git commit"
+            ]
+          }
         },
         {
-          "id": "freno-de-guardar-commit-dentro-de-otro-shell-frena",
-          "type": "must-block",
-          "_por_que": "envolver el commit en otro shell no lo esconde.",
+          "id": "freno-de-guardar-commit-dentro-de-otro-shell-pregunta",
+          "type": "must-emit",
+          "_por_que": "antes de guardar en una corrida, el gancho pregunta en la ventana de permiso, y la pregunta nombra la forma.",
           "setup": [
             "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && echo x > app.js",
             "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\""
           ],
-          "stdin": { "session_id": "bench-freno", "tool_name": "Bash", "tool_input": { "command": "bash -lc 'git commit -am x'" } },
-          "expect": { "exit": 2, "stderr_re": ["OK DE GUARDAR", "git commit"] }
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "bash -lc 'git commit -am x'"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "\"permissionDecision\":\"ask\"",
+              "git commit"
+            ]
+          }
         },
         {
-          "id": "freno-de-guardar-comando-desde-una-variable-frena",
-          "type": "must-block",
-          "_por_que": "un comando armado desde una variable no se puede leer: dentro de una corrida frena.",
+          "id": "freno-de-guardar-comando-desde-una-variable-pregunta",
+          "type": "must-emit",
+          "_por_que": "lo que no se lee con certeza, en una corrida, pregunta igual: no se sabe qué guardaría.",
           "setup": [
             "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && echo x > app.js",
             "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\""
           ],
-          "stdin": { "session_id": "bench-freno", "tool_name": "Bash", "tool_input": { "command": "G=git; $G commit -am x" } },
-          "expect": { "exit": 2, "stderr_re": ["OK DE GUARDAR", "no pude leer este comando"] }
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "G=git; $G commit -am x"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "\"permissionDecision\":\"ask\"",
+              "no pude leer este comando"
+            ]
+          }
         },
         {
-          "id": "freno-de-guardar-shell-que-lee-de-un-tubo-frena",
-          "type": "must-block",
-          "_por_que": "lo que no se lee con certeza frena dentro de una corrida: un shell que lee su guion de un tubo, guarde o no.",
+          "id": "freno-de-guardar-shell-que-lee-de-un-tubo-pregunta",
+          "type": "must-emit",
+          "_por_que": "lo que no se lee con certeza, en una corrida, pregunta igual: no se sabe qué guardaría.",
           "setup": [
             "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && echo x > app.js",
             "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\""
           ],
-          "stdin": { "session_id": "bench-freno", "tool_name": "Bash", "tool_input": { "command": "echo 'git commit -am x' | sh" } },
-          "expect": { "exit": 2, "stderr_re": ["OK DE GUARDAR", "no pude leer este comando"] }
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "echo 'git commit -am x' | sh"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "\"permissionDecision\":\"ask\"",
+              "no pude leer este comando"
+            ]
+          }
         },
         {
           "id": "freno-de-guardar-el-texto-no-repite-el-comando",
-          "type": "must-block",
-          "_por_que": "el texto del freno nombra la forma y el repo, nunca el comando: un comando puede traer una credencial.",
+          "type": "must-emit",
+          "_por_que": "antes de guardar en una corrida, el gancho pregunta en la ventana de permiso, y la pregunta nombra la forma. Nunca repite el comando: puede traer una credencial.",
           "setup": [
             "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && echo x > app.js",
             "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\""
           ],
-          "stdin": { "session_id": "bench-freno", "tool_name": "Bash", "tool_input": { "command": "git push https://bench:SECRETO-DE-PRUEBA@example.com/r.git HEAD" } },
-          "expect": { "exit": 2, "stderr_re": ["OK DE GUARDAR", "git push"], "stderr_not_re": ["SECRETO-DE-PRUEBA"] }
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push https://bench:SECRETO-DE-PRUEBA@example.com/r.git HEAD"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "\"permissionDecision\":\"ask\"",
+              "git push"
+            ],
+            "stdout_not_re": [
+              "SECRETO-DE-PRUEBA"
+            ],
+            "stderr_not_re": [
+              "SECRETO-DE-PRUEBA"
+            ]
+          }
         },
         {
-          "id": "freno-de-guardar-cerrada-sin-ok-frena-fuera-de-la-corrida",
-          "type": "must-block",
-          "_por_que": "cerrar la corrida con --discard no es la salida del ok: el registro de la sesión sigue frenando el commit de ese repo fuera de la corrida.",
+          "id": "freno-de-guardar-registro-viejo-ya-no-frena-fuera-de-la-corrida",
+          "type": "must-not-block",
+          "_por_que": "el registro «cerrada sin ok» ya no existe: fuera de una corrida, guardar pasa como siempre aunque quede un registro viejo en la HOME.",
           "setup": [
             "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && echo x > app.js",
             "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/save-closed\"; printf '[{\"story\":\"9.9\",\"repos\":[\"%s\"],\"ts\":\"2026-10-25T10:00:00.000Z\"}]' \"$(pwd -P)\" > \"$S/save-closed/bench-freno.json\""
           ],
-          "stdin": { "session_id": "bench-freno", "tool_name": "Bash", "tool_input": { "command": "git push origin HEAD" } },
-          "expect": { "exit": 2, "stderr_re": ["OK DE GUARDAR", "cerró sin ok de guardar"] }
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin HEAD"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stdout_not_re": [
+              "permissionDecision"
+            ]
+          }
         },
         {
           "id": "freno-de-guardar-gemelo-fuera-de-una-corrida-pasa",
@@ -167,8 +321,54 @@
           "setup": [
             "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && echo x > app.js"
           ],
-          "stdin": { "session_id": "bench-freno", "tool_name": "Bash", "tool_input": { "command": "git push origin HEAD" } },
-          "expect": { "exit": 0 }
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin HEAD"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "freno-de-guardar-commit-del-camino-rapido-pregunta",
+          "type": "must-emit",
+          "_por_que": "con un camino rápido abierto y firmado, guardar pregunta en la ventana como en una corrida, con el motivo del carril.",
+          "setup": [
+            "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && echo x > app.js",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre completo\",\"maxFiles\":5,\"files\":[],\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-freno.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-freno\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\""
+          ],
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git add -A && git commit -m 'fix: x'"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "\"permissionDecision\":\"ask\"",
+              "camino rápido «el combo muestra el nombre completo»"
+            ]
+          }
+        },
+        {
+          "id": "freno-de-guardar-gemelo-carril-sin-firma-pasa",
+          "type": "must-not-block",
+          "_por_que": "el gemelo: una declaración de carril sin su firma no es un carril abierto, y el commit pasa como fuera de una corrida.",
+          "setup": [
+            "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && echo x > app.js",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre completo\",\"maxFiles\":5,\"files\":[],\"declaredAt\":\"%s\",\"lastTouch\":\"%s\"}' \"$T\" \"$T\" > \"$S/adhoc/bench-freno.json\""
+          ],
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git add -A && git commit -m 'fix: x'"
+            }
+          }
         },
         {
           "id": "freno-de-guardar-comun-ls-en-la-corrida-pasa",
@@ -178,8 +378,16 @@
             "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && echo x > app.js",
             "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\""
           ],
-          "stdin": { "session_id": "bench-freno", "tool_name": "Bash", "tool_input": { "command": "ls -la" } },
-          "expect": { "exit": 0 }
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "ls -la"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
         },
         {
           "id": "freno-de-guardar-comun-ll-en-la-corrida-pasa",
@@ -190,8 +398,16 @@
             "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\"",
             "mkdir -p \"$HOME/.claude/shell-snapshots\" && printf \"alias -- ll='ls -lh'\\nalias -- gst='git status'\\n\" > \"$HOME/.claude/shell-snapshots/snapshot-zsh-1-bench.sh\""
           ],
-          "stdin": { "session_id": "bench-freno", "tool_name": "Bash", "tool_input": { "command": "ll src" } },
-          "expect": { "exit": 0 }
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "ll src"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
         },
         {
           "id": "freno-de-guardar-comun-cat-en-la-corrida-pasa",
@@ -201,8 +417,16 @@
             "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && echo x > app.js",
             "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\""
           ],
-          "stdin": { "session_id": "bench-freno", "tool_name": "Bash", "tool_input": { "command": "cat app.js" } },
-          "expect": { "exit": 0 }
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cat app.js"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
         },
         {
           "id": "freno-de-guardar-comun-grep-en-la-corrida-pasa",
@@ -212,8 +436,16 @@
             "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && echo x > app.js",
             "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\""
           ],
-          "stdin": { "session_id": "bench-freno", "tool_name": "Bash", "tool_input": { "command": "grep -rn x ." } },
-          "expect": { "exit": 0 }
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "grep -rn x ."
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
         },
         {
           "id": "freno-de-guardar-comun-npm-test-en-la-corrida-pasa",
@@ -223,8 +455,16 @@
             "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && echo x > app.js",
             "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\""
           ],
-          "stdin": { "session_id": "bench-freno", "tool_name": "Bash", "tool_input": { "command": "npm test -- app.test.js 2>&1 | tail -5" } },
-          "expect": { "exit": 0 }
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "npm test -- app.test.js 2>&1 | tail -5"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
         },
         {
           "id": "freno-de-guardar-comun-git-status-por-alias-en-la-corrida-pasa",
@@ -235,8 +475,16 @@
             "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\"",
             "mkdir -p \"$HOME/.claude/shell-snapshots\" && printf \"alias -- ll='ls -lh'\\nalias -- gst='git status'\\n\" > \"$HOME/.claude/shell-snapshots/snapshot-zsh-1-bench.sh\""
           ],
-          "stdin": { "session_id": "bench-freno", "tool_name": "Bash", "tool_input": { "command": "gst" } },
-          "expect": { "exit": 0 }
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "gst"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
         },
         {
           "id": "freno-de-guardar-comun-git-log-en-la-corrida-pasa",
@@ -246,8 +494,16 @@
             "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && echo x > app.js",
             "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\""
           ],
-          "stdin": { "session_id": "bench-freno", "tool_name": "Bash", "tool_input": { "command": "git log --oneline -3" } },
-          "expect": { "exit": 0 }
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git log --oneline -3"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
         },
         {
           "id": "freno-de-guardar-comun-git-diff-en-la-corrida-pasa",
@@ -257,44 +513,73 @@
             "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && echo x > app.js",
             "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\""
           ],
-          "stdin": { "session_id": "bench-freno", "tool_name": "Bash", "tool_input": { "command": "git diff --stat 2>/dev/null" } },
-          "expect": { "exit": 0 }
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git diff --stat 2>/dev/null"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
         },
         {
-          "id": "freno-de-guardar-push-con-salida-unida-con-ok-pasa",
+          "id": "freno-de-guardar-push-con-salida-unida-no-frena",
           "type": "must-not-block",
-          "_por_que": "el push con la salida de error unida (2>&1), con el ok vigente, pasa: la redirección no cambia el repo ni da duda.",
+          "_por_que": "el push con la salida de error unida (2>&1): no frena; la redirección de la salida no es una duda.",
           "setup": [
             "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && git checkout -q -b story/bench && git remote add origin https://example.com/bench.git && echo x > app.js",
-            "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\"",
-            "node -e 'const SO=require(process.env.SKILLS+\"/skills/tycon-pipeline/scripts/lib/save-ok.js\");const fs=require(\"fs\");const p=process.env.HOME+\"/.claude/.tycon-pipeline/active/bench-freno.json\";const m=JSON.parse(fs.readFileSync(p,\"utf8\"));const repos=SO.reposDeLaCorrida({marker:m,hermanos:[]});const previo=SO.antesDeFirmar({via:\"ventana\",marker:m,repos});if(previo.codigo!==0){console.error(previo.motivo);process.exit(1)}m.saveOk=SO.constancia({marker:m,via:\"ventana\",previo,ahora:new Date().toISOString()});fs.writeFileSync(p,JSON.stringify(m))'"
+            "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\""
           ],
-          "stdin": { "session_id": "bench-freno", "tool_name": "Bash", "tool_input": { "command": "git push origin story/bench 2>&1" } },
-          "expect": { "exit": 0 }
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin story/bench 2>&1"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
         },
         {
-          "id": "freno-de-guardar-push-a-un-archivo-con-ok-pasa",
+          "id": "freno-de-guardar-push-a-un-archivo-no-frena",
           "type": "must-not-block",
-          "_por_que": "el push con su salida a un archivo (> log), con el ok vigente, pasa: la redirección no cambia el repo ni da duda.",
+          "_por_que": "el push con su salida a un archivo (> log): no frena; la redirección de la salida no es una duda.",
           "setup": [
             "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && git checkout -q -b story/bench && git remote add origin https://example.com/bench.git && echo x > app.js",
-            "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\"",
-            "node -e 'const SO=require(process.env.SKILLS+\"/skills/tycon-pipeline/scripts/lib/save-ok.js\");const fs=require(\"fs\");const p=process.env.HOME+\"/.claude/.tycon-pipeline/active/bench-freno.json\";const m=JSON.parse(fs.readFileSync(p,\"utf8\"));const repos=SO.reposDeLaCorrida({marker:m,hermanos:[]});const previo=SO.antesDeFirmar({via:\"ventana\",marker:m,repos});if(previo.codigo!==0){console.error(previo.motivo);process.exit(1)}m.saveOk=SO.constancia({marker:m,via:\"ventana\",previo,ahora:new Date().toISOString()});fs.writeFileSync(p,JSON.stringify(m))'"
+            "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\""
           ],
-          "stdin": { "session_id": "bench-freno", "tool_name": "Bash", "tool_input": { "command": "git push origin story/bench > push.log 2>&1" } },
-          "expect": { "exit": 0 }
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin story/bench > push.log 2>&1"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
         },
         {
-          "id": "freno-de-guardar-push-con-error-descartado-con-ok-pasa",
+          "id": "freno-de-guardar-push-con-error-descartado-no-frena",
           "type": "must-not-block",
-          "_por_que": "el push con su salida de error descartada (2>/dev/null), con el ok vigente, pasa.",
+          "_por_que": "el push con su salida de error descartada (2>/dev/null): no frena; la redirección de la salida no es una duda.",
           "setup": [
             "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && git checkout -q -b story/bench && git remote add origin https://example.com/bench.git && echo x > app.js",
-            "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\"",
-            "node -e 'const SO=require(process.env.SKILLS+\"/skills/tycon-pipeline/scripts/lib/save-ok.js\");const fs=require(\"fs\");const p=process.env.HOME+\"/.claude/.tycon-pipeline/active/bench-freno.json\";const m=JSON.parse(fs.readFileSync(p,\"utf8\"));const repos=SO.reposDeLaCorrida({marker:m,hermanos:[]});const previo=SO.antesDeFirmar({via:\"ventana\",marker:m,repos});if(previo.codigo!==0){console.error(previo.motivo);process.exit(1)}m.saveOk=SO.constancia({marker:m,via:\"ventana\",previo,ahora:new Date().toISOString()});fs.writeFileSync(p,JSON.stringify(m))'"
+            "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\""
           ],
-          "stdin": { "session_id": "bench-freno", "tool_name": "Bash", "tool_input": { "command": "git push origin story/bench 2>/dev/null" } },
-          "expect": { "exit": 0 }
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin story/bench 2>/dev/null"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
         }
       ]
     }

@@ -25,7 +25,8 @@
  * que el validador de historias corrió sobre ese archivo después de su última escritura, y eso queda en la
  * cadena de la conversación que guarda la herramienta, donde el agente no escribe (`validator-record.js`).
  * Por eso: una historia nueva sin esa constancia sólo nace en borrador (`status: draft`), y pasar un
- * borrador a cualquier otro estado la pide. El pipeline no arranca sobre un borrador, y el cierre del turno
+ * borrador a cualquier otro estado la pide. Pide también la constancia vigente de la revisión adversaria de la
+ * historia (`story-review-record.js`): la pasa a ready-for-dev quien la escribió, después de esa revisión. El pipeline no arranca sobre un borrador, y el cierre del turno
  * insiste con la orden concreta mientras quede uno sin validar (`story-claim-check.js`).
  *
  * ── CALIBRADO (dónde NO frena — cada punto es un falso positivo que mataría el control) ─────────
@@ -161,13 +162,16 @@ const isDraftStatus = (s) => s === 'draft' || s === 'mixed';
  * @param {boolean} a.repoUnderHarness  el repo trabaja con el arnés (.tycon/ o stories descubiertas)
  * @param {boolean} a.idIsWork          el id declarado sigue la numeración del repo (null = no se pudo leer); sólo cambia el texto
  * @param {boolean} [a.record]          hay constancia del validador
+ * @param {boolean} [a.review]          hay constancia vigente de la revisión adversaria de la historia
  * @param {boolean} [a.gateEnabled]     config commiteada del repo (default true)
  * @param {boolean} [a.isCodex]         herramienta sin la conversación legible → no se frena (unknown)
  * @returns {{action:'pass'|'block', kind:string, reason:string}}
  */
+const VALIDADA = 'el validador corrió sobre la historia después de su última escritura, y tiene su revisión adversaria vigente';
+
 function computeStorySkillGate({
   filePath, existsOnDisk, prevStatus = null, status = null, isStoryCandidate, isHarness, repoUnderHarness, idIsWork,
-  record = false, gateEnabled = true, isCodex = false,
+  record = false, review = false, gateEnabled = true, isCodex = false,
 }) {
   if (!isStoryCandidate) return { action: 'pass', kind: 'not-story', reason: 'no declara identidad de story' };
   if (existsOnDisk && !isDraftStatus(prevStatus)) return { action: 'pass', kind: 'exists', reason: 'la story ya existe y no está en borrador — editar no es crear' };
@@ -177,8 +181,9 @@ function computeStorySkillGate({
   const name = path.basename(String(filePath || ''));
   if (existsOnDisk) {
     if (status === 'draft') return { action: 'pass', kind: 'draft-edit', reason: 'editar un borrador sin cambiarle el estado' };
-    if (record) return { action: 'pass', kind: 'validated', reason: 'el validador corrió sobre la historia después de su última escritura' };
+    if (record && review) return { action: 'pass', kind: 'validated', reason: VALIDADA };
     if (isCodex) return { action: 'pass', kind: 'unknown-codex', reason: 'Codex no deja leer la conversación — sin constancia posible del validador, no se frena, queda medido' };
+    if (record) return { action: 'block', kind: 'draft-promote-sin-revision', reason: `pasar el borrador ${name} a ${status || 'otro estado'} sin la revisión adversaria de la historia` };
     return {
       action: 'block', kind: 'draft-promote',
       reason: status == null
@@ -189,8 +194,9 @@ function computeStorySkillGate({
   // Un id con otra forma que la del repo no abre el portón: un modelo que se saltea la skill también inventa el número
   // (G-1 en un repo que numera por épica); el mensaje lo dice.
   if (status === 'draft') return { action: 'pass', kind: 'new-draft', reason: 'historia nueva en borrador' };
-  if (record) return { action: 'pass', kind: 'validated', reason: 'el validador corrió sobre la historia después de su última escritura' };
+  if (record && review) return { action: 'pass', kind: 'validated', reason: VALIDADA };
   if (isCodex) return { action: 'pass', kind: 'unknown-codex', reason: 'Codex no deja leer la conversación — sin constancia posible del validador, no se frena, queda medido' };
+  if (record) return { action: 'block', kind: 'new-sin-revision', reason: `story nueva (${name}) en ${status || 'un estado que no se ve'} sin la revisión adversaria de la historia` };
   return {
     action: 'block', kind: 'new-not-draft',
     reason: `story nueva (${name}) en ${status || 'un estado que no se ve'} sin constancia del validador` +
@@ -202,6 +208,7 @@ function computeStorySkillGate({
 // `firma`: lo que dijo la ventana (`{ comando, motivo }`): el cartel nombra el comando que pide la firma sobre el archivo.
 function blockMessage(r, { filePath, via, byName = false, firma = null } = {}) {
   const rel = path.basename(String(filePath || ''));
+  if (/-sin-revision$/.test(r.kind)) return mensajeSinRevision(r, { filePath, via, firma });
   const promote = /^draft-promote/.test(r.kind);
   const terminal = promote && /terminal/.test(r.reason || '');
   const what = promote
@@ -228,6 +235,31 @@ function blockMessage(r, { filePath, via, byName = false, firma = null } = {}) {
         '       archivo y, si pasa, pasala a ready-for-dev. La skill tycon-create-story hace esos pasos en orden.',
     '',
     '   (b) Saltear el validador lo decide la persona, no vos. Si te lo pide, la firma en la ventana de permiso:',
+    `       corré ${(firma && firma.comando) || `marker.js sign-file story-skill-bypass ${filePath}`} y, con su «Sí»,`,
+    '       repetí esta escritura con Edit o Write. La firma vale una vez y queda anotada.',
+    firma && firma.motivo ? `       (No hay firma: ${firma.motivo}.)` : '',
+  ].filter((l) => l !== '').join('\n');
+}
+
+/** El cartel cuando el validador ya corrió y falta la revisión adversaria de la historia. */
+function mensajeSinRevision(r, { filePath, via, firma }) {
+  const rel = path.basename(String(filePath || ''));
+  return [
+    `🔴 HISTORIA SIN REVISIÓN ADVERSARIA — escritura DENEGADA: "${rel}" no puede dejar el borrador: el validador corrió,`,
+    '   pero no hay una revisión adversaria vigente de esta historia.',
+    via ? `   (vía ${via})` : '',
+    '',
+    '   Por qué frena: una historia pasa a ready-for-dev cuando la escribió una sesión y pasó la revisión adversaria, que',
+    '   busca lo que el validador no ve. Una revisión de un texto anterior, o que espera una respuesta, no cuenta.',
+    '',
+    '   Qué hacer AHORA:',
+    '',
+    '   (a) Lanzá la revisión adversaria (tycon-story-adversarial-reviewer) sobre ese archivo, resolvé lo que encuentre y',
+    '       anotala con `pipeline.js story-review-record --story <archivo> --result <limpio | corregido | preguntado>`.',
+    '       Si el portón de la revisión dice que no corresponde (`run: false`), anotá ese salteo como dice la skill.',
+    '       Después volvé a hacer este cambio. La skill tycon-create-story hace esos pasos en orden.',
+    '',
+    '   (b) Saltear la revisión lo decide la persona, no vos. Si te lo pide, la firma en la ventana de permiso:',
     `       corré ${(firma && firma.comando) || `marker.js sign-file story-skill-bypass ${filePath}`} y, con su «Sí»,`,
     '       repetí esta escritura con Edit o Write. La firma vale una vez y queda anotada.',
     firma && firma.motivo ? `       (No hay firma: ${firma.motivo}.)` : '',
