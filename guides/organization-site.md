@@ -552,6 +552,11 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   campo que el arnés fija, un valor vacío, que empieza con «@» o con un salto de línea, o una gravedad que no es una de
   las cuatro, se marcan en su campo y no se proponen. Un proyecto que no tiene el tipo elegido usa el suyo, y el resumen
   de la mañana lo dice. Queda en `operations.json`, en el repo de operaciones (`work_items`). Lo revisa quien mantiene.
+- **Aviso de contexto**: a partir de cuántos tokens una sesión le pide al agente que te recomiende limpiar la
+  conversación (`/clear`) o abrir una sesión nueva, al terminar el paso en curso; vuelve a avisar cada 100 mil más. Avisa,
+  no frena. De 100.000 a 900.000; vacío, 300.000. Una máquina puede poner su propio número con
+  `TYCON_CONTEXT_NOTICE_TOKENS` (la variable gana). Queda en `team-repos.json` → `context_notice`, en el repo del perfil.
+  Lo revisa quien mantiene.
 
 ![Pedidos de trabajo](sitio-de-la-organizacion/capturas/configuracion-pedidos.png)
 
@@ -705,6 +710,11 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   historia llega también a su pedido de trabajo, en Azure DevOps o GitHub. Queda en `team-repos.json` →
   `estimates`, en el repo del perfil; el perfil tiene que pedir una versión del arnés que lea la clave. Lo revisa quien
   mantiene.
+- **Pase adversarial**: cuándo corre el pase que ejecuta el código de una historia para buscarle defectos. Automático
+  (de fábrica): según el riesgo, y siempre que la historia toca un freno del repo, seguridad o datos. Siempre: en todas
+  las historias. No hay opción para apagarlo: saltearlo lo firma el dueño en cada historia. Un repo que pide automático en
+  su `.tycon/advisors.yaml` (`deep_review: auto`) gana sobre «siempre». Queda en `team-repos.json` → `deep_review`, en el
+  repo del perfil. Lo revisa quien mantiene.
 
 ![Cómo trabaja el agente](sitio-de-la-organizacion/capturas/configuracion-claude.png)
 

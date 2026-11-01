@@ -678,7 +678,7 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 ## skills/tycon-pipeline/scripts/lib/models.js — el modelo de cada trabajo del pipeline
 
-**Qué es:** El único lugar donde se define el modelo de cada trabajo del pipeline (revisores, vueltas, pase adversarial, ayudantes y sugerencia de sesión) y cómo se resuelve con la configuración de la organización (`team-repos.json → models`).
+**Qué es:** El único lugar donde se define el modelo de cada trabajo del pipeline y cómo lo cambia la organización (`models`).
 
 **Por qué existe:** Estaba escrito en seis lugares y una organización no podía decir quién paga. Con `mandatory_ceiling: true` el tope baja el modelo y avisa, sin frenar.
 
@@ -1228,7 +1228,7 @@ _(scripts/tools/work-in-progress.js + el comando commands/wip.md)_
 
 _(scripts/metrics/upload-runs.js + scripts/metrics/download-runs.js)_
 
-**Qué es:** Sube las corridas de cada máquina a un buzón privado de Azure Storage (todos escriben, sólo lee el rol de lectura); `download-runs.js` las baja. También sube las métricas de cada merge (`merge-metrics.js`), que el tablero de la noche baja con `--merges-to` a `.dashboard/merges/`.
+**Qué es:** Sube las corridas de cada máquina a un buzón privado de Azure Storage; `download-runs.js` las baja. También sube las métricas de cada merge.
 
 **Por qué existe:** El hilo trae prompts, rutas del disco y código de cliente, así que no puede viajar por git. La llave de subida sólo crea blobs nuevos: no lee, no lista, no pisa ni borra.
 
@@ -1566,13 +1566,23 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksfailed-query-noticejs)
 
+## scripts/hooks/context-size-notice.js
+
+**Qué es:** Pasados 300 mil tokens, pide recomendar `/clear` al terminar el paso. No frena.
+
+**Por qué existe:** Cada mensaje re-lee todo el contexto de la sesión.
+
+**Quién la usa:** Los hooks del mensaje y del arranque. Umbral: `context_notice.tokens`.
+
+**Dónde se prueba:** `scripts/tests/context-size-notice.test.js`
+
 ## scripts/hooks/wait-notice.js
 
 **Qué es:** Avisa por Telegram cuando una corrida activa del pipeline queda esperando a una persona.
 
 **Por qué existe:** La espera por una persona es buena parte del reloj de una corrida y nada avisaba: quien la dejaba corriendo se enteraba tarde de una pregunta sin contestar. Cada espera nueva es un mensaje nuevo; sin Telegram prendido no hace nada.
 
-**Quién la usa:** Los hooks de cierre de turno, de pregunta y de permiso. Plazo: `wait_notice.minutes`; con coordinadora viva le llega a ella y al dueño a `owner_minutes`.
+**Quién la usa:** Los hooks de cierre de turno, de pregunta y de permiso. Plazo: `wait_notice.minutes`.
 
 **Dónde se prueba:** `scripts/tests/wait-notice.test.js`
 

@@ -76,7 +76,15 @@ const CONNECTORS = Object.freeze({ azure: 'azure-devops', github: 'github' });
 function connectorOf(platform) { return Object.prototype.hasOwnProperty.call(CONNECTORS, platform) ? CONNECTORS[platform] : null; }
 const REPO_KEYS = { azure: ['org', 'project', 'repo'], github: ['org', 'repo'] };
 const REQUIRED = ['public', 'profile', 'operations'];
-const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites', 'models', 'wait_notice', 'coverage', 'review', 'stack', 'weekly_review', 'estimates'];
+const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites', 'models', 'wait_notice', 'coverage', 'review', 'stack', 'weekly_review', 'estimates', 'context_notice', 'deep_review'];
+// El umbral del aviso de contexto: tokens enteros de 100.000 a 900.000. Lo lee scripts/hooks/context-size-notice.js,
+// después de TYCON_CONTEXT_NOTICE_TOKENS de la máquina y antes de los 300.000 de fábrica.
+const CONTEXT_NOTICE_KEYS = ['tokens'];
+const CONTEXT_NOTICE_RANGE = [100000, 900000];
+// La política del pase adversarial de la organización: `always` o `auto` (de fábrica, `auto`). Sólo puede subir: no hay
+// `off`, porque saltear el pase lo firma el dueño (`marker.js sign-adversarial-skip`). La lee skills/tycon-pipeline/scripts/pipeline.js.
+const DEEP_REVIEW_KEYS = ['default'];
+const DEEP_REVIEW_VALUES = ['always', 'auto'];
 // La revisión de la semana: prendida o no, el tope en dólares de su única corrida del agente y el tope de material en
 // caracteres. Lo lee scripts/nightly/weekly-review/weekly-review.js; sin la clave, prendida, 5 y 600.000: con 600.000
 // entra casi toda una semana de mucho movimiento por menos de la mitad del tope en dólares.
@@ -532,6 +540,33 @@ function waitNoticeProblems(value) {
   return out;
 }
 
+/** Los problemas de `context_notice`; `[]` si está bien. */
+function contextNoticeProblems(value) {
+  if (!isObject(value)) return [{ path: 'context_notice', message: 'tiene que ser un objeto (el umbral del aviso de contexto)' }];
+  const out = [];
+  for (const k of Object.keys(value)) if (!fieldComment(k, value[k]) && !CONTEXT_NOTICE_KEYS.includes(k)) out.push({ path: `context_notice.${k}`, message: 'clave desconocida' });
+  const t = value.tokens;
+  const [desde, hasta] = CONTEXT_NOTICE_RANGE;
+  if (t !== undefined && !(Number.isInteger(t) && t >= desde && t <= hasta)) {
+    out.push({ path: 'context_notice.tokens', message: `tiene que ser un número entero de tokens, de 100.000 a 900.000 (es ${JSON.stringify(t)})` });
+  }
+  return out;
+}
+
+/** Los problemas de `deep_review`; `[]` si está bien. */
+function deepReviewProblems(value) {
+  if (!isObject(value)) return [{ path: 'deep_review', message: 'tiene que ser un objeto (la política del pase adversarial)' }];
+  const out = [];
+  for (const k of Object.keys(value)) if (!fieldComment(k, value[k]) && !DEEP_REVIEW_KEYS.includes(k)) out.push({ path: `deep_review.${k}`, message: 'clave desconocida' });
+  const d = value.default;
+  if (d === 'off') {
+    out.push({ path: 'deep_review.default', message: 'la organización no puede apagar el pase adversarial: saltearlo lo firma el dueño en cada ejecución (marker.js sign-adversarial-skip). Vale always o auto' });
+  } else if (d !== undefined && !DEEP_REVIEW_VALUES.includes(d)) {
+    out.push({ path: 'deep_review.default', message: `tiene que ser always o auto (es ${JSON.stringify(d)})` });
+  }
+  return out;
+}
+
 /** Los problemas de `weekly_review`; `[]` si está bien. Casos: scripts/tests/weekly-review.test.js T12. */
 function weeklyReviewProblems(value) {
   if (!isObject(value)) return [{ path: 'weekly_review', message: 'tiene que ser un objeto (la revisión de la semana)' }];
@@ -688,9 +723,14 @@ function parse(text) {
   const sectionWeekly = isObject(doc) && doc.weekly_review !== undefined ? weeklyReviewProblems(doc.weekly_review) : [];
   // y con `estimates`: una unidad mal escrita no deja sin el archivo; quien estima lo dice y no escribe
   const sectionEstimates = isObject(doc) && doc.estimates !== undefined ? estimatesProblems(doc.estimates) : [];
+  // y con `context_notice` y `deep_review`: un valor malo cae al de fábrica, no deja sin el archivo
+  const sectionContext = isObject(doc) && doc.context_notice !== undefined ? contextNoticeProblems(doc.context_notice) : [];
+  const sectionDeep = isObject(doc) && doc.deep_review !== undefined ? deepReviewProblems(doc.deep_review) : [];
   let data = problems.length ? null : doc;
-  if (data && (sectionModels.length || sectionWait.length || sectionCoverage.length || sectionReview.length || sectionStack.length || sectionWeekly.length || sectionEstimates.length)) {
+  if (data && (sectionModels.length || sectionWait.length || sectionCoverage.length || sectionReview.length || sectionStack.length || sectionWeekly.length || sectionEstimates.length || sectionContext.length || sectionDeep.length)) {
     data = { ...doc };
+    if (sectionContext.length) delete data.context_notice;
+    if (sectionDeep.length) delete data.deep_review;
     if (sectionModels.length) delete data.models;
     if (sectionWait.length) delete data.wait_notice;
     if (sectionWeekly.length) delete data.weekly_review;
@@ -710,6 +750,8 @@ function parse(text) {
     ...(sectionStack.length ? { stack: sectionStack } : {}),
     ...(sectionWeekly.length ? { weekly_review: sectionWeekly } : {}),
     ...(sectionEstimates.length ? { estimates: sectionEstimates } : {}),
+    ...(sectionContext.length ? { context_notice: sectionContext } : {}),
+    ...(sectionDeep.length ? { deep_review: sectionDeep } : {}),
   };
   return { ok: problems.length === 0, data, problems, ...(Object.keys(sections).length ? { sectionProblems: sections } : {}) };
 }
@@ -757,7 +799,7 @@ function privateRepoRef(data) {
   return `${m.project}/_git/${m.repo}`;
 }
 
-module.exports = { VERSION, PLATFORMS, CONNECTORS, connectorOf, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, MODEL_LEVELS, PROVIDERS, NIGHTLY_PROVIDERS, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, modelsProblems, reviewProblems, modelsAboveCeiling, modelsOutsideAllowed, nightlyLevel, suitesWithoutPipeline, suitesWithRule, stackProblems, weeklyReviewProblems, estimatesProblems, ESTIMATES_UNITS, ESTIMATES_HOURS_PER_DAY, WAIT_NOTICE_PEER_MAX, parse, load, url, privateRepoRef, repoProblems, identityKey, harnessCopies, mergeSuitesFor };
+module.exports = { VERSION, PLATFORMS, CONNECTORS, connectorOf, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, MODEL_LEVELS, PROVIDERS, NIGHTLY_PROVIDERS, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, modelsProblems, reviewProblems, contextNoticeProblems, deepReviewProblems, DEEP_REVIEW_VALUES, modelsAboveCeiling, modelsOutsideAllowed, nightlyLevel, suitesWithoutPipeline, suitesWithRule, stackProblems, weeklyReviewProblems, estimatesProblems, ESTIMATES_UNITS, ESTIMATES_HOURS_PER_DAY, WAIT_NOTICE_PEER_MAX, parse, load, url, privateRepoRef, repoProblems, identityKey, harnessCopies, mergeSuitesFor };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

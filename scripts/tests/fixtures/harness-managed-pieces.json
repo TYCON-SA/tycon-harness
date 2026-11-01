@@ -52,6 +52,8 @@
     { "kind": "hook", "id": "PreToolUse:@tcg:wait-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "PostToolUse:@tcg:wait-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "UserPromptSubmit:@tcg:wait-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
+    { "kind": "hook", "id": "UserPromptSubmit:@tcg:context-size-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
+    { "kind": "hook", "id": "SessionStart:@tcg:context-size-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "Notification:@tcg:wait-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "SessionEnd:@tcg:wait-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "Stop:@tcg:blocking-meter.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },

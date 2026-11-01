@@ -222,6 +222,8 @@ apaga sólo con su variable en `0`, y el portón de edición, `hook-pre-edit.js`
 | `wait-notice.js` | PreToolUse (AskUserQuestion\|ExitPlanMode\|mcp__spokenly__ask_user_dictation) | Una pregunta a la persona abre la espera del aviso | No | full | `TYCON_WAIT_NOTICE=0` |
 | `wait-notice.js` | PostToolUse (AskUserQuestion\|ExitPlanMode\|mcp__spokenly__ask_user_dictation) | La respuesta cierra la espera del aviso | No | full | `TYCON_WAIT_NOTICE=0` |
 | `wait-notice.js` | UserPromptSubmit | La persona escribió: la espera del aviso se cierra | No | full | `TYCON_WAIT_NOTICE=0` |
+| `context-size-notice.js` | UserPromptSubmit | Cuando la sesión pasa el umbral de tokens (300 mil), le pide al agente que recomiende `/clear` o una sesión nueva al terminar el paso; otra vez cada 100 mil más | No | full | `TYCON_CONTEXT_NOTICE=0` |
+| `context-size-notice.js` | SessionStart | Después de `/clear` o de compactar, el aviso de contexto vuelve a cero | No | full | `TYCON_CONTEXT_NOTICE=0` |
 | `wait-notice.js` | Notification (permission_prompt) | Un pedido de permiso abre la espera del aviso | No | full | `TYCON_WAIT_NOTICE=0` |
 | `wait-notice.js` | SessionEnd | La sesión se cerró: su espera se cierra sin avisar | No | full | `TYCON_WAIT_NOTICE=0` |
 | `blocking-meter.js` | Stop | Mide la herramienta bloqueante más larga del turno y los mensajes que quedaron esperando | No | full | `TYCON_BLOCKING_METER=0` |

@@ -564,6 +564,11 @@ be, to copy it and open the request by hand.
   that is not one of the four, is marked on its field and not proposed. A project without the chosen type uses its own,
   and the morning summary says so. It lives in `operations.json`, in the operations repo (`work_items`). A maintainer
   reviews it.
+- **Context notice**: from how many tokens a session asks the agent to recommend clearing the conversation
+  (`/clear`) or opening a new session, once the current step ends; it warns again every 100 thousand more. It warns, it
+  does not stop. From 100,000 to 900,000; empty, 300,000. A machine can set its own number with
+  `TYCON_CONTEXT_NOTICE_TOKENS` (the variable wins). It lives in `team-repos.json` → `context_notice`, in the profile
+  repo. A maintainer reviews it.
 
 ![Work items](sitio-de-la-organizacion/capturas/configuracion-pedidos.png)
 
@@ -726,6 +731,11 @@ be, to copy it and open the request by hand.
   Each story's current estimate also reaches its work item, in Azure DevOps or GitHub.
   It lives in `team-repos.json` → `estimates`, in the profile repo; the profile has to require a harness version that
   reads the key. A maintainer reviews it.
+- **Adversarial pass**: when the pass that runs a story's code to hunt for defects runs. Automatic (the
+  default): by risk, and always when the story touches one of the repo's brakes, security or data. Always: on every
+  story. There is no option to turn it off: skipping it is signed by the owner on each story. A repo that asks for
+  automatic in its `.tycon/advisors.yaml` (`deep_review: auto`) wins over «always». It lives in `team-repos.json` →
+  `deep_review`, in the profile repo. A maintainer reviews it.
 
 ![How the agent works](sitio-de-la-organizacion/capturas/configuracion-claude.png)
 

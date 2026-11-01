@@ -898,3 +898,52 @@ test('2.75-T22 Estimates_ValidoYProblemas @story-2.75 @ac-21 — la unidad y sus
     assert.match(r.stdout, /hours_per_day/);
   } finally { fs.rmSync(arbol, { recursive: true, force: true }); }
 });
+
+test('ContextNotice_EditableOnSite_Validation @story-7.54 @ac-3 — el umbral del aviso de contexto, de 100.000 a 900.000, con su sección aparte', () => {
+  // 🔴 rojo: la clave no existe, un valor fuera de rango invalida el archivo, o pasa como válido.
+  const ok = TEAM.parse(JSON.stringify(Object.assign(goodTeam(), { context_notice: { tokens: 250000 } })));
+  assert.equal(ok.ok, true, JSON.stringify(ok.problems));
+  assert.deepStrictEqual(ok.data.context_notice, { tokens: 250000 });
+  assert.equal(ok.sectionProblems, undefined);
+  for (const borde of [100000, 900000]) {
+    const r = TEAM.parse(JSON.stringify(Object.assign(goodTeam(), { context_notice: { tokens: borde } })));
+    assert.equal(r.sectionProblems, undefined, `${borde} vale`);
+  }
+  const casos = [
+    [{ tokens: 99999 }, 'context_notice.tokens'],
+    [{ tokens: 900001 }, 'context_notice.tokens'],
+    [{ tokens: '300000' }, 'context_notice.tokens'],
+    [{ tokens: 300000.5 }, 'context_notice.tokens'],
+    [{ tokens: 300000, otra: 1 }, 'context_notice.otra'],
+    [5, 'context_notice'],
+  ];
+  for (const [cn, ruta] of casos) {
+    const r = TEAM.parse(JSON.stringify(Object.assign(goodTeam(), { context_notice: cn })));
+    assert.equal(r.ok, true, `${ruta}: un problema de context_notice no invalida el archivo`);
+    assert.ok(r.data && !('context_notice' in r.data), `${ruta}: data sin context_notice`);
+    assert.ok(r.sectionProblems && r.sectionProblems.context_notice.some((p) => p.path === ruta), `${ruta}: ${JSON.stringify(r.sectionProblems)}`);
+  }
+  const fuera = TEAM.parse(JSON.stringify(Object.assign(goodTeam(), { context_notice: { tokens: 50000 } })));
+  assert.match(fuera.sectionProblems.context_notice[0].message, /100\.000 a 900\.000/);
+});
+
+test('DeepReviewDefault_EditableOnSite_NoOff_Validation @story-7.54 @ac-6 — la política del pase: always o auto; off se rechaza con el motivo de la firma', () => {
+  // 🔴 rojo: la clave no existe, `off` pasa, o se rechaza sin decir que saltear el pase lo firma el dueño.
+  for (const v of ['always', 'auto']) {
+    const r = TEAM.parse(JSON.stringify(Object.assign(goodTeam(), { deep_review: { default: v } })));
+    assert.equal(r.ok, true, JSON.stringify(r.problems));
+    assert.deepStrictEqual(r.data.deep_review, { default: v });
+    assert.equal(r.sectionProblems, undefined, v);
+  }
+  const off = TEAM.parse(JSON.stringify(Object.assign(goodTeam(), { deep_review: { default: 'off' } })));
+  assert.equal(off.ok, true, 'un off no invalida el archivo');
+  assert.ok(!('deep_review' in off.data), 'el off no llega a las máquinas');
+  const p = off.sectionProblems.deep_review.find((x) => x.path === 'deep_review.default');
+  assert.ok(p, JSON.stringify(off.sectionProblems));
+  assert.match(p.message, /firma/);
+  assert.match(p.message, /dueño/);
+  for (const [dr, ruta] of [[{ default: 'nunca' }, 'deep_review.default'], [{ default: 'auto', otra: 1 }, 'deep_review.otra'], ['always', 'deep_review']]) {
+    const r = TEAM.parse(JSON.stringify(Object.assign(goodTeam(), { deep_review: dr })));
+    assert.ok(r.sectionProblems && r.sectionProblems.deep_review.some((x) => x.path === ruta), `${ruta}: ${JSON.stringify(r.sectionProblems)}`);
+  }
+});

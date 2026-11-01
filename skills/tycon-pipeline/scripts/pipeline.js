@@ -1845,9 +1845,42 @@ function anotarEnMarker(campos, cambio) {
   return { ok: true, marker: m };
 }
 
+/**
+ * La política del pase adversarial de la organización (`team-repos.json → deep_review.default`, `always` o `auto`):
+ * `{ value, problem }`, con `value: null` sin política. La lee sólo la línea de comandos, como `orgModels`. Nunca tira.
+ */
+function orgDeepReview(opts = {}) {
+  const env = opts.env || process.env;
+  const nada = { value: null, problem: null };
+  try {
+    const dir = opts.tree || require('./lib/harness-path.js').rutaArnesHook({ env, home: opts.home }).dir;
+    if (!dir) return nada;
+    const lector = path.join(dir, 'scripts', 'lib', 'team-repos.js');
+    const archivo = path.join(dir, 'team-repos.json');
+    let texto;
+    // sin archivo, la organización no declaró nada; uno que está y no se puede usar se dice: la política no se pierde callada
+    try { texto = fs.readFileSync(archivo, 'utf8'); } catch (e) {
+      return e && e.code === 'ENOENT' ? nada : { value: null, problem: `no pude leer la política del pase de la organización (${archivo}: ${(e && e.code) || e}): decide el riesgo` };
+    }
+    if (!fs.existsSync(lector)) return { value: null, problem: `no pude leer la política del pase de la organización (${archivo}: el arnés no trae su lector, ${lector}): decide el riesgo` };
+    const r = require(lector).parse(String(texto).replace(/^﻿/, ''));
+    const sec = r.sectionProblems && r.sectionProblems.deep_review;
+    if (sec && sec.length) return { value: null, problem: `la política del pase de la organización no vale (${sec[0].path}: ${sec[0].message}): decide el riesgo` };
+    if (!r.ok) {
+      const p = (r.problems && r.problems[0]) || {};
+      return { value: null, problem: `no pude usar team-repos.json de la organización (${p.path ? `${p.path}: ` : ''}${p.message || 'no es válido'}): decide el riesgo` };
+    }
+    const v = r.data && r.data.deep_review && r.data.deep_review.default;
+    return { value: v === 'always' || v === 'auto' ? v : null, problem: null };
+  } catch (e) {
+    return { value: null, problem: `no pude leer la política del pase de la organización (${String((e && e.message) || e).split('\n')[0]}): decide el riesgo` };
+  }
+}
+
 /** Lo que la línea de comandos le pasa a las funciones que deciden: la configuración y el pedido de la corrida. */
 function conModelosDeLaCorrida(args) {
-  return { ...args, orgModels: orgModels(), modelRequests: pedidosDeModelos(readSessionMarker()) };
+  const politica = orgDeepReview();
+  return { ...args, orgModels: orgModels(), modelRequests: pedidosDeModelos(readSessionMarker()), orgDeepReview: politica.value, orgDeepReviewProblem: politica.problem };
 }
 
 function modelHintsForSet({ all, tier }) {
@@ -3712,6 +3745,17 @@ function computeRiskClass(args) {
     'archivos de auth/seguridad/pagos siempre plan HITL');
   add('sin-pipelines-multi-tanda', !/^pipelines:/m.test(content),
     'stories con entregas en tandas tienen interdependencias — plan HITL');
+  // un freno del repo (lo que nombra su manifiesto de controles) no es una historia chica; sin manifiesto, no aplica
+  const repoDeLosFrenos = args.repo && fs.existsSync(args.repo) ? args.repo : repoDeLaStory(storyPath);
+  const frenos = frenosDelManifiesto(repoDeLosFrenos);
+  if (frenos && frenos.error) {
+    add('sin-frenos', false, `no pude leer el manifiesto de controles (scripts/ci/controls-from-base.json: ${frenos.error}): en duda, la corrida es NORMAL`);
+  } else if (frenos) {
+    const tocados = [...new Set(scopeFiles.map((f) => rutaComparable(f, [repoDeLosFrenos]).rel).filter((r) => frenos.files.has(r)))];
+    add('sin-frenos', tocados.length === 0, tocados.length
+      ? `el alcance toca frenos del manifiesto de controles (${tocados.join(', ')}) — plan HITL y pase adversarial`
+      : 'ningún archivo del alcance es un freno del manifiesto de controles');
+  }
 
   const allPass = criteria.every((c) => c.pass);
   return {
@@ -3723,6 +3767,29 @@ function computeRiskClass(args) {
       ? 'LOW-risk: la revisión adversarial de la story se saltea. El plan lo aprueba una persona, o la coordinadora con la revisión automática.'
       : 'NORMAL: «Aprobar el plan» con la persona, o la coordinadora con la revisión automática si la story no es delicada.',
   };
+}
+
+/**
+ * Los frenos que nombra el manifiesto de controles de un repo (scripts/ci/controls-from-base.json): `controls[].script`,
+ * `controls[].rules` (una cadena o un objeto con `path`, también los `optional`) y `workflows[].path`. `content` no
+ * cuenta: es lo que el manifiesto declara que no es regla. Más angosto que `archivosDeControles` a propósito: esa suma
+ * el código que cargan los guiones (bibliotecas compartidas que no son frenos). `{ files: Set }`, `{ error }` si no se
+ * puede leer, o null sin manifiesto. Nunca tira.
+ */
+function frenosDelManifiesto(raiz) {
+  if (!raiz) return null;
+  const f = path.join(raiz, 'scripts', 'ci', 'controls-from-base.json');
+  let texto;
+  try { texto = fs.readFileSync(f, 'utf8'); } catch (e) { return e && e.code === 'ENOENT' ? null : { error: (e && e.code) || String(e) }; }
+  let inv;
+  try { inv = JSON.parse(texto); } catch (e) { return { error: `no es JSON válido (${String((e && e.message) || e).split('\n')[0]})` }; }
+  if (!inv || !Array.isArray(inv.controls)) return { error: 'no tiene «controls»' };
+  const ruta = (r) => (typeof r === 'string' ? r : r && typeof r.path === 'string' ? r.path : null);
+  const files = new Set([
+    ...inv.controls.flatMap((c) => (c && typeof c === 'object' ? [c.script, ...(Array.isArray(c.rules) ? c.rules.map(ruta) : [])] : [])),
+    ...(Array.isArray(inv.workflows) ? inv.workflows.map(ruta) : []),
+  ].filter((x) => typeof x === 'string' && x).map((x) => x.replace(/\\/g, '/').replace(/^\.\//, '')));
+  return { files };
 }
 
 // ── ¿La story es delicada? ──
@@ -4587,7 +4654,8 @@ function salidaGrande(texto, code) {
 }
 
 let avisosDelPorton = [];
-// El camino del pedido de saltear el pase, o null: la bandera, la variable o `deep_review: off`.
+// El camino del pedido de saltear el pase, o null: la bandera, la variable o `deep_review: off` del repo. La política de
+// la organización (`args.orgDeepReview`) nunca es un pedido: sólo puede ser always o auto.
 function pedidoDeSalteo(args) {
   if (args.noDeepReview) return args.noDeepReviewFrom || '--no-deep-review';
   return deepReviewConfig(args.repo) === 'off' ? 'deep_review: off' : null;
@@ -4707,6 +4775,12 @@ function criterioDelPase(args) {
   // 2) Config por repo (`off` es un pedido: lo mira computeDeepReviewGate).
   const cfg = deepReviewConfig(args.repo);
   if (cfg === 'always') return { run: true, model, ...extras, reason: '.tycon/advisors.yaml deep_review: always' };
+  // La política de la organización (`args.orgDeepReview`, que lee la línea de comandos de team-repos.json →
+  // deep_review.default) entra en el mismo lugar que el `always` del repo; el `auto` del repo gana. No hay `off` de la
+  // organización: saltear el pase lo firma el dueño, así que cualquier otro valor no cambia nada.
+  if (args.orgDeepReview === 'always' && cfg !== 'auto') {
+    return { run: true, model, ...extras, reason: 'la organización lo pide siempre (team-repos.json → deep_review.default: always)' };
+  }
   // 3) Force-on explícito.
   if (args.deepReview) return { run: true, model, ...extras, reason: 'forzado ON (--deep-review)' };
   if (args.ultracode) return { run: true, model, ...extras, reason: 'ultracode ON → fuerza deep-review (hunters en Opus)' };
@@ -7449,6 +7523,7 @@ function main() {
     // La constancia del salteo se lee acá, de la corrida y del registro de la cuenta; un pedido sin ella se muestra.
     const { result, texto: textoDelPedido } = deepReviewGateDeLaCorrida({ args: conModelos, corrida, mostrar: true });
     if (textoDelPedido) process.stderr.write(textoDelPedido);
+    if (conModelos.orgDeepReviewProblem) process.stderr.write(`deep-review-gate: ${conModelos.orgDeepReviewProblem}\n`);
     if (result) decirModelos(result, conModelos.orgModels, avisosDelPorton);
     if (result && result.run === null) {
       // 🔴 No se pudo medir: se dice y se CORTA. «Correr por las dudas» tampoco es gratis — una
@@ -7918,6 +7993,8 @@ module.exports = {
   matchGlob,
   // La configuración `models` de la organización (la usa también on-advisor-run.js)
   orgModels,
+  orgDeepReview,
+  frenosDelManifiesto,
   aplicarModelosDeRevisores,
   // El cartel de la corrida (mods/harness-mods) copia la lista de pasos; harness-mods.test.js T16 la ata a ésta.
   completedWorkHours, harnessTimeTool, gitignoreAppendText, computeMissingBeforeStart,
