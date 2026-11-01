@@ -52,28 +52,28 @@ Los frenos, los controles y las firmas de control del arnés son de quien lo man
 
 ```mermaid
 flowchart TB
-  pedir(["<b>Pedir</b>"]) --> chico{"<b>¿Es un cambio chico?</b><br/><small>lo pedís en una frase y ves que quedó con sólo mirarlo</small>"}
+  pedir(["<b>Pedir</b>"]) --> chico{"<b>¿Es un cambio chico?</b><br/>lo pedís en una frase y ves que quedó con sólo mirarlo"}
   chico -- "Sí · Camino rápido" --> r1
   chico -- "No · Historia" --> h1
   subgraph rapido [" "]
     direction TB
-    r1["<b>Abrir el carril</b><br/><small>con la lista de archivos<br/>riesgo normal: la coordinadora, hasta 5<br/>riesgo alto: el dueño, hasta 8</small>"] --> r2["<b>Programar con la prueba primero</b><br/><small>al guardar, el arnés avisa si fue al revés</small>"]
+    r1["<b>Abrir el carril</b><br/>con la lista de archivos<br/>riesgo normal: la coordinadora, hasta 5<br/>riesgo alto: el dueño, hasta 8"] --> r2["<b>Programar con la prueba primero</b><br/>al guardar, el arnés avisa si fue al revés"]
     r2 --> r3["<b>Correr sus pruebas</b>"]
-    r3 --> r4["<b>Revisores y pase adversarial</b><br/><small>sólo con riesgo alto</small>"]
+    r3 --> r4["<b>Revisores y pase adversarial</b><br/>sólo con riesgo alto"]
   end
   subgraph historia [" "]
     direction TB
     h1["<b>Validar la historia</b>"] --> h2["<b>Armar el plan</b>"]
-    h2 --> h3["<b>Aprobar el plan</b><br/><small>riesgo normal: la coordinadora, si la revisión automática dio «aprobado»<br/>riesgo alto: el dueño</small>"]
+    h2 --> h3["<b>Aprobar el plan</b><br/>riesgo normal: la coordinadora, si la revisión automática dio «aprobado»<br/>riesgo alto: el dueño"]
     h3 --> h4["<b>Programar con las pruebas primero</b>"]
     h4 --> h5["<b>Correr las pruebas</b>"]
-    h5 --> h6["<b>Revisores</b><br/><small>elegidos según el cambio</small>"]
-    h6 --> h7["<b>Pase adversarial</b><br/><small>no en una historia chica de riesgo bajo ni en sólo documentación o pruebas</small>"]
+    h5 --> h6["<b>Revisores</b><br/>elegidos según el cambio"]
+    h6 --> h7["<b>Pase adversarial</b><br/>no en una historia chica de riesgo bajo ni en sólo documentación o pruebas"]
     h7 --> h8["<b>Probar en vivo, criterio por criterio</b>"]
   end
-  r4 --> g1["<b>Guardar</b><br/><small>el sí en la ventana de permiso</small>"]
+  r4 --> g1["<b>Guardar</b><br/>el sí en la ventana de permiso"]
   h8 --> g1
-  g1 --> g2["<b>Pull request</b><br/><small>la CI#59; en una historia, también el portón</small>"]
+  g1 --> g2["<b>Pull request</b><br/>la CI#59; en una historia, también el portón"]
 ```
 
 Los controles son una parte del ciclo: cuidan cada paso. Se arranca de dos maneras: [solo, en tu
