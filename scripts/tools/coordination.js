@@ -15,6 +15,9 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *   signature-done <id>      borra el archivo y su pendiente
  *   open --name <n> --cwd <carpeta> -- <encargo>
  *                            abre una sesión de fondo con ese nombre; nunca reintenta
+ *   open --name <n> --repo <repo> [--branch <rama>] -- <encargo>
+ *                            lo mismo, en un puesto fijo libre del repo (scripts/tools/work-slots.js), en la rama del
+ *                            trabajo (wt/<nombre> sin rama); sin puesto libre no la abre
  *
  * Además, sin línea de comandos: `capNotice` es el aviso del tope que la coordinadora ve en cada turno
  * (scripts/hooks/coordination-notice.js) y `adversarialTurn` es lo que `deep-review-gate` agrega cuando otra sesión
@@ -35,6 +38,7 @@ const { adversarialInFlight } = require(path.join(SKILL_LIB, 'codex-reviewers.js
 const { sesionQueReenvia, designacionVigente } = require(path.join(SKILL_LIB, 'critical-waivers.js'));
 const { sessionsBySid } = require('./work-in-progress.js');
 const tyconConfig = require(path.join(__dirname, '..', 'lib', 'tycon-config.js'));
+const workSlots = require('./work-slots.js');
 
 const CODEX_WINDOW_MS = 5 * 60000;
 // Una sesión de Codex quieta hace más de tres horas ya no está esperando: no se lista.
@@ -487,25 +491,49 @@ function open(opts = {}) {
   if (taken.has(name)) return no(`«${name}» ya lo usa otra sesión viva: no la abrí.`);
   if (!oneLine(task)) return no('Falta el encargo de la sesión: no la abrí.');
   if (s.working.length >= s.cap.value) return no(`Ya hay ${s.working.length} trabajando y el tope es ${s.cap.value} (${ORIGIN[s.cap.origin] || s.cap.origin}): no la abrí, espera su turno.`);
-  if (!cwd || !path.isAbsolute(cwd)) return no('Falta la carpeta de la sesión, absoluta: no la abrí.');
-  if (!fs.existsSync(cwd)) return no(`La carpeta ${cwd} no existe: no la abrí.`);
+  if (cwd && opts.repo) return no('Va o la carpeta o el repo, no los dos: no la abrí.');
+  // Con el repo, la sesión va a un puesto fijo (scripts/tools/work-slots.js): la carpeta ya está aprobada y no hace
+  // falta que el dueño apruebe una nueva.
+  let slot = null;
+  if (opts.repo) {
+    if (!path.isAbsolute(opts.repo)) return no('El repo va con su ruta absoluta: no la abrí.');
+    const branch = opts.branch || `wt/${name}`;
+    const tk = workSlots.take({ home, env, arnes: opts.arnes, repo: opts.repo, branch });
+    if (!tk.ok) return no(`${tk.message.replace(/\.$/, '')}; no la abrí.`);
+    slot = tk;
+  }
+  const where = slot ? slot.path : cwd;
+  if (!where || !path.isAbsolute(where)) return no('Falta la carpeta de la sesión, absoluta: no la abrí.');
+  if (!fs.existsSync(where)) return no(`La carpeta ${where} no existe: no la abrí.`);
+  // Si no abrió, el puesto vuelve a quedar libre y la rama que se creó para el trabajo no queda.
+  const fail = (message) => {
+    if (slot) {
+      workSlots.release({ home, env, slot: slot.path });
+      if (slot.created) spawnSync('git', ['-C', slot.path, 'branch', '-d', slot.branch], { encoding: 'utf8', windowsHide: true });
+    }
+    return no(message);
+  };
+  const job = slot
+    ? `${task} — Trabajás en el puesto ${slot.path}, en la rama ${slot.branch}. Al terminar, con todo commiteado, soltalo: node "${path.join(__dirname, 'work-slots.js')}" release "${slot.path}"`
+    : String(task);
   const launcher = opts.launcher || { bin: 'claude', prefix: [] };
   const timeoutMs = opts.timeoutMs || LAUNCH_TIMEOUT_MS;
-  const r = spawnSync(launcher.bin, [...(launcher.prefix || []), '--bg', '-n', name, '--', String(task)], {
-    cwd, encoding: 'utf8', timeout: timeoutMs, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
+  const r = spawnSync(launcher.bin, [...(launcher.prefix || []), '--bg', '-n', name, '--', job], {
+    cwd: where, encoding: 'utf8', timeout: timeoutMs, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
   });
-  if (r.error && r.error.code === 'ENOENT') return no(`Claude Code no está instalado en esta máquina (no encontré ${launcher.bin}): no abrí la sesión.`);
+  if (r.error && r.error.code === 'ENOENT') return fail(`Claude Code no está instalado en esta máquina (no encontré ${launcher.bin}): no abrí la sesión.`);
+  // sin respuesta no se sabe si abrió: el puesto queda tomado, mejor que dos sesiones en la misma carpeta
   if (r.error && r.error.code === 'ETIMEDOUT') return no(`El lanzador no volvió en ${Math.round(timeoutMs / 1000)} s: no sé si abrió la sesión y no reintenté. Mirá con /wip.`);
-  if (r.error) return no(`El lanzador falló (${r.error.code || r.error.message}): no abrí la sesión.`);
+  if (r.error) return fail(`El lanzador falló (${r.error.code || r.error.message}): no abrí la sesión.`);
   if (r.status !== 0) {
     const out = `${r.stderr || ''}\n${r.stdout || ''}`;
-    if (/not trusted/i.test(out)) return no(`La carpeta ${cwd} todavía no está aprobada para Claude Code: la abre el dueño una vez. Mientras tanto, la sesión la abre el dueño y yo le doy el encargo.`);
+    if (/not trusted/i.test(out)) return fail(`La carpeta ${where} todavía no está aprobada para Claude Code: la abre el dueño una vez${slot ? ' (los puestos sin aprobar los lista work-slots.js pending-trust)' : ''}. Mientras tanto, la sesión la abre el dueño y yo le doy el encargo.`);
     const first = out.split('\n').map((l) => l.trim()).find(Boolean);
-    return no(`El lanzador falló: ${first || (r.signal ? `lo cortó la señal ${r.signal}` : `salió con código ${r.status}`)}. No reintenté.`);
+    return fail(`El lanzador falló: ${first || (r.signal ? `lo cortó la señal ${r.signal}` : `salió con código ${r.status}`)}. No reintenté.`);
   }
-  const opened = `Abrí «${name}» en ${cwd}. Para entrar: claude attach ${name}`;
+  const opened = `Abrí «${name}» en ${where}. Para entrar: claude attach ${name}`;
   try {
-    writeJson(openedFile(home), [...recentOpened(home, now, []).filter((o) => o.name !== name), { name, cwd, at: now }]);
+    writeJson(openedFile(home), [...recentOpened(home, now, []).filter((o) => o.name !== name), { name, cwd: where, at: now }]);
   } catch (e) {
     return { ok: true, message: oneLine(`${opened}. Pero no la pude anotar (${e.code || e.message}): hasta que escriba su archivo de sesión no cuenta para el tope.`) };
   }
@@ -555,11 +583,11 @@ function main(argv) {
     return r.ok ? 0 : 1;
   }
   if (cmd === 'open') {
-    const r = open({ ...base, name: f.name, cwd: f.cwd, task: f.rest.join(' '), timeoutMs: f['timeout-ms'] ? Number(f['timeout-ms']) : undefined });
+    const r = open({ ...base, name: f.name, cwd: f.cwd, repo: f.repo, branch: f.branch, task: f.rest.join(' '), timeoutMs: f['timeout-ms'] ? Number(f['timeout-ms']) : undefined });
     process.stdout.write(`${r.message}\n`);
     return r.ok ? 0 : 1;
   }
-  process.stderr.write('uso: coordination.js status [--json] | coordinate | signature --kind <tema> --title <qué> --cwd <carpeta> -- <comando...> | signature-done <id> | open --name <n> --cwd <carpeta> -- <encargo>\n');
+  process.stderr.write('uso: coordination.js status [--json] | coordinate | signature --kind <tema> --title <qué> --cwd <carpeta> -- <comando...> | signature-done <id> | open --name <n> (--cwd <carpeta> | --repo <repo> [--branch <rama>]) -- <encargo>\n');
   return 2;
 }
 

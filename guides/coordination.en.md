@@ -62,6 +62,13 @@ toward the cap.
 approval. In practice, the first time the coordinator opens a session in a new worktree, `open` answers that the
 folder still needs approving.
 
+**That is why there are fixed work slots.** With `--repo <repo>` instead of `--cwd`, `open` does not use a new folder:
+it takes a free slot of the repo and opens the session there, on the job's branch (`--branch <branch>`, or
+`wt/<name>`). There are as many slots as the cap and they are always the same folders, so the owner approves them only
+once: `node scripts/tools/work-slots.js pending-trust` lists the missing ones, each with its `cd`. With no free slot,
+`open` says so and does not open. The task tells the session how to release the slot when it is done; if the launcher
+fails, the slot is free again. What the slots are: `guides/git-worktrees.md` §8.
+
 **Not measured yet, left as the owner's test:** how long a session opened in the background takes to show up, and what
 title the editor tab shows after `/rename`. The guide takes neither for granted.
 
