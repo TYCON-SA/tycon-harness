@@ -7964,6 +7964,13 @@
           "expect": { "exit": 2, "stderr_re": ["registro de aprobaciones de pendientes no se escribe a mano"] }
         },
         {
+          "id": "pending-approvals-carpeta-write-frena",
+          "type": "must-block",
+          "_por_que": "Cada aprobación nueva va en su propio archivo de tasks/pending-approvals/: también lo escribe sólo marker.js approve-pending, con la firma.",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Write", "tool_input": { "file_path": "${FIXTURE}/tasks/pending-approvals/DEF-x.0123456789abcdef.json", "content": "{}" } },
+          "expect": { "exit": 2, "stderr_re": ["registro de aprobaciones de pendientes no se escribe a mano"] }
+        },
+        {
           "id": "pending-approvals-pasa-la-lista",
           "type": "must-not-block",
           "_por_que": "La lista de pendientes se edita a mano: lo que frena es abrir un pendiente sin aprobación, y eso lo mira el commit.",
@@ -9008,6 +9015,19 @@
           "id": "pending-approvals-consola-cp-frena",
           "type": "must-block",
           "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "cp /tmp/a.jsonl tasks/pending-approvals.jsonl" }, "cwd": "${FIXTURE}" },
+          "expect": { "exit": 2, "stderr_re": ["registro de aprobaciones de pendientes no se escribe a mano"] }
+        },
+        {
+          "id": "pending-approvals-carpeta-consola-redireccion-frena",
+          "type": "must-block",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "echo '{}' > tasks/pending-approvals/DEF-x.0123456789abcdef.json" }, "cwd": "${FIXTURE}" },
+          "expect": { "exit": 2, "stderr_re": ["registro de aprobaciones de pendientes no se escribe a mano"] }
+        },
+        {
+          "id": "pending-approvals-carpeta-consola-cp-frena",
+          "type": "must-block",
+          "_por_que": "Copiar a la carpeta, sin nombrar el archivo: el destino es la carpeta misma.",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "cp /tmp/a.json tasks/pending-approvals/" }, "cwd": "${FIXTURE}" },
           "expect": { "exit": 2, "stderr_re": ["registro de aprobaciones de pendientes no se escribe a mano"] }
         },
         {
