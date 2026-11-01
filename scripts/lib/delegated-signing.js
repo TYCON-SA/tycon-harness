@@ -206,10 +206,14 @@ function motivoDelRepo({ repo, cwd, estado, sesion, destino, raiz }) {
   if (!cwd) return 'el pedido no dice desde qué carpeta se corre';
   const delPendiente = raiz(path.resolve(cwd, repo || '.'));
   if (!delPendiente) return `${repo || cwd} no es un repo de git`;
-  const suyos = reposDe(estado, sesion, raiz, { estricto: true });
-  if (suyos === undefined) return 'no pude leer el marcador o el arreglo rápido de la sesión del pedido, o uno de sus repos no se encuentra';
-  const checkout = raiz(cwd);
-  if ((checkout && checkout.clave === delPendiente.clave) || suyos.includes(delPendiente.clave)) return `${delPendiente.ruta} es un repo de la coordinadora: un pendiente suyo lo aprueba el dueño`;
+  // un worktree agregado nunca es de la coordinadora: sólo cuentan su checkout y los clones principales donde trabaja.
+  // Pedir la firma parada en el worktree de la sesión destino no lo hace suyo
+  if (!delPendiente.enlazado) {
+    const suyos = reposDe(estado, sesion, raiz, { estricto: true });
+    if (suyos === undefined) return 'no pude leer el marcador o el arreglo rápido de la sesión del pedido, o uno de sus repos no se encuentra';
+    const checkout = raiz(cwd);
+    if ((checkout && checkout.clave === delPendiente.clave) || suyos.includes(delPendiente.clave)) return `${delPendiente.ruta} es un repo de la coordinadora: un pendiente suyo lo aprueba el dueño`;
+  }
   const delDestino = reposDe(estado, destino, raiz);
   if (delDestino === undefined) return `no pude leer el marcador o el arreglo rápido de la sesión ${destino}`;
   if (!delDestino.includes(delPendiente.clave)) return `${delPendiente.ruta} no es un repo donde trabaja la sesión ${destino} (ni su ejecución abierta ni su arreglo rápido)`;

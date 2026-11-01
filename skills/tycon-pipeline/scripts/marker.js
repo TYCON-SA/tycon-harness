@@ -5312,16 +5312,26 @@ function cmdAdhoc(sub, payloadJson) {
       console.error('marker.js adhoc set: sin sesión no sé a qué pestaña abrirle el arreglo rápido: --terminal --for-session <id de la sesión>.');
       process.exit(2);
     }
+    // un tope menor que los archivos ya tocados deja el arreglo trabado: se frena antes de pedir la firma (también en el
+    // chequeo previo de la ventana), con el número de archivos tocados
+    const actual = io.readAdhoc(STATE_DIR, destino);
+    const tocados = actual ? (actual.files || []).length : 0;
+    if (actual && payload.maxFiles !== undefined && payload.maxFiles < tocados) {
+      console.error(`marker.js adhoc set: el arreglo rápido de la sesión ${destino} ya tocó ${tocados} archivos: un tope de ${payload.maxFiles} lo dejaría trabado. Pedí ${tocados} o más, o cerralo con \`adhoc clear\` y abrí uno nuevo.`);
+      process.exit(2);
+    }
     const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
     // en la terminal el dueño ve este resumen: el motivo y el cupo, como en la ventana
     const cupoPedido = payload.maxFiles !== undefined ? `hasta ${payload.maxFiles} archivos` : 'el cupo de siempre (8 archivos, o el que ya tenía)';
     // por delegación, el dueño se entera antes de la constancia, por los canales del perfil: sin entrega, no hay arreglo
-    const antes = (viaPedida) => {
+    const antes = (viaPedida, registro) => {
       if (viaPedida !== 'delegacion') return null;
       const so = require('./lib/save-ok.js');
       const notify = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'notify.js'));
       const cupo = cupoDelegado(payload.maxFiles !== undefined ? payload.maxFiles : 8);
-      const a = so.avisar({ texto: `Arreglo rápido: la coordinadora abrió el de la sesión ${destino}: «${reason}» · hasta ${cupo} archivos, sin tocar lo sensible.`,
+      // el de una pestaña sin permisos lo abrió la propia sesión, sin firma: «hecho y avisado»
+      const quien = registro && registro.via === 'avisado' ? `la sesión ${registro.sesion} abrió sin firma (pestaña sin permisos)` : 'la coordinadora abrió';
+      const a = so.avisar({ texto: `Arreglo rápido: ${quien} el de la sesión ${destino}: «${reason}» · hasta ${cupo} archivos, sin tocar lo sensible.`,
         canales: () => notify.canalesDeLaSesion(), mandar: (o) => notify.avisar(o) });
       return a.ok ? null : { codigo: 1, motivo: `sin aviso a la persona, la coordinadora no abre el arreglo rápido (${a.motivo})` };
     };
@@ -5337,7 +5347,7 @@ function cmdAdhoc(sub, payloadJson) {
       process.exit(r.codigo === 2 ? 2 : 1);
     }
     // una vía que este guion no conoce no se cuenta como ventana: no se declara
-    if (!['delegacion', 'terminal', 'ventana'].includes(r.via)) {
+    if (!['delegacion', 'avisado', 'terminal', 'ventana'].includes(r.via)) {
       console.error(`🔒 marker.js adhoc set: la firma volvió por una vía que no conozco (${r.via}); no declaré nada.`);
       process.exit(1);
     }
@@ -5346,7 +5356,8 @@ function cmdAdhoc(sub, payloadJson) {
     const existing = io.readAdhoc(STATE_DIR, destino);
     let maxFiles = payload.maxFiles !== undefined ? payload.maxFiles : (existing ? existing.maxFiles : 8);
     const pedido = maxFiles;
-    if (via === 'delegacion') maxFiles = cupoDelegado(maxFiles);
+    // lo hecho y avisado en una pestaña sin permisos tiene el mismo cupo que la delegación
+    if (via === 'delegacion' || via === 'avisado') maxFiles = cupoDelegado(maxFiles);
     const obj = {
       reason, maxFiles,
       files: existing ? (existing.files || []) : [],

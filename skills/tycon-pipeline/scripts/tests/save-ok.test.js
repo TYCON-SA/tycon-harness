@@ -708,3 +708,44 @@ test('ControlesDelCommit_ColgadoNiega_SinGanchoPasa', (t) => {
   assert.strictEqual(r.codigo, 2);
   assert.match(r.motivo, /no terminaron/);
 });
+
+// Las salidas y capturas de una prueba en vivo que el registro (`<clave>-smoke-ledger.jsonl`) nombra con su huella son
+// evidencia: la matriz por criterio las exige, y el ok por delegación no puede tomarlas por código.
+// 🔴 rojo con el código de antes: un `.png` o un `.txt` en la carpeta de la evidencia era «no es evidencia», y el ok
+// de una historia con pruebas en vivo le tocaba siempre a una persona.
+test('Evidencia_SalidasYCapturasDelRegistro_SonEvidencia', (t) => {
+  const a = repo(t);
+  const sha = (buf) => require('crypto').createHash('sha256').update(buf).digest('hex');
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+  const txt = Buffer.from('salida del humo\n');
+  escribir(a, '.advisors/dod-runtime/9.99-smoke-captures/20261101T120000-abc123.png', png);
+  escribir(a, '.advisors/dod-runtime/9.99-smoke-outputs/20261101T120000-def456.txt', txt);
+  escribir(a, '.advisors/dod-runtime/9.99-smoke-ledger.jsonl', `${JSON.stringify({ v: 2, acs: [1], output: '9.99-smoke-outputs/20261101T120000-def456.txt', output_sha: sha(txt), capture: '9.99-smoke-captures/20261101T120000-abc123.png', capture_sha: sha(png) })}\n`);
+  assert.deepStrictEqual(SO.sensibles({ repos: [a] }), [], 'las anotadas son evidencia');
+  // una captura suelta, o una anotada que cambió después de sellarla, no
+  escribir(a, '.advisors/dod-runtime/9.99-smoke-captures/suelta.png', png);
+  escribir(a, '.advisors/dod-runtime/9.99-smoke-outputs/20261101T120000-def456.txt', 'otra salida\n');
+  const s = SO.sensibles({ repos: [a] }).map((x) => x.archivo).sort();
+  assert.deepStrictEqual(s, ['.advisors/dod-runtime/9.99-smoke-captures/suelta.png', '.advisors/dod-runtime/9.99-smoke-outputs/20261101T120000-def456.txt']);
+});
+
+// El chequeo previo del ok mira lo preparado cuando la persona preparó algo: un cambio que entra en dos commits se firma
+// sin sacar del disco el resto. Sin nada preparado, lo de siempre: lo que guardaría el commit de todo.
+// 🔴 rojo con el código de antes: miraba siempre el disco, y el código sin preparar frenaba el ok del primer commit.
+test('ControlesDelCommit_ConAlgoPreparado_MiraLoPreparado', (t) => {
+  const a = repo(t);
+  gancho(t, a, 'if git diff --cached -U0 | grep -q PROHIBIDO; then echo "datos estables: PROHIBIDO en lo que se guarda" >&2; exit 1; fi');
+  escribir(a, 'excepcion.json', '{"permitido": true}\n');
+  sh(a, 'add', 'excepcion.json');
+  escribir(a, 'resto.js', '// PROHIBIDO hasta que entre la excepción\n');   // en el disco, sin preparar
+  const indice = fs.readFileSync(path.join(a, '.git', 'index'));
+  const r = SO.controlesDelCommit({ repos: [a] });
+  assert.strictEqual(r.codigo, 0, r.motivo);
+  assert.deepStrictEqual(fs.readFileSync(path.join(a, '.git', 'index')), indice, 'el índice de la persona no se tocó');
+  // lo preparado que frena, frena, y el motivo dice que miró lo preparado
+  escribir(a, 'excepcion.json', '{"PROHIBIDO": true}\n');
+  sh(a, 'add', 'excepcion.json');
+  const n = SO.controlesDelCommit({ repos: [a] });
+  assert.strictEqual(n.codigo, 2);
+  assert.match(n.motivo, /lo preparado/);
+});
