@@ -117,6 +117,10 @@
           {
             "type": "command",
             "command": "node ${TCG}/scripts/hooks/response-style-notice.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/why-blocked-notice.js"
           }
         ]
       }

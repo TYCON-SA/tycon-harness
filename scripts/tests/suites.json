@@ -19,6 +19,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/why-blocked-notice.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/nightly-dod-notice.test.sh",
       "requiere": []
     },
