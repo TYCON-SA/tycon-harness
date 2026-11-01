@@ -52,7 +52,8 @@ test('T1 EstadoPorSesion: firma, coordina, espera, prueba, trabajando y libre sa
   });
   assert.deepStrictEqual(byName(data, 'sesion-e').pasos, STEPS);
   assert.strictEqual(byName(data, 'sesion-e').avance, 50);
-  assert.strictEqual(data.meta.extra, 3, 'ocho personas, cinco escritorios');
+  assert.strictEqual(data.meta.extra, 0, 'ocho personas, ocho escritorios');
+  assert.strictEqual(data.meta.puestos.length, 8);
 });
 
 test('T2 CoordinadoraQuieta_NoEstaLibre: la coordinadora sin fila de trabajo coordina', () => {
@@ -119,7 +120,7 @@ test('T11 ComoElTablero: la nota es la oración, sin hora dice «sin hora estima
 function pageTimeHelpers() {
   const html = page({ agents: [], items: [], meta: { teToca: [] }, rows: [], free: [], unreadable: [] });
   const code = html.slice(html.indexOf('const DAYS='), html.indexOf('function renderTop'));
-  return new Function(`${code.replace(/^const (AST|SHIRT|agents)=.*$/gm, '')}; return { finTxt };`)();
+  return new Function(`${code.replace(/^(const (AST|SHIRT|agents)=|let agents|function setData|setData\(DATA\)).*$/gm, '')}; return { finTxt };`)();
 }
 
 test('T12 HoraPasada: si la hora de fin de una corrida abierta ya pasó dice el atraso real en rojo; si es vieja, «sin hora estimada»; nunca «en hora»', () => {
@@ -522,4 +523,197 @@ test('T51 AdhocSet_KeepsDeclaredHour: agrandar el carril no borra la hora declar
   const src = fs.readFileSync(MARKER, 'utf8');
   const set = src.slice(src.indexOf('const existing = io.readAdhoc(STATE_DIR, destino);'), src.indexOf('io.writeAdhoc(STATE_DIR, destino, obj);'));
   assert.match(set, /existing[^\n]*\.until/, 'adhoc set copia la hora del carril que ya existía');
+});
+
+// ---------- la oficina viva: una tarjeta, el sitio, abrir sin cmd, los escritorios y la promesa de cada corrida ----------
+
+const { openFile, deskSlots } = require(OFFICE);
+
+test('T34 Card_OneWorkOnly: la tarjeta dice un solo trabajo, el de la corrida o el del carril', () => {
+  const m = toyMachine();
+  const pipe = { stepsCompleted: ['start', 'validate-story'], stepsPending: ['plan', 'implement'] };
+  fs.writeFileSync(path.join(m.state, 'active', 's1.json'), JSON.stringify({ sessionId: 's1', storyId: '9.1', storyPath: storyFile(m, '9.1', 'La historia de la corrida'), ...pipe }));
+  fs.writeFileSync(path.join(m.state, 'doing', 's1.json'), JSON.stringify({ text: 'mientras espero, miro el banco', at: new Date(NOW).toISOString(), endAt: new Date(NOW + 3600000).toISOString() }));
+  fs.writeFileSync(path.join(m.state, 'adhoc', 's1.json'), JSON.stringify({ reason: 'otro arreglo de la misma sesión', declaredAt: new Date(NOW).toISOString(), until: new Date(NOW + 2 * 3600000).toISOString() }));
+  fs.writeFileSync(path.join(m.state, 'adhoc', 's2.json'), JSON.stringify({ reason: 'arreglo suelto', declaredAt: new Date(NOW).toISOString() }));
+  liveSession(m, 's1', 'Alfa');
+  liveSession(m, 's2', 'Beto');
+  const w = buildWip({ stateDir: m.state, sessionsDir: m.sessions, now: new Date(NOW).toISOString(), home: m.root });
+  const { data } = buildOffice({ wip: w, nowMs: NOW });
+  const alfa = byName(data, 'Alfa');
+  assert.strictEqual(alfa.tipo, 'pipeline');
+  assert.match(alfa.mientras || '', /miro el banco|otro arreglo/);
+  for (const hh of [new Date(NOW + 3600000), new Date(NOW + 2 * 3600000)]) {
+    assert.ok(!String(alfa.pronosticoIso || '').endsWith(`${String(hh.getHours()).padStart(2, '0')}:${String(hh.getMinutes()).padStart(2, '0')}`), 'la hora de la nota o del carril no es la de la corrida');
+  }
+  const beto = byName(data, 'Beto');
+  assert.strictEqual(beto.termina, 'sin hora estimada');
+  assert.strictEqual(beto.avance, undefined);
+});
+
+test('T35 SiteLink_FromProfile_OrNothing: el enlace al sitio sale del perfil, o no hay enlace', async () => {
+  const { collect } = require(OFFICE);
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'office-site-'));
+  for (const d of ['active', 'adhoc', 'doing']) fs.mkdirSync(path.join(stateDir(home), d), { recursive: true });
+  const at = (code, out) => async () => ({ code, out });
+  const ok = await collect({ home, now: new Date(NOW).toISOString(), siteUrl: at(0, 'https://sitio.example\n') });
+  assert.strictEqual(ok.meta.sitio, 'https://sitio.example');
+  const html = page(ok);
+  assert.match(html, /target="_blank" rel="noopener"|rel="noopener"/);
+  for (const [code, out, note] of [[3, '', null], [2, 'perfil roto', /sitio/], [0, 'javascript:alert(1)', null]]) {
+    const d = await collect({ home, now: new Date(NOW).toISOString(), siteUrl: at(code, out) });
+    assert.strictEqual(d.meta.sitio, undefined, `${code} ${out}`);
+    if (note) assert.ok(d.unreadable.some((u) => note.test(u)), d.unreadable.join(' | '));
+  }
+});
+
+test('T36 OpenFile_Windows_NoShell: en Windows abre con rundll32, sin cmd ni shell', () => {
+  const target = 'C:\\Temp\\a&b|c^d "e"\\oficina.html';
+  const calls = [];
+  const fake = (cmd, args, opts) => { calls.push({ cmd, args, opts }); return { on() {}, unref() {} }; };
+  openFile(target, { platform: 'win32', spawn: fake });
+  assert.strictEqual(calls[0].cmd, 'rundll32');
+  assert.deepStrictEqual(calls[0].args, ['url.dll,FileProtocolHandler', target]);
+  assert.ok(!calls[0].args.includes('/c') && calls[0].cmd !== 'cmd');
+  assert.ok(!calls[0].opts.shell, 'sin shell');
+  openFile(target, { platform: 'darwin', spawn: fake });
+  openFile(target, { platform: 'linux', spawn: fake });
+  assert.deepStrictEqual(calls.slice(1).map((c) => [c.cmd, c.args]), [['open', [target]], ['xdg-open', [target]]]);
+  let said = '';
+  const failing = () => ({ on(ev, fn) { if (ev === 'error') fn(new Error('ENOENT')); }, unref() {} });
+  const write = process.stderr.write;
+  process.stderr.write = (s) => { said += s; return true; };
+  try { openFile(target, { platform: 'win32', spawn: failing }); } finally { process.stderr.write = write; }
+  assert.match(said, /abrila a mano: .*oficina\.html/);
+});
+
+test('T52 Desks_UpToTen_NotCappedByCoordination: hasta 10 escritorios según cuántas sesiones haya', () => {
+  for (const [n, desks, extra] of [[6, 6, 0], [10, 10, 0], [12, 10, 2]]) {
+    const entries = Array.from({ length: n }, (_, i) => ({ session: `s${String(i).padStart(2, '0')}`, extra: { kind: 'loose', text: `arreglo ${i}` } }));
+    const { data } = buildOffice({ wip: wip(entries), nowMs: NOW });
+    assert.strictEqual(data.meta.puestos.length, desks, `${n} sesiones`);
+    assert.strictEqual(data.meta.extra, extra);
+  }
+  // hasta cinco, los cinco lugares de siempre; con seis o más, la grilla de diez; nunca más de diez
+  const five = deskSlots(5);
+  assert.deepStrictEqual(deskSlots(3), five.slice(0, 3));
+  assert.deepStrictEqual(five[0], [5.6, 1.45, 0], 'el primero de los cinco de siempre');
+  const ten = deskSlots(10);
+  assert.strictEqual(ten.length, 10);
+  assert.strictEqual(new Set(ten.map((s) => `${s[0]},${s[1]}`)).size, 10, 'diez lugares distintos');
+  assert.ok(!ten.some((s) => five.some((f) => f[0] === s[0] && f[1] === s[1])), 'la grilla no reusa los cinco');
+  assert.deepStrictEqual(deskSlots(6), ten.slice(0, 6));
+  assert.strictEqual(deskSlots(12).length, 10, 'tope de diez');
+  const html = page(buildOffice({ wip: wip([{ session: 'a' }]), nowMs: NOW }).data);
+  assert.doesNotMatch(html, /max_working/, 'el tope de la coordinadora no cuenta');
+  assert.match(html, /m\.puestos/, 'la página dibuja los puestos que le llegan');
+  assert.doesNotMatch(html, /SLOTS/, 'sin los cinco lugares fijos');
+});
+
+test('T53 OwnPromise_DistinctDelays: cada corrida mide su atraso contra su propia promesa', () => {
+  const m = toyMachine();
+  const pipe = { stepsCompleted: ['start', 'validate-story'], stepsPending: ['plan', 'implement'] };
+  // las dos pasadas de su tiempo: la promesa es su arranque más su estimado, los dos campos que el marcador guarda
+  const arranque = (horasAtras, estimado) => ({ startedAt: new Date(NOW - horasAtras * 3600000).toISOString(), estimate_min: estimado });
+  fs.writeFileSync(path.join(m.state, 'active', 's1.json'), JSON.stringify({ sessionId: 's1', storyId: '9.1', storyPath: storyFile(m, '9.1', 'Una'), ...pipe, ...arranque(5, 180) }));
+  fs.writeFileSync(path.join(m.state, 'active', 's2.json'), JSON.stringify({ sessionId: 's2', storyId: '9.2', storyPath: storyFile(m, '9.2', 'Otra'), ...pipe, ...arranque(1.5, 60) }));
+  fs.writeFileSync(path.join(m.state, 'active', 's3.json'), JSON.stringify({ sessionId: 's3', storyId: '9.3', storyPath: storyFile(m, '9.3', 'Sin promesa'), ...pipe }));
+  liveSession(m, 's1', 'Alfa'); liveSession(m, 's2', 'Beto'); liveSession(m, 's3', 'Cata');
+  const w = buildWip({ stateDir: m.state, sessionsDir: m.sessions, now: new Date(NOW).toISOString(), home: m.root });
+  // la oficina se abre después: las dos ven la misma hora, pero cada una tiene la suya
+  const { data } = buildOffice({ wip: w, nowMs: NOW });
+  const [a, b] = [byName(data, 'Alfa'), byName(data, 'Beto')];
+  assert.strictEqual(a.estimadaIso.slice(11), new Date(NOW - 2 * 3600000).toTimeString().slice(0, 5));
+  assert.strictEqual(b.estimadaIso.slice(11), new Date(NOW - 30 * 60000).toTimeString().slice(0, 5));
+  assert.deepStrictEqual([a.atrasoMin, b.atrasoMin], [120, 30], 'cada atraso contra su promesa');
+  assert.deepStrictEqual([a.fin.cls, b.fin.cls], ['late', 'late']);
+  // sin promesa anotada sigue la regla de antes: la primera hora vista, que acá no hay (no hay historial)
+  assert.strictEqual(byName(data, 'Cata').termina, 'sin hora estimada');
+  // los dos campos llegan de verdad al marcador por `marker.js set`, el camino de `pipeline.js start`
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'office-promesa-'));
+  const rc = runMarker(home, 'sid-promesa', ['set', JSON.stringify({ stepScheme: 2, storyId: '9.9', storyPath: '/x/s.md', repoPath: home, stepsPending: ['approve-plan'], estimate_min: 45 })]);
+  assert.strictEqual(rc, 0);
+  const escrito = JSON.parse(fs.readFileSync(path.join(stateDir(home), 'active', 'sid-promesa.json'), 'utf8'));
+  assert.ok(Number.isFinite(Date.parse(escrito.startedAt)), 'el marcador guarda su arranque');
+  assert.strictEqual(escrito.estimate_min, 45, 'el marcador guarda su estimado');
+});
+
+test('T56 Entering_NoQueueHour_NotLate: lo que terminó y espera entrar sin hora de la cola no sale atrasado por su promesa', () => {
+  const ent = (kind) => ({ session: kind, extra: { kind, storyId: '9.1', endAt: null, promisedAt: NOW - 3 * 3600000 } });
+  const { data } = buildOffice({ wip: wip([ent('entering'), ent('stalled')]), nowMs: NOW });
+  for (const n of ['entering', 'stalled']) {
+    const a = byName(data, n);
+    assert.notStrictEqual(a.fin && a.fin.cls, 'late', `${n}: su promesa vieja no es atraso`);
+    assert.ok(!a.atrasoMin, `${n}: sin minutos de atraso`);
+    assert.strictEqual(a.termina, 'sin hora estimada', `${n}: dice que no hay hora, como /wip`);
+  }
+});
+
+test('T57 Plain_KeepsOrdinaryWords: el texto de la sesión conserva las palabras comunes', () => {
+  const said = (text) => byName(buildOffice({ wip: wip([{ session: 'n', extra: { kind: 'note', text } }]), nowMs: NOW }).data, 'n').haciendo;
+  assert.strictEqual(said('Migra el plugin de .NET a la versión 8'), 'Migra el plugin de .NET a la versión 8');
+  assert.strictEqual(said('Arregla el paso-a-paso del alta'), 'Arregla el paso-a-paso del alta');
+  assert.strictEqual(said('Pruebas end-to-end del alta'), 'Pruebas end-to-end del alta');
+  assert.strictEqual(said('Revisa la escena de three.js'), 'Revisa la escena de three.js');
+  assert.strictEqual(said('10.30: reunión con el cliente'), '10.30: reunión con el cliente');
+  assert.strictEqual(said('#1 prioridad: el alta'), '#1 prioridad: el alta');
+  // lo técnico se sigue sacando
+  assert.strictEqual(said('Arregla scripts/tools/office.js en la rama'), 'Arregla en la rama');
+  assert.strictEqual(said('8.85 · Corrige el pedido #842'), 'Corrige el pedido');
+  assert.strictEqual(said('Toca on-bash-write-gate y el .gitignore'), 'Toca y el');
+});
+
+test('T65 Promises_Unreadable_Said: unas horas prometidas rotas se dicen, no se toman por vacías', async () => {
+  const { collect } = require(OFFICE);
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'office-prom-'));
+  for (const d of ['active', 'adhoc', 'doing', 'office']) fs.mkdirSync(path.join(stateDir(home), d), { recursive: true });
+  const none = async () => ({ code: 3, out: '' });
+  const fresh = await collect({ home, now: new Date(NOW).toISOString(), siteUrl: none });
+  assert.ok(!fresh.unreadable.some((u) => /prometidas/.test(u)), 'sin archivo no hay aviso');
+  const file = path.join(stateDir(home), 'office', 'promises.json');
+  for (const text of ['{ roto', '[]', '"texto"']) {
+    fs.writeFileSync(file, text);
+    const broken = await collect({ home, now: new Date(NOW).toISOString(), siteUrl: none });
+    assert.ok(broken.unreadable.some((u) => /horas prometidas no se pudieron leer/.test(u)), `${text}: ${broken.unreadable.join(' | ')}`);
+  }
+  // ilegible (sin permiso): también se dice
+  if (process.platform !== 'win32' && process.getuid() !== 0) {
+    fs.writeFileSync(file, '{}');
+    fs.chmodSync(file, 0o000);
+    const blocked = await collect({ home, now: new Date(NOW).toISOString(), siteUrl: none });
+    fs.chmodSync(file, 0o600);
+    assert.ok(blocked.unreadable.some((u) => /horas prometidas no se pudieron leer \(EACCES\)/.test(u)), blocked.unreadable.join(' | '));
+  }
+});
+
+test('T66 Page_DrawFails_Said: si una foto nueva no se puede dibujar, la página lo dice', () => {
+  const html = page({ agents: [], items: [], meta: { actualizado: '10:00' }, rows: [], free: [], unreadable: [] }, { live: { token: 'abc' } });
+  const handler = (html.match(/ws\.onmessage=([^\n]*);\n/) || [])[1];
+  assert.ok(handler, 'la página viva tiene su manejador');
+  // se corre el manejador de verdad: una foto que no se puede dibujar avisa; la siguiente que se dibuja saca el aviso
+  const ovl = { textContent: '', hidden: true };
+  let breakIt = true;
+  const errors = [];
+  const run = new Function('document', 'window', 'setData', 'renderTop', 'renderCrew', 'console', 'BORRADO', `return (${handler});`);
+  const onmessage = run({ getElementById: (id) => (id === 'ovl' ? ovl : null) }, { tablero: {} },
+    () => { if (breakIt) throw new Error('dibujo roto'); }, () => {}, () => {}, { error: (e) => errors.push(e) });
+  onmessage({ data: JSON.stringify({ type: 'foto', data: {} }) });
+  assert.strictEqual(ovl.hidden, false);
+  assert.match(ovl.textContent, /No pude dibujar la última novedad/);
+  assert.strictEqual(errors.length, 1, 'el error queda en la consola');
+  breakIt = false;
+  onmessage({ data: JSON.stringify({ type: 'foto', data: {} }) });
+  assert.strictEqual(ovl.hidden, true, 'una foto buena saca el aviso');
+});
+
+test('T58 Page_PlaceholderInData_DoesNotBreak: un título con el nombre de un marcador de la plantilla no rompe la página', () => {
+  const data = { agents: [{ nombre: 's1', titulo: 'documentar __OFFICE_LIVE__ y __OFFICE_DATA__' }], items: [], meta: { actualizado: '10:00' }, rows: [], free: [], unreadable: [] };
+  for (const live of [{ token: 'abc' }, null]) {
+    const html = page(data, { live });
+    const d = html.match(/^let DATA=(.*);$/m);
+    const l = html.match(/^const LIVE=(.*);$/m);
+    assert.ok(d && l, 'la plantilla conserva sus dos asignaciones');
+    assert.strictEqual(JSON.parse(d[1]).agents[0].titulo, 'documentar __OFFICE_LIVE__ y __OFFICE_DATA__');
+    assert.deepStrictEqual(JSON.parse(l[1]), live);
+  }
 });

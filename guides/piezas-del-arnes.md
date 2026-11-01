@@ -1214,15 +1214,15 @@ _(scripts/metrics/step-times.js + el carril de cada commit en scripts/hooks/unpu
 
 ## scripts/tools/work-in-progress.js
 
-_(scripts/tools/work-in-progress.js + el comando commands/wip.md)_
+_(scripts/tools/work-in-progress.js + commands/wip.md; en 3D y en vivo: scripts/tools/office.js)_
 
-**Qué es:** El comando `/wip`: una tabla con el trabajo en curso de la máquina (story, paso, hora de fin y sesión), lo que espera entrar a los repos (y si choca con main), lo que anotó cada sesión sin story (`marker.js doing`), las libres, las que nadie usa y lo que quedó a medio camino.
+**Qué es:** `/wip`: una tabla con el trabajo en curso de la máquina (story, paso, hora de fin y sesión), lo que espera entrar a los repos (y si choca con main), lo que anotó cada sesión sin story (`marker.js doing`), las libres, las que nadie usa y lo que quedó a medio camino.
 
-**Por qué existe:** Con varias sesiones trabajando a la vez, saber qué hace cada una pedía leer los marcadores a mano. La hora de fin sale de la mediana de los pasos medidos en las corridas anteriores de la máquina; sin datos, lo dice en vez de inventar una hora.
+**Por qué existe:** Con varias sesiones a la vez, saber qué hace cada una pedía leer los marcadores a mano. La hora de fin es la mediana de los pasos medidos en la máquina; sin datos, lo dice en vez de inventarla.
 
 **Quién la usa:** Quien coordina varias sesiones en la misma máquina. Sólo lee: no limpia ni adopta nada.
 
-**Dónde se prueba:** `scripts/tests/work-in-progress.test.js`
+**Dónde se prueba:** `scripts/tests/work-in-progress.test.js` y `office*.test.js`
 
 ## scripts/metrics/upload-runs.js
 
