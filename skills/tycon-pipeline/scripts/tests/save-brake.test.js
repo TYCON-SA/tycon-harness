@@ -554,7 +554,7 @@ test('CambioAUnControl_SiguePidiendoLaFirmaDeControl (T14)', (t) => {
   const r = spawnSync('bash', [path.join(copia, 'scripts', 'ci', 'run-base-controls.sh'), 'pending', '--root', copia, '--base', 'base', '--range', 'base...pedido'],
     { encoding: 'utf8', env: { ...SIN_SESION, HOME: h, USERPROFILE: h } });
   const salida = `${r.stdout}${r.stderr}`;
-  assert.match(salida, new RegExp(`${freno.replace(/[.]/g, '\\.')} \\(código que corre un control\\)`), salida);
+  assert.ok(salida.includes(`${freno} (código que corre un control)`), salida);
   assert.match(salida, /approve --root/, `da el comando de la firma: ${salida}`);
 });
 
