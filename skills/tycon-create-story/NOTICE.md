@@ -25,6 +25,8 @@ This skill is a modified copy of `bmad-create-story` from the BMad Method.
 | `first-time.md` | New, written by the team: the first-time mode for a repo without a BMAD project (three plain questions, then the script writes the story) |
 | `scripts/story-without-bmad.js` | New, written by the team: decides the mode from the repo and writes the first-time story from the answers |
 | `scripts/tests/story-without-bmad.test.js` | New, written by the team: the tests of that script and of the first-time instructions |
+| `scripts/story-number.js` | New, written by the team: the number of a new story, read from `main`, the remote branches and the worktrees of the machine, with a doubt instead of a guess |
+| `scripts/tests/story-number.test.js` | New, written by the team: the tests of that script and of the step that calls it |
 
 To see every change line by line, compare this folder with the path above at that commit.
 
@@ -53,5 +55,7 @@ Esta skill es una copia modificada de `bmad-create-story`, del BMad Method.
 | `first-time.md` | Nuevo, escrito por el equipo: el modo primera vez para un repo sin proyecto BMAD (tres preguntas en llano y después el guion escribe la historia) |
 | `scripts/story-without-bmad.js` | Nuevo, escrito por el equipo: decide el modo por lo que hay en el repo y escribe la historia de primera vez desde las respuestas |
 | `scripts/tests/story-without-bmad.test.js` | Nuevo, escrito por el equipo: las pruebas de ese guion y de las instrucciones de primera vez |
+| `scripts/story-number.js` | Nuevo, escrito por el equipo: el número de una historia nueva, leído de `main`, de las ramas remotas y de los worktrees de la máquina, con una duda en vez de una adivinanza |
+| `scripts/tests/story-number.test.js` | Nuevo, escrito por el equipo: las pruebas de ese guion y del paso que lo llama |
 
 Para ver cada cambio línea por línea, comparar esta carpeta con la ruta de arriba en ese commit.

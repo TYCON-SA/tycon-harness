@@ -674,6 +674,12 @@
       "requiere": []
     },
     {
+      "__nota": "el número de una historia nueva sale de main, de las ramas remotas y de los worktrees de la máquina; con duda, se pregunta.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-create-story/scripts/tests/story-number.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/backfill-discovery.test.js",
       "requiere": []
