@@ -191,7 +191,7 @@ function signedRecordKind(p) {
 
 function computeStoryGate({
   filePath, stateDir, homeDir, repoRoot, repoHasTycon, repoHasStories, gateEnabled = true, marker, adhoc,
-  isHarness, realFilePath = null, installedRoots = [], realStateDir = null,
+  isHarness, realFilePath = null, installedRoots = [], realStateDir = null, sensitiveCheck = null,
 }) {
   if (!filePath) return { action: 'pass', reason: 'sin file_path' };
   // la ruta real (por los enlaces) la resuelve el borde; sin ella, la escrita
@@ -221,10 +221,18 @@ function computeStoryGate({
     return { action: 'block', kind: 'pending-approvals', reason: 'escritura a mano del registro de aprobaciones de pendientes' };
   }
   // El arreglo rápido que abrió la coordinadora por delegación no toca lo sensible: eso lo firma el dueño. Antes del
-  // portón apagado y del pase de los repos del arnés, que es donde están esos archivos
+  // portón apagado y del pase de los repos del arnés, que es donde están esos archivos. La lista de lo sensible vive en el
+  // arnés (scripts/lib/signatures.js): unas skills instaladas aparte no la alcanzan, y sin la lista el carril delegado
+  // no toca nada
   if (adhoc && adhoc.reason && adhoc.via === 'delegacion' && repoRoot) {
-    const { esSensible } = require('./save-ok.js');
-    const sensible = [filePath, real].map((f) => norm(path.relative(repoRoot, f))).find((rel) => !rel.startsWith('..') && esSensible(rel));
+    const rels = [filePath, real].map((f) => norm(path.relative(repoRoot, f))).filter((rel) => !rel.startsWith('..'));
+    let sensible;
+    try {
+      const esSensible = sensitiveCheck || require('./save-ok.js').esSensible;
+      sensible = rels.find((rel) => esSensible(rel));
+    } catch (_) {
+      if (rels.length) return { action: 'block', kind: 'adhoc-sensitive', reason: `el arreglo rápido delegado no encuentra la lista de lo sensible del arnés (scripts/lib/signatures.js): ${rels[0]} lo firma una persona` };
+    }
     if (sensible) {
       return { action: 'block', kind: 'adhoc-sensitive', reason: `el arreglo rápido delegado no toca lo sensible (${sensible}): ese cambio lo firma una persona` };
     }
