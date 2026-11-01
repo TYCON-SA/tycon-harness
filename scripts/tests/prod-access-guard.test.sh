@@ -476,7 +476,7 @@ frena_indecidible "8.14 DotGlobOn_WildcardMayBeHiddenFolder (GLOBIGNORE)" "GLOBI
 mkdir -p "$CASA/Library/Caches/Google/.oculta" "$CASA/Library/Caches/java-db/x" "$CASA/Library/Caches/com.spotify.client/.y"
 pasa "Caches_DotGlob_FolderWithoutProtected_Passes" "rm -rf ~/Library/Caches/Google/.[!.]*"
 pasa "Caches_DotGlob_MissingFolder_Passes (nada que casar)" "rm -rf ~/Library/Caches/no-existe/.[!.]*"
-pasa "Caches_DotGlob_FromVariable_Passes""p=~/Library/Caches/Google; rm -rf \"\$p\"/.[!.]*"
+pasa "Caches_DotGlob_FromVariable_Passes" "p=~/Library/Caches/Google; rm -rf \"\$p\"/.[!.]*"
 pasa "Caches_ForLoop_RmDotGlob_Passes (caso real 1)" 'for d in Google java-db com.spotify.client; do p=~/Library/Caches/$d; for x in "$p"/* "$p"/.[!.]*; do [ -e "$x" ] && rm -rf -- "$x"; done; done'
 pasa "Caches_ForLoop_FindExecRm_Passes (caso real 2)" 'for d in Google java-db com.spotify.client; do find "$HOME/Library/Caches/$d" -mindepth 1 -maxdepth 1 -exec rm -rf {} + ; done'
 # lo legítimo sigue frenando: la carpeta tiene `.tycon` o `.tycon-pipeline`, el bucle llega al catálogo, o no se lee
