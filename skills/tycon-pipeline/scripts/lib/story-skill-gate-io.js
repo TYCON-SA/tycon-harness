@@ -24,6 +24,8 @@ const io = require('./story-gate-io.js');
 
 const DEFAULT_STATE_DIR = io.DEFAULT_STATE_DIR;
 const MARKS_DIR = 'skill-marks';
+// los resultados de la revisión adversaria que la dan por hecha (`pendiente` espera una respuesta; `no-medido` no cuenta)
+const REVISADA = new Set(['limpio', 'corregido', 'preguntado', 'saltado']);
 const MARK_PURGE_MS = 24 * 3600 * 1000; // marcas de más de un día se borran al escribir una nueva
 
 function safeSid(sessionId) {
@@ -155,7 +157,19 @@ function evaluate({ absPath, content, edit, nameHint = false, sessionId, via, ev
   }
 
   const isCodex = isCodexEvent(event);
-  const args = { filePath: abs, existsOnDisk, prevStatus, status, isStoryCandidate, isHarness, repoUnderHarness, idIsWork, gateEnabled, isCodex };
+  // La revisión adversaria de la historia: vigente (el mismo texto) y terminada. Una que espera respuesta no cuenta.
+  // Un revisor que se cayó (`no-medido`) cuenta como intento: la skill sigue y el primer paso del pipeline la relanza.
+  // El modo primera vez no corre la revisión (8.84): una historia con su constancia de primera vez no la pide.
+  let review = false;
+  if (existsOnDisk) {
+    try {
+      const casaReal = casa || os.homedir();
+      const leida = require('./story-review-record.js').readRecord(casaReal, abs);
+      review = (leida.estado === 'current' && REVISADA.has(leida.record.resultado)) || leida.estado === 'unmeasured'
+        || (!!declaredId && require('./first-time-record.js').isRecorded(casaReal, abs, declaredId));
+    } catch { review = false; }
+  }
+  const args = { filePath: abs, existsOnDisk, prevStatus, status, isStoryCandidate, isHarness, repoUnderHarness, idIsWork, gateEnabled, isCodex, review };
   let verdict = gate.computeStorySkillGate(args);
   // La constancia del validador se busca sólo cuando hace falta: leer la conversación cuesta.
   let recordNote = null;

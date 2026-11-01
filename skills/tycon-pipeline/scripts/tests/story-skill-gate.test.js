@@ -84,11 +84,15 @@ test('computeStorySkillGate: tabla de verdad', () => {
   assert.match(v({ idIsWork: false }).reason, /numeración/);
   assert.equal(v({ isCodex: true }).kind, 'unknown-codex');
   assert.equal(v({ status: 'draft' }).kind, 'new-draft');
-  assert.equal(v({ record: true }).kind, 'validated');
-  // un borrador que existe: editarlo sin cambiar el estado pasa; pasarlo a otro estado pide la constancia
+  assert.equal(v({ record: true, review: true }).kind, 'validated');
+  // el validador solo no alcanza: falta la revisión adversaria de la historia
+  assert.equal(v({ record: true }).action, 'block'); assert.equal(v({ record: true }).kind, 'new-sin-revision');
+  // un borrador que existe: editarlo sin cambiar el estado pasa; pasarlo a otro estado pide las dos constancias
   assert.equal(v({ existsOnDisk: true, prevStatus: 'draft', status: 'draft' }).kind, 'draft-edit');
   assert.equal(v({ existsOnDisk: true, prevStatus: 'draft' }).kind, 'draft-promote');
-  assert.equal(v({ existsOnDisk: true, prevStatus: 'draft', record: true }).kind, 'validated');
+  assert.equal(v({ existsOnDisk: true, prevStatus: 'draft', record: true }).kind, 'draft-promote-sin-revision');
+  assert.equal(v({ existsOnDisk: true, prevStatus: 'draft', review: true }).kind, 'draft-promote');
+  assert.equal(v({ existsOnDisk: true, prevStatus: 'draft', record: true, review: true }).kind, 'validated');
   assert.match(v({ existsOnDisk: true, prevStatus: 'draft', status: null }).reason, /terminal/);
   // idIsWork null (no se pudo leer el id) NO abre el portón: se asume trabajo.
   assert.equal(v({ idIsWork: null }).action, 'block');
@@ -436,6 +440,9 @@ const editar = (abs, sid, old_string, new_string, st) => handler.handle({
   tool_input: { file_path: abs, old_string, new_string },
 }, { stateDir: st });
 function borrador(repo) { const p = path.join(repo, 'specs', 'story-as1-pedidos.md'); fs.writeFileSync(p, DRAFT); return p; }
+// la constancia de la revisión adversaria de la historia, como la deja `pipeline.js story-review-record`
+const reviewRecord = require(path.join(SCRIPTS, 'lib', 'story-review-record.js'));
+function revisada(p, resultado = 'limpio') { reviewRecord.writeRecord(os.homedir(), p, { resultado, ...(resultado === 'saltado' ? { motivo: 'riesgo-bajo' } : {}) }); }
 
 test('T6 Gate_NuevaEnBorrador_Pasa: una historia nueva en draft pasa sin la skill ni la constancia', () => {
   const st = mkState();
@@ -463,6 +470,7 @@ test('T8 Gate_PasoAReadySinConstancia_Frena: de draft a ready-for-dev sin consta
   const sin = editar(p, 's8a', 'status: draft', 'status: ready-for-dev', mkState());
   assert.ok(sin && sin.block, 'sin constancia tiene que frenar'); assert.match(sin.block, /tycon-story-validator/);
   conversacion('s8b', [persona('creá una historia para esto'), ...validado(p)], 'toolu_edit');
+  revisada(p);
   const st = mkState();
   assert.equal(editar(p, 's8b', 'status: draft', 'status: ready-for-dev', st), null);
   assert.match(gatesLog(st), /"status":"validated"/);
@@ -485,6 +493,43 @@ test('T8 Gate_PasoAReadySinConstancia_Frena: de draft a ready-for-dev sin consta
   const t = bash.handle(ev, { stateDir: mkState() });
   // @story-8.109: lo frena antes la historia escrita por consola, que pide lo mismo (la herramienta de edición)
   assert.ok(t && t.block, 'sed -i sobre un borrador tiene que frenar'); assert.match(t.block, /tool Edit|herramienta de edición/);
+});
+
+test('T28 Gate_PasoAReadySinRevisionAdversaria_Frena: validada y sin la revisión adversaria frena; con la revisión vigente pasa', () => {
+  const repo = mkRepo({ yaml: TOTORA_PATTERN });
+  const p = borrador(repo);
+  conversacion('s28', [persona('creá una historia para esto'), ...validado(p)], 'toolu_edit');
+  // el rojo: con el código de antes, el validador solo abría el freno
+  const sin = editar(p, 's28', 'status: draft', 'status: ready-for-dev', mkState());
+  assert.ok(sin && sin.block, 'sin la revisión adversaria tiene que frenar');
+  assert.match(sin.block, /revisión adversaria/); assert.match(sin.block, /story-review-record/);
+  // una revisión que todavía espera una respuesta no cuenta
+  revisada(p, 'pendiente');
+  assert.ok((editar(p, 's28', 'status: draft', 'status: ready-for-dev', mkState()) || {}).block, 'pendiente');
+  // una revisión de un texto anterior no cuenta: la historia cambió después
+  revisada(p);
+  fs.writeFileSync(p, DRAFT + '\n## Criterios\n1. Uno nuevo\n');
+  assert.ok((editar(p, 's28', 'status: draft', 'status: ready-for-dev', mkState()) || {}).block, 'revisión vieja');
+  // con la revisión vigente pasa, también cuando la revisión se salteó por riesgo bajo
+  fs.writeFileSync(p, DRAFT);
+  revisada(p, 'saltado');
+  assert.equal(editar(p, 's28', 'status: draft', 'status: ready-for-dev', mkState()), null);
+  revisada(p, 'corregido');
+  assert.equal(editar(p, 's28', 'status: draft', 'status: ready-for-dev', mkState()), null);
+  // un revisor que se cayó deja «no-medido»: la skill sigue y el pipeline la relanza en su primer paso
+  revisada(p, 'no-medido');
+  assert.equal(editar(p, 's28', 'status: draft', 'status: ready-for-dev', mkState()), null);
+});
+
+test('T29 Gate_PrimeraVez_NoPideLaRevision @story-8.84: una historia del modo primera vez pasa con el validador solo', () => {
+  const repo = mkRepo({ yaml: TOTORA_PATTERN });
+  const p = borrador(repo);
+  conversacion('s29', [persona('creá una historia para esto'), ...validado(p)], 'toolu_edit');
+  // la constancia la deja el guion del modo primera vez; la de otro número no cuenta
+  require(path.join(SCRIPTS, 'lib', 'first-time-record.js')).writeRecord(os.homedir(), p, 'AS-2');
+  assert.ok((editar(p, 's29', 'status: draft', 'status: ready-for-dev', mkState()) || {}).block, 'otro número');
+  require(path.join(SCRIPTS, 'lib', 'first-time-record.js')).writeRecord(os.homedir(), p, 'AS-1');
+  assert.equal(editar(p, 's29', 'status: draft', 'status: ready-for-dev', mkState()), null);
 });
 
 test('T9 Gate_EditarBorradorSinCambiarEstado_Pasa: corregir el cuerpo de un borrador pasa siempre', () => {

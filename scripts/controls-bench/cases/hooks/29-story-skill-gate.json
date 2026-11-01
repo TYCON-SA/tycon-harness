@@ -485,13 +485,13 @@
      }
     },
     {
-     "id": "pasa-paso-de-borrador-a-ready-con-validador",
-     "type": "must-run",
+     "id": "frena-paso-de-borrador-a-ready-validada-sin-revision-adversaria",
+     "type": "must-block",
      "tools": [
       "claude"
      ],
-     "asymmetry": "La constancia se lee de la conversación de Claude Code.",
-     "__doc": "8.91 AC 3: con el validador corrido sobre el borrador (en la cadena de la conversación, con su respuesta), el paso a ready-for-dev pasa y queda anotado.",
+     "asymmetry": "La constancia del validador se lee de la conversación de Claude Code.",
+     "__doc": "Con el validador corrido y sin la revisión adversaria de la historia, el paso a ready-for-dev frena: la pasa quien la escribió, después de esa revisión. Su gemelo con la revisión es el caso siguiente.",
      "env": {
       "CLAUDE_CODE_SESSION_ID": "bench-ssg"
      },
@@ -502,6 +502,50 @@
       "node \"$TCG/scripts/controls-bench/conversation-fixture.js\" --who person --text \"creá una historia para esto\" --session bench-ssg",
       "node \"$TCG/scripts/controls-bench/conversation-fixture.js\" --who validator --text \"$PWD/specs/9-9.md\" --session bench-ssg",
       "node \"$TCG/scripts/controls-bench/conversation-fixture.js\" --who command --session bench-ssg"
+     ],
+     "stdin": {
+      "session_id": "bench-ssg",
+      "tool_name": "Edit",
+      "tool_use_id": "bench-tu",
+      "tool_input": {
+       "file_path": "${FIXTURE}/specs/9-9.md",
+       "old_string": "status: draft",
+       "new_string": "status: ready-for-dev"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "HISTORIA SIN REVISIÓN ADVERSARIA",
+       "story-review-record"
+      ],
+      "file_contains": [
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+        "re": "\"kind\":\"draft-promote-sin-revision\""
+       }
+      ]
+     }
+    },
+    {
+     "id": "pasa-paso-de-borrador-a-ready-con-validador",
+     "type": "must-run",
+     "tools": [
+      "claude"
+     ],
+     "asymmetry": "La constancia se lee de la conversación de Claude Code.",
+     "__doc": "8.91 AC 3: con el validador corrido sobre el borrador (en la cadena de la conversación, con su respuesta) y su revisión adversaria vigente, el paso a ready-for-dev pasa y queda anotado.",
+     "env": {
+      "CLAUDE_CODE_SESSION_ID": "bench-ssg"
+     },
+     "setup": [
+      "git init -q -b main .",
+      "mkdir -p .tycon specs",
+      "printf -- '---\\nstory: \"9.9\"\\nepic: \"9\"\\nstatus: draft\\n---\\n# Story 9.9\\n' > specs/9-9.md",
+      "node \"$TCG/scripts/controls-bench/conversation-fixture.js\" --who person --text \"creá una historia para esto\" --session bench-ssg",
+      "node \"$TCG/scripts/controls-bench/conversation-fixture.js\" --who validator --text \"$PWD/specs/9-9.md\" --session bench-ssg",
+      "node \"$TCG/scripts/controls-bench/conversation-fixture.js\" --who command --session bench-ssg",
+      "node \"$SKILLS/skills/tycon-pipeline/scripts/pipeline.js\" story-review-record --story \"$PWD/specs/9-9.md\" --result limpio > /dev/null"
      ],
      "stdin": {
       "session_id": "bench-ssg",

@@ -1563,6 +1563,7 @@
     "hook-pre-edit.js::pasa-historia-nueva-en-borrador": true,
     "hook-pre-edit.js::bloquea-paso-de-borrador-a-ready-sin-validador": true,
     "hook-pre-edit.js::rojo-el-mismo-paso-a-ready-pasa-con-solo-este-freno-apagado": true,
+    "hook-pre-edit.js::frena-paso-de-borrador-a-ready-validada-sin-revision-adversaria": true,
     "hook-pre-edit.js::pasa-paso-de-borrador-a-ready-con-validador": true,
     "hook-pre-edit.js::pasa-editar-historia-in-progress-por-edit": true,
     "hook-pre-edit.js::rojo-el-mismo-edit-sobre-un-borrador-frena": true,
