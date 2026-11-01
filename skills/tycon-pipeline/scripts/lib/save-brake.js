@@ -1,11 +1,15 @@
 'use strict';
 /**
- * save-brake.js — el freno de guardar: dentro de una corrida, un commit, un push o un pedido pasan sólo con el ok de
- * guardar vigente (`saveOk`, la firma `save` de lib/save-ok.js). Lo llama `on-pre-commit.js` en cada comando de consola.
+ * save-brake.js — el freno de guardar: dentro de una corrida, antes de un commit, un push o un pedido, la sesión le
+ * pregunta a la persona en la ventana de permiso, y con el sí guarda. Lo llama `on-pre-commit.js` en cada comando de
+ * consola; en una pestaña que no pide permisos (la ventana se aprobaría sola) guarda sin preguntar y lo dice en pantalla.
+ * No hay firma ni constancia del ok: lo delicado (frenos, firmas, controles, producción) lo cubre la firma de control del
+ * pedido, que no cambia.
  *
  *   · comandosQueGuardan  los `git commit`, `git push` y los pedidos que se crean o se mergean (los comandos con `pr`
- *                         que declaran los conectores de plataforma en `rawCommands`) de verdad del comando, con su repo; los que no se pueden leer (una variable, una carpeta que no se sabe, un
- *                         programa que corre git por su cuenta) salen como `opaco`;
+ *                         que declaran los conectores de plataforma en `rawCommands`) de verdad del comando, con su repo;
+ *                         los que no se pueden leer (una variable, una carpeta que no se sabe, un programa que corre git
+ *                         por su cuenta) salen como `opaco`;
  *   · leerComando         lo mismo y las dudas: lo que no se lee con certeza, guarde o no (un comando en una variable,
  *                         un shell que lee de la entrada, una función o un alias que no está en la copia del shell de
  *                         la sesión, un subcomando que no es de git, más de cuatro niveles, una ruta que no se
@@ -13,32 +17,23 @@
  *                         programa que no se encuentra y dice commit, push o pr). Los alias y las funciones de la copia
  *                         del shell (`~/.claude/shell-snapshots`) se leen como lo que corren. Los comentarios y los
  *                         heredocs con comillas no corren: se sacan antes de leer. Las redirecciones de la salida no
- *                         son una duda. Durante una corrida, una duda frena: una forma nueva frena por defecto;
- *   · decidir             null (pasa) o `{ texto }` (frena). Sin un comando que guarda ni una duda, no lee nada. Con el
- *                         ok vigente frena igual el commit o el push que el mismo comando hace después de cambiar
- *                         archivos del repo, la rama, la configuración o el destino: el ok es del estado de antes;
- *   · registrarCierreSinOk, sinOk, olvidarCubiertos  el registro «cerrada sin ok» que dejan los cierres de `marker.js`:
- *                         una corrida cerrada sin el ok sigue frenando sus repos con cambios en esa sesión;
- *   · tieneCambiosDeCodigo  si un repo tiene algo que guardar fuera del papeleo.
+ *                         son una duda. Durante una corrida, una duda pregunta;
+ *   · decidir             null (pasa) o `{ pregunta }` (el texto de la ventana). Sin una corrida, o sin un comando que
+ *                         guarda ni una duda, no lee nada.
  *
- * El ok se da sólo con `marker.js approve-save` (la ventana, la delegación o la terminal): ninguna frase, opción ni
- * variable lo abre. Fuera de una corrida y sin registro, todo pasa como antes. El texto del freno nombra la forma
- * (`git push`, `… pr create`…) y el repo, nunca el comando: un comando puede traer una credencial.
+ * Ninguna frase, opción ni variable saltea la ventana. El texto nombra la forma (`git push`, `… pr create`…) y el repo,
+ * nunca el comando: un comando puede traer una credencial.
  *
  * Lo que no ve (lo dice guides/firmas-del-arnes.md): un guion o un programa que guarda sin nombrar git en el comando
  * (un archivo de guion corrido por su nombre, un programa que lee el comando de un archivo), los alias propios del
  * programa de la plataforma, los comandos de pedido que no lo crean ni lo mergean (la API, marcarlo listo, cambiarlo),
- * los commits que hacen `merge`, `cherry-pick`, `revert`, `am` o `commit-tree`, y un programa que no conoce que cambia
- * archivos del repo antes de un commit en el mismo comando.
+ * y los commits que hacen `merge`, `cherry-pick`, `revert`, `am` o `commit-tree`.
  */
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { stateDir } = require('./state-dir.js');
-const { sessionIdFileKey } = require('./session-id.js');
 
-const MARKER_JS = path.join(__dirname, '..', 'marker.js');
 const SO = () => require('./save-ok.js');
 
 // ── el lector del shell ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -896,60 +891,6 @@ function leerComando(command, cwd, depth = 0, dudas = [], home) {
   }
 }
 
-function git(dir, args) {
-  const r = spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
-  // `crudo` sin recortar: en `status --porcelain` el primer espacio es parte de la columna del estado
-  return { ok: r.status === 0, out: String(r.stdout || '').trim(), crudo: String(r.stdout || '') };
-}
-
-/** La rama de destino de un push: la escrita, o la de seguimiento, o la rama actual. `HEAD` es la rama actual. */
-function destinoDelPush(c) {
-  let { remoto, rama } = c;
-  if (!rama) {
-    const u = git(c.dir, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']);
-    if (u.ok && u.out.includes('/') && !remoto) {
-      remoto = u.out.slice(0, u.out.indexOf('/'));
-      rama = u.out.slice(u.out.indexOf('/') + 1);
-    }
-  }
-  if (!rama || rama === 'HEAD') {
-    const r = git(c.dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
-    if (!r.ok) throw new Error('no pude leer la rama del repo');
-    rama = r.out;
-  }
-  return { remoto: remoto || 'origin', rama };
-}
-
-// ── el registro «cerrada sin ok» ────────────────────────────────────────────────────────────────────────────────────
-
-const registroPath = (sesion, home) => path.join(stateDir(home || os.homedir()), 'save-closed', `${sessionIdFileKey(sesion)}.json`);
-
-/** Las entradas del registro de la sesión (`[{ story, repos, ts }]`); un registro que no se lee tira. */
-function leerRegistro(sesion, home) {
-  let txt;
-  try { txt = fs.readFileSync(registroPath(sesion, home), 'utf8'); } catch (e) {
-    if (e.code === 'ENOENT') return [];
-    throw e;
-  }
-  const r = JSON.parse(txt);
-  if (!Array.isArray(r)) throw new Error('el registro de corridas cerradas sin ok no es una lista');
-  return r;
-}
-function escribirRegistro(sesion, home, entradas) {
-  const p = registroPath(sesion, home);
-  if (!entradas.length) { try { fs.unlinkSync(p); } catch (e) { if (e.code !== 'ENOENT') throw e; } return; }
-  fs.mkdirSync(path.dirname(p), { recursive: true });
-  const tmp = `${p}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(entradas, null, 2) + '\n', 'utf8');
-  fs.renameSync(tmp, p);
-}
-
-// la constancia de la corrida, si es de esta corrida y sigue valiendo
-function okDeLaCorrida(marker) {
-  const s = marker && marker.saveOk;
-  if (!s || s.storyId !== marker.storyId || s.startedAt !== (marker.startedAt || null)) return null;
-  return s;
-}
 // los repos de la corrida. Una ruta de la corrida (el repo o la story) que no está en ningún repo de git no tiene nada
 // que guardar: sale de la cuenta, y sin ninguna de las dos la corrida no guarda en ningún repo
 function reposDe(marker) {
@@ -961,181 +902,49 @@ function reposDe(marker) {
   return s.reposDeLaCorrida({ marker: m, hermanos });
 }
 
-/**
- * ¿El repo tiene cambios que guardar: algo en `git status` o commits propios contra su base, sin contar el papeleo que
- * no vence el ok (la evidencia que el cierre escribe, las stories, las tareas, los trozos de memoria)? Una carpeta que no
- * es un repo de git no tiene nada que guardar; «no pude mirar» cuenta como cambio.
- */
-function tieneCambiosDeCodigo(repo) {
-  if (SO().raizDe(repo) === null) return false;
-  const st = git(repo, ['status', '--porcelain', '-z', '-uall']);
-  const d = git(repo, ['diff', '--name-only', '-z', 'origin/main...HEAD']);
-  if (!st.ok || !d.ok) return true;
-  // cada entrada de status: «XY ruta», y la de un renombre trae después la ruta de origen
-  const rutas = [];
-  const ent = st.crudo.split('\0');
-  for (let i = 0; i < ent.length; i += 1) {
-    if (!ent[i]) continue;
-    rutas.push(ent[i].slice(3));
-    if (/^[RC]/.test(ent[i])) { rutas.push(ent[i + 1]); i += 1; }
-  }
-  rutas.push(...d.crudo.split('\0').filter(Boolean));
-  return rutas.some((r) => !SO().esPapeleoDeLaHuella(r, '100644'));
-}
-
-// sin poder medir: todos los repos que la corrida nombra (el de la story, los que tocó, los hermanos), cada uno si se lee
-function reposSinMedir(marker) {
-  const out = new Set();
-  // el que git no contesta cuenta con su ruta: no poder medirlo no lo saca de la cuenta
-  const sumar = (d) => { try { const r = SO().raizDe(d); if (r) out.add(r); } catch (_) { out.add(path.resolve(d)); } };
-  if (marker.repoPath) sumar(marker.repoPath);
-  if (marker.storyPath) sumar(path.dirname(path.resolve(marker.repoPath || '.', marker.storyPath)));
-  for (const e of Array.isArray(marker.fileEvents) ? marker.fileEvents : []) {
-    const f = e && e.path;
-    if (typeof f === 'string') sumar(path.dirname(path.resolve(marker.repoPath || '.', f)));
-  }
-  try { for (const d of require('./companion-repos.js').companionRoots(marker.repoPath, marker.storyPath) || []) sumar(d); } catch (_) { /* sin hermanos */ }
-  return out.size ? [...out] : [marker.repoPath].filter(Boolean);
-}
-
-/** `{ repos }` con cambios de la corrida sin el ok vigente, o null. No poder medir cuenta como cambios en todos. */
-function sinOk({ marker }) {
-  const ok = okDeLaCorrida(marker);
-  if (ok && SO().vigente({ saveOk: ok }).ok) return null;
-  let repos;
-  try { repos = reposDe(marker); } catch (_) { return { repos: reposSinMedir(marker), sinMedir: true }; }
-  const con = repos.filter((r) => { try { return tieneCambiosDeCodigo(r); } catch (_) { return true; } });
-  return con.length ? { repos: con } : null;
-}
-
-/**
- * Al cerrar una corrida sin el ok vigente: anota sus repos con cambios en el registro de `sesion` (la misma story se
- * anota una vez, con los repos juntos). Devuelve si anotó; un registro que no se puede leer o escribir tira.
- */
-function registrarCierreSinOk({ marker, sesion, home }) {
-  if (!marker || !marker.storyId) return false;
-  const s = sinOk({ marker });
-  if (!s) return false;
-  const story = String(marker.storyId);
-  const entradas = leerRegistro(sesion, home);
-  const previa = entradas.find((e) => e.story === story);
-  if (previa) previa.repos = [...new Set([...(previa.repos || []), ...s.repos])];
-  else entradas.push({ story, repos: s.repos, ts: new Date().toISOString() });
-  escribirRegistro(sesion, home, entradas);
-  return true;
-}
-
-/** Saca del registro de `sesion` los repos que cubre un ok nuevo; una entrada sin repos se va. */
-function olvidarCubiertos({ sesion, repos, home }) {
-  const cubiertos = new Set((repos || []).map(String));
-  const entradas = leerRegistro(sesion, home).map((e) => ({ ...e, repos: (e.repos || []).filter((r) => !cubiertos.has(r)) })).filter((e) => e.repos.length);
-  escribirRegistro(sesion, home, entradas);
-}
-
 // ── la decisión ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
-const COMO_SE_DA = [
-  'El commit, el push y los pedidos de una corrida van con el ok de guardar. Lo da una persona, no el agente ni una frase del chat:',
-  `  node ${MARKER_JS} approve-save   (la ventana de permiso, la delegación del perfil, o --terminal en su terminal)`,
-];
-function texto(c, repo, motivo) {
-  return [`🔒 OK DE GUARDAR — «${c.forma}»${repo ? ` sobre ${repo}` : ''}: ${motivo}.`, ...COMO_SE_DA].join('\n');
+const COMO_SE_AUTORIZA = 'Antes de guardar, el arnés le pregunta a la persona en la ventana de permiso; con el sí, guarda.';
+function pregunta(c, repo, story) {
+  return `¿GUARDO? «${c.forma}»${repo ? ` sobre ${repo}` : ''}, de la corrida de ${story}. ${COMO_SE_AUTORIZA}`;
 }
-// Lo que no se lee con certeza, durante una corrida: frena guarde o no, y aun con el ok (no se sabe qué guardaría ni a
-// dónde). Una forma nueva frena así por defecto.
-function textoNoLeo(story) {
-  return [`🔒 OK DE GUARDAR — no pude leer este comando; si guarda, pedí el ok primero (la corrida de ${story} está abierta).`,
-    '  Con el ok ya dado, escribilo de una forma que se lea: git commit, git push, o el pedido de la plataforma escrito tal cual.',
-    ...COMO_SE_DA].join('\n');
+// lo que no se lee con certeza, durante una corrida: no se sabe qué guardaría ni a dónde, y se pregunta igual
+function preguntaNoLeo(story) {
+  return `¿GUARDO? no pude leer este comando; si guarda, es de la corrida de ${story}. ${COMO_SE_AUTORIZA}`;
 }
 
-// el registro decide los comandos fuera de una corrida, y los repos ajenos a la corrida abierta
-function porElRegistro(cs, { sid, home, raiz }) {
-  const entradas = leerRegistro(sid, home);
-  if (!entradas.length) return null;
-  let cambio = false;
-  const vivas = entradas.filter((e) => {
-    const con = (e.repos || []).filter((r) => { try { return tieneCambiosDeCodigo(r); } catch (_) { return true; } });
-    if (con.length !== (e.repos || []).length) cambio = true;
-    e.repos = con;
-    return con.length > 0;
-  });
-  if (cambio) escribirRegistro(sid, home, vivas);
+/**
+ * ¿Pregunta? null (pasa) o `{ pregunta }`: el texto de la ventana de permiso. Dentro de una corrida (el marcador de la
+ * sesión), un commit o un push sobre un repo de la corrida, todo pedido y lo que no se puede leer con certeza preguntan.
+ * Un marcador que existe y no es el de una corrida también pregunta. Fuera de una corrida nada pregunta. No hay ok que
+ * guardar: lo que toca algo delicado lo cubre la firma de control del pedido.
+ */
+function decidir({ command, cwd, sid, home }) {
+  // fuera de una corrida nada pregunta: no hace falta leer el comando
+  let crudo = null;
+  try { crudo = fs.readFileSync(require('./open-runs.js').markerPath(sid, home), 'utf8'); } catch (e) {
+    if (e.code === 'ENOENT') return null;
+  }
+  const { cs, dudas } = leerComando(command, cwd || process.cwd(), 0, [], home);
+  if (!cs.length && !dudas.length) return null;
+  const c0 = cs[0] || { forma: OPACO };
+  let m = null;
+  try { m = crudo === null ? null : JSON.parse(crudo); } catch (_) { m = null; }
+  if (!m || typeof m !== 'object' || Array.isArray(m) || !m.storyId) {
+    return { pregunta: `¿GUARDO? «${c0.forma}»: el marcador de la corrida no se puede leer o no dice de qué story es. ${COMO_SE_AUTORIZA}` };
+  }
+  if (dudas.length || cs.some((c) => c.opaco)) return { pregunta: preguntaNoLeo(m.storyId) };
+  let repos;
+  try { repos = reposDe(m); } catch (e) { return { pregunta: pregunta(c0, null, m.storyId) }; }
   for (const c of cs) {
-    for (const e of vivas) {
-      const r = c.tipo === 'pr' || c.opaco ? e.repos[0] : raiz(c.dir);
-      if (c.tipo === 'pr' || c.opaco || e.repos.includes(r)) return { texto: texto(c, r, `la corrida de ${e.story} cerró sin ok de guardar, con cambios sin guardar en ${e.repos.join(', ')}`) };
-    }
+    // un pedido se juzga contra toda la corrida
+    if (c.tipo === 'pr') return { pregunta: pregunta(c, null, m.storyId) };
+    let r;
+    // la carpeta sale del comando: no vuelve en el texto
+    try { r = SO().raizDe(c.dir); } catch (_) { return { pregunta: pregunta(c, null, m.storyId) }; }
+    if (r && repos.includes(r)) return { pregunta: pregunta(c, r, m.storyId) };
   }
   return null;
 }
 
-/**
- * ¿Frena? null (pasa) o `{ texto }`. Dentro de una corrida (el marcador de la sesión): un commit o un push sobre un repo
- * de la corrida, y todo pedido, pasan sólo con el ok vigente; lo que no se puede leer con certeza frena aunque haya ok.
- * Un marcador que existe y no es el de una corrida frena. Fuera, sólo el registro «cerrada sin ok» frena.
- */
-function decidir({ command, cwd, sid, home }) {
-  // fuera de una corrida y sin nada en el registro de la sesión, nada frena: no hace falta leer el comando
-  let hayMarcador = true;
-  try { fs.statSync(require('./open-runs.js').markerPath(sid, home)); } catch (e) { if (e.code === 'ENOENT') hayMarcador = false; }
-  if (!hayMarcador) {
-    let vacio = false;
-    try { vacio = leerRegistro(sid, home).length === 0; } catch (_) { vacio = false; }
-    if (vacio) return null;
-  }
-  const { cs, dudas } = leerComando(command, cwd || process.cwd(), 0, [], home);
-  if (!cs.length && !dudas.length) return null;
-  const s = SO();
-  const c0 = cs[0] || { forma: OPACO };
-  let m = null;
-  let crudo = null;
-  try { crudo = fs.readFileSync(require('./open-runs.js').markerPath(sid, home), 'utf8'); } catch (e) {
-    if (e.code !== 'ENOENT') return { texto: texto(c0, null, `no pude leer el marcador de la corrida (${e.code || 'error de lectura'})`) };
-  }
-  if (crudo !== null) {
-    try { m = JSON.parse(crudo); } catch (_) { return { texto: texto(c0, null, 'el marcador de la corrida no se puede leer: no es JSON') }; }
-    if (!m || typeof m !== 'object' || Array.isArray(m) || !m.storyId) return { texto: texto(c0, null, 'el marcador de la corrida no dice de qué story es') };
-  }
-  const raiz = (d) => s.raizDe(d);
-  if (!m) {
-    if (!cs.length) return null;
-    try { return porElRegistro(cs, { sid, home, raiz }); } catch (e) {
-      return { texto: texto(cs[0], null, `no pude leer el registro de corridas cerradas sin ok (${e.code || 'no es una lista'})`) };
-    }
-  }
-  if (dudas.length || cs.some((c) => c.opaco)) return { texto: textoNoLeo(m.storyId) };
-  let repos;
-  try { repos = reposDe(m); } catch (e) { return { texto: texto(c0, null, `no pude saber qué repos guarda la corrida de ${m.storyId} (${e.message})`) }; }
-  const ok = okDeLaCorrida(m);
-  const ajenos = [];
-  for (const c of cs) {
-    if (c.tipo === 'pr') {
-      const v = s.vigente({ saveOk: ok });
-      if (!v.ok) return { texto: texto(c, null, `${v.motivo} (un pedido se juzga contra toda la corrida de ${m.storyId})`) };
-      continue;
-    }
-    let r;
-    // la carpeta sale del comando: no vuelve en el texto
-    try { r = raiz(c.dir); } catch (_) { return { texto: texto(c, null, 'no pude saber de qué repo es') }; }
-    if (!r || !repos.includes(r)) { ajenos.push(c); continue; }
-    let push = null;
-    if (c.tipo === 'push') {
-      try { push = destinoDelPush(c); } catch (e) { return { texto: texto(c, r, e.message) }; }
-    }
-    const v = s.vigente({ saveOk: ok, push, repoActual: r });
-    // la rama escrita en el comando tampoco: puede ser una credencial
-    if (!v.ok) return { texto: texto(c, r, c.rama ? v.motivo.replace(`no para ${push.rama}`, () => 'no para la rama escrita en el comando') : v.motivo) };
-    // el ok es del árbol y de la rama de antes del comando: lo que el mismo comando cambia antes de guardar no lo cubre
-    if (c.incierto) return { texto: texto(c, r, 'no se sabe a qué rama empuja: el comando cambia la rama, la configuración o el destino antes del push; empujá en un comando aparte, con la rama escrita') };
-    const dentro = (p) => { const rel = path.relative(r, p); return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel)); };
-    if ((c.escritos || []).some(dentro)) return { texto: texto(c, r, 'el comando cambia archivos del repo antes de guardar, y el ok es del árbol de antes: guardá en un comando aparte') };
-  }
-  if (!ajenos.length) return null;
-  try { return porElRegistro(ajenos, { sid, home, raiz }); } catch (e) {
-    return { texto: texto(ajenos[0], null, `no pude leer el registro de corridas cerradas sin ok (${e.code || 'no es una lista'})`) };
-  }
-}
-
-module.exports = { tramosDelShell, palabrasDelShell, commitsDelShell, comandosQueGuardan, leerComando, decidir, sinOk, registrarCierreSinOk,
-  olvidarCubiertos, registroPath, tieneCambiosDeCodigo };
+module.exports = { tramosDelShell, palabrasDelShell, commitsDelShell, comandosQueGuardan, leerComando, decidir };

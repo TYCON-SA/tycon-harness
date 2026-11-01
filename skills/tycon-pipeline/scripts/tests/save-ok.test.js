@@ -344,13 +344,14 @@ test('ApproveSave_ForSession_OtraCorrida_Sale2 (T11) @story-8.143 @ac-8', () => 
   assert.strictEqual(r(null).codigo, 2, 'sin corrida');
 });
 
-test('PrepareCommit_OkDeGuardar_PorConstancia (T15) @story-8.143 @ac-9', () => {
+// 🔴 Falla con: el paso de preparar el commit que vuelve a pedir la constancia del ok, o que deja que un mensaje de otra
+// sesión saltee la ventana de permiso.
+test('PrepareCommit_GuardarEnLaVentana (T15) @story-8.143 @ac-9', () => {
   const texto = fs.readFileSync(path.join(__dirname, '..', '..', 'steps', 'step-11-prepare-commit.md'), 'utf8');
-  assert.match(texto, /save-check/);
-  assert.match(texto, /save-check[^\n]*(antes del commit|antes de commitear)/i);
-  assert.match(texto, /antes de cada push/i);
+  assert.doesNotMatch(texto, /save-check|approve-save/, 'sin la constancia del ok');
+  assert.match(texto, /ventana de permiso/i);
   assert.match(texto, /cada pedido/i);
-  assert.match(texto, /otra sesión[^\n]*no alcanza/i);
+  assert.match(texto, /otra sesión no saltean la ventana/i);
   assert.match(texto, /marker\.js clear[^\n]*después del último push/i);
 });
 
