@@ -137,6 +137,69 @@ function recordAdhocFile(stateDir, sessionId, filePath) {
   return writeAdhoc(stateDir, sessionId, { ...a, files, lastTouch: new Date().toISOString() });
 }
 
+/**
+ * El riesgo de una ruta y de su ruta real (detrás de un enlace, o con una carpeta enlazada como /tmp → /private/tmp),
+ * cada una relativa a su raíz: la primera que da riesgo alto decide. Sin raíz: una ruta fuera de todo repo (la carpeta
+ * temporal de la sesión) no es de riesgo alto (las reglas se prueban sobre la ruta del repo, no sobre las carpetas de
+ * arriba); si la raíz no se pudo ubicar porque git no contestó, «no pude saber».
+ */
+function riesgoDeLaRutaYSuReal(abs, repo) {
+  const rp = require('./risk-paths.js');
+  if (!repo) {
+    const u = require('./adhoc-base.js').ubicar(abs);
+    if (u.raiz) repo = u.raiz;
+    else if (u.fuera) return { value: false, rule: null, file: null, reason: 'fuera de un repo' };
+    else return { value: true, rule: 'no-pude-saber', file: null, reason: `no pude saber: no pude ubicar el repo de ${abs} (${u.falla})` };
+  }
+  const real = installedTree.realPath(abs);
+  let repoReal = repo;
+  try { repoReal = fs.realpathSync(repo); } catch (_) { repoReal = repo; }
+  let ultimo = null;
+  for (const [ruta, raiz] of [[abs, repo], [real, repoReal]]) {
+    if (!ruta) continue;
+    const r = rp.riesgoDeRuta(ruta, { repo: raiz });
+    if (r.value) return r;
+    ultimo = r;
+  }
+  return ultimo || { value: false, rule: null, file: null, reason: 'ninguna' };
+}
+
+/**
+ * Anota una ruta escrita por el carril de la sesión (lo llama on-edit.js en PostToolUse, en cualquier repo y sea código
+ * o no): la suma a `rutas`, trae la base de su repo al primer toque (lib/adhoc-base.js) y, si la ruta es de riesgo alto
+ * (lib/risk-paths.js), marca el carril con la regla y el archivo. El cupo (`files`) no cambia. Devuelve
+ * `{ adhoc, avisos }`, o null sin carril. Lo que no se puede leer sigue y avisa.
+ */
+function anotarRutaDelCarril(stateDir, sessionId, filePath) {
+  const a = readAdhoc(stateDir, sessionId);
+  if (!a) return null;
+  const base = require('./adhoc-base.js');
+  const avisos = [];
+  const abs = String(filePath);
+  let nuevo = { ...a };
+  const rutas = Array.isArray(a.rutas) ? [...a.rutas] : [];
+  if (!rutas.some((f) => gate.sameFile(f, abs))) rutas.push(abs);
+  nuevo.rutas = rutas;
+  const repo = base.raizDe(abs);
+  if (repo) {
+    const b = base.conBase(nuevo, repo);
+    nuevo = b.adhoc;
+    if (b.aviso) avisos.push(b.aviso);
+  } else {
+    avisos.push(`camino rápido: no pude ubicar el repo de ${abs} (git no contestó o está fuera de un repo): sin base, y el riesgo se mide sólo por la ruta`);
+  }
+  if (!nuevo.riesgoAlto) {
+    // sin repo, las reglas que sólo miran la ruta igual valen (`.sql`, `auth/`, producción); «no pude saber» marca
+    let r;
+    try { r = riesgoDeLaRutaYSuReal(abs, repo); } catch (e) { r = { value: true, rule: 'no-pude-saber', reason: `no pude saber: no pude calcular el riesgo (${e.message})` }; }
+    if (r && r.value) nuevo.riesgoAlto = { regla: r.rule, archivo: abs, motivo: r.reason, ts: new Date().toISOString() };
+  }
+  nuevo.lastTouch = new Date().toISOString();
+  writeAdhoc(stateDir, sessionId, nuevo);
+  for (const aviso of avisos) appendLog(stateDir, 'gates.log', sessionId, { name: 'adhoc-base', status: 'warn', file: abs, reason: aviso });
+  return { adhoc: nuevo, avisos };
+}
+
 /** Markers activos (no stale) de OTRAS sesiones cuyo repoPath contiene el archivo. */
 function listOtherMarkers(stateDir, sessionId, filePath) {
   const dir = path.join(stateDir, 'active');
@@ -304,9 +367,22 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
   // suponiendo que NO es un repo del harness: si así ya pasa, pasa y no se pagó ningún git. Sólo si
   // bloquearía (y no es el state-dir, que bloquea siempre) se lee el remoto — y `isHarness` viaja
   // SIEMPRE como booleano: si no, la lógica pura caería al respaldo por carpeta, que es el agujero.
+  // Un carril delegado (o de una pestaña sin permisos) mira lo sensible y el riesgo alto con la raíz REAL del repo del
+  // archivo: con la raíz supuesta de abajo ninguna ruta quedaba adentro y esos frenos no se disparaban.
+  let adhocRepoRoot = null;
+  let riesgoAlto = null;
+  if (adhoc && (adhoc.via === 'delegacion' || adhoc.via === 'avisado')) {
+    adhocRepoRoot = repoContext(abs).repoRoot;
+    if (adhoc.via === 'delegacion') {
+      // sin raíz, igual las reglas que miran la ruta (`.sql`, `auth/`); la ruta real también cuenta (un enlace)
+      try { riesgoAlto = riesgoDeLaRutaYSuReal(abs, adhocRepoRoot); } catch (e) {
+        riesgoAlto = { value: true, rule: 'no-pude-saber', reason: `no pude saber: no pude calcular el riesgo (${e.message})` };
+      }
+    }
+  }
   const hipotetico = (isHarness) => gate.computeStoryGate({
     filePath: abs, stateDir, homeDir: os.homedir(), repoRoot: '/__unknown__', repoHasTycon: true, repoHasStories: true,
-    marker, adhoc, isHarness, realFilePath, installedRoots: roots, realStateDir,
+    marker, adhoc, isHarness, realFilePath, installedRoots: roots, realStateDir, adhocRepoRoot, riesgoAlto,
   });
   let pre = hipotetico(false);
   if (pre.action === 'block' && pre.kind !== 'state-dir' && pre.kind !== 'installed-tree' && pre.kind !== 'control-approvals' && isHarnessRepo(abs)) pre = hipotetico(true);
@@ -340,7 +416,8 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
     name: 'story-gate', status: 'blocked', kind: verdict.kind, file: abs, via: via || null,
     story: marker ? marker.storyId : null, reason: verdict.reason, ...(adhocSinFirma ? { adhocSinFirma } : {}),
   });
-  let message = gate.blockMessage(verdict, { filePath: abs, repoRoot: repo.repoRoot, marker, otherMarkers, via });
+  let message = gate.blockMessage(verdict, { filePath: abs, repoRoot: repo.repoRoot, marker, otherMarkers, via,
+    harness: verdict.kind === 'adhoc-high-risk' ? isHarnessRepo(abs) : true });
   if (adhocSinFirma && verdict.kind === 'no-lane') {
     message += `\n\n  ⚠️ Hay una declaración del arreglo rápido para esta sesión, pero sin su firma: ${adhocSinFirma}. No abre el\n`
       + '     portón. Si la persona quiere el arreglo rápido, se vuelve a declarar con `marker.js adhoc set`, que ella aprueba en la ventana.';
@@ -350,6 +427,6 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
 
 module.exports = {
   DEFAULT_STATE_DIR, STALE_HOURS,
-  readMarker, readAdhoc, adhocFirmado, writeAdhoc, recordAdhocFile, adhocPath, listOtherMarkers,
+  readMarker, readAdhoc, adhocFirmado, writeAdhoc, recordAdhocFile, anotarRutaDelCarril, adhocPath, listOtherMarkers,
   repoContext, gateEnabledForRepo, appendLog, evaluate, isHarnessRepo, defaultInstalledRoots,
 };

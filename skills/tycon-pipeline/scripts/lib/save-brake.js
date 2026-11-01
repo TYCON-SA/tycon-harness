@@ -957,7 +957,14 @@ function carrilAbierto(sid, home) {
   const io = require('./story-gate-io.js');
   const dir = path.dirname(path.dirname(require('./open-runs.js').markerPath(sid, home)));
   const a = io.readAdhoc(dir, sid);
-  return a && io.adhocFirmado(dir, sid, a) ? a : null;
+  if (!a) {
+    // sin archivo no hay carril; un archivo que existe y no se lee como JSON es otra cosa, y se dice
+    let crudo;
+    try { crudo = fs.readFileSync(io.adhocPath(dir, sid), 'utf8'); } catch (e) { if (e.code === 'ENOENT') return null; throw e; }
+    try { JSON.parse(crudo); } catch (e) { throw new Error(`no es JSON (${e.message})`); }
+    return null;
+  }
+  return io.adhocFirmado(dir, sid, a) ? a : null;
 }
 
 /**
@@ -967,10 +974,24 @@ function carrilAbierto(sid, home) {
  */
 function decidirCarril({ command, cwd, sid, home }) {
   let a = null;
-  try { a = carrilAbierto(sid, home); } catch (_) { a = null; }
+  let ilegible = null;
+  try { a = carrilAbierto(sid, home); } catch (e) { a = null; ilegible = e; }
+  if (ilegible) {
+    // un registro del carril que no se puede leer no es «no hay carril»: si lo que viene guarda, se pregunta y se anota
+    const { cs, dudas } = leerComando(command, cwd || process.cwd(), 0, [], home);
+    if (!cs.length && !dudas.length) return null;
+    try {
+      const dir = path.dirname(path.dirname(require('./open-runs.js').markerPath(sid, home)));
+      require('./story-gate-io.js').appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'unknown', reason: `registro del camino rápido ilegible: ${ilegible.message}` });
+    } catch (_) { /* el aviso de abajo igual sale */ }
+    return { pregunta: `¿GUARDO? no pude leer el registro del camino rápido de esta sesión (${ilegible.message}): no sé si le faltan los revisores. ${COMO_SE_AUTORIZA}` };
+  }
   if (!a) return null;
   const { cs, dudas } = leerComando(command, cwd || process.cwd(), 0, [], home);
   if (!cs.length && !dudas.length) return null;
+  const reposDelComando = cs.map((c) => { try { return SO().raizDe(c.dir); } catch (_) { return null; } }).filter(Boolean);
+  const riesgo = frenoDelRiesgo(a, sid, home, reposDelComando);
+  if (riesgo) return riesgo;
   const de = `del camino rápido «${String(a.reason).slice(0, 160)}»`;
   if (dudas.length || cs.some((c) => c.opaco)) return { pregunta: `¿GUARDO? no pude leer este comando; si guarda, es ${de}. ${COMO_SE_AUTORIZA}` };
   const repos = [];
@@ -988,4 +1009,76 @@ function decidirCarril({ command, cwd, sid, home }) {
   return null;
 }
 
-module.exports = { tramosDelShell, palabrasDelShell, commitsDelShell, comandosQueGuardan, leerComando, decidir };
+// ── el camino rápido de riesgo alto ─────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * El texto del freno cuando faltan los revisores y el pase, en los dos perfiles: en un producto lo lee el dev («vos») y
+ * no nombra las piezas de la capa de mantenimiento; en el arnés dice «constancia», que es lo que se escribe.
+ */
+function textoFaltanRevisoresYPase({ harness, regla, archivo }) {
+  const gate = require('./story-gate.js');
+  const marker = gate.MARKER_JS;
+  const pipeline = marker.replace(/marker\.js$/, 'pipeline.js');
+  const que = `${archivo} (regla: ${regla})`;
+  return (harness ? [
+    `🔒 GUARDAR: faltan los revisores y el pase. Este camino rápido toca una ruta de riesgo alto: ${que}.`,
+    '  Antes de guardar corren los revisores y el pase adversarial sobre el diff del camino rápido contra su base, y quedan',
+    '  sus dos constancias en el registro del carril (sin ok firmado: con las dos, guardar sigue como siempre).',
+    `   1. node ${pipeline} advisors --adhoc     → lanzá los revisores que devuelve; después: node ${pipeline} check-count --adhoc`,
+    `   2. node ${pipeline} deep-review-gate --adhoc → si corre, el pase; después: node ${marker} mark-adversarial-result <N> --adhoc --result <archivo>`,
+    '  Un cambio de código después de las constancias las vence. Si el dueño no abrió este camino rápido, no se delega:',
+    '  pedíselo a él, o escribí la historia que lo lleva.',
+  ] : [
+    `🔒 GUARDAR: faltan los revisores y el pase. Este cambio toca una ruta de riesgo alto: ${que}.`,
+    '  Antes de guardar, corré vos los revisores y el pase adversarial sobre lo que cambió; el arnés anota que corrieron',
+    '  y después guardás como siempre, con tu sí.',
+    `   1. node ${pipeline} advisors --adhoc     → lanzá los revisores que devuelve; después: node ${pipeline} check-count --adhoc`,
+    `   2. node ${pipeline} deep-review-gate --adhoc → si corre, el pase; después: node ${marker} mark-adversarial-result <N> --adhoc --result <archivo>`,
+    '  Si cambiás código después, vas a tener que correrlos de nuevo.',
+  ]).join('\n');
+}
+
+/**
+ * Un carril de riesgo alto no guarda sin las dos constancias vigentes: `{ texto }` o null. Marca el carril si lo que se
+ * guarda trae una ruta de riesgo alto que la herramienta no vio. Vigente = la huella de los archivos de código del
+ * carril es la de cada constancia. Lo que no se puede leer sigue y avisa (nivel 1).
+ */
+function frenoDelRiesgo(a, sid, home, reposDelComando = []) {
+  const io = require('./story-gate-io.js');
+  const base = require('./adhoc-base.js');
+  const dir = path.dirname(path.dirname(require('./open-runs.js').markerPath(sid, home)));
+  let marca = a.riesgoAlto || null;
+  try {
+    if (!marca) {
+      const { porRepo, fallas } = base.archivosDelCarril(a, { repos: reposDelComando });
+      // git que no contesta: se mide con lo que hay, y se dice (nivel 1: sigue y avisa)
+      for (const f of fallas) {
+        process.stderr.write(`⚠️  ${f}\n`);
+        io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'unknown', reason: f });
+      }
+      let repoDeLaMarca = null;
+      for (const repo of Object.keys(porRepo)) {
+        const r = require('./risk-paths.js').riesgoDeArchivos(porRepo[repo], { repo });
+        if (r.value) { marca = { regla: r.rule, archivo: r.file ? path.join(repo, r.file) : repo, motivo: r.reason, ts: new Date().toISOString() }; repoDeLaMarca = repo; break; }
+      }
+      if (!marca) return null;
+      // el archivo y su repo quedan en el carril: los revisores y el pase lo miden después
+      const rutas = Array.isArray(a.rutas) ? [...a.rutas] : [];
+      if (!rutas.includes(marca.archivo)) rutas.push(marca.archivo);
+      a = base.conBase({ ...a, riesgoAlto: marca, rutas }, repoDeLaMarca).adhoc;
+      io.writeAdhoc(dir, sid, a);
+    }
+    const huella = base.huellaDelCarril(a);
+    // una huella medida con git caído no confirma nada: las constancias no valen contra ella
+    const vigente = (c) => c && typeof c === 'object' && base.huellaCompleta(huella) && c.huella === huella;
+    if (vigente(a.revisores) && vigente(a.pase)) return null;
+  } catch (e) {
+    process.stderr.write(`⚠️  camino rápido: no pude medir el riesgo de lo que se guarda (${e.message}); sigue sin ese freno.\n`);
+    io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'unknown', reason: `riesgo del carril sin medir: ${e.message}` });
+    return null;
+  }
+  const harness = (() => { try { return io.isHarnessRepo(marca.archivo); } catch (_) { return true; } })();
+  return { texto: textoFaltanRevisoresYPase({ harness, regla: marca.regla, archivo: marca.archivo }) };
+}
+
+module.exports = { tramosDelShell, palabrasDelShell, commitsDelShell, comandosQueGuardan, leerComando, decidir, textoFaltanRevisoresYPase, frenoDelRiesgo };

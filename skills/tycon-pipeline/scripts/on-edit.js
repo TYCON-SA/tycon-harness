@@ -167,6 +167,17 @@ function handle(event) {
       io.recordAdhocFile(STATE_DIR, sessionId, filePath);
     }
   } catch { /* best-effort */ }
+  // Cada ruta que escribe el carril, en cualquier repo: su base al primer toque y la marca de riesgo alto, que piden
+  // los revisores y el pase antes de guardar (lib/save-brake.js).
+  let avisosDelCarril = [];
+  try {
+    const r = require('./lib/story-gate-io.js').anotarRutaDelCarril(STATE_DIR, sessionId, filePath);
+    if (r) avisosDelCarril = r.avisos;
+  } catch (e) {
+    // sin anotar, el carril puede quedar sin su marca de riesgo alto: se dice y queda en gates.log
+    avisosDelCarril = [`camino rápido: no pude anotar ${filePath} en el carril (${(e && e.message) || e}): su riesgo no se midió`];
+    try { require('./lib/story-gate-io.js').appendLog(STATE_DIR, 'gates.log', sessionId, { name: 'adhoc-base', status: 'unknown', file: filePath, reason: avisosDelCarril[0] }); } catch { /* el aviso igual sale */ }
+  }
 
   // Caso 2: sin marker — chequear si el archivo está referenciado por una story.
   const story = findStoryReferencing(filePath);
@@ -196,7 +207,7 @@ function handle(event) {
     };
   }
 
-  return null;
+  return avisosDelCarril.length ? { reminder: avisosDelCarril.join('\n') } : null;
 }
 
 module.exports = { handle };
