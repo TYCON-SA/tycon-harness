@@ -267,7 +267,7 @@ function reviewersRound(marker) {
   const arreglo = (Array.isArray(marker.fileEvents) ? marker.fileEvents : [])
     // la marca `code` en falso (la pone on-edit) gana: el cartel decide con ella y tiene que decidir igual; en verdadero
     // no alcanza, porque un marcador de antes la ponía también en lo que el arnés escribe en .advisors
-    .some((e) => e && Date.parse(e.ts || '') > cierre && e.code !== false && pideOtraVuelta(e.path, { storyPath: marker.storyPath }));
+    .some((e) => e && Date.parse(e.ts || '') > cierre && e.code !== false && pideOtraVuelta(e.path, { storyPath: marker.storyPath, repoPath: marker.repoPath }));
   if (!arreglo) return null;
   return { round: (Number(t.rounds) || 1) + 1 };
 }
