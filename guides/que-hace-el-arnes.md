@@ -181,7 +181,7 @@ los cambie de verdad. Son **dos preguntas**, independientes, que se contestan **
 
 **1. ¿Historia o camino rápido? Lo decide el tamaño.** Si lo podés pedir en una frase y, al terminar, ves que quedó
 bien con sólo mirarlo y correr sus pruebas, va por **camino rápido**: se abre un carril, el permiso para editar código
-sin historia, con el motivo en una línea y la lista de archivos. Abrir el carril es la aprobación. Si para saber si
+sin historia, con el motivo en una línea y la lista de archivos. El carril lo aprueba una persona del equipo, o el dueño del producto si hay riesgo. Si para saber si
 quedó completo necesitás una lista de criterios, o va a llevar varias sesiones, va por **historia**: criterios de
 aceptación, pruebas con nombre y archivos que toca. La historia es la especificación: se valida antes de programar,
 manda sobre el código y al cerrar se cruza criterio por criterio. Lo decide quien abre el trabajo, antes de empezar,

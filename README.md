@@ -50,27 +50,27 @@ harness, not part of your product's day to day. The detail, with examples:
 
 ```mermaid
 flowchart TB
-  request([Request]) --> size{Can it be asked in one sentence and<br/>seen to be right just by looking?}
-  size -- No --> h1
-  size -- Yes --> r1
-  subgraph story [Story]
+  request(["Request"]) --> size{"Is it a small change?"}
+  size -- "No" --> h1
+  size -- "Yes" --> r1
+  subgraph story ["Story"]
     direction TB
-    h1[Validate the story] --> h2[Make the plan]
-    h2 --> h3[Approve the plan<br/>a person; the product owner if there is risk]
-    h3 --> h4[Code with the tests first]
-    h4 --> h5[Run the tests]
-    h5 --> h6[Reviewers chosen by the change]
-    h6 --> h7[Adversarial pass<br/>except in a small or docs-only story]
-    h7 --> h8[Live check, criterion by criterion]
-    h8 --> h9[Save<br/>a yes in the permission prompt]
-    h9 --> h10[Pull request: CI and the gate]
+    h1["Validate the story"] --> h2["Make the plan"]
+    h2 --> h3["Approve the plan<br/>a person on the team, or the product owner if there is risk"]
+    h3 --> h4["Code with the tests first"]
+    h4 --> h5["Run the tests"]
+    h5 --> h6["Reviewers chosen by the change"]
+    h6 --> h7["Adversarial pass<br/>except in a small or docs-only story"]
+    h7 --> h8["Live check, criterion by criterion"]
+    h8 --> h9["Save<br/>a yes in the permission prompt"]
+    h9 --> h10["Pull request: CI and the gate"]
   end
-  subgraph quick [Quick path]
+  subgraph quick ["Quick path"]
     direction TB
-    r1[Open the lane<br/>the reason and the list of files: opening it is the approval] --> r2[Code]
-    r2 --> r3[The same commit controls]
-    r3 --> r4[Save<br/>a yes in the permission prompt]
-    r4 --> r5[Pull request: the same CI]
+    r1["Open the lane<br/>approved by a person on the team, or the product owner if there is risk"] --> r2["Code"]
+    r2 --> r3["The same commit controls"]
+    r3 --> r4["Save<br/>a yes in the permission prompt"]
+    r4 --> r5["Pull request: the same CI"]
   end
 ```
 

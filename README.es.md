@@ -50,27 +50,27 @@ día a día de tu producto. El detalle, con ejemplos:
 
 ```mermaid
 flowchart TB
-  pedido([Pedido]) --> tamano{¿Se pide en una frase y se ve<br/>que quedó con sólo mirarlo?}
-  tamano -- No --> h1
-  tamano -- Sí --> r1
-  subgraph historia [Historia]
+  pedido(["Pedido"]) --> tamano{"¿Es un cambio chico?"}
+  tamano -- "No" --> h1
+  tamano -- "Sí" --> r1
+  subgraph historia ["Historia"]
     direction TB
-    h1[Validar la historia] --> h2[Armar el plan]
-    h2 --> h3[Aprobar el plan<br/>una persona; el dueño del producto si hay riesgo]
-    h3 --> h4[Programar con las pruebas primero]
-    h4 --> h5[Correr las pruebas]
-    h5 --> h6[Revisores elegidos según el cambio]
-    h6 --> h7[Pase adversarial<br/>salvo en una historia chica o de sólo documentación]
-    h7 --> h8[Probar en vivo, criterio por criterio]
-    h8 --> h9[Guardar<br/>el sí en la ventana de permiso]
-    h9 --> h10[Pull request: la CI y el portón]
+    h1["Validar la historia"] --> h2["Armar el plan"]
+    h2 --> h3["Aprobar el plan<br/>una persona del equipo, o el dueño del producto si hay riesgo"]
+    h3 --> h4["Programar con las pruebas primero"]
+    h4 --> h5["Correr las pruebas"]
+    h5 --> h6["Revisores elegidos según el cambio"]
+    h6 --> h7["Pase adversarial<br/>salvo en una historia chica o de sólo documentación"]
+    h7 --> h8["Probar en vivo, criterio por criterio"]
+    h8 --> h9["Guardar<br/>el sí en la ventana de permiso"]
+    h9 --> h10["Pull request: la CI y el portón"]
   end
-  subgraph rapido [Camino rápido]
+  subgraph rapido ["Camino rápido"]
     direction TB
-    r1[Abrir el carril<br/>el motivo y la lista de archivos: abrirlo es la aprobación] --> r2[Programar]
-    r2 --> r3[Los mismos controles del commit]
-    r3 --> r4[Guardar<br/>el sí en la ventana de permiso]
-    r4 --> r5[Pull request: la misma CI]
+    r1["Abrir el carril<br/>lo aprueba una persona del equipo, o el dueño del producto si hay riesgo"] --> r2["Programar"]
+    r2 --> r3["Los mismos controles del commit"]
+    r3 --> r4["Guardar<br/>el sí en la ventana de permiso"]
+    r4 --> r5["Pull request: la misma CI"]
   end
 ```
 
