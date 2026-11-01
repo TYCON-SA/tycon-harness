@@ -22,12 +22,22 @@ El ciclo de desarrollo con IA (AI SDLC), paso por paso:
 
 1. **Pedido e historia:** contás qué querés y el agente lo escribe como una historia (story): qué hay que hacer y cómo
    se prueba. Para un ajuste chico alcanza con pedirlo con tus palabras.
-2. **Plan aprobado:** el agente arma el plan y te lo muestra; en una historia chica lo aprueba solo, en las demás espera tu visto bueno.
+2. **Plan aprobado:** el agente arma el plan y te lo muestra; alguien lo aprueba antes de programar: vos o, en un equipo, la coordinadora en tu nombre cuando el riesgo es normal.
 3. **Pruebas y código:** escribe las pruebas y el código, y corre las pruebas.
 4. **Revisión:** revisores especializados (seguridad, convenciones, cobertura) miran el cambio antes del commit.
 5. **Entrega:** el commit y el merge pasan por controles. Nada se commitea ni se sube sin tu permiso.
 6. **Operación y medición:** cada merge a main deja su archivo de métricas, y los procesos de la noche de tu
    organización revisan las dependencias y arman el tablero del ciclo.
+
+**La medida justa.** Al arrancar un producto se especifica entero, una vez —documento de producto, arquitectura,
+épicos e historias—; después, historia por historia. Dos preguntas antes de tocar código. ¿Historia o camino rápido?
+Lo decide el tamaño real: lo que se dice en una frase y se verifica mirando el resultado y sus pruebas va por camino
+rápido, con el motivo escrito, un cupo de archivos y una firma; lo que necesita criterios para saber si quedó
+completo va por historia, que es la especificación. ¿Quién firma? Lo decide el riesgo: lo que toca un freno, algo
+sensible o una decisión tuya lo firmás vos; el resto, en un equipo, puede firmarlo en tu nombre la coordinadora (una
+sesión de agente que el equipo designa para las firmas de rutina). Ningún plan se aprueba solo, y producción es
+siempre de una persona. Cada equipo fija la medida desde su sitio, con un piso que no se baja:
+[La medida justa](guides/que-hace-el-arnes.md#la-medida-justa-cuánto-papel-lleva-cada-cambio).
 
 Los controles son una parte del ciclo: cuidan cada paso. Se arranca de dos maneras: [solo, en tu
 máquina](#empezá-solo), o [para tu equipo](#para-equipos).
@@ -138,7 +148,7 @@ Una historia es tu pedido escrito, con sus criterios y sus pruebas: el agente la
 3. **Si la idea es grande, primero las historias.** Tu agente la lleva por etapas —entender el problema, el PRD, la arquitectura, las épicas— hasta dejar las historias; vos revisás cada etapa, y cada artefacto se commitea al repo, al lado del código. Para un cambio chico no hace falta: pedí la historia directo. · [▶ video](https://github.com/user-attachments/assets/24124d87-ebca-4069-8d82-d0b498f09518)
 4. **Pedí la historia con tus palabras**, para que el cambio quede escrito antes de programar: «creá una historia para agregar un filtro por fecha».
 5. **Revisá la historia.** El agente la arma con lo que le pediste, contestando tres preguntas en llano (qué tiene que hacer, cómo se ve que anda y qué no tiene que tocar), y te marca lo que supuso. Te la muestra y la escribe con tu «sí». Si tu repo ya trae la carpeta `_bmad/`, la arma con lo que hay ahí.
-6. **Pedí «implementemos la story»**, para arrancar el recorrido: la frase va así. Si no hay git, lo inicia; si estás en `main`, crea la rama. Valida la historia y, si le falta algo, te pregunta si la arregla. En una historia chica te muestra el plan y lo aprueba solo; en las demás, lo aprobás vos. Después escribe las pruebas y el código, corre las pruebas y los revisores, y prueba cada criterio corriéndolo.
+6. **Pedí «implementemos la story»**, para arrancar el recorrido: la frase va así. Si no hay git, lo inicia; si estás en `main`, crea la rama. Valida la historia y, si le falta algo, te pregunta si la arregla. Te muestra el plan y espera tu "sí" antes de programar. Después escribe las pruebas y el código, corre las pruebas y los revisores, y prueba cada criterio corriéndolo.
 7. **Revisá el resumen y decí «commitealo».** Te deja el mensaje armado y nunca commitea ni sube cambios sin tu permiso. Al cerrar la primera historia te ofrece la instalación completa.
 8. **Una historia con pantalla.** El agente arma una maqueta para que la apruebes antes de programar; si tu repo no tiene cómo probar en un navegador, te ofrece prepararlo; y te deja una guía para probarla a mano. · [▶ video](https://github.com/user-attachments/assets/8aa2c03a-03d7-42ab-b4ae-daf90a53e3c9)
 9. **Las reglas propias de tu proyecto.** Pedile a tu agente un revisor que controle una regla tuya (por ejemplo, «el email de un cliente nunca se muestra completo»): queda en tu repo de reglas y revisa cada historia junto con los del arnés. · [▶ video](https://github.com/user-attachments/assets/1ef473c6-f088-413f-8560-9d801e6a0c75)
