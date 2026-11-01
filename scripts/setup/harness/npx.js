@@ -260,11 +260,24 @@ function steps({ ctx, env, home, tty, ask, secret, launch, tree, io }) {
   // ── la instalación, de este árbol y en esta misma terminal ────────────────────────────────────────────────────
   const args = ['install', '--version', 'latest', ...(repo ? ['--repo', repo] : []), ...(team ? ['--team', team] : []), ...(rest.includes('--defaults') ? [] : ['--defaults']), ...rest];
   const status = launch('harness.js install', tree(...args));
+  if (status === 0 && audience !== 'org') nextStep(home);
   if (audience !== 'org' || status !== 0) return status;
   // «dar de alta mi organización»: install sale 0 también sin instalar (el «no» al plan, --dry-run): sin arnés no hay alta
   if (S.read(home).status !== 'ok') { say('no se instaló nada: el alta de tu organización queda para cuando instales (volvé a correr la misma línea)'); return 0; }
   say('instalado: ahora el alta de tu organización (harness.js team-init)');
   return launch('harness.js team-init', tree('team-init'));
+}
+
+// Después de una instalación nueva, el primer día en tres pasos y la página de un minuto del árbol instalado. Sin arnés
+// instalado (el «no» al plan, --dry-run) no hay próximo paso.
+function nextStep(home) {
+  const r = S.read(home);
+  if (r.status !== 'ok' || !r.state || !r.state.tree) return;
+  say('instalado. El próximo paso:');
+  say('  1. abrí tu agente de código en la carpeta de tu repo (si ya estaba abierto, cerralo y abrilo de nuevo);');
+  say('  2. pedile «creá una historia para …» con lo que quieras hacer, y revisala;');
+  say('  3. decí «implementemos la story»: el arnés te lleva paso a paso.');
+  say(`  El arnés en un minuto: ${path.join(r.state.tree, 'getting-started', 'one-minute.es.md')}`);
 }
 
 module.exports = { run, requisites, tarCmd, splitArgs, teamOf, NODE_FLOOR, HARNESS_JS, PACKAGE };

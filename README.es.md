@@ -2,6 +2,9 @@
 
 [English](README.md) · Castellano
 
+**¿Recién llegás?** [El arnés en un minuto](getting-started/one-minute.es.md): qué es, el primer día en tres pasos y
+las palabras que usa.
+
 **El arnés en cuatro minutos.**
 
 https://github.com/user-attachments/assets/3fbe4538-6b96-4b56-b2ed-92d36be1c6f8

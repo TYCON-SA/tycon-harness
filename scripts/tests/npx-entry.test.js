@@ -45,7 +45,9 @@ const DRIVER = [
   "'use strict';",
   'const N = require(process.argv[2]); const spec = JSON.parse(process.argv[3]); const launches = [];',
   'const io = { tty: Boolean(spec.tty), line: () => (spec.answer === undefined ? "" : spec.answer), secret: () => spec.secret || "",',
-  '  launch: (what, args) => { launches.push({ what, args }); return spec.status === undefined ? 0 : spec.status; } };',
+  '  launch: (what, args) => { launches.push({ what, args });',
+  '    if (spec.installs) { const fs = require("fs"); fs.mkdirSync(require("path").dirname(spec.installs.file), { recursive: true }); fs.writeFileSync(spec.installs.file, spec.installs.body); }',
+  '    return spec.status === undefined ? 0 : spec.status; } };',
   'if (spec.tools) io.tools = (n) => `/x/bin/${n}`;',
   'const r = N.run({ env: process.env, home: process.env.HOME, argv: spec.argv }, io);',
   'process.stdout.write(JSON.stringify({ code: r.code, launches }));', ''].join('\n');
@@ -498,5 +500,40 @@ test('8.46 T44 NpxEntry_AgentHelp_SameAsTools', async () => {
       assert.strictEqual(r.code, found ? 0 : 1, `${name}: ${r.out}`);
       if (!found) assert.ok(r.out.includes(TL.agentLines(process.platform)[1]), `${name}: las órdenes de tools.js`);
     }
+  } finally { fs.rmSync(box, { recursive: true, force: true }); }
+});
+
+test('complejidad NpxEntry_ProximoPaso: una instalación nueva para mí termina diciendo el próximo paso', async () => {
+  const box = tmp('npx-proximo-');
+  try {
+    // lo que el install de juguete deja: el estado de un arnés instalado, escrito recién al lanzarlo
+    const fresh = () => {
+      const home = fs.mkdtempSync(path.join(box, 'home-'));
+      const scratch = fs.mkdtempSync(path.join(box, 'molde-'));
+      const tree = installedAt(scratch);
+      const file = path.join(scratch, '.tycon', 'state', 'harness-state.json');
+      const body = read(file).split(scratch).join(home);
+      fs.mkdirSync(path.join(home, '.tycon', 'harness', 'scripts', 'setup'), { recursive: true });
+      fs.copyFileSync(path.join(tree, 'scripts', 'setup', 'harness.js'), path.join(home, '.tycon', 'harness', 'scripts', 'setup', 'harness.js'));
+      return { home, installs: { file: path.join(home, '.tycon', 'state', 'harness-state.json'), body } };
+    };
+    let f = fresh();
+    let r = await drive(box, { argv: ['--yes'], installs: f.installs }, { home: f.home });
+    assert.strictEqual(r.code, 0, r.out);
+    assert.match(r.out, /El próximo paso/, r.out);
+    assert.match(r.out, /abrí tu agente de código en la carpeta de tu repo/);
+    assert.match(r.out, /«creá una historia para …»/);
+    assert.match(r.out, /«implementemos la story»/);
+    assert.ok(r.out.includes(path.join(f.home, '.tycon', 'harness', 'getting-started', 'one-minute.es.md')), `señala la página de un minuto del árbol instalado: ${r.out}`);
+    // un install que sale 0 sin instalar (el «no» al plan): sin próximo paso
+    f = fresh();
+    r = await drive(box, { argv: ['--yes'] }, { home: f.home });
+    assert.strictEqual(r.code, 0, r.out);
+    assert.doesNotMatch(r.out, /El próximo paso/, 'sin arnés instalado no hay próximo paso');
+    // un install que falla: tampoco
+    f = fresh();
+    r = await drive(box, { argv: ['--yes'], installs: f.installs, status: 3 }, { home: f.home });
+    assert.strictEqual(r.code, 3, r.out);
+    assert.doesNotMatch(r.out, /El próximo paso/);
   } finally { fs.rmSync(box, { recursive: true, force: true }); }
 });
