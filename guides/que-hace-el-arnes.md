@@ -163,7 +163,7 @@ está la **rama corta**, sin PRD ni arquitectura formal. **La ceremonia escala c
 ### La medida justa: cuánto papel lleva cada cambio
 
 **El tamaño y el riesgo definen el flujo:** el tamaño decide si va por historia o por camino rápido; el riesgo decide
-quién firma y cuánta revisión lleva cada parte. La medida la fija cada equipo.
+quién aprueba antes de programar y cuánta revisión lleva cada cambio. La medida la fija cada equipo.
 
 Lo que leíste arriba es SDD: la spec antes que el código. Nuestra opinión, después de usarlo, es que hace falta
 **exactamente cuando el resultado no se puede juzgar mirándolo**: cuando necesitás una lista de criterios para
@@ -177,65 +177,55 @@ Por eso lo hacemos en **dos etapas**. **Primero, una vez, al arrancar un product
 el documento de producto, la arquitectura, los épicos y las historias. Ahí sí es especificación completa. **Después,
 historia por historia, con la medida justa**: cada historia es su propia especificación; lo que cambia en el camino
 se escribe en la historia, y el documento de producto y la arquitectura no se vuelven a tocar salvo que una historia
-los cambie de verdad. Son **dos preguntas**, independientes, que se contestan **antes de tocar código**:
+los cambie de verdad. Son **dos preguntas**, independientes, que se contestan **antes de tocar código**, y una tercera al guardar:
 
-**1. ¿Historia o camino rápido? Lo decide el tamaño real.** Si lo que tiene que quedar se dice en una frase, se
-verifica mirando el resultado y las pruebas, y entra en una sesión, va por **camino rápido**: un cambio sin historia,
-con el motivo escrito, una firma y un cupo de archivos que escribe quien firma (8 de fábrica; 5 como mucho cuando
-firma la coordinadora —una sesión de agente que el equipo designa, y a la que el perfil le delega sólo las firmas de
-rutina—). El camino rápido es lo que la guía de firmas llama arreglo rápido (la firma `adhoc-lane`); la
-rama corta de BMAD es cómo se escribe ese cambio. Si necesita criterios para saber si está completo, o varias
-sesiones, o varias partes, va por **historia**: criterios de aceptación, pruebas con nombre, archivos que toca. La
-historia es la especificación; se valida antes de programar, manda sobre el código y al cerrar se cruza criterio por
-criterio. El documento de producto y la arquitectura, escritos al arrancar, son el punto de partida: no se reescriben
-con cada cambio, sólo cuando una historia los cambia de verdad. Lo juzga quien abre el trabajo, porque un programa no
-puede medir un cambio que todavía no existe; lo que el programa verifica después es lo mecánico: que no se toque
-código sin historia ni camino rápido declarado, y que el cambio respete su cupo.
+**1. ¿Historia o camino rápido? Lo decide el tamaño.** Si lo podés pedir en una frase y, al terminar, ves que quedó
+bien con sólo mirarlo y correr sus pruebas, va por **camino rápido**: se abre un carril, el permiso para editar código
+sin historia, con el motivo en una línea y la lista de archivos. Abrir el carril es la aprobación. Si para saber si
+quedó completo necesitás una lista de criterios, o va a llevar varias sesiones, va por **historia**: criterios de
+aceptación, pruebas con nombre y archivos que toca. La historia es la especificación: se valida antes de programar,
+manda sobre el código y al cerrar se cruza criterio por criterio. Lo decide quien abre el trabajo, antes de empezar,
+porque un programa no puede medir un cambio que todavía no existe. Lo que el programa verifica después es lo
+mecánico: sin carril ni historia abiertos, niega la primera edición de código. Si a mitad de camino aparecen
+preguntas que piden criterios, el carril se cierra, el código queda en su rama y se escribe la historia que lo
+retoma.
 
-**2. ¿Quién firma? Lo decide el riesgo.** Lo que no es rutina lo firma **el dueño**: vos, o quien responde por el
-repo en un equipo. Riesgo alto es tocar un freno, un control, producción o un archivo de la lista de lo sensible —eso
-lo mide un programa—, o traer una decisión del dueño —eso lo juzga quien abre el trabajo, y lo escribe—. Sin ninguna
-señal, riesgo normal. Ante la duda, la casilla más estricta. En un equipo, las firmas de rutina las puede dar en
-nombre del dueño **la coordinadora**, si el perfil se las delega.
+**2. ¿Quién aprueba antes de programar? Lo decide el riesgo.** En una historia, una persona aprueba el plan —qué
+archivos va a tocar el agente y en qué orden— antes de la primera línea. Si el cambio toca producción, borra o
+transforma datos (una migración que saca una columna), toca seguridad (permisos, autenticación, secretos) o trae una
+decisión de alcance del cliente, aprueba **el dueño del producto**, quien responde por él. Si no, **cualquier persona
+del equipo**. Una parte del riesgo la mide un programa, por ejemplo que el cambio trae una migración; la otra la juzga
+quien abre el trabajo, y la deja escrita. Ante la duda, el caso más estricto. Ningún plan se aprueba solo.
 
-| | Riesgo normal (si el perfil lo delega) | Riesgo alto |
+**3. Guardar es el sí de una persona.** Antes de cada commit, push y pull request, el agente pregunta «¿guardo?» en
+la ventana de permiso, el mismo cuadro donde ya aprobás sus comandos, y con un sí guarda. No pide comando ni deja
+papel, porque guardar se deshace: un commit se revierte. Lo que no se deshace igual de fácil se decide antes, en la
+aprobación del plan.
+
+**Cuánta revisión lleva cada cambio.** En una historia corren los revisores automáticos, que un programa elige según
+lo que tocó el cambio; el pase adversarial, un segundo grupo que intenta romper lo que los revisores aprobaron, salvo
+en una historia chica o de sólo documentación o pruebas; y la matriz por criterio, que exige que cada criterio tenga
+una prueba que corrió de verdad. Un hallazgo crítico lo decide una persona. En un camino rápido no corren los
+revisores ni el pase: lo cuidan sus pruebas, los mismos controles antes del commit y la misma CI del pull request.
+
+**Lo que no es de tu producto.** Cambiar los frenos del arnés, firmar sus controles o coordinar sesiones es trabajo
+de quien mantiene el arnés, no del día a día de tu producto.
+
+**Un ejemplo, con un combo (una lista desplegable).**
+
+| El cambio | Tamaño | Quién aprueba |
 |---|---|---|
-| **Camino rápido** | Firma la coordinadora, con el motivo y el cupo, y avisa al dueño | Firma el dueño |
-| **Historia** | El plan lo aprueba la coordinadora, sólo con el «aprobado» de la revisión automática | El plan lo aprueba el dueño |
+| *«El combo de provincia muestra el nombre completo en vez de la sigla.»* | Camino rápido: una frase, se verifica abriendo el combo. | Una persona, al abrir el carril. |
+| *«El combo trae las opciones de la base y recuerda la última elección.»* | Historia: ¿qué muestra sin resultados?, ¿dónde guarda la elección, y por cuánto?, ¿quién ve las opciones? Cada pregunta es un criterio. | Una persona aprueba el plan; el dueño del producto, si recordar la elección toca permisos. |
+| *«Sacar la columna de teléfono fijo de la tabla de clientes.»* | Historia: ¿qué pasa con los datos que ya hay?, ¿se respaldan antes?, ¿qué pantallas e informes la leen? | El dueño del producto: la migración borra datos. |
 
-**El plan aprobado antes de programar se queda, siempre.** Ningún plan se aprueba solo: lo aprueba una persona, o la
-coordinadora con la revisión automática en «aprobado». Y hay cosas que son **siempre de una persona**, sin importar
-el tamaño ni el riesgo: cada pase a producción, un criterio que ninguna prueba puede correr, apagar un control o
-saltear una revisión. El commit y el push los firma una persona o, en un equipo, la coordinadora en nombre del dueño,
-sólo si nada de lo tocado es sensible, la corrida terminó limpia y el aviso le llegó.
+**En una frase:** el tamaño del cambio decide cuánto papel lleva, una línea o una historia; el riesgo decide quién
+aprueba antes de programar; y guardar, siempre, pide el sí de una persona.
 
-**Cuánta revisión lleva cada parte.** Los revisores que corren los elige un programa mirando qué tocó el cambio, no
-el modelo. El pase adversarial —un segundo grupo que intenta romper lo que el primero aprobó— corre en toda historia
-salvo en las chicas (hasta seis archivos, sin base de datos, sin rutas sensibles, sin tandas, sin alcance firmado con
-un cliente y con pocas líneas nuevas) y en las de sólo documentación o pruebas; cada repo puede forzarlo siempre para sus rutas compartidas.
-Saltearlo cuando corresponde lo firma el dueño y deja constancia.
-
-**Qué queda en la persona y qué en el arnés.** La persona decide el camino y juzga el riesgo que no es mecánico,
-aprueba el plan y cada pase a producción, firma el commit y el push —o deja que la coordinadora lo haga en su nombre
-cuando nada es sensible— y decide ante un hallazgo crítico. El arnés niega el código sin carril, exige la prueba
-antes que el código, elige y cuenta los revisores, mide el riesgo mecánico, cruza cada criterio al cerrar y deja
-constancia de cada firma: quién, por qué vía y cuándo.
-
-**Un ejemplo, con un combo (una lista desplegable).** *«El combo de provincia tiene que mostrar el nombre completo
-en vez de la sigla»*: se dice en una frase, se verifica abriendo el combo y con una prueba, entra en una sesión, no
-toca nada sensible. **Camino rápido, riesgo normal**: la coordinadora firma el permiso con el motivo y los dos o tres
-archivos, y avisa. *«El combo trae las opciones de la base por un servicio nuevo, filtra mientras escribís y recuerda
-la última elección»*: ¿qué muestra sin resultados?, ¿cuántas trae?, ¿dónde recuerda y por cuánto tiempo?, ¿quién
-puede verlas? Eso son criterios, y hay pruebas con nombre para cada uno. **Historia**: plan aprobado antes de
-programar; si recordar la elección pide una migración de base o toca permisos, la historia es de riesgo alto y ese
-plan lo aprueba el dueño.
-
-**Cada equipo fija la medida.** La proporción no viene fija: desde el sitio de la organización (pestaña
-Configuración, con un pedido de cambio) cada equipo dice qué firma su dueño y qué delega, en qué máquinas, y los
-plazos de los avisos; y en cada repo, qué rutas fuerzan el pase adversarial (su archivo `.tycon/advisors.yaml`). Con
-un **piso que no se baja**: lo delegado es sólo rutina (una firma de excepción puesta como delegada no pasa la
-validación del perfil); saltear una revisión, apagar un control y producción nunca se delegan; el commit y el push,
-sólo si nada de lo tocado es sensible; el plan nunca se aprueba solo; y las constancias no se escriben a mano.
+**Cada equipo ajusta la medida, con un piso.** Desde el sitio de la organización (pestaña Configuración; cada cambio
+va como un pedido que alguien revisa), el equipo decide qué aprueba su dueño del producto. Cada repo declara en
+`.tycon/advisors.yaml` qué rutas fuerzan siempre el pase adversarial. El piso no se baja: ningún plan se aprueba solo,
+nada se guarda sin el sí de una persona, y saltear una revisión o tocar producción nunca se delegan.
 
 ### La story: la unidad que el arnés sabe leer
 

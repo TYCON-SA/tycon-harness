@@ -25,7 +25,7 @@ El ciclo de desarrollo con IA (AI SDLC), paso por paso:
 
 1. **Pedido e historia:** contás qué querés y el agente lo escribe como una historia (story): qué hay que hacer y cómo
    se prueba. Para un ajuste chico alcanza con pedirlo con tus palabras.
-2. **Plan aprobado:** el agente arma el plan y te lo muestra; alguien lo aprueba antes de programar: vos o, en un equipo, la coordinadora en tu nombre cuando el riesgo es normal.
+2. **Plan aprobado:** el agente arma el plan y te lo muestra; una persona lo aprueba antes de programar: alguien del equipo o, si el cambio tiene riesgo, el dueño del producto.
 3. **Pruebas y código:** escribe las pruebas y el código, y corre las pruebas.
 4. **Revisión:** revisores especializados (seguridad, convenciones, cobertura) miran el cambio antes del commit.
 5. **Entrega:** el commit y el merge pasan por controles. Nada se commitea ni se sube sin tu permiso.
@@ -33,14 +33,46 @@ El ciclo de desarrollo con IA (AI SDLC), paso por paso:
    organización revisan las dependencias y arman el tablero del ciclo.
 
 **La medida justa.** Al arrancar un producto se especifica entero, una vez —documento de producto, arquitectura,
-épicos e historias—; después, historia por historia. Dos preguntas antes de tocar código. ¿Historia o camino rápido?
-Lo decide el tamaño real: lo que se dice en una frase y se verifica mirando el resultado y sus pruebas va por camino
-rápido, con el motivo escrito, un cupo de archivos y una firma; lo que necesita criterios para saber si quedó
-completo va por historia, que es la especificación. ¿Quién firma? Lo decide el riesgo: lo que toca un freno, algo
-sensible o una decisión tuya lo firmás vos; el resto, en un equipo, puede firmarlo en tu nombre la coordinadora (una
-sesión de agente que el equipo designa para las firmas de rutina). Ningún plan se aprueba solo, y producción es
-siempre de una persona. Cada equipo fija la medida desde su sitio, con un piso que no se baja:
+épicos e historias—; después, historia por historia. Cada cambio lleva el papel que su tamaño pide, ni más ni menos.
+
+- **El tamaño decide historia o camino rápido.** Lo que pedís en una frase y ves que quedó bien con sólo mirarlo y
+  correr sus pruebas va por camino rápido: el motivo en una línea y la lista de archivos. Lo que necesita una lista de
+  criterios para saber si quedó completo, o varias sesiones, va por historia, que es la especificación.
+- **El riesgo decide quién aprueba antes de programar.** Una persona del equipo. El dueño del producto si el cambio
+  toca producción, borra o transforma datos, toca seguridad o cambia lo que pidió el cliente. Ningún plan se aprueba
+  solo.
+- **Guardar es el sí de una persona.** Antes de cada commit, push y pull request, el agente pregunta en la ventana de
+  permiso, el mismo cuadro donde ya aprobás sus comandos. Con un sí, guarda: sin comando y sin firma.
+
+Cambiar los frenos del arnés, firmar sus controles o coordinar sesiones es trabajo de quien mantiene el arnés, no del
+día a día de tu producto. El detalle, con ejemplos:
 [La medida justa](guides/que-hace-el-arnes.md#la-medida-justa-cuánto-papel-lleva-cada-cambio).
+
+```mermaid
+flowchart TB
+  pedido([Pedido]) --> tamano{¿Se pide en una frase y se ve<br/>que quedó con sólo mirarlo?}
+  tamano -- No --> h1
+  tamano -- Sí --> r1
+  subgraph historia [Historia]
+    direction TB
+    h1[Validar la historia] --> h2[Armar el plan]
+    h2 --> h3[Aprobar el plan<br/>una persona; el dueño del producto si hay riesgo]
+    h3 --> h4[Programar con las pruebas primero]
+    h4 --> h5[Correr las pruebas]
+    h5 --> h6[Revisores elegidos según el cambio]
+    h6 --> h7[Pase adversarial<br/>salvo en una historia chica o de sólo documentación]
+    h7 --> h8[Probar en vivo, criterio por criterio]
+    h8 --> h9[Guardar<br/>el sí en la ventana de permiso]
+    h9 --> h10[Pull request: la CI y el portón]
+  end
+  subgraph rapido [Camino rápido]
+    direction TB
+    r1[Abrir el carril<br/>el motivo y la lista de archivos: abrirlo es la aprobación] --> r2[Programar]
+    r2 --> r3[Los mismos controles del commit]
+    r3 --> r4[Guardar<br/>el sí en la ventana de permiso]
+    r4 --> r5[Pull request: la misma CI]
+  end
+```
 
 Los controles son una parte del ciclo: cuidan cada paso. Se arranca de dos maneras: [solo, en tu
 máquina](#empezá-solo), o [para tu equipo](#para-equipos).
