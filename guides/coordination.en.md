@@ -75,9 +75,18 @@ title the editor tab shows after `/rename`. The guide takes neither for granted.
 **The opened session starts like the coordinator.** It runs in the same permission mode as the coordinator and with
 remote control under its name, so the owner can see it and drive it from claude.ai/code or the phone. With different
 modes, the new session gets stuck on a permission prompt nobody sees, and the messages from the other sessions are held
-back from it; if the owner is also away from the machine, they cannot go in with `claude attach`. Until `open` does it
-by itself, if an opened session gets stuck like that, the coordinator stops it and relaunches it by hand:
-`claude --bg --resume <id> -n <name> --permission-mode <its mode> --remote-control <name> -- <task>`.
+back from it; if the owner is also away from the machine, they cannot go in with `claude attach`.
+
+`open` does it by itself: it reads the coordinator's mode and launches the session with `--permission-mode <that mode>`
+and `--remote-control <name>`. The mode is not chosen: `open` does not accept `--permission-mode`, so it never opens a
+session with more permissions than the coordinator. It does not open, and says so in one line, if it cannot tell the
+mode or if the coordinator is in plan mode (the new session would wait for someone to approve its plan). The mode comes
+from the coordinator's conversation, which records it with each of the person's messages. **Known limit:** if someone
+changes its mode with Shift+Tab and sends no message afterwards, `open` copies the previous mode. A session opened by
+hand, or before this change, that got stuck like that, the coordinator stops and relaunches:
+`claude --bg --resume <id> -n <name> --permission-mode <its mode> --remote-control <name> -- <task>`. To stop and
+remove a background session, use `claude stop <id>` and `claude rm <id>`, with the id that `claude agents` shows: with
+the name they answer that they cannot find it (measured on 2026-11-01).
 
 `open` passes the task to the launcher as is, without reviewing it: nothing it says signs anything (see «The owner's
 signatures»).

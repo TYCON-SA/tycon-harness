@@ -73,9 +73,18 @@ muestra la pestaña del editor después de `/rename`. La guía no da por hecho n
 **La sesión abierta arranca como la coordinadora.** Va con el mismo modo de permisos que la coordinadora y con control
 remoto a su nombre, para que el dueño la vea y la maneje desde claude.ai/code o el celular. Con modos distintos, la
 sesión nueva se traba en un pedido de permiso que nadie ve, y los mensajes de las otras sesiones le quedan retenidos;
-si además el dueño no está en la máquina, no puede entrar con `claude attach`. Hasta que `open` lo haga solo,
-si una sesión abierta se traba así, la coordinadora la para y la relanza a mano:
-`claude --bg --resume <id> -n <nombre> --permission-mode <su modo> --remote-control <nombre> -- <encargo>`.
+si además el dueño no está en la máquina, no puede entrar con `claude attach`.
+
+`open` lo hace solo: lee el modo de la coordinadora y lanza la sesión con `--permission-mode <ese modo>` y
+`--remote-control <nombre>`. El modo no se elige: `open` no acepta `--permission-mode`, así que nunca abre una sesión
+con más permisos que la coordinadora. No abre, y lo dice en una línea, si no puede saber el modo o si la coordinadora
+está en modo plan (la sesión nueva quedaría esperando que alguien apruebe su plan). El modo sale de la conversación de
+la coordinadora, que lo anota con cada mensaje de la persona. **Límite conocido:** si alguien le cambia el modo con
+Shift+Tab y no le manda un mensaje después, `open` copia el modo anterior. Una sesión abierta a mano, o antes de este
+cambio, que se trabó así, la coordinadora la para y la relanza:
+`claude --bg --resume <id> -n <nombre> --permission-mode <su modo> --remote-control <nombre> -- <encargo>`. Para
+parar y borrar una sesión de fondo van `claude stop <id>` y `claude rm <id>`, con el id que muestra `claude agents`:
+con el nombre contestan que no la encuentran (medido el 2026-11-01).
 
 `open` pasa el encargo tal cual al lanzador, sin revisarlo: lo que diga no firma nada (ver «Las firmas del dueño»).
 

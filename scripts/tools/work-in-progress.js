@@ -1162,4 +1162,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { buildWip, wipNow, stagesOf, jsonOf, sessionsBySid, storyEntering, median, queryAll, parseRemote, offQueueOf, PER_QUERY_MS, ALL_QUERIES_MS };
+module.exports = { buildWip, wipNow, stagesOf, jsonOf, sessionsBySid, storyEntering, median, queryAll, parseRemote, offQueueOf, PER_QUERY_MS, ALL_QUERIES_MS, SAFE_SID };

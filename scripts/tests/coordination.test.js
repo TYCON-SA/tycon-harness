@@ -12,7 +12,7 @@ const { spawnSync } = require('child_process');
 const ROOT = path.join(__dirname, '..', '..');
 const COORD = path.join(ROOT, 'scripts', 'tools', 'coordination.js');
 const C = require(COORD);
-const { stateDir } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
+const { stateDir, claudeDir } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
 
 const NOW = Date.parse('2026-10-25T14:00:00.000Z');
 // A project folder outside the temporary one: a derived name there is a real session, not an internal agent.
@@ -72,6 +72,26 @@ if (b === 'killed') process.kill(process.pid, 'SIGKILL');
   return { bin: process.execPath, prefix: [script] };
 }
 const launched = (t) => { try { return JSON.parse(fs.readFileSync(path.join(t.root, 'launched.json'), 'utf8')); } catch { return null; } };
+// The session that calls `open`, as Claude Code leaves it: its id in the environment and its conversation in
+// `projects/<folder>/<sid>.jsonl`, with one person's message per permission mode, the last one being the current
+// mode. `pad` adds that many bytes of conversation without a mode after them; `mtime` dates the file.
+const CALLER_SID = 'coord-sid';
+function callerTranscript(t, modes, { sid = CALLER_SID, folder = t.root.replace(/[^A-Za-z0-9-]/g, '-'), pad = 0, mtime = null } = {}) {
+  const dir = path.join(claudeDir(t.home), 'projects', folder);
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `${sid}.jsonl`);
+  const lines = modes.map((m) => JSON.stringify({ type: 'user', permissionMode: m, message: { content: 'hola' } }));
+  if (pad) lines.push(JSON.stringify({ type: 'assistant', message: { content: 'x'.repeat(pad) } }));
+  fs.writeFileSync(file, `${lines.join('\n')}\n`);
+  if (mtime != null) fs.utimesSync(file, mtime / 1000, mtime / 1000);
+  return file;
+}
+// The calling session for the opening cases: in bypass unless the case wrote its own conversation.
+function caller(t, sid = CALLER_SID) {
+  const file = path.join(claudeDir(t.home), 'projects', t.root.replace(/[^A-Za-z0-9-]/g, '-'), `${sid}.jsonl`);
+  if (!fs.existsSync(file)) callerTranscript(t, ['bypassPermissions'], { sid });
+  return { env: { ...t.opts.env, CLAUDE_CODE_SESSION_ID: sid } };
+}
 
 // ── The guide and the command (AC 1-7) ───────────────────────────────────────────────────────────────────────────
 
@@ -275,14 +295,14 @@ test('T10 Signature_TerminalPath_WritesOnceOrPrints @story-8.122 @ac-10: uno esc
 
 // ── Opening and naming (AC 23-29) ────────────────────────────────────────────────────────────────────────────────
 
-const open = (t, args) => C.open({ ...t.opts, cwd: t.root, ...args });
+const open = (t, args) => C.open({ ...t.opts, ...caller(t), cwd: t.root, ...args });
 
 test('T24 Open_LaunchesRealSession @story-8.122 @ac-24: llama al lanzador con nombre, carpeta y encargo; devuelve cómo entrar', () => {
   const t = toy();
   const r = open(t, { name: 'n1', task: 'implementá la 9.9', launcher: launcher(t) });
   assert.strictEqual(r.ok, true, r.message);
   const l = launched(t);
-  assert.deepStrictEqual(l.argv, ['--bg', '-n', 'n1', '--', 'implementá la 9.9']);
+  assert.deepStrictEqual(l.argv, ['--bg', '-n', 'n1', '--permission-mode', 'bypassPermissions', '--remote-control', 'n1', '--', 'implementá la 9.9']);
   assert.strictEqual(fs.realpathSync(l.cwd), fs.realpathSync(t.root));
   assert.match(r.message, /claude attach n1/);
   assert.strictEqual(C.status(t.opts).working.some((w) => w.session === 'n1'), true, 'la recién abierta cuenta');
@@ -347,7 +367,7 @@ test('T29 Open_JustOpened_CountsUntilItsFile @story-8.122 @ac-29: una abierta ha
   const t = toy();
   session(t, 'busy-a', 'a', { status: 'busy' });
   session(t, 'busy-b', 'b', { status: 'busy' });
-  const first = C.open({ ...t.opts, now: mins(1), cwd: t.root, name: 'n1', task: 'algo', launcher: launcher(t) });
+  const first = C.open({ ...t.opts, ...caller(t), now: mins(1), cwd: t.root, name: 'n1', task: 'algo', launcher: launcher(t) });
   assert.strictEqual(first.ok, true, first.message);
   fs.rmSync(path.join(t.root, 'launched.json'));
   const again = open(t, { name: 'n2', task: 'algo', launcher: launcher(t) });
@@ -355,7 +375,7 @@ test('T29 Open_JustOpened_CountsUntilItsFile @story-8.122 @ac-29: una abierta ha
   assert.match(again.message, /3 trabajando/);
   assert.strictEqual(launched(t), null);
   // eleven minutes later, without its session file, it no longer counts
-  const later = C.open({ ...t.opts, now: NOW + 10 * 60000, cwd: t.root, name: 'n2', task: 'algo', launcher: launcher(t) });
+  const later = C.open({ ...t.opts, ...caller(t), now: NOW + 10 * 60000, cwd: t.root, name: 'n2', task: 'algo', launcher: launcher(t) });
   assert.strictEqual(later.ok, true, later.message);
 });
 
@@ -394,7 +414,7 @@ test('T29b Open_JustOpened_CountsEvenIfIdle @story-8.122 @ac-29: abierta hace 1 
   const t = toy();
   session(t, 'busy-a', 'a', { status: 'busy' });
   session(t, 'busy-b', 'b', { status: 'busy' });
-  assert.strictEqual(C.open({ ...t.opts, now: mins(1), cwd: t.root, name: 'n1', task: 'algo', launcher: launcher(t) }).ok, true);
+  assert.strictEqual(C.open({ ...t.opts, ...caller(t), now: mins(1), cwd: t.root, name: 'n1', task: 'algo', launcher: launcher(t) }).ok, true);
   session(t, 'n1-sid', 'n1');
   const s = C.status(t.opts);
   assert.strictEqual(s.working.length, 3, JSON.stringify(s.working));
@@ -443,7 +463,7 @@ test('T8h Status_CodexWithoutDate_Waits @story-8.122 @ac-8: un hilo de Codex sin
 
 test('T25b Open_MissingFolder_SaysSo @story-8.122 @ac-25: una carpeta que no existe no se confunde con el lanzador ausente', () => {
   const t = toy();
-  const r = C.open({ ...t.opts, cwd: path.join(t.root, 'no-existe'), name: 'n1', task: 'algo', launcher: launcher(t) });
+  const r = C.open({ ...t.opts, ...caller(t), cwd: path.join(t.root, 'no-existe'), name: 'n1', task: 'algo', launcher: launcher(t) });
   assert.strictEqual(r.ok, false);
   assert.match(r.message, /no existe/);
   assert.doesNotMatch(r.message, /no está instalado/);
@@ -638,15 +658,15 @@ const branchIn = (dir) => spawnSync('git', ['-C', dir, 'symbolic-ref', '-q', '--
 test('T40 Open_WithRepo_TakesAFreeSlot: con el repo, abre la sesión en un puesto libre, en la rama del trabajo, y le dice cómo soltarlo', () => {
   const t = toy({ profile: { coordination: { max_working: 2 } } });
   const repo = toyRepo(t);
-  const r = C.open({ ...t.opts, repo, name: 'n1', task: 'implementá la 9.9', launcher: launcher(t) });
+  const r = C.open({ ...t.opts, ...caller(t), repo, name: 'n1', task: 'implementá la 9.9', launcher: launcher(t) });
   assert.strictEqual(r.ok, true, r.message);
   const l = launched(t);
   assert.strictEqual(fs.realpathSync(l.cwd), slotOf(repo, 1));
   assert.strictEqual(branchIn(slotOf(repo, 1)), 'wt/n1');
-  assert.match(l.argv[4], /^implementá la 9\.9/);
-  assert.match(l.argv[4], /work-slots\.js" release "/, 'el encargo dice cómo soltar el puesto');
+  assert.match(l.argv[l.argv.length - 1], /^implementá la 9\.9/);
+  assert.match(l.argv[l.argv.length - 1], /work-slots\.js" release "/, 'el encargo dice cómo soltar el puesto');
   assert.ok(r.message.includes(slotOf(repo, 1)), r.message);
-  const b = C.open({ ...t.opts, now: NOW + 1000, repo, name: 'n2', branch: 'feat/x', task: 'otra', launcher: launcher(t) });
+  const b = C.open({ ...t.opts, ...caller(t), now: NOW + 1000, repo, name: 'n2', branch: 'feat/x', task: 'otra', launcher: launcher(t) });
   assert.strictEqual(b.ok, true, b.message);
   assert.strictEqual(branchIn(slotOf(repo, 2)), 'feat/x');
 });
@@ -655,7 +675,7 @@ test('T41 Open_WithRepo_NoFreeSlot_DoesNotOpen: sin puesto libre lo dice y no ll
   const t = toy({ profile: { coordination: { max_working: 1 } } });
   const repo = toyRepo(t);
   assert.strictEqual(WS.take({ ...t.opts, repo, branch: 'feat/ocupa' }).ok, true);
-  const r = C.open({ ...t.opts, repo, name: 'n1', task: 'algo', launcher: launcher(t) });
+  const r = C.open({ ...t.opts, ...caller(t), repo, name: 'n1', task: 'algo', launcher: launcher(t) });
   assert.strictEqual(r.ok, false);
   assert.match(r.message, /no hay puesto libre/);
   assert.match(r.message, /no la abrí/);
@@ -665,7 +685,7 @@ test('T41 Open_WithRepo_NoFreeSlot_DoesNotOpen: sin puesto libre lo dice y no ll
 test('T42 Open_WithRepo_LaunchFails_FreesTheSlot: si el lanzador falla, el puesto vuelve a quedar libre y la rama nueva no queda', () => {
   const t = toy({ profile: { coordination: { max_working: 1 } } });
   const repo = toyRepo(t);
-  const r = C.open({ ...t.opts, repo, name: 'n1', task: 'algo', launcher: launcher(t, 'error') });
+  const r = C.open({ ...t.opts, ...caller(t), repo, name: 'n1', task: 'algo', launcher: launcher(t, 'error') });
   assert.strictEqual(r.ok, false);
   assert.strictEqual(WS.list({ ...t.opts, repo }).slots[0].free, true);
   assert.strictEqual(gitToy(repo, 'branch', '--list', 'wt/n1'), '');
@@ -674,8 +694,142 @@ test('T42 Open_WithRepo_LaunchFails_FreesTheSlot: si el lanzador falla, el puest
 test('T43 Open_RepoAndCwd_Refuses: carpeta y repo a la vez es ambiguo: no la abre', () => {
   const t = toy();
   const repo = toyRepo(t);
-  const r = C.open({ ...t.opts, repo, cwd: t.root, name: 'n1', task: 'algo', launcher: launcher(t) });
+  const r = C.open({ ...t.opts, ...caller(t), repo, cwd: t.root, name: 'n1', task: 'algo', launcher: launcher(t) });
   assert.strictEqual(r.ok, false);
   assert.match(r.message, /o la carpeta o el repo/);
   assert.strictEqual(launched(t), null);
+});
+
+// ── The opened session starts like the one that opens it ─────────────────────────────────────────────────────
+
+const openAs = (t, env, args = {}) => C.open({ ...t.opts, env: { ...t.opts.env, ...env }, cwd: t.root, name: 'n1', task: 'algo', launcher: launcher(t), ...args });
+const before = (argv, flag) => argv.indexOf(flag) !== -1 && argv.indexOf(flag) < argv.indexOf('--');
+
+test('8.177 T1 Open_ModoBypass_LoPasaAlLanzador @story-8.177 @ac-1 @ac-5: en bypass, la sesión nueva arranca en bypass y con control remoto a su nombre', () => {
+  const t = toy();
+  callerTranscript(t, ['bypassPermissions']);
+  const r = openAs(t, { CLAUDE_CODE_SESSION_ID: CALLER_SID });
+  assert.strictEqual(r.ok, true, r.message);
+  const { argv } = launched(t);
+  assert.deepStrictEqual(argv.slice(argv.indexOf('--permission-mode'), argv.indexOf('--permission-mode') + 2), ['--permission-mode', 'bypassPermissions']);
+  assert.deepStrictEqual(argv.slice(argv.indexOf('--remote-control'), argv.indexOf('--remote-control') + 2), ['--remote-control', 'n1']);
+  assert.ok(before(argv, '--permission-mode') && before(argv, '--remote-control'), argv.join(' '));
+  assert.deepStrictEqual(argv.slice(-2), ['--', 'algo']);
+});
+
+test('8.177 T2 Open_ModoDefault_NoPasaModo @story-8.177 @ac-2 @ac-5: en el modo por defecto no pasa modo (el lanzador ya arranca así), pero sí el control remoto', () => {
+  const t = toy();
+  callerTranscript(t, ['default']);
+  const r = openAs(t, { CLAUDE_CODE_SESSION_ID: CALLER_SID });
+  assert.strictEqual(r.ok, true, r.message);
+  const { argv } = launched(t);
+  assert.ok(!argv.includes('--permission-mode'), argv.join(' '));
+  assert.ok(before(argv, '--remote-control'), argv.join(' '));
+});
+
+test('8.177 T3 Open_ModoCambiado_ValeElUltimo @story-8.177 @ac-3: si el modo cambió durante la sesión, vale el último', () => {
+  const t = toy();
+  callerTranscript(t, ['bypassPermissions', 'default', 'auto']);
+  const r = openAs(t, { CLAUDE_CODE_SESSION_ID: CALLER_SID });
+  assert.strictEqual(r.ok, true, r.message);
+  const { argv } = launched(t);
+  assert.strictEqual(argv[argv.indexOf('--permission-mode') + 1], 'auto');
+});
+
+function refuses(t, r, what) {
+  assert.strictEqual(r.ok, false, `${what}: ${r.message}`);
+  assert.match(r.message, /modo de permisos/, what);
+  assert.match(r.message, /no la abrí/, what);
+  assert.strictEqual(r.message.trim().split('\n').length, 1, what);
+  assert.strictEqual(launched(t), null, `${what}: no llamó al lanzador`);
+}
+
+test('8.177 T4a Open_SinSid_NoAbre @story-8.177 @ac-4: sin id de la sesión que llama, o con uno que no entra en una ruta, no abre', () => {
+  const t = toy();
+  callerTranscript(t, ['bypassPermissions']);
+  refuses(t, openAs(t, {}), 'sin sid');
+  refuses(t, openAs(t, { CLAUDE_CODE_SESSION_ID: `../${CALLER_SID}` }), 'sid con ../');
+});
+
+test('8.177 T4b Open_SinTranscripcion_NoAbre @story-8.177 @ac-4: un id sin conversación guardada no abre', () => {
+  const t = toy();
+  refuses(t, openAs(t, { CLAUDE_CODE_SESSION_ID: 'nadie' }), 'sin transcripción');
+});
+
+test('8.177 T4c Open_SinPermissionMode_NoAbre @story-8.177 @ac-4: una conversación sin modo anotado no abre', () => {
+  const t = toy();
+  callerTranscript(t, [], { pad: 100 });
+  refuses(t, openAs(t, { CLAUDE_CODE_SESSION_ID: CALLER_SID }), 'sin permissionMode');
+});
+
+test('8.177 T4d Open_ModoFueraDeLista_NoAbre @story-8.177 @ac-4: un modo que el lanzador no conoce no abre', () => {
+  const t = toy();
+  callerTranscript(t, ['raro']);
+  refuses(t, openAs(t, { CLAUDE_CODE_SESSION_ID: CALLER_SID }), 'modo raro');
+});
+
+test('8.177 T4e Open_ModoMasLejosQueElTope_NoAbre @story-8.177 @ac-4: un modo anotado a más de 1 MB del final no se busca: no abre', () => {
+  const t = toy();
+  callerTranscript(t, ['bypassPermissions'], { pad: 1024 * 1024 + 10 });
+  refuses(t, openAs(t, { CLAUDE_CODE_SESSION_ID: CALLER_SID }), 'más lejos que el tope');
+});
+
+test('8.177 T5 Open_SinModo_ConRepo_NoTomaPuesto @story-8.177 @ac-4: con el repo y sin modo legible, no toma puesto ni crea la rama', () => {
+  const t = toy({ profile: { coordination: { max_working: 1 } } });
+  const repo = toyRepo(t);
+  const r = C.open({ ...t.opts, env: { CLAUDE_CODE_SESSION_ID: 'nadie' }, repo, name: 'n1', task: 'algo', launcher: launcher(t) });
+  refuses(t, r, 'con repo');
+  assert.ok(!fs.existsSync(slotOf(repo, 1)), 'no armó el puesto');
+  assert.strictEqual(gitToy(repo, 'branch', '--list', 'wt/n1'), '');
+});
+
+test('8.177 T6 Open_Respuesta_DiceComoEntrarRemoto @story-8.177 @ac-6: la respuesta dice cómo entrar por la terminal y por claude.ai/code', () => {
+  const t = toy();
+  const r = open(t, { name: 'n1', task: 'algo', launcher: launcher(t) });
+  assert.strictEqual(r.ok, true, r.message);
+  assert.match(r.message, /claude attach n1/);
+  assert.match(r.message, /claude\.ai\/code/);
+  assert.match(r.message, /control remoto «n1»/);
+});
+
+test('8.177 T7 Open_Cli_RechazaElegirModo @story-8.177 @ac-7: open no acepta elegir el modo por la línea de comandos', () => {
+  const t = toy();
+  callerTranscript(t, ['default']);
+  // sin el lanzador real a mano: si el rechazo faltara, no abriría una sesión de verdad
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'coord-path-'));
+  const cli = spawnSync(process.execPath, [COORD, 'open', '--name', 'n1', '--cwd', t.root, '--permission-mode', 'bypassPermissions', '--', 'algo'], {
+    encoding: 'utf8', input: '', env: { PATH: empty, HOME: t.home, USERPROFILE: t.home, CLAUDE_CODE_SESSION_ID: CALLER_SID },
+  });
+  assert.strictEqual(cli.status, 2, cli.stdout + cli.stderr);
+  assert.match(cli.stderr, /no elige el modo/);
+  assert.strictEqual(launched(t), null);
+});
+
+test('8.177 T8 Open_ModoPlan_NoAbre @story-8.177 @ac-4b: con la sesión que abre en modo plan, no abre y lo dice', () => {
+  const t = toy();
+  callerTranscript(t, ['bypassPermissions', 'plan']);
+  const r = openAs(t, { CLAUDE_CODE_SESSION_ID: CALLER_SID });
+  refuses(t, r, 'plan');
+  assert.match(r.message, /plan/);
+});
+
+test('8.177 T9 Open_SidEnVariasCarpetas_ValeLaMasNueva @story-8.177 @ac-9: el mismo id en dos carpetas, ninguna la de su archivo de sesión: vale la más nueva', () => {
+  const t = toy();
+  session(t, CALLER_SID, 'coord', { cwd: path.join(t.root, 'otra-cosa') });
+  callerTranscript(t, ['bypassPermissions'], { folder: '-vieja', mtime: mins(30) });
+  callerTranscript(t, ['auto'], { folder: '-nueva', mtime: mins(1) });
+  const r = openAs(t, { CLAUDE_CODE_SESSION_ID: CALLER_SID });
+  assert.strictEqual(r.ok, true, r.message);
+  const { argv } = launched(t);
+  assert.strictEqual(argv[argv.indexOf('--permission-mode') + 1], 'auto');
+});
+
+test('8.177 T10 Guia_DiceQueOpenCopiaElModo_YSuLimite @story-8.177 @ac-8: las dos guías dicen que open copia el modo, con su límite', () => {
+  for (const [file, gone] of [[GUIDE, /Hasta que `open` lo haga solo/], [GUIDE_EN, /Until `open` does it/]]) {
+    const text = fs.readFileSync(file, 'utf8');
+    assert.doesNotMatch(text, gone, file);
+    assert.match(text, /--permission-mode/, file);
+    assert.match(text, /--remote-control/, file);
+    assert.match(text, /Shift\+Tab/, file);
+  }
 });

@@ -36,7 +36,7 @@ const SKILL_LIB = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', '
 const { stateDir, claudeDir } = require(path.join(SKILL_LIB, 'state-dir.js'));
 const { adversarialInFlight } = require(path.join(SKILL_LIB, 'codex-reviewers.js'));
 const { sesionQueReenvia, designacionVigente } = require(path.join(SKILL_LIB, 'critical-waivers.js'));
-const { sessionsBySid } = require('./work-in-progress.js');
+const { sessionsBySid, SAFE_SID } = require('./work-in-progress.js');
 const tyconConfig = require(path.join(__dirname, '..', 'lib', 'tycon-config.js'));
 const workSlots = require('./work-slots.js');
 
@@ -471,6 +471,64 @@ function signatureDone(id, opts = {}) {
 
 // ── Abrir una sesión de fondo ──
 
+// Los modos que acepta `claude --permission-mode`, más `default`, que es como la conversación anota el modo por
+// defecto (el lanzador sin la opción ya arranca en él).
+const LAUNCHER_MODES = new Set(['acceptEdits', 'auto', 'bypassPermissions', 'manual', 'dontAsk', 'plan', 'default']);
+const MODE_TAIL_BYTES = 1024 * 1024;
+const MODE_CHUNK_BYTES = 64 * 1024;
+const MODE_RE = /"permissionMode":"([^"\\]*)"/g;
+
+// El último modo anotado en el último MODE_TAIL_BYTES de un archivo, leído de atrás hacia adelante; null si no hay.
+function lastModeIn(file) {
+  const fd = fs.openSync(file, 'r');
+  try {
+    const size = fs.fstatSync(fd).size;
+    let end = size;
+    let tail = '';
+    while (end > 0 && size - end < MODE_TAIL_BYTES) {
+      const len = Math.min(MODE_CHUNK_BYTES, end, MODE_TAIL_BYTES - (size - end));
+      const buf = Buffer.alloc(len);
+      fs.readSync(fd, buf, 0, len, end - len);
+      end -= len;
+      // se suma el bloque nuevo adelante: una anotación partida entre dos bloques queda entera en el texto
+      tail = buf.toString('latin1') + tail;
+      let m;
+      let last = null;
+      MODE_RE.lastIndex = 0;
+      while ((m = MODE_RE.exec(tail))) last = m[1];
+      if (last !== null) return last;
+    }
+    return null;
+  } finally { fs.closeSync(fd); }
+}
+
+// El modo de permisos de la sesión que llama. No está en el entorno ni en su archivo de sesión: sólo en su
+// conversación, donde cada mensaje de la persona lleva el modo de ese momento. Se busca en todas las carpetas de
+// `projects/` (la conversación no siempre está en la de su carpeta de arranque) y vale la de modificación más nueva.
+// Límite conocido: un cambio de modo sin un mensaje después no queda anotado.
+function callerPermissionMode({ home, env }) {
+  const sid = env.CLAUDE_CODE_SESSION_ID;
+  if (!sid || !SAFE_SID.test(String(sid))) return { problem: 'no sé qué sesión me llama' };
+  const projects = path.join(claudeDir(home), 'projects');
+  let newest = null;
+  let dirs = [];
+  try { dirs = fs.readdirSync(projects); } catch (e) { return { problem: `no pude leer ${projects}: ${e.code || e.message}` }; }
+  for (const d of dirs) {
+    const file = path.join(projects, d, `${sid}.jsonl`);
+    let st;
+    try { st = fs.statSync(file); } catch { continue; }
+    if (st.isFile() && (!newest || st.mtimeMs > newest.mtimeMs)) newest = { file, mtimeMs: st.mtimeMs };
+  }
+  if (!newest) return { problem: 'no encontré la conversación de esta sesión' };
+  let mode;
+  try { mode = lastModeIn(newest.file); } catch (e) { return { problem: `no pude leer la conversación: ${e.code || e.message}` }; }
+  if (mode === null) return { problem: 'la conversación no lo anota cerca del final' };
+  if (!LAUNCHER_MODES.has(mode)) return { problem: `la conversación dice «${label(mode)}», que el lanzador no conoce` };
+  // una sesión de fondo en plan queda esperando que alguien apruebe su plan
+  if (mode === 'plan') return { problem: 'estás en modo plan, y la sesión nueva quedaría esperando que alguien apruebe su plan' };
+  return { mode };
+}
+
 /** Abre una sesión de fondo con nombre y encargo. Nunca reintenta; sólo una apertura que salió bien queda anotada. */
 function open(opts = {}) {
   const home = opts.home || require('os').homedir();
@@ -492,6 +550,10 @@ function open(opts = {}) {
   if (!oneLine(task)) return no('Falta el encargo de la sesión: no la abrí.');
   if (s.working.length >= s.cap.value) return no(`Ya hay ${s.working.length} trabajando y el tope es ${s.cap.value} (${ORIGIN[s.cap.origin] || s.cap.origin}): no la abrí, espera su turno.`);
   if (cwd && opts.repo) return no('Va o la carpeta o el repo, no los dos: no la abrí.');
+  // La sesión nueva arranca en el modo de la que la abre: en otro modo se traba en permisos que nadie ve y no recibe
+  // los mensajes de las demás. Sin saberlo, no se abre a ciegas.
+  const pm = callerPermissionMode({ home, env });
+  if (pm.problem) return no(`No pude saber en qué modo de permisos estás (${pm.problem}): no la abrí.`);
   // Con el repo, la sesión va a un puesto fijo (scripts/tools/work-slots.js): la carpeta ya está aprobada y no hace
   // falta que el dueño apruebe una nueva.
   let slot = null;
@@ -518,7 +580,9 @@ function open(opts = {}) {
     : String(task);
   const launcher = opts.launcher || { bin: 'claude', prefix: [] };
   const timeoutMs = opts.timeoutMs || LAUNCH_TIMEOUT_MS;
-  const r = spawnSync(launcher.bin, [...(launcher.prefix || []), '--bg', '-n', name, '--', job], {
+  // con control remoto a su nombre, el dueño la ve y la maneja desde claude.ai/code o el celular
+  const modeArgs = pm.mode === 'default' ? [] : ['--permission-mode', pm.mode];
+  const r = spawnSync(launcher.bin, [...(launcher.prefix || []), '--bg', '-n', name, ...modeArgs, '--remote-control', name, '--', job], {
     cwd: where, encoding: 'utf8', timeout: timeoutMs, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
   });
   if (r.error && r.error.code === 'ENOENT') return fail(`Claude Code no está instalado en esta máquina (no encontré ${launcher.bin}): no abrí la sesión.`);
@@ -531,7 +595,7 @@ function open(opts = {}) {
     const first = out.split('\n').map((l) => l.trim()).find(Boolean);
     return fail(`El lanzador falló: ${first || (r.signal ? `lo cortó la señal ${r.signal}` : `salió con código ${r.status}`)}. No reintenté.`);
   }
-  const opened = `Abrí «${name}» en ${where}. Para entrar: claude attach ${name}`;
+  const opened = `Abrí «${name}» en ${where}. Para entrar: claude attach ${name}, o desde claude.ai/code (control remoto «${name}»)`;
   try {
     writeJson(openedFile(home), [...recentOpened(home, now, []).filter((o) => o.name !== name), { name, cwd: where, at: now }]);
   } catch (e) {
@@ -583,6 +647,11 @@ function main(argv) {
     return r.ok ? 0 : 1;
   }
   if (cmd === 'open') {
+    // el modo no se elige: se copia el de la sesión que abre, así nunca queda más alto
+    if (f['permission-mode'] !== undefined) {
+      process.stderr.write('coordination.js: open no elige el modo de permisos: copia el de la sesión que lo llama.\n');
+      return 2;
+    }
     const r = open({ ...base, name: f.name, cwd: f.cwd, repo: f.repo, branch: f.branch, task: f.rest.join(' '), timeoutMs: f['timeout-ms'] ? Number(f['timeout-ms']) : undefined });
     process.stdout.write(`${r.message}\n`);
     return r.ok ? 0 : 1;
@@ -593,4 +662,4 @@ function main(argv) {
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { status, statusText, readPending, capNotice, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, coordinationDir };
+module.exports = { status, statusText, readPending, capNotice, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, callerPermissionMode, coordinationDir };
