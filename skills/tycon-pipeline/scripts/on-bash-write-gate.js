@@ -3150,6 +3150,10 @@ function handleCarrilEHistoria(event, opts = {}) {
   // ── Portón de CARRIL (código + estado del pipeline) ──────────────────────────────────────────
   if (!laneOff) {
     const passedCode = [];
+    // un carril delegado no escribe una ruta de riesgo alto aunque no sea código (`.tycon/production.json`): sus
+    // destinos ya leídos van todos al portón, que decide
+    let delegado = false;
+    try { const a = io.readAdhoc(stateDir, sessionId); delegado = !!(a && a.via === 'delegacion'); } catch (e) { logHookError(e); }
     for (const abs of absTargets) {
       // un destino con una variable sin resolver PUEDE ser código aunque su ruta cruda no tenga la extensión
       // (`cat > $F`, `src/x.$EXT`): para el registro cuenta como código
@@ -3158,8 +3162,8 @@ function handleCarrilEHistoria(event, opts = {}) {
       // un manifiesto o su lock: para el registro es código; para el carril, no
       const quizasCodigo = isCodeFile(abs) || isManifestFile(abs) || (sinResolverDe.has(abs) && !extLiteral);
       const enProtegido = protegido(abs);
-      if (!quizasCodigo && !enProtegido) continue;
-      if (isCodeFile(abs) || enProtegido) {
+      if (!quizasCodigo && !enProtegido && !delegado) continue;
+      if (isCodeFile(abs) || enProtegido || delegado) {
         const r = io.evaluate({ filePath: abs, sessionId, cwd, via, stateDir, installedRoots });
         if (r.verdict.action === 'block') return { block: r.message + '\n' };
       }

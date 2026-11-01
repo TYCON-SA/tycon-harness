@@ -157,6 +157,29 @@ const SKILLS_DIR = require('./skills-dir.js').resolveSkillsDirs().skills;
 const DISCOVERY_PATH = path.join(SKILLS_DIR, 'tycon-pipeline', 'scripts', 'lib', 'story-discovery.js');
 let siblingsOf = null;   // los repos del mismo producto (de la skill del pipeline); sin ella, las rutas no se juzgan
 try { siblingsOf = require(path.join(SKILLS_DIR, 'tycon-pipeline', 'scripts', 'lib', 'product-siblings.js')).productSiblingsInfo; } catch { siblingsOf = null; }
+// los valores de `riesgo_alto_por:` viven con la regla de riesgo (lib/risk-paths.js); sin ella, la regla no corre y se dice
+let riskPaths;
+try { riskPaths = require(path.join(SKILLS_DIR, 'tycon-pipeline', 'scripts', 'lib', 'risk-paths.js')); } catch { riskPaths = null; }
+
+/**
+ * El error de un valor de `riesgo_alto_por:` fuera de la lista, en los dos perfiles: en un repo de producto lo lee el
+ * dev («vos») y no nombra las piezas de la capa de mantenimiento; en el arnés, sí.
+ */
+function errorRiesgoAltoPor({ harness, rel, invalidos }) {
+  const lista = riskPaths ? riskPaths.VALORES_RIESGO_ALTO_POR.join(' · ') : 'alcance · seguridad · dependencia-nueva · plata · clientes · personas';
+  return {
+    rel,
+    problema: `\`riesgo_alto_por:\` trae valores fuera de la lista: ${invalidos.join(', ')}`,
+    efecto: harness
+      ? 'la decisión del dueño queda escrita con un nombre que nadie lee igual; el plan igual cuenta como riesgo alto y no lo aprueba la coordinadora'
+      : 'el riesgo alto queda escrito con un nombre que nadie lee igual; el plan igual cuenta como riesgo alto y lo aprobás vos',
+    arreglo: `usar EXACTAMENTE uno o más de: ${lista}`,
+  };
+}
+const mensajeRiesgoAltoPor = (o) => { const e = errorRiesgoAltoPor(o); return `${e.rel}: ${e.problema}\n  efecto: ${e.efecto}\n  arreglo: ${e.arreglo}`; };
+function esDelArnes(abs) {
+  try { return !!require('./harness-repo.js').esRutaDelArnes(abs); } catch { return false; }
+}
 let discovery = null;
 try {
   discovery = require(DISCOVERY_PATH);
@@ -593,6 +616,17 @@ function main() {
     //    existía con el nombre viejo no se le dice nada
     if (/^ado_work_item:/m.test(parsed.fm) && !/^work_item:/m.test(parsed.fm) && naceAhora(abs, scalar(parsed.fm, 'story'))) campoViejo.push(rel);
 
+    // 7. `riesgo_alto_por:` con los valores de la lista (story-format.md). Frena siempre: el campo es nuevo.
+    if (riskPaths) {
+      const decl = riskPaths.leerRiesgoAltoPor(parsed.fm);
+      if (decl && decl.invalidos.length) {
+        errors.push(errorRiesgoAltoPor({ harness: esDelArnes(abs), rel, invalidos: decl.invalidos }));
+        continue;
+      }
+    } else if (/^riesgo_alto_por\s*:/m.test(parsed.fm)) {
+      console.error(`⚠️  ${rel}: no encontré la regla de riesgo (lib/risk-paths.js del skill tycon-pipeline): \`riesgo_alto_por:\` no se revisó.`);
+    }
+
     // 4. La causa del reproceso. El por qué de cada rama, en la cabecera del archivo.
     if (!vocab.motivo) {
       const lista = vocab.causas.join(' · ');
@@ -713,7 +747,7 @@ function main() {
 // Exportado para que OTROS controles usen EL MISMO criterio de "esto es una story" en vez de
 // escribir el suyo (dos detectores del mismo concepto terminan divergiendo: uno aparte podría tomar por story rota
 // un reporte de medición que declara `story:` en el cuerpo, sin frontmatter).
-module.exports = { frontmatterZone, looksLikeStory, DECLARES_STORY, NOT_A_STORY_NAME, STORY_SHAPED };
+module.exports = { frontmatterZone, looksLikeStory, DECLARES_STORY, NOT_A_STORY_NAME, STORY_SHAPED, errorRiesgoAltoPor, mensajeRiesgoAltoPor };
 
 // 🔴 `process.exitCode`, NO `process.exit()`: en Node las escrituras a una tubería son
 // ASINCRÓNICAS y `process.exit()` mata el proceso con parte de lo escrito en el aire. Medido con

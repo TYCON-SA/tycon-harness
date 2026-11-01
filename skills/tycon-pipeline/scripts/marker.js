@@ -3360,6 +3360,40 @@ function cmdMarkAdversarialGate(raw) {
 // listo. Sirve igual para el pase adversarial del pipeline y para una revisión lanzada a mano después del cierre
 // (sin marker hay que decir de qué story es: una línea sin story no la puede cruzar nadie).
 // `head` es el commit sobre el que se anotó: lo que permite comparar después contra el merge.
+/**
+ * `mark-adversarial-result <N> --adhoc --result <archivo>`: la constancia del pase del camino rápido de la sesión, en el
+ * registro del carril, con la huella de sus archivos de código. Como en una corrida, el número sale del resultado y un
+ * pase sin medir no deja constancia; cada confirmado va a la suite o se difiere con motivo (`--tests`, `--own`,
+ * `--deferred` + `--reason`). Se anota después de arreglar: la huella es la de ese momento.
+ */
+function anotarPaseDelCarril({ confirmados, marker, flag }) {
+  const salir = (t) => { console.error(`marker.js mark-adversarial-result --adhoc: ${t}`); process.exit(2); };
+  if (marker) salir('hay una corrida abierta en esta sesión: manda la corrida. Anotalo sin --adhoc.');
+  const io = require('./lib/story-gate-io.js');
+  const a = io.adhocFirmado(STATE_DIR, SID, io.readAdhoc(STATE_DIR, SID));
+  if (!a) salir('esta sesión no tiene un camino rápido abierto con su firma (marker.js adhoc set).');
+  const ruta = flag('--result');
+  if (!ruta) salir('el pase se anota con --result <archivo>: el JSON que devolvió. El número sale de ahí, no del que anota.');
+  let medicion;
+  try { medicion = require('./lib/adversarial-verdict.js').medicionDelResultado(JSON.parse(fs.readFileSync(path.resolve(ruta), 'utf8'))); } catch (e) {
+    salir(`--result ${ruta}: no lo pude leer (${String(e.message).split('\n')[0]}) — no se anotó nada.`);
+  }
+  if (medicion.confirmados !== confirmados) salir(`<N> = ${confirmados} pero el resultado trae ${medicion.confirmados} confirmado(s) — no se anotó nada.`);
+  if (!medicion.medido) salir(`el pase quedó sin medir (${medicion.motivo}): relanzalo; un pase que no revisó todo no deja constancia.`);
+  const num = (k) => { const v = flag(k); if (v === undefined) return 0; if (!/^\d+$/.test(String(v))) salir(`${k} '${v}' tiene que ser un entero ≥ 0`); return parseInt(v, 10); };
+  const pruebas = num('--tests'), propias = num('--own'), diferidos = num('--deferred');
+  if (confirmados > 0 && pruebas + propias + diferidos !== confirmados) salir(`--tests ${pruebas} + --own ${propias} + --deferred ${diferidos} ≠ ${confirmados} confirmados: cada hallazgo va a la suite o se difiere con motivo.`);
+  if (diferidos > 0 && !String(flag('--reason') || '').trim()) salir(`${diferidos} diferido(s) sin --reason.`);
+  const ab = require('./lib/adhoc-base.js');
+  const huella = ab.huellaDelCarril(a);
+  if (!ab.huellaCompleta(huella)) salir('git no contestó al medir el carril: la huella quedó incompleta y no sirve de constancia. Reintentá.');
+  io.writeAdhoc(STATE_DIR, SID, { ...io.readAdhoc(STATE_DIR, SID), pase: {
+    huella, at: new Date().toISOString(), confirmados, pruebas, propias, diferidos, motivo: flag('--reason') || null,
+    modelo: flag('--model') || null, resultado: path.resolve(ruta),
+  } });
+  console.log(JSON.stringify({ ok: true, adhoc: true, confirmados, huella }, null, 2));
+}
+
 function cmdMarkAdversarialResult(countRaw) {
   const argv = process.argv;
   const flag = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : undefined; };
@@ -3374,6 +3408,7 @@ function cmdMarkAdversarialResult(countRaw) {
     process.exit(2);
   }
   const marker = readMarker();
+  if (argv.includes('--adhoc')) { anotarPaseDelCarril({ confirmados, marker, flag }); return; }
   const storyId = flag('--story') || (marker && marker.storyId) || null;
   if (!storyId) {
     console.error('marker.js mark-adversarial-result: no hay corrida del pipeline en esta sesión — pasá --story <id> para saber de qué story es el pase');

@@ -193,6 +193,7 @@ function signedRecordKind(p) {
 function computeStoryGate({
   filePath, stateDir, homeDir, repoRoot, repoHasTycon, repoHasStories, gateEnabled = true, marker, adhoc,
   isHarness, realFilePath = null, installedRoots = [], realStateDir = null, sensitiveCheck = null,
+  adhocRepoRoot = null, riesgoAlto = null,
 }) {
   if (!filePath) return { action: 'pass', reason: 'sin file_path' };
   // la ruta real (por los enlaces) la resuelve el borde; sin ella, la escrita
@@ -226,8 +227,10 @@ function computeStoryGate({
   // arnés (scripts/lib/signatures.js): unas skills instaladas aparte no la alcanzan, y sin la lista el carril delegado
   // no toca nada
   // (el de una pestaña sin permisos, «hecho y avisado», tampoco)
-  if (adhoc && adhoc.reason && (adhoc.via === 'delegacion' || adhoc.via === 'avisado') && repoRoot) {
-    const rels = [filePath, real].map((f) => norm(path.relative(repoRoot, f))).filter((rel) => !rel.startsWith('..'));
+  // La raíz del repo para estos dos frenos la resuelve el borde (`adhocRepoRoot`): sin ella, la de la llamada.
+  const raizDelCarril = adhocRepoRoot || repoRoot;
+  if (adhoc && adhoc.reason && (adhoc.via === 'delegacion' || adhoc.via === 'avisado') && raizDelCarril) {
+    const rels = [filePath, real].map((f) => norm(path.relative(raizDelCarril, f))).filter((rel) => !rel.startsWith('..'));
     let sensible;
     try {
       const esSensible = sensitiveCheck || require('./save-ok.js').esSensible;
@@ -238,6 +241,15 @@ function computeStoryGate({
     if (sensible) {
       return { action: 'block', kind: 'adhoc-sensitive', reason: `el arreglo rápido delegado no toca lo sensible (${sensible}): ese cambio lo firma una persona` };
     }
+  }
+  // Un camino rápido de riesgo alto no se delega: el carril abierto por delegación no escribe una ruta de riesgo alto,
+  // sea código o no. La regla la calcula el borde (lib/risk-paths.js, la misma de la historia) y llega en `riesgoAlto`.
+  if (adhoc && adhoc.reason && adhoc.via === 'delegacion' && riesgoAlto && riesgoAlto.value) {
+    const archivo = norm(raizDelCarril ? path.relative(raizDelCarril, filePath) : filePath);
+    return {
+      action: 'block', kind: 'adhoc-high-risk', regla: riesgoAlto.rule, archivo,
+      reason: `el camino rápido delegado no escribe una ruta de riesgo alto (${archivo}: ${riesgoAlto.reason})`,
+    };
   }
 
   if (gateEnabled === false) return { action: 'pass', reason: 'gate apagado (env o config commiteada del repo)' };
@@ -320,9 +332,28 @@ const PREGUNTA_SIN_CARRIL = [
   'Lo tenés que escribir vos en el chat: el cuadro de botones no vale.',
 ];
 
-function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } = {}) {
+function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, harness = true } = {}) {
   const f = norm(filePath);
   const viaLine = via ? `  (detectado en ${via})\n` : '';
+  if (r.kind === 'adhoc-high-risk') {
+    // los dos perfiles: en un producto el camino rápido lo abre el dev con su sí; en el arnés, una persona y no la
+    // delegación. Un producto no nombra las piezas de la capa de mantenimiento.
+    const regla = r.regla || 'riesgo alto';
+    return (harness ? [
+      '⛔ camino rápido delegado — RUTA DE RIESGO ALTO',
+      viaLine.replace(/\n$/, ''),
+      `  ${f} es de riesgo alto (regla: ${regla}).`,
+      '  Un camino rápido de riesgo alto no se delega: la coordinadora no lo abre por delegación. Lo abre una persona con',
+      '  su sí en la ventana de permiso, y antes de guardar corren los revisores y el pase adversarial sobre su diff.',
+      '  Salidas: pedíselo a una persona (que abra ella el camino rápido), o escribí la historia que lo lleva.',
+    ] : [
+      '⛔ camino rápido — RUTA DE RIESGO ALTO',
+      viaLine.replace(/\n$/, ''),
+      `  ${f} es de riesgo alto (regla: ${regla}).`,
+      '  Este cambio lo aprobás vos: abrí el camino rápido con tu sí en la ventana de permiso. Antes de guardar corren',
+      '  los revisores y el pase adversarial sobre su diff.',
+    ]).filter((l) => l !== '').join('\n');
+  }
   if (r.kind === 'state-dir') {
     return [
       '⛔ tycon-pipeline — ESCRITURA DIRECTA AL ESTADO DEL PIPELINE',

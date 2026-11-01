@@ -1421,6 +1421,24 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.174: el camino rápido de riesgo alto — una sola regla de riesgo (risk-paths.js), la base del carril, el delegado que no la escribe, la marca, y los revisores y el pase antes de guardar.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adhoc-high-risk.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.174: riesgo_alto_por en la historia y los archivos de dependencias cuentan como riesgo alto; el lint frena un valor fuera de la lista.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/owner-decision-risk.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.174: los textos del camino rápido en los dos perfiles (producto: «vos»; arnés: dueño, coordinadora).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adhoc-two-profiles.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/installed-tree.test.js",
       "requiere": []
