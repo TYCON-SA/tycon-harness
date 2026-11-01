@@ -25,7 +25,7 @@ open models through [Ollama](guides/integrations/ollama.en.md), and with
 
 1. **Request and story:** you say what you want and the agent writes it as a story: what has to be done and how it is
    tested. For a small fix, asking for it in your own words is enough.
-2. **Approved plan:** the agent makes the plan and shows it to you; a person approves it in their permission prompt before any code is written. In a team, the coordinator can approve routine ones; a sensitive one is always approved by the dev.
+2. **Approved plan:** the agent makes the plan and shows it to you; it is approved before any code is written, never by itself: with normal risk, the coordinator; with high risk, the owner.
 3. **Tests and code:** it writes the tests and the code, and runs the tests.
 4. **Review:** specialized reviewers (security, conventions, coverage) check the change before the commit.
 5. **Delivery:** the commit and the merge go through checks. Nothing is committed or pushed without your permission.
@@ -33,21 +33,21 @@ open models through [Ollama](guides/integrations/ollama.en.md), and with
    review the dependencies and build the cycle dashboard.
 
 **The right measure.** When a product starts it is specified in full, once —product document, architecture, epics
-and stories—; then, story by story. Each change carries the paperwork its size calls for, no more and no less.
+and stories—; then, story by story.
 
-- **Size decides story or quick path.** What you ask for in one sentence, and can see is right just by looking at it
-  and running its tests, goes by quick path: the reason in one line and the list of files. What needs a list of
-  criteria to know it is complete, or several sessions, goes by story, which is the specification.
-- **Risk decides who approves before coding.** The plan and the lane are approved by a person in their permission
-  prompt: they never approve themselves. In a team, the coordinator (an agent session the team designates) can approve
-  routine ones on the owner's behalf. A sensitive plan is always approved by the dev: one that touches production, a
-  database migration, security or payment paths, the CI gate, the installer or the repo's controls, or one for a story
-  marked `sensible:`.
-- **Saving is a person's yes.** Before every commit, push and pull request, the agent asks in the permission prompt,
-  the same box where you already approve its commands. With a yes, it saves: no command and no signature.
+- **Size decides: story or quick path.** Is it a small change? You ask for it in one sentence and, when it is done,
+  you can see it is right just by looking at the result and its tests. Then it goes by quick path: the reason in one
+  line and the list of files. If not, it goes by story: criteria, named tests, the plan approved before coding and the
+  review at the end.
+- **Risk decides who approves.** It is high if the change touches something sensitive in the repo, such as
+  production, a migration or security, or if it brings a decision for the owner: scope, security, a new dependency,
+  money, clients or other people. When in doubt, high. With normal risk the coordinator approves; with high risk, the
+  owner. The owner is the person your organization designates to approve what is sensitive; if you work alone, it is
+  you. Without a coordinator, the owner does the coordinator's part. The plan never approves itself.
+- **Saving is a yes in the permission prompt, on both paths.** Before every commit, push and pull request the agent
+  asks "save?", and with a yes it saves. There is no signature and no command.
 
-Changing the harness guards or signing its controls is the job of whoever maintains the harness, not part of your
-product's day to day. The detail, with examples:
+The harness guards, controls and control signatures belong to whoever maintains it. The detail:
 [The right measure](guides/que-hace-el-arnes.md#la-medida-justa-cuánto-papel-lleva-cada-cambio) (in Spanish).
 
 ```mermaid
@@ -58,19 +58,19 @@ flowchart TB
   subgraph story ["Story"]
     direction TB
     h1["Validate the story"] --> h2["Make the plan"]
-    h2 --> h3["Approve the plan<br/>a person, in their permission prompt<br/>the dev, if the plan is sensitive"]
+    h2 --> h3["Approve the plan<br/>normal risk: the coordinator<br/>high risk: the owner"]
     h3 --> h4["Code with the tests first"]
     h4 --> h5["Run the tests"]
     h5 --> h6["Reviewers chosen by the change"]
-    h6 --> h7["Adversarial pass<br/>except in a small or docs-only story"]
+    h6 --> h7["Adversarial pass<br/>except in a small low-risk story<br/>or a docs-only or tests-only change"]
     h7 --> h8["Live check, criterion by criterion"]
     h8 --> h9["Save<br/>a yes in the permission prompt"]
     h9 --> h10["Pull request: CI and the gate"]
   end
   subgraph quick ["Quick path"]
     direction TB
-    r1["Open the lane<br/>the reason and the list of files<br/>approved by a person, in their permission prompt"] --> r2["Code<br/>the test before the code<br/>on save, the harness warns if it was the other way round"]
-    r2 --> r3["The same commit controls"]
+    r1["Open the lane, with the list of files<br/>normal risk: the coordinator, up to 5<br/>high risk: the owner, up to 8"] --> r2["Code<br/>the test before the code<br/>on save, the harness warns if it was the other way round"]
+    r2 --> r3["With high risk: reviewers and adversarial pass"]
     r3 --> r4["Save<br/>a yes in the permission prompt"]
     r4 --> r5["Pull request: the same CI"]
   end

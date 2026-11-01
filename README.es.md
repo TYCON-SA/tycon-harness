@@ -25,7 +25,7 @@ El ciclo de desarrollo con IA (AI SDLC), paso por paso:
 
 1. **Pedido e historia:** contás qué querés y el agente lo escribe como una historia (story): qué hay que hacer y cómo
    se prueba. Para un ajuste chico alcanza con pedirlo con tus palabras.
-2. **Plan aprobado:** el agente arma el plan y te lo muestra; una persona lo aprueba en su ventana de permiso antes de programar. En un equipo, la coordinadora puede aprobar los de rutina; uno delicado lo aprueba siempre el dev.
+2. **Plan aprobado:** el agente arma el plan y te lo muestra; se aprueba antes de programar, nunca solo: con riesgo normal, la coordinadora; con riesgo alto, el dueño.
 3. **Pruebas y código:** escribe las pruebas y el código, y corre las pruebas.
 4. **Revisión:** revisores especializados (seguridad, convenciones, cobertura) miran el cambio antes del commit.
 5. **Entrega:** el commit y el merge pasan por controles. Nada se commitea ni se sube sin tu permiso.
@@ -33,21 +33,21 @@ El ciclo de desarrollo con IA (AI SDLC), paso por paso:
    organización revisan las dependencias y arman el tablero del ciclo.
 
 **La medida justa.** Al arrancar un producto se especifica entero, una vez —documento de producto, arquitectura,
-épicos e historias—; después, historia por historia. Cada cambio lleva el papel que su tamaño pide, ni más ni menos.
+épicos e historias—; después, historia por historia.
 
-- **El tamaño decide historia o camino rápido.** Lo que pedís en una frase y ves que quedó bien con sólo mirarlo y
-  correr sus pruebas va por camino rápido: el motivo en una línea y la lista de archivos. Lo que necesita una lista de
-  criterios para saber si quedó completo, o varias sesiones, va por historia, que es la especificación.
-- **El riesgo decide quién aprueba antes de programar.** El plan y el carril los aprueba una persona en su ventana de
-  permiso: nunca se aprueban solos. En un equipo, la coordinadora (una sesión del agente que el equipo designa) puede
-  aprobar los de rutina por delegación. Un plan delicado lo aprueba siempre el dev: el que toca producción, una
-  migración de base de datos, rutas de seguridad o pagos, el portón de CI, el instalador o los controles del repo, o
-  el de una historia marcada `sensible:`.
-- **Guardar es el sí de una persona.** Antes de cada commit, push y pull request, el agente pregunta en la ventana de
-  permiso, el mismo cuadro donde ya aprobás sus comandos. Con un sí, guarda: sin comando y sin firma.
+- **El tamaño decide: historia o camino rápido.** ¿Es un cambio chico? Lo pedís en una frase y, al terminar, ves que
+  quedó con sólo mirar el resultado y sus pruebas. Entonces va por camino rápido: el motivo en una línea y la lista de
+  archivos. Si no, va por historia: criterios, pruebas con nombre, el plan aprobado antes de programar y la revisión al
+  cerrar.
+- **El riesgo decide quién aprueba.** Es alto si el cambio toca algo sensible del repo, como producción, una migración
+  o seguridad, o si trae una decisión del dueño: alcance, seguridad, una dependencia nueva, plata, clientes u otras
+  personas. Ante la duda, alto. Con riesgo normal aprueba la coordinadora; con riesgo alto, el dueño. El dueño es la
+  persona que tu organización designa para aprobar lo delicado; si trabajás solo, sos vos. Sin coordinadora, lo suyo
+  lo hace el dueño. El plan nunca se aprueba solo.
+- **Guardar es un sí en la ventana de permiso, en los dos caminos.** Antes de cada commit, push y pull request el
+  agente pregunta «¿guardo?», y con un sí guarda. No hay firma ni comando.
 
-Cambiar los frenos del arnés o firmar sus controles es trabajo de quien mantiene el arnés, no del día a día de tu
-producto. El detalle, con ejemplos:
+Los frenos, los controles y las firmas de control del arnés son de quien lo mantiene. El detalle:
 [La medida justa](guides/que-hace-el-arnes.md#la-medida-justa-cuánto-papel-lleva-cada-cambio).
 
 ```mermaid
@@ -58,19 +58,19 @@ flowchart TB
   subgraph historia ["Historia"]
     direction TB
     h1["Validar la historia"] --> h2["Armar el plan"]
-    h2 --> h3["Aprobar el plan<br/>una persona, en su ventana de permiso<br/>el dev, si el plan es delicado"]
+    h2 --> h3["Aprobar el plan<br/>riesgo normal: la coordinadora<br/>riesgo alto: el dueño"]
     h3 --> h4["Programar con las pruebas primero"]
     h4 --> h5["Correr las pruebas"]
     h5 --> h6["Revisores elegidos según el cambio"]
-    h6 --> h7["Pase adversarial<br/>salvo en una historia chica o de sólo documentación"]
+    h6 --> h7["Pase adversarial<br/>salvo en una historia chica de riesgo bajo<br/>o de sólo documentación o pruebas"]
     h7 --> h8["Probar en vivo, criterio por criterio"]
     h8 --> h9["Guardar<br/>el sí en la ventana de permiso"]
     h9 --> h10["Pull request: la CI y el portón"]
   end
   subgraph rapido ["Camino rápido"]
     direction TB
-    r1["Abrir el carril<br/>el motivo y la lista de archivos<br/>lo aprueba una persona, en su ventana de permiso"] --> r2["Programar<br/>la prueba antes del código<br/>al guardar, el arnés avisa si fue al revés"]
-    r2 --> r3["Los mismos controles del commit"]
+    r1["Abrir el carril, con la lista de archivos<br/>riesgo normal: la coordinadora, hasta 5<br/>riesgo alto: el dueño, hasta 8"] --> r2["Programar<br/>la prueba antes del código<br/>al guardar, el arnés avisa si fue al revés"]
+    r2 --> r3["Con riesgo alto: revisores y pase adversarial"]
     r3 --> r4["Guardar<br/>el sí en la ventana de permiso"]
     r4 --> r5["Pull request: la misma CI"]
   end

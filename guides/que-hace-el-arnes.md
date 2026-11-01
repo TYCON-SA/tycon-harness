@@ -163,7 +163,7 @@ está la **rama corta**, sin PRD ni arquitectura formal. **La ceremonia escala c
 ### La medida justa: cuánto papel lleva cada cambio
 
 **El tamaño y el riesgo definen el flujo:** el tamaño decide si va por historia o por camino rápido; el riesgo decide
-quién aprueba antes de programar y cuánta revisión lleva cada cambio. La medida la fija cada equipo.
+quién aprueba y cuánta revisión lleva cada cambio. La medida la fija cada equipo.
 
 Lo que leíste arriba es SDD: la spec antes que el código. Nuestra opinión, después de usarlo, es que hace falta
 **exactamente cuando el resultado no se puede juzgar mirándolo**: cuando necesitás una lista de criterios para
@@ -177,59 +177,41 @@ Por eso lo hacemos en **dos etapas**. **Primero, una vez, al arrancar un product
 el documento de producto, la arquitectura, los épicos y las historias. Ahí sí es especificación completa. **Después,
 historia por historia, con la medida justa**: cada historia es su propia especificación; lo que cambia en el camino
 se escribe en la historia, y el documento de producto y la arquitectura no se vuelven a tocar salvo que una historia
-los cambie de verdad. Son **dos preguntas**, independientes, que se contestan **antes de tocar código**, y una tercera al guardar:
+los cambie de verdad. Son **dos preguntas**, independientes, que se contestan **antes de tocar código**:
 
-**1. ¿Historia o camino rápido? Lo decide el tamaño.** Si lo podés pedir en una frase y, al terminar, ves que quedó
-bien con sólo mirarlo y correr sus pruebas, va por **camino rápido**: se abre un carril, el permiso para editar código
-sin historia, con el motivo en una línea y la lista de archivos. El carril lo aprueba una persona en su ventana de permiso; en un equipo, la coordinadora puede darlo por delegación,
-con hasta cinco archivos y sin tocar los frenos ni las firmas del arnés. Si para saber si
-quedó completo necesitás una lista de criterios, o va a llevar varias sesiones, va por **historia**: criterios de
-aceptación, pruebas con nombre y archivos que toca. La historia es la especificación: se valida antes de programar,
-manda sobre el código y al cerrar se cruza criterio por criterio. Lo decide quien abre el trabajo, antes de empezar,
-porque un programa no puede medir un cambio que todavía no existe. Lo que el programa verifica después es lo
-mecánico: sin carril ni historia abiertos, niega la primera edición de código. Si a mitad de camino aparecen
-preguntas que piden criterios, el carril se cierra, el código queda en su rama y se escribe la historia que lo
-retoma.
+**1. ¿Historia o camino rápido? Lo decide el tamaño.** La pregunta es si es un cambio chico: lo pedís en una frase y,
+al terminar, ves que quedó con sólo mirar el resultado y sus pruebas, sin una lista de criterios.
 
-**2. ¿Quién aprueba antes de programar? Lo decide el riesgo.** En una historia, una persona aprueba el plan —qué
-archivos va a tocar el agente y en qué orden— antes de la primera línea, en su ventana de permiso. Ningún plan se
-aprueba solo. En un equipo, **la coordinadora** (una sesión del agente que el equipo designa) puede aprobar un plan de
-rutina por delegación, sólo si una revisión automática del plan dice «aprobado». Un plan **delicado** lo aprueba
-siempre **el dev**. Es delicado si la historia o el plan tocan producción, una migración de base de datos, rutas de
-seguridad o pagos, la superficie que el repo declara compartida, el portón de CI, el instalador o los controles del
-repo, o si la historia está marcada `sensible:`. Eso lo mide un programa (`pipeline.js risk-class`); lo que no puede
-medir, como una decisión que no es del programador, lo marca quien escribe la historia con `sensible:`. Ante la duda,
-delicado.
+- **Sí: camino rápido.** El papel es el motivo en una línea y la lista de archivos. Un motivo con varios temas no es
+  un camino rápido: son varios, o es una historia.
+- **No: historia.** Lleva criterios, pruebas con nombre, el plan aprobado antes de programar y la revisión al cerrar.
+  También va por historia lo que necesita varias sesiones o espera a alguien de afuera.
+- **Si el camino rápido crece**, se cierra el carril, el código queda en su rama y se escribe la historia que lo
+  retoma.
 
-**3. Guardar es el sí de una persona.** Antes de cada commit, push y pull request, el agente pregunta «¿guardo?» en
-la ventana de permiso, el mismo cuadro donde ya aprobás sus comandos, y con un sí guarda. No pide comando ni deja
-papel, porque guardar se deshace: un commit se revierte. Lo que no se deshace igual de fácil se decide antes, en la
-aprobación del plan.
+**2. ¿Quién aprueba? Lo decide el riesgo.** El riesgo es **alto** cuando el cambio toca algo sensible del repo, como
+producción, una migración o seguridad. También cuando trae una decisión del dueño: alcance, seguridad, una dependencia
+nueva, plata, clientes u otras personas. Ante la duda, riesgo alto. **El dueño** es la persona que tu organización
+designa para aprobar lo delicado. Si trabajás solo, el dueño sos vos.
 
-**Cuánta revisión lleva cada cambio.** En una historia corren los revisores automáticos, que un programa elige según
-lo que tocó el cambio; el pase adversarial, un segundo grupo que intenta romper lo que los revisores aprobaron, salvo
-en una historia chica o de sólo documentación o pruebas; y la matriz por criterio, que exige que cada criterio tenga
-una prueba que corrió de verdad. Un hallazgo crítico lo decide una persona. En un camino rápido no corren los
-revisores ni el pase: lo cuidan sus pruebas, los mismos controles antes del commit y la misma CI del pull request.
-
-**Lo que no es de tu producto.** Cambiar los frenos del arnés o firmar sus controles es trabajo
-de quien mantiene el arnés, no del día a día de tu producto.
-
-**Un ejemplo, con un combo (una lista desplegable).**
-
-| El cambio | Tamaño | Quién aprueba |
+| | Riesgo normal | Riesgo alto |
 |---|---|---|
-| *«El combo de provincia muestra el nombre completo en vez de la sigla.»* | Camino rápido: una frase, se verifica abriendo el combo. | Una persona, al abrir el carril. |
-| *«El combo trae las opciones de la base y recuerda la última elección.»* | Historia: ¿qué muestra sin resultados?, ¿dónde guarda la elección, y por cuánto?, ¿quién ve las opciones? Cada pregunta es un criterio. | Una persona aprueba el plan, o la coordinadora si es de rutina. Si recordar la elección toca la autenticación o una migración, el plan es delicado y lo aprueba el dev. |
-| *«Sacar la columna de teléfono fijo de la tabla de clientes.»* | Historia: ¿qué pasa con los datos que ya hay?, ¿se respaldan antes?, ¿qué pantallas e informes la leen? | El dev: una migración hace delicado el plan. |
+| **Camino rápido** | Lo abre la coordinadora, con la lista de archivos, y le avisa al dueño. Hasta 5 archivos | Lo abre el dueño. Corren los revisores que aplican y el pase adversarial. Hasta 8 archivos |
+| **Historia** | El plan lo aprueba la coordinadora, sólo si la revisión automática del plan dio «aprobado» | El plan lo aprueba el dueño |
 
-**En una frase:** el tamaño del cambio decide cuánto papel lleva, una línea o una historia; el riesgo decide quién
-aprueba antes de programar; y guardar, siempre, pide el sí de una persona.
+Sin coordinadora, porque trabajás solo o tu organización no la usa, lo de la coordinadora lo hace el dueño. El plan
+nunca se aprueba solo.
 
-**Cada equipo ajusta la medida, con un piso.** Desde el sitio de la organización (pestaña Configuración; cada cambio
-va como un pedido que alguien revisa), el equipo decide qué delega en la coordinadora. Cada repo declara en
-`.tycon/advisors.yaml` qué rutas fuerzan siempre el pase adversarial. El piso no se baja: ningún plan se aprueba solo,
-nada se guarda sin el sí de una persona, y saltear una revisión o tocar producción nunca se delegan.
+**3. Guardar.** Siempre es un sí en la ventana de permiso, en los dos caminos. Antes de cada commit, push y pull
+request el agente pregunta «¿guardo?», y con un sí guarda. No hay firma ni comando.
+
+**4. La revisión.** En una historia corren los revisores que elige un script según lo que toca el cambio, y el pase
+adversarial. El pase también corre en las partes chicas de una historia grande. No corre en una historia chica de
+riesgo bajo, de hasta 6 archivos, ni en un cambio que es sólo documentación o pruebas. En un camino rápido no hay
+revisores ni pase, salvo con riesgo alto. Las pruebas van antes del código: en una historia, el arnés frena el primer
+archivo de código si antes no se tocó una prueba; en un camino rápido, avisa al guardar si fue al revés.
+
+Los frenos, los controles y las firmas de control del arnés son de quien lo mantiene.
 
 ### La story: la unidad que el arnés sabe leer
 
