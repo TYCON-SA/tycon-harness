@@ -69,8 +69,9 @@ flowchart TB
   end
   subgraph quick ["Quick path"]
     direction TB
-    r1["Open the lane, with the list of files<br/>normal risk: the coordinator, up to 5<br/>high risk: the owner, up to 8"] --> r2["Code<br/>the test before the code<br/>on save, the harness warns if it was the other way round"]
-    r2 --> r3["With high risk: reviewers and adversarial pass"]
+    r1["Open the lane, with the list of files<br/>normal risk: the coordinator, up to 5<br/>high risk: the owner, up to 8"] --> r2["Code with the test first<br/>on save, the harness warns if it was the other way round"]
+    r2 --> r2b["Run its tests"]
+    r2b --> r3["With high risk: reviewers and adversarial pass"]
     r3 --> r4["Save<br/>a yes in the permission prompt"]
     r4 --> r5["Pull request: the same CI"]
   end

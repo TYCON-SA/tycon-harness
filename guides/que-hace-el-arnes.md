@@ -207,8 +207,9 @@ request el agente pregunta «¿guardo?», y con un sí guarda. No hay firma ni c
 
 **4. La revisión.** En una historia corren los revisores que elige un script según lo que toca el cambio, y el pase
 adversarial. El pase también corre en las partes chicas de una historia grande. No corre en una historia chica de
-riesgo bajo, de hasta 6 archivos, ni en un cambio que es sólo documentación o pruebas. En un camino rápido no hay
-revisores ni pase, salvo con riesgo alto. Las pruebas van antes del código: en una historia, el arnés frena el primer
+riesgo bajo, de hasta 6 archivos, ni en un cambio que es sólo documentación o pruebas. En un camino rápido también
+hay pruebas: se escribe la prueba antes del código y se corren antes de guardar, porque el cambio se verifica
+mirando el resultado y sus pruebas. No hay revisores ni pase, salvo con riesgo alto. Las pruebas van antes del código: en una historia, el arnés frena el primer
 archivo de código si antes no se tocó una prueba; en un camino rápido, avisa al guardar si fue al revés.
 
 Los frenos, los controles y las firmas de control del arnés son de quien lo mantiene.

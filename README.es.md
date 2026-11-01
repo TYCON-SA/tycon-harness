@@ -69,8 +69,9 @@ flowchart TB
   end
   subgraph rapido ["Camino rápido"]
     direction TB
-    r1["Abrir el carril, con la lista de archivos<br/>riesgo normal: la coordinadora, hasta 5<br/>riesgo alto: el dueño, hasta 8"] --> r2["Programar<br/>la prueba antes del código<br/>al guardar, el arnés avisa si fue al revés"]
-    r2 --> r3["Con riesgo alto: revisores y pase adversarial"]
+    r1["Abrir el carril, con la lista de archivos<br/>riesgo normal: la coordinadora, hasta 5<br/>riesgo alto: el dueño, hasta 8"] --> r2["Programar con la prueba primero<br/>al guardar, el arnés avisa si fue al revés"]
+    r2 --> r2b["Correr sus pruebas"]
+    r2b --> r3["Con riesgo alto: revisores y pase adversarial"]
     r3 --> r4["Guardar<br/>el sí en la ventana de permiso"]
     r4 --> r5["Pull request: la misma CI"]
   end
