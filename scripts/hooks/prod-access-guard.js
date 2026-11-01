@@ -1277,7 +1277,21 @@ function escrituraProtegida(cmd, payload) {
     if (hit) return { tipo: 'archivo', ruta: mostrar(i.dir ? `${i.dir === '/' ? '' : i.dir}/${escPatron(hit)}` : escPatron(hit)), alcance, literal, desde: ruta };
     if (i.enRaizTycon && re.test(CARPETA_DE_ESTADO)) return { tipo: 'carpeta', ruta, alcance, literal, estado: true };
     // sin dotglob, sólo un comodín que empieza con punto puede ser `.tycon`/`.tycon-pipeline` (`.tyc*` sí, `*-*` no)
-    if (/[^*?]/.test(baseTxt) && puedeSerOculto(i.base) && CARPETAS_PROTEGIDAS.some((c) => re.test(c))) return { tipo: 'carpeta', ruta, alcance, literal };
+    if (/[^*?]/.test(baseTxt) && puedeSerOculto(i.base) && CARPETAS_PROTEGIDAS.some((c) => re.test(c))) {
+      // El comodín casa con nombres que ya están en la carpeta. Si la carpeta está escrita entera, se deja leer y no tiene
+      // adentro ninguna de las dos carpetas protegidas, el comodín no puede alcanzarlas: vaciar `~/Library/Caches/x/.[!.]*`
+      // no toca el catálogo. Una carpeta que no existe no tiene nada que casar (como en `alcanceDeFind`). Una carpeta con
+      // comodines, desconocida o que no se deja leer sigue frenando.
+      if (i.dir && i.dir.startsWith('/') && sp.patternIsLiteral(i.dir)) {
+        const dir = sp.patternToLiteral(i.dir);
+        let nombres = null;
+        try { nombres = fs.readdirSync(dir).map((x) => x.toLowerCase()); } catch (e) {
+          nombres = e && (e.code === 'ENOENT' || e.code === 'ENOTDIR') ? [] : null;
+        }
+        if (nombres && !CARPETAS_PROTEGIDAS.some((c) => nombres.includes(c))) return { tipo: null, ruta, alcance, literal };
+      }
+      return { tipo: 'carpeta', ruta, alcance, literal };
+    }
     return { tipo: null, ruta, alcance, literal };
   };
 
@@ -1872,12 +1886,18 @@ function escrituraProtegida(cmd, payload) {
       const nombre = pal(args[0]);
       const valores = [];
       const subs = [];
+      let todoLeido = args.length > 2;
       for (const raw of args.slice(2)) {
         const r = expandir(raw);
+        if (r.unknown || r.undecidable) todoLeido = false;
         valores.push(...r.patterns.filter((p) => !(r.unknown && p === '*')));
         subs.push(...sp.substitutions(raw), ...variablesUsedIn(raw).flatMap((n) => ctx.substitutionsOf[n] || []));
       }
       ctx.vars[nombre] = [...new Set([...[].concat(ctx.vars[nombre] || []), ...valores])];
+      // Con todas las palabras leídas, la variable del bucle vale esas palabras y nada más. shell-parse la marca además
+      // como desconocida al aplicar las asignaciones del segmento; esto lo deshace después de ese paso. Con una palabra
+      // que no se lee (`$(ls)`, una variable sin valor), sigue desconocida y frena como antes.
+      ctx.forLeido = todoLeido && valores.length && !subs.length ? { nombre, valores: [...new Set(valores)] } : null;
       if (subs.length) ctx.substitutionsOf[nombre] = [...new Set([...(ctx.substitutionsOf[nombre] || []), ...subs])].slice(0, 16);
       return null;
     }
@@ -1952,7 +1972,7 @@ function escrituraProtegida(cmd, payload) {
         if (h && h.shell) { const v = adentro(h.cuerpo, carpetaDeSegmento(prog, args, cwd)); if (v) return { veredicto: v }; }
       }
       if (CAMBIAN_CARPETA.has(prog)) cwd = nuevaCarpeta(prog, args, cwd);
-      else { const v = segmento(pp, i0, prog, args, cwd, tuberia, prof); if (v) return { veredicto: v }; }
+      else { ctx.forLeido = null; const v = segmento(pp, i0, prog, args, cwd, tuberia, prof); if (v) return { veredicto: v }; }
       // de qué sustituciones sale cada variable (#5): las suyas y las de las variables que copia, leídas antes de asignar
       const subsDe = pp.assignments.map((a) => [...sp.substitutions(a.raw), ...variablesUsedIn(a.raw).flatMap((n) => ctx.substitutionsOf[n] || [])]);
       // una variable de sólo lectura no se reasigna: la asignación falla y el comando sigue
@@ -1966,6 +1986,8 @@ function escrituraProtegida(cmd, payload) {
       // las asignaciones, DESPUÉS de las palabras: `X=a cmd $X` usa la X de antes. Detrás de `;` (o al principio) y fuera
       // de ramas, una reasignación REEMPLAZA el valor, como el shell; detrás de `&&`, `|`… la unión (#28, contrato del carril G)
       sp.applyAssignments(ctx, pp, { previousSep: k ? segs[k - 1].sep : '' });
+      // un `for` con todas sus palabras leídas: su variable vale esas palabras (lo dejó juzgado judgeProgram)
+      if (ctx.forLeido) { ctx.vars[ctx.forLeido.nombre] = ctx.forLeido.valores; ctx.forLeido = null; }
       // lo que el shell pisó seguro olvida también de qué sustitución salía (`F=$(…); F=/tmp/a; rm $F`); si no, la unión
       pp.assignments.forEach((a, j) => {
         const olvida = pisaSeguro && ctx.replaced.has(a.name) && a.op !== '+=' && !a.element && !a.array
