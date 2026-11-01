@@ -53,7 +53,7 @@
  *
  * Uso:  node suites-for-change.js --suites <suites.json> --scripts <raíz scripts del arnés>
  *            [--skills <carpeta de skills>] [--changed <archivo con un cambio por línea>] [--heavy <heavy-suites.json>]
- *            [--changed-with-docs <la lista entera, con los .md>] [--deps [--nightly <ultimo-suites.json>]]
+ *            [--changed-with-docs <la lista entera, con los .md>] [--deps|--direct [--nightly <ultimo-suites.json>] [--added-removed <archivo>]]
  *            [--over-limit <suites-over-limit.json>]
  * Salida (stdout): `ROOT\tagent-skills\t<carpeta>\t<de dónde salió>\t<ok|missing>` (una línea; de dónde salió:
  *        variable | own-clone | installed | --skills), `RUN\t<ruta absoluta>` por suite a correr, en el orden de
@@ -110,6 +110,48 @@ function nightlyNet(file, now = Date.now()) {
   const hours = (now - at) / 3600000;
   if (hours > NIGHTLY_MAX_HOURS) return `la foto nocturna es de hace ${Math.round(hours)} h (más de ${NIGHTLY_MAX_HOURS})`;
   return null;
+}
+
+/**
+ * La red de `--direct`, suite por suite: lo que el pedido saltea lo mide la noche. Hace falta una foto de las últimas
+ * 36 h que diga qué corrió (`ran`); una suite que la noche no corrió, o que quedó sin medir (`unmeasured`), no tiene red y
+ * corre en el pedido. La foto entera no tiene que estar completa. Devuelve `{ problem }` o `{ measured }` (nombres).
+ */
+function nightlyMeasured(file, now = Date.now()) {
+  if (!file) return { problem: 'no hay foto nocturna (--nightly)' };
+  let photo;
+  try {
+    photo = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch (e) {
+    return { problem: `la foto nocturna ${file} no se deja leer (${e.code || e.message})` };
+  }
+  const at = Date.parse(photo && photo.ts);
+  if (!Number.isFinite(at)) return { problem: `la foto nocturna no trae una hora legible (ts: ${JSON.stringify(photo && photo.ts)})` };
+  const hours = (now - at) / 3600000;
+  if (hours > NIGHTLY_MAX_HOURS) return { problem: `la foto nocturna es de hace ${Math.round(hours)} h (más de ${NIGHTLY_MAX_HOURS})` };
+  if (hours < -1) return { problem: 'la foto nocturna dice ser de una hora posterior a ahora' };
+  if (!Array.isArray(photo.ran)) return { problem: 'la foto nocturna no dice qué suites corrió (ran)' };
+  const bare = (n) => String(n).replace(/\(no-medida\)$/, '');
+  const unmeasured = new Set((Array.isArray(photo.unmeasured) ? photo.unmeasured : []).map(bare));
+  return { measured: new Set(photo.ran.map(bare).filter((n) => !unmeasured.has(n))) };
+}
+
+// Con `--direct`, además de cómo se eligen las suites, corre todo si el cambio toca lo que corre las pruebas o las
+// deja pasar: el pipeline, el instalador (también el del freno de producción), el portón de CI y la regla con que
+// elige las carpetas, o los ganchos de git.
+const DIRECT_RUNS_ALL = /^(pipelines\/|scripts\/setup\/|\.githooks\/)|(^|\/)install-tycon-hooks\.[^/]+$|(^|\/)tycon-ci-gate\.js$|^scripts\/production\/install-guard\.[^/]+$|^skills\/tycon-pipeline\/scripts\/lib\/touched-files\.js$/;
+
+/**
+ * ¿El código de la suite (`text`) nombra el archivo `f`? Su ruta, su nombre con extensión, o su nombre sin extensión
+ * como palabra entera, si tiene 4 letras o más (`w` suelta no nombra `w.js`).
+ */
+function names(text, f) {
+  const base = path.posix.basename(f);
+  if (text.includes(f) || text.includes(base)) return true;
+  const stem = base.replace(/\.[^.]+$/, '');
+  if (stem.length < 4) return false;
+  const esc = stem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^A-Za-z0-9_-])${esc}([^A-Za-z0-9_-]|$)`).test(text);
 }
 
 /**
@@ -377,7 +419,7 @@ function main(argv) {
   const suitesFile = arg(argv, '--suites');
   const scriptsRoot = arg(argv, '--scripts');
   if (!suitesFile || !scriptsRoot) {
-    process.stderr.write('uso: suites-for-change.js --suites <suites.json> --scripts <dir> [--skills <dir>] [--changed <archivo>] [--changed-with-docs <archivo>] [--heavy <heavy-suites.json>] [--deps [--nightly <ultimo-suites.json>]] [--groups-alone] [--over-limit <suites-over-limit.json>]\n');
+    process.stderr.write('uso: suites-for-change.js --suites <suites.json> --scripts <dir> [--skills <dir>] [--changed <archivo>] [--changed-with-docs <archivo>] [--heavy <heavy-suites.json>] [--deps|--direct [--nightly <ultimo-suites.json>] [--added-removed <archivo>]] [--groups-alone] [--over-limit <suites-over-limit.json>]\n');
     return 2;
   }
   let root;
@@ -505,7 +547,22 @@ function main(argv) {
   const groupsAlone = argv.includes('--groups-alone') && !itself.length;
   if (argv.includes('--groups-alone') && itself.length) process.stderr.write(`ℹ️  el cambio toca cómo se eligen las suites (${itself.join(', ')}): las de los grupos corren\n`);
   let depsSel = null;
-  if (argv.includes('--deps') && listed.known && changed.known) {
+  const direct = argv.includes('--direct');
+  if (direct && listed.known && changed.known) {
+    const files = listed.files.map((f) => f.replace(/\\/g, '/'));
+    const all = [...new Set([...itself, ...files.filter((f) => DIRECT_RUNS_ALL.test(f))])];
+    const net = nightlyMeasured(arg(argv, '--nightly'));
+    if (all.length) process.stderr.write(`ℹ️  el cambio toca cómo se eligen o corren las pruebas (${all.join(', ')}): corre todo\n`);
+    else if (net.problem) process.stderr.write(`ℹ️  --direct no saltea nada: no hay red para lo salteado (${net.problem})\n`);
+    else {
+      // Un archivo nuevo o borrado cambia lo que ve una suite que recorre el repo (un censo, un barrido de comentarios)
+      // aunque no lo nombre. Si el cambio agrega o borra algo —o no se sabe—, ésas corren.
+      const ar = readChanged(arg(argv, '--added-removed'));
+      const structural = !ar.known || ar.files.length > 0;
+      if (structural) process.stderr.write(`ℹ️  ${ar.known ? 'el cambio agrega o borra archivos' : 'no sé si el cambio agrega o borra archivos'}: corren las suites que recorren el repo\n`);
+      depsSel = { direct: true, files, measured: net.measured, texts: new Map(), structural, D: require('./suite-deps.js'), cache: new Map() };
+    }
+  } else if (argv.includes('--deps') && listed.known && changed.known) {
     const files = listed.files.map((f) => f.replace(/\\/g, '/'));
     const noNet = nightlyNet(arg(argv, '--nightly'));
     if (itself.length) process.stderr.write(`ℹ️  el cambio toca cómo se eligen las suites (${itself.join(', ')}): corre todo\n`);
@@ -520,6 +577,7 @@ function main(argv) {
   // `deps: "graph"`, cuyo ls-files o grep es sobre un repo de juguete — no depende de todo por eso.
   const depsSkip = (s, files = depsSel && depsSel.files, ignoreWhole = false) => {
     if (!depsSel) return false;
+    if (depsSel.direct) return directSkip(s, files);
     const rel = codePath(s);
     if (!rel) return false;   // fuera del repo (skills instaladas): no hay código que leer, corre
     // no está —ella, o la parte registrada aunque su entero esté—: corre, y quien la corre dice «NO se midió»
@@ -553,6 +611,30 @@ function main(argv) {
     }
     return true;
   };
+  // `--direct`: se saltea sólo si la noche la midió y su propio código no nombra nada de lo que tocó el cambio. Ante la
+  // duda (no está en disco, no se deja leer, fuera del repo), corre.
+  function directSkip(s, files) {
+    if (!depsSel.measured.has(path.basename(s.ruta))) return false;
+    const own = ownPaths(s);
+    if (own.some((o) => files.includes(o))) return false;
+    const rels = [...new Set([codePath(s), ...own].filter(Boolean))];
+    if (!rels.length) return false;
+    if (depsSel.structural) {
+      let whole = true;
+      try { whole = depsSel.D.suiteDeps(repoRoot, codePath(s), depsSel.cache).wholeRepo; } catch (_) { whole = true; }
+      if (whole) return false;
+    }
+    for (const rel of rels) {
+      if (!depsSel.texts.has(rel)) {
+        let t = null;
+        try { t = fs.readFileSync(path.join(repoRoot, rel), 'utf8'); } catch (_) { t = null; }
+        depsSel.texts.set(rel, t);
+      }
+      const t = depsSel.texts.get(rel);
+      if (t === null || files.some((f) => names(t, f))) return false;
+    }
+    return true;
+  }
   // Las pesadas que miran .md (`reads_md`) se eligen con la lista ENTERA (`--changed-with-docs`); las demás, y todo lo
   // que no es pesada, con `--changed`, que en la 170 es la lista de código (los .md no eligen suites).
   // Pedida y no legible: las que miran .md no saben qué .md cambiaron, y corren (sin lista, como en «no pude mirar»).
@@ -610,11 +692,15 @@ function main(argv) {
         // cualquier suite cuando --deps no saltea nada; con `deps: false`, sus patrones son todo su criterio; si no, se
         // saltea sólo si tampoco usa nada del cambio.
         if (!depsSel && !(groupsAlone && heavy.grouped.has(name))) heavyWithoutDeps.push(name);
+        // con --direct la red es por suite: la que la noche no midió corre, también la que se elige sólo por sus patrones
+        else if (depsSel && depsSel.direct && !depsSel.measured.has(name)) { /* sin red: corre */ }
         else if (mode === false) {
           lines.push(`SKIP\t${name}\tel cambio no toca lo que mide (${heavyFile}): la corre el banco nocturno`);
           continue;
-        } else if (depsSkip(s, files.filter((f) => !heavy.ignore.some((re) => re.test(f))), mode === 'graph' && graphStillReviewed(s, name))) {
-          lines.push(`SKIP\t${name}\tel cambio no toca lo que mide (${heavyFile}) ni nada de lo que usa su código (scripts/ci/suite-deps.js): la corre el banco nocturno`);
+        } else if (depsSkip(s, files.filter((f) => !heavy.ignore.some((re) => re.test(f))), !depsSel.direct && mode === 'graph' && graphStillReviewed(s, name))) {
+          lines.push(depsSel.direct
+            ? `SKIP\t${name}\tel cambio no toca lo que mide (${heavyFile}) y su código no nombra nada de lo que tocó: la corre el banco nocturno`
+            : `SKIP\t${name}\tel cambio no toca lo que mide (${heavyFile}) ni nada de lo que usa su código (scripts/ci/suite-deps.js): la corre el banco nocturno`);
           continue;
         }
       }
@@ -633,7 +719,9 @@ function main(argv) {
       }
     }
     if (gate === undefined && depsSkip(s)) {
-      lines.push(`SKIP\t${name}\tel cambio no toca nada de lo que usa su código (scripts/ci/suite-deps.js): la corre el banco nocturno`);
+      lines.push(depsSel.direct
+        ? `SKIP\t${name}\tsu código no nombra nada de lo que tocó el cambio: la corre el banco nocturno`
+        : `SKIP\t${name}\tel cambio no toca nada de lo que usa su código (scripts/ci/suite-deps.js): la corre el banco nocturno`);
       continue;
     }
     lines.push(`RUN\t${abs}`);
@@ -647,7 +735,7 @@ function main(argv) {
   // (f) si con --deps no queda ninguna suite que correr, corre todo: un cambio de código que nadie usa no es un «nada
   // que medir», y un plan vacío la 170 lo cuenta como «no se midió» (rojo)
   if (depsSel && !lines.some((l) => l.startsWith('RUN\t'))) {
-    process.stderr.write('ℹ️  con --deps no quedaba ninguna suite: corre todo\n');
+    process.stderr.write(`ℹ️  con ${depsSel.direct ? '--direct' : '--deps'} no quedaba ninguna suite: corre todo\n`);
     lines.length = 0;
     for (const s of all) {
       const name = path.basename(s.ruta);
