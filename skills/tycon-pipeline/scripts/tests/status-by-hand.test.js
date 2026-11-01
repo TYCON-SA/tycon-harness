@@ -801,3 +801,60 @@ test('EdicionSinFormaConocida_PalabraQueNoEsArchivo', () => {
     assert.strictEqual(r.status, 2, `${JSON.stringify(c.slice(0, 120))}: ${r.stderr}`);
   }
 });
+
+// ── El sed que cambia lo que el encabezado cuida, más allá del estado de arriba ───────────────────────────────────────
+// Un `sed` que nombra su historia se ensaya sobre una copia y pasa si no la cierra. Medía sólo los `status:` de arriba:
+// una tanda del bloque `pipelines` pasada a `done`, o el número de la historia cambiado, pasaban por consola y frenaban
+// con la herramienta de edición. Ahora el `sed` pasa sólo si la herramienta de edición también dejaría pasar el cambio.
+// Los casos van en una tabla: el comando, el texto de antes y el de después (lo que el `sed` dejaría).
+const TANDA_BLOQUEADA = 'pipelines:\n  front:\n    status: blocked\n';
+const CASOS_SED = {
+  tanda: { extra: TANDA_BLOQUEADA, sed: "s/^    status: blocked$/    status: done/", antes: '    status: blocked\n', despues: '    status: done\n' },
+  id: { sed: 's/^story: "9.9"$/story: "9.2"/', antes: 'story: "9.9"', despues: 'story: "9.2"' },
+  repetido: { sed: 's/^qa_guide: off$/status: draft/', antes: 'qa_guide: off', despues: 'status: draft' },
+  cuerpo: { sed: 's/^Texto\\.$/Texto nuevo./', antes: 'Texto.', despues: 'Texto nuevo.' },
+};
+const porSed = (caso) => {
+  const h = nuevaHome({ extra: caso.extra || '' });
+  return consola(h, `sed -i -e '${caso.sed}' ${HISTORIA}`);
+};
+const porEdicion = (caso) => {
+  const h = nuevaHome({ herramienta: 'Edit', extra: caso.extra || '' });
+  return correr(ENCABEZADO, h, editar(h, caso.antes, caso.despues));
+};
+
+// 🔴 Falla con: comparar sólo los `status:` de arriba (la tanda pasa a `done` por consola sin firma).
+test('SedPipelinesTandaADone_Frena — una tanda de blocked a done, con el estado de arriba igual', () => {
+  const r = porSed(CASOS_SED.tanda);
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.match(r.stderr, POR_CONSOLA);
+});
+
+// 🔴 Falla con: no mirar el `story:` (la historia cambia de número por consola).
+test('SedCambiaElId_Frena — el número de la historia cambiado', () => {
+  const r = porSed(CASOS_SED.id);
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.match(r.stderr, POR_CONSOLA);
+});
+
+// 🔴 Falla con: dejar pasar un segundo `status:` (cada lector puede quedarse con uno distinto).
+test('SedEstadoRepetido_Frena — un segundo status: en el encabezado', () => {
+  const r = porSed(CASOS_SED.repetido);
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.match(r.stderr, POR_CONSOLA);
+});
+
+// 🔴 Falla con: frenar un `sed` que sólo cambia el cuerpo (el caso del 31/10, que pasa a propósito).
+test('SedSoloCuerpo_Pasa — un renglón del cuerpo, con el encabezado igual', () => {
+  const r = porSed(CASOS_SED.cuerpo);
+  assert.strictEqual(r.status, 0, r.stderr);
+});
+
+// 🔴 Falla con: que la consola y la herramienta de edición juzguen distinto el mismo cambio al encabezado.
+test('SedYEdicionDicenLoMismo — los cuatro casos, por consola y por la herramienta de edición', () => {
+  for (const [que, caso] of Object.entries(CASOS_SED)) {
+    const consolaFrena = porSed(caso).status === 2;
+    const edicionFrena = porEdicion(caso).status === 2;
+    assert.strictEqual(consolaFrena, edicionFrena, `${que}: consola ${consolaFrena ? 'frena' : 'pasa'}, edición ${edicionFrena ? 'frena' : 'pasa'}`);
+  }
+});
