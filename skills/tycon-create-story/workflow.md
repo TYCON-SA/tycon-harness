@@ -73,6 +73,15 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
 <workflow>
 
 <step n="1" goal="Determine target story">
+  <critical>A NEW story number is never picked by looking at `main` alone: two sessions on the same machine can write
+    stories at the same time, and the other one's story may live only in its worktree or in a branch with no pull
+    request. Whenever the number is not given (by the person, by the coordinator, or by a `backlog` key of
+    {sprint_status}), run `node <this skill's directory>/scripts/story-number.js next --repo <stories repo> --epic <n>`. It
+    reads `origin/main`, every remote branch and every worktree of that repo on this machine (also uncommitted files)
+    and prints `next`. Exit 0: use `next`. If it exits 3 (sale 3), there is doubt (a branch names a number with no
+    story, or the branches could not be fetched): do NOT assign; show its `doubts` and ask the person (or the
+    coordinator) for the number. A number given to you is still checked against its `used` list: if it is taken, say
+    so before writing.</critical>
   <check if="{{story_path}} is provided by user or user provided the epic and story number such as 2-4 or 1.6 or epic 1 story 5">
     <action>Parse user-provided story path: extract epic_num, story_num, story_title from format like "1-2-user-auth"</action>
     <action>Set {{epic_num}}, {{story_num}}, {{story_key}} from user input</action>
