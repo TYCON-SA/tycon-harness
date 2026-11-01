@@ -52,29 +52,28 @@ The harness guards, controls and control signatures belong to whoever maintains 
 
 ```mermaid
 flowchart TB
-  request(["Request"]) --> size{"Is it a small change?"}
-  size -- "No" --> h1
-  size -- "Yes" --> r1
-  subgraph story ["Story"]
+  pedir(["<b>Ask</b>"]) --> chico{"<b>Is it a small change?</b><br/><small>you ask for it in one sentence and can see it is right just by looking</small>"}
+  chico -- "Yes · Quick path" --> r1
+  chico -- "No · Story" --> h1
+  subgraph rapido [" "]
     direction TB
-    h1["Validate the story"] --> h2["Make the plan"]
-    h2 --> h3["Approve the plan<br/>normal risk: the coordinator<br/>high risk: the owner"]
-    h3 --> h4["Code with the tests first"]
-    h4 --> h5["Run the tests"]
-    h5 --> h6["Reviewers chosen by the change"]
-    h6 --> h7["Adversarial pass<br/>except in a small low-risk story<br/>or a docs-only or tests-only change"]
-    h7 --> h8["Live check, criterion by criterion"]
-    h8 --> h9["Save<br/>a yes in the permission prompt"]
-    h9 --> h10["Pull request: CI and the gate"]
+    r1["<b>Open the lane</b><br/><small>with the list of files<br/>normal risk: the coordinator, up to 5<br/>high risk: the owner, up to 8</small>"] --> r2["<b>Code with the test first</b><br/><small>on save, the harness warns if it was the other way round</small>"]
+    r2 --> r3["<b>Run its tests</b>"]
+    r3 --> r4["<b>Reviewers and adversarial pass</b><br/><small>only with high risk</small>"]
   end
-  subgraph quick ["Quick path"]
+  subgraph historia [" "]
     direction TB
-    r1["Open the lane, with the list of files<br/>normal risk: the coordinator, up to 5<br/>high risk: the owner, up to 8"] --> r2["Code with the test first<br/>on save, the harness warns if it was the other way round"]
-    r2 --> r2b["Run its tests"]
-    r2b --> r3["With high risk: reviewers and adversarial pass"]
-    r3 --> r4["Save<br/>a yes in the permission prompt"]
-    r4 --> r5["Pull request: the same CI"]
+    h1["<b>Validate the story</b>"] --> h2["<b>Make the plan</b>"]
+    h2 --> h3["<b>Approve the plan</b><br/><small>normal risk: the coordinator, if the automatic review said «approved»<br/>high risk: the owner</small>"]
+    h3 --> h4["<b>Code with the tests first</b>"]
+    h4 --> h5["<b>Run the tests</b>"]
+    h5 --> h6["<b>Reviewers</b><br/><small>chosen by the change</small>"]
+    h6 --> h7["<b>Adversarial pass</b><br/><small>not in a small low-risk story nor in a docs-only or tests-only change</small>"]
+    h7 --> h8["<b>Live check, criterion by criterion</b>"]
   end
+  r4 --> g1["<b>Save</b><br/><small>a yes in the permission prompt</small>"]
+  h8 --> g1
+  g1 --> g2["<b>Pull request</b><br/><small>CI#59; in a story, also the gate</small>"]
 ```
 
 The checks are one part of the cycle: they guard every step. There are two ways to start it: [on your own, on your

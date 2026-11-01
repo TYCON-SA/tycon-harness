@@ -52,29 +52,28 @@ Los frenos, los controles y las firmas de control del arnés son de quien lo man
 
 ```mermaid
 flowchart TB
-  pedido(["Pedido"]) --> tamano{"¿Es un cambio chico?"}
-  tamano -- "No" --> h1
-  tamano -- "Sí" --> r1
-  subgraph historia ["Historia"]
+  pedir(["<b>Pedir</b>"]) --> chico{"<b>¿Es un cambio chico?</b><br/><small>lo pedís en una frase y ves que quedó con sólo mirarlo</small>"}
+  chico -- "Sí · Camino rápido" --> r1
+  chico -- "No · Historia" --> h1
+  subgraph rapido [" "]
     direction TB
-    h1["Validar la historia"] --> h2["Armar el plan"]
-    h2 --> h3["Aprobar el plan<br/>riesgo normal: la coordinadora<br/>riesgo alto: el dueño"]
-    h3 --> h4["Programar con las pruebas primero"]
-    h4 --> h5["Correr las pruebas"]
-    h5 --> h6["Revisores elegidos según el cambio"]
-    h6 --> h7["Pase adversarial<br/>salvo en una historia chica de riesgo bajo<br/>o de sólo documentación o pruebas"]
-    h7 --> h8["Probar en vivo, criterio por criterio"]
-    h8 --> h9["Guardar<br/>el sí en la ventana de permiso"]
-    h9 --> h10["Pull request: la CI y el portón"]
+    r1["<b>Abrir el carril</b><br/><small>con la lista de archivos<br/>riesgo normal: la coordinadora, hasta 5<br/>riesgo alto: el dueño, hasta 8</small>"] --> r2["<b>Programar con la prueba primero</b><br/><small>al guardar, el arnés avisa si fue al revés</small>"]
+    r2 --> r3["<b>Correr sus pruebas</b>"]
+    r3 --> r4["<b>Revisores y pase adversarial</b><br/><small>sólo con riesgo alto</small>"]
   end
-  subgraph rapido ["Camino rápido"]
+  subgraph historia [" "]
     direction TB
-    r1["Abrir el carril, con la lista de archivos<br/>riesgo normal: la coordinadora, hasta 5<br/>riesgo alto: el dueño, hasta 8"] --> r2["Programar con la prueba primero<br/>al guardar, el arnés avisa si fue al revés"]
-    r2 --> r2b["Correr sus pruebas"]
-    r2b --> r3["Con riesgo alto: revisores y pase adversarial"]
-    r3 --> r4["Guardar<br/>el sí en la ventana de permiso"]
-    r4 --> r5["Pull request: la misma CI"]
+    h1["<b>Validar la historia</b>"] --> h2["<b>Armar el plan</b>"]
+    h2 --> h3["<b>Aprobar el plan</b><br/><small>riesgo normal: la coordinadora, si la revisión automática dio «aprobado»<br/>riesgo alto: el dueño</small>"]
+    h3 --> h4["<b>Programar con las pruebas primero</b>"]
+    h4 --> h5["<b>Correr las pruebas</b>"]
+    h5 --> h6["<b>Revisores</b><br/><small>elegidos según el cambio</small>"]
+    h6 --> h7["<b>Pase adversarial</b><br/><small>no en una historia chica de riesgo bajo ni en sólo documentación o pruebas</small>"]
+    h7 --> h8["<b>Probar en vivo, criterio por criterio</b>"]
   end
+  r4 --> g1["<b>Guardar</b><br/><small>el sí en la ventana de permiso</small>"]
+  h8 --> g1
+  g1 --> g2["<b>Pull request</b><br/><small>la CI#59; en una historia, también el portón</small>"]
 ```
 
 Los controles son una parte del ciclo: cuidan cada paso. Se arranca de dos maneras: [solo, en tu
