@@ -793,3 +793,14 @@ test('T71 Board_Page_Panel: la página trae el panel del tablero y lo dibuja con
   assert.ok(!/innerHTML/.test(fn), 'el tablero se escribe con textContent');
   assert.match(html, /renderBoard\(\);renderTop\(\);renderCrew\(\)|renderBoard\(\)/);
 });
+
+test('T72 SiteLink_OnlyFromPage_OnlyWeb: el enlace al sitio sale de la página armada, sólo si es web, nunca del WebSocket', () => {
+  const html = page({ agents: [], items: [], meta: { actualizado: '10:00', sitio: 'https://sitio.example/x' }, rows: [], free: [], unreadable: [] }, { live: { token: 'abc' } });
+  const line = (html.match(/^const SITE=(.*);$/m) || [])[1];
+  assert.ok(line, 'la página calcula el enlace una vez');
+  const site = (sitio) => new Function('DATA', `return ${line};`)({ meta: { sitio } });
+  assert.strictEqual(site('https://sitio.example/x'), 'https://sitio.example/x');
+  for (const bad of ['javascript:alert(1)', 'data:text/html,hola', 'vbscript:x', '', null, 'no es una dirección']) assert.strictEqual(site(bad), null, String(bad));
+  // nada de la página toma el sitio de los datos que llegan después
+  assert.strictEqual((html.match(/meta\.sitio/g) || []).length, 1, 'sólo el cálculo de SITE mira meta.sitio');
+});

@@ -132,6 +132,8 @@ const AST={trabajando:["Trabajando","#3ddc84"],prueba:["Corriendo pruebas","#5aa
 const SHIRT=["#c2569b","#2f9e6a","#3b7ddd","#e08a1e","#7a5cc7","#d65a4a"];
 let agents,items,meta;
 function setData(d){DATA=d||{};agents=DATA.agents||[];items=DATA.items||[];meta=DATA.meta||null}
+// el enlace al sitio sale sólo de la página que armó office.js, nunca de un mensaje del WebSocket, y sólo si es web
+const SITE=(()=>{try{const u=new URL(String(DATA&&DATA.meta&&DATA.meta.sitio||""));return u.protocol==="https:"||u.protocol==="http:"?u.href:null}catch(e){return null}})();
 setData(DATA);
 // el fin lo calcula office.js una vez por sesión: la etiqueta, la tarjeta, el detalle, el panel y la tabla dicen lo mismo
 const finTxt=a=>a.fin||null;
@@ -150,7 +152,7 @@ function renderBoard(){const sec=document.getElementById("board"),body=document.
 }
 function renderTop(){
   document.getElementById("stamp").textContent=meta?"Foto de las "+meta.actualizado+(meta.pedidosLeidos?" · pedidos leídos a las "+meta.pedidosLeidos:""):"";
-  const site=document.getElementById("site");if(meta&&meta.sitio){site.href=meta.sitio;site.hidden=false}else{site.removeAttribute("href");site.hidden=true}
+  const site=document.getElementById("site");if(SITE){site.href=SITE;site.hidden=false}else{site.removeAttribute("href");site.hidden=true}
   const you=(meta&&meta.teToca)||[],ul=document.getElementById("youList");ul.replaceChildren();you.forEach(t=>ul.appendChild(el("li",null,t)));document.getElementById("you").hidden=!you.length;
   const tb=document.getElementById("rows");tb.replaceChildren();(DATA.rows||[]).forEach(r=>{const tr=el("tr");[r.work,r.state,r.end,r.session,r.folder].forEach(v=>tr.appendChild(el("td",null,v||"")));tb.appendChild(tr)});
   if(!(DATA.rows||[]).length){const tr=el("tr");const td=el("td",null,"Nadie trabaja en esta máquina.");td.colSpan=5;tr.appendChild(td);tb.appendChild(tr)}
@@ -167,7 +169,7 @@ function renderCrew(){const c=document.getElementById("crew");c.replaceChildren(
     if(a.avance!=null)k.appendChild(el("span","eta","Avance: "+a.avance+"%"));c.appendChild(k)})}
 // sin 3D, la tabla queda abierta y la sala dice por qué
 function sinTresD(msg){const o=document.getElementById("ovl");o.textContent=msg;o.hidden=false;document.getElementById("tablewrap").open=true}
-window.tablero={agents:()=>agents,items:()=>items,meta:()=>meta,AST,SHIRT,fmt,finTxt,sinTresD};
+window.tablero={agents:()=>agents,items:()=>items,meta:()=>meta,site:()=>SITE,AST,SHIRT,fmt,finTxt,sinTresD};
 renderTop();renderCrew();
 // la oficina viva: cada foto nueva actualiza en el lugar; si el proceso se cierra, queda la última foto y el aviso
 const CERRADA="La oficina se cerró. Corré /office otra vez para verla al día.";
@@ -441,7 +443,7 @@ const ray=new THREE.Raycaster(),ptr=new THREE.Vector2();let down=null;
 renderer.domElement.addEventListener("pointerdown",e=>down=[e.clientX,e.clientY]);
 function apuntado(e){const r=renderer.domElement.getBoundingClientRect();ptr.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);ray.setFromCamera(ptr,cam);return ray.intersectObjects([pnlFace,...(sitio()?[signFace]:[]),...desks.map(d=>d.hit)])[0]}
 // el cartel abre el sitio de la organización, sólo si el perfil trae su dirección
-const sitio=()=>{const m=T.meta();return m&&m.sitio||null};
+const sitio=()=>T.site();
 renderer.domElement.addEventListener("pointermove",e=>{if(e.buttons)return;const h=sitio()&&apuntado(e);renderer.domElement.style.cursor=h&&h.object===signFace?"pointer":""});
 renderer.domElement.addEventListener("pointerup",e=>{if(!down||Math.hypot(e.clientX-down[0],e.clientY-down[1])>5)return;const h=apuntado(e);if(!h)return;if(h.object===pnlFace){abrirTablero();return}if(h.object===signFace){const s=sitio();if(s)window.open(s,"_blank","noopener");return}const d=desks.find(x=>x.hit===h.object);if(d)abrir(d.agent.nombre)});
 let mueve=null;renderer.domElement.addEventListener("pointermove",e=>{if(mueve)return;mueve=requestAnimationFrame(()=>{mueve=null;renderer.domElement.style.cursor=apuntado(e)?"pointer":"grab"})});
