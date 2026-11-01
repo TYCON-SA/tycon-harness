@@ -343,9 +343,9 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       '⛔ camino rápido delegado — RUTA DE RIESGO ALTO',
       viaLine.replace(/\n$/, ''),
       `  ${f} es de riesgo alto (regla: ${regla}).`,
-      '  Un camino rápido de riesgo alto no se delega: la coordinadora no lo abre por delegación. Lo abre el dueño con su',
-      '  sí en la ventana de permiso, y antes de guardar corren los revisores y el pase adversarial sobre su diff.',
-      '  Salidas: pedíselo al dueño (que abra el camino rápido él), o escribí la historia que lo lleva.',
+      '  Un camino rápido de riesgo alto no se delega: la coordinadora no lo abre por delegación. Lo abre una persona con',
+      '  su sí en la ventana de permiso, y antes de guardar corren los revisores y el pase adversarial sobre su diff.',
+      '  Salidas: pedíselo a una persona (que abra ella el camino rápido), o escribí la historia que lo lleva.',
     ] : [
       '⛔ camino rápido — RUTA DE RIESGO ALTO',
       viaLine.replace(/\n$/, ''),

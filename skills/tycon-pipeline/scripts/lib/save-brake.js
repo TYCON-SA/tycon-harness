@@ -1026,8 +1026,8 @@ function textoFaltanRevisoresYPase({ harness, regla, archivo }) {
     '  sus dos constancias en el registro del carril (sin ok firmado: con las dos, guardar sigue como siempre).',
     `   1. node ${pipeline} advisors --adhoc     → lanzá los revisores que devuelve; después: node ${pipeline} check-count --adhoc`,
     `   2. node ${pipeline} deep-review-gate --adhoc → si corre, el pase; después: node ${marker} mark-adversarial-result <N> --adhoc --result <archivo>`,
-    '  Un cambio de código después de las constancias las vence. Si el dueño no abrió este camino rápido, no se delega:',
-    '  pedíselo a él, o escribí la historia que lo lleva.',
+    '  Un cambio de código después de las constancias las vence. Si no lo abrió una persona, este camino rápido no se',
+    '  delega: pedíselo a una persona, o escribí la historia que lo lleva.',
   ] : [
     `🔒 GUARDAR: faltan los revisores y el pase. Este cambio toca una ruta de riesgo alto: ${que}.`,
     '  Antes de guardar, corré vos los revisores y el pase adversarial sobre lo que cambió; el arnés anota que corrieron',
