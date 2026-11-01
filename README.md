@@ -2,6 +2,9 @@
 
 English · [Castellano](README.es.md)
 
+**New here?** [The harness in one minute](getting-started/one-minute.md): what it is, your first day in three steps,
+and the words it uses.
+
 **The harness in four minutes** (in Spanish, with subtitles).
 
 https://github.com/user-attachments/assets/3fbe4538-6b96-4b56-b2ed-92d36be1c6f8
@@ -134,7 +137,7 @@ installed) and the version. The minimal install adds the harness's guide index t
 does not touch git or the rules on how the agent answers you. To remove it, `harness.js uninstall --dry-run` shows
 what it would remove and `harness.js uninstall --yes` removes it.
 
-If you use Codex, one step is left: the last line asks you to open `codex`, run `/hooks` and approve them once. Codex
+If you use Codex, one step is left: at the end it asks you to open `codex`, run `/hooks` and approve them once. Codex
 approves its hooks one by one; without that step the harness's controls do not run in Codex, and nothing warns you.
 
 The full install adds the guards in the repos that work with the harness and changes how the agent answers you in all your projects:

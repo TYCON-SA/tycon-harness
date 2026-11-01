@@ -2,6 +2,9 @@
 
 [English](README.md) · Castellano
 
+**¿Recién llegás?** [El arnés en un minuto](getting-started/one-minute.es.md): qué es, el primer día en tres pasos y
+las palabras que usa.
+
 **El arnés en cuatro minutos.**
 
 https://github.com/user-attachments/assets/3fbe4538-6b96-4b56-b2ed-92d36be1c6f8
@@ -133,7 +136,7 @@ nada. Con el «sí» tarda menos de un minuto y termina con «arnés instalado»
 tu agente el índice de guías del arnés en cada sesión; no toca git ni las reglas de cómo te contesta. Para sacarla,
 `harness.js uninstall --dry-run` muestra qué quitaría y `harness.js uninstall --yes` la quita.
 
-Si usás Codex, falta un paso: la última línea te pide abrir `codex`, correr `/hooks` y aprobarlos una vez. Codex
+Si usás Codex, falta un paso: al final te pide abrir `codex`, correr `/hooks` y aprobarlos una vez. Codex
 aprueba sus hooks uno por uno; sin ese paso, los controles del arnés no corren en Codex y no avisan.
 
 La instalación completa suma los frenos en los repos que trabajan con el arnés y cambia cómo te contesta el agente en todos tus proyectos:
