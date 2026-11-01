@@ -45,6 +45,9 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const crypto = require('crypto');
+
+// un número con su palabra en singular o en plural
+const cuantos = (n, uno, varios) => `${n} ${n === 1 ? uno : varios}`;
 const { spawnSync } = require('child_process');
 const { BRAND_LOGO } = require('../lib/operations-config.js');
 
@@ -60,6 +63,10 @@ const RUTAS = Object.freeze([
   // las fichas vivas de la noche y las decisiones que esperan aplicarse: «Lo que encontró la noche» (tabs/findings.js).
   // Las archivadas no: la sección no las muestra.
   ...['dependencies', 'watcher', 'runs-review'].flatMap((c) => ['pending', 'promoted', 'decisions'].map((d) => `inbox/${c}/${d}/`)),
+  // el pipeline de la noche de cada fuente, en pipelines/ o en .github/workflows/: de su cron sale a qué hora se aplica
+  // una decisión
+  // (tabs/findings.js, `PIPELINE_DE`). Sólo esos archivos, no la carpeta: el resto de los pipelines el sitio no lo lee
+  ...['pipelines', '.github/workflows'].flatMap((c) => ['runs-review.yml', 'dependency-audit.yml', 'production-watch.yml'].map((n) => `${c}/${n}`)),
 ]);
 const INDICE = 'actual.json';
 const CARPETA_FOTOS = 'fotos/';
@@ -183,7 +190,7 @@ function leerFoto(gz) {
   const sirve = (a) => enRutas(a.rel) || a.rel === logo;
   const ignorados = archivos.filter((a) => !sirve(a)).map((a) => a.rel);
   const abiertos = archivos.filter(sirve);
-  if (!abiertos.length) return { ok: false, motivo: archivos.length ? `la foto no trae ningún archivo que el sitio lea (${archivos.length} ignorado(s))` : 'la foto no trae ningún archivo' };
+  if (!abiertos.length) return { ok: false, motivo: archivos.length ? `la foto no trae ningún archivo que el sitio lea (${cuantos(archivos.length, 'ignorado', 'ignorados')})` : 'la foto no trae ningún archivo' };
   return { ok: true, archivos: abiertos, ignorados };
 }
 
@@ -303,7 +310,7 @@ async function subir({ repo, almacen, ahora = Date.now, log = () => {}, dryRun =
   try { foto = armarFoto(j.archivos); } catch (e) { return { ok: false, motivo: e.message }; }
   const huella = crypto.createHash('sha256').update(foto).digest('hex');
   const indice = { version: 1, commit: j.commit, hora: new Date(ahora()).toISOString(), huella, bytes: foto.length, archivos: Object.fromEntries(j.archivos.map((a) => [a.rel, a.oid])), foto: `${CARPETA_FOTOS}${j.commit}.tar.gz` };
-  if (dryRun) return { ok: true, subido: false, motivo: `prueba: ${j.archivos.length} archivo(s), ${foto.length} bytes, commit ${j.commit.slice(0, 12)}`, commit: j.commit, bytes: foto.length, indice };
+  if (dryRun) return { ok: true, subido: false, motivo: `prueba: ${cuantos(j.archivos.length, 'archivo', 'archivos')}, ${foto.length} bytes, commit ${j.commit.slice(0, 12)}`, commit: j.commit, bytes: foto.length, indice };
   const previo = await almacen.get(INDICE);
   let anterior = null;
   if (previo.error || (previo.status !== 200 && previo.status !== 404)) return { ok: false, motivo: `no se pudo leer el índice de la copia (${codigoDe(previo)}${previo.status ? ` ${previo.status}` : ''})` };
@@ -322,7 +329,7 @@ async function subir({ repo, almacen, ahora = Date.now, log = () => {}, dryRun =
       if (l.error || l.status !== 200) return { ok: false, motivo: `no se pudo comprobar que la foto de ${j.commit.slice(0, 12)} siga en el contenedor (${codigoDe(l)})` };
       if (esta) {
         const b = await borrarViejas({ almacen, ahora, log });
-        if (b.borradas.length) log(`borradas ${b.borradas.length} foto(s) de más de 7 días`);
+        if (b.borradas.length) log(`${b.borradas.length === 1 ? 'borrada 1 foto' : `borradas ${b.borradas.length} fotos`} de más de 7 días`);
         return { ok: true, subido: false, motivo: `la copia ya está al día con ${j.commit.slice(0, 12)}: no se sube nada`, commit: j.commit };
       }
       log(`el índice nombra ${j.commit.slice(0, 12)} y su foto no está: se vuelve a subir`);
@@ -333,9 +340,9 @@ async function subir({ repo, almacen, ahora = Date.now, log = () => {}, dryRun =
   const i = await almacen.put(INDICE, Buffer.from(`${JSON.stringify(indice)}\n`), 'application/json');
   if (i.error || (i.status !== 201 && i.status !== 200)) return { ok: false, motivo: `la foto se subió y el índice no (${i.error ? i.error.code || i.error.message : i.status}): el sitio sigue con la anterior` };
   const b = await borrarViejas({ almacen, ahora, log });
-  if (b.borradas.length) log(`borradas ${b.borradas.length} foto(s) de más de 7 días`);
+  if (b.borradas.length) log(`${b.borradas.length === 1 ? 'borrada 1 foto' : `borradas ${b.borradas.length} fotos`} de más de 7 días`);
   const opsAntes = anterior && anterior.archivos && typeof anterior.archivos === 'object' ? anterior.archivos['operations.json'] : undefined;
-  return { ok: true, subido: true, motivo: `subida la foto de ${j.commit.slice(0, 12)}: ${j.archivos.length} archivo(s), ${foto.length} bytes`, commit: j.commit, bytes: foto.length, cambioOperaciones: opsAntes !== indice.archivos['operations.json'] };
+  return { ok: true, subido: true, motivo: `subida la foto de ${j.commit.slice(0, 12)}: ${cuantos(j.archivos.length, 'archivo', 'archivos')}, ${foto.length} bytes`, commit: j.commit, bytes: foto.length, cambioOperaciones: opsAntes !== indice.archivos['operations.json'] };
 }
 
 const DESPERTAR_MS = 90 * 1000;  // un sitio dormido tarda alrededor de un minuto en contestar
@@ -397,7 +404,7 @@ async function podarCopias({ dir, actual, previo = null, conservar = CONSERVAR_C
     try { await fs.promises.rm(path.join(dir, n), { recursive: true, force: true }); borradas.push(n); } catch (e) { log(`copia de operaciones: ${n} no se pudo borrar (${e.code || e.message}); queda para la próxima`); }
   }
   const pendientes = Math.max(0, aBorrar.length - tope);
-  if (borradas.length) log(`copia de operaciones: borradas ${borradas.length} carpeta(s) viejas de la copia${pendientes ? `; quedan ${pendientes} para la próxima pasada` : ''}`);
+  if (borradas.length) log(`copia de operaciones: ${borradas.length === 1 ? 'borrada 1 carpeta vieja' : `borradas ${borradas.length} carpetas viejas`} de la copia${pendientes ? `; quedan ${pendientes} para la próxima pasada` : ''}`);
   return { borradas, quedan: pendientes };
 }
 /**
@@ -454,7 +461,7 @@ async function bajar({ almacen, dir, previo = null, log = () => {}, opcionesPoda
   if (crypto.createHash('sha256').update(f.cuerpo).digest('hex') !== indice.huella) return { ok: false, codigo: 'ilegible', motivo: 'la foto no tiene la huella que dice el índice: no se abre' };
   const foto = leerFoto(f.cuerpo);
   if (!foto.ok) return { ok: false, codigo: 'ilegible', motivo: foto.motivo };
-  if (foto.ignorados.length) log(`copia de operaciones: ${foto.ignorados.length} archivo(s) de la foto que el sitio no lee, ignorados: ${foto.ignorados.slice(0, 10).join(', ').slice(0, 400)}`);
+  if (foto.ignorados.length) log(`copia de operaciones: ${foto.ignorados.length === 1 ? '1 archivo de la foto que el sitio no lee, ignorado' : `${foto.ignorados.length} archivos de la foto que el sitio no lee, ignorados`}: ${foto.ignorados.slice(0, 10).join(', ').slice(0, 400)}`);
   // asíncrono, archivo por archivo: sobre un disco compartido escribir miles de archivos de una vez traba al servidor
   let abriendo = null;
   try {
@@ -467,7 +474,7 @@ async function bajar({ almacen, dir, previo = null, log = () => {}, opcionesPoda
     }
     const carpeta = path.join(dir, `copia-${indice.commit.slice(0, 12)}-${crypto.randomBytes(3).toString('hex')}`);
     await fs.promises.rename(abriendo, carpeta);
-    log(`copia de operaciones: abierta la foto de ${indice.commit.slice(0, 12)} (${foto.archivos.length} archivo(s))`);
+    log(`copia de operaciones: abierta la foto de ${indice.commit.slice(0, 12)} (${cuantos(foto.archivos.length, 'archivo', 'archivos')})`);
     // la anterior se borra DESPUÉS y de fondo: si el borrado falla, la foto nueva ya está abierta y es la que vale
     const poda = programarPoda({ dir, actual: carpeta, previo: previo && previo.carpeta !== carpeta ? previo.carpeta : null, log, ...opcionesPoda });
     return { ok: true, cambio: true, carpeta, indice, poda };

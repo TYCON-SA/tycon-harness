@@ -115,6 +115,8 @@ const L = (idioma, clave, valores) => {
   if (!e) throw new Error(`runs-texts.js: no hay texto para la clave «${PREFIJO + clave}»`);
   return llenar(e.es, valores);
 };
+/** Lo mismo con {n} = 1 en singular: la clave con un 1 al final, si existe (como el navegador de la vista). */
+const Ln = (idioma, clave, valores) => L(idioma, valores && valores.n === 1 && PROPIOS[`${PREFIJO}${clave}1`] ? `${clave}1` : clave, valores);
 /** Una frase que armó el modelo (en castellano), en `idioma`: traducida si es de la casa; si no, tal cual. */
 // Sólo los moldes de las frases del modelo (`corridas.m.*`) y los nombres de los pasos (`paso.*`): nunca los textos de la
 // página, que podrían coincidir con un valor que el cliente compara (`estado: 'medido'`) y romperlo en otro idioma.
@@ -394,7 +396,7 @@ function nombresDePasos(tabla = TABLA_DE_PASOS) {
   if (faltan.length === nombres.length) {
     return { nombres, fuente: 'numeros', motivo: 'la tabla de pasos del pipeline no trae los nombres de los pasos: van por número, sin nombre' };
   }
-  return { nombres, fuente: 'tabla', motivo: faltan.length ? `la tabla de pasos no nombra el/los paso(s) ${faltan.join(', ')}: van por número` : null };
+  return { nombres, fuente: 'tabla', motivo: !faltan.length ? null : faltan.length === 1 ? `la tabla de pasos no nombra el paso ${faltan[0]}: va por número` : `la tabla de pasos no nombra estos pasos: ${faltan.join(', ')}; van por número` };
 }
 
 /**
@@ -1435,15 +1437,15 @@ const dur = (ms, idioma) => ms == null ? '—' : ms < 90 * 60000 ? `${Math.round
  */
 function textoSinMarca(c, nombres, idioma, prefijo) {
   const curso = Number.isInteger(c.paso_en_curso) ? c.paso_en_curso : null;
-  if (c.llego_al_final) return L(idioma, prefijo + 'pasosSinMarca', { n: c.sin_marca.length });
+  if (c.llego_al_final) return Ln(idioma, prefijo + 'pasosSinMarca', { n: c.sin_marca.length });
   // después de donde quedó, no se llegaron a correr; antes, corrieron sin su marca
   const donde = filaDondeQuedo(c);
   const despues = c.sin_marca.filter((f) => f !== curso && donde !== null && f > donde).length;
   const antes = c.sin_marca.filter((f) => f !== curso).length - despues;
   const partes = [];
   if (curso !== null) partes.push(L(idioma, prefijo + 'pasoSinTerminar', { p: enIdioma(idioma, nombres[curso] || String(curso)) }));
-  if (despues) partes.push(L(idioma, prefijo + 'pasosSinCorrer', { n: despues }));
-  if (antes) partes.push(L(idioma, prefijo + 'pasosSinMarca', { n: antes }));
+  if (despues) partes.push(Ln(idioma, prefijo + 'pasosSinCorrer', { n: despues }));
+  if (antes) partes.push(Ln(idioma, prefijo + 'pasosSinMarca', { n: antes }));
   return partes.join('; ');
 }
 /** El paso donde quedó una ejecución que no llegó al final: el que quedó a medias o, si ninguno, el último terminado. */
@@ -1487,7 +1489,7 @@ function colArchivos(c, idioma) {
     // Un 0 con repos sin mirar es «no pude mirar» escrito como «no cambió nada».
     if (!x.git.total_archivos && sinMedir.length) {
       const cuales = sinMedir.map((r) => `${r.n} (${enIdioma(idioma, r.motivo || 'sin motivo')})`).join(' · ');
-      return `<span class="nd" title="${esc(L(idioma, 'v.reposSinMirar', { n: sinMedir.length, t: nR, cuales }))} — ${esc(noEsCero)}">—</span>`;
+      return `<span class="nd" title="${esc(L(idioma, sinMedir.length === 1 ? (nR === 1 ? 'v.reposSinMirarUnico' : 'v.reposSinMirar1') : 'v.reposSinMirar', { n: sinMedir.length, t: nR, cuales }))} — ${esc(noEsCero)}">—</span>`;
     }
     const a = x.git.total_archivos;
     const titulo = `${L(idioma, 'v.segunGit')} ${a} ${L(idioma, a === 1 ? 'v.archivo1' : 'v.archivoN')} ${L(idioma, 'v.en')} ${nR} ${L(idioma, nR === 1 ? 'v.repo1' : 'v.repoN')}${sinMedir.length ? `, ${sinMedir.length} ${L(idioma, 'v.sinPoderMirar')}` : ''} (${L(idioma, 'v.segunGitResto')})`;
@@ -1497,11 +1499,11 @@ function colArchivos(c, idioma) {
   const n = x.archivos.filter((a) => !/^script por consola/.test(a.f)).length;
   if (n) {
     const c = x.lista.length;
-    const titulo = `${c} ${L(idioma, c === 1 ? 'v.cambio1' : 'v.cambioN')} ${L(idioma, 'v.en')} ${n} ${L(idioma, n === 1 ? 'v.archivo1' : 'v.archivoN')}${x.por_consola ? L(idioma, 'v.masConsola', { n: x.por_consola }) : ''}`;
+    const titulo = `${c} ${L(idioma, c === 1 ? 'v.cambio1' : 'v.cambioN')} ${L(idioma, 'v.en')} ${n} ${L(idioma, n === 1 ? 'v.archivo1' : 'v.archivoN')}${x.por_consola ? Ln(idioma, 'v.masConsola', { n: x.por_consola }) : ''}`;
     return `<span title="${esc(titulo)}">${n}</span>`;
   }
-  if (x.en_commits) return `<span title="${esc(L(idioma, 'v.porConsolaCommits', { n: x.en_commits }))}">${x.en_commits}</span><small class="nd">${esc(L(idioma, 'v.porConsola'))}</small>`;
-  if (x.por_consola) return `<span class="nd" title="${esc(L(idioma, 'v.porConsolaSinSaber', { n: x.por_consola }))}">${esc(L(idioma, 'v.porConsola'))}</span>`;
+  if (x.en_commits) return `<span title="${esc(Ln(idioma, 'v.porConsolaCommits', { n: x.en_commits }))}">${x.en_commits}</span><small class="nd">${esc(L(idioma, 'v.porConsola'))}</small>`;
+  if (x.por_consola) return `<span class="nd" title="${esc(Ln(idioma, 'v.porConsolaSinSaber', { n: x.por_consola }))}">${esc(L(idioma, 'v.porConsola'))}</span>`;
   return `<span title="${esc(L(idioma, 'v.noEdito'))}">0</span>`;
 }
 
@@ -1532,7 +1534,9 @@ function cabecera(M, opts = {}) {
   const conControles = C.filter((c) => c.controles).length;
   const alFinal = C.filter((c) => c.llego_al_final).length;
   const origen = sitio ? x('v.versionDelSitio') : `commit ${esc((() => { try { return execSync('git rev-parse --short HEAD', { cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch (e) { return L(I, 'v.desconocido'); } })())}`;
-  const selloCorridas = Number.isFinite(M.archivos) ? x(M.duplicados === 1 ? 'v.selloArchivos1' : 'v.selloArchivos', { n: N, a: M.archivos, d: M.duplicados, i: M.ilegibles }) : String(N);
+  // cada parte del sello con su número: «1 duplicado», «1 no se pudo leer», aunque las otras sean varias
+  const selloCorridas = Number.isFinite(M.archivos) ? [x(M.archivos === 1 ? 'v.selloLeidosUno' : 'v.selloLeidos', { n: N, a: M.archivos }), x(M.duplicados === 1 ? 'v.selloDuplicadoUno' : 'v.selloDuplicados', { d: M.duplicados }),
+    x(M.ilegibles === 1 ? 'v.selloIlegibleUno' : 'v.selloIlegibles', { i: M.ilegibles })].join(' · ') : String(N);
   const eyebrow = !sitio ? `${x('v.eyebrowNoche')} <span class="mono">artifacts/tablero-del-arnes.html</span>${x('v.eyebrowNocheRepo')}`
     : sitio.rol === 'maintainer' ? `${x('v.eyebrowSitio')} <a href="/arnes">${x('v.eyebrowSitioEnlace')}</a>`
       : x('v.eyebrowDev');
@@ -3055,7 +3059,7 @@ function main(opts = {}) {
   if (M.multi) {
     log(`  máquinas: ${M.maquinas.lista.map((x) => `${x.nombre} ${x.corridas}`).join(' · ') || 'ninguna'}${M.maquinas.sin_declarar ? ` · sin declarar ${M.maquinas.sin_declarar}` : ''} (esta máquina: ${maquina || 'sin nombre'})`);
     if (M.buzon && M.buzon.estado !== 'leido') log(`  buzón NO LEÍDO: ${M.buzon.motivo}`);
-    if (M.buzon && M.buzon.carpetas_ilegibles) log(`  ${M.buzon.carpetas_ilegibles} carpeta(s) del buzón no se pudieron leer`);
+    if (M.buzon && M.buzon.carpetas_ilegibles) log(`  ${M.buzon.carpetas_ilegibles === 1 ? '1 carpeta del buzón no se pudo leer' : `${M.buzon.carpetas_ilegibles} carpetas del buzón no se pudieron leer`}`);
     if (M.buzon && M.buzon.uniones && M.buzon.uniones.estado === 'no_medidas') log(`  uniones de carpetas no medidas: ${M.buzon.uniones.motivo}`);
   }
   if (opts.json) console.log(JSON.stringify(M, (k, v) => (k === '_texto' || k === '_textoGit' ? undefined : v), 2));

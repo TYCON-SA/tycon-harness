@@ -456,7 +456,7 @@ test('T26 2.79-Guia_PestanasYBloquesComoElSitio @story-2.79 @ac-23 — pestañas
     for (const id of PERSONA_VE) assert.ok(dePersona.includes(t(l.idioma, `pestana.${id}`)), `${l.idioma}: una persona ve «${t(l.idioma, `pestana.${id}`)}»: ${dePersona}`);
     for (const id of MANTIENE_VE.filter((x) => !PERSONA_VE.includes(x))) assert.ok(!dePersona.includes(t(l.idioma, `pestana.${id}`)), `${l.idioma}: una persona no ve «${t(l.idioma, `pestana.${id}`)}»`);
     // los bloques de Mantenimiento, con su título del sitio y en el orden de la página
-    const bloques = ['mant.toca.titulo', 'mant.espera.titulo', 'mant.decididas.titulo', 'mant.marcha.titulo'].map((k) => t(l.idioma, k, { n: '' }).replace(/\s*\(\)$/, ''));
+    const bloques = ['mant.toca.titulo', 'mant.espera.titulo', 'mant.marcha.titulo', 'mant.decididas.titulo'].map((k) => t(l.idioma, k, { n: '' }).replace(/\s*\(\)$/, ''));
     const donde = bloques.map((b) => mant.indexOf(`**${b}**`));
     assert.ok(donde.every((i) => i >= 0), `${l.idioma}: Mantenimiento nombra ${bloques.join(', ')} en negrita`);
     assert.deepStrictEqual([...donde].sort((a, b) => a - b), donde, `${l.idioma}: en el orden de la página`);

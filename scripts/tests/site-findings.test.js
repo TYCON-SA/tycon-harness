@@ -71,8 +71,8 @@ const FICHAS = {
   'inbox/dependencies/pending/dep-uno.yaml': 'id: dep-uno\ndetectado: 2026-10-19\nveredicto: pendiente\npaquete: pkg-uno\nseveridad: high\nnoches: 3\npropuesta_accion: arreglar\npropuesta_razon: Hay una versión corregida del paquete\nrepos:\n  - Producto X/FrontEnd\npedidos:\n  - Producto X: 5002\n',
   'inbox/dependencies/promoted/dep-res.yaml': 'id: dep-res\ndetectado: 2026-10-01\nveredicto: pendiente\npaquete: pkg-resuelto\nseveridad: low\nnoches: 5\nresuelto: 2026-10-20\n',
   'inbox/dependencies/archived/2026-10-10/dep-arch.yaml': 'id: dep-arch\ndetectado: 2026-10-01\nveredicto: descartado\npaquete: pkg-archivado\nseveridad: low\nnoches: 5\n',
-  'inbox/watcher/pending/vig-uno.yaml': '# borrador del vigilante\nid: vig-uno\nfuente: vigilante\ncausa: acme:errores-500\nfecha: 2026-10-22\nproducto: acme\nregla: errores-500\nseveridad: alta\ndiagnostico: DIAGNOSTICO-PRIVADO del vigilante\nveredicto: pendiente\nvista_por_ultima_vez: 2026-10-24\nnoches_seguidas: 3\npropuesta_accion: aceptar\npropuesta_razon: Es ruido de un cliente de prueba\nstory_creada: https://dev.acme.example/acme/_workitems/edit/88\nevidencia:\n  - EVIDENCIA-PRIVADA tachada\n',
-  'inbox/watcher/pending/vig-dos.yaml': 'id: vig-dos\nfuente: vigilante\ncausa: acme:lentitud\nfecha: 2026-10-23\nproducto: acme\nregla: lentitud\nveredicto: pendiente\npropuesta_accion: arreglar\npropuesta_razon: mirar /etc/passwd en acme.example\nstory_creada: algo escrito a mano con espacios\n',
+  'inbox/watcher/pending/vig-uno.yaml': '# borrador del vigilante\nid: vig-uno\nfuente: vigilante\ncausa: acme:errores-500\nfecha: 2026-10-22\nproducto: acme\nregla: errores-500\nseveridad: alta\ndiagnostico: DIAGNOSTICO-PRIVADO del vigilante\nveredicto: pendiente\nvista_por_ultima_vez: 2026-10-24\nnoches_seguidas: 3\npropuesta_accion: aceptar\npropuesta_razon: Es ruido de un cliente de prueba\npropuesta_modelo: sonnet\nstory_creada: https://dev.acme.example/acme/_workitems/edit/88\nevidencia:\n  - EVIDENCIA-PRIVADA tachada\n',
+  'inbox/watcher/pending/vig-dos.yaml': 'id: vig-dos\nfuente: vigilante\ncausa: acme:lentitud\nfecha: 2026-10-23\nproducto: acme\nregla: lentitud\nveredicto: pendiente\npropuesta_accion: arreglar\npropuesta_razon: mirar /etc/passwd en acme.example\npropuesta_modelo: sonnet\nstory_creada: algo escrito a mano con espacios\n',
   [`inbox/runs-review/pending/${EJ1.id}.yaml`]: CYCLE.serializar(EJ1_CON),
   [`inbox/runs-review/promoted/${EJ2.id}.yaml`]: CYCLE.serializar(EJ2),
   [`inbox/runs-review/archived/${EJ_RES.id}.yaml`]: CYCLE.serializar(EJ_RES),
@@ -124,7 +124,9 @@ async function conSitio({ politica = true, autoApply = false, extra = {}, clones
     const cfg = validarConfiguracion(env).cfg;
     if (dataDir) cfg.dataDir = dataDir;
     const reloj = { t: AHORA };
-    const hallazgos = FINDINGS().crearRutas({ cfg, fuentes, ahora: () => reloj.t, urlBase: { github: api.base } });
+    // lo que el sitio deja en su registro
+    const registro = [];
+    const hallazgos = FINDINGS().crearRutas({ cfg, fuentes, ahora: () => reloj.t, urlBase: { github: api.base }, log: (x) => registro.push(String(x)) });
     const rutasExtra = [...hallazgos, ...RUNS().crearRutas({ cfg, fuentes, version: '2026.10.25.1' })];
     h = await H.arrancarSitio({ env, fuentes, rutasExtra });
     const entrar = async (email) => (await H.ingresar(h, emisor, { sub: `s-${email}`, email, email_verified: true })).sesion;
@@ -138,7 +140,7 @@ async function conSitio({ politica = true, autoApply = false, extra = {}, clones
     const enviar = async (...ds) => confirmar({ decisiones: ds.map(([fuente, id, accion]) => ({ fuente, id, accion })) });
     const fila = (j, fuente, id) => (j.toca || []).find((x) => x.fuente === fuente && x.id === id);
     const llamadasPedidos = () => api.llamadas.filter((l) => l.method === 'GET' && /\/pulls$/.test(l.ruta)).length;
-    await fn({ h, api, ops, lead, dev, tok, lista, confirmar, enviar, fila, reloj, llamadasPedidos, entrar, fuentes });
+    await fn({ h, api, ops, lead, dev, tok, lista, confirmar, enviar, fila, reloj, llamadasPedidos, entrar, fuentes, registro });
   } finally { await Promise.allSettled([h && h.cerrar(), emisor && emisor.cerrar(), api && api.cerrar()].filter(Boolean)); }
 }
 
@@ -175,7 +177,7 @@ test('T31 Mantenimiento_TresBloques_PorQuienTienePelota — te toca decidir, esp
     assert.doesNotMatch(p.texto, /<table/);
     assert.strictEqual((p.texto.match(/<article class="m-carta[^"]*" data-ficha="/g) || []).length, 4, 'una tarjeta por ficha que espera decisión');
     assert.match(p.texto, /Te toca decidir \(4\)/);
-    assert.match(p.texto, /<details class="m-bloque m-marcha"><summary>[^<]*En marcha \(2\)/, 'en marcha, cerrado');
+    assert.match(p.texto, /<details class="m-bloque m-marcha"><summary>[^<]*Arreglos en curso \(2\)/, 'arreglos en curso, cerrado');
     assert.doesNotMatch(p.texto, /<h2>Esperando aprobación/, 'sin nada esperando, el bloque no se ve');
     assert.match(p.texto, /href="https:\/\/dev\.acme\.example\/acme\/_workitems\/edit\/77"[^>]*>Tarea 77</);
     assert.match(p.texto, /href="https:\/\/dev\.azure\.com\/acme\/Producto%20X\/_workitems\/edit\/5002"[^>]*>Tarea 5002 \(Producto X\)</);
@@ -454,11 +456,11 @@ test('T58 Sitio_DecisionEnMain_AprobadoSeAplicaEstaNoche — con la decisión en
     const j = (await lista()).json;
     assert.ok(!j.toca.some((x) => x.id === 'vig-uno'));
     assert.deepStrictEqual(j.espera, [], 'nadie más tiene que aprobarla');
-    assert.deepStrictEqual(j.decididas, [{ fuente: 'vigilante', id: 'vig-uno', nombre: 'Acme: un error que la noche marcó', accion: 'aceptar', quien: 'lead', el: '2026-10-24', donde: 'acme', estado: 'esta_noche' }]);
+    assert.deepStrictEqual(j.decididas, [{ fuente: 'vigilante', id: 'vig-uno', nombre: 'Acme: un error que la noche marcó', accion: 'aceptar', quien: 'lead', el: '2026-10-24', donde: 'acme', estado: 'esta_noche', vista_el: null, tarea: null }]);
     const p = await h.pedir('/mantenimiento', { cookie: lead });
     assert.doesNotMatch(p.texto, /<div class="m-bloque m-espera">|Aprobado: se aplica/);
-    assert.match(p.texto, /<summary data-t="Ya decididas \(\{n\}\)">Ya decididas \(1\)<\/summary>/);
-    assert.match(p.texto, /<li data-ficha="vigilante\/vig-uno"><b>Acme: un error que la noche marcó<\/b> <span class="m-tarea">acme · Archivar · 24\/10 · lead · la aplica la revisión de esta noche<\/span><\/li>/);
+    assert.match(p.texto, /<summary data-t="Historial de decisiones \(\{n\}\)">Historial de decisiones \(1\)<\/summary>/);
+    assert.match(p.texto, /<li data-ficha="vigilante\/vig-uno"><b>Acme: un error que la noche marcó<\/b> <span class="m-tarea">acme · Archivar · lead · decidida el 24\/10 · la aplica la revisión de esta noche<\/span><\/li>/);
     // y un envío tardío no abre otro pedido
     const r = await enviar(['vigilante', 'vig-uno', 'arreglar']);
     assert.strictEqual(r.json.codigo, 'nada_que_enviar');
@@ -576,34 +578,37 @@ test('T70 Mantenimiento_SaleDeEjecuciones — lo que encontró la noche tiene su
 });
 
 // Mantenimiento_QuePasoYMeta
-// 🔴 Falla con: una tarjeta que dice sólo el nombre de la causa, las máquinas o las stories en la frase en lugar del
-// detalle, una fecha en otro formato que DD/MM, o los datos del vigilante sin usar.
-test('T71 Mantenimiento_QuePasoYMeta — cada tarjeta dice qué pasó con los datos de la ficha; máquinas y stories, en el detalle', { timeout: 60000 }, async () => {
+// 🔴 Falla con: una tarjeta que dice sólo el nombre de la causa, sin explicar el control; las historias y las máquinas
+// escondidas en un desplegable; una fecha en otro formato que DD/MM, o los datos del vigilante sin usar.
+test('T71 Mantenimiento_QuePasoYMeta @story-2.79 @ac-72 — cada tarjeta cuenta el caso en llano, con sus historias y máquinas a la vista', { timeout: 60000 }, async () => {
   await conSitio({ extra: { ...extraDe(EJ_CASOS, EJ_UNA), 'inbox/watcher/pending/vig-tres.yaml': VIG_SENAL } }, async ({ h, lead, lista, fila }) => {
     const j = (await lista()).json;
     const c = fila(j, 'ejecuciones', EJ_CASOS.id);
     assert.strictEqual(c.meta, '5 veces · 2 máquinas · última vez 22/10');
-    assert.strictEqual(c.que_paso, 'Pasó 5 veces, del 21/10 al 22/10.');
+    // un tipo de caso sin frase propia dice su nombre
+    assert.strictEqual(c.que_paso, 'Entre el 21/10 y el 22/10, 5 ejecuciones tuvieron el mismo problema: aviso automático con error. Historias: 1.5, 1.4, 1.3, 1.2, 1.1. Máquinas: mac-b, mac-a.');
     assert.deepStrictEqual(c.detalle, { maquinas: ['mac-b', 'mac-a'], stories: ['1.5', '1.4', '1.3', '1.2', '1.1'] });
+    // una sola, con la frase que explica el control
     const u = fila(j, 'ejecuciones', EJ_UNA.id);
     assert.strictEqual(u.meta, '1 vez · 1 máquina · última vez 22/10');
-    assert.strictEqual(u.que_paso, 'Pasó una vez, el 22/10.');
+    assert.strictEqual(u.que_paso, 'El 22/10, una ejecución terminó con el freno de seguridad apagado, el que frena los comandos peligrosos. Historias: 2.1. Máquinas: mac-c.');
     // sin casos, la cuenta y las fechas de la ficha
     const e1 = fila(j, 'ejecuciones', EJ1.id);
     assert.strictEqual(e1.meta, '4 veces · última vez 24/10');
-    assert.strictEqual(e1.que_paso, 'Pasó 4 veces, del 21/10 al 24/10.');
+    assert.strictEqual(e1.que_paso, 'Entre el 21/10 y el 24/10, 4 ejecuciones terminaron sin el pase adversarial, la revisión que intenta romper lo que ya se aprobó.');
     // el vigilante: sus números, su regla en llano, que ya había aparecido y cuánto tardó
     const v = fila(j, 'vigilante', 'vig-tres');
     assert.strictEqual(v.meta, 'acme · producción · 22/10');
     assert.strictEqual(v.que_paso, '15 errores 502 en el plugin utilesplugin sobre 21 solicitudes en 24 h. Es un tipo de error que no se había visto, o que coincide con un despliegue. Ya había aparecido desde el 06/10 y quedó sin mirar. Cada uno tardó unos 32 s antes de fallar.');
     assert.strictEqual(fila(j, 'vigilante', 'vig-uno').que_paso, 'Un error de producción que la noche marcó.');
-    // la página: la frase en la tarjeta y el detalle aparte, cerrado
+    // la página: la frase en la tarjeta, con las historias y las máquinas a la vista, sin desplegable
     const p = await h.pedir('/mantenimiento', { cookie: lead });
     const carta = cartaDe(p.texto, `ejecuciones/${EJ_CASOS.id}`);
-    assert.match(carta, /Qué pasó:<\/b> Pasó 5 veces, del 21\/10 al 22\/10\./);
-    assert.match(carta, /<details class="m-detalle"><summary>Ver detalle<\/summary>[\s\S]*Máquinas: mac-b, mac-a[\s\S]*Stories: 1\.5, 1\.4, 1\.3, 1\.2, 1\.1/);
+    assert.match(carta, /Qué pasó:<\/b> Entre el 21\/10 y el 22\/10, 5 ejecuciones tuvieron el mismo problema: aviso automático con error\. Historias: 1\.5, 1\.4, 1\.3, 1\.2, 1\.1\. Máquinas: mac-b, mac-a\./);
+    assert.doesNotMatch(carta, /m-detalle|Ver detalle/);
     const en = (await lista(`${lead}; sitio-idioma=en`)).json;
-    assert.strictEqual(fila(en, 'ejecuciones', EJ_CASOS.id).que_paso, 'It happened 5 times, from 21/10 to 22/10.');
+    assert.match(fila(en, 'ejecuciones', EJ_CASOS.id).que_paso, /^Between 21\/10 and 22\/10, 5 runs had the same problem: .+\. Stories: 1\.5, 1\.4, 1\.3, 1\.2, 1\.1\. Machines: mac-b, mac-a\.$/);
+    assert.strictEqual(fila(en, 'ejecuciones', EJ1.id).que_paso, 'Between 21/10 and 24/10, 4 runs ended without the adversarial pass, the review that tries to break what was already approved.');
     assert.strictEqual(fila(en, 'ejecuciones', EJ_CASOS.id).meta, '5 times · 2 machines · last time 22/10');
   });
 });
@@ -639,7 +644,8 @@ test('T72 Mantenimiento_Analisis_RecomiendaYOrden — el análisis dice por qué
     assert.match(b, /Análisis automático/);
     const c = cartaDe(p.texto, `ejecuciones/${C.id}`);
     assert.match(c, /class="m-carta sin-analizar"/);
-    assert.match(c, /<details class="m-sin-analisis"><summary>Decidir sin análisis<\/summary>[\s\S]*data-accion="aceptar"/);
+    // sin análisis ni propuesta: el lugar de decidir, a la vista y con su título
+    assert.match(c, /<div class="m-decidir"><p class="m-decidir-tit">Decidir \(sin análisis\)<\/p>[\s\S]*data-accion="aceptar"/);
     // la página en inglés dice que el análisis está en castellano
     const en = (await h.pedir('/mantenimiento', { cookie: `${lead}; sitio-idioma=en` })).texto;
     assert.match(cartaDe(en, `ejecuciones/${A.id}`), /\(the analysis is in Spanish\)/);
@@ -724,17 +730,17 @@ test('T75 Mantenimiento_Envio_FormaYTope — el envío se rechaza entero si no t
 
 // Mantenimiento_QuePaso_ClaseDeError
 // 🔴 Falla con: la clase sin decir, su clave cruda en lugar del texto, el código de salida perdido, o el otro idioma.
-test('M6 Mantenimiento_QuePaso_ClaseDeError — las ejecuciones dicen su error más común, con la clase en llano', { timeout: 60000 }, async () => {
+test('M6 Mantenimiento_QuePaso_ClaseDeError @story-2.79 @ac-72 — las ejecuciones dicen su error más común, con la clase en llano', { timeout: 60000 }, async () => {
   const conClase = { ...conCasos('RR-HOOK:UserPromptSubmit/carga', 'aviso automático con error', [caso(7, '2026-10-22', 'mac-a-0123abcd', '3.1'), caso(8, '2026-10-22', 'mac-a-0123abcd', '3.2')]),
     hechos: { errores: { 'sin-procesos': 146, otro: 2 }, error_clase: 'sin-procesos', error_clase_veces: 146, error_veces: 148 } };
   const conSalida = { ...conCasos('RR-HOOK:Stop/carga', 'aviso automático con error', [caso(9, '2026-10-22', 'mac-a-0123abcd', '3.3')]),
     hechos: { errores: { salida: 3 }, error_clase: 'salida', error_clase_veces: 3, error_veces: 3, error_codigo: 2 } };
   await conSitio({ extra: extraDe(conClase, conSalida) }, async ({ lead, lista, fila }) => {
     const j = (await lista()).json;
-    assert.strictEqual(fila(j, 'ejecuciones', conClase.id).que_paso, 'Pasó 2 veces, el 22/10. Error más común: la máquina no pudo abrir un proceso más («resource temporarily unavailable») (146 de 148).');
-    assert.strictEqual(fila(j, 'ejecuciones', conSalida.id).que_paso, 'Pasó una vez, el 22/10. Error más común: terminó con error (código 2) sin un mensaje reconocible (3 de 3).');
+    assert.strictEqual(fila(j, 'ejecuciones', conClase.id).que_paso, 'El 22/10, 2 ejecuciones tuvieron el mismo problema: aviso automático con error. Error más común: la máquina no pudo abrir un proceso más («resource temporarily unavailable») (146 de 148). Historias: 3.2, 3.1. Máquinas: mac-a.');
+    assert.strictEqual(fila(j, 'ejecuciones', conSalida.id).que_paso, 'El 22/10, una ejecución tuvo este problema: aviso automático con error. Error más común: terminó con error (código 2) sin un mensaje reconocible (3 de 3). Historias: 3.3. Máquinas: mac-a.');
     const en = (await lista(`${lead}; sitio-idioma=en`)).json;
-    assert.strictEqual(fila(en, 'ejecuciones', conClase.id).que_paso, 'It happened 2 times, on 22/10. Most common error: the machine could not start another process ("resource temporarily unavailable") (146 of 148).');
+    assert.match(fila(en, 'ejecuciones', conClase.id).que_paso, /^On 22\/10, 2 runs had the same problem: .+\. Most common error: the machine could not start another process \("resource temporarily unavailable"\) \(146 of 148\)\. Stories: 3\.2, 3\.1\. Machines: mac-a\.$/);
   });
 });
 
@@ -766,8 +772,8 @@ test('M7 Mantenimiento_VigilanteEnLlano — el título dice producto, plugin, qu
     assert.match(tres.sin_analizar, /la noche todavía no le llegó a esta ficha/);
     assert.match(fila(j, 'vigilante', 'vig-seis').sin_analizar, /el modelo falló tres noches seguidas y la noche dejó de pedírselo/);
     assert.doesNotMatch(tres.sin_analizar, /vuelve a intentar/);
-    assert.deepStrictEqual(fila(j, 'vigilante', 'vig-uno').propuesta, { accion: 'aceptar', razon: 'Es ruido de un cliente de prueba' });
-    assert.deepStrictEqual(fila(j, 'vigilante', 'vig-dos').propuesta, { accion: 'arreglar', razon: null }, 'la razón que no pasa el filtro no se muestra');
+    assert.deepStrictEqual(fila(j, 'vigilante', 'vig-uno').propuesta, { accion: 'aceptar', razon: 'Es ruido de un cliente de prueba', modelo: 'sonnet' });
+    assert.deepStrictEqual(fila(j, 'vigilante', 'vig-dos').propuesta, { accion: 'arreglar', razon: null, modelo: 'sonnet' }, 'la razón que no pasa el filtro no se muestra');
     const p = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
     assert.match(p, /<b class="m-nombre">Facturas · plugin utilesx: un error nuevo, o que apareció con un despliegue \(12 veces\)<\/b> <button type="button" class="m-q" popovertarget="m-ayuda-regla-deriva"/);
     assert.match(p, /<li><b>ABC · plugin abcbackend: no tuvo actividad, o está caído<\/b> <button type="button" class="m-q" popovertarget="m-ayuda-regla-latido"/);
@@ -775,10 +781,10 @@ test('M7 Mantenimiento_VigilanteEnLlano — el título dice producto, plugin, qu
     assert.match(p, /Es un tipo de error que no se había visto, o que coincide con un despliegue/);
     assert.doesNotMatch(p, /<b(?: class="m-nombre")?>(deriva|latido|goteo|desagregacion)</, 'ninguna clave cruda como título');
     assert.doesNotMatch(p, /vuelve a intentar/);
-    assert.match(p, /Propuesta del modelo: Archivar\. <span lang="es">Es ruido de un cliente de prueba<\/span>/);
+    assert.match(p, /Lo propone el modelo de IA que revisa cada noche: Archivar\. <span lang="es">Es ruido de un cliente de prueba<\/span>/);
     const en = (await lista(`${lead}; sitio-idioma=en`)).json;
     const pEn = (await h.pedir('/mantenimiento', { cookie: `${lead}; sitio-idioma=en` })).texto;
-    assert.match(pEn, /Model proposal: Archive\. <span lang="es">Es ruido de un cliente de prueba<\/span> \(the reason is in Spanish\)/);
+    assert.match(pEn, /Proposed by the AI model that reviews every night: Archive\. <span lang="es">Es ruido de un cliente de prueba<\/span> \(the reason is in Spanish\)/);
     assert.strictEqual(fila(en, 'vigilante', 'vig-tres').nombre, 'Facturas · plugin utilesx: a new error, or one that came with a deployment (12 times)');
   });
 });
@@ -1010,7 +1016,7 @@ test('T81 Mantenimiento_YaDecididas_QueQuienCuandoYSiSeAplico — qué se decidi
     assert.strictEqual(r.json.codigo, 'aplicado', r.texto);
     assert.deepStrictEqual(r.json.decididas, [{ clave: 'vigilante/vig-uno', accion: 'aceptar', quien: 'lead', el: '2026-10-25', donde: 'acme' }], 'la respuesta trae lo que pasa a «Ya decididas»');
     const esta = (await lista()).json;
-    assert.deepStrictEqual(esta.decididas, [{ fuente: 'vigilante', id: 'vig-uno', nombre: 'Acme: un error que la noche marcó', accion: 'aceptar', quien: 'lead', el: '2026-10-25', donde: 'acme', estado: 'esta_noche' }]);
+    assert.deepStrictEqual(esta.decididas, [{ fuente: 'vigilante', id: 'vig-uno', nombre: 'Acme: un error que la noche marcó', accion: 'aceptar', quien: 'lead', el: '2026-10-25', donde: 'acme', estado: 'esta_noche', vista_el: null, tarea: null }]);
     assert.strictEqual(esta.cuentas.decididas, 1);
     // el pedido entra en main, el sitio trae la foto nueva, y la noche aplica la decisión y borra su archivo
     const noche = path.join(ops.raiz, 'noche');
@@ -1025,9 +1031,9 @@ test('T81 Mantenimiento_YaDecididas_QueQuienCuandoYSiSeAplico — qué se decidi
     g(ops.clon, 'pull', '-q', '--no-rebase');
     assert.ok(!fs.existsSync(path.join(ops.clon, 'inbox', 'watcher', 'decisions', 'vig-uno.json')), 'la noche borró el archivo de la decisión');
     const despues = (await lista()).json;
-    assert.deepStrictEqual(despues.decididas, [{ fuente: 'vigilante', id: 'vig-uno', nombre: 'Acme: un error que la noche marcó', accion: 'aceptar', quien: 'lead', el: '2026-10-25', donde: 'acme', estado: 'aplicada' }], 'quién y cuándo siguen aunque el archivo ya no esté');
+    assert.deepStrictEqual(despues.decididas, [{ fuente: 'vigilante', id: 'vig-uno', nombre: 'Acme: un error que la noche marcó', accion: 'aceptar', quien: 'lead', el: '2026-10-25', donde: 'acme', estado: 'aplicada', vista_el: null, tarea: null }], 'quién y cuándo siguen aunque el archivo ya no esté');
     const p = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
-    assert.match(p, /<span class="m-tarea">acme · Archivar · 25\/10 · lead · la noche ya guardó la decisión<\/span>/);
+    assert.match(p, /<span class="m-tarea">acme · Archivar · lead · decidida el 25\/10<\/span>/);
     // el correo de la sesión está en la cabecera de la página; en la sección y en la lista, no
     const seccion = p.slice(p.indexOf('<details class="m-bloque m-decididas"'), p.indexOf('</details>', p.indexOf('<details class="m-bloque m-decididas"')));
     assert.ok(!seccion.includes(LEAD) && !JSON.stringify(despues).includes(LEAD), 'sin el correo entero');
@@ -1045,7 +1051,7 @@ test('T82 Mantenimiento_Numeros_CambianSinRecargar — cada número trae su mold
     const p = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
     assert.match(p, /<button type="button" class="btn m-seguir" data-t="Seguir las recomendaciones \(\{n\}\)"/);
     assert.match(p, /<div class="m-bloque m-toca" data-t-vacio="Nada para decidir hoy\.">/);
-    assert.match(p, /<details class="m-bloque m-decididas"[^>]* data-t-esta-noche="la aplica la revisión de esta noche" data-t-sin-donde="sin dato de dónde"><summary data-t="Ya decididas \(\{n\}\)">/);
+    assert.match(p, /<details class="m-bloque m-decididas"[^>]* data-t-esta-noche="la aplica la revisión de esta noche" data-t-decidida="decidida el \{dia\}" data-t-sin-donde="sin dato de dónde"><summary data-t="Historial de decisiones \(\{n\}\)">/);
     const cli = (await h.pedir('/hallazgos/cliente.js', { cookie: lead })).texto;
     assert.match(cli, /function aDecididas\(/, 'lo decidido pasa a «Ya decididas»');
     // la fecha de la fila nueva: la expresión llega entera al navegador (en el molde, `\d` sin duplicar se pierde)
@@ -1266,7 +1272,7 @@ test('T91 Mantenimiento_Dependencia_QueEsYSugerencia — la carta dice qué es l
     const j = (await lista()).json;
     const con = fila(j, 'dependencias', 'dep-aviso');
     assert.deepStrictEqual(con.aviso, { resumen: 'Denial of Service via RouterLink <img src=x onerror=alert(1)> in SSR (CVE-2026-111751)', parche: '22.2.1, 21.2.25' });
-    assert.deepStrictEqual(con.propuesta, { accion: 'revisar', razon: 'Antes de aceptar, mirá si el sitio usa la representación del lado del servidor' });
+    assert.deepStrictEqual(con.propuesta, { accion: 'revisar', razon: 'Antes de aceptar, mirá si el sitio usa la representación del lado del servidor', modelo: 'gemma4:31b' });
     assert.strictEqual(con.recomendada, null, 'la sugerencia no se sigue en bloque');
     assert.deepStrictEqual(fila(j, 'dependencias', 'dep-sinaviso').aviso, { sin_leer: true });
     assert.strictEqual(fila(j, 'dependencias', 'dep-sinaviso').propuesta, null);
@@ -1473,4 +1479,244 @@ test('T63 2.79-Ayudas_CadaUnaJuntoASuPalabra @story-2.79 @ac-52 — cada «?» s
   const C = FINDINGS().CLIENTE;
   assert.match(C, /addEventListener\('toggle'/, 'el cliente escucha la apertura de cada ventanita');
   assert.match(C, /getBoundingClientRect\(\)/, 'y la ubica según dónde está su botón');
+});
+
+// ── Mantenimiento: cuándo se procesa lo que decidís ───────────────────────────────────────────────────────────────────
+
+// 2.79-Mantenimiento_SinAnalizar_NoTraePropuestaYSeVeDondeDecidir
+// 🔴 Falla con: una ficha que dice «Sin analizar» y «Propuesta del modelo» a la vez, una propuesta sin modelo que se
+//    muestra como del modelo, o los botones escondidos en un desplegable cerrado que no dice que ahí se decide.
+const VIG_SIN_MODELO = 'id: vig-cinco\nfuente: vigilante\ncausa: acme:latido\nfecha: 2026-10-23\nproducto: acme\nregla: latido\nveredicto: pendiente\npropuesta_accion: arreglar\npropuesta_razon: Hace dos días que no llega nada\n';
+test('T79 2.79-Mantenimiento_SinAnalizar_NoTraePropuestaYSeVeDondeDecidir @story-2.79 @ac-72 — sin análisis no hay propuesta del modelo, y el bloque de decidir se ve', { timeout: 60000 }, async () => {
+  // una dependencia con su aviso y una sugerencia que no dice de qué modelo salió: la misma regla que las demás fuentes
+  const DEP_SIN_MODELO = 'id: dep-sinmod\ndetectado: 2026-10-20\nveredicto: pendiente\npaquete: pkg-sinmod\nseveridad: high\nnoches: 2\npr: 12\npr_repo: acme/ops\naviso_resumen: Una falla de prueba\npropuesta_accion: aceptar\npropuesta_razon: Hay parche\n';
+  await conSitio({ extra: { 'inbox/watcher/pending/vig-cinco.yaml': VIG_SIN_MODELO, 'inbox/dependencies/pending/dep-sinmod.yaml': DEP_SIN_MODELO } }, async ({ h, lead, registro }) => {
+    const p = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
+    assert.doesNotMatch(p, /<details class="m-sin-analisis"/, 'los botones no van escondidos en un desplegable');
+    assert.doesNotMatch(cartaDe(p, 'dependencias/dep-sinmod'), /m-propuesta|Hay parche/, 'la sugerencia sin modelo de una dependencia tampoco se muestra');
+    assert.strictEqual(registro.filter((x) => /dependencias\/dep-sinmod/.test(x) && /propuesta/.test(x)).length, 1, `y queda en el registro: ${registro.join(' | ')}`);
+    // la ficha que vio el dueño: sin análisis y con la propuesta del modelo
+    const conPropuesta = cartaDe(p, `ejecuciones/${EJ1.id}`);
+    assert.doesNotMatch(conPropuesta, /Sin analizar/, 'con propuesta del modelo, no dice a la vez «Sin analizar»');
+    // el título no repite la propuesta: ya está en el renglón de arriba
+    assert.match(conPropuesta, /<div class="m-decidir"><p class="m-decidir-tit">Decidir<\/p>/);
+    assert.match(conPropuesta, /<button type="button" class="m-elegir m-propuesto" data-accion="arreglar"/, 'el botón propuesto, resaltado');
+    assert.match(conPropuesta, /<button type="button" class="m-elegir" data-accion="aceptar"/, 'el otro, a la vista y sin resaltar');
+    // una propuesta que no salió de un análisis dice de dónde salió, sin nombres internos: el modelo de la noche
+    assert.match(conPropuesta, /<p class="m-propuesta">Lo propone el modelo de IA que revisa cada noche: Arreglar\./);
+    assert.doesNotMatch(conPropuesta, /sonnet/, 'el nombre interno del modelo no se muestra');
+    // una propuesta que no dice de qué modelo salió no se muestra como del modelo: queda en el registro
+    const sinModelo = cartaDe(p, 'vigilante/vig-cinco');
+    assert.doesNotMatch(sinModelo, /propone|Propuesta del modelo|m-propuesto/);
+    assert.match(sinModelo, /<p class="m-sin">Sin analizar: /);
+    assert.match(sinModelo, /<div class="m-decidir"><p class="m-decidir-tit">Decidir \(sin análisis\)<\/p>/);
+    assert.match(sinModelo, /data-accion="aceptar"[^]*data-accion="arreglar"/);
+    assert.strictEqual(registro.filter((x) => /vigilante\/vig-cinco/.test(x) && /propuesta/.test(x)).length, 1, `la propuesta sin modelo queda en el registro: ${registro.join(' | ')}`);
+    await h.pedir('/mantenimiento', { cookie: lead });
+    assert.strictEqual(registro.filter((x) => /vigilante\/vig-cinco/.test(x) && /propuesta/.test(x)).length, 1, 'una vez, no en cada página');
+    // en inglés, lo mismo
+    const en = (await h.pedir('/mantenimiento', { cookie: `${lead}; sitio-idioma=en` })).texto;
+    assert.match(cartaDe(en, `ejecuciones/${EJ1.id}`), /<p class="m-decidir-tit">Decide<\/p>/);
+    assert.match(cartaDe(en, `ejecuciones/${EJ1.id}`), /Proposed by the AI model that reviews every night: Fix\./);
+    assert.match(cartaDe(en, 'vigilante/vig-cinco'), /<p class="m-decidir-tit">Decide \(not analyzed\)<\/p>/);
+    const css = fs.readFileSync(path.join(H.SITE, 'static', 'site.css'), 'utf8');
+    assert.match(css, /\.m-propuesto\s*\{/, 'el resaltado del botón propuesto tiene su estilo');
+  });
+});
+
+// 2.79-Mantenimiento_Enviar_DiceQuePasaYCuando
+// 🔴 Falla con: «Enviado» sin decir qué pasa después ni cuándo; más de una línea; números de pull request, nombres de
+//    paquetes o «UTC» en la línea; una hora inventada cuando no hay cron que leer; «a más tardar» que no es la última
+//    revisión de la noche; prometer una tarea que no se crea; hablar de aprobar con auto_apply.
+const CRONES = {
+  // como vienen en los pipelines de verdad: sangría, guion, comillas y un comentario al final
+  'pipelines/runs-review.yml': "trigger: none\nschedules:\n  - cron: '0 3 * * *'   # 03:00 UTC, todos los días\n    branches:\n      include: [main]\n",
+  // en una organización de GitHub, el de producción vive en .github/workflows/
+  '.github/workflows/production-watch.yml': 'on:\n  schedule:\n    - cron: "15 8 * * *"\n',
+};
+const CRON_DEP = { 'pipelines/dependency-audit.yml': "schedules:\n  - cron: '0 4 * * *'\n" };
+const DEP_TAREA = 'id: dep-tarea\ndetectado: 2026-10-20\nveredicto: pendiente\npaquete: pkg-tarea\nseveridad: high\nnoches: 2\npr: 11\npr_repo: acme/ops\nrepos:\n  - Producto X/FrontEnd\npedidos:\n  - Producto X: 5003\n';
+const SIN_NUMEROS = /\d|pkg-|UTC|pedido/;
+test('T80 2.79-Mantenimiento_Enviar_DiceQuePasaYCuando @story-2.79 @ac-73 — al enviar, una línea: dónde quedó, cuándo se aplica (a más tardar) y si crea la tarea', { timeout: 120000 }, async () => {
+  const extra = { ...CRONES, 'inbox/dependencies/pending/dep-tarea.yaml': DEP_TAREA, 'inbox/watcher/pending/vig-cinco.yaml': VIG_SIN_MODELO };
+  // sin el pipeline de los paquetes: la línea no dice hora, y la ficha que ya tiene su tarea lo dice en un renglón aparte
+  await conSitio({ extra }, async ({ h, lead, enviar, registro }) => {
+    const r = await enviar(['vigilante', 'vig-cinco', 'arreglar'], ['ejecuciones', EJ1.id, 'arreglar'], ['dependencias', 'dep-tarea', 'aceptar']);
+    assert.strictEqual(r.json.ok, true, r.texto);
+    const q = r.json.queSigue;
+    assert.ok(q && typeof q.texto === 'string', `la respuesta dice qué sigue: ${r.texto}`);
+    assert.strictEqual(q.hora, null, 'sin el horario de una fuente enviada no se promete una hora');
+    assert.strictEqual(q.texto, 'Tus decisiones quedaron en un pull request. Cuando alguien lo apruebe, se aplican en la próxima revisión de la noche, y ahí se crea la tarea.');
+    assert.deepStrictEqual(q.notas, ['«Se saltó el pase adversarial» no crea una tarea nueva: ya tiene la suya.']);
+    for (const x of [q.texto, ...q.notas]) assert.doesNotMatch(x, SIN_NUMEROS, `sin números ni nombres internos: ${x}`);
+    assert.strictEqual(registro.filter((x) => /dependency-audit\.yml/.test(x)).length, 1, `el cron que no se pudo leer, en el registro: ${registro.join(' | ')}`);
+    // otro envío no repite el renglón
+    const otra = await enviar(['vigilante', 'vig-uno', 'aceptar']);
+    assert.strictEqual(otra.json.ok, true, `el segundo envío corrió: ${otra.texto}`);
+    assert.strictEqual(registro.filter((x) => /dependency-audit\.yml/.test(x)).length, 1, 'una vez por archivo y por arranque');
+    // la pantalla pone la hora local de quien mira, a partir de la hora de la respuesta
+    const cli = (await h.pedir('/hallazgos/cliente.js', { cookie: lead })).texto;
+    assert.match(cli, /queSigue/, 'el navegador arma lo que sigue con la respuesta');
+    assert.match(cli, /toLocaleTimeString/, 'y pasa la hora a la de quien mira');
+    assert.doesNotMatch(TX.t('es', 'ayuda.arreglar'), /la noche siguiente/, 'la ayuda no contradice la línea');
+    assert.doesNotMatch(TX.t('es', 'mant.marcha.intro'), /noche siguiente/);
+  });
+  // con los tres horarios: «a más tardar» es la última revisión de las fuentes enviadas
+  await conSitio({ extra: { ...extra, ...CRON_DEP } }, async ({ enviar }) => {
+    const r = await enviar(['vigilante', 'vig-cinco', 'arreglar'], ['dependencias', 'dep-tarea', 'aceptar']);
+    assert.strictEqual(r.json.queSigue.hora, '08:15');
+    assert.strictEqual(r.json.queSigue.texto, 'Tus decisiones quedaron en un pull request. Cuando alguien lo apruebe, se aplican en la próxima revisión de la noche, a más tardar a las {hora}, y ahí se crea la tarea.');
+    assert.deepStrictEqual(r.json.queSigue.notas, []);
+    // archivar no crea tarea: la línea no la promete
+    const a = await enviar(['ejecuciones', EJ1.id, 'aceptar']);
+    assert.strictEqual(a.json.queSigue.hora, '03:00');
+    assert.strictEqual(a.json.queSigue.texto, 'Tu decisión quedó en un pull request. Cuando alguien lo apruebe, se aplica en la próxima revisión de la noche, a más tardar a las {hora}.');
+  });
+  // la noche cruza las 00:00 UTC: la última es la de después de medianoche
+  await conSitio({ extra: { 'pipelines/runs-review.yml': "schedules:\n  - cron: '30 23 * * *'\n", 'pipelines/production-watch.yml': "schedules:\n  - cron: '0 2 * * *'\n" } }, async ({ enviar }) => {
+    const r = await enviar(['vigilante', 'vig-uno', 'aceptar'], ['ejecuciones', EJ1.id, 'aceptar']);
+    assert.strictEqual(r.json.queSigue.hora, '02:00');
+  });
+  // con auto_apply no hay aprobación que esperar
+  await conSitio({ extra, autoApply: true }, async ({ enviar }) => {
+    const r = await enviar(['vigilante', 'vig-cinco', 'arreglar']);
+    assert.strictEqual(r.json.codigo, 'aplicado', r.texto);
+    assert.strictEqual(r.json.queSigue.texto, 'Tu decisión quedó guardada. Se aplica en la próxima revisión de la noche, a más tardar a las {hora}, y ahí se crea la tarea.');
+  });
+  // la ficha que ya tiene su historia: no promete la tarea y dice por qué
+  await conSitio({ extra }, async ({ enviar }) => {
+    const r = await enviar(['vigilante', 'vig-dos', 'arreglar']);
+    assert.strictEqual(r.json.queSigue.texto, 'Tu decisión quedó en un pull request. Cuando alguien lo apruebe, se aplica en la próxima revisión de la noche, a más tardar a las {hora}.');
+    assert.match(r.json.queSigue.notas[0], /^«[^»]+» no crea una tarea nueva: ya tiene su historia\.$/, r.json.queSigue.notas.join(' | '));
+  });
+  // dos horarios en el mismo pipeline: no se elige uno, y queda en el registro
+  await conSitio({ extra: { 'pipelines/production-watch.yml': "schedules:\n  - cron: '0 8 * * *'\n  - cron: '0 20 * * *'\n" } }, async ({ enviar, registro }) => {
+    const r = await enviar(['vigilante', 'vig-uno', 'aceptar']);
+    assert.strictEqual(r.json.queSigue.hora, null);
+    assert.ok(registro.some((x) => /production-watch\.yml trae 2 horarios/.test(x)), registro.join(' | '));
+  });
+  // un cron con otra forma no inventa la hora
+  await conSitio({ extra: { 'pipelines/production-watch.yml': "schedules:\n  - cron: '*/30 8 * * 1-5'\n" } }, async ({ enviar, registro }) => {
+    const r = await enviar(['vigilante', 'vig-uno', 'aceptar']);
+    assert.strictEqual(r.json.queSigue.hora, null);
+    assert.strictEqual(r.json.queSigue.texto, 'Tu decisión quedó en un pull request. Cuando alguien lo apruebe, se aplica en la próxima revisión de la noche.');
+    assert.ok(registro.some((x) => /production-watch\.yml/.test(x)), registro.join(' | '));
+  });
+});
+
+// 2.79-Mantenimiento_Listas_EstadoConFechaYNombresNuevos
+// 🔴 Falla con: una fila sin fecha de decidida, «aplicada» con la fecha de hoy del servidor o con una foto que no leyó
+//    esa fuente, una fecha para una fila de antes del cambio, una decisión nueva que conserva la fecha de aplicada
+//    vieja, una clave nueva en una ficha de la noche, o los nombres viejos de las listas.
+test('T81 2.79-Mantenimiento_Listas_EstadoConFechaYNombresNuevos @story-2.79 @ac-74 — cada fila con su estado y su fecha, y las listas con su nombre nuevo', { timeout: 120000 }, async () => {
+  const datos = tmp('site-findings-t81-');
+  const archivo = path.join(datos, 'mantenimiento-decididas.json');
+  const anotada = (el, mas = {}) => ({ accion: 'aceptar', en: AHORA - 3600 * 1000, quien: LEAD, el, donde: 'acme', ...mas });
+  const VIG_CUATRO = 'id: vig-cuatro\nfuente: vigilante\ncausa: acme:goteo\nfecha: 2026-10-22\nproducto: acme\nregla: goteo\nveredicto: pendiente\n';
+  fs.writeFileSync(archivo, JSON.stringify({
+    // decidida, la ficha sigue en pending: la aplica esta noche
+    'vigilante/vig-uno': anotada('2026-10-24'),
+    // decidida y la ficha va a dejar de estar pendiente entre una foto y la otra
+    'vigilante/vig-cuatro': anotada('2026-10-24'),
+    // decidida antes de este cambio, ya aplicada: sólo «decidida el», nunca una fecha inventada
+    'ejecuciones/vieja-sin-fecha': anotada('2026-10-20', { visto: true, nombre: 'Una de antes' }),
+    // la que la noche no pudo aplicar
+    'dependencias/dep-fallo': anotada('2026-10-24'),
+    // la que está en las dos listas: decidida y con su tarea en «Arreglos en curso»
+    [`ejecuciones/${EJ2.id}`]: { ...anotada('2026-10-23'), accion: 'arreglar', pendiente: true },
+  }));
+  const extra = { 'inbox/watcher/pending/vig-cuatro.yaml': VIG_CUATRO, 'inbox/dependencies/pending/dep-fallo.yaml': DEP_FALLO };
+  const indice = { hora: '2026-10-26T04:30:00Z', commit: 'a'.repeat(40), huella: 'f'.repeat(16) };
+  const conIndice = (ops) => ({ operaciones: { dir: ops.clon, indice }, perfil: null });
+  const filaDe = (p, k) => (new RegExp(`<li data-ficha="${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}">[^\\n]*?</li>`).exec(p) || [''])[0];
+  const fichasAntes = {};
+  await conSitio({ dataDir: datos, extra, clones: conIndice }, async ({ h, ops, lead, lista }) => {
+    for (const rel of g(ops.clon, 'ls-files').split('\n').filter((x) => x.startsWith('inbox/'))) fichasAntes[rel] = fs.readFileSync(path.join(ops.clon, rel), 'utf8');
+    // la primera foto: las dos decididas siguen en pending
+    let j = (await lista()).json;
+    let est = Object.fromEntries(j.decididas.map((x) => [x.id, x]));
+    assert.strictEqual(est['vig-uno'].estado, 'esta_noche');
+    assert.strictEqual(est['vig-cuatro'].estado, 'esta_noche');
+    assert.strictEqual(est['vieja-sin-fecha'].vista_el, null, 'la de antes no recibe una fecha');
+    assert.strictEqual(est[EJ2.id].estado, 'aplicada');
+    assert.strictEqual(est[EJ2.id].vista_el, '2026-10-26', 'aplicada y vista con la foto del 26');
+    assert.strictEqual(est[EJ2.id].tarea, '77', 'con la tarea de la misma foto');
+    // la segunda foto: vig-cuatro ya no está en pending (la noche la aplicó)
+    fs.rmSync(path.join(ops.clon, 'inbox', 'watcher', 'pending', 'vig-cuatro.yaml'));
+    indice.hora = '2026-10-27T04:30:00Z';
+    j = (await lista()).json;
+    est = Object.fromEntries(j.decididas.map((x) => [x.id, x]));
+    assert.deepStrictEqual([est['vig-cuatro'].estado, est['vig-cuatro'].vista_el, est['vig-cuatro'].tarea], ['aplicada', '2026-10-27', null]);
+    assert.strictEqual(est[EJ2.id].vista_el, '2026-10-26', 'la fecha es la de la primera vez que se vio');
+    assert.strictEqual(est['dep-fallo'].estado, 'no_aplicada');
+    const p = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
+    assert.match(filaDe(p, 'vigilante/vig-uno'), /<span class="m-tarea">acme · Archivar · lead · decidida el 24\/10 · la aplica la revisión de esta noche<\/span>/);
+    assert.match(filaDe(p, 'vigilante/vig-cuatro'), /lead · decidida el 24\/10 · aplicada, vista el 27\/10<\/span>/);
+    assert.match(filaDe(p, `ejecuciones/${EJ2.id}`), /decidida el 23\/10 · aplicada, vista el 26\/10 · tarea 77<\/span>/);
+    assert.match(filaDe(p, 'ejecuciones/vieja-sin-fecha'), /lead · decidida el 20\/10<\/span>/, 'la de antes: sólo «decidida el»');
+    assert.match(filaDe(p, 'dependencias/dep-fallo'), /decidida el 24\/10 · la noche no la pudo aplicar/);
+    // los nombres nuevos, y el historial plegado al fondo, después de los arreglos en curso
+    assert.doesNotMatch(p, /Ya decididas|En marcha/);
+    const marcha = p.indexOf('<details class="m-bloque m-marcha">');
+    const historial = p.indexOf('<details class="m-bloque m-decididas"');
+    assert.ok(marcha > 0 && historial > marcha, 'el historial va después de los arreglos en curso');
+    assert.match(p, /<summary data-t="Historial de decisiones \(\{n\}\)">Historial de decisiones \(5\)<\/summary>/);
+    assert.match(p, /<summary>Arreglos en curso \(\d+\)<\/summary><p class="m-intro">[^<]*Una ficha puede estar acá y en el historial de decisiones/);
+    // una decisión nueva por main sobre una ficha ya aplicada borra la fecha: vuelve a pending con su decisión en main
+    fs.writeFileSync(path.join(ops.clon, 'inbox', 'watcher', 'pending', 'vig-cuatro.yaml'), VIG_CUATRO);
+    fs.mkdirSync(path.join(ops.clon, 'inbox', 'watcher', 'decisions'), { recursive: true });
+    fs.writeFileSync(path.join(ops.clon, 'inbox', 'watcher', 'decisions', 'vig-cuatro.json'), `${JSON.stringify({ fuente: 'vigilante', id: 'vig-cuatro', accion: 'arreglar', quien: LEAD, el: '2026-10-27' }, null, 2)}\n`);
+    j = (await lista()).json;
+    est = Object.fromEntries(j.decididas.map((x) => [x.id, x]));
+    assert.deepStrictEqual([est['vig-cuatro'].estado, est['vig-cuatro'].vista_el], ['esta_noche', null], 'decidida otra vez por main: sin la fecha vieja');
+    assert.deepStrictEqual([est['vig-cuatro'].accion, est['vig-cuatro'].el], ['arreglar', '2026-10-27'], 'con el día de la decisión nueva, no el de la anterior');
+    assert.ok(!('aplicada_vista_el' in JSON.parse(fs.readFileSync(archivo, 'utf8'))['vigilante/vig-cuatro']), 'y el registro la borró');
+    // la noche no ve nada de esto: ninguna ficha cambió
+    fs.rmSync(path.join(ops.clon, 'inbox', 'watcher', 'decisions', 'vig-cuatro.json'));
+    for (const [rel, txt] of Object.entries(fichasAntes)) assert.strictEqual(fs.readFileSync(path.join(ops.clon, rel), 'utf8'), txt, `${rel} no cambió`);
+  });
+  // por el sitio: una decisión nueva (marcar) sobre una ya aplicada empieza sin la fecha
+  const D = FINDINGS().crearDecididas({ dataDir: datos, ahora: () => AHORA });
+  assert.strictEqual(D.historia().find((x) => x.clave === `ejecuciones/${EJ2.id}`).aplicada_vista_el, '2026-10-26');
+  D.marcar([{ clave: `ejecuciones/${EJ2.id}`, accion: 'aceptar', quien: LEAD, el: '2026-10-27' }]);
+  assert.ok(!('aplicada_vista_el' in D.historia().find((x) => x.clave === `ejecuciones/${EJ2.id}`)), 'decidida otra vez por el sitio: sin la fecha vieja');
+  // con la fuente ilegible no se anota nada, aunque la ficha falte de la foto
+  const ilegible = tmp('site-findings-t81-ilegible-');
+  fs.writeFileSync(path.join(ilegible, 'mantenimiento-decididas.json'), JSON.stringify({ 'vigilante/vig-uno': anotada('2026-10-24', { pendiente: true }) }));
+  await conSitio({ dataDir: ilegible, clones: conIndice }, async ({ ops, lista }) => {
+    // la carpeta de la fuente es un archivo: no se puede leer, corra quien corra la prueba (como root, chmod 000 se lee)
+    const carpeta = path.join(ops.clon, 'inbox', 'watcher', 'pending');
+    fs.rmSync(carpeta, { recursive: true, force: true });
+    fs.writeFileSync(carpeta, 'no es una carpeta\n');
+    const x = (await lista()).json.decididas.find((y) => y.id === 'vig-uno');
+    assert.strictEqual(x.vista_el, null, 'una foto que no leyó la fuente no da fecha');
+    assert.ok(!('aplicada_vista_el' in JSON.parse(fs.readFileSync(path.join(ilegible, 'mantenimiento-decididas.json'), 'utf8'))['vigilante/vig-uno']));
+  });
+  // una decisión del sitio que nunca llegó a main (su pull request se cerró) vence a los 7 días: la ficha sigue esperando
+  // en la foto, así que no es «aplicada» ni recibe fecha
+  const vencida = tmp('site-findings-t81-vencida-');
+  fs.writeFileSync(path.join(vencida, 'mantenimiento-decididas.json'), JSON.stringify({ 'vigilante/vig-uno': anotada('2026-10-17', { en: AHORA - 8 * 24 * 3600 * 1000, pendiente: true }) }));
+  await conSitio({ dataDir: vencida, clones: conIndice }, async ({ h, lead, lista }) => {
+    const j = (await lista()).json;
+    const x = j.decididas.find((y) => y.id === 'vig-uno');
+    assert.ok(j.toca.some((y) => y.id === 'vig-uno'), 'la ficha vuelve a «Te toca decidir»');
+    assert.deepStrictEqual([x.estado, x.vista_el], ['sin_aplicar', null], 'y el historial no la da por aplicada');
+    assert.ok(!('aplicada_vista_el' in JSON.parse(fs.readFileSync(path.join(vencida, 'mantenimiento-decididas.json'), 'utf8'))['vigilante/vig-uno']));
+    assert.doesNotMatch(filaDe((await h.pedir('/mantenimiento', { cookie: lead })).texto, 'vigilante/vig-uno'), /aplicada/);
+  });
+  // una dependencia ya aplicada (rechazada, sigue en pending/ con su rechazo) nombra las tareas que trae la foto
+  const conTarea = tmp('site-findings-t81-dep-');
+  fs.writeFileSync(path.join(conTarea, 'mantenimiento-decididas.json'), JSON.stringify({ 'dependencias/dep-rech': { ...anotada('2026-10-24', { pendiente: true }), accion: 'reject' } }));
+  const DEP_RECH = 'id: dep-rech\ndetectado: 2026-10-19\nveredicto: pendiente\npaquete: pkg-rech\nseveridad: high\nnoches: 3\npr: 13\npr_repo: acme/ops\nrechazado: 2026-10-25\nrepos:\n  - Producto X/FrontEnd\npedidos:\n  - Producto X: 5002\n';
+  await conSitio({ dataDir: conTarea, clones: conIndice, extra: { 'inbox/dependencies/pending/dep-rech.yaml': DEP_RECH } }, async ({ lista }) => {
+    const x = (await lista()).json.decididas.find((y) => y.id === 'dep-rech');
+    assert.deepStrictEqual([x.estado, x.tarea], ['aplicada', '5002'], JSON.stringify(x));
+  });
+  // con el clon directo, sin índice, no hay día de la foto: no se anota, y nunca la fecha de hoy
+  const directo = tmp('site-findings-t81-directo-');
+  fs.writeFileSync(path.join(directo, 'mantenimiento-decididas.json'), JSON.stringify({ [`ejecuciones/${EJ2.id}`]: { ...anotada('2026-10-23'), accion: 'arreglar', pendiente: true } }));
+  await conSitio({ dataDir: directo }, async ({ h, lead, lista }) => {
+    assert.strictEqual((await lista()).json.decididas[0].vista_el, null);
+    assert.match(filaDe((await h.pedir('/mantenimiento', { cookie: lead })).texto, `ejecuciones/${EJ2.id}`), /lead · decidida el 23\/10 · tarea 77<\/span>/, 'sin fecha vista, pero con la tarea de la foto: la nombra');
+  });
 });

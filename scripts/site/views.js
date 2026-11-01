@@ -280,7 +280,7 @@ function filasArnes(m, { ahora = Date.now(), version = null, ultima = null, idio
       lista: rojas.map((nombre) => ({ nombre, nueva: Boolean(ayer && !ayer.has(nombre)) })) });
   } else lineas.push({ clave: 'suites', titulo: T('arnes.suites'), estado: 'no_medido', texto: sinMedir(s) });
   const e = m.examen;
-  lineas.push({ clave: 'examen', titulo: T('arnes.examen'), estado: medida(e) ? 'medido' : 'no_medido', texto: medida(e) ? `${T('arnes.examenFallos', { fecha: e.fecha, n: Number(e.fallos) || 0 })}${e.completo === false ? T('arnes.examenIncompleto') : ''}` : sinMedir(e) });
+  lineas.push({ clave: 'examen', titulo: T('arnes.examen'), estado: medida(e) ? 'medido' : 'no_medido', texto: medida(e) ? `${T(Number(e.fallos) === 1 ? 'arnes.examenFallos1' : 'arnes.examenFallos', { fecha: e.fecha, n: Number(e.fallos) || 0 })}${e.completo === false ? T('arnes.examenIncompleto') : ''}` : sinMedir(e) });
   const tb = m.tablero;
   const sello = medida(tb) && tb.sello ? tb.sello : null;
   lineas.push({ clave: 'sello', titulo: T('arnes.sello'), estado: sello ? 'medido' : 'no_medido', texto: sello ? `${String(sello.generado || '').slice(0, 10)} · ${T(sello.completo ? 'arnes.completa' : 'arnes.incompleta')}` : cf(tb) });
@@ -611,7 +611,7 @@ function seccionEstimaciones(m, idioma) {
   for (const p of productos) {
     if (p.sin_fotos) { filas.push(`<tr data-producto="${esc(p.producto)}"><th scope="row">${esc(p.producto)}</th><td class="nm" colspan="5">${esc(T('vista.noMedidoCon', { motivo: T('proyectos.sinFoto') }))}</td></tr>`); continue; }
     for (const r of p.repos) {
-      const ileg = r.ilegibles ? ` <span class="nota">${esc(T('proyectos.est.ilegibles', { n: r.ilegibles }))}</span>` : '';
+      const ileg = r.ilegibles ? ` <span class="nota">${esc(T(r.ilegibles === 1 ? 'proyectos.est.ilegibles1' : 'proyectos.est.ilegibles', { n: r.ilegibles }))}</span>` : '';
       if (!r.filas.length) { filas.push(`<tr data-producto="${esc(p.producto)}"><th scope="row">${esc(p.producto)}</th><td>${esc(`${p.producto} · ${r.repo}`)}</td><td${r.estado === 'no_medido' ? ' class="nm"' : ''} colspan="4">${esc(r.texto)}${ileg}</td></tr>`); continue; }
       r.filas.forEach((f, i) => {
         const nombre = `${p.producto} · ${r.repo} · ${T('proyectos.est.epica', { id: f.epica })}${f.titulo ? ` — ${f.titulo}` : ''}`;
