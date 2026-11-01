@@ -24,10 +24,10 @@ modelos abiertos vía [Ollama](guides/integrations/ollama.md), y con [Cursor](gu
 El ciclo de desarrollo con IA (AI SDLC), paso por paso:
 
 1. **Pedido e historia:** contás qué querés y el agente lo escribe como una historia (story): qué hay que hacer y cómo
-   se prueba. Para un ajuste chico alcanza con pedirlo con tus palabras.
-2. **Plan aprobado:** el agente arma el plan y te lo muestra; se aprueba antes de programar, nunca solo: con riesgo normal, la coordinadora; con riesgo alto, el dueño.
+   se prueba. Un cambio chico va por camino rápido: el motivo en una línea y la lista de archivos.
+2. **Plan aprobado:** el agente arma el plan y te lo muestra; se aprueba antes de programar, nunca solo: con riesgo normal, la coordinadora, sólo si la revisión automática del plan dio «aprobado»; con riesgo alto, el dueño.
 3. **Pruebas y código:** escribe las pruebas y el código, y corre las pruebas.
-4. **Revisión:** revisores especializados (seguridad, convenciones, cobertura) miran el cambio antes del commit.
+4. **Revisión:** en una historia, revisores especializados (seguridad, convenciones, cobertura) miran el cambio antes del commit; en un camino rápido, sólo con riesgo alto.
 5. **Entrega:** el commit y el merge pasan por controles. Nada se commitea ni se sube sin tu permiso.
 6. **Operación y medición:** cada merge a main deja su archivo de métricas, y los procesos de la noche de tu
    organización revisan las dependencias y arman el tablero del ciclo.
@@ -38,10 +38,11 @@ El ciclo de desarrollo con IA (AI SDLC), paso por paso:
 - **El tamaño decide: historia o camino rápido.** ¿Es un cambio chico? Lo pedís en una frase y, al terminar, ves que
   quedó con sólo mirar el resultado y sus pruebas. Entonces va por camino rápido: el motivo en una línea y la lista de
   archivos. Si no, va por historia: criterios, pruebas con nombre, el plan aprobado antes de programar y la revisión al
-  cerrar.
+  cerrar. También va por historia lo que necesita varias sesiones o espera a alguien de afuera.
 - **El riesgo decide quién aprueba.** Es alto si el cambio toca algo sensible del repo, como producción, una migración
   o seguridad, o si trae una decisión del dueño: alcance, seguridad, una dependencia nueva, plata, clientes u otras
-  personas. Ante la duda, alto. Con riesgo normal aprueba la coordinadora; con riesgo alto, el dueño. El dueño es la
+  personas. Ante la duda, alto. Con riesgo normal aprueba la coordinadora, que al abrir un camino rápido le avisa al dueño; con
+  riesgo alto, el dueño. El dueño es la
   persona que tu organización designa para aprobar lo delicado; si trabajás solo, sos vos. Sin coordinadora, lo suyo
   lo hace el dueño. El plan nunca se aprueba solo.
 - **Guardar es un sí en la ventana de permiso, en los dos caminos.** Antes de cada commit, push y pull request el
@@ -73,8 +74,14 @@ flowchart TB
   end
   r4 --> g1["<b>Guardar</b><br/>el sí en la ventana de permiso"]
   h8 --> g1
-  g1 --> g2["<b>Pull request</b><br/>la CI#59; en una historia, también el portón"]
+  g1 --> g2["<b>Pull request</b><br/>la CI"]
+  classDef decide fill:#2f6fde,stroke:#1f4fa8,color:#ffffff
+  classDef control fill:#F15A24,stroke:#b8410f,color:#ffffff
+  class r1,h3,g1 decide
+  class r4,h4,h5,h6,h7,h8,g2 control
 ```
+
+<sub>🟦 Decide alguien: una persona, o la coordinadora con riesgo normal · 🟧 Control que no se saltea</sub>
 
 Los controles son una parte del ciclo: cuidan cada paso. Se arranca de dos maneras: [solo, en tu
 máquina](#empezá-solo), o [para tu equipo](#para-equipos).
@@ -182,11 +189,11 @@ Una historia es tu pedido escrito, con sus criterios y sus pruebas: el agente la
 
 1. **Abrí tu agente de código en la carpeta de tu repo**: ahí escribe la historia, crea la rama y guarda los cambios. Si lo tenías abierto desde antes de instalar, cerralo y abrilo de nuevo: las reglas del arnés entran al abrirlo.
 2. **Decí que confiás en la carpeta**: la primera vez que abrís tu agente en esa carpeta, te pregunta si confiás en ella: contestá que sí.
-3. **Si la idea es grande, primero las historias.** Tu agente la lleva por etapas —entender el problema, el PRD, la arquitectura, las épicas— hasta dejar las historias; vos revisás cada etapa, y cada artefacto se commitea al repo, al lado del código. Para un cambio chico no hace falta: pedí la historia directo. · [▶ video](https://github.com/user-attachments/assets/24124d87-ebca-4069-8d82-d0b498f09518)
+3. **Si la idea es grande, primero las historias.** Tu agente la lleva por etapas —entender el problema, el PRD, la arquitectura, las épicas— hasta dejar las historias; vos revisás cada etapa, y cada artefacto se commitea al repo, al lado del código. Para una idea acotada no hace falta: pedí la historia directo. · [▶ video](https://github.com/user-attachments/assets/24124d87-ebca-4069-8d82-d0b498f09518)
 4. **Pedí la historia con tus palabras**, para que el cambio quede escrito antes de programar: «creá una historia para agregar un filtro por fecha».
 5. **Revisá la historia.** El agente la arma con lo que le pediste, contestando tres preguntas en llano (qué tiene que hacer, cómo se ve que anda y qué no tiene que tocar), y te marca lo que supuso. Te la muestra y la escribe con tu «sí». Si tu repo ya trae la carpeta `_bmad/`, la arma con lo que hay ahí.
 6. **Pedí «implementemos la story»**, para arrancar el recorrido: la frase va así. Si no hay git, lo inicia; si estás en `main`, crea la rama. Valida la historia y, si le falta algo, te pregunta si la arregla. Te muestra el plan y espera tu "sí" antes de programar. Después escribe las pruebas y el código, corre las pruebas y los revisores, y prueba cada criterio corriéndolo.
-7. **Revisá el resumen y decí «commitealo».** Te deja el mensaje armado y nunca commitea ni sube cambios sin tu permiso. Al cerrar la primera historia te ofrece la instalación completa.
+7. **Revisá el resumen.** Antes de commitear te pregunta «¿guardo?» en la ventana de permiso, y con un sí guarda: nunca commitea ni sube cambios sin tu permiso. Al cerrar la primera historia te ofrece la instalación completa.
 8. **Una historia con pantalla.** El agente arma una maqueta para que la apruebes antes de programar; si tu repo no tiene cómo probar en un navegador, te ofrece prepararlo; y te deja una guía para probarla a mano. · [▶ video](https://github.com/user-attachments/assets/8aa2c03a-03d7-42ab-b4ae-daf90a53e3c9)
 9. **Las reglas propias de tu proyecto.** Pedile a tu agente un revisor que controle una regla tuya (por ejemplo, «el email de un cliente nunca se muestra completo»): queda en tu repo de reglas y revisa cada historia junto con los del arnés. · [▶ video](https://github.com/user-attachments/assets/1ef473c6-f088-413f-8560-9d801e6a0c75)
 

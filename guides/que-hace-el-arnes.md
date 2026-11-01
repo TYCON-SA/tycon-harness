@@ -157,13 +157,13 @@ Cada artefacto **se commitea al repo**, al lado del código: versionado, con his
 cada punto de revisión se puede lanzar una pasada adversarial que verifica la concordancia entre los
 tres niveles — que un cambio en una story no rompa la arquitectura ni el PRD, y al revés.
 
-No todo pasa por la ceremonia completa: para un arreglo urgente o un cambio chico con alcance claro
-está la **rama corta**, sin PRD ni arquitectura formal. **La ceremonia escala con el riesgo.**
+No todo pasa por la ceremonia completa: para un cambio chico está el **camino rápido** (abajo). El papel lo decide
+el tamaño; quién aprueba, el riesgo.
 
 ### La medida justa: cuánto papel lleva cada cambio
 
 **El tamaño y el riesgo definen el flujo:** el tamaño decide si va por historia o por camino rápido; el riesgo decide
-quién aprueba y cuánta revisión lleva cada cambio. La medida la fija cada equipo.
+quién aprueba.
 
 Lo que leíste arriba es SDD: la spec antes que el código. Nuestra opinión, después de usarlo, es que hace falta
 **exactamente cuando el resultado no se puede juzgar mirándolo**: cuando necesitás una lista de criterios para
@@ -360,14 +360,14 @@ Arranque               → ¿sesión fresca? ¿repo limpio? ¿qué esfuerzo pide
                          arranca el reloj y la tarea pasa a Activa en Azure DevOps
 Validar la historia    → ¿está bien escrita? ¿los ACs son verificables?
 Armar el plan          → BMAD planifica la implementación
-⏸ Aprobar el plan      → VOS APROBÁS EL PLAN
+⏸ Aprobar el plan      → la coordinadora o el dueño, según el riesgo
 Implementar            → con portón de build
 Correr las pruebas
 Revisores              → en paralelo; el set se computa mecánicamente según qué tocó el diff
                          (si hubo arreglos, vuelven a correr: «Revisores, otra vuelta»)
 Pase adversarial       → un segundo grupo intenta romper lo que el primero aprobó;
                          la prueba con la que lo rompió entra a la suite como regresión
-⏸ Hallazgos            → reporte consolidado; VOS APROBÁS LOS HALLAZGOS
+⏸ Hallazgos            → reporte consolidado; un hallazgo crítico lo decide una persona
 Probar en vivo         → portón de "listo" de verdad: ¿esto ANDA, o sólo compila?
 Preparar el commit     → no lo ejecuta
 Cierre en ADO          → cierra el work item (aparte, después del merge)
@@ -383,9 +383,8 @@ después permite contestar *"¿y cómo sabés que corrieron de verdad?"*.
 la cosa anda —un llamado real contra el backend, una matriz por cada criterio de aceptación— y
 verifica **contra qué backend corrió** y si ese commit está en el servidor.
 
-**Y hay un cuarto modo, opt-in**: `--autonomous`. No cambia quién aprueba (el plan, el commit y
-producción siguen siendo de una persona, o de la coordinadora en su nombre donde el perfil lo
-delega): agrega un portón que **no deja que el turno termine** mientras el "listo" esté en rojo,
+**Y hay un cuarto modo, opt-in**: `--autonomous`. No cambia quién aprueba (el plan, según el riesgo; guardar,
+siempre tu sí en la ventana de permiso; producción, de una persona): agrega un portón que **no deja que el turno termine** mientras el "listo" esté en rojo,
 obligando a iterar probar→arreglar→volver a probar. Con tres frenos para que no sea un loop infinito: tope de
 iteraciones, detección de no-progreso (los mismos fallos N veces → escala a humano) y un botón de
 pánico. Sólo actúa si lo pediste explícitamente.
@@ -394,7 +393,7 @@ pánico. Sólo actúa si lo pediste explícitamente.
 saltear los otros tres **en silencio**. Si la lista canónica vive en un archivo, no siempre lo lee
 entero, y nada avisa. Por eso el set lo computa un script y un hook cuenta las invocaciones reales.
 
-**Cómo se cuenta**: *"pido una story, apruebo el plan, apruebo los hallazgos. Todo lo del medio lo
+**Cómo se cuenta**: *"pido una story, alguien aprueba el plan antes de programar, y con mi sí se guarda. Todo lo del medio lo
 hace solo, y hay revisores especializados que miran el código antes que yo — y no los elige el
 modelo, los elige un script."*
 
@@ -692,7 +691,7 @@ https://www.bizuit.com/sdd-harness/more/
 
 ## Qué NO hace el arnés — la pregunta que siempre sigue
 
-- **No decide por vos.** Los tres puntos de aprobación del pipeline son bloqueantes, y las reglas
+- **No decide por vos.** El plan lo aprueba una persona, o la coordinadora con riesgo normal; guardar pide tu sí; y las reglas
   que la minería propone se aprueban de a una.
 - **No garantiza que el código esté bien.** Garantiza que lo que aprendimos a la mala no se vuelva a
   olvidar, y que cuando algo sale mal quede el rastro de por dónde pasó.
@@ -732,14 +731,14 @@ frase.
 | **marcador** | archivo de estado que dice "hay una story en curso, es ésta" |
 | **AC** | criterio de aceptación (*acceptance criteria*), en formato dado/cuando/entonces |
 | **encabezado** (*frontmatter*) | el bloque de metadatos del principio de un archivo de story |
-| **carril** | por dónde va el trabajo: story completa o ajuste puntual |
+| **carril** | el permiso para editar código sin historia en un camino rápido: el motivo en una línea y la lista de archivos |
 | **DoD** | *definition of done*: la lista explícita de qué significa "listo" para esta story, escrita para que un script pueda verificar cada ítem |
 | **desvío** (*drift*) | cuando el código y la spec quedan desincronizados |
 | **SDD** | *spec-driven development*: la spec antes que el código, y el código la sirve |
 | **BMAD** | el framework de agentes que produce y mantiene las specs |
-| **dueño** | quien responde por el repo y firma lo que no es rutina |
-| **coordinadora** | la sesión de agente que el equipo designa; firma en nombre del dueño sólo lo que el perfil le delega |
-| **camino rápido** | un cambio chico sin historia, con motivo escrito, cupo de archivos y firma; la guía de firmas lo llama arreglo rápido |
+| **dueño** | la persona que tu organización designa para aprobar lo delicado; si trabajás solo, el dueño sos vos |
+| **coordinadora** | la sesión de agente que el equipo designa: con riesgo normal abre el camino rápido (hasta 5 archivos, avisándole al dueño) y aprueba el plan si la revisión automática dio «aprobado»; sin coordinadora, lo hace el dueño |
+| **camino rápido** | un cambio chico sin historia: el motivo en una línea y la lista de archivos |
 | **ADO** | Azure DevOps, donde viven los work items |
 | **banco de pruebas** | los casos que disparan los controles reales para verificar que bloquean lo que dicen |
 | **smoke** | prueba mínima contra el sistema corriendo de verdad, no contra el build |

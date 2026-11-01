@@ -24,10 +24,10 @@ open models through [Ollama](guides/integrations/ollama.en.md), and with
 [Cursor](guides/integrations/cursor.en.md). The AI software development life cycle (AI SDLC), step by step:
 
 1. **Request and story:** you say what you want and the agent writes it as a story: what has to be done and how it is
-   tested. For a small fix, asking for it in your own words is enough.
-2. **Approved plan:** the agent makes the plan and shows it to you; it is approved before any code is written, never by itself: with normal risk, the coordinator; with high risk, the owner.
+   tested. A small change goes by quick path: the reason in one line and the list of files.
+2. **Approved plan:** the agent builds the plan and shows it to you; it is approved before any code is written, never by itself: with normal risk, the coordinator, only if the automatic review of the plan said "approved"; with high risk, the owner.
 3. **Tests and code:** it writes the tests and the code, and runs the tests.
-4. **Review:** specialized reviewers (security, conventions, coverage) check the change before the commit.
+4. **Review:** on a story, specialized reviewers (security, conventions, coverage) check the change before the commit; on a quick path, only with high risk.
 5. **Delivery:** the commit and the merge go through checks. Nothing is committed or pushed without your permission.
 6. **Operation and measurement:** every merge to main leaves its metrics file, and your organization's nightly jobs
    review the dependencies and build the cycle dashboard.
@@ -36,45 +36,52 @@ open models through [Ollama](guides/integrations/ollama.en.md), and with
 and stories—; then, story by story.
 
 - **Size decides: story or quick path.** Is it a small change? You ask for it in one sentence and, when it is done,
-  you can see it is right just by looking at the result and its tests. Then it goes by quick path: the reason in one
+  you see it came out right just by looking at the result and its tests. Then it goes by quick path: the reason in one
   line and the list of files. If not, it goes by story: criteria, named tests, the plan approved before coding and the
-  review at the end.
+  review at the end. What needs several sessions or waits on someone outside also goes by story.
 - **Risk decides who approves.** It is high if the change touches something sensitive in the repo, such as
   production, a migration or security, or if it brings a decision for the owner: scope, security, a new dependency,
-  money, clients or other people. When in doubt, high. With normal risk the coordinator approves; with high risk, the
-  owner. The owner is the person your organization designates to approve what is sensitive; if you work alone, it is
+  money, customers or other people. When in doubt, high. With normal risk the coordinator approves, and when opening a
+  quick path it notifies the owner; with high risk, the owner. The owner is the person your organization designates to
+  approve delicate work; if you work alone, it is
   you. Without a coordinator, the owner does the coordinator's part. The plan never approves itself.
-- **Saving is a yes in the permission prompt, on both paths.** Before every commit, push and pull request the agent
+- **Saving is the yes in the permission window, on both paths.** Before every commit, push and pull request the agent
   asks "save?", and with a yes it saves. There is no signature and no command.
 
-The harness guards, controls and control signatures belong to whoever maintains it. The detail:
+The harness brakes, controls and control signatures belong to whoever maintains it. The detail:
 [The right measure](guides/que-hace-el-arnes.md#la-medida-justa-cuánto-papel-lleva-cada-cambio) (in Spanish).
 
 ```mermaid
 flowchart TB
-  pedir(["<b>Ask</b>"]) --> chico{"<b>Is it a small change?</b><br/>you ask for it in one sentence and can see it is right just by looking"}
+  pedir(["<b>Request</b>"]) --> chico{"<b>Is it a small change?</b><br/>you ask for it in one sentence and see it came out right just by looking"}
   chico -- "Yes · Quick path" --> r1
   chico -- "No · Story" --> h1
   subgraph rapido [" "]
     direction TB
-    r1["<b>Open the lane</b><br/>with the list of files<br/>normal risk: the coordinator, up to 5<br/>high risk: the owner, up to 8"] --> r2["<b>Code with the test first</b><br/>on save, the harness warns if it was the other way round"]
+    r1["<b>Open the lane</b><br/>with the list of files<br/>normal risk: the coordinator, up to 5<br/>high risk: the owner, up to 8"] --> r2["<b>Code with the test first</b><br/>at saving, the harness warns if it was the other way round"]
     r2 --> r3["<b>Run its tests</b>"]
     r3 --> r4["<b>Reviewers and adversarial pass</b><br/>only with high risk"]
   end
   subgraph historia [" "]
     direction TB
-    h1["<b>Validate the story</b>"] --> h2["<b>Make the plan</b>"]
+    h1["<b>Validate the story</b>"] --> h2["<b>Build the plan</b>"]
     h2 --> h3["<b>Approve the plan</b><br/>normal risk: the coordinator, if the automatic review said «approved»<br/>high risk: the owner"]
     h3 --> h4["<b>Code with the tests first</b>"]
     h4 --> h5["<b>Run the tests</b>"]
-    h5 --> h6["<b>Reviewers</b><br/>chosen by the change"]
-    h6 --> h7["<b>Adversarial pass</b><br/>not in a small low-risk story nor in a docs-only or tests-only change"]
+    h5 --> h6["<b>Reviewers</b><br/>picked based on the change"]
+    h6 --> h7["<b>Adversarial pass</b><br/>not on a small low-risk story, nor on documentation or tests only"]
     h7 --> h8["<b>Live check, criterion by criterion</b>"]
   end
-  r4 --> g1["<b>Save</b><br/>a yes in the permission prompt"]
+  r4 --> g1["<b>Save</b><br/>the yes in the permission window"]
   h8 --> g1
-  g1 --> g2["<b>Pull request</b><br/>CI#59; in a story, also the gate"]
+  g1 --> g2["<b>Pull request</b><br/>CI"]
+  classDef decide fill:#2f6fde,stroke:#1f4fa8,color:#ffffff
+  classDef control fill:#F15A24,stroke:#b8410f,color:#ffffff
+  class r1,h3,g1 decide
+  class r4,h4,h5,h6,h7,h8,g2 control
 ```
+
+<sub>🟦 Someone decides: a person, or the coordinator with normal risk · 🟧 A control that is not skipped</sub>
 
 The checks are one part of the cycle: they guard every step. There are two ways to start it: [on your own, on your
 machine](#start-on-your-own), or [for your team](#for-teams).
@@ -183,11 +190,11 @@ A story is your request in writing, with its criteria and its tests: the agent f
 
 1. **Open your coding agent in your repo's folder**: that is where it writes the story, creates the branch and saves the changes. If it was open from before you installed, close it and open it again: the harness's rules load when it starts.
 2. **Say you trust the folder**: the first time you open your agent in that folder, it asks whether you trust it: say yes.
-3. **If the idea is big, the stories come first.** Your agent takes it through stages —understanding the problem, the PRD, the architecture, the epics— until it leaves the stories; you review each stage, and each artifact is committed to the repo, next to the code. A small change does not need it: ask for the story directly. · [▶ video](https://github.com/user-attachments/assets/24124d87-ebca-4069-8d82-d0b498f09518)
+3. **If the idea is big, the stories come first.** Your agent takes it through stages —understanding the problem, the PRD, the architecture, the epics— until it leaves the stories; you review each stage, and each artifact is committed to the repo, next to the code. A bounded idea does not need it: ask for the story directly. · [▶ video](https://github.com/user-attachments/assets/24124d87-ebca-4069-8d82-d0b498f09518)
 4. **Ask for the story in your own words**, so the change is written down before any code: "create a story to add a date filter".
 5. **Review the story.** The agent builds it from your request, answering three plain questions (what it must do, how you can tell it works, and what it must not touch), and marks what it assumed. It shows it to you and writes it on your "yes". If your repo already has a `_bmad/` folder, it builds it with what is there.
 6. **Ask "implementemos la story" (let's implement the story)**, to start the run: the phrase stays in Spanish. If there is no git, it initializes it; if you are on `main`, it creates the branch. It validates the story and, if something is missing, asks whether to fix it. It shows you the plan and waits for your "yes" before any code. Then it writes the tests and the code, runs the tests and the reviewers, and checks each criterion by running it.
-7. **Read the summary and say "commit it".** It leaves the message ready and never commits or pushes without your permission. When the first story closes, it offers you the full install.
+7. **Read the summary.** Before committing it asks "save?" in the permission window, and with a yes it saves: it never commits or pushes without your permission. When the first story closes, it offers you the full install.
 8. **A story with a screen.** The agent builds a mockup for you to approve before any code; if your repo has no way to test in a browser, it offers to set it up; and it leaves a guide for testing it by hand. · [▶ video](https://github.com/user-attachments/assets/8aa2c03a-03d7-42ab-b4ae-daf90a53e3c9)
 9. **Your project's own rules.** Ask your agent for a reviewer that checks a rule of yours (for example, "a customer's email is never shown in full"): it lives in your rules repo and reviews every story along with the harness's own. · [▶ video](https://github.com/user-attachments/assets/1ef473c6-f088-413f-8560-9d801e6a0c75)
 
