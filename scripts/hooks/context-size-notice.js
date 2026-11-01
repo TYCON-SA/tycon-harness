@@ -30,10 +30,7 @@ const STEP_TOKENS = 100000;
 const RANGO = '100.000 a 900.000';
 
 // La carpeta del estado la sabe tycon-home.js; si este archivo viaja suelto (al banco, a un laboratorio), la de siempre.
-function stateDirOf(home) {
-  const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
-  return fs.existsSync(lib) ? require(lib).stateDir(home) : path.join(home || os.homedir(), '.claude', '.tycon-pipeline');
-}
+const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 const safeSid = (sid) => String(sid || '_nosession').replace(/[^A-Za-z0-9._-]/g, '_');
 
 // ── el umbral ────────────────────────────────────────────────────────────────────────────────────────────────────
