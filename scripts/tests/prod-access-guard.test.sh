@@ -470,6 +470,28 @@ frena "8.14 WildcardWithDot_IsHiddenFolder (control .*)" "rm -rf ~/.claude/.*"
 frena_indecidible "8.14 DotGlobOn_WildcardMayBeHiddenFolder (setopt globdots)" "setopt globdots; rm -rf ~/.claude/*-*"
 frena_indecidible "8.14 DotGlobOn_WildcardMayBeHiddenFolder (GLOBIGNORE)" "GLOBIGNORE=x; rm -rf ~/.claude/*-*"
 
+# (4a') Vaciar cachés de usuario fuera de los repos. Un comodín con punto (`.[!.]*`) en una carpeta que existe y no tiene
+# adentro `.tycon` ni `.tycon-pipeline` no puede borrar ninguna de las dos; la variable de un `for` con palabras que se
+# leen vale esas palabras, no «desconocida». Los dos «casos reales» son comandos de vaciado de cachés tal como se escriben.
+mkdir -p "$CASA/Library/Caches/Google/.oculta" "$CASA/Library/Caches/java-db/x" "$CASA/Library/Caches/com.spotify.client/.y"
+pasa "Caches_DotGlob_FolderWithoutProtected_Passes" "rm -rf ~/Library/Caches/Google/.[!.]*"
+pasa "Caches_DotGlob_MissingFolder_Passes (nada que casar)" "rm -rf ~/Library/Caches/no-existe/.[!.]*"
+pasa "Caches_DotGlob_FromVariable_Passes" "p=~/Library/Caches/Google; rm -rf \"\$p\"/.[!.]*"
+pasa "Caches_ForLoop_RmDotGlob_Passes (caso real 1)" 'for d in Google java-db com.spotify.client; do p=~/Library/Caches/$d; for x in "$p"/* "$p"/.[!.]*; do [ -e "$x" ] && rm -rf -- "$x"; done; done'
+pasa "Caches_ForLoop_FindExecRm_Passes (caso real 2)" 'for d in Google java-db com.spotify.client; do find "$HOME/Library/Caches/$d" -mindepth 1 -maxdepth 1 -exec rm -rf {} + ; done'
+# lo legítimo sigue frenando: la carpeta tiene `.tycon` o `.tycon-pipeline`, el bucle llega al catálogo, o no se lee
+frena "Caches_DotGlob_RepoRoot_Blocks (rm -rf <repo>/.[!.]*)" "rm -rf $REPOS/backend-acme/.[!.]*"
+frena "Caches_DotGlob_PipelineParent_Blocks (rm -rf ~/.claude/.[!.]*)" "rm -rf ~/.claude/.[!.]*"
+frena "Caches_ForLoop_ReachesCatalog_Blocks (for … find -delete)" "for d in backend-acme otro; do find \"$REPOS/\$d\" -name '*.json' -delete; done"
+frena "Caches_ForLoop_CatalogByName_Blocks (for … rm production.json)" "for d in backend-acme; do rm -f \"$REPOS/\$d/.tycon/production.json\"; done"
+frena "Caches_ForLoop_UnresolvedWords_Blocks (for d in \$(ls))" "for d in \$(ls $REPOS); do rm -rf \"$REPOS/\$d\"/.[!.]*; done"
+mkdir -p "$CASA/Library/Caches/proyecto/.tycon"
+frena "Caches_ForLoop_FindOverFolderWithRepo_Blocks" 'for d in Caches; do find "$HOME/Library/$d" -mindepth 1 -maxdepth 1 -exec rm -rf {} + ; done'
+rm -rf "$CASA/Library/Caches/proyecto"
+mkdir -p "$TMP/cerrada/.x"; chmod 000 "$TMP/cerrada"
+frena "Caches_DotGlob_UnreadableFolder_Blocks" "rm -rf $TMP/cerrada/.[!.]*"
+chmod 755 "$TMP/cerrada"
+
 # (4b) Con la carpeta de trabajo en la raíz del pipeline: `sed` sin -i no escribe sus archivos, y lo que un intérprete
 # recibe de una variable o sustitución sin resolver es dato de su programa (el programa calcula qué abre).
 # Frenar «ESCRIBE sobre …/production-index.json (el shell arma ese nombre desde «"$F"»)» sería un falso positivo.
