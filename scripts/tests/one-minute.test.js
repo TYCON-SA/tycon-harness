@@ -52,7 +52,10 @@ test('T3 OneMinute_Glossary: las palabras del arnés con su definición, las mis
   const en = words(read(EN));
   assert.ok(es.length >= 6 && es.length <= 9, `entre 6 y 9 palabras: ${es.map((w) => w.word).join(', ')}`);
   assert.strictEqual(en.length, es.length, 'el mismo número de palabras en inglés');
-  for (const w of ['historia', 'revisor', 'freno', 'ejecución', 'pedido']) assert.ok(es.some((x) => x.word === w), `«${w}» está`);
+  for (const w of ['historia', 'revisor', 'freno', 'ejecución', 'pedido de cambio']) assert.ok(es.some((x) => x.word === w), `«${w}» está`);
+  // cada palabra con un solo sentido: ninguna definición usa otra palabra del glosario para otra cosa
+  assert.ok(!es.some((x) => x.word === 'pedido'), '«pedido» a secas es lo que pide la persona, no el pull request');
+  for (const w of ['guard', 'pull request', 'story', 'reviewer']) assert.ok(en.some((x) => x.word === w), `«${w}» is there`);
   for (const w of [...es, ...en]) assert.ok(w.def.length >= 15, `«${w.word}» tiene su definición`);
 });
 

@@ -525,6 +525,14 @@ test('complejidad NpxEntry_ProximoPaso: una instalación nueva para mí termina 
     assert.match(r.out, /«creá una historia para …»/);
     assert.match(r.out, /«implementemos la story»/);
     assert.ok(r.out.includes(path.join(f.home, '.tycon', 'harness', 'getting-started', 'one-minute.es.md')), `señala la página de un minuto del árbol instalado: ${r.out}`);
+    assert.doesNotMatch(r.out, /en Codex: abrí codex/, 'sin Codex enchufado no nombra sus hooks');
+    // con Codex enchufado, el paso de sus hooks va antes del 1: sin él, los controles no corren en Codex
+    f = fresh();
+    const withCodex = JSON.stringify({ ...JSON.parse(f.installs.body), tools: ['claude', 'codex'] });
+    r = await drive(box, { argv: ['--yes'], installs: { ...f.installs, body: withCodex } }, { home: f.home });
+    assert.strictEqual(r.code, 0, r.out);
+    const hooks = r.out.indexOf('0. en Codex: abrí codex, corré /hooks');
+    assert.ok(hooks > 0 && hooks < r.out.indexOf('1. abrí tu agente'), `el paso de Codex va primero: ${r.out}`);
     // un install que sale 0 sin instalar (el «no» al plan): sin próximo paso
     f = fresh();
     r = await drive(box, { argv: ['--yes'] }, { home: f.home });

@@ -273,7 +273,9 @@ function steps({ ctx, env, home, tty, ask, secret, launch, tree, io }) {
 function nextStep(home) {
   const r = S.read(home);
   if (r.status !== 'ok' || !r.state || !r.state.tree) return;
-  say('instalado. El próximo paso:');
+  say('El próximo paso:');
+  // Codex aprueba sus hooks uno por uno: sin ese paso, los controles del arnés no corren en Codex
+  if (Array.isArray(r.state.tools) && r.state.tools.includes('codex')) say('  0. en Codex: abrí codex, corré /hooks y aprobalos una vez; sin eso los controles no corren;');
   say('  1. abrí tu agente de código en la carpeta de tu repo (si ya estaba abierto, cerralo y abrilo de nuevo);');
   say('  2. pedile «creá una historia para …» con lo que quieras hacer, y revisala;');
   say('  3. decí «implementemos la story»: el arnés te lleva paso a paso.');
