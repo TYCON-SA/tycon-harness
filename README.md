@@ -25,7 +25,7 @@ open models through [Ollama](guides/integrations/ollama.en.md), and with
 
 1. **Request and story:** you say what you want and the agent writes it as a story: what has to be done and how it is
    tested. A small change goes by quick path: the reason in one line and the list of files.
-2. **Approved plan:** the agent builds the plan and shows it to you; it is approved before any code is written, never by itself: with normal risk, the coordinating session, only if the automatic review of the plan said "approved"; with high risk, you.
+2. **Approved plan:** the agent builds the plan and shows it to you; it is approved before any code is written, never by itself. Who approves depends on the risk (below).
 3. **Tests and code:** it writes the tests and the code, and runs the tests.
 4. **Review:** on a story, specialized reviewers (security, conventions, coverage) check the change before the commit; on a quick path, only with high risk.
 5. **Delivery:** the commit and the merge go through checks. Nothing is committed or pushed without your permission.
@@ -45,7 +45,7 @@ and stories—; then, story by story.
   - **If it bundles several topics**, it is not small: it is several quick paths, or a story.
 
   **Who decides and who checks.** Whoever opens the work judges the size, but if you work with a coordinating session,
-  you do not decide alone: the quick path is approved by the coordinating session or by you. The harness enforces it:
+  you do not decide alone: the quick path is approved by the coordinating session or you. The harness enforces it:
   - Without an open quick path or a story, the harness **does not let you write code**.
   - The quick path has a **file cap**: 5 if the coordinating session approved it, 8 if you did. Past it, the harness
     **closes it** and asks for a story.
@@ -55,8 +55,8 @@ and stories—; then, story by story.
     security. Also when it brings a decision for you or your organization: scope, security, a new dependency, money,
     customers or other people. When in doubt, high risk.
   - **The coordinating session** is an agent session your team can use to approve routine work; it is not a person.
-  - **Who approves what:** you always approve the delicate work, the dev who is working. With normal risk, the
-    coordinating session opens the quick path with the list of files and lets you know, and approves the plan if the
+  - **Who approves what:** you always approve the delicate work. With normal risk, the
+    coordinating session opens the quick path with the list of files and tells you, and approves the plan if the
     automatic review said "approved". With high risk, you approve it. Without a coordinating session, you approve its
     part. The plan never approves itself.
 - **Saving is the yes in the permission window, on both paths.** Before every commit, push and pull request the agent

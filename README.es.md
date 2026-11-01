@@ -25,7 +25,7 @@ El ciclo de desarrollo con IA (AI SDLC), paso por paso:
 
 1. **Pedido e historia:** contás qué querés y el agente lo escribe como una historia (story): qué hay que hacer y cómo
    se prueba. Un cambio chico va por camino rápido: el motivo en una línea y la lista de archivos.
-2. **Plan aprobado:** el agente arma el plan y te lo muestra; se aprueba antes de programar, nunca solo: con riesgo normal, la sesión coordinadora, sólo si la revisión automática del plan dio «aprobado»; con riesgo alto, vos.
+2. **Plan aprobado:** el agente arma el plan y te lo muestra; se aprueba antes de programar, nunca solo. Quién lo aprueba depende del riesgo (más abajo).
 3. **Pruebas y código:** escribe las pruebas y el código, y corre las pruebas.
 4. **Revisión:** en una historia, revisores especializados (seguridad, convenciones, cobertura) miran el cambio antes del commit; en un camino rápido, sólo con riesgo alto.
 5. **Entrega:** el commit y el merge pasan por controles. Nada se commitea ni se sube sin tu permiso.
