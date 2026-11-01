@@ -330,6 +330,14 @@ const STALLED = 'Pedidos sin encolar';
 // el fin de una story con el paso 8 cerrado: sin un pedido en la cola no hay hora que estimar
 const closedEnd = (state, m, entry, nowMs, info) => (state.startsWith(STALLED) ? 'sin estimación (ningún pedido está en la cola: hay que encolarlo)' : enteringEnd(m, entry, nowMs, info));
 
+// La hora que la corrida prometió al arrancar, en milisegundos: su arranque más su estimado, los dos campos que el
+// marcador guarda desde `pipeline.js start` (y reinicia al cambiar de historia). null si le falta alguno.
+const promisedOf = (m) => {
+  const t = Date.parse(m && m.startedAt);
+  const min = m && Number(m.estimate_min);
+  return Number.isFinite(t) && Number.isFinite(min) && min > 0 ? t + min * 60000 : null;
+};
+
 // Los pasos de una corrida, en orden, con los hechos marcados: para quien la dibuja (el comando /office).
 function stagesOf(m) {
   const steps = STEPS.map((s) => ({ id: s.id, name: s.name, done: isDone(m, s.id) }));
@@ -900,7 +908,7 @@ function buildWip(opts = {}) {
       const end = entering ? closedEnd(entering, m, entry, nowMs, info) : estimateEnd(m, medians, nowMs, entry, info);
       const kind = !entering ? 'pipeline' : entering.startsWith(STALLED) ? 'stalled' : 'entering';
       addRow({ work, state: step, end, session: label, folder: folderOf(sid, m.repoPath) }, sid,
-        { kind, storyId: m.storyId ? String(m.storyId) : null, title, batch: storyBatch(m.storyPath), endAt: info.at == null ? null : info.at, late: Boolean(info.late), ...stagesOf(m) });
+        { kind, storyId: m.storyId ? String(m.storyId) : null, title, batch: storyBatch(m.storyPath), endAt: info.at == null ? null : info.at, late: Boolean(info.late), promisedAt: promisedOf(m), ...stagesOf(m) });
     }
     else {
       halfway.push(`${work} · ${nameOf(sid)} · quedó en: ${step} · limpiar: node ${MARKER_JS} clear-session ${sid}`);
@@ -928,7 +936,7 @@ function buildWip(opts = {}) {
     const info = {};
     const end = closedEnd(entering, m, storyEntry(m, gitCtx), nowMs, info);
     addRow({ work: `${m.storyId || '?'} · ${cut(title, TITLE_MAX)}`, state: entering, end, session: liveName(sid), folder: folderOf(sid, m.repoPath) }, sid,
-      { kind: entering.startsWith(STALLED) ? 'stalled' : 'entering', storyId: m.storyId ? String(m.storyId) : null, title, batch: storyBatch(m.storyPath), endAt: info.at == null ? null : info.at, late: Boolean(info.late), ...stagesOf(m) });
+      { kind: entering.startsWith(STALLED) ? 'stalled' : 'entering', storyId: m.storyId ? String(m.storyId) : null, title, batch: storyBatch(m.storyPath), endAt: info.at == null ? null : info.at, late: Boolean(info.late), promisedAt: promisedOf(m), ...stagesOf(m) });
   }
 
   if (stale) unreadable.push(`${stale} marcador(es) sin tocar hace más de 24 h: no cuentan (marker.js list-all los descarta)`);

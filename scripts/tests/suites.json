@@ -1690,6 +1690,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/office-server.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/coordination.test.js",
       "requiere": []
     },

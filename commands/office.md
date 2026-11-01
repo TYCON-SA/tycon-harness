@@ -17,21 +17,32 @@ trae el comando todavía y que se actualiza con `/tycon-harness`. No corras nada
 
 | Código | Qué significa |
 |---|---|
-| 0 | la página quedó escrita y se abrió en el navegador; la salida dice dónde está |
-| 2 | no existe la carpeta de estado del pipeline en esta máquina: decilo con lo que imprimió |
+| 0 | la oficina quedó abierta en el navegador; la salida dice su dirección, o que ya estaba abierta |
+| 1 | no pudo arrancar el proceso local: decilo con el motivo que imprimió |
 | otro | el programa falló: mostrá el error tal cual |
 
 ## Qué le mostrás
 
-Una línea: dónde quedó la página (la ruta que imprimió) y que es una foto de ahora, que se actualiza corriendo
-`/office` otra vez. No resumas lo que dice la página: para eso está `/wip`.
+Una línea: la dirección que imprimió y que la página se actualiza sola mientras esté abierta. Si dice «ya estaba
+abierta», es la misma de antes. No resumas lo que dice la página: para eso está `/wip`.
+
+## Cómo se actualiza
+
+Mientras la página está abierta, un proceso local (uno solo por máquina, sólo en esta máquina y con un token) vigila
+las carpetas del arnés y le manda cada cambio a la página por WebSocket: una sesión que cambia de paso, espera algo o
+termina se ve sin volver a correr nada. No consulta nada cada tantos segundos; los pedidos de git, Azure DevOps y
+GitHub se preguntan a lo sumo una vez por minuto. La página no le puede mandar órdenes al proceso. El proceso se cierra
+solo a los 2 minutos sin la página abierta y a las 8 horas; entonces la página dice «La oficina se cerró. Corré /office
+otra vez para verla al día.» y deja la última foto.
 
 ## Qué trae la página
 
 Los datos son los mismos de `/wip`, más las firmas pendientes y la sesión coordinadora. Cada sesión es una persona en
-su escritorio (hasta cinco; las demás, en las tarjetas de abajo), con su nombre, su estado en palabras y su hora de
-fin. La hora se compara con la primera que se vio para esa sesión y esa story: sale en rojo si va más de 15 minutos
-tarde y en verde si va más de 15 minutos antes. Arriba de la etiqueta, una burbuja más chica dice lo que hace mientras
+su escritorio (hasta diez, acomodados según cuántas haya; las demás, en las tarjetas de abajo), con su nombre, su
+estado en palabras y su hora de fin. La hora se compara con la que prometió la corrida al arrancar (o, si no la anotó,
+con la primera que se vio): sale en rojo si va más de 15 minutos tarde y en verde si va más de 15 minutos antes. Si el
+perfil del equipo trae la dirección del sitio de la organización, el encabezado tiene «Abrir el sitio» y el cartel de
+la pared también lo abre. Arriba de la etiqueta, una burbuja más chica dice lo que hace mientras
 tanto.
 
 La persona se mueve según su estado: teclea cuando trabaja, mira la pantalla cuando corre pruebas o revisores, espera
@@ -40,5 +51,6 @@ espera una respuesta o un permiso, y señala cuando es la coordinadora. Al tocar
 su corrida. El panel de la pared cuenta lo pendiente de la máquina (en curso, tu firma, esperan entrar, a medio camino)
 y al tocarlo lo lista.
 
-La página no necesita internet: la librería 3D va adentro. Si el navegador no puede dibujar en 3D, lo dice y abre la
-tabla. Con `--json` el programa imprime los datos en lugar de escribir la página.
+La página no necesita internet: la librería 3D y la del WebSocket vienen con el arnés. Si el navegador no puede dibujar
+en 3D, lo dice y abre la tabla. Con `--json` el programa imprime los datos, y con `--out <archivo>` escribe la foto fija
+de antes, sin proceso.

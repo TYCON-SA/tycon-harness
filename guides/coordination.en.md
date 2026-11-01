@@ -180,6 +180,26 @@ The quick fix (a code change with no story) is the `adhoc-lane` signature: the t
 Short and plain: what happened, what is missing and what the owner decides, in that order. One notice per batch of
 work, not one per session. The style meter that already exists measures this; this recipe does not add another one.
 
+## The board in the office
+
+The `/office` page shows the coordinator's board of pending work in a panel apart from the desks: what is due today,
+this week, next week and later, each item with its expected end time, who has it and a plain note, plus what is already
+done with its real time. The coordinator writes the whole board to `<state>/coordination/tablero.json` (first to a
+separate file and then renamed, so the office never reads it half written) every time it changes:
+
+- `pendientes`: a list; each item has `titulo`, `estado` (`hecho`, `curso`, `firma`, `riesgo` or `espera`), `grupo`
+  (`Hoy`, `Esta semana`, `La semana que viene` or `Más adelante`), `orden`, `quien`, `nota`, and its time:
+  `pronosticoIso` or `estimadaIso` (local time, `YYYY-MM-DDTHH:MM`), or `termina` with its own text. A done item carries
+  `realIso`.
+- `meta`: `actualizado`, `resumen` and `teToca` (what the owner has to do, one line each).
+
+Without the file there is no panel. A broken file is reported below, under «No se pudo leer», and the panel is not
+drawn. The live office reads it again on its own when it changes. The desks do not come from here: they come from what
+each session is doing.
+
+A quick fix's promised time is set by its session with `marker.js adhoc until HH:MM`. The office and `/wip` show it as
+its end and measure the delay against it; without a time they say «sin hora estimada».
+
 ## The everyday rules
 
 They come from a whole day of coordinating several sessions. Each says what to do and why.
