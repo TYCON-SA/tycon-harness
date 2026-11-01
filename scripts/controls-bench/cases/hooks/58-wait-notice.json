@@ -151,6 +151,39 @@
           ]
         }
       ]
+    },
+    {
+      "hook": "wait-notice.js --timer (el proceso del plazo)",
+      "script": "${TCG}/scripts/hooks/wait-notice.js",
+      "event": "Stop",
+      "matcher": "*",
+      "args": ["--timer", "bench-w6", "2026-10-31T10:00:00.000Z"],
+      "cases": [
+        {
+          "id": "coordinadora-cerrada-va-directo-al-duenio",
+          "type": "must-stay-quiet",
+          "__doc": "El renglón de una designación solo no hace coordinadora: sin el rol en el perfil del árbol y sin su sesión viva, el plazo no espera por ella y va directo al dueño, como sin coordinadora. Sin bot, termina en no-channel sin mandar nada. ROJO PREVIO: anotar coordinator-notified con sólo la designación (el dueño se enteraría recién a su plazo, por una sesión que nadie lee) o salir distinto de 0. Con coordinadora viva, scripts/tests/wait-notice.test.js T29-T31.",
+          "files": {
+            "transcript.jsonl": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"implementemos\"},\"timestamp\":\"2026-10-31T10:00:00.000Z\"}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"¿Sigo con los revisores?\"}]},\"timestamp\":\"2026-10-31T10:00:05.000Z\"}\n"
+          },
+          "stdin": {},
+          "env": {
+            "TYCON_TELEGRAM_CHAT_ID": "1",
+            "TELEGRAM_BOT_TOKEN": "",
+            "TYCON_TELEGRAM_API": "http://127.0.0.1:9",
+            "TYCON_WAIT_NOTICE_MS": "100",
+            "TYCON_WAIT_NOTICE_OWNER_MS": "60000"
+          },
+          "expect": {
+            "exit": 0,
+            "file_contains": [{ "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/wait-notice/log.jsonl", "re": "\"session\":\"bench-w6\".*\"result\":\"no-channel\"" }],
+            "file_not_contains": [{ "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/wait-notice/log.jsonl", "re": "coordinator-notified" }]
+          },
+          "setup": [
+            "mkdir -p \"$SANDBOX_HOME/.claude/.tycon-pipeline/wait-notice/waits\" && printf '%s\\n' '{\"ts\":\"2026-10-31T09:00:00.000Z\",\"name\":\"relay-designation\",\"status\":\"ok\",\"sesion\":\"bench-coord\",\"rol\":\"coordinadora\",\"quien\":\"el dueño\",\"cita\":\"Esta sesión es la coordinadora\"}' > \"$SANDBOX_HOME/.claude/.tycon-pipeline/gates.log\" && node -e 'const p=require(\"path\"),fs=require(\"fs\");fs.writeFileSync(p.join(process.env.SANDBOX_HOME,\".claude\",\".tycon-pipeline\",\"wait-notice\",\"waits\",\"bench-w6.json\"),JSON.stringify({session:\"bench-w6\",story:\"9.9\",step:\"5\",stepName:\"Revisores\",kind:\"stop\",waiting:\"¿Sigo?\",openedAt:\"2026-10-31T10:00:00.000Z\",records:2,prompts:1,transcript:p.join(process.env.FIXTURE,\"transcript.jsonl\"),pid:null,notified:false}))'"
+          ]
+        }
+      ]
     }
   ]
 }

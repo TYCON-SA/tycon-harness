@@ -11,6 +11,9 @@
  * vuelve. Si en el plazo (5 minutos; `wait_notice.minutes` de team-repos.json; `TYCON_WAIT_NOTICE_MS` en la máquina)
  * nadie se movió, manda UN mensaje por cada canal con el id de la story, el paso por su nombre llano y qué se espera.
  * Los canales los elige la organización en el perfil (`integrations.notify.channels`); sin la lista, Telegram.
+ * Con una coordinadora designada y viva (y que no sea la sesión que espera), al plazo la espera le llega a ella, una
+ * línea en su próximo turno (scripts/hooks/coordination-notice.js), y a los canales recién al plazo del dueño
+ * (30 minutos desde la apertura; `wait_notice.owner_minutes`; `TYCON_WAIT_NOTICE_OWNER_MS`), si sigue sin resolver.
  *
  *   Stop (también con stop_hook_active) · PreToolUse de las tres herramientas que esperan a la persona ·
  *   Notification con permission_prompt                                        → abre la espera
@@ -42,6 +45,7 @@ const ROOT = path.join(__dirname, '..', '..');
 const SKILL_LIB = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib');
 const NOTIFY = path.join(ROOT, 'scripts', 'lib', 'notify.js');
 const DEFAULT_MINUTES = 5;
+const DEFAULT_OWNER_MINUTES = 30;
 const STALE_MS = 12 * 3600 * 1000;
 const ALIVE_MARGIN_MS = 2 * 60 * 1000;
 const LINE_MAX = 200;
@@ -63,8 +67,8 @@ const SECRET_SHAPES = [
 // la carpeta del estado la sabe tycon-home.js; si este archivo viaja suelto (al banco, a un laboratorio), la ruta de siempre
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 const home = () => os.homedir();
-const dirs = () => {
-  const sd = stateDirOf(home());
+const dirs = (h) => {
+  const sd = stateDirOf(h || home());
   const base = path.join(sd, 'wait-notice');
   return { active: path.join(sd, 'active'), base, waits: path.join(base, 'waits'), log: path.join(base, 'log.jsonl'), shared: path.join(base, 'last-message.json') };
 };
@@ -229,6 +233,19 @@ function thresholdMs({ env = process.env, tree, homeDir } = {}) {
   return Number.isInteger(m) ? { ms: m * 60000, problem: null } : def;
 }
 
+/** `{ ms, problem }`: el plazo del dueño cuando la espera ya le llegó a la coordinadora, contado desde la apertura. La
+ *  variable de la máquina, si no `wait_notice.owner_minutes` de la organización, si no 30 minutos. */
+function ownerThresholdMs({ env = process.env, tree, homeDir } = {}) {
+  const def = { ms: DEFAULT_OWNER_MINUTES * 60000, problem: null };
+  const v = env.TYCON_WAIT_NOTICE_OWNER_MS;
+  if (v !== undefined && /^\d+$/.test(String(v)) && Number(v) > 0) return { ms: Number(v), problem: null };
+  if (v !== undefined && String(v) !== '') return { ms: def.ms, problem: `TYCON_WAIT_NOTICE_OWNER_MS: tiene que ser un número de milisegundos (es ${JSON.stringify(String(v)).slice(0, 40)})` };
+  const org = orgWaitNotice({ env, tree, homeDir });
+  if (org.problem) return { ms: def.ms, problem: org.problem };
+  const m = org.data && org.data.owner_minutes;
+  return Number.isInteger(m) ? { ms: m * 60000, problem: null } : def;
+}
+
 /** `{ on, problem }`: si el aviso corre en esta máquina. La variable TYCON_WAIT_NOTICE, si está puesta, gana (`0` lo
  *  apaga, otro valor lo deja); si no, `wait_notice.enabled` de la organización; si no, encendido. Una sección que no se
  *  puede leer no lo apaga: queda encendido y se dice. */
@@ -321,7 +338,8 @@ function closeWait(sid, result, extra = {}) {
   try {
     logLine({
       session: sid, story: w.story, step: w.stepName, startedAt: w.openedAt, notified: !!w.notified,
-      ...(w.notifiedAt ? { notifiedAt: w.notifiedAt } : {}), result,
+      ...(w.notifiedAt ? { notifiedAt: w.notifiedAt } : {}),
+      ...(w.coordinatorAt ? { coordinator: w.coordinator, coordinatorAt: w.coordinatorAt } : {}), result,
       ...(result === 'answered' ? { returnedAt: new Date().toISOString() } : {}), ...extra,
     });
   } catch { /* el registro no se pudo escribir: se sigue */ }
@@ -386,19 +404,76 @@ function channels() {
   return { ok: true, channels: s.canales, mail: s.mail, chat: s.chat };
 }
 
-/** El proceso del plazo: duerme, mira si la espera sigue igual y, si corresponde, avisa. */
-function timer(sid, openedAt) {
-  const { ms } = thresholdMs({});
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+const sleepMs = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+/** La espera, si sigue igual a los `elapsedMs` de abierta; si no, la cierra con lo que pasó y devuelve null. */
+function stillWaiting(sid, openedAt, elapsedMs) {
   const w = readWait(sid);
-  if (!w || w.openedAt !== openedAt) return;          // ya se cerró o la reemplazó otra
+  if (!w || w.openedAt !== openedAt) return null;     // ya se cerró o la reemplazó otra
   const now = countRecords(w.transcript);
-  if (now.prompts > w.prompts) { closeWait(sid, 'answered'); return; }
-  if (now.records > w.records) { closeWait(sid, 'kept-working'); return; }
+  if (now.prompts > w.prompts) { closeWait(sid, 'answered'); return null; }
+  if (now.records > w.records) { closeWait(sid, 'kept-working'); return null; }
   let mtime = 0;
   try { mtime = fs.statSync(w.transcript).mtimeMs; } catch { mtime = 0; }
-  if (!mtime || Date.now() - mtime > ms + ALIVE_MARGIN_MS) { closeWait(sid, 'session-ended'); return; }
-  if (backgroundPending(w.transcript)) { closeWait(sid, 'kept-working', { reason: 'background-task' }); return; }
+  if (!mtime || Date.now() - mtime > elapsedMs + ALIVE_MARGIN_MS) { closeWait(sid, 'session-ended'); return null; }
+  if (backgroundPending(w.transcript)) { closeWait(sid, 'kept-working', { reason: 'background-task' }); return null; }
+  return w;
+}
+
+/** La coordinadora designada y viva que recibe primero la espera de otra sesión, o null (scripts/tools/coordination.js). */
+function coordinatorFor(sid) {
+  try { return require(path.join(ROOT, 'scripts', 'tools', 'coordination.js')).liveCoordinator({}, sid); } catch { return null; }
+}
+
+/**
+ * Las esperas que le tocan a la coordinadora y todavía no vio: una línea por espera (qué sesión, qué espera, desde qué
+ * hora y cuándo pasa al dueño). Cada una sale una sola vez: queda marcada como vista.
+ */
+function coordinatorLines({ home: h, coordinatorSid } = {}) {
+  const d = dirs(h);
+  let names = [];
+  try { names = fs.readdirSync(d.waits).filter((n) => n.endsWith('.json')); } catch { return []; }
+  const botToken = process.env.TELEGRAM_BOT_TOKEN || '';
+  const out = [];
+  for (const n of names) {
+    const p = path.join(d.waits, n);
+    const w = readJson(p);
+    if (!w || !coordinatorSid || w.coordinatorSid !== coordinatorSid || w.coordinatorShownAt || w.notified) continue;
+    out.push(`Espera: ${w.waitingName || w.session} espera ${oneLine(w.waiting, botToken) || 'una respuesta'} (la ${w.story}, ${stepLabel(w.step).name}) desde las ${clock(w.openedAt)}; si sigue a las ${clock(w.ownerAt)}, el aviso va al dueño.`);
+    try { writeJsonAtomic(p, { ...w, coordinatorShownAt: new Date().toISOString() }); } catch { /* sale de nuevo en el turno siguiente */ }
+  }
+  return out;
+}
+const clock = (iso) => { const t = new Date(iso); return Number.isNaN(t.getTime()) ? '?' : `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`; };
+
+/**
+ * El proceso del plazo: duerme, mira si la espera sigue igual y, si corresponde, avisa. Con una coordinadora designada y
+ * viva (y que no sea la sesión que espera), al primer plazo la espera le llega a ella y al dueño recién a su plazo,
+ * si sigue sin resolver. Sin coordinadora, al dueño al primer plazo.
+ */
+function timer(sid, openedAt) {
+  const { ms } = thresholdMs({});
+  sleepMs(ms);
+  let w = stillWaiting(sid, openedAt, ms);
+  if (!w) return;
+  const coord = coordinatorFor(sid);
+  if (coord) {
+    const owner = ownerThresholdMs({});
+    if (owner.problem) logLine({ session: sid, event: 'config-problem', problem: owner.problem });   // usa 30 min, y lo dice
+    const opened = Date.parse(openedAt);
+    const coordinatorAt = new Date().toISOString();
+    const cur = readWait(sid);
+    if (!cur || cur.openedAt !== openedAt) return;
+    writeJsonAtomic(waitPath(sid), {
+      ...cur, coordinator: coord.name, coordinatorSid: coord.sid, waitingName: coord.waitingName, coordinatorAt,
+      ownerAt: new Date((Number.isFinite(opened) ? opened : Date.now()) + owner.ms).toISOString(),
+    });
+    logLine({ session: sid, story: w.story, step: w.stepName, event: 'coordinator-notified', coordinator: coord.name, coordinatorAt });
+    const left = (Number.isFinite(opened) ? opened : Date.now()) + owner.ms - Date.now();
+    if (left > 0) sleepMs(left);
+    w = stillWaiting(sid, openedAt, Math.max(ms, owner.ms));
+    if (!w) return;
+  }
 
   const via = channels();
   if (!via.ok) { closeWait(sid, 'config-error'); return; }
@@ -511,7 +586,7 @@ function noteFindingsWait(sid, which = 'noteFindingsWait') {
   return true;
 }
 
-module.exports = { WAIT_TOOLS, stepLabel, currentStep, buildMessage, thresholdMs, noticeEnabled, orgWaitNotice, timerSpawnOptions, countRecords, isGenuineUserPrompt, backgroundPending, noteFindingsWait };
+module.exports = { WAIT_TOOLS, stepLabel, currentStep, buildMessage, thresholdMs, ownerThresholdMs, coordinatorLines, noticeEnabled, orgWaitNotice, timerSpawnOptions, countRecords, isGenuineUserPrompt, backgroundPending, noteFindingsWait };
 
 if (require.main === module) {
   try {

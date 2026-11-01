@@ -246,7 +246,8 @@ const CON_TERMINAL = [
 function markerEnTerminal(home, args, respuesta) {
   if (process.platform === 'win32') return null;
   const env = { ...process.env, HOME: home, USERPROFILE: home, RESPUESTA_TTY: respuesta };
-  for (const k of ['CLAUDE_CODE_SESSION_ID', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID', 'NODE_OPTIONS']) delete env[k];
+  // la firma por la terminal se niega dentro de la CI: la terminal simulada no hereda sus variables
+  for (const k of ['CLAUDE_CODE_SESSION_ID', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID', 'NODE_OPTIONS', 'CI', 'TF_BUILD', 'GITHUB_ACTIONS']) delete env[k];
   const r = spawnSync('python3', ['-c', CON_TERMINAL, process.execPath, path.join(SCRIPTS, 'marker.js'), ...args], { encoding: 'utf8', env, timeout: 60000 });
   return r.error ? null : r;
 }
