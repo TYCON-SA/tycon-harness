@@ -162,6 +162,39 @@ Nunca toca el checkout principal, uno bloqueado (`git worktree lock`) ni el de l
 
 ---
 
+## 8. Puestos fijos
+
+Claude Code pide aprobar cada carpeta nueva antes de abrir una sesión ahí, y la aprobación de una carpeta no cubre
+las de adentro. Con un worktree nuevo por trabajo, cada sesión de fondo esperaba al dueño. Los **puestos** son
+worktrees que no se borran: siempre las mismas carpetas, aprobadas una vez, y cada trabajo cambia de rama adentro.
+
+```
+<parent>/<RepoName>--slot-<n>      # n de 1 al tope de sesiones (coordination.max_working; 3 sin valor)
+```
+
+- Están **bloqueados** (`git worktree lock`): el barrido del §7 no los toca.
+- Uno está **libre** si está sin rama, sobre main, y sin cambios sin commitear. Uno con rama, o con cambios, lo está
+  usando un trabajo.
+- Si el tope sube, se crean los que faltan. Si baja, no se borra ninguno.
+- El clon de `agent-skills` no lleva puestos: su freno de staging mira la ruta literal.
+
+El guion es `scripts/tools/work-slots.js` (node: anda igual en Windows); `tycon-worktree.sh slot …` es un atajo.
+
+```bash
+node scripts/tools/work-slots.js take --branch <rama>   # toma el primero libre y cambia ahí a la rama; imprime su cd
+node scripts/tools/work-slots.js release                # desde el puesto: lo deja sobre main, libre; la rama queda
+node scripts/tools/work-slots.js list                   # libres y ocupados, cada uno con su cd
+node scripts/tools/work-slots.js pending-trust          # los que Claude Code todavía no aprobó, con su cd
+```
+
+`take` crea la rama desde origin/main si no existe; `release` se niega si quedan cambios sin commitear. La coordinadora
+abre las sesiones de fondo en un puesto con `coordination.js open --repo <repo>` (`guides/coordination.md`).
+
+Para aprobarlos de una tanda, el dueño corre cada línea que imprime `pending-trust` (`cd "<puesto>" && claude`) y
+acepta la pregunta de Claude Code. Es una vez por puesto; la aprobación la da una persona, el guion no la escribe.
+
+---
+
 **Por qué**: el pipeline ya es parcialmente worktree-safe (story-discovery
 tolera `.git` file, markers per-session con `repoPath`, colisiones por path absoluto).
 El bloqueo real para paralelizar stories no es el pipeline: es **compartir el

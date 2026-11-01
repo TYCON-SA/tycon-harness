@@ -608,3 +608,74 @@ test('T25c Open_LauncherKilled_SaysTheSignal @story-8.122 @ac-25: un lanzador qu
   assert.match(r.message, /SIGKILL/);
   assert.doesNotMatch(r.message, /null/);
 });
+
+// ── Opening in a fixed work slot ─────────────────────────────────────────────────────────────────────────────────
+
+const WS = require(path.join(ROOT, 'scripts', 'tools', 'work-slots.js'));
+// Pinned dates and no background maintenance: the toy commits are the same on every run.
+const GIT_ENV = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.invalid', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.invalid', GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z' };
+function gitToy(cwd, ...args) {
+  const r = spawnSync('git', ['-c', 'maintenance.auto=false', '-c', 'init.defaultBranch=main', ...args], { cwd, env: GIT_ENV, encoding: 'utf8' });
+  if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${r.stderr}`);
+  return r.stdout.trim();
+}
+// A repo cloned from its own origin, with one commit on main, inside the toy machine's folder.
+function toyRepo(t) {
+  const origin = path.join(t.root, 'origin.git');
+  gitToy(t.root, 'init', '--bare', origin);
+  const repo = path.join(fs.realpathSync(t.root), 'src', 'proyecto');
+  fs.mkdirSync(path.dirname(repo), { recursive: true });
+  gitToy(t.root, 'clone', '-q', origin, repo);
+  fs.writeFileSync(path.join(repo, 'a.txt'), 'uno\n');
+  gitToy(repo, 'add', 'a.txt');
+  gitToy(repo, 'commit', '-q', '-m', 'uno');
+  gitToy(repo, 'push', '-q', 'origin', 'HEAD:main');
+  return repo;
+}
+const slotOf = (repo, n) => path.join(path.dirname(repo), `${path.basename(repo)}--slot-${n}`);
+const branchIn = (dir) => spawnSync('git', ['-C', dir, 'symbolic-ref', '-q', '--short', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+
+test('T40 Open_WithRepo_TakesAFreeSlot: con el repo, abre la sesión en un puesto libre, en la rama del trabajo, y le dice cómo soltarlo', () => {
+  const t = toy({ profile: { coordination: { max_working: 2 } } });
+  const repo = toyRepo(t);
+  const r = C.open({ ...t.opts, repo, name: 'n1', task: 'implementá la 9.9', launcher: launcher(t) });
+  assert.strictEqual(r.ok, true, r.message);
+  const l = launched(t);
+  assert.strictEqual(fs.realpathSync(l.cwd), slotOf(repo, 1));
+  assert.strictEqual(branchIn(slotOf(repo, 1)), 'wt/n1');
+  assert.match(l.argv[4], /^implementá la 9\.9/);
+  assert.match(l.argv[4], /work-slots\.js" release "/, 'el encargo dice cómo soltar el puesto');
+  assert.ok(r.message.includes(slotOf(repo, 1)), r.message);
+  const b = C.open({ ...t.opts, now: NOW + 1000, repo, name: 'n2', branch: 'feat/x', task: 'otra', launcher: launcher(t) });
+  assert.strictEqual(b.ok, true, b.message);
+  assert.strictEqual(branchIn(slotOf(repo, 2)), 'feat/x');
+});
+
+test('T41 Open_WithRepo_NoFreeSlot_DoesNotOpen: sin puesto libre lo dice y no llama al lanzador', () => {
+  const t = toy({ profile: { coordination: { max_working: 1 } } });
+  const repo = toyRepo(t);
+  assert.strictEqual(WS.take({ ...t.opts, repo, branch: 'feat/ocupa' }).ok, true);
+  const r = C.open({ ...t.opts, repo, name: 'n1', task: 'algo', launcher: launcher(t) });
+  assert.strictEqual(r.ok, false);
+  assert.match(r.message, /no hay puesto libre/);
+  assert.match(r.message, /no la abrí/);
+  assert.strictEqual(launched(t), null);
+});
+
+test('T42 Open_WithRepo_LaunchFails_FreesTheSlot: si el lanzador falla, el puesto vuelve a quedar libre y la rama nueva no queda', () => {
+  const t = toy({ profile: { coordination: { max_working: 1 } } });
+  const repo = toyRepo(t);
+  const r = C.open({ ...t.opts, repo, name: 'n1', task: 'algo', launcher: launcher(t, 'error') });
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(WS.list({ ...t.opts, repo }).slots[0].free, true);
+  assert.strictEqual(gitToy(repo, 'branch', '--list', 'wt/n1'), '');
+});
+
+test('T43 Open_RepoAndCwd_Refuses: carpeta y repo a la vez es ambiguo: no la abre', () => {
+  const t = toy();
+  const repo = toyRepo(t);
+  const r = C.open({ ...t.opts, repo, cwd: t.root, name: 'n1', task: 'algo', launcher: launcher(t) });
+  assert.strictEqual(r.ok, false);
+  assert.match(r.message, /o la carpeta o el repo/);
+  assert.strictEqual(launched(t), null);
+});

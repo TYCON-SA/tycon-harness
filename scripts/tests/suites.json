@@ -1689,6 +1689,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/work-slots.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/advisor-liveness-on-change.test.js",
       "requiere": []
     },
