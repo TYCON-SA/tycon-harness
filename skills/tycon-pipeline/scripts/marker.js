@@ -4288,6 +4288,25 @@ function sessionLiveness(sid) {
 // `doing "<qué hago>"`: lo que hace una sesión sin story (un video, una medición), para que /wip lo diga. No es un
 // permiso: no toca el portón de carril ni el ad-hoc. Otro `doing` la reemplaza; `doing clear` la borra;
 // `doing clear-orphan <sid>` borra la nota de otra sesión que ya no vive. Archivo: doing/<sid>.json { text, at }; doing.log.
+// La hora de fin que declara una sesión, «HH:MM», como fecha completa: la de hoy; la de mañana si quedaría más de 12 h
+// antes de ahora (a las 23:00, «01:30» es de mañana); la de ayer si quedaría más de 18 h después (a las 00:10, «23:30» es
+// de anoche, y ya pasó). Una hora mal escrita es null.
+function untilIso(text) {
+  const m = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(String(text || '').trim());
+  if (!m) return null;
+  const now = Date.now();
+  const d = new Date(now);
+  d.setHours(Number(m[1]), Number(m[2]), 0, 0);
+  if (d.getTime() < now - 12 * 3600 * 1000) d.setDate(d.getDate() + 1);
+  else if (d.getTime() > now + 18 * 3600 * 1000) d.setDate(d.getDate() - 1);
+  return d.toISOString();
+}
+
+// Una hora declarada que ya pasó se anota igual (puede ser a propósito), pero se avisa: /office la va a mostrar atrasada.
+function warnPastUntil(cmd, iso) {
+  if (Date.parse(iso) < Date.now()) console.error(`marker.js ${cmd}: esa hora ya pasó hoy; quedó anotada y la oficina la va a mostrar atrasada`);
+}
+
 function cmdDoing(sub, arg) {
   const dir = path.join(STATE_DIR, 'doing');
   const safe = (s) => String(s).replace(/[/\\]/g, '_');
@@ -4328,10 +4347,18 @@ function cmdDoing(sub, arg) {
     console.error('marker.js doing: el texto va de 8 a 200 caracteres — uso: marker.js doing "<qué hago>" | doing clear');
     process.exit(2);
   }
+  // `--until HH:MM`: la hora a la que la sesión dice que termina, para /wip y /office
+  const u = process.argv.indexOf('--until');
+  const endAt = u >= 0 ? untilIso(process.argv[u + 1]) : null;
+  if (u >= 0 && !endAt) {
+    console.error('marker.js doing: --until va con una hora HH:MM (por ejemplo 19:30)');
+    process.exit(2);
+  }
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(file, JSON.stringify({ text, at: new Date().toISOString() }));
-  appendLog('doing.log', { kind: 'DOING_SET', text });
-  process.stdout.write(`doing: ${text}\n`);
+  fs.writeFileSync(file, JSON.stringify({ text, at: new Date().toISOString(), ...(endAt ? { endAt } : {}) }));
+  appendLog('doing.log', { kind: 'DOING_SET', text, ...(endAt ? { endAt } : {}) });
+  if (endAt) warnPastUntil('doing', endAt);
+  process.stdout.write(`doing: ${text}${endAt ? ` (termina ${process.argv[u + 1]})` : ''}\n`);
 }
 
 function cmdAdhocClearOrphan(sid) {
@@ -5271,6 +5298,19 @@ function cmdAdhoc(sub, payloadJson) {
     process.stdout.write(JSON.stringify(existing, null, 2) + '\n');
     process.exit(existing ? 0 : 1);
   }
+  // `adhoc until HH:MM`: la hora a la que termina el arreglo rápido de esta sesión. No abre ni agranda el carril, así que
+  // no pide firma; sin carril no hay dónde anotarla.
+  if (sub === 'until') {
+    const until = untilIso(payloadJson);
+    if (!until) { console.error('marker.js adhoc until: va con una hora HH:MM (por ejemplo 19:30)'); process.exit(2); }
+    const existing = io.readAdhoc(STATE_DIR, SID);
+    if (!existing) { console.error('marker.js adhoc until: esta sesión no tiene un arreglo rápido abierto: no hay dónde anotar la hora'); process.exit(1); }
+    io.writeAdhoc(STATE_DIR, SID, { ...existing, until });
+    appendLog('adhoc.log', { kind: 'ADHOC_UNTIL', until });
+    warnPastUntil('adhoc until', until);
+    process.stdout.write(`adhoc: termina ${String(payloadJson).trim()}\n`);
+    process.exit(0);
+  }
   if (sub === 'clear') {
     const existing = io.readAdhoc(STATE_DIR, SID);
     try { fs.unlinkSync(io.adhocPath(STATE_DIR, SID)); } catch (e) {
@@ -5348,6 +5388,8 @@ function cmdAdhoc(sub, payloadJson) {
       via, by,
       // la hora de la firma: el portón acepta la declaración sólo con el renglón `adhoc-lane-signed` de esta hora
       firmadaEn: nowIso(),
+      // la hora de fin que declaró la sesión con `adhoc until` sigue valiendo al agrandar el carril
+      ...(existing && existing.until ? { until: existing.until } : {}),
     };
     io.writeAdhoc(STATE_DIR, destino, obj);
     // el portón de edición apagado no apaga la firma; queda igual en bypass.log, que la revisión de la noche cuenta

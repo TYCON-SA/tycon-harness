@@ -432,7 +432,7 @@ function parsePipelinesBlock(specContent) {
     const line = lines[i];
     if (line.trim() === '') continue;
     const indent = line.length - line.trimStart().length;
-    if (indent === 0) break; // fin del bloque pipelines
+    if (indent === 0 && !/^-\s/.test(line)) break; // fin del bloque pipelines (una lista sin sangría sigue siendo suya)
     // (a) LISTA: `  - name: X` abre una entrada. Se chequea ANTES que el pendingItem genérico
     // (`- texto`) para no tragarse el `- name:` como un ítem pendiente.
     const listNameM = line.match(/^\s*-\s*name\s*:\s*["']?([\w-]+)/);
@@ -443,6 +443,13 @@ function parsePipelinesBlock(specContent) {
     if (!current) continue;
     const statusM = line.match(/^\s+status\s*:\s*["']?([\w-]+)/);
     if (statusM) { current.status = statusM[1]; continue; }
+    // `title`: el nombre de la tanda que dice /office. Entre comillas se toma entero; sin comillas, sin el comentario.
+    const titleM = line.match(/^\s+title\s*:\s*(.*?)\s*$/);
+    if (titleM) {
+      const q = /^(["'])(.*)\1$/.exec(titleM[1].replace(/\s+#[^"']*$/, ''));
+      current.title = q ? q[2] : titleM[1].replace(/\s+#.*$/, '');
+      continue;
+    }
     // `blocked_by`: lo lee VAL-C6 sin modelo. Sin comillas ni comentario inline; vacío → ''.
     const blockedM = line.match(/^\s+blocked_by\s*:\s*(.*?)\s*$/);
     if (blockedM) { current.blockedBy = blockedM[1].replace(/\s+#.*$/, '').replace(/^["']|["']$/g, '').trim(); continue; }

@@ -112,15 +112,11 @@ const el=(t,c,txt)=>{const e=document.createElement(t);if(c)e.className=c;if(txt
 const DAYS=["dom","lun","mar","mié","jue","vie","sáb"];
 const parse=s=>{const m=/^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d)$/.exec(s||"");return m?new Date(+m[1],m[2]-1,+m[3],+m[4],+m[5]):null};
 const fmt=s=>{const d=parse(s);return d?DAYS[d.getDay()]+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"):"—"};
-const dif=(a,b)=>{const x=parse(a),y=parse(b);return x&&y?Math.round((y-x)/60000):null};
-const difTxt=m=>{const s=m>0?"+":m<0?"−":"";const a=Math.abs(m);return a<60?s+a+" min":s+Math.floor(a/60)+" h "+String(a%60).padStart(2,"0")};
 const AST={trabajando:["Trabajando","#3ddc84"],prueba:["Corriendo pruebas","#5aa9ff"],espera:["Esperando entrar","#a59fc4"],firma:["Espera tu firma","#ffa53d"],libre:["Libre","#9aa3a0"],coordina:["Coordinando","#ff6fc0"]};
 const SHIRT=["#c2569b","#2f9e6a","#3b7ddd","#e08a1e","#7a5cc7","#d65a4a"];
 const agents=DATA.agents||[],items=DATA.items||[],meta=DATA.meta||null;
-// el fin: la hora de ahora con su diferencia contra la prometida; si ya pasó, el atraso real; sin hora, «sin hora estimada»
-const finTxt=a=>{const dd=a.atrasoMin>0?a.atrasoMin:dif(a.estimadaIso,a.pronosticoIso),fin=a.pronosticoIso||a.estimadaIso;if(!fin)return a.termina?{hora:a.termina,dif:"",cls:""}:null;
-  if(a.atrasoMin>0)return {hora:fmt(fin),dif:difTxt(dd)+" tarde",cls:"late"};
-  return {hora:fmt(fin),dif:dd==null?"":dd>15?difTxt(dd)+" tarde":dd<-15?difTxt(dd).replace("−","")+" antes":"en hora",cls:dd==null?"":dd>15?"late":dd<-15?"early":"ontime"}};
+// el fin lo calcula office.js una vez por sesión: la etiqueta, la tarjeta, el detalle, el panel y la tabla dicen lo mismo
+const finTxt=a=>a.fin||null;
 function renderTop(){
   document.getElementById("stamp").textContent=meta?"Foto de las "+meta.actualizado:"";
   const you=(meta&&meta.teToca)||[],ul=document.getElementById("youList");you.forEach(t=>ul.appendChild(el("li",null,t)));document.getElementById("you").hidden=!you.length;
@@ -139,7 +135,7 @@ function renderCrew(){const c=document.getElementById("crew");c.replaceChildren(
     if(a.avance!=null)k.appendChild(el("span","eta","Avance: "+a.avance+"%"));c.appendChild(k)})}
 // sin 3D, la tabla queda abierta y la sala dice por qué
 function sinTresD(msg){const o=document.getElementById("ovl");o.textContent=msg;o.hidden=false;document.getElementById("tablewrap").open=true}
-window.tablero={agents:()=>agents,items:()=>items,meta:()=>meta,AST,SHIRT,fmt,dif,difTxt,finTxt,sinTresD};
+window.tablero={agents:()=>agents,items:()=>items,meta:()=>meta,AST,SHIRT,fmt,finTxt,sinTresD};
 renderTop();renderCrew();
 setTimeout(()=>{if(!window.tablero.started)sinTresD("Este navegador no pudo cargar la oficina en 3D; las tarjetas y la tabla tienen lo mismo.")},8000);
 </script>
@@ -392,6 +388,7 @@ function abrir(nombre){panel.classList.remove("wide");sel=nombre;const a=T.agent
   panel.querySelector("h3").textContent=a.nombre;panel.querySelector(".es").textContent=s[0];const dl=panel.querySelector("dl");
   const row=(k,v,cls)=>{if(v==null||v==="")return;const dt=document.createElement("dt");dt.textContent=k;const dd=document.createElement("dd");if(cls)dd.className=cls;if(v instanceof Node)dd.append(v);else dd.textContent=v;dl.append(dt,dd)};
   row("Trabajo",a.titulo);
+  row("De la historia",a.historia);
   row("Haciendo",a.haciendo);
   if(a.mientras){const sp=document.createElement("span");const ms=T.AST[a.mientrasEstado];sp.textContent=a.mientras+(ms?" ("+ms[0].toLowerCase()+")":"");row("Mientras tanto",sp)}
   const f=T.finTxt(a);if(f){const sp=document.createElement("span");sp.append(f.hora);if(f.dif){const x=document.createElement("em");x.className=f.cls;x.textContent=" · "+f.dif;sp.append(x)}row("Termina",sp)}
@@ -414,8 +411,8 @@ function abrirTablero(){sel=null;desks.forEach(pintarTag);const items=T.items(),
   const ct=mk("div","counts");GROUPS.forEach(([g,l,c])=>{const k=mk("div","cnt");k.style.setProperty("--k",c);k.append(mk("b",null,String(de(g).length)),mk("span",null,l));ct.append(k)});panel.append(ct);
   const toca=(meta&&meta.teToca)||[];if(toca.length){panel.append(mk("h4","toca","Te toca"));const ul=mk("ul","toca");toca.forEach(t=>ul.append(mk("li",null,t)));panel.append(ul)}
   GROUPS.forEach(([g,l,c])=>{const rows=de(g);if(!rows.length)return;const h=mk("h4",null,l+" · "+rows.length);h.style.color=c;panel.append(h);const ul=mk("ul","list");
-    rows.forEach(r=>{const li=mk("li");li.append(mk("b",null,r.titulo||""));const fin=r.pronosticoIso||r.estimadaIso;const d=T.dif(r.estimadaIso,r.pronosticoIso);
-      const meta2=mk("span","m",(r.quien||"—")+(fin?" · "+T.fmt(fin):""));if(d!=null&&Math.abs(d)>15){const x=mk("em",d>0?"late":"early"," · "+(d>0?T.difTxt(d)+" tarde":T.difTxt(d).replace("−","")+" antes"));meta2.append(x)}li.append(meta2);ul.append(li)});panel.append(ul)});
+    rows.forEach(r=>{const li=mk("li");li.append(mk("b",null,r.titulo||""));const f=r.fin;
+      const meta2=mk("span","m",(r.accion||r.quien||"—")+(f?" · "+f.hora:""));if(f&&f.dif)meta2.append(mk("em",f.cls," · "+f.dif));li.append(meta2);ul.append(li)});panel.append(ul)});
   if(!items.length)panel.append(mk("p","m","No hay nada pendiente en esta máquina."));
   if(meta&&meta.actualizado)panel.append(mk("p","m","Foto de las "+meta.actualizado))}
 
