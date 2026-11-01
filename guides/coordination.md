@@ -70,6 +70,13 @@ vuelve a quedar libre. Cómo son los puestos: `guides/git-worktrees.md` §8.
 **Sin medir todavía, queda como prueba del dueño:** cuánto tarda en aparecer una sesión abierta de fondo, y qué título
 muestra la pestaña del editor después de `/rename`. La guía no da por hecho ninguna de las dos.
 
+**La sesión abierta arranca como la coordinadora.** Va con el mismo modo de permisos que la coordinadora y con control
+remoto a su nombre, para que el dueño la vea y la maneje desde claude.ai/code o el celular. Con modos distintos, la
+sesión nueva se traba en un pedido de permiso que nadie ve, y los mensajes de las otras sesiones le quedan retenidos;
+si además el dueño no está en la máquina, no puede entrar con `claude attach`. Hasta que `open` lo haga solo,
+si una sesión abierta se traba así, la coordinadora la para y la relanza a mano:
+`claude --bg --resume <id> -n <nombre> --permission-mode <su modo> --remote-control <nombre> -- <encargo>`.
+
 `open` pasa el encargo tal cual al lanzador, sin revisarlo: lo que diga no firma nada (ver «Las firmas del dueño»).
 
 Con Codex, las sesiones las abre el dueño: Codex no tiene un lanzador de sesiones de fondo con nombre.

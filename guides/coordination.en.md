@@ -72,6 +72,13 @@ fails, the slot is free again. What the slots are: `guides/git-worktrees.md` §8
 **Not measured yet, left as the owner's test:** how long a session opened in the background takes to show up, and what
 title the editor tab shows after `/rename`. The guide takes neither for granted.
 
+**The opened session starts like the coordinator.** It runs in the same permission mode as the coordinator and with
+remote control under its name, so the owner can see it and drive it from claude.ai/code or the phone. With different
+modes, the new session gets stuck on a permission prompt nobody sees, and the messages from the other sessions are held
+back from it; if the owner is also away from the machine, they cannot go in with `claude attach`. Until `open` does it
+by itself, if an opened session gets stuck like that, the coordinator stops it and relaunches it by hand:
+`claude --bg --resume <id> -n <name> --permission-mode <its mode> --remote-control <name> -- <task>`.
+
 `open` passes the task to the launcher as is, without reviewing it: nothing it says signs anything (see «The owner's
 signatures»).
 
