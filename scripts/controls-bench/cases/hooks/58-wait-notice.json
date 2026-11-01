@@ -149,6 +149,38 @@
           "setup": [
             "mkdir -p \"$SANDBOX_HOME/.claude/.tycon-pipeline/active\" && printf '%s' '{\"storyId\":\"9.9\",\"stepsPending\":[5,6,8]}' > \"$SANDBOX_HOME/.claude/.tycon-pipeline/active/bench-w5.json\""
           ]
+        },
+        {
+          "id": "turno-pedido-a-otra-sesion-abre-espera-de-otra-sesion",
+          "type": "must-stay-quiet",
+          "__doc": "Un turno que termina con un mensaje a otra sesión (un turno pedido a la coordinadora) abre la espera como de otra sesión, con a quién espera: con coordinadora viva, el dueño se entera recién a su propio plazo (wait_notice.peer_owner_minutes). Sale 0 sin salida. ROJO PREVIO: abrirla como una espera de la persona, que va al dueño al plazo de siempre. Los plazos, en scripts/tests/wait-notice.test.js T33-T36.",
+          "files": {
+            "transcript.jsonl": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"implementemos\"},\"timestamp\":\"2026-10-31T10:00:00.000Z\"}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"id\":\"sm1\",\"name\":\"SendMessage\",\"input\":{\"to\":\"Coordinadora\",\"message\":\"¿Me das turno para el banco?\"}}]},\"timestamp\":\"2026-10-31T10:00:05.000Z\"}\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"sm1\",\"content\":\"ok\"}]},\"timestamp\":\"2026-10-31T10:00:06.000Z\"}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Pedí turno; espero.\"}]},\"timestamp\":\"2026-10-31T10:00:07.000Z\"}\n"
+          },
+          "stdin": {
+            "hook_event_name": "Stop",
+            "session_id": "bench-w7",
+            "transcript_path": "${FIXTURE}/transcript.jsonl",
+            "stop_hook_active": false
+          },
+          "env": {
+            "TYCON_TELEGRAM_CHAT_ID": "1",
+            "TELEGRAM_BOT_TOKEN": "",
+            "TYCON_TELEGRAM_API": "http://127.0.0.1:9",
+            "TYCON_WAIT_NOTICE_MS": "3000"
+          },
+          "expect": {
+            "exit": 0,
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/wait-notice/waits/bench-w7.json",
+                "re": "\"kind\":\"peer\".*la respuesta de Coordinadora"
+              }
+            ]
+          },
+          "setup": [
+            "mkdir -p \"$SANDBOX_HOME/.claude/.tycon-pipeline/active\" && printf '%s' '{\"storyId\":\"9.9\",\"stepsPending\":[5,6,8]}' > \"$SANDBOX_HOME/.claude/.tycon-pipeline/active/bench-w7.json\""
+          ]
         }
       ]
     },
@@ -157,7 +189,11 @@
       "script": "${TCG}/scripts/hooks/wait-notice.js",
       "event": "Stop",
       "matcher": "*",
-      "args": ["--timer", "bench-w6", "2026-10-31T10:00:00.000Z"],
+      "args": [
+        "--timer",
+        "bench-w6",
+        "2026-10-31T10:00:00.000Z"
+      ],
       "cases": [
         {
           "id": "coordinadora-cerrada-va-directo-al-duenio",
@@ -176,8 +212,18 @@
           },
           "expect": {
             "exit": 0,
-            "file_contains": [{ "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/wait-notice/log.jsonl", "re": "\"session\":\"bench-w6\".*\"result\":\"no-channel\"" }],
-            "file_not_contains": [{ "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/wait-notice/log.jsonl", "re": "coordinator-notified" }]
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/wait-notice/log.jsonl",
+                "re": "\"session\":\"bench-w6\".*\"result\":\"no-channel\""
+              }
+            ],
+            "file_not_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/wait-notice/log.jsonl",
+                "re": "coordinator-notified"
+              }
+            ]
           },
           "setup": [
             "mkdir -p \"$SANDBOX_HOME/.claude/.tycon-pipeline/wait-notice/waits\" && printf '%s\\n' '{\"ts\":\"2026-10-31T09:00:00.000Z\",\"name\":\"relay-designation\",\"status\":\"ok\",\"sesion\":\"bench-coord\",\"rol\":\"coordinadora\",\"quien\":\"el dueño\",\"cita\":\"Esta sesión es la coordinadora\"}' > \"$SANDBOX_HOME/.claude/.tycon-pipeline/gates.log\" && node -e 'const p=require(\"path\"),fs=require(\"fs\");fs.writeFileSync(p.join(process.env.SANDBOX_HOME,\".claude\",\".tycon-pipeline\",\"wait-notice\",\"waits\",\"bench-w6.json\"),JSON.stringify({session:\"bench-w6\",story:\"9.9\",step:\"5\",stepName:\"Revisores\",kind:\"stop\",waiting:\"¿Sigo?\",openedAt:\"2026-10-31T10:00:00.000Z\",records:2,prompts:1,transcript:p.join(process.env.FIXTURE,\"transcript.jsonl\"),pid:null,notified:false}))'"

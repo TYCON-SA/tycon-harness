@@ -1572,7 +1572,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Por qué existe:** La espera por una persona es buena parte del reloj de una corrida y nada avisaba: quien la dejaba corriendo se enteraba tarde de una pregunta sin contestar. Cada espera nueva es un mensaje nuevo; sin Telegram prendido no hace nada.
 
-**Quién la usa:** Los hooks de cierre de turno, de pregunta a la persona y de pedido de permiso; manda con `tycon-telegram-notify.sh`. El plazo es `wait_notice.minutes` de `team-repos.json`; con una coordinadora designada y viva, al plazo le llega a ella y al dueño a `wait_notice.owner_minutes` (30).
+**Quién la usa:** Los hooks de cierre de turno, de pregunta y de permiso. Plazo: `wait_notice.minutes`; con coordinadora viva le llega a ella y al dueño a `owner_minutes`.
 
 **Dónde se prueba:** `scripts/tests/wait-notice.test.js`
 
