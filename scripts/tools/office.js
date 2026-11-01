@@ -13,7 +13,8 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  * de una corrida se mide contra su promesa (su arranque más su estimado, del marcador); sin estimado, contra la primera
  * hora que se vio para esa sesión y ese trabajo, guardada en `<estado>/office/promises.json`.
  * El panel de la pared cuenta lo pendiente de la máquina: lo que está en curso, las firmas, lo que espera entrar y lo
- * que quedó a medio camino.
+ * que quedó a medio camino. Si la coordinadora escribe su tablero en `<estado>/coordination/tablero.json`, la página lo
+ * muestra en un panel aparte: los pendientes por grupo, con su hora esperable y quién los tiene, y lo ya hecho.
  *
  * `--open` abre la oficina viva: arranca el proceso local de office/server.js (o reusa el que ya está) y abre su
  * dirección; la página recibe cada cambio por WebSocket. `--out` escribe la foto fija en un archivo, y `--json` imprime
@@ -244,6 +245,65 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
   return { data: { agents, items, meta, rows, free: wip.free || [], unreadable: wip.unreadable || [] }, promises: kept };
 }
 
+// El tablero que escribe la coordinadora en `<estado>/coordination/tablero.json`, con lo mismo que su página de
+// pendientes: `pendientes` (titulo, estado, grupo, orden, quien, nota, estimadaIso, pronosticoIso, realIso, termina) y
+// `meta` (actualizado, resumen, teToca). Sus `agentes` no se usan: los escritorios salen de /wip.
+const BOARD_GROUPS = ['Hoy', 'Esta semana', 'La semana que viene', 'Más adelante'];
+const BOARD_TEXT_MAX = 300;
+const text = (v) => (typeof v === 'string' ? v.trim().slice(0, BOARD_TEXT_MAX) : '');
+// la hora local de la página del tablero, 'YYYY-MM-DDTHH:MM', como la dice la oficina: «mar 18:00»
+const boardHour = (v) => {
+  const m = /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d)/.exec(typeof v === 'string' ? v : '');
+  if (!m) return '';
+  const ms = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]).getTime();
+  return Number.isFinite(ms) ? dayHhmm(ms) : '';
+};
+
+/** Lo que dibuja el panel del tablero, sin leer nada; `raw` es el archivo ya leído. Tira si no tiene la forma. */
+function buildBoard(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('no es un objeto');
+  if (raw.pendientes != null && !Array.isArray(raw.pendientes)) throw new Error('«pendientes» no es una lista');
+  const meta = raw.meta && typeof raw.meta === 'object' && !Array.isArray(raw.meta) ? raw.meta : {};
+  const rows = (raw.pendientes || []).filter((p) => p && typeof p === 'object' && text(p.titulo));
+  const ord = (p) => (Number.isFinite(p.orden) ? p.orden : Infinity);
+  rows.sort((a, b) => ord(a) - ord(b));
+  const groups = new Map();
+  const done = [];
+  for (const p of rows) {
+    if (p.estado === 'hecho') { done.push({ titulo: text(p.titulo), quien: text(p.quien), real: boardHour(p.realIso) || 'sin hora' }); continue; }
+    const name = text(p.grupo) || 'Sin grupo';
+    if (!groups.has(name)) groups.set(name, []);
+    groups.get(name).push({
+      titulo: text(p.titulo), quien: text(p.quien), nota: text(p.nota),
+      fin: text(p.termina) || boardHour(p.pronosticoIso) || boardHour(p.estimadaIso) || 'sin hora estimada',
+      estado: text(p.estado),
+    });
+  }
+  // los grupos de la semana van en su orden; los demás, después, en el orden en que aparecen
+  const names = [...groups.keys()].sort((a, b) => {
+    const ia = BOARD_GROUPS.indexOf(a); const ib = BOARD_GROUPS.indexOf(b);
+    return (ia < 0 ? BOARD_GROUPS.length : ia) - (ib < 0 ? BOARD_GROUPS.length : ib);
+  });
+  return {
+    actualizado: boardHour(meta.actualizado) || text(meta.actualizado),
+    resumen: text(meta.resumen),
+    teToca: (Array.isArray(meta.teToca) ? meta.teToca : []).map(text).filter(Boolean),
+    grupos: names.map((nombre) => ({ nombre, items: groups.get(nombre) })),
+    hechos: done,
+  };
+}
+
+// El tablero de la coordinadora. Sin archivo, no hay tablero; uno roto o ilegible se dice en `problem`.
+function readBoard(file) {
+  let raw;
+  try { raw = fs.readFileSync(file, 'utf8'); } catch (e) {
+    return e.code === 'ENOENT' ? { board: null } : { board: null, problem: `el tablero de la coordinadora no se pudo leer (${e.code || e.message})` };
+  }
+  try { return { board: buildBoard(JSON.parse(raw)) }; } catch (e) {
+    return { board: null, problem: `el tablero de la coordinadora no se pudo leer (${e.message})` };
+  }
+}
+
 // Un módulo de la librería con sus importaciones relativas cambiadas por el nombre con que figura en MODULES: un
 // módulo que viene de una dirección `data:` no tiene carpeta contra la cual resolverlas.
 function moduleSource(key, rel) {
@@ -314,6 +374,9 @@ async function collect(opts = {}) {
   const saved = readPromises(file);
   if (saved.problem) problems.push(saved.problem);
   const { data, promises } = buildOffice({ wip, signatures, coordinatorSid, coordinatorName, promises: saved.promises, nowMs });
+  const board = readBoard(path.join(sdir, 'coordination', 'tablero.json'));
+  if (board.problem) problems.push(board.problem);
+  data.tablero = board.board;
   data.unreadable.push(...problems);
   // el enlace al sitio, sólo con una dirección web: cualquier otra cosa no se muestra
   let site;
@@ -445,4 +508,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { buildOffice, page, importMap, moduleSource, collect, openFile, openLive, deskSlots, readSiteUrl, MODULES };
+module.exports = { buildOffice, buildBoard, page, importMap, moduleSource, collect, openFile, openLive, deskSlots, readSiteUrl, MODULES };

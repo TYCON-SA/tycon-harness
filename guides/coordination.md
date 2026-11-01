@@ -186,6 +186,24 @@ El arreglo rápido (un cambio de código sin historia) es la firma `adhoc-lane`:
 Cortos y llanos: qué pasó, qué falta y qué decide él, en ese orden. Un aviso por tanda de trabajo, no uno por sesión.
 Lo mide el medidor de estilo que ya existe; esta receta no agrega otro.
 
+## El tablero en la oficina
+
+La oficina de `/office` muestra, en un panel aparte de los escritorios, el tablero de pendientes de la coordinadora: lo de
+hoy, de esta semana, de la semana que viene y de más adelante, cada cosa con su hora esperable de fin, quién la tiene y una
+nota llana, y lo ya hecho con su hora real. La coordinadora lo escribe entero en `<estado>/coordination/tablero.json`
+(primero en un archivo aparte y después renombrado, para que la oficina nunca lo lea a medias), cada vez que lo cambia:
+
+- `pendientes`: una lista; cada uno con `titulo`, `estado` (`hecho`, `curso`, `firma`, `riesgo` o `espera`), `grupo`
+  (`Hoy`, `Esta semana`, `La semana que viene` o `Más adelante`), `orden`, `quien`, `nota`, y su hora: `pronosticoIso`
+  o `estimadaIso` (hora local, `AAAA-MM-DDTHH:MM`), o `termina` con un texto propio. Un hecho lleva `realIso`.
+- `meta`: `actualizado`, `resumen` y `teToca` (lo que le toca al dueño, una línea cada cosa).
+
+Sin el archivo no hay panel. Un archivo roto se dice abajo, en «No se pudo leer», y el panel no se dibuja. La oficina viva
+lo vuelve a leer sola cuando cambia. Los escritorios no salen de acá: salen de lo que hace cada sesión.
+
+La hora prometida de un arreglo rápido la anota su sesión con `marker.js adhoc until HH:MM`. La oficina y `/wip` la
+muestran como su fin, y miden el atraso contra ella; sin hora, dicen «sin hora estimada».
+
 ## Las reglas del día a día
 
 Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y por qué.

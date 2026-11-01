@@ -717,3 +717,79 @@ test('T58 Page_PlaceholderInData_DoesNotBreak: un título con el nombre de un ma
     assert.deepStrictEqual(JSON.parse(l[1]), live);
   }
 });
+
+// ── El tablero de la coordinadora: <estado>/coordination/tablero.json, en un panel aparte ─────────────────────────────
+
+const BOARD = {
+  meta: { actualizado: '2026-10-18T10:55', resumen: 'Dos cosas en curso y una esperando tu firma.', teToca: ['Firmar el ok de guardar de la B'] },
+  agentes: [{ nombre: 'Almeida', estado: 'curso' }],
+  pendientes: [
+    { titulo: 'Más adelante uno', estado: 'espera', grupo: 'Más adelante', orden: 1, quien: 'Beto', nota: 'Cuando haya lugar' },
+    { titulo: 'La oficina en vivo', estado: 'curso', grupo: 'Hoy', orden: 2, quien: 'Almeida', estimadaIso: '2026-10-18T12:00', pronosticoIso: '2026-10-18T12:30', nota: 'Falta guardar' },
+    { titulo: 'Primero de hoy', estado: 'firma', grupo: 'Hoy', orden: 1, quien: 'vos', termina: 'cuando firmes' },
+    { titulo: 'Esta semana uno', estado: 'riesgo', grupo: 'Esta semana', orden: 1, quien: 'Angelito', estimadaIso: '2026-10-20T18:00' },
+    { titulo: 'La excepción del GUID', estado: 'hecho', grupo: 'Hoy', orden: 3, quien: 'Angelito', realIso: '2026-10-18T09:10' },
+    { titulo: 'Otro grupo', estado: 'curso', grupo: 'Algún día', orden: 1, quien: 'Beto' },
+  ],
+};
+
+async function collectWith(text) {
+  const { collect } = require(OFFICE);
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'office-tab-'));
+  for (const d of ['active', 'adhoc', 'doing', 'office', 'coordination']) fs.mkdirSync(path.join(stateDir(home), d), { recursive: true });
+  if (text != null) fs.writeFileSync(path.join(stateDir(home), 'coordination', 'tablero.json'), text);
+  return collect({ home, now: new Date(NOW).toISOString(), siteUrl: async () => ({ code: 3, out: '' }) });
+}
+
+test('T67 Board_Absent_NoPanel: sin el archivo de la coordinadora no hay tablero ni aviso', async () => {
+  const data = await collectWith(null);
+  assert.strictEqual(data.tablero, null);
+  assert.ok(!data.unreadable.some((u) => /tablero/.test(u)), data.unreadable.join(' | '));
+});
+
+test('T68 Board_Grouped: los pendientes van por grupo, en el orden de la semana y por su orden; los hechos aparte', () => {
+  const { buildBoard } = require(OFFICE);
+  const t = buildBoard(BOARD);
+  assert.deepStrictEqual(t.grupos.map((g) => g.nombre), ['Hoy', 'Esta semana', 'Más adelante', 'Algún día']);
+  assert.deepStrictEqual(t.grupos[0].items.map((i) => i.titulo), ['Primero de hoy', 'La oficina en vivo']);
+  const live = t.grupos[0].items[1];
+  assert.strictEqual(live.quien, 'Almeida');
+  assert.strictEqual(live.nota, 'Falta guardar');
+  assert.strictEqual(live.fin, 'dom 12:30', 'la hora esperable es la del pronóstico, con su día');
+  assert.strictEqual(t.grupos[0].items[0].fin, 'cuando firmes', 'el texto propio de la coordinadora gana');
+  assert.strictEqual(t.grupos[1].items[0].fin, 'mar 18:00');
+  assert.strictEqual(t.grupos[2].items[0].fin, 'sin hora estimada');
+  assert.deepStrictEqual(t.hechos, [{ titulo: 'La excepción del GUID', quien: 'Angelito', real: 'dom 09:10' }]);
+  assert.deepStrictEqual(t.teToca, ['Firmar el ok de guardar de la B']);
+  assert.strictEqual(t.resumen, 'Dos cosas en curso y una esperando tu firma.');
+  assert.strictEqual(t.actualizado, 'dom 10:55');
+  assert.ok(!('agentes' in t), 'los escritorios salen de /wip: el tablero no los repite');
+});
+
+test('T69 Board_Broken_Said: un tablero roto se dice y no se dibuja', async () => {
+  for (const text of ['{ roto', '[]', '{"pendientes":"no es lista"}']) {
+    const data = await collectWith(text);
+    assert.strictEqual(data.tablero, null, text);
+    assert.ok(data.unreadable.some((u) => /el tablero de la coordinadora no se pudo leer/.test(u)), `${text}: ${data.unreadable.join(' | ')}`);
+  }
+});
+
+test('T70 Board_OnlyStrings: lo que no es texto no llega a la página, y un renglón sin título se saltea', () => {
+  const { buildBoard } = require(OFFICE);
+  const t = buildBoard({ pendientes: [{ titulo: { x: 1 } }, null, 'texto', { titulo: 'Bien', quien: 42, nota: ['a'], grupo: 7, estado: 'curso' }], meta: { teToca: ['ok', 3, null] } });
+  assert.strictEqual(t.grupos.length, 1);
+  assert.strictEqual(t.grupos[0].nombre, 'Sin grupo');
+  assert.deepStrictEqual(t.grupos[0].items[0], { titulo: 'Bien', quien: '', nota: '', fin: 'sin hora estimada', estado: 'curso' });
+  assert.deepStrictEqual(t.teToca, ['ok']);
+});
+
+test('T71 Board_Page_Panel: la página trae el panel del tablero y lo dibuja con texto, nunca como HTML', async () => {
+  const data = await collectWith(JSON.stringify(BOARD));
+  assert.ok(data.tablero && data.tablero.grupos.length === 4);
+  const html = page(data);
+  assert.match(html, /id="board"/);
+  const fn = (html.match(/function renderBoard\(\)\{[\s\S]*?\n\}/) || [])[0];
+  assert.ok(fn, 'la página tiene su función del tablero');
+  assert.ok(!/innerHTML/.test(fn), 'el tablero se escribe con textContent');
+  assert.match(html, /renderBoard\(\);renderTop\(\);renderCrew\(\)|renderBoard\(\)/);
+});
