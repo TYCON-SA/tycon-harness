@@ -1633,6 +1633,10 @@
     {
       "words": ["refmap", "mainline"],
       "reason": "nombres de opciones de git (`git pull --refmap`, `git cherry-pick --mainline`) que el freno de constancias reconoce para saber qué trae el comando: son de git, no se traducen. Aprobada por la coordinadora, por autorización del dueño, el 2026-10-28."
+    },
+    {
+      "words": ["websocket", "subprotocol", "permessage", "util", "utf"],
+      "reason": "nombres propios de la librería ws 8.22.0 copiada sin cambios en scripts/tools/office/vendor/ws/ (story 2.81, tanda B): sus archivos (websocket.js, websocket-server.js, subprotocol.js, permessage-deflate.js, buffer-util.js) y sus variables de entorno (WS_NO_BUFFER_UTIL, WS_NO_UTF_8_VALIDATE). Son términos del protocolo y de la librería en inglés técnico; renombrarlos rompería la copia tal cual y su huella. Decidido por el dueño el 2026-11-01."
     }
   ],
   "schemaFiles": [
