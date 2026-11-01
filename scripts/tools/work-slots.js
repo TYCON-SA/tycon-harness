@@ -57,7 +57,7 @@ function git(cwd, args) {
 }
 
 /** El checkout principal del repo de `dir` (los puestos son sus hermanos): `{ main, common }` o `{ problem }`. */
-function mainCheckout(dir) {
+function mainCheckout(dir, home) {
   if (!dir || !fs.existsSync(dir)) return { problem: `la carpeta ${dir} no existe` };
   const c = git(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
   if (c.problem) return { problem: `${dir} no es un repo de git (${c.problem})` };
@@ -65,8 +65,15 @@ function mainCheckout(dir) {
   if (path.basename(common) !== '.git') return { problem: `${dir} es un repo sin carpeta de trabajo: no lleva puestos` };
   const main = fs.realpathSync(path.dirname(common));
   // el freno de staging del clon de las skills mira su ruta literal: un puesto en otra ruta lo esquivaría
-  if (main.split(path.sep).join('/').includes('/.claude/agent-skills')) return { problem: `${main} es el clon de agent-skills: no lleva puestos` };
+  if (isSkillsClone(main, home)) return { problem: `${main} es el clon de agent-skills: no lleva puestos` };
   return { main, common };
+}
+
+// la ruta del clon de las skills la sabe tycon-home.js; se carga al usarla, no al cargar este archivo
+function isSkillsClone(main, home) {
+  try {
+    return fs.realpathSync(require('../setup/harness/tycon-home.js').installedSkillsDir(home || os.homedir())) === main;
+  } catch { return false; }
 }
 
 const slotPath = (main, n) => path.join(path.dirname(main), `${path.basename(main)}${TAG}${n}`);
@@ -122,7 +129,7 @@ function present(main) {
 /** Crea los puestos que falten hasta el tope. Nunca borra uno: si el tope bajó, lo dice. */
 function ensure(opts = {}) {
   const home = opts.home || os.homedir();
-  const r = mainCheckout(opts.repo || process.cwd());
+  const r = mainCheckout(opts.repo || process.cwd(), home);
   if (r.problem) return no(`No hay puestos: ${r.problem}.`);
   const want = cap(opts);
   if (!Number.isInteger(want) || want < 1) return no(`El tope de puestos tiene que ser un entero desde 1 (vino ${opts.count}).`);
@@ -154,7 +161,7 @@ function ensure(opts = {}) {
 }
 
 function list(opts = {}) {
-  const r = mainCheckout(opts.repo || process.cwd());
+  const r = mainCheckout(opts.repo || process.cwd(), opts.home);
   if (r.problem) return no(`No hay puestos: ${r.problem}.`);
   const p = present(r.main);
   if (p.problem) return no(`No pude listar los worktrees de ${r.main} (${p.problem}).`);
@@ -184,7 +191,7 @@ function take(opts = {}) {
   }
   const e = ensure(opts);
   if (!e.ok) return e;
-  const r = mainCheckout(e.main);
+  const r = mainCheckout(e.main, opts.home);
   return withLock(r.common, () => {
     const p = present(r.main);
     if (p.problem) return no(`No pude listar los worktrees de ${r.main} (${p.problem}).`);
@@ -202,7 +209,7 @@ function take(opts = {}) {
 /** Deja el puesto sobre main, sin rama y libre. La rama queda. Con cambios sin commitear no lo suelta. */
 function release(opts = {}) {
   const dir = path.resolve(opts.slot || process.cwd());
-  const r = mainCheckout(dir);
+  const r = mainCheckout(dir, opts.home);
   if (r.problem) return no(`No solté nada: ${r.problem}.`);
   const p = present(r.main);
   if (p.problem) return no(`No pude listar los worktrees de ${r.main} (${p.problem}).`);
