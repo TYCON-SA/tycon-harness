@@ -60,6 +60,8 @@ const FRENOS = {
   'test-scope-guard': { reglas: ['suite-completa'], veredictos: ['bloqueo', 'paso', 'escape'] },
   'pr-uno-por-repo': { reglas: ['pr-duplicado'], veredictos: ['bloqueo', 'paso', 'escape'] },
   'pr-sin-auto-complete': { reglas: ['sin-auto-complete'], veredictos: ['bloqueo', 'paso', 'escape'] },
+  // Encolar un pedido del arnés que toca el instalador sin las portables en verde (el mismo hook que el de arriba).
+  'pr-sin-portables': { reglas: ['sin-portables'], veredictos: ['bloqueo', 'paso', 'escape'] },
   // Nunca bloquea: todas sus salidas son 0. Que la ficha lo diga es parte de la medición — «avisó N
   // veces y nadie hizo nada» es lo que decide si algún día tiene que pasar a frenar.
   'push-referencia-fantasma': { reglas: ['referencia-fantasma'], veredictos: ['aviso', 'paso'] },
