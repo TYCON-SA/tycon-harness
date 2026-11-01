@@ -29,6 +29,7 @@
           "id": "sed-solo-el-cuerpo-pasa",
           "type": "must-not-block",
           "tools": ["claude"],
+          "asymmetry": "Par del caso must-block (tools:['claude']).",
           "_por_que": "El caso del 31/10: un sed que sólo cambia el cuerpo pasa a propósito, como la herramienta de edición.",
           "setup": [
             "git init -q -b main .",
