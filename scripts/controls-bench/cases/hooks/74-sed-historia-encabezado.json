@@ -1,0 +1,50 @@
+{
+  "hooks": [
+    {
+      "hook": "on-bash-write-gate.js (historia escrita por consola: el sed que cambia el encabezado)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-bash-write-gate.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "_por_que": "Un sed que nombra su historia se ensaya sobre una copia y pasa si no la cierra. Medía sólo los status: de arriba: una tanda del bloque pipelines pasada a done pasaba por consola y frenaba con la herramienta de edición.",
+      "cases": [
+        {
+          "id": "sed-tanda-de-pipelines-a-done-frena",
+          "type": "must-block",
+          "tools": ["claude"],
+          "asymmetry": "Bajo Codex el freno no frena.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs",
+            "printf -- '---\\nstory: \"9.9\"\\nepic: \"9\"\\nstatus: in-progress\\npipelines:\\n  front:\\n    status: blocked\\n---\\n# Story 9.9\\n\\nTexto.\\n' > specs/story-9.9-algo.md"
+          ],
+          "stdin": {
+            "session_id": "bench-sed-tanda",
+            "tool_name": "Bash",
+            "tool_input": { "command": "sed -i -e 's/^    status: blocked$/    status: done/' specs/story-9.9-algo.md" },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": { "exit": 2, "stderr_re": ["HISTORIA ESCRITA POR CONSOLA"] }
+        },
+        {
+          "id": "sed-solo-el-cuerpo-pasa",
+          "type": "must-not-block",
+          "tools": ["claude"],
+          "asymmetry": "Par del caso must-block (tools:['claude']).",
+          "_por_que": "El caso del 31/10: un sed que sólo cambia el cuerpo pasa a propósito, como la herramienta de edición.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs",
+            "printf -- '---\\nstory: \"9.9\"\\nepic: \"9\"\\nstatus: in-progress\\npipelines:\\n  front:\\n    status: blocked\\n---\\n# Story 9.9\\n\\nTexto.\\n' > specs/story-9.9-algo.md"
+          ],
+          "stdin": {
+            "session_id": "bench-sed-tanda",
+            "tool_name": "Bash",
+            "tool_input": { "command": "sed -i -e 's/^Texto\\.$/Texto nuevo./' specs/story-9.9-algo.md" },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": { "exit": 0 }
+        }
+      ]
+    }
+  ]
+}

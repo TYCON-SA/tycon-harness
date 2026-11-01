@@ -2555,13 +2555,16 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
   return [...sinResolver, ...[...vistos].filter((abs) => {
     const estado = estadoDeHistoria(abs);
     if (estado === null) return false;
-    // un `sed` que deja el estado del encabezado como estaba no la cierra: pasa como el cuerpo editado con Edit
+    // un `sed` que deja el encabezado como estaba no la cierra: pasa como el cuerpo editado con Edit. Los `status:` de
+    // arriba tienen que quedar iguales y, además, la herramienta de edición tiene que dejar pasar el mismo cambio (una
+    // tanda del bloque `pipelines` a `done`, el número de la historia, un estado repetido)
     if (sedsDe.has(abs) && !noSoloSed.has(abs)) {
       let antes = null;
       try { antes = fs.readFileSync(abs, 'utf8'); } catch (e) { logHookError(e); }
       const despues = antes == null ? null : ensayarSeds(abs, [...new Set(sedsDe.get(abs))]);
       const ea = estadosDelEncabezado(antes || '');
-      if (despues != null && ea.length && JSON.stringify(ea) === JSON.stringify(estadosDelEncabezado(despues))) return false;
+      if (despues != null && ea.length && JSON.stringify(ea) === JSON.stringify(estadosDelEncabezado(despues))
+        && !require('./lib/story-transition.js').transicionAMano(abs, antes, despues)) return false;
     }
     if (estado !== 'draft') return true;
     // el estado del encabezado del cuerpo (todos sus `status:` en borrador), no un `status: draft` cualquiera más abajo
