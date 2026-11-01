@@ -324,18 +324,18 @@ Pasan dos cosas. La primera: te cobran el turno anterior — los dos medidores a
 fui de largo y cuánto te dejé esperando, y lo entregan ahora *(`response-style-notice.js` ·
 `blocking-notice.js`)*.
 
-La segunda es la que gobierna el resto del día: se decide el **carril**. Hay dos, y cambian todo lo
+La segunda es la que gobierna el resto del día: se decide el **camino**. Hay dos, y cambian todo lo
 que sigue:
 
-- **Carril de story** — esto es trabajo de una story con spec. Se abre el **marcador** (un archivo
+- **Historia** — esto es trabajo de una story con spec. Se abre el **marcador** (un archivo
   de estado que dice *"hay una story en curso, es ésta"*), arranca el timer, y de ahí en más los
   frenos de edición saben contra qué verificar.
-- **Carril de ajuste puntual** — un arreglo chico, declarado como tal y con constancia. Menos
-  ceremonia, pero deja rastro.
+- **Camino rápido** — un cambio chico: se abre el **carril**, con el motivo en una línea y la lista de
+  archivos. Menos ceremonia, pero deja rastro.
 
 Sin uno de los dos, no se toca código. Ése es el portón del Momento 4.
 
-**Por qué**: decidir el carril por **expresiones regulares** sobre lo que escribís no funciona. El castellano
+**Por qué**: decidir el camino por **expresiones regulares** sobre lo que escribís no funciona. El castellano
 no se deja regexear — *"no quiero saltear el pipeline"* se lee como *"salteemos el pipeline"*, y
 cada arreglo produce la falla opuesta (medido: tres fallas en tres días, con ~120 líneas de
 patrones). Por eso decide un modelo barato 🧠 leyendo tus prompts reales. Y como toda pieza que
@@ -405,7 +405,7 @@ Cada edición de archivo pasa por una cadena de seis frenos, en este orden:
 
 | El freno | Qué impide | (script) |
 |---|---|---|
-| **el portón de carril** | tocar código sin una story ni un marcador de ajuste puntual | `on-story-gate` |
+| **el portón de carril** | tocar código sin una historia ni un carril de camino rápido | `on-story-gate` |
 | **el que no te deja fabricar la evidencia** | inventar la prueba que después desbloquea el cierre de la story | `on-dod-evidence-guard` |
 | **el que custodia el "listo"** | marcar una story como terminada sin cumplir el listado de cierre | `on-frontmatter-write` |
 | **el que exige el test primero** | escribir el primer archivo de código antes que su test | `on-atdd-preedit` |
