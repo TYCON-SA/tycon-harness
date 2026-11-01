@@ -190,16 +190,17 @@ al terminar, ves que quedó con sólo mirar el resultado y sus pruebas, sin una 
   retoma.
 
 **2. ¿Quién aprueba? Lo decide el riesgo.** El riesgo es **alto** cuando el cambio toca algo sensible del repo, como
-producción, una migración o seguridad. También cuando trae una decisión del dueño: alcance, seguridad, una dependencia
-nueva, plata, clientes u otras personas. Ante la duda, riesgo alto. **El dueño** es la persona que tu organización
-designa para aprobar lo delicado. Si trabajás solo, el dueño sos vos.
+producción, una migración o seguridad. También cuando trae una decisión tuya o de tu organización: alcance, seguridad,
+una dependencia nueva, plata, clientes u otras personas. Ante la duda, riesgo alto. **Lo delicado lo aprobás siempre
+vos**, el dev que trabaja. La **sesión coordinadora** es una sesión de agente que tu equipo puede usar para aprobar lo de
+rutina; no es una persona.
 
 | | Riesgo normal | Riesgo alto |
 |---|---|---|
-| **Camino rápido** | Lo abre la coordinadora, con la lista de archivos, y le avisa al dueño. Hasta 5 archivos | Lo abre el dueño. Corren los revisores que aplican y el pase adversarial. Hasta 8 archivos |
-| **Historia** | El plan lo aprueba la coordinadora, sólo si la revisión automática del plan dio «aprobado» | El plan lo aprueba el dueño |
+| **Camino rápido** | Lo abre la sesión coordinadora, con la lista de archivos, y te avisa. Hasta 5 archivos | Lo abrís vos. Corren los revisores que aplican y el pase adversarial. Hasta 8 archivos |
+| **Historia** | El plan lo aprueba la sesión coordinadora, sólo si la revisión automática del plan dio «aprobado» | El plan lo aprobás vos |
 
-Sin coordinadora, porque trabajás solo o tu organización no la usa, lo de la coordinadora lo hace el dueño. El plan
+Sin sesión coordinadora, porque trabajás solo o tu equipo no la usa, lo de la coordinadora lo aprobás vos. El plan
 nunca se aprueba solo.
 
 **3. Guardar.** Siempre es un sí en la ventana de permiso, en los dos caminos. Antes de cada commit, push y pull
@@ -360,7 +361,7 @@ Arranque               → ¿sesión fresca? ¿repo limpio? ¿qué esfuerzo pide
                          arranca el reloj y la tarea pasa a Activa en Azure DevOps
 Validar la historia    → ¿está bien escrita? ¿los ACs son verificables?
 Armar el plan          → BMAD planifica la implementación
-⏸ Aprobar el plan      → la coordinadora o el dueño, según el riesgo
+⏸ Aprobar el plan      → vos, o la sesión coordinadora con riesgo normal
 Implementar            → con portón de build
 Correr las pruebas
 Revisores              → en paralelo; el set se computa mecánicamente según qué tocó el diff
@@ -691,7 +692,7 @@ https://www.bizuit.com/sdd-harness/more/
 
 ## Qué NO hace el arnés — la pregunta que siempre sigue
 
-- **No decide por vos.** El plan lo aprueba una persona, o la coordinadora con riesgo normal; guardar pide tu sí; y las reglas
+- **No decide por vos.** El plan lo aprobás vos, o la sesión coordinadora con riesgo normal; guardar pide tu sí; y las reglas
   que la minería propone se aprueban de a una.
 - **No garantiza que el código esté bien.** Garantiza que lo que aprendimos a la mala no se vuelva a
   olvidar, y que cuando algo sale mal quede el rastro de por dónde pasó.
@@ -736,8 +737,7 @@ frase.
 | **desvío** (*drift*) | cuando el código y la spec quedan desincronizados |
 | **SDD** | *spec-driven development*: la spec antes que el código, y el código la sirve |
 | **BMAD** | el framework de agentes que produce y mantiene las specs |
-| **dueño** | la persona que tu organización designa para aprobar lo delicado; si trabajás solo, el dueño sos vos |
-| **coordinadora** | la sesión de agente que el equipo designa: con riesgo normal abre el camino rápido (hasta 5 archivos, avisándole al dueño) y aprueba el plan si la revisión automática dio «aprobado»; sin coordinadora, lo hace el dueño |
+| **sesión coordinadora** | una sesión de agente, no una persona, que tu equipo puede usar para aprobar lo de rutina: con riesgo normal abre el camino rápido (hasta 5 archivos, y te avisa) y aprueba el plan si la revisión automática dio «aprobado»; sin ella, lo aprobás vos. Lo delicado lo aprobás siempre vos |
 | **camino rápido** | un cambio chico sin historia: el motivo en una línea y la lista de archivos |
 | **ADO** | Azure DevOps, donde viven los work items |
 | **banco de pruebas** | los casos que disparan los controles reales para verificar que bloquean lo que dicen |

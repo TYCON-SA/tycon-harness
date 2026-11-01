@@ -25,7 +25,7 @@ open models through [Ollama](guides/integrations/ollama.en.md), and with
 
 1. **Request and story:** you say what you want and the agent writes it as a story: what has to be done and how it is
    tested. A small change goes by quick path: the reason in one line and the list of files.
-2. **Approved plan:** the agent builds the plan and shows it to you; it is approved before any code is written, never by itself: with normal risk, the coordinator, only if the automatic review of the plan said "approved"; with high risk, the owner.
+2. **Approved plan:** the agent builds the plan and shows it to you; it is approved before any code is written, never by itself: with normal risk, the coordinating session, only if the automatic review of the plan said "approved"; with high risk, you.
 3. **Tests and code:** it writes the tests and the code, and runs the tests.
 4. **Review:** on a story, specialized reviewers (security, conventions, coverage) check the change before the commit; on a quick path, only with high risk.
 5. **Delivery:** the commit and the merge go through checks. Nothing is committed or pushed without your permission.
@@ -45,18 +45,19 @@ and stories—; then, story by story.
   - **If it bundles several topics**, it is not small: it is several quick paths, or a story.
 
   **Who decides and who checks.** Whoever opens the work judges the size, but does not decide alone: the quick path is
-  approved by the coordinator or the owner. And what follows does not depend on anyone's good faith. The harness
+  approved by the coordinating session or by you. And what follows does not depend on anyone's good faith. The harness
   enforces it:
   - Without an open quick path or a story, the harness **does not let you write code**.
-  - The quick path has a **file cap**: 5 if the coordinator approved it, 8 if the owner did. Past it, the harness
+  - The quick path has a **file cap**: 5 if the coordinating session approved it, 8 if you did. Past it, the harness
     **closes it** and asks for a story.
-  - A quick path with several topics in its reason **cannot be approved by the coordinator**.
+  - A quick path with several topics in its reason **cannot be approved by the coordinating session**.
 - **Risk decides who approves.** It is high if the change touches something sensitive in the repo, such as
-  production, a migration or security, or if it brings a decision for the owner: scope, security, a new dependency,
-  money, customers or other people. When in doubt, high. With normal risk the coordinator approves, and when opening a
-  quick path it notifies the owner; with high risk, the owner. The owner is the person your organization designates to
-  approve delicate work; if you work alone, it is
-  you. Without a coordinator, the owner does the coordinator's part. The plan never approves itself.
+  production, a migration or security. Also if it brings a decision for you or your organization: scope, security, a
+  new dependency, money, customers or other people. When in doubt, high. **You always approve the delicate work**, the
+  dev who is working. The **coordinating session** is an agent session your team can use to approve routine work; it
+  is not a person. With normal risk, it opens the quick path with the list of files and lets you know; with high risk,
+  you open it. Without a coordinating session, because you work alone or your team does not use one, you approve its
+  part. The plan never approves itself.
 - **Saving is the yes in the permission window, on both paths.** Before every commit, push and pull request the agent
   asks "save?", and with a yes it saves. There is no signature and no command.
 
@@ -70,14 +71,14 @@ flowchart TB
   chico -- "No · Story" --> h1
   subgraph rapido [" "]
     direction TB
-    r1["<b>Open the lane</b><br/>with the list of files<br/>normal risk: the coordinator, up to 5<br/>high risk: the owner, up to 8"] --> r2["<b>Code with the test first</b><br/>at saving, the harness warns if it was the other way round"]
+    r1["<b>Open the lane</b><br/>with the list of files<br/>normal risk: the coordinating session, up to 5<br/>high risk: you, up to 8"] --> r2["<b>Code with the test first</b><br/>at saving, the harness warns if it was the other way round"]
     r2 --> r3["<b>Run its tests</b>"]
     r3 --> r4["<b>Reviewers and adversarial pass</b><br/>only with high risk"]
   end
   subgraph historia [" "]
     direction TB
     h1["<b>Validate the story</b>"] --> h2["<b>Build the plan</b>"]
-    h2 --> h3["<b>Approve the plan</b><br/>normal risk: the coordinator, if the automatic review said «approved»<br/>high risk: the owner"]
+    h2 --> h3["<b>Approve the plan</b><br/>normal risk: the coordinating session, if the automatic review said «approved»<br/>high risk: you"]
     h3 --> h4["<b>Code with the tests first</b>"]
     h4 --> h5["<b>Run the tests</b>"]
     h5 --> h6["<b>Reviewers</b><br/>picked based on the change"]
@@ -93,7 +94,7 @@ flowchart TB
   class r4,h4,h5,h6,h7,h8,g2 control
 ```
 
-<sub>🟦 Someone decides: a person, or the coordinator with normal risk · 🟧 A control that is not skipped</sub>
+<sub>🟦 Someone decides: you, or the coordinating session with normal risk · 🟧 A control that is not skipped</sub>
 
 The checks are one part of the cycle: they guard every step. There are two ways to start it: [on your own, on your
 machine](#start-on-your-own), or [for your team](#for-teams).
