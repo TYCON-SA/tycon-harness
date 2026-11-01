@@ -362,11 +362,13 @@ PY
     #   scripts/hooks/dev-behind-main-notice.js — la rama dev atrasada frente a main
     #   scripts/hooks/stuck-pr-notice.js — los pedidos trabados en choque o sin entrar
     #   scripts/hooks/coordination-notice.js — el tope de sesiones, sólo para la coordinadora designada
+    #   scripts/hooks/why-blocked-notice.js — el último freno de la sesión, cuando la persona pregunta por qué la frenó
     # «ruta=N»: registrado N veces (un hook en varios eventos); sin «=N», una.
     T40_ADDED=(scripts/hooks/public-push-guard.js scripts/hooks/owner-email-notice.js scripts/hooks/wait-notice.js=6
       scripts/hooks/worktree-sweep.js scripts/hooks/unclosed-runs-notice.js scripts/hooks/deprecated-read-notice.js
       scripts/hooks/deprecated-session-notice.js scripts/hooks/extension-notices.js scripts/hooks/guard-update-notice.js
-      scripts/hooks/dev-behind-main-notice.js scripts/hooks/stuck-pr-notice.js scripts/hooks/coordination-notice.js)
+      scripts/hooks/dev-behind-main-notice.js scripts/hooks/stuck-pr-notice.js scripts/hooks/coordination-notice.js
+      scripts/hooks/why-blocked-notice.js)
     t40_apart() { # t40_apart <settings> <salida> → aparta los declarados del settings (lo reescribe); en <salida>, los que no están UNA vez
       rm -f "$2"
       python3 - "$1" "$2" "${T40_ADDED[@]}" <<'PY'
