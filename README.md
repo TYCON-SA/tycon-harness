@@ -25,7 +25,7 @@ open models through [Ollama](guides/integrations/ollama.en.md), and with
 
 1. **Request and story:** you say what you want and the agent writes it as a story: what has to be done and how it is
    tested. For a small fix, asking for it in your own words is enough.
-2. **Approved plan:** the agent makes the plan and shows it to you; a person approves it before any code is written: someone on the team or, if the change carries risk, the product owner.
+2. **Approved plan:** the agent makes the plan and shows it to you; a person approves it in their permission prompt before any code is written. In a team, the coordinator can approve routine ones; a sensitive one is always approved by the dev.
 3. **Tests and code:** it writes the tests and the code, and runs the tests.
 4. **Review:** specialized reviewers (security, conventions, coverage) check the change before the commit.
 5. **Delivery:** the commit and the merge go through checks. Nothing is committed or pushed without your permission.
@@ -38,14 +38,16 @@ and stories—; then, story by story. Each change carries the paperwork its size
 - **Size decides story or quick path.** What you ask for in one sentence, and can see is right just by looking at it
   and running its tests, goes by quick path: the reason in one line and the list of files. What needs a list of
   criteria to know it is complete, or several sessions, goes by story, which is the specification.
-- **Risk decides who approves before coding.** A person on the team. The product owner if the change touches
-  production, deletes or transforms data, touches security or changes what the client asked for. No plan approves
-  itself.
+- **Risk decides who approves before coding.** The plan and the lane are approved by a person in their permission
+  prompt: they never approve themselves. In a team, the coordinator (an agent session the team designates) can approve
+  routine ones on the owner's behalf. A sensitive plan is always approved by the dev: one that touches production, a
+  database migration, security or payment paths, the CI gate, the installer or the repo's controls, or one for a story
+  marked `sensible:`.
 - **Saving is a person's yes.** Before every commit, push and pull request, the agent asks in the permission prompt,
   the same box where you already approve its commands. With a yes, it saves: no command and no signature.
 
-Changing the harness guards, signing its controls or coordinating sessions is the job of whoever maintains the
-harness, not part of your product's day to day. The detail, with examples:
+Changing the harness guards or signing its controls is the job of whoever maintains the harness, not part of your
+product's day to day. The detail, with examples:
 [The right measure](guides/que-hace-el-arnes.md#la-medida-justa-cuánto-papel-lleva-cada-cambio) (in Spanish).
 
 ```mermaid
@@ -56,7 +58,7 @@ flowchart TB
   subgraph story ["Story"]
     direction TB
     h1["Validate the story"] --> h2["Make the plan"]
-    h2 --> h3["Approve the plan<br/>a person on the team, or the product owner if there is risk"]
+    h2 --> h3["Approve the plan<br/>a person, in their permission prompt<br/>the dev, if the plan is sensitive"]
     h3 --> h4["Code with the tests first"]
     h4 --> h5["Run the tests"]
     h5 --> h6["Reviewers chosen by the change"]
@@ -67,7 +69,7 @@ flowchart TB
   end
   subgraph quick ["Quick path"]
     direction TB
-    r1["Open the lane<br/>approved by a person on the team, or the product owner if there is risk"] --> r2["Code"]
+    r1["Open the lane<br/>the reason and the list of files<br/>approved by a person, in their permission prompt"] --> r2["Code<br/>the test before the code<br/>on save, the harness warns if it was the other way round"]
     r2 --> r3["The same commit controls"]
     r3 --> r4["Save<br/>a yes in the permission prompt"]
     r4 --> r5["Pull request: the same CI"]

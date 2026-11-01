@@ -25,7 +25,7 @@ El ciclo de desarrollo con IA (AI SDLC), paso por paso:
 
 1. **Pedido e historia:** contás qué querés y el agente lo escribe como una historia (story): qué hay que hacer y cómo
    se prueba. Para un ajuste chico alcanza con pedirlo con tus palabras.
-2. **Plan aprobado:** el agente arma el plan y te lo muestra; una persona lo aprueba antes de programar: alguien del equipo o, si el cambio tiene riesgo, el dueño del producto.
+2. **Plan aprobado:** el agente arma el plan y te lo muestra; una persona lo aprueba en su ventana de permiso antes de programar. En un equipo, la coordinadora puede aprobar los de rutina; uno delicado lo aprueba siempre el dev.
 3. **Pruebas y código:** escribe las pruebas y el código, y corre las pruebas.
 4. **Revisión:** revisores especializados (seguridad, convenciones, cobertura) miran el cambio antes del commit.
 5. **Entrega:** el commit y el merge pasan por controles. Nada se commitea ni se sube sin tu permiso.
@@ -38,14 +38,16 @@ El ciclo de desarrollo con IA (AI SDLC), paso por paso:
 - **El tamaño decide historia o camino rápido.** Lo que pedís en una frase y ves que quedó bien con sólo mirarlo y
   correr sus pruebas va por camino rápido: el motivo en una línea y la lista de archivos. Lo que necesita una lista de
   criterios para saber si quedó completo, o varias sesiones, va por historia, que es la especificación.
-- **El riesgo decide quién aprueba antes de programar.** Una persona del equipo. El dueño del producto si el cambio
-  toca producción, borra o transforma datos, toca seguridad o cambia lo que pidió el cliente. Ningún plan se aprueba
-  solo.
+- **El riesgo decide quién aprueba antes de programar.** El plan y el carril los aprueba una persona en su ventana de
+  permiso: nunca se aprueban solos. En un equipo, la coordinadora (una sesión del agente que el equipo designa) puede
+  aprobar los de rutina por delegación. Un plan delicado lo aprueba siempre el dev: el que toca producción, una
+  migración de base de datos, rutas de seguridad o pagos, el portón de CI, el instalador o los controles del repo, o
+  el de una historia marcada `sensible:`.
 - **Guardar es el sí de una persona.** Antes de cada commit, push y pull request, el agente pregunta en la ventana de
   permiso, el mismo cuadro donde ya aprobás sus comandos. Con un sí, guarda: sin comando y sin firma.
 
-Cambiar los frenos del arnés, firmar sus controles o coordinar sesiones es trabajo de quien mantiene el arnés, no del
-día a día de tu producto. El detalle, con ejemplos:
+Cambiar los frenos del arnés o firmar sus controles es trabajo de quien mantiene el arnés, no del día a día de tu
+producto. El detalle, con ejemplos:
 [La medida justa](guides/que-hace-el-arnes.md#la-medida-justa-cuánto-papel-lleva-cada-cambio).
 
 ```mermaid
@@ -56,7 +58,7 @@ flowchart TB
   subgraph historia ["Historia"]
     direction TB
     h1["Validar la historia"] --> h2["Armar el plan"]
-    h2 --> h3["Aprobar el plan<br/>una persona del equipo, o el dueño del producto si hay riesgo"]
+    h2 --> h3["Aprobar el plan<br/>una persona, en su ventana de permiso<br/>el dev, si el plan es delicado"]
     h3 --> h4["Programar con las pruebas primero"]
     h4 --> h5["Correr las pruebas"]
     h5 --> h6["Revisores elegidos según el cambio"]
@@ -67,7 +69,7 @@ flowchart TB
   end
   subgraph rapido ["Camino rápido"]
     direction TB
-    r1["Abrir el carril<br/>lo aprueba una persona del equipo, o el dueño del producto si hay riesgo"] --> r2["Programar"]
+    r1["Abrir el carril<br/>el motivo y la lista de archivos<br/>lo aprueba una persona, en su ventana de permiso"] --> r2["Programar<br/>la prueba antes del código<br/>al guardar, el arnés avisa si fue al revés"]
     r2 --> r3["Los mismos controles del commit"]
     r3 --> r4["Guardar<br/>el sí en la ventana de permiso"]
     r4 --> r5["Pull request: la misma CI"]

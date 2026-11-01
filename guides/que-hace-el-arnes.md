@@ -181,7 +181,8 @@ los cambie de verdad. Son **dos preguntas**, independientes, que se contestan **
 
 **1. ¿Historia o camino rápido? Lo decide el tamaño.** Si lo podés pedir en una frase y, al terminar, ves que quedó
 bien con sólo mirarlo y correr sus pruebas, va por **camino rápido**: se abre un carril, el permiso para editar código
-sin historia, con el motivo en una línea y la lista de archivos. El carril lo aprueba una persona del equipo, o el dueño del producto si hay riesgo. Si para saber si
+sin historia, con el motivo en una línea y la lista de archivos. El carril lo aprueba una persona en su ventana de permiso; en un equipo, la coordinadora puede darlo por delegación,
+con hasta cinco archivos y sin tocar los frenos ni las firmas del arnés. Si para saber si
 quedó completo necesitás una lista de criterios, o va a llevar varias sesiones, va por **historia**: criterios de
 aceptación, pruebas con nombre y archivos que toca. La historia es la especificación: se valida antes de programar,
 manda sobre el código y al cerrar se cruza criterio por criterio. Lo decide quien abre el trabajo, antes de empezar,
@@ -191,11 +192,14 @@ preguntas que piden criterios, el carril se cierra, el código queda en su rama 
 retoma.
 
 **2. ¿Quién aprueba antes de programar? Lo decide el riesgo.** En una historia, una persona aprueba el plan —qué
-archivos va a tocar el agente y en qué orden— antes de la primera línea. Si el cambio toca producción, borra o
-transforma datos (una migración que saca una columna), toca seguridad (permisos, autenticación, secretos) o trae una
-decisión de alcance del cliente, aprueba **el dueño del producto**, quien responde por él. Si no, **cualquier persona
-del equipo**. Una parte del riesgo la mide un programa, por ejemplo que el cambio trae una migración; la otra la juzga
-quien abre el trabajo, y la deja escrita. Ante la duda, el caso más estricto. Ningún plan se aprueba solo.
+archivos va a tocar el agente y en qué orden— antes de la primera línea, en su ventana de permiso. Ningún plan se
+aprueba solo. En un equipo, **la coordinadora** (una sesión del agente que el equipo designa) puede aprobar un plan de
+rutina por delegación, sólo si una revisión automática del plan dice «aprobado». Un plan **delicado** lo aprueba
+siempre **el dev**. Es delicado si la historia o el plan tocan producción, una migración de base de datos, rutas de
+seguridad o pagos, la superficie que el repo declara compartida, el portón de CI, el instalador o los controles del
+repo, o si la historia está marcada `sensible:`. Eso lo mide un programa (`pipeline.js risk-class`); lo que no puede
+medir, como una decisión que no es del programador, lo marca quien escribe la historia con `sensible:`. Ante la duda,
+delicado.
 
 **3. Guardar es el sí de una persona.** Antes de cada commit, push y pull request, el agente pregunta «¿guardo?» en
 la ventana de permiso, el mismo cuadro donde ya aprobás sus comandos, y con un sí guarda. No pide comando ni deja
@@ -208,7 +212,7 @@ en una historia chica o de sólo documentación o pruebas; y la matriz por crite
 una prueba que corrió de verdad. Un hallazgo crítico lo decide una persona. En un camino rápido no corren los
 revisores ni el pase: lo cuidan sus pruebas, los mismos controles antes del commit y la misma CI del pull request.
 
-**Lo que no es de tu producto.** Cambiar los frenos del arnés, firmar sus controles o coordinar sesiones es trabajo
+**Lo que no es de tu producto.** Cambiar los frenos del arnés o firmar sus controles es trabajo
 de quien mantiene el arnés, no del día a día de tu producto.
 
 **Un ejemplo, con un combo (una lista desplegable).**
@@ -216,14 +220,14 @@ de quien mantiene el arnés, no del día a día de tu producto.
 | El cambio | Tamaño | Quién aprueba |
 |---|---|---|
 | *«El combo de provincia muestra el nombre completo en vez de la sigla.»* | Camino rápido: una frase, se verifica abriendo el combo. | Una persona, al abrir el carril. |
-| *«El combo trae las opciones de la base y recuerda la última elección.»* | Historia: ¿qué muestra sin resultados?, ¿dónde guarda la elección, y por cuánto?, ¿quién ve las opciones? Cada pregunta es un criterio. | Una persona aprueba el plan; el dueño del producto, si recordar la elección toca permisos. |
-| *«Sacar la columna de teléfono fijo de la tabla de clientes.»* | Historia: ¿qué pasa con los datos que ya hay?, ¿se respaldan antes?, ¿qué pantallas e informes la leen? | El dueño del producto: la migración borra datos. |
+| *«El combo trae las opciones de la base y recuerda la última elección.»* | Historia: ¿qué muestra sin resultados?, ¿dónde guarda la elección, y por cuánto?, ¿quién ve las opciones? Cada pregunta es un criterio. | Una persona aprueba el plan, o la coordinadora si es de rutina. Si recordar la elección toca la autenticación o una migración, el plan es delicado y lo aprueba el dev. |
+| *«Sacar la columna de teléfono fijo de la tabla de clientes.»* | Historia: ¿qué pasa con los datos que ya hay?, ¿se respaldan antes?, ¿qué pantallas e informes la leen? | El dev: una migración hace delicado el plan. |
 
 **En una frase:** el tamaño del cambio decide cuánto papel lleva, una línea o una historia; el riesgo decide quién
 aprueba antes de programar; y guardar, siempre, pide el sí de una persona.
 
 **Cada equipo ajusta la medida, con un piso.** Desde el sitio de la organización (pestaña Configuración; cada cambio
-va como un pedido que alguien revisa), el equipo decide qué aprueba su dueño del producto. Cada repo declara en
+va como un pedido que alguien revisa), el equipo decide qué delega en la coordinadora. Cada repo declara en
 `.tycon/advisors.yaml` qué rutas fuerzan siempre el pase adversarial. El piso no se baja: ningún plan se aprueba solo,
 nada se guarda sin el sí de una persona, y saltear una revisión o tocar producción nunca se delegan.
 
