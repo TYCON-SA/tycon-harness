@@ -712,17 +712,21 @@ test('PrShards_HeavySuites_TheStepsPassTheCriterionAndTheVerdictGetsWhatDidNotRu
   // con la lista del cambio, el de las dependencias de cada suite (scripts/ci/suite-deps.js), la
   // lista de código para elegir y la entera para la pesada que mira .md, y la foto nocturna de origin/main como red
   // (la foto, la que trajo Validar; no `git show origin/main:…` en este paso)
-  for (const piece of ['--deps', '--changed "$LISTA_CODIGO_SUITES"', '--changed-with-docs "$CAMB"', '--nightly "$FOTO"', '$(Agent.TempDirectory)/snapshot/nightly-suites.json']) {
+  for (const piece of ['--direct', '--changed "$LISTA_CODIGO_SUITES"', '--changed-with-docs "$CAMB"', '--nightly "$FOTO"', '$(Agent.TempDirectory)/snapshot/nightly-suites.json']) {
     assert.ok(stepBody(PLAN_STEP).includes(piece), `el plan pasa ${piece}`);
   }
   assert.ok(!stepBody(PLAN_STEP).includes('git show origin/main:scripts/controls-bench'), 'el plan no lee la foto por su cuenta');
   assert.ok(stepBody(JOIN_STEP).includes('--not-run "${PLAN_DIR}skip.txt"'), 'y el reporte anota las que no corrieron');
 });
 
+// Con `--direct` la red es por suite: la foto dice qué midió la noche (`ran`). La de juguete nombra sólo la pesada, así
+// las demás suites de juguete —que la noche «no midió»— corren igual y el reparto se sigue midiendo.
+const HEAVY_PHOTO = () => ({ ...FRESH_PHOTO(), ran: ['clean-machine.test.sh'] });
+
 test('PrShards_HeavySuites_ChangeThatDoesNotShip_SkipsBothAndTheVerdictSaysSo', { skip: NO_BASH }, () => {
   // (las guías y los guiones viajan en la copia y corren la copia pública de verdad; esto no viaja)
   const shards = maxShards();
-  const dir = toy(HEAVY_TOY);
+  const dir = toy(HEAVY_TOY, { photo: HEAVY_PHOTO() });
   const r = runPlan(dir, shards, ['specs/story-9.9-lab.md', 'tasks/lab.md']);
   const plan = r;
   assert.strictEqual(r.code, 0, r.out);
@@ -744,16 +748,17 @@ test('PrShards_HeavySuites_NightlyPhotoIncompleteOldOrMissing_NothingIsSkippedAn
   // prueba rota. Acá la foto la pone el caso (toyGit), no el nocturno de anoche.
   const old = new Date(Date.now() - 40 * 3600 * 1000).toISOString();
   const cases = [
-    ['el nocturno no midió todo', { kind: 'bash-tests', ts: new Date().toISOString(), failures: ['clean-machine.test.sh(no-medida)'], complete: false }, /--deps no saltea nada[^\n]*complete: false/],
-    ['la foto es de hace 40 h', { kind: 'bash-tests', ts: old, failures: [], complete: true }, /--deps no saltea nada[^\n]*hace 40 h/],
-    ['no llegó la foto', null, /##vso\[task\.logissue type=warning\]suites: no pude leer la foto nocturna[^\n]*--deps no saltea nada/],
+    ['el nocturno no midió esa suite', { kind: 'bash-tests', ts: new Date().toISOString(), failures: ['clean-machine.test.sh(no-medida)'], unmeasured: ['clean-machine.test.sh(no-medida)'], ran: ['clean-machine.test.sh'], complete: false }, null],
+    ['la foto no dice qué corrió', { kind: 'bash-tests', ts: new Date().toISOString(), failures: [], complete: true }, /--direct no saltea nada[^\n]*\(ran\)/],
+    ['la foto es de hace 40 h', { kind: 'bash-tests', ts: old, failures: [], complete: true, ran: ['clean-machine.test.sh'] }, /--direct no saltea nada[^\n]*hace 40 h/],
+    ['no llegó la foto', null, /##vso\[task\.logissue type=warning\]suites: no pude leer la foto nocturna[^\n]*--direct no saltea nada/],
   ];
   for (const [what, photo, says] of cases) {
     const r = runPlan(toy(HEAVY_TOY, { photo }), maxShards(), ['specs/story-9.9-lab.md', 'tasks/lab.md']);
     assert.strictEqual(r.code, 0, `${what}\n${r.out}`);
     assert.deepStrictEqual(planned(r, 'skip.txt'), [], `${what}: sin red no se saltea ninguna\n${r.out}`);
     for (const heavy of ['clean-machine.test.sh']) assert.ok(planned(r, 'run.txt').includes(heavy), `${what}: ${heavy} corre\n${r.out}`);
-    assert.match(r.out, says, `${what}: el paso dice por qué no saltea`);
+    if (says) assert.match(r.out, says, `${what}: el paso dice por qué no saltea`);
   }
 });
 
@@ -770,7 +775,7 @@ test('PrShards_ToyGit_OnlyAnswersTheNightlyPhoto', { skip: NO_BASH }, () => {
 
 test('PrShards_HeavySuites_PublishingChangeOrFailedDiff_RunsBoth', { skip: NO_BASH }, () => {
   const shards = maxShards();
-  const publishing = runPlan(toy(HEAVY_TOY), shards, ['scripts/publishing/export.js']);
+  const publishing = runPlan(toy(HEAVY_TOY, { photo: HEAVY_PHOTO() }), shards, ['scripts/publishing/export.js']);
   assert.strictEqual(publishing.code, 0, publishing.out);
   for (const name of ['clean-machine.test.sh']) assert.ok(planned(publishing, 'run.txt').includes(name), `scripts/publishing/ corre ${name}`);
   // El diff del pedido de merge falló («Qué trae este cambio» dejó todo=si): corren todas, nunca «no hace falta».
@@ -1471,7 +1476,7 @@ test('T43 Validation_OneSnapshotFourReaders_EveryJobUsesWhatValidarBrought', () 
   assert.match(snapshotTemplate, /artifact: 'snapshot-a\$\(System\.JobAttempt\)'/, 'se publica con el intento en el nombre');
   const live = (s) => s.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n');
   // los cuatro lectores: ninguno lee la del checkout ni le pregunta a git
-  assert.ok(stepBody(PLAN_STEP).includes('FOTO="$(Agent.TempDirectory)/snapshot/nightly-suites.json"'), 'la red de --deps');
+  assert.ok(stepBody(PLAN_STEP).includes('FOTO="$(Agent.TempDirectory)/snapshot/nightly-suites.json"'), 'la red de --direct');
   assert.ok(live(stepBody(RUN_STEP)).includes('"$(Agent.TempDirectory)/snapshot/nightly-suites.json"'), 'las rojas de anoche que no se reintentan');
   assert.ok(stepBody(JOIN_STEP).includes('--previous "$(Agent.TempDirectory)/snapshot/nightly-suites.json"'), 'la comparación del reporte');
   for (const flag of ['--suites-snapshot "$(Agent.TempDirectory)/snapshot/nightly-suites.json"', '--bench-snapshot "$(Agent.TempDirectory)/snapshot/nightly-bench.json"']) {

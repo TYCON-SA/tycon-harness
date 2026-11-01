@@ -1044,3 +1044,53 @@ test('T85 PhotoFolderThatCannotBeListed_IsSaid_NotReadAsNoHistory', () => {
   assert.match(D.redactarVigilante(w, {}) || '', /^🔴 vigilante: no pude leer la carpeta de sus fotos \(EACCES/);
   assert.strictEqual(D.evaluarVigilante({ vigOut: '/x', ahora, fuente: missing }).estado, 'sin-historia');
 });
+
+// ── la suite roja dice qué entró desde su última noche verde ────────────────
+// Cada pedido corre sólo las suites que nombran lo que tocó; lo que rompe por un camino indirecto lo ve la noche. El
+// aviso nombra los pedidos del privado que entraron a main desde la última foto en que esa suite estaba verde, y el
+// rango del público con su enlace. Sólo en la máquina que tiene el clon de mantenimiento.
+function nextNight(lab, files, prs, directs = 0) {
+  const origin = path.join(lab.base, 'remotos', 'mantenimiento');
+  for (let i = 0; i < directs; i += 1) {
+    write(path.join(origin, `directo-${i}.txt`), `${i}\n`);
+    git(lab, origin, ['add', '-A']); git(lab, origin, ['commit', '-qm', `un commit directo ${i}`]);
+  }
+  for (const n of prs) {
+    git(lab, origin, ['checkout', '-q', '-b', `rama-${n}`]);
+    write(path.join(origin, `cambio-${n}.txt`), `${n}\n`);
+    git(lab, origin, ['add', '-A']); git(lab, origin, ['commit', '-qm', `cambio ${n}`]);
+    git(lab, origin, ['checkout', '-q', 'main']);
+    git(lab, origin, ['merge', '-q', '--no-ff', '-m', `Merge pull request ${n} from rama-${n} into main`, `rama-${n}`]);
+  }
+  for (const [rel, text] of Object.entries(files)) write(path.join(origin, ...rel.split('/')), text);
+  git(lab, origin, ['add', '-A', '-f']); git(lab, origin, ['commit', '-qm', 'otra noche']);
+  git(lab, lab.priv, ['fetch', '-q', 'origin']);
+  git(lab, lab.priv, ['merge', '-q', '--ff-only', 'origin/main']);
+  const head = path.join(lab.priv, '.git', 'FETCH_HEAD');
+  fs.writeFileSync(head, `${git(lab, lab.priv, ['rev-parse', 'origin/main'])}\t\tbranch 'main' of ${origin}\n`);
+}
+
+test('SuitesRed_NamesThePullRequestsSinceItsLastGreenNight', () => {
+  const at = Date.now() - HOUR;
+  const green = night(at - 24 * HOUR);
+  green[SUITES] = edit(green, SUITES, (j) => { j.harness = { source: 'github', commit: 'a'.repeat(40) }; });
+  const lab = machine({ published: green });
+  const red = night(at);
+  nextNight(lab, { [SUITES]: edit(red, SUITES, (j) => { j.failures = ['a.test.js']; j.harness = { source: 'github', commit: 'b'.repeat(40) }; }) }, [7001, 7002], 1);
+  const s = startup(lab);
+  const extra = s.bench.split('\n').find((l) => /desde su última noche verde/.test(l)) || '';
+  assert.match(extra, /a\.test\.js/, s.bench);
+  assert.match(extra, /privado: 7001, 7002/, extra);
+  const url = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'public-remotes.json'), 'utf8')).remotes[0];
+  assert.ok(extra.includes(`${url}/compare/aaaaaaa...bbbbbbb`), `el rango del público con su enlace:\n${extra}`);
+  assert.match(extra, /^\s/, 'va debajo de la línea de las suites, no como un aviso aparte');
+  assert.match(extra, /privado: 7001, 7002 y 1 commit\(s\) directo\(s\) a main/, 'cuenta los commits directos, no la foto misma');
+  assert.match(extra, /puede caer en la siguiente/, 'dice que el rango va por la hora de cada foto');
+});
+
+test('SuitesRed_NoGreenNightInTheHistory_SaysNothingMore', () => {
+  const at = Date.now() - HOUR;
+  const base = night(at);
+  const s = startup(machine({ published: { ...base, [SUITES]: edit(base, SUITES, (j) => { j.failures = ['a.test.js']; }) } }));
+  assert.doesNotMatch(s.bench, /desde su última noche verde/, s.bench);
+});

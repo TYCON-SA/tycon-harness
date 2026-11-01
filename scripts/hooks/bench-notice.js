@@ -297,7 +297,78 @@ function estadoDeLasSuitesNocturnas() {
   const MAX_ROJAS = 3;
   const nombradas = conMotivo.slice(0, MAX_ROJAS).join(' · ') + (rojas.length > MAX_ROJAS ? ` · y ${rojas.length - MAX_ROJAS} más` : '');
   return [`🔴 suites de prueba nocturnas (foto del ${fecha}${cuando}): ${rojas.length} en rojo — ${nombradas}`
-    + (sinMedir ? ` · 🟡 ${sinMedir}` : '') + ' · detalle: scripts/controls-bench/ultimo-suites.json' + cola + foto.nota];
+    + (sinMedir ? ` · 🟡 ${sinMedir}` : '') + ' · detalle: scripts/controls-bench/ultimo-suites.json' + cola + foto.nota,
+  ...desdeLaUltimaVerde(rojas.slice(0, MAX_ROJAS), rep, foto)];
+}
+
+// ── Qué entró desde la última noche verde de cada suite roja ────────────────────────────────────────────────────────
+// Cada pedido corre sólo las suites que nombran lo que tocó (scripts/ci/suites-for-change.js --direct); lo que rompe
+// por un camino indirecto lo ve la noche. Para saber a quién le toca, la línea de abajo nombra los pedidos del privado
+// que entraron a main desde la última foto en que esa suite estaba verde, y el rango del público con su enlace. Sólo en
+// la máquina que lee las fotos de su clon de mantenimiento (ahí está la historia); sin una noche verde en las últimas
+// HISTORIA_NOCHES fotos, si git no contesta o si se pasa de TOPE_MS en total (el arranque no espera), no agrega nada.
+// El rango va de la foto verde a la roja, por la hora en que cada una se guardó: un pedido que entró mientras corría la
+// noche puede caer en la noche siguiente. Por eso la línea lo dice, y cuenta también los commits directos a main.
+const HISTORIA_NOCHES = 12;
+const TOPE_MS = 4000;
+function desdeLaUltimaVerde(rojas, rep, foto) {
+  if (!foto.espera || !NOCHE || !rojas.length) return [];
+  const { spawnSync } = require('child_process');
+  const hasta = Date.now() + TOPE_MS;
+  let agotado = false;
+  const git = (args) => {
+    const resta = hasta - Date.now();
+    if (resta <= 0) { agotado = true; return null; }
+    const r = spawnSync('git', ['-C', NOCHE.dir, ...args], { encoding: 'utf8', timeout: resta, maxBuffer: 16 * 1024 * 1024 });
+    if (r.status !== 0) { agotado = agotado || Date.now() >= hasta; return null; }
+    return String(r.stdout);
+  };
+  const ARCHIVO = 'scripts/controls-bench/ultimo-suites.json';
+  const log = git(['log', 'origin/main', '--format=%H', `-n${HISTORIA_NOCHES}`, '--', ARCHIVO]);
+  const shas = log ? log.split('\n').filter(Boolean) : [];
+  if (shas.length < 2) return [];
+  const fotos = new Map();
+  const fotoEn = (sha) => {
+    if (!fotos.has(sha)) {
+      let j = null;
+      const t = git(['show', `${sha}:${ARCHIVO}`]);
+      try { j = t ? JSON.parse(t) : null; } catch (_) { j = null; }
+      fotos.set(sha, j && typeof j === 'object' ? j : null);
+    }
+    return fotos.get(sha);
+  };
+  let url = null;
+  try { url = String(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'setup', 'public-remotes.json'), 'utf8')).remotes[0] || '').replace(/\.git$/, '') || null; } catch (_) { url = null; }
+  const corto = (c) => String(c).slice(0, 7);
+  const comun = (j) => (j && j.harness && /^[0-9a-f]{7,40}$/.test(String(j.harness.commit)) ? String(j.harness.commit) : null);
+  const out = [];
+  for (const suite of rojas) {
+    const verde = shas.slice(1).find((sha) => {
+      const j = fotoEn(sha);
+      return j && Array.isArray(j.ran) && j.ran.includes(suite) && !(j.failures || []).includes(suite);
+    });
+    if (agotado) return [];
+    if (!verde) continue;
+    // los commits de main entre las dos fotos: los merges dan los números de pedido; los demás (salvo los que guardan la
+    // propia foto) son commits directos. Si git no contesta, la línea no se escribe: «ningún pedido» sería falso.
+    const commits = git(['log', '--first-parent', '--format=%H%x09%P%x09%s', `${verde}..${shas[0]}`]);
+    if (commits === null) { if (agotado) return []; continue; }
+    const filas = commits.split('\n').filter(Boolean).map((l) => { const [h, p, ...s] = l.split('\t'); return { h, merge: p.trim().split(/\s+/).length > 1, s: s.join('\t') }; });
+    // del más viejo al más nuevo (git log da primero el último)
+    const prs = [...new Set(filas.filter((f) => f.merge).flatMap((f) => [...f.s.matchAll(/pull request (\d+)/gi)].map((m) => m[1])))].reverse();
+    // las fotos mismas no son cambios: se guardan en commits propios de la noche
+    const directos = filas.filter((f) => !f.merge && !shas.includes(f.h) && !/\[nocturno\]/i.test(f.s)).length;
+    const antes = comun(fotoEn(verde));
+    const ahora = comun(rep);
+    const publico = antes && ahora && antes !== ahora
+      ? (url ? `${url}/compare/${corto(antes)}...${corto(ahora)}` : `${corto(antes)}...${corto(ahora)}`) : null;
+    const fecha = limpio(String((fotoEn(verde) || {}).ts || '').slice(0, 10)) || '?';
+    out.push(`   ↳ ${limpio(suite)} — entró desde su última noche verde (${fecha}): privado: ${prs.length ? prs.join(', ') : 'ningún pedido'}`
+      + (directos ? ` y ${directos} commit(s) directo(s) a main` : '')
+      + (publico ? ` · público: ${limpio(publico, 200)}` : '')
+      + ' · por la hora en que se guardó cada foto: un pedido que entró mientras corría la noche puede caer en la siguiente');
+  }
+  return out;
 }
 
 function estadoDelBancoNocturno() {
