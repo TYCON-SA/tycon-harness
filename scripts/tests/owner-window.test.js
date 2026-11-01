@@ -1564,17 +1564,19 @@ test('Freno_ApproveSave_FormaCanonica (T12) @story-8.143 @ac-1', (t) => {
   }
 });
 
-// Una pestaña que no pide permisos (bypass y parecidos) aprueba sola lo que el freno manda a la ventana: el renglón
-// quedaría a nombre del dueño sin que nadie haya dicho Sí. Ahí la firma se niega con el comando de la terminal; en una
-// pestaña que pregunta, la ventana de siempre; la delegación no usa ventana y sigue valiendo.
+// Una pestaña que no pide permisos (bypass y parecidos) aprueba sola lo que el freno manda a la ventana. Lo que afloja
+// un control se niega ahí con el comando de la terminal; lo de rutina (un pendiente, el ok de guardar, el plan, un
+// arreglo rápido dentro de su tope) se hace y queda en el registro como «hecho y avisado». En una pestaña que pregunta,
+// la ventana de siempre; la delegación no usa ventana y sigue valiendo.
 // 🔴 mutación: sin mirar el modo de permisos → en bypass sale 'ask' y la ventana se aprueba sola.
-test('Freno_PestanaSinPermisos_NiegaLaVentana_ConElComandoDeLaTerminal', (t) => {
+test('Freno_PestanaSinPermisos_NiegaLoQueAfloja_ConElComandoDeLaTerminal', (t) => {
   for (const modo of ['bypassPermissions', 'dontAsk', 'auto', 'un-modo-nuevo']) {
     const casa = casaNueva(t);
-    const r = pedir(casa, SAVE, { evento: { ...DE_LA_COORD, permission_mode: modo } });
+    const cmd = `node ${MARKER} clear-session ses-a --lost`;
+    const r = pedir(casa, cmd, { evento: { ...DE_LA_COORD, permission_mode: modo } });
     assert.strictEqual(r.decision, 'deny', `${modo}: ${r.texto}`);
     assert.match(r.texto, /no pide permisos/, modo);
-    assert.match(r.texto, /approve-save --terminal .*con --for-session ses-a/, `${modo}: el comando de la terminal`);
+    assert.match(r.texto, /--terminal/, `${modo}: el comando de la terminal`);
     assert.strictEqual(registros(casa).length, 0, `${modo}: sin registro de ventana`);
   }
   for (const modo of ['default', 'acceptEdits', 'plan', undefined]) {
@@ -1587,6 +1589,60 @@ test('Freno_PestanaSinPermisos_NiegaLaVentana_ConElComandoDeLaTerminal', (t) => 
   const r = pedir(casaConDesignada(t), SAVE, { evento: { ...DE_LA_COORD, permission_mode: 'bypassPermissions' }, delegacion: delegacionReal({ perfil: conSave }) });
   assert.strictEqual(r.decision, 'allow', r.texto);
   assert.strictEqual(r.via, 'delegacion');
+});
+
+// Lo de rutina en una pestaña sin permisos: se hace y queda «hecho y avisado». El guion pasa por los mismos controles
+// que la delegación (el guardado sensible, el plan sin revisión aprobada y el cupo delegado siguen afuera).
+// 🔴 rojo con el código de antes: en bypass las cuatro se negaban y había que firmarlas en la terminal.
+test('Freno_PestanaSinPermisos_RutinaHechaYAvisada', (t) => {
+  const RUTINA = [
+    ['save', SAVE, SAVE_ARGV],
+    ['pending-approval', `node ${MARKER} approve-pending --id DEF-nuevo --repo /r --for-session ses-a`, [MARKER, 'approve-pending', '--id', 'DEF-nuevo', '--repo', '/r', '--for-session', 'ses-a']],
+    ['plan-approval', `node ${MARKER} complete-step approve-plan --approved "dale" --for-session ses-a`, [MARKER, 'complete-step', 'approve-plan', '--approved', 'dale', '--for-session', 'ses-a']],
+    ['adhoc-lane', `node ${MARKER} adhoc set '{"reason":"arreglo del sp","maxFiles":3}' --for-session ses-a`, [MARKER, 'adhoc', 'set', '{"reason":"arreglo del sp","maxFiles":3}', '--for-session', 'ses-a']],
+  ];
+  for (const [firma, cmd, argv] of RUTINA) {
+    const casa = casaNueva(t);
+    const r = pedir(casa, cmd, { evento: { ...DE_LA_COORD, permission_mode: 'bypassPermissions' } });
+    assert.strictEqual(r.decision, 'allow', `${firma}: ${r.texto}`);
+    assert.strictEqual(r.via, 'avisado', firma);
+    assert.match(r.texto, /hecho y avisado/, firma);
+    assert.strictEqual(vigentes(casa).length, 1, `${firma}: deja el registro que consume el guion`);
+    // el guion firma con la vía nueva, y lo que comprueba antes lo comprueba como la delegación
+    let viaDeAntes = null;
+    const avisos = [];
+    const e = ow.exigir({ firma, argv, pid: 301, arbol: arbolDelGuion(casa, cmd), casa, ahora: AHORA + 60000, propia: 'ses-coord',
+      antes: (via) => { viaDeAntes = via; return null; }, notificar: (texto) => avisos.push(texto) });
+    assert.strictEqual(e.codigo, 0, `${firma}: ${e.motivo}`);
+    assert.strictEqual(e.via, 'avisado', firma);
+    assert.strictEqual(viaDeAntes, 'delegacion', `${firma}: los controles de la delegación`);
+    // el ok de guardar y el arreglo rápido avisan desde su propio guion (los controles de la delegación); el resto, acá
+    assert.strictEqual(avisos.length, ['save', 'adhoc-lane'].includes(firma) ? 0 : 1, `${firma}: avisa una vez`);
+    const firmada = gates(casa).find((g) => g.name === `${firma}-signed`);
+    assert.strictEqual(firmada && firmada.via, 'avisado', firma);
+    const q = ow.quienFirmo(e, 'el-dev');
+    assert.strictEqual(q.via, 'hecho y avisado', firma);
+    // un control de la delegación que niega vuelve como negado, sin gastar el pedido
+    const casa2 = casaNueva(t);
+    pedir(casa2, cmd, { evento: { ...DE_LA_COORD, permission_mode: 'bypassPermissions' } });
+    const n = ow.exigir({ firma, argv, pid: 301, arbol: arbolDelGuion(casa2, cmd), casa: casa2, ahora: AHORA + 60000, propia: 'ses-coord',
+      antes: () => ({ codigo: 2, motivo: 'toca algo sensible' }), notificar: () => {} });
+    assert.strictEqual(n.codigo, 2, firma);
+    assert.strictEqual(vigentes(casa2).length, 1, `${firma}: el pedido sigue sin gastar`);
+  }
+  // subir el tope de un arreglo rápido que ya existe sigue siendo una firma
+  const casa = casaNueva(t);
+  const adhoc = path.join(casa, '.claude', '.tycon-pipeline', 'adhoc');
+  fs.mkdirSync(adhoc, { recursive: true });
+  fs.writeFileSync(path.join(adhoc, 'ses-a.json'), JSON.stringify({ reason: 'arreglo del sp', maxFiles: 3, files: [] }));
+  const sube = pedir(casa, `node ${MARKER} adhoc set '{"reason":"arreglo del sp","maxFiles":9}' --for-session ses-a`, { evento: { ...DE_LA_COORD, permission_mode: 'bypassPermissions' } });
+  assert.strictEqual(sube.decision, 'deny', sube.texto);
+  assert.match(sube.texto, /subir el tope/);
+  const igual = pedir(casa, `node ${MARKER} adhoc set '{"reason":"arreglo del sp","maxFiles":3}' --for-session ses-a`, { evento: { ...DE_LA_COORD, permission_mode: 'bypassPermissions' } });
+  assert.strictEqual(igual.decision, 'allow', igual.texto);
+  // y un escape que viaja con la firma de rutina no se hace sin firma
+  const conEscape = pedir(casaNueva(t), SAVE, { evento: { ...DE_LA_COORD, permission_mode: 'bypassPermissions' }, escapes: ['escape:TYCON_STATUS_GATE'] });
+  assert.notStrictEqual(conEscape.decision, 'allow', conEscape.texto);
 });
 
 test('ApproveSave_SeisLlaves (T13) @story-8.143 @ac-8', (t) => {
@@ -1654,6 +1710,33 @@ test('8.141 T8 OwnerWindow_AdhocSet_PideLaVentana', (t) => {
   assert.strictEqual(v.via, 'ventana');
   const sin = casaNueva(t);
   assert.strictEqual(ow.exigir({ firma: 'adhoc-lane', argv: [MARKER, 'adhoc', 'set', '{"reason":"arreglo del sp"}'], pid: 301, arbol: arbolDelGuion(sin, ADHOC), casa: sin, ahora: AHORA + 60000, propia: 'ses-a' }).codigo, 1);
+});
+
+// El chequeo previo de `adhoc set`: el motivo de más de 200 caracteres y un tope menor que los archivos ya tocados se
+// niegan antes de la ventana (o de la terminal), con el guion de verdad en modo de chequeo.
+// 🔴 rojo con el código de antes: `adhoc-lane` no tenía chequeo previo, la ventana se abría y el «Sí» se perdía; y el
+// tope menor que lo tocado ni siquiera lo frenaba el guion.
+test('OwnerWindow_AdhocSet_ChequeoPrevio_MotivoLargoYTopeMenorQueLoTocado', (t) => {
+  assert.ok(ow.CON_PRECHEQUEO.has('adhoc-lane'), 'adhoc-lane pasa por el chequeo previo');
+  const casa = casaNueva(t);
+  const largo = 'x'.repeat(201);
+  const motivoLargo = ow.comprobarConElGuion({ firma: 'adhoc-lane', palabras: [MARKER, 'adhoc', 'set', JSON.stringify({ reason: largo })], cwd: casa, sesion: 'ses-a', casa });
+  assert.ok(motivoLargo && motivoLargo.niega, JSON.stringify(motivoLargo));
+  assert.match(motivoLargo.niega, /hasta 200 caracteres/);
+  const adhoc = path.join(casa, '.claude', '.tycon-pipeline', 'adhoc');
+  fs.mkdirSync(adhoc, { recursive: true });
+  fs.writeFileSync(path.join(adhoc, 'ses-a.json'), JSON.stringify({ reason: 'arreglo del sp', maxFiles: 8, files: ['/r/a.js', '/r/b.js', '/r/c.js', '/r/d.js', '/r/e.js', '/r/f.js'] }));
+  const menor = ow.comprobarConElGuion({ firma: 'adhoc-lane', palabras: [MARKER, 'adhoc', 'set', JSON.stringify({ reason: 'arreglo del sp', maxFiles: 5 })], cwd: casa, sesion: 'ses-a', casa });
+  assert.ok(menor && menor.niega, JSON.stringify(menor));
+  assert.match(menor.niega, /ya tocó 6 archivos/);
+  // el mismo pedido con un tope que alcanza llega a la firma
+  const alcanza = ow.comprobarConElGuion({ firma: 'adhoc-lane', palabras: [MARKER, 'adhoc', 'set', JSON.stringify({ reason: 'arreglo del sp', maxFiles: 6 })], cwd: casa, sesion: 'ses-a', casa });
+  assert.deepStrictEqual(alcanza, { ok: true });
+  // y el freno, con ese chequeo, no abre la ventana
+  const r = pedir(casa, `node ${MARKER} adhoc set '{"reason":"arreglo del sp","maxFiles":5}'`, { comprobar: (o) => ow.comprobarConElGuion({ ...o, casa }) });
+  assert.strictEqual(r.decision, 'deny', r.texto);
+  assert.match(r.texto, /No abrí la ventana/);
+  assert.strictEqual(vigentes(casa).length, 0);
 });
 
 // 8.141 T8b OwnerWindow_AdhocSet_MotivoConFlags_PideLaVentana @story-8.141 @ac-4 @ac-6
@@ -1965,26 +2048,37 @@ test('Pendiente_RepoDeLaStoryDeOtraSesion_FirmaSinVentana (e): el worktree priva
   }
 });
 
-test('Pendiente_RepoDeLaStoryDeLaCoordinadora_Ventana (f): el repo de su story es de ella, aunque también sea el de otra', (t) => {
+test('Pendiente_WorktreeDeLaStoryDeLaCoordinadora_FirmaSinVentana (f): un worktree agregado nunca es de la coordinadora; sólo su checkout', (t) => {
   const { casa, ajeno, propio } = casaConPendiente(t);
   const activos = path.join(casa, '.claude', '.tycon-pipeline', 'active');
   const privado = worktreeDePrueba(t);
   fs.writeFileSync(path.join(activos, 'ses-a.json'), JSON.stringify({ sessionId: 'ses-a', storyId: '9.99', storyPath: `${privado}/specs/story-9.99.md`, repoPath: ajeno }));
   fs.writeFileSync(path.join(activos, 'ses-coord.json'), JSON.stringify({ sessionId: 'ses-coord', storyId: '7.77', storyPath: `${privado}/specs/story-7.77.md`, repoPath: repoDePrueba(t) }));
+  // el rojo: antes, el worktree de la story de ella la hacía dueña de ese repo y el pendiente iba al dueño
   let r = pedirPendiente(casa, aprobarPendiente(privado, ' --for-session ses-a'), propio);
-  assert.strictEqual(r.decision, 'ask', r.texto);
-  assert.match(r.texto, /No se firmó por delegación: .*coordinadora/);
-  // del lado de ella, un repo declarado que no se encuentra niega: no se abre por un dato que falta
+  assert.strictEqual(r.decision, 'allow', r.texto);
+  assert.strictEqual(r.via, 'delegacion');
+  // la firma pedida parada en el worktree (`cd <worktree> && …`) tampoco lo hace suyo
+  r = pedirPendiente(casa, aprobarPendiente(privado, ' --for-session ses-a'), privado);
+  assert.strictEqual(r.decision, 'allow', r.texto);
+  // con un dato de ella que no se lee, un worktree agregado igual no es suyo
   for (const suyo of [
     { storyPath: `${privado}/no-existe/story-7.77.md`, repoPath: repoDePrueba(t) },
     { storyPath: 'specs/story-7.77.md', repoPath: repoDePrueba(t) },
-    { storyPath: `${repoDePrueba(t)}/story-7.77.md`, repoPath: path.join(os.tmpdir(), 'no-es-un-repo-de-git') },
   ]) {
     fs.writeFileSync(path.join(activos, 'ses-coord.json'), JSON.stringify({ sessionId: 'ses-coord', storyId: '7.77', ...suyo }));
     r = pedirPendiente(casa, aprobarPendiente(privado, ' --for-session ses-a'), propio);
-    assert.strictEqual(r.decision, 'ask', `${JSON.stringify(suyo)}: ${r.texto}`);
-    assert.match(r.texto, /No se firmó por delegación: .*no pude leer/);
+    assert.strictEqual(r.decision, 'allow', `${JSON.stringify(suyo)}: ${r.texto}`);
   }
+  // un clon principal sí se mira entero: un dato de ella que no se lee niega
+  const clonDeA = repoDePrueba(t);
+  fs.mkdirSync(path.join(clonDeA, 'specs'));
+  fs.writeFileSync(path.join(activos, 'ses-a.json'), JSON.stringify({ sessionId: 'ses-a', storyId: '9.99', repoPath: clonDeA }));
+  fs.writeFileSync(path.join(activos, 'ses-coord.json'), JSON.stringify({ sessionId: 'ses-coord', storyId: '7.77', storyPath: `${repoDePrueba(t)}/story-7.77.md`, repoPath: path.join(os.tmpdir(), 'no-es-un-repo-de-git') }));
+  r = pedirPendiente(casa, aprobarPendiente(clonDeA, ' --for-session ses-a'), propio);
+  assert.strictEqual(r.decision, 'ask', r.texto);
+  assert.match(r.texto, /No se firmó por delegación: .*no pude leer/);
+  fs.writeFileSync(path.join(activos, 'ses-a.json'), JSON.stringify({ sessionId: 'ses-a', storyId: '9.99', storyPath: `${privado}/specs/story-9.99.md`, repoPath: ajeno }));
   // la story de la otra sesión vive en el checkout de la coordinadora: ese repo sigue siendo de ella
   const otra = casaConPendiente(t);
   fs.mkdirSync(path.join(otra.propio, 'specs'));
@@ -2055,7 +2149,8 @@ test('Precheck_GuionEnRegla_SinRespuestaOCaido_AbreLaVentana', (t) => {
 test('Precheck_SoloParaSusFirmasYSinDelegar', (t) => {
   let llamado = 0;
   const comprobar = () => { llamado++; return { niega: 'no' }; };
-  for (const cmd of [ADHOC, SIGN_FILE('dod_runtime_exempt', '/r/specs/story-9.99.md')]) {
+  // (el arreglo rápido tiene chequeo previo desde que el motivo largo y el tope menor se niegan antes de la ventana)
+  for (const cmd of [SIGN_FILE('dod_runtime_exempt', '/r/specs/story-9.99.md')]) {
     const r = pedir(casaNueva(t), cmd, { comprobar });
     assert.strictEqual(r.decision, 'ask', `${cmd}: ${r.texto}`);
   }
@@ -2155,7 +2250,7 @@ test('Precheck_AprobarElPlan_FueraDeOrdenNiegaYEnOrdenNoEscribe', (t) => {
 // Las otras firmas de guion con requisitos propios pasan por el mismo chequeo. Quedan sin chequeo el carril, que no
 // tiene requisitos antes de la firma, y las cuatro firmas sobre un archivo.
 const CON_REQUISITOS = ['plan-approval', 'extra-round', 'save', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver',
-  'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran'];
+  'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran', 'adhoc-lane'];
 
 // 🔴 Falla con: una firma de guion con requisitos que abre la ventana sin preguntarle antes al guion.
 test('Precheck_LasFirmasConRequisitos_NoAbrenLaVentanaSiElGuionSeNiega', (t) => {
@@ -2165,6 +2260,7 @@ test('Precheck_LasFirmasConRequisitos_NoAbrenLaVentanaSiElGuionSeNiega', (t) => 
     ['pending-approval', `node ${MARKER} approve-pending --id DEF-nuevo --repo /r`],
     ['escape:force-manual', `node ${MARKER} set-check dod green --force-manual`],
     ['escape:trust-ran', `node ${PIPELINE} check-count --repo /r --story /r/specs/story-9.99.md --trust-ran --ran a`],
+    ['adhoc-lane', ADHOC],
   ];
   const vistas = new Set();
   for (const [firma, cmd] of [...GUIONES, ...otras]) {

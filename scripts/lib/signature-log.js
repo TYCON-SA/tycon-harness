@@ -25,7 +25,8 @@ const stateDir = (casa) => require(path.join(__dirname, '..', '..', 'skills', 't
 const FILE = 'signatures.jsonl';
 // `review`: la coordinadora por delegación, respaldada por el veredicto aprobado de la revisión automática que ella lanzó
 // (la aprobación de un plan de rutina): nivel 1, delegada
-const VIAS = Object.freeze(['window', 'terminal', 'delegation', 'command', 'review']);
+// `notified`: lo de rutina que se hizo sin firma en una pestaña sin permisos, con aviso a la persona (owner-window.js)
+const VIAS = Object.freeze(['window', 'terminal', 'delegation', 'command', 'review', 'notified']);
 const DELEGADAS = Object.freeze(['delegation', 'review']);
 const MOTIVO_MAX = 500;
 

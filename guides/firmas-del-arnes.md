@@ -271,6 +271,31 @@ un mensaje de otra sesión no saltean la ventana. En una pestaña que no pide pe
 gancho guarda sin preguntar y lo dice en pantalla. Cerrar la corrida ya no pide nada. Lo delicado (frenos, firmas,
 controles, producción) lo cubre la firma de control del pedido, que es del dueño y no cambia.
 
+### Lo de rutina en una pestaña sin permisos: hecho y avisado
+
+En una pestaña que no pide permisos la ventana se aprobaría sola. Ahí, las cuatro firmas de nivel 1 se hacen sin firma
+y quedan en el registro de firmas con la vía `notified` («hecho y avisado»): aprobar un pendiente, el ok de guardar, el
+plan y abrir un arreglo rápido. Pasan por los mismos controles que la delegación de la coordinadora:
+
+- el ok de guardar, sólo con la historia limpia y sin nada sensible;
+- el plan, con la revisión automática aprobada y nunca uno delicado;
+- el arreglo rápido, con el cupo delegado y sin tocar lo sensible.
+
+A la persona le llega el aviso por los canales de la sesión. Subir el tope de un arreglo rápido que ya existe sigue
+siendo una firma. Todo lo de nivel 2 y 3 también: eximir un crítico, saltear el pase, un criterio que no se prueba en
+vivo, cambiar un estado a mano, cerrar una corrida perdida o como deuda, y cualquier cambio de control. Eso se niega
+en la pestaña sin permisos, con el comando de la terminal.
+
+Tres arreglos de la misma tanda:
+
+- **Pendientes en un worktree:** un worktree agregado nunca cuenta como repo de la coordinadora, aunque ella pida la
+  firma parada en él. Sólo cuentan su checkout y los clones principales donde trabaja.
+- **El ok de guardar y lo preparado:** el chequeo previo del ok mira lo preparado cuando hay algo preparado, así un
+  cambio que entra en dos commits se firma sin sacar del disco el resto. Las salidas y capturas de una prueba en vivo
+  que su registro nombra con la misma huella cuentan como evidencia; una suelta, no.
+- **`adhoc set`:** un motivo de más de 200 caracteres y un tope menor que los archivos ya tocados se niegan antes de
+  abrir la ventana o pedir la firma.
+
 La pregunta nombra la forma (`git push`, `… pr create`…) y el repo, nunca el comando, que puede traer una credencial;
 tampoco la rama escrita en el comando; en un camino rápido, también su motivo. Un camino rápido es del repo de los
 archivos que anotó (si todavía no anotó ninguno, de cualquiera); un pedido pregunta siempre. Dentro de una corrida o de

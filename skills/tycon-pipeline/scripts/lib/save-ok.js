@@ -32,6 +32,24 @@ const BASE = 'origin/main';
 const EVIDENCIA = '.advisors';
 const PATRONES_EVIDENCIA = [`${EVIDENCIA}/**/*.json`, `${EVIDENCIA}/**/*.jsonl`, `${EVIDENCIA}/**/*.md`];
 const esEvidencia = (rel) => rel.startsWith(`${EVIDENCIA}/`) && /\.(json|jsonl|md)$/i.test(rel);
+
+/**
+ * ¿`rel` es una salida o una captura de una prueba en vivo que su registro nombra con la misma huella? La deja
+ * smoke-run.sh en `<carpeta>/<clave>-smoke-outputs/` o `-smoke-captures/`, y el registro `<carpeta>/<clave>-smoke-ledger.jsonl`
+ * anota su ruta y su sha256. Una suelta, o una que cambió después de sellarla, no.
+ */
+function esEvidenciaEnVivo(repo, rel) {
+  const m = /^(.*)\/([^/]+)-smoke-(outputs|captures)\/([^/]+)$/.exec(String(rel));
+  if (!m || !m[1].startsWith(EVIDENCIA)) return false;
+  const [, carpeta, clave, tipo, nombre] = m;
+  const sub = `${clave}-smoke-${tipo}/${nombre}`;
+  const [campo, huellaCampo] = tipo === 'outputs' ? ['output', 'output_sha'] : ['capture', 'capture_sha'];
+  let lineas;
+  try { lineas = fs.readFileSync(path.join(repo, carpeta, `${clave}-smoke-ledger.jsonl`), 'utf8').split('\n').filter(Boolean); } catch (_) { return false; }
+  let sha;
+  try { sha = require('crypto').createHash('sha256').update(fs.readFileSync(path.join(repo, rel))).digest('hex'); } catch (_) { return false; }
+  return lineas.some((l) => { try { const o = JSON.parse(l); return o[campo] === sub && o[huellaCampo] === sha; } catch (_) { return false; } });
+}
 // el papeleo que no vence el ok de guardar: la evidencia, más las stories y su estado (`specs/`) y las tareas (`tasks/`),
 // sólo en sus datos y sus informes. Nunca una carpeta oculta, un enlace, lo de la lista sensible ni la configuración de
 // una herramienta (`package.json`, `tsconfig.json`): ésos cargan o deciden algo, y cambiarlos pide otro ok
@@ -225,12 +243,22 @@ function controlesDelCommit({ repos, timeoutMs = CONTROLES_MS }) {
       }
     } catch (_) { /* barrer es de cortesía: no cambia el veredicto */ }
     const indice = path.join(gitDir.out, `save-ok-controls-${process.pid}-${Date.now()}`);
+    // con algo preparado, lo que guardaría el próximo commit es lo preparado: los controles miran una copia del índice
+    // de la persona (un cambio que entra en dos commits se firma sin sacar del disco el resto). Sin nada preparado, el
+    // commit de todo, como siempre
+    let preparado = false;
     try {
       const env = { GIT_INDEX_FILE: indice, TYCON_PRECOMMIT_READ_ONLY: '1' };
       const tieneHead = git(repo, ['rev-parse', '--verify', '--quiet', 'HEAD']).ok;
-      for (const p of [tieneHead ? ['read-tree', 'HEAD'] : ['read-tree', '--empty'], ['add', '-A']]) {
-        const r = git(repo, p, env);
-        if (!r.ok) return no(`no pude armar lo que guardaría el commit (git ${p[0]}: ${r.err})`);
+      const delIndice = git(repo, ['rev-parse', '--path-format=absolute', '--git-path', 'index']);
+      const hayPreparado = tieneHead && delIndice.ok && spawnSync('git', ['-C', repo, 'diff', '--cached', '--quiet'], { encoding: 'utf8' }).status === 1;
+      if (hayPreparado) {
+        try { fs.copyFileSync(delIndice.out, indice); preparado = true; } catch (e) { return no(`no pude copiar lo preparado (${e.code || e.message})`); }
+      } else {
+        for (const p of [tieneHead ? ['read-tree', 'HEAD'] : ['read-tree', '--empty'], ['add', '-A']]) {
+          const r = git(repo, p, env);
+          if (!r.ok) return no(`no pude armar lo que guardaría el commit (git ${p[0]}: ${r.err})`);
+        }
       }
       const queda = limite - Date.now();
       const r = queda <= 0 ? { error: { code: 'ETIMEDOUT' }, status: null } : spawnSync('git', ['-C', repo, 'hook', 'run', '--ignore-missing', 'pre-commit'], {
@@ -240,7 +268,8 @@ function controlesDelCommit({ repos, timeoutMs = CONTROLES_MS }) {
         return no(`los controles del commit no terminaron en ${Math.round(timeoutMs / 1000)} s (${r.error ? r.error.code || r.error.message : r.signal}): no se firma sin saber si el commit pasa. Probá \`git hook run pre-commit\` en ${repo} y volvé a pedir la firma`);
       }
       if (r.status !== 0) {
-        return no(`los controles del commit lo frenarían, y arreglarlo después vencería el ok. Lo que dijeron: ${ultimas(`${r.stderr}\n${r.stdout}`)}. Arreglá eso y volvé a pedir la firma`);
+        const sobre = preparado ? 'los controles del commit, sobre lo preparado,' : 'los controles del commit, sobre todo lo del disco (no hay nada preparado),';
+        return no(`${sobre} lo frenarían, y arreglarlo después vencería el ok. Lo que dijeron: ${ultimas(`${r.stderr}\n${r.stdout}`)}. Arreglá eso y volvé a pedir la firma`);
       }
     } finally {
       try { fs.unlinkSync(indice); } catch (_) { /* no llegó a existir */ }
@@ -342,8 +371,9 @@ function sensibles({ repos = [] } = {}) {
       const abs = path.join(repo, rel);
       const relReal = path.relative(raizReal, real(abs));
       if (es(rel) || (!relReal.startsWith('..') && es(relReal))) { out.push({ repo, archivo: rel, motivo: 'está en la lista de lo sensible' }); continue; }
-      // la huella y «el último cambio» no miran la evidencia: lo que no es evidencia ahí adentro no pasa sin verse
-      if (rel.startsWith(`${EVIDENCIA}/`) && !esEvidencia(rel)) { out.push({ repo, archivo: rel, motivo: 'no es evidencia y está en la carpeta de la evidencia' }); continue; }
+      // la huella y «el último cambio» no miran la evidencia: lo que no es evidencia ahí adentro no pasa sin verse. Las
+      // salidas y capturas de una prueba en vivo que su registro nombra con la misma huella sí son evidencia
+      if (rel.startsWith(`${EVIDENCIA}/`) && !esEvidencia(rel) && !esEvidenciaEnVivo(repo, rel)) { out.push({ repo, archivo: rel, motivo: 'no es evidencia y está en la carpeta de la evidencia' }); continue; }
       let texto = null;
       try { texto = fs.readFileSync(abs, 'utf8'); } catch (e) {
         // borrado: no carga nada; no poder leerlo (permisos, una carpeta, un submódulo) no prueba que no cargue nada

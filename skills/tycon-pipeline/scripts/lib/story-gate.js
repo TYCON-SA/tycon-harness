@@ -225,7 +225,8 @@ function computeStoryGate({
   // portón apagado y del pase de los repos del arnés, que es donde están esos archivos. La lista de lo sensible vive en el
   // arnés (scripts/lib/signatures.js): unas skills instaladas aparte no la alcanzan, y sin la lista el carril delegado
   // no toca nada
-  if (adhoc && adhoc.reason && adhoc.via === 'delegacion' && repoRoot) {
+  // (el de una pestaña sin permisos, «hecho y avisado», tampoco)
+  if (adhoc && adhoc.reason && (adhoc.via === 'delegacion' || adhoc.via === 'avisado') && repoRoot) {
     const rels = [filePath, real].map((f) => norm(path.relative(repoRoot, f))).filter((rel) => !rel.startsWith('..'));
     let sensible;
     try {

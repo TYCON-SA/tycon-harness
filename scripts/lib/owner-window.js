@@ -478,7 +478,8 @@ function clasificarConElGuion(palabras, cwd) {
 const PRECHEQUEO = 'TYCON_SIGN_PRECHECK';
 const PRECHEQUEO_OK = 'tycon-sign-precheck: ok';
 // las firmas de guion con requisitos propios; el carril y las firmas sobre un archivo no comprueban nada antes de firmar
-const CON_PRECHEQUEO = new Set(['extra-round', 'save', 'plan-approval', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver',
+// (`adhoc-lane`: el largo del motivo y un tope menor que lo ya tocado se niegan antes de la ventana)
+const CON_PRECHEQUEO = new Set(['extra-round', 'save', 'plan-approval', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver', 'adhoc-lane',
   'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran']);
 // lo que espera el chequeo: el ok de guardar corre además los controles del commit de cada repo, con su propio plazo de
 // 210 s (lib/save-ok.js)
@@ -499,6 +500,31 @@ function comprobarConElGuion({ firma, palabras, cwd, sesion, casa, env }) {
   if (r.error || r.status === null) return null;
   if (r.status === 0) return String(r.stdout).split('\n').includes(PRECHEQUEO_OK) ? { ok: true } : null;
   return { niega: String(r.stderr || r.stdout || `salió ${r.status}`).trim() };
+}
+
+// lo que en una pestaña sin permisos se hace sin firma y queda «hecho y avisado»: autorizaciones de rutina, no lo que
+// afloja un control (cambiar el estado, cerrar una corrida perdida, subir el tope de un arreglo rápido siguen con firma)
+const RUTINA_SIN_PERMISOS = new Set(['pending-approval', 'save', 'plan-approval', 'adhoc-lane']);
+// las que avisan a la persona desde los controles de la delegación de su propio guion (save-ok.js, marker.js adhoc)
+const AVISA_SU_GUION = new Set(['save', 'adhoc-lane']);
+
+/**
+ * ¿La firma pedida en una pestaña sin permisos es de rutina? `{ ok }` o `{ ok: false, motivo }`. Va sola, sin escapes;
+ * un arreglo rápido que ya existe no sube su tope (el que se pide sin `maxFiles` conserva el que tenía).
+ */
+function rutinaSinPermisos({ guion, pendientes = [], palabras, destino, casa }) {
+  if (!guion || !RUTINA_SIN_PERMISOS.has(guion) || pendientes.length !== 1 || pendientes[0] !== guion) return { ok: false, motivo: null };
+  if (guion !== 'adhoc-lane') return { ok: true };
+  let pedido;
+  try { pedido = JSON.parse((palabras || [])[3]); } catch (_) { return { ok: false, motivo: 'no pude leer el arreglo rápido que se pide' }; }
+  let existente = null;
+  try { existente = JSON.parse(fs.readFileSync(path.join(stateDir(casa), 'adhoc', `${destino}.json`), 'utf8')); } catch (e) {
+    if (e.code !== 'ENOENT') return { ok: false, motivo: 'no pude leer el arreglo rápido que ya tiene la sesión' };
+  }
+  if (existente && pedido && pedido.maxFiles !== undefined && Number(pedido.maxFiles) > Number(existente.maxFiles)) {
+    return { ok: false, motivo: `subir el tope del arreglo rápido (de ${existente.maxFiles} a ${pedido.maxFiles} archivos) sigue siendo una firma` };
+  }
+  return { ok: true };
 }
 
 /**
@@ -593,10 +619,17 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
     else sinDelegar = rs.map((r) => r && !r.ok && r.motivo).find((m) => m && !/no delega|sólo del dueño|la sesión que implementa/.test(m)) || null;
   } catch (e) { return negar(`no se pudo consultar la delegación del perfil (${e.message})`, pendientes); }
   // una pestaña que no pide permisos aprueba sola lo que se manda a la ventana: el renglón quedaría a nombre del dueño
-  // sin su Sí. Sólo los modos que preguntan llevan a la ventana; uno desconocido niega. Sin el dato, la de siempre
+  // sin su Sí. Lo que afloja un control se niega ahí, con el comando de la terminal; lo de rutina se hace y queda en el
+  // registro como «hecho y avisado» (`rutinaSinPermisos`). Sólo los modos que preguntan llevan a la ventana; uno
+  // desconocido no pregunta. Sin el dato, la de siempre
   const modo = evento.permission_mode == null ? null : String(evento.permission_mode);
+  let avisado = false;
   if (!delegada && modo !== null && !MODOS_QUE_PREGUNTAN.has(modo)) {
-    return negar(`esta pestaña no pide permisos (${una(modo, 40)}): la ventana se aprobaría sola, sin el Sí del dueño`, pendientes);
+    const rutina = rutinaSinPermisos({ guion: firmaGuion, pendientes, palabras: can && can.palabras, destino, casa });
+    if (!rutina.ok) {
+      return negar(`esta pestaña no pide permisos (${una(modo, 40)}): la ventana se aprobaría sola, sin el Sí del dueño${rutina.motivo ? `, y ${rutina.motivo}` : ''}`, pendientes);
+    }
+    avisado = true;
   }
   // el guion dice antes si se negaría: entonces no hay ventana ni registro (sin respuesta, la ventana se abre como siempre)
   if (guion && !delegada && CON_PRECHEQUEO.has(firmaGuion)) {
@@ -616,10 +649,14 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
     try {
       escribirRegistro(casa, { firma: firmaGuion, sesion, destino, tool_use_id: evento.tool_use_id == null ? null : String(evento.tool_use_id),
         sha256: sha256(comando), comando, herramienta: { pid: tool.pid, inicio: tool.inicio }, ts: new Date(ahora).toISOString(), corrida: corridaDe(casa, destino),
-        ...(delegada ? { via: 'delegacion', maquina: delegada.maquina } : {}), ...(refirmaDe ? { refirma_de: refirmaDe } : {}) });
+        ...(delegada ? { via: 'delegacion', maquina: delegada.maquina } : avisado ? { via: 'avisado' } : {}), ...(refirmaDe ? { refirma_de: refirmaDe } : {}) });
     } catch (e) { return negar(`no se pudo escribir el registro de la ventana (${e.code || e.message})`, pendientes); }
   }
   if (delegada) return { decision: 'allow', via: 'delegacion', relevo: sesion, firmas: pendientes, texto: 'firmada por la delegación del perfil' };
+  if (avisado) {
+    return { decision: 'allow', via: 'avisado', relevo: sesion, firmas: pendientes,
+      texto: `hecho y avisado: esta pestaña no pide permisos, así que ${firmaDe(firmaGuion).approves} se hace sin firma, con los controles de la delegación, y queda en el registro de firmas` };
+  }
   const que = pendientes.map((id) => firmaDe(id).approves).join('; ');
   const texto = `${aprobador(evento.cwd).label}: ${que}. Story ${storyDe(casa, destino)}, sesión ${destino}. Detalle: ${detalle}. `
     + (sinDelegar ? `No se firmó por delegación: ${una(sinDelegar, 200)}. ` : '')
@@ -701,7 +738,8 @@ function verificar({ firma, argv = [], pid = process.pid, arbol, casa, ahora = D
     // lo que el guion comprueba con el pedido a la vista y sin gastarlo (la vía la escribió el freno en el registro)
     let previo = null;
     if (antes) {
-      previo = antes(ultimo.reg.via === 'delegacion' ? 'delegacion' : 'ventana', ultimo.reg);
+      // lo hecho y avisado en una pestaña sin permisos pasa por los mismos controles que la delegación
+      previo = antes(['delegacion', 'avisado'].includes(ultimo.reg.via) ? 'delegacion' : 'ventana', ultimo.reg);
       if (previo && previo.codigo) return { ok: false, codigo: previo.codigo, motivo: previo.motivo };
     }
     try { fs.renameSync(path.join(dir, ultimo.f), path.join(dir, `${ultimo.f}.consumido-${ahora}`)); } catch (_) { return no('el pedido de la ventana ya se usó'); }
@@ -717,7 +755,7 @@ function verificar({ firma, argv = [], pid = process.pid, arbol, casa, ahora = D
 
 // la vía de la firma en el registro común (signature-log.js). `revision`: la coordinadora por delegación, respaldada por el
 // veredicto aprobado de la revisión automática que ella lanzó (la aprobación del plan)
-const VIA_COMUN = { ventana: 'window', terminal: 'terminal', delegacion: 'delegation', revision: 'review' };
+const VIA_COMUN = { ventana: 'window', terminal: 'terminal', delegacion: 'delegation', revision: 'review', avisado: 'notified' };
 
 /**
  * El renglón `<firma>-signed` del gates.log: cómo se firmó, quién y para quién. Va antes de la constancia del guion.
@@ -734,7 +772,8 @@ function firmar({ firma, via, sesion = null, destino = null, resumen = '', casa,
     fs.mkdirSync(dir, { recursive: true });
     fs.appendFileSync(path.join(dir, 'gates.log'), `${JSON.stringify({ ts: new Date(ahora).toISOString(), ...renglon })}\n`);
   }
-  let quien = via === 'delegacion' ? `coordinadora (sesión ${sesion})` : via === 'revision' ? `coordinadora (sesión ${sesion}), vía revisión automática` : persona;
+  let quien = via === 'delegacion' ? `coordinadora (sesión ${sesion})` : via === 'revision' ? `coordinadora (sesión ${sesion}), vía revisión automática`
+    : via === 'avisado' ? `sesión ${sesion}, en una pestaña sin permisos (hecho y avisado)` : persona;
   if (quien === undefined) { try { quien = os.userInfo().username; } catch (_) { quien = null; } }
   const escribir = appendSignature || require('./signature-log.js').appendSignature;
   // al lado del gates.log que recibió el renglón -signed: el guion que anota lo escribe en la carpeta de estado de su HOME
@@ -890,7 +929,22 @@ function porTerminal({ firma, sesion = null, destino = null, resumen = '', casa,
  * (`{ codigo, motivo }` para no firmar; null para seguir). `extra`: campos más para el renglón `-signed` (o una función
  * que los da, llamada al firmar con `{ via, sesion, destino }`).
  */
-function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = process.pid, arbol, casa, ahora, tty, anotar, propia, salir, antes, extra, aprobador, env, escribir } = {}) {
+/**
+ * El aviso de lo hecho sin firma en una pestaña sin permisos, por los canales de la sesión (`notify.js`). Si no sale, se
+ * dice en pantalla: lo hecho ya quedó en el registro de firmas, que es la constancia.
+ */
+function avisarHecho({ firma, sesion, destino, que, notificar }) {
+  const s = firmaDe(firma);
+  const texto = `Hecho y avisado: ${s ? s.approves : firma}${destino ? `, sesión ${destino}` : ''}${sesion && sesion !== destino ? ` (lo pidió ${sesion})` : ''}. ${una(que, 200)}`;
+  try {
+    if (notificar) { notificar(texto); return; }
+    const notify = require('./notify.js');
+    const r = notify.avisar({ canales: notify.canalesDeLaSesion(), texto, lado: 'sesion' });
+    if (r && r.ok === false) console.error(`⚠️ hecho y avisado: el aviso no salió (${r.motivo || r.error || 'sin canal'}); queda en el registro de firmas`);
+  } catch (e) { console.error(`⚠️ hecho y avisado: el aviso no salió (${e.message}); queda en el registro de firmas`); }
+}
+
+function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = process.pid, arbol, casa, ahora, tty, anotar, propia, salir, antes, extra, aprobador, env, escribir, notificar } = {}) {
   // sin variable de sesión (la terminal del dueño) el guion no tiene sesión propia: la dice --for-session
   if (propia === '_nosession') propia = null;
   const i = argv.indexOf('--for-session');
@@ -932,10 +986,15 @@ function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = proce
   const v = verificar({ firma, argv, pid, arbol, casa, ahora, sesion: propia || undefined, destino: destino || undefined, antes });
   if (!v.ok) return { codigo: v.codigo || 1, motivo: v.motivo };
   // el registro que dejó el freno sin ventana (la delegación del perfil) firma con via: delegacion; si lo que comprobó el
-  // guion antes (`antes`) la respalda con la revisión automática, con via: revision y el resumen de la revisión
-  const porRevision = v.registro.via === 'delegacion' && v.previo && v.previo.via === 'revision';
-  const via = porRevision ? 'revision' : v.registro.via === 'delegacion' ? 'delegacion' : 'ventana';
-  firmar({ firma, via, sesion: v.registro.sesion, destino: v.registro.destino, resumen: (porRevision && v.previo.resumen) || resumen || v.registro.comando, casa, ahora, anotar, extra });
+  // guion antes (`antes`) la respalda con la revisión automática, con via: revision y el resumen de la revisión. El de una
+  // pestaña sin permisos firma con via: avisado, y se avisa a la persona por los canales de la sesión
+  const avisado = v.registro.via === 'avisado';
+  const porRevision = !avisado && v.registro.via === 'delegacion' && v.previo && v.previo.via === 'revision';
+  const via = avisado ? 'avisado' : porRevision ? 'revision' : v.registro.via === 'delegacion' ? 'delegacion' : 'ventana';
+  const que = (v.previo && v.previo.resumen) || resumen || v.registro.comando;
+  firmar({ firma, via, sesion: v.registro.sesion, destino: v.registro.destino, resumen: (porRevision || avisado) ? que : (resumen || v.registro.comando), casa, ahora, anotar, extra });
+  // el ok de guardar y el arreglo rápido ya avisaron desde los controles de la delegación de su guion
+  if (avisado && !AVISA_SU_GUION.has(firma)) avisarHecho({ firma, sesion: v.registro.sesion, destino: v.registro.destino, que, notificar });
   return { codigo: 0, via, destino: v.registro.destino, sesion: v.registro.sesion, registro: v.registro };
 }
 
@@ -976,6 +1035,7 @@ function fijarDestino({ r, propia, necesitaMarcador = false, leerMarcador, casa,
 function quienFirmo({ via, sesion } = {}, persona) {
   if (via === 'delegacion') return { tipo: 'automatica', quien: `coordinadora (sesión ${sesion})`, delegacion: persona, via: 'delegada · coordinadora' };
   if (via === 'revision') return { tipo: 'automatica', quien: `coordinadora (sesión ${sesion}), vía revisión automática`, delegacion: persona, via: 'revisión automática · coordinadora' };
+  if (via === 'avisado') return { tipo: 'automatica', quien: `sesión ${sesion}, en una pestaña sin permisos`, delegacion: persona, via: 'hecho y avisado' };
   return { tipo: 'manual', quien: persona, via: via === 'terminal' ? 'terminal' : 'ventana' };
 }
 
