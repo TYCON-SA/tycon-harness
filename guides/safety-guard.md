@@ -89,7 +89,7 @@ Cada regla tiene un rule ID estable (citado en el mensaje de bloqueo).
 | **ESC-C3** | `marker.js set-autonomous <valor que lo apaga>` con el modo autónomo prendido; `marker.js clear`, `clear-session` de la propia sesión o `update-story-status <h> review\|done` con un control en rojo, pasos sin correr o el pase adversarial sin cerrar; `marker.js set-check … --force-manual` o `pipeline.js check-count … --trust-ran` con la ejecución en verde o en rojo; `--no-deep-review` en `pipeline.js start` o `deep-review-gate` o en `marker.js mark-adversarial-skipped`, siempre, también antes de que exista la ejecución; `marker.js clear-session <sesión> --lost` o `marker.js restore <sesión>`, siempre (abajo, «La ejecución perdida»). Los archivos que siguen a `--files` no son la bandera, salvo una variable sola sin valor conocido o una que vale una bandera | Apagan el lazo que no deja cerrar con las pruebas en rojo, o archivan como terminada una ejecución que no terminó. La salida normal de una historia que no se pudo es `marker.js close-as-debt`; hacerlo igual lo decide la persona (abajo). El cierre normal del paso 11, `adhoc clear`, `doing clear` y un texto que sólo nombra el comando no frenan |
 | **ESC-C4** | `marker.js close-as-debt` o `marker.js expect-red`, con una ejecución en la sesión | Dejan una salida prevista por la historia como el final de la ejecución, o un control en rojo como esperado. Lo autoriza la persona, siempre (abajo); un texto que sólo nombra el comando no frena |
 | **ESC-C5** | Un comando que crea, toca o copia un archivo `ALLOW_DOD_EVIDENCE_WRITE` (`touch`, `cp`, `mv`, una redirección, `tee`, un intérprete, `New-Item`, `Set-Content`, …), o que escribe `dod_runtime_exempt: true` en un `.md` (`sed -i`, `perl -i`, `>`, `>>`, `tee`) | El permiso de escribir a mano la evidencia de la prueba en vivo y la exención de esa prueba los firma la persona, con `marker.js sign-file <firma> <archivo>`, y la escritura va después con Edit o Write: por la consola frena siempre. Mirarlo, buscarlo, borrarlo o sacar la exención no frena. Por la herramienta de escribir archivos lo miran el guardián de la evidencia (consume el permiso sólo con la constancia de esa firma, de la misma sesión y sobre ese archivo, dentro de los 30 minutos) y el hook del encabezado (pide la misma firma para agregar la exención a una historia en implementación) |
-| **ESC-C6** | `marker.js complete-step approve-plan` (o `3`) con `--approved "<cita>"` o `--mockup-approved "<cita>"`, o `approve-mockup --approved`, cuando no se la puede pedir en la ventana (la forma escondida, Codex, otra consola) | La aprobación del plan es de la persona: la da en la ventana de permiso o en su terminal; la cita no se busca en la conversación. Por delegación la da la coordinadora sólo con el «aprobado» de la revisión automática que ella lanzó, y nunca el de una story delicada. Ningún plan se aprueba solo |
+| **ESC-C6** | `marker.js complete-step approve-plan` (o `3`) con `--approved "<cita>"` o `--mockup-approved "<cita>"`, o `approve-mockup --approved`, cuando no se la puede pedir en la ventana (la forma escondida, Codex, otra consola) | La aprobación del plan es de la persona: la da en la ventana de permiso; donde la ventana no llega, con un click en el cuadro de opciones o un «aprobado» escrito; o en su terminal. La cita no se busca en la conversación. Por delegación la da la coordinadora sólo con el «aprobado» de la revisión automática que ella lanzó, y nunca el de una story delicada. Ningún plan se aprueba solo |
 | **ESC-C7** | Un comando que corre `run-base-controls.sh approve` (aprobar un cambio de los controles del repo, o refirmarlos tras traer main) que no se puede pedir en la ventana: escondido detrás de otro comando o adentro de un `bash -c`, un `eval` o un `"$(…)"`, en Codex, o lanzado desde otra consola; también con `--relayed-by`, que ya no firma. Un `grep`, un `cat` o un mensaje de commit que nombran esas palabras no lo corren y pasan | El cambio de un control lo firma el dueño, en la ventana de permiso o en su terminal con el comando de `pending`. La coordinadora lo firma desde su pestaña sólo si el perfil del equipo se lo delega. Un comando que esconde la firma (`node -e`, otro guion) no la pide, y `approve` no firma |
 | **ESC-C2** | Un comando que nombra `~/.claude/projects` (también tras un `cd`) y trae una forma de escribir: redirección (salvo a `/dev/null`), `tee`, `sponge`, `sed -i`, `awk -i`, `dd`, `truncate`, `cp`, `mv`, un intérprete con código en la línea; en PowerShell `Add-Content`, `Set-Content`, `Out-File`, `Copy-Item`, `Move-Item` | De las conversaciones guardadas salen la constancia del validador y el plan que vio la persona. Leer con `tail`, `grep`, `ls` o `wc` no frena |
 
@@ -104,9 +104,10 @@ Cada regla tiene un rule ID estable (citado en el mensaje de bloqueo).
 
 ## Saltear el freno: lo decide la persona
 
-Ninguna frase escrita en el chat abre el freno: el arnés no lee la conversación para firmar. Cada salteo es una firma
-de la persona, con su comando; la lista entera está en [las firmas del dueño](firmas-del-arnes.md). Se da de una de
-dos formas, y ninguna la puede usar el agente solo:
+Cada salteo es una firma de la persona, con su comando; la lista entera está en
+[las firmas del dueño](firmas-del-arnes.md). Ninguna frase abre una regla de este freno: para eso está la emergencia. En
+las demás firmas, donde la ventana no llega, vale el «aprobado» que la persona tipea: lo anota un gancho al enviar el
+mensaje. Un encargo, otra sesión o Telegram no firman. Hay cuatro formas, y ninguna la puede usar el agente solo:
 
 **La emergencia: la única salida de una regla de este freno.** Cuando el freno frena, guarda el texto exacto que leyó
 como un pedido con número, y el cartel lo da. La persona la firma en su terminal, nunca la ventana ni la delegación, con
@@ -131,9 +132,15 @@ sobre un archivo) el freno deja antes un registro del pedido, y el guion firma s
 lo lanzó la consola de la herramienta con ese comando exacto. El registro vale una sola vez y vence a los 30 minutos.
 Una firma sobre un archivo deja una constancia que consume el Edit o Write siguiente de esa sesión sobre ese archivo.
 
+**Con un click o un «aprobado» (Claude Code)**, donde la ventana no llega: una pestaña que no pide permisos o una sesión
+de fondo. El freno niega el comando y le dice al agente qué mostrar: el cuadro de opciones con una sola pregunta, o el
+mismo texto en el chat, con «firma <id>». Con el click o el «aprobado» de la persona, el agente repite el comando. Vale
+una vez y vence a los 30 minutos. Las reglas están en [Aprobar sin terminal](firmas-del-arnes.md#aprobar-sin-terminal). No
+lo aceptan `TYCON_SAFETY_OFF`, `TYCON_PROD_LINT`, la emergencia ni saltear el pase adversarial.
+
 **En la terminal de la persona**, donde no hay freno: el comando de la columna «Firmarla en la terminal» de esa lista
-(casi siempre el mismo con `--terminal`). Es la única forma en Codex, que no tiene ventana de permiso. También es la
-forma de toda firma que el freno no puede decidir: el comando escondido detrás de otro (`cd … && <firma>`), la
+(casi siempre el mismo con `--terminal`). Es la única forma en Codex, que no tiene ventana de permiso, y la de lo que no
+acepta el click. También es la forma de toda firma que el freno no puede decidir: el comando escondido detrás de otro (`cd … && <firma>`), la
 herramienta lanzada por otra herramienta o por su consola, una consola de fondo viva, o Windows, donde el árbol de
 procesos no se lee. El cartel de cada freno trae el comando de la terminal.
 
@@ -185,9 +192,10 @@ escribe, no pisa los controles (`checks`, `checksProvenance`), el pase ni el mod
 pasar a otra historia deja la anterior anotada como abortada si no había terminado.
 
 Por qué: el prefijo lo puede escribir el agente. Un modelo frenado por `--no-verify` reescribió el comando con
-`TYCON_SAFETY_OFF=1` por su cuenta y commiteó, aunque la orden decía que no buscara otra forma. Una frase en el chat
-tampoco alcanzaba: el agente la escribía en la conversación por otros caminos. Por eso la salida del freno es una sola,
-la emergencia, firmada en la terminal para un comando, y no hay forma de apagarlo para toda una sesión.
+`TYCON_SAFETY_OFF=1` por su cuenta y commiteó, aunque la orden decía que no buscara otra forma. Una frase citada de la
+conversación tampoco alcanzaba: el agente la escribía ahí por otros caminos. Por eso la salida del freno es una sola, la
+emergencia, firmada en la terminal para un comando, y no hay forma de apagarlo para toda una sesión. El «aprobado» de las
+demás firmas es otra cosa: lo anota un gancho al enviar el mensaje, y se comprueba que lo tipeó la persona.
 
 Cada escape queda en `~/.claude/.tycon-pipeline/frenos.jsonl`, con la regla esquivada y el camino (`ventana`,
 `delegacion` con la sesión que firmó, o `persona` para la emergencia), sin el texto del comando. Escribir un apagado en
@@ -196,9 +204,8 @@ interruptor en `env`, un hook del arnés) lo frena `HARNESS-C2`, por la terminal
 
 **Codex** no tiene ventana de permiso: la emergencia es igual, en la terminal.
 
-`harness.js sign` firma cualquier id del catálogo, y por ahora siempre en la terminal: así el agente no puede llenar el
-registro de firmas con firmas que nadie dio. La ventana de permiso entra cuando los frenos lean ese registro; hasta
-entonces, sólo la emergencia tiene efecto.
+`harness.js sign` firma cualquier id del catálogo, siempre en la terminal: así el agente no puede llenar el registro de
+firmas con firmas que nadie dio. Sólo la emergencia tiene efecto: las demás firmas se aprueban como dice esta sección.
 
 Límite conocido: el permiso de la emergencia es un archivo en la carpeta de estado de la cuenta. Los frenos de escritura
 cuidan esa carpeta entera, con Edit, Write y por consola, igual que los registros de la ventana de permiso
@@ -295,8 +302,8 @@ del turno; el commit en el repo de la ejecución; y en la consola, todo lo que n
 `head` y `tail` sin redirección. `gates.log` y `run-open.json` son además rutas protegidas de la primera capa, al lado
 del marcador.
 
-**La salida es del dueño.** La firma en la ventana de permiso, o en su terminal con `--terminal`, uno de estos dos
-comandos:
+**La salida es del dueño.** La firma en la ventana de permiso, con un click o un «aprobado» donde la ventana no llega, o
+en su terminal con `--terminal`, uno de estos dos comandos:
 
 - `marker.js clear-session <sesión> --lost`: anota `run-close` con `estado: perdida`, el camino de la firma y la hora, y borra la copia.
 - `marker.js restore <sesión>`: vuelve a abrir la ejecución desde la copia del repo (marcador nuevo y `run-open` con

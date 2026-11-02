@@ -460,8 +460,8 @@ El gate del proyecto (el script que el repo declaró en `e2e.gate`) hace, por co
 
 Si el repo no tenía cómo probar en un navegador y la persona contestó que no a la oferta (en «Aprobar el plan»), la historia lleva
 `browser_test: deferred` y `browser_test_reason: "<fecha> — la persona: «<su respuesta>»"`, y `gates.log` la constancia
-`browser-test-deferred` que escribió `e2e-setup.js defer`, después de la firma de la persona en la ventana de permiso o
-en su terminal (`browser-test-signed`). `complete-step prepare-commit`, el commit y el paso a `review` vuelven a buscar
+`browser-test-deferred` que escribió `e2e-setup.js defer`, después de la firma de la persona en la ventana de permiso, con
+un click o un «aprobado», o en su terminal (`browser-test-signed`). `complete-step prepare-commit`, el commit y el paso a `review` vuelven a buscar
 esa firma, posterior a la oferta: si la encuentran, el gate no corre (la historia se prueba con la guía para probarla a
 mano) y dicen en una línea «Prueba con navegador pendiente en la historia …», que queda anotada (`browser-test-debt`).
 Si falta la marca, la constancia, la oferta o la firma, o si el repo ya tiene prueba con navegador (ahí se corre),
@@ -656,14 +656,18 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js run-check ac
     `runtime_not_verifiable:` (`reason:` + `covered_by:`), se le presenta al dev **uno por
     uno en el chat** con el resumen llano ("probado corriendo: N de T; solo tests de
     código: M; sin evidencia: K"), y decide una persona. **El agente nunca firma por su
-    cuenta.** Dos caminos:
+    cuenta.** Tres caminos:
     1. **La ventana de permiso** (el principal). Corré
        `node <skill>/scripts/marker.js runtime-waiver <abs spec.md> --acs <n,m> --approved-by "<el dev>"`, sin
        `--quote`: la herramienta le abre al dev la ventana de permiso con el comando, y lo aprueba ahí. Lo que escriba
-       en el chat ya no firma, y el ok reenviado por otra sesión (`--relayed-by`) no se acepta: lo firma la persona que
+       en el chat ahí no firma, y el ok reenviado por otra sesión (`--relayed-by`) no se acepta: lo firma la persona que
        vio el criterio. Con una consola de fondo viva (un `Bash` en segundo plano que sigue corriendo) la ventana no
        se abre y el freno pide cerrarla o firmar desde la terminal: cerrá antes los procesos de fondo propios.
-    2. **Desde su terminal**, si el dev prefiere: `node <skill>/scripts/marker.js runtime-waiver <abs spec.md> --terminal`
+    2. **Un click o un «aprobado»**, donde la ventana no llega (una pestaña sin permisos, una sesión de fondo). El mismo
+       comando se niega y dice cómo pedirlo. Mostrale el criterio y, en el cuadro de opciones o en el texto, «firma
+       runtime-waiver». Con el click o el «aprobado» de la persona, repetí el comando. Cada aprobación sirve para un
+       solo pedido.
+    3. **Desde su terminal**, si el dev prefiere: `node <skill>/scripts/marker.js runtime-waiver <abs spec.md> --terminal`
        (pide confirmación criterio por criterio; en Windows abre una ventana para firmar).
 
     Después, re-correr el `run-check acmatrix` (ahora verde).
@@ -693,13 +697,15 @@ declarado imposible → **el agente DEBE correrlo**, no waiveable) de `NOT-VERIF
 en el frontmatter `runtime_not_verifiable:` con `reason:`+`covered_by:` → imposible de ejercer
 corriendo la app → lo decide el usuario). El agente presenta CADA `NOT-VERIFIABLE` en la
 conversación (razón + test que lo cubre) y el usuario decide AC por AC: lo aprueba en la ventana de permiso
-(`runtime-waiver <historia> --acs N --approved-by "<quién>"`, sin `--quote`) o desde su terminal (`--terminal`). Lo que
-escriba en el chat ya no firma. Ver SKILL.md F.ii.
+(`runtime-waiver <historia> --acs N --approved-by "<quién>"`, sin `--quote`); donde la ventana no llega, con un click o
+un «aprobado» escrito; o desde su terminal (`--terminal`). Donde hay ventana, lo que escriba en el chat no firma. Ver
+SKILL.md F.ii.
 
 **Un crítico de este paso también lo decide una persona**. Si el revisor de la prueba en vivo marca un
 CRITICAL que el dev decide no arreglar, el agente nunca se exime solo: corre
 `marker.js waive-critical --rule <regla> --file <archivo> --reason "<por qué>" --approved-by "<el dev>"` y el dev lo
-aprueba en la ventana de permiso (o lo corre desde su terminal con `--terminal`). La cita o el reenvío ya no eximen.
+aprueba en la ventana de permiso; donde la ventana no llega, con un click o un «aprobado» escrito (o lo corre desde su
+terminal con `--terminal`). La cita o el reenvío ya no eximen.
 Recién ahí el hallazgo se anota `waived`.
 
 #### Una función sin pantalla ni servidor
@@ -723,7 +729,7 @@ Sembrar las precondiciones de un AC (el «Given»: el paciente, el pedido de ori
 que la app produce y después verificarlo no prueba nada: la prueba encuentra lo que el propio flujo escribió, y el
 revisor de cierre lo marca como resultado fabricado (DODRT-C10, crítico). Si la acción de la app no se puede ejercer,
 el AC no se «arregla» con un `INSERT`: va a `runtime_not_verifiable:` con su `reason:` y su `covered_by:`, y lo
-firma el dev desde su terminal. Cada humo con `--acs` escribe antes de correr qué tiene que pasar (`--pass-if`, que
+firma el dev (`runtime-waiver`). Cada humo con `--acs` escribe antes de correr qué tiene que pasar (`--pass-if`, que
 hable del «Then» del AC, no «ok» ni «funciona»); su salida queda guardada y sellada, y el revisor la lee contra esa
 frase (DODRT-W4).
 
@@ -753,8 +759,9 @@ Configuración del sitio): `complete-step prepare-commit` frena hasta que una pe
 mano. Se pide así, nunca se pone por la persona:
 1. La persona prueba con la guía y te dice qué criterios probó.
 2. Corré `node <skill>/scripts/marker.js mark-tested --acs 1,2 --approved-by "<quién>"`, sin `--quote`: la persona lo
-   aprueba en la ventana de permiso, que le muestra los criterios. Lo que escriba en el chat ya no marca.
-3. O la persona lo firma en su terminal: `marker.js mark-tested --acs 1,2 --terminal`.
+   aprueba en la ventana de permiso, que le muestra los criterios. Donde hay ventana, lo que escriba en el chat no marca.
+3. Donde la ventana no llega, el comando se niega y dice cómo pedir el click o el «aprobado»; con eso, se repite.
+4. O la persona lo firma en su terminal: `marker.js mark-tested --acs 1,2 --terminal`.
 Un reenvío de la sesión coordinadora no marca: la marca es de quien probó. Las marcas quedan en
 `<carpeta de la corrida>/manual-checks.jsonl`, cada una con su par en el registro del arnés.
 
