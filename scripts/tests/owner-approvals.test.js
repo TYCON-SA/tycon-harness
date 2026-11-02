@@ -598,6 +598,37 @@ test('AlcanzaAlCuadro_VacioAsteriscoYExpresion', () => {
   for (const m of ['Bash', 'Edit|Write', 'mcp__.*']) assert.ok(!oa.alcanzaAlCuadro(m), m);
 });
 
+// Los ganchos del cuadro en una instalación completa de Windows, tal como quedan en la configuración.
+// 🔴 Falla con: una comparación que sólo mira las barras de Windows, y toma por ajenos a los ganchos del arnés.
+test('Ganchos_RutaConBarrasNormalesEnWindows_SonDelArnes', () => {
+  const raiz = 'C:\\h\\versions\\2026.11.02.24';
+  const con = (ruta) => `C:/h/node/current/node.exe "${ruta}"`;
+  for (const n of ['wait-notice.js', 'session-state.js']) assert.ok(oa.esPermitido(con(`C:/h/versions/2026.11.02.24/scripts/hooks/${n}`), raiz), n);
+  assert.ok(!oa.esPermitido(con('C:/h/versions/2026.11.02.24/scripts/hooks/otro.js'), raiz), 'otro gancho');
+  assert.ok(!oa.esPermitido(con('C:/otro/scripts/hooks/wait-notice.js'), raiz), 'otra carpeta');
+  assert.ok(!oa.esPermitido(`${con('C:/h/versions/2026.11.02.24/scripts/hooks/wait-notice.js')} & otro.exe`, raiz), 'otro comando atrás');
+});
+
+// La forma medida en la extensión del editor en Windows: la carpeta del proyecto con «c--» en minúscula, y la decisión con
+// `grantScope` y `reasonCode`.
+// 🔴 Falla con: una lectura que exige otra forma de carpeta o de decisión, y deja sin valer un click verdadero.
+test('Click_FormaMedidaEnLaExtensionDeWindows_Vale', (t) => {
+  const casa = casaNueva(t);
+  const carpeta = path.join(casa, '.claude', 'projects', 'c--Users-Public-proyecto');
+  fs.mkdirSync(carpeta, { recursive: true });
+  const salida = { questions: [{ question: PIDE, header: 'Firma', options: [{ label: 'Sí, aprobar', description: 'Aprueba' }, { label: 'No', description: 'No aprueba' }], multiSelect: false }], answers: { [PIDE]: 'Sí, aprobar' } };
+  const reg = registroDe({ hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', session_id: 'ses-a', tool_use_id: 'toolu_1', tool_response: salida }, { ahora: Date.parse(hace(1)) });
+  assert.ok(reg, 'el gancho anota la respuesta real del cuadro');
+  const renglon = { type: 'user', timestamp: reg.ts, entrypoint: 'claude-vscode', version: '2.1.314', userType: 'external', sessionId: 'ses-a',
+    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'Your questions have been answered' }] },
+    toolUseResult: salida, permissionDecision: { decision: 'accept', source: 'user_temporary', grantScope: 'once', reasonCode: 'unknown' } };
+  fs.writeFileSync(path.join(carpeta, 'ses-a.jsonl'), `${JSON.stringify(cuadro('toolu_1'))}\n${JSON.stringify(renglon)}\n`);
+  const ruta = oa.transcripcionDe(casa, 'ses-a');
+  assert.ok(ruta && ruta.includes('c--Users-Public-proyecto'), 'encuentra la transcripción');
+  assert.deepStrictEqual(oa.clickEnLaTranscripcion(ruta, reg, { pregunta: PIDE, opciones: CUADRO.opciones }), { ok: true });
+  assert.deepStrictEqual(oa.validarEnClaude(reg, CTX(casa, { cwd: casa, linea: '' })), { ok: true });
+});
+
 // En Windows el gancho anota sólo si entre él y la herramienta hay Git Bash o Node. Forma medida en `claude -p`.
 // 🔴 Falla con: un agente que corre el gancho por su consola (Bash o PowerShell) y anota una aprobación.
 test('Gancho_EnWindows_SoloLoLanzaLaHerramienta', () => {

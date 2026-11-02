@@ -420,7 +420,7 @@ test('Effects_WindowsFlag_MatchesPs1Lists', () => {
 // La clasificación de perfiles: `minimal` trae lo que hace falta para las guías, las skills, los
 // revisores, el pipeline como skill y el aviso de versión nueva. Sólo en `full`: lo que puede frenar, lo que cambia cómo
 // contesta el asistente, lo que toca git fuera del clon y lo que corre solo de fondo sin ser de una integración. Lo de
-// una integración va en los dos (lo trae su llave). Los seis hooks de `minimal` se nombran acá: sumar uno es una decisión.
+// una integración va en los dos (lo trae su llave). Los hooks de `minimal` se nombran acá: sumar uno es una decisión.
 const MINIMAL_HOOKS = [
   'UserPromptSubmit:tycon-pipeline/scripts/on-prompt.js', 'PostToolUse:tycon-pipeline/scripts/hook-post-edit.js',
   'PostToolUse:tycon-pipeline/scripts/on-skill-invoke.js', 'PreToolUse:tycon-pipeline/scripts/on-advisor-run.js',
@@ -431,6 +431,8 @@ const MINIMAL_HOOKS = [
   // los avisos de los paquetes reemplazan reglas que los paquetes escribían en el CLAUDE.md de los dos perfiles: sólo en
   // full, la mínima las perdería
   'SessionStart:@tcg:extension-notices.js',
+  // el freno de comandos da un cuadro de firma: sin el gancho que anota el click, en la mínima ese cuadro nunca vale
+  'UserPromptSubmit:@tcg:owner-approval-record.js', 'PostToolUse:@tcg:owner-approval-record.js',
 ];
 /** Las filas de «Los hooks que instala»: `{ hook, event, profile }` (la columna «Perfil» tal cual), o null sin la columna. */
 function installTableRows(text) {
