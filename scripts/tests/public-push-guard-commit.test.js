@@ -121,7 +121,10 @@ test('AutorConCorreoReal_NoFrena_LoMiraElEmpuje', (t) => {
   assert.strictEqual(a.status, 0, a.salida);
 });
 
-test('SinListaNiPerfil_NoMira', (t) => {
+// El freno busca la lista y el perfil en el árbol desde el que corre: un árbol que los trae no es una máquina sin ellos.
+const ARBOL_CON_LISTA = ['scripts/publishing/denylist.json', 'team-profile.json', 'perfil-equipo.json'].some((p) => fs.existsSync(path.join(REPO, p)));
+
+test('SinListaNiPerfil_NoMira', { skip: ARBOL_CON_LISTA && 'NO MEDIDO en este árbol: trae la lista o el perfil del equipo; lo mide la CI pública' }, (t) => {
   // 🔴 mutación: mirar sin la lista frena en la CI pública lo que sus excepciones permiten: 16 de los últimos 40 merges.
   const l = lab(t, { lista: null });
   l.escribir('LEEME.md', `${LLAVE}\n`);
