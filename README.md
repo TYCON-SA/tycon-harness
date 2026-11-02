@@ -324,6 +324,7 @@ The harness's words (story, workflow, guard, nightly jobs…), one line each, in
 | Use it with Codex | [What is optional](getting-started/reference.md#what-is-optional) |
 | Use it with an open model through Ollama, in either tool | [Use the harness with Ollama models](guides/integrations/ollama.en.md) |
 | Use it with Cursor | [Use the harness with Cursor](guides/integrations/cursor.en.md) |
+| Work with several sessions at once, with one organizing the rest | [Working with a coordinator](guides/working-with-a-coordinator.en.md) |
 | Understand a word of the harness | [The harness's words](getting-started/reference.md#the-harnesss-words) |
 | Change the harness | [CONTRIBUTING.md](.github/CONTRIBUTING.md) |
 

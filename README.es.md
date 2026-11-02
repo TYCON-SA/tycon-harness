@@ -323,6 +323,7 @@ Las palabras del arnés (historia, recorrido, freno, procesos de la noche…), u
 | Usarlo con Codex | [Qué es opcional](getting-started/reference.es.md#qué-es-opcional) |
 | Usarlo con un modelo abierto por Ollama, en cualquiera de las dos herramientas | [Usar el arnés con modelos de Ollama](guides/integrations/ollama.md) |
 | Usarlo con Cursor | [Usar el arnés con Cursor](guides/integrations/cursor.md) |
+| Trabajar con varias sesiones a la vez, con una que ordena a las demás | [Trabajar con una coordinadora](guides/working-with-a-coordinator.md) |
 | Entender una palabra del arnés | [Las palabras del arnés](getting-started/reference.es.md#las-palabras-del-arnés) |
 | Cambiar el arnés | [CONTRIBUTING.md](.github/CONTRIBUTING.md) |
 
