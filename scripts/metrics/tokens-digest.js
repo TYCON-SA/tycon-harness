@@ -240,8 +240,12 @@ function sanear(txt, home) {
   const casa = home || os.homedir();
   const tmp = os.tmpdir();
   const casaConSuResto = new RegExp(`${casa.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:[\\\\/](?:[^\\s'"]|\\s(?=[\\w .()-]*[\\\\/]))*)?`, 'g');
-  return FORMAS_DE_CREDENCIAL.reduce((t, forma) => t.replace(forma, '<oculto>'), String(txt || '')
+  // de una forma con su nombre adelante (`Password=…`) queda el nombre: dice de qué se trata, y no es el secreto
+  const tapar = (m) => { const nombre = /^[A-Za-z][A-Za-z_-]*\s*[=:]\s*/.exec(m); return `${nombre ? nombre[0] : ''}<oculto>`; };
+  return FORMAS_DE_CREDENCIAL.reduce((t, forma) => t.replace(forma, tapar), String(txt || '')
     // Una llave privada, con su contenido: el encabezado solo dejaría el cuerpo a la vista. Sin su cierre, hasta el final.
+    // el usuario y la clave de una dirección: `postgres://usuario:clave@servidor`
+    .replace(/(:\/\/)[^\s/:@]+:[^\s/@]+@/g, '$1<oculto>@')
     .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, '<oculto>'))
     // 🔴 EL ORDEN IMPORTA. Si el home se colapsara a `~` en el PRIMER paso, la regla que borra rutas
     // absolutas no reconocería lo que queda: `/Users/<dev>/Proyectos/Cliente/a.cs` se publicaría como

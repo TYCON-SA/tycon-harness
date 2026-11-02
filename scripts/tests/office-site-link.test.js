@@ -1572,6 +1572,7 @@ test('Regresion_TokensSueltosYRutas_NoViajan: credenciales sin nombre y rutas en
   const secrets = [
     ...LOOSE_TOKENS(),
     ['firma SAS corta', `https://acme.example/c?sv=2024&sig=${'AbCd'}%2Bx&se=2027`, `${'AbCd'}%2Bx`],
+    ['usuario y clave en una dirección', `${'postgres'}://dbuser:${'p4ssw0rd'}Largo@db.acme.example/app`, `${'p4ssw0rd'}Largo`],
     ['clave de una cuenta', `AccountKey=${'k'.repeat(20)}==;EndpointSuffix=acme`, 'k'.repeat(20)],
     ['llave privada, con su contenido', `-----BEGIN ${'PRIVATE'} KEY-----\nMII${'m'.repeat(20)}\n-----END ${'PRIVATE'} KEY-----`, 'm'.repeat(20)],
     ['llave privada, sin su cierre', `-----BEGIN ${'PRIVATE'} KEY-----MII${'n'.repeat(20)}`, 'n'.repeat(20)],
