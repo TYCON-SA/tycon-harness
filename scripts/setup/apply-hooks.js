@@ -641,18 +641,22 @@ function applyToSettings(settings, o) {
   // un `.js` es el mismo hook en las dos formas del intérprete: se reconoce y se reescribe en su lugar
   // una ruta muerta que termina en la misma ruta del repo (una carpeta de versión que ya se borró) es el mismo hook: se
   // re-arraiga en vez de quedar al lado, dando error en cada evento
-  const deadSame = (cmd, h) => { const sc = scriptOf(cmd); return Boolean(sc) && fwd(sc).endsWith(`/${repoPathOf(h.spec)}`) && !fs.existsSync(sc); };
+  // …y también una carpeta de versión que sigue en el disco: seguir ahí es correr los ganchos de antes de actualizar
+  const versionesDe = fwd(path.join(path.dirname(path.dirname(path.dirname(o.hooksDir))), 'versions'));
+  const deUnaVersion = (sc, h) => { const f = fwd(sc); return f !== fwd(resolve(h.spec)) && f.toLowerCase().startsWith(`${versionesDe.toLowerCase()}/`) && f.split('/').slice(versionesDe.split('/').length + 1).join('/') === repoPathOf(h.spec); };
+  const deadSame = (cmd, h) => { const sc = scriptOf(cmd); return Boolean(sc) && fwd(sc).endsWith(`/${repoPathOf(h.spec)}`) && (!fs.existsSync(sc) || deUnaVersion(sc, h)); };
   const sameHook = (cmd, h, abs, runner) => (windows ? invokesRepoPath(cmd, repoPathOf(h.spec)) : (namesFile(cmd, abs) || deadSame(cmd, h)) && (runner === 'node' ? JS_RUNNER.test(cmd) : cmd.includes(`${runner} "`)));
   // el comando con el intérprete que corresponde, si el de hoy es otro: sólo se cambia el intérprete (el guion queda escrito
   // como estaba); null si ya está bien o no es un `.js`
   const reform = (cmd, runner, h, absCmd) => {
-    if (runner !== 'node') return null;
+    // un `.sh` no cambia de intérprete: sólo sale de la carpeta de una versión
+    if (runner !== 'node') { const sc = scriptOf(cmd); return sc && deadSame(cmd, h) ? String(cmd).split(sc).join(absCmd) : null; }
     const now = leadingInterpreter(cmd);
     // sólo un intérprete que es un Node (`node`, o una ruta que termina en node/node.exe): otro comando no se toca
     if (!now || !/(?:^|[/"])node(?:\.exe)?"?$/i.test(now)) return null;
-    // el guion queda como estaba escrito si existe; una ruta que ya no está (una versión borrada) vuelve a la estable
+    // el guion queda como estaba escrito si existe; la ruta de una versión, borrada o no, vuelve a la estable
     const old = scriptOf(cmd);
-    const script = old && fs.existsSync(old) ? old : absCmd;
+    const script = old && fs.existsSync(old) && !deadSame(cmd, h) ? old : absCmd;
     const next = `${jsHead(h)} "${script}"`;
     return next === String(cmd).trim() ? null : next;
   };
@@ -724,7 +728,7 @@ function applyToSettings(settings, o) {
       // el mismo hook en la otra forma del intérprete: se reescribe ESE comando, en su lugar (misma posición, matcher y
       // `async`), y se informa como cambio de forma
       const next = reform(cmdOf(found), runner, h, absCmd);
-      if (next) { r.reformed.push({ event: h.event, relpath: h.spec, from: leadingInterpreter(cmdOf(found)), to: jsHead(h) }); found.command = next; }
+      if (next) { r.reformed.push({ event: h.event, relpath: h.spec, from: leadingInterpreter(cmdOf(found)), to: runner === 'node' ? jsHead(h) : runner }); found.command = next; }
       // el mismo hook escrito otra vez en el grupo (la ruta de una versión borrada al lado de la viva, lo que dejaba el
       // aplicador anterior): queda uno solo, el ya reescrito, sin importar en qué orden estaban
       for (const entry of bucket) {
@@ -753,7 +757,7 @@ function applyToSettings(settings, o) {
     if (carried) {
       hookObj = carried.hook; label = `${h.label} — matcher ampliado de «${carried.matcher}» a «${h.matcher}»`;
       const next = reform(cmdOf(hookObj), runner, h, absCmd);
-      if (next) { r.reformed.push({ event: h.event, relpath: h.spec, from: leadingInterpreter(cmdOf(hookObj)), to: jsHead(h) }); hookObj.command = next; }
+      if (next) { r.reformed.push({ event: h.event, relpath: h.spec, from: leadingInterpreter(cmdOf(hookObj)), to: runner === 'node' ? jsHead(h) : runner }); hookObj.command = next; }
     }
     else { hookObj = { type: 'command', command }; if (h.async) hookObj.async = true; }
     let appended = false;
@@ -830,9 +834,11 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
   const windows = platform === 'windows';
   const home = os.homedir();
   const settingsPath = path.resolve(a.settings || env.TYCON_SETTINGS_PATH || path.join(home, '.claude', 'settings.json'));
-  const hooksDir = path.resolve(a.hooksDir || path.join(SCRIPTS_DIR, 'hooks'));
+  // se lanza también con la carpeta numerada de la versión: lo que se escribe nombra el enlace, que actualizar mueve
+  const { throughLink } = require('./harness/tools.js');
+  const hooksDir = throughLink(path.resolve(a.hooksDir || path.join(SCRIPTS_DIR, 'hooks')), home, env);
   if (!a.skills) throw new ApplyError('apply-hooks: falta --skills (la carpeta skills/ del arnés)');
-  const skills = path.resolve(a.skills);
+  const skills = throughLink(path.resolve(a.skills), home, env);
   // las integraciones del mismo árbol que los hooks del núcleo
   const integrationsDir = path.join(path.dirname(path.dirname(hooksDir)), 'integrations');
   const list = loadList(a.list || path.join(SETUP_DIR, 'hooks-list.json'), { integrationsDir });
@@ -861,7 +867,7 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
   const decision = decide(list, { env: envWithOrgSwitches(env, switches), integ, profile, minimalIds, platform, has });
   // el intérprete de los hooks `.js`: mirando el disco, también si este instalador corre suelto
   const interp = require('./harness/harness-node.js').interpreter({ env, platform: windows ? 'win32' : (process.platform === 'win32' ? 'linux' : process.platform) });
-  const r = applyToSettings(settings, { list, decision, platform, hooksDir, skills, integrationsDir, check: a.check, env, settingsPath, interp });
+  const r = applyToSettings(settings, { list, decision, platform, hooksDir, skills, integrationsDir, check: a.check, env, settingsPath, interp, floor: throughLink(NODE_FLOOR, home, env) });
   // sin el Node del arnés, se dice en rojo y con el arreglo: nunca «en el próximo arranque»
   if (!interp.own && interp.switch !== 'off') {
     let repair = windows ? 'pwsh -File "<arnés>/scripts/install-tycon-hooks.ps1"' : 'bash "<arnés>/scripts/install-tycon-hooks.sh"';
