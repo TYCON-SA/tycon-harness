@@ -218,7 +218,8 @@ function toyHome() {
   return { home, state };
 }
 
-const run = (home, args) => execFileSync('node', [OFFICE, ...args], { input: '', env: { ...process.env, HOME: home, USERPROFILE: home }, stdio: 'pipe' }).toString();
+// sin el sitio de la organización: el perfil del equipo, puesto encima del árbol en la validación, sí trae site.url
+const run = (home, args) => execFileSync('node', [OFFICE, ...args], { input: '', env: { ...process.env, HOME: home, USERPROFILE: home, TYCON_OFFICE_LINK: '0' }, stdio: 'pipe' }).toString();
 
 test('T9 Comando: --json imprime los datos, sin --json escribe la página, y sin carpeta de estado sale 2', () => {
   const { home } = toyHome();

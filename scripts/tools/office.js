@@ -1272,13 +1272,16 @@ async function openLive(home = os.homedir()) {
     let exited = null;
     child.on('exit', (code) => { exited = code; });
     child.unref();
-    for (let i = 0; i < 200; i += 1) {
+    // el proceso nuevo se va sin tocar el candado (sale 0) si el que está sólo tardaba en contestar: vale cualquier
+    // candado cuyo dueño conteste, con su pid. El plazo es por hora y pasa los 10 s que el nuevo le espera al de antes
+    const deadline = Date.now() + 15000;
+    while (Date.now() < deadline) {
       const lock = readLock();
-      if (lock && lock.pid === child.pid && await answers(lock)) return { url: urlOf(lock), reused: false };
-      if (exited != null) break;
+      if (lock && await answers(lock)) return { url: urlOf(lock), reused: lock.pid !== child.pid };
+      if (exited != null && exited !== 0) break;
       await sleep(50);
     }
-    let why = 'no contestó en 10 s';
+    let why = 'no contestó en 15 s';
     try { why = fs.readFileSync(log, 'utf8').trim().split('\n').pop() || why; } catch { /* sin registro */ }
     try { process.kill(child.pid, 'SIGTERM'); } catch { /* ya salió */ }
     throw new Error(`la oficina viva ${why}`);
@@ -1320,6 +1323,10 @@ async function main(argv) {
     let r;
     try { r = await openLive(); } catch (e) { process.stderr.write(`office.js: ${String(e.message).split('\n')[0]}\n`); return 1; }
     process.stdout.write(r.reused ? `La oficina ya estaba abierta: ${r.url}\n` : `La oficina está abierta en ${r.url}\n`);
+    const { waitingLine, linkedSite } = require('./office/site-link.js');
+    const waiting = waitingLine(stateDir(os.homedir()));
+    // sin sitio o con el enlace apagado, nadie la aprueba ni el estado cambia: la línea no diría nada cierto
+    if (waiting && linkedSite(readSiteUrl())) process.stdout.write(`${waiting}\n`);
     if (process.env.TYCON_OFFICE_NO_BROWSER !== '1') openFile(r.url);
     return 0;
   }
