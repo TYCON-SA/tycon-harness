@@ -3073,6 +3073,12 @@
       "requiere": []
     },
     {
+      "__nota": "las sondas de Cursor (scripts/tools/cursor-probes.js): con un Cursor de mentira, la forma de la evidencia, el cuelgue y el error, y que de ~/.cursor/projects sólo se borre lo de la carpeta temporal. Todo en el temporal: nunca toca el Cursor real.",
+      "raiz": "arnes",
+      "ruta": "tests/cursor-probes.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el informe del aplicador no le manda a un juez viejo hooks con prefijos que no entiende (TYCON_REPORT_HOOK_PREFIXES); el lector y la salud de la 2026.10.20.52 (de git) aceptan el informe nuevo; el arranque corre la salud si la última no la corrió esta versión.",
       "raiz": "arnes",
       "ruta": "tests/old-judge-report.test.js",
