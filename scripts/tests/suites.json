@@ -907,6 +907,12 @@
       "requiere": []
     },
     {
+      "__nota": "Nombrar un guion no es correrlo: la lista de archivos de un comando de sólo lectura de pipeline.js, o lo que lee un programa que sólo lee, no cuenta; el guion que corre sigue frenando, con cualquier envoltura, encadenado o en una variable.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-write-named-script.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/bash-write-gate-failures-logged.test.js",
       "requiere": []
