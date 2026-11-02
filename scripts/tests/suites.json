@@ -3807,6 +3807,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.155, tanda A: la llave del modelo de la noche en el grupo de variables harness-nightly-model — los dos nocturnos con modelo lo enlazan y cada paso del modelo recibe las dos llaves; el paso que dice «llegó/no llegó» corrido de verdad, sin el valor ni su largo; una llave literal `$(NOMBRE)` cuenta como ausente; y los pasos del README en orden (crear, autorizar, probar sin efectos, mergear, la variable vieja al final). Las copias del repo de operaciones, con --operations <clon>; sin él, «no medido». Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/nightly-key.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el barrido de las retrospectivas (scripts/metrics/retro-sweep.js): repos de juguete con git de verdad y el latido real; lo cubierto, lo que no pide retro, «no pude mirar», el reintento de lo que faltó, el clon por url y la regla de scripts/lib/retro-coverage.js. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/retro-sweep.test.js",
