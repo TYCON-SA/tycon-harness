@@ -52,6 +52,29 @@ opening it checks two things, in order, and if one fails it does not open and sa
 1. The name: only letters, digits, hyphen and underscore, and not used by another live session.
 2. The cap: if as many sessions as the cap are already working, it does not open.
 
+**The names of new sessions.** Without `--name` (or with `--name auto`), `open` takes the first free name from
+`coordination.session_names`. Once the list runs out, it goes on with a number: `Tero-2`, `Hornero-2`, and then
+`Tero-3`. Without that setting it does not open and asks for the name, as always; that is why «auto» no longer works
+as a session name. With `--repo` and no `--branch`, a name that already has a `wt/<name>` branch in the repo is
+skipped: the new session does not start on another one's work. Openings go one at a time: if two arrive together, the
+second waits for the first to finish, so they do not pick the same name. The key holds the id of a built-in
+theme (`animals`, `rivers`, `colors` or `trees`) or a list of your own, in the usual order: the
+`TYCON_COORDINATION_SESSION_NAMES` variable wins over the machine and the machine wins over the profile (the variable
+takes the same: a theme, or comma-separated names). The
+organization's theme is chosen in the Configuration tab of the site («The sessions on each machine»). The built-in themes
+ship with the harness, which is published: they carry no real people and no trademarks.
+
+**Each dev's own list is put together by their session, never by the site.** The dev asks for it in the chat in their
+own words, for example «name my sessions after the planets». The session builds the list, shows it in full and waits
+for their «Approved». With it, the session saves it in THAT machine's settings, comma-separated:
+`node scripts/lib/tycon-config.js set coordination.session_names "Mercurio,Venus,Marte"`. A single name takes a
+trailing comma (`"Mercurio,"`): without a comma, the text is read as a theme id. Each name goes without spaces
+or accents (letters, digits, hyphen or underscore); if the dev asked for something with an accent, the session proposes
+it without one. A list with real people or trademarks goes only there: never in the team profile, in a guide or in
+anything that gets published. If the production guard installed on the machine predates this key, the command writes
+nothing and says how to update it (with `sudo`, it asks for the dev's password): with the key, that guard would say
+«configuration BROKEN» in every session. The session hands that command to the dev and saves the list afterwards.
+
 `open` never retries. If the tool refuses because nobody approved the folder, it says in one line which folder the
 owner has to open once; meanwhile, the owner opens the session and the coordinator gives it the task. The approval
 belongs to a person: the agent does not write it. The other failures also take one line: the launcher is not
@@ -100,7 +123,7 @@ finished its turn: it does not count. Codex sessions do not write that file; the
 last 5 minutes. A session that `open` opened less than 10 minutes ago counts even if it has not written its file yet.
 
 The cap is `coordination.max_working`, from 1 to 20. The team profile gives the organization's number (on the site,
-Configuration tab, "How many sessions work at once"), and each machine can change it for itself, because how much it
+Configuration tab, "The sessions on each machine"), and each machine can change it for itself, because how much it
 can take depends on the machine. With no value anywhere, the cap is 3. `coordination.js status` shows who is working,
 who is waiting and why, and the cap with where it comes from.
 
