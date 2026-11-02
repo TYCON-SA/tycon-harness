@@ -606,3 +606,43 @@ test('T61 Signatures_Change_PushesPhoto: una firma pedida o resuelta llega sola 
   assert.ok(await until(() => p.fotos.length >= 2, 4000), 'llega una foto nueva sin tocar otra carpeta');
   p.close();
 });
+
+// Una conversación de juguete para una sesión de la máquina de juguete.
+function toyTranscript(m, sid, lines) {
+  const dir = path.join(claudeDir(m.home), 'projects', 'toy');
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `${sid}.jsonl`);
+  fs.appendFileSync(file, lines.map((l) => `${JSON.stringify(l)}\n`).join(''));
+  return file;
+}
+const peerLine = (name, body, id) => ({ type: 'user', isMeta: true, timestamp: new Date().toISOString(), origin: { kind: 'peer', name, body, msg_id: id }, message: { role: 'user', content: 'x' } });
+
+test('T30 Envelope_InPhoto_NoText; Conversation_OnlyWithToken: el sobre dice quién y no qué; el texto se pide con el token, por un nombre de la oficina', async () => {
+  const m = toy();
+  fs.writeFileSync(path.join(m.sessions, 's2.json'), JSON.stringify({ pid: process.pid, sessionId: 's2', name: 'Beta', status: 'busy', statusUpdatedAt: Date.now() }));
+  toyTranscript(m, 's1', [{ type: 'assistant', timestamp: new Date().toISOString(), message: { content: [{ type: 'text', text: 'Empiezo.' }] } }]);
+  const r = openSync(m);
+  assert.strictEqual(r.status, 0, r.stderr);
+  const lock = readLock(m);
+  const ws = page(lock);
+  await ws.opened;
+  await ws.next(8000);
+  toyTranscript(m, 's1', [peerLine('Beta', 'el secreto del mensaje', 'id-1')]);
+  // la foto se renueva cuando cambia algo que la oficina vigila
+  fs.writeFileSync(path.join(m.sessions, 's2.json'), JSON.stringify({ pid: process.pid, sessionId: 's2', name: 'Beta', status: 'idle', statusUpdatedAt: Date.now() }));
+  let foto = null;
+  for (let i = 0; i < 40 && !foto; i += 1) {
+    await sleep(100);
+    foto = ws.fotos.map((f) => f.data).find((d) => d && (d.sobres || []).length);
+  }
+  assert.ok(foto, 'llegó una foto con el sobre');
+  assert.deepStrictEqual(foto.sobres.map((s) => [s.id, s.de, s.a]), [['id-1', 'Beta', 'Alfa']]);
+  assert.ok(!JSON.stringify(ws.fotos).includes('el secreto del mensaje'), 'el texto nunca viaja en la foto');
+  // sin token no se lee; un nombre que no está en la oficina, tampoco; una ruta no es un nombre
+  assert.strictEqual((await get(lock.port, '/conversacion?s=Alfa')).status, 403);
+  assert.strictEqual((await get(lock.port, `/conversacion?t=${lock.token}&s=${encodeURIComponent('../../etc/passwd')}`)).status, 404);
+  const said = await get(lock.port, `/conversacion?t=${lock.token}&s=Alfa`);
+  assert.strictEqual(said.status, 200);
+  assert.deepStrictEqual(JSON.parse(said.body), { sinCoordinadora: true }, 'sin coordinadora designada, no hay conversación');
+  ws.close();
+});

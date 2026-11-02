@@ -418,6 +418,10 @@ test('T1 Foto_LaMismaQueLaOficinaLocal: viaja sólo lo que lee la página; la li
   assert.strictEqual(sent.tablas.hoy.contar, true);
   assert.ok(!('origen' in sent.tablas.hoy), 'la página no lo lee');
   assert.ok(foto.items.length > 0 && !('items' in sent), 'la página no lee los campos de `items`');
+  // los mensajes entre sesiones son sólo de la oficina abierta en la máquina, aunque la página los lea
+  assert.ok(readBy('DATA')('sobres') && !('sobres' in FIELDS), 'los sobres no están en la lista');
+  assert.ok(!('sobres' in pick({ sobres: [{ de: 'Alfa', a: 'Beta', texto: 'un mensaje' }] }, '/home/nadie')));
+  assert.strictEqual(typeof sentOf('Alfa').comoTrabaja, 'string');
   assert.deepStrictEqual(sent.tablero, { resumen: 'Resumen', teToca: ['Algo'] });
   assert.strictEqual(sent.unreadable[0], 'algo que no se leyó');
   // un valor que no tiene la forma de su campo tampoco viaja

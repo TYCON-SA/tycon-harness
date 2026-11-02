@@ -561,7 +561,9 @@ function harnessNodeNotice(notice, a) {
   return add ? (clean ? `${clean} · ${add}` : add) : clean;
 }
 
-function runApplierOnly(ctx, tree, { log, snapshotDir = null, tools = undefined, force = false } = {}) {
+function runApplierOnly(ctx, treeGiven, { log, snapshotDir = null, tools = undefined, force = false } = {}) {
+  // lo que escriben el aplicador y el enchufe de Codex nombra el enlace, no la carpeta numerada que resolvió Node
+  const tree = mod('tools').throughLink(treeGiven, ctx.home, ctx.env);
   const T = mod('tools');
   if (tools === undefined) {
     const st = loadState(ctx);

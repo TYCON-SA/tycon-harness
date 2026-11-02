@@ -18,6 +18,9 @@
  * en unos 3 s. El canal de vuelta está cerrado: un mensaje de la página
  * cierra esa conexión sin leerlo. Se apaga solo a los 2 min sin páginas (el reloj arranca con el proceso) y a las 8 h.
  *
+ * `/conversacion?s=<nombre>` contesta los últimos mensajes de una persona de la oficina, y se lee sólo cuando alguien la
+ * toca. Ese texto no entra en la foto: lo que se conecte a la foto no lo recibe.
+ *
  * Quien cambia el estado de una sesión (el marcador del pipeline, la ventana del dueño) lo avisa por `POST /event`
  * (scripts/lib/office-event.js), con el mismo token: la foto se recalcula enseguida y una vez más al segundo, porque la
  * ventana del dueño avisa antes de que la herramienta escriba el estado de la sesión. La vigilancia queda de respaldo
@@ -162,6 +165,8 @@ async function serve() {
   // el umbral de la sesión callada, también una vez: la página lo usa con su propio reloj
   const quiet = office.readQuietMinutes();
   const quietMinutes = async () => quiet;
+  // hasta dónde se leyó cada conversación y a quién corresponde cada nombre: vive sólo en este proceso
+  const envelopes = office.createEnvelopes();
   const siteAddress = linkedSite(site);
   const linked = Boolean(siteAddress);
   const link = linked ? createLink({ site: siteAddress, sdir, home }) : null;
@@ -173,7 +178,7 @@ async function serve() {
   // la foto: lo mismo que la foto fija, más lo que este proceso no pudo hacer
   const snapshot = async () => {
     counters.reads += 1;
-    const data = await office.collect({ home, queryAll: query, queryPrs, siteUrl, quietMinutes });
+    const data = await office.collect({ home, queryAll: query, queryPrs, siteUrl, quietMinutes, envelopes });
     data.unreadable.push(...notes);
     const readAt = query.readAt();
     if (readAt != null) data.meta.pedidosLeidos = hhmm(readAt);
@@ -303,6 +308,19 @@ async function serve() {
       const rel = key != null && Object.prototype.hasOwnProperty.call(office.MODULES, key) ? office.MODULES[key] : null;
       if (!rel) { res.writeHead(404); res.end(); return; }
       send('text/javascript; charset=utf-8', office.moduleSource(key, rel));
+      return;
+    }
+    // sólo se lee al tocar a una persona, y sólo una que está en la oficina: el nombre es una clave, nunca una ruta
+    if (url.pathname === '/conversacion') {
+      ready.then(() => {
+        const said = office.conversationOf(envelopes, url.searchParams.get('s') || '');
+        if (!said) { res.writeHead(404, { 'cache-control': 'no-store' }); res.end(); return; }
+        send('application/json; charset=utf-8', JSON.stringify(said));
+      }).catch((e) => {
+        process.stderr.write(`${new Date().toISOString()} la conversación no se pudo leer: ${e && e.code ? e.code : 'error'}\n`);
+        if (!res.headersSent) res.writeHead(500, { 'cache-control': 'no-store' });
+        res.end();
+      });
       return;
     }
     if (testing && url.pathname === '/debug/counters') { send('application/json', JSON.stringify(counters)); return; }

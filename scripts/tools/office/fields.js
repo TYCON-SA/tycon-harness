@@ -5,7 +5,8 @@
  * máquina arma con ella lo que manda (`pick`) y el sitio vuelve a aplicarla a lo que recibe.
  *
  * Un campo que `collect()` suma después no viaja hasta entrar acá. Lo que la página calcula sola (la ropa y el pelo de
- * cada persona) no viaja, ni `items`, cuyos campos la página no lee: los pendientes le llegan por `kanban`.
+ * cada persona) no viaja, ni `items`, cuyos campos la página no lee: los pendientes le llegan por `kanban`. Tampoco viajan
+ * `sobres` ni la conversación de una sesión: son sólo de la oficina abierta en la máquina.
  * Casos: scripts/tests/office-site-link.test.js
  */
 const crypto = require('crypto');
@@ -33,7 +34,7 @@ const TABLE = record({ titulo: text, columnas: list(text), filas: list(record({ 
 
 const FIELDS = {
   agents: list(record({
-    nombre: text, estado: oneOf(AGENT_STATES), titulo: text, historia: text, encargo: text, haciendo: text, haciendoAhora: text, ultimaAccion: action,
+    nombre: text, estado: oneOf(AGENT_STATES), comoTrabaja: text, titulo: text, historia: text, encargo: text, haciendo: text, haciendoAhora: text, ultimaAccion: action,
     espera: text, parada: text, callada: text, mientras: text, mientrasEstado: oneOf(AGENT_STATES), enPausa: text,
     fin: END, horaPorque: text, estimadaIso: hour, avance: number, carpeta: folder, pasos: list(record({ name: text, done: flag })), novedadMs: number, sinPid: flag,
   })),
