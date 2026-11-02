@@ -307,13 +307,13 @@ it refers to.
 
 ## The board in the office
 
-The `/office` page shows pending work as a kanban with five columns: **Tu firma, En curso, Esperan entrar, Sin empezar and
+The `/office` page shows pending work as a kanban with five columns: **Tu firma, En curso, Esperan entrar, Sin sesión and
 Hechos**. The first three build themselves from what each session is doing. The coordinator's board adds what the machine
 does not know. The coordinator writes the whole board to `<state>/coordination/tablero.json` (first to a separate file and
 then renamed, so the office never reads it half written) every time it changes:
 
 - `pendientes`: a list; each item has `titulo`, `estado` (`hecho`, `curso`, `firma`, `riesgo`, `entrando`, `sin-empezar`, or
-  `espera`, which goes to «Sin empezar»), `grupo` (`Hoy`, `Esta semana`, `La semana que viene` or `Más adelante`), `orden`,
+  `espera`, which goes to «Sin sesión»; `curso` and `riesgo` go to «En curso» only if a live session is doing it, and otherwise also to «Sin sesión»), `grupo` (`Hoy`, `Esta semana`, `La semana que viene` or `Más adelante`), `orden`,
   `quien`, `nota`, and its time: `pronosticoIso` or `estimadaIso` (local time, `YYYY-MM-DDTHH:MM`), or `termina` with its
   own text. A done item carries `realIso`.
 - `historia` (for example `"2.81"`) and `pedido` (`{ "repo": "tycon-harness", "numero": 885 }`), both optional. With

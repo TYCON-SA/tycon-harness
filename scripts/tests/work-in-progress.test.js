@@ -1614,3 +1614,57 @@ test('wip · MientrasTantoViejo_DiceDesdeCuando: un arreglo rápido o una nota s
   fs.writeFileSync(path.join(m.state, 'doing', 'vij00000-1.json'), JSON.stringify({ text: 'mido el disco', at: new Date(minsBefore(70)).toISOString() }));
   assert.strictEqual(run(m, { prs: () => ({ prs: [{ number: 12, draft: false }] }) }).rows[0].meanwhile, `mido el disco (sin tocar desde ${localHhmm(minsBefore(70))})`);
 });
+
+test('T200 EnteredMain_OnlyWithEvidence: entró si la punta de su rama es parte de la principal y no le queda nada sin commitear', () => {
+  const { enteredMain } = require(path.join(__dirname, '..', 'tools', 'work-in-progress.js'));
+  const { spawnSync } = require('child_process');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'wip-entro-')));
+  const g = (dir, ...a) => { const r = spawnSync('git', ['-C', dir, '-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { encoding: 'utf8' }); assert.strictEqual(r.status, 0, r.stderr); return r.stdout; };
+  const base = path.join(root, 'origen');
+  fs.mkdirSync(base);
+  g(base, 'init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(base, 'a.txt'), 'a');
+  g(base, 'add', '.');
+  g(base, 'commit', '-qm', 'uno');
+  const repo = path.join(root, 'repo');
+  spawnSync('git', ['clone', '-q', base, repo]);
+  const ctx = () => ({ until: Date.now() + 5000, cache: new Map() });
+  const file = path.join(repo, 'a.txt');
+  assert.strictEqual(enteredMain([file], ctx()), false, 'parada en la principal no dice nada');
+  g(repo, 'checkout', '-qb', 'fix/algo');
+  fs.writeFileSync(path.join(repo, 'b.txt'), 'b');
+  assert.strictEqual(enteredMain([file], ctx()), false, 'con cambios sin commitear');
+  g(repo, 'add', '.');
+  g(repo, 'commit', '-qm', 'dos');
+  assert.strictEqual(enteredMain([file], ctx()), false, 'con un commit que la principal no tiene');
+  g(base, 'pull', '-q', repo, 'fix/algo');
+  g(repo, 'fetch', '-q', 'origin');
+  assert.strictEqual(enteredMain([file], ctx()), true, 'su punta entró');
+  assert.strictEqual(enteredMain([file, path.join(os.tmpdir(), 'suelto.js')], ctx()), true, 'lo que está fuera de un repo no cuenta');
+  assert.strictEqual(enteredMain([], ctx()), false, 'sin archivos no hay evidencia');
+  const broken = path.join(root, 'roto');
+  fs.mkdirSync(path.join(broken, '.git'), { recursive: true });
+  assert.strictEqual(enteredMain([file, path.join(broken, 'x.js')], ctx()), false, 'un repo que no se puede leer no cuenta como entrado, aunque el otro haya entrado');
+  g(repo, 'checkout', '-q', 'main');
+  g(repo, 'pull', '-q', 'origin', 'main');
+  fs.writeFileSync(file, 'cambiado');
+  g(repo, 'checkout', '-qb', 'otra');
+  g(repo, 'checkout', '-q', 'main');
+  assert.strictEqual(enteredMain([file], ctx()), false, 'parada en la principal con un archivo cambiado');
+  assert.strictEqual(enteredMain([path.join(root, 'worktrees', 'ya-no-esta', 'x.js')], ctx()), true, 'la carpeta de trabajo que se borró entró');
+});
+
+test('T201 Halfway_LiveSessionInTheFolder: lo que dejó una sesión cerrada en la carpeta de otra viva no quedó a medio camino', () => {
+  const m = toyMachine();
+  const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'wip-viva-')));
+  fs.mkdirSync(path.join(repo, '.git'));
+  fs.writeFileSync(path.join(repo, '.git', 'HEAD'), 'ref: refs/heads/fix/algo\n');
+  fs.mkdirSync(path.join(m.state, 'adhoc'), { recursive: true });
+  fs.writeFileSync(path.join(m.state, 'adhoc', 'cerrada-1.json'), JSON.stringify({ reason: 'lo dejado por otra', files: [path.join(repo, 'a.js')], declaredAt: NOW, lastTouch: NOW }));
+  const before = buildWip({ stateDir: m.state, sessionsDir: m.sessions, now: NOW, home: m.root }).halfwayItems.find((h) => h.text === 'lo dejado por otra');
+  assert.ok(before && !before.entered, 'sin sesión viva queda');
+  session(m, process.pid, 'viva-1', 'Ana', { cwd: repo });
+  const after = buildWip({ stateDir: m.state, sessionsDir: m.sessions, now: NOW, home: m.root }).halfwayItems.find((h) => h.text === 'lo dejado por otra');
+  assert.strictEqual(after.entered, true);
+});
+

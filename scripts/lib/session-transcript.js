@@ -2,7 +2,7 @@
 /**
  * session-transcript.js — qué hace una sesión sin pipeline, leído de su conversación: el encargo (su primer mensaje de la
  * persona), lo que está haciendo (la última frase que escribió en su chat) y su última acción (la última herramienta, con
- * el nombre del archivo que tocó y hace cuánto).
+ * el nombre del archivo que tocó y a qué hora). De los mensajes sólo se dicen las oraciones que quedan enteras sin rutas ni código.
  *
  * Se lee sólo el principio (64 KB) y el final (256 KB) del archivo, nunca entero; de ahí sólo esos tres datos, recortados
  * y en llano. Nada se guarda en disco: quien llama los pone en la foto local de la oficina, detrás de su token.
@@ -34,7 +34,8 @@ const ACTIONS = {
 
 const oneLine = (s) => String(s).replace(/\s+/g, ' ').trim();
 const cut = (s, n) => { const c = Array.from(s); return c.length > n ? `${c.slice(0, n - 1).join('')}…` : s; };
-const plainText = (t) => require(path.join(__dirname, '..', 'tools', 'office.js')).plain(t);
+// Sólo oraciones enteras: a la que le faltaría una ruta o un código no se la muestra a medias.
+const plainWhole = (t) => require(path.join(__dirname, '..', 'tools', 'office.js')).plainWhole(t);
 const textsOf = (content) => {
   if (typeof content === 'string') return [content];
   if (!Array.isArray(content)) return [];
@@ -42,7 +43,10 @@ const textsOf = (content) => {
 };
 // lo que no escribió una persona: avisos de ganchos y etiquetas de la herramienta, y las instrucciones que le carga Codex
 const notFromPerson = (t) => /^\s*(<|# AGENTS\.md instructions)/.test(t);
-const sinceText = (min) => (min < 60 ? `hace ${min} min` : `hace ${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')}`);
+// La hora de la última acción: la foto de la oficina puede quedar abierta, y un «hace 0 min» se queda ahí para siempre.
+const atHour = (ms) => { const d = new Date(ms); return `a las ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+// un punto de una abreviatura («Sr. García») no corta la oración
+const SENTENCES = /(?<!\b(?:Sr|Sra|Dr|Dra|Ing|Lic|Prof|Av|Art|art|núm|pág)\.)(?<=[.!?…])\s+(?=[\p{Lu}¿¡«"])/u;
 
 // La última frase de un texto, en llano y recortada: sin el formato del chat ni los renglones de antes.
 function lastSentence(text) {
@@ -50,9 +54,15 @@ function lastSentence(text) {
   const prose = String(text).replace(/^\s*```[\s\S]*?(?:^\s*```.*$|(?![\s\S]))/gm, '').split('\n').filter((l) => !/^\s*\|/.test(l));
   const lines = prose.map((l) => l.replace(/^[\s>#*`-]+|[*`]+\s*$/g, '').trim()).filter(Boolean);
   if (!lines.length) return null;
-  const parts = oneLine(lines[lines.length - 1]).split(/(?<=[.!?…])\s+(?=[\p{Lu}¿¡«"])/u).filter(Boolean);
-  const said = plainText(parts[parts.length - 1]);
-  return said ? cut(said, FRASE_MAX) : null;
+  // de atrás para adelante: la última oración que se puede decir entera
+  for (let l = lines.length - 1; l >= 0; l -= 1) {
+    const parts = oneLine(lines[l]).split(SENTENCES).filter(Boolean);
+    for (let p = parts.length - 1; p >= 0; p -= 1) {
+      const said = plainWhole(parts[p]);
+      if (said) return cut(said, FRASE_MAX);
+    }
+  }
+  return null;
 }
 
 // Un renglón de Claude o de Codex como `{ who, texts, tool, file, at }`; null si no cuenta o no se reconoce.
@@ -87,9 +97,9 @@ function wholeLines(text, cutStart, cutEnd) {
 /**
  * Lee una conversación: `{ encargo, haciendoAhora, ultimaAccion, lastWriteMs, problem }`. Sin el archivo, vacía o con un
  * formato desconocido, los tres datos en null; si no se puede leer, además `problem` con su motivo y nunca su texto.
- * `opts`: `now` (ms) e `io` (`{ readSync }`, para contar lo que se lee).
+ * `opts`: `io` (`{ readSync }`, para contar lo que se lee).
  */
-function readTranscript(file, { now = Date.now(), io = fs } = {}) {
+function readTranscript(file, { io = fs } = {}) {
   const out = { encargo: null, haciendoAhora: null, ultimaAccion: null, lastWriteMs: null, problem: null };
   let fd;
   try { fd = fs.openSync(file, 'r'); } catch (e) {
@@ -115,7 +125,10 @@ function readTranscript(file, { now = Date.now(), io = fs } = {}) {
       const e = entryOf(line);
       if (!e || e.who !== 'user') continue;
       const t = e.texts.find((x) => x.trim() && !notFromPerson(x));
-      if (t) { const said = plainText(oneLine(t)); if (said) { out.encargo = cut(said, ENCARGO_MAX); break; } }
+      if (t) {
+        const said = oneLine(t).split(SENTENCES).map(plainWhole).filter(Boolean).join(' ');
+        if (said) { out.encargo = cut(said, ENCARGO_MAX); break; }
+      }
     }
     for (let i = tailLines.length - 1; i >= 0 && !(out.haciendoAhora && out.ultimaAccion); i -= 1) {
       const e = entryOf(tailLines[i]);
@@ -130,7 +143,7 @@ function readTranscript(file, { now = Date.now(), io = fs } = {}) {
         const target = [input.file_path, input.notebook_path, input.path].find((v) => typeof v === 'string' && v);
         const parts = [ACTIONS[tool.name] || 'Usar una herramienta'];
         if (target) parts.push(path.basename(target));
-        if (Number.isFinite(e.at)) parts.push(sinceText(Math.max(0, Math.round((now - e.at) / 60000))));
+        if (Number.isFinite(e.at)) parts.push(atHour(e.at));
         out.ultimaAccion = parts.join(' · ');
       }
     }

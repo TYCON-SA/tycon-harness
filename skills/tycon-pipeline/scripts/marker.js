@@ -4431,6 +4431,9 @@ function sessionLiveness(sid) {
 // `doing "<qué hago>"`: lo que hace una sesión sin story (un video, una medición), para que /wip lo diga. No es un
 // permiso: no toca el portón de carril ni el ad-hoc. Otro `doing` la reemplaza; `doing clear` la borra;
 // `doing clear-orphan <sid>` borra la nota de otra sesión que ya no vive. Archivo: doing/<sid>.json { text, at }; doing.log.
+// `--until HH:MM`: a qué hora dice que termina. Volver a anotar el mismo trabajo (el mismo texto, o sin texto) conserva en
+// `promisedAt` la primera hora que prometió, contra la que la oficina compara. `--waiting-for "<qué espera>"`: no tiene hora
+// porque depende de otro; queda desde cuándo (`waitingSince`), que no cambia mientras espere lo mismo.
 // La hora de fin que declara una sesión, «HH:MM», como fecha completa: la de hoy; la de mañana si quedaría más de 12 h
 // antes de ahora (a las 23:00, «01:30» es de mañana); la de ayer si quedaría más de 18 h después (a las 00:10, «23:30» es
 // de anoche, y ya pasó). Una hora mal escrita es null.
@@ -4485,9 +4488,13 @@ function cmdDoing(sub, arg) {
     process.stdout.write('doing: borrada\n');
     return;
   }
-  const text = String(sub || '').replace(/\s+/g, ' ').trim();
+  let prev = null;
+  try { prev = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_e) { /* sin nota, o rota: no hay nada que conservar */ }
+  const onlyHour = sub === '--until' || sub === '--waiting-for';
+  if (onlyHour && !(prev && prev.text)) { console.error('marker.js doing: sin una nota anotada, la hora va con su texto — uso: marker.js doing "<qué hago>" --until HH:MM'); process.exit(2); }
+  const text = onlyHour ? prev.text : String(sub || '').replace(/\s+/g, ' ').trim();
   if (text.length < 8 || text.length > 200) {
-    console.error('marker.js doing: el texto va de 8 a 200 caracteres — uso: marker.js doing "<qué hago>" | doing clear');
+    console.error('marker.js doing: el texto va de 8 a 200 caracteres — uso: marker.js doing "<qué hago>" [--until HH:MM | --waiting-for "<qué espera>"] | doing clear');
     process.exit(2);
   }
   // `--until HH:MM`: la hora a la que la sesión dice que termina, para /wip y /office
@@ -4497,11 +4504,22 @@ function cmdDoing(sub, arg) {
     console.error('marker.js doing: --until va con una hora HH:MM (por ejemplo 19:30)');
     process.exit(2);
   }
+  const w = process.argv.indexOf('--waiting-for');
+  const waitingFor = w >= 0 ? String(process.argv[w + 1] || '').replace(/\s+/g, ' ').trim() : '';
+  if (w >= 0 && (waitingFor.length < 3 || waitingFor.length > 120 || u >= 0)) {
+    console.error('marker.js doing: --waiting-for va con qué espera (de 3 a 120 caracteres) y sin --until: quien espera no da una hora');
+    process.exit(2);
+  }
+  const now = new Date().toISOString();
+  // el mismo trabajo, anotado hace menos de un día: la primera hora prometida y el arranque de la misma espera se conservan
+  const same = prev && prev.text === text && Date.now() - Date.parse(prev.at) < 24 * 3600 * 1000;
+  const promisedAt = same ? prev.promisedAt || prev.endAt || null : null;
+  const waitingSince = !waitingFor ? null : (same && prev.waitingFor === waitingFor && prev.waitingSince) || now;
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(file, JSON.stringify({ text, at: new Date().toISOString(), ...(endAt ? { endAt } : {}) }));
-  appendLog('doing.log', { kind: 'DOING_SET', text, ...(endAt ? { endAt } : {}) });
+  fs.writeFileSync(file, JSON.stringify({ text, at: now, ...(endAt ? { endAt } : {}), ...(promisedAt ? { promisedAt } : {}), ...(waitingFor ? { waitingFor, waitingSince } : {}) }));
+  appendLog('doing.log', { kind: 'DOING_SET', text, ...(endAt ? { endAt } : {}), ...(waitingFor ? { waitingFor } : {}) });
   if (endAt) warnPastUntil('doing', endAt);
-  process.stdout.write(`doing: ${text}${endAt ? ` (termina ${process.argv[u + 1]})` : ''}\n`);
+  process.stdout.write(`doing: ${text}${endAt ? ` (termina ${process.argv[u + 1]})` : waitingFor ? ` (espera ${waitingFor})` : ''}\n`);
 }
 
 function cmdAdhocClearOrphan(sid) {

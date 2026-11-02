@@ -66,7 +66,7 @@ function cachedQuery(query, { ttlMs = QUERY_TTL_MS, clock = Date.now } = {}) {
  */
 function watchedDirs(home, sdir) {
   return [path.join(sdir, 'active'), path.join(sdir, 'adhoc'), path.join(sdir, 'doing'), path.join(sdir, 'parked'), path.join(claudeDir(home), 'sessions'), path.join(sdir, 'sessions'),
-    path.join(sdir, 'coordination'), path.join(sdir, 'gates.log')];
+    path.join(sdir, 'coordination'), path.join(sdir, 'coordination', 'tablas'), path.join(sdir, 'gates.log')];
 }
 
 /**

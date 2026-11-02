@@ -44,7 +44,9 @@ la rama de lo último que tocó, si no es de la story. Una story cerrada hace m�
 lo que hace hoy, o libre.
 
 «Anotado por la sesión» es lo que una sesión sin story dijo que hace, si quiere corregir lo que el /wip deduce, con
-`marker.js doing "<qué hago>"` (otro `doing` lo reemplaza; `marker.js doing clear` lo borra al terminar).
+`marker.js doing "<qué hago>"` (otro `doing` lo reemplaza; `marker.js doing clear` lo borra al terminar). Con
+`--until HH:MM` anota a qué hora termina, y `doing --until HH:MM` cambia sólo la hora: la oficina la compara con la primera que
+prometió. Con `--waiting-for "<qué espera>"` dice qué espera y desde cuándo, sin dar una hora. Vale también con un arreglo rápido abierto.
 La nota no es un permiso: no deja editar código sin pipeline, como sí lo hace `adhoc`. Pasada 1 h sin tocarse, la fila pregunta
 si terminó.
 
