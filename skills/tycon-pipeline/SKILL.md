@@ -277,7 +277,7 @@ Hooks: `on-prompt.js` (intención de story, conflicto cross-sesión, "listo" con
 
 En un repo bajo el arnés, un archivo de CÓDIGO no se edita sin (a) pipeline activo o (b) carril ad-hoc
 declarado: `marker.js adhoc set '{"reason":"<qué y por qué>"}'` (cupo 8 archivos, `adhoc.log`), que el dueño
-aprueba en la ventana, con click o «aprobado» (firma `adhoc-lane`; o `--terminal`). La designada de la
+aprueba en la ventana de permiso, con click o «aprobado» (firma `adhoc-lane`; o `--terminal`). La designada de la
 máquina lo declara por otra pestaña con `--for-session <id>` si el perfil lo delega. Con marker y el plan sin
 aprobar, no se edita código. Escrituras directas a
 `~/.claude/.tycon-pipeline/` se deniegan siempre. El carril lo elige el USER: si no lo dijo, preguntar.

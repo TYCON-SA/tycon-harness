@@ -127,8 +127,8 @@ firmar, y en la columna tu situación:
 
 Con Claude Code, la mayoría de las firmas no piden la terminal. El camino depende de la pestaña:
 
-- **La pestaña pide permisos:** te aparece la ventana de permiso y contestás «Sí». Ahí el arnés no mira el chat: escribir
-  «aprobado» no firma nada.
+- **La pestaña pide permisos:** te aparece la ventana de permiso y contestás «Sí». Ahí escribir «aprobado» no firma nada,
+  salvo que la coordinadora la firmaría por delegación: entonces gana tu aprobación.
 - **La pestaña no pide permisos, o la sesión corre de fondo:** la ventana no le llega a nadie seguro. Vale tu click en el
   cuadro de opciones o tu mensaje «aprobado». Sin eso, el freno niega el comando y le dice al agente cómo pedírtelo; lo
   de rutina en una pestaña sin permisos se hace y se avisa (ver «Lo de rutina en una pestaña sin permisos»).
@@ -138,8 +138,9 @@ Lo que tiene que cumplir esa aprobación:
 - **Sirve para una sola firma y vence a los 30 minutos.** Un comando que pide dos firmas no la usa.
 - **Nombra lo que aprueba.** La pregunta del cuadro, o lo último que te dijo el agente antes de tu «aprobado», trae el
   texto «firma <id>», con el id de la tabla de abajo.
-- **La das en la sesión que firma, o en la coordinadora.** En la pestaña de la coordinadora, con la designación
-  confirmada, nombra además «sesión <id>», la de la sesión que firma. La aprobación es tuya, no una delegación.
+- **La das en la sesión que firma, o en la coordinadora con la designación confirmada.** Si la firma es para otra sesión
+  que la de la pestaña donde apruebas, nombra además «sesión <id>»; si nombra otra sesión, no vale para ésta. La aprobación
+  es tuya, no una delegación.
 - **El mensaje es un «aprobado» claro.** «Aprobado», «apruebo» o «sí, aprobado», sin preguntas, negaciones ni condiciones.
   «No apruebo» o «¿lo aprobaste?» no cuentan.
 - **El mensaje lo tipeás vos, en la herramienta de consola.** No cuenta uno que llega desde la extensión del editor, por
