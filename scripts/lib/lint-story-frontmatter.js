@@ -102,7 +102,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const { sinGitDelPadre } = require('./clean-git-env.js');
 
-const REQUIRED =['story', 'epic', 'status'];
+const REQUIRED = ['story', 'epic', 'status'];
 
 // ── La causa del reproceso — `followup_reason:` ───────────────────────────────────────────────
 //

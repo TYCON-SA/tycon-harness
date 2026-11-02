@@ -157,6 +157,9 @@ test('Constancias_Redireccion_NoEsUnArgumento', () => {
     'git reset --hard origin/main 2>&1',
     'git rebase origin/main > /tmp/salida.txt',
     'git branch -f sana origin/main 2>&1',
+    'git merge --ff-only origin/main >| /tmp/salida.txt',
+    'git merge --ff-only origin/main > "/tmp/con espacio.txt"',
+    "git merge --ff-only origin/main > '/tmp/con espacio.txt'",
   ];
   for (const c of pasan) assert.ok(!(correr(c) || {}).block, `pasa: ${c}`);
   const frenan = [
@@ -204,6 +207,8 @@ test('Constancias_Heredoc_ElTextoNoEsUnComando', () => {
     `git commit -m "$(cat <<'EOF'\n${TEXTO}\nEOF\n)"`,
     `git add a.txt && git commit -q -m "$(cat <<'EOF'\n${TEXTO}\nEOF\n)"`,
     `gh pr create --title t --body "$(cat <<'EOF'\n${TEXTO}\nEOF\n)"`,
+    `cat <<'EOF' > /tmp/nota.txt 2>&1\n${TEXTO}\nEOF`,
+    `tee -a /tmp/nota.txt <<'EOF' > /dev/null\n${TEXTO}\nEOF`,
   ];
   for (const c of pasan) assert.ok(!(correr(c) || {}).block, `pasa: ${c}`);
   const COPIA = '`cp /tmp/x.json .github/control-changes/`';
@@ -243,10 +248,45 @@ test('Constancias_Heredoc_ElTextoNoEsUnComando', () => {
     `echo "<<'E'"\ncp /tmp/x.json .github/control-changes/\nE`,
     // un parche por heredoc sigue mirándose por lo que trae
     "git apply <<'EOF'\ndiff --git a/.tycon/control-changes.jsonl b/.tycon/control-changes.jsonl\nEOF",
+    // la línea de la marca sigue en la de abajo: lo que parece el cuerpo es parte del comando
+    `cat <<'EOF' \\\n> /tmp/nota.txt\necho ${COPIA}\nEOF`,
+    `cat <<'EOF' \\\n| bash\necho ${COPIA}\nEOF`,
+    `tee /tmp/nota.txt <<'EOF' \\\n| sh\necho ${COPIA}\nEOF`,
+    `cat <<'EOF' 'a\n' | bash\necho ${COPIA}\nEOF`,
+    `cat <<'EOF' "a\n" | bash\necho ${COPIA}\nEOF`,
+    `cat <<'EOF' $(\necho ${COPIA}\n)\nEOF`,
+    // lo que tiene detrás la marca, en un mensaje, en un grupo o tras un comentario
+    `git commit -m "$(cat <<'EOF' ; echo x\n${COPIA}\nEOF\n)"`,
+    `{ git commit -m "$(cat <<'EOF'\n${COPIA}\nEOF\n)"; }`,
+    `git commit -m x # "$(cat <<'EOF'\n${COPIA}\nEOF\n)"`,
+    // cat redefinido de las otras dos formas
+    `alias cat=bash; cat <<'EOF'\necho ${COPIA}\nEOF`,
+    `function cat { bash; }; cat <<'EOF'\necho ${COPIA}\nEOF`,
+    // la salida del heredoc la corre otro: una comilla invertida abierta antes, o algo detrás de la marca
+    `eval \`\ncat <<'EOF'\necho $(cp /tmp/x.json .github/control-changes/)\nEOF\n\``,
+    `eval \`cat <<'EOF'\necho $(cp /tmp/x.json .github/control-changes/)\nEOF\n\``,
+    `cat <<'EOF' > /tmp/x && bash /tmp/x\necho ${COPIA}\nEOF`,
+    `cat <<'EOF' > /tmp/x & bash /tmp/x\necho ${COPIA}\nEOF`,
+    `cat <<'EOF' ; bash\necho ${COPIA}\nEOF`,
+    `cat <<'EOF' <x\necho ${COPIA}\nEOF`,
+    `cat <<'EOF' \`bash\`\necho ${COPIA}\nEOF`,
+    `echo x | cat <<'EOF'\necho ${COPIA}\nEOF`,
+    `bash <<<"${COPIA}"`,
+    // un cuerpo vacío: el shell cierra en la primera marca y corre lo que sigue, hasta la otra
+    `cat > /tmp/nota.txt <<'EOF'\nEOF\n${COPIA}\nEOF`,
+    `tee /tmp/nota.txt <<-'EOF'\n\tEOF\n${COPIA}\nEOF`,
   ];
   for (const c of frenan) {
     const r = correr(c);
     assert.ok(r && r.block, `frena: ${c}`);
     assert.match(r.block, /constancia de cambio de control no se escribe a mano/, c);
   }
+});
+
+// 🔴 Falla con: un `>(…)` tomado por una redirección, que dejaría de mirar el comando que lleva adentro.
+test('Constancias_SustitucionDeProceso_SeSigueMirando', () => {
+  const correr = correrEn(repoConRamas());
+  const r = correr('git merge --ff-only origin/main >(cp /tmp/x.json .github/control-changes/)');
+  assert.ok(r && r.block);
+  assert.match(r.block, /constancia de cambio de control no se escribe a mano/);
 });

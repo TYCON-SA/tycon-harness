@@ -2292,15 +2292,20 @@ function sinRedireccionesDeSalida(tramo) {
 
 // un heredoc entero: lo que tiene delante en su línea, la comilla y la marca, lo que tiene detrás, el cuerpo y el cierre
 const HEREDOC_ENTERO = /(^|\n)([^\n]*?)(?<![\\<])<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()]+)\3(?=[\s;&|()<>]|$)([^\n]*)\n([\s\S]*?)(\n[ \t]*\4[ \t]*)(?=\n|$)/g;
-// un grupo o una palabra de control abierta antes del heredoc: lo que escribe puede seguir camino a otro programa
-const GRUPO_O_CONTROL = /[({]|(?:^|[\s;&|])(?:if|then|else|elif|do|while|until|for|case|select|function)(?=[\s;]|$)/;
+// un grupo, una comilla invertida o una palabra de control abierta antes del heredoc: lo que escribe puede seguir camino a otro programa
+const GRUPO_O_CONTROL = /[({`]|(?:^|[\s;&|])(?:if|then|else|elif|do|while|until|for|case|select|function)(?=[\s;]|$)/;
 const CAT_O_TEE_REDEFINIDO = /(?:^|[\s;&|(])(?:function[ \t]+(?:cat|tee)\b|alias[ \t]+(?:cat|tee)=|(?:cat|tee)[ \t]*\(\s*\))/;
+// lo que puede ir detrás de la marca sin que la línea siga abajo ni el cuerpo vaya a otro programa: palabras y
+// redirecciones. El `&` sólo vale en `N>&M`: `&&` y `&` empiezan otro comando, que puede correr lo que se escribió
+const DETRAS_DE_LA_MARCA = /^[ \t\w./~@%+=:,>-]*$/;
+const REDIRECCION_A_DESCRIPTOR = /\d*>&\d+/g;
 
 /**
  * El comando sin el texto de los heredocs que nadie corre: la marca va entre comillas (el shell no expande el cuerpo) y
  * el cuerpo sólo llega a un archivo o a un mensaje. Eso es `cat` o `tee` sin una tubería ni un grupo que lo lleve a otro
- * programa, o `git commit` y `gh pr|issue` con `"$(cat <<'X'`. El cuerpo de cualquier otro se sigue mirando, y con dos
- * heredocs en una línea, lo que sigue también: no se sabe de cuál es cada texto.
+ * programa, o `git commit` y `gh pr|issue` con `"$(cat <<'X'`. Con una barra invertida, una comilla abierta o un `$(` tras
+ * la marca, la línea sigue abajo y lo que parece el cuerpo es parte del comando. El cuerpo de cualquier otro se sigue
+ * mirando, y con dos heredocs en una línea, lo que sigue también: no se sabe de cuál es cada texto.
  */
 function sinTextoDeHeredocs(cmd) {
   const s = String(cmd);
@@ -2308,10 +2313,12 @@ function sinTextoDeHeredocs(cmd) {
   const es = posicionesDeComando(s);
   const comandoHasta = (fin) => { let t = ''; for (let i = 0; i < fin; i++) if (es[i]) t += s[i]; return t; };
   const soloTexto = (m) => {
-    const [todo, ini, antes, comilla, , despues] = m;
+    const [todo, ini, antes, comilla, marca, despues, cuerpo] = m;
     const linea = m.index + ini.length;
     const abre = linea + antes.length;
     if (!comilla || s.slice(0, linea).endsWith('\\\n')) return false;
+    // con el cuerpo vacío, el shell cerró en la primera línea y lo que sigue, hasta la otra marca, es comando
+    if (cuerpo.split('\n')[0].trim() === marca) return false;
     const mensaje = /^(.*)"\$\(cat[ \t]+$/.exec(antes);
     if (mensaje) {
       const comilla0 = linea + mensaje[1].length;
@@ -2320,7 +2327,7 @@ function sinTextoDeHeredocs(cmd) {
       const w = palabras(sinPalabrasDelShell(tramos(mensaje[1]).pop() || '')).filter((x) => x !== '').join(' ');
       return /^(?:git(?: -[cC] \S+)* commit|gh (?:pr|issue) \S+)(?: |$)/.test(w);
     }
-    if (!es[abre] || antes.includes('#') || /\||>\(/.test(`${antes}${despues}`)) return false;
+    if (!es[abre] || antes.includes('#') || /\||>\(/.test(antes) || !DETRAS_DE_LA_MARCA.test(despues.replace(REDIRECCION_A_DESCRIPTOR, ' '))) return false;
     if (GRUPO_O_CONTROL.test(comandoHasta(abre))) return false;
     const w = palabras(sinPalabrasDelShell(tramos(antes).pop() || '')).filter((x) => x !== '');
     return w[0] === 'cat' || w[0] === 'tee';
