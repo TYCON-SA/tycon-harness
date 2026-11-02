@@ -74,7 +74,9 @@
 //        [--body-file <archivo>] [--json]       (un PEDIDO, en su validación — cada commit que suma a
 //        su rama destino, el nombre de la rama, el título y el cuerpo. No le pregunta nada al remoto y la lista es
 //        siempre obligatoria; lo llama el paso «El freno de publicación sobre el pedido» de pipelines/azure-pipelines-maintainers-pr.yml)
-//   node public-push-guard.js status [--fetch]                         (¿está puesto?, ¿de dónde sale la lista?, ¿está al
+//   node public-push-guard.js pre-commit                               (lo que agrega este commit, dentro del control del
+//        commit: lo llama .githooks/pre-commit-checks. Más abajo, `preCommit`)
+//   node public-push-guard.js status [--fetch]                       (¿está puesto?, ¿de dónde sale la lista?, ¿está al
 //        día?; con `--fetch` se le pregunta además al remoto del clon de la lista. Su código no cambia por la frescura)
 //   node public-push-guard.js                                          (sin argumentos: el freno previo a la herramienta
 //        de Claude Code y de Codex, con el evento por la entrada; mira los `gh` que publican sin empujar — más abajo)
@@ -130,13 +132,13 @@ const CHUNK = 200;   // cuántos archivos se leen de git por vez: un empuje enor
 
 const short = (sha) => String(sha).slice(0, 10);
 
-function git(cwd, args, { input, binary = false } = {}) {
+function git(cwd, args, { input, binary = false, env = null } = {}) {
   // la entrada va como bytes: con `encoding: 'buffer'` Node no sabe convertir un texto
   // GIT_NO_REPLACE_OBJECTS: se lee el objeto de VERDAD. Con un reemplazo (`git replace`) git muestra otro objeto en su
   // lugar, pero el empuje manda el original: un commit sucio «arreglado» con un reemplazo se miraría limpio y saldría tal cual.
   return spawnSync('git', ['-C', cwd, '-c', 'core.quotePath=false', ...args], {
     input: input === undefined ? undefined : Buffer.from(input), ...(binary ? {} : { encoding: 'utf8' }), maxBuffer: 1024 * 1024 * 1024, windowsHide: true,
-    env: { ...process.env, GIT_NO_REPLACE_OBJECTS: '1' },
+    env: { ...process.env, GIT_NO_REPLACE_OBJECTS: '1', ...env },
   });
 }
 /** La salida de git, o «no pude mirar» nombrando sólo el subcomando (el error de git puede repetir un nombre de rama). */
@@ -1083,6 +1085,84 @@ function prePushMessage(result) {
   return L;
 }
 
+// ── el modo del commit: lo que este commit agrega, antes de que exista ────────────────────────
+// La identidad con que se arma el commit: la de verdad la mira el empuje. Va por el ambiente porque git le exporta el autor al
+// gancho en todo commit, y ese ambiente le gana a la configuración.
+const LOOK_WHO = 'public-push-guard';
+const LOOK_EMAIL = `${LOOK_WHO}@users.noreply.github.com`;
+const LOOK_IDENTITY = { GIT_AUTHOR_NAME: LOOK_WHO, GIT_AUTHOR_EMAIL: LOOK_EMAIL, GIT_COMMITTER_NAME: LOOK_WHO, GIT_COMMITTER_EMAIL: LOOK_EMAIL };
+const LOOK_MESSAGE = 'lo que guardaría el commit';
+const COMMIT_MARK = / ?\(commit [0-9a-f]+\)/;
+
+/**
+ * Lo que este commit agrega, mirado por el freno como lo miraría al empujar. Corre dentro del control del commit, donde git
+ * ya sabe qué entra (el índice que deja en GIT_INDEX_FILE vale para `git add`, `-a` y las rutas). Se arma el commit con sus
+ * padres de verdad, también los de un merge en curso, y se mira sólo él: lo que ya está en un padre no es de este commit,
+ * así que un `--amend` que saca un dato pasa, y un dato de un commit anterior lo sigue frenando el empuje. No le pregunta
+ * nada al remoto, no mira el mensaje ni el autor y no anota en el registro: nada se publicó ni se frenó todavía.
+ * Sin la lista (la CI pública, alguien de afuera) no mira: tampoco están sus excepciones, y frenaría lo que ya está permitido.
+ * Mira sólo `origin`; otro remoto público lo mira el empuje.
+ * Devuelve `{ code, result }`: 0 limpio, o no es asunto de este freno · 1 hallazgos · 2 no pude mirar.
+ */
+function preCommit({ cwd = process.cwd(), env = process.env } = {}) {
+  const result = { verdict: 'skip', reason: null, findings: [], looked: { commits: 0, objects: 0, refs: 0, tags: 0 }, list: null };
+  try {
+    const top = toplevel(cwd);
+    if (!top) { result.reason = 'no es un árbol de trabajo'; return { code: 0, result }; }
+    const remote = git(top, ['remote', 'get-url', '--push', 'origin']);
+    const url = remote.status === 0 ? String(remote.stdout || '').trim() : '';
+    if (!url) { result.reason = 'sin origin: lo mira el empuje'; return { code: 0, result }; }
+    if (judgeRemote(url, top, env).kind !== 'public') { result.reason = 'el remoto no es público'; return { code: 0, result }; }
+    if (!isHarnessTree(top) && !isDeclared(harnessRepo().identidadRemoto(url), env)) { result.reason = 'no es un commit del arnés'; return { code: 0, result }; }
+    result.verdict = 'pass';
+    const tree = gitOut(top, ['write-tree']).trim();
+    const head = git(top, ['rev-parse', '--verify', '--quiet', 'HEAD']);
+    const parents = head.status === 0 ? [String(head.stdout).trim()] : [];
+    const merging = gitOut(top, ['rev-parse', '--path-format=absolute', '--git-path', 'MERGE_HEAD']).trim();
+    if (fs.existsSync(merging)) parents.push(...fs.readFileSync(merging, 'utf8').split('\n').map((s) => s.trim()).filter((s) => SHA.test(s)));
+    if (parents.length === 1 && gitOut(top, ['rev-parse', 'HEAD^{tree}']).trim() === tree) return { code: 0, result };
+    const list = resolveList(top, env, { pushing: true });
+    result.list = { source: list.source };
+    if (list.generic) { result.verdict = 'skip'; result.reason = 'sin la lista no están sus excepciones: lo mira el empuje'; return { code: 0, result }; }
+    const scan = historyScanner({ top, remote: null });
+    const R = makeReview(list, scan);
+    const tip = gitOut(top, ['commit-tree', tree, ...parents.flatMap((p) => ['-p', p]), '-m', LOOK_MESSAGE], { env: LOOK_IDENTITY }).trim();
+    const limitMs = limitOf(env);
+    const deadline = Date.now() + limitMs;
+    const tick = () => { if (Date.now() >= deadline) throw new OutOfTime(`pasé el tope de tiempo (${Math.round(limitMs / 1000)} s) sin terminar de mirar el commit`); };
+    try {
+      reviewCommitsInto(R, result.looked, { top, tips: [tip], excludes: new Set(parents), list, tick });
+    } catch (e) {
+      if (!(e instanceof OutOfTime) || !R.findings.length) throw e;
+      result.partial = e.message;
+    }
+    // el commit armado no existe en la historia de nadie: su sha no le dice nada a quien lee
+    result.findings = R.findings.map((f) => ({ ...f, place: f.place.replace(COMMIT_MARK, '') }));
+    if (result.findings.length) { result.verdict = 'findings'; return { code: 1, result }; }
+    return { code: 0, result };
+  } catch (e) {
+    result.verdict = 'blind';
+    result.reason = e instanceof Blind ? e.message : `el freno falló por dentro (${(e && (e.code || e.name)) || 'error'})`;
+    return { code: 2, result };
+  }
+}
+
+function preCommitMessage(result) {
+  const L = [];
+  if (result.verdict === 'blind') {
+    L.push(`⚠️  freno de publicación: no pude mirar lo que lleva este commit (${result.reason}). El empuje lo vuelve a mirar.`);
+    return L;
+  }
+  if (result.verdict !== 'findings') return L;
+  L.push(`⛔ COMMIT FRENADO — el remoto es público y ${result.findings.length} cosa(s) de este commit no podrían salir al empujar:`);
+  for (const f of result.findings.slice(0, MAX_SHOWN)) L.push(`   · [${f.category}${f.rule ? `/${f.rule}` : ''}] ${f.place}`);
+  if (result.findings.length > MAX_SHOWN) L.push(`   · … y ${result.findings.length - MAX_SHOWN} más`);
+  if (result.partial) L.push(`   Y no terminé de mirar: ${result.partial}. Puede haber más.`);
+  L.push('   El commit no se hizo. Sacalo de lo preparado y volvé a commitear.');
+  L.push('   Un secreto de verdad se da por comprometido: rotalo. Si es un freno falso, la salida es una excepción con motivo en la lista privada (`permitidos`).');
+  return L;
+}
+
 // ── el modo de rango: un pedido, en su validación ─────────────────────────────────────────────
 /**
  * Lo que un PEDIDO publica, mirado en la validación que corre antes del merge: cada commit que alcanza `head` y no
@@ -1584,6 +1664,13 @@ function main(argv) {
     else for (const l of prePushMessage(result)) process.stderr.write(`${l}\n`);
     return code;
   }
+  if (mode === 'pre-commit') {
+    const { code, result } = preCommit();
+    for (const l of preCommitMessage(result)) process.stderr.write(`${l}\n`);
+    if (code === 1) return 1;
+    // no poder mirar: el commit se deshace y el empuje vuelve a mirar. El chequeo previo de un ok de guardar, en cambio, no firma
+    return code === 2 && process.env.TYCON_PRECOMMIT_READ_ONLY === '1' ? 2 : 0;
+  }
   if (mode === 'status') {
     const s = status({ fetch: rest.includes('--fetch') });
     process.stdout.write(`${s.lines.join('\n')}\n`);
@@ -1623,6 +1710,8 @@ module.exports = {
   remoteHas, readObjects, repoAt, pushMayBeHarness, isDeclared,
   // el modo de rango (la validación de un pedido)
   rangeMode, rangeMessage,
+  // el modo del commit (dentro del control del commit)
+  preCommit, preCommitMessage,
   // ¿la lista está al día? (lo usan también `harness.js doctor` y scripts/publishing/new-names.js; las
   // firmas, en el comentario de cada función)
   listFreshness, freshnessText, freshnessLines, gitElsewhere, HOOK_MARK, LIST_PATH, LIST_STALE_DAYS, LIST_REMOTE_ANSWER_MS,
