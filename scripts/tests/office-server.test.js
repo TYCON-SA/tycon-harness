@@ -235,11 +235,13 @@ test('T7 Events_BurstOfChanges_OneSnapshot: cinco cambios juntos dan una foto; u
   const lock = readLock(m);
   const p = page(lock);
   await p.next();
-  for (let i = 0; i < 5; i += 1) fs.writeFileSync(path.join(m.sdir, 'doing', `n${i}.json`), JSON.stringify({ text: `nota ${i}`, at: new Date().toISOString() }));
+  const tablas = path.join(m.sdir, 'coordination', 'tablas');
+  fs.mkdirSync(tablas, { recursive: true });
+  for (let i = 0; i < 5; i += 1) fs.writeFileSync(path.join(tablas, `n${i}.json`), JSON.stringify({ at: new Date().toISOString(), hoy: [{ grupo: 'A', que: `fila ${i}`, hoy: 'x' }] }));
   await p.next(2000);
   await sleep(800);
   assert.strictEqual(p.fotos.length, 2, 'una sola foto por la ráfaga');
-  fs.writeFileSync(path.join(m.sdir, 'doing', 'n0.json'), fs.readFileSync(path.join(m.sdir, 'doing', 'n0.json')));
+  fs.writeFileSync(path.join(tablas, 'n0.json'), fs.readFileSync(path.join(tablas, 'n0.json')));
   await sleep(900);
   assert.strictEqual(p.fotos.length, 2, 'la foto igual no se manda');
   p.close();
@@ -257,6 +259,53 @@ test('T8 Server_Idle_ReadsNothing: sin cambios no se lee nada ni se corre nada',
   assert.deepStrictEqual([after.reads, after.queries], [before.reads, before.queries]);
   assert.strictEqual(after.intervals, 0, 'ningún reloj que consulte');
   p.close();
+});
+
+test('T8b PrPhoto_RenewedOnlyWhileSomeoneLooks: la lectura de pedidos se renueva con una página abierta, y sólo si nadie lo hizo antes', async () => {
+  const fake = (m) => {
+    const script = path.join(m.sdir, 'fake-refresh.js');
+    const photo = path.join(m.sdir, 'stuck-prs-photo.json');
+    fs.writeFileSync(script, `require('fs').appendFileSync(${JSON.stringify(`${script}.log`)}, 'x\\n');
+require('fs').writeFileSync(${JSON.stringify(photo)}, JSON.stringify({ at: new Date().toISOString(), lecturas: { 'org/pub': { ok: true, value: [{ number: 909, title: 'arreglo', inQueue: true }] } } }));`);
+    return { script, runs: () => { try { return fs.readFileSync(`${script}.log`, 'utf8').trim().split('\n').length; } catch { return 0; } }, photo };
+  };
+  // sin lectura: la primera página la pide, la foto trae el pedido y sigue cada tanto
+  const m = toy();
+  const f = fake(m);
+  openSync(m, { TYCON_OFFICE_PR_REFRESH: f.script, TYCON_OFFICE_PR_PHOTO_MS: '500' });
+  const lock = readLock(m);
+  await sleep(700);
+  assert.strictEqual(f.runs(), 0, 'sin páginas no se lee nada');
+  const p = page(lock);
+  await p.next();
+  let shown = null;
+  for (let i = 0; i < 40 && !shown; i += 1) {
+    await sleep(100);
+    const last = p.fotos[p.fotos.length - 1];
+    const c = last.data && last.data.kanban ? last.data.kanban.columnas.find((x) => x.id === 'entrando') : null;
+    if (c && c.tarjetas.length) shown = c.tarjetas[0];
+  }
+  assert.ok(shown, 'la foto nueva llega sola a la página');
+  assert.strictEqual(shown.quien, 'pedido #909');
+  await sleep(1300);
+  const during = f.runs();
+  assert.ok(during >= 2, `se renueva mientras está abierta (${during})`);
+  assert.ok(during <= 5, `sin apurarse (${during})`);
+  p.close();
+  await sleep(300);
+  const closed = f.runs();
+  await sleep(1000);
+  assert.strictEqual(f.runs(), closed, 'sin páginas deja de leer');
+  // una lectura reciente de otra sesión no se repite
+  const n = toy();
+  const g = fake(n);
+  fs.writeFileSync(g.photo, JSON.stringify({ at: new Date().toISOString(), lecturas: {} }));
+  openSync(n, { TYCON_OFFICE_PR_REFRESH: g.script, TYCON_OFFICE_PR_PHOTO_MS: '60000' });
+  const q = page(readLock(n));
+  await q.next();
+  await sleep(500);
+  assert.strictEqual(g.runs(), 0);
+  q.close();
 });
 
 test('T9 Remote_QueriedAtMostOncePerMinute: los pedidos se preguntan una vez por minuto', async () => {

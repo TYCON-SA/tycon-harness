@@ -45,7 +45,7 @@ test('T98 Transcript_EncargoNowLastAction @story-2.81 @ac-53 — el encargo, lo 
   assert.ok(r.encargo.startsWith('Sos Tina.'), r.encargo);
   assert.ok(Array.from(r.encargo).length <= 140, r.encargo);
   assert.doesNotMatch(r.encargo, /\/Users|story-8\.3|\n/);
-  assert.strictEqual(r.haciendoAhora, 'Reviso las pruebas del tablero y sigo con el kanban.');
+  assert.strictEqual(r.haciendoAhora, 'Primero miro el código.', 'la primera oración de su último mensaje: su conclusión');
   assert.strictEqual(r.ultimaAccion, `Editar · office.js · a las ${hm(NOW - 4 * 60000)}`);
   assert.doesNotMatch(JSON.stringify(r), /secreto del archivo|un aviso/);
   // la frase larga se recorta, y un comando no se muestra
@@ -152,7 +152,7 @@ test('T102 Transcript_Codex_KnownOrNothing @story-2.81 @ac-55 — el formato de 
   ]);
   const r = readTranscript(file, { now: NOW, tool: 'codex' });
   assert.strictEqual(r.encargo, 'Ordená las pruebas de la oficina.');
-  assert.strictEqual(r.haciendoAhora, 'Sigo con el kanban.');
+  assert.strictEqual(r.haciendoAhora, 'Miro el código.');
   assert.strictEqual(r.ultimaAccion, `Ejecutar un comando · a las ${hm(NOW - 5 * 60000)}`);
   assert.doesNotMatch(JSON.stringify(r), /secreto/);
   const unknown = path.join(d, 'rollout-otro.jsonl');
@@ -194,3 +194,19 @@ test('T201 Transcript_Abbreviation_NotASentence: «Sr. García» no parte la ora
   assert.strictEqual(readTranscript(f).haciendoAhora, 'Hablé con el Sr. García del informe.');
 });
 
+test('T221 Transcript_NowSaysWhatItDoes: una pregunta o un consejo no dicen qué hace; lo de un mensaje anterior ya no vale', () => {
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'trans-hace-')), 's.jsonl');
+  const text = (t) => ({ type: 'assistant', message: { content: [{ type: 'text', text: t }] } });
+  const now = (...lines) => { fs.writeFileSync(f, `${lines.map((l) => JSON.stringify(text(l))).join('\n')}\n`); return readTranscript(f).haciendoAhora; };
+  assert.strictEqual(now('Conviene abrirlo en una sesión nueva. ¿Arranco?'), null);
+  assert.strictEqual(now('Corro las pruebas. ¿Querés el detalle?'), 'Corro las pruebas.');
+  assert.strictEqual(now('Reviso el panel.', '¿Arranco?'), null, 'un mensaje anterior no dice lo de ahora');
+  assert.strictEqual(now('Listo. Reviso el panel.'), 'Reviso el panel.');
+  assert.strictEqual(now('Espero que entre el #907 y el pedido 6106.'), 'Espero que entre el #907 y el pedido 6106.', 'el pedido queda: sin él la oración no dice nada');
+});
+
+test('T222 Transcript_EncargoFirstSentence: del encargo, la primera oración; las instrucciones de método no van', () => {
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'trans-encargo-')), 's.jsonl');
+  fs.writeFileSync(f, `${JSON.stringify({ type: 'user', message: { content: 'Urgente: el freno no ve el click. Avisá a la Coordinadora al arrancar. Decí «ejecución».' } })}\n`);
+  assert.strictEqual(readTranscript(f).encargo, 'Urgente: el freno no ve el click.');
+});

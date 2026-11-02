@@ -13,7 +13,9 @@
  *
  * Una lectura al arrancar y después sólo cuando cambia algo en las carpetas vigiladas (`fs.watch`, sin consultar cada N
  * segundos): los cambios de 250 ms se juntan, se recalcula la foto y se manda sólo si cambió. Los pedidos de git, Azure
- * DevOps y GitHub se preguntan a lo sumo una vez por minuto. El canal de vuelta está cerrado: un mensaje de la página
+ * DevOps y GitHub se preguntan a lo sumo una vez por minuto. La lectura de los pedidos abiertos, que deja
+ * stuck-pr-notice.js, se renueva cada 3 minutos si nadie lo hizo antes, y sólo con una página conectada: son cinco listados
+ * en unos 3 s. El canal de vuelta está cerrado: un mensaje de la página
  * cierra esa conexión sin leerlo. Se apaga solo a los 2 min sin páginas (el reloj arranca con el proceso) y a las 8 h.
  *
  * La foto, la vigilancia y la conexión de la página son tres partes separadas: conectar este mismo proceso a otro
@@ -24,6 +26,7 @@ const os = require('os');
 const path = require('path');
 const http = require('http');
 const crypto = require('crypto');
+const { spawn } = require('child_process');
 
 const WebSocket = require('./vendor/ws');
 
@@ -32,6 +35,7 @@ const { stateDir, claudeDir } = require(path.join(ROOT, 'skills', 'tycon-pipelin
 
 const DEBOUNCE_MS = 250;
 const QUERY_TTL_MS = 60 * 1000;
+const PR_PHOTO_MS = 3 * 60 * 1000;
 const MAX_PAYLOAD = 1024;
 const BACK_CHANNEL = 'la página mandó un mensaje: el canal de vuelta está cerrado';
 
@@ -114,7 +118,7 @@ async function serve() {
   const lockFile = lockPathOf(sdir);
   const testing = process.env.TYCON_OFFICE_TEST === '1';
   const token = crypto.randomBytes(16).toString('hex');
-  const counters = { reads: 0, sends: 0, queries: 0, intervals: 0 };
+  const counters = { reads: 0, sends: 0, queries: 0, intervals: 0, prRefreshes: 0 };
   // en las pruebas, cada reloj que repite queda contado: el proceso no consulta cada tanto
   if (testing) {
     const every = global.setInterval;
@@ -184,6 +188,29 @@ async function serve() {
   const schedule = () => { clearTimeout(pending); pending = setTimeout(recompute, DEBOUNCE_MS); };
   const noteOnce = (text) => { if (!notes.includes(text)) notes.push(text); schedule(); };
 
+  // la lectura de los pedidos abiertos, al día mientras alguien mira: en las pruebas sólo corre el guion que ellas le den
+  const prRefresher = testing ? process.env.TYCON_OFFICE_PR_REFRESH : path.join(ROOT, 'scripts', 'hooks', 'stuck-pr-notice.js');
+  const prEveryMs = numEnv('TYCON_OFFICE_PR_PHOTO_MS', PR_PHOTO_MS);
+  let prTimer = null;
+  let prRunning = false;
+  const prPhotoAge = () => { try { return Date.now() - fs.statSync(path.join(sdir, 'stuck-prs-photo.json')).mtimeMs; } catch { return Infinity; } };
+  const refreshPrPhoto = () => {
+    if (prRunning || !prRefresher || process.env.TYCON_STUCK_PR_NOTICE === '0') return;
+    prRunning = true;
+    counters.prRefreshes += 1;
+    const child = spawn(process.execPath, [prRefresher, '--refresh', path.resolve(process.env.TYCON_TREE || ROOT)], { stdio: 'ignore', windowsHide: true, timeout: 2 * 60 * 1000 });
+    child.on('error', (e) => { prRunning = false; noteOnce(`los pedidos abiertos no se pudieron leer: ${e.message}`); });
+    child.on('exit', () => { prRunning = false; schedule(); });
+    child.unref();
+  };
+  const prTick = () => {
+    if (!clients.size) { prTimer = null; return; }
+    const age = prPhotoAge();
+    if (age >= prEveryMs) refreshPrPhoto();
+    prTimer = setTimeout(prTick, age >= prEveryMs ? prEveryMs : prEveryMs - age);
+    prTimer.unref();
+  };
+
   const okHost = (h) => h === `127.0.0.1:${port}` || h === `localhost:${port}`;
   const okOrigin = (o) => o === `http://127.0.0.1:${port}` || o === `http://localhost:${port}`;
   const tokenOf = (url) => url.searchParams.get('t') || '';
@@ -235,12 +262,13 @@ async function serve() {
     wss.handleUpgrade(req, socket, head, (ws) => {
       clients.add(ws);
       clearTimeout(idle);
+      if (!prTimer) prTick();
       // el canal de vuelta está cerrado: un mensaje cierra la conexión sin leerse
       ws.on('message', () => { ws.close(1008, 'el canal de vuelta está cerrado'); noteOnce(BACK_CHANNEL); });
       // un mensaje de más de 1 KB lo corta la librería sola, con 1009, antes de leerlo
       // sólo el corte por tamaño es un mensaje de la página; un corte de red no lo es (lo dice el `close`)
       ws.on('error', (e) => { if (e && e.code === 'WS_ERR_UNSUPPORTED_MESSAGE_LENGTH') noteOnce(BACK_CHANNEL); });
-      ws.on('close', () => { clients.delete(ws); if (!clients.size) armIdle(); });
+      ws.on('close', () => { clients.delete(ws); if (!clients.size) { armIdle(); clearTimeout(prTimer); prTimer = null; } });
       ready.then(() => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'foto', data: last })); })
         .catch((e) => { noteOnce(`una página no recibió la foto: ${e.message}`); try { ws.close(1011, 'sin foto'); } catch { /* ya cerrada */ } });
     });
@@ -267,7 +295,7 @@ async function serve() {
   const shutdown = () => {
     if (done) return;
     done = true;
-    clearTimeout(idle); clearTimeout(cap); clearTimeout(pending);
+    clearTimeout(idle); clearTimeout(cap); clearTimeout(pending); clearTimeout(prTimer);
     unwatch();
     for (const c of clients) { try { c.close(1001, 'la oficina se cerró'); } catch { /* ya cerrada */ } }
     try {

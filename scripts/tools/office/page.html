@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Oficina del arnés</title>
 <style>
-/* La página de /office: arriba la sala en 3D; abajo una tarjeta por sesión, el kanban de pendientes y la tabla de
-   /wip. Todo viene adentro. */
+/* La página de /office: arriba la sala en 3D; abajo una tarjeta por sesión y el trabajo, en tablas o en kanban. La tabla de
+   /wip sale sólo si el navegador no puede dibujar en 3D. Todo viene adentro. */
 :root{
   --bg:#f5f6f4; --surface:#ffffff; --fg:#1d2321; --muted:#5d6763; --line:#dde2df; --accent:#1f6f5c;
   --display:system-ui,-apple-system,"Segoe UI",sans-serif; --body:system-ui,-apple-system,"Segoe UI",sans-serif; --mono:ui-monospace,Menlo,Consolas,monospace;
@@ -16,6 +16,7 @@
 :root[data-theme="dark"]{
   --bg:#141917; --surface:#1c2220; --fg:#e6ebe8; --muted:#9aa5a0; --line:#2c3431; --accent:#5cc0a3; color-scheme:dark}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 var(--body);padding:24px 16px 48px}
 main{max-width:1600px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
 header{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px 20px;border-bottom:2px solid var(--fg);padding-bottom:12px}
@@ -54,7 +55,7 @@ h2{font:700 .8rem var(--display);text-transform:uppercase;letter-spacing:.08em;c
 .compact .tag .bot{width:18px;height:18px}
 .compact .tag .es,.compact .tag .more{display:none}
 .compact .tag b{font-size:12px}
-.panel3{position:absolute;z-index:5000;right:12px;top:12px;width:min(330px,calc(100% - 24px));max-height:calc(100% - 24px);overflow:auto;background:rgba(24,20,34,.95);border:1px solid rgba(255,255,255,.14);border-radius:14px;padding:14px 16px;box-shadow:0 12px 30px rgba(0,0,0,.5);color:#f4eefc}
+.panel3{position:absolute;z-index:5000;right:12px;top:12px;width:min(330px,calc(100% - 24px));max-height:calc(100% - 24px);overflow:auto;background:#181422;border:1px solid rgba(255,255,255,.14);border-radius:14px;padding:14px 16px;box-shadow:0 12px 30px rgba(0,0,0,.5);color:#f4eefc}
 .panel3 h3{margin:0 0 6px;font:700 1.05rem var(--display);padding-right:20px}
 .panel3 .chip{display:inline-flex;gap:6px;padding:1px 9px;border-radius:999px;border:1px solid var(--c);color:var(--c);font-size:12px;margin-bottom:10px}
 .panel3 dl{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin:0;font-size:13px;line-height:1.4}
@@ -93,7 +94,18 @@ table{width:100%;border-collapse:collapse;min-width:760px}
 th{font:500 .72rem var(--display);text-transform:uppercase;letter-spacing:.07em;color:var(--muted);text-align:left;padding:8px 12px;border-bottom:1px solid var(--line)}
 td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top;font-size:.9rem}
 tr:last-child td{border-bottom:0}
-footer{color:var(--muted);font-size:.85rem}
+.nota{color:var(--muted);font-size:.85rem;margin:8px 0 0}
+.trabajo{display:flex;flex-direction:column;gap:10px}
+.trabajo .vistas{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px}
+.trabajo .vistas h2{margin:0}
+/* el interruptor de la vista: por debajo son dos botones de opción, y el teclado y los lectores de pantalla los usan como tales */
+.seg{display:inline-flex;gap:2px;padding:3px;background:var(--line);border-radius:9px}
+.seg label{position:relative;cursor:pointer}
+.seg input{position:absolute;inset:0;margin:0;opacity:0;cursor:pointer}
+.seg span{display:block;padding:5px 16px;border-radius:7px;font:600 .9rem var(--body);color:var(--muted)}
+.seg label:hover span{color:var(--fg)}
+.seg input:checked+span{background:var(--accent);color:var(--surface)}
+.seg input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
 /* los pendientes, un kanban de cinco columnas que se acomodan al ancho (cada tarjeta con su título, quién y hora) y lo
    que quedó a medio camino plegado debajo */
 .board{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
@@ -124,11 +136,19 @@ footer{color:var(--muted);font-size:.85rem}
     <div class="stage" id="stage" role="img" aria-label="Las sesiones trabajando en la oficina"><div class="labels" id="labels"></div><p class="ovl" id="ovl" hidden></p><div class="hint">Arrastrá para girar · rueda para acercar · tocá a alguien o el panel de la pared para ver el detalle</div><aside class="panel3" id="panel" hidden></aside></div>
   </section>
   <div class="you" id="you" hidden><h2>Te toca a vos</h2><ul id="youList"></ul></div>
-  <section><h2>Las sesiones</h2><div class="crew" id="crew"></div></section>
-  <section class="board tablas" id="tablas" hidden aria-label="Resúmenes"></section>
-  <section class="board" id="board" hidden aria-labelledby="boardTitle"><h2 id="boardTitle">Pendientes</h2><div id="boardBody"></div></section>
-  <details class="tablewrap" id="tablewrap"><summary>Ver como tabla</summary><div class="table"><table><thead><tr><th>Trabajo</th><th>Estado</th><th>Fin estimado</th><th>Sesión</th><th>Carpeta</th></tr></thead><tbody id="rows"></tbody></table></div><p class="empty" id="freeLine" hidden></p></details>
-  <footer id="foot">«Prometido» es la hora que dio la ejecución al arrancar; «Termina» es la de ahora, que se recalcula al entrar a cada paso y queda fija hasta el próximo. La diferencia sale en rojo si va más de 15 minutos tarde y en verde si va más de 15 minutos antes.</footer>
+  <section><h2>Las sesiones</h2><div class="crew" id="crew"></div><p class="nota" id="foot">«Prometido» es la hora que dio la ejecución al arrancar; «Termina» es la de ahora, que se recalcula al entrar a cada paso y queda fija hasta el próximo. La diferencia sale en rojo si va más de 15 minutos tarde y en verde si va más de 15 minutos antes.</p></section>
+  <section class="trabajo" id="trabajo" hidden aria-labelledby="trabajoTitle">
+    <div class="vistas"><h2 id="trabajoTitle">El trabajo</h2>
+      <div class="seg" role="radiogroup" aria-labelledby="trabajoTitle">
+        <label><input type="radio" name="vista" value="tablas" checked><span>Tablas</span></label>
+        <label><input type="radio" name="vista" value="kanban"><span>Kanban</span></label>
+      </div></div>
+    <div class="board tablas" id="tablas" hidden></div>
+    <div class="board" id="board" hidden><div id="boardBody"></div></div>
+    <div class="board" id="halfway" hidden></div>
+  </section>
+  <p class="nota" id="noRead" hidden></p>
+  <details class="tablewrap" id="tablewrap" hidden><summary>Ver como tabla</summary><div class="table"><table><thead><tr><th>Trabajo</th><th>Estado</th><th>Fin estimado</th><th>Sesión</th><th>Carpeta</th></tr></thead><tbody id="rows"></tbody></table></div><p class="empty" id="freeLine" hidden></p></details>
 </main>
 <script>
 let DATA=__OFFICE_DATA__;
@@ -148,37 +168,50 @@ setData(DATA);
 // el fin lo calcula office.js una vez por sesión: la etiqueta, la tarjeta, el detalle, el panel y la tabla dicen lo mismo
 const finTxt=a=>a.fin||null;
 // los pendientes: cinco columnas siempre, del estado real y del tablero de la coordinadora. Todo va como texto, nunca como HTML
-function renderBoard(){const sec=document.getElementById("board"),body=document.getElementById("boardBody"),k=DATA.kanban,t=DATA.tablero,KC={firma:"#ffa53d",curso:"#5aa9ff",entrando:"#a59fc4",sinEmpezar:"#9aa3a0",hechos:"#3ddc84"};body.replaceChildren();
-  if(!k){sec.hidden=true;return}sec.hidden=false;
+function renderBoard(){const body=document.getElementById("boardBody"),k=DATA.kanban,t=DATA.tablero,KC={firma:"#ffa53d",curso:"#5aa9ff",entrando:"#a59fc4",sinEmpezar:"#9aa3a0",hechos:"#3ddc84"};body.replaceChildren();
+  if(!k)return;
   const resumen=t&&t.resumen||"";
   const top=el("p","sum");top.textContent=resumen+(k.escrito?(resumen?" · ":"")+k.escrito:"");if(top.textContent)body.appendChild(top);
   if(t&&(t.teToca||[]).length){const p=el("p","sum toca");p.textContent="Te toca: "+t.teToca.join(" · ");body.appendChild(p)}
   const cols=el("div","cols");
   (k.columnas||[]).forEach(c=>{const col=el("div","col"),list=c.tarjetas||[];col.style.setProperty("--k",KC[c.id]||"var(--line)");col.appendChild(el("h3",null,c.nombre+" · "+list.length));
+    if(c.nota)col.appendChild(el("p","none",c.nota));
     if(!list.length)col.appendChild(el("p","none","Nada"));
     list.forEach(i=>{const card=el("div","item");card.appendChild(el("b",null,i.titulo||""));const line=[i.quien,i.hora,i.grupo].filter(Boolean).join(" · ");if(line)card.appendChild(el("span","m",line));
       [i.espera?"Espera "+i.espera+".":"",i.marca,i.motivo,i.nota].forEach(v=>{if(v)card.appendChild(el("span","n",v))});col.appendChild(card)});
     cols.appendChild(col)});
   body.appendChild(cols);
-  // lo que quedó a medio camino, plegado en una línea que se abre al tocarla, con qué hacer con cada cosa
-  const half=k.medioCamino||[];
-  if(half.length){const d=el("details","done");d.appendChild(el("summary",null,half.length+(half.length===1?" quedó a medio camino":" quedaron a medio camino")));const ul=el("ul");
-    half.forEach(i=>{const li=el("li");li.appendChild(el("b",null,i.titulo));li.appendChild(el("span","m"," · "+i.accion));ul.appendChild(li)});d.appendChild(ul);body.appendChild(d)}
 }
+// lo que de verdad quedó sin terminar, en las dos vistas, con qué hacer con cada cosa. Sin nada que decir, no aparece
+function renderHalfway(){const sec=document.getElementById("halfway"),k=DATA.kanban||{},half=k.medioCamino||[];sec.replaceChildren();sec.hidden=!half.length&&!k.medioCaminoNoSe;if(sec.hidden)return;
+  sec.appendChild(el("h2",null,"A medio camino"));
+  half.forEach(i=>{const card=el("div","item");card.appendChild(el("b",null,i.titulo));card.appendChild(el("span","n",i.accion));sec.appendChild(card)});
+  if(k.medioCaminoNoSe)sec.appendChild(el("p","none",k.medioCaminoNoSe))}
 function renderTop(){
   document.getElementById("stamp").textContent=meta?"Al día a las "+meta.actualizado+(meta.pedidosLeidos?" · pedidos leídos a las "+meta.pedidosLeidos:""):"";
   const site=document.getElementById("site");if(SITE){site.href=SITE;site.hidden=false}else{site.removeAttribute("href");site.hidden=true}
   const you=(meta&&meta.teToca)||[],ul=document.getElementById("youList");ul.replaceChildren();you.forEach(t=>ul.appendChild(el("li",null,t)));document.getElementById("you").hidden=!you.length;
   const tb=document.getElementById("rows");tb.replaceChildren();(DATA.rows||[]).forEach(r=>{const tr=el("tr");[r.work,r.state,r.end,r.session,r.folder].forEach(v=>tr.appendChild(el("td",null,v||"")));tb.appendChild(tr)});
   if(!(DATA.rows||[]).length){const tr=el("tr");const td=el("td",null,"Nadie trabaja en esta máquina.");td.colSpan=5;tr.appendChild(td);tb.appendChild(tr)}
-  const fl=document.getElementById("freeLine"),bits=[];if((DATA.free||[]).length)bits.push("Libres: "+DATA.free.join(", "));if((DATA.unreadable||[]).length)bits.push("No se pudo leer: "+DATA.unreadable.join(" · "));
-  fl.textContent=bits.join(" — ");fl.hidden=!bits.length;renderBoard();renderTablas()}
+  const fl=document.getElementById("freeLine"),free=(DATA.free||[]).length?"Libres: "+DATA.free.join(", "):"";fl.textContent=free;fl.hidden=!free;
+  const nr=document.getElementById("noRead"),bad=(DATA.unreadable||[]).join(" · ");nr.textContent=bad?"No se pudo leer: "+bad:"";nr.hidden=!bad;
+  renderBoard();renderTablas();renderHalfway();pintarVista()}
+// el trabajo se ve de a una vista, y la página recuerda la última: sólo esta persona y este navegador
+const VISTA_KEY="office.vista";
+function vistaGuardada(){try{const v=localStorage.getItem(VISTA_KEY);return v==="kanban"||v==="tablas"?v:null}catch(e){return null}}
+function guardarVista(v){try{localStorage.setItem(VISTA_KEY,v)}catch(e){/* sin dónde guardarla, vale hasta recargar */}}
+let vista=vistaGuardada()||"tablas";
+function pintarVista(){const hay=Boolean(DATA.tablas),k=Boolean(DATA.kanban),v=vista==="kanban"&&k||!hay?"kanban":"tablas";
+  document.getElementById("tablas").hidden=v!=="tablas"||!hay;document.getElementById("board").hidden=v!=="kanban"||!k;
+  document.getElementById("trabajo").hidden=!hay&&!k;
+  document.querySelectorAll('input[name="vista"]').forEach(i=>{i.checked=i.value===v})}
+document.querySelectorAll('input[name="vista"]').forEach(i=>i.addEventListener("change",()=>{if(!i.checked)return;vista=i.value;guardarVista(vista);pintarVista()}));
 // los dos resúmenes, arriba del tablero, y cuándo se escribió cada uno. Todo va como texto, nunca como HTML
-function renderTablas(){const sec=document.getElementById("tablas"),ts=DATA.tablas;sec.replaceChildren();sec.hidden=!ts;if(!ts)return;
-  ["hoy","pendientes"].forEach(k=>{const t=ts[k];if(!t)return;const d=el("div","una");d.appendChild(el("h2",null,t.titulo));d.appendChild(el("span","escrito",t.escrito||""));
+function renderTablas(){const sec=document.getElementById("tablas"),ts=DATA.tablas;sec.replaceChildren();if(!ts)return;
+  ["hoy","pendientes"].forEach(k=>{const t=ts[k];if(!t)return;const d=el("div","una");d.appendChild(el("h2",null,t.titulo));d.appendChild(el("span","escrito",[t.escrito,t.cruce].filter(Boolean).join(" · ")));
     if(!(t.filas||[]).length){d.appendChild(el("p","none","Nada"));sec.appendChild(d);return}
     const tb=el("table"),hd=el("tr");t.columnas.forEach(c=>hd.appendChild(el("th",null,c)));const th=el("thead");th.appendChild(hd);tb.appendChild(th);const bd=el("tbody");
-    let previo=null;t.filas.forEach(r=>{const tr=el("tr");[r.grupo===previo?"":r.grupo,r.que,r.col].forEach(v=>tr.appendChild(el("td",null,v||"")));previo=r.grupo;bd.appendChild(tr)});tb.appendChild(bd);const w=el("div","table");w.appendChild(tb);d.appendChild(w);sec.appendChild(d)})}
+    const cuantas=g=>t.filas.filter(f=>f.grupo===g).length;let previo=null;t.filas.forEach(r=>{const tr=el("tr");[r.grupo===previo?"":t.contar&&r.grupo?r.grupo+" · "+cuantas(r.grupo):r.grupo,r.que,r.col].forEach(v=>tr.appendChild(el("td",null,v||"")));previo=r.grupo;bd.appendChild(tr)});tb.appendChild(bd);const w=el("div","table");w.appendChild(tb);d.appendChild(w);sec.appendChild(d)})}
 function renderCrew(){const c=document.getElementById("crew");c.replaceChildren();
   if(!agents.length){c.appendChild(el("p","empty","No hay sesiones abiertas en esta máquina."));return}
   agents.forEach((a,i)=>{const s=AST[a.estado]||[a.estado||"","#999"];const k=el("div","card");
@@ -188,7 +221,7 @@ function renderCrew(){const c=document.getElementById("crew");c.replaceChildren(
 // lo que se dice de una sesión, de un solo lugar: la tarjeta y el panel pintan esta lista y sólo cambia su estilo
 function ficha(a){const r=[],add=(k,v,x)=>{if(v!=null&&v!=="")r.push({k,v,...x})};
   add("Trabajo",a.titulo);add("De la historia",a.historia);add("Encargo",a.encargo);
-  if(a.haciendoAhora)add("Haciendo ahora",a.haciendoAhora);else add("Haciendo",a.haciendo);
+  if(a.haciendoAhora)add("Haciendo ahora",a.haciendoAhora);else if(a.haciendo!==a.titulo)add("Haciendo",a.haciendo);
   add("Última acción",a.ultimaAccion);add("Espera",a.espera);add("Parada",a.parada);add("Novedades",a.callada);
   const ms=AST[a.mientrasEstado];add("Mientras tanto",a.mientras?a.mientras+(ms?" ("+ms[0].toLowerCase()+")":""):"");
   add("En pausa",a.enPausa);
@@ -203,7 +236,7 @@ function pintarFicha(a,box,abiertos){const dl=el("dl");
   if(a.pasos&&a.pasos.length){const d=el("details","pasos");d.open=abiertos;d.appendChild(el("summary",null,"Pasos de la ejecución"));const ol=el("ol","steps");let now=false;
     a.pasos.forEach(p=>{const cur=!p.done&&!now;if(cur)now=true;const li=el("li",p.done?"done":cur?"now":"");li.appendChild(el("span",null,p.done?"✓":cur?"▸":"·"));li.appendChild(document.createTextNode(p.name));ol.appendChild(li)});d.appendChild(ol);box.appendChild(d)}}
 // sin 3D, la tabla queda abierta y la sala dice por qué
-function sinTresD(msg){const o=document.getElementById("ovl");o.textContent=msg;o.hidden=false;document.getElementById("tablewrap").open=true}
+function sinTresD(msg){const o=document.getElementById("ovl");o.textContent=msg;o.hidden=false;const t=document.getElementById("tablewrap");t.hidden=false;t.open=true}
 window.tablero={agents:()=>agents,items:()=>items,kanban:()=>DATA.kanban||null,meta:()=>meta,site:()=>SITE,AST,SHIRT,fmt,finTxt,sinTresD,pintarFicha};
 // el reloj de la página (decisión 20): cada minuto compara la hora con la última novedad de cada sesión y marca las
 // calladas; sin pid, pasadas las 2 h, la da por inactiva. No consulta nada afuera: mira la hora y los datos que tiene.
@@ -497,6 +530,7 @@ function abrirTablero(){sel=null;desks.forEach(pintarTag);const K=T.kanban()||{}
   cols.forEach(c=>{const rows=c.tarjetas||[];if(!rows.length)return;const h=mk("h4",null,c.nombre+" · "+rows.length);h.style.color=KCOL[c.id]||"#9aa3a0";panel.append(h);const ul=mk("ul","list");
     rows.forEach(r=>{const li=mk("li");li.append(mk("b",null,r.titulo||""));li.append(mk("span","m",[r.quien,r.hora,r.espera?"espera "+r.espera:"",r.marca,r.motivo].filter(Boolean).join(" · ")));if(r.nota)li.append(mk("span","m",r.nota));ul.append(li)});panel.append(ul)});
   if(half.length){const h=mk("h4",null,"A medio camino · "+half.length);h.style.color=HALF;panel.append(h);const ul=mk("ul","list");half.forEach(r=>{const li=mk("li");li.append(mk("b",null,r.titulo||""),mk("span","m",r.accion||""));ul.append(li)});panel.append(ul)}
+  if(K.medioCaminoNoSe)panel.append(mk("p","m",K.medioCaminoNoSe));
   if(!half.length&&!cols.some(c=>(c.tarjetas||[]).length))panel.append(mk("p","m","No hay nada pendiente en esta máquina."));
   if(meta&&meta.actualizado)panel.append(mk("p","m",stampOf(K,meta)))}
 
