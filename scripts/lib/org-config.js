@@ -71,6 +71,8 @@ const SECCIONES = Object.freeze([
   // máquina, con su variable); un medidor se enciende o se apaga. La variable puesta en una máquina gana
   Object.freeze({ id: 'interruptores', titulo: 'Frenos y medidores', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['switches'], idCorto: 'profile', necesita: ['switches'] }),
   Object.freeze({ id: 'coordinacion', titulo: 'Cuántas sesiones trabajan a la vez', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['coordination'], rutas: Object.freeze(['coordination.max_working']), idCorto: 'profile', necesita: ['coordination'] }),
+  // cuándo la oficina de /office dice que una sesión que trabaja está callada
+  Object.freeze({ id: 'oficina', titulo: 'La oficina de /office', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['office'], rutas: Object.freeze(['office.quiet_minutes']), idCorto: 'profile', necesita: ['office'] }),
   // cómo se pone al día el freno de producción de cada máquina (guard.update): con la contraseña de su persona
   // o solo, con la versión publicada; vale sólo desde el perfil, y cada máquina instala el permiso con su contraseña
   Object.freeze({ id: 'frenoProduccion', titulo: 'Cómo se actualiza el freno de producción', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['guard'], rutas: Object.freeze(['guard.update']), idCorto: 'profile', necesita: ['guard'] }),
@@ -1476,6 +1478,7 @@ function pantalla(idioma = 'es') {
     pruebaAMano: { t: T('pantalla.pruebaAManoTitulo'), d: T('pantalla.pruebaAManoDescripcion'), corto: T('pantalla.pruebaAManoTitulo') },
     interruptores: { t: T('pantalla.interruptoresTitulo'), d: T('pantalla.interruptoresDescripcion'), corto: T('pantalla.interruptoresTitulo') },
     coordinacion: { t: T('pantalla.coordinacionTitulo'), d: T('pantalla.coordinacionDescripcion'), corto: T('pantalla.coordinacionTitulo') },
+    oficina: { t: T('pantalla.oficinaTitulo'), d: T('pantalla.oficinaDescripcion'), corto: T('pantalla.oficinaTitulo') },
     frenoProduccion: { t: T('pantalla.frenoProduccionTitulo'), d: T('pantalla.frenoProduccionDescripcion'), corto: T('pantalla.frenoProduccionTitulo') },
     integraciones: { t: T('pantalla.integraciones'), d: T('pantalla.queServiciosUsaCadaMaquina'), corto: T('pantalla.integraciones') },
     ado: { t: 'Azure DevOps', d: T('pantalla.laOrganizacionDeLaPlataforma', { plataforma: 'Azure DevOps' }), corto: 'Azure DevOps' },
@@ -1489,7 +1492,7 @@ function pantalla(idioma = 'es') {
     aldia: { t: T('pantalla.comoSeActualizaElSitio'), d: T('pantalla.siElSitioSePone'), corto: T('pantalla.actualizacionDelSitio') },
   };
   // las pestañas: [id, nombre, secciones, tablas para mirar]. Se ve una por vez; el resumen de arriba, en todas
-  var PESTANAS = [['personas', T('pantalla.personas'), ['organizacion', 'sitio', 'aplicar', 'aldia', 'direccionSitio', 'personas', 'responsables'], []], ['repos', T('pantalla.reposYProductos'), ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', T('pantalla.avisosYLaNoche'), ['canal', 'espera', 'umbrales', 'fichas', 'pedidos', 'contexto'], []], ['claude', T('pantalla.comoTrabajaClaude'), ['respuesta', 'modelos', 'suites', 'cobertura', 'revision', 'tecnologia', 'aprobaciones', 'pruebaAMano', 'interruptores', 'coordinacion', 'integraciones', 'hilos', 'estimaciones', 'paseAdversarial'], []], ['instalacion', T('pantalla.instalacionYActualizacion'), ['actualizacion', 'instalacion', 'paquetes', 'frenoProduccion'], ['contenido', 'versiones']]];
+  var PESTANAS = [['personas', T('pantalla.personas'), ['organizacion', 'sitio', 'aplicar', 'aldia', 'direccionSitio', 'personas', 'responsables'], []], ['repos', T('pantalla.reposYProductos'), ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', T('pantalla.avisosYLaNoche'), ['canal', 'espera', 'umbrales', 'fichas', 'pedidos', 'contexto'], []], ['claude', T('pantalla.comoTrabajaClaude'), ['respuesta', 'modelos', 'suites', 'cobertura', 'revision', 'tecnologia', 'aprobaciones', 'pruebaAMano', 'interruptores', 'coordinacion', 'oficina', 'integraciones', 'hilos', 'estimaciones', 'paseAdversarial'], []], ['instalacion', T('pantalla.instalacionYActualizacion'), ['actualizacion', 'instalacion', 'paquetes', 'frenoProduccion'], ['contenido', 'versiones']]];
   /** La pestaña de un ancla (#pestana-x, #seccion-x o una tabla para mirar); null si no es de ninguna. */
   function pestanaDe(ancla) {
     var id = String(ancla || '').replace(/^#/, '');
@@ -2602,6 +2605,11 @@ function pantalla(idioma = 'es') {
     box.appendChild(el('p', { class: 'muted', text: T('pantalla.coordinacionAyuda') }));
     return box;
   }
+  function editorOficina(s, d, pr) {
+    var box = el('div', { class: 'pila' }, campo(T('pantalla.oficinaCallada'), (d.office || {}).quiet_minutes, function (v) { hoja(d, 'office', 'quiet_minutes', v === '' ? '' : numOTexto(v)); }, 'office.quiet_minutes', pr, { inputmode: 'numeric' }));
+    box.appendChild(el('p', { class: 'muted', text: T('pantalla.oficinaAyuda') }));
+    return box;
+  }
   function editorAdo(s, d, pr) {
     var ex = s.extras || {};
     var box = el('div', { class: 'pila' }, campo(T('pantalla.laOrganizacionSuDireccionEn', { plataforma: 'Azure DevOps' }), (d.ado || {}).org, function (v) { hoja(d, 'ado', 'org', v); }, 'ado.org', pr));
@@ -3655,7 +3663,7 @@ function pantalla(idioma = 'es') {
       el('p', { class: 'sub-d', text: T('pantalla.tecIdiomaVacio') })));
     return box;
   }
-  var EDITORES = { pedidos: editorPedidos, tecnologia: editorTecnologia, fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, contexto: editorContexto, paseAdversarial: editorPaseAdversarial, cobertura: editorCobertura, revision: editorRevision, estimaciones: editorEstimaciones, respuesta: editorRespuesta, integraciones: editorIntegraciones, aprobaciones: editorAprobaciones, direccionSitio: editorDireccionSitio, pruebaAMano: editorPruebaAMano, interruptores: editorInterruptores, coordinacion: editorCoordinacion, frenoProduccion: editorFrenoProduccion, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: editorCanal, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
+  var EDITORES = { pedidos: editorPedidos, tecnologia: editorTecnologia, fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, contexto: editorContexto, paseAdversarial: editorPaseAdversarial, cobertura: editorCobertura, revision: editorRevision, estimaciones: editorEstimaciones, respuesta: editorRespuesta, integraciones: editorIntegraciones, aprobaciones: editorAprobaciones, direccionSitio: editorDireccionSitio, pruebaAMano: editorPruebaAMano, interruptores: editorInterruptores, coordinacion: editorCoordinacion, oficina: editorOficina, frenoProduccion: editorFrenoProduccion, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: editorCanal, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
 
   // los editores de suites y modelos arman objetos vacíos para tener dónde escribir: no se mandan. Una clave vacía en el
   // archivo pediría al perfil una versión más nueva sin cambiar nada

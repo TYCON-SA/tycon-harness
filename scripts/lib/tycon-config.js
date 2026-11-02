@@ -251,6 +251,9 @@ const VOCABULARIO = Object.freeze({
   // donde la coordinadora deja un ejecutable por firma que el dueño hace en su terminal. Es de la máquina: en el perfil
   // del equipo es un error. Sin valor, las firmas van en el aviso del chat y nada se escribe en disco.
   coordination: Object.freeze({ max_working: 'entero:1-20', owner_folder: 'ruta' }),
+  // La oficina de /office. `quiet_minutes`: cuántos minutos sin novedades tiene que pasar una sesión que trabaja para que
+  // la página diga «sin novedades desde las HH:MM». Sin valor, 15.
+  office: Object.freeze({ quiet_minutes: 'entero:1-1440' }),
   // La dirección del sitio de la organización, la que abre el comando de barra org-site. Vale SÓLO desde el perfil del
   // equipo (PROFILE_ONLY): es una para toda la organización, y si la máquina pudiera decirla, el agente podría mandar a
   // la persona a otra página. Sin valor, el comando dice cómo cargarla (desde el sitio o con un pedido al perfil).

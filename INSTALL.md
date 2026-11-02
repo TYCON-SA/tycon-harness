@@ -226,6 +226,13 @@ apaga sólo con su variable en `0`, y el portón de edición, `hook-pre-edit.js`
 | `context-size-notice.js` | SessionStart | Después de `/clear` o de compactar, el aviso de contexto vuelve a cero | No | full | `TYCON_CONTEXT_NOTICE=0` |
 | `wait-notice.js` | Notification (permission_prompt) | Un pedido de permiso abre la espera del aviso | No | full | `TYCON_WAIT_NOTICE=0` |
 | `wait-notice.js` | SessionEnd | La sesión se cerró: su espera se cierra sin avisar | No | full | `TYCON_WAIT_NOTICE=0` |
+| `session-state.js` | SessionStart | Anota el estado de la sesión para /office: su nombre, su proceso y su paso | No | full | `TYCON_SESSION_STATE=0` |
+| `session-state.js` | Notification (permission_prompt) | Un pedido de permiso: la sesión espera «un permiso» | No | full | `TYCON_SESSION_STATE=0` |
+| `session-state.js` | PreToolUse (AskUserQuestion\|ExitPlanMode\|mcp__spokenly__ask_user_dictation) | Una pregunta a la persona: la sesión espera «una respuesta» | No | full | `TYCON_SESSION_STATE=0` |
+| `session-state.js` | PostToolUse | Terminó el uso de una herramienta: la espera de un permiso se cierra | No | full | `TYCON_SESSION_STATE=0` |
+| `session-state.js` | UserPromptSubmit | La persona escribió: la espera se cierra | No | full | `TYCON_SESSION_STATE=0` |
+| `session-state.js` | Stop | El turno se cerró: la espera se cierra | No | full | `TYCON_SESSION_STATE=0` |
+| `session-state.js` | SessionEnd | La sesión se cerró: su archivo de estado se borra | No | full | `TYCON_SESSION_STATE=0` |
 | `blocking-meter.js` | Stop | Mide la herramienta bloqueante más larga del turno y los mensajes que quedaron esperando | No | full | `TYCON_BLOCKING_METER=0` |
 | `blocking-notice.js` | UserPromptSubmit | Cobra el veredicto del medidor de bloqueo del turno anterior | No | full | `TYCON_BLOCKING_METER=0` |
 | `coordination-notice.js` | UserPromptSubmit | Sólo en la sesión coordinadora: avisa cuando la máquina está en el tope de sesiones trabajando o lo pasó, y una vez por día de las firmas que esperan hace más de un día | No | full | `TYCON_COORDINATION_NOTICE=0` |
