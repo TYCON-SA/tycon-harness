@@ -1,0 +1,74 @@
+{
+  "hooks": [
+    {
+      "hook": "on-bash-write-gate.js (constancias: una redirección no es un argumento, y el texto de un heredoc no es un comando)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-bash-write-gate.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "_por_que": "El freno de constancias partía `2>&1` en las palabras `2` y `1`: las miraba como ramas y frenaba un avance legítimo, y como destino de una copia dejaba pasar `rsync` e `install` hacia una constancia. Además miraba como comando el texto de un heredoc literal, y frenaba a quien sólo escribía una nota que nombraba el caso.",
+      "cases": [
+        {
+          "id": "avance-con-redireccion-pasa",
+          "type": "must-not-block",
+          "tools": ["claude"],
+          "asymmetry": "Par del caso must-block (tools:['claude']).",
+          "setup": [
+            "git init -q -b main .",
+            "git -c user.email=b@ejemplo.test -c user.name=b commit -q --allow-empty -m inicio",
+            "git update-ref refs/remotes/origin/main HEAD"
+          ],
+          "stdin": {
+            "session_id": "bench-constancias-redireccion",
+            "tool_name": "Bash",
+            "tool_input": { "command": "git merge --ff-only origin/main 2>&1" },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": { "exit": 0 }
+        },
+        {
+          "id": "copia-a-constancia-con-redireccion-frena",
+          "type": "must-block",
+          "tools": ["claude"],
+          "asymmetry": "Bajo Codex el freno no frena.",
+          "setup": ["git init -q -b main ."],
+          "stdin": {
+            "session_id": "bench-constancias-redireccion",
+            "tool_name": "Bash",
+            "tool_input": { "command": "rsync -a /tmp/firmas/ .github/control-changes/ 2>&1" },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": { "exit": 2, "stderr_re": ["constancia de cambio de control no se escribe a mano"] }
+        },
+        {
+          "id": "heredoc-literal-que-nombra-el-caso-pasa",
+          "type": "must-not-block",
+          "tools": ["claude"],
+          "asymmetry": "Par del caso must-block (tools:['claude']).",
+          "setup": ["git init -q -b main ."],
+          "stdin": {
+            "session_id": "bench-constancias-heredoc",
+            "tool_name": "Bash",
+            "tool_input": { "command": "cat > /tmp/bench-nota.txt <<'EOF'\nfrenó `git merge no-existe 2>&1`\nEOF" },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": { "exit": 0 }
+        },
+        {
+          "id": "heredoc-sin-comillas-que-corre-una-copia-frena",
+          "type": "must-block",
+          "tools": ["claude"],
+          "asymmetry": "Bajo Codex el freno no frena.",
+          "_por_que": "Sin comillas en la marca, el shell corre lo que está adentro del cuerpo.",
+          "setup": ["git init -q -b main ."],
+          "stdin": {
+            "session_id": "bench-constancias-heredoc",
+            "tool_name": "Bash",
+            "tool_input": { "command": "cat > /tmp/bench-nota.txt <<EOF\n`cp /tmp/x.json .github/control-changes/`\nEOF" },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": { "exit": 2, "stderr_re": ["constancia de cambio de control no se escribe a mano"] }
+        }
+      ]
+    }
+  ]
+}
