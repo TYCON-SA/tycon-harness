@@ -46,6 +46,7 @@ const FIELDS = {
     })),
     medioCamino: list(record({ titulo: text, accion: text })),
     medioCaminoNoSe: text,
+    medioCaminoLeido: text,
   }),
   tablas: record({ hoy: TABLE, pendientes: TABLE }),
   meta: record({ actualizado: text, pedidosLeidos: text, teToca: list(text), extra: number, puestos: list(list(number)), sitio: text, quietMin: number }),
