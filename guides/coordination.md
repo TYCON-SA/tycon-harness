@@ -305,10 +305,10 @@ aparte y después renombrado, para que la oficina nunca lo lea a medias), cada v
   `quien`, `nota`, y su hora: `pronosticoIso` o `estimadaIso` (hora local, `AAAA-MM-DDTHH:MM`), o `termina` con un texto
   propio. Un hecho lleva `realIso`.
 - `historia` (por ejemplo `"2.81"`) y `pedido` (`{ "repo": "tycon-harness", "numero": 885 }`), opcionales. Con `historia` y
-  una corrida de esa historia en esta máquina, la fila no aporta estado ni hora: salen de la corrida, y la fila aporta su
-  `nota`. Con `pedido`, el estado sale de consultarlo, a lo sumo una vez por minuto: abierto, «Esperan entrar», con el
+  una ejecución de esa historia en esta máquina, la fila no aporta estado ni hora: salen de la ejecución, y la fila aporta
+  su `nota`. Con `pedido`, el estado sale de consultarlo, a lo sumo una vez por minuto: abierto, «Esperan entrar», con el
   motivo si está en borrador o fuera de la cola; entró, «Hechos» con su hora. Si la consulta falla, la fila queda donde dice
-  `estado` y el motivo va a «No se pudo leer». `repo` es el nombre de un repo de una corrida de esta máquina o de los que
+  `estado` y el motivo va a «No se pudo leer». `repo` es el nombre de un repo de una ejecución de esta máquina o de los que
   declara `team-repos.json`. `estado` vale sólo cuando no hay de dónde sacarlo.
 - `meta`: `actualizado`, `resumen` y `teToca` (lo que le toca al dueño, una línea cada cosa).
 
@@ -318,11 +318,11 @@ más que el umbral de la sesión callada (también un tablero al día y sin camb
 una persona que ya tiene tarjeta del estado real no se duplica. Los escritorios no salen de acá: salen de lo que hace cada
 sesión.
 
-Una corrida dejada a propósito se marca con `marker.js park <historia> --queue` («En fila para pruebas») o
-`--until AAAA-MM-DD` («En pausa hasta…»), aunque su sesión esté cerrada. Con dos corridas de la misma historia hay que decir
-cuál, con `--session <id>`. Una corrida marcada no dice hora ni atraso, nunca dice «limpiar», y `marker.js clear-session` se
-niega. La marca sale con `marker.js unpark <historia>`, al adoptar la corrida o con la salida que firma el dueño. Ninguna de
-las dos pide firma: la marca no autoriza nada. Por qué: limpiar una de ésas pierde el trabajo.
+Una ejecución dejada a propósito se marca con `marker.js park <historia> --queue` («En fila para pruebas») o
+`--until AAAA-MM-DD` («En pausa hasta…»), aunque su sesión esté cerrada. Con dos ejecuciones de la misma historia hay que
+decir cuál, con `--session <id>`. Una ejecución marcada no dice hora ni atraso, nunca dice «limpiar», y
+`marker.js clear-session` se niega. La marca sale con `marker.js unpark <historia>`, al adoptar la ejecución o con la salida
+que firma el dueño. Ninguna de las dos pide firma: la marca no autoriza nada. Por qué: limpiar una de ésas pierde el trabajo.
 
 La hora prometida de un arreglo rápido la anota su sesión con `marker.js adhoc until HH:MM`. La oficina y `/wip` la
 muestran como su fin, y miden el atraso contra ella; sin hora, dicen «sin hora estimada».
