@@ -373,10 +373,47 @@ Para prenderla:
 2. Dalo de alta como los demás (nombre sugerido: `instinct-proposals`) y pasale el parámetro `mailboxConnection`: la
    misma conexión de sólo lectura sobre el buzón que usa el tablero, autorizada también para este pipeline. Sin buzón,
    la noche sale «no medido».
-3. El modelo de la noche se elige en el sitio (la fila «El proceso de la noche»). La llave va como **variable secreta** de
-   esta definición: `OLLAMA_API_KEY` con Ollama, `ANTHROPIC_API_KEY` con Anthropic. Sin modelo o sin llave, las
-   propuestas salen sólo con los números y el resumen lo dice.
+3. El modelo de la noche se elige en el sitio (la fila «El proceso de la noche»). La llave sale del grupo de variables
+   que comparte con la revisión de dependencias: [el punto 13](#13-la-llave-del-modelo-de-la-noche-un-grupo-compartido).
+   Sin modelo o sin llave, las propuestas salen sólo con los números y el resumen lo dice.
 4. Nada más: desde que existe `.dashboard/instincts/`, el resumen de la mañana (`dependency-audit.yml`, 04:00) suma la
    línea «aprendizajes: …». Si una noche no dejó su informe, el resumen lo dice en vez de «sin propuestas nuevas».
 
 El modelo es sólo para Azure DevOps: una organización en GitHub todavía no tiene la variante de esta noche.
+
+## 13. La llave del modelo de la noche: un grupo compartido
+
+Los dos nocturnos que llaman al modelo de la noche, `dependency-audit` (la propuesta por ficha) e `instinct-proposals`
+(los aprendizajes), leen la llave de un mismo grupo de variables, `harness-nightly-model`, que nombra su parámetro
+`modelVariableGroup`. Se carga y se cambia en un solo lugar. Sin el grupo, o sin la llave del proveedor elegido, la noche sale igual, sin modelo, y el resumen lo dice:
+nunca en rojo. Es sólo para Azure DevOps.
+
+Cada nocturno, apenas arranca, dice en su registro `OLLAMA_API_KEY: llegó` o `no llegó`, y lo mismo con
+`ANTHROPIC_API_KEY`. Nunca muestra el valor ni su largo.
+
+Los pasos van en este orden. Un YAML que enlaza un grupo que no existe, o que esa definición no tiene autorizado, no
+arranca o se queda esperando permiso: esa noche no corre.
+
+1. Creá el grupo `harness-nightly-model` en *Pipelines → Library → + Variable group*, con dos variables:
+   `OLLAMA_API_KEY` (con Ollama) y `ANTHROPIC_API_KEY` (con Anthropic). Cargá sólo la del proveedor que elegiste en el
+   sitio, o las dos. Marcá cada una como **secreta** (el candado). El valor se escribe sólo en esa pantalla; nunca en
+   una línea de comandos (queda en el historial de la consola) ni en un archivo.
+2. Autorizá el grupo sólo para esas dos definiciones, por nombre: en el grupo, *Pipeline permissions → +* y elegí
+   `dependency-audit` y `instinct-proposals`. Nunca con *Open access* («permitir el acceso a todas las pipelines»):
+   cualquier pipeline del proyecto podría leer la llave.
+3. Abrí el pedido que pone `harness-nightly-model` como valor por defecto del parámetro `modelVariableGroup` en tus
+   copias de los dos YAML (las de `pipelines/` del repo de operaciones): así lo usa también la noche por horario. El
+   modelo lo trae vacío porque un grupo que no existe no deja arrancar el pipeline. Todavía no lo completes.
+4. Lanzá a mano cada definición una vez, sobre la rama del pedido y sin efectos:
+   `az pipelines run --id <id de dependency-audit> --branch <rama del pedido> --parameters efectos=false --project my-project`
+   y lo mismo con `--id <id de instinct-proposals>`. Mirá que las dos arranquen sin pedir permiso y que el paso «Ver si
+   llegó la llave del modelo de la noche» diga «llegó» en la llave del proveedor elegido. Sin efectos no se crean
+   pedidos de trabajo, no se guardan propuestas ni sale otro resumen del día.
+5. Completá (merge) el pedido. Desde la noche siguiente, la llave sale del grupo.
+6. Al final, sacá la variable vieja de cada definición (*Edit → Variables*), si la tenía. La variable del YAML, y un
+   grupo enlazado ahí, pisa a la que se carga en la pantalla de la definición: desde el paso 5 manda el grupo, y sacar
+   la vieja es limpieza, para no dejar una copia que nadie mira. Si en tu organización la de la definición ganara (el
+   paso 4 diría «llegó» aunque el grupo esté vacío), sacala justo antes del paso 4 y hacé el 5 enseguida: una noche que
+   caiga en el medio sale sin modelo, nunca en rojo.
+
+Para cambiar la llave después, se cambia sólo en el grupo (paso 1). La usa la noche siguiente.

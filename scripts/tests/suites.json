@@ -1734,6 +1734,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/session-names.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/work-slots.test.js",
       "requiere": []
     },
@@ -3804,6 +3809,12 @@
       "__nota": "story 8.30 (T1 a T5): los modelos de pipelines de operaciones para cualquier organización (pipelines/operations/) — los archivos en su lugar, ningún literal del equipo, todo paso con efectos atado a efectos (y a main si empuja), y la plantilla ops-data.yml corrida de verdad sobre dos repos de juguete. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/operations-pipelines.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.155, tanda A: la llave del modelo de la noche en el grupo de variables harness-nightly-model — los dos nocturnos con modelo lo enlazan y cada paso del modelo recibe las dos llaves; el paso que dice «llegó/no llegó» corrido de verdad, sin el valor ni su largo; una llave literal `$(NOMBRE)` cuenta como ausente; y los pasos del README en orden (crear, autorizar, probar sin efectos, mergear, la variable vieja al final). Las copias del repo de operaciones, con --operations <clon>; sin él, «no medido». Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/nightly-key.test.js",
       "requiere": []
     },
     {

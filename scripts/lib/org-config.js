@@ -70,7 +70,7 @@ const SECCIONES = Object.freeze([
   // los frenos y medidores de todas las máquinas (switches): un freno sólo se enciende desde acá (apagarlo es de cada
   // máquina, con su variable); un medidor se enciende o se apaga. La variable puesta en una máquina gana
   Object.freeze({ id: 'interruptores', titulo: 'Frenos y medidores', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['switches'], idCorto: 'profile', necesita: ['switches'] }),
-  Object.freeze({ id: 'coordinacion', titulo: 'Cuántas sesiones trabajan a la vez', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['coordination'], rutas: Object.freeze(['coordination.max_working']), idCorto: 'profile', necesita: ['coordination'] }),
+  Object.freeze({ id: 'coordinacion', titulo: 'Las sesiones de cada máquina', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['coordination'], rutas: Object.freeze(['coordination.max_working', 'coordination.session_names']), idCorto: 'profile', necesita: ['coordination'] }),
   // cuándo la oficina de /office dice que una sesión que trabaja está callada
   Object.freeze({ id: 'oficina', titulo: 'La oficina de /office', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['office'], rutas: Object.freeze(['office.quiet_minutes']), idCorto: 'profile', necesita: ['office'] }),
   // cómo se pone al día el freno de producción de cada máquina (guard.update): con la contraseña de su persona
@@ -380,6 +380,11 @@ const LEVELS_SINCE = '2026.10.30.30';
  */
 const SITE_SINCE = '2026.10.31.99';
 /**
+ * 🔴 La primera versión del arnés cuyo lector conoce `coordination.session_names` (con qué nombres abre la coordinadora
+ * las sesiones nuevas): la etiqueta del merge que la trae, como LEVELS_SINCE.
+ */
+const SESSION_NAMES_SINCE = '2026.11.02.3';
+/**
  * 🔴 La primera versión del arnés cuyo lector conoce `integrations.timeTracking` (la etiqueta del merge que trajo ese
  * lector). El selector de la herramienta de horas saca la llave vieja `integrations.clockify` del perfil: una máquina
  * anterior no entiende la clave nueva y se quedaría sin Clockify en silencio. Por eso el pedido que la cambia sube
@@ -468,6 +473,9 @@ function teamProfileGateProblem({ layerText, versionImagen, doc, actual }) {
   const niveles = isObject(doc) && isObject(doc.approvals) ? doc.approvals.levels : undefined;
   const nivelesAntes = isObject(actual) && isObject(actual.approvals) ? actual.approvals.levels : undefined;
   if (niveles !== undefined && (!isObject(actual) || canonico(niveles) !== canonico(nivelesAntes))) pedidas.push(['approvals.levels', LEVELS_SINCE, 'org.capaSinNiveles']);
+  const nombres = isObject(doc) && isObject(doc.coordination) ? doc.coordination.session_names : undefined;
+  const nombresAntes = isObject(actual) && isObject(actual.coordination) ? actual.coordination.session_names : undefined;
+  if (nombres !== undefined && (!isObject(actual) || canonico(nombres) !== canonico(nombresAntes))) pedidas.push(['coordination.session_names', SESSION_NAMES_SINCE, 'org.capaSinNombresDeSesion']);
   const maquinas = isObject(doc) && isObject(doc.approvals) ? doc.approvals.delegated_machines : undefined;
   const maquinasAntes = isObject(actual) && isObject(actual.approvals) ? actual.approvals.delegated_machines : undefined;
   if (maquinas !== undefined && (!isObject(actual) || canonico(maquinas) !== canonico(maquinasAntes))) pedidas.push(['approvals.delegated_machines', DELEGATED_LIST_SINCE, 'org.capaSinListaDeFirmas']);
@@ -1340,6 +1348,8 @@ function pantalla(idioma = 'es') {
   // loadReader), para no repetirlos acá. Un lector sin ellos deja la sección sin selectores
   const lectorPerfil = require('./pack-pieces.js').configReader();
   const interruptores = JSON.stringify(Object.entries((lectorPerfil && lectorPerfil.SWITCHES) || {}).map(([k, sw]) => [k, sw.variable, sw.factory, sw.brake]));
+  // los temas de fábrica de los nombres de sesión, del mismo lector; uno sin ellos deja sólo «como hoy»
+  const temas = JSON.stringify((lectorPerfil && typeof lectorPerfil.temasDeSesion === 'function' && lectorPerfil.temasDeSesion()) || {}).replace(/</g, '\\u003c');
   return String.raw`'use strict';
 // config.js — la pestaña Configuración del sitio de la organización (story 2.29). Lo sirve scripts/lib/org-config.js.
 // Sólo usa setAttribute, appendChild, addEventListener, textContent y replaceChildren: las pruebas lo corren sobre un
@@ -2575,6 +2585,7 @@ function pantalla(idioma = 'es') {
   // —apagarlo no se ofrece: es de cada máquina, con su variable—; un medidor, además, se apaga. Debajo, qué hace cada uno
   // [clave, variable, fábrica, es freno], del lector
   var INTERRUPTORES = ${interruptores};
+  var TEMAS = ${temas};
   var FRENOS = INTERRUPTORES.filter(function (x) { return x[3]; });
   var MEDIDORES = INTERRUPTORES.filter(function (x) { return !x[3]; });
   function editorInterruptores(s, d, pr) {
@@ -2602,6 +2613,29 @@ function pantalla(idioma = 'es') {
   }
   function editorCoordinacion(s, d, pr) {
     var box = el('div', { class: 'pila' }, campo(T('pantalla.coordinacionTope'), (d.coordination || {}).max_working, function (v) { hoja(d, 'coordination', 'max_working', v === '' ? '' : numOTexto(v)); }, 'coordination.max_working', pr, { inputmode: 'numeric' }));
+    // los nombres de las sesiones nuevas: como hoy o un tema de fábrica; una lista escrita a mano en el perfil se
+    // muestra y queda como está (la lista propia de cada dev va en su máquina, y la arma su sesión)
+    var v = (d.coordination || {}).session_names;
+    if (typeof v === 'string') v = v.trim().toLowerCase();
+    var lista = Array.isArray(v);
+    // la lista del perfil se guarda al dibujar: volver a elegirla la repone en el borrador, aunque antes se haya elegido
+    // un tema o «como hoy»
+    var original = lista ? v.slice() : null;
+    var ops = [['', T('pantalla.nombresComoHoy')]].concat(Object.keys(TEMAS).map(function (id) { return [id, T('pantalla.nombresTema.' + id)]; }));
+    if (lista) ops.push(['__lista', T('pantalla.nombresListaDelPerfil', { n: v.length })]);
+    else if (v !== undefined && v !== '' && !TEMAS[v]) ops.push([String(v), String(v)]);
+    var muestra = el('p', { class: 'muted' });
+    function ejemplo(x) {
+      var nombres = x === '__lista' ? original : TEMAS[x];
+      if (!nombres || !nombres.length) { muestra.textContent = T('pantalla.nombresEjemploComoHoy'); return; }
+      var primeros = nombres.slice(0, 5).join(', ') + (nombres.length > 5 ? ', …' : '');
+      muestra.textContent = T('pantalla.nombresEjemplo', { primeros: primeros, n: nombres.length, siguen: nombres.slice(0, 2).map(function (n) { return n + '-2'; }).join(', ') });
+    }
+    var sub = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.nombresTitulo') }), el('p', { class: 'sub-d', text: T('pantalla.nombresAyuda') }),
+      selector(T('pantalla.nombresDeDonde'), lista ? '__lista' : (v === undefined ? '' : v), ops, function (x) { hoja(d, 'coordination', 'session_names', x === '__lista' ? original.slice() : x); ejemplo(x); }, 'coordination.session_names', pr),
+      muestra, el('p', { class: 'muted', text: T('pantalla.nombresListaPropia') }));
+    ejemplo(lista ? '__lista' : v);
+    box.appendChild(sub);
     box.appendChild(el('p', { class: 'muted', text: T('pantalla.coordinacionAyuda') }));
     return box;
   }
@@ -4177,7 +4211,7 @@ function pantalla(idioma = 'es') {
 
 module.exports = {
   extrasDeAprobaciones, nombreDeMaquina,
-  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, ESTIMATES_SINCE, CONTEXT_NOTICE_SINCE, DEEP_REVIEW_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, COORDINATION_SINCE, SWITCHES_SINCE, SITE_SINCE, WAIT_NOTICE_ENABLED_SINCE, WAIT_NOTICE_OWNER_SINCE, WAIT_NOTICE_PEER_SINCE, DELEGATED_LIST_SINCE, OWNER_ONLY_SINCE, LEVELS_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
+  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, ESTIMATES_SINCE, CONTEXT_NOTICE_SINCE, DEEP_REVIEW_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, COORDINATION_SINCE, SWITCHES_SINCE, SITE_SINCE, SESSION_NAMES_SINCE, WAIT_NOTICE_ENABLED_SINCE, WAIT_NOTICE_OWNER_SINCE, WAIT_NOTICE_PEER_SINCE, DELEGATED_LIST_SINCE, OWNER_ONLY_SINCE, LEVELS_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
   problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy, estimacionesDeHoy, modelosEnNiveles, equivalenciasDe, proveedoresDe,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia, reaplicar, versionDeTexto,
   SIN_NOTICIAS_DIAS, CLAVES_DEL_REPO, lectorDeClave, reemplazarBloque, revisarClaveDelRepo, idDeRepo, urlDeRepo,

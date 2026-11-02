@@ -16,11 +16,13 @@
 #   · El BUZÓN DE CORRIDAS: el nombre de la conexión de servicio de Azure en el parámetro `mailboxConnection` (de sólo
 #     lectura sobre ese almacenamiento, autorizada para este pipeline), y dónde está, en operations.json → site.mailbox.
 #     Sin la conexión, la noche no puede leer y su informe sale «no medido».
-#   · El modelo de la noche, que se elige en el sitio (`models.nightly` de team-repos.json). La llave va como VARIABLE
-#     SECRETA de esta definición: `OLLAMA_API_KEY` con Ollama, `ANTHROPIC_API_KEY` con Anthropic. Nunca en este YAML ni en
-#     un archivo. Una variable que no existe llega como el literal `$(NOMBRE)`, y se toma como ausente: sin llave o sin
-#     modelo, las propuestas salen sólo con los números y el resumen lo dice. Con Anthropic, el agente necesita la CLI
-#     `claude` (el paso la instala sólo en ese caso).
+#   · El modelo de la noche, que se elige en el sitio (`models.nightly` de team-repos.json). La llave sale del GRUPO DE
+#     VARIABLES `harness-nightly-model`, el mismo que enlaza dependency-audit.yml, nombrado en el parámetro
+#     `modelVariableGroup`: `OLLAMA_API_KEY` con Ollama, `ANTHROPIC_API_KEY` con Anthropic, secretas. Cómo crearlo y
+#     autorizarlo, una vez: README.md, «La llave del modelo de la noche: un grupo compartido». Nunca en este YAML ni en un
+#     archivo. Una variable que no existe llega como el
+#     literal `$(NOMBRE)`, y se toma como ausente: sin llave o sin modelo, las propuestas salen sólo con los números y el
+#     resumen lo dice. Con Anthropic, el agente necesita la CLI `claude` (el paso la instala sólo en ese caso).
 #
 # A las 02:00 UTC: antes del resumen de las 04:00, sin pisar los otros nocturnos. Si pasa de 60 minutos, choca con el de
 # las 03:00.
@@ -49,6 +51,12 @@ parameters:
     displayName: 'Conexión de servicio de Azure con lectura sobre el buzón de ejecuciones (vacío: la noche sale «no medido»)'
     type: string
     default: ''
+  # El grupo de variables con la llave del modelo de la noche (ver la cabecera). Vacío de fábrica: un grupo que no
+  # existe no deja arrancar el pipeline. La copia de la organización pone su nombre como valor por defecto.
+  - name: modelVariableGroup
+    displayName: 'Grupo de variables con la llave del modelo de la noche (vacío: las propuestas salen sin modelo)'
+    type: string
+    default: ''
 
 resources:
   repositories:
@@ -61,6 +69,9 @@ pool:
   vmImage: 'ubuntu-latest'
 
 variables:
+  # La llave del modelo de la noche (secretas), por el parámetro modelVariableGroup. Ver la cabecera.
+  - ${{ if ne(parameters.modelVariableGroup, '') }}:
+      - group: ${{ parameters.modelVariableGroup }}
   - ${{ if eq(parameters.efectos, false) }}:
       - name: SIN_GUARDAR
         value: '--no-push'
@@ -75,6 +86,20 @@ jobs:
     steps:
       - template: pipelines/operations/templates/fetch-harness.yml@harness
       - template: pipelines/operations/templates/ops-data.yml@harness
+
+      - script: |
+          # Si la llave del modelo llegó del grupo harness-nightly-model, sin mostrarla ni decir su largo. Corre con y sin
+          # efectos, para ver en la corrida de prueba que el grupo la entrega. Vacía, en blanco o el literal `$(NOMBRE)`
+          # (la variable no existe) es «no llegó».
+          for K in OLLAMA_API_KEY ANTHROPIC_API_KEY; do
+            V="${!K:-}"
+            case "${V//[[:space:]]/}" in ''|'$('*')') echo "$K: no llegó" ;; *) echo "$K: llegó" ;; esac
+          done
+          exit 0
+        displayName: 'Ver si llegó la llave del modelo de la noche'
+        env:
+          OLLAMA_API_KEY: $(OLLAMA_API_KEY)
+          ANTHROPIC_API_KEY: $(ANTHROPIC_API_KEY)
 
       # El perfil de la organización: si la integración está prendida. Sin él, la noche sale «no medido» (perfil ilegible).
       - script: |
