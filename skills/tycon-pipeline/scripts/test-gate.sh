@@ -971,7 +971,7 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
     TG_FULL_SUITE_BY="$(node "$SCRIPT_DIR/lib/test-gate-scope.js" "$REPO_RUN")" || _tg_scope_rc=$?
     if [[ "$_tg_scope_rc" == "0" && -n "$TG_FULL_SUITE_BY" ]]; then
       LIGHT_ARGS=(--scoped-by-repo "$TG_FULL_SUITE_BY")
-      echo "[test-gate] el repo acota el portón (test_gate en .test-gate.yaml): corren sólo las suites que leen lo tocado; la suite completa la corre la CI del pedido ($TG_FULL_SUITE_BY)"
+      echo "[test-gate] el repo acota el portón (test_gate en .test-gate.yaml): si se sabe qué se tocó, corren sólo las suites que lo leen; la suite completa la corre la CI del pedido ($TG_FULL_SUITE_BY)"
     elif [[ "$_tg_scope_rc" != "10" ]]; then
       echo "[test-gate] ⚠️  no pude leer test_gate de .test-gate.yaml (salió $_tg_scope_rc): corre la suite entera" >&2
     fi
@@ -979,13 +979,29 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
   # Ya acotado porque una CI corre la completa, y lo único que cambió desde la última corrida es lo que trajo main: corren
   # las suites que fallaron y las que nombran lo que trajo main (lib/after-main.js). Lo de la historia ya se midió. Cualquier
   # otro cambio corre lo de siempre. Lo medido se anota al cerrar; si esta corrida no termina, no queda nada anotado.
-  if [[ "$TG_TOP_FULL" == "1" && -z "${TG_PRIVATE_TREE_DIR:-}" ]]; then
+  # En el árbol armado se compara cada repo de verdad: el árbol es una carpeta nueva cada vez, y main no la tiene.
+  if [[ "$TG_TOP_FULL" == "1" ]]; then
     TG_MEASURED="$OUT_DIR/test-gate-measured.json"
-    if node "$SCRIPT_DIR/lib/after-main.js" snapshot "$REPO_RUN" > "$RESULTS_DIR/measured-start.json"; then
-      if [[ ${#LIGHT_ARGS[@]} -gt 0 && "${TYCON_GATE_ALL_SUITES:-}" != "1" ]] \
-        && node "$SCRIPT_DIR/lib/after-main.js" decide "$REPO_RUN" "$TG_MEASURED" "$RESULTS_DIR/measured-start.json" "$RESULTS_DIR/touched.json"; then
+    _tg_acotado="${#LIGHT_ARGS[@]}"
+    if [[ -n "${TG_PRIVATE_TREE_DIR:-}" ]]; then
+      # el árbol armado siempre está acotado: sus suites enteras las corren la CI del pedido y el nocturno
+      _tg_acotado=1
+      _tg_foto=(snapshot-tree "$(_tg_tree_field private.root)" "$_TG_PUB_ROOT" "$(_tg_tree_field base.source)" "$(_tg_tree_field base.commit)" "${_tg_equipo:--}" "$(_tg_tree_field measured.private)" "$(_tg_tree_field measured.public)")
+      _tg_decide=(decide-tree)
+    else
+      _tg_foto=(snapshot "$REPO_RUN")
+      _tg_decide=(decide "$REPO_RUN")
+    fi
+    if node "$SCRIPT_DIR/lib/after-main.js" "${_tg_foto[@]}" > "$RESULTS_DIR/measured-start.json"; then
+      if [[ "$_tg_acotado" -gt 0 && "${TYCON_GATE_ALL_SUITES:-}" != "1" ]] \
+        && node "$SCRIPT_DIR/lib/after-main.js" "${_tg_decide[@]}" "$TG_MEASURED" "$RESULTS_DIR/measured-start.json" "$RESULTS_DIR/touched.json"; then
         TOUCHED_ARGS=(--touched "$RESULTS_DIR/touched.json")
-        LIGHT_ARGS=(--scoped-by-repo "${TG_FULL_SUITE_BY:-la CI del pedido}")
+        if [[ -n "${TG_PRIVATE_TREE_DIR:-}" ]]; then
+          TG_TREE_ARGS=(--skills "$(_tg_tree_field skills)" --scoped-by-repo "${TG_FULL_SUITE_BY:-la CI del pedido}")
+          TG_TREE_TOUCHED_FILE=""
+        else
+          LIGHT_ARGS=(--scoped-by-repo "${TG_FULL_SUITE_BY:-la CI del pedido}")
+        fi
         TG_AFTER_MAIN=1
       fi
       rm -f "$TG_MEASURED"
@@ -1039,12 +1055,12 @@ if [[ "$RUNNER" =~ ^(dotnet|node-test|jest|vitest)$ && "$SUITE_EXIT" =~ ^[3-7]$ 
   SUITE_EXIT=1
 fi
 
-# 77: el corredor no arrancó porque otra sesión tiene el turno de la suite completa de la máquina (scripts/tools/heavy-turn.js;
+# 77: el corredor no arrancó porque otra sesión tiene el turno de las ejecuciones grandes de la máquina (scripts/tools/heavy-turn.js;
 # ya dijo quién). `run-check` lo anotó como rojo, así que un verde viejo no queda en pie; para quien llama es un 75.
 if [[ "$SUITE_EXIT" == "77" && "$RUNNER" == "suites-json" ]]; then
-  TG_NO_COMPANIONS="otra sesión tiene el turno de la suite completa de la máquina"
+  TG_NO_COMPANIONS="otra sesión tiene el turno de las ejecuciones grandes de la máquina"
   rm -f "$OUT_FILE"
-  echo "🟡 [test-gate] no corrí nada: otra sesión tiene el turno de la suite completa de la máquina (arriba, quién y desde cuándo). Esperá que termine; no quedó tests-result.json." >&2
+  echo "🟡 [test-gate] no corrí nada: otra sesión tiene el turno de las ejecuciones grandes de la máquina (arriba, quién y desde cuándo). Esperá que termine; no quedó tests-result.json." >&2
   exit 75
 fi
 # 75: `run-check tests` no lanzó nada porque otra corrida de las pruebas está en marcha en este repo (ya dijo desde
@@ -1075,7 +1091,9 @@ if [[ "$TG_TOP_FULL" == "1" ]]; then
     || echo "[test-gate] ⚠️  no pude anotar las suites que fallaron: la próxima corrida completa no va a pedir repetirlas primero" >&2
 fi
 if [[ -n "${TG_MEASURED:-}" ]]; then
-  node "$SCRIPT_DIR/lib/after-main.js" record "$REPO_RUN" "$RESULTS_DIR/measured-start.json" "$RESULTS_DIR/suites.json" "$SUITE_EXIT" "$TG_MEASURED" \
+  _tg_anotar=record
+  [[ -n "${TG_PRIVATE_TREE_DIR:-}" ]] && _tg_anotar=record-tree
+  node "$SCRIPT_DIR/lib/after-main.js" "$_tg_anotar" "$REPO_RUN" "$RESULTS_DIR/measured-start.json" "$RESULTS_DIR/suites.json" "$SUITE_EXIT" "$TG_MEASURED" \
     || echo "[test-gate] ⚠️  no pude anotar qué midió esta corrida: si después se trae main, corre lo de siempre" >&2
 fi
 

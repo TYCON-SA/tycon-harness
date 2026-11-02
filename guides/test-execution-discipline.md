@@ -51,7 +51,14 @@ Se agrava cuando, **al mismo tiempo**, el agente tiene **8–11 subagentes (advi
    última corrida, mezclado con main, da exactamente lo que hay en la carpeta, corren sólo las suites que fallaron y las
    que nombran archivos que trajo main. Se compara la carpeta, no los commits. Cualquier otro cambio corre lo de siempre
    (`lib/after-main.js`). No ve un archivo ignorado que lea una suite, ni el destino de un enlace fuera del repo: eso queda
-   para la CI del pedido.
+   para la CI del pedido. En el árbol armado del privado vale lo mismo, comparando cada repo: el privado y el público. Si
+   además cambió el perfil del equipo, o el público salió de otro lado, corre lo de siempre.
+
+   *Sin base avisa antes de arrancar*: en un repo que acota el portón, si no se sabe qué se tocó corren todas las suites.
+   Lo dice antes de la primera, con la cantidad y cómo acotarla: `TYCON_COVERAGE_BASE="$(git merge-base origin/main HEAD)"`.
+
+   *Una ejecución grande espera su turno*: en una máquina con coordinadora, desde 100 suites por correr, acotada o no, va una
+   por vez. Si otra tiene el turno, el portón sale 75 sin correr nada y dice quién lo tiene.
 
 3. **Nunca full-suite + fan-out de subagentes simultáneo.** Si hay advisors/subagentes corriendo,
    **esperar** a que terminen antes de lanzar la suite completa (y viceversa). Secuenciar, no superponer.

@@ -172,13 +172,13 @@ El mismo aviso trae dos cosas más:
 ## Lo pesado, con turno: la suite completa y los pases adversariales
 
 En la máquina puede correr a la vez **una suite completa y un pase adversarial o una tanda de revisores de otra sesión**:
-el pase y los revisores corren en la nube y casi no usan la máquina. **Nunca dos suites completas ni dos pases a la vez.**
+el pase y los revisores corren en la nube y casi no usan la máquina. **Nunca dos ejecuciones grandes de pruebas ni dos pases a la vez.**
 Lo controla el arnés, no la memoria de nadie:
 
-- **La segunda suite no arranca.** El corredor de las suites y las portables enteras piden el turno
-  (`scripts/tools/heavy-turn.js`). Con el turno de otro proceso vivo no corren (el portón de pruebas sale 75, su «esperá») y
-  dicen quién lo tiene, desde cuándo y cómo destrabarlo. Una suite acotada no lo pide. El turno de un proceso muerto, o de más de
-  tres horas, se libera solo.
+- **La segunda ejecución grande no arranca.** Piden el turno (`scripts/tools/heavy-turn.js`) el corredor de las suites, cuando
+  va a correr 100 suites o más, esté acotado o no, y las portables enteras. Con el turno de otro proceso vivo no corren (el
+  portón de pruebas sale 75, su «esperá») y dicen quién lo tiene, cuántas suites corre, desde cuándo y cómo destrabarlo. Con
+  menos de 100 suites no se pide. El turno de un proceso muerto, o de más de tres horas, se libera solo.
 - **El segundo pase no se lanza.** Con otro en vuelo, el portón del pase (`pipeline.js deep-review-gate`) sale 3, y
   `pipeline.js next` pide esperar en vez de lanzar. La respuesta trae `other_in_flight` (historia, sesión y hora) y la línea
   que dice quién tiene el lugar. El pase de una sesión cerrada no cuenta.

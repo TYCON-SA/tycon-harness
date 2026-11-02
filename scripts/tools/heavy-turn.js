@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 'use strict';
 /*
- * heavy-turn.js — el turno de la suite completa en una máquina con coordinadora (guides/coordination.md).
+ * heavy-turn.js — el turno de las ejecuciones grandes de pruebas en una máquina con coordinadora (guides/coordination.md).
  *
- * En la máquina corre una suite completa por vez: dos a la vez la saturan. Una suite completa y un pase adversarial o una
- * tanda de revisores de otra sesión sí pueden ir juntos (corren en la nube). El corredor de la suite toma el turno al
- * arrancar y lo suelta al terminar; con el turno tomado por otro proceso vivo, no arranca y dice quién lo tiene.
+ * En la máquina corre una ejecución grande por vez: dos a la vez la saturan. Es grande por cuántas suites corre, no por
+ * estar acotada o no: el corte lo pone quien pide el turno (`TURN_FROM_SUITES` de run-suites-json.js; las portables enteras
+ * siempre). Una grande y un pase adversarial o una tanda de revisores de otra sesión sí pueden ir juntos (corren en la
+ * nube). El corredor toma el turno al arrancar y lo suelta al terminar; con el turno tomado por otro proceso vivo, no
+ * arranca y dice quién lo tiene.
  *
  *   take --what <qué corre> [--process <pid>]   0 = turno tomado (o no hay coordinadora) · 77 = lo tiene otro, y dice quién
  *   release [--process <pid>]                   suelta el turno si es de ese proceso; el de otro no lo toca
@@ -80,7 +82,7 @@ function sessionName(home, sid) {
 }
 
 // Lo que dice el registro se sanea al leerlo: el archivo queda en la carpeta del estado y su texto llega al contexto de un agente.
-const describe = (t) => `${oneLine(t.session) || 'una sesión sin nombre'} (${oneLine(t.what) || 'suite completa'}, desde las ${hhmm(t.at)})`;
+const describe = (t) => `${oneLine(t.session) || 'una sesión sin nombre'} (${oneLine(t.what) || 'ejecución grande'}, desde las ${hhmm(t.at)})`;
 
 // Publica el turno entero y de una: `link` falla si el archivo ya está, y nadie puede leerlo a medio escribir.
 function publish(file, turn) {
@@ -116,7 +118,7 @@ function take({ home = require('os').homedir(), env = process.env, arnes, pid = 
   const file = turnFile(home);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const sid = env.CLAUDE_CODE_SESSION_ID || env.CODEX_SESSION_ID || null;
-  const mine = { pid, sid, session: sessionName(home, sid), what: oneLine(what) || 'suite completa', at: now };
+  const mine = { pid, sid, session: sessionName(home, sid), what: oneLine(what) || 'ejecución grande', at: now };
   // unos pocos intentos: entre sacar un turno vencido y publicar el propio puede entrar otro, o estar sacándolo otro
   for (let i = 0; i < 20; i += 1) {
     if (i) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
@@ -124,11 +126,11 @@ function take({ home = require('os').homedir(), env = process.env, arnes, pid = 
     const t = readTurn(file);
     if (inForce(t, now)) {
       if (Number(t.pid) === pid) return { ok: true, taken: true, message: null };
-      return { ok: false, taken: false, holder: t, message: `Ya corre una suite completa en esta máquina: ${describe(t)}. Va una por vez (guides/coordination.md, «Lo pesado, con turno»): esperá que termine, o pedile turno a la ${role}. Si quedó colgada, se destraba con heavy-turn.js release --process ${Number(t.pid)}.` };
+      return { ok: false, taken: false, holder: t, message: `Ya corre una ejecución grande de pruebas en esta máquina: ${describe(t)}. Va una por vez (guides/coordination.md, «Lo pesado, con turno»): esperá que termine, o pedile turno a la ${role}. Si quedó colgada, se destraba con heavy-turn.js release --process ${Number(t.pid)}.` };
     }
     evict(file, now);
   }
-  return { ok: false, taken: false, message: `No pude tomar el turno de la suite completa (${file} vuelve a aparecer): no la corrí.` };
+  return { ok: false, taken: false, message: `No pude tomar el turno de las ejecuciones grandes (${file} vuelve a aparecer): no la corrí.` };
 }
 
 /** Suelta el turno si es de `pid`. El de otro proceso no se toca. */

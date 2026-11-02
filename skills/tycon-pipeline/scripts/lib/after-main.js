@@ -18,12 +18,22 @@
  * repo y un cambio de modo con `core.fileMode=false`. Tampoco consulta la red: que main esté en verde, y que `origin/main`
  * no se haya movido a mano, lo garantiza la cola de merge.
  *
+ * EN EL ÁRBOL ARMADO DEL PRIVADO (lib/private-tree.js) la carpeta que corre es temporal, nueva cada vez y con el público
+ * encima: main no la tiene, y compararla siempre daría «otro cambio». Se anota y se compara cada repo de verdad: el privado
+ * y el público, con el mismo criterio, y el perfil del equipo, que tiene que ser el mismo. El público en su versión del
+ * servidor no trae nada de la historia: vale si el commit nuevo desciende del medido. Si el público salió de otro lado,
+ * corre lo de siempre.
+ *
  * Uso:
  *   node after-main.js snapshot <repo>                                  → imprime { head, tree } de la carpeta
  *   node after-main.js record <repo> <snapshot> <resumen> <exit> <salida> → anota lo medido si la corrida midió todo lo
  *        suyo y la carpeta no cambió mientras corría; si no, no deja nada
  *   node after-main.js decide <repo> <medido> <snapshot> <salida>       → sale 0 y escribe lo tocado (la forma de
  *        touched-files.js) si sólo cambió main; sale 10 y dice por qué, si no
+ *   node after-main.js snapshot-tree <privado> <público> <fuente> <commit> <equipo|-> <huella privado> <huella público>
+ *        → la foto de los repos del árbol; sale 1 si no coincide con la huella de lo que se armó
+ *   node after-main.js record-tree <árbol> <snapshot> <resumen> <exit> <salida>
+ *   node after-main.js decide-tree <medido> <snapshot> <salida>
  *
  * Casos: skills/tycon-pipeline/scripts/tests/test-gate-after-main.test.js
  */
@@ -75,6 +85,14 @@ const relativaAlRepo = (repo, ruta) => path.relative(real(repo), real(ruta)).spl
  * falló incluye lo heredado del nocturno: esa foto puede cambiar con lo que trae main.
  */
 function medido({ repo, inicio, resumen, exit }) {
+  const r = lasQueFallaron({ repo, resumen, exit });
+  if (r.no) return r;
+  if (arbolDeLaCarpeta(repo) !== inicio.tree) return { no: 'la carpeta cambió mientras corría' };
+  return { head: inicio.head, tree: inicio.tree, failed: r.failed };
+}
+
+/** `{ failed }`, las rutas relativas a `repo` de lo que falló, o `{ no }` si la corrida no dice qué midió. */
+function lasQueFallaron({ repo, resumen, exit }) {
   if (exit !== 0 && exit !== 1) return { no: `la corrida salió ${exit}` };
   if (!resumen || resumen.no_medido) return { no: 'la corrida no midió' };
   const pendientes = ['ausentes', 'unmeasured_suites'].find((k) => !Array.isArray(resumen[k]) || resumen[k].length);
@@ -84,8 +102,7 @@ function medido({ repo, inicio, resumen, exit }) {
   const heredadas = (resumen.inherited && Array.isArray(resumen.inherited.suites)) ? resumen.inherited.suites : [];
   const todas = [...fallas, ...heredadas, ...(resumen.suites || []), ...(resumen.deferred_suites || []).map((d) => ({ ruta: d && d.suite }))];
   if (todas.some((s) => s && s.ruta && relativaAlRepo(repo, s.ruta).startsWith('../'))) return { no: 'hay suites fuera del repo' };
-  if (arbolDeLaCarpeta(repo) !== inicio.tree) return { no: 'la carpeta cambió mientras corría' };
-  return { head: inicio.head, tree: inicio.tree, failed: [...new Set([...fallas, ...heredadas].map((f) => f && f.ruta).filter(Boolean).map((r) => relativaAlRepo(repo, r)))] };
+  return { failed: [...new Set([...fallas, ...heredadas].map((f) => f && f.ruta).filter(Boolean).map((r) => relativaAlRepo(repo, r)))] };
 }
 
 /** ¿Algún submódulo tiene cambios adentro? El árbol sólo ve su commit. Tira si no se pudo mirar. */
@@ -105,10 +122,14 @@ function diferencias(repo, a, b) {
   return out;
 }
 
+// Lo anotado viene de un archivo y llega a git como argumento: sólo vale un hash, nunca algo que se lea como opción.
+const ES_HASH = /^[0-9a-f]{40,64}$/;
+const fotoValida = (f) => Boolean(f) && ES_HASH.test(String(f.head)) && ES_HASH.test(String(f.tree));
+
 /** `{ files, base }` si lo único que cambió es lo que trajo main, o `{ no }` con el motivo. */
 function decidir({ repo, anotado, ahora }) {
   const no = (m) => ({ no: m });
-  if (!anotado || !anotado.head || !anotado.tree || !Array.isArray(anotado.failed)) return no('la corrida anterior no dejó qué midió');
+  if (!fotoValida(anotado) || !Array.isArray(anotado.failed)) return no('la corrida anterior no dejó qué midió');
   if (ahora === anotado.tree) return no('no cambió nada desde la corrida anterior');
   if (submoduloSucio(repo)) return no('un submódulo tiene cambios adentro, y el árbol no los ve');
   const main = git(repo, ['merge-base', BASE, 'HEAD']);
@@ -127,29 +148,110 @@ function decidir({ repo, anotado, ahora }) {
   return { files: [...new Set([...deMain, ...otras.map((d) => d.rel), ...anotado.failed])], deMain: deMain.length, fallaron: anotado.failed.length };
 }
 
+/** La foto de los repos que forman el árbol armado. `origen`: { privado, publico, fuente, commit, equipo }. Tira si no se pudo. */
+function fotoDelArbol(origen) {
+  const { privado, publico, fuente, commit, equipo } = origen;
+  let pub;
+  if (fuente === 'server') {
+    const t = git(publico, ['rev-parse', '--verify', `${commit}^{tree}`]);
+    if (!t.ok) throw new Error(`no encontré la versión del servidor del público (${t.err})`);
+    pub = { head: commit, tree: t.out };
+  } else pub = foto(publico);
+  return { origen, privado: foto(privado), publico: pub, equipo: equipo ? foto(equipo) : null };
+}
+
+/** Lo anotado del árbol, o `{ no }`: además de lo de `medido`, ningún repo puede haber cambiado mientras corría. */
+function medidoDelArbol({ arbol, inicio, resumen, exit }) {
+  const r = lasQueFallaron({ repo: arbol, resumen, exit });
+  if (r.no) return r;
+  const ahora = fotoDelArbol(inicio.origen);
+  const igual = (k) => (ahora[k] && ahora[k].tree) === (inicio[k] && inicio[k].tree);
+  if (!['privado', 'publico', 'equipo'].every(igual)) return { no: 'una carpeta cambió mientras corría' };
+  return { ...inicio, failed: r.failed };
+}
+
+/** Como `decidir`, para el árbol armado: `{ files, deMain, fallaron }` si lo único nuevo en cada repo es lo de su main, o `{ no }`. */
+function decidirDelArbol({ anotado, ahora }) {
+  const no = (m) => ({ no: m });
+  if (!anotado || !anotado.origen || !fotoValida(anotado.privado) || !fotoValida(anotado.publico) || !Array.isArray(anotado.failed)) return no('la corrida anterior no dejó qué midió');
+  if ((anotado.equipo && anotado.equipo.tree) !== (ahora.equipo && ahora.equipo.tree)) return no('cambió el perfil del equipo');
+  if (anotado.origen.fuente !== ahora.origen.fuente) return no('el público de debajo salió de otro lado');
+  const { privado, publico, fuente } = ahora.origen;
+  const files = new Set();
+  let deMain = 0;
+  const sumar = (lista) => { for (const f of lista) files.add(f); };
+  if (anotado.privado.tree !== ahora.privado.tree) {
+    const d = decidir({ repo: privado, anotado: { ...anotado.privado, failed: [] }, ahora: ahora.privado.tree });
+    if (d.no) return no(`en el privado, ${d.no}`);
+    sumar(d.files);
+    deMain += d.deMain;
+  }
+  if (anotado.publico.tree !== ahora.publico.tree) {
+    if (fuente === 'server') {
+      if (git(publico, ['merge-base', '--is-ancestor', anotado.publico.head, ahora.publico.head]).status !== 0) return no('la versión del servidor del público no desciende de la medida');
+      const deServidor = diferencias(publico, anotado.publico.tree, ahora.publico.tree).map((d) => d.rel);
+      sumar(deServidor);
+      deMain += deServidor.length;
+    } else {
+      const d = decidir({ repo: publico, anotado: { ...anotado.publico, failed: [] }, ahora: ahora.publico.tree });
+      if (d.no) return no(`en el público, ${d.no}`);
+      sumar(d.files);
+      deMain += d.deMain;
+    }
+  }
+  if (!files.size) return no('no cambió nada desde la corrida anterior');
+  sumar(anotado.failed);
+  return { files: [...files], deMain, fallaron: anotado.failed.length };
+}
+
 const leer = (f) => JSON.parse(fs.readFileSync(f, 'utf8'));
+const leerAnotado = (f) => {
+  try { return leer(f); } catch (e) {
+    if (e.code !== 'ENOENT') console.error(`[test-gate] no pude leer lo medido (${e.message})`);
+    return null;
+  }
+};
+function contestar(d, salida) {
+  if (d.no) { console.error(`[test-gate] corre lo de siempre: ${d.no}`); return NO_APLICA; }
+  fs.writeFileSync(salida, `${JSON.stringify({ known: true, files: d.files, sources: { after_main: d.files }, reason: null })}\n`);
+  console.log(`[test-gate] lo único que cambió es lo que trajo main (${d.deMain} archivo(s)): corren las ${d.fallaron} suite(s) que fallaron y las que nombran esos archivos`);
+  return 0;
+}
+function anotar(m, salida) {
+  if (m.no) { console.error(`[test-gate] no anoto lo medido: ${m.no}: si después se trae main, corre lo de siempre`); return 0; }
+  fs.writeFileSync(salida, `${JSON.stringify(m)}\n`);
+  return 0;
+}
 
 function main(argv) {
   const [cmd, repo, ...resto] = argv;
-  const uso = 'uso: after-main.js snapshot <repo> · record <repo> <snapshot> <resumen> <exit> <salida> · decide <repo> <medido> <snapshot> <salida>';
+  const uso = 'uso: after-main.js snapshot <repo> · record <repo> <snapshot> <resumen> <exit> <salida> · decide <repo> <medido> <snapshot> <salida> · snapshot-tree <privado> <público> <fuente> <commit> <equipo|-> <huella privado> <huella público> · record-tree <árbol> <snapshot> <resumen> <exit> <salida> · decide-tree <medido> <snapshot> <salida>';
   if (!repo) { console.error(uso); return 2; }
   if (cmd === 'snapshot') { process.stdout.write(`${JSON.stringify(foto(repo))}\n`); return 0; }
   if (cmd === 'record') {
     const [inicioF, resumenF, exit, salida] = resto;
-    const m = medido({ repo, inicio: leer(inicioF), resumen: leer(resumenF), exit: Number(exit) });
-    if (m.no) { console.error(`[test-gate] no anoto lo medido: ${m.no}: si después se trae main, corre lo de siempre`); return 0; }
-    fs.writeFileSync(salida, `${JSON.stringify(m)}\n`);
-    return 0;
+    return anotar(medido({ repo, inicio: leer(inicioF), resumen: leer(resumenF), exit: Number(exit) }), salida);
   }
   if (cmd === 'decide') {
     const [medidoF, inicioF, salida] = resto;
-    let anotado = null;
-    try { anotado = leer(medidoF); } catch (e) { if (e.code !== 'ENOENT') console.error(`[test-gate] no pude leer lo medido (${e.message})`); }
-    const d = decidir({ repo, anotado, ahora: leer(inicioF).tree });
-    if (d.no) { console.error(`[test-gate] corre lo de siempre: ${d.no}`); return NO_APLICA; }
-    fs.writeFileSync(salida, `${JSON.stringify({ known: true, files: d.files, sources: { after_main: d.files }, reason: null })}\n`);
-    console.log(`[test-gate] lo único que cambió es lo que trajo main (${d.deMain} archivo(s)): corren las ${d.fallaron} suite(s) que fallaron y las que nombran esos archivos`);
+    return contestar(decidir({ repo, anotado: leerAnotado(medidoF), ahora: leer(inicioF).tree }), salida);
+  }
+  if (cmd === 'snapshot-tree') {
+    const [publico, fuente, commit, equipo, huellaPrivado, huellaPublico] = resto;
+    const f = fotoDelArbol({ privado: repo, publico, fuente, commit, equipo: equipo === '-' ? null : equipo });
+    // el árbol ya se armó: lo que cambió desde entonces está en el disco y no en lo que se va a medir
+    if (f.privado.tree !== huellaPrivado || f.publico.tree !== huellaPublico) throw new Error('una carpeta cambió mientras se armaba el árbol');
+    process.stdout.write(`${JSON.stringify(f)}\n`);
     return 0;
+  }
+  if (cmd === 'record-tree') {
+    const [inicioF, resumenF, exit, salida] = resto;
+    return anotar(medidoDelArbol({ arbol: repo, inicio: leer(inicioF), resumen: leer(resumenF), exit: Number(exit) }), salida);
+  }
+  if (cmd === 'decide-tree') {
+    // acá el primer argumento es el archivo de lo medido, no un repo: los repos vienen en la foto
+    const [inicioF, salida] = resto;
+    return contestar(decidirDelArbol({ anotado: leerAnotado(repo), ahora: leer(inicioF) }), salida);
   }
   console.error(uso);
   return 2;
@@ -159,8 +261,8 @@ if (require.main === module) {
   try { process.exitCode = main(process.argv.slice(2)); } catch (e) {
     // no poder comparar nunca acota
     console.error(`[test-gate] corre lo de siempre: no pude comparar con la corrida anterior (${e.message})`);
-    process.exitCode = process.argv[2] === 'decide' ? NO_APLICA : 1;
+    process.exitCode = process.argv[2] === 'decide' || process.argv[2] === 'decide-tree' ? NO_APLICA : 1;
   }
 }
 
-module.exports = { foto, medido, decidir, NO_APLICA };
+module.exports = { foto, medido, decidir, fotoDelArbol, medidoDelArbol, decidirDelArbol, NO_APLICA };

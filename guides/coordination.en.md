@@ -180,10 +180,10 @@ The machine can run at the same time **one full suite and one adversarial pass o
 the pass and the reviewers run in the cloud and barely use the machine. **Never two full suites or two passes at once.**
 The harness controls this, not anyone's memory:
 
-- **The second suite does not start.** The suite runner and the whole portable run ask for the turn
-  (`scripts/tools/heavy-turn.js`). With the turn held by another live process they do not run (the test gate exits 75, its
-  "wait") and they say who holds it, since when and how to free it. A scoped suite does not ask for it. The turn of a dead process, or one older
-  than three hours, frees itself.
+- **The second large run does not start.** The turn (`scripts/tools/heavy-turn.js`) is requested by the suite runner, when it
+  is about to run 100 suites or more, scoped or not, and by the whole portable run. With the turn held by another live
+  process they do not run (the test gate exits 75, its "wait") and they say who holds it, how many suites it runs, since when
+  and how to free it. Below 100 suites it is not requested. The turn of a dead process, or one older than three hours, frees itself.
 - **The second pass is not launched.** With another in flight, the pass's gate (`pipeline.js deep-review-gate`) exits 3, and
   `pipeline.js next` asks to wait instead of launching. The answer carries `other_in_flight` (story, session and time) and the
   line saying who holds the place. The pass of a closed session does not count.

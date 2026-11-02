@@ -91,6 +91,9 @@ const MAX_CASES = 40;
 const MAX_CASE_CONTEXT = 6;
 const MAX_LINE = 300;
 const WRAPPER = path.join(__dirname, 'coverage-wrapper.js');
+// Desde cuántas suites por correr se pide el turno de la máquina: dos portones grandes a la vez la saturan, y uno mediano
+// corre cerca de cien. Es el único lugar donde se fija.
+const TURN_FROM_SUITES = 100;
 
 /**
  * Cómo se lanza una suite: `[ejecutable, args, env]`, sin las variables internas del portón. Con cobertura, bajo el envoltorio: sin la variable que anida
@@ -417,9 +420,6 @@ function main(argv, env = process.env) {
   let light = argv.includes('--light');
   // acotar sin saber qué se tocó sería no correr nada: el acotado por el repo sólo vale con lo tocado conocido
   const byRepo = Boolean(fullSuiteBy) && !allSuites && touched.known;
-  if (fullSuiteBy && !allSuites && !touched.known) {
-    console.log(`[suites.json] el repo acota el portón, pero no sé qué se tocó (${touched.reason || 'sin motivo'}): corren todas las suites`);
-  }
   const onlyTouched = (argv.includes('--only-touched') || byRepo) && !allSuites;
   // el tamaño se fija al arrancar: si el cambio real toca código, la corrida deja de ser liviana y corre lo de siempre
   if (light && touched.known) {
@@ -554,16 +554,22 @@ function main(argv, env = process.env) {
   const portables = [...parallel, ...exclusives].filter((p) => p.portable).length;
   console.log(`[suites.json] workers: ${workers} · en paralelo: ${parallel.length} · solas al final: ${exclusives.length} · diferidas: ${resumen.deferred_suites.length}${portables ? ` · ${portables} portables con su HOME vacía, como en la CI` : ''}`);
 
-  // El turno de la suite completa (scripts/tools/heavy-turn.js): una corrida sin acotar es la suite completa, y en una
-  // máquina con coordinadora va una por vez. Con el turno de otro proceso vivo no corre y sale 77, con quién lo tiene.
-  // Sin coordinadora (la CI, la nube) no se toma nada. Una sola suite, la cruzada o la acotada por el repo no lo piden.
-  const full = !suiteOnly && !onlyTouched;
+  // El turno de las ejecuciones grandes (scripts/tools/heavy-turn.js): lo que satura la máquina es cuántas suites corren, esté
+  // acotada o no la ejecución, y en una máquina con coordinadora va una grande por vez. Con el turno de otro proceso vivo
+  // no corre y sale 77, con quién lo tiene. Sin coordinadora (la CI, la nube) no se toma nada.
+  const count = parallel.length + exclusives.length;
   let turn = null;
-  if (full) {
-    try { turn = require(path.join(repo, 'scripts', 'tools', 'heavy-turn.js')); } catch (_) { turn = null; }
+  if (count >= TURN_FROM_SUITES) {
+    // un repo sin el módulo no tiene turno; uno que lo trae y no carga, lo dice
+    const turnModule = path.join(repo, 'scripts', 'tools', 'heavy-turn.js');
+    try { turn = require(turnModule); } catch (e) {
+      turn = null;
+      if (fs.existsSync(turnModule)) console.error(`[suites.json] ⚠️  no pude cargar el turno de las ejecuciones grandes (${e.message}): corro igual`);
+    }
     let t = { ok: true };
-    // no poder mirar el turno no frena la suite: se dice y corre, como antes de que hubiera turno
-    try { if (turn) t = turn.take({ env, what: `suites.json de ${path.basename(path.resolve(repo))}` }); } catch (e) { console.error(`[suites.json] ⚠️  no pude mirar el turno de la suite completa (${e.message}): corro igual`); }
+    // no poder mirar el turno no frena la suite: se dice y corre, como antes de que hubiera turno. El nombre sale de la
+    // carpeta desde donde se lanza: en el árbol armado, `repo` es una carpeta temporal
+    try { if (turn) t = turn.take({ env, what: `${count} suites de ${path.basename(process.cwd())}` }); } catch (e) { console.error(`[suites.json] ⚠️  no pude mirar el turno de las ejecuciones grandes (${e.message}): corro igual`); }
     if (!t.ok) {
       console.error(`[suites.json] ${t.message}`);
       escribir(out, { ...resumen, no_medido: t.message });
@@ -574,6 +580,13 @@ function main(argv, env = process.env) {
   }
   const releaseTurn = () => { if (turn) { try { turn.release({}); } catch (_) { /* vence con el proceso */ } turn = null; } };
   process.on('exit', releaseTurn);
+
+  // El repo acota el portón y no se sabe qué se tocó: corre todo. Se dice acá, lo último antes de la primera suite, con la
+  // cantidad y cómo acotarla: quien la lanzó puede cortarla. La base tiene que ser ancestro de HEAD: `origin/main` solo
+  // no sirve en una rama atrasada.
+  if (fullSuiteBy && !allSuites && !touched.known) {
+    console.log(`🟠 [suites.json] sin base: el repo acota el portón, pero no sé qué se tocó (${touched.reason || 'sin motivo'}): corren todas las suites (${count}). Para acotar, cortala y relanzá con TYCON_COVERAGE_BASE="$(git merge-base origin/main HEAD)"`);
+  }
 
   const live = new Set();
   let interrupted = null;
