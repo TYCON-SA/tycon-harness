@@ -217,8 +217,8 @@ Si algo no anda, `/tycon-harness` (en Claude Code) o `node ~/.claude/tycon-harne
 
 - Tu agente de código, Claude Code o Codex, instalado y con tu sesión iniciada: es donde se usa el arnés.
 - Node 24 y `tar` (para correr la línea de instalación alcanza con Node 22 o posterior). En Mac y Linux, además, Python 3.
-- Windows 11 con PowerShell 7, Mac o Linux. En WSL no se probó.
-- Git **no** hace falta para instalar el arnés: se baja como archivos, no se clona.
+- Windows 11 con PowerShell 7 y Git para Windows, Mac o Linux. En WSL no se probó.
+- Git **no** hace falta para bajar el arnés: se baja como archivos, no se clona.
   Tampoco hace falta una cuenta de GitHub: este repo es público. Para commitear tus historias sí hace falta git, con
   tu nombre y tu correo configurados (`git config --global user.name` y `user.email`).
 - Tu Node hace falta para instalar. Después el arnés baja su propio Node 24 (unos 50 MB, de nodejs.org) y sus hooks

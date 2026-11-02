@@ -3767,6 +3767,8 @@ function cmdDoctor(ctx) {
   // actualización sana ni hacerla volver atrás. Corrido por una persona, es rojo.
   const requirementLevel = ctx.env.TYCON_HARNESS_HEALTH === '1' ? 'warn' : 'fail';
   const requirementItems = () => { for (const r of requirementChecks(ctx, { release: read.status === 'ok' && S.isRelease(read.state) })) add(r.problem ? requirementLevel : 'ok', r.problem || `requisito ${r.name}: ${r.version} (${r.path})`); };
+  // en Windows sin Git es un aviso: no impide instalar ni pone rojo el diagnóstico
+  const windowsGitItem = () => { try { const n = require(path.join(__dirname, '..', 'lib', 'git-bash.js')).windowsGitNotice({ platform: ctx.platform, env: ctx.env }); if (n) add(n.level, n.text); } catch (e) { add('warn', `Git para Windows: no pude mirarlo (${e.message})`); } };
   // la línea de arranque en su forma VIEJA: doctor daría «nada en rojo» en una máquina que no se actualiza
   // sola —en Windows esa línea ni corre: Claude Code lanza los hooks por Git Bash—. `startup` la migra.
   const startupLineItem = () => {
@@ -3780,6 +3782,7 @@ function cmdDoctor(ctx) {
   };
   if (read.status === 'missing') {
     requirementItems();
+    windowsGitItem();
     startupLineItem();
     facts = placeFacts(ctx, ctx.tree);
     placeItems(ctx, facts, add);
@@ -3799,7 +3802,7 @@ function cmdDoctor(ctx) {
   const withClaude = plugged.includes('claude');
   // Node y los demás requisitos del aplicador
   add('ok', `Node ${process.versions.node} (piso ${NODE_FLOOR})`);
-  if (withClaude) requirementItems();
+  if (withClaude) { requirementItems(); windowsGitItem(); }
   if (TOOLS.recorded(state)) add('ok', `herramientas enchufadas: ${TOOLS.names(plugged)}`);
   // una herramienta instalada y sin enchufar: se enchufa en la próxima instalación, no sola; se dice antes
   { const tn = toolNotice(ctx, tree, state); if (tn) add('ok', tn); }

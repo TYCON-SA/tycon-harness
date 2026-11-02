@@ -142,20 +142,24 @@ function traeElSello(texto, { sello, destino, pregunta }) {
 /**
  * ¿Al gancho lo lanzó la herramienta, sin la consola de un agente ni otra herramienta en el medio? `{ ok, herramienta }`
  * o `{ ok: false, motivo }`. Un agente que corre el gancho a mano lo lanza desde su consola; uno que abre otra sesión en
- * una pseudo-terminal tiene esa consola arriba de la herramienta nueva. Sin árbol (Windows), no anota.
+ * una pseudo-terminal tiene esa consola arriba de la herramienta nueva. Sin árbol, no anota. En Windows, entre el gancho
+ * y la herramienta sólo puede haber Git Bash o el mismo Node (medido): lo demás podría ser una consola que no se lee.
  */
-function lanzadoPorLaHerramienta({ arbol, pid = process.pid, casa } = {}) {
+function lanzadoPorLaHerramienta({ arbol, pid = process.pid, casa, plataforma = process.platform } = {}) {
   const w = ow();
-  const a = arbol === undefined ? w.leerArbol() : arbol;
+  const enWindows = plataforma === 'win32';
+  const a = w.arbolDeLaPlataforma(arbol, plataforma);
   if (!a) return { ok: false, motivo: 'no pude leer los procesos de la máquina' };
   const m = new Map(a.map((p) => [p.pid, p]));
-  const consola = (p) => w.desenvolver(p.comando, casa) !== null;
+  const consola = (p) => (enWindows ? w.esConsolaDeWindows(p) : w.desenvolver(p.comando, casa) !== null);
+  const permitidoEnWindows = (p) => !!w.gitBashDe(p.ejecutable) || /^node\.exe$/i.test(String(p.ejecutable || '').split(/[\\/]/).pop());
   let p = m.get(pid);
   const vistos = new Set();
   while (p && !vistos.has(p.pid)) {
     vistos.add(p.pid);
     if (p.pid !== pid && w.esHerramienta(p)) break;
     if (p.pid !== pid && consola(p)) return { ok: false, motivo: 'al gancho lo lanzó la consola de un agente' };
+    if (p.pid !== pid && enWindows && !permitidoEnWindows(p)) return { ok: false, motivo: 'al gancho no lo lanzó la herramienta' };
     p = m.get(p.ppid);
   }
   if (!p || !w.esHerramienta(p)) return { ok: false, motivo: 'al gancho no lo lanzó la herramienta' };
@@ -602,13 +606,15 @@ function buscar({ casa, sesion, destino = sesion, cuadro, coordinadora = null, a
   for (const a of candidatas) {
     let proceso = null;
     if (a.sesion !== sesion) {
-      if (leido === undefined) leido = ow().leerArbol();
+      if (leido === undefined) leido = ow().arbolDeLaPlataforma();
       proceso = procesoQueLaAnoto({ a, arbol: leido, casa });
       if (!proceso.ok) { motivo = motivo || proceso.motivo; continue; }
     } else if (herramienta) {
-      if (leido === undefined) leido = ow().leerArbol();
+      if (leido === undefined) leido = ow().arbolDeLaPlataforma();
       const p = (leido || []).find((x) => x.pid === herramienta.pid);
-      proceso = p ? { linea: p.comando } : null;
+      // sin la línea del proceso no se miran los ganchos que suman sus banderas: la aprobación no se puede confirmar
+      if (!p) { motivo = motivo || 'no encontré el proceso de la herramienta entre los procesos de la máquina'; continue; }
+      proceso = { linea: p.comando };
     }
     const v = check(a, { casa, cwd, cuadro, destino, linea: proceso && proceso.linea, cwdAprobacion: proceso && proceso.cwd });
     if (v && v.ok) return { ok: true, aprobacion: a, via: a.tipo };

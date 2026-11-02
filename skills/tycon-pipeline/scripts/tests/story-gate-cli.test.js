@@ -323,6 +323,71 @@ test('8.141 T9b AdhocSet_LoQueSeFirmaSeVeEntero', () => {
   assert.equal(markerCli(home, sid, ['adhoc', 'set', JSON.stringify({ reason: 'x'.repeat(200), maxFiles: 50 })]).status, 0);
 });
 
+// La forma sin JSON, para la consola de la persona en Windows. 🔴 Falla con: un pedido por banderas que se firma fuera de
+// la terminal, un motivo que se hace pasar por una bandera, o un pedido que no queda igual que el de JSON.
+test('AdhocSet_PorBanderas_SoloEnLaTerminal_YQuedaIgualQueConJson', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const sid = 'sess-banderas';
+  for (const [args, dice] of [
+    [['--reason', 'arreglo del sp de deudas'], /sólo con --terminal/],
+    [['--max-files', '3', '--terminal'], /falta --reason/],
+    [['--reason', '--terminal', '--terminal'], /no puede empezar con «-»/],
+    [['--reason', '--for-session', 'otra', '--terminal'], /no puede empezar con «-»/],
+    [['--reason', '-x motivo largo', '--terminal'], /no puede empezar con «-»/],
+    [['--reason'], /--reason necesita un valor/],
+    [['--reason', 'arreglo del sp de deudas', '--reason', 'otro motivo cualquiera', '--terminal'], /una sola vez/],
+    [['--reason', 'arreglo del sp de deudas', '--max-files', 'tres', '--terminal'], /número entero/],
+    [['--reason', 'arreglo del sp de deudas', '--max-files', '-3', '--terminal'], /no puede empezar con «-»/],
+    [['--reason', 'arreglo del sp de deudas', '--quote', 'dijo que sí', '--terminal'], /no conozco «--quote»/],
+    [['--reason', 'arreglo del sp de deudas', '--mockup', 'm.html', '--terminal'], /no conozco «--mockup»/],
+    [['--reason', 'x', '--terminal'], /≥8 caracteres/],
+    [['--reason', 'x'.repeat(201), '--terminal'], /hasta 200 caracteres/],
+    [['--reason', 'arreglo del sp de deudas', '--max-files', '51', '--terminal'], /entero de 1 a 50/],
+  ]) {
+    const r = markerSinVentana(home, sid, ['adhoc', 'set', ...args]);
+    assert.equal(r.status, 2, `${args.join(' ')}: ${r.stderr}`);
+    assert.match(r.stderr, dice, args.join(' '));
+    assert.equal(declaracion(home, sid), null, `${args.join(' ')}: no escribe`);
+  }
+  assert.equal(adhocLog(home).length, 0);
+  const banderas = markerEnTerminal(home, ['adhoc', 'set', '--reason', 'arreglo del sp de deudas', '--max-files', '3', '--terminal', '--for-session', 'sess-b'], 'firmo');
+  if (!banderas) { console.log('⏭ la firma por banderas en la terminal: NO MEDIDO — sin Python (o en Windows) para abrir una terminal'); return; }
+  assert.equal(banderas.status, 0, `${banderas.stdout}${banderas.stderr}`);
+  assert.match(banderas.stdout, /«arreglo del sp de deudas» · hasta 3 archivos/, 'la terminal muestra el motivo y el cupo que se firman');
+  const json = markerEnTerminal(home, ['adhoc', 'set', '{"reason":"arreglo del sp de deudas","maxFiles":3}', '--terminal', '--for-session', 'sess-j'], 'firmo');
+  assert.equal(json.status, 0, `${json.stdout}${json.stderr}`);
+  // lo único que cambia entre las dos es la sesión y la hora
+  const loPedido = (d) => { const { declaredAt, lastTouch, firmadaEn, by, ...resto } = d; return resto; };
+  assert.deepStrictEqual(loPedido(declaracion(home, 'sess-b')), loPedido(declaracion(home, 'sess-j')));
+  assert.equal(declaracion(home, 'sess-b').via, 'terminal');
+  const no = markerEnTerminal(home, ['adhoc', 'set', '--reason', 'otro arreglo chico', '--terminal', '--for-session', 'sess-no'], 'no');
+  assert.equal(no.status, 1, `${no.stdout}${no.stderr}`);
+  assert.equal(declaracion(home, 'sess-no'), null);
+  assert.match(`${no.stdout}${no.stderr}`, /adhoc set --reason "otro arreglo chico" --terminal --for-session sess-no/, 'dice el comando en la misma forma');
+});
+
+// En Windows la consola de la persona no se lleva bien con el JSON: el aviso da la forma sin él, salvo que no se pueda.
+test('AdhocSet_EnWindows_ElAvisoDaLaFormaSinJson', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const win = { TYCON_WAIVER_PLATFORM: 'win32' };
+  let r = markerSinVentana(home, 'sess-w', ['adhoc', 'set', '{"reason":"arreglo del sp de deudas","maxFiles":3}'], win);
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /adhoc set --reason "arreglo del sp de deudas" --max-files 3 --terminal --for-session sess-w/);
+  r = markerSinVentana(home, 'sess-w', ['adhoc', 'set', '{"reason":"arreglo con \\"comillas\\" adentro"}'], win);
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /adhoc set '\{"reason":"arreglo con \\"comillas\\" adentro"\}' --terminal/, 'un motivo con comillas no se puede citar en esa forma');
+  // 🔴 Falla con: un comando sugerido que su propia forma rechaza al pegarlo, o que la consola rompe
+  r = markerSinVentana(home, 'sess-w', ['adhoc', 'set', '{"reason":"-fix del boton rojo"}'], win);
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /adhoc set '\{"reason":"-fix del boton rojo"\}' --terminal/, 'un motivo con «-» adelante, la forma con banderas lo rechaza');
+  const { motivoSeCita, pedidoPorBanderas } = require('../lib/adhoc-screen.js');
+  for (const motivo of ['arreglo del sp de deudas', 'con ñ, acentos y a/b']) {
+    assert.equal(motivoSeCita(motivo), true, motivo);
+    assert.ok(pedidoPorBanderas(['--reason', motivo, '--terminal']).payload, `${motivo}: lo que se sugiere, la forma lo acepta`);
+  }
+  for (const motivo of ['-fix del boton', 'con "comillas"', 'con `x`', 'vale $HOME', 'al 50%', 'ruta C:\\tmp\\', 'dos\nrenglones', 'cierra“; otro comando; “aca', 'cierra‘ y sigue’', 'hola!']) assert.equal(motivoSeCita(motivo), false, motivo);
+});
+
 // 8.141 T10 AdhocSet_ElChatNoAutoriza @story-8.141 @ac-5 @ac-8
 // 🔴 Falla con: un texto de la conversación guardada (del dueño, de otra sesión, fabricado o de una nota) que abre el
 // arreglo rápido sin la firma.

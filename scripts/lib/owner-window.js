@@ -25,9 +25,15 @@
  * Write siguiente de esa sesión sobre ese archivo consume (`consumirArchivo`), dentro de los mismos 30 minutos.
  *
  * La envoltura de la consola es la medida en la Mac (`zsh -c source <foto del ambiente> … && eval '<comando>' <
- * /dev/null && pwd -P >| /tmp/claude-…-cwd`). Una que no coincide, un árbol que no se lee (Windows) o una herramienta
- * lanzada por otra herramienta o por su consola se niegan: lo indecidible se firma en la terminal. Lo que no ve: una
- * herramienta abierta por el agente dentro de `tmux`, cuyo servidor no tiene padre (límite declarado en la guía).
+ * /dev/null && pwd -P >| /tmp/claude-…-cwd`). Una que no coincide, un árbol que no se lee o una herramienta lanzada por
+ * otra herramienta o por su consola se niegan: lo indecidible se firma en la terminal. Lo que no ve: una herramienta
+ * abierta por el agente dentro de `tmux`, cuyo servidor no tiene padre (límite declarado en la guía).
+ *
+ * En Windows firman sólo el click y el «aprobado», y sólo por la consola Bash, con la forma medida en una máquina
+ * (`desenvolverWindows`, `consolaDeWindows`). La ventana de permiso no firma: su pedido queda escrito antes de que la
+ * persona conteste, y en Windows un programa puede declarar cualquier padre al crear un proceso, así que podría imitar la
+ * consola con la ventana abierta. Con el click, el pedido se escribe después de que la persona aprobó ese comando exacto.
+ * La consola PowerShell no firma: su línea no dice qué comando corre.
  *
  * El árbol, el evento, la casa y la hora se pasan como parámetros en las pruebas; nada se finge por el ambiente.
  */
@@ -55,6 +61,12 @@ const VARIABLES_DE_SESION = /(^|[^\w])(CLAUDE_CODE_SESSION_ID|TYCON_SESSION_ID|C
 // los guiones de las firmas `guion`, por su nombre de archivo
 const GUIONES = new Set(['marker.js', 'pipeline.js', 'e2e-setup.js', 'run-base-controls.sh', 'delegated-signing.js']);
 const NODES = new Set(['node', 'nodejs']);
+// los procesos de Bash entre el guion y la herramienta en Windows, medidos: el de `Git\\bin` y dos de `Git\\usr\\bin`
+const NIVELES_DE_LA_CONSOLA = 3;
+// lo que anota la aprobación en Windows; un pedido sin esto sería de la ventana de permiso
+const VIAS_DE_WINDOWS = new Set(['click', 'mensaje']);
+const SIN_GIT_BASH = 'esta máquina no tiene Git Bash: instalá Git para Windows (winget install Git.Git, y volvé a abrir la herramienta), que hace falta para los controles que son guiones de bash y para firmar con un click; mientras tanto, para firmar queda --terminal, en la ventana nueva de tres palabras';
+const buscarGitBash = () => require('./git-bash.js').findGitBash({ platform: 'win32' });
 const SHS = new Set(['bash', 'sh']);
 // las consolas que corren el texto de `-c` como un comando (`grep -c '…'` cuenta renglones: no corre nada)
 const CONSOLAS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'pwsh', 'powershell', 'pwsh.exe', 'powershell.exe', 'bash.exe']);
@@ -100,6 +112,55 @@ function leerArbol({ spawnSync = require('child_process').spawnSync, plataforma 
     if (m) fuera.push({ pid: Number(m[1]), ppid: Number(m[2]), inicio: m[3].replace(/\s+/g, ' '), comando: m[4], ...(ejecutables.has(Number(m[1])) ? { ejecutable: ejecutables.get(Number(m[1])) } : {}) });
   }
   return fuera.length ? fuera : null;
+}
+
+// Windows da la hora de inicio con siete decimales y en UTC (`ToString('o')`): como texto, se ordena como hora
+const CONSULTA_WINDOWS = "[Console]::OutputEncoding=[Text.Encoding]::UTF8; Get-CimInstance Win32_Process | Select-Object "
+  + "@{n='pid';e={$_.ProcessId}},@{n='ppid';e={$_.ParentProcessId}},@{n='inicio';e={if($_.CreationDate){$_.CreationDate.ToUniversalTime().ToString('o')}}},"
+  + "@{n='ejecutable';e={$_.ExecutablePath}},@{n='comando';e={$_.CommandLine}} | ConvertTo-Json -Compress";
+
+/**
+ * Los procesos de Windows como los da `leerArbol`, o null si no se pueden leer. PowerShell sale de su ruta fija, sin
+ * `PSModulePath` (un PowerShell 7 lo deja apuntando a sus módulos, y decide de dónde se carga la consulta) ni las variables
+ * con las que .NET carga otro código en el proceso.
+ * Tarda de 0,7 a 2,2 s (medido), así que se lee sólo al pedir una firma o al anotar una aprobación.
+ *
+ * Es otra lectura que `leerArbol` porque en Windows la cadena termina en padres que ya murieron, y la emergencia exige
+ * que llegue hasta el sistema: con esta lectura nunca llegaría.
+ */
+function leerArbolWindows({ spawnSync = require('child_process').spawnSync } = {}) {
+  const env = { ...process.env };
+  for (const k of Object.keys(env)) if (/^(PSModulePath$|COR_|CORECLR_|COMPLUS_|DOTNET_)/i.test(k)) delete env[k];
+  let r;
+  try {
+    r = spawnSync('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', CONSULTA_WINDOWS],
+      { encoding: 'utf8', windowsHide: true, timeout: 15000, maxBuffer: 64 * 1024 * 1024, env });
+  } catch (_) { return null; }
+  if (!r || r.error || r.status !== 0 || !r.stdout) return null;
+  let lista;
+  try { lista = JSON.parse(String(r.stdout).replace(/^\uFEFF/, '')); } catch (_) { return null; }
+  const fuera = (Array.isArray(lista) ? lista : [lista]).filter((p) => p && Number.isInteger(p.pid) && Number.isInteger(p.ppid))
+    .map((p) => ({ pid: p.pid, ppid: p.ppid, inicio: String(p.inicio || ''), comando: String(p.comando || ''), ...(p.ejecutable ? { ejecutable: String(p.ejecutable) } : {}) }));
+  return fuera.length ? conPadresValidos(fuera) : null;
+}
+
+/**
+ * Windows reusa los números de proceso y no borra el padre de un hijo cuyo padre murió: un proceso que arrancó después
+ * que su hijo no es su padre, sólo tiene el número de aquél. Ese hijo queda sin padre. Sin la hora de los dos, no se sabe.
+ */
+function conPadresValidos(arbol) {
+  const m = new Map(arbol.map((p) => [p.pid, p]));
+  return arbol.map((p) => {
+    const padre = m.get(p.ppid);
+    return !padre || (padre.inicio && p.inicio && padre.inicio <= p.inicio) ? p : { ...p, ppid: null };
+  });
+}
+
+/** El árbol que se pasó, o el de la máquina si falta; en Windows, sin los padres que no lo son. */
+function arbolDeLaPlataforma(arbol, plataforma = process.platform) {
+  if (plataforma !== 'win32') return arbol === undefined ? leerArbol({ plataforma }) : arbol;
+  const a = arbol === undefined ? leerArbolWindows() : arbol;
+  return a && conPadresValidos(a);
 }
 
 /**
@@ -153,6 +214,128 @@ function desenvolver(linea, casa) {
   const partes = m[1].split(`'"'"'`);
   if (partes.some((p) => p.includes("'"))) return null;
   return partes.join("'");
+}
+
+/**
+ * Las palabras de una línea de comando de Windows, con sus reglas: las barras valen como escape sólo antes de una comilla.
+ * null si la línea queda con una comilla abierta, o si trae `""` dentro de unas comillas, que cada programa lee a su modo.
+ */
+function palabrasDeWindows(linea) {
+  const s = String(linea || '');
+  const fuera = [];
+  let i = 0;
+  for (;;) {
+    while (s[i] === ' ' || s[i] === '\t') i++;
+    if (i >= s.length) return fuera;
+    let w = '';
+    let comillas = false;
+    while (i < s.length && (comillas || (s[i] !== ' ' && s[i] !== '\t'))) {
+      if (s[i] === '\\') {
+        let n = 0;
+        while (s[i + n] === '\\') n++;
+        i += n;
+        if (s[i] !== '"') { w += '\\'.repeat(n); continue; }
+        w += '\\'.repeat(Math.floor(n / 2));
+        if (n % 2) { w += '"'; i++; }
+      } else if (s[i] === '"') {
+        if (comillas && s[i + 1] === '"') return null;
+        comillas = !comillas;
+        i++;
+      } else w += s[i++];
+    }
+    if (comillas) return null;
+    fuera.push(w);
+  }
+}
+
+/** La carpeta de Git de un `bash.exe` de Git Bash, y si es el de arriba (`bin`) o uno de abajo (`usr\\bin`); null si no es. */
+function gitBashDe(programa) {
+  const m = /^([A-Za-z]:\\(?:[^\\"]+\\)*Git)\\bin\\(\.\.\\usr\\bin\\)?bash\.exe$/i.exec(String(programa || ''));
+  return m ? { git: m[1], arriba: !m[2] } : null;
+}
+
+/**
+ * Lo que dice la línea de una consola Bash de la herramienta en Windows: `{ programa, texto, comando }`, o null si no es la
+ * forma medida. La envoltura es la de la Mac (`desenvolver`), con la casa en `/c/Users/…`, el `export TEMP` y el
+ * archivo temporal en la carpeta temporal de la cuenta; un usuario con espacios en la ruta no está medido y no coincide.
+ */
+function consolaBashDeWindows(linea, casa) {
+  const w = palabrasDeWindows(linea);
+  if (!w || w.length !== 3 || w[1] !== '-c' || !gitBashDe(w[0])) return null;
+  const msys = String(casa).replace(/^([A-Za-z]):/, (_, d) => `/${d.toLowerCase()}`).replace(/\\/g, '/');
+  const temp = escRe(`${casa}\\AppData\\Local\\Temp`);
+  const re = new RegExp(`^source ${escRe(msys)}/\\.claude/shell-snapshots/snapshot-bash-[\\w.-]+\\.sh 2>/dev/null \\|\\| true && `
+    + `export TEMP='${temp}' TMP='${temp}' && `
+    + '(?:shopt -u extglob 2>/dev/null \\|\\| true && )?'
+    + "(?:\\{(?: \\\\builtin (?:unalias|unset -f) -- '[\\w-]+';)+ \\} >/dev/null 2>&1 \\|\\| true && )?"
+    + `eval '([\\s\\S]*)'(?: < /dev/null)? && pwd -P >\\| ${escRe(msys)}/AppData/Local/Temp/claude-[0-9a-f]+-cwd$`);
+  const m = re.exec(w[2]);
+  if (!m) return null;
+  const partes = m[1].split(`'"'"'`);
+  if (partes.some((p) => p.includes("'"))) return null;
+  return { programa: w[0], texto: w[2], comando: partes.join("'") };
+}
+
+/** El comando que corre una consola Bash de la herramienta en Windows, o null: como `desenvolver`, con esa forma. */
+function desenvolverWindows(linea, casa) {
+  const c = consolaBashDeWindows(linea, casa);
+  return c ? c.comando : null;
+}
+
+/**
+ * ¿La línea es de una consola de la herramienta en Windows, de cualquier forma? La Bash lleva la foto del ambiente, y la
+ * PowerShell la variable por la que le llega el comando. Sirve para frenar, no para firmar: no dice qué comando corre.
+ */
+function esConsolaDeWindows(p) {
+  return /shell-snapshots[\\/]snapshot-|CLAUDE_CODE_SHELL_LAUNCHER_SCRIPT|__claudeCodeScript/.test(String((p && p.comando) || ''));
+}
+
+/**
+ * ¿Es una consola viva de la herramienta (`p`, hijo directo suyo)? Además de las de arriba, cualquier PowerShell, sola o
+ * lanzada por `cmd`, por si cambia la variable: no se puede leer qué corre. Un `cmd` que no la nombra no cuenta: con él se
+ * lanzan los servidores MCP.
+ */
+function esConsolaVivaDeWindows(p) {
+  if (esConsolaDeWindows(p)) return true;
+  const programa = base(p && p.ejecutable);
+  if (programa === 'pwsh.exe' || programa === 'powershell.exe') return true;
+  return programa === 'cmd.exe' && /(^|[\\/"\s])(?:pwsh|powershell)(?:\.exe)?(?=["\s]|$)/i.test(String(p.comando || ''));
+}
+
+/**
+ * La consola que lanzó al guion `yo` en Windows, de abajo hacia arriba: `{ comando, tool }`, o `{ motivo }`. Exige los
+ * niveles medidos (dos de `usr\\bin` y arriba el de `bin`, de la misma carpeta de Git), cada uno con su ejecutable, el mismo
+ * texto en todos, y la herramienta arriba de ellos.
+ */
+function consolaDeWindows(m, yo, casa) {
+  const niveles = [];
+  let p = yo && m.get(yo.ppid);
+  while (p && niveles.length < NIVELES_DE_LA_CONSOLA) { niveles.push(p); p = m.get(p.ppid); }
+  const no = { motivo: 'el guion no lo lanzó la consola Bash de la herramienta, en la forma medida en Windows' };
+  if (niveles.length !== NIVELES_DE_LA_CONSOLA) return no;
+  const formas = niveles.map((n) => consolaBashDeWindows(n.comando, casa));
+  if (formas.some((f) => !f)) return no;
+  if (formas.some((f) => f.texto !== formas[0].texto)) return { motivo: 'los niveles de la consola no dicen el mismo comando' };
+  const gits = formas.map((f) => gitBashDe(f.programa));
+  const orden = gits.every((g, k) => g.arriba === (k === NIVELES_DE_LA_CONSOLA - 1) && g.git === gits[0].git);
+  if (!orden || niveles.some((n, k) => n.ejecutable !== formas[k].programa)) return no;
+  if (!p || !esHerramienta(p)) return { motivo: 'la consola no es de la herramienta' };
+  return { comando: formas[0].comando, tool: p };
+}
+
+/**
+ * Una ruta como la ve Windows: Git Bash le pasa a un programa `/c/x` como `C:/x`, y la casa de `~/` ya sale así. Sin
+ * distinguir mayúsculas. Sólo para comparar.
+ */
+function rutaDeWindows(w) {
+  const m = /^\/([A-Za-z])(\/.*)?$/.exec(String(w));
+  return path.win32.normalize(m ? `${m[1]}:${m[2] || '/'}` : String(w)).toLowerCase();
+}
+
+function mismaRutaDeWindows(a, b, casa) {
+  const conCasa = (w) => (String(w).startsWith('~/') ? path.win32.join(casa, String(w).slice(2)) : String(w));
+  const real = (w) => { const r = rutaDeWindows(conCasa(w)); try { return rutaDeWindows(fs.realpathSync(r)); } catch (_) { return r; } };
+  return real(a) === real(b);
 }
 
 function porPid(arbol) { return new Map(arbol.map((p) => [p.pid, p])); }
@@ -633,9 +816,11 @@ function pasaDelCupoDelegado(palabras) {
  * `aprobaciones`: el módulo de la aprobación explícita (owner-approvals.js), para las pruebas.
  * `delegacion(opciones)`: si la firma corre sin ventana (delegated-signing.js, las dos listas del perfil);
  * `clasificar(palabras, cwd)`: la clase de un `approve` con `--base`; `comprobar(opciones)`: el chequeo antes de la
- * ventana (`comprobarConElGuion`); `arbol` y `casa` se leen si faltan.
+ * ventana (`comprobarConElGuion`); `arbol` y `casa` se leen si faltan. `plataforma`: la de la máquina; se pasa en las
+ * pruebas de la forma de Windows, y no se saca del ambiente.
  */
-function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ahora = Date.now(), delegacion, clasificar = clasificarConElGuion, comprobar = comprobarConElGuion, userInfo, aprobador = approverOf, aprobaciones } = {}) {
+function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ahora = Date.now(), delegacion, clasificar = clasificarConElGuion, comprobar = comprobarConElGuion, userInfo, aprobador = approverOf, aprobaciones, plataforma = process.platform, gitBash = buscarGitBash } = {}) {
+  const enWindows = plataforma === 'win32';
   const comando = String((evento.tool_input && evento.tool_input.command) || '');
   const sesion = evento.session_id == null ? '' : String(evento.session_id);
   // la terminal firma para la sesión destino en cuanto se conoce: antes, para la del evento
@@ -654,6 +839,11 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   // Codex: sin ventana de permiso, y la aprobación explícita (owner-approvals.js) todavía no tiene su lado. El cuadro de
   // Codex (`request_user_input`) en el modo normal pide la bandera `features.default_mode_request_user_input`
   if (evento.turn_id) return negar('Codex no tiene ventana de permiso: pedirla deja correr el comando', pedidas);
+  // se niega acá, antes de mirar las aprobaciones: el click no se gasta en un comando que el guion no puede comprobar
+  if (enWindows && herramientaDelEvento !== 'Bash') {
+    const seguir = gitBash().path ? 'corré la firma por la consola Bash de la herramienta, o con --terminal' : SIN_GIT_BASH;
+    return negar(`la línea de la consola PowerShell no dice qué comando corre, así que no se puede comparar con lo aprobado: ${seguir}`, pedidas);
+  }
   // el motivo del arreglo rápido es texto libre y puede nombrar un flag o una variable: en la forma canónica, los dos
   // controles de abajo miran el comando sin ese argumento (un flag o una variable de verdad siguen a la vista)
   const canAdhoc = canonicaDe(comando);
@@ -678,12 +868,15 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
     const aLaVista = porVariable ? variableALaVista(nombre, s.command.split('=')[1].split(' ')[0], comando) : nombreALaVista(comando);
     if (!aLaVista) return negar(`el escape ${nombre} viene escondido (un nombre armado, env, export o una envoltura)`, pedidas);
   }
+  if (enWindows && escapes.length) return negar('en Windows un escape no se aprueba en la pestaña', pedidas);
+  // el guion de consola se identifica con el número de proceso de Git Bash, que no es el de Windows: nunca se comprobaría
+  if (enWindows && can && base(can.palabras[0]).endsWith('.sh')) return negar('en Windows un guion de consola no se puede comprobar en la pestaña', pedidas);
   if (casa === undefined) {
     try { casa = casaDeLaCuenta(userInfo ? { userInfo } : undefined); } catch (e) { return negar(`no se pudo resolver la casa de la cuenta (${e.message})`, pedidas); }
   }
   let pendientes = pedidas;
   // el árbol: la herramienta, sin otra herramienta ni consola por arriba, con pantalla y sin consolas de fondo
-  if (arbol === undefined) arbol = leerArbol();
+  arbol = arbolDeLaPlataforma(arbol, plataforma);
   if (!arbol) return negar('no pude leer los procesos de la máquina', pendientes);
   const arriba = padres(arbol, pid);
   const i = arriba.findIndex(esHerramienta);
@@ -691,11 +884,12 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   const tool = arriba[i];
   // una sesión de fondo (`claude --bg`) corre debajo de sus anfitriones (el daemon y la terminal virtual): no son otra
   // herramienta, pero la ventana de permiso no le llega a nadie seguro. Ahí sólo vale la aprobación explícita
-  const otra = (p) => (esHerramienta(p) && !esAnfitrionDeFondoDe(tool, p)) || desenvolver(p.comando, casa) !== null;
+  const esConsola = (p) => (enWindows ? esConsolaDeWindows(p) : desenvolver(p.comando, casa) !== null);
+  const otra = (p) => (esHerramienta(p) && !esAnfitrionDeFondoDe(tool, p)) || esConsola(p);
   if (arriba.slice(i + 1).some(otra)) return negar('la herramienta la lanzó otra herramienta o su consola', pendientes);
   const deFondo = arriba.slice(i + 1).some(esHerramienta);
   if (sinPantalla(tool)) return negar('la sesión no tiene pantalla (-p o --print): no hay ventana', pendientes);
-  if (arbol.some((p) => p.ppid === tool.pid && desenvolver(p.comando, casa) !== null)) return negar('cerrá los procesos de fondo o firmá desde tu terminal: hay una consola de fondo viva', pendientes);
+  if (arbol.some((p) => p.ppid === tool.pid && (enWindows ? esConsolaVivaDeWindows(p) : esConsola(p)))) return negar('cerrá los procesos de fondo o firmá desde tu terminal: hay una consola de fondo viva', pendientes);
   const destino = destinoDe(can && can.palabras, sesion, guion);
   if (!SESION.test(destino)) return negar(sesionNombrada(guion, can && can.palabras) !== null ? 'la sesión que nombra el comando no se puede leer' : 'la sesión de --for-session no se puede leer', pendientes);
   const pedida = forSessionDe(can && can.palabras);
@@ -718,7 +912,8 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   let delegada = null;
   let sinDelegar = null;
   if (delegacion === undefined) delegacion = (o) => require('./delegated-signing.js').delegaSinVentana(o);
-  try {
+  // en Windows no se delega: sólo firman el click y el «aprobado»
+  if (!enWindows) try {
     const estado = stateDir(casa);
     const rs = pendientes.map((id) => delegacion({ firma: id, sesion, destino, home: casa, estado, cwd: evento.cwd, repo: repoDe(can && can.palabras) }));
     if (rs.every((r) => r && r.ok)) delegada = rs[0];
@@ -739,7 +934,7 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   // cuenta (un plan delicado, un guardado que toca algo sensible) pasa
   let aprobada = null;
   let sinAprobacion = null;
-  if (delegada || sinVentana || deFondo) {
+  if (delegada || sinVentana || deFondo || enWindows) {
     const cuadro = pendientes.length === 1 ? cuadroPara({ firma: pendientes[0], comando, palabras: can && can.palabras, destino, cwd: evento.cwd, casa, sesion }) : null;
     const a = aprobacionExplicita({ pendientes, sesion, destino, casa, ahora, cwd: evento.cwd, aprobaciones, herramienta: { pid: tool.pid, inicio: tool.inicio }, cuadro: cuadro || {}, arbol });
     if (a.ok) { aprobada = a; delegada = null; }
@@ -749,10 +944,10 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
       // sin aprobación: lo de rutina en una pestaña sin permisos sigue «hecho y avisado»; lo demás se niega y dice cómo
       // aprobarlo. En una sesión de fondo no hay «hecho y avisado»: nadie ve el aviso en la pestaña
       const rutina = rutinaSinPermisos({ guion: firmaGuion, pendientes, palabras: can && can.palabras, destino, casa });
-      if (deFondo || !rutina.ok) {
-        const donde = deFondo ? 'esta sesión corre de fondo: la ventana de permiso no le llega a nadie seguro'
+      if (enWindows || deFondo || !rutina.ok) {
+        const donde = enWindows ? 'en Windows la ventana de permiso no firma' : deFondo ? 'esta sesión corre de fondo: la ventana de permiso no le llega a nadie seguro'
           : `esta pestaña no pide permisos (${una(modo, 40)}): la ventana se aprobaría sola, sin el Sí del dueño`;
-        return negarSinVentana(`${donde}${rutina.motivo ? `, y ${rutina.motivo}` : ''}; ${a.motivo}`, pendientes, paraTerminal, cuadro, deFondo);
+        return negarSinVentana(`${donde}${rutina.motivo && !enWindows ? `, y ${rutina.motivo}` : ''}; ${a.motivo}`, pendientes, paraTerminal, cuadro, deFondo);
       }
     }
   }
@@ -824,31 +1019,44 @@ function comoAprobar(firma, reg, casa) {
  * ¿El guion de `firma` (proceso `pid`, argumentos `argv` desde el guion) viene del «Sí» de una ventana? `{ ok, registro }`
  * consume el registro; `{ ok: false, motivo }` no escribe nada.
  */
-function verificar({ firma, argv = [], pid = process.pid, arbol, casa, ahora = Date.now(), userInfo, sesion, destino, antes } = {}) {
+function verificar({ firma, argv = [], pid = process.pid, arbol, casa, ahora = Date.now(), userInfo, sesion, destino, antes, plataforma = process.platform, gitBash = buscarGitBash } = {}) {
+  const enWindows = plataforma === 'win32';
   const s = firmaDe(firma);
   const no = (m) => ({ ok: false, motivo: `esta firma no pasó por la ventana: ${m}. Pedila de nuevo: el comando solo, en su forma exacta; en una pestaña sin permisos se aprueba con un click en el cuadro de opciones o con un «aprobado» escrito. O en tu terminal: ${(s && s.terminal) || 'el mismo comando con --terminal'}` });
   if (!s || s.kind !== 'guion') return no(`«${firma}» no es una firma de guion`);
   if (casa === undefined) {
     try { casa = casaDeLaCuenta(userInfo ? { userInfo } : undefined); } catch (e) { return no(`no se pudo resolver la casa de la cuenta (${e.message})`); }
   }
-  if (arbol === undefined) arbol = leerArbol();
+  arbol = arbolDeLaPlataforma(arbol, plataforma);
   if (!arbol) return no('no pude leer los procesos de la máquina');
   const m = porPid(arbol);
   let yo = m.get(pid);
   // el piso de Node relanza el guion con el Node del arnés: su padre es el mismo guion con el Node viejo
   // (el relanzado lleva la ruta entera del guion; el padre, la que escribió la consola)
-  const llamado = (p) => { const w = String((p && p.comando) || '').trim().split(/\s+/); return { node: NODES.has(base(w[0])), guion: base(w[1]), resto: w.slice(2).join(' ') }; };
+  const llamado = (p) => {
+    const w = (enWindows ? palabrasDeWindows(p && p.comando) : String((p && p.comando) || '').trim().split(/\s+/)) || [];
+    const programa = base(w[0]);
+    return { node: NODES.has(enWindows ? programa.replace(/\.exe$/, '') : programa), guion: base(w[1]), resto: w.slice(2).join(' ') };
+  };
   const padre = yo && m.get(yo.ppid);
   if (padre) {
     const a = llamado(padre);
     const b = llamado(yo);
     if (a.node && b.node && GUIONES.has(b.guion) && a.guion === b.guion && a.resto === b.resto) yo = padre;
   }
-  const consola = yo && m.get(yo.ppid);
-  const comando = consola ? desenvolver(consola.comando, casa) : null;
-  if (comando === null) return no('el guion no lo lanzó la consola de la herramienta');
-  const tool = m.get(consola.ppid);
-  if (!tool || !esHerramienta(tool)) return no('la consola no es de la herramienta');
+  let comando;
+  let tool;
+  if (enWindows) {
+    const c = consolaDeWindows(m, yo, casa);
+    if (c.motivo) return no(gitBash().path ? c.motivo : `${c.motivo}; ${SIN_GIT_BASH}`);
+    ({ comando, tool } = c);
+  } else {
+    const consola = yo && m.get(yo.ppid);
+    comando = consola ? desenvolver(consola.comando, casa) : null;
+    if (comando === null) return no('el guion no lo lanzó la consola de la herramienta');
+    tool = m.get(consola.ppid);
+    if (!tool || !esHerramienta(tool)) return no('la consola no es de la herramienta');
+  }
   const can = canonicaDe(comando);
   // la refirma tras traer main es el mismo comando que el cambio de control
   if (!can || (can.id !== firma && !(firma === REFIRMA && can.id === CONTROL))) return no('el comando no tiene la forma canónica de la firma');
@@ -856,9 +1064,11 @@ function verificar({ firma, argv = [], pid = process.pid, arbol, casa, ahora = D
   // la consola expande `~/` al principio de cada palabra, con su HOME
   const conTilde = (w, a) => w === a || (w.startsWith('~/') && [casa, os.homedir()].some((h) => path.join(h, w.slice(2)) === a));
   const guion = esperado[0].startsWith('~/') ? path.join(casa, esperado[0].slice(2)) : esperado[0];
-  if (argv.length !== esperado.length || !mismoArchivo(guion, argv[0]) || esperado.slice(1).some((w, k) => !conTilde(w, String(argv[k + 1])))) {
-    return no('los argumentos del guion no son los del comando');
-  }
+  const iguales = enWindows
+    ? argv.length === esperado.length && mismaRutaDeWindows(esperado[0], argv[0], casa)
+      && esperado.slice(1).every((w, k) => w === String(argv[k + 1]) || (/^(~|\/[A-Za-z])\//.test(w) && mismaRutaDeWindows(w, argv[k + 1], casa)))
+    : argv.length === esperado.length && mismoArchivo(guion, argv[0]) && !esperado.slice(1).some((w, k) => !conTilde(w, String(argv[k + 1])));
+  if (!iguales) return no('los argumentos del guion no son los del comando');
   const dir = carpeta(casa);
   const prefijo = `${firma.replace(/[^\w-]/g, '_')}--`;
   let archivos = [];
@@ -872,6 +1082,8 @@ function verificar({ firma, argv = [], pid = process.pid, arbol, casa, ahora = D
     try { reg = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch (_) { ilegibles++; continue; }
     const edad = ahora - Date.parse(reg.ts);
     if (reg.firma !== firma || reg.sha256 !== huella || reg.comando !== comando) continue;
+    // en Windows el pedido tiene que venir de una aprobación ya dada
+    if (enWindows && !VIAS_DE_WINDOWS.has(reg.via)) continue;
     // el registro es de la sesión que pidió y para su destino: el de otra sesión no lo usa nadie más
     if (sesion && reg.sesion !== sesion) continue;
     if (destino && reg.destino !== destino) continue;
@@ -1199,7 +1411,7 @@ function quienFirmo({ via, sesion } = {}, persona) {
   return { tipo: 'manual', quien: persona, via: via === 'terminal' ? 'terminal' : 'ventana' };
 }
 
-module.exports = { VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
+module.exports = { VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
   rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, esAnfitrionDeFondoDe };
 
 if (require.main === module) {

@@ -18,6 +18,12 @@
  *      ventana contestaban «aquí no hay una terminal del dueño» y en Windows ninguna story pasaba de «Aprobar el plan».
  *   6. la emergencia (`harness.js sign emergency`): el número del pedido ata el texto que leyó el freno con las comillas y
  *      barras de PowerShell, Bash y cmd; el agente no la firma; sin persona vence; `--commit` coincide con la carpeta.
+ *   7. los argumentos que la consola no deja pasar (comillas, `%`, barra final) llegan intactos a la ventana nueva, por el
+ *      ambiente, y esa consola sigue contando como nueva.
+ *   8. el arreglo rápido por la forma sin JSON: como el agente, no se abre.
+ *   9. qué le llega a un programa desde PowerShell 5.1 y 7, con el JSON y con las banderas.
+ *  10. la lectura de procesos del click (`leerArbolWindows`): la cadena de un proceso hasta esta sonda, con Git Bash de por
+ *      medio, con los acentos de su línea intactos y cada padre arrancado antes que su hijo.
  * Si la ventana ni siquiera arranca el comando en este agente, el paso 2 lo dice como hallazgo (no se probó la espera).
  *
  * Fuera de Windows no mide nada (no medido). Uso: node scripts/tests/windows/waiver-probe.js --lab <laboratorio> --out <carpeta del reporte>
@@ -66,6 +72,9 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, rec 
   const env = Object.assign({}, baseEnv, { HOME: x.home, USERPROFILE: x.home, TF_BUILD: '', CLAUDE_CODE_SESSION_ID: 'waiver-probe' });
   delete env.TYCON_WAIVER_IN_WINDOW;
   delete env.TYCON_WAIVER_PLATFORM;
+  // con estas variables la firma se corta antes de abrir la ventana, y esta sonda no mediría nada de lo que dice medir
+  delete env.CI;
+  delete env.GITHUB_ACTIONS;
 
   // 1 · como el agente: la marca puesta y las respuestas por la entrada
   const a = L.run(process.execPath, [MARKER, 'runtime-waiver', x.story], {
@@ -112,7 +121,7 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, rec 
   const prev = { TYCON_WAIVER_TIMEOUT_S: process.env.TYCON_WAIVER_TIMEOUT_S };
   process.env.TYCON_WAIVER_TIMEOUT_S = '90';
   let abierta;
-  try { abierta = W.abrirVentana({ script: guion, titulo: 'sonda del waiver' }); } finally {
+  try { abierta = W.abrirVentana({ script: guion, titulo: 'sonda del waiver', env: {} }); } finally {
     if (prev.TYCON_WAIVER_TIMEOUT_S === undefined) delete process.env.TYCON_WAIVER_TIMEOUT_S; else process.env.TYCON_WAIVER_TIMEOUT_S = prev.TYCON_WAIVER_TIMEOUT_S;
   }
   rec.fact('new_window_open', abierta);
@@ -128,7 +137,111 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, rec 
   // 6 · la emergencia: el número del pedido ata el texto que leyó el freno, con las comillas y barras de PowerShell y cmd
   emergencia({ dir, env, rec });
 
+  // 7 · los argumentos que la consola no deja pasar llegan intactos a la ventana, y esa consola sigue contando como nueva
+  argumentosDificiles({ dir, W, rec });
+
+  // 8 · el arreglo rápido, como el agente: la marca puesta y las palabras por la entrada
+  arregloComoElAgente({ x, env, rec });
+
+  // 9 · lo que le llega a un programa desde cada PowerShell, con el JSON y con las banderas
+  desdePowerShell({ dir, env, rec });
+
+  // 10 · la lectura de procesos del click: la cadena real, con acentos y con Git Bash de por medio
+  lecturaDeProcesos({ dir, env, rec });
+
   return { status: L.STATUS.measured, reason: null };
+}
+
+const OWNER_WINDOW = path.join(__dirname, '..', '..', 'lib', 'owner-window.js');
+
+function lecturaDeProcesos({ dir, env, rec }) {
+  const salida = path.join(dir, 'cadena.json');
+  const guion = path.join(dir, 'lee-su-cadena.js');
+  fs.writeFileSync(guion, [
+    "'use strict';",
+    `const ow = require(${JSON.stringify(OWNER_WINDOW)});`,
+    'const desde = Date.now();',
+    'const arbol = ow.leerArbolWindows();',
+    'const ms = Date.now() - desde;',
+    'const m = new Map((arbol || []).map((p) => [p.pid, p]));',
+    'const cadena = [];',
+    'for (let p = m.get(process.pid); p && cadena.length < 12; p = m.get(p.ppid)) cadena.push(p);',
+    `require('fs').writeFileSync(${JSON.stringify(salida)}, JSON.stringify({ ms, procesos: arbol && arbol.length, yo: process.pid, sonda: Number(process.argv[3]), cadena }));`,
+  ].join('\n'));
+  const leer = (prog, args) => {
+    try { fs.unlinkSync(salida); } catch { /* lo normal: no existe */ }
+    const r = L.run(prog, args, { env, timeoutMs: 120000 });
+    try { return JSON.parse(fs.readFileSync(salida, 'utf8')); } catch { return { sinLeer: { exit: r.exit, says: String(r.stderr || '').slice(0, 300) } }; }
+  };
+  const directa = leer(process.execPath, [guion, 'motivo ñandú', String(process.pid)]);
+  rec.fact('process_read', { ms: directa.ms, procesos: directa.procesos, niveles: (directa.cadena || []).length, sinLeer: directa.sinLeer });
+  const yo = (directa.cadena || [])[0];
+  if (!yo) { rec.finding('waiver:process-read-failed', 'waiver', `no pude leer los procesos: ${JSON.stringify(directa.sinLeer || directa)}`); return; }
+  if (!yo.comando.includes('ñandú')) rec.finding('waiver:process-read-accents', 'waiver', `los acentos de la línea no llegaron intactos: ${yo.comando.slice(-60)}`);
+  if (!(directa.cadena || []).some((p) => p.pid === directa.sonda)) rec.finding('waiver:process-read-chain', 'waiver', 'la cadena de un hijo directo no llega a la sonda que lo lanzó');
+  const desordenado = directa.cadena.find((p, k) => k > 0 && p.inicio > directa.cadena[k - 1].inicio);
+  if (desordenado) rec.finding('waiver:process-read-order', 'waiver', `un padre arrancó después que su hijo y la lectura lo dejó en la cadena: ${desordenado.pid}`);
+  if (require(OWNER_WINDOW).leerArbol() !== null) rec.finding('waiver:emergency-read-changed', 'waiver', 'la lectura de la emergencia dejó de negarse en Windows');
+  const bash = L.scanPath('bash', { env })[0];
+  if (!bash) { rec.finding('waiver:process-read-bash-not-measured', 'waiver', 'no encuentro bash en este agente: la cadena con Git Bash no se midió'); return; }
+  const porBash = leer(bash, ['-c', `"${process.execPath.replace(/\\/g, '/')}" "${guion.replace(/\\/g, '/')}" 'motivo ñandú' ${process.pid}`]);
+  rec.fact('process_read_bash', (porBash.cadena || []).map((p) => ({ ejecutable: p.ejecutable, inicio: p.inicio })));
+  const hayBash = (porBash.cadena || []).some((p) => /bash\.exe$/i.test(p.ejecutable || ''));
+  if (!hayBash) rec.finding('waiver:process-read-bash', 'waiver', `la cadena no muestra el bash que lanzó al guion: ${JSON.stringify(porBash.sinLeer || porBash.cadena)}`.slice(0, 500));
+}
+
+const DIFICILES = ['adhoc', 'set', '{"reason":"subir al 50% & ^ ñ","maxFiles":3}', 'C:\\repo\\', '--terminal'];
+
+function argumentosDificiles({ dir, W, rec }) {
+  const salida = path.join(dir, 'ventana-dificil.json');
+  const guion = path.join(dir, 'ventana-dificil.js');
+  fs.writeFileSync(guion, [
+    "'use strict';",
+    `const W = require(${JSON.stringify(LIB)});`,
+    'W.anotarVentana();',
+    `require('fs').writeFileSync(${JSON.stringify(salida)}, JSON.stringify(Object.assign({ argv: process.argv.slice(2) }, W.consolaNueva())));`,
+  ].join('\n'));
+  const prev = process.env.TYCON_WAIVER_TIMEOUT_S;
+  process.env.TYCON_WAIVER_TIMEOUT_S = '90';
+  let abierta;
+  try { abierta = W.abrirVentana({ script: guion, args: DIFICILES, titulo: 'sonda de los argumentos', env: {} }); } finally {
+    if (prev === undefined) delete process.env.TYCON_WAIVER_TIMEOUT_S; else process.env.TYCON_WAIVER_TIMEOUT_S = prev;
+  }
+  let pos = null;
+  try { pos = JSON.parse(fs.readFileSync(salida, 'utf8')); } catch { /* la ventana no llegó a escribir */ }
+  rec.fact('hard_args_window', { abierta, pos });
+  if (!pos) rec.finding('waiver:hard-args-not-measured', 'waiver', `la ventana con argumentos difíciles no llegó a contestar (${JSON.stringify(abierta)})`);
+  else if (JSON.stringify(pos.argv) !== JSON.stringify(DIFICILES)) rec.finding('waiver:hard-args-changed', 'waiver', `los argumentos cambiaron en el camino: ${JSON.stringify(pos.argv)}`);
+  else if (!pos.nueva) rec.finding('waiver:hard-args-console-not-new', 'waiver', `con los argumentos por el ambiente, la ventana no pasa por «nueva» (${pos.conectados} conectados)`);
+}
+
+function arregloComoElAgente({ x, env, rec }) {
+  const a = L.run(process.execPath, [MARKER, 'adhoc', 'set', '--reason', 'sonda de la ventana', '--terminal', '--for-session', 'waiver-agente'], {
+    env: Object.assign({}, env, { TYCON_WAIVER_IN_WINDOW: '1' }), input: 'gato luna reloj\n', timeoutMs: 120000,
+  });
+  const declarado = fs.existsSync(path.join(x.home, '.claude', '.tycon-pipeline', 'adhoc', 'waiver-agente.json'));
+  rec.fact('adhoc_agent_like', { exit: a.exit, declarado, says: String(a.stderr || '').split(/\r?\n/).filter(Boolean).slice(0, 3) });
+  if (declarado) rec.finding('waiver:adhoc-agent-signed', 'waiver', 'con la marca y las palabras por la entrada, el arreglo rápido SE ABRIÓ: el candado no frena al agente');
+  else if (a.exit === 0 || !String(a.stderr || '').includes('🔒')) rec.finding('waiver:adhoc-agent-not-measured', 'waiver', `no se abrió, pero tampoco lo negó el candado: no se midió (salió ${a.exit}): ${String(a.stderr || '').slice(0, 200)}`);
+}
+
+function desdePowerShell({ dir, env, rec }) {
+  const guion = path.join(dir, 'imprime-argumentos.js');
+  fs.writeFileSync(guion, 'console.log(JSON.stringify(process.argv.slice(2)));\n');
+  const formas = { json: ['{"reason":"motivo con espacios","maxFiles":3}'], banderas: ['--reason', 'motivo con espacios', '--max-files', '3'] };
+  for (const nombre of ['powershell', 'pwsh']) {
+    const ps = L.scanPath(nombre, { env })[0];
+    if (!ps) { rec.fact(`quoting_${nombre}`, 'no está en este agente'); continue; }
+    const visto = {};
+    for (const [forma, args] of Object.entries(formas)) {
+      const citados = args.map((a) => `'${a}'`).join(' ');
+      const r = L.run(ps, ['-NoProfile', '-NonInteractive', '-Command', `& '${process.execPath}' '${guion}' ${citados}`], { env, timeoutMs: 60000 });
+      const llego = String(r.stdout || '').trim();
+      visto[forma] = { intacto: llego === JSON.stringify(args), llego };
+    }
+    rec.fact(`quoting_${nombre}`, visto);
+    if (!visto.banderas.intacto) rec.finding(`waiver:reason-flags-broken-${nombre}`, 'waiver', `${nombre} no pasa intacta la forma con --reason: ${visto.banderas.llego}`);
+  }
 }
 
 /**
@@ -242,6 +355,8 @@ function firmasPorTerminal({ dir, x, env, rec }) {
   const casos = [
     ['approve-plan', process.execPath, [MARKER, 'complete-step', 'approve-plan', '--terminal', '--for-session', 'waiver-owner'], () => /plan-approval-signed/.test(leer(path.join(x.home, '.claude', '.tycon-pipeline', 'gates.log')))],
     ['control-change', bash, [CONTROLES, 'approve', '--root', repo, '--file', 'regla.txt', '--out', '.tycon/control-changes.jsonl', '--terminal'], () => fs.existsSync(path.join(repo, '.tycon', 'control-changes.jsonl'))],
+    ['adhoc-json', process.execPath, [MARKER, 'adhoc', 'set', '{"reason":"sonda de la ventana","maxFiles":3}', '--terminal', '--for-session', 'waiver-adhoc'], () => fs.existsSync(path.join(activos, '..', 'adhoc', 'waiver-adhoc.json'))],
+    ['adhoc-banderas', process.execPath, [MARKER, 'adhoc', 'set', '--reason', 'sonda de la ventana', '--max-files', '3', '--terminal', '--for-session', 'waiver-adhoc'], () => fs.existsSync(path.join(activos, '..', 'adhoc', 'waiver-adhoc.json'))],
   ];
   for (const [nombre, prog, args, firmo] of casos) {
     if (!prog) { rec.finding(`waiver:owner-terminal-${nombre}-not-measured`, 'waiver', 'no encuentro bash en este agente: la firma del portón por terminal no se midió'); continue; }
@@ -268,6 +383,8 @@ function main(argv) {
   }
   rec.finish(result.status, result.reason);
   say(`${NAME}: ${result.status === L.STATUS.measured ? `medido — ${rec.step.findings.length} hallazgo(s)` : result.reason}`);
+  // el reporte sólo los cuenta, y estos hallazgos no ponen rojo el trabajo: sin esto no se leen en la CI
+  for (const f of rec.step.findings) say(`  ${JSON.stringify(f).slice(0, 500)}`);
   return 0;
 }
 
