@@ -1649,7 +1649,7 @@ function explicar(opts = {}) {
 //     regla de `guardWarning` de scripts/setup/harness/channel.js, generalizada a cualquier sección). Medido el
 //     2026-10-04: la copia instalada no lee el perfil del equipo, sólo el archivo de la máquina.
 const GUARD_LIB = '/opt/tycon/lib/tycon-config.js';
-const GUARD_INSTALL = 'sudo bash ~/.claude/tycon-claude-guides/scripts/production/install-guard.sh';
+const GUARD_INSTALL = 'sudo bash ~/.tycon/harness/scripts/production/install-guard.sh';
 // Las claves que no se escriben si el freno instalado no las conoce: las guarda una sesión a pedido de la persona, y un
 // aviso de «configuración ROTA» en cada sesión por haber elegido nombres es un costo que no vale. Se escribe después de
 // poner al día el freno.
