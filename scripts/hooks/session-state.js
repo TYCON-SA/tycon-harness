@@ -9,7 +9,7 @@
  *           PostToolUse, UserPromptSubmit, Stop → ya no espera · SessionEnd → borra el archivo
  *   Codex:  SessionStart → crea el archivo (sin nombre ni pid: Codex no da uno estable). Su arranque no trae `turn_id`:
  *           se lo reconoce por la carpeta de su conversación (toolOf), y el próximo momento corrige un archivo mal creado
- *           Stop con un pipeline abierto → espera «una respuesta» · UserPromptSubmit → ya no espera
+ *           UserPromptSubmit → ocupada (`busy: true`) y ya no espera · Stop → parada (`busy: false`)
  *           Codex no avisa los pedidos de permiso ni el cierre de la sesión: no se inventan (adapters/codex/hooks.json,
  *           la asimetría declarada). Una firma pendiente no es la espera de una sesión: su registro no dice de cuál es.
  *
@@ -76,23 +76,12 @@ function claudeSession(home, sid, { sdir = null, alive = isAlive } = {}) {
   return { name: found[0].name, pid: found[0].pid };
 }
 
-// ¿Hay un pipeline abierto? Un marcador que existe y no se lee cuenta como no abierto, y queda en el registro.
-const pipelineOpen = (sdir, sid) => {
-  const file = path.join(sdir, 'active', `${String(sid).replace(/[^\w.-]/g, '_')}.json`);
-  let m = null;
-  try { m = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) {
-    if (e.code !== 'ENOENT') require(LIB).logError(sdir, `sesión ${sid}: su marcador no se pudo leer (${e.code || e.message})`);
-    return false;
-  }
-  return Boolean(m && Array.isArray(m.stepsPending) && m.stepsPending.length);
-};
-
 /** Lo que cambia en el archivo con este momento: `{ patch }`, `{ remove: true }` o null (nada que anotar). */
-function decide(d, codex, sdir) {
+function decide(d, codex) {
   const ev = d.hook_event_name;
   if (codex) {
-    if (ev === 'Stop') return { patch: pipelineOpen(sdir, d.session_id) ? { waitingForOwner: true, waitingFor: ANSWER } : { waitingForOwner: false, waitingFor: null } };
-    if (ev === 'UserPromptSubmit') return { patch: { waitingForOwner: false, waitingFor: null } };
+    if (ev === 'Stop') return { patch: { busy: false } };
+    if (ev === 'UserPromptSubmit') return { patch: { busy: true, waitingForOwner: false, waitingFor: null } };
     if (ev === 'SessionStart') return { patch: {} };
     return null;
   }
@@ -115,7 +104,7 @@ function handle(d, env = process.env, home = os.homedir()) {
   if (!sid) return;
   const { tool, certain } = toolOf(d, env);
   const codex = tool === 'codex';
-  const what = decide(d, codex, sdir);
+  const what = decide(d, codex);
   if (!what) return;
   if (what.remove) { lib.remove(sdir, sid, { env }); return; }
   const retool = certain;

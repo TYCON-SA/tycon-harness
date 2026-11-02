@@ -1,7 +1,8 @@
 'use strict';
 /**
  * session-state.test.js — el archivo de estado de cada sesión: quién lo escribe, cuándo, y qué hace la oficina con él.
- * T17 a T24, T27 a T33, y T76 a T82 (las regresiones del pase adversarial).
+ * T17 a T21, T23, T24, T27 a T33, y T76 a T82 (las regresiones del pase adversarial); del estado real, T86 (reemplaza a
+ * la T22), T110, T117, T118 y T125.
  *
  * Cada caso tiene su HOME de juguete: el estado real de la máquina no se toca. Los ganchos y marker.js se lanzan por
  * subproceso, con el ambiente limpio de las variables de la máquina (TYCON_*, CLAUDE_CODE_SESSION_ID,
@@ -33,7 +34,7 @@ const STEPS = require(path.join(SCRIPTS, 'lib', 'steps.js'));
 const { conVentana } = require(path.join(ROOT, 'scripts', 'tests', 'lib', 'window-passed.js'));
 
 const lib = () => require(LIB);
-const FIELDS = ['schema', 'session', 'tool', 'name', 'sentence', 'step', 'endAt', 'endWithoutHour', 'waitingForOwner', 'waitingFor', 'updatedAt', 'pid'];
+const FIELDS = ['schema', 'session', 'tool', 'name', 'sentence', 'step', 'endAt', 'endWithoutHour', 'waitingForOwner', 'waitingFor', 'updatedAt', 'pid', 'busy'];
 const HOUR = 3600000;
 
 // ── el mundo de cada caso ───────────────────────────────────────────────────────────────────────────────────────
@@ -235,23 +236,37 @@ test('T21 Claude_PermissionAndQuestion_Waiting @story-2.81 @ac-21 — el permiso
   if (process.platform !== 'win32') assert.strictEqual(fs.statSync(fileOf(w, sid)).mode & 0o777, 0o600, 'el archivo es privado');
 });
 
-test('T22 Codex_StopWithPipeline_Waiting @story-2.81 @ac-22 — Codex espera al cerrar el turno con un pipeline; una firma no es su espera', () => {
+test('T86 Codex_BusyFromPromptAndStop @story-2.81 @ac-45 — Codex anota ocupada o parada con sus dos momentos; una firma no es su espera', () => {
   const w = world();
   pipelineMarker(w, 's-cx');
   const ev = (sid, e) => assert.strictEqual(hook(w, { session_id: sid, turn_id: 't', ...e }).status, 0);
   ev('s-cx', { hook_event_name: 'SessionStart' });
-  ev('s-cx', { hook_event_name: 'Stop' });
-  assert.strictEqual(stateOf(w, 's-cx').waitingForOwner, true);
-  assert.strictEqual(stateOf(w, 's-cx').waitingFor, 'una respuesta');
+  assert.strictEqual(stateOf(w, 's-cx').busy, null, 'al arrancar todavía no se sabe');
   ev('s-cx', { hook_event_name: 'UserPromptSubmit', prompt: 'seguí' });
-  assert.strictEqual(stateOf(w, 's-cx').waitingForOwner, false);
-  // sin pipeline, con una firma pendiente en la máquina: no espera (decisión 24b)
+  assert.strictEqual(stateOf(w, 's-cx').busy, true);
+  ev('s-cx', { hook_event_name: 'Stop' });
+  assert.strictEqual(stateOf(w, 's-cx').busy, false);
+  assert.strictEqual(stateOf(w, 's-cx').waitingForOwner, false, 'el fin de turno con pipeline ya no es una espera');
+  assert.strictEqual(stateOf(w, 's-cx').waitingFor, null);
+  // sin pipeline, con una firma pendiente en la máquina: tampoco espera (decisión 24b)
   const { coordinationDir } = require(path.join(ROOT, 'scripts', 'tools', 'coordination.js'));
   fs.mkdirSync(coordinationDir(w.home), { recursive: true });
   fs.writeFileSync(path.join(coordinationDir(w.home), 'signatures.json'), JSON.stringify([{ id: 'f1', key: 'k', file: '/x', kind: 'k', title: 'una firma', at: Date.now() }]));
   ev('s-libre', { hook_event_name: 'SessionStart' });
+  ev('s-libre', { hook_event_name: 'UserPromptSubmit', prompt: 'hola' });
   ev('s-libre', { hook_event_name: 'Stop' });
+  assert.strictEqual(stateOf(w, 's-libre').busy, false);
   assert.strictEqual(stateOf(w, 's-libre').waitingForOwner, false);
+  // un archivo escrito antes de esta tanda se sigue leyendo: le falta el campo y no se rompe
+  const old = stateOf(w, 's-libre');
+  delete old.busy;
+  fs.writeFileSync(fileOf(w, 's-libre'), JSON.stringify(old));
+  assert.strictEqual(lib().read(w.sdir, 's-libre').problem, undefined);
+  // en Claude, el fin de turno no anota nada de esto: lo dice su archivo de sesión
+  assert.strictEqual(hook(w, { hook_event_name: 'SessionStart', session_id: 's-cl', source: 'startup' }).status, 0);
+  assert.strictEqual(hook(w, { hook_event_name: 'UserPromptSubmit', session_id: 's-cl', prompt: 'hola' }).status, 0);
+  assert.strictEqual(hook(w, { hook_event_name: 'Stop', session_id: 's-cl' }).status, 0);
+  assert.strictEqual(stateOf(w, 's-cl').busy, null);
 });
 
 test('T23 Codex_NoPermissionEvent_NothingInvented @story-2.81 @ac-22 — en Codex, usar una herramienta no se toma como un permiso', () => {
@@ -481,6 +496,144 @@ test('T33 TwoWriters_DoNotOverwriteEachOther @story-2.81 @ac-17 — la espera de
   assert.strictEqual(st.step, STEPS.byId('implement').name);
   assert.strictEqual(st.waitingForOwner, true);
   assert.strictEqual(st.waitingFor, 'un permiso');
+});
+
+// ── La marca de «en fila» o «en pausa», y la hora del paso ──────────────────────────────────────────────────────────
+
+const parkedFile = (w, sid) => path.join(w.sdir, 'parked', `${sid}.json`);
+const twoDaysAhead = () => { const d = new Date(Date.now() + 48 * HOUR); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+
+test('T110 ClearSession_RefusesParked @story-2.81 @ac-60 — limpiar una corrida marcada se niega y dice cómo sacar la marca', () => {
+  const w = world();
+  pipelineMarker(w, 's-fila');
+  assert.strictEqual(marker(w, 's-otra', ['park', '9.9', '--queue']).status, 0);
+  const r = marker(w, 's-otra', ['clear-session', 's-fila']);
+  assert.notStrictEqual(r.status, 0, r.stdout);
+  assert.ok(fs.existsSync(path.join(w.sdir, 'active', 's-fila.json')), 'el marcador sigue');
+  assert.match(r.stderr, /unpark 9\.9/, r.stderr);
+  // sacada la marca, se limpia como siempre
+  assert.strictEqual(marker(w, 's-otra', ['unpark', '9.9']).status, 0);
+  assert.ok(!fs.existsSync(parkedFile(w, 's-fila')));
+  assert.strictEqual(marker(w, 's-otra', ['clear-session', 's-fila']).status, 0);
+});
+
+test('T117 Park_NoRunOrTwoRuns_Refuses @story-2.81 @ac-60 — sin corrida o con dos, no se marca; con --session, esa', () => {
+  const w = world();
+  let r = marker(w, 's-x', ['park', '9.9', '--queue']);
+  assert.notStrictEqual(r.status, 0);
+  assert.ok(!fs.existsSync(path.join(w.sdir, 'parked')) || !fs.readdirSync(path.join(w.sdir, 'parked')).length, 'no escribió nada');
+  pipelineMarker(w, 's-a');
+  pipelineMarker(w, 's-b');
+  r = marker(w, 's-x', ['park', '9.9', '--queue']);
+  assert.notStrictEqual(r.status, 0);
+  assert.match(r.stderr, /s-a/);
+  assert.match(r.stderr, /s-b/);
+  assert.match(r.stderr, /--session/);
+  assert.ok(!fs.existsSync(parkedFile(w, 's-a')) && !fs.existsSync(parkedFile(w, 's-b')));
+  r = marker(w, 's-x', ['park', '9.9', '--until', twoDaysAhead(), '--session', 's-b']);
+  assert.strictEqual(r.status, 0, r.stderr);
+  const mark = JSON.parse(fs.readFileSync(parkedFile(w, 's-b'), 'utf8'));
+  assert.strictEqual(mark.story, '9.9');
+  assert.strictEqual(mark.kind, 'until');
+  assert.strictEqual(mark.until, twoDaysAhead());
+  assert.strictEqual(mark.by, 's-x');
+  assert.ok(Number.isFinite(Date.parse(mark.at)));
+  // lo que no se entiende no se escribe
+  for (const bad of [['park', '9.9'], ['park', '9.9', '--queue', '--until', twoDaysAhead()], ['park', '9.9', '--until', 'mañana', '--session', 's-a'], ['park', '9.9', '--queue', '--session', 's-noesta'], ['unpark', '7.7']]) {
+    assert.notStrictEqual(marker(w, 's-x', bad).status, 0, bad.join(' '));
+  }
+  assert.ok(!fs.existsSync(parkedFile(w, 's-a')));
+});
+
+test('T118 Park_LostRestoreNewRun @story-2.81 @ac-60 — la salida del dueño sigue y saca la marca; adoptar también; una corrida nueva no la hereda', () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'session-state-marca-'));
+  const home = path.join(base, 'home');
+  const repo = path.join(base, 'repo');
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+  fs.symlinkSync(ROOT, path.join(home, '.claude', 'agent-skills'));
+  fs.symlinkSync(ROOT, path.join(home, '.claude', 'tycon-harness'));
+  fs.mkdirSync(path.join(repo, 'specs'), { recursive: true });
+  fs.mkdirSync(path.join(repo, 'src'));
+  // stable-data: los commits de juguete llevan fecha fija y el mantenimiento de git apagado
+  const FECHA = '2026-01-01T10:00:00';
+  const git = (...a) => execFileSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', repo, ...a], { stdio: 'ignore', env: { ...process.env, GIT_AUTHOR_DATE: FECHA, GIT_COMMITTER_DATE: FECHA } });
+  git('init', '-q', '-b', 'feat/x');
+  git('config', 'user.email', 't@t');
+  git('config', 'user.name', 't');
+  const stories = {};
+  for (const [i, sid] of ['s-a', 's-b', 's-c', 's-d'].entries()) {
+    const n = `9.${i + 1}`;
+    stories[sid] = path.join(repo, 'specs', `story-${n}-otra.md`);
+    fs.writeFileSync(stories[sid], ['---', `story: "${n}"`, 'title: "otra"', 'status: ready-for-dev', 'files_to_modify:', '  - src/a.js', '---', `# Story ${n}`, '', '### Tests', '', '| # | Test |', '|---|---|', '| T1 | a |', '', '## Dev Agent Record', ''].join('\n'));
+  }
+  fs.writeFileSync(path.join(repo, 'src', 'a.js'), 'module.exports = 1;\n');
+  git('add', '.');
+  git('commit', '-qm', 'inicio');
+  const w = { home, sdir: stateDir(home) };
+  const env = (sid, extra = {}) => cleanEnv(home, { TYCON_HOME: '', TYCON_GUIDES_DIR: ROOT, CLAUDE_CODE_SESSION_ID: sid, ...extra });
+  const run = (script, args, sid, extra) => spawnSync(process.execPath, [path.join(SCRIPTS, script), ...args], { encoding: 'utf8', env: env(sid, extra), input: '', cwd: repo });
+  const start = (sid) => { const r = run('pipeline.js', ['start', '--story', stories[sid], '--repo', repo, '--brief'], sid); assert.strictEqual(r.status, 0, r.stderr + r.stdout); };
+  const park = (id) => { const r = run('marker.js', ['park', id, '--queue'], 's-z'); assert.strictEqual(r.status, 0, r.stderr + r.stdout); };
+  // clear-session --lost, con la firma
+  start('s-a'); park('9.1');
+  let r = run('marker.js', ['clear-session', 's-a', '--lost'], 's-z', conVentana({}));
+  assert.strictEqual(r.status, 0, r.stderr + r.stdout);
+  assert.ok(!fs.existsSync(parkedFile(w, 's-a')), '--lost saca la marca');
+  // restore, con la firma
+  start('s-b'); park('9.2');
+  fs.rmSync(path.join(w.sdir, 'active', 's-b.json'));
+  r = run('marker.js', ['restore', 's-b'], 's-b', conVentana({}));
+  assert.strictEqual(r.status, 0, r.stderr + r.stdout);
+  assert.ok(!fs.existsSync(parkedFile(w, 's-b')), 'restore saca la marca');
+  // adoptar
+  start('s-c'); park('9.3');
+  r = run('marker.js', ['adopt-session', 's-c'], 's-y');
+  assert.strictEqual(r.status, 0, r.stderr + r.stdout);
+  assert.ok(!fs.existsSync(parkedFile(w, 's-c')), 'adoptar saca la marca');
+  // una corrida nueva de la misma sesión, de otra historia, no sale marcada
+  start('s-d'); park('9.4');
+  r = run('marker.js', ['clear'], 's-d');
+  assert.strictEqual(r.status, 0, r.stderr + r.stdout);
+  const { buildWip } = require(path.join(ROOT, 'scripts', 'tools', 'work-in-progress.js'));
+  const m = { sessionId: 's-d', storyId: '9.1', storyPath: stories['s-a'], stepScheme: STEPS.SCHEME, startedAt: new Date().toISOString(), lastTouch: new Date().toISOString(), stepsCompleted: ['start'], stepsPending: ['validate-story', 'plan'] };
+  fs.writeFileSync(path.join(w.sdir, 'active', 's-d.json'), JSON.stringify(m));
+  const wip = buildWip({ home, stateDir: w.sdir, sessionsDir: path.join(home, 'no-hay') });
+  const it = wip.halfwayItems.find((h) => h.sid === 's-d');
+  assert.ok(it, wip.text);
+  assert.ok(!it.mark, 'la marca era de otra historia');
+  assert.match(wip.text, /limpiar: node/);
+});
+
+test('T125 Hour_WrittenOnStep_SameInWipAndOffice @story-2.81 @ac-57 @ac-62 — la hora la anota marker.js al entrar al paso y /wip y la oficina dicen ésa', async () => {
+  const w = world();
+  claudeSession(w, 's-h', 'Hora');
+  const mins = { start: 1, 'validate-story': 5, plan: 5, 'approve-plan': 5, implement: 30, 'run-tests': 5, reviewers: 10, findings: 5, 'prepare-commit': 5 };
+  history(w, mins);
+  pipelineMarker(w, 's-h');
+  assert.strictEqual(marker(w, 's-h', ['start-step', 'implement']).status, 0);
+  const read = () => JSON.parse(fs.readFileSync(path.join(w.sdir, 'active', 's-h.json'), 'utf8'));
+  const first = read().horaDelPaso;
+  assert.strictEqual(first.step, 'implement');
+  assert.ok(Number.isFinite(Date.parse(first.at)) && Number.isFinite(Date.parse(first.computedAt)), JSON.stringify(first));
+  // cambian las medianas de la máquina: la hora no se mueve hasta el próximo paso
+  history(w, { ...mins, implement: 300 });
+  const { buildWip } = require(path.join(ROOT, 'scripts', 'tools', 'work-in-progress.js'));
+  const { buildOffice } = require(OFFICE);
+  const hh = (ms) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+  const wip = buildWip({ home: w.home, stateDir: w.sdir, sessionsDir: w.sessions });
+  assert.match(wip.rows[0].end, new RegExp(hh(Date.parse(first.at))), wip.text);
+  const a = buildOffice({ wip, nowMs: Date.now() }).data.agents.find((x) => x.nombre === 'Hora');
+  assert.ok(a.pronosticoIso.endsWith(hh(Date.parse(first.at))), a.pronosticoIso);
+  // otro arranque del mismo paso no la mueve; cerrar el paso la recalcula para el que sigue
+  assert.strictEqual(marker(w, 's-h', ['start-step', 'implement']).status, 0);
+  assert.deepStrictEqual(read().horaDelPaso, first);
+  assert.strictEqual(marker(w, 's-h', ['complete-step', 'implement', '--no-atdd', '--reason', 'la prueba no tiene código']).status, 0);
+  const second = read().horaDelPaso;
+  assert.strictEqual(second.step, 'run-tests');
+  assert.notStrictEqual(second.at, first.at);
+  // el archivo de estado de la sesión dice la misma hora
+  lib().refresh(w.sdir, 's-h', { create: true, tool: 'claude', home: w.home });
+  assert.strictEqual(Date.parse(stateOf(w, 's-h').endAt), Date.parse(second.at));
 });
 
 // ── Las regresiones del pase adversarial ───────────────────────────────────────────────────────────────────────

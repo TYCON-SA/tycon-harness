@@ -94,6 +94,13 @@ function identidades(tr) {
     .filter((r) => r && typeof r === 'object' && r.org && r.repo);
 }
 
+/** La identidad de un repo por su nombre (`repo` u `org/repo`), de las que declara team-repos.json; null si no está. */
+function identityByName(name, opts = {}) {
+  const tr = teamRepos(opts);
+  const wanted = String(name || '').toLowerCase();
+  return identidades(tr && tr.data).find((r) => String(r.repo).toLowerCase() === wanted || `${r.org}/${r.repo}`.toLowerCase() === wanted) || null;
+}
+
 /** Una identidad de repo a partir de lo que llega: un objeto, un JSON o `org/repo`. */
 function repoOf(repo) {
   if (!repo) return null;
@@ -415,4 +422,4 @@ function main(argv) {
 
 if (require.main === module) main(process.argv.slice(2)).then((code) => { process.exitCode = code; });
 
-module.exports = { choose, run, call, conformance, connector, identityFromRemote, limpiar, summary, rawCommands, rawCommandOf, main, OPERATIONS, REASONS };
+module.exports = { choose, run, call, conformance, connector, identityFromRemote, identityByName, limpiar, summary, rawCommands, rawCommandOf, main, OPERATIONS, REASONS };

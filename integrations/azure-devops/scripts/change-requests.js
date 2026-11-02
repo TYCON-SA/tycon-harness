@@ -1,7 +1,7 @@
 'use strict';
-// change-requests.js — los pedidos de cambio de un repo de Azure DevOps: abrir uno que entra solo (`change-request.open`)
-// y los activos (`change-request.list`), con lo que hace falta para saber si uno está trabado: borrador, auto-completar,
-// si choca con su destino, la punta de su rama y quién lo abrió.
+// change-requests.js — los pedidos de cambio de un repo de Azure DevOps: abrir uno que entra solo (`change-request.open`),
+// uno por su número (`change-request.read`) y los activos (`change-request.list`), con lo que hace falta para saber si uno
+// está trabado: borrador, auto-completar, si choca con su destino, la punta de su rama y quién lo abrió.
 //
 // Abrir, con las mismas banderas que usaba el paso del merge (la organización sale de la identidad del repo; `update`
 // y `show` corren dentro del clon, `repoDir`):
@@ -233,6 +233,39 @@ function abrirPedido(args, ctx) {
   }
 }
 
-module.exports = { 'change-request.open': abrirPedido, 'change-request.list': listarPedidos };
+/**
+ * Un pedido por su número, activo o cerrado: `{ number, state: open|merged|closed, draft, autoComplete, mergedAt, title }`,
+ * sin `inQueue`: Azure DevOps no tiene cola aparte, y lo que lo hace entrar solo es el auto-completar. Sus números son de
+ * toda la organización: uno de otro repo no es éste. Uno que no existe es no_encontrado, nunca «entró».
+ *   az repos pr show --id <n> --org <org> -o json
+ */
+function leerPedido(args, ctx) {
+  const repo = ctx.repo || {};
+  const o = orgDe(repo);
+  if (o.problem) return o.problem;
+  const n = Number(args && args.number);
+  if (!Number.isInteger(n) || n <= 0) return no('rechazado', `el número del pedido no se puede leer: ${JSON.stringify(args && args.number)}`);
+  const timeout = Number.isFinite(args.deadlineMs) ? args.deadlineMs - Date.now() : 120000;
+  if (timeout <= 0) return no('no_medido', 'tope: se acabó el tiempo antes de leer el pedido');
+  const r = correrAz(ctx, ['repos', 'pr', 'show', '--id', String(n), '--org', o.value, '-o', 'json'], { timeout });
+  if (r.problem) return /TF401180|was not found|could not be found/i.test(r.problem.detail) ? no('no_encontrado', `el pedido !${n} no existe`) : r.problem;
+  const p = r.value;
+  if (!p || typeof p !== 'object' || Number(p.pullRequestId) !== n) return no('no_medido', `az contestó el pedido !${n} sin forma`);
+  if (String((p.repository && p.repository.name) || '').toLowerCase() !== String(repo.repo).toLowerCase()) return no('no_encontrado', `el pedido !${n} no es de ${repo.repo}`);
+  const entro = p.status === 'completed';
+  return {
+    ok: true,
+    value: {
+      number: n,
+      state: p.status === 'active' ? 'open' : entro ? 'merged' : 'closed',
+      draft: p.isDraft === true,
+      autoComplete: Boolean(p.autoCompleteSetBy),
+      mergedAt: entro && p.closedDate ? String(p.closedDate) : null,
+      title: String(p.title || ''),
+    },
+  };
+}
+
+module.exports = { 'change-request.open': abrirPedido, 'change-request.list': listarPedidos, 'change-request.read': leerPedido };
 // para las pruebas; no enumerables, así el conector no las toma por operaciones
 for (const [k, v] of Object.entries({ llamadaAz, asunto, textoParaAz, correrAz, orgDe })) Object.defineProperty(module.exports, k, { value: v, enumerable: false });

@@ -51,7 +51,7 @@
               }
             ]
           },
-          "asymmetry": "El caso fija la conducta propia de Codex (sin pid estable, la espera sólo al cerrar el turno con un pipeline abierto); en Claude la misma entrada se anota distinto. Declarado en adapters/codex/hooks.json."
+          "asymmetry": "El caso fija la conducta propia de Codex (sin pid estable, y parada al cerrar el turno, sin espera); en Claude la misma entrada se anota distinto. Declarado en adapters/codex/hooks.json."
         }
       ]
     },
@@ -196,12 +196,12 @@
       "matcher": "*",
       "cases": [
         {
-          "id": "codex-fin-de-turno-con-pipeline-espera",
+          "id": "codex-fin-de-turno-con-pipeline-parada",
           "type": "must-stay-quiet",
           "tools": [
             "codex"
           ],
-          "__doc": "En Codex, el fin del turno con un pipeline abierto anota que la sesión espera «una respuesta» (decisión 7a), sin frenar el cierre. ROJO PREVIO: frenar, imprimir, o no anotar la espera.",
+          "__doc": "En Codex, el fin del turno con un pipeline abierto anota que la sesión quedó parada, sin frenar el cierre; esperar es otra cosa y no se anota por terminar un turno. ROJO PREVIO: frenar, imprimir, o no anotar la parada.",
           "setup": [
             "mkdir -p \"$SANDBOX_HOME/.claude/.tycon-pipeline/active\" && printf '%s' '{\"storyId\":\"9.9\",\"sessionId\":\"bench-ss7\",\"stepsPending\":[\"implement\"]}' > \"$SANDBOX_HOME/.claude/.tycon-pipeline/active/bench-ss7.json\""
           ],
@@ -216,11 +216,11 @@
             "file_contains": [
               {
                 "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/sessions/bench-ss7.json",
-                "re": "\"waitingFor\": \"una respuesta\""
+                "re": "\"busy\": false"
               }
             ]
           },
-          "asymmetry": "El caso fija la conducta propia de Codex (sin pid estable, la espera sólo al cerrar el turno con un pipeline abierto); en Claude la misma entrada se anota distinto. Declarado en adapters/codex/hooks.json."
+          "asymmetry": "El caso fija la conducta propia de Codex (sin pid estable, y parada al cerrar el turno, sin espera); en Claude la misma entrada se anota distinto. Declarado en adapters/codex/hooks.json."
         }
       ]
     },

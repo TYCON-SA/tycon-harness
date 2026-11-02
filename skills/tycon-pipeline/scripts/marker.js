@@ -57,6 +57,10 @@
  *                                                  (lib/open-runs.js); pide la frase del dueño
  *   marker.js restore <sessionId>               → rearma en esta sesión el marcador de una ejecución perdida, desde
  *                                                  la copia de su apertura; pide la frase del dueño
+ *   marker.js park <historia> --queue | --until AAAA-MM-DD [--session <id>] → marca una corrida dejada a propósito («en
+ *                                                  fila» o «en pausa»), aunque su sesión esté cerrada: nunca se ofrece
+ *                                                  limpiarla, y clear-session se niega. Sin firma: la marca no autoriza nada.
+ *   marker.js unpark <historia>                 → saca esa marca
  *   marker.js adhoc clear-orphan <sessionId>    → borra el ad-hoc de OTRA sesión, sólo si no está viva
  *                                                  y lleva más de 24 h sin tocarse
  *   marker.js doing "<qué hago>" | doing clear  → anota (o borra) qué hace esta sesión sin story, para /wip; NO es un
@@ -294,6 +298,8 @@ function pruneStale() {
         }
         // el cierre es de la sesión podada, no de la que poda
         const podada = m.sessionId || f.replace(/\.json$/, '');
+        // una corrida dejada a propósito lleva días sin tocarse y no está abandonada: podarla pierde su trabajo
+        if (marcaDe(podada, m) || esperaGuardar(m)) continue;
         fs.unlinkSync(full);
         cerrarEjecucion(podada, m, { registrar: false, estado: 'abandonada', motivo: `podada: más de ${STALE_HOURS} h sin tocarse`, soloAbierta: true });
       }
@@ -739,6 +745,8 @@ function cmdSet(payloadJson) {
     // `reviewers-run`)
     ...(payload.sessionModel !== undefined ? { sessionModel: payload.sessionModel } : {}),
     ...(payload.codexSession !== undefined ? { codexSession: payload.codexSession } : {}),
+    // la hora de este paso sigue valiendo si se retoma la misma story; una story nueva no la hereda
+    ...(at(existing, 'horaDelPaso') ? { horaDelPaso: at(existing, 'horaDelPaso') } : {}),
   };
   // Un marcador que no es de ningún esquema (números y nombres mezclados, o un paso que la tabla no conoce) no se
   // escribe: los portones no sabrían si el plan está aprobado.
@@ -2010,7 +2018,7 @@ function cmdCompleteStep(nRaw, flags) {
     }
   }
   marker.lastTouch = nowIso();
-  writeMarker(marker);
+  writeMarker(conHoraDelPaso(marker));
   syncSessionState(SID);
   process.stdout.write(JSON.stringify(marker, null, 2));
 }
@@ -2065,7 +2073,7 @@ function cmdStartStep(nRaw) {
   const nuevo = anotarArranque(marker, n, nowIso());
   if (!nuevo) process.exit(0);
   nuevo.lastTouch = nowIso();
-  writeMarker(nuevo);
+  writeMarker(conHoraDelPaso(nuevo));
   syncSessionState(SID);
 }
 
@@ -4199,6 +4207,106 @@ function cmdFindByStory(storyId) {
   process.stdout.write(JSON.stringify(matches, null, 2));
 }
 
+// La marca de una corrida dejada a propósito: `<estado>/parked/<sesión>.json` con `{story, kind: queue | until, until, at,
+// by}`. Vive junto a las corridas y no adentro: sin firma no se escribe el marcador de otra sesión, y las de la fila tienen
+// la sesión cerrada. No autoriza nada, sólo protege y cambia lo que se muestra: ni ponerla ni sacarla piden firma.
+const parkedPath = (sid) => path.join(STATE_DIR, 'parked', `${String(sid).replace(/[/\\]/g, '_')}.json`);
+function sacarMarca(sid) {
+  try { fs.unlinkSync(parkedPath(sid)); } catch (e) { if (e.code !== 'ENOENT') console.error(`⚠️  marker.js: no pude sacar la marca de la sesión ${sid} (${e.code || e.message}).`); }
+}
+// La marca que protege a esta corrida: la de su historia, puesta después de que arrancó (una corrida nueva no la hereda), o
+// la fecha de `paused_until:` de su historia, que /wip y la oficina muestran igual. Una marca que está y no se puede leer
+// protege: no poder preguntar no es estar sin marca.
+function marcaDe(sid, m) {
+  let mark = null;
+  try { mark = JSON.parse(fs.readFileSync(parkedPath(sid), 'utf8')); } catch (e) {
+    if (e.code !== 'ENOENT' && e.code !== 'ENOTDIR') {
+      process.stderr.write(`[marker] no pude leer la marca de la sesión ${sid} (${e.code || e.message}): la trato como marcada.\n`);
+      return { kind: 'ilegible' };
+    }
+  }
+  if (mark && String(mark.story) === String(m && m.storyId) && !(Date.parse(mark.at) < Date.parse(m.startedAt))) return mark;
+  let until = null;
+  try { until = require(path.join(__dirname, '..', '..', '..', 'scripts', 'tools', 'work-in-progress.js')).storyPausedUntil(m && m.storyPath); } catch (e) {
+    // sin ese lector, sólo cuenta la marca: se dice, porque esto protege trabajo
+    process.stderr.write(`[marker] no pude ver si la historia ${m && m.storyId} está en pausa (${e.message}).\n`);
+  }
+  return until ? { kind: 'historia', until } : null;
+}
+// Una corrida terminada con cambios sin guardar espera el ok del dueño, aunque lleve días sin tocarse: no está abandonada.
+// Si no se puede leer el repo tampoco se poda.
+function esperaGuardar(m) {
+  if (!m || !Array.isArray(m.stepsPending) || m.stepsPending.length) return false;
+  try {
+    const t = require(path.join(__dirname, '..', '..', '..', 'scripts', 'tools', 'work-in-progress.js')).unsavedChanges(m, { until: Date.now() + 3000, cache: new Map() });
+    return t.dirty || t.problems.length > 0;
+  } catch (_e) { return true; }
+}
+// Las corridas abiertas de una historia, con las viejas: una dejada en fila puede llevar días sin tocarse.
+function corridasDe(storyId) {
+  let files = [];
+  try { files = fs.readdirSync(ACTIVE_DIR).filter((f) => f.endsWith('.json')); } catch (_e) { return []; }
+  const out = [];
+  for (const f of files) {
+    try {
+      const m = JSON.parse(fs.readFileSync(path.join(ACTIVE_DIR, f), 'utf8'));
+      if (m && String(m.storyId) === String(storyId)) out.push(m.sessionId || f.replace(/\.json$/, ''));
+    } catch (e) { process.stderr.write(`[marker] no pude leer ${f} (${e.message}): no sé si es de la historia ${storyId}.\n`); }
+  }
+  return out;
+}
+
+function cmdPark(storyId, rest = []) {
+  const uso = 'uso: marker.js park <historia> --queue | --until AAAA-MM-DD [--session <id>]';
+  if (!storyId || String(storyId).startsWith('--')) { console.error(`marker.js park: falta la historia — ${uso}`); process.exit(2); }
+  const queue = rest.includes('--queue');
+  const u = rest.indexOf('--until');
+  const until = u >= 0 ? rest[u + 1] : null;
+  if (queue === (u >= 0)) { console.error(`marker.js park: va con --queue o con --until, uno de los dos — ${uso}`); process.exit(2); }
+  // una fecha de verdad: un 31 de febrero no es una. Se compara en UTC, así da lo mismo el huso de la máquina
+  const when = until && /^\d{4}-\d\d-\d\d$/.test(until) ? new Date(`${until}T00:00:00Z`) : null;
+  if (u >= 0 && !(when && !Number.isNaN(when.getTime()) && when.toISOString().slice(0, 10) === until)) { console.error(`marker.js park: --until va con una fecha AAAA-MM-DD (es ${until}) — ${uso}`); process.exit(2); }
+  const s = rest.indexOf('--session');
+  const pedida = s >= 0 ? String(rest[s + 1] || '').replace(/[/\\]/g, '_') : null;
+  const corridas = corridasDe(storyId);
+  const elegidas = pedida ? corridas.filter((c) => c === pedida) : corridas;
+  if (!elegidas.length) { console.error(`marker.js park: no hay una corrida de la historia ${storyId}${pedida ? ` en la sesión ${pedida}` : ''}: no se marcó nada.`); process.exit(1); }
+  if (elegidas.length > 1) { console.error(`marker.js park: hay ${elegidas.length} corridas de la historia ${storyId}: ${elegidas.join(', ')}. Decí cuál con --session <id>: no se marcó nada.`); process.exit(1); }
+  const file = parkedPath(elegidas[0]);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, `${JSON.stringify({ story: String(storyId), kind: queue ? 'queue' : 'until', until: queue ? null : until, at: nowIso(), by: SID })}\n`);
+  fs.renameSync(tmp, file);
+  appendLog('parked.log', { kind: 'PARK', story: String(storyId), sessionId: elegidas[0], until: queue ? null : until, by: SID });
+  process.stdout.write(`park: la corrida de la historia ${storyId} (sesión ${elegidas[0]}) queda ${queue ? 'en fila para pruebas' : `en pausa hasta ${until}`}\n`);
+}
+
+function cmdUnpark(storyId) {
+  if (!storyId) { console.error('marker.js unpark: falta la historia — uso: marker.js unpark <historia>'); process.exit(2); }
+  const dir = path.join(STATE_DIR, 'parked');
+  let files = [];
+  try { files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')); } catch (_e) { /* sin carpeta, ninguna marca */ }
+  const marcadas = files.filter((f) => { try { return String(JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')).story) === String(storyId); } catch (_e) { return false; } });
+  if (!marcadas.length) { console.error(`marker.js unpark: no hay una marca de la historia ${storyId}.`); process.exit(1); }
+  for (const f of marcadas) sacarMarca(f.replace(/\.json$/, ''));
+  appendLog('parked.log', { kind: 'UNPARK', story: String(storyId), by: SID });
+  process.stdout.write(`unpark: la corrida de la historia ${storyId} ya no está marcada\n`);
+}
+
+// La hora de este paso, para que /wip y la oficina digan la misma aunque nadie mire y cambien las medianas. Si no se puede
+// calcular, el marcador queda sin ella y se calcula como antes.
+function conHoraDelPaso(marker) {
+  if (PREVIO) return marker;
+  try {
+    const hora = require(path.join(__dirname, '..', '..', '..', 'scripts', 'tools', 'work-in-progress.js')).hourForStep(marker, { home: os.homedir(), stateDir: STATE_DIR });
+    if (hora) marker.horaDelPaso = hora; else delete marker.horaDelPaso;
+  } catch (e) {
+    delete marker.horaDelPaso;
+    try { require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'session-state.js')).logError(STATE_DIR, `marker.js no pudo calcular la hora del paso (${e && e.message ? e.message : e})`); } catch (_e) { /* sin registro tampoco */ }
+  }
+  return marker;
+}
+
 function cmdClearSession(sid, rest = []) {
   if (!sid) {
     console.error('marker.js clear-session: sessionId requerido');
@@ -4215,6 +4323,15 @@ function cmdClearSession(sid, rest = []) {
   frenarSiIlegible(p, safe, `clear-session ${safe}`);
   const m = JSON.parse(fs.readFileSync(p, 'utf8'));
   frenarSiPerdida(safe, 'clear-session', m.repoPath);
+  // limpiar una corrida dejada a propósito pierde el trabajo: primero se saca la marca, a conciencia
+  const marca = marcaDe(safe, m);
+  if (marca) {
+    console.error(`marker.js clear-session: la corrida de la historia ${m.storyId} está marcada (en fila o en pausa) y limpiarla pierde su trabajo: no se borró nada.`);
+    if (marca.kind === 'historia') console.error(`  La pausa viene de \`paused_until: ${marca.until}\` de su historia: si de verdad hay que limpiarla, primero sacá esa línea.`);
+    else if (marca.kind === 'ilegible') console.error(`  Su marca no se puede leer: mirá ${parkedPath(safe)} y, si de verdad hay que limpiarla, sacala primero.`);
+    else console.error(`  Si de verdad hay que limpiarla, primero: marker.js unpark ${m.storyId}`);
+    process.exit(1);
+  }
   try { fs.unlinkSync(p); } catch (e) {
     console.error(`marker.js clear-session: no pude borrar ${p}: ${e.message}`);
     process.exit(1);
@@ -4257,6 +4374,7 @@ function cmdSalidaPerdida(modo, sesion) {
     try { fs.unlinkSync(markerFilePath(sesion)); } catch (_e) { /* ya no estaba: es lo perdido */ }
     or.cerrar({ sid: SID, sesion, runDir: apertura.runDir, story: apertura.story, estado: 'perdida', via, cita, extra: porDe(firma),
       motivo: `cerrada como perdida desde la sesión ${desde}` });
+    sacarMarca(sesion);
     syncSessionState(sesion);
     process.stdout.write(`cerrada como perdida: la ejecución de la story ${apertura.story} (sesión ${sesion})\n`);
     return;
@@ -4282,6 +4400,7 @@ function cmdSalidaPerdida(modo, sesion) {
     ...(sigue ? {} : { startedAt: nowIso(), stepScheme: STEPS_LIB.SCHEME, stepsCompleted: [], stepsPending: STEPS_LIB.STEPS.filter((s) => !s.flag).map((s) => s.id) }),
   });
   or.abrir({ sid: SID, story: base.story, storyPath: base.storyPath, repo: base.repo, runDir: base.runDir, motivo: 'restaurada' });
+  sacarMarca(sesion);
   syncSessionState(SID);
   process.stdout.write(`restaurada: la ejecución de la story ${base.story} vuelve a la sesión ${SID}\n`);
 }
@@ -4473,6 +4592,8 @@ function cmdAdoptSession(sid) {
   const adopted = { ...other, sessionId: SID, lastTouch: nowIso(), adoptedFrom: safe, adoptedAt: nowIso() };
   writeMarker(adopted);
   try { fs.unlinkSync(otherPath); } catch (_e) { /* pruneStale lo limpia */ }
+  // quien adopta una corrida en fila la retoma: deja de estar dejada a propósito
+  sacarMarca(safe);
   // el trabajo cambia de escritorio: la sesión vieja queda sin paso y la nueva toma el suyo
   syncSessionState(safe);
   syncSessionState(SID);
@@ -5332,7 +5453,8 @@ function cmdAdhoc(sub, payloadJson) {
     if (!until) { console.error('marker.js adhoc until: va con una hora HH:MM (por ejemplo 19:30)'); process.exit(2); }
     const existing = io.readAdhoc(STATE_DIR, SID);
     if (!existing) { console.error('marker.js adhoc until: esta sesión no tiene un arreglo rápido abierto: no hay dónde anotar la hora'); process.exit(1); }
-    io.writeAdhoc(STATE_DIR, SID, { ...existing, until });
+    // `untilAt`: cuándo se declaró esta hora; una declaración nueva empieza su propia promesa, y una de hace rato es vieja
+    io.writeAdhoc(STATE_DIR, SID, { ...existing, until, untilAt: nowIso() });
     syncSessionState(SID);
     appendLog('adhoc.log', { kind: 'ADHOC_UNTIL', until });
     warnPastUntil('adhoc until', until);
@@ -5482,6 +5604,7 @@ function cmdAdhoc(sub, payloadJson) {
       ...(existing && existing.capture ? { capture: existing.capture } : {}),
       // y la base: anotar la maqueta no achica lo que se mide de la rama
       ...(existing && existing.bases ? { bases: existing.bases } : {}),
+      ...(existing && existing.untilAt ? { untilAt: existing.untilAt } : {}),
     };
     io.writeAdhoc(STATE_DIR, destino, obj);
     syncSessionState(destino);
@@ -5772,11 +5895,17 @@ switch (cmd) {
   case 'rethink':
     cmdRethink(process.argv.slice(3));
     break;
+  case 'park':
+    cmdPark(arg1, process.argv.slice(4));
+    break;
+  case 'unpark':
+    cmdUnpark(arg1);
+    break;
   default:
     console.error(`marker.js: comando desconocido '${cmd}'`);
     console.error(
       'Usage: marker.js <set|get|touch|complete-step|append-file|clear|is-active|' +
-        'list-all|find-by-story|clear-session|adopt-session|update-story-status|' +
+        'list-all|find-by-story|clear-session|park|unpark|adopt-session|update-story-status|' +
         'mark-dod-runtime-checked|set-autonomous|set-check|run-check|set-flag|set-size|snapshot-iter|' +
         'mark-adversarial-launched|mark-adversarial-result|mark-adversarial-skipped|mark-adversarial-gate|promote-probe|adhoc|story-skill-bypass|' +
         'approve-mockup|rethink> [arg] [arg2]',

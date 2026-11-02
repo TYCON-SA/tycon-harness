@@ -65,7 +65,7 @@ function cachedQuery(query, { ttlMs = QUERY_TTL_MS, clock = Date.now } = {}) {
  * (`gates.log`).
  */
 function watchedDirs(home, sdir) {
-  return [path.join(sdir, 'active'), path.join(sdir, 'adhoc'), path.join(sdir, 'doing'), path.join(claudeDir(home), 'sessions'), path.join(sdir, 'sessions'),
+  return [path.join(sdir, 'active'), path.join(sdir, 'adhoc'), path.join(sdir, 'doing'), path.join(sdir, 'parked'), path.join(claudeDir(home), 'sessions'), path.join(sdir, 'sessions'),
     path.join(sdir, 'coordination'), path.join(sdir, 'gates.log')];
 }
 
@@ -107,7 +107,7 @@ const hhmm = (ms) => { const d = new Date(ms); return `${String(d.getHours()).pa
 
 async function serve() {
   const office = require(path.join(ROOT, 'scripts', 'tools', 'office.js'));
-  const { queryAll } = require(path.join(ROOT, 'scripts', 'tools', 'work-in-progress.js'));
+  const { queryAll, readPrs } = require(path.join(ROOT, 'scripts', 'tools', 'work-in-progress.js'));
   const home = os.homedir();
   const sdir = stateDir(home);
   const dir = officeDirOf(sdir);
@@ -122,6 +122,8 @@ async function serve() {
   }
   const notes = [];
   const query = cachedQuery(async (wanted) => { counters.queries += 1; return queryAll(wanted); });
+  // los pedidos que nombra el tablero, con el mismo recuerdo de un minuto
+  const queryPrs = cachedQuery(async (wanted) => { counters.queries += 1; return readPrs(wanted); });
   // la dirección del sitio se lee una vez, al arrancar: no cambia mientras la página está abierta
   const site = office.readSiteUrl();
   const siteUrl = async () => site;
@@ -132,7 +134,7 @@ async function serve() {
   // la foto: lo mismo que la foto fija, más lo que este proceso no pudo hacer
   const snapshot = async () => {
     counters.reads += 1;
-    const data = await office.collect({ home, queryAll: query, siteUrl, quietMinutes });
+    const data = await office.collect({ home, queryAll: query, queryPrs, siteUrl, quietMinutes });
     data.unreadable.push(...notes);
     const readAt = query.readAt();
     if (readAt != null) data.meta.pedidosLeidos = hhmm(readAt);

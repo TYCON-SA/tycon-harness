@@ -307,20 +307,34 @@ it refers to.
 
 ## The board in the office
 
-The `/office` page shows the coordinator's board of pending work in a panel apart from the desks: what is due today,
-this week, next week and later, each item with its expected end time, who has it and a plain note, plus what is already
-done with its real time. The coordinator writes the whole board to `<state>/coordination/tablero.json` (first to a
-separate file and then renamed, so the office never reads it half written) every time it changes:
+The `/office` page shows pending work as a kanban with five columns: **Tu firma, En curso, Esperan entrar, Sin empezar and
+Hechos**. The first three build themselves from what each session is doing. The coordinator's board adds what the machine
+does not know. The coordinator writes the whole board to `<state>/coordination/tablero.json` (first to a separate file and
+then renamed, so the office never reads it half written) every time it changes:
 
-- `pendientes`: a list; each item has `titulo`, `estado` (`hecho`, `curso`, `firma`, `riesgo` or `espera`), `grupo`
-  (`Hoy`, `Esta semana`, `La semana que viene` or `Más adelante`), `orden`, `quien`, `nota`, and its time:
-  `pronosticoIso` or `estimadaIso` (local time, `YYYY-MM-DDTHH:MM`), or `termina` with its own text. A done item carries
-  `realIso`.
+- `pendientes`: a list; each item has `titulo`, `estado` (`hecho`, `curso`, `firma`, `riesgo`, `entrando`, `sin-empezar`, or
+  `espera`, which goes to «Sin empezar»), `grupo` (`Hoy`, `Esta semana`, `La semana que viene` or `Más adelante`), `orden`,
+  `quien`, `nota`, and its time: `pronosticoIso` or `estimadaIso` (local time, `YYYY-MM-DDTHH:MM`), or `termina` with its
+  own text. A done item carries `realIso`.
+- `historia` (for example `"2.81"`) and `pedido` (`{ "repo": "tycon-harness", "numero": 885 }`), both optional. With
+  `historia` and a run of that story on this machine, the row adds no state or time: they come from the run, and the row
+  adds its `nota`. With `pedido`, the state comes from asking for it, at most once a minute: open goes to «Esperan
+  entrar», with the reason if it is a draft or out of the queue; merged goes to «Hechos» with its time. If the query fails,
+  the row stays where `estado` says and the reason goes to «No se pudo leer». `repo` is the name of a repo of a run on this
+  machine or of one declared in `team-repos.json`. `estado` only counts when there is nowhere else to get it from.
 - `meta`: `actualizado`, `resumen` and `teToca` (what the owner has to do, one line each).
 
-Without the file there is no panel. A broken file is reported below, under «No se pudo leer», and the panel is not
-drawn. The live office reads it again on its own when it changes. The desks do not come from here: they come from what
-each session is doing.
+Without the file the kanban still shows, with the real-state columns. A broken file is reported below, under «No se pudo
+leer». The live office reads it again on its own when it changes, and the kanban says «Tablero escrito a las HH:MM», with
+«(vieja)» once it passes the quiet-session threshold (even a board that is up to date and unchanged: it is only written
+when it changes). A row of a person who already has a real-state card is not duplicated. The desks do not come from here:
+they come from what each session is doing.
+
+A run left on purpose is marked with `marker.js park <story> --queue` («En fila para pruebas») or `--until YYYY-MM-DD` («En
+pausa hasta…»), even if its session is closed. With two runs of the same story, say which one with `--session <id>`. A
+marked run shows no time or delay, never says «limpiar», and `marker.js clear-session` refuses it. The mark goes away with
+`marker.js unpark <story>`, by adopting the run, or through the exit the owner signs. Neither one asks for a signature: the
+mark authorizes nothing. Why: clearing one of those loses the work.
 
 A quick fix's promised time is set by its session with `marker.js adhoc until HH:MM`. The office and `/wip` show it as
 its end and measure the delay against it; without a time they say «sin hora estimada».

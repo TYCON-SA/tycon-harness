@@ -194,6 +194,37 @@ test('T6 Events_FileChange_PushesWithinTwoSeconds: un marcador nuevo llega en me
   p.close();
 });
 
+test('T96 Live_StatusChange_PushesPhoto @story-2.81 @ac-51: una sesión que se para y una marca nueva llegan solas a la página', async () => {
+  const m = toy();
+  marker(m, 's1', '7.1', 'La oficina viva');
+  openSync(m);
+  const lock = readLock(m);
+  const p = page(lock);
+  const inicial = await p.next();
+  assert.strictEqual(inicial.data.agents.find((a) => a.nombre === 'Alfa').estado, 'trabajando');
+  const until = (pred, ms = 2000) => new Promise((resolve, reject) => {
+    const t0 = Date.now();
+    const look = () => {
+      const f = p.fotos.find(pred);
+      if (f) { resolve(Date.now() - t0); return; }
+      if (Date.now() - t0 > ms) { reject(new Error(`no llegó en ${ms} ms`)); return; }
+      setTimeout(look, 25);
+    };
+    look();
+  });
+  const at = Date.now();
+  fs.writeFileSync(path.join(m.sessions, 's1.json'), JSON.stringify({ pid: process.pid, sessionId: 's1', name: 'Alfa', status: 'idle', statusUpdatedAt: at }));
+  await until((f) => f.data.agents.find((a) => a.nombre === 'Alfa').estado === 'parada');
+  const parada = p.fotos.find((f) => f.data.agents.find((a) => a.nombre === 'Alfa').estado === 'parada');
+  assert.ok(parada.data.kanban.columnas.find((c) => c.id === 'curso').tarjetas.some((t) => t.quien === 'Alfa'), 'va a «En curso»');
+  // la marca: una carpeta que todavía no existe se espera desde la de arriba
+  fs.mkdirSync(path.join(m.sdir, 'parked'), { recursive: true });
+  await sleep(100);
+  fs.writeFileSync(path.join(m.sdir, 'parked', 's1.json'), JSON.stringify({ story: '7.1', kind: 'queue', until: null, at: new Date().toISOString(), by: 'x' }));
+  await until((f) => f.data.agents.find((a) => a.nombre === 'Alfa').marca === 'En fila para pruebas');
+  p.close();
+});
+
 test('T7 Events_BurstOfChanges_OneSnapshot: cinco cambios juntos dan una foto; uno igual no manda nada', async () => {
   // la foto lleva la hora en minutos: si el minuto cambia en medio, la foto nueva es legítima.
   // La prueba arranca lejos del cambio de minuto (dura unos 4 s, aun con la máquina cargada).
@@ -326,7 +357,7 @@ test('T14 Watch_MissingFolder_AndWatchError: una carpeta que aparece después se
   fs.mkdirSync(path.join(m.sdir, 'adhoc'));
   fs.writeFileSync(path.join(m.sdir, 'adhoc', 's1.json'), JSON.stringify({ reason: 'arreglo de la oficina', declaredAt: new Date().toISOString() }));
   const foto = await p.next(3000);
-  assert.ok(foto.data.agents.some((a) => /arreglo de la oficina/.test(a.haciendo || '')), JSON.stringify(foto.data.agents));
+  assert.ok(foto.data.agents.some((a) => /arreglo de la oficina/.test(a.titulo || '')), JSON.stringify(foto.data.agents));
   assert.strictEqual((await counters(lock)).intervals, 0, 'sin consultas periódicas');
   p.close();
 });

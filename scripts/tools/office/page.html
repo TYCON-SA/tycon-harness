@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Oficina del arnés</title>
 <style>
-/* La página de /office: arriba la sala en 3D; abajo una tarjeta por sesión, el tablero de la coordinadora y la tabla de
+/* La página de /office: arriba la sala en 3D; abajo una tarjeta por sesión, el kanban de pendientes y la tabla de
    /wip. Todo viene adentro. */
 :root{
   --bg:#f5f6f4; --surface:#ffffff; --fg:#1d2321; --muted:#5d6763; --line:#dde2df; --accent:#1f6f5c;
@@ -92,14 +92,18 @@ th{font:500 .72rem var(--display);text-transform:uppercase;letter-spacing:.07em;
 td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top;font-size:.9rem}
 tr:last-child td{border-bottom:0}
 footer{color:var(--muted);font-size:.85rem}
-/* el tablero de la coordinadora, abajo y compacto: los pendientes en una grilla que se acomoda al ancho (cada celda con
-   su título, quién y hora) y lo terminado plegado en una línea */
+/* los pendientes, un kanban de cinco columnas que se acomodan al ancho (cada tarjeta con su título, quién y hora) y lo
+   que quedó a medio camino plegado debajo */
 .board{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
 .board .sum{margin:0;font-size:.95rem}
-.board .pend{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px}
+.board .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;align-items:start}
+.board .col{display:flex;flex-direction:column;gap:6px;min-width:0}
+.board .col h3{margin:0;font:700 .85rem var(--display);border-bottom:3px solid var(--k,var(--line));padding-bottom:4px}
+.board .none{margin:0;font-size:.85rem;color:var(--muted)}
 .board .item{border-left:4px solid var(--k,var(--line));background:var(--bg);border-radius:4px;padding:6px 10px;display:flex;flex-direction:column;gap:2px;min-width:0}
 .board .item b{font-weight:600;font-size:.9rem;line-height:1.3;overflow-wrap:anywhere}
 .board .item .m{font:500 .78rem var(--mono);color:var(--muted);overflow-wrap:anywhere}
+.board .item .n{font-size:.82rem;overflow-wrap:anywhere}
 .board details.done summary{cursor:pointer;font-size:.9rem;color:var(--muted)}
 .board details.done ul{list-style:none;margin:6px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:4px 12px}
 .board details.done li{font-size:.85rem;overflow-wrap:anywhere} .board details.done li .m{font:500 .78rem var(--mono);color:var(--muted)}
@@ -118,9 +122,9 @@ footer{color:var(--muted);font-size:.85rem}
   </section>
   <div class="you" id="you" hidden><h2>Te toca a vos</h2><ul id="youList"></ul></div>
   <section><h2>Las sesiones</h2><div class="crew" id="crew"></div></section>
-  <section class="board" id="board" hidden aria-labelledby="boardTitle"><h2 id="boardTitle">El tablero de la coordinadora</h2><div id="boardBody"></div></section>
+  <section class="board" id="board" hidden aria-labelledby="boardTitle"><h2 id="boardTitle">Pendientes</h2><div id="boardBody"></div></section>
   <details class="tablewrap" id="tablewrap"><summary>Ver como tabla</summary><div class="table"><table><thead><tr><th>Trabajo</th><th>Estado</th><th>Fin estimado</th><th>Sesión</th><th>Carpeta</th></tr></thead><tbody id="rows"></tbody></table></div><p class="empty" id="freeLine" hidden></p></details>
-  <footer id="foot">«Prometido» es la primera hora de fin que se vio para esa sesión y esa story; «Termina» es la de ahora. La diferencia sale en rojo si va más de 15 minutos tarde y en verde si va más de 15 minutos antes.</footer>
+  <footer id="foot">«Prometido» es la hora que dio la corrida al arrancar; «Termina» es la de ahora, que se recalcula al entrar a cada paso y queda fija hasta el próximo. La diferencia sale en rojo si va más de 15 minutos tarde y en verde si va más de 15 minutos antes.</footer>
 </main>
 <script>
 let DATA=__OFFICE_DATA__;
@@ -130,7 +134,7 @@ const el=(t,c,txt)=>{const e=document.createElement(t);if(c)e.className=c;if(txt
 const DAYS=["dom","lun","mar","mié","jue","vie","sáb"];
 const parse=s=>{const m=/^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d)$/.exec(s||"");return m?new Date(+m[1],m[2]-1,+m[3],+m[4],+m[5]):null};
 const fmt=s=>{const d=parse(s);return d?DAYS[d.getDay()]+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"):"—"};
-const AST={trabajando:["Trabajando","#3ddc84"],prueba:["Corriendo pruebas","#5aa9ff"],espera:["Esperando entrar","#a59fc4"],firma:["Espera tu firma","#ffa53d"],libre:["Libre","#9aa3a0"],coordina:["Coordinando","#ff6fc0"],inactiva:["Inactiva","#6b6f6e"]};
+const AST={trabajando:["Trabajando","#3ddc84"],prueba:["Corriendo pruebas","#5aa9ff"],parada:["Parada","#c9b458"],espera:["Esperando entrar","#a59fc4"],firma:["Tu firma","#ffa53d"],libre:["Libre","#9aa3a0"],coordina:["Coordinando","#ff6fc0"],inactiva:["Inactiva","#6b6f6e"]};
 const SHIRT=["#c2569b","#2f9e6a","#3b7ddd","#e08a1e","#7a5cc7","#d65a4a"];
 let agents,items,meta;
 function setData(d){DATA=d||{};agents=DATA.agents||[];items=DATA.items||[];meta=DATA.meta||null}
@@ -139,24 +143,26 @@ const SITE=(()=>{try{const u=new URL(String(DATA&&DATA.meta&&DATA.meta.sitio||""
 setData(DATA);
 // el fin lo calcula office.js una vez por sesión: la etiqueta, la tarjeta, el detalle, el panel y la tabla dicen lo mismo
 const finTxt=a=>a.fin||null;
-// el tablero de la coordinadora, en su panel: sin tablero no hay panel. Todo va como texto, nunca como HTML
-const BK={hecho:"#3ddc84",curso:"#5aa9ff",firma:"#ffa53d",riesgo:"#ff6b80",espera:"#a59fc4"};
-function renderBoard(){const sec=document.getElementById("board"),body=document.getElementById("boardBody"),t=DATA.tablero;body.replaceChildren();
-  if(!t){sec.hidden=true;return}sec.hidden=false;
-  const top=el("p","sum");top.textContent=(t.resumen||"")+(t.actualizado?(t.resumen?" · ":"")+"Al día: "+t.actualizado:"");if(top.textContent)body.appendChild(top);
-  if((t.teToca||[]).length){const p=el("p","sum toca");p.textContent="Te toca: "+t.teToca.join(" · ");body.appendChild(p)}
-  // una celda por trabajo, en el orden de los grupos; el grupo va en la celda, así la grilla no se parte en columnas largas
-  const pend=el("div","pend");
-  (t.grupos||[]).forEach(g=>(g.items||[]).forEach(i=>{const c=el("div","item");c.style.setProperty("--k",BK[i.estado]||"var(--line)");if(i.nota)c.title=i.nota;
-    c.appendChild(el("b",null,i.titulo));c.appendChild(el("span","m",g.nombre+" · "+i.fin+(i.quien?" · "+i.quien:"")));pend.appendChild(c)}));
-  if(pend.children.length)body.appendChild(pend);else body.appendChild(el("p","empty","El tablero no tiene pendientes."));
-  // lo terminado, plegado en una línea que se abre al tocarla
-  const done=t.hechos||[];
-  if(done.length){const d=el("details","done");d.appendChild(el("summary",null,done.length+(done.length===1?" terminado":" terminados")));const ul=el("ul");
-    done.forEach(i=>{const li=el("li");li.appendChild(el("b",null,i.titulo));li.appendChild(el("span","m"," · "+i.real+(i.quien?" · "+i.quien:"")));ul.appendChild(li)});d.appendChild(ul);body.appendChild(d)}
+// los pendientes: cinco columnas siempre, del estado real y del tablero de la coordinadora. Todo va como texto, nunca como HTML
+function renderBoard(){const sec=document.getElementById("board"),body=document.getElementById("boardBody"),k=DATA.kanban,t=DATA.tablero,KC={firma:"#ffa53d",curso:"#5aa9ff",entrando:"#a59fc4",sinEmpezar:"#9aa3a0",hechos:"#3ddc84"};body.replaceChildren();
+  if(!k){sec.hidden=true;return}sec.hidden=false;
+  const resumen=t&&t.resumen||"";
+  const top=el("p","sum");top.textContent=resumen+(k.escrito?(resumen?" · ":"")+k.escrito:"");if(top.textContent)body.appendChild(top);
+  if(t&&(t.teToca||[]).length){const p=el("p","sum toca");p.textContent="Te toca: "+t.teToca.join(" · ");body.appendChild(p)}
+  const cols=el("div","cols");
+  (k.columnas||[]).forEach(c=>{const col=el("div","col"),list=c.tarjetas||[];col.style.setProperty("--k",KC[c.id]||"var(--line)");col.appendChild(el("h3",null,c.nombre+" · "+list.length));
+    if(!list.length)col.appendChild(el("p","none","Nada"));
+    list.forEach(i=>{const card=el("div","item");card.appendChild(el("b",null,i.titulo||""));const line=[i.quien,i.hora,i.grupo].filter(Boolean).join(" · ");if(line)card.appendChild(el("span","m",line));
+      [i.espera?"Espera "+i.espera+".":"",i.marca,i.motivo,i.nota].forEach(v=>{if(v)card.appendChild(el("span","n",v))});col.appendChild(card)});
+    cols.appendChild(col)});
+  body.appendChild(cols);
+  // lo que quedó a medio camino, plegado en una línea que se abre al tocarla, con qué hacer con cada cosa
+  const half=k.medioCamino||[];
+  if(half.length){const d=el("details","done");d.appendChild(el("summary",null,half.length+(half.length===1?" quedó a medio camino":" quedaron a medio camino")));const ul=el("ul");
+    half.forEach(i=>{const li=el("li");li.appendChild(el("b",null,i.titulo));li.appendChild(el("span","m"," · "+i.accion));ul.appendChild(li)});d.appendChild(ul);body.appendChild(d)}
 }
 function renderTop(){
-  document.getElementById("stamp").textContent=meta?"Foto de las "+meta.actualizado+(meta.pedidosLeidos?" · pedidos leídos a las "+meta.pedidosLeidos:""):"";
+  document.getElementById("stamp").textContent=meta?"Al día a las "+meta.actualizado+(meta.pedidosLeidos?" · pedidos leídos a las "+meta.pedidosLeidos:""):"";
   const site=document.getElementById("site");if(SITE){site.href=SITE;site.hidden=false}else{site.removeAttribute("href");site.hidden=true}
   const you=(meta&&meta.teToca)||[],ul=document.getElementById("youList");ul.replaceChildren();you.forEach(t=>ul.appendChild(el("li",null,t)));document.getElementById("you").hidden=!you.length;
   const tb=document.getElementById("rows");tb.replaceChildren();(DATA.rows||[]).forEach(r=>{const tr=el("tr");[r.work,r.state,r.end,r.session,r.folder].forEach(v=>tr.appendChild(el("td",null,v||"")));tb.appendChild(tr)});
@@ -168,15 +174,21 @@ function renderCrew(){const c=document.getElementById("crew");c.replaceChildren(
   agents.forEach((a,i)=>{const s=AST[a.estado]||[a.estado||"","#999"];const k=el("div","card");
     const h=el("h3");const d=el("span","dot");d.style.background=SHIRT[i%SHIRT.length];h.appendChild(d);h.appendChild(document.createTextNode(a.nombre||""));k.appendChild(h);
     const st=el("span","st",s[0]);st.style.color=s[1];st.style.borderColor=s[1];k.appendChild(st);
-    if(a.haciendo)k.appendChild(el("p",null,a.haciendo));
+    const side=(label,v)=>{if(!v)return;const m=el("p","side");m.appendChild(el("b",null,label+": "));m.appendChild(document.createTextNode(v));k.appendChild(m)};
+    if(a.encargo)side("Encargo",a.encargo);
+    if(a.haciendoAhora)side("Haciendo ahora",a.haciendoAhora);else if(a.haciendo)k.appendChild(el("p",null,a.haciendo));
+    if(a.ultimaAccion)side("Última acción",a.ultimaAccion);
     if(a.espera)k.appendChild(el("p","side","Espera "+a.espera+"."));
+    if(a.parada)k.appendChild(el("span","eta",a.parada.charAt(0).toUpperCase()+a.parada.slice(1)));
     if(a.callada)k.appendChild(el("span","eta",a.callada.charAt(0).toUpperCase()+a.callada.slice(1)));
-    if(a.mientras){const m=el("p","side");m.appendChild(el("b",null,"Mientras tanto: "));m.appendChild(document.createTextNode(a.mientras));k.appendChild(m)}
-    const f=finTxt(a);if(f)k.appendChild(el("span","eta","Termina "+f.hora+(f.dif?" · "+f.dif:"")));
+    side("Mientras tanto",a.mientras);
+    side("En pausa",a.enPausa);
+    const f=finTxt(a);if(f)k.appendChild(el("span","eta",(a.termina?"":"Termina ")+f.hora+(f.dif?" · "+f.dif:"")));
+    if(a.horaPorque)k.appendChild(el("span","eta",a.horaPorque.charAt(0).toUpperCase()+a.horaPorque.slice(1)));
     if(a.avance!=null)k.appendChild(el("span","eta","Avance: "+a.avance+"%"));c.appendChild(k)})}
 // sin 3D, la tabla queda abierta y la sala dice por qué
 function sinTresD(msg){const o=document.getElementById("ovl");o.textContent=msg;o.hidden=false;document.getElementById("tablewrap").open=true}
-window.tablero={agents:()=>agents,items:()=>items,meta:()=>meta,site:()=>SITE,AST,SHIRT,fmt,finTxt,sinTresD};
+window.tablero={agents:()=>agents,items:()=>items,kanban:()=>DATA.kanban||null,meta:()=>meta,site:()=>SITE,AST,SHIRT,fmt,finTxt,sinTresD};
 // el reloj de la página (decisión 20): cada minuto compara la hora con la última novedad de cada sesión y marca las
 // calladas; sin pid, pasadas las 2 h, la da por inactiva. No consulta nada afuera: mira la hora y los datos que tiene.
 const QUIET_DEFAULT=15,DEAD_MS=2*3600000;
@@ -184,7 +196,7 @@ function umbral(m){const n=Number(m&&m.quietMin);return Number.isFinite(n)&&n>0?
 function relojTick(list,now,m){const q=umbral(m)*60000,hh=t=>{const d=new Date(t);return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0")};
   (list||[]).forEach(a=>{if(typeof a.novedadMs!=="number"||a.estado==="inactiva")return;const desde="sin novedades desde las "+hh(a.novedadMs);
     if(a.sinPid&&now-a.novedadMs>DEAD_MS){a.estado="inactiva";a.callada=null;a.haciendo="Inactiva: "+desde+".";return}
-    a.callada=now-a.novedadMs>q?desde:null})}
+    a.callada=a.estado!=="parada"&&now-a.novedadMs>q?desde:null})}
 // fin del reloj
 // el reloj corre también al abrir y con cada foto nueva: la foto y el minuto siguiente dicen lo mismo de cada sesión
 relojTick(agents,Date.now(),meta);renderTop();renderCrew();
@@ -260,16 +272,17 @@ function drawSign(){const {g}=texSign.userData,w=1024,h=300;g.clearRect(0,0,w,h)
 drawSign();
 // el panel de la pared: lo pendiente de esta máquina
 const texPanel=canvasTex(768,640,()=>{});
-const GROUPS=[["riesgo","A medio camino","#ff6b80"],["firma","Tu firma","#ffb04d"],["curso","En curso","#6cb6ff"],["espera","Esperan entrar","#c4bdf0"]];
-function drawPanel(){const {g}=texPanel.userData,w=768,h=640,items=T.items(),meta=T.meta();g.clearRect(0,0,w,h);g.fillStyle="#0e1220";g.beginPath();g.roundRect(4,4,w-8,h-8,26);g.fill();g.strokeStyle="#4a5a8a";g.lineWidth=8;g.stroke();
-  g.fillStyle="#ffffff";g.font="800 64px "+FONT;g.fillText("Pendientes",36,82);
-  const cnt=k=>items.filter(i=>i.estado===k).length;
-  const stats=[["En curso",cnt("curso"),"#3ddc84"],["Tu firma",cnt("firma"),"#ffb04d"],["Esperan entrar",cnt("espera"),"#c4bdf0"],["A medio camino",cnt("riesgo"),"#ff6b80"]];
-  stats.forEach(([l,n,c],i)=>{const x=36+(i%2)*356,y=112+Math.floor(i/2)*190;g.fillStyle="#1b2236";g.beginPath();g.roundRect(x,y,340,176,20);g.fill();g.fillStyle=c;g.fillRect(x,y,12,176);
-    g.font="800 120px "+FONT;g.fillText(String(n),x+34,y+118);g.fillStyle="#ffffff";g.font="700 38px "+FONT;g.fillText(l,x+34,y+160)});
-  const toca=(meta&&meta.teToca)||[];g.fillStyle="#ffb04d";g.font="800 52px "+FONT;g.fillText("Te toca: "+toca.length,36,560);
-  g.fillStyle="#dfe6ff";g.font="600 32px "+FONT;g.textAlign="right";g.fillText("tocá para ver el detalle",w-36,612);g.textAlign="left";
-  if(meta&&meta.actualizado){g.fillStyle="#9fb0d8";g.font="600 32px "+FONT;g.fillText(meta.actualizado,36,612)}texPanel.needsUpdate=true}
+// las columnas del kanban, con sus colores; lo que quedó a medio camino se cuenta aparte
+const KCOL={firma:"#ffb04d",curso:"#6cb6ff",entrando:"#c4bdf0",sinEmpezar:"#9aa3a0",hechos:"#3ddc84"},HALF="#ff6b80";
+const stampOf=(k,meta)=>k&&k.escrito||"Al día a las "+meta.actualizado;
+function drawPanel(){const {g}=texPanel.userData,w=768,h=640,k=T.kanban(),meta=T.meta();g.clearRect(0,0,w,h);g.fillStyle="#0e1220";g.beginPath();g.roundRect(4,4,w-8,h-8,26);g.fill();g.strokeStyle="#4a5a8a";g.lineWidth=8;g.stroke();
+  g.fillStyle="#ffffff";g.font="800 64px "+FONT;g.fillText("Pendientes",36,76);
+  const stats=((k&&k.columnas)||[]).map(c=>[c.nombre,(c.tarjetas||[]).length,KCOL[c.id]||"#9aa3a0"]);stats.push(["A medio camino",((k&&k.medioCamino)||[]).length,HALF]);
+  stats.forEach(([l,n,c],i)=>{const x=36+(i%2)*356,y=96+Math.floor(i/2)*138;g.fillStyle="#1b2236";g.beginPath();g.roundRect(x,y,340,128,18);g.fill();g.fillStyle=c;g.fillRect(x,y,12,128);
+    g.font="800 84px "+FONT;g.fillText(String(n),x+30,y+82);g.fillStyle="#ffffff";g.font="700 32px "+FONT;g.fillText(l,x+30,y+116)});
+  const toca=(meta&&meta.teToca)||[];g.fillStyle="#ffb04d";g.font="800 46px "+FONT;g.fillText("Te toca: "+toca.length,36,558);
+  g.fillStyle="#dfe6ff";g.font="600 26px "+FONT;g.textAlign="right";g.fillText("tocá para ver el detalle",w-36,612);g.textAlign="left";
+  if(meta&&meta.actualizado){g.fillStyle="#9fb0d8";g.font="600 26px "+FONT;g.fillText(stampOf(k,meta),36,612)}texPanel.needsUpdate=true}
 
 // ---------- habitación ----------
 const S=10,WH=4.2;
@@ -401,6 +414,7 @@ function drawScreen(d,t){const {g}=d.screen.userData,w=160,h=120,e=d.agent.estad
   else if(e==="espera"){g.fillStyle="#141226";g.fillRect(0,0,w,h);const r=(t*.5)%1;g.save();g.translate(80,60);g.rotate(r>.85?(r-.85)/.15*Math.PI:0);g.strokeStyle="#c9c2ea";g.lineWidth=3;g.beginPath();g.moveTo(-18,-30);g.lineTo(18,-30);g.lineTo(-18,30);g.lineTo(18,30);g.closePath();g.stroke();g.fillStyle="#c9c2ea";const k=Math.min(r/.85,1);g.beginPath();g.moveTo(-14*(1-k),-26+26*k);g.lineTo(14*(1-k),-26+26*k);g.lineTo(0,0);g.fill();g.beginPath();g.moveTo(0,26-24*k);g.lineTo(14*k+2,26);g.lineTo(-14*k-2,26);g.fill();g.restore()}
   else if(e==="coordina"){g.fillStyle="#1f0f22";g.fillRect(0,0,w,h);g.strokeStyle="#ff8fd0";g.lineWidth=2;const B=[[60,10],[12,74],[60,74],[108,74]];B.forEach(([x,y],i)=>{g.globalAlpha=.55+.45*Math.abs(Math.sin(t*2+i));g.strokeRect(x,y,40,24)});g.globalAlpha=1;g.beginPath();g.moveTo(80,34);g.lineTo(80,54);g.moveTo(32,54);g.lineTo(128,54);[32,80,128].forEach(x=>{g.moveTo(x,54);g.lineTo(x,74)});g.stroke()}
   else if(e==="libre"){g.fillStyle="#06070d";g.fillRect(0,0,w,h);g.fillStyle="#5a6a9a";g.font="700 12px monospace";g.fillText("zZ",80+Math.sin(t*.7)*55-8,60+Math.cos(t*.9)*35)}
+  else if(e==="parada"){g.fillStyle="#161208";g.fillRect(0,0,w,h);g.fillStyle="#c9b458";g.fillRect(58,36,14,48);g.fillRect(88,36,14,48);g.font="700 14px monospace";g.fillText("PARADA",54,106)}
   else{g.fillStyle="#0e1426";g.fillRect(0,0,w,h);const cols=["#7fe0b0","#7fb2ff","#ffcf6e","#ff8fb1","#c7a2ff"];const off=(t*26+d.t0*40)%12;for(let i=-1;i<11;i++){const yy=10+i*12-off,sl=Math.floor(i+t*26/12+d.t0*3);let x=8+(sl%3)*10;for(let k=0;k<3;k++){const ww=10+((sl*7+k*13)%30);g.fillStyle=cols[(sl+k)%5];g.fillRect(x,yy,ww,5);x+=ww+5}}if(Math.floor(t*2)%2){g.fillStyle="#fff";g.fillRect(140,104,6,9)}}
   d.screen.needsUpdate=true}
 
@@ -411,6 +425,7 @@ function animar(d,t){const {up,head,arms}=d.person.userData,e=d.agent.estado,k=t
   else if(e==="coordina"){armR=2.35;zR=-.55;armL=1.15;hx=-.12;hy=.25+Math.sin(k*.9)*.08;lean=.02}
   else if(e==="espera"){lean=-.2+Math.sin(k*1.4)*.02;armL=armR=1.0;zL=.2;zR=-.2;hx=-.1;hy=Math.sin(k*.5)*.15}
   else if(e==="libre"){lean=-.24;armL=armR=1.0;zL=.2;zR=-.2;hx=.3+Math.sin(k*1.2)*.03}
+  else if(e==="parada"){lean=-.16;armL=armR=1.05;zL=.18;zR=-.18;hx=.02;hy=Math.sin(k*.4)*.1}
   else if(e==="firma"){armR=2.9+Math.sin(k*7)*.25;zR=-.25;armL=1.2;lean=-.06;hx=-.15;hy=.45}
   const ease=(o,v)=>o+(v-o)*.15;up.rotation.x=ease(up.rotation.x,-lean);up.scale.y=1+Math.sin(k*2.2)*.012;
   arms[0].rotation.x=ease(arms[0].rotation.x,armL);arms[1].rotation.x=ease(arms[1].rotation.x,armR);arms[0].rotation.z=ease(arms[0].rotation.z,zL);arms[1].rotation.z=ease(arms[1].rotation.z,zR);
@@ -420,7 +435,7 @@ function animar(d,t){const {up,head,arms}=d.person.userData,e=d.agent.estado,k=t
 // ---------- etiquetas ----------
 let desks=[],sel=null;
 const BOT='<svg class="bot" viewBox="0 0 24 24" fill="none" stroke="#c9b6ff" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="4" y="8" width="16" height="11" rx="4"/><path d="M12 8V4.5"/><circle cx="12" cy="3.5" r="1.2"/><circle cx="9" cy="13" r="1.3" fill="#c9b6ff"/><circle cx="15" cy="13" r="1.3" fill="#c9b6ff"/><path d="M2 12.5v3M22 12.5v3"/></svg>';
-const FX={firma:"!",espera:"⌛",coordina:"→",prueba:"✓",libre:"z"};
+const FX={firma:"!",espera:"⌛",coordina:"→",prueba:"✓",libre:"z",parada:"‖"};
 function nuevoTag(d){const e=document.createElement("button");e.type="button";e.className="tag";e.innerHTML=BOT+'<div class="tx"><b></b><span class="st"><span class="dot"></span><span class="es"></span></span><span class="more"><span class="fin"></span><span class="bar"><i></i></span></span></div><span class="fx"></span>';e.onclick=()=>abrir(d.agent.nombre);labelsEl.appendChild(e);d.el=e}
 function pintarTag(d){const a=d.agent,s=T.AST[a.estado]||[a.estado||"","#999"];d.el.style.setProperty("--c",s[1]);d.el.style.setProperty("--ropa",d.ropa);d.el.querySelector("b").textContent=a.nombre||"";
   d.el.querySelector(".es").textContent=s[0]+(a.mientras?" · y algo más":"");const f=T.finTxt(a),fin=d.el.querySelector(".fin");fin.replaceChildren();
@@ -448,9 +463,15 @@ function abrir(nombre){panel.classList.remove("wide");sel=nombre;const a=T.agent
   const row=(k,v,cls)=>{if(v==null||v==="")return;const dt=document.createElement("dt");dt.textContent=k;const dd=document.createElement("dd");if(cls)dd.className=cls;if(v instanceof Node)dd.append(v);else dd.textContent=v;dl.append(dt,dd)};
   row("Trabajo",a.titulo);
   row("De la historia",a.historia);
-  row("Haciendo",a.haciendo);
+  row("Encargo",a.encargo);
+  if(a.haciendoAhora)row("Haciendo ahora",a.haciendoAhora);else row("Haciendo",a.haciendo);
+  row("Última acción",a.ultimaAccion);
+  row("Espera",a.espera);
+  row("Parada",a.parada);
   if(a.mientras){const sp=document.createElement("span");const ms=T.AST[a.mientrasEstado];sp.textContent=a.mientras+(ms?" ("+ms[0].toLowerCase()+")":"");row("Mientras tanto",sp)}
+  row("En pausa",a.enPausa);
   const f=T.finTxt(a);if(f){const sp=document.createElement("span");sp.append(f.hora);if(f.dif){const x=document.createElement("em");x.className=f.cls;x.textContent=" · "+f.dif;sp.append(x)}row("Termina",sp)}
+  row("Por qué",a.horaPorque);
   if(a.estimadaIso)row("Prometido",T.fmt(a.estimadaIso));
   if(a.avance!=null){const b=document.createElement("span");b.className="pbar";const i=document.createElement("i");i.style.width=a.avance+"%";b.append(i);const w=document.createElement("span");w.append(b," "+a.avance+"%");row("Avance",w)}
   row("Carpeta",a.carpeta);
@@ -466,17 +487,18 @@ renderer.domElement.addEventListener("pointermove",e=>{if(e.buttons)return;const
 renderer.domElement.addEventListener("pointerup",e=>{if(!down||Math.hypot(e.clientX-down[0],e.clientY-down[1])>5)return;const h=apuntado(e);if(!h)return;if(h.object===pnlFace){abrirTablero();return}if(h.object===signFace){const s=sitio();if(s)window.open(s,"_blank","noopener");return}const d=desks.find(x=>x.hit===h.object);if(d)abrir(d.agent.nombre)});
 let mueve=null;renderer.domElement.addEventListener("pointermove",e=>{if(mueve)return;mueve=requestAnimationFrame(()=>{mueve=null;renderer.domElement.style.cursor=apuntado(e)?"pointer":"grab"})});
 // el detalle de lo pendiente, plano y legible
-function abrirTablero(){sel=null;desks.forEach(pintarTag);const items=T.items(),meta=T.meta();panel.hidden=false;panel.classList.add("wide");panel.style.setProperty("--c","#9cc2ff");panel.replaceChildren();
+function abrirTablero(){sel=null;desks.forEach(pintarTag);const K=T.kanban()||{},meta=T.meta();panel.hidden=false;panel.classList.add("wide");panel.style.setProperty("--c","#9cc2ff");panel.replaceChildren();
   const mk=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
   const cl=mk("button","close","×");cl.type="button";cl.setAttribute("aria-label","Cerrar");cl.onclick=()=>{panel.hidden=true;panel.classList.remove("wide")};panel.append(cl,mk("h3",null,"Pendientes"));
-  const de=g=>items.filter(i=>i.estado===g).sort((a,b)=>(a.pronosticoIso||a.estimadaIso||"9").localeCompare(b.pronosticoIso||b.estimadaIso||"9"));
-  const ct=mk("div","counts");GROUPS.forEach(([g,l,c])=>{const k=mk("div","cnt");k.style.setProperty("--k",c);k.append(mk("b",null,String(de(g).length)),mk("span",null,l));ct.append(k)});panel.append(ct);
+  const cols=K.columnas||[],half=K.medioCamino||[];
+  const ct=mk("div","counts");cols.forEach(c=>{const k=mk("div","cnt");k.style.setProperty("--k",KCOL[c.id]||"#9aa3a0");k.append(mk("b",null,String((c.tarjetas||[]).length)),mk("span",null,c.nombre));ct.append(k)});
+  {const k=mk("div","cnt");k.style.setProperty("--k",HALF);k.append(mk("b",null,String(half.length)),mk("span",null,"A medio camino"));ct.append(k)}panel.append(ct);
   const toca=(meta&&meta.teToca)||[];if(toca.length){panel.append(mk("h4","toca","Te toca"));const ul=mk("ul","toca");toca.forEach(t=>ul.append(mk("li",null,t)));panel.append(ul)}
-  GROUPS.forEach(([g,l,c])=>{const rows=de(g);if(!rows.length)return;const h=mk("h4",null,l+" · "+rows.length);h.style.color=c;panel.append(h);const ul=mk("ul","list");
-    rows.forEach(r=>{const li=mk("li");li.append(mk("b",null,r.titulo||""));const f=r.fin;
-      const meta2=mk("span","m",(r.accion||r.quien||"—")+(f?" · "+f.hora:""));if(f&&f.dif)meta2.append(mk("em",f.cls," · "+f.dif));li.append(meta2);ul.append(li)});panel.append(ul)});
-  if(!items.length)panel.append(mk("p","m","No hay nada pendiente en esta máquina."));
-  if(meta&&meta.actualizado)panel.append(mk("p","m","Foto de las "+meta.actualizado))}
+  cols.forEach(c=>{const rows=c.tarjetas||[];if(!rows.length)return;const h=mk("h4",null,c.nombre+" · "+rows.length);h.style.color=KCOL[c.id]||"#9aa3a0";panel.append(h);const ul=mk("ul","list");
+    rows.forEach(r=>{const li=mk("li");li.append(mk("b",null,r.titulo||""));li.append(mk("span","m",[r.quien,r.hora,r.espera?"espera "+r.espera:"",r.marca,r.motivo].filter(Boolean).join(" · ")));if(r.nota)li.append(mk("span","m",r.nota));ul.append(li)});panel.append(ul)});
+  if(half.length){const h=mk("h4",null,"A medio camino · "+half.length);h.style.color=HALF;panel.append(h);const ul=mk("ul","list");half.forEach(r=>{const li=mk("li");li.append(mk("b",null,r.titulo||""),mk("span","m",r.accion||""));ul.append(li)});panel.append(ul)}
+  if(!half.length&&!cols.some(c=>(c.tarjetas||[]).length))panel.append(mk("p","m","No hay nada pendiente en esta máquina."));
+  if(meta&&meta.actualizado)panel.append(mk("p","m",stampOf(K,meta)))}
 
 // ---------- luces y postproceso ----------
 scene.add(new THREE.HemisphereLight("#ffd6b0","#5a3a6a",1.7));

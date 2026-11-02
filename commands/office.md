@@ -38,18 +38,22 @@ otra vez para verla al día.» y deja la última foto.
 ## Qué trae la página
 
 Los datos son los mismos de `/wip`, más las firmas pendientes y la sesión coordinadora. Cada sesión es una persona en
-su escritorio (hasta diez, acomodados según cuántas haya; las demás, en las tarjetas de abajo), con su nombre, su
-estado en palabras y su hora de fin. La hora se compara con la que prometió la corrida al arrancar (o, si no la anotó,
-con la primera que se vio): sale en rojo si va más de 15 minutos tarde y en verde si va más de 15 minutos antes. Si el
-perfil del equipo trae la dirección del sitio de la organización, el encabezado tiene «Abrir el sitio» y el cartel de
-la pared también lo abre. Arriba de la etiqueta, una burbuja más chica dice lo que hace mientras
-tanto.
+su escritorio (hasta diez, acomodados según cuántas haya; con más, primero las que trabajan, y las demás en las tarjetas
+de abajo), con su nombre, su estado en palabras y su hora de fin. El estado sale de si la sesión trabaja, no de su paso:
+«Trabajando», «Parada» o «Tu firma» cuando espera algo del dueño. La hora se calcula al entrar a cada paso y queda fija
+hasta el próximo: sale en rojo si va más de 15 minutos tarde. El detalle dice además la hora que prometió la corrida al
+arrancar. Una hora que ya no dice nada lo aclara: «vieja (de las HH:MM)» o «sin hora: el trabajo cambió». Si el perfil del
+equipo trae la dirección del sitio de la organización, el encabezado tiene «Abrir el sitio» y el cartel de la pared también
+lo abre. Arriba de la etiqueta, una burbuja más chica dice lo que hace mientras tanto, si lo tocó en la última hora. Una
+sesión sin pipeline dice su encargo, lo que está haciendo y su última acción, leídos sólo del principio y del final de su
+conversación: nada de eso se guarda ni sale de la máquina.
 
-La persona se mueve según su estado: teclea cuando trabaja, mira la pantalla cuando corre pruebas o revisores, espera
-reclinada cuando su story espera entrar a los repos, levanta la mano con un aro naranja en el piso cuando la sesión
-espera una respuesta o un permiso, y señala cuando es la coordinadora. Al tocarla se abre su detalle, con los pasos de
-su corrida. El panel de la pared cuenta lo pendiente de la máquina (en curso, tu firma, esperan entrar, a medio camino)
-y al tocarlo lo lista.
+La persona se mueve según su estado: teclea cuando trabaja, mira la pantalla cuando corre pruebas o revisores, se queda
+quieta cuando está parada, espera reclinada cuando su story espera entrar a los repos, levanta la mano con un aro naranja
+en el piso cuando la sesión espera algo del dueño, y señala cuando es la coordinadora. Al tocarla se abre su detalle, con
+los pasos de su corrida. Abajo, los pendientes son un kanban de cinco columnas (Tu firma, En curso, Esperan entrar, Sin
+empezar, Hechos), con lo que quedó a medio camino plegado debajo. El panel de la pared cuenta esas columnas y al tocarlo
+las lista.
 
 La página no necesita internet: la librería 3D y la del WebSocket vienen con el arnés. Si el navegador no puede dibujar
 en 3D, lo dice y abre la tabla. Con `--json` el programa imprime los datos, y con `--out <archivo>` escribe la foto fija
