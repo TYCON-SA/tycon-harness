@@ -48,7 +48,7 @@ and stories—; then, story by story.
   you do not decide alone: the quick path is approved by the coordinating session or you. The harness enforces it:
   - Without an open quick path or a story, the harness **does not let you write code**.
   - The quick path has a **file cap**: 5 if the coordinating session approved it, 8 if you did. Past it, the harness
-    **closes it** and asks for a story.
+    **closes it** and recommends a story. If you still want to stay on the quick path, you ask for it with a separate click, which is recorded; the coordinating session cannot.
   - A quick path with several topics in its reason **cannot be approved by the coordinating session**.
 - **Risk decides who approves.**
   - **High risk** is when the change touches something sensitive in the repo, such as production, a migration or
@@ -60,9 +60,8 @@ and stories—; then, story by story.
     automatic review said "approved". With high risk, you approve it. Without a coordinating session, you approve its
     part. The plan never approves itself.
 - **If the change has a screen, on both paths a mockup is approved before building.** In a story, whoever approves the
-  plan approves it, and the harness stops if the mockup changed, if one of its texts is missing from the screen, or if a
-  dialog does not open on top; the rest is checked by whoever tests the screen. On a quick path it does not save without
-  the mockup and a screenshot newer than the last change, but it does not compare them: whoever approves saving does.
+  plan approves it; on a quick path it is recorded when the lane opens. On both, what was built is validated against the
+  mockup.
 - **Saving is a click in the options box or a written "Aprobado", on both paths.** Before every commit, push and pull
   request the agent asks "save?". If your tab asks for permissions, the yes goes in the permission window. There is no
   signature and no command.
@@ -77,10 +76,10 @@ flowchart TB
   chico -- "No · Story" --> h1
   subgraph rapido [" "]
     direction TB
-    r1["<b>Open the lane</b><br/>with the list of files<br/>normal risk: the coordinating session, up to 5<br/>high risk: you, up to 8"] --> r1m["<b>Approve the mockup</b><br/>if it has a screen · before building"]
+    r1["<b>Open the lane</b><br/>with the list of files<br/>normal risk: the coordinating session, up to 5<br/>high risk: you, up to 8<br/>more than 8: the harness recommends a story, or a separate click from you"] --> r1m["<b>Approve the mockup</b><br/>if it has a screen · before building"]
     r1m --> r2["<b>Code with the test first</b><br/>at saving, the harness warns if it was the other way round"]
     r2 --> r3["<b>Run its tests</b>"]
-    r3 --> r3c["<b>Capture what was built</b><br/>if it has a screen · the harness requires it, but whoever approves saving compares it"]
+    r3 --> r3c["<b>Validate against the mockup</b><br/>if it has a screen"]
     r3c --> r4["<b>Reviewers and adversarial pass</b><br/>only with high risk"]
   end
   subgraph historia [" "]
@@ -93,9 +92,9 @@ flowchart TB
     h5 --> h6["<b>Reviewers</b><br/>picked based on the change"]
     h6 --> h7["<b>Adversarial pass</b><br/>not on a small low-risk story, nor on documentation or tests only"]
     h7 --> h8["<b>Live check, criterion by criterion</b>"]
+    h8 --> h9["<b>Validate against the mockup</b><br/>if it has a screen"]
   end
   r4 --> g1["<b>Save</b><br/>a click in the box, or a written «Aprobado»"]
-  h8 --> h9["<b>Compare with the mockup</b><br/>if it has a screen · the harness compares the texts; the rest, whoever tests the screen"]
   h9 --> g1
   g1 --> g2["<b>Pull request</b><br/>CI"]
   classDef decide fill:#2f6fde,stroke:#1f4fa8,color:#ffffff

@@ -218,10 +218,8 @@ alcanza con mirar el resultado y sus pruebas. No hay revisores ni pase, salvo co
 archivo de código si antes no se tocó una prueba; en un camino rápido, avisa al guardar si fue al revés.
 
 **5. Si el cambio tiene pantalla.** En los dos caminos se aprueba una maqueta antes de construir: un archivo con los
-textos reales de la pantalla y dónde va cada cosa. En una historia la aprueba quien aprueba el plan, y el arnés frena si
-la maqueta cambió, si en la pantalla falta uno de sus textos o si una ventana no se abre encima; el resto lo mira quien
-prueba la pantalla. En un camino rápido no guarda sin la maqueta y una captura más nueva que el último cambio, pero no
-las compara: las compara quien aprueba guardar.
+textos reales de la pantalla y dónde va cada cosa. En una historia la aprueba quien aprueba el plan; en un camino rápido se
+anota al abrir el carril. En los dos, lo construido se valida contra la maqueta.
 
 Los frenos, los controles y las firmas de control del arnés son de quien lo mantiene.
 

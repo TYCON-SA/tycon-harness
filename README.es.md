@@ -47,7 +47,7 @@ El ciclo de desarrollo con IA (AI SDLC), paso por paso:
   coordinadora, no lo decidís solo: el camino rápido lo aprueba la sesión coordinadora o vos. Lo hace cumplir el arnés:
   - Sin un camino rápido abierto o una historia, el arnés **no deja escribir código**.
   - El camino rápido tiene un **tope de archivos**: 5 si lo aprobó la sesión coordinadora, 8 si lo aprobaste vos. Al pasarlo,
-    el arnés **lo cierra** y pide una historia.
+    el arnés **lo cierra** y recomienda una historia. Si igual querés seguir por camino rápido, lo pedís vos con un click aparte, que queda anotado; la sesión coordinadora no puede.
   - Un camino rápido con varios temas en el motivo **no lo puede aprobar la sesión coordinadora**.
 - **El riesgo decide quién aprueba.**
   - **Riesgo alto** es cuando el cambio toca algo sensible del repo, como producción, una migración o seguridad.
@@ -60,9 +60,8 @@ El ciclo de desarrollo con IA (AI SDLC), paso por paso:
     dio «aprobado». Con riesgo alto, lo aprobás vos. Sin sesión coordinadora, lo suyo lo aprobás vos. El plan nunca se
     aprueba solo.
 - **Si el cambio tiene pantalla, en los dos caminos se aprueba una maqueta antes de construir.** En una historia la
-  aprueba quien aprueba el plan, y el arnés frena si la maqueta cambió, si en la pantalla falta uno de sus textos o si
-  una ventana no se abre encima; el resto lo mira quien prueba la pantalla. En un camino rápido no guarda sin la maqueta
-  y una captura más nueva que el último cambio, pero no las compara: las compara quien aprueba guardar.
+  aprueba quien aprueba el plan; en un camino rápido se anota al abrir el carril. En los dos, lo construido se valida
+  contra la maqueta.
 - **Guardar es un click en el cuadro de opciones o un «Aprobado» escrito, en los dos caminos.** Antes de cada commit,
   push y pull request el agente pregunta «¿guardo?». Si tu pestaña pide permisos, el sí va en la ventana de permiso. No
   hay firma ni comando.
@@ -77,10 +76,10 @@ flowchart TB
   chico -- "No · Historia" --> h1
   subgraph rapido [" "]
     direction TB
-    r1["<b>Abrir el carril</b><br/>con la lista de archivos<br/>riesgo normal: la sesión coordinadora, hasta 5<br/>riesgo alto: vos, hasta 8"] --> r1m["<b>Aprobar la maqueta</b><br/>si tiene pantalla · antes de construir"]
+    r1["<b>Abrir el carril</b><br/>con la lista de archivos<br/>riesgo normal: la sesión coordinadora, hasta 5<br/>riesgo alto: vos, hasta 8<br/>más de 8: el arnés recomienda una historia, o un click aparte tuyo"] --> r1m["<b>Aprobar la maqueta</b><br/>si tiene pantalla · antes de construir"]
     r1m --> r2["<b>Programar con la prueba primero</b><br/>al guardar, el arnés avisa si fue al revés"]
     r2 --> r3["<b>Correr sus pruebas</b>"]
-    r3 --> r3c["<b>Capturar lo construido</b><br/>si tiene pantalla · el arnés la exige, pero la compara quien aprueba guardar"]
+    r3 --> r3c["<b>Validar contra la maqueta</b><br/>si tiene pantalla"]
     r3c --> r4["<b>Revisores y pase adversarial</b><br/>sólo con riesgo alto"]
   end
   subgraph historia [" "]
@@ -93,9 +92,9 @@ flowchart TB
     h5 --> h6["<b>Revisores</b><br/>elegidos según el cambio"]
     h6 --> h7["<b>Pase adversarial</b><br/>no en una historia chica de riesgo bajo ni en sólo documentación o pruebas"]
     h7 --> h8["<b>Probar en vivo, criterio por criterio</b>"]
+    h8 --> h9["<b>Validar contra la maqueta</b><br/>si tiene pantalla"]
   end
   r4 --> g1["<b>Guardar</b><br/>un click en el cuadro, o un «Aprobado» escrito"]
-  h8 --> h9["<b>Comparar con la maqueta</b><br/>si tiene pantalla · el arnés compara los textos; el resto, quien prueba la pantalla"]
   h9 --> g1
   g1 --> g2["<b>Pull request</b><br/>la CI"]
   classDef decide fill:#2f6fde,stroke:#1f4fa8,color:#ffffff
