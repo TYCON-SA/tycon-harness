@@ -116,6 +116,27 @@ signatures»).
 
 With Codex, the owner opens the sessions: Codex has no launcher for named background sessions.
 
+## Closing a session
+
+The coordinator, or a person in their terminal, closes a session with `coordination.js close --name <name>`. Before
+closing it checks four things, and if one is missing it does not close and says which:
+
+1. That it is idle: one running a command is not closed either.
+2. That its folder has nothing uncommitted or unpushed.
+3. That its branch got into `main`, and so did the branches it left in that folder since it started. In a fixed slot,
+   that the slot is released: a slot is released, not deleted.
+4. That it has no open run and no open quick fix.
+
+What it cannot look at (a folder it did not record or that is gone, git not answering, an unreadable record) comes out
+as «no sé» (I don't know), and it does not close either. With everything clean it runs `claude stop` and `claude rm`
+with the session's id.
+
+**An interactive session is not closed.** It is checked all the same and it says so: a person closes that tab.
+
+**Limits.** It looks at the folder the session is in now: it does not see another worktree the session left behind, nor
+what was kept with `git stash`. A branch deleted without merging is no longer seen. A branch squashed into one commit
+reads as not merged. A worktree of a repo with no working folder comes out as «no sé». `claude stop` and `claude rm` by hand do not go through this.
+
 ## The cap: what counts as working
 
 **Working** is a live session whose session file says it is busy. A session waiting for CI, the queue or the owner has
@@ -249,6 +270,22 @@ The quick fix (a code change with no story) is the `adhoc-lane` signature: the t
   it is the team profile and the designation the owner confirmed. With no designated session on the target machine, the
   quick fix is approved in the target tab's window.
 
+**If the fix touches a screen, it does not save without three things.** What a screen is comes from the pipeline's own
+criterion (`lib/ui-signal.js`, with the organization's `screen_test` rule), file by file. A test does not count.
+
+1. The mockup, passing `mockup.js check`.
+2. Its approval: `marker.js adhoc set '{"reason":"…","mockup":"<path>","mockupApproved":"<who and by which path>"}'`,
+   with the usual signature. The window shows the mockup and who approved it. If the mockup changes, it needs approval again.
+3. The screenshot, newer than the last change to the lane's files: `marker.js adhoc capture <image>`. It asks for no
+   signature: it approves nothing, and the guard measures it. A code change afterwards expires it.
+
+The save window shows the mockup and screenshot paths together. If the guard cannot measure whether the fix touches a
+screen, it does not save either: nothing measured, nothing green.
+
+**Limits.** The guard looks at the screenshot's date: it does not check that it shows that screen, nor compare it to the
+mockup. A closed quick fix (`adhoc clear`) or an expired one stops nothing on save, same as the high-risk guard. A screen
+recorded in a nested worktree that was deleted keeps asking for a mockup and a screenshot: the way out is `adhoc clear`.
+
 ## The notices to the owner
 
 Short and plain: what happened, what is missing and what the owner decides, in that order. One notice per batch of
@@ -331,6 +368,7 @@ They come from a whole day of coordinating several sessions. Each says what to d
 | One full suite at a time | freno | The suite runner and the whole portable run do not start with the turn held by another live process, and they say who holds it. A suite someone runs another way is not seen. |
 | Adversarial passes one at a time | freno | The pass's gate exits 3 and `next` asks to wait with another in flight. Nothing stops launching the pass without asking the gate, and a quick fix's pass is not noted as in flight. After an hour, it only warns. |
 | Idle background sessions get closed or given work | aviso | The coordinator's notice on each turn, after 15 minutes. |
+| A session closes with nothing pending | freno | `close` does not close if something is missing or it could not look. `claude stop` and `claude rm` by hand do not go through it, and it does not see another worktree the session left behind. |
 | A ready request does not stay unqueued | aviso | The coordinator's notice on each turn, after 10 minutes, and the startup one. GitHub only. |
 | "Finishes" means working | nadie | It is the word she picks: no data on the machine sees it. |
 | Confirm a signature is missing before asking for it | nadie | How to confirm depends on each signature; `signature` only avoids two files with the same command. |
@@ -344,6 +382,7 @@ They come from a whole day of coordinating several sessions. Each says what to d
 | The time of the finished work | nadie | What «finished» means depends on each work. |
 | A story number never alone | nadie | It goes in the messages, which do not go through a text check. |
 | A tab that does not ask for permissions does not sign through the window | freno | The window's guard refuses the signature and gives the terminal command. That the path says «delegación» is confirmed by the coordinator. |
+| A quick fix with a screen carries a mockup and a screenshot | freno | The save guard does not pass without the three things, or if it could not measure. It looks at the screenshot's date, not at what it shows. |
 | Heavy things one at a time, with a turn | nadie | The full suite and the adversarial pass have their stop (above); the bench, the exam and the gate do not. |
 | Look at the diff before approving someone else's request | nadie | It is the approver's judgment call. |
 | A waiting session writes what it is doing | nadie | The session writes it with `marker.js doing`; nothing forces it. |

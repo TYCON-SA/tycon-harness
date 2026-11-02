@@ -19,8 +19,9 @@
  *                         del shell (`~/.claude/shell-snapshots`) se leen como lo que corren. Los comentarios y los
  *                         heredocs con comillas no corren: se sacan antes de leer. Las redirecciones de la salida no
  *                         son una duda. Durante una corrida, una duda pregunta;
- *   · decidir             null (pasa) o `{ pregunta }` (el texto de la ventana). Sin una corrida ni un camino rápido
- *                         abierto, o sin un comando que guarda ni una duda, no lee nada.
+ *   · decidir             null (pasa), `{ pregunta }` (el texto de la ventana) o `{ texto }` (no guarda: un camino rápido al
+ *                         que le faltan los revisores y el pase, o la maqueta y la captura de su pantalla). Sin una
+ *                         corrida ni un camino rápido abierto, o sin un comando que guarda ni una duda, no lee nada.
  *
  * Ninguna frase, opción ni variable saltea la ventana. El texto nombra la forma (`git push`, `… pr create`…) y el repo,
  * nunca el comando: un comando puede traer una credencial.
@@ -990,23 +991,64 @@ function decidirCarril({ command, cwd, sid, home }) {
   const { cs, dudas } = leerComando(command, cwd || process.cwd(), 0, [], home);
   if (!cs.length && !dudas.length) return null;
   const reposDelComando = cs.map((c) => { try { return SO().raizDe(c.dir); } catch (_) { return null; } }).filter(Boolean);
-  const riesgo = frenoDelRiesgo(a, sid, home, reposDelComando);
-  if (riesgo) return riesgo;
-  const de = `del camino rápido «${String(a.reason).slice(0, 160)}»`;
-  if (dudas.length || cs.some((c) => c.opaco)) return { pregunta: `¿GUARDO? no pude leer este comando; si guarda, es ${de}. ${COMO_SE_AUTORIZA}` };
   const repos = [];
   for (const f of Array.isArray(a.files) ? a.files : []) {
     let r = null;
     try { r = SO().raizDe(path.dirname(String(f))); } catch (_) { r = null; }
     if (r && !repos.includes(r)) repos.push(r);
   }
+  // el trabajo de otro repo no es de este carril: no le pide su maqueta. La pantalla va antes que el riesgo: la maqueta y
+  // la captura pueden ser archivos del repo, y los revisores tienen que medir lo que se guarda con ellas
+  const delCarril = !repos.length || dudas.length || reposDelComando.length < cs.length || cs.some((c) => c.opaco || c.tipo === 'pr') || reposDelComando.some((r) => repos.includes(r));
+  const pantalla = delCarril ? frenoDePantalla(a, sid, home, repos.length ? [] : reposDelComando) : null;
+  if (pantalla && pantalla.texto) return pantalla;
+  const riesgo = frenoDelRiesgo(a, sid, home, reposDelComando);
+  if (riesgo) return riesgo;
+  const de = `del camino rápido «${String(a.reason).slice(0, 160)}»`;
+  const como = pantalla ? `${pantalla.mostrar} ${COMO_SE_AUTORIZA}` : COMO_SE_AUTORIZA;
+  if (dudas.length || cs.some((c) => c.opaco)) return { pregunta: `¿GUARDO? no pude leer este comando; si guarda, es ${de}. ${como}` };
   for (const c of cs) {
-    if (c.tipo === 'pr') return { pregunta: `¿GUARDO? «${c.forma}», ${de}. ${COMO_SE_AUTORIZA}` };
+    if (c.tipo === 'pr') return { pregunta: `¿GUARDO? «${c.forma}», ${de}. ${como}` };
     let r = null;
-    try { r = SO().raizDe(c.dir); } catch (_) { return { pregunta: `¿GUARDO? «${c.forma}», ${de}. ${COMO_SE_AUTORIZA}` }; }
-    if (!repos.length || (r && repos.includes(r))) return { pregunta: `¿GUARDO? «${c.forma}»${r ? ` sobre ${r}` : ''}, ${de}. ${COMO_SE_AUTORIZA}` };
+    try { r = SO().raizDe(c.dir); } catch (_) { return { pregunta: `¿GUARDO? «${c.forma}», ${de}. ${como}` }; }
+    if (!repos.length || (r && repos.includes(r))) return { pregunta: `¿GUARDO? «${c.forma}»${r ? ` sobre ${r}` : ''}, ${de}. ${como}` };
   }
   return null;
+}
+
+// ── la pantalla del camino rápido ───────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Un carril que toca una pantalla no guarda sin su maqueta aprobada y una captura posterior al último cambio: `{ texto }`.
+ * Con las tres, `{ mostrar }`: las dos rutas para la ventana. Sin pantalla, null. Sin medir no hay verde: tampoco guarda.
+ */
+function frenoDePantalla(a, sid, home, repos) {
+  const io = require('./story-gate-io.js');
+  const gate = require('./story-gate.js');
+  const dir = path.dirname(path.dirname(require('./open-runs.js').markerPath(sid, home)));
+  let r;
+  try { r = require('./adhoc-screen.js').revisar(a, repos); } catch (e) { r = { sinMedir: e.message }; }
+  if (r.sinMedir) {
+    io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `pantalla del carril sin medir: ${r.sinMedir}` });
+    return { texto: `🔒 GUARDAR: no pude medir si este camino rápido toca una pantalla (${r.sinMedir}). Sin medir no guarda: arreglá eso y repetí el comando.` };
+  }
+  for (const m of r.avisos || []) {
+    process.stderr.write(`⚠️  ${m}\n`);
+    io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'unknown', reason: m });
+  }
+  if (!r.pantallas.length) return null;
+  if (!r.faltan.length) return { mostrar: r.mostrar };
+  const marker = gate.MARKER_JS;
+  const mockup = marker.replace(/marker\.js$/, 'mockup.js');
+  return { texto: [
+    `🔒 GUARDAR: este camino rápido toca una pantalla (${r.pantallas[0]}) y le falta:`,
+    ...r.faltan.map((f) => `  · ${f}`),
+    '  Cómo se completa, en este orden:',
+    `   1. La maqueta: node ${mockup} render --data <modelo.json> --out <ruta> (la forma del modelo: node ${mockup} schema).`,
+    `   2. Mostrásela a la persona y, con su ok: node ${marker} adhoc set '{"reason":"<el motivo>","mockup":"<ruta>","mockupApproved":"<quién la aprobó y por qué vía>"}'`,
+    `   3. Con la pantalla ya construida, la captura: node ${marker} adhoc capture <ruta de la imagen>`,
+    '  Un cambio de código después de la captura la vence.',
+  ].join('\n') };
 }
 
 // ── el camino rápido de riesgo alto ─────────────────────────────────────────────────────────────────────────────────
