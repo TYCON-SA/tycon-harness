@@ -16,6 +16,7 @@
 //     "env": { "CURSOR_CONVERSATION_ID": "conv-1" },      variables the hooks get on top of the inherited ones
 //     "event_env": { "stop": { … } },     the same, for one event only
 //     "foreign_project": "otro-repo",     a project folder another Cursor session creates during the run
+//     "lock_short_parent": true,          the folder that holds the short project folder ends read-only
 //     "raw_payload": "no es json",        what the hooks get on stdin instead of the JSON payload
 //     "event_raw_payload": { "stop": "…" },   the same, for one event only
 //     "no_wait": true,                    a run launches the hooks without waiting for them and ends 200 ms later
@@ -76,6 +77,7 @@ function createProjectFolders(cwd, trusted) {
     if (route.length > 91) {
       const short = `${route.substring(0, 83)}-${crypto.createHash('sha256').update(route).digest('hex').slice(0, 7)}`;
       fs.mkdirSync(short, { recursive: true });
+      if (state.lock_short_parent) fs.chmodSync(path.dirname(short), 0o555);
     }
     if (trusted) fs.writeFileSync(path.join(route, '.workspace-trusted'), JSON.stringify({ workspacePath: cwd, trustMethod: 'cli-flag' }));
     if (state.foreign_project) fs.mkdirSync(path.join(projects, state.foreign_project), { recursive: true });

@@ -378,25 +378,40 @@ function slugOf(dir) {
 }
 
 /**
+ * The second folder the CLI creates for `work` when its route is long: the whole route cut at a fixed length, plus a hash
+ * of that route. With a long data folder the cut lands above `projects`, so this is a path and not a name under it.
+ */
+function shortRoute(work) {
+  const route = path.join(projectsDir(), slugOf(work));
+  if (route.length <= LONG_ROUTE) return null;
+  return `${route.substring(0, ROUTE_CUT)}-${crypto.createHash('sha256').update(route).digest('hex').slice(0, ROUTE_HASH)}`;
+}
+
+/**
  * Whether a project folder was created for `work`: the exact names the CLI gives it, the path with dashes and, with a
  * long route, the cut route with its hash. Anything else belongs to another Cursor session.
  */
 function isRunFolder(name, work) {
-  const slug = slugOf(work);
-  if (name === slug) return true;
-  const route = path.join(projectsDir(), slug);
-  if (route.length <= LONG_ROUTE) return false;
-  const short = `${route.substring(0, ROUTE_CUT)}-${crypto.createHash('sha256').update(route).digest('hex').slice(0, ROUTE_HASH)}`;
-  return path.join(projectsDir(), name) === short;
+  return name === slugOf(work) || path.join(projectsDir(), name) === shortRoute(work);
 }
 
-/** Removes what the run added to the projects folder for `work` and checks the listing is the one from before. */
+/**
+ * Removes what the run left for `work` and checks that it is gone: the projects folder must list what it listed before,
+ * and the short folder, which may be outside it, must not exist.
+ */
 function restoreProjects(before, work) {
   const dir = projectsDir();
-  const now = readProjects();
-  if (now.error) return { status: ERROR, motivo: `no pude leer ~/.cursor/projects después de la ejecución: ${now.error}`, removed: [], foreign: [] };
-  const added = (now.list || []).filter((n) => !(before.list || []).includes(n));
   const removed = [];
+  // its name carries a hash of a route that did not exist before the run: it can only be from this run
+  const short = shortRoute(work);
+  const shortOutside = short && path.dirname(short) !== dir ? short : null;
+  if (shortOutside && fs.existsSync(shortOutside)) {
+    try { fs.rmSync(shortOutside, { recursive: true, force: true }); removed.push(path.basename(shortOutside)); } catch (_e) { /* reported below */ }
+  }
+  const left = shortOutside && fs.existsSync(shortOutside) ? `no pude borrar ${shortOutside}, que Cursor creó para esta ejecución fuera de ~/.cursor/projects` : null;
+  const now = readProjects();
+  if (now.error) return { status: ERROR, motivo: left || `no pude leer ~/.cursor/projects después de la ejecución: ${now.error}`, removed, foreign: [] };
+  const added = (now.list || []).filter((n) => !(before.list || []).includes(n));
   for (const n of added.filter((a) => isRunFolder(a, work))) {
     try { fs.rmSync(path.join(dir, n), { recursive: true, force: true }); removed.push(n); } catch (_e) { /* reported below */ }
   }
@@ -410,10 +425,10 @@ function restoreProjects(before, work) {
   const after = readProjects();
   const same = !after.error && JSON.stringify(after.list) === JSON.stringify(before.list);
   const foreign = added.filter((a) => !isRunFolder(a, work));
-  let motivo = null;
-  if (foreign.length) motivo = `en ~/.cursor/projects apareció ${foreign.length} carpeta(s) que no son de esta ejecución y no las toqué (los nombres, en cursor_state.foreign de --json)`;
-  else if (!same) motivo = '~/.cursor/projects no quedó igual que antes';
-  return { status: same ? 'igual' : ERROR, motivo, removed, foreign };
+  let motivo = left;
+  if (!motivo && foreign.length) motivo = `en ~/.cursor/projects apareció ${foreign.length} carpeta(s) que no son de esta ejecución y no las toqué (los nombres, en cursor_state.foreign de --json)`;
+  else if (!motivo && !same) motivo = '~/.cursor/projects no quedó igual que antes';
+  return { status: same && !left ? 'igual' : ERROR, motivo, removed, foreign };
 }
 
 const NO_HOOK_WITH_SERVICE_CLOSED = 'Cursor no disparó ningún hook con el servicio cerrado';

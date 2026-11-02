@@ -235,6 +235,42 @@ test('CursorProbes_ConFake_EscribeEvidencia', async (t) => {
     }
   });
 
+  // The short name cuts the whole route, so a long data folder puts it above `projects`, where no listing shows it. Where
+  // the cut lands depends on the length of the temporary folder, so these cases build the route to the exact length.
+  const homeCutAt = (tail) => {
+    const parent = fs.realpathSync(fs.mkdtempSync(path.join(IS_WIN ? os.tmpdir() : '/tmp', 'cp-')));
+    roots.push(parent);
+    const size = 83 - parent.length - 1 - tail.length;
+    assert.ok(size > 0, `${parent} is too long for this case`);
+    return { parent, home: path.join(parent, 'h'.repeat(size)) };
+  };
+
+  await t.test('la carpeta corta que cae fuera de projects también se borra', () => {
+    for (const tail of [`${path.sep}.cursor${path.sep}pro`, `${path.sep}.cu`, '']) {
+      const root = tmpRoot();
+      const { parent, home } = homeCutAt(tail);
+      const { r, out } = runProbes(root, { bin: fakePackage(root), state: { fire_hooks: false }, home });
+      assert.strictEqual(r.status, 0, r.stderr);
+      assert.strictEqual(out.cursor_state.status, 'igual', `corte en «${tail}»: ${JSON.stringify(out.cursor_state)}`);
+      assert.strictEqual(out.cursor_state.removed.length, 2, JSON.stringify(out.cursor_state));
+      assert.deepStrictEqual(fs.readdirSync(home), [], `corte en «${tail}»`);
+      assert.deepStrictEqual(fs.readdirSync(parent), [path.basename(home)], `corte en «${tail}»`);
+    }
+  });
+
+  await t.test('la carpeta corta que no se pudo borrar no sale como «igual»', { skip: IS_WIN || process.getuid() === 0 }, () => {
+    const root = tmpRoot();
+    const { home } = homeCutAt(`${path.sep}.cu`);
+    try {
+      const { r, out } = runProbes(root, { bin: fakePackage(root), state: { fire_hooks: false, lock_short_parent: true }, home });
+      assert.strictEqual(r.status, 0, r.stderr);
+      assert.strictEqual(out.cursor_state.status, 'ERROR', JSON.stringify(out.cursor_state));
+      assert.ok(out.notes.some((n) => /^ERROR/.test(n)), JSON.stringify(out.notes));
+    } finally {
+      fs.chmodSync(home, 0o755);
+    }
+  });
+
   await t.test('la carpeta corta de otra ruta no se borra', () => {
     const root = tmpRoot();
     const home = path.join(root, 'home');
