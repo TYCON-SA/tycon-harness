@@ -25,9 +25,9 @@ const CLIENT_PACK = path.join('packs', 'clients', 'pack.json');
 
 // Los números cambian cuando una regla se agrega, se retira o se une a otra: se actualizan acá junto con el catálogo.
 const EXPECTED = {
-  filas: 369,
-  reglas: 368,
-  identificadores: 366,
+  filas: 370,
+  reglas: 369,
+  identificadores: 367,
   i18n: 7,
   sinVerificacion: 8,
   retiradas: ['ACCOV-C9', 'REAL-C5', 'REAL-W5', 'SPEC-W8'],
