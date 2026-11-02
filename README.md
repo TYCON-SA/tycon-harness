@@ -59,9 +59,8 @@ and stories—; then, story by story.
     coordinating session opens the quick path with the list of files and tells you, and approves the plan if the
     automatic review said "approved". With high risk, you approve it. Without a coordinating session, you approve its
     part. The plan never approves itself.
-- **If the change has a screen, on both paths a mockup is approved before building.** In a story, whoever approves the
-  plan approves it; on a quick path it is recorded when the lane opens. On both, what was built is validated against the
-  mockup.
+- **If the change has a screen, on both paths a mockup is approved before building**, and what was built is validated
+  against it.
 - **Saving is a click in the options box or a written "Aprobado", on both paths.** Before every commit, push and pull
   request the agent asks "save?". If your tab asks for permissions, the yes goes in the permission window. There is no
   signature and no command.
@@ -277,36 +276,27 @@ An example: at ACME, Pedro is the admin and Juan writes code.
    asks for the name, the platform and the address of the team repo, builds its three files (`team-layer.json`,
    `team-profile.json` and `team-repos.json`) from [an example](https://github.com/TYCON-SA/harness-team-profile-example)
    and validates them before writing. It creates no repos and asks for no credentials: it tells him where to create the
-   empty repo, with access only for the team, and if he says yes it pushes it with his git. With the harness already
-   installed, the same is `node ~/.tycon/harness/scripts/setup/harness.js team-init`. The operations repo is created
-   separately (below, "The nightly jobs").
+   empty repo, with access only for the team, and if he says yes it pushes it with his git. The operations repo is created
+   separately (below, "What runs at night").
 2. Everything that is customized —where each repo lives, who gets the notices, the thresholds— is configured from the
    **Configuration** tab of the [team site](guides/organization-site.en.md) (admins only): it validates with the
    harness's own readers and proposes every change as a pull request, never a direct write to `main`. While ACME has no
-   site, each file is changed with a pull request to its repo: what reaches the machines, to the team repo; what is for
-   the nightly jobs and the site, to the operations repo. The harness works fully that way: what each case needs and
+   site, each file is changed with a pull request to its repo. The harness works fully that way: what each case needs and
    where each setting lives, in [With or without the site](getting-started/reference.md#with-or-without-the-site).
-   The local page (`node ~/.tycon/harness/scripts/setup/harness.js team-config`) shows, read-only and with nothing on
-   the internet, what is in his clones and the problems the readers see; it saves and proposes nothing.
 3. Juan installs with npx and the team repo: `npx @tyconsa/harness@latest --team acme/harness-team-profile` if it is on
    GitHub, or `npx @tyconsa/harness@latest --team https://dev.azure.com/acme/<project>/_git/harness-team-profile` if it
    is on Azure DevOps. Since only the team sees that repo, before downloading anything the line checks that it can read
    it and, if not, asks him for read permission. From then on, every update also brings him what belongs to the team.
 
-How the harness extends for your organization —what each organization adds, the configuration page and a worked example— in an
+How the harness extends for your organization, with a worked example, in an
 [interactive map](https://www.bizuit.com/sdd-harness/more/mapa-del-arnes.html).
-
-**The nightly jobs.** On Azure DevOps, the dependency review, the cycle metrics and the dashboard run in your
-organization with three model jobs and your operations repo: [how to set them up](pipelines/operations/README.md)
-(in Spanish). On GitHub, the same three run as GitHub Actions workflows, and the dependency findings become issues in
-each product repo: [how to set them up](pipelines/operations/github/README.md) (in Spanish).
 
 **Step by step, for whoever sets up the team.**
 
-1. **Understand the three layers.** This repo, the harness, the same for everybody; the team repo, with what reaches every machine; and the team operations, with what runs at night. The table above says what each one holds. · [▶ video](https://github.com/user-attachments/assets/582a4581-141c-486e-a19d-1f5eb01d6129)
+1. **Understand the three layers.** This repo, the harness, the same for everybody; the team repo, with what reaches every machine; and the team operations, with what runs at night. · [▶ video](https://github.com/user-attachments/assets/582a4581-141c-486e-a19d-1f5eb01d6129)
 2. **Set up your team.** `npx @tyconsa/harness@latest --audience org` installs your machine and goes on with `harness.js team-init`, which builds the three files of the team repo and validates them. Create the empty repo, with access only for the team, and push them. Each dev installs with `npx @tyconsa/harness@latest --team <team repo>`. · [▶ video](https://github.com/user-attachments/assets/fa77d543-85b8-4564-8530-d583679b15c5)
 3. **Look at the organization site.** Each person signs in with the organization's account and sees their own: their runs, their pull requests, what is assigned to them; whoever maintains the harness sees everything. It is optional: the harness works fully without it. **See it without installing anything:** the demo site, [https://is.gd/tyconharnessdemo](https://is.gd/tyconharnessdemo), opens without an account with sample data from a made-up organization and writes nothing; the first visit may take a few seconds while it wakes up. [Setting up the site: step-by-step guide](guides/organization-site.en.md#what-you-need-first) (try it with Docker, Azure Container Apps, Render or your own machine). · [▶ video](https://github.com/user-attachments/assets/9cc321d7-9410-43ef-a842-9d27f98e4dc5)
-4. **Configure from the site.** The **Configuration** tab (maintainers only) customizes the organization: who is responsible for what, the notice channel, the thresholds. It validates every change and proposes it as a pull request; it never writes `main`. Without the site, the same change goes as a pull request to the right repo. · [▶ video](https://github.com/user-attachments/assets/61438ad4-9f29-4719-b298-c74dddb19d93)
+4. **Configure from the site.** The **Configuration** tab (maintainers only) customizes the organization: who is responsible for what, the notice channel, the thresholds. It validates every change and proposes it as a pull request; it never writes `main`. · [▶ video](https://github.com/user-attachments/assets/61438ad4-9f29-4719-b298-c74dddb19d93)
 5. **From commit to production.** The commit and the merge go through controls on each machine, and [the CI gate](guides/ci-gate.md) (in Spanish) checks again on the server what reached `main`. If you declare in `operations.json → deployments` the staging and production pipelines of each product, the dashboard shows their deployments ([how](pipelines/operations/README.md), in Spanish). · [▶ video](https://github.com/user-attachments/assets/41082543-3c5e-4e25-9e64-3e0c48fd985c)
 6. **What runs at night.** The dependency review, the cycle metrics and the dashboard run in your organization with your operations repo, and in the morning the notice arrives (Telegram, Slack or Teams) with counts and the link to the site. How to set them up: on [Azure DevOps](pipelines/operations/README.md) or on [GitHub](pipelines/operations/github/README.md) (in Spanish). · [▶ video](https://github.com/user-attachments/assets/0fc6e458-74d8-4338-b997-3e87841680c6)
 

@@ -59,9 +59,8 @@ El ciclo de desarrollo con IA (AI SDLC), paso por paso:
     coordinadora abre el camino rápido con la lista de archivos y te avisa, y aprueba el plan si la revisión automática
     dio «aprobado». Con riesgo alto, lo aprobás vos. Sin sesión coordinadora, lo suyo lo aprobás vos. El plan nunca se
     aprueba solo.
-- **Si el cambio tiene pantalla, en los dos caminos se aprueba una maqueta antes de construir.** En una historia la
-  aprueba quien aprueba el plan; en un camino rápido se anota al abrir el carril. En los dos, lo construido se valida
-  contra la maqueta.
+- **Si el cambio tiene pantalla, en los dos caminos se aprueba una maqueta antes de construir**, y lo construido se
+  valida contra ella.
 - **Guardar es un click en el cuadro de opciones o un «Aprobado» escrito, en los dos caminos.** Antes de cada commit,
   push y pull request el agente pregunta «¿guardo?». Si tu pestaña pide permisos, el sí va en la ventana de permiso. No
   hay firma ni comando.
@@ -276,32 +275,24 @@ Un ejemplo: en ACME, Pedro es el admin y Juan programa.
    la dirección del repo del equipo, arma sus tres archivos (`team-layer.json`, `team-profile.json` y `team-repos.json`)
    a partir de [un ejemplo](https://github.com/TYCON-SA/harness-team-profile-example) y los valida antes de escribir. No
    crea repos ni pide credenciales: le dice dónde crear el repo vacío, con acceso sólo para el equipo, y si dice que sí
-   lo sube con su git. Con el arnés ya instalado, lo mismo es `node ~/.tycon/harness/scripts/setup/harness.js team-init`.
-   El repo de operaciones se crea aparte (abajo, «Los procesos de la noche»).
+   lo sube con su git.
+   El repo de operaciones se crea aparte (abajo, «Lo que corre de noche»).
 2. Todo lo que se personaliza —dónde vive cada repo, a quién se le asignan los avisos, los umbrales— se configura desde
    la pestaña **Configuración** del [sitio del equipo](guides/organization-site.md) (sólo para los admins): valida con
    los mismos lectores del arnés y propone cada cambio con un pedido de cambio (pull request), nunca escribe `main`.
-   Mientras ACME no tiene su sitio, cada archivo se cambia con un pedido de cambio a su repo: lo que llega a las
-   máquinas, al repo del equipo; lo de la noche y del sitio, al de operaciones. El arnés funciona entero así: qué
+   Mientras ACME no tiene su sitio, cada archivo se cambia con un pedido de cambio a su repo. El arnés funciona entero así: qué
    necesita cada caso y dónde vive cada configuración, en [Con sitio o sin sitio](getting-started/reference.es.md#con-sitio-o-sin-sitio).
-   La página local (`node ~/.tycon/harness/scripts/setup/harness.js team-config`) muestra, de sólo lectura y sin nada
-   en internet, lo que hay en sus clones y los problemas que ven los lectores; no guarda ni propone nada.
 3. Juan instala con npx y el repo del equipo: `npx @tyconsa/harness@latest --team acme/harness-team-profile` si está en
    GitHub, o `npx @tyconsa/harness@latest --team https://dev.azure.com/acme/<proyecto>/_git/harness-team-profile` si
    está en Azure DevOps. Como ese repo lo ve sólo el equipo, antes de bajar nada la línea mira si lo puede leer y, si
    no, le pide el permiso de lectura. Desde ahí, cada actualización le trae también lo del equipo.
 
-Cómo se extiende el arnés para tu organización —qué suma cada organización, la página de configuración y un recorrido de ejemplo— en un
+Cómo se extiende el arnés para tu organización, con un recorrido de ejemplo, en un
 [mapa interactivo](https://www.bizuit.com/sdd-harness/more/mapa-del-arnes.html).
-
-**Los procesos de la noche.** En Azure DevOps, la revisión de dependencias, las métricas del ciclo y el tablero corren en
-tu organización con tres procesos modelo y tu repo de operaciones: [cómo darlos de alta](pipelines/operations/README.md).
-En GitHub, los mismos tres corren como workflows de GitHub Actions, y los hallazgos de dependencias son issues en el
-repo de cada producto: [cómo darlos de alta](pipelines/operations/github/README.md).
 
 **Paso a paso, para quien arma el equipo.**
 
-1. **Entendé las tres capas.** Este repo, el arnés, igual para todos; el repo del equipo, con lo que llega a cada máquina; y las operaciones del equipo, con lo que corre de noche. La tabla de arriba dice qué guarda cada uno. · [▶ video](https://github.com/user-attachments/assets/582a4581-141c-486e-a19d-1f5eb01d6129)
+1. **Entendé las tres capas.** Este repo, el arnés, igual para todos; el repo del equipo, con lo que llega a cada máquina; y las operaciones del equipo, con lo que corre de noche. · [▶ video](https://github.com/user-attachments/assets/582a4581-141c-486e-a19d-1f5eb01d6129)
 2. **Da de alta tu equipo.** `npx @tyconsa/harness@latest --audience org` instala tu máquina y sigue con `harness.js team-init`, que arma los tres archivos del repo del equipo y los valida. Creá el repo vacío, con acceso sólo para el equipo, y subilos. Cada dev instala con `npx @tyconsa/harness@latest --team <repo del equipo>`. · [▶ video](https://github.com/user-attachments/assets/fa77d543-85b8-4564-8530-d583679b15c5)
 3. **Mirá el sitio de la organización.** Cada persona entra con la cuenta de la organización y ve lo suyo: sus corridas, sus pedidos de cambio, lo que tiene asignado; quien mantiene el arnés ve todo. Es opcional: el arnés funciona entero sin él. **Miralo sin instalar nada:** el sitio demo, [https://is.gd/tyconharnessdemo](https://is.gd/tyconharnessdemo), se abre sin cuenta con datos de una organización inventada y no escribe nada; la primera visita puede tardar unos segundos, mientras se despierta. [Levantar el sitio: guía paso a paso](guides/organization-site.md#qué-hace-falta-antes) (probarlo con Docker, Azure Container Apps, Render o una máquina propia). · [▶ video](https://github.com/user-attachments/assets/9cc321d7-9410-43ef-a842-9d27f98e4dc5)
 4. **Configurá desde el sitio.** La pestaña **Configuración** (sólo para quien mantiene) personaliza la organización: quién es responsable de qué, el canal del aviso, los umbrales. Valida cada cambio y lo propone con un pedido de cambio; nunca escribe `main`. Sin sitio, el mismo cambio va con un pedido de cambio al repo que corresponde. · [▶ video](https://github.com/user-attachments/assets/61438ad4-9f29-4719-b298-c74dddb19d93)
