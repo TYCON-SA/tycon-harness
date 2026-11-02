@@ -1729,6 +1729,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/session-names.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/work-slots.test.js",
       "requiere": []
     },

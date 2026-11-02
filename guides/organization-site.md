@@ -699,10 +699,12 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   valor, cada uno como viene de fábrica. Ojo con otro valor escrito a mano (un número, un texto que no es ninguno de
   éstos): el lector no lo entiende y da por rota la configuración entera de cada máquina, no sólo este interruptor; el
   sitio no deja proponerlo. Queda en `team-profile.json` → `switches`, en el repo del perfil.
-- **Cuántas sesiones trabajan a la vez**: cuando una sesión coordina a las demás, cuántas pueden estar trabajando al
-  mismo tiempo en una máquina (de 1 a 20; sin valor, 3) antes de que la próxima espere su turno. Cada máquina puede
-  cambiarlo para sí, porque cuánto aguanta depende de ella. La carpeta donde quedan las firmas del dueño es de cada
-  máquina y no se pone acá. Queda en `team-profile.json` → `coordination.max_working`; la receta entera está en
+- **Las sesiones de cada máquina**: cuando una sesión coordina a las demás, cuántas pueden estar trabajando al
+  mismo tiempo en una máquina (de 1 a 20; sin valor, 3) antes de que la próxima espere su turno, y con qué nombres se
+  abren las nuevas: como hoy (los pone quien abre) o un tema de fábrica (animales, ríos, colores o árboles), con un
+  ejemplo de los nombres que salen. Cada máquina puede cambiar las dos cosas para sí; la lista propia de cada dev no se
+  edita acá: se la pide a su sesión. La carpeta donde quedan las firmas del dueño es de cada máquina y no se pone acá.
+  Queda en `team-profile.json` → `coordination.max_working` y `coordination.session_names`; la receta entera está en
   `guides/coordination.md`.
 - **Integraciones**: qué servicios usa cada máquina (el reloj de horas, la memoria, el buzón, la noche, el índice de
   código de CodeGraph); una máquina puede apagar una para ella sola. Con CodeGraph prendido, el instalador se lo instala

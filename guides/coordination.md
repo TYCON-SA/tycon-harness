@@ -50,6 +50,28 @@ abrir, mira dos cosas, en orden, y si una falla no abre y dice por qué:
 1. El nombre: sólo letras, números, guion y guion bajo, y que no lo use otra sesión viva.
 2. El tope: si ya trabajan tantas como el tope, no abre.
 
+**Los nombres de las sesiones nuevas.** Sin `--name` (o con `--name auto`), `open` toma el primer nombre libre de
+`coordination.session_names`. Agotada la lista, sigue con número: `Tero-2`, `Hornero-2`, y después `Tero-3`. Sin esa
+configuración no abre y pide el nombre, como siempre; por eso «auto» ya no sirve como nombre de una sesión. Con
+`--repo` y sin `--branch`, se saltea un nombre que ya tiene rama `wt/<nombre>` en el repo: la sesión nueva no arranca
+sobre el trabajo de otra. Las aperturas van de a una: si dos llegan juntas, la segunda espera que termine la primera, así
+no eligen el mismo nombre. La clave vale el id de un tema de fábrica (`animals`, `rivers`,
+`colors` o `trees`) o una lista propia, con el orden de siempre: la variable `TYCON_COORDINATION_SESSION_NAMES` gana a la
+máquina y la máquina gana al perfil (la variable lleva lo mismo: un tema, o nombres separados por comas). El tema de la organización se elige en la pestaña Configuración del sitio
+(«Las sesiones de cada máquina»). Los temas de fábrica viajan con el arnés, que se publica: no llevan personas reales ni
+marcas.
+
+**La lista propia de cada dev la arma su sesión, nunca el sitio.** El dev la pide en el chat con sus palabras, por
+ejemplo «llamá mis sesiones como los planetas». La sesión arma la lista, se la muestra entera y espera su «Aprobado».
+Con él, la guarda en la configuración de ESA máquina, separada por comas:
+`node scripts/lib/tycon-config.js set coordination.session_names "Mercurio,Venus,Marte"`. Un solo nombre lleva la coma
+al final (`"Mercurio,"`): sin coma, el texto se lee como el id de un tema. Cada nombre va sin espacios ni
+acentos (letras, números, guion o guion bajo); si el dev pidió algo con acento, la sesión lo propone sin él. Una lista
+con personas reales o marcas va sólo ahí: nunca en el perfil del equipo, en una guía ni en nada que se publique. Si el
+freno de producción instalado en la máquina es anterior a esta clave, el comando no escribe nada y dice cómo ponerlo al
+día (con `sudo`, pide la contraseña del dev): con la clave, ese freno diría «configuración ROTA» en cada sesión. La
+sesión le pasa ese comando al dev y guarda la lista después.
+
 `open` nunca reintenta. Si la herramienta se niega porque nadie aprobó la carpeta, dice en una línea qué carpeta tiene
 que abrir el dueño una vez; mientras tanto, la sesión la abre el dueño y la coordinadora le da el encargo. La
 aprobación es de una persona: el agente no la escribe. Las otras fallas también van en una línea: que el lanzador no
@@ -98,7 +120,7 @@ los últimos 5 minutos. Una sesión que abrió `open` hace menos de 10 minutos c
 archivo.
 
 El tope es `coordination.max_working`, de 1 a 20. El perfil del equipo da el número de la organización (en el sitio,
-pestaña Configuración, «Cuántas sesiones trabajan a la vez»), y cada máquina puede cambiarlo para sí, porque cuánto
+pestaña Configuración, «Las sesiones de cada máquina»), y cada máquina puede cambiarlo para sí, porque cuánto
 aguanta depende de ella. Sin valor en ningún lado, el tope es 3. `coordination.js status` muestra quién trabaja, quién
 espera y por qué, y el tope con su origen.
 
