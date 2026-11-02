@@ -249,8 +249,11 @@ const VOCABULARIO = Object.freeze({
   // la máquina, con el orden de siempre (variable › máquina › perfil): el perfil da el número de la organización y cada
   // máquina puede cambiarlo para sí, porque cuánto aguanta depende de ella. Sin valor, 3. `owner_folder`: la carpeta
   // donde la coordinadora deja un ejecutable por firma que el dueño hace en su terminal. Es de la máquina: en el perfil
-  // del equipo es un error. Sin valor, las firmas van en el aviso del chat y nada se escribe en disco.
-  coordination: Object.freeze({ max_working: 'entero:1-20', owner_folder: 'ruta' }),
+  // del equipo es un error. Sin valor, las firmas van en el aviso del chat y nada se escribe en disco. `session_names`:
+  // con qué nombres abre la coordinadora las sesiones nuevas (coordination.js open sin --name), el id de un tema de
+  // fábrica o una lista propia (`sessionNames`, más abajo); con el orden de siempre, así cada dev elige los suyos.
+  // Sin valor, los pone quien abre la sesión.
+  coordination: Object.freeze({ max_working: 'entero:1-20', owner_folder: 'ruta', session_names: 'nombres-de-sesion' }),
   // La dirección del sitio de la organización, la que abre el comando de barra org-site. Vale SÓLO desde el perfil del
   // equipo (PROFILE_ONLY): es una para toda la organización, y si la máquina pudiera decirla, el agente podría mandar a
   // la persona a otra página. Sin valor, el comando dice cómo cargarla (desde el sitio o con un pedido al perfil).
@@ -343,6 +346,87 @@ function optionsOf(tipo) { return typeof tipo === 'string' && tipo.startsWith('o
 /** Las opciones de un tipo `opciones:` (un valor solo, o una lista sin repetidos, de una lista cerrada). */
 function subsetOf(tipo) { return typeof tipo === 'string' && tipo.startsWith('opciones:') ? tipo.slice('opciones:'.length).split('|') : null; }
 /** El catálogo de firmas, o null si no se puede cargar: entonces una clave de firmas se lee rota, nunca abierta. */
+/*
+ * Los nombres con que la coordinadora abre las sesiones nuevas (`coordination.session_names`; coordination.js open sin
+ * --name): el id de un tema de fábrica (`animals`) o una lista propia. El tema de fábrica viaja con el arnés, que se
+ * publica: sólo temas neutros, sin personas reales ni marcas. Una lista con personas o marcas va en la configuración de
+ * la máquina de cada dev, que no se publica.
+ *
+ * Un nombre de sesión va como valor de `-n` y en `claude attach <nombre>`: empieza con letra o número (no se lee como
+ * una bandera) y sigue con letras sin acento, números, guion o guion bajo, sin espacios. Agotada la lista, sigue con
+ * número: `Tero-2`, `Hornero-2`, … y después `Tero-3`.
+ */
+const sessionNames = (() => {
+  const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+  const NAME_MAX = 40;
+  const LIST_MAX = 200;
+
+  const THEMES = Object.freeze({
+    animals: Object.freeze(['Tero', 'Hornero', 'Carpincho', 'Guanaco', 'Nutria', 'Lechuza', 'Halcon', 'Vizcacha', 'Zorzal', 'Tatu']),
+    rivers: Object.freeze(['Parana', 'Uruguay', 'Salado', 'Bermejo', 'Limay', 'Colorado', 'Atuel', 'Pilcomayo', 'Iguazu', 'Chubut']),
+    colors: Object.freeze(['Ambar', 'Cobalto', 'Celeste', 'Indigo', 'Jade', 'Lila', 'Ocre', 'Rubi', 'Salvia', 'Turquesa']),
+    trees: Object.freeze(['Nogal', 'Roble', 'Jacaranda', 'Olmo', 'Aromo', 'Alerce', 'Coihue', 'Algarrobo', 'Tipa', 'Molle']),
+  });
+
+  // el id de un tema, sin mayúsculas: «Animals» es «animals»
+  const themeId = (v) => (typeof v === 'string' ? v.trim().toLowerCase() : '');
+  const isTheme = (v) => typeof v === 'string' && Object.prototype.hasOwnProperty.call(THEMES, themeId(v));
+
+  /** null si el valor sirve como `coordination.session_names`; si no, el motivo. */
+  function problem(value) {
+    if (typeof value === 'string') {
+      if (isTheme(value)) return null;
+      const unNombre = NAME_RE.test(value.trim()) ? ` (para un solo nombre propio, terminalo con una coma: «${value.trim()},»)` : '';
+      return `tiene que ser un tema de fábrica (${Object.keys(THEMES).join(', ')}) o una lista de nombres, no ${JSON.stringify(value)}${unNombre}`;
+    }
+    if (!Array.isArray(value) || !value.length) return `tiene que ser un tema de fábrica (${Object.keys(THEMES).join(', ')}) o una lista no vacía de nombres, no ${JSON.stringify(value)}`;
+    if (value.length > LIST_MAX) return `la lista tiene ${value.length} nombres; el máximo es ${LIST_MAX}`;
+    for (const n of value) {
+      if (typeof n !== 'string' || !NAME_RE.test(n.trim())) return `${JSON.stringify(n)} no sirve como nombre de sesión: letras sin acento, números, guion o guion bajo, sin espacios, y empieza con letra o número`;
+      if (n.trim().length > NAME_MAX) return `«${n.trim()}» es largo: un nombre de sesión va hasta ${NAME_MAX} caracteres`;
+    }
+    // una lista hecha sólo de ids de tema es, casi seguro, dos temas juntos: va uno solo
+    if (value.every((n) => isTheme(n))) return `${JSON.stringify(value)} son temas de fábrica: va uno solo, sin comas`;
+    const seen = new Set();
+    for (const n of value) {
+      const k = n.trim().toLowerCase();
+      if (seen.has(k)) return `la lista repite «${n.trim()}»`;
+      seen.add(k);
+    }
+    return null;
+  }
+
+  /** Los nombres de un valor ya validado: los del tema o los de la lista; sin valor, ninguno. */
+  function namesOf(value) {
+    if (isTheme(value)) return THEMES[themeId(value)].slice();
+    return Array.isArray(value) ? value.map((n) => String(n).trim()) : [];
+  }
+
+  /**
+   * El primer nombre de la lista que no está en `taken`; agotada, el primero con número (`Tero-2`, …, `Tero-3`). null sin
+   * nombres. `taken` se compara sin mayúsculas: «tero» ya tomado deja afuera a «Tero».
+   */
+  function nextFree(names, taken) {
+    if (!names.length) return null;
+    const used = new Set([...taken].map((n) => String(n).toLowerCase()));
+    for (let round = 1; ; round += 1) {
+      for (const n of names) {
+        const candidate = round === 1 ? n : `${n}-${round}`;
+        if (candidate.length <= NAME_MAX && !used.has(candidate.toLowerCase())) return candidate;
+      }
+      if (round > used.size + 1) return null;
+    }
+  }
+
+  return { NAME_RE, NAME_MAX, LIST_MAX, THEMES, themeId, isTheme, problem, namesOf, nextFree };
+})();
+/** Una lista separada por comas (`Tero,Hornero`) es una lista; un texto sin comas, el id de un tema. */
+function nombresDeTexto(v) {
+  const s = String(v).trim();
+  return s.includes(',') ? s.split(',').map((x) => x.trim()).filter(Boolean) : s;
+}
+/** Los temas de fábrica de los nombres de sesión (`{ id: [nombres] }`), para la pestaña del sitio. */
+function temasDeSesion() { return sessionNames.THEMES; }
 function catalogoDeFirmas() {
   try { return require('./signatures.js'); } catch (e) { fallaDelCatalogo = String((e && (e.code || e.message)) || e); return null; }
 }
@@ -450,6 +534,7 @@ const VARIABLES = Object.freeze({
   'models.provider': ['TYCON_MODEL_PROVIDER'],
   'coordination.max_working': ['TYCON_COORDINATION_MAX_WORKING'],
   'coordination.owner_folder': ['TYCON_COORDINATION_OWNER_FOLDER'],
+  'coordination.session_names': ['TYCON_COORDINATION_SESSION_NAMES'],
 });
 
 // Los interruptores por hook que ya existían siguen valiendo POR ENCIMA de la llave de su
@@ -527,6 +612,7 @@ function normalizarValor(tipo, valor, home, clave) {
   if (tipo === 'plataforma') return Object.fromEntries(Object.keys(valor).filter((k) => !esComentario(k)).map((k) => [k, String(valor[k]).trim().toLowerCase()]));
   if (tipo === 'maquinas') return valor.map((m) => ({ id: m.id.trim(), label: m.label.trim() }));
   if (tipo === 'niveles') return { ...valor };
+  if (tipo === 'nombres-de-sesion') return Array.isArray(valor) ? valor.map((v) => String(v).trim()) : String(valor).trim().toLowerCase();
   // una lista de opciones sigue siendo lista y un valor solo sigue solo: quien lo lee pregunta con `delegaFirma`
   if (subsetOf(tipo) || tipo === 'firmas' || tipo === 'firmas-ids') return Array.isArray(valor) ? valor.map((v) => v.trim()) : String(valor).trim();
   if (Array.isArray(valor)) return valor.slice();
@@ -1003,6 +1089,8 @@ function validarTipo(tipo, valor) {
       }
       return null;
     }
+    case 'nombres-de-sesion':
+      return sessionNames.problem(valor);
     case 'freno':
       return saysOn(valor) ? null : `tiene que ser "on" (o true): un freno sólo se enciende desde la configuración (sin valor, como viene de fábrica) — no ${JSON.stringify(valor)}`;
     case 'ruta-absoluta':
@@ -1070,6 +1158,11 @@ function valorDeEntorno(env, clave, tipo, home) {
       // un valor cerrado fuera de la lista es configuración ROTA, no el default (story 8.13: `nightly` no es «stable»)
       if (opciones.includes(v)) return { valor: v, variable };
       return { error: { archivo: 'entorno', clave: variable, motivo: `vale «${v}»; tiene que ser ${opciones.join(' o ')}` } };
+    }
+    if (tipo === 'nombres-de-sesion') {
+      const valor = nombresDeTexto(v);
+      const motivo = validarTipo(tipo, valor);
+      return motivo ? { error: { archivo: 'entorno', clave: variable, motivo: `vale «${v}»; ${motivo}` } } : { valor: normalizarValor(tipo, valor, home, clave), variable };
     }
     // una ruta que tiene que ser absoluta (`paths.tree`, story 8.13.1): relativa por variable también es un error
     if (tipo === 'ruta-absoluta' && !esRutaAbsoluta(v)) {
@@ -1345,7 +1438,8 @@ function modelProvider(opts = {}) {
 }
 /**
  * La receta de la coordinadora, según una configuración YA cargada: `{ max_working: { value, origin }, owner_folder:
- * { value, origin } }`. Sin valor, el tope es 3 y la carpeta null, los dos con origen `sin-valor`.
+ * { value, origin }, session_names: { value, origin } }`. Sin valor, el tope es 3, la carpeta null y los nombres null,
+ * los tres con origen `sin-valor`.
  */
 function coordinacion(config) {
   const v = (config.valores && config.valores.coordination) || {};
@@ -1353,7 +1447,7 @@ function coordinacion(config) {
   const con = (clave, defecto) => (v[clave] === null || v[clave] === undefined
     ? { value: defecto, origin: 'sin-valor' }
     : { value: v[clave], origin: o[`coordination.${clave}`] });
-  return { max_working: con('max_working', 3), owner_folder: con('owner_folder', null) };
+  return { max_working: con('max_working', 3), owner_folder: con('owner_folder', null), session_names: con('session_names', null) };
 }
 function respuesta(config) {
   const r = config.valores.response;
@@ -1555,6 +1649,11 @@ function explicar(opts = {}) {
 //     regla de `guardWarning` de scripts/setup/harness/channel.js, generalizada a cualquier sección). Medido el
 //     2026-10-04: la copia instalada no lee el perfil del equipo, sólo el archivo de la máquina.
 const GUARD_LIB = '/opt/tycon/lib/tycon-config.js';
+const GUARD_INSTALL = 'sudo bash ~/.claude/tycon-claude-guides/scripts/production/install-guard.sh';
+// Las claves que no se escriben si el freno instalado no las conoce: las guarda una sesión a pedido de la persona, y un
+// aviso de «configuración ROTA» en cada sesión por haber elegido nombres es un costo que no vale. Se escribe después de
+// poner al día el freno.
+const GUARD_FIRST = Object.freeze(['coordination.session_names']);
 /** ¿El lector del freno instalado conoce la sección (y, con `clave`, la clave dentro de ella)? `true` (o no hay freno) ·
  *  `false` · el motivo si no se pudo leer (no poder leerlo no es «lo conoce»: se avisa igual, con el motivo). */
 function guardKnows(guardLib, seccion, clave) {
@@ -1634,6 +1733,10 @@ function setKey(home = os.homedir(), clave, valorNuevo, { env = process.env, gua
   const err = validarTipo(tipo, valorNuevo);
   if (err) return { ok: false, file, reason: `${enArchivo(seccion)}.${k}: ${err}` };
   const valorEscrito = typeof valorNuevo === 'string' ? valorNuevo.trim() : valorNuevo;
+  if (GUARD_FIRST.includes(`${seccion}.${k}`)) {
+    const sabe = guardKnows(guardLib, seccion, k);
+    if (sabe !== true) return { ok: false, file, reason: `no lo escribí: el freno de producción instalado (${guardLib}) ${sabe === false ? `es anterior a la clave «${enArchivo(seccion)}.${k}»` : sabe}, y con ella en ${file} diría «configuración ROTA» en cada sesión. Primero ponelo al día (pide tu contraseña): ${GUARD_INSTALL} — y después volvé a correr este comando` };
+  }
   const lm = leerJson(file);
   if (lm.estado === 'roto') return { ok: false, file, reason: `${file}: ${lm.motivo} — no se escribe sobre un archivo roto; arreglalo primero (node scripts/lib/tycon-config.js validate)` };
   const datos = lm.estado === 'leido' ? lm.datos : {};
@@ -1684,8 +1787,8 @@ function setKey(home = os.homedir(), clave, valorNuevo, { env = process.env, gua
   }
   const conoce = guardKnows(guardLib, seccion, k);
   const queNoConoce = conoce === false && guardKnows(guardLib, seccion) === true ? `la clave «${enArchivo(seccion)}.${k}»` : `la sección «${enArchivo(seccion)}»`;
-  if (conoce === false) avisos.push(`ojo: el freno de producción instalado (${guardLib}) es anterior a ${queNoConoce} y va a decir «configuración ROTA» hasta reinstalarlo: sudo bash ~/.claude/tycon-claude-guides/scripts/production/install-guard.sh`);
-  else if (conoce !== true) avisos.push(`ojo: el freno de producción instalado (${guardLib}): ${conoce} — si es anterior a la sección «${enArchivo(seccion)}», va a decir «configuración ROTA» hasta reinstalarlo: sudo bash ~/.claude/tycon-claude-guides/scripts/production/install-guard.sh`);
+  if (conoce === false) avisos.push(`ojo: el freno de producción instalado (${guardLib}) es anterior a ${queNoConoce} y va a decir «configuración ROTA» hasta reinstalarlo: ${GUARD_INSTALL}`);
+  else if (conoce !== true) avisos.push(`ojo: el freno de producción instalado (${guardLib}): ${conoce} — si es anterior a la sección «${enArchivo(seccion)}», va a decir «configuración ROTA» hasta reinstalarlo: ${GUARD_INSTALL}`);
   return { ok: true, file, before, after: valorEscrito, warning: avisos.length ? avisos.join(' · ') : null };
 }
 
@@ -1759,7 +1862,7 @@ const KEYS = Object.freeze(Object.keys(VOCABULARIO).map((s) => enArchivo(s)));
 
 module.exports = {
   parse, KEYS, motivoPaquetes, paquetesDeTexto, CANALES_DE_AVISO,
-  VOCABULARIO, DEFAULTS, PROFILE_WINS, PROFILE_ONLY, INTEGRACIONES, LAS_OCHO, TOOLS, toolKeys, coordinacion, COMO_SE_PRENDE, VARIABLES, INTERRUPTORES_POR_HOOK, RAIZ_ARNES, NOMBRE_PERFIL, NOMBRE_PERFIL_VIEJO, perfilDelArbol, avisoNombrePerfil, NOMBRE_ENLACE, PLACE_NAME, LEGACY_PLACE_NAME, DONDE_CLAVES, ConfigError,
+  VOCABULARIO, DEFAULTS, PROFILE_WINS, PROFILE_ONLY, INTEGRACIONES, LAS_OCHO, TOOLS, toolKeys, coordinacion, temasDeSesion, sessionNames, COMO_SE_PRENDE, VARIABLES, INTERRUPTORES_POR_HOOK, RAIZ_ARNES, NOMBRE_PERFIL, NOMBRE_PERFIL_VIEJO, perfilDelArbol, avisoNombrePerfil, NOMBRE_ENLACE, PLACE_NAME, LEGACY_PLACE_NAME, DONDE_CLAVES, ConfigError,
   rutaMaquina, nombreArchivoMaquina, comoSePrende, rutaPerfil, leerPerfil, rutaLlaveBuzon, cargar, leer, leerParaHook, avisoParaHook, valor, explicar, estadoEnlace, formaPersonal,
   normalizarOrg, nombreDeOrganizacion, resolverRutaDeArchivo, personalEnComentario,
   esIntegracion, estadoIntegracion, integraciones, timeTracking, plataforma, validarTipo, delegaFirma, AREAS_PLATAFORMA, respuesta, modelProvider, TOPE_POR_ESTILO, integracionParaComando, integracionParaHook, sinAnotar, setKey, cli,
@@ -1800,6 +1903,8 @@ function cli(argv) {
     }
     // varias carpetas, separadas como en el PATH (`:` en Mac y Linux, `;` en Windows): se guardan como lista
     if (tipo === 'rutas') { const l = String(crudo).split(path.delimiter).map((x) => x.trim()).filter(Boolean); if (l.length > 1) valorNuevo = l; }
+    // los nombres de sesión separados por comas se guardan como lista; sin comas, es el id de un tema
+    if (tipo === 'nombres-de-sesion') valorNuevo = nombresDeTexto(crudo);
     if (rangoDe(tipo) && /^\d+$/.test(String(crudo).trim())) valorNuevo = Number(String(crudo).trim());
     const r = setKey(os.homedir(), clave, valorNuevo);
     if (!r.ok) { process.stderr.write(`tycon-config.js set: ${r.reason}\n`); process.exit(2); }

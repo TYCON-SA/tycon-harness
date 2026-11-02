@@ -3629,12 +3629,12 @@ test('org-site · Config_DireccionSitio_SeccionYPedido — la sección, sus text
   assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.SITE_SINCE)), versionImagen: '2026.10.15.48', doc: CON }), null);
 });
 
-// ── Cuántas sesiones trabajan a la vez (coordination.max_working) ──────────────────────────────────────────────────────
+// ── Las sesiones de cada máquina: el tope (coordination.max_working) ───────────────────────────────────────────────────
 // El tope es del equipo y va en la pestaña; la carpeta de las firmas del dueño es de cada máquina y no aparece.
 test('8.122 T9 · Config_CoordinationCap_SectionAndRequest @story-8.122 @ac-9', async () => {
   const s = ORG.seccionPorId('coordinacion');
   assert.ok(s, 'la sección existe');
-  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.rutas, s.necesita], ['team-profile.json', 'perfil', 'harness-config', ['coordination'], ['coordination.max_working'], ['coordination']]);
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.rutas, s.necesita], ['team-profile.json', 'perfil', 'harness-config', ['coordination'], ['coordination.max_working', 'coordination.session_names'], ['coordination']]);
   const rev = (borrador) => ORG.revisar({ seccion: 'coordinacion', texto: ORG.formatJson(PERFIL_TYCON), borrador, lectores: { 'harness-config': TC } });
   const ok = rev({ coordination: { max_working: 5 } });
   assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
@@ -3659,6 +3659,56 @@ test('8.122 T9 · Config_CoordinationCap_SectionAndRequest @story-8.122 @ac-9', 
   const bajo = ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.QA_SINCE)), versionImagen: '2026.10.15.48', doc: CON });
   assert.match(bajo, /todavía no se puede proponer/); assert.ok(bajo.includes(`>= ${ORG.COORDINATION_SINCE}`), bajo);
   assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.COORDINATION_SINCE)), versionImagen: '2026.10.15.48', doc: CON }), null);
+});
+
+// ── Los nombres de las sesiones nuevas (coordination.session_names) ─────────────────────────────────────────────────────
+// El sitio elige para la organización «como hoy» o un tema de fábrica; la lista propia de cada dev va en su máquina y la
+// arma su sesión. Una lista escrita a mano en el perfil se muestra y no se pisa.
+test('Config_SessionNames_ThemeFromTheSite', async () => {
+  assert.deepStrictEqual(ORG.seccionPorId('coordinacion').rutas, ['coordination.max_working', 'coordination.session_names']);
+  const rev = (borrador) => ORG.revisar({ seccion: 'coordinacion', texto: ORG.formatJson(PERFIL_TYCON), borrador, lectores: { 'harness-config': TC } });
+  const ok = rev({ coordination: { session_names: 'rivers' } });
+  assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
+  assert.strictEqual(ok.texto, ORG.formatJson({ ...PERFIL_TYCON, coordination: { session_names: 'rivers' } }));
+  assert.strictEqual(rev({ coordination: { session_names: 'dinosaurios' } }).ok, false, 'un tema que no existe no se propone');
+  const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const temas = Object.keys(TC.temasDeSesion());
+  assert.ok(temas.length >= 3, temas.join(','));
+  for (const idioma of ['es', 'en']) {
+    for (const k of ['pantalla.nombresTitulo', 'pantalla.nombresAyuda', 'pantalla.nombresDeDonde', 'pantalla.nombresComoHoy', 'pantalla.nombresListaDelPerfil', 'pantalla.nombresEjemplo', 'pantalla.nombresEjemploComoHoy', 'pantalla.nombresListaPropia', 'org.capaSinNombresDeSesion', ...temas.map((id) => `pantalla.nombresTema.${id}`)]) {
+      assert.ok(textos.t(idioma, k) && textos.t(idioma, k) !== k, `${idioma} ${k}`);
+    }
+  }
+  // la pantalla: un selector con «como hoy» y cada tema, el ejemplo de los nombres y la línea de la lista propia
+  let p = await pantallaFalsa([seccionPerfil('coordinacion', { coordination: { session_names: 'animals' } })]);
+  assert.strictEqual(p.error, null);
+  const sel = p.todo(p.sec('coordinacion')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'coordination.session_names');
+  assert.ok(sel, 'hay un selector de nombres');
+  assert.deepStrictEqual(sel.hijos.map((o) => o.attrs.value), ['', ...temas]);
+  assert.strictEqual(sel.value, 'animals');
+  const texto = p.textoDe('coordinacion');
+  assert.ok(texto.includes(`Así salen: ${TC.temasDeSesion().animals.slice(0, 5).join(', ')}`), texto);
+  assert.match(texto, /Para tu lista propia, pedísela a tu sesión/);
+  // una lista escrita a mano en el perfil: se muestra como opción propia y elegirla no la cambia
+  p = await pantallaFalsa([seccionPerfil('coordinacion', { coordination: { session_names: ['Norte', 'Sur'] } })]);
+  const sel2 = p.todo(p.sec('coordinacion')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'coordination.session_names');
+  assert.strictEqual(sel2.value, '__lista');
+  assert.match(p.textoDe('coordinacion'), /La lista escrita en el perfil \(2 nombres\)/);
+  assert.match(p.textoDe('coordinacion'), /Así salen: Norte, Sur/);
+  // elegir un tema y volver a la lista repone la lista en lo que se revisa
+  const pedidos = [];
+  p = await pantallaFalsa([seccionPerfil('coordinacion', { coordination: { session_names: ['Norte', 'Sur'] } })], { '/api/config/revisar': (cuerpo) => { pedidos.push(cuerpo); return { ok: true, problems: [] }; } });
+  const sel3 = p.todo(p.sec('coordinacion')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'coordination.session_names');
+  const cambiar = (x) => { sel3.value = x; (sel3.on.change || sel3.onchange)({ target: sel3 }); };
+  cambiar('animals'); cambiar(''); cambiar('__lista');
+  await p.click('Revisar cambios', 'coordinacion');
+  assert.deepStrictEqual(pedidos.pop().borrador.coordination.session_names, ['Norte', 'Sur']);
+  // la capa: proponer los nombres pide la versión que los lee; el tope solo no la pide
+  const CON = { ...PERFIL_TYCON, coordination: { max_working: 5, session_names: 'trees' } };
+  const bajo = ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.COORDINATION_SINCE)), versionImagen: '2026.10.15.48', actual: { ...PERFIL_TYCON, coordination: { max_working: 5 } }, doc: CON });
+  assert.match(bajo, /coordination\.session_names/); assert.ok(bajo.includes(`>= ${ORG.SESSION_NAMES_SINCE}`), bajo);
+  assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.SESSION_NAMES_SINCE)), versionImagen: '2026.10.15.48', doc: CON }), null);
+  assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.COORDINATION_SINCE)), versionImagen: '2026.10.15.48', actual: PERFIL_TYCON, doc: { ...PERFIL_TYCON, coordination: { max_working: 5 } } }), null);
 });
 
 // ── Frenos y medidores (switches) ─────────────────────────────────────────────────────────────────────────────────────

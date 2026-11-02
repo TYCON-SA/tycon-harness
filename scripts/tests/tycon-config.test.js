@@ -2356,6 +2356,66 @@ test('T9 Config_CapMachineWins_FolderMachineOnly @story-8.122 @ac-9: el tope de 
   assert.match(err.motivo, /es de la máquina/);
 });
 
+test('Config_SessionNames_ThemeOrList — coordination.session_names: a factory theme or a list, the machine wins, a bad value is broken', () => {
+  // a factory theme in the profile and a list in the machine file: the machine wins
+  const home = casa();
+  maquina(home, { coordination: { session_names: [' Norte ', 'Sur'] } });
+  const c = cargar({ home, arnes: arnesCon({ coordination: { session_names: 'animals' } }) });
+  assert.deepEqual(c.errores, []);
+  assert.deepEqual(lib().coordinacion(c).session_names, { value: ['Norte', 'Sur'], origin: 'maquina' });
+  const p = cargar({ home: casa(), arnes: arnesCon({ coordination: { session_names: 'rivers' } }) });
+  assert.deepEqual(lib().coordinacion(p).session_names, { value: 'rivers', origin: 'perfil' });
+  // the variable: a theme, or a comma-separated list
+  const v = cargar({ home, arnes: arnesCon({}), env: { TYCON_COORDINATION_SESSION_NAMES: 'Uno, Dos' } });
+  assert.deepEqual(lib().coordinacion(v).session_names, { value: ['Uno', 'Dos'], origin: 'env' });
+  const vt = cargar({ home: casa(), arnes: arnesCon({}), env: { TYCON_COORDINATION_SESSION_NAMES: 'trees' } });
+  assert.deepEqual(lib().coordinacion(vt).session_names, { value: 'trees', origin: 'env' });
+  // nowhere: null, with no origin
+  assert.deepEqual(lib().coordinacion(cargar({ home: casa(), arnes: arnesCon({}) })).session_names, { value: null, origin: 'sin-valor' });
+  // broken: an unknown theme, an empty list, a name with a space or an accent, a repeated name
+  for (const malo of ['dinosaurios', [], ['con espacio'], ['Río'], ['-x'], ['Uno', 'uno'], [3]]) {
+    const r = cargar({ home: casa(), arnes: arnesCon({ coordination: { session_names: malo } }) });
+    assert.ok(r.errores.some((e) => e.clave === 'coordination.session_names'), `${JSON.stringify(malo)}: ${JSON.stringify(r.errores)}`);
+  }
+  const ve = cargar({ home: casa(), arnes: arnesCon({}), env: { TYCON_COORDINATION_SESSION_NAMES: 'Uno,con espacio' } });
+  assert.ok(ve.errores.some((e) => e.clave === 'TYCON_COORDINATION_SESSION_NAMES'), JSON.stringify(ve.errores));
+});
+
+test('Config_SessionNames_SetFromTheCommandLine — set takes a theme id, or a comma-separated list that is saved as a list', () => {
+  const home = casa();
+  const env = { TYCON_PROFILE: '0', TYCON_GUARD_LIB_FOR_TEST: path.join(tmp('tcfg-set-nom-'), 'no-esta.js') };
+  const leido = () => JSON.parse(fs.readFileSync(path.join(home, '.claude', 'tycon.json'), 'utf8')).coordination.session_names;
+  let out = cli(['set', 'coordination.session_names', 'colors'], { home, env });
+  assert.equal(out.status, 0, out.stderr);
+  assert.equal(leido(), 'colors');
+  out = cli(['set', 'coordination.session_names', 'Norte,Sur,Este'], { home, env });
+  assert.equal(out.status, 0, out.stderr);
+  assert.deepEqual(leido(), ['Norte', 'Sur', 'Este']);
+  assert.equal(cli(['set', 'coordination.session_names', 'Norte,con espacio'], { home, env }).status, 2, 'un nombre que no sirve no se escribe');
+  assert.deepEqual(leido(), ['Norte', 'Sur', 'Este']);
+});
+
+test('Config_SessionNames_NotWrittenWithAnOldGuard — with an installed production guard that does not know the key, set writes nothing and says how to update it', () => {
+  const home = casa();
+  const dir = tmp('tcfg-set-guard-');
+  const nuevo = fs.readFileSync(path.join(SCRIPTS, 'production', 'guard-libs', 'lib', 'tycon-config.js'), 'utf8');
+  const viejo = nuevo.replace(", session_names: 'aceptada'", '');
+  assert.notStrictEqual(viejo, nuevo, 'la copia del freno conoce la clave');
+  fs.writeFileSync(path.join(dir, 'viejo.js'), viejo);
+  fs.writeFileSync(path.join(dir, 'nuevo.js'), nuevo);
+  const file = path.join(home, '.claude', 'tycon.json');
+  let out = cli(['set', 'coordination.session_names', 'Norte,Sur'], { home, env: { TYCON_PROFILE: '0', TYCON_GUARD_LIB_FOR_TEST: path.join(dir, 'viejo.js') } });
+  assert.equal(out.status, 2, out.stdout);
+  assert.match(out.stderr, /no lo escribí.*coordination\.session_names.*install-guard\.sh/s);
+  assert.ok(!fs.existsSync(file), 'no escribió nada');
+  // another key is still written with an old guard, with the usual warning after writing
+  out = cli(['set', 'coordination.max_working', '4'], { home, env: { TYCON_PROFILE: '0', TYCON_GUARD_LIB_FOR_TEST: path.join(dir, 'viejo.js') } });
+  assert.equal(out.status, 0, out.stderr);
+  out = cli(['set', 'coordination.session_names', 'Norte,Sur'], { home, env: { TYCON_PROFILE: '0', TYCON_GUARD_LIB_FOR_TEST: path.join(dir, 'nuevo.js') } });
+  assert.equal(out.status, 0, out.stderr);
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).coordination, { max_working: 4, session_names: ['Norte', 'Sur'] });
+});
+
 test('Config_PersonalData_NotShown — explain shows the chat cut short, and the hook answer carries no configuration', () => {
   const home = casa();
   const arnes = arnesCon(null);

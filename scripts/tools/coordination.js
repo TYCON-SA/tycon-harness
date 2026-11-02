@@ -14,7 +14,9 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *                            de firmas en esta máquina, sólo imprime el comando
  *   signature-done <id>      borra el archivo y su pendiente
  *   open --name <n> --cwd <carpeta> -- <encargo>
- *                            abre una sesión de fondo con ese nombre; nunca reintenta
+ *                            abre una sesión de fondo con ese nombre; nunca reintenta. Sin --name (o con --name auto)
+ *                            toma el primero libre de `coordination.session_names` (el lector de configuración);
+ *                            sin esa configuración, no la abre
  *   open --name <n> --repo <repo> [--branch <rama>] -- <encargo>
  *                            lo mismo, en un puesto fijo libre del repo (scripts/tools/work-slots.js), en la rama del
  *                            trabajo (wt/<nombre> sin rama); sin puesto libre no la abre
@@ -28,7 +30,8 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  * Trabaja una sesión cuyo archivo dice `busy`, una de Codex con actividad en los últimos 5 minutos y una que abrió
  * `open` hace menos de 10 minutos y todavía no escribió su archivo. Las sesiones se leen con lo mismo que usa /wip.
  * El tope sale del lector de configuración (`coordination.max_working`, 3 sin valor); la carpeta de las firmas,
- * también (`coordination.owner_folder`, sólo de la máquina). Lo que este guion anota vive en `<estado>/coordination/`.
+ * también (`coordination.owner_folder`, sólo de la máquina), y los nombres de las sesiones nuevas
+ * (`coordination.session_names`). Lo que este guion anota vive en `<estado>/coordination/`.
  */
 const fs = require('fs');
 const path = require('path');
@@ -41,6 +44,7 @@ const { sesionQueReenvia, designacionVigente } = require(path.join(SKILL_LIB, 'c
 const { sessionsBySid, SAFE_SID } = require('./work-in-progress.js');
 const tyconConfig = require(path.join(__dirname, '..', 'lib', 'tycon-config.js'));
 const workSlots = require('./work-slots.js');
+const { sessionNames } = tyconConfig;
 
 const CODEX_WINDOW_MS = 5 * 60000;
 // Una sesión de Codex quieta hace más de tres horas ya no está esperando: no se lista.
@@ -55,7 +59,7 @@ const ADVERSARIAL_TURN_MAX_MS = 60 * 60000;
 const DOING_FRESH_MS = 3 * 3600000;
 const LAUNCH_TIMEOUT_MS = 30000;
 // Empieza con letra o número: el nombre va como valor de `-n` y no puede leerse como una bandera.
-const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+const { NAME_RE } = sessionNames;
 const KIND_RE = /^[a-z0-9-]+$/;
 const LABEL_MAX = 40;
 
@@ -81,8 +85,8 @@ function writeJson(file, value) {
   try { fs.renameSync(tmp, file); } catch (e) { try { fs.unlinkSync(tmp); } catch { /* ya no está */ } throw e; }
 }
 
-// La configuración de esta máquina: el tope y la carpeta de las firmas, con su origen. Un error del lector no tumba el
-// estado: el tope queda en el de fábrica y el motivo va en `problems`.
+// La configuración de esta máquina: el tope, la carpeta de las firmas y los nombres de las sesiones, con su origen. Un
+// error del lector no tumba el estado: el tope queda en el de fábrica y el motivo va en `problems`.
 function recipe({ home, arnes, env }) {
   try {
     const cfg = tyconConfig.cargar({ home, env, ...(arnes ? { arnes } : {}) });
@@ -90,7 +94,7 @@ function recipe({ home, arnes, env }) {
     const problem = cfg.errores && cfg.errores.length ? `la configuración no se pudo leer entera (${cfg.errores[0].clave || cfg.errores[0].archivo}: ${cfg.errores[0].motivo})` : null;
     return { ...r, problem };
   } catch (e) {
-    return { max_working: { value: 3, origin: 'sin-valor' }, owner_folder: { value: null, origin: 'sin-valor' }, problem: `el lector de configuración falló (${e.message})` };
+    return { max_working: { value: 3, origin: 'sin-valor' }, owner_folder: { value: null, origin: 'sin-valor' }, session_names: { value: null, origin: 'sin-valor' }, problem: `el lector de configuración falló (${e.message})` };
   }
 }
 
@@ -600,15 +604,56 @@ function callerPermissionMode({ home, env }) {
   return { mode };
 }
 
-/** Abre una sesión de fondo con nombre y encargo. Nunca reintenta; sólo una apertura que salió bien queda anotada. */
+// Una apertura por vez en la máquina: dos `open` juntos elegían el mismo nombre de la lista y la segunda anotación de
+// `opened` pisaba la primera. La otra espera su turno; un candado de hace más de dos minutos es de una apertura que murió.
+const OPEN_LOCK_STALE_MS = 120000;
+const OPEN_LOCK_WAIT_MS = LAUNCH_TIMEOUT_MS + 15000;
+function withOpenLock(home, waitMs, fn) {
+  // al lado de la carpeta de la coordinadora y no adentro: con esa carpeta sin permiso de escritura se abre igual y se
+  // avisa que no se pudo anotar
+  const lock = path.join(stateDir(home), 'coordination-open.lock');
+  try { fs.mkdirSync(stateDir(home), { recursive: true }); } catch (e) { return { ok: false, message: `No pude preparar ${stateDir(home)} (${e.code || e.message}): no la abrí.` }; }
+  const until = Date.now() + waitMs;
+  for (;;) {
+    try { fs.mkdirSync(lock); break; } catch (e) {
+      if (e.code !== 'EEXIST') return { ok: false, message: `No pude tomar el candado de las aperturas (${e.code}): no la abrí.` };
+      let age = 0;
+      try { age = Date.now() - fs.statSync(lock).mtimeMs; } catch { continue; }
+      if (age > OPEN_LOCK_STALE_MS) { try { fs.rmdirSync(lock); } catch { /* otro lo soltó */ } continue; }
+      if (Date.now() >= until) return { ok: false, message: 'Otra apertura de sesión sigue en curso en esta máquina: no la abrí. Probá de nuevo en unos segundos.' };
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200);
+    }
+  }
+  try { return fn(); } finally { try { fs.rmdirSync(lock); } catch { /* ya no está */ } }
+}
+
+// Los nombres que ya tienen rama `wt/<nombre>` en el repo: con un nombre de la lista y sin --branch, la sesión nueva
+// arrancaría sobre la rama del trabajo anterior con ese nombre. `{ names }` o `{ problem }`.
+function wtBranchNames(repo) {
+  const r = spawnSync('git', ['-C', repo, 'for-each-ref', '--format=%(refname)', 'refs/heads/wt/'], { encoding: 'utf8', windowsHide: true });
+  if (r.error || r.status !== 0) return { problem: oneLine((r.stderr || '').split('\n')[0] || (r.error && r.error.code) || `git salió con código ${r.status}`) };
+  return { names: r.stdout.split('\n').map((l) => l.trim().replace(/^refs\/heads\/wt\//, '')).filter(Boolean) };
+}
+
+/**
+ * Abre una sesión de fondo con nombre y encargo. Nunca reintenta; sólo una apertura que salió bien queda anotada. Sin
+ * nombre (o con «auto»), toma el primero libre de `coordination.session_names`.
+ */
 function open(opts = {}) {
   const home = opts.home || require('os').homedir();
+  return withOpenLock(home, opts.lockWaitMs == null ? OPEN_LOCK_WAIT_MS : opts.lockWaitMs, () => openNow({ ...opts, home }));
+}
+
+function openNow(opts) {
+  const { home } = opts;
   const env = opts.env || process.env;
   const now = opts.now == null ? Date.now() : Number(opts.now);
-  const { name, task, cwd } = opts;
+  const { task, cwd } = opts;
+  let { name } = opts;
+  const auto = name === undefined || name === null || name === '' || name === 'auto';
   const no = (message) => ({ ok: false, message: oneLine(message) });
   if (isCodex(env) && !opts.launcher) return no('Codex no tiene cómo abrir una sesión de fondo: esa sesión la abre el dueño.');
-  if (!NAME_RE.test(String(name || ''))) return no('El nombre de la sesión va con letras, números, guion o guion bajo, sin espacios: no la abrí.');
+  if (!auto && !NAME_RE.test(String(name))) return no('El nombre de la sesión va con letras, números, guion o guion bajo, sin espacios: no la abrí.');
   const s = status({ ...opts, home, env, now });
   // Sin leer todo no se sabe el tope ni qué nombres están tomados: no se abre a ciegas.
   if (s.problems.length) return no(`No pude leer todo el estado de la máquina (${s.problems[0]}): no la abrí.`);
@@ -617,6 +662,18 @@ function open(opts = {}) {
   const openedProblems = [];
   for (const o of recentOpened(home, now, openedProblems)) taken.add(o.name);
   if (openedProblems.length) return no(`No pude saber qué sesiones se abrieron recién (${openedProblems[0]}): no la abrí.`);
+  if (auto) {
+    const names = sessionNames.namesOf(recipe({ home, arnes: opts.arnes, env }).session_names.value);
+    // sin lista, como siempre: el nombre lo pone quien abre
+    if (names.length && opts.repo && !opts.branch && path.isAbsolute(String(opts.repo))) {
+      const b = wtBranchNames(opts.repo);
+      if (b.problem) return no(`No pude ver qué ramas wt/ tiene ${opts.repo} (${b.problem}): no la abrí.`);
+      for (const n of b.names) taken.add(n);
+    }
+    if (!names.length) return no('El nombre de la sesión va con letras, números, guion o guion bajo, sin espacios (sin --name, sale de coordination.session_names, y esta máquina no tiene esa lista): no la abrí.');
+    name = sessionNames.nextFree(names, taken);
+    if (!name) return no('No quedó ningún nombre libre en la lista de esta máquina (coordination.session_names): no la abrí.');
+  }
   if (taken.has(name)) return no(`«${name}» ya lo usa otra sesión viva: no la abrí.`);
   if (!oneLine(task)) return no('Falta el encargo de la sesión: no la abrí.');
   if (s.working.length >= s.cap.value) return no(`Ya hay ${s.working.length} trabajando y el tope es ${s.cap.value} (${ORIGIN[s.cap.origin] || s.cap.origin}): no la abrí, espera su turno.`);
@@ -730,7 +787,7 @@ function main(argv) {
     process.stdout.write(`${r.message}\n`);
     return r.ok ? 0 : 1;
   }
-  process.stderr.write('uso: coordination.js status [--json] | coordinate | signature --kind <tema> --title <qué> --cwd <carpeta> -- <comando...> | signature-done <id> | open --name <n> (--cwd <carpeta> | --repo <repo> [--branch <rama>]) -- <encargo>\n');
+  process.stderr.write('uso: coordination.js status [--json] | coordinate | signature --kind <tema> --title <qué> --cwd <carpeta> -- <comando...> | signature-done <id> | open [--name <n>|auto] (--cwd <carpeta> | --repo <repo> [--branch <rama>]) -- <encargo>\n');
   return 2;
 }
 

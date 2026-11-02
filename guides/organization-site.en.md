@@ -719,11 +719,13 @@ be, to copy it and open the request by hand.
   written by hand (a number, a text that is none of these): the reader does not understand it and treats the whole
   configuration of every machine as broken, not just this switch; the site does not let you propose it. It lives in
   `team-profile.json` → `switches`, in the profile repo.
-- **How many sessions work at once**: when one session coordinates the others,
-  how many can be working at the same time on one machine (1 to 20; empty means 3) before the next one waits its turn.
-  Each machine can change it for itself, because how much it can take depends on the machine. The folder where the
-  owner's signatures are left belongs to each machine and is not set here. It lives in `team-profile.json` →
-  `coordination.max_working`; the whole recipe is in `guides/coordination.en.md`.
+- **The sessions on each machine**: when one session coordinates the others,
+  how many can be working at the same time on one machine (1 to 20; empty means 3) before the next one waits its turn,
+  and what names new ones get: as today (whoever opens names it) or a built-in theme (animals, rivers, colors or
+  trees), with an example of the names that come out. Each machine can change both for itself; each dev's own list is
+  not edited here: they ask their session for it. The folder where the owner's signatures are left belongs to each
+  machine and is not set here. It lives in `team-profile.json` → `coordination.max_working` and
+  `coordination.session_names`; the whole recipe is in `guides/coordination.en.md`.
 - **Integrations**: which services each machine uses (the time clock, the memory, the mailbox, the
   night, the CodeGraph code index); a machine can turn one off for itself. With CodeGraph on, the installer sets it up
   for each dev and the harness warns when a machine lacks it. It lives in `team-profile.json`, in the profile repo. A
