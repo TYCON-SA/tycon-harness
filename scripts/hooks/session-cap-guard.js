@@ -367,7 +367,7 @@ function claude(args, ctx) {
 
 // ── La decisión ──
 
-const shQuote = (s) => (/^[\w@%+=:,./\\-]+$/.test(s) ? s : `"${String(s).replace(/"/g, '\\"')}"`);
+const shQuote = (s) => (/^[\w@%+=:,./\\-]+$/.test(s) ? s : `"${String(s).replace(/[\\"$`]/g, '\\$&')}"`);
 const hhmmss = (ms) => { const d = new Date(ms); return [d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, '0')).join(''); };
 const NOMBRE_OK = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 

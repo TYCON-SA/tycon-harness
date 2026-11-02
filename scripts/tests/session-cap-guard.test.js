@@ -351,3 +351,15 @@ test('T13 AperturasSeguidas_LaSegundaNiega @story-8.178 @ac-11: con 4 de 5, la p
     } finally { fs.chmodSync(dir, 0o755); }
   }
 });
+
+test('T17 ComandoDeOpen_RutaConCaracteresRaros @story-8.178 @ac-1: la carpeta del comando de open llega entera al shell', { skip: process.platform === 'win32' ? 'prueba las comillas de sh' : false }, () => {
+  const t = toy({ cap: 5, busy: 5 });
+  for (const cwd of ['/tmp/a b\\c', '/tmp/a"b c', '/tmp/a\\" b', '/tmp/a $HOME b', '/tmp/a `id` b']) {
+    const d = G.decidir({ hook_event_name: 'PreToolUse', tool_name: 'Bash', cwd, tool_input: { command: 'claude --bg -n x -- y' } }, { home: t.home, env: t.env, now: NOW });
+    assert.strictEqual(d.deny, true, cwd);
+    const quoted = / --cwd (.+) -- <encargo>/.exec(d.message);
+    assert.ok(quoted, d.message);
+    const r = spawnSync('sh', ['-c', `printf %s ${quoted[1]}`], { encoding: 'utf8' });
+    assert.strictEqual(r.stdout, cwd);
+  }
+});
