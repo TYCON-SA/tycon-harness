@@ -604,6 +604,20 @@ function callerPermissionMode({ home, env }) {
   return { mode };
 }
 
+/**
+ * El tope, como lo cuentan `open` y el freno de sesiones (scripts/hooks/session-cap-guard.js): `{ atCap, working, cap,
+ * problems }`. Lee las conversaciones, como `open`. Con `problems` no vacío el conteo no es confiable: cada uno decide.
+ */
+function capCheck(opts = {}) {
+  const s = status(opts);
+  return { atCap: s.working.length >= s.cap.value, working: s.working, cap: s.cap, problems: s.problems };
+}
+
+/** Anota una sesión recién abierta en `opened.json`, para que cuente hasta que escriba su archivo. Tira si no puede. */
+function noteOpened({ home, now, name, cwd }) {
+  writeJson(openedFile(home), [...recentOpened(home, now, []).filter((o) => o.name !== name), { name, cwd, at: now }]);
+}
+
 // Una apertura por vez en la máquina: dos `open` juntos elegían el mismo nombre de la lista y la segunda anotación de
 // `opened` pisaba la primera. La otra espera su turno; un candado de hace más de dos minutos es de una apertura que murió.
 const OPEN_LOCK_STALE_MS = 120000;
@@ -654,7 +668,7 @@ function openNow(opts) {
   const no = (message) => ({ ok: false, message: oneLine(message) });
   if (isCodex(env) && !opts.launcher) return no('Codex no tiene cómo abrir una sesión de fondo: esa sesión la abre el dueño.');
   if (!auto && !NAME_RE.test(String(name))) return no('El nombre de la sesión va con letras, números, guion o guion bajo, sin espacios: no la abrí.');
-  const s = status({ ...opts, home, env, now });
+  const s = capCheck({ ...opts, home, env, now });
   // Sin leer todo no se sabe el tope ni qué nombres están tomados: no se abre a ciegas.
   if (s.problems.length) return no(`No pude leer todo el estado de la máquina (${s.problems[0]}): no la abrí.`);
   const taken = new Set([...sessionsBySid(path.join(claudeDir(home), 'sessions'), [], path.join(claudeDir(home), 'projects')).values()]
@@ -676,7 +690,7 @@ function openNow(opts) {
   }
   if (taken.has(name)) return no(`«${name}» ya lo usa otra sesión viva: no la abrí.`);
   if (!oneLine(task)) return no('Falta el encargo de la sesión: no la abrí.');
-  if (s.working.length >= s.cap.value) return no(`Ya hay ${s.working.length} trabajando y el tope es ${s.cap.value} (${ORIGIN[s.cap.origin] || s.cap.origin}): no la abrí, espera su turno.`);
+  if (s.atCap) return no(`Ya hay ${s.working.length} trabajando y el tope es ${s.cap.value} (${ORIGIN[s.cap.origin] || s.cap.origin}): no la abrí, espera su turno.`);
   if (cwd && opts.repo) return no('Va o la carpeta o el repo, no los dos: no la abrí.');
   // La sesión nueva arranca en el modo de la que la abre: en otro modo se traba en permisos que nadie ve y no recibe
   // los mensajes de las demás. Sin saberlo, no se abre a ciegas.
@@ -728,7 +742,7 @@ function openNow(opts) {
   }
   const opened = `Abrí «${name}» en ${where}. Para entrar: claude attach ${name}, o desde claude.ai/code (control remoto «${name}»)`;
   try {
-    writeJson(openedFile(home), [...recentOpened(home, now, []).filter((o) => o.name !== name), { name, cwd: where, at: now }]);
+    noteOpened({ home, now, name, cwd: where });
   } catch (e) {
     return { ok: true, message: oneLine(`${opened}. Pero no la pude anotar (${e.code || e.message}): hasta que escriba su archivo de sesión no cuenta para el tope.`) };
   }
@@ -793,4 +807,4 @@ function main(argv) {
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { status, statusText, readPending, capNotice, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, callerPermissionMode, coordinationDir };
+module.exports = { status, statusText, readPending, capNotice, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, capCheck, noteOpened, callerPermissionMode, coordinationDir, ORIGIN };

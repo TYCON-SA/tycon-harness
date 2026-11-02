@@ -124,6 +124,15 @@ pestaña Configuración, «Las sesiones de cada máquina»), y cada máquina pue
 aguanta depende de ella. Sin valor en ningún lado, el tope es 3. `coordination.js status` muestra quién trabaja, quién
 espera y por qué, y el tope con su origen.
 
+El tope frena por cualquier camino del agente, no sólo por `open`. Antes de cada comando, un freno mira si el comando
+abre una sesión de Claude de fondo: `claude --bg`, o `claude` corriendo de fondo (`&`, `nohup`, `setsid`, `tmux new -d`,
+`screen -dm`, `Start-Process`, la ejecución de fondo de la herramienta), también envuelto en `env`, `sudo`, `bash -c`,
+`pwsh -c` o `cmd /c`. Si abre y la máquina está en el tope, lo niega y da el comando de `open`, que espera turno. Cuenta
+con la misma función que `open`. Debajo del tope deja pasar y anota la sesión, así cuenta desde ese momento. Si no puede
+contar (un archivo de estado que no se lee) o no puede anotarla, niega igual y nombra el archivo. La salida es arreglar
+ese archivo, o que la persona abra la sesión desde su terminal: el freno mira sólo las herramientas del agente. No tiene
+interruptor: el tope lo cambia una persona.
+
 La coordinadora, además, lo ve sin pedirlo: en cada turno, si la máquina está en el tope, un aviso le dice quiénes
 trabajan; si lo pasó, por cuánto y cuál trabaja hace menos. Debajo del tope no dice nada de eso, y ninguna otra sesión lo
 ve. Se apaga con `TYCON_COORDINATION_NOTICE=0`.

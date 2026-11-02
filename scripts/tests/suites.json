@@ -1739,6 +1739,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/session-cap-guard.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/session-names.test.js",
       "requiere": []
     },

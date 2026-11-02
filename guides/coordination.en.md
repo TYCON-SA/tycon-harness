@@ -127,6 +127,15 @@ Configuration tab, "The sessions on each machine"), and each machine can change 
 can take depends on the machine. With no value anywhere, the cap is 3. `coordination.js status` shows who is working,
 who is waiting and why, and the cap with where it comes from.
 
+The cap brakes on every path the agent takes, not only through `open`. Before each command, a brake checks whether the
+command opens a background Claude session: `claude --bg`, or `claude` running in the background (`&`, `nohup`, `setsid`,
+`tmux new -d`, `screen -dm`, `Start-Process`, the tool's background execution), also wrapped in `env`, `sudo`,
+`bash -c`, `pwsh -c` or `cmd /c`. If it opens one and the machine is at the cap, it refuses and gives the `open` command,
+which waits its turn. It counts with the same function as `open`. Below the cap it lets the command through and records
+the session, so it counts from that moment. If it cannot count (a state file that cannot be read) or cannot record the
+session, it refuses as well and names the file. The way out is fixing that file, or the person opening the session from
+their terminal: the brake only watches the agent's tools. It has no switch: a person changes the cap.
+
 The coordinator also sees it without asking: on each turn, if the machine is at the cap, a notice tells her who is
 working; if it is over, by how much and which one has been working the shortest. Below the cap it says nothing about that,
 and no other session sees it. It is turned off with `TYCON_COORDINATION_NOTICE=0`.

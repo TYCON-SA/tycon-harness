@@ -42,6 +42,7 @@
     { "kind": "hook", "id": "PreToolUse:@tcg:push-phantom-ref-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "PreToolUse:@tcg:pr-one-per-repo-guard.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": false },
     { "kind": "hook", "id": "PreToolUse:@tcg:pr-auto-complete-guard.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
+    { "kind": "hook", "id": "PreToolUse:@tcg:session-cap-guard.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "PreToolUse:@tcg:public-push-guard.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "PreToolUse:tycon-pipeline/scripts/on-bash-write-gate.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "PreToolUse:tycon-pipeline/scripts/on-advisor-run.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },

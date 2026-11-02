@@ -422,6 +422,27 @@ test('T29 Open_JustOpened_CountsUntilItsFile @story-8.122 @ac-29: una abierta ha
   assert.strictEqual(later.ok, true, later.message);
 });
 
+test('T9 Open_CapCheck_MismoMensaje @story-8.178 @ac-6: open usa capCheck y su mensaje en el tope no cambia; noteOpened anota como open', () => {
+  const t = toy();
+  for (const s of ['a', 'b', 'c']) session(t, `busy-${s}`, s, { status: 'busy' });
+  const c = C.capCheck({ ...t.opts, ...caller(t) });
+  assert.deepStrictEqual({ atCap: c.atCap, working: c.working.length, cap: c.cap, problems: c.problems }, { atCap: true, working: 3, cap: { value: 3, origin: 'sin-valor' }, problems: [] });
+  const r = open(t, { name: 'n1', task: 'algo', launcher: launcher(t) });
+  assert.deepStrictEqual(r, { ok: false, message: 'Ya hay 3 trabajando y el tope es 3 (de fábrica): no la abrí, espera su turno.' });
+  assert.strictEqual(launched(t), null);
+  // debajo del tope llama al lanzador y la deja anotada con noteOpened
+  const u = toy();
+  session(u, 'busy-a', 'a', { status: 'busy' });
+  assert.strictEqual(C.capCheck({ ...u.opts, ...caller(u) }).atCap, false);
+  const ok = open(u, { name: 'n1', task: 'algo', launcher: launcher(u) });
+  assert.strictEqual(ok.ok, true, ok.message);
+  assert.ok(launched(u));
+  C.noteOpened({ home: u.home, now: NOW, name: 'n2', cwd: u.root });
+  const list = JSON.parse(fs.readFileSync(path.join(C.coordinationDir(u.home), 'opened.json'), 'utf8'));
+  assert.deepStrictEqual(list.map((o) => o.name), ['n1', 'n2']);
+  assert.strictEqual(C.capCheck({ ...u.opts, ...caller(u) }).atCap, true);
+});
+
 // ── What the adversarial pass reproduced (regressions) ───────────────────────────────────────────────────────────
 
 test('T8c Status_SkipsInternalAgents @story-8.122 @ac-8: un agente interno (nombre armado, carpeta temporal) no cuenta ni se pide nombrar', () => {
