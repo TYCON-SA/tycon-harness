@@ -299,6 +299,20 @@ function codexPieces({ tree, home = os.homedir(), env = process.env } = {}) {
 }
 
 /**
+ * `dir` por el nombre estable del arnés, si cae adentro de la versión a la que apunta su enlace: una ruta escrita con la
+ * carpeta numerada ata la máquina a esa versión, y actualizar sólo mueve el enlace. Sin enlace, o afuera de él, `dir` tal cual.
+ */
+function throughLink(dir, home, env) {
+  try {
+    const H = require('./tycon-home.js');
+    const link = H.ownPathsOf({ home, env }).harness;
+    if (!H.isLink(link)) return dir;
+    const rel = path.relative(fs.realpathSync(link), fs.realpathSync(dir));
+    return rel.startsWith('..') || path.isAbsolute(rel) ? dir : path.join(link, rel);
+  } catch (_) { return dir; }
+}
+
+/**
  * Enchufa (o re-enchufa) a Codex desde `tree`. `force`: despliega aunque la huella diga «al día» (una instalación).
  * @returns {{ok:boolean, out:string, pieces:object[], warnings:string[], reason:string|null}}
  */
@@ -379,7 +393,7 @@ function recorded(state) {
   return Boolean(state && Array.isArray(state.tools) && state.tools.some((x) => TOOLS.includes(x)));
 }
 
-module.exports = {
+module.exports = { throughLink,
   TOOLS, LABELS, DETECT,
   codexHome, runnableAt, findIn, ownConfig, detect, parseOption, choose, reason, planLine, names, agentLines, noneFound, codexDeployed, plugged, recorded, same,
   agentsMdPath, codexPieces, plugCodex, unplugged, unpluggedNotice, NOTICE_HEAD, NOTICE_TAIL, NOTICE_RE,
