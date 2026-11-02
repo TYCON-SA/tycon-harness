@@ -379,10 +379,9 @@ const LEVELS_SINCE = '2026.10.30.30';
 const SITE_SINCE = '2026.10.31.99';
 /**
  * 🔴 La primera versión del arnés cuyo lector conoce `coordination.session_names` (con qué nombres abre la coordinadora
- * las sesiones nuevas). Provisoria hasta la etiqueta del merge que la trae: una versión que todavía no existe, para que
- * el sitio frene de más en vez de dejar que una máquina anterior rechace el perfil entero.
+ * las sesiones nuevas): la etiqueta del merge que la trae, como LEVELS_SINCE.
  */
-const SESSION_NAMES_SINCE = '2026.11.01.99';
+const SESSION_NAMES_SINCE = '2026.11.02.3';
 /**
  * 🔴 La primera versión del arnés cuyo lector conoce `integrations.timeTracking` (la etiqueta del merge que trajo ese
  * lector). El selector de la herramienta de horas saca la llave vieja `integrations.clockify` del perfil: una máquina
