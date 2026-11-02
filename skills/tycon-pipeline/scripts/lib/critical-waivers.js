@@ -21,9 +21,9 @@ const esCriticoEximido = (f) => !!f && String(f.severity || '').trim().toUpperCa
   && String(f.disposition || '').trim().toLowerCase() === 'waived';
 
 /** Una constancia completa: regla, quién, tipo y vía. null = válida; si no, el motivo. */
-// Se firma en la terminal o en la ventana de permiso y la ata su renglón del registro del arnés. Una anterior a la
+// Se firma en la terminal, en la ventana de permiso, o con el click o el «aprobado» de la persona, y la ata su renglón del registro del arnés. Una anterior a la
 // ventana, que salió de una cita en la conversación, ya no vale: la conversación no se lee para firmar nada.
-const sinCita = (via) => /terminal|ventana|delegada/.test(String(via || ''));
+const sinCita = (via) => /terminal|ventana|delegada|click en el cuadro|«aprobado» escrito/.test(String(via || ''));
 const CITA_VIEJA = 'esta exención se firmó con una cita en la conversación, que ya no cuenta: firmala en la ventana';
 
 function constanciaInvalida(l) {
@@ -178,7 +178,7 @@ function sesionQueReenvia({ env = process.env, home, arnes } = {}) {
 // El perfil dice SI la organización usa una sesión que reenvía el ok de un dev (`approvals.relay_session`: el nombre del
 // rol, por ejemplo «coordinadora»). CUÁL es se designa en la máquina: la sesión corre `marker.js designate-relay` con
 // una frase que la nombra («Esta sesión es la coordinadora») y el renglón queda en el gates.log. Ese renglón no designa
-// nada solo: lo confirma el dueño en su terminal (scripts/lib/delegated-signing.js `confirm-designation`). La sesión se
+// nada solo: lo confirma el dueño, con un click en esa pestaña o en su terminal (scripts/lib/delegated-signing.js `confirm-designation`). La sesión se
 // reconoce por su número, que no cambia al reiniciar el proceso (sí con /clear o con un chat nuevo); el nombre visible
 // no cuenta, porque lo pone el sistema y otra sesión puede llevar el mismo.
 const DESIGNACION = 'relay-designation';

@@ -699,7 +699,8 @@ be, to copy it and open the request by hand.
     everyone; the team does not add or remove rows) and "The level of each signature" (it goes up, never down; only
     routine is delegated).
   - **On each machine**, the designation: the sentence in the chosen session's chat. For it to sign what is delegated,
-    the owner also confirms it at their terminal with `node scripts/lib/delegated-signing.js confirm-designation` (see
+    that session also runs `node scripts/lib/delegated-signing.js confirm-designation` and the owner approves it with a
+    click in the options box, or runs it at their terminal (see
     `guides/firmas-del-arnes.md`, «Aprobar en nombre del dueño»). It is recognized by its conversation, keeps counting
     after a restart, and has to be repeated after a new chat or a `/clear`. If nobody designated it, nobody confirmed
     the designation, or the session is closed, there is no coordinator: everything goes to the developer.

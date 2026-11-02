@@ -53,6 +53,10 @@ test('8.141 T16 LaneLlmNotice_CuentaPorVia', (t) => {
   assert.strictEqual(r.status, 0, r.stderr);
   assert.match(r.stdout, /arreglos rápidos en 7 días: 6 \(en la ventana: 3, en la terminal: 1, por la coordinadora: 1\)/);
   assert.match(r.stdout, /sin dato de cómo se firmó: 1/);
+  assert.doesNotMatch(r.stdout, /click/, 'sin aprobaciones por click no se nombran');
+  const conClick = correr(estado(t, [{ ts: hace(DIA), kind: 'ADHOC_SET', via: 'click', reason: 'a' }, { ts: hace(DIA), kind: 'ADHOC_SET', via: 'mensaje', reason: 'b' }]));
+  assert.match(conClick.stdout, /con un click o un «aprobado»: 2/);
+  assert.doesNotMatch(conClick.stdout, /sin dato/, 'el click no es «sin dato»');
   assert.doesNotMatch(r.stdout, /modelo|desempate|juez|TYCON_LANE_LLM=/i);
   // un segundo arranque sin arreglos nuevos no dice nada (el sello)
   assert.strictEqual(correr(dir).stdout, '');

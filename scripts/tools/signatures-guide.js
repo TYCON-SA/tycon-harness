@@ -16,7 +16,8 @@ const cat = require('../lib/signatures.js');
 
 const GUIA = path.resolve(__dirname, '..', '..', 'guides', 'firmas-del-arnes.md');
 
-const OTRA_SESION = { yes: 'sí', no: 'no, por la terminal', pending: 'todavía sin comando' };
+const OTRA_SESION = { yes: 'sí', no: 'no, en la pestaña de esa sesión', pending: 'todavía sin comando' };
+const otraSesion = (s) => (cat.ONLY_IN_TERMINAL.includes(s.id) ? 'no, sólo en tu terminal' : OTRA_SESION[s.otherSession]);
 const NIVEL = { 1: '1 · rutina', 2: '2 · excepción', 3: '3 · irreversible' };
 const code = (s) => `\`${s}\``;
 const fila = (celdas) => `| ${celdas.join(' | ')} |`;
@@ -29,7 +30,7 @@ const TABLAS = {
       hoy.length ? hoy.join(', ') : 'todavía no se pide'];
   })),
   firmas: () => tabla(['Firma', 'Qué aprueba', 'Comando que la pide', '¿Desde otra sesión?', 'Firmarla en la terminal'],
-    cat.SIGNATURES.map((s) => [code(s.id), s.approves, code(s.command), OTRA_SESION[s.otherSession], s.terminal === null ? '—' : code(s.terminal)])),
+    cat.SIGNATURES.map((s) => [code(s.id), s.approves, code(s.command), otraSesion(s), s.terminal === null ? '—' : code(s.terminal)])),
   grupos: () => tabla(['Grupo', 'Firmas'], Object.entries(cat.GROUPS).map(([g, ids]) => [code(g), ids.map(code).join(', ')])),
 };
 

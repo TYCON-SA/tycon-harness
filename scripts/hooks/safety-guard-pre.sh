@@ -832,8 +832,8 @@ if [[ "$_ow_mira" == "1" ]]; then
       for _ow_e in ${OW_ESCAPES[@]+"${OW_ESCAPES[@]}"}; do
         constancia "$(ow_regla "$_ow_e")" escape ventana "" "$_c3_sid" "${_ow_e#escape:}"
       done ;;
-    # la aprobación explícita de la persona (un click o un «aprobado») queda como la ventana: la dio ella, no la delegación
-    allow) _ow_camino=delegacion; case "$OW_VIA" in click|mensaje) _ow_camino=ventana ;; esac
+    # la aprobación explícita de la persona (un click o un «aprobado») queda con su vía: la dio ella, no la delegación
+    allow) _ow_camino=delegacion; case "$OW_VIA" in click|mensaje) _ow_camino="$OW_VIA" ;; esac
       constancia "$(ow_regla "$OW_FIRMA")" escape "$_ow_camino" "$OW_RELEVO" "$_c3_sid" "${OW_FIRMA#escape:}" ;;
     none)
       # la salida de una ejecución perdida que la ventana no reconoce como su firma (otro subcomando): no se firma acá

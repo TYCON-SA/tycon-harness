@@ -17,7 +17,10 @@
  *   command       el comando que la pide.
  *   otherSession  'yes' si el comando se puede correr desde la pestaña de otra sesión, 'no' si no, 'pending' si la firma
  *                 todavía no tiene comando.
- *   terminal      cómo la firma el dueño en su terminal, o null mientras no tenga comando.
+ *   terminal      cómo la firma el dueño en su terminal si lo prefiere (salvo lo irreversible, una firma también se aprueba
+ *                 sin terminal: en la ventana de permiso o, donde no llega, con un click en el cuadro de opciones o un
+ *                 «aprobado» escrito; owner-window.js), o null mientras no tenga comando.
+ *   ifWrong       qué pasa si sale mal, en llano: lo muestra el cuadro de opciones.
  *   covers        los ids de LEVELS que aprueba: el suyo, o dos si la firma de hoy junta dos cosas de distinto peso,
  *                 u otro si es un escape que hace lo mismo que otra firma.
  *   level         el mayor nivel de lo que cubre.
@@ -61,6 +64,7 @@ const LEVELS_EN = Object.freeze({
   'escape:TYCON_STATUS_GATE': "change a story's status by hand",
   'escape:story-skill-bypass': 'write a story without the story skill',
   'escape:set-autonomous': 'change the autonomous mode of a run',
+  'designation-confirm': 'confirm which session is the coordinator of this machine',
   'control-change': 'any change to a control',
   'escape:TYCON_SAFETY_OFF': 'turn off the safety guard for one command',
   'escape:TYCON_PROD_LINT': 'turn off the production query control',
@@ -92,6 +96,7 @@ const LEVELS = Object.freeze([
   ['escape:TYCON_STATUS_GATE', 2, AMBOS, 'cambiar a mano el estado de una historia'],
   ['escape:story-skill-bypass', 2, AMBOS, 'escribir una historia sin la skill de historias'],
   ['escape:set-autonomous', 2, AMBOS, 'cambiar el modo autónomo de una ejecución'],
+  ['designation-confirm', 2, AMBOS, 'confirmar qué sesión es la coordinadora de esta máquina'],
   ['control-change', 3, MANT, 'cualquier cambio de control'],
   ['escape:TYCON_SAFETY_OFF', 3, AMBOS, 'apagar el freno de seguridad para un comando'],
   ['escape:TYCON_PROD_LINT', 3, AMBOS, 'apagar el control de consultas a producción'],
@@ -142,8 +147,29 @@ const CON_NOMBRE = [
   ['cambiar-el-estado', 'cambiar a mano el estado de una story', 'file'],
 ];
 
+// qué pasa si sale mal: lo dice el cuadro de opciones que arma el guion de la firma (owner-window.js `cuadroPara`). Un
+// escape dice lo de todos, salvo que tenga el suyo
+const SI_SALE_MAL_ESCAPE = 'ese control no mira este comando, así que lo que frenaba pasa; queda anotado';
+const SI_SALE_MAL = Object.freeze({
+  'plan-approval': 'se implementa un plan que no querías; se frena la ejecución y se rehace, y nada entra a main sin revisión',
+  'extra-round': 'se gasta una vuelta más de revisores; no cambia el código',
+  'refresh-after-main': 'queda firmado un control con lo que trajo main; se revierte con otro pedido',
+  'control-change': 'un control queda cambiado y lo que frenaba puede pasar; se revierte con otro pedido',
+  'critical-waiver': 'un hallazgo crítico entra sin arreglar',
+  'runtime-waiver': 'un criterio queda sin probar en vivo, y un error puede llegar a producción',
+  'manual-test': 'un criterio queda como probado sin una prueba automática que lo repita',
+  'browser-test': 'se prepara la prueba con navegador, o queda sin ella y un error de pantalla puede pasar',
+  'lost-run': 'la ejecución se cierra y lo que le faltaba queda sin hacer',
+  'adversarial-skip': 'el código entra sin el pase adversarial, y un error que él encontraría puede llegar a main',
+  'pending-approval': 'queda un pendiente de más en la lista; se cierra a mano',
+  'adhoc-lane': 'la sesión escribe código sin historia; se cierra el arreglo, y nada entra a main sin revisión',
+  save: 'se guarda en el repo y se abre el pedido; se revierte con otro commit',
+  'designation-confirm': 'esa sesión firma en tu nombre lo que el perfil delega, hasta que se designe otra',
+});
+
 // qué aprueba cada firma, en inglés: lo muestra la pantalla de Configuración en ese idioma
 const APPROVES_EN = {
+  'designation-confirm': 'confirm which session is the coordinator of this machine',
   'plan-approval': "approve a story's plan",
   'extra-round': 'one more round of reviewers',
   'refresh-after-main': 'sign the controls again after bringing in main, with no change of its own',
@@ -198,6 +224,7 @@ const SIGNATURES = Object.freeze([
   { id: 'pending-approval', approves: 'abrir un pendiente nuevo en la lista de pendientes', command: 'marker.js approve-pending --id <CÓDIGO> --repo <carpeta>', otherSession: 'yes', terminal: 'marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --terminal' },
   { id: 'adhoc-lane', approves: 'abrir el arreglo rápido de una sesión, sin historia', command: "marker.js adhoc set '<json>'", otherSession: 'yes', terminal: "marker.js adhoc set '<json>' --terminal --for-session <id>" },
   { id: 'save', approves: 'guardar la story: commit, push y los pull requests', command: 'marker.js approve-save [--for-session <D>]', otherSession: 'yes', terminal: 'marker.js approve-save --terminal --for-session <D>' },
+  { id: 'designation-confirm', approves: 'confirmar qué sesión es la coordinadora de esta máquina', command: 'delegated-signing.js confirm-designation', otherSession: 'no', terminal: 'delegated-signing.js confirm-designation --terminal' },
   ...POR_VARIABLE.map(([nombre, valor, approves]) => ({
     id: `escape:${nombre}`, approves, command: `${nombre}=${valor} <comando>`, otherSession: 'no', terminal: `${nombre}=${valor} <comando>`,
   })),
@@ -209,7 +236,7 @@ const SIGNATURES = Object.freeze([
 ].map((s) => {
   const covers = coversOf(s.id).map(levelOf);
   return Object.freeze({
-    ...s, approvesEn: APPROVES_EN[s.id] || null, kind: kindDe(s.id),
+    ...s, approvesEn: APPROVES_EN[s.id] || null, kind: kindDe(s.id), ifWrong: SI_SALE_MAL[s.id] || SI_SALE_MAL_ESCAPE,
     covers: Object.freeze(covers.map((l) => l.id)),
     level: Math.max(...covers.map((l) => l.level)),
     profiles: Object.freeze(AMBOS.filter((p) => covers.some((l) => l.profiles.includes(p)))),
@@ -297,4 +324,7 @@ function delegatedLevel(id, raised) {
   return Math.max(...s.covers.filter((c) => !NOT_DELEGATED.includes(c)).map((c) => effectiveLevel(c, raised)));
 }
 
-module.exports = { SIGNATURES, LEVELS, GROUPS, FIRMAS_DE_ARCHIVO, SENSITIVE, REQUIERE_SENSIBLE, NOT_DELEGATED, ids, groupNames, isId, expand, effectiveLevel, delegatedLevel };
+// Lo que no tiene vuelta atrás: sólo se firma en la terminal de la persona, nunca con un click ni con un «aprobado»
+const ONLY_IN_TERMINAL = Object.freeze(['escape:TYCON_SAFETY_OFF', 'escape:TYCON_PROD_LINT', 'emergency']);
+
+module.exports = { SIGNATURES, LEVELS, GROUPS, FIRMAS_DE_ARCHIVO, SENSITIVE, REQUIERE_SENSIBLE, NOT_DELEGATED, ONLY_IN_TERMINAL, ids, groupNames, isId, expand, effectiveLevel, delegatedLevel };

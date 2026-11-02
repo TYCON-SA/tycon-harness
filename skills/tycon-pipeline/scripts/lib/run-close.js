@@ -88,7 +88,7 @@ function escapeDeCierre(frenos, sid, desde, escape = 'cerrar-la-ejecucion') {
 }
 
 // las vías del registro de escapes por las que una persona autorizó cerrar (la delegación firma en su nombre)
-const VIAS_DE_CIERRE = ['persona', 'reenvio', 'ventana', 'delegacion'];
+const VIAS_DE_CIERRE = ['persona', 'reenvio', 'ventana', 'delegacion', 'click', 'mensaje'];
 
 /** El `cierre` que deja `clear`. Uno ya escrito (`deuda`) se devuelve tal cual. */
 function cierreDe(marker, { sid, home, ahora = new Date().toISOString() } = {}) {

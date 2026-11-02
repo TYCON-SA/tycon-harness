@@ -23,7 +23,7 @@ const { inHarnessCopy } = require(path.join(SCRIPTS, '..', '..', '..', 'scripts'
 const REGLA = 'TEST-C1';
 const ARCHIVO = '.advisors/tests-result.json';
 const MOTIVO = 'test-gate.sh no reconoce pytest; la suite se corrió a mano: 12 pasaron';
-const VENTANA = /aprobalo en la ventana de permiso que sale a continuación; si no, elegí «No»\. Una respuesta en el chat no lo exime\./;
+const VENTANA = /aprobalo en la ventana de permiso que sale a continuación o, donde no sale, en el cuadro de opciones; si no, elegí «No»\. Lo exime esa aprobación, no otra respuesta en el chat\./;
 
 function tmp(prefijo) { return fs.mkdtempSync(path.join(os.tmpdir(), prefijo)); }
 const GIT_ENV = { ...process.env, GIT_AUTHOR_DATE: '2026-10-20T12:00:00Z', GIT_COMMITTER_DATE: '2026-10-20T12:00:00Z' };
@@ -247,7 +247,7 @@ test('CriticalShown_8_94_TodosLosCriticosJuntos @story-8.94 @ac-2', () => {
   assert.ok(aviso.includes(LARGO), aviso);
   assert.ok(aviso.includes('ningún criterio lo pide'), 'con el motivo del hallazgo');
   assert.doesNotMatch(aviso, /SEC-C2/);
-  assert.match(aviso, /Son 2 críticos: se aprueban en la ventana de permiso, no en el chat\./);
+  assert.match(aviso, /Son 2 críticos: se aprueban de a uno, en la ventana de permiso o en el cuadro de opciones\./);
   assert.deepEqual(muestras(lab).map((g) => g.rule).sort(), [LARGO, REGLA].sort(), 'una constancia por cada crítico mostrado');
 });
 

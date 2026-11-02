@@ -183,10 +183,16 @@ function isAdversarialSkipRecord(p) { return ADVERSARIAL_SKIP_FILE.test(norm(Str
 // El archivo de antes y la carpeta de un archivo por aprobación (la carpeta misma también: `cp x tasks/pending-approvals/`)
 const PENDING_APPROVALS_FILE = /(^|\/)tasks\/pending-approvals(\.jsonl$|\/|$)/i;
 function isPendingApprovalsRecord(p) { return PENDING_APPROVALS_FILE.test(norm(String(p || ''))); }
-/** ¿Es una constancia firmada que no se escribe a mano? `control-approvals`, `adversarial-skip-record`, `pending-approvals` o null. */
+// El registro de las aprobaciones de la persona (scripts/lib/owner-approvals.js) y lo ya gastado (`usadas/`): lo escribe sólo
+// su gancho, y borrar una usada devuelve una aprobación ya gastada. Sólo se lee del estado de la cuenta, en una de sus dos
+// carpetas (la carpeta misma también): una con ese nombre en un producto no es el registro
+const OWNER_APPROVALS_DIR = /(^|\/)(?:\.tycon\/state|\.tycon-pipeline)\/owner-approvals(\/|$)/i;
+function isOwnerApprovalsRecord(p) { return OWNER_APPROVALS_DIR.test(norm(String(p || ''))); }
+/** ¿Es una constancia firmada que no se escribe a mano? `control-approvals`, `adversarial-skip-record`, `pending-approvals`, `owner-approvals` o null. */
 function signedRecordKind(p) {
   if (isControlApproval(p)) return 'control-approvals';
   if (isPendingApprovalsRecord(p)) return 'pending-approvals';
+  if (isOwnerApprovalsRecord(p)) return 'owner-approvals';
   return isAdversarialSkipRecord(p) ? 'adversarial-skip-record' : null;
 }
 
@@ -221,6 +227,9 @@ function computeStoryGate({
   }
   if (isPendingApprovalsRecord(filePath) || isPendingApprovalsRecord(real)) {
     return { action: 'block', kind: 'pending-approvals', reason: 'escritura a mano del registro de aprobaciones de pendientes' };
+  }
+  if (isOwnerApprovalsRecord(filePath) || isOwnerApprovalsRecord(real)) {
+    return { action: 'block', kind: 'owner-approvals', reason: 'escritura a mano del registro de aprobaciones de la persona' };
   }
   // El arreglo rápido que abrió la coordinadora por delegación no toca lo sensible: eso lo firma el dueño. Antes del
   // portón apagado y del pase de los repos del arnés, que es donde están esos archivos. La lista de lo sensible vive en el
@@ -398,6 +407,16 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       '  ventana de permiso o en su terminal (`--terminal`). Sin ella, el pase corre.',
     ].filter((l) => l !== '').join('\n');
   }
+  if (r.kind === 'owner-approvals') {
+    return [
+      '⛔ el registro de las aprobaciones de la persona no se toca a mano',
+      viaLine.replace(/\n$/, ''),
+      `  ${f}`,
+      '  Lo escribe sólo el gancho que anota su click en el cuadro de opciones o su «aprobado», y lo gastado queda en',
+      '  `usadas/`: escribirlo es fingir una aprobación, y borrar ahí devuelve una que ya se usó. Si falta una firma, pedile',
+      '  la aprobación a la persona.',
+    ].filter((l) => l !== '').join('\n');
+  }
   if (r.kind === 'pending-approvals') {
     return [
       '⛔ el registro de aprobaciones de pendientes no se escribe a mano',
@@ -567,7 +586,7 @@ function storyByConsoleMessage(rutas, via) {
 
 module.exports = {
   markerDeleteMessage, storyByConsoleMessage,
-  computeStoryGate, blockMessage, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
+  computeStoryGate, blockMessage, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, isOwnerApprovalsRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
   STORY_INTENT_PATTERNS,
   DEFAULT_ADHOC_MAX_FILES, DELEGATED_ADHOC_MAX_FILES, cupoDelegado, EXTRA_CODE_EXTS, NEVER_CODE_SEGMENTS, HARNESS_REPO_SEGMENTS, MARKER_JS,
 };

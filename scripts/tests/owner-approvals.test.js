@@ -19,7 +19,10 @@ const AHORA = Date.parse('2026-11-01T23:30:00Z');
 const hace = (min) => new Date(AHORA - min * 60000).toISOString();
 const SIEMPRE = () => ({ ok: true });
 const FIRMA = 'save';
-const PIDE = `¿Guardo los cambios del arreglo? Si sale mal, se revierte el commit. (firma ${FIRMA})`;
+const armar = (firma = FIRMA, destino = 'ses-a', huella = 'ab12cd34') => oa.cuadroDe({ firma, destino, que: 'guardar los cambios', detalle: 'el comando: marker.js approve-save', siSaleMal: 'se revierte el commit', huella });
+const CUADRO = armar();
+const PIDE = CUADRO.pregunta;
+const CTX = (casa, o = {}) => ({ casa, cuadro: CUADRO, destino: 'ses-a', ...o });
 
 function casaNueva(t) {
   const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'owner-approvals-'));
@@ -40,9 +43,9 @@ const agente = (texto, ts = hace(2)) => ({ type: 'assistant', timestamp: ts, mes
 const tipeado = (texto, ts = hace(1)) => ({ type: 'user', timestamp: ts, message: { role: 'user', content: texto }, origin: { kind: 'human' }, promptSource: 'typed', entrypoint: 'cli' });
 const deOtraSesion = (texto, ts = hace(1)) => ({ type: 'user', timestamp: ts, isMeta: true, message: { role: 'user', content: texto }, origin: { kind: 'peer', name: 'Coordinadora' }, entrypoint: 'cli' });
 const cuadro = (id, pregunta = PIDE, ts = hace(2)) => ({ type: 'assistant', timestamp: ts, message: { role: 'assistant', content: [{ type: 'tool_use', id, name: 'AskUserQuestion', input: { questions: [{ question: pregunta }] } }] } });
-const respuesta = (id, { pregunta = PIDE, opcion = 'Sí, aprobar', decision = { decision: 'accept', source: 'user_temporary' }, ts = hace(1) } = {}) => ({
+const respuesta = (id, { pregunta = PIDE, opcion = 'Sí, aprobar', opciones = ['Sí, aprobar', 'No'], decision = { decision: 'accept', source: 'user_temporary' }, ts = hace(1) } = {}) => ({
   type: 'user', timestamp: ts, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: 'ok' }] },
-  toolUseResult: { questions: [{ question: pregunta }], answers: { [pregunta]: opcion } }, ...(decision ? { permissionDecision: decision } : {}) });
+  toolUseResult: { questions: [{ question: pregunta, options: opciones.map((label) => ({ label })) }], answers: { [pregunta]: opcion } }, ...(decision ? { permissionDecision: decision } : {}) });
 const mensaje = (texto = 'Aprobado', ts = hace(1), sesion = 'ses-a') => ({ tipo: 'mensaje', sesion, ts, texto });
 const click = (id = 'toolu_1', ts = hace(1)) => ({ tipo: 'click', sesion: 'ses-a', ts, tool_use_id: id, pregunta: PIDE, respuesta: 'Sí, aprobar' });
 
@@ -86,69 +89,58 @@ test('RespuestaDelCuadro_SoloUnaOpcionQueApruebaSinAusencia', () => {
   assert.ok(!oa.respuestaDelCuadro(null).ok);
 });
 
-test('NombraLaFirma_YLaSesionCuandoVieneDeLaCoordinadora', () => {
-  assert.ok(oa.nombraLaFirma(PIDE, 'save'));
-  assert.ok(!oa.nombraLaFirma(PIDE, 'critical-waiver'), 'un «aprobado» para guardar no exime un crítico');
-  assert.ok(!oa.nombraLaFirma('¿Apruebo el formato del resumen?', 'save'));
-  assert.ok(!oa.nombraLaFirma(PIDE, 'save', 'ses-a'), 'desde la coordinadora tiene que nombrar la sesión');
-  assert.ok(oa.nombraLaFirma(`${PIDE} sesión ses-a`, 'save', 'ses-a'));
-  // sin distinguir mayúsculas, como lo escribe una persona o un agente
-  assert.ok(oa.nombraLaFirma('Firma plan-approval, Sesión ses-a.', 'plan-approval', 'ses-a'));
-  assert.ok(oa.nombraLaFirma('FIRMA save (sesion ses-a)', 'save', 'ses-a'));
-  // la frase suelta: otra firma o otra sesión que empiezan igual no la nombran
-  assert.ok(!oa.nombraLaFirma('firma save-all', 'save'));
-  assert.ok(!oa.nombraLaFirma('refirma save', 'save'));
-  assert.ok(!oa.nombraLaFirma('firma save, sesión ses-ab', 'save', 'ses-a'));
-  // un nombre con caracteres de expresión regular se busca tal cual
-  assert.ok(oa.nombraLaFirma('firma escape:force-manual', 'escape:force-manual'));
-  assert.ok(!oa.nombraLaFirma('firma escapeXforce-manual', 'escape.force-manual'));
-  // un texto que nombra otra sesión no aprueba ésta, aunque sea la de la misma pestaña
-  assert.ok(!oa.nombraLaFirma('firma save, sesión ses-b', 'save', null, 'ses-c'));
-  assert.ok(!oa.nombraLaFirma('firma save, sesión: ses-b', 'save', null, 'ses-c'));
-  assert.ok(!oa.nombraLaFirma('firma save, sesión ses-a y sesión ses-b', 'save', 'ses-a'));
-  assert.ok(oa.nombraLaFirma('firma save, Sesión SES-C', 'save', null, 'ses-c'));
-  assert.ok(oa.nombraLaFirma('firma save, como en la sesión anterior', 'save', null, 'ses-c'), '«sesión anterior» no nombra ninguna');
-  // un id con letras solas también nombra una sesión, y con puntuación en el medio también
-  assert.ok(!oa.nombraLaFirma('firma save, sesión coord', 'save', null, 'dest'));
-  assert.ok(!oa.nombraLaFirma('firma save de la sesión de otra-ses', 'save', null, 'ses-c'), 'un conector no esconde el id');
-  assert.ok(!oa.nombraLaFirma('firma save, sesión del la ses-b', 'save', null, 'ses-c'));
-  assert.ok(oa.nombraLaFirma('firma save de la sesión de ses-c', 'save', 'ses-c'));
-  assert.ok(oa.nombraLaFirma('firma save, en esta sesión actual', 'save', null, 'ses-c'));
-  assert.ok(!oa.nombraLaFirma('firma save, sesión Ñandú', 'save', null, 'ses-c'));
-  assert.ok(!oa.nombraLaFirma('firma save, sesión sesa; sesión sesb', 'save', 'sesa'));
-  for (const texto of ['firma save, sesión: ses-b', 'firma save, sesión (ses-b)', 'firma save, sesión [ses-b]', 'firma save, sesion «ses-b»']) {
-    assert.ok(oa.nombraLaFirma(texto, 'save', 'ses-b'), texto);
-    assert.ok(!oa.nombraLaFirma(texto, 'save', 'ses-c'), texto);
-  }
+test('CuadroDe_LoArmaElGuion_ConQueSeApruebaQuePasaYElSello', () => {
+  const c = armar('plan-approval', 'ses-b', 'ffff0000');
+  assert.strictEqual(c.sello, 'firma plan-approval · sesión ses-b · código ffff0000');
+  assert.ok(c.pregunta.includes(c.sello));
+  assert.match(c.pregunta, /Si sale mal: se revierte el commit/);
+  assert.deepStrictEqual(c.opciones, ['Sí, aprobar', 'No']);
+  assert.ok(oa.respuestaDelCuadro({ answers: { [c.pregunta]: c.opciones[0] } }).ok, 'la opción que arma aprueba');
+  assert.ok(!oa.respuestaDelCuadro({ answers: { [c.pregunta]: c.opciones[1] } }).ok, 'la otra no');
+});
+
+test('TraeElSello_EnteroYSinNombrarOtraSesion', () => {
+  const o = { sello: CUADRO.sello, destino: 'ses-a' };
+  assert.ok(oa.traeElSello(`Te pido esto: ${CUADRO.sello}. ¿Lo aprobás?`, o));
+  assert.ok(!oa.traeElSello('¿Apruebo el formato del resumen?', o));
+  assert.ok(!oa.traeElSello('firma save, sesión ses-a', o), 'sin el código del comando no es el sello');
+  assert.ok(!oa.traeElSello(armar('save', 'ses-a', 'distinto1').sello, o), 'el sello de otro comando no aprueba éste');
+  assert.ok(!oa.traeElSello(`${CUADRO.sello} y también sesión ses-b`, o), 'un texto que enumera sesiones no vale');
+  assert.ok(!oa.traeElSello(`${CUADRO.sello}, el arreglo de la sesión Sivori`, o), 'un nombre después de «sesión» cuenta como otra');
+  assert.ok(oa.traeElSello(`${CUADRO.sello}, como en la sesión anterior`, o), '«sesión anterior» no nombra ninguna');
+  assert.ok(!oa.traeElSello(null, o));
+  assert.ok(!oa.traeElSello(CUADRO.sello, { sello: '', destino: 'ses-a' }), 'sin sello no hay nada que comparar');
 });
 
 test('Transcripcion_AprobadoParaOtraSesionEnLaMismaPestana_NoFirmaLaPropia', (t) => {
   const casa = casaNueva(t);
-  transcripcion(casa, 'ses-a', [agente(`${PIDE} sesión ses-b`), tipeado('Aprobado')]);
-  assert.match(oa.validarEnClaude(mensaje(), { casa, firma: FIRMA }).motivo, /nombra otra sesión/);
-  transcripcion(casa, 'ses-a', [cuadro('toolu_1', `${PIDE} sesión ses-b`), respuesta('toolu_1', { pregunta: `${PIDE} sesión ses-b` })]);
-  assert.match(oa.validarEnClaude({ ...click(), pregunta: `${PIDE} sesión ses-b` }, { casa, firma: FIRMA }).motivo, /nombra otra sesión/);
+  const otra = armar('save', 'ses-b').pregunta;
+  transcripcion(casa, 'ses-a', [agente(otra), tipeado('Aprobado')]);
+  assert.match(oa.validarEnClaude(mensaje(), CTX(casa)).motivo, /no trae/);
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1', otra), respuesta('toolu_1', { pregunta: otra })]);
+  assert.match(oa.validarEnClaude({ ...click(), pregunta: otra }, CTX(casa)).motivo, /no es la que armó el guion/);
 });
 
 test('Transcripcion_DosAprobadoSeguidos_CadaUnoConSuPregunta', (t) => {
   const casa = casaNueva(t);
-  const critica = '¿Eximo el crítico? (firma critical-waiver, sesión ses-b)';
-  const guardar = '¿Guardo? (firma save, sesión ses-b)';
+  const critica = armar('critical-waiver', 'ses-b');
+  const guardar = armar('save', 'ses-b');
   // la sesión ses-a es la coordinadora: dos «aprobado» a un minuto, para dos firmas
-  transcripcion(casa, 'ses-a', [agente(critica, hace(3)), tipeado('Aprobado', hace(2)), agente(guardar, hace(1.5)), tipeado('Aprobado', hace(1))]);
+  transcripcion(casa, 'ses-a', [agente(critica.pregunta, hace(3)), tipeado('Aprobado', hace(2)), agente(guardar.pregunta, hace(1.5)), tipeado('Aprobado', hace(1))]);
   const primero = mensaje('Aprobado', hace(2));
   const segundo = mensaje('Aprobado', hace(1));
-  assert.ok(oa.validarEnClaude(primero, { casa, firma: 'critical-waiver', sesion: 'ses-b' }).ok);
-  assert.ok(oa.validarEnClaude(segundo, { casa, firma: 'save', sesion: 'ses-b' }).ok);
-  assert.ok(!oa.validarEnClaude(segundo, { casa, firma: 'critical-waiver', sesion: 'ses-b' }).ok, 'el segundo no exime el crítico');
-  assert.ok(!oa.validarEnClaude(primero, { casa, firma: 'save', sesion: 'ses-b' }).ok, 'el primero no guarda');
+  const con = (c) => ({ casa, cuadro: c, destino: 'ses-b' });
+  assert.ok(oa.validarEnClaude(primero, con(critica)).ok);
+  assert.ok(oa.validarEnClaude(segundo, con(guardar)).ok);
+  assert.ok(!oa.validarEnClaude(segundo, con(critica)).ok, 'el segundo no exime el crítico');
+  assert.ok(!oa.validarEnClaude(primero, con(guardar)).ok, 'el primero no guarda');
 });
 
 test('Transcripcion_DosAprobadoAUnaSolaPregunta_ElSegundoNoVale', (t) => {
   const casa = casaNueva(t);
   transcripcion(casa, 'ses-a', [agente(PIDE, hace(3)), tipeado('Aprobado', hace(2)), tipeado('Aprobado', hace(1))]);
-  assert.ok(oa.validarEnClaude(mensaje('Aprobado', hace(2)), { casa, firma: FIRMA }).ok);
-  assert.match(oa.validarEnClaude(mensaje('Aprobado', hace(1)), { casa, firma: FIRMA }).motivo, /no nombra «firma save»/);
+  assert.ok(oa.validarEnClaude(mensaje('Aprobado', hace(2)), CTX(casa)).ok);
+  assert.match(oa.validarEnClaude(mensaje('Aprobado', hace(1)), CTX(casa)).motivo, /no trae/);
 });
 
 // --- el gancho ------------------------------------------------------------------------------------------------------
@@ -200,53 +192,86 @@ test('Gancho_SoloLoQueLanzaLaHerramienta', () => {
 
 test('Buscar_SinClickNiMensaje_SeNiega', (t) => {
   const casa = casaNueva(t);
-  const r = oa.buscar({ casa, sesion: 'ses-a', firma: FIRMA, ahora: AHORA, validar: SIEMPRE });
+  const r = oa.buscar({ casa, sesion: 'ses-a', cuadro: CUADRO, ahora: AHORA, validar: SIEMPRE });
   assert.ok(!r.ok);
   assert.match(r.motivo, /no hay un click en el cuadro ni un «aprobado»/);
+});
+
+test('Buscar_SinCuadroArmado_SeNiega', (t) => {
+  const casa = casaNueva(t);
+  oa.anotar(casa, click());
+  assert.match(oa.buscar({ casa, sesion: 'ses-a', ahora: AHORA, validar: SIEMPRE }).motivo, /armar el cuadro/);
 });
 
 test('Buscar_MensajeViejo_SeNiega', (t) => {
   const casa = casaNueva(t);
   oa.anotar(casa, mensaje('Aprobado', hace(31)));
-  assert.ok(!oa.buscar({ casa, sesion: 'ses-a', firma: FIRMA, ahora: AHORA, validar: SIEMPRE }).ok);
+  assert.ok(!oa.buscar({ casa, sesion: 'ses-a', cuadro: CUADRO, ahora: AHORA, validar: SIEMPRE }).ok);
   oa.anotar(casa, mensaje('Aprobado', hace(29)));
-  assert.ok(oa.buscar({ casa, sesion: 'ses-a', firma: FIRMA, ahora: AHORA, validar: SIEMPRE }).ok);
+  assert.ok(oa.buscar({ casa, sesion: 'ses-a', cuadro: CUADRO, ahora: AHORA, validar: SIEMPRE }).ok);
 });
+
+const LANZADA = 'Mon Nov  2 01:30:39 2026';
+const COORD = { pid: 900, inicio: LANZADA };
+const ARBOL_COORD = [{ pid: 900, ppid: 1, inicio: LANZADA, comando: 'claude' }];
+/** Lo que Claude Code dice del proceso de la coordinadora: `~/.claude/sessions/<pid>.json`. */
+function procesoDeLaSesion(casa, sessionId = 'ses-b', cwd = '/r/coord') {
+  const dir = path.join(casa, '.claude', 'sessions');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, '900.json'), JSON.stringify({ pid: 900, sessionId, cwd }));
+}
 
 test('Buscar_DeOtraSesionQueNoEsLaCoordinadora_SeNiega_DeLaCoordinadoraVale', (t) => {
   const casa = casaNueva(t);
-  oa.anotar(casa, mensaje('Aprobado', hace(1), 'ses-b'));
-  assert.ok(!oa.buscar({ casa, sesion: 'ses-a', firma: FIRMA, ahora: AHORA, validar: SIEMPRE }).ok, 'sin coordinadora');
-  assert.ok(!oa.buscar({ casa, sesion: 'ses-a', firma: FIRMA, coordinadora: 'ses-c', ahora: AHORA, validar: SIEMPRE }).ok, 'ses-b no es la coordinadora');
+  oa.anotar(casa, { ...mensaje('Aprobado', hace(1), 'ses-b'), herramienta: COORD });
+  procesoDeLaSesion(casa);
+  assert.ok(!oa.buscar({ casa, sesion: 'ses-a', cuadro: CUADRO, ahora: AHORA, validar: SIEMPRE, arbol: ARBOL_COORD }).ok, 'sin coordinadora');
+  assert.ok(!oa.buscar({ casa, sesion: 'ses-a', cuadro: CUADRO, coordinadora: 'ses-c', ahora: AHORA, validar: SIEMPRE, arbol: ARBOL_COORD }).ok, 'ses-b no es la coordinadora');
   let pide = null;
-  const r = oa.buscar({ casa, sesion: 'ses-a', firma: FIRMA, coordinadora: 'ses-b', ahora: AHORA, validar: (a, ctx) => { pide = ctx; return { ok: true }; } });
+  const r = oa.buscar({ casa, sesion: 'ses-a', cuadro: CUADRO, coordinadora: 'ses-b', ahora: AHORA, arbol: ARBOL_COORD, validar: (a, ctx) => { pide = ctx; return { ok: true }; } });
   assert.ok(r.ok);
   assert.strictEqual(r.via, 'mensaje');
-  assert.strictEqual(pide.sesion, 'ses-a', 'desde la coordinadora, la aprobación tiene que nombrar la sesión que firma');
-  assert.strictEqual(pide.firma, FIRMA);
+  assert.strictEqual(pide.cuadro, CUADRO, 'se valida contra el cuadro que armó el guion');
 });
 
-test('Buscar_FirmaParaOtraSesion_LaAprobacionTieneQueNombrarLaDestino', (t) => {
+test('Buscar_AprobacionDeLaCoordinadora_LaAnotoSuProcesoVivo', (t) => {
   const casa = casaNueva(t);
-  oa.anotar(casa, mensaje('Aprobado', hace(1), 'ses-coord'));
-  const contexto = (o) => { let pide = null; oa.buscar({ casa, firma: FIRMA, ahora: AHORA, validar: (a, ctx) => { pide = ctx; return { ok: true }; }, ...o }); return pide; };
-  // la coordinadora firma para otra sesión con el «aprobado» de su propia pestaña: nombra la sesión destino
-  assert.strictEqual(contexto({ sesion: 'ses-coord', destino: 'ses-a' }).sesion, 'ses-a');
-  // la coordinadora firma para sí misma: no hace falta
-  assert.strictEqual(contexto({ sesion: 'ses-coord', destino: 'ses-coord' }).sesion, null);
-  assert.strictEqual(contexto({ sesion: 'ses-coord' }).sesion, null);
-  // otra sesión firma para sí, con el «aprobado» de la coordinadora: nombra esa sesión
-  assert.strictEqual(contexto({ sesion: 'ses-a', coordinadora: 'ses-coord' }).sesion, 'ses-a');
+  oa.anotar(casa, { ...mensaje('Aprobado', hace(1), 'ses-b'), herramienta: COORD });
+  const busca = (arbol) => oa.buscar({ casa, sesion: 'ses-a', cuadro: CUADRO, coordinadora: 'ses-b', ahora: AHORA, validar: SIEMPRE, arbol });
+  assert.match(busca(ARBOL_COORD).motivo, /no sé de qué sesión es/, 'sin lo que Claude Code dice de ese proceso, no vale');
+  assert.match(busca([]).motivo, /ya no está/, 'su proceso se cerró');
+  assert.match(busca([{ ...ARBOL_COORD[0], inicio: 'Tue Nov  3 00:00:00 2026' }]).motivo, /ya no está/, 'el número del proceso pasó a otro');
+  assert.match(busca([{ ...ARBOL_COORD[0], comando: 'vim' }]).motivo, /ya no está/, 'ese número no es la herramienta');
+  assert.match(busca(null).motivo, /no pude leer los procesos/);
+  // lo que Claude Code dice de ese proceso
+  procesoDeLaSesion(casa, 'ses-z', '/r');
+  assert.match(busca(ARBOL_COORD).motivo, /no es de la sesión ses-b/);
+  procesoDeLaSesion(casa);
+  let pide = null;
+  assert.ok(oa.buscar({ casa, sesion: 'ses-a', cuadro: CUADRO, coordinadora: 'ses-b', ahora: AHORA, arbol: ARBOL_COORD, validar: (a, ctx) => { pide = ctx; return { ok: true }; } }).ok);
+  assert.strictEqual(pide.cwdAprobacion, '/r/coord', 'los ganchos se miran también en la carpeta de la pestaña que contestó');
+  // otro proceso vivo con la misma sesión (un agente que la abrió con `--resume`, desprendido de su consola): no se sabe cuál la anotó
+  const dir = path.join(casa, '.claude', 'sessions');
+  fs.writeFileSync(path.join(dir, '901.json'), JSON.stringify({ pid: 901, sessionId: 'ses-b', cwd: '/r/coord' }));
+  const conOtro = [...ARBOL_COORD, { pid: 901, ppid: 1, inicio: LANZADA, comando: 'claude' }];
+  assert.match(busca(conOtro).motivo, /más de un proceso/);
+  assert.ok(busca(ARBOL_COORD).ok, 'el archivo de un proceso que ya no vive no cuenta');
+  fs.writeFileSync(path.join(dir, '901.json'), JSON.stringify({ pid: 901, sessionId: 'ses-z', cwd: '/r' }));
+  assert.ok(busca(conOtro).ok, 'un proceso vivo de otra sesión no cuenta');
+  // sin registro de quién la anotó, no vale
+  const casa2 = casaNueva(t);
+  oa.anotar(casa2, mensaje('Aprobado', hace(1), 'ses-b'));
+  assert.match(oa.buscar({ casa: casa2, sesion: 'ses-a', cuadro: CUADRO, coordinadora: 'ses-b', ahora: AHORA, validar: SIEMPRE, arbol: ARBOL_COORD }).motivo, /qué proceso/);
 });
 
 test('Consumir_UnaAprobacionSirveParaUnaSolaFirma', (t) => {
   const casa = casaNueva(t);
   oa.anotar(casa, click());
-  const r = oa.buscar({ casa, sesion: 'ses-a', firma: FIRMA, ahora: AHORA, validar: SIEMPRE });
+  const r = oa.buscar({ casa, sesion: 'ses-a', cuadro: CUADRO, ahora: AHORA, validar: SIEMPRE });
   assert.ok(r.ok);
   assert.ok(oa.consumir(casa, r.aprobacion, { ahora: AHORA, firma: FIRMA, sesion: 'ses-a' }).ok);
   assert.ok(!oa.consumir(casa, r.aprobacion, { ahora: AHORA }).ok, 'la segunda vez no');
-  assert.ok(!oa.buscar({ casa, sesion: 'ses-a', firma: FIRMA, ahora: AHORA, validar: SIEMPRE }).ok, 'ya no queda ninguna');
+  assert.ok(!oa.buscar({ casa, sesion: 'ses-a', cuadro: CUADRO, ahora: AHORA, validar: SIEMPRE }).ok, 'ya no queda ninguna');
 });
 
 // --- la transcripción -----------------------------------------------------------------------------------------------
@@ -254,47 +279,135 @@ test('Consumir_UnaAprobacionSirveParaUnaSolaFirma', (t) => {
 test('Transcripcion_MensajeTipeadoALaHoraYTrasLaPregunta_Vale', (t) => {
   const casa = casaNueva(t);
   transcripcion(casa, 'ses-a', [agente(PIDE), tipeado('Aprobado')]);
-  assert.ok(oa.validarEnClaude(mensaje(), { casa, firma: FIRMA }).ok);
+  assert.ok(oa.validarEnClaude(mensaje(), CTX(casa)).ok);
+});
+
+// Las formas medidas en transcripciones reales: la extensión del editor anota `claude-vscode · sdk · human`.
+const desdeElEditor = (texto, ts) => ({ ...tipeado(texto, ts), promptSource: 'sdk', entrypoint: 'claude-vscode' });
+
+test('Transcripcion_MensajeEscritoEnLaExtensionDelEditor_Vale', (t) => {
+  const casa = casaNueva(t);
+  transcripcion(casa, 'ses-a', [agente(PIDE), desdeElEditor('Aprobado')]);
+  assert.deepStrictEqual(oa.validarEnClaude(mensaje(), CTX(casa)), { ok: true });
+});
+
+test('Transcripcion_DeLaExtension_LoQueNoEsDeLaPersona_NoVale', (t) => {
+  const casa = casaNueva(t);
+  // otra sesión, por la extensión
+  transcripcion(casa, 'ses-a', [agente(PIDE), { ...deOtraSesion('Aprobado'), promptSource: 'system', entrypoint: 'claude-vscode' }]);
+  assert.match(oa.validarEnClaude(mensaje(), CTX(casa)).motivo, /no lo escribió una persona/);
+  // sin origen: no se puede decir que la escribió una persona
+  const { origin, ...sinOrigen } = desdeElEditor('Aprobado');
+  assert.ok(origin);
+  transcripcion(casa, 'ses-a', [agente(PIDE), sinOrigen]);
+  assert.match(oa.validarEnClaude(mensaje(), CTX(casa)).motivo, /no lo escribió una persona/);
+  // un programa con origen de persona, y una herramienta o una forma que no se midieron
+  for (const r of [{ promptSource: 'sdk', entrypoint: 'sdk-cli' }, { promptSource: 'system', entrypoint: 'claude-vscode' }, { promptSource: 'sdk', entrypoint: 'otra-cosa' }, { promptSource: 'sdk', entrypoint: 'cli' }]) {
+    transcripcion(casa, 'ses-a', [agente(PIDE), { ...tipeado('Aprobado'), ...r }]);
+    assert.match(oa.validarEnClaude(mensaje(), CTX(casa)).motivo, /no lo tipeó una persona/, JSON.stringify(r));
+  }
+});
+
+// La pregunta entera, no sólo el sello: con el sello pegado a otra pregunta, la persona aprobaría una cosa y firmaría otra.
+test('Sello_EnOtraPregunta_ElAprobadoNoVale', (t) => {
+  const casa = casaNueva(t);
+  transcripcion(casa, 'ses-a', [agente(`¿Aprobás el formato del resumen? (${CUADRO.sello})`), tipeado('Aprobado')]);
+  assert.match(oa.validarEnClaude(mensaje(), CTX(casa)).motivo, /no trae/);
+});
+
+test('Click_SinConstanciaDeQuienContesto_NoVale', (t) => {
+  const casa = casaNueva(t);
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1'), respuesta('toolu_1', { decision: null })]);
+  assert.match(oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), click(), { pregunta: PIDE, opciones: CUADRO.opciones }).motivo, /no dice quién contestó/);
+});
+
+test('Click_OpcionesQueNoSonLasDelGuion_NoVale', (t) => {
+  const casa = casaNueva(t);
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1'), respuesta('toolu_1', { opciones: ['Sí, aprobar', 'Aprobado'] })]);
+  assert.match(oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), click(), { pregunta: PIDE, opciones: CUADRO.opciones }).motivo, /opciones/);
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1'), respuesta('toolu_1')]);
+  assert.deepStrictEqual(oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), click(), { pregunta: PIDE, opciones: CUADRO.opciones }), { ok: true });
+});
+
+// El detalle de la pregunta copia el motivo del comando, que escribió el agente: lo que dice ahí no es la sesión que firma.
+test('Sello_MotivoQueNombraOtraSesion_ElAprobadoVale', (t) => {
+  const casa = casaNueva(t);
+  const c = oa.cuadroDe({ firma: FIRMA, destino: 'ses-a', que: 'guardar', detalle: 'el motivo: «sigue el carril de la sesion e573b06f»', siSaleMal: 'se revierte', huella: 'ab12cd34' });
+  transcripcion(casa, 'ses-a', [agente(c.pregunta), tipeado('Aprobado')]);
+  assert.deepStrictEqual(oa.validarEnClaude(mensaje(), { ...CTX(casa), cuadro: c }), { ok: true });
+  // fuera de la pregunta armada, nombrar otra sesión sigue invalidando
+  transcripcion(casa, 'ses-a', [agente(`${c.pregunta} Es para la sesión ses-b.`), tipeado('Aprobado')]);
+  assert.match(oa.validarEnClaude(mensaje(), { ...CTX(casa), cuadro: c }).motivo, /nombra otra sesión/);
 });
 
 test('Transcripcion_MensajeQueNoEsDeLaPersonaDeOtraHoraOParaOtraFirma_NoVale', (t) => {
   const casa = casaNueva(t);
   // otra sesión lo mandó
   transcripcion(casa, 'ses-a', [agente(PIDE), deOtraSesion('Aprobado')]);
-  assert.match(oa.validarEnClaude(mensaje(), { casa, firma: FIRMA }).motivo, /no lo escribió una persona/);
+  assert.match(oa.validarEnClaude(mensaje(), CTX(casa)).motivo, /no lo escribió una persona/);
   // un programa (`claude -p`, un SDK)
   transcripcion(casa, 'ses-a', [agente(PIDE), { ...tipeado('Aprobado'), entrypoint: 'sdk-cli' }]);
-  assert.ok(!oa.validarEnClaude(mensaje(), { casa, firma: FIRMA }).ok);
+  assert.ok(!oa.validarEnClaude(mensaje(), CTX(casa)).ok);
   // la persona lo escribió ayer: un registro de hoy no se apoya en ese renglón
   transcripcion(casa, 'ses-a', [agente(PIDE, hace(60 * 24 + 1)), tipeado('Aprobado', hace(60 * 24))]);
-  assert.match(oa.validarEnClaude(mensaje(), { casa, firma: FIRMA }).motivo, /a esa hora/);
+  assert.match(oa.validarEnClaude(mensaje(), CTX(casa)).motivo, /a esa hora/);
   // lo último que dijo el agente era otra cosa
   transcripcion(casa, 'ses-a', [agente('¿Apruebo el formato del resumen?'), tipeado('Aprobado')]);
-  assert.match(oa.validarEnClaude(mensaje(), { casa, firma: FIRMA }).motivo, /no nombra «firma save»/);
+  assert.match(oa.validarEnClaude(mensaje(), CTX(casa)).motivo, /no trae/);
   // la ruta sale de la sesión, no del registro: una transcripción armada en otro lado no se lee
   const falsa = path.join(casa, 'falsa.jsonl');
   fs.writeFileSync(falsa, [agente(PIDE), tipeado('Aprobado')].map((r) => JSON.stringify(r)).join('\n'));
-  assert.match(oa.validarEnClaude({ ...mensaje('Aprobado', hace(1), 'ses-x'), transcript: falsa }, { casa, firma: FIRMA }).motivo, /no encontré la transcripción/);
+  assert.match(oa.validarEnClaude({ ...mensaje('Aprobado', hace(1), 'ses-x'), transcript: falsa }, CTX(casa)).motivo, /no encontré la transcripción/);
 });
 
 test('Transcripcion_ClickDeLaPersona_Vale_DeUnGanchoOtraRespuestaOtraHoraNo', (t) => {
   const casa = casaNueva(t);
   transcripcion(casa, 'ses-a', [cuadro('toolu_1'), respuesta('toolu_1')]);
-  assert.ok(oa.validarEnClaude(click(), { casa, firma: FIRMA }).ok);
+  assert.ok(oa.validarEnClaude(click(), CTX(casa)).ok);
   transcripcion(casa, 'ses-a', [cuadro('toolu_1'), respuesta('toolu_1', { decision: { decision: 'accept', source: 'hook', reasonType: 'hook' } })]);
-  assert.match(oa.validarEnClaude(click(), { casa, firma: FIRMA }).motivo, /un gancho/);
+  assert.match(oa.validarEnClaude(click(), CTX(casa)).motivo, /un gancho/);
   transcripcion(casa, 'ses-a', [cuadro('toolu_1'), respuesta('toolu_1', { opcion: 'No' })]);
-  assert.ok(!oa.validarEnClaude(click(), { casa, firma: FIRMA }).ok, 'un cuadro contestado «No»');
+  assert.ok(!oa.validarEnClaude(click(), CTX(casa)).ok, 'un cuadro contestado «No»');
   transcripcion(casa, 'ses-a', [cuadro('toolu_1'), respuesta('toolu_1', { ts: hace(60) })]);
-  assert.match(oa.validarEnClaude(click(), { casa, firma: FIRMA }).motivo, /hora del registro/);
+  assert.match(oa.validarEnClaude(click(), CTX(casa)).motivo, /hora del registro/);
   transcripcion(casa, 'ses-a', [respuesta('toolu_1')]);
-  assert.ok(!oa.validarEnClaude(click(), { casa, firma: FIRMA }).ok, 'un registro de un cuadro que no existió');
+  assert.ok(!oa.validarEnClaude(click(), CTX(casa)).ok, 'un registro de un cuadro que no existió');
   const otra = '¿Apruebo el formato del resumen?';
   transcripcion(casa, 'ses-a', [cuadro('toolu_1', otra), respuesta('toolu_1', { pregunta: otra })]);
-  assert.ok(!oa.validarEnClaude({ ...click(), pregunta: otra }, { casa, firma: FIRMA }).ok, 'un click a otra pregunta no firma');
+  assert.ok(!oa.validarEnClaude({ ...click(), pregunta: otra }, CTX(casa)).ok, 'un click a otra pregunta no firma');
 });
 
 // --- los ganchos que escuchan el cuadro ------------------------------------------------------------------------------
+
+// Un gancho nuevo del arnés sobre el cuadro, olvidado en la lista, invalida todos los clicks de la máquina (pasó con
+// session-state.js). Entrar a la lista es una decisión: un gancho que contesta el cuadro no va en ella.
+test('Encabezado_GanchoEscritoEnUnaSolaLinea_Cuenta', () => {
+  for (const evento of ['PreToolUse', 'PermissionRequest']) {
+    const g = oa.ganchosDelEncabezado(`name: x\nhooks:\n  ${evento}: [{ matcher: "AskUserQuestion", hooks: [{ type: command, command: "python3 x.py" }] }]\n`);
+    assert.strictEqual(g.length, 1, evento);
+    assert.strictEqual(g[0].evento, evento);
+  }
+  assert.deepStrictEqual(oa.ganchosDelEncabezado('hooks:\n  Stop: [{ hooks: [{ type: command, command: "x" }] }]\n'), [], 'otro evento no escucha el cuadro');
+  assert.strictEqual(oa.ganchosDelEncabezado('hooks:\n  PreToolUse: [{ matcher: "Bash", hooks: [] }]\n').length, 1, 'en una línea el matcher no se lee: ante la duda, cuenta');
+  assert.strictEqual(oa.ganchosDelEncabezado('hooks:\n# un comentario al margen\n  PreToolUse:\n    - matcher: ""\n      hooks:\n        - command: python3 x.py\n').length, 1, 'un comentario no cierra el bloque');
+});
+
+test('Escuchas_CadaGanchoDelArnesSobreElCuadro_EstaEnLaLista', () => {
+  const lista = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'setup', 'hooks-list.json'), 'utf8'));
+  const sobreElCuadro = lista.hooks.filter((h) => ['PreToolUse', 'PermissionRequest'].includes(h.event) && oa.alcanzaAlCuadro(h.matcher));
+  assert.ok(sobreElCuadro.length > 0, 'la lista de ganchos se leyó');
+  for (const h of sobreElCuadro) assert.ok(oa.esPermitido(h.spec), `${h.spec}: escucha el cuadro y no está en PERMITIDOS`);
+});
+
+test('Escuchas_LosGanchosDelArnesInstalados_ElClickVale', (t) => {
+  const casa = casaNueva(t);
+  fs.mkdirSync(path.join(casa, '.claude'), { recursive: true });
+  const instalado = (n) => `/x/node "${path.join(casa, '.tycon', 'harness', 'scripts', 'hooks', n)}"`;
+  fs.writeFileSync(path.join(casa, '.claude', 'settings.json'), JSON.stringify({ hooks: {
+    PreToolUse: [{ matcher: 'AskUserQuestion|ExitPlanMode', hooks: ['wait-notice.js', 'session-state.js'].map((n) => ({ type: 'command', command: instalado(n) })) }],
+  } }));
+  assert.deepStrictEqual(oa.escuchasDelCuadro({ casa, cwd: casa, plataforma: 'linux' }).ajenos, []);
+});
 
 test('Escuchas_GanchoAjenoSobreElCuadro_ElClickNoVale', (t) => {
   const casa = casaNueva(t);
@@ -330,6 +443,154 @@ test('Escuchas_PluginYCapaIlegible', (t) => {
   assert.strictEqual(oa.escuchasDelCuadro({ casa, plataforma: 'linux' }).ajenos.length, 1);
   fs.writeFileSync(path.join(casa, '.claude', 'settings.json'), '{ esto no es json');
   assert.deepStrictEqual(oa.escuchasDelCuadro({ casa, plataforma: 'linux' }).ilegibles, [path.join(casa, '.claude', 'settings.json')]);
+});
+
+const AJENO = { hooks: { PreToolUse: [{ matcher: 'AskUserQuestion', hooks: [{ type: 'command', command: '/x/contesta.sh' }] }] } };
+
+test('Escuchas_LaCarpetaAdministrada_SusJsonSiLasCopiasNo', (t) => {
+  const casa = casaNueva(t);
+  const administrada = path.join(casa, 'admin');
+  const d = path.join(administrada, 'managed-settings.d');
+  fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(path.join(d, 'vieja.json.bak'), JSON.stringify(AJENO));
+  assert.strictEqual(oa.escuchasDelCuadro({ casa, administrada }).ajenos.length, 0, 'una copia con otro final no se carga');
+  // el freno de producción, de verdad instalado ahí: mira la consola, no el cuadro
+  fs.writeFileSync(path.join(d, 'tycon-production.json'), JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Bash|Monitor|PowerShell', hooks: [{ type: 'command', command: '/opt/tycon/node-shim.sh' }] }] } }));
+  assert.strictEqual(oa.escuchasDelCuadro({ casa, administrada }).ajenos.length, 0);
+  fs.writeFileSync(path.join(d, 'plantado.json'), JSON.stringify(AJENO));
+  assert.match(oa.escuchasDelCuadro({ casa, administrada }).ajenos[0].archivo, /plantado\.json/);
+});
+
+test('Escuchas_BanderasDelProceso_SettingsYPluginDir', (t) => {
+  const casa = casaNueva(t);
+  const f = path.join(casa, 'mis-ajustes.json');
+  fs.writeFileSync(f, JSON.stringify(AJENO));
+  assert.strictEqual(oa.escuchasDelCuadro({ casa, linea: `claude --settings ${f}` }).ajenos.length, 1);
+  assert.strictEqual(oa.escuchasDelCuadro({ casa, linea: `claude --settings=${f}` }).ajenos.length, 1);
+  assert.ok(oa.escuchasDelCuadro({ casa, linea: 'claude --settings {"hooks":{}}' }).ilegibles.length, 'lo que no se puede leer no se da por limpio');
+  assert.ok(oa.escuchasDelCuadro({ casa, linea: `claude --settings ${path.join(casa, 'no-esta.json')}` }).ilegibles.length);
+  const plugin = path.join(casa, 'mi-plugin');
+  fs.mkdirSync(path.join(plugin, 'hooks'), { recursive: true });
+  fs.writeFileSync(path.join(plugin, 'hooks', 'hooks.json'), JSON.stringify(AJENO));
+  assert.strictEqual(oa.escuchasDelCuadro({ casa }).ajenos.length, 0);
+  assert.strictEqual(oa.escuchasDelCuadro({ casa, linea: `claude --plugin-dir ${plugin}` }).ajenos.length, 1);
+  assert.deepStrictEqual(oa.banderasDe('claude --print hola'), { settings: [], pluginDirs: [] });
+});
+
+test('Escuchas_PluginConGanchosEnSuManifiesto', (t) => {
+  const casa = casaNueva(t);
+  const raiz = path.join(casa, '.claude', 'plugins', 'cache', 'cat', 'plug', '1.0.0');
+  fs.mkdirSync(path.join(raiz, '.claude-plugin'), { recursive: true });
+  const manifiesto = path.join(raiz, '.claude-plugin', 'plugin.json');
+  fs.writeFileSync(manifiesto, JSON.stringify({ name: 'plug' }));
+  assert.strictEqual(oa.escuchasDelCuadro({ casa }).ajenos.length, 0, 'sin ganchos en el manifiesto');
+  // en otro archivo, con la ruta relativa a la raíz del plugin
+  fs.mkdirSync(path.join(raiz, 'config'), { recursive: true });
+  fs.writeFileSync(path.join(raiz, 'config', 'mis-ganchos.json'), JSON.stringify(AJENO));
+  fs.writeFileSync(manifiesto, JSON.stringify({ name: 'plug', hooks: './config/mis-ganchos.json' }));
+  assert.strictEqual(oa.escuchasDelCuadro({ casa }).ajenos.length, 1);
+  // o adentro del manifiesto
+  fs.writeFileSync(manifiesto, JSON.stringify({ name: 'plug', ...AJENO }));
+  assert.strictEqual(oa.escuchasDelCuadro({ casa }).ajenos.length, 1);
+  fs.writeFileSync(manifiesto, '{ roto');
+  assert.ok(oa.escuchasDelCuadro({ casa }).ilegibles.length);
+});
+
+test('Escuchas_EncabezadoDeSkillsYAgentes', (t) => {
+  const casa = casaNueva(t);
+  const agentes = path.join(casa, '.claude', 'agents');
+  fs.mkdirSync(agentes, { recursive: true });
+  const agente1 = (matcher, evento = 'PreToolUse') => `---\nname: x\nhooks:\n  ${evento}:\n    - ${matcher ? `matcher: "${matcher}"\n      ` : ''}hooks:\n        - type: command\n          command: /x/contesta.sh\ntools: Read\n---\nCuerpo\n`;
+  fs.writeFileSync(path.join(agentes, 'a.md'), agente1('Bash'));
+  assert.strictEqual(oa.escuchasDelCuadro({ casa }).ajenos.length, 0, 'un gancho sobre la consola no toca el cuadro');
+  fs.writeFileSync(path.join(agentes, 'a.md'), agente1('AskUserQuestion'));
+  assert.strictEqual(oa.escuchasDelCuadro({ casa }).ajenos.length, 1);
+  fs.writeFileSync(path.join(agentes, 'a.md'), agente1(null, 'PermissionRequest'));
+  assert.strictEqual(oa.escuchasDelCuadro({ casa }).ajenos.length, 1, 'sin matcher alcanza a todo');
+  fs.writeFileSync(path.join(agentes, 'a.md'), agente1('AskUserQuestion', 'PostToolUse'));
+  assert.strictEqual(oa.escuchasDelCuadro({ casa }).ajenos.length, 0, 'después del cuadro ya no lo contesta');
+  fs.writeFileSync(path.join(agentes, 'a.md'), '---\nname: x\nhooks: { PreToolUse: [] }\n---\n');
+  assert.strictEqual(oa.escuchasDelCuadro({ casa }).ajenos.length, 1, 'en una sola línea, ante la duda cuenta');
+  fs.writeFileSync(path.join(agentes, 'a.md'), 'Sin encabezado. hooks: PreToolUse en el cuerpo no cuenta\n');
+  assert.strictEqual(oa.escuchasDelCuadro({ casa }).ajenos.length, 0);
+  // una skill instalada como enlace, y la del proyecto
+  const afuera = path.join(casa, 'afuera', 'mi-skill');
+  fs.mkdirSync(afuera, { recursive: true });
+  fs.writeFileSync(path.join(afuera, 'SKILL.md'), agente1('AskUserQuestion'));
+  fs.mkdirSync(path.join(casa, '.claude', 'skills'), { recursive: true });
+  fs.symlinkSync(afuera, path.join(casa, '.claude', 'skills', 'mi-skill'));
+  assert.strictEqual(oa.escuchasDelCuadro({ casa }).ajenos.length, 1);
+  const cwd = path.join(casa, 'repo');
+  fs.mkdirSync(path.join(cwd, '.claude', 'agents'), { recursive: true });
+  fs.writeFileSync(path.join(cwd, '.claude', 'agents', 'b.md'), agente1('AskUserQuestion'));
+  assert.strictEqual(oa.escuchasDelCuadro({ casa, cwd }).ajenos.length, 2);
+  // el de un plugin instalado
+  const plug = path.join(casa, '.claude', 'plugins', 'cache', 'cat', 'plug', '1.0.0', 'agents');
+  fs.mkdirSync(plug, { recursive: true });
+  fs.writeFileSync(path.join(plug, 'c.md'), agente1('AskUserQuestion'));
+  assert.strictEqual(oa.escuchasDelCuadro({ casa, cwd }).ajenos.length, 3);
+});
+
+test('FrenoDelRegistro_NoSeEscribeMueveNiBorra', (t) => {
+  const sg = require('../../skills/tycon-pipeline/scripts/lib/story-gate.js');
+  const bash = require('../../skills/tycon-pipeline/scripts/on-bash-write-gate.js');
+  const casa = casaNueva(t);
+  const stateDir = path.join(casa, '.tycon', 'state');
+  const reg = path.join(stateDir, 'owner-approvals');
+  fs.mkdirSync(path.join(reg, 'usadas'), { recursive: true });
+  fs.writeFileSync(path.join(reg, 'usadas', 'abc'), '{}');
+  // Edit y Write, también con otra carpeta de estado
+  for (const f of [path.join(reg, 'ses.jsonl'), path.join(reg, 'usadas', 'abc'), '/otra/casa/.claude/.tycon-pipeline/owner-approvals/ses.jsonl']) {
+    const r = sg.computeStoryGate({ filePath: f, stateDir: '/no/es/acá', homeDir: casa });
+    assert.strictEqual(r.action, 'block', f);
+    assert.strictEqual(r.kind, 'owner-approvals', f);
+    assert.match(sg.blockMessage(r, { filePath: f }), /registro de las aprobaciones de la persona/);
+  }
+  assert.strictEqual(sg.signedRecordKind('/r/scripts/lib/owner-approvals.js'), null, 'el código del módulo se edita');
+  assert.strictEqual(sg.signedRecordKind('/r/scripts/tests/owner-approvals.test.js'), null);
+  // por consola
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: casa, tool_input: { command } });
+  const frena = [
+    `rm ${reg}/usadas/abc`, `rm -rf ${reg}/usadas`, `rm -rf ${reg}`, `rm ${stateDir}/own*`, `rm ${reg}/usadas/*`,
+    `mv ${reg}/usadas/abc /tmp/x`, `mv ${reg} /tmp/x`, `unlink ${reg}/usadas/abc`, `find ${reg} -delete`,
+    `echo '{}' > ${reg}/ses.jsonl`, `echo '{}' >> ${reg}/ses.jsonl`, `printf x | tee ${reg}/ses.jsonl`,
+    `cp /tmp/x ${reg}/ses.jsonl`, `mv /tmp/x ${reg}/ses.jsonl`, `ln -s /tmp/x ${reg}/ses.jsonl`,
+    `node -e "require('fs').rmSync(require('path').join(st, 'owner-approvals', 'usadas', id))"`,
+    `python3 -c "import os; os.remove(os.path.join(st, 'owner-approvals', 'usadas', i))"`,
+  ];
+  for (const c of frena) {
+    const b = bash.handle(ev(c), { stateDir });
+    assert.ok(b && b.block, `tenía que frenar: ${c}`);
+  }
+  const b = bash.handle(ev(`rm ${reg}/usadas/abc`), { stateDir });
+  assert.match(b.block, /registro de las aprobaciones de la persona/);
+  // leerlo o tocar el código del módulo no frena
+  for (const c of [`cat ${reg}/ses.jsonl`, `ls ${reg}/usadas`, `grep -c . ${reg}/ses.jsonl`, 'rm /tmp/owner-approvals.test.js.bak', 'rm /tmp/owner-approvals-1.txt']) {
+    assert.strictEqual(bash.handle(ev(c), { stateDir }), null, c);
+  }
+});
+
+test('Vias_ElClickYElMensajeSeReconocen_EnElSalteoElCierreYLosEscapes', (t) => {
+  const sk = require('../../skills/tycon-pipeline/scripts/lib/adversarial-skip.js');
+  const rc = require('../../skills/tycon-pipeline/scripts/lib/run-close.js');
+  for (const via of ['click', 'mensaje']) {
+    assert.ok(rc.VIAS_DE_CIERRE.includes(via), `un cierre aprobado con ${via} no queda «sin registro»`);
+    const casa = casaNueva(t);
+    const carpeta = path.join(casa, 'corrida');
+    const ejecucion = '2026-11-01T23:00:00.000Z';
+    assert.ok(!sk.muestra({ story: '9.99', carpeta, ejecucion, camino: '--no-deep-review', casa, ahora: AHORA }).error);
+    const estado = path.dirname(oa.carpeta(casa));
+    const r = sk.firmarSalteo({ story: '9.99', motivo: 'sólo cambia un texto', argv: [], casa, ahora: AHORA, maquina: 'm', aprobar: () => {},
+      exigir: (o) => { fs.appendFileSync(path.join(estado, 'gates.log'), `${JSON.stringify({ name: 'adversarial-skip-signed', status: 'ok', via, resumen: o.resumen })}\n`); return { codigo: 0, via }; } });
+    assert.strictEqual(r.codigo, 0, r.motivo);
+    const v = sk.vigente({ story: '9.99', carpeta, ejecucion, casa });
+    assert.ok(v.ok, v.motivo);
+    assert.strictEqual(v.linea.via, via, 'la constancia dice cómo se aprobó');
+    // una vía que no es de una persona sigue sin valer
+    const casa2 = casaNueva(t);
+    sk.muestra({ story: '9.99', carpeta: path.join(casa2, 'c'), ejecucion, camino: '--no-deep-review', casa: casa2, ahora: AHORA });
+    assert.strictEqual(sk.firmarSalteo({ story: '9.99', motivo: 'x y z', argv: [], casa: casa2, ahora: AHORA, exigir: () => ({ codigo: 0, via: 'delegacion' }) }).codigo, 2);
+  }
 });
 
 test('AlcanzaAlCuadro_VacioAsteriscoYExpresion', () => {

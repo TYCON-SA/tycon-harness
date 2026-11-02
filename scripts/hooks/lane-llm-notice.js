@@ -73,17 +73,18 @@ function desde(evs, iso) {
 }
 
 function cuenta(evs) {
-  const c = { total: evs.length, ventana: 0, terminal: 0, delegacion: 0, sinDato: 0 };
+  const c = { total: evs.length, ventana: 0, terminal: 0, delegacion: 0, aprobado: 0, sinDato: 0 };
   for (const e of evs) {
     if (e.via === 'ventana') c.ventana++;
     else if (e.via === 'terminal') c.terminal++;
     else if (e.via === 'delegacion') c.delegacion++;
+    else if (e.via === 'click' || e.via === 'mensaje') c.aprobado++;
     else c.sinDato++;
   }
   return c;
 }
 
-const renglon = (c, dias) => `arreglos rápidos en ${dias} días: ${c.total} (en la ventana: ${c.ventana}, en la terminal: ${c.terminal}, por la coordinadora: ${c.delegacion})`
+const renglon = (c, dias) => `arreglos rápidos en ${dias} días: ${c.total} (en la ventana: ${c.ventana}, en la terminal: ${c.terminal}, por la coordinadora: ${c.delegacion}${c.aprobado ? `, con un click o un «aprobado»: ${c.aprobado}` : ''})`
   + (c.sinDato ? `; sin dato de cómo se firmó: ${c.sinDato}` : '');
 
 function corto(s, n) { return String(s || '').replace(/\s+/g, ' ').slice(0, n); }
@@ -99,6 +100,7 @@ if (REPORT) {
     `  · en la ventana:        ${c.ventana}\n` +
     `  · en la terminal:       ${c.terminal}\n` +
     `  · por la coordinadora:  ${c.delegacion}\n` +
+    `  · click o «aprobado»:   ${c.aprobado}\n` +
     `  · sin dato:             ${c.sinDato}\n`,
   );
   const delegados = evs.filter((e) => e.via === 'delegacion');

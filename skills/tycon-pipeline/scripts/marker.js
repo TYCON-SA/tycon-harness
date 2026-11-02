@@ -5012,7 +5012,8 @@ function cmdSaveCheck(argv) {
 // `designate-relay --approved-by "<el dev>" --quote "<su frase>"` designa ESTA sesión, en esta máquina, como la que
 // firma en nombre del dueño (el rol de `approvals.relay_session`). La frase nombra el rol («Esta sesión es la
 // coordinadora»). Queda un renglón en el gates.log; una designación nueva reemplaza a la anterior. La designación vale
-// cuando el dueño la confirma en su terminal (scripts/lib/delegated-signing.js `confirm-designation`).
+// cuando el dueño la confirma, con un click en la pestaña de la sesión o en su terminal (scripts/lib/delegated-signing.js
+// `confirm-designation`).
 function cmdDesignateRelay(argv) {
   const cw = require('./lib/critical-waivers.js');
   const { val } = opcionesDe(argv);
@@ -5029,19 +5030,19 @@ function cmdDesignateRelay(argv) {
     console.error(`🚫 marker.js designate-relay: no pude dejar la designación en el registro del arnés${quedo && quedo.error ? ` (${quedo.error})` : ''}.`);
     process.exit(2);
   }
-  console.error(`✅ Esta sesión (${e.sesion}) es la «${e.rol}» de esta máquina, designada por ${e.quien}. Vale cuando una persona la confirma en su terminal: node scripts/lib/delegated-signing.js confirm-designation`);
+  console.error(`✅ Esta sesión (${e.sesion}) es la «${e.rol}» de esta máquina, designada por ${e.quien}. Vale cuando una persona la confirma: corré node scripts/lib/delegated-signing.js confirm-designation en esta pestaña y aprobala con un click, o confirmala en su terminal`);
   process.exit(0);
 }
 
 // `mark-tested --acs <n,m> [--approved-by <quién>] [--terminal]` deja la marca de que una persona probó a mano esos
 // criterios de la guía, si la organización lo pide (`qa.manual_check: required`, lib/manual-checks.js). La aprueba la
-// persona en la ventana de permiso, o la firma en su terminal. Un reenvío de otra sesión no marca: la marca es de quien probó.
+// persona en la ventana de permiso, con su click o su «aprobado», o en su terminal. Un reenvío de otra sesión no marca: la marca es de quien probó.
 function cmdMarkTested(argv) {
   const mc = require('./lib/manual-checks.js');
   const { val, tiene } = opcionesDe(argv);
   const acs = [...new Set(String(val('--acs') || '').split(/[,\s]+/).filter(Boolean).map(Number))];
   if (!acs.length || acs.some((n) => !Number.isInteger(n) || n <= 0)) {
-    console.error('marker.js mark-tested: falta --acs <números de criterio, separados por coma> (la persona lo aprueba en la ventana de permiso, o con --terminal).');
+    console.error('marker.js mark-tested: falta --acs <números de criterio, separados por coma> (la persona lo aprueba en la ventana de permiso, con un click o un «aprobado», o con --terminal).');
     process.exit(2);
   }
   const p = mc.prendida();
