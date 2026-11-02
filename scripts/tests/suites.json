@@ -1052,6 +1052,11 @@
       "requiere": []
     },
     {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-after-main.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 7.15: qué archivos toca la story y, sobre todo, si se pudo mirar — el test-gate difiere exportador-real sólo cuando lo sabe.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/touched-files.test.js",
