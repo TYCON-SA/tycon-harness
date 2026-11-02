@@ -2484,3 +2484,24 @@ test('niveles T7 TyconConfig_Delegacion_SoloRutina', () => {
   assert.deepEqual(c.errores.map((e) => e.clave), ['approvals.levels']);
   assert.deepEqual(c.valores.approvals.delegated_signing, 'off', 'con los niveles rotos no se delega nada: no se sabe qué subió el dueño');
 });
+
+test('Llave_SignatureList_ValidaOnYOff (T16) — @story-8.153 @ac-16', () => {
+  const { cargar } = require(LIB);
+  const arnes = tmp('tcfg-lista-');
+  const leer = (valor) => {
+    const home = casa();
+    if (valor !== undefined) fs.writeFileSync(path.join(home, '.claude', 'tycon.json'), JSON.stringify({ approvals: { signature_list: valor } }));
+    return cargar({ home, arnes, env: {} });
+  };
+  assert.strictEqual(leer('on').valores.approvals.signature_list, 'on');
+  assert.strictEqual(leer('off').valores.approvals.signature_list, 'off');
+  assert.ok(!leer(undefined).valores.approvals.signature_list, 'sin valor, apagada');
+  const mala = leer('quizas');
+  assert.deepEqual(mala.errores.map((e) => e.clave), ['approvals.signature_list']);
+  assert.notStrictEqual(mala.valores.approvals.signature_list, 'on');
+  // también desde el perfil
+  fs.writeFileSync(path.join(arnes, 'perfil-equipo.json'), JSON.stringify({ approvals: { signature_list: 'on' } }));
+  assert.strictEqual(cargar({ home: casa(), arnes, env: {} }).valores.approvals.signature_list, 'on');
+  // la copia del freno de producción la acepta: si no, leería como roto un perfil que la trae
+  assert.deepEqual(require(path.join(SCRIPTS, 'production', 'guard-libs', 'lib', 'tycon-config.js')).cargar({ home: casa(), arnes, env: {} }).errores, []);
+});

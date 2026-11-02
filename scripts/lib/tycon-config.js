@@ -232,6 +232,9 @@ const VOCABULARIO = Object.freeze({
     delegated_machines: 'maquinas',
     owner_only: 'firmas-ids',
     levels: 'niveles',
+    // La lista de lo que espera a la persona (signature-list.js): `on` el freno anota y al volver se las pasan de a una;
+    // `off` (o sin valor), como si no existiera. No aprueba nada, así que también vale desde la máquina.
+    signature_list: 'opcion:on|off',
   }),
   // Cómo se pone al día el freno de producción de cada máquina: `password` (o sin valor), con la contraseña
   // de su persona cada vez; `auto`, solo, con la versión publicada, en las máquinas que instalaron el permiso. Sólo del

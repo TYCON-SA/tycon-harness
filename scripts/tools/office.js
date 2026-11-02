@@ -50,7 +50,7 @@ const { stateDir, claudeDir } = require(path.join(ROOT, 'skills', 'tycon-pipelin
 const { designacionVigente } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'critical-waivers.js'));
 const { resolveSessionId } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'session-id.js'));
 const { OVERDUE_HOUR: OVERDUE, wipNow, sessionsBySid, codexNames, realState, replacedByNewer, hourVerdict, readPrs, offQueueOf, identityOf, remoteOfFolder, SAFE_SID, LOOSE_STALE_MS } = require('./work-in-progress.js');
-const { readPending } = require('./coordination.js');
+const signatureList = require(path.join(ROOT, 'scripts', 'lib', 'signature-list.js'));
 const sessionState = require(path.join(ROOT, 'scripts', 'lib', 'session-state.js'));
 const { readTranscript, codexTranscript, peerMessagesSince, readConversation, TAIL_BYTES } = require(path.join(ROOT, 'scripts', 'lib', 'session-transcript.js'));
 
@@ -231,6 +231,37 @@ function notStoppedYet(real, lastWrite, statusAt, nowMs) {
 // Una hora de fin que pasó no es un pronóstico: se dice eso, y desde cuándo no hay novedades.
 const overdueFin = (at) => ({ hora: OVERDUE, dif: Number.isFinite(at) ? `sin novedades desde las ${hhmm(at)}` : '', cls: 'late' });
 const latest = (...times) => { const v = times.filter(Number.isFinite); return v.length ? Math.max(...v) : NaN; };
+
+/**
+ * Lo que la lista de firmas pone en «Tu firma»: lo de la terminal, un renglón por fila; lo de una sesión, una sola tarjeta
+ * por sesión. Con la sesión ya esperando la firma (`conTarjeta`), su tarjeta alcanza. `yaAvisada`: la sesión ya está en «te
+ * toca» por lo que espera, el plan o el guardado. De un permiso sólo sale su título: el pedido no se muestra.
+ */
+function cardsOfSignatures(signatures, agents, sidOf) {
+  const cards = [];
+  const bySession = new Map();
+  for (const s of signatures) {
+    if (!s || !s.title) continue;
+    const at = Number.isFinite(s.at) ? s.at : null;
+    if (!s.destino) { cards.push({ titulo: `Firma: ${plain(s.title)}`, quien: 'vos', at, linea: `Firmar: ${plain(s.title)}` }); continue; }
+    const k = String(s.destino);
+    if (!bySession.has(k)) bySession.set(k, []);
+    bySession.get(k).push({ ...s, at });
+  }
+  for (const [sid, rows] of bySession) {
+    rows.sort((a, b) => (a.at || 0) - (b.at || 0));
+    const first = rows[0];
+    const more = rows.length > 1 ? ` y ${rows.length - 1} más` : '';
+    const isPermission = first.tipo === 'permiso';
+    const agent = agents.find((a) => String(sidOf.get(a)) === sid);
+    const quien = agent ? agent.nombre : plain(first.nombre) || plain(sid.slice(0, 8));
+    const waits = Boolean(agent) && agent.estado === 'firma';
+    cards.push({ titulo: `${isPermission ? '' : 'Firma: '}${plain(first.title)}${more}`, quien, at: first.at, conTarjeta: waits,
+      yaAvisada: waits && (agent.espera === 'que apruebes el plan' || agent.espera === 'el ok para guardar'),
+      linea: `${isPermission ? '' : 'Firmar: '}${plain(first.title)}${more} (${quien})` });
+  }
+  return cards;
+}
 
 /**
  * Los datos de la página, sin leer nada: `wip` es lo que devuelve wipNow, `signatures` las firmas pendientes,
@@ -491,10 +522,10 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     estado: a.tipo === 'stalled' ? 'riesgo' : a.estado === 'espera' ? 'espera' : a.estado === 'firma' ? 'firma' : 'curso',
     ...(a.marca ? { marca: a.marca } : {}),
   }));
-  for (const s of signatures) {
-    if (!s || !s.title) continue;
-    const at = Number.isFinite(s.at) ? s.at : null;
-    items.push({ titulo: `Firma: ${plain(s.title)}`, quien: 'vos', estado: 'firma', estimadaIso: at == null ? null : localIso(at), pronosticoIso: null, fin: at == null ? null : { hora: dayHhmm(at), dif: '', cls: '' } });
+  const signatureCards = cardsOfSignatures(signatures, agents, sidOf);
+  for (const s of signatureCards) {
+    if (s.conTarjeta) continue;
+    items.push({ titulo: s.titulo, quien: s.quien, estado: 'firma', estimadaIso: s.at == null ? null : localIso(s.at), pronosticoIso: null, fin: s.at == null ? null : { hora: dayHhmm(s.at), dif: '', cls: '' } });
   }
   // lo que espera al dueño es su firma, y lo dejado a propósito sigue en curso. A medio camino queda sólo lo que de verdad
   // quedó sin terminar: archivos sin guardar o commits fuera de la rama principal, una fila por carpeta. Lo demás de una
@@ -533,8 +564,8 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
   }
   for (const l of leftovers.values()) items.push({ ...leftoverCard(l), estado: 'riesgo', quien: '—', estimadaIso: null, pronosticoIso: null, fin: null });
   // «te toca» es sólo lo que pide una firma o una decisión del dueño: lo demás lo hace cada sesión
-  const teToca = [...signatures.filter((s) => s && s.title).map((s) => `Firmar: ${plain(s.title)}`), ...toldOwner];
-  const kanban = buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, signatures, board, prAnswers, openPrs, openPrsNote, nowMs });
+  const teToca = [...signatureCards.filter((s) => !s.yaAvisada).map((s) => s.linea), ...toldOwner];
+  const kanban = buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, signatures: signatureCards.filter((s) => !s.conTarjeta), board, prAnswers, openPrs, openPrsNote, nowMs });
   if (halfwayUnknown) kanban.medioCaminoNoSe = halfwayUnknown === 1 ? 'De un trabajo de una sesión cerrada no se pudo saber si dejó algo sin terminar.' : `De ${halfwayUnknown} trabajos de sesiones cerradas no se pudo saber si dejaron algo sin terminar.`;
   if (kanban.medioCamino.length || kanban.medioCaminoNoSe) kanban.medioCaminoLeido = `Leído a las ${hhmm(wip.halfwayReadAt || nowMs)}`;
   const meta = {
@@ -620,10 +651,7 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
     col('entrando').tarjetas.push(card);
     if (r.storyId) byStory.set(String(r.storyId), card);
   }
-  for (const s of signatures) {
-    if (!s || !s.title) continue;
-    col('firma').tarjetas.push({ titulo: `Firma: ${plain(s.title)}`, quien: 'vos', hora: Number.isFinite(s.at) ? dayHhmm(s.at) : '' });
-  }
+  for (const s of signatures) col('firma').tarjetas.push({ titulo: s.titulo, quien: s.quien, hora: s.at == null ? '' : dayHhmm(s.at) });
   // las ejecuciones marcadas de sesiones cerradas se cruzan con el tablero al final: pueden ser una de sus filas
   const parked = [];
   for (const h of halfwayCards) {
@@ -1155,7 +1183,12 @@ async function collect(opts = {}) {
   const wip = await wipNow(opts);
   const problems = [];
   let signatures = [];
-  try { signatures = readPending(home); } catch (e) { problems.push(`las firmas pendientes no se pudieron leer: ${e.message}`); }
+  try {
+    const open = signatureList.abiertos(home, { arnes: opts.arnes, env: opts.env, ahora: nowMs });
+    problems.push(...open.problemas);
+    const names = sessionsBySid(opts.sessionsDir || path.join(claudeDir(home), 'sessions'), [], null);
+    signatures = open.filas.map((f) => (f.destino && names.get(f.destino) ? { ...f, nombre: names.get(f.destino).name } : f));
+  } catch (e) { problems.push(`las firmas pendientes no se pudieron leer: ${e.message}`); }
   const des = designacionVigente({ dir: sdir });
   if (des && des.error) problems.push(`no se sabe cuál es la coordinadora: ${des.error}`);
   const coordinatorSid = des && des.sesion ? des.sesion : null;
