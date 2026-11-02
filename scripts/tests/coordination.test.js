@@ -107,6 +107,7 @@ const MEASURES = {
   'Una suite completa por vez': 'freno',
   'Pases adversariales de a uno': 'freno',
   'Las sesiones de fondo quietas se cierran o reciben trabajo': 'aviso',
+  'Una sesión se cierra sin nada pendiente': 'freno',
   'Un pedido listo no queda sin encolar': 'aviso',
   '«Termina» quiere decir funcionando': 'nadie',
   'Confirmar que una firma falta antes de pedirla': 'nadie',
@@ -120,6 +121,7 @@ const MEASURES = {
   'La hora del trabajo terminado': 'nadie',
   'Un número de historia nunca solo': 'nadie',
   'Una pestaña que no pide permisos no firma por la ventana': 'freno',
+  'Un arreglo rápido con pantalla lleva maqueta y captura': 'freno',
   'Lo pesado de a uno, con turno': 'nadie',
   'Mirar el diff antes de aprobar un pedido ajeno': 'nadie',
   'Una sesión que espera anota qué hace': 'nadie',
@@ -926,4 +928,331 @@ test('8.177 T10 Guia_DiceQueOpenCopiaElModo_YSuLimite @story-8.177 @ac-8: las do
     assert.match(text, /--remote-control/, file);
     assert.match(text, /Shift\+Tab/, file);
   }
+});
+
+// ── Closing a session ────────────────────────────────────────────────────────────────────────────────────────────────
+
+const COORD_SID = 'coord-close';
+const git = (dir, ...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' }).stdout.trim();
+// A repo with its origin (a local bare one) and main pushed, plus the toy machine with its coordinator.
+function closeLab() {
+  const t = toy({ profile: { approvals: { relay_session: 'coordinadora' } } });
+  designate(t, COORD_SID);
+  const origin = path.join(t.root, 'origin.git');
+  const repo = path.join(t.root, 'repo');
+  spawnSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
+  spawnSync('git', ['init', '-q', '-b', 'main', repo]);
+  git(repo, 'config', 'user.email', 'a@b');
+  git(repo, 'config', 'user.name', 'a');
+  git(repo, 'remote', 'add', 'origin', origin);
+  fs.writeFileSync(path.join(repo, 'a.txt'), 'x\n');
+  git(repo, 'add', '.');
+  git(repo, 'commit', '-qm', 'base');
+  git(repo, 'push', '-q', 'origin', 'main');
+  return { ...t, repo, closeOpts: { ...t.opts, env: { CLAUDE_CODE_SESSION_ID: COORD_SID } } };
+}
+function commitIn(dir, file = 'b.txt') {
+  fs.writeFileSync(path.join(dir, file), 'y\n');
+  git(dir, 'add', '.');
+  git(dir, 'commit', '-qm', 'trabajo');
+}
+const bg = (t, name, cwd, extra = {}) => session(t, `sid-${name}`, name, { cwd, kind: 'bg', jobId: `job-${name}`, startedAt: 1000, ...extra });
+// A toy launcher that keeps every call and answers as told, by verb.
+function closer(t, fail = {}) {
+  const script = path.join(t.root, 'closer.js');
+  fs.writeFileSync(script, `
+const fs = require('fs');
+const [verb, id] = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(path.join(t.root, 'closed.log'))}, verb + ' ' + id + '\\n');
+const f = ${JSON.stringify(fail)};
+if (f[verb]) { process.stderr.write(f[verb] + '\\n'); process.exit(1); }
+`);
+  return { bin: process.execPath, prefix: [script] };
+}
+const closed = (t) => { try { return fs.readFileSync(path.join(t.root, 'closed.log'), 'utf8').trim().split('\n'); } catch { return []; } };
+const closeIt = (t, name, extra = {}) => C.close({ ...t.closeOpts, name, ...extra, launcher: extra.launcher || closer(t) });
+
+test('Close_Clean_StopsAndRemoves: una sesión de fondo limpia, en main, se para y se borra', () => {
+  const t = closeLab();
+  bg(t, 'limpia', t.repo);
+  const r = closeIt(t, 'limpia');
+  assert.strictEqual(r.ok, true, r.message);
+  assert.strictEqual(r.closed, true);
+  assert.deepStrictEqual(closed(t), ['stop job-limpia', 'rm job-limpia']);
+});
+
+test('Close_DeadSession_OnlyRemoves: la que ya no corre no se para: sólo se borra', () => {
+  const t = closeLab();
+  bg(t, 'muerta', t.repo, { pid: 2147483646 });
+  assert.strictEqual(closeIt(t, 'muerta').closed, true);
+  assert.deepStrictEqual(closed(t), ['rm job-muerta']);
+});
+
+test('Close_Uncommitted_SaysWhat: con cambios sin commitear no cierra y dice cuántos', () => {
+  const t = closeLab();
+  fs.writeFileSync(path.join(t.repo, 'suelto.txt'), 'z\n');
+  bg(t, 'sucia', t.repo);
+  const r = closeIt(t, 'sucia');
+  assert.strictEqual(r.ok, false);
+  assert.match(r.message, /falta: 1 archivo\(s\) sin commitear/);
+  assert.deepStrictEqual(closed(t), []);
+});
+
+test('Close_Unpushed_SaysWhat: con commits sin empujar no cierra', () => {
+  const t = closeLab();
+  commitIn(t.repo);
+  bg(t, 'sin-empujar', t.repo);
+  const r = closeIt(t, 'sin-empujar');
+  assert.match(r.message, /1 commit\(s\) sin empujar/);
+  assert.deepStrictEqual(closed(t), []);
+});
+
+test('Close_Worktree: una rama empujada que no entró no cierra; cuando entró a main, sí', () => {
+  const t = closeLab();
+  const wt = path.join(t.root, 'wt');
+  git(t.repo, 'worktree', 'add', '-q', '-b', 'fix/x', wt);
+  commitIn(wt);
+  git(wt, 'push', '-q', 'origin', 'fix/x');
+  bg(t, 'con-rama', wt);
+  const r = closeIt(t, 'con-rama');
+  assert.match(r.message, /la rama fix\/x de .* no entró a main/);
+  assert.doesNotMatch(r.message, /sin empujar/, 'empujada está');
+  assert.deepStrictEqual(closed(t), []);
+  git(t.repo, 'merge', '-q', '--ff-only', 'fix/x');
+  git(t.repo, 'push', '-q', 'origin', 'main');
+  assert.strictEqual(closeIt(t, 'con-rama').closed, true);
+});
+
+test('Close_Slot: un puesto fijo tomado no cierra aunque la rama haya entrado; suelto, sí', () => {
+  const t = closeLab();
+  const slot = path.join(t.root, 'repo--slot-1');
+  git(t.repo, 'worktree', 'add', '-q', '--detach', slot, 'origin/main');
+  git(slot, 'checkout', '-q', '-b', 'wt/puesto');
+  bg(t, 'puesto', slot);
+  assert.match(closeIt(t, 'puesto').message, /sigue tomado por la rama wt\/puesto: soltalo/);
+  assert.deepStrictEqual(closed(t), []);
+  git(slot, 'checkout', '-q', '--detach');
+  assert.strictEqual(closeIt(t, 'puesto').closed, true);
+  assert.ok(fs.existsSync(slot), 'el puesto no se borra');
+});
+
+test('Close_OpenRun: con su corrida o su arreglo rápido abiertos no cierra', () => {
+  const t = closeLab();
+  bg(t, 'corrida', t.repo);
+  marker(t, 'sid-corrida', { storyId: '9.9' });
+  assert.match(closeIt(t, 'corrida').message, /su corrida de la historia 9\.9 sigue abierta/);
+  // terminada: los pasos pendientes en cero
+  marker(t, 'sid-corrida', { storyId: '9.9', stepsPending: [] });
+  const adhoc = path.join(t.state, 'adhoc');
+  fs.mkdirSync(adhoc, { recursive: true });
+  // stable-data: el lector del arreglo rápido mide el vencimiento contra la hora real; acá sólo tiene que estar vigente
+  fs.writeFileSync(path.join(adhoc, 'sid-corrida.json'), JSON.stringify({ reason: 'un arreglo de prueba', lastTouch: new Date().toISOString() }));
+  assert.match(closeIt(t, 'corrida').message, /su arreglo rápido sigue abierto/);
+  fs.writeFileSync(path.join(adhoc, 'sid-corrida.json'), '{ roto');
+  assert.match(closeIt(t, 'corrida').message, /no sé: no pude leer su arreglo rápido/);
+  assert.deepStrictEqual(closed(t), []);
+  // vencido ya no abre nada
+  fs.writeFileSync(path.join(adhoc, 'sid-corrida.json'), JSON.stringify({ reason: 'un arreglo de prueba', lastTouch: '2020-01-01T00:00:00.000Z' }));
+  assert.strictEqual(closeIt(t, 'corrida').closed, true);
+});
+
+test('Close_CannotLook_SaysDontKnow: sin carpeta anotada, con la carpeta borrada o sin origin dice «no sé» y no cierra', () => {
+  const t = closeLab();
+  bg(t, 'sin-carpeta', null);
+  assert.match(closeIt(t, 'sin-carpeta').message, /no sé: no anotó su carpeta/);
+  bg(t, 'borrada', path.join(t.root, 'no-esta'));
+  assert.match(closeIt(t, 'borrada').message, /no sé: su carpeta .* ya no está/);
+  git(t.repo, 'remote', 'remove', 'origin');
+  bg(t, 'sin-origin', t.repo);
+  assert.match(closeIt(t, 'sin-origin').message, /no sé: no pude traer main de origin/);
+  assert.deepStrictEqual(closed(t), []);
+});
+
+test('Close_HiddenWork: lo que la configuración esconde, una rama local que dejó y una main empujada a otra rama no quedan limpias', () => {
+  const t = closeLab();
+  git(t.repo, 'config', 'status.showUntrackedFiles', 'no');
+  fs.writeFileSync(path.join(t.repo, 'nuevo.txt'), 'z\n');
+  bg(t, 'escondido', t.repo);
+  assert.match(closeIt(t, 'escondido').message, /1 archivo\(s\) sin commitear/);
+  fs.rmSync(path.join(t.repo, 'nuevo.txt'));
+
+  git(t.repo, 'checkout', '-q', '-b', 'feat');
+  commitIn(t.repo);
+  git(t.repo, 'checkout', '-q', 'main');
+  bg(t, 'dejo-rama', t.repo);
+  assert.match(closeIt(t, 'dejo-rama').message, /la rama local feat de .* no entró a main/);
+  // la que dejó antes de que arrancara la sesión no es suya
+  bg(t, 'dejo-rama', t.repo, { startedAt: Date.now() + 3600000 });
+  assert.strictEqual(closeIt(t, 'dejo-rama').closed, true);
+  bg(t, 'sin-hora', t.repo, { startedAt: undefined });
+  assert.match(closeIt(t, 'sin-hora').message, /no sé: no sé desde cuándo trabaja/);
+  // borrada, ya no cuenta
+  git(t.repo, 'branch', '-qD', 'feat');
+  bg(t, 'borro-rama', t.repo);
+  assert.strictEqual(closeIt(t, 'borro-rama').closed, true);
+
+  commitIn(t.repo, 'c.txt');
+  git(t.repo, 'push', '-q', 'origin', 'main:otra');
+  bg(t, 'a-otra', t.repo);
+  const r = closeIt(t, 'a-otra');
+  assert.match(r.message, /la rama main de .* no entró a main/);
+  assert.doesNotMatch(r.message, /sin empujar/);
+});
+
+test('Close_LeftBehind: un puesto suelto con su rama sin entrar y unos commits hechos sin rama no quedan limpios', () => {
+  const t = closeLab();
+  const slot = path.join(t.root, 'repo--slot-1');
+  git(t.repo, 'worktree', 'add', '-q', '--detach', slot, 'origin/main');
+  git(slot, 'checkout', '-q', '-b', 'wt/puesto');
+  commitIn(slot);
+  git(slot, 'checkout', '-q', '--detach', 'origin/main');
+  bg(t, 'puesto', slot);
+  assert.match(closeIt(t, 'puesto').message, /la rama local wt\/puesto de .* no entró a main/);
+  assert.deepStrictEqual(closed(t), []);
+
+  git(t.repo, 'checkout', '-q', '--detach');
+  commitIn(t.repo, 'c.txt');
+  git(t.repo, 'checkout', '-q', 'main');
+  bg(t, 'suelta', t.repo);
+  assert.match(closeIt(t, 'suelta').message, /1 commit\(s\) hechos sin rama en /);
+  assert.deepStrictEqual(closed(t), []);
+});
+
+test('Close_LogUnreadable: un registro vacío o con otra forma dice «no sé», y una rama que no se pudo mirar no pasa por borrada', () => {
+  const t = closeLab();
+  const logFile = path.join(t.repo, '.git', 'logs', 'HEAD');
+  fs.writeFileSync(logFile, '');
+  bg(t, 'sin-registro', t.repo);
+  assert.match(closeIt(t, 'sin-registro').message, /no sé: no pude leer el registro de .*: no sé qué ramas dejó/);
+  assert.deepStrictEqual(closed(t), []);
+  // a branch the log names whose ref cannot be read: not «it no longer exists»
+  git(t.repo, 'checkout', '-q', '-b', 'feat');
+  git(t.repo, 'checkout', '-q', 'main');
+  fs.writeFileSync(path.join(t.repo, '.git', 'refs', 'heads', 'feat'), 'esto no es un commit\n');
+  const r = closeIt(t, 'sin-registro');
+  assert.match(r.message, /no sé: .*refs\/heads\/feat/);
+  assert.deepStrictEqual(closed(t), []);
+});
+
+test('Close_DetachedOrNoRepo: un commit suelto empujado que no entró no cierra; una carpeta sin repo no tiene nada de git que mirar', () => {
+  const t = closeLab();
+  const wt = path.join(t.root, 'wt');
+  git(t.repo, 'worktree', 'add', '-q', '-b', 'fix/z', wt);
+  commitIn(wt);
+  git(wt, 'push', '-q', 'origin', 'fix/z');
+  git(wt, 'checkout', '-q', '--detach');
+  bg(t, 'suelto', wt);
+  assert.match(closeIt(t, 'suelto').message, /el commit suelto de .* no entró a main/);
+  assert.deepStrictEqual(closed(t), []);
+  const plain = path.join(t.root, 'sin-repo');
+  fs.mkdirSync(plain);
+  bg(t, 'sin-repo', plain);
+  assert.strictEqual(closeIt(t, 'sin-repo').closed, true);
+});
+
+test('Close_UnreadableRecords: registros ilegibles dicen «no sé» y no cierran; la lista de abiertas ilegible no se pisa', () => {
+  const t = closeLab();
+  bg(t, 'limpia', t.repo);
+  // the slot list cannot answer: «no sé», not «it is not a slot»
+  const original = WS.list;
+  WS.list = () => ({ ok: false, message: 'no hay puestos' });
+  try { assert.match(closeIt(t, 'limpia').message, /no sé: no pude mirar si .* es un puesto fijo/); } finally { WS.list = original; }
+  const adhoc = path.join(t.state, 'adhoc');
+  fs.mkdirSync(adhoc, { recursive: true });
+  fs.writeFileSync(path.join(adhoc, 'sid-limpia.json'), '{}');
+  assert.match(closeIt(t, 'limpia').message, /no sé: no pude leer su arreglo rápido: no dice su motivo/);
+  fs.rmSync(path.join(adhoc, 'sid-limpia.json'));
+  fs.writeFileSync(path.join(t.state, 'active', 'sid-limpia.json'), '{ roto');
+  assert.match(closeIt(t, 'limpia').message, /no sé: el marcador sid-limpia\.json no se puede leer/);
+  fs.rmSync(path.join(t.state, 'active', 'sid-limpia.json'));
+  assert.deepStrictEqual(closed(t), []);
+  // a broken status (the repo's own metadata) is not a clean folder
+  const head = path.join(t.repo, '.git', 'index');
+  fs.writeFileSync(head, 'no es un índice');
+  assert.match(closeIt(t, 'limpia').message, /no sé: no pude mirar los cambios/);
+  fs.rmSync(head);
+  git(t.repo, 'read-tree', 'HEAD');
+  // the opened list unreadable: it closes, says so and leaves the file as it was
+  fs.mkdirSync(path.join(t.state, 'coordination'), { recursive: true });
+  fs.writeFileSync(path.join(t.state, 'coordination', 'opened.json'), '{ roto');
+  const r = closeIt(t, 'limpia', { now: NOW });
+  assert.strictEqual(r.closed, true, r.message);
+  assert.match(r.message, /no pude leer las abiertas/);
+  assert.strictEqual(fs.readFileSync(path.join(t.state, 'coordination', 'opened.json'), 'utf8'), '{ roto');
+});
+
+test('Close_RefusesWithoutAnswers: designación ilegible, sesión ilegible, Codex o id que parece una opción no cierran', () => {
+  const t = closeLab();
+  bg(t, 'limpia', t.repo);
+  assert.match(C.close({ ...t.opts, name: 'limpia', env: { CODEX_SESSION_ID: 'x' } }).message, /Codex no tiene sesiones de fondo/);
+  bg(t, 'guion', t.repo, { jobId: '--force' });
+  assert.match(closeIt(t, 'guion').message, /no anotó un id de fondo válido/);
+  fs.writeFileSync(path.join(t.home, '.claude', 'sessions', 'rota.json'), '{ roto');
+  assert.match(closeIt(t, 'limpia').message, /No pude leer todas las sesiones/);
+  assert.deepStrictEqual(closed(t), []);
+});
+
+test('Close_Busy: la que está trabajando no se cierra', () => {
+  const t = closeLab();
+  for (const status of ['busy', 'shell', 'waiting', undefined]) {
+    bg(t, 'ocupada', t.repo, { status });
+    assert.match(closeIt(t, 'ocupada').message, /falta: está trabajando/, String(status));
+  }
+  assert.deepStrictEqual(closed(t), []);
+  bg(t, 'ocupada', t.repo, { status: 'idle' });
+  assert.strictEqual(closeIt(t, 'ocupada').closed, true);
+});
+
+test('Close_Interactive_OnlyChecks: a una interactiva la verifica y avisa: la pestaña la cierra la persona', () => {
+  const t = closeLab();
+  bg(t, 'pestana', t.repo, { kind: 'interactive' });
+  const r = closeIt(t, 'pestana');
+  assert.strictEqual(r.ok, true, r.message);
+  assert.strictEqual(r.closed, false);
+  assert.match(r.message, /la cierra la persona/);
+  assert.deepStrictEqual(closed(t), []);
+  fs.writeFileSync(path.join(t.repo, 'suelto.txt'), 'z\n');
+  assert.match(closeIt(t, 'pestana').message, /sin commitear/, 'sucia, dice qué falta');
+});
+
+test('Close_WhoCanClose: la coordinadora o una persona en su terminal; ni otra sesión ni ella misma', () => {
+  const t = closeLab();
+  bg(t, 'limpia', t.repo);
+  const otra = closeIt(t, 'limpia', { env: { CLAUDE_CODE_SESSION_ID: 'sid-otra' } });
+  assert.match(otra.message, /la cierra la coordinadora designada o una persona/);
+  session(t, COORD_SID, 'coord', { cwd: t.repo, kind: 'interactive' });
+  assert.match(closeIt(t, 'coord').message, /no se cierra a sí misma/);
+  assert.deepStrictEqual(closed(t), []);
+  assert.strictEqual(closeIt(t, 'limpia', { env: {} }).closed, true, 'en la terminal de una persona no hay sesión');
+});
+
+test('Close_NotFoundOrAmbiguous: sin nombre, con uno que no está o repetido no cierra nada', () => {
+  const t = closeLab();
+  assert.match(closeIt(t, undefined).message, /close va con --name/);
+  assert.match(closeIt(t, 'nadie').message, /No encuentro la sesión «nadie»/);
+  session(t, 'a1', 'doble', { cwd: t.repo, kind: 'bg', jobId: 'j1' });
+  session(t, 'a2', 'doble', { cwd: t.repo, kind: 'bg', jobId: 'j2' });
+  assert.match(closeIt(t, 'doble').message, /más de una sesión/);
+  assert.deepStrictEqual(closed(t), []);
+});
+
+test('Close_LauncherFails: si no se puede parar no se borra, y sin id de fondo no se intenta', () => {
+  const t = closeLab();
+  bg(t, 'trabada', t.repo);
+  const r = closeIt(t, 'trabada', { launcher: closer(t, { stop: 'no la encuentro' }) });
+  assert.match(r.message, /no la pude parar \(no la encuentro\)/);
+  assert.deepStrictEqual(closed(t), ['stop job-trabada']);
+  const b = closeIt(t, 'trabada', { launcher: closer(t, { rm: 'tiene commits sin empujar' }) });
+  assert.match(b.message, /quedó parada, pero no la pude borrar \(tiene commits sin empujar\)/);
+  bg(t, 'sin-id', t.repo, { jobId: null });
+  assert.match(closeIt(t, 'sin-id').message, /no anotó un id de fondo válido/);
+});
+
+test('Close_FreesTheName: la sesión cerrada sale de las recién abiertas', () => {
+  const t = closeLab();
+  fs.mkdirSync(path.join(t.state, 'coordination'), { recursive: true });
+  fs.writeFileSync(path.join(t.state, 'coordination', 'opened.json'), JSON.stringify([{ name: 'limpia', cwd: t.repo, at: NOW }, { name: 'otra', cwd: t.repo, at: NOW }]));
+  bg(t, 'limpia', t.repo);
+  assert.strictEqual(closeIt(t, 'limpia', { now: NOW }).closed, true);
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(t.state, 'coordination', 'opened.json'), 'utf8')).map((o) => o.name), ['otra']);
 });

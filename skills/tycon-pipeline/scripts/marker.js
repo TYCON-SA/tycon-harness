@@ -5338,6 +5338,20 @@ function cmdAdhoc(sub, payloadJson) {
     process.stdout.write(`adhoc: termina ${String(payloadJson).trim()}\n`);
     process.exit(0);
   }
+  // `adhoc capture <imagen>`: la captura de la pantalla construida. No pide firma: no aprueba nada, y el freno de guardar
+  // mide que sea posterior al último cambio.
+  if (sub === 'capture') {
+    if (!payloadJson) { console.error('marker.js adhoc capture: va con la ruta de la imagen'); process.exit(2); }
+    const file = path.resolve(String(payloadJson));
+    const existing = io.readAdhoc(STATE_DIR, SID);
+    if (!existing) { console.error('marker.js adhoc capture: esta sesión no tiene un arreglo rápido abierto: no hay dónde anotar la captura'); process.exit(1); }
+    const problema = require('./lib/adhoc-screen.js').problemaDeLaCaptura(file);
+    if (problema) { console.error(`marker.js adhoc capture: ${problema}`); process.exit(2); }
+    io.writeAdhoc(STATE_DIR, SID, { ...existing, capture: { file, at: nowIso() } });
+    appendLog('adhoc.log', { kind: 'ADHOC_CAPTURE', file });
+    process.stdout.write(`adhoc: captura anotada ${file}\n`);
+    process.exit(0);
+  }
   if (sub === 'clear') {
     const existing = io.readAdhoc(STATE_DIR, SID);
     try { fs.unlinkSync(io.adhocPath(STATE_DIR, SID)); } catch (e) {
@@ -5369,6 +5383,23 @@ function cmdAdhoc(sub, payloadJson) {
     if (payload.maxFiles !== undefined && !(Number.isInteger(payload.maxFiles) && payload.maxFiles >= 1 && payload.maxFiles <= ADHOC_CUPO_MAX)) {
       console.error(`marker.js adhoc set: "maxFiles" es un número entero de 1 a ${ADHOC_CUPO_MAX}.`);
       process.exit(2);
+    }
+    // la maqueta y quién la aprobó van juntas, y la firma de este comando las cubre: la ventana muestra las dos
+    let maqueta = null;
+    if (payload.mockup !== undefined || payload.mockupApproved !== undefined) {
+      const approval = String(payload.mockupApproved || '').trim();
+      if (!String(payload.mockup || '').trim() || !approval) {
+        console.error('marker.js adhoc set: "mockup" y "mockupApproved" van juntos: la ruta de la maqueta y quién la aprobó y por qué vía.');
+        process.exit(2);
+      }
+      if (approval.length > ADHOC_MOTIVO_MAX) {
+        console.error(`marker.js adhoc set: "mockupApproved" de hasta ${ADHOC_MOTIVO_MAX} caracteres: la ventana no muestra más.`);
+        process.exit(2);
+      }
+      const file = path.resolve(String(payload.mockup));
+      const m = require('./lib/adhoc-screen.js').problemaDeLaMaqueta(file);
+      if (m.problema) { console.error(`marker.js adhoc set: ${m.problema}`); process.exit(2); }
+      maqueta = { file, sha256: m.sha256, approval };
     }
     // la sesión destino: la de --for-session (la designada declara por otra pestaña, o el dueño desde su terminal), o la propia
     const k = process.argv.indexOf('--for-session');
@@ -5405,7 +5436,13 @@ function cmdAdhoc(sub, payloadJson) {
         canales: () => notify.canalesDeLaSesion(), mandar: (o) => notify.avisar(o) });
       return a.ok ? null : { codigo: 1, motivo: `sin aviso a la persona, la coordinadora no abre el arreglo rápido (${a.motivo})` };
     };
-    const r = ow.exigir({ firma: 'adhoc-lane', argv: process.argv.slice(1), resumen: `arreglo rápido de la sesión ${destino}: «${reason}» · ${cupoPedido}`,
+    // la maqueta va antes del motivo: el resumen se corta a los 200 caracteres, y lo que se aprueba de nuevo es ella. Entero
+    // queda en la terminal, antes de la firma, y en adhoc.log
+    const conMaqueta = maqueta ? `, maqueta ${maqueta.file} aprobada por «${maqueta.approval}»` : '';
+    // lo lee quien firma: sin saltos de línea ni escapes que armen renglones falsos
+    const { enUnRenglon } = require('./lib/adhoc-screen.js');
+    if (maqueta) console.error(`marker.js adhoc set: anota la maqueta ${enUnRenglon(maqueta.file)}, aprobada por «${enUnRenglon(maqueta.approval)}», con el motivo «${enUnRenglon(reason)}».`);
+    const r = ow.exigir({ firma: 'adhoc-lane', argv: process.argv.slice(1), resumen: enUnRenglon(`arreglo rápido de la sesión ${destino}${conMaqueta}: «${reason}» · ${cupoPedido}`),
       propia: PROPIA, anotar: (renglon) => appendLog('gates.log', renglon), antes });
     if (r.codigo !== 0) {
       const json = String(payloadJson).replace(/'/g, "'\\''");
@@ -5439,6 +5476,11 @@ function cmdAdhoc(sub, payloadJson) {
       firmadaEn: nowIso(),
       // la hora de fin que declaró la sesión con `adhoc until` sigue valiendo al agrandar el carril
       ...(existing && existing.until ? { until: existing.until } : {}),
+      // la maqueta aprobada y la captura también: el freno de guardar mide si siguen valiendo
+      ...(maqueta ? { mockup: { ...maqueta, at: nowIso() } } : (existing && existing.mockup ? { mockup: existing.mockup } : {})),
+      ...(existing && existing.capture ? { capture: existing.capture } : {}),
+      // y la base: anotar la maqueta no achica lo que se mide de la rama
+      ...(existing && existing.bases ? { bases: existing.bases } : {}),
     };
     io.writeAdhoc(STATE_DIR, destino, obj);
     syncSessionState(destino);
@@ -5446,7 +5488,8 @@ function cmdAdhoc(sub, payloadJson) {
     const gateOn = String(process.env.TYCON_STORY_GATE || '').toLowerCase() !== 'off';
     const maquina = r.registro && r.registro.maquina ? r.registro.maquina : null;
     appendLog('adhoc.log', { kind: existing ? 'ADHOC_UPDATE' : 'ADHOC_SET', reason, maxFiles, prevMaxFiles: existing ? existing.maxFiles : null,
-      files: obj.files.length, cwd: process.cwd(), via, by, destino, ...(maquina ? { maquina } : {}), ...(gateOn ? {} : { gate: 'off' }) });
+      files: obj.files.length, cwd: process.cwd(), via, by, destino, ...(maquina ? { maquina } : {}), ...(gateOn ? {} : { gate: 'off' }),
+      ...(maqueta ? { mockup: maqueta.file, mockupApproved: maqueta.approval } : {}) });
     if (!gateOn) appendLog('bypass.log', { kind: 'STORY_GATE_OFF_ADHOC', reason, cwd: process.cwd() });
     if (maxFiles < pedido) {
       const antes = Number(payload.maxFiles) > 0 ? `pediste ${pedido}` : `tenía ${pedido}`;
@@ -5455,7 +5498,7 @@ function cmdAdhoc(sub, payloadJson) {
     process.stdout.write(JSON.stringify(obj, null, 2) + '\n');
     process.exit(0);
   }
-  console.error('marker.js adhoc: uso — adhoc set \'{"reason":"…","maxFiles":N}\' [--for-session <id>] [--terminal] | adhoc get | adhoc clear | adhoc clear-orphan <sessionId>');
+  console.error('marker.js adhoc: uso — adhoc set \'{"reason":"…","maxFiles":N,"mockup":"<ruta>","mockupApproved":"<quién y por qué vía>"}\' [--for-session <id>] [--terminal] | adhoc capture <imagen> | adhoc until HH:MM | adhoc get | adhoc clear | adhoc clear-orphan <sessionId>');
   process.exit(2);
 }
 

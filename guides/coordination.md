@@ -112,6 +112,26 @@ con el nombre contestan que no la encuentran (medido el 2026-11-01).
 
 Con Codex, las sesiones las abre el dueño: Codex no tiene un lanzador de sesiones de fondo con nombre.
 
+## Cerrar una sesión
+
+La coordinadora, o una persona en su terminal, cierra una sesión con `coordination.js close --name <nombre>`. Antes de
+cerrar mira cuatro cosas, y si falta una no cierra y dice cuál:
+
+1. Que esté quieta: una con un comando corriendo tampoco se cierra.
+2. Que en su carpeta no quede nada sin commitear ni sin empujar.
+3. Que su rama haya entrado a `main`, también las ramas de las que se fue en esa carpeta desde que arrancó. Si está en un
+   puesto fijo, que esté suelto: un puesto se suelta, no se borra.
+4. Que no tenga una corrida ni un arreglo rápido abiertos.
+
+Lo que no puede mirar (una carpeta que no anotó o que ya no está, git que no contesta, un registro ilegible) sale como
+«no sé», y tampoco cierra. Con todo limpio corre `claude stop` y `claude rm` con el id de la sesión.
+
+**Una sesión interactiva no se cierra.** La verifica igual y avisa: esa pestaña la cierra la persona.
+
+**Límites.** Mira la carpeta donde está la sesión ahora: otro worktree que haya dejado no lo ve, ni lo guardado con `git
+stash`. Una rama borrada sin entrar ya no se ve. Una rama que entró aplastada en un solo commit sale como que no entró. Un
+worktree de un repo sin carpeta de trabajo sale como «no sé». `claude stop` y `claude rm` a mano no pasan por acá.
+
 ## El tope: qué cuenta como trabajar
 
 **Trabajando** es una sesión viva cuyo archivo de sesión dice que está ocupada. Una sesión que espera la CI, la cola o
@@ -240,6 +260,22 @@ El arreglo rápido (un cambio de código sin historia) es la firma `adhoc-lane`:
   designación que el dueño confirmó. Sin designada en la máquina destino, el atajo se aprueba en la ventana de la
   pestaña destino.
 
+**Si el arreglo toca una pantalla, no guarda sin tres cosas.** Qué es una pantalla lo dice el mismo criterio del pipeline
+(`lib/ui-signal.js`, con la regla `screen_test` de la organización), archivo por archivo. Una prueba no cuenta.
+
+1. La maqueta, que pase `mockup.js check`.
+2. Su aprobación: `marker.js adhoc set '{"reason":"…","mockup":"<ruta>","mockupApproved":"<quién y por qué vía>"}'`, con
+   la firma de siempre. La ventana muestra la maqueta y quién la aprobó. Si la maqueta cambia, hay que volver a aprobarla.
+3. La captura, más nueva que el último cambio de los archivos del carril: `marker.js adhoc capture <imagen>`. No pide
+   firma: no aprueba nada, y el freno la mide. Un cambio de código después la vence.
+
+La ventana de guardar muestra juntas las rutas de la maqueta y de la captura. Si el freno no puede medir si el arreglo
+toca una pantalla, tampoco guarda: sin medir no hay verde.
+
+**Límites.** El freno mira la fecha de la captura: no comprueba que muestre esa pantalla ni la compara con la maqueta. Un
+arreglo rápido cerrado (`adhoc clear`) o vencido ya no frena nada al guardar, igual que el freno de riesgo alto. Una
+pantalla anotada en un worktree anidado que ya se borró sigue pidiendo maqueta y captura: la salida es `adhoc clear`.
+
 ## Los avisos al dueño
 
 Cortos y llanos: qué pasó, qué falta y qué decide él, en ese orden. Un aviso por tanda de trabajo, no uno por sesión.
@@ -318,6 +354,7 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
 | Una suite completa por vez | freno | El corredor de las suites y las portables enteras no arrancan con el turno de otro proceso vivo, y dicen quién lo tiene. Una suite que alguien corre por otro camino no la ve. |
 | Pases adversariales de a uno | freno | El portón del pase sale 3 y `next` pide esperar con otro en vuelo. Lanzar el pase sin consultar el portón no lo frena nada, y el de un arreglo rápido no queda anotado como en vuelo. Pasada una hora, sólo avisa. |
 | Las sesiones de fondo quietas se cierran o reciben trabajo | aviso | El aviso de cada turno de la coordinadora, pasados 15 minutos. |
+| Una sesión se cierra sin nada pendiente | freno | `close` no cierra si falta algo o si no pudo mirarlo. `claude stop` y `claude rm` a mano no pasan por él, y otro worktree que haya dejado la sesión no lo ve. |
 | Un pedido listo no queda sin encolar | aviso | El aviso de cada turno de la coordinadora, pasados 10 minutos, y el del arranque. Sólo en GitHub. |
 | «Termina» quiere decir funcionando | nadie | Es la palabra que elige: ningún dato de la máquina la ve. |
 | Confirmar que una firma falta antes de pedirla | nadie | Cómo se confirma depende de cada firma; `signature` sólo evita dos archivos con el mismo comando. |
@@ -331,6 +368,7 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
 | La hora del trabajo terminado | nadie | Qué es «terminado» depende de cada trabajo. |
 | Un número de historia nunca solo | nadie | Va en los mensajes, que no pasan por un control de texto. |
 | Una pestaña que no pide permisos no firma por la ventana | freno | El freno de la ventana niega la firma y da el comando de la terminal. Que la vía diga «delegación» lo confirma la coordinadora. |
+| Un arreglo rápido con pantalla lleva maqueta y captura | freno | El freno de guardar no pasa sin las tres cosas, ni si no pudo medir. Mira la fecha de la captura, no qué muestra. |
 | Lo pesado de a uno, con turno | nadie | La suite completa y el pase adversarial tienen su freno (arriba); el banco, el examen y el portón no. |
 | Mirar el diff antes de aprobar un pedido ajeno | nadie | Es criterio de quien aprueba. |
 | Una sesión que espera anota qué hace | nadie | Lo anota la sesión con `marker.js doing`; nada la obliga. |
