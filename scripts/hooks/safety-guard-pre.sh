@@ -807,13 +807,13 @@ Primero lo que no necesita a la persona: lo de «Alternativa». Si no se puede, 
   case "$OW_FIRMA" in
     plan-approval) block "ESC-C6" \
         "Aprobar el plan es una firma de la persona, y este comando no la puede pedir en la ventana de permiso." \
-        "Mostrale el plan a la persona y corré la aprobación en su forma exacta, sola, para que la apruebe en la ventana; o que la firme ella en su terminal." ;;
+        "Mostrale el plan a la persona y corré la aprobación en su forma exacta, sola: la aprueba en la ventana o, sin ventana, con un click en el cuadro de opciones o un «aprobado» escrito. La terminal queda como opción." ;;
     control-change|refresh-after-main) block "ESC-C7" \
         "Aprobar un cambio de los controles del repo es una firma de una persona, y este comando no la puede pedir en la ventana de permiso." \
-        "Corré run-base-controls.sh approve en su forma exacta, sola, para que la persona lo apruebe en la ventana; o que lo firme en su terminal." ;;
+        "Corré run-base-controls.sh approve en su forma exacta, sola: la persona lo aprueba en la ventana o, sin ventana, con un click en el cuadro de opciones o un «aprobado» escrito. La terminal queda como opción." ;;
     *) [ "$regla" = "ESC-C3" ] && BLOCK_MOTIVO="firma-fuera-de-la-ventana"; block "$regla" \
         "Esto lo firma la persona, y este comando no la puede pedir en la ventana de permiso." \
-        "Corré el comando de la firma en su forma exacta, solo, para que la persona lo apruebe en la ventana; o que lo firme ella en su terminal." ;;
+        "Corré el comando de la firma en su forma exacta, solo: la persona lo aprueba en la ventana o, sin ventana, con un click en el cuadro de opciones o un «aprobado» escrito (lo irreversible, en su terminal)." ;;
   esac
 }
 _ow_mira=0
@@ -832,7 +832,9 @@ if [[ "$_ow_mira" == "1" ]]; then
       for _ow_e in ${OW_ESCAPES[@]+"${OW_ESCAPES[@]}"}; do
         constancia "$(ow_regla "$_ow_e")" escape ventana "" "$_c3_sid" "${_ow_e#escape:}"
       done ;;
-    allow) constancia "$(ow_regla "$OW_FIRMA")" escape delegacion "$OW_RELEVO" "$_c3_sid" "${OW_FIRMA#escape:}" ;;
+    # la aprobación explícita de la persona (un click o un «aprobado») queda como la ventana: la dio ella, no la delegación
+    allow) _ow_camino=delegacion; case "$OW_VIA" in click|mensaje) _ow_camino=ventana ;; esac
+      constancia "$(ow_regla "$OW_FIRMA")" escape "$_ow_camino" "$OW_RELEVO" "$_c3_sid" "${OW_FIRMA#escape:}" ;;
     none)
       # la salida de una ejecución perdida que la ventana no reconoce como su firma (otro subcomando): no se firma acá
       if [[ -n "$_c3_perdida" ]]; then

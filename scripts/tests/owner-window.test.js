@@ -2350,3 +2350,132 @@ test('Precheck_LosGuionesDeVerdad_NieganLoQueAntesNegabanDespuesDeLaFirma', (t) 
   assert.deepStrictEqual(chequear(`node ${MARKER} waive-critical --rule SEC-C1 --reason "lo cubre otra capa"`, 'ses-w'), { ok: true });
   assert.deepStrictEqual(fotoDe(estado, rd), antes, 'el chequeo no creó la carpeta de la corrida');
 });
+
+// --- la aprobación explícita: un click en el cuadro o un «aprobado» escrito (owner-approvals.js) ---------------------
+// Donde la ventana no llega (una pestaña sin permisos, una sesión de fondo) la firma la da la persona sin terminal. Se
+// prueba lo que tiene que pasar y lo que no: sin aprobación se niega y dice cómo aprobar; una aprobación sirve para una
+// sola firma; la de otra sesión que no es la coordinadora no vale; lo irreversible sigue en la terminal.
+const oaReal = require('../lib/owner-approvals.js');
+// la transcripción y los ganchos se prueban en owner-approvals.test.js: acá se dan por buenos
+const aprobacionesDePrueba = ({ coordinadora = null } = {}) => ({
+  buscar: (o) => oaReal.buscar({ ...o, validar: () => ({ ok: true }) }),
+  consumir: oaReal.consumir,
+  coordinadoraConfirmada: () => coordinadora,
+});
+const pedirSinVentana = (casa, cmd, o = {}) => ow.decidir({ evento: evento(cmd, { ...DE_LA_COORD, permission_mode: 'bypassPermissions', ...(o.evento || {}) }),
+  escapes: o.escapes || [], arbol: o.arbol || arbolDelFreno(), pid: 201, casa, ahora: o.ahora || AHORA, delegacion: SIN_DELEGACION,
+  clasificar: () => null, comprobar: () => null, aprobador: DEL_ARNES, aprobaciones: o.aprobaciones || aprobacionesDePrueba(o) });
+const anotarAprobacion = (casa, sesion, extra = {}) => oaReal.anotar(casa, { tipo: 'mensaje', sesion, ts: new Date(AHORA - 60000).toISOString(), texto: 'Aprobado',
+  herramienta: { pid: 100, inicio: INICIO }, ...extra });
+const PERDIDA = `node ${MARKER} clear-session ses-a --lost`;
+const PERDIDA_ARGV = [MARKER, 'clear-session', 'ses-a', '--lost'];
+
+test('Aprobacion_SinClickNiMensaje_SeNiegaYDiceComoAprobarSinTerminal', (t) => {
+  const casa = casaNueva(t);
+  const r = pedirSinVentana(casa, PERDIDA);
+  assert.strictEqual(r.decision, 'deny', r.texto);
+  assert.match(r.texto, /cuadro de opciones/);
+  assert.match(r.texto, /«aprobado»/);
+  assert.match(r.texto, /qué pasa si sale mal/);
+  assert.match(r.texto, /--terminal/, 'la terminal queda como opción');
+  assert.strictEqual(registros(casa).length, 0);
+});
+
+test('Aprobacion_MensajeAnotado_FirmaUnaVezYElGuionLaUsa', (t) => {
+  const casa = casaNueva(t);
+  anotarAprobacion(casa, 'ses-coord');
+  const r = pedirSinVentana(casa, PERDIDA);
+  assert.strictEqual(r.decision, 'allow', r.texto);
+  assert.strictEqual(r.via, 'mensaje');
+  assert.match(r.texto, /tu mensaje «Aprobado»/);
+  const reg = JSON.parse(fs.readFileSync(path.join(ow.carpeta(casa), vigentes(casa)[0]), 'utf8'));
+  assert.strictEqual(reg.via, 'mensaje');
+  // el guion firma con la vía de la aprobación, con los controles de la ventana
+  let viaDeAntes = null;
+  const firmas = [];
+  const e = ow.exigir({ firma: 'lost-run', argv: PERDIDA_ARGV, pid: 301, arbol: arbolDelGuion(casa, PERDIDA), casa, ahora: AHORA + 60000, propia: 'ses-coord',
+    antes: (via) => { viaDeAntes = via; return null; }, notificar: () => {} });
+  assert.strictEqual(e.codigo, 0, e.motivo);
+  assert.strictEqual(e.via, 'mensaje');
+  assert.strictEqual(viaDeAntes, 'ventana');
+  assert.strictEqual(gates(casa).find((g) => g.name === 'lost-run-signed').via, 'mensaje');
+  assert.strictEqual(ow.quienFirmo(e, 'el-dev').tipo, 'manual');
+  void firmas;
+  // la misma aprobación no sirve para otra firma
+  const otra = pedirSinVentana(casa, PERDIDA);
+  assert.strictEqual(otra.decision, 'deny', otra.texto);
+});
+
+test('Aprobacion_ViejaODeOtraSesionNoCoordinadora_SeNiega', (t) => {
+  const vieja = casaNueva(t);
+  anotarAprobacion(vieja, 'ses-coord', { ts: new Date(AHORA - 31 * 60000).toISOString() });
+  assert.strictEqual(pedirSinVentana(vieja, PERDIDA).decision, 'deny');
+  const ajena = casaNueva(t);
+  anotarAprobacion(ajena, 'ses-otra');
+  assert.strictEqual(pedirSinVentana(ajena, PERDIDA).decision, 'deny', 'otra sesión sin coordinadora');
+  assert.strictEqual(pedirSinVentana(ajena, PERDIDA, { coordinadora: 'ses-tercera' }).decision, 'deny', 'otra sesión que no es la coordinadora');
+  const r = pedirSinVentana(ajena, PERDIDA, { coordinadora: 'ses-otra' });
+  assert.strictEqual(r.decision, 'allow', `en la pestaña de la coordinadora sí: ${r.texto}`);
+});
+
+test('Aprobacion_LoIrreversibleSigueEnLaTerminal', (t) => {
+  for (const [nombre, cmd] of [['TYCON_SAFETY_OFF', 'TYCON_SAFETY_OFF=1 rm -rf build'], ['TYCON_PROD_LINT', 'TYCON_PROD_LINT=off sqlcmd -Q x']]) {
+    const casa = casaNueva(t);
+    anotarAprobacion(casa, 'ses-coord');
+    const r = pedirSinVentana(casa, cmd, { escapes: [`escape:${nombre}`] });
+    assert.strictEqual(r.decision, 'deny', `${nombre}: ${r.texto}`);
+    assert.doesNotMatch(r.texto, /cuadro de opciones/, nombre);
+    assert.match(r.texto, /terminal/, nombre);
+    assert.ok(oaReal.buscar({ casa, sesion: 'ses-coord', ahora: AHORA, validar: () => ({ ok: true }) }).ok, `${nombre}: la aprobación no se gastó`);
+  }
+});
+
+test('Aprobacion_SesionDeFondo_SinAprobacionSeNiega_ConAprobacionFirma', (t) => {
+  const fondo = [...BASE,
+    // como lo lee `ps` en la Mac: los dos de abajo se renombran y su ejecutable trae el subcomando
+    { pid: 50, ppid: 1, inicio: INICIO, ejecutable: '/u/node_modules/@anthropic-ai/claude-code/bin/claude.exe', comando: '/u/node_modules/@anthropic-ai/claude-code/bin/claude.exe daemon run --origin transient' },
+    { pid: 60, ppid: 50, inicio: INICIO, ejecutable: 'claude bg-pty-host', comando: 'claude bg-pty-host --bg-pty-host /tmp/x.pty.sock 200 50 -- /u/claude' },
+    { pid: 100, ppid: 60, inicio: INICIO, ejecutable: 'claude bg-spare', comando: 'claude bg-spare --bg-spare /tmp/x.claim.sock' },
+    { pid: 200, ppid: 100, inicio: INICIO, comando: '/bin/bash /h/scripts/hooks/safety-guard-pre.sh' },
+    { pid: 201, ppid: 200, inicio: INICIO, comando: 'node /h/scripts/lib/owner-window.js gate' }];
+  const casa = casaNueva(t);
+  // aun en un modo que pregunta: la ventana de una sesión de fondo no le llega a nadie seguro
+  const sin = pedirSinVentana(casa, SAVE, { arbol: fondo, evento: { permission_mode: 'default' } });
+  assert.strictEqual(sin.decision, 'deny', sin.texto);
+  assert.match(sin.texto, /corre de fondo/);
+  anotarAprobacion(casa, 'ses-coord');
+  const con = pedirSinVentana(casa, SAVE, { arbol: fondo, evento: { permission_mode: 'default' } });
+  assert.strictEqual(con.decision, 'allow', con.texto);
+  assert.strictEqual(con.via, 'mensaje');
+  // el guion de la firma, lanzado por la consola de la sesión de fondo, la reconoce como la herramienta y firma
+  const guion = [...fondo.slice(0, 4),
+    { pid: 300, ppid: 100, inicio: INICIO, comando: envolver(casa, SAVE) },
+    { pid: 301, ppid: 300, inicio: INICIO, comando: SAVE }];
+  const e = ow.exigir({ firma: 'save', argv: SAVE_ARGV, pid: 301, arbol: guion, casa, ahora: AHORA + 60000, propia: 'ses-coord', antes: () => null, notificar: () => {} });
+  assert.strictEqual(e.codigo, 0, e.motivo);
+  assert.strictEqual(e.via, 'mensaje');
+  // otra herramienta de verdad por arriba sigue negando
+  const anidada = [...BASE, { pid: 90, ppid: 1, inicio: INICIO, comando: 'claude --print algo' }, { ...herramienta(), ppid: 90 },
+    { pid: 200, ppid: 100, inicio: INICIO, comando: '/bin/bash /h/scripts/hooks/safety-guard-pre.sh' },
+    { pid: 201, ppid: 200, inicio: INICIO, comando: 'node /h/scripts/lib/owner-window.js gate' }];
+  const casa2 = casaNueva(t);
+  anotarAprobacion(casa2, 'ses-coord');
+  assert.match(pedirSinVentana(casa2, SAVE, { arbol: anidada }).texto, /la lanzó otra herramienta/);
+});
+
+test('Aprobacion_RutinaSinAprobacion_SigueHechaYAvisada_ConAprobacionEsDeLaPersona', (t) => {
+  const casa = casaNueva(t);
+  assert.strictEqual(pedirSinVentana(casa, SAVE).via, 'avisado');
+  const casa2 = casaNueva(t);
+  anotarAprobacion(casa2, 'ses-coord', { tipo: 'click', tool_use_id: 'toolu_9' });
+  const r = pedirSinVentana(casa2, SAVE);
+  assert.strictEqual(r.via, 'click');
+  assert.match(r.texto, /tu click en el cuadro de opciones/);
+});
+
+test('Aprobacion_DeOtraCopiaDeLaSesion_NoVale', (t) => {
+  // un agente abre la misma sesión en otro proceso (`claude --resume`) y escribe «aprobado»: lo anota otro proceso
+  const casa = casaNueva(t);
+  anotarAprobacion(casa, 'ses-coord', { herramienta: { pid: 777, inicio: INICIO } });
+  assert.strictEqual(pedirSinVentana(casa, PERDIDA).decision, 'deny');
+});

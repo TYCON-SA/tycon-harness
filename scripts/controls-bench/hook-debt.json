@@ -2,6 +2,11 @@
   "__doc": "DEUDA DECLARADA de cobertura de hooks (FIX-7 + decisión D3 del dev, 2026-08-25). `build/check-hook-coverage.js` enumera los scripts de hooks EN DISCO y exige que cada uno tenga casos en el banco; lo que no los tiene entra ACÁ con motivo y fecha, y al escribirle casos se BORRA su línea. 🔴 La lista arrancó con 9 entradas el 2026-08-25 a la mañana y quedó VACÍA el mismo día a la tarde (casos en 20-handlers-pre-edit.json y 21-hooks-sueltos.json, cada uno verificado en rojo desconectando su hook). Se deja el archivo con la lista vacía a propósito: es el lugar donde una pieza nueva declara su deuda, y su historia en git es el registro de cuánto duró cada una.",
   "debt": [
     {
+      "script": "owner-approval-record.js",
+      "date": "2026-11-01",
+      "reason": "Anota el «aprobado» escrito y el click en el cuadro para firmar sin terminal. Su caso de verdad necesita un árbol de procesos con la herramienta arriba (sólo anota lo que lanza la herramienta, no la consola de un agente), que el banco no arma; corre en scripts/tests/owner-approvals.test.js (qué anota, qué no, quién lo lanzó, la transcripción, los ganchos ajenos) y en owner-window.test.js (la firma de punta a punta). Sale de acá cuando el banco sepa montar ese árbol."
+    },
+    {
       "script": "pre-push-repo-rules.js",
       "date": "2026-10-25",
       "reason": "Las cuatro reglas de todo el repo que corre el gancho global de git antes de empujar el arnés. Sus casos necesitan un repo de git con la marca del arnés, un remoto de carpeta y una copia temporal del commit que viaja, que el banco no arma; corren en scripts/tests/pre-push-repo-rules.test.js (verde, rojo con su comando, el commit y no el árbol, empuje ajeno, sin node, tope, entrada ilegible). Sale de acá cuando el banco sepa montar ese repo."
