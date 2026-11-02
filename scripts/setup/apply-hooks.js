@@ -650,7 +650,7 @@ function applyToSettings(settings, o) {
   // como estaba); null si ya está bien o no es un `.js`
   const reform = (cmd, runner, h, absCmd) => {
     // un `.sh` no cambia de intérprete: sólo sale de la carpeta de una versión
-    if (runner !== 'node') { const sc = scriptOf(cmd); return sc && deadSame(cmd, h) ? String(cmd).split(sc).join(absCmd) : null; }
+    if (runner !== 'node') { const sc = scriptOf(cmd); return sc && deUnaVersion(sc, h) ? String(cmd).split(sc).join(absCmd) : null; }
     const now = leadingInterpreter(cmd);
     // sólo un intérprete que es un Node (`node`, o una ruta que termina en node/node.exe): otro comando no se toca
     if (!now || !/(?:^|[/"])node(?:\.exe)?"?$/i.test(now)) return null;
