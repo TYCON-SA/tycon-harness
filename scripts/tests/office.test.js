@@ -2741,7 +2741,7 @@ test('T266 Tokens_Plain: números en llano, y sin ventana no hay porcentaje', ()
   assert.deepStrictEqual([850, 1000, 762000, 999400, 999600, 1000000, 1040000, 4600000, 95600000, 1175000000].map(tokensTxt),
     ['850', '1 mil', '762 mil', '999 mil', '1 millón', '1 millón', '1 millón', '4,6 millones', '95,6 millones', '1.175 millones']);
   const base = { lectura: 762000, escritura: 233000, cache: 95600000, agentes: 12 };
-  assert.deepStrictEqual(tokensCard({ ...base, contexto: 610000, limite: 700000 }), { contexto: '610 mil de 700 mil · 87 %', consumidos: 'lectura 762 mil · escritura 233 mil · lecturas de caché 95,6 millones', agentes: 12 });
+  assert.deepStrictEqual(tokensCard({ ...base, contexto: 610000, limite: 700000 }), { contexto: '610 mil de 700 mil · 87 %', consumidos: 'Read 762 mil · Write 233 mil · Cache Read 95,6 millones', agentes: 12 });
   assert.strictEqual(tokensCard({ ...base, contexto: 180000, limite: null }).contexto, '180 mil · porcentaje no medido');
   assert.deepStrictEqual(tokensCard({ noMedido: true }), { noMedido: true });
 });
@@ -2757,7 +2757,7 @@ test('T268 Tokens_OnlyInTheOpenOffice: con la oficina abierta llegan por nombre;
   const usage = { input_tokens: 1000, cache_creation_input_tokens: 0, cache_read_input_tokens: 500000, output_tokens: 2000 };
   fs.writeFileSync(path.join(dir, 's.jsonl'), `${JSON.stringify({ type: 'assistant', message: { id: 'm1', model: 'claude-opus-5-5', role: 'assistant', content: [], usage } })}\n`);
   const live = await collectAt(m, now, { envelopes: createEnvelopes() });
-  assert.deepStrictEqual(live.tokens.Sol, { contexto: '501 mil de 1 millón · 50 %', consumidos: 'lectura 1 mil · escritura 2 mil · lecturas de caché 500 mil', agentes: 0 });
+  assert.deepStrictEqual(live.tokens.Sol, { contexto: '501 mil de 1 millón · 50 %', consumidos: 'Read 1 mil · Write 2 mil · Cache Read 500 mil', agentes: 0 });
   assert.strictEqual((await collectAt(m, now)).tokens, undefined, 'la foto fija no lee conversaciones enteras');
   const { pick } = require(path.join(path.dirname(OFFICE), 'office', 'fields.js'));
   assert.strictEqual(pick(live, m.home).tokens, undefined, 'no viajan al sitio');
@@ -2776,7 +2776,7 @@ test('T270 Tokens_CodexWithoutName: una sesión de Codex sin nombre propio tiene
   const data = await collectAt(m, now, { envelopes: createEnvelopes() });
   const card = data.agents.find((a) => a.nombre === 'cx-1');
   assert.ok(card, 'tiene su tarjeta');
-  assert.deepStrictEqual(data.tokens['cx-1'], { contexto: '65 mil de 258 mil · 25 %', consumidos: 'lectura 50 mil · escritura 5 mil · lecturas de caché 483 mil', agentes: 0 });
+  assert.deepStrictEqual(data.tokens['cx-1'], { contexto: '65 mil de 258 mil · 25 %', consumidos: 'Read 50 mil · Write 5 mil · Cache Read 483 mil', agentes: 0 });
 });
 
 test('T269 WaysOfWorking_FinishedRunNote: una nota de la sesión cuya ejecución terminó sigue diciendo su historia', async () => {
@@ -2793,7 +2793,11 @@ test('T269 WaysOfWorking_FinishedRunNote: una nota de la sesión cuya ejecución
 
 test('T267 Conversation_OnlyInItsWindow: el botón va sólo con la oficina viva, la ventana se cierra con Esc y la foto no trae el texto', () => {
   const html = page({ agents: [], items: [], kanban: null, meta: null });
-  assert.match(html, /if\(LIVE&&a\.nombre\)\{const b=el\("button","verCharla","Ver conversación"\)/, 'sin oficina viva no hay botón');
+  assert.match(html, /if\(LIVE&&a\.nombre\)box\.appendChild\(botonCharla\(a\.nombre\)\)/, 'sin oficina viva no hay botón');
+  assert.match(html, /createTextNode\("Ver conversación"\)/);
+  assert.match(html, /s\.appendChild\(dibujo\(CHARLA_ICONO\)\)/, 'lleva su ícono, dibujado en la página');
+  assert.match(html, /\.ventana \.panel3\{[^}]*height:min\(920px,calc\(100dvh - 32px\)\)/, 'la ventana entra en la pantalla');
+  assert.match(html, /\.ventana \.panel3 \.chat\{[^}]*overflow:hidden auto/, 'y los mensajes suben y bajan adentro');
   assert.match(html, /e\.key==="Escape"\)cerrarCharla\(\)/);
   assert.match(html, /id="ventana" hidden/, 'arranca cerrada');
   assert.match(html, /event\.target===this\)cerrarCharla\(\)/, 'tocando afuera se cierra');

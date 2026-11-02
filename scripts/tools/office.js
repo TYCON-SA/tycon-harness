@@ -1119,7 +1119,7 @@ function tokensTxt(n) {
 function tokensCard(t) {
   if (!t || t.noMedido) return { noMedido: true };
   const contexto = t.limite ? `${tokensTxt(t.contexto)} de ${tokensTxt(t.limite)} · ${Math.round((t.contexto / t.limite) * 100)} %` : `${tokensTxt(t.contexto)} · porcentaje no medido`;
-  return { contexto, consumidos: `lectura ${tokensTxt(t.lectura)} · escritura ${tokensTxt(t.escritura)} · lecturas de caché ${tokensTxt(t.cache)}`, agentes: t.agentes };
+  return { contexto, consumidos: `Read ${tokensTxt(t.lectura)} · Write ${tokensTxt(t.escritura)} · Cache Read ${tokensTxt(t.cache)}`, agentes: t.agentes };
 }
 
 // El ajuste de compactación de cada modelo, de la configuración de esta máquina. Sin él, cuenta la ventana del modelo.
