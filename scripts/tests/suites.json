@@ -3486,6 +3486,12 @@
       "requiere": []
     },
     {
+      "__nota": "los frenos de Codex en Windows: el lanzador que falla cerrado, la forma escrita en hooks.json, la medición viva de la auditoría y el enchufe sin Git",
+      "raiz": "arnes",
+      "ruta": "tests/run-sh-hook.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "arreglo del 2026-10-14 (sin story): la búsqueda en el PATH de harness.js (findInPath, la de los requisitos de install y doctor) y de tools.js (findIn, la que detecta Claude Code y Codex), con el sistema y el sistema de archivos inyectados — en Windows el alias de ejecución de la Microsoft Store (statSync tira EACCES, lstatSync existe) cuenta como encontrado; una carpeta con el nombre del programa no; gana el primero del PATH; en Mac y Linux la regla no cambia. Más un caso con el sistema de archivos de verdad. No lanza procesos.",
       "raiz": "arnes",
       "ruta": "tests/path-lookup.test.js",

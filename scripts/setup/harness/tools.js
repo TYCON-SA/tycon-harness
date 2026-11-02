@@ -316,9 +316,19 @@ function throughLink(dir, home, env) {
  * Enchufa (o re-enchufa) a Codex desde `tree`. `force`: despliega aunque la huella diga «al día» (una instalación).
  * @returns {{ok:boolean, out:string, pieces:object[], warnings:string[], reason:string|null}}
  */
-function plugCodex({ tree, home = os.homedir(), env = process.env, log = null, snapshotDir = null, force = false } = {}) {
+function plugCodex({ tree, home = os.homedir(), env = process.env, log = null, snapshotDir = null, force = false, platform = process.platform, buscarGitBash } = {}) {
   const { spawnSync } = require('child_process');
   const say = (l) => { try { if (log) log(`codex: ${l}`); } catch (_) { /* el registro no frena */ } };
+  // en Windows sin Git Bash, los frenos de Codex no pueden correr: no se enchufa algo que después frena todo sin explicar
+  if (platform === 'win32') {
+    let bash = null;
+    try { bash = (buscarGitBash || require(path.join(tree, 'scripts', 'lib', 'git-bash.js')).findGitBash)({ env, platform }); } catch (e) { bash = { reason: e.message }; }
+    if (!bash || !bash.path) {
+      const reason = `en Windows, los frenos de Codex necesitan Git para Windows, y no lo encontré (${(bash && bash.reason) || 'sin motivo'}). Instalalo con winget install Git.Git y repetí`;
+      say(reason);
+      return { ok: false, out: '', pieces: [], warnings: [], reason };
+    }
+  }
   const deploy = path.join(tree, 'build', 'deploy-codex-all.js');
   const blocks = path.join(tree, 'scripts', 'setup', 'agents-md-blocks.js');
   if (!fs.existsSync(deploy)) {

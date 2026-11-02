@@ -26,7 +26,13 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const TCG = path.resolve(__dirname, '..');
+// por el enlace, si este árbol es la versión a la que apunta: esta ruta queda escrita, y actualizar sólo mueve el enlace
+// (una copia parcial del árbol no trae al que sabe del enlace, y una copia tampoco es la versión a la que apunta)
+const TCG = (() => {
+  const tree = path.resolve(__dirname, '..');
+  const tools = path.join(tree, 'scripts', 'setup', 'harness', 'tools.js');
+  return fs.existsSync(tools) ? require(tools).throughLink(tree, os.homedir(), process.env) : tree;
+})();
 // Resolución TOLERANTE (raíz O carpeta de skills — las dos semánticas conviven documentadas).
 // La variante «instalada», porque estas rutas quedan ESCRITAS en ~/.codex/hooks.json:
 // con «el propio clon primero» los comandos pasarían a apuntar al clon del arnés.
@@ -34,6 +40,7 @@ const SKILLS = require(path.join(__dirname, '..', 'scripts', 'lib', 'skills-dir.
 // Los marcadores que el fragmento lleva como texto y el despliegue cambia por rutas (no son plantillas de JS).
 const PH_TCG = '$' + '{TCG}';
 const PH_SKILLS = '$' + '{SKILLS}';
+const SH_RUNNER = 'scripts/lib/run-sh-hook.js';
 
 /**
  * El fragmento con `${TCG}` y `${SKILLS}` cambiados por las rutas de esta máquina, texto por texto.
@@ -43,11 +50,25 @@ const PH_SKILLS = '$' + '{SKILLS}';
  * y la lectura tira («Bad escaped character»), y el despliegue de hooks de Codex falla entero en cualquier Windows.
  * Reemplazando en cada texto, la ruta entra tal cual y quien serializa después la escapa.
  */
-function substitute(fragment, tcg, skills, { interp = harnessInterpreter() } = {}) {
+function substitute(fragment, tcg0, skills0, { interp = harnessInterpreter(), platform = process.platform } = {}) {
+  // En Windows, Codex lanza cada gancho con `cmd.exe /C`, donde `bash` no está: un `.sh` va por el lanzador en Node, que
+  // busca Git Bash y hace fallar cerrado a un freno (scripts/lib/run-sh-hook.js). Las rutas, con barras normales
+  const enWindows = platform === 'win32';
+  // cmd.exe corta o interpreta una ruta con `&`, `^` o `(` aunque no tenga espacios: el freno no arrancaría, y Codex sigue
+  const needsQuotes = (v) => (enWindows ? /[^A-Za-z0-9_./:\\-]/ : /\s/).test(v);
+  const tcg = enWindows ? String(tcg0).replace(/\\/g, '/') : tcg0;
+  const skills = enWindows ? String(skills0).replace(/\\/g, '/') : skills0;
+  const porLanzador = (x, ev) => {
+    const m = enWindows ? /^bash (\$\{(?:TCG|SKILLS)\}\/\S+\.sh)$/.exec(x) : null;
+    if (!m) return x;
+    // todo `.sh` antes de una herramienta es un freno: sin depender de leer la lista, que si falla dejaría seguir
+    return `node ${PH_TCG}/${SH_RUNNER}${ev === 'PreToolUse' ? ' --gate' : ''} ${m[1]}`;
+  };
   // un comando del arnés que arranca con `node ` sale con el intérprete que decide
   // harness-node.js#interpreter MIRANDO EL DISCO (el Node propio del arnés, o `node`): la misma regla que el aplicador de
   // Claude Code, así quien despliega y quien audita (harness-parity.js, que llama a esta función) no se contradicen
-  const prefix = (interp && interp.prefix) || 'node';
+  const prefix0 = (interp && interp.prefix) || 'node';
+  const prefix = needsQuotes(prefix0) && !prefix0.startsWith('"') ? `"${prefix0}"` : prefix0;
   // sin el Node del arnés (y sin apagarlo a propósito), un comando del arnés va por el piso de Node, como en el aplicador
   // de Claude Code: con un Node viejo en el PATH vuelve a lanzar con el del arnés o lo dice
   const floor = path.join(tcg, 'scripts', 'lib', 'node-floor.js');
@@ -55,21 +76,21 @@ function substitute(fragment, tcg, skills, { interp = harnessInterpreter() } = {
   // barras normales en las dos plataformas, como el prefijo del Node propio: así `plantillas` reconoce la forma venga del
   // árbol que venga
   const floorFwd = floor.replace(/\\/g, '/');
-  const floorHead = `node ${/\s/.test(floorFwd) ? `"${floorFwd}"` : floorFwd}`;
+  const floorHead = `node ${needsQuotes(floorFwd) ? `"${floorFwd}"` : floorFwd}`;
   // un freno antes de una herramienta (en la lista de Claude Code, PreToolUse con effect: blocks) va con --gate: con un
   // Node viejo falla cerrado
   const gates = viaFloor ? codexGateTails(tcg) : [];
-  const headFor = (orig, ev) => (!viaFloor ? prefix : ev === 'PreToolUse' && gates.some((t) => orig.endsWith(`/${t}`)) ? `${floorHead} --gate` : floorHead);
+  const headFor = (orig, ev) => (!viaFloor ? prefix : ev === 'PreToolUse' && (gates.some((t) => orig.endsWith(`/${t}`)) || orig.includes(`${SH_RUNNER} --gate `)) ? `${floorHead} --gate` : floorHead);
   const withInterp = (orig, str, ev) => { const head = headFor(orig, ev); return head !== 'node' && /^node \$\{(?:TCG|SKILLS)\}/.test(orig) ? `${head}${str.slice('node'.length)}` : str; };
   // una ruta con espacio («C:\\Users\\Nombre Apellido»): el trozo del comando que la lleva va entre comillas dobles, si no el
   // hook queda escrito y no corre nunca
   const quoted = (str, name, value) => {
-    if (!/\s/.test(value)) return str.split(name).join(value);
+    if (!needsQuotes(value)) return str.split(name).join(value);
     return str.replace(new RegExp(`(\\S*)${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\S*)`, 'g'), (m0, pre, post) => (pre.startsWith('"') ? m0.split(name).join(value) : `"${pre}${value}${post}"`));
   };
   // `ev`: el evento del bloque `hooks.<evento>` en el que está el comando
   const walk = (x, ev) => {
-    if (typeof x === 'string') return withInterp(x, quoted(quoted(x, '${TCG}', tcg), '${SKILLS}', skills), ev);
+    if (typeof x === 'string') { const y = porLanzador(x, ev); return withInterp(y, quoted(quoted(y, '${TCG}', tcg), '${SKILLS}', skills), ev); }
     if (Array.isArray(x)) return x.map((v) => walk(v, ev));
     if (x && typeof x === 'object') return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, walk(v, ev)]));
     return x;
@@ -257,7 +278,7 @@ function plantillas(fragmentoCrudo) {
 
 function isTycon(command, tcg, skills, formas = []) {
   const c = String(command);
-  if (c.includes(tcg) || c.includes(skills) || formas.some((re) => re.test(c))) return true;
+  if (c.includes(tcg) || c.includes(skills) || c.includes(`/${SH_RUNNER}`) || c.includes(String(tcg).replace(/\\/g, '/')) || c.includes(String(skills).replace(/\\/g, '/')) || formas.some((re) => re.test(c))) return true;
   // Un hook que apunta a scripts de una copia temporal tampoco es configuración del dev, aunque el
   // arnés ya no lo tenga: lo dejó un despliegue desde una copia.
   const ruta = (c.match(/(\/\S*\/(?:scripts|skills)\/\S+)/) || [])[1];

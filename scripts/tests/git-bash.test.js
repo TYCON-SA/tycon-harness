@@ -51,7 +51,7 @@ test('GitBash_AvisoDeWindows — sin Git avisa, sin dar por medido que no hay fr
   const sin = windowsGitNotice(windows([], {}).ctx);
   assert.strictEqual(sin.level, 'warn', 'visible, y no rojo: no impide instalar');
   assert.match(sin.text, /freno de seguridad/);
-  assert.match(sin.text, /no se midió/);
+  assert.match(sin.text, /se traba la terminal/);
   assert.match(sin.text, /winget install Git\.Git/);
   assert.match(sin.text, /ventana nueva de tres palabras/);
   assert.deepStrictEqual(windowsGitNotice(windows([GIT_BASH], {}).ctx), { level: 'ok', text: `Git para Windows: ${GIT_BASH}` });
