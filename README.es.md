@@ -36,8 +36,8 @@ El ciclo de desarrollo con IA (AI SDLC), paso por paso:
 épicos e historias—; después, historia por historia.
 
 - **El tamaño decide: historia o camino rápido.** La pregunta: ¿es un cambio chico?
-  - **Es chico** si lo pedís en una frase y, al terminar, ves que quedó bien mirando el resultado y corriendo sus
-    pruebas. Ejemplo: «el combo de provincia muestra el nombre completo en vez de la sigla». Va por **camino rápido**.
+  - **Es chico** si lo pedís en una frase y, al terminar, sabés si quedó bien sin revisar una lista: alcanza con mirar
+    el resultado y correr sus pruebas. Ejemplo: «el combo de provincia muestra el nombre completo en vez de la sigla». Va por **camino rápido**.
   - **No es chico** si para saber que quedó completo hace falta una lista de criterios, si lleva más de una sesión o si
     espera a alguien de afuera. Ejemplo: «el combo trae las opciones de la base y recuerda la última elección». Va por
     **historia**.
@@ -59,40 +59,49 @@ El ciclo de desarrollo con IA (AI SDLC), paso por paso:
     coordinadora abre el camino rápido con la lista de archivos y te avisa, y aprueba el plan si la revisión automática
     dio «aprobado». Con riesgo alto, lo aprobás vos. Sin sesión coordinadora, lo suyo lo aprobás vos. El plan nunca se
     aprueba solo.
-- **Guardar es un sí en la ventana de permiso, en los dos caminos.** Antes de cada commit, push y pull request el
-  agente pregunta «¿guardo?», y con un sí guarda. No hay firma ni comando.
+- **Si el cambio tiene pantalla, en los dos caminos se aprueba una maqueta antes de construir.** En una historia la
+  aprueba quien aprueba el plan, y el arnés frena si la maqueta cambió, si en la pantalla falta uno de sus textos o si
+  una ventana no se abre encima; el resto lo mira quien prueba la pantalla. En un camino rápido no guarda sin la maqueta
+  y una captura más nueva que el último cambio, pero no las compara: las compara quien aprueba guardar.
+- **Guardar es un click en el cuadro de opciones o un «Aprobado» escrito, en los dos caminos.** Antes de cada commit,
+  push y pull request el agente pregunta «¿guardo?». Si tu pestaña pide permisos, el sí va en la ventana de permiso. No
+  hay firma ni comando.
 
 Los frenos, los controles y las firmas de control del arnés son de quien lo mantiene. El detalle:
 [La medida justa](guides/que-hace-el-arnes.md#la-medida-justa-cuánto-papel-lleva-cada-cambio).
 
 ```mermaid
 flowchart TB
-  pedir(["<b>Pedir</b>"]) --> chico{"<b>¿Es un cambio chico?</b><br/>lo pedís en una frase y ves que quedó con sólo mirarlo"}
+  pedir(["<b>Pedir</b>"]) --> chico{"<b>¿Es un cambio chico?</b><br/>lo pedís en una frase, y al terminar sabés si quedó bien sin revisar una lista"}
   chico -- "Sí · Camino rápido" --> r1
   chico -- "No · Historia" --> h1
   subgraph rapido [" "]
     direction TB
-    r1["<b>Abrir el carril</b><br/>con la lista de archivos<br/>riesgo normal: la sesión coordinadora, hasta 5<br/>riesgo alto: vos, hasta 8"] --> r2["<b>Programar con la prueba primero</b><br/>al guardar, el arnés avisa si fue al revés"]
+    r1["<b>Abrir el carril</b><br/>con la lista de archivos<br/>riesgo normal: la sesión coordinadora, hasta 5<br/>riesgo alto: vos, hasta 8"] --> r1m["<b>Aprobar la maqueta</b><br/>si tiene pantalla · antes de construir"]
+    r1m --> r2["<b>Programar con la prueba primero</b><br/>al guardar, el arnés avisa si fue al revés"]
     r2 --> r3["<b>Correr sus pruebas</b>"]
-    r3 --> r4["<b>Revisores y pase adversarial</b><br/>sólo con riesgo alto"]
+    r3 --> r3c["<b>Capturar lo construido</b><br/>si tiene pantalla · el arnés la exige, pero la compara quien aprueba guardar"]
+    r3c --> r4["<b>Revisores y pase adversarial</b><br/>sólo con riesgo alto"]
   end
   subgraph historia [" "]
     direction TB
     h1["<b>Validar la historia</b>"] --> h2["<b>Armar el plan</b>"]
     h2 --> h3["<b>Aprobar el plan</b><br/>riesgo normal: la sesión coordinadora, si la revisión automática dio «aprobado»<br/>riesgo alto: vos"]
-    h3 --> h4["<b>Programar con las pruebas primero</b>"]
+    h3 --> h3m["<b>Aprobar la maqueta</b><br/>si tiene pantalla · junto con el plan, y por quien lo aprueba"]
+    h3m --> h4["<b>Programar con las pruebas primero</b>"]
     h4 --> h5["<b>Correr las pruebas</b>"]
     h5 --> h6["<b>Revisores</b><br/>elegidos según el cambio"]
     h6 --> h7["<b>Pase adversarial</b><br/>no en una historia chica de riesgo bajo ni en sólo documentación o pruebas"]
     h7 --> h8["<b>Probar en vivo, criterio por criterio</b>"]
   end
-  r4 --> g1["<b>Guardar</b><br/>el sí en la ventana de permiso"]
-  h8 --> g1
+  r4 --> g1["<b>Guardar</b><br/>un click en el cuadro, o un «Aprobado» escrito"]
+  h8 --> h9["<b>Comparar con la maqueta</b><br/>si tiene pantalla · el arnés compara los textos; el resto, quien prueba la pantalla"]
+  h9 --> g1
   g1 --> g2["<b>Pull request</b><br/>la CI"]
   classDef decide fill:#2f6fde,stroke:#1f4fa8,color:#ffffff
   classDef control fill:#F15A24,stroke:#b8410f,color:#ffffff
-  class r1,h3,g1 decide
-  class r4,h4,h5,h6,h7,h8,g2 control
+  class r1,r1m,h3,h3m,g1 decide
+  class r3c,r4,h4,h5,h6,h7,h8,h9,g2 control
 ```
 
 <sub>🟦 Decide alguien: vos, o la sesión coordinadora con riesgo normal · 🟧 Control que no se saltea</sub>
@@ -207,7 +216,7 @@ Una historia es tu pedido escrito, con sus criterios y sus pruebas: el agente la
 4. **Pedí la historia con tus palabras**, para que el cambio quede escrito antes de programar: «creá una historia para agregar un filtro por fecha».
 5. **Revisá la historia.** El agente la arma con lo que le pediste, contestando tres preguntas en llano (qué tiene que hacer, cómo se ve que anda y qué no tiene que tocar), y te marca lo que supuso. Te la muestra y la escribe con tu «sí». Si tu repo ya trae la carpeta `_bmad/`, la arma con lo que hay ahí.
 6. **Pedí «implementemos la story»**, para arrancar el recorrido: la frase va así. Si no hay git, lo inicia; si estás en `main`, crea la rama. Valida la historia y, si le falta algo, te pregunta si la arregla. Te muestra el plan y espera tu "sí" antes de programar. Después escribe las pruebas y el código, corre las pruebas y los revisores, y prueba cada criterio corriéndolo.
-7. **Revisá el resumen.** Antes de commitear te pregunta «¿guardo?» en la ventana de permiso, y con un sí guarda: nunca commitea ni sube cambios sin tu permiso. Al cerrar la primera historia te ofrece la instalación completa.
+7. **Revisá el resumen.** Antes de commitear te pregunta «¿guardo?» y guarda con tu sí: nunca commitea ni sube cambios sin tu permiso. Al cerrar la primera historia te ofrece la instalación completa.
 8. **Una historia con pantalla.** El agente arma una maqueta para que la apruebes antes de programar; si tu repo no tiene cómo probar en un navegador, te ofrece prepararlo; y te deja una guía para probarla a mano. · [▶ video](https://github.com/user-attachments/assets/8aa2c03a-03d7-42ab-b4ae-daf90a53e3c9)
 9. **Las reglas propias de tu proyecto.** Pedile a tu agente un revisor que controle una regla tuya (por ejemplo, «el email de un cliente nunca se muestra completo»): queda en tu repo de reglas y revisa cada historia junto con los del arnés. · [▶ video](https://github.com/user-attachments/assets/1ef473c6-f088-413f-8560-9d801e6a0c75)
 

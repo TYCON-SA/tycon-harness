@@ -36,8 +36,8 @@ open models through [Ollama](guides/integrations/ollama.en.md), and with
 and stories—; then, story by story.
 
 - **Size decides: story or quick path.** The question: is it a small change?
-  - **It is small** if you ask for it in one sentence and, when it is done, you see it came out right by looking at the
-    result and running its tests. Example: "the province dropdown shows the full name instead of the abbreviation". It
+  - **It is small** if you ask for it in one sentence and, when it is done, you know if it came out right without going
+    through a list: looking at the result and running its tests is enough. Example: "the province dropdown shows the full name instead of the abbreviation". It
     goes by **quick path**.
   - **It is not small** if knowing it is complete takes a list of criteria, if it takes more than one session or if it
     waits on someone outside. Example: "the dropdown loads its options from the database and remembers the last
@@ -59,40 +59,49 @@ and stories—; then, story by story.
     coordinating session opens the quick path with the list of files and tells you, and approves the plan if the
     automatic review said "approved". With high risk, you approve it. Without a coordinating session, you approve its
     part. The plan never approves itself.
-- **Saving is the yes in the permission window, on both paths.** Before every commit, push and pull request the agent
-  asks "save?", and with a yes it saves. There is no signature and no command.
+- **If the change has a screen, on both paths a mockup is approved before building.** In a story, whoever approves the
+  plan approves it, and the harness stops if the mockup changed, if one of its texts is missing from the screen, or if a
+  dialog does not open on top; the rest is checked by whoever tests the screen. On a quick path it does not save without
+  the mockup and a screenshot newer than the last change, but it does not compare them: whoever approves saving does.
+- **Saving is a click in the options box or a written "Aprobado", on both paths.** Before every commit, push and pull
+  request the agent asks "save?". If your tab asks for permissions, the yes goes in the permission window. There is no
+  signature and no command.
 
 The harness brakes, controls and control signatures belong to whoever maintains it. The detail:
 [The right measure](guides/que-hace-el-arnes.md#la-medida-justa-cuánto-papel-lleva-cada-cambio) (in Spanish).
 
 ```mermaid
 flowchart TB
-  pedir(["<b>Request</b>"]) --> chico{"<b>Is it a small change?</b><br/>you ask for it in one sentence and see it came out right just by looking"}
+  pedir(["<b>Request</b>"]) --> chico{"<b>Is it a small change?</b><br/>you ask for it in one sentence, and when it is done you know if it came out right without going through a list"}
   chico -- "Yes · Quick path" --> r1
   chico -- "No · Story" --> h1
   subgraph rapido [" "]
     direction TB
-    r1["<b>Open the lane</b><br/>with the list of files<br/>normal risk: the coordinating session, up to 5<br/>high risk: you, up to 8"] --> r2["<b>Code with the test first</b><br/>at saving, the harness warns if it was the other way round"]
+    r1["<b>Open the lane</b><br/>with the list of files<br/>normal risk: the coordinating session, up to 5<br/>high risk: you, up to 8"] --> r1m["<b>Approve the mockup</b><br/>if it has a screen · before building"]
+    r1m --> r2["<b>Code with the test first</b><br/>at saving, the harness warns if it was the other way round"]
     r2 --> r3["<b>Run its tests</b>"]
-    r3 --> r4["<b>Reviewers and adversarial pass</b><br/>only with high risk"]
+    r3 --> r3c["<b>Capture what was built</b><br/>if it has a screen · the harness requires it, but whoever approves saving compares it"]
+    r3c --> r4["<b>Reviewers and adversarial pass</b><br/>only with high risk"]
   end
   subgraph historia [" "]
     direction TB
     h1["<b>Validate the story</b>"] --> h2["<b>Build the plan</b>"]
     h2 --> h3["<b>Approve the plan</b><br/>normal risk: the coordinating session, if the automatic review said «approved»<br/>high risk: you"]
-    h3 --> h4["<b>Code with the tests first</b>"]
+    h3 --> h3m["<b>Approve the mockup</b><br/>if it has a screen · together with the plan, by whoever approves it"]
+    h3m --> h4["<b>Code with the tests first</b>"]
     h4 --> h5["<b>Run the tests</b>"]
     h5 --> h6["<b>Reviewers</b><br/>picked based on the change"]
     h6 --> h7["<b>Adversarial pass</b><br/>not on a small low-risk story, nor on documentation or tests only"]
     h7 --> h8["<b>Live check, criterion by criterion</b>"]
   end
-  r4 --> g1["<b>Save</b><br/>the yes in the permission window"]
-  h8 --> g1
+  r4 --> g1["<b>Save</b><br/>a click in the box, or a written «Aprobado»"]
+  h8 --> h9["<b>Compare with the mockup</b><br/>if it has a screen · the harness compares the texts; the rest, whoever tests the screen"]
+  h9 --> g1
   g1 --> g2["<b>Pull request</b><br/>CI"]
   classDef decide fill:#2f6fde,stroke:#1f4fa8,color:#ffffff
   classDef control fill:#F15A24,stroke:#b8410f,color:#ffffff
-  class r1,h3,g1 decide
-  class r4,h4,h5,h6,h7,h8,g2 control
+  class r1,r1m,h3,h3m,g1 decide
+  class r3c,r4,h4,h5,h6,h7,h8,h9,g2 control
 ```
 
 <sub>🟦 Someone decides: you, or the coordinating session with normal risk · 🟧 A control that is not skipped</sub>
@@ -208,7 +217,7 @@ A story is your request in writing, with its criteria and its tests: the agent f
 4. **Ask for the story in your own words**, so the change is written down before any code: "create a story to add a date filter".
 5. **Review the story.** The agent builds it from your request, answering three plain questions (what it must do, how you can tell it works, and what it must not touch), and marks what it assumed. It shows it to you and writes it on your "yes". If your repo already has a `_bmad/` folder, it builds it with what is there.
 6. **Ask "implementemos la story" (let's implement the story)**, to start the run: the phrase stays in Spanish. If there is no git, it initializes it; if you are on `main`, it creates the branch. It validates the story and, if something is missing, asks whether to fix it. It shows you the plan and waits for your "yes" before any code. Then it writes the tests and the code, runs the tests and the reviewers, and checks each criterion by running it.
-7. **Read the summary.** Before committing it asks "save?" in the permission window, and with a yes it saves: it never commits or pushes without your permission. When the first story closes, it offers you the full install.
+7. **Read the summary.** Before committing it asks "save?" and saves with your yes: it never commits or pushes without your permission. When the first story closes, it offers you the full install.
 8. **A story with a screen.** The agent builds a mockup for you to approve before any code; if your repo has no way to test in a browser, it offers to set it up; and it leaves a guide for testing it by hand. · [▶ video](https://github.com/user-attachments/assets/8aa2c03a-03d7-42ab-b4ae-daf90a53e3c9)
 9. **Your project's own rules.** Ask your agent for a reviewer that checks a rule of yours (for example, "a customer's email is never shown in full"): it lives in your rules repo and reviews every story along with the harness's own. · [▶ video](https://github.com/user-attachments/assets/1ef473c6-f088-413f-8560-9d801e6a0c75)
 
