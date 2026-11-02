@@ -238,9 +238,9 @@ function debtDeclared({ stateDir, storyPath, content = null, home = os.homedir()
   const g = rs[rs.length - 1];
   const ofertas = gates(stateDir).filter((o) => o.name === OFFER_SHOWN && o.story === id && o.sessionId === g.sessionId && o.ts === g.offerTs);
   if (!ofertas.length) return { declared: false, motivo: 'no hay constancia de la oferta a la que contestó la persona', story: id };
-  // firmada en la ventana, por la delegación o en la terminal: vale la línea de la firma, entre la oferta y la constancia.
-  // Una vieja, firmada con una cita en la conversación, ya no cuenta: se pide de nuevo
-  const falta = ['ventana', 'delegacion', 'terminal'].includes(g.via) ? firmaQueNoAparece(g, gates(stateDir))
+  // firmada en la ventana, con el click o el «aprobado» de la persona, por la delegación o en la terminal: vale la línea
+  // de la firma, entre la oferta y la constancia. Una vieja, firmada con una cita en la conversación, ya no cuenta: se pide de nuevo
+  const falta = ['ventana', 'click', 'mensaje', 'delegacion', 'terminal'].includes(g.via) ? firmaQueNoAparece(g, gates(stateDir))
     : 'el «no» se dio con una cita en la conversación, que ya no cuenta: pedilo de nuevo en la ventana';
   if (falta) return { declared: false, motivo: falta, story: id };
   // la fecha que se dice es la de la constancia, no la que trae la historia (que se puede editar)

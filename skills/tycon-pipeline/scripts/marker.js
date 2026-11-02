@@ -1353,12 +1353,14 @@ function cmdCompleteStep(nRaw, flags) {
     appendLog('gates.log', { name: 'plan-approval', status: 'ok', story: marker.storyId, mode: marker.planApproval.mode, text: marker.planApproval.text, ...firmaPlan.constancia });
     // `--approved` sin `--approved-by` ni `--delegated-by` queda automática «sin nombrar»; por la revisión, automática a
     // nombre de la revisión. La maqueta la aprueba quien aprobó el plan, en el mismo comando.
+    // con su click o su «aprobado», aprobó la persona: nadie vio este comando, así que un nombre escrito en él no cuenta
+    const delDueno = ['click', 'mensaje'].includes(firmaPlan.via) ? { tipo: 'manual', quien: process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona' } : null;
     const quienPlan = porRevision
       ? { tipo: 'automatica', quien: `revisión automática (${revision.modelo})`, delegacion: `coordinadora (sesión ${PROPIA})` }
-      : quienDeLasOpciones(optVal);
+      : delDueno || quienDeLasOpciones(optVal);
     anotarAprobacion(marker, { que: 'plan', cuando: at3, via: `complete-step ${n} ${porRevision ? '· revisión automática' : '--approved'}`, ...quienPlan, ...porDe(firmaPlan) });
     if (mockupPlan) {
-      anotarAprobacion(marker, { que: 'maqueta', cuando: at3, via: `complete-step ${n} --mockup-approved`, ...quienDeLasOpciones(optVal), ...porDe(firmaPlan) });
+      anotarAprobacion(marker, { que: 'maqueta', cuando: at3, via: `complete-step ${n} --mockup-approved`, ...(delDueno || quienDeLasOpciones(optVal)), ...porDe(firmaPlan) });
     }
     // La decisión se anota SIEMPRE, para que «Preparar el commit» vea una pantalla que apareció después del plan.
     marker.mockupDecision = { screen: sc.screen, signal: sc.signal || null, at: at3 };
@@ -5382,7 +5384,7 @@ function cmdAdhoc(sub, payloadJson) {
       process.exit(r.codigo === 2 ? 2 : 1);
     }
     // una vía que este guion no conoce no se cuenta como ventana: no se declara
-    if (!['delegacion', 'avisado', 'terminal', 'ventana'].includes(r.via)) {
+    if (!['delegacion', 'avisado', 'terminal', 'ventana', 'click', 'mensaje'].includes(r.via)) {
       console.error(`🔒 marker.js adhoc set: la firma volvió por una vía que no conozco (${r.via}); no declaré nada.`);
       process.exit(1);
     }
