@@ -394,6 +394,13 @@
       "scripts": [
         "deprecated-read-notice.js"
       ]
+    },
+    {
+      "log": "PreToolUse · Bash|PowerShell — SOLO Claude Code (el tope de sesiones por cualquier camino)",
+      "verdict": "ASIMETRÍA A PROPÓSITO (2026-11-01, story 8.178): session-cap-guard.js frena las sesiones de fondo que abre el agente con la máquina en el tope. Codex no abre sesiones de fondo (coordination.js open ya se lo niega), así que de su lado no hay nada que frenar y el freno no se registra.",
+      "scripts": [
+        "session-cap-guard.js"
+      ]
     }
   ]
 }

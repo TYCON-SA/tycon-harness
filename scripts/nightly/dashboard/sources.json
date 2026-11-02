@@ -229,7 +229,8 @@
           "new-names",
           "spanish-names",
           "public-push-guard",
-          "internal-history"
+          "internal-history",
+          "session-cap-guard"
         ]
       },
       "frenos_escapes": {
