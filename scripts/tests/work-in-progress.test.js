@@ -13,7 +13,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const WIP = path.join(__dirname, '..', 'tools', 'work-in-progress.js');
-const { buildWip, wipNow, createMemory, git: askGit, stepMedians } = require(WIP);
+const { buildWip, wipNow, createMemory, reviseHalfway, git: askGit, stepMedians } = require(WIP);
 
 const NOW = '2026-10-18T14:00:00.000Z';
 const DEAD_PID = 999999;
@@ -1770,5 +1770,67 @@ test('T207 WipNow_WithMemory_SameAnswer: con memoria la foto dice lo mismo que s
     assert.deepStrictEqual(second[key], plain[key], key);
   }
   assert.ok(memory.git.size > 0, 'la foto preguntó y recordó');
+});
+
+// ── «A medio camino» is read when someone asks or a session closes, never because time passed ─────────────────────
+
+const halfwayCtx = (memory) => ({ ...photoCtx(memory), halfway: true });
+function halfwayRepo(m) {
+  const repo = gitRepo(m.root, 'a', 'trabajo');
+  commit(repo, 'uno');
+  return repo;
+}
+
+test('T208 Halfway_StatusKept_UntilRevised: el status de A medio camino no vence solo, y se relee al pedirlo', () => {
+  const m = toyMachine();
+  const repo = halfwayRepo(m);
+  const memory = createMemory({ statusKeepMs: 0 });
+  const first = askGit(repo, STATUS, halfwayCtx(memory));
+  const readAt = memory.halfwayReadAt;
+  assert.ok(readAt, 'anota a qué hora leyó');
+  fs.writeFileSync(path.join(repo, 'nuevo.txt'), 'x');
+  assert.strictEqual(askGit(repo, STATUS, halfwayCtx(memory)), first, 'pasado el rato del otro status, sigue sin preguntar');
+  reviseHalfway(memory);
+  assert.ok(askGit(repo, STATUS, halfwayCtx(memory)).out.includes('nuevo.txt'), 'al revisar ve el archivo nuevo');
+  assert.ok(memory.halfwayReadAt >= readAt);
+});
+
+test('T209 Halfway_NotMixedWithLiveCard: la tarjeta en curso no recibe el status guardado de A medio camino', () => {
+  const m = toyMachine();
+  const repo = halfwayRepo(m);
+  const memory = createMemory({ statusKeepMs: 0 });
+  const shared = photoCtx(memory);
+  assert.strictEqual(askGit(repo, STATUS, { ...shared, halfway: true }).out, '');
+  fs.writeFileSync(path.join(repo, 'nuevo.txt'), 'x');
+  assert.ok(askGit(repo, STATUS, shared).out.includes('nuevo.txt'), 'en la misma foto, la tarjeta lee lo de ahora');
+});
+
+test('T210 Halfway_SessionCloses_Revised; PageClosed_NotRevised: cerrarse una sesión pide revisar, salvo con la página cerrada', () => {
+  const m = toyMachine();
+  session(m, process.pid, 'viva-1', 'Ana');
+  const memory = createMemory();
+  run(m, { memory });
+  assert.strictEqual(memory.halfwaySince, 0, 'la primera foto no pide nada');
+  run(m, { memory });
+  assert.strictEqual(memory.halfwaySince, 0, 'sin cambios, tampoco');
+  fs.unlinkSync(path.join(m.sessions, 'viva-1.json'));
+  run(m, { memory });
+  assert.ok(memory.halfwaySince > 0, 'se cerró: hay que revisar');
+
+  const closed = createMemory();
+  session(m, process.pid, 'viva-2', 'Bea');
+  run(m, { memory: closed });
+  closed.pageOpen = false;
+  fs.unlinkSync(path.join(m.sessions, 'viva-2.json'));
+  run(m, { memory: closed });
+  assert.strictEqual(closed.halfwaySince, 0, 'con la página cerrada, nada');
+});
+
+test('T211 Halfway_ReadAt_FromMemoryOrNow: la hora es la de la última lectura; sin memoria, la de ahora', () => {
+  const m = toyMachine();
+  assert.strictEqual(run(m).halfwayReadAt, Date.parse(NOW));
+  const memory = createMemory();
+  memory.halfwayReadAt = 1234;
+  assert.strictEqual(run(m, { memory }).halfwayReadAt, 1234);
 });
 
