@@ -337,3 +337,53 @@ test('T47 FilesToModify_SoloEnElRemoto_NoFrena: un clon atrasado no hace inventa
   assert.strictEqual(r.code, 0, r.out);
   assert.match(r.out, /al día/);
 });
+
+// 🔴 Falla con: la consulta a un repo hermano hereda el GIT_DIR que git le pone al gancho de un commit. Esa variable le
+// gana a `-C`: se le pregunta al repo del commit, y un archivo que está en la rama principal del hermano se da por
+// inventado; o al revés, el repo del commit contesta por un hermano que no tiene el archivo.
+function hermanoConArchivoSoloEnElRemoto(prod) {
+  const back = path.join(prod, 'Backend');
+  fs.rmSync(path.join(back, '.git'), { recursive: true, force: true });
+  execFileSync('git', ['init', '-q'], { cwd: back, env: GIT_ENV });
+  execFileSync('git', ['remote', 'add', 'origin', 'https://dev.azure.com/acme/Acme/_git/Backend'], { cwd: back, env: GIT_ENV });
+  write(prod, 'Backend/src/AcmeBackend/Features/Nuevo/NuevoService.cs', '// nuevo\n');
+  execFileSync('git', ['add', '.'], { cwd: back, env: GIT_ENV });
+  commit(back, '-m', 'con el archivo');
+  execFileSync('git', ['update-ref', 'refs/remotes/origin/main', 'HEAD'], { cwd: back, env: GIT_ENV });
+  fs.rmSync(path.join(back, 'src', 'AcmeBackend', 'Features', 'Nuevo'), { recursive: true, force: true });
+}
+function dentroDelCommitDe(repo) {
+  const gitDir = path.join(repo, '.git');
+  return { ...process.env, GIT_DIR: gitDir, GIT_WORK_TREE: repo, GIT_INDEX_FILE: path.join(gitDir, 'index') };
+}
+function runConEnv(args, cwd, env) {
+  try {
+    return { code: 0, out: execFileSync('node', [LINT, ...args], { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) };
+  } catch (e) {
+    return { code: e.status ?? 1, out: `${e.stdout || ''}${e.stderr || ''}` };
+  }
+}
+
+test('T48 FilesToModify_DentroDeUnCommit_MiraAlHermano: el GIT_DIR del commit no tapa la rama principal del repo hermano', () => {
+  const { prod, proj } = productoConCodigo();
+  hermanoConArchivoSoloEnElRemoto(prod);
+  const f = story(proj, 'specs/story-6.5-cbu-del-gestor.md', HISTORIA_65(['src/AcmeBackend/Features/Nuevo/NuevoService.cs']));
+  const r = runConEnv([f], proj, dentroDelCommitDe(proj));
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /al día/);
+});
+
+test('T49 FilesToModify_DentroDeUnCommit_OtroRepoNoContesta: el repo del GIT_DIR no responde por los del producto', () => {
+  const { prod, proj } = productoConCodigo();
+  hermanoConArchivoSoloEnElRemoto(prod);
+  const ruta = 'src/AcmeBackend/Features/Inventado/Inventado.cs';
+  const otro = mkRepo('lint-otro-repo-');
+  write(otro, ruta, '// sólo en otro repo\n');
+  execFileSync('git', ['add', '.'], { cwd: otro, env: GIT_ENV });
+  commit(otro, '-m', 'con el archivo');
+  execFileSync('git', ['update-ref', 'refs/remotes/origin/main', 'HEAD'], { cwd: otro, env: GIT_ENV });
+  const f = story(proj, 'specs/story-6.5-cbu-del-gestor.md', HISTORIA_65([ruta]));
+  const r = runConEnv([f], proj, dentroDelCommitDe(otro));
+  assert.notStrictEqual(r.code, 0, r.out);
+  assert.match(r.out, /Inventado\.cs/);
+});

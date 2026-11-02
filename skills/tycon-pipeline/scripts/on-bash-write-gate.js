@@ -1740,7 +1740,7 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
     const limpio = sinPalabrasDelShell(tramo);
     // las redirecciones y el tee a una constancia, también adentro de `bash -c` (los tramos anidados están en `todos`)
     for (const m of limpio.matchAll(/(?<![<\d&])(?:\d?>>?|&>>?)\|?\s*(['"]?)([^\s<>;&|'"]+)\1/g)) if (es(m[2])) out.push(m[2]);
-    const words = palabras(limpio.replace(/(?<![<\d])<(?!<)\s*[^\s<>;&|]+/g, ' ').trim().replace(PREFIJO, '')).filter((w) => w !== '' && w !== '\\');
+    const words = palabras(sinRedireccionesDeSalida(limpio).replace(/(?<![<\d])<(?!<)\s*[^\s<>;&|]+/g, ' ').trim().replace(PREFIJO, '')).filter((w) => w !== '' && w !== '\\');
     let c = nombreDeComando(words[0]);
     let args = words.slice(1);
     if (c === 'xargs') {
@@ -2281,10 +2281,68 @@ function sinPalabrasDelShell(tramo) {
 }
 
 /**
- * El comando y lo que corre adentro de él: `$(…)`, comillas invertidas, `bash -c '…'`, `eval …` y `find … -exec …`.
- * Cada uno se mira como otro comando.
+ * El tramo sin sus redirecciones de salida (`2>&1`, `> f`, `>> f`, `&> f`, `2> f`), que no son argumentos. Un `>` entre
+ * comillas o escapado es texto, y `>(…)` lleva un comando: quedan como están.
  */
-function comandosAnidados(cmd, hondo = 0) {
+function sinRedireccionesDeSalida(tramo) {
+  const s = String(tramo);
+  const es = posicionesDeComando(s);
+  return s.replace(/(?:(?<![^\s])\d+|&)?(?<!\\)>>?(?!\()[|&]?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, (m, en) => (es[en] ? ' ' : m));
+}
+
+// un heredoc entero: lo que tiene delante en su línea, la comilla y la marca, lo que tiene detrás, el cuerpo y el cierre
+const HEREDOC_ENTERO = /(^|\n)([^\n]*?)(?<![\\<])<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()]+)\3(?=[\s;&|()<>]|$)([^\n]*)\n([\s\S]*?)(\n[ \t]*\4[ \t]*)(?=\n|$)/g;
+// un grupo o una palabra de control abierta antes del heredoc: lo que escribe puede seguir camino a otro programa
+const GRUPO_O_CONTROL = /[({]|(?:^|[\s;&|])(?:if|then|else|elif|do|while|until|for|case|select|function)(?=[\s;]|$)/;
+const CAT_O_TEE_REDEFINIDO = /(?:^|[\s;&|(])(?:function[ \t]+(?:cat|tee)\b|alias[ \t]+(?:cat|tee)=|(?:cat|tee)[ \t]*\(\s*\))/;
+
+/**
+ * El comando sin el texto de los heredocs que nadie corre: la marca va entre comillas (el shell no expande el cuerpo) y
+ * el cuerpo sólo llega a un archivo o a un mensaje. Eso es `cat` o `tee` sin una tubería ni un grupo que lo lleve a otro
+ * programa, o `git commit` y `gh pr|issue` con `"$(cat <<'X'`. El cuerpo de cualquier otro se sigue mirando, y con dos
+ * heredocs en una línea, lo que sigue también: no se sabe de cuál es cada texto.
+ */
+function sinTextoDeHeredocs(cmd) {
+  const s = String(cmd);
+  if (!s.includes('<<') || CAT_O_TEE_REDEFINIDO.test(s)) return s;
+  const es = posicionesDeComando(s);
+  const comandoHasta = (fin) => { let t = ''; for (let i = 0; i < fin; i++) if (es[i]) t += s[i]; return t; };
+  const soloTexto = (m) => {
+    const [todo, ini, antes, comilla, , despues] = m;
+    const linea = m.index + ini.length;
+    const abre = linea + antes.length;
+    if (!comilla || s.slice(0, linea).endsWith('\\\n')) return false;
+    const mensaje = /^(.*)"\$\(cat[ \t]+$/.exec(antes);
+    if (mensaje) {
+      const comilla0 = linea + mensaje[1].length;
+      if (comilla0 === 0 || !es[comilla0 - 1] || despues.trim() || !/^\s*\)"/.test(s.slice(m.index + todo.length))) return false;
+      if (GRUPO_O_CONTROL.test(comandoHasta(comilla0)) || mensaje[1].includes('#')) return false;
+      const w = palabras(sinPalabrasDelShell(tramos(mensaje[1]).pop() || '')).filter((x) => x !== '').join(' ');
+      return /^(?:git(?: -[cC] \S+)* commit|gh (?:pr|issue) \S+)(?: |$)/.test(w);
+    }
+    if (!es[abre] || antes.includes('#') || /\||>\(/.test(`${antes}${despues}`)) return false;
+    if (GRUPO_O_CONTROL.test(comandoHasta(abre))) return false;
+    const w = palabras(sinPalabrasDelShell(tramos(antes).pop() || '')).filter((x) => x !== '');
+    return w[0] === 'cat' || w[0] === 'tee';
+  };
+  let out = '';
+  let hasta = 0;
+  for (const m of s.matchAll(HEREDOC_ENTERO)) {
+    if (m[2].includes('<<') || m[5].includes('<<')) break;
+    if (!soloTexto(m)) continue;
+    const fin = m.index + m[0].length;
+    out += s.slice(hasta, fin - m[6].length - m[7].length) + m[7];
+    hasta = fin;
+  }
+  return out + s.slice(hasta);
+}
+
+/**
+ * El comando y lo que corre adentro de él: `$(…)`, comillas invertidas, `bash -c '…'`, `eval …` y `find … -exec …`.
+ * Cada uno se mira como otro comando. El texto de un heredoc que nadie corre no es un comando.
+ */
+function comandosAnidados(comando, hondo = 0) {
+  const cmd = sinTextoDeHeredocs(comando);
   const out = [cmd];
   if (hondo > 3) return out;
   const sumar = (c) => { if (c && String(c).trim()) out.push(...comandosAnidados(String(c), hondo + 1)); };
