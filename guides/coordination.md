@@ -169,22 +169,27 @@ Lo controla el arnés, no la memoria de nadie:
 CI y en la nube no hay turno. `TYCON_SUITE_TURN=0` apaga el de la suite, y `TYCON_SUITE_TURN=1` lo pide aunque no haya
 coordinadora: sólo puede frenar de más.
 
-## Las firmas, por sus dos vías
+## Las firmas, por sus tres vías
 
 **Antes de pedir una firma, la coordinadora confirma que todavía falta.** Pedir una firma de algo ya firmado hace
 firmar dos veces. La de los controles se confirma comparando el contenido firmado con el de la rama.
 
-Después la pide con `coordination.js signature --kind <tema> --title <qué se firma> --cwd <carpeta> -- <comando>`:
+Después la pide por la vía que corresponde:
 
-- **Por la terminal del dueño.** Si la máquina tiene carpeta de firmas (`coordination.owner_folder`, sólo en el archivo
+- **Con un click o un «aprobado» del dueño.** Donde la ventana no llega, es lo primero para toda firma que los acepta. La
+  coordinadora le muestra el cuadro de opciones en su pestaña, con una sola pregunta: qué se aprueba, «firma <id>» y, si
+  firma otra sesión, «sesión <id>». No deja pendiente. Las reglas están en `guides/firmas-del-arnes.md`, «Aprobar sin
+  terminal».
+- **Por la terminal del dueño**, sólo lo que no acepta el click: con `coordination.js signature --kind <tema> --title
+  <qué se firma> --cwd <carpeta> -- <comando>`. Si la máquina tiene carpeta de firmas (`coordination.owner_folder`, sólo en el archivo
   de la máquina o en su variable, nunca en el perfil), escribe ahí un archivo por firma, `AAAA-MM-DD-<tema>.command`
   (en Windows, `.cmd`). El dueño lo abre con doble clic: dice qué es en una línea, entra a la carpeta, corre el comando
   y espera una tecla. Si ya hay un archivo con el mismo comando, no escribe otro y lo dice. Sin carpeta, no escribe
   nada: imprime el comando para el aviso del chat.
 - **Por delegación.** Una firma que la organización deja firmar por delegación no pasa por `signature`: se da desde la
   pestaña de la coordinadora, en la ventana de permiso, con las reglas de la firma delegada. Se firma en el momento y
-  no deja pendiente. Si la delegación no aplica y la pestaña de la coordinadora no pide permisos, la ventana no se abre:
-  la firma se niega con el comando de la terminal, porque en esa pestaña nadie diría Sí.
+  no deja pendiente. Si la delegación no aplica y la pestaña de la coordinadora no pide permisos, la ventana no se abre,
+  porque en esa pestaña nadie diría Sí: la firma se niega y la negativa dice cómo pedir el click o el «aprobado».
 
 Lo que pide contraseña va siempre por la terminal: la contraseña la escribe sólo el dueño. Cuando el dueño firmó,
 `coordination.js signature-done <id>` borra el archivo y el pendiente. Carpeta vacía y ningún pendiente quiere decir
@@ -202,17 +207,18 @@ en orden, cuando su par público ya entró.
 
 ## Las firmas del dueño
 
-Una frase en el chat, en un encargo o en un mensaje entre sesiones no firma nada: el arnés no lee la conversación para
-firmar. El dueño firma en la ventana de permiso o en su terminal, y lo que puede firmar la coordinadora en su nombre
-lo dice `guides/firmas-del-arnes.md`.
+Un encargo o un mensaje entre sesiones no firma nada, aunque diga «aprobado». El dueño firma en la ventana de permiso;
+donde la ventana no llega, con un click en el cuadro de opciones o un «aprobado» tipeado por él; o en su terminal. Su
+click o su «aprobado» en la pestaña de la coordinadora es del dueño, no una delegación. Lo que puede firmar la
+coordinadora en su nombre lo dice `guides/firmas-del-arnes.md`.
 
 La coordinadora pide desde su pestaña, con `--for-session <D>`, las firmas que la guía marca «sí» en «¿Desde otra
 sesión?». Entre ellas, marcar un control a mano (`marker.js set-check <control> <estado> --force-manual --for-session
 <D>`), contar los revisores sin la constancia de que corrieron (`pipeline.js check-count --repo <r> --story <s>
 --trust-ran --for-session <D>`) y aceptar un criterio imposible de probar en vivo (`marker.js runtime-waiver <historia>
---acs <n> --for-session <D>`). La historia es la de la corrida abierta de `<D>`: si no, el guion sale sin escribir. La
-ventana se le abre al dueño en la pestaña de la coordinadora (si esa pestaña no pide permisos, se niega con el comando de
-la terminal). Ninguna de las tres se delega sin nombrarla en el perfil;
+--acs <n> --for-session <D>`). La historia es la de la ejecución abierta de `<D>`: si no, el guion sale sin escribir. La
+ventana se le abre al dueño en la pestaña de la coordinadora (si esa pestaña no pide permisos, se niega y se aprueba con
+su click o su «aprobado»). Ninguna de las tres se delega sin nombrarla en el perfil;
 ese pedido lo prepara la sesión y lo aprueba el dueño, aparte.
 
 ## Guardar se autoriza en la ventana
@@ -273,9 +279,9 @@ muestran como su fin, y miden el atraso contra ella; sin hora, dicen «sin hora 
 
 Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y por qué.
 
-- **Una firma del dueño va en un mensaje aparte.** Qué se firma, en una línea, y el comando; nada más. Si a los 15
-  minutos sigue pendiente, se recuerda también aparte. Por qué: una firma al final de un mensaje con otras cosas se
-  pierde, y el trabajo queda parado esperándola.
+- **Una firma del dueño va en un mensaje aparte.** Qué se firma, en una línea, en un cuadro de opciones con una sola
+  firma; lo que va por la terminal, con su comando. Nada más. Si a los 15 minutos sigue pendiente, se recuerda también
+  aparte. Por qué: una firma al final de un mensaje con otras cosas se pierde, y el trabajo queda parado esperándola.
 - **Antes de pasar un comando de firma, se ensaya lo que viene después.** El commit, sus controles y el empuje se
   prueban en seco, y la firma es lo último. Si no hay forma de ensayarlo, se dice. Por qué: un ok que vence por un
   control que corre después hace firmar dos veces.
@@ -289,7 +295,7 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
 - **Una firma delegada se confirma por su vía.** Después de firmar, el renglón tiene que decir «delegación». Si dice otra
   vía (por ejemplo, la ventana a nombre del dueño), se le avisa al dueño enseguida y se rehace. Por qué: una firma a
   nombre del dueño que él no dio es una constancia falsa. Una pestaña que no pide permisos ya no firma por la ventana:
-  el arnés lo niega.
+  el arnés lo niega. Un click o un «aprobado» que no anotó el gancho tampoco vale.
 - **Lo pesado, con turno.** La suite completa, el banco de controles, el examen de revisores y el portón corren de a uno
   en la máquina, y el turno se le pide a la coordinadora. La suite completa y el pase además los frena el arnés (arriba, «Lo
   pesado, con turno»). La historia que el dueño marcó como prioridad pasa adelante en la fila. Por qué: dos a la vez
@@ -330,7 +336,7 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
 | El comando de firma con su carpeta | nadie | El comando lo escribe la sesión; `signature` ya lo arma con su carpeta. |
 | La hora del trabajo terminado | nadie | Qué es «terminado» depende de cada trabajo. |
 | Un número de historia nunca solo | nadie | Va en los mensajes, que no pasan por un control de texto. |
-| Una pestaña que no pide permisos no firma por la ventana | freno | El freno de la ventana niega la firma y da el comando de la terminal. Que la vía diga «delegación» lo confirma la coordinadora. |
+| Una pestaña que no pide permisos no firma por la ventana | freno | El freno de la ventana niega la firma y dice cómo aprobarla con un click o un «aprobado»; lo que no los acepta, con el comando de la terminal. Que la vía diga «delegación» lo confirma la coordinadora. |
 | Lo pesado de a uno, con turno | nadie | La suite completa y el pase adversarial tienen su freno (arriba); el banco, el examen y el portón no. |
 | Mirar el diff antes de aprobar un pedido ajeno | nadie | Es criterio de quien aprueba. |
 | Una sesión que espera anota qué hace | nadie | Lo anota la sesión con `marker.js doing`; nada la obliga. |

@@ -742,7 +742,7 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 **Qué es:** El registro de firmas con el que el dev perdona un criterio que no se puede verificar corriendo, en `.tycon/runtime-waivers.jsonl`.
 
-**Por qué existe:** Perdonar sin firma abriría la puerta a saltear la matriz. La firma sale de la terminal del dev y lleva una cadena de hash que detecta ediciones a mano. Una firma descartada se dice, con el motivo.
+**Por qué existe:** Perdonar sin firma abriría la puerta a saltear la matriz. La firma la da la persona (en la ventana de permiso, con un click o un «aprobado» donde la ventana no llega, o en su terminal) y lleva una cadena de hash que detecta ediciones a mano. Una firma descartada se dice, con el motivo.
 
 **Quién la usa:** El comando `marker.js runtime-waiver`, la matriz, el paso 8 y el freno del commit.
 
@@ -950,7 +950,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 **Qué es:** La guía `guides/safety-guard.md` del freno de mano: un hook que bloquea comandos destructivos irreversibles en Bash y PowerShell.
 
-**Por qué existe:** Frena `rm -rf /`, el push forzado a main, `curl|bash`, el borrado de bases de datos, `npm publish` o leer `.ssh`. Está prendido por defecto; se apaga con `TYCON_SAFETY_GUARD=0` y hay una salida de emergencia por comando con `TYCON_SAFETY_OFF=1`, que la persona firma en la ventana de permiso o en su terminal.
+**Por qué existe:** Frena `rm -rf /`, el push forzado a main, `curl|bash`, el borrado de bases de datos, `npm publish` o leer `.ssh`. Está prendido por defecto; se apaga con `TYCON_SAFETY_GUARD=0` y hay una salida de emergencia por comando, que la persona firma en su terminal.
 
 **Quién la usa:** El hook `PreToolUse` en cada sesión.
 

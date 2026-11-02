@@ -93,8 +93,10 @@ firmar, y en la columna tu situación:
 | 2 · excepción | **Marcar un criterio como probado a mano** (`manual-test`) | vos | espera | vos | espera | no aplica |
 | 3 · irreversible | **La emergencia** (`emergency`): pasar por encima del freno de seguridad | vos, en tu terminal | espera | vos, en tu terminal | espera | no aplica |
 
-- **Vos**: te aparece la ventana de permiso y aprobás. **La coordinadora**: la firma ella, sin molestarte. **Espera**:
-  nadie firma; el trabajo queda frenado en ese paso hasta que alguien firme, y no se rompe nada.
+- **Vos**: aprobás sin terminal. En una pestaña que pide permisos te aparece la ventana de permiso; en una que no pide, o
+  en una sesión de fondo, aprobás con un click en el cuadro de opciones o con un «aprobado» escrito (ver «Aprobar sin
+  terminal»). **La coordinadora**: la firma ella, sin molestarte. **Espera**: nadie firma; el trabajo queda frenado en ese
+  paso hasta que alguien firme, y no se rompe nada.
 - \* **La coordinadora** firma sin ventana sólo lo que el perfil pone en `approvals.delegated_signing`, en las máquinas de
   `approvals.delegated_machines`, y sólo con la designación confirmada por el dueño en su terminal (ver «Aprobar en
   nombre del dueño»). Si la firma no está delegada, tu máquina no está en la lista o nadie confirmó la designación, la
@@ -118,18 +120,63 @@ firmar, y en la columna tu situación:
   su terminal con `harness.js sign emergency`, con su motivo (cómo, en el párrafo de arriba). El agente no la puede
   correr.
 - En los repos del arnés, el dueño ocupa el lugar del dev (ver «Quién aprueba»).
-- «En la ventana» vale para Claude Code. Codex no tiene ventana de permiso: ahí todo se firma en la terminal
-  (`guides/safety-guard.md`).
+- «En la ventana» vale para Claude Code. Codex no tiene ventana de permiso, y el click y el «aprobado» todavía no valen
+  ahí: en Codex todo se firma en la terminal (`guides/safety-guard.md`).
+
+## Aprobar sin terminal
+
+Con Claude Code, la mayoría de las firmas no piden la terminal. El camino depende de la pestaña:
+
+- **La pestaña pide permisos:** te aparece la ventana de permiso y contestás «Sí». Ahí escribir «aprobado» no firma nada,
+  salvo que la coordinadora la firmaría por delegación: entonces gana tu aprobación.
+- **La pestaña no pide permisos, o la sesión corre de fondo:** la ventana no le llega a nadie seguro. Vale tu click en el
+  cuadro de opciones o tu mensaje «aprobado». Sin eso, el freno niega el comando y le dice al agente cómo pedírtelo; lo
+  de rutina en una pestaña sin permisos se hace y se avisa (ver «Lo de rutina en una pestaña sin permisos»).
+
+Lo que tiene que cumplir esa aprobación:
+
+- **Sirve para una sola firma y vence a los 30 minutos.** Un comando que pide dos firmas no la usa.
+- **Nombra lo que aprueba.** La pregunta del cuadro, o lo último que te dijo el agente antes de tu «aprobado», trae el
+  texto «firma <id>», con el id de la tabla de abajo.
+- **La das en la sesión que firma, o en la coordinadora con la designación confirmada.** Si la firma es para otra sesión
+  que la de la pestaña donde apruebas, nombra además «sesión <id>»; si nombra otra sesión, no vale para ésta. La aprobación
+  es tuya, no una delegación.
+- **El mensaje es un «aprobado» claro.** «Aprobado», «apruebo» o «sí, aprobado», sin preguntas, negaciones ni condiciones.
+  «No apruebo» o «¿lo aprobaste?» no cuentan.
+- **El mensaje lo tipeás vos, en la herramienta de consola.** No cuenta uno que llega desde la extensión del editor, por
+  un programa, por otra sesión, por un encargo o por Telegram. En esos casos, usá el click.
+- **Ningún gancho ajeno escucha el cuadro.** Si un gancho que no es del arnés lo escucha, el click no vale, y el freno te
+  pide escribir «aprobado».
+
+Lo que no acepta el click ni el «aprobado», y se firma en tu terminal:
+
+- apagar el freno de seguridad para un comando (`escape:TYCON_SAFETY_OFF`);
+- apagar el control de consultas a producción (`escape:TYCON_PROD_LINT`);
+- la salida de emergencia (`emergency`);
+- saltear el pase adversarial (`adversarial-skip`, `escape:TYCON_NO_DEEP_REVIEW` y `escape:no-deep-review`);
+- confirmar la designación de la coordinadora (ver «Aprobar en nombre del dueño»).
+
+La contraseña que pide reinstalar el freno de producción no es una aprobación: la escribís vos, con `sudo`.
+
+La terminal también es la salida cuando el freno no puede decidir:
+
+- en Codex;
+- en Windows, donde no se leen los procesos de la máquina;
+- con el comando escondido detrás de otro (`cd … && <firma>`);
+- con la herramienta lanzada por otra herramienta o por su consola;
+- en una sesión sin pantalla (`-p`);
+- con una consola de fondo viva: se cierra, o se firma en la terminal.
 
 ## Las firmas
 
 La columna «¿Desde otra sesión?» dice si el comando se puede correr desde la pestaña de otra sesión (medido el
-2026-10-26). Un escape se firma en la propia sesión o corriendo el comando en tu terminal, donde no hay freno. Dos
+2026-10-26). Un escape se aprueba en la propia sesión, o corriendo el comando en tu terminal, donde no hay freno. Dos
 escapes, `escape:force-manual` y `escape:trust-ran`, los pide su guion en su forma exacta, como las firmas de guion:
 desde otra sesión van con `--for-session <D>`.
 
-En Windows la terminal no se lee: cada comando de la columna «Firmarla en la terminal» abre una ventana nueva con el
-mismo comando, y ahí firmás escribiendo tres palabras al azar. La ventana vence a los 5 minutos sin firmar nada.
+La columna «Firmarla en la terminal» es la otra salida, para quien la prefiera o donde hace falta (ver «Aprobar sin
+terminal»). En Windows la terminal no se lee: cada uno de esos comandos abre una ventana nueva con el mismo comando, y ahí
+firmás escribiendo tres palabras al azar. La ventana vence a los 5 minutos sin firmar nada.
 
 Traer main a un pedido con un cambio de control ya firmado no pide otra firma. Si cada archivo de control es lo que firmó
 el dueño, tal cual o con lo de main fusionado sin conflictos, el control de la base acepta la constancia que ya está y
@@ -200,7 +247,7 @@ reserva va por su id.
 ## Lo que la ventana no ve
 
 El freno niega la ventana si la herramienta la lanzó una consola u otra herramienta, y el comando de firma se firma
-entonces en la terminal. Hay un caso que no ve: una herramienta que el agente abre dentro de `tmux` y a la que le manda
+entonces en la terminal. El click y el «aprobado» tampoco valen ahí. Hay un caso que no ve: una herramienta que el agente abre dentro de `tmux` y a la que le manda
 teclas puede contestar su propia ventana. El servidor de `tmux` no tiene padre, y desde los procesos de la máquina no se
 distingue un `tmux` de la persona de uno del agente.
 
@@ -212,9 +259,14 @@ frena a un agente que esquive el freno de la carpeta de estado: el agente corre 
 quien escribe el archivo por una vía que el freno no ve escribe también el renglón. La barrera contra eso es el freno de
 la carpeta de estado, que niega toda escritura ahí que no sea de los guiones del arnés.
 
+Un click o un «aprobado» los anota un gancho que lanza la herramienta. Al usarlos, el arnés relee la transcripción de la
+sesión: tiene que estar el mensaje tipeado por la persona, o el cuadro contestado por ella y no por un gancho. Un agente
+que corre el gancho a mano no anota nada. Lo que no cubre: un agente que rompa un freno a propósito para escribir a mano
+el registro y la transcripción, porque corre con el mismo usuario que la persona.
+
 Además, cada firma que da un guion deja un renglón en un registro común, `signatures.jsonl`, en la misma carpeta que
-`gates.log`. Lo escribe `scripts/lib/signature-log.js`. El renglón dice quién firmó y por qué vía (la ventana, la
-terminal o la delegación); si fue delegada, quién la pidió y sobre qué sesión; también el id y el nivel de la firma en el
+`gates.log`. Lo escribe `scripts/lib/signature-log.js`. El renglón dice quién firmó y por qué vía (la ventana, el click,
+el mensaje, la terminal, la delegación o «hecho y avisado»); si fue delegada, quién la pidió y sobre qué sesión; también el id y el nivel de la firma en el
 catálogo, la huella de la máquina, la hora y el motivo. Los registros de cada guion siguen como están. Si el registro
 común no se puede escribir, la firma igual vale y el guion lo avisa. Los escapes del freno de seguridad no pasan por
 ahí: su constancia se escribe al pedir la ventana, antes de que la persona conteste.
@@ -258,7 +310,8 @@ comparan por la carpeta real, así que otra forma de escribir la ruta no cambia 
 escribe un pendiente en el repo de otra sesión, se lo puede aprobar sola. Esa vía no se usa: un pendiente que abre la
 coordinadora lo aprueba el dueño.
 
-Si falta algo, sale la ventana en la pestaña de la designada. El guion firma con `via: delegacion`. Un escape es siempre
+Si falta algo, sale la ventana en la pestaña de la designada; si esa pestaña no pide permisos, el dueño lo aprueba ahí
+con un click o un «aprobado» (ver «Aprobar sin terminal»). El guion firma con `via: delegacion`. Un escape es siempre
 de la sesión que lo corre, así que nunca se delega. Refirmar los controles tras traer `main` se delega sólo cuando el
 clasificador comprueba que es eso; si no, es un cambio de control, que es sólo del dueño.
 
@@ -288,8 +341,11 @@ plan y abrir un arreglo rápido. Pasan por los mismos controles que la delegaci�
 
 A la persona le llega el aviso por los canales de la sesión. Subir el tope de un arreglo rápido que ya existe sigue
 siendo una firma. Todo lo de nivel 2 y 3 también: eximir un crítico, saltear el pase, un criterio que no se prueba en
-vivo, cambiar un estado a mano, cerrar una corrida perdida o como deuda, y cualquier cambio de control. Eso se niega
-en la pestaña sin permisos, con el comando de la terminal.
+vivo, cambiar un estado a mano, cerrar una ejecución perdida o como deuda, y cualquier cambio de control. Sin aprobación,
+eso se niega en la pestaña sin permisos, y la negativa dice cómo aprobarlo con un click o un «aprobado» (lo que no los
+acepta, en la terminal). Si la persona aprobó, la firma es suya y queda con esa vía, también en lo de rutina.
+
+En una sesión de fondo no hay «hecho y avisado»: nadie ve el aviso en la pestaña, así que todo pide la aprobación.
 
 Tres arreglos de la misma tanda:
 
@@ -334,6 +390,7 @@ desde su pestaña:
 - si quedó perdida (le falta el marcador o la copia de su apertura), `marker.js clear-session <sesión> --lost
   --for-session <sesión>` pide la firma `lost-run`. Corre sin ventana si el perfil la delega, y si no, sale la ventana.
 
-La ventana muestra la story y la sesión que se cierran, que son las que nombra el comando. Si `--for-session` nombra
+La ventana muestra la story y la sesión que se cierran, que son las que nombra el comando. Donde la ventana no llega, se
+aprueba con un click o un «aprobado» (ver «Aprobar sin terminal»). Si `--for-session` nombra
 otra sesión, no se pide. `marker.js clear` cierra sólo la ejecución propia: con `--for-session` sale 2.
 `marker.js restore <sesión>` rearma la ejecución perdida en la sesión que corre el comando, y firma para ésa.
