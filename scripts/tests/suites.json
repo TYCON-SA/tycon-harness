@@ -2485,6 +2485,12 @@
       "requiere": []
     },
     {
+      "__nota": "El control de las palabras de las guías en castellano (scripts/ci/vocabulary.js): una palabra que no se escribe frena con archivo, línea y la que va en su lugar; el código, los enlaces, los nombres de la máquina y las excepciones declaradas no cuentan; el techo sólo baja; el glosario dice lo mismo que las reglas; y el árbol real cabe en su techo.",
+      "raiz": "arnes",
+      "ruta": "tests/vocabulary.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "El servidor MCP que declara una integración (`mcp` de su manifiesto): el despliegue de Codex registra, avisa o saca el de la herramienta de horas elegida, también con una sin servidor; y las heurísticas del costo de contexto toman los servidores de las integraciones sin nombrarlos.",
       "raiz": "arnes",
       "ruta": "tests/integrations-mcp.test.js",

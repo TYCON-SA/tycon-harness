@@ -181,6 +181,17 @@ if [ -f "$TOOL_NAMES" ] && ! node "$TOOL_NAMES" --repo "$REPO_ROOT"; then
   exit 1
 fi
 
+# ── Las palabras de las guías en castellano ──
+# Las guías dicen cada cosa con una sola palabra (guides/maintaining/vocabulario.md): un commit que sube las palabras que
+# no se escriben en la prosa de una guía sobre el techo de su archivo, o con una excepción mal declarada, no se crea. Las
+# reglas: scripts/ci/vocabulary.json.
+# Casos: scripts/tests/vocabulary.test.js
+VOCABULARY="$REPO_ROOT/scripts/ci/vocabulary.js"
+if [ -f "$VOCABULARY" ] && ! node "$VOCABULARY" --repo "$REPO_ROOT"; then
+  echo "⛔ COMMIT RECHAZADO — una palabra de las guías que no se escribe, o no se pudo medir (arriba dice dónde y cuál va)." >&2
+  exit 1
+fi
+
 # ── La historia interna en la prosa que se publica ──
 # Una referencia interna (el número de una story, el código de un trabajo, un caso del registro interno, una rama, un
 # commit o una corrida) no lleva a nada desde afuera. Mira lo que el commit AGREGA a la prosa que se publica (el código y las pruebas no son
