@@ -100,8 +100,9 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { sinGitDelPadre } = require('./clean-git-env.js');
 
-const REQUIRED = ['story', 'epic', 'status'];
+const REQUIRED =['story', 'epic', 'status'];
 
 // ── La causa del reproceso — `followup_reason:` ───────────────────────────────────────────────
 //
@@ -456,17 +457,19 @@ function rootsOf(storyFile) {
 /**
  * ¿La ruta existe en la rama principal del remoto de ese repo (`origin/HEAD`, o `origin/main`)? 'yes' · 'no' ·
  * 'unknown'. Un clon sin esa rama (sin remoto, o un `.git` que git no lee) no puede estar atrasado: 'no'. Con la rama y
- * sin poder listarla (un error, el tiempo agotado), 'unknown': no se da por inventada.
+ * sin poder listarla (un error, el tiempo agotado), 'unknown': no se da por inventada. Dentro de un commit git deja
+ * `GIT_DIR` y compañía en el entorno, y le ganan a `-C`: sin sacarlas, contestaría el repo del commit.
  */
 function inRemoteMain(root, p) {
   if (!fs.existsSync(path.join(root, '.git'))) return 'no';
+  const env = sinGitDelPadre();
   let ref = null;
   for (const r of ['origin/HEAD', 'origin/main']) {
-    try { execFileSync('git', ['-C', root, 'rev-parse', '--verify', '-q', `${r}^{commit}`], { stdio: 'ignore', timeout: 5000 }); ref = r; break; } catch { /* la siguiente */ }
+    try { execFileSync('git', ['-C', root, 'rev-parse', '--verify', '-q', `${r}^{commit}`], { stdio: 'ignore', timeout: 5000, env }); ref = r; break; } catch { /* la siguiente */ }
   }
   if (!ref) return 'no';
   try {
-    const out = execFileSync('git', ['-C', root, 'ls-tree', '--name-only', ref, '--', p], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
+    const out = execFileSync('git', ['-C', root, 'ls-tree', '--name-only', ref, '--', p], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, env });
     return out.trim() ? 'yes' : 'no';
   } catch { return 'unknown'; }
 }
