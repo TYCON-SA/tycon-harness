@@ -33,8 +33,9 @@ Bajar el arnés va siempre sin credencial y casi no pasa por la API: gasta una s
    Mirá también si está Git para Windows, con git --version. Si falta, decime que lo instale yo: winget install Git.Git
    Después de instalar algo, tengo que cerrar y volver a abrir la terminal y Claude Code: avisame y esperá.
    (El arnés se baja como archivos, no se clona. Git para Windows hace falta para que corran los controles que son guiones
-   de bash, entre ellos el freno de seguridad, y para firmar con un click. Sin él no se midió qué pasa con esos controles:
-   por eso se pide. Para firmar sin él queda la ventana nueva de tres palabras.)
+   de bash, entre ellos el freno de seguridad, y para firmar con un click. Sin él no se pierde seguridad, se traba la
+   terminal: todo comando queda frenado, también los legítimos, y cada intento tarda unos 2,5 minutos. Se midió con Claude
+   Code 2.1.316. Codex, sin él, no se enchufa. Para firmar sin él queda la ventana nueva de tres palabras.)
 
 2. Ver el plan de instalación (no instala nada): dame esta línea para mi ventana:
        npx @tyconsa/harness@latest --audience me --profile full --integrations none --packs all --dry-run
@@ -143,8 +144,8 @@ B. codegraph — índice del código, para que el agente encuentre las cosas sin
    B4. PRENDER codegraph (en el arnés sólo deja constancia: no registra nada).
 
 C. codex — el mismo arnés bajo Codex, el asistente de OpenAI. Pide cuenta de OpenAI: un plan de ChatGPT (Plus, Pro,
-   Business, Edu o Enterprise) o una clave de API. Ojo: en Windows el código está, pero el arnés todavía no lo probó en
-   una máquina Windows real (lo dice su INSTALL.md). Lo que no salga como acá, PARÁ y anotalo.
+   Business, Edu o Enterprise) o una clave de API. Pide Git para Windows: sin él no se enchufa, porque sus frenos no correrían.
+   Lo que no salga como acá, PARÁ y anotalo.
    C1. codex --version
        Si no está: npm install -g @openai/codex (instalador oficial por npm, sin administrador) y otra vez codex --version.
        Esperado: un número de versión.
