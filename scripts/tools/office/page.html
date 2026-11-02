@@ -45,6 +45,7 @@ h2{font:700 .8rem var(--display);text-transform:uppercase;letter-spacing:.08em;c
 .ico{display:inline-block;width:12px;height:12px;line-height:12px;text-align:center;margin-right:4px;vertical-align:-2px;font-weight:700}.ico svg{display:block;width:100%;height:100%}
 .sobre{position:absolute;z-index:4000;transform:translate(-50%,-140%);pointer-events:auto;cursor:pointer;display:flex;flex-direction:column;align-items:center;background:#f4f1ea;color:#1d1030;border:0;border-radius:8px;padding:3px 9px;font:700 11.5px var(--display);white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.45)}
 .sobre small{font:500 10.5px var(--body)}
+.sobre .dib{font-size:20px;line-height:1;color:#1f6feb;margin-right:6px;vertical-align:-3px}
 .sobre:focus-visible{outline:2px solid #ff6fc0;outline-offset:2px}
 .tag .more{display:flex;align-items:center;gap:8px;font:500 11px var(--mono);color:#b6a9c9}
 .tag .fin{max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -570,7 +571,7 @@ function pintarCharla(c,leyendo){const mk=(t,cl,x)=>{const e=document.createElem
   seccion("Con la coordinadora",(d.conCoordinadora||[]).map(m=>msg(m.propio?sel:m.de,m.at,m.texto,m.propio)),"No hay mensajes con la coordinadora en lo último de su conversación.");
   panel.append(mk("p","m","Últimos 10 mensajes. "+ALCANCE));alFinal()}
 // ---------- los sobres: quién le habla a quién, unos segundos, sin el texto ----------
-const VUELO_MS=3000,MAX_VUELOS=3,vuelos=[],vistos=new Set(),a3=new THREE.Vector3(),b3=new THREE.Vector3(),sobreGeo=new THREE.BoxGeometry(.46,.05,.32),solapaGeo=new THREE.BoxGeometry(.3,.02,.2),sobreMat=new THREE.MeshBasicMaterial({color:"#f4f1ea",toneMapped:false}),solapaMat=new THREE.MeshBasicMaterial({color:"#ff6fc0",toneMapped:false});
+const VUELO_MS=3000,MAX_VUELOS=3,vuelos=[],vistos=new Set(),a3=new THREE.Vector3(),b3=new THREE.Vector3(),sobreGeo=new THREE.BoxGeometry(1.1,.1,.74),solapaGeo=new THREE.BoxGeometry(.72,.03,.46),sobreMat=new THREE.MeshBasicMaterial({color:"#1f6feb",toneMapped:false}),solapaMat=new THREE.MeshBasicMaterial({color:"#dbe9ff",toneMapped:false});
 function lanzarSobres(){const nuevos=[];let delSel=false;
   for(const s of T.sobres()){if(vistos.has(s.id))continue;vistos.add(s.id);if(sel&&(s.de===sel||s.a===sel))delSel=true;nuevos.push(s)}
   if(delSel)charla=null;
@@ -578,8 +579,8 @@ function lanzarSobres(){const nuevos=[];let delSel=false;
   if(!nuevos.length||!enVista||document.hidden)return;
   const conLugar=nuevos.map(s=>({s,de:desks.find(d=>d.agent.nombre===s.de),a:desks.find(d=>d.agent.nombre===s.a)})).filter(v=>v.de&&v.a&&v.de!==v.a);
   const van=conLugar.slice(-Math.max(0,MAX_VUELOS-vuelos.length)),resto=conLugar.length-van.length;
-  van.forEach((v,i)=>{const m=new THREE.Group();m.add(new THREE.Mesh(sobreGeo,sobreMat));const f=new THREE.Mesh(solapaGeo,solapaMat);f.position.y=.035;m.add(f);scene.add(m);
-    const e=document.createElement("button");e.type="button";e.className="sobre";e.textContent=v.s.de+" → "+v.s.a;e.onclick=()=>abrir(v.s.de);
+  van.forEach((v,i)=>{const m=new THREE.Group();m.add(new THREE.Mesh(sobreGeo,sobreMat));const f=new THREE.Mesh(solapaGeo,solapaMat);f.position.y=.065;m.add(f);scene.add(m);
+    const e=document.createElement("button");e.type="button";e.className="sobre";const fila=document.createElement("span"),dib=document.createElement("span");dib.className="dib";dib.textContent="✉";dib.setAttribute("aria-hidden","true");fila.append(dib,v.s.de+" → "+v.s.a);e.append(fila);e.onclick=()=>abrir(v.s.de);
     if(resto&&i===van.length-1){const x=document.createElement("small");x.textContent="y "+resto+(resto===1?" mensaje más":" mensajes más");e.append(x)}
     labelsEl.appendChild(e);const vuelo={m,e,de:v.de,a:v.a,t0:performance.now()};vuelos.push(vuelo);
     if(reduce)setTimeout(()=>{quitarVuelo(vuelo);despertar()},VUELO_MS)});
