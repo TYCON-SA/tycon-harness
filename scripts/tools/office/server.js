@@ -125,11 +125,14 @@ async function serve() {
   // la dirección del sitio se lee una vez, al arrancar: no cambia mientras la página está abierta
   const site = office.readSiteUrl();
   const siteUrl = async () => site;
+  // el umbral de la sesión callada, también una vez: la página lo usa con su propio reloj
+  const quiet = office.readQuietMinutes();
+  const quietMinutes = async () => quiet;
 
   // la foto: lo mismo que la foto fija, más lo que este proceso no pudo hacer
   const snapshot = async () => {
     counters.reads += 1;
-    const data = await office.collect({ home, queryAll: query, siteUrl });
+    const data = await office.collect({ home, queryAll: query, siteUrl, quietMinutes });
     data.unreadable.push(...notes);
     const readAt = query.readAt();
     if (readAt != null) data.meta.pedidosLeidos = hhmm(readAt);

@@ -706,6 +706,10 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   edita acá: se la pide a su sesión. La carpeta donde quedan las firmas del dueño es de cada máquina y no se pone acá.
   Queda en `team-profile.json` → `coordination.max_working` y `coordination.session_names`; la receta entera está en
   `guides/coordination.md`.
+- **La oficina de /office**: cuántos minutos sin novedades tiene que pasar una sesión que trabaja para que la oficina diga
+  «sin novedades desde las HH:MM» (de 1 a 1440; sin valor, 15). Lo mide la página con su propio reloj, sin preguntarle
+  nada a la máquina; una sesión en un paso largo sigue viva y sólo se marca callada. Queda en `team-profile.json` →
+  `office.quiet_minutes`.
 - **Integraciones**: qué servicios usa cada máquina (el reloj de horas, la memoria, el buzón, la noche, el índice de
   código de CodeGraph); una máquina puede apagar una para ella sola. Con CodeGraph prendido, el instalador se lo instala
   a cada dev y el arnés avisa si una máquina no lo tiene. Queda en `team-profile.json`, en el repo del perfil. Lo

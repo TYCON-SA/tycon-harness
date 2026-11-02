@@ -726,6 +726,10 @@ be, to copy it and open the request by hand.
   not edited here: they ask their session for it. The folder where the owner's signatures are left belongs to each
   machine and is not set here. It lives in `team-profile.json` → `coordination.max_working` and
   `coordination.session_names`; the whole recipe is in `guides/coordination.en.md`.
+- **The /office office**: how many minutes without news a working session has to go before the office says «no news
+  since HH:MM» (1 to 1440; empty means 15). The page measures it with its own clock, without asking the machine
+  anything; a session in a long step is still alive and is only marked as quiet. It lives in `team-profile.json` →
+  `office.quiet_minutes`.
 - **Integrations**: which services each machine uses (the time clock, the memory, the mailbox, the
   night, the CodeGraph code index); a machine can turn one off for itself. With CodeGraph on, the installer sets it up
   for each dev and the harness warns when a machine lacks it. It lives in `team-profile.json`, in the profile repo. A
