@@ -21,6 +21,9 @@
  * `/conversacion?s=<nombre>` contesta los últimos mensajes de una persona de la oficina, y se lee sólo cuando alguien la
  * toca. Ese texto no entra en la foto: lo que se conecte a la foto no lo recibe.
  *
+ * La foto se arma en un hilo aparte, porque lanza git y lee muchos archivos sin soltar el hilo: acá adentro, la página y los
+ * vigilantes siguen contestando mientras tanto. Ese hilo recuerda de una foto a la otra lo que no cambió (`createMemory`).
+ *
  * La foto, la vigilancia y la conexión de la página son tres partes separadas: conectar este mismo proceso a otro
  * destino cambia sólo la última.
  */
@@ -30,6 +33,7 @@ const path = require('path');
 const http = require('http');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
+const { Worker, isMainThread, parentPort, workerData } = require('worker_threads');
 
 const WebSocket = require('./vendor/ws');
 
@@ -112,40 +116,87 @@ function watchAll(dirs, onChange, notes) {
 
 const hhmm = (ms) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 
+// El hilo de la foto: arma una por cada mensaje y contesta con ella, con lo que el proceso necesita para leer una
+// conversación y con cuánto consultó. Lo que recuerda de una foto a la otra vive sólo acá.
+function photoThread() {
+  const office = require(path.join(ROOT, 'scripts', 'tools', 'office.js'));
+  const { queryAll, readPrs, createMemory } = require(path.join(ROOT, 'scripts', 'tools', 'work-in-progress.js'));
+  const home = os.homedir();
+  const counted = { queries: 0, intervals: 0 };
+  if (process.env.TYCON_OFFICE_TEST === '1') {
+    const every = global.setInterval;
+    global.setInterval = (...a) => { counted.intervals += 1; return every(...a); };
+  }
+  const query = cachedQuery(async (wanted) => { counted.queries += 1; return queryAll(wanted); });
+  // los pedidos que nombra el tablero, con el mismo recuerdo de un minuto
+  const queryPrs = cachedQuery(async (wanted) => { counted.queries += 1; return readPrs(wanted); });
+  const memory = createMemory();
+  // hasta dónde se leyó cada conversación y a quién corresponde cada nombre
+  const envelopes = office.createEnvelopes();
+  // la dirección del sitio y el umbral de la sesión callada se leen una vez: no cambian mientras la página está abierta
+  let once = null;
+  parentPort.on('message', async () => {
+    try {
+      if (!once) once = { site: office.readSiteUrl(), quiet: office.readQuietMinutes() };
+      const data = await office.collect({ home, queryAll: query, queryPrs, siteUrl: async () => once.site, quietMinutes: async () => once.quiet, envelopes, memory });
+      parentPort.postMessage({ data, files: [...envelopes.files], coordinator: envelopes.coordinator, readAt: query.readAt(), counted });
+    } catch (e) {
+      parentPort.postMessage({ error: e && e.message ? e.message : String(e), stack: e && e.stack });
+    }
+  });
+}
+
+// Le pide una foto al hilo. Si el hilo se cae, esa foto falla y la próxima arranca otro, sin lo que recordaba.
+function photoAsker() {
+  let worker = null;
+  let waiting = null;
+  const settle = (fn, value) => { const w = waiting; waiting = null; if (w) w[fn](value); };
+  const start = () => {
+    const w = new Worker(__filename, { workerData: { officePhoto: true } });
+    const gone = (e) => { if (worker === w) worker = null; settle('reject', e); };
+    w.on('message', (m) => {
+      if (!m.error) { settle('resolve', m); return; }
+      settle('reject', Object.assign(new Error(m.error), m.stack ? { stack: m.stack } : {}));
+    });
+    w.on('error', gone);
+    w.on('exit', () => gone(new Error('el hilo de la foto se cerró')));
+    return w;
+  };
+  return () => new Promise((resolve, reject) => {
+    waiting = { resolve, reject };
+    if (!worker) worker = start();
+    worker.postMessage('foto');
+  });
+}
+
 async function serve() {
   const office = require(path.join(ROOT, 'scripts', 'tools', 'office.js'));
-  const { queryAll, readPrs } = require(path.join(ROOT, 'scripts', 'tools', 'work-in-progress.js'));
   const home = os.homedir();
   const sdir = stateDir(home);
   const dir = officeDirOf(sdir);
   const lockFile = lockPathOf(sdir);
   const testing = process.env.TYCON_OFFICE_TEST === '1';
   const token = crypto.randomBytes(16).toString('hex');
-  const counters = { reads: 0, sends: 0, queries: 0, intervals: 0, prRefreshes: 0 };
+  const counters = { reads: 0, sends: 0, intervals: 0, prRefreshes: 0 };
   // en las pruebas, cada reloj que repite queda contado: el proceso no consulta cada tanto
   if (testing) {
     const every = global.setInterval;
     global.setInterval = (...a) => { counters.intervals += 1; return every(...a); };
   }
   const notes = [];
-  const query = cachedQuery(async (wanted) => { counters.queries += 1; return queryAll(wanted); });
-  // los pedidos que nombra el tablero, con el mismo recuerdo de un minuto
-  const queryPrs = cachedQuery(async (wanted) => { counters.queries += 1; return readPrs(wanted); });
-  // la dirección del sitio se lee una vez, al arrancar: no cambia mientras la página está abierta
-  const site = office.readSiteUrl();
-  const siteUrl = async () => site;
-  // el umbral de la sesión callada, también una vez: la página lo usa con su propio reloj
-  const quiet = office.readQuietMinutes();
-  const quietMinutes = async () => quiet;
-  // hasta dónde se leyó cada conversación y a quién corresponde cada nombre: vive sólo en este proceso
-  const envelopes = office.createEnvelopes();
+  const askPhoto = photoAsker();
+  // a quién corresponde cada nombre, según la última foto: vive sólo en este proceso
+  const envelopes = { files: new Map(), coordinator: null };
+  let threadCounted = { queries: 0, intervals: 0 };
 
   // la foto: lo mismo que la foto fija, más lo que este proceso no pudo hacer
   const snapshot = async () => {
     counters.reads += 1;
-    const data = await office.collect({ home, queryAll: query, queryPrs, siteUrl, quietMinutes, envelopes });
+    const { data, files, coordinator, readAt, counted } = await askPhoto();
+    envelopes.files = new Map(files);
+    envelopes.coordinator = coordinator;
+    threadCounted = counted;
     data.unreadable.push(...notes);
-    const readAt = query.readAt();
     if (readAt != null) data.meta.pedidosLeidos = hhmm(readAt);
     return data;
   };
@@ -262,7 +313,7 @@ async function serve() {
       });
       return;
     }
-    if (testing && url.pathname === '/debug/counters') { send('application/json', JSON.stringify(counters)); return; }
+    if (testing && url.pathname === '/debug/counters') { send('application/json', JSON.stringify({ ...counters, queries: threadCounted.queries, intervals: counters.intervals + threadCounted.intervals })); return; }
     res.writeHead(404); res.end();
   });
 
@@ -348,7 +399,8 @@ async function serve() {
   if (again) { again = false; schedule(); }
 }
 
-if (require.main === module) {
+if (!isMainThread && workerData && workerData.officePhoto) photoThread();
+else if (require.main === module) {
   serve().catch((e) => {
     process.stderr.write(`no arrancó: ${e && e.message ? e.message : e}\n`);
     process.exit(1);
