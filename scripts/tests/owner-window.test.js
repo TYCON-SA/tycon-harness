@@ -72,8 +72,8 @@ const SIN_DELEGACION = () => ({ ok: false, motivo: 'sin delegación en la prueba
 // sin `aprobador`, el texto de un repo del arnés: el de verdad mira el remoto de la carpeta del evento
 const { APPROVERS } = require(path.join(__dirname, '..', 'lib', 'approver.js'));
 const DEL_ARNES = () => APPROVERS.maintainers;
-const pedir = (casa, cmd, o = {}) => ow.decidir({ evento: evento(cmd, o.evento), escapes: o.escapes || [], arbol: o.arbol || arbolDelFreno(), pid: 201, casa, ahora: o.ahora || AHORA, delegacion: o.delegacion || SIN_DELEGACION, clasificar: o.clasificar || (() => null), comprobar: o.comprobar || (() => null), aprobador: o.aprobador || DEL_ARNES });
-const registros = (casa) => { try { return fs.readdirSync(ow.carpeta(casa)); } catch (_) { return []; } };
+const pedir = (casa, cmd, o = {}) => ow.decidir({ evento: evento(cmd, o.evento), escapes: o.escapes || [], arbol: o.arbol || arbolDelFreno(), pid: 201, casa, ahora: o.ahora || AHORA, delegacion: o.delegacion || SIN_DELEGACION, clasificar: o.clasificar || (() => null), comprobar: o.comprobar || (() => null), aprobador: o.aprobador || DEL_ARNES, aprobaciones: o.aprobaciones });
+const registros =(casa) => { try { return fs.readdirSync(ow.carpeta(casa)); } catch (_) { return []; } };
 const vigentes = (casa) => registros(casa).filter((f) => f.endsWith('.json'));
 const gates = (casa) => { try { return fs.readFileSync(path.join(casa, '.claude', '.tycon-pipeline', 'gates.log'), 'utf8').split('\n').filter(Boolean).map(JSON.parse); } catch (_) { return []; } };
 
@@ -2360,6 +2360,7 @@ const oaReal = require('../lib/owner-approvals.js');
 const aprobacionesDePrueba = ({ coordinadora = null } = {}) => ({
   buscar: (o) => oaReal.buscar({ ...o, validar: () => ({ ok: true }) }),
   consumir: oaReal.consumir,
+  devolver: oaReal.devolver,
   coordinadoraConfirmada: () => coordinadora,
 });
 const pedirSinVentana = (casa, cmd, o = {}) => ow.decidir({ evento: evento(cmd, { ...DE_LA_COORD, permission_mode: 'bypassPermissions', ...(o.evento || {}) }),
@@ -2471,6 +2472,73 @@ test('Aprobacion_RutinaSinAprobacion_SigueHechaYAvisada_ConAprobacionEsDeLaPerso
   const r = pedirSinVentana(casa2, SAVE);
   assert.strictEqual(r.via, 'click');
   assert.match(r.texto, /tu click en el cuadro de opciones/);
+});
+
+test('Aprobacion_GanaALaDelegacion_LaFirmaEsDeLaPersonaYSeUsaUnaVez', (t) => {
+  const delegaTodo = delegacionReal({ perfil: { ...PERFIL, delegated_signing: ['plan-approval', 'save', 'runtime-waiver'] } });
+  const RUNTIME = `node ${MARKER} runtime-waiver ${HISTORIA.story} --acs 1 --for-session ses-a`;
+  const casos = [['plan-approval', PLAN, PLAN_ARGV], ['save', SAVE, SAVE_ARGV],
+    ['runtime-waiver', RUNTIME, [MARKER, 'runtime-waiver', HISTORIA.story, '--acs', '1', '--for-session', 'ses-a']]];
+  for (const [firma, cmd, argv] of casos) {
+    const casa = casaConDesignada(t);
+    if (firma === 'runtime-waiver') tresParaOtra(casa);
+    const pide = (modo) => pedir(casa, cmd, { evento: { ...DE_LA_COORD, ...(modo ? { permission_mode: modo } : {}) }, delegacion: delegaTodo, aprobaciones: aprobacionesDePrueba() });
+    // sin aprobación, la delegación como siempre: el guion decide con sus controles
+    assert.strictEqual(pide('bypassPermissions').via, 'delegacion', firma);
+    // el «aprobado» vale también en una pestaña que pregunta: lo que la delegación firmaría, ahora lo firma la persona
+    anotarAprobacion(casa, 'ses-coord');
+    const r = pide('default');
+    assert.deepStrictEqual([r.decision, r.via], ['allow', 'mensaje'], `${firma}: ${r.texto}`);
+    // el guion ya no pasa por los controles de la delegación: los de una persona en la ventana
+    const vistas = [];
+    const e = ow.exigir({ firma, argv, pid: 301, arbol: arbolDelGuion(casa, cmd), casa, ahora: AHORA + 60000, propia: 'ses-coord', notificar: () => {},
+      antes: (via) => { vistas.push(via); return via === 'delegacion' ? { codigo: 2, motivo: 'esto es delicado' } : null; } });
+    assert.strictEqual(e.codigo, 0, `${firma}: ${e.motivo}`);
+    assert.strictEqual(e.via, 'mensaje', firma);
+    assert.deepStrictEqual(vistas, ['ventana'], firma);
+    assert.strictEqual(ow.quienFirmo(e, 'el-dev').quien, 'el-dev', firma);
+    // la aprobación se gastó: el siguiente pedido vuelve a la delegación, y lo delicado se frena
+    const otra = pide();
+    assert.strictEqual(otra.via, 'delegacion', firma);
+    const frena = ow.exigir({ firma, argv, pid: 301, arbol: arbolDelGuion(casa, cmd), casa, ahora: AHORA + 60000, propia: 'ses-coord', antes: () => ({ codigo: 2, motivo: 'esto es delicado' }) });
+    assert.strictEqual(frena.codigo, 2, firma);
+    assert.match(frena.motivo, /^esto es delicado\. Si lo que frena es que no firma una persona: /, firma);
+    assert.match(frena.motivo, new RegExp(`«firma ${firma}» y «sesión ses-a»`), firma);
+    assert.match(frena.motivo, /sin usar\)$/, firma);
+  }
+});
+
+test('Aprobacion_SinRegistroNoSeGasta_SiOtraLaGanoNoQuedaPedido', (t) => {
+  // el registro no se puede escribir: se niega y la aprobación sigue sin usar
+  const casa = casaNueva(t);
+  anotarAprobacion(casa, 'ses-coord');
+  fs.mkdirSync(path.dirname(ow.carpeta(casa)), { recursive: true });
+  fs.writeFileSync(ow.carpeta(casa), 'no es una carpeta');
+  const r = pedirSinVentana(casa, PERDIDA);
+  assert.strictEqual(r.decision, 'deny', r.texto);
+  assert.match(r.texto, /no se pudo escribir el registro/);
+  fs.rmSync(ow.carpeta(casa));
+  assert.strictEqual(pedirSinVentana(casa, PERDIDA).via, 'mensaje', 'la aprobación se puede usar todavía');
+  // otra firma la gastó en el medio: se niega y no queda un pedido vigente que el guion pueda usar
+  const casa2 = casaNueva(t);
+  anotarAprobacion(casa2, 'ses-coord');
+  const ganada = { ...aprobacionesDePrueba(), consumir: () => ({ ok: false, motivo: 'esa aprobación ya la usó otra firma' }) };
+  const n = pedirSinVentana(casa2, PERDIDA, { aprobaciones: ganada });
+  assert.strictEqual(n.decision, 'deny', n.texto);
+  assert.match(n.texto, /ya la usó otra firma/);
+  assert.deepStrictEqual(vigentes(casa2), []);
+});
+
+test('Aprobacion_QueNoValeConDelegacion_NoLaGastaYFirmaLaDelegacion', (t) => {
+  const casa = casaConDesignada(t);
+  anotarAprobacion(casa, 'ses-coord');
+  const consumidas = [];
+  const noVale = { ...aprobacionesDePrueba(), buscar: () => ({ ok: false, motivo: 'no nombra la firma' }), consumir: (...a) => { consumidas.push(a); return { ok: true }; } };
+  const r = pedir(casa, PLAN, { evento: DE_LA_COORD, delegacion: delegacionReal(), aprobaciones: noVale });
+  assert.strictEqual(r.via, 'delegacion', r.texto);
+  assert.deepStrictEqual(consumidas, []);
+  const reg = JSON.parse(fs.readFileSync(path.join(ow.carpeta(casa), vigentes(casa)[0]), 'utf8'));
+  assert.strictEqual(reg.sin_aprobacion, 'no nombra la firma');
 });
 
 test('Aprobacion_DeOtraCopiaDeLaSesion_NoVale', (t) => {
