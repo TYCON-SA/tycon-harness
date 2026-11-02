@@ -1129,7 +1129,7 @@ function readModelSettings(home) {
 
 // Los tokens de cada persona de la oficina, por nombre. Quedan al nivel de arriba de la foto, como los sobres: la lista de
 // lo que viaja al sitio no los trae. Lo que ya se contó no se vuelve a leer (`counts`).
-function readTokens(wip, states, counts, { home, projectsDir, codexHome }) {
+function readTokens(wip, states, counts, { home, nowMs, projectsDir, codexHome, cxNames }) {
   const dir = projectsDir || path.join(claudeDir(home), 'projects');
   const modelSettings = readModelSettings(home);
   const out = {};
@@ -1138,9 +1138,12 @@ function readTokens(wip, states, counts, { home, projectsDir, codexHome }) {
     if (file && !out[p.name]) out[p.name] = tokensCard(readSessionTokens(file, counts, { modelSettings }));
   }
   for (const f of states) {
-    if (f.tool !== 'codex' || !f.name || out[f.name]) continue;
-    const file = codexTranscript(codexHome || path.join(home, '.codex'), f.session, {});
-    if (file) out[f.name] = tokensCard(readSessionTokens(file, counts, {}));
+    if (f.tool !== 'codex') continue;
+    // el mismo nombre con que sale su tarjeta
+    const name = f.name || cxNames.get(f.session) || String(f.session).slice(0, 8);
+    if (out[name]) continue;
+    const file = codexTranscript(codexHome || path.join(home, '.codex'), f.session, { now: nowMs });
+    if (file) out[name] = tokensCard(readSessionTokens(file, counts, {}));
   }
   return out;
 }
@@ -1319,7 +1322,7 @@ async function collect(opts = {}) {
   const waitingPrs = await askWaitingPrs(wip, open, opts, remembered.prsEnded);
   const { data, promises } = buildOffice({ wip, signatures, coordinatorSid, coordinatorName, promises: saved.promises, nowMs, sessionFiles: ss.states, codexNames: cxNames, quietMin, board: board.board, prAnswers, transcripts, lastWrites, processes, openPrs: open.prs, openPrsNote: open.note, waitingPrs });
   // sólo con la oficina abierta: la primera pasada lee conversaciones enteras, y la foto fija y `--json` empezarían de cero cada vez
-  if (opts.envelopes && !opts.noTranscripts) data.tokens = readTokens(wip, ss.states, remembered.tokens, { home, projectsDir: opts.projectsDir, codexHome: opts.codexHome });
+  if (opts.envelopes && !opts.noTranscripts) data.tokens = readTokens(wip, ss.states, remembered.tokens, { home, nowMs, projectsDir: opts.projectsDir, codexHome: opts.codexHome, cxNames });
   // lo del tablero que no es una fila: su resumen, lo que dice que le toca al dueño y cuándo se escribió
   data.tablas = buildTables({ board: board.board, boardWrittenAt: board.writtenAt, sessionTables: readSessionTables(sdir, nowMs, problems), kanban: data.kanban, nowMs });
   data.tablero = board.board ? { actualizado: board.board.actualizado, resumen: board.board.resumen, teToca: board.board.teToca } : null;

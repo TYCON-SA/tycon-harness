@@ -2763,6 +2763,22 @@ test('T268 Tokens_OnlyInTheOpenOffice: con la oficina abierta llegan por nombre;
   assert.strictEqual(pick(live, m.home).tokens, undefined, 'no viajan al sitio');
 });
 
+test('T270 Tokens_CodexWithoutName: una sesión de Codex sin nombre propio tiene sus tokens bajo el nombre de su tarjeta', async () => {
+  const m = parkMachine();
+  const now = Date.now();
+  fs.mkdirSync(path.join(m.state, 'sessions'), { recursive: true });
+  fs.writeFileSync(path.join(m.state, 'sessions', 'cx-1.json'), JSON.stringify(sessionFile('cx-1', { tool: 'codex', pid: null, step: 'Implementar', sentence: 'Va por el paso «Implementar».', updatedAt: atIso(now - 60000) })));
+  const d = new Date(now);
+  const dir = path.join(m.home, '.codex', 'sessions', String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0'));
+  fs.mkdirSync(dir, { recursive: true });
+  const info = { total_token_usage: { input_tokens: 532881, cached_input_tokens: 483200, output_tokens: 4753 }, last_token_usage: { input_tokens: 64593 }, model_context_window: 258400 };
+  fs.writeFileSync(path.join(dir, 'rollout-2026-cx-1.jsonl'), `${JSON.stringify({ type: 'event_msg', payload: { type: 'token_count', info } })}\n`);
+  const data = await collectAt(m, now, { envelopes: createEnvelopes() });
+  const card = data.agents.find((a) => a.nombre === 'cx-1');
+  assert.ok(card, 'tiene su tarjeta');
+  assert.deepStrictEqual(data.tokens['cx-1'], { contexto: '65 mil de 258 mil · 25 %', consumidos: 'lectura 50 mil · escritura 5 mil · lecturas de caché 483 mil', agentes: 0 });
+});
+
 test('T269 WaysOfWorking_FinishedRunNote: una nota de la sesión cuya ejecución terminó sigue diciendo su historia', async () => {
   const m = parkMachine();
   const now = Date.now();
