@@ -266,6 +266,12 @@ Guardar se autoriza en la ventana de permiso, no con una firma: autorización si
 y lo que no se deshace ya tiene su firma de control. La firma `save` y `marker.js approve-save` siguen en el catálogo,
 pero el freno ya no las pide.
 
+El control del commit corre además el freno de publicación sobre lo que agrega ese commit: lo que el empuje frenaría (un
+secreto, un nombre de la lista) frena el commit, y no queda historia que reescribir. La ventana ya preguntó, así que ese
+sí se pierde. Sin poder mirar, el commit sigue con un aviso, y el empuje vuelve a mirar. El mensaje, el autor, los commits
+anteriores y otro remoto público que no sea `origin` los sigue mirando sólo el empuje. Sin la lista, en la CI o en una
+máquina de afuera, no mira.
+
 El gancho del comando lo hace cumplir, no la memoria del agente. En una corrida o en un camino rápido (el carril
 firmado de `marker.js adhoc set`, sin vencer), antes de todo `git commit`, `git push`
 y todo pedido que se crea o se mergea, el gancho le pregunta a la persona en la ventana de permiso de siempre; con el
