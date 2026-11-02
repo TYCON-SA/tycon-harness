@@ -41,7 +41,13 @@ h2{font:700 .8rem var(--display);text-transform:uppercase;letter-spacing:.08em;c
 .tag .st{display:flex;align-items:center;gap:6px;font-size:11.5px;color:#d9d0ea}
 .tag .dot{width:8px;height:8px;border-radius:50%;background:var(--c);box-shadow:0 0 8px var(--c);flex:none}
 .tag .es{color:var(--c)}
+.tag .como{font:600 10.5px var(--mono);color:#cfc6e4;letter-spacing:.01em}
+.ico{display:inline-block;width:12px;height:12px;line-height:12px;text-align:center;margin-right:4px;vertical-align:-2px;font-weight:700}.ico svg{display:block;width:100%;height:100%}
+.sobre{position:absolute;z-index:4000;transform:translate(-50%,-140%);pointer-events:auto;cursor:pointer;display:flex;flex-direction:column;align-items:center;background:#f4f1ea;color:#1d1030;border:0;border-radius:8px;padding:3px 9px;font:700 11.5px var(--display);white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.45)}
+.sobre small{font:500 10.5px var(--body)}
+.sobre:focus-visible{outline:2px solid #ff6fc0;outline-offset:2px}
 .tag .more{display:flex;align-items:center;gap:8px;font:500 11px var(--mono);color:#b6a9c9}
+.tag .fin{max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tag em,.panel3 em{font-style:normal} em.late{color:#ff7b7b} em.early{color:#5fe39a} em.ontime{color:#b6a9c9}
 .tag .bar{width:46px;height:4px;border-radius:3px;background:rgba(255,255,255,.14);overflow:hidden}
 .tag .bar i{display:block;height:100%;background:var(--c)}
@@ -53,7 +59,7 @@ h2{font:700 .8rem var(--display);text-transform:uppercase;letter-spacing:.08em;c
 .tag.sel{border-color:var(--c)}
 .compact .tag{padding:4px 8px 4px 5px;gap:5px}
 .compact .tag .bot{width:18px;height:18px}
-.compact .tag .es,.compact .tag .more{display:none}
+.compact .tag .es,.compact .tag .more,.compact .tag .como{display:none}
 .compact .tag b{font-size:12px}
 .panel3{position:absolute;z-index:5000;right:12px;top:12px;width:min(330px,calc(100% - 24px));max-height:calc(100% - 24px);overflow:auto;background:#181422;border:1px solid rgba(255,255,255,.14);border-radius:14px;padding:14px 16px;box-shadow:0 12px 30px rgba(0,0,0,.5);color:#f4eefc}
 .panel3 h3{margin:0 0 6px;font:700 1.05rem var(--display);padding-right:20px}
@@ -62,7 +68,15 @@ h2{font:700 .8rem var(--display);text-transform:uppercase;letter-spacing:.08em;c
 .panel3 dt{color:#b6a9c9}.panel3 dd{margin:0;min-width:0;overflow-wrap:anywhere}
 .pbar{display:inline-block;width:110px;height:6px;border-radius:3px;background:rgba(127,127,127,.25);overflow:hidden;vertical-align:middle}
 .pbar i{display:block;height:100%;background:var(--c)}
-.panel3.wide{width:min(440px,calc(100% - 24px))}
+.panel3.wide,.panel3.charla{width:min(440px,calc(100% - 24px))}
+.panel3 .chat{display:flex;flex-direction:column;gap:6px;max-height:38vh;overflow:auto;padding-right:2px}
+.panel3 .msg{display:flex;flex-direction:column;gap:4px;flex:none;max-width:88%;align-self:flex-start;background:rgba(255,255,255,.08);border-radius:10px;padding:6px 10px;font-size:13px;line-height:1.4;overflow-wrap:anywhere}
+.panel3 .msg.mio{align-self:flex-end;background:rgba(90,169,255,.2)}
+.panel3 .msg b{font:600 11.5px var(--mono);color:#cfc6e4}
+.panel3 .msg p{margin:0}.panel3 .msg strong{font-weight:700}
+.panel3 .msg code{font:500 12px var(--mono);background:rgba(0,0,0,.3);border-radius:4px;padding:0 3px}
+.panel3 .msg pre{margin:0;background:rgba(0,0,0,.3);border-radius:6px;padding:6px 8px;white-space:pre-wrap;overflow-wrap:anywhere}.panel3 .msg pre code{background:none;padding:0}
+.panel3 .msg ul,.panel3 .msg ol{margin:0;padding-left:18px;display:block;font-size:13px}.panel3 .msg li{margin:2px 0}
 .panel3 h4{margin:14px 0 6px;font:700 .78rem var(--display);text-transform:uppercase;letter-spacing:.07em}
 .panel3 .counts{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:8px;margin-top:6px}
 .panel3 .cnt{background:rgba(255,255,255,.06);border-left:4px solid var(--k);border-radius:8px;padding:6px 10px;display:flex;flex-direction:column}
@@ -220,7 +234,7 @@ function renderCrew(){const c=document.getElementById("crew");c.replaceChildren(
     pintarFicha(a,k,false);c.appendChild(k)})}
 // lo que se dice de una sesión, de un solo lugar: la tarjeta y el panel pintan esta lista y sólo cambia su estilo
 function ficha(a){const r=[],add=(k,v,x)=>{if(v!=null&&v!=="")r.push({k,v,...x})};
-  add("Trabajo",a.titulo);add("De la historia",a.historia);add("Encargo",a.encargo);
+  add("Trabajo",a.titulo);add("Cómo trabaja",a.comoTrabaja);add("De la historia",a.historia);add("Encargo",a.encargo);
   if(a.haciendoAhora)add("Haciendo ahora",a.haciendoAhora);else if(a.haciendo!==a.titulo)add("Haciendo",a.haciendo);
   add("Última acción",a.ultimaAccion);add("Espera",a.espera);add("Parada",a.parada);add("Novedades",a.callada);
   const ms=AST[a.mientrasEstado];add("Mientras tanto",a.mientras?a.mientras+(ms?" ("+ms[0].toLowerCase()+")":""):"");
@@ -230,14 +244,23 @@ function ficha(a){const r=[],add=(k,v,x)=>{if(v!=null&&v!=="")r.push({k,v,...x})
   if(a.avance!=null)add("Avance",a.avance+"%",{pct:a.avance});
   add("Carpeta",a.carpeta);return r}
 // la ficha dentro de `box`; los pasos van plegados en la tarjeta y abiertos en el panel
+// El ícono de cómo trabaja: la forma alcanza para distinguirlos, sin color. Se arma con nodos y dibujos fijos, nunca con el
+// texto de la foto. La coordinadora lleva la misma flecha de su estado; la de camino corto termina en una barra.
+const COMO_ICONO={corto:["path",{d:"M3 12h11M10 7l5 5-5 5M20 6v12"}],historia:["path",{d:"M12 6c-2-1.5-5-2-8-2v14c3 0 6 .5 8 2 2-1.5 5-2 8-2V4c-3 0-6 .5-8 2zM12 6v14"}],otra:["circle",{cx:"12",cy:"12",r:"7"}]};
+const COMO_SVG={viewBox:"0 0 24 24",fill:"none",stroke:"currentColor","stroke-width":"2.2","stroke-linecap":"round","stroke-linejoin":"round"};
+function iconoComo(como){const s=document.createElement("span");s.className="ico";s.setAttribute("aria-hidden","true");const t=String(como||"");
+  if(t==="Coordinando"){s.textContent="→";return s}
+  const k=t==="Camino corto"?"corto":t.startsWith("Historia")?"historia":"otra";
+  const NS="http://www.w3.org/2000/svg",nodo=(tag,attrs)=>{const n=document.createElementNS(NS,tag);Object.entries(attrs).forEach(([a,v])=>n.setAttribute(a,v));return n},svg=nodo("svg",COMO_SVG);
+  svg.appendChild(nodo(...COMO_ICONO[k]));s.appendChild(svg);return s}
 function pintarFicha(a,box,abiertos){const dl=el("dl");
   ficha(a).forEach(r=>{const dd=el("dd");if(r.pct!=null){const b=el("span","pbar"),i=el("i");i.style.width=r.pct+"%";b.appendChild(i);dd.appendChild(b);dd.appendChild(document.createTextNode(" "))}
-    dd.appendChild(document.createTextNode(r.v));if(r.dif){const x=el("em",r.cls||null," · "+r.dif);dd.appendChild(x)}dl.appendChild(el("dt",null,r.k));dl.appendChild(dd)});box.appendChild(dl);
+    if(r.k==="Cómo trabaja")dd.appendChild(iconoComo(r.v));dd.appendChild(document.createTextNode(r.v));if(r.dif){const x=el("em",r.cls||null," · "+r.dif);dd.appendChild(x)}dl.appendChild(el("dt",null,r.k));dl.appendChild(dd)});box.appendChild(dl);
   if(a.pasos&&a.pasos.length){const d=el("details","pasos");d.open=abiertos;d.appendChild(el("summary",null,"Pasos de la ejecución"));const ol=el("ol","steps");let now=false;
     a.pasos.forEach(p=>{const cur=!p.done&&!now;if(cur)now=true;const li=el("li",p.done?"done":cur?"now":"");li.appendChild(el("span",null,p.done?"✓":cur?"▸":"·"));li.appendChild(document.createTextNode(p.name));ol.appendChild(li)});d.appendChild(ol);box.appendChild(d)}}
 // sin 3D, la tabla queda abierta y la sala dice por qué
 function sinTresD(msg){const o=document.getElementById("ovl");o.textContent=msg;o.hidden=false;const t=document.getElementById("tablewrap");t.hidden=false;t.open=true}
-window.tablero={agents:()=>agents,items:()=>items,kanban:()=>DATA.kanban||null,meta:()=>meta,site:()=>SITE,AST,SHIRT,fmt,finTxt,sinTresD,pintarFicha};
+window.tablero={agents:()=>agents,items:()=>items,kanban:()=>DATA.kanban||null,meta:()=>meta,site:()=>SITE,sobres:()=>DATA.sobres||[],live:()=>LIVE,AST,SHIRT,fmt,finTxt,sinTresD,pintarFicha,iconoComo};
 // el reloj de la página (decisión 20): cada minuto compara la hora con la última novedad de cada sesión y marca las
 // calladas; sin pid, pasadas las 2 h, la da por inactiva. No consulta nada afuera: mira la hora y los datos que tiene.
 const QUIET_DEFAULT=15,DEAD_MS=2*3600000;
@@ -486,8 +509,8 @@ function animar(d,t){const {up,head,arms}=d.person.userData,e=d.agent.estado,k=t
 let desks=[],sel=null;
 const BOT='<svg class="bot" viewBox="0 0 24 24" fill="none" stroke="#c9b6ff" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="4" y="8" width="16" height="11" rx="4"/><path d="M12 8V4.5"/><circle cx="12" cy="3.5" r="1.2"/><circle cx="9" cy="13" r="1.3" fill="#c9b6ff"/><circle cx="15" cy="13" r="1.3" fill="#c9b6ff"/><path d="M2 12.5v3M22 12.5v3"/></svg>';
 const FX={firma:"!",espera:"⌛",coordina:"→",prueba:"✓",libre:"z",parada:"‖"};
-function nuevoTag(d){const e=document.createElement("button");e.type="button";e.className="tag";e.innerHTML=BOT+'<div class="tx"><b></b><span class="st"><span class="dot"></span><span class="es"></span></span><span class="more"><span class="fin"></span><span class="bar"><i></i></span></span></div><span class="fx"></span>';e.onclick=()=>abrir(d.agent.nombre);labelsEl.appendChild(e);d.el=e}
-function pintarTag(d){const a=d.agent,s=T.AST[a.estado]||[a.estado||"","#999"];d.el.style.setProperty("--c",s[1]);d.el.style.setProperty("--ropa",d.ropa);d.el.querySelector("b").textContent=a.nombre||"";
+function nuevoTag(d){const e=document.createElement("button");e.type="button";e.className="tag";e.innerHTML=BOT+'<div class="tx"><b></b><span class="como"></span><span class="st"><span class="dot"></span><span class="es"></span></span><span class="more"><span class="fin"></span><span class="bar"><i></i></span></span></div><span class="fx"></span>';e.onclick=()=>abrir(d.agent.nombre);labelsEl.appendChild(e);d.el=e}
+function pintarTag(d){const a=d.agent,s=T.AST[a.estado]||[a.estado||"","#999"];d.el.style.setProperty("--c",s[1]);d.el.style.setProperty("--ropa",d.ropa);d.el.querySelector("b").textContent=a.nombre||"";d.el.querySelector(".como").replaceChildren(...(a.comoTrabaja?[T.iconoComo(a.comoTrabaja),a.comoTrabaja]:[]));
   d.el.querySelector(".es").textContent=s[0]+(a.mientras?" · y algo más":"");const f=T.finTxt(a),fin=d.el.querySelector(".fin");fin.replaceChildren();
   if(f){fin.append(f.hora);if(f.dif){const x=document.createElement("em");x.className=f.cls;x.textContent=" · "+f.dif;fin.append(x)}}
   const bar=d.el.querySelector(".bar");bar.hidden=a.avance==null;bar.firstChild.style.width=(a.avance||0)+"%";
@@ -507,10 +530,66 @@ function ubicarTags(){const W=stage.clientWidth,H=stage.clientHeight,cmp=stage.c
     const el=p.d.el,beside=Math.abs(pos[0]-p.ax)>p.w/4;el.style.left=pos[0]+"px";el.style.top=pos[1]+"px";el.style.setProperty("--stem",beside?"0px":Math.max(0,p.ay-pos[1])+"px");el.style.zIndex=String(Math.round(p.ay))})}
 
 // ---------- detalle de la sesión: la misma ficha que su tarjeta ----------
-function abrir(nombre){panel.classList.remove("wide");sel=nombre;const a=T.agents().find(x=>x.nombre===nombre);if(!a){sel=null;panel.hidden=true;return}const s=T.AST[a.estado]||[a.estado||"","#999"];panel.hidden=false;panel.style.setProperty("--c",s[1]);
+// `foto`: lo pidió una foto nueva, no un toque. Mantiene lo que se estaba leyendo y no vuelve a pedir la conversación.
+function abrir(nombre,foto=false){panel.classList.remove("wide");const baja=foto&&sel===nombre?panel.scrollTop:0,leyendo=foto&&sel===nombre?[...panel.querySelectorAll(".chat")].map(c=>c.scrollTop):null;sel=nombre;const a=T.agents().find(x=>x.nombre===nombre);if(!a){sel=null;panel.hidden=true;return}const s=T.AST[a.estado]||[a.estado||"","#999"];panel.hidden=false;panel.style.setProperty("--c",s[1]);
   panel.innerHTML='<button class="close" type="button" aria-label="Cerrar">×</button><h3></h3><span class="chip">● <span class="es"></span></span>';
   panel.querySelector("h3").textContent=a.nombre;panel.querySelector(".es").textContent=s[0];T.pintarFicha(a,panel,true);
-  panel.querySelector(".close").onclick=()=>{sel=null;panel.hidden=true;desks.forEach(pintarTag)};desks.forEach(pintarTag)}
+  panel.querySelector(".close").onclick=()=>{sel=null;panel.hidden=true;panel.classList.remove("charla");desks.forEach(pintarTag)};desks.forEach(pintarTag);
+  panel.classList.toggle("charla",Boolean(T.live()));
+  if(T.live()){if(!foto||!charla||charla.nombre!==nombre)pedirCharla(nombre);else{pintarCharla(charla,leyendo);panel.scrollTop=baja}}}
+// ---------- la conversación: se pide sólo al tocar, y nunca viaja en la foto ----------
+let charla=null,ultimoPedido=0;
+const ALCANCE="Sólo se ven en esta máquina: no se guardan ni se mandan a ningún lado.";
+function pedirCharla(nombre){charla=null;const yo=++ultimoPedido,q=fetch("conversacion?t="+encodeURIComponent(T.live().token)+"&s="+encodeURIComponent(nombre)).then(r=>{if(!r.ok)throw new Error(String(r.status));return r.json()});
+  q.then(datos=>({nombre,datos}),()=>({nombre,falla:true})).then(c=>{if(yo!==ultimoPedido||sel!==nombre)return;charla=c;pintarCharla(c)})}
+// El formato simple de un mensaje: negritas, código y listas. Todo se arma con nodos y textContent, así que lo que traiga
+// el mensaje nunca llega a ser HTML.
+function enLinea(padre,texto){for(const p of String(texto).split(/(\*\*[^*\n]+\*\*|`[^`\n]+`)/)){if(!p)continue;
+  if(p.startsWith("**")&&p.endsWith("**")&&p.length>4){const e=document.createElement("strong");e.textContent=p.slice(2,-2);padre.append(e)}
+  else if(p.startsWith("`")&&p.endsWith("`")&&p.length>2){const e=document.createElement("code");e.textContent=p.slice(1,-1);padre.append(e)}
+  else padre.append(document.createTextNode(p))}}
+function formatear(texto){const out=[];let lista=null,codigo=null;
+  for(const linea of String(texto).split("\n")){
+    if(/^\s*```/.test(linea)){if(codigo){codigo=null}else{const pre=document.createElement("pre");codigo=document.createElement("code");pre.append(codigo);out.push(pre);lista=null}continue}
+    if(codigo){codigo.textContent+=(codigo.textContent?"\n":"")+linea;continue}
+    const it=/^\s*(?:([-*•])|(\d+)[.)])\s+(.*)$/.exec(linea);
+    if(it){const tipo=it[2]?"OL":"UL";if(!lista||lista.tagName!==tipo){lista=document.createElement(tipo);out.push(lista)}const li=document.createElement("li");enLinea(li,it[3]);lista.append(li);continue}
+    lista=null;const limpia=linea.replace(/^\s*#{1,6}\s+/,"");if(!limpia.trim())continue;
+    const p=document.createElement("p");if(limpia!==linea){const f=document.createElement("strong");f.textContent=limpia.replace(/\*\*/g,"");p.append(f)}else enLinea(p,linea);out.push(p)}
+  return out}
+function msg(quien,cuando,texto,mio){const box=document.createElement("div");box.className="msg"+(mio?" mio":"");const b=document.createElement("b"),t=Number(cuando),hh=Number.isFinite(t)&&t>0?new Date(t):null;b.textContent=quien+(hh?" · "+String(hh.getHours()).padStart(2,"0")+":"+String(hh.getMinutes()).padStart(2,"0"):"");box.append(b,...formatear(texto));return box}
+// Abre como un chat: cada conversación en lo último, dentro de su caja, y los datos de la persona quedan a la vista. Una foto
+// nueva no le mueve a nadie lo que estaba leyendo (`leyendo`).
+function pintarCharla(c,leyendo){const mk=(t,cl,x)=>{const e=document.createElement(t);if(cl)e.className=cl;if(x!=null)e.textContent=x;return e},seccion=(titulo,filas,vacio)=>{panel.append(mk("h4",null,titulo));if(!filas.length){panel.append(mk("p","m",vacio));return}const ch=mk("div","chat");filas.forEach(f=>ch.append(f));panel.append(ch)};
+  if(c.falla){panel.append(mk("p","m","No se pudo leer la conversación de esta sesión."));return}
+  const d=c.datos||{};if(d.sinCoordinadora)return;
+  const alFinal=()=>{const chats=[...panel.querySelectorAll(".chat")];chats.forEach((ch,i)=>{ch.scrollTop=leyendo&&leyendo[i]!=null?leyendo[i]:ch.scrollHeight})};
+  if(d.conVos){seccion("Con vos",d.conVos.map(m=>msg(m.quien==="vos"?"Vos":sel,m.at,m.texto,m.quien==="vos")),"No hay mensajes con vos en lo último de su conversación.");
+    seccion("Con las sesiones",(d.conSesiones||[]).map(m=>msg(m.de===sel?sel+" a "+m.a:m.de,m.at,m.texto,m.de===sel)),"No hay mensajes con las sesiones en lo último de su conversación.");
+    panel.append(mk("p","m","Tus últimos 20 mensajes con sus respuestas, y los últimos 10 con las sesiones, en orden. "+ALCANCE+" Las contraseñas y las claves se tapan."));alFinal();return}
+  seccion("Con la coordinadora",(d.conCoordinadora||[]).map(m=>msg(m.propio?sel:m.de,m.at,m.texto,m.propio)),"No hay mensajes con la coordinadora en lo último de su conversación.");
+  panel.append(mk("p","m","Últimos 10 mensajes. "+ALCANCE));alFinal()}
+// ---------- los sobres: quién le habla a quién, unos segundos, sin el texto ----------
+const VUELO_MS=3000,MAX_VUELOS=3,vuelos=[],vistos=new Set(),a3=new THREE.Vector3(),b3=new THREE.Vector3(),sobreGeo=new THREE.BoxGeometry(.46,.05,.32),solapaGeo=new THREE.BoxGeometry(.3,.02,.2),sobreMat=new THREE.MeshBasicMaterial({color:"#f4f1ea",toneMapped:false}),solapaMat=new THREE.MeshBasicMaterial({color:"#ff6fc0",toneMapped:false});
+function lanzarSobres(){const nuevos=[];let delSel=false;
+  for(const s of T.sobres()){if(vistos.has(s.id))continue;vistos.add(s.id);if(sel&&(s.de===sel||s.a===sel))delSel=true;nuevos.push(s)}
+  if(delSel)charla=null;
+  // con la sala fuera de vista no se dibuja: ese mensaje ya pasó
+  if(!nuevos.length||!enVista||document.hidden)return;
+  const conLugar=nuevos.map(s=>({s,de:desks.find(d=>d.agent.nombre===s.de),a:desks.find(d=>d.agent.nombre===s.a)})).filter(v=>v.de&&v.a&&v.de!==v.a);
+  const van=conLugar.slice(-Math.max(0,MAX_VUELOS-vuelos.length)),resto=conLugar.length-van.length;
+  van.forEach((v,i)=>{const m=new THREE.Group();m.add(new THREE.Mesh(sobreGeo,sobreMat));const f=new THREE.Mesh(solapaGeo,solapaMat);f.position.y=.035;m.add(f);scene.add(m);
+    const e=document.createElement("button");e.type="button";e.className="sobre";e.textContent=v.s.de+" → "+v.s.a;e.onclick=()=>abrir(v.s.de);
+    if(resto&&i===van.length-1){const x=document.createElement("small");x.textContent="y "+resto+(resto===1?" mensaje más":" mensajes más");e.append(x)}
+    labelsEl.appendChild(e);const vuelo={m,e,de:v.de,a:v.a,t0:performance.now()};vuelos.push(vuelo);
+    if(reduce)setTimeout(()=>{quitarVuelo(vuelo);despertar()},VUELO_MS)});
+  // mientras vuela, la sala se dibuja como si alguien la tocara; después vuelve a su ritmo
+  if(van.length){hastaTocando=Math.max(hastaTocando,performance.now()+VUELO_MS);despertar()}}
+function quitarVuelo(v){const i=vuelos.indexOf(v);if(i>=0)vuelos.splice(i,1);scene.remove(v.m);v.e.remove()}
+function volar(){const W=stage.clientWidth,H=stage.clientHeight,now=performance.now();
+  for(const v of [...vuelos]){const k=reduce?.5:(now-v.t0)/VUELO_MS;if(k>=1){quitarVuelo(v);continue}
+    a3.copy(v.de.st.position);b3.copy(v.a.st.position);a3.lerp(b3,k);a3.y=1.7+Math.sin(k*Math.PI)*1.1;v.m.position.copy(a3);v.m.rotation.y=k*Math.PI*2;
+    a3.project(cam);v.e.style.left=(a3.x+1)/2*W+"px";v.e.style.top=(1-a3.y)/2*H+"px"}}
 const ray=new THREE.Raycaster(),ptr=new THREE.Vector2();let down=null;
 renderer.domElement.addEventListener("pointerdown",e=>down=[e.clientX,e.clientY]);
 function apuntado(e){const r=renderer.domElement.getBoundingClientRect();ptr.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);ray.setFromCamera(ptr,cam);return ray.intersectObjects([pnlFace,...(sitio()?[signFace]:[]),...desks.map(d=>d.hit)])[0]}
@@ -559,7 +638,7 @@ new IntersectionObserver(es=>{enVista=es[es.length-1].isIntersecting;if(enVista)
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)despertar()});
 function loop(){if(!enVista||document.hidden){timer=null;return}try{dibujar()}finally{programar()}}
 function dibujar(){const t=reduce?2:clock.getElapsedTime();controls.update();
-  desks.forEach(d=>animar(d,t));if(t-lastScr>PANTALLAS_S||lastScr<0){desks.forEach(d=>drawScreen(d,t));lastScr=t}
+  desks.forEach(d=>animar(d,t));volar();if(t-lastScr>PANTALLAS_S||lastScr<0){desks.forEach(d=>drawScreen(d,t));lastScr=t}
   if(cuadros++%SOMBRA_CADA===0)renderer.shadowMap.needsUpdate=true;
   leds.forEach((m,i)=>m.visible=ledRate?Math.sin(t*ledRate*(1+i%5*.3)+i*1.7)>-.5:true);
   steam.forEach(s=>{const p=(t*.35+s.ph)%1;s.m.position.set(6.2+Math.sin(p*9+s.ph*6)*.05,1.35+p*.7,5.6);s.m.material.opacity=.35*(1-p);s.m.scale.setScalar(.6+p*1.2)});
@@ -580,12 +659,12 @@ function alDia(){const ags=desks.map(d=>d.agent);
   aviso(!ags.length?"No hay sesiones abiertas en esta máquina.":extra?"Y "+extra+" sesión(es) más: están en las tarjetas de abajo.":"")}
 T.refresh=()=>{const ps=puestos(),ags=T.agents().slice(0,ps.length);
   if(ags.map(a=>a.nombre).join("\n")!==quienes)poblar();else{desks.forEach((d,i)=>{d.agent=ags[i];pintarTag(d)});lastScr=-1}
-  tagsAlDia=false;despertar();alDia();
-  if(sel){if(T.agents().some(a=>a.nombre===sel))abrir(sel);else{sel=null;panel.hidden=true}}
+  tagsAlDia=false;despertar();alDia();lanzarSobres();
+  if(sel){if(T.agents().some(a=>a.nombre===sel))abrir(sel,true);else{sel=null;panel.hidden=true}}
   else if(!panel.hidden&&panel.classList.contains("wide"))abrirTablero()};
 // dónde está la cámara, para comprobar que una foto nueva no la mueve
 T.camara=()=>cam.position.toArray().map(n=>+n.toFixed(3));
-return function(){resize();poblar();alDia()};
+return function(){resize();poblar();alDia();lanzarSobres()};
 }
 </script>
 </body>

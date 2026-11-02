@@ -2201,7 +2201,7 @@ test('T212 Card_And_Panel_OneFicha: la tarjeta y el panel pintan la misma ficha,
   assert.strictEqual((html.match(/function ficha\(a\)/g) || []).length, 1, 'un solo lugar');
   const crew = html.slice(html.indexOf('function renderCrew()'), html.indexOf('function ficha(a)'));
   assert.match(crew, /pintarFicha\(a,k,false\)/);
-  const abrir = html.slice(html.indexOf('function abrir(nombre)'), html.indexOf('const ray=new THREE.Raycaster()'));
+  const abrir = html.slice(html.indexOf('function abrir(nombre'), html.indexOf('const ray=new THREE.Raycaster()'));
   assert.match(abrir, /T\.pintarFicha\(a,panel,true\)/);
   assert.doesNotMatch(abrir, /row\("Trabajo"/);
   const ficha = html.slice(html.indexOf('function ficha(a)'), html.indexOf('// sin 3D, la tabla queda abierta'));
@@ -2539,4 +2539,75 @@ test('T233 SameText_NoRepeat: si lo que hace es lo que anotó, la tarjeta no lo 
   assert.match(html, /else if\(a\.haciendo!==a\.titulo\)add\("Haciendo",a\.haciendo\)/);
   assert.strictEqual(plainOf('espera que entren el #907 y el 6106', { keepPrs: true }), 'espera que entren el #907 y el 6106');
   assert.strictEqual(plainOf('espera que entren el #907 y el 6106'), 'espera que entren y el 6106', 'los títulos siguen sin números de pedido');
+});
+
+test('T246 WaysOfWorking_FromItsMark: una ejecución es una historia, un arreglo es camino corto, y lo demás es otra cosa', () => {
+  const { data } = buildOffice({
+    nowMs: NOW,
+    wip: wip([
+      { session: 'Ana', extra: { kind: 'pipeline', storyId: '8.181', current: 'implement', title: 'Algo' } },
+      { session: 'Beto', extra: { kind: 'entering', storyId: '8.2', title: 'Otra' } },
+      { session: 'Caro', extra: { kind: 'loose', text: 'Conviene una historia' } },
+      { session: 'Dani', extra: { kind: 'note', text: 'Estoy en camino corto' } },
+      { session: 'Eli', extra: { kind: 'activity' } },
+    ], { free: ['Fede'], freeSids: ['sid-Fede'], freeStatus: ['idle'] }),
+  });
+  const como = Object.fromEntries(data.agents.map((a) => [a.nombre, a.comoTrabaja]));
+  assert.deepStrictEqual(como, { Ana: 'Historia 8.181', Beto: 'Historia 8.2', Caro: 'Camino corto', Dani: 'Otra cosa', Eli: 'Otra cosa', Fede: 'Otra cosa' });
+});
+
+test('T247 Envelopes_OnlyInTheLiveOffice: la página sabe volar un sobre y pedir la conversación, y la foto fija no trae ni sobres ni texto', () => {
+  const html = page({ agents: [], items: [], kanban: null, meta: null });
+  assert.match(html, /lanzarSobres/);
+  assert.match(html, /conversacion\?t=/);
+  assert.match(html, /Tus últimos 20 mensajes con sus respuestas/);
+  const { home } = toyHome();
+  const data = JSON.parse(run(home, ['--json', '--now', new Date(NOW).toISOString()]));
+  assert.strictEqual('sobres' in data, false, '--json no crea los sobres: viven en el proceso de la oficina');
+});
+
+test('T248 WaysOfWorking_Coordinator: la coordinadora dice que coordina, también con un arreglo abierto', () => {
+  const { data } = buildOffice({ nowMs: NOW, coordinatorSid: 'sid-Ana', coordinatorName: 'Ana', wip: wip([{ session: 'Ana', extra: { kind: 'loose', text: 'Un arreglo' } }, { session: 'Beto', extra: { kind: 'loose', text: 'Otro' } }]) });
+  assert.deepStrictEqual(data.agents.map((a) => [a.nombre, a.comoTrabaja]), [['Ana', 'Coordinando'], ['Beto', 'Camino corto']]);
+  const free = buildOffice({ nowMs: NOW, coordinatorName: 'Ana', wip: wip([], { free: ['Ana'], freeSids: ['s'], freeStatus: ['idle'] }) });
+  assert.strictEqual(free.data.agents[0].comoTrabaja, 'Coordinando');
+});
+
+// Un document mínimo: nodos con hijos y texto, sin ningún intérprete de HTML. Si el formato usara innerHTML, se notaría acá.
+function fakeDom() {
+  const node = (tagName) => ({ tagName, children: [], textContent: '', append(...k) { this.children.push(...k); } });
+  return { createElement: (t) => node(t.toUpperCase()), createTextNode: (t) => ({ tagName: '#text', children: [], textContent: t }) };
+}
+const shape = (n) => (n.tagName === '#text' ? n.textContent : [n.tagName.toLowerCase(), ...(n.children.length ? n.children.map(shape) : [n.textContent])]);
+
+test('T249 MessageFormat_NodesOnly: negritas, código y listas se arman con nodos, y lo que traiga el mensaje queda como texto', () => {
+  const html = page({ agents: [], items: [], kanban: null, meta: null });
+  const src = html.slice(html.indexOf('function enLinea('), html.indexOf('function msg('));
+  assert.doesNotMatch(src, /innerHTML|insertAdjacentHTML|outerHTML|document\.write/, 'nada del mensaje se inserta como HTML');
+  const formatear = new Function('document', `${src}; return formatear;`)(fakeDom());
+  const fmt = (t) => formatear(t).map(shape);
+  assert.deepStrictEqual(fmt('Es **importante** y `npm test` anda.'), [['p', 'Es ', ['strong', 'importante'], ' y ', ['code', 'npm test'], ' anda.']]);
+  assert.deepStrictEqual(fmt('Mirá:\n- uno\n- **dos**\n\n1. tres'), [['p', 'Mirá:'], ['ul', ['li', 'uno'], ['li', ['strong', 'dos']]], ['ol', ['li', 'tres']]]);
+  assert.deepStrictEqual(fmt('```js\nconst a = 1;\nconst b = 2;\n```'), [['pre', ['code', 'const a = 1;\nconst b = 2;']]]);
+  assert.deepStrictEqual(fmt('## Título'), [['p', ['strong', 'Título']]]);
+  assert.deepStrictEqual(fmt('<img src=x onerror=alert(1)> **<b>hola</b>**'), [['p', '<img src=x onerror=alert(1)> ', ['strong', '<b>hola</b>']]]);
+  assert.deepStrictEqual(fmt('```\n<script>alert(1)</script>'), [['pre', ['code', '<script>alert(1)</script>']]], 'un bloque sin cerrar queda como código');
+  assert.deepStrictEqual(fmt('5 * 3 y 2 ** 4 sin formato'), [['p', '5 * 3 y 2 ** 4 sin formato']]);
+});
+
+test('T250 WaysOfWorking_Icon: cada caso tiene su forma, y al ícono no entra el texto de la foto', () => {
+  const html = page({ agents: [], items: [], kanban: null, meta: null });
+  const src = html.slice(html.indexOf('const COMO_ICONO='), html.indexOf('function pintarFicha('));
+  const fake = (tag) => ({ tag, attrs: {}, kids: [], textContent: '', setAttribute(k, v) { this.attrs[k] = v; }, appendChild(n) { this.kids.push(n); } });
+  const doc = { createElement: fake, createElementNS: (_, tag) => fake(tag) };
+  const icono = new Function('document', `${src}; return iconoComo;`)(doc);
+  const shape = (t) => { const s = icono(t); return s.textContent || JSON.stringify(s.kids.map((k) => [k.attrs, k.kids.map((p) => [p.tag, p.attrs])])); };
+  const forms = ['Camino corto', 'Historia 8.181', 'Otra cosa', 'Coordinando'].map(shape);
+  assert.strictEqual(new Set(forms).size, 4, 'una forma por caso');
+  assert.strictEqual(shape('Coordinando'), '→', 'la coordinadora conserva la flecha de su estado');
+  assert.strictEqual(shape('Historia'), shape('Historia 8.181'));
+  assert.strictEqual(shape('<img src=x onerror=alert(1)>'), shape('Otra cosa'), 'lo desconocido es otra cosa, y su texto no entra');
+  assert.doesNotMatch(forms.join(''), /fill="(?!none)|stroke="#/, 'el ícono no depende de un color: usa el del texto');
+  assert.match(html, /T\.iconoComo\(a\.comoTrabaja\)/, 'la etiqueta del dibujo lo lleva');
+  assert.match(html, /r\.k==="Cómo trabaja"\)dd\.appendChild\(iconoComo\(r\.v\)\)/, 'la tarjeta y el detalle lo llevan');
 });

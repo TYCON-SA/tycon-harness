@@ -17,6 +17,13 @@
  * `content` una lista de `{type: input_text | output_text, text}`) o `custom_tool_call` y `function_call` (`name`). El
  * primer mensaje de `user` son sus instrucciones («# AGENTS.md instructions»): no es el encargo. Sus primeros renglones
  * pueden pasar los 64 KB: entonces no hay encargo, y lo demás sale igual. Un formato que no se reconoce no da nada.
+ *
+ * Los mensajes entre sesiones también están en la conversación. Lo que recibe una sesión es un renglón `user` con
+ * `origin: { kind: 'peer', name, body, msg_id }`: es la prueba de que llegó, y por eso es la única fuente de los sobres
+ * (`peerMessagesSince`, sin el texto). Lo que manda es un `tool_use` de `SendMessage`. Lo que escribe la persona lleva
+ * `origin.kind: 'human'`, y un turno termina en un renglón `system` con `subtype: 'stop_hook_summary'`, así que la respuesta a
+ * un mensaje es el último texto de su turno. `readConversation` lee esos mensajes hacia atrás y con tope, sólo cuando alguien
+ * toca a una persona; el texto no se guarda y las claves se tapan (`coverSecrets`). Codex no se manda mensajes.
  */
 const fs = require('fs');
 const path = require('path');
@@ -176,4 +183,159 @@ function codexTranscript(codexHome, sid, { now = Date.now(), days = 3 } = {}) {
   return null;
 }
 
-module.exports = { readTranscript, codexTranscript, HEAD_BYTES, TAIL_BYTES, ENCARGO_MAX, FRASE_MAX };
+const COVER = '••••••';
+// una palabra larga con letras y números: una clave o un token. Una ruta tiene barras o puntos, y no entra
+const LONG_KEY = /(?<![\w+=/.-])(?=[A-Za-z0-9_+=-]*\d)(?=[A-Za-z0-9_+=-]*[A-Za-z])[A-Za-z0-9_+=-]{24,}(?![\w+=/-]|\.\w)/g;
+const NAMED_KEY = /\b(contrase[nñ]a|clave|password|passwd|pwd|token|secret|api[-_ ]?key|pat)(\s*(?:es|:|=)\s*)["'«]?[^\s"'»,;]+/giu;
+/** El texto con lo que parece una contraseña o una clave tapado. Las rutas, los números de pedido y las horas quedan. */
+function coverSecrets(text) {
+  return String(text).replace(NAMED_KEY, (_, word, sep) => `${word}${sep}${COVER}`).replace(LONG_KEY, COVER);
+}
+
+// Los mensajes de una sesión que no se van a leer enteros en la pantalla.
+const MESSAGE_MAX = 2000;
+const NO_TEXT = 'Mensaje sin texto';
+const shownText = (t) => {
+  const clean = String(t).replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim();
+  return clean ? cut(coverSecrets(clean), MESSAGE_MAX) : NO_TEXT;
+};
+const atOf = (d) => { const t = Date.parse(d.timestamp); return Number.isFinite(t) ? t : null; };
+// `Coordinadora` o `Coordinadora [8e42be]`: el destinatario sin su referencia
+const bareName = (to) => String(to || '').replace(/\s*\[[^\]]*\]\s*$/, '').trim();
+const parsed = (line) => { try { const d = JSON.parse(line); return d && typeof d === 'object' && !d.isSidechain ? d : null; } catch { return null; } };
+
+/**
+ * Los mensajes que recibió una sesión desde `offset`: `{ offset, items: [{ id, de, at }] }`, sin su texto. Sólo lee lo
+ * que creció, y a lo sumo el último `maxBytes`; un renglón a medio escribir queda para la próxima. Si el archivo no creció,
+ * no lee nada.
+ */
+function peerMessagesSince(file, offset, { maxBytes = 1024 * 1024 } = {}) {
+  let fd;
+  try { fd = fs.openSync(file, 'r'); } catch { return { offset, items: [] }; }
+  try {
+    const size = fs.fstatSync(fd).size;
+    // más chico que antes: la conversación se reescribió, y se sigue desde el final
+    if (size < offset) return { offset: size, items: [] };
+    if (size === offset) return { offset, items: [] };
+    const start = Math.max(offset, size - maxBytes);
+    const buf = Buffer.alloc(size - start);
+    fs.readSync(fd, buf, 0, buf.length, start);
+    const lastEnd = buf.lastIndexOf(10);
+    if (lastEnd < 0) return { offset: start === offset ? offset : start, items: [] };
+    const items = [];
+    const lines = buf.subarray(0, lastEnd).toString('utf8').split('\n');
+    if (start !== offset) lines.shift();
+    for (const line of lines) {
+      if (!line.includes('"kind":"peer"')) continue;
+      const d = parsed(line);
+      const o = d && d.type === 'user' ? d.origin : null;
+      if (o && o.kind === 'peer' && o.name && o.msg_id) items.push({ id: String(o.msg_id), de: String(o.name), at: atOf(d) });
+    }
+    return { offset: start + lastEnd + 1, items };
+  } catch { return { offset, items: [] }; } finally { fs.closeSync(fd); }
+}
+
+// Los renglones de un archivo del final hacia el principio, de a `step` bytes y hasta `maxBytes`. Corta por el salto de
+// renglón, que en UTF-8 nunca cae en medio de una letra. `visit` devuelve true para terminar antes.
+function eachLineBackward(file, { maxBytes, step = 1024 * 1024 }, visit) {
+  const fd = fs.openSync(file, 'r');
+  try {
+    let end = fs.fstatSync(fd).size;
+    let read = 0;
+    let carry = Buffer.alloc(0);
+    while (end > 0 && read < maxBytes) {
+      const len = Math.min(step, end);
+      const chunk = Buffer.alloc(len);
+      fs.readSync(fd, chunk, 0, len, end - len);
+      end -= len; read += len;
+      const whole = Buffer.concat([chunk, carry]);
+      const firstEnd = end > 0 ? whole.indexOf(10) : -1;
+      carry = end > 0 ? (firstEnd >= 0 ? whole.subarray(0, firstEnd) : whole) : Buffer.alloc(0);
+      const body = end > 0 ? (firstEnd >= 0 ? whole.subarray(firstEnd + 1) : null) : whole;
+      if (!body) continue;
+      const lines = body.toString('utf8').split('\n');
+      for (let i = lines.length - 1; i >= 0; i -= 1) if (lines[i] && visit(lines[i])) return;
+    }
+  } finally { fs.closeSync(fd); }
+}
+
+const SESSION_CONVERSATION_BYTES = 16 * 1024 * 1024;
+const COORDINATOR_CONVERSATION_BYTES = 64 * 1024 * 1024;
+const WITH_COORDINATOR = 10;
+const FROM_PERSON = 20;
+const WITH_SESSIONS = 10;
+
+// Lo que se saca de un renglón: quién habló y qué dijo. Los textos citados llevan las comillas escapadas, así que estas
+// marcas sólo aparecen en el renglón que es de verdad eso; igual se confirma después de leerlo.
+const peerOf = (d) => (d.type === 'user' && d.origin && d.origin.kind === 'peer' && d.origin.name ? { de: String(d.origin.name), texto: shownText(d.origin.body || ''), at: atOf(d) } : null);
+const sentOf = (d) => {
+  if (d.type !== 'assistant' || !d.message || !Array.isArray(d.message.content)) return [];
+  return d.message.content.filter((c) => c && c.type === 'tool_use' && c.name === 'SendMessage' && c.input && typeof c.input.message === 'string' && c.input.message)
+    .map((c) => ({ a: bareName(c.input.to), texto: shownText(c.input.message), at: atOf(d) }));
+};
+const personOf = (d) => {
+  if (d.type !== 'user' || d.isMeta || d.toolUseResult || !d.origin || d.origin.kind !== 'human' || !d.message) return null;
+  const t = textsOf(d.message.content).find((x) => x.trim());
+  // una orden del programa (`<local-command…>`) no es un mensaje de la persona
+  return t && notFromPerson(t) && !/^\s*<system-reminder>/.test(t) ? null : { texto: t ? shownText(t) : NO_TEXT, at: atOf(d) };
+};
+
+/**
+ * Los últimos mensajes de una sesión con la coordinadora, en orden: `{ conCoordinadora: [{ de, texto, at, propio }] }`.
+ * De la coordinadora: `{ conVos: [{ quien: 'vos' | 'coordinadora', texto, at }], conSesiones: [{ de, a, texto, at }] }`.
+ * Lee hacia atrás y termina al juntarlos, o en el tope. Sin el nombre de la coordinadora, no hay con quién cruzar.
+ */
+function readConversation(file, { coordinator, isCoordinator = false, maxBytes } = {}) {
+  if (!coordinator) return { sinCoordinadora: true };
+  if (!isCoordinator) {
+    const out = [];
+    eachLineBackward(file, { maxBytes: maxBytes || SESSION_CONVERSATION_BYTES }, (line) => {
+      if (!line.includes('"kind":"peer"') && !line.includes('"SendMessage"')) return false;
+      const d = parsed(line);
+      if (!d) return false;
+      const got = peerOf(d);
+      if (got && got.de === coordinator) out.push({ de: got.de, texto: got.texto, at: got.at, propio: false });
+      for (const s of sentOf(d).reverse()) if (s.a === coordinator) out.push({ de: null, texto: s.texto, at: s.at, propio: true });
+      return out.length >= WITH_COORDINATOR;
+    });
+    return { conCoordinadora: out.slice(0, WITH_COORDINATOR).reverse() };
+  }
+  const conVos = [];
+  const conSesiones = [];
+  let answer = null;
+  let persons = 0;
+  eachLineBackward(file, { maxBytes: maxBytes || COORDINATOR_CONVERSATION_BYTES }, (line) => {
+    if (line.includes('"stop_hook_summary"')) {
+      // un turno que terminó: lo que se vea de acá para atrás ya es de otro
+      answer = null;
+      return false;
+    }
+    const isPerson = line.includes('"kind":"human"');
+    const isPeer = line.includes('"kind":"peer"');
+    const isSend = line.includes('"SendMessage"');
+    const isText = line.includes('"type":"assistant"') && line.includes('"type":"text"');
+    if (!isPerson && !isPeer && !isSend && !isText) return false;
+    const d = parsed(line);
+    if (!d) return false;
+    if (conSesiones.length < WITH_SESSIONS) {
+      const got = peerOf(d);
+      if (got) conSesiones.push({ de: got.de, a: coordinator, texto: got.texto, at: got.at });
+      for (const s of sentOf(d).reverse()) if (conSesiones.length < WITH_SESSIONS) conSesiones.push({ de: coordinator, a: s.a, texto: s.texto, at: s.at });
+    }
+    if (d.type === 'assistant' && answer === null && d.message) {
+      const t = [...textsOf(d.message.content)].reverse().find((x) => x.trim());
+      if (t) answer = { quien: 'coordinadora', texto: shownText(t), at: atOf(d) };
+    }
+    const person = persons < FROM_PERSON ? personOf(d) : null;
+    if (person) {
+      if (answer) conVos.push(answer);
+      conVos.push({ quien: 'vos', texto: person.texto, at: person.at });
+      answer = null;
+      persons += 1;
+    }
+    return persons >= FROM_PERSON && conSesiones.length >= WITH_SESSIONS;
+  });
+  return { conVos: conVos.reverse(), conSesiones: conSesiones.reverse() };
+}
+
+module.exports = { readTranscript, codexTranscript, peerMessagesSince, readConversation, coverSecrets, HEAD_BYTES, TAIL_BYTES, ENCARGO_MAX, FRASE_MAX };
