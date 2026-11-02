@@ -546,19 +546,54 @@ function opcionesDelInterprete(familia, words, i) {
 const sinGrupo = (w) => String(w).replace(/^[({]+/, '').replace(/[)};]+$/, '');
 
 /**
+ * El comando con los renglones unidos donde el shell los une: una barra invertida justo antes del salto de línea. No en un
+ * comentario, donde el salto corta igual; tampoco una barra escapada (`\\`), ni delante de un `\r`, que para el shell es un
+ * carácter más. Es para ver un comando largo entero al buscar guiones; `tramos` queda como la leen los demás frenos. Con
+ * un heredoc no une nada: en su cuerpo la barra es texto, y unir la línea de cierre correría el cierre a un renglón posterior
+ * y borraría lo que hay en el medio.
+ */
+function sinContinuaciones(cmd) {
+  const s = String(cmd);
+  if (s.includes('<<')) return s;
+  let out = '';
+  let q = null;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (q === "'") { out += c; if (c === "'") q = null; continue; }
+    if (c === '\\') {
+      if (s[i + 1] !== '\n') out += c + (s[i + 1] ?? '');
+      i++;
+      continue;
+    }
+    if (q === '"') { out += c; if (c === '"') q = null; continue; }
+    if (c === "'" || c === '"') { q = c; out += c; continue; }
+    // empieza una palabra: después de un espacio o de un signo que corta palabras (`true;#\`)
+    if (c === '#' && (i === 0 || /[\s;&|()<>`]/.test(s[i - 1]))) {
+      const fin = s.indexOf('\n', i);
+      const hasta = fin < 0 ? s.length : fin;
+      out += s.slice(i, hasta);
+      i = hasta - 1;
+      continue;
+    }
+    out += c;
+  }
+  return out;
+}
+
+/**
  * Los guiones que el comando corre desde un archivo (`python3 p.py a`, `time node p.js`, `./x.py`, `python3 -m x`,
  * `node -r ./p.js`), leídos: `[{ interprete, archivo, texto, argv, grande }]`. El intérprete se busca en cualquier
  * palabra del tramo, detrás de cualquier envoltorio (`time`, `sudo -u x`, `nice -10`, `if … then`, `xargs`); el guion
  * es la primera palabra después de sus opciones que existe, desde cada carpeta donde puede estar parado el comando, o
  * que escribe un heredoc del mismo comando. Se lee de su ruta real, la misma que corre el intérprete, y con él los
  * módulos locales que importa. Un guion de la instalación del arnés no cuenta, por la ruta real ya resuelta: el
- * orquestador escribe historias.
+ * orquestador escribe historias. Un guion que un tramo sólo nombra tampoco (`tramoQueSoloNombra`).
  */
 function guionesEnArchivo(cmd, bases, instalados = []) {
   const out = [];
   const vistos = new Set();
   const escritos = heredocs(cmd).filter((h) => h.target);
-  const todosLosTramos = comandosAnidados(cmd).flatMap((sub) => tramos(sub));
+  const todosLosTramos = comandosAnidados(sinContinuaciones(cmd)).flatMap((sub) => tramos(sub));
   const palabrasDe = (tramo) => palabras(tramo.trim().replace(PREFIJO, '')).map(sinGrupo).filter((w) => w !== '');
   // la ruta real del guion tal como la abre el intérprete: unida a la carpeta sin normalizar, para que `enlace/..` se
   // resuelva por donde lleva el enlace y no por el texto (la versión nativa: la otra normaliza el `..` antes)
@@ -577,9 +612,13 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
     } catch { return null; }
   };
   // el guion y los módulos locales que importa, hasta dos niveles y veinte archivos; uno del arnés no se revisa, pero
-  // lo que importa pasa la misma prueba
+  // lo que importa pasa la misma prueba. El tope es de los módulos, y los del arnés llevan la cuenta aparte: no le comen
+  // el lugar a lo que corre después. Un guion nombrado en el comando se mira siempre
+  const modulos = { exentos: 0, revisados: 0 };
   const agregar = (interprete, real, leido, argv, hondo = 0, exento = false) => {
-    if (vistos.has(real) || vistos.size >= 20) return;
+    if (vistos.has(real)) return;
+    const cuenta = exento ? 'exentos' : 'revisados';
+    if (hondo > 0 && modulos[cuenta]++ >= 20) return;
     vistos.add(real);
     if (!exento) out.push({ interprete, archivo: real, texto: leido.texto, argv, grande: leido.grande });
     if (hondo >= 2 || (leido.grande && !exento)) return;
@@ -611,12 +650,19 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
     return false;
   };
   const argumentos = (ws) => ws.filter((w) => !/^(?:\d|&)?[<>]/.test(w)).map((w) => expandirRuta(cmd, w).valor);
+  // el `pipeline.js` de la instalación, desde cada carpeta donde puede estar parado el comando
+  const esPipelineInstalado = (valor) => {
+    const reales = bases.map((b) => rutaReal(valor, b)).filter(Boolean);
+    return reales.length > 0 && reales.every((r) => path.basename(r) === 'pipeline.js' && instalado(r));
+  };
+  const noTocaElShell = comandoNoTocaElShell(cmd);
   for (const tramo of todosLosTramos) {
     const words = palabrasDe(tramo);
-    // el ejecutable directo con su línea `#!` (`./x.py`, `bin/x`)
-    for (let k = 0; k < words.length; k++) {
-      if (!words[k].includes('/')) continue;
+    const soloNombra = noTocaElShell && tramoQueSoloNombra(cmd, tramo, esPipelineInstalado);
+    // el ejecutable directo con su línea `#!` (`./x.py`, `bin/x`), también en una variable (`G=./x.py; "$G"`)
+    for (let k = 0; k < words.length && !soloNombra; k++) {
       const valor = expandirRuta(cmd, words[k]).valor;
+      if (!String(valor).includes('/')) continue;
       for (const base of bases) {
         const real = rutaReal(valor, base);
         if (!real) continue;
@@ -639,7 +685,8 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
         break;
       }
     }
-    for (let k = 0; k < words.length; k++) {
+    // de un tramo que sólo nombra, el intérprete es la primera palabra: `grep node x` o un archivo `node` de la lista no lo son
+    for (let k = 0; k < (soloNombra ? 1 : words.length); k++) {
       const interprete = nombreDeComando(words[k]);
       if (!CORRE_ARCHIVO.test(interprete)) continue;
       const familia = familiaDe(interprete);
@@ -1595,9 +1642,10 @@ function guionDeSedSinEfectos(guion) {
     }
     if ('dDpPnNgGhHxlz='.includes(c)) continue;
     if (c === 'q' || c === 'Q') { while (/\d/.test(s[i] || '')) i++; continue; }
-    // el texto de `a`, `i` y `c`, y la etiqueta de `b`, `t`, `T` y `:`, llegan hasta el fin de la línea o del guion
+    // el texto de `a`, `i` y `c` llega hasta el fin de la línea o del guion; la etiqueta de `b`, `t`, `T` y `:`, hasta el
+    // primer espacio o `;`, como la corta el `sed` de GNU: lo que sigue es otro comando (`t x e` corre `e`)
     if ('aic'.includes(c)) { const nl = s.indexOf('\n', i); i = nl < 0 ? s.length : nl + 1; continue; }
-    if ('btT:'.includes(c)) { while (i < s.length && !/[;\n]/.test(s[i])) i++; continue; }
+    if ('btT:'.includes(c)) { while (/[ \t]/.test(s[i] || '')) i++; while (i < s.length && !/[\s;]/.test(s[i])) i++; continue; }
     return false;
   }
   return true;
@@ -2973,6 +3021,17 @@ function anotarEscriturasConsola(stateDir, sessionId, rutas, kind = null) {
 const LEE = new Set(['cat', 'ls', 'grep', 'head', 'tail']);
 const MARKER_LEE = new Set(['get', 'list-all', 'find-by-story', 'clear-session', 'restore']);
 const PIPELINE_LEE = new Set(['risk-class', 'followups-status']);
+// Los programas que leen los archivos que reciben y no corren ninguno. Sin `awk`, `rg --pre`, `sort --compress-program`
+// ni `open`, que pueden correr lo que se les da; `sed` va aparte (`sedQueLee`). Y los comandos de `pipeline.js` que
+// reciben una lista de archivos y la miran sin correrla
+const LEE_ARCHIVOS = new Set([...LEE, 'wc', 'stat']);
+const PIPELINE_LISTA = new Set(['advisors', 'check-count', 'smart-reloop', 'deep-review-gate', 'mech-check', 'risk-class', 'model-hint']);
+// Lo que puede ir en el mismo comando sin cambiar qué programa corre un nombre: un programa aparte no toca al shell. Lo
+// que sí lo toca (`hash -p`, `source`, `export`, un alias, una función) no está, sin hacer falta conocerlo uno por uno
+const VECINOS = new Set([...LEE_ARCHIVOS, 'sed', 'git', 'node', 'nodejs', 'cd', 'echo', 'printf', 'pwd', 'true', 'false', 'test', '[',
+  'sleep', 'date', 'sort', 'uniq', 'cut', 'tr', 'jq', 'diff', 'tee', 'basename', 'dirname', 'realpath']);
+// una variable suelta que cambia qué se corre o cómo se parte (`PATH`, `path`, `NODE_OPTIONS`, `BASH_ENV`, `IFS`)
+const VARIABLE_DEL_SHELL = /path$|env$|options$|^ifs$|^(?:ld|dyld)_/i;
 // El programa vale por su nombre sólo si es el del sistema: sin ruta (lo busca el PATH), en una carpeta del sistema, o
 // el mismo node que corre este gancho. Un `./cat` plantado en el repo no es leer.
 const CARPETAS_DEL_SISTEMA = ['/bin/', '/usr/bin/', '/usr/local/bin/', '/opt/homebrew/bin/'];
@@ -2991,6 +3050,67 @@ function esteGuion(arg, guion, cwd) {
     return fs.realpathSync(dado) === fs.realpathSync(path.join(__dirname, guion));
   } catch { return false; }
 }
+const gitQueLee = (w) => ['status', 'diff', 'log'].includes(w[1] && w[1].texto) && !w.some((x) => /^--output\b/.test(x.texto));
+
+/**
+ * ¿Este `sed` sólo lee? El de GNU corre lo que le pide `e`, también sobre las líneas del archivo (`sed e ./x`), y lee las
+ * opciones en cualquier lugar: vale un guion a la vista y sin efectos, y detrás sólo archivos escritos tal cual.
+ */
+function sedQueLee(w) {
+  let i = 1;
+  while (w[i] && /^-[nEr]+$/.test(w[i].texto)) i++;
+  const resto = w.slice(i + 1);
+  return !!w[i] && w[i].literal && !w[i].texto.startsWith('-') && guionDeSedSinEfectos(w[i].texto)
+    && resto.every((x) => x.literal && !x.texto.startsWith('-'));
+}
+
+/**
+ * ¿Ningún tramo del comando, ni de lo que corre adentro de él, puede cambiar qué programa corre un nombre? Cada uno es un
+ * programa de `VECINOS` o una variable suelta que no es del shell. Lee programas, no texto: un `function` o un `f()`
+ * entre comillas es lo que se busca, no una función.
+ */
+function comandoNoTocaElShell(cmd, hondo = 0) {
+  const mc = require('./lib/marker-command.js');
+  const { tramos: lista, subs, abierta } = mc.tramos(sinRedireccionesDeSalida(cmd), 'bash');
+  if (abierta || hondo > 3) return false;
+  return subs.every((s) => comandoNoTocaElShell(s, hondo + 1)) && lista.every((t) => {
+    const w = t.palabras;
+    if (!w.length) return true;
+    const asignada = /^([A-Za-z_][A-Za-z0-9_]*)\+?=/.exec(w[0].texto);
+    if (asignada) return w.length === 1 && !VARIABLE_DEL_SHELL.test(asignada[1]);
+    if (!w[0].literal || !programaDelSistema(w[0].texto)) return false;
+    const prog = nombreDeComando(w[0].texto);
+    return VECINOS.has(prog) && !(prog === 'printf' && w[1] && w[1].texto === '-v');
+  });
+}
+
+/**
+ * ¿El tramo nombra guiones sin correrlos? Sí, si su programa sólo lee sus archivos o es un comando de sólo lectura del
+ * `pipeline.js` instalado: la lista es de lo que no corre, y lo que no está en ella cuenta, sin hacer falta conocer cada
+ * envoltura (`stdbuf`, `flock`, `caffeinate`). El tramo se lee como lo lee el shell (lib/marker-command.js): si ahí hay
+ * más de uno (`&`, paréntesis), o un comando adentro, no se exime. Se pregunta sólo si el comando entero no puede cambiar
+ * qué programa corre ese nombre (`comandoNoTocaElShell`).
+ */
+function tramoQueSoloNombra(cmd, tramo, esPipelineInstalado) {
+  const mc = require('./lib/marker-command.js');
+  // sin las redirecciones de salida: el `&` de `2>&1` no empieza otro tramo, y lo que escriben lo miran los demás frenos
+  const texto = sinRedireccionesDeSalida(tramo);
+  const { tramos: lista, subs, abierta } = mc.tramos(texto, 'bash');
+  if (subs.length || abierta || lista.length !== 1) return false;
+  const w = lista[0].palabras;
+  if (!w.length) return false;
+  const prog = nombreDeComando(w[0].texto);
+  if (LEE_ARCHIVOS.has(prog) || (prog === 'sed' && sedQueLee(w)) || (prog === 'git' && gitQueLee(w))) return true;
+  if (prog !== 'node' && prog !== 'nodejs') return false;
+  const llamadas = mc.llamadas(texto, { shell: 'bash' });
+  const l = llamadas[0];
+  if (llamadas.length !== 1 || l.guion !== 'pipeline' || !PIPELINE_LISTA.has(l.sub) || !w[2] || w[2].texto !== l.sub) return false;
+  // las banderas se leen como las lee el freno de firmas: una que no se ve puede ser la que pide una firma
+  if (l.envFile || l.porXargs || mc.escapeDe(l, null) || mc.lectorDeBanderas(l)('--extra-round')) return false;
+  // una variable que no se sabe queda escrita en la ruta, y esa ruta no existe
+  return esPipelineInstalado(expandirRuta(cmd, w[1].texto).valor);
+}
+
 function soloLee(cmd, shell, cwd) {
   const { tramos, subs, abierta } = require('./lib/marker-command.js').tramos(String(cmd), shell);
   if (subs.length || abierta || !tramos.length) return false;
@@ -3002,7 +3122,7 @@ function soloLee(cmd, shell, cwd) {
     if (!programaDelSistema(w[0].texto)) return false;
     const prog = path.basename(w[0].texto.replace(/\\/g, '/')).toLowerCase().replace(/\.exe$/, '');
     if (LEE.has(prog)) return true;
-    if (prog === 'git') return ['status', 'diff', 'log'].includes(w[1] && w[1].texto) && !w.some((x) => /^--output\b/.test(x.texto));
+    if (prog === 'git') return gitQueLee(w);
     if (prog !== 'node' && prog !== 'nodejs') return false;
     const guion = w[1] ? path.basename(w[1].texto.replace(/\\/g, '/')).toLowerCase() : '';
     // el nombre no alcanza: un marker.js cualquiera podría escribir; vale sólo el guion de esta misma carpeta

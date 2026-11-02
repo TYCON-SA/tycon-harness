@@ -34,6 +34,11 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  * los datos. La foto fija es un solo archivo, sin nada de afuera: la librería 3D (three.js 0.160.0, MIT, en
  * office/vendor/three/) va adentro, y si el navegador no puede dibujar en 3D se ve la tabla. Sólo mira: no cambia nada
  * del trabajo de las sesiones.
+ *
+ * Con la oficina viva, un mensaje entre dos sesiones vuela como un sobre entre sus escritorios (`sobres` en la foto: quién,
+ * a quién y cuándo, sin el texto). Al tocar a una persona, la página le pide al proceso sus últimos mensajes con la
+ * coordinadora; los de la coordinadora incluyen los que cruzó con la persona. Ese texto no entra en la foto: no llega a
+ * ningún otro lado, y la página no puede mandar nada de vuelta. Cada sesión dice cómo trabaja (`comoTrabaja`), de su marca.
  */
 const fs = require('fs');
 const os = require('os');
@@ -47,7 +52,7 @@ const { resolveSessionId } = require(path.join(ROOT, 'skills', 'tycon-pipeline',
 const { OVERDUE_HOUR: OVERDUE, wipNow, sessionsBySid, codexNames, realState, replacedByNewer, hourVerdict, readPrs, offQueueOf, identityOf, remoteOfFolder, SAFE_SID, LOOSE_STALE_MS } = require('./work-in-progress.js');
 const signatureList = require(path.join(ROOT, 'scripts', 'lib', 'signature-list.js'));
 const sessionState = require(path.join(ROOT, 'scripts', 'lib', 'session-state.js'));
-const { readTranscript, codexTranscript } = require(path.join(ROOT, 'scripts', 'lib', 'session-transcript.js'));
+const { readTranscript, codexTranscript, peerMessagesSince, readConversation, TAIL_BYTES } = require(path.join(ROOT, 'scripts', 'lib', 'session-transcript.js'));
 
 const VENDOR = path.join(__dirname, 'office', 'vendor', 'three');
 const TEMPLATE = path.join(__dirname, 'office', 'page.html');
@@ -422,6 +427,7 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     // parada no va «en hora» ni adelantada: lo que hay que saber es qué espera, y sólo ella puede decirlo
     if (estado === 'parada' && a.fin && a.fin.cls !== 'late' && endAt != null) a.fin = { hora: a.fin.hora, dif: 'parada, no anotó qué espera', cls: '' };
     a.tipo = x.kind || null;
+    a.comoTrabaja = waysOfWorking(x.kind, replaced ? null : x0.storyId);
     // sin pipeline, lo que dice su propia conversación
     const said = transcripts && NO_RUN_KINDS.has(x.kind) && d.sid != null ? transcripts.get(String(d.sid)) : null;
     if (said) saySession(a, said, x.lastAt, Boolean(titulo) && (x.kind === 'note' || x.kind === 'loose'));
@@ -440,6 +446,7 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     const a = name === coordinatorName && !waits ? { nombre: name, estado: 'coordina', haciendo: 'Coordina las sesiones de esta máquina' }
       : waits ? { nombre: name, estado: 'firma', espera: real.espera, haciendo: (f && f.sentence) || 'Sin trabajo' }
         : { nombre: name, estado: 'libre', haciendo: 'Sin trabajo' };
+    a.comoTrabaja = waysOfWorking(null);
     if (waits && f) novelty(a, f);
     sidOf.set(a, sid);
     agents.push(a);
@@ -455,6 +462,8 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     if (stale && (!Number.isFinite(at) || nowMs - at > SESSION_FILE_KEEP_MS)) continue;
     if (f.tool === 'claude' && !stale && !f.waitingForOwner) continue;
     const a = { nombre: f.name || cxNames.get(sid) || sid.slice(0, 8), titulo: null, carpeta: null };
+    const ownRun = halfwayOf.get(sid);
+    a.comoTrabaja = waysOfWorking(!stale && (f.step || ownRun) ? 'pipeline' : null, ownRun && ownRun.storyId);
     if (stale) {
       a.estado = 'inactiva';
       a.haciendo = `Inactiva: sin novedades desde las ${Number.isFinite(at) ? hhmm(at) : '—'}.`;
@@ -498,6 +507,8 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
   const bySession = (p, q) => { const s = String(sidOf.get(p)); const t = String(sidOf.get(q)); return s < t ? -1 : s > t ? 1 : 0; };
   const byCoordinatorThenName = (p, q) => (q.estado === 'coordina') - (p.estado === 'coordina') || String(p.nombre).localeCompare(String(q.nombre), 'es') || bySession(p, q);
   agents.sort(byCoordinatorThenName);
+  // la coordinadora no trabaja en una cosa: coordina, aunque tenga un arreglo abierto o algo que el dueño tenga que firmar
+  for (const a of agents) if ((coordinatorSid && sidOf.get(a) === coordinatorSid) || (coordinatorName && a.nombre === coordinatorName)) a.comoTrabaja = 'Coordinando';
   if (agents.length > MAX_DESKS) {
     const rank = (a) => (a.estado === 'coordina' ? 0 : a.estado === 'trabajando' || a.estado === 'prueba' ? 1 : a.estado === 'firma' ? 2 : a.estado === 'parada' || a.estado === 'espera' ? 3 : 4);
     const chosen = new Set([...agents].sort((p, q) => rank(p) - rank(q) || byCoordinatorThenName(p, q)).slice(0, MAX_DESKS));
@@ -556,6 +567,7 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
   const teToca = [...signatureCards.filter((s) => !s.yaAvisada).map((s) => s.linea), ...toldOwner];
   const kanban = buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, signatures: signatureCards.filter((s) => !s.conTarjeta), board, prAnswers, openPrs, openPrsNote, nowMs });
   if (halfwayUnknown) kanban.medioCaminoNoSe = halfwayUnknown === 1 ? 'De un trabajo de una sesión cerrada no se pudo saber si dejó algo sin terminar.' : `De ${halfwayUnknown} trabajos de sesiones cerradas no se pudo saber si dejaron algo sin terminar.`;
+  if (kanban.medioCamino.length || kanban.medioCaminoNoSe) kanban.medioCaminoLeido = `Leído a las ${hhmm(wip.halfwayReadAt || nowMs)}`;
   const meta = {
     actualizado: hhmm(nowMs),
     teToca,
@@ -582,6 +594,13 @@ function leftoverCard({ folder, branch, changes, ahead, work }) {
 }
 
 // La hora de una tarjeta, la misma de la persona.
+// Cómo trabaja una sesión, por su marca y nunca por lo que dice: una ejecución (abierta o terminada y entrando) es una
+// historia, un arreglo declarado es camino corto y lo demás es otra cosa. La coordinadora dice «Coordinando».
+const RUN_KINDS = new Set(['pipeline', 'finished', 'entering', 'stalled']);
+function waysOfWorking(kind, storyId) {
+  if (RUN_KINDS.has(kind)) return storyId ? `Historia ${storyId}` : 'Historia';
+  return kind === 'loose' ? 'Camino corto' : 'Otra cosa';
+}
 const cardHour = (fin) => (fin ? fin.hora + (fin.dif ? ` · ${fin.dif}` : '') : '');
 const firstWord = (t) => String(t || '').trim().split(/\s+/)[0].toLowerCase();
 // ¿Dos títulos hablan del mismo trabajo? El de una ejecución y el que le puso la coordinadora en el tablero pueden no ser iguales
@@ -1116,6 +1135,46 @@ function saySession(a, said, fallbackAt, annotated = false) {
   a.haciendo = at === undefined ? 'Sin novedades.' : `Sin novedades desde las ${hhmm(at)}`;
 }
 
+// Los sobres: lo que vive sólo en el proceso de la oficina abierta. La foto fija y `--json` no lo crean, así que ni los
+// sobres ni la conversación pueden salir de esa oficina. De cada conversación se recuerda hasta dónde se leyó: si no
+// creció, no se lee nada. El texto nunca entra en la foto: se pide al tocar a una persona (`conversationOf`).
+const ENVELOPE_WINDOW_MS = 60 * 1000;
+const createEnvelopes = () => ({ offsets: new Map(), files: new Map(), recent: new Map(), coordinator: null });
+
+function readEnvelopes(env, wip, { home, nowMs, projectsDir }) {
+  const dir = projectsDir || path.join(claudeDir(home), 'projects');
+  const people = [];
+  (wip.rows || []).forEach((row, i) => {
+    const d = (wip.details && wip.details[i]) || {};
+    if (d.sid != null) people.push({ name: row.session, sid: String(d.sid), cwd: ((wip.extra && wip.extra[i]) || {}).cwd });
+  });
+  (wip.free || []).forEach((name, i) => { const sid = (wip.freeSids || [])[i]; if (sid != null) people.push({ name, sid: String(sid) }); });
+  env.files.clear();
+  for (const p of people) {
+    const file = transcriptOf(dir, p.sid, p.cwd);
+    if (!file) continue;
+    if (!env.files.has(p.name)) env.files.set(p.name, { file, sid: p.sid });
+    let offset = env.offsets.get(file);
+    if (offset === undefined) {
+      // la primera vez, desde poco antes del final: lo viejo no vuela
+      try { offset = Math.max(0, fs.statSync(file).size - TAIL_BYTES); } catch { continue; }
+    }
+    const got = peerMessagesSince(file, offset);
+    env.offsets.set(file, got.offset);
+    for (const m of got.items) if (!env.recent.has(m.id)) env.recent.set(m.id, { id: m.id, de: m.de, a: p.name, at: m.at });
+  }
+  for (const [id, m] of env.recent) if (!Number.isFinite(m.at) || nowMs - m.at > ENVELOPE_WINDOW_MS) env.recent.delete(id);
+  return [...env.recent.values()].sort((p, q) => p.at - q.at);
+}
+
+/** Los últimos mensajes de una persona que está en la oficina, a pedido; null si no está. Nada de esto se guarda. */
+function conversationOf(env, name) {
+  const e = env.files.get(name);
+  if (!e) return null;
+  const c = env.coordinator;
+  return readConversation(e.file, { coordinator: c && c.name, isCoordinator: Boolean(c) && e.sid === c.sid });
+}
+
 /** Lee todo lo de esta máquina y arma los datos; guarda las promesas al día. */
 async function collect(opts = {}) {
   const home = opts.home || os.homedir();
@@ -1167,6 +1226,10 @@ async function collect(opts = {}) {
   // lo del tablero que no es una fila: su resumen, lo que dice que le toca al dueño y cuándo se escribió
   data.tablas = buildTables({ board: board.board, boardWrittenAt: board.writtenAt, sessionTables: readSessionTables(sdir, nowMs, problems), kanban: data.kanban, nowMs });
   data.tablero = board.board ? { actualizado: board.board.actualizado, resumen: board.board.resumen, teToca: board.board.teToca } : null;
+  if (opts.envelopes) {
+    opts.envelopes.coordinator = coordinatorSid ? { sid: coordinatorSid, name: coordinatorName } : null;
+    data.sobres = readEnvelopes(opts.envelopes, wip, { home, nowMs, projectsDir: opts.projectsDir });
+  }
   if (board.board && Number.isFinite(board.writtenAt)) data.kanban.escrito = `Tablero escrito a las ${hhmm(board.writtenAt)}${nowMs - board.writtenAt > quietMin * 60000 ? ' (vieja)' : ''}`;
   data.unreadable.push(...problems);
   // el enlace al sitio, sólo con una dirección web: cualquier otra cosa no se muestra
@@ -1243,13 +1306,16 @@ async function openLive(home = os.homedir()) {
     let exited = null;
     child.on('exit', (code) => { exited = code; });
     child.unref();
-    for (let i = 0; i < 200; i += 1) {
+    // el proceso nuevo se va sin tocar el candado (sale 0) si el que está sólo tardaba en contestar: vale cualquier
+    // candado cuyo dueño conteste, con su pid. El plazo es por hora y pasa los 10 s que el nuevo le espera al de antes
+    const deadline = Date.now() + 15000;
+    while (Date.now() < deadline) {
       const lock = readLock();
-      if (lock && lock.pid === child.pid && await answers(lock)) return { url: urlOf(lock), reused: false };
-      if (exited != null) break;
+      if (lock && await answers(lock)) return { url: urlOf(lock), reused: lock.pid !== child.pid };
+      if (exited != null && exited !== 0) break;
       await sleep(50);
     }
-    let why = 'no contestó en 10 s';
+    let why = 'no contestó en 15 s';
     try { why = fs.readFileSync(log, 'utf8').trim().split('\n').pop() || why; } catch { /* sin registro */ }
     try { process.kill(child.pid, 'SIGTERM'); } catch { /* ya salió */ }
     throw new Error(`la oficina viva ${why}`);
@@ -1291,6 +1357,10 @@ async function main(argv) {
     let r;
     try { r = await openLive(); } catch (e) { process.stderr.write(`office.js: ${String(e.message).split('\n')[0]}\n`); return 1; }
     process.stdout.write(r.reused ? `La oficina ya estaba abierta: ${r.url}\n` : `La oficina está abierta en ${r.url}\n`);
+    const { waitingLine, linkedSite } = require('./office/site-link.js');
+    const waiting = waitingLine(stateDir(os.homedir()));
+    // sin sitio o con el enlace apagado, nadie la aprueba ni el estado cambia: la línea no diría nada cierto
+    if (waiting && linkedSite(readSiteUrl())) process.stdout.write(`${waiting}\n`);
     if (process.env.TYCON_OFFICE_NO_BROWSER !== '1') openFile(r.url);
     return 0;
   }
@@ -1316,4 +1386,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { buildOffice, buildBoard, page, importMap, moduleSource, collect, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, buildTables, writeTables, readTranscripts, readLastWrites, MODULES };
+module.exports = { buildOffice, buildBoard, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, buildTables, writeTables, readTranscripts, readLastWrites, MODULES };

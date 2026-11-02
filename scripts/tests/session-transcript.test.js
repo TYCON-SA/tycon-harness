@@ -11,7 +11,7 @@ const os = require('os');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..', '..');
-const { readTranscript, HEAD_BYTES, TAIL_BYTES } = require(path.join(ROOT, 'scripts', 'lib', 'session-transcript.js'));
+const { readTranscript, peerMessagesSince, readConversation, coverSecrets, HEAD_BYTES, TAIL_BYTES } = require(path.join(ROOT, 'scripts', 'lib', 'session-transcript.js'));
 
 const NOW = Date.parse('2026-11-01T22:00:00.000Z');
 const hm = (ms) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
@@ -209,4 +209,91 @@ test('T222 Transcript_EncargoFirstSentence: del encargo, la primera oración; la
   const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'trans-encargo-')), 's.jsonl');
   fs.writeFileSync(f, `${JSON.stringify({ type: 'user', message: { content: 'Urgente: el freno no ve el click. Avisá a la Coordinadora al arrancar. Decí «ejecución».' } })}\n`);
   assert.strictEqual(readTranscript(f).encargo, 'Urgente: el freno no ve el click.');
+});
+
+// Una conversación con mensajes entre sesiones, con la forma medida en las reales.
+const peer = (name, body, min, id = `m-${name}-${min}`) => ({ type: 'user', isMeta: true, timestamp: at(min), origin: { kind: 'peer', name, body, msg_id: id }, message: { role: 'user', content: `<cross-session-message from="x">${body}</cross-session-message>` } });
+const sent = (to, message, min) => ({ type: 'assistant', isSidechain: false, timestamp: at(min), message: { role: 'assistant', content: [{ type: 'tool_use', name: 'SendMessage', input: { to, message } }] } });
+const person = (text, min) => ({ type: 'user', timestamp: at(min), origin: { kind: 'human' }, message: { role: 'user', content: text } });
+const turnEnd = (min) => ({ type: 'system', subtype: 'stop_hook_summary', timestamp: at(min) });
+
+test('T240 Envelopes_OnlyWhatGrew: lee sólo lo nuevo, trae quién y no el texto; si el archivo no creció, no da nada', () => {
+  const file = path.join(dir(), 's.jsonl');
+  write(file, [said('Empiezo.', 9), peer('Coordinadora', 'el texto del mensaje', 8)]);
+  const first = peerMessagesSince(file, 0);
+  assert.deepStrictEqual(first.items.map((m) => [m.id, m.de]), [['m-Coordinadora-8', 'Coordinadora']]);
+  assert.ok(!JSON.stringify(first).includes('el texto del mensaje'), 'el sobre no lleva el texto');
+  assert.deepStrictEqual(peerMessagesSince(file, first.offset), { offset: first.offset, items: [] });
+  fs.appendFileSync(file, `${JSON.stringify(peer('Bruno', 'otro', 2))}\n${JSON.stringify(said('Sigo.', 1)).slice(0, 10)}`);
+  const second = peerMessagesSince(file, first.offset);
+  assert.deepStrictEqual(second.items.map((m) => m.de), ['Bruno'], 'un renglón a medio escribir queda para la próxima');
+  assert.ok(second.offset < fs.statSync(file).size);
+  assert.deepStrictEqual(peerMessagesSince(path.join(dir(), 'no-esta.jsonl'), 0), { offset: 0, items: [] });
+});
+
+test('T241 Envelopes_NotFromAgents: un mensaje de un subagente o una mención en un texto no son un sobre', () => {
+  const file = path.join(dir(), 's.jsonl');
+  write(file, [{ ...peer('Coordinadora', 'de un agente', 8), isSidechain: true }, said('Dije "kind":"peer" en un texto.', 7), { ...peer('', 'sin nombre', 6) }]);
+  assert.deepStrictEqual(peerMessagesSince(file, 0).items, []);
+});
+
+test('T242 Conversation_Session: sus mensajes con la coordinadora, en orden, y los de otras sesiones no', () => {
+  const file = path.join(dir(), 's.jsonl');
+  write(file, [peer('Coordinadora', 'Hacé la tanda.', 9), sent('Ferrari', 'A otra sesión.', 8), sent('Coordinadora [8e42be]', 'Arranco.', 7), peer('Ferrari', 'De otra sesión.', 6)]);
+  const got = readConversation(file, { coordinator: 'Coordinadora' });
+  assert.deepStrictEqual(got.conCoordinadora.map((m) => [m.propio, m.texto]), [[false, 'Hacé la tanda.'], [true, 'Arranco.']]);
+});
+
+test('T243 Conversation_NoCoordinator: sin coordinadora no hay conversación que mostrar', () => {
+  const file = path.join(dir(), 's.jsonl');
+  write(file, [person('Hola', 9), said('Hola.', 8)]);
+  assert.deepStrictEqual(readConversation(file, { coordinator: null, isCoordinator: false }), { sinCoordinadora: true });
+});
+
+test('T244 Conversation_WithPerson: cada mensaje con su respuesta, en orden; lo que contestó a una sesión no es una respuesta a la persona', () => {
+  const file = path.join(dir(), 's.jsonl');
+  write(file, [
+    person('¿Cómo va?', 20), said('Lo miro.', 19), said('Va bien.', 18), turnEnd(18),
+    peer('Bruno', 'Terminé.', 15), said('Gracias, Bruno.', 14), turnEnd(14),
+    person('Seguí.', 10), sent('Bruno', 'Seguí vos.', 9), said('Le avisé.', 8), turnEnd(8),
+    { type: 'user', isMeta: true, timestamp: at(7), message: { role: 'user', content: 'un aviso de un gancho' } },
+    { type: 'user', timestamp: at(6), origin: { kind: 'task-notification' }, message: { role: 'user', content: '<task-notification>x</task-notification>' } },
+  ]);
+  const got = readConversation(file, { coordinator: 'Coordinadora', isCoordinator: true });
+  assert.deepStrictEqual(got.conVos.map((m) => [m.quien, m.texto]), [['vos', '¿Cómo va?'], ['coordinadora', 'Va bien.'], ['vos', 'Seguí.'], ['coordinadora', 'Le avisé.']]);
+  assert.deepStrictEqual(got.conSesiones.map((m) => [m.de, m.a, m.texto]), [['Bruno', 'Coordinadora', 'Terminé.'], ['Coordinadora', 'Bruno', 'Seguí vos.']]);
+});
+
+test('T245 Conversation_Limits: se queda con los últimos 20 de la persona, y un tope de lectura lo corta sin romperse', () => {
+  const file = path.join(dir(), 's.jsonl');
+  const lines = [];
+  for (let i = 30; i > 0; i -= 1) lines.push(person(`mensaje ${i}`, i * 2), said(`respuesta ${i}`, i * 2 - 1), turnEnd(i * 2 - 1));
+  write(file, lines);
+  const got = readConversation(file, { coordinator: 'Coordinadora', isCoordinator: true });
+  const mine = got.conVos.filter((m) => m.quien === 'vos');
+  assert.strictEqual(mine.length, 20);
+  assert.strictEqual(mine[0].texto, 'mensaje 20');
+  assert.strictEqual(got.conVos[got.conVos.length - 1].texto, 'respuesta 1');
+  // el tope cuenta de a tramos de 1 MB: lo que quedó antes de ese tramo no se lee
+  const capped = path.join(dir(), 's.jsonl');
+  write(capped, [person('viejo', 9), tool('Read', { file_path: 'x'.repeat(2 * 1024 * 1024) }, 8), person('nuevo', 3), said('Respondo.', 2), turnEnd(2)]);
+  assert.deepStrictEqual(readConversation(capped, { coordinator: 'Coordinadora', isCoordinator: true, maxBytes: 1 }).conVos.map((m) => m.texto), ['nuevo', 'Respondo.']);
+  assert.ok(readConversation(capped, { coordinator: 'Coordinadora', isCoordinator: true }).conVos.some((m) => m.texto === 'viejo'), 'sin ese tope, sí');
+  const tail = path.join(dir(), 's.jsonl');
+  write(tail, [person('ñandú '.repeat(400000), 3), said('Respondo.', 2), turnEnd(2)]);
+  const big = readConversation(tail, { coordinator: 'Coordinadora', isCoordinator: true });
+  assert.ok(big.conVos[0].texto.startsWith('ñandú'), 'un renglón más largo que el tramo se lee entero y sin romper las letras');
+  assert.ok(Array.from(big.conVos[0].texto).length <= 2000, 'el mensaje se recorta');
+});
+
+test('T246 CoverSecrets: tapa las claves y deja las rutas, los pedidos y las horas', () => {
+  const key = `${'ghp'}_a1b2c3d4e5f6g7h8i9j0k1l2m3n4`;
+  assert.strictEqual(coverSecrets(`usá ${key} ahora`), 'usá •••••• ahora');
+  assert.strictEqual(coverSecrets('La clave es hunter2.'), 'La clave es ••••••');
+  assert.strictEqual(coverSecrets('La contraseña: abc123, sigo'), 'La contraseña: ••••••, sigo');
+  const keep = 'Mirá /Users/x/SourceCode/tycon-harness/scripts/lib/session-transcript.js y el pedido #911 a las 16:45.';
+  assert.strictEqual(coverSecrets(keep), keep);
+  const file = path.join(dir(), 's.jsonl');
+  write(file, [person(`Te paso ${key}.`, 3), said('Listo.', 2), turnEnd(2), peer('Bruno', `El token: ${key}`, 1)]);
+  assert.ok(!JSON.stringify(readConversation(file, { coordinator: 'Coordinadora', isCoordinator: true })).includes(key));
 });

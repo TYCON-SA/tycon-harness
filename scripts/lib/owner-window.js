@@ -742,7 +742,13 @@ function escribirRegistro(casa, reg) {
   const tmp = `${destino}.tmp-${process.pid}`;
   fs.writeFileSync(tmp, JSON.stringify(reg), { mode: 0o600 });
   fs.renameSync(tmp, destino);
+  avisarOficina(reg.destino, casa);
   return destino;
+}
+
+/** La sesión pasó a esperar o dejó de esperar: la oficina se entera enseguida. El aviso nunca cambia el resultado de la firma. */
+function avisarOficina(sesion, casa) {
+  try { require('./office-event.js').notify(sesion, casa === undefined ? {} : { home: casa }); } catch (_) { /* la vigilancia de la oficina lo ve después */ }
 }
 
 /**
@@ -1163,6 +1169,7 @@ function firmar({ firma, via, sesion = null, destino = null, resumen = '', casa,
       source: path.basename(process.argv[1] || '') || null, home, now: ahora, huella });
   } catch (e) { r = { ok: false, error: e.message }; }
   if (!r || !r.ok) (avisar || ((m) => console.error(m)))(`⚠️ la firma se dio, pero no quedó en el registro común de firmas: ${(r && r.error) || 'sin respuesta'}`);
+  avisarOficina(destino || sesion, home);
 }
 
 // --- las firmas sobre un archivo ------------------------------------------------------------------------------------
@@ -1228,6 +1235,7 @@ function consumirArchivo({ firma, sesion, archivo, cwd, casa, ahora = Date.now()
     return { ok: false, motivo: e.code === 'ENOENT' ? 'la firma de la ventana ya se usó' : `la firma de la ventana no se pudo reservar (${e.code || e.message})` };
   }
   if (Array.isArray(espera)) espera.push({ f, reservado: destino, ahora });
+  avisarOficina(sesion, casa);
   return { ok: true, constancia: c };
 }
 

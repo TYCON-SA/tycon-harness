@@ -22,7 +22,8 @@ const WIN = process.platform === 'win32';
 const started = new Set();
 test.after(() => { for (const pid of started) { try { process.kill(pid, 'SIGKILL'); } catch { /* ya salió */ } } });
 
-// A toy machine: the state folders the office watches and one live session.
+// A toy machine: the state folders the office watches and one live session. These tests measure the office without the
+// organization site: the team's profile, laid over the tree in the validation runs, does bring a site.url.
 function toy({ withAdhoc = true } = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'office-live-'));
   const sdir = stateDir(home);
@@ -33,7 +34,7 @@ function toy({ withAdhoc = true } = {}) {
   return { home, sdir, sessions };
 }
 
-const envOf = (home, more = {}) => ({ ...process.env, HOME: home, USERPROFILE: home, TYCON_OFFICE_NO_BROWSER: '1', TYCON_OFFICE_TEST: '1', ...more });
+const envOf = (home, more = {}) => ({ ...process.env, HOME: home, USERPROFILE: home, TYCON_OFFICE_NO_BROWSER: '1', TYCON_OFFICE_TEST: '1', TYCON_OFFICE_LINK: '0', ...more });
 const lockOf = (m) => path.join(m.sdir, 'office', 'server.json');
 const readLock = (m) => { try { return JSON.parse(fs.readFileSync(lockOf(m), 'utf8')); } catch { return null; } };
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
@@ -480,7 +481,7 @@ function slowFirstPhoto(ms) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'office-slow-'));
   const flag = path.join(dir, 'leyo');
   const file = path.join(dir, 'slow.js');
-  fs.writeFileSync(file, `if (process.argv[1] && /office[\\\\/]server\\.js$/.test(process.argv[1])) {
+  fs.writeFileSync(file, `if (!require('worker_threads').isMainThread) {
   const Module = require('module'); const orig = Module.prototype.require; let done = false;
   Module.prototype.require = function (id) {
     const m = orig.apply(this, arguments);
@@ -529,7 +530,7 @@ test('T60 FirstPhoto_Slow_OpenStillAnswers: una primera foto lenta no hace falla
 function failingRecompute() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'office-fail-'));
   const file = path.join(dir, 'fail.js');
-  fs.writeFileSync(file, `if (process.argv[1] && /office[\\\\/]server\\.js$/.test(process.argv[1])) {
+  fs.writeFileSync(file, `if (!require('worker_threads').isMainThread) {
   const Module = require('module'); const orig = Module.prototype.require; let done = false;
   Module.prototype.require = function (id) {
     const m = orig.apply(this, arguments);
@@ -593,6 +594,130 @@ test('T64 Recompute_Fails_PageTold: si una foto nueva no se puede armar, la pág
   p.close();
 });
 
+// A preload that holds the photo's thread without letting go, as git does, and writes `flag` when it starts holding it.
+function blockingPhoto(ms) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'office-block-'));
+  const flag = path.join(dir, 'trabado');
+  const file = path.join(dir, 'block.js');
+  fs.writeFileSync(file, `if (!require('worker_threads').isMainThread) {
+  const Module = require('module'); const orig = Module.prototype.require; let done = false;
+  Module.prototype.require = function (id) {
+    const m = orig.apply(this, arguments);
+    if (!done && /tools[\\\\/]office\\.js$/.test(id)) {
+      done = true; const c = m.collect;
+      m.collect = async (...a) => { const d = await c(...a); require('fs').writeFileSync(${JSON.stringify(flag)}, 'x'); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ${ms}); return d; };
+    }
+    return m;
+  };
+}\n`);
+  return { NODE_OPTIONS: `--require ${file}`, flag };
+}
+
+// A preload that makes the second photo of each thread kill that thread.
+function dyingThread() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'office-die-'));
+  const file = path.join(dir, 'die.js');
+  fs.writeFileSync(file, `if (!require('worker_threads').isMainThread) {
+  const Module = require('module'); const orig = Module.prototype.require; let done = false;
+  Module.prototype.require = function (id) {
+    const m = orig.apply(this, arguments);
+    if (!done && /tools[\\\\/]office\\.js$/.test(id)) {
+      done = true; const c = m.collect; let calls = 0;
+      m.collect = async (...a) => { calls += 1; if (calls === 2) process.exit(1); return c(...a); };
+    }
+    return m;
+  };
+}\n`);
+  return { NODE_OPTIONS: `--require ${file}` };
+}
+
+test('T65 Photo_HoldsItsThread_ProcessAnswers: mientras se arma la foto, el proceso contesta enseguida', async () => {
+  const m = toy();
+  const held = blockingPhoto(4000);
+  const opening = openAsync(m, { NODE_OPTIONS: held.NODE_OPTIONS });
+  assert.ok(await until(() => fs.existsSync(held.flag) && readLock(m), 10000), 'la foto está trabada');
+  const lock = readLock(m);
+  const t0 = Date.now();
+  const health = await get(lock.port, `/health?t=${lock.token}`);
+  assert.strictEqual(health.status, 200);
+  assert.ok(Date.now() - t0 < 1500, `contestó en ${Date.now() - t0} ms`);
+  await opening;
+});
+
+test('T66 Photo_ThreadDies_PageToldAndNextPhotoWorks: si el hilo de la foto se cae, la página lo sabe y la próxima foto sale', async () => {
+  const m = toy();
+  openSync(m, dyingThread());
+  const p = page(readLock(m));
+  await p.next();
+  fs.writeFileSync(path.join(m.sdir, 'doing', 'n0.json'), '{}');
+  assert.ok(await until(() => p.fotos.some((f) => f.data.unreadable.some((u) => /no se pudo recalcular: el hilo de la foto se cerró/.test(u))), 6000), 'llega el aviso');
+  fs.writeFileSync(path.join(m.sessions, 's2.json'), JSON.stringify({ pid: process.pid, sessionId: 's2', name: 'Nueva', status: 'busy', statusUpdatedAt: Date.now() }));
+  assert.ok(await until(() => { const d = p.fotos[p.fotos.length - 1].data; return JSON.stringify(d).includes('Nueva') && !d.unreadable.some((u) => /no se pudo recalcular/.test(u)); }, 6000), 'otro hilo armó la foto, y el aviso se fue');
+  p.close();
+});
+
+// What a closed session left: a folder with one file not saved.
+function leftBehind(m) {
+  const repo = path.join(m.home, 'trabajo');
+  fs.mkdirSync(repo);
+  const git = (...a) => spawnSync('git', ['-C', repo, '-c', 'user.name=t', '-c', 'user.email=t@example.com', ...a], { encoding: 'utf8' });
+  spawnSync('git', ['init', '-q', repo]);
+  git('symbolic-ref', 'HEAD', 'refs/heads/trabajo');
+  git('commit', '-q', '--allow-empty', '-m', 'uno');
+  git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+  fs.writeFileSync(path.join(repo, 'a.js'), 'x');
+  fs.mkdirSync(path.join(m.sdir, 'adhoc'), { recursive: true });
+  fs.writeFileSync(path.join(m.sdir, 'adhoc', 'cerrada-1.json'), JSON.stringify({ reason: 'lo dejado', files: [path.join(repo, 'a.js')], declaredAt: new Date().toISOString(), lastTouch: new Date().toISOString() }));
+  return repo;
+}
+const halfOf = (f) => JSON.stringify(f.data.kanban.medioCamino);
+const lastFoto = (p) => p.fotos[p.fotos.length - 1];
+
+test('T67 Halfway_EveryWhile_PageOpen: con la página abierta se revisa cada tanto, aunque nada avise', async () => {
+  const m = toy();
+  const repo = leftBehind(m);
+  openSync(m, { TYCON_OFFICE_HALFWAY_MS: '1500' });
+  const p = page(readLock(m));
+  const first = await p.next();
+  assert.strictEqual(first.data.kanban.medioCamino.length, 1);
+  assert.match(first.data.kanban.medioCaminoLeido, /^Leído a las \d\d:\d\d$/);
+  fs.writeFileSync(path.join(repo, 'b.js'), 'x');
+  assert.ok(await until(() => halfOf(lastFoto(p)) !== halfOf(first), 8000), 'la revisión ve el archivo nuevo');
+  p.close();
+});
+
+test('T68 Halfway_OtherChange_NotRead: otro cambio arma la foto sin volver a leer A medio camino', async () => {
+  const m = toy();
+  const repo = leftBehind(m);
+  openSync(m);
+  const lock = readLock(m);
+  const p = page(lock);
+  const first = await p.next();
+  const before = (await counters(lock)).reads;
+  fs.writeFileSync(path.join(repo, 'b.js'), 'x');
+  fs.writeFileSync(path.join(m.sessions, 's2.json'), JSON.stringify({ pid: process.pid, sessionId: 's2', name: 'Nueva', status: 'busy', statusUpdatedAt: Date.now() }));
+  assert.ok(await until(() => JSON.stringify(lastFoto(p).data).includes('Nueva'), 6000), 'la sesión nueva llegó en vivo');
+  assert.ok((await counters(lock)).reads > before);
+  assert.strictEqual(halfOf(lastFoto(p)), halfOf(first), 'A medio camino espera su revisión');
+  p.close();
+});
+
+test('T69 Halfway_PageOpened_Read: al abrir la oficina otra vez se revisa', async () => {
+  const m = toy();
+  const repo = leftBehind(m);
+  openSync(m, { TYCON_OFFICE_HALFWAY_FRESH_MS: '200' });
+  const lock = readLock(m);
+  const p = page(lock);
+  const first = await p.next();
+  p.close();
+  fs.writeFileSync(path.join(repo, 'b.js'), 'x');
+  await sleep(600);
+  const again = page(lock);
+  await again.next();
+  assert.ok(await until(() => halfOf(lastFoto(again)) !== halfOf(first), 6000), 'la página nueva ve el archivo nuevo');
+  again.close();
+});
+
 test('T61 Signatures_Change_PushesPhoto: una firma pedida o resuelta llega sola a la página', async () => {
   const m = toy();
   assert.ok(watchedOf(m).includes(path.join(m.sdir, 'coordination')), 'vigila las firmas');
@@ -604,4 +729,44 @@ test('T61 Signatures_Change_PushesPhoto: una firma pedida o resuelta llega sola 
   fs.writeFileSync(path.join(m.sdir, 'coordination', 'signatures.json'), JSON.stringify([{ title: 'firma de prueba', sid: 's1', at: Date.now() }]));
   assert.ok(await until(() => p.fotos.length >= 2, 4000), 'llega una foto nueva sin tocar otra carpeta');
   p.close();
+});
+
+// Una conversación de juguete para una sesión de la máquina de juguete.
+function toyTranscript(m, sid, lines) {
+  const dir = path.join(claudeDir(m.home), 'projects', 'toy');
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `${sid}.jsonl`);
+  fs.appendFileSync(file, lines.map((l) => `${JSON.stringify(l)}\n`).join(''));
+  return file;
+}
+const peerLine = (name, body, id) => ({ type: 'user', isMeta: true, timestamp: new Date().toISOString(), origin: { kind: 'peer', name, body, msg_id: id }, message: { role: 'user', content: 'x' } });
+
+test('T30 Envelope_InPhoto_NoText; Conversation_OnlyWithToken: el sobre dice quién y no qué; el texto se pide con el token, por un nombre de la oficina', async () => {
+  const m = toy();
+  fs.writeFileSync(path.join(m.sessions, 's2.json'), JSON.stringify({ pid: process.pid, sessionId: 's2', name: 'Beta', status: 'busy', statusUpdatedAt: Date.now() }));
+  toyTranscript(m, 's1', [{ type: 'assistant', timestamp: new Date().toISOString(), message: { content: [{ type: 'text', text: 'Empiezo.' }] } }]);
+  const r = openSync(m);
+  assert.strictEqual(r.status, 0, r.stderr);
+  const lock = readLock(m);
+  const ws = page(lock);
+  await ws.opened;
+  await ws.next(8000);
+  toyTranscript(m, 's1', [peerLine('Beta', 'el secreto del mensaje', 'id-1')]);
+  // la foto se renueva cuando cambia algo que la oficina vigila
+  fs.writeFileSync(path.join(m.sessions, 's2.json'), JSON.stringify({ pid: process.pid, sessionId: 's2', name: 'Beta', status: 'idle', statusUpdatedAt: Date.now() }));
+  let foto = null;
+  for (let i = 0; i < 40 && !foto; i += 1) {
+    await sleep(100);
+    foto = ws.fotos.map((f) => f.data).find((d) => d && (d.sobres || []).length);
+  }
+  assert.ok(foto, 'llegó una foto con el sobre');
+  assert.deepStrictEqual(foto.sobres.map((s) => [s.id, s.de, s.a]), [['id-1', 'Beta', 'Alfa']]);
+  assert.ok(!JSON.stringify(ws.fotos).includes('el secreto del mensaje'), 'el texto nunca viaja en la foto');
+  // sin token no se lee; un nombre que no está en la oficina, tampoco; una ruta no es un nombre
+  assert.strictEqual((await get(lock.port, '/conversacion?s=Alfa')).status, 403);
+  assert.strictEqual((await get(lock.port, `/conversacion?t=${lock.token}&s=${encodeURIComponent('../../etc/passwd')}`)).status, 404);
+  const said = await get(lock.port, `/conversacion?t=${lock.token}&s=Alfa`);
+  assert.strictEqual(said.status, 200);
+  assert.deepStrictEqual(JSON.parse(said.body), { sinCoordinadora: true }, 'sin coordinadora designada, no hay conversación');
+  ws.close();
 });

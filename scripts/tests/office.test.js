@@ -218,7 +218,8 @@ function toyHome() {
   return { home, state };
 }
 
-const run = (home, args) => execFileSync('node', [OFFICE, ...args], { input: '', env: { ...process.env, HOME: home, USERPROFILE: home }, stdio: 'pipe' }).toString();
+// sin el sitio de la organización: el perfil del equipo, puesto encima del árbol en la validación, sí trae site.url
+const run = (home, args) => execFileSync('node', [OFFICE, ...args], { input: '', env: { ...process.env, HOME: home, USERPROFILE: home, TYCON_OFFICE_LINK: '0' }, stdio: 'pipe' }).toString();
 
 test('T9 Comando: --json imprime los datos, sin --json escribe la página, y sin carpeta de estado sale 2', () => {
   const { home } = toyHome();
@@ -265,20 +266,23 @@ const runMarker = (home, sid, args) => {
 };
 
 test('T37 LooseAndNote_DeclaredEnd_Shown: el arreglo rápido y la nota dicen su hora de fin si la declaran', () => {
+  // una hora que todavía no pasó, a cualquier hora que corra la prueba y en cualquier huso: marker.js usa el reloj real
+  const later = new Date(Date.now() + 3600000);
+  const HORA = `${String(later.getHours()).padStart(2, '0')}:${String(later.getMinutes()).padStart(2, '0')}`;
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'office-until-'));
   const sdir = stateDir(home);
   fs.mkdirSync(path.join(sdir, 'adhoc'), { recursive: true });
   fs.writeFileSync(path.join(sdir, 'adhoc', 's1.json'), JSON.stringify({ reason: 'arreglos rápidos de la oficina', declaredAt: new Date().toISOString() }));
   assert.strictEqual(runMarker(home, 's2', ['adhoc', 'until', '25:99']), 2, 'la hora se valida primero, aunque no haya carril');
-  assert.strictEqual(runMarker(home, 's2', ['adhoc', 'until', '19:30']), 1, 'sin carril no hay dónde anotarla');
+  assert.strictEqual(runMarker(home, 's2', ['adhoc', 'until', HORA]), 1, 'sin carril no hay dónde anotarla');
   assert.ok(!fs.existsSync(path.join(sdir, 'adhoc', 's2.json')), 'sin carril no se crea nada');
-  assert.strictEqual(runMarker(home, 's1', ['adhoc', 'until', '19:30']), 0);
-  assert.strictEqual(runMarker(home, 's3', ['doing', 'espero turno para el banco de controles', '--until', '19:30']), 0);
+  assert.strictEqual(runMarker(home, 's1', ['adhoc', 'until', HORA]), 0);
+  assert.strictEqual(runMarker(home, 's3', ['doing', 'espero turno para el banco de controles', '--until', HORA]), 0);
   const until = JSON.parse(fs.readFileSync(path.join(sdir, 'adhoc', 's1.json'), 'utf8')).until;
   const endAt = JSON.parse(fs.readFileSync(path.join(sdir, 'doing', 's3.json'), 'utf8')).endAt;
   for (const iso of [until, endAt]) {
     const d = new Date(iso);
-    assert.deepStrictEqual([d.getHours(), d.getMinutes()], [19, 30]);
+    assert.deepStrictEqual([d.getHours(), d.getMinutes()], [later.getHours(), later.getMinutes()]);
     // hoy, mañana si quedaría más de 12 h atrás, ayer si quedaría más de 18 h adelante
     assert.ok(Date.parse(iso) > Date.now() - 12 * 3600000 && Date.parse(iso) <= Date.now() + 18 * 3600000, `${iso} cae entre 12 h atrás y 18 h adelante`);
   }
@@ -304,7 +308,7 @@ test('T37 LooseAndNote_DeclaredEnd_Shown: el arreglo rápido y la nota dicen su 
   fs.writeFileSync(runStory, '---\nstory: "7.7"\ntitle: "Una historia con corrida"\n---\n');
   fs.writeFileSync(path.join(sdir, 'active', 's5.json'), JSON.stringify({ sessionId: 's5', storyId: '7.7', storyPath: runStory, stepsCompleted: ['start'], stepsPending: ['validate-story'] }));
   fs.writeFileSync(path.join(sdir, 'adhoc', 's5.json'), JSON.stringify({ reason: 'arreglo con corrida', declaredAt: new Date().toISOString() }));
-  assert.strictEqual(runMarker(home, 's5', ['adhoc', 'until', '19:30']), 0);
+  assert.strictEqual(runMarker(home, 's5', ['adhoc', 'until', HORA]), 0);
   const sessions = path.join(home, 'sessions');
   fs.mkdirSync(sessions);
   fs.writeFileSync(path.join(sessions, 's5.json'), JSON.stringify({ pid: process.pid, sessionId: 's5', name: 'Muñe', status: 'busy', statusUpdatedAt: Date.now() }));
@@ -313,9 +317,9 @@ test('T37 LooseAndNote_DeclaredEnd_Shown: el arreglo rápido y la nota dicen su 
   const { data } = buildOffice({ wip: w, nowMs: Date.now() });
   for (const name of ['Alfa', 'Zeta']) {
     const a = byName(data, name);
-    assert.strictEqual(a.pronosticoIso.slice(11), '19:30', name);
+    assert.strictEqual(a.pronosticoIso.slice(11), HORA, name);
     assert.strictEqual(a.termina, undefined, `${name} tiene hora`);
-    assert.match(w.rows.find((r) => r.session === name).end, /19:30/, `/wip la muestra en «Fin estimado» (${name})`);
+    assert.match(w.rows.find((r) => r.session === name).end, new RegExp(HORA), `/wip la muestra en «Fin estimado» (${name})`);
   }
   // una hora guardada ilegible se dice, no pasa por «sin estimación»
   fs.writeFileSync(path.join(sdir, 'adhoc', 's7.json'), JSON.stringify({ reason: 'arreglo con la hora rota', declaredAt: new Date().toISOString(), until: 'mañana' }));
@@ -324,7 +328,7 @@ test('T37 LooseAndNote_DeclaredEnd_Shown: el arreglo rápido y la nota dicen su 
   assert.strictEqual(w2.rows.find((r) => r.session === 'Rota').end, 'hora declarada ilegible');
   const withRun = byName(data, 'Muñe');
   assert.strictEqual(withRun.tipo, 'pipeline', 'la sesión con corrida es su corrida');
-  assert.ok(!String(withRun.pronosticoIso || '').endsWith('19:30'), 'la hora del carril no pisa la de la corrida');
+  assert.ok(!String(withRun.pronosticoIso || '').endsWith(HORA), 'la hora del carril no pisa la de la corrida');
 });
 
 test('T38 PlainSentence_NoFilesBranchesFolders: la oración, el título y el «mientras tanto» van sin archivos, ramas ni carpetas', () => {
@@ -380,6 +384,9 @@ test('T40 Halfway_PlainWithAction: «a medio camino» en llano y con qué hacer;
   const unknown = buildOffice({ wip: wip([], { halfwayItems: [{ kind: 'adhoc', text: 'arreglo de fecha rota', cleanAfter: 'unknown' }] }), nowMs: now }).data;
   assert.deepStrictEqual(unknown.kanban.medioCamino, [], 'lo que no se sabe no es una fila');
   assert.match(unknown.kanban.medioCaminoNoSe, /^De un trabajo de una sesión cerrada no se pudo saber/);
+  assert.match(unknown.kanban.medioCaminoLeido, /^Leído a las \d\d:\d\d$/, 'dice a qué hora se leyó');
+  assert.strictEqual(buildOffice({ wip: wip([]), nowMs: now }).data.kanban.medioCaminoLeido, undefined, 'sin nada a medio camino, no dice nada');
+  assert.ok((page(data).match(/medioCaminoLeido/g) || []).length >= 2, 'la sección y el panel muestran la hora');
   assert.match(w.text, /ad-hoc «arreglo del aviso del arranque»/, 'la tabla de /wip no cambia');
   assert.match(page(data), /r\.accion/, 'la página muestra la acción');
 });
@@ -2201,7 +2208,7 @@ test('T212 Card_And_Panel_OneFicha: la tarjeta y el panel pintan la misma ficha,
   assert.strictEqual((html.match(/function ficha\(a\)/g) || []).length, 1, 'un solo lugar');
   const crew = html.slice(html.indexOf('function renderCrew()'), html.indexOf('function ficha(a)'));
   assert.match(crew, /pintarFicha\(a,k,false\)/);
-  const abrir = html.slice(html.indexOf('function abrir(nombre)'), html.indexOf('const ray=new THREE.Raycaster()'));
+  const abrir = html.slice(html.indexOf('function abrir(nombre'), html.indexOf('const ray=new THREE.Raycaster()'));
   assert.match(abrir, /T\.pintarFicha\(a,panel,true\)/);
   assert.doesNotMatch(abrir, /row\("Trabajo"/);
   const ficha = html.slice(html.indexOf('function ficha(a)'), html.indexOf('// sin 3D, la tabla queda abierta'));
@@ -2576,4 +2583,75 @@ test('Office_UnaTarjetaPorSesion (T8) — @story-8.153 @ac-8: un renglón de la 
   ({ data } = buildOffice({ wip: wip([]), signatures: [{ id: 't', title: 'por la terminal', at: NOW }], nowMs: NOW }));
   assert.deepStrictEqual(data.meta.teToca, ['Firmar: por la terminal']);
   assert.strictEqual(col(data, 'firma').tarjetas[0].quien, 'vos');
+});
+
+test('T246 WaysOfWorking_FromItsMark: una ejecución es una historia, un arreglo es camino corto, y lo demás es otra cosa', () => {
+  const { data } = buildOffice({
+    nowMs: NOW,
+    wip: wip([
+      { session: 'Ana', extra: { kind: 'pipeline', storyId: '8.181', current: 'implement', title: 'Algo' } },
+      { session: 'Beto', extra: { kind: 'entering', storyId: '8.2', title: 'Otra' } },
+      { session: 'Caro', extra: { kind: 'loose', text: 'Conviene una historia' } },
+      { session: 'Dani', extra: { kind: 'note', text: 'Estoy en camino corto' } },
+      { session: 'Eli', extra: { kind: 'activity' } },
+    ], { free: ['Fede'], freeSids: ['sid-Fede'], freeStatus: ['idle'] }),
+  });
+  const como = Object.fromEntries(data.agents.map((a) => [a.nombre, a.comoTrabaja]));
+  assert.deepStrictEqual(como, { Ana: 'Historia 8.181', Beto: 'Historia 8.2', Caro: 'Camino corto', Dani: 'Otra cosa', Eli: 'Otra cosa', Fede: 'Otra cosa' });
+});
+
+test('T247 Envelopes_OnlyInTheLiveOffice: la página sabe volar un sobre y pedir la conversación, y la foto fija no trae ni sobres ni texto', () => {
+  const html = page({ agents: [], items: [], kanban: null, meta: null });
+  assert.match(html, /lanzarSobres/);
+  assert.match(html, /conversacion\?t=/);
+  assert.match(html, /Tus últimos 20 mensajes con sus respuestas/);
+  const { home } = toyHome();
+  const data = JSON.parse(run(home, ['--json', '--now', new Date(NOW).toISOString()]));
+  assert.strictEqual('sobres' in data, false, '--json no crea los sobres: viven en el proceso de la oficina');
+});
+
+test('T248 WaysOfWorking_Coordinator: la coordinadora dice que coordina, también con un arreglo abierto', () => {
+  const { data } = buildOffice({ nowMs: NOW, coordinatorSid: 'sid-Ana', coordinatorName: 'Ana', wip: wip([{ session: 'Ana', extra: { kind: 'loose', text: 'Un arreglo' } }, { session: 'Beto', extra: { kind: 'loose', text: 'Otro' } }]) });
+  assert.deepStrictEqual(data.agents.map((a) => [a.nombre, a.comoTrabaja]), [['Ana', 'Coordinando'], ['Beto', 'Camino corto']]);
+  const free = buildOffice({ nowMs: NOW, coordinatorName: 'Ana', wip: wip([], { free: ['Ana'], freeSids: ['s'], freeStatus: ['idle'] }) });
+  assert.strictEqual(free.data.agents[0].comoTrabaja, 'Coordinando');
+});
+
+// Un document mínimo: nodos con hijos y texto, sin ningún intérprete de HTML. Si el formato usara innerHTML, se notaría acá.
+function fakeDom() {
+  const node = (tagName) => ({ tagName, children: [], textContent: '', append(...k) { this.children.push(...k); } });
+  return { createElement: (t) => node(t.toUpperCase()), createTextNode: (t) => ({ tagName: '#text', children: [], textContent: t }) };
+}
+const shape = (n) => (n.tagName === '#text' ? n.textContent : [n.tagName.toLowerCase(), ...(n.children.length ? n.children.map(shape) : [n.textContent])]);
+
+test('T249 MessageFormat_NodesOnly: negritas, código y listas se arman con nodos, y lo que traiga el mensaje queda como texto', () => {
+  const html = page({ agents: [], items: [], kanban: null, meta: null });
+  const src = html.slice(html.indexOf('function enLinea('), html.indexOf('function msg('));
+  assert.doesNotMatch(src, /innerHTML|insertAdjacentHTML|outerHTML|document\.write/, 'nada del mensaje se inserta como HTML');
+  const formatear = new Function('document', `${src}; return formatear;`)(fakeDom());
+  const fmt = (t) => formatear(t).map(shape);
+  assert.deepStrictEqual(fmt('Es **importante** y `npm test` anda.'), [['p', 'Es ', ['strong', 'importante'], ' y ', ['code', 'npm test'], ' anda.']]);
+  assert.deepStrictEqual(fmt('Mirá:\n- uno\n- **dos**\n\n1. tres'), [['p', 'Mirá:'], ['ul', ['li', 'uno'], ['li', ['strong', 'dos']]], ['ol', ['li', 'tres']]]);
+  assert.deepStrictEqual(fmt('```js\nconst a = 1;\nconst b = 2;\n```'), [['pre', ['code', 'const a = 1;\nconst b = 2;']]]);
+  assert.deepStrictEqual(fmt('## Título'), [['p', ['strong', 'Título']]]);
+  assert.deepStrictEqual(fmt('<img src=x onerror=alert(1)> **<b>hola</b>**'), [['p', '<img src=x onerror=alert(1)> ', ['strong', '<b>hola</b>']]]);
+  assert.deepStrictEqual(fmt('```\n<script>alert(1)</script>'), [['pre', ['code', '<script>alert(1)</script>']]], 'un bloque sin cerrar queda como código');
+  assert.deepStrictEqual(fmt('5 * 3 y 2 ** 4 sin formato'), [['p', '5 * 3 y 2 ** 4 sin formato']]);
+});
+
+test('T250 WaysOfWorking_Icon: cada caso tiene su forma, y al ícono no entra el texto de la foto', () => {
+  const html = page({ agents: [], items: [], kanban: null, meta: null });
+  const src = html.slice(html.indexOf('const COMO_ICONO='), html.indexOf('function pintarFicha('));
+  const fake = (tag) => ({ tag, attrs: {}, kids: [], textContent: '', setAttribute(k, v) { this.attrs[k] = v; }, appendChild(n) { this.kids.push(n); } });
+  const doc = { createElement: fake, createElementNS: (_, tag) => fake(tag) };
+  const icono = new Function('document', `${src}; return iconoComo;`)(doc);
+  const shape = (t) => { const s = icono(t); return s.textContent || JSON.stringify(s.kids.map((k) => [k.attrs, k.kids.map((p) => [p.tag, p.attrs])])); };
+  const forms = ['Camino corto', 'Historia 8.181', 'Otra cosa', 'Coordinando'].map(shape);
+  assert.strictEqual(new Set(forms).size, 4, 'una forma por caso');
+  assert.strictEqual(shape('Coordinando'), '→', 'la coordinadora conserva la flecha de su estado');
+  assert.strictEqual(shape('Historia'), shape('Historia 8.181'));
+  assert.strictEqual(shape('<img src=x onerror=alert(1)>'), shape('Otra cosa'), 'lo desconocido es otra cosa, y su texto no entra');
+  assert.doesNotMatch(forms.join(''), /fill="(?!none)|stroke="#/, 'el ícono no depende de un color: usa el del texto');
+  assert.match(html, /T\.iconoComo\(a\.comoTrabaja\)/, 'la etiqueta del dibujo lo lleva');
+  assert.match(html, /r\.k==="Cómo trabaja"\)dd\.appendChild\(iconoComo\(r\.v\)\)/, 'la tarjeta y el detalle lo llevan');
 });
