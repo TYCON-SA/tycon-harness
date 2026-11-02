@@ -60,6 +60,17 @@ T="$(mktemp -d)"
 #    TYCON_PORTABLE_HOME=<carpeta> la pone en otro lado; se crea y se borra entera al terminar.
 CASA="${TYCON_PORTABLE_HOME:-$RAIZ/.advisors/portables-home-$$}"
 trap 'rm -rf "$T" "$CASA"' EXIT
+# Entera (sin TYCON_PORTABLE_ONLY ni TYCON_PORTABLE_SHARD) es una suite completa: en una máquina con coordinadora va una por
+# vez (scripts/tools/heavy-turn.js). Con el turno de otra no corre, y dice quién lo tiene; sin coordinadora, corre siempre.
+# En Git Bash `$$` es un pid que node no ve: el turno se daría por muerto, así que ahí no se pide.
+case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) _turno_pide=0 ;; *) _turno_pide=1 ;; esac
+if [ "$_turno_pide" = 1 ] && [ -z "${TYCON_PORTABLE_ONLY:-}" ] && [ -z "${TYCON_PORTABLE_SHARD:-}" ] && [ -f "$RAIZ/scripts/tools/heavy-turn.js" ]; then
+  _turno_rc=0
+  node "$RAIZ/scripts/tools/heavy-turn.js" take --what "suites portables" --process $$ || _turno_rc=$?
+  if [ "$_turno_rc" = 77 ]; then echo "NO MEDIDO suites-portables: la máquina ya corre una suite completa (arriba, quién la tiene)"; exit 77; fi
+  [ "$_turno_rc" = 0 ] || echo "⚠️  suites-portables: no pude mirar el turno de la suite completa (salió $_turno_rc): corro igual"
+  trap 'node "$RAIZ/scripts/tools/heavy-turn.js" release --process $$ >/dev/null 2>&1; rm -rf "$T" "$CASA"' EXIT
+fi
 # El árbol al empezar, para la constancia del final (ver el final de este archivo)
 ARBOL_INICIO="$(git -C "$RAIZ" rev-parse 'HEAD^{tree}' 2>/dev/null || true)"
 

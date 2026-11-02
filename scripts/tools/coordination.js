@@ -21,9 +21,11 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *                            lo mismo, en un puesto fijo libre del repo (scripts/tools/work-slots.js), en la rama del
  *                            trabajo (wt/<nombre> sin rama); sin puesto libre no la abre
  *
- * Además, sin línea de comandos: `capNotice` es el aviso del tope que la coordinadora ve en cada turno
- * (scripts/hooks/coordination-notice.js) y `adversarialTurn` es lo que `deep-review-gate` agrega cuando otra sesión
- * tiene un pase adversarial en vuelo. Los dos callan sin coordinadora designada.
+ * Además, sin línea de comandos: `capNotice` es el aviso que la coordinadora ve en cada turno
+ * (scripts/hooks/coordination-notice.js): el tope, las sesiones de fondo quietas, los pedidos verdes que nadie encoló,
+ * las firmas viejas. `adversarialTurn` es lo que frena a `deep-review-gate` y a `next` cuando otra sesión tiene un pase
+ * adversarial en vuelo. El turno de la suite completa vive en scripts/tools/heavy-turn.js. Todo calla sin coordinadora
+ * designada.
  *
  * Trabaja una sesión cuyo archivo dice `busy`, una de Codex con actividad en los últimos 5 minutos y una que abrió
  * `open` hace menos de 10 minutos y todavía no escribió su archivo. Las sesiones se leen con lo mismo que usa /wip.
@@ -48,6 +50,13 @@ const CODEX_WINDOW_MS = 5 * 60000;
 // Una sesión de Codex quieta hace más de tres horas ya no está esperando: no se lista.
 const CODEX_IDLE_MS = 3 * 3600000;
 const OPENED_WINDOW_MS = 10 * 60000;
+// Una sesión de fondo sin trabajar más que esto ocupa su lugar sin hacer nada: se le avisa a la coordinadora.
+const QUIET_MS = 15 * 60000;
+// Un pase en vuelo frena al siguiente hasta esta edad. El marcador no sabe si el pase ya terminó en la nube (se entera
+// cuando su sesión lo recoge), así que uno terminado o colgado ocupa el lugar a lo sumo este tiempo; suelen tardar 20 a 40 min.
+const ADVERSARIAL_TURN_MAX_MS = 60 * 60000;
+// La nota de `marker.js doing` dice que la sesión hace algo sin tocar archivos, mientras sea reciente.
+const DOING_FRESH_MS = 3 * 3600000;
 const LAUNCH_TIMEOUT_MS = 30000;
 // Empieza con letra o número: el nombre va como valor de `-n` y no puede leerse como una bandera.
 const { NAME_RE } = sessionNames;
@@ -154,6 +163,16 @@ function recentOpened(home, now, problems) {
   return valid.filter((o) => now - o.at < OPENED_WINDOW_MS);
 }
 
+// La sesión anotó hace poco qué hace (`marker.js doing`): no está quieta, aunque su archivo diga `idle`.
+function hasFreshDoing(home, sid, now) {
+  try { return now - fs.statSync(path.join(stateDir(home), 'doing', `${sid}.json`)).mtimeMs < DOING_FRESH_MS; } catch { return false; }
+}
+
+// Quién tiene el turno de la suite completa: el renglón de heavy-turn.js, o null. No poder leerlo no frena el estado.
+function suiteHolder(home, now, problems) {
+  try { return require('./heavy-turn.js').holder({ home, now }); } catch (e) { problems.push(`el turno de la suite completa (${e.message})`); return null; }
+}
+
 // Los pases adversariales en vuelo, con la sesión de cada uno.
 function inFlight(markers, nameOf) {
   const out = [];
@@ -175,6 +194,9 @@ function status(opts = {}) {
   const working = [];
   const waiting = [];
   const unnamed = [];
+  const quiet = [];
+  const passWaiting = [];
+  const suite = suiteHolder(home, now, problems);
   const opened = recentOpened(home, now, problems);
   const justOpened = new Set(opened.map((o) => o.name));
   const alive = new Set();
@@ -188,7 +210,17 @@ function status(opts = {}) {
     if (s.nameSource === 'derived' && s.name) unnamed.push(label(s.name));
     if (s.busy) working.push({ session: nameOf(sid), sid, why: story || 'trabajando sin pipeline', since: s.statusAt });
     else if (justOpened.has(s.name)) working.push({ session: nameOf(sid), sid, why: 'recién abierta, todavía arrancando', since: (opened.find((o) => o.name === s.name) || {}).at || null });
-    else waiting.push({ session: nameOf(sid), sid, why: story ? `${story}, ${s.status || 'sin estado'}` : 'sin trabajo' });
+    else {
+      waiting.push({ session: nameOf(sid), sid, why: story ? `${story}, ${s.status || 'sin estado'}` : 'sin trabajo' });
+      // la que tiene que lanzar su pase y espera el lugar: no está quieta, le falta que alguien la despierte
+      const owesPass = m && m.adversarialGate && m.adversarialGate.run === true && !m.adversarial && m.deepReviewDone !== true;
+      if (owesPass && s.status === 'idle') passWaiting.push({ session: nameOf(sid), sid });
+      // una de fondo, quieta: ni esperando su pase, ni con una nota de lo que hace, ni con la suite completa de la máquina
+      else if (s.kind === 'bg' && s.status === 'idle' && Number.isFinite(s.statusAt) && now - s.statusAt >= QUIET_MS
+        && !(m && adversarialInFlight(m)) && !hasFreshDoing(home, sid, now) && !(suite && suite.sid === sid)) {
+        quiet.push({ session: nameOf(sid), sid, minutes: Math.floor((now - s.statusAt) / 60000) });
+      }
+    }
   }
   for (const c of codexThreads(opts.codexHome || path.join(home, '.codex'), problems)) {
     const session = c.name || c.id.slice(0, 8);
@@ -206,7 +238,8 @@ function status(opts = {}) {
   let pending = [];
   try { pending = readPending(home); } catch (e) { problems.push(e.message); }
   return {
-    working, waiting, cap: r.max_working, adversarial,
+    working, waiting, quiet, passWaiting, cap: r.max_working, adversarial,
+    suite: suite ? { session: suite.session ? label(suite.session) : null, what: label(suite.what), since: suite.at } : null,
     signatures: { terminal: pending.length, delegated: 0 },
     unnamed, problems,
   };
@@ -221,6 +254,8 @@ function statusText(s) {
   lines.push(`Esperando: ${s.waiting.length}`);
   for (const w of s.waiting) lines.push(`  · ${w.session} — ${w.why}`);
   lines.push(`Pase adversarial en vuelo: ${s.adversarial.length ? s.adversarial.map((a) => `${a.storyId ? `la ${a.storyId}` : 'sin story'} (${a.session}, desde las ${hhmm(a.since)})`).join(' · ') : 'ninguno'}`);
+  lines.push(`Suite completa en curso: ${s.suite ? `${s.suite.session || 'una sesión sin nombre'} (${s.suite.what}, desde las ${hhmm(s.suite.since)})` : 'ninguna'}`);
+  lines.push(`De fondo y quietas: ${s.quiet.length ? s.quiet.map((q) => `${q.session} hace ${q.minutes} min`).join(' · ') : 'ninguna'}`);
   lines.push(`Firmas pendientes: ${s.signatures.terminal} por la terminal · ${s.signatures.delegated} por delegación`);
   lines.push(`Sin nombre puesto por una persona: ${s.unnamed.length ? s.unnamed.join(', ') : 'ninguna'}`);
   if (s.problems.length) lines.push(`No se pudo leer: ${s.problems.join(' · ')}`);
@@ -325,10 +360,25 @@ function oldSignatures(opts, now, problems) {
   return `Coordinación: ${old.length} firma(s) del dueño esperan hace más de un día; la más vieja, «${label(old[0].title)}», desde el ${ddmm(old[0].at)} a las ${hhmm(old[0].at)}.`;
 }
 
+// Los pedidos verdes que nadie encoló (scripts/hooks/stuck-pr-notice.js), de la última foto: sin salir a la red.
+function greenPrLines(opts, problems) {
+  try {
+    const r = require(path.join(__dirname, '..', 'hooks', 'stuck-pr-notice.js')).coordinatorLines({
+      home: opts.home || require('os').homedir(), ...(opts.arnes ? { tree: opts.arnes } : {}), ...(opts.now == null ? {} : { now: Number(opts.now) }),
+    });
+    if (r.problem) problems.push(r.problem);
+    return r.lines.map((l) => l.replace(/^⚠️ /, 'Coordinación: '));
+  } catch (e) {
+    problems.push(`los pedidos verdes (${e.message})`);
+    return [];
+  }
+}
+
 /**
- * El aviso del tope para la sesión coordinadora: en el tope, quiénes trabajan; pasado el tope, por cuánto y cuál trabaja
- * hace menos. Debajo del tope, null. Después, las firmas del dueño que esperan hace más de un día. Lo que no pudo leer
- * va en una línea. No abre ninguna conversación.
+ * El aviso para la sesión coordinadora: en el tope, quiénes trabajan; pasado el tope, por cuánto y cuál trabaja hace
+ * menos. Después, las sesiones de fondo quietas, los pedidos verdes que nadie encoló y las firmas del dueño que esperan
+ * hace más de un día. Sin nada de eso, null. Lo que no pudo leer va en una línea. No abre ninguna conversación ni sale a
+ * la red.
  */
 function capNotice(opts = {}) {
   const sid = sessionOf(opts);
@@ -347,6 +397,16 @@ function capNotice(opts = {}) {
       lines.push(`Coordinación: la máquina pasó el tope por ${working.length - cap} (${working.length} de ${cap} trabajando: ${names})${newest ? `; la que trabaja hace menos: ${newest.session}` : ''}.`);
     }
   }
+  for (const q of s.quiet.filter((x) => x.sid !== sid)) lines.push(`Coordinación: ${q.session} está quieta hace ${q.minutes} min: cerrala o dale trabajo.`);
+  // nada la despierta sola: quien tiene que avisarle cuando se libera el lugar es la coordinadora. Con el mismo criterio
+  // que el portón: el pase de una sesión cerrada, o de más de una hora, no ocupa el lugar.
+  for (const w of s.passWaiting.filter((x) => x.sid !== sid)) {
+    const t = adversarialTurn({ ...opts, sessionId: w.sid });
+    lines.push(t && t.waiting_turn
+      ? `Coordinación: ${w.session} espera su turno de pase adversarial (lo tiene ${t.other_in_flight[0].session}): avisale cuando termine.`
+      : `Coordinación: ${w.session} puede lanzar su pase adversarial, no hay otro en vuelo: avisale.`);
+  }
+  lines.push(...greenPrLines(opts, problems));
   const signatures = oldSignatures(opts, opts.now == null ? Date.now() : Number(opts.now), problems);
   if (signatures) lines.push(signatures);
   lines.push(...waitLines(opts, sid, problems));
@@ -355,14 +415,17 @@ function capNotice(opts = {}) {
 }
 
 /**
- * Lo que `deep-review-gate` agrega cuando otra sesión tiene un pase adversarial en vuelo: `{ other_in_flight, turn }`.
- * Sin otro pase, o sin coordinadora designada, null.
+ * El turno del pase adversarial, cuando otra sesión tiene uno en vuelo: `{ other_in_flight, turn, waiting_turn }`. Con
+ * `waiting_turn`, `deep-review-gate` sale 3 y `next` pide esperar: el arnés no deja lanzar el segundo. Un pase de más de
+ * una hora ya no frena (puede estar terminado o colgado), y se dice. Sin otro pase, o sin coordinadora designada, null.
  */
 function adversarialTurn(opts = {}) {
   const env = opts.env || process.env;
   const home = opts.home || require('os').homedir();
   const sid = sessionOf(opts);
   const d = designacionVigente({ home });
+  // no poder leerla no es «no hay coordinadora»: el pase no se frena, pero se dice que no se pudo mirar
+  if (d && d.error) process.stderr.write(`coordination: no pude saber cuál es la coordinadora (${d.error}): no miro el turno del pase\n`);
   if (!d || d.error) return null;
   const rol = sesionQueReenvia({ env, home, arnes: opts.arnes });
   if (!rol.valor) return null;
@@ -371,12 +434,20 @@ function adversarialTurn(opts = {}) {
   // Una coordinadora que ya se cerró no da turnos; el pase de una sesión que ya no vive quedó abandonado.
   if (!(sessions.get(d.sesion) || {}).alive) return null;
   const markers = markersBySid(home, problems);
-  const others = [...markers].filter(([k, m]) => k !== sid && adversarialInFlight(m) && (!sessions.has(k) || sessions.get(k).alive));
+  // Una sesión cerrada no deja archivo: sin archivo no vive, y su pase quedó abandonado, salvo que sea de Codex, que no
+  // escribe esos archivos: ésa cuenta si tuvo actividad hace poco. Si no se pudieron leer las sesiones, en la duda, cuenta.
+  const now = opts.now == null ? Date.now() : Number(opts.now);
+  const codexAlive = new Set(codexThreads(opts.codexHome || path.join(home, '.codex'), problems).filter((c) => c.last && now - c.last < CODEX_IDLE_MS).map((c) => c.id));
+  const others = [...markers].filter(([k, m]) => k !== sid && adversarialInFlight(m) && (sessions.has(k) ? sessions.get(k).alive : (codexAlive.has(k) || problems.length > 0)));
   if (!others.length) return null;
   const nameOf = (k) => { const s = sessions.get(k); return (s && s.name && label(s.name)) || String(k).slice(0, 8); };
   const other_in_flight = inFlight(new Map(others), nameOf).map(({ sid: _s, ...a }) => a);
   const list = other_in_flight.map((a) => `${a.storyId ? `la ${a.storyId}` : 'sin story'}, ${a.session}, desde las ${hhmm(a.since)}`).join(' · ');
-  return { other_in_flight, turn: `Hay otro pase adversarial en vuelo (${list}): pedile turno a la ${rol.valor} antes de lanzar este.` };
+  // una fecha que no se lee no frena: no se sabe cuánto lleva, y sin tope trabaría la fila para siempre
+  const waiting_turn = other_in_flight.some((a) => { const at = Date.parse(a.since); return Number.isFinite(at) && now - at < ADVERSARIAL_TURN_MAX_MS; });
+  return { other_in_flight, waiting_turn, turn: waiting_turn
+    ? `Hay otro pase adversarial en vuelo (${list}): va uno por vez y el arnés no deja lanzar este hasta que termine; pedile turno a la ${rol.valor}.`
+    : `Hay otro pase adversarial anotado hace más de una hora (${list}): puede estar terminado o colgado, así que no frena; pedile turno a la ${rol.valor} antes de lanzar este.` };
 }
 
 // ── Las firmas por la terminal ──
@@ -632,9 +703,12 @@ function openNow(opts) {
     }
     return no(message);
   };
+  // Lo pesado se pide: seis sesiones dentro del tope, cada una con lo suyo, llevaron la carga de una máquina a 52.
+  const rolTurno = sesionQueReenvia({ env, home, arnes: opts.arnes }).valor;
+  const heavyRule = rolTurno ? ` — Nada pesado sin turno de la ${rolTurno}: suite completa, banco, examen, portón, revisores, pase.` : '';
   const job = slot
-    ? `${task} — Trabajás en el puesto ${slot.path}, en la rama ${slot.branch}. Al terminar, con todo commiteado, soltalo: node "${path.join(__dirname, 'work-slots.js')}" release "${slot.path}"`
-    : String(task);
+    ? `${task}${heavyRule} — Trabajás en el puesto ${slot.path}, en la rama ${slot.branch}. Al terminar, con todo commiteado, soltalo: node "${path.join(__dirname, 'work-slots.js')}" release "${slot.path}"`
+    : `${task}${heavyRule}`;
   const launcher = opts.launcher || { bin: 'claude', prefix: [] };
   const timeoutMs = opts.timeoutMs || LAUNCH_TIMEOUT_MS;
   // con control remoto a su nombre, el dueño la ve y la maneja desde claude.ai/code o el celular
