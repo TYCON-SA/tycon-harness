@@ -3243,7 +3243,8 @@ function cmdMarkAdversarialSkipped(argsGate) {
     [path.join(__dirname, 'pipeline.js'), 'deep-review-gate', ...args],
     { encoding: 'utf8', env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
   let gate = null;
-  if (r.status === 0) { try { gate = JSON.parse(r.stdout); } catch (_e) { gate = null; } }
+  // la salida 3 es «corre, y espera su turno»: un veredicto legible, que niega el salteo como cualquier otro `run: true`
+  if (r.status === 0 || r.status === 3) { try { gate = JSON.parse(r.stdout); } catch (_e) { gate = null; } }
   if (!gate || typeof gate !== 'object') {
     const detalle = String(r.stderr || '').trim()
       || (r.error && r.error.message)

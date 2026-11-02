@@ -341,3 +341,167 @@ test('T14f Notice_BadEntryOrDayFile_SaysSo @story-8.122 @ac-14: una pendiente si
   pending(borde, [{ title: 'Justo', hoursAgo: 24 }]);
   assert.strictEqual(C.capNotice(borde.opts), null);
 });
+
+// ── Sesiones de fondo quietas, el turno de la suite, los pedidos verdes y el freno del segundo pase ───────────────────
+
+const bg = (t, sid, name, minutesAgo, extra = {}) => session(t, sid, name, { kind: 'bg', status: 'idle', statusUpdatedAt: mins(minutesAgo), ...extra });
+
+test('Q1 Notice_QuietBackgroundSession_SaysCloseOrAssign: una de fondo sin trabajar más de 15 min avisa; las demás no', () => {
+  const t = toy();
+  bg(t, 'bg-1', 'Uma', 20);
+  bg(t, 'bg-2', 'Nico', 10);
+  session(t, 'int-1', 'Beto', { kind: 'interactive', status: 'idle', statusUpdatedAt: mins(90) });
+  bg(t, 'bg-3', 'Trabaja', 40, { status: 'busy' });
+  bg(t, 'bg-4', 'Muerta', 40, { pid: deadPid() });
+  const n = C.capNotice(t.opts);
+  assert.ok(n, 'avisa');
+  assert.match(n, /Coordinación: Uma está quieta hace 20 min: cerrala o dale trabajo\./);
+  for (const name of ['Nico', 'Beto', 'Trabaja', 'Muerta']) assert.ok(!n.includes(name), `${name} no se nombra: ${n}`);
+  // la coordinadora misma, de fondo y quieta, no se avisa a sí misma
+  const t2 = toy();
+  bg(t2, COORD, 'Coordinadora', 50);
+  assert.strictEqual(C.capNotice(t2.opts), null);
+});
+
+test('Q2 Notice_QuietButWaiting_NotNamed: su pase en vuelo, una nota reciente o la suite de la máquina no cuentan como quieta', () => {
+  const t = toy();
+  bg(t, 'bg-pase', 'ConPase', 30);
+  inFlight(t, 'bg-pase', '9.5', 25);
+  bg(t, 'bg-nota', 'ConNota', 30);
+  const doing = path.join(t.state, 'doing');
+  fs.mkdirSync(doing, { recursive: true });
+  fs.writeFileSync(path.join(doing, 'bg-nota.json'), JSON.stringify({ text: 'miro la cola' }));
+  bg(t, 'bg-suite', 'ConSuite', 30);
+  fs.mkdirSync(path.join(t.state, 'coordination'), { recursive: true });
+  fs.writeFileSync(path.join(t.state, 'coordination', 'suite-turn.json'), JSON.stringify({ pid: process.pid, sid: 'bg-suite', session: 'ConSuite', what: 'suites portables', at: mins(30) }));
+  const s = C.status({ ...t.opts, noTranscripts: true });
+  assert.deepStrictEqual(s.quiet, [], JSON.stringify(s.quiet));
+  assert.strictEqual(s.suite.session, 'ConSuite');
+  assert.match(C.statusText(s), /Suite completa en curso: ConSuite \(suites portables, desde las \d\d:\d\d\)/);
+  // una nota vieja ya no la tapa
+  const old = new Date(NOW - 4 * 3600000);
+  fs.utimesSync(path.join(doing, 'bg-nota.json'), old, old);
+  assert.deepStrictEqual(C.status({ ...t.opts, noTranscripts: true }).quiet.map((q) => q.session), ['ConNota']);
+});
+
+test('Q3 Notice_GreenRequestNobodyQueued_SaysHowToQueue: un pedido verde sin auto-merge, de la foto, con el comando; sin salir a la red', () => {
+  const t = toy();
+  const az = (repo) => ({ platform: 'azure', org: 'acme', project: 'Harness', repo });
+  fs.writeFileSync(path.join(t.arnes, 'team-repos.json'), JSON.stringify({ version: 1, public: { platform: 'github', org: 'acme', repo: 'harness' },
+    profile: az('harness-team-profile'), operations: az('harness-team-operations'), maintainers: az('harness-maintainers') }));
+  const pr = { number: 882, draft: false, autoComplete: false, inQueue: false, lastQueueDrop: null, mergeState: 'clean', author: 'quien', sourceCommit: 'c882', sourceBranch: 'fix/aprobado', createdAt: '2026-10-25T10:00:00Z' };
+  fs.writeFileSync(path.join(t.state, 'stuck-prs-photo.json'), JSON.stringify({ at: new Date(mins(1)).toISOString(), repos: ['acme/harness', 'acme/Harness/harness-team-profile', 'acme/Harness/harness-team-operations', 'acme/Harness/harness-maintainers'], lecturas: { 'acme/harness': { ok: true, value: [pr] } } }));
+  fs.writeFileSync(path.join(t.state, 'green-prs.json'), JSON.stringify({ 'acme/harness#882': { estado: 'verde-sin-auto', punta: 'c882', vistoDesde: new Date(mins(15)).toISOString() } }));
+  const n = C.capNotice(t.opts);
+  assert.ok(n, 'avisa');
+  assert.match(n, /^Coordinación: pedido 882 \(harness\) listo y sin auto-merge hace 15 min, fuera de la cola/m);
+  assert.match(n, /gh pr merge 882 -R acme\/harness --merge/);
+  assert.ok(!fs.existsSync(path.join(t.state, 'stuck-prs-refresh.lock')), 'con la foto vigente no lanza la lectura de fondo');
+});
+
+test('Q4 AdversarialTurn_Waits_UpToAnHour: frena con un pase en vuelo; pasada una hora, con una fecha ilegible o con la sesión cerrada, no', () => {
+  const t = toy();
+  session(t, 'otra-2', 'Vecina', { status: 'busy' });
+  inFlight(t, 'otra-2', '9.2', 12);
+  const r = C.adversarialTurn({ ...t.opts, sessionId: 'propia-1' });
+  assert.strictEqual(r.waiting_turn, true);
+  assert.match(r.turn, /el arnés no deja lanzar este hasta que termine/);
+  assert.match(r.turn, /Vecina/);
+  inFlight(t, 'otra-2', '9.2', 61);
+  const viejo = C.adversarialTurn({ ...t.opts, sessionId: 'propia-1' });
+  assert.strictEqual(viejo.waiting_turn, false);
+  assert.match(viejo.turn, /hace más de una hora/);
+  marker(t, 'otra-2', { storyId: '9.2', adversarial: { launchedAt: 'no es una fecha', runId: 'wf_x' } });
+  assert.strictEqual(C.adversarialTurn({ ...t.opts, sessionId: 'propia-1' }).waiting_turn, false);
+  // una sesión cerrada no deja archivo: su pase quedó abandonado y no ocupa el lugar
+  const c = toy();
+  inFlight(c, 'cerrada', '9.7', 5);
+  assert.strictEqual(C.adversarialTurn({ ...c.opts, sessionId: 'propia-1' }), null);
+  // una de Codex tampoco lo deja, y su pase sí cuenta si tuvo actividad hace poco
+  const dbDir = path.join(c.root, 'codex');
+  fs.mkdirSync(dbDir);
+  const { DatabaseSync } = require('node:sqlite');
+  const db = new DatabaseSync(path.join(dbDir, 'state_1.sqlite'));
+  db.exec("CREATE TABLE threads (id TEXT, name TEXT, updated_at_ms INTEGER, source TEXT)");
+  db.prepare('INSERT INTO threads VALUES (?, ?, ?, ?)').run('cerrada', 'Con Codex', mins(2), 'cli');
+  db.close();
+  assert.strictEqual(C.adversarialTurn({ ...c.opts, sessionId: 'propia-1', codexHome: dbDir }).waiting_turn, true);
+});
+
+test('Q6 Notice_WaitingForPassTurn_WakeHerUp: quien debe su pase no sale como quieta; la coordinadora la despierta cuando se libera', () => {
+  const t = toy();
+  bg(t, 'bg-debe', 'Rita', 40);
+  marker(t, 'bg-debe', { storyId: '9.8', adversarialGate: { run: true, files: ['a.js'] } });
+  session(t, 'otra-2', 'Vecina', { status: 'busy' });
+  inFlight(t, 'otra-2', '9.2', 12);
+  const n = C.capNotice(t.opts);
+  assert.match(n, /Coordinación: Rita espera su turno de pase adversarial \(lo tiene Vecina\): avisale cuando termine\./);
+  assert.ok(!/Rita está quieta/.test(n), n);
+  fs.unlinkSync(path.join(t.state, 'active', 'otra-2.json'));
+  assert.match(C.capNotice(t.opts), /Coordinación: Rita puede lanzar su pase adversarial, no hay otro en vuelo: avisale\./);
+  // el pase de una sesión cerrada no ocupa el lugar: el aviso dice lo mismo que el portón
+  inFlight(t, 'cerrada', '9.3', 5);
+  assert.match(C.capNotice(t.opts), /Rita puede lanzar su pase adversarial/);
+  fs.unlinkSync(path.join(t.state, 'active', 'cerrada.json'));
+  // ya lanzado, no debe nada
+  marker(t, 'bg-debe', { storyId: '9.8', adversarialGate: { run: true }, adversarial: { launchedAt: new Date(mins(5)).toISOString() } });
+  assert.strictEqual(C.capNotice(t.opts), null);
+});
+
+test('Q5 DeepReviewGate_SecondPass_ExitsThreeAndSaysWho: el portón de verdad sale 3 y nombra quién tiene el lugar; sin otro pase, 0', { skip: process.platform === 'win32' ? 'enlaces simbólicos' : false }, () => {
+  const t = toy();
+  // un árbol con el perfil de juguete: quién es la coordinadora sale del perfil del árbol, y con los enlaces conservados
+  // el proceso cree vivir ahí
+  const tree = path.join(t.root, 'arbol');
+  fs.mkdirSync(tree);
+  fs.symlinkSync(path.join(ROOT, 'scripts'), path.join(tree, 'scripts'));
+  fs.symlinkSync(path.join(ROOT, 'skills'), path.join(tree, 'skills'));
+  fs.writeFileSync(path.join(tree, 'team-profile.json'), JSON.stringify({ approvals: { relay_session: 'coordinadora' } }));
+  // la designación vale con su renglón de ahora: la del juguete es de la fecha fija de las demás pruebas
+  // stable-data: la designación y el pase de este caso los lee un proceso aparte, con su propio reloj: no depende del día ni del huso
+  fs.appendFileSync(path.join(t.state, 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), name: 'relay-designation', status: 'ok', sesion: COORD, rol: 'coordinadora', quien: 'el dueño', cita: 'Esta sesión es la coordinadora' })}\n`);
+  session(t, 'otra-2', 'Vecina', { status: 'busy' });
+  fs.writeFileSync(path.join(t.state, 'active', 'otra-2.json'), JSON.stringify({ sessionId: 'otra-2', storyId: '9.2', stepsPending: [6], lastTouch: new Date().toISOString(), adversarial: { launchedAt: new Date(Date.now() - 12 * 60000).toISOString(), runId: 'wf_x' } }));
+  const repo = path.join(t.root, 'repo');
+  fs.mkdirSync(repo);
+  spawnSync('git', ['init', '-q', repo]);
+  // el repo declara que su pase corre siempre: corre sin una bandera que lo fuerce
+  fs.mkdirSync(path.join(repo, 'specs'));
+  fs.mkdirSync(path.join(repo, 'scripts'));
+  fs.mkdirSync(path.join(repo, '.tycon'));
+  fs.writeFileSync(path.join(repo, '.tycon', 'advisors.yaml'), 'deep_review: always\n');
+  const story = path.join(repo, 'specs', 'story-9.9.md');
+  fs.writeFileSync(story, ['---', 'story: "9.9"', 'epic: 1', 'status: in-progress', 'approach: "[ADAPT]"', 'files_to_create: []', 'files_to_modify:', '  - scripts/a.js', '---', '', '# Story', '', '## Acceptance Criteria', '', '1. criterio', ''].join('\n'));
+  const code = 'scripts/a.js';
+  fs.writeFileSync(path.join(repo, code), 'module.exports = 1;\n');
+  const gate = () => spawnSync(process.execPath, ['--preserve-symlinks', '--preserve-symlinks-main', path.join(tree, 'skills', 'tycon-pipeline', 'scripts', 'pipeline.js'), 'deep-review-gate', '--repo', repo, '--story', story, '--files', code], {
+    cwd: repo, encoding: 'utf8', timeout: 60000,
+    env: { ...process.env, HOME: t.home, USERPROFILE: t.home, CLAUDE_CODE_SESSION_ID: 'propia-1', TYCON_PROFILE: '' },
+  });
+  const r = gate();
+  assert.strictEqual(r.status, 3, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stderr, /deep-review-gate: Hay otro pase adversarial en vuelo \(la 9\.2, Vecina/);
+  const out = JSON.parse(r.stdout);
+  assert.strictEqual(out.run, true);
+  assert.strictEqual(out.waiting_turn, true);
+  // `next` tampoco pide lanzarlo, y el salteo se sigue negando con el veredicto legible
+  const SK = path.join(tree, 'skills', 'tycon-pipeline', 'scripts');
+  const env = { ...process.env, HOME: t.home, USERPROFILE: t.home, CLAUDE_CODE_SESSION_ID: 'propia-1', TYCON_PROFILE: '' };
+  fs.writeFileSync(path.join(t.state, 'active', 'propia-1.json'), JSON.stringify({
+    storyId: '9.9', storyPath: story, repoPath: repo, sessionId: 'propia-1', startedAt: new Date(Date.now() - 3600000).toISOString(), lastTouch: new Date().toISOString(),
+    stepsCompleted: [0, 1, 2, 3, 4], stepsPending: [5, 6, 7, 8], filesTouched: [], iterations: {}, fileEvents: [], clockiStarted: true, adoMarkedActive: true,
+    adversarialGate: { run: true, early_launch: true, files: [code], at: new Date().toISOString(), sessionId: 'propia-1' },
+  }));
+  const node = (script, args) => spawnSync(process.execPath, ['--preserve-symlinks', '--preserve-symlinks-main', path.join(SK, script), ...args], { cwd: repo, encoding: 'utf8', timeout: 60000, env });
+  const next = node('pipeline.js', ['next']);
+  assert.strictEqual(JSON.parse(next.stdout).pending_action.kind, 'esperar-turno-pase', `${next.stdout}\n${next.stderr}`);
+  assert.match(JSON.parse(next.stdout).pending_action.message, /No lo lances todavía/);
+  const skip = node('marker.js', ['mark-adversarial-skipped', '--files', code]);
+  assert.strictEqual(skip.status, 2, skip.stderr);
+  assert.match(skip.stderr, /el portón dice que el pase CORRE/);
+  fs.unlinkSync(path.join(t.state, 'active', 'propia-1.json'));
+  fs.unlinkSync(path.join(t.state, 'active', 'otra-2.json'));
+  const libre = gate();
+  assert.strictEqual(libre.status, 0, `${libre.stdout}\n${libre.stderr}`);
+  assert.strictEqual(JSON.parse(libre.stdout).run, true);
+});

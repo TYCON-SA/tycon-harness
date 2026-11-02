@@ -103,16 +103,40 @@ aguanta depende de ella. Sin valor en ningún lado, el tope es 3. `coordination.
 espera y por qué, y el tope con su origen.
 
 La coordinadora, además, lo ve sin pedirlo: en cada turno, si la máquina está en el tope, un aviso le dice quiénes
-trabajan; si lo pasó, por cuánto y cuál trabaja hace menos. Debajo del tope no dice nada, y ninguna otra sesión lo ve.
-Se apaga con `TYCON_COORDINATION_NOTICE=0`.
+trabajan; si lo pasó, por cuánto y cuál trabaja hace menos. Debajo del tope no dice nada de eso, y ninguna otra sesión lo
+ve. Se apaga con `TYCON_COORDINATION_NOTICE=0`.
 
-## Los pases adversariales, de a uno
+El mismo aviso trae dos cosas más:
 
-Un pase adversarial pesa mucho en la máquina: dos a la vez la saturan. Antes de lanzarlo, la sesión le pide turno a la
-coordinadora, y la coordinadora lo da cuando no hay otro en vuelo. `coordination.js status` dice qué pase está en
-vuelo, de qué historia, en qué sesión y desde cuándo. Y cuando una sesión consulta el portón del pase
-(`pipeline.js deep-review-gate`) con otro en vuelo, la respuesta trae `other_in_flight` (historia, sesión y hora) y la
-línea que le dice que pida turno. Sin coordinadora designada, el portón responde como siempre.
+- **Las sesiones de fondo quietas.** Una sesión de fondo que lleva más de 15 minutos sin trabajar sale como «X está
+  quieta hace N min: cerrala o dale trabajo». No sale la que espera su pase adversarial, la que anotó hace poco qué hace
+  (`marker.js doing`) ni la que tiene la suite completa de la máquina.
+- **Los pedidos listos que nadie encoló, en GitHub.** Un pedido abierto y limpio (sin choque ni controles obligatorios
+  pendientes), sin auto-merge y fuera de la cola, igual por más de 10 minutos, sale con el comando para encolarlo. Por qué:
+  nadie lo va a mergear, y todos creen que ya entró. Sale de la última lectura guardada, de menos de una hora: el aviso no
+  va a la red. Los pedidos de un bot no salen. En Azure no sale: sin leer sus controles, «limpio» sólo dice que no choca.
+- **La sesión que espera lugar para su pase.** Tiene que lanzarlo y otra tiene el lugar: sale con quién lo tiene, y cuando
+  se libera, con «puede lanzar». Nada la despierta sola: le avisa la coordinadora.
+
+## Lo pesado, con turno: la suite completa y los pases adversariales
+
+En la máquina puede correr a la vez **una suite completa y un pase adversarial o una tanda de revisores de otra sesión**:
+el pase y los revisores corren en la nube y casi no usan la máquina. **Nunca dos suites completas ni dos pases a la vez.**
+Lo controla el arnés, no la memoria de nadie:
+
+- **La segunda suite no arranca.** El corredor de las suites y las portables enteras piden el turno
+  (`scripts/tools/heavy-turn.js`). Con el turno de otro proceso vivo no corren (el portón de pruebas sale 75, su «esperá») y
+  dicen quién lo tiene, desde cuándo y cómo destrabarlo. Una suite acotada no lo pide. El turno de un proceso muerto, o de más de
+  tres horas, se libera solo.
+- **El segundo pase no se lanza.** Con otro en vuelo, el portón del pase (`pipeline.js deep-review-gate`) sale 3, y
+  `pipeline.js next` pide esperar en vez de lanzar. La respuesta trae `other_in_flight` (historia, sesión y hora) y la línea
+  que dice quién tiene el lugar. El pase de una sesión cerrada no cuenta.
+- **Cuánto puede tardar el lugar en liberarse.** Hasta una hora de más: el arnés sabe que un pase terminó cuando su sesión
+  lo recoge, no cuando termina en la nube. Pasada esa hora ya no frena, porque puede estar terminado o colgado, y se dice.
+
+`coordination.js status` muestra la suite y el pase en curso. Sin coordinadora designada, todo responde como siempre: en la
+CI y en la nube no hay turno. `TYCON_SUITE_TURN=0` apaga el de la suite, y `TYCON_SUITE_TURN=1` lo pide aunque no haya
+coordinadora: sólo puede frenar de más.
 
 ## Las firmas, por sus dos vías
 
@@ -190,6 +214,12 @@ El arreglo rápido (un cambio de código sin historia) es la firma `adhoc-lane`:
 Cortos y llanos: qué pasó, qué falta y qué decide él, en ese orden. Un aviso por tanda de trabajo, no uno por sesión.
 Lo mide el medidor de estilo que ya existe; esta receta no agrega otro.
 
+## Cómo habla la coordinadora
+
+**Cuando dice que algo «termina», es funcionando de verdad: entró a main y está instalado.** Si todavía no, lo aclara:
+«en la cola», «en main, sin instalar», «programado, sin pedido». Por qué: el dueño decide con esa palabra, y un «ya está»
+que todavía no funciona le hace dar por resuelto algo que sigue roto. Una hora de fin dice también a qué estado se refiere.
+
 ## El tablero en la oficina
 
 La oficina de `/office` muestra, en un panel aparte de los escritorios, el tablero de pendientes de la coordinadora: lo de
@@ -229,9 +259,10 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
   vía (por ejemplo, la ventana a nombre del dueño), se le avisa al dueño enseguida y se rehace. Por qué: una firma a
   nombre del dueño que él no dio es una constancia falsa. Una pestaña que no pide permisos ya no firma por la ventana:
   el arnés lo niega.
-- **Lo pesado, de a uno, y con turno.** La suite completa, el banco de controles, el examen de revisores y el portón
-  corren de a uno en la máquina, y el turno se le pide a la coordinadora. La historia que el dueño marcó como prioridad
-  pasa adelante en la fila. Por qué: dos a la vez saturan la máquina y los dos tardan más.
+- **Lo pesado, con turno.** La suite completa, el banco de controles, el examen de revisores y el portón corren de a uno
+  en la máquina, y el turno se le pide a la coordinadora. La suite completa y el pase además los frena el arnés (arriba, «Lo
+  pesado, con turno»). La historia que el dueño marcó como prioridad pasa adelante en la fila. Por qué: dos a la vez
+  saturan la máquina y los dos tardan más.
 - **Antes de aprobar un pedido ajeno, se mira el diff.** Y un ok que cubre archivos sensibles que nadie revisó no se da:
   primero se separan. Por qué: aprobar sin mirar es firmar lo que no se vio.
 - **Una sesión «libre» puede estar esperando algo.** Cuando corre algo sin tocar archivos, anota qué hace con
@@ -253,7 +284,11 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
 | La coordinadora cierra los detalles con la opción más segura | nadie | Es criterio, y queda anotado para que el dueño lo vea. |
 | Cada sesión con un nombre puesto por una persona | aviso | `/coordinate` lista las que tienen el nombre que armó la herramienta. |
 | No más sesiones trabajando que el tope | freno | `open` no abre en el tope. Una sesión que el dueño abre a mano no la frena nada; la cuenta `status` y, en el tope, el aviso de cada turno de la coordinadora. |
-| Pases adversariales de a uno | aviso | El turno lo da la coordinadora. El portón del pase le dice a la sesión que hay otro en vuelo y que pida turno; no la frena. |
+| Una suite completa por vez | freno | El corredor de las suites y las portables enteras no arrancan con el turno de otro proceso vivo, y dicen quién lo tiene. Una suite que alguien corre por otro camino no la ve. |
+| Pases adversariales de a uno | freno | El portón del pase sale 3 y `next` pide esperar con otro en vuelo. Lanzar el pase sin consultar el portón no lo frena nada, y el de un arreglo rápido no queda anotado como en vuelo. Pasada una hora, sólo avisa. |
+| Las sesiones de fondo quietas se cierran o reciben trabajo | aviso | El aviso de cada turno de la coordinadora, pasados 15 minutos. |
+| Un pedido listo no queda sin encolar | aviso | El aviso de cada turno de la coordinadora, pasados 10 minutos, y el del arranque. Sólo en GitHub. |
+| «Termina» quiere decir funcionando | nadie | Es la palabra que elige: ningún dato de la máquina la ve. |
 | Confirmar que una firma falta antes de pedirla | nadie | Cómo se confirma depende de cada firma; `signature` sólo evita dos archivos con el mismo comando. |
 | Un archivo por firma, borrado al firmar | aviso | `status` cuenta las firmas pendientes; `signature` no escribe un segundo archivo con el mismo comando. Una que espera hace más de un día se le recuerda a la coordinadora, una vez por día. |
 | Pedidos en orden | nadie | Ningún dato de la máquina dice qué pedido es par de cuál sin preguntarle a la red en cada turno. |
@@ -265,7 +300,7 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
 | La hora del trabajo terminado | nadie | Qué es «terminado» depende de cada trabajo. |
 | Un número de historia nunca solo | nadie | Va en los mensajes, que no pasan por un control de texto. |
 | Una pestaña que no pide permisos no firma por la ventana | freno | El freno de la ventana niega la firma y da el comando de la terminal. Que la vía diga «delegación» lo confirma la coordinadora. |
-| Lo pesado de a uno, con turno | nadie | El pase adversarial tiene su aviso (arriba); la suite completa, el banco, el examen y el portón no. |
+| Lo pesado de a uno, con turno | nadie | La suite completa y el pase adversarial tienen su freno (arriba); el banco, el examen y el portón no. |
 | Mirar el diff antes de aprobar un pedido ajeno | nadie | Es criterio de quien aprueba. |
 | Una sesión que espera anota qué hace | nadie | Lo anota la sesión con `marker.js doing`; nada la obliga. |
 | Comprobar que un pedido sigue en la cola | nadie | Mirarlo cada turno sería preguntarle a la red todo el tiempo. |

@@ -1017,6 +1017,14 @@ if [[ "$RUNNER" =~ ^(dotnet|node-test|jest|vitest)$ && "$SUITE_EXIT" =~ ^[3-7]$ 
   SUITE_EXIT=1
 fi
 
+# 77: el corredor no arrancó porque otra sesión tiene el turno de la suite completa de la máquina (scripts/tools/heavy-turn.js;
+# ya dijo quién). `run-check` lo anotó como rojo, así que un verde viejo no queda en pie; para quien llama es un 75.
+if [[ "$SUITE_EXIT" == "77" && "$RUNNER" == "suites-json" ]]; then
+  TG_NO_COMPANIONS="otra sesión tiene el turno de la suite completa de la máquina"
+  rm -f "$OUT_FILE"
+  echo "🟡 [test-gate] no corrí nada: otra sesión tiene el turno de la suite completa de la máquina (arriba, quién y desde cuándo). Esperá que termine; no quedó tests-result.json." >&2
+  exit 75
+fi
 # 75: `run-check tests` no lanzó nada porque otra corrida de las pruebas está en marcha en este repo (ya dijo desde
 # cuándo y de quién). No es un rojo: no se escribe tests-result.json, no se toca el check y no se corren los hermanos.
 if [[ "$SUITE_EXIT" == "75" ]]; then

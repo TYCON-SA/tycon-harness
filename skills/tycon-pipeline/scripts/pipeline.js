@@ -3052,6 +3052,15 @@ function accionDelPase(marker, story, { sidNow, nextStep } = {}) {
     };
   }
   if (gate.run !== true) return {};
+  // con otra sesión en su pase, `next` tampoco pide lanzarlo: el mismo turno que frena al portón
+  try {
+    const turno = require(path.join(__dirname, '..', '..', '..', 'scripts', 'tools', 'coordination.js')).adversarialTurn({ sessionId: sidNow });
+    if (turno && turno.waiting_turn === true) {
+      return { pending_action: { kind: 'esperar-turno-pase', message: `${turno.turn} No lo lances todavía: seguí con el paso que sigue. La coordinadora te avisa cuando se libere el lugar, y \`next\` deja de decir esto.` } };
+    }
+  } catch (e) {
+    process.stderr.write(`next: no pude ver si hay otro pase adversarial en vuelo (${String(e.message).split('\n')[0]})\n`);
+  }
   const archivos = Array.isArray(gate.files) ? gate.files : [];
   const cuando = String(nextStep) === 'reviewers' ? 'AHORA, antes del primer revisor' : 'AHORA';
   return {
@@ -3209,7 +3218,7 @@ function computeNext() {
     note: exempt7c
       ? `${partes}Sigue ${etiqueta}. ${NOTA_7C_EXENTA}`
       : nextStep
-      ? `${partes}${pending && ['consultar-porton', 'lanzar-pase'].includes(pending.kind) ? `ANTES, pase adversarial: ${pending.message} ` : ''}Sigue ${etiqueta}. Leé SOLO ${path.basename(nextStep.file)} y ejecutalo. Los skips listados son mecánicos (verificables) — no infieras otros (regla E.i). Al completar: ${cierre(nextStep)}.${pending && pending.kind.endsWith('-pase-ajeno') ? ` ⚠️ ${pending.message} Regla: ${pending.rule} (${pending.why}).` : ''}${notaDelTamano(marker, nextStep) ? ` ${notaDelTamano(marker, nextStep)}` : ''}${warnings.length ? ` ${warnings.join(' · ')}.` : ''}`
+      ? `${partes}${pending && ['consultar-porton', 'lanzar-pase', 'esperar-turno-pase'].includes(pending.kind) ? `ANTES, pase adversarial: ${pending.message} ` : ''}Sigue ${etiqueta}. Leé SOLO ${path.basename(nextStep.file)} y ejecutalo. Los skips listados son mecánicos (verificables) — no infieras otros (regla E.i). Al completar: ${cierre(nextStep)}.${pending && pending.kind.endsWith('-pase-ajeno') ? ` ⚠️ ${pending.message} Regla: ${pending.rule} (${pending.why}).` : ''}${notaDelTamano(marker, nextStep) ? ` ${notaDelTamano(marker, nextStep)}` : ''}${warnings.length ? ` ${warnings.join(' · ')}.` : ''}`
       : `No quedan pasos pendientes — cerrá con marker.js clear (o ${STEPS_TABLE.CLOSE_STEP.file} si vas a cerrar la story en ADO: «${STEPS_TABLE.CLOSE_STEP.name}»).`,
   };
 }
@@ -7525,7 +7534,8 @@ function main() {
   }
   if (cmd === 'deep-review-gate') {
     // Pase adversarial: ¿corre el pase adversarial reproduce-or-refute? {run, model, reason}. Gate = risk-class
-    // NORMAL + overrides. exit 0 siempre (informativo); el orquestador lee `run`.
+    // NORMAL + overrides. Exit 0: el orquestador lee `run`. Exit 3: corre, pero otra sesión tiene su pase en vuelo y va
+    // uno por vez (`waiting_turn`): no se lanza todavía.
     // Misma guarda que risk-class: el default de este gate ES risk-class, así que
     // un --files mal expandido produce un LOW silencioso y sella el pase adversarial como hecho
     // (`deepReviewDone`). Abortar es correcto AUNQUE el comando sea informativo: un veredicto
@@ -7583,8 +7593,8 @@ function main() {
         process.stderr.write(`deep-review-gate: no pude anotar el veredicto en la corrida (${e.message.split('\n')[0]}) — \`next\` va a pedir consultar el portón otra vez\n`);
       }
     }
-    // Con otra sesión en su pase adversarial, el turno lo da la coordinadora (guides/coordination.md). Sin coordinadora
-    // designada, o sin otro pase, el veredicto sale igual que siempre.
+    // Con otra sesión en su pase adversarial, va uno por vez (guides/coordination.md): sale 3 y dice quién tiene el lugar.
+    // Sin coordinadora designada, o sin otro pase, el veredicto sale igual que siempre.
     if (result && result.run === true) {
       try {
         const turno = require(path.join(__dirname, '..', '..', '..', 'scripts', 'tools', 'coordination.js'))
@@ -7595,6 +7605,10 @@ function main() {
       }
     }
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    if (result && result.waiting_turn === true) {
+      process.stderr.write(`deep-review-gate: ${result.turn}\n`);
+      process.exit(3);
+    }
     process.exit(0);
   }
   if (cmd === 'timing-report') {
