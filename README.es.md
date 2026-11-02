@@ -36,8 +36,8 @@ El ciclo de desarrollo con IA (AI SDLC), paso por paso:
 épicos e historias—; después, historia por historia.
 
 - **El tamaño decide: historia o camino rápido.** La pregunta: ¿es un cambio chico?
-  - **Es chico** si lo pedís en una frase y, al terminar, ves que quedó bien mirando el resultado y corriendo sus
-    pruebas. Ejemplo: «el combo de provincia muestra el nombre completo en vez de la sigla». Va por **camino rápido**.
+  - **Es chico** si lo pedís en una frase y, al terminar, sabés si quedó bien sin revisar una lista: alcanza con mirar
+    el resultado y correr sus pruebas. Ejemplo: «el combo de provincia muestra el nombre completo en vez de la sigla». Va por **camino rápido**.
   - **No es chico** si para saber que quedó completo hace falta una lista de criterios, si lleva más de una sesión o si
     espera a alguien de afuera. Ejemplo: «el combo trae las opciones de la base y recuerda la última elección». Va por
     **historia**.
@@ -47,7 +47,7 @@ El ciclo de desarrollo con IA (AI SDLC), paso por paso:
   coordinadora, no lo decidís solo: el camino rápido lo aprueba la sesión coordinadora o vos. Lo hace cumplir el arnés:
   - Sin un camino rápido abierto o una historia, el arnés **no deja escribir código**.
   - El camino rápido tiene un **tope de archivos**: 5 si lo aprobó la sesión coordinadora, 8 si lo aprobaste vos. Al pasarlo,
-    el arnés **lo cierra** y pide una historia.
+    el arnés **lo cierra** y recomienda una historia. Si igual querés seguir por camino rápido, lo pedís vos con un click aparte, que queda anotado; la sesión coordinadora no puede.
   - Un camino rápido con varios temas en el motivo **no lo puede aprobar la sesión coordinadora**.
 - **El riesgo decide quién aprueba.**
   - **Riesgo alto** es cuando el cambio toca algo sensible del repo, como producción, una migración o seguridad.
@@ -59,40 +59,47 @@ El ciclo de desarrollo con IA (AI SDLC), paso por paso:
     coordinadora abre el camino rápido con la lista de archivos y te avisa, y aprueba el plan si la revisión automática
     dio «aprobado». Con riesgo alto, lo aprobás vos. Sin sesión coordinadora, lo suyo lo aprobás vos. El plan nunca se
     aprueba solo.
-- **Guardar es un sí en la ventana de permiso, en los dos caminos.** Antes de cada commit, push y pull request el
-  agente pregunta «¿guardo?», y con un sí guarda. No hay firma ni comando.
+- **Si el cambio tiene pantalla, en los dos caminos se aprueba una maqueta antes de construir**, y lo construido se
+  valida contra ella.
+- **Guardar es un click en el cuadro de opciones o un «Aprobado» escrito, en los dos caminos.** Antes de cada commit,
+  push y pull request el agente pregunta «¿guardo?». Si tu pestaña pide permisos, el sí va en la ventana de permiso. No
+  hay firma ni comando.
 
 Los frenos, los controles y las firmas de control del arnés son de quien lo mantiene. El detalle:
 [La medida justa](guides/que-hace-el-arnes.md#la-medida-justa-cuánto-papel-lleva-cada-cambio).
 
 ```mermaid
 flowchart TB
-  pedir(["<b>Pedir</b>"]) --> chico{"<b>¿Es un cambio chico?</b><br/>lo pedís en una frase y ves que quedó con sólo mirarlo"}
+  pedir(["<b>Pedir</b>"]) --> chico{"<b>¿Es un cambio chico?</b><br/>lo pedís en una frase, y al terminar sabés si quedó bien sin revisar una lista"}
   chico -- "Sí · Camino rápido" --> r1
   chico -- "No · Historia" --> h1
   subgraph rapido [" "]
     direction TB
-    r1["<b>Abrir el carril</b><br/>con la lista de archivos<br/>riesgo normal: la sesión coordinadora, hasta 5<br/>riesgo alto: vos, hasta 8"] --> r2["<b>Programar con la prueba primero</b><br/>al guardar, el arnés avisa si fue al revés"]
+    r1["<b>Abrir el carril</b><br/>con la lista de archivos<br/>riesgo normal: la sesión coordinadora, hasta 5<br/>riesgo alto: vos, hasta 8<br/>más de 8: el arnés recomienda una historia, o un click aparte tuyo"] --> r1m["<b>Aprobar la maqueta</b><br/>si tiene pantalla · antes de construir"]
+    r1m --> r2["<b>Programar con la prueba primero</b><br/>al guardar, el arnés avisa si fue al revés"]
     r2 --> r3["<b>Correr sus pruebas</b>"]
-    r3 --> r4["<b>Revisores y pase adversarial</b><br/>sólo con riesgo alto"]
+    r3 --> r3c["<b>Validar contra la maqueta</b><br/>si tiene pantalla"]
+    r3c --> r4["<b>Revisores y pase adversarial</b><br/>sólo con riesgo alto"]
   end
   subgraph historia [" "]
     direction TB
     h1["<b>Validar la historia</b>"] --> h2["<b>Armar el plan</b>"]
     h2 --> h3["<b>Aprobar el plan</b><br/>riesgo normal: la sesión coordinadora, si la revisión automática dio «aprobado»<br/>riesgo alto: vos"]
-    h3 --> h4["<b>Programar con las pruebas primero</b>"]
+    h3 --> h3m["<b>Aprobar la maqueta</b><br/>si tiene pantalla · junto con el plan, y por quien lo aprueba"]
+    h3m --> h4["<b>Programar con las pruebas primero</b>"]
     h4 --> h5["<b>Correr las pruebas</b>"]
     h5 --> h6["<b>Revisores</b><br/>elegidos según el cambio"]
     h6 --> h7["<b>Pase adversarial</b><br/>no en una historia chica de riesgo bajo ni en sólo documentación o pruebas"]
     h7 --> h8["<b>Probar en vivo, criterio por criterio</b>"]
+    h8 --> h9["<b>Validar contra la maqueta</b><br/>si tiene pantalla"]
   end
-  r4 --> g1["<b>Guardar</b><br/>el sí en la ventana de permiso"]
-  h8 --> g1
+  r4 --> g1["<b>Guardar</b><br/>un click en el cuadro, o un «Aprobado» escrito"]
+  h9 --> g1
   g1 --> g2["<b>Pull request</b><br/>la CI"]
   classDef decide fill:#2f6fde,stroke:#1f4fa8,color:#ffffff
   classDef control fill:#F15A24,stroke:#b8410f,color:#ffffff
-  class r1,h3,g1 decide
-  class r4,h4,h5,h6,h7,h8,g2 control
+  class r1,r1m,h3,h3m,g1 decide
+  class r3c,r4,h4,h5,h6,h7,h8,h9,g2 control
 ```
 
 <sub>🟦 Decide alguien: vos, o la sesión coordinadora con riesgo normal · 🟧 Control que no se saltea</sub>
@@ -207,7 +214,7 @@ Una historia es tu pedido escrito, con sus criterios y sus pruebas: el agente la
 4. **Pedí la historia con tus palabras**, para que el cambio quede escrito antes de programar: «creá una historia para agregar un filtro por fecha».
 5. **Revisá la historia.** El agente la arma con lo que le pediste, contestando tres preguntas en llano (qué tiene que hacer, cómo se ve que anda y qué no tiene que tocar), y te marca lo que supuso. Te la muestra y la escribe con tu «sí». Si tu repo ya trae la carpeta `_bmad/`, la arma con lo que hay ahí.
 6. **Pedí «implementemos la story»**, para arrancar el recorrido: la frase va así. Si no hay git, lo inicia; si estás en `main`, crea la rama. Valida la historia y, si le falta algo, te pregunta si la arregla. Te muestra el plan y espera tu "sí" antes de programar. Después escribe las pruebas y el código, corre las pruebas y los revisores, y prueba cada criterio corriéndolo.
-7. **Revisá el resumen.** Antes de commitear te pregunta «¿guardo?» en la ventana de permiso, y con un sí guarda: nunca commitea ni sube cambios sin tu permiso. Al cerrar la primera historia te ofrece la instalación completa.
+7. **Revisá el resumen.** Antes de commitear te pregunta «¿guardo?» y guarda con tu sí: nunca commitea ni sube cambios sin tu permiso. Al cerrar la primera historia te ofrece la instalación completa.
 8. **Una historia con pantalla.** El agente arma una maqueta para que la apruebes antes de programar; si tu repo no tiene cómo probar en un navegador, te ofrece prepararlo; y te deja una guía para probarla a mano. · [▶ video](https://github.com/user-attachments/assets/8aa2c03a-03d7-42ab-b4ae-daf90a53e3c9)
 9. **Las reglas propias de tu proyecto.** Pedile a tu agente un revisor que controle una regla tuya (por ejemplo, «el email de un cliente nunca se muestra completo»): queda en tu repo de reglas y revisa cada historia junto con los del arnés. · [▶ video](https://github.com/user-attachments/assets/1ef473c6-f088-413f-8560-9d801e6a0c75)
 
@@ -268,32 +275,24 @@ Un ejemplo: en ACME, Pedro es el admin y Juan programa.
    la dirección del repo del equipo, arma sus tres archivos (`team-layer.json`, `team-profile.json` y `team-repos.json`)
    a partir de [un ejemplo](https://github.com/TYCON-SA/harness-team-profile-example) y los valida antes de escribir. No
    crea repos ni pide credenciales: le dice dónde crear el repo vacío, con acceso sólo para el equipo, y si dice que sí
-   lo sube con su git. Con el arnés ya instalado, lo mismo es `node ~/.tycon/harness/scripts/setup/harness.js team-init`.
-   El repo de operaciones se crea aparte (abajo, «Los procesos de la noche»).
+   lo sube con su git.
+   El repo de operaciones se crea aparte (abajo, «Lo que corre de noche»).
 2. Todo lo que se personaliza —dónde vive cada repo, a quién se le asignan los avisos, los umbrales— se configura desde
    la pestaña **Configuración** del [sitio del equipo](guides/organization-site.md) (sólo para los admins): valida con
    los mismos lectores del arnés y propone cada cambio con un pedido de cambio (pull request), nunca escribe `main`.
-   Mientras ACME no tiene su sitio, cada archivo se cambia con un pedido de cambio a su repo: lo que llega a las
-   máquinas, al repo del equipo; lo de la noche y del sitio, al de operaciones. El arnés funciona entero así: qué
+   Mientras ACME no tiene su sitio, cada archivo se cambia con un pedido de cambio a su repo. El arnés funciona entero así: qué
    necesita cada caso y dónde vive cada configuración, en [Con sitio o sin sitio](getting-started/reference.es.md#con-sitio-o-sin-sitio).
-   La página local (`node ~/.tycon/harness/scripts/setup/harness.js team-config`) muestra, de sólo lectura y sin nada
-   en internet, lo que hay en sus clones y los problemas que ven los lectores; no guarda ni propone nada.
 3. Juan instala con npx y el repo del equipo: `npx @tyconsa/harness@latest --team acme/harness-team-profile` si está en
    GitHub, o `npx @tyconsa/harness@latest --team https://dev.azure.com/acme/<proyecto>/_git/harness-team-profile` si
    está en Azure DevOps. Como ese repo lo ve sólo el equipo, antes de bajar nada la línea mira si lo puede leer y, si
    no, le pide el permiso de lectura. Desde ahí, cada actualización le trae también lo del equipo.
 
-Cómo se extiende el arnés para tu organización —qué suma cada organización, la página de configuración y un recorrido de ejemplo— en un
+Cómo se extiende el arnés para tu organización, con un recorrido de ejemplo, en un
 [mapa interactivo](https://www.bizuit.com/sdd-harness/more/mapa-del-arnes.html).
-
-**Los procesos de la noche.** En Azure DevOps, la revisión de dependencias, las métricas del ciclo y el tablero corren en
-tu organización con tres procesos modelo y tu repo de operaciones: [cómo darlos de alta](pipelines/operations/README.md).
-En GitHub, los mismos tres corren como workflows de GitHub Actions, y los hallazgos de dependencias son issues en el
-repo de cada producto: [cómo darlos de alta](pipelines/operations/github/README.md).
 
 **Paso a paso, para quien arma el equipo.**
 
-1. **Entendé las tres capas.** Este repo, el arnés, igual para todos; el repo del equipo, con lo que llega a cada máquina; y las operaciones del equipo, con lo que corre de noche. La tabla de arriba dice qué guarda cada uno. · [▶ video](https://github.com/user-attachments/assets/582a4581-141c-486e-a19d-1f5eb01d6129)
+1. **Entendé las tres capas.** Este repo, el arnés, igual para todos; el repo del equipo, con lo que llega a cada máquina; y las operaciones del equipo, con lo que corre de noche. · [▶ video](https://github.com/user-attachments/assets/582a4581-141c-486e-a19d-1f5eb01d6129)
 2. **Da de alta tu equipo.** `npx @tyconsa/harness@latest --audience org` instala tu máquina y sigue con `harness.js team-init`, que arma los tres archivos del repo del equipo y los valida. Creá el repo vacío, con acceso sólo para el equipo, y subilos. Cada dev instala con `npx @tyconsa/harness@latest --team <repo del equipo>`. · [▶ video](https://github.com/user-attachments/assets/fa77d543-85b8-4564-8530-d583679b15c5)
 3. **Mirá el sitio de la organización.** Cada persona entra con la cuenta de la organización y ve lo suyo: sus corridas, sus pedidos de cambio, lo que tiene asignado; quien mantiene el arnés ve todo. Es opcional: el arnés funciona entero sin él. **Miralo sin instalar nada:** el sitio demo, [https://is.gd/tyconharnessdemo](https://is.gd/tyconharnessdemo), se abre sin cuenta con datos de una organización inventada y no escribe nada; la primera visita puede tardar unos segundos, mientras se despierta. [Levantar el sitio: guía paso a paso](guides/organization-site.md#qué-hace-falta-antes) (probarlo con Docker, Azure Container Apps, Render o una máquina propia). · [▶ video](https://github.com/user-attachments/assets/9cc321d7-9410-43ef-a842-9d27f98e4dc5)
 4. **Configurá desde el sitio.** La pestaña **Configuración** (sólo para quien mantiene) personaliza la organización: quién es responsable de qué, el canal del aviso, los umbrales. Valida cada cambio y lo propone con un pedido de cambio; nunca escribe `main`. Sin sitio, el mismo cambio va con un pedido de cambio al repo que corresponde. · [▶ video](https://github.com/user-attachments/assets/61438ad4-9f29-4719-b298-c74dddb19d93)

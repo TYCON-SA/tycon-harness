@@ -36,8 +36,8 @@ open models through [Ollama](guides/integrations/ollama.en.md), and with
 and stories—; then, story by story.
 
 - **Size decides: story or quick path.** The question: is it a small change?
-  - **It is small** if you ask for it in one sentence and, when it is done, you see it came out right by looking at the
-    result and running its tests. Example: "the province dropdown shows the full name instead of the abbreviation". It
+  - **It is small** if you ask for it in one sentence and, when it is done, you know if it came out right without going
+    through a list: looking at the result and running its tests is enough. Example: "the province dropdown shows the full name instead of the abbreviation". It
     goes by **quick path**.
   - **It is not small** if knowing it is complete takes a list of criteria, if it takes more than one session or if it
     waits on someone outside. Example: "the dropdown loads its options from the database and remembers the last
@@ -48,7 +48,7 @@ and stories—; then, story by story.
   you do not decide alone: the quick path is approved by the coordinating session or you. The harness enforces it:
   - Without an open quick path or a story, the harness **does not let you write code**.
   - The quick path has a **file cap**: 5 if the coordinating session approved it, 8 if you did. Past it, the harness
-    **closes it** and asks for a story.
+    **closes it** and recommends a story. If you still want to stay on the quick path, you ask for it with a separate click, which is recorded; the coordinating session cannot.
   - A quick path with several topics in its reason **cannot be approved by the coordinating session**.
 - **Risk decides who approves.**
   - **High risk** is when the change touches something sensitive in the repo, such as production, a migration or
@@ -59,40 +59,47 @@ and stories—; then, story by story.
     coordinating session opens the quick path with the list of files and tells you, and approves the plan if the
     automatic review said "approved". With high risk, you approve it. Without a coordinating session, you approve its
     part. The plan never approves itself.
-- **Saving is the yes in the permission window, on both paths.** Before every commit, push and pull request the agent
-  asks "save?", and with a yes it saves. There is no signature and no command.
+- **If the change has a screen, on both paths a mockup is approved before building**, and what was built is validated
+  against it.
+- **Saving is a click in the options box or a written "Aprobado", on both paths.** Before every commit, push and pull
+  request the agent asks "save?". If your tab asks for permissions, the yes goes in the permission window. There is no
+  signature and no command.
 
 The harness brakes, controls and control signatures belong to whoever maintains it. The detail:
 [The right measure](guides/que-hace-el-arnes.md#la-medida-justa-cuánto-papel-lleva-cada-cambio) (in Spanish).
 
 ```mermaid
 flowchart TB
-  pedir(["<b>Request</b>"]) --> chico{"<b>Is it a small change?</b><br/>you ask for it in one sentence and see it came out right just by looking"}
+  pedir(["<b>Request</b>"]) --> chico{"<b>Is it a small change?</b><br/>you ask for it in one sentence, and when it is done you know if it came out right without going through a list"}
   chico -- "Yes · Quick path" --> r1
   chico -- "No · Story" --> h1
   subgraph rapido [" "]
     direction TB
-    r1["<b>Open the lane</b><br/>with the list of files<br/>normal risk: the coordinating session, up to 5<br/>high risk: you, up to 8"] --> r2["<b>Code with the test first</b><br/>at saving, the harness warns if it was the other way round"]
+    r1["<b>Open the lane</b><br/>with the list of files<br/>normal risk: the coordinating session, up to 5<br/>high risk: you, up to 8<br/>more than 8: the harness recommends a story, or a separate click from you"] --> r1m["<b>Approve the mockup</b><br/>if it has a screen · before building"]
+    r1m --> r2["<b>Code with the test first</b><br/>at saving, the harness warns if it was the other way round"]
     r2 --> r3["<b>Run its tests</b>"]
-    r3 --> r4["<b>Reviewers and adversarial pass</b><br/>only with high risk"]
+    r3 --> r3c["<b>Validate against the mockup</b><br/>if it has a screen"]
+    r3c --> r4["<b>Reviewers and adversarial pass</b><br/>only with high risk"]
   end
   subgraph historia [" "]
     direction TB
     h1["<b>Validate the story</b>"] --> h2["<b>Build the plan</b>"]
     h2 --> h3["<b>Approve the plan</b><br/>normal risk: the coordinating session, if the automatic review said «approved»<br/>high risk: you"]
-    h3 --> h4["<b>Code with the tests first</b>"]
+    h3 --> h3m["<b>Approve the mockup</b><br/>if it has a screen · together with the plan, by whoever approves it"]
+    h3m --> h4["<b>Code with the tests first</b>"]
     h4 --> h5["<b>Run the tests</b>"]
     h5 --> h6["<b>Reviewers</b><br/>picked based on the change"]
     h6 --> h7["<b>Adversarial pass</b><br/>not on a small low-risk story, nor on documentation or tests only"]
     h7 --> h8["<b>Live check, criterion by criterion</b>"]
+    h8 --> h9["<b>Validate against the mockup</b><br/>if it has a screen"]
   end
-  r4 --> g1["<b>Save</b><br/>the yes in the permission window"]
-  h8 --> g1
+  r4 --> g1["<b>Save</b><br/>a click in the box, or a written «Aprobado»"]
+  h9 --> g1
   g1 --> g2["<b>Pull request</b><br/>CI"]
   classDef decide fill:#2f6fde,stroke:#1f4fa8,color:#ffffff
   classDef control fill:#F15A24,stroke:#b8410f,color:#ffffff
-  class r1,h3,g1 decide
-  class r4,h4,h5,h6,h7,h8,g2 control
+  class r1,r1m,h3,h3m,g1 decide
+  class r3c,r4,h4,h5,h6,h7,h8,h9,g2 control
 ```
 
 <sub>🟦 Someone decides: you, or the coordinating session with normal risk · 🟧 A control that is not skipped</sub>
@@ -208,7 +215,7 @@ A story is your request in writing, with its criteria and its tests: the agent f
 4. **Ask for the story in your own words**, so the change is written down before any code: "create a story to add a date filter".
 5. **Review the story.** The agent builds it from your request, answering three plain questions (what it must do, how you can tell it works, and what it must not touch), and marks what it assumed. It shows it to you and writes it on your "yes". If your repo already has a `_bmad/` folder, it builds it with what is there.
 6. **Ask "implementemos la story" (let's implement the story)**, to start the run: the phrase stays in Spanish. If there is no git, it initializes it; if you are on `main`, it creates the branch. It validates the story and, if something is missing, asks whether to fix it. It shows you the plan and waits for your "yes" before any code. Then it writes the tests and the code, runs the tests and the reviewers, and checks each criterion by running it.
-7. **Read the summary.** Before committing it asks "save?" in the permission window, and with a yes it saves: it never commits or pushes without your permission. When the first story closes, it offers you the full install.
+7. **Read the summary.** Before committing it asks "save?" and saves with your yes: it never commits or pushes without your permission. When the first story closes, it offers you the full install.
 8. **A story with a screen.** The agent builds a mockup for you to approve before any code; if your repo has no way to test in a browser, it offers to set it up; and it leaves a guide for testing it by hand. · [▶ video](https://github.com/user-attachments/assets/8aa2c03a-03d7-42ab-b4ae-daf90a53e3c9)
 9. **Your project's own rules.** Ask your agent for a reviewer that checks a rule of yours (for example, "a customer's email is never shown in full"): it lives in your rules repo and reviews every story along with the harness's own. · [▶ video](https://github.com/user-attachments/assets/1ef473c6-f088-413f-8560-9d801e6a0c75)
 
@@ -269,36 +276,27 @@ An example: at ACME, Pedro is the admin and Juan writes code.
    asks for the name, the platform and the address of the team repo, builds its three files (`team-layer.json`,
    `team-profile.json` and `team-repos.json`) from [an example](https://github.com/TYCON-SA/harness-team-profile-example)
    and validates them before writing. It creates no repos and asks for no credentials: it tells him where to create the
-   empty repo, with access only for the team, and if he says yes it pushes it with his git. With the harness already
-   installed, the same is `node ~/.tycon/harness/scripts/setup/harness.js team-init`. The operations repo is created
-   separately (below, "The nightly jobs").
+   empty repo, with access only for the team, and if he says yes it pushes it with his git. The operations repo is created
+   separately (below, "What runs at night").
 2. Everything that is customized —where each repo lives, who gets the notices, the thresholds— is configured from the
    **Configuration** tab of the [team site](guides/organization-site.en.md) (admins only): it validates with the
    harness's own readers and proposes every change as a pull request, never a direct write to `main`. While ACME has no
-   site, each file is changed with a pull request to its repo: what reaches the machines, to the team repo; what is for
-   the nightly jobs and the site, to the operations repo. The harness works fully that way: what each case needs and
+   site, each file is changed with a pull request to its repo. The harness works fully that way: what each case needs and
    where each setting lives, in [With or without the site](getting-started/reference.md#with-or-without-the-site).
-   The local page (`node ~/.tycon/harness/scripts/setup/harness.js team-config`) shows, read-only and with nothing on
-   the internet, what is in his clones and the problems the readers see; it saves and proposes nothing.
 3. Juan installs with npx and the team repo: `npx @tyconsa/harness@latest --team acme/harness-team-profile` if it is on
    GitHub, or `npx @tyconsa/harness@latest --team https://dev.azure.com/acme/<project>/_git/harness-team-profile` if it
    is on Azure DevOps. Since only the team sees that repo, before downloading anything the line checks that it can read
    it and, if not, asks him for read permission. From then on, every update also brings him what belongs to the team.
 
-How the harness extends for your organization —what each organization adds, the configuration page and a worked example— in an
+How the harness extends for your organization, with a worked example, in an
 [interactive map](https://www.bizuit.com/sdd-harness/more/mapa-del-arnes.html).
-
-**The nightly jobs.** On Azure DevOps, the dependency review, the cycle metrics and the dashboard run in your
-organization with three model jobs and your operations repo: [how to set them up](pipelines/operations/README.md)
-(in Spanish). On GitHub, the same three run as GitHub Actions workflows, and the dependency findings become issues in
-each product repo: [how to set them up](pipelines/operations/github/README.md) (in Spanish).
 
 **Step by step, for whoever sets up the team.**
 
-1. **Understand the three layers.** This repo, the harness, the same for everybody; the team repo, with what reaches every machine; and the team operations, with what runs at night. The table above says what each one holds. · [▶ video](https://github.com/user-attachments/assets/582a4581-141c-486e-a19d-1f5eb01d6129)
+1. **Understand the three layers.** This repo, the harness, the same for everybody; the team repo, with what reaches every machine; and the team operations, with what runs at night. · [▶ video](https://github.com/user-attachments/assets/582a4581-141c-486e-a19d-1f5eb01d6129)
 2. **Set up your team.** `npx @tyconsa/harness@latest --audience org` installs your machine and goes on with `harness.js team-init`, which builds the three files of the team repo and validates them. Create the empty repo, with access only for the team, and push them. Each dev installs with `npx @tyconsa/harness@latest --team <team repo>`. · [▶ video](https://github.com/user-attachments/assets/fa77d543-85b8-4564-8530-d583679b15c5)
 3. **Look at the organization site.** Each person signs in with the organization's account and sees their own: their runs, their pull requests, what is assigned to them; whoever maintains the harness sees everything. It is optional: the harness works fully without it. **See it without installing anything:** the demo site, [https://is.gd/tyconharnessdemo](https://is.gd/tyconharnessdemo), opens without an account with sample data from a made-up organization and writes nothing; the first visit may take a few seconds while it wakes up. [Setting up the site: step-by-step guide](guides/organization-site.en.md#what-you-need-first) (try it with Docker, Azure Container Apps, Render or your own machine). · [▶ video](https://github.com/user-attachments/assets/9cc321d7-9410-43ef-a842-9d27f98e4dc5)
-4. **Configure from the site.** The **Configuration** tab (maintainers only) customizes the organization: who is responsible for what, the notice channel, the thresholds. It validates every change and proposes it as a pull request; it never writes `main`. Without the site, the same change goes as a pull request to the right repo. · [▶ video](https://github.com/user-attachments/assets/61438ad4-9f29-4719-b298-c74dddb19d93)
+4. **Configure from the site.** The **Configuration** tab (maintainers only) customizes the organization: who is responsible for what, the notice channel, the thresholds. It validates every change and proposes it as a pull request; it never writes `main`. · [▶ video](https://github.com/user-attachments/assets/61438ad4-9f29-4719-b298-c74dddb19d93)
 5. **From commit to production.** The commit and the merge go through controls on each machine, and [the CI gate](guides/ci-gate.md) (in Spanish) checks again on the server what reached `main`. If you declare in `operations.json → deployments` the staging and production pipelines of each product, the dashboard shows their deployments ([how](pipelines/operations/README.md), in Spanish). · [▶ video](https://github.com/user-attachments/assets/41082543-3c5e-4e25-9e64-3e0c48fd985c)
 6. **What runs at night.** The dependency review, the cycle metrics and the dashboard run in your organization with your operations repo, and in the morning the notice arrives (Telegram, Slack or Teams) with counts and the link to the site. How to set them up: on [Azure DevOps](pipelines/operations/README.md) or on [GitHub](pipelines/operations/github/README.md) (in Spanish). · [▶ video](https://github.com/user-attachments/assets/0fc6e458-74d8-4338-b997-3e87841680c6)
 
