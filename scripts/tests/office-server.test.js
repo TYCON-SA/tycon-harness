@@ -481,7 +481,7 @@ function slowFirstPhoto(ms) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'office-slow-'));
   const flag = path.join(dir, 'leyo');
   const file = path.join(dir, 'slow.js');
-  fs.writeFileSync(file, `if (process.argv[1] && /office[\\\\/]server\\.js$/.test(process.argv[1])) {
+  fs.writeFileSync(file, `if (!require('worker_threads').isMainThread) {
   const Module = require('module'); const orig = Module.prototype.require; let done = false;
   Module.prototype.require = function (id) {
     const m = orig.apply(this, arguments);
@@ -530,7 +530,7 @@ test('T60 FirstPhoto_Slow_OpenStillAnswers: una primera foto lenta no hace falla
 function failingRecompute() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'office-fail-'));
   const file = path.join(dir, 'fail.js');
-  fs.writeFileSync(file, `if (process.argv[1] && /office[\\\\/]server\\.js$/.test(process.argv[1])) {
+  fs.writeFileSync(file, `if (!require('worker_threads').isMainThread) {
   const Module = require('module'); const orig = Module.prototype.require; let done = false;
   Module.prototype.require = function (id) {
     const m = orig.apply(this, arguments);
@@ -591,6 +591,68 @@ test('T64 Recompute_Fails_PageTold: si una foto nueva no se puede armar, la pág
   assert.ok(await until(() => p.fotos.some((f) => f.data.unreadable.some((u) => /no se pudo recalcular/.test(u))), 4000), 'llega la foto con el aviso');
   const last = p.fotos[p.fotos.length - 1].data.unreadable.filter((u) => /no se pudo recalcular/.test(u));
   assert.strictEqual(last.length, 1, 'el aviso no se repite');
+  p.close();
+});
+
+// A preload that holds the photo's thread without letting go, as git does, and writes `flag` when it starts holding it.
+function blockingPhoto(ms) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'office-block-'));
+  const flag = path.join(dir, 'trabado');
+  const file = path.join(dir, 'block.js');
+  fs.writeFileSync(file, `if (!require('worker_threads').isMainThread) {
+  const Module = require('module'); const orig = Module.prototype.require; let done = false;
+  Module.prototype.require = function (id) {
+    const m = orig.apply(this, arguments);
+    if (!done && /tools[\\\\/]office\\.js$/.test(id)) {
+      done = true; const c = m.collect;
+      m.collect = async (...a) => { const d = await c(...a); require('fs').writeFileSync(${JSON.stringify(flag)}, 'x'); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ${ms}); return d; };
+    }
+    return m;
+  };
+}\n`);
+  return { NODE_OPTIONS: `--require ${file}`, flag };
+}
+
+// A preload that makes the second photo of each thread kill that thread.
+function dyingThread() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'office-die-'));
+  const file = path.join(dir, 'die.js');
+  fs.writeFileSync(file, `if (!require('worker_threads').isMainThread) {
+  const Module = require('module'); const orig = Module.prototype.require; let done = false;
+  Module.prototype.require = function (id) {
+    const m = orig.apply(this, arguments);
+    if (!done && /tools[\\\\/]office\\.js$/.test(id)) {
+      done = true; const c = m.collect; let calls = 0;
+      m.collect = async (...a) => { calls += 1; if (calls === 2) process.exit(1); return c(...a); };
+    }
+    return m;
+  };
+}\n`);
+  return { NODE_OPTIONS: `--require ${file}` };
+}
+
+test('T65 Photo_HoldsItsThread_ProcessAnswers: mientras se arma la foto, el proceso contesta enseguida', async () => {
+  const m = toy();
+  const held = blockingPhoto(4000);
+  const opening = openAsync(m, { NODE_OPTIONS: held.NODE_OPTIONS });
+  assert.ok(await until(() => fs.existsSync(held.flag) && readLock(m), 10000), 'la foto está trabada');
+  const lock = readLock(m);
+  const t0 = Date.now();
+  const health = await get(lock.port, `/health?t=${lock.token}`);
+  assert.strictEqual(health.status, 200);
+  assert.ok(Date.now() - t0 < 1500, `contestó en ${Date.now() - t0} ms`);
+  await opening;
+});
+
+test('T66 Photo_ThreadDies_PageToldAndNextPhotoWorks: si el hilo de la foto se cae, la página lo sabe y la próxima foto sale', async () => {
+  const m = toy();
+  openSync(m, dyingThread());
+  const p = page(readLock(m));
+  await p.next();
+  fs.writeFileSync(path.join(m.sdir, 'doing', 'n0.json'), '{}');
+  assert.ok(await until(() => p.fotos.some((f) => f.data.unreadable.some((u) => /no se pudo recalcular: el hilo de la foto se cerró/.test(u))), 6000), 'llega el aviso');
+  fs.writeFileSync(path.join(m.sessions, 's2.json'), JSON.stringify({ pid: process.pid, sessionId: 's2', name: 'Nueva', status: 'busy', statusUpdatedAt: Date.now() }));
+  assert.ok(await until(() => { const d = p.fotos[p.fotos.length - 1].data; return JSON.stringify(d).includes('Nueva') && !d.unreadable.some((u) => /no se pudo recalcular/.test(u)); }, 6000), 'otro hilo armó la foto, y el aviso se fue');
   p.close();
 });
 
