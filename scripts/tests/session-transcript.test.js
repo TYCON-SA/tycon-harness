@@ -220,11 +220,12 @@ test('T230 Encargo_NotTheName: «Sos X.» no es el encargo; un archivo de encarg
   assert.strictEqual(encargoOf(`Sos Pratto. Hacé el encargo de ${file}. Decí ejecución.`), 'el tope de las sesiones');
   assert.strictEqual(encargoOf(`Leé y hacé ${file}.`), 'el tope de las sesiones');
   // sin título o sin archivo, la siguiente oración que se pueda decir; otro archivo no se lee
-  assert.strictEqual(encargoOf(`Hacé el encargo de ${path.join(d, 'encargo-no-esta.md')}. Antes de encolar, la captura.`), 'Antes de encolar, la captura.');
+  assert.strictEqual(encargoOf(`Hacé el encargo de ${path.join(d, 'encargo-no-esta.md')}. Medí la cola.`), 'Medí la cola.');
   const other = path.join(d, 'secreto.md');
   fs.writeFileSync(other, '# Lo privado\n');
   assert.strictEqual(encargoOf(`Hacé el encargo de ${other}. Con cuidado.`), 'Con cuidado.');
   assert.strictEqual(encargoOf('Sos Paz.'), null);
+  assert.strictEqual(encargoOf('Avisale a la Coordinadora al arrancar. Antes de pedir firma, medí el tamaño.'), null, 'sólo instrucciones: no hay encargo');
 });
 
 // A turn with its count, the shape measured in real conversations.

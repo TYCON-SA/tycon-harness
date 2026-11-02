@@ -15,7 +15,7 @@ const path = require('path');
 const TEXT_MAX = 200;
 const MAX_MESSAGE_BYTES = 64 * 1024;
 
-const AGENT_STATES = ['trabajando', 'prueba', 'parada', 'espera', 'firma', 'libre', 'coordina', 'inactiva'];
+const AGENT_STATES = ['trabajando', 'prueba', 'parada', 'espera', 'esperando', 'firma', 'pregunta', 'libre', 'coordina', 'inactiva'];
 const END_CLASSES = ['late', 'early', 'ontime', ''];
 const KANBAN_COLUMNS = ['firma', 'curso', 'entrando', 'sinEmpezar', 'hechos'];
 const LOCAL_HOUR = /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d)$/;
@@ -42,18 +42,18 @@ const FIELDS = {
     escrito: text,
     columnas: list(record({
       id: oneOf(KANBAN_COLUMNS), nombre: text, nota: text,
-      tarjetas: list(record({ titulo: text, quien: text, hora: text, grupo: text, espera: text, marca: text, motivo: text, nota: text })),
+      tarjetas: list(record({ titulo: text, quien: text, hora: text, grupo: text, espera: text, marca: text, motivo: text, nota: text, otro: flag })),
     })),
     medioCamino: list(record({ titulo: text, accion: text })),
     medioCaminoNoSe: text,
     medioCaminoLeido: text,
   }),
-  tablas: record({ hoy: TABLE, pendientes: TABLE }),
-  meta: record({ actualizado: text, pedidosLeidos: text, teToca: list(text), extra: number, puestos: list(list(number)), sitio: text, quietMin: number }),
+  tablas: record({ hoy: TABLE, pendientes: TABLE, hechos: TABLE }),
+  meta: record({ actualizado: text, pedidosLeidos: text, teToca: list(text), trabado: list(record({ titulo: text, filas: list(text) })), extra: number, puestos: list(list(number)), sitio: text, quietMin: number }),
   rows: list(record({ work: text, state: text, end: text, session: text, folder })),
   free: list(text),
   unreadable: list(text),
-  tablero: record({ resumen: text, teToca: list(text) }),
+  tablero: record({ resumen: text }),
 };
 
 function validHour(value) {
