@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Oficina del arnés</title>
 <style>
-/* La página de /office: arriba la sala en 3D, abajo una tarjeta por sesión y la tabla de /wip. Todo viene adentro. */
+/* La página de /office: arriba la sala en 3D; abajo una tarjeta por sesión, el tablero de la coordinadora y la tabla de
+   /wip. Todo viene adentro. */
 :root{
   --bg:#f5f6f4; --surface:#ffffff; --fg:#1d2321; --muted:#5d6763; --line:#dde2df; --accent:#1f6f5c;
   --display:system-ui,-apple-system,"Segoe UI",sans-serif; --body:system-ui,-apple-system,"Segoe UI",sans-serif; --mono:ui-monospace,Menlo,Consolas,monospace;
@@ -16,7 +17,7 @@
   --bg:#141917; --surface:#1c2220; --fg:#e6ebe8; --muted:#9aa5a0; --line:#2c3431; --accent:#5cc0a3; color-scheme:dark}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 var(--body);padding:24px 16px 48px}
-main{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+main{max-width:1600px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
 header{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px 20px;border-bottom:2px solid var(--fg);padding-bottom:12px}
 header .site{font:600 .9rem var(--body);color:var(--fg)}
 h1{font:700 1.7rem/1.1 var(--display);margin:0;letter-spacing:-.01em}
@@ -91,16 +92,17 @@ th{font:500 .72rem var(--display);text-transform:uppercase;letter-spacing:.07em;
 td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top;font-size:.9rem}
 tr:last-child td{border-bottom:0}
 footer{color:var(--muted);font-size:.85rem}
-/* el tablero de la coordinadora: lo que hay para hoy, la semana y después, y lo que ya se hizo */
-.board{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:12px}
+/* el tablero de la coordinadora, abajo y compacto: los pendientes en una grilla que se acomoda al ancho (cada celda con
+   su título, quién y hora) y lo terminado plegado en una línea */
+.board{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
 .board .sum{margin:0;font-size:.95rem}
-.board .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
-.board h3{margin:0 0 6px;font:700 .95rem var(--display)}
-.board ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
-.board li{border-left:4px solid var(--k,var(--line));padding:2px 0 2px 10px;display:flex;flex-direction:column;gap:2px;min-width:0}
-.board li b{font-weight:600;overflow-wrap:anywhere}
-.board li .m{font:500 .8rem var(--mono);color:var(--muted)}
-.board li .n{font-size:.85rem;color:var(--muted);overflow-wrap:anywhere}
+.board .pend{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px}
+.board .item{border-left:4px solid var(--k,var(--line));background:var(--bg);border-radius:4px;padding:6px 10px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.board .item b{font-weight:600;font-size:.9rem;line-height:1.3;overflow-wrap:anywhere}
+.board .item .m{font:500 .78rem var(--mono);color:var(--muted);overflow-wrap:anywhere}
+.board details.done summary{cursor:pointer;font-size:.9rem;color:var(--muted)}
+.board details.done ul{list-style:none;margin:6px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:4px 12px}
+.board details.done li{font-size:.85rem;overflow-wrap:anywhere} .board details.done li .m{font:500 .78rem var(--mono);color:var(--muted)}
 .board .toca{color:#a8640b}
 </style>
 </head>
@@ -111,12 +113,12 @@ footer{color:var(--muted);font-size:.85rem}
     <span class="stamp" id="stamp"></span>
     <a class="site" id="site" hidden target="_blank" rel="noopener">Abrir el sitio</a>
   </header>
-  <div class="you" id="you" hidden><h2>Te toca a vos</h2><ul id="youList"></ul></div>
-  <section class="board" id="board" hidden aria-labelledby="boardTitle"><h2 id="boardTitle">El tablero de la coordinadora</h2><div id="boardBody"></div></section>
   <section class="office" id="office">
     <div class="stage" id="stage" role="img" aria-label="Las sesiones trabajando en la oficina"><div class="labels" id="labels"></div><p class="ovl" id="ovl" hidden></p><div class="hint">Arrastrá para girar · rueda para acercar · tocá a alguien o el panel de la pared para ver el detalle</div><aside class="panel3" id="panel" hidden></aside></div>
   </section>
+  <div class="you" id="you" hidden><h2>Te toca a vos</h2><ul id="youList"></ul></div>
   <section><h2>Las sesiones</h2><div class="crew" id="crew"></div></section>
+  <section class="board" id="board" hidden aria-labelledby="boardTitle"><h2 id="boardTitle">El tablero de la coordinadora</h2><div id="boardBody"></div></section>
   <details class="tablewrap" id="tablewrap"><summary>Ver como tabla</summary><div class="table"><table><thead><tr><th>Trabajo</th><th>Estado</th><th>Fin estimado</th><th>Sesión</th><th>Carpeta</th></tr></thead><tbody id="rows"></tbody></table></div><p class="empty" id="freeLine" hidden></p></details>
   <footer id="foot">«Prometido» es la primera hora de fin que se vio para esa sesión y esa story; «Termina» es la de ahora. La diferencia sale en rojo si va más de 15 minutos tarde y en verde si va más de 15 minutos antes.</footer>
 </main>
@@ -143,12 +145,15 @@ function renderBoard(){const sec=document.getElementById("board"),body=document.
   if(!t){sec.hidden=true;return}sec.hidden=false;
   const top=el("p","sum");top.textContent=(t.resumen||"")+(t.actualizado?(t.resumen?" · ":"")+"Al día: "+t.actualizado:"");if(top.textContent)body.appendChild(top);
   if((t.teToca||[]).length){const p=el("p","sum toca");p.textContent="Te toca: "+t.teToca.join(" · ");body.appendChild(p)}
-  const grid=el("div","grid");
-  const col=(name,list,line)=>{const c=el("div");c.appendChild(el("h3",null,name));const ul=el("ul");list.forEach(i=>ul.appendChild(line(i)));c.appendChild(ul);grid.appendChild(c)};
-  (t.grupos||[]).forEach(g=>col(g.nombre,g.items||[],i=>{const li=el("li");li.style.setProperty("--k",BK[i.estado]||"var(--line)");li.appendChild(el("b",null,i.titulo));
-    li.appendChild(el("span","m","Termina "+i.fin+(i.quien?" · "+i.quien:"")));if(i.nota)li.appendChild(el("span","n",i.nota));return li}));
-  if((t.hechos||[]).length)col("Hecho",t.hechos,i=>{const li=el("li");li.style.setProperty("--k",BK.hecho);li.appendChild(el("b",null,i.titulo));li.appendChild(el("span","m","Terminó "+i.real+(i.quien?" · "+i.quien:"")));return li});
-  if(!grid.children.length)body.appendChild(el("p","empty","El tablero no tiene pendientes."));else body.appendChild(grid)
+  // una celda por trabajo, en el orden de los grupos; el grupo va en la celda, así la grilla no se parte en columnas largas
+  const pend=el("div","pend");
+  (t.grupos||[]).forEach(g=>(g.items||[]).forEach(i=>{const c=el("div","item");c.style.setProperty("--k",BK[i.estado]||"var(--line)");if(i.nota)c.title=i.nota;
+    c.appendChild(el("b",null,i.titulo));c.appendChild(el("span","m",g.nombre+" · "+i.fin+(i.quien?" · "+i.quien:"")));pend.appendChild(c)}));
+  if(pend.children.length)body.appendChild(pend);else body.appendChild(el("p","empty","El tablero no tiene pendientes."));
+  // lo terminado, plegado en una línea que se abre al tocarla
+  const done=t.hechos||[];
+  if(done.length){const d=el("details","done");d.appendChild(el("summary",null,done.length+(done.length===1?" terminado":" terminados")));const ul=el("ul");
+    done.forEach(i=>{const li=el("li");li.appendChild(el("b",null,i.titulo));li.appendChild(el("span","m"," · "+i.real+(i.quien?" · "+i.quien:"")));ul.appendChild(li)});d.appendChild(ul);body.appendChild(d)}
 }
 function renderTop(){
   document.getElementById("stamp").textContent=meta?"Foto de las "+meta.actualizado+(meta.pedidosLeidos?" · pedidos leídos a las "+meta.pedidosLeidos:""):"";

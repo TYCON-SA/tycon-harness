@@ -46,6 +46,7 @@
     "`shared/` entra sin CI; se verifica con `az pipelines runs show` (el commit no aparece en NINGÚN"
   ],
   "pipelines/operations/README.md": [
+    "`az pipelines run --id <id de dependency-audit> --branch <rama del pedido> --parameters efectos=false --project my-project`",
     "az pipelines create --name stage-metrics --repository operations --repository-type tfsgit --branch main \\",
     "mano con el parámetro **efectos** destildado (*Run pipeline → efectos*, o `az pipelines run --id <N> --branch <rama>"
   ],

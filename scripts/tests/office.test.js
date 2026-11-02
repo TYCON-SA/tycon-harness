@@ -804,3 +804,67 @@ test('T72 SiteLink_OnlyFromPage_OnlyWeb: el enlace al sitio sale de la página a
   // nada de la página toma el sitio de los datos que llegan después
   assert.strictEqual((html.match(/meta\.sitio/g) || []).length, 1, 'sólo el cálculo de SITE mira meta.sitio');
 });
+
+// ── La sala arriba, el tablero abajo y compacto ──────────────────────────────────────────────────────────────────────
+
+// Un DOM mínimo: lo justo para correr la función del tablero de la página tal cual.
+function tinyDom() {
+  const node = (tag) => {
+    const n = { tag, className: '', textContent: '', hidden: false, children: [], style: { setProperty() {} }, attrs: {} };
+    n.appendChild = (c) => { n.children.push(c); return c; };
+    n.append = (...cs) => { cs.forEach((c) => n.children.push(typeof c === 'string' ? { tag: '#text', textContent: c, children: [] } : c)); };
+    n.replaceChildren = () => { n.children = []; };
+    n.setAttribute = (k, v) => { n.attrs[k] = v; };
+    return n;
+  };
+  const byId = { board: node('section'), boardBody: node('div') };
+  return { document: { createElement: node, getElementById: (id) => byId[id] || null }, byId };
+}
+const all = (n, pred, out = []) => { if (pred(n)) out.push(n); (n.children || []).forEach((c) => all(c, pred, out)); return out; };
+const textOf = (n) => (n.textContent || '') + (n.children || []).map(textOf).join('');
+
+test('T73 Office_FirstThenBoard: la sala 3D es lo primero que se ve; el tablero va abajo, después de las sesiones', async () => {
+  const data = await collectWith(JSON.stringify(BOARD));
+  const html = page(data);
+  const body = html.slice(html.indexOf('<body>'));
+  const at = (re) => body.search(re);
+  assert.ok(at(/id="office"/) > 0 && at(/id="board"/) > 0, 'están las dos');
+  assert.ok(at(/id="office"/) < at(/id="board"/), 'la sala va antes que el tablero');
+  assert.ok(at(/id="office"/) < at(/id="crew"/), 'la sala va antes que las tarjetas de las sesiones');
+  // en un monitor ancho la página usa el ancho: no queda en una columna angosta en el medio
+  const width = Number((html.match(/main\{max-width:(\d+)px/) || [])[1]);
+  assert.ok(width >= 1500, `ancho máximo ${width}`);
+});
+
+test('T74 Board_Compact: los pendientes en una grilla (título, quién, hora) y los terminados plegados en una línea', async () => {
+  const data = await collectWith(JSON.stringify(BOARD));
+  const html = page(data);
+  const fn = (html.match(/function renderBoard\(\)\{[\s\S]*?\n\}/) || [])[0];
+  const BK = (html.match(/const BK=(\{[^}]*\});/) || [])[1];
+  const el = (html.match(/const el=(\([^\n]*\});\n/) || [])[1];
+  assert.ok(fn && BK && el, 'la página trae la función, los colores y el ayudante');
+  const { document, byId } = tinyDom();
+  new Function('document', 'DATA', `const BK=${BK};const el=${el};${fn};renderBoard();`)(document, { tablero: data.tablero });
+  const body = byId.boardBody;
+  // los pendientes: una celda por trabajo, cada una con su título, quién y hora, en una grilla
+  const grids = all(body, (n) => /\bpend\b/.test(n.className));
+  assert.strictEqual(grids.length, 1, 'una sola grilla de pendientes');
+  const cells = grids[0].children.filter((c) => /\bitem\b/.test(c.className));
+  assert.strictEqual(cells.length, 5, 'los cinco que no están hechos');
+  const first = textOf(cells[0]);
+  assert.match(first, /Primero de hoy/);
+  assert.match(first, /vos/);
+  assert.match(first, /cuando firmes/);
+  assert.ok(!all(grids[0], (n) => /La excepción del GUID/.test(n.textContent || '')).length, 'lo hecho no va en la grilla');
+  // el grupo se dice en la celda, así la grilla no se parte en columnas largas por grupo
+  assert.match(textOf(cells[cells.length - 1]), /Algún día/);
+  // los terminados: plegados en una línea que se abre al tocarla
+  const fold = all(body, (n) => n.tag === 'details');
+  assert.strictEqual(fold.length, 1, 'los terminados van plegados');
+  const summary = fold[0].children.find((c) => c.tag === 'summary');
+  assert.strictEqual(summary && summary.textContent, '1 terminado');
+  assert.match(textOf(fold[0]), /La excepción del GUID/);
+  assert.ok(!fold[0].open, 'arranca cerrado');
+  // la grilla se acomoda sola al ancho: varias columnas en un monitor ancho, una en una pantalla angosta
+  assert.match(html, /\.board \.pend\{display:grid;grid-template-columns:repeat\(auto-fill,minmax\(/);
+});
