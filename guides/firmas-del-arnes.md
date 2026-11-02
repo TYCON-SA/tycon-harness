@@ -141,6 +141,11 @@ firmar, y en la columna tu situación:
 
 ## Aprobar sin terminal
 
+Con `approvals.signature_list` en `on`, lo que el freno niega con su cuadro a la propia sesión queda anotado, y al volver la
+persona se lo pasan de a uno con ese mismo cuadro. La lista no firma nada: un click vale por lo que pregunta el freno cuando la
+sesión que lo pidió repite el comando. Lo delegado, lo irreversible y lo que corre otra sesión no dejan renglón. El detalle:
+`guides/coordination.md`, «La lista de firmas».
+
 Con Claude Code, la mayoría de las firmas no piden la terminal. El camino depende de la pestaña:
 
 - **La pestaña pide permisos:** te aparece la ventana de permiso y contestás «Sí». Ahí escribir «aprobado» no firma nada,

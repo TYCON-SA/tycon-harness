@@ -2540,3 +2540,40 @@ test('T233 SameText_NoRepeat: si lo que hace es lo que anotó, la tarjeta no lo 
   assert.strictEqual(plainOf('espera que entren el #907 y el 6106', { keepPrs: true }), 'espera que entren el #907 y el 6106');
   assert.strictEqual(plainOf('espera que entren el #907 y el 6106'), 'espera que entren y el 6106', 'los títulos siguen sin números de pedido');
 });
+
+test('Office_UnaTarjetaPorSesion (T8) — @story-8.153 @ac-8: un renglón de la lista de firmas no duplica la tarjeta de su sesión', () => {
+  const fila = (destino, title, extra = {}) => ({ tipo: 'firma', id: `f-${destino}-${title}`, destino, title, at: NOW - 60000, ...extra });
+  // la sesión ya esperando la firma: una sola tarjeta, la suya
+  let { data } = buildOffice({ wip: wip([{ session: 'Alma', sid: 'a', status: 'waiting_for_input', extra: { kind: 'pipeline', current: 'implement', title: 'Lo de Alma' } }]),
+    signatures: [fila('a', 'marcar un criterio')], nowMs: NOW });
+  assert.strictEqual(col(data, 'firma').tarjetas.length, 1, JSON.stringify(col(data, 'firma').tarjetas));
+  assert.strictEqual(col(data, 'firma').tarjetas[0].quien, 'Alma');
+  assert.strictEqual(data.meta.teToca.length, 1, 'la pared cuenta lo mismo');
+  assert.match(data.meta.teToca[0], /marcar un criterio.*Alma/);
+  assert.match(page(data), /"Te toca: "\+toca\.length/, 'el contador de la pared es el largo de teToca');
+
+  // trabajando en otra cosa: dos tarjetas, cada una en su columna, y el renglón con su nombre
+  ({ data } = buildOffice({ wip: wip([{ session: 'Bruno', sid: 'b', status: 'busy', extra: { kind: 'pipeline', current: 'implement', title: 'Lo de Bruno' } }]),
+    signatures: [fila('b', 'marcar un criterio'), fila('b', 'otro criterio')], nowMs: NOW }));
+  assert.deepStrictEqual(titles(data, 'curso'), ['Lo de Bruno']);
+  assert.deepStrictEqual(titles(data, 'firma'), ['Firma: marcar un criterio y 1 más'], 'una por sesión');
+  assert.strictEqual(col(data, 'firma').tarjetas[0].quien, 'Bruno');
+  assert.strictEqual(data.meta.teToca.length, col(data, 'firma').tarjetas.length, 'coincide con la columna');
+
+  // un permiso de una sesión sin tarjeta: su título, sin el pedido
+  ({ data } = buildOffice({ wip: wip([]), signatures: [{ tipo: 'permiso', id: 'p', destino: 'sin-tarjeta', nombre: 'Ciro', herramienta: 'Bash', pedido: 'rm -rf algo-secreto', title: 'Permiso: Bash', at: NOW }], nowMs: NOW }));
+  assert.deepStrictEqual(titles(data, 'firma'), ['Permiso: Bash']);
+  assert.strictEqual(col(data, 'firma').tarjetas[0].quien, 'Ciro');
+  assert.doesNotMatch(JSON.stringify(data), /algo-secreto/);
+  assert.strictEqual(data.meta.teToca.length, 1);
+
+  // quien ya espera aprobar el plan no se cuenta dos veces
+  ({ data } = buildOffice({ wip: wip([{ session: 'Dora', sid: 'd', status: 'idle', extra: { kind: 'pipeline', current: 'approve-plan', title: 'Lo de Dora', storyId: '9.9' } }]),
+    signatures: [fila('d', 'aprobar el plan de una story')], nowMs: NOW }));
+  assert.strictEqual(col(data, 'firma').tarjetas.length, 1);
+  assert.strictEqual(data.meta.teToca.length, 1);
+  // lo de la terminal, como siempre
+  ({ data } = buildOffice({ wip: wip([]), signatures: [{ id: 't', title: 'por la terminal', at: NOW }], nowMs: NOW }));
+  assert.deepStrictEqual(data.meta.teToca, ['Firmar: por la terminal']);
+  assert.strictEqual(col(data, 'firma').tarjetas[0].quien, 'vos');
+});

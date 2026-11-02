@@ -681,13 +681,15 @@ function aprobacionExplicita({ pendientes, sesion, destino, casa, ahora, cwd, ap
 
 /**
  * La negativa donde la ventana no llega: trae el cuadro armado, que es el camino por defecto, y después las otras dos
- * formas de aprobarlo. Lo irreversible, sólo la terminal.
+ * formas de aprobarlo. Lo irreversible, sólo la terminal. `anotado`: ya quedó en la lista de firmas y una coordinadora
+ * viva se lo va a pasar a la persona (`anotarNegativa`): la sesión sólo espera el aviso para repetir el comando.
  */
-function negarSinVentana(motivo, ids, sesion, cuadro = null, deFondo = false) {
+function negarSinVentana(motivo, ids, sesion, cuadro = null, deFondo = false, anotado = false) {
   if (vaATerminal(ids)) return negarCon(motivo, ids, sesion);
   const t = terminalDe(ids, sesion);
   const otraForma = `Si prefiere la terminal: ${t || 'el mismo comando con --terminal'}.`;
   if (!cuadro || cuadro.error || ids.length !== 1) return { decision: 'deny', firmas: ids, texto: `${motivo}. Esto lo aprueba la persona: corré cada firma sola, en su forma exacta, y este freno te da el cuadro de opciones para mostrarle. ${otraForma}` };
+  if (anotado) return { decision: 'deny', firmas: ids, cuadro, texto: `${motivo}. Esto lo aprueba la persona y ya quedó anotado en su lista: no muestres el cuadro ni mandes un mensaje. Cuando te avisen, repetí el mismo comando. ${otraForma}` };
   return { decision: 'deny', firmas: ids, cuadro, texto: `${motivo}. Esto lo aprueba la persona, sin terminal, con el cuadro de opciones: mostrale AskUserQuestion con una sola pregunta, sin cambiarle una letra: «${cuadro.pregunta}», y las opciones «${cuadro.opciones[0]}» y «${cuadro.opciones[1]}». `
     + `Con su click, repetí el mismo comando. ${deFondo ? 'Si esta sesión corre de fondo, pasale el texto y el comando a la coordinadora: lo muestra en su pestaña, y con el click repetís el comando acá. ' : ''}`
     + `No se lo pidas por el chat salvo que el cuadro no se pueda mostrar: en ese caso, tu último mensaje trae «${cuadro.sello}» y ella contesta «aprobado». ${otraForma}` };
@@ -696,6 +698,18 @@ function negarSinVentana(motivo, ids, sesion, cuadro = null, deFondo = false) {
 function negarCon(motivo, ids, sesion) {
   const t = terminalDe(ids, sesion);
   return { decision: 'deny', firmas: ids, texto: `${motivo}. Esta firma se da en tu terminal${t ? `: ${t}` : ''}.` };
+}
+
+/**
+ * La lista de firmas (signature-list.js): lo que el freno niega con su cuadro a la propia sesión destino queda anotado, y
+ * devuelve si la negativa dice «cuando te avisen, repetí». No dejan renglón lo que pide otra sesión, `designation-confirm`,
+ * un escape ni lo irreversible. Nada de esto cambia lo que se decide: si falla, la negativa de siempre.
+ */
+function anotarNegativa({ casa, sesion, destino, guion, pendientes, comando, palabras, cuadro, cwd, ahora, deFondo, lista = {} }) {
+  if (!guion || !palabras || destino !== sesion || pendientes.length !== 1 || pendientes[0] === DESIGNACION || vaATerminal(pendientes) || !cuadro || cuadro.error) return false;
+  try {
+    return require('./signature-list.js').alNegar({ casa, firma: pendientes[0], titulo: firmaDe(pendientes[0]).approves, sesion, destino, comando, palabras, cwd, ahora, deFondo, ...lista });
+  } catch (_) { return false; }
 }
 
 // --- el freno -----------------------------------------------------------------------------------------------------
@@ -817,9 +831,10 @@ function pasaDelCupoDelegado(palabras) {
  * `delegacion(opciones)`: si la firma corre sin ventana (delegated-signing.js, las dos listas del perfil);
  * `clasificar(palabras, cwd)`: la clase de un `approve` con `--base`; `comprobar(opciones)`: el chequeo antes de la
  * ventana (`comprobarConElGuion`); `arbol` y `casa` se leen si faltan. `plataforma`: la de la máquina; se pasa en las
- * pruebas de la forma de Windows, y no se saca del ambiente.
+ * pruebas de la forma de Windows, y no se saca del ambiente. `lista`: `{ arnes, env }` para leer la llave de la lista de
+ * firmas; se pasa en las pruebas.
  */
-function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ahora = Date.now(), delegacion, clasificar = clasificarConElGuion, comprobar = comprobarConElGuion, userInfo, aprobador = approverOf, aprobaciones, plataforma = process.platform, gitBash = buscarGitBash } = {}) {
+function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ahora = Date.now(), delegacion, clasificar = clasificarConElGuion, comprobar = comprobarConElGuion, userInfo, aprobador = approverOf, aprobaciones, plataforma = process.platform, gitBash = buscarGitBash, lista } = {}) {
   const enWindows = plataforma === 'win32';
   const comando = String((evento.tool_input && evento.tool_input.command) || '');
   const sesion = evento.session_id == null ? '' : String(evento.session_id);
@@ -947,7 +962,8 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
       if (enWindows || deFondo || !rutina.ok) {
         const donde = enWindows ? 'en Windows la ventana de permiso no firma' : deFondo ? 'esta sesión corre de fondo: la ventana de permiso no le llega a nadie seguro'
           : `esta pestaña no pide permisos (${una(modo, 40)}): la ventana se aprobaría sola, sin el Sí del dueño`;
-        return negarSinVentana(`${donde}${rutina.motivo && !enWindows ? `, y ${rutina.motivo}` : ''}; ${a.motivo}`, pendientes, paraTerminal, cuadro, deFondo);
+        const anotado = anotarNegativa({ casa, sesion, destino, guion, pendientes, comando, palabras: can && can.palabras, cuadro, cwd: evento.cwd, ahora, deFondo, lista });
+        return negarSinVentana(`${donde}${rutina.motivo && !enWindows ? `, y ${rutina.motivo}` : ''}; ${a.motivo}`, pendientes, paraTerminal, cuadro, deFondo, anotado);
       }
     }
   }
