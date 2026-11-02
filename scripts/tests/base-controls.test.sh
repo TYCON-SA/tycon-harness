@@ -265,8 +265,8 @@ run "${R}" "${T}/t8c.out"
 is "T8 la constancia está anclada al cambio: otro cambio de la regla vuelve a rojo" "1" "${RC}"
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
-# T14 Vocabulario_SubirTechoPideFirma @story-8.154 @ac-14 · el control de las palabras de las guías, desde la base:
-# subir un techo con una palabra nueva frena sin la constancia del dueño; bajarlo junto con la palabra que se va, pasa
+# T14 Vocabulario_CambiarTechoEntraSinFirma @story-8.154 @ac-14 · el control de las palabras de las guías, desde la base:
+# informa y no frena, así que subir un techo con una palabra nueva o bajarlo con la que se va entra sin constancia
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 make_vocab_base() {
   local r="$1"
@@ -305,9 +305,8 @@ printf '%s\n' 'Y otro advisor más.' >> "${R}/guides/x.md"
 printf '%s\n' '{ "terms": [ { "use": "revisor", "avoid": ["advisor", "advisors"] } ], "exceptions": [], "ceiling": { "guides/x.md": 2 } }' > "${R}/scripts/ci/vocabulary.json"
 commit "${R}"
 run "${R}" "${T}/t14v-sube.out"
-is "T14 subir el techo junto con una palabra nueva: rojo contra la base" "1" "${RC}"
-has "T14 la base frena la palabra nueva, con su línea" "${T}/t14v-sube.out" "guides/x.md:4: «advisor» → revisor"
-has "T14 dice que afloja un control y pide la constancia" "${T}/t14v-sube.out" "afloja un control sin la constancia del dueño"
+is "T14 subir el techo junto con una palabra nueva: verde, sin constancia" "0" "${RC}"
+has "T14 lo dice al subir" "${T}/t14v-sube.out" "la base y el pedido pasan: entra sin constancia"
 R="${T}/t14v-baja"; make_vocab_base "${R}"; pr "${R}"
 printf '%s\n' '# Guía' '' 'El revisor.' > "${R}/guides/x.md"
 printf '%s\n' '{ "terms": [ { "use": "revisor", "avoid": ["advisor", "advisors"] } ], "exceptions": [], "ceiling": { "guides/x.md": 0 } }' > "${R}/scripts/ci/vocabulary.json"

@@ -47,12 +47,12 @@ Tampoco cambian dos frases, que van como excepción en las reglas, cada una con 
 El control es `scripts/ci/vocabulary.js`, con sus reglas en `scripts/ci/vocabulary.json`. Corre en cada commit y mira
 la prosa de `guides/`, `getting-started/`, `README.es.md`, `INDEX.md` e `INSTALL.md`.
 
-Cada archivo tiene un techo: cuántas palabras por cambiar puede tener todavía. Un archivo nuevo nace con techo 0. Si un
-archivo pasa su techo, el commit no se crea, y el control dice el archivo, la línea, la palabra y la que va en su
-lugar. Si queda por debajo, avisa el número que va en las reglas, para bajarlo en el mismo pedido.
+El control informa y no frena: ni el commit ni el pedido quedan afuera por una palabra. Un sinónimo en una guía no
+rompe nada.
 
-Bajar un techo es libre. Subirlo, quitar una palabra o sumar una excepción afloja el control: la revisión del pedido lo
-corre con las reglas de la base y pide la constancia del dueño.
+Cada archivo tiene un techo: cuántas palabras por cambiar puede tener todavía. Un archivo nuevo nace con techo 0. Si un
+archivo pasa su techo, el control dice el archivo, la línea, la palabra y la que va en su lugar. Si queda por debajo,
+avisa el número que va en las reglas, para bajarlo en el mismo pedido.
 
 Para ver cuánto queda en cada archivo:
 

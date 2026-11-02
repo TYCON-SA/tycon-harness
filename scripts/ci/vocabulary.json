@@ -1,5 +1,5 @@
 {
-  "__doc": "Las reglas del control de las palabras de las guías (scripts/ci/vocabulary.js); el glosario que las explica es guides/maintaining/vocabulario.md y tiene que decir lo mismo. `terms`: cada fila, con la palabra que va (`use`) y las que no se escriben (`avoid`). `exceptions`: frases que quedan tal cual, cada una con su motivo; sin `path` valen en todas las guías medidas. `ceiling`: cuántas palabras por cambiar puede tener todavía cada archivo; las tandas de barrido lo bajan a 0. Bajar un techo es siempre libre; subirlo, quitar un término o sumar una excepción es aflojar el control.",
+  "__doc": "Las reglas del control de las palabras de las guías (scripts/ci/vocabulary.js); el glosario que las explica es guides/maintaining/vocabulario.md y tiene que decir lo mismo. `terms`: cada fila, con la palabra que va (`use`) y las que no se escriben (`avoid`). `exceptions`: frases que quedan tal cual, cada una con su motivo; sin `path` valen en todas las guías medidas. `ceiling`: cuántas palabras por cambiar puede tener todavía cada archivo; las tandas de barrido lo bajan a 0. El control informa y no frena: pasar un techo se señala, y ningún commit ni pedido queda afuera por eso.",
   "terms": [
     { "use": "historia", "avoid": ["story", "stories"] },
     { "use": "revisor", "avoid": ["advisor", "advisors"] },

@@ -2496,7 +2496,7 @@
       "requiere": []
     },
     {
-      "__nota": "El control de las palabras de las guías en castellano (scripts/ci/vocabulary.js): una palabra que no se escribe frena con archivo, línea y la que va en su lugar; el código, los enlaces, los nombres de la máquina y las excepciones declaradas no cuentan; el techo sólo baja; el glosario dice lo mismo que las reglas; y el árbol real cabe en su techo.",
+      "__nota": "El control de las palabras de las guías en castellano (scripts/ci/vocabulary.js): una palabra que no se escribe se señala con archivo, línea y la que va en su lugar, sin frenar; el código, los enlaces, los nombres de la máquina y las excepciones declaradas no cuentan; el techo avisa; el glosario dice lo mismo que las reglas; y el árbol real informa sin frenar.",
       "raiz": "arnes",
       "ruta": "tests/vocabulary.test.js",
       "requiere": []

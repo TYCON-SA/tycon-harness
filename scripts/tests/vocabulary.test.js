@@ -6,11 +6,11 @@
  * POR QUÉ. Las guías en castellano decían la misma cosa con dos palabras (historia y story, revisor y advisor). Sin un
  * control que cuente, el sinónimo vuelve con el próximo párrafo apurado y nadie lo ve.
  *
- * QUÉ MIDE. Que una palabra nueva frena con archivo, línea y la que va en su lugar (T1, T8); que el código, los enlaces y
- * los nombres de la máquina no cuentan (T2, T11); que la frase que arranca el recorrido y las excepciones declaradas no
- * cuentan, y una excepción mal declarada frena (T3); que el techo sólo baja (T4); que sólo se mide la prosa en castellano
- * (T5); que el glosario y las reglas dicen lo mismo (T6); que el árbol real cabe en su techo (T7); y que unas reglas que
- * no se leen dan «no medido», nunca verde (T12).
+ * QUÉ MIDE. Que una palabra nueva se señala con archivo, línea y la que va en su lugar, sin frenar el commit (T1, T8); que
+ * el código, los enlaces y los nombres de la máquina no cuentan (T2, T11); que la frase que arranca el recorrido y las
+ * excepciones declaradas no cuentan, y una excepción mal declarada se señala (T3); que el techo avisa (T4); que sólo se mide la prosa en castellano
+ * (T5); que el glosario y las reglas dicen lo mismo (T6); que el árbol real informa sin frenar, cuente lo que cuente (T7);
+ * y que unas reglas que no se leen dan «no medido», nunca verde (T12).
  *
  * Correr:   node --test scripts/tests/vocabulary.test.js
  */
@@ -44,7 +44,7 @@ const RULES = {
 function git(dir, args) {
   return execFileSync('git', ['-C', dir, '-c', 'user.name=t', '-c', 'user.email=t@acme.example', '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', ...args], { encoding: 'utf8', env: { ...process.env, ...FIXED } });
 }
-// en un repo de juguete, una excepción que ninguna guía trae frena: por defecto van sin excepciones
+// en un repo de juguete, una excepción que ninguna guía trae da un aviso: por defecto van sin excepciones
 const TOY = { ...RULES, exceptions: [] };
 /** Un repo de juguete con sus reglas (o el texto crudo de las reglas) y sus archivos, todo en el índice. */
 function toyRepo(files, rules = TOY) {
@@ -77,13 +77,13 @@ function runHookBlock(dir) {
   return spawnSync('bash', ['-c', `set -uo pipefail\nREPO_ROOT=${JSON.stringify(dir)}\n${hookBlock()}\nexit 0\n`], { encoding: 'utf8' });
 }
 
-test('T1 Vocabulario_TerminoNuevoEnProsa_Frena @story-8.154 @ac-1', () => {
+test('T1 Vocabulario_TerminoNuevoEnProsa_AvisaYNoFrena @story-8.154 @ac-1', () => {
   const dir = toyRepo({ 'guides/x.md': '# Guía\n\nEl revisor mira el cambio.\n' });
   assert.strictEqual(runHookBlock(dir).status, 0, 'sin la palabra, el commit pasa');
   fs.appendFileSync(path.join(dir, 'guides/x.md'), 'Y después corre el advisor.\n');
   git(dir, ['add', 'guides/x.md']);
   const r = runHookBlock(dir);
-  assert.strictEqual(r.status, 1, r.stdout + r.stderr);
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
   const out = r.stdout + r.stderr;
   assert.match(out, /guides\/x\.md:4/, 'archivo y línea');
   assert.match(out, /«advisor» → revisor/, 'la palabra y la que va en su lugar');
@@ -141,6 +141,9 @@ test('T3 Vocabulario_FraseGatilloYExcepciones @story-8.154 @ac-3', () => {
   for (const [e, why] of malas) {
     const r = VOC.check({ repo: toyRepo(guia, { ...RULES, exceptions: [...RULES.exceptions, e] }) });
     assert.ok(!r.ok && r.problems.some((p) => why.test(p)), `${JSON.stringify(e)}: ${r.problems.join('\n')}`);
+    const c = cli(toyRepo(guia, { ...RULES, exceptions: [...RULES.exceptions, e] }));
+    assert.strictEqual(c.status, 0, c.stdout + c.stderr);
+    assert.match(c.stderr, why, 'la excepción mal declarada se señala y no frena');
   }
   // una excepción que ya no encuentra su frase avisa y sale 0: sacar la frase y la excepción juntas endurece, y la
   // revisión desde la base no lo puede ver como un aflojamiento
@@ -157,7 +160,7 @@ test('T3 Vocabulario_FraseGatilloYExcepciones @story-8.154 @ac-3', () => {
   assert.ok(VOC.check({ repo: toyRepo(guia, comodin) }).problems.some((p) => /comod/.test(p)));
 });
 
-test('T4 Vocabulario_TechoQueSoloBaja @story-8.154 @ac-4', () => {
+test('T4 Vocabulario_TechoAvisa @story-8.154 @ac-4', () => {
   const files = { 'guides/justo.md': 'un advisor\n', 'guides/abajo.md': 'una story\n' };
   const rules = { ...TOY, ceiling: { 'guides/justo.md': 1, 'guides/abajo.md': 3 } };
   const dir = toyRepo(files, rules);
@@ -167,11 +170,11 @@ test('T4 Vocabulario_TechoQueSoloBaja @story-8.154 @ac-4', () => {
   const c = cli(dir);
   assert.strictEqual(c.status, 0, c.stdout + c.stderr);
   assert.match(c.stdout, /guides\/abajo\.md/);
-  // un archivo nuevo nace con techo 0
+  // un archivo nuevo nace con techo 0: pasarlo se señala y no frena
   fs.writeFileSync(path.join(dir, 'guides/nuevo.md'), 'el harness\n');
   git(dir, ['add', '-A']);
   const n = cli(dir);
-  assert.strictEqual(n.status, 1, n.stdout + n.stderr);
+  assert.strictEqual(n.status, 0, n.stdout + n.stderr);
   assert.match(n.stdout + n.stderr, /guides\/nuevo\.md:1/);
   // y uno con techo que lo supera, también
   fs.appendFileSync(path.join(dir, 'guides/justo.md'), 'otro advisor\n');
@@ -213,12 +216,12 @@ test('T6 Vocabulario_GlosarioIgualALasReglas @story-8.154 @ac-6', () => {
   assert.deepStrictEqual(VOC.mentionsIn(guide, rules), [], 'las palabras que no se escriben van entre acentos graves: la guía nace con techo 0');
 });
 
-test('T7 Vocabulario_ArbolRealCabeEnSuTecho @story-8.154 @ac-7', (t) => {
+test('T7 Vocabulario_ArbolReal_InformaYNoFrena @story-8.154 @ac-7', (t) => {
   const r = VOC.check({ repo: ROOT, skipThin: true });
   if (r.skipped) { t.skip('el árbol es el repo de mantenimiento adelgazado: lo mide la copia del público'); return; }
-  assert.strictEqual(r.ok, true, r.problems.join('\n'));
-  assert.deepStrictEqual(r.notes, [], 'el techo es justo lo que hay hoy');
-  assert.ok(Object.keys(r.perFile).length > 10, 'el árbol real tiene menciones que contar');
+  // ni una palabra de más ni un techo sin bajar vuelven rojo a un pedido: por eso esto no mira lo que el árbol cuenta
+  const c = cli(ROOT);
+  assert.strictEqual(c.status, 0, c.stdout + c.stderr);
   const base = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'ci', 'controls-from-base.json'), 'utf8'));
   assert.ok(base.controls.some((c) => c.name === 'vocabulary' && c.script === 'scripts/ci/vocabulary.js' && c.rules.includes('scripts/ci/vocabulary.json')), 'en el inventario de controles desde la base, con su regla');
 });
@@ -228,8 +231,13 @@ test('T8 Vocabulario_PreCommitLoCorre @story-8.154 @ac-1', () => {
   assert.match(hook, /^(?!\s*#).*node "\$VOCABULARY" --repo "\$REPO_ROOT"/m, 'en una línea que corre, no en un comentario');
   const dir = toyRepo({ 'guides/x.md': 'una story\notra story\n' }, { ...TOY, ceiling: { 'guides/x.md': 1 } });
   const r = runHookBlock(dir);
-  assert.strictEqual(r.status, 1, r.stdout + r.stderr);
-  assert.match(r.stderr, /COMMIT RECHAZADO/);
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stderr, /guides\/x\.md:2: «story» → historia/);
+  assert.doesNotMatch(r.stdout + r.stderr, /COMMIT RECHAZADO|✅/);
+  // ni una falla imprevista del control frena el commit
+  const roto = toyRepo({ 'guides/x.md': 'una story\n', 'scripts/ci/vocabulary.js': 'process.exit(1);\n' });
+  const conFalla = spawnSync('bash', ['-c', `set -uo pipefail\nREPO_ROOT=${JSON.stringify(roto)}\n${hookBlock()}\nexit 0\n`], { encoding: 'utf8' });
+  assert.strictEqual(conFalla.status, 0, conFalla.stdout + conFalla.stderr);
   // el repo de mantenimiento adelgazado: sus guías propias no se publican y no se miden
   const thin = toyRepo({ '.tycon/internal-forms.json': JSON.stringify({ layout: 'thin' }), 'guides/propia.md': 'el advisor\n' });
   const s = cli(thin, '--skip-thin');
@@ -245,13 +253,16 @@ test('T11 Vocabulario_NombresDeLaMaquinaQuedan @story-8.154 @ac-2', () => {
 
 test('T12 Vocabulario_ReglasIlegibles_NoMedido @story-8.154 @ac-12', () => {
   for (const [why, rules] of [['rotas', '{ no es json'], ['sin terms', JSON.stringify({ exceptions: [], ceiling: {} })], ['terms vacío', JSON.stringify({ terms: [] })]]) {
-    const r = cli(toyRepo({ 'guides/x.md': 'el advisor\n' }, rules));
-    assert.strictEqual(r.status, 2, `${why}: ${r.stdout}${r.stderr}`);
+    const dir = toyRepo({ 'guides/x.md': 'el advisor\n' }, rules);
+    const r = cli(dir);
+    assert.strictEqual(r.status, 0, `${why}: ${r.stdout}${r.stderr}`);
     assert.match(r.stderr, /no medido/, why);
+    assert.doesNotMatch(r.stdout, /✅/, `${why}: nunca verde sin haber medido`);
+    for (const q of ['--measure', '--json']) assert.strictEqual(cli(dir, q).status, 2, `${why}: ${q} no da una salida vacía con 0`);
   }
   const sin = cli(toyRepo({ 'guides/x.md': 'el advisor\n', 'scripts/ci/vocabulary.json': null }, null));
-  assert.strictEqual(sin.status, 2, 'sin reglas no se mide: nunca verde');
-  assert.match(sin.stderr, /no medido/);
+  assert.strictEqual(sin.status, 0, sin.stdout + sin.stderr);
+  assert.match(sin.stderr, /no medido/, 'sin reglas no se mide: nunca verde');
   // un repo de juguete con el pre-commit del arnés y sin ninguna guía: no hay nada que medir, como tool-names sin
   // integraciones; con una guía y sin reglas, sigue sin medirse
   const vacio = cli(toyRepo({ 'specs/story-1.1.md': 'una story\n', 'scripts/ci/vocabulary.json': null }, null));
@@ -260,6 +271,6 @@ test('T12 Vocabulario_ReglasIlegibles_NoMedido @story-8.154 @ac-12', () => {
   // con --repo en una subcarpeta, mide el repo entero: no sale verde con «nada que medir»
   const sub = toyRepo({ 'guides/x.md': 'el advisor\n' });
   const desdeSub = cli(path.join(sub, 'guides'));
-  assert.strictEqual(desdeSub.status, 1, desdeSub.stdout + desdeSub.stderr);
+  assert.strictEqual(desdeSub.status, 0, desdeSub.stdout + desdeSub.stderr);
   assert.match(desdeSub.stderr, /guides\/x\.md:1/);
 });
