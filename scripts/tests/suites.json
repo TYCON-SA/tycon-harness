@@ -1438,6 +1438,12 @@
       "requiere": []
     },
     {
+      "__nota": "el camino rápido que toca una pantalla: maqueta aprobada y captura posterior al último cambio, o no guarda.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adhoc-screen.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.174: riesgo_alto_por en la historia y los archivos de dependencias cuentan como riesgo alto; el lint frena un valor fuera de la lista.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/owner-decision-risk.test.js",
