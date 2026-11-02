@@ -161,8 +161,8 @@ function normalizar(cmd) {
  * el nombre entero. `token` sí cuenta siempre, aunque tape un `CancellationToken:` de más — un
  * `authToken` que pasa es peor que un nombre de tipo tapado.
  */
-const CREDENCIAL_FUERTE = new Set(['token', 'secret', 'password', 'passwd', 'pat', 'apikey', 'credential', 'credentials', 'bearer', 'authorization']);
-const CREDENCIAL_CON_KEY = new Set(['api', 'secret', 'access', 'private', 'auth', 'client', 'ssh', 'license', 'encryption', 'signing']);
+const CREDENCIAL_FUERTE = new Set(['token', 'secret', 'password', 'passwd', 'pat', 'apikey', 'credential', 'credentials', 'bearer', 'authorization', 'sig']);
+const CREDENCIAL_CON_KEY = new Set(['api', 'secret', 'access', 'private', 'auth', 'client', 'ssh', 'license', 'encryption', 'signing', 'account']);
 function esNombreDeCredencial(nombre) {
   const partes = String(nombre || '')
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
@@ -170,6 +170,7 @@ function esNombreDeCredencial(nombre) {
     .map((x) => x.toLowerCase())
     .filter(Boolean);
   if (partes.some((p) => CREDENCIAL_FUERTE.has(p))) return true;
+  if (partes.includes('signature') && partes.includes('access')) return true;
   if (partes.includes('key')) return partes.length === 1 || partes.some((p) => CREDENCIAL_CON_KEY.has(p));
   return false;
 }
@@ -212,6 +213,24 @@ function taparCredencialesConNombre(txt) {
   return out + txt.slice(pos);
 }
 
+// Una carpeta de arriba del sistema no dice nada de la persona ni del cliente; cualquier otra ruta absoluta sí puede.
+const RUTA_DE_SISTEMA = 'usr|bin|sbin|etc|lib|lib64|var|proc|sys|dev|run|boot|System|Library|Applications|nix';
+const RUTA_ABSOLUTA = new RegExp(`(?<![\\w.:/~<>-])/(?!(?:${RUTA_DE_SISTEMA})/)[\\w.@+-]+/(?:[^\\s'"]|\\s(?=[\\w .()-]*/))*`, 'g');
+
+// Las formas de una credencial sin nombre adelante (un token de GitHub, una llave de AWS, un JWT): las saben el detector
+// de publicación y el control de claves del commit, y acá se usan las mismas. Se cargan SI ESTÁN, como la carpeta del
+// estado: este archivo viaja suelto al banco y a laboratorios, sin ellas. Si están y no cargan, tira.
+function formasDeCredencial() {
+  const siEsta = (rel) => { const f = path.join(__dirname, rel); return fs.existsSync(f) ? require(f) : null; };
+  const detector = siEsta('../publishing/detector.js');
+  const claves = siEsta('../lib/provider-secret-shapes.js');
+  return [
+    ...(detector ? detector.PATRONES_GENERICOS.filter((p) => p.categoria === 'secreto').map((p) => p.regex) : []),
+    ...(claves ? [claves.ANY] : []),
+  ];
+}
+const FORMAS_DE_CREDENCIAL = formasDeCredencial();
+
 /**
  * Saca del texto lo que identifica a una máquina o a una sesión. El mensaje rescatado es lo ÚNICO
  * que esta pieza publica que no nace de una lista blanca, así que la verificación (T13) va sobre lo
@@ -220,7 +239,10 @@ function taparCredencialesConNombre(txt) {
 function sanear(txt, home) {
   const casa = home || os.homedir();
   const tmp = os.tmpdir();
-  return String(txt || '')
+  const casaConSuResto = new RegExp(`${casa.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:[\\\\/](?:[^\\s'"]|\\s(?=[\\w .()-]*[\\\\/]))*)?`, 'g');
+  return FORMAS_DE_CREDENCIAL.reduce((t, forma) => t.replace(forma, '<oculto>'), String(txt || '')
+    // Una llave privada, con su contenido: el encabezado solo dejaría el cuerpo a la vista. Sin su cierre, hasta el final.
+    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, '<oculto>'))
     // 🔴 EL ORDEN IMPORTA. Si el home se colapsara a `~` en el PRIMER paso, la regla que borra rutas
     // absolutas no reconocería lo que queda: `/Users/<dev>/Proyectos/Cliente/a.cs` se publicaría como
     // `~/Proyectos/Cliente/a.cs` — o sea, sobreviviría exactamente el tramo que nombra al cliente.
@@ -245,8 +267,12 @@ function sanear(txt, home) {
     .split(tmp).join('<carpeta temporal>')
     .replace(/\/(?:Users|home)\/(?:[^\s'"]|\s(?=[\w .()-]*\/))*/g, '<ruta>')
     .replace(/[A-Za-z]:\\(?:[^\s'"]|\s(?=[\w .()-]*\\))*/g, '<ruta>')
-    .split(casa).join('<ruta>')
+    .replace(/(?<![A-Za-z0-9])[A-Za-z]:\/(?!\/)(?:[^\s'"]|\s(?=[\w .()-]*\/))*/g, '<ruta>')
+    .replace(/\\\\[^\s'"\\]+\\(?:[^\s'"]|\s(?=[\w .()-]*\\))*/g, '<ruta>')
+    .replace(casaConSuResto, '<ruta>')
+    .replace(RUTA_ABSOLUTA, '<ruta>')
     .replace(/~\/(?:[^\s'"]|\s(?=[\w .()-]*\/))*/g, '<ruta>')
+    .replace(/~\\(?:[^\s'"]|\s(?=[\w .()-]*\\))*/g, '<ruta>')
     .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '<correo>')
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '<sesión>');
 }

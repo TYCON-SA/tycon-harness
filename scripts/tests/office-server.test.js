@@ -22,7 +22,8 @@ const WIN = process.platform === 'win32';
 const started = new Set();
 test.after(() => { for (const pid of started) { try { process.kill(pid, 'SIGKILL'); } catch { /* ya salió */ } } });
 
-// A toy machine: the state folders the office watches and one live session.
+// A toy machine: the state folders the office watches and one live session. These tests measure the office without the
+// organization site: the team's profile, laid over the tree in the validation runs, does bring a site.url.
 function toy({ withAdhoc = true } = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'office-live-'));
   const sdir = stateDir(home);
@@ -33,7 +34,7 @@ function toy({ withAdhoc = true } = {}) {
   return { home, sdir, sessions };
 }
 
-const envOf = (home, more = {}) => ({ ...process.env, HOME: home, USERPROFILE: home, TYCON_OFFICE_NO_BROWSER: '1', TYCON_OFFICE_TEST: '1', ...more });
+const envOf = (home, more = {}) => ({ ...process.env, HOME: home, USERPROFILE: home, TYCON_OFFICE_NO_BROWSER: '1', TYCON_OFFICE_TEST: '1', TYCON_OFFICE_LINK: '0', ...more });
 const lockOf = (m) => path.join(m.sdir, 'office', 'server.json');
 const readLock = (m) => { try { return JSON.parse(fs.readFileSync(lockOf(m), 'utf8')); } catch { return null; } };
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };

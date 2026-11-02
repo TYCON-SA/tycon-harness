@@ -926,6 +926,23 @@ function archivosDelRegistro(dir) {
 }
 
 /**
+ * La huella de la clave de la oficina de esta máquina y el archivo que la lleva al buzón (`{ fingerprint, publicKey }`), o
+ * null si la máquina todavía no tiene clave. Un archivo que está y no sirve devuelve `{ problema }`: la aprobación de la
+ * máquina depende de esta huella, y callar lo dejaría esperando sin que nadie sepa por qué. El buzón es el otro canal por
+ * el que el sitio de la organización confirma de qué máquina es un pedido de alta. De la clave privada, que vive en el
+ * mismo archivo, sólo se mira que esté; el motivo nunca copia el contenido.
+ */
+function huellaDeLaOficina() {
+  let k;
+  try { k = JSON.parse(fs.readFileSync(path.join(stateDirOf(os.homedir()), 'office', 'site-key.json'), 'utf8')); }
+  catch (e) { return e.code === 'ENOENT' ? null : { problema: e.code || 'no es JSON' }; }
+  if (!k || typeof k.publicKey !== 'string' || typeof k.privateKey !== 'string') return { problema: 'le faltan campos' };
+  const fingerprint = crypto.createHash('sha256').update(Buffer.from(k.publicKey, 'base64')).digest('hex');
+  if (k.fingerprint !== fingerprint) return { problema: 'la huella no coincide' };
+  return { fingerprint, cuerpo: Buffer.from(JSON.stringify({ fingerprint, publicKey: k.publicKey })) };
+}
+
+/**
  * Un PUT de blob. Resuelve { status } o { error } — nunca rechaza. `cuerpo` es un Buffer entero en
  * memoria: el blob se manda entero o no se manda (los hilos pesan cientos de KB). Con `If-None-Match: *` siempre
  * no pisar vale desde la subida, aunque la política del contenedor dejara escribir. Sólo el chequeo de
@@ -1207,12 +1224,15 @@ async function subir(opts = {}) {
       }
     } catch (e) { noLeidos.push(`archivos de los merges (${e.code || 'error'})`); }
   } else res.merges = null;
+  const leida = huellaDeLaOficina();
+  const oficina = leida && !leida.problema ? leida : null;
+  if (leida && leida.problema) noLeidos.push(`la clave de la oficina (${leida.problema}): la próxima sesión la reemplaza y vuelve a pedir el alta`);
   try { for (const f of archivosDelRegistro(origen)) entradas.push({ dir: origen, f, juego: null, clave: `${maquina}/${f}`, blob: `${maquina}/${f}` }); }
   catch (e) {
     // Una máquina que nunca corrió el pipeline no tiene la carpeta: es «nada que subir» de corridas, no un fallo en cada arranque.
     if (e.code !== 'ENOENT') return fin(1, 'sin_registro', `no se pudo leer el registro de ejecuciones ${origen} (${e.code || e.message})`);
     // 🔴 «Nada que subir» sólo si tampoco hubo un error con los registros: si no, eso sale 1 al final (parcial).
-    if (!entradas.length && !noLeidos.length) { log(`esta máquina todavía no tiene ejecuciones del pipeline (${origen}): nada que subir`); return fin(0, 'sin_corridas'); }
+    if (!entradas.length && !noLeidos.length && !oficina) { log(`esta máquina todavía no tiene ejecuciones del pipeline (${origen}): nada que subir`); return fin(0, 'sin_corridas'); }
   }
 
   const destino = `${cfg.cuenta}/${cfg.contenedor}`;
@@ -1265,7 +1285,10 @@ async function subir(opts = {}) {
     }
     pendientes.push({ f, dir, clave, blob, aVersion, merge, version: null, previa: null, juego: suJuego || null, mtimeMs: st.mtimeMs, size: cuerpo.length, sha256 });
   }
-  res.a_subir = pendientes.length;
+  // la huella de la oficina va en su propio archivo, uno por huella: no pasa por la cola de los volcados ni tiene versiones
+  const blobOficina = oficina ? `${maquina}/office-keys/${oficina.fingerprint}.json` : null;
+  const huellaPendiente = Boolean(oficina) && !registro.archivos[blobOficina];
+  res.a_subir = pendientes.length + (huellaPendiente ? 1 : 0);
   if (res.merges) res.merges.nuevos = pendientes.filter((p) => p.merge).length;
 
   if (opts.dryRun) {
@@ -1305,6 +1328,19 @@ async function subir(opts = {}) {
   //    lo dispararía también por el hilo de una corrida (`*.hilo.jsonl.gz`).
   const esFallaDeRegistro = (x) => x.startsWith('registros de frenos y escapes') || REGISTROS.some((r) => x.startsWith(`${r}.gz `));
   let registroFallido = noLeidos.some(esFallaDeRegistro) || juegosFallidos.size > 0;
+  if (huellaPendiente) {
+    const md5 = crypto.createHash('md5').update(oficina.cuerpo).digest('base64');
+    const r = await ponerBlob(urlDe(blobOficina), oficina.cuerpo, md5, 30000);
+    const tipo = r.error ? null : respuestaDelBuzon(r);
+    if (r.error) return fin(1, 'sin_red', `sin red o sin respuesta del buzón (${r.error.code || r.error.message}) al subir la huella de la oficina: sube en el próximo arranque`);
+    // la llave no lee: un «ya existe» dice que esa huella ya está, y no hay nada más que hacer con ella
+    if (tipo === 'creado' || tipo === 'ya_existe') {
+      registro.archivos[blobOficina] = { size: oficina.cuerpo.length, sha256: crypto.createHash('sha256').update(oficina.cuerpo).digest('hex'), subido: new Date().toISOString(), blob: blobOficina, version: null };
+      try { guardar(); }
+      catch (e) { return fin(1, 'registro_ilegible', `la huella de la oficina subió pero el registro de subidas ${rutaRegistro} no se pudo escribir (${e.code || e.message}): la pasada siguiente la vuelve a intentar`); }
+      if (tipo === 'creado') { res.subidos += 1; res.bytes += oficina.cuerpo.length; res.subido = true; }
+    } else noSubidos.push(`la huella de la oficina (${r.status}${r.codigo ? ` ${r.codigo}` : ''})`);
+  }
   for (let i = 0; i < pendientes.length; i++) {
     if (Date.now() - inicio > tope) { res.sin_tiempo = pendientes.length - i; break; }
     const p = pendientes[i];
