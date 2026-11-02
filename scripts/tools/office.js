@@ -673,7 +673,7 @@ function buildTables({ board = null, boardWrittenAt = null, sessionTables = [], 
     const written = sessionTables.filter((x) => x && Array.isArray(x[key]) && x[key].length).sort((a, b) => tableAt(a.at, key) - tableAt(b.at, key));
     if (written.length) {
       const seen = new Map();
-      for (const x of written) for (const r of x[key]) seen.set(`${r.grupo} ${r.que}`, r);
+      for (const x of written) for (const r of x[key]) seen.set(`${r.grupo}\u0000${r.que}`, r);
       out[key] = { titulo: t.titulo, columnas: t.columnas, filas: byGroup([...seen.values()]), escrito: writtenText(tableAt(written[written.length - 1].at, key), nowMs), origen: 'sesiones' };
       continue;
     }
