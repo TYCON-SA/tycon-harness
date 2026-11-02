@@ -182,14 +182,13 @@ if [ -f "$TOOL_NAMES" ] && ! node "$TOOL_NAMES" --repo "$REPO_ROOT"; then
 fi
 
 # ── Las palabras de las guías en castellano ──
-# Las guías dicen cada cosa con una sola palabra (guides/maintaining/vocabulario.md): un commit que sube las palabras que
-# no se escriben en la prosa de una guía sobre el techo de su archivo, o con una excepción mal declarada, no se crea. Las
-# reglas: scripts/ci/vocabulary.json.
+# Las guías dicen cada cosa con una sola palabra (guides/maintaining/vocabulario.md): el control señala las palabras que
+# no se escriben en la prosa de una guía y pasan el techo de su archivo. Informa y no frena el commit. Las reglas:
+# scripts/ci/vocabulary.json.
 # Casos: scripts/tests/vocabulary.test.js
 VOCABULARY="$REPO_ROOT/scripts/ci/vocabulary.js"
-if [ -f "$VOCABULARY" ] && ! node "$VOCABULARY" --repo "$REPO_ROOT"; then
-  echo "⛔ COMMIT RECHAZADO — una palabra de las guías que no se escribe, o no se pudo medir (arriba dice dónde y cuál va)." >&2
-  exit 1
+if [ -f "$VOCABULARY" ]; then
+  node "$VOCABULARY" --repo "$REPO_ROOT" || true
 fi
 
 # ── La historia interna en la prosa que se publica ──

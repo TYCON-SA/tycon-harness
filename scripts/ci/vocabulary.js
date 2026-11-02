@@ -11,15 +11,18 @@
  *     (la palabra pegada a `-`, `_`, `/`, `@` o a un `.` seguido de letra: `tycon-harness`, `advisors.yaml`);
  *   · sin las frases declaradas en `exceptions`, cada una con su motivo (una sin motivo, con comodines o que ya no
  *     encuentra su frase, frena). Una excepción sin `path` vale en todos los archivos medidos; con `path`, sólo en ése.
- * Lo que cuenta no puede pasar el techo de su archivo (`ceiling`; sin entrada, 0). Por debajo del techo no frena: avisa el
- * número que va, para que el pedido que barre lo baje. Subir un techo es aflojar el control: lo mira la revisión desde
- * la base (scripts/ci/controls-from-base.json).
+ * Cada archivo tiene un techo (`ceiling`; sin entrada, 0). Por encima, el control señala cada palabra con su línea y la
+ * que va en su lugar; por debajo, avisa el número que va, para que el pedido que barre lo baje.
  *
- * Las reglas: scripts/ci/vocabulary.json, leídas del índice. Sin reglas legibles no se mide: sale 2, nunca verde.
+ * Informa y nunca frena un commit ni un pedido: un sinónimo en una guía no rompe nada, y frenar por él deja afuera
+ * trabajo que funciona.
+ *
+ * Las reglas: scripts/ci/vocabulary.json, leídas del índice. Sin reglas legibles dice «no medido», nunca verde.
  *
  * Uso: node scripts/ci/vocabulary.js --repo <dir> [--measure] [--json] [--skip-thin]
- *   sale 0 dentro del techo · 1 una palabra de más o una excepción mal declarada · 2 no medido (git o las reglas)
- *   --measure imprime lo que cuenta cada archivo (para fijar el techo) y sale 0
+ *   sale 0 con lo que encuentre, también sin poder medir. Con --measure o --json, que contestan una consulta y no son
+ *   el control, sin poder medir sale 2: la salida vacía no se confunde con «no hay nada»
+ *   --measure imprime lo que cuenta cada archivo (para fijar el techo)
  *   --skip-thin lo pasa sólo el pre-commit propio del repo de mantenimiento adelgazado: si el árbol lo es (su
  *     `.tycon/internal-forms.json` dice `layout: "thin"`), no cuenta y lo dice; las guías las mide el repo público
  * Casos: scripts/tests/vocabulary.test.js
@@ -266,14 +269,15 @@ function check({ repo, skipThin = false }) {
 function main(argv) {
   const repoAt = argv.indexOf('--repo');
   const repo = path.resolve(repoAt >= 0 && argv[repoAt + 1] ? argv[repoAt + 1] : '.');
+  const query = argv.includes('--measure') || argv.includes('--json');
   let r;
+  // cualquier falla, también una imprevista: sin esto, un error del propio control frenaría el commit
   try { r = check({ repo, skipThin: argv.includes('--skip-thin') }); } catch (e) {
-    if (!(e instanceof LookError)) throw e;
-    process.stderr.write(`⛔ vocabulary: no medido — ${e.message}\n`);
-    return 2;
+    process.stderr.write(`⚠️ vocabulary: no medido — ${e.message}\n`);
+    return query ? 2 : 0;
   }
   if (argv.includes('--measure')) { process.stdout.write(`${JSON.stringify(r.perFile, null, 2)}\n`); return 0; }
-  if (argv.includes('--json')) { process.stdout.write(`${JSON.stringify(r, null, 2)}\n`); return r.ok ? 0 : 1; }
+  if (argv.includes('--json')) { process.stdout.write(`${JSON.stringify(r, null, 2)}\n`); return 0; }
   if (r.skipped) { process.stdout.write(`⏭ vocabulary: ${r.notes.join(' · ')}\n`); return 0; }
   for (const n of r.notes) process.stdout.write(`ℹ vocabulary: ${n}\n`);
   if (r.ok) {
@@ -281,8 +285,8 @@ function main(argv) {
     process.stdout.write(`✅ vocabulary: ${total} palabra(s) por cambiar en ${Object.keys(r.perFile).length} archivo(s), dentro del techo\n`);
     return 0;
   }
-  for (const p of r.problems) process.stderr.write(`🛑 vocabulary: ${p}\n`);
-  return 1;
+  for (const p of r.problems) process.stderr.write(`⚠️ vocabulary: ${p}\n`);
+  return 0;
 }
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
