@@ -649,11 +649,14 @@ function aprobadoDelDueno(lab, dijo) {
   oa.anotar(lab.home, { tipo: 'mensaje', sesion: COORD, ts, texto: 'aprobado', herramienta: { pid: h.pid, inicio: h.inicio } });
 }
 
+/** La pregunta que arma el freno para ese comando: lo único que el agente puede mostrar para que un «aprobado» firme. */
+const preguntaDe = (lab, cmd, firma = 'plan-approval') => ow.cuadroPara({ firma, comando: cmd, palabras: ow.canonica(cmd), destino: DESTINO, cwd: lab.repo, casa: lab.home, sesion: COORD }).pregunta;
+
 test('Delicado_ConAprobadoDelDueno_PasaYQuedaASuNombre', (t) => {
   const plan = '# Plan\n\n1. Tocar el README.md del repositorio de juguete.\n';
   const lab = laboratorio(t, { sensible: 'seguridad', plan });
   // con el plan a la vista: con riesgo bajo, un ok a una pregunta que no lo trae no aprueba, tampoco desde esta pestaña
-  aprobadoDelDueno(lab, `Firma plan-approval, sesión ${DESTINO}. ¿Lo aprobás?\n\n${plan}`);
+  aprobadoDelDueno(lab, `${preguntaDe(lab, lab.comando(APROBAR))}\n\n${plan}`);
   const p = lab.pedir(lab.comando(APROBAR), { delegada: true });
   assert.deepStrictEqual([p.decision, p.via], ['allow', 'mensaje'], p.texto);
   const r = lab.correr(APROBAR);
@@ -669,8 +672,8 @@ test('Delicado_ConAprobadoDelDueno_PasaYQuedaASuNombre', (t) => {
 test('Aprobado_UnNombreEscritoEnElComando_NoReemplazaALaPersona', (t) => {
   const plan = '# Plan\n\n1. Tocar el README.md del repositorio de juguete.\n';
   const lab = laboratorio(t, { sensible: 'seguridad', plan });
-  aprobadoDelDueno(lab, `Firma plan-approval, sesión ${DESTINO}. ¿Lo aprobás?\n\n${plan}`);
   const args = [...APROBAR, '--approved-by', 'Otra-Persona'];
+  aprobadoDelDueno(lab, `${preguntaDe(lab, lab.comando(args))}\n\n${plan}`);
   const p = lab.pedir(lab.comando(args), { delegada: true });
   assert.deepStrictEqual([p.decision, p.via], ['allow', 'mensaje'], p.texto);
   const r = lab.correr(args);
@@ -693,7 +696,7 @@ test('Aprobado_ParaOtraSesion_NoFirmaElPlanDeLaPestana', (t) => {
 
 test('Delicado_ConAprobadoSinElPlanALaVista_RiesgoBajo_NoGastaLaAprobacion', (t) => {
   const lab = laboratorio(t, { sensible: 'seguridad' });
-  aprobadoDelDueno(lab, `Firma plan-approval, sesión ${DESTINO}: ¿lo aprobás?`);
+  aprobadoDelDueno(lab, preguntaDe(lab, lab.comando(APROBAR)));
   const p = lab.pedir(lab.comando(APROBAR), { delegada: true });
   assert.strictEqual(p.decision, 'deny', p.texto);
   assert.match(p.texto, /aprobó sin ver el plan/);
@@ -706,17 +709,18 @@ test('Delicado_DelegacionSinAprobado_SigueFrenadaYDiceComoAprobar', (t) => {
   const r = aprobarPorDelegacion(lab);
   assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /plan delicado \(nivel 2\): lo aprueba el dev/);
-  assert.match(r.stderr, new RegExp(`«firma plan-approval» y «sesión ${DESTINO}»`));
+  assert.match(r.stderr, new RegExp(`firma plan-approval · sesión ${DESTINO} · código `));
   assert.match(r.stderr, /no hay un click en el cuadro ni un «aprobado» tuyo/);
   assert.strictEqual(JSON.parse(lab.leer(DESTINO)).planApproval, undefined);
 });
 
 test('Delicado_AprobadoQueNoNombraEstaFirmaOEstaSesion_NoPasa', (t) => {
-  for (const [dijo, motivo] of [
-    ['Firma plan-approval: ¿lo aprobás?', /ni «sesión ses-a»/], // sin la sesión, un «aprobado» al plan de otra serviría para éste
-    ['Firma plan-approval, sesión ses-b: ¿lo aprobás?', /ni «sesión ses-a»/],
-    ['Firma save, sesión ses-a: ¿lo guardo?', /no nombra «firma plan-approval»/],
-    ['¿Te parece bien el formato?', /no nombra «firma plan-approval»/],
+  for (const dijo of [
+    'Firma plan-approval: ¿lo aprobás?', // sin la sesión, un «aprobado» al plan de otra serviría para éste
+    'Firma plan-approval, sesión ses-b: ¿lo aprobás?',
+    'Firma plan-approval, sesión ses-a: ¿lo aprobás?', // ya no alcanza con nombrarla: la pregunta la arma el freno
+    'Firma save, sesión ses-a: ¿lo guardo?',
+    '¿Te parece bien el formato?',
   ]) {
     const lab = laboratorio(t, { sensible: 'seguridad' });
     aprobadoDelDueno(lab, dijo);
@@ -725,17 +729,17 @@ test('Delicado_AprobadoQueNoNombraEstaFirmaOEstaSesion_NoPasa', (t) => {
     const r = lab.correr(APROBAR);
     assert.strictEqual(r.status, 2, `${dijo}: ${r.stdout}${r.stderr}`);
     assert.match(r.stderr, /plan delicado/, dijo);
-    assert.match(r.stderr, motivo, dijo);
+    assert.match(r.stderr, /no trae «firma plan-approval · sesión ses-a · código /, dijo);
     assert.strictEqual(JSON.parse(lab.leer(DESTINO)).planApproval, undefined, dijo);
   }
 });
 
 test('Carril_ConAprobadoDelDueno_SeDeclara', (t) => {
   const lab = laboratorio(t);
-  aprobadoDelDueno(lab, `Firma adhoc-lane, sesión ${DESTINO}: arreglo rápido de hasta 3 archivos.`);
   const json = JSON.stringify({ reason: 'el arreglo de la prueba', maxFiles: 3 });
   const args = ['adhoc', 'set', json, '--for-session', DESTINO];
   const cmd = `node ${MARKER} adhoc set '${json}' --for-session ${DESTINO}`;
+  aprobadoDelDueno(lab, preguntaDe(lab, cmd, 'adhoc-lane'));
   const p = lab.pedir(cmd, { delegada: true });
   assert.deepStrictEqual([p.decision, p.via], ['allow', 'mensaje'], p.texto);
   const r = lab.marker(COORD, args, { arbol: { arbol: arbolDelGuion(lab.home, cmd), pid: 301, ahora: AHORA + 60000 } });

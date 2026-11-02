@@ -681,8 +681,8 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   - **C · quién firma cada cosa y su nivel**: «Quién firma cada cosa» (la lista la trae el arnés, igual para todos;
     el equipo no agrega ni saca filas) y «El nivel de cada firma» (se sube, nunca se baja; sólo la rutina se delega).
   - **En cada máquina**, la designación: «Esta sesión es la <nombre>» en el chat de la sesión elegida. Para que firme
-    lo delegado, además, el dueño la confirma en su terminal con `node scripts/lib/delegated-signing.js
-    confirm-designation` (ver `guides/firmas-del-arnes.md`, «Aprobar en nombre del dueño»). Se la reconoce por su
+    lo delegado, además, esa sesión corre `node scripts/lib/delegated-signing.js confirm-designation` y el dueño lo aprueba
+    con un click en el cuadro de opciones, o lo corre en su terminal (ver `guides/firmas-del-arnes.md`, «Aprobar en nombre del dueño»). Se la reconoce por su
     conversación, sigue valiendo si se reinicia, y hay que repetirla tras un chat nuevo o un `/clear`. Si nadie la
     designó, nadie confirmó la designación, o la sesión está cerrada, no hay coordinadora: todo le llega al dev.
 - **Prueba a mano de cada punto**: si, además de lo que prueba el arnés, una persona tiene que marcar cada criterio de

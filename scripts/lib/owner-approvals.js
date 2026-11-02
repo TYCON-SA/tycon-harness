@@ -5,12 +5,12 @@
  * (scripts/hooks/owner-approval-record.js); la consume una firma (owner-window.js `decidir`) donde la ventana de permiso
  * no llega (una pestaña sin permisos, una sesión de fondo), en lugar de mandar a la terminal.
  *
- * Cada aprobación sirve para UNA firma: la que nombra. La pregunta del cuadro, o el último mensaje del agente antes del
- * «aprobado», tiene que decir «firma <id>» (y, si la firma es para otra sesión que la de la pestaña donde se aprueba,
- * «sesión <id>» de esa sesión). Vence a los 30 minutos. Vale en la sesión donde se dio o en la coordinadora designada y
- * confirmada. Gana a la delegación: lo que la coordinadora no puede firmar por su cuenta (un plan delicado, un guardado
- * que toca algo sensible) pasa con la aprobación de la persona. Lo irreversible (owner-window.js `TERMINAL_SIEMPRE`) no
- * la acepta.
+ * Cada aprobación sirve para UNA firma y UN comando. La pregunta del cuadro la arma el guion (`cuadroDe`: qué se aprueba,
+ * qué pasa si sale mal y el sello «firma <id> · sesión <id> · código <huella del comando>»), el agente la muestra tal cual
+ * y se compara entera; el último mensaje del agente antes de un «aprobado» tiene que traer el sello. Vence a los 30
+ * minutos. Vale en la sesión donde se dio o en la coordinadora designada y confirmada, si su proceso sigue vivo. Gana a la
+ * delegación: lo que la coordinadora no puede firmar por su cuenta (un plan delicado, un guardado que toca algo sensible)
+ * pasa con la aprobación de la persona. Lo irreversible (owner-window.js `TERMINAL_SIEMPRE`) no la acepta.
  *
  * Por qué el agente no la puede fingir:
  * - El modelo no puede llenar la respuesta del cuadro: la herramienta la descarta antes de mostrarlo.
@@ -20,9 +20,13 @@
  *   estar el mensaje tipeado por la persona (`origin.kind: human`, `promptSource: typed`, `entrypoint: cli`) a la hora
  *   del registro, o el cuadro con esa pregunta, contestado con esa opción a esa hora y no por un gancho
  *   (`permissionDecision.source: hook`).
- * - Para el click se revisan además las capas de configuración y los plugins instalados: un gancho que no es del arnés
- *   sobre el cuadro (PreToolUse o PermissionRequest), o una capa que no se puede leer, y el click no vale.
- * Lo que no cubre: un agente que rompa un freno a propósito (escribir a mano el registro y la transcripción).
+ * - Para el click se revisan además las capas de configuración (también `managed-settings.d/` y `--settings`), los plugins
+ *   instalados (`hooks.json`, los ganchos de su `plugin.json`, `--plugin-dir`) y el encabezado de skills y agentes: un
+ *   gancho que no es del arnés sobre el cuadro (PreToolUse o PermissionRequest), o algo que no se puede leer, y el click no
+ *   vale.
+ * - El registro no se escribe, mueve ni borra por Edit, Write ni la consola (story-gate.js, on-bash-write-gate.js).
+ * Lo que no cubre: un agente que rompa un freno a propósito (un guion que escribe a mano el registro y la transcripción),
+ * y las banderas de una sesión de fondo, porque su proceso no las muestra.
  *
  * La parte de acá no depende de la herramienta salvo las funciones de Claude Code (la transcripción, las capas, el
  * árbol de procesos). Codex queda para después: tiene el cuadro (`request_user_input`), que en el modo normal pide la
@@ -41,10 +45,15 @@ const VENCE_MIN = 30;
 const MARGEN_MS = 2 * 60 * 1000;
 const SESION = /^[\w-]+$/;
 const CUADRO = 'AskUserQuestion';
+const APRUEBA = 'Sí, aprobar';
+const NIEGA = 'No';
 // lo que llega como prompt sin que lo haya escrito la persona: mensajes de otra sesión, de un canal, avisos de tareas
 const ENVUELTO = /<(?:cross-session-message|channel|task-notification|teammate-message|system-reminder|local-command|command-name)\b/i;
 // los ganchos del arnés que pueden escuchar el cuadro: el aviso de espera y el que anota el click
-const PERMITIDOS = ['wait-notice.js', 'owner-approval-record.js'];
+const PERMITIDOS = ['wait-notice.js', 'owner-approval-record.js', 'session-state.js'];
+// Cómo anota la herramienta un mensaje tipeado, medido en transcripciones reales: en la consola `cli · typed`, en la extensión
+// del editor `claude-vscode · sdk`. Otra sesión llega con `system`, y un programa (`claude -p`) con `sdk-cli`.
+const TIPEADO = { cli: ['typed'], 'claude-vscode': ['sdk'] };
 const sha = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 const una = (s, n = 200) => { const t = String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); return t.length > n ? `${t.slice(0, n)}…` : t; };
 const ow = () => require('./owner-window.js');
@@ -96,9 +105,6 @@ function respuestaDelCuadro(salida) {
   return { ok: true, pregunta: String(pregunta), respuesta };
 }
 
-// la frase suelta y sin distinguir mayúsculas: «Firma save» nombra `save`; «firma save-all» y «refirma save», no
-const dice = (texto, frase) => new RegExp(`(^|[^\\p{L}\\p{N}_-])${frase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}_-])`, 'iu').test(texto);
-
 // lo que puede seguir a «sesión» en una frase sin nombrar ninguna; cualquier otra palabra cuenta como un id, y ante la duda
 // la aprobación no vale y se pide de nuevo
 const NO_ES_ID = new Set(['que', 'y', 'o', 'en', 'con', 'para', 'por', 'sin', 'a', 'al', 'su', 'sus', 'esta', 'este', 'es', 'se',
@@ -110,15 +116,23 @@ function sesionesNombradas(texto) {
 }
 
 /**
- * ¿El texto (la pregunta del cuadro, o lo último que dijo el agente) nombra la firma y, si hace falta, la sesión? Un
- * texto que nombra otra sesión que `destino` no aprueba ésta, aunque sea la de la misma pestaña.
+ * El cuadro de una firma: lo arma el guion, y el agente lo muestra tal cual. `sello`: lo que ata la aprobación a esa firma,
+ * esa sesión y ese comando (`huella`); `pregunta`: el texto entero, con qué se aprueba y qué pasa si sale mal.
  */
-function nombraLaFirma(texto, firma, sesion, destino = sesion) {
+function cuadroDe({ firma, destino, que, detalle, siSaleMal, huella }) {
+  const sello = `firma ${firma} · sesión ${destino} · código ${huella}`;
+  return { sello, pregunta: `¿Aprobás ${una(que, 200)}? Detalle: ${una(detalle, 900)}. Si sale mal: ${una(siSaleMal, 200)}. (${sello})`, opciones: [APRUEBA, NIEGA] };
+}
+
+/**
+ * ¿El mensaje del agente trae la pregunta que armó el guion (`pregunta`; sin ella, el sello) y no nombra otra sesión que la
+ * destino? Para el «aprobado» escrito. El sello solo, pegado a otra pregunta, haría aprobar una cosa y firmar otra. Lo que
+ * dice la pregunta no cuenta como sesión nombrada: su detalle copia el motivo del comando.
+ */
+function traeElSello(texto, { sello, destino, pregunta }) {
   const t = String(texto || '');
-  if (!firma || !dice(t, `firma ${firma}`)) return false;
-  const nombradas = sesionesNombradas(t);
-  if (destino && nombradas.some((s) => s !== String(destino).toLowerCase())) return false;
-  return !sesion || nombradas.includes(String(sesion).toLowerCase());
+  const resto = pregunta ? t.split(pregunta).join(' ') : t;
+  return !!sello && t.includes(pregunta || sello) && sesionesNombradas(resto).every((s) => s === String(destino).toLowerCase());
 }
 
 // --- quién lanzó el gancho ------------------------------------------------------------------------------------------
@@ -230,9 +244,9 @@ const cerca = (r, ts) => { const t = Date.parse(r && r.timestamp); const u = Dat
 
 /**
  * El mensaje en la transcripción, tipeado por la persona a la hora del registro, después de un mensaje del agente que
- * nombra la firma: `{ ok }` o `{ ok: false, motivo }`.
+ * trae el sello de la firma: `{ ok }` o `{ ok: false, motivo }`.
  */
-function mensajeEnLaTranscripcion(ruta, a, { firma, sesion } = {}) {
+function mensajeEnLaTranscripcion(ruta, a, { sello, destino, pregunta } = {}) {
   let rs;
   try { rs = renglones(ruta); } catch (e) { return { ok: false, motivo: `no pude leer la transcripción (${e.code || e.message})` }; }
   const t = String(a.texto || '').trim();
@@ -247,23 +261,22 @@ function mensajeEnLaTranscripcion(ruta, a, { firma, sesion } = {}) {
   if (i < 0) return { ok: false, motivo: 'el mensaje no está en la transcripción de la sesión a esa hora' };
   const r = rs[i];
   if (r.isMeta === true || !r.origin || r.origin.kind !== 'human') return { ok: false, motivo: 'el mensaje no lo escribió una persona (lo mandó otra sesión o un programa)' };
-  if (r.promptSource !== 'typed') return { ok: false, motivo: 'el mensaje no se tipeó' };
-  if (r.entrypoint !== 'cli') return { ok: false, motivo: 'el mensaje llegó por un programa, no por la persona' };
+  if (!(TIPEADO[r.entrypoint] || []).includes(r.promptSource)) return { ok: false, motivo: `el mensaje no lo tipeó una persona: llegó por ${una(r.entrypoint, 40)} · ${una(r.promptSource, 40)}` };
   // lo que el agente dijo después del mensaje anterior de la persona: una pregunta se contesta una sola vez
   let antes = null;
   for (let k = i - 1; k >= 0 && antes === null; k--) {
     if (rs[k] && rs[k].type === 'user' && rs[k].origin && rs[k].origin.kind === 'human' && textoDe(rs[k]) !== null) break;
     if (rs[k] && rs[k].type === 'assistant' && textoDe(rs[k])) antes = textoDe(rs[k]);
   }
-  if (!nombraLaFirma(antes, firma, sesion, sesion || a.sesion)) return { ok: false, motivo: `lo último que dijo el agente antes del «aprobado» no nombra «firma ${firma}»${sesion ? ` ni «sesión ${sesion}»` : ''}, o nombra otra sesión` };
+  if (!traeElSello(antes, { sello, destino, pregunta })) return { ok: false, motivo: `lo último que dijo el agente antes del «aprobado» no trae «${sello}», o nombra otra sesión` };
   return { ok: true };
 }
 
 /**
- * El cuadro en la transcripción: la pregunta nombra la firma, la respuesta es la del registro, a esa hora, y no la dio
- * un gancho. `{ ok }` o `{ ok: false, motivo }`.
+ * El cuadro en la transcripción: la pregunta es la que armó el guion, la respuesta es la del registro, a esa hora, y no la
+ * dio un gancho. `{ ok }` o `{ ok: false, motivo }`.
  */
-function clickEnLaTranscripcion(ruta, a, { firma, sesion } = {}) {
+function clickEnLaTranscripcion(ruta, a, { pregunta, opciones } = {}) {
   let rs;
   try { rs = renglones(ruta); } catch (e) { return { ok: false, motivo: `no pude leer la transcripción (${e.code || e.message})` }; }
   if (!a.tool_use_id) return { ok: false, motivo: 'el click no dice qué cuadro contestó' };
@@ -273,32 +286,64 @@ function clickEnLaTranscripcion(ruta, a, { firma, sesion } = {}) {
   if (!r) return { ok: false, motivo: 'la respuesta del cuadro no está en la transcripción' };
   if (!cerca(r, a.ts)) return { ok: false, motivo: 'la respuesta del cuadro no es de la hora del registro' };
   const d = r.permissionDecision || (r.toolUseResult && r.toolUseResult.permissionDecision);
-  if (d && (d.source === 'hook' || d.reasonType === 'hook')) return { ok: false, motivo: 'el cuadro lo contestó un gancho, no la persona' };
-  if (d && d.decision && d.decision !== 'accept') return { ok: false, motivo: 'el cuadro no se aceptó' };
+  // sin ese dato no se sabe si lo contestó un gancho, y uno ajeno se puede sacar antes de que se mire la configuración
+  if (!d) return { ok: false, motivo: 'la transcripción no dice quién contestó el cuadro' };
+  if (d.source === 'hook' || d.reasonType === 'hook') return { ok: false, motivo: 'el cuadro lo contestó un gancho, no la persona' };
+  if (d.decision && d.decision !== 'accept') return { ok: false, motivo: 'el cuadro no se aceptó' };
   const dijo = respuestaDelCuadro(r.toolUseResult);
   if (!dijo.ok) return { ok: false, motivo: `en la transcripción, ${dijo.motivo}` };
   if (dijo.pregunta !== a.pregunta || dijo.respuesta !== a.respuesta) return { ok: false, motivo: 'la respuesta del cuadro en la transcripción no es la del registro' };
-  if (!nombraLaFirma(dijo.pregunta, firma, sesion, sesion || a.sesion)) return { ok: false, motivo: `la pregunta del cuadro no nombra «firma ${firma}»${sesion ? ` ni «sesión ${sesion}»` : ''}, o nombra otra sesión` };
+  if (!pregunta || dijo.pregunta !== pregunta) return { ok: false, motivo: 'la pregunta del cuadro no es la que armó el guion para esta firma: mostrala tal cual' };
+  // con dos opciones que aprueban, la persona no tendría cómo decir que no
+  const mostrada = ((r.toolUseResult && r.toolUseResult.questions) || []).find((q) => q && q.question === pregunta);
+  const etiquetas = mostrada && Array.isArray(mostrada.options) ? mostrada.options.map((o) => o && o.label) : null;
+  if (!opciones || JSON.stringify(etiquetas) !== JSON.stringify(opciones)) return { ok: false, motivo: 'las opciones del cuadro no son las que armó el guion: mostralas tal cual' };
   return { ok: true };
 }
 
-/** Las capas de configuración de Claude Code que pueden traer ganchos, para la carpeta `cwd`. */
-function capas({ casa = os.homedir(), cwd, plataforma = process.platform } = {}) {
-  const fuera = [path.join(casa, '.claude', 'settings.json'), path.join(casa, '.claude', 'settings.local.json')];
-  if (cwd) fuera.push(path.join(cwd, '.claude', 'settings.json'), path.join(cwd, '.claude', 'settings.local.json'));
-  if (plataforma === 'darwin') fuera.push('/Library/Application Support/ClaudeCode/managed-settings.json');
-  else if (plataforma === 'win32') fuera.push('C:\\Program Files\\ClaudeCode\\managed-settings.json');
-  else fuera.push('/etc/claude-code/managed-settings.json');
-  return fuera;
+/** La carpeta de la configuración administrada de Claude Code. */
+function carpetaAdministrada(plataforma = process.platform) {
+  if (plataforma === 'darwin') return '/Library/Application Support/ClaudeCode';
+  return plataforma === 'win32' ? 'C:\\Program Files\\ClaudeCode' : '/etc/claude-code';
 }
 
 /**
- * Los `hooks.json` de los plugins instalados (`~/.claude/plugins/cache`; todos, porque uno sin habilitar puede habilitarse
- * sin pasar por acá). Los catálogos de `marketplaces/` no corren: no cuentan.
+ * Las capas de configuración de Claude Code que pueden traer ganchos, para la carpeta `cwd`: las de la cuenta y del
+ * proyecto, la administrada y su carpeta `managed-settings.d/` (sus `.json`; las copias con otro final no se cargan).
  */
-function hooksDePlugins(casa = os.homedir()) {
+function capas({ casa = os.homedir(), cwd, plataforma = process.platform, administrada = carpetaAdministrada(plataforma) } = {}) {
+  const fuera = [path.join(casa, '.claude', 'settings.json'), path.join(casa, '.claude', 'settings.local.json')];
+  if (cwd) fuera.push(path.join(cwd, '.claude', 'settings.json'), path.join(cwd, '.claude', 'settings.local.json'));
+  fuera.push(path.join(administrada, 'managed-settings.json'));
+  const d = path.join(administrada, 'managed-settings.d');
+  try { for (const f of fs.readdirSync(d)) if (f.endsWith('.json')) fuera.push(path.join(d, f)); } catch (e) { if (e.code !== 'ENOENT') fuera.push(d); }
+  return fuera;
+}
+
+/** Las carpetas que hay adentro de una raíz, siguiendo los enlaces (una skill instalada suele ser un enlace). */
+function subcarpetas(d, nombres = null) {
+  let es;
+  try { es = fs.readdirSync(d); } catch (e) { return e.code === 'ENOENT' ? [] : [{ ilegible: d }]; }
+  return es.filter((n) => !nombres || nombres.includes(n)).map((n) => path.join(d, n)).filter((p) => { try { return fs.statSync(p).isDirectory(); } catch (_) { return false; } });
+}
+
+/**
+ * Los archivos de ganchos de los plugins de `raices` (por defecto, los instalados en `~/.claude/plugins/cache`; todos,
+ * porque uno sin habilitar puede habilitarse sin pasar por acá): su `hooks/hooks.json` y lo que nombre su `plugin.json`,
+ * sea otro archivo o los ganchos mismos (`{ objeto, archivo }`). Los catálogos de `marketplaces/` no corren: no cuentan.
+ */
+function hooksDePlugins(casa = os.homedir(), raices = [path.join(casa, '.claude', 'plugins', 'cache')]) {
   const fuera = [];
-  const raiz = path.join(casa, '.claude', 'plugins', 'cache');
+  const delManifiesto = (p) => {
+    let j;
+    try { j = JSON.parse(fs.readFileSync(p, 'utf8')); } catch (_) { fuera.push({ ilegible: p }); return; }
+    const raiz = path.basename(path.dirname(p)) === '.claude-plugin' ? path.dirname(path.dirname(p)) : path.dirname(p);
+    for (const h of [].concat(j && j.hooks !== undefined ? j.hooks : [])) {
+      if (typeof h === 'string') fuera.push(path.resolve(raiz, h));
+      else if (h && typeof h === 'object') fuera.push({ objeto: h, archivo: p });
+      else fuera.push({ ilegible: p });
+    }
+  };
   const recorrer = (d, n) => {
     if (n > 7) return;
     let es;
@@ -307,10 +352,104 @@ function hooksDePlugins(casa = os.homedir()) {
       const p = path.join(d, e.name);
       if (e.isDirectory() && e.name !== 'node_modules' && e.name !== '.git') recorrer(p, n + 1);
       else if (e.isFile() && e.name === 'hooks.json' && path.basename(d) === 'hooks') fuera.push(p);
+      else if (e.isFile() && e.name === 'plugin.json') delManifiesto(p);
     }
   };
-  recorrer(raiz, 0);
+  for (const r of raices) recorrer(r, 0);
   return fuera;
+}
+
+/** El encabezado YAML de un `.md`, o null. Lee sólo el principio: un encabezado no ocupa más. */
+function encabezadoDe(ruta) {
+  const fd = fs.openSync(ruta, 'r');
+  try {
+    const b = Buffer.alloc(16384);
+    const t = b.toString('utf8', 0, fs.readSync(fd, b, 0, b.length, 0));
+    const m = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(t);
+    return m ? m[1] : t.startsWith('---') ? t : null;
+  } finally { fs.closeSync(fd); }
+}
+
+/**
+ * Los ganchos sobre el cuadro de un encabezado de skill o de agente (`hooks:`), como `{ evento, comando }`. Lee los
+ * renglones sin intérprete de YAML: un evento sin `matcher`, o con uno que alcanza al cuadro, cuenta entero; ante la duda,
+ * cuenta.
+ */
+function ganchosDelEncabezado(texto) {
+  const fuera = [];
+  const rs = String(texto || '').split(/\r?\n/);
+  const inicio = rs.findIndex((l) => /^hooks\s*:/.test(l));
+  if (inicio < 0) return fuera;
+  // un comentario pegado al margen no cierra el bloque
+  const fin = rs.findIndex((l, i) => i > inicio && /^[^\s#]/.test(l));
+  const bloque = rs.slice(inicio, fin < 0 ? rs.length : fin);
+  let evento = null;
+  let tramo = [];
+  const cerrar = () => {
+    if (!['PreToolUse', 'PermissionRequest'].includes(evento)) return;
+    const matchers = tramo.map((l) => /\bmatcher\s*:\s*["']?([^"'#]*?)["']?\s*$/.exec(l)).filter(Boolean).map((m) => m[1]);
+    if (matchers.length && !matchers.some(alcanzaAlCuadro)) return;
+    const comandos = tramo.map((l) => /\bcommand\s*:\s*(.+?)\s*$/.exec(l)).filter(Boolean).map((m) => m[1].replace(/^["']|["']$/g, ''));
+    for (const comando of comandos.length ? comandos : ['(sin comando a la vista)']) if (!esPermitido(comando)) fuera.push({ evento, comando });
+  };
+  for (const l of bloque.slice(1)) {
+    const m = /^\s*["']?([A-Za-z]+)["']?\s*:\s*(?:\[\s*)?$/.exec(l);
+    if (m && /^[A-Z]/.test(m[1])) { cerrar(); evento = m[1]; tramo = []; continue; }
+    // el evento y sus ganchos en una sola línea: no se lee el matcher, y ante la duda cuenta
+    const enLinea = /^\s*["']?(PreToolUse|PermissionRequest)["']?\s*:\s*\S/.exec(l);
+    if (enLinea) fuera.push({ evento: enLinea[1], comando: una(l.trim(), 160) });
+    tramo.push(l);
+  }
+  cerrar();
+  // una forma en una sola línea (`hooks: { PreToolUse: … }`), o un evento que no se pudo leer, cuenta
+  if (/\b(?:PreToolUse|PermissionRequest)\b/.test(rs[inicio])) fuera.push({ evento: 'PreToolUse', comando: una(rs[inicio], 160) });
+  return fuera;
+}
+
+/**
+ * Los `.md` con encabezado que pueden traer ganchos: skills y agentes (también comandos) de la cuenta, del proyecto y de
+ * los plugins instalados. Las carpetas `skills/` y `agents/` de un plugin se buscan en todos los niveles que recorre
+ * `hooksDePlugins`.
+ */
+function encabezadosPosibles({ casa = os.homedir(), cwd, pluginDirs = [] } = {}) {
+  const fuera = [];
+  const deRaiz = (raiz) => {
+    for (const d of subcarpetas(path.join(raiz, 'skills'))) { if (typeof d === 'object') fuera.push(d); else fuera.push(path.join(d, 'SKILL.md')); }
+    for (const nombre of ['agents', 'commands']) {
+      let es;
+      try { es = fs.readdirSync(path.join(raiz, nombre)); } catch (e) { if (e.code !== 'ENOENT') fuera.push({ ilegible: path.join(raiz, nombre) }); continue; }
+      for (const f of es) if (f.endsWith('.md')) fuera.push(path.join(raiz, nombre, f));
+    }
+  };
+  deRaiz(path.join(casa, '.claude'));
+  if (cwd) deRaiz(path.join(cwd, '.claude'));
+  const recorrer = (d, n) => {
+    if (n > 7) return;
+    let es;
+    try { es = fs.readdirSync(d, { withFileTypes: true }); } catch (e) { if (e.code !== 'ENOENT') fuera.push({ ilegible: d }); return; }
+    if (es.some((e) => e.isDirectory() && ['skills', 'agents', 'commands'].includes(e.name))) deRaiz(d);
+    for (const e of es) if (e.isDirectory() && !['node_modules', '.git', 'skills', 'agents', 'commands'].includes(e.name)) recorrer(path.join(d, e.name), n + 1);
+  };
+  for (const r of [path.join(casa, '.claude', 'plugins', 'cache'), ...pluginDirs]) recorrer(r, 0);
+  return fuera;
+}
+
+/**
+ * Lo que la línea del proceso de la herramienta suma a sus capas: `--settings <archivo>` y `--plugin-dir <carpeta>`. Con
+ * la línea partida por espacios: un valor que no se puede leer (una ruta con espacios, JSON en línea) queda como archivo y
+ * no se puede abrir, y entonces el click no vale.
+ */
+function banderasDe(linea) {
+  const w = String(linea || '').trim().split(/\s+/);
+  const settings = [];
+  const pluginDirs = [];
+  w.forEach((x, i) => {
+    const m = /^--(settings|plugin-dir)(?:=(.*))?$/.exec(x);
+    if (!m) return;
+    const v = m[2] !== undefined ? m[2] : w[i + 1];
+    (m[1] === 'settings' ? settings : pluginDirs).push(v || '');
+  });
+  return { settings, pluginDirs };
 }
 
 /** ¿El matcher de un gancho alcanza al cuadro? Vacío o `*` alcanza a todo; una expresión, si la acepta. */
@@ -335,17 +474,16 @@ function esPermitido(comando) {
 
 /**
  * Los ganchos ajenos que escuchan el cuadro: `{ ajenos: [{ archivo, evento, comando }], ilegibles: [archivo] }`. Mira
- * PreToolUse y PermissionRequest en las capas de configuración y en los plugins instalados.
+ * PreToolUse y PermissionRequest en las capas de configuración, en lo que suman las banderas del proceso (`linea`, la de
+ * la herramienta), en los plugins instalados y en el encabezado de skills y agentes.
  */
-function escuchasDelCuadro({ casa = os.homedir(), cwd, plataforma } = {}) {
+function escuchasDelCuadro({ casa = os.homedir(), cwd, plataforma, administrada, linea } = {}) {
   const ajenos = [];
   const ilegibles = [];
-  const archivos = [...capas({ casa, cwd, plataforma }).map((a) => ({ a, plugin: false })), ...hooksDePlugins(casa).map((a) => ({ a, plugin: true }))];
-  for (const { a, plugin } of archivos) {
-    if (typeof a === 'object') { ilegibles.push(a.ilegible); continue; }
-    let j;
-    try { j = JSON.parse(fs.readFileSync(a, 'utf8')); } catch (e) { if (e.code !== 'ENOENT') ilegibles.push(a); continue; }
-    const hooks = (j && (plugin && !j.hooks ? j : j.hooks)) || {};
+  const { settings, pluginDirs } = banderasDe(linea);
+  const archivos = [...capas({ casa, cwd, plataforma, ...(administrada ? { administrada } : {}) }).map((a) => ({ a, plugin: false })),
+    ...hooksDePlugins(casa, [path.join(casa, '.claude', 'plugins', 'cache'), ...pluginDirs]).map((a) => ({ a, plugin: true }))];
+  const delObjeto = (hooks, a) => {
     for (const evento of ['PreToolUse', 'PermissionRequest']) {
       for (const g of Array.isArray(hooks[evento]) ? hooks[evento] : []) {
         if (!g || !alcanzaAlCuadro(g.matcher)) continue;
@@ -355,8 +493,54 @@ function escuchasDelCuadro({ casa = os.homedir(), cwd, plataforma } = {}) {
         }
       }
     }
+  };
+  for (const { a, plugin } of archivos) {
+    if (a && typeof a === 'object' && a.ilegible) { ilegibles.push(a.ilegible); continue; }
+    if (a && typeof a === 'object') { delObjeto(a.objeto.hooks || a.objeto, a.archivo); continue; }
+    let j;
+    try { j = JSON.parse(fs.readFileSync(a, 'utf8')); } catch (e) { if (e.code !== 'ENOENT') ilegibles.push(a); continue; }
+    delObjeto((j && (plugin && !j.hooks ? j : j.hooks)) || {}, a);
+  }
+  // pedida en la línea del proceso: si no se puede leer, no se sabe qué trae
+  for (const a of settings) {
+    let j;
+    try { j = JSON.parse(fs.readFileSync(a, 'utf8')); } catch (_) { ilegibles.push(a || '--settings'); continue; }
+    delObjeto((j && j.hooks) || {}, a);
+  }
+  for (const a of encabezadosPosibles({ casa, cwd, pluginDirs })) {
+    if (typeof a === 'object') { ilegibles.push(a.ilegible); continue; }
+    let t;
+    try { t = encabezadoDe(a); } catch (e) { if (e.code !== 'ENOENT') ilegibles.push(a); continue; }
+    for (const g of ganchosDelEncabezado(t)) ajenos.push({ archivo: a, evento: g.evento, comando: una(g.comando, 160) });
   }
   return { ajenos, ilegibles };
+}
+
+// --- quién anotó una aprobación dada en otra sesión -----------------------------------------------------------------
+
+/**
+ * La aprobación dada en otra sesión (la coordinadora) la anotó el proceso de esa sesión, que sigue vivo: el proceso que
+ * dice el registro está en el árbol, con su misma hora de inicio, es la herramienta, y Claude Code lo tiene como esa sesión
+ * (`~/.claude/sessions/<pid>.json`). `{ ok, linea, cwd }` o `{ ok: false, motivo }`.
+ */
+function procesoQueLaAnoto({ a, arbol, casa }) {
+  const w = ow();
+  const h = a.herramienta;
+  if (!h || !Number.isInteger(h.pid)) return { ok: false, motivo: 'el registro no dice qué proceso la anotó' };
+  if (!arbol) return { ok: false, motivo: 'no pude leer los procesos de la máquina' };
+  const p = arbol.find((x) => x.pid === h.pid);
+  if (!p || p.inicio !== h.inicio || !w.esHerramienta(p)) return { ok: false, motivo: `el proceso de la sesión ${a.sesion} que la anotó ya no está` };
+  let s;
+  try { s = JSON.parse(fs.readFileSync(path.join(casa, '.claude', 'sessions', `${h.pid}.json`), 'utf8')); } catch (e) {
+    return { ok: false, motivo: e.code === 'ENOENT' ? `no sé de qué sesión es el proceso ${h.pid}` : `no pude leer de qué sesión es el proceso ${h.pid} (${e.code || e.message})` };
+  }
+  if (!s || s.sessionId !== a.sesion) return { ok: false, motivo: `el proceso ${h.pid} no es de la sesión ${a.sesion}` };
+  // otra copia viva de la sesión (abierta con `--resume` por un agente, desprendida de su consola) también se anota como ella
+  const otros = arbol.filter((x) => x.pid !== h.pid && w.esHerramienta(x)).filter((x) => {
+    try { return JSON.parse(fs.readFileSync(path.join(casa, '.claude', 'sessions', `${x.pid}.json`), 'utf8')).sessionId === a.sesion; } catch (e) { return e.code !== 'ENOENT'; }
+  });
+  if (otros.length) return { ok: false, motivo: `hay más de un proceso vivo de la sesión ${a.sesion}: no sé cuál anotó la aprobación` };
+  return { ok: true, linea: p.comando, cwd: s.cwd ? String(s.cwd) : null };
 }
 
 // --- la coordinadora ------------------------------------------------------------------------------------------------
@@ -387,14 +571,16 @@ function coordinadoraConfirmada(casa) {
 
 /**
  * La aprobación vigente para la firma `firma` pedida desde `sesion` sobre `destino` (por defecto, la misma): sin usar, de
- * los últimos 30 minutos, dada en `sesion` o en la coordinadora (`coordinadora`: su id, o null), que nombra esa firma (y
- * `destino`, si no es la sesión donde se aprobó: un «aprobado» al plan de una sesión no aprueba el de otra).
- * `herramienta` ({ pid, inicio }): la de la firma; la aprobación de la propia sesión tiene que venir de ese mismo
- * proceso. `validar(aprobacion, contexto)` la confirma contra la transcripción y los ganchos; se pasa en las pruebas.
- * `cwd` y `casa` son los de la firma, nunca los del registro. `{ ok, aprobacion, via }` o `{ ok: false, motivo }`.
+ * los últimos 30 minutos, dada en `sesion` o en la coordinadora (`coordinadora`: su id, o null), contestando el cuadro
+ * que armó el guion para ese comando (`cuadro`: `{ pregunta, sello }`, de `cuadroDe`). La de la propia sesión tiene que
+ * venir del mismo proceso de la herramienta que firma (`herramienta`: { pid, inicio }); la de la coordinadora, de su
+ * proceso vivo (`arbol`, se lee si falta). `validar(aprobacion, contexto)` la confirma contra la transcripción y los
+ * ganchos; se pasa en las pruebas. `cwd` y `casa` son los de la firma, nunca los del registro. `{ ok, aprobacion, via }` o
+ * `{ ok: false, motivo }`.
  */
-function buscar({ casa, sesion, destino = sesion, firma, coordinadora = null, ahora = Date.now(), cwd, herramienta = null, validar } = {}) {
+function buscar({ casa, sesion, destino = sesion, cuadro, coordinadora = null, ahora = Date.now(), cwd, herramienta = null, validar, arbol } = {}) {
   if (!SESION.test(String(sesion || ''))) return { ok: false, motivo: 'la firma no dice de qué sesión es' };
+  if (!cuadro || !cuadro.pregunta || !cuadro.sello) return { ok: false, motivo: 'no pude armar el cuadro de esta firma' };
   const sesiones = [sesion, ...(coordinadora && coordinadora !== sesion && SESION.test(coordinadora) ? [coordinadora] : [])];
   let candidatas = [];
   try { for (const s of sesiones) candidatas.push(...leerSesion(casa, s).filter((r) => r.sesion === s)); } catch (e) { return { ok: false, motivo: e.message }; }
@@ -407,9 +593,20 @@ function buscar({ casa, sesion, destino = sesion, firma, coordinadora = null, ah
   }).sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts));
   if (!candidatas.length) return { ok: false, motivo: 'no hay un click en el cuadro ni un «aprobado» tuyo de los últimos 30 minutos sin usar' };
   const check = validar || ((a, ctx) => validarEnClaude(a, ctx));
+  let leido = arbol;
   let motivo = null;
   for (const a of candidatas) {
-    const v = check(a, { casa, cwd, firma, sesion: a.sesion === destino ? null : destino });
+    let proceso = null;
+    if (a.sesion !== sesion) {
+      if (leido === undefined) leido = ow().leerArbol();
+      proceso = procesoQueLaAnoto({ a, arbol: leido, casa });
+      if (!proceso.ok) { motivo = motivo || proceso.motivo; continue; }
+    } else if (herramienta) {
+      if (leido === undefined) leido = ow().leerArbol();
+      const p = (leido || []).find((x) => x.pid === herramienta.pid);
+      proceso = p ? { linea: p.comando } : null;
+    }
+    const v = check(a, { casa, cwd, cuadro, destino, linea: proceso && proceso.linea, cwdAprobacion: proceso && proceso.cwd });
     if (v && v.ok) return { ok: true, aprobacion: a, via: a.tipo };
     motivo = motivo || (v && v.motivo);
   }
@@ -418,19 +615,22 @@ function buscar({ casa, sesion, destino = sesion, firma, coordinadora = null, ah
 
 /**
  * La confirmación con lo que deja Claude Code: la transcripción de la sesión donde se aprobó y, para el click, los
- * ganchos que escuchan el cuadro. `sesion`: la sesión sobre la que se firma, cuando la aprobación se dio en otra (la
- * coordinadora).
+ * ganchos que escuchan el cuadro, en la carpeta de la firma y en la de la pestaña donde se contestó (`cwdAprobacion`).
+ * `linea`: la del proceso de la herramienta que lo mostró. El «aprobado» sólo tiene que traer el sello: el texto lo
+ * escribió el agente, y lo que lo ata a esta firma es el sello.
  */
-function validarEnClaude(a, { casa = os.homedir(), cwd, firma, sesion } = {}) {
+function validarEnClaude(a, { casa = os.homedir(), cwd, cuadro, destino, linea, cwdAprobacion } = {}) {
   const ruta = transcripcionDe(casa, a.sesion);
   if (!ruta) return { ok: false, motivo: `no encontré la transcripción de la sesión ${a.sesion}` };
-  if (a.tipo === 'mensaje') return mensajeEnLaTranscripcion(ruta, a, { firma, sesion });
-  const e = escuchasDelCuadro({ casa, cwd });
-  if (e.ilegibles.length) return { ok: false, motivo: `no pude leer ${e.ilegibles[0]}, y sin leerla no sé si un gancho contestó el cuadro` };
-  if (e.ajenos.length) return { ok: false, motivo: `un gancho que no es del arnés escucha el cuadro (${e.ajenos[0].evento} en ${e.ajenos[0].archivo}): mientras esté, el click no vale; escribí «aprobado»` };
-  return clickEnLaTranscripcion(ruta, a, { firma, sesion });
+  if (a.tipo === 'mensaje') return mensajeEnLaTranscripcion(ruta, a, { sello: cuadro.sello, destino, pregunta: cuadro.pregunta });
+  for (const c of [...new Set([cwd, cwdAprobacion].filter(Boolean))]) {
+    const e = escuchasDelCuadro({ casa, cwd: c, linea });
+    if (e.ilegibles.length) return { ok: false, motivo: `no pude leer ${e.ilegibles[0]}, y sin leerla no sé si un gancho contestó el cuadro` };
+    if (e.ajenos.length) return { ok: false, motivo: `un gancho que no es del arnés escucha el cuadro (${e.ajenos[0].evento} en ${e.ajenos[0].archivo}): mientras esté, el click no vale; escribí «aprobado»` };
+  }
+  return clickEnLaTranscripcion(ruta, a, { pregunta: cuadro.pregunta, opciones: cuadro.opciones });
 }
 
-module.exports = { VENCE_MIN, ENVUELTO, PERMITIDOS, carpeta, esAprobacion, mensajeDeLaPersona, respuestaDelCuadro, nombraLaFirma, lanzadoPorLaHerramienta,
-  anotar, leerSesion, consumir, devolver, transcripcionDe, mensajeEnLaTranscripcion, clickEnLaTranscripcion, capas, hooksDePlugins, alcanzaAlCuadro, esPermitido,
-  escuchasDelCuadro, coordinadoraConfirmada, buscar, validarEnClaude };
+module.exports = { VENCE_MIN, ENVUELTO, PERMITIDOS, APRUEBA, NIEGA, carpeta, esAprobacion, mensajeDeLaPersona, respuestaDelCuadro, cuadroDe, traeElSello, lanzadoPorLaHerramienta,
+  anotar, leerSesion, consumir, devolver, transcripcionDe, mensajeEnLaTranscripcion, clickEnLaTranscripcion, capas, hooksDePlugins, ganchosDelEncabezado, banderasDe, alcanzaAlCuadro, esPermitido,
+  escuchasDelCuadro, procesoQueLaAnoto, coordinadoraConfirmada, buscar, validarEnClaude };

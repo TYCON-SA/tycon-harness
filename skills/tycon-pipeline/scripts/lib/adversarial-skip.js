@@ -53,8 +53,13 @@ function casaDistinta(casa) {
   return process.platform === 'win32' ? a.toLowerCase() !== b.toLowerCase() : a !== b;
 }
 
+// las vías en que la firma la dio una persona. El click o el «aprobado» se saben recién después de firmar, y la huella va en
+// el renglón de la firma: entran a la huella como `ventana`, y lo que dice la vía lo comprueba el renglón (`motivoDe`)
+const VIAS = ['ventana', 'terminal', 'click', 'mensaje'];
+const viaDeLaHuella = (via) => (via === 'click' || via === 'mensaje' ? 'ventana' : via);
+
 /** La huella de una constancia: sha256 de sus ocho campos, 16 hex. */
-const huella = (l) => sha(CAMPOS.map((k) => valor(l && l[k]))).slice(0, 16);
+const huella = (l) => sha(CAMPOS.map((k) => valor(l && (k === 'via' ? viaDeLaHuella(l[k]) : l[k])))).slice(0, 16);
 const huellaCorta = (m) => sha([m.story, m.carpeta, m.ejecucion, m.camino].map(valor)).slice(0, 8);
 
 /** Los dos comandos de firma: el que pide la ventana y el de la terminal del dueño. */
@@ -101,7 +106,7 @@ function muestra({ story, carpeta: dada, ejecucion, camino, casa, userInfo, ahor
   const texto = error
     ? `${cabeza}   No pude anotar la muestra (${error}): sin ella no hay firma posible, y el pase corre.\n`
       + `   Con la muestra anotada, una persona firma con: ${cmds[0]}  (o en su terminal: ${cmds[1]})\n`
-    : `${cabeza}   Para saltearlo, que lo firme una persona, no el agente:\n     en la ventana de permiso: ${cmds[0]}\n     en su terminal:           ${cmds[1]}\n`;
+    : `${cabeza}   Para saltearlo, que lo firme una persona, no el agente:\n     en la ventana de permiso o, sin ventana, con su click en el cuadro de opciones o su «aprobado»: ${cmds[0]}\n     en su terminal:           ${cmds[1]}\n`;
   return { renglon, texto, comandos: cmds, ...(error ? { error } : {}) };
 }
 
@@ -151,7 +156,7 @@ function motivoDe(l, { story, carpeta, ejecucion, renglones }) {
   if (String(l.story) !== String(story)) return `es de otra story (${l.story})`;
   if (!path.isAbsolute(String(l.carpeta)) || carpetaReal(l.carpeta) !== carpetaReal(carpeta)) return 'es de otra ejecución (otra carpeta)';
   if (String(l.ejecucion) !== String(ejecucion)) return `es de una ejecución ya cerrada (${l.ejecucion})`;
-  if (!['ventana', 'terminal'].includes(l.via) || l.quien !== 'dueño' || !l.camino || !l.motivo || !l.ts) return 'le falta un campo (vía, quién, camino, motivo u hora)';
+  if (!VIAS.includes(l.via) || l.quien !== 'dueño' || !l.camino || !l.motivo || !l.ts) return 'le falta un campo (vía, quién, camino, motivo u hora)';
   if (l.huella !== huella(l)) return 'su huella no coincide con lo que dice (se cambió después de firmarla)';
   const ok = renglones.some((g) => g.name === FIRMADA && g.status === 'ok' && g.via === l.via && String(g.resumen || '').startsWith(`huella ${l.huella} `));
   if (!ok) return 'no tiene su renglón adversarial-skip-signed en el registro del arnés de esta cuenta (no la firmó una persona en esta máquina)';
@@ -242,7 +247,7 @@ function reverificar({ marker, carpeta, casa, userInfo } = {}) {
  */
 function firmarSalteo({ story, motivo, argv = [], sesion = null, casa, userInfo, ahora = Date.now(), maquina, exigir, aprobar } = {}) {
   const prohibida = PROHIBIDAS.find((b) => argv.some((w) => w === b || String(w).startsWith(`${b}=`)));
-  if (prohibida) return { codigo: 1, motivo: `${prohibida} no firma: el salteo lo firma una persona en la ventana de permiso (este comando sin ${prohibida}) o en su terminal (--terminal)` };
+  if (prohibida) return { codigo: 1, motivo: `${prohibida} no firma: el salteo lo firma una persona en la ventana de permiso o, sin ventana, con su click en el cuadro de opciones o su «aprobado» (este comando sin ${prohibida}), o en su terminal (--terminal)` };
   if (!story || !String(motivo || '').trim()) return { codigo: 2, motivo: 'faltan --story <S> y --reason "<motivo>"' };
   let c;
   try { c = casaDe(casa, userInfo); } catch (e) { return { codigo: 2, motivo: e.message }; }
@@ -252,7 +257,7 @@ function firmarSalteo({ story, motivo, argv = [], sesion = null, casa, userInfo,
   if (!m) return { codigo: 1, motivo: `no hay una muestra del pedido para la story ${story}: corré primero el pedido (el portón, start, set-size o mark-adversarial-skipped)` };
   const previas = leer(m.carpeta);
   if (previas.error || previas.ilegibles) return { codigo: 1, motivo: `${FILE} de la ejecución no se lee (${previas.error || `${previas.ilegibles} línea(s) ilegible(s)`}): no se firma sobre un archivo roto` };
-  const via = argv.includes('--terminal') ? 'terminal' : 'ventana';
+  let via = argv.includes('--terminal') ? 'terminal' : 'ventana';
   const linea = { ts: new Date(ahora).toISOString(), story: String(story), carpeta: m.carpeta, ejecucion: m.ejecucion, camino: m.camino, motivo: String(motivo).trim(), via, quien: 'dueño', maquina: maquina || null };
   linea.huella = huella(linea);
   let r;
@@ -260,7 +265,8 @@ function firmarSalteo({ story, motivo, argv = [], sesion = null, casa, userInfo,
     r = exigir({ firma: FIRMA, argv, resumen: `huella ${linea.huella} · story ${story} · ${linea.motivo}`, casa: c, propia: sesion || undefined });
   } catch (e) { return { codigo: 2, motivo: `no pude dejar el renglón de la firma (${(e && e.message) || e})` }; }
   if (!r || r.codigo !== 0) return { codigo: (r && r.codigo) || 1, motivo: (r && r.motivo) || 'no se firmó' };
-  if (r.via && r.via !== via) return { codigo: 2, motivo: `la firma volvió por otra vía (${r.via})` };
+  if (r.via && r.via !== via && !(via === 'ventana' && viaDeLaHuella(r.via) === 'ventana')) return { codigo: 2, motivo: `la firma volvió por otra vía (${r.via})` };
+  if (r.via) { via = r.via; linea.via = via; }
   const reg = leerRegistro(c);
   if (reg.error || !reg.renglones.some((g) => g.name === FIRMADA && g.status === 'ok' && g.via === via && String(g.resumen || '').startsWith(`huella ${linea.huella} `))) {
     return { codigo: 2, motivo: `no quedó el renglón ${FIRMADA} en el registro del arnés${reg.error ? ` (${reg.error})` : ''}: sin él la constancia no vale, y no la escribo` };

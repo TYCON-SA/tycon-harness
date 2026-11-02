@@ -64,6 +64,7 @@ en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.
 | `escape:TYCON_STATUS_GATE` | 2 · excepción | dev y mantenimiento | cambiar a mano el estado de una historia | `escape:TYCON_STATUS_GATE`, `escape:cambiar-el-estado` |
 | `escape:story-skill-bypass` | 2 · excepción | dev y mantenimiento | escribir una historia sin la skill de historias | `escape:story-skill-bypass` |
 | `escape:set-autonomous` | 2 · excepción | dev y mantenimiento | cambiar el modo autónomo de una ejecución | `escape:set-autonomous` |
+| `designation-confirm` | 2 · excepción | dev y mantenimiento | confirmar qué sesión es la coordinadora de esta máquina | `designation-confirm` |
 | `control-change` | 3 · irreversible | sólo mantenimiento | cualquier cambio de control | `control-change` |
 | `escape:TYCON_SAFETY_OFF` | 3 · irreversible | dev y mantenimiento | apagar el freno de seguridad para un comando | `escape:TYCON_SAFETY_OFF` |
 | `escape:TYCON_PROD_LINT` | 3 · irreversible | dev y mantenimiento | apagar el control de consultas a producción | `escape:TYCON_PROD_LINT` |
@@ -98,8 +99,8 @@ firmar, y en la columna tu situación:
   terminal»). **La coordinadora**: la firma ella, sin molestarte. **Espera**: nadie firma; el trabajo queda frenado en ese
   paso hasta que alguien firme, y no se rompe nada.
 - \* **La coordinadora** firma sin ventana sólo lo que el perfil pone en `approvals.delegated_signing`, en las máquinas de
-  `approvals.delegated_machines`, y sólo con la designación confirmada por el dueño en su terminal (ver «Aprobar en
-  nombre del dueño»). Si la firma no está delegada, tu máquina no está en la lista o nadie confirmó la designación, la
+  `approvals.delegated_machines`, y sólo con la designación confirmada por el dueño (`designation-confirm`: con un click en
+  la pestaña de la sesión designada, o en su terminal; ver «Aprobar en nombre del dueño»). Si la firma no está delegada, tu máquina no está en la lista o nadie confirmó la designación, la
   fila es igual que sin coordinadora. Lo que queda en 2 o más sale de esa lista.
 - \*\* **El plan, con coordinadora**: ella lanza la revisión automática (`marker.js plan-review --for-session <sesión>`,
   el pase adversarial en modo plan) y aprueba sólo si dice «aprobado» sobre ese mismo plan. Sin veredicto o rechazado, el
@@ -107,9 +108,23 @@ firmar, y en la columna tu situación:
   puede lanzar su propia revisión (`steps/step-04-approve-plan.md`).
 - **Con tu aprobación escrita, la firma es tuya, también en lo delicado.** Donde la ventana no llega, o cuando la coordinadora
   firmaría por delegación, vale tu click en el cuadro de opciones o tu «aprobado» tipeado. Gana a la delegación: un plan
-  delicado o un guardado que toca algo sensible pasan, y quedan a tu nombre. Lo último que te dijo el agente tiene que
-  nombrar «firma <id>» y, si firma para otra sesión, «sesión <id>»; si nombra otra sesión, no vale para ésta. Cada
-  aprobación sirve una vez y vence a los 30 minutos. Sin ella, la coordinadora sigue frenada en lo delicado.
+  delicado o un guardado que toca algo sensible pasan, y quedan a tu nombre. El camino por defecto es el cuadro: la
+  pregunta la arma el freno (qué se aprueba, qué pasa si sale mal y el sello «firma <id> · sesión <id> · código <huella
+  del comando>»), se la da al agente al negar el comando, y el agente la muestra sin cambiarle una letra. Se compara
+  entera: otra pregunta no firma nada. El «aprobado» queda para cuando el cuadro no se puede mostrar: lo último que te
+  dijo el agente tiene que traer ese sello y no nombrar otra sesión. Cada aprobación sirve una vez, para ese comando, y
+  vence a los 30 minutos. Sin ella, la coordinadora sigue frenada en lo delicado. Si un click no contó y la delegación
+  firmó igual, el comando lo dice.
+- **Todo se aprueba sin terminal salvo cuatro cosas**: apagar el freno de seguridad, apagar el control de producción, la
+  salida de emergencia y el `sudo` del freno de producción. Esas siguen en tu terminal porque no tienen vuelta atrás. Lo
+  demás, la terminal es opcional: la columna «Firmarla en la terminal» dice cómo, si la preferís.
+- **Una aprobación dada en la pestaña de la coordinadora** vale para otra sesión sólo si la coordinadora está confirmada y
+  el proceso de su herramienta que la anotó sigue vivo.
+- **El registro de las aprobaciones** (`owner-approvals/` en la carpeta de estado, con lo gastado en `usadas/`) no se
+  escribe, mueve ni borra por Edit, Write ni la consola. El click no vale si un gancho ajeno escucha el cuadro: se buscan
+  en las capas de configuración (también `managed-settings.d/` y `--settings`), en los plugins (`hooks.json`, los ganchos
+  de su `plugin.json`, `--plugin-dir`) y en el encabezado de skills y agentes. Lo que no ve: las banderas de una sesión de
+  fondo, porque su proceso no las muestra.
 - Con coordinadora, ella puede pedir algunas de nivel 2 (eximir un crítico, un criterio que no se prueba en vivo), pero
   las contesta una persona.
 - **Si tu push ya despliega algo** (en tu equipo, subir a una rama dispara un despliegue), quien administra puede subir
@@ -120,8 +135,8 @@ firmar, y en la columna tu situación:
   su terminal con `harness.js sign emergency`, con su motivo (cómo, en el párrafo de arriba). El agente no la puede
   correr.
 - En los repos del arnés, el dueño ocupa el lugar del dev (ver «Quién aprueba»).
-- «En la ventana» vale para Claude Code. Codex no tiene ventana de permiso, y el click y el «aprobado» todavía no valen
-  ahí: en Codex todo se firma en la terminal (`guides/safety-guard.md`).
+- «En la ventana» vale para Claude Code. Codex no tiene ventana de permiso, y el click y el «aprobado» no valen ahí: en
+  Codex todo se firma en la terminal (`guides/safety-guard.md`, y abajo, «En Codex»).
 
 ## Aprobar sin terminal
 
@@ -136,15 +151,15 @@ Con Claude Code, la mayoría de las firmas no piden la terminal. El camino depen
 Lo que tiene que cumplir esa aprobación:
 
 - **Sirve para una sola firma y vence a los 30 minutos.** Un comando que pide dos firmas no la usa.
-- **Nombra lo que aprueba.** La pregunta del cuadro, o lo último que te dijo el agente antes de tu «aprobado», trae el
-  texto «firma <id>», con el id de la tabla de abajo.
-- **La das en la sesión que firma, o en la coordinadora con la designación confirmada.** Si la firma es para otra sesión
-  que la de la pestaña donde apruebas, nombra además «sesión <id>»; si nombra otra sesión, no vale para ésta. La aprobación
-  es tuya, no una delegación.
+- **La pregunta la arma el freno.** Se la da al agente al negar el comando, con el sello «firma <id> · sesión <id> · código
+  <huella del comando>», y el agente la muestra sin cambiarle una letra. Tu click vale sólo con esa pregunta entera. Tu
+  «aprobado» vale si lo último que te dijo el agente trae ese sello y no nombra otra sesión.
+- **La das en la sesión que firma, o en la coordinadora con la designación confirmada.** Dada en la coordinadora, su proceso
+  tiene que seguir vivo. La aprobación es tuya, no una delegación.
 - **El mensaje es un «aprobado» claro.** «Aprobado», «apruebo» o «sí, aprobado», sin preguntas, negaciones ni condiciones.
   «No apruebo» o «¿lo aprobaste?» no cuentan.
-- **El mensaje lo tipeás vos, en la herramienta de consola.** No cuenta uno que llega desde la extensión del editor, por
-  un programa, por otra sesión, por un encargo o por Telegram. En esos casos, usá el click.
+- **El mensaje lo tipeás vos, en la consola o en la extensión del editor.** No cuenta uno que llega por un programa, por otra
+  sesión, por un encargo o por Telegram. En esos casos, usá el click.
 - **Ningún gancho ajeno escucha el cuadro.** Si un gancho que no es del arnés lo escucha, el click no vale, y el freno te
   pide escribir «aprobado».
 
@@ -152,9 +167,7 @@ Lo que no acepta el click ni el «aprobado», y se firma en tu terminal:
 
 - apagar el freno de seguridad para un comando (`escape:TYCON_SAFETY_OFF`);
 - apagar el control de consultas a producción (`escape:TYCON_PROD_LINT`);
-- la salida de emergencia (`emergency`);
-- saltear el pase adversarial (`adversarial-skip`, `escape:TYCON_NO_DEEP_REVIEW` y `escape:no-deep-review`);
-- confirmar la designación de la coordinadora (ver «Aprobar en nombre del dueño»).
+- la salida de emergencia (`emergency`).
 
 La contraseña que pide reinstalar el freno de producción no es una aprobación: la escribís vos, con `sudo`.
 
@@ -167,10 +180,18 @@ La terminal también es la salida cuando el freno no puede decidir:
 - en una sesión sin pantalla (`-p`);
 - con una consola de fondo viva: se cierra, o se firma en la terminal.
 
+### En Codex
+
+En Codex todo se firma en la terminal, y es una decisión, no algo que falta. Su cuadro (`request_user_input`) no sirve de
+firma con la forma normal de abrir Codex: la terminal usa un servidor compartido, y otro programa conectado a ese servidor
+contesta el cuadro con un resultado idéntico al de un click. El comando `codex queue`, además, mete un mensaje que para el
+gancho se ve igual que uno tipeado. Medido en Codex 0.162.1.
+
 ## Las firmas
 
 La columna «¿Desde otra sesión?» dice si el comando se puede correr desde la pestaña de otra sesión (medido el
-2026-10-26). Un escape se aprueba en la propia sesión, o corriendo el comando en tu terminal, donde no hay freno. Dos
+2026-10-26). Un escape se firma en la pestaña de la propia sesión (con la ventana, o con tu click o tu «aprobado» dado ahí
+o en la coordinadora) o corriendo el comando en tu terminal, donde no hay freno. Dos
 escapes, `escape:force-manual` y `escape:trust-ran`, los pide su guion en su forma exacta, como las firmas de guion:
 desde otra sesión van con `--for-session <D>`.
 
@@ -195,27 +216,28 @@ vuelve a pedir la firma del dueño.
 | `manual-test` | marcar un criterio como probado a mano | `marker.js mark-tested --acs` | sí | `marker.js mark-tested --acs --terminal` |
 | `browser-test` | preparar la prueba con navegador, o decirle que no | `e2e-setup.js prepare (o defer --no)` | sí | `e2e-setup.js prepare --terminal (o defer --no --terminal)` |
 | `lost-run` | dar por perdida una ejecución y cerrarla | `marker.js clear-session --lost (o restore)` | sí | `marker.js clear-session --lost --terminal (o restore --terminal)` |
-| `adversarial-skip` | saltear el pase adversarial con constancia | `marker.js sign-adversarial-skip --story <S> --reason <R>` | no, por la terminal | `marker.js sign-adversarial-skip --story <S> --reason <R> --terminal` |
+| `adversarial-skip` | saltear el pase adversarial con constancia | `marker.js sign-adversarial-skip --story <S> --reason <R>` | no, en la pestaña de esa sesión | `marker.js sign-adversarial-skip --story <S> --reason <R> --terminal` |
 | `pending-approval` | abrir un pendiente nuevo en la lista de pendientes | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta>` | sí | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --terminal` |
 | `adhoc-lane` | abrir el arreglo rápido de una sesión, sin historia | `marker.js adhoc set '<json>'` | sí | `marker.js adhoc set '<json>' --terminal --for-session <id>` |
 | `save` | guardar la story: commit, push y los pull requests | `marker.js approve-save [--for-session <D>]` | sí | `marker.js approve-save --terminal --for-session <D>` |
-| `escape:TYCON_SAFETY_OFF` | apagar el freno de seguridad para un comando | `TYCON_SAFETY_OFF=1 <comando>` | no, por la terminal | `TYCON_SAFETY_OFF=1 <comando>` |
-| `escape:TYCON_PROD_LINT` | apagar el control de consultas a producción para un comando | `TYCON_PROD_LINT=0 <comando>` | no, por la terminal | `TYCON_PROD_LINT=0 <comando>` |
-| `escape:TYCON_NEW_NAMES` | apagar el control de nombres nuevos en lo que se publica | `TYCON_NEW_NAMES=0 <comando>` | no, por la terminal | `TYCON_NEW_NAMES=0 <comando>` |
-| `escape:TYCON_TEST_GATE` | saltear el portón de pruebas del commit | `TYCON_TEST_GATE=1 <comando>` | no, por la terminal | `TYCON_TEST_GATE=1 <comando>` |
-| `escape:DOD_BYPASS` | saltear los controles del commit (queda anotado) | `DOD_BYPASS=1 <comando>` | no, por la terminal | `DOD_BYPASS=1 <comando>` |
-| `escape:TYCON_NO_DEEP_REVIEW` | apagar el pase adversarial de una ejecución | `TYCON_NO_DEEP_REVIEW=1 <comando>` | no, por la terminal | `TYCON_NO_DEEP_REVIEW=1 <comando>` |
-| `escape:TYCON_STATUS_GATE` | cambiar a mano el estado de una story | `TYCON_STATUS_GATE=off <comando>` | no, por la terminal | `TYCON_STATUS_GATE=off <comando>` |
-| `escape:story-skill-bypass` | escribir una story sin la skill de stories | `marker.js sign-file story-skill-bypass <archivo>` | no, por la terminal | `marker.js sign-file story-skill-bypass <archivo> --terminal` |
-| `escape:set-autonomous` | cambiar el modo autónomo de una ejecución | `marker.js set-autonomous` | no, por la terminal | `el mismo comando` |
-| `escape:cerrar-la-ejecucion` | cerrar una ejecución con un control en rojo | `marker.js clear` | no, por la terminal | `el mismo comando` |
-| `escape:cerrar-como-deuda` | cerrar una ejecución dejando lo que falta como deuda | `marker.js close-as-debt` | no, por la terminal | `el mismo comando` |
+| `designation-confirm` | confirmar qué sesión es la coordinadora de esta máquina | `delegated-signing.js confirm-designation` | no, en la pestaña de esa sesión | `delegated-signing.js confirm-designation --terminal` |
+| `escape:TYCON_SAFETY_OFF` | apagar el freno de seguridad para un comando | `TYCON_SAFETY_OFF=1 <comando>` | no, sólo en tu terminal | `TYCON_SAFETY_OFF=1 <comando>` |
+| `escape:TYCON_PROD_LINT` | apagar el control de consultas a producción para un comando | `TYCON_PROD_LINT=0 <comando>` | no, sólo en tu terminal | `TYCON_PROD_LINT=0 <comando>` |
+| `escape:TYCON_NEW_NAMES` | apagar el control de nombres nuevos en lo que se publica | `TYCON_NEW_NAMES=0 <comando>` | no, en la pestaña de esa sesión | `TYCON_NEW_NAMES=0 <comando>` |
+| `escape:TYCON_TEST_GATE` | saltear el portón de pruebas del commit | `TYCON_TEST_GATE=1 <comando>` | no, en la pestaña de esa sesión | `TYCON_TEST_GATE=1 <comando>` |
+| `escape:DOD_BYPASS` | saltear los controles del commit (queda anotado) | `DOD_BYPASS=1 <comando>` | no, en la pestaña de esa sesión | `DOD_BYPASS=1 <comando>` |
+| `escape:TYCON_NO_DEEP_REVIEW` | apagar el pase adversarial de una ejecución | `TYCON_NO_DEEP_REVIEW=1 <comando>` | no, en la pestaña de esa sesión | `TYCON_NO_DEEP_REVIEW=1 <comando>` |
+| `escape:TYCON_STATUS_GATE` | cambiar a mano el estado de una story | `TYCON_STATUS_GATE=off <comando>` | no, en la pestaña de esa sesión | `TYCON_STATUS_GATE=off <comando>` |
+| `escape:story-skill-bypass` | escribir una story sin la skill de stories | `marker.js sign-file story-skill-bypass <archivo>` | no, en la pestaña de esa sesión | `marker.js sign-file story-skill-bypass <archivo> --terminal` |
+| `escape:set-autonomous` | cambiar el modo autónomo de una ejecución | `marker.js set-autonomous` | no, en la pestaña de esa sesión | `el mismo comando` |
+| `escape:cerrar-la-ejecucion` | cerrar una ejecución con un control en rojo | `marker.js clear` | no, en la pestaña de esa sesión | `el mismo comando` |
+| `escape:cerrar-como-deuda` | cerrar una ejecución dejando lo que falta como deuda | `marker.js close-as-debt` | no, en la pestaña de esa sesión | `el mismo comando` |
 | `escape:force-manual` | marcar a mano el estado de un control | `marker.js set-check <control> <estado> --force-manual [--for-session <D>]` | sí | `marker.js set-check <control> <estado> --force-manual --terminal` |
 | `escape:trust-ran` | contar los revisores sin la constancia de que corrieron | `pipeline.js check-count --repo <r> --story <s> --trust-ran [--for-session <D>]` | sí | `pipeline.js check-count --repo <r> --story <s> --trust-ran --terminal` |
-| `escape:ALLOW_DOD_EVIDENCE_WRITE` | escribir a mano la evidencia de la prueba en vivo | `marker.js sign-file ALLOW_DOD_EVIDENCE_WRITE <archivo>` | no, por la terminal | `marker.js sign-file ALLOW_DOD_EVIDENCE_WRITE <archivo> --terminal` |
-| `escape:dod_runtime_exempt` | eximir una story de la prueba en vivo | `marker.js sign-file dod_runtime_exempt <archivo>` | no, por la terminal | `marker.js sign-file dod_runtime_exempt <archivo> --terminal` |
-| `escape:no-deep-review` | saltear el pase adversarial de una ejecución | `pipeline.js start --no-deep-review` | no, por la terminal | `el mismo comando` |
-| `escape:cambiar-el-estado` | cambiar a mano el estado de una story | `marker.js sign-file cambiar-el-estado <archivo>` | no, por la terminal | `marker.js sign-file cambiar-el-estado <archivo> --terminal` |
+| `escape:ALLOW_DOD_EVIDENCE_WRITE` | escribir a mano la evidencia de la prueba en vivo | `marker.js sign-file ALLOW_DOD_EVIDENCE_WRITE <archivo>` | no, en la pestaña de esa sesión | `marker.js sign-file ALLOW_DOD_EVIDENCE_WRITE <archivo> --terminal` |
+| `escape:dod_runtime_exempt` | eximir una story de la prueba en vivo | `marker.js sign-file dod_runtime_exempt <archivo>` | no, en la pestaña de esa sesión | `marker.js sign-file dod_runtime_exempt <archivo> --terminal` |
+| `escape:no-deep-review` | saltear el pase adversarial de una ejecución | `pipeline.js start --no-deep-review` | no, en la pestaña de esa sesión | `el mismo comando` |
+| `escape:cambiar-el-estado` | cambiar a mano el estado de una story | `marker.js sign-file cambiar-el-estado <archivo>` | no, en la pestaña de esa sesión | `marker.js sign-file cambiar-el-estado <archivo> --terminal` |
 <!-- fin: firmas -->
 
 ## Los grupos de la 8.116
@@ -288,12 +310,12 @@ ventana sólo si se cumple todo esto:
 - el perfil del equipo pone la firma en `approvals.delegated_signing` (un grupo cuenta por cada firma que nombra) y no en
   `approvals.owner_only`: si está en las dos, gana «sólo del dueño»;
 - esta máquina está en `approvals.delegated_machines`;
-- la sesión que la corre es la designada, y el dueño confirmó la designación en su terminal;
+- la sesión que la corre es la designada, y el dueño confirmó la designación (con su click en esa pestaña, o en su terminal);
 - la sesión destino no es la propia, ni trabaja la misma story que una ejecución abierta de la sesión designada.
 
 El arreglo rápido de otra pestaña (`adhoc-lane`) se declara así desde la sesión designada de la misma máquina, con
-`marker.js adhoc set '<json>' --for-session <sesión>`; por esta vía el cupo queda en 5 archivos como mucho, el arreglo
-nunca toca lo sensible de `scripts/lib/signatures.js` y, antes de abrirlo, al dueño le llega una línea por los canales
+`marker.js adhoc set '<json>' --for-session <sesión>`; por esta vía el cupo es de 5 archivos como mucho (pedir más se niega, y
+el freno da el cuadro para que lo apruebe una persona), el arreglo nunca toca lo sensible de `scripts/lib/signatures.js` y, antes de abrirlo, al dueño le llega una línea por los canales
 de los avisos, como el ok de guardar (sin entrega, no hay arreglo). La
 coordinadora de otra máquina no lo declara: se lo pide a la designada de la máquina destino (`guides/coordination.md`).
 No entra en ninguno de los grupos de la 8.116: para delegarla, el perfil la nombra.

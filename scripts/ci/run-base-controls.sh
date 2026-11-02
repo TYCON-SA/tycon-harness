@@ -119,6 +119,25 @@ function show(root, rev, p) {
   const r = git(root, ['cat-file', 'blob', `${rev}:${p}`], { allowFail: true });
   return r.status === 0 ? r.stdout : null;
 }
+// muchos blobs con un solo git, `{ id → texto }`, o null si git falló; lo que no es un blob no está. Un proceso por constancia tarda más que el
+// tope del freno de seguridad con la máquina cargada, y el clasificador y el chequeo previo de la firma corren dentro de él
+function blobsOf(root, ids) {
+  const out = new Map();
+  if (!ids.length) return out;
+  const r = spawnSync('git', ['-C', root, 'cat-file', '--batch'], { input: `${ids.join('\n')}\n`, env: GIT_ENV, maxBuffer: 512 * 1024 * 1024 });
+  if (r.error || r.status !== 0) return null;
+  const b = r.stdout;
+  for (let i = 0; i < b.length;) {
+    const nl = b.indexOf(10, i);
+    if (nl < 0) break;
+    const [id, tipo, largo] = b.toString('utf8', i, nl).split(' ');
+    i = nl + 1;
+    if (largo === undefined) continue;
+    if (tipo === 'blob') out.set(id, b.toString('utf8', i, i + Number(largo)));
+    i += Number(largo) + 1;
+  }
+  return out;
+}
 // la lista de archivos de un árbol, una vez por árbol: el recorrido del código pregunta por muchas rutas
 const TREES = new Map();
 function exists(root, rev, p) {
@@ -446,14 +465,17 @@ function readApprovalDir(root, rev, dir) {
   const r = git(root, ['ls-tree', '-z', rev, '--', dir], { allowFail: true });
   // una carpeta que no está sale 0 y vacía: un error es «no pude listar», y se dice
   if (r.status !== 0) { notSigning(dir, rev, 'no pude listar la carpeta'); return out; }
-  for (const rec of r.stdout.split('\0').filter(Boolean)) {
+  const recs = r.stdout.split('\0').filter(Boolean);
+  const textos = blobsOf(root, recs.map((rec) => rec.slice(0, rec.indexOf('\t')).split(' ')).filter(([, type]) => type === 'blob').map(([, , id]) => id));
+  if (!textos) { notSigning(dir, rev, 'no pude leer las constancias'); return out; }
+  for (const rec of recs) {
     const tab = rec.indexOf('\t');
-    const [mode, type] = rec.slice(0, tab).split(' ');
+    const [mode, type, id] = rec.slice(0, tab).split(' ');
     const p = rec.slice(tab + 1);
     const name = p.slice(dir.length);
     if (type !== 'blob' || (mode !== '100644' && mode !== '100755')) { notSigning(p, rev, 'no es un archivo común del primer nivel de la carpeta'); continue; }
     if (!name.endsWith('.json')) { notSigning(p, rev, 'no es un .json'); continue; }
-    const text = show(root, rev, p);
+    const text = textos.has(id) ? textos.get(id) : null;
     let a; try { a = text === null ? null : JSON.parse(text); } catch (_) { a = null; }
     if (a === null) { notSigning(p, rev, 'no se lee'); continue; }
     const why = approvalProblem(a);
@@ -478,9 +500,11 @@ function baseApprovalHashes(root, base) {
   const add = (text) => { try { const a = JSON.parse(text); if (a && typeof a.hash === 'string') hashes.add(a.hash); } catch (_) { /* no es una constancia */ } };
   for (const file of approvalFiles(read.inv)) {
     if (!isApprovalDir(file)) { const text = show(root, base, file); if (text !== null) text.split('\n').filter((l) => l.trim()).forEach(add); continue; }
-    const r = git(root, ['ls-tree', '-z', '--name-only', base, '--', file], { allowFail: true });
+    const r = git(root, ['ls-tree', '-z', base, '--', file], { allowFail: true });
     if (r.status !== 0) return null;
-    for (const p of r.stdout.split('\0').filter(Boolean)) { const text = show(root, base, p); if (text !== null) add(text); }
+    const textos = blobsOf(root, r.stdout.split('\0').filter(Boolean).map((rec) => rec.slice(0, rec.indexOf('\t')).split(' ')[2]));
+    if (!textos) return null;
+    for (const text of textos.values()) add(text);
   }
   return hashes;
 }
@@ -653,7 +677,7 @@ function alarm(a) {
     const before = blobOf(a.root, from, w.path); const after = blobOf(a.root, to, w.path);
     if (before === after || approvedEntry(approvals, w.path, after || 'borrado')) continue;
     const last = trimNl(git(a.root, ['log', '-1', '--format=%H', `${from}..${to}`, '--', w.path], { allowFail: true }).stdout || '') || to;
-    console.log(`⚠️ base-controls: aviso — main trajo ${w.path} en ${short(last)} sin constancia del dueño. Revisá qué cambió (git diff ${short(from)} ${short(to)} -- ${w.path}); si está bien, firmalo desde una terminal: bash ${SELF} approve --root <repo> --file ${w.path} --rev ${short(to)}`);
+    console.log(`⚠️ base-controls: aviso — main trajo ${w.path} en ${short(last)} sin constancia del dueño. Revisá qué cambió (git diff ${short(from)} ${short(to)} -- ${w.path}); si está bien, firmalo desde una sesión, con tu click en el cuadro de opciones o tu «aprobado» (o en una terminal, con --terminal): bash ${SELF} approve --root <repo> --file ${w.path} --rev ${short(to)}`);
   }
   for (const p of [...a.rules].sort()) {
     if (!p.endsWith('.json') || blobOf(a.root, from, p) === blobOf(a.root, to, p)) continue;
@@ -766,7 +790,7 @@ function cmdRun() {
         const viaMain = signed ? null : refreshedFrom(a, work, approvals.filter((x) => !unproven.includes(x)), inBase);
         if (viaMain) refreshedOf = viaMain;
         if (!signed && !viaMain) {
-          reasons.push(`el pedido afloja un control sin la constancia del dueño: ${a.changed.join(', ')}. La firma, desde una terminal (con el arnés instalado si el repo no trae este guion): ${signCommand('<repo>', a.entries, a.approvalsOut, a.baseArg)}`);
+          reasons.push(`el pedido afloja un control sin la constancia del dueño: ${a.changed.join(', ')}. La firma, desde una sesión, con el click del dueño en el cuadro de opciones o su «aprobado» (o en una terminal, con --terminal; con el arnés instalado si el repo no trae este guion): ${signCommand('<repo>', a.entries, a.approvalsOut, a.baseArg)}`);
         } else {
           // con la constancia: la regla de la base menos lo aprobado, que va en su versión del pedido; tiene que dar verde
           const rest = [...a.rules].filter((p) => !a.changed.includes(p));
@@ -814,8 +838,8 @@ function cmdPending() {
   try { deMain = refreshedFrom(a, work, readApprovals(a.root, a.prHead || a.tip, approvalFiles(a.inv)).filter((x) => x.via === undefined), baseApprovalHashes(a.root, a.base)); } finally { fs.rmSync(work, { recursive: true, force: true }); }
   if (deMain) { console.log(`base-controls: no hace falta firmar: es lo que el dueño firmó (${deMain.slice(0, 12)}) más lo que trajo main, con fusión limpia`); return; }
   const firma = signCommand(a.root, a.entries, a.approvalsOut, a.baseArg);
-  console.log(`la firma, desde la sesión (el dueño la aprueba en la ventana de permiso): ${firma}`);
-  console.log(`o desde tu terminal: ${firma} --terminal`);
+  console.log(`la firma, desde la sesión (el dueño la aprueba en la ventana de permiso, o, donde la ventana no llega, con su click en el cuadro de opciones o su «aprobado»): ${firma}`);
+  console.log(`o, si prefiere, en su terminal: ${firma} --terminal`);
 }
 
 // la ventana nueva de Windows (skills/tycon-pipeline/scripts/lib/runtime-waiver.js, del mismo árbol que este guion)

@@ -12,7 +12,7 @@
  *
  *   {"ts":"…","freno":"test-scope-guard","regla":"suite-completa","veredicto":"bloqueo","sha256":"…"}
  *
- * Un `escape` puede llevar además por qué camino se autorizó (`via`: persona, reenvio o ambiente) y, si vino por
+ * Un `escape` puede llevar además por qué camino se autorizó (`via`, de la lista `VIAS`) y, si vino por
  * relevo, la sesión que lo reenvió (`relevo`). Los dos son de una forma cerrada, no texto libre. Un `bloqueo` de una
  * regla que frena por causas distintas lleva además su `motivo`, un código de la lista `MOTIVOS`.
  *
@@ -214,8 +214,9 @@ function anotarFallo(home, motivo) {
 // lo aprobó: el rol que declara el perfil del equipo, un nombre corto. Un valor fuera de la forma no se anota (la línea
 // se escribe igual). `delegacion`: la sesión designada lo aprobó en nombre del dueño (lib/owner-window.js). `persona`,
 // `reenvio` y `sin-conversacion` son de antes de la ventana de permiso, cuando la autorización salía de la
-// conversación: ya no se escriben, y siguen en la lista para leer los renglones viejos.
-const VIAS = ['persona', 'reenvio', 'delegacion', 'ambiente', 'sin-conversacion', 'ventana'];
+// conversación: ya no se escriben, y siguen en la lista para leer los renglones viejos. `click` y `mensaje`: la persona lo
+// aprobó en el cuadro de opciones o con un «aprobado» escrito (lib/owner-approvals.js).
+const VIAS = ['persona', 'reenvio', 'delegacion', 'ambiente', 'sin-conversacion', 'ventana', 'click', 'mensaje'];
 const RELEVO = /^[\p{L}\p{N}][\p{L}\p{N} _-]{0,39}$/u;
 // Qué escape con nombre se usó y en qué sesión: `marker.js clear` busca acá quién autorizó cerrar una ejecución abierta,
 // y `close-as-debt` quién autorizó la deuda. Lista cerrada; un valor fuera de la lista no se anota y queda el aviso.

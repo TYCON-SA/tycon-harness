@@ -5,14 +5,14 @@
  *
  * Lo que decide es `delegaSinVentana`: una firma de `approvals.delegated_signing`, fuera de `owner_only`, en una
  * máquina de `delegated_machines`, pedida por la sesión designada para otra sesión, corre sin ventana. La designación
- * vale sólo si el dueño la confirmó en su terminal (`confirm-designation`). Ninguna firma sale de una cita en la
- * conversación.
+ * vale sólo si el dueño la confirmó (`confirm-designation`: con un click en la pestaña de la sesión designada, o en su
+ * terminal). Ninguna firma sale de una cita en la conversación.
  *
  * Todo se lee de la casa de la cuenta (`real-home.js`), nunca de `HOME`, `USERPROFILE` ni de una variable `TYCON_*`:
  * el agente puede poner esas variables. Cada dependencia entra por parámetro.
  *
  * CLI:
- *   node delegated-signing.js confirm-designation   (lo corre el dueño en su terminal)
+ *   node delegated-signing.js confirm-designation [--terminal]   (la sesión designada, con la firma de la persona; o el dueño en su terminal)
  */
 
 const crypto = require('crypto');
@@ -72,7 +72,7 @@ function confirmedDesignation(p) {
   const want = confirmationRecord(d, null);
   const ok = g.lines.some((l) => l && l.name === CONFIRMED && l.status === 'ok' && l.sesion === want.sesion
     && l.designacion_ts === want.designacion_ts && l.cita_sha === want.cita_sha);
-  if (!ok) return { ok: false, reason: 'la designación de la sesión no está confirmada en la terminal del dueño: que corra `node scripts/lib/delegated-signing.js confirm-designation` en su terminal' };
+  if (!ok) return { ok: false, reason: 'la designación de la sesión no está confirmada por el dueño: la sesión designada corre `node scripts/lib/delegated-signing.js confirm-designation` y el dueño la aprueba con un click en el cuadro de opciones, o la confirma en su terminal' };
   return { ok: true, designacion: d };
 }
 
@@ -237,11 +237,23 @@ function cli(argv) {
   const [cmd] = argv;
   if (cmd === 'confirm-designation') {
     const rw = require(path.join(PIPELINE_LIB, 'runtime-waiver.js'));
-    if (!rw.hasTty()) { console.error('🔒 confirm-designation pide la terminal del dueño (/dev/tty): el agente no puede correrlo.'); return 2; }
     const p = accountPaths(accountHome());
     const cw = require(path.join(PIPELINE_LIB, 'critical-waivers.js'));
     const d = cw.designacionVigente({ dir: p.state });
     if (!d || d.error) { console.error((d && d.error) || 'ninguna sesión de esta máquina está designada'); return 1; }
+    // desde la pestaña de la sesión designada: la firma de la persona, en la ventana o con su click (owner-window.js). En
+    // la terminal, la frase. Una firma que no dio una persona no confirma nada
+    if (!argv.includes('--terminal') && !rw.hasTty()) {
+      const propia = process.env.CLAUDE_CODE_SESSION_ID || process.env.TYCON_SESSION_ID || '';
+      if (propia !== d.sesion) { console.error(`🔒 confirm-designation: se corre desde la pestaña de la sesión designada (${d.sesion}), o en la terminal del dueño.`); return 1; }
+      const r = require('./owner-window.js').exigir({ firma: 'designation-confirm', argv: [__filename, ...argv], resumen: `la sesión ${d.sesion} es la «${d.rol}» de esta máquina`, propia });
+      if (r.codigo !== 0) { console.error(`🔒 confirm-designation: ${r.motivo}`); return r.codigo === 2 ? 2 : 1; }
+      if (!['ventana', 'click', 'mensaje'].includes(r.via)) { console.error(`🔒 confirm-designation: la firma volvió por ${r.via}, y esto lo confirma una persona: no se confirmó nada.`); return 1; }
+      appendGatesLine(p, confirmationRecord(d, new Date().toISOString()));
+      console.error(`✅ designación confirmada (${r.via}).`);
+      return 0;
+    }
+    if (!rw.hasTty()) { console.error('🔒 confirm-designation --terminal pide la terminal del dueño (/dev/tty).'); return 2; }
     console.error(`La sesión designada es la «${d.rol}» (${d.sesion}), desde ${d.ts}, con la frase: «${d.cita}».`);
     console.error('Con esto, esa sesión firma sin ventana, en las otras sesiones, sólo las firmas que el perfil del equipo delega (approvals.delegated_signing), y sólo en las máquinas que nombra; las demás, y las de approvals.owner_only, las firmás vos.');
     if (!rw.confirmarFrase()) { console.error('No coincide: no se confirmó nada.'); return 1; }

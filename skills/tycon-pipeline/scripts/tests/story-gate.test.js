@@ -885,6 +885,17 @@ test('T32 Freno_BorrarYDeshacer', () => {
   });
 });
 
+test('Freno_RegistroDeAprobaciones_SoloEnElEstado', () => {
+  for (const f of ['/home/u/.tycon/state/owner-approvals/s.jsonl', '/home/u/.claude/.tycon-pipeline/owner-approvals/usadas/abc', '/home/u/.Tycon/State/Owner-Approvals/s.jsonl']) {
+    assert.equal(gate.computeStoryGate({ ...BASE, filePath: f }).action, 'block', f);
+    assert.ok(gate.isOwnerApprovalsRecord(f), f);
+  }
+  // un producto puede tener una carpeta con ese nombre: el registro lo leen sólo el estado de la cuenta
+  for (const f of [`${REPO}/owner-approvals/readme.md`, `${REPO}/src/owner-approvals/a.js`, `${REPO}/.tycon/owner-approvals/a.json`]) {
+    assert.notEqual(gate.computeStoryGate({ ...BASE, filePath: f }).kind, 'owner-approvals', f);
+  }
+});
+
 test('T33 Freno_PowerShell_FormasNuevas', () => {
   const { stateDir, repo } = corridaAbierta();
   const ev = (command) => ({ tool_name: 'PowerShell', session_id: 's1', cwd: repo, tool_input: { command } });

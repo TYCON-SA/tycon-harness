@@ -1433,6 +1433,33 @@ function origenesMovidos(cmd) {
  * sólo si es lo que el comando borra o recorre.
  */
 function marcadoresTocados(cmd, cwd, stateDir) {
+  const installedTree = require('./lib/installed-tree.js');
+  const registros = [stateDir, installedTree.realPath(stateDir)].filter(Boolean).map((b) => path.join(b, 'gates.log'));
+  // el registro de aperturas (`gates.log`) y la copia de una apertura (`.advisors/pipeline-runs/<carpeta>/run-open.json`):
+  // las otras dos piezas de una ejecución abierta (lib/open-runs.js)
+  const pieza = (r) => registros.includes(r) || (path.basename(r) === 'run-open.json' && path.basename(path.dirname(path.dirname(r))) === 'pipeline-runs');
+  return zonaTocada(cmd, cwd, stateDir, { carpeta: 'active', nombres: ['active', 'active.json'], pieza });
+}
+
+/**
+ * Lo que el comando borra o mueve del registro de las aprobaciones de la persona (`owner-approvals/`, de cualquier
+ * estado): lo gastado está en `usadas/`, y borrarlo devuelve una aprobación ya usada. Sin interruptor.
+ */
+function aprobacionesTocadas(cmd, cwd, stateDir) {
+  const { isOwnerApprovalsRecord } = require('./lib/story-gate.js');
+  // el nombre alcanza donde la ruta no se puede resolver: un guion que la arma por partes, una variable, o una relativa con
+  // un `cd` adelante. Una ruta que se lee sola se resuelve, y una carpeta de un producto que se llama igual no es el registro
+  const conCd = /(^|[;&|(\s])(?:cd|pushd)\s/.test(String(cmd || ''));
+  const noSeResuelve = (t) => /[\s$`(),'"]/.test(t) || (conCd && !/^(?:\/|~)/.test(t));
+  return zonaTocada(cmd, cwd, stateDir, { carpeta: 'owner-approvals', nombres: ['owner-approvals'], pieza: isOwnerApprovalsRecord,
+    enTexto: (t) => noSeResuelve(t) && /(^|[^\w.-])owner-approvals(?![\w.-])/i.test(t) });
+}
+
+/**
+ * Lo que el comando borra o mueve de una zona del estado: `carpeta` y `nombres` adentro del estado, o lo que `pieza` dice.
+ * `enTexto`: cuándo un texto la nombra sin que la ruta se pueda resolver (un guion que la arma por partes); sin él, el nombre de la carpeta del estado.
+ */
+function zonaTocada(cmd, cwd, stateDir, { carpeta, nombres, pieza, enTexto = null }) {
   if (!BORRA_O_MUEVE.test(String(cmd || ''))) return [];
   // un `git checkout|restore|rm` dice sus rutas (destinosBorrados las lee una por una): si es lo único que borra, el
   // nombre de la carpeta del estado suelto en otro lado del comando (`gh … --json state`) no es lo que borra
@@ -1442,20 +1469,16 @@ function marcadoresTocados(cmd, cwd, stateDir) {
   const installedTree = require('./lib/installed-tree.js');
   const bases = [...new Set([stateDir, installedTree.realPath(stateDir)].filter(Boolean))];
   const comodin = (glob) => new RegExp(`^${glob.replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]')}$`);
-  const alcanza = (seg) => expandirLlaves(seg).some((s) => s === 'active' || s === 'active.json'
-    || (/[*?[]/.test(s) && (comodin(s).test('active') || comodin(s).test('active.json'))));
-  // la ruta cae en un marcador (o en su carpeta); `arriba`: también una carpeta que los contiene
-  // el registro de aperturas (`gates.log`) y la copia de una apertura (`.advisors/pipeline-runs/<carpeta>/run-open.json`):
-  // las otras dos piezas de una ejecución abierta (lib/open-runs.js)
-  const esPiezaDeEjecucion = (r) => bases.some((b) => r === path.join(b, 'gates.log'))
-    || (path.basename(r) === 'run-open.json' && path.basename(path.dirname(path.dirname(r))) === 'pipeline-runs');
+  const alcanza = (seg) => expandirLlaves(seg).some((s) => nombres.includes(s)
+    || (/[*?[]/.test(s) && nombres.some((n) => comodin(s).test(n))));
+  // la ruta cae en la zona; `arriba`: también una carpeta que la contiene
   const toca = (abs, arriba) => {
     const reales = [...new Set([abs, installedTree.realPath(abs)].filter(Boolean))];
-    if (reales.some(esPiezaDeEjecucion)) return true;
+    if (reales.some(pieza)) return true;
     return bases.some((b) => {
-      const activos = path.join(b, 'active');
+      const activos = path.join(b, carpeta);
       return reales.some((r) => {
-        if (r === activos || r === path.join(b, 'active.json') || isInside(activos, r)) return true;
+        if (nombres.some((n) => r === path.join(b, n)) || isInside(activos, r)) return true;
         if (arriba && isInside(r, activos)) return true;
         const dir = path.dirname(r);
         if (!/[*?[]/.test(path.basename(r))) return false;
@@ -1485,7 +1508,8 @@ function marcadoresTocados(cmd, cwd, stateDir) {
   };
   const out = [];
   for (const w of palabrasProfundas(cmd)) {
-    if (porTexto && nombraPorTexto(w)) { out.push(w); continue; }
+    // `enTexto`: la zona dice cómo se la nombra; el nombre suelto de la carpeta del estado no habla de ella
+    if (porTexto && (enTexto ? enTexto(w) : nombraPorTexto(w))) { out.push(w); continue; }
     if (/\s/.test(w)) continue;
     for (const x of expandirLlaves(w)) {
       const abs = resolver(x);
@@ -3018,6 +3042,11 @@ function handleCarrilEHistoria(event, opts = {}) {
   };
   // las constancias de cambio de control, sin interruptor: como el freno de Edit y Write
   const constancias = constanciasTocadas(cmd, cwd, stateDir);
+  // el registro de las aprobaciones de la persona, también al borrarlo o moverlo
+  const aprobaciones = constancias.length ? [] : aprobacionesTocadas(cmd, cwd, stateDir);
+  if (aprobaciones.length) {
+    return { block: require('./lib/story-gate.js').blockMessage({ kind: 'owner-approvals' }, { filePath: aprobaciones[0], via: `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}` }) + '\n' };
+  }
   if (constancias.length) {
     const sg = require('./lib/story-gate.js');
     // el registro del arnés y la carpeta de una ejecución son estado del pipeline; lo demás, su constancia
