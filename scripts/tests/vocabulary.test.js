@@ -65,7 +65,8 @@ const words = (text, rules = RULES) => VOC.mentionsIn(text, rules).map((m) => m.
 /** El tramo del control en el pre-commit, desde su variable hasta su `fi` de primer nivel. */
 function hookBlock() {
   const hook = fs.readFileSync(path.join(ROOT, '.githooks', 'pre-commit-checks'), 'utf8');
-  const start = hook.indexOf('VOCABULARY="$REPO_ROOT/scripts/ci/vocabulary.js"');
+  // el repo de mantenimiento adelgazado trae su copia del pre-commit, que busca los guiones en TCG
+  const start = hook.search(/VOCABULARY="\$(REPO_ROOT|TCG)\/scripts\/ci\/vocabulary\.js"/);
   assert.ok(start >= 0, 'el pre-commit tiene el bloque del control');
   const end = hook.indexOf('\nfi\n', start);
   assert.ok(end > start, 'el bloque cierra con su fi');
@@ -74,7 +75,7 @@ function hookBlock() {
 /** Corre el bloque del pre-commit sobre un repo de juguete que trae el guion del control. */
 function runHookBlock(dir) {
   fs.copyFileSync(TOOL, path.join(dir, 'scripts', 'ci', 'vocabulary.js'));
-  return spawnSync('bash', ['-c', `set -uo pipefail\nREPO_ROOT=${JSON.stringify(dir)}\n${hookBlock()}\nexit 0\n`], { encoding: 'utf8' });
+  return spawnSync('bash', ['-c', `set -uo pipefail\nREPO_ROOT=${JSON.stringify(dir)}\nTCG=${JSON.stringify(dir)}\n${hookBlock()}\nexit 0\n`], { encoding: 'utf8' });
 }
 
 test('T1 Vocabulario_TerminoNuevoEnProsa_AvisaYNoFrena @story-8.154 @ac-1', () => {
@@ -236,7 +237,7 @@ test('T8 Vocabulario_PreCommitLoCorre @story-8.154 @ac-1', () => {
   assert.doesNotMatch(r.stdout + r.stderr, /COMMIT RECHAZADO|✅/);
   // ni una falla imprevista del control frena el commit
   const roto = toyRepo({ 'guides/x.md': 'una story\n', 'scripts/ci/vocabulary.js': 'process.exit(1);\n' });
-  const conFalla = spawnSync('bash', ['-c', `set -uo pipefail\nREPO_ROOT=${JSON.stringify(roto)}\n${hookBlock()}\nexit 0\n`], { encoding: 'utf8' });
+  const conFalla = spawnSync('bash', ['-c', `set -uo pipefail\nREPO_ROOT=${JSON.stringify(roto)}\nTCG=${JSON.stringify(roto)}\n${hookBlock()}\nexit 0\n`], { encoding: 'utf8' });
   assert.strictEqual(conFalla.status, 0, conFalla.stdout + conFalla.stderr);
   // el repo de mantenimiento adelgazado: sus guías propias no se publican y no se miden
   const thin = toyRepo({ '.tycon/internal-forms.json': JSON.stringify({ layout: 'thin' }), 'guides/propia.md': 'el advisor\n' });
