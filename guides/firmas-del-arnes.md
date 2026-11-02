@@ -96,7 +96,8 @@ firmar, y en la columna tu situación:
 
 - **Vos**: aprobás sin terminal. En una pestaña que pide permisos te aparece la ventana de permiso; en una que no pide, o
   en una sesión de fondo, aprobás con un click en el cuadro de opciones o con un «aprobado» escrito (ver «Aprobar sin
-  terminal»). **La coordinadora**: la firma ella, sin molestarte. **Espera**: nadie firma; el trabajo queda frenado en ese
+  terminal»). En Windows, siempre con el click o el «aprobado», o en tu terminal (ver «En Windows»). **La coordinadora**:
+  la firma ella, sin molestarte; en Windows no hay delegación. **Espera**: nadie firma; el trabajo queda frenado en ese
   paso hasta que alguien firme, y no se rompe nada.
 - \* **La coordinadora** firma sin ventana sólo lo que el perfil pone en `approvals.delegated_signing`, en las máquinas de
   `approvals.delegated_machines`, y sólo con la designación confirmada por el dueño (`designation-confirm`: con un click en
@@ -147,6 +148,7 @@ Con Claude Code, la mayoría de las firmas no piden la terminal. El camino depen
 - **La pestaña no pide permisos, o la sesión corre de fondo:** la ventana no le llega a nadie seguro. Vale tu click en el
   cuadro de opciones o tu mensaje «aprobado». Sin eso, el freno niega el comando y le dice al agente cómo pedírtelo; lo
   de rutina en una pestaña sin permisos se hace y se avisa (ver «Lo de rutina en una pestaña sin permisos»).
+- **En Windows:** siempre el click o el «aprobado», y la ventana de permiso no firma (ver «En Windows»).
 
 Lo que tiene que cumplir esa aprobación:
 
@@ -174,7 +176,7 @@ La contraseña que pide reinstalar el freno de producción no es una aprobación
 La terminal también es la salida cuando el freno no puede decidir:
 
 - en Codex;
-- en Windows, donde no se leen los procesos de la máquina;
+- en Windows, por la consola PowerShell o con una forma de consola que no es la medida;
 - con el comando escondido detrás de otro (`cd … && <firma>`);
 - con la herramienta lanzada por otra herramienta o por su consola;
 - en una sesión sin pantalla (`-p`);
@@ -189,29 +191,52 @@ gancho se ve igual que uno tipeado. Medido en Codex 0.162.1.
 
 ### En Windows
 
-En Windows no se leen los procesos de la máquina, así que la ventana de permiso, el click y el «aprobado» no firman. Cada
-firma se da con `--terminal`, que abre una ventana nueva donde escribís tres palabras al azar.
+En Windows firmás con un click en el cuadro de opciones o con un «aprobado» escrito, si el agente corre la firma por su
+consola Bash. El freno niega el comando la primera vez y le da al agente el cuadro para mostrarte; con tu click, el agente
+repite el mismo comando. La otra salida es `--terminal`, que abre una ventana nueva donde escribís tres palabras al azar.
+Para un arreglo rápido, ese comando es `marker.js adhoc set --reason "<motivo>" [--max-files N] --terminal --for-session
+<id>`, sin JSON.
 
-**Rodeo para abrir un arreglo rápido, hasta que se corrija.** `adhoc set --terminal` no llega a abrir esa ventana: rechaza
-las comillas del JSON, y el JSON siempre las lleva. Mientras tanto, la abrís vos desde PowerShell, con este comando en una
-sola línea:
+Esto no firma en Windows:
 
-```powershell
-$env:TYCON_WAIVER_IN_WINDOW='1'; Start-Process node -ArgumentList '"<carpeta>\marker.js" adhoc set "{\"reason\":\"<motivo>\",\"maxFiles\":10}" --terminal --for-session <id>'
-```
+- **La ventana de permiso.** Su pedido queda escrito antes de que contestes, y en Windows un programa puede declarar
+  cualquier padre al crear un proceso (técnica conocida, no medida acá): mientras la ventana está abierta, un programa del
+  agente podría imitar la consola y firmar sin tu «Sí». Con el click, el pedido se escribe después de que aprobaste ese
+  comando exacto, y imitar la consola no le da nada nuevo.
+- **La consola PowerShell.** Su línea no dice qué comando corre, así que no se puede comparar con lo que aprobaste. El
+  freno lo niega antes de usar tu aprobación, y dice que se corra por Bash o con `--terminal`.
+- **La delegación y «hecho y avisado».** Nada se firma sin una acción tuya.
+- **Un escape y un guion de consola** (`run-base-controls.sh`). Van en tu terminal: un escape no deja un pedido que el guion
+  pueda comprobar, y el guion de consola se identifica con un número de proceso de Git Bash, que no es el de Windows.
 
-- `<carpeta>` es `skills\tycon-pipeline\scripts`, dentro de tu arnés, con la ruta entera.
-- `<motivo>` va sin comillas, y `<id>` es el id de la sesión.
-- Al terminar, cerrá esa consola de PowerShell: la variable queda puesta ahí.
+Una consola de fondo viva frena, y también una PowerShell viva, porque no se puede leer qué corre. Se cierra, o se firma en
+la terminal.
 
-El control es el mismo: el arnés comprueba que la consola sea nueva y pide las tres palabras. Sólo cambia quién abre la
-ventana. Lo midió un dev en Windows real, con el arnés 2026.11.02.15: firmó, y `adhoc.log` dice `via: terminal`.
+Los límites de esto:
+
+- La forma de la consola se midió en una sola máquina (extensión de VS Code 2.1.289, Git Bash). Con otra versión u otra
+  forma, se niega: es seguro, pero puede frenarte. En ese caso, usá `--terminal`.
+- Git para Windows hace falta para firmar con un click, porque sin él la herramienta no tiene consola Bash, y para que
+  corran los controles que son guiones de bash, entre ellos el freno de seguridad. Qué pasa con esos controles sin Git no
+  se midió en una máquina sin Git: por eso se pide. El diagnóstico (`/tycon-harness`) avisa si falta, y no impide instalar.
+  Para firmar sin él queda `--terminal`, en la ventana nueva.
+- No está medido un usuario con espacios en la ruta, ni una carpeta temporal fuera de la casa de la cuenta: si la forma no
+  coincide, se niega.
+- Git Bash le cambia a un programa los argumentos que parecen rutas. Si uno llega distinto de lo que aprobaste, se niega y
+  tu aprobación se pierde: hay que pedirla de nuevo.
+- El gancho que anota tu aprobación se midió en una sesión sin pantalla (`claude -p`), no en una con pantalla.
+- Un motivo con acentos todavía no se probó de punta a punta.
+
+### En Linux
+
+En Linux el click va por el mismo camino que en la Mac, pero no se probó en una máquina real con una sesión de VS Code. Si
+la forma no coincide, se niega y queda `--terminal`.
 
 ## Las firmas
 
 La columna «¿Desde otra sesión?» dice si el comando se puede correr desde la pestaña de otra sesión (medido el
 2026-10-26). Un escape se firma en la pestaña de la propia sesión (con la ventana, o con tu click o tu «aprobado» dado ahí
-o en la coordinadora) o corriendo el comando en tu terminal, donde no hay freno. Dos
+o en la coordinadora) o corriendo el comando en tu terminal, donde no hay freno; en Windows, sólo en tu terminal. Dos
 escapes, `escape:force-manual` y `escape:trust-ran`, los pide su guion en su forma exacta, como las firmas de guion:
 desde otra sesión van con `--for-session <D>`.
 
@@ -238,7 +263,7 @@ vuelve a pedir la firma del dueño.
 | `lost-run` | dar por perdida una ejecución y cerrarla | `marker.js clear-session --lost (o restore)` | sí | `marker.js clear-session --lost --terminal (o restore --terminal)` |
 | `adversarial-skip` | saltear el pase adversarial con constancia | `marker.js sign-adversarial-skip --story <S> --reason <R>` | no, en la pestaña de esa sesión | `marker.js sign-adversarial-skip --story <S> --reason <R> --terminal` |
 | `pending-approval` | abrir un pendiente nuevo en la lista de pendientes | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta>` | sí | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --terminal` |
-| `adhoc-lane` | abrir el arreglo rápido de una sesión, sin historia | `marker.js adhoc set '<json>'` | sí | `marker.js adhoc set '<json>' --terminal --for-session <id>` |
+| `adhoc-lane` | abrir el arreglo rápido de una sesión, sin historia | `marker.js adhoc set '<json>'` | sí | `marker.js adhoc set --reason "<motivo>" [--max-files N] --terminal --for-session <id>` |
 | `save` | guardar la story: commit, push y los pull requests | `marker.js approve-save [--for-session <D>]` | sí | `marker.js approve-save --terminal --for-session <D>` |
 | `designation-confirm` | confirmar qué sesión es la coordinadora de esta máquina | `delegated-signing.js confirm-designation` | no, en la pestaña de esa sesión | `delegated-signing.js confirm-designation --terminal` |
 | `escape:TYCON_SAFETY_OFF` | apagar el freno de seguridad para un comando | `TYCON_SAFETY_OFF=1 <comando>` | no, sólo en tu terminal | `TYCON_SAFETY_OFF=1 <comando>` |

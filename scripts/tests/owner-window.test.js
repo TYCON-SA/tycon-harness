@@ -1702,7 +1702,7 @@ test('8.141 T8 OwnerWindow_AdhocSet_PideLaVentana', (t) => {
   const codex = casaNueva(t);
   const c = pedir(codex, ADHOC, { evento: { turn_id: 'turn-1' } });
   assert.strictEqual(c.decision, 'deny');
-  assert.match(c.texto, /en tu terminal: marker\.js adhoc set '<json>' --terminal --for-session <id>/);
+  assert.match(c.texto, /en tu terminal: marker\.js adhoc set --reason "<motivo>" \[--max-files N\] --terminal --for-session <id>/);
   assert.strictEqual(registros(codex).length, 0);
   // el subcomando en una variable cuenta como el arreglo rápido, y la forma lo niega
   const opaca = pedir(casaNueva(t), `S=set; node ${MARKER} adhoc "$S" '{"reason":"arreglo del sp"}'`);
@@ -2675,4 +2675,294 @@ test('Aprobacion_DeOtraCopiaDeLaSesion_NoVale', (t) => {
   const casa = casaNueva(t);
   anotarAprobacion(casa, 'ses-coord', { herramienta: { pid: 777, inicio: INICIO } });
   assert.strictEqual(pedirSinVentana(casa, PERDIDA).decision, 'deny');
+});
+
+// --- Windows: sólo el click o el «aprobado», sólo por la consola Bash ------------------------------------------------
+// Líneas inventadas con la forma medida en una máquina (extensión 2.1.289, Git Bash): tres niveles de bash con el mismo texto
+// entre el guion y la herramienta. La lectura de verdad se mide en la CI de Windows (scripts/tests/windows/waiver-probe.js).
+// 🔴 Falla con: una firma por la ventana o por delegación en Windows, una imitación por otra consola que firma, un click
+// gastado en un comando que el guion no puede comprobar.
+const W_INICIO = (min) => `2026-10-27T1${min < 60 ? '0' : '1'}:${String(min % 60).padStart(2, '0')}:00.0000000Z`;
+const W_GIT = 'C:\\Program Files\\Git';
+const W_BIN = `${W_GIT}\\bin\\bash.exe`;
+const W_USR = `${W_GIT}\\bin\\..\\usr\\bin\\bash.exe`;
+const W_CLAUDE = 'C:\\Users\\dev\\.vscode\\extensions\\anthropic.claude-code-win32-x64\\resources\\native-binary\\claude.exe';
+const W_TOOL = { pid: 100, ppid: 40, inicio: W_INICIO(0), ejecutable: W_CLAUDE, comando: `${W_CLAUDE} --output-format stream-json --verbose` };
+const W_VSCODE = { pid: 40, ppid: 30, inicio: '2026-10-27T09:00:00.0000000Z', ejecutable: 'C:\\Code\\Code.exe', comando: '"C:\\Code\\Code.exe" --type=utility' };
+const msysDe = (casa) => String(casa).replace(/^([A-Za-z]):/, (_, d) => `/${d.toLowerCase()}`).replace(/\\/g, '/');
+// el texto de `-c` con las reglas de Windows: la comilla con barra, y las barras antes de ella o del cierre, dobles
+const citarWin = (s) => `"${s.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, '$1$1')}"`;
+function guionWin(casa, cmd, { temp = `${casa}\\AppData\\Local\\Temp`, cwd = `${msysDe(casa)}/AppData/Local/Temp/claude-0ab1-cwd` } = {}) {
+  return `source ${msysDe(casa)}/.claude/shell-snapshots/snapshot-bash-1793-ab12.sh 2>/dev/null || true && export TEMP='${temp}' TMP='${temp}'`
+    + " && shopt -u extglob 2>/dev/null || true && { \\builtin unalias -- 'unsetenv'; \\builtin unset -f -- 'unsetenv'; } >/dev/null 2>&1 || true"
+    + ` && eval '${cmd.replace(/'/g, `'"'"'`)}' < /dev/null && pwd -P >| ${cwd}`;
+}
+const lineaWin = (programa, texto) => `"${programa}" -c ${citarWin(texto)}`;
+/** El árbol del guion: `niveles` son los procesos de la consola, de arriba hacia abajo, y el último es el padre del guion. */
+function arbolGuionWin(casa, cmd, { texto = guionWin(casa, cmd), niveles, tool = W_TOOL, guion = {}, extra = [] } = {}) {
+  const lista = niveles || [[W_BIN, texto], [W_USR, texto], [W_USR, texto]];
+  const procesos = lista.map(([programa, t], k) => ({ pid: 300 + k, ppid: k ? 299 + k : tool.pid, inicio: W_INICIO(5 + k), ejecutable: programa, comando: lineaWin(programa, t) }));
+  return [W_VSCODE, tool, ...procesos, { pid: 400, ppid: 299 + lista.length, inicio: W_INICIO(10), ejecutable: 'C:\\Program Files\\nodejs\\node.exe', comando: `"C:\\Program Files\\nodejs\\node.exe" ${cmd}`, ...guion }, ...extra];
+}
+const arbolFrenoWin = ({ tool = W_TOOL, extra = [] } = {}) => [W_VSCODE, tool,
+  { pid: 200, ppid: tool.pid, inicio: W_INICIO(5), ejecutable: W_BIN, comando: `"${W_BIN}" -c "bash /c/h/safety-guard-pre.sh"` },
+  { pid: 201, ppid: 200, inicio: W_INICIO(6), ejecutable: W_USR, comando: `"${W_USR}" -c "bash /c/h/safety-guard-pre.sh"` },
+  { pid: 202, ppid: 201, inicio: W_INICIO(7), ejecutable: 'C:\\Program Files\\nodejs\\node.exe', comando: '"C:\\Program Files\\nodejs\\node.exe" /c/h/owner-window.js gate' }, ...extra];
+const W_APROBADA = { id: 'a1', sesion: 'ses-a', tipo: 'click' };
+const conClick = (usos = []) => ({ buscar: () => ({ ok: true, aprobacion: W_APROBADA, via: 'click' }), consumir: (c, a) => { usos.push(a.id); return { ok: true }; }, devolver: () => {}, coordinadoraConfirmada: () => null });
+const sinClick = { buscar: () => ({ ok: false, motivo: 'no hay un click en el cuadro ni un «aprobado» tuyo de los últimos 30 minutos sin usar' }), consumir: () => assert.fail('no se gasta'), devolver: () => {}, coordinadoraConfirmada: () => null };
+const CON_GIT = () => ({ path: W_BIN });
+const SIN_GIT = () => ({ path: null, reason: 'no está' });
+const pedirWin = (casa, cmd, o = {}) => ow.decidir({ plataforma: 'win32', evento: evento(cmd, o.evento), escapes: o.escapes || [], arbol: o.arbol || arbolFrenoWin(), pid: 202, casa, ahora: AHORA,
+  delegacion: o.delegacion || (() => assert.fail('en Windows no se consulta la delegación')), clasificar: () => null, comprobar: o.comprobar || (() => null), aprobador: DEL_ARNES, aprobaciones: o.aprobaciones || sinClick, gitBash: o.gitBash || CON_GIT });
+const verificarWin = (casa, firma, argv, arbol, o = {}) => ow.verificar({ plataforma: 'win32', firma, argv, pid: 400, arbol, casa, ahora: AHORA + 1000, gitBash: CON_GIT, ...o });
+const W_ADHOC = `node ${MARKER} adhoc set '{"reason":"subir el tope ñandú","maxFiles":3}' --for-session ses-a`;
+const W_ADHOC_ARGV = [MARKER, 'adhoc', 'set', '{"reason":"subir el tope ñandú","maxFiles":3}', '--for-session', 'ses-a'];
+
+test('Windows_Palabras_ConLasReglasDeWindows', () => {
+  assert.deepStrictEqual(ow.palabrasDeWindows('"C:\\Program Files\\a.exe" -c "x \\"y\\" z"'), ['C:\\Program Files\\a.exe', '-c', 'x "y" z']);
+  assert.deepStrictEqual(ow.palabrasDeWindows('a\\b c\\\\d'), ['a\\b', 'c\\\\d'], 'una barra que no va antes de una comilla queda como está');
+  assert.deepStrictEqual(ow.palabrasDeWindows('"a\\\\" b'), ['a\\', 'b'], 'dos barras antes de la comilla: una barra, y la comilla cierra');
+  assert.deepStrictEqual(ow.palabrasDeWindows('"a\\\\\\"b"'), ['a\\"b'], 'tres barras: una barra y una comilla');
+  assert.strictEqual(ow.palabrasDeWindows('"sin cerrar'), null);
+  assert.strictEqual(ow.palabrasDeWindows('"a""b"'), null, 'dos comillas seguidas: cada programa las lee a su modo');
+});
+
+test('Windows_Desenvolver_SoloLaFormaMedida', () => {
+  const casa = 'C:\\Users\\dev';
+  const cmd = `node "C:/h/marker.js" adhoc set '{"reason":"motivo"}' --for-session abc`;
+  assert.strictEqual(ow.desenvolverWindows(lineaWin(W_USR, guionWin(casa, cmd)), casa), cmd);
+  assert.strictEqual(ow.desenvolverWindows(lineaWin(W_BIN, guionWin(casa, cmd)), casa), cmd);
+  const noVale = {
+    'otra casa': lineaWin(W_USR, guionWin('C:\\Users\\otro', cmd)),
+    'otra carpeta temporal': lineaWin(W_USR, guionWin(casa, cmd, { temp: 'C:\\Temp' })),
+    'el archivo temporal en otro lado': lineaWin(W_USR, guionWin(casa, cmd, { cwd: '/tmp/claude-0ab1-cwd' })),
+    'otro bash': lineaWin('C:\\msys64\\usr\\bin\\bash.exe', guionWin(casa, cmd)),
+    'el bash de Windows': lineaWin('C:\\Windows\\System32\\bash.exe', guionWin(casa, cmd)),
+    'una consola de la Mac': `/bin/zsh -c source ${casa}/.claude/shell-snapshots/snapshot-zsh-1-a.sh 2>/dev/null || true && eval 'x' < /dev/null && pwd -P >| /tmp/claude-ab12-cwd`,
+    'sin -c': `"${W_USR}" ${citarWin(guionWin(casa, cmd))}`,
+    'una palabra de más': `${lineaWin(W_USR, guionWin(casa, cmd))} otra`,
+    'algo después de la envoltura': lineaWin(W_USR, `${guionWin(casa, cmd)}; node marker.js`),
+    'una comilla suelta adentro': lineaWin(W_USR, guionWin(casa, 'x').replace("eval 'x'", "eval 'x'y'")),
+    'comillas sin cerrar': `"${W_USR}" -c "source`,
+  };
+  for (const [que, linea] of Object.entries(noVale)) assert.strictEqual(ow.desenvolverWindows(linea, casa), null, que);
+  // la forma de Windows no vale en la Mac
+  assert.strictEqual(ow.desenvolver(lineaWin(W_USR, guionWin(casa, cmd)), casa), null);
+});
+
+test('Windows_SinAprobacion_NiegaConElCuadroYLaTerminal_NuncaLaVentana', (t) => {
+  const casa = casaNueva(t);
+  for (const modo of ['default', 'acceptEdits', 'plan', 'bypassPermissions']) {
+    const r = pedirWin(casa, W_ADHOC, { evento: { permission_mode: modo } });
+    assert.strictEqual(r.decision, 'deny', `${modo}: ni ventana ni hecho y avisado`);
+    assert.match(r.texto, /en Windows la ventana de permiso no firma/);
+    assert.ok(r.cuadro && r.texto.includes(r.cuadro.pregunta), 'da el cuadro');
+    assert.match(r.texto, /adhoc set --reason "<motivo>" \[--max-files N\] --terminal --for-session <id>/, 'y el comando de la terminal');
+  }
+  assert.strictEqual(vigentes(casa).length, 0, 'no queda un pedido escrito');
+});
+
+test('Windows_ConClick_ElPedidoSeEscribeDespues_YElGuionLoConsume', (t) => {
+  const casa = casaNueva(t);
+  const usos = [];
+  const r = pedirWin(casa, W_ADHOC, { aprobaciones: conClick(usos) });
+  assert.strictEqual(r.decision, 'allow', r.texto);
+  assert.strictEqual(r.via, 'click');
+  assert.deepStrictEqual(usos, ['a1'], 'la aprobación se gasta una vez');
+  const [archivo] = vigentes(casa);
+  const reg = JSON.parse(fs.readFileSync(path.join(ow.carpeta(casa), archivo), 'utf8'));
+  assert.strictEqual(reg.via, 'click');
+  const v = verificarWin(casa, 'adhoc-lane', W_ADHOC_ARGV, arbolGuionWin(casa, W_ADHOC));
+  assert.ok(v.ok, v.motivo);
+  assert.strictEqual(v.registro.via, 'click');
+  assert.strictEqual(vigentes(casa).length, 0, 'consumido');
+  assert.ok(!verificarWin(casa, 'adhoc-lane', W_ADHOC_ARGV, arbolGuionWin(casa, W_ADHOC)).ok, 'una sola vez');
+});
+
+test('Windows_PorPowerShell_NiegaSinGastarLaAprobacion', (t) => {
+  const casa = casaNueva(t);
+  const nunca = { buscar: () => assert.fail('no se mira'), consumir: () => assert.fail('no se gasta'), devolver: () => {}, coordinadoraConfirmada: () => null };
+  const r = pedirWin(casa, W_ADHOC, { evento: { tool_name: 'PowerShell' }, aprobaciones: nunca });
+  assert.strictEqual(r.decision, 'deny');
+  assert.match(r.texto, /consola Bash de la herramienta, o con --terminal/);
+  assert.strictEqual(vigentes(casa).length, 0);
+});
+
+test('Windows_SinGitBash_DiceComoSeguir', (t) => {
+  const casa = casaNueva(t);
+  const nunca = { buscar: () => assert.fail('no se mira'), consumir: () => assert.fail('no se gasta'), devolver: () => {}, coordinadoraConfirmada: () => null };
+  const r = pedirWin(casa, W_ADHOC, { evento: { tool_name: 'PowerShell' }, aprobaciones: nunca, gitBash: SIN_GIT });
+  assert.strictEqual(r.decision, 'deny');
+  assert.match(r.texto, /instalá Git para Windows/);
+  assert.match(r.texto, /ventana nueva de tres palabras/);
+  assert.doesNotMatch(r.texto, /corré la firma por la consola Bash/, 'sin Git no hay consola Bash a la que mandarlo');
+  // sin Git, el guion lanzado por PowerShell tampoco firma, y dice lo mismo
+  const ps = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
+  const arbol = [W_VSCODE, W_TOOL, { pid: 300, ppid: 100, inicio: W_INICIO(5), ejecutable: ps, comando: `"${ps}" -Command x` },
+    { pid: 400, ppid: 300, inicio: W_INICIO(10), ejecutable: 'C:\\node.exe', comando: `C:\\node.exe ${W_ADHOC}` }];
+  const v = verificarWin(casa, 'adhoc-lane', W_ADHOC_ARGV, arbol, { gitBash: SIN_GIT });
+  assert.ok(!v.ok);
+  assert.match(v.motivo, /instalá Git para Windows/);
+  assert.doesNotMatch(verificarWin(casa, 'adhoc-lane', W_ADHOC_ARGV, arbol).motivo, /instalá Git para Windows/);
+});
+
+test('Windows_ConsolaViva_Frena_YUnServidorMcpNo', (t) => {
+  const casa = casaNueva(t);
+  const psCmd = 'C:\\WINDOWS\\System32\\cmd.exe /d /s /c ""C:\\WINDOWS\\System32\\chcp.com" 65001 >nul & "C:\\Program Files\\PowerShell\\7\\pwsh.exe" -NoProfile -Command "$__claudeCodeScript = $env:CLAUDE_CODE_SHELL_LAUNCHER_SCRIPT; Invoke-Expression -Command $__claudeCodeScript""';
+  const vivas = {
+    'Bash de fondo': { ejecutable: W_BIN, comando: lineaWin(W_BIN, guionWin(casa, 'sleep 100')) },
+    'Bash de otra forma': { ejecutable: W_BIN, comando: `"${W_BIN}" -c "source /c/x/.claude/shell-snapshots/snapshot-bash-1-a.sh && sleep 100"` },
+    'PowerShell medida': { ejecutable: 'C:\\WINDOWS\\System32\\cmd.exe', comando: psCmd },
+    'PowerShell con otra variable': { ejecutable: 'C:\\WINDOWS\\System32\\cmd.exe', comando: 'C:\\WINDOWS\\System32\\cmd.exe /d /s /c "pwsh.exe -Command x"' },
+    'PowerShell directa': { ejecutable: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe', comando: '"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -Command x' },
+  };
+  for (const [que, p] of Object.entries(vivas)) {
+    const r = pedirWin(casa, W_ADHOC, { arbol: arbolFrenoWin({ extra: [{ pid: 500, ppid: 100, inicio: W_INICIO(8), ...p }] }), aprobaciones: conClick() });
+    assert.strictEqual(r.decision, 'deny', que);
+    assert.match(r.texto, /consola de fondo viva/, que);
+  }
+  const mcp = { pid: 500, ppid: 100, inicio: W_INICIO(8), ejecutable: 'C:\\WINDOWS\\System32\\cmd.exe', comando: 'C:\\WINDOWS\\System32\\cmd.exe /c npx -y servidor-mcp' };
+  assert.strictEqual(pedirWin(casa, W_ADHOC, { arbol: arbolFrenoWin({ extra: [mcp] }), aprobaciones: conClick() }).decision, 'allow', 'un servidor MCP no es una consola');
+});
+
+test('Windows_Herramienta_SinPantalla_OLanzadaPorUnaConsola_Niega', (t) => {
+  const casa = casaNueva(t);
+  const sinPantalla = { ...W_TOOL, comando: `${W_CLAUDE} -p hola` };
+  assert.match(pedirWin(casa, W_ADHOC, { arbol: arbolFrenoWin({ tool: sinPantalla }), aprobaciones: conClick() }).texto, /no tiene pantalla/);
+  const ps = { pid: 40, ppid: 30, inicio: '2026-10-27T09:00:00.0000000Z', ejecutable: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe', comando: '"pwsh.exe" -Command "$__claudeCodeScript = 1"' };
+  const r = pedirWin(casa, W_ADHOC, { arbol: arbolFrenoWin().map((p) => (p.pid === 40 ? ps : p)), aprobaciones: conClick() });
+  assert.match(r.texto, /la lanzó otra herramienta o su consola/);
+});
+
+test('Windows_UnEscapeYUnGuionDeConsola_VanALaTerminal', (t) => {
+  const casa = casaNueva(t);
+  const escape = pedirWin(casa, 'TYCON_SAFETY_OFF=1 ls', { escapes: ['escape:TYCON_SAFETY_OFF'], aprobaciones: conClick() });
+  assert.strictEqual(escape.decision, 'deny');
+  assert.match(escape.texto, /en Windows un escape no se aprueba en la pestaña/);
+  const sh = pedirWin(casa, `bash ${CONTROLES} approve`, { aprobaciones: conClick() });
+  assert.strictEqual(sh.decision, 'deny');
+  assert.match(sh.texto, /en Windows un guion de consola no se puede comprobar en la pestaña/);
+  assert.strictEqual(vigentes(casa).length, 0);
+});
+
+test('Windows_Verificar_NoAceptaUnaImitacion', (t) => {
+  const casa = casaNueva(t);
+  assert.strictEqual(pedirWin(casa, W_ADHOC, { aprobaciones: conClick() }).decision, 'allow');
+  const texto = guionWin(casa, W_ADHOC);
+  const otroTexto = guionWin(casa, `${W_ADHOC} --terminal`);
+  const PS = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
+  const imitaciones = {
+    'otro texto en un nivel': { niveles: [[W_BIN, otroTexto], [W_USR, texto], [W_USR, texto]] },
+    'otro texto en el nivel de abajo': { niveles: [[W_BIN, texto], [W_USR, texto], [W_USR, otroTexto]] },
+    'un nivel de menos': { niveles: [[W_USR, texto], [W_USR, texto]] },
+    'un nivel de más': { niveles: [[W_BIN, texto], [W_BIN, texto], [W_USR, texto], [W_USR, texto]] },
+    'los niveles al revés': { niveles: [[W_USR, texto], [W_USR, texto], [W_BIN, texto]] },
+    'otra carpeta de Git': { niveles: [['D:\\Git\\bin\\bash.exe', texto], [W_USR, texto], [W_USR, texto]] },
+    'otro programa': { niveles: [['C:\\tmp\\bash.exe', texto], [W_USR, texto], [W_USR, texto]] },
+    'otra casa': { texto: guionWin('C:\\Users\\otro', W_ADHOC) },
+    'la herramienta no está arriba': { tool: { ...W_TOOL, ejecutable: PS, comando: `"${PS}" -NoProfile` } },
+  };
+  for (const [que, o] of Object.entries(imitaciones)) {
+    const v = verificarWin(casa, 'adhoc-lane', W_ADHOC_ARGV, arbolGuionWin(casa, W_ADHOC, o));
+    assert.ok(!v.ok, que);
+  }
+  // el ejecutable de un nivel no es el que dice su línea
+  const mentira = arbolGuionWin(casa, W_ADHOC).map((p) => (p.pid === 301 ? { ...p, ejecutable: 'C:\\tmp\\falso.exe' } : p));
+  assert.ok(!verificarWin(casa, 'adhoc-lane', W_ADHOC_ARGV, mentira).ok, 'el ejecutable');
+  // la consola PowerShell: su línea no dice qué comando corre
+  const porPs = [W_VSCODE, W_TOOL, { pid: 300, ppid: 100, inicio: W_INICIO(5), ejecutable: PS, comando: `"${PS}" -NoProfile -Command "$__claudeCodeScript = $env:CLAUDE_CODE_SHELL_LAUNCHER_SCRIPT"` },
+    { pid: 400, ppid: 300, inicio: W_INICIO(10), ejecutable: 'C:\\node.exe', comando: `C:\\node.exe ${W_ADHOC}` }];
+  assert.ok(!verificarWin(casa, 'adhoc-lane', W_ADHOC_ARGV, porPs).ok, 'PowerShell');
+  // otros argumentos que los del comando
+  assert.ok(!verificarWin(casa, 'adhoc-lane', [MARKER, 'adhoc', 'set', '{"reason":"otro motivo cualquiera"}', '--for-session', 'ses-a'], arbolGuionWin(casa, W_ADHOC)).ok, 'los argumentos');
+  // nada de lo anterior gastó el pedido: el de verdad sigue sirviendo
+  assert.ok(verificarWin(casa, 'adhoc-lane', W_ADHOC_ARGV, arbolGuionWin(casa, W_ADHOC)).ok);
+});
+
+test('Windows_UnPadreQueArrancoDespues_NoEsElPadre', (t) => {
+  const casa = casaNueva(t);
+  assert.strictEqual(pedirWin(casa, W_ADHOC, { aprobaciones: conClick() }).decision, 'allow');
+  // la consola arrancó después que el guion: tiene el número de su padre muerto, y nada más
+  const reusado = arbolGuionWin(casa, W_ADHOC).map((p) => (p.pid === 302 ? { ...p, inicio: W_INICIO(30) } : p));
+  assert.ok(!verificarWin(casa, 'adhoc-lane', W_ADHOC_ARGV, reusado).ok, 'un nivel');
+  const herramientaNueva = arbolGuionWin(casa, W_ADHOC).map((p) => (p.pid === 100 ? { ...p, inicio: W_INICIO(30) } : p));
+  assert.ok(!verificarWin(casa, 'adhoc-lane', W_ADHOC_ARGV, herramientaNueva).ok, 'la herramienta');
+  const sinHora = arbolGuionWin(casa, W_ADHOC).map((p) => (p.pid === 301 ? { ...p, inicio: '' } : p));
+  assert.ok(!verificarWin(casa, 'adhoc-lane', W_ADHOC_ARGV, sinHora).ok, 'sin la hora no se sabe');
+  // el freno tampoco encuentra la herramienta por ese camino
+  const frenoReusado = arbolFrenoWin().map((p) => (p.pid === 100 ? { ...p, inicio: W_INICIO(30) } : p));
+  assert.match(pedirWin(casa, W_ADHOC, { arbol: frenoReusado, aprobaciones: conClick() }).texto, /no encontré el proceso de la herramienta/);
+  assert.ok(verificarWin(casa, 'adhoc-lane', W_ADHOC_ARGV, arbolGuionWin(casa, W_ADHOC)).ok, 'con los horarios en orden, sí');
+  const igual = ow.conPadresValidos([{ pid: 1, ppid: 0, inicio: W_INICIO(0) }, { pid: 2, ppid: 1, inicio: W_INICIO(0) }]);
+  assert.strictEqual(igual[1].ppid, 1, 'a la misma hora puede ser: el reloj de Windows no llega a separarlos');
+});
+
+test('Windows_UnPedidoDeLaVentana_NoFirma', (t) => {
+  // el pedido sin aprobación es el que dejaría la ventana: escrito antes de que la persona conteste
+  const casa = casaNueva(t);
+  assert.strictEqual(ow.decidir({ plataforma: 'darwin', evento: evento(W_ADHOC), arbol: arbolDelFreno(), pid: 201, casa, ahora: AHORA, delegacion: SIN_DELEGACION, clasificar: () => null, comprobar: () => null, aprobador: DEL_ARNES }).decision, 'ask');
+  const [archivo] = vigentes(casa);
+  const reg = JSON.parse(fs.readFileSync(path.join(ow.carpeta(casa), archivo), 'utf8'));
+  assert.strictEqual(reg.via, undefined);
+  const herramienta = { pid: W_TOOL.pid, inicio: W_TOOL.inicio };
+  fs.writeFileSync(path.join(ow.carpeta(casa), archivo), JSON.stringify({ ...reg, herramienta }));
+  assert.ok(!verificarWin(casa, 'adhoc-lane', W_ADHOC_ARGV, arbolGuionWin(casa, W_ADHOC)).ok);
+  // con la vía de una aprobación, ese mismo pedido sí
+  fs.writeFileSync(path.join(ow.carpeta(casa), archivo), JSON.stringify({ ...reg, herramienta, via: 'mensaje' }));
+  assert.ok(verificarWin(casa, 'adhoc-lane', W_ADHOC_ARGV, arbolGuionWin(casa, W_ADHOC)).ok);
+});
+
+test('Windows_LasRutasQueCambiaGitBash_CuentanComoLaMisma', (t) => {
+  const casa = casaNueva(t);
+  const cmd = `node /c/h/scripts/marker.js adhoc set '{"reason":"motivo largo del arreglo"}' --for-session ses-a`;
+  const argv = ['C:\\h\\scripts\\marker.js', 'adhoc', 'set', '{"reason":"motivo largo del arreglo"}', '--for-session', 'ses-a'];
+  assert.strictEqual(pedirWin(casa, cmd, { aprobaciones: conClick() }).decision, 'allow');
+  assert.ok(!verificarWin(casa, 'adhoc-lane', ['C:\\otra\\marker.js', ...argv.slice(1)], arbolGuionWin(casa, cmd)).ok, 'otro guion');
+  assert.ok(verificarWin(casa, 'adhoc-lane', argv, arbolGuionWin(casa, cmd)).ok);
+  // el piso de Node relanza el guion: su padre es el mismo guion, y la consola está arriba de él
+  assert.strictEqual(pedirWin(casa, cmd, { aprobaciones: conClick() }).decision, 'allow');
+  const nodo = 'C:\\Program Files\\nodejs\\node.exe';
+  const hijo = { pid: 401, ppid: 400, inicio: W_INICIO(11), ejecutable: nodo, comando: `"${nodo}" C:\\h\\scripts\\marker.js adhoc set "{\\"reason\\":\\"motivo largo del arreglo\\"}" --for-session ses-a` };
+  const padre = { comando: `"${nodo}" /c/h/scripts/marker.js adhoc set "{\\"reason\\":\\"motivo largo del arreglo\\"}" --for-session ses-a` };
+  assert.ok(verificarWin(casa, 'adhoc-lane', argv, arbolGuionWin(casa, cmd, { guion: padre, extra: [hijo] }), { pid: 401 }).ok, 'relanzado');
+});
+
+test('Windows_LeerLosProcesos_RutaFijaSinModulosYSinTocarLaEmergencia', () => {
+  let visto = null;
+  const salida = JSON.stringify([
+    { pid: 10, ppid: 0, inicio: W_INICIO(0), ejecutable: W_CLAUDE, comando: 'claude.exe ñandú' },
+    { pid: 11, ppid: 10, inicio: W_INICIO(1), ejecutable: null, comando: null },
+    { pid: 12, ppid: 99, inicio: W_INICIO(1), comando: 'padre muerto' },
+    { pid: 'x', ppid: 1, comando: 'no se entiende' },
+  ]);
+  const previo = process.env.PSModulePath;
+  process.env.PSModulePath = 'C:\\agente\\modulos';
+  process.env.COR_PROFILER = '{agente}';
+  let a;
+  try { a = ow.leerArbolWindows({ spawnSync: (cmd, args, o) => { visto = { cmd, args, o }; return { status: 0, stdout: `\uFEFF${salida}` }; } }); } finally {
+    if (previo === undefined) delete process.env.PSModulePath; else process.env.PSModulePath = previo;
+    delete process.env.COR_PROFILER;
+  }
+  assert.strictEqual(visto.cmd, 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
+  assert.ok(visto.args.includes('-NoProfile'));
+  assert.strictEqual(visto.o.env.PSModulePath, undefined, 'de dónde se carga la consulta no lo decide el ambiente');
+  assert.strictEqual(visto.o.env.COR_PROFILER, undefined, 'ni qué código carga .NET en el proceso');
+  assert.strictEqual(a.length, 3);
+  assert.strictEqual(a[0].comando, 'claude.exe ñandú');
+  assert.strictEqual(a[0].ejecutable, W_CLAUDE);
+  assert.strictEqual(a[1].ejecutable, undefined);
+  assert.strictEqual(a[2].ppid, 99, 'un padre que ya no está sigue diciendo su número');
+  for (const r of [{ status: 1, stdout: salida }, { status: 0, stdout: '' }, { status: 0, stdout: 'no es json' }, { error: new Error('x') }, null]) {
+    assert.strictEqual(ow.leerArbolWindows({ spawnSync: () => r }), null, JSON.stringify(r));
+  }
+  assert.strictEqual(ow.leerArbolWindows({ spawnSync: () => { throw new Error('x'); } }), null);
+  assert.strictEqual(ow.leerArbol({ plataforma: 'win32', spawnSync: () => assert.fail('no lee') }), null, 'la lectura de la emergencia queda como estaba');
+});
+
+test('Windows_FueraDeWindows_LaFormaDeWindowsNoFirma', (t) => {
+  const casa = casaNueva(t);
+  assert.strictEqual(pedirWin(casa, W_ADHOC, { aprobaciones: conClick() }).decision, 'allow');
+  const v = ow.verificar({ plataforma: 'darwin', firma: 'adhoc-lane', argv: W_ADHOC_ARGV, pid: 400, arbol: arbolGuionWin(casa, W_ADHOC), casa, ahora: AHORA + 1000 });
+  assert.ok(!v.ok);
 });

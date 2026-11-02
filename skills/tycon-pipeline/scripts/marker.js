@@ -5506,10 +5506,21 @@ function cmdAdhoc(sub, payloadJson) {
   }
   if (sub === 'set') {
     let payload;
-    try { payload = JSON.parse(payloadJson || ''); } catch (err) {
-      console.error('marker.js adhoc set: payload JSON inválido —', err.message);
-      console.error('  Uso: marker.js adhoc set \'{"reason":"<qué y por qué>","maxFiles":8}\'');
-      process.exit(2);
+    const porBanderas = String(payloadJson || '').startsWith('--');
+    if (porBanderas) {
+      const p = require('./lib/adhoc-screen.js').pedidoPorBanderas(process.argv.slice(4));
+      if (p.problema) {
+        console.error(`marker.js adhoc set: ${p.problema}.`);
+        console.error('  Uso: marker.js adhoc set --reason "<qué y por qué>" [--max-files N] --terminal --for-session <id>');
+        process.exit(2);
+      }
+      payload = p.payload;
+    } else {
+      try { payload = JSON.parse(payloadJson || ''); } catch (err) {
+        console.error('marker.js adhoc set: payload JSON inválido —', err.message);
+        console.error('  Uso: marker.js adhoc set \'{"reason":"<qué y por qué>","maxFiles":8}\'');
+        process.exit(2);
+      }
     }
     const reason = String((payload && payload.reason) || '').trim();
     if (reason.length < 8) {
@@ -5586,11 +5597,15 @@ function cmdAdhoc(sub, payloadJson) {
     const r = ow.exigir({ firma: 'adhoc-lane', argv: process.argv.slice(1), resumen: enUnRenglon(`arreglo rápido de la sesión ${destino}${conMaqueta}: «${reason}» · ${cupoPedido}`),
       propia: PROPIA, anotar: (renglon) => appendLog('gates.log', renglon), antes });
     if (r.codigo !== 0) {
-      const json = String(payloadJson).replace(/'/g, "'\\''");
+      // la forma con JSON sólo si hace falta: la maqueta no entra en la otra, y hay motivos que no se pueden citar en ella
+      const screen = require('./lib/adhoc-screen.js');
+      const sinJson = screen.motivoSeCita(reason) && (porBanderas || (!maqueta && require('./lib/runtime-waiver.js').esWindows()));
+      const pedidoEnJson = porBanderas ? JSON.stringify(payload) : String(payloadJson);
+      const pedidoEnTerminal = sinJson ? `--reason "${reason}"${payload.maxFiles !== undefined ? ` --max-files ${payload.maxFiles}` : ''}` : `'${pedidoEnJson.replace(/'/g, "'\\''")}'`;
       console.error(`🔒 marker.js adhoc set: la persona no lo aprobó — ${r.motivo}`);
       console.error('   El arreglo rápido lo aprueba una persona, no el agente: en la ventana de permiso, corriendo este comando solo y en su forma');
       console.error('   exacta (la ventana le muestra el motivo y el cupo), o en su terminal:');
-      console.error(`     node ${__filename} adhoc set '${json}' --terminal --for-session ${destino}`);
+      console.error(`     node ${__filename} adhoc set ${pedidoEnTerminal} --terminal --for-session ${destino}`);
       console.error('   Si la persona no lo pidió, preguntale en castellano llano si lo quiere como ajuste puntual o con story.');
       process.exit(r.codigo === 2 ? 2 : 1);
     }

@@ -119,6 +119,8 @@ function canonical(e) {
 // como envolver el comando con `script` en Mac). Mac y Linux no cambian.
 const VENTANA_TOPE_S = 300;
 const MARCA_VENTANA = 'TYCON_WAIVER_IN_WINDOW';
+// Windows corta una variable de ambiente a los 32767 caracteres, y la variable comparte ese tope con su nombre
+const ARGUMENTOS_TOPE = 32000;
 const PALABRAS = Object.freeze(['arbol', 'barco', 'campo', 'dedo', 'faro', 'gato', 'hielo', 'isla', 'jarra', 'lago',
   'mano', 'nube', 'oro', 'pato', 'queso', 'rio', 'sol', 'tren', 'uva', 'vela', 'mesa', 'llave', 'luna', 'piedra', 'pan',
   'reloj', 'silla', 'torre', 'vaso', 'zorro', 'canto', 'brisa', 'cobre', 'duna', 'flor', 'gota', 'humo', 'lana', 'miel',
@@ -259,7 +261,8 @@ function topeVentanaS() {
 
 /**
  * Abre la ventana nueva y espera. `script` y `args` son lo que corre adentro (el mismo comando), con `programa` (node, o
- * bash para un guion de bash). Devuelve
+ * bash para un guion de bash). Los argumentos que la consola no deja pasar van por el ambiente (window-args.js), sólo con
+ * node. Devuelve
  * `{ estado: 'cerrada', codigo }`, `{ estado: 'vencida' }` (pasó el tope: se la cerró, no se firmó nada) o
  * `{ estado: 'no-abrio', motivo }`. `opts.spawn` y `opts.kill` sólo para las pruebas.
  */
@@ -267,17 +270,24 @@ function abrirVentana({ script, args = [], titulo = 'Firma del waiver', programa
   // en la CI no hay quién firme: no se abre ni se espera (con la consola inyectada, el ambiente es el que se pasa)
   if (enLaCI(env !== undefined ? env : (spawn ? {} : process.env))) return { estado: 'no-abrio', motivo: 'esta firma la da una persona: no sigo (es la CI)' };
   const cp = require('child_process');
-  const todo = [programa, script, ...args];
   // una barra al final escapa la comilla de cierre y junta ese argumento con el siguiente
-  const malo = todo.find((a) => /["%\r\n]|\\$/.test(String(a)));
+  const noPasa = (a) => /["%\r\n]|\\$/.test(String(a));
+  // lo que la consola no deja pasar viaja por el ambiente (window-args.js); una ruta no: es lo que Windows tiene que lanzar
+  const porAmbiente = args.some(noPasa);
+  const cargador = path.join(__dirname, 'window-args.js');
+  const todo = porAmbiente ? [programa, '-r', cargador, script] : [programa, script, ...args];
+  const malo = todo.find(noPasa);
   if (malo) return { estado: 'no-abrio', motivo: `una ruta trae un carácter que la consola de Windows no deja pasar entre comillas (${malo})` };
+  if (porAmbiente && !/^(node|nodejs)(\.exe)?$/i.test(path.win32.basename(String(programa)))) return { estado: 'no-abrio', motivo: `un argumento trae un carácter que la consola de Windows no deja pasar, y ${programa} no lo puede leer del ambiente` };
+  const argumentos = porAmbiente ? JSON.stringify(args.map(String)) : null;
+  if (porAmbiente && argumentos.length > ARGUMENTOS_TOPE) return { estado: 'no-abrio', motivo: `los argumentos son demasiado largos para pasarlos a la ventana (${argumentos.length} caracteres, el tope es ${ARGUMENTOS_TOPE})` };
   const pidFile = path.join(os.tmpdir(), `tycon-waiver-ventana-${process.pid}-${Date.now()}.pid`);
   const linea = `start "${titulo}" /wait ${todo.map((a) => `"${a}"`).join(' ')}`;
   const tope = topeVentanaS();
   const correr = spawn || ((cmd, a, o) => cp.spawnSync(cmd, a, o));
   const r = correr(delSistema('cmd.exe'), ['/d', '/s', '/c', `"${linea}"`], {
     windowsVerbatimArguments: true, windowsHide: false, stdio: 'inherit', timeout: tope * 1000,
-    env: { ...process.env, [MARCA_VENTANA]: '1', TYCON_WAIVER_WINDOW_PROCESS_FILE: pidFile },
+    env: { ...process.env, [MARCA_VENTANA]: '1', TYCON_WAIVER_WINDOW_PROCESS_FILE: pidFile, ...(porAmbiente ? { TYCON_WAIVER_WINDOW_ARGS: argumentos } : {}) },
   });
   const vencida = r && r.error && (r.error.code === 'ETIMEDOUT' || r.signal === 'SIGTERM');
   let pid = null;

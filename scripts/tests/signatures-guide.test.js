@@ -140,7 +140,7 @@ test('8.141 T7 Signatures_AdhocLane_FueraDeLosGrupos', () => {
   assert.strictEqual(s.approves, 'abrir el arreglo rápido de una sesión, sin historia');
   assert.strictEqual(s.approvesEn, "open a session's quick fix, with no story");
   assert.strictEqual(s.command, "marker.js adhoc set '<json>'");
-  assert.strictEqual(s.terminal, "marker.js adhoc set '<json>' --terminal --for-session <id>");
+  assert.strictEqual(s.terminal, 'marker.js adhoc set --reason "<motivo>" [--max-files N] --terminal --for-session <id>');
   for (const g of cat.groupNames()) assert.ok(!cat.expand(g).includes('adhoc-lane'), `el grupo ${g} no la trae`);
   assert.deepStrictEqual(cat.expand('adhoc-lane'), ['adhoc-lane'], 'por su nombre sí');
 });

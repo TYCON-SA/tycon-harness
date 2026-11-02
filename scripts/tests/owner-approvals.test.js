@@ -597,3 +597,39 @@ test('AlcanzaAlCuadro_VacioAsteriscoYExpresion', () => {
   for (const m of ['', '*', null, 'AskUserQuestion', 'Ask.*', 'AskUserQuestion|Bash']) assert.ok(oa.alcanzaAlCuadro(m), String(m));
   for (const m of ['Bash', 'Edit|Write', 'mcp__.*']) assert.ok(!oa.alcanzaAlCuadro(m), m);
 });
+
+// En Windows el gancho anota sólo si entre él y la herramienta hay Git Bash o Node. Forma medida en `claude -p`.
+// 🔴 Falla con: un agente que corre el gancho por su consola (Bash o PowerShell) y anota una aprobación.
+test('Gancho_EnWindows_SoloLoLanzaLaHerramienta', () => {
+  const I = (m) => `2026-11-02T10:${String(m).padStart(2, '0')}:00.0000000Z`;
+  const CLAUDE = 'C:\\x\\native-binary\\claude.exe';
+  const BIN = 'C:\\Program Files\\Git\\bin\\bash.exe';
+  const USR = 'C:\\Program Files\\Git\\bin\\..\\usr\\bin\\bash.exe';
+  const NODE = 'C:\\Program Files\\nodejs\\node.exe';
+  const PS = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
+  const tool = { pid: 100, ppid: 40, inicio: I(0), ejecutable: CLAUDE, comando: `${CLAUDE} --output-format stream-json` };
+  const nodo = (pid, ppid, m, ejecutable, comando) => ({ pid, ppid, inicio: I(m), ejecutable, comando });
+  const gancho = (ppid) => nodo(500, ppid, 20, NODE, `"${NODE}" /c/h/owner-approval-record.js`);
+  const bashes = [nodo(300, 100, 5, BIN, `"${BIN}" -c "node /c/h/owner-approval-record.js"`), nodo(301, 300, 6, USR, `"${USR}" -c "node /c/h/owner-approval-record.js"`)];
+  const ver = (arbol) => oa.lanzadoPorLaHerramienta({ arbol, pid: 500, casa: 'C:\\Users\\dev', plataforma: 'win32' });
+  const bien = ver([tool, ...bashes, gancho(301)]);
+  assert.ok(bien.ok, bien.motivo);
+  assert.deepStrictEqual(bien.herramienta, { pid: 100, inicio: I(0) });
+  // por la consola Bash del agente
+  const envuelta = `"${USR}" -c "source /c/Users/dev/.claude/shell-snapshots/snapshot-bash-1-a.sh && eval 'node x'"`;
+  assert.match(ver([tool, nodo(300, 100, 5, USR, envuelta), gancho(300)]).motivo, /la consola de un agente/);
+  // por la consola PowerShell del agente: cmd, pwsh y el gancho
+  const cmd = nodo(300, 100, 5, 'C:\\WINDOWS\\System32\\cmd.exe', 'cmd.exe /d /s /c "pwsh.exe -Command $__claudeCodeScript"');
+  const ps = nodo(301, 300, 6, PS, `"${PS}" -Command "$__claudeCodeScript = $env:CLAUDE_CODE_SHELL_LAUNCHER_SCRIPT"`);
+  assert.match(ver([tool, cmd, ps, gancho(301)]).motivo, /la consola de un agente/);
+  // un PowerShell, o cualquier otro programa, que no se lee como consola
+  assert.match(ver([tool, nodo(301, 100, 6, PS, `"${PS}" -File x.ps1`), gancho(301)]).motivo, /no lo lanzó la herramienta/);
+  assert.match(ver([tool, nodo(301, 100, 6, 'C:\\tmp\\otro.exe', 'otro.exe'), gancho(301)]).motivo, /no lo lanzó la herramienta/);
+  // sin la herramienta arriba, o una herramienta que no es padre porque arrancó después
+  assert.ok(!ver([...bashes, gancho(301)]).ok);
+  assert.ok(!ver([{ ...tool, inicio: I(30) }, ...bashes, gancho(301)]).ok);
+  // la herramienta la lanzó la consola de un agente
+  const arriba = nodo(40, 30, 0, PS, `"${PS}" -Command "$__claudeCodeScript = 1"`);
+  arriba.inicio = '2026-11-02T09:00:00.0000000Z';
+  assert.match(ver([arriba, tool, ...bashes, gancho(301)]).motivo, /la lanzó otra herramienta o la consola de un agente/);
+});

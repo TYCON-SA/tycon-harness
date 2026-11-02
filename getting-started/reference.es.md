@@ -43,8 +43,10 @@ Diez palabras, cada una con un solo sentido en estas páginas:
 
 - **Sin cuenta de GitHub**: este repo es público, y el arnés se baja de acá sin credencial.
 - **Tu agente de código**: Claude Code o Codex, instalado y con tu sesión iniciada.
-- **En Windows, nativo**: Node 24 (alcanza con Node 22 o posterior), PowerShell 7 y `tar` (viene con Windows 10 y posteriores). Git y Python
-  no hacen falta. Por WSL, lo mismo que en Mac y Linux, dentro de WSL.
+- **En Windows, nativo**: Node 24 (alcanza con Node 22 o posterior), PowerShell 7, `tar` (viene con Windows 10 y posteriores) y Git para
+  Windows. Git hace falta para que corran los controles que son guiones de bash, entre ellos el freno de seguridad, y para
+  firmar con un click. Sin él no se midió qué pasa con esos controles: por eso se pide. El arnés se baja igual, como
+  archivos. Python no hace falta. Por WSL, lo mismo que en Mac y Linux, dentro de WSL.
 - **En Mac y Linux**: Bash, Python 3, `tar`, `curl` y Node 24 (alcanza con Node 22 o posterior; probado en 22 y 24). Git no hace falta.
 - **Node 20**: 20 se tolera sólo para actualizar una instalación existente; no se prueba.
 - **Los revisores para tu tecnología** que trae tu equipo pueden pedir más (los de .NET, el SDK de .NET de tu plugin):
@@ -80,6 +82,7 @@ te falte, desde cualquier terminal:
 ```powershell
 winget install OpenJS.NodeJS.LTS
 winget install Microsoft.PowerShell
+winget install Git.Git
 ```
 
 Cerrá la terminal y abrí **PowerShell 7** (en el menú Inicio se llama así): todos los comandos de esta página se corren
