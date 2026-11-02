@@ -992,7 +992,7 @@ Advisor condicional **PROJECT-gated** (no por diff). Audita texto visible al usu
 
 ## Safety Guard — `safety-guard-pre.sh`
 
-Hook `PreToolUse` matcher `Bash|PowerShell` (la herramienta PowerShell de Claude Code en Windows, 2026-10-04; cada regla con su forma de PowerShell, mismo id). Bloqueo de comandos destructivos irreversibles. **No es un advisor** (no analiza diffs ni produce findings de review) — es un **hook en tiempo real** que aborta la ejecución con `exit 2` y mensaje a stderr. Las reglas se citan en el mensaje del bloqueo. Prendido por default; opt-out vía `TYCON_SAFETY_GUARD=0`. Saltearlo lo decide la persona: el prefijo `TYCON_SAFETY_OFF=1 <cmd>` lo firma ella en la ventana de permiso (con el comando en su forma exacta, solo) o en su terminal; ninguna frase en el chat lo abre. Ver `guides/safety-guard.md` para detalle.
+Hook `PreToolUse` matcher `Bash|PowerShell` (la herramienta PowerShell de Claude Code en Windows, 2026-10-04; cada regla con su forma de PowerShell, mismo id). Bloqueo de comandos destructivos irreversibles. **No es un advisor** (no analiza diffs ni produce findings de review) — es un **hook en tiempo real** que aborta la ejecución con `exit 2` y mensaje a stderr. Las reglas se citan en el mensaje del bloqueo. Prendido por default; opt-out vía `TYCON_SAFETY_GUARD=0`. Saltearlo lo decide la persona: firma la emergencia en su terminal, para ese comando; `TYCON_SAFETY_OFF=1` ya no apaga nada y ninguna frase en el chat lo abre. Ver `guides/safety-guard.md` para detalle.
 
 ### CRITICAL — Filesystem
 
@@ -1023,7 +1023,7 @@ Hook `PreToolUse` matcher `Bash|PowerShell` (la herramienta PowerShell de Claude
 
 | ID | Nombre | Fix típico |
 |---|---|---|
-| **PUB-C1** | `npm publish` | Si era intencional, se repite con `TYCON_SAFETY_OFF=1` adelante y la persona lo firma en la ventana de permiso (con el comando en su forma exacta, solo) o en su terminal. Verificar que el package no contenga secretos |
+| **PUB-C1** | `npm publish` | Si era intencional, la persona firma la emergencia en su terminal, con el número del cartel, y se repite el comando tal cual. Verificar que el package no contenga secretos |
 | **PUB-C2** | `yarn publish` | Idem PUB-C1 |
 | **PUB-C3** | `dotnet nuget push` | Solo CI/release pipeline debería pushear NuGet. Si manual a propósito: override + verificar `.nupkg` |
 

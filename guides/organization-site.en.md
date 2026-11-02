@@ -645,7 +645,8 @@ be, to copy it and open the request by hand.
   new chat or a `/clear`. A session with the same name cannot relay.
   Below it is **who signs each thing**: one row for each signature in the catalog
   (`guides/firmas-del-arnes.md`), with three choices. "In the owner's window" is the default: the owner answers in the
-  permission window or signs at their terminal. "Delegated to the coordinator" (`approvals.delegated_signing`) lets that
+  permission window; where the window does not reach, approves with a click in the options box or a written "aprobado";
+  or signs at their terminal. "Delegated to the coordinator" (`approvals.delegated_signing`) lets that
   session sign it on the owner's behalf, and its sentence is recorded; what is delegated is not protected against an
   agent: if the coordinator decides to approve it on its own, the harness cannot tell it apart from the owner's ok, so
   delegate only low-risk things. "Owner only" (`approvals.owner_only`) locks it: the site does not offer to delegate it,
@@ -664,8 +665,9 @@ be, to copy it and open the request by hand.
   delegated. Going back to the default level removes the signature from `approvals.levels`. Proposing levels requires
   the team layer to ask for a harness version that can read them.
   Who signs each level: 1, the coordinator if the profile delegates it (the plan, only with the approved verdict of the
-  automatic review she launches), otherwise the dev in the window; 2,
-  always a person in the window; 3, a person, and the emergency at their terminal. With nobody to answer, anything not
+  automatic review she launches), otherwise the dev; 2, always a person; 3, a person, and the emergency at their
+  terminal. The person approves in the window; where the window does not reach (a tab without permissions, a background
+  session), with a click or an "aprobado". With nobody to answer, anything not
   delegated waits: the system does not look at the time, it asks for the signature anyway and, if nobody answers, the
   session stays stopped at that step. With Codex, which has no window, everything is signed at the terminal. The full matrix
   is in `guides/firmas-del-arnes.md`.

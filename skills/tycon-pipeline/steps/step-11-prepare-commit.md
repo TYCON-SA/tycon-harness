@@ -53,8 +53,9 @@ Lo que decide el agente, porque el comando no lo ve o no lo frena:
 - **Checks con `provenance: manual`**: no bloquean, pero se anuncian en el commit prep como `⚠ check '<name>' no
   verificado mecánicamente (provenance=manual — ver gates.log)`.
 - **Matriz en rojo**: los ACs `SIN CORRER` los corre el agente (no se eximen); los imposibles declarados se le presentan
-  al dev con la lista y el resumen llano. Esa eximición la firma **el dev desde su terminal** (`marker.js
-  runtime-waiver <abs spec.md>`, TTY-only), vive en `.tycon/runtime-waivers.jsonl` del repo de la story (no en el
+  al dev con la lista y el resumen llano. Esa eximición la firma **el dev** en la ventana de permiso, con un click o un
+  «aprobado» donde la ventana no llega, o en su terminal (`marker.js runtime-waiver <abs spec.md>`; ver
+  `step-10-live-check.md`), vive en `.tycon/runtime-waivers.jsonl` del repo de la story (no en el
   frontmatter) y se vence sola si alguien reescribe la justificación. El mensaje de commit DEBE listar los ACs
   diferidos a prueba manual: no desaparecen, viajan con el commit.
 - **Protocolo de cierre ACCOV-C7..C10**: leer `~/.claude/tycon-harness/guides/accov-governance-protocol.md` si no se

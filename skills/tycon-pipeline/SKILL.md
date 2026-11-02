@@ -123,8 +123,8 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   <skill>/scripts/runtime-matrix.js --story <abs spec>`; `prepare-commit` la exige verde (run-check). Cada
   AC queda RUNTIME / CODE-ONLY / SIN-EVIDENCIA. `NOT-RUN` → lo corre el agente (E2E, o smoke vía
   `scripts/smoke-run.sh`, que es lo único que cuenta como evidencia); `NOT-VERIFIABLE` (declarado en
-  `runtime_not_verifiable:` con `reason:` + `covered_by:`) → decide una persona; el agente nunca firma por su cuenta: `runtime-waiver` lo aprueba el dev en la
-  ventana de permiso, o con `--terminal`; ni cita ni reenvío. Un CRITICAL, igual: `waive-critical`. Presentar CADA NOT-VERIFIABLE en el chat, en llano,
+  `runtime_not_verifiable:` con `reason:` + `covered_by:`) → decide una persona; el agente nunca firma por su cuenta: `runtime-waiver` lo aprueba el dev: ventana,
+  click, «aprobado» o `--terminal`; ni cita ni reenvío. Un CRITICAL, igual: `waive-critical`. Presentar CADA NOT-VERIFIABLE en el chat, en llano,
   con razón y test que lo cubre, y pedir decisión AC por AC — nunca sólo el comando o un link. El checkpoint
   de «Hallazgos» lleva el resumen: «Corrido de verdad: N de T. Sin correr (bloquean, los corro yo): [lista].
   Imposibles-declarados (esperan tu decisión): [lista]». Narrar «listo / probado» con la matriz roja es la violación. Un verbo de
@@ -277,7 +277,7 @@ Hooks: `on-prompt.js` (intención de story, conflicto cross-sesión, "listo" con
 
 En un repo bajo el arnés, un archivo de CÓDIGO no se edita sin (a) pipeline activo o (b) carril ad-hoc
 declarado: `marker.js adhoc set '{"reason":"<qué y por qué>"}'` (cupo 8 archivos, `adhoc.log`), que el dueño
-aprueba en la ventana de permiso (firma `adhoc-lane`; o `--terminal`). Nada del chat lo abre. La designada de la
+aprueba en la ventana, con click o «aprobado» (firma `adhoc-lane`; o `--terminal`). La designada de la
 máquina lo declara por otra pestaña con `--for-session <id>` si el perfil lo delega. Con marker y el plan sin
 aprobar, no se edita código. Escrituras directas a
 `~/.claude/.tycon-pipeline/` se deniegan siempre. El carril lo elige el USER: si no lo dijo, preguntar.

@@ -139,15 +139,20 @@ which pass is in flight, for which story, in which session and since when. And w
 (`pipeline.js deep-review-gate`) while another is in flight, the answer carries `other_in_flight` (story, session and
 time) and the line telling it to ask for its turn. With no coordinator designated, the gate answers as always.
 
-## Signatures, by their two paths
+## Signatures, by their three paths
 
 **Before asking for a signature, the coordinator confirms it is still missing.** Asking for a signature of something
 already signed makes the owner sign twice. The control signature is confirmed by comparing the signed content with the
 branch's.
 
-Then she asks for it with `coordination.js signature --kind <topic> --title <what is signed> --cwd <folder> -- <command>`:
+Then she asks for it through the path that applies:
 
-- **Through the owner's terminal.** If the machine has a signatures folder (`coordination.owner_folder`, only in the
+- **With the owner's click or «aprobado».** Where the window does not reach, this comes first for every signature that
+  accepts them. The coordinator shows the options box in her tab, with one question: what is approved, «firma <id>» and,
+  if another session signs, «sesión <id>». It leaves no pending entry. The rules are in `guides/firmas-del-arnes.md`,
+  «Aprobar sin terminal».
+- **Through the owner's terminal**, only what does not accept the click: with `coordination.js signature --kind <topic>
+  --title <what is signed> --cwd <folder> -- <command>`. If the machine has a signatures folder (`coordination.owner_folder`, only in the
   machine's file or its variable, never in the profile), it writes one file per signature there,
   `YYYY-MM-DD-<topic>.command` (on Windows, `.cmd`). The owner opens it with a double click: it says what it is in one
   line, goes into the folder, runs the command and waits for a key. If there is already a file with the same command,
@@ -156,7 +161,8 @@ Then she asks for it with `coordination.js signature --kind <topic> --title <wha
 - **By delegation.** A signature the organization lets be signed by delegation does not go through `signature`: it is
   given from the coordinator's tab, in the permission window, under the delegated signing rules. It is signed on the
   spot and leaves no pending entry. If delegation does not apply and the coordinator's tab does not ask for permissions,
-  the window does not open: the signature is refused with the terminal command, because in that tab nobody would say Yes.
+  the window does not open, because in that tab nobody would say Yes: the signature is refused, and the refusal says how
+  to ask for the click or the «aprobado».
 
 What asks for a password always goes through the terminal: only the owner types the password. Once the owner signed,
 `coordination.js signature-done <id>` deletes the file and the pending entry. An empty folder and no pending entries
@@ -174,9 +180,10 @@ publishes them in order, once their public pair is in.
 
 ## The owner's signatures
 
-A phrase in the chat, in a task or in a message between sessions signs nothing: the harness does not read the
-conversation to sign. The owner signs in the permission window or in their terminal, and what the coordinator can sign
-on the owner's behalf is in `guides/firmas-del-arnes.md`.
+A task or a message between sessions signs nothing, even if it says «aprobado». The owner signs in the permission window;
+where the window does not reach, with a click in the options box or an «aprobado» they typed; or in their terminal. Their
+click or «aprobado» in the coordinator's tab is the owner's, not a delegation. What the coordinator can sign on the
+owner's behalf is in `guides/firmas-del-arnes.md`.
 
 From her own tab, with `--for-session <D>`, the coordinator requests the signatures the guide marks «sí» under «¿Desde
 otra sesión?». Among them: setting a check by hand (`marker.js set-check <control> <estado> --force-manual
@@ -184,7 +191,7 @@ otra sesión?». Among them: setting a check by hand (`marker.js set-check <cont
 --story <s> --trust-ran --for-session <D>`) and accepting a criterion that cannot be tested live (`marker.js
 runtime-waiver <historia> --acs <n> --for-session <D>`). The story is the one of `<D>`'s open run: otherwise the script
 exits without writing. The window opens for the owner in the coordinator's tab (if that tab does not ask for
-permissions, it is refused with the terminal command). None of the three is delegated unless
+permissions, it is refused and approved with their click or «aprobado»). None of the three is delegated unless
 the profile names it; that request is prepared by the session and approved by the owner, separately.
 
 ## Saving is authorized in the permission window
@@ -243,9 +250,10 @@ its end and measure the delay against it; without a time they say «sin hora est
 
 They come from a whole day of coordinating several sessions. Each says what to do and why.
 
-- **An owner's signature goes in a message of its own.** What is signed, in one line, and the command; nothing else. If
-  it is still pending after 15 minutes, the reminder also goes on its own. Why: a signature at the end of a message
-  with other things gets lost, and the work stays stopped waiting for it.
+- **An owner's signature goes in a message of its own.** What is signed, in one line, in an options box with a single
+  signature; what goes through the terminal, with its command. Nothing else. If it is still pending after 15 minutes, the
+  reminder also goes on its own. Why: a signature at the end of a message with other things gets lost, and the work stays
+  stopped waiting for it.
 - **Before handing over a signature command, rehearse what comes after it.** The commit, its checks and the push are
   tried dry, and the signature is the last step. If there is no way to rehearse, say so. Why: an ok that expires
   because of a check that runs later makes the owner sign twice.
@@ -259,7 +267,7 @@ They come from a whole day of coordinating several sessions. Each says what to d
 - **A delegated signature is confirmed by its path.** After signing, the line must say «delegación». If it says another
   path (for example, the window in the owner's name), tell the owner right away and redo it. Why: a signature in the
   owner's name that they did not give is a false record. A tab that does not ask for permissions no longer signs
-  through the window: the harness refuses it.
+  through the window: the harness refuses it. A click or an «aprobado» the hook did not record does not count either.
 - **Heavy things one at a time, with a turn.** The full suite, the controls bench, the reviewers' exam and the gate run
   one at a time on the machine, and the turn is asked from the coordinator. The story the owner marked as a priority
   goes first in the line. Why: two at once saturate the machine and both take longer.
@@ -296,7 +304,7 @@ They come from a whole day of coordinating several sessions. Each says what to d
 | The signature command with its folder | nadie | The session writes the command; `signature` already builds it with its folder. |
 | The time of the finished work | nadie | What «finished» means depends on each work. |
 | A story number never alone | nadie | It goes in the messages, which do not go through a text check. |
-| A tab that does not ask for permissions does not sign through the window | freno | The window's guard refuses the signature and gives the terminal command. That the path says «delegación» is confirmed by the coordinator. |
+| A tab that does not ask for permissions does not sign through the window | freno | The window's guard refuses the signature and says how to approve it with a click or an «aprobado»; what does not accept them, with the terminal command. That the path says «delegación» is confirmed by the coordinator. |
 | Heavy things one at a time, with a turn | nadie | The adversarial pass has its notice (above); the full suite, the bench, the exam and the gate do not. |
 | Look at the diff before approving someone else's request | nadie | It is the approver's judgment call. |
 | A waiting session writes what it is doing | nadie | The session writes it with `marker.js doing`; nothing forces it. |

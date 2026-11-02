@@ -131,8 +131,8 @@ test('T1 Guide_HasEveryRuleWithItsMeasure @story-8.122 @ac-1: cada sección de l
   const h = headings(GUIDE).join('\n');
   for (const s of [/Qué va al dueño/, /Cómo decide la coordinadora/, /Abrir y nombrar las sesiones/, /El tope/, /pases adversariales/i,
     /Las firmas/, /El orden de los pedidos/, /Las firmas del dueño/, /Los avisos al dueño/, /Qué mide cada regla/]) assert.match(h, s);
-  // @story-8.139: una frase no firma nada, así que no hay frase que otra sesión no pueda escribir
-  assert.match(text, /no firma nada: el arnés no lee la conversación para\s+firmar/);
+  // lo que otra sesión puede escribir no firma: vale sólo el «aprobado» que tipea la persona (owner-approvals.js)
+  assert.match(text, /Un encargo o un mensaje entre sesiones no firma nada, aunque diga «aprobado»/);
   // the measure table: one row per rule, each with a notice, a brake or nobody, and why
   const table = text.split('## Qué mide cada regla')[1] || '';
   const rows = table.split('\n').filter((l) => /^\| /.test(l) && !/^\| Regla/.test(l) && !/^\|---/.test(l));
