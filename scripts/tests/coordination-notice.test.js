@@ -15,6 +15,7 @@ const ROOT = path.join(__dirname, '..', '..');
 const C = require(path.join(ROOT, 'scripts', 'tools', 'coordination.js'));
 const HOOK = path.join(ROOT, 'scripts', 'hooks', 'coordination-notice.js');
 const { stateDir } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
+const { harnessCopy } = require(path.join(ROOT, 'scripts', 'tests', 'lib', 'harness-copy.js'));
 
 const NOW = Date.parse('2026-10-27T14:00:00.000Z');
 const mins = (n) => NOW - n * 60000;
@@ -129,6 +130,114 @@ test('T20 NoRole_NothingSaid @story-8.122 @ac-20: sin rol, sin designación o en
   inFlight(t, 's-a', '9.9', 5);
   assert.ok(C.capNotice(t.opts));
   assert.ok(C.adversarialTurn({ ...t.opts, sessionId: 's-b' }));
+});
+
+// ── The rules, read again in each new context ────────────────────────────────────────────────────────────────────
+
+const GUIDE_PATH = path.join(ROOT, 'guides', 'coordination.md');
+// A saved conversation as Claude Code leaves it: its title at the top, and again after a rename.
+function saved(t, sid, ...titles) {
+  const dir = path.join(t.home, '.claude', 'projects', '-repo');
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `${sid}.jsonl`);
+  fs.writeFileSync(file, [...titles.map((title) => JSON.stringify({ type: 'agent-name', agentName: title, sessionId: sid })), JSON.stringify({ type: 'user', sessionId: sid }), ''].join('\n'));
+  return file;
+}
+
+test('Guide_Designated_Compact_ReadsTheRules: la designada, al compactar y al limpiar con el mismo id, lee la guía; al arrancar o retomar no', () => {
+  const t = toy();
+  for (const source of ['compact', 'clear']) {
+    const n = C.guideNotice({ ...t.opts, source });
+    assert.ok(n && n.includes(GUIDE_PATH), `${source}: manda a leer la guía: ${n}`);
+    assert.match(n, /sos la coordinadora/);
+  }
+  assert.ok(fs.existsSync(GUIDE_PATH), 'la ruta que manda a leer existe');
+  for (const source of ['startup', 'resume', undefined]) assert.strictEqual(C.guideNotice({ ...t.opts, source }), null, `${source}: calla`);
+});
+
+test('Guide_NotDesignated_Silent: otra sesión, sin designación o sin rol, compactar y limpiar no dicen nada', () => {
+  const t = toy();
+  saved(t, COORD, 'Coordinadora');
+  const transcript = saved(t, 'otra', 'Vecina');
+  assert.strictEqual(C.guideNotice({ ...t.opts, sessionId: 'otra', source: 'compact', title: 'Coordinadora', transcript }), null, 'compactar no quita la designación: una con el mismo título no es ella');
+  assert.strictEqual(C.guideNotice({ ...t.opts, sessionId: 'otra', source: 'clear', title: 'Vecina', transcript }), null, 'limpiar con otro título');
+  assert.strictEqual(C.guideNotice({ ...t.opts, sessionId: 'otra', source: 'clear', transcript }), null, 'sin título no hay con qué reconocerla');
+  assert.strictEqual(C.guideNotice({ ...t.opts, sessionId: 'otra', source: 'clear', title: 'Coordinadora' }), null, 'sin conversación tampoco');
+  for (const [label, o] of [['sin designación', toy({ designated: null })], ['sin rol', toy({ role: null })]]) {
+    const f = saved(o, COORD, 'Coordinadora');
+    assert.strictEqual(C.guideNotice({ ...o.opts, sessionId: 'nueva', source: 'clear', title: 'Coordinadora', transcript: f }), null, label);
+    assert.strictEqual(C.guideNotice({ ...o.opts, sessionId: COORD, source: 'compact' }), null, `${label}, al compactar`);
+  }
+});
+
+test('Guide_ClearLosesDesignation_SaysHowToGetItBack: tras limpiar, con otro id y el mismo título, dice cómo recuperarla y no la recupera sola', () => {
+  const t = toy();
+  saved(t, COORD, 'Coordinadora');
+  const transcript = saved(t, 'nueva', 'Coordinadora');
+  const n = C.guideNotice({ ...t.opts, sessionId: 'nueva', source: 'clear', title: 'Coordinadora', transcript });
+  assert.match(n, /era la coordinadora/);
+  assert.match(n, /«Esta sesión es la coordinadora»/);
+  assert.match(n, /nunca vos/, 'la frase la escribe la persona');
+  assert.match(n, /designate-relay/);
+  assert.strictEqual(require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'critical-waivers.js')).designacionVigente({ home: t.home }).sesion, COORD, 'la designación no se movió');
+  // the title that counts is the last one: she was renamed after starting
+  saved(t, COORD, 'Vieja', 'Coordinadora');
+  assert.match(C.guideNotice({ ...t.opts, sessionId: 'nueva', source: 'clear', title: 'Coordinadora', transcript }), /era la coordinadora/);
+  saved(t, COORD, 'Coordinadora', 'Otro nombre');
+  assert.strictEqual(C.guideNotice({ ...t.opts, sessionId: 'nueva', source: 'clear', title: 'Coordinadora', transcript }), null);
+  // a long conversation: the title stays at the top, past what is read from the end
+  const big = path.join(t.home, '.claude', 'projects', '-repo', `${COORD}.jsonl`);
+  fs.writeFileSync(big, `${JSON.stringify({ type: 'agent-name', agentName: 'Coordinadora' })}\n${`${JSON.stringify({ type: 'user', text: 'x'.repeat(1000) })}\n`.repeat(1000)}`);
+  assert.match(C.guideNotice({ ...t.opts, sessionId: 'nueva', source: 'clear', title: 'Coordinadora', transcript }), /era la coordinadora/);
+});
+
+// The real hook and the real command read the role from their own tree's profile, so they run from a copy that has one.
+function copyWithProfile() {
+  const copy = harnessCopy();
+  fs.writeFileSync(path.join(copy, 'team-profile.json'), JSON.stringify({ approvals: { relay_session: 'coordinadora' } }));
+  return copy;
+}
+function cleanEnv(t) {
+  const env = { ...process.env, HOME: t.home, USERPROFILE: t.home };
+  for (const k of ['TYCON_STATE_DIR', 'TYCON_HOME', 'TYCON_PROFILE', 'CLAUDE_CODE_SESSION_ID', 'TYCON_SESSION_ID', 'TYCON_EVAL_SANDBOX', 'NODE_TEST_CONTEXT']) delete env[k];
+  return env;
+}
+
+test('Guide_RealHook_SessionStart: el gancho real se lo dice a la designada al compactar, y a las demás no', () => {
+  const t = toy();
+  const copy = copyWithProfile();
+  const env = cleanEnv(t);
+  const hook = (event) => spawnSync(process.execPath, [path.join(copy, 'scripts', 'hooks', 'coordination-notice.js')], { input: JSON.stringify({ hook_event_name: 'SessionStart', ...event }), encoding: 'utf8', env });
+  const dicho = hook({ session_id: COORD, source: 'compact' });
+  assert.strictEqual(dicho.status, 0, dicho.stderr);
+  assert.ok(dicho.stdout.includes(path.join(copy, 'guides', 'coordination.md')), `manda a leer la guía: ${dicho.stdout}`);
+  for (const event of [{ session_id: 'otra', source: 'compact' }, { session_id: COORD, source: 'startup' }, { session_id: 'otra', source: 'clear' }]) {
+    const r = hook(event);
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.strictEqual(r.stdout, '', JSON.stringify(event));
+  }
+  // after clearing, the hook hands over the title and the conversation: same title, how to get it back; another, nothing
+  saved(t, COORD, 'Coordinadora');
+  const transcript = saved(t, 'nueva', 'Coordinadora');
+  const perdida = hook({ session_id: 'nueva', source: 'clear', session_title: 'Coordinadora', transcript_path: transcript });
+  assert.strictEqual(perdida.status, 0, perdida.stderr);
+  assert.match(perdida.stdout, /era la coordinadora/);
+  assert.strictEqual(hook({ session_id: 'nueva', source: 'clear', session_title: 'Vecina', transcript_path: transcript }).stdout, '');
+});
+
+test('Guide_Designate_SaysToReadTheRules: al designarse, el comando real manda a leer la guía', () => {
+  const t = toy({ designated: null });
+  const copy = copyWithProfile();
+  const env = { ...cleanEnv(t), CLAUDE_CODE_SESSION_ID: COORD };
+  const marker = path.join(copy, 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+  const guide = path.join(copy, 'guides', 'coordination.md');
+  const r = spawnSync(process.execPath, [marker, 'designate-relay', '--approved-by', 'Dev de Prueba', '--quote', 'Esta sesión es la coordinadora'], { cwd: t.root, encoding: 'utf8', env });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.ok(r.stderr.includes(guide), `manda a leer la guía: ${r.stderr}`);
+  // a failed designation sends nobody to read anything
+  const no = spawnSync(process.execPath, [marker, 'designate-relay', '--approved-by', 'Dev de Prueba'], { cwd: t.root, encoding: 'utf8', env });
+  assert.notStrictEqual(no.status, 0);
+  assert.ok(!no.stderr.includes(guide));
 });
 
 test('T20b Hook_WithoutCoordinator_Silent @story-8.122 @ac-20: el gancho real, sin coordinadora, no imprime nada y sale 0', () => {
