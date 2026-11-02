@@ -1795,6 +1795,7 @@ test('T28 FrenoDeSeguridad_RenglonForjado_NoApruebaNada @story-8.139 @ac-28 — 
   const P = path.join(SCRIPTS, 'pipeline.js');
   const E = path.join(SCRIPTS, 'e2e-setup.js');
   const C = path.join(RAIZ, 'scripts', 'ci', 'run-base-controls.sh');
+  const D = path.join(RAIZ, 'scripts', 'lib', 'delegated-signing.js');
   const INICIO = 'Tue Oct 27 10:00:00 2026';
   // cada firma `guion` con su comando completo, en la forma canónica que la ventana reconoce
   const GUIONES = [
@@ -1813,6 +1814,7 @@ test('T28 FrenoDeSeguridad_RenglonForjado_NoApruebaNada @story-8.139 @ac-28 — 
     ['escape:force-manual', ['node', M, 'set-check', 'tests', 'green', '--force-manual']],
     ['escape:trust-ran', ['node', P, 'check-count', '--repo', '/r', '--story', 's.md', '--trust-ran']],
     ['adhoc-lane', ['node', M, 'adhoc', 'set', '{"reason":"autorizo el arreglo rápido"}']],
+    ['designation-confirm', ['node', D, 'confirm-designation']],
     ...['story-skill-bypass', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt', 'cambiar-el-estado']
       .map((n) => [`escape:${n}`, ['node', M, 'sign-file', n, '/r/specs/story-9.99.md']]),
   ];

@@ -40,6 +40,8 @@ const crypto = require('crypto');
 const ROOT = path.join(__dirname, '..', '..');
 const LIB = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib');
 const stateDir = (casa) => require(path.join(LIB, 'state-dir.js')).stateDir(casa);
+// la carpeta de Claude Code de la cuenta, por el ayudante: el nombre no se escribe acá
+const carpetaClaude = (casa) => require(path.join(LIB, 'state-dir.js')).claudeDir(casa);
 const VENCE_MIN = 30;
 // la distancia entre la hora del registro y la del renglón de la transcripción
 const MARGEN_MS = 2 * 60 * 1000;
@@ -332,12 +334,13 @@ function subcarpetas(d, nombres = null) {
  * porque uno sin habilitar puede habilitarse sin pasar por acá): su `hooks/hooks.json` y lo que nombre su `plugin.json`,
  * sea otro archivo o los ganchos mismos (`{ objeto, archivo }`). Los catálogos de `marketplaces/` no corren: no cuentan.
  */
-function hooksDePlugins(casa = os.homedir(), raices = [path.join(casa, '.claude', 'plugins', 'cache')]) {
+function hooksDePlugins(casa = os.homedir(), raices = [path.join(carpetaClaude(casa), 'plugins', 'cache')]) {
   const fuera = [];
   const delManifiesto = (p) => {
     let j;
     try { j = JSON.parse(fs.readFileSync(p, 'utf8')); } catch (_) { fuera.push({ ilegible: p }); return; }
-    const raiz = path.basename(path.dirname(p)) === '.claude-plugin' ? path.dirname(path.dirname(p)) : path.dirname(p);
+    // el manifiesto puede vivir en la carpeta `[.]claude-plugin/` del plugin (un nombre de Claude Code, no la carpeta de la cuenta)
+    const raiz = /^[.]claude-plugin$/.test(path.basename(path.dirname(p))) ? path.dirname(path.dirname(p)) : path.dirname(p);
     for (const h of [].concat(j && j.hooks !== undefined ? j.hooks : [])) {
       if (typeof h === 'string') fuera.push(path.resolve(raiz, h));
       else if (h && typeof h === 'object') fuera.push({ objeto: h, archivo: p });
@@ -421,8 +424,9 @@ function encabezadosPosibles({ casa = os.homedir(), cwd, pluginDirs = [] } = {})
       for (const f of es) if (f.endsWith('.md')) fuera.push(path.join(raiz, nombre, f));
     }
   };
-  deRaiz(path.join(casa, '.claude'));
-  if (cwd) deRaiz(path.join(cwd, '.claude'));
+  // la carpeta de la cuenta y la del proyecto, que se llama igual
+  deRaiz(carpetaClaude(casa));
+  if (cwd) deRaiz(path.join(cwd, path.basename(carpetaClaude(casa))));
   const recorrer = (d, n) => {
     if (n > 7) return;
     let es;
@@ -430,7 +434,7 @@ function encabezadosPosibles({ casa = os.homedir(), cwd, pluginDirs = [] } = {})
     if (es.some((e) => e.isDirectory() && ['skills', 'agents', 'commands'].includes(e.name))) deRaiz(d);
     for (const e of es) if (e.isDirectory() && !['node_modules', '.git', 'skills', 'agents', 'commands'].includes(e.name)) recorrer(path.join(d, e.name), n + 1);
   };
-  for (const r of [path.join(casa, '.claude', 'plugins', 'cache'), ...pluginDirs]) recorrer(r, 0);
+  for (const r of [path.join(carpetaClaude(casa), 'plugins', 'cache'), ...pluginDirs]) recorrer(r, 0);
   return fuera;
 }
 
@@ -482,7 +486,7 @@ function escuchasDelCuadro({ casa = os.homedir(), cwd, plataforma, administrada,
   const ilegibles = [];
   const { settings, pluginDirs } = banderasDe(linea);
   const archivos = [...capas({ casa, cwd, plataforma, ...(administrada ? { administrada } : {}) }).map((a) => ({ a, plugin: false })),
-    ...hooksDePlugins(casa, [path.join(casa, '.claude', 'plugins', 'cache'), ...pluginDirs]).map((a) => ({ a, plugin: true }))];
+    ...hooksDePlugins(casa, [path.join(carpetaClaude(casa), 'plugins', 'cache'), ...pluginDirs]).map((a) => ({ a, plugin: true }))];
   const delObjeto = (hooks, a) => {
     for (const evento of ['PreToolUse', 'PermissionRequest']) {
       for (const g of Array.isArray(hooks[evento]) ? hooks[evento] : []) {
@@ -521,7 +525,7 @@ function escuchasDelCuadro({ casa = os.homedir(), cwd, plataforma, administrada,
 /**
  * La aprobación dada en otra sesión (la coordinadora) la anotó el proceso de esa sesión, que sigue vivo: el proceso que
  * dice el registro está en el árbol, con su misma hora de inicio, es la herramienta, y Claude Code lo tiene como esa sesión
- * (`~/.claude/sessions/<pid>.json`). `{ ok, linea, cwd }` o `{ ok: false, motivo }`.
+ * (`sessions/<pid>.json` en la carpeta de Claude Code de la cuenta). `{ ok, linea, cwd }` o `{ ok: false, motivo }`.
  */
 function procesoQueLaAnoto({ a, arbol, casa }) {
   const w = ow();
@@ -531,13 +535,13 @@ function procesoQueLaAnoto({ a, arbol, casa }) {
   const p = arbol.find((x) => x.pid === h.pid);
   if (!p || p.inicio !== h.inicio || !w.esHerramienta(p)) return { ok: false, motivo: `el proceso de la sesión ${a.sesion} que la anotó ya no está` };
   let s;
-  try { s = JSON.parse(fs.readFileSync(path.join(casa, '.claude', 'sessions', `${h.pid}.json`), 'utf8')); } catch (e) {
+  try { s = JSON.parse(fs.readFileSync(path.join(carpetaClaude(casa), 'sessions', `${h.pid}.json`), 'utf8')); } catch (e) {
     return { ok: false, motivo: e.code === 'ENOENT' ? `no sé de qué sesión es el proceso ${h.pid}` : `no pude leer de qué sesión es el proceso ${h.pid} (${e.code || e.message})` };
   }
   if (!s || s.sessionId !== a.sesion) return { ok: false, motivo: `el proceso ${h.pid} no es de la sesión ${a.sesion}` };
   // otra copia viva de la sesión (abierta con `--resume` por un agente, desprendida de su consola) también se anota como ella
   const otros = arbol.filter((x) => x.pid !== h.pid && w.esHerramienta(x)).filter((x) => {
-    try { return JSON.parse(fs.readFileSync(path.join(casa, '.claude', 'sessions', `${x.pid}.json`), 'utf8')).sessionId === a.sesion; } catch (e) { return e.code !== 'ENOENT'; }
+    try { return JSON.parse(fs.readFileSync(path.join(carpetaClaude(casa), 'sessions', `${x.pid}.json`), 'utf8')).sessionId === a.sesion; } catch (e) { return e.code !== 'ENOENT'; }
   });
   if (otros.length) return { ok: false, motivo: `hay más de un proceso vivo de la sesión ${a.sesion}: no sé cuál anotó la aprobación` };
   return { ok: true, linea: p.comando, cwd: s.cwd ? String(s.cwd) : null };

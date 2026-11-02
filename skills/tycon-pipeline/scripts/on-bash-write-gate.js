@@ -3045,7 +3045,14 @@ function handleCarrilEHistoria(event, opts = {}) {
   // el registro de las aprobaciones de la persona, también al borrarlo o moverlo
   const aprobaciones = constancias.length ? [] : aprobacionesTocadas(cmd, cwd, stateDir);
   if (aprobaciones.length) {
-    return { block: require('./lib/story-gate.js').blockMessage({ kind: 'owner-approvals' }, { filePath: aprobaciones[0], via: `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}` }) + '\n' };
+    const sg = require('./lib/story-gate.js');
+    const via = `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}`;
+    // el comando que nombra el registro (su carpeta, un archivo suyo, su nombre en un texto) recibe su cartel. El que lo
+    // alcanza sólo por una carpeta que lo contiene borra el estado entero, con los marcadores: el cartel es el del estado,
+    // que dice cómo se cierra una ejecución; el del registro queda para cuando ese freno está apagado (éste no se apaga)
+    const directo = aprobaciones.some((a) => /(^|[^\w.-])owner-approvals(?![\w.-])/i.test(String(a)));
+    const tocados = directo || laneOff ? [] : marcadoresTocados(cmd, cwd, stateDir);
+    return { block: (tocados.length ? sg.markerDeleteMessage(tocados, via) : sg.blockMessage({ kind: 'owner-approvals' }, { filePath: aprobaciones[0], via })) + '\n' };
   }
   if (constancias.length) {
     const sg = require('./lib/story-gate.js');
