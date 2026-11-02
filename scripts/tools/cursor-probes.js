@@ -690,7 +690,7 @@ function masker(result) {
 }
 
 function cell(s) {
-  return String(s == null ? '' : s).replace(/\|/g, '\\|').replace(/\s+/g, ' ').trim();
+  return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\s+/g, ' ').trim();
 }
 
 function answerText(it) {

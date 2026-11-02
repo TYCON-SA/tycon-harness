@@ -450,6 +450,20 @@ test('CursorProbes_ConFake_EscribeEvidencia', async (t) => {
     assert.ok(out, 'the measurement was lost with the report');
   });
 
+  await t.test('una contrabarra no rompe una fila del informe', () => {
+    const item = { id: 'x', question: 'q', source: EJECUCION, status: 'MEDIDO', motivo: null, answer: null, command: null, output: 'C:\\ruta\\|fin', evidence: [] };
+    const probe = { status: 'MEDIDO', motivo: null, items: [item] };
+    const md = probes.renderReport({
+      measured_at: 'hoy',
+      cursor: { path: null, package_dir: null },
+      version: { status: 'NO MEDIDO', motivo: 'm', command: 'c' },
+      probes: { S1: probe, S2: probe, S3: probe, S4: probe },
+      decisions: Object.fromEntries(['D4', 'D5', 'D8', 'D9'].map((d) => [d, { rama: 'r', motivo: 'm', supuesto: true }])),
+      notes: [],
+    });
+    assert.ok(md.includes('C:\\\\ruta\\\\\\|fin'), md);
+  });
+
   await t.test('quién aparece como cursor-agent', () => {
     const seen = (args, exe = 'node') => probes.cursorSeenAs([{ exe, args }]);
     assert.strictEqual(seen('/Users/ana maria/.local/bin/cursor-agent --use-system-ca /x/index.js -p ok'), 'linea de comando');
