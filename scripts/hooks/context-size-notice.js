@@ -214,8 +214,21 @@ function run(evento, { env = process.env, home = os.homedir(), tree, now = Date.
   guardarEstado(f, { ...sinNoMedido, tramo });
   const nota = problem ? ` (no usé un valor mal puesto: ${problem})` : '';
   return {
-    out: `🧠 contexto: esta sesión lleva ${mil(m.tokens)} tokens (umbral ${mil(umbral)}). Al terminar el paso en curso, nunca en el medio, recomendale a la persona /clear o una sesión nueva.${nota}`,
+    out: `🧠 contexto: esta sesión lleva ${mil(m.tokens)} tokens (umbral ${mil(umbral)}). Al terminar el paso en curso, nunca en el medio, recomendale a la persona /clear o una sesión nueva.${comoRetomar(home, ev.session_id)}${nota}`,
   };
+}
+
+// Con una ejecución del pipeline abierta en esta sesión, cómo seguirla en otra: el marcador queda con el id de ésta, y
+// `/clear` también cambia el id. Sin marcador legible, nada.
+function comoRetomar(home, sid) {
+  if (!sid) return '';
+  let m;
+  try { m = JSON.parse(fs.readFileSync(path.join(stateDirOf(home), 'active', `${safeSid(sid)}.json`), 'utf8')); } catch { return ''; }
+  if (!m || typeof m !== 'object' || !m.storyId) return '';
+  const propio = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+  const marker = fs.existsSync(propio) ? propio : 'marker.js';
+  const story = String(m.storyId).replace(/[^\w.-]/g, '').slice(0, 40);
+  return ` Esta sesión tiene abierta la ejecución de la ${story}: para seguirla en la sesión nueva (o después de /clear, que cambia el id), ahí se corre node "${marker}" adopt-session ${safeSid(sid)}; pipeline.js start sobre la misma historia también lo ofrece.`;
 }
 
 function main() {

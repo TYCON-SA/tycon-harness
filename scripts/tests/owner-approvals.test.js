@@ -92,6 +92,63 @@ test('NombraLaFirma_YLaSesionCuandoVieneDeLaCoordinadora', () => {
   assert.ok(!oa.nombraLaFirma('¿Apruebo el formato del resumen?', 'save'));
   assert.ok(!oa.nombraLaFirma(PIDE, 'save', 'ses-a'), 'desde la coordinadora tiene que nombrar la sesión');
   assert.ok(oa.nombraLaFirma(`${PIDE} sesión ses-a`, 'save', 'ses-a'));
+  // sin distinguir mayúsculas, como lo escribe una persona o un agente
+  assert.ok(oa.nombraLaFirma('Firma plan-approval, Sesión ses-a.', 'plan-approval', 'ses-a'));
+  assert.ok(oa.nombraLaFirma('FIRMA save (sesion ses-a)', 'save', 'ses-a'));
+  // la frase suelta: otra firma o otra sesión que empiezan igual no la nombran
+  assert.ok(!oa.nombraLaFirma('firma save-all', 'save'));
+  assert.ok(!oa.nombraLaFirma('refirma save', 'save'));
+  assert.ok(!oa.nombraLaFirma('firma save, sesión ses-ab', 'save', 'ses-a'));
+  // un nombre con caracteres de expresión regular se busca tal cual
+  assert.ok(oa.nombraLaFirma('firma escape:force-manual', 'escape:force-manual'));
+  assert.ok(!oa.nombraLaFirma('firma escapeXforce-manual', 'escape.force-manual'));
+  // un texto que nombra otra sesión no aprueba ésta, aunque sea la de la misma pestaña
+  assert.ok(!oa.nombraLaFirma('firma save, sesión ses-b', 'save', null, 'ses-c'));
+  assert.ok(!oa.nombraLaFirma('firma save, sesión: ses-b', 'save', null, 'ses-c'));
+  assert.ok(!oa.nombraLaFirma('firma save, sesión ses-a y sesión ses-b', 'save', 'ses-a'));
+  assert.ok(oa.nombraLaFirma('firma save, Sesión SES-C', 'save', null, 'ses-c'));
+  assert.ok(oa.nombraLaFirma('firma save, como en la sesión anterior', 'save', null, 'ses-c'), '«sesión anterior» no nombra ninguna');
+  // un id con letras solas también nombra una sesión, y con puntuación en el medio también
+  assert.ok(!oa.nombraLaFirma('firma save, sesión coord', 'save', null, 'dest'));
+  assert.ok(!oa.nombraLaFirma('firma save de la sesión de otra-ses', 'save', null, 'ses-c'), 'un conector no esconde el id');
+  assert.ok(!oa.nombraLaFirma('firma save, sesión del la ses-b', 'save', null, 'ses-c'));
+  assert.ok(oa.nombraLaFirma('firma save de la sesión de ses-c', 'save', 'ses-c'));
+  assert.ok(oa.nombraLaFirma('firma save, en esta sesión actual', 'save', null, 'ses-c'));
+  assert.ok(!oa.nombraLaFirma('firma save, sesión Ñandú', 'save', null, 'ses-c'));
+  assert.ok(!oa.nombraLaFirma('firma save, sesión sesa; sesión sesb', 'save', 'sesa'));
+  for (const texto of ['firma save, sesión: ses-b', 'firma save, sesión (ses-b)', 'firma save, sesión [ses-b]', 'firma save, sesion «ses-b»']) {
+    assert.ok(oa.nombraLaFirma(texto, 'save', 'ses-b'), texto);
+    assert.ok(!oa.nombraLaFirma(texto, 'save', 'ses-c'), texto);
+  }
+});
+
+test('Transcripcion_AprobadoParaOtraSesionEnLaMismaPestana_NoFirmaLaPropia', (t) => {
+  const casa = casaNueva(t);
+  transcripcion(casa, 'ses-a', [agente(`${PIDE} sesión ses-b`), tipeado('Aprobado')]);
+  assert.match(oa.validarEnClaude(mensaje(), { casa, firma: FIRMA }).motivo, /nombra otra sesión/);
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1', `${PIDE} sesión ses-b`), respuesta('toolu_1', { pregunta: `${PIDE} sesión ses-b` })]);
+  assert.match(oa.validarEnClaude({ ...click(), pregunta: `${PIDE} sesión ses-b` }, { casa, firma: FIRMA }).motivo, /nombra otra sesión/);
+});
+
+test('Transcripcion_DosAprobadoSeguidos_CadaUnoConSuPregunta', (t) => {
+  const casa = casaNueva(t);
+  const critica = '¿Eximo el crítico? (firma critical-waiver, sesión ses-b)';
+  const guardar = '¿Guardo? (firma save, sesión ses-b)';
+  // la sesión ses-a es la coordinadora: dos «aprobado» a un minuto, para dos firmas
+  transcripcion(casa, 'ses-a', [agente(critica, hace(3)), tipeado('Aprobado', hace(2)), agente(guardar, hace(1.5)), tipeado('Aprobado', hace(1))]);
+  const primero = mensaje('Aprobado', hace(2));
+  const segundo = mensaje('Aprobado', hace(1));
+  assert.ok(oa.validarEnClaude(primero, { casa, firma: 'critical-waiver', sesion: 'ses-b' }).ok);
+  assert.ok(oa.validarEnClaude(segundo, { casa, firma: 'save', sesion: 'ses-b' }).ok);
+  assert.ok(!oa.validarEnClaude(segundo, { casa, firma: 'critical-waiver', sesion: 'ses-b' }).ok, 'el segundo no exime el crítico');
+  assert.ok(!oa.validarEnClaude(primero, { casa, firma: 'save', sesion: 'ses-b' }).ok, 'el primero no guarda');
+});
+
+test('Transcripcion_DosAprobadoAUnaSolaPregunta_ElSegundoNoVale', (t) => {
+  const casa = casaNueva(t);
+  transcripcion(casa, 'ses-a', [agente(PIDE, hace(3)), tipeado('Aprobado', hace(2)), tipeado('Aprobado', hace(1))]);
+  assert.ok(oa.validarEnClaude(mensaje('Aprobado', hace(2)), { casa, firma: FIRMA }).ok);
+  assert.match(oa.validarEnClaude(mensaje('Aprobado', hace(1)), { casa, firma: FIRMA }).motivo, /no nombra «firma save»/);
 });
 
 // --- el gancho ------------------------------------------------------------------------------------------------------
@@ -167,6 +224,19 @@ test('Buscar_DeOtraSesionQueNoEsLaCoordinadora_SeNiega_DeLaCoordinadoraVale', (t
   assert.strictEqual(r.via, 'mensaje');
   assert.strictEqual(pide.sesion, 'ses-a', 'desde la coordinadora, la aprobación tiene que nombrar la sesión que firma');
   assert.strictEqual(pide.firma, FIRMA);
+});
+
+test('Buscar_FirmaParaOtraSesion_LaAprobacionTieneQueNombrarLaDestino', (t) => {
+  const casa = casaNueva(t);
+  oa.anotar(casa, mensaje('Aprobado', hace(1), 'ses-coord'));
+  const contexto = (o) => { let pide = null; oa.buscar({ casa, firma: FIRMA, ahora: AHORA, validar: (a, ctx) => { pide = ctx; return { ok: true }; }, ...o }); return pide; };
+  // la coordinadora firma para otra sesión con el «aprobado» de su propia pestaña: nombra la sesión destino
+  assert.strictEqual(contexto({ sesion: 'ses-coord', destino: 'ses-a' }).sesion, 'ses-a');
+  // la coordinadora firma para sí misma: no hace falta
+  assert.strictEqual(contexto({ sesion: 'ses-coord', destino: 'ses-coord' }).sesion, null);
+  assert.strictEqual(contexto({ sesion: 'ses-coord' }).sesion, null);
+  // otra sesión firma para sí, con el «aprobado» de la coordinadora: nombra esa sesión
+  assert.strictEqual(contexto({ sesion: 'ses-a', coordinadora: 'ses-coord' }).sesion, 'ses-a');
 });
 
 test('Consumir_UnaAprobacionSirveParaUnaSolaFirma', (t) => {

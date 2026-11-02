@@ -254,6 +254,9 @@ const VOCABULARIO = Object.freeze({
   // fábrica o una lista propia (`sessionNames`, más abajo); con el orden de siempre, así cada dev elige los suyos.
   // Sin valor, los pone quien abre la sesión.
   coordination: Object.freeze({ max_working: 'entero:1-20', owner_folder: 'ruta', session_names: 'nombres-de-sesion' }),
+  // La oficina de /office. `quiet_minutes`: cuántos minutos sin novedades tiene que pasar una sesión que trabaja para que
+  // la página diga «sin novedades desde las HH:MM». Sin valor, 15.
+  office: Object.freeze({ quiet_minutes: 'entero:1-1440' }),
   // La dirección del sitio de la organización, la que abre el comando de barra org-site. Vale SÓLO desde el perfil del
   // equipo (PROFILE_ONLY): es una para toda la organización, y si la máquina pudiera decirla, el agente podría mandar a
   // la persona a otra página. Sin valor, el comando dice cómo cargarla (desde el sitio o con un pedido al perfil).
@@ -1649,7 +1652,7 @@ function explicar(opts = {}) {
 //     regla de `guardWarning` de scripts/setup/harness/channel.js, generalizada a cualquier sección). Medido el
 //     2026-10-04: la copia instalada no lee el perfil del equipo, sólo el archivo de la máquina.
 const GUARD_LIB = '/opt/tycon/lib/tycon-config.js';
-const GUARD_INSTALL = 'sudo bash ~/.claude/tycon-claude-guides/scripts/production/install-guard.sh';
+const GUARD_INSTALL = 'sudo bash ~/.tycon/harness/scripts/production/install-guard.sh';
 // Las claves que no se escriben si el freno instalado no las conoce: las guarda una sesión a pedido de la persona, y un
 // aviso de «configuración ROTA» en cada sesión por haber elegido nombres es un costo que no vale. Se escribe después de
 // poner al día el freno.

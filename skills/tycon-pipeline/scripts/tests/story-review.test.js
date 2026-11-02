@@ -452,10 +452,11 @@ function examenVale(hash, archivo) {
   return onlyDescriptionChanged(antes.stdout, fs.readFileSync(archivo, 'utf8'));
 }
 
-test('NoRegresion_ValidadorYCincoB @story-8.84 @ac-19 — el examen del validador sigue en 13 de 13', () => {
+test('NoRegresion_ValidadorYCincoB @story-8.84 @ac-19 — el examen del validador pasa todos sus casos', () => {
   const examen = JSON.parse(fs.readFileSync(path.join(RAIZ, 'scripts', 'controls-bench', 'reviewer-exams', 'tycon-story-validator.json'), 'utf8'));
-  assert.equal(examen.passed, 13);
-  assert.equal(examen.total, 13);
+  const casos = JSON.parse(fs.readFileSync(path.join(RAIZ, 'scripts', 'controls-bench', 'cases', 'advisors', 'tycon-story-validator.json'), 'utf8')).cases;
+  assert.equal(examen.total, casos.length, 'el examen no corrió todos los casos del revisor');
+  assert.equal(examen.passed, examen.total);
   assert.ok(examenVale(examen.hash, path.join(RAIZ, 'agents', 'tycon-story-validator.md')), 'el validador cambió sin volver a examinarlo');
   const md = fs.readFileSync(path.join(RAIZ, 'agents', 'tycon-story-validator.md'), 'utf8');
   assert.doesNotMatch(md, /SADV/);

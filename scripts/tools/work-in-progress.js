@@ -259,7 +259,7 @@ function sessionsBySid(dir, unreadable, projectsDir) {
     const cwd = typeof s.cwd === 'string' ? s.cwd : null;
     // el nombre es el del archivo de sesión, el que usan los mensajes; sin él, el último /rename de la conversación
     const name = (typeof s.name === 'string' && s.name.trim()) ? cut(oneLine(s.name), NAME_MAX) : sessionTitle(projectsDir, cwd, s.sessionId, unreadable);
-    const cur = { name: name || null, alive, busy: s.status === 'busy', status: typeof s.status === 'string' ? s.status : null, statusAt: Number(s.statusUpdatedAt) || null, nameSource: typeof s.nameSource === 'string' ? s.nameSource : null, cwd, last: dates.length ? Math.max(...dates) : null, internal: isInternalAgent(cwd, s.nameSource) };
+    const cur = { name: name || null, alive, busy: s.status === 'busy', status: typeof s.status === 'string' ? s.status : null, statusAt: Number(s.statusUpdatedAt) || null, nameSource: typeof s.nameSource === 'string' ? s.nameSource : null, kind: typeof s.kind === 'string' ? s.kind : null, cwd, last: dates.length ? Math.max(...dates) : null, internal: isInternalAgent(cwd, s.nameSource) };
     // Dos archivos con la misma sesión: manda el vivo, y la actividad es la más nueva de los dos.
     const prev = out.get(s.sessionId);
     if (!prev || (!prev.alive && alive)) out.set(s.sessionId, prev && prev.last > nn(cur.last, -1) ? { ...cur, last: prev.last } : cur);
@@ -308,6 +308,20 @@ function estimateEnd(marker, medians, nowMs, entry, info = {}) {
   info.late = nowMs > currentEnd;
   if (nowMs > currentEnd) return `atrasada (estimado ${hhmm(fixed)}${approx ? ', aprox.' : ''})`;
   return `${hhmm(fixed)}${approx ? ' (aprox.)' : ''}${entryNote(entry)}`;
+}
+
+/**
+ * La hora de fin de un marcador, la misma que muestra la tabla: `{ endAt }` en milisegundos, o `{ endAt: null,
+ * endWithoutHour }` con el motivo. Para quien la anota en el archivo de estado de la sesión (scripts/lib/session-state.js).
+ */
+function endOf(marker, opts = {}) {
+  const home = opts.home || os.homedir();
+  const sdir = opts.stateDir || stateDir(home);
+  const nowMs = Number.isFinite(opts.now) ? opts.now : Date.now();
+  const medians = stepMedians(path.join(sdir, 'timing-history'), []);
+  const info = {};
+  const text = estimateEnd(marker, medians, nowMs, storyEntry(marker, { until: Date.now() + GIT_BUDGET_MS, cache: new Map() }), info);
+  return info.at == null ? { endAt: null, endWithoutHour: text } : { endAt: info.at, endWithoutHour: null };
 }
 
 // La story que cerró el paso 8 y espera sus pedidos: el cierre del 8 más la entrada a los repos.
@@ -912,7 +926,7 @@ function buildWip(opts = {}) {
     }
     else {
       halfway.push(`${work} · ${nameOf(sid)} · quedó en: ${step} · limpiar: node ${MARKER_JS} clear-session ${sid}`);
-      halfwayItems.push({ kind: 'run', text: title, cleanAfter: null });
+      halfwayItems.push({ kind: 'run', text: title, cleanAfter: null, sid });
     }
   }
 
@@ -977,7 +991,7 @@ function buildWip(opts = {}) {
         try { touched = fs.statSync(file).mtimeMs; } catch (e) {
           unreadable.push(`${file}: sin fecha legible (${e.message})`);
           halfway.push(`ad-hoc «${work}» · ${nameOf(sid)} · fecha ilegible: no se sabe desde cuándo se puede limpiar`);
-          halfwayItems.push({ kind: 'adhoc', text: String(a.reason || ''), cleanAfter: 'unknown' });
+          halfwayItems.push({ kind: 'adhoc', text: String(a.reason || ''), cleanAfter: 'unknown', sid });
           continue;
         }
       }
@@ -985,7 +999,7 @@ function buildWip(opts = {}) {
         ? `limpiar: node ${MARKER_JS} adhoc clear-orphan ${sid}`
         : `se podrá limpiar después de las ${hhmm(touched + STALE_MS)}`;
       halfway.push(`ad-hoc «${work}» · ${nameOf(sid)} · ${how}`);
-      halfwayItems.push({ kind: 'adhoc', text: String(a.reason || ''), cleanAfter: nowMs - touched > STALE_MS ? null : touched + STALE_MS });
+      halfwayItems.push({ kind: 'adhoc', text: String(a.reason || ''), cleanAfter: nowMs - touched > STALE_MS ? null : touched + STALE_MS, sid });
     }
   }
 
@@ -1011,7 +1025,7 @@ function buildWip(opts = {}) {
       if (!Number.isFinite(touched)) { try { touched = fs.statSync(file).mtimeMs; } catch { touched = nowMs; } }
       const how = nowMs - touched > STALE_MS ? `borrar: node ${MARKER_JS} doing clear-orphan ${sid}` : `se podrá borrar después de las ${hhmm(touched + STALE_MS)}`;
       halfway.push(`nota «${work}» · ${nameOf(sid)} · ${how}`);
-      halfwayItems.push({ kind: 'note', text: String(d.text || ''), cleanAfter: nowMs - touched > STALE_MS ? null : touched + STALE_MS });
+      halfwayItems.push({ kind: 'note', text: String(d.text || ''), cleanAfter: nowMs - touched > STALE_MS ? null : touched + STALE_MS, sid });
       continue;
     }
     busy.add(sid);
@@ -1033,6 +1047,8 @@ function buildWip(opts = {}) {
   }
 
   const free = [];
+  // la sesión de cada libre, en el mismo orden: para /office, que la cruza con su archivo de estado
+  const freeSids = [];
   const noData = [];
   const idle = [];
   let internal = 0;
@@ -1061,15 +1077,15 @@ function buildWip(opts = {}) {
       const parts = [active ? 'Trabajando sin pipeline' : 'Trabajando sin marcador', why, story && `story ${story} en preparación`,
         s.last != null && `última actividad ${hhmm(s.last)}`, !active && `último archivo ${hhmm(files.newest)}`].filter(Boolean);
       addRow({ work: place ? place.work : unknown ? 'no se ve qué hace' : sessionPlace(s.cwd, gitCtx, unreadable), state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label, folder: place ? tilde(place.root) : tilde(s.cwd) }, sid, { kind: active ? 'activity' : 'nomarker' });
-    } else if (s.last == null) { free.push(label); noData.push(label); }
+    } else if (s.last == null) { free.push(label); freeSids.push(sid); noData.push(label); }
     else if (nowMs - s.last > IDLE_MS) idle.push(`${label} (desde ${hhmm(s.last)})`);
-    else free.push(label);
+    else { free.push(label); freeSids.push(sid); }
   }
   const details = rowSids.map((sid) => {
     const s = sessions.get(sid);
     return { sid, status: s ? s.status : null, nameSource: s ? s.nameSource : null };
   });
-  return { rows, details, extra, free, idle, halfway, halfwayItems, unreadable, wanted, internal, text: render(rows, free, noData, idle, halfway, unreadable, internal) };
+  return { rows, details, extra, free, freeSids, idle, halfway, halfwayItems, unreadable, wanted, internal, text: render(rows, free, noData, idle, halfway, unreadable, internal) };
 }
 
 function render(rows, free, noData, idle, halfway, unreadable, internal = 0) {
@@ -1162,4 +1178,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { buildWip, wipNow, stagesOf, jsonOf, sessionsBySid, storyEntering, median, queryAll, parseRemote, offQueueOf, PER_QUERY_MS, ALL_QUERIES_MS, SAFE_SID };
+module.exports = { buildWip, wipNow, stagesOf, jsonOf, sessionsBySid, storyEntering, median, queryAll, parseRemote, offQueueOf, endOf, codexNames, PER_QUERY_MS, ALL_QUERIES_MS, SAFE_SID };

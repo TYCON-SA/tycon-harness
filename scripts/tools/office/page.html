@@ -130,7 +130,7 @@ const el=(t,c,txt)=>{const e=document.createElement(t);if(c)e.className=c;if(txt
 const DAYS=["dom","lun","mar","mié","jue","vie","sáb"];
 const parse=s=>{const m=/^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d)$/.exec(s||"");return m?new Date(+m[1],m[2]-1,+m[3],+m[4],+m[5]):null};
 const fmt=s=>{const d=parse(s);return d?DAYS[d.getDay()]+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"):"—"};
-const AST={trabajando:["Trabajando","#3ddc84"],prueba:["Corriendo pruebas","#5aa9ff"],espera:["Esperando entrar","#a59fc4"],firma:["Espera tu firma","#ffa53d"],libre:["Libre","#9aa3a0"],coordina:["Coordinando","#ff6fc0"]};
+const AST={trabajando:["Trabajando","#3ddc84"],prueba:["Corriendo pruebas","#5aa9ff"],espera:["Esperando entrar","#a59fc4"],firma:["Espera tu firma","#ffa53d"],libre:["Libre","#9aa3a0"],coordina:["Coordinando","#ff6fc0"],inactiva:["Inactiva","#6b6f6e"]};
 const SHIRT=["#c2569b","#2f9e6a","#3b7ddd","#e08a1e","#7a5cc7","#d65a4a"];
 let agents,items,meta;
 function setData(d){DATA=d||{};agents=DATA.agents||[];items=DATA.items||[];meta=DATA.meta||null}
@@ -169,18 +169,31 @@ function renderCrew(){const c=document.getElementById("crew");c.replaceChildren(
     const h=el("h3");const d=el("span","dot");d.style.background=SHIRT[i%SHIRT.length];h.appendChild(d);h.appendChild(document.createTextNode(a.nombre||""));k.appendChild(h);
     const st=el("span","st",s[0]);st.style.color=s[1];st.style.borderColor=s[1];k.appendChild(st);
     if(a.haciendo)k.appendChild(el("p",null,a.haciendo));
+    if(a.espera)k.appendChild(el("p","side","Espera "+a.espera+"."));
+    if(a.callada)k.appendChild(el("span","eta",a.callada.charAt(0).toUpperCase()+a.callada.slice(1)));
     if(a.mientras){const m=el("p","side");m.appendChild(el("b",null,"Mientras tanto: "));m.appendChild(document.createTextNode(a.mientras));k.appendChild(m)}
     const f=finTxt(a);if(f)k.appendChild(el("span","eta","Termina "+f.hora+(f.dif?" · "+f.dif:"")));
     if(a.avance!=null)k.appendChild(el("span","eta","Avance: "+a.avance+"%"));c.appendChild(k)})}
 // sin 3D, la tabla queda abierta y la sala dice por qué
 function sinTresD(msg){const o=document.getElementById("ovl");o.textContent=msg;o.hidden=false;document.getElementById("tablewrap").open=true}
 window.tablero={agents:()=>agents,items:()=>items,meta:()=>meta,site:()=>SITE,AST,SHIRT,fmt,finTxt,sinTresD};
-renderTop();renderCrew();
+// el reloj de la página (decisión 20): cada minuto compara la hora con la última novedad de cada sesión y marca las
+// calladas; sin pid, pasadas las 2 h, la da por inactiva. No consulta nada afuera: mira la hora y los datos que tiene.
+const QUIET_DEFAULT=15,DEAD_MS=2*3600000;
+function umbral(m){const n=Number(m&&m.quietMin);return Number.isFinite(n)&&n>0?n:QUIET_DEFAULT}
+function relojTick(list,now,m){const q=umbral(m)*60000,hh=t=>{const d=new Date(t);return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0")};
+  (list||[]).forEach(a=>{if(typeof a.novedadMs!=="number"||a.estado==="inactiva")return;const desde="sin novedades desde las "+hh(a.novedadMs);
+    if(a.sinPid&&now-a.novedadMs>DEAD_MS){a.estado="inactiva";a.callada=null;a.haciendo="Inactiva: "+desde+".";return}
+    a.callada=now-a.novedadMs>q?desde:null})}
+// fin del reloj
+// el reloj corre también al abrir y con cada foto nueva: la foto y el minuto siguiente dicen lo mismo de cada sesión
+relojTick(agents,Date.now(),meta);renderTop();renderCrew();
+setInterval(()=>{relojTick(agents,Date.now(),meta);renderCrew();if(window.tablero.refresh)window.tablero.refresh()},60000);
 // la oficina viva: cada foto nueva actualiza en el lugar; si el proceso se cierra, queda la última foto y el aviso
 const CERRADA="La oficina se cerró. Corré /office otra vez para verla al día.";
 function cerrada(){const o=document.getElementById("ovl");o.textContent=CERRADA;o.hidden=false;const fl=document.getElementById("freeLine");fl.textContent=CERRADA;fl.hidden=false}
 if(LIVE){const ws=new WebSocket("ws://"+location.host+"/live?t="+encodeURIComponent(LIVE.token));
-  ws.onmessage=ev=>{const o=document.getElementById("ovl"),FALLA="No pude dibujar la última novedad; la oficina muestra la anterior. Corré /office otra vez si sigue así.";try{const m=JSON.parse(ev.data);if(!m||m.type!=="foto")return;setData(m.data);renderTop();renderCrew();if(o.textContent===FALLA){o.textContent="";o.hidden=true}if(window.tablero.refresh)window.tablero.refresh()}catch(e){console.error(e);o.textContent=FALLA;o.hidden=false}};
+  ws.onmessage=ev=>{const o=document.getElementById("ovl"),FALLA="No pude dibujar la última novedad; la oficina muestra la anterior. Corré /office otra vez si sigue así.";try{const m=JSON.parse(ev.data);if(!m||m.type!=="foto")return;setData(m.data);relojTick(agents,Date.now(),meta);renderTop();renderCrew();if(o.textContent===FALLA){o.textContent="";o.hidden=true}if(window.tablero.refresh)window.tablero.refresh()}catch(e){console.error(e);o.textContent=FALLA;o.hidden=false}};
   ws.onclose=cerrada}
 setTimeout(()=>{if(!window.tablero.started)sinTresD("Este navegador no pudo cargar la oficina en 3D; las tarjetas y la tabla tienen lo mismo.")},8000);
 </script>

@@ -1052,6 +1052,11 @@
       "requiere": []
     },
     {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-after-main.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 7.15: qué archivos toca la story y, sobre todo, si se pudo mirar — el test-gate difiere exportador-real sólo cuando lo sabe.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/touched-files.test.js",
@@ -1715,6 +1720,11 @@
     {
       "raiz": "arnes",
       "ruta": "tests/office-server.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/session-state.test.js",
       "requiere": []
     },
     {
@@ -3620,6 +3630,12 @@
       "requiere": []
     },
     {
+      "__nota": "arreglo rápido 2026-11-01 (reglas de la coordinadora): el turno de la suite completa (scripts/tools/heavy-turn.js). Con coordinadora, una suite completa por vez: la segunda no arranca y dice quién tiene el lugar; sin coordinadora no cambia nada; un turno de un proceso muerto o de más de tres horas se libera solo y el ajeno no se suelta. El corredor de suites.json lo pide sólo sin acotar, y las portables sólo enteras. Con HOME de juguete y un arnés instalado de juguete, porque el clon no trae el perfil; también toma el turno con varios procesos a la vez y corre las portables de verdad hasta su negativa.",
+      "raiz": "arnes",
+      "ruta": "tests/heavy-turn.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.17, tandas W3 y W4 (T33-T37 y los casos del pase adversarial): el aplicador de la lista única de hooks (scripts/setup/apply-hooks.js) — qué decide con cada integración, perfil y opt-in, que deja el mismo settings.json que el instalador de antes, las dos reglas de identidad (Mac/Linux por archivo, Windows por la ruta del repo), la marca de codificación, los permisos, los matchers repetidos, la sección de rutas que no se pueden registrar y la desinstalación de un bash entre comillas y de los enlaces duros anotados. Con HOME y settings.json de prueba; no usa bash ni pwsh.",
       "raiz": "arnes",
       "ruta": "tests/apply-hooks.test.js",
@@ -3809,6 +3825,12 @@
       "__nota": "story 8.30 (T1 a T5): los modelos de pipelines de operaciones para cualquier organización (pipelines/operations/) — los archivos en su lugar, ningún literal del equipo, todo paso con efectos atado a efectos (y a main si empuja), y la plantilla ops-data.yml corrida de verdad sobre dos repos de juguete. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/operations-pipelines.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.155, tanda A: la llave del modelo de la noche en el grupo de variables harness-nightly-model — los dos nocturnos con modelo lo enlazan y cada paso del modelo recibe las dos llaves; el paso que dice «llegó/no llegó» corrido de verdad, sin el valor ni su largo; una llave literal `$(NOMBRE)` cuenta como ausente; y los pasos del README en orden (crear, autorizar, probar sin efectos, mergear, la variable vieja al final). Las copias del repo de operaciones, con --operations <clon>; sin él, «no medido». Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/nightly-key.test.js",
       "requiere": []
     },
     {

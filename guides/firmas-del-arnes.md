@@ -103,6 +103,11 @@ firmar, y en la columna tu situación:
   el pase adversarial en modo plan) y aprueba sólo si dice «aprobado» sobre ese mismo plan. Sin veredicto o rechazado, el
   plan espera a una persona. Ningún plan se aprueba solo, tampoco el de riesgo bajo, y la sesión que hizo el plan no
   puede lanzar su propia revisión (`steps/step-04-approve-plan.md`).
+- **Con tu aprobación escrita, la firma es tuya, también en lo delicado.** Donde la ventana no llega, o cuando la coordinadora
+  firmaría por delegación, vale tu click en el cuadro de opciones o tu «aprobado» tipeado. Gana a la delegación: un plan
+  delicado o un guardado que toca algo sensible pasan, y quedan a tu nombre. Lo último que te dijo el agente tiene que
+  nombrar «firma <id>» y, si firma para otra sesión, «sesión <id>»; si nombra otra sesión, no vale para ésta. Cada
+  aprobación sirve una vez y vence a los 30 minutos. Sin ella, la coordinadora sigue frenada en lo delicado.
 - Con coordinadora, ella puede pedir algunas de nivel 2 (eximir un crítico, un criterio que no se prueba en vivo), pero
   las contesta una persona.
 - **Si tu push ya despliega algo** (en tu equipo, subir a una rama dispara un despliegue), quien administra puede subir

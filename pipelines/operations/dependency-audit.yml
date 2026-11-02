@@ -49,6 +49,13 @@ parameters:
     displayName: 'Versiones del SDK de .NET a instalar (sólo se instalan si algún repo es nuget)'
     type: object
     default: ['9.0.x', '10.0.x']
+  # El grupo de variables con la llave del modelo de la noche, compartido con instinct-proposals.yml. Vacío de fábrica:
+  # un grupo que no existe no deja arrancar el pipeline. La copia de la organización pone su nombre como valor por
+  # defecto (README.md, «La llave del modelo de la noche: un grupo compartido»). Sin grupo, la noche corre sin modelo.
+  - name: modelVariableGroup
+    displayName: 'Grupo de variables con la llave del modelo de la noche (vacío: la noche corre sin modelo)'
+    type: string
+    default: ''
 
 resources:
   repositories:
@@ -63,6 +70,9 @@ pool:
 variables:
   - name: RAMA_ANALIZADA
     value: 'main'
+  # La llave del modelo de la noche (OLLAMA_API_KEY, ANTHROPIC_API_KEY, secretas), por el parámetro modelVariableGroup.
+  - ${{ if ne(parameters.modelVariableGroup, '') }}:
+      - group: ${{ parameters.modelVariableGroup }}
 
 jobs:
   - job: Review
@@ -71,6 +81,20 @@ jobs:
     steps:
       - template: pipelines/operations/templates/fetch-harness.yml@harness
       - template: pipelines/operations/templates/ops-data.yml@harness
+
+      - script: |
+          # Si la llave del modelo llegó del grupo harness-nightly-model, sin mostrarla ni decir su largo. Corre con y sin
+          # efectos: la corrida de prueba (efectos=false) no llama al modelo, y así se ve que el grupo la entrega antes de
+          # que la use una noche. Vacía, en blanco o el literal `$(NOMBRE)` (la variable no existe) es «no llegó».
+          for K in OLLAMA_API_KEY ANTHROPIC_API_KEY; do
+            V="${!K:-}"
+            case "${V//[[:space:]]/}" in ''|'$('*')') echo "$K: no llegó" ;; *) echo "$K: llegó" ;; esac
+          done
+          exit 0
+        displayName: 'Ver si llegó la llave del modelo de la noche'
+        env:
+          OLLAMA_API_KEY: $(OLLAMA_API_KEY)
+          ANTHROPIC_API_KEY: $(ANTHROPIC_API_KEY)
 
       - script: |
           set -euo pipefail

@@ -95,6 +95,10 @@
           {
             "type": "command",
             "command": "node ${TCG}/scripts/hooks/context-size-notice.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/session-state.js"
           }
         ]
       }
@@ -129,6 +133,10 @@
           {
             "type": "command",
             "command": "node ${TCG}/scripts/hooks/why-blocked-notice.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/session-state.js"
           }
         ]
       }
@@ -277,6 +285,10 @@
           {
             "type": "command",
             "command": "node ${TCG}/scripts/hooks/wait-notice.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/session-state.js"
           }
         ]
       }
@@ -393,6 +405,13 @@
       "verdict": "ASIMETRÍA DECLARADA (2026-10-22, story 8.95): deprecated-read-notice.js avisa al leer un archivo deprecado. Del lado Claude se registra con matcher Read|Bash|PowerShell; Codex no emite evento para su herramienta propia de lectura, así que de su lado el aviso corre sólo por la terminal (su evento Bash: cat, sed -n, head…). Lo que Codex lea sin la terminal queda cubierto por la instrucción del arranque (deprecated-session-notice.js) y por los revisores, que reciben marcados los archivos deprecados del diff.",
       "scripts": [
         "deprecated-read-notice.js"
+      ]
+    },
+    {
+      "log": "session-state.js — Claude: SessionStart, SessionEnd, Notification (permission_prompt), PreToolUse de las preguntas, PostToolUse, UserPromptSubmit y Stop ↔ Codex: SessionStart, UserPromptSubmit y Stop (story 2.81, tanda A)",
+      "verdict": "ASIMETRÍA A PROPÓSITO (2026-11-01, story 2.81, decisión 7): Codex no avisa cuando pide un permiso ni cuando la sesión se cierra, y no tiene la herramienta de preguntas con opciones. De su lado el archivo de estado se crea al arrancar, la espera se anota sólo al cerrar el turno con un pipeline abierto (lo único que el arnés sabe por sí mismo) y se cierra con el próximo mensaje de la persona; un pedido de permiso de Codex no se ve, y la oficina no lo inventa. El fin de la sesión se infiere: sin pid estable (decisión 24d), una sesión sin cambios hace más de 2 h se muestra inactiva, y su archivo no se borra. En Claude se anotan los dos momentos que Codex no tiene: el pedido de permiso (Notification) y el cierre (SessionEnd, que borra el archivo).",
+      "scripts": [
+        "session-state.js"
       ]
     },
     {
