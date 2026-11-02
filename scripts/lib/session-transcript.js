@@ -1,8 +1,9 @@
 'use strict';
 /**
  * session-transcript.js — qué hace una sesión sin pipeline, leído de su conversación: el encargo (su primer mensaje de la
- * persona), lo que está haciendo (la última frase que escribió en su chat) y su última acción (la última herramienta, con
- * el nombre del archivo que tocó y a qué hora). De los mensajes sólo se dicen las oraciones que quedan enteras sin rutas ni código.
+ * persona, su primera oración), lo que está haciendo (la primera oración de su último mensaje, que es su conclusión; una
+ * pregunta o un consejo no dicen qué hace) y su última acción (la última herramienta, con el nombre del archivo que tocó y a
+ * qué hora). De los mensajes sólo se dicen las oraciones que quedan enteras sin rutas ni código.
  *
  * Se lee sólo el principio (64 KB) y el final (256 KB) del archivo, nunca entero; de ahí sólo esos tres datos, recortados
  * y en llano. Nada se guarda en disco: quien llama los pone en la foto local de la oficina, detrás de su token.
@@ -35,7 +36,7 @@ const ACTIONS = {
 const oneLine = (s) => String(s).replace(/\s+/g, ' ').trim();
 const cut = (s, n) => { const c = Array.from(s); return c.length > n ? `${c.slice(0, n - 1).join('')}…` : s; };
 // Sólo oraciones enteras: a la que le faltaría una ruta o un código no se la muestra a medias.
-const plainWhole = (t) => require(path.join(__dirname, '..', 'tools', 'office.js')).plainWhole(t);
+const plainWhole = (t) => require(path.join(__dirname, '..', 'tools', 'office.js')).plainWhole(t, { keepPrs: true });
 const textsOf = (content) => {
   if (typeof content === 'string') return [content];
   if (!Array.isArray(content)) return [];
@@ -48,18 +49,19 @@ const atHour = (ms) => { const d = new Date(ms); return `a las ${String(d.getHou
 // un punto de una abreviatura («Sr. García») no corta la oración
 const SENTENCES = /(?<!\b(?:Sr|Sra|Dr|Dra|Ing|Lic|Prof|Av|Art|art|núm|pág)\.)(?<=[.!?…])\s+(?=[\p{Lu}¿¡«"])/u;
 
-// La última frase de un texto, en llano y recortada: sin el formato del chat ni los renglones de antes.
-function lastSentence(text) {
+// Lo que no dice qué hace una sesión: una pregunta, un consejo, un pedido a quien lee o un «listo» suelto.
+const NOT_WHAT_IT_DOES = /\?\s*$|^¿|^(?:listo|ok|dale|bien|bueno|perfecto|hecho|entendido|sí)[.!]?$|^(?:te\s+)?(?:conviene|recomiendo|sugiero|propongo)\b|^(?:querés|decime|avisame|confirmame|habría que|deberías|podés)\b/iu;
+
+// La primera oración de un texto que diga qué hace, en llano y recortada: sin el formato del chat. null si ninguna lo dice.
+function firstSentence(text) {
   // sin los bloques de código ni las filas de una tabla: no son una frase
   const prose = String(text).replace(/^\s*```[\s\S]*?(?:^\s*```.*$|(?![\s\S]))/gm, '').split('\n').filter((l) => !/^\s*\|/.test(l));
   const lines = prose.map((l) => l.replace(/^[\s>#*`-]+|[*`]+\s*$/g, '').trim()).filter(Boolean);
   if (!lines.length) return null;
-  // de atrás para adelante: la última oración que se puede decir entera
-  for (let l = lines.length - 1; l >= 0; l -= 1) {
-    const parts = oneLine(lines[l]).split(SENTENCES).filter(Boolean);
-    for (let p = parts.length - 1; p >= 0; p -= 1) {
-      const said = plainWhole(parts[p]);
-      if (said) return cut(said, FRASE_MAX);
+  for (const line of lines) {
+    for (const part of oneLine(line).split(SENTENCES).filter(Boolean)) {
+      const said = plainWhole(part);
+      if (said && !NOT_WHAT_IT_DOES.test(said)) return cut(said, FRASE_MAX);
     }
   }
   return null;
@@ -126,16 +128,18 @@ function readTranscript(file, { io = fs } = {}) {
       if (!e || e.who !== 'user') continue;
       const t = e.texts.find((x) => x.trim() && !notFromPerson(x));
       if (t) {
-        const said = oneLine(t).split(SENTENCES).map(plainWhole).filter(Boolean).join(' ');
+        const said = oneLine(t).split(SENTENCES).map(plainWhole).find(Boolean);
         if (said) { out.encargo = cut(said, ENCARGO_MAX); break; }
       }
     }
-    for (let i = tailLines.length - 1; i >= 0 && !(out.haciendoAhora && out.ultimaAccion); i -= 1) {
+    // sólo su último mensaje: uno anterior ya no dice qué hace ahora
+    let lastMessageSeen = false;
+    for (let i = tailLines.length - 1; i >= 0 && !(lastMessageSeen && out.ultimaAccion); i -= 1) {
       const e = entryOf(tailLines[i]);
       if (!e || e.who !== 'assistant') continue;
-      if (!out.haciendoAhora) {
+      if (!lastMessageSeen) {
         const t = [...e.texts].reverse().find((x) => x.trim());
-        if (t) out.haciendoAhora = lastSentence(t);
+        if (t) { out.haciendoAhora = firstSentence(t); lastMessageSeen = true; }
       }
       if (!out.ultimaAccion && e.tools.length) {
         const tool = e.tools[e.tools.length - 1];

@@ -505,6 +505,19 @@ function changesOutsideRun(out) {
   }
   return false;
 }
+// Los archivos con cambios de esa misma salida, sin contar los de la propia corrida.
+function changedFiles(out) {
+  const entries = String(out).split('\0');
+  let n = 0;
+  for (let i = 0; i < entries.length; i += 1) {
+    const e = entries[i];
+    if (!e.trim()) continue;
+    const status = /^\s*(\S+)\s/.exec(e);
+    if (status && /[RC]/.test(status[1])) i += 1;
+    if (!e.replace(/^\s*\S+\s+/, '').startsWith('.advisors/')) n += 1;
+  }
+  return n;
+}
 const closedAtOf = (m) => {
   const t8 = (m.stepTimings || {})['prepare-commit'] || (m.stepTimings || {})['8'];
   return [t8 && t8.completedAt, m.lastTouch].map((v) => Date.parse(v)).find(Number.isFinite) || null;
@@ -942,6 +955,26 @@ function enteredMain(paths, ctx) {
   return seen;
 }
 
+// Lo que de verdad quedó de una sesión cerrada en sus carpetas: archivos sin guardar y commits que no están en la rama
+// principal, por carpeta. `unknown` si alguna no se pudo leer; una carpeta que ya no está no deja nada.
+function leftInFolders(roots, ctx) {
+  const left = [];
+  let unknown = false;
+  for (const [root, repo] of roots) {
+    const head = branchOf(repo);
+    // en la principal, lo que no sigue git no es de nadie en particular: el mismo criterio de `enteredMain`
+    const onMain = !head.err && (!head.branch || MAIN_BRANCHES.includes(head.branch));
+    const st = git(root, ['--no-optional-locks', 'status', '--porcelain', '-z', ...(onMain ? ['--untracked-files=no'] : [])], ctx);
+    if (st.err || head.err) { unknown = true; continue; }
+    const counts = MAIN_BRANCHES.map((b) => git(root, ['rev-list', '--count', `origin/${b}..HEAD`], ctx)).find((r) => !r.err);
+    if (!counts) unknown = true;
+    const changes = changedFiles(st.out);
+    const ahead = counts ? Number(counts.out) || 0 : 0;
+    if (changes || ahead) left.push({ folder: root, branch: head.branch || null, changes, ahead });
+  }
+  return { left, unknown };
+}
+
 // Lo que anotó una sesión con su nota sobre su hora: la que dice ahora, la primera que prometió por ese trabajo y qué
 // espera, desde cuándo. Quien espera no tiene hora: no se la inventa.
 function hourOfNote(d) {
@@ -1131,9 +1164,13 @@ function buildWip(opts = {}) {
     if (enteredMain(named2, leftCtx)) return { entered: true };
     // otra sesión viva sigue en esa misma carpeta: no quedó a medio camino, lo tiene ella
     const live = new Set([...sessions.values()].filter((s) => s.alive && s.cwd).map((s) => s.cwd));
-    const folders = [...rootsOf(named2, leftCtx).roots.keys()];
+    const { roots, unreadable: noRoots } = rootsOf(named2, leftCtx);
+    const folders = [...roots.keys()];
+    if (folders.length > 0 && folders.every((r) => live.has(r))) return { entered: true };
+    // la carpeta que tiene otra sesión viva es de ella; sin ninguna ruta que mirar, o con una ilegible, no se sabe
+    const { left, unknown } = leftInFolders(new Map([...roots].filter(([r]) => !live.has(r))), leftCtx);
     // sin saberlo por las carpetas, quien lo lea todavía puede preguntarle al pedido que nombre el trabajo
-    return folders.length > 0 && folders.every((r) => live.has(r)) ? { entered: true } : { folders };
+    return { folders, left, unknown: unknown || noRoots || !paths.length };
   };
   const touchedCache = new Map();
   const touchedOf = (sid) => {
@@ -1337,6 +1374,13 @@ function buildWip(opts = {}) {
     }
     if (pipe) {
       if (d.waitingFor) { Object.assign(extra[pipe.i], { waitingFor: String(d.waitingFor), waitingSince: hourOfNote(d).waitingSince }); rows[pipe.i].end = waitingEnd(d); }
+      else {
+        // la hora de la nota es de la ejecución si la nombra o si la de su paso ya venció; si no, es de lo que hace mientras tanto
+        const run = extra[pipe.i];
+        const runEnd = Number.isFinite(run.endAt) ? run.endAt : run.promisedAt;
+        const isOfRun = (run.storyId && String(d.text || '').includes(run.storyId)) || (Number.isFinite(runEnd) && runEnd < nowMs);
+        if (isOfRun && Number.isFinite(Date.parse(d.endAt)) && Number.isFinite(at) && !(at < run.hourAt) && !(at < run.runStartedAt)) Object.assign(run, { noteEnd: Date.parse(d.endAt), noteEndAt: at });
+      }
       const old = Number.isFinite(at) && nowMs - at > LOOSE_STALE_MS ? ` (sin tocar desde ${hhmm(at)})` : '';
       // la nota más nueva que el arreglo es lo de ahora: un carril viejo no la tapa
       const priorAt = extra[pipe.i].meanwhileAt;
