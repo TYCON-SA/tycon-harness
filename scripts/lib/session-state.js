@@ -3,7 +3,9 @@
  * session-state.js — el archivo de estado de cada sesión de Claude o de Codex: `<estado>/sessions/<sesión>.json`.
  *
  * Lo que dice: `{schema: 1, session, tool, name, sentence, step, endAt, endWithoutHour, waitingForOwner, waitingFor,
- * updatedAt, pid}`. Lo escriben los que saben cada cosa: marker.js el paso, la oración y la hora de fin (`refresh`), y el
+ * updatedAt, pid, busy}`. `busy` es de Codex, que no tiene un archivo de sesión propio: `true` con el mensaje de la
+ * persona, `false` con el fin de turno y `null` si no se sabe (de Claude lo dice su archivo de sesión). Lo escriben los
+ * que saben cada cosa: marker.js el paso, la oración y la hora de fin (`refresh`), y el
  * gancho scripts/hooks/session-state.js el arranque, la espera y el cierre. Cada uno lee el archivo, cambia sólo sus
  * campos y lo escribe entero, con un temporal que después se renombra; si lo que quedaría es lo mismo que ya dice (sin
  * contar `updatedAt`), no escribe, así la oficina no recibe un cambio falso. La oficina (scripts/tools/office.js) lo
@@ -22,7 +24,7 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..', '..');
 const SCHEMA = 1;
 const TOOLS = ['claude', 'codex'];
-const FIELDS = ['schema', 'session', 'tool', 'name', 'sentence', 'step', 'endAt', 'endWithoutHour', 'waitingForOwner', 'waitingFor', 'updatedAt', 'pid'];
+const FIELDS = ['schema', 'session', 'tool', 'name', 'sentence', 'step', 'endAt', 'endWithoutHour', 'waitingForOwner', 'waitingFor', 'updatedAt', 'pid', 'busy'];
 // la oración de una sesión sin pipeline ni trabajo suelto declarado: la misma que dice la oficina
 const NO_PIPELINE = 'Trabaja sin pipeline.';
 const DEAD_AFTER_MS = 2 * 3600 * 1000;
@@ -90,7 +92,7 @@ function readAll(sdir) {
 
 const fresh = (sid, tool) => ({
   schema: SCHEMA, session: String(sid), tool, name: null, sentence: NO_PIPELINE, step: null, endAt: null, endWithoutHour: null,
-  waitingForOwner: false, waitingFor: null, updatedAt: null, pid: null,
+  waitingForOwner: false, waitingFor: null, updatedAt: null, pid: null, busy: null,
 });
 const withoutTime = (s) => JSON.stringify(FIELDS.filter((k) => k !== 'updatedAt').map((k) => s[k] === undefined ? null : s[k]));
 

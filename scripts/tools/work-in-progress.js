@@ -16,8 +16,10 @@ function nn(v, d) { return v === undefined || v === null ? d : v; }
  * máquina (`timing-history/`), contando sólo los pasos con arranque y fin medidos (`step-times.js`), más la entrada a
  * los repos de la story (CI, cola y merge: la mediana del tiempo entre el último commit de cada rama y su merge, leída
  * de su historia de git). La hora es fija: cuenta desde el arranque del paso en curso, y pasado su estimado dice
- * «atrasada (estimado HH:MM)»; nunca corre con el reloj. Si algún paso que falta no tiene mediana, no hay hora: se dice
- * cuál. Un repo sin merges medidos queda afuera de la hora, y se dice.
+ * «atrasada (estimado HH:MM)»; nunca corre con el reloj. marker.js la anota al entrar a cada paso (`horaDelPaso`), y es
+ * ésa aunque cambien las medianas; una hora vencida dice «vieja (de las HH:MM)» si se calculó hace más de una hora, o
+ * «sin hora: el trabajo cambió» si además la corrida lleva una hora sin actividad. Si algún paso que falta no tiene
+ * mediana, no hay hora: se dice cuál. Un repo sin merges medidos queda afuera de la hora, y se dice.
  *
  * Una sesión viva sin marcador ni ad-hoc también puede estar trabajando (un video, una medición, una story que todavía
  * no armó su marcador): si su archivo de sesión dice `busy`, o tuvo actividad en los últimos 5 minutos, sale en la tabla
@@ -36,7 +38,12 @@ function nn(v, d) { return v === undefined || v === null ? d : v; }
  * El programa no limpia nada.
  *
  * Un marcador sin pasos pendientes está terminado y no se muestra. Uno sin tocar hace más de 24 h no cuenta, igual que
- * para `marker.js list-all`, que lo descarta; acá sólo se dice cuántos hay, sin borrarlos.
+ * para `marker.js list-all`, que lo descarta; acá sólo se dice cuántos hay, sin borrarlos. Salvo el dejado a propósito
+ * (`marker.js park`, o `paused_until:` en la historia): se sigue viendo con esa marca, sin hora y sin «limpiar».
+ *
+ * La columna «Estado» suma el estado real de la sesión, el mismo que dibuja /office: parada desde cuándo, o «Tu firma» con
+ * lo que espera (`realState`). Una corrida terminada, sin pedidos y con cambios sin commitear en sus repos espera el ok de
+ * guardar, aunque su sesión esté cerrada: lo dice el árbol del repo, no la falta de `saveOk`.
  *
  * Excepción: si cerró el paso 8 y su sesión sigue viva (de sus cierres cuenta el que cerró último), la story puede estar esperando entrar a los repos (la CI, la
  * cola, un pedido en borrador). Se buscan sus repos (`repoPath` y la raíz git de cada archivo tocado, salvo los que
@@ -131,6 +138,43 @@ function storyBatch(storyPath) {
   // en blanco
   const running = parsePipelinesBlock(text).filter((p) => p.status === 'in-progress');
   return running.length === 1 && running[0].title ? running[0].title : null;
+}
+
+// ── La marca de una corrida dejada a propósito («en fila» o «en pausa») ──────────────────────────────────────────────
+// `<estado>/parked/<sesión>.json`, que escribe `marker.js park`: `{story, kind: queue | until, until, at, by}`. Vale para
+// esa historia, y sólo para la corrida que ya estaba cuando se marcó. Una historia con `paused_until:` dice lo mismo.
+const QUEUE_MARK = 'En fila para pruebas';
+function readParked(sdir, unreadable) {
+  const out = new Map();
+  for (const file of jsonFiles(path.join(sdir, 'parked'), unreadable)) {
+    try { out.set(path.basename(file, '.json'), readObject(file)); } catch (e) { unreadable.push(`${file}: ${e.message}`); }
+  }
+  return out;
+}
+const localYmd = (ms) => { const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+// La fecha de `paused_until:` de una historia, o null. Una historia que no se puede leer no dice que no está en pausa: el
+// motivo queda en `unreadable`, si viene.
+function storyPausedUntil(storyPath, unreadable) {
+  if (typeof storyPath !== 'string' || !storyPath) return null;
+  try {
+    const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(fs.readFileSync(storyPath, 'utf8'));
+    const line = fm && /^paused_until:[ \t]*["']?(\d{4}-\d\d-\d\d)/m.exec(fm[1]);
+    return line ? line[1] : null;
+  } catch (e) {
+    if (unreadable && !ABSENT_FILE.includes(e && e.code)) unreadable.push(`${storyPath}: no pude ver si está en pausa (${(e && e.code) || (e && e.message)})`);
+    return null;
+  }
+}
+// Lo que dice una corrida marcada, o null. La fecha pasada no la saca: dice que venció y se sigue viendo.
+function markOf(m, sid, parked, nowMs, unreadable) {
+  const mark = parked.get(String(sid).replace(/[/\\]/g, '_'));
+  const started = Date.parse(m.startedAt);
+  const marked = mark && String(mark.story) === String(m.storyId) && !(Number.isFinite(started) && Date.parse(mark.at) < started) ? mark : null;
+  if (marked && marked.kind === 'queue') return QUEUE_MARK;
+  const until = marked && typeof marked.until === 'string' ? marked.until : storyPausedUntil(m.storyPath, unreadable);
+  if (!until) return null;
+  const [, mo, da] = until.split('-');
+  return localYmd(nowMs) > until ? `En pausa: venció el ${da}/${mo}` : `En pausa hasta el ${da}/${mo}`;
 }
 
 // La columna «Fin estimado» del arreglo rápido y de la nota: la hora que declaró la sesión (`raw`, ya leída en `ms`).
@@ -259,7 +303,7 @@ function sessionsBySid(dir, unreadable, projectsDir) {
     const cwd = typeof s.cwd === 'string' ? s.cwd : null;
     // el nombre es el del archivo de sesión, el que usan los mensajes; sin él, el último /rename de la conversación
     const name = (typeof s.name === 'string' && s.name.trim()) ? cut(oneLine(s.name), NAME_MAX) : sessionTitle(projectsDir, cwd, s.sessionId, unreadable);
-    const cur = { name: name || null, alive, busy: s.status === 'busy', status: typeof s.status === 'string' ? s.status : null, statusAt: Number(s.statusUpdatedAt) || null, nameSource: typeof s.nameSource === 'string' ? s.nameSource : null, kind: typeof s.kind === 'string' ? s.kind : null, jobId: typeof s.jobId === 'string' ? s.jobId : null, startedAt: Number(s.startedAt) || null, cwd, last: dates.length ? Math.max(...dates) : null, internal: isInternalAgent(cwd, s.nameSource) };
+    const cur = { name: name || null, alive, busy: s.status === 'busy' || s.status === 'shell', status: typeof s.status === 'string' ? s.status : null, statusAt: Number(s.statusUpdatedAt) || null, nameSource: typeof s.nameSource === 'string' ? s.nameSource : null, kind: typeof s.kind === 'string' ? s.kind : null, jobId: typeof s.jobId === 'string' ? s.jobId : null, startedAt: Number(s.startedAt) || null, cwd, last: dates.length ? Math.max(...dates) : null, internal: isInternalAgent(cwd, s.nameSource) };
     // Dos archivos con la misma sesión: manda el vivo, y la actividad es la más nueva de los dos.
     const prev = out.get(s.sessionId);
     if (!prev || (!prev.alive && alive)) out.set(s.sessionId, prev && prev.last > nn(cur.last, -1) ? { ...cur, last: prev.last } : cur);
@@ -279,18 +323,48 @@ function entryNote(entry) {
   return entry.missing.length ? ` (sin la entrada a ${entry.missing.join(', ')}: sin merges medidos)` : ' (con la entrada a los repos)';
 }
 
+// Los pasos que cuentan para la hora: los que se dan por hechos con una bandera (el pase adversarial, la prueba en vivo)
+// no tienen mediana propia, y su tiempo cae en el paso que acompañan, como los sub-pasos viejos.
+const pendingForHour = (marker) => (marker.stepsPending || []).map(String).filter((s) => !(byId(s) && (byId(s).flag || !byId(s).number)));
+// `horaDelPaso` si es del paso en curso y se puede leer: `{ at, computedAt }` en milisegundos; si no, null.
+function hourOfStep(marker) {
+  const h = marker && marker.horaDelPaso;
+  if (!h || typeof h !== 'object' || String(h.step) !== pendingForHour(marker)[0]) return null;
+  const at = Date.parse(h.at);
+  return Number.isFinite(at) ? { at, computedAt: Date.parse(h.computedAt) } : null;
+}
+
+// Lo que se dice en lugar de la hora cuando ya no dice nada: la del trabajo que cambió (vencida hace rato en una corrida
+// sin actividad en la última hora) o la que se calculó o declaró hace más de una hora. null: la hora vale, y si pasó, es
+// atraso. Sin fechas no se juzga.
+const WORK_CHANGED = 'sin hora: el trabajo cambió';
+function hourVerdict({ endAt, hourAt, activityAt, nowMs, run = false }) {
+  if (!Number.isFinite(endAt) || endAt >= nowMs) return null;
+  const oldHour = Number.isFinite(hourAt) && nowMs - hourAt > LOOSE_STALE_MS;
+  if (run && Number.isFinite(activityAt) && nowMs - activityAt > LOOSE_STALE_MS && (oldHour || nowMs - endAt > LOOSE_STALE_MS)) return WORK_CHANGED;
+  return oldHour ? `vieja (de las ${hhmm(hourAt)})` : null;
+}
+
 // La hora es fija: arranque del paso en curso + su mediana + las de los pasos que faltan + la entrada a los repos.
 // Pasado el estimado del paso en curso, dice «atrasada» con esa hora; nunca corre con el reloj (si corriera, un paso
 // pasado de su mediana mostraría la hora actual y escondería el atraso).
 // En `info`, si viene, quedan la hora en milisegundos (`at`) y si está atrasada (`late`).
+// Con la hora que marker.js anotó al entrar a este paso (`horaDelPaso`), es ésa: misma entrada, misma hora, aunque cambien
+// las medianas. En `info` quedan además cuándo se calculó (`computedAt`) y el paso (`step`).
 function estimateEnd(marker, medians, nowMs, entry, info = {}) {
-  // los pasos que se dan por hechos con una bandera (el pase adversarial, la prueba en vivo) no tienen mediana propia:
-  // su tiempo cae en el paso que acompañan, como los sub-pasos viejos
-  const pending = (marker.stepsPending || []).map(String).filter((s) => !(byId(s) && (byId(s).flag || !byId(s).number)));
+  const pending = pendingForHour(marker);
   if (!pending.length) return 'sin datos (no quedan pasos)';
+  const current = pending[0];
+  const fixedHour = hourOfStep(marker);
+  if (fixedHour) {
+    info.at = fixedHour.at;
+    info.computedAt = fixedHour.computedAt;
+    info.step = current;
+    info.late = nowMs > fixedHour.at;
+    return nowMs > fixedHour.at ? `atrasada (estimado ${hhmm(fixedHour.at)})` : hhmm(fixedHour.at);
+  }
   const missing = pending.find((s) => medians[s] == null);
   if (missing !== undefined) return `sin datos (${stateOf(missing)})`;
-  const current = pending[0];
   const timings = marker.stepTimings || {};
   let since = timings[current] && Date.parse(timings[current].startedAt);
   // Sin arranque anotado del paso en curso, se cuenta desde el fin del último paso: la hora es aproximada y se dice.
@@ -318,10 +392,29 @@ function endOf(marker, opts = {}) {
   const home = opts.home || os.homedir();
   const sdir = opts.stateDir || stateDir(home);
   const nowMs = Number.isFinite(opts.now) ? opts.now : Date.now();
+  // con la hora anotada de este paso no hace falta leer la historia de la máquina ni los repos
+  if (hourOfStep(marker)) return { endAt: hourOfStep(marker).at, endWithoutHour: null };
   const medians = stepMedians(path.join(sdir, 'timing-history'), []);
   const info = {};
-  const text = estimateEnd(marker, medians, nowMs, storyEntry(marker, { until: Date.now() + GIT_BUDGET_MS, cache: new Map() }), info);
-  return info.at == null ? { endAt: null, endWithoutHour: text } : { endAt: info.at, endWithoutHour: null };
+  const ctx = { until: Date.now() + GIT_BUDGET_MS, cache: new Map() };
+  const entry = storyEntry(marker, ctx);
+  const text = estimateEnd(marker, medians, nowMs, entry, info);
+  return info.at == null ? { endAt: null, endWithoutHour: text } : { endAt: info.at, endWithoutHour: null, partial: Boolean(ctx.gitTimedOut) };
+}
+
+/**
+ * La hora de este paso para anotar en el marcador (`horaDelPaso`), que marker.js escribe al arrancar o cerrar un paso:
+ * la que ya estaba si es del paso en curso (queda fija hasta el próximo), la nueva si no, y null sin paso o sin datos.
+ */
+function hourForStep(marker, opts = {}) {
+  const step = pendingForHour(marker)[0];
+  if (step === undefined) return null;
+  if (hourOfStep(marker)) return marker.horaDelPaso;
+  const { endAt, partial } = endOf({ ...marker, horaDelPaso: null }, opts);
+  // (un repo sin merges no cuenta: ahí no hay más dato que esperar)
+  const now = Number.isFinite(opts.now) ? opts.now : Date.now();
+  // una hora calculada sin la entrada a un repo (git no contestó a tiempo) no se fija para todo el paso
+  return endAt == null || partial ? null : { step, at: new Date(endAt).toISOString(), computedAt: new Date(now).toISOString() };
 }
 
 // La story que cerró el paso 8 y espera sus pedidos: el cierre del 8 más la entrada a los repos.
@@ -341,6 +434,80 @@ function enteringEnd(marker, entry, nowMs, info = {}) {
 
 const ENTERING = 'Entrando a los repos';
 const STALLED = 'Pedidos sin encolar';
+const SAVE_WAITS = 'Terminó: espera el ok para guardar';
+const SAVE_OK = 'Terminó: ya tiene el ok para guardar';
+const WAITING_STATUS = /wait|input|permission/i;
+const TESTING_STEPS = new Set(['run-tests', 'reviewers', 'adversarial-pass', 'live-check']);
+
+/**
+ * El estado real de una sesión con trabajo: `{ estado, parada?, espera? }`, de lo que dice la herramienta y no del paso.
+ * `x` es lo que la fila sabe de su trabajo, `d` lo que dice el archivo de sesión de Claude (`status`, `statusAt`) y `f` el
+ * archivo de estado de la sesión. La espera anotada manda sobre «ocupada»: quien pide un permiso espera. Sin un estado
+ * legible, sale por su paso y no cuenta como parada.
+ */
+function realState(x, d, f) {
+  if (f && f.waitingForOwner) return { estado: 'firma', espera: f.waitingFor || 'algo de vos' };
+  if (d && d.status && WAITING_STATUS.test(d.status)) return { estado: 'firma', espera: 'tu respuesta en su pantalla' };
+  const codex = Boolean(f && f.tool === 'codex');
+  const status = d && d.status;
+  const busy = codex ? (typeof f.busy === 'boolean' ? f.busy : null) : status === 'busy' || status === 'shell' ? true : status === 'idle' ? false : null;
+  if (x.kind === 'entering' || x.kind === 'stalled') return { estado: 'espera' };
+  // terminada sin nada que guardar (`nothingToSave`: una marcada con el árbol limpio) no espera ningún ok
+  if (x.kind === 'finished') return busy === false && !x.saveOk && !x.nothingToSave ? { estado: 'firma', espera: 'el ok para guardar' } : { estado: 'trabajando' };
+  if (busy === false) {
+    if (x.kind === 'pipeline' && x.current === 'approve-plan') return { estado: 'firma', espera: 'que apruebes el plan' };
+    const at = codex ? Date.parse(f.updatedAt) : Number(d && d.statusAt);
+    return { estado: 'parada', parada: Number.isFinite(at) && at > 0 ? `parada desde las ${hhmm(at)}` : 'parada' };
+  }
+  return { estado: x.kind === 'pipeline' && TESTING_STEPS.has(x.current) ? 'prueba' : 'trabajando' };
+}
+
+// ¿El trabajo de ahora (un arreglo o una nota, fresco y posterior a su última actividad) tapa a esta corrida abierta?
+const replacedByNewer = (x, nowMs) => x.kind === 'pipeline' && Number.isFinite(x.meanwhileAt) && Number.isFinite(x.activityAt) && x.meanwhileAt > x.activityAt && nowMs - x.meanwhileAt <= LOOSE_STALE_MS;
+
+// ¿Le quedan cambios sin commitear a los repos de la corrida? La señal de que espera el ok de guardar: guardar se autoriza
+// en la ventana de permiso, así que la falta de `saveOk` no dice nada. La carpeta de la corrida (`.advisors/`) no es
+// trabajo sin guardar. `{ dirty, problems }`: un repo que no se puede leer no dice que espera. La carpeta de la corrida
+// puede estar en otra rama, con el trabajo de otro: en la principal o en la de otra historia, sus cambios no son de ésta.
+function unsavedChanges(m, ctx) {
+  const mine = ofStory(m, ctx);
+  const id = m.storyId ? String(m.storyId) : '';
+  const failures = [];
+  const problems = [];
+  let dirty = false;
+  const roots = storyRepos(m, failures, ctx);
+  // la carpeta que ya no está es la de una historia que entró (se borra al mergear): no es un problema
+  for (const f of failures) if (!/: ya no existe$/.test(f)) problems.push(f);
+  for (const root of roots) {
+    const repo = repoOf(root, ctx);
+    if (repo && repo.err) { problems.push(`${path.basename(root)}: ${repo.err}`); continue; }
+    const head = repo ? branchOf(repo) : null;
+    if (head && head.err) { problems.push(`${path.basename(root)}: ${head.err}`); continue; }
+    if (!head || !mine(root, head.branch) || MAIN_BRANCHES.includes(head.branch)) continue;
+    const named = storyOfBranch(head.branch);
+    if (named && id && named !== id) continue;
+    const st = git(root, ['--no-optional-locks', 'status', '--porcelain', '-z'], ctx);
+    if (st.err) { problems.push(`${path.basename(root)}: ${st.err}`); continue; }
+    if (changesOutsideRun(st.out)) dirty = true;
+  }
+  return { dirty, problems };
+}
+// `git status --porcelain -z`: cada entrada termina en NUL, sin citar la ruta; un renombre o una copia traen además su origen.
+function changesOutsideRun(out) {
+  const entries = String(out).split('\0');
+  for (let i = 0; i < entries.length; i += 1) {
+    const e = entries[i];
+    if (!e.trim()) continue;
+    const status = /^\s*(\S+)\s/.exec(e);
+    if (!e.replace(/^\s*\S+\s+/, '').startsWith('.advisors/')) return true;
+    if (status && /[RC]/.test(status[1]) && !String(entries[++i] || '').startsWith('.advisors/')) return true;
+  }
+  return false;
+}
+const closedAtOf = (m) => {
+  const t8 = (m.stepTimings || {})['prepare-commit'] || (m.stepTimings || {})['8'];
+  return [t8 && t8.completedAt, m.lastTouch].map((v) => Date.parse(v)).find(Number.isFinite) || null;
+};
 // el fin de una story con el paso 8 cerrado: sin un pedido en la cola no hay hora que estimar
 const closedEnd = (state, m, entry, nowMs, info) => (state.startsWith(STALLED) ? 'sin estimación (ningún pedido está en la cola: hay que encolarlo)' : enteringEnd(m, entry, nowMs, info));
 
@@ -369,8 +536,9 @@ const GIT_BUDGET_MS = 3000;
 function git(dir, args, ctx) {
   const key = `${dir}\0${args.join(' ')}`;
   if (ctx.cache.has(key)) return ctx.cache.get(key);
-  if (Date.now() > ctx.until) return { err: `se pasó del tope de ${GIT_BUDGET_MS / 1000} s leyendo los repos`, status: null };
+  if (Date.now() > ctx.until) { ctx.gitTimedOut = true; return { err: `se pasó del tope de ${GIT_BUDGET_MS / 1000} s leyendo los repos`, status: null }; }
   const res = gitNow(dir, args, Math.max(1, Math.min(GIT_MS, ctx.until - Date.now())));
+  if (res.err && res.status == null) ctx.gitTimedOut = true;
   ctx.cache.set(key, res);
   return res;
 }
@@ -565,6 +733,14 @@ function repoQuery(root, failures, ctx) {
   return { root, branch: head.branch, ...parseRemote(origin.url) };
 }
 
+// Adónde apunta el `origin` de una carpeta, en la rama que sea: `parseRemote`, o null si no se sabe.
+function remoteOfFolder(root) {
+  const repo = repoOf(root, { until: Date.now() + GIT_BUDGET_MS, cache: new Map() });
+  if (!repo || repo.err) return null;
+  const origin = originOf(repo);
+  return origin.url ? parseRemote(origin.url) : null;
+}
+
 // La identidad del repo para la capa de plataforma, sacada de su origin.
 function identityOf(q) {
   if (q.kind === 'github') { const [org, repo] = q.slug.split('/'); return { platform: 'github', org, repo }; }
@@ -584,13 +760,11 @@ function killQuery(child) {
   } catch { /* ya terminó */ }
 }
 
-// Los pedidos abiertos de la rama, con `change-request list` de la capa lanzada como proceso: `{ prs }` o `{ error }`.
-// Un «no» de la capa trae su motivo; choca con main lo dice el conector (`mergeState: 'conflict'`).
-function runQuery(q, perMs, env, children) {
+// Una operación de la capa de plataforma lanzada como proceso: lo que devuelve `onValue` con su `value`, o `{ error }`. Un
+// «no» de la capa trae su motivo.
+function askLayer(args, perMs, env, children, onValue) {
   return new Promise((resolve) => {
-    const args = [PLATFORM, 'change-request', 'list', '--repo', JSON.stringify(identityOf(q)),
-      '--args', JSON.stringify({ sourceBranch: q.branch, checks: false, deadlineMs: Date.now() + perMs })];
-    const child = spawn(process.execPath, args, { env, windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, [PLATFORM, ...args], { env, windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'] });
     children.push(child);
     let out = '';
     let err = '';
@@ -606,22 +780,42 @@ function runQuery(q, perMs, env, children) {
       let r;
       try { r = JSON.parse(out); } catch { fail(`respuesta ilegible (${oneLine(err || out).slice(0, 200) || `salió ${code}`})`); return; }
       if (!r || r.ok !== true) { fail(`${(r && r.reason) || 'no_medido'}: ${oneLine((r && r.detail) || 'sin detalle').slice(0, 200)}`); return; }
-      if (!Array.isArray(r.value)) { fail('respuesta ilegible (no es una lista)'); return; }
-      const prs = r.value.map((p) => ({
-        number: p && p.number, draft: Boolean(p && p.draft === true), conflict: Boolean(p && p.mergeState === 'conflict'),
-        offQueue: Boolean(p && typeof p === 'object' && offQueueOf(p)),
-        // sin borrador ni auto-completar, la plataforma no supo si está en la cola: se dice, no se da por encolado
-        queueUnknown: Boolean(p && typeof p === 'object' && p.draft !== true && !p.autoComplete && p.inQueue === null),
-      }));
-      if (!prs.every((p) => Number.isInteger(p.number))) { fail('respuesta ilegible (un pedido sin número)'); return; }
-      done({ prs });
+      const v = onValue(r.value);
+      if (v && v.bad) { fail(v.bad); return; }
+      done(v);
     });
   });
 }
 
+// Los pedidos abiertos de la rama, con `change-request list`: `{ prs }` o `{ error }`. Choca con main lo dice el conector
+// (`mergeState: 'conflict'`).
+function runQuery(q, perMs, env, children) {
+  const args = ['change-request', 'list', '--repo', JSON.stringify(identityOf(q)),
+    '--args', JSON.stringify({ sourceBranch: q.branch, checks: false, deadlineMs: Date.now() + perMs })];
+  return askLayer(args, perMs, env, children, (value) => {
+    if (!Array.isArray(value)) return { bad: 'respuesta ilegible (no es una lista)' };
+    const prs = value.map((p) => ({
+      number: p && p.number, draft: Boolean(p && p.draft === true), conflict: Boolean(p && p.mergeState === 'conflict'),
+      offQueue: Boolean(p && typeof p === 'object' && offQueueOf(p)),
+      // sin borrador ni auto-completar, la plataforma no supo si está en la cola: se dice, no se da por encolado
+      queueUnknown: Boolean(p && typeof p === 'object' && p.draft !== true && !p.autoComplete && p.inQueue === null),
+    }));
+    if (!prs.every((p) => Number.isInteger(p.number))) return { bad: 'respuesta ilegible (un pedido sin número)' };
+    return { prs };
+  });
+}
+
+// Un pedido que nombra el tablero de la coordinadora, por su número, con `change-request read`: `{ pr }` o `{ error }`.
+// `q`: `{ repo, numero, identity }`; sin identidad no se sabe a quién preguntarle.
+function runRead(q, perMs, env, children) {
+  if (!q.identity) return Promise.resolve({ error: `no sé en qué plataforma vive el repo ${q.repo}` });
+  const args = ['change-request', 'read', '--repo', JSON.stringify(q.identity), '--args', JSON.stringify({ number: q.numero, deadlineMs: Date.now() + perMs })];
+  return askLayer(args, perMs, env, children, (value) => (value && typeof value === 'object' && !Array.isArray(value) ? { pr: value } : { bad: 'respuesta ilegible (no es un pedido)' }));
+}
+
 // Todas las consultas a la vez, cada una con su tope y todas juntas con otro; al vencer el total se matan las que
 // siguen vivas, para que el comando termine. Lo que no contesta es un error.
-function queryAll(queries, { perMs = PER_QUERY_MS, totalMs = ALL_QUERIES_MS, env = process.env } = {}) {
+function queryAll(queries, { perMs = PER_QUERY_MS, totalMs = ALL_QUERIES_MS, env = process.env, run = runQuery } = {}) {
   const children = [];
   let timer;
   const late = new Promise((resolve) => {
@@ -630,8 +824,9 @@ function queryAll(queries, { perMs = PER_QUERY_MS, totalMs = ALL_QUERIES_MS, env
       resolve({ error: `se pasó del tope de ${totalMs / 1000} s para todas las consultas` });
     }, totalMs);
   });
-  return Promise.all(queries.map((q) => Promise.race([runQuery(q, perMs, env, children), late]))).finally(() => clearTimeout(timer));
+  return Promise.all(queries.map((q) => Promise.race([run(q, perMs, env, children), late]))).finally(() => clearTimeout(timer));
 }
+const readPrs = (queries, opts = {}) => queryAll(queries, { ...opts, run: runRead });
 
 // La rama de una carpeta, o '' (sin repo, sin rama, o que no existe). Un repo roto o un HEAD que no se lee van a
 // `unreadable` (una vez cada uno), no se callan.
@@ -644,11 +839,13 @@ function branchAt(dir, ctx, unreadable) {
   return head && !head.err ? head.branch : '';
 }
 
-// La story de la rama de la carpeta de una sesión (`story/<id>…`), o `null`.
-function storyBranch(dir, ctx, unreadable) {
-  const x = /^story\/(\d+(?:\.\d+)+)(?:[-/]|$)/.exec(branchAt(dir, ctx, unreadable));
+// La story que nombra una rama (`story/<id>…`), o `null`.
+function storyOfBranch(branch) {
+  const x = /^story\/(\d+(?:\.\d+)+)(?:[-/]|$)/.exec(branch || '');
   return x ? x[1] : null;
 }
+// La story de la rama de la carpeta de una sesión, o `null`.
+const storyBranch = (dir, ctx, unreadable) => storyOfBranch(branchAt(dir, ctx, unreadable));
 
 // Qué hace una sesión sin pipeline: su carpeta y la rama en que está (sin rama: sólo la carpeta).
 function sessionPlace(cwd, ctx, unreadable) {
@@ -878,6 +1075,7 @@ function buildWip(opts = {}) {
 
   let stale = 0;
   let staleWaiting = 0;
+  const parked = readParked(sdir, unreadable);
   for (const file of jsonFiles(path.join(sdir, 'active'), unreadable)) {
     let m;
     try { m = readObject(file); } catch (e) { unreadable.push(`${file}: ${e.message}`); continue; }
@@ -889,21 +1087,32 @@ function buildWip(opts = {}) {
     if (!Number.isFinite(touched)) {
       try { touched = fs.statSync(file).mtimeMs; } catch (e) { unreadable.push(`${file}: sin fecha legible (${e.message})`); continue; }
     }
+    const sid = m.sessionId || path.basename(file, '.json');
+    // la dejada a propósito se sigue viendo aunque lleve días sin tocarse
+    const mark = markOf(m, sid, parked, nowMs, unreadable);
+    // Con el paso 8 cerrado, lo que queda sin guardar espera al dueño aunque lleve días sin tocarse
+    const tree = closed ? unsavedChanges(m, gitCtx) : null;
+    const tellProblems = () => { for (const p of tree.problems) unreadable.push(`story ${m.storyId || '?'}: no se pudo leer si le quedan cambios sin guardar (${p})`); };
     // un cerrado viejo con la sesión muerta es una corrida terminada; con la sesión viva no se sabe si sus pedidos
     // entraron: se dice al pie, y la sesión sale con lo que hace hoy (o libre)
-    if (nowMs - touched > STALE_MS) {
-      const sid = m.sessionId || path.basename(file, '.json');
+    if (nowMs - touched > STALE_MS && !mark && !(tree && tree.dirty)) {
       if (!closed) stale += 1;
       else if (liveName(sid)) staleWaiting += 1;
+      if (tree) tellProblems();
       continue;
     }
-    const sid = m.sessionId || path.basename(file, '.json');
-    // Con el paso 8 cerrado sólo cuenta si la sesión vive y la story todavía no entró a sus repos.
+    // Con el paso 8 cerrado cuenta si la sesión vive y la story todavía no entró a sus repos, o si le quedan cambios sin
+    // guardar (viva o no: espera el ok del dueño). `save`: 'waits' o, con el ok ya dado, 'ok'.
     let entering = null;
+    let save = null;
     if (closed) {
-      if (!liveName(sid)) continue;
+      if (!liveName(sid) && !tree.dirty && !mark) { tellProblems(); continue; }
       entering = enteringState(m, opts.prs, unreadable, wanted, gitCtx);
-      if (!entering) continue;
+      if (!entering) {
+        tellProblems();
+        if (tree.dirty) save = m.saveOk ? 'ok' : 'waits';
+        if (!save && !mark) continue;
+      } else if (!liveName(sid) && !mark) continue;
     }
     busy.add(sid);
     let title;
@@ -912,21 +1121,36 @@ function buildWip(opts = {}) {
       unreadable.push(`${m.storyPath || '(sin ruta de story)'}: ${e.code === 'ENOENT' ? 'no existe' : e.message}`);
     }
     // con el esquema por nombre, el que sigue incluye los pasos de bandera («Probar en vivo»), que stepsPending no lista
-    const step = entering || stateOf((schemeOf(m) === 2 && pendingSteps(m)[0]) || m.stepsPending[0]);
+    const saveText = save === 'waits' ? SAVE_WAITS : save === 'ok' ? SAVE_OK : null;
+    const step = mark || entering || saveText || (closed ? 'Terminó' : stateOf((schemeOf(m) === 2 && pendingSteps(m)[0]) || m.stepsPending[0]));
     const work = `${m.storyId || '?'} · ${cut(title, TITLE_MAX)}`;
     const label = liveName(sid);
+    const stages = stagesOf(m);
     if (label) {
       const entry = storyEntry(m, gitCtx);
       pipeRows.set(sid, { i: rows.length, m });
       const info = {};
-      const end = entering ? closedEnd(entering, m, entry, nowMs, info) : estimateEnd(m, medians, nowMs, entry, info);
-      const kind = !entering ? 'pipeline' : entering.startsWith(STALLED) ? 'stalled' : 'entering';
+      let end = entering ? closedEnd(entering, m, entry, nowMs, info) : closed ? 'sin estimación (ya terminó)' : estimateEnd(m, medians, nowMs, entry, info);
+      const kind = save ? 'finished' : !entering && closed ? 'finished' : !entering ? 'pipeline' : entering.startsWith(STALLED) ? 'stalled' : 'entering';
+      const promisedAt = promisedOf(m);
+      const activityAt = Date.parse(m.lastTouch);
+      const verdict = kind === 'pipeline' ? hourVerdict({ endAt: info.at == null ? promisedAt : info.at, hourAt: info.computedAt, activityAt, nowMs, run: true }) : null;
+      if (verdict) end = verdict;
+      if (mark) end = 'sin hora de fin';
       addRow({ work, state: step, end, session: label, folder: folderOf(sid, m.repoPath) }, sid,
-        { kind, storyId: m.storyId ? String(m.storyId) : null, title, batch: storyBatch(m.storyPath), endAt: info.at == null ? null : info.at, late: Boolean(info.late), promisedAt: promisedOf(m), ...stagesOf(m) });
+        { kind, storyId: m.storyId ? String(m.storyId) : null, title, batch: storyBatch(m.storyPath), endAt: info.at == null ? null : info.at, late: Boolean(info.late), promisedAt, ...stages,
+          ...(mark ? { mark } : {}), ...(save === 'ok' ? { saveOk: true } : {}), ...(kind === 'finished' && !save ? { nothingToSave: true } : {}),
+          ...(info.step !== undefined ? { hourStep: stepName(info.step) || `paso ${info.step}`, hourAt: info.computedAt } : {}),
+          activityAt: Number.isFinite(activityAt) ? activityAt : null, runStartedAt: Date.parse(m.startedAt) || null, closedAt: closed ? closedAtOf(m) : null });
     }
     else {
-      halfway.push(`${work} · ${nameOf(sid)} · quedó en: ${step} · limpiar: node ${MARKER_JS} clear-session ${sid}`);
-      halfwayItems.push({ kind: 'run', text: title, cleanAfter: null, sid });
+      const awaits = save === 'waits' ? 'save' : !closed && stages.current === 'approve-plan' ? 'plan' : null;
+      const item = { kind: 'run', text: title, cleanAfter: null, sid, name: nameOf(sid), storyId: m.storyId ? String(m.storyId) : null, ...(awaits ? { awaits } : {}), ...(mark || save === 'ok' ? { mark: mark || SAVE_OK } : {}) };
+      // lo marcado, sin guardar o que espera al dueño no se ofrece limpiar: limpiarlo pierde el trabajo. La firma le gana a la marca
+      if (awaits === 'plan') halfway.push(`${work} · ${nameOf(sid)} · ${mark ? `${mark} · ` : ''}Tu firma: que apruebes el plan`);
+      else if (mark || save) halfway.push(`${work} · ${nameOf(sid)} · ${mark && save === 'waits' ? `${mark} · ${SAVE_WAITS}` : step}`);
+      else halfway.push(`${work} · ${nameOf(sid)} · quedó en: ${step} · limpiar: node ${MARKER_JS} clear-session ${sid}`);
+      halfwayItems.push(item);
     }
   }
 
@@ -950,7 +1174,7 @@ function buildWip(opts = {}) {
     const info = {};
     const end = closedEnd(entering, m, storyEntry(m, gitCtx), nowMs, info);
     addRow({ work: `${m.storyId || '?'} · ${cut(title, TITLE_MAX)}`, state: entering, end, session: liveName(sid), folder: folderOf(sid, m.repoPath) }, sid,
-      { kind: entering.startsWith(STALLED) ? 'stalled' : 'entering', storyId: m.storyId ? String(m.storyId) : null, title, batch: storyBatch(m.storyPath), endAt: info.at == null ? null : info.at, late: Boolean(info.late), promisedAt: promisedOf(m), ...stagesOf(m) });
+      { kind: entering.startsWith(STALLED) ? 'stalled' : 'entering', storyId: m.storyId ? String(m.storyId) : null, title, batch: storyBatch(m.storyPath), endAt: info.at == null ? null : info.at, late: Boolean(info.late), promisedAt: promisedOf(m), closedAt: closedAtOf(m), ...stagesOf(m) });
   }
 
   if (stale) unreadable.push(`${stale} marcador(es) sin tocar hace más de 24 h: no cuentan (marker.js list-all los descarta)`);
@@ -969,7 +1193,9 @@ function buildWip(opts = {}) {
       const last = [a.lastTouch, a.declaredAt].map((v) => Date.parse(v)).find(Number.isFinite);
       const old = last !== undefined && nowMs - last > LOOSE_STALE_MS ? ` (sin tocar desde ${hhmm(last)})` : '';
       rows[pipe.i].meanwhile = `arreglo rápido «${work}»${old}`;
-      extra[pipe.i].meanwhile = String(a.reason || '');
+      const end = Date.parse(a.until);
+      const declaredAt = [a.untilAt, a.declaredAt].map((v) => Date.parse(v)).find(Number.isFinite);
+      Object.assign(extra[pipe.i], { meanwhile: String(a.reason || ''), meanwhileKind: 'loose', meanwhileAt: last === undefined ? null : last, meanwhileEnd: Number.isFinite(end) ? end : null, meanwhileDeclaredAt: declaredAt === undefined ? null : declaredAt });
       continue;
     }
     const label = liveName(sid);
@@ -981,8 +1207,10 @@ function buildWip(opts = {}) {
       if (last !== undefined && nowMs - last > LOOSE_STALE_MS) parts.push(`¿terminó? cerralo desde su sesión: node ${MARKER_JS} adhoc clear`);
       const until = Date.parse(a.until);
       const declared = Number.isFinite(until);
-      addRow({ work, state: parts.join(' · '), end: declaredEnd(a.until, until), session: label, folder: folderOf(sid) }, sid,
-        { kind: 'loose', text: String(a.reason || ''), endAt: declared ? until : null });
+      // cuándo se declaró la hora: la promesa es de esa declaración, y una declaración vieja ya no dice nada
+      const declaredAt = [a.untilAt, a.declaredAt].map((v) => Date.parse(v)).find(Number.isFinite);
+      addRow({ work, state: parts.join(' · '), end: hourVerdict({ endAt: until, hourAt: declaredAt, nowMs }) || declaredEnd(a.until, until), session: label, folder: folderOf(sid) }, sid,
+        { kind: 'loose', text: String(a.reason || ''), endAt: declared ? until : null, hourAt: declaredAt === undefined ? null : declaredAt, promiseAt: declaredAt === undefined ? null : declaredAt });
     }
     else {
       // Se limpia con `adhoc clear-orphan`, que sólo borra pasadas las 24 h sin tocarse: antes, se dice desde cuándo.
@@ -1015,7 +1243,13 @@ function buildWip(opts = {}) {
     const at = Date.parse(d.at);
     if (pipe) {
       const old = Number.isFinite(at) && nowMs - at > LOOSE_STALE_MS ? ` (sin tocar desde ${hhmm(at)})` : '';
-      if (!rows[pipe.i].meanwhile) { rows[pipe.i].meanwhile = `${work}${old}`; extra[pipe.i].meanwhile = String(d.text || ''); }
+      // la nota más nueva que el arreglo es lo de ahora: un carril viejo no la tapa
+      const priorAt = extra[pipe.i].meanwhileAt;
+      if (!rows[pipe.i].meanwhile || (Number.isFinite(at) && Number.isFinite(priorAt) && at > priorAt)) {
+        rows[pipe.i].meanwhile = `${work}${old}`;
+        const end = Date.parse(d.endAt);
+        Object.assign(extra[pipe.i], { meanwhile: String(d.text || ''), meanwhileKind: 'note', meanwhileAt: Number.isFinite(at) ? at : null, meanwhileEnd: Number.isFinite(end) ? end : null, meanwhileDeclaredAt: Number.isFinite(at) ? at : null });
+      }
       continue;
     }
     const label = liveName(sid);
@@ -1034,8 +1268,8 @@ function buildWip(opts = {}) {
     if (Number.isFinite(at) && nowMs - at > LOOSE_STALE_MS) parts.push(`¿terminó? borrala desde su sesión: node ${MARKER_JS} doing clear`);
     const until = Date.parse(d.endAt);
     const declared = Number.isFinite(until);
-    addRow({ work, state: parts.join(' · '), end: declaredEnd(d.endAt, until), session: label, folder: folderOf(sid) }, sid,
-      { kind: 'note', text: String(d.text || ''), endAt: declared ? until : null });
+    addRow({ work, state: parts.join(' · '), end: hourVerdict({ endAt: until, hourAt: at, nowMs }) || declaredEnd(d.endAt, until), session: label, folder: folderOf(sid) }, sid,
+      { kind: 'note', text: String(d.text || ''), endAt: declared ? until : null, hourAt: Number.isFinite(at) ? at : null, promiseAt: Number.isFinite(at) ? at : null });
   }
 
   // sin arreglo ni nota: si lo último que tocó la sesión está en un repo que no es de su story, eso hace mientras tanto
@@ -1045,10 +1279,16 @@ function buildWip(opts = {}) {
     for (const file of touchedOf(sid)) { place = touchedPlace(file, gitCtx, unreadable); if (place) break; }
     if (place && !ofStory(m, gitCtx)(place.root, place.branch) && place.story !== String(m.storyId || '')) rows[i].meanwhile = place.work;
   }
+  // una corrida abierta tapada por el trabajo de ahora queda en pausa y sin hora, como en la oficina
+  for (const [, { i }] of pipeRows) {
+    if (extra[i].mark || !replacedByNewer(extra[i], nowMs)) continue;
+    rows[i].end = 'sin hora estimada (en pausa)';
+  }
 
   const free = [];
   // la sesión de cada libre, en el mismo orden: para /office, que la cruza con su archivo de estado
   const freeSids = [];
+  const freeStatus = [];
   const noData = [];
   const idle = [];
   let internal = 0;
@@ -1077,23 +1317,59 @@ function buildWip(opts = {}) {
       const parts = [active ? 'Trabajando sin pipeline' : 'Trabajando sin marcador', why, story && `story ${story} en preparación`,
         s.last != null && `última actividad ${hhmm(s.last)}`, !active && `último archivo ${hhmm(files.newest)}`].filter(Boolean);
       addRow({ work: place ? place.work : unknown ? 'no se ve qué hace' : sessionPlace(s.cwd, gitCtx, unreadable), state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label, folder: place ? tilde(place.root) : tilde(s.cwd) }, sid, { kind: active ? 'activity' : 'nomarker' });
-    } else if (s.last == null) { free.push(label); freeSids.push(sid); noData.push(label); }
-    else if (nowMs - s.last > IDLE_MS) idle.push(`${label} (desde ${hhmm(s.last)})`);
-    else { free.push(label); freeSids.push(sid); }
+    } else if (s.last == null) { free.push(label); freeSids.push(sid); freeStatus.push(s.status); noData.push(label); }
+    // la que espera una respuesta no está sin uso, aunque lleve horas esperando
+    else if (nowMs - s.last > IDLE_MS && !WAITING_STATUS.test(s.status || '')) idle.push(`${label} (desde ${hhmm(s.last)})`);
+    else { free.push(label); freeSids.push(sid); freeStatus.push(s.status); }
   }
   const details = rowSids.map((sid) => {
     const s = sessions.get(sid);
-    return { sid, status: s ? s.status : null, nameSource: s ? s.nameSource : null };
+    return { sid, status: s ? s.status : null, statusAt: s ? s.statusAt : null, nameSource: s ? s.nameSource : null };
   });
-  return { rows, details, extra, free, freeSids, idle, halfway, halfwayItems, unreadable, wanted, internal, text: render(rows, free, noData, idle, halfway, unreadable, internal) };
+  // lo que la conversación y la tabla necesitan de cada sesión, y su estado real: /wip dice lo mismo que la oficina
+  const files = sessionFileMap(sdir, unreadable);
+  rowSids.forEach((sid, i) => {
+    const s = sessions.get(sid);
+    if (s) { extra[i].cwd = s.cwd; extra[i].lastAt = s.last; }
+  });
+  const notes = rowSids.map((sid, i) => stateNote(extra[i], details[i], files.get(String(sid))));
+  // la libre que espera algo: /office la pone en «Tu firma» y /wip lo dice igual
+  const freeNotes = new Map(free.map((name, i) => {
+    const r = realState({}, { status: freeStatus[i] }, files.get(String(freeSids[i])));
+    return [name, r.estado === 'firma' ? `Tu firma: ${r.espera}` : ''];
+  }));
+  // los repos de las corridas con fila: /office los reconoce al preguntar por un pedido que nombra el tablero
+  const runRepos = [...new Set([...pipeRows.values()].map(({ m }) => m.repoPath).filter((p) => typeof p === 'string' && path.isAbsolute(p)))];
+  return { rows, details, extra, free, freeSids, freeStatus, idle, halfway, halfwayItems, unreadable, wanted, runRepos, internal, text: render(rows, free, noData, idle, halfway, unreadable, internal, notes, freeNotes) };
 }
 
-function render(rows, free, noData, idle, halfway, unreadable, internal = 0) {
+// Los archivos de estado de las sesiones, por sesión. Los que no se pueden usar los dice la oficina; lo que tira al leer
+// la carpeta entera se dice acá.
+function sessionFileMap(sdir, unreadable) {
+  const out = new Map();
+  try { for (const f of require(path.join(ROOT, 'scripts', 'lib', 'session-state.js')).readAll(sdir).states) out.set(String(f.session), f); } catch (e) {
+    if (unreadable) unreadable.push(`los archivos de estado de las sesiones no se pudieron leer (${(e && e.code) || (e && e.message)})`);
+  }
+  return out;
+}
+
+// El estado real de una fila, para sumarlo a la columna «Estado»: nada si la fila ya lo dice. Lo que espera al dueño se
+// dice también en una fila marcada: la firma le gana a la marca.
+function stateNote(x, d, f) {
+  const r = realState(x, d, f);
+  if (r.estado === 'firma') return x.kind === 'finished' && r.espera === 'el ok para guardar' && !x.mark ? '' : `Tu firma: ${r.espera}`;
+  return x.mark || x.kind === 'finished' ? '' : r.parada || '';
+}
+
+function render(rows, free, noData, idle, halfway, unreadable, internal = 0, notes = [], freeNotes = new Map()) {
   const esc = (s) => oneLine(s).replace(/\|/g, '\\|');
   const lines = ['| Trabajo | Estado | Fin estimado | Sesión | Carpeta |', '|---|---|---|---|---|'];
   if (!rows.length) lines.push('| (nada en curso) | | | | |');
-  for (const r of rows) lines.push(`| ${esc(r.work)} | ${esc(r.meanwhile ? `${r.state} · mientras tanto: ${r.meanwhile}` : r.state)} | ${esc(r.end)} | ${esc(r.session)} | ${esc(r.folder || '')} |`);
-  const freeText = free.map((f) => (noData.includes(f) ? `${f} (sin dato de actividad)` : f));
+  rows.forEach((r, i) => {
+    const state = notes[i] ? `${r.state} · ${notes[i]}` : r.state;
+    lines.push(`| ${esc(r.work)} | ${esc(r.meanwhile ? `${state} · mientras tanto: ${r.meanwhile}` : state)} | ${esc(r.end)} | ${esc(r.session)} | ${esc(r.folder || '')} |`);
+  });
+  const freeText = free.map((f) => (freeNotes.get(f) ? `${f} (${freeNotes.get(f)})` : noData.includes(f) ? `${f} (sin dato de actividad)` : f));
   lines.push('', `Libres: ${freeText.length ? freeText.join(', ') : 'ninguna'}`);
   if (idle.length) lines.push(`Sin uso hace más de ${IDLE_MS / 3600000} h: ${idle.join(', ')}`);
   if (internal) lines.push(`${internal} agente(s) interno(s) de otras sesiones (sin fila: corren en la carpeta temporal, sin nombre puesto)`);
@@ -1178,4 +1454,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { buildWip, wipNow, stagesOf, jsonOf, sessionsBySid, storyEntering, median, queryAll, parseRemote, offQueueOf, endOf, codexNames, PER_QUERY_MS, ALL_QUERIES_MS, SAFE_SID };
+module.exports = { buildWip, wipNow, stagesOf, jsonOf, sessionsBySid, storyEntering, median, queryAll, readPrs, parseRemote, offQueueOf, identityOf, remoteOfFolder, endOf, hourForStep, hourVerdict, realState, replacedByNewer, storyPausedUntil, unsavedChanges, codexNames, PER_QUERY_MS, ALL_QUERIES_MS, SAFE_SID, LOOSE_STALE_MS };

@@ -144,6 +144,7 @@
     "process=$(az devops project show \\"
   ],
   "integrations/azure-devops/scripts/change-requests.js": [
+    "*   az repos pr show --id <n> --org <org> -o json",
     "//   az devops invoke --area git --resource pullRequests --route-parameters project=<proyecto>",
     "//   az repos pr create --org <org> --project <proyecto> --repository <repo> --source-branch <rama> --target-branch <destino>",
     "//   az repos pr list --org <org> --project <proyecto> --repository <repo> --source-branch <rama> --target-branch <destino>",

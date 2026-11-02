@@ -71,7 +71,8 @@ async function main() {
     check((await page.locator('#panel h3').innerText()) === 'Alfa', 'el detalle de Alfa abierto');
     // un cambio: Beto declara su arreglo; la tarjeta llega sola
     fs.writeFileSync(path.join(sdir, 'adhoc', 's2.json'), JSON.stringify({ reason: 'revisión del banco de controles', declaredAt: new Date().toISOString() }));
-    await page.waitForFunction(() => [...document.querySelectorAll('.card')].some((c) => c.textContent.includes('revisión del banco de controles')), null, { timeout: 5000 });
+    // el carril es el título: va en su tarjeta del kanban; sin conversación legible, la de la persona dice «Sin novedades»
+    await page.waitForFunction(() => [...document.querySelectorAll('.item')].some((c) => c.textContent.includes('revisión del banco de controles')), null, { timeout: 5000 });
     check(true, 'la tarjeta de Beto cambió sola');
     check(await page.locator('#panel').isVisible() && (await page.locator('#panel h3').innerText()) === 'Alfa', 'el detalle sigue abierto');
     await sleep(300);
@@ -89,7 +90,7 @@ async function main() {
     process.kill(lock.pid, 'SIGTERM');
     await page.waitForFunction(() => document.getElementById('ovl').textContent.includes('La oficina se cerró'), null, { timeout: 5000 });
     check(true, 'el aviso «La oficina se cerró…» apareció');
-    check(await page.locator('.card', { hasText: 'revisión del banco de controles' }).count() === 1, 'la última foto quedó');
+    check(await page.locator('.item', { hasText: 'revisión del banco de controles' }).count() === 1, 'la última foto quedó');
   } finally {
     await browser.close();
     try { process.kill(lock.pid, 'SIGKILL'); } catch { /* ya salió */ }

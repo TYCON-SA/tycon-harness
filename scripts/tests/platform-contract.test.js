@@ -70,7 +70,7 @@ test('Platform_OperationsList_MatchesContract @story-8.85 @ac-1', () => {
   const ops = C().OPERATIONS;
   // el lector de configuración guarda su copia de las áreas: tienen que ser las mismas del contrato
   assert.deepStrictEqual([...require(path.join(ROOT, 'scripts', 'lib', 'tycon-config.js')).AREAS_PLATAFORMA], [...C().AREAS]);
-  assert.strictEqual(ops.length, 12, 'las doce operaciones del dominio');
+  assert.strictEqual(ops.length, 13, 'las trece operaciones del dominio');
   for (const n of ['azure-devops', 'github']) {
     const man = JSON.parse(fs.readFileSync(path.join(ROOT, 'integrations', n, 'integration.json'), 'utf8'));
     assert.strictEqual(man.kind, 'platform', n);
@@ -578,6 +578,75 @@ test('AdoList_PageCap_NoMedido @story-8.131 @ac-12', async () => {
   assert.deepStrictEqual([r.ok, r.reason], [false, 'no_medido'], JSON.stringify(r));
   assert.match(r.detail, /tope/);
   assert.strictEqual(r.value, undefined, 'nunca la lista cortada');
+});
+
+test('T122 PrRead_ContractAndConnectors @story-2.81 @ac-65', async () => {
+  const c = C();
+  assert.ok(c.OPERATIONS.includes('change-request.read'));
+  assert.ok(c.REPO_OPERATIONS.includes('change-request.read'), 'va por la plataforma del repo');
+  for (const plat of ['azure-devops', 'github']) {
+    const man = JSON.parse(fs.readFileSync(path.join(ROOT, 'integrations', plat, 'integration.json'), 'utf8'));
+    assert.ok(man.operations.includes('change-request.read'), `${plat} la declara`);
+  }
+  const MERGED = '2026-11-01T18:30:00Z';
+  // GitHub
+  const estado = estadoGh({
+    pulls: { 'acme/portal': [
+      { number: 11, state: 'open', title: 'abierto', head: { ref: 'a', sha: 'a1' }, base: { repo: { full_name: 'acme/portal' } }, user: { login: 'x', type: 'User' }, merge_queue: { state: 'QUEUED' } },
+      { number: 12, state: 'open', draft: true, title: 'borrador', head: { ref: 'b', sha: 'b1' }, base: { repo: { full_name: 'acme/portal' } }, user: { login: 'x', type: 'User' } },
+      { number: 13, state: 'open', title: 'fuera', head: { ref: 'c', sha: 'c1' }, base: { repo: { full_name: 'acme/portal' } }, user: { login: 'x', type: 'User' } },
+      { number: 14, state: 'closed', merged_at: MERGED, title: 'entró', head: { ref: 'd', sha: 'd1' }, base: { repo: { full_name: 'acme/portal' } }, user: { login: 'x', type: 'User' } },
+      { number: 15, state: 'closed', merged_at: null, title: 'cerrado', head: { ref: 'e', sha: 'e1' }, base: { repo: { full_name: 'acme/portal' } }, user: { login: 'x', type: 'User' } },
+    ] },
+  });
+  const m = mundo({ platform: { default: 'github' } });
+  const env = { ...m.env, TYCON_GH_CMD: FAKE_GH, FAKE_GH_STATE: estado };
+  const gh = (number) => P().run('change-request.read', { number }, { env, repo: GH });
+  let r = await gh(11);
+  assert.strictEqual(r.ok, true, JSON.stringify(r));
+  assert.deepStrictEqual(
+    { number: r.value.number, state: r.value.state, draft: r.value.draft, inQueue: r.value.inQueue, mergedAt: r.value.mergedAt },
+    { number: 11, state: 'open', draft: false, inQueue: true, mergedAt: null },
+  );
+  r = await gh(12);
+  assert.deepStrictEqual([r.value.state, r.value.draft], ['open', true]);
+  r = await gh(13);
+  assert.deepStrictEqual([r.value.state, r.value.inQueue, r.value.autoComplete], ['open', false, false]);
+  r = await gh(14);
+  assert.deepStrictEqual([r.value.state, r.value.mergedAt], ['merged', MERGED]);
+  r = await gh(15);
+  assert.deepStrictEqual([r.value.state, r.value.mergedAt], ['closed', null]);
+  r = await gh(999);
+  assert.deepStrictEqual([r.ok, r.reason], [false, 'no_encontrado'], JSON.stringify(r));
+  // sin número no se pregunta
+  r = await gh('12; rm');
+  assert.deepStrictEqual([r.ok, r.reason], [false, 'rechazado'], JSON.stringify(r));
+  // Azure DevOps
+  const w = mundoAzure([[]]);
+  fs.writeFileSync(path.join(w.fix, 'repos-pr.json'), JSON.stringify([
+    prAzure(21, { autoCompleteSetBy: { id: 'quien' } }),
+    prAzure(22, { isDraft: true }),
+    prAzure(23),
+    prAzure(24, { status: 'completed', closedDate: MERGED }),
+    prAzure(25, { status: 'abandoned', closedDate: MERGED }),
+    prAzure(26, { repository: { name: 'OtroRepo', project: { name: 'Producto' } } }),
+  ]));
+  const az = (number) => P().run('change-request.read', { number }, { env: w.env, repo: AZ });
+  r = await az(21);
+  assert.strictEqual(r.ok, true, JSON.stringify(r));
+  assert.deepStrictEqual({ number: r.value.number, state: r.value.state, draft: r.value.draft, autoComplete: r.value.autoComplete, mergedAt: r.value.mergedAt }, { number: 21, state: 'open', draft: false, autoComplete: true, mergedAt: null });
+  r = await az(22);
+  assert.deepStrictEqual([r.value.state, r.value.draft], ['open', true]);
+  r = await az(23);
+  assert.deepStrictEqual([r.value.state, r.value.autoComplete], ['open', false]);
+  r = await az(24);
+  assert.deepStrictEqual([r.value.state, r.value.mergedAt], ['merged', MERGED]);
+  r = await az(25);
+  assert.deepStrictEqual([r.value.state, r.value.mergedAt], ['closed', null]);
+  for (const n of [999, 26]) {
+    r = await az(n);
+    assert.deepStrictEqual([r.ok, r.reason], [false, 'no_encontrado'], `${n}: ${JSON.stringify(r)}`);
+  }
 });
 
 test('T30 Contrato_EstimateEnCreateYUpdate @story-2.75 @ac-27', async () => {

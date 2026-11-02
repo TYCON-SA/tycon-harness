@@ -20,7 +20,7 @@ const STEPS = [{ id: 'implement', name: 'Implementar', done: true }, { id: 'run-
 function wip(entries, more = {}) {
   return {
     rows: entries.map((e) => ({ work: e.work || `Story ${e.session}`, state: e.state || 'en curso', end: e.end || '15:00', session: e.session, folder: 'repo-a', ...(e.meanwhile ? { meanwhile: e.meanwhile } : {}) })),
-    details: entries.map((e) => ({ sid: e.sid || `sid-${e.session}`, status: e.status || 'busy' })),
+    details: entries.map((e) => ({ sid: e.sid || `sid-${e.session}`, status: 'status' in e ? e.status : 'busy', statusAt: e.statusAt || null })),
     extra: entries.map((e) => e.extra || { kind: 'loose' }),
     free: [],
     halfway: [],
@@ -747,19 +747,20 @@ test('T67 Board_Absent_NoPanel: sin el archivo de la coordinadora no hay tablero
   assert.ok(!data.unreadable.some((u) => /tablero/.test(u)), data.unreadable.join(' | '));
 });
 
-test('T68 Board_Grouped: los pendientes van por grupo, en el orden de la semana y por su orden; los hechos aparte', () => {
+test('T68 Board_Grouped: las filas van en el orden de la semana y por su orden, cada una con su columna y su hora', () => {
   const { buildBoard } = require(OFFICE);
   const t = buildBoard(BOARD);
-  assert.deepStrictEqual(t.grupos.map((g) => g.nombre), ['Hoy', 'Esta semana', 'Más adelante', 'Algún día']);
-  assert.deepStrictEqual(t.grupos[0].items.map((i) => i.titulo), ['Primero de hoy', 'La oficina en vivo']);
-  const live = t.grupos[0].items[1];
+  assert.deepStrictEqual(t.filas.map((f) => f.titulo), ['Primero de hoy', 'La oficina en vivo', 'La excepción del GUID', 'Esta semana uno', 'Más adelante uno', 'Otro grupo']);
+  assert.deepStrictEqual(t.filas.map((f) => f.columna), ['firma', 'curso', 'hechos', 'curso', 'sinEmpezar', 'curso']);
+  const live = t.filas[1];
   assert.strictEqual(live.quien, 'Almeida');
   assert.strictEqual(live.nota, 'Falta guardar');
   assert.strictEqual(live.fin, 'dom 12:30', 'la hora esperable es la del pronóstico, con su día');
-  assert.strictEqual(t.grupos[0].items[0].fin, 'cuando firmes', 'el texto propio de la coordinadora gana');
-  assert.strictEqual(t.grupos[1].items[0].fin, 'mar 18:00');
-  assert.strictEqual(t.grupos[2].items[0].fin, 'sin hora estimada');
-  assert.deepStrictEqual(t.hechos, [{ titulo: 'La excepción del GUID', quien: 'Angelito', real: 'dom 09:10' }]);
+  assert.strictEqual(t.filas[0].fin, 'cuando firmes', 'el texto propio de la coordinadora gana');
+  assert.strictEqual(t.filas[3].fin, 'mar 18:00');
+  assert.strictEqual(t.filas[3].marca, 'riesgo', 'en riesgo va a «En curso» con esa marca');
+  assert.strictEqual(t.filas[4].fin, 'sin hora estimada');
+  assert.strictEqual(t.filas[2].fin, 'dom 09:10', 'un hecho dice su hora real');
   assert.deepStrictEqual(t.teToca, ['Firmar el ok de guardar de la B']);
   assert.strictEqual(t.resumen, 'Dos cosas en curso y una esperando tu firma.');
   assert.strictEqual(t.actualizado, 'dom 10:55');
@@ -777,15 +778,24 @@ test('T69 Board_Broken_Said: un tablero roto se dice y no se dibuja', async () =
 test('T70 Board_OnlyStrings: lo que no es texto no llega a la página, y un renglón sin título se saltea', () => {
   const { buildBoard } = require(OFFICE);
   const t = buildBoard({ pendientes: [{ titulo: { x: 1 } }, null, 'texto', { titulo: 'Bien', quien: 42, nota: ['a'], grupo: 7, estado: 'curso' }], meta: { teToca: ['ok', 3, null] } });
-  assert.strictEqual(t.grupos.length, 1);
-  assert.strictEqual(t.grupos[0].nombre, 'Sin grupo');
-  assert.deepStrictEqual(t.grupos[0].items[0], { titulo: 'Bien', quien: '', nota: '', fin: 'sin hora estimada', estado: 'curso' });
+  assert.strictEqual(t.filas.length, 1);
+  assert.strictEqual(t.filas[0].grupo, '');
+  assert.deepStrictEqual(t.filas[0], { titulo: 'Bien', quien: '', nota: '', fin: 'sin hora estimada', estado: 'curso', grupo: '', columna: 'curso', marca: null, historia: null, pedido: null });
   assert.deepStrictEqual(t.teToca, ['ok']);
+  // `historia` y `pedido` tienen forma: lo que no la tiene no llega a una consulta
+  const p = buildBoard({ pendientes: [
+    { titulo: 'a', historia: '2.81', pedido: { repo: 'tycon-harness', numero: 885 } },
+    { titulo: 'b', historia: 7, pedido: { repo: 'x; rm', numero: 885 } },
+    { titulo: 'c', pedido: { repo: 'tycon-harness', numero: '885; rm' } },
+    { titulo: 'd', pedido: 'tycon-harness#885' },
+  ] }).filas;
+  assert.deepStrictEqual(p.map((f) => [f.historia, f.pedido]), [['2.81', { repo: 'tycon-harness', numero: 885 }], [null, null], [null, null], [null, null]]);
 });
 
 test('T71 Board_Page_Panel: la página trae el panel del tablero y lo dibuja con texto, nunca como HTML', async () => {
   const data = await collectWith(JSON.stringify(BOARD));
-  assert.ok(data.tablero && data.tablero.grupos.length === 4);
+  assert.ok(data.tablero && data.tablero.resumen);
+  assert.ok(data.kanban.columnas.find((c) => c.id === 'curso').tarjetas.some((t) => t.titulo === 'La oficina en vivo'));
   const html = page(data);
   assert.match(html, /id="board"/);
   const fn = (html.match(/function renderBoard\(\)\{[\s\S]*?\n\}/) || [])[0];
@@ -836,37 +846,32 @@ test('T73 Office_FirstThenBoard: la sala 3D es lo primero que se ve; el tablero 
   assert.ok(width >= 1500, `ancho máximo ${width}`);
 });
 
-test('T74 Board_Compact: los pendientes en una grilla (título, quién, hora) y los terminados plegados en una línea', async () => {
-  const data = await collectWith(JSON.stringify(BOARD));
+// La función del kanban de la página, corrida fuera del navegador con un DOM mínimo.
+function drawKanban(data) {
   const html = page(data);
   const fn = (html.match(/function renderBoard\(\)\{[\s\S]*?\n\}/) || [])[0];
-  const BK = (html.match(/const BK=(\{[^}]*\});/) || [])[1];
   const el = (html.match(/const el=(\([^\n]*\});\n/) || [])[1];
-  assert.ok(fn && BK && el, 'la página trae la función, los colores y el ayudante');
+  assert.ok(fn && el, 'la página trae la función y el ayudante');
   const { document, byId } = tinyDom();
-  new Function('document', 'DATA', `const BK=${BK};const el=${el};${fn};renderBoard();`)(document, { tablero: data.tablero });
-  const body = byId.boardBody;
-  // los pendientes: una celda por trabajo, cada una con su título, quién y hora, en una grilla
-  const grids = all(body, (n) => /\bpend\b/.test(n.className));
-  assert.strictEqual(grids.length, 1, 'una sola grilla de pendientes');
-  const cells = grids[0].children.filter((c) => /\bitem\b/.test(c.className));
-  assert.strictEqual(cells.length, 5, 'los cinco que no están hechos');
-  const first = textOf(cells[0]);
-  assert.match(first, /Primero de hoy/);
-  assert.match(first, /vos/);
-  assert.match(first, /cuando firmes/);
-  assert.ok(!all(grids[0], (n) => /La excepción del GUID/.test(n.textContent || '')).length, 'lo hecho no va en la grilla');
-  // el grupo se dice en la celda, así la grilla no se parte en columnas largas por grupo
-  assert.match(textOf(cells[cells.length - 1]), /Algún día/);
-  // los terminados: plegados en una línea que se abre al tocarla
-  const fold = all(body, (n) => n.tag === 'details');
-  assert.strictEqual(fold.length, 1, 'los terminados van plegados');
-  const summary = fold[0].children.find((c) => c.tag === 'summary');
-  assert.strictEqual(summary && summary.textContent, '1 terminado');
-  assert.match(textOf(fold[0]), /La excepción del GUID/);
-  assert.ok(!fold[0].open, 'arranca cerrado');
-  // la grilla se acomoda sola al ancho: varias columnas en un monitor ancho, una en una pantalla angosta
-  assert.match(html, /\.board \.pend\{display:grid;grid-template-columns:repeat\(auto-fill,minmax\(/);
+  new Function('document', 'DATA', `const el=${el};${fn};renderBoard();`)(document, data);
+  return { html, fn, body: byId.boardBody, sec: byId.board };
+}
+
+test('T74 Board_Compact: cada tarjeta dice título, quién y hora, en su columna; a medio camino va plegado debajo', async () => {
+  const data = await collectWith(JSON.stringify(BOARD));
+  const { html, body } = drawKanban(data);
+  const cols = all(body, (n) => /\bcol\b/.test(n.className));
+  assert.strictEqual(cols.length, 5, 'las cinco columnas');
+  const firma = textOf(cols[0]);
+  assert.match(firma, /Primero de hoy/);
+  assert.match(firma, /vos/);
+  assert.match(firma, /cuando firmes/);
+  // el grupo se dice en la tarjeta
+  assert.match(textOf(cols[1]), /Algún día/);
+  assert.match(textOf(cols[4]), /La excepción del GUID/, 'lo hecho va en su columna');
+  assert.ok(!all(cols[1], (n) => /La excepción del GUID/.test(n.textContent || '')).length, 'y no en otra');
+  // las columnas se acomodan solas al ancho: varias en un monitor ancho, una en una pantalla angosta
+  assert.match(html, /\.board \.cols\{display:grid;grid-template-columns:repeat\(auto-fit,minmax\(/);
 });
 
 // ---------- el archivo de estado de cada sesión ----------
@@ -996,4 +1001,999 @@ test('T84 NoPid_OldFile_PhotoAndClockAgree @story-2.81 @ac-23 — sin pid y call
   const after = html.slice(html.indexOf('// fin del reloj'));
   assert.match(after, /^\/\/ fin del reloj\n(?:\/\/[^\n]*\n)*relojTick\(agents,Date\.now\(\),meta\);renderTop\(\);renderCrew\(\);/, 'al abrir, el reloj antes del primer dibujo');
   assert.match(html, /setData\(m\.data\);relojTick\(agents,Date\.now\(\),meta\);renderTop\(\)/, 'con cada foto nueva, el reloj antes de dibujar');
+});
+
+// ---------- el estado real, «Tu firma», el trabajo de ahora, el kanban, la hora y la marca ----------
+
+const { spawnSync } = require('child_process');
+const { wipNow } = require(path.join(__dirname, '..', 'tools', 'work-in-progress.js'));
+const { collect, buildBoard } = require(OFFICE);
+const STEP_LIB = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'steps.js'));
+
+const col = (data, id) => data.kanban.columnas.find((c) => c.id === id);
+const titles = (data, id) => col(data, id).tarjetas.map((t) => t.titulo);
+const hm = (ms) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+const IDS = STEP_LIB.STEPS.filter((s) => !s.flag).map((s) => s.id);
+// un marcador con los pasos por nombre, con `done` hechos
+const runMarkerFile = (m, sid, id, title, done, extra = {}) => fs.writeFileSync(path.join(m.state, 'active', `${sid}.json`), JSON.stringify({
+  sessionId: sid, storyId: id, storyPath: storyFile(m, id, title), stepScheme: STEP_LIB.SCHEME, stepsCompleted: done, stepsPending: IDS.filter((s) => !done.includes(s)), ...extra,
+}));
+const BEFORE_PLAN = ['start', 'validate-story', 'plan'];
+const CLOSED = { stepsCompleted: IDS, stepsPending: [] };
+const sessionWith = (m, sid, name, status, at = NOW) => fs.writeFileSync(path.join(m.sessions, `${sid}.json`),
+  JSON.stringify({ pid: process.pid, sessionId: sid, name, status, statusUpdatedAt: at }));
+// un repo de verdad, en una rama de historia, con `origin` en GitHub: `dirty` deja un archivo sin commitear
+function toyRepo(m, name, { dirty = false } = {}) {
+  const dir = path.join(m.root, name);
+  fs.mkdirSync(dir);
+  // stable-data: el commit de juguete lleva fecha fija y el mantenimiento de git apagado
+  const FECHA = '2026-01-01T10:00:00';
+  const git = (...a) => execFileSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', dir, ...a], { stdio: 'ignore', env: { ...process.env, GIT_AUTHOR_DATE: FECHA, GIT_COMMITTER_DATE: FECHA } });
+  git('init', '-q', '-b', 'story/9.9-algo');
+  git('config', 'user.email', 't@t');
+  git('config', 'user.name', 't');
+  git('remote', 'add', 'origin', `https://github.com/acme/${name}.git`);
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'uno\n');
+  git('add', '.');
+  git('commit', '-qm', 'inicio');
+  if (dirty) fs.writeFileSync(path.join(dir, 'a.txt'), 'dos\n');
+  return dir;
+}
+const noPrs = async (qs) => qs.map(() => ({ prs: [] }));
+const atIso = (ms) => new Date(ms).toISOString();
+
+test('T85 RealStatus_BusyIdleWaiting @story-2.81 @ac-44: el estado sale de si la sesión trabaja, no del paso', () => {
+  const impl = { kind: 'pipeline', current: 'implement', steps: [{ id: 'implement', name: 'Implementar', done: false }] };
+  const tests = { kind: 'pipeline', current: 'run-tests', steps: [{ id: 'run-tests', name: 'Correr las pruebas', done: false }] };
+  const at2010 = new Date(2026, 9, 18, 20, 10).getTime();
+  const { data } = buildOffice({
+    wip: wip([
+      { session: 'Uno', status: 'busy', extra: impl },
+      { session: 'Dos', status: 'shell', extra: impl },
+      { session: 'Tres', status: 'idle', statusAt: at2010, extra: impl },
+      { session: 'Cuatro', status: 'waiting', extra: impl },
+      { session: 'Cinco', status: 'busy', extra: tests },
+      { session: 'Seis', status: null, extra: tests },
+      { session: 'Coord', sid: 'co', status: 'idle', extra: impl },
+    ]),
+    coordinatorSid: 'co',
+    nowMs: NOW,
+  });
+  const st = (n) => byName(data, n).estado;
+  assert.deepStrictEqual(['Uno', 'Dos', 'Tres', 'Cuatro', 'Cinco', 'Seis', 'Coord'].map(st), ['trabajando', 'trabajando', 'parada', 'firma', 'prueba', 'prueba', 'coordina']);
+  assert.strictEqual(byName(data, 'Tres').parada, 'parada desde las 20:10');
+  assert.strictEqual(byName(data, 'Tres').haciendo, 'Va por el paso «Implementar».');
+  assert.strictEqual(byName(data, 'Cuatro').espera, 'tu respuesta en su pantalla');
+  assert.strictEqual(byName(data, 'Uno').parada, undefined);
+  assert.ok(!JSON.stringify(data).includes('input needed'), 'el waitingFor de Claude, en inglés, no se muestra');
+  assert.match(page(data), /parada:\["Parada"/, 'la página conoce el estado nuevo');
+});
+
+test('T87 Codex_BusyInOffice @story-2.81 @ac-45: Codex dice ocupada o parada igual que Claude', () => {
+  const work = { tool: 'codex', pid: null, step: 'Implementar', sentence: 'Va por el paso «Implementar».' };
+  const { data } = buildOffice({
+    wip: wip([]),
+    sessionFiles: [
+      sessionFile('c1', { ...work, name: 'Ocupada', busy: true }),
+      sessionFile('c2', { ...work, name: 'Parada', busy: false }),
+      sessionFile('c3', { ...work, name: 'Vieja', busy: null }),
+      sessionFile('c4', { tool: 'codex', pid: null, name: 'SinTrabajo', busy: false }),
+      sessionFile('c5', { tool: 'codex', pid: null, name: 'SoloOcupada', busy: true }),
+    ],
+    nowMs: NOW,
+  });
+  assert.strictEqual(byName(data, 'Ocupada').estado, 'trabajando');
+  assert.strictEqual(byName(data, 'Parada').estado, 'parada');
+  assert.match(byName(data, 'Parada').parada, /^parada desde las \d\d:\d\d$/);
+  assert.strictEqual(byName(data, 'Vieja').estado, 'trabajando', 'un archivo de antes, como hoy');
+  assert.strictEqual(byName(data, 'SinTrabajo').estado, 'libre');
+  assert.strictEqual(byName(data, 'SoloOcupada').estado, 'trabajando', 'ocupada sin trabajo declarado también trabaja');
+});
+
+test('T119 Codex_BusyStuck_QuietThenInactive @story-2.81 @ac-45: un turno cortado primero dice «sin novedades» y a las 2 h «inactiva»', () => {
+  const stuck = (min) => sessionFile('cx', { tool: 'codex', pid: null, name: 'Cortada', step: 'Implementar', sentence: 'Va por el paso «Implementar».', busy: true, updatedAt: atIso(NOW - min * 60000) });
+  const at = (min) => byName(buildOffice({ wip: wip([]), sessionFiles: [stuck(min)], nowMs: NOW }).data, 'Cortada');
+  assert.strictEqual(at(5).callada, undefined);
+  assert.strictEqual(at(20).estado, 'trabajando');
+  assert.match(at(20).callada, /^sin novedades desde las \d\d:\d\d$/);
+  assert.strictEqual(at(130).estado, 'inactiva');
+});
+
+test('T120 Waiting_WinsOverBusy_UnknownStatusAsToday @story-2.81 @ac-44 @ac-46: lo que pide un permiso espera; sin estado legible, por su paso', () => {
+  const plan = { kind: 'pipeline', current: 'approve-plan', steps: [{ id: 'approve-plan', name: 'Aprobar el plan', done: false }] };
+  const { data } = buildOffice({
+    wip: wip([
+      { session: 'Pide', sid: 's-pide', status: 'busy', extra: { kind: 'pipeline', current: 'implement' } },
+      { session: 'SinDato', status: null, extra: plan },
+    ]),
+    sessionFiles: [sessionFile('s-pide', { name: 'Pide', waitingForOwner: true, waitingFor: 'un permiso' })],
+    nowMs: NOW,
+  });
+  assert.strictEqual(byName(data, 'Pide').estado, 'firma');
+  assert.strictEqual(byName(data, 'Pide').espera, 'un permiso');
+  assert.strictEqual(byName(data, 'SinDato').estado, 'trabajando');
+  assert.strictEqual(byName(data, 'SinDato').espera, undefined);
+  assert.deepStrictEqual(data.meta.teToca, [], 'sin saber que está parada, no le toca a nadie');
+});
+
+async function ownerMachine() {
+  const m = toyMachine();
+  const now = NOW;
+  const repo = toyRepo(m, 'con-cambios', { dirty: true });
+  runMarkerFile(m, 'p1', '9.1', 'Espera el plan', BEFORE_PLAN);
+  sessionWith(m, 'p1', 'Plan', 'idle', now - 600000);
+  fs.writeFileSync(path.join(m.state, 'active', 'g1.json'), JSON.stringify({ sessionId: 'g1', storyId: '9.9', storyPath: storyFile(m, '9.9', 'Espera guardar'), repoPath: repo, stepScheme: STEP_LIB.SCHEME, ...CLOSED }));
+  sessionWith(m, 'g1', 'Guardar', 'idle', now - 600000);
+  runMarkerFile(m, 'b1', '9.2', 'Revisan el plan', BEFORE_PLAN);
+  sessionWith(m, 'b1', 'Ocupada', 'busy');
+  runMarkerFile(m, 'cx', '9.3', 'El plan de Codex', BEFORE_PLAN);
+  const w = await wipNow({ stateDir: m.state, sessionsDir: m.sessions, now: atIso(now), home: m.root, queryAll: noPrs });
+  return { m, now, repo, w };
+}
+
+test('T88 OwnerSignature_PlanAndSave @story-2.81 @ac-46: lo que espera al dueño es «Tu firma», también en Codex', async () => {
+  const { now, w } = await ownerMachine();
+  const { data } = buildOffice({ wip: w, nowMs: now, sessionFiles: [sessionFile('cx', { tool: 'codex', pid: null, name: 'Codina', step: 'Aprobar el plan', sentence: 'Va por el paso «Aprobar el plan».', busy: false })] });
+  assert.strictEqual(byName(data, 'Plan').estado, 'firma');
+  assert.strictEqual(byName(data, 'Plan').espera, 'que apruebes el plan');
+  assert.strictEqual(byName(data, 'Guardar').estado, 'firma');
+  assert.strictEqual(byName(data, 'Guardar').espera, 'el ok para guardar');
+  assert.strictEqual(byName(data, 'Ocupada').estado, 'trabajando');
+  assert.strictEqual(byName(data, 'Codina').estado, 'firma');
+  assert.strictEqual(byName(data, 'Codina').espera, 'que apruebes el plan');
+  const firma = col(data, 'firma').tarjetas.map((t) => t.quien);
+  for (const n of ['Plan', 'Guardar', 'Codina']) assert.ok(firma.includes(n), `${n} en «Tu firma»: ${firma}`);
+  assert.ok(!firma.includes('Ocupada'));
+  assert.ok(data.meta.teToca.some((t) => /Espera el plan/.test(t)), data.meta.teToca.join(' | '));
+  assert.ok(data.meta.teToca.some((t) => /Espera guardar/.test(t)), data.meta.teToca.join(' | '));
+});
+
+test('T89 Wip_SaveRow_NotFree @story-2.81 @ac-46: en /wip la corrida que espera guardar es una fila, no una sesión libre', async () => {
+  const { w } = await ownerMachine();
+  const row = w.rows.find((r) => r.session === 'Guardar');
+  assert.ok(row, w.text);
+  assert.strictEqual(row.state, 'Terminó: espera el ok para guardar');
+  assert.match(row.work, /^9\.9 · Espera guardar/);
+  assert.ok(!w.free.includes('Guardar'));
+  assert.match(w.text, /Terminó: espera el ok para guardar/);
+});
+
+test('T121 SaveSignal_DirtyTree_NotSaveOk @story-2.81 @ac-46: la señal de guardar sale del árbol del repo', async () => {
+  const closed = async (repoOpts, extra = {}, mutate = () => {}) => {
+    const m = toyMachine();
+    const repo = toyRepo(m, 'r', repoOpts);
+    mutate(repo);
+    fs.writeFileSync(path.join(m.state, 'active', 'g.json'), JSON.stringify({ sessionId: 'g', storyId: '9.9', storyPath: storyFile(m, '9.9', 'Espera guardar'), repoPath: repo, stepScheme: STEP_LIB.SCHEME, ...CLOSED, ...extra }));
+    sessionWith(m, 'g', 'Guardar', 'idle', NOW - 20 * 60000);
+    const w = await wipNow({ stateDir: m.state, sessionsDir: m.sessions, now: atIso(NOW), home: m.root, queryAll: noPrs });
+    return { w, data: buildOffice({ wip: w, nowMs: NOW }).data };
+  };
+  const dirty = await closed({ dirty: true });
+  assert.strictEqual(byName(dirty.data, 'Guardar').estado, 'firma');
+  // limpio: como hoy, libre
+  const clean = await closed({ dirty: false });
+  assert.strictEqual(byName(clean.data, 'Guardar').estado, 'libre');
+  assert.deepStrictEqual(clean.w.rows, []);
+  // sólo la carpeta de la corrida sin commitear: no es trabajo sin guardar
+  const onlyRun = await closed({ dirty: false }, {}, (repo) => { fs.mkdirSync(path.join(repo, '.advisors', 'pipeline-runs'), { recursive: true }); fs.writeFileSync(path.join(repo, '.advisors', 'pipeline-runs', 'x.md'), 'x'); });
+  assert.strictEqual(byName(onlyRun.data, 'Guardar').estado, 'libre', onlyRun.w.text);
+  // con el ok ya dado, sigue trabajando
+  const ok = await closed({ dirty: true }, { saveOk: { storyId: '9.9' } });
+  assert.strictEqual(byName(ok.data, 'Guardar').estado, 'trabajando');
+  assert.strictEqual(byName(ok.data, 'Guardar').espera, undefined);
+  // un repo que no se puede leer no dice que espera, y se dice por qué
+  const broken = await closed({ dirty: true }, {}, (repo) => fs.rmSync(path.join(repo, '.git', 'objects'), { recursive: true, force: true }));
+  assert.notStrictEqual(byName(broken.data, 'Guardar').estado, 'firma');
+  assert.ok(broken.data.unreadable.some((u) => /no se pudo leer|git/.test(u) && /9\.9|r\b/.test(u)), broken.data.unreadable.join(' | '));
+});
+
+test('T90 Meanwhile_OnlyRecentAndAfterStart @story-2.81 @ac-47: el «mientras tanto» es de ahora; /wip sigue mostrando los tres', async () => {
+  const m = toyMachine();
+  const steps = BEFORE_PLAN;
+  const when = (min) => atIso(NOW - min * 60000);
+  runMarkerFile(m, 'a', '9.1', 'Vieja', steps, { startedAt: when(210), lastTouch: when(1) });
+  fs.writeFileSync(path.join(m.state, 'adhoc', 'a.json'), JSON.stringify({ reason: 'carril de otra cosa', declaredAt: when(150), lastTouch: when(150) }));
+  runMarkerFile(m, 'b', '9.2', 'Anterior', steps, { startedAt: when(20), lastTouch: when(1) });
+  fs.writeFileSync(path.join(m.state, 'doing', 'b.json'), JSON.stringify({ text: 'nota de antes del arranque', at: when(30) }));
+  runMarkerFile(m, 'c', '9.3', 'Reciente', steps, { startedAt: when(210), lastTouch: when(1) });
+  fs.writeFileSync(path.join(m.state, 'doing', 'c.json'), JSON.stringify({ text: 'nota de hace poco', at: when(10) }));
+  sessionWith(m, 'a', 'A', 'busy'); sessionWith(m, 'b', 'B', 'busy'); sessionWith(m, 'c', 'C', 'busy');
+  const w = await wipNow({ stateDir: m.state, sessionsDir: m.sessions, now: atIso(NOW), home: m.root });
+  const { data } = buildOffice({ wip: w, nowMs: NOW });
+  assert.strictEqual(byName(data, 'A').mientras, undefined);
+  assert.strictEqual(byName(data, 'B').mientras, undefined);
+  assert.strictEqual(byName(data, 'C').mientras, 'nota de hace poco');
+  const said = (s) => w.rows.find((r) => r.session === s).meanwhile;
+  assert.match(said('A'), /carril de otra cosa.*sin tocar desde/);
+  assert.match(said('B'), /nota de antes del arranque/);
+  assert.match(said('C'), /nota de hace poco/);
+});
+
+test('T91 ClosedRun_DoesNotOwnNewWork @story-2.81 @ac-48: la corrida cerrada no se queda con la tarjeta del trabajo nuevo', async () => {
+  const m = toyMachine();
+  const now = Date.now();
+  const repo = toyRepo(m, 'cerrada');
+  const closure = { sessionId: 's', storyId: '9.9', storyPath: storyFile(m, '9.9', 'La historia cerrada'), repoPath: repo, stepScheme: STEP_LIB.SCHEME, ...CLOSED, startedAt: atIso(now - 3 * 3600000), estimate_min: 60, lastTouch: atIso(now - 90 * 60000), stepTimings: { 'prepare-commit': { completedAt: atIso(now - 90 * 60000) } } };
+  fs.writeFileSync(path.join(m.state, 'timing-history', 'h.json'), JSON.stringify({ archivedAt: atIso(now - 90 * 60000), marker: closure }));
+  sessionWith(m, 's', 'Sigue', 'busy', now);
+  const queue = async (qs) => qs.map(() => ({ prs: [{ number: 5, draft: false, conflict: false, offQueue: false }] }));
+  // sin carril ni nota, como hoy
+  let w = await wipNow({ stateDir: m.state, sessionsDir: m.sessions, now: atIso(now), home: m.root, queryAll: queue });
+  let a = byName(buildOffice({ wip: w, nowMs: now }).data, 'Sigue');
+  assert.strictEqual(a.estado, 'espera');
+  assert.strictEqual(a.titulo, 'La historia cerrada');
+  // con un carril declarado después, la tarjeta es el carril
+  fs.writeFileSync(path.join(m.state, 'adhoc', 's.json'), JSON.stringify({ reason: 'Arreglo el aviso del pedido', declaredAt: atIso(now - 30 * 60000), lastTouch: atIso(now - 30 * 60000) }));
+  w = await wipNow({ stateDir: m.state, sessionsDir: m.sessions, now: atIso(now), home: m.root, queryAll: queue });
+  const { data } = buildOffice({ wip: w, nowMs: now });
+  a = byName(data, 'Sigue');
+  assert.strictEqual(a.estado, 'trabajando');
+  assert.strictEqual(a.haciendo, 'Arreglo el aviso del pedido');
+  assert.strictEqual(a.titulo, 'Arreglo el aviso del pedido');
+  assert.strictEqual(a.termina, 'sin hora estimada');
+  for (const k of ['avance', 'pasos', 'pronosticoIso', 'atrasoMin']) assert.strictEqual(a[k], undefined, k);
+  assert.ok(col(data, 'entrando').tarjetas.some((t) => t.titulo === 'La historia cerrada' && t.quien === 'Sigue'), JSON.stringify(col(data, 'entrando')));
+  assert.ok(col(data, 'curso').tarjetas.some((t) => t.titulo === 'Arreglo el aviso del pedido' && t.quien === 'Sigue'));
+  // /wip sigue como hoy: la corrida, con su «mientras tanto»
+  assert.match(w.rows[0].meanwhile, /Arreglo el aviso del pedido/);
+});
+
+test('T92 NotePromise_PerDeclaration @story-2.81 @ac-49: una nota nueva con el mismo texto empieza una promesa nueva', () => {
+  const note = (declaredAt, endAt) => ({ session: 'Nota', extra: { kind: 'note', text: 'Ordeno las pruebas', endAt, hourAt: declaredAt, promiseAt: declaredAt } });
+  const first = buildOffice({ wip: wip([note(NOW - 2 * 3600000, NOW - 3600000)]), nowMs: NOW - 90 * 60000 });
+  const { data } = buildOffice({ wip: wip([note(NOW - 30 * 60000, NOW + 30 * 60000)]), promises: first.promises, nowMs: NOW });
+  assert.deepStrictEqual([byName(data, 'Nota').fin.dif, byName(data, 'Nota').fin.cls], ['en hora', 'ontime']);
+});
+
+const KANBAN_BOARD = {
+  pendientes: [
+    { titulo: 'Sin arrancar', estado: 'sin-empezar', grupo: 'Hoy', orden: 1 },
+    { titulo: 'Espera turno', estado: 'espera', grupo: 'Esta semana', orden: 1 },
+    { titulo: 'Hecho uno', estado: 'hecho', realIso: '2026-10-18T09:10', quien: 'Beto' },
+    { titulo: 'Hecho dos', estado: 'hecho', realIso: '2026-10-18T09:20', quien: 'Beto' },
+    { titulo: 'Lo de la persona con sesión', estado: 'curso', quien: 'Ana (la tanda B)' },
+    { titulo: 'Lo de alguien sin sesión', estado: 'curso', quien: 'Rita' },
+  ],
+};
+
+test('T93 Kanban_FiveColumns_FromRealStateAndBoard @story-2.81 @ac-50: cinco columnas, del estado real y del tablero', () => {
+  const { data } = buildOffice({
+    wip: wip([
+      { session: 'Ana', status: 'busy', work: '9.1 · Una', extra: { kind: 'pipeline', title: 'Una', storyId: '9.1', current: 'implement', endAt: NOW + 3600000 } },
+      { session: 'Eva', status: 'idle', work: '9.2 · Dos', extra: { kind: 'pipeline', title: 'Dos', storyId: '9.2', current: 'implement' } },
+      { session: 'Pepa', status: 'idle', work: '9.3 · Tres', extra: { kind: 'pipeline', title: 'Tres', storyId: '9.3', current: 'approve-plan' } },
+      { session: 'Lia', status: 'busy', work: '9.4 · Cuatro', extra: { kind: 'entering', title: 'Cuatro', storyId: '9.4', endAt: NOW + 3600000 } },
+    ], { free: ['Mimi'], halfwayItems: [{ kind: 'adhoc', text: 'un arreglo que quedó', cleanAfter: null, sid: 'x' }] }),
+    signatures: [{ id: 'f1', title: 'la primera firma', at: NOW }, { id: 'f2', title: 'la segunda firma', at: NOW }],
+    board: buildBoard(KANBAN_BOARD),
+    nowMs: NOW,
+  });
+  assert.deepStrictEqual(data.kanban.columnas.map((c) => c.nombre), ['Tu firma', 'En curso', 'Esperan entrar', 'Sin empezar', 'Hechos']);
+  assert.deepStrictEqual(titles(data, 'firma').sort(), ['Firma: la primera firma', 'Firma: la segunda firma', 'Tres'].sort());
+  assert.deepStrictEqual(titles(data, 'curso').sort(), ['Dos', 'Lo de alguien sin sesión', 'Una'].sort(), 'la fila de Ana no se suma: manda su tarjeta');
+  assert.deepStrictEqual(titles(data, 'entrando'), ['Cuatro']);
+  assert.deepStrictEqual(titles(data, 'sinEmpezar'), ['Sin arrancar', 'Espera turno']);
+  assert.deepStrictEqual(titles(data, 'hechos'), ['Hecho uno', 'Hecho dos']);
+  assert.deepStrictEqual(data.kanban.medioCamino.map((x) => [x.titulo, x.accion]), [['un arreglo que quedó', 'Ya se puede limpiar: pedíselo a la coordinadora']]);
+  for (const c of data.kanban.columnas) for (const t of c.tarjetas) assert.ok('titulo' in t && 'quien' in t && 'hora' in t, JSON.stringify(t));
+  const una = col(data, 'curso').tarjetas.find((t) => t.titulo === 'Una');
+  assert.strictEqual(una.quien, 'Ana');
+  assert.ok(una.hora);
+  assert.ok(!JSON.stringify(data.kanban).includes('9.1'), 'sin números de historia');
+  // el panel de la pared cuenta lo mismo
+  assert.match(page(data), /function drawPanel\(\)\{[^\n]*kanban/);
+});
+
+test('T124 Board_Riesgo_WholeWordName @story-2.81 @ac-50: «riesgo» va a «En curso» con su marca; «Ana» no es «Ananda»', () => {
+  const { data } = buildOffice({
+    wip: wip([{ session: 'Ana', status: 'busy', extra: { kind: 'loose', text: 'el arreglo de Ana' } }]),
+    board: buildBoard({ pendientes: [{ titulo: 'Lo de Ananda', estado: 'curso', quien: 'Ananda' }, { titulo: 'Puede fallar', estado: 'riesgo', quien: 'Rita' }, { titulo: 'En la cola', estado: 'entrando', quien: 'Rita' }] }),
+    nowMs: NOW,
+  });
+  const riesgo = col(data, 'curso').tarjetas.find((t) => t.titulo === 'Puede fallar');
+  assert.strictEqual(riesgo.marca, 'riesgo');
+  assert.ok(titles(data, 'curso').includes('Lo de Ananda'), 'la fila de Ananda queda en el kanban');
+  assert.deepStrictEqual(titles(data, 'entrando'), ['En la cola']);
+});
+
+test('T94 Kanban_NoBoard_StillColumns @story-2.81 @ac-50: sin tablero, el kanban sale igual', async () => {
+  const data = await collectWith(null);
+  assert.deepStrictEqual(data.kanban.columnas.map((c) => c.tarjetas.length), [0, 0, 0, 0, 0]);
+  assert.strictEqual(data.kanban.medioCamino.length, 0);
+  assert.strictEqual(data.tablero, null);
+  assert.ok(!data.unreadable.some((u) => /tablero/.test(u)), data.unreadable.join(' | '));
+});
+
+test('T95 Kanban_Page_TextOnly_WallSameColumns @story-2.81 @ac-50: la página dibuja las cinco columnas como texto', () => {
+  const data = { agents: [], items: [], meta: { teToca: [], actualizado: '10:00' }, rows: [], free: [], unreadable: [], tablero: null, kanban: {
+    columnas: [
+      { id: 'firma', nombre: 'Tu firma', tarjetas: [{ titulo: '<b>no es html</b>', quien: 'Ana', hora: 'dom 10:00', espera: 'el ok para guardar' }] },
+      { id: 'curso', nombre: 'En curso', tarjetas: [{ titulo: 'Una', quien: 'Eva', hora: 'sin hora estimada', marca: 'En fila para pruebas', nota: 'Lo de hoy' }, { titulo: 'Dos', quien: 'Lia', hora: '', motivo: 'en borrador' }] },
+      { id: 'entrando', nombre: 'Esperan entrar', tarjetas: [] },
+      { id: 'sinEmpezar', nombre: 'Sin empezar', tarjetas: [] },
+      { id: 'hechos', nombre: 'Hechos', tarjetas: [] },
+    ],
+    medioCamino: [{ titulo: 'Lo que quedó', quien: '—', accion: 'Ya se puede limpiar: pedíselo a la coordinadora' }],
+  } };
+  const { fn, body, sec } = drawKanban(data);
+  assert.strictEqual(sec.hidden, false);
+  assert.ok(!/innerHTML/.test(fn), 'se escribe con textContent');
+  const cols = all(body, (n) => /\bcol\b/.test(n.className));
+  assert.deepStrictEqual(cols.map((c) => textOf(c.children[0])), ['Tu firma · 1', 'En curso · 2', 'Esperan entrar · 0', 'Sin empezar · 0', 'Hechos · 0']);
+  assert.match(textOf(cols[2]), /Nada/);
+  assert.match(textOf(cols[0]), /<b>no es html<\/b>/);
+  assert.match(textOf(cols[0]), /el ok para guardar/);
+  assert.match(textOf(cols[1]), /En fila para pruebas/);
+  assert.match(textOf(cols[1]), /en borrador/);
+  assert.match(textOf(cols[1]), /Lo de hoy/);
+  const fold = all(body, (n) => n.tag === 'details');
+  assert.strictEqual(fold.length, 1, 'a medio camino va plegado');
+  assert.ok(!fold[0].open);
+  assert.match(textOf(fold[0]), /Lo que quedó/);
+  assert.match(textOf(fold[0]), /Ya se puede limpiar/);
+  const html = page(data);
+  assert.ok(!/const GROUPS=\[\["riesgo"/.test(html), 'el panel de la pared no cuenta otras columnas');
+  assert.match(html, /function abrirTablero\(\)\{[^\n]*kanban/);
+});
+
+test('T97 Regression_ChangedOnPurpose @story-2.81 @ac-52: las salidas de antes siguen, y las suites vecinas siguen verdes', { timeout: 600000 }, () => {
+  const { home } = toyHome();
+  const at = new Date(NOW).toISOString();
+  const data = JSON.parse(run(home, ['--json', '--now', at]));
+  assert.ok(Array.isArray(data.agents) && data.kanban && data.meta);
+  const out = path.join(home, 'foto.html');
+  assert.match(run(home, ['--out', out, '--now', at]), /La oficina está en/);
+  assert.ok(!fs.existsSync(path.join(stateDir(home), 'office', 'server.json')), 'la foto fija no arranca ningún proceso');
+  const r = spawnSync(process.execPath, ['--test', path.join(__dirname, 'work-in-progress.test.js')], { encoding: 'utf8', env: { ...process.env, TYCON_SESSION_STATE: '0' } });
+  assert.strictEqual(r.status, 0, `work-in-progress.test.js: ${r.stdout.slice(-2000)}`);
+});
+
+test('T99 Office_NoPipeline_ShowsTheThree @story-2.81 @ac-53 @ac-54: sin pipeline, lo que dice su conversación', () => {
+  const said = { encargo: 'Ordená las pruebas', haciendoAhora: 'Sigo con el kanban.', ultimaAccion: 'Editar · office.js · hace 4 min', lastWriteMs: NOW - 240000 };
+  const { data } = buildOffice({
+    wip: wip([
+      { session: 'Suelta', sid: 'a', extra: { kind: 'activity' } },
+      { session: 'Nota', sid: 'b', extra: { kind: 'note', text: 'mido el disco' } },
+      { session: 'Corre', sid: 'c', extra: { kind: 'pipeline', current: 'implement', steps: STEPS, title: 'Su historia' } },
+      { session: 'Muda', sid: 'd', extra: { kind: 'activity', lastAt: NOW - 600000 } },
+    ]),
+    transcripts: new Map([['a', said], ['b', said], ['c', said], ['d', { encargo: null, haciendoAhora: null, ultimaAccion: null, lastWriteMs: null }]]),
+    nowMs: NOW,
+  });
+  const a = byName(data, 'Suelta');
+  assert.strictEqual(a.haciendo, 'Sigo con el kanban.');
+  assert.strictEqual(a.titulo, 'Ordená las pruebas');
+  assert.strictEqual(a.encargo, 'Ordená las pruebas');
+  assert.strictEqual(a.haciendoAhora, 'Sigo con el kanban.');
+  assert.strictEqual(a.ultimaAccion, 'Editar · office.js · hace 4 min');
+  const b = byName(data, 'Nota');
+  assert.strictEqual(b.titulo, 'mido el disco');
+  assert.strictEqual(b.haciendoAhora, 'Sigo con el kanban.');
+  const c = byName(data, 'Corre');
+  assert.strictEqual(c.titulo, 'Su historia');
+  assert.strictEqual(c.encargo, undefined, 'con corrida abierta no cambia');
+  assert.strictEqual(c.haciendo, 'Va por el paso «Implementar».');
+  assert.strictEqual(byName(data, 'Muda').haciendo, `Sin novedades desde las ${hm(NOW - 600000)}`);
+  const html = page(data);
+  for (const label of ['Encargo', 'Haciendo ahora', 'Última acción']) assert.match(html, new RegExp(label), `la página lo nombra: ${label}`);
+  const crew = html.slice(html.indexOf('function renderCrew()'), html.indexOf('// sin 3D, la tabla queda abierta'));
+  assert.ok(crew.includes('Haciendo ahora') && !/innerHTML/.test(crew), 'como texto');
+});
+
+test('T103 NewWorkOnTop_OldRunPaused @story-2.81 @ac-56: el trabajo nuevo arriba y la corrida vieja debajo, sin hora', () => {
+  const { data } = buildOffice({
+    wip: wip([{ session: 'Dos', work: '9.1 · La vieja', extra: { kind: 'pipeline', storyId: '9.1', title: 'La vieja', current: 'implement', steps: STEPS, progress: 50, activityAt: NOW - 3.5 * 3600000, endAt: NOW + 3600000, hourAt: NOW - 3.5 * 3600000, meanwhile: 'el arreglo rápido de ahora', meanwhileAt: NOW - 10 * 60000, meanwhileKind: 'loose', runStartedAt: NOW - 5 * 3600000 } }]),
+    nowMs: NOW,
+  });
+  const a = byName(data, 'Dos');
+  assert.strictEqual(a.haciendo, 'el arreglo rápido de ahora');
+  assert.strictEqual(a.titulo, 'el arreglo rápido de ahora');
+  assert.strictEqual(a.enPausa, 'La vieja');
+  assert.strictEqual(a.mientras, undefined);
+  assert.strictEqual(a.termina, 'sin hora estimada');
+  for (const k of ['pasos', 'avance', 'pronosticoIso']) assert.strictEqual(a[k], undefined, k);
+  assert.match(page(data), /En pausa/);
+});
+
+const hourRun = (fields) => ({ kind: 'pipeline', storyId: '9.1', title: 'Una', current: 'implement', steps: STEPS, ...fields });
+
+test('T104 ExpiredEnd_NoActivity_WorkChanged @story-2.81 @ac-56: vencida y sin actividad, el trabajo cambió', () => {
+  const { data } = buildOffice({ wip: wip([{ session: 'Quieta', extra: hourRun({ endAt: NOW - 3.5 * 3600000, hourAt: NOW - 4.5 * 3600000, activityAt: NOW - 4 * 3600000 }) }]), nowMs: NOW });
+  const a = byName(data, 'Quieta');
+  assert.deepStrictEqual(a.fin, { hora: 'sin hora: el trabajo cambió', dif: '', cls: '' });
+  for (const k of ['atrasoMin', 'atrasada', 'pronosticoIso']) assert.strictEqual(a[k], undefined, k);
+});
+
+test('T105 Hour_StableBetweenPhotos @story-2.81 @ac-57: dos fotos del mismo paso dicen la misma hora, aunque cambien las medianas', () => {
+  const m = toyMachine();
+  const h = (implement) => fs.writeFileSync(path.join(m.state, 'timing-history', 'h.json'), JSON.stringify({ archivedAt: atIso(NOW - 86400000), marker: { startedAt: atIso(NOW - 2 * 86400000), stepTimings: { implement: { startedAt: atIso(NOW - 2 * 86400000), completedAt: atIso(NOW - 2 * 86400000 + implement * 60000) } } } }));
+  const at = NOW + 2 * 3600000;
+  runMarkerFile(m, 's', '9.1', 'Una', BEFORE_PLAN.concat('approve-plan'), { startedAt: atIso(NOW - 3600000), lastTouch: atIso(NOW - 60000), horaDelPaso: { step: 'implement', at: atIso(at), computedAt: atIso(NOW - 60000) } });
+  sessionWith(m, 's', 'Una', 'busy');
+  const see = () => { const w = buildWip({ stateDir: m.state, sessionsDir: m.sessions, now: atIso(NOW), home: m.root }); return [w, byName(buildOffice({ wip: w, nowMs: NOW }).data, 'Una')]; };
+  h(30);
+  const [w1, a1] = see();
+  h(500);
+  const [w2, a2] = see();
+  assert.strictEqual(a1.fin.hora, a2.fin.hora);
+  assert.strictEqual(a1.pronosticoIso.slice(11), hm(at));
+  assert.match(w1.rows[0].end, new RegExp(hm(at)));
+  assert.strictEqual(w1.rows[0].end, w2.rows[0].end);
+  // un marcador con la hora de otro paso calcula como hoy
+  runMarkerFile(m, 'o', '9.2', 'Otra', BEFORE_PLAN.concat('approve-plan'), { lastTouch: atIso(NOW - 60000), horaDelPaso: { step: 'plan', at: atIso(at), computedAt: atIso(NOW - 60000) } });
+  sessionWith(m, 'o', 'Otra', 'busy');
+  const other = buildWip({ stateDir: m.state, sessionsDir: m.sessions, now: atIso(NOW), home: m.root }).extra.find((x) => x.storyId === '9.2');
+  assert.strictEqual(other.hourStep, undefined);
+});
+
+test('T106 Hour_RecalculatedOnStep_SaysWhy @story-2.81 @ac-57: al pasar de paso dice por qué cambió, y el atraso se mide contra esa hora', () => {
+  const m = toyMachine();
+  const at = NOW - 15 * 60000;
+  runMarkerFile(m, 's', '9.1', 'Una', BEFORE_PLAN.concat('approve-plan', 'implement'), { startedAt: atIso(NOW - 5 * 3600000), estimate_min: 60, lastTouch: atIso(NOW - 60000), horaDelPaso: { step: 'run-tests', at: atIso(at), computedAt: atIso(NOW - 30 * 60000) } });
+  sessionWith(m, 's', 'Una', 'busy');
+  const { data } = buildOffice({ wip: buildWip({ stateDir: m.state, sessionsDir: m.sessions, now: atIso(NOW), home: m.root }), nowMs: NOW });
+  const a = byName(data, 'Una');
+  assert.strictEqual(a.horaPorque, 'recalculada al pasar a Correr las pruebas');
+  assert.strictEqual(a.atrasoMin, 15, 'contra la hora del paso, no contra la promesa');
+  assert.strictEqual(a.fin.dif, '+15 min tarde');
+  assert.strictEqual(a.pronosticoIso.slice(11), hm(at));
+  assert.strictEqual(a.estimadaIso.slice(11), hm(NOW - 4 * 3600000), '«Prometido» sigue siendo la promesa del arranque');
+  assert.match(page(data), /Prometido/);
+});
+
+test('T107 Hour_Old_NotLate @story-2.81 @ac-58: una hora calculada hace rato dice «vieja», no «tarde»', () => {
+  const { data } = buildOffice({
+    wip: wip([
+      { session: 'Vieja', extra: hourRun({ endAt: NOW - 30 * 60000, hourAt: NOW - 3.5 * 3600000, activityAt: NOW - 30 * 60000 }) },
+      { session: 'Reciente', extra: hourRun({ endAt: NOW - 15 * 60000, hourAt: NOW - 30 * 60000, activityAt: NOW - 30 * 60000 }) },
+      { session: 'Carril', extra: { kind: 'loose', text: 'un arreglo', endAt: NOW - 2 * 3600000, hourAt: NOW - 3.5 * 3600000 } },
+    ]),
+    nowMs: NOW,
+  });
+  const v = byName(data, 'Vieja');
+  assert.deepStrictEqual(v.fin, { hora: `vieja (de las ${hm(NOW - 3.5 * 3600000)})`, dif: '', cls: '' });
+  assert.strictEqual(v.atrasoMin, undefined);
+  assert.strictEqual(byName(data, 'Reciente').atrasoMin, 15);
+  assert.strictEqual(byName(data, 'Reciente').fin.cls, 'late');
+  assert.deepStrictEqual(byName(data, 'Carril').fin, { hora: `vieja (de las ${hm(NOW - 3.5 * 3600000)})`, dif: '', cls: '' });
+});
+
+// Una máquina de juguete con la HOME entera, para correr marker.js y leer /office y /wip de verdad.
+function parkMachine() {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'office-marca-'));
+  const sdir = stateDir(home);
+  for (const d of ['active', 'adhoc', 'doing', 'timing-history']) fs.mkdirSync(path.join(sdir, d), { recursive: true });
+  const sessions = path.join(home, '.claude', 'sessions');
+  fs.mkdirSync(sessions, { recursive: true });
+  const m = { root: home, state: sdir, sessions, home };
+  return m;
+}
+const collectAt = (m, nowMs, more = {}) => collect({ home: m.home, now: atIso(nowMs), siteUrl: async () => ({ code: 3, out: '' }), quietMinutes: async () => ({ code: 3, out: '' }), queryAll: noPrs, ...more });
+const ddmm = (ms) => { const d = new Date(ms); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`; };
+const ymd = (ms) => { const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+
+test('T108 Park_Until_ShownAndExpired @story-2.81 @ac-59: «En pausa hasta», «venció», igual sin marca, y de vuelta su paso', async () => {
+  const m = parkMachine();
+  const now = Date.now();
+  const until = now + 2 * 86400000;
+  runMarkerFile(m, 's', '2.81', 'La tanda', BEFORE_PLAN.concat('approve-plan'), { startedAt: atIso(now - 3600000), lastTouch: atIso(now - 60000) });
+  sessionWith(m, 's', 'Viva', 'busy', now);
+  assert.strictEqual(runMarker(m.home, 'otra', ['park', '2.81', '--until', ymd(until)]), 0);
+  let data = await collectAt(m, now);
+  let w = await wipNow({ home: m.home, now: atIso(now), queryAll: noPrs });
+  let a = byName(data, 'Viva');
+  assert.strictEqual(a.marca, `En pausa hasta el ${ddmm(until)}`);
+  assert.strictEqual(a.haciendo, `En pausa hasta el ${ddmm(until)}`);
+  for (const k of ['pronosticoIso', 'atrasoMin', 'atrasada']) assert.strictEqual(a[k], undefined, k);
+  assert.strictEqual(a.fin.hora, `En pausa hasta el ${ddmm(until)}`);
+  assert.match(w.text, new RegExp(`En pausa hasta el ${ddmm(until)}`));
+  // pasada la fecha, venció, sin limpiar (y sigue viéndose aunque el marcador tenga más de un día)
+  const later = until + 86400000;
+  fs.rmSync(path.join(m.sessions, 's.json'));
+  data = await collectAt(m, later);
+  w = await wipNow({ home: m.home, now: atIso(later), queryAll: noPrs });
+  const it = data.items.find((i) => i.titulo === 'La tanda');
+  assert.strictEqual(it.marca, `En pausa: venció el ${ddmm(until)}`);
+  assert.ok(!JSON.stringify(it).includes('limpiar'), JSON.stringify(it));
+  assert.match(w.text, /venció/);
+  assert.doesNotMatch(w.text, /limpiar/);
+  // sacar la marca: vuelve su paso
+  sessionWith(m, 's', 'Viva', 'busy', now);
+  assert.strictEqual(runMarker(m.home, 'otra', ['unpark', '2.81']), 0);
+  data = await collectAt(m, now);
+  a = byName(data, 'Viva');
+  assert.strictEqual(a.marca, undefined);
+  assert.strictEqual(a.haciendo, 'Va por el paso «Implementar».');
+  // sin marca, con `paused_until:` en la historia, dice lo mismo
+  const story = path.join(m.root, 'story-2.82.md');
+  fs.writeFileSync(story, `---\nstory: "2.82"\ntitle: "La pausada"\npaused_until: ${ymd(until)}\n---\n# Story\n`);
+  fs.writeFileSync(path.join(m.state, 'active', 'p.json'), JSON.stringify({ sessionId: 'p', storyId: '2.82', storyPath: story, stepScheme: STEP_LIB.SCHEME, stepsCompleted: BEFORE_PLAN, stepsPending: IDS.filter((s) => !BEFORE_PLAN.includes(s)), lastTouch: atIso(now - 60000) }));
+  sessionWith(m, 'p', 'Pausada', 'busy', now);
+  data = await collectAt(m, now);
+  assert.strictEqual(byName(data, 'Pausada').marca, `En pausa hasta el ${ddmm(until)}`);
+  data = await collectAt(m, later);
+  assert.ok(data.items.some((i) => i.marca === `En pausa: venció el ${ddmm(until)}`), JSON.stringify(data.items));
+});
+
+test('T109 Park_Queue_NeverClean @story-2.81 @ac-60: la corrida en fila nunca dice «limpiar»; la que no está marcada, como hoy', async () => {
+  const m = parkMachine();
+  const now = Date.now();
+  runMarkerFile(m, 'fila', '8.176', 'En la fila', BEFORE_PLAN.concat('approve-plan'), { lastTouch: atIso(now - 60000) });
+  runMarkerFile(m, 'suelta', '8.177', 'Sin marca', BEFORE_PLAN.concat('approve-plan'), { lastTouch: atIso(now - 60000) });
+  assert.strictEqual(runMarker(m.home, 'otra', ['park', '8.176', '--queue']), 0);
+  const data = await collectAt(m, now);
+  const w = await wipNow({ home: m.home, now: atIso(now), queryAll: noPrs });
+  const card = col(data, 'curso').tarjetas.find((t) => t.titulo === 'En la fila');
+  assert.strictEqual(card.marca, 'En fila para pruebas');
+  assert.ok(!JSON.stringify(card).includes('limpiar'));
+  assert.ok(!data.kanban.medioCamino.some((x) => x.titulo === 'En la fila'), 'no queda a medio camino');
+  assert.ok(data.kanban.medioCamino.some((x) => x.titulo === 'Sin marca' && /limpiar/.test(x.accion)));
+  assert.match(w.halfway.find((h) => /8\.176/.test(h)), /En fila para pruebas/);
+  assert.doesNotMatch(w.halfway.find((h) => /8\.176/.test(h)), /limpiar/);
+  assert.match(w.halfway.find((h) => /8\.177/.test(h)), /limpiar: node/);
+});
+
+test('T111 OwnerColumn_CountsClosedSessions @story-2.81 @ac-61: «Tu firma» cuenta también a las sesiones cerradas', async () => {
+  const m = parkMachine();
+  const now = Date.now();
+  const repo = toyRepo(m, 'sin-guardar', { dirty: true });
+  runMarkerFile(m, 'p1', '9.1', 'Plan uno', BEFORE_PLAN, { lastTouch: atIso(now - 60000) });
+  runMarkerFile(m, 'p2', '9.2', 'Plan dos', BEFORE_PLAN, { lastTouch: atIso(now - 60000) });
+  fs.writeFileSync(path.join(m.state, 'active', 'g1.json'), JSON.stringify({ sessionId: 'g1', storyId: '9.9', storyPath: storyFile(m, '9.9', 'Guardar uno'), repoPath: repo, stepScheme: STEP_LIB.SCHEME, ...CLOSED, lastTouch: atIso(now - 60000) }));
+  runMarkerFile(m, 'o1', '9.3', 'Otro paso', BEFORE_PLAN.concat('approve-plan'), { lastTouch: atIso(now - 60000) });
+  assert.strictEqual(runMarker(m.home, 'otra', ['park', '9.2', '--queue']), 0);
+  const data = await collectAt(m, now);
+  const firma = titles(data, 'firma');
+  for (const t of ['Plan uno', 'Plan dos', 'Guardar uno']) assert.ok(firma.includes(t), `${t}: ${firma}`);
+  assert.ok(!firma.includes('Otro paso'));
+  assert.strictEqual(data.meta.teToca.length, 3, data.meta.teToca.join(' | '));
+  assert.ok(col(data, 'firma').tarjetas.every((t) => t.quien && t.quien !== '—'), 'con el nombre de la sesión');
+  const marked = col(data, 'firma').tarjetas.find((t) => t.titulo === 'Plan dos');
+  assert.strictEqual(marked.marca, 'En fila para pruebas', 'la marcada conserva su texto');
+  assert.ok(!data.kanban.medioCamino.some((x) => firma.includes(x.titulo)), 'y no se repite a medio camino');
+  assert.ok(data.kanban.medioCamino.some((x) => x.titulo === 'Otro paso'));
+});
+
+test('T112 OfficeAndWip_SayTheSame @story-2.81 @ac-62: /office y /wip dicen lo mismo de cada sesión', async () => {
+  const m = parkMachine();
+  const now = Date.now();
+  const at = (min) => atIso(now - min * 60000);
+  const repo = toyRepo(m, 'con-cambios', { dirty: true });
+  const mk = (sid, id, title, done, name, status, extra = {}) => { runMarkerFile(m, sid, id, title, done, { startedAt: at(300), lastTouch: at(1), ...extra }); if (name) sessionWith(m, sid, name, status, now - 600000); };
+  const next = BEFORE_PLAN.concat('approve-plan');
+  mk('a', '9.1', 'Parada', next, 'Ana', 'idle');
+  mk('b', '9.2', 'Pide', next, 'Bea', 'waiting');
+  mk('c', '9.3', 'Plan', BEFORE_PLAN, 'Cata', 'idle');
+  fs.writeFileSync(path.join(m.state, 'active', 'd.json'), JSON.stringify({ sessionId: 'd', storyId: '9.9', storyPath: storyFile(m, '9.9', 'Guardar'), repoPath: repo, stepScheme: STEP_LIB.SCHEME, ...CLOSED, lastTouch: at(1) }));
+  sessionWith(m, 'd', 'Dora', 'idle', now - 600000);
+  mk('e', '9.4', 'Sin cambios', next, 'Eva', 'busy', { lastTouch: at(240), horaDelPaso: { step: 'implement', at: at(210), computedAt: at(270) } });
+  mk('f', '9.5', 'Vieja', next, 'Fani', 'busy', { lastTouch: at(30), horaDelPaso: { step: 'implement', at: at(100), computedAt: at(200) } });
+  mk('g', '9.6', 'Pausada', next, 'Gina', 'busy');
+  mk('h', '9.7', 'Fila', next, null, null);
+  assert.strictEqual(runMarker(m.home, 'otra', ['park', '9.6', '--until', ymd(now + 2 * 86400000)]), 0);
+  assert.strictEqual(runMarker(m.home, 'otra', ['park', '9.7', '--queue']), 0);
+  const data = await collectAt(m, now);
+  const w = await wipNow({ home: m.home, now: atIso(now), queryAll: noPrs });
+  const line = (name) => w.text.split('\n').find((l) => l.includes(`| ${name} |`)) || '';
+  assert.strictEqual(byName(data, 'Ana').estado, 'parada');
+  assert.match(line('Ana'), new RegExp(byName(data, 'Ana').parada));
+  assert.strictEqual(byName(data, 'Bea').estado, 'firma');
+  assert.match(line('Bea'), new RegExp(`Tu firma: ${byName(data, 'Bea').espera}`));
+  assert.strictEqual(byName(data, 'Cata').espera, 'que apruebes el plan');
+  assert.match(line('Cata'), /Tu firma: que apruebes el plan/);
+  assert.strictEqual(byName(data, 'Dora').espera, 'el ok para guardar');
+  assert.match(line('Dora'), /Terminó: espera el ok para guardar/);
+  assert.strictEqual(byName(data, 'Eva').fin.hora, 'sin hora: el trabajo cambió');
+  assert.match(line('Eva'), /sin hora: el trabajo cambió/);
+  assert.strictEqual(byName(data, 'Fani').fin.hora, `vieja (de las ${hm(now - 200 * 60000)})`);
+  assert.match(line('Fani'), new RegExp(`vieja \\(de las ${hm(now - 200 * 60000)}\\)`));
+  assert.strictEqual(byName(data, 'Gina').marca, `En pausa hasta el ${ddmm(now + 2 * 86400000)}`);
+  assert.match(line('Gina'), new RegExp(byName(data, 'Gina').marca));
+  assert.doesNotMatch(line('Gina'), /limpiar/);
+  const fila = data.items.find((i) => i.titulo === 'Fila');
+  assert.strictEqual(fila.marca, 'En fila para pruebas');
+  assert.match(w.text, /En fila para pruebas/);
+  assert.doesNotMatch(w.halfway.find((h) => /9\.7/.test(h)), /limpiar/);
+});
+
+test('T113 Desks_WorkersFirst_StablePlaces @story-2.81 @ac-63: con más de 10 sesiones, los escritorios son para las que trabajan', () => {
+  const work = { kind: 'pipeline', current: 'implement', steps: STEPS };
+  const entries = (over = {}) => [
+    { session: 'Zoe', sid: 'co', status: 'idle', extra: work },
+    ...['Omar', 'Pia', 'Quim', 'Rosa'].map((session) => ({ session, status: over[session] || 'busy', extra: work })),
+    ...['Vero', 'Walter'].map((session) => ({ session, status: 'waiting', extra: work })),
+    ...['Tita', 'Ulises'].map((session) => ({ session, status: 'idle', extra: work })),
+  ];
+  const free = ['Ada', 'Bruno', 'Celia', 'Dani'];
+  const build = (over) => buildOffice({ wip: wip(entries(over), { free }), coordinatorSid: 'co', nowMs: NOW }).data;
+  const data = build();
+  assert.deepStrictEqual(data.agents.slice(0, 10).map((a) => a.nombre), ['Zoe', 'Ada', 'Omar', 'Pia', 'Quim', 'Rosa', 'Tita', 'Ulises', 'Vero', 'Walter']);
+  assert.deepStrictEqual(data.agents.slice(10).map((a) => a.nombre), ['Bruno', 'Celia', 'Dani']);
+  assert.strictEqual(data.meta.extra, 3);
+  assert.strictEqual(data.meta.puestos.length, 10);
+  // una que pasa de ocupada a parada no mueve a nadie
+  assert.deepStrictEqual(build({ Pia: 'idle' }).agents.map((a) => a.nombre), data.agents.map((a) => a.nombre));
+  // con 10 o menos, el orden de hoy
+  const few = buildOffice({ wip: wip(entries().slice(0, 9), { free: ['Ada'] }), coordinatorSid: 'co', nowMs: NOW }).data;
+  assert.deepStrictEqual(few.agents.map((a) => a.nombre), ['Zoe', 'Ada', 'Omar', 'Pia', 'Quim', 'Rosa', 'Tita', 'Ulises', 'Vero', 'Walter']);
+});
+
+test('T114 Board_RowWithStory_RunDecides @story-2.81 @ac-64: con corrida, la fila aporta la nota y manda la corrida', () => {
+  const { data } = buildOffice({
+    wip: wip([{ session: 'Eva', status: 'idle', extra: { kind: 'pipeline', storyId: '2.81', title: 'La tanda', current: 'implement', steps: STEPS, endAt: NOW + 3600000 } }]),
+    board: buildBoard({ pendientes: [{ titulo: 'Lo de la 2.81', historia: '2.81', estado: 'hecho', nota: 'Lo de hoy' }, { titulo: 'Suelta', estado: 'curso' }] }),
+    nowMs: NOW,
+  });
+  assert.deepStrictEqual(titles(data, 'curso').sort(), ['La tanda', 'Suelta'].sort());
+  assert.deepStrictEqual(titles(data, 'hechos'), []);
+  const card = col(data, 'curso').tarjetas.find((t) => t.titulo === 'La tanda');
+  assert.strictEqual(card.nota, 'Lo de hoy');
+  assert.ok(card.hora && card.hora !== 'sin hora estimada');
+});
+
+test('T123 Board_StoryWithoutRun_StoryAndPr @story-2.81 @ac-64: sin corrida, la columna del archivo o la del pedido; con corrida, no se consulta', async () => {
+  const asked = [];
+  const queryPrs = async (qs) => qs.map((q) => { asked.push(q.numero); return { pr: { state: 'merged', mergedAt: atIso(NOW - 3600000) } }; });
+  const m = toyMachine();
+  fs.mkdirSync(path.join(m.state, 'coordination'), { recursive: true });
+  fs.writeFileSync(path.join(m.state, 'coordination', 'tablero.json'), JSON.stringify({ pendientes: [
+    { titulo: 'Sin corrida ni pedido', historia: '7.1', estado: 'sin-empezar' },
+    { titulo: 'Sin corrida con pedido', historia: '7.2', estado: 'curso', pedido: { repo: 'tycon-harness', numero: 100 } },
+    { titulo: 'Con corrida y pedido', historia: '7.3', estado: 'hecho', pedido: { repo: 'tycon-harness', numero: 101 } },
+  ] }));
+  runMarkerFile(m, 's', '7.3', 'La corrida', BEFORE_PLAN.concat('approve-plan'), { lastTouch: atIso(NOW) });
+  sessionWith(m, 's', 'Eva', 'busy');
+  const data = await collect({ stateDir: m.state, sessionsDir: m.sessions, home: m.root, now: atIso(NOW), siteUrl: async () => ({ code: 3, out: '' }), quietMinutes: async () => ({ code: 3, out: '' }), queryPrs });
+  assert.deepStrictEqual(titles(data, 'sinEmpezar'), ['Sin corrida ni pedido']);
+  assert.deepStrictEqual(titles(data, 'hechos'), ['Sin corrida con pedido']);
+  assert.deepStrictEqual(titles(data, 'curso'), ['La corrida']);
+  assert.deepStrictEqual(asked, [100], 'con corrida no se consulta');
+});
+
+test('T115 Board_RowWithPr_StateFromPr @story-2.81 @ac-65: el estado de la fila sale de su pedido, a lo sumo una vez por minuto', async () => {
+  const { cachedQuery } = require(path.join(__dirname, '..', 'tools', 'office', 'server.js'));
+  const answers = {
+    1: { pr: { state: 'open', draft: false, autoComplete: true, inQueue: true } },
+    2: { pr: { state: 'open', draft: true, autoComplete: false } },
+    3: { pr: { state: 'open', draft: false, autoComplete: false, inQueue: false } },
+    4: { pr: { state: 'merged', mergedAt: atIso(NOW - 3600000) } },
+    5: { error: 'la capa de plataforma: no_medido: se cayó la red' },
+  };
+  let calls = 0;
+  const asked = [];
+  const queryPrs = cachedQuery(async (qs) => { calls += 1; return qs.map((q) => { asked.push(q.numero); return answers[q.numero]; }); });
+  const m = toyMachine();
+  fs.mkdirSync(path.join(m.state, 'coordination'), { recursive: true });
+  const row = (titulo, numero, estado = 'sin-empezar') => ({ titulo, estado, pedido: { repo: 'tycon-harness', numero } });
+  fs.writeFileSync(path.join(m.state, 'coordination', 'tablero.json'), JSON.stringify({ pendientes: [row('En la cola', 1), row('Borrador', 2), row('Fuera', 3), row('Entró', 4), row('Falla', 5, 'curso'), { titulo: 'Sin pedido', estado: 'hecho' }] }));
+  const photo = () => collect({ stateDir: m.state, sessionsDir: m.sessions, home: m.root, now: atIso(NOW), siteUrl: async () => ({ code: 3, out: '' }), quietMinutes: async () => ({ code: 3, out: '' }), queryPrs });
+  const data = await photo();
+  assert.deepStrictEqual(titles(data, 'entrando'), ['En la cola', 'Borrador', 'Fuera']);
+  const entra = col(data, 'entrando').tarjetas;
+  assert.strictEqual(entra[0].motivo, undefined);
+  assert.strictEqual(entra[1].motivo, 'en borrador');
+  assert.strictEqual(entra[2].motivo, 'fuera de la cola');
+  const hecho = col(data, 'hechos').tarjetas.find((t) => t.titulo === 'Entró');
+  assert.ok(hecho.hora && /\d\d:\d\d/.test(hecho.hora), JSON.stringify(hecho));
+  assert.ok(titles(data, 'curso').includes('Falla'), 'lo que falla queda donde dice el archivo: no saber no es «entró»');
+  assert.ok(data.unreadable.some((u) => /se cayó la red/.test(u)), data.unreadable.join(' | '));
+  await photo();
+  assert.strictEqual(calls, 1, 'dos fotos seguidas: una sola consulta');
+  assert.deepStrictEqual(asked.sort(), [1, 2, 3, 4, 5], 'cada uno una vez, y ninguno que el tablero no nombra');
+});
+
+test('T116 Stamp_UpToDate_BoardWrittenAt @story-2.81 @ac-66: «Al día a las» y la hora de escritura del tablero', async () => {
+  const html = page({ agents: [], items: [], meta: { actualizado: '10:00', teToca: [] }, rows: [], free: [], unreadable: [], kanban: { columnas: [], medioCamino: [] } });
+  assert.match(html, /"Al día a las "\+meta\.actualizado/);
+  assert.doesNotMatch(html, /Foto de las/);
+  const m = toyMachine();
+  const file = path.join(m.state, 'coordination', 'tablero.json');
+  const photo = (now) => collect({ stateDir: m.state, sessionsDir: m.sessions, home: m.root, now: atIso(now), siteUrl: async () => ({ code: 3, out: '' }), quietMinutes: async () => ({ code: 3, out: '' }) });
+  // sin tablero, el kanban no dice ninguna hora
+  assert.strictEqual((await photo(NOW)).kanban.escrito, undefined);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ pendientes: [] }));
+  fs.utimesSync(file, new Date(NOW), new Date(NOW));
+  assert.strictEqual((await photo(NOW + 10 * 60000)).kanban.escrito, `Tablero escrito a las ${hm(NOW)}`);
+  assert.strictEqual((await photo(NOW + 20 * 60000)).kanban.escrito, `Tablero escrito a las ${hm(NOW)} (vieja)`);
+  // el kanban y el panel de la pared usan esa hora; sin tablero, la pared dice «Al día»
+  assert.match(html, /escrito\|\|"Al día a las "/);
+  const { body } = drawKanban({ agents: [], items: [], meta: { actualizado: '10:00', teToca: [] }, rows: [], free: [], unreadable: [], tablero: null, kanban: { escrito: `Tablero escrito a las ${hm(NOW)}`, columnas: [], medioCamino: [] } });
+  assert.match(textOf(body), new RegExp(`Tablero escrito a las ${hm(NOW)}`));
+});
+
+// ── Las regresiones del pase adversarial del estado real ─────────────────────────────────────────────────────────────
+
+const parked = (m, sid, body) => { fs.mkdirSync(path.join(m.state, 'parked'), { recursive: true }); fs.writeFileSync(path.join(m.state, 'parked', `${sid}.json`), body); };
+const oldHours = (now, h) => atIso(now - h * 3600000);
+
+test('T126 PausedUntil_ProtectsLikeAMark @story-2.81 @ac-59 @ac-60: `paused_until:` de la historia protege de limpiar y de la poda', () => {
+  const m = parkMachine();
+  const now = Date.now();
+  const story = path.join(m.root, 'story-9.21.md');
+  fs.writeFileSync(story, `---\nstory: "9.21"\ntitle: "Pausada"\npaused_until: ${ymd(now + 5 * 86400000)}\n---\n# Story\n`);
+  const base = { storyId: '9.21', storyPath: story, stepScheme: STEP_LIB.SCHEME, stepsCompleted: BEFORE_PLAN, stepsPending: IDS.filter((s) => !BEFORE_PLAN.includes(s)), startedAt: oldHours(now, 40), lastTouch: oldHours(now, 30) };
+  fs.writeFileSync(path.join(m.state, 'active', 'pa.json'), JSON.stringify({ sessionId: 'pa', ...base }));
+  fs.writeFileSync(path.join(m.state, 'active', 'pb.json'), JSON.stringify({ sessionId: 'pb', ...base }));
+  assert.strictEqual(runMarker(m.home, 'otra', ['clear-session', 'pa']), 1);
+  assert.ok(fs.existsSync(path.join(m.state, 'active', 'pa.json')), 'limpiarla se niega');
+  assert.strictEqual(runMarker(m.home, 'otra', ['list-all']), 0);
+  assert.ok(fs.existsSync(path.join(m.state, 'active', 'pb.json')), 'la poda no la borra');
+});
+
+test('T127 Mark_Unreadable_Protects @story-2.81 @ac-60: una marca que está y no se lee protege; `--until` vale en cualquier huso', () => {
+  const m = parkMachine();
+  const now = Date.now();
+  runMarkerFile(m, 'rota', '9.22', 'Rota', BEFORE_PLAN, { startedAt: oldHours(now, 40), lastTouch: oldHours(now, 30) });
+  parked(m, 'rota', '{ esto no es json');
+  assert.strictEqual(runMarker(m.home, 'otra', ['clear-session', 'rota']), 1);
+  assert.strictEqual(runMarker(m.home, 'otra', ['list-all']), 0);
+  assert.ok(fs.existsSync(path.join(m.state, 'active', 'rota.json')));
+  // +14 h: las 12:00 locales caen el día anterior en UTC
+  runMarkerFile(m, 'huso', '9.23', 'Huso', BEFORE_PLAN, { lastTouch: atIso(now) });
+  const out = execFileSync('node', [MARKER, 'park', '9.23', '--until', '2030-03-10'], { input: '', env: { ...process.env, TZ: 'Pacific/Kiritimati', HOME: m.home, USERPROFILE: m.home, CLAUDE_CODE_SESSION_ID: 'otra' }, encoding: 'utf8' });
+  assert.match(out, /en pausa hasta 2030-03-10/);
+});
+
+test('T128 FinishedAndMarked_CleanTree_NoSignature @story-2.81 @ac-46 @ac-62: marcada, cerrada y con el árbol limpio no pide el ok', async () => {
+  const m = parkMachine();
+  const now = Date.now();
+  const repo = toyRepo(m, 'limpio');
+  fs.writeFileSync(path.join(m.state, 'active', 'g.json'), JSON.stringify({ sessionId: 'g', storyId: '9.9', storyPath: storyFile(m, '9.9', 'Limpia'), repoPath: repo, stepScheme: STEP_LIB.SCHEME, ...CLOSED, startedAt: oldHours(now, 3), lastTouch: atIso(now - 60000) }));
+  sessionWith(m, 'g', 'Bea', 'idle', now - 600000);
+  parked(m, 'g', JSON.stringify({ story: '9.9', kind: 'queue', at: atIso(now - 60000) }));
+  const data = await collectAt(m, now);
+  assert.notStrictEqual(byName(data, 'Bea').estado, 'firma');
+  assert.strictEqual(byName(data, 'Bea').marca, 'En fila para pruebas');
+  assert.deepStrictEqual(data.meta.teToca, []);
+  assert.deepStrictEqual(titles(data, 'firma'), []);
+  assert.ok(titles(data, 'curso').includes('Limpia'), 'y sigue en curso');
+});
+
+test('T129 FinishedWithChanges_DoesNotVanishAfterADay @story-2.81 @ac-46 @ac-61: lo terminado sin guardar sigue pidiendo el ok a las 30 h y la poda no lo borra', async () => {
+  const m = parkMachine();
+  const now = Date.now();
+  const repo = toyRepo(m, 'sucio', { dirty: true });
+  fs.writeFileSync(path.join(m.state, 'active', 'g.json'), JSON.stringify({ sessionId: 'g', storyId: '9.9', storyPath: storyFile(m, '9.9', 'Sin guardar'), repoPath: repo, stepScheme: STEP_LIB.SCHEME, ...CLOSED, startedAt: oldHours(now, 40), lastTouch: oldHours(now, 30) }));
+  const data = await collectAt(m, now);
+  assert.ok(titles(data, 'firma').includes('Sin guardar'));
+  assert.strictEqual(data.meta.teToca.length, 1);
+  assert.strictEqual(runMarker(m.home, 'otra', ['list-all']), 0);
+  assert.ok(fs.existsSync(path.join(m.state, 'active', 'g.json')), 'la poda no la borra');
+});
+
+test('T130 UnsavedChanges_OnlyThisRun @story-2.81 @ac-46: rutas citadas, renombres, otra rama y un repo que no contesta', () => {
+  const m = parkMachine();
+  const repo = toyRepo(m, 'lector');
+  const git = (...a) => execFileSync('git', ['-c', 'core.quotepath=true', '-C', repo, ...a], { stdio: 'ignore' });
+  const { unsavedChanges } = require(path.join(path.dirname(OFFICE), 'work-in-progress.js'));
+  const ask = (id) => unsavedChanges({ storyId: id, repoPath: repo }, { until: Date.now() + 5000, cache: new Map() });
+  fs.mkdirSync(path.join(repo, '.advisors'));
+  fs.writeFileSync(path.join(repo, '.advisors', 'con espacio ñ.txt'), 'a');
+  fs.writeFileSync(path.join(repo, 'codigo.js'), 'a');
+  git('add', '-A');
+  git('commit', '-q', '-m', 'base');
+  fs.writeFileSync(path.join(repo, '.advisors', 'con espacio ñ.txt'), 'b');
+  assert.strictEqual(ask('9.9').dirty, false, '.advisors/ con espacio y acento no es trabajo');
+  git('checkout', '-q', '.');
+  git('mv', '.advisors/con espacio ñ.txt', 'movido.js');
+  assert.strictEqual(ask('9.9').dirty, true, 'un renombre hacia el código es trabajo');
+  assert.strictEqual(ask('9.1').dirty, false, 'en la rama de otra historia, los cambios no son de ésta');
+  git('checkout', '-q', '-b', 'main');
+  assert.strictEqual(ask('9.9').dirty, false, 'en la rama principal tampoco');
+  git('checkout', '-q', 'story/9.9-algo');
+  const late = unsavedChanges({ storyId: '9.9', repoPath: repo }, { until: 0, cache: new Map() });
+  assert.strictEqual(late.dirty, false);
+  assert.match(late.problems.join(' '), /tope/, 'el tope de tiempo se dice');
+});
+
+test('T131 ClosedSession_UnreadableRepo_Said @story-2.81 @ac-46 @ac-61: con la sesión cerrada, un repo roto queda en «no se pudo leer»', async () => {
+  const m = parkMachine();
+  const now = Date.now();
+  const repo = toyRepo(m, 'roto');
+  fs.writeFileSync(path.join(m.state, 'active', 'g.json'), JSON.stringify({ sessionId: 'g', storyId: '9.9', storyPath: storyFile(m, '9.9', 'Rota'), repoPath: repo, stepScheme: STEP_LIB.SCHEME, ...CLOSED, lastTouch: atIso(now - 60000) }));
+  fs.rmSync(path.join(repo, '.git', 'HEAD'));
+  fs.writeFileSync(path.join(repo, '.git', 'config'), '[roto');
+  const w = await wipNow({ home: m.home, now: atIso(now), queryAll: noPrs });
+  assert.match(w.unreadable.join(' '), /no se pudo leer si le quedan cambios|roto/, w.unreadable.join(' | '));
+});
+
+test('T132 Finished_NoLatePromise @story-2.81 @ac-62: una corrida terminada no sale atrasada por su promesa', () => {
+  const { data } = buildOffice({ wip: wip([{ session: 'Ana', status: 'idle', extra: { kind: 'finished', storyId: '9.9', title: 'T', promisedAt: NOW - 3600000 } }]), nowMs: NOW });
+  const a = byName(data, 'Ana');
+  assert.strictEqual(a.atrasada, undefined);
+  assert.strictEqual(a.atrasoMin, undefined);
+  assert.strictEqual(a.fin.hora, 'sin hora estimada');
+  assert.strictEqual(a.espera, 'el ok para guardar');
+});
+
+test('T133 NewerWork_DoesNotHideMarkOrOwner @story-2.81 @ac-56 @ac-59 @ac-61: lo nuevo no tapa una marca ni lo que espera al dueño, y una sin encolar sigue en riesgo', () => {
+  const newer = { meanwhile: 'Otra cosa', meanwhileKind: 'note', meanwhileAt: NOW - 60000, activityAt: NOW - 3600000 };
+  const { data } = buildOffice({
+    wip: wip([
+      { session: 'Mar', extra: { kind: 'pipeline', storyId: '9.1', title: 'Marcada', mark: 'En fila para pruebas', ...newer } },
+      { session: 'Pla', status: 'idle', extra: { kind: 'pipeline', storyId: '9.2', title: 'Plan', current: 'approve-plan', ...newer } },
+      { session: 'Pau', extra: { kind: 'pipeline', storyId: '9.3', title: 'Pausada', current: 'implement', ...newer } },
+      { session: 'Sta', extra: { kind: 'stalled', storyId: '9.4', title: 'Sin encolar', closedAt: NOW - 3600000, meanwhile: 'Otra', meanwhileKind: 'note', meanwhileAt: NOW - 60000 } },
+    ]),
+    nowMs: NOW,
+    board: { filas: [{ titulo: 'Fila', historia: '9.3', estado: 'hecho', columna: 'hechos', nota: 'de la coordinadora', quien: '', fin: '' }] },
+  });
+  assert.strictEqual(byName(data, 'Mar').marca, 'En fila para pruebas');
+  assert.strictEqual(byName(data, 'Mar').mientras, 'Otra cosa');
+  assert.ok(data.meta.teToca.some((t) => /Aprobar el plan/.test(t)), data.meta.teToca.join());
+  assert.strictEqual(byName(data, 'Pau').enPausa, 'Pausada');
+  assert.deepStrictEqual(titles(data, 'hechos'), [], 'la fila de una corrida en pausa no manda');
+  assert.strictEqual(col(data, 'curso').tarjetas.find((t) => t.quien === 'Pau').nota, 'de la coordinadora');
+  const sta = col(data, 'entrando').tarjetas.find((t) => t.titulo === 'Sin encolar');
+  assert.strictEqual(sta.marca, 'riesgo');
+  assert.notStrictEqual(sta.hora, 'esperando entrar');
+});
+
+test('T134 PausedByNewer_SameInWip @story-2.81 @ac-56 @ac-62: la hora de la corrida tapada, y la nota nueva sobre un carril viejo', async () => {
+  const m = parkMachine();
+  const now = Date.now();
+  runMarkerFile(m, 's', '9.3', 'Tapada', BEFORE_PLAN.concat('approve-plan'), { startedAt: oldHours(now, 5), lastTouch: oldHours(now, 3) });
+  sessionWith(m, 's', 'Sol', 'busy', now);
+  fs.writeFileSync(path.join(m.state, 'adhoc', 's.json'), JSON.stringify({ reason: 'carril viejo', declaredAt: oldHours(now, 2), lastTouch: oldHours(now, 2) }));
+  fs.writeFileSync(path.join(m.state, 'doing', 's.json'), JSON.stringify({ text: 'nota nueva', at: atIso(now - 60000) }));
+  const w = await wipNow({ home: m.home, now: atIso(now), queryAll: noPrs });
+  const i = w.rows.findIndex((r) => r.session === 'Sol');
+  assert.strictEqual(w.extra[i].meanwhileKind, 'note');
+  assert.strictEqual(w.rows[i].end, 'sin hora estimada (en pausa)');
+  const data = await collectAt(m, now);
+  assert.strictEqual(byName(data, 'Sol').enPausa, 'Tapada');
+  assert.strictEqual(byName(data, 'Sol').titulo, 'nota nueva');
+});
+
+test('T135 Wip_SaysTheSignature @story-2.81 @ac-61 @ac-62: /wip dice «Tu firma» en una marcada y no ofrece limpiar un plan que espera', async () => {
+  const m = parkMachine();
+  const now = Date.now();
+  runMarkerFile(m, 'v', '9.1', 'Viva', BEFORE_PLAN, { startedAt: oldHours(now, 1), lastTouch: atIso(now - 60000) });
+  sessionWith(m, 'v', 'Vera', 'idle', now - 600000);
+  parked(m, 'v', JSON.stringify({ story: '9.1', kind: 'queue', at: atIso(now - 60000) }));
+  runMarkerFile(m, 'c', '9.2', 'Cerrada', BEFORE_PLAN, { lastTouch: atIso(now - 60000) });
+  const w = await wipNow({ home: m.home, now: atIso(now), queryAll: noPrs });
+  assert.match(w.text.split('\n').find((l) => l.includes('| Vera |')), /Tu firma: que apruebes el plan/);
+  const h = w.halfway.find((x) => /9\.2/.test(x));
+  assert.match(h, /Tu firma: que apruebes el plan/);
+  assert.doesNotMatch(h, /limpiar/);
+});
+
+test('T136 FreeSession_Waiting_IsASignature @story-2.81 @ac-44 @ac-62: la sesión sin trabajo que espera es «Tu firma», también pasadas 3 h', async () => {
+  const { data } = buildOffice({ wip: wip([], { free: ['Lia', 'Ana'], freeSids: ['l', 'a'], freeStatus: ['waiting', 'idle'] }), nowMs: NOW });
+  assert.strictEqual(byName(data, 'Lia').estado, 'firma');
+  assert.strictEqual(byName(data, 'Lia').espera, 'tu respuesta en su pantalla');
+  assert.strictEqual(byName(data, 'Ana').estado, 'libre');
+  const m = parkMachine();
+  const now = Date.now();
+  sessionWith(m, 'l', 'Lia', 'waiting', now - 5 * 3600000);
+  fs.writeFileSync(path.join(m.sessions, 'l.json'), JSON.stringify({ pid: process.pid, sessionId: 'l', name: 'Lia', status: 'waiting', statusUpdatedAt: now - 5 * 3600000, updatedAt: now - 5 * 3600000 }));
+  const w = await wipNow({ home: m.home, now: atIso(now), queryAll: noPrs });
+  assert.ok(w.free.includes('Lia') || w.rows.some((r) => r.session === 'Lia'), JSON.stringify({ free: w.free, idle: w.idle }));
+  assert.ok(!w.idle.some((t) => t.startsWith('Lia')), 'no está sin uso');
+});
+
+test('T137 CodexFileCard_MarkAndLane @story-2.81 @ac-59 @ac-62 @ac-53: la tarjeta de Codex lleva su marca y su carril como título', () => {
+  const file = (session, more) => ({ session, tool: 'codex', pid: process.pid, updatedAt: atIso(NOW - 60000), busy: true, ...more });
+  const { data } = buildOffice({
+    wip: wip([], { halfwayItems: [{ kind: 'run', sid: 'cxm', text: 'Marcada', name: 'Cx1', storyId: '9.1', mark: 'En fila para pruebas' }] }),
+    sessionFiles: [file('cxm', { name: 'Cx1', step: 'Implementar', endAt: atIso(NOW + 3600000) }), file('cxl', { name: 'Cx2', sentence: 'Arreglo el aviso del pedido' })],
+    transcripts: new Map([['cxl', { encargo: 'Sos Tina. El encargo inicial', haciendoAhora: 'Reviso.', ultimaAccion: null, lastWriteMs: NOW }]]),
+    isAlive: () => true,
+    nowMs: NOW,
+  });
+  const m = byName(data, 'Cx1');
+  assert.strictEqual(m.marca, 'En fila para pruebas');
+  assert.strictEqual(m.pronosticoIso, undefined);
+  assert.strictEqual(m.fin.hora, 'En fila para pruebas');
+  const l = byName(data, 'Cx2');
+  assert.strictEqual(l.titulo, 'Arreglo el aviso del pedido');
+  assert.strictEqual(l.haciendo, 'Reviso.');
+});
+
+test('T138 MarkedEntering_GoesToCurso @story-2.81 @ac-59: una marcada que espera entrar va a «En curso», viva o cerrada', () => {
+  const { data } = buildOffice({ wip: wip([{ session: 'Ana', extra: { kind: 'entering', storyId: '9.1', title: 'Entra', mark: 'En fila para pruebas' } }]), nowMs: NOW });
+  assert.ok(titles(data, 'curso').includes('Entra'));
+  assert.ok(!titles(data, 'entrando').includes('Entra'));
+});
+
+test('T139 Board_Forms @story-2.81 @ac-64 @ac-65: ids y pedidos reales, lo que no se reconoce se dice, un estado raro no tira la foto y los grupos en su orden', () => {
+  const b = buildBoard({ pendientes: [
+    { titulo: 'a', historia: 'OC-5', estado: 'constructor', grupo: 'Zeta', orden: 9 },
+    { titulo: 'b', historia: '8.85-E', pedido: { repo: 'Mi Repo', numero: '123' }, grupo: 'Alfa', orden: 1 },
+    { titulo: 'c', historia: 'con espacio', pedido: { repo: 'x', numero: 'no' }, grupo: 'Zeta', orden: 2 },
+  ] });
+  const f = Object.fromEntries(b.filas.map((x) => [x.titulo, x]));
+  assert.strictEqual(f.a.historia, 'OC-5');
+  assert.strictEqual(f.a.columna, 'sinEmpezar');
+  assert.strictEqual(f.b.historia, '8.85-E');
+  assert.deepStrictEqual(f.b.pedido, { repo: 'Mi Repo', numero: 123 });
+  assert.strictEqual(f.c.historia, null);
+  assert.strictEqual(b.avisos.length, 2, b.avisos.join(' | '));
+  assert.deepStrictEqual(b.filas.map((x) => x.titulo), ['c', 'a', 'b'], 'los grupos, en el orden en que aparecen');
+});
+
+test('T140 Board_LeftoverRun_FileRules_AndOpenRepoKnown @story-2.81 @ac-64 @ac-65: lo que quedó sin tarjeta consulta su pedido, y el repo de una corrida abierta se reconoce', async () => {
+  const m = parkMachine();
+  const now = Date.now();
+  const repo = toyRepo(m, 'propio');
+  runMarkerFile(m, 'a', '9.9', 'Abierta', BEFORE_PLAN.concat('approve-plan'), { repoPath: repo, lastTouch: atIso(now - 60000) });
+  sessionWith(m, 'a', 'Ana', 'busy', now);
+  runMarkerFile(m, 'b', '9.8', 'Quedó', BEFORE_PLAN.concat('approve-plan'), { lastTouch: atIso(now - 60000) });
+  fs.mkdirSync(path.join(m.state, 'coordination'), { recursive: true });
+  fs.writeFileSync(path.join(m.state, 'coordination', 'tablero.json'), JSON.stringify({ pendientes: [
+    { titulo: 'Fila del pedido', historia: '9.8', estado: 'curso', pedido: { repo: 'propio', numero: 501 } },
+  ] }));
+  const asked = [];
+  const data = await collectAt(m, now, { queryPrs: async (qs) => { asked.push(...qs); return qs.map(() => ({ pr: { state: 'merged', mergedAt: atIso(now) } })); } });
+  assert.strictEqual(asked.length, 1, 'el pedido de una fila sin tarjeta se consulta');
+  assert.deepStrictEqual(asked[0].identity, { platform: 'github', org: 'acme', repo: 'propio' });
+  assert.ok(titles(data, 'hechos').includes('Fila del pedido'));
+});
+
+test('T141 SameName_StableOrder @story-2.81 @ac-52: dos sesiones con el mismo nombre no cambian de escritorio', () => {
+  const orden = (entries) => buildOffice({ wip: wip(entries), nowMs: NOW }).data.agents.map((a) => a.haciendo);
+  const x = { session: 'Ana', sid: 'a1', extra: { kind: 'note', text: 'Primera' } };
+  const y = { session: 'Ana', sid: 'a2', extra: { kind: 'note', text: 'Segunda' } };
+  assert.deepStrictEqual(orden([x, y]), orden([y, x]));
+});
+
+test('T142 Plain_NoTechnicalNoNumbersNoSecrets @story-2.81 @ac-53: lo que dice la conversación sale en llano y sin datos sensibles', () => {
+  const { plain } = require(OFFICE);
+  assert.strictEqual(plain('Reviso `office.js` y `stuck-pr-notice` ahora'), 'Reviso y ahora');
+  assert.strictEqual(plain('Mirá **office.js** ya'), 'Mirá ya');
+  assert.strictEqual(plain('Toco office.js:241 ahora'), 'Toco ahora');
+  assert.strictEqual(plain('Revisá C:\\Users\\x\\office.js ya'), 'Revisá ya');
+  assert.strictEqual(plain('Implementá la 2.81 tanda C'), 'Implementá la historia tanda C');
+  assert.strictEqual(plain('Seguí con la 8.171-B y el pedido 885'), 'Seguí con la historia y el pedido');
+  assert.strictEqual(plain('La reunión es a la 1.30 con 2.5 horas'), 'La reunión es a la 1.30 con 2.5 horas');
+  for (const leak of [`mi correo es ana${'@'}acme.com`, 'llamá al +54 11 4444-5555', 'la clave=abc123', `usá ${'ghp'}_abcdefghij${'0123456789'}xyz`, `el token ${'eyJ'}hbGciOi.${'eyJ'}zdWIiOiIx.c2lnbmF0dXJl9 vence`]) {
+    assert.doesNotMatch(plain(leak), /@|4444|abc123|ghp_|eyJ/, leak);
+  }
+  assert.strictEqual(plain('Fue el 2026-11-02 a las 10-12'), 'Fue el 2026-11-02 a las 10-12');
+});
+
+test('T143 ClosedRunWithLane_ReadsItsConversation @story-2.81 @ac-53: la sesión cuya corrida terminó y declaró un carril trae su conversación', async () => {
+  const m = parkMachine();
+  const now = Date.now();
+  const repo = toyRepo(m, 'entra');
+  fs.writeFileSync(path.join(m.state, 'active', 's.json'), JSON.stringify({ sessionId: 's', storyId: '9.9', storyPath: storyFile(m, '9.9', 'Entrando'), repoPath: repo, stepScheme: STEP_LIB.SCHEME, ...CLOSED, startedAt: oldHours(now, 3), lastTouch: oldHours(now, 1), stepTimings: { 'prepare-commit': { completedAt: oldHours(now, 1) } } }));
+  fs.writeFileSync(path.join(m.sessions, 's.json'), JSON.stringify({ pid: process.pid, sessionId: 's', name: 'Sol', status: 'busy', statusUpdatedAt: now, cwd: repo }));
+  fs.writeFileSync(path.join(m.state, 'adhoc', 's.json'), JSON.stringify({ reason: 'el carril', declaredAt: atIso(now - 60000), lastTouch: atIso(now - 60000) }));
+  const dir = path.join(m.home, '.claude', 'projects', repo.replace(/[^A-Za-z0-9-]/g, '-'));
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 's.jsonl'), `${[
+    { type: 'user', timestamp: atIso(now - 120000), message: { content: 'Sos Sol. El encargo' } },
+    { type: 'assistant', timestamp: atIso(now - 60000), message: { content: [{ type: 'text', text: 'Sigo con el kanban.' }] } },
+  ].map((l) => JSON.stringify(l)).join('\n')}\n`);
+  const data = await collectAt(m, now, { queryAll: async (qs) => qs.map(() => ({ prs: [{ number: 5, title: 't', autoComplete: true, inQueue: true }] })) });
+  const a = byName(data, 'Sol');
+  assert.strictEqual(a.titulo, 'el carril');
+  assert.strictEqual(a.haciendoAhora, 'Sigo con el kanban.');
+  assert.strictEqual(a.encargo, 'Sos Sol. El encargo');
+});
+
+test('T144 HourForStep_NotFrozenOnGitTimeout @story-2.81 @ac-57: una hora calculada sin la entrada a un repo no se fija para todo el paso', () => {
+  const { hourForStep, endOf } = require(path.join(path.dirname(OFFICE), 'work-in-progress.js'));
+  const m = parkMachine();
+  const repo = toyRepo(m, 'lento');
+  const now = Date.now();
+  fs.mkdirSync(path.join(m.state, 'timing-history'), { recursive: true });
+  const done = BEFORE_PLAN.concat('approve-plan');
+  const pending = IDS.filter((s) => !done.includes(s));
+  const timings = Object.fromEntries(IDS.map((s, n) => [s, { startedAt: atIso(now - 3600000 + n * 120000), completedAt: atIso(now - 3600000 + n * 120000 + 60000) }]));
+  for (let i = 0; i < 3; i += 1) fs.writeFileSync(path.join(m.state, 'timing-history', `h${i}.json`), JSON.stringify({ marker: { startedAt: oldHours(now, 1), stepScheme: STEP_LIB.SCHEME, stepTimings: timings } }));
+  const marker = { storyId: '9.9', repoPath: repo, stepScheme: STEP_LIB.SCHEME, stepsCompleted: done, stepsPending: pending, stepTimings: { [pending[0]]: { startedAt: atIso(now - 1000) } } };
+  const fakeBin = path.join(m.root, 'bin');
+  fs.mkdirSync(fakeBin);
+  fs.writeFileSync(path.join(fakeBin, 'git'), `#!/bin/sh\nsleep 3\nexit 1\n`, { mode: 0o755 });
+  const before = process.env.PATH;
+  process.env.PATH = `${fakeBin}${path.delimiter}${before}`;
+  try {
+    const e = endOf(marker, { home: m.home, stateDir: m.state, now });
+    assert.ok(e.endAt != null, `sin hora: ${e.endWithoutHour}`);
+    assert.strictEqual(e.partial, true);
+    assert.strictEqual(hourForStep(marker, { home: m.home, stateDir: m.state, now }), null);
+  } finally { process.env.PATH = before; }
 });
