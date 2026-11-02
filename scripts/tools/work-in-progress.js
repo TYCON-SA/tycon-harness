@@ -1187,6 +1187,8 @@ function buildWip(opts = {}) {
   const extra = [];
   const addRow = (row, sid, x = {}) => { rows.push(row); rowSids.push(sid); extra.push(x); };
   const busy = new Set();
+  // la historia de la ejecución sin pasos pendientes de cada sesión: una nota de esa sesión sigue siendo de esa historia
+  const finishedStory = new Map();
   // la fila de la story de cada sesión, para sumarle lo que hace mientras tanto
   const pipeRows = new Map();
   // la fila del arreglo rápido de cada sesión: su hora puede venir de una nota
@@ -1291,7 +1293,7 @@ function buildWip(opts = {}) {
       if (!entering) {
         tellProblems();
         if (tree.dirty) save = m.saveOk ? 'ok' : 'waits';
-        if (!save && !mark) continue;
+        if (!save && !mark) { if (m.storyId) finishedStory.set(sid, String(m.storyId)); continue; }
       } else if (!liveName(sid) && !mark) continue;
     }
     busy.add(sid);
@@ -1471,7 +1473,7 @@ function buildWip(opts = {}) {
     const until = Date.parse(d.endAt);
     const declared = Number.isFinite(until);
     addRow({ work, state: parts.join(' · '), end: d.waitingFor ? waitingEnd(d) : hourVerdict({ endAt: until, hourAt: at, nowMs }) || declaredEnd(d.endAt, until), session: label, folder: folderOf(sid) }, sid,
-      { kind: 'note', text: String(d.text || ''), endAt: declared ? until : null, hourAt: Number.isFinite(at) ? at : null, promiseAt: Number.isFinite(at) ? at : null, ...hourOfNote(d) });
+      { kind: 'note', text: String(d.text || ''), endAt: declared ? until : null, hourAt: Number.isFinite(at) ? at : null, promiseAt: Number.isFinite(at) ? at : null, ...(finishedStory.has(sid) ? { finishedStoryId: finishedStory.get(sid) } : {}), ...hourOfNote(d) });
   }
 
   // sin arreglo ni nota: si lo último que tocó la sesión está en un repo que no es de su story, eso hace mientras tanto

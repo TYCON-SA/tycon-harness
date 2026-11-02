@@ -69,7 +69,14 @@ h2{font:700 .8rem var(--display);text-transform:uppercase;letter-spacing:.08em;c
 .panel3 dt{color:#b6a9c9}.panel3 dd{margin:0;min-width:0;overflow-wrap:anywhere}
 .pbar{display:inline-block;width:110px;height:6px;border-radius:3px;background:rgba(127,127,127,.25);overflow:hidden;vertical-align:middle}
 .pbar i{display:block;height:100%;background:var(--c)}
-.panel3.wide,.panel3.charla{width:min(440px,calc(100% - 24px))}
+.panel3.wide{width:min(440px,calc(100% - 24px))}
+.chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.panel3 .chips .chip{margin-bottom:0}.panel3 .chips{margin-bottom:10px}
+.como-chip{display:inline-flex;align-items:center;gap:5px;font:500 .74rem var(--body);padding:1px 9px;border-radius:999px;border:1px solid var(--line);color:var(--fg)}.panel3 .como-chip{color:#e8e1f5;border-color:rgba(255,255,255,.28)}
+.verCharla{align-self:flex-start;margin-top:8px;font:500 .8rem var(--body);padding:3px 10px;border-radius:8px;border:1px solid var(--line);background:transparent;color:inherit;cursor:pointer}.verCharla:hover{background:rgba(127,127,127,.18)}
+.ventana{position:fixed;inset:0;z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(8,6,14,.62)}.ventana[hidden]{display:none}
+.ventana .panel3{position:static;width:min(680px,100%);max-height:calc(100vh - 32px);color:#efe9fa}.ventana .panel3 .chat{max-height:52vh}
+.ventana .cerrar{display:block;margin-top:12px;font:500 .85rem var(--body);padding:5px 14px;border-radius:8px;border:1px solid rgba(255,255,255,.28);background:transparent;color:inherit;cursor:pointer}
+.ventana h4{margin:12px 0 6px;font:700 .78rem var(--display);text-transform:uppercase;letter-spacing:.07em;color:#b6a9c9}.ventana .m{font-size:12.5px;color:#b6a9c9;margin:8px 0 0}
 .panel3 .chat{display:flex;flex-direction:column;gap:6px;max-height:38vh;overflow:auto;padding-right:2px}
 .panel3 .msg{display:flex;flex-direction:column;gap:4px;flex:none;max-width:88%;align-self:flex-start;background:rgba(255,255,255,.08);border-radius:10px;padding:6px 10px;font-size:13px;line-height:1.4;overflow-wrap:anywhere}
 .panel3 .msg.mio{align-self:flex-end;background:rgba(90,169,255,.2)}
@@ -165,6 +172,7 @@ tr:last-child td{border-bottom:0}
   <p class="nota" id="noRead" hidden></p>
   <details class="tablewrap" id="tablewrap" hidden><summary>Ver como tabla</summary><div class="table"><table><thead><tr><th>Trabajo</th><th>Estado</th><th>Fin estimado</th><th>Sesión</th><th>Carpeta</th></tr></thead><tbody id="rows"></tbody></table></div><p class="empty" id="freeLine" hidden></p></details>
 </main>
+<div class="ventana" id="ventana" hidden onclick="if(event.target===this)cerrarCharla()"><div class="panel3" role="dialog" aria-modal="true" aria-label="Conversación"></div></div>
 <script>
 let DATA=__OFFICE_DATA__;
 // con el proceso local, las fotos nuevas llegan por el WebSocket; la página nunca le manda nada
@@ -232,18 +240,20 @@ function renderCrew(){const c=document.getElementById("crew");c.replaceChildren(
   if(!agents.length){c.appendChild(el("p","empty","No hay sesiones abiertas en esta máquina."));return}
   agents.forEach((a,i)=>{const s=AST[a.estado]||[a.estado||"","#999"];const k=el("div","card");
     const h=el("h3");const d=el("span","dot");d.style.background=SHIRT[i%SHIRT.length];h.appendChild(d);h.appendChild(document.createTextNode(a.nombre||""));k.appendChild(h);
-    const st=el("span","st",s[0]);st.style.color=s[1];st.style.borderColor=s[1];k.appendChild(st);k.style.setProperty("--c",s[1]);
+    const st=el("span","st",s[0]);st.style.color=s[1];st.style.borderColor=s[1];const chips=el("div","chips");chips.appendChild(st);if(a.comoTrabaja)chips.appendChild(etiquetaComo(a.comoTrabaja));k.appendChild(chips);k.style.setProperty("--c",s[1]);
     pintarFicha(a,k,false);c.appendChild(k)})}
 // lo que se dice de una sesión, de un solo lugar: la tarjeta y el panel pintan esta lista y sólo cambia su estilo
 function ficha(a){const r=[],add=(k,v,x)=>{if(v!=null&&v!=="")r.push({k,v,...x})};
-  add("Trabajo",a.titulo);add("Cómo trabaja",a.comoTrabaja);add("De la historia",a.historia);add("Encargo",a.encargo);
+  add("Trabajo",a.titulo);add("De la historia",a.historia);add("Encargo",a.encargo);
   if(a.haciendoAhora)add("Haciendo ahora",a.haciendoAhora);else if(a.haciendo!==a.titulo)add("Haciendo",a.haciendo);
   add("Última acción",a.ultimaAccion);add("Espera",a.espera);add("Parada",a.parada);add("Novedades",a.callada);
   const ms=AST[a.mientrasEstado];add("Mientras tanto",a.mientras?a.mientras+(ms?" ("+ms[0].toLowerCase()+")":""):"");
   add("En pausa",a.enPausa);
-  const f=finTxt(a);if(f)add("Termina",f.hora,{dif:f.dif,cls:f.cls});
+  // quien espera a otro no da una hora: dice qué espera, o qué pasó con los pedidos que esperaba
+  const f=finTxt(a),h=f?String(f.hora):"";if(h.startsWith("espera "))add("Espera",h.slice(7),{dif:f.dif,cls:f.cls});else if(/^El \d+ /.test(h))r.push({k:"",v:h});else if(f)add("Termina",f.hora,{dif:f.dif,cls:f.cls});
   add("Por qué",a.horaPorque);if(a.estimadaIso)add("Prometido",fmt(a.estimadaIso));
   if(a.avance!=null)add("Avance",a.avance+"%",{pct:a.avance});
+  const tk=(DATA.tokens||{})[a.nombre];if(tk){if(tk.noMedido)add("Tokens","no medido");else{add("Contexto",tk.contexto);add("Tokens consumidos",tk.consumidos);if(tk.agentes)r.push({k:"",v:tk.agentes===1?"Incluye su agente":"Incluye sus "+tk.agentes+" agentes"})}}
   add("Carpeta",a.carpeta);return r}
 // la ficha dentro de `box`; los pasos van plegados en la tarjeta y abiertos en el panel
 // El ícono de cómo trabaja: la forma alcanza para distinguirlos, sin color. Se arma con nodos y dibujos fijos, nunca con el
@@ -257,12 +267,52 @@ function iconoComo(como){const s=document.createElement("span");s.className="ico
   svg.appendChild(nodo(...COMO_ICONO[k]));s.appendChild(svg);return s}
 function pintarFicha(a,box,abiertos){const dl=el("dl");
   ficha(a).forEach(r=>{const dd=el("dd");if(r.pct!=null){const b=el("span","pbar"),i=el("i");i.style.width=r.pct+"%";b.appendChild(i);dd.appendChild(b);dd.appendChild(document.createTextNode(" "))}
-    if(r.k==="Cómo trabaja")dd.appendChild(iconoComo(r.v));dd.appendChild(document.createTextNode(r.v));if(r.dif){const x=el("em",r.cls||null," · "+r.dif);dd.appendChild(x)}dl.appendChild(el("dt",null,r.k));dl.appendChild(dd)});box.appendChild(dl);
+    dd.appendChild(document.createTextNode(r.v));if(r.dif){const x=el("em",r.cls||null," · "+r.dif);dd.appendChild(x)}dl.appendChild(el("dt",null,r.k));dl.appendChild(dd)});box.appendChild(dl);
   if(a.pasos&&a.pasos.length){const d=el("details","pasos");d.open=abiertos;d.appendChild(el("summary",null,"Pasos de la ejecución"));const ol=el("ol","steps");let now=false;
-    a.pasos.forEach(p=>{const cur=!p.done&&!now;if(cur)now=true;const li=el("li",p.done?"done":cur?"now":"");li.appendChild(el("span",null,p.done?"✓":cur?"▸":"·"));li.appendChild(document.createTextNode(p.name));ol.appendChild(li)});d.appendChild(ol);box.appendChild(d)}}
+    a.pasos.forEach(p=>{const cur=!p.done&&!now;if(cur)now=true;const li=el("li",p.done?"done":cur?"now":"");li.appendChild(el("span",null,p.done?"✓":cur?"▸":"·"));li.appendChild(document.createTextNode(p.name));ol.appendChild(li)});d.appendChild(ol);box.appendChild(d)}
+  // la conversación se lee con la oficina abierta en esta máquina: en la foto fija y en el sitio no hay de dónde
+  if(LIVE&&a.nombre){const b=el("button","verCharla","Ver conversación");b.type="button";b.onclick=()=>abrirCharla(a.nombre,b);box.appendChild(b)}}
+function etiquetaComo(como){const e=el("span","como-chip");e.appendChild(iconoComo(como));e.appendChild(document.createTextNode(como));return e}
+// ---------- la conversación: se pide sólo al abrir su ventana, y nunca viaja en la foto ----------
+let charlaDe=null,charlaVuelve=null,ultimoPedido=0;
+const ALCANCE="Sólo se ven en esta máquina: no se guardan ni se mandan a ningún lado.";
+const ventana=()=>document.getElementById("ventana");
+function abrirCharla(nombre,boton){const v=ventana(),box=v.firstElementChild;charlaDe=nombre;charlaVuelve=boton;v.hidden=false;
+  const cerrar=el("button","cerrar","Cerrar");cerrar.type="button";cerrar.onclick=cerrarCharla;box.replaceChildren(el("h3",null,"Conversación de "+nombre),el("p","m","Leyendo…"),cerrar);cerrar.focus();
+  const yo=++ultimoPedido;fetch("conversacion?t="+encodeURIComponent(LIVE.token)+"&s="+encodeURIComponent(nombre)).then(r=>{if(!r.ok)throw new Error(String(r.status));return r.json()}).then(datos=>({datos}),()=>({falla:true})).then(c=>{if(yo===ultimoPedido&&charlaDe===nombre)pintarCharla(box,nombre,c,cerrar)})}
+function cerrarCharla(){const v=ventana();if(v.hidden)return;v.hidden=true;v.firstElementChild.replaceChildren();charlaDe=null;ultimoPedido+=1;if(charlaVuelve&&charlaVuelve.isConnected)charlaVuelve.focus();charlaVuelve=null}
+document.addEventListener("keydown",e=>{if(e.key==="Escape")cerrarCharla()});
+// El formato simple de un mensaje: negritas, código y listas. Todo se arma con nodos y textContent, así que lo que traiga
+// el mensaje nunca llega a ser HTML.
+function enLinea(padre,texto){for(const p of String(texto).split(/(\*\*[^*\n]+\*\*|`[^`\n]+`)/)){if(!p)continue;
+  if(p.startsWith("**")&&p.endsWith("**")&&p.length>4){const e=document.createElement("strong");e.textContent=p.slice(2,-2);padre.append(e)}
+  else if(p.startsWith("`")&&p.endsWith("`")&&p.length>2){const e=document.createElement("code");e.textContent=p.slice(1,-1);padre.append(e)}
+  else padre.append(document.createTextNode(p))}}
+function formatear(texto){const out=[];let lista=null,codigo=null;
+  for(const linea of String(texto).split("\n")){
+    if(/^\s*```/.test(linea)){if(codigo){codigo=null}else{const pre=document.createElement("pre");codigo=document.createElement("code");pre.append(codigo);out.push(pre);lista=null}continue}
+    if(codigo){codigo.textContent+=(codigo.textContent?"\n":"")+linea;continue}
+    const it=/^\s*(?:([-*•])|(\d+)[.)])\s+(.*)$/.exec(linea);
+    if(it){const tipo=it[2]?"OL":"UL";if(!lista||lista.tagName!==tipo){lista=document.createElement(tipo);out.push(lista)}const li=document.createElement("li");enLinea(li,it[3]);lista.append(li);continue}
+    lista=null;const limpia=linea.replace(/^\s*#{1,6}\s+/,"");if(!limpia.trim())continue;
+    const p=document.createElement("p");if(limpia!==linea){const f=document.createElement("strong");f.textContent=limpia.replace(/\*\*/g,"");p.append(f)}else enLinea(p,linea);out.push(p)}
+  return out}
+function msg(quien,cuando,texto,mio){const box=document.createElement("div");box.className="msg"+(mio?" mio":"");const b=document.createElement("b"),t=Number(cuando),hh=Number.isFinite(t)&&t>0?new Date(t):null;b.textContent=quien+(hh?" · "+String(hh.getHours()).padStart(2,"0")+":"+String(hh.getMinutes()).padStart(2,"0"):"");box.append(b,...formatear(texto));return box}
+// Abre como un chat: cada conversación en lo último, dentro de su caja.
+function pintarCharla(box,nombre,c,cerrar){const fin=x=>{box.insertBefore(x,cerrar)},seccion=(titulo,filas,vacio)=>{fin(el("h4",null,titulo));if(!filas.length){fin(el("p","m",vacio));return}const ch=el("div","chat");filas.forEach(f=>ch.append(f));fin(ch)};
+  box.querySelector("p.m").remove();
+  if(c.falla){fin(el("p","m","No se pudo leer la conversación de esta sesión."));return}
+  const d=c.datos||{};if(d.sinCoordinadora){fin(el("p","m","Esta máquina no tiene coordinadora designada: no hay con quién cruzar los mensajes."));return}
+  const alFinal=()=>box.querySelectorAll(".chat").forEach(ch=>{ch.scrollTop=ch.scrollHeight});
+  if(d.conVos){seccion("Con vos",d.conVos.map(m=>msg(m.quien==="vos"?"Vos":nombre,m.at,m.texto,m.quien==="vos")),"No hay mensajes con vos en lo último de su conversación.");
+    seccion("Con las sesiones",(d.conSesiones||[]).map(m=>msg(m.de===nombre?nombre+" a "+m.a:m.de,m.at,m.texto,m.de===nombre)),"No hay mensajes con las sesiones en lo último de su conversación.");
+    fin(el("p","m","Tus últimos 20 mensajes con sus respuestas, y los últimos 10 con las sesiones, en orden. "+ALCANCE+" Las contraseñas y las claves se tapan."));alFinal();return}
+  const filas=(d.conCoordinadora||[]).map(m=>msg(m.propio?nombre:m.de,m.at,m.texto,m.propio));if(d.arranque)filas.unshift(msg("Mensaje de arranque",d.arranque.at,d.arranque.texto,false));
+  seccion("Con la coordinadora",filas,"No hay mensajes con la coordinadora en lo último de su conversación.");
+  fin(el("p","m","Últimos 10 mensajes. "+ALCANCE));alFinal()}
 // sin 3D, la tabla queda abierta y la sala dice por qué
 function sinTresD(msg){const o=document.getElementById("ovl");o.textContent=msg;o.hidden=false;const t=document.getElementById("tablewrap");t.hidden=false;t.open=true}
-window.tablero={agents:()=>agents,items:()=>items,kanban:()=>DATA.kanban||null,meta:()=>meta,site:()=>SITE,sobres:()=>DATA.sobres||[],live:()=>LIVE,AST,SHIRT,fmt,finTxt,sinTresD,pintarFicha,iconoComo};
+window.tablero={agents:()=>agents,items:()=>items,kanban:()=>DATA.kanban||null,meta:()=>meta,site:()=>SITE,sobres:()=>DATA.sobres||[],live:()=>LIVE,AST,SHIRT,fmt,finTxt,sinTresD,pintarFicha,iconoComo,etiquetaComo};
 // el reloj de la página (decisión 20): cada minuto compara la hora con la última novedad de cada sesión y marca las
 // calladas; sin pid, pasadas las 2 h, la da por inactiva. No consulta nada afuera: mira la hora y los datos que tiene.
 const QUIET_DEFAULT=15,DEAD_MS=2*3600000;
@@ -533,49 +583,15 @@ function ubicarTags(){const W=stage.clientWidth,H=stage.clientHeight,cmp=stage.c
 
 // ---------- detalle de la sesión: la misma ficha que su tarjeta ----------
 // `foto`: lo pidió una foto nueva, no un toque. Mantiene lo que se estaba leyendo y no vuelve a pedir la conversación.
-function abrir(nombre,foto=false){panel.classList.remove("wide");const baja=foto&&sel===nombre?panel.scrollTop:0,leyendo=foto&&sel===nombre?[...panel.querySelectorAll(".chat")].map(c=>c.scrollTop):null;sel=nombre;const a=T.agents().find(x=>x.nombre===nombre);if(!a){sel=null;panel.hidden=true;return}const s=T.AST[a.estado]||[a.estado||"","#999"];panel.hidden=false;panel.style.setProperty("--c",s[1]);
-  panel.innerHTML='<button class="close" type="button" aria-label="Cerrar">×</button><h3></h3><span class="chip">● <span class="es"></span></span>';
-  panel.querySelector("h3").textContent=a.nombre;panel.querySelector(".es").textContent=s[0];T.pintarFicha(a,panel,true);
-  panel.querySelector(".close").onclick=()=>{sel=null;panel.hidden=true;panel.classList.remove("charla");desks.forEach(pintarTag)};desks.forEach(pintarTag);
-  panel.classList.toggle("charla",Boolean(T.live()));
-  if(T.live()){if(!foto||!charla||charla.nombre!==nombre)pedirCharla(nombre);else{pintarCharla(charla,leyendo);panel.scrollTop=baja}}}
-// ---------- la conversación: se pide sólo al tocar, y nunca viaja en la foto ----------
-let charla=null,ultimoPedido=0;
-const ALCANCE="Sólo se ven en esta máquina: no se guardan ni se mandan a ningún lado.";
-function pedirCharla(nombre){charla=null;const yo=++ultimoPedido,q=fetch("conversacion?t="+encodeURIComponent(T.live().token)+"&s="+encodeURIComponent(nombre)).then(r=>{if(!r.ok)throw new Error(String(r.status));return r.json()});
-  q.then(datos=>({nombre,datos}),()=>({nombre,falla:true})).then(c=>{if(yo!==ultimoPedido||sel!==nombre)return;charla=c;pintarCharla(c)})}
-// El formato simple de un mensaje: negritas, código y listas. Todo se arma con nodos y textContent, así que lo que traiga
-// el mensaje nunca llega a ser HTML.
-function enLinea(padre,texto){for(const p of String(texto).split(/(\*\*[^*\n]+\*\*|`[^`\n]+`)/)){if(!p)continue;
-  if(p.startsWith("**")&&p.endsWith("**")&&p.length>4){const e=document.createElement("strong");e.textContent=p.slice(2,-2);padre.append(e)}
-  else if(p.startsWith("`")&&p.endsWith("`")&&p.length>2){const e=document.createElement("code");e.textContent=p.slice(1,-1);padre.append(e)}
-  else padre.append(document.createTextNode(p))}}
-function formatear(texto){const out=[];let lista=null,codigo=null;
-  for(const linea of String(texto).split("\n")){
-    if(/^\s*```/.test(linea)){if(codigo){codigo=null}else{const pre=document.createElement("pre");codigo=document.createElement("code");pre.append(codigo);out.push(pre);lista=null}continue}
-    if(codigo){codigo.textContent+=(codigo.textContent?"\n":"")+linea;continue}
-    const it=/^\s*(?:([-*•])|(\d+)[.)])\s+(.*)$/.exec(linea);
-    if(it){const tipo=it[2]?"OL":"UL";if(!lista||lista.tagName!==tipo){lista=document.createElement(tipo);out.push(lista)}const li=document.createElement("li");enLinea(li,it[3]);lista.append(li);continue}
-    lista=null;const limpia=linea.replace(/^\s*#{1,6}\s+/,"");if(!limpia.trim())continue;
-    const p=document.createElement("p");if(limpia!==linea){const f=document.createElement("strong");f.textContent=limpia.replace(/\*\*/g,"");p.append(f)}else enLinea(p,linea);out.push(p)}
-  return out}
-function msg(quien,cuando,texto,mio){const box=document.createElement("div");box.className="msg"+(mio?" mio":"");const b=document.createElement("b"),t=Number(cuando),hh=Number.isFinite(t)&&t>0?new Date(t):null;b.textContent=quien+(hh?" · "+String(hh.getHours()).padStart(2,"0")+":"+String(hh.getMinutes()).padStart(2,"0"):"");box.append(b,...formatear(texto));return box}
-// Abre como un chat: cada conversación en lo último, dentro de su caja, y los datos de la persona quedan a la vista. Una foto
-// nueva no le mueve a nadie lo que estaba leyendo (`leyendo`).
-function pintarCharla(c,leyendo){const mk=(t,cl,x)=>{const e=document.createElement(t);if(cl)e.className=cl;if(x!=null)e.textContent=x;return e},seccion=(titulo,filas,vacio)=>{panel.append(mk("h4",null,titulo));if(!filas.length){panel.append(mk("p","m",vacio));return}const ch=mk("div","chat");filas.forEach(f=>ch.append(f));panel.append(ch)};
-  if(c.falla){panel.append(mk("p","m","No se pudo leer la conversación de esta sesión."));return}
-  const d=c.datos||{};if(d.sinCoordinadora)return;
-  const alFinal=()=>{const chats=[...panel.querySelectorAll(".chat")];chats.forEach((ch,i)=>{ch.scrollTop=leyendo&&leyendo[i]!=null?leyendo[i]:ch.scrollHeight})};
-  if(d.conVos){seccion("Con vos",d.conVos.map(m=>msg(m.quien==="vos"?"Vos":sel,m.at,m.texto,m.quien==="vos")),"No hay mensajes con vos en lo último de su conversación.");
-    seccion("Con las sesiones",(d.conSesiones||[]).map(m=>msg(m.de===sel?sel+" a "+m.a:m.de,m.at,m.texto,m.de===sel)),"No hay mensajes con las sesiones en lo último de su conversación.");
-    panel.append(mk("p","m","Tus últimos 20 mensajes con sus respuestas, y los últimos 10 con las sesiones, en orden. "+ALCANCE+" Las contraseñas y las claves se tapan."));alFinal();return}
-  seccion("Con la coordinadora",(d.conCoordinadora||[]).map(m=>msg(m.propio?sel:m.de,m.at,m.texto,m.propio)),"No hay mensajes con la coordinadora en lo último de su conversación.");
-  panel.append(mk("p","m","Últimos 10 mensajes. "+ALCANCE));alFinal()}
+function abrir(nombre,foto=false){panel.classList.remove("wide");const baja=foto&&sel===nombre?panel.scrollTop:0;sel=nombre;const a=T.agents().find(x=>x.nombre===nombre);if(!a){sel=null;panel.hidden=true;return}const s=T.AST[a.estado]||[a.estado||"","#999"];panel.hidden=false;panel.style.setProperty("--c",s[1]);
+  panel.innerHTML='<button class="close" type="button" aria-label="Cerrar">×</button><h3></h3><div class="chips"><span class="chip">● <span class="es"></span></span></div>';
+  panel.querySelector("h3").textContent=a.nombre;panel.querySelector(".es").textContent=s[0];if(a.comoTrabaja)panel.querySelector(".chips").append(T.etiquetaComo(a.comoTrabaja));T.pintarFicha(a,panel,true);
+  panel.querySelector(".close").onclick=()=>{sel=null;panel.hidden=true;desks.forEach(pintarTag)};desks.forEach(pintarTag);
+  if(foto)panel.scrollTop=baja}
 // ---------- los sobres: quién le habla a quién, unos segundos, sin el texto ----------
 const VUELO_MS=3000,MAX_VUELOS=3,vuelos=[],vistos=new Set(),a3=new THREE.Vector3(),b3=new THREE.Vector3(),sobreGeo=new THREE.BoxGeometry(1.1,.1,.74),solapaGeo=new THREE.BoxGeometry(.72,.03,.46),sobreMat=new THREE.MeshBasicMaterial({color:"#1f6feb",toneMapped:false}),solapaMat=new THREE.MeshBasicMaterial({color:"#dbe9ff",toneMapped:false});
-function lanzarSobres(){const nuevos=[];let delSel=false;
-  for(const s of T.sobres()){if(vistos.has(s.id))continue;vistos.add(s.id);if(sel&&(s.de===sel||s.a===sel))delSel=true;nuevos.push(s)}
-  if(delSel)charla=null;
+function lanzarSobres(){const nuevos=[];
+  for(const s of T.sobres()){if(vistos.has(s.id))continue;vistos.add(s.id);nuevos.push(s)}
   // con la sala fuera de vista no se dibuja: ese mensaje ya pasó
   if(!nuevos.length||!enVista||document.hidden)return;
   const conLugar=nuevos.map(s=>({s,de:desks.find(d=>d.agent.nombre===s.de),a:desks.find(d=>d.agent.nombre===s.a)})).filter(v=>v.de&&v.a&&v.de!==v.a);
