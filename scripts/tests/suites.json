@@ -3711,6 +3711,11 @@
       "requiere": []
     },
     {
+      "raiz": "arnes",
+      "ruta": "tests/public-push-guard-commit.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.26, tanda F1 (T57): el lector de un comando `gh` (scripts/lib/gh-pr.js, armado sobre el de az-pr.js): qué es de lectura (lista cerrada), a qué repo apunta, qué textos y archivos publica, y qué no se puede leer desde el comando. Sin git, sin red.",
       "raiz": "arnes",
       "ruta": "tests/gh-pr.test.js",
