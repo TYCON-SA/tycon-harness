@@ -30,8 +30,11 @@ Bajar el arnés va siempre sin credencial y casi no pasa por la API: gasta una s
    $PSVersionTable.PSVersion.ToString(); node --version; npx --version; tar --version
    Esperado: PowerShell 7.algo, node v24 (con v22 también anda), npx (viene con node) y tar (viene con Windows 10 y posteriores). Lo
    que falte, decime que lo instale yo, de a uno:  winget install Microsoft.PowerShell · winget install OpenJS.NodeJS.LTS
+   Mirá también si está Git para Windows, con git --version. Si falta, decime que lo instale yo: winget install Git.Git
    Después de instalar algo, tengo que cerrar y volver a abrir la terminal y Claude Code: avisame y esperá.
-   (git NO hace falta: el arnés se baja como archivos, no se clona.)
+   (El arnés se baja como archivos, no se clona. Git para Windows hace falta para que corran los controles que son guiones
+   de bash, entre ellos el freno de seguridad, y para firmar con un click. Sin él no se midió qué pasa con esos controles:
+   por eso se pide. Para firmar sin él queda la ventana nueva de tres palabras.)
 
 2. Ver el plan de instalación (no instala nada): dame esta línea para mi ventana:
        npx @tyconsa/harness@latest --audience me --profile full --integrations none --packs all --dry-run

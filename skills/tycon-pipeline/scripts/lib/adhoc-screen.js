@@ -8,6 +8,8 @@
  *   revisar(adhoc, repos)     `{ pantallas, faltan, mostrar }`, o `{ sinMedir }` si no se pudo medir: sin medir no guarda.
  *   problemaDeLaMaqueta(ruta) `{ sha256 }` o `{ problema }`: que exista y pase `mockup.js check`.
  *   problemaDeLaCaptura(ruta) el problema en una frase, o null: que sea una imagen de verdad y no esté vacía.
+ *   pedidoPorBanderas(args)   `{ payload }` o `{ problema }`: el pedido de `adhoc set --reason …`, sin JSON.
+ *   motivoSeCita(motivo)      ¿el motivo va en `--reason "<motivo>"`, y `pedidoPorBanderas` lo acepta?
  *
  * Qué es una pantalla lo dice el pipeline (`ui-signal.js`, con la regla `screen_test` de la organización), archivo por
  * archivo; una prueba no lo es. La captura vale si es más nueva que el último cambio de los archivos del carril.
@@ -30,6 +32,43 @@ const FIRMAS_DE_IMAGEN = {
 const rutaReal = (p) => { try { return fs.realpathSync(p); } catch (_) { return path.resolve(String(p)); } };
 // una ruta en un renglón: va al texto que lee la persona antes de aprobar, y no puede armar renglones falsos
 const enUnRenglon = (s) => String(s).replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, '');
+
+/**
+ * El pedido de `adhoc set --reason <motivo> [--max-files N] --terminal [--for-session <id>]`, la forma sin JSON para la
+ * consola de la persona: el PowerShell que viene con Windows rompe las comillas del JSON al pasarlo. `args` son los
+ * argumentos después de `set`. `{ payload }` o `{ problema }`. Va sólo con `--terminal`: la ventana de permiso, la
+ * delegación y el tope leen el JSON. Un motivo que empieza con `-` se rechaza, para que no se haga pasar por una bandera.
+ */
+function pedidoPorBanderas(args) {
+  const payload = {};
+  let terminal = false;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--terminal') terminal = true;
+    else if (a === '--for-session') i++;
+    else if (a === '--reason' || a === '--max-files') {
+      const clave = a === '--reason' ? 'reason' : 'maxFiles';
+      const v = args[++i];
+      if (clave in payload) return { problema: `${a} va una sola vez` };
+      if (v === undefined || v.startsWith('-')) return { problema: `${a} necesita un valor, y no puede empezar con «-»` };
+      if (clave === 'maxFiles' && !/^\d+$/.test(v)) return { problema: '--max-files es un número entero' };
+      payload[clave] = clave === 'maxFiles' ? Number(v) : v;
+    } else return { problema: `no conozco «${enUnRenglon(a)}»` };
+  }
+  if (!('reason' in payload)) return { problema: 'falta --reason' };
+  if (!terminal) return { problema: 'esta forma va sólo con --terminal; desde una sesión, el pedido va en JSON' };
+  return { payload };
+}
+
+/**
+ * ¿El motivo se puede dar en `--reason "<motivo>"`? No, si empieza con `-` (`pedidoPorBanderas` lo rechaza), si trae lo que
+ * bash, PowerShell o cmd leen adentro de unas comillas (PowerShell toma las comillas tipográficas como comillas normales,
+ * y una cerraría el motivo), si termina en una barra (escapa la comilla de cierre) o si trae un carácter de control (parte
+ * el renglón).
+ */
+function motivoSeCita(motivo) {
+  return !/^-|["`$%!\u2018-\u201F]|\\$|[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(String(motivo));
+}
 
 function problemaDeLaMaqueta(ruta) {
   const mk = require('../mockup.js');
@@ -135,4 +174,4 @@ function revisar(adhoc, repos = []) {
   return { pantallas, faltan: faltantes(adhoc, ultimaEdicion), mostrar: `Maqueta: ${dicha(adhoc.mockup)} · captura: ${dicha(adhoc.capture)}.`, avisos };
 }
 
-module.exports = { revisar, problemaDeLaMaqueta, problemaDeLaCaptura, enUnRenglon };
+module.exports = { revisar, problemaDeLaMaqueta, problemaDeLaCaptura, enUnRenglon, pedidoPorBanderas, motivoSeCita };

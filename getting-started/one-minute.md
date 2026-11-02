@@ -9,7 +9,7 @@ that stop you, not just warn you.
 **Your first day, in three steps:**
 
 1. **Install**, in the terminal: `npx @tyconsa/harness@latest`. It shows what changes and asks once. You need Node 22
-   or later and your agent already installed (on Windows, PowerShell 7).
+   or later and your agent already installed (on Windows, PowerShell 7 and Git for Windows).
 2. **Open your agent in your repo's folder and ask** "create a story to …" with what you want to do. It builds the
    story by answering three plain questions (what it has to do, how you can tell it works, what it must not touch),
    shows it to you and writes it when you say yes.

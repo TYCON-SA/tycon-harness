@@ -132,8 +132,9 @@ sobre un archivo) el freno deja antes un registro del pedido, y el guion firma s
 lo lanzó la consola de la herramienta con ese comando exacto. El registro vale una sola vez y vence a los 30 minutos.
 Una firma sobre un archivo deja una constancia que consume el Edit o Write siguiente de esa sesión sobre ese archivo.
 
-**Con un click o un «aprobado» (Claude Code)**, donde la ventana no llega: una pestaña que no pide permisos o una sesión
-de fondo. El freno niega el comando y le dice al agente qué mostrar: el cuadro de opciones con una sola pregunta, o el
+**Con un click o un «aprobado» (Claude Code)**, donde la ventana no llega: una pestaña que no pide permisos, una sesión
+de fondo o Windows, donde la ventana no firma y sólo vale por la consola Bash
+([En Windows](firmas-del-arnes.md#en-windows)). El freno niega el comando y le dice al agente qué mostrar: el cuadro de opciones con una sola pregunta, o el
 mismo texto en el chat, con «firma <id>». Con el click o el «aprobado» de la persona, el agente repite el comando. Vale
 una vez y vence a los 30 minutos. Las reglas están en [Aprobar sin terminal](firmas-del-arnes.md#aprobar-sin-terminal). No
 lo aceptan `TYCON_SAFETY_OFF`, `TYCON_PROD_LINT`, la emergencia ni saltear el pase adversarial.
@@ -141,8 +142,8 @@ lo aceptan `TYCON_SAFETY_OFF`, `TYCON_PROD_LINT`, la emergencia ni saltear el pa
 **En la terminal de la persona**, donde no hay freno: el comando de la columna «Firmarla en la terminal» de esa lista
 (casi siempre el mismo con `--terminal`). Es la única forma en Codex, que no tiene ventana de permiso, y la de lo que no
 acepta el click. También es la forma de toda firma que el freno no puede decidir: el comando escondido detrás de otro (`cd … && <firma>`), la
-herramienta lanzada por otra herramienta o por su consola, una consola de fondo viva, o Windows, donde el árbol de
-procesos no se lee. El cartel de cada freno trae el comando de la terminal.
+herramienta lanzada por otra herramienta o por su consola, una consola de fondo viva, o en Windows la consola PowerShell
+y las formas de consola que no son la medida. En Windows, además, un escape se firma siempre ahí. El cartel de cada freno trae el comando de la terminal.
 
 Algunas firmas las puede dar la coordinadora desde su pestaña, si el perfil del equipo se las delega
 (`approvals.delegated_signing`); las que son sólo del dueño, no (`approvals.owner_only`). La constancia de cada escape
@@ -366,7 +367,6 @@ TYCON_SAFETY_GUARD=1 \
 - **Read/Edit/Write tool calls** — el hook solo intercepta `Bash`. Una llamada `Read` a `~/.ssh/id_rsa` sigue funcionando. Para cubrir eso necesitamos hook `PreToolUse` matcher `Read|Edit|Write` con denylist de paths. v2.
 - **Freeze mode** — limitar edits a un directorio. Requiere estado persistente entre invocations del hook (qué scope freezeaste). v2.
 - **Guard mode autónomo** — combinación Careful + Freeze auto-activada cuando `tycon-pipeline --autonomous`. v2.
-- **Windows / `.ps1`** — el script es bash. Devs en Windows no tienen safety-guard por ahora. Roadmap: portar a PowerShell con paridad de denylist.
 
 **Roadmap v2 (propuesto, sin compromiso):**
 

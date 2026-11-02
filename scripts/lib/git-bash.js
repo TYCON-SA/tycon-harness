@@ -154,7 +154,18 @@ function findGitBash(ctx = {}) {
   return platform === 'win32' ? findOnWindows(env, exists) : findOnPosix(env, exists);
 }
 
-module.exports = { findGitBash, isWslLauncher, ENV_VAR };
+/**
+ * La línea del diagnóstico sobre Git para Windows: `{ level, text }`, o null fuera de Windows. Sin él es un aviso, que no
+ * impide instalar: los hooks `.sh` se registran con `bash` a secas, y qué pasa con ellos sin Git no se midió.
+ */
+function windowsGitNotice(ctx = {}) {
+  if ((ctx.platform || process.platform) !== 'win32') return null;
+  const found = findGitBash(ctx);
+  if (found.path) return { level: 'ok', text: `Git para Windows: ${found.path}` };
+  return { level: 'warn', text: 'Git para Windows: no está. Hace falta para que corran los controles que son guiones de bash, entre ellos el freno de seguridad, y para firmar con un click. Sin él no se midió qué pasa con esos controles: por eso se pide. Instalalo con winget install Git.Git; mientras tanto, para firmar queda la ventana nueva de tres palabras' };
+}
+
+module.exports = { findGitBash, isWslLauncher, windowsGitNotice, ENV_VAR };
 
 if (require.main === module) {
   const found = findGitBash();

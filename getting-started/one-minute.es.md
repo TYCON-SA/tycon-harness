@@ -9,7 +9,7 @@ frenan, no sólo avisan.
 **El primer día, en tres pasos:**
 
 1. **Instalá**, en la terminal: `npx @tyconsa/harness@latest`. Te muestra qué cambia y pregunta una vez. Hace falta
-   Node 22 o posterior y tu agente ya instalado (en Windows, PowerShell 7).
+   Node 22 o posterior y tu agente ya instalado (en Windows, PowerShell 7 y Git para Windows).
 2. **Abrí tu agente en la carpeta de tu repo y pedí** «creá una historia para …» con lo que quieras hacer. La arma
    contestando tres preguntas en llano (qué tiene que hacer, cómo se ve que anda y qué no tiene que tocar), te la
    muestra y la escribe con tu «sí».
