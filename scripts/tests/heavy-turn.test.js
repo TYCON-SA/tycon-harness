@@ -129,6 +129,8 @@ test('HT4 SuiteTurn_FromAWorkingClone_ReadsTheInstalledProfile — el perfil est
   assert.match(r.stderr, new RegExp(`release --process ${other}`), 'dice cómo destrabarla');
   spawnSync(process.execPath, [cli, 'release', '--process', String(process.pid)], { env, encoding: 'utf8' });
   assert.strictEqual(JSON.parse(fs.readFileSync(HT.turnFile(m.home), 'utf8')).pid, other, 'el turno ajeno sigue');
+  // el árbol que arma el nocturno trae su propio perfil: desde ahí siempre hay rol, y este caso no se puede medir
+  if (['team-profile.json', 'perfil-equipo.json'].some((f) => fs.existsSync(path.join(ROOT, f)))) return;
   // sin el perfil instalado no hay rol: no se pide nada, y corre
   const sin = toy();
   fs.mkdirSync(path.dirname(HT.turnFile(sin.home)), { recursive: true });

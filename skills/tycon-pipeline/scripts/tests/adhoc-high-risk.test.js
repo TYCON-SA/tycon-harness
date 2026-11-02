@@ -73,9 +73,9 @@ function onEdit(home, sid, file) {
     env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid }, encoding: 'utf8',
   });
 }
-function cli(script, args, { home, sid, cwd }) {
+function cli(script, args, { home, sid, cwd, env = {} }) {
   return spawnSync(process.execPath, [script, ...args], {
-    cwd, env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid }, encoding: 'utf8',
+    cwd, env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, ...env }, encoding: 'utf8',
   });
 }
 function escribir(dir, rel, txt = 'x\n') {
@@ -338,7 +338,8 @@ test('T8 Advisors_y_DeepReviewGate_ConAdhoc — @story-8.174 @ac-7', () => {
   escribir(prod, 'src/auth/x.ts', 'export const a = 1;\n');
   const state = conCarril(home, 's8', { rutas: [path.join(prod, 'src/auth/x.ts')], bases: { [prod]: adhocBase.traerBase(prod) },
     riesgoAlto: { regla: 'rutas-sensibles', archivo: path.join(prod, 'src/auth/x.ts') } });
-  const ctx = { home, sid: 's8', cwd: prod };
+  // `advisors` lee los paquetes de revisores del arnés: la HOME de prueba no tiene el enlace, y en el árbol que arma el nocturno tampoco se deduce solo
+  const ctx = { home, sid: 's8', cwd: prod, env: { TYCON_GUIDES_DIR: path.resolve(SCRIPTS, '..', '..', '..') } };
   // advisors --adhoc: el set del diff del carril y el expected en el registro del carril
   const adv = cli(PIPELINE, ['advisors', '--adhoc'], ctx);
   assert.equal(adv.status, 0, adv.stderr);

@@ -1205,6 +1205,8 @@ const PATH_BEFORE = /[\w.~$@+\\/-]*$/;
 function completesOtherRealPath(line, at, hit, dir, oldRel) {
   if (!dir || (line[at - 1] !== '/' && line[at - 1] !== '\\')) return false;
   const segs = line.slice(0, at - 1).match(PATH_BEFORE)[0].split(/[\\/]/);
+  // `.dashboard/` es la salida de los procesos de la noche: no está en el repo, y lo de adentro es de ahí, no una carpeta mudada
+  if (segs.filter(Boolean).pop() === '.dashboard') return true;
   const old = oldRel.replace(/\/+$/, '');
   const root = path.resolve(dir);
   let rel = hit.split('\\').join('/').replace(/\/+$/, '');
