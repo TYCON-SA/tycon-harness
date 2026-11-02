@@ -24,10 +24,10 @@ modelos abiertos vía [Ollama](guides/integrations/ollama.md), y con [Cursor](gu
 El ciclo de desarrollo con IA (AI SDLC), paso por paso:
 
 1. **Pedido e historia:** contás qué querés y el agente lo escribe como una historia (story): qué hay que hacer y cómo
-   se prueba. Un cambio chico va por camino rápido: el motivo en una línea y la lista de archivos.
+   se prueba. Un cambio chico va por camino corto: el motivo en una línea y la lista de archivos.
 2. **Plan aprobado:** el agente arma el plan y te lo muestra; se aprueba antes de programar, nunca solo. Quién lo aprueba depende del riesgo (más abajo).
 3. **Pruebas y código:** escribe las pruebas y el código, y corre las pruebas.
-4. **Revisión:** en una historia, revisores especializados (seguridad, convenciones, cobertura) miran el cambio antes del commit; en un camino rápido, sólo con riesgo alto.
+4. **Revisión:** en una historia, revisores especializados (seguridad, convenciones, cobertura) miran el cambio antes del commit.
 5. **Entrega:** el commit y el merge pasan por controles. Nada se commitea ni se sube sin tu permiso.
 6. **Operación y medición:** cada merge a main deja su archivo de métricas, y los procesos de la noche de tu
    organización revisan las dependencias y arman el tablero del ciclo.
@@ -35,33 +35,29 @@ El ciclo de desarrollo con IA (AI SDLC), paso por paso:
 **La medida justa.** Al arrancar un producto se especifica entero, una vez —documento de producto, arquitectura,
 épicos e historias—; después, historia por historia.
 
-- **El tamaño decide: historia o camino rápido.** La pregunta: ¿es un cambio chico?
+- **El tamaño decide: historia o camino corto.** La pregunta: ¿es un cambio chico?
   - **Es chico** si lo pedís en una frase y, al terminar, sabés si quedó bien sin revisar una lista: alcanza con mirar
-    el resultado y correr sus pruebas. Ejemplo: «el combo de provincia muestra el nombre completo en vez de la sigla». Va por **camino rápido**.
+    el resultado y correr sus pruebas. Ejemplo: «el combo de provincia muestra el nombre completo en vez de la sigla». Va por **camino corto**.
   - **No es chico** si para saber que quedó completo hace falta una lista de criterios, si lleva más de una sesión o si
     espera a alguien de afuera. Ejemplo: «el combo trae las opciones de la base y recuerda la última elección». Va por
     **historia**.
-  - **Si junta varios temas**, no es chico: son varios caminos rápidos, o una historia.
+  - **Si junta varios temas**, no es chico: son varios caminos cortos, o una historia.
 
   **Quién decide y quién controla.** El tamaño lo juzga quien abre el trabajo, pero si trabajás con una sesión
-  coordinadora, no lo decidís solo: el camino rápido lo aprueba la sesión coordinadora o vos. Lo hace cumplir el arnés:
-  - Sin un camino rápido abierto o una historia, el arnés **no deja escribir código**.
-  - El camino rápido tiene un **tope de archivos**: 5 si lo aprobó la sesión coordinadora, 8 si lo aprobaste vos. Al pasarlo,
-    el arnés **lo cierra** y recomienda una historia. Si igual querés seguir por camino rápido, lo pedís vos con un click aparte, que queda anotado; la sesión coordinadora no puede.
-  - Un camino rápido con varios temas en el motivo **no lo puede aprobar la sesión coordinadora**.
+  coordinadora, no lo decidís solo: el camino corto lo aprueba la sesión coordinadora o vos. Lo hace cumplir el arnés:
+  - Sin un camino corto abierto o una historia, el arnés **no deja escribir código**.
+  - El camino corto tiene un **tope de archivos**: uno si lo aprobó la sesión coordinadora, otro si lo aprobaste vos. Los topes los configura cada organización; por defecto, 5 y 8. Al pasarlo,
+    el arnés **lo cierra** y recomienda una historia. Para seguir por camino corto, lo pedís vos con un click aparte, que queda anotado; la sesión coordinadora no puede.
+  - Un camino corto con varios temas en el motivo **no lo puede aprobar la sesión coordinadora**.
 - **El riesgo decide quién aprueba.**
   - **Riesgo alto** es cuando el cambio toca algo sensible del repo, como producción, una migración o seguridad.
     También cuando trae una decisión tuya o de tu organización: alcance, seguridad, una dependencia nueva, plata,
     clientes u otras personas. Ante la duda, riesgo alto.
   - **La sesión coordinadora** es una sesión de agente que tu equipo puede usar para aprobar lo de rutina; no es una
     persona.
-  - **Quién aprueba qué:** lo delicado lo aprobás siempre vos, el dev que trabaja. Con riesgo normal, la sesión
-    coordinadora abre el camino rápido con la lista de archivos y te avisa, y aprueba el plan si la revisión automática
-    dio «aprobado». Con riesgo alto, lo aprobás vos. Sin sesión coordinadora, lo suyo lo aprobás vos. El plan nunca se
-    aprueba solo.
-- **Si el cambio tiene pantalla, en los dos caminos se aprueba una maqueta antes de construir**, y lo construido se
-  valida contra ella.
-- **Guardar es un click en el cuadro de opciones o un «Aprobado» escrito, en los dos caminos.** Antes de cada commit,
+  - **Quién aprueba qué:** lo delicado lo aprobás siempre vos, el dev que trabaja. Lo demás va como muestra el diagrama, y la sesión
+    coordinadora te avisa cuando abre un camino corto. Sin ella, lo suyo lo aprobás vos.
+- **Guardar es un click o un «Aprobado» escrito.** Antes de cada commit,
   push y pull request el agente pregunta «¿guardo?». Si tu pestaña pide permisos, el sí va en la ventana de permiso. No
   hay firma ni comando.
 
@@ -70,39 +66,44 @@ Los frenos, los controles y las firmas de control del arnés son de quien lo man
 
 ```mermaid
 flowchart TB
-  pedir(["<b>Pedir</b>"]) --> chico{"<b>¿Es un cambio chico?</b><br/>lo pedís en una frase, y al terminar sabés si quedó bien sin revisar una lista"}
-  chico -- "Sí · Camino rápido" --> r1
+  pedir(["<b>Pedir</b><br/>👤 Vos"]) --> chico{"<b>¿Es un cambio chico?</b>"}
+  chico -- "Sí · Camino corto" --> r1
   chico -- "No · Historia" --> h1
-  subgraph rapido [" "]
+  subgraph corto [" "]
     direction TB
-    r1["<b>Abrir el carril</b><br/>con la lista de archivos<br/>riesgo normal: la sesión coordinadora, hasta 5<br/>riesgo alto: vos, hasta 8<br/>más de 8: el arnés recomienda una historia, o un click aparte tuyo"] --> r1m["<b>Aprobar la maqueta</b><br/>si tiene pantalla · antes de construir"]
+    r1["<b>Abrir el carril</b><br/>🤖 la sesión coordinadora: riesgo normal, hasta su tope<br/>👤 Vos: riesgo alto, hasta el tope del camino corto<br/>más del tope: el arnés recomienda una historia, o un click aparte tuyo"] --> r0m["<b>Armar la maqueta</b><br/>si tiene pantalla · la arma el agente"]
+    r0m --> r1m["<b>Aprobar la maqueta</b><br/>si tiene pantalla · antes de construir<br/>👤 Vos"]
     r1m --> r2["<b>Programar con la prueba primero</b><br/>al guardar, el arnés avisa si fue al revés"]
     r2 --> r3["<b>Correr sus pruebas</b>"]
-    r3 --> r3c["<b>Validar contra la maqueta</b><br/>si tiene pantalla"]
+    r3 --> r3c["<b>Validar contra la maqueta</b><br/>si tiene pantalla · el arnés compara los textos"]
     r3c --> r4["<b>Revisores y pase adversarial</b><br/>sólo con riesgo alto"]
   end
   subgraph historia [" "]
     direction TB
     h1["<b>Validar la historia</b>"] --> h2["<b>Armar el plan</b>"]
-    h2 --> h3["<b>Aprobar el plan</b><br/>riesgo normal: la sesión coordinadora, si la revisión automática dio «aprobado»<br/>riesgo alto: vos"]
-    h3 --> h3m["<b>Aprobar la maqueta</b><br/>si tiene pantalla · junto con el plan, y por quien lo aprueba"]
+    h2 --> h2m["<b>Armar la maqueta</b><br/>si tiene pantalla · la arma el agente, con el plan"]
+    h2m --> h3["<b>Aprobar el plan</b><br/>🤖 la sesión coordinadora: riesgo normal, si la revisión automática dio «aprobado»<br/>👤 Vos: riesgo alto"]
+    h3 --> h3m["<b>Aprobar la maqueta</b><br/>si tiene pantalla · junto con el plan<br/>🤖 o 👤 Vos: quien aprueba el plan"]
     h3m --> h4["<b>Programar con las pruebas primero</b>"]
     h4 --> h5["<b>Correr las pruebas</b>"]
     h5 --> h6["<b>Revisores</b><br/>elegidos según el cambio"]
-    h6 --> h7["<b>Pase adversarial</b><br/>no en una historia chica de riesgo bajo ni en sólo documentación o pruebas"]
-    h7 --> h8["<b>Probar en vivo, criterio por criterio</b>"]
-    h8 --> h9["<b>Validar contra la maqueta</b><br/>si tiene pantalla"]
+    h6 --> h7["<b>Pase adversarial</b><br/>no en una historia chica de riesgo bajo ni en sólo documentos o pruebas"]
+    h7 --> h8["<b>Probar en vivo, criterio por criterio</b><br/>👤 Vos firmás lo que no se pudo probar en vivo"]
+    h8 --> hq["<b>Armar la guía de QA</b><br/>si se puede operar a mano · la arma el agente"]
+    hq --> h9["<b>Validar contra la maqueta</b><br/>si tiene pantalla · el arnés compara los textos"]
   end
-  r4 --> g1["<b>Guardar</b><br/>un click en el cuadro, o un «Aprobado» escrito"]
+  r4 --> g1["<b>Guardar</b><br/>👤 Vos: un click en el cuadro, o un «Aprobado» escrito<br/>con pantalla, mirás las capturas contra la maqueta"]
   h9 --> g1
   g1 --> g2["<b>Pull request</b><br/>la CI"]
+  g2 -- "Historia" --> g3["<b>Pasar la historia a «done»</b><br/>👤 Vos o QA, con la prueba de la guía"]
+  hq -.-> g3
   classDef decide fill:#2f6fde,stroke:#1f4fa8,color:#ffffff
   classDef control fill:#F15A24,stroke:#b8410f,color:#ffffff
-  class r1,r1m,h3,h3m,g1 decide
+  class pedir,r1,r1m,h3,h3m,g1,g3 decide
   class r3c,r4,h4,h5,h6,h7,h8,h9,g2 control
 ```
 
-<sub>🟦 Decide alguien: vos, o la sesión coordinadora con riesgo normal · 🟧 Control que no se saltea</sub>
+<sub>🟦 Decide alguien: 👤 **Vos** · 🤖 la sesión coordinadora · 🟧 Control que no se saltea</sub>
 
 Los controles son una parte del ciclo: cuidan cada paso. Se arranca de dos maneras: [solo, en tu
 máquina](#empezá-solo), o [para tu equipo](#para-equipos).

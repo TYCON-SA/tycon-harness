@@ -184,8 +184,16 @@ function declaredEnd(raw, ms) {
   return raw == null || raw === '' ? 'sin estimación (no tiene pasos)' : 'hora declarada ilegible';
 }
 
-// Medianas en ms por id de paso, de los pasos medidos y sin fusionar de las corridas archivadas.
-function stepMedians(dir, unreadable) {
+// Medianas en ms por id de paso, de los pasos medidos y sin fusionar de las corridas archivadas. Con `memory` no se releen
+// mientras la carpeta no cambie: son más de mil archivos, y una ejecución archivada es un archivo nuevo.
+function stepMedians(dir, unreadable, memory) {
+  let stamp = null;
+  if (memory) { try { stamp = fs.statSync(dir).mtimeMs; } catch { /* sin carpeta: lo dice jsonFiles */ } }
+  const kept = memory && stamp !== null && memory.medians && memory.medians.stamp === stamp ? memory.medians : null;
+  if (kept) {
+    if (kept.note) unreadable.push(kept.note);
+    return kept.out;
+  }
   const samples = {};
   let broken = 0;
   for (const file of jsonFiles(dir, unreadable)) {
@@ -200,7 +208,8 @@ function stepMedians(dir, unreadable) {
       (samples[p.paso] = samples[p.paso] || []).push(p.ms);
     }
   }
-  if (broken) unreadable.push(`${broken} ejecución(es) archivada(s) en ${dir}: no se pudieron leer`);
+  const note = broken ? `${broken} ejecución(es) archivada(s) en ${dir}: no se pudieron leer` : null;
+  if (note) unreadable.push(note);
   const out = {};
   for (const [k, v] of Object.entries(samples)) out[k] = median(v);
   // Un paso por nombre de máquina sin ejecuciones propias todavía usa la mediana de su equivalente viejo.
@@ -209,6 +218,7 @@ function stepMedians(dir, unreadable) {
   const viejo = { start: sum('0'), 'validate-story': sum('1'), plan: sum('2'), 'approve-plan': sum('3'), implement: sum('4'),
     'run-tests': out['4'] != null ? 0 : undefined, reviewers: sum('5'), findings: sum('6', '7'), 'prepare-commit': sum('8') };
   for (const [k, v] of Object.entries(viejo)) if (out[k] == null && v !== undefined) out[k] = v;
+  if (memory && stamp !== null) memory.medians = { stamp, out, note };
   return out;
 }
 
@@ -505,6 +515,19 @@ function changesOutsideRun(out) {
   }
   return false;
 }
+// Los archivos con cambios de esa misma salida, sin contar los de la propia corrida.
+function changedFiles(out) {
+  const entries = String(out).split('\0');
+  let n = 0;
+  for (let i = 0; i < entries.length; i += 1) {
+    const e = entries[i];
+    if (!e.trim()) continue;
+    const status = /^\s*(\S+)\s/.exec(e);
+    if (status && /[RC]/.test(status[1])) i += 1;
+    if (!e.replace(/^\s*\S+\s+/, '').startsWith('.advisors/')) n += 1;
+  }
+  return n;
+}
 const closedAtOf = (m) => {
   const t8 = (m.stepTimings || {})['prepare-commit'] || (m.stepTimings || {})['8'];
   return [t8 && t8.completedAt, m.lastTouch].map((v) => Date.parse(v)).find(Number.isFinite) || null;
@@ -531,16 +554,53 @@ const PER_QUERY_MS = 15000;
 const ALL_QUERIES_MS = 20000;
 const GIT_MS = 2000;
 const GIT_BUDGET_MS = 3000;
+const STATUS_KEEP_MS = 60 * 1000;
+
+/**
+ * Lo que un proceso que arma fotos seguido recuerda de una a la otra (`office/server.js`). Casi todo lo que se le pregunta a
+ * git depende sólo de los commits, y se repite mientras no cambien. `git status` depende de los archivos, que no avisan: se
+ * recuerda un rato, y por eso lo que dice puede atrasar hasta `statusKeepMs`. El de «A medio camino» no vence con el tiempo:
+ * se vuelve a leer cuando alguien lo pide (`reviseHalfway`) o se cierra una sesión con la página abierta.
+ */
+const createMemory = ({ statusKeepMs = STATUS_KEEP_MS } = {}) => ({ git: new Map(), medians: null, statusKeepMs, halfwaySince: 0, halfwayReadAt: null, aliveSids: null, pageOpen: true });
+
+/** Pide leer otra vez los archivos sin guardar de «A medio camino» en la próxima foto. */
+const reviseHalfway = (memory) => { memory.halfwaySince = Date.now(); };
+
+// Una sesión que estaba viva en la foto anterior y ya no: lo que dejó puede estar sin terminar. Con la página cerrada no se
+// revisa nada: al abrirla se revisa igual.
+function reviseIfSessionClosed(memory, sessions) {
+  const alive = new Set([...sessions].filter(([, s]) => s.alive).map(([sid]) => sid));
+  if (memory.pageOpen && memory.aliveSids && [...memory.aliveSids].some((sid) => !alive.has(sid))) reviseHalfway(memory);
+  memory.aliveSids = alive;
+}
 
 // git con tope: `{ out }` si salió bien; si no, `{ err, status }` con el motivo. `ctx.until` es el tope de toda la
-// lectura de repos y `ctx.cache` guarda lo leído, para que la segunda pasada no vuelva a preguntar.
+// lectura de repos y `ctx.cache` guarda lo leído, para que la segunda pasada no vuelva a preguntar. Con `ctx.memory`, lo
+// que git ya contestó no se vuelve a preguntar mientras siga valiendo, y eso no gasta el tope. `ctx.halfway`: el `git status`
+// de «A medio camino», que dura más que el de una tarjeta en curso y por eso se guarda aparte.
 function git(dir, args, ctx) {
-  const key = `${dir}\0${args.join(' ')}`;
+  const isStatus = args.includes('status');
+  const forHalfway = isStatus && Boolean(ctx.halfway);
+  const key = `${forHalfway ? 'medio\0' : ''}${dir}\0${args.join(' ')}`;
   if (ctx.cache.has(key)) return ctx.cache.get(key);
+  const stamp = ctx.memory && !isStatus ? commitsStamp(dir, ctx) : null;
+  const kept = ctx.memory ? ctx.memory.git.get(key) : null;
+  const stillValid = () => {
+    if (forHalfway) return kept.at > ctx.memory.halfwaySince;
+    return isStatus ? Date.now() - kept.at < ctx.memory.statusKeepMs : stamp !== null && kept.stamp === stamp;
+  };
+  if (kept && stillValid()) {
+    ctx.cache.set(key, kept.res);
+    return kept.res;
+  }
   if (Date.now() > ctx.until) { ctx.gitTimedOut = true; return { err: `se pasó del tope de ${GIT_BUDGET_MS / 1000} s leyendo los repos`, status: null }; }
   const res = gitNow(dir, args, Math.max(1, Math.min(GIT_MS, ctx.until - Date.now())));
   if (res.err && res.status == null) ctx.gitTimedOut = true;
   ctx.cache.set(key, res);
+  if (forHalfway && ctx.memory) ctx.memory.halfwayReadAt = Date.now();
+  // un git que no llegó a contestar no dice nada: no se recuerda
+  if (ctx.memory && !(res.err && res.status == null)) ctx.memory.git.set(key, { res, stamp, at: Date.now() });
   return res;
 }
 
@@ -606,6 +666,21 @@ function branchOf(repo) {
   if (head.text === undefined) return { err: `${repo.root}: no se lee su HEAD (${head.err || 'no está'})` };
   const ref = /^ref:\s*refs\/heads\/(.+?)\s*$/.exec(head.text.trim());
   return { branch: ref ? ref[1] : '' };
+}
+
+// Lo que dice en qué commits está el repo, leído de sus archivos: HEAD, las puntas que se preguntan y la fecha de
+// `packed-refs`, donde git guarda las que no tienen archivo propio. null si no se puede saber: entonces no se recuerda nada.
+function commitsStamp(dir, ctx) {
+  const repo = repoOf(dir, ctx);
+  if (!repo || repo.err) return null;
+  const head = readText(path.join(repo.gitDir, 'HEAD'));
+  if (head.text === undefined) return null;
+  const { branch } = branchOf(repo);
+  const refs = [...(branch ? [`refs/heads/${branch}`] : []), 'refs/remotes/origin/HEAD',
+    ...['main', 'master'].flatMap((b) => [`refs/remotes/origin/${b}`, `refs/heads/${b}`])];
+  const parts = [head.text.trim(), ...refs.map((r) => readText(path.join(repo.commonDir, r)).text || '')];
+  try { parts.push(String(fs.statSync(path.join(repo.commonDir, 'packed-refs')).mtimeMs)); } catch { parts.push(''); }
+  return parts.join('\0');
 }
 
 // La dirección de `origin` en el `config` común del repo: `{ url }`, `{ none: true }` sin `origin`, o `{ err }`.
@@ -942,6 +1017,26 @@ function enteredMain(paths, ctx) {
   return seen;
 }
 
+// Lo que de verdad quedó de una sesión cerrada en sus carpetas: archivos sin guardar y commits que no están en la rama
+// principal, por carpeta. `unknown` si alguna no se pudo leer; una carpeta que ya no está no deja nada.
+function leftInFolders(roots, ctx) {
+  const left = [];
+  let unknown = false;
+  for (const [root, repo] of roots) {
+    const head = branchOf(repo);
+    // en la principal, lo que no sigue git no es de nadie en particular: el mismo criterio de `enteredMain`
+    const onMain = !head.err && (!head.branch || MAIN_BRANCHES.includes(head.branch));
+    const st = git(root, ['--no-optional-locks', 'status', '--porcelain', '-z', ...(onMain ? ['--untracked-files=no'] : [])], ctx);
+    if (st.err || head.err) { unknown = true; continue; }
+    const counts = MAIN_BRANCHES.map((b) => git(root, ['rev-list', '--count', `origin/${b}..HEAD`], ctx)).find((r) => !r.err);
+    if (!counts) unknown = true;
+    const changes = changedFiles(st.out);
+    const ahead = counts ? Number(counts.out) || 0 : 0;
+    if (changes || ahead) left.push({ folder: root, branch: head.branch || null, changes, ahead });
+  }
+  return { left, unknown };
+}
+
 // Lo que anotó una sesión con su nota sobre su hora: la que dice ahora, la primera que prometió por ese trabajo y qué
 // espera, desde cuándo. Quien espera no tiene hora: no se la inventa.
 function hourOfNote(d) {
@@ -1083,7 +1178,8 @@ function buildWip(opts = {}) {
   const unreadable = [];
   const projectsDir = opts.projectsDir || path.join(claudeDir(home), 'projects');
   const sessions = sessionsBySid(sessionsDir, unreadable, projectsDir);
-  const medians = stepMedians(path.join(sdir, 'timing-history'), unreadable);
+  const medians = stepMedians(path.join(sdir, 'timing-history'), unreadable, opts.memory);
+  if (opts.memory) reviseIfSessionClosed(opts.memory, sessions);
   const rows = [];
   // la sesión de cada fila, en el mismo orden: el --json la suma a la fila
   const rowSids = [];
@@ -1096,7 +1192,7 @@ function buildWip(opts = {}) {
   // la fila del arreglo rápido de cada sesión: su hora puede venir de una nota
   const looseRows = new Map();
   const wanted = [];
-  const gitCtx = opts.gitCtx || { until: Date.now() + nn(opts.repoBudgetMs, GIT_BUDGET_MS), cache: new Map() };
+  const gitCtx = opts.gitCtx || { until: Date.now() + nn(opts.repoBudgetMs, GIT_BUDGET_MS), cache: new Map(), memory: opts.memory };
 
   const halfway = [];
   // lo mismo que `halfway`, como datos, para quien lo dice en llano (el comando /office): qué quedó y desde cuándo se
@@ -1125,15 +1221,19 @@ function buildWip(opts = {}) {
   // ¿Ya entró a la rama principal lo que dejó esta sesión cerrada? Los archivos de su carril, o los últimos que tocó. Cada una
   // tiene su propio tope: con la máquina cargada, las primeras no le gastan el tiempo a las demás
   const leftInMain = (sid, named, fallback) => {
-    const leftCtx = { until: Date.now() + nn(opts.repoBudgetMs, GIT_BUDGET_MS), cache: gitCtx.cache };
+    const leftCtx = { until: Date.now() + nn(opts.repoBudgetMs, GIT_BUDGET_MS), cache: gitCtx.cache, memory: gitCtx.memory, halfway: true };
     const paths = [...(Array.isArray(named) ? named : []), ...lastTouched(sdir, sid, home, nowMs, unreadable, Infinity)];
     const named2 = paths.length ? paths : [fallback];
     if (enteredMain(named2, leftCtx)) return { entered: true };
     // otra sesión viva sigue en esa misma carpeta: no quedó a medio camino, lo tiene ella
     const live = new Set([...sessions.values()].filter((s) => s.alive && s.cwd).map((s) => s.cwd));
-    const folders = [...rootsOf(named2, leftCtx).roots.keys()];
+    const { roots, unreadable: noRoots } = rootsOf(named2, leftCtx);
+    const folders = [...roots.keys()];
+    if (folders.length > 0 && folders.every((r) => live.has(r))) return { entered: true };
+    // la carpeta que tiene otra sesión viva es de ella; sin ninguna ruta que mirar, o con una ilegible, no se sabe
+    const { left, unknown } = leftInFolders(new Map([...roots].filter(([r]) => !live.has(r))), leftCtx);
     // sin saberlo por las carpetas, quien lo lea todavía puede preguntarle al pedido que nombre el trabajo
-    return folders.length > 0 && folders.every((r) => live.has(r)) ? { entered: true } : { folders };
+    return { folders, left, unknown: unknown || noRoots || !paths.length };
   };
   const touchedCache = new Map();
   const touchedOf = (sid) => {
@@ -1337,6 +1437,13 @@ function buildWip(opts = {}) {
     }
     if (pipe) {
       if (d.waitingFor) { Object.assign(extra[pipe.i], { waitingFor: String(d.waitingFor), waitingSince: hourOfNote(d).waitingSince }); rows[pipe.i].end = waitingEnd(d); }
+      else {
+        // la hora de la nota es de la ejecución si la nombra o si la de su paso ya venció; si no, es de lo que hace mientras tanto
+        const run = extra[pipe.i];
+        const runEnd = Number.isFinite(run.endAt) ? run.endAt : run.promisedAt;
+        const isOfRun = (run.storyId && String(d.text || '').includes(run.storyId)) || (Number.isFinite(runEnd) && runEnd < nowMs);
+        if (isOfRun && Number.isFinite(Date.parse(d.endAt)) && Number.isFinite(at) && !(at < run.hourAt) && !(at < run.runStartedAt)) Object.assign(run, { noteEnd: Date.parse(d.endAt), noteEndAt: at });
+      }
       const old = Number.isFinite(at) && nowMs - at > LOOSE_STALE_MS ? ` (sin tocar desde ${hhmm(at)})` : '';
       // la nota más nueva que el arreglo es lo de ahora: un carril viejo no la tapa
       const priorAt = extra[pipe.i].meanwhileAt;
@@ -1435,7 +1542,7 @@ function buildWip(opts = {}) {
   }));
   // los repos de las corridas con fila: /office los reconoce al preguntar por un pedido que nombra el tablero
   const runRepos = [...new Set([...pipeRows.values()].map(({ m }) => m.repoPath).filter((p) => typeof p === 'string' && path.isAbsolute(p)))];
-  return { rows, details, extra, free, freeSids, freeStatus, idle, halfway, halfwayItems, unreadable, wanted, runRepos, internal, text: render(rows, free, noData, idle, halfway, unreadable, internal, notes, freeNotes) };
+  return { rows, details, extra, free, freeSids, freeStatus, idle, halfway, halfwayItems, halfwayReadAt: (gitCtx.memory && gitCtx.memory.halfwayReadAt) || nowMs, unreadable, wanted, runRepos, internal, text: render(rows, free, noData, idle, halfway, unreadable, internal, notes, freeNotes) };
 }
 
 // Los archivos de estado de las sesiones, por sesión. Los que no se pueden usar los dice la oficina; lo que tira al leer
@@ -1491,7 +1598,7 @@ async function storyEntering(m, { query = queryAll, budgetMs = GIT_BUDGET_MS } =
 // El trabajo en curso de ahora, con los pedidos ya preguntados: primero se ve qué preguntar, las preguntas van todas
 // juntas y la tabla se arma otra vez con las respuestas.
 async function wipNow(opts = {}) {
-  const o = { ...opts, gitCtx: opts.gitCtx || { until: Date.now() + GIT_BUDGET_MS, cache: new Map() } };
+  const o = { ...opts, gitCtx: opts.gitCtx || { until: Date.now() + GIT_BUDGET_MS, cache: new Map(), memory: opts.memory } };
   let r = buildWip(o);
   if (r.wanted.length) {
     const unique = [...new Map(r.wanted.map((q) => [q.root, q])).values()];
@@ -1549,4 +1656,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { buildWip, wipNow, enteredMain, OVERDUE_HOUR, stagesOf, jsonOf, sessionsBySid, storyEntering, median, queryAll, readPrs, parseRemote, offQueueOf, identityOf, remoteOfFolder, endOf, hourForStep, hourVerdict, realState, replacedByNewer, storyPausedUntil, unsavedChanges, codexNames, PER_QUERY_MS, ALL_QUERIES_MS, SAFE_SID, LOOSE_STALE_MS };
+module.exports = { buildWip, wipNow, createMemory, reviseHalfway, git, stepMedians, enteredMain, OVERDUE_HOUR, stagesOf, jsonOf, sessionsBySid, storyEntering, median, queryAll, readPrs, parseRemote, offQueueOf, identityOf, remoteOfFolder, endOf, hourForStep, hourVerdict, realState, replacedByNewer, storyPausedUntil, unsavedChanges, codexNames, PER_QUERY_MS, ALL_QUERIES_MS, SAFE_SID, LOOSE_STALE_MS };

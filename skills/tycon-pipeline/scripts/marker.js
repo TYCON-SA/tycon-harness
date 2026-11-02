@@ -301,6 +301,7 @@ function pruneStale() {
         // una corrida dejada a propósito lleva días sin tocarse y no está abandonada: podarla pierde su trabajo
         if (marcaDe(podada, m) || esperaGuardar(m)) continue;
         fs.unlinkSync(full);
+        avisarOficina(podada);
         cerrarEjecucion(podada, m, { registrar: false, estado: 'abandonada', motivo: `podada: más de ${STALE_HOURS} h sin tocarse`, soloAbierta: true });
       }
     } catch (_e) { /* ignore */ }
@@ -404,6 +405,12 @@ function sinFirmaNoSeEscribe() {
   process.exit(2);
 }
 
+// Cambió lo que la oficina muestra de una sesión (un marcador, un arreglo rápido o una nota). El aviso no espera ni cambia
+// el resultado: este archivo viaja suelto, y sin el aviso se pierde en silencio.
+function avisarOficina(sesion = SID) {
+  try { require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'office-event.js')).notify(sesion); } catch (_e) { /* la vigilancia de la oficina lo ve después */ }
+}
+
 function writeMarker(marker) {
   sinFirmaNoSeEscribe();
   ensureActiveDir();
@@ -412,6 +419,7 @@ function writeMarker(marker) {
   const tmp = `${p}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(marker, null, 2) + '\n', 'utf8');
   fs.renameSync(tmp, p);
+  avisarOficina();
 }
 
 // El archivo de estado de la sesión que el comando cambió: su paso, su oración y su hora de fin, de lo que dice el
@@ -454,6 +462,7 @@ function clearMarker() {
       }
     } catch (_e) { /* ignore */ }
   }
+  avisarOficina();
 }
 
 // El cierre de la ejecución de `sesion` en el registro, con su carpeta, y la copia de la apertura borrada
@@ -4336,6 +4345,7 @@ function cmdClearSession(sid, rest = []) {
     console.error(`marker.js clear-session: no pude borrar ${p}: ${e.message}`);
     process.exit(1);
   }
+  avisarOficina(safe);
   cerrarEjecucion(safe, m, { registrar: false, estado: 'abortada', motivo: SID === safe ? 'clear-session de la propia sesión' : `clear-session desde la sesión ${SID}` });
   syncSessionState(safe);
   process.stdout.write(`cleared: ${safe}.json\n`);
@@ -4372,6 +4382,7 @@ function cmdSalidaPerdida(modo, sesion) {
   const desde = (firma.constancia && firma.constancia.por) || SID;
   if (modo === 'lost') {
     try { fs.unlinkSync(markerFilePath(sesion)); } catch (_e) { /* ya no estaba: es lo perdido */ }
+    avisarOficina(sesion);
     or.cerrar({ sid: SID, sesion, runDir: apertura.runDir, story: apertura.story, estado: 'perdida', via, cita, extra: porDe(firma),
       motivo: `cerrada como perdida desde la sesión ${desde}` });
     sacarMarca(sesion);
@@ -4476,6 +4487,7 @@ function cmdDoing(sub, arg) {
       process.exit(3);
     }
     try { fs.unlinkSync(file); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+    avisarOficina(sid);
     appendLog('doing.log', { kind: 'DOING_CLEAR_ORPHAN', sessionId: sid, by: SID });
     process.stdout.write(`doing: borrada la nota de la sesión ${sid}\n`);
     return;
@@ -4484,6 +4496,7 @@ function cmdDoing(sub, arg) {
   const file = path.join(dir, `${safe(SID)}.json`);
   if (sub === 'clear') {
     try { fs.unlinkSync(file); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+    avisarOficina();
     appendLog('doing.log', { kind: 'DOING_CLEAR' });
     process.stdout.write('doing: borrada\n');
     return;
@@ -4517,6 +4530,7 @@ function cmdDoing(sub, arg) {
   const waitingSince = !waitingFor ? null : (same && prev.waitingFor === waitingFor && prev.waitingSince) || now;
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(file, JSON.stringify({ text, at: now, ...(endAt ? { endAt } : {}), ...(promisedAt ? { promisedAt } : {}), ...(waitingFor ? { waitingFor, waitingSince } : {}) }));
+  avisarOficina();
   appendLog('doing.log', { kind: 'DOING_SET', text, ...(endAt ? { endAt } : {}), ...(waitingFor ? { waitingFor } : {}) });
   if (endAt) warnPastUntil('doing', endAt);
   process.stdout.write(`doing: ${text}${endAt ? ` (termina ${process.argv[u + 1]})` : waitingFor ? ` (espera ${waitingFor})` : ''}\n`);
@@ -4556,6 +4570,7 @@ function cmdAdhocClearOrphan(sid) {
     deny(`lleva menos de ${STALE_HOURS} h sin tocarse: se podrá después de las ${hhmm} del ${d.toISOString().slice(0, 10)}`);
   }
   try { fs.unlinkSync(file); } catch (e) { deny(`no pude borrar ${file}: ${e.message}`, 1); }
+  avisarOficina(sid);
   // appendLog no frena si no puede escribir: se mira que la línea haya quedado y, si no, se avisa.
   const logFile = path.join(STATE_DIR, 'adhoc.log');
   const size = () => { try { return fs.statSync(logFile).size; } catch (_e) { return -1; } };
@@ -4615,6 +4630,7 @@ function cmdAdoptSession(sid) {
   // el trabajo cambia de escritorio: la sesión vieja queda sin paso y la nueva toma el suyo
   syncSessionState(safe);
   syncSessionState(SID);
+  avisarOficina(safe);
   // la ejecución cambia de sesión: se cierra la de la otra y se abre en ésta, con la misma carpeta
   try {
     const or = require('./lib/open-runs.js');
@@ -5474,6 +5490,7 @@ function cmdAdhoc(sub, payloadJson) {
     // `untilAt`: cuándo se declaró esta hora; una declaración nueva empieza su propia promesa, y una de hace rato es vieja
     io.writeAdhoc(STATE_DIR, SID, { ...existing, until, untilAt: nowIso() });
     syncSessionState(SID);
+    avisarOficina();
     appendLog('adhoc.log', { kind: 'ADHOC_UNTIL', until });
     warnPastUntil('adhoc until', until);
     process.stdout.write(`adhoc: termina ${String(payloadJson).trim()}\n`);
@@ -5499,6 +5516,7 @@ function cmdAdhoc(sub, payloadJson) {
       // sólo «no existe» es estar cerrado: otro error deja el atajo abierto, y eso se dice
       if (e.code !== 'ENOENT') { console.error(`marker.js adhoc clear: no pude borrar la declaración (${e.code || e.message}); el arreglo rápido sigue abierto.`); process.exit(1); }
     }
+    avisarOficina();
     // el arreglo que pasó el tope deja lo que contó: es lo que mide si elegirlo valió la pena
     let contados = {};
     if (existing && existing.sobreCupo) {
@@ -5662,6 +5680,7 @@ function cmdAdhoc(sub, payloadJson) {
     };
     io.writeAdhoc(STATE_DIR, destino, obj);
     syncSessionState(destino);
+    avisarOficina(destino);
     // el portón de edición apagado no apaga la firma; queda igual en bypass.log, que la revisión de la noche cuenta
     const gateOn = String(process.env.TYCON_STORY_GATE || '').toLowerCase() !== 'off';
     const maquina = r.registro && r.registro.maquina ? r.registro.maquina : null;
