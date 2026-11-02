@@ -1,8 +1,8 @@
 'use strict';
 // stable-data: las horas de estas pruebas son relativas al reloj de quien las corre (turnos recién tomados o vencidos): no dependen del día ni del huso.
-// heavy-turn.test.js — el turno de la suite completa (scripts/tools/heavy-turn.js): con coordinadora, una suite completa por
-// vez en la máquina; la segunda no arranca y dice quién tiene el lugar. Sin coordinadora, nada cambia. Un turno de un
-// proceso muerto se libera solo; el de otro no se suelta. Y el corredor de suites.json lo pide sólo sin acotar.
+// heavy-turn.test.js — el turno de las ejecuciones grandes (scripts/tools/heavy-turn.js): con coordinadora, una por vez en
+// la máquina; la segunda no arranca y dice quién tiene el lugar. Sin coordinadora, nada cambia. Un turno de un proceso
+// muerto se libera solo; el de otro no se suelta. Y el corredor de suites.json lo pide según cuántas suites corren.
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
@@ -48,6 +48,24 @@ function machineEnv(m) {
   for (const k of Object.keys(env)) if (/^TYCON_/.test(k) || k === 'CLAUDE_CODE_SESSION_ID') delete env[k];
   return env;
 }
+// Un repo de juguete con `n` suites que nombran lib/x.js y el módulo del turno de este árbol.
+function repoConSuites(m, n, nombran = n) {
+  const repo = path.join(m.root, 'repo');
+  const tests = path.join(repo, 'scripts', 'tests');
+  fs.mkdirSync(tests, { recursive: true });
+  fs.mkdirSync(path.join(repo, 'scripts', 'tools'), { recursive: true });
+  const rutas = Array.from({ length: n }, (_, i) => `tests/s${i}.test.js`);
+  fs.writeFileSync(path.join(tests, 'suites.json'), JSON.stringify({ diarias: rutas.map((ruta) => ({ raiz: 'arnes', ruta, requiere: ['x'] })) }));
+  rutas.forEach((ruta, i) => fs.writeFileSync(path.join(repo, 'scripts', ruta), `${i < nombran ? '// lib/x.js\n' : ''}process.exit(0)\n`));
+  fs.writeFileSync(path.join(repo, 'scripts', 'tools', 'heavy-turn.js'), `module.exports = require(${JSON.stringify(path.join(ROOT, 'scripts', 'tools', 'heavy-turn.js'))});\n`);
+  return { repo, primera: rutas[0] };
+}
+// Ejecución acotada: lo tocado se conoce, y todas las suites del repo de juguete lo nombran.
+function acotada(m, repo, out, extra = []) {
+  const touched = path.join(m.root, 'tocado.json');
+  fs.writeFileSync(touched, JSON.stringify({ known: true, files: ['lib/x.js'], sources: {}, reason: null }));
+  return [RUNNER, repo, out, '--touched', touched, '--scoped-by-repo', 'la CI', ...extra];
+}
 const POSIX = { skip: process.platform === 'win32' ? 'enlaces simbólicos y bash' : false };
 // un proceso vivo que no es éste: el «otro» corredor
 function otherProcess(t) {
@@ -63,7 +81,7 @@ test('HT1 SuiteTurn_SecondFullSuite_StopsAndSaysWho — con el turno de otra ses
   assert.deepStrictEqual([a.ok, a.taken], [true, true]);
   const b = HT.take({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: 'otra' }, pid: process.pid, what: 'suites.json' });
   assert.strictEqual(b.ok, false);
-  assert.match(b.message, /Ya corre una suite completa en esta máquina: Uma \(suites portables, desde las \d\d:\d\d\)/);
+  assert.match(b.message, /Ya corre una ejecución grande de pruebas en esta máquina: Uma \(suites portables, desde las \d\d:\d\d\)/);
   assert.match(b.message, /pedile turno a la coordinadora/);
   // el mismo proceso lo vuelve a pedir: sigue siendo suyo
   assert.strictEqual(HT.take({ home: m.home, arnes: m.arnes, env: {}, pid: other }).ok, true);
@@ -107,7 +125,7 @@ test('HT4 SuiteTurn_FromAWorkingClone_ReadsTheInstalledProfile — el perfil est
   const cli = path.join(ROOT, 'scripts', 'tools', 'heavy-turn.js');
   const r = spawnSync(process.execPath, [cli, 'take', '--what', 'x', '--process', String(process.pid)], { env, encoding: 'utf8' });
   assert.strictEqual(r.status, HT.BUSY_EXIT, r.stderr);
-  assert.match(r.stderr, /Ya corre una suite completa en esta máquina: Uma/);
+  assert.match(r.stderr, /Ya corre una ejecución grande de pruebas en esta máquina: Uma/);
   assert.match(r.stderr, new RegExp(`release --process ${other}`), 'dice cómo destrabarla');
   spawnSync(process.execPath, [cli, 'release', '--process', String(process.pid)], { env, encoding: 'utf8' });
   assert.strictEqual(JSON.parse(fs.readFileSync(HT.turnFile(m.home), 'utf8')).pid, other, 'el turno ajeno sigue');
@@ -118,32 +136,113 @@ test('HT4 SuiteTurn_FromAWorkingClone_ReadsTheInstalledProfile — el perfil est
   assert.strictEqual(spawnSync(process.execPath, [cli, 'take', '--what', 'x', '--process', String(process.pid)], { env: machineEnv(sin), encoding: 'utf8' }).status, 0);
 });
 
-test('HT5 SuiteTurn_RunnerFullRunStops_ScopedRunPasses — el corredor sin acotar no corre con el turno ajeno; una sola suite, sí', POSIX, (t) => {
+test('HT5 Turno_GrandeSinAcotar_NoArrancaConElTurnoAjeno — sin acotar y grande no corre con el turno ajeno; una sola suite, sí', POSIX, (t) => {
   const m = toy();
   installed(m);
   const other = otherProcess(t);
-  // un repo de juguete con una suite y el módulo del turno de este árbol
-  const repo = path.join(m.root, 'repo');
-  fs.mkdirSync(path.join(repo, 'scripts', 'tests'), { recursive: true });
-  fs.mkdirSync(path.join(repo, 'scripts', 'tools'), { recursive: true });
-  fs.writeFileSync(path.join(repo, 'scripts', 'tests', 'suites.json'), JSON.stringify({ diarias: [{ raiz: 'arnes', ruta: 'tests/verde.test.js', requiere: ['x'] }] }));
-  fs.writeFileSync(path.join(repo, 'scripts', 'tests', 'verde.test.js'), 'process.exit(0)\n');
-  fs.writeFileSync(path.join(repo, 'scripts', 'tools', 'heavy-turn.js'), `module.exports = require(${JSON.stringify(path.join(ROOT, 'scripts', 'tools', 'heavy-turn.js'))});\n`);
+  const { repo, primera } = repoConSuites(m, 100);
   fs.mkdirSync(path.dirname(HT.turnFile(m.home)), { recursive: true });
   fs.writeFileSync(HT.turnFile(m.home), JSON.stringify({ pid: other, session: 'Uma', what: 'suites portables', at: Date.now() }));
   const env = { ...machineEnv(m), TYCON_SKILLS_DIR: path.join(ROOT, 'skills') };
   const out = path.join(m.root, 'resumen.json');
   const full = spawnSync(process.execPath, [RUNNER, repo, out], { env, encoding: 'utf8', timeout: 60000 });
   assert.strictEqual(full.status, HT.BUSY_EXIT, `${full.stdout}\n${full.stderr}`);
-  assert.match(full.stderr, /Ya corre una suite completa en esta máquina: Uma/);
+  assert.match(full.stderr, /Ya corre una ejecución grande de pruebas en esta máquina: Uma/);
   assert.match(JSON.parse(fs.readFileSync(out, 'utf8')).no_medido, /Uma/);
-  const one = spawnSync(process.execPath, [RUNNER, repo, out, '--suite', 'tests/verde.test.js'], { env, encoding: 'utf8', timeout: 60000 });
+  const one = spawnSync(process.execPath, [RUNNER, repo, out, '--suite', primera], { env, encoding: 'utf8', timeout: 60000 });
   assert.strictEqual(one.status, 0, `${one.stdout}\n${one.stderr}`);
-  // sin el turno ajeno, la completa corre y al terminar lo suelta
+  // sin el turno ajeno, la grande corre y al terminar lo suelta
   fs.unlinkSync(HT.turnFile(m.home));
-  const ok = spawnSync(process.execPath, [RUNNER, repo, out], { env, encoding: 'utf8', timeout: 60000 });
+  const ok = spawnSync(process.execPath, [RUNNER, repo, out], { env, encoding: 'utf8', timeout: 120000 });
   assert.strictEqual(ok.status, 0, `${ok.stdout}\n${ok.stderr}`);
   assert.ok(!fs.existsSync(HT.turnFile(m.home)), 'al terminar soltó el turno');
+});
+
+// 🔴 mutación: pedirlo sólo sin acotar deja correr cientos de suites junto a otro portón, y eso satura la máquina.
+test('HT5a Turno_AcotadaGrande_NoArrancaConElTurnoAjeno — acotada o no, con 100 suites no corre y dice quién', POSIX, (t) => {
+  const m = toy();
+  installed(m);
+  const other = otherProcess(t);
+  const { repo } = repoConSuites(m, 100);
+  fs.mkdirSync(path.dirname(HT.turnFile(m.home)), { recursive: true });
+  fs.writeFileSync(HT.turnFile(m.home), JSON.stringify({ pid: other, session: 'Uma', what: '279 suites de otro', at: Date.now() }));
+  const env = { ...machineEnv(m), TYCON_SKILLS_DIR: path.join(ROOT, 'skills') };
+  const out = path.join(m.root, 'resumen.json');
+  const r = spawnSync(process.execPath, acotada(m, repo, out), { env, encoding: 'utf8', timeout: 60000 });
+  assert.strictEqual(r.status, HT.BUSY_EXIT, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stderr, /Uma \(279 suites de otro, desde las/);
+  assert.match(JSON.parse(fs.readFileSync(out, 'utf8')).no_medido, /Uma/);
+  assert.strictEqual(JSON.parse(fs.readFileSync(HT.turnFile(m.home), 'utf8')).pid, other, 'el turno ajeno sigue');
+});
+
+// 🔴 mutación: contar las declaradas en vez de las que corren frena una acotada chica porque el repo tiene muchas suites.
+test('HT5g Turno_MuchasDeclaradasPocasPorCorrer_NoLoPide — las diferidas no cuentan', POSIX, (t) => {
+  const m = toy();
+  installed(m);
+  const other = otherProcess(t);
+  const { repo } = repoConSuites(m, 150, 5);
+  fs.mkdirSync(path.dirname(HT.turnFile(m.home)), { recursive: true });
+  fs.writeFileSync(HT.turnFile(m.home), JSON.stringify({ pid: other, session: 'Uma', what: 'x', at: Date.now() }));
+  const env = { ...machineEnv(m), TYCON_SKILLS_DIR: path.join(ROOT, 'skills') };
+  const out = path.join(m.root, 'resumen.json');
+  const r = spawnSync(process.execPath, acotada(m, repo, out), { env, encoding: 'utf8', timeout: 60000 });
+  assert.strictEqual(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  assert.strictEqual(JSON.parse(fs.readFileSync(out, 'utf8')).corridas, 5);
+  assert.strictEqual(JSON.parse(fs.readFileSync(HT.turnFile(m.home), 'utf8')).pid, other, 'el turno ajeno sigue');
+});
+
+// 🔴 mutación: tragarse el error del módulo deja sin turno a una ejecución grande sin que nadie se entere.
+test('HT5h Turno_ModuloQueNoCarga_LoDiceYCorre — no poder mirar el turno no frena, y se dice', POSIX, () => {
+  const m = toy();
+  installed(m);
+  const { repo } = repoConSuites(m, 100);
+  fs.writeFileSync(path.join(repo, 'scripts', 'tools', 'heavy-turn.js'), 'throw new Error("módulo roto");\n');
+  const env = { ...machineEnv(m), TYCON_SKILLS_DIR: path.join(ROOT, 'skills') };
+  const r = spawnSync(process.execPath, acotada(m, repo, path.join(m.root, 'resumen.json')), { env, encoding: 'utf8', timeout: 120000 });
+  assert.strictEqual(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stderr, /no pude cargar el turno de las ejecuciones grandes \(módulo roto\): corro igual/);
+});
+
+// 🔴 mutación: bajar el corte frena una acotada chica que no satura la máquina.
+test('HT5d Turno_AcotadaChica_CorreConElTurnoAjeno — con 99 suites corre', POSIX, (t) => {
+  const m = toy();
+  installed(m);
+  const other = otherProcess(t);
+  const { repo } = repoConSuites(m, 99);
+  fs.mkdirSync(path.dirname(HT.turnFile(m.home)), { recursive: true });
+  fs.writeFileSync(HT.turnFile(m.home), JSON.stringify({ pid: other, session: 'Uma', what: 'x', at: Date.now() }));
+  const env = { ...machineEnv(m), TYCON_SKILLS_DIR: path.join(ROOT, 'skills') };
+  const r = spawnSync(process.execPath, acotada(m, repo, path.join(m.root, 'resumen.json')), { env, encoding: 'utf8', timeout: 120000 });
+  assert.strictEqual(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  assert.strictEqual(JSON.parse(fs.readFileSync(HT.turnFile(m.home), 'utf8')).pid, other, 'el turno ajeno sigue');
+});
+
+// 🔴 mutación: no decir cuántas corren deja a `holder` y a la negativa sin el dato con que se decide esperar; no soltarlo frena a los demás.
+test('HT5e Turno_AcotadaGrande_LoTomaYLoSuelta — mientras corre se ve con su cantidad; al terminar, nadie', POSIX, () => {
+  const m = toy();
+  installed(m);
+  const { repo } = repoConSuites(m, 100);
+  const cli = path.join(ROOT, 'scripts', 'tools', 'heavy-turn.js');
+  // una suite que anota quién tiene el turno mientras corre
+  fs.writeFileSync(path.join(repo, 'scripts', 'tests', 's0.test.js'), `// lib/x.js\nconst r = require('child_process').spawnSync(process.execPath, [${JSON.stringify(cli)}, 'holder'], { encoding: 'utf8' });\nrequire('fs').writeFileSync(${JSON.stringify(path.join(m.root, 'visto.txt'))}, r.stdout);\n`);
+  const env = { ...machineEnv(m), TYCON_SKILLS_DIR: path.join(ROOT, 'skills'), CLAUDE_CODE_SESSION_ID: 's-uma' };
+  const r = spawnSync(process.execPath, acotada(m, repo, path.join(m.root, 'resumen.json')), { env, encoding: 'utf8', timeout: 120000, cwd: repo });
+  assert.strictEqual(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  assert.match(fs.readFileSync(path.join(m.root, 'visto.txt'), 'utf8'), /Uma \(100 suites de repo, desde las/);
+  assert.ok(!fs.existsSync(HT.turnFile(m.home)), 'al terminar soltó el turno');
+});
+
+// 🔴 mutación: seguir pidiéndolo por «sin acotar» frena una liviana de tres suites porque otra sesión corre algo grande.
+test('HT5f Turno_LivianaDePocas_NoLoPide — sin acotar, con pocas suites por correr, no lo pide', POSIX, (t) => {
+  const m = toy();
+  installed(m);
+  const other = otherProcess(t);
+  const { repo } = repoConSuites(m, 3);
+  fs.mkdirSync(path.dirname(HT.turnFile(m.home)), { recursive: true });
+  fs.writeFileSync(HT.turnFile(m.home), JSON.stringify({ pid: other, session: 'Uma', what: 'x', at: Date.now() }));
+  const env = { ...machineEnv(m), TYCON_SKILLS_DIR: path.join(ROOT, 'skills') };
+  const r = spawnSync(process.execPath, [RUNNER, repo, path.join(m.root, 'resumen.json')], { env, encoding: 'utf8', timeout: 60000 });
+  assert.strictEqual(r.status, 0, `${r.stdout}\n${r.stderr}`);
 });
 
 test('HT6 SuiteTurn_PortablesFull_StopsForReal — las portables enteras, con el turno ajeno, no corren y dicen quién lo tiene', POSIX, (t) => {
@@ -154,7 +253,7 @@ test('HT6 SuiteTurn_PortablesFull_StopsForReal — las portables enteras, con el
   fs.writeFileSync(HT.turnFile(m.home), JSON.stringify({ pid: other, session: 'Uma', what: 'suites portables', at: Date.now() }));
   const r = spawnSync('bash', [path.join(ROOT, 'scripts', 'tests', 'portable-suites.test.sh')], { env: machineEnv(m), encoding: 'utf8', timeout: 60000, cwd: path.join(ROOT, 'scripts') });
   assert.strictEqual(r.status, HT.BUSY_EXIT, `${r.stdout}\n${r.stderr}`);
-  assert.match(r.stderr, /Ya corre una suite completa en esta máquina: Uma/);
+  assert.match(r.stderr, /Ya corre una ejecución grande de pruebas en esta máquina: Uma/);
   assert.match(r.stdout, /NO MEDIDO suites-portables/);
   assert.strictEqual(JSON.parse(fs.readFileSync(HT.turnFile(m.home), 'utf8')).pid, other, 'el turno ajeno sigue');
 });
@@ -185,25 +284,20 @@ test('HT7 SuiteTurn_TakenAtOnce_OneOwner — varios procesos a la vez, con o sin
   assert.deepStrictEqual(fs.readdirSync(path.dirname(HT.turnFile(m.home))).filter((f) => /\.(tmp|evict)$/.test(f)), [], 'no deja temporales');
 });
 
-test('HT5b SuiteTurn_GateSaysWait_NotRed — por el portón de verdad: con el turno ajeno sale 75, dice quién, y no deja un verde viejo', POSIX, (t) => {
+test('HT5b Turno_PortonGrande_Sale75 — por el portón de verdad: con el turno ajeno sale 75, dice quién, y no deja un verde viejo', POSIX, (t) => {
   const m = toy();
   installed(m);
   const other = otherProcess(t);
-  const repo = path.join(m.root, 'repo');
-  fs.mkdirSync(path.join(repo, 'scripts', 'tests'), { recursive: true });
-  fs.mkdirSync(path.join(repo, 'scripts', 'tools'), { recursive: true });
+  const { repo } = repoConSuites(m, 100);
   spawnSync('git', ['init', '-q', repo]);
-  fs.writeFileSync(path.join(repo, 'scripts', 'tests', 'suites.json'), JSON.stringify({ diarias: [{ raiz: 'arnes', ruta: 'tests/verde.test.js', requiere: ['x'] }] }));
-  fs.writeFileSync(path.join(repo, 'scripts', 'tests', 'verde.test.js'), 'process.exit(0)\n');
-  fs.writeFileSync(path.join(repo, 'scripts', 'tools', 'heavy-turn.js'), `module.exports = require(${JSON.stringify(path.join(ROOT, 'scripts', 'tools', 'heavy-turn.js'))});\n`);
   fs.mkdirSync(path.dirname(HT.turnFile(m.home)), { recursive: true });
   fs.writeFileSync(HT.turnFile(m.home), JSON.stringify({ pid: other, session: 'Uma', what: 'suites portables', at: Date.now() }));
   const gate = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'test-gate.sh');
   const env = { ...machineEnv(m), TYCON_SKILLS_DIR: path.join(ROOT, 'skills'), TYCON_GATE_ALL_SUITES: '1' };
   const r = spawnSync('bash', [gate, repo], { env, encoding: 'utf8', timeout: 90000, cwd: repo });
   assert.strictEqual(r.status, 75, `${r.stdout}\n${r.stderr}`);
-  assert.match(r.stderr, /Ya corre una suite completa en esta máquina: Uma/);
-  assert.match(r.stderr, /otra sesión tiene el turno de la suite completa/);
+  assert.match(r.stderr, /Ya corre una ejecución grande de pruebas en esta máquina: Uma/);
+  assert.match(r.stderr, /otra sesión tiene el turno de las ejecuciones grandes/);
   assert.ok(!fs.existsSync(path.join(repo, '.advisors', 'tests-result.json')), 'no queda un resultado que se lea como de esta corrida');
 });
 

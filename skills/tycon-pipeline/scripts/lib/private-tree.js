@@ -179,7 +179,8 @@ function cloneWithDisk(src, dest, { at = null } = {}) {
   if (git(src, ['for-each-ref', '--format=%(refname)', 'refs/remotes/origin/']).trim()) {
     git(dest, ['fetch', '-q', '--prune', src, '+refs/remotes/origin/*:refs/remotes/origin/*']);
   }
-  if (at) return { head, uncommitted: false };
+  const huella = () => git(dest, ['rev-parse', 'HEAD^{tree}']).trim();
+  if (at) return { head, uncommitted: false, tree: huella() };
   // modificados y borrados respecto de HEAD (índice o disco), y lo nuevo que el .gitignore no ignora
   const cambiados = lista0(git(src, ['diff', '--name-only', '--no-renames', '-z', 'HEAD', '--']));
   const nuevos = lista0(git(src, ['ls-files', '--others', '--exclude-standard', '-z']));
@@ -209,7 +210,7 @@ function cloneWithDisk(src, dest, { at = null } = {}) {
       'los cambios sin commit de la rama (foto del portón de pruebas; no se empuja)']);
   }
   for (const rel of omitidos) process.stderr.write(`[test-gate] ⚠️  ${path.basename(src)}: ${rel} es una carpeta con su propio git (un submódulo o un repo anidado): sus cambios no entran al árbol que se mide\n`);
-  return { head, uncommitted: sucio };
+  return { head, uncommitted: sucio, tree: huella() };
 }
 
 /** El lstat, o null si NO EXISTE. Otro error (permisos, disco) sube: leerlo como «borrado» sacaría el archivo del árbol callado. */
@@ -302,6 +303,8 @@ function build(repo, story, dir) {
     tree: arbol, skills: path.join(arbol, 'skills'),
     base: { ...pub, uncommitted: pubFoto.uncommitted },
     private: { root: repo, commit: priv.head, uncommitted: priv.uncommitted },
+    // la huella de lo que se clonó de cada repo, antes de superponer: lo que este árbol mide de verdad (lib/after-main.js)
+    measured: { private: priv.tree, public: pubFoto.tree },
     team: team || null, teamSource: layer.source, teamProblem: layer.problem, seconds: Math.round((Date.now() - t0) / 100) / 10,
     overlay: (r.stdout || '').trim().split('\n').pop() || '',
   };
