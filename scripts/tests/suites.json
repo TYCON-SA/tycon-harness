@@ -3620,6 +3620,12 @@
       "requiere": []
     },
     {
+      "__nota": "arreglo rápido 2026-11-01 (reglas de la coordinadora): el turno de la suite completa (scripts/tools/heavy-turn.js). Con coordinadora, una suite completa por vez: la segunda no arranca y dice quién tiene el lugar; sin coordinadora no cambia nada; un turno de un proceso muerto o de más de tres horas se libera solo y el ajeno no se suelta. El corredor de suites.json lo pide sólo sin acotar, y las portables sólo enteras. Con HOME de juguete y un arnés instalado de juguete, porque el clon no trae el perfil; también toma el turno con varios procesos a la vez y corre las portables de verdad hasta su negativa.",
+      "raiz": "arnes",
+      "ruta": "tests/heavy-turn.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.17, tandas W3 y W4 (T33-T37 y los casos del pase adversarial): el aplicador de la lista única de hooks (scripts/setup/apply-hooks.js) — qué decide con cada integración, perfil y opt-in, que deja el mismo settings.json que el instalador de antes, las dos reglas de identidad (Mac/Linux por archivo, Windows por la ruta del repo), la marca de codificación, los permisos, los matchers repetidos, la sección de rutas que no se pueden registrar y la desinstalación de un bash entre comillas y de los enlaces duros anotados. Con HOME y settings.json de prueba; no usa bash ni pwsh.",
       "raiz": "arnes",
       "ruta": "tests/apply-hooks.test.js",

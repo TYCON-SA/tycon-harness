@@ -215,4 +215,118 @@ test('PS1b HooksLists_BashOnlyRow_IsRed — un registro con «Bash» solo da roj
   ] } }), []);
 });
 
-module.exports = { parityProblems, shellToolProblems };
+// ── (e) las demás listas que nombran cada gancho ───────────────────────────────────────────────────────
+// Un gancho nuevo en hooks-list.json tiene que estar también en la lista de efectos, en los textos del sitio y en la
+// tabla de INSTALL.md. Las suites que lo miran (repo-papers, how-it-works, integration-effects…) son pesadas y no corren
+// en la prueba acotada: el faltante salía recién en la cola. Acá sale en la prueba corta, con el renglón que falta.
+// Las mismas reglas que esas suites: los textos, los del lector del sitio (`readControls`: un despachador no lleva texto
+// propio, cada control de su cadena sí; uno de una integración lo trae su manifiesto); la tabla, un par (evento, guion)
+// por registro, con los de las integraciones escritos `integrations/<n>/…`.
+const EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'Notification', 'SessionEnd'];
+const MORE = { effects: 'scripts/setup/install-effects.json', texts: 'scripts/site/texts.js', install: 'INSTALL.md' };
+const tableName = (spec) => spec.replace(/^@tcg:/, '').replace(/^@int:/, 'integrations/');
+
+/** Los pares (evento, guion) de la tabla «Los hooks que instala» de INSTALL.md; null si no está la tabla. */
+function installPairs(text) {
+  const lines = text.split('\n');
+  let inFence = false;
+  const h = lines.findIndex((l) => { if (/^\s*(```|~~~)/.test(l)) inFence = !inFence; return !inFence && /^#+\s.*Los hooks que instala/.test(l); });
+  if (h < 0) return null;
+  const start = lines.findIndex((l, i) => i > h && /^\s*\|/.test(l));
+  if (start < 0) return null;
+  const pairs = new Set();
+  for (let i = start + 2; i < lines.length && /^\s*\|/.test(lines[i]); i++) {
+    const cells = lines[i].trim().replace(/^\|/, '').replace(/\|$/, '').split(/(?<!\\)\|/).map((c) => c.replace(/`/g, '').trim());
+    const event = (cells[1] || '').match(new RegExp(`\\b(${EVENTS.join('|')})\\b`));
+    if (event) pairs.add(`${event[1]} ${cells[0]}`);
+  }
+  return pairs;
+}
+
+/**
+ * Lo que falta en las otras listas, cada cosa con la lista y el renglón que hay que agregar. Vacío = ninguna falta.
+ * @param {{own: object[], all: object[], effects: object, texts: object, controls: object[], install: string}} input
+ *   `own`: los registros de hooks-list.json; `all`: ésos más los de las integraciones (la tabla los lleva a todos).
+ */
+function listsProblems({ own = [], all = [], effects, texts, controls, install }) {
+  const problems = [];
+  const ids = new Set(((effects && effects.effects) || []).map((e) => e && e.id));
+  if (ids.size < 30) problems.push(`reader: sólo leí ${ids.size} entradas de ${MORE.effects}`);
+  // los de las integraciones declaran su efecto en su manifiesto: acá sólo los de la lista del arnés
+  for (const h of own) {
+    const id = pieceIdOf(h);
+    if (!ids.has(id)) problems.push(`effects-missing: ${scriptOf(h.spec)} (${h.event}) no está en ${MORE.effects} — agregá una entrada con "id": "${id}", "kind": "hook" y su "does", "title" y "en"`);
+  }
+  if (!Array.isArray(controls) || controls.length < 30) problems.push(`reader: sólo leí ${(controls || []).length} controles con el lector del sitio`);
+  const seen = new Set();
+  for (const c of controls || []) {
+    if (c.control || seen.has(c.spec)) continue;
+    seen.add(c.spec);
+    const v = (texts && (texts[`control.${c.spec}@${c.event}`] || texts[`control.${c.spec}`])) || null;
+    if (!v || !v.es || !v.en) problems.push(`texts-missing: ${c.spec} no tiene su texto en ${MORE.texts} — agregá 'control.${c.spec}': { es: '<qué hace, en castellano>', en: '<what it does, in English>' }`);
+  }
+  const pairs = installPairs(String(install || ''));
+  if (!pairs) problems.push(`install-table: ${MORE.install} no tiene la tabla de «Los hooks que instala»`);
+  else {
+    for (const h of all) {
+      const k = `${h.event} ${tableName(h.spec)}`;
+      if (!pairs.has(k)) problems.push(`install-missing: ${tableName(h.spec)} (${h.event}) no tiene su fila en la tabla de ganchos de ${MORE.install} — agregá | \`${tableName(h.spec)}\` | ${h.event} | <qué hace> | <¿bloquea?> | <perfil> | <interruptor> |`);
+    }
+  }
+  return problems;
+}
+
+const realLists = () => {
+  const HIW = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'how-it-works.js'));
+  return {
+    own: JSON.parse(read(FILES.list)).hooks,
+    all: listWithIntegrations().hooks,
+    effects: JSON.parse(read(MORE.effects)),
+    texts: require(path.join(ROOT, MORE.texts)).TEXTOS,
+    controls: HIW.readControls(ROOT).controls,
+    install: read(MORE.install),
+  };
+};
+
+test('HL1 HooksLists_EveryHookInEveryList — con los archivos reales, cada gancho está en la lista de efectos, en los textos del sitio y en la tabla de INSTALL.md', () => {
+  assert.deepStrictEqual(listsProblems(realLists()), []);
+});
+
+test('HL2 HooksLists_NewHookMissingEverywhere_IsRed — un gancho nuevo sólo en hooks-list.json da un rojo por lista, con el renglón que falta', () => {
+  const c = realLists();
+  const nuevo = { event: 'SessionStart', matcher: '', spec: '@tcg:lab-owner-record.js', when: 'always', platforms: { windows: true }, label: 'x' };
+  c.own = c.own.concat(nuevo);
+  c.all = c.all.concat(nuevo);
+  c.controls = c.controls.concat({ spec: nuevo.spec, event: nuevo.event, control: null });
+  const p = listsProblems(c);
+  assert.deepStrictEqual(p.map((x) => x.split(':')[0]), ['effects-missing', 'texts-missing', 'install-missing'], p.join('\n'));
+  assert.match(p[0], /"id": "SessionStart:@tcg:lab-owner-record\.js"/);
+  assert.match(p[1], /'control\.@tcg:lab-owner-record\.js': \{ es: /);
+  assert.match(p[1], /scripts\/site\/texts\.js/);
+  assert.match(p[2], /\| `lab-owner-record\.js` \| SessionStart \|/);
+  assert.match(p[2], /INSTALL\.md/);
+});
+
+test('HL3 HooksLists_OneListMissing_NamesOnlyThatList — el caso del #882: el texto del sitio y la fila de INSTALL.md faltan, la lista de efectos no', () => {
+  const c = realLists();
+  const h = c.own.find((x) => x.spec === '@tcg:context-size-notice.js' && x.event === 'UserPromptSubmit');
+  assert.ok(h, 'no está el registro de ejemplo');
+  const texts = { ...c.texts };
+  delete texts['control.@tcg:context-size-notice.js'];
+  const install = c.install.split('\n').filter((l) => !(l.includes('`context-size-notice.js`') && l.includes('UserPromptSubmit'))).join('\n');
+  const p = listsProblems({ ...c, texts, install });
+  assert.deepStrictEqual(p.map((x) => x.split(':')[0]), ['texts-missing', 'install-missing'], p.join('\n'));
+  assert.ok(p.every((x) => x.includes('context-size-notice.js')), p.join('\n'));
+  // la otra fila del mismo gancho (SessionStart) sigue: falta sólo la de UserPromptSubmit
+  assert.match(p[1], /\(UserPromptSubmit\)/);
+});
+
+test('HL4 HooksLists_EmptyReaders_AreRed — una lista de efectos vacía, sin controles o sin la tabla no dan verde', () => {
+  const c = realLists();
+  const p = listsProblems({ ...c, effects: { effects: [] }, controls: [], install: '# INSTALL\nsin tabla\n' });
+  assert.ok(p.some((x) => x.startsWith(`reader: sólo leí 0 entradas de ${MORE.effects}`)), p.join('\n'));
+  assert.ok(p.some((x) => x.startsWith('reader: sólo leí 0 controles')), p.join('\n'));
+  assert.ok(p.some((x) => x.startsWith('install-table:')), p.join('\n'));
+});
+
+module.exports = { parityProblems, shellToolProblems, listsProblems };

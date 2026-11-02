@@ -104,7 +104,11 @@ const MEASURES = {
   'La coordinadora cierra los detalles con la opción más segura': 'nadie',
   'Cada sesión con un nombre puesto por una persona': 'aviso',
   'No más sesiones trabajando que el tope': 'freno',
-  'Pases adversariales de a uno': 'aviso',
+  'Una suite completa por vez': 'freno',
+  'Pases adversariales de a uno': 'freno',
+  'Las sesiones de fondo quietas se cierran o reciben trabajo': 'aviso',
+  'Un pedido listo no queda sin encolar': 'aviso',
+  '«Termina» quiere decir funcionando': 'nadie',
   'Confirmar que una firma falta antes de pedirla': 'nadie',
   'Un archivo por firma, borrado al firmar': 'aviso',
   'Pedidos en orden': 'nadie',
@@ -351,6 +355,15 @@ test('T27 Open_BadOrTakenName_DoesNotOpen @story-8.122 @ac-27: un nombre en uso 
     assert.match(r.message, name === 'Usado' ? /ya lo usa/ : /letras, números, guion/, name);
   }
   assert.strictEqual(launched(t), null);
+});
+
+test('T24b Open_TaskSaysNothingHeavyWithoutTurn: con coordinadora, el encargo dice que lo pesado pide turno; sin ella, queda tal cual', () => {
+  const t = toy({ profile: { approvals: { relay_session: 'coordinadora' } } });
+  assert.ok(open(t, { name: 'n1', task: 'implementá la 9.9', launcher: launcher(t) }).ok);
+  assert.match(launched(t).argv.at(-1), /^implementá la 9\.9 — Nada pesado sin turno de la coordinadora: suite completa, banco, examen, portón, revisores, pase\.$/);
+  const sin = toy();
+  assert.ok(open(sin, { name: 'n2', task: 'implementá la 9.9', launcher: launcher(sin) }).ok);
+  assert.strictEqual(launched(sin).argv.at(-1), 'implementá la 9.9');
 });
 
 test('T27b Open_NoName_TakesTheNextFreeFromTheList: sin --name (o con auto) toma el primero libre de coordination.session_names; agotada, sigue con número', () => {

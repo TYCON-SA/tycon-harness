@@ -128,16 +128,42 @@ can take depends on the machine. With no value anywhere, the cap is 3. `coordina
 who is waiting and why, and the cap with where it comes from.
 
 The coordinator also sees it without asking: on each turn, if the machine is at the cap, a notice tells her who is
-working; if it is over, by how much and which one has been working the shortest. Below the cap it says nothing, and no
-other session sees it. It is turned off with `TYCON_COORDINATION_NOTICE=0`.
+working; if it is over, by how much and which one has been working the shortest. Below the cap it says nothing about that,
+and no other session sees it. It is turned off with `TYCON_COORDINATION_NOTICE=0`.
 
-## Adversarial passes, one at a time
+The same notice carries two more things:
 
-An adversarial pass weighs a lot on the machine: two at once overload it. Before launching one, the session asks the
-coordinator for its turn, and the coordinator gives it when no other pass is in flight. `coordination.js status` says
-which pass is in flight, for which story, in which session and since when. And when a session asks the pass's gate
-(`pipeline.js deep-review-gate`) while another is in flight, the answer carries `other_in_flight` (story, session and
-time) and the line telling it to ask for its turn. With no coordinator designated, the gate answers as always.
+- **Background sessions sitting idle.** A background session that has gone more than 15 minutes without working shows up
+  as "X has been idle for N min: close it or give it work". Not one waiting for its adversarial pass, one that recently
+  noted what it is doing (`marker.js doing`), or the one holding the machine's full suite.
+- **Ready requests nobody queued, on GitHub.** An open, clean request (no conflict and no required checks pending) with no
+  auto-merge and outside the queue, unchanged for more than 10 minutes, shows up with the command to queue it. Why: nobody is
+  going to merge it, and everyone thinks it already went in. It comes from the last saved reading, less than an hour old: the
+  notice does not go to the network. Requests from a bot do not show up. Not on Azure: without reading its checks, "clean"
+  only says it does not conflict.
+- **The session waiting for room for its pass.** It has to launch one and another holds the place: it shows up with who holds
+  it, and once freed, with "can launch". Nothing wakes it by itself: the coordinator tells it.
+
+## Heavy work takes turns: the full suite and adversarial passes
+
+The machine can run at the same time **one full suite and one adversarial pass or batch of reviewers from another session**:
+the pass and the reviewers run in the cloud and barely use the machine. **Never two full suites or two passes at once.**
+The harness controls this, not anyone's memory:
+
+- **The second suite does not start.** The suite runner and the whole portable run ask for the turn
+  (`scripts/tools/heavy-turn.js`). With the turn held by another live process they do not run (the test gate exits 75, its
+  "wait") and they say who holds it, since when and how to free it. A scoped suite does not ask for it. The turn of a dead process, or one older
+  than three hours, frees itself.
+- **The second pass is not launched.** With another in flight, the pass's gate (`pipeline.js deep-review-gate`) exits 3, and
+  `pipeline.js next` asks to wait instead of launching. The answer carries `other_in_flight` (story, session and time) and the
+  line saying who holds the place. The pass of a closed session does not count.
+- **How long the place can take to free up.** Up to an hour too long: the harness knows a pass finished when its session
+  collects it, not when it finishes in the cloud. After that hour it no longer stops anything, because it may be finished or
+  stuck, and that is said.
+
+`coordination.js status` shows the suite and the pass in progress. With no coordinator designated, everything answers as
+always: in CI and in the cloud there is no turn. `TYCON_SUITE_TURN=0` turns off the suite's, and `TYCON_SUITE_TURN=1` asks for
+it even with no coordinator: it can only stop too much.
 
 ## Signatures, by their three paths
 
@@ -226,6 +252,13 @@ The quick fix (a code change with no story) is the `adhoc-lane` signature: the t
 Short and plain: what happened, what is missing and what the owner decides, in that order. One notice per batch of
 work, not one per session. The style meter that already exists measures this; this recipe does not add another one.
 
+## How the coordinator speaks
+
+**When she says something "finishes", it means working for real: it went into main and it is installed.** If not yet, she
+says so: "in the queue", "in main, not installed", "programmed, no request yet". Why: the owner decides on that word, and a
+"done" that does not work yet makes them consider settled something that is still broken. An end time also says which state
+it refers to.
+
 ## The board in the office
 
 The `/office` page shows the coordinator's board of pending work in a panel apart from the desks: what is due today,
@@ -268,9 +301,10 @@ They come from a whole day of coordinating several sessions. Each says what to d
   path (for example, the window in the owner's name), tell the owner right away and redo it. Why: a signature in the
   owner's name that they did not give is a false record. A tab that does not ask for permissions no longer signs
   through the window: the harness refuses it. A click or an «aprobado» the hook did not record does not count either.
-- **Heavy things one at a time, with a turn.** The full suite, the controls bench, the reviewers' exam and the gate run
-  one at a time on the machine, and the turn is asked from the coordinator. The story the owner marked as a priority
-  goes first in the line. Why: two at once saturate the machine and both take longer.
+- **Heavy things, with a turn.** The full suite, the controls bench, the reviewers' exam and the gate run one at a time on
+  the machine, and the turn is asked from the coordinator. The harness also stops the full suite and the pass (above,
+  "Heavy work takes turns"). The story the owner marked as a priority goes first in the line. Why: two at once saturate the
+  machine and both take longer.
 - **Before approving someone else's request, look at the diff.** And an ok covering sensitive files nobody reviewed is
   not given: separate them first. Why: approving without looking is signing what was not seen.
 - **A «free» session may be waiting for something.** When it runs something without touching files, it writes what
@@ -293,7 +327,11 @@ They come from a whole day of coordinating several sessions. Each says what to d
 | The coordinator settles details with the safest option | nadie | It is a judgment call, and it is written down for the owner to see. |
 | Every session with a name a person gave it | aviso | `/coordinate` lists the ones whose name the tool made up. |
 | No more sessions working than the cap | freno | `open` does not open at the cap. Nothing stops a session the owner opens by hand; `status` counts it and, at the cap, so does the coordinator's notice on each turn. |
-| Adversarial passes one at a time | aviso | The coordinator gives the turn. The pass's gate tells the session another one is in flight and to ask for its turn; it does not stop it. |
+| One full suite at a time | freno | The suite runner and the whole portable run do not start with the turn held by another live process, and they say who holds it. A suite someone runs another way is not seen. |
+| Adversarial passes one at a time | freno | The pass's gate exits 3 and `next` asks to wait with another in flight. Nothing stops launching the pass without asking the gate, and a quick fix's pass is not noted as in flight. After an hour, it only warns. |
+| Idle background sessions get closed or given work | aviso | The coordinator's notice on each turn, after 15 minutes. |
+| A ready request does not stay unqueued | aviso | The coordinator's notice on each turn, after 10 minutes, and the startup one. GitHub only. |
+| "Finishes" means working | nadie | It is the word she picks: no data on the machine sees it. |
 | Confirm a signature is missing before asking for it | nadie | How to confirm depends on each signature; `signature` only avoids two files with the same command. |
 | One file per signature, deleted once signed | aviso | `status` counts the pending signatures; `signature` does not write a second file with the same command. One that has waited more than a day is brought up to the coordinator, once a day. |
 | Requests in order | nadie | No data on the machine says which request pairs with which without asking the network on every turn. |
@@ -305,7 +343,7 @@ They come from a whole day of coordinating several sessions. Each says what to d
 | The time of the finished work | nadie | What «finished» means depends on each work. |
 | A story number never alone | nadie | It goes in the messages, which do not go through a text check. |
 | A tab that does not ask for permissions does not sign through the window | freno | The window's guard refuses the signature and says how to approve it with a click or an «aprobado»; what does not accept them, with the terminal command. That the path says «delegación» is confirmed by the coordinator. |
-| Heavy things one at a time, with a turn | nadie | The adversarial pass has its notice (above); the full suite, the bench, the exam and the gate do not. |
+| Heavy things one at a time, with a turn | nadie | The full suite and the adversarial pass have their stop (above); the bench, the exam and the gate do not. |
 | Look at the diff before approving someone else's request | nadie | It is the approver's judgment call. |
 | A waiting session writes what it is doing | nadie | The session writes it with `marker.js doing`; nothing forces it. |
 | Check that a request is still in the queue | nadie | Checking on every turn would mean asking the network all the time. |
