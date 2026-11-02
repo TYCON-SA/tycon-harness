@@ -24,10 +24,10 @@ open models through [Ollama](guides/integrations/ollama.en.md), and with
 [Cursor](guides/integrations/cursor.en.md). The AI software development life cycle (AI SDLC), step by step:
 
 1. **Request and story:** you say what you want and the agent writes it as a story: what has to be done and how it is
-   tested. A small change goes by quick path: the reason in one line and the list of files.
+   tested. A small change goes by short path: the reason in one line and the list of files.
 2. **Approved plan:** the agent builds the plan and shows it to you; it is approved before any code is written, never by itself. Who approves depends on the risk (below).
 3. **Tests and code:** it writes the tests and the code, and runs the tests.
-4. **Review:** on a story, specialized reviewers (security, conventions, coverage) check the change before the commit; on a quick path, only with high risk.
+4. **Review:** on a story, specialized reviewers (security, conventions, coverage) check the change before the commit.
 5. **Delivery:** the commit and the merge go through checks. Nothing is committed or pushed without your permission.
 6. **Operation and measurement:** every merge to main leaves its metrics file, and your organization's nightly jobs
    review the dependencies and build the cycle dashboard.
@@ -35,33 +35,29 @@ open models through [Ollama](guides/integrations/ollama.en.md), and with
 **The right measure.** When a product starts it is specified in full, once —product document, architecture, epics
 and stories—; then, story by story.
 
-- **Size decides: story or quick path.** The question: is it a small change?
+- **Size decides: story or short path.** The question: is it a small change?
   - **It is small** if you ask for it in one sentence and, when it is done, you know if it came out right without going
     through a list: looking at the result and running its tests is enough. Example: "the province dropdown shows the full name instead of the abbreviation". It
-    goes by **quick path**.
+    goes by **short path**.
   - **It is not small** if knowing it is complete takes a list of criteria, if it takes more than one session or if it
     waits on someone outside. Example: "the dropdown loads its options from the database and remembers the last
     choice". It goes by **story**.
-  - **If it bundles several topics**, it is not small: it is several quick paths, or a story.
+  - **If it bundles several topics**, it is not small: it is several short paths, or a story.
 
   **Who decides and who checks.** Whoever opens the work judges the size, but if you work with a coordinating session,
-  you do not decide alone: the quick path is approved by the coordinating session or you. The harness enforces it:
-  - Without an open quick path or a story, the harness **does not let you write code**.
-  - The quick path has a **file cap**: 5 if the coordinating session approved it, 8 if you did. Past it, the harness
-    **closes it** and recommends a story. If you still want to stay on the quick path, you ask for it with a separate click, which is recorded; the coordinating session cannot.
-  - A quick path with several topics in its reason **cannot be approved by the coordinating session**.
+  you do not decide alone: the short path is approved by the coordinating session or you. The harness enforces it:
+  - Without an open short path or a story, the harness **does not let you write code**.
+  - The short path has a **file cap**: one if the coordinating session approved it, another if you did. Each organization sets the caps; by default, 5 and 8. Past it, the harness
+    **closes it** and recommends a story. To stay on the short path, you ask with a separate click, which is recorded; the coordinating session cannot.
+  - A short path with several topics in its reason **cannot be approved by the coordinating session**.
 - **Risk decides who approves.**
   - **High risk** is when the change touches something sensitive in the repo, such as production, a migration or
     security. Also when it brings a decision for you or your organization: scope, security, a new dependency, money,
     customers or other people. When in doubt, high risk.
   - **The coordinating session** is an agent session your team can use to approve routine work; it is not a person.
-  - **Who approves what:** you always approve the delicate work. With normal risk, the
-    coordinating session opens the quick path with the list of files and tells you, and approves the plan if the
-    automatic review said "approved". With high risk, you approve it. Without a coordinating session, you approve its
-    part. The plan never approves itself.
-- **If the change has a screen, on both paths a mockup is approved before building**, and what was built is validated
-  against it.
-- **Saving is a click in the options box or a written "Aprobado", on both paths.** Before every commit, push and pull
+  - **Who approves what:** you always approve the delicate work. The rest goes as the diagram shows, and the
+    coordinating session tells you when it opens a short path. Without one, you approve its part.
+- **Saving is a click or a written "Aprobado".** Before every commit, push and pull
   request the agent asks "save?". If your tab asks for permissions, the yes goes in the permission window. There is no
   signature and no command.
 
@@ -70,39 +66,44 @@ The harness brakes, controls and control signatures belong to whoever maintains 
 
 ```mermaid
 flowchart TB
-  pedir(["<b>Request</b>"]) --> chico{"<b>Is it a small change?</b><br/>you ask for it in one sentence, and when it is done you know if it came out right without going through a list"}
-  chico -- "Yes · Quick path" --> r1
+  pedir(["<b>Request</b><br/>👤 You"]) --> chico{"<b>Is it a small change?</b>"}
+  chico -- "Yes · Short path" --> r1
   chico -- "No · Story" --> h1
-  subgraph rapido [" "]
+  subgraph corto [" "]
     direction TB
-    r1["<b>Open the lane</b><br/>with the list of files<br/>normal risk: the coordinating session, up to 5<br/>high risk: you, up to 8<br/>more than 8: the harness recommends a story, or a separate click from you"] --> r1m["<b>Approve the mockup</b><br/>if it has a screen · before building"]
-    r1m --> r2["<b>Code with the test first</b><br/>at saving, the harness warns if it was the other way round"]
+    r1["<b>Open the lane</b><br/>🤖 the coordinating session: normal risk, up to its cap<br/>👤 You: high risk, up to the short path cap<br/>past the cap: the harness recommends a story, or a separate click from you"] --> r0m["<b>Build the mockup</b><br/>if it has a screen · by the agent"]
+    r0m --> r1m["<b>Approve the mockup</b><br/>if it has a screen · before building<br/>👤 You"]
+    r1m --> r2["<b>Code with the test first</b><br/>at saving, the harness warns if it was reversed"]
     r2 --> r3["<b>Run its tests</b>"]
-    r3 --> r3c["<b>Validate against the mockup</b><br/>if it has a screen"]
+    r3 --> r3c["<b>Validate against the mockup</b><br/>if it has a screen · the harness compares the texts"]
     r3c --> r4["<b>Reviewers and adversarial pass</b><br/>only with high risk"]
   end
   subgraph historia [" "]
     direction TB
     h1["<b>Validate the story</b>"] --> h2["<b>Build the plan</b>"]
-    h2 --> h3["<b>Approve the plan</b><br/>normal risk: the coordinating session, if the automatic review said «approved»<br/>high risk: you"]
-    h3 --> h3m["<b>Approve the mockup</b><br/>if it has a screen · together with the plan, by whoever approves it"]
+    h2 --> h2m["<b>Build the mockup</b><br/>if it has a screen · by the agent, with the plan"]
+    h2m --> h3["<b>Approve the plan</b><br/>🤖 the coordinating session: normal risk, if the automatic review said «approved»<br/>👤 You: high risk"]
+    h3 --> h3m["<b>Approve the mockup</b><br/>if it has a screen · together with the plan<br/>🤖 or 👤 You: whoever approves the plan"]
     h3m --> h4["<b>Code with the tests first</b>"]
     h4 --> h5["<b>Run the tests</b>"]
     h5 --> h6["<b>Reviewers</b><br/>picked based on the change"]
-    h6 --> h7["<b>Adversarial pass</b><br/>not on a small low-risk story, nor on documentation or tests only"]
-    h7 --> h8["<b>Live check, criterion by criterion</b>"]
-    h8 --> h9["<b>Validate against the mockup</b><br/>if it has a screen"]
+    h6 --> h7["<b>Adversarial pass</b><br/>not on a small low-risk story, nor on docs or tests only"]
+    h7 --> h8["<b>Live check, criterion by criterion</b><br/>👤 You sign what could not be tested live"]
+    h8 --> hq["<b>Build the QA guide</b><br/>if it can be operated by hand · by the agent"]
+    hq --> h9["<b>Validate against the mockup</b><br/>if it has a screen · the harness compares the texts"]
   end
-  r4 --> g1["<b>Save</b><br/>a click in the box, or a written «Aprobado»"]
+  r4 --> g1["<b>Save</b><br/>👤 You: a click in the box, or a written «Aprobado»<br/>with a screen, you check the captures against the mockup"]
   h9 --> g1
   g1 --> g2["<b>Pull request</b><br/>CI"]
+  g2 -- "Story" --> g3["<b>Move the story to «done»</b><br/>👤 You or QA, testing with the guide"]
+  hq -.-> g3
   classDef decide fill:#2f6fde,stroke:#1f4fa8,color:#ffffff
   classDef control fill:#F15A24,stroke:#b8410f,color:#ffffff
-  class r1,r1m,h3,h3m,g1 decide
+  class pedir,r1,r1m,h3,h3m,g1,g3 decide
   class r3c,r4,h4,h5,h6,h7,h8,h9,g2 control
 ```
 
-<sub>🟦 Someone decides: you, or the coordinating session with normal risk · 🟧 A control that is not skipped</sub>
+<sub>🟦 Someone decides: 👤 **You** · 🤖 the coordinating session · 🟧 A control that is not skipped</sub>
 
 The checks are one part of the cycle: they guard every step. There are two ways to start it: [on your own, on your
 machine](#start-on-your-own), or [for your team](#for-teams).
