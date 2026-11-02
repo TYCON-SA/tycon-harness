@@ -5499,7 +5499,15 @@ function cmdAdhoc(sub, payloadJson) {
       // sólo «no existe» es estar cerrado: otro error deja el atajo abierto, y eso se dice
       if (e.code !== 'ENOENT') { console.error(`marker.js adhoc clear: no pude borrar la declaración (${e.code || e.message}); el arreglo rápido sigue abierto.`); process.exit(1); }
     }
-    appendLog('adhoc.log', { kind: 'ADHOC_CLEAR', reason: existing ? existing.reason : null, files: existing ? (existing.files || []).length : 0 });
+    // el arreglo que pasó el tope deja lo que contó: es lo que mide si elegirlo valió la pena
+    let contados = {};
+    if (existing && existing.sobreCupo) {
+      try {
+        const c = require('./lib/adhoc-base.js').cuentaDelCarril(existing);
+        contados = { sobreCupo: true, cupoPedido: existing.cupoPedido, eligio: existing.eligio, contados: c.archivos.length, archivos: c.archivos, ...(c.fallas.length ? { sinMedir: c.fallas[0] } : {}) };
+      } catch (e) { contados = { sobreCupo: true, cupoPedido: existing.cupoPedido, eligio: existing.eligio, sinMedir: e.message }; }
+    }
+    appendLog('adhoc.log', { kind: 'ADHOC_CLEAR', reason: existing ? existing.reason : null, files: existing ? (existing.files || []).length : 0, ...contados });
     syncSessionState(SID);
     process.stdout.write('adhoc: cleared\n');
     process.exit(0);
@@ -5575,7 +5583,7 @@ function cmdAdhoc(sub, payloadJson) {
     }
     const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
     // en la terminal el dueño ve este resumen: el motivo y el cupo, como en la ventana
-    const cupoPedido = payload.maxFiles !== undefined ? `hasta ${payload.maxFiles} archivos` : 'el cupo de siempre (8 archivos, o el que ya tenía)';
+    const cupoPedido = payload.maxFiles !== undefined ? `hasta ${payload.maxFiles} archivos de implementación, sin pruebas ni guías` : 'el cupo de siempre (8 archivos de implementación, o el que ya tenía)';
     // por delegación, el dueño se entera antes de la constancia, por los canales del perfil: sin entrega, no hay arreglo
     const antes = (viaPedida, registro) => {
       if (viaPedida !== 'delegacion') return null;
@@ -5594,7 +5602,10 @@ function cmdAdhoc(sub, payloadJson) {
     // lo lee quien firma: sin saltos de línea ni escapes que armen renglones falsos
     const { enUnRenglon } = require('./lib/adhoc-screen.js');
     if (maqueta) console.error(`marker.js adhoc set: anota la maqueta ${enUnRenglon(maqueta.file)}, aprobada por «${enUnRenglon(maqueta.approval)}», con el motivo «${enUnRenglon(reason)}».`);
-    const r = ow.exigir({ firma: 'adhoc-lane', argv: process.argv.slice(1), resumen: enUnRenglon(`arreglo rápido de la sesión ${destino}${conMaqueta}: «${reason}» · ${cupoPedido}`),
+    const firmas = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signatures.js'));
+    // la misma regla que mira el freno: pasar el tope es otra firma
+    const firmaDelPedido = firmas.firmaDelPedidoAdhoc(process.argv.slice(4));
+    const r = ow.exigir({ firma: firmaDelPedido, argv: process.argv.slice(1), resumen: enUnRenglon(`arreglo rápido de la sesión ${destino}${conMaqueta}: «${reason}» · ${cupoPedido}`),
       propia: PROPIA, anotar: (renglon) => appendLog('gates.log', renglon), antes });
     if (r.codigo !== 0) {
       // la forma con JSON sólo si hace falta: la maqueta no entra en la otra, y hay motivos que no se pueden citar en ella
@@ -5614,6 +5625,11 @@ function cmdAdhoc(sub, payloadJson) {
       console.error(`🔒 marker.js adhoc set: la firma volvió por una vía que no conozco (${r.via}); no declaré nada.`);
       process.exit(1);
     }
+    // pasar el tope lo elige una persona: su click o su terminal
+    if (firmaDelPedido === firmas.SOBRE_CUPO && !['click', 'terminal'].includes(r.via)) {
+      console.error(`🔒 marker.js adhoc set: pasar el tope lo aprueba sólo el click de la persona o su terminal, y volvió por ${r.via}; no declaré nada.`);
+      process.exit(1);
+    }
     const via = r.via;
     const by = r.sesion || SID;
     const existing = io.readAdhoc(STATE_DIR, destino);
@@ -5621,6 +5637,10 @@ function cmdAdhoc(sub, payloadJson) {
     const pedido = maxFiles;
     // lo hecho y avisado en una pestaña sin permisos tiene el mismo cupo que la delegación
     if (via === 'delegacion' || via === 'avisado') maxFiles = cupoDelegado(maxFiles);
+    // la marca del sobre cupo: la pone la firma nueva y se conserva mientras el cupo siga por encima del tope. Un carril
+    // anterior con más de 8 no la tiene: termina con su número, sin pedirla
+    const sobreCupo = firmaDelPedido === firmas.SOBRE_CUPO ? { sobreCupo: true, cupoPedido: maxFiles, eligio: 'persona' }
+      : existing && existing.sobreCupo && maxFiles > firmas.TOPE ? { sobreCupo: true, cupoPedido: existing.cupoPedido, eligio: existing.eligio } : {};
     const obj = {
       reason, maxFiles,
       files: existing ? (existing.files || []) : [],
@@ -5628,7 +5648,8 @@ function cmdAdhoc(sub, payloadJson) {
       lastTouch: nowIso(),
       cwd: process.cwd(),
       via, by,
-      // la hora de la firma: el portón acepta la declaración sólo con el renglón `adhoc-lane-signed` de esta hora
+      ...sobreCupo,
+      // la hora de la firma: el portón acepta la declaración sólo con el renglón `-signed` de su firma, de esta hora
       firmadaEn: nowIso(),
       // la hora de fin que declaró la sesión con `adhoc until` sigue valiendo al agrandar el carril
       ...(existing && existing.until ? { until: existing.until } : {}),
@@ -5645,7 +5666,7 @@ function cmdAdhoc(sub, payloadJson) {
     const gateOn = String(process.env.TYCON_STORY_GATE || '').toLowerCase() !== 'off';
     const maquina = r.registro && r.registro.maquina ? r.registro.maquina : null;
     appendLog('adhoc.log', { kind: existing ? 'ADHOC_UPDATE' : 'ADHOC_SET', reason, maxFiles, prevMaxFiles: existing ? existing.maxFiles : null,
-      files: obj.files.length, cwd: process.cwd(), via, by, destino, ...(maquina ? { maquina } : {}), ...(gateOn ? {} : { gate: 'off' }),
+      files: obj.files.length, cwd: process.cwd(), via, by, destino, ...sobreCupo, ...(maquina ? { maquina } : {}), ...(gateOn ? {} : { gate: 'off' }),
       ...(maqueta ? { mockup: maqueta.file, mockupApproved: maqueta.approval } : {}) });
     if (!gateOn) appendLog('bypass.log', { kind: 'STORY_GATE_OFF_ADHOC', reason, cwd: process.cwd() });
     if (maxFiles < pedido) {

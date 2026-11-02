@@ -277,6 +277,18 @@ The quick fix (a code change with no story) is the `adhoc-lane` signature: the t
   it is the team profile and the designation the owner confirmed. With no designated session on the target machine, the
   quick fix is approved in the target tab's window.
 
+**Going past the limit does not go through you.** Asking for more than 8 files is the `adhoc-lane:sobre-cupo` signature,
+and the developer chooses it: with a click in the question box of the tab doing the work, or in their terminal. A click in
+your tab does not count, nor a forwarded «aprobado», nor the delegation; so a background session nobody is watching can only
+do it through the terminal. Only the implementation files the fix changed count: what came in from `main`, tests, guides
+and probes do not add up. Past the quota, the fix stops on edit and does not save, and the message recommends a story.
+
+**With the mockup and the screenshot, what was built is compared with the mockup.** It compares texts, not the drawing: if a
+text of the mockup is not in the fix's screens or in the other screens of its repos, it does not save. A text that already
+exists in another screen passes, even if the fix did not build it. A difference is declared in `<mockup>-diferencias.md`,
+with `- «<text>» — differs: <why>`, or `mockup-compare: no — <reason>` if it cannot be compared. The agent declares it,
+with no signature: it stays visible in the save question and in `gates.log`.
+
 **If the fix touches a screen, it does not save without three things.** What a screen is comes from the pipeline's own
 criterion (`lib/ui-signal.js`, with the organization's `screen_test` rule), file by file. A test does not count.
 

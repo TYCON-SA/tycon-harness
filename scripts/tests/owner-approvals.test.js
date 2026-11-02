@@ -329,6 +329,57 @@ test('Click_OpcionesQueNoSonLasDelGuion_NoVale', (t) => {
   assert.deepStrictEqual(oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), click(), { pregunta: PIDE, opciones: CUADRO.opciones }), { ok: true });
 });
 
+const SOBRE_CUPO = 'adhoc-lane:sobre-cupo';
+const DESCRIPCIONES = ['La sesión sigue con el arreglo. Pasa el tope de archivos del camino corto: lo elegís vos, en lugar de una historia.',
+  'No se abre el arreglo, y el trabajo va por una historia.'];
+const cuadroDelTope = () => require('../lib/owner-window.js').cuadroPara({ firma: SOBRE_CUPO, palabras: ['marker.js', 'adhoc', 'set', '{"reason":"arreglo del sp","maxFiles":12}'], destino: 'ses-a', sesion: 'ses-a' });
+
+test('T12 Cuadro_SobreCupo_TextoFijoDeLasOpciones @story-8.181 @ac-5', () => {
+  const c = cuadroDelTope();
+  assert.ok(!c.error, c.error);
+  assert.match(c.pregunta, /pasa? el tope de archivos del camino corto/);
+  assert.match(c.pregunta, /se recomienda una historia/);
+  assert.match(c.pregunta, /hasta 12 archivos de implementación, sin pruebas ni guías/, 'el número va en el detalle');
+  assert.deepStrictEqual(c.opciones, ['Sí, aprobar', 'No']);
+  assert.deepStrictEqual(c.descripciones, DESCRIPCIONES);
+  assert.strictEqual(c.soloClick, true);
+  for (const d of c.descripciones) assert.doesNotMatch(d, /\d/, 'sin números en las opciones');
+});
+
+// El mismo click de la coordinadora vale para una firma común: lo que lo niega es que el cuadro sea de sólo click.
+test('T9b Buscar_SoloClick_NoMiraLaCoordinadoraNiElMensaje @story-8.181 @ac-4', (t) => {
+  const casa = casaNueva(t);
+  oa.anotar(casa, { ...click(), sesion: 'ses-b', herramienta: COORD });
+  procesoDeLaSesion(casa);
+  const busca = (cuadroDeLaFirma) => oa.buscar({ casa, sesion: 'ses-a', cuadro: cuadroDeLaFirma, coordinadora: 'ses-b', ahora: AHORA, validar: SIEMPRE, arbol: ARBOL_COORD });
+  assert.ok(busca(CUADRO).ok, 'para una firma común, vale');
+  const soloClick = { ...CUADRO, soloClick: true, descripciones: DESCRIPCIONES };
+  assert.match(busca(soloClick).motivo, /no hay un click/);
+  const propia = casaNueva(t);
+  oa.anotar(propia, mensaje('Aprobado'));
+  assert.ok(!oa.buscar({ casa: propia, sesion: 'ses-a', cuadro: soloClick, ahora: AHORA, validar: SIEMPRE }).ok, 'un «aprobado» escrito no vale');
+  oa.anotar(propia, click());
+  assert.strictEqual(oa.buscar({ casa: propia, sesion: 'ses-a', cuadro: soloClick, ahora: AHORA, validar: SIEMPRE }).via, 'click');
+});
+
+test('T13 Cuadro_SobreCupo_OtraDescripcion_NoVale @story-8.181 @ac-5', (t) => {
+  const casa = casaNueva(t);
+  const c = cuadroDelTope();
+  const conDescripciones = (descripciones) => {
+    const r = respuesta('toolu_1', { pregunta: c.pregunta });
+    r.toolUseResult.questions[0].options = r.toolUseResult.questions[0].options.map((o, i) => ({ ...o, ...(descripciones ? { description: descripciones[i] } : {}) }));
+    return r;
+  };
+  const elClick = { ...click(), pregunta: c.pregunta };
+  const ver = () => oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), elClick, { pregunta: c.pregunta, opciones: c.opciones, descripciones: c.descripciones });
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1', c.pregunta), conDescripciones([DESCRIPCIONES[0].replace('lo elegís vos', 'lo elige el agente'), DESCRIPCIONES[1]])]);
+  assert.match(ver().motivo, /no son las que armó el guion/);
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1', c.pregunta), conDescripciones(null)]);
+  assert.match(ver().motivo, /no son las que armó el guion/, 'sin descripciones tampoco');
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1', c.pregunta), conDescripciones(DESCRIPCIONES)]);
+  assert.deepStrictEqual(ver(), { ok: true });
+});
+
 // El detalle de la pregunta copia el motivo del comando, que escribió el agente: lo que dice ahí no es la sesión que firma.
 test('Sello_MotivoQueNombraOtraSesion_ElAprobadoVale', (t) => {
   const casa = casaNueva(t);

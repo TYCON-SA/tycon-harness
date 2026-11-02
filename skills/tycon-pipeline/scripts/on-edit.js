@@ -163,7 +163,7 @@ function handle(event) {
     const { isImplPath } = require('./lib/atdd-order.js');
     const sg = require('./lib/story-gate.js');
     const io = require('./lib/story-gate-io.js');
-    if (isImplPath(filePath) && sg.isCodeFile(filePath) && !io.isHarnessRepo(filePath)) {
+    if (isImplPath(filePath) && sg.isCodeFile(filePath)) {
       io.recordAdhocFile(STATE_DIR, sessionId, filePath);
     }
   } catch { /* best-effort */ }

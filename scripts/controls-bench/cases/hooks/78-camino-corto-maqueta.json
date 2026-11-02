@@ -1,0 +1,39 @@
+{
+  "__doc": "T43 Banco_MaquetaDelCaminoCorto @story-8.181 @ac-23. Lo construido contra la maqueta en el camino corto (AC 16-22): un carril que toca una pantalla, con la maqueta aprobada y la captura al día, no guarda si le falta un texto de la maqueta. Compara textos, no el dibujo: un texto que ya existe en otra pantalla pasa. Una diferencia se declara en <maqueta>-diferencias.md y queda a la vista.",
+  "hooks": [
+    {
+      "hook": "on-pre-commit.js",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-pre-commit.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "camino-corto-maqueta-texto-que-falta-no-guarda",
+          "type": "must-block",
+          "_por_que": "la pantalla no dice los textos de su maqueta aprobada: no guarda, y dice las tres formas de completarlo.",
+          "setup": [
+            "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && git update-ref refs/remotes/origin/main HEAD && git checkout -q -b arreglo",
+            "node \"${SKILLS}/skills/tycon-pipeline/scripts/mockup.js\" demo --out maqueta.html",
+            "mkdir -p src && echo '<p>otra cosa</p>' > src/Combo.tsx && touch -t 202601010000 src/Combo.tsx && printf '\\211PNG\\r\\n\\032\\n\\000\\000\\000\\015' > captura.png",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; R=$(pwd -P); T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); H=$(node -e \"process.stdout.write(require(process.argv[1]).mockupHash(require('fs').readFileSync('maqueta.html','utf8')))\" \"${SKILLS}/skills/tycon-pipeline/scripts/mockup.js\"); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"maxFiles\":5,\"files\":[\"%s/src/Combo.tsx\"],\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\",\"mockup\":{\"file\":\"%s/maqueta.html\",\"sha256\":\"%s\",\"approval\":\"la aprobó Ana\"},\"capture\":{\"file\":\"%s/captura.png\"}}' \"$R\" \"$T\" \"$T\" \"$T\" \"$R\" \"$H\" \"$R\" > \"$S/adhoc/bench-maqueta.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-maqueta\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\""
+          ],
+          "stdin": { "session_id": "bench-maqueta", "tool_name": "Bash", "tool_input": { "command": "git commit -m 'feat: x'" } },
+          "expect": { "exit": 2, "stderr_re": ["texto\\(s\\) de su maqueta", "Corregí la pantalla", "Volvé a aprobar la maqueta", "differs:"] }
+        },
+        {
+          "id": "camino-corto-maqueta-diferencia-declarada-pasa-y-se-muestra",
+          "type": "must-emit",
+          "_por_que": "con la comparación declarada imposible no frena, y la pregunta de guardar muestra el motivo.",
+          "setup": [
+            "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && git update-ref refs/remotes/origin/main HEAD && git checkout -q -b arreglo",
+            "node \"${SKILLS}/skills/tycon-pipeline/scripts/mockup.js\" demo --out maqueta.html && echo 'mockup-compare: no — arma sus textos en el servidor' > maqueta-diferencias.md",
+            "mkdir -p src && echo '<p>otra cosa</p>' > src/Combo.tsx && touch -t 202601010000 src/Combo.tsx && printf '\\211PNG\\r\\n\\032\\n\\000\\000\\000\\015' > captura.png",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; R=$(pwd -P); T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); H=$(node -e \"process.stdout.write(require(process.argv[1]).mockupHash(require('fs').readFileSync('maqueta.html','utf8')))\" \"${SKILLS}/skills/tycon-pipeline/scripts/mockup.js\"); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"maxFiles\":5,\"files\":[\"%s/src/Combo.tsx\"],\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\",\"mockup\":{\"file\":\"%s/maqueta.html\",\"sha256\":\"%s\",\"approval\":\"la aprobó Ana\"},\"capture\":{\"file\":\"%s/captura.png\"}}' \"$R\" \"$T\" \"$T\" \"$T\" \"$R\" \"$H\" \"$R\" > \"$S/adhoc/bench-maqueta.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-maqueta\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\""
+          ],
+          "stdin": { "session_id": "bench-maqueta", "tool_name": "Bash", "tool_input": { "command": "git commit -m 'feat: x'" } },
+          "expect": { "stdout_re": ["\"permissionDecision\":\"ask\"", "arma sus textos en el servidor"] }
+        }
+      ]
+    }
+  ]
+}

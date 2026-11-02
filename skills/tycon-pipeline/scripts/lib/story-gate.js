@@ -105,6 +105,8 @@ const DEFAULT_ADHOC_MAX_FILES = 8;
 // el arreglo rápido que abre la coordinadora por delegación: más chico que el que firma una persona
 const DELEGATED_ADHOC_MAX_FILES = 5;
 const cupoDelegado = (pedido) => Math.min(pedido, DELEGATED_ADHOC_MAX_FILES);
+/** El cupo de un carril: el suyo, o el de siempre si no trae uno que se pueda leer. */
+const cupoDelCarril = (adhoc) => (Number.isFinite(Number(adhoc && adhoc.maxFiles)) && Number(adhoc.maxFiles) > 0 ? Number(adhoc.maxFiles) : DEFAULT_ADHOC_MAX_FILES);
 const MARKER_JS = '~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js';
 
 function norm(p) {
@@ -265,7 +267,9 @@ function computeStoryGate({
   if (!isCodeFile(filePath)) return { action: 'pass', reason: 'no es código' };
   // `isHarness` booleano = el borde ya leyó el remoto; sin él decide la carpeta (respaldo).
   const harness = typeof isHarness === 'boolean' ? isHarness : isHarnessPath(filePath);
-  if (harness) return { action: 'pass', reason: 'repo del harness (agent-skills / el arnés)' };
+  // con un carril abierto rige su tope también en el arnés; sin carril, o con una ejecución de historia, el arnés pasa
+  const carrilEnElArnes = harness && adhoc && adhoc.reason && !(marker && marker.storyId);
+  if (harness && !carrilEnElArnes) return { action: 'pass', reason: 'repo del harness (agent-skills / el arnés)' };
 
   // ── Carril STORY (pipeline activo) — se mira ANTES que el repo ───────────────────────────────
   if (marker && marker.storyId) {
@@ -288,15 +292,15 @@ function computeStoryGate({
 
   if (!repoRoot) return { action: 'pass', reason: 'archivo fuera de un repo git' };
   if (homeDir && sameFile(repoRoot, homeDir)) return { action: 'pass', reason: 'el "repo" es el home (dotfiles) — no cuenta' };
-  if (!repoHasTycon && !repoHasStories) {
+  // un clon del arnés puede no tener `.tycon/`: trabaja con el arnés igual
+  if (!harness && !repoHasTycon && !repoHasStories) {
     return { action: 'pass', reason: 'el repo no trabaja con el arnés (sin .tycon/ ni stories Mary+GOLD)' };
   }
 
   // ── Carril AD-HOC (hotfix / ajuste chico, sin story) ─────────────────────────────────────────
   if (adhoc && adhoc.reason) {
     const files = Array.isArray(adhoc.files) ? adhoc.files : [];
-    const max = Number.isFinite(Number(adhoc.maxFiles)) && Number(adhoc.maxFiles) > 0
-      ? Number(adhoc.maxFiles) : DEFAULT_ADHOC_MAX_FILES;
+    const max = cupoDelCarril(adhoc);
     const already = files.some((f) => sameFile(f, filePath));
     // Al cupo cuentan sólo los archivos de IMPLEMENTACIÓN (un hotfix .cs + su test = 1).
     const countsTowardCap = isImplPath(filePath);
@@ -304,6 +308,8 @@ function computeStoryGate({
       return {
         action: 'block',
         kind: 'adhoc-cap',
+        tocados: files.length,
+        cupo: max,
         reason: `el ad-hoc "${adhoc.reason}" ya tocó ${files.length} archivo(s) de implementación (cupo ${max})`,
       };
     }
@@ -340,6 +346,29 @@ const PREGUNTA_SIN_CARRIL = [
   '2. Con historia. Escribí: con historia',
   'Lo tenés que escribir vos en el chat: el cuadro de botones no vale.',
 ];
+
+/**
+ * El mensaje al pasar el tope, al editar y al guardar: recomienda la historia y nombra el click aparte como segunda salida,
+ * en los dos perfiles. En un producto lo lee el dev («vos») y no nombra las piezas de la capa de mantenimiento.
+ */
+function textoDelTope({ harness = true, tocados, cupo, archivos = [], ibaA = null, via = '' }) {
+  const pedido = `node ${MARKER_JS} adhoc set '{"reason":"<qué y por qué>","maxFiles":<N>}'`;
+  return [
+    '⛔ camino corto — PASÓ EL TOPE DE ARCHIVOS',
+    via,
+    `  Este arreglo ya cambió ${tocados} archivo(s) de implementación (cupo ${cupo}).${ibaA ? ` Ibas a tocar otro más: ${ibaA}.` : ''}`,
+    ...archivos.map((a) => `   · ${a}`),
+    '  Se recomienda que siga por una historia, con su plan aprobado, las pruebas primero y sus revisores:',
+    '   `Skill(skill="tycon-create-story", …)` si no existe, y después `Skill(skill="tycon-pipeline", args="implementemos la story X.Y")`.',
+    ...(harness ? [
+      '  Si el dev elige seguir sin historia, es su click aparte, en esta pestaña; la coordinadora no lo da:',
+    ] : [
+      '  Si preferís seguir sin historia, lo elegís vos con un click aparte, en esta pestaña:',
+    ]),
+    `   ${pedido}`,
+    '  Ese comando trae el cuadro. Cuentan sólo los archivos de implementación, sin pruebas ni guías.',
+  ].filter((l) => l !== '').join('\n');
+}
 
 function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, harness = true } = {}) {
   const f = norm(filePath);
@@ -449,20 +478,7 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
     ].join('\n');
   }
   if (r.kind === 'adhoc-cap') {
-    return [
-      '⛔ tycon-pipeline — EL AD-HOC YA NO ES UN AJUSTE CHICO',
-      viaLine + '',
-      `  ${r.reason}. Ibas a tocar otro más: ${f}.`,
-      '  Un hotfix no recorre media base de código. Si el trabajo creció, es una funcionalidad y va por',
-      '  story + pipeline (con plan aprobado, tests primero, advisors, DoD).',
-      '',
-      '  Salidas (la decide el USER, no vos — preguntale):',
-      '   (a) Story + pipeline → `Skill(skill="tycon-create-story", …)` (si no existe) y después',
-      '       `Skill(skill="tycon-pipeline", args="implementemos la story X.Y")`.',
-      '   (b) El user confirma que sigue siendo un ajuste acotado → re-declará con cupo mayor y motivo:',
-      `        node ${MARKER_JS} adhoc set '{"reason":"<qué y por qué>","maxFiles":<N>}'`,
-      '       Lo aprueba una persona en la ventana de permiso (queda en adhoc.log con el cupo anterior y el nuevo).',
-    ].join('\n');
+    return textoDelTope({ harness, tocados: r.tocados, cupo: r.cupo, ibaA: f, via: viaLine.replace(/\n$/, '') });
   }
   // no-lane
   const resume = otherMarkers.length
@@ -586,7 +602,7 @@ function storyByConsoleMessage(rutas, via) {
 
 module.exports = {
   markerDeleteMessage, storyByConsoleMessage,
-  computeStoryGate, blockMessage, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, isOwnerApprovalsRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
+  computeStoryGate, blockMessage, textoDelTope, cupoDelCarril, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, isOwnerApprovalsRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
   STORY_INTENT_PATTERNS,
   DEFAULT_ADHOC_MAX_FILES, DELEGATED_ADHOC_MAX_FILES, cupoDelegado, EXTRA_CODE_EXTS, NEVER_CODE_SEGMENTS, HARNESS_REPO_SEGMENTS, MARKER_JS,
 };

@@ -9,6 +9,8 @@
  *   archivosDelCarril(adhoc)  `{ porRepo: { <repo>: [rel…] }, avisos }`: lo que el carril anotó, lo preparado para el
  *                             commit y el diff contra la base; sin base, lo anotado, lo preparado y lo cambiado contra
  *                             HEAD, con el aviso de que la rama no se midió.
+ *   propiosDelCarril(adhoc)   lo mismo, sin lo que entró de `main`: lo que el arreglo cambió de verdad.
+ *   cuentaDelCarril(adhoc)    `{ archivos, avisos, fallas }`: de lo propio, lo que suma para el tope.
  *   huellaDelCarril(adhoc)    el sha256 del contenido de sus archivos de código, en cada repo: un cambio después de una
  *                             constancia la cambia.
  *
@@ -136,6 +138,88 @@ function archivosDelCarril(adhoc, { repos: extra = [] } = {}) {
   return { porRepo, avisos, fallas };
 }
 
+/** ¿Sigue la carpeta de un repo anotado? Una que ya no está (un worktree borrado) no tiene nada que medir; otro error sube. */
+function sigueElRepo(repo) {
+  try { fs.statSync(repo); return true; } catch (e) {
+    if (e.code === 'ENOENT' || e.code === 'ENOTDIR') return false;
+    throw e;
+  }
+}
+
+/**
+ * Desde dónde se mide lo propio de un repo: la bifurcación con `main`, sin lo que entró de ahí. Sin esa rama, la base
+ * anotada; sin ninguna de las dos, lo anotado y el commit, con el aviso. Git que no contesta, sube.
+ */
+function basePropia(repo, adhoc) {
+  try { return { sha: git(repo, ['merge-base', 'HEAD', `origin/${RAMA}`]) }; } catch (e) {
+    // exit 1: historias sin relación. La rama que falta o el repo sin commits los dice el texto
+    if (e.status !== 1 && !/not a valid object name/i.test(String(e.stderr || e.message))) throw e;
+  }
+  const anotada = adhoc.bases && adhoc.bases[repo];
+  if (anotada && anotada.sha && ES_SHA.test(anotada.sha)) return { sha: anotada.sha };
+  let cabeza = null;
+  try { cabeza = git(repo, ['rev-parse', '--verify', '-q', 'HEAD']); } catch (e) { if (e.status !== 1) throw e; }
+  return { sha: cabeza, aviso: `camino corto: ${repo} no tiene su base traída (${(anotada && anotada.motivo) || 'sin origin/main'}): la rama no se midió, sólo lo anotado y el commit` };
+}
+
+/**
+ * Lo que este carril cambió de verdad, sin lo traído de `main`: `{ porRepo, avisos, fallas }`, como `archivosDelCarril`.
+ * Lo anotado suma si existe o si git lo muestra borrado. Una sonda fuera de un repo, una ruta que nunca existió o un repo
+ * borrado no son «no pude medir»: no suman.
+ */
+function propiosDelCarril(adhoc, { repos: extra = [] } = {}) {
+  const porRepo = {};
+  const avisos = [];
+  const fallas = [];
+  const anotadas = [...((adhoc && adhoc.rutas) || []), ...((adhoc && adhoc.files) || [])].filter((f) => path.isAbsolute(String(f)));
+  const { repos, huerfanas } = reposYHuerfanas({ bases: adhoc && adhoc.bases, rutas: anotadas.filter((f) => fs.existsSync(path.dirname(f))) });
+  for (const f of huerfanas) {
+    const m = `camino corto: no pude ubicar el repo de ${f}: queda sin medir`;
+    avisos.push(m);
+    fallas.push(m);
+  }
+  const reales = anotadas.map(rutaReal);
+  for (const repo of [...new Set([...repos, ...extra.filter(Boolean)])]) {
+    try {
+      if (!sigueElRepo(repo)) continue;
+      const base = basePropia(repo, adhoc);
+      if (base.aviso) avisos.push(base.aviso);
+      const set = new Set(rutasDeGit(repo, ['diff', '--cached', '--name-only']));
+      for (const l of rutasDeGit(repo, ['ls-files', '--others', '--exclude-standard'])) set.add(l);
+      if (base.sha) for (const l of rutasDeGit(repo, ['diff', '--name-only', base.sha, '--'])) set.add(l);
+      for (const f of reales) {
+        const rel = path.relative(repo, f).replace(/\\/g, '/');
+        if (rel && !rel.startsWith('..') && !path.isAbsolute(rel) && fs.existsSync(f)) set.add(rel);
+      }
+      porRepo[repo] = [...set].sort();
+    } catch (e) {
+      const f = `camino corto: git no contestó en ${repo} (${String((e && e.message) || e).split('\n')[0]})`;
+      avisos.push(f);
+      fallas.push(f);
+    }
+  }
+  return { porRepo, avisos, fallas };
+}
+
+/**
+ * Lo que suma para el tope: los archivos de implementación que el carril cambió, con su ruta entera. `{ archivos, avisos,
+ * fallas }`. La maqueta y la captura anotadas no suman, aunque vivan en el repo.
+ */
+function cuentaDelCarril(adhoc, opciones) {
+  const { isImplPath } = require('./atdd-order.js');
+  const { isCodeFile } = require('./story-gate.js');
+  const { porRepo, avisos, fallas } = propiosDelCarril(adhoc, opciones);
+  const anotadas = new Set([adhoc && adhoc.mockup, adhoc && adhoc.capture].filter((x) => x && typeof x.file === 'string').map((x) => rutaReal(x.file)));
+  const archivos = [];
+  for (const repo of Object.keys(porRepo)) {
+    for (const rel of porRepo[repo]) {
+      const abs = path.join(repo, rel);
+      if (isImplPath(rel) && isCodeFile(rel) && !anotadas.has(rutaReal(abs))) archivos.push(abs);
+    }
+  }
+  return { archivos: archivos.sort(), avisos, fallas };
+}
+
 /**
  * La huella del carril: el sha256 del contenido de sus archivos de código y de sus archivos de riesgo alto (una
  * migración, `.tycon/production.json`, un pipeline), en cada repo. Con git caído empieza con `incompleta:` y no vale
@@ -162,4 +246,4 @@ function huellaDelCarril(adhoc) {
 /** ¿La huella sirve para una constancia? Una incompleta, no. */
 const huellaCompleta = (h) => typeof h === 'string' && !h.startsWith('incompleta:');
 
-module.exports = { traerBase, conBase, reposDelCarril, archivosDelCarril, huellaDelCarril, huellaCompleta, raizDe, ubicar, RAMA };
+module.exports = { traerBase, conBase, reposDelCarril, archivosDelCarril, propiosDelCarril, cuentaDelCarril, sigueElRepo, huellaDelCarril, huellaCompleta, raizDe, ubicar, RAMA };

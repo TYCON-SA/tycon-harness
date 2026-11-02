@@ -560,12 +560,12 @@ test('CambioAUnControl_SiguePidiendoLaFirmaDeControl (T14)', (t) => {
 
 /** El carril de un camino rápido, firmado como lo deja `marker.js adhoc set`: la declaración con la hora de su firma y
  *  el renglón `adhoc-lane-signed` de esa hora en gates.log. Sin `firmado`, la declaración sola (no abre nada). */
-function carril(h, { files = [], firmado = true, lastTouch, sid = SID } = {}) {
+function carril(h, { files = [], firmado = true, lastTouch, sid = SID, maxFiles = 5, bases } = {}) {
   const ahora = new Date().toISOString();
   fs.mkdirSync(path.join(estado(h), 'adhoc'), { recursive: true });
   fs.writeFileSync(path.join(estado(h), 'adhoc', `${sid}.json`), JSON.stringify({
-    reason: 'el combo muestra el nombre completo', maxFiles: 5, files, declaredAt: lastTouch || ahora, lastTouch: lastTouch || ahora,
-    ...(firmado ? { firmadaEn: ahora } : {}),
+    reason: 'el combo muestra el nombre completo', maxFiles, files, declaredAt: lastTouch || ahora, lastTouch: lastTouch || ahora,
+    ...(firmado ? { firmadaEn: ahora } : {}), ...(bases ? { bases } : {}),
   }));
   if (firmado) fs.appendFileSync(path.join(estado(h), 'gates.log'), `${JSON.stringify({ name: 'adhoc-lane-signed', status: 'ok', destino: sid, ts: ahora })}\n`);
 }
@@ -573,6 +573,157 @@ function carril(h, { files = [], firmado = true, lastTouch, sid = SID } = {}) {
 // T15 CaminoRapido_PreguntaComoUnaCorrida
 // 🔴 Falla con: un camino rápido que guarda sin preguntar (el freno mira sólo el marcador de una corrida), o un carril
 // sin firma o vencido que hace preguntar a quien trabaja sin pipeline.
+// ── el tope del camino corto al guardar ─────────────────────────────────────────────────────────────────────────────
+/** `n` archivos de implementación nuevos en la rama, commiteados. */
+function commitDeArchivos(d, prefijo, n) {
+  for (let i = 0; i < n; i++) escribir(d, `src/${prefijo}${i}.js`, `// ${prefijo}${i}\n`);
+  sh(d, 'add', '-A');
+  sh(d, 'commit', '-q', '-m', `${prefijo}: ${n} archivos`);
+}
+const guardar = (d, h) => brake().decidir({ command: 'git commit -m x', cwd: d, sid: SID, home: h });
+const elTope = /pasó el tope|PASÓ EL TOPE/i;
+
+test('T22 SaveBrake_MasArchivosQueElCupo_NoGuarda @story-8.181 @ac-11', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  commitDeArchivos(d, 'a', 9);
+  carril(h, { maxFiles: 8 });
+  const r = guardar(d, h);
+  assert.ok(r && r.texto, JSON.stringify(r));
+  assert.match(r.texto, elTope);
+  assert.match(r.texto, /src\/a0\.js/, 'nombra los archivos contados');
+  assert.match(r.texto, /src\/a8\.js/);
+  assert.ok(r.texto.indexOf('historia') < r.texto.indexOf('click'), 'la historia primero, el click después');
+  assert.doesNotMatch(r.texto, /cupo mayor/);
+});
+
+test('T23 SaveBrake_ArchivoQueElConteoNoVio_TambienCuenta @story-8.181 @ac-11', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  commitDeArchivos(d, 'a', 3);
+  // el conteo al editar sólo vio uno: los otros los escribió otro camino
+  carril(h, { maxFiles: 2, files: [path.join(d, 'src', 'a0.js')] });
+  assert.match((guardar(d, h) || {}).texto || '', elTope);
+});
+
+test('T24 SaveBrake_PruebasYDocumentos_NoCuentan @story-8.181 @ac-10 @ac-11', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  commitDeArchivos(d, 'a', 8);
+  for (let i = 0; i < 6; i++) escribir(d, `src/a${i}.test.js`, 'x\n');
+  for (let i = 0; i < 6; i++) escribir(d, `guides/g${i}.md`, 'x\n');
+  sh(d, 'add', '-A');
+  sh(d, 'commit', '-q', '-m', 'pruebas y guías');
+  carril(h, { maxFiles: 8 });
+  const r = guardar(d, h);
+  assert.ok(r && !r.texto, `no frena por el tope: ${JSON.stringify(r)}`);
+});
+
+test('T25 SaveBrake_CerrarYReabrirEnLaMismaRama_NoEmpiezaDeCero @story-8.181 @ac-11', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  commitDeArchivos(d, 'a', 5);
+  carril(h, { maxFiles: 8, files: [] });
+  assert.ok(!(guardar(d, h) || {}).texto, 'con 5 guarda');
+  fs.rmSync(path.join(estado(h), 'adhoc', `${SID}.json`));
+  commitDeArchivos(d, 'b', 4);
+  carril(h, { maxFiles: 8, files: [] });
+  assert.match((guardar(d, h) || {}).texto || '', elTope);
+});
+
+test('T26 SaveBrake_TraerMain_NoSumaLoDeOtros @story-8.181 @ac-12', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  commitDeArchivos(d, 'propio', 2);
+  sh(d, 'checkout', '-q', 'main');
+  commitDeArchivos(d, 'ajeno', 12);
+  sh(d, 'push', '-q', 'origin', 'main');
+  sh(d, 'checkout', '-q', RAMA);
+  sh(d, 'merge', '-q', '--no-edit', 'origin/main');
+  const antes = sh(d, 'rev-parse', `${RAMA}~1`);
+  carril(h, { maxFiles: 3, files: [path.join(d, 'src', 'propio0.js')], bases: { [d]: { sha: antes, traida: true } } });
+  const { cuentaDelCarril } = require(path.join(SCRIPTS, 'lib', 'adhoc-base.js'));
+  assert.deepStrictEqual(cuentaDelCarril(JSON.parse(fs.readFileSync(path.join(estado(h), 'adhoc', `${SID}.json`), 'utf8'))).archivos.map((f) => path.basename(f)).sort(), ['propio0.js', 'propio1.js']);
+  assert.ok(!(guardar(d, h) || {}).texto, 'lo traído de main no suma');
+});
+
+test('T27 SaveBrake_SinBaseTraida_MideMenosYAvisa @story-8.181 @ac-13', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  commitDeArchivos(d, 'a', 2);
+  sh(d, 'update-ref', '-d', 'refs/remotes/origin/main');
+  const anotados = [path.join(d, 'src', 'a0.js'), path.join(d, 'src', 'a1.js')];
+  carril(h, { maxFiles: 2, files: anotados });
+  assert.ok(!(guardar(d, h) || {}).texto, 'con lo anotado no pasa el cupo');
+  assert.match(fs.readFileSync(path.join(estado(h), 'gates.log'), 'utf8'), /no tiene su base/, 'lo avisa');
+  carril(h, { maxFiles: 1, files: anotados });
+  assert.match((guardar(d, h) || {}).texto || '', elTope);
+});
+
+test('T28 SaveBrake_NoPudoMedir_NoGuarda @story-8.181 @ac-13', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  carril(h, { maxFiles: 8, bases: { [d]: { sha: sh(d, 'rev-parse', 'HEAD'), traida: true } } });
+  fs.writeFileSync(path.join(d, '.git', 'HEAD'), 'esto no es un HEAD\n');
+  const r = guardar(path.dirname(d), h);
+  assert.ok(r && r.texto, JSON.stringify(r));
+  assert.match(r.texto, /no pude medir/i);
+});
+
+test('T29 SaveBrake_RepoBorrado_NoEsNoPudoMedir @story-8.181 @ac-13', (t) => {
+  const d = repoConOrigin(t);
+  const otro = repoConOrigin(t, 'otro');
+  const h = home(t);
+  const sha = sh(otro, 'rev-parse', 'HEAD');
+  carril(h, { maxFiles: 8, bases: { [otro]: { sha, traida: true } } });
+  fs.rmSync(otro, { recursive: true, force: true });
+  const r = guardar(d, h);
+  assert.ok(!(r && r.texto), `sigue: ${JSON.stringify(r)}`);
+});
+
+test('T44 SaveBrake_ArchivoBorrado_Cuenta @story-8.181 @ac-10', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  sh(d, 'checkout', '-q', 'main');
+  commitDeArchivos(d, 'viejo', 1);
+  sh(d, 'push', '-q', 'origin', 'main');
+  sh(d, 'checkout', '-q', RAMA);
+  sh(d, 'merge', '-q', '--no-edit', 'origin/main');
+  commitDeArchivos(d, 'a', 2);
+  fs.rmSync(path.join(d, 'src', 'viejo0.js'));
+  sh(d, 'add', '-A');
+  sh(d, 'commit', '-q', '-m', 'borra uno');
+  carril(h, { maxFiles: 2 });
+  const r = guardar(d, h);
+  assert.match((r || {}).texto || '', /viejo0\.js/, 'el borrado cuenta y se nombra');
+});
+
+test('T42 SaveBrake_TextoQueFalta_DiceComoSeCompleta @story-8.181 @ac-16', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  const m = path.join(d, 'maqueta.html');
+  const hecha = spawnSync(process.execPath, [path.join(SCRIPTS, 'mockup.js'), 'demo', '--out', m], { encoding: 'utf8' });
+  assert.strictEqual(hecha.status, 0, hecha.stderr);
+  const screen = require(path.join(SCRIPTS, 'lib', 'adhoc-screen.js'));
+  const captura = path.join(d, 'captura.png');
+  fs.writeFileSync(captura, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]));
+  escribir(d, 'src/Combo.tsx', '<p>otra cosa</p>\n');
+  const viejo = new Date(Date.now() - 3600000);
+  fs.utimesSync(path.join(d, 'src', 'Combo.tsx'), viejo, viejo);
+  const ahora = new Date().toISOString();
+  fs.mkdirSync(path.join(estado(h), 'adhoc'), { recursive: true });
+  fs.writeFileSync(path.join(estado(h), 'adhoc', `${SID}.json`), JSON.stringify({ reason: 'el combo muestra el nombre completo', maxFiles: 5, files: [path.join(d, 'src', 'Combo.tsx')], declaredAt: ahora, lastTouch: ahora, firmadaEn: ahora,
+    mockup: { file: m, sha256: screen.problemaDeLaMaqueta(m).sha256, approval: 'la aprobó Ana' }, capture: { file: captura } }));
+  fs.appendFileSync(path.join(estado(h), 'gates.log'), `${JSON.stringify({ name: 'adhoc-lane-signed', status: 'ok', destino: SID, ts: ahora })}\n`);
+  const r = guardar(d, h);
+  assert.ok(r && r.texto, JSON.stringify(r));
+  assert.match(r.texto, /le faltan? \d+ texto/);
+  assert.match(r.texto, /Corregí la pantalla/);
+  assert.match(r.texto, /Volvé a aprobar la maqueta/);
+  assert.match(r.texto, /maqueta-diferencias\.md/);
+  assert.match(r.texto, /differs:/);
+});
+
 test('CaminoRapido_PreguntaComoUnaCorrida (T15)', (t) => {
   const h = home(t);
   const a = repoConOrigin(t);

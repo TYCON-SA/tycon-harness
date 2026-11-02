@@ -1000,7 +1000,11 @@ function decidirCarril({ command, cwd, sid, home }) {
   // el trabajo de otro repo no es de este carril: no le pide su maqueta. La pantalla va antes que el riesgo: la maqueta y
   // la captura pueden ser archivos del repo, y los revisores tienen que medir lo que se guarda con ellas
   const delCarril = !repos.length || dudas.length || reposDelComando.length < cs.length || cs.some((c) => c.opaco || c.tipo === 'pr') || reposDelComando.some((r) => repos.includes(r));
-  const pantalla = delCarril ? frenoDePantalla(a, sid, home, repos.length ? [] : reposDelComando) : null;
+  // los del carril, aunque la carpeta de lo anotado ya no esté (se borró con su pantalla); sin ninguno, los del comando
+  const reposDeLoQueSeGuarda = repos.length ? repos : reposDelComando;
+  const tope = delCarril ? frenoDelTope(a, sid, home, reposDeLoQueSeGuarda) : null;
+  if (tope) return tope;
+  const pantalla = delCarril ? frenoDePantalla(a, sid, home, reposDeLoQueSeGuarda) : null;
   if (pantalla && pantalla.texto) return pantalla;
   const riesgo = frenoDelRiesgo(a, sid, home, reposDelComando);
   if (riesgo) return riesgo;
@@ -1014,6 +1018,34 @@ function decidirCarril({ command, cwd, sid, home }) {
     if (!repos.length || (r && repos.includes(r))) return { pregunta: `¿GUARDO? «${c.forma}»${r ? ` sobre ${r}` : ''}, ${de}. ${como}` };
   }
   return null;
+}
+
+// ── el tope del camino corto ────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Un carril que cambió más archivos de implementación que su cupo no guarda: `{ texto }`, con los archivos contados. Mide
+ * lo que el arreglo cambió de verdad, así que ve lo que el conteo al editar no vio, y cerrar y reabrir el carril en la misma
+ * rama no empieza de cero. Dentro del cupo, null. Si git no contesta tampoco guarda: sin medir no hay verde.
+ */
+function frenoDelTope(a, sid, home, repos) {
+  const io = require('./story-gate-io.js');
+  const gate = require('./story-gate.js');
+  const dir = path.dirname(path.dirname(require('./open-runs.js').markerPath(sid, home)));
+  let c;
+  try { c = require('./adhoc-base.js').cuentaDelCarril(a, { repos }); } catch (e) { c = { archivos: [], avisos: [], fallas: [e.message] }; }
+  if (c.fallas.length) {
+    io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `tope del carril sin medir: ${c.fallas[0]}` });
+    return { texto: `🔒 GUARDAR: no pude medir cuántos archivos cambió este camino corto (${c.fallas[0]}). Sin medir no guarda: arreglá eso y repetí el comando.` };
+  }
+  for (const m of c.avisos) {
+    process.stderr.write(`⚠️  ${m}\n`);
+    io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'unknown', reason: m });
+  }
+  const cupo = gate.cupoDelCarril(a);
+  if (c.archivos.length <= cupo) return null;
+  io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `camino corto: ${c.archivos.length} archivos de implementación con cupo ${cupo}`, archivos: c.archivos });
+  const harness = (() => { try { return io.isHarnessRepo(c.archivos[0]); } catch (_) { return true; } })();
+  return { texto: `🔒 GUARDAR: no guarda.\n${gate.textoDelTope({ harness, tocados: c.archivos.length, cupo, archivos: c.archivos })}` };
 }
 
 // ── la pantalla del camino rápido ───────────────────────────────────────────────────────────────────────────────────
@@ -1030,15 +1062,28 @@ function frenoDePantalla(a, sid, home, repos) {
   try { r = require('./adhoc-screen.js').revisar(a, repos); } catch (e) { r = { sinMedir: e.message }; }
   if (r.sinMedir) {
     io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `pantalla del carril sin medir: ${r.sinMedir}` });
+    if (r.deLaMaqueta) return { texto: `🔒 GUARDAR: no pude comparar la pantalla con su maqueta (${r.sinMedir}). Sin medir no guarda.` };
     return { texto: `🔒 GUARDAR: no pude medir si este camino rápido toca una pantalla (${r.sinMedir}). Sin medir no guarda: arreglá eso y repetí el comando.` };
   }
-  for (const m of r.avisos || []) {
-    process.stderr.write(`⚠️  ${m}\n`);
-    io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'unknown', reason: m });
-  }
+  // los avisos de lo que se midió con menos ya los dio el freno del tope, que mide lo mismo
   if (!r.pantallas.length) return null;
-  if (!r.faltan.length) return { mostrar: r.mostrar };
+  if (!r.faltan.length) {
+    for (const reason of r.registro || []) io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'ok', reason });
+    return { mostrar: r.mostrar };
+  }
   const marker = gate.MARKER_JS;
+  if (r.textosQueFaltan) {
+    io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `faltan ${r.textosQueFaltan.total} textos de la maqueta` });
+    return { texto: [
+      `🔒 GUARDAR: este camino corto toca una pantalla (${r.pantallas[0]}) y le faltan ${r.textosQueFaltan.total} texto(s) de su maqueta aprobada:`,
+      ...r.faltan.map((f) => `  · ${f}`),
+      '  Se completa de una de estas tres formas:',
+      '   1. Corregí la pantalla, para que diga ese texto.',
+      `   2. Volvé a aprobar la maqueta, si lo que cambió es ella: node ${marker} adhoc set '{"reason":"<el motivo>","mockup":"<ruta>","mockupApproved":"<quién la aprobó y por qué vía>"}'`,
+      `   3. Declará la diferencia en ${r.textosQueFaltan.diferencias}, con un renglón \`- «<texto>» — differs: <por qué>\`. Si no se puede comparar: \`mockup-compare: no — <motivo>\`.`,
+      '  Se comparan los textos, no el dibujo: un texto que ya existe en otra pantalla del repo pasa.',
+    ].join('\n') };
+  }
   const mockup = marker.replace(/marker\.js$/, 'mockup.js');
   return { texto: [
     `🔒 GUARDAR: este camino rápido toca una pantalla (${r.pantallas[0]}) y le falta:`,

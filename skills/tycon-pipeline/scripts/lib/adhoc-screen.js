@@ -14,6 +14,9 @@
  * Qué es una pantalla lo dice el pipeline (`ui-signal.js`, con la regla `screen_test` de la organización), archivo por
  * archivo; una prueba no lo es. La captura vale si es más nueva que el último cambio de los archivos del carril.
  *
+ * Con las dos, lo construido se compara con la maqueta (`compararConLaMaqueta`): compara textos, no el dibujo, y un texto
+ * que ya existe en otra pantalla del repo pasa. Una diferencia se declara en `<maqueta>-diferencias.md`, al lado de ella.
+ *
  * Lo que no ve: la fecha de un archivo se puede cambiar, y una imagen de verdad puede no mostrar esa pantalla. Sin la base
  * del carril (sin red al abrirlo) mide lo anotado y el commit, no el resto de la rama: sigue y lo avisa, como el resto del
  * camino rápido.
@@ -144,19 +147,81 @@ function fechaDelCambio(abs) {
 // de verdad (la ruta `/test` de `src/app/test/page.tsx`).
 const esPrueba = (rel) => /\.(test|spec)\.[^./]+$/i.test(rel) || /(^|\/)__tests__\//.test(rel) || /^(tests?|e2e)\//i.test(rel);
 
+const TANDA_DE_PANTALLAS = 50;
+const MAS_NOMBRADOS = 5;
+const TOPE_COMPARAR_MS = 20000;
+// se lee al comparar, y un 0 vale: las pruebas agotan el tiempo con él
+const topeDeComparar = () => { const v = process.env.TYCON_ADHOC_COMPARE_TIMEOUT_MS; return v !== undefined && Number.isFinite(Number(v)) ? Number(v) : TOPE_COMPARAR_MS; };
+
+/** El archivo de las diferencias, al lado de la maqueta. */
+const archivoDeDiferencias = (maqueta) => `${String(maqueta).replace(/\.html?$/i, '')}-diferencias.md`;
+
+/** El resto de las pantallas de un repo: las mismas extensiones que busca la revisión de una historia, sin las pruebas. */
+function otrasPantallas(repo, yaMiradas) {
+  const lista = execFileSync('git', ['-C', repo, '-c', 'core.quotepath=false', 'ls-files', '-z'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 5000 });
+  return lista.split('\0').filter((rel) => rel && /\.(tsx|jsx|vue|svelte)$/i.test(rel) && !esPrueba(rel))
+    .map((rel) => ({ rel, abs: path.join(repo, rel) })).filter((s) => !yaMiradas.has(s.abs));
+}
+
+/**
+ * Lo construido contra la maqueta aprobada, con la misma comparación que una historia (`compareWithScreens`): primero en
+ * las pantallas del carril y lo que falta en el resto de las pantallas de sus repos, por tandas, hasta que no falte nada o
+ * se acabe el tiempo. `{ faltan, declaradas, imposible }` o `{ sinMedir }`. Compara textos, no el dibujo: un texto que ya
+ * existe en otra pantalla pasa.
+ */
+function compararConLaMaqueta(adhoc, pantallas, repos) {
+  const mk = require('../mockup.js');
+  const desde = Date.now();
+  const tope = topeDeComparar();
+  const dif = archivoDeDiferencias(adhoc.mockup.file);
+  const agotado = () => ({ sinMedir: `se agotaron los ${Math.round(tope / 1000)} segundos de la comparación: repetí el comando, o declará en ${enUnRenglon(dif)} la línea \`mockup-compare: no — <motivo>\`` });
+  let md = '';
+  try { md = fs.readFileSync(dif, 'utf8'); } catch (e) {
+    if (e.code !== 'ENOENT') return { sinMedir: `no pude leer ${enUnRenglon(dif)} (${e.code || e.message})` };
+  }
+  // la misma línea que lee la revisión de una historia (qa-guide.js): el motivo va en ese renglón
+  const imposible = md.match(/^[ \t]*[-*]?[ \t]*mockup-compare:[ \t]*no[ \t]*[—–-]+[ \t]*(\S.*?)[ \t]*$/im);
+  if (imposible) return { faltan: [], declaradas: [], imposible: imposible[1] };
+  let textos;
+  try { textos = mk.mockupTexts(fs.readFileSync(adhoc.mockup.file, 'utf8')); } catch (e) { return { sinMedir: `no pude leer la maqueta (${e.code || e.message})` }; }
+  if (!textos) return { sinMedir: `${enUnRenglon(adhoc.mockup.file)} no es una maqueta de mockup.js` };
+  const legibles = pantallas.filter((abs) => fs.existsSync(abs)).map((abs) => ({ rel: abs, abs }));
+  if (!legibles.length) return { sinMedir: `el carril no tiene pantallas que se puedan leer: si sólo borró una, declará en ${enUnRenglon(dif)} la línea \`mockup-compare: no — <motivo>\`` };
+  if (Date.now() - desde >= tope) return agotado();
+  const delCarril = mk.compareWithScreens({ texts: textos, screens: legibles, md });
+  if (delCarril.unreadable.length) return { sinMedir: `no pude leer la pantalla ${enUnRenglon(delCarril.unreadable[0].rel)} (${delCarril.unreadable[0].error})` };
+  let faltan = delCarril.missing;
+  const declaradas = delCarril.declared;
+  if (!faltan.length) return { faltan, declaradas, imposible: null };
+  const yaMiradas = new Set(legibles.map((s) => s.abs));
+  let ilegible = null;
+  for (const repo of repos) {
+    let resto;
+    try { resto = otrasPantallas(repo, yaMiradas); } catch (e) { return { sinMedir: `git no contestó en ${enUnRenglon(repo)} (${String(e.message || e).split('\n')[0]})` }; }
+    for (let i = 0; i < resto.length && faltan.length; i += TANDA_DE_PANTALLAS) {
+      if (Date.now() - desde >= tope) return agotado();
+      const c = mk.compareWithScreens({ texts: faltan, screens: resto.slice(i, i + TANDA_DE_PANTALLAS), md });
+      if (c.unreadable.length && !ilegible) ilegible = c.unreadable[0];
+      faltan = c.missing;
+    }
+  }
+  // una pantalla sin leer podría tener lo que falta: no mirar no es «falta»
+  if (faltan.length && ilegible) return { sinMedir: `no pude leer la pantalla ${enUnRenglon(ilegible.rel)} (${ilegible.error})` };
+  return { faltan, declaradas, imposible: null };
+}
+
 function revisar(adhoc, repos = []) {
-  const { archivosDelCarril } = require('./adhoc-base.js');
+  const { propiosDelCarril } = require('./adhoc-base.js');
   const { isCodeFile } = require('./story-gate.js');
   const { fileTouchesUi } = require('./ui-signal.js');
-  // un repo anotado que ya no está (un worktree borrado) no tiene nada que guardar: no es «no pude medir». Otro error al
-  // mirarlo (sin permiso, un disco desmontado) sí lo es, y sube
-  const sigue = (repo) => { try { fs.statSync(repo); return true; } catch (e) { if (e.code === 'ENOENT' || e.code === 'ENOTDIR') return false; throw e; } };
-  const bases = Object.fromEntries(Object.entries(adhoc.bases || {}).filter(([repo]) => sigue(repo)));
-  const { porRepo, fallas, avisos } = archivosDelCarril({ ...adhoc, bases }, { repos });
+  // lo que el arreglo cambió de verdad: lo traído de `main` no pide maqueta ni captura
+  const { porRepo, fallas, avisos } = propiosDelCarril(adhoc, { repos });
   if (fallas.length) return { sinMedir: fallas[0] };
   const anotadas = new Set([adhoc.mockup, adhoc.capture].filter((x) => x && typeof x.file === 'string').map((x) => rutaReal(x.file)));
   const regla = reglaDePantalla();
   const pantallas = [];
+  // `pantallas` va al texto que lee la persona; la comparación abre las rutas tal cual
+  const rutasDePantallas = [];
   let ultimaEdicion = -Infinity;
   for (const repo of Object.keys(porRepo)) {
     const nombre = nombreDelRepo(repo);
@@ -164,14 +229,26 @@ function revisar(adhoc, repos = []) {
       const abs = path.join(repo, rel);
       if (anotadas.has(rutaReal(abs))) continue;
       const esPantalla = !esPrueba(rel) && fileTouchesUi(rel, repo, regla, nombre);
-      if (esPantalla) pantallas.push(enUnRenglon(abs));
+      if (esPantalla) { pantallas.push(enUnRenglon(abs)); rutasDePantallas.push(abs); }
       if (!esPantalla && !isCodeFile(rel)) continue;
       ultimaEdicion = Math.max(ultimaEdicion, fechaDelCambio(abs));
     }
   }
   if (!pantallas.length) return { pantallas, faltan: [], mostrar: null, avisos };
   const dicha = (x) => (x && typeof x.file === 'string' ? enUnRenglon(x.file) : 'sin anotar');
-  return { pantallas, faltan: faltantes(adhoc, ultimaEdicion), mostrar: `Maqueta: ${dicha(adhoc.mockup)} · captura: ${dicha(adhoc.capture)}.`, avisos };
+  const mostrar = `Maqueta: ${dicha(adhoc.mockup)} · captura: ${dicha(adhoc.capture)}.`;
+  const faltan = faltantes(adhoc, ultimaEdicion);
+  if (faltan.length) return { pantallas, faltan, mostrar, avisos };
+  const c = compararConLaMaqueta(adhoc, rutasDePantallas, Object.keys(porRepo));
+  if (c.sinMedir) return { sinMedir: c.sinMedir, deLaMaqueta: true };
+  if (c.faltan.length) {
+    return { pantallas, mostrar, avisos, faltan: [...new Set(c.faltan.map((x) => x.text))].slice(0, MAS_NOMBRADOS).map((x) => `el texto «${enUnRenglon(x)}» de la maqueta`),
+      textosQueFaltan: { total: new Set(c.faltan.map((x) => x.text)).size, diferencias: archivoDeDiferencias(adhoc.mockup.file) } };
+  }
+  // lo que no se comparó queda a la vista: en la pregunta de guardar y en el registro
+  const registro = c.imposible ? [`comparación con la maqueta declarada imposible: ${enUnRenglon(c.imposible)}`]
+    : c.declaradas.map((d) => `diferencia declarada con la maqueta: «${enUnRenglon(d.text)}» — differs: ${enUnRenglon(d.motivo)}`);
+  return { pantallas, faltan: [], mostrar: [mostrar, ...registro].join(' '), registro, avisos };
 }
 
 module.exports = { revisar, problemaDeLaMaqueta, problemaDeLaCaptura, enUnRenglon, pedidoPorBanderas, motivoSeCita };

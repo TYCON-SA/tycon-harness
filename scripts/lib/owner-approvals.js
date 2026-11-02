@@ -119,11 +119,12 @@ function sesionesNombradas(texto) {
 
 /**
  * El cuadro de una firma: lo arma el guion, y el agente lo muestra tal cual. `sello`: lo que ata la aprobación a esa firma,
- * esa sesión y ese comando (`huella`); `pregunta`: el texto entero, con qué se aprueba y qué pasa si sale mal.
+ * esa sesión y ese comando (`huella`); `pregunta`: el texto entero, con qué se aprueba y qué pasa si sale mal. Con
+ * `soloClick`, sólo lo aprueba un click en la sesión que trabaja, y el cuadro se muestra con sus `descripciones`.
  */
-function cuadroDe({ firma, destino, que, detalle, siSaleMal, huella }) {
+function cuadroDe({ firma, destino, que, detalle, siSaleMal, huella, soloClick = false, descripciones = null }) {
   const sello = `firma ${firma} · sesión ${destino} · código ${huella}`;
-  return { sello, pregunta: `¿Aprobás ${una(que, 200)}? Detalle: ${una(detalle, 900)}. Si sale mal: ${una(siSaleMal, 200)}. (${sello})`, opciones: [APRUEBA, NIEGA] };
+  return { sello, pregunta: `¿Aprobás ${una(que, 200)}? Detalle: ${una(detalle, 900)}. Si sale mal: ${una(siSaleMal, 200)}. (${sello})`, opciones: [APRUEBA, NIEGA], ...(soloClick ? { soloClick: true, descripciones } : {}) };
 }
 
 /**
@@ -282,7 +283,7 @@ function mensajeEnLaTranscripcion(ruta, a, { sello, destino, pregunta } = {}) {
  * El cuadro en la transcripción: la pregunta es la que armó el guion, la respuesta es la del registro, a esa hora, y no la
  * dio un gancho. `{ ok }` o `{ ok: false, motivo }`.
  */
-function clickEnLaTranscripcion(ruta, a, { pregunta, opciones } = {}) {
+function clickEnLaTranscripcion(ruta, a, { pregunta, opciones, descripciones } = {}) {
   let rs;
   try { rs = renglones(ruta); } catch (e) { return { ok: false, motivo: `no pude leer la transcripción (${e.code || e.message})` }; }
   if (!a.tool_use_id) return { ok: false, motivo: 'el click no dice qué cuadro contestó' };
@@ -304,6 +305,7 @@ function clickEnLaTranscripcion(ruta, a, { pregunta, opciones } = {}) {
   const mostrada = ((r.toolUseResult && r.toolUseResult.questions) || []).find((q) => q && q.question === pregunta);
   const etiquetas = mostrada && Array.isArray(mostrada.options) ? mostrada.options.map((o) => o && o.label) : null;
   if (!opciones || JSON.stringify(etiquetas) !== JSON.stringify(opciones)) return { ok: false, motivo: 'las opciones del cuadro no son las que armó el guion: mostralas tal cual' };
+  if (descripciones && JSON.stringify(mostrada.options.map((o) => o && o.description)) !== JSON.stringify(descripciones)) return { ok: false, motivo: 'las descripciones del cuadro no son las que armó el guion: mostralas tal cual' };
   return { ok: true };
 }
 
@@ -590,17 +592,19 @@ function coordinadoraConfirmada(casa) {
 function buscar({ casa, sesion, destino = sesion, cuadro, coordinadora = null, ahora = Date.now(), cwd, herramienta = null, validar, arbol } = {}) {
   if (!SESION.test(String(sesion || ''))) return { ok: false, motivo: 'la firma no dice de qué sesión es' };
   if (!cuadro || !cuadro.pregunta || !cuadro.sello) return { ok: false, motivo: 'no pude armar el cuadro de esta firma' };
-  const sesiones = [sesion, ...(coordinadora && coordinadora !== sesion && SESION.test(coordinadora) ? [coordinadora] : [])];
+  // un cuadro de sólo click vale en la pestaña que hace el trabajo: ni la coordinadora ni un mensaje escrito lo contestan
+  const soloClick = !!cuadro.soloClick;
+  const sesiones = [sesion, ...(!soloClick && coordinadora && coordinadora !== sesion && SESION.test(coordinadora) ? [coordinadora] : [])];
   let candidatas = [];
   try { for (const s of sesiones) candidatas.push(...leerSesion(casa, s).filter((r) => r.sesion === s)); } catch (e) { return { ok: false, motivo: e.message }; }
   candidatas = candidatas.filter((r) => {
     const edad = ahora - Date.parse(r.ts);
-    if (!(edad >= 0 && edad <= VENCE_MIN * 60000 && (r.tipo === 'click' || r.tipo === 'mensaje') && !usada(casa, r.id))) return false;
+    if (!(edad >= 0 && edad <= VENCE_MIN * 60000 && (r.tipo === 'click' || (r.tipo === 'mensaje' && !soloClick)) && !usada(casa, r.id))) return false;
     // la de la propia sesión la anotó el mismo proceso de la herramienta que firma: otra copia de la sesión (abierta con
     // `--resume` por un agente) no aprueba por ella
     return !herramienta || r.sesion !== sesion || (r.herramienta && r.herramienta.pid === herramienta.pid && r.herramienta.inicio === herramienta.inicio);
   }).sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts));
-  if (!candidatas.length) return { ok: false, motivo: 'no hay un click en el cuadro ni un «aprobado» tuyo de los últimos 30 minutos sin usar' };
+  if (!candidatas.length) return { ok: false, motivo: soloClick ? 'no hay un click en el cuadro de esta pestaña de los últimos 30 minutos sin usar' : 'no hay un click en el cuadro ni un «aprobado» tuyo de los últimos 30 minutos sin usar' };
   const check = validar || ((a, ctx) => validarEnClaude(a, ctx));
   let leido = arbol;
   let motivo = null;
@@ -639,7 +643,7 @@ function validarEnClaude(a, { casa = os.homedir(), cwd, cuadro, destino, linea, 
     if (e.ilegibles.length) return { ok: false, motivo: `no pude leer ${e.ilegibles[0]}, y sin leerla no sé si un gancho contestó el cuadro` };
     if (e.ajenos.length) return { ok: false, motivo: `un gancho que no es del arnés escucha el cuadro (${e.ajenos[0].evento} en ${e.ajenos[0].archivo}): mientras esté, el click no vale; escribí «aprobado»` };
   }
-  return clickEnLaTranscripcion(ruta, a, { pregunta: cuadro.pregunta, opciones: cuadro.opciones });
+  return clickEnLaTranscripcion(ruta, a, { pregunta: cuadro.pregunta, opciones: cuadro.opciones, descripciones: cuadro.descripciones });
 }
 
 module.exports = { VENCE_MIN, ENVUELTO, PERMITIDOS, APRUEBA, NIEGA, carpeta, esAprobacion, mensajeDeLaPersona, respuestaDelCuadro, cuadroDe, traeElSello, lanzadoPorLaHerramienta,
