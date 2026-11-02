@@ -187,6 +187,26 @@ firma con la forma normal de abrir Codex: la terminal usa un servidor compartido
 contesta el cuadro con un resultado idéntico al de un click. El comando `codex queue`, además, mete un mensaje que para el
 gancho se ve igual que uno tipeado. Medido en Codex 0.162.1.
 
+### En Windows
+
+En Windows no se leen los procesos de la máquina, así que la ventana de permiso, el click y el «aprobado» no firman. Cada
+firma se da con `--terminal`, que abre una ventana nueva donde escribís tres palabras al azar.
+
+**Rodeo para abrir un arreglo rápido, hasta que se corrija.** `adhoc set --terminal` no llega a abrir esa ventana: rechaza
+las comillas del JSON, y el JSON siempre las lleva. Mientras tanto, la abrís vos desde PowerShell, con este comando en una
+sola línea:
+
+```powershell
+$env:TYCON_WAIVER_IN_WINDOW='1'; Start-Process node -ArgumentList '"<carpeta>\marker.js" adhoc set "{\"reason\":\"<motivo>\",\"maxFiles\":10}" --terminal --for-session <id>'
+```
+
+- `<carpeta>` es `skills\tycon-pipeline\scripts`, dentro de tu arnés, con la ruta entera.
+- `<motivo>` va sin comillas, y `<id>` es el id de la sesión.
+- Al terminar, cerrá esa consola de PowerShell: la variable queda puesta ahí.
+
+El control es el mismo: el arnés comprueba que la consola sea nueva y pide las tres palabras. Sólo cambia quién abre la
+ventana. Lo midió un dev en Windows real, con el arnés 2026.11.02.15: firmó, y `adhoc.log` dice `via: terminal`.
+
 ## Las firmas
 
 La columna «¿Desde otra sesión?» dice si el comando se puede correr desde la pestaña de otra sesión (medido el
