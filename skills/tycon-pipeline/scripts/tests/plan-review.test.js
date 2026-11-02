@@ -634,6 +634,115 @@ test('Delicado_ConRevisionAprobada_EsperaAlDev (T11) @story-1.29 @ac-9', (t) => 
   assert.match(r.stderr, /plan delicado \(nivel 2\): lo aprueba el dev/);
 });
 
+// ── el «aprobado» del dueño en la pestaña de la coordinadora: la firma es suya, y lo delicado pasa ────────────────────
+const oa = require(path.join(RAIZ, 'scripts', 'lib', 'owner-approvals.js'));
+/** Lo que deja un «aprobado» tipeado en la pestaña de ses-coord: la transcripción con lo que dijo el agente, y el registro del gancho. */
+function aprobadoDelDueno(lab, dijo) {
+  const ts = new Date(AHORA - 60000).toISOString();
+  const dir = path.join(lab.home, '.claude', 'projects', '-r-proyecto');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${COORD}.jsonl`), `${[
+    { type: 'assistant', timestamp: new Date(AHORA - 120000).toISOString(), message: { role: 'assistant', content: [{ type: 'text', text: dijo }] } },
+    { type: 'user', timestamp: ts, message: { role: 'user', content: 'aprobado' }, origin: { kind: 'human' }, promptSource: 'typed', entrypoint: 'cli' },
+  ].map((r) => JSON.stringify(r)).join('\n')}\n`);
+  const h = arbolDelFreno().find((p) => ow.esHerramienta(p));
+  oa.anotar(lab.home, { tipo: 'mensaje', sesion: COORD, ts, texto: 'aprobado', herramienta: { pid: h.pid, inicio: h.inicio } });
+}
+
+test('Delicado_ConAprobadoDelDueno_PasaYQuedaASuNombre', (t) => {
+  const plan = '# Plan\n\n1. Tocar el README.md del repositorio de juguete.\n';
+  const lab = laboratorio(t, { sensible: 'seguridad', plan });
+  // con el plan a la vista: con riesgo bajo, un ok a una pregunta que no lo trae no aprueba, tampoco desde esta pestaña
+  aprobadoDelDueno(lab, `Firma plan-approval, sesión ${DESTINO}. ¿Lo aprobás?\n\n${plan}`);
+  const p = lab.pedir(lab.comando(APROBAR), { delegada: true });
+  assert.deepStrictEqual([p.decision, p.via], ['allow', 'mensaje'], p.texto);
+  const r = lab.correr(APROBAR);
+  assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  const pa = JSON.parse(lab.leer(DESTINO)).planApproval;
+  assert.deepStrictEqual([pa.mode, pa.via], ['user', 'mensaje']);
+  assert.strictEqual(pa.revision, undefined, 'no se apoya en la revisión automática');
+  const anotada = lab.aprobaciones().find((a) => a.que === 'plan');
+  assert.strictEqual(anotada.tipo, 'manual', JSON.stringify(anotada));
+  assert.deepStrictEqual(lab.firmas().filter((f) => f.signature === 'plan-approval').map((f) => f.via), ['message']);
+});
+
+test('Aprobado_UnNombreEscritoEnElComando_NoReemplazaALaPersona', (t) => {
+  const plan = '# Plan\n\n1. Tocar el README.md del repositorio de juguete.\n';
+  const lab = laboratorio(t, { sensible: 'seguridad', plan });
+  aprobadoDelDueno(lab, `Firma plan-approval, sesión ${DESTINO}. ¿Lo aprobás?\n\n${plan}`);
+  const args = [...APROBAR, '--approved-by', 'Otra-Persona'];
+  const p = lab.pedir(lab.comando(args), { delegada: true });
+  assert.deepStrictEqual([p.decision, p.via], ['allow', 'mensaje'], p.texto);
+  const r = lab.correr(args);
+  assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  const anotada = lab.aprobaciones().find((a) => a.que === 'plan');
+  assert.strictEqual(anotada.tipo, 'manual', JSON.stringify(anotada));
+  assert.notStrictEqual(anotada.quien, 'Otra-Persona');
+});
+
+test('Aprobado_ParaOtraSesion_NoFirmaElPlanDeLaPestana', (t) => {
+  // la sesión de la pestaña corre su propio plan con el «aprobado» que era para otra
+  const plan = '# Plan\n\n1. Tocar el README.md del repositorio de juguete.\n';
+  const lab = laboratorio(t, { sensible: 'seguridad', plan });
+  aprobadoDelDueno(lab, `Firma plan-approval, sesión ses-otra. ¿Lo aprobás?\n\n${plan}`);
+  const cmd = lab.comando(['complete-step', 'approve-plan', '--approved', 'el plan']);
+  const p = ow.decidir({ evento: { session_id: COORD, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'bypassPermissions', tool_input: { command: cmd } },
+    escapes: [], arbol: arbolDelFreno(), pid: 201, casa: lab.home, ahora: AHORA, delegacion: () => ({ ok: false, motivo: 'la sesión que implementa no se firma sola sin ventana' }), clasificar: () => null, comprobar: () => null });
+  assert.notStrictEqual(p.via, 'mensaje', p.texto);
+});
+
+test('Delicado_ConAprobadoSinElPlanALaVista_RiesgoBajo_NoGastaLaAprobacion', (t) => {
+  const lab = laboratorio(t, { sensible: 'seguridad' });
+  aprobadoDelDueno(lab, `Firma plan-approval, sesión ${DESTINO}: ¿lo aprobás?`);
+  const p = lab.pedir(lab.comando(APROBAR), { delegada: true });
+  assert.strictEqual(p.decision, 'deny', p.texto);
+  assert.match(p.texto, /aprobó sin ver el plan/);
+  assert.deepStrictEqual(fs.existsSync(path.join(oa.carpeta(lab.home), 'usadas')) ? fs.readdirSync(path.join(oa.carpeta(lab.home), 'usadas')) : [], []);
+});
+
+test('Delicado_DelegacionSinAprobado_SigueFrenadaYDiceComoAprobar', (t) => {
+  const lab = laboratorio(t, { sensible: 'seguridad' });
+  lab.revisar(APROBADO);
+  const r = aprobarPorDelegacion(lab);
+  assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /plan delicado \(nivel 2\): lo aprueba el dev/);
+  assert.match(r.stderr, new RegExp(`«firma plan-approval» y «sesión ${DESTINO}»`));
+  assert.match(r.stderr, /no hay un click en el cuadro ni un «aprobado» tuyo/);
+  assert.strictEqual(JSON.parse(lab.leer(DESTINO)).planApproval, undefined);
+});
+
+test('Delicado_AprobadoQueNoNombraEstaFirmaOEstaSesion_NoPasa', (t) => {
+  for (const [dijo, motivo] of [
+    ['Firma plan-approval: ¿lo aprobás?', /ni «sesión ses-a»/], // sin la sesión, un «aprobado» al plan de otra serviría para éste
+    ['Firma plan-approval, sesión ses-b: ¿lo aprobás?', /ni «sesión ses-a»/],
+    ['Firma save, sesión ses-a: ¿lo guardo?', /no nombra «firma plan-approval»/],
+    ['¿Te parece bien el formato?', /no nombra «firma plan-approval»/],
+  ]) {
+    const lab = laboratorio(t, { sensible: 'seguridad' });
+    aprobadoDelDueno(lab, dijo);
+    const p = lab.pedir(lab.comando(APROBAR), { delegada: true });
+    assert.strictEqual(p.via, 'delegacion', dijo);
+    const r = lab.correr(APROBAR);
+    assert.strictEqual(r.status, 2, `${dijo}: ${r.stdout}${r.stderr}`);
+    assert.match(r.stderr, /plan delicado/, dijo);
+    assert.match(r.stderr, motivo, dijo);
+    assert.strictEqual(JSON.parse(lab.leer(DESTINO)).planApproval, undefined, dijo);
+  }
+});
+
+test('Carril_ConAprobadoDelDueno_SeDeclara', (t) => {
+  const lab = laboratorio(t);
+  aprobadoDelDueno(lab, `Firma adhoc-lane, sesión ${DESTINO}: arreglo rápido de hasta 3 archivos.`);
+  const json = JSON.stringify({ reason: 'el arreglo de la prueba', maxFiles: 3 });
+  const args = ['adhoc', 'set', json, '--for-session', DESTINO];
+  const cmd = `node ${MARKER} adhoc set '${json}' --for-session ${DESTINO}`;
+  const p = lab.pedir(cmd, { delegada: true });
+  assert.deepStrictEqual([p.decision, p.via], ['allow', 'mensaje'], p.texto);
+  const r = lab.marker(COORD, args, { arbol: { arbol: arbolDelGuion(lab.home, cmd), pid: 301, ahora: AHORA + 60000 } });
+  assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(lab.estado, 'adhoc', `${DESTINO}.json`), 'utf8')).via, 'mensaje');
+});
+
 test('SinVeredictoORechazadoOSinHerramienta_EsperaAPersona (T12) @story-1.29 @ac-10', (t) => {
   const motivo = /la revisión no dio aprobado: el plan espera a una persona/;
   for (const resultado of [SIN_MEDIR, RECHAZADO]) {
