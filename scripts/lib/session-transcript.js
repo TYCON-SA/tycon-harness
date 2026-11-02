@@ -23,9 +23,15 @@
  * (`peerMessagesSince`, sin el texto). Lo que manda es un `tool_use` de `SendMessage`. Lo que escribe la persona lleva
  * `origin.kind: 'human'`, y un turno termina en un renglón `system` con `subtype: 'stop_hook_summary'`, así que la respuesta a
  * un mensaje es el último texto de su turno. `readConversation` lee esos mensajes hacia atrás y con tope, sólo cuando alguien
- * toca a una persona; el texto no se guarda y las claves se tapan (`coverSecrets`). Codex no se manda mensajes.
+ * abre su ventana; el texto no se guarda y las claves se tapan (`coverSecrets`). Codex no se manda mensajes. El mensaje con el
+ * que arranca una sesión de fondo se guarda como si lo hubiera escrito una persona: no dice quién la abrió.
+ *
+ * Los tokens también salen de acá (`countTokens`): cada turno trae su `usage` y puede ocupar varios renglones con el mismo
+ * `message.id`, así que se cuenta una vez por mensaje. Los agentes de una sesión están en `<sesión>/subagents/`. Codex trae
+ * sus totales y su ventana en cada `token_count`. Se lee por tramos y sólo lo que creció: hay conversaciones de más de 500 MB.
  */
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const HEAD_BYTES = 64 * 1024;
@@ -70,6 +76,39 @@ function firstSentence(text) {
       const said = plainWhole(part);
       if (said && !NOT_WHAT_IT_DOES.test(said)) return cut(said, FRASE_MAX);
     }
+  }
+  return null;
+}
+
+// «Sos Ortega.»: el nombre que le dan a la sesión, no lo que le piden.
+const OWN_NAME = /^Sos\s+(?:la\s+|el\s+)?\S+\.?$/iu;
+// «Hacé el encargo de <archivo>» o «Leé y hacé <archivo>»: el archivo es el encargo. Si sólo lo nombra de paso, no lo es.
+const ENCARGO_FILE = /^(?:hac[eé]\s+el\s+encargo\s|le[eé]\s+y\s+hac[eé]\s).*?((?:~|\/)[^\s«»"']*encargo[^\s«»"']*\.md)(?=[\s.,:;]|$)/iu;
+const ENCARGO_FILE_MAX = 4096;
+const ENCARGO_WORD = /^Encargo:\s*/iu;
+
+// El primer título de un archivo de encargo: sólo un `.md` con «encargo» en el nombre, y sólo su principio.
+function titleOfEncargo(ruta) {
+  const file = ruta.startsWith('~') ? path.join(os.homedir(), ruta.slice(1)) : ruta;
+  let fd;
+  try {
+    fd = fs.openSync(file, 'r');
+    const buf = Buffer.alloc(ENCARGO_FILE_MAX);
+    const n = fs.readSync(fd, buf, 0, ENCARGO_FILE_MAX, 0);
+    const title = /^#\s+(.+)$/m.exec(buf.subarray(0, n).toString('utf8'));
+    return title ? plainWhole(title[1].replace(ENCARGO_WORD, '')) : null;
+  } catch { return null; } finally { if (fd !== undefined) fs.closeSync(fd); }
+}
+
+// Lo que le piden a una sesión en su primer mensaje: sin «Sos X.». Si apunta a un archivo de encargo, su título; si una oración
+// no se puede decir entera por una ruta, lo que dice antes de los dos puntos; si no, la siguiente que se pueda decir.
+function encargoOf(text) {
+  for (const part of oneLine(text).split(SENTENCES).map((s) => s.trim()).filter((s) => s && !OWN_NAME.test(s))) {
+    const pointer = ENCARGO_FILE.exec(part);
+    const title = pointer && titleOfEncargo(pointer[1]);
+    if (title) return title;
+    const said = plainWhole(part) || (part.includes(':') ? plainWhole(part.slice(0, part.indexOf(':'))) : null);
+    if (said) return said.replace(ENCARGO_WORD, '') || said;
   }
   return null;
 }
@@ -135,7 +174,7 @@ function readTranscript(file, { io = fs } = {}) {
       if (!e || e.who !== 'user') continue;
       const t = e.texts.find((x) => x.trim() && !notFromPerson(x));
       if (t) {
-        const said = oneLine(t).split(SENTENCES).map(plainWhole).find(Boolean);
+        const said = encargoOf(t);
         if (said) { out.encargo = cut(said, ENCARGO_MAX); break; }
       }
     }
@@ -280,14 +319,133 @@ const personOf = (d) => {
   return t && notFromPerson(t) && !/^\s*<system-reminder>/.test(t) ? null : { texto: t ? shownText(t) : NO_TEXT, at: atOf(d) };
 };
 
+// El primer mensaje de la conversación, de lo que se guarda como escrito por una persona; null si no se lee.
+function startingMessage(file) {
+  let fd;
+  try {
+    fd = fs.openSync(file, 'r');
+    const buf = Buffer.alloc(HEAD_BYTES);
+    const n = fs.readSync(fd, buf, 0, HEAD_BYTES, 0);
+    for (const line of wholeLines(buf.subarray(0, n).toString('utf8'), false, n === HEAD_BYTES)) {
+      const d = parsed(line);
+      const said = d ? personOf(d) : null;
+      if (said) return said;
+    }
+    return null;
+  } catch { return null; } finally { if (fd !== undefined) fs.closeSync(fd); }
+}
+
+const TOKEN_STEP_BYTES = 1024 * 1024;
+const newCount = () => ({ offset: 0, byMessage: new Map(), lectura: 0, escritura: 0, cache: 0, ultimo: null, codex: null });
+
+function addTurn(count, id, u) {
+  const now = { lectura: (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0), escritura: u.output_tokens || 0, cache: u.cache_read_input_tokens || 0 };
+  const was = count.byMessage.get(id) || { lectura: 0, escritura: 0, cache: 0 };
+  for (const k of ['lectura', 'escritura', 'cache']) count[k] += now[k] - was[k];
+  count.byMessage.set(id, now);
+}
+
+function countLine(line, count, isAgent) {
+  const claude = line.includes('"usage"');
+  if (!claude && !line.includes('"token_count"')) return;
+  let d;
+  try { d = JSON.parse(line); } catch { return; }
+  if (!d || typeof d !== 'object') return;
+  if (d.type === 'assistant' && d.message && d.message.usage && typeof d.message.usage === 'object') {
+    const m = d.message;
+    if (m.model === '<synthetic>' || (d.isSidechain && !isAgent)) return;
+    addTurn(count, m.id || d.uuid, m.usage);
+    if (!isAgent) count.ultimo = { contexto: (m.usage.input_tokens || 0) + (m.usage.cache_creation_input_tokens || 0) + (m.usage.cache_read_input_tokens || 0), modelo: typeof m.model === 'string' ? m.model : null };
+    return;
+  }
+  const p = d.type === 'event_msg' && d.payload;
+  if (p && p.type === 'token_count' && p.info && p.info.total_token_usage && p.info.last_token_usage) {
+    count.codex = { total: p.info.total_token_usage, contexto: p.info.last_token_usage.input_tokens, ventana: p.info.model_context_window };
+  }
+}
+
+/** Suma a `count` lo que creció el archivo desde la última vez. Un renglón a medio escribir queda para la próxima. */
+function countTokens(file, count, { isAgent = false } = {}) {
+  let fd;
+  try { fd = fs.openSync(file, 'r'); } catch { return count; }
+  try {
+    const size = fs.fstatSync(fd).size;
+    // más chico que antes: la conversación se reescribió, y se cuenta de nuevo
+    if (size < count.offset) Object.assign(count, newCount());
+    let carry = Buffer.alloc(0);
+    let at = count.offset;
+    while (at < size) {
+      const chunk = Buffer.alloc(Math.min(TOKEN_STEP_BYTES, size - at));
+      const n = fs.readSync(fd, chunk, 0, chunk.length, at);
+      if (!n) break;
+      at += n;
+      const whole = Buffer.concat([carry, chunk.subarray(0, n)]);
+      const lastEnd = whole.lastIndexOf(10);
+      if (lastEnd < 0) { carry = whole; continue; }
+      for (const line of whole.subarray(0, lastEnd).toString('utf8').split('\n')) if (line) countLine(line, count, isAgent);
+      carry = whole.subarray(lastEnd + 1);
+    }
+    count.offset = at - carry.length;
+  } catch { /* lo que no se pudo leer queda sin contar: se reintenta en la próxima foto */ } finally { fs.closeSync(fd); }
+  return count;
+}
+
+// La ventana publicada de cada modelo (al 6/10/2026). Un modelo que no está acá no tiene porcentaje: no se inventa.
+const PUBLISHED_WINDOW = {
+  'claude-fable-5-1': 1000000, 'claude-fable-5': 1000000, 'claude-opus-5-5': 1000000, 'claude-opus-5': 1000000, 'claude-opus-4-8': 1000000,
+  'claude-opus-4-7': 1000000, 'claude-opus-4-6': 1000000, 'claude-sonnet-5-5': 1000000, 'claude-sonnet-5': 1000000, 'claude-sonnet-4-6': 1000000,
+  'claude-haiku-5-5': 1000000, 'claude-haiku-4-5': 200000,
+};
+
+/**
+ * Contra qué se mide el contexto: el límite donde la sesión se compacta sola, que es lo que dice cuánto le queda; sin él, la
+ * ventana del modelo. Si el contexto pasó el límite, éste no vale para esa sesión: se usa la ventana. null si ninguno sirve.
+ */
+function contextLimit(modelo, contexto, modelSettings) {
+  if (!modelo) return null;
+  const bare = modelo.replace(/\[[^\]]*\]$/, '');
+  const conf = modelSettings && modelSettings[bare];
+  const own = conf && Number.isFinite(conf.autoCompactWindow) && conf.autoCompactWindow > 0 ? conf.autoCompactWindow : null;
+  const published = PUBLISHED_WINDOW[bare] || null;
+  return [own, published].find((v) => v && contexto <= v) || null;
+}
+
+/**
+ * Los tokens de una sesión: `{ contexto, limite, lectura, escritura, cache, agentes }`, o `{ noMedido: true }` sin un conteo
+ * legible. `counts` recuerda por archivo hasta dónde se leyó, y vive lo que viva quien llama.
+ */
+function readSessionTokens(file, counts, { modelSettings } = {}) {
+  const countOf = (f) => { if (!counts.has(f)) counts.set(f, newCount()); return counts.get(f); };
+  const main = countTokens(file, countOf(file));
+  if (main.codex) {
+    const t = main.codex.total;
+    const cached = t.cached_input_tokens || 0;
+    const ventana = Number.isFinite(main.codex.ventana) && main.codex.ventana > 0 ? main.codex.ventana : null;
+    return { contexto: main.codex.contexto, limite: ventana, lectura: Math.max(0, (t.input_tokens || 0) - cached), escritura: t.output_tokens || 0, cache: cached, agentes: 0 };
+  }
+  if (!main.ultimo) return { noMedido: true };
+  const dir = path.join(path.dirname(file), path.basename(file, '.jsonl'), 'subagents');
+  let names = [];
+  try { names = fs.readdirSync(dir).filter((n) => n.endsWith('.jsonl')); } catch { /* sin agentes */ }
+  const total = { lectura: main.lectura, escritura: main.escritura, cache: main.cache };
+  for (const n of names) {
+    const f = path.join(dir, n);
+    const a = countTokens(f, countOf(f), { isAgent: true });
+    for (const k of Object.keys(total)) total[k] += a[k];
+  }
+  const { contexto, modelo } = main.ultimo;
+  return { contexto, limite: contextLimit(modelo, contexto, modelSettings), ...total, agentes: names.length };
+}
+
 /**
  * Los últimos mensajes de una sesión con la coordinadora, en orden: `{ conCoordinadora: [{ de, texto, at, propio }] }`.
  * De la coordinadora: `{ conVos: [{ quien: 'vos' | 'coordinadora', texto, at }], conSesiones: [{ de, a, texto, at }] }`.
  * Lee hacia atrás y termina al juntarlos, o en el tope. Sin el nombre de la coordinadora, no hay con quién cruzar.
  */
-function readConversation(file, { coordinator, isCoordinator = false, maxBytes } = {}) {
+function readConversation(file, { coordinator, isCoordinator = false, background = false, maxBytes } = {}) {
   if (!coordinator) return { sinCoordinadora: true };
   if (!isCoordinator) {
+    const arranque = background ? startingMessage(file) : null;
     const out = [];
     eachLineBackward(file, { maxBytes: maxBytes || SESSION_CONVERSATION_BYTES }, (line) => {
       if (!line.includes('"kind":"peer"') && !line.includes('"SendMessage"')) return false;
@@ -298,7 +456,7 @@ function readConversation(file, { coordinator, isCoordinator = false, maxBytes }
       for (const s of sentOf(d).reverse()) if (s.a === coordinator) out.push({ de: null, texto: s.texto, at: s.at, propio: true });
       return out.length >= WITH_COORDINATOR;
     });
-    return { conCoordinadora: out.slice(0, WITH_COORDINATOR).reverse() };
+    return { conCoordinadora: out.slice(0, WITH_COORDINATOR).reverse(), ...(arranque ? { arranque } : {}) };
   }
   const conVos = [];
   const conSesiones = [];
@@ -338,4 +496,4 @@ function readConversation(file, { coordinator, isCoordinator = false, maxBytes }
   return { conVos: conVos.reverse(), conSesiones: conSesiones.reverse() };
 }
 
-module.exports = { readTranscript, codexTranscript, peerMessagesSince, readConversation, coverSecrets, HEAD_BYTES, TAIL_BYTES, ENCARGO_MAX, FRASE_MAX };
+module.exports = { readTranscript, codexTranscript, peerMessagesSince, readConversation, coverSecrets, readSessionTokens, contextLimit, encargoOf, HEAD_BYTES, TAIL_BYTES, ENCARGO_MAX, FRASE_MAX };
