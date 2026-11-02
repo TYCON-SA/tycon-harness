@@ -265,6 +265,58 @@ run "${R}" "${T}/t8c.out"
 is "T8 la constancia está anclada al cambio: otro cambio de la regla vuelve a rojo" "1" "${RC}"
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# T14 Vocabulario_SubirTechoPideFirma @story-8.154 @ac-14 · el control de las palabras de las guías, desde la base:
+# subir un techo con una palabra nueva frena sin la constancia del dueño; bajarlo junto con la palabra que se va, pasa
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+make_vocab_base() {
+  local r="$1"
+  mkdir -p "${r}/.githooks" "${r}/scripts/ci" "${r}/.github/workflows" "${r}/guides"
+  cat > "${r}/.githooks/pre-commit-checks" <<'SH'
+#!/usr/bin/env bash
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+node "$REPO_ROOT/scripts/ci/vocabulary.js" --repo "$REPO_ROOT" || exit 1
+SH
+  cp "${ROOT}/scripts/ci/vocabulary.js" "${r}/scripts/ci/vocabulary.js"
+  printf '%s\n' '{ "terms": [ { "use": "revisor", "avoid": ["advisor", "advisors"] } ], "exceptions": [], "ceiling": { "guides/x.md": 1 } }' > "${r}/scripts/ci/vocabulary.json"
+  cat > "${r}/scripts/ci/controls-from-base.json" <<'JSON'
+{
+  "hook": ".githooks/pre-commit-checks",
+  "passes": [
+    { "name": "pre-commit", "mode": "index", "cmd": ["bash", ".githooks/pre-commit-checks"] }
+  ],
+  "controls": [
+    { "name": "vocabulary", "script": "scripts/ci/vocabulary.js", "rules": ["scripts/ci/vocabulary.json"] },
+    { "name": "base-controls", "script": "scripts/ci/run-base-controls.sh", "rules": ["scripts/ci/controls-from-base.json"] }
+  ],
+  "content": [],
+  "workflows": [
+    { "path": ".github/workflows/ci.yml", "must_contain": ["run-base-controls"] }
+  ],
+  "approvals": ".tycon/control-changes.jsonl"
+}
+JSON
+  cp "${SCRIPT}" "${r}/scripts/ci/run-base-controls.sh"
+  printf '%s\n' 'name: ci' 'jobs: { ci: { steps: [ { run: "bash run-base-controls" } ] } }' > "${r}/.github/workflows/ci.yml"
+  printf '%s\n' '# Guía' '' 'El revisor, antes advisor.' > "${r}/guides/x.md"
+  ( cd "${r}" && lab_git init -q . && lab_git add -A && lab_git commit -qm base ) > /dev/null 2>&1
+}
+R="${T}/t14v-sube"; make_vocab_base "${R}"; pr "${R}"
+printf '%s\n' 'Y otro advisor más.' >> "${R}/guides/x.md"
+printf '%s\n' '{ "terms": [ { "use": "revisor", "avoid": ["advisor", "advisors"] } ], "exceptions": [], "ceiling": { "guides/x.md": 2 } }' > "${R}/scripts/ci/vocabulary.json"
+commit "${R}"
+run "${R}" "${T}/t14v-sube.out"
+is "T14 subir el techo junto con una palabra nueva: rojo contra la base" "1" "${RC}"
+has "T14 la base frena la palabra nueva, con su línea" "${T}/t14v-sube.out" "guides/x.md:4: «advisor» → revisor"
+has "T14 dice que afloja un control y pide la constancia" "${T}/t14v-sube.out" "afloja un control sin la constancia del dueño"
+R="${T}/t14v-baja"; make_vocab_base "${R}"; pr "${R}"
+printf '%s\n' '# Guía' '' 'El revisor.' > "${R}/guides/x.md"
+printf '%s\n' '{ "terms": [ { "use": "revisor", "avoid": ["advisor", "advisors"] } ], "exceptions": [], "ceiling": { "guides/x.md": 0 } }' > "${R}/scripts/ci/vocabulary.json"
+commit "${R}"
+run "${R}" "${T}/t14v-baja.out"
+is "T14 bajar el techo junto con la palabra que se va: verde, sin constancia" "0" "${RC}"
+has "T14 lo dice" "${T}/t14v-baja.out" "la base y el pedido pasan: entra sin constancia"
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 # T9 · la base no se lee
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 R="${T}/t9"; make_base "${R}"; pr "${R}"; printf 'limpio\n' > "${R}/docs/otro.txt"; commit "${R}"
