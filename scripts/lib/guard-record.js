@@ -146,6 +146,9 @@ const FRENOS = {
     reglas: ['finding', 'could-not-look', 'disabled', 'clean'],
     veredictos: ['bloqueo', 'aviso', 'paso', 'escape'],
   },
+  // El tope de sesiones trabajando (scripts/hooks/session-cap-guard.js): anota sólo cuando niega abrir una sesión de
+  // fondo. No tiene `escape`: ninguna variable lo apaga, el tope lo cambia una persona.
+  'session-cap-guard': { reglas: ['tope'], veredictos: ['bloqueo'] },
 };
 
 const REGLA_DESCONOCIDA = 'otra';
@@ -159,6 +162,9 @@ const MOTIVOS = {
   },
   'prod-access-guard': {
     produccion: ['escritura-protegida', 'nombre-armado', 'servidor-no-literal', 'base-de-produccion', 'llavero'],
+  },
+  'session-cap-guard': {
+    tope: ['en-el-tope', 'no-pude-contar', 'no-pude-decidir'],
   },
 };
 

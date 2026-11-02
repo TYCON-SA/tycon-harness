@@ -1124,6 +1124,12 @@ function informe(argv) {
     }
   }
 
+  // las suites de la historia no corrieron: el código de la historia saldría de la cuenta y el porcentaje mentiría
+  if (process.env.TYCON_TEST_GATE_AFTER_MAIN === '1') {
+    cov.touched_lines = null;
+    cov.touched_lines_pct = null;
+    touchedMotivo = 'sin cruce de líneas tocadas: esta corrida eligió sólo lo que trajo main; la cobertura de la historia la midió la corrida anterior';
+  }
   if (touchedMotivo) cov.touched_no_cross_check = touchedMotivo;
   if (cov.touched_lines_pct !== null) {
     cov.threshold_basis = 'touched_lines';

@@ -78,7 +78,8 @@ story causó en otro lado. Cuesta ~2 min; aparecer todas juntas recién en el me
 | `5` | **no pude correr las pruebas**: falta el corredor (`npx`, `dotnet`, `npm`), o el shell lo ve pero no se puede lanzar. No se corrió nada (`halted: true`, `missing_tool`) | NO tocar las pruebas: instalar la herramienta o abrir la sesión con un PATH que la vea, y re-correr el gate |
 | `6` | la suite salió 0 pero **no corrió ninguna prueba** (o no dejó un resumen que las cuente): no es verde | mirar `no_tests_run` en `tests-result.json`: alcance vacío, todas saltadas o `todo`, o un resumen ilegible; corregir eso y re-correr |
 | `7` | **sin acotar**: la corrida del repo hermano no pudo acotarse a lo tocado (no se supo qué se tocó, o ninguna suite lo lee) y no corrió nada. El portón acotado por el repo (`test_gate`) no sale 7: sin saber qué se tocó corre todo, y si ninguna suite lee lo tocado sale 0. No es verde ni rojo (`unscoped: true` con el motivo, `merge_requires_ci: true`; el check `tests` queda `sin-acotar`) | seguir anunciándolo: la cubre la CI del pedido, y el merge exige la CI completa en verde. No forzar la completa en la máquina (`TYCON_GATE_ALL_SUITES=1`) salvo pedido del dev |
-| `75` | **no corrió nada**: otra corrida de las pruebas ya está en marcha en este repo (`run-check tests` lo dice con la hora de inicio, su pid y su sesión). No es verde ni rojo: no escribe `tests-result.json` ni corre los repos hermanos | esperar el resultado de esa corrida, no relanzar. Si quedó colgada, la negativa nombra la carpeta del candado para sacarlo a mano |
+| `75` | **no corrió nada**: otra corrida de las pruebas ya está en marcha en este repo (`run-check tests` lo dice con la hora de inicio, su pid y su sesión), o otra sesión tiene el turno de la suite completa de la máquina (la negativa dice quién; el check `tests` queda en rojo para que un verde viejo no valga). No es verde ni rojo: no escribe `tests-result.json` ni corre los repos hermanos | esperar el resultado de esa corrida, no relanzar. Si quedó colgada, la negativa dice cómo destrabarla |
+| `77` | no sale del portón: es lo que sale el corredor de las suites con el turno de la suite completa en manos de otra sesión, y el portón lo da como `75` | lo mismo que `75` |
 | `76` | **no corrió nada**: en la última corrida completa fallaron suites que todavía no salieron verdes solas (la lista vive en el marcador, `testsFailed`). No escribe `tests-result.json` ni toca el check `tests` | después de un rojo, repetir primero la suite que falló: `bash …/test-gate.sh <repo> <story> --suite <ruta>` (la negativa da el comando de cada una). En verde sale de la lista; con la lista vacía, la completa arranca. Una suite sola nunca cierra este paso |
 | `129` | la corrida se cortó (la terminal se cerró) mientras medía el repo privado adelgazado: la carpeta del árbol armado se borró y la corrida de las suites se cortó. No es verde | re-correr el gate |
 | `130` | la corrida se cortó con Ctrl-C mientras medía el repo privado adelgazado; lo mismo que el `129` | re-correr el gate |
@@ -184,7 +185,9 @@ resueltos, lanzar.**
    línea `adversarial-skip` en `gates.log`). Dejar además el `reason` en `<RUN_DIR>/step-05b-adversarial.md` (el paso
    `step-08-adversarial-pass.md` no se alcanza: `next` lo da por atendido; es el no-op esperado). 🔴 La bandera del
    pase no se escribe a mano, y `complete-step adversarial-pass` frena sin esta constancia. **`run: true` +
-   `early_launch: true`** → seguir.
+   `early_launch: true`** → seguir. **Sale 3 (`waiting_turn: true`)** → otra sesión tiene su pase en vuelo y va uno por
+   vez: no lances. El texto (`turn`) dice quién tiene el lugar. Seguí con los revisores. La coordinadora te avisa cuando
+   se libera, y `pipeline.js next` deja de pedir esperar (`esperar-turno-pase`): ahí lanzá.
 2. Lanzar con el `model` que devuelve el gate: no se pregunta por otro modelo.
 3. 🔴 **Validar `files` NO vacío y de CÓDIGO antes de invocar**: si la lista quedó vacía o mal armada, el workflow
    retorna un no-op instantáneo y el lanzamiento se quema (el guard bloquea relanzar sin `--relaunch`). La lista debe

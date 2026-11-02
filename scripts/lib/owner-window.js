@@ -450,12 +450,12 @@ const vaATerminal = (ids) => ids.some((id) => TERMINAL_SIEMPRE.has(id) || ((firm
  * La aprobación explícita de la persona para la firma pedida (owner-approvals.js): `{ ok, aprobacion, via }` o
  * `{ ok: false, motivo }`. Una por firma: un comando que pide dos no la usa. Lo irreversible no la acepta.
  */
-function aprobacionExplicita({ pendientes, sesion, casa, ahora, cwd, aprobaciones, herramienta }) {
+function aprobacionExplicita({ pendientes, sesion, destino, casa, ahora, cwd, aprobaciones, herramienta }) {
   if (vaATerminal(pendientes)) return { ok: false, motivo: 'esto es irreversible y se firma en la terminal' };
   if (pendientes.length !== 1) return { ok: false, motivo: 'un click o un «aprobado» sirve para una sola firma, y este comando pide más de una' };
   try {
     const oa = aprobaciones || require('./owner-approvals.js');
-    return oa.buscar({ casa, sesion, firma: pendientes[0], coordinadora: oa.coordinadoraConfirmada(casa), ahora, cwd, herramienta });
+    return oa.buscar({ casa, sesion, destino, firma: pendientes[0], coordinadora: oa.coordinadoraConfirmada(casa), ahora, cwd, herramienta });
   } catch (e) { return { ok: false, motivo: `no pude leer las aprobaciones (${e.message})` }; }
 }
 
@@ -466,8 +466,8 @@ function negarSinVentana(motivo, ids, sesion) {
   const que = ids.map((id) => (firmaDe(id) || { approves: id }).approves).join('; ');
   const id = ids[0];
   return { decision: 'deny', firmas: ids, texto: `${motivo}. Esto lo aprueba la persona, sin terminal: mostrale el cuadro de opciones (AskUserQuestion) `
-    + `con una sola pregunta que diga qué se aprueba (${que}), qué pasa si sale mal, y el texto «firma ${id}» (si la aprueba desde la pestaña de la `
-    + `coordinadora, también «sesión ${sesion}»), con las opciones «Sí, aprobar» y «No»; o escribile eso mismo y pedile que conteste «aprobado». `
+    + `con una sola pregunta que diga qué se aprueba (${que}), qué pasa si sale mal, y el texto «firma ${id}» (si se firma para otra sesión que la de la `
+    + `pestaña donde se aprueba, también «sesión ${sesion}»), con las opciones «Sí, aprobar» y «No»; o escribile eso mismo y pedile que conteste «aprobado». `
     + `Con su click o su mensaje, repetí el mismo comando. Si prefiere la terminal: ${t || 'el mismo comando con --terminal'}.` };
 }
 
@@ -681,12 +681,16 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   const sinVentana = modo !== null && !MODOS_QUE_PREGUNTAN.has(modo);
   // donde la ventana no llega (una pestaña sin permisos, una sesión de fondo), vale la aprobación explícita de la persona:
   // su click en el cuadro de opciones o su «aprobado» escrito (owner-approvals.js), uno por firma. Va antes de «hecho y
-  // avisado»: si la persona aprobó, la firma es suya
+  // avisado» y de la delegación: si la persona aprobó, la firma es suya, y lo que la coordinadora no puede firmar por su
+  // cuenta (un plan delicado, un guardado que toca algo sensible) pasa
   let aprobada = null;
-  if (!delegada && (sinVentana || deFondo)) {
-    const a = aprobacionExplicita({ pendientes, sesion, casa, ahora, cwd: evento.cwd, aprobaciones, herramienta: { pid: tool.pid, inicio: tool.inicio } });
-    if (a.ok) aprobada = a;
+  let sinAprobacion = null;
+  if (delegada || sinVentana || deFondo) {
+    const a = aprobacionExplicita({ pendientes, sesion, destino, casa, ahora, cwd: evento.cwd, aprobaciones, herramienta: { pid: tool.pid, inicio: tool.inicio } });
+    if (a.ok) { aprobada = a; delegada = null; }
+    else if (delegada) sinAprobacion = a.motivo;
     else {
+      sinAprobacion = a.motivo;
       // sin aprobación: lo de rutina en una pestaña sin permisos sigue «hecho y avisado»; lo demás se niega y dice cómo
       // aprobarlo. En una sesión de fondo no hay «hecho y avisado»: nadie ve el aviso en la pestaña
       const rutina = rutinaSinPermisos({ guion: firmaGuion, pendientes, palabras: can && can.palabras, destino, casa });
@@ -713,9 +717,11 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
     if (c.error) return negar(c.error, pendientes);
     detalle = c.texto;
   }
-  // la aprobación explícita se gasta recién acá, cuando el comando ya no se va a negar: sirve para una sola firma
+  // la aprobación explícita se gasta recién acá, cuando el comando ya no se va a negar, y antes de escribir el pedido:
+  // nunca queda un pedido vigente con una aprobación sin gastar. Si el pedido no se puede escribir, se devuelve
+  const oa = aprobada ? (aprobaciones || require('./owner-approvals.js')) : null;
   if (aprobada) {
-    const u = (aprobaciones || require('./owner-approvals.js')).consumir(casa, aprobada.aprobacion, { ahora, firma: pendientes[0], sesion });
+    const u = oa.consumir(casa, aprobada.aprobacion, { ahora, firma: pendientes[0], sesion });
     if (!u.ok) return negarSinVentana(u.motivo, pendientes, paraTerminal);
   }
   if (guion) {
@@ -723,8 +729,11 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
       escribirRegistro(casa, { firma: firmaGuion, sesion, destino, tool_use_id: evento.tool_use_id == null ? null : String(evento.tool_use_id),
         sha256: sha256(comando), comando, herramienta: { pid: tool.pid, inicio: tool.inicio }, ts: new Date(ahora).toISOString(), corrida: corridaDe(casa, destino),
         ...(delegada ? { via: 'delegacion', maquina: delegada.maquina } : aprobada ? { via: aprobada.via, aprobacion: aprobada.aprobacion.id, aprobada_en: aprobada.aprobacion.sesion }
-          : avisado ? { via: 'avisado' } : {}), ...(refirmaDe ? { refirma_de: refirmaDe } : {}) });
-    } catch (e) { return negar(`no se pudo escribir el registro de la ventana (${e.code || e.message})`, pendientes); }
+          : avisado ? { via: 'avisado' } : {}), ...(sinAprobacion ? { sin_aprobacion: una(sinAprobacion, 300) } : {}), ...(refirmaDe ? { refirma_de: refirmaDe } : {}) });
+    } catch (e) {
+      if (aprobada) oa.devolver(casa, aprobada.aprobacion);
+      return negar(`no se pudo escribir el registro de la ventana (${e.code || e.message})`, pendientes);
+    }
   }
   if (delegada) return { decision: 'allow', via: 'delegacion', relevo: sesion, firmas: pendientes, texto: 'firmada por la delegación del perfil' };
   if (aprobada) {
@@ -747,6 +756,12 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
 function mismoArchivo(a, b) {
   const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return path.resolve(p); } };
   return real(a) === real(b);
+}
+
+/** Cómo pasa con la persona una firma que el pedido `reg` no pudo dar sin ella. */
+function comoAprobar(firma, reg) {
+  const nombres = `«firma ${firma}»${reg.destino && reg.destino !== reg.sesion ? ` y «sesión ${reg.destino}»` : ''}`;
+  return `Si lo que frena es que no firma una persona: mostrale qué se aprueba con el texto ${nombres} y, con su click en el cuadro de opciones o su «aprobado», repetí el mismo comando${reg.sin_aprobacion ? ` (ahora: ${reg.sin_aprobacion})` : ''}`;
 }
 
 /**
@@ -817,8 +832,10 @@ function verificar({ firma, argv = [], pid = process.pid, arbol, casa, ahora = D
     let previo = null;
     if (antes) {
       // lo hecho y avisado en una pestaña sin permisos pasa por los mismos controles que la delegación
-      previo = antes(['delegacion', 'avisado'].includes(ultimo.reg.via) ? 'delegacion' : 'ventana', ultimo.reg);
-      if (previo && previo.codigo) return { ok: false, codigo: previo.codigo, motivo: previo.motivo };
+      const sinPersona = ['delegacion', 'avisado'].includes(ultimo.reg.via);
+      previo = antes(sinPersona ? 'delegacion' : 'ventana', ultimo.reg);
+      // lo que no se firma sin la persona dice cómo se aprueba con ella, y por qué no contó lo que ya hubiera aprobado
+      if (previo && previo.codigo) return { ok: false, codigo: previo.codigo, motivo: sinPersona ? `${previo.motivo}. ${comoAprobar(firma, ultimo.reg)}` : previo.motivo };
     }
     try { fs.renameSync(path.join(dir, ultimo.f), path.join(dir, `${ultimo.f}.consumido-${ahora}`)); } catch (_) { return no('el pedido de la ventana ya se usó'); }
     for (const v of viejos) { try { fs.renameSync(path.join(dir, v.f), path.join(dir, `${v.f}.vencido-${ahora}`)); } catch (_) { /* otro guion ya lo movió */ } }

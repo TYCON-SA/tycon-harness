@@ -631,7 +631,8 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   su nombre: sigue valiendo si la sesión se reinicia, y hay que volver a designarla si se abre un chat nuevo o se hace
   `/clear`. Una sesión que se llama igual no puede reenviar.
   Debajo está **quién firma cada cosa**: una fila por cada firma del catálogo (`guides/firmas-del-arnes.md`), con tres
-  opciones. «A la ventana del dueño» es lo de fábrica: el dueño contesta en la ventana de permiso o firma en su terminal.
+  opciones. «A la ventana del dueño» es lo de fábrica: el dueño contesta en la ventana de permiso; donde la ventana no
+  llega, aprueba con un click en el cuadro de opciones o un «aprobado» escrito; o firma en su terminal.
   «Delegada a la coordinadora» (`approvals.delegated_signing`) deja que esa sesión la firme en nombre del dueño, y su
   frase queda registrada; lo delegado no está protegido contra un agente: si la coordinadora decide aprobarlo por su
   cuenta, el arnés no lo distingue de un ok del dueño, así que se delega sólo lo de bajo riesgo. «Sólo del dueño»
@@ -649,8 +650,9 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   leerlo y lo avisa como ignorada; lo demás se sigue delegando. Volver al nivel de fábrica saca la firma de
   `approvals.levels`. Proponer niveles pide que la capa del equipo exija una versión del arnés que ya sepa leerlos.
   Quién firma cada nivel: el 1, la coordinadora si el perfil se lo delega (el plan, sólo con el veredicto aprobado de la
-  revisión automática que ella lanza), y si no el dev en la ventana; el 2,
-  siempre una persona en la ventana; el 3, una persona, y la emergencia en su terminal. Sin nadie que conteste, todo lo
+  revisión automática que ella lanza), y si no el dev; el 2, siempre una persona; el 3, una persona, y la emergencia en
+  su terminal. La persona aprueba en la ventana; donde la ventana no llega (una pestaña sin permisos, una sesión de
+  fondo), con un click o un «aprobado». Sin nadie que conteste, todo lo
   que no está delegado espera: el sistema no mira la hora, pide la firma igual y, si nadie contesta, la sesión queda
   frenada en ese paso. Con Codex, que no tiene ventana, todo se firma en la terminal. La matriz completa
   está en `guides/firmas-del-arnes.md`, «Quién firma cada nivel».
@@ -706,6 +708,10 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   edita acá: se la pide a su sesión. La carpeta donde quedan las firmas del dueño es de cada máquina y no se pone acá.
   Queda en `team-profile.json` → `coordination.max_working` y `coordination.session_names`; la receta entera está en
   `guides/coordination.md`.
+- **La oficina de /office**: cuántos minutos sin novedades tiene que pasar una sesión que trabaja para que la oficina diga
+  «sin novedades desde las HH:MM» (de 1 a 1440; sin valor, 15). Lo mide la página con su propio reloj, sin preguntarle
+  nada a la máquina; una sesión en un paso largo sigue viva y sólo se marca callada. Queda en `team-profile.json` →
+  `office.quiet_minutes`.
 - **Integraciones**: qué servicios usa cada máquina (el reloj de horas, la memoria, el buzón, la noche, el índice de
   código de CodeGraph); una máquina puede apagar una para ella sola. Con CodeGraph prendido, el instalador se lo instala
   a cada dev y el arnés avisa si una máquina no lo tiene. Queda en `team-profile.json`, en el repo del perfil. Lo

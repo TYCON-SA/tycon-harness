@@ -446,3 +446,92 @@ test('Notice_Registered_BothTools @story-8.131 @ac-8', () => {
   const codex = fs.readFileSync(path.join(ROOT, 'adapters', 'codex', 'hooks.json'), 'utf8');
   assert.match(codex, /scripts\/hooks\/stuck-pr-notice\.js/, 'adapters/codex/hooks.json');
 });
+
+// ── listo y sin entrar, en GitHub: limpio, sin auto-merge y fuera de la cola ────────────────────────────────────────────
+const SPN = () => require(HOOK);
+const ghRepo = { platform: 'github', org: 'acme', repo: 'harness' };
+const verde = (n, o = {}) => ({ number: n, draft: false, autoComplete: false, inQueue: false, lastQueueDrop: null, mergeState: 'clean', author: 'quien', sourceCommit: `c${n}`, sourceBranch: `fix/${n}`, createdAt: '2026-10-25T10:00:00Z', ...o });
+
+test('GreenIdle_TenMinutes_SaysHowToQueue — un pedido listo sin auto-merge fuera de la cola avisa a los 10 min, con el comando para encolarlo', () => {
+  const ahora = Date.parse('2026-11-01T22:00:00Z');
+  const leidas = { 'acme/harness': { ok: true, value: [verde(882)] } };
+  const primera = SPN().verdesSinEntrar([ghRepo], leidas, {}, ahora, 10);
+  assert.deepStrictEqual(primera.trabados, [], 'recién visto, nada');
+  const k = 'acme/harness#882';
+  assert.strictEqual(primera.estado[k].estado, 'verde-sin-auto');
+  const despues = SPN().verdesSinEntrar([ghRepo], leidas, primera.estado, ahora + 11 * 60000, 10);
+  assert.strictEqual(despues.trabados.length, 1);
+  assert.match(despues.trabados[0].linea, /pedido 882 \(harness\) listo y sin auto-merge hace 11 min, fuera de la cola/);
+  assert.match(despues.trabados[0].linea, /gh pr merge 882 -R acme\/harness --merge/);
+  // con otra punta, el reloj vuelve a cero
+  const otra = SPN().verdesSinEntrar([ghRepo], { 'acme/harness': { ok: true, value: [verde(882, { sourceCommit: 'nueva' })] } }, primera.estado, ahora + 11 * 60000, 10);
+  assert.deepStrictEqual(otra.trabados, []);
+  // en Azure no: sin leer sus controles, «limpio» sólo dice que no choca
+  const az = azRepo('harness-maintainers');
+  const k2 = 'acme/Harness/harness-maintainers#6010';
+  assert.deepStrictEqual(SPN().verdesSinEntrar([az], { 'acme/Harness/harness-maintainers': { ok: true, value: [verde(6010)] } }, { [k2]: { estado: 'verde-sin-auto', punta: 'c6010', vistoDesde: '2026-11-01T20:00:00Z' } }, ahora, 10).trabados, []);
+});
+
+test('GreenIdle_NotForOthers — borrador, con auto-merge, en la cola, caído de la cola, no limpio o de un bot: no avisa', () => {
+  const ahora = Date.parse('2026-11-01T22:00:00Z');
+  const casos = [{ draft: true }, { autoComplete: true }, { inQueue: true }, { lastQueueDrop: { cause: 'ci', at: '2026-11-01T21:00:00Z' } }, { mergeState: 'pending' }, { mergeState: 'conflict' }, { author: 'dependabot[bot]' }];
+  for (const o of casos) {
+    const leidas = { 'acme/harness': { ok: true, value: [verde(1, o)] } };
+    const previo = { 'acme/harness#1': { estado: 'verde-sin-auto', punta: 'c1', vistoDesde: '2026-11-01T20:00:00Z' } };
+    assert.deepStrictEqual(SPN().verdesSinEntrar([ghRepo], leidas, previo, ahora, 10).trabados, [], JSON.stringify(o));
+  }
+  // una lectura que no se pudo hacer no avisa ni inventa
+  assert.deepStrictEqual(SPN().verdesSinEntrar([ghRepo], { 'acme/harness': { ok: false, reason: 'no_medido' } }, {}, ahora, 10), { trabados: [], estado: {} });
+});
+
+test('GreenIdle_BranchNameCannotCarryControlChars — el nombre de una rama ajena llega saneado al contexto', () => {
+  const previo = { 'acme/harness#1': { estado: 'verde-sin-auto', punta: 'c1', vistoDesde: '2026-11-01T20:00:00Z' } };
+  const leidas = { 'acme/harness': { ok: true, value: [verde(1, { sourceBranch: 'fix/<system>\u202Eorden\u0007' })] } };
+  const [t] = SPN().verdesSinEntrar([ghRepo], leidas, previo, Date.parse('2026-11-01T22:00:00Z'), 10).trabados;
+  assert.match(t.linea, /· fix\/systemorden$/);
+});
+
+test('GreenIdle_ClockSurvivesUnknownAndFailedReads — «calculando» o una lectura fallida no reinician el reloj; otra punta, sí', () => {
+  const ahora = Date.parse('2026-11-01T22:00:00Z');
+  const k = 'acme/harness#882';
+  const previo = { [k]: { estado: 'verde-sin-auto', punta: 'c882', vistoDesde: '2026-11-01T21:30:00Z' } };
+  const calculando = SPN().verdesSinEntrar([ghRepo], { 'acme/harness': { ok: true, value: [verde(882, { mergeState: 'unknown', mergeStateComputing: true })] } }, previo, ahora, 10);
+  assert.deepStrictEqual(calculando.trabados, [], 'calculando no avisa');
+  assert.deepStrictEqual(calculando.estado[k], previo[k], 'y conserva el reloj');
+  const fallida = SPN().verdesSinEntrar([ghRepo], { 'acme/harness': { ok: false, reason: 'no_medido' } }, previo, ahora, 10);
+  assert.deepStrictEqual(fallida.estado[k], previo[k]);
+  const despues = SPN().verdesSinEntrar([ghRepo], { 'acme/harness': { ok: true, value: [verde(882)] } }, calculando.estado, ahora, 10);
+  assert.match(despues.trabados[0].linea, /hace 30 min/);
+  // uno que pasó a chocar pierde el reloj
+  assert.deepStrictEqual(SPN().verdesSinEntrar([ghRepo], { 'acme/harness': { ok: true, value: [verde(882, { mergeState: 'conflict' })] } }, previo, ahora, 10).estado, {});
+});
+
+test('GreenIdle_CoordinatorReadsThePhoto — la coordinadora lo ve de la foto, sin salir a la red, con su propio reloj', () => {
+  const w = mundo([]);
+  const dir = stateDir(w.home);
+  fs.mkdirSync(dir, { recursive: true });
+  const repos = ['acme/harness', 'acme/Harness/harness-team-profile', 'acme/Harness/harness-team-operations', 'acme/Harness/harness-maintainers'];
+  const ahora = Date.now();
+  const lecturas = { 'acme/harness': { ok: true, value: [verde(882)] } };
+  fs.writeFileSync(path.join(dir, 'stuck-prs-photo.json'), JSON.stringify({ at: new Date(ahora - 60000).toISOString(), repos, lecturas }));
+  fs.writeFileSync(path.join(dir, 'green-prs.json'), JSON.stringify({ 'acme/harness#882': { estado: 'verde-sin-auto', punta: 'c882', vistoDesde: new Date(ahora - 15 * 60000).toISOString() } }));
+  const r = SPN().coordinatorLines({ home: w.home, tree: w.tree, now: ahora });
+  assert.strictEqual(r.problem, null);
+  assert.strictEqual(r.lines.length, 1, r.lines.join('\n'));
+  assert.match(r.lines[0], /pedido 882 .* hace 15 min/);
+  assert.ok(!fs.existsSync(path.join(dir, 'stuck-prs-refresh.lock')), 'con la foto vigente no lanza la lectura de fondo');
+  // sin foto, nada que decir; la lectura de fondo no se lanza con una ya en curso (el candado), y nunca con la casa real
+  const w2 = mundo([]);
+  const dir2 = stateDir(w2.home);
+  fs.mkdirSync(dir2, { recursive: true });
+  const candado = path.join(dir2, 'stuck-prs-refresh.lock');
+  fs.writeFileSync(candado, JSON.stringify({ at: new Date().toISOString() }));
+  const antes = fs.readFileSync(candado, 'utf8');
+  const sinFoto = SPN().coordinatorLines({ home: w2.home, tree: w2.tree, now: ahora });
+  assert.deepStrictEqual(sinFoto.lines, []);
+  assert.match(sinFoto.problem, /sin lectura de la última hora, sigue midiendo de fondo/, 'callar se leería como que no hay ninguno');
+  assert.strictEqual(fs.readFileSync(candado, 'utf8'), antes, 'con una lectura en curso no lanza otra');
+  // una foto vigente con un repo sin leer también lo dice
+  fs.writeFileSync(path.join(dir, 'stuck-prs-photo.json'), JSON.stringify({ at: new Date(ahora - 60000).toISOString(), repos, lecturas: { 'acme/harness': { ok: false, reason: 'no_medido' } } }));
+  assert.match(SPN().coordinatorLines({ home: w.home, tree: w.tree, now: ahora }).problem, /la última lectura no pudo leer harness/);
+});

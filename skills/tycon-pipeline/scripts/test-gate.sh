@@ -187,6 +187,9 @@ TG_TREE_PUB_ROOT=""
 TG_NO_COMPANIONS=""
 TG_TREE_TOUCHED_FILE=""
 TG_TOP_FULL=""
+TG_FULL_SUITE_BY=""
+TG_MEASURED=""
+TG_AFTER_MAIN=""
 borrar_arbol_privado() {
   # La corrida de las suites va en su propio grupo de procesos (ver la rama suites.json): se corta el grupo entero, así
   # run-check y el corredor reciben la señal y el corredor corta sus suites. Cortar sólo el subshell las dejaría vivas
@@ -973,6 +976,25 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
       echo "[test-gate] ⚠️  no pude leer test_gate de .test-gate.yaml (salió $_tg_scope_rc): corre la suite entera" >&2
     fi
   fi
+  # Ya acotado porque una CI corre la completa, y lo único que cambió desde la última corrida es lo que trajo main: corren
+  # las suites que fallaron y las que nombran lo que trajo main (lib/after-main.js). Lo de la historia ya se midió. Cualquier
+  # otro cambio corre lo de siempre. Lo medido se anota al cerrar; si esta corrida no termina, no queda nada anotado.
+  if [[ "$TG_TOP_FULL" == "1" && -z "${TG_PRIVATE_TREE_DIR:-}" ]]; then
+    TG_MEASURED="$OUT_DIR/test-gate-measured.json"
+    if node "$SCRIPT_DIR/lib/after-main.js" snapshot "$REPO_RUN" > "$RESULTS_DIR/measured-start.json"; then
+      if [[ ${#LIGHT_ARGS[@]} -gt 0 && "${TYCON_GATE_ALL_SUITES:-}" != "1" ]] \
+        && node "$SCRIPT_DIR/lib/after-main.js" decide "$REPO_RUN" "$TG_MEASURED" "$RESULTS_DIR/measured-start.json" "$RESULTS_DIR/touched.json"; then
+        TOUCHED_ARGS=(--touched "$RESULTS_DIR/touched.json")
+        LIGHT_ARGS=(--scoped-by-repo "${TG_FULL_SUITE_BY:-la CI del pedido}")
+        TG_AFTER_MAIN=1
+      fi
+      rm -f "$TG_MEASURED"
+    else
+      echo "[test-gate] ⚠️  no pude anotar qué mide esta corrida: si después se trae main, corre lo de siempre" >&2
+      rm -f "$TG_MEASURED"
+      TG_MEASURED=""
+    fi
+  fi
   _TG_SIZE="$(node "$MARKER_JS" get 2>/dev/null | node -e 'let t="";process.stdin.on("data",d=>t+=d).on("end",()=>{try{process.stdout.write(String(JSON.parse(t).size||""))}catch(e){process.stderr.write("[test-gate] no pude leer el tamaño de la corrida del marcador: corren las suites de siempre\n")}})' || true)"
   if [[ "$_TG_SIZE" == "liviana" ]]; then
     LIGHT_ARGS+=(--light)
@@ -1017,6 +1039,14 @@ if [[ "$RUNNER" =~ ^(dotnet|node-test|jest|vitest)$ && "$SUITE_EXIT" =~ ^[3-7]$ 
   SUITE_EXIT=1
 fi
 
+# 77: el corredor no arrancó porque otra sesión tiene el turno de la suite completa de la máquina (scripts/tools/heavy-turn.js;
+# ya dijo quién). `run-check` lo anotó como rojo, así que un verde viejo no queda en pie; para quien llama es un 75.
+if [[ "$SUITE_EXIT" == "77" && "$RUNNER" == "suites-json" ]]; then
+  TG_NO_COMPANIONS="otra sesión tiene el turno de la suite completa de la máquina"
+  rm -f "$OUT_FILE"
+  echo "🟡 [test-gate] no corrí nada: otra sesión tiene el turno de la suite completa de la máquina (arriba, quién y desde cuándo). Esperá que termine; no quedó tests-result.json." >&2
+  exit 75
+fi
 # 75: `run-check tests` no lanzó nada porque otra corrida de las pruebas está en marcha en este repo (ya dijo desde
 # cuándo y de quién). No es un rojo: no se escribe tests-result.json, no se toca el check y no se corren los hermanos.
 if [[ "$SUITE_EXIT" == "75" ]]; then
@@ -1043,6 +1073,10 @@ fi
 if [[ "$TG_TOP_FULL" == "1" ]]; then
   ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" tests-failed record --summary "$RESULTS_DIR/suites.json" --repo "$REPO_STORY" ) \
     || echo "[test-gate] ⚠️  no pude anotar las suites que fallaron: la próxima corrida completa no va a pedir repetirlas primero" >&2
+fi
+if [[ -n "${TG_MEASURED:-}" ]]; then
+  node "$SCRIPT_DIR/lib/after-main.js" record "$REPO_RUN" "$RESULTS_DIR/measured-start.json" "$RESULTS_DIR/suites.json" "$SUITE_EXIT" "$TG_MEASURED" \
+    || echo "[test-gate] ⚠️  no pude anotar qué midió esta corrida: si después se trae main, corre lo de siempre" >&2
 fi
 
 # --- Parsear resultados + coverage (best-effort, nunca rompe) ----------------
@@ -1092,7 +1126,7 @@ BASE_REF="$(node -e 'try{const j=JSON.parse(process.argv[1]);process.stdout.writ
 # `realpath`, que en un Git Bash pueden faltar: el informe trae su propio reemplazo de los dos.
 # El artefacto de una corrida anterior se borra antes: si el informe falla, no puede quedar un verde viejo a la vista.
 rm -f "$OUT_FILE"
-TYCON_TEST_GATE_TREE_TOUCHED="${TG_TREE_TOUCHED_FILE:-}" node "$SCRIPT_DIR/lib/test-gate-report.js" "$RUNNER" "$REPO" "$REPO_RUN" "$RESULTS_DIR" "$OUT_FILE" "$SUITE_EXIT" "$STORY_ID" "$COV_MIN" "$TS" "$TEST_PROJECT_COUNT" "$SCOPE" "$SCOPE_SOURCE" "$DECLARED_NEW" "$CODE_STATE_JSON" "$BASE_REF" "$BASE_JSON" \
+TYCON_TEST_GATE_AFTER_MAIN="${TG_AFTER_MAIN:-}" TYCON_TEST_GATE_TREE_TOUCHED="${TG_TREE_TOUCHED_FILE:-}" node "$SCRIPT_DIR/lib/test-gate-report.js" "$RUNNER" "$REPO" "$REPO_RUN" "$RESULTS_DIR" "$OUT_FILE" "$SUITE_EXIT" "$STORY_ID" "$COV_MIN" "$TS" "$TEST_PROJECT_COUNT" "$SCOPE" "$SCOPE_SOURCE" "$DECLARED_NEW" "$CODE_STATE_JSON" "$BASE_REF" "$BASE_JSON" \
   || echo "[test-gate] ⚠️  el informe falló (lib/test-gate-report.js): mirá el error de arriba; no quedó artefacto" >&2
 
 # 🔴 Una suite que sale 0 sin haber corrido ninguna prueba (o sin informe que lo cuente) NO es verde (story 8.17,

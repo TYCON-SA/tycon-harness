@@ -1,0 +1,259 @@
+{
+  "__doc": "Estado de cada sesión (story 2.81, tanda A, 2026-11-01): el gancho anota en <estado>/sessions/<sesión>.json el arranque, la espera y el cierre, para la oficina de /office. Lo que el banco fija: nunca frena ni imprime (es un registro, no un aviso), escribe lo que dice cada momento, y en Codex no inventa la espera de un permiso. La suite completa (marker.js, la oficina, el instalador) es scripts/tests/session-state.test.js. La asimetría con Codex (sin permiso ni cierre de sesión) está declarada en adapters/codex/hooks.json.",
+  "hooks": [
+    {
+      "hook": "session-state.js (el estado de la sesión, al arrancar)",
+      "script": "${TCG}/scripts/hooks/session-state.js",
+      "event": "SessionStart",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "arranque-crea-el-archivo-sin-frenar",
+          "type": "must-stay-quiet",
+          "__doc": "En las dos herramientas, el arranque crea el archivo de la sesión y sale 0 sin salida. ROJO PREVIO: imprimir algo, salir distinto de 0, o no escribir el archivo.",
+          "stdin": {
+            "hook_event_name": "SessionStart",
+            "session_id": "bench-ss1",
+            "source": "startup"
+          },
+          "expect": {
+            "exit": 0,
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/sessions/bench-ss1.json",
+                "re": "\"schema\": 1"
+              }
+            ]
+          }
+        },
+        {
+          "id": "codex-arranque-sin-nombre-ni-pid",
+          "type": "must-stay-quiet",
+          "tools": [
+            "codex"
+          ],
+          "__doc": "En Codex (el evento trae turn_id) el archivo dice tool codex y va sin pid: Codex no da uno estable. ROJO PREVIO: tomar el pid del proceso que corre el gancho.",
+          "stdin": {
+            "hook_event_name": "SessionStart",
+            "session_id": "bench-ss2",
+            "turn_id": "t-1"
+          },
+          "expect": {
+            "exit": 0,
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/sessions/bench-ss2.json",
+                "re": "\"tool\": \"codex\""
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/sessions/bench-ss2.json",
+                "re": "\"pid\": null"
+              }
+            ]
+          },
+          "asymmetry": "El caso fija la conducta propia de Codex (sin pid estable, la espera sólo al cerrar el turno con un pipeline abierto); en Claude la misma entrada se anota distinto. Declarado en adapters/codex/hooks.json."
+        }
+      ]
+    },
+    {
+      "hook": "session-state.js (un pedido de permiso, sólo Claude)",
+      "script": "${TCG}/scripts/hooks/session-state.js",
+      "event": "Notification",
+      "matcher": "permission_prompt",
+      "cases": [
+        {
+          "id": "permiso-anota-la-espera-sin-pipeline",
+          "type": "must-stay-quiet",
+          "tools": [
+            "claude"
+          ],
+          "__doc": "Un pedido de permiso anota que la sesión espera «un permiso», también sin pipeline y sin canal de aviso (decisión 24a). ROJO PREVIO: depender de wait-notice.js, que sin pipeline no anota nada.",
+          "stdin": {
+            "hook_event_name": "Notification",
+            "session_id": "bench-ss3",
+            "notification_type": "permission_prompt",
+            "message": "Claude needs your permission to use Bash"
+          },
+          "env": {
+            "TYCON_WAIT_NOTICE": "0"
+          },
+          "expect": {
+            "exit": 0,
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/sessions/bench-ss3.json",
+                "re": "\"waitingFor\": \"un permiso\""
+              }
+            ]
+          },
+          "asymmetry": "Codex no avisa este momento (decisión 7 de la story 2.81): no tiene pedido de permiso, cierre de sesión ni la herramienta de preguntas; declarado en adapters/codex/hooks.json."
+        }
+      ]
+    },
+    {
+      "hook": "session-state.js (una pregunta a la persona)",
+      "script": "${TCG}/scripts/hooks/session-state.js",
+      "event": "PreToolUse",
+      "matcher": "AskUserQuestion|ExitPlanMode|mcp__spokenly__ask_user_dictation",
+      "cases": [
+        {
+          "id": "pregunta-anota-que-espera-una-respuesta",
+          "type": "must-stay-quiet",
+          "tools": [
+            "claude"
+          ],
+          "__doc": "Una pregunta con opciones anota que la sesión espera «una respuesta», sin frenar la pregunta. ROJO PREVIO: frenar o imprimir.",
+          "stdin": {
+            "hook_event_name": "PreToolUse",
+            "session_id": "bench-ss4",
+            "tool_name": "AskUserQuestion",
+            "tool_input": {
+              "questions": []
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/sessions/bench-ss4.json",
+                "re": "\"waitingFor\": \"una respuesta\""
+              }
+            ]
+          },
+          "asymmetry": "Codex no avisa este momento (decisión 7 de la story 2.81): no tiene pedido de permiso, cierre de sesión ni la herramienta de preguntas; declarado en adapters/codex/hooks.json."
+        }
+      ]
+    },
+    {
+      "hook": "session-state.js (terminó el uso de una herramienta)",
+      "script": "${TCG}/scripts/hooks/session-state.js",
+      "event": "PostToolUse",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "herramienta-terminada-cierra-la-espera",
+          "type": "must-stay-quiet",
+          "tools": [
+            "claude"
+          ],
+          "__doc": "Con una espera abierta, el próximo uso terminado de una herramienta la cierra: el permiso se contestó. ROJO PREVIO: dejar la espera abierta mientras la sesión ya trabaja.",
+          "setup": [
+            "mkdir -p \"$SANDBOX_HOME/.claude/.tycon-pipeline/sessions\" && printf '%s' '{\"schema\":1,\"session\":\"bench-ss5\",\"tool\":\"claude\",\"name\":null,\"sentence\":\"Trabaja sin pipeline.\",\"step\":null,\"endAt\":null,\"endWithoutHour\":null,\"waitingForOwner\":true,\"waitingFor\":\"un permiso\",\"updatedAt\":\"2026-11-01T10:00:00.000Z\",\"pid\":null}' > \"$SANDBOX_HOME/.claude/.tycon-pipeline/sessions/bench-ss5.json\""
+          ],
+          "stdin": {
+            "hook_event_name": "PostToolUse",
+            "session_id": "bench-ss5",
+            "tool_name": "Bash",
+            "tool_input": {}
+          },
+          "expect": {
+            "exit": 0,
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/sessions/bench-ss5.json",
+                "re": "\"waitingForOwner\": false"
+              }
+            ]
+          },
+          "asymmetry": "Codex no avisa este momento (decisión 7 de la story 2.81): no tiene pedido de permiso, cierre de sesión ni la herramienta de preguntas; declarado en adapters/codex/hooks.json."
+        }
+      ]
+    },
+    {
+      "hook": "session-state.js (la persona escribió)",
+      "script": "${TCG}/scripts/hooks/session-state.js",
+      "event": "UserPromptSubmit",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "mensaje-de-la-persona-cierra-la-espera",
+          "type": "must-stay-quiet",
+          "__doc": "La persona escribió: la espera se cierra, en las dos herramientas. ROJO PREVIO: imprimir algo en el mensaje de la persona (se le sumaría al contexto).",
+          "setup": [
+            "mkdir -p \"$SANDBOX_HOME/.claude/.tycon-pipeline/sessions\" && printf '%s' '{\"schema\":1,\"session\":\"bench-ss6\",\"tool\":\"claude\",\"name\":null,\"sentence\":\"Trabaja sin pipeline.\",\"step\":null,\"endAt\":null,\"endWithoutHour\":null,\"waitingForOwner\":true,\"waitingFor\":\"una respuesta\",\"updatedAt\":\"2026-11-01T10:00:00.000Z\",\"pid\":null}' > \"$SANDBOX_HOME/.claude/.tycon-pipeline/sessions/bench-ss6.json\""
+          ],
+          "stdin": {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "bench-ss6",
+            "prompt": "dale"
+          },
+          "expect": {
+            "exit": 0,
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/sessions/bench-ss6.json",
+                "re": "\"waitingForOwner\": false"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "session-state.js (el fin del turno)",
+      "script": "${TCG}/scripts/hooks/session-state.js",
+      "event": "Stop",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "codex-fin-de-turno-con-pipeline-espera",
+          "type": "must-stay-quiet",
+          "tools": [
+            "codex"
+          ],
+          "__doc": "En Codex, el fin del turno con un pipeline abierto anota que la sesión espera «una respuesta» (decisión 7a), sin frenar el cierre. ROJO PREVIO: frenar, imprimir, o no anotar la espera.",
+          "setup": [
+            "mkdir -p \"$SANDBOX_HOME/.claude/.tycon-pipeline/active\" && printf '%s' '{\"storyId\":\"9.9\",\"sessionId\":\"bench-ss7\",\"stepsPending\":[\"implement\"]}' > \"$SANDBOX_HOME/.claude/.tycon-pipeline/active/bench-ss7.json\""
+          ],
+          "stdin": {
+            "hook_event_name": "Stop",
+            "session_id": "bench-ss7",
+            "turn_id": "t-7",
+            "stop_hook_active": false
+          },
+          "expect": {
+            "exit": 0,
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/sessions/bench-ss7.json",
+                "re": "\"waitingFor\": \"una respuesta\""
+              }
+            ]
+          },
+          "asymmetry": "El caso fija la conducta propia de Codex (sin pid estable, la espera sólo al cerrar el turno con un pipeline abierto); en Claude la misma entrada se anota distinto. Declarado en adapters/codex/hooks.json."
+        }
+      ]
+    },
+    {
+      "hook": "session-state.js (la sesión se cerró, sólo Claude)",
+      "script": "${TCG}/scripts/hooks/session-state.js",
+      "event": "SessionEnd",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "cierre-borra-el-archivo",
+          "type": "must-stay-quiet",
+          "tools": [
+            "claude"
+          ],
+          "__doc": "El cierre de una sesión de Claude borra su archivo de estado. ROJO PREVIO: dejarlo, y que la oficina la muestre inactiva para siempre.",
+          "setup": [
+            "mkdir -p \"$SANDBOX_HOME/.claude/.tycon-pipeline/sessions\" && printf '%s' '{\"schema\":1,\"session\":\"bench-ss8\",\"tool\":\"claude\"}' > \"$SANDBOX_HOME/.claude/.tycon-pipeline/sessions/bench-ss8.json\""
+          ],
+          "stdin": {
+            "hook_event_name": "SessionEnd",
+            "session_id": "bench-ss8",
+            "reason": "exit"
+          },
+          "expect": {
+            "exit": 0,
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/sessions/bench-ss8.json"
+            ]
+          },
+          "asymmetry": "Codex no avisa este momento (decisión 7 de la story 2.81): no tiene pedido de permiso, cierre de sesión ni la herramienta de preguntas; declarado en adapters/codex/hooks.json."
+        }
+      ]
+    }
+  ]
+}

@@ -6,9 +6,11 @@
  * no llega (una pestaña sin permisos, una sesión de fondo), en lugar de mandar a la terminal.
  *
  * Cada aprobación sirve para UNA firma: la que nombra. La pregunta del cuadro, o el último mensaje del agente antes del
- * «aprobado», tiene que decir «firma <id>» (y, si se aprueba desde la pestaña de la coordinadora, «sesión <id>» de la
- * sesión que firma). Vence a los 30 minutos. Vale en la sesión donde se dio o en la coordinadora designada y confirmada.
- * Lo irreversible (owner-window.js `TERMINAL_SIEMPRE`) no la acepta.
+ * «aprobado», tiene que decir «firma <id>» (y, si la firma es para otra sesión que la de la pestaña donde se aprueba,
+ * «sesión <id>» de esa sesión). Vence a los 30 minutos. Vale en la sesión donde se dio o en la coordinadora designada y
+ * confirmada. Gana a la delegación: lo que la coordinadora no puede firmar por su cuenta (un plan delicado, un guardado
+ * que toca algo sensible) pasa con la aprobación de la persona. Lo irreversible (owner-window.js `TERMINAL_SIEMPRE`) no
+ * la acepta.
  *
  * Por qué el agente no la puede fingir:
  * - El modelo no puede llenar la respuesta del cuadro: la herramienta la descarta antes de mostrarlo.
@@ -94,11 +96,29 @@ function respuestaDelCuadro(salida) {
   return { ok: true, pregunta: String(pregunta), respuesta };
 }
 
-/** ¿El texto (la pregunta del cuadro, o lo último que dijo el agente) nombra la firma y, si hace falta, la sesión? */
-function nombraLaFirma(texto, firma, sesion) {
+// la frase suelta y sin distinguir mayúsculas: «Firma save» nombra `save`; «firma save-all» y «refirma save», no
+const dice = (texto, frase) => new RegExp(`(^|[^\\p{L}\\p{N}_-])${frase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}_-])`, 'iu').test(texto);
+
+// lo que puede seguir a «sesión» en una frase sin nombrar ninguna; cualquier otra palabra cuenta como un id, y ante la duda
+// la aprobación no vale y se pide de nuevo
+const NO_ES_ID = new Set(['que', 'y', 'o', 'en', 'con', 'para', 'por', 'sin', 'a', 'al', 'su', 'sus', 'esta', 'este', 'es', 'se',
+  'anterior', 'actual', 'nueva', 'nuevo', 'misma', 'mismo', 'propia', 'destino', 'coordinadora', 'principal', 'otra', 'otro']);
+
+/** Lo que un texto nombra como sesión, en minúsculas: la palabra que sigue a «sesión» o a «sesión de», con o sin puntuación. */
+function sesionesNombradas(texto) {
+  return [...String(texto).matchAll(/(?:^|[^\p{L}\p{N}_-])sesi[oó]n[\s:=«"'`([]+(?:(?:de|del|la|el)\s+)*([\p{L}\p{N}_-]+)/giu)].map((m) => m[1].toLowerCase()).filter((s) => !NO_ES_ID.has(s));
+}
+
+/**
+ * ¿El texto (la pregunta del cuadro, o lo último que dijo el agente) nombra la firma y, si hace falta, la sesión? Un
+ * texto que nombra otra sesión que `destino` no aprueba ésta, aunque sea la de la misma pestaña.
+ */
+function nombraLaFirma(texto, firma, sesion, destino = sesion) {
   const t = String(texto || '');
-  if (!firma || !t.includes(`firma ${firma}`)) return false;
-  return !sesion || t.includes(`sesión ${sesion}`) || t.includes(`sesion ${sesion}`);
+  if (!firma || !dice(t, `firma ${firma}`)) return false;
+  const nombradas = sesionesNombradas(t);
+  if (destino && nombradas.some((s) => s !== String(destino).toLowerCase())) return false;
+  return !sesion || nombradas.includes(String(sesion).toLowerCase());
 }
 
 // --- quién lanzó el gancho ------------------------------------------------------------------------------------------
@@ -169,6 +189,11 @@ function consumir(casa, aprobacion, { ahora = Date.now(), firma, sesion } = {}) 
   }
 }
 
+/** Devuelve una aprobación recién marcada como usada, porque su pedido no se pudo escribir. Si tampoco se puede, queda usada y se pide de nuevo. */
+function devolver(casa, aprobacion) {
+  try { fs.unlinkSync(path.join(carpeta(casa), 'usadas', aprobacion.id)); } catch (_) { /* falla cerrado: una aprobación de menos */ }
+}
+
 // --- lo de Claude Code: la transcripción y los ganchos que escuchan el cuadro ------------------------------------------
 
 /** La transcripción de la sesión: `~/.claude/projects/<carpeta>/<sesión>.jsonl`, de la casa de la cuenta. */
@@ -211,15 +236,26 @@ function mensajeEnLaTranscripcion(ruta, a, { firma, sesion } = {}) {
   let rs;
   try { rs = renglones(ruta); } catch (e) { return { ok: false, motivo: `no pude leer la transcripción (${e.code || e.message})` }; }
   const t = String(a.texto || '').trim();
-  const i = rs.findIndex((x) => x && x.type === 'user' && String(textoDe(x) || '').trim() === t && cerca(x, a.ts));
+  // el renglón más cercano a la hora del registro: dos «aprobado» seguidos no se validan contra el mismo
+  let i = -1;
+  let distancia = Infinity;
+  rs.forEach((x, k) => {
+    if (!x || x.type !== 'user' || String(textoDe(x) || '').trim() !== t || !cerca(x, a.ts)) return;
+    const d = Math.abs(Date.parse(x.timestamp) - Date.parse(a.ts));
+    if (d < distancia) { distancia = d; i = k; }
+  });
   if (i < 0) return { ok: false, motivo: 'el mensaje no está en la transcripción de la sesión a esa hora' };
   const r = rs[i];
   if (r.isMeta === true || !r.origin || r.origin.kind !== 'human') return { ok: false, motivo: 'el mensaje no lo escribió una persona (lo mandó otra sesión o un programa)' };
   if (r.promptSource !== 'typed') return { ok: false, motivo: 'el mensaje no se tipeó' };
   if (r.entrypoint !== 'cli') return { ok: false, motivo: 'el mensaje llegó por un programa, no por la persona' };
+  // lo que el agente dijo después del mensaje anterior de la persona: una pregunta se contesta una sola vez
   let antes = null;
-  for (let k = i - 1; k >= 0 && antes === null; k--) if (rs[k] && rs[k].type === 'assistant' && textoDe(rs[k])) antes = textoDe(rs[k]);
-  if (!nombraLaFirma(antes, firma, sesion)) return { ok: false, motivo: `lo último que dijo el agente antes del «aprobado» no nombra «firma ${firma}»${sesion ? ` ni «sesión ${sesion}»` : ''}` };
+  for (let k = i - 1; k >= 0 && antes === null; k--) {
+    if (rs[k] && rs[k].type === 'user' && rs[k].origin && rs[k].origin.kind === 'human' && textoDe(rs[k]) !== null) break;
+    if (rs[k] && rs[k].type === 'assistant' && textoDe(rs[k])) antes = textoDe(rs[k]);
+  }
+  if (!nombraLaFirma(antes, firma, sesion, sesion || a.sesion)) return { ok: false, motivo: `lo último que dijo el agente antes del «aprobado» no nombra «firma ${firma}»${sesion ? ` ni «sesión ${sesion}»` : ''}, o nombra otra sesión` };
   return { ok: true };
 }
 
@@ -242,7 +278,7 @@ function clickEnLaTranscripcion(ruta, a, { firma, sesion } = {}) {
   const dijo = respuestaDelCuadro(r.toolUseResult);
   if (!dijo.ok) return { ok: false, motivo: `en la transcripción, ${dijo.motivo}` };
   if (dijo.pregunta !== a.pregunta || dijo.respuesta !== a.respuesta) return { ok: false, motivo: 'la respuesta del cuadro en la transcripción no es la del registro' };
-  if (!nombraLaFirma(dijo.pregunta, firma, sesion)) return { ok: false, motivo: `la pregunta del cuadro no nombra «firma ${firma}»${sesion ? ` ni «sesión ${sesion}»` : ''}` };
+  if (!nombraLaFirma(dijo.pregunta, firma, sesion, sesion || a.sesion)) return { ok: false, motivo: `la pregunta del cuadro no nombra «firma ${firma}»${sesion ? ` ni «sesión ${sesion}»` : ''}, o nombra otra sesión` };
   return { ok: true };
 }
 
@@ -350,13 +386,14 @@ function coordinadoraConfirmada(casa) {
 // --- buscar la aprobación para una firma ----------------------------------------------------------------------------
 
 /**
- * La aprobación vigente para la firma `firma` pedida desde `sesion`: sin usar, de los últimos 30 minutos, dada en
- * `sesion` o en la coordinadora (`coordinadora`: su id, o null), que nombra esa firma (y la sesión, si viene de la
- * coordinadora). `herramienta` ({ pid, inicio }): la de la firma; la aprobación de la propia sesión tiene que venir de
- * ese mismo proceso. `validar(aprobacion, contexto)` la confirma contra la transcripción y los ganchos; se pasa en las
- * pruebas. `cwd` y `casa` son los de la firma, nunca los del registro. `{ ok, aprobacion, via }` o `{ ok: false, motivo }`.
+ * La aprobación vigente para la firma `firma` pedida desde `sesion` sobre `destino` (por defecto, la misma): sin usar, de
+ * los últimos 30 minutos, dada en `sesion` o en la coordinadora (`coordinadora`: su id, o null), que nombra esa firma (y
+ * `destino`, si no es la sesión donde se aprobó: un «aprobado» al plan de una sesión no aprueba el de otra).
+ * `herramienta` ({ pid, inicio }): la de la firma; la aprobación de la propia sesión tiene que venir de ese mismo
+ * proceso. `validar(aprobacion, contexto)` la confirma contra la transcripción y los ganchos; se pasa en las pruebas.
+ * `cwd` y `casa` son los de la firma, nunca los del registro. `{ ok, aprobacion, via }` o `{ ok: false, motivo }`.
  */
-function buscar({ casa, sesion, firma, coordinadora = null, ahora = Date.now(), cwd, herramienta = null, validar } = {}) {
+function buscar({ casa, sesion, destino = sesion, firma, coordinadora = null, ahora = Date.now(), cwd, herramienta = null, validar } = {}) {
   if (!SESION.test(String(sesion || ''))) return { ok: false, motivo: 'la firma no dice de qué sesión es' };
   const sesiones = [sesion, ...(coordinadora && coordinadora !== sesion && SESION.test(coordinadora) ? [coordinadora] : [])];
   let candidatas = [];
@@ -372,7 +409,7 @@ function buscar({ casa, sesion, firma, coordinadora = null, ahora = Date.now(), 
   const check = validar || ((a, ctx) => validarEnClaude(a, ctx));
   let motivo = null;
   for (const a of candidatas) {
-    const v = check(a, { casa, cwd, firma, sesion: a.sesion === sesion ? null : sesion });
+    const v = check(a, { casa, cwd, firma, sesion: a.sesion === destino ? null : destino });
     if (v && v.ok) return { ok: true, aprobacion: a, via: a.tipo };
     motivo = motivo || (v && v.motivo);
   }
@@ -381,7 +418,8 @@ function buscar({ casa, sesion, firma, coordinadora = null, ahora = Date.now(), 
 
 /**
  * La confirmación con lo que deja Claude Code: la transcripción de la sesión donde se aprobó y, para el click, los
- * ganchos que escuchan el cuadro. `sesion`: la que firma, cuando la aprobación se dio en otra (la coordinadora).
+ * ganchos que escuchan el cuadro. `sesion`: la sesión sobre la que se firma, cuando la aprobación se dio en otra (la
+ * coordinadora).
  */
 function validarEnClaude(a, { casa = os.homedir(), cwd, firma, sesion } = {}) {
   const ruta = transcripcionDe(casa, a.sesion);
@@ -394,5 +432,5 @@ function validarEnClaude(a, { casa = os.homedir(), cwd, firma, sesion } = {}) {
 }
 
 module.exports = { VENCE_MIN, ENVUELTO, PERMITIDOS, carpeta, esAprobacion, mensajeDeLaPersona, respuestaDelCuadro, nombraLaFirma, lanzadoPorLaHerramienta,
-  anotar, leerSesion, consumir, transcripcionDe, mensajeEnLaTranscripcion, clickEnLaTranscripcion, capas, hooksDePlugins, alcanzaAlCuadro, esPermitido,
+  anotar, leerSesion, consumir, devolver, transcripcionDe, mensajeEnLaTranscripcion, clickEnLaTranscripcion, capas, hooksDePlugins, alcanzaAlCuadro, esPermitido,
   escuchasDelCuadro, coordinadoraConfirmada, buscar, validarEnClaude };

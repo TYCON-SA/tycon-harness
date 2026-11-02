@@ -694,9 +694,9 @@ test('T66 Page_DrawFails_Said: si una foto nueva no se puede dibujar, la página
   const ovl = { textContent: '', hidden: true };
   let breakIt = true;
   const errors = [];
-  const run = new Function('document', 'window', 'setData', 'renderTop', 'renderCrew', 'console', 'BORRADO', `return (${handler});`);
+  const run = new Function('document', 'window', 'setData', 'renderTop', 'renderCrew', 'console', 'relojTick', 'agents', 'meta', 'BORRADO', `return (${handler});`);
   const onmessage = run({ getElementById: (id) => (id === 'ovl' ? ovl : null) }, { tablero: {} },
-    () => { if (breakIt) throw new Error('dibujo roto'); }, () => {}, () => {}, { error: (e) => errors.push(e) });
+    () => { if (breakIt) throw new Error('dibujo roto'); }, () => {}, () => {}, { error: (e) => errors.push(e) }, () => {}, [], null);
   onmessage({ data: JSON.stringify({ type: 'foto', data: {} }) });
   assert.strictEqual(ovl.hidden, false);
   assert.match(ovl.textContent, /No pude dibujar la última novedad/);
@@ -867,4 +867,133 @@ test('T74 Board_Compact: los pendientes en una grilla (título, quién, hora) y 
   assert.ok(!fold[0].open, 'arranca cerrado');
   // la grilla se acomoda sola al ancho: varias columnas en un monitor ancho, una en una pantalla angosta
   assert.match(html, /\.board \.pend\{display:grid;grid-template-columns:repeat\(auto-fill,minmax\(/);
+});
+
+// ---------- el archivo de estado de cada sesión ----------
+
+// Un archivo de sesión como lo escriben el gancho y marker.js, con lo que la prueba cambie.
+const sessionFile = (session, fields = {}) => ({
+  schema: 1, session, tool: 'claude', name: null, sentence: 'Trabaja sin pipeline.', step: null, endAt: null, endWithoutHour: null,
+  waitingForOwner: false, waitingFor: null, updatedAt: new Date(NOW - 60000).toISOString(), pid: process.pid, ...fields,
+});
+
+test('T25 Office_PrefersSessionFile @story-2.81 @ac-24 — el archivo manda en lo que sabe; lo demás, /wip', () => {
+  const later = NOW + 2 * 3600000;
+  const { data } = buildOffice({
+    wip: wip([
+      { session: 'ConArchivo', sid: 's-a', extra: { kind: 'pipeline', current: 'implement', steps: STEPS, endAt: NOW + 3600000 } },
+      { session: 'SinArchivo', sid: 's-b', extra: { kind: 'pipeline', current: 'implement', steps: [{ id: 'implement', name: 'Implementar', done: false }] } },
+      { session: 'Entrando', sid: 's-c', extra: { kind: 'entering', endAt: NOW - 600000 } },
+    ], { halfwayItems: [{ kind: 'run', text: 'La historia de Codex', cleanAfter: null, sid: 's-d' }, { kind: 'adhoc', text: 'otro carril', cleanAfter: null, sid: 's-x' }] }),
+    sessionFiles: [
+      sessionFile('s-a', { name: 'ConArchivo', step: 'Revisores', sentence: 'Va por el paso «Revisores».', endAt: new Date(later).toISOString(), waitingForOwner: true, waitingFor: 'un permiso' }),
+      sessionFile('s-c', { name: 'Entrando' }),
+      sessionFile('s-d', { tool: 'codex', pid: null, step: 'Implementar', sentence: 'Va por el paso «Implementar».' }),
+    ],
+    codexNames: new Map([['s-d', 'Lola']]),
+    nowMs: NOW,
+  });
+  const a = byName(data, 'ConArchivo');
+  assert.strictEqual(a.estado, 'firma', 'la espera sale del archivo');
+  assert.strictEqual(a.espera, 'un permiso');
+  assert.strictEqual(a.haciendo, 'Va por el paso «Revisores».');
+  assert.strictEqual(a.paso, 'Revisores');
+  assert.strictEqual(a.pronosticoIso, (() => { const d = new Date(later); const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; })(), 'la hora sale del archivo');
+  assert.strictEqual(byName(data, 'SinArchivo').haciendo, 'Va por el paso «Implementar».', 'sin archivo, la derivación de hoy');
+  const c = byName(data, 'Entrando');
+  assert.strictEqual(c.haciendo, 'Terminó: sus cambios están entrando a los repos.', 'lo que el archivo no sabe sigue saliendo de /wip');
+  assert.strictEqual(c.termina, 'esperando entrar');
+  const d = byName(data, 'Lola');
+  assert.ok(d, 'la sesión de Codex sin fila se dibuja con su nombre');
+  assert.strictEqual(d.haciendo, 'Va por el paso «Implementar».');
+  assert.strictEqual(d.estado, 'trabajando');
+  assert.ok(!data.items.some((i) => i.titulo === 'La historia de Codex'), 'y no sale además en «A medio camino»');
+  assert.ok(data.items.some((i) => i.titulo === 'otro carril'), 'lo de otras sesiones sin archivo queda');
+});
+
+test('T26 Office_BrokenSessionFile_FallsBack @story-2.81 @ac-25 — un archivo roto o de otro esquema se dice y la sesión sale igual', () => {
+  const { home, state } = toyHome();
+  const sdir = path.join(home, '.claude', '.tycon-pipeline');
+  assert.strictEqual(state, sdir);
+  fs.mkdirSync(path.join(sdir, 'sessions'), { recursive: true });
+  fs.writeFileSync(path.join(sdir, 'sessions', 's1.json'), '{roto');
+  fs.writeFileSync(path.join(home, '.claude', 'sessions', 's9.json'), JSON.stringify({ pid: process.pid, sessionId: 's9', name: 'sesion-9', status: 'idle', statusUpdatedAt: NOW - 20 * 60000 }));
+  fs.writeFileSync(path.join(sdir, 'sessions', 's9.json'), JSON.stringify(sessionFile('s9', { schema: 9, name: 'sesion-9', sentence: 'del esquema 9' })));
+  fs.writeFileSync(path.join(sdir, 'sessions', 'sx.json'), JSON.stringify(sessionFile('sx', { tool: 'otra', name: 'sesion-x' })));
+  const data = JSON.parse(run(home, ['--json', '--now', new Date(NOW).toISOString()]));
+  const said = data.unreadable.join('\n');
+  assert.match(said, /s1\.json[^\n]*JSON|s1\.json[^\n]*roto/i, said);
+  assert.match(said, /s9\.json[^\n]*schema/i, said);
+  assert.match(said, /sx\.json[^\n]*herramienta/i, said);
+  assert.deepStrictEqual(data.agents.map((a) => [a.nombre, a.estado]).sort(), [['sesion-9', 'libre'], ['sesion-a', 'libre']], 'cada sesión sale con la derivación de hoy');
+  assert.ok(!data.agents.some((a) => a.haciendo === 'del esquema 9'));
+});
+
+// The page clock, run outside the browser with a fake time and counted network calls.
+function pageClock(html) {
+  const from = html.indexOf('// el reloj de la página');
+  const to = html.indexOf('// fin del reloj');
+  assert.ok(from > 0 && to > from, 'la página trae su reloj');
+  const calls = { net: 0 };
+  const count = () => { calls.net += 1; };
+  const fn = new Function('fetch', 'WebSocket', 'XMLHttpRequest', 'EventSource', `${html.slice(from, to)}; return { relojTick, umbral };`);
+  return { ...fn(count, function W() { count(); }, function X() { count(); }, function E() { count(); }), calls };
+}
+
+test('T43 Page_QuietClock_ConfigurableThreshold @story-2.81 @ac-39 — el reloj de la página marca las calladas con el umbral, sin pedir nada', async () => {
+  const html = page({ agents: [], items: [], meta: { teToca: [] }, rows: [], free: [], unreadable: [] }, { live: { token: 't' } });
+  assert.match(html, /setInterval\(\s*\(\)\s*=>\s*\{[^}]*relojTick/, 'el reloj corre cada minuto en la página');
+  const { relojTick, umbral, calls } = pageClock(html);
+  const people = () => [
+    { nombre: 'A', estado: 'trabajando', haciendo: 'x', novedadMs: NOW - 16 * 60000, sinPid: false },
+    { nombre: 'B', estado: 'trabajando', haciendo: 'y', novedadMs: NOW - 5 * 60000, sinPid: false },
+    { nombre: 'C', estado: 'trabajando', haciendo: 'z', novedadMs: NOW - (2 * 3600000 + 60000), sinPid: true },
+  ];
+  let list = people();
+  relojTick(list, NOW, { quietMin: undefined });
+  assert.match(list[0].callada, /^sin novedades desde las \d\d:\d\d$/);
+  assert.ok(!list[1].callada);
+  assert.strictEqual(list[2].estado, 'inactiva', 'sin pid y más de 2 h: inactiva, sin foto nueva');
+  assert.match(list[2].haciendo, /sin novedades desde las \d\d:\d\d/);
+  list = people();
+  relojTick(list, NOW, { quietMin: 30 });
+  assert.ok(!list[0].callada && !list[1].callada, 'con 30, ninguna');
+  for (const bad of ['abc', 0, -5, null]) assert.strictEqual(umbral({ quietMin: bad }), 15, String(bad));
+  assert.strictEqual(calls.net, 0, 'el reloj no hace ningún pedido de red');
+  // collect pasa el umbral del perfil del equipo, y uno roto cae al de por defecto
+  const { collect } = require(OFFICE);
+  const { home } = toyHome();
+  const at = new Date(NOW).toISOString();
+  const quiet = async (code, out) => (await collect({ home, now: at, siteUrl: async () => ({ code: 3, out: '' }), quietMinutes: async () => ({ code, out }) })).meta.quietMin;
+  assert.strictEqual(await quiet(3, ''), 15, 'sin configurar');
+  assert.strictEqual(await quiet(0, '30\n'), 30);
+  assert.strictEqual(await quiet(0, 'abc'), 15, 'roto: el de por defecto');
+  assert.strictEqual(await quiet(0, '0'), 15);
+});
+
+test('T83 Coordinator_FileWait_Shows @story-2.81 @ac-24 — la coordinadora que espera un permiso se ve esperando, con archivo o sin él', () => {
+  const asking = sessionFile('s-co', { name: 'Coordinadora', waitingForOwner: true, waitingFor: 'un permiso' });
+  // con fila de /wip
+  let { data } = buildOffice({ wip: wip([{ session: 'Coordinadora', sid: 's-co', extra: { kind: 'activity' } }]), coordinatorSid: 's-co', sessionFiles: [asking], nowMs: NOW });
+  assert.strictEqual(byName(data, 'Coordinadora').estado, 'firma');
+  assert.strictEqual(byName(data, 'Coordinadora').espera, 'un permiso');
+  // libre en /wip
+  ({ data } = buildOffice({ wip: wip([], { free: ['Coordinadora'], freeSids: ['s-co'] }), coordinatorName: 'Coordinadora', sessionFiles: [asking], nowMs: NOW }));
+  assert.strictEqual(byName(data, 'Coordinadora').estado, 'firma');
+  // sin espera, coordina
+  ({ data } = buildOffice({ wip: wip([], { free: ['Coordinadora'], freeSids: ['s-co'] }), coordinatorName: 'Coordinadora', sessionFiles: [sessionFile('s-co', { name: 'Coordinadora' })], nowMs: NOW }));
+  assert.strictEqual(byName(data, 'Coordinadora').estado, 'coordina');
+});
+
+test('T84 NoPid_OldFile_PhotoAndClockAgree @story-2.81 @ac-23 — sin pid y callada más de 2 h, la foto ya la dice inactiva; el reloj corre al abrir y con cada foto', () => {
+  const old = sessionFile('s-np', { name: 'SinPid', tool: 'codex', pid: null, waitingForOwner: true, waitingFor: 'una respuesta', updatedAt: new Date(NOW - 3 * 3600000).toISOString() });
+  const { data } = buildOffice({ wip: wip([{ session: 'SinPid', sid: 's-np', extra: { kind: 'loose', text: 'algo' } }]), sessionFiles: [old], nowMs: NOW });
+  const a = byName(data, 'SinPid');
+  assert.strictEqual(a.estado, 'inactiva');
+  assert.match(a.haciendo, /^Inactiva: sin novedades desde las \d\d:\d\d\.$/);
+  assert.ok(!a.espera, 'la espera vieja no se muestra');
+  const html = page({ agents: [], items: [], meta: { teToca: [] }, rows: [], free: [], unreadable: [] }, { live: { token: 't' } });
+  const after = html.slice(html.indexOf('// fin del reloj'));
+  assert.match(after, /^\/\/ fin del reloj\n(?:\/\/[^\n]*\n)*relojTick\(agents,Date\.now\(\),meta\);renderTop\(\);renderCrew\(\);/, 'al abrir, el reloj antes del primer dibujo');
+  assert.match(html, /setData\(m\.data\);relojTick\(agents,Date\.now\(\),meta\);renderTop\(\)/, 'con cada foto nueva, el reloj antes de dibujar');
 });

@@ -23,7 +23,8 @@ files_to_modify: []
   - files_to_create / files_to_modify: rutas relativas al repo; iguales a la tabla de Dev Notes.
   - work_item (antes ado_work_item): NO se escribe a mano; lo agrega tycon-story-work-item al crear la story.
   - Si la story corrige, recalibra o extiende otra: agregar followup_of y followup_reason (§1.2).
-  - Si se entrega en tandas: bloque pipelines (§1.1).
+  - Si se entrega en tandas: bloque pipelines (§1.1). Dos tandas sobre los mismos archivos que no sirven solas van en
+    una sola; si sirven solas, cada una dice qué entrega en `delivers`.
   - Nunca comillas dobles dentro de un comentario ni en el valor de title: la story se vuelve
     invisible para el arnés sin dar error (§1.0). Usar comillas simples.
   Borrar este comentario al terminar.

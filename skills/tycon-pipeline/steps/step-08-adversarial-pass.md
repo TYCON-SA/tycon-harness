@@ -39,6 +39,9 @@ El workflow se lanza **al cierre de «Implementar»** (ver `step-06-run-tests.md
 - **`marker.adversarial` NO existe** (kill-switch `TYCON_5B_EARLY=0`, o pipeline pre-fase-B) →
   comportamiento clásico: evaluar el gate y lanzar ACÁ (§Cuándo corre + §Acción), registrando
   igual `mark-adversarial-launched <runId> 5b`.
+- **El gate sale 3 (`waiting_turn: true`)**, en cualquiera de los casos de arriba que lanza o relanza → otra sesión tiene
+  su pase en vuelo y va uno por vez: no lances. Anunciá en 1 línea quién tiene el lugar (`turn`) y **cerrá el turno**. La
+  coordinadora te avisa cuando se libere, y ahí se retoma con `pipeline.js next`.
 - Nota: si «Implementar» ya anotó el salteo con `mark-adversarial-skipped` (gate `run:false`), este
   step no se alcanza (`next` lo da por atendido) — es el no-op esperado, no un caso de esta lista.
 

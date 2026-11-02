@@ -30,8 +30,9 @@ const { spawn } = require('child_process');
 const ROOT = path.join(__dirname, '..', '..');
 const { stateDir, claudeDir } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
 const { designacionVigente } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'critical-waivers.js'));
-const { wipNow, sessionsBySid } = require('./work-in-progress.js');
+const { wipNow, sessionsBySid, codexNames } = require('./work-in-progress.js');
 const { readPending } = require('./coordination.js');
+const sessionState = require(path.join(ROOT, 'scripts', 'lib', 'session-state.js'));
 
 const VENDOR = path.join(__dirname, 'office', 'vendor', 'three');
 const TEMPLATE = path.join(__dirname, 'office', 'page.html');
@@ -53,12 +54,19 @@ const MODULES = {
   'three/addons/shaders/LuminosityHighPassShader.js': 'extras/LuminosityHighPassShader.js',
   'three/addons/shaders/OutputShader.js': 'extras/OutputShader.js',
 };
+// Los estados de una sesión que trabaja o espera: los únicos en que estar callada dice algo.
+const QUIET_STATES = new Set(['trabajando', 'prueba', 'firma', 'espera']);
 // Los pasos en que la sesión corre pruebas o revisa: su persona mira la pantalla en lugar de teclear.
 const TESTING_STEPS = new Set(['run-tests', 'reviewers', 'adversarial-pass', 'live-check']);
 // Una sesión que espera a una persona (un permiso, una respuesta) pide la firma con la mano levantada.
 const WAITING_STATUS = /wait|input|permission/i;
 const PROMISE_KEEP_MS = 24 * 3600000;
 const STALE_END_MS = 12 * 3600000;
+// la sesión callada (decisión 20): sin novedades hace más de este umbral, en minutos; el perfil del equipo lo cambia
+// con `office.quiet_minutes`, desde el sitio
+const QUIET_DEFAULT_MIN = 15;
+// un archivo de estado inactivo de más de un día no se dibuja (los de Codex nunca se borran); queda en disco
+const SESSION_FILE_KEEP_MS = 24 * 3600000;
 // Hasta 10 escritorios, según cuántas sesiones haya; las demás quedan en las tarjetas de abajo. El tope de sesiones por
 // coordinadora no cuenta acá: la oficina muestra todas las de la máquina.
 const MAX_DESKS = 10;
@@ -150,26 +158,60 @@ function stateOf(x, status, isCoordinator) {
  * `coordinatorSid` la sesión coordinadora (o null) y `promises` la primera hora vista de cada sesión y story.
  * Devuelve `{ data, promises }`, con las promesas ya al día para guardarlas.
  */
-function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorName = null, promises = {}, nowMs = Date.now() }) {
+function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorName = null, promises = {}, nowMs = Date.now(),
+  sessionFiles = [], codexNames: cxNames = new Map(), quietMin = QUIET_DEFAULT_MIN, isAlive } = {}) {
   const kept = {};
   for (const [k, p] of Object.entries(promises || {})) {
     if (p && Number.isFinite(p.at) && Number.isFinite(p.seen) && nowMs - p.seen < PROMISE_KEEP_MS) kept[k] = p;
   }
+  // el archivo de estado de cada sesión, por sesión
+  const files = new Map();
+  for (const f of sessionFiles || []) if (f && f.session) files.set(String(f.session), f);
+  const used = new Set();
+  const quiet = Number.isFinite(quietMin) && quietMin > 0 ? quietMin : QUIET_DEFAULT_MIN;
+  const fileEnd = (f) => { const t = Date.parse(f && f.endAt); return Number.isFinite(t) ? t : null; };
+  // la última novedad, para la página y su reloj: quieta más que el umbral, «sin novedades desde las HH:MM»
+  const novelty = (a, f) => {
+    const at = Date.parse(f.updatedAt);
+    if (!Number.isFinite(at)) return;
+    a.novedadMs = at;
+    a.sinPid = f.pid == null;
+    // sin pid, pasadas las 2 h, inactiva: lo mismo que decide el reloj de la página, así la foto no la devuelve atrás
+    if (a.sinPid && nowMs - at > sessionState.DEAD_AFTER_MS) {
+      a.estado = 'inactiva';
+      a.haciendo = `Inactiva: sin novedades desde las ${hhmm(at)}.`;
+      delete a.espera;
+      return;
+    }
+    if (nowMs - at > quiet * 60000) a.callada = `sin novedades desde las ${hhmm(at)}`;
+  };
   const agents = [];
   wip.rows.forEach((row, i) => {
     const d = (wip.details && wip.details[i]) || {};
     const x = (wip.extra && wip.extra[i]) || {};
-    const estado = stateOf(x, d.status, Boolean(coordinatorSid) && d.sid === coordinatorSid);
+    const f = d.sid != null ? files.get(String(d.sid)) || null : null;
+    if (f) used.add(String(d.sid));
+    // el archivo manda en lo que sabe: el paso mientras hay pipeline, el trabajo suelto declarado y la espera; lo que no
+    // sabe (la entrada a los repos, la nota, la actividad sin marcador) sigue saliendo de /wip
+    const knows = Boolean(f) && ((x.kind === 'pipeline' && f.step) || x.kind === 'loose');
+    const base = stateOf(x, f ? null : d.status, Boolean(coordinatorSid) && d.sid === coordinatorSid);
+    // la espera del archivo manda también sobre la coordinadora, como el estado de Claude cuando no hay archivo
+    const asksOwner = Boolean(f && f.waitingForOwner);
+    const estado = asksOwner ? 'firma' : base;
     // el título es el de la tanda que corre, entero; sin tanda, el de la historia. Sin carril ni nota no hay título.
     const blind = row.work === 'no se ve qué hace' || x.kind === 'activity' || x.kind === 'nomarker';
     const titulo = blind ? null : unnumbered(x.batch) || unnumbered(x.title) || plain(row.work) || null;
-    const a = { nombre: row.session, estado, titulo, haciendo: sentenceOf(estado, x, row), carpeta: row.folder || null };
+    const haciendo = knows && f.sentence ? f.sentence : sentenceOf(f ? base : estado, x, row);
+    const a = { nombre: row.session, estado, titulo, haciendo, carpeta: row.folder || null };
+    if (asksOwner) a.espera = f.waitingFor || 'algo de vos';
+    if (knows && f.step) a.paso = f.step;
     if (titulo && unnumbered(x.batch) && unnumbered(x.title)) a.historia = unnumbered(x.title);
     // la promesa que la corrida anotó al arrancar; sin estimado, es también la hora de fin de la que sigue trabajando.
     // La que terminó y espera entrar no la toma: su hora es la de la cola, y sin ella no hay hora (como en /wip)
     const promisedAt = Number.isFinite(x.promisedAt) ? x.promisedAt : null;
     const done = x.kind === 'entering' || x.kind === 'stalled';
-    const rawEnd = Number.isFinite(x.endAt) ? x.endAt : done ? null : promisedAt;
+    const ownEnd = knows ? fileEnd(f) : Number.isFinite(x.endAt) ? x.endAt : null;
+    const rawEnd = ownEnd != null ? ownEnd : done ? null : promisedAt;
     // una hora de fin que pasó hace más de STALE_END_MS ya no dice nada: se trata como si no hubiera hora
     const endAt = Number.isFinite(rawEnd) && nowMs - rawEnd <= STALE_END_MS ? rawEnd : null;
     // lo que terminó y espera la cola no está atrasado: su hora pasada no se muestra. Los pedidos sin encolar no esperan
@@ -203,13 +245,53 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
           : { hora: dayHhmm(endAt), dif: 'en hora', cls: 'ontime' };
     }
     a.tipo = x.kind || null;
+    if (f && QUIET_STATES.has(a.estado)) novelty(a, f);
     agents.push(a);
   });
-  // la coordinadora quieta no está libre: coordina a las demás
-  for (const name of wip.free || []) {
-    agents.push(name === coordinatorName
-      ? { nombre: name, estado: 'coordina', haciendo: 'Coordina las sesiones de esta máquina' }
-      : { nombre: name, estado: 'libre', haciendo: 'Sin trabajo' });
+  // la coordinadora quieta no está libre: coordina a las demás. Una libre cuyo archivo dice que espera algo, espera
+  (wip.free || []).forEach((name, i) => {
+    const sid = (wip.freeSids || [])[i];
+    const f = sid != null ? files.get(String(sid)) || null : null;
+    if (f) used.add(String(sid));
+    // la espera va antes que «coordina»: la coordinadora que pide un permiso espera, como sin archivo
+    if (name === coordinatorName && !(f && f.waitingForOwner)) { agents.push({ nombre: name, estado: 'coordina', haciendo: 'Coordina las sesiones de esta máquina' }); return; }
+    if (f && f.waitingForOwner) {
+      const a = { nombre: name, estado: 'firma', espera: f.waitingFor || 'algo de vos', haciendo: f.sentence || 'Sin trabajo' };
+      novelty(a, f);
+      agents.push(a);
+      return;
+    }
+    agents.push({ nombre: name, estado: 'libre', haciendo: 'Sin trabajo' });
+  });
+  // las sesiones que sólo tienen su archivo: Codex sin marcador, o una que se cayó sin avisar. Una de Claude viva que no
+  // está en /wip está sin uso hace horas: /wip la cuenta mejor y no se dibuja de nuevo. Inactiva de más de un día, no se
+  // dibuja (sigue en disco)
+  const fromFile = new Set();
+  for (const [sid, f] of files) {
+    if (used.has(sid)) continue;
+    const stale = sessionState.isStale(f, { now: nowMs, ...(isAlive ? { isAlive } : {}) });
+    const at = Date.parse(f.updatedAt);
+    if (stale && (!Number.isFinite(at) || nowMs - at > SESSION_FILE_KEEP_MS)) continue;
+    if (f.tool === 'claude' && !stale && !f.waitingForOwner) continue;
+    const a = { nombre: f.name || cxNames.get(sid) || sid.slice(0, 8), titulo: null, carpeta: null };
+    if (stale) {
+      a.estado = 'inactiva';
+      a.haciendo = `Inactiva: sin novedades desde las ${Number.isFinite(at) ? hhmm(at) : '—'}.`;
+    } else {
+      const works = Boolean(f.step) || (f.sentence && f.sentence !== sessionState.NO_PIPELINE);
+      a.estado = f.waitingForOwner ? 'firma' : works ? 'trabajando' : 'libre';
+      a.haciendo = works ? f.sentence : f.waitingForOwner ? (f.sentence || 'Sin trabajo') : 'Sin trabajo';
+      if (f.waitingForOwner) a.espera = f.waitingFor || 'algo de vos';
+      if (f.step) a.paso = f.step;
+      if (a.estado !== 'libre') {
+        const e = fileEnd(f);
+        if (e != null) { a.pronosticoIso = localIso(e); a.fin = { hora: dayHhmm(e), dif: '', cls: '' }; } else { a.termina = 'sin hora estimada'; a.fin = { hora: a.termina, dif: '', cls: '' }; }
+        a.tipo = 'archivo';
+        novelty(a, f);
+        fromFile.add(sid);
+      }
+    }
+    agents.push(a);
   }
   // un orden fijo para las tarjetas y los escritorios: la coordinadora primero y después por nombre
   agents.sort((p, q) => (q.estado === 'coordina') - (p.estado === 'coordina') || String(p.nombre).localeCompare(String(q.nombre), 'es'));
@@ -227,6 +309,8 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
   }
   // lo que quedó a medio camino: qué era, en llano, y qué hacer con eso
   for (const h of wip.halfwayItems || []) {
+    // la corrida de una sesión que se dibuja desde su archivo no quedó a medio camino: está trabajando
+    if (h.sid != null && fromFile.has(String(h.sid))) continue;
     const accion = h.cleanAfter === 'unknown' ? 'No se sabe desde cuándo se puede limpiar: preguntale a la coordinadora'
       : Number.isFinite(h.cleanAfter) ? `Se puede limpiar después de las ${hhmm(h.cleanAfter)}` : 'Ya se puede limpiar: pedíselo a la coordinadora';
     // el de una corrida es el título de su historia: lo escribió una persona y queda entero
@@ -239,6 +323,7 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     teToca,
     extra: Math.max(0, agents.length - MAX_DESKS),
     puestos: deskSlots(agents.length),
+    quietMin: quiet,
   };
   // la tabla dice lo mismo que las tarjetas, en llano
   const rows = agents.filter((a) => a.tipo).map((a) => ({ work: a.titulo || '', state: a.mientras ? `${a.haciendo} Mientras tanto: ${a.mientras}.` : a.haciendo, end: a.fin ? a.fin.hora + (a.fin.dif ? ` · ${a.fin.dif}` : '') : '', session: a.nombre, folder: a.carpeta || '' }));
@@ -332,12 +417,16 @@ function page(data, { live = null } = {}) {
     .replace('__OFFICE_DATA__', () => safe(data));
 }
 
-// La dirección del sitio de la organización, con el mismo lector que el comando /org-site: sale 0 con la dirección,
-// 3 si el perfil no la trae y 2 si la configuración no se pudo leer.
-function readSiteUrl() {
-  const r = require('child_process').spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'lib', 'tycon-config.js'), 'get', 'site.url'], { input: '', encoding: 'utf8', timeout: 5000 });
+// Una clave de la configuración, con el mismo lector que el comando /org-site: sale 0 con el valor, 3 si no está y 2 si
+// la configuración no se pudo leer.
+function readConfigKey(key) {
+  const r = require('child_process').spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'lib', 'tycon-config.js'), 'get', key], { input: '', encoding: 'utf8', timeout: 5000 });
   return { code: r.status == null ? 2 : r.status, out: r.status === 0 ? r.stdout : (r.stderr || r.stdout || (r.error && r.error.message) || '') };
 }
+// La dirección del sitio de la organización.
+const readSiteUrl = () => readConfigKey('site.url');
+// El umbral de la sesión callada, en minutos (decisión 20).
+const readQuietMinutes = () => readConfigKey('office.quiet_minutes');
 
 // Las horas prometidas guardadas. Sin archivo, ninguna; un archivo roto o ilegible se dice en `problem`: tomarlo por
 // vacío haría medir los atrasos contra la hora de ahora sin avisar.
@@ -373,7 +462,18 @@ async function collect(opts = {}) {
   const file = path.join(sdir, 'office', 'promises.json');
   const saved = readPromises(file);
   if (saved.problem) problems.push(saved.problem);
-  const { data, promises } = buildOffice({ wip, signatures, coordinatorSid, coordinatorName, promises: saved.promises, nowMs });
+  // los archivos de estado de cada sesión; uno que no se puede usar se dice, y esa sesión sale como la deduce /wip
+  const ss = sessionState.readAll(sdir);
+  problems.push(...ss.problems);
+  const cxNames = ss.states.some((s) => s.tool === 'codex' && !s.name) ? codexNames(opts.codexHome || path.join(home, '.codex'), problems) : new Map();
+  // el umbral de la sesión callada: un número entero de minutos, o el de por defecto
+  let q;
+  try { q = await (opts.quietMinutes || readQuietMinutes)(); } catch (e) { q = { code: 2, out: e.message }; }
+  const qn = q && q.code === 0 ? Number(String(q.out || '').trim()) : NaN;
+  const quietMin = Number.isInteger(qn) && qn > 0 ? qn : QUIET_DEFAULT_MIN;
+  if (q && q.code === 2) problems.push(`el umbral de la sesión callada no se pudo leer: ${String(q.out || '').trim().split('\n')[0] || 'sin motivo'}; uso ${QUIET_DEFAULT_MIN} min`);
+  else if (q && q.code === 0 && quietMin !== qn) problems.push(`office.quiet_minutes no es un número de minutos (${String(q.out || '').trim().slice(0, 40)}); uso ${QUIET_DEFAULT_MIN} min`);
+  const { data, promises } = buildOffice({ wip, signatures, coordinatorSid, coordinatorName, promises: saved.promises, nowMs, sessionFiles: ss.states, codexNames: cxNames, quietMin });
   const board = readBoard(path.join(sdir, 'coordination', 'tablero.json'));
   if (board.problem) problems.push(board.problem);
   data.tablero = board.board;
@@ -508,4 +608,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { buildOffice, buildBoard, page, importMap, moduleSource, collect, openFile, openLive, deskSlots, readSiteUrl, MODULES };
+module.exports = { buildOffice, buildBoard, page, importMap, moduleSource, collect, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, MODULES };

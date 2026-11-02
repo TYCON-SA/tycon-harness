@@ -1052,6 +1052,11 @@
       "requiere": []
     },
     {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-after-main.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 7.15: qué archivos toca la story y, sobre todo, si se pudo mirar — el test-gate difiere exportador-real sólo cuando lo sabe.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/touched-files.test.js",
@@ -1433,6 +1438,12 @@
       "requiere": []
     },
     {
+      "__nota": "el camino rápido que toca una pantalla: maqueta aprobada y captura posterior al último cambio, o no guarda.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adhoc-screen.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.174: riesgo_alto_por en la historia y los archivos de dependencias cuentan como riesgo alto; el lint frena un valor fuera de la lista.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/owner-decision-risk.test.js",
@@ -1719,12 +1730,22 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/session-state.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/coordination.test.js",
       "requiere": []
     },
     {
       "raiz": "arnes",
       "ruta": "tests/coordination-notice.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/session-cap-guard.test.js",
       "requiere": []
     },
     {
@@ -2461,6 +2482,12 @@
       "__nota": "El control de los nombres de las herramientas de horas fuera de su integración (scripts/ci/tool-names.js): cuenta sólo lo del núcleo (no las zonas permitidas ni las rutas a una integración), frena sobre el techo con archivo y línea, las excepciones con motivo y sin comodines, y el árbol real dentro de su techo.",
       "raiz": "arnes",
       "ruta": "tests/tool-names.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "El control de las palabras de las guías en castellano (scripts/ci/vocabulary.js): una palabra que no se escribe frena con archivo, línea y la que va en su lugar; el código, los enlaces, los nombres de la máquina y las excepciones declaradas no cuentan; el techo sólo baja; el glosario dice lo mismo que las reglas; y el árbol real cabe en su techo.",
+      "raiz": "arnes",
+      "ruta": "tests/vocabulary.test.js",
       "requiere": []
     },
     {
@@ -3615,6 +3642,12 @@
       "requiere": []
     },
     {
+      "__nota": "arreglo rápido 2026-11-01 (reglas de la coordinadora): el turno de la suite completa (scripts/tools/heavy-turn.js). Con coordinadora, una suite completa por vez: la segunda no arranca y dice quién tiene el lugar; sin coordinadora no cambia nada; un turno de un proceso muerto o de más de tres horas se libera solo y el ajeno no se suelta. El corredor de suites.json lo pide sólo sin acotar, y las portables sólo enteras. Con HOME de juguete y un arnés instalado de juguete, porque el clon no trae el perfil; también toma el turno con varios procesos a la vez y corre las portables de verdad hasta su negativa.",
+      "raiz": "arnes",
+      "ruta": "tests/heavy-turn.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.17, tandas W3 y W4 (T33-T37 y los casos del pase adversarial): el aplicador de la lista única de hooks (scripts/setup/apply-hooks.js) — qué decide con cada integración, perfil y opt-in, que deja el mismo settings.json que el instalador de antes, las dos reglas de identidad (Mac/Linux por archivo, Windows por la ruta del repo), la marca de codificación, los permisos, los matchers repetidos, la sección de rutas que no se pueden registrar y la desinstalación de un bash entre comillas y de los enlaces duros anotados. Con HOME y settings.json de prueba; no usa bash ni pwsh.",
       "raiz": "arnes",
       "ruta": "tests/apply-hooks.test.js",
@@ -3708,6 +3741,11 @@
       "__nota": "story 8.26, tanda F1 (T22, T56): el freno antes de publicar, en un empuje (scripts/hooks/public-push-guard.js). El freno corre COPIADO a un arnés de laboratorio —así la prueba decide si esa «máquina» tiene el perfil del equipo y dónde está la lista— contra repos de juguete con git; un repo desnudo local hace de público. Cada rojo (un término en el contenido, la ruta, el mensaje, la rama o una marca; un token; un correo que no es noreply; una ruta vedada; un objeto ilegible; el tope de tiempo) tiene su verde. La lista es inventada.",
       "raiz": "arnes",
       "ruta": "tests/public-push-guard.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/public-push-guard-commit.test.js",
       "requiere": []
     },
     {

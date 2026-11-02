@@ -554,6 +554,27 @@ function main(argv, env = process.env) {
   const portables = [...parallel, ...exclusives].filter((p) => p.portable).length;
   console.log(`[suites.json] workers: ${workers} · en paralelo: ${parallel.length} · solas al final: ${exclusives.length} · diferidas: ${resumen.deferred_suites.length}${portables ? ` · ${portables} portables con su HOME vacía, como en la CI` : ''}`);
 
+  // El turno de la suite completa (scripts/tools/heavy-turn.js): una corrida sin acotar es la suite completa, y en una
+  // máquina con coordinadora va una por vez. Con el turno de otro proceso vivo no corre y sale 77, con quién lo tiene.
+  // Sin coordinadora (la CI, la nube) no se toma nada. Una sola suite, la cruzada o la acotada por el repo no lo piden.
+  const full = !suiteOnly && !onlyTouched;
+  let turn = null;
+  if (full) {
+    try { turn = require(path.join(repo, 'scripts', 'tools', 'heavy-turn.js')); } catch (_) { turn = null; }
+    let t = { ok: true };
+    // no poder mirar el turno no frena la suite: se dice y corre, como antes de que hubiera turno
+    try { if (turn) t = turn.take({ env, what: `suites.json de ${path.basename(path.resolve(repo))}` }); } catch (e) { console.error(`[suites.json] ⚠️  no pude mirar el turno de la suite completa (${e.message}): corro igual`); }
+    if (!t.ok) {
+      console.error(`[suites.json] ${t.message}`);
+      escribir(out, { ...resumen, no_medido: t.message });
+      // no es verde ni rojo, y el total no se mide: test-gate.sh la da como su 75, «otra corrida en marcha, esperá»
+      return Promise.resolve(turn.BUSY_EXIT);
+    }
+    if (!t.taken) turn = null;
+  }
+  const releaseTurn = () => { if (turn) { try { turn.release({}); } catch (_) { /* vence con el proceso */ } turn = null; } };
+  process.on('exit', releaseTurn);
+
   const live = new Set();
   let interrupted = null;
   const onSignal = (sig) => {
@@ -689,6 +710,7 @@ function main(argv, env = process.env) {
   return (async () => {
     await pool(parallel, workers);
     await pool(exclusives, 1);
+    releaseTurn();
     removeHomes();
     process.removeListener('SIGINT', onSignal);
     process.removeListener('SIGTERM', onSignal);

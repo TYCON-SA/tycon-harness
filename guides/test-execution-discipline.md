@@ -47,6 +47,12 @@ Se agrava cuando, **al mismo tiempo**, el agente tiene **8–11 subagentes (advi
    `ruta` de su entrada en `suites.json`). Mientras quede alguna sin salir verde sola, la corrida completa sale 76 sin
    lanzar nada y da el comando de cada una.
 
+   *Traer main no repite lo que ya se midió*: con el portón acotado porque una CI corre la completa, si lo que midió la
+   última corrida, mezclado con main, da exactamente lo que hay en la carpeta, corren sólo las suites que fallaron y las
+   que nombran archivos que trajo main. Se compara la carpeta, no los commits. Cualquier otro cambio corre lo de siempre
+   (`lib/after-main.js`). No ve un archivo ignorado que lea una suite, ni el destino de un enlace fuera del repo: eso queda
+   para la CI del pedido.
+
 3. **Nunca full-suite + fan-out de subagentes simultáneo.** Si hay advisors/subagentes corriendo,
    **esperar** a que terminen antes de lanzar la suite completa (y viceversa). Secuenciar, no superponer.
 

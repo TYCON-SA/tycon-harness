@@ -212,6 +212,7 @@ apaga sólo con su variable en `0`, y el portón de edición, `hook-pre-edit.js`
 | `push-phantom-ref-notice.js` | PreToolUse (Bash) | Antes de subir cambios, avisa si nombran un archivo de código que no existe en el repo | No | full | `TYCON_PUSH_GHOST=0` |
 | `pr-one-per-repo-guard.js` | PreToolUse (Bash) | Apagado de fábrica. Prendido, frena abrir un pull request en Azure DevOps si ese repo ya tiene uno abierto | Sí, sólo prendido | full | `TYCON_PR_ONE_PER_REPO=1` lo prende |
 | `pr-auto-complete-guard.js` | PreToolUse (Bash) | Frena el pull request a `main` armado con `az` sin `--auto-complete true` y `--squash false` explícitos | Sí | full | `TYCON_PR_AUTO_COMPLETE_GUARD=0` · puntual: `TYCON_PR_BY_HAND=1` pegado al comando |
+| `session-cap-guard.js` | PreToolUse (Bash) | Frena abrir una sesión de Claude de fondo, por cualquier camino, cuando la máquina ya está en el tope de sesiones trabajando; si no puede contarlas, frena igual. Dice el camino: `coordination.js open`, que espera turno | Sí | full | ninguno: el tope lo cambia una persona (`coordination.max_working`) |
 | `public-push-guard.js` | PreToolUse (Bash) | En un clon del arnés con un remoto público, frena el `gh` que publica un texto que no puede salir (un secreto, un correo, una ruta de máquina, un término de la lista privada) o que no se puede leer desde el comando | Sí | full | ninguno: de un freno falso se sale con una excepción con motivo en la lista privada |
 | `tycon-pipeline/scripts/on-bash-write-gate.js` | PreToolUse (Bash) | El portón de carril por la terminal: deniega escribir código con `sed -i`, heredoc, `tee` o `cp` sin pipeline ni ad-hoc declarado | Sí | full | `TYCON_STORY_GATE=off` |
 | `tycon-pipeline/scripts/on-advisor-run.js` | PreToolUse (Task\|Agent) | Anota cada subagente lanzado: es lo que cuenta el pipeline para saber qué revisores corrieron | No | minimal y full | ninguno propio |
@@ -228,6 +229,13 @@ apaga sólo con su variable en `0`, y el portón de edición, `hook-pre-edit.js`
 | `context-size-notice.js` | SessionStart | Después de `/clear` o de compactar, el aviso de contexto vuelve a cero | No | full | `TYCON_CONTEXT_NOTICE=0` |
 | `wait-notice.js` | Notification (permission_prompt) | Un pedido de permiso abre la espera del aviso | No | full | `TYCON_WAIT_NOTICE=0` |
 | `wait-notice.js` | SessionEnd | La sesión se cerró: su espera se cierra sin avisar | No | full | `TYCON_WAIT_NOTICE=0` |
+| `session-state.js` | SessionStart | Anota el estado de la sesión para /office: su nombre, su proceso y su paso | No | full | `TYCON_SESSION_STATE=0` |
+| `session-state.js` | Notification (permission_prompt) | Un pedido de permiso: la sesión espera «un permiso» | No | full | `TYCON_SESSION_STATE=0` |
+| `session-state.js` | PreToolUse (AskUserQuestion\|ExitPlanMode\|mcp__spokenly__ask_user_dictation) | Una pregunta a la persona: la sesión espera «una respuesta» | No | full | `TYCON_SESSION_STATE=0` |
+| `session-state.js` | PostToolUse | Terminó el uso de una herramienta: la espera de un permiso se cierra | No | full | `TYCON_SESSION_STATE=0` |
+| `session-state.js` | UserPromptSubmit | La persona escribió: la espera se cierra | No | full | `TYCON_SESSION_STATE=0` |
+| `session-state.js` | Stop | El turno se cerró: la espera se cierra | No | full | `TYCON_SESSION_STATE=0` |
+| `session-state.js` | SessionEnd | La sesión se cerró: su archivo de estado se borra | No | full | `TYCON_SESSION_STATE=0` |
 | `blocking-meter.js` | Stop | Mide la herramienta bloqueante más larga del turno y los mensajes que quedaron esperando | No | full | `TYCON_BLOCKING_METER=0` |
 | `blocking-notice.js` | UserPromptSubmit | Cobra el veredicto del medidor de bloqueo del turno anterior | No | full | `TYCON_BLOCKING_METER=0` |
 | `coordination-notice.js` | UserPromptSubmit | Sólo en la sesión coordinadora: avisa cuando la máquina está en el tope de sesiones trabajando o lo pasó, y una vez por día de las firmas que esperan hace más de un día | No | full | `TYCON_COORDINATION_NOTICE=0` |

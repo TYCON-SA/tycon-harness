@@ -201,3 +201,22 @@ test('ContextNotice_BrokenOrgFile_SaysIt @story-7.54 @ac-3 — un team-repos.jso
   assert.strictEqual(r.tokens, 300000);
   assert.match(r.problem || '', /team-repos\.json/);
 });
+
+test('ContextNotice_OpenRun_SaysHowToResume — con una ejecución abierta, dice cómo seguirla en otra sesión; sin ella, no', () => {
+  // 🔴 rojo: el aviso no nombra adopt-session ni el id de esta sesión, o lo dice sin ejecución abierta.
+  const { stateDir } = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js'));
+  const home = tmp('ctx-home-');
+  const active = path.join(stateDir(home), 'active');
+  fs.mkdirSync(active, { recursive: true });
+  fs.writeFileSync(path.join(active, 'r1-con.json'), JSON.stringify({ sessionId: 'r1-con', storyId: '9.99' }));
+  const r = correr(prompt('r1-con', transcript(tmp('ctx-r1-'), [pedido(), turno(310000)])), { home });
+  assert.strictEqual(r.code, 0, r.err);
+  assert.strictEqual(r.out.split('\n').length, 1, `una línea: ${r.out}`);
+  assert.match(r.out, /la 9\.99/);
+  assert.match(r.out, /marker\.js" adopt-session r1-con/, 'con la ruta entre comillas: puede traer espacios');
+  assert.match(r.out, /pipeline\.js start/);
+  const r2 = correr(prompt('r1-sin', transcript(tmp('ctx-r1b-'), [pedido(), turno(310000)])), { home });
+  assert.strictEqual(r2.code, 0, r2.err);
+  assert.match(r2.out, /300 mil/);
+  assert.doesNotMatch(r2.out, /adopt-session/, 'sin ejecución abierta no la menciona');
+});

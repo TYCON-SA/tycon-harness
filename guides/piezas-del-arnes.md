@@ -742,7 +742,7 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 **Qué es:** El registro de firmas con el que el dev perdona un criterio que no se puede verificar corriendo, en `.tycon/runtime-waivers.jsonl`.
 
-**Por qué existe:** Perdonar sin firma abriría la puerta a saltear la matriz. La firma sale de la terminal del dev y lleva una cadena de hash que detecta ediciones a mano. Una firma descartada se dice, con el motivo.
+**Por qué existe:** Perdonar sin firma abriría la puerta a saltear la matriz. La firma la da la persona (en la ventana de permiso, con un click o un «aprobado» donde la ventana no llega, o en su terminal) y lleva una cadena de hash que detecta ediciones a mano. Una firma descartada se dice, con el motivo.
 
 **Quién la usa:** El comando `marker.js runtime-waiver`, la matriz, el paso 8 y el freno del commit.
 
@@ -950,7 +950,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 **Qué es:** La guía `guides/safety-guard.md` del freno de mano: un hook que bloquea comandos destructivos irreversibles en Bash y PowerShell.
 
-**Por qué existe:** Frena `rm -rf /`, el push forzado a main, `curl|bash`, el borrado de bases de datos, `npm publish` o leer `.ssh`. Está prendido por defecto; se apaga con `TYCON_SAFETY_GUARD=0` y hay una salida de emergencia por comando con `TYCON_SAFETY_OFF=1`, que la persona firma en la ventana de permiso o en su terminal.
+**Por qué existe:** Frena `rm -rf /`, el push forzado a main, `curl|bash`, el borrado de bases de datos, `npm publish` o leer `.ssh`. Está prendido por defecto; se apaga con `TYCON_SAFETY_GUARD=0` y hay una salida de emergencia por comando, que la persona firma en su terminal.
 
 **Quién la usa:** El hook `PreToolUse` en cada sesión.
 
@@ -1214,15 +1214,15 @@ _(scripts/metrics/step-times.js + el carril de cada commit en scripts/hooks/unpu
 
 ## scripts/tools/work-in-progress.js
 
-_(scripts/tools/work-in-progress.js + commands/wip.md; en 3D y en vivo: scripts/tools/office.js)_
+_(scripts/tools/work-in-progress.js + commands/wip.md; en 3D y en vivo: scripts/tools/office.js; el estado de cada sesión: scripts/hooks/session-state.js)_
 
-**Qué es:** `/wip`: una tabla con el trabajo en curso de la máquina (story, paso, hora de fin y sesión), lo que espera entrar a los repos (y si choca con main), lo que anotó cada sesión sin story (`marker.js doing`), las libres, las que nadie usa y lo que quedó a medio camino.
+**Qué es:** `/wip`: una tabla con el trabajo en curso de la máquina (story, paso, hora de fin y sesión), lo que espera entrar a los repos, las notas (`marker.js doing`), las libres, las que nadie usa y lo que quedó a medio camino.
 
-**Por qué existe:** Con varias sesiones a la vez, saber qué hace cada una pedía leer los marcadores a mano. La hora de fin es la mediana de los pasos medidos en la máquina; sin datos, lo dice en vez de inventarla.
+**Por qué existe:** Con varias sesiones a la vez, saber qué hace cada una pedía leer los marcadores a mano. La hora de fin es la mediana de los pasos medidos en la máquina; sin datos, lo dice.
 
 **Quién la usa:** Quien coordina varias sesiones en la misma máquina. Sólo lee: no limpia ni adopta nada.
 
-**Dónde se prueba:** `scripts/tests/work-in-progress.test.js` y `office*.test.js`
+**Dónde se prueba:** `scripts/tests/work-in-progress.test.js`, `office*.test.js` y `session-state.test.js`
 
 ## scripts/metrics/upload-runs.js
 
@@ -2137,8 +2137,6 @@ _.github/workflows/npm-publish.yml + scripts/ci/check-public-workflow.js `--publ
 **Quién la usa:** La CI pública, en cada push a `main` que toca `scripts/setup/npm/**` o a mano.
 
 **Dónde se prueba:** `scripts/tests/npm-publish-workflow.test.js`
-
-**Guía:** [paquete-npm.md](maintaining/paquete-npm.md)
 
 **Guía:** [guides/maintaining/paquete-npm.md](maintaining/paquete-npm.md)
 

@@ -116,6 +116,27 @@ signatures»).
 
 With Codex, the owner opens the sessions: Codex has no launcher for named background sessions.
 
+## Closing a session
+
+The coordinator, or a person in their terminal, closes a session with `coordination.js close --name <name>`. Before
+closing it checks four things, and if one is missing it does not close and says which:
+
+1. That it is idle: one running a command is not closed either.
+2. That its folder has nothing uncommitted or unpushed.
+3. That its branch got into `main`, and so did the branches it left in that folder since it started. In a fixed slot,
+   that the slot is released: a slot is released, not deleted.
+4. That it has no open run and no open quick fix.
+
+What it cannot look at (a folder it did not record or that is gone, git not answering, an unreadable record) comes out
+as «no sé» (I don't know), and it does not close either. With everything clean it runs `claude stop` and `claude rm`
+with the session's id.
+
+**An interactive session is not closed.** It is checked all the same and it says so: a person closes that tab.
+
+**Limits.** It looks at the folder the session is in now: it does not see another worktree the session left behind, nor
+what was kept with `git stash`. A branch deleted without merging is no longer seen. A branch squashed into one commit
+reads as not merged. A worktree of a repo with no working folder comes out as «no sé». `claude stop` and `claude rm` by hand do not go through this.
+
 ## The cap: what counts as working
 
 **Working** is a live session whose session file says it is busy. A session waiting for CI, the queue or the owner has
@@ -127,27 +148,67 @@ Configuration tab, "The sessions on each machine"), and each machine can change 
 can take depends on the machine. With no value anywhere, the cap is 3. `coordination.js status` shows who is working,
 who is waiting and why, and the cap with where it comes from.
 
+The cap brakes on every path the agent takes, not only through `open`. Before each command, a brake checks whether the
+command opens a background Claude session: `claude --bg`, or `claude` running in the background (`&`, `nohup`, `setsid`,
+`tmux new -d`, `screen -dm`, `Start-Process`, the tool's background execution), also wrapped in `env`, `sudo`,
+`bash -c`, `pwsh -c` or `cmd /c`. If it opens one and the machine is at the cap, it refuses and gives the `open` command,
+which waits its turn. It counts with the same function as `open`. Below the cap it lets the command through and records
+the session, so it counts from that moment. If it cannot count (a state file that cannot be read) or cannot record the
+session, it refuses as well and names the file. The way out is fixing that file, or the person opening the session from
+their terminal: the brake only watches the agent's tools. It has no switch: a person changes the cap.
+
 The coordinator also sees it without asking: on each turn, if the machine is at the cap, a notice tells her who is
-working; if it is over, by how much and which one has been working the shortest. Below the cap it says nothing, and no
-other session sees it. It is turned off with `TYCON_COORDINATION_NOTICE=0`.
+working; if it is over, by how much and which one has been working the shortest. Below the cap it says nothing about that,
+and no other session sees it. It is turned off with `TYCON_COORDINATION_NOTICE=0`.
 
-## Adversarial passes, one at a time
+The same notice carries two more things:
 
-An adversarial pass weighs a lot on the machine: two at once overload it. Before launching one, the session asks the
-coordinator for its turn, and the coordinator gives it when no other pass is in flight. `coordination.js status` says
-which pass is in flight, for which story, in which session and since when. And when a session asks the pass's gate
-(`pipeline.js deep-review-gate`) while another is in flight, the answer carries `other_in_flight` (story, session and
-time) and the line telling it to ask for its turn. With no coordinator designated, the gate answers as always.
+- **Background sessions sitting idle.** A background session that has gone more than 15 minutes without working shows up
+  as "X has been idle for N min: close it or give it work". Not one waiting for its adversarial pass, one that recently
+  noted what it is doing (`marker.js doing`), or the one holding the machine's full suite.
+- **Ready requests nobody queued, on GitHub.** An open, clean request (no conflict and no required checks pending) with no
+  auto-merge and outside the queue, unchanged for more than 10 minutes, shows up with the command to queue it. Why: nobody is
+  going to merge it, and everyone thinks it already went in. It comes from the last saved reading, less than an hour old: the
+  notice does not go to the network. Requests from a bot do not show up. Not on Azure: without reading its checks, "clean"
+  only says it does not conflict.
+- **The session waiting for room for its pass.** It has to launch one and another holds the place: it shows up with who holds
+  it, and once freed, with "can launch". Nothing wakes it by itself: the coordinator tells it.
 
-## Signatures, by their two paths
+## Heavy work takes turns: the full suite and adversarial passes
+
+The machine can run at the same time **one full suite and one adversarial pass or batch of reviewers from another session**:
+the pass and the reviewers run in the cloud and barely use the machine. **Never two full suites or two passes at once.**
+The harness controls this, not anyone's memory:
+
+- **The second suite does not start.** The suite runner and the whole portable run ask for the turn
+  (`scripts/tools/heavy-turn.js`). With the turn held by another live process they do not run (the test gate exits 75, its
+  "wait") and they say who holds it, since when and how to free it. A scoped suite does not ask for it. The turn of a dead process, or one older
+  than three hours, frees itself.
+- **The second pass is not launched.** With another in flight, the pass's gate (`pipeline.js deep-review-gate`) exits 3, and
+  `pipeline.js next` asks to wait instead of launching. The answer carries `other_in_flight` (story, session and time) and the
+  line saying who holds the place. The pass of a closed session does not count.
+- **How long the place can take to free up.** Up to an hour too long: the harness knows a pass finished when its session
+  collects it, not when it finishes in the cloud. After that hour it no longer stops anything, because it may be finished or
+  stuck, and that is said.
+
+`coordination.js status` shows the suite and the pass in progress. With no coordinator designated, everything answers as
+always: in CI and in the cloud there is no turn. `TYCON_SUITE_TURN=0` turns off the suite's, and `TYCON_SUITE_TURN=1` asks for
+it even with no coordinator: it can only stop too much.
+
+## Signatures, by their three paths
 
 **Before asking for a signature, the coordinator confirms it is still missing.** Asking for a signature of something
 already signed makes the owner sign twice. The control signature is confirmed by comparing the signed content with the
 branch's.
 
-Then she asks for it with `coordination.js signature --kind <topic> --title <what is signed> --cwd <folder> -- <command>`:
+Then she asks for it through the path that applies:
 
-- **Through the owner's terminal.** If the machine has a signatures folder (`coordination.owner_folder`, only in the
+- **With the owner's click or «aprobado».** Where the window does not reach, this comes first for every signature that
+  accepts them. The coordinator shows the options box in her tab, with one question: what is approved, «firma <id>» and,
+  if another session signs, «sesión <id>». It leaves no pending entry. The rules are in `guides/firmas-del-arnes.md`,
+  «Aprobar sin terminal».
+- **Through the owner's terminal**, only what does not accept the click: with `coordination.js signature --kind <topic>
+  --title <what is signed> --cwd <folder> -- <command>`. If the machine has a signatures folder (`coordination.owner_folder`, only in the
   machine's file or its variable, never in the profile), it writes one file per signature there,
   `YYYY-MM-DD-<topic>.command` (on Windows, `.cmd`). The owner opens it with a double click: it says what it is in one
   line, goes into the folder, runs the command and waits for a key. If there is already a file with the same command,
@@ -156,7 +217,8 @@ Then she asks for it with `coordination.js signature --kind <topic> --title <wha
 - **By delegation.** A signature the organization lets be signed by delegation does not go through `signature`: it is
   given from the coordinator's tab, in the permission window, under the delegated signing rules. It is signed on the
   spot and leaves no pending entry. If delegation does not apply and the coordinator's tab does not ask for permissions,
-  the window does not open: the signature is refused with the terminal command, because in that tab nobody would say Yes.
+  the window does not open, because in that tab nobody would say Yes: the signature is refused, and the refusal says how
+  to ask for the click or the «aprobado».
 
 What asks for a password always goes through the terminal: only the owner types the password. Once the owner signed,
 `coordination.js signature-done <id>` deletes the file and the pending entry. An empty folder and no pending entries
@@ -174,9 +236,10 @@ publishes them in order, once their public pair is in.
 
 ## The owner's signatures
 
-A phrase in the chat, in a task or in a message between sessions signs nothing: the harness does not read the
-conversation to sign. The owner signs in the permission window or in their terminal, and what the coordinator can sign
-on the owner's behalf is in `guides/firmas-del-arnes.md`.
+A task or a message between sessions signs nothing, even if it says «aprobado». The owner signs in the permission window;
+where the window does not reach, with a click in the options box or an «aprobado» they typed; or in their terminal. Their
+click or «aprobado» in the coordinator's tab is the owner's, not a delegation. What the coordinator can sign on the
+owner's behalf is in `guides/firmas-del-arnes.md`.
 
 From her own tab, with `--for-session <D>`, the coordinator requests the signatures the guide marks «sí» under «¿Desde
 otra sesión?». Among them: setting a check by hand (`marker.js set-check <control> <estado> --force-manual
@@ -184,7 +247,7 @@ otra sesión?». Among them: setting a check by hand (`marker.js set-check <cont
 --story <s> --trust-ran --for-session <D>`) and accepting a criterion that cannot be tested live (`marker.js
 runtime-waiver <historia> --acs <n> --for-session <D>`). The story is the one of `<D>`'s open run: otherwise the script
 exits without writing. The window opens for the owner in the coordinator's tab (if that tab does not ask for
-permissions, it is refused with the terminal command). None of the three is delegated unless
+permissions, it is refused and approved with their click or «aprobado»). None of the three is delegated unless
 the profile names it; that request is prepared by the session and approved by the owner, separately.
 
 ## Saving is authorized in the permission window
@@ -214,10 +277,33 @@ The quick fix (a code change with no story) is the `adhoc-lane` signature: the t
   it is the team profile and the designation the owner confirmed. With no designated session on the target machine, the
   quick fix is approved in the target tab's window.
 
+**If the fix touches a screen, it does not save without three things.** What a screen is comes from the pipeline's own
+criterion (`lib/ui-signal.js`, with the organization's `screen_test` rule), file by file. A test does not count.
+
+1. The mockup, passing `mockup.js check`.
+2. Its approval: `marker.js adhoc set '{"reason":"…","mockup":"<path>","mockupApproved":"<who and by which path>"}'`,
+   with the usual signature. The window shows the mockup and who approved it. If the mockup changes, it needs approval again.
+3. The screenshot, newer than the last change to the lane's files: `marker.js adhoc capture <image>`. It asks for no
+   signature: it approves nothing, and the guard measures it. A code change afterwards expires it.
+
+The save window shows the mockup and screenshot paths together. If the guard cannot measure whether the fix touches a
+screen, it does not save either: nothing measured, nothing green.
+
+**Limits.** The guard looks at the screenshot's date: it does not check that it shows that screen, nor compare it to the
+mockup. A closed quick fix (`adhoc clear`) or an expired one stops nothing on save, same as the high-risk guard. A screen
+recorded in a nested worktree that was deleted keeps asking for a mockup and a screenshot: the way out is `adhoc clear`.
+
 ## The notices to the owner
 
 Short and plain: what happened, what is missing and what the owner decides, in that order. One notice per batch of
 work, not one per session. The style meter that already exists measures this; this recipe does not add another one.
+
+## How the coordinator speaks
+
+**When she says something "finishes", it means working for real: it went into main and it is installed.** If not yet, she
+says so: "in the queue", "in main, not installed", "programmed, no request yet". Why: the owner decides on that word, and a
+"done" that does not work yet makes them consider settled something that is still broken. An end time also says which state
+it refers to.
 
 ## The board in the office
 
@@ -243,9 +329,10 @@ its end and measure the delay against it; without a time they say «sin hora est
 
 They come from a whole day of coordinating several sessions. Each says what to do and why.
 
-- **An owner's signature goes in a message of its own.** What is signed, in one line, and the command; nothing else. If
-  it is still pending after 15 minutes, the reminder also goes on its own. Why: a signature at the end of a message
-  with other things gets lost, and the work stays stopped waiting for it.
+- **An owner's signature goes in a message of its own.** What is signed, in one line, in an options box with a single
+  signature; what goes through the terminal, with its command. Nothing else. If it is still pending after 15 minutes, the
+  reminder also goes on its own. Why: a signature at the end of a message with other things gets lost, and the work stays
+  stopped waiting for it.
 - **Before handing over a signature command, rehearse what comes after it.** The commit, its checks and the push are
   tried dry, and the signature is the last step. If there is no way to rehearse, say so. Why: an ok that expires
   because of a check that runs later makes the owner sign twice.
@@ -259,10 +346,11 @@ They come from a whole day of coordinating several sessions. Each says what to d
 - **A delegated signature is confirmed by its path.** After signing, the line must say «delegación». If it says another
   path (for example, the window in the owner's name), tell the owner right away and redo it. Why: a signature in the
   owner's name that they did not give is a false record. A tab that does not ask for permissions no longer signs
-  through the window: the harness refuses it.
-- **Heavy things one at a time, with a turn.** The full suite, the controls bench, the reviewers' exam and the gate run
-  one at a time on the machine, and the turn is asked from the coordinator. The story the owner marked as a priority
-  goes first in the line. Why: two at once saturate the machine and both take longer.
+  through the window: the harness refuses it. A click or an «aprobado» the hook did not record does not count either.
+- **Heavy things, with a turn.** The full suite, the controls bench, the reviewers' exam and the gate run one at a time on
+  the machine, and the turn is asked from the coordinator. The harness also stops the full suite and the pass (above,
+  "Heavy work takes turns"). The story the owner marked as a priority goes first in the line. Why: two at once saturate the
+  machine and both take longer.
 - **Before approving someone else's request, look at the diff.** And an ok covering sensitive files nobody reviewed is
   not given: separate them first. Why: approving without looking is signing what was not seen.
 - **A «free» session may be waiting for something.** When it runs something without touching files, it writes what
@@ -285,7 +373,12 @@ They come from a whole day of coordinating several sessions. Each says what to d
 | The coordinator settles details with the safest option | nadie | It is a judgment call, and it is written down for the owner to see. |
 | Every session with a name a person gave it | aviso | `/coordinate` lists the ones whose name the tool made up. |
 | No more sessions working than the cap | freno | `open` does not open at the cap. Nothing stops a session the owner opens by hand; `status` counts it and, at the cap, so does the coordinator's notice on each turn. |
-| Adversarial passes one at a time | aviso | The coordinator gives the turn. The pass's gate tells the session another one is in flight and to ask for its turn; it does not stop it. |
+| One full suite at a time | freno | The suite runner and the whole portable run do not start with the turn held by another live process, and they say who holds it. A suite someone runs another way is not seen. |
+| Adversarial passes one at a time | freno | The pass's gate exits 3 and `next` asks to wait with another in flight. Nothing stops launching the pass without asking the gate, and a quick fix's pass is not noted as in flight. After an hour, it only warns. |
+| Idle background sessions get closed or given work | aviso | The coordinator's notice on each turn, after 15 minutes. |
+| A session closes with nothing pending | freno | `close` does not close if something is missing or it could not look. `claude stop` and `claude rm` by hand do not go through it, and it does not see another worktree the session left behind. |
+| A ready request does not stay unqueued | aviso | The coordinator's notice on each turn, after 10 minutes, and the startup one. GitHub only. |
+| "Finishes" means working | nadie | It is the word she picks: no data on the machine sees it. |
 | Confirm a signature is missing before asking for it | nadie | How to confirm depends on each signature; `signature` only avoids two files with the same command. |
 | One file per signature, deleted once signed | aviso | `status` counts the pending signatures; `signature` does not write a second file with the same command. One that has waited more than a day is brought up to the coordinator, once a day. |
 | Requests in order | nadie | No data on the machine says which request pairs with which without asking the network on every turn. |
@@ -296,8 +389,9 @@ They come from a whole day of coordinating several sessions. Each says what to d
 | The signature command with its folder | nadie | The session writes the command; `signature` already builds it with its folder. |
 | The time of the finished work | nadie | What «finished» means depends on each work. |
 | A story number never alone | nadie | It goes in the messages, which do not go through a text check. |
-| A tab that does not ask for permissions does not sign through the window | freno | The window's guard refuses the signature and gives the terminal command. That the path says «delegación» is confirmed by the coordinator. |
-| Heavy things one at a time, with a turn | nadie | The adversarial pass has its notice (above); the full suite, the bench, the exam and the gate do not. |
+| A tab that does not ask for permissions does not sign through the window | freno | The window's guard refuses the signature and says how to approve it with a click or an «aprobado»; what does not accept them, with the terminal command. That the path says «delegación» is confirmed by the coordinator. |
+| A quick fix with a screen carries a mockup and a screenshot | freno | The save guard does not pass without the three things, or if it could not measure. It looks at the screenshot's date, not at what it shows. |
+| Heavy things one at a time, with a turn | nadie | The full suite and the adversarial pass have their stop (above); the bench, the exam and the gate do not. |
 | Look at the diff before approving someone else's request | nadie | It is the approver's judgment call. |
 | A waiting session writes what it is doing | nadie | The session writes it with `marker.js doing`; nothing forces it. |
 | Check that a request is still in the queue | nadie | Checking on every turn would mean asking the network all the time. |

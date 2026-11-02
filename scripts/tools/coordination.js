@@ -20,10 +20,14 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *   open --name <n> --repo <repo> [--branch <rama>] -- <encargo>
  *                            lo mismo, en un puesto fijo libre del repo (scripts/tools/work-slots.js), en la rama del
  *                            trabajo (wt/<nombre> sin rama); sin puesto libre no la abre
+ *   close --name <n>         cierra una sesión de fondo si quedó limpia; si falta algo, o no pudo mirarlo, no cierra y dice
+ *                            qué. A una interactiva la verifica y avisa
  *
- * Además, sin línea de comandos: `capNotice` es el aviso del tope que la coordinadora ve en cada turno
- * (scripts/hooks/coordination-notice.js) y `adversarialTurn` es lo que `deep-review-gate` agrega cuando otra sesión
- * tiene un pase adversarial en vuelo. Los dos callan sin coordinadora designada.
+ * Además, sin línea de comandos: `capNotice` es el aviso que la coordinadora ve en cada turno
+ * (scripts/hooks/coordination-notice.js): el tope, las sesiones de fondo quietas, los pedidos verdes que nadie encoló,
+ * las firmas viejas. `adversarialTurn` es lo que frena a `deep-review-gate` y a `next` cuando otra sesión tiene un pase
+ * adversarial en vuelo. El turno de la suite completa vive en scripts/tools/heavy-turn.js. Todo calla sin coordinadora
+ * designada.
  *
  * Trabaja una sesión cuyo archivo dice `busy`, una de Codex con actividad en los últimos 5 minutos y una que abrió
  * `open` hace menos de 10 minutos y todavía no escribió su archivo. Las sesiones se leen con lo mismo que usa /wip.
@@ -48,7 +52,15 @@ const CODEX_WINDOW_MS = 5 * 60000;
 // Una sesión de Codex quieta hace más de tres horas ya no está esperando: no se lista.
 const CODEX_IDLE_MS = 3 * 3600000;
 const OPENED_WINDOW_MS = 10 * 60000;
+// Una sesión de fondo sin trabajar más que esto ocupa su lugar sin hacer nada: se le avisa a la coordinadora.
+const QUIET_MS = 15 * 60000;
+// Un pase en vuelo frena al siguiente hasta esta edad. El marcador no sabe si el pase ya terminó en la nube (se entera
+// cuando su sesión lo recoge), así que uno terminado o colgado ocupa el lugar a lo sumo este tiempo; suelen tardar 20 a 40 min.
+const ADVERSARIAL_TURN_MAX_MS = 60 * 60000;
+// La nota de `marker.js doing` dice que la sesión hace algo sin tocar archivos, mientras sea reciente.
+const DOING_FRESH_MS = 3 * 3600000;
 const LAUNCH_TIMEOUT_MS = 30000;
+const GIT_TIMEOUT_MS = 20000;
 // Empieza con letra o número: el nombre va como valor de `-n` y no puede leerse como una bandera.
 const { NAME_RE } = sessionNames;
 const KIND_RE = /^[a-z0-9-]+$/;
@@ -154,6 +166,16 @@ function recentOpened(home, now, problems) {
   return valid.filter((o) => now - o.at < OPENED_WINDOW_MS);
 }
 
+// La sesión anotó hace poco qué hace (`marker.js doing`): no está quieta, aunque su archivo diga `idle`.
+function hasFreshDoing(home, sid, now) {
+  try { return now - fs.statSync(path.join(stateDir(home), 'doing', `${sid}.json`)).mtimeMs < DOING_FRESH_MS; } catch { return false; }
+}
+
+// Quién tiene el turno de la suite completa: el renglón de heavy-turn.js, o null. No poder leerlo no frena el estado.
+function suiteHolder(home, now, problems) {
+  try { return require('./heavy-turn.js').holder({ home, now }); } catch (e) { problems.push(`el turno de la suite completa (${e.message})`); return null; }
+}
+
 // Los pases adversariales en vuelo, con la sesión de cada uno.
 function inFlight(markers, nameOf) {
   const out = [];
@@ -175,6 +197,9 @@ function status(opts = {}) {
   const working = [];
   const waiting = [];
   const unnamed = [];
+  const quiet = [];
+  const passWaiting = [];
+  const suite = suiteHolder(home, now, problems);
   const opened = recentOpened(home, now, problems);
   const justOpened = new Set(opened.map((o) => o.name));
   const alive = new Set();
@@ -188,7 +213,17 @@ function status(opts = {}) {
     if (s.nameSource === 'derived' && s.name) unnamed.push(label(s.name));
     if (s.busy) working.push({ session: nameOf(sid), sid, why: story || 'trabajando sin pipeline', since: s.statusAt });
     else if (justOpened.has(s.name)) working.push({ session: nameOf(sid), sid, why: 'recién abierta, todavía arrancando', since: (opened.find((o) => o.name === s.name) || {}).at || null });
-    else waiting.push({ session: nameOf(sid), sid, why: story ? `${story}, ${s.status || 'sin estado'}` : 'sin trabajo' });
+    else {
+      waiting.push({ session: nameOf(sid), sid, why: story ? `${story}, ${s.status || 'sin estado'}` : 'sin trabajo' });
+      // la que tiene que lanzar su pase y espera el lugar: no está quieta, le falta que alguien la despierte
+      const owesPass = m && m.adversarialGate && m.adversarialGate.run === true && !m.adversarial && m.deepReviewDone !== true;
+      if (owesPass && s.status === 'idle') passWaiting.push({ session: nameOf(sid), sid });
+      // una de fondo, quieta: ni esperando su pase, ni con una nota de lo que hace, ni con la suite completa de la máquina
+      else if (s.kind === 'bg' && s.status === 'idle' && Number.isFinite(s.statusAt) && now - s.statusAt >= QUIET_MS
+        && !(m && adversarialInFlight(m)) && !hasFreshDoing(home, sid, now) && !(suite && suite.sid === sid)) {
+        quiet.push({ session: nameOf(sid), sid, minutes: Math.floor((now - s.statusAt) / 60000) });
+      }
+    }
   }
   for (const c of codexThreads(opts.codexHome || path.join(home, '.codex'), problems)) {
     const session = c.name || c.id.slice(0, 8);
@@ -206,7 +241,8 @@ function status(opts = {}) {
   let pending = [];
   try { pending = readPending(home); } catch (e) { problems.push(e.message); }
   return {
-    working, waiting, cap: r.max_working, adversarial,
+    working, waiting, quiet, passWaiting, cap: r.max_working, adversarial,
+    suite: suite ? { session: suite.session ? label(suite.session) : null, what: label(suite.what), since: suite.at } : null,
     signatures: { terminal: pending.length, delegated: 0 },
     unnamed, problems,
   };
@@ -221,6 +257,8 @@ function statusText(s) {
   lines.push(`Esperando: ${s.waiting.length}`);
   for (const w of s.waiting) lines.push(`  · ${w.session} — ${w.why}`);
   lines.push(`Pase adversarial en vuelo: ${s.adversarial.length ? s.adversarial.map((a) => `${a.storyId ? `la ${a.storyId}` : 'sin story'} (${a.session}, desde las ${hhmm(a.since)})`).join(' · ') : 'ninguno'}`);
+  lines.push(`Suite completa en curso: ${s.suite ? `${s.suite.session || 'una sesión sin nombre'} (${s.suite.what}, desde las ${hhmm(s.suite.since)})` : 'ninguna'}`);
+  lines.push(`De fondo y quietas: ${s.quiet.length ? s.quiet.map((q) => `${q.session} hace ${q.minutes} min`).join(' · ') : 'ninguna'}`);
   lines.push(`Firmas pendientes: ${s.signatures.terminal} por la terminal · ${s.signatures.delegated} por delegación`);
   lines.push(`Sin nombre puesto por una persona: ${s.unnamed.length ? s.unnamed.join(', ') : 'ninguna'}`);
   if (s.problems.length) lines.push(`No se pudo leer: ${s.problems.join(' · ')}`);
@@ -325,10 +363,25 @@ function oldSignatures(opts, now, problems) {
   return `Coordinación: ${old.length} firma(s) del dueño esperan hace más de un día; la más vieja, «${label(old[0].title)}», desde el ${ddmm(old[0].at)} a las ${hhmm(old[0].at)}.`;
 }
 
+// Los pedidos verdes que nadie encoló (scripts/hooks/stuck-pr-notice.js), de la última foto: sin salir a la red.
+function greenPrLines(opts, problems) {
+  try {
+    const r = require(path.join(__dirname, '..', 'hooks', 'stuck-pr-notice.js')).coordinatorLines({
+      home: opts.home || require('os').homedir(), ...(opts.arnes ? { tree: opts.arnes } : {}), ...(opts.now == null ? {} : { now: Number(opts.now) }),
+    });
+    if (r.problem) problems.push(r.problem);
+    return r.lines.map((l) => l.replace(/^⚠️ /, 'Coordinación: '));
+  } catch (e) {
+    problems.push(`los pedidos verdes (${e.message})`);
+    return [];
+  }
+}
+
 /**
- * El aviso del tope para la sesión coordinadora: en el tope, quiénes trabajan; pasado el tope, por cuánto y cuál trabaja
- * hace menos. Debajo del tope, null. Después, las firmas del dueño que esperan hace más de un día. Lo que no pudo leer
- * va en una línea. No abre ninguna conversación.
+ * El aviso para la sesión coordinadora: en el tope, quiénes trabajan; pasado el tope, por cuánto y cuál trabaja hace
+ * menos. Después, las sesiones de fondo quietas, los pedidos verdes que nadie encoló y las firmas del dueño que esperan
+ * hace más de un día. Sin nada de eso, null. Lo que no pudo leer va en una línea. No abre ninguna conversación ni sale a
+ * la red.
  */
 function capNotice(opts = {}) {
   const sid = sessionOf(opts);
@@ -347,6 +400,16 @@ function capNotice(opts = {}) {
       lines.push(`Coordinación: la máquina pasó el tope por ${working.length - cap} (${working.length} de ${cap} trabajando: ${names})${newest ? `; la que trabaja hace menos: ${newest.session}` : ''}.`);
     }
   }
+  for (const q of s.quiet.filter((x) => x.sid !== sid)) lines.push(`Coordinación: ${q.session} está quieta hace ${q.minutes} min: cerrala o dale trabajo.`);
+  // nada la despierta sola: quien tiene que avisarle cuando se libera el lugar es la coordinadora. Con el mismo criterio
+  // que el portón: el pase de una sesión cerrada, o de más de una hora, no ocupa el lugar.
+  for (const w of s.passWaiting.filter((x) => x.sid !== sid)) {
+    const t = adversarialTurn({ ...opts, sessionId: w.sid });
+    lines.push(t && t.waiting_turn
+      ? `Coordinación: ${w.session} espera su turno de pase adversarial (lo tiene ${t.other_in_flight[0].session}): avisale cuando termine.`
+      : `Coordinación: ${w.session} puede lanzar su pase adversarial, no hay otro en vuelo: avisale.`);
+  }
+  lines.push(...greenPrLines(opts, problems));
   const signatures = oldSignatures(opts, opts.now == null ? Date.now() : Number(opts.now), problems);
   if (signatures) lines.push(signatures);
   lines.push(...waitLines(opts, sid, problems));
@@ -355,14 +418,17 @@ function capNotice(opts = {}) {
 }
 
 /**
- * Lo que `deep-review-gate` agrega cuando otra sesión tiene un pase adversarial en vuelo: `{ other_in_flight, turn }`.
- * Sin otro pase, o sin coordinadora designada, null.
+ * El turno del pase adversarial, cuando otra sesión tiene uno en vuelo: `{ other_in_flight, turn, waiting_turn }`. Con
+ * `waiting_turn`, `deep-review-gate` sale 3 y `next` pide esperar: el arnés no deja lanzar el segundo. Un pase de más de
+ * una hora ya no frena (puede estar terminado o colgado), y se dice. Sin otro pase, o sin coordinadora designada, null.
  */
 function adversarialTurn(opts = {}) {
   const env = opts.env || process.env;
   const home = opts.home || require('os').homedir();
   const sid = sessionOf(opts);
   const d = designacionVigente({ home });
+  // no poder leerla no es «no hay coordinadora»: el pase no se frena, pero se dice que no se pudo mirar
+  if (d && d.error) process.stderr.write(`coordination: no pude saber cuál es la coordinadora (${d.error}): no miro el turno del pase\n`);
   if (!d || d.error) return null;
   const rol = sesionQueReenvia({ env, home, arnes: opts.arnes });
   if (!rol.valor) return null;
@@ -371,12 +437,20 @@ function adversarialTurn(opts = {}) {
   // Una coordinadora que ya se cerró no da turnos; el pase de una sesión que ya no vive quedó abandonado.
   if (!(sessions.get(d.sesion) || {}).alive) return null;
   const markers = markersBySid(home, problems);
-  const others = [...markers].filter(([k, m]) => k !== sid && adversarialInFlight(m) && (!sessions.has(k) || sessions.get(k).alive));
+  // Una sesión cerrada no deja archivo: sin archivo no vive, y su pase quedó abandonado, salvo que sea de Codex, que no
+  // escribe esos archivos: ésa cuenta si tuvo actividad hace poco. Si no se pudieron leer las sesiones, en la duda, cuenta.
+  const now = opts.now == null ? Date.now() : Number(opts.now);
+  const codexAlive = new Set(codexThreads(opts.codexHome || path.join(home, '.codex'), problems).filter((c) => c.last && now - c.last < CODEX_IDLE_MS).map((c) => c.id));
+  const others = [...markers].filter(([k, m]) => k !== sid && adversarialInFlight(m) && (sessions.has(k) ? sessions.get(k).alive : (codexAlive.has(k) || problems.length > 0)));
   if (!others.length) return null;
   const nameOf = (k) => { const s = sessions.get(k); return (s && s.name && label(s.name)) || String(k).slice(0, 8); };
   const other_in_flight = inFlight(new Map(others), nameOf).map(({ sid: _s, ...a }) => a);
   const list = other_in_flight.map((a) => `${a.storyId ? `la ${a.storyId}` : 'sin story'}, ${a.session}, desde las ${hhmm(a.since)}`).join(' · ');
-  return { other_in_flight, turn: `Hay otro pase adversarial en vuelo (${list}): pedile turno a la ${rol.valor} antes de lanzar este.` };
+  // una fecha que no se lee no frena: no se sabe cuánto lleva, y sin tope trabaría la fila para siempre
+  const waiting_turn = other_in_flight.some((a) => { const at = Date.parse(a.since); return Number.isFinite(at) && now - at < ADVERSARIAL_TURN_MAX_MS; });
+  return { other_in_flight, waiting_turn, turn: waiting_turn
+    ? `Hay otro pase adversarial en vuelo (${list}): va uno por vez y el arnés no deja lanzar este hasta que termine; pedile turno a la ${rol.valor}.`
+    : `Hay otro pase adversarial anotado hace más de una hora (${list}): puede estar terminado o colgado, así que no frena; pedile turno a la ${rol.valor} antes de lanzar este.` };
 }
 
 // ── Las firmas por la terminal ──
@@ -533,6 +607,20 @@ function callerPermissionMode({ home, env }) {
   return { mode };
 }
 
+/**
+ * El tope, como lo cuentan `open` y el freno de sesiones (scripts/hooks/session-cap-guard.js): `{ atCap, working, cap,
+ * problems }`. Lee las conversaciones, como `open`. Con `problems` no vacío el conteo no es confiable: cada uno decide.
+ */
+function capCheck(opts = {}) {
+  const s = status(opts);
+  return { atCap: s.working.length >= s.cap.value, working: s.working, cap: s.cap, problems: s.problems };
+}
+
+/** Anota una sesión recién abierta en `opened.json`, para que cuente hasta que escriba su archivo. Tira si no puede. */
+function noteOpened({ home, now, name, cwd }) {
+  writeJson(openedFile(home), [...recentOpened(home, now, []).filter((o) => o.name !== name), { name, cwd, at: now }]);
+}
+
 // Una apertura por vez en la máquina: dos `open` juntos elegían el mismo nombre de la lista y la segunda anotación de
 // `opened` pisaba la primera. La otra espera su turno; un candado de hace más de dos minutos es de una apertura que murió.
 const OPEN_LOCK_STALE_MS = 120000;
@@ -583,7 +671,7 @@ function openNow(opts) {
   const no = (message) => ({ ok: false, message: oneLine(message) });
   if (isCodex(env) && !opts.launcher) return no('Codex no tiene cómo abrir una sesión de fondo: esa sesión la abre el dueño.');
   if (!auto && !NAME_RE.test(String(name))) return no('El nombre de la sesión va con letras, números, guion o guion bajo, sin espacios: no la abrí.');
-  const s = status({ ...opts, home, env, now });
+  const s = capCheck({ ...opts, home, env, now });
   // Sin leer todo no se sabe el tope ni qué nombres están tomados: no se abre a ciegas.
   if (s.problems.length) return no(`No pude leer todo el estado de la máquina (${s.problems[0]}): no la abrí.`);
   const taken = new Set([...sessionsBySid(path.join(claudeDir(home), 'sessions'), [], path.join(claudeDir(home), 'projects')).values()]
@@ -605,7 +693,7 @@ function openNow(opts) {
   }
   if (taken.has(name)) return no(`«${name}» ya lo usa otra sesión viva: no la abrí.`);
   if (!oneLine(task)) return no('Falta el encargo de la sesión: no la abrí.');
-  if (s.working.length >= s.cap.value) return no(`Ya hay ${s.working.length} trabajando y el tope es ${s.cap.value} (${ORIGIN[s.cap.origin] || s.cap.origin}): no la abrí, espera su turno.`);
+  if (s.atCap) return no(`Ya hay ${s.working.length} trabajando y el tope es ${s.cap.value} (${ORIGIN[s.cap.origin] || s.cap.origin}): no la abrí, espera su turno.`);
   if (cwd && opts.repo) return no('Va o la carpeta o el repo, no los dos: no la abrí.');
   // La sesión nueva arranca en el modo de la que la abre: en otro modo se traba en permisos que nadie ve y no recibe
   // los mensajes de las demás. Sin saberlo, no se abre a ciegas.
@@ -632,9 +720,12 @@ function openNow(opts) {
     }
     return no(message);
   };
+  // Lo pesado se pide: seis sesiones dentro del tope, cada una con lo suyo, llevaron la carga de una máquina a 52.
+  const rolTurno = sesionQueReenvia({ env, home, arnes: opts.arnes }).valor;
+  const heavyRule = rolTurno ? ` — Nada pesado sin turno de la ${rolTurno}: suite completa, banco, examen, portón, revisores, pase.` : '';
   const job = slot
-    ? `${task} — Trabajás en el puesto ${slot.path}, en la rama ${slot.branch}. Al terminar, con todo commiteado, soltalo: node "${path.join(__dirname, 'work-slots.js')}" release "${slot.path}"`
-    : String(task);
+    ? `${task}${heavyRule} — Trabajás en el puesto ${slot.path}, en la rama ${slot.branch}. Al terminar, con todo commiteado, soltalo: node "${path.join(__dirname, 'work-slots.js')}" release "${slot.path}"`
+    : `${task}${heavyRule}`;
   const launcher = opts.launcher || { bin: 'claude', prefix: [] };
   const timeoutMs = opts.timeoutMs || LAUNCH_TIMEOUT_MS;
   // con control remoto a su nombre, el dueño la ve y la maneja desde claude.ai/code o el celular
@@ -654,11 +745,183 @@ function openNow(opts) {
   }
   const opened = `Abrí «${name}» en ${where}. Para entrar: claude attach ${name}, o desde claude.ai/code (control remoto «${name}»)`;
   try {
-    writeJson(openedFile(home), [...recentOpened(home, now, []).filter((o) => o.name !== name), { name, cwd: where, at: now }]);
+    noteOpened({ home, now, name, cwd: where });
   } catch (e) {
     return { ok: true, message: oneLine(`${opened}. Pero no la pude anotar (${e.code || e.message}): hasta que escriba su archivo de sesión no cuenta para el tope.`) };
   }
   return { ok: true, message: opened };
+}
+
+// ── Cerrar una sesión ──
+
+function gitIn(dir, args) {
+  // la carpeta la dice el archivo de la sesión: su configuración no corre un programa por acá
+  const r = spawnSync('git', ['-C', dir, '-c', 'core.fsmonitor=false', '-c', 'protocol.ext.allow=never', ...args], { encoding: 'utf8', timeout: GIT_TIMEOUT_MS, windowsHide: true, env: { ...process.env, LC_ALL: 'C', LANG: 'C', LANGUAGE: 'C' } });
+  return { code: r.error ? null : r.status, out: String(r.stdout || '').trim(), err: String((r.error && r.error.message) || r.stderr || '').trim().split('\n')[0] };
+}
+
+// Lo que le falta a la carpeta de una sesión para cerrarla: `{ missing, unknown }`. Lo que no se pudo mirar va a `unknown`:
+// «no sé» nunca es «está limpia». Un puesto fijo se suelta, no se borra (work-slots.js).
+function folderGaps(dir, opts) {
+  const missing = [];
+  const unknown = [];
+  // `answersOne`: los comandos cuyo código 1 es una respuesta («no está en una rama», «no entró»), no una falla
+  const git = (args, what, answersOne = false) => {
+    const r = gitIn(dir, args);
+    if (r.code !== 0 && !(answersOne && r.code === 1)) unknown.push(`no pude mirar ${what} en ${dir} (${r.err || `salió con código ${r.code}`})`);
+    return r;
+  };
+  if (!fs.existsSync(dir)) return { missing, unknown: [`su carpeta ${dir} ya no está: no puedo mirar su rama`] };
+  const top = gitIn(dir, ['rev-parse', '--show-toplevel']);
+  // fuera de un repo no hay nada de git que mirar
+  if (top.code !== 0) return /not a git repository/i.test(top.err) ? { missing, unknown } : { missing, unknown: [`no pude mirar el repo de ${dir} (${top.err})`] };
+  // con todos los archivos sin seguir, aunque la configuración del repo los esconda
+  const status = git(['status', '--porcelain', '--untracked-files=all'], 'los cambios');
+  if (status.code === 0 && status.out) missing.push(`${status.out.split('\n').length} archivo(s) sin commitear en ${dir}`);
+  const branch = git(['symbolic-ref', '-q', '--short', 'HEAD'], 'la rama', true);
+  const onBranch = branch.code === 0;
+  const slots = workSlots.list({ home: opts.home, env: opts.env, arnes: opts.arnes, repo: dir });
+  if (!slots.ok) unknown.push(`no pude mirar si ${dir} es un puesto fijo (${slots.message})`);
+  const slot = slots.ok ? slots.slots.find((s) => fs.realpathSync(top.out) === s.path) : null;
+  if (slot && onBranch) missing.push(`el puesto ${slot.path} sigue tomado por la rama ${branch.out}: soltalo con work-slots.js release`);
+  const fetched = gitIn(dir, ['fetch', '--quiet', '--no-tags', 'origin', 'main']);
+  if (fetched.code !== 0) {
+    unknown.push(`no pude traer main de origin en ${dir} (${fetched.err || `salió con código ${fetched.code}`}): no sé si lo empujó ni si entró`);
+    return { missing, unknown };
+  }
+  const main = git(['rev-parse', 'FETCH_HEAD^{commit}'], 'main');
+  if (main.code !== 0) return { missing, unknown };
+  const unpushed = git(['rev-list', '--count', 'HEAD', '--not', '--remotes', main.out], 'lo empujado');
+  if (unpushed.code === 0 && Number(unpushed.out) > 0) missing.push(`${unpushed.out} commit(s) sin empujar en ${dir}`);
+  // la rama de un worktree o de la carpeta, o un commit suelto: que haya entrado a main. También una `main` local: empujada
+  // a otra rama, tampoco entró
+  const merged = git(['merge-base', '--is-ancestor', 'HEAD', main.out], 'si la rama entró a main', true);
+  if (merged.code === 1) missing.push(`${onBranch ? `la rama ${branch.out}` : 'el commit suelto'} de ${dir} no entró a main`);
+  // las ramas de las que la sesión se fue en esta carpeta: su registro dice cuáles, desde que arrancó
+  if (!Number.isFinite(opts.startedAt)) {
+    unknown.push(`no sé desde cuándo trabaja en ${dir}: no puedo mirar las ramas que dejó`);
+    return { missing, unknown };
+  }
+  // sin su archivo, git contesta con el registro de la rama, que no dice de qué ramas se fue: medido
+  const logPath = git(['rev-parse', '--git-path', 'logs/HEAD'], 'el registro');
+  if (logPath.code !== 0) return { missing, unknown };
+  let logSize = 0;
+  try { logSize = fs.statSync(path.resolve(dir, logPath.out)).size; } catch (_) { logSize = 0; }
+  const log = logSize ? git(['reflog', 'show', '--date=unix', '--format=%gd %gs', 'HEAD'], 'las ramas que dejó') : null;
+  if (log && log.code !== 0) return { missing, unknown };
+  // un registro vacío (apagado por configuración) o con otra forma no dice que no dejó ramas
+  const lines = log && log.out ? log.out.split('\n') : [];
+  if (!lines.length || !lines.every((l) => /^HEAD@\{\d+\}( |$)/.test(l))) {
+    unknown.push(`no pude leer el registro de ${dir}: no sé qué ramas dejó`);
+    return { missing, unknown };
+  }
+  const left = new Set();
+  for (const l of lines) {
+    const m = /^HEAD@\{(\d+)\} checkout: moving from (\S+) to /.exec(l);
+    if (m && Number(m[1]) * 1000 >= opts.startedAt) left.add(m[2]);
+  }
+  for (const b of left) {
+    if (b === branch.out) continue;
+    // el código 1 es «ya no existe»; otro es que no se pudo mirar
+    const ref = git(['show-ref', '--verify', '--quiet', `refs/heads/${b}`], `si la rama ${b} sigue`, true);
+    if (ref.code !== 0) {
+      // sin rama, el registro dice el commit: lo hecho ahí sólo queda en el registro si ninguna rama lo tiene
+      if (ref.code === 1 && /^[0-9a-f]{7,40}$/.test(b)) {
+        const loose = git(['rev-list', '--count', b, '--not', '--branches', '--remotes', main.out], `el commit ${b}`);
+        if (loose.code === 0 && Number(loose.out) > 0) missing.push(`${loose.out} commit(s) hechos sin rama en ${dir}, desde ${b}`);
+      }
+      continue;
+    }
+    const entered = git(['merge-base', '--is-ancestor', `refs/heads/${b}`, main.out], `si la rama ${b} entró a main`, true);
+    if (entered.code === 1) missing.push(`la rama local ${b} de ${dir} no entró a main`);
+  }
+  return { missing, unknown };
+}
+
+// La ejecución de la sesión: `{ missing, unknown }`. Un marcador sin pasos pendientes es de una corrida terminada, y un
+// arreglo rápido vencido ya no abre nada.
+function runGaps(sid, home) {
+  const missing = [];
+  const unknown = [];
+  const io = require(path.join(SKILL_LIB, 'story-gate-io.js'));
+  const problems = [];
+  const m = markersBySid(home, problems).get(String(sid));
+  unknown.push(...problems);
+  if (m && !(Array.isArray(m.stepsPending) && m.stepsPending.length === 0)) missing.push(`su ejecución de la historia ${m.storyId || '(sin nombre)'} sigue abierta`);
+  let crudo = null;
+  try { crudo = fs.readFileSync(io.adhocPath(stateDir(home), sid), 'utf8'); } catch (e) {
+    if (e.code !== 'ENOENT') unknown.push(`no pude leer su arreglo rápido (${e.code || e.message})`);
+  }
+  if (crudo !== null) {
+    try {
+      const a = JSON.parse(crudo);
+      if (!a || !a.reason) unknown.push('no pude leer su arreglo rápido: no dice su motivo');
+      else if (io.readAdhoc(stateDir(home), sid)) missing.push('su arreglo rápido sigue abierto: marker.js adhoc clear');
+    } catch (e) {
+      unknown.push(`no pude leer su arreglo rápido (${e.message})`);
+    }
+  }
+  return { missing, unknown };
+}
+
+/**
+ * Cierra una sesión de fondo sólo si quedó limpia: nada sin commitear ni sin empujar, su worktree sin rama pendiente y su
+ * ejecución cerrada. Si falta algo no cierra y dice qué; lo que no pudo mirar es «no sé», y tampoco cierra. A una sesión
+ * interactiva la verifica y avisa: esa pestaña la cierra la persona. `{ ok, closed, message }`.
+ */
+function close(opts = {}) {
+  const home = opts.home || require('os').homedir();
+  const env = opts.env || process.env;
+  const name = opts.name;
+  const no = (message) => ({ ok: false, closed: false, message: oneLine(message) });
+  if (!name || !NAME_RE.test(String(name))) return no('close va con --name <el nombre de la sesión>: no cerré nada.');
+  if (isCodex(env) && !opts.launcher) return no('Codex no tiene sesiones de fondo que cerrar: no cerré nada.');
+  // el nombre lo escribe la coordinadora o una persona en su terminal: una sesión de trabajo no cierra a otra
+  const caller = sessionOf({ ...opts, env });
+  const d = designacionVigente({ home });
+  if (d && d.error) return no(`No pude saber cuál es la coordinadora (${d.error}): no cerré nada.`);
+  if (caller && (!d || d.sesion !== caller)) return no('Una sesión la cierra la coordinadora designada o una persona en su terminal: no cerré nada.');
+  const unreadable = [];
+  const sessions = sessionsBySid(path.join(claudeDir(home), 'sessions'), unreadable, path.join(claudeDir(home), 'projects'));
+  if (unreadable.length) return no(`No pude leer todas las sesiones (${unreadable[0]}): no cerré nada.`);
+  const found = [...sessions.entries()].filter(([, s]) => s.name === name);
+  const alive = found.filter(([, s]) => s.alive);
+  if (!found.length) return no(`No encuentro la sesión «${name}»: no cerré nada.`);
+  if (alive.length > 1 || (!alive.length && found.length > 1)) return no(`Hay más de una sesión «${name}»: no cerré nada.`);
+  const [sid, s] = alive[0] || found[0];
+  if (sid === caller) return no('Una sesión no se cierra a sí misma: no cerré nada.');
+  const missing = [];
+  const unknown = [];
+  // sólo una quieta: `shell` es un comando corriendo, y un estado que no se conoce tampoco es estar quieta
+  if (s.alive && s.status !== 'idle') missing.push(`está trabajando (${oneLine(s.status) || 'sin estado'})`);
+  const folder = s.cwd ? folderGaps(s.cwd, { home, env, arnes: opts.arnes, startedAt: s.startedAt }) : { missing: [], unknown: ['no anotó su carpeta: no puedo mirarla'] };
+  const run = runGaps(sid, home);
+  missing.push(...folder.missing, ...run.missing);
+  unknown.push(...folder.unknown, ...run.unknown);
+  if (missing.length || unknown.length) {
+    const parts = [missing.length ? `falta: ${missing.join('; ')}` : '', unknown.length ? `no sé: ${unknown.join('; ')}` : ''].filter(Boolean);
+    return no(`No cierro «${name}»: ${parts.join('. ')}.`);
+  }
+  if (!/^(bg|background)$/.test(String(s.kind))) return { ok: true, closed: false, message: `«${name}» quedó limpia. Es una pestaña interactiva: la cierra la persona.` };
+  // el id va como argumento del lanzador: uno que empieza con guion se leería como una opción
+  if (!/^\w[\w-]*$/.test(String(s.jobId || ''))) return no(`«${name}» quedó limpia, pero no anotó un id de fondo válido: no sé cómo cerrarla. Mirá el id con claude agents.`);
+  const launcher = opts.launcher || { bin: 'claude', prefix: [] };
+  const run1 = (verb) => spawnSync(launcher.bin, [...(launcher.prefix || []), verb, s.jobId], { encoding: 'utf8', timeout: opts.timeoutMs || LAUNCH_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+  const why = (r) => (r.error ? (r.error.code || r.error.message) : (`${r.stderr || ''}\n${r.stdout || ''}`.split('\n').map((l) => l.trim()).find(Boolean) || `salió con código ${r.status}`));
+  if (s.alive) {
+    const stop = run1('stop');
+    if (stop.error || stop.status !== 0) return no(`«${name}» quedó limpia, pero no la pude parar (${why(stop)}): no la cerré.`);
+  }
+  const rm = run1('rm');
+  if (rm.error || rm.status !== 0) return no(`«${name}» quedó parada, pero no la pude borrar (${why(rm)}).`);
+  // sin leer la lista no se la reescribe: vacía, el tope dejaría de contar a las recién abiertas
+  const openedProblems = [];
+  const opened = recentOpened(home, opts.now == null ? Date.now() : Number(opts.now), openedProblems);
+  if (openedProblems.length) return { ok: true, closed: true, message: oneLine(`Cerré «${name}». Pero no pude leer las abiertas (${openedProblems[0]}): sigue contando para el tope hasta que venza.`) };
+  try { writeJson(openedFile(home), opened.filter((o) => o.name !== name)); } catch (e) {
+    return { ok: true, closed: true, message: oneLine(`Cerré «${name}». Pero no pude sacarla de las abiertas (${e.code || e.message}).`) };
+  }
+  return { ok: true, closed: true, message: `Cerré «${name}»: quedó limpia, sin nada pendiente.` };
 }
 
 // ── La línea de comandos ──
@@ -713,10 +976,15 @@ function main(argv) {
     process.stdout.write(`${r.message}\n`);
     return r.ok ? 0 : 1;
   }
-  process.stderr.write('uso: coordination.js status [--json] | coordinate | signature --kind <tema> --title <qué> --cwd <carpeta> -- <comando...> | signature-done <id> | open [--name <n>|auto] (--cwd <carpeta> | --repo <repo> [--branch <rama>]) -- <encargo>\n');
+  if (cmd === 'close') {
+    const r = close({ ...base, name: f.name });
+    process.stdout.write(`${r.message}\n`);
+    return r.ok ? 0 : 1;
+  }
+  process.stderr.write('uso: coordination.js status [--json] | coordinate | signature --kind <tema> --title <qué> --cwd <carpeta> -- <comando...> | signature-done <id> | open [--name <n>|auto] (--cwd <carpeta> | --repo <repo> [--branch <rama>]) -- <encargo> | close --name <n>\n');
   return 2;
 }
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { status, statusText, readPending, capNotice, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, callerPermissionMode, coordinationDir };
+module.exports = { status, statusText, readPending, capNotice, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, ORIGIN };

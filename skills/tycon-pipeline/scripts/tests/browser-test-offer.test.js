@@ -576,6 +576,12 @@ test('Cierre_SinElOkDeLaPersona_Frena @story-8.67 @ac-7', () => {
   assert.equal(ofertaYNo(home, 's-otra-maquina', bin, d).status, 0);
   fs.rmSync(path.join(home, '.claude', 'projects', '-tienda', 's-otra-maquina.jsonl'));
   assert.equal(bt.debtDeclared({ stateDir, storyPath: d.story, home }).declared, true);
+  // firmado con el click o el «aprobado» de la persona, donde la ventana no llega: vale igual
+  const g = tienda();
+  assert.equal(ofertaYNo(home, 's-mensaje', bin, g).status, 0);
+  fs.writeFileSync(log, fs.readFileSync(log, 'utf8').split('\n').map((l) => (/"s-mensaje"/.test(l) ? l.replace('"via":"ventana"', '"via":"mensaje"') : l)).join('\n'));
+  assert.ok(fs.readFileSync(log, 'utf8').includes('"via":"mensaje"'), 'la prueba cambió la vía de la constancia');
+  assert.equal(bt.debtDeclared({ stateDir, storyPath: g.story, home }).declared, true);
   // la marca con otra cita que la de la constancia: no vale
   const e = tienda();
   assert.equal(ofertaYNo(home, 's-cita', bin, e).status, 0);

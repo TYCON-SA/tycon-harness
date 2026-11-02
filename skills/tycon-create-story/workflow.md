@@ -330,6 +330,9 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
   <action>Fill the YAML frontmatter completely: epic, story, title, status, sprint, priority, approach,
   depends_on, files_to_create, files_to_modify. Add followup_of + followup_reason if the story corrects,
   recalibrates or extends another one (§1.2), and a pipelines block if it ships in batches (§1.1).
+  Before splitting into batches: if two batches touch the same files and neither is usable or deliverable alone, write
+  them as a single batch (each batch adds its own plan, reviewers, tests and signatures). If they share files and each
+  one is usable alone, give each a `delivers:` line saying what someone gets with only that batch in (§1.1, VAL-W19).
   Do NOT write work_item (tycon-story-work-item adds it; the old name ado_work_item is never written). No double quotes inside YAML comments or
   inside the title value (§1.0).</action>
   <action>Keep every Mary+GOLD section of the template. Backend stories MUST fill "Patron de referencia
