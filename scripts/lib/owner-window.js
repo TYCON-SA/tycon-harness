@@ -12,6 +12,11 @@
  *   lo lanzó la consola de la herramienta con el comando exacto de un registro vigente, y lo consume una sola vez. Sin
  *   eso no firma: la persona lo firma en su terminal (`porTerminal`).
  *
+ * Donde la ventana no llega (una pestaña sin permisos, una sesión de fondo), la firma la da la persona sin terminal: un
+ * click suyo en el cuadro de opciones o un «aprobado» escrito, que anota un gancho (owner-approvals.js). Sirve para una
+ * sola firma, dentro de 30 minutos, dado en la sesión que firma o en la coordinadora confirmada. Lo irreversible
+ * (`TERMINAL_SIEMPRE`) sigue en la terminal.
+ *
  * El registro vive en `owner-window/`, dentro de la carpeta del estado de la casa de la cuenta, un archivo por (firma, sesión
  * destino, sesión del pedido). La casa sale de real-home.js: `HOME`, `USERPROFILE` y `TYCON_HOME` no la cambian.
  *
@@ -103,6 +108,9 @@ function leerArbol({ spawnSync = require('child_process').spawnSync, plataforma 
 function esHerramienta(p) {
   const linea = String((p && p.comando) || '').trim();
   const exe = p && p.ejecutable ? String(p.ejecutable) : '';
+  // la sesión de fondo (`claude --bg`) corre en un proceso que se renombra `claude bg-spare`: su ejecutable ya no se
+  // llama `claude`, y la consola de sus comandos cuelga de él
+  if (/^claude(\.exe)?\s+bg-spare(\s|$)/.test(linea) || /^claude(\.exe)?\s+bg-spare$/.test(exe)) return true;
   const w = linea.split(/\s+/);
   let nombre = w[0];
   let resto = w.slice(1);
@@ -113,6 +121,16 @@ function esHerramienta(p) {
 }
 
 /** ¿La línea de la herramienta trae `-p` o `--print` (sin pantalla)? */
+/**
+ * ¿`p` es un anfitrión de la sesión de fondo `tool`? Sólo si la herramienta es la de una sesión de fondo
+ * (`claude bg-spare`) y `p` es su terminal virtual (`claude bg-pty-host`) o el daemon (`claude daemon`): un claude
+ * abierto debajo de una sesión de fondo no tiene a esos procesos por anfitriones.
+ */
+function esAnfitrionDeFondoDe(tool, p) {
+  if (!/^claude(\.exe)?\s+bg-spare(\s|$)/.test(String((tool && tool.comando) || '').trim())) return false;
+  return /(^|[\\/\s])claude(\.exe)?\s+(daemon|bg-pty-host)(\s|$)/.test(String((p && p.comando) || ''));
+}
+
 function sinPantalla(p) {
   return String(p.comando).trim().split(/\s+/).slice(1).some((w) => w === '-p' || w === '--print' || w.startsWith('--print='));
 }
@@ -423,6 +441,36 @@ function terminalDe(ids, sesion) {
   const guion = ids.some((id) => (firmaDe(id) || {}).kind === 'guion');
   return t && guion && sesion && SESION.test(sesion) ? `${t}, con --for-session ${sesion}` : t;
 }
+// lo irreversible: sigue en la terminal aunque la persona apruebe en la pestaña, porque no tiene vuelta atrás. Y
+// `adversarial-skip`, cuyo guion todavía compara la vía con la de la ventana: con un click se gastaría sin firmar
+const TERMINAL_SIEMPRE = new Set(['escape:TYCON_SAFETY_OFF', 'escape:TYCON_PROD_LINT', 'emergency', 'adversarial-skip']);
+const vaATerminal = (ids) => ids.some((id) => TERMINAL_SIEMPRE.has(id) || ((firmaDe(id) || {}).covers || []).some((c) => TERMINAL_SIEMPRE.has(c)));
+
+/**
+ * La aprobación explícita de la persona para la firma pedida (owner-approvals.js): `{ ok, aprobacion, via }` o
+ * `{ ok: false, motivo }`. Una por firma: un comando que pide dos no la usa. Lo irreversible no la acepta.
+ */
+function aprobacionExplicita({ pendientes, sesion, casa, ahora, cwd, aprobaciones, herramienta }) {
+  if (vaATerminal(pendientes)) return { ok: false, motivo: 'esto es irreversible y se firma en la terminal' };
+  if (pendientes.length !== 1) return { ok: false, motivo: 'un click o un «aprobado» sirve para una sola firma, y este comando pide más de una' };
+  try {
+    const oa = aprobaciones || require('./owner-approvals.js');
+    return oa.buscar({ casa, sesion, firma: pendientes[0], coordinadora: oa.coordinadoraConfirmada(casa), ahora, cwd, herramienta });
+  } catch (e) { return { ok: false, motivo: `no pude leer las aprobaciones (${e.message})` }; }
+}
+
+/** La negativa donde la ventana no llega: dice cómo aprobarla sin terminal; lo irreversible, sólo la terminal. */
+function negarSinVentana(motivo, ids, sesion) {
+  if (vaATerminal(ids)) return negarCon(motivo, ids, sesion);
+  const t = terminalDe(ids, sesion);
+  const que = ids.map((id) => (firmaDe(id) || { approves: id }).approves).join('; ');
+  const id = ids[0];
+  return { decision: 'deny', firmas: ids, texto: `${motivo}. Esto lo aprueba la persona, sin terminal: mostrale el cuadro de opciones (AskUserQuestion) `
+    + `con una sola pregunta que diga qué se aprueba (${que}), qué pasa si sale mal, y el texto «firma ${id}» (si la aprueba desde la pestaña de la `
+    + `coordinadora, también «sesión ${sesion}»), con las opciones «Sí, aprobar» y «No»; o escribile eso mismo y pedile que conteste «aprobado». `
+    + `Con su click o su mensaje, repetí el mismo comando. Si prefiere la terminal: ${t || 'el mismo comando con --terminal'}.` };
+}
+
 function negarCon(motivo, ids, sesion) {
   const t = terminalDe(ids, sesion);
   return { decision: 'deny', firmas: ids, texto: `${motivo}. Esta firma se da en tu terminal${t ? `: ${t}` : ''}.` };
@@ -530,11 +578,12 @@ function rutinaSinPermisos({ guion, pendientes = [], palabras, destino, casa }) 
 /**
  * Lo que decide el freno ante un evento: `{ decision: 'ask' | 'deny' | 'allow' | 'none', texto, firmas, via? }`.
  * `escapes`: las firmas `freno` que el freno de seguridad vio en el comando (los escapes por variable y con nombre).
+ * `aprobaciones`: el módulo de la aprobación explícita (owner-approvals.js), para las pruebas.
  * `delegacion(opciones)`: si la firma corre sin ventana (delegated-signing.js, las dos listas del perfil);
  * `clasificar(palabras, cwd)`: la clase de un `approve` con `--base`; `comprobar(opciones)`: el chequeo antes de la
  * ventana (`comprobarConElGuion`); `arbol` y `casa` se leen si faltan.
  */
-function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ahora = Date.now(), delegacion, clasificar = clasificarConElGuion, comprobar = comprobarConElGuion, userInfo, aprobador = approverOf } = {}) {
+function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ahora = Date.now(), delegacion, clasificar = clasificarConElGuion, comprobar = comprobarConElGuion, userInfo, aprobador = approverOf, aprobaciones } = {}) {
   const comando = String((evento.tool_input && evento.tool_input.command) || '');
   const sesion = evento.session_id == null ? '' : String(evento.session_id);
   // la terminal firma para la sesión destino en cuanto se conoce: antes, para la del evento
@@ -550,6 +599,8 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   // registro de ese pedido sin que nadie lo apruebe
   const herramientaDelEvento = evento.tool_name == null ? 'Bash' : String(evento.tool_name);
   if (!['Bash', 'PowerShell'].includes(herramientaDelEvento)) return negar(`las firmas se piden por la consola de la herramienta, no por ${una(herramientaDelEvento, 40)}`, pedidas);
+  // Codex: sin ventana de permiso, y la aprobación explícita (owner-approvals.js) todavía no tiene su lado. El cuadro de
+  // Codex (`request_user_input`) en el modo normal pide la bandera `features.default_mode_request_user_input`
   if (evento.turn_id) return negar('Codex no tiene ventana de permiso: pedirla deja correr el comando', pedidas);
   // el motivo del arreglo rápido es texto libre y puede nombrar un flag o una variable: en la forma canónica, los dos
   // controles de abajo miran el comando sin ese argumento (un flag o una variable de verdad siguen a la vista)
@@ -586,7 +637,11 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   const i = arriba.findIndex(esHerramienta);
   if (i < 0) return negar('no encontré el proceso de la herramienta', pendientes);
   const tool = arriba[i];
-  if (arriba.slice(i + 1).some((p) => esHerramienta(p) || desenvolver(p.comando, casa) !== null)) return negar('la herramienta la lanzó otra herramienta o su consola', pendientes);
+  // una sesión de fondo (`claude --bg`) corre debajo de sus anfitriones (el daemon y la terminal virtual): no son otra
+  // herramienta, pero la ventana de permiso no le llega a nadie seguro. Ahí sólo vale la aprobación explícita
+  const otra = (p) => (esHerramienta(p) && !esAnfitrionDeFondoDe(tool, p)) || desenvolver(p.comando, casa) !== null;
+  if (arriba.slice(i + 1).some(otra)) return negar('la herramienta la lanzó otra herramienta o su consola', pendientes);
+  const deFondo = arriba.slice(i + 1).some(esHerramienta);
   if (sinPantalla(tool)) return negar('la sesión no tiene pantalla (-p o --print): no hay ventana', pendientes);
   if (arbol.some((p) => p.ppid === tool.pid && desenvolver(p.comando, casa) !== null)) return negar('cerrá los procesos de fondo o firmá desde tu terminal: hay una consola de fondo viva', pendientes);
   const destino = destinoDe(can && can.palabras, sesion, guion);
@@ -623,14 +678,27 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   // registro como «hecho y avisado» (`rutinaSinPermisos`). Sólo los modos que preguntan llevan a la ventana; uno
   // desconocido no pregunta. Sin el dato, la de siempre
   const modo = evento.permission_mode == null ? null : String(evento.permission_mode);
-  let avisado = false;
-  if (!delegada && modo !== null && !MODOS_QUE_PREGUNTAN.has(modo)) {
-    const rutina = rutinaSinPermisos({ guion: firmaGuion, pendientes, palabras: can && can.palabras, destino, casa });
-    if (!rutina.ok) {
-      return negar(`esta pestaña no pide permisos (${una(modo, 40)}): la ventana se aprobaría sola, sin el Sí del dueño${rutina.motivo ? `, y ${rutina.motivo}` : ''}`, pendientes);
+  const sinVentana = modo !== null && !MODOS_QUE_PREGUNTAN.has(modo);
+  // donde la ventana no llega (una pestaña sin permisos, una sesión de fondo), vale la aprobación explícita de la persona:
+  // su click en el cuadro de opciones o su «aprobado» escrito (owner-approvals.js), uno por firma. Va antes de «hecho y
+  // avisado»: si la persona aprobó, la firma es suya
+  let aprobada = null;
+  if (!delegada && (sinVentana || deFondo)) {
+    const a = aprobacionExplicita({ pendientes, sesion, casa, ahora, cwd: evento.cwd, aprobaciones, herramienta: { pid: tool.pid, inicio: tool.inicio } });
+    if (a.ok) aprobada = a;
+    else {
+      // sin aprobación: lo de rutina en una pestaña sin permisos sigue «hecho y avisado»; lo demás se niega y dice cómo
+      // aprobarlo. En una sesión de fondo no hay «hecho y avisado»: nadie ve el aviso en la pestaña
+      const rutina = rutinaSinPermisos({ guion: firmaGuion, pendientes, palabras: can && can.palabras, destino, casa });
+      if (deFondo || !rutina.ok) {
+        const donde = deFondo ? 'esta sesión corre de fondo: la ventana de permiso no le llega a nadie seguro'
+          : `esta pestaña no pide permisos (${una(modo, 40)}): la ventana se aprobaría sola, sin el Sí del dueño`;
+        return negarSinVentana(`${donde}${rutina.motivo ? `, y ${rutina.motivo}` : ''}; ${a.motivo}`, pendientes, paraTerminal);
+      }
     }
-    avisado = true;
   }
+  let avisado = false;
+  if (!delegada && !aprobada && sinVentana) avisado = true;
   // el guion dice antes si se negaría: entonces no hay ventana ni registro (sin respuesta, la ventana se abre como siempre)
   if (guion && !delegada && CON_PRECHEQUEO.has(firmaGuion)) {
     let c = null;
@@ -645,14 +713,24 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
     if (c.error) return negar(c.error, pendientes);
     detalle = c.texto;
   }
+  // la aprobación explícita se gasta recién acá, cuando el comando ya no se va a negar: sirve para una sola firma
+  if (aprobada) {
+    const u = (aprobaciones || require('./owner-approvals.js')).consumir(casa, aprobada.aprobacion, { ahora, firma: pendientes[0], sesion });
+    if (!u.ok) return negarSinVentana(u.motivo, pendientes, paraTerminal);
+  }
   if (guion) {
     try {
       escribirRegistro(casa, { firma: firmaGuion, sesion, destino, tool_use_id: evento.tool_use_id == null ? null : String(evento.tool_use_id),
         sha256: sha256(comando), comando, herramienta: { pid: tool.pid, inicio: tool.inicio }, ts: new Date(ahora).toISOString(), corrida: corridaDe(casa, destino),
-        ...(delegada ? { via: 'delegacion', maquina: delegada.maquina } : avisado ? { via: 'avisado' } : {}), ...(refirmaDe ? { refirma_de: refirmaDe } : {}) });
+        ...(delegada ? { via: 'delegacion', maquina: delegada.maquina } : aprobada ? { via: aprobada.via, aprobacion: aprobada.aprobacion.id, aprobada_en: aprobada.aprobacion.sesion }
+          : avisado ? { via: 'avisado' } : {}), ...(refirmaDe ? { refirma_de: refirmaDe } : {}) });
     } catch (e) { return negar(`no se pudo escribir el registro de la ventana (${e.code || e.message})`, pendientes); }
   }
   if (delegada) return { decision: 'allow', via: 'delegacion', relevo: sesion, firmas: pendientes, texto: 'firmada por la delegación del perfil' };
+  if (aprobada) {
+    const como = aprobada.via === 'click' ? 'tu click en el cuadro de opciones' : `tu mensaje «${una(aprobada.aprobacion.texto, 80)}»`;
+    return { decision: 'allow', via: aprobada.via, relevo: sesion, firmas: pendientes, texto: `aprobada por ${como}: ${firmaDe(pendientes[0]) ? firmaDe(pendientes[0]).approves : pendientes[0]}` };
+  }
   if (avisado) {
     return { decision: 'allow', via: 'avisado', relevo: sesion, firmas: pendientes,
       texto: `hecho y avisado: esta pestaña no pide permisos, así que ${firmaDe(firmaGuion).approves} se hace sin firma, con los controles de la delegación, y queda en el registro de firmas` };
@@ -677,7 +755,7 @@ function mismoArchivo(a, b) {
  */
 function verificar({ firma, argv = [], pid = process.pid, arbol, casa, ahora = Date.now(), userInfo, sesion, destino, antes } = {}) {
   const s = firmaDe(firma);
-  const no = (m) => ({ ok: false, motivo: `esta firma no pasó por la ventana: ${m}. Firmala en tu terminal: ${(s && s.terminal) || 'el mismo comando con --terminal'}` });
+  const no = (m) => ({ ok: false, motivo: `esta firma no pasó por la ventana: ${m}. Pedila de nuevo: el comando solo, en su forma exacta; en una pestaña sin permisos se aprueba con un click en el cuadro de opciones o con un «aprobado» escrito. O en tu terminal: ${(s && s.terminal) || 'el mismo comando con --terminal'}` });
   if (!s || s.kind !== 'guion') return no(`«${firma}» no es una firma de guion`);
   if (casa === undefined) {
     try { casa = casaDeLaCuenta(userInfo ? { userInfo } : undefined); } catch (e) { return no(`no se pudo resolver la casa de la cuenta (${e.message})`); }
@@ -755,7 +833,7 @@ function verificar({ firma, argv = [], pid = process.pid, arbol, casa, ahora = D
 
 // la vía de la firma en el registro común (signature-log.js). `revision`: la coordinadora por delegación, respaldada por el
 // veredicto aprobado de la revisión automática que ella lanzó (la aprobación del plan)
-const VIA_COMUN = { ventana: 'window', terminal: 'terminal', delegacion: 'delegation', revision: 'review', avisado: 'notified' };
+const VIA_COMUN = { ventana: 'window', terminal: 'terminal', delegacion: 'delegation', revision: 'review', avisado: 'notified', click: 'click', mensaje: 'message' };
 
 /**
  * El renglón `<firma>-signed` del gates.log: cómo se firmó, quién y para quién. Va antes de la constancia del guion.
@@ -990,7 +1068,8 @@ function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = proce
   // pestaña sin permisos firma con via: avisado, y se avisa a la persona por los canales de la sesión
   const avisado = v.registro.via === 'avisado';
   const porRevision = !avisado && v.registro.via === 'delegacion' && v.previo && v.previo.via === 'revision';
-  const via = avisado ? 'avisado' : porRevision ? 'revision' : v.registro.via === 'delegacion' ? 'delegacion' : 'ventana';
+  const explicita = v.registro.via === 'click' || v.registro.via === 'mensaje';
+  const via = avisado ? 'avisado' : porRevision ? 'revision' : v.registro.via === 'delegacion' ? 'delegacion' : explicita ? v.registro.via : 'ventana';
   const que = (v.previo && v.previo.resumen) || resumen || v.registro.comando;
   firmar({ firma, via, sesion: v.registro.sesion, destino: v.registro.destino, resumen: (porRevision || avisado) ? que : (resumen || v.registro.comando), casa, ahora, anotar, extra });
   // el ok de guardar y el arreglo rápido ya avisaron desde los controles de la delegación de su guion
@@ -1036,11 +1115,13 @@ function quienFirmo({ via, sesion } = {}, persona) {
   if (via === 'delegacion') return { tipo: 'automatica', quien: `coordinadora (sesión ${sesion})`, delegacion: persona, via: 'delegada · coordinadora' };
   if (via === 'revision') return { tipo: 'automatica', quien: `coordinadora (sesión ${sesion}), vía revisión automática`, delegacion: persona, via: 'revisión automática · coordinadora' };
   if (via === 'avisado') return { tipo: 'automatica', quien: `sesión ${sesion}, en una pestaña sin permisos`, delegacion: persona, via: 'hecho y avisado' };
+  if (via === 'click') return { tipo: 'manual', quien: persona, via: 'click en el cuadro de opciones' };
+  if (via === 'mensaje') return { tipo: 'manual', quien: persona, via: '«aprobado» escrito' };
   return { tipo: 'manual', quien: persona, via: via === 'terminal' ? 'terminal' : 'ventana' };
 }
 
 module.exports = { VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
-  rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma };
+  rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, esAnfitrionDeFondoDe };
 
 if (require.main === module) {
   const argv = process.argv.slice(2);

@@ -144,6 +144,22 @@ test('LlamadaMal_Sale2', () => {
   assert.strictEqual(r.status, 2);
 });
 
+test('EpicaQueNoEsNumero_NoEntraALaExpresion', () => {
+  // la épica va dentro de una expresión regular: un texto con comodines o un patrón que cuelga no llega a armarla
+  for (const malo of ['.*', '(a+)+$', '8|9', '', ' ', null, undefined, '8.1', '-1']) {
+    assert.throws(() => lib.numbersOfBranch('story/8.12-x', malo), /la épica tiene que ser un número/, String(malo));
+    assert.throws(() => lib.numbersOfSprintStatus('8-1-x: draft', malo), /la épica tiene que ser un número/, String(malo));
+    assert.throws(() => lib.collect({ repo: os.tmpdir(), epic: malo, fetch: false }), /la épica tiene que ser un número/, String(malo));
+  }
+  // un número sigue andando, también como número
+  assert.deepStrictEqual(lib.numbersOfBranch('story/8.12-x', 8), [12]);
+  assert.deepStrictEqual(lib.numbersOfSprintStatus('  8-3-titulo: draft\n9-4-otro: done', '8'), [3]);
+  // y la entrada del guion la rechaza sin tirar: sale 2 con el uso
+  const r = spawnSync(process.execPath, [GUION, 'next', '--repo', os.tmpdir(), '--epic', '.*', '--no-fetch'], { env: ENV, encoding: 'utf8' });
+  assert.strictEqual(r.status, 2);
+  assert.match(r.stderr, /uso:/);
+});
+
 test('Workflow_LlamaAlGuionYPreguntaConDuda', () => {
   const wf = fs.readFileSync(path.resolve(__dirname, '..', '..', 'workflow.md'), 'utf8');
   assert.match(wf, /scripts\/story-number\.js next/);

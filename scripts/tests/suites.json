@@ -2368,6 +2368,12 @@
       "requiere": []
     },
     {
+      "__nota": "la aprobación explícita de la persona sin terminal (scripts/lib/owner-approvals.js y el gancho owner-approval-record.js): un click en el cuadro de opciones o un «aprobado» escrito; se niega sin aprobación, con una vieja, de otra sesión que no es la coordinadora, ya usada, mandada por otra sesión o contestada por un gancho. Sin red, milisegundos.",
+      "raiz": "arnes",
+      "ruta": "tests/owner-approvals.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la tabla de controles de la máquina (scripts/metrics/controls-table.js): cuenta por freno y regla y las firmas por vía con los registros de una casa de prueba; un registro que no está sale «no medido», los renglones sin fecha se cuentan aparte y el guion no escribe en la carpeta de estado. Segundos.",
       "raiz": "arnes",
       "ruta": "tests/controls-table.test.js",
