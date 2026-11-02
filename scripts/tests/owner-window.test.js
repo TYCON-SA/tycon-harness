@@ -2751,6 +2751,46 @@ test('Windows_Desenvolver_SoloLaFormaMedida', () => {
   assert.strictEqual(ow.desenvolver(lineaWin(W_USR, guionWin(casa, cmd)), casa), null);
 });
 
+// La línea real de la consola, medida en una máquina Windows, con la casa y el comando puestos por la prueba. Trae dos
+// bloques que borran nombres de atajos; cuántos trae depende de la máquina.
+const lineaMedida = (casa, cmd) => String.raw`source <msys>/.claude/shell-snapshots/snapshot-bash-1793640180323-vwupfx.sh 2>/dev/null || true && export TEMP='<casa>\AppData\Local\Temp' TMP='<casa>\AppData\Local\Temp' && shopt -u extglob 2>/dev/null || true && { \builtin unalias -- 'which'; \builtin unset -f -- 'which'; } >/dev/null 2>&1 || true && { \builtin unalias -- 'unsetenv'; \builtin unset -f -- 'unsetenv'; } >/dev/null 2>&1 || true && eval '<cmd>' < /dev/null && pwd -P >| <msys>/AppData/Local/Temp/claude-e33b-cwd`
+  .split('<msys>').join(msysDe(casa)).split('<casa>').join(casa).split('<cmd>').join(cmd.replace(/'/g, `'"'"'`));
+
+// 🔴 Falla con: la forma que acepta un solo bloque, que en esa máquina deja la firma sin reconocer a su consola.
+test('Windows_LineaMedidaCon2Bloques_Firma', (t) => {
+  const casa = casaNueva(t);
+  const r = pedirWin(casa, W_ADHOC, { aprobaciones: conClick() });
+  assert.strictEqual(r.decision, 'allow', r.texto);
+  const v = verificarWin(casa, 'adhoc-lane', W_ADHOC_ARGV, arbolGuionWin(casa, W_ADHOC, { texto: lineaMedida(casa, W_ADHOC) }));
+  assert.ok(v.ok, v.motivo);
+  assert.strictEqual(v.registro.via, 'click');
+  const dev = 'C:\\Users\\dev';
+  assert.strictEqual(ow.desenvolverWindows(lineaWin(W_USR, lineaMedida(dev, W_ADHOC)), dev), W_ADHOC);
+});
+
+// 🔴 Falla con: una forma que acepta cualquier cosa entre los bloques: la consola correría otro comando que el aprobado.
+test('Windows_LineaMedida_OtroTextoEntreLosBloques_NoSeReconoce', () => {
+  const dev = 'C:\\Users\\dev';
+  const buena = lineaMedida(dev, W_ADHOC);
+  const bloque = String.raw`{ \builtin unalias -- 'which'; \builtin unset -f -- 'which'; } >/dev/null 2>&1 || true && `;
+  const noVale = {
+    'un comando antes de un bloque': buena.replace(bloque, `otro.exe && ${bloque}`),
+    'otro comando adentro del bloque': buena.replace(String.raw`\builtin unset -f -- 'which';`, 'otro.exe;'),
+    'un bloque sin su cierre': buena.replace(bloque, String.raw`{ \builtin unalias -- 'which'; } && `),
+    'un nombre que no es un nombre': buena.replace(String.raw`-- 'which'; \builtin unset`, String.raw`-- 'a b'; \builtin unset`),
+  };
+  for (const [que, texto] of Object.entries(noVale)) assert.strictEqual(ow.desenvolverWindows(lineaWin(W_USR, texto), dev), null, que);
+  // sin bloques, con uno o con muchos, el comando que se firma es el mismo
+  const otro = String.raw`{ \builtin unalias -- 'unsetenv'; \builtin unset -f -- 'unsetenv'; } >/dev/null 2>&1 || true && `;
+  for (const texto of [buena.replace(bloque, '').replace(otro, ''), buena.replace(bloque, ''), buena.replace(bloque, bloque.repeat(5))]) {
+    assert.strictEqual(ow.desenvolverWindows(lineaWin(W_USR, texto), dev), W_ADHOC);
+  }
+  // en la Mac, el mismo tope
+  const mac = (bloques) => `/bin/zsh -c source /Users/dev/.claude/shell-snapshots/snapshot-zsh-1-a.sh 2>/dev/null || true && ${bloques}eval 'x' < /dev/null && pwd -P >| /tmp/claude-ab12-cwd`;
+  assert.strictEqual(ow.desenvolver(mac(bloque + bloque), '/Users/dev'), 'x');
+  assert.strictEqual(ow.desenvolver(mac(`otro.exe && ${bloque}`), '/Users/dev'), null);
+});
+
 test('Windows_SinAprobacion_NiegaConElCuadroYLaTerminal_NuncaLaVentana', (t) => {
   const casa = casaNueva(t);
   for (const modo of ['default', 'acceptEdits', 'plan', 'bypassPermissions']) {

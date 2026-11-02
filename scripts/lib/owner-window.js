@@ -207,7 +207,7 @@ function desenvolver(linea, casa) {
     + '/\\.claude/shell-snapshots/snapshot-(?:zsh|bash)-[\\w.-]+\\.sh 2>/dev/null \\|\\| true && '
     + '(?:setopt(?: [A-Z_]+)+ 2>/dev/null \\|\\| true && )?'
     + '(?:shopt -u extglob 2>/dev/null \\|\\| true && )?'
-    + "(?:\\{(?: \\\\builtin (?:unalias|unset -f) -- '[\\w-]+';)+ \\} >/dev/null 2>&1 \\|\\| true && )?"
+    + "(?:\\{(?: \\\\builtin (?:unalias|unset -f) -- '[\\w-]+';)+ \\} >/dev/null 2>&1 \\|\\| true && )*"
     + "eval '([\\s\\S]*)'(?: < /dev/null)? && pwd -P >\\| (?:/private)?/tmp/claude-[0-9a-f]+-cwd$");
   const m = re.exec(String(linea || ''));
   if (!m) return null;
@@ -267,7 +267,7 @@ function consolaBashDeWindows(linea, casa) {
   const re = new RegExp(`^source ${escRe(msys)}/\\.claude/shell-snapshots/snapshot-bash-[\\w.-]+\\.sh 2>/dev/null \\|\\| true && `
     + `export TEMP='${temp}' TMP='${temp}' && `
     + '(?:shopt -u extglob 2>/dev/null \\|\\| true && )?'
-    + "(?:\\{(?: \\\\builtin (?:unalias|unset -f) -- '[\\w-]+';)+ \\} >/dev/null 2>&1 \\|\\| true && )?"
+    + "(?:\\{(?: \\\\builtin (?:unalias|unset -f) -- '[\\w-]+';)+ \\} >/dev/null 2>&1 \\|\\| true && )*"
     + `eval '([\\s\\S]*)'(?: < /dev/null)? && pwd -P >\\| ${escRe(msys)}/AppData/Local/Temp/claude-[0-9a-f]+-cwd$`);
   const m = re.exec(w[2]);
   if (!m) return null;

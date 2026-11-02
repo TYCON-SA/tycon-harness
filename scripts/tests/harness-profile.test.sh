@@ -173,14 +173,71 @@ if corre T32; then
   applier "$H" "$TREE" "$T/t32/install.out"
   [ "$RC" = 0 ] || mal "T32 el aplicador en minimal salió ${RC}: $(tail -n 3 "$T/t32/install.out" | tr '\n' ' ')"
   harness_hooks "$H" "$TREE" > "$T/t32/hooks.txt"; minimal_hooks > "$T/t32/want.txt"
-  # nueve: seis que anotan, el que dice los avisos de los paquetes, el freno de comandos y el portón de edición
-  [ "$(wc -l < "$T/t32/want.txt" | tr -d ' ')" = 9 ] && ok "T32 la lista de efectos marca nueve hooks de minimal" || mal "T32 la lista marca $(wc -l < "$T/t32/want.txt" | tr -d ' ') hooks de minimal, no nueve"
-  cmp -s "$T/t32/hooks.txt" "$T/t32/want.txt" && ok "T32 registra exactamente los nueve hooks de minimal" \
+  # once: ocho que anotan, el que dice los avisos de los paquetes, el freno de comandos y el portón de edición
+  [ "$(wc -l < "$T/t32/want.txt" | tr -d ' ')" = 11 ] && ok "T32 la lista de efectos marca once hooks de minimal" || mal "T32 la lista marca $(wc -l < "$T/t32/want.txt" | tr -d ' ') hooks de minimal, no once"
+  cmp -s "$T/t32/hooks.txt" "$T/t32/want.txt" && ok "T32 registra exactamente los once hooks de minimal" \
     || mal "T32 hooks registrados distintos de los de minimal: $(diff "$T/t32/want.txt" "$T/t32/hooks.txt" | grep '^[<>]' | head -6 | tr '\n' ' ')"
   # el freno de comandos destructivos y el portón de edición están en los dos perfiles (sin el portón, el agente puede
   # implementar una historia sin recorrido y nadie se entera); los demás, sólo en full
   grep -qx 'PreToolUse:@tcg:safety-guard-pre.sh' "$T/t32/hooks.txt" && ok "T32 el freno de comandos destructivos, registrado" || mal "T32 minimal sin el freno de comandos destructivos"
   grep -qx 'PreToolUse:tycon-pipeline/scripts/hook-pre-edit.js' "$T/t32/hooks.txt" && ok "T32 el portón de edición, registrado" || mal "T32 minimal sin el portón de edición"
+  # Si el freno de comandos da un cuadro, tiene que poder aceptarse: una mínima recién instalada firma con el click.
+  # 🔴 Falla con: el gancho que anota el click sólo en full, que en Windows deja al dev sin firmar.
+  cat > "$T/t32/click.js" <<'JS'
+// La mínima recién instalada firma con el click: el gancho sale de la configuración que dejó la instalación, y el freno
+// valida el click contra esa misma configuración y una transcripción con la forma medida en la extensión de Windows.
+const fs = require('fs');
+const path = require('path');
+const [casa, raiz] = process.argv.slice(2);
+const ow = require(path.join(raiz, 'scripts', 'lib', 'owner-window.js'));
+const oa = require(path.join(raiz, 'scripts', 'lib', 'owner-approvals.js'));
+const { APPROVERS } = require(path.join(raiz, 'scripts', 'lib', 'approver.js'));
+const no = (m) => { console.log(m); process.exit(1); };
+const hooks = JSON.parse(fs.readFileSync(path.join(casa, '.claude', 'settings.json'), 'utf8')).hooks || {};
+const comando = (hooks.PostToolUse || []).filter((g) => oa.alcanzaAlCuadro(g.matcher)).flatMap((g) => g.hooks || []).map((h) => h.command).find((c) => /owner-approval-record\.js/.test(c));
+if (!comando) no('la configuración no trae el gancho del cuadro');
+const ruta = /"([^"]*owner-approval-record\.js)"/.exec(comando)[1];
+if (!fs.existsSync(ruta)) no(`el gancho registrado no existe: ${ruta}`);
+const { registroDe } = require(path.join(raiz, 'scripts', 'hooks', 'owner-approval-record.js'));
+
+const SESION = 'ses-minima';
+const MARKER = path.join(raiz, 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+const CMD = `node ${MARKER} adhoc set '{"reason":"prueba del click, ñandú y corrección","maxFiles":1}'`;
+const ahora = Date.now();
+const hora = (m) => new Date(ahora - (60 - m) * 60000).toISOString().replace(/\.\d+Z$/, '.0000000Z');
+const BIN = 'C:\\Program Files\\Git\\bin\\bash.exe';
+const USR = 'C:\\Program Files\\Git\\bin\\..\\usr\\bin\\bash.exe';
+const NODE = 'C:\\Program Files\\nodejs\\node.exe';
+const CLAUDE = 'C:\\x\\native-binary\\claude.exe';
+const TOOL = { pid: 100, ppid: 40, inicio: hora(0), ejecutable: CLAUDE, comando: `${CLAUDE} --output-format stream-json --verbose` };
+const arbol = [{ pid: 40, ppid: 30, inicio: hora(-5), ejecutable: 'C:\\Code\\Code.exe', comando: '"C:\\Code\\Code.exe" --type=utility' }, TOOL,
+  { pid: 200, ppid: 100, inicio: hora(5), ejecutable: BIN, comando: `"${BIN}" -c "bash /c/h/safety-guard-pre.sh"` },
+  { pid: 201, ppid: 200, inicio: hora(6), ejecutable: USR, comando: `"${USR}" -c "bash /c/h/safety-guard-pre.sh"` },
+  { pid: 202, ppid: 201, inicio: hora(7), ejecutable: NODE, comando: `"${NODE}" /c/h/owner-window.js gate` }];
+const pedir = () => ow.decidir({ plataforma: 'win32', evento: { session_id: SESION, tool_use_id: 'toolu_02', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: CMD } },
+  escapes: [], arbol, pid: 202, casa, ahora: Date.now(), clasificar: () => null, comprobar: () => null, aprobador: () => APPROVERS.maintainers, gitBash: () => ({ path: BIN }) });
+
+const sin = pedir();
+if (sin.decision !== 'deny' || !sin.cuadro) no(`sin click: ${sin.decision}, sin cuadro: ${sin.texto}`);
+const pregunta = sin.cuadro.pregunta;
+const respuesta = { questions: [{ question: pregunta, header: 'Firma', options: sin.cuadro.opciones.map((label) => ({ label, description: label })), multiSelect: false }], answers: { [pregunta]: oa.APRUEBA } };
+const reg = registroDe({ hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', session_id: SESION, tool_use_id: 'toolu_01', tool_response: respuesta }, { ahora });
+if (!reg) no('el gancho no anotó la respuesta del cuadro');
+oa.anotar(casa, { ...reg, herramienta: { pid: TOOL.pid, inicio: TOOL.inicio } });
+const carpeta = path.join(casa, '.claude', 'projects', 'c--Users-Public-proyecto');
+fs.mkdirSync(carpeta, { recursive: true });
+fs.writeFileSync(path.join(carpeta, `${SESION}.jsonl`), [
+  { type: 'assistant', timestamp: new Date(ahora - 30000).toISOString(), message: { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_01', name: 'AskUserQuestion', input: { questions: respuesta.questions } }] } },
+  { type: 'user', timestamp: new Date(ahora).toISOString(), entrypoint: 'claude-vscode', version: '2.1.314', userType: 'external', sessionId: SESION,
+    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_01', content: 'Your questions have been answered' }] },
+    toolUseResult: respuesta, permissionDecision: { decision: 'accept', source: 'user_temporary', grantScope: 'once', reasonCode: 'unknown' } },
+].map((r) => JSON.stringify(r)).join('\n') + '\n');
+const con = pedir();
+if (con.decision !== 'allow' || con.via !== 'click') no(`con click: ${con.decision}: ${con.texto}`);
+if (pedir().decision !== 'deny') no('el click sirvió dos veces');
+console.log('firmó con el click');
+JS
+  if R="$("$REAL_NODE" "$T/t32/click.js" "$H" "$RAIZ" 2>&1)"; then ok "T32 la mínima recién instalada firma con el click"; else mal "T32 la mínima no firma con el click: ${R}"; fi
   python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if any("hook-pre-edit.js" in h.get("command","") and "Edit" in (g.get("matcher") or "") for g in d.get("hooks",{}).get("PreToolUse",[]) for h in g.get("hooks",[])) else 1)' "$H/.claude/settings.json" \
     && ok "T32 el portón de edición corre antes de Edit|Write" || mal "T32 el portón de edición no está antes de Edit|Write"
   grep -Eq 'test-scope-guard-pre|on-pre-commit|on-bash-write-gate' "$T/t32/hooks.txt" && mal "T32 hay otro freno registrado en minimal" || ok "T32 ningún otro freno"

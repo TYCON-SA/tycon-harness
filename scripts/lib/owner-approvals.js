@@ -471,12 +471,13 @@ function alcanzaAlCuadro(matcher) {
  * ¿El comando es un gancho del arnés que puede escuchar el cuadro? Por su ruta dentro de este arnés o la instalada, y
  * nada más en la línea (ni `;`, `&`, `|`, ni sustituciones).
  */
-function esPermitido(comando) {
+function esPermitido(comando, raiz = ROOT) {
   const c = String(comando || '').trim();
   if (!c || /[;&|`\n]|\$\(/.test(c)) return false;
   return PERMITIDOS.some((n) => {
-    const ruta = path.join(ROOT, 'scripts', 'hooks', n);
-    return c.includes(ruta) || c === `@tcg:${n}` || new RegExp(`(^|[\\s"'])[^\\s"']*/\\.tycon/harness/scripts/hooks/${n.replace('.', '\\.')}(["']?)$`).test(c);
+    const ruta = path.join(raiz, 'scripts', 'hooks', n);
+    // en Windows la configuración escribe la ruta con barras normales
+    return c.includes(ruta) || c.includes(ruta.replace(/\\/g, '/')) || c === `@tcg:${n}` || new RegExp(`(^|[\\s"'])[^\\s"']*/\\.tycon/harness/scripts/hooks/${n.replace('.', '\\.')}(["']?)$`).test(c);
   });
 }
 
