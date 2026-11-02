@@ -559,20 +559,38 @@ const STATUS_KEEP_MS = 60 * 1000;
 /**
  * Lo que un proceso que arma fotos seguido recuerda de una a la otra (`office/server.js`). Casi todo lo que se le pregunta a
  * git depende sólo de los commits, y se repite mientras no cambien. `git status` depende de los archivos, que no avisan: se
- * recuerda un rato, y por eso lo que dice puede atrasar hasta `statusKeepMs`.
+ * recuerda un rato, y por eso lo que dice puede atrasar hasta `statusKeepMs`. El de «A medio camino» no vence con el tiempo:
+ * se vuelve a leer cuando alguien lo pide (`reviseHalfway`) o se cierra una sesión con la página abierta.
  */
-const createMemory = ({ statusKeepMs = STATUS_KEEP_MS } = {}) => ({ git: new Map(), medians: null, statusKeepMs });
+const createMemory = ({ statusKeepMs = STATUS_KEEP_MS } = {}) => ({ git: new Map(), medians: null, statusKeepMs, halfwaySince: 0, halfwayReadAt: null, aliveSids: null, pageOpen: true });
+
+/** Pide leer otra vez los archivos sin guardar de «A medio camino» en la próxima foto. */
+const reviseHalfway = (memory) => { memory.halfwaySince = Date.now(); };
+
+// Una sesión que estaba viva en la foto anterior y ya no: lo que dejó puede estar sin terminar. Con la página cerrada no se
+// revisa nada: al abrirla se revisa igual.
+function reviseIfSessionClosed(memory, sessions) {
+  const alive = new Set([...sessions].filter(([, s]) => s.alive).map(([sid]) => sid));
+  if (memory.pageOpen && memory.aliveSids && [...memory.aliveSids].some((sid) => !alive.has(sid))) reviseHalfway(memory);
+  memory.aliveSids = alive;
+}
 
 // git con tope: `{ out }` si salió bien; si no, `{ err, status }` con el motivo. `ctx.until` es el tope de toda la
 // lectura de repos y `ctx.cache` guarda lo leído, para que la segunda pasada no vuelva a preguntar. Con `ctx.memory`, lo
-// que git ya contestó no se vuelve a preguntar mientras siga valiendo, y eso no gasta el tope.
+// que git ya contestó no se vuelve a preguntar mientras siga valiendo, y eso no gasta el tope. `ctx.halfway`: el `git status`
+// de «A medio camino», que dura más que el de una tarjeta en curso y por eso se guarda aparte.
 function git(dir, args, ctx) {
-  const key = `${dir}\0${args.join(' ')}`;
-  if (ctx.cache.has(key)) return ctx.cache.get(key);
   const isStatus = args.includes('status');
+  const forHalfway = isStatus && Boolean(ctx.halfway);
+  const key = `${forHalfway ? 'medio\0' : ''}${dir}\0${args.join(' ')}`;
+  if (ctx.cache.has(key)) return ctx.cache.get(key);
   const stamp = ctx.memory && !isStatus ? commitsStamp(dir, ctx) : null;
   const kept = ctx.memory ? ctx.memory.git.get(key) : null;
-  if (kept && (isStatus ? Date.now() - kept.at < ctx.memory.statusKeepMs : stamp !== null && kept.stamp === stamp)) {
+  const stillValid = () => {
+    if (forHalfway) return kept.at > ctx.memory.halfwaySince;
+    return isStatus ? Date.now() - kept.at < ctx.memory.statusKeepMs : stamp !== null && kept.stamp === stamp;
+  };
+  if (kept && stillValid()) {
     ctx.cache.set(key, kept.res);
     return kept.res;
   }
@@ -580,6 +598,7 @@ function git(dir, args, ctx) {
   const res = gitNow(dir, args, Math.max(1, Math.min(GIT_MS, ctx.until - Date.now())));
   if (res.err && res.status == null) ctx.gitTimedOut = true;
   ctx.cache.set(key, res);
+  if (forHalfway && ctx.memory) ctx.memory.halfwayReadAt = Date.now();
   // un git que no llegó a contestar no dice nada: no se recuerda
   if (ctx.memory && !(res.err && res.status == null)) ctx.memory.git.set(key, { res, stamp, at: Date.now() });
   return res;
@@ -1160,6 +1179,7 @@ function buildWip(opts = {}) {
   const projectsDir = opts.projectsDir || path.join(claudeDir(home), 'projects');
   const sessions = sessionsBySid(sessionsDir, unreadable, projectsDir);
   const medians = stepMedians(path.join(sdir, 'timing-history'), unreadable, opts.memory);
+  if (opts.memory) reviseIfSessionClosed(opts.memory, sessions);
   const rows = [];
   // la sesión de cada fila, en el mismo orden: el --json la suma a la fila
   const rowSids = [];
@@ -1201,7 +1221,7 @@ function buildWip(opts = {}) {
   // ¿Ya entró a la rama principal lo que dejó esta sesión cerrada? Los archivos de su carril, o los últimos que tocó. Cada una
   // tiene su propio tope: con la máquina cargada, las primeras no le gastan el tiempo a las demás
   const leftInMain = (sid, named, fallback) => {
-    const leftCtx = { until: Date.now() + nn(opts.repoBudgetMs, GIT_BUDGET_MS), cache: gitCtx.cache, memory: gitCtx.memory };
+    const leftCtx = { until: Date.now() + nn(opts.repoBudgetMs, GIT_BUDGET_MS), cache: gitCtx.cache, memory: gitCtx.memory, halfway: true };
     const paths = [...(Array.isArray(named) ? named : []), ...lastTouched(sdir, sid, home, nowMs, unreadable, Infinity)];
     const named2 = paths.length ? paths : [fallback];
     if (enteredMain(named2, leftCtx)) return { entered: true };
@@ -1522,7 +1542,7 @@ function buildWip(opts = {}) {
   }));
   // los repos de las corridas con fila: /office los reconoce al preguntar por un pedido que nombra el tablero
   const runRepos = [...new Set([...pipeRows.values()].map(({ m }) => m.repoPath).filter((p) => typeof p === 'string' && path.isAbsolute(p)))];
-  return { rows, details, extra, free, freeSids, freeStatus, idle, halfway, halfwayItems, unreadable, wanted, runRepos, internal, text: render(rows, free, noData, idle, halfway, unreadable, internal, notes, freeNotes) };
+  return { rows, details, extra, free, freeSids, freeStatus, idle, halfway, halfwayItems, halfwayReadAt: (gitCtx.memory && gitCtx.memory.halfwayReadAt) || nowMs, unreadable, wanted, runRepos, internal, text: render(rows, free, noData, idle, halfway, unreadable, internal, notes, freeNotes) };
 }
 
 // Los archivos de estado de las sesiones, por sesión. Los que no se pueden usar los dice la oficina; lo que tira al leer
@@ -1636,4 +1656,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { buildWip, wipNow, createMemory, git, stepMedians, enteredMain, OVERDUE_HOUR, stagesOf, jsonOf, sessionsBySid, storyEntering, median, queryAll, readPrs, parseRemote, offQueueOf, identityOf, remoteOfFolder, endOf, hourForStep, hourVerdict, realState, replacedByNewer, storyPausedUntil, unsavedChanges, codexNames, PER_QUERY_MS, ALL_QUERIES_MS, SAFE_SID, LOOSE_STALE_MS };
+module.exports = { buildWip, wipNow, createMemory, reviseHalfway, git, stepMedians, enteredMain, OVERDUE_HOUR, stagesOf, jsonOf, sessionsBySid, storyEntering, median, queryAll, readPrs, parseRemote, offQueueOf, identityOf, remoteOfFolder, endOf, hourForStep, hourVerdict, realState, replacedByNewer, storyPausedUntil, unsavedChanges, codexNames, PER_QUERY_MS, ALL_QUERIES_MS, SAFE_SID, LOOSE_STALE_MS };

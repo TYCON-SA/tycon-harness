@@ -656,6 +656,68 @@ test('T66 Photo_ThreadDies_PageToldAndNextPhotoWorks: si el hilo de la foto se c
   p.close();
 });
 
+// What a closed session left: a folder with one file not saved.
+function leftBehind(m) {
+  const repo = path.join(m.home, 'trabajo');
+  fs.mkdirSync(repo);
+  const git = (...a) => spawnSync('git', ['-C', repo, '-c', 'user.name=t', '-c', 'user.email=t@example.com', ...a], { encoding: 'utf8' });
+  spawnSync('git', ['init', '-q', repo]);
+  git('symbolic-ref', 'HEAD', 'refs/heads/trabajo');
+  git('commit', '-q', '--allow-empty', '-m', 'uno');
+  git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+  fs.writeFileSync(path.join(repo, 'a.js'), 'x');
+  fs.mkdirSync(path.join(m.sdir, 'adhoc'), { recursive: true });
+  fs.writeFileSync(path.join(m.sdir, 'adhoc', 'cerrada-1.json'), JSON.stringify({ reason: 'lo dejado', files: [path.join(repo, 'a.js')], declaredAt: new Date().toISOString(), lastTouch: new Date().toISOString() }));
+  return repo;
+}
+const halfOf = (f) => JSON.stringify(f.data.kanban.medioCamino);
+const lastFoto = (p) => p.fotos[p.fotos.length - 1];
+
+test('T67 Halfway_EveryWhile_PageOpen: con la página abierta se revisa cada tanto, aunque nada avise', async () => {
+  const m = toy();
+  const repo = leftBehind(m);
+  openSync(m, { TYCON_OFFICE_HALFWAY_MS: '1500' });
+  const p = page(readLock(m));
+  const first = await p.next();
+  assert.strictEqual(first.data.kanban.medioCamino.length, 1);
+  assert.match(first.data.kanban.medioCaminoLeido, /^Leído a las \d\d:\d\d$/);
+  fs.writeFileSync(path.join(repo, 'b.js'), 'x');
+  assert.ok(await until(() => halfOf(lastFoto(p)) !== halfOf(first), 8000), 'la revisión ve el archivo nuevo');
+  p.close();
+});
+
+test('T68 Halfway_OtherChange_NotRead: otro cambio arma la foto sin volver a leer A medio camino', async () => {
+  const m = toy();
+  const repo = leftBehind(m);
+  openSync(m);
+  const lock = readLock(m);
+  const p = page(lock);
+  const first = await p.next();
+  const before = (await counters(lock)).reads;
+  fs.writeFileSync(path.join(repo, 'b.js'), 'x');
+  fs.writeFileSync(path.join(m.sessions, 's2.json'), JSON.stringify({ pid: process.pid, sessionId: 's2', name: 'Nueva', status: 'busy', statusUpdatedAt: Date.now() }));
+  assert.ok(await until(() => JSON.stringify(lastFoto(p).data).includes('Nueva'), 6000), 'la sesión nueva llegó en vivo');
+  assert.ok((await counters(lock)).reads > before);
+  assert.strictEqual(halfOf(lastFoto(p)), halfOf(first), 'A medio camino espera su revisión');
+  p.close();
+});
+
+test('T69 Halfway_PageOpened_Read: al abrir la oficina otra vez se revisa', async () => {
+  const m = toy();
+  const repo = leftBehind(m);
+  openSync(m, { TYCON_OFFICE_HALFWAY_FRESH_MS: '200' });
+  const lock = readLock(m);
+  const p = page(lock);
+  const first = await p.next();
+  p.close();
+  fs.writeFileSync(path.join(repo, 'b.js'), 'x');
+  await sleep(600);
+  const again = page(lock);
+  await again.next();
+  assert.ok(await until(() => halfOf(lastFoto(again)) !== halfOf(first), 6000), 'la página nueva ve el archivo nuevo');
+  again.close();
+});
+
 test('T61 Signatures_Change_PushesPhoto: una firma pedida o resuelta llega sola a la página', async () => {
   const m = toy();
   assert.ok(watchedOf(m).includes(path.join(m.sdir, 'coordination')), 'vigila las firmas');

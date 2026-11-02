@@ -23,6 +23,8 @@
  *
  * La foto se arma en un hilo aparte, porque lanza git y lee muchos archivos sin soltar el hilo: acá adentro, la página y los
  * vigilantes siguen contestando mientras tanto. Ese hilo recuerda de una foto a la otra lo que no cambió (`createMemory`).
+ * Los archivos sin guardar de «A medio camino» se leen al abrir la oficina, al cerrarse una sesión y cada 15 minutos con una
+ * página abierta; con la página cerrada, nunca.
  *
  * Quien cambia el estado de una sesión (el marcador del pipeline, la ventana del dueño) lo avisa por `POST /event`
  * (scripts/lib/office-event.js), con el mismo token: la foto se recalcula enseguida y una vez más al segundo, porque la
@@ -54,6 +56,8 @@ const { stateDir, claudeDir } = require(path.join(ROOT, 'skills', 'tycon-pipelin
 const DEBOUNCE_MS = 250;
 const QUERY_TTL_MS = 60 * 1000;
 const PR_PHOTO_MS = 3 * 60 * 1000;
+const HALFWAY_MS = 15 * 60 * 1000;
+const HALFWAY_OPEN_FRESH_MS = 60 * 1000;
 const MAX_PAYLOAD = 1024;
 const MAX_EVENT_BYTES = 256;
 const EVENT_TYPES = ['changed', 'session'];
@@ -142,7 +146,7 @@ function readLockFile(lockFile) {
 // conversación y con cuánto consultó. Lo que recuerda de una foto a la otra vive sólo acá.
 function photoThread() {
   const office = require(path.join(ROOT, 'scripts', 'tools', 'office.js'));
-  const { queryAll, readPrs, createMemory } = require(path.join(ROOT, 'scripts', 'tools', 'work-in-progress.js'));
+  const { queryAll, readPrs, createMemory, reviseHalfway } = require(path.join(ROOT, 'scripts', 'tools', 'work-in-progress.js'));
   const home = os.homedir();
   const counted = { queries: 0, intervals: 0 };
   if (process.env.TYCON_OFFICE_TEST === '1') {
@@ -157,11 +161,13 @@ function photoThread() {
   const envelopes = office.createEnvelopes();
   // la dirección del sitio y el umbral de la sesión callada se leen una vez: no cambian mientras la página está abierta
   let once = null;
-  parentPort.on('message', async () => {
+  parentPort.on('message', async ({ revise, pageOpen }) => {
     try {
+      memory.pageOpen = pageOpen;
+      if (revise) reviseHalfway(memory);
       if (!once) once = { site: office.readSiteUrl(), quiet: office.readQuietMinutes() };
       const data = await office.collect({ home, queryAll: query, queryPrs, siteUrl: async () => once.site, quietMinutes: async () => once.quiet, envelopes, memory });
-      parentPort.postMessage({ data, files: [...envelopes.files], coordinator: envelopes.coordinator, readAt: query.readAt(), counted });
+      parentPort.postMessage({ data, files: [...envelopes.files], coordinator: envelopes.coordinator, readAt: query.readAt(), halfwayReadAt: memory.halfwayReadAt, counted });
     } catch (e) {
       parentPort.postMessage({ error: e && e.message ? e.message : String(e), stack: e && e.stack });
     }
@@ -184,10 +190,10 @@ function photoAsker() {
     w.on('exit', () => gone(new Error('el hilo de la foto se cerró')));
     return w;
   };
-  return () => new Promise((resolve, reject) => {
+  return (request) => new Promise((resolve, reject) => {
     waiting = { resolve, reject };
     if (!worker) worker = start();
-    worker.postMessage('foto');
+    worker.postMessage(request);
   });
 }
 
@@ -214,6 +220,9 @@ async function serve() {
   }
   const notes = [];
   const askPhoto = photoAsker();
+  // «A medio camino» se revisa al abrir la oficina, al cerrarse una sesión (lo ve el hilo) y cada tanto con la página abierta
+  let reviseNext = false;
+  let halfwayReadAt = null;
   // a quién corresponde cada nombre, según la última foto: vive sólo en este proceso
   const envelopes = { files: new Map(), coordinator: null };
   let threadCounted = { queries: 0, intervals: 0 };
@@ -229,7 +238,10 @@ async function serve() {
   // la foto: lo mismo que la foto fija, más lo que este proceso no pudo hacer
   const snapshot = async () => {
     counters.reads += 1;
-    const { data, files, coordinator, readAt, counted } = await askPhoto();
+    const request = { revise: reviseNext, pageOpen: clients.size > 0 };
+    reviseNext = false;
+    const { data, files, coordinator, readAt, halfwayReadAt: halfwayAt, counted } = await askPhoto(request);
+    halfwayReadAt = halfwayAt;
     envelopes.files = new Map(files);
     envelopes.coordinator = coordinator;
     threadCounted = counted;
@@ -305,6 +317,22 @@ async function serve() {
     if (age >= prEveryMs) refreshPrPhoto();
     prTimer = setTimeout(prTick, age >= prEveryMs ? prEveryMs : prEveryMs - age);
     prTimer.unref();
+  };
+
+  const halfwayEveryMs = numEnv('TYCON_OFFICE_HALFWAY_MS', HALFWAY_MS);
+  let halfwayTimer = null;
+  const reviseHalfwaySoon = () => { reviseNext = true; schedule(); };
+  const halfwayTick = () => {
+    reviseHalfwaySoon();
+    halfwayTimer = setTimeout(halfwayTick, halfwayEveryMs);
+    halfwayTimer.unref();
+  };
+  // la primera página de un proceso que recién leyó no vuelve a pedir lo mismo
+  const halfwayOnOpen = () => {
+    if (halfwayTimer) return;
+    if (halfwayReadAt != null && Date.now() - halfwayReadAt >= numEnv('TYCON_OFFICE_HALFWAY_FRESH_MS', HALFWAY_OPEN_FRESH_MS)) reviseHalfwaySoon();
+    halfwayTimer = setTimeout(halfwayTick, halfwayEveryMs);
+    halfwayTimer.unref();
   };
 
   const okHost = (h) => h === `127.0.0.1:${port}` || h === `localhost:${port}`;
@@ -395,12 +423,13 @@ async function serve() {
       clients.add(ws);
       reviewLife();
       if (!prTimer) prTick();
+      halfwayOnOpen();
       // el canal de vuelta está cerrado: un mensaje cierra la conexión sin leerse
       ws.on('message', () => { ws.close(1008, 'el canal de vuelta está cerrado'); noteOnce(BACK_CHANNEL); });
       // un mensaje de más de 1 KB lo corta la librería sola, con 1009, antes de leerlo
       // sólo el corte por tamaño es un mensaje de la página; un corte de red no lo es (lo dice el `close`)
       ws.on('error', (e) => { if (e && e.code === 'WS_ERR_UNSUPPORTED_MESSAGE_LENGTH') noteOnce(BACK_CHANNEL); });
-      ws.on('close', () => { clients.delete(ws); reviewLife(); if (!clients.size) { clearTimeout(prTimer); prTimer = null; } });
+      ws.on('close', () => { clients.delete(ws); reviewLife(); if (!clients.size) { clearTimeout(prTimer); prTimer = null; clearTimeout(halfwayTimer); halfwayTimer = null; } });
       ready.then(() => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'foto', data: last })); })
         .catch((e) => { noteOnce(`una página no recibió la foto: ${e.message}`); try { ws.close(1011, 'sin foto'); } catch { /* ya cerrada */ } });
     });
@@ -429,7 +458,7 @@ async function serve() {
   function shutdown() {
     if (done) return;
     done = true;
-    clearTimeout(idle); clearTimeout(cap); clearTimeout(pending); clearTimeout(settle); clearTimeout(prTimer); clearInterval(sessionCheck);
+    clearTimeout(idle); clearTimeout(cap); clearTimeout(pending); clearTimeout(settle); clearTimeout(prTimer); clearTimeout(halfwayTimer); clearInterval(sessionCheck);
     unwatch();
     if (link) link.stop();
     for (const c of clients) { try { c.close(1001, 'la oficina se cerró'); } catch { /* ya cerrada */ } }

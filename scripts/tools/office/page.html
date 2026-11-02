@@ -200,6 +200,7 @@ function renderBoard(){const body=document.getElementById("boardBody"),k=DATA.ka
 // lo que de verdad quedó sin terminar, en las dos vistas, con qué hacer con cada cosa. Sin nada que decir, no aparece
 function renderHalfway(){const sec=document.getElementById("halfway"),k=DATA.kanban||{},half=k.medioCamino||[];sec.replaceChildren();sec.hidden=!half.length&&!k.medioCaminoNoSe;if(sec.hidden)return;
   sec.appendChild(el("h2",null,"A medio camino"));
+  if(k.medioCaminoLeido)sec.appendChild(el("p","none",k.medioCaminoLeido));
   half.forEach(i=>{const card=el("div","item");card.appendChild(el("b",null,i.titulo));card.appendChild(el("span","n",i.accion));sec.appendChild(card)});
   if(k.medioCaminoNoSe)sec.appendChild(el("p","none",k.medioCaminoNoSe))}
 function renderTop(){
@@ -610,6 +611,7 @@ function abrirTablero(){sel=null;desks.forEach(pintarTag);const K=T.kanban()||{}
   cols.forEach(c=>{const rows=c.tarjetas||[];if(!rows.length)return;const h=mk("h4",null,c.nombre+" · "+rows.length);h.style.color=KCOL[c.id]||"#9aa3a0";panel.append(h);const ul=mk("ul","list");
     rows.forEach(r=>{const li=mk("li");li.append(mk("b",null,r.titulo||""));li.append(mk("span","m",[r.quien,r.hora,r.espera?"espera "+r.espera:"",r.marca,r.motivo].filter(Boolean).join(" · ")));if(r.nota)li.append(mk("span","m",r.nota));ul.append(li)});panel.append(ul)});
   if(half.length){const h=mk("h4",null,"A medio camino · "+half.length);h.style.color=HALF;panel.append(h);const ul=mk("ul","list");half.forEach(r=>{const li=mk("li");li.append(mk("b",null,r.titulo||""),mk("span","m",r.accion||""));ul.append(li)});panel.append(ul)}
+  if(K.medioCaminoLeido)panel.append(mk("p","m",K.medioCaminoLeido));
   if(K.medioCaminoNoSe)panel.append(mk("p","m",K.medioCaminoNoSe));
   if(!half.length&&!cols.some(c=>(c.tarjetas||[]).length))panel.append(mk("p","m","No hay nada pendiente en esta máquina."));
   if(meta&&meta.actualizado)panel.append(mk("p","m",stampOf(K,meta)))}
