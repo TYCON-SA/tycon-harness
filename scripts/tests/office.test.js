@@ -265,20 +265,23 @@ const runMarker = (home, sid, args) => {
 };
 
 test('T37 LooseAndNote_DeclaredEnd_Shown: el arreglo rápido y la nota dicen su hora de fin si la declaran', () => {
+  // una hora que todavía no pasó, a cualquier hora que corra la prueba y en cualquier huso: marker.js usa el reloj real
+  const later = new Date(Date.now() + 3600000);
+  const HORA = `${String(later.getHours()).padStart(2, '0')}:${String(later.getMinutes()).padStart(2, '0')}`;
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'office-until-'));
   const sdir = stateDir(home);
   fs.mkdirSync(path.join(sdir, 'adhoc'), { recursive: true });
   fs.writeFileSync(path.join(sdir, 'adhoc', 's1.json'), JSON.stringify({ reason: 'arreglos rápidos de la oficina', declaredAt: new Date().toISOString() }));
   assert.strictEqual(runMarker(home, 's2', ['adhoc', 'until', '25:99']), 2, 'la hora se valida primero, aunque no haya carril');
-  assert.strictEqual(runMarker(home, 's2', ['adhoc', 'until', '19:30']), 1, 'sin carril no hay dónde anotarla');
+  assert.strictEqual(runMarker(home, 's2', ['adhoc', 'until', HORA]), 1, 'sin carril no hay dónde anotarla');
   assert.ok(!fs.existsSync(path.join(sdir, 'adhoc', 's2.json')), 'sin carril no se crea nada');
-  assert.strictEqual(runMarker(home, 's1', ['adhoc', 'until', '19:30']), 0);
-  assert.strictEqual(runMarker(home, 's3', ['doing', 'espero turno para el banco de controles', '--until', '19:30']), 0);
+  assert.strictEqual(runMarker(home, 's1', ['adhoc', 'until', HORA]), 0);
+  assert.strictEqual(runMarker(home, 's3', ['doing', 'espero turno para el banco de controles', '--until', HORA]), 0);
   const until = JSON.parse(fs.readFileSync(path.join(sdir, 'adhoc', 's1.json'), 'utf8')).until;
   const endAt = JSON.parse(fs.readFileSync(path.join(sdir, 'doing', 's3.json'), 'utf8')).endAt;
   for (const iso of [until, endAt]) {
     const d = new Date(iso);
-    assert.deepStrictEqual([d.getHours(), d.getMinutes()], [19, 30]);
+    assert.deepStrictEqual([d.getHours(), d.getMinutes()], [later.getHours(), later.getMinutes()]);
     // hoy, mañana si quedaría más de 12 h atrás, ayer si quedaría más de 18 h adelante
     assert.ok(Date.parse(iso) > Date.now() - 12 * 3600000 && Date.parse(iso) <= Date.now() + 18 * 3600000, `${iso} cae entre 12 h atrás y 18 h adelante`);
   }
@@ -304,7 +307,7 @@ test('T37 LooseAndNote_DeclaredEnd_Shown: el arreglo rápido y la nota dicen su 
   fs.writeFileSync(runStory, '---\nstory: "7.7"\ntitle: "Una historia con corrida"\n---\n');
   fs.writeFileSync(path.join(sdir, 'active', 's5.json'), JSON.stringify({ sessionId: 's5', storyId: '7.7', storyPath: runStory, stepsCompleted: ['start'], stepsPending: ['validate-story'] }));
   fs.writeFileSync(path.join(sdir, 'adhoc', 's5.json'), JSON.stringify({ reason: 'arreglo con corrida', declaredAt: new Date().toISOString() }));
-  assert.strictEqual(runMarker(home, 's5', ['adhoc', 'until', '19:30']), 0);
+  assert.strictEqual(runMarker(home, 's5', ['adhoc', 'until', HORA]), 0);
   const sessions = path.join(home, 'sessions');
   fs.mkdirSync(sessions);
   fs.writeFileSync(path.join(sessions, 's5.json'), JSON.stringify({ pid: process.pid, sessionId: 's5', name: 'Muñe', status: 'busy', statusUpdatedAt: Date.now() }));
@@ -313,9 +316,9 @@ test('T37 LooseAndNote_DeclaredEnd_Shown: el arreglo rápido y la nota dicen su 
   const { data } = buildOffice({ wip: w, nowMs: Date.now() });
   for (const name of ['Alfa', 'Zeta']) {
     const a = byName(data, name);
-    assert.strictEqual(a.pronosticoIso.slice(11), '19:30', name);
+    assert.strictEqual(a.pronosticoIso.slice(11), HORA, name);
     assert.strictEqual(a.termina, undefined, `${name} tiene hora`);
-    assert.match(w.rows.find((r) => r.session === name).end, /19:30/, `/wip la muestra en «Fin estimado» (${name})`);
+    assert.match(w.rows.find((r) => r.session === name).end, new RegExp(HORA), `/wip la muestra en «Fin estimado» (${name})`);
   }
   // una hora guardada ilegible se dice, no pasa por «sin estimación»
   fs.writeFileSync(path.join(sdir, 'adhoc', 's7.json'), JSON.stringify({ reason: 'arreglo con la hora rota', declaredAt: new Date().toISOString(), until: 'mañana' }));
@@ -324,7 +327,7 @@ test('T37 LooseAndNote_DeclaredEnd_Shown: el arreglo rápido y la nota dicen su 
   assert.strictEqual(w2.rows.find((r) => r.session === 'Rota').end, 'hora declarada ilegible');
   const withRun = byName(data, 'Muñe');
   assert.strictEqual(withRun.tipo, 'pipeline', 'la sesión con corrida es su corrida');
-  assert.ok(!String(withRun.pronosticoIso || '').endsWith('19:30'), 'la hora del carril no pisa la de la corrida');
+  assert.ok(!String(withRun.pronosticoIso || '').endsWith(HORA), 'la hora del carril no pisa la de la corrida');
 });
 
 test('T38 PlainSentence_NoFilesBranchesFolders: la oración, el título y el «mientras tanto» van sin archivos, ramas ni carpetas', () => {

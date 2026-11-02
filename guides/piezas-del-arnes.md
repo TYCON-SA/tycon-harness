@@ -1222,8 +1222,6 @@ _(scripts/tools/work-in-progress.js + commands/wip.md; en 3D y en vivo: scripts/
 
 **Quién la usa:** Quien coordina varias sesiones. Sólo lee: no limpia ni adopta.
 
-**En la oficina viva:** cada sesión dice si está en camino corto, en una historia o en otra cosa, de su marca. Un mensaje entre dos sesiones vuela como un sobre entre sus escritorios, con unos segundos de atraso. Al tocar a una persona se ven sus últimos mensajes con la coordinadora; al tocar a la coordinadora, también los que cruzó con la persona. Sale de las conversaciones, sin gancho y sin modelo. El texto se lee sólo al tocar y nunca entra en la foto, así que no llega al sitio ni al buzón; lo que parece una clave se tapa.
-
 **Dónde se prueba:** `scripts/tests/`: `work-in-progress`, `office*`, `session-state`, `session-transcript`
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptstoolswork-in-progressjs)
