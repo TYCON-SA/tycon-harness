@@ -59,8 +59,8 @@ h2{font:700 .8rem var(--display);text-transform:uppercase;letter-spacing:.08em;c
 .panel3 .chip{display:inline-flex;gap:6px;padding:1px 9px;border-radius:999px;border:1px solid var(--c);color:var(--c);font-size:12px;margin-bottom:10px}
 .panel3 dl{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin:0;font-size:13px;line-height:1.4}
 .panel3 dt{color:#b6a9c9}.panel3 dd{margin:0;min-width:0;overflow-wrap:anywhere}
-.panel3 .pbar{display:inline-block;width:110px;height:6px;border-radius:3px;background:rgba(255,255,255,.14);overflow:hidden;vertical-align:middle}
-.panel3 .pbar i{display:block;height:100%;background:var(--c)}
+.pbar{display:inline-block;width:110px;height:6px;border-radius:3px;background:rgba(127,127,127,.25);overflow:hidden;vertical-align:middle}
+.pbar i{display:block;height:100%;background:var(--c)}
 .panel3.wide{width:min(440px,calc(100% - 24px))}
 .panel3 h4{margin:14px 0 6px;font:700 .78rem var(--display);text-transform:uppercase;letter-spacing:.07em}
 .panel3 .counts{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:8px;margin-top:6px}
@@ -69,9 +69,10 @@ h2{font:700 .8rem var(--display);text-transform:uppercase;letter-spacing:.08em;c
 .panel3 ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;font-size:13px;line-height:1.4}
 .panel3 ul.list{list-style:none;padding:0} .panel3 ul.list li{display:flex;flex-direction:column;border-bottom:1px solid rgba(255,255,255,.08);padding-bottom:6px}
 .panel3 ul.list b{font-weight:500} .panel3 .m{font:500 12px var(--mono);color:#b6a9c9;margin:6px 0 0}
-.panel3 ol.steps{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:3px;font-size:12.5px}
-.panel3 ol.steps li{display:flex;gap:8px;color:#9d93b0} .panel3 ol.steps li.done{color:#d9d0ea} .panel3 ol.steps li.now{color:var(--c);font-weight:600}
-.panel3 ol.steps li span{width:14px;flex:none;text-align:center}
+.panel3 details.pasos summary{margin:14px 0 6px;font:700 .78rem var(--display);text-transform:uppercase;letter-spacing:.07em;color:var(--c);cursor:pointer}
+ol.steps{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:3px;font-size:12.5px}
+ol.steps li{display:flex;gap:8px;color:#9d93b0} .panel3 ol.steps li.done{color:#d9d0ea} .card ol.steps li.done{color:var(--fg)} ol.steps li.now{color:var(--c);font-weight:600}
+ol.steps li span{width:14px;flex:none;text-align:center}
 .panel3 h4.toca{color:#ffb04d} .panel3 ul.toca li::marker{color:#ffb04d}
 .panel3 .close{position:absolute;right:8px;top:6px;background:none;border:0;color:#b6a9c9;font-size:22px;cursor:pointer;line-height:1}
 .ovl{position:absolute;left:50%;top:14px;transform:translateX(-50%);margin:0;background:rgba(18,14,26,.8);padding:6px 14px;border-radius:999px;font-size:13px;color:#e8dcff;text-align:center;max-width:calc(100% - 32px)}
@@ -83,8 +84,9 @@ h2{font:700 .8rem var(--display);text-transform:uppercase;letter-spacing:.08em;c
 .card .dot{width:10px;height:10px;border-radius:50%;flex:none}
 .card .st{align-self:flex-start;font:500 .74rem var(--body);padding:1px 9px;border-radius:999px;border:1px solid}
 .card p{margin:0;font-size:.9rem;line-height:1.45;overflow-wrap:anywhere}
-.card .side{font-size:.85rem;color:var(--muted)} .card .side b{font-weight:600;color:var(--fg)}
-.card .eta{font:500 .82rem var(--mono);color:var(--muted)}
+.card dl{margin:0;font-size:.82rem;line-height:1.35}
+.card dt{color:var(--muted);font-size:.72rem;margin-top:5px} .card dt:first-child{margin-top:0} .card dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.card details.pasos{font-size:.82rem} .card details.pasos summary{color:var(--muted);cursor:pointer}
 details.tablewrap summary{cursor:pointer;font:700 .8rem var(--display);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
 .table{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:6px;margin-top:8px}
 table{width:100%;border-collapse:collapse;min-width:760px}
@@ -96,6 +98,7 @@ footer{color:var(--muted);font-size:.85rem}
    que quedó a medio camino plegado debajo */
 .board{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
 .board .sum{margin:0;font-size:.95rem}
+.tablas .una{min-width:0} .tablas h2{margin:0 0 2px} .tablas .escrito{font-size:.8rem;color:var(--muted)} .tablas .table{overflow-x:auto} .tablas table{min-width:520px;margin-top:6px} .tablas td:first-child{white-space:nowrap}
 .board .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;align-items:start}
 .board .col{display:flex;flex-direction:column;gap:6px;min-width:0}
 .board .col h3{margin:0;font:700 .85rem var(--display);border-bottom:3px solid var(--k,var(--line));padding-bottom:4px}
@@ -122,9 +125,10 @@ footer{color:var(--muted);font-size:.85rem}
   </section>
   <div class="you" id="you" hidden><h2>Te toca a vos</h2><ul id="youList"></ul></div>
   <section><h2>Las sesiones</h2><div class="crew" id="crew"></div></section>
+  <section class="board tablas" id="tablas" hidden aria-label="Resúmenes"></section>
   <section class="board" id="board" hidden aria-labelledby="boardTitle"><h2 id="boardTitle">Pendientes</h2><div id="boardBody"></div></section>
   <details class="tablewrap" id="tablewrap"><summary>Ver como tabla</summary><div class="table"><table><thead><tr><th>Trabajo</th><th>Estado</th><th>Fin estimado</th><th>Sesión</th><th>Carpeta</th></tr></thead><tbody id="rows"></tbody></table></div><p class="empty" id="freeLine" hidden></p></details>
-  <footer id="foot">«Prometido» es la hora que dio la corrida al arrancar; «Termina» es la de ahora, que se recalcula al entrar a cada paso y queda fija hasta el próximo. La diferencia sale en rojo si va más de 15 minutos tarde y en verde si va más de 15 minutos antes.</footer>
+  <footer id="foot">«Prometido» es la hora que dio la ejecución al arrancar; «Termina» es la de ahora, que se recalcula al entrar a cada paso y queda fija hasta el próximo. La diferencia sale en rojo si va más de 15 minutos tarde y en verde si va más de 15 minutos antes.</footer>
 </main>
 <script>
 let DATA=__OFFICE_DATA__;
@@ -168,27 +172,39 @@ function renderTop(){
   const tb=document.getElementById("rows");tb.replaceChildren();(DATA.rows||[]).forEach(r=>{const tr=el("tr");[r.work,r.state,r.end,r.session,r.folder].forEach(v=>tr.appendChild(el("td",null,v||"")));tb.appendChild(tr)});
   if(!(DATA.rows||[]).length){const tr=el("tr");const td=el("td",null,"Nadie trabaja en esta máquina.");td.colSpan=5;tr.appendChild(td);tb.appendChild(tr)}
   const fl=document.getElementById("freeLine"),bits=[];if((DATA.free||[]).length)bits.push("Libres: "+DATA.free.join(", "));if((DATA.unreadable||[]).length)bits.push("No se pudo leer: "+DATA.unreadable.join(" · "));
-  fl.textContent=bits.join(" — ");fl.hidden=!bits.length;renderBoard()}
+  fl.textContent=bits.join(" — ");fl.hidden=!bits.length;renderBoard();renderTablas()}
+// los dos resúmenes, arriba del tablero, y cuándo se escribió cada uno. Todo va como texto, nunca como HTML
+function renderTablas(){const sec=document.getElementById("tablas"),ts=DATA.tablas;sec.replaceChildren();sec.hidden=!ts;if(!ts)return;
+  ["hoy","pendientes"].forEach(k=>{const t=ts[k];if(!t)return;const d=el("div","una");d.appendChild(el("h2",null,t.titulo));d.appendChild(el("span","escrito",t.escrito||""));
+    if(!(t.filas||[]).length){d.appendChild(el("p","none","Nada"));sec.appendChild(d);return}
+    const tb=el("table"),hd=el("tr");t.columnas.forEach(c=>hd.appendChild(el("th",null,c)));const th=el("thead");th.appendChild(hd);tb.appendChild(th);const bd=el("tbody");
+    let previo=null;t.filas.forEach(r=>{const tr=el("tr");[r.grupo===previo?"":r.grupo,r.que,r.col].forEach(v=>tr.appendChild(el("td",null,v||"")));previo=r.grupo;bd.appendChild(tr)});tb.appendChild(bd);const w=el("div","table");w.appendChild(tb);d.appendChild(w);sec.appendChild(d)})}
 function renderCrew(){const c=document.getElementById("crew");c.replaceChildren();
   if(!agents.length){c.appendChild(el("p","empty","No hay sesiones abiertas en esta máquina."));return}
   agents.forEach((a,i)=>{const s=AST[a.estado]||[a.estado||"","#999"];const k=el("div","card");
     const h=el("h3");const d=el("span","dot");d.style.background=SHIRT[i%SHIRT.length];h.appendChild(d);h.appendChild(document.createTextNode(a.nombre||""));k.appendChild(h);
-    const st=el("span","st",s[0]);st.style.color=s[1];st.style.borderColor=s[1];k.appendChild(st);
-    const side=(label,v)=>{if(!v)return;const m=el("p","side");m.appendChild(el("b",null,label+": "));m.appendChild(document.createTextNode(v));k.appendChild(m)};
-    if(a.encargo)side("Encargo",a.encargo);
-    if(a.haciendoAhora)side("Haciendo ahora",a.haciendoAhora);else if(a.haciendo)k.appendChild(el("p",null,a.haciendo));
-    if(a.ultimaAccion)side("Última acción",a.ultimaAccion);
-    if(a.espera)k.appendChild(el("p","side","Espera "+a.espera+"."));
-    if(a.parada)k.appendChild(el("span","eta",a.parada.charAt(0).toUpperCase()+a.parada.slice(1)));
-    if(a.callada)k.appendChild(el("span","eta",a.callada.charAt(0).toUpperCase()+a.callada.slice(1)));
-    side("Mientras tanto",a.mientras);
-    side("En pausa",a.enPausa);
-    const f=finTxt(a);if(f)k.appendChild(el("span","eta",(a.termina?"":"Termina ")+f.hora+(f.dif?" · "+f.dif:"")));
-    if(a.horaPorque)k.appendChild(el("span","eta",a.horaPorque.charAt(0).toUpperCase()+a.horaPorque.slice(1)));
-    if(a.avance!=null)k.appendChild(el("span","eta","Avance: "+a.avance+"%"));c.appendChild(k)})}
+    const st=el("span","st",s[0]);st.style.color=s[1];st.style.borderColor=s[1];k.appendChild(st);k.style.setProperty("--c",s[1]);
+    pintarFicha(a,k,false);c.appendChild(k)})}
+// lo que se dice de una sesión, de un solo lugar: la tarjeta y el panel pintan esta lista y sólo cambia su estilo
+function ficha(a){const r=[],add=(k,v,x)=>{if(v!=null&&v!=="")r.push({k,v,...x})};
+  add("Trabajo",a.titulo);add("De la historia",a.historia);add("Encargo",a.encargo);
+  if(a.haciendoAhora)add("Haciendo ahora",a.haciendoAhora);else add("Haciendo",a.haciendo);
+  add("Última acción",a.ultimaAccion);add("Espera",a.espera);add("Parada",a.parada);add("Novedades",a.callada);
+  const ms=AST[a.mientrasEstado];add("Mientras tanto",a.mientras?a.mientras+(ms?" ("+ms[0].toLowerCase()+")":""):"");
+  add("En pausa",a.enPausa);
+  const f=finTxt(a);if(f)add("Termina",f.hora,{dif:f.dif,cls:f.cls});
+  add("Por qué",a.horaPorque);if(a.estimadaIso)add("Prometido",fmt(a.estimadaIso));
+  if(a.avance!=null)add("Avance",a.avance+"%",{pct:a.avance});
+  add("Carpeta",a.carpeta);return r}
+// la ficha dentro de `box`; los pasos van plegados en la tarjeta y abiertos en el panel
+function pintarFicha(a,box,abiertos){const dl=el("dl");
+  ficha(a).forEach(r=>{const dd=el("dd");if(r.pct!=null){const b=el("span","pbar"),i=el("i");i.style.width=r.pct+"%";b.appendChild(i);dd.appendChild(b);dd.appendChild(document.createTextNode(" "))}
+    dd.appendChild(document.createTextNode(r.v));if(r.dif){const x=el("em",r.cls||null," · "+r.dif);dd.appendChild(x)}dl.appendChild(el("dt",null,r.k));dl.appendChild(dd)});box.appendChild(dl);
+  if(a.pasos&&a.pasos.length){const d=el("details","pasos");d.open=abiertos;d.appendChild(el("summary",null,"Pasos de la ejecución"));const ol=el("ol","steps");let now=false;
+    a.pasos.forEach(p=>{const cur=!p.done&&!now;if(cur)now=true;const li=el("li",p.done?"done":cur?"now":"");li.appendChild(el("span",null,p.done?"✓":cur?"▸":"·"));li.appendChild(document.createTextNode(p.name));ol.appendChild(li)});d.appendChild(ol);box.appendChild(d)}}
 // sin 3D, la tabla queda abierta y la sala dice por qué
 function sinTresD(msg){const o=document.getElementById("ovl");o.textContent=msg;o.hidden=false;document.getElementById("tablewrap").open=true}
-window.tablero={agents:()=>agents,items:()=>items,kanban:()=>DATA.kanban||null,meta:()=>meta,site:()=>SITE,AST,SHIRT,fmt,finTxt,sinTresD};
+window.tablero={agents:()=>agents,items:()=>items,kanban:()=>DATA.kanban||null,meta:()=>meta,site:()=>SITE,AST,SHIRT,fmt,finTxt,sinTresD,pintarFicha};
 // el reloj de la página (decisión 20): cada minuto compara la hora con la última novedad de cada sesión y marca las
 // calladas; sin pid, pasadas las 2 h, la da por inactiva. No consulta nada afuera: mira la hora y los datos que tiene.
 const QUIET_DEFAULT=15,DEAD_MS=2*3600000;
@@ -227,8 +243,9 @@ try{construir()()}catch(e){console.error(e);T.sinTresD("Este navegador no puede 
 function construir(){
 // ---------- motor ----------
 const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
-renderer.setPixelRatio(Math.min(devicePixelRatio,2));
-renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+// la oficina queda abierta horas: la resolución tiene tope, y las sombras no se recalculan en cada cuadro
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.25));
+renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.shadowMap.autoUpdate=false;renderer.shadowMap.needsUpdate=true;
 renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.12;renderer.outputColorSpace=THREE.SRGBColorSpace;
 stage.prepend(renderer.domElement);
 const scene=new THREE.Scene();
@@ -456,27 +473,10 @@ function ubicarTags(){const W=stage.clientWidth,H=stage.clientHeight,cmp=stage.c
     if(!pos)pos=[p.ax,p.ay];puestos.push({x:pos[0],y:pos[1],w:p.w,h:p.h});
     const el=p.d.el,beside=Math.abs(pos[0]-p.ax)>p.w/4;el.style.left=pos[0]+"px";el.style.top=pos[1]+"px";el.style.setProperty("--stem",beside?"0px":Math.max(0,p.ay-pos[1])+"px");el.style.zIndex=String(Math.round(p.ay))})}
 
-// ---------- detalle de la sesión, con los pasos de su corrida ----------
+// ---------- detalle de la sesión: la misma ficha que su tarjeta ----------
 function abrir(nombre){panel.classList.remove("wide");sel=nombre;const a=T.agents().find(x=>x.nombre===nombre);if(!a){sel=null;panel.hidden=true;return}const s=T.AST[a.estado]||[a.estado||"","#999"];panel.hidden=false;panel.style.setProperty("--c",s[1]);
-  panel.innerHTML='<button class="close" type="button" aria-label="Cerrar">×</button><h3></h3><span class="chip">● <span class="es"></span></span><dl></dl>';
-  panel.querySelector("h3").textContent=a.nombre;panel.querySelector(".es").textContent=s[0];const dl=panel.querySelector("dl");
-  const row=(k,v,cls)=>{if(v==null||v==="")return;const dt=document.createElement("dt");dt.textContent=k;const dd=document.createElement("dd");if(cls)dd.className=cls;if(v instanceof Node)dd.append(v);else dd.textContent=v;dl.append(dt,dd)};
-  row("Trabajo",a.titulo);
-  row("De la historia",a.historia);
-  row("Encargo",a.encargo);
-  if(a.haciendoAhora)row("Haciendo ahora",a.haciendoAhora);else row("Haciendo",a.haciendo);
-  row("Última acción",a.ultimaAccion);
-  row("Espera",a.espera);
-  row("Parada",a.parada);
-  if(a.mientras){const sp=document.createElement("span");const ms=T.AST[a.mientrasEstado];sp.textContent=a.mientras+(ms?" ("+ms[0].toLowerCase()+")":"");row("Mientras tanto",sp)}
-  row("En pausa",a.enPausa);
-  const f=T.finTxt(a);if(f){const sp=document.createElement("span");sp.append(f.hora);if(f.dif){const x=document.createElement("em");x.className=f.cls;x.textContent=" · "+f.dif;sp.append(x)}row("Termina",sp)}
-  row("Por qué",a.horaPorque);
-  if(a.estimadaIso)row("Prometido",T.fmt(a.estimadaIso));
-  if(a.avance!=null){const b=document.createElement("span");b.className="pbar";const i=document.createElement("i");i.style.width=a.avance+"%";b.append(i);const w=document.createElement("span");w.append(b," "+a.avance+"%");row("Avance",w)}
-  row("Carpeta",a.carpeta);
-  if(a.pasos&&a.pasos.length){const h=document.createElement("h4");h.textContent="Pasos de la corrida";h.style.color=s[1];const ol=document.createElement("ol");ol.className="steps";let now=false;
-    a.pasos.forEach(p=>{const li=document.createElement("li");const cur=!p.done&&!now;if(cur)now=true;li.className=p.done?"done":cur?"now":"";const m=document.createElement("span");m.textContent=p.done?"✓":cur?"▸":"·";li.append(m,p.name);ol.append(li)});panel.append(h,ol)}
+  panel.innerHTML='<button class="close" type="button" aria-label="Cerrar">×</button><h3></h3><span class="chip">● <span class="es"></span></span>';
+  panel.querySelector("h3").textContent=a.nombre;panel.querySelector(".es").textContent=s[0];T.pintarFicha(a,panel,true);
   panel.querySelector(".close").onclick=()=>{sel=null;panel.hidden=true;desks.forEach(pintarTag)};desks.forEach(pintarTag)}
 const ray=new THREE.Raycaster(),ptr=new THREE.Vector2();let down=null;
 renderer.domElement.addEventListener("pointerdown",e=>down=[e.clientX,e.clientY]);
@@ -503,20 +503,34 @@ function abrirTablero(){sel=null;desks.forEach(pintarTag);const K=T.kanban()||{}
 // ---------- luces y postproceso ----------
 scene.add(new THREE.HemisphereLight("#ffd6b0","#5a3a6a",1.7));
 const sun=new THREE.DirectionalLight("#ffd9b3",3.0);sun.position.set(14,16,9);sun.target.position.set(5,0,5);scene.add(sun,sun.target);
-sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);Object.assign(sun.shadow.camera,{left:-9,right:9,top:9,bottom:-9,near:1,far:50});sun.shadow.bias=-.0004;sun.shadow.normalBias=.02;sun.shadow.radius=4;
+sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);Object.assign(sun.shadow.camera,{left:-9,right:9,top:9,bottom:-9,near:1,far:50});sun.shadow.bias=-.0004;sun.shadow.normalBias=.02;sun.shadow.radius=4;
 const fill=new THREE.PointLight("#ff7fb0",8,14,1.5);fill.position.set(6,3.6,6);scene.add(fill);
-const rt=new THREE.WebGLRenderTarget(1,1,{samples:4,type:THREE.HalfFloatType});
+const rt=new THREE.WebGLRenderTarget(1,1,{samples:2,type:THREE.HalfFloatType});
 const composer=new EffectComposer(renderer,rt);composer.addPass(new RenderPass(scene,cam));
 const bloom=new UnrealBloomPass(new THREE.Vector2(1,1),.38,.5,.9);composer.addPass(bloom);composer.addPass(new OutputPass());
-function resize(){const w=stage.clientWidth,h=stage.clientHeight;if(!w||!h)return;const asp=w/h;const hh=Math.max(5.3,7.4/asp);cam.left=-hh*asp;cam.right=hh*asp;cam.top=hh;cam.bottom=-hh;cam.updateProjectionMatrix();stage.classList.toggle("compact",w<560);renderer.setSize(w,h,false);composer.setSize(w,h);bloom.setSize(w,h)}
-new ResizeObserver(resize).observe(stage);resize();
+function resize(){const w=stage.clientWidth,h=stage.clientHeight;if(!w||!h)return;const asp=w/h;const hh=Math.max(5.3,7.4/asp);cam.left=-hh*asp;cam.right=hh*asp;cam.top=hh;cam.bottom=-hh;cam.updateProjectionMatrix();stage.classList.toggle("compact",w<560);renderer.setSize(w,h,false);composer.setSize(w,h);bloom.setSize(w,h);tagsAlDia=false;despertar()}
 
-const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches,clock=new THREE.Clock();let lastScr=-1,ledRate=0;
-function loop(){requestAnimationFrame(loop);const t=reduce?2:clock.getElapsedTime();controls.update();
-  desks.forEach(d=>animar(d,t));if(t-lastScr>.12||lastScr<0){desks.forEach(d=>drawScreen(d,t));lastScr=t}
+const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches,clock=new THREE.Clock();let lastScr=-1,ledRate=0,tagsAlDia=false;
+// Se dibuja con ritmo: más rápido mientras alguien toca la sala, a un ritmo tranquilo si hay personas que se mueven, muy de
+// vez en cuando si nadie se mueve, y nada si la sala no se ve. Con el movimiento reducido, sólo cuando algo cambia.
+const FPS_TOCANDO=30,FPS_MOVIMIENTO=15,FPS_QUIETA=4,TOCANDO_MS=2000,SOMBRA_CADA=3,PANTALLAS_S=.4,SE_MUEVEN=new Set(["trabajando","prueba","coordina","firma","espera"]);
+let hastaTocando=0,enVista=true,timer=null,cuadros=0;
+const ritmo=()=>reduce?0:performance.now()<hastaTocando?FPS_TOCANDO:desks.some(d=>SE_MUEVEN.has(d.agent.estado))?FPS_MOVIMIENTO:FPS_QUIETA;
+function programar(){clearTimeout(timer);timer=null;const f=ritmo();if(!f||!enVista||document.hidden)return;timer=setTimeout(()=>requestAnimationFrame(loop),1000/f)}
+function despertar(){clearTimeout(timer);timer=setTimeout(()=>requestAnimationFrame(loop),0)}
+function tocar(){hastaTocando=performance.now()+TOCANDO_MS;if(!timer)despertar()}
+["pointerdown","pointermove","wheel"].forEach(ev=>renderer.domElement.addEventListener(ev,tocar,{passive:true}));
+controls.addEventListener("change",()=>{tagsAlDia=false;tocar()});
+new IntersectionObserver(es=>{enVista=es[es.length-1].isIntersecting;if(enVista)despertar()}).observe(stage);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)despertar()});
+function loop(){if(!enVista||document.hidden){timer=null;return}try{dibujar()}finally{programar()}}
+function dibujar(){const t=reduce?2:clock.getElapsedTime();controls.update();
+  desks.forEach(d=>animar(d,t));if(t-lastScr>PANTALLAS_S||lastScr<0){desks.forEach(d=>drawScreen(d,t));lastScr=t}
+  if(cuadros++%SOMBRA_CADA===0)renderer.shadowMap.needsUpdate=true;
   leds.forEach((m,i)=>m.visible=ledRate?Math.sin(t*ledRate*(1+i%5*.3)+i*1.7)>-.5:true);
   steam.forEach(s=>{const p=(t*.35+s.ph)%1;s.m.position.set(6.2+Math.sin(p*9+s.ph*6)*.05,1.35+p*.7,5.6);s.m.material.opacity=.35*(1-p);s.m.scale.setScalar(.6+p*1.2)});
-  composer.render();ubicarTags()}
+  composer.render();if(!tagsAlDia){ubicarTags();tagsAlDia=true}}
+new ResizeObserver(resize).observe(stage);resize();
 loop();
 
 // ---------- datos: los de /wip, una sesión por escritorio ----------
@@ -524,7 +538,7 @@ loop();
 let quienes=null;
 function poblar(){const ps=puestos(),ags=T.agents().slice(0,ps.length);
   desks.forEach(d=>{scene.remove(d.st);d.el.remove()});
-  desks=ags.map((a,i)=>{const d=crearPuesto(a,i,ps[i]);nuevoTag(d);pintarTag(d);return d});lastScr=-1;quienes=ags.map(a=>a.nombre).join("\n")}
+  desks=ags.map((a,i)=>{const d=crearPuesto(a,i,ps[i]);nuevoTag(d);pintarTag(d);return d});lastScr=-1;quienes=ags.map(a=>a.nombre).join("\n");renderer.shadowMap.needsUpdate=true;tagsAlDia=false;despertar()}
 function alDia(){const ags=desks.map(d=>d.agent);
   ledRate=ags.filter(a=>a.estado==="trabajando"||a.estado==="prueba").length*1.6;
   drawPanel();
@@ -532,7 +546,7 @@ function alDia(){const ags=desks.map(d=>d.agent);
   aviso(!ags.length?"No hay sesiones abiertas en esta máquina.":extra?"Y "+extra+" sesión(es) más: están en las tarjetas de abajo.":"")}
 T.refresh=()=>{const ps=puestos(),ags=T.agents().slice(0,ps.length);
   if(ags.map(a=>a.nombre).join("\n")!==quienes)poblar();else{desks.forEach((d,i)=>{d.agent=ags[i];pintarTag(d)});lastScr=-1}
-  alDia();
+  tagsAlDia=false;despertar();alDia();
   if(sel){if(T.agents().some(a=>a.nombre===sel))abrir(sel);else{sel=null;panel.hidden=true}}
   else if(!panel.hidden&&panel.classList.contains("wide"))abrirTablero()};
 // dónde está la cámara, para comprobar que una foto nueva no la mueve

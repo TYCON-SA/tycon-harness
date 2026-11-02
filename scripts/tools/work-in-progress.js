@@ -338,11 +338,12 @@ function hourOfStep(marker) {
 // sin actividad en la última hora) o la que se calculó o declaró hace más de una hora. null: la hora vale, y si pasó, es
 // atraso. Sin fechas no se juzga.
 const WORK_CHANGED = 'sin hora: el trabajo cambió';
+const OVERDUE_HOUR = 'se pasó de la hora';
 function hourVerdict({ endAt, hourAt, activityAt, nowMs, run = false }) {
   if (!Number.isFinite(endAt) || endAt >= nowMs) return null;
   const oldHour = Number.isFinite(hourAt) && nowMs - hourAt > LOOSE_STALE_MS;
   if (run && Number.isFinite(activityAt) && nowMs - activityAt > LOOSE_STALE_MS && (oldHour || nowMs - endAt > LOOSE_STALE_MS)) return WORK_CHANGED;
-  return oldHour ? `vieja (de las ${hhmm(hourAt)})` : null;
+  return oldHour ? OVERDUE_HOUR : null;
 }
 
 // La hora es fija: arranque del paso en curso + su mediana + las de los pasos que faltan + la entrada a los repos.
@@ -860,7 +861,7 @@ function sessionPlace(cwd, ctx, unreadable) {
 // final del registro: el renglón más nuevo está abajo.
 const TOUCHED_TAIL_BYTES = 64 * 1024;
 const TOUCHED_MAX = 20;
-function lastTouched(sdir, sid, home, nowMs, unreadable) {
+function lastTouched(sdir, sid, home, nowMs, unreadable, maxAgeMs = IDLE_MS) {
   if (!SAFE_SID.test(String(sid))) return [];
   const file = path.join(sdir, 'file-events', `${sid}.jsonl`);
   let text;
@@ -887,13 +888,77 @@ function lastTouched(sdir, sid, home, nowMs, unreadable) {
     const p = ev && typeof ev.path === 'string' ? ev.path : '';
     const ts = Date.parse(ev && ev.ts);
     if (!path.isAbsolute(p) || !Number.isFinite(ts)) continue;
-    if (nowMs - ts > IDLE_MS) break;
+    if (nowMs - ts > maxAgeMs) break;
     if (/[\\/]scratchpad[\\/]/.test(p) || p.startsWith(memory) || out.includes(p)) continue;
     if (!out.length) out.newest = ts;
     out.push(p);
   }
   return out;
 }
+
+// Los repos o carpetas de trabajo de una lista de archivos, si alguno estaba en una carpeta de trabajo que ya no existe, y si
+// alguno no se pudo leer.
+function rootsOf(paths, ctx) {
+  const roots = new Map();
+  let gone = false;
+  let unreadable = false;
+  for (const p of paths) {
+    if (typeof p !== 'string' || !path.isAbsolute(p)) continue;
+    const worktree = /^(.*[\\/]worktrees[\\/][^\\/]+)[\\/]/.exec(p);
+    if (worktree && !fs.existsSync(worktree[1])) { gone = true; continue; }
+    let dir = path.dirname(p);
+    while (!fs.existsSync(dir) && path.dirname(dir) !== dir) dir = path.dirname(dir);
+    const repo = repoOf(dir, ctx);
+    if (repo && repo.err) unreadable = true;
+    else if (repo) roots.set(repo.root, repo);
+  }
+  return { roots, gone, unreadable };
+}
+
+// ¿El trabajo de una sesión cerrada ya entró a la rama principal? Se mira la carpeta de cada archivo que nombra o tocó: la
+// punta de su rama es parte de `origin/<principal>` y no le quedan cambios sin commitear. Lo que no se puede leer no cuenta
+// como entrado: sin evidencia positiva, sigue a medio camino.
+function enteredMain(paths, ctx) {
+  const { roots, gone, unreadable } = rootsOf(paths, ctx);
+  if (unreadable) return false;
+  // la carpeta de trabajo que ya no está se borró al entrar: es lo que hacen el merge y el cierre de una sesión
+  let seen = gone;
+  for (const [root, repo] of roots) {
+    const head = branchOf(repo);
+    if (head.err) return false;
+    if (!head.branch || MAIN_BRANCHES.includes(head.branch)) {
+      // parada en la principal no dice que entró, salvo que tenga archivos cambiados: ésos no están guardados en ninguna parte
+      const onMain = git(root, ['--no-optional-locks', 'status', '--porcelain', '-z', '--untracked-files=no'], ctx);
+      if (onMain.err || changesOutsideRun(onMain.out)) return false;
+      continue;
+    }
+    const st = git(root, ['--no-optional-locks', 'status', '--porcelain', '-z'], ctx);
+    if (st.err || changesOutsideRun(st.out)) return false;
+    // `merge-base --is-ancestor` sale 1 si no es parte; otro código, que esa rama principal no está en este repo
+    const inMain = MAIN_BRANCHES.some((b) => !git(root, ['merge-base', '--is-ancestor', 'HEAD', `origin/${b}`], ctx).err);
+    if (!inMain) return false;
+    seen = true;
+  }
+  return seen;
+}
+
+// Lo que anotó una sesión con su nota sobre su hora: la que dice ahora, la primera que prometió por ese trabajo y qué
+// espera, desde cuándo. Quien espera no tiene hora: no se la inventa.
+function hourOfNote(d) {
+  const at = Date.parse(d.at);
+  const until = Date.parse(d.endAt);
+  const first = Date.parse(d.promisedAt);
+  const since = Date.parse(d.waitingSince);
+  return {
+    ...(Number.isFinite(until) ? { endAt: until, hourAt: at, promiseAt: at } : {}),
+    ...(Number.isFinite(first) ? { promisedAt: first } : {}),
+    ...(d.waitingFor ? { waitingFor: String(d.waitingFor), waitingSince: Number.isFinite(since) ? since : null } : {}),
+  };
+}
+const waitingEnd = (d) => {
+  const since = Date.parse(d.waitingSince);
+  return `espera ${d.waitingFor}${Number.isFinite(since) ? ` desde las ${hhmm(since)}` : ''}`;
+};
 
 // Qué hace una sesión según un archivo que tocó: el repo, y la rama si no es la principal o la primera carpeta dentro del
 // repo si lo es; la story, de una rama `story/<id>…` o de un archivo `specs/story-<id>-…`; `root`, la raíz del repo o
@@ -1028,6 +1093,8 @@ function buildWip(opts = {}) {
   const busy = new Set();
   // la fila de la story de cada sesión, para sumarle lo que hace mientras tanto
   const pipeRows = new Map();
+  // la fila del arreglo rápido de cada sesión: su hora puede venir de una nota
+  const looseRows = new Map();
   const wanted = [];
   const gitCtx = opts.gitCtx || { until: Date.now() + nn(opts.repoBudgetMs, GIT_BUDGET_MS), cache: new Map() };
 
@@ -1054,6 +1121,19 @@ function buildWip(opts = {}) {
     if (!p) return '(carpeta desconocida)';
     for (const h of [home, realHome]) if (p === h || p.startsWith(h + path.sep)) return path.join('~', p.slice(h.length + 1));
     return p;
+  };
+  // ¿Ya entró a la rama principal lo que dejó esta sesión cerrada? Los archivos de su carril, o los últimos que tocó. Cada una
+  // tiene su propio tope: con la máquina cargada, las primeras no le gastan el tiempo a las demás
+  const leftInMain = (sid, named, fallback) => {
+    const leftCtx = { until: Date.now() + nn(opts.repoBudgetMs, GIT_BUDGET_MS), cache: gitCtx.cache };
+    const paths = [...(Array.isArray(named) ? named : []), ...lastTouched(sdir, sid, home, nowMs, unreadable, Infinity)];
+    const named2 = paths.length ? paths : [fallback];
+    if (enteredMain(named2, leftCtx)) return { entered: true };
+    // otra sesión viva sigue en esa misma carpeta: no quedó a medio camino, lo tiene ella
+    const live = new Set([...sessions.values()].filter((s) => s.alive && s.cwd).map((s) => s.cwd));
+    const folders = [...rootsOf(named2, leftCtx).roots.keys()];
+    // sin saberlo por las carpetas, quien lo lea todavía puede preguntarle al pedido que nombre el trabajo
+    return folders.length > 0 && folders.every((r) => live.has(r)) ? { entered: true } : { folders };
   };
   const touchedCache = new Map();
   const touchedOf = (sid) => {
@@ -1141,6 +1221,7 @@ function buildWip(opts = {}) {
         { kind, storyId: m.storyId ? String(m.storyId) : null, title, batch: storyBatch(m.storyPath), endAt: info.at == null ? null : info.at, late: Boolean(info.late), promisedAt, ...stages,
           ...(mark ? { mark } : {}), ...(save === 'ok' ? { saveOk: true } : {}), ...(kind === 'finished' && !save ? { nothingToSave: true } : {}),
           ...(info.step !== undefined ? { hourStep: stepName(info.step) || `paso ${info.step}`, hourAt: info.computedAt } : {}),
+          runFolder: typeof m.repoPath === 'string' && m.repoPath ? tilde(m.repoPath) : null,
           activityAt: Number.isFinite(activityAt) ? activityAt : null, runStartedAt: Date.parse(m.startedAt) || null, closedAt: closed ? closedAtOf(m) : null });
     }
     else {
@@ -1149,7 +1230,10 @@ function buildWip(opts = {}) {
       // lo marcado, sin guardar o que espera al dueño no se ofrece limpiar: limpiarlo pierde el trabajo. La firma le gana a la marca
       if (awaits === 'plan') halfway.push(`${work} · ${nameOf(sid)} · ${mark ? `${mark} · ` : ''}Tu firma: que apruebes el plan`);
       else if (mark || save) halfway.push(`${work} · ${nameOf(sid)} · ${mark && save === 'waits' ? `${mark} · ${SAVE_WAITS}` : step}`);
-      else halfway.push(`${work} · ${nameOf(sid)} · quedó en: ${step} · limpiar: node ${MARKER_JS} clear-session ${sid}`);
+      else {
+        halfway.push(`${work} · ${nameOf(sid)} · quedó en: ${step} · limpiar: node ${MARKER_JS} clear-session ${sid}`);
+        if (typeof m.repoPath === 'string') Object.assign(item, leftInMain(sid, [path.join(m.repoPath, 'x')], null));
+      }
       halfwayItems.push(item);
     }
   }
@@ -1209,6 +1293,7 @@ function buildWip(opts = {}) {
       const declared = Number.isFinite(until);
       // cuándo se declaró la hora: la promesa es de esa declaración, y una declaración vieja ya no dice nada
       const declaredAt = [a.untilAt, a.declaredAt].map((v) => Date.parse(v)).find(Number.isFinite);
+      looseRows.set(sid, rows.length);
       addRow({ work, state: parts.join(' · '), end: hourVerdict({ endAt: until, hourAt: declaredAt, nowMs }) || declaredEnd(a.until, until), session: label, folder: folderOf(sid) }, sid,
         { kind: 'loose', text: String(a.reason || ''), endAt: declared ? until : null, hourAt: declaredAt === undefined ? null : declaredAt, promiseAt: declaredAt === undefined ? null : declaredAt });
     }
@@ -1227,7 +1312,7 @@ function buildWip(opts = {}) {
         ? `limpiar: node ${MARKER_JS} adhoc clear-orphan ${sid}`
         : `se podrá limpiar después de las ${hhmm(touched + STALE_MS)}`;
       halfway.push(`ad-hoc «${work}» · ${nameOf(sid)} · ${how}`);
-      halfwayItems.push({ kind: 'adhoc', text: String(a.reason || ''), cleanAfter: nowMs - touched > STALE_MS ? null : touched + STALE_MS, sid });
+      halfwayItems.push({ kind: 'adhoc', text: String(a.reason || ''), cleanAfter: nowMs - touched > STALE_MS ? null : touched + STALE_MS, sid, ...leftInMain(sid, [...(a.files || []), ...(a.rutas || [])], a.cwd) });
     }
   }
 
@@ -1236,12 +1321,22 @@ function buildWip(opts = {}) {
   for (const file of jsonFiles(path.join(sdir, 'doing'), unreadable)) {
     const sid = path.basename(file, '.json');
     const pipe = pipeRows.get(sid);
-    if (busy.has(sid) && !pipe) continue;
+    const looseRow = looseRows.get(sid);
+    if (busy.has(sid) && !pipe && looseRow === undefined) continue;
     let d;
     try { d = readObject(file); } catch (e) { unreadable.push(`${file}: ${e.message}`); continue; }
     const work = cut(String(d.text || '(sin texto)'), TITLE_MAX);
     const at = Date.parse(d.at);
+    // con un arreglo rápido abierto, la nota no abre otra fila: le da su hora, o dice qué espera
+    if (looseRow !== undefined) {
+      const hour = hourOfNote(d);
+      Object.assign(extra[looseRow], hour);
+      if (hour.waitingFor) rows[looseRow].end = waitingEnd(d);
+      else if (Number.isFinite(hour.endAt)) rows[looseRow].end = hourVerdict({ endAt: hour.endAt, hourAt: at, nowMs }) || declaredEnd(d.endAt, hour.endAt);
+      continue;
+    }
     if (pipe) {
+      if (d.waitingFor) { Object.assign(extra[pipe.i], { waitingFor: String(d.waitingFor), waitingSince: hourOfNote(d).waitingSince }); rows[pipe.i].end = waitingEnd(d); }
       const old = Number.isFinite(at) && nowMs - at > LOOSE_STALE_MS ? ` (sin tocar desde ${hhmm(at)})` : '';
       // la nota más nueva que el arreglo es lo de ahora: un carril viejo no la tapa
       const priorAt = extra[pipe.i].meanwhileAt;
@@ -1259,7 +1354,7 @@ function buildWip(opts = {}) {
       if (!Number.isFinite(touched)) { try { touched = fs.statSync(file).mtimeMs; } catch { touched = nowMs; } }
       const how = nowMs - touched > STALE_MS ? `borrar: node ${MARKER_JS} doing clear-orphan ${sid}` : `se podrá borrar después de las ${hhmm(touched + STALE_MS)}`;
       halfway.push(`nota «${work}» · ${nameOf(sid)} · ${how}`);
-      halfwayItems.push({ kind: 'note', text: String(d.text || ''), cleanAfter: nowMs - touched > STALE_MS ? null : touched + STALE_MS, sid });
+      halfwayItems.push({ kind: 'note', text: String(d.text || ''), cleanAfter: nowMs - touched > STALE_MS ? null : touched + STALE_MS, sid, ...leftInMain(sid, [], null) });
       continue;
     }
     busy.add(sid);
@@ -1268,8 +1363,8 @@ function buildWip(opts = {}) {
     if (Number.isFinite(at) && nowMs - at > LOOSE_STALE_MS) parts.push(`¿terminó? borrala desde su sesión: node ${MARKER_JS} doing clear`);
     const until = Date.parse(d.endAt);
     const declared = Number.isFinite(until);
-    addRow({ work, state: parts.join(' · '), end: hourVerdict({ endAt: until, hourAt: at, nowMs }) || declaredEnd(d.endAt, until), session: label, folder: folderOf(sid) }, sid,
-      { kind: 'note', text: String(d.text || ''), endAt: declared ? until : null, hourAt: Number.isFinite(at) ? at : null, promiseAt: Number.isFinite(at) ? at : null });
+    addRow({ work, state: parts.join(' · '), end: d.waitingFor ? waitingEnd(d) : hourVerdict({ endAt: until, hourAt: at, nowMs }) || declaredEnd(d.endAt, until), session: label, folder: folderOf(sid) }, sid,
+      { kind: 'note', text: String(d.text || ''), endAt: declared ? until : null, hourAt: Number.isFinite(at) ? at : null, promiseAt: Number.isFinite(at) ? at : null, ...hourOfNote(d) });
   }
 
   // sin arreglo ni nota: si lo último que tocó la sesión está en un repo que no es de su story, eso hace mientras tanto
@@ -1454,4 +1549,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { buildWip, wipNow, stagesOf, jsonOf, sessionsBySid, storyEntering, median, queryAll, readPrs, parseRemote, offQueueOf, identityOf, remoteOfFolder, endOf, hourForStep, hourVerdict, realState, replacedByNewer, storyPausedUntil, unsavedChanges, codexNames, PER_QUERY_MS, ALL_QUERIES_MS, SAFE_SID, LOOSE_STALE_MS };
+module.exports = { buildWip, wipNow, enteredMain, OVERDUE_HOUR, stagesOf, jsonOf, sessionsBySid, storyEntering, median, queryAll, readPrs, parseRemote, offQueueOf, identityOf, remoteOfFolder, endOf, hourForStep, hourVerdict, realState, replacedByNewer, storyPausedUntil, unsavedChanges, codexNames, PER_QUERY_MS, ALL_QUERIES_MS, SAFE_SID, LOOSE_STALE_MS };

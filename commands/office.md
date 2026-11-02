@@ -42,17 +42,26 @@ su escritorio (hasta diez, acomodados según cuántas haya; con más, primero la
 de abajo), con su nombre, su estado en palabras y su hora de fin. El estado sale de si la sesión trabaja, no de su paso:
 «Trabajando», «Parada» o «Tu firma» cuando espera algo del dueño. La hora se calcula al entrar a cada paso y queda fija
 hasta el próximo: sale en rojo si va más de 15 minutos tarde. El detalle dice además la hora que prometió la corrida al
-arrancar. Una hora que ya no dice nada lo aclara: «vieja (de las HH:MM)» o «sin hora: el trabajo cambió». Si el perfil del
+arrancar. Una hora de fin que pasó no es un pronóstico: dice «se pasó de la hora» y desde cuándo no hay novedades; la del trabajo que cambió dice «sin hora: el trabajo cambió». Una sesión sin pipeline anota su hora con `marker.js doing --until HH:MM`, se compara con la primera que prometió, y un aviso se lo recuerda si no la tiene; con `--waiting-for` dice qué espera y desde cuándo, sin hora. «Corriendo pruebas» se dice sólo si la sesión tiene pruebas corriendo entre sus procesos; si no se puede saber, lo dice. Si el perfil del
 equipo trae la dirección del sitio de la organización, el encabezado tiene «Abrir el sitio» y el cartel de la pared también
 lo abre. Arriba de la etiqueta, una burbuja más chica dice lo que hace mientras tanto, si lo tocó en la última hora. Una
 sesión sin pipeline dice su encargo, lo que está haciendo y su última acción, leídos sólo del principio y del final de su
-conversación: nada de eso se guarda ni sale de la máquina.
+conversación: nada de eso se guarda ni sale de la máquina. Su título es lo que ella anotó que hace, o su último mensaje; el
+encargo se muestra como encargo. La tarjeta y el panel al tocar a la persona dicen lo mismo.
+
+Arriba del tablero van dos tablas: «Hoy» y «Pendientes», cada una con la hora en que se escribió. Las escribe la coordinadora,
+y si no hay, cualquier sesión a pedido, con `office.js --write-tables <archivo.json>` (`{ "hoy": [{ "grupo", "que", "hoy" }],
+"pendientes": [{ "grupo", "que", "cuando" }] }`): las de varias sesiones se muestran juntas, sin pisarse. Sin nadie que las
+escriba, se arman con lo que el arnés sabe y dicen la hora anotada, sin probabilidades: ésas las juzga una persona.
+
+La sala se dibuja con ritmo para no cargar la máquina: más rápido mientras la tocás, a un ritmo tranquilo si hay personas que se
+mueven, muy de vez en cuando si nadie se mueve, y nada si no se ve.
 
 La persona se mueve según su estado: teclea cuando trabaja, mira la pantalla cuando corre pruebas o revisores, se queda
 quieta cuando está parada, espera reclinada cuando su story espera entrar a los repos, levanta la mano con un aro naranja
 en el piso cuando la sesión espera algo del dueño, y señala cuando es la coordinadora. Al tocarla se abre su detalle, con
 los pasos de su corrida. Abajo, los pendientes son un kanban de cinco columnas (Tu firma, En curso, Esperan entrar, Sin
-empezar, Hechos), con lo que quedó a medio camino plegado debajo. El panel de la pared cuenta esas columnas y al tocarlo
+sesión, Hechos), con lo que quedó a medio camino plegado debajo. El panel de la pared cuenta esas columnas y al tocarlo
 las lista.
 
 La página no necesita internet: la librería 3D y la del WebSocket vienen con el arnés. Si el navegador no puede dibujar

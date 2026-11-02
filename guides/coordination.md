@@ -301,7 +301,7 @@ la máquina no sabe. La coordinadora lo escribe entero en `<estado>/coordination
 aparte y después renombrado, para que la oficina nunca lo lea a medias), cada vez que lo cambia:
 
 - `pendientes`: una lista; cada uno con `titulo`, `estado` (`hecho`, `curso`, `firma`, `riesgo`, `entrando`, `sin-empezar`
-  o `espera`, que va a «Sin empezar»), `grupo` (`Hoy`, `Esta semana`, `La semana que viene` o `Más adelante`), `orden`,
+  o `espera`, que va a «Sin sesión»; «curso» y «riesgo» van a «En curso» sólo si una sesión viva lo hace, y si no, también a «Sin sesión»), `grupo` (`Hoy`, `Esta semana`, `La semana que viene` o `Más adelante`), `orden`,
   `quien`, `nota`, y su hora: `pronosticoIso` o `estimadaIso` (hora local, `AAAA-MM-DDTHH:MM`), o `termina` con un texto
   propio. Un hecho lleva `realIso`.
 - `historia` (por ejemplo `"2.81"`) y `pedido` (`{ "repo": "tycon-harness", "numero": 885 }`), opcionales. Con `historia` y
@@ -393,7 +393,7 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
 | Un arreglo rápido con pantalla lleva maqueta y captura | freno | El freno de guardar no pasa sin las tres cosas, ni si no pudo medir. Mira la fecha de la captura, no qué muestra. |
 | Lo pesado de a uno, con turno | nadie | La suite completa y el pase adversarial tienen su freno (arriba); el banco, el examen y el portón no. |
 | Mirar el diff antes de aprobar un pedido ajeno | nadie | Es criterio de quien aprueba. |
-| Una sesión que espera anota qué hace | nadie | Lo anota la sesión con `marker.js doing`; nada la obliga. |
+| Una sesión que espera anota qué hace | nadie | Lo anota la sesión con `marker.js doing --waiting-for`; un aviso se lo recuerda, y nada la obliga. |
 | Comprobar que un pedido sigue en la cola | nadie | Mirarlo cada turno sería preguntarle a la red todo el tiempo. |
 | Las decisiones del dueño con su contexto | nadie | Es criterio; el medidor de estilo mide el largo, no el contenido. |
 | Lo que ve el dueño, sin jerga | aviso | El medidor de estilo que ya existe. |
