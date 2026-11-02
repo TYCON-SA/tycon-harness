@@ -98,7 +98,14 @@ tr:last-child td{border-bottom:0}
 .trabajo{display:flex;flex-direction:column;gap:10px}
 .trabajo .vistas{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px}
 .trabajo .vistas h2{margin:0}
-.trabajo .vistas label{display:inline-flex;align-items:center;gap:5px;font-size:.9rem;cursor:pointer}
+/* el interruptor de la vista: por debajo son dos botones de opción, y el teclado y los lectores de pantalla los usan como tales */
+.seg{display:inline-flex;gap:2px;padding:3px;background:var(--line);border-radius:9px}
+.seg label{position:relative;cursor:pointer}
+.seg input{position:absolute;inset:0;margin:0;opacity:0;cursor:pointer}
+.seg span{display:block;padding:5px 16px;border-radius:7px;font:600 .9rem var(--body);color:var(--muted)}
+.seg label:hover span{color:var(--fg)}
+.seg input:checked+span{background:var(--accent);color:var(--surface)}
+.seg input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
 /* los pendientes, un kanban de cinco columnas que se acomodan al ancho (cada tarjeta con su título, quién y hora) y lo
    que quedó a medio camino plegado debajo */
 .board{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
@@ -131,9 +138,11 @@ tr:last-child td{border-bottom:0}
   <div class="you" id="you" hidden><h2>Te toca a vos</h2><ul id="youList"></ul></div>
   <section><h2>Las sesiones</h2><div class="crew" id="crew"></div><p class="nota" id="foot">«Prometido» es la hora que dio la ejecución al arrancar; «Termina» es la de ahora, que se recalcula al entrar a cada paso y queda fija hasta el próximo. La diferencia sale en rojo si va más de 15 minutos tarde y en verde si va más de 15 minutos antes.</p></section>
   <section class="trabajo" id="trabajo" hidden aria-labelledby="trabajoTitle">
-    <div class="vistas" role="radiogroup" aria-labelledby="trabajoTitle"><h2 id="trabajoTitle">El trabajo</h2>
-      <label><input type="radio" name="vista" value="tablas" checked>Tablas</label>
-      <label><input type="radio" name="vista" value="kanban">Kanban</label></div>
+    <div class="vistas"><h2 id="trabajoTitle">El trabajo</h2>
+      <div class="seg" role="radiogroup" aria-labelledby="trabajoTitle">
+        <label><input type="radio" name="vista" value="tablas" checked><span>Tablas</span></label>
+        <label><input type="radio" name="vista" value="kanban"><span>Kanban</span></label>
+      </div></div>
     <div class="board tablas" id="tablas" hidden></div>
     <div class="board" id="board" hidden><div id="boardBody"></div></div>
     <div class="board" id="halfway" hidden></div>

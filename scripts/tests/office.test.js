@@ -2362,6 +2362,10 @@ test('T225 Views_OnePerTime: «El trabajo» muestra Tablas o Kanban, una por vez
   assert.match(html, /<h2 id="trabajoTitle">El trabajo<\/h2>/);
   assert.match(html, /name="vista" value="tablas"/);
   assert.match(html, /name="vista" value="kanban"/);
+  assert.match(html, /<div class="seg" role="radiogroup"/, 'un interruptor de dos posiciones');
+  assert.match(html, /\.seg input:checked\+span\{background:var\(--accent\)/, 'la opción activa bien marcada, con los colores de cada tema');
+  assert.match(html, /\.seg input:focus-visible\+span\{outline/, 'y el teclado se ve');
+  assert.doesNotMatch(html, /\.seg input\{[^}]*display:none/, 'sin sacarle el teclado a los botones');
   assert.doesNotMatch(html, /id="boardTitle"/, 'la sección ya no se llama Pendientes');
   assert.match(html, /\[hidden\]\{display:none!important\}/, 'un display propio no le gana a hidden');
   // la lógica de la vista, fuera del navegador
