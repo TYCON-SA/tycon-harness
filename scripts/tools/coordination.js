@@ -847,7 +847,7 @@ function runGaps(sid, home) {
   const problems = [];
   const m = markersBySid(home, problems).get(String(sid));
   unknown.push(...problems);
-  if (m && !(Array.isArray(m.stepsPending) && m.stepsPending.length === 0)) missing.push(`su corrida de la historia ${m.storyId || '(sin nombre)'} sigue abierta`);
+  if (m && !(Array.isArray(m.stepsPending) && m.stepsPending.length === 0)) missing.push(`su ejecución de la historia ${m.storyId || '(sin nombre)'} sigue abierta`);
   let crudo = null;
   try { crudo = fs.readFileSync(io.adhocPath(stateDir(home), sid), 'utf8'); } catch (e) {
     if (e.code !== 'ENOENT') unknown.push(`no pude leer su arreglo rápido (${e.code || e.message})`);

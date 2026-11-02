@@ -1040,7 +1040,7 @@ test('Close_OpenRun: con su corrida o su arreglo rápido abiertos no cierra', ()
   const t = closeLab();
   bg(t, 'corrida', t.repo);
   marker(t, 'sid-corrida', { storyId: '9.9' });
-  assert.match(closeIt(t, 'corrida').message, /su corrida de la historia 9\.9 sigue abierta/);
+  assert.match(closeIt(t, 'corrida').message, /su ejecución de la historia 9\.9 sigue abierta/);
   // terminada: los pasos pendientes en cero
   marker(t, 'sid-corrida', { storyId: '9.9', stepsPending: [] });
   const adhoc = path.join(t.state, 'adhoc');
