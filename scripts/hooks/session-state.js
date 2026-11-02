@@ -41,7 +41,8 @@ function toolOf(d, env) {
   const parts = t ? t.split(/[\\/]/) : [];
   const codexHome = env.CODEX_HOME ? path.resolve(env.CODEX_HOME) : null;
   // Claude guarda sus conversaciones en `.claude/projects/`: se mira primero, así una carpeta `.codex` más adentro no la confunde
-  const ci = parts.indexOf('.claude');
+  const { claudeDir } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
+  const ci = parts.indexOf(path.basename(claudeDir(os.homedir())));
   if (ci >= 0 && parts[ci + 1] === 'projects') return { tool: 'claude', certain: true };
   if (parts.includes('.codex') || (codexHome && t.startsWith(codexHome + path.sep))) return { tool: 'codex', certain: true };
   if ((env.CODEX_SESSION_ID || env.CODEX_THREAD_ID) && !env.CLAUDE_CODE_SESSION_ID) return { tool: 'codex', certain: false };
