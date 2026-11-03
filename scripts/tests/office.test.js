@@ -2543,7 +2543,7 @@ test('T232 Stopped_NotOnTime: una sesión parada no dice «en hora» sin decir q
 test('T233 SameText_NoRepeat: si lo que hace es lo que anotó, la tarjeta no lo dice dos veces; un título sigue sin números de pedido', () => {
   const { plain: plainOf } = require(OFFICE);
   const html = page(mixedOffice());
-  assert.match(html, /else if\(a\.haciendo!==a\.titulo\)add\("Haciendo",a\.haciendo\)/);
+  assert.match(html, /else if\(a\.haciendo!==a\.titulo&&!SOLO_COORDINA\.test\(a\.haciendo\|\|""\)\)add\("Haciendo",a\.haciendo\)/);
   assert.strictEqual(plainOf('espera que entren el #907 y el 6106', { keepPrs: true }), 'espera que entren el #907 y el 6106');
   assert.strictEqual(plainOf('espera que entren el #907 y el 6106'), 'espera que entren y el 6106', 'los títulos siguen sin números de pedido');
 });
@@ -2850,6 +2850,10 @@ test('T272 Dialogs_TestSession: la sesión que lanzó otra sesión no cuenta; si
   assert.ok(!['firma', 'pregunta'].includes(a.estado), a.estado);
   assert.ok(!a.espera, 'no dice que espera tu respuesta');
   assert.deepStrictEqual(seen.meta.teToca, [], 'no le toca a nadie');
+  const { wipNow } = require(path.join(path.dirname(OFFICE), 'work-in-progress.js'));
+  const said = await wipNow({ home: m.home, now: atIso(now), queryAll: noPrs, processes: tree });
+  assert.doesNotMatch(said.text, /Te pregunta|Tu firma/, '/wip dice lo mismo');
+  assert.match(said.text, /sonda/);
   const blind = await collectAt(m, now, { processes: null });
   assert.strictEqual(byName(blind, 'sonda').estado, 'pregunta', 'sin árbol no se sabe');
   const unrelated = await collectAt(m, now, { processes: [{ pid: process.pid, ppid: 1 }] });
@@ -3021,6 +3025,87 @@ test('T279 OtherProject_NotCounted: una sesión de un repo que el arnés no sigu
   assert.match(page(data), /list\.filter\(i=>!i\.otro\)\.length/, 'la columna no lo cuenta');
   fs.unlinkSync(path.join(m.state, 'stuck-prs-photo.json'));
   assert.notStrictEqual(byName(await collectAt(m, now), 'Mesa').comoTrabaja, 'Otro proyecto', 'sin la lista de repos no se sabe');
+});
+
+// ── Etiquetas, avioncito, coordinadora y orden ───────────────────────────────────────────────────────────────────
+
+test('T284 Labels_Switch: siempre por defecto, y la elección se recuerda; si no puede recordarla, vuelve a «Siempre»', () => {
+  const html = page({ agents: [], items: [], kanban: null, meta: null });
+  assert.match(html, /<input type="radio" name="etiquetas" value="siempre" checked>/, 'como hoy, por defecto');
+  assert.match(html, /value="mouse"><span>Al pasar el mouse<\/span>/);
+  assert.ok(html.indexOf('name="etiquetas"') < html.indexOf('id="stage"'), 'arriba del dibujo');
+  const src = html.slice(html.indexOf('const ETIQUETAS_KEY='), html.indexOf('function modoEtiquetas('));
+  const run = (storage) => new Function('localStorage', `${src}; return { etiquetasGuardadas, guardarEtiquetas };`)(storage);
+  const kept = new Map();
+  const ok = run({ getItem: (k) => kept.get(k) ?? null, setItem: (k, v) => kept.set(k, v) });
+  assert.strictEqual(ok.etiquetasGuardadas(), 'siempre');
+  ok.guardarEtiquetas('mouse');
+  assert.strictEqual(ok.etiquetasGuardadas(), 'mouse');
+  kept.set('office.etiquetas', '<raro>');
+  assert.strictEqual(ok.etiquetasGuardadas(), 'siempre');
+  const broken = run({ getItem() { throw new Error('bloqueado'); }, setItem() { throw new Error('bloqueado'); } });
+  assert.strictEqual(broken.etiquetasGuardadas(), 'siempre');
+  assert.doesNotThrow(() => broken.guardarEtiquetas('mouse'));
+  assert.match(html, /\.stage\.solo-mouse \.tag\{opacity:0;pointer-events:none\}/, 'ocultas, pero el teclado llega');
+  assert.match(html, /\.stage\.solo-mouse \.tag\.ver,\.stage\.solo-mouse \.tag\.sel,\.stage\.solo-mouse \.tag:focus-visible\{opacity:1/);
+  assert.match(html, /e\.pointerType==="touch"&&!\(h&&\(h\.object===pnlFace\|\|h\.object===signFace\)\)\)\{verEtiqueta/, 'al tocar, muestra la etiqueta y no abre el detalle');
+  assert.doesNotMatch(html, /solo-mouse[^}]*\.sobre/, 'el avioncito no se oculta');
+});
+
+test('T285 PaperPlane: el mensaje vuela como avioncito, apuntando adonde va, y su rótulo lleva un dibujo sin internet', () => {
+  const html = page({ agents: [], items: [], kanban: null, meta: null });
+  assert.doesNotMatch(html, /sobreGeo|solapaGeo|✉/, 'el sobre ya no está');
+  assert.match(html, /new THREE\.Mesh\(avionGeo,avionMat\)/);
+  assert.match(html, /v\.m\.rotation\.set\(-Math\.cos\(k\*Math\.PI\)\*\.3,Math\.atan2\(/, 'con la nariz hacia su destino');
+  assert.match(html, /dib\.append\(T\.dibujo\(T\.AVION_ICONO\)\)/);
+  assert.match(html, /v\.s\.de\+" → "\+v\.s\.a/, 'el rótulo dice quién a quién, sin el texto');
+});
+
+test('T286 Coordinator_NoHourNoRepeat: coordinar no tiene hora de fin, y «Coordinando» se dice una vez', () => {
+  const { data } = buildOffice({
+    wip: wip([{ session: 'Coord', sid: 'c', extra: { kind: 'note', text: 'el tablero', endAt: NOW - 3600000, hourAt: NOW - 7200000, promiseAt: NOW - 7200000 } }]),
+    coordinatorSid: 'c',
+    coordinatorName: 'Coord',
+    nowMs: NOW,
+  });
+  const a = byName(data, 'Coord');
+  assert.strictEqual(a.estado, 'coordina');
+  assert.strictEqual(a.fin, null);
+  for (const k of ['termina', 'estimadaIso', 'pronosticoIso', 'atrasada', 'atrasoMin']) assert.ok(!(k in a), k);
+  const html = page(data);
+  assert.match(html, /a\.comoTrabaja&&a\.comoTrabaja!==s\[0\]\)chips\.appendChild\(etiquetaComo/, 'en la tarjeta');
+  assert.match(html, /a\.comoTrabaja&&a\.comoTrabaja!==s\[0\]\)panel\.querySelector\("\.chips"\)/, 'en el detalle');
+  assert.match(html, /a\.comoTrabaja&&a\.comoTrabaja!==s\[0\]\?\[T\.iconoComo/, 'en el dibujo');
+  const only = html.slice(html.indexOf('const SOLO_COORDINA='), html.indexOf('\n', html.indexOf('const SOLO_COORDINA=')));
+  const re = new Function(`${only}; return SOLO_COORDINA;`)();
+  assert.ok(re.test('Coordina las sesiones de esta máquina') && re.test('Coordina las sesiones de esta máquina.'));
+  assert.ok(!re.test('Coordina las sesiones y revisa el tablero'), 'lo que diga algo más se muestra');
+});
+
+test('T287 InProgress_ByEndHour: lo que termina antes va arriba; lo que espera o no tiene hora, después; la coordinadora, al final', () => {
+  const end = (min) => ({ kind: 'loose', text: 'algo', endAt: NOW + min * 60000, hourAt: NOW - 60000, promiseAt: NOW - 60000 });
+  const { data } = buildOffice({
+    wip: wip([
+      { session: 'Coord', sid: 'c', extra: { kind: 'note', text: 'el tablero' } },
+      { session: 'Sinhora', extra: { kind: 'loose', text: 'sin hora' } },
+      { session: 'Espera', extra: { kind: 'note', text: 'espera', waitingFor: 'un aviso', waitingSince: NOW - 60000, endAt: NOW + 60000 } },
+      { session: 'Tarde', extra: end(90) },
+      { session: 'Pronto', extra: end(10) },
+    ]),
+    coordinatorSid: 'c',
+    coordinatorName: 'Coord',
+    nowMs: NOW,
+  });
+  const order = col(data, 'curso').tarjetas.map((c) => c.quien);
+  assert.deepStrictEqual(order.slice(0, 2), ['Pronto', 'Tarde']);
+  assert.deepStrictEqual(order.slice(2, 4).sort(), ['Espera', 'Sinhora']);
+  assert.strictEqual(order[order.length - 1], 'Coord');
+});
+
+test('T288 Conversation_ButtonAtTheBottom: el botón va abajo de cada tarjeta, alineado entre las de la misma fila', () => {
+  const html = page({ agents: [], items: [], kanban: null, meta: null });
+  assert.match(html, /\.card\{[^}]*display:flex;flex-direction:column/, 'la tarjeta es una columna, y las de una fila miden lo mismo');
+  assert.match(html, /\.card \.verCharla\{margin-top:auto\}/);
 });
 
 test('T283 Conversation_CoordinatorTabs: la coordinadora tiene dos pestañas y abre en «Con vos»; una sesión común, una sola lista', () => {

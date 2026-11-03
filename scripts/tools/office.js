@@ -469,6 +469,11 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
         a.fin = { hora: a.termina, dif: Number.isFinite(since) ? `desde las ${hhmm(since)}` : '', cls: '' };
       } else if (endAt != null) a.fin = { hora: dayHhmm(endAt), dif: 'parada, no anotó qué espera', cls: '' };
     }
+    // coordinar no tiene hora de fin
+    if (isCoordinator) {
+      for (const k of ['termina', 'estimadaIso', 'pronosticoIso', 'horaPorque', 'atrasada', 'atrasoMin']) delete a[k];
+      a.fin = null;
+    }
     a.tipo = x.kind || null;
     // sale de su marca: una nota no cambia cómo trabaja una sesión, y un arreglo rápido más nuevo sí
     if (x.kind === 'note' && (replaced || x.finishedStoryId)) a.comoTrabaja = waysOfWorking('pipeline', x0.storyId || x.finishedStoryId);
@@ -685,6 +690,8 @@ function sameWorkScore(a, b) {
 function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, signatures, board, prAnswers, openPrs = [], openPrsNote = null, nowMs = Date.now() }) {
   const cols = KANBAN_COLUMNS.map(([id, nombre]) => ({ id, nombre, tarjetas: [] }));
   const col = (id) => cols.find((c) => c.id === id);
+  // cómo se ordena «En curso»: lo que termina antes, arriba; después lo que espera o no tiene hora, y al final la coordinadora
+  const inProgress = new Map();
   const byStory = new Map();
   const people = new Set();
   for (const a of agents) {
@@ -698,6 +705,8 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
     if (!id || (a.estado === 'coordina' && !a.titulo)) continue;
     if (a.tipo === 'stalled') card.marca = 'riesgo';
     if (a.otroProyecto) { card.quien = `${a.nombre} · Otro proyecto`; card.otro = true; }
+    const hourAt = a.estado === 'esperando' ? NaN : Date.parse(a.pronosticoIso || a.estimadaIso);
+    inProgress.set(card, a.estado === 'coordina' ? { tier: 2 } : Number.isFinite(hourAt) ? { tier: 0, at: hourAt } : { tier: 1 });
     col(id).tarjetas.push(card);
     people.add(firstWord(a.nombre));
     if (storyOfAgent.has(a)) byStory.set(storyOfAgent.get(a), card);
@@ -745,6 +754,7 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
     // sin una sesión que la haga no hay nadie atrasado: se dice para cuándo estaba. Lo que espera la cola tampoco está atrasado
     if (late && id === 'sinEmpezar') { card.hora = `estaba para ${f.fin}`; delete card.cls; }
     if (late && id === 'entrando') { card.hora = 'esperando entrar'; delete card.cls; }
+    inProgress.set(card, Number.isFinite(f.finAt) ? { tier: 0, at: f.finAt } : { tier: 1 });
     col(id).tarjetas.push(card);
     boardCards.push({ f, id, card });
   }
@@ -770,6 +780,8 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
     col('entrando').tarjetas.push({ titulo: p.title, quien: `pedido ${p.mark}${p.number}`, hora: p.inQueue ? 'en la cola' : 'con auto-completar', ...(p.conflict ? { motivo: 'choca con main' } : {}) });
   }
   if (openPrsNote) col('entrando').nota = openPrsNote;
+  const rank = (c) => inProgress.get(c) || { tier: 1 };
+  col('curso').tarjetas.sort((p, q) => rank(p).tier - rank(q).tier || (rank(p).tier === 0 ? rank(p).at - rank(q).at : 0));
   // «Terminados» es lo de hoy, lo último primero; lo anterior, o lo que no dice cuándo, va a la tabla «Hechos» para que la
   // columna no crezca sin fin
   const today = new Date(nowMs).toDateString();
@@ -1301,27 +1313,6 @@ async function askTablePrs(board, sessionTables, wip, open, opts, known, remoteO
   return out;
 }
 
-// De prueba es la sesión que lanzó otra sesión: ninguna de las de verdad desciende de otra. El árbol de procesos sólo se lee si
-// hay un cuadro abierto; sin árbol (Windows) no se sabe, y la sesión cuenta como una más.
-function testSessionsOf(sessions, states, readTree) {
-  const out = new Set();
-  const fileOf = new Map(states.map((f) => [String(f.session), f]));
-  const asking = [...sessions].filter(([sid, s]) => s.alive && Number.isInteger(s.pid) && ASKS_OWNER.has(realState({}, { status: s.status }, fileOf.get(String(sid)) || null).estado));
-  if (!asking.length) return out;
-  const tree = readTree();
-  if (!Array.isArray(tree)) return out;
-  const parent = new Map(tree.map((p) => [Number(p.pid), Number(p.ppid)]));
-  const sessionPids = new Set([...sessions.values()].filter((s) => s.alive).map((s) => s.pid));
-  for (const [sid, s] of asking) {
-    let p = parent.get(s.pid);
-    for (let i = 0; p > 1 && i < 64; i += 1) {
-      if (sessionPids.has(p)) { out.add(String(sid)); break; }
-      p = parent.get(p);
-    }
-  }
-  return out;
-}
-
 // Las sesiones de un repo que el arnés no sigue, de los que lee la lista de pedidos. Si no se sabe de qué repo es, cuenta.
 function otherProjectsOf(wip, open, remoteOf) {
   const out = new Set();
@@ -1561,7 +1552,7 @@ async function collect(opts = {}) {
     return remembered.remotes.get(cwd);
   };
   const tablePrs = await askTablePrs(board.board, sessionTables, wip, open, opts, remembered.prsEnded, remoteOf);
-  const testSessions = testSessionsOf(sessions, ss.states, () => (processes != null ? processes : opts.processes !== undefined ? opts.processes : require(path.join(ROOT, 'scripts', 'lib', 'owner-window.js')).leerArbol()));
+  const testSessions = wip.testSids || new Set();
   const personSessions = new Set([...sessions].filter(([, s]) => s.kind === 'interactive').map(([sid]) => String(sid)));
   const { data, promises } = buildOffice({ wip, signatures, coordinatorSid, coordinatorName, promises: saved.promises, nowMs, sessionFiles: ss.states, codexNames: cxNames, quietMin, board: board.board, prAnswers, transcripts, lastWrites, processes, openPrs: open.prs, openPrsNote: open.note, waitingPrs, testSessions, personSessions, otherProjects: otherProjectsOf(wip, open, remoteOf) });
   // sólo con la oficina abierta: la primera pasada lee conversaciones enteras, y la foto fija y `--json` empezarían de cero cada vez
