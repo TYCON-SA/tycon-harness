@@ -6167,3 +6167,102 @@ test('DeepReviewDefault_EditableOnSite_NoOff @story-7.54 @ac-6 — la política 
   const { TEXTOS } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
   assert.ok(TEXTOS['pantalla.paseAdversarialTitulo'] && TEXTOS['pantalla.paseAdversarialAyuda'], 'los textos de la sección');
 });
+
+const textosDe = (raiz) => { const out = []; const walk = (x) => { if (x.textContent) out.push(x.textContent); if (x.attrs && x.attrs.text) out.push(x.attrs.text); (x.hijos || []).forEach((h) => { if (typeof h === 'string') out.push(h); else walk(h); }); }; walk(raiz); return out; };
+
+test('Regresion_OficinasEnConfiguracion_AprobarYDarDeBaja @story-8.171 @ac-9 — quien mantiene decide con la API y sin pedido al repo', async () => {
+  // 🔴 rojo: la ruta no existe, un dev puede decidir, se aprueba sin la huella del buzón, o la baja no queda.
+  const { crearLlaves } = require(path.join(ROOT, 'scripts', 'site', 'machine-keys.js'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'llaves-'));
+  const llaves = crearLlaves({ dataDir: dir });
+  const clave = crypto.generateKeyPairSync('ed25519').publicKey.export({ format: 'jwk' }).x;
+  const publicKey = Buffer.from(clave, 'base64url').toString('base64');
+  const fingerprint = crypto.createHash('sha256').update(Buffer.from(publicKey, 'base64')).digest('hex');
+  assert.strictEqual(llaves.pedir({ publicKey, fingerprint, nombre: 'pista', direccion: '10.0.0.1' }).status, 202);
+  const machines = { 'maq-a': { person: DEV, reported_sha256: crypto.createHash('sha256').update(DEV).digest('hex'), confirmed_by: LEAD, confirmed_on: '2026-10-01' } };
+  const conf = opsBase({ people: { machines } });
+  conf.site = { ...conf.site, mailbox: { provider: 'azure-blob', account: 'cuentax', container: 'runs' } };
+  const fuentes = fuentesCon({ ops: clon({ 'operations.json': conf }), config: conf, informados: H.informados({ 'maq-a': DEV }) });
+  let huellas = { medido: true, carpetas: {} };
+  fuentes.huellas = () => huellas;
+  await conPestana({ fuentes, opciones: { llaves } }, async ({ h, entrar, token, escribir }) => {
+    const lead = await entrar(LEAD);
+    const tok = await token(lead);
+    const vista = async () => JSON.parse((await h.pedir('/api/config', { cookie: lead })).texto).secciones.find((s) => s.id === 'personas').extras.oficinas;
+    let of = await vista();
+    assert.strictEqual(of.pedidos[0].situacion, 'esperando_huella');
+    assert.strictEqual(of.pedidos[0].huella.length, 19, 'la huella en grupos de cuatro');
+    assert.strictEqual(of.sinDisco, true, 'sin SITE_DATA_DIR lo dice');
+    const accion = async (cuerpo) => JSON.parse((await escribir('/api/config/oficinas', lead, tok, cuerpo)).texto);
+    // sin la huella por el buzón no se aprueba
+    const antes = await accion({ accion: 'approve', fingerprint });
+    assert.strictEqual(antes.ok, false);
+    assert.match(antes.message, /la máquina todavía no dejó la huella con sus ejecuciones/);
+    huellas = { medido: true, carpetas: { 'maq-a': { huellas: [fingerprint], llena: false } } };
+    of = await vista();
+    assert.strictEqual(of.pedidos[0].situacion, 'listo');
+    assert.strictEqual(of.pedidos[0].maquina, 'maq-a');
+    const ok = await accion({ accion: 'approve', fingerprint });
+    assert.strictEqual(ok.ok, true, JSON.stringify(ok));
+    assert.deepStrictEqual(ok.oficinas.pedidos, []);
+    assert.strictEqual(ok.oficinas.maquinas[0].maquina, 'maq-a');
+    assert.strictEqual((await accion({ accion: 'disable', maquina: 'maq-a' })).oficinas.maquinas[0].deBaja, true);
+    assert.strictEqual((await accion({ accion: 'reactivate', maquina: 'maq-a' })).oficinas.maquinas[0].deBaja, false);
+    // la marca: sin marca lo dice, y con marca la borra
+    assert.match((await accion({ accion: 'clear_mark', maquina: 'maq-a' })).message, /no tiene la marca/);
+    for (let i = 0; i < 11; i += 1) llaves.anotarDesplazamiento('maq-a');
+    assert.strictEqual((await vista()).maquinas[0].copiada, true);
+    assert.strictEqual((await accion({ accion: 'clear_mark', maquina: 'maq-a' })).oficinas.maquinas[0].copiada, false);
+    // retirar la clave: la máquina deja de tener oficina, y dos veces lo dice
+    const retirada = await accion({ accion: 'revoke', maquina: 'maq-a' });
+    assert.strictEqual(retirada.ok, true, JSON.stringify(retirada));
+    assert.deepStrictEqual(retirada.oficinas.maquinas, []);
+    assert.match((await accion({ accion: 'revoke', maquina: 'maq-a' })).message, /no tiene una clave aprobada/);
+    // confirmar una huella en conflicto, y rechazar un pedido
+    const clavePedido = () => {
+      const pk = Buffer.from(crypto.generateKeyPairSync('ed25519').publicKey.export({ format: 'jwk' }).x, 'base64url').toString('base64');
+      const fp = crypto.createHash('sha256').update(Buffer.from(pk, 'base64')).digest('hex');
+      assert.strictEqual(llaves.pedir({ publicKey: pk, fingerprint: fp, nombre: 'otra', direccion: '10.0.0.2' }).status, 202);
+      return fp;
+    };
+    const f1 = clavePedido(); const f2 = clavePedido();
+    huellas = { medido: true, carpetas: { 'maq-a': { huellas: [f1, f2], llena: false } } };
+    assert.strictEqual((await vista()).pedidos.find((p) => p.fingerprint === f1).situacion, 'conflicto');
+    const vista1 = await accion({ accion: 'confirm', fingerprint: f1 });
+    assert.strictEqual(vista1.oficinas.pedidos.find((p) => p.fingerprint === f1).situacion, 'listo');
+    const sinF2 = await accion({ accion: 'reject', fingerprint: f2 });
+    assert.strictEqual(sinF2.ok, true);
+    assert.ok(!sinF2.oficinas.pedidos.some((p) => p.fingerprint === f2));
+    // una acción que no existe, y un dev
+    assert.strictEqual((await escribir('/api/config/oficinas', lead, tok, { accion: 'borrar_todo' })).status, 400);
+    const dev = await entrar(DEV);
+    assert.strictEqual((await h.pedir('/api/config/oficinas', { method: 'POST', cookie: dev, body: '{}', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1', 'x-site-token': tok } })).status, 403);
+  });
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('Regresion_PantallaDeOficinas_ConLosTextosDeLaMaqueta @story-8.171 @ac-9 — lo que aprobó el dueño', async () => {
+  const oficinas = {
+    conBuzon: true, sinDisco: false,
+    pedidos: [
+      { fingerprint: 'a'.repeat(64), huella: 'aaaa-aaaa-aaaa-aaaa', nombre: 'pista', situacion: 'listo', maquina: 'maquina-a', person: DEV },
+      { fingerprint: 'b'.repeat(64), huella: 'bbbb-bbbb-bbbb-bbbb', nombre: 'maquina-c', situacion: 'esperando_huella', maquina: null, person: null },
+      { fingerprint: 'c'.repeat(64), huella: 'cccc-cccc-cccc-cccc', nombre: 'x', situacion: 'conflicto', maquina: 'maquina-b', person: DEV },
+    ],
+    maquinas: [
+      { maquina: 'maquina-f', person: DEV, fingerprint: 'f'.repeat(64), ultimaConexion: 1, conectada: true, deBaja: false, copiada: false, masNueva: false },
+      { maquina: 'maquina-g', person: DEV, ultimaConexion: 1, conectada: false, deBaja: false, copiada: true, masNueva: false },
+      { maquina: 'maquina-h', person: DEV, ultimaConexion: 1, conectada: false, deBaja: true, copiada: false, masNueva: false },
+      { maquina: 'maquina-i', person: DEV, ultimaConexion: 1, conectada: true, deBaja: false, copiada: false, masNueva: true },
+    ],
+  };
+  const r = await pantallaConPestanas({ secciones: TODAS.map((id) => (id === 'personas' ? SEC(id, { extras: { oficinas } }) : SEC(id))) });
+  const caja = r.creados.filter((n) => n.attrs.id === 'seccion-personas').pop();
+  const textos = textosDe(caja).join(' | ');
+  for (const t of ['La oficina de cada máquina', 'Solicitudes de alta', 'Máquinas con oficina', 'Retirar esta clave', 'Aprobar', 'Rechazar', 'Es la que vio el dev', 'Dar de baja', 'Reactivar', 'Borrar la marca', 'Posible clave copiada', 'Conectada', 'De baja', 'Dice llamarse «maquina-c»', 'Esperando que la máquina deje la huella con sus ejecuciones', 'Conflicto: confirmá la huella con el dev', 'Nada: la máquina dejó la misma huella con sus ejecuciones']) assert.ok(textos.includes(t), `falta «${t}»`);
+  assert.ok(textos.includes('Más nueva que el sitio'));
+  // sin pedidos y sin buzón
+  const vacia = await pantallaConPestanas({ secciones: TODAS.map((id) => (id === 'personas' ? SEC(id, { extras: { oficinas: { conBuzon: false, sinDisco: true, pedidos: [], maquinas: [] } } }) : SEC(id))) });
+  const t2 = textosDe(vacia.creados.filter((n) => n.attrs.id === 'seccion-personas').pop()).join(' | ');
+  for (const t of ['No hay solicitudes de alta.', 'Este sitio no sabe dónde dejan sus ejecuciones las máquinas', 'Este sitio no tiene disco propio']) assert.ok(t2.includes(t), `falta «${t}»`);
+});

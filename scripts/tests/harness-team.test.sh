@@ -48,6 +48,8 @@ set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$RAIZ/scripts/tests/lib/harness-lab.sh"
 export TYCON_UPDATE_APPLY=auto
+# el arranque corre en el lugar: desprendido, si tarda más de 20 s sigue de fondo con el candado y el comando siguiente sale 3
+export TYCON_STARTUP_DETACH=0
 # La llave del buzón se busca en el árbol instalado, que es lo que se mide acá (T7: la que apila la capa del equipo). Quien
 # corre esta suite puede traer TYCON_MAILBOX_JSON apuntando a otro lado: las portables la ponen en un archivo que no
 # existe, a propósito, y con ella heredada T7 daría «buzón: prendida (perfil; llave AUSENTE)» en una máquina vacía, adentro
@@ -751,7 +753,7 @@ PY
   K0="$(canal_cambio)"; ventana now; harness_release startup >/dev/null 2>&1
   [ "$(canal_cambio)" = "$K0" ] && ok "(r) …y el arranque siguiente no dice «el canal cambió»" || mal "(r) el arranque siguiente dijo que el canal cambió"
   harness_lab_release_control '{ "auth": "none" }'
-  unset LAB_APPLIER_INTEG TYCON_STARTUP_DETACH
+  unset LAB_APPLIER_INTEG
   export TYCON_UPDATE_APPLY=auto
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 fi
