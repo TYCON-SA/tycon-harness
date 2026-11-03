@@ -6,11 +6,14 @@
  *                             remoto) `{ sha: null, traida: false, motivo, ts }`. Nunca lee el `origin/main` local, que
  *                             puede estar movido o atrasado: lee lo que trajo (FETCH_HEAD).
  *   conBase(adhoc, repo)      el carril con la base de ese repo anotada, si todavía no la tenía (el primer toque).
- *   archivosDelCarril(adhoc)  `{ porRepo: { <repo>: [rel…] }, avisos }`: lo que el carril anotó, lo preparado para el
- *                             commit y el diff contra la base; sin base, lo anotado, lo preparado y lo cambiado contra
- *                             HEAD, con el aviso de que la rama no se midió.
- *   propiosDelCarril(adhoc)   lo mismo, sin lo que entró de `main`: lo que el arreglo cambió de verdad.
+ *   conBasesAlDia(adhoc)      el carril con `main` traído otra vez en cada repo: lo que el freno hace antes de frenar.
+ *   archivosDelCarril(adhoc)  `{ porRepo: { <repo>: [rel…] }, avisos }`: lo que el carril anotó y sigue cambiado, lo
+ *                             preparado para el commit y el diff contra el punto de salida de la rama (lo que `main` agregó
+ *                             después no es de la rama); sin base, lo anotado, lo preparado y lo cambiado contra HEAD, con
+ *                             el aviso de que la rama no se midió.
+ *   propiosDelCarril(adhoc)   lo que el arreglo cambió de verdad, contra la rama de integración más cercana.
  *   cuentaDelCarril(adhoc)    `{ archivos, avisos, fallas }`: de lo propio, lo que suma para el tope.
+ *   marcaSinSustento(…)       ¿la marca de riesgo alto nombra un archivo que ya no es del carril?
  *   huellaDelCarril(adhoc)    el sha256 del contenido de sus archivos de código, en cada repo: un cambio después de una
  *                             constancia la cambia.
  *
@@ -57,7 +60,7 @@ function traerBase(repo) {
   const ts = new Date().toISOString();
   try {
     git(repo, ['fetch', '--quiet', '--no-tags', 'origin', RAMA], TOPE_MS);
-    return { sha: git(repo, ['rev-parse', 'FETCH_HEAD^{commit}']), traida: true, ts };
+    return { sha: git(repo, ['rev-parse', 'FETCH_HEAD^{commit}']), traida: true, ts, origen: git(repo, ['remote', 'get-url', 'origin']) };
   } catch (e) {
     const motivo = String((e && (e.stderr || e.message)) || e).split('\n').find((l) => l.trim()) || 'git no contestó';
     return { sha: null, traida: false, motivo: `no pude traer ${RAMA} de origin: ${motivo.trim()}`, ts };
@@ -71,6 +74,62 @@ function conBase(adhoc, repo) {
   const b = traerBase(repo);
   bases[repo] = b;
   return { adhoc: { ...adhoc, bases }, aviso: b.traida ? null : `camino rápido: la base de ${repo} queda sin traer (${b.motivo}); al guardar se mide con lo anotado y el commit, sin la rama` };
+}
+
+/**
+ * El carril con `main` traído otra vez en los repos que ya tienen base: `{ adhoc, alDia, avisos }`, con los repos cuya base
+ * quedó recién traída y lo que no se pudo. Sin red queda la anotada. Un `origin` que ya no es el de la base anotada tampoco
+ * cuenta: su `main` podría traer la misma rama.
+ */
+function conBasesAlDia(adhoc) {
+  const bases = { ...((adhoc && adhoc.bases) || {}) };
+  const alDia = [];
+  const avisos = [];
+  for (const repo of Object.keys(bases)) {
+    const b = traerBase(repo);
+    if (!b.traida) { avisos.push(`camino rápido: ${repo} sigue con la base anotada (${b.motivo})`); continue; }
+    if (bases[repo].origen && bases[repo].origen !== b.origen) { avisos.push(`camino rápido: ${repo} sigue con la base anotada: su origin ya no es el de esa base`); continue; }
+    bases[repo] = b;
+    alDia.push(repo);
+  }
+  return { adhoc: { ...adhoc, bases }, alDia, avisos };
+}
+
+// La etiqueta de `git ls-files -v` de un archivo con una bandera del índice (`--skip-worktree`, `--assume-unchanged`): el
+// diff no ve lo que el archivo tiene.
+const CON_BANDERA = /^(S|[a-z])/;
+
+/**
+ * Donde la rama se separó de la base: lo que `main` agregó después no es de la rama. Sin historia común, la base: mide de
+ * más. Con git caído, también; el diff que sigue lo dice como una falla.
+ */
+function puntoDeSalida(repo, sha) {
+  try { return git(repo, ['merge-base', sha, 'HEAD']) || sha; } catch (_) { return sha; }
+}
+
+/**
+ * ¿La marca nombra un archivo que ya no es del carril? Sólo con la medición completa y `main` recién traído en su repo.
+ * Tampoco si un commit de otra rama local lo tocó después de la marca: pasarse de rama no la levanta. La duda deja la marca;
+ * si la duda es un git que no contestó, `avisar` lo dice.
+ */
+function marcaSinSustento(marca, { porRepo, fallas }, alDia, bases, avisar = () => {}) {
+  if (fallas.length || !marca || !marca.archivo) return false;
+  // un enlace: medir su destino no dice si el enlace cambió
+  try { if (fs.lstatSync(marca.archivo).isSymbolicLink()) return false; } catch (_) { /* ya no está: se mide por su ruta */ }
+  const abs = rutaReal(marca.archivo);
+  const repo = raizDe(abs);
+  if (!repo || !alDia.includes(repo) || !porRepo[repo]) return false;
+  const rel = path.relative(repo, abs).replace(/\\/g, '/');
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel) || porRepo[repo].includes(rel)) return false;
+  const t = Date.parse(marca.ts);
+  const desde = Number.isNaN(t) ? [] : [`--since=${new Date(t).toISOString().slice(0, 19)}Z`];
+  try {
+    if (CON_BANDERA.test(git(repo, ['--literal-pathspecs', 'ls-files', '-v', '--', rel]))) return false;
+    return !git(repo, ['--literal-pathspecs', 'log', '-1', '--format=%H', '--branches', ...desde, '--not', bases[repo].sha, '--', rel]);
+  } catch (e) {
+    avisar(`camino rápido: la marca de ${rel} queda: no pude mirar las otras ramas (${String(e.message || e).split('\n')[0]})`);
+    return false;
+  }
 }
 
 /** La ruta real (por los enlaces de carpeta, como /tmp → /private/tmp); la de su carpeta si el archivo ya no está. */
@@ -142,11 +201,23 @@ function archivosDelCarril(adhoc, { repos: extra = [] } = {}) {
     }
     const base = adhoc.bases && adhoc.bases[repo];
     try {
-      for (const l of rutasDeGit(repo, ['diff', '--cached', '--name-only'])) set.add(l);
+      const anotados = [...set];
+      // lo que git ya contestó queda en la medición aunque lo que sigue falle
+      const cambiadas = new Set();
+      const sumar = (l) => { cambiadas.add(l); set.add(l); };
+      rutasDeGit(repo, ['diff', '--cached', '--name-only']).forEach(sumar);
       // un archivo nuevo que git todavía no sigue también es del carril (un `git add -A` lo sube en el mismo comando)
-      for (const l of rutasDeGit(repo, ['ls-files', '--others', '--exclude-standard'])) set.add(l);
+      rutasDeGit(repo, ['ls-files', '--others', '--exclude-standard']).forEach(sumar);
       if (base && base.sha && ES_SHA.test(base.sha)) {
-        for (const l of rutasDeGit(repo, ['diff', '--name-only', base.sha, '--'])) set.add(l);
+        rutasDeGit(repo, ['diff', '--name-only', puntoDeSalida(repo, base.sha), '--']).forEach(sumar);
+        // lo anotado que git sigue y no cambió ya no es del carril (una edición restaurada); uno ignorado o con bandera
+        // del índice, que git no mide, sí lo es
+        const seguidos = new Map(!anotados.length ? [] : git(repo, ['--literal-pathspecs', 'ls-files', '-v', '-z', '--', ...anotados])
+          .split('\0').filter(Boolean).map((l) => [l.slice(2), l]));
+        for (const rel of anotados) {
+          if (cambiadas.has(rel)) continue;
+          if (seguidos.has(rel) ? !CON_BANDERA.test(seguidos.get(rel)) : !fs.existsSync(path.join(repo, rel))) set.delete(rel);
+        }
       } else {
         for (const l of rutasDeGit(repo, ['diff', '--name-only', 'HEAD', '--'])) set.add(l);
         avisos.push(`camino rápido: ${repo} no tiene su base traída (${(base && base.motivo) || 'sin anotar'}): la rama no se midió, sólo lo anotado y el commit`);
@@ -324,4 +395,4 @@ function huellaDelCarril(adhoc) {
 /** ¿La huella sirve para una constancia? Una incompleta, no. */
 const huellaCompleta = (h) => typeof h === 'string' && !h.startsWith('incompleta:');
 
-module.exports = { traerBase, conBase, reposDelCarril, archivosDelCarril, propiosDelCarril, cuentaDelCarril, sigueElRepo, huellaDelCarril, huellaCompleta, raizDe, ubicar, RAMA };
+module.exports = { traerBase, conBase, conBasesAlDia, marcaSinSustento, reposDelCarril, archivosDelCarril, propiosDelCarril, cuentaDelCarril, sigueElRepo, huellaDelCarril, huellaCompleta, raizDe, ubicar, RAMA };

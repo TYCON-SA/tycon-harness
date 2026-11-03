@@ -1012,8 +1012,14 @@ function decidirCarril({ command, cwd, sid, home }) {
   const subeLoSinSeguir = dudas.length > 0 || cs.some((c) => c.opaco) || (cs.some((c) => c.tipo === 'push' || c.tipo === 'pr') && hayOtroPasoAntes(command, cs));
   const tope = delCarril ? frenoDelTope(a, sid, home, reposDeLoQueSeGuarda, subeLoSinSeguir) : null;
   if (tope) return tope;
-  const pantalla = delCarril ? frenoDePantalla(a, sid, home, reposDeLoQueSeGuarda) : null;
-  if (pantalla && pantalla.texto) return pantalla;
+  let pantalla = delCarril ? frenoDePantalla(a, sid, home, reposDeLoQueSeGuarda) : null;
+  if (pantalla && pantalla.texto) {
+    // antes de frenar, con `main` traído otra vez: la pantalla pudo venir de otro pedido que la rama ya trajo
+    a = basesAlDia(a, sid, home).adhoc;
+    pantalla = frenoDePantalla(a, sid, home, reposDeLoQueSeGuarda);
+    if (pantalla && pantalla.texto) return pantalla;
+    require('./story-gate-io.js').writeAdhoc(path.dirname(path.dirname(require('./open-runs.js').markerPath(sid, home))), sid, a);
+  }
   const riesgo = frenoDelRiesgo(a, sid, home, reposDelComando);
   if (riesgo) return riesgo;
   const de = `del camino rápido «${String(a.reason).slice(0, 160)}»`;
@@ -1141,10 +1147,26 @@ function textoFaltanRevisoresYPase({ harness, regla, archivo }) {
   ]).join('\n');
 }
 
+// Lo que no se pudo medir: se dice en pantalla y queda en el registro.
+function avisarSinMedir(texto, sid, home) {
+  process.stderr.write(`⚠️  ${texto}\n`);
+  const dir = path.dirname(path.dirname(require('./open-runs.js').markerPath(sid, home)));
+  require('./story-gate-io.js').appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'unknown', reason: texto });
+}
+
+// El carril con `main` traído otra vez, avisando los repos donde no se pudo.
+function basesAlDia(a, sid, home) {
+  const r = require('./adhoc-base.js').conBasesAlDia(a);
+  for (const aviso of r.avisos) avisarSinMedir(aviso, sid, home);
+  return r;
+}
+
 /**
  * Un carril de riesgo alto no guarda sin las dos constancias vigentes: `{ texto }` o null. Marca el carril si lo que se
  * guarda trae una ruta de riesgo alto que la herramienta no vio. Vigente = la huella de los archivos de código del
- * carril es la de cada constancia. Lo que no se puede leer sigue y avisa (nivel 1).
+ * carril es la de cada constancia. Antes de frenar trae `main` otra vez y vuelve a medir: la marca que ya no tiene de qué
+ * agarrarse se levanta, y traer `main` a la rama no vence las constancias si lo propio no cambió. Lo que no se puede leer
+ * sigue y avisa (nivel 1).
  */
 function frenoDelRiesgo(a, sid, home, reposDelComando = []) {
   const io = require('./story-gate-io.js');
@@ -1152,29 +1174,46 @@ function frenoDelRiesgo(a, sid, home, reposDelComando = []) {
   const dir = path.dirname(path.dirname(require('./open-runs.js').markerPath(sid, home)));
   let marca = a.riesgoAlto || null;
   try {
-    if (!marca) {
-      const { porRepo, fallas } = base.archivosDelCarril(a, { repos: reposDelComando });
+    const dichas = new Set();
+    const medir = (carril) => {
+      const { porRepo, fallas } = base.archivosDelCarril(carril, { repos: reposDelComando });
       // git que no contesta: se mide con lo que hay, y se dice (nivel 1: sigue y avisa)
       for (const f of fallas) {
-        process.stderr.write(`⚠️  ${f}\n`);
-        io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'unknown', reason: f });
+        if (dichas.has(f)) continue;
+        dichas.add(f);
+        avisarSinMedir(f, sid, home);
       }
-      let repoDeLaMarca = null;
       for (const repo of Object.keys(porRepo)) {
         const r = require('./risk-paths.js').riesgoDeArchivos(porRepo[repo], { repo });
-        if (r.value) { marca = { regla: r.rule, archivo: r.file ? path.join(repo, r.file) : repo, motivo: r.reason, ts: new Date().toISOString() }; repoDeLaMarca = repo; break; }
+        if (r.value) return { porRepo, fallas, repo, nueva: { regla: r.rule, archivo: r.file ? path.join(repo, r.file) : repo, motivo: r.reason, ts: new Date().toISOString() } };
       }
-      if (!marca) return null;
+      return { porRepo, fallas };
+    };
+    const vigentes = (carril) => {
+      const huella = base.huellaDelCarril(carril);
+      // una huella medida con git caído no confirma nada: las constancias no valen contra ella
+      const vigente = (c) => c && typeof c === 'object' && base.huellaCompleta(huella) && c.huella === huella;
+      return vigente(carril.revisores) && vigente(carril.pase);
+    };
+    if (marca ? vigentes(a) : !medir(a).nueva) return null;
+    const { adhoc: traido, alDia: reposAlDia } = basesAlDia(a, sid, home);
+    const m = medir(traido);
+    a = traido;
+    if (marca && base.marcaSinSustento(marca, m, reposAlDia, a.bases, (texto) => avisarSinMedir(texto, sid, home))) {
+      io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'ok', reason: `marca levantada: ${marca.archivo} (regla: ${marca.regla}) ya no es de este camino rápido` });
+      const { riesgoAlto: _, ...sinMarca } = a;
+      a = sinMarca;
+      marca = null;
+    }
+    if (!marca && m.nueva) {
+      marca = m.nueva;
       // el archivo y su repo quedan en el carril: los revisores y el pase lo miden después
       const rutas = Array.isArray(a.rutas) ? [...a.rutas] : [];
       if (!rutas.includes(marca.archivo)) rutas.push(marca.archivo);
-      a = base.conBase({ ...a, riesgoAlto: marca, rutas }, repoDeLaMarca).adhoc;
-      io.writeAdhoc(dir, sid, a);
+      a = base.conBase({ ...a, riesgoAlto: marca, rutas }, m.repo).adhoc;
     }
-    const huella = base.huellaDelCarril(a);
-    // una huella medida con git caído no confirma nada: las constancias no valen contra ella
-    const vigente = (c) => c && typeof c === 'object' && base.huellaCompleta(huella) && c.huella === huella;
-    if (vigente(a.revisores) && vigente(a.pase)) return null;
+    io.writeAdhoc(dir, sid, a);
+    if (!marca || vigentes(a)) return null;
   } catch (e) {
     process.stderr.write(`⚠️  camino rápido: no pude medir el riesgo de lo que se guarda (${e.message}); sigue sin ese freno.\n`);
     io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'unknown', reason: `riesgo del carril sin medir: ${e.message}` });
