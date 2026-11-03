@@ -994,6 +994,8 @@ function decidirCarril({ command, cwd, sid, home }) {
   // los repos que el carril anotó, aunque ahí no haya anotado ningún archivo de implementación
   const repos = [];
   for (const f of [...(Array.isArray(a.files) ? a.files : []), ...(Array.isArray(a.rutas) ? a.rutas : [])]) {
+    // una variable sin expandir (`$L/p.js`) no es una ruta: no mete al carril el repo de la carpeta donde corrió el comando
+    if (/[$`]/.test(String(f))) continue;
     let r = null;
     try { r = SO().raizDe(path.dirname(String(f))); } catch (_) { r = null; }
     if (r && !repos.includes(r)) repos.push(r);
@@ -1004,8 +1006,10 @@ function decidirCarril({ command, cwd, sid, home }) {
   const delCarril = !repos.length || dudas.length || reposDelComando.length < cs.length || cs.some((c) => c.opaco || c.tipo === 'pr') || reposDelComando.some((r) => repos.includes(r));
   // los del carril, aunque la carpeta de lo anotado ya no esté (se borró con su pantalla); sin ninguno, los del comando
   const reposDeLoQueSeGuarda = repos.length ? repos : reposDelComando;
-  // un `git add` en el mismo comando sube lo que git todavía no sigue, y este freno corre antes de que se agregue
-  const subeLoSinSeguir = dudas.length > 0 || cs.some((c) => c.opaco) || /\bgit\b[^;&|\n]*\badd\b/.test(String(command));
+  // lo que git todavía no sigue puede subir en un solo comando que empuja después de hacer otra cosa, y este freno corre antes:
+  // no hay un guardado siguiente que lo cuente. Sin empujar, el siguiente sí lo cuenta. No se busca el `git add` en el texto:
+  // tiene sinónimos y atajos, y la palabra puede estar en un mensaje
+  const subeLoSinSeguir = dudas.length > 0 || cs.some((c) => c.opaco) || (cs.some((c) => c.tipo === 'push' || c.tipo === 'pr') && hayOtroPasoAntes(command, cs));
   const tope = delCarril ? frenoDelTope(a, sid, home, reposDeLoQueSeGuarda, subeLoSinSeguir) : null;
   if (tope) return tope;
   const pantalla = delCarril ? frenoDePantalla(a, sid, home, reposDeLoQueSeGuarda) : null;
@@ -1025,6 +1029,14 @@ function decidirCarril({ command, cwd, sid, home }) {
 }
 
 // ── el tope del camino corto ────────────────────────────────────────────────────────────────────────────────────────
+
+/** ¿El comando hace algo más que guardar? Moverse de carpeta no cuenta; lo que no se puede leer, sí. */
+function hayOtroPasoAntes(command, guardados) {
+  const { tramos, subs, abierta } = require('./marker-command.js').tramos(String(command), 'bash');
+  if (subs.length || abierta) return true;
+  const otros = tramos.filter((t) => { const w = t.palabras[0]; return !(w && /^(cd|pushd|popd)$/.test(w.texto)); });
+  return otros.length > guardados.length;
+}
 
 /**
  * Un carril que cambió más archivos de implementación que su cupo no guarda: `{ texto }`, con los archivos contados. Mide
@@ -1047,7 +1059,7 @@ function frenoDelTope(a, sid, home, repos, sinSeguir = false) {
   }
   const cupo = gate.cupoDelCarril(a);
   if (c.archivos.length <= cupo) return null;
-  io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `camino corto: ${c.archivos.length} archivos de implementación con cupo ${cupo}`, archivos: c.archivos });
+  io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `camino corto: ${c.archivos.length} archivos de implementación con cupo ${cupo}`, archivos: c.archivos.slice(0, gate.TOPE_DE_NOMBRES) });
   const harness = (() => { try { return io.isHarnessRepo(c.archivos[0]); } catch (_) { return true; } })();
   return { texto: `🔒 GUARDAR: no guarda.\n${gate.textoDelTope({ harness, tocados: c.archivos.length, cupo, archivos: c.archivos })}` };
 }

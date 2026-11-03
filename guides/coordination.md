@@ -308,7 +308,11 @@ El arreglo rápido (un cambio de código sin historia) es la firma `adhoc-lane`:
 click en el cuadro de la pestaña que hace el trabajo, o en su terminal. Un click en tu pestaña no vale, ni un «aprobado»
 reenviado, ni la delegación; por eso una sesión de fondo sin nadie mirando sólo puede hacerlo por la terminal. Cuentan sólo
 los archivos de implementación que el arreglo cambió: lo traído de `main`, las pruebas, las guías y las sondas no suman. Al
-pasar el cupo, el arreglo frena al editar y no guarda, y el mensaje recomienda la historia.
+pasar el cupo, el arreglo frena al editar y no guarda, y el mensaje recomienda la historia. Límite: mide la rama en la que se
+trabaja y lo que ya está en el disco. Trabajo armado en otra rama y empujado por su nombre, o creado en el mismo comando que
+empuja, no suma. Eso no lo deja entrar a `main`, porque el pedido sigue con su control y su revisión: esquiva el aviso, y hay
+que hacerlo a propósito. Al revés, en `dev` con `main` traído y sin empujar, lo ya integrado suma de más: se empuja, o se elige
+con el click.
 
 **Con la maqueta y la captura, lo construido se compara con la maqueta.** Compara textos, no el dibujo: si un texto de la
 maqueta no está en las pantallas del carril ni en las demás de sus repos, no guarda. Un texto que ya existe en otra pantalla

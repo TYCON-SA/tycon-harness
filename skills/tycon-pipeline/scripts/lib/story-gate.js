@@ -105,6 +105,15 @@ const DEFAULT_ADHOC_MAX_FILES = 8;
 // el arreglo rápido que abre la coordinadora por delegación: más chico que el que firma una persona
 const DELEGATED_ADHOC_MAX_FILES = 5;
 const cupoDelegado = (pedido) => Math.min(pedido, DELEGATED_ADHOC_MAX_FILES);
+/**
+ * El cupo que queda al declarar: el pedido, el que ya tenía o el de siempre. Lo hecho por delegación o en una pestaña sin
+ * permisos va con el cupo delegado. Pedir sin número no achica lo que la persona ya eligió con su click: trabaría el arreglo.
+ */
+function cupoAlDeclarar({ pedido, existing, via }) {
+  const cupo = pedido !== undefined ? pedido : (existing ? existing.maxFiles : DEFAULT_ADHOC_MAX_FILES);
+  const porDelegacion = via === 'delegacion' || via === 'avisado';
+  return porDelegacion && !(pedido === undefined && existing && existing.sobreCupo) ? cupoDelegado(cupo) : cupo;
+}
 /** El cupo de un carril: el suyo, o el de siempre si no trae uno que se pueda leer. */
 const cupoDelCarril = (adhoc) => (Number.isFinite(Number(adhoc && adhoc.maxFiles)) && Number(adhoc.maxFiles) > 0 ? Number(adhoc.maxFiles) : DEFAULT_ADHOC_MAX_FILES);
 const MARKER_JS = '~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js';
@@ -351,13 +360,18 @@ const PREGUNTA_SIN_CARRIL = [
  * El mensaje al pasar el tope, al editar y al guardar: recomienda la historia y nombra el click aparte como segunda salida,
  * en los dos perfiles. En un producto lo lee el dev («vos») y no nombra las piezas de la capa de mantenimiento.
  */
+// Cuántos archivos se nombran: en una rama grande, una lista entera repetida en cada intento desplaza del registro el
+// renglón de la firma del carril, y el carril deja de contar como abierto.
+const TOPE_DE_NOMBRES = 50;
+
 function textoDelTope({ harness = true, tocados, cupo, archivos = [], ibaA = null, via = '' }) {
   const pedido = `node ${MARKER_JS} adhoc set '{"reason":"<qué y por qué>","maxFiles":<N>}'`;
   return [
     '⛔ camino corto — PASÓ EL TOPE DE ARCHIVOS',
     via,
     `  Este arreglo ya cambió ${tocados} archivo(s) de implementación (cupo ${cupo}).${ibaA ? ` Ibas a tocar otro más: ${ibaA}.` : ''}`,
-    ...archivos.map((a) => `   · ${a}`),
+    ...archivos.slice(0, TOPE_DE_NOMBRES).map((a) => `   · ${a}`),
+    ...(archivos.length > TOPE_DE_NOMBRES ? [`   · y ${archivos.length - TOPE_DE_NOMBRES} más`] : []),
     '  Se recomienda que siga por una historia, con su plan aprobado, las pruebas primero y sus revisores:',
     '   `Skill(skill="tycon-create-story", …)` si no existe, y después `Skill(skill="tycon-pipeline", args="implementemos la story X.Y")`.',
     ...(harness ? [
@@ -602,7 +616,7 @@ function storyByConsoleMessage(rutas, via) {
 
 module.exports = {
   markerDeleteMessage, storyByConsoleMessage,
-  computeStoryGate, blockMessage, textoDelTope, cupoDelCarril, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, isOwnerApprovalsRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
+  computeStoryGate, blockMessage, textoDelTope, TOPE_DE_NOMBRES, cupoDelCarril, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, isOwnerApprovalsRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
   STORY_INTENT_PATTERNS,
-  DEFAULT_ADHOC_MAX_FILES, DELEGATED_ADHOC_MAX_FILES, cupoDelegado, EXTRA_CODE_EXTS, NEVER_CODE_SEGMENTS, HARNESS_REPO_SEGMENTS, MARKER_JS,
+  DEFAULT_ADHOC_MAX_FILES, DELEGATED_ADHOC_MAX_FILES, cupoDelegado, cupoAlDeclarar, EXTRA_CODE_EXTS, NEVER_CODE_SEGMENTS, HARNESS_REPO_SEGMENTS, MARKER_JS,
 };

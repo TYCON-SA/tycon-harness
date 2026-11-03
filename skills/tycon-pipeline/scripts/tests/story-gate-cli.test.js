@@ -489,6 +489,17 @@ test('AdhocClear_SobreCupoVencido_AnotaLaCuentaIgual @story-8.181 @ac-6', () => 
   assert.deepStrictEqual([c.sobreCupo, c.cupoPedido, c.eligio, c.contados, c.archivos], [true, 9, 'persona', 1, [a]]);
 });
 
+// 🔴 Falla con: la ruta absoluta mirada entera: un repo debajo de una carpeta `tests` cuenta cero archivos y nunca frena.
+test('ArchivosQueSuman_RepoDebajoDeTests_Cuentan @story-8.181 @ac-10', () => {
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'porton-')));
+  const repo = path.join(base, 'tests', 'r');
+  fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
+  execFileSync('git', ['-C', repo, 'init', '-q']);
+  const a = path.join(repo, 'src', 'a.js');
+  fs.writeFileSync(a, 'x\n');
+  assert.deepStrictEqual(io.archivosQueSuman([a]), [a]);
+});
+
 // 🔴 Falla con: una declaración ilegible o medida con menos que queda en el registro como un cierre normal.
 test('AdhocClear_RegistroDiceLoQueNoSeMidio @story-8.181 @ac-6', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));

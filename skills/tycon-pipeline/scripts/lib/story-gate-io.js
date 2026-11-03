@@ -350,7 +350,13 @@ function carrilQueCuenta(adhoc) {
 function archivosQueSuman(files) {
   const { isImplPath } = require('./atdd-order.js');
   const { ubicar } = require('./adhoc-base.js');
-  return files.filter((f) => path.isAbsolute(String(f)) && isImplPath(f) && gate.isCodeFile(f) && fs.existsSync(f) && !ubicar(f).fuera);
+  return files.filter((f) => {
+    if (!path.isAbsolute(String(f)) || !gate.isCodeFile(f) || !fs.existsSync(f)) return false;
+    const u = ubicar(f);
+    if (u.fuera) return false;
+    // relativa al repo: un repo que vive debajo de una carpeta `tests` no hace pruebas de todos sus archivos
+    return isImplPath(u.raiz ? path.relative(u.raiz, fs.realpathSync(f)).replace(/\\/g, '/') : f);
+  });
 }
 
 function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR, installedRoots }) {

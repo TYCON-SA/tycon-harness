@@ -19,6 +19,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 
@@ -44,7 +45,8 @@ function ubicar(p) {
   while (!fs.existsSync(d) && path.dirname(d) !== d) d = path.dirname(d);
   try { return { raiz: fs.realpathSync(git(d, ['rev-parse', '--show-toplevel'])) }; } catch (e) {
     const err = String((e && (e.stderr || e.message)) || e);
-    if (/not a git repository/i.test(err)) return { fuera: true };
+    // adentro de `.git` o de un repo pelado no hay árbol de trabajo: tampoco hay nada que medir
+    if (/not a git repository|must be run in a work tree/i.test(err)) return { fuera: true };
     return { falla: err.split('\n').find((l) => l.trim()) || 'git no contestó' };
   }
 }
@@ -95,8 +97,24 @@ function reposDelCarril(adhoc) { return reposYHuerfanas(adhoc).repos; }
 // (`--no-renames`): un archivo movido sale con su ruta vieja y la nueva, y la vieja puede ser la de riesgo alto.
 const rutasDeGit = (repo, [sub, ...resto]) => git(repo, ['-c', 'core.quotepath=false', sub, '-z',
   ...(sub === 'diff' ? ['--no-renames'] : []), ...resto]).split('\0').filter(Boolean);
-// Para contar lo propio: un archivo movido es un cambio, con su ruta nueva.
-const cambiosDeGit = (repo, args) => git(repo, ['-c', 'core.quotepath=false', 'diff', '-z', '--name-only', '--find-renames', ...args]).split('\0').filter(Boolean);
+const sumaAlTope = (rel) => require('./atdd-order.js').isImplPath(rel) && require('./story-gate.js').isCodeFile(rel);
+/**
+ * Para contar lo propio: un archivo movido es un cambio, con su ruta nueva si ésa suma; si no, con la vieja. Mover
+ * implementación a una carpeta que no suma también es cambiarla: si no, mudarla la sacaría de la cuenta. Qué suma lo dice
+ * quien mide: el tope mira la implementación; la maqueta, las pantallas.
+ */
+function cambiosDeGit(repo, args, suma = sumaAlTope) {
+  const campos = git(repo, ['-c', 'core.quotepath=false', 'diff', '-z', '--name-status', '--find-renames', ...args]).split('\0').filter(Boolean);
+  const rutas = [];
+  for (let i = 0; i < campos.length;) {
+    const estado = campos[i++];
+    if (/^[RC]/.test(estado)) {
+      const [vieja, nueva] = [campos[i++], campos[i++]];
+      rutas.push(suma(nueva) || !suma(vieja) ? nueva : vieja);
+    } else rutas.push(campos[i++]);
+  }
+  return rutas;
+}
 const ES_SHA = /^[0-9a-f]{7,64}$/i;
 
 /**
@@ -162,8 +180,10 @@ function sigueElRepo(repo) {
 }
 
 /**
- * Desde dónde se mide lo propio de un repo: la bifurcación con la rama de integración más cercana (`main` o `dev`), sin lo
- * que entró de ahí. Sin ninguna, la base anotada; sin ésa, lo anotado y el commit, con el aviso. Git que no contesta, sube.
+ * Desde dónde se mide lo propio de un repo: la bifurcación con la rama de integración más cercana (`main` o `dev`). Una sola:
+ * «igual a la otra rama» no quiere decir «entró de ahí», y un revert masivo no sumaría. El costo: en `dev` con `main` traído y
+ * sin empujar, lo ya integrado suma hasta que se empuja; ese falso freno tiene su salida en el click. Sin ninguna, la base
+ * anotada; sin ésa, lo anotado y el commit, con el aviso. Git que no contesta, sube.
  */
 function basePropia(repo, adhoc) {
   const candidatas = [];
@@ -213,7 +233,7 @@ function traeDeIntegracion(repo) {
  * entra en un commit, el guardado siguiente lo cuenta. Con un merge en curso de una rama de integración, lo que queda igual
  * que en esa rama es lo que el merge trae: `HEAD` todavía no lo tiene y la bifurcación no lo descuenta.
  */
-function propiosDelCarril(adhoc, { repos: extra = [], sinSeguir = false } = {}) {
+function propiosDelCarril(adhoc, { repos: extra = [], sinSeguir = false, suma = sumaAlTope } = {}) {
   const porRepo = {};
   const avisos = [];
   const fallas = [];
@@ -225,15 +245,18 @@ function propiosDelCarril(adhoc, { repos: extra = [], sinSeguir = false } = {}) 
     fallas.push(m);
   }
   const reales = anotadas.map(rutaReal);
+  const casa = rutaReal(os.homedir());
   for (const repo of [...new Set([...repos, ...extra.filter(Boolean)])]) {
     try {
       if (!sigueElRepo(repo)) { avisos.push(`camino corto: ${repo} ya no es un repo: no hay nada que medir ahí`); continue; }
+      // la carpeta de la persona como repo de dotfiles no es del arreglo: el portón de edición tampoco la cuenta
+      if (repo === casa) continue;
       const base = basePropia(repo, adhoc);
       if (base.aviso) avisos.push(base.aviso);
-      let set = new Set(cambiosDeGit(repo, ['--cached']));
-      if (base.sha) for (const l of cambiosDeGit(repo, [base.sha, '--'])) set.add(l);
+      let set = new Set(cambiosDeGit(repo, ['--cached'], suma));
+      if (base.sha) for (const l of cambiosDeGit(repo, [base.sha, '--'], suma)) set.add(l);
       if (traeDeIntegracion(repo)) {
-        const distintos = new Set(cambiosDeGit(repo, ['MERGE_HEAD', '--']));
+        const distintos = new Set(cambiosDeGit(repo, ['MERGE_HEAD', '--'], suma));
         set = new Set([...set].filter((l) => distintos.has(l)));
       }
       if (sinSeguir) for (const l of rutasDeGit(repo, ['ls-files', '--others', '--exclude-standard'])) set.add(l);
@@ -266,7 +289,8 @@ function cuentaDelCarril(adhoc, opciones) {
     for (const rel of porRepo[repo]) {
       const abs = path.join(repo, rel);
       if (isImplPath(rel) && isCodeFile(rel) && !anotadas.has(rutaReal(abs))) {
-        const clave = abs.normalize('NFC');
+        // Mac y Windows tampoco distinguen mayúsculas: es el mismo archivo con otra grafía
+        const clave = process.platform === 'linux' ? abs.normalize('NFC') : abs.normalize('NFC').toLowerCase();
         if (!archivos.has(clave)) archivos.set(clave, abs);
       }
     }

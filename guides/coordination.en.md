@@ -319,7 +319,11 @@ The quick fix (a code change with no story) is the `adhoc-lane` signature: the t
 and the developer chooses it: with a click in the question box of the tab doing the work, or in their terminal. A click in
 your tab does not count, nor a forwarded «aprobado», nor the delegation; so a background session nobody is watching can only
 do it through the terminal. Only the implementation files the fix changed count: what came in from `main`, tests, guides
-and probes do not add up. Past the quota, the fix stops on edit and does not save, and the message recommends a story.
+and probes do not add up. Past the quota, the fix stops on edit and does not save, and the message recommends a story. Limit:
+it measures the branch being worked on and what is already on disk. Work built on another branch and pushed by its name, or
+created in the same command that pushes, does not add up. That does not let it into `main`, because the pull request still has
+its check and its review: it skips the notice, and it takes doing it on purpose. Conversely, on `dev` with `main` brought in and
+not pushed, what is already integrated counts too: push it, or choose with the click.
 
 **With the mockup and the screenshot, what was built is compared with the mockup.** It compares texts, not the drawing: if a
 text of the mockup is not in the fix's screens or in the other screens of its repos, it does not save. A text that already

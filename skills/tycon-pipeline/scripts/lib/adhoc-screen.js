@@ -143,9 +143,9 @@ function fechaDelCambio(abs) {
   }
 }
 
-// Una prueba por su nombre o por una carpeta de pruebas. Una carpeta `test/` más adentro puede ser una pantalla de verdad
-// (la ruta `/test` de `src/app/test/page.tsx`): ésa cuenta como prueba sólo en la raíz.
-const esPrueba = (rel) => /\.(test|spec|cy)\.[^./]+$/i.test(rel) || /(^|\/)(__tests__|__mocks__|tests|e2e|cypress|playwright)\//i.test(rel) || /^test\//i.test(rel);
+// Una prueba por su nombre o por una carpeta de pruebas o de ejemplos. Una carpeta `test/`, `specs/` o `fixtures/` más adentro
+// puede ser una pantalla de verdad (la ruta `/test` de `src/app/test/page.tsx`): ésas cuentan como prueba sólo en la raíz.
+const esPrueba = (rel) => /\.(test|spec|cy|stories)\.[^./]+$/i.test(rel) || /(^|\/)(__tests__|__mocks__|__fixtures__|tests|e2e|cypress|playwright)\//i.test(rel) || /^(test|specs?|fixtures)\//i.test(rel);
 
 const TANDA_DE_PANTALLAS = 50;
 const MAS_NOMBRADOS = 5;
@@ -221,7 +221,7 @@ function revisar(adhoc, repos = []) {
   const { isCodeFile } = require('./story-gate.js');
   const { fileTouchesUi } = require('./ui-signal.js');
   // lo que el arreglo cambió de verdad: lo traído de `main` no pide maqueta ni captura
-  const { porRepo, fallas, avisos } = propiosDelCarril(adhoc, { repos, sinSeguir: true });
+  const { porRepo, fallas, avisos } = propiosDelCarril(adhoc, { repos, sinSeguir: true, suma: (rel) => !esPrueba(rel) });
   if (fallas.length) return { sinMedir: fallas[0] };
   const anotadas = new Set([adhoc.mockup, adhoc.capture].filter((x) => x && typeof x.file === 'string').map((x) => rutaReal(x.file)));
   const regla = reglaDePantalla();

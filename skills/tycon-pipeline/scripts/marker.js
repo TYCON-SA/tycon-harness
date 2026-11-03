@@ -5469,7 +5469,7 @@ function cmdRuntimeWaiver(storyArg, argv = []) {
 // tiene prioridad sobre él aunque siga existiendo.
 // ============================================================
 // el cupo más grande que declara la designada por otra pestaña: uno mayor lo aprueba el dueño en su ventana
-const { DELEGATED_ADHOC_MAX_FILES: ADHOC_TOPE_DELEGADO, cupoDelegado } = require('./lib/story-gate.js');
+const { DELEGATED_ADHOC_MAX_FILES: ADHOC_TOPE_DELEGADO, cupoDelegado, cupoAlDeclarar } = require('./lib/story-gate.js');
 const ADHOC_MOTIVO_MAX = 200;
 const ADHOC_CUPO_MAX = 50;
 
@@ -5618,7 +5618,7 @@ function cmdAdhoc(sub, payloadJson) {
       if (viaPedida !== 'delegacion') return null;
       const so = require('./lib/save-ok.js');
       const notify = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'notify.js'));
-      const cupo = cupoDelegado(payload.maxFiles !== undefined ? payload.maxFiles : 8);
+      const cupo = cupoAlDeclarar({ pedido: payload.maxFiles, existing: actual, via: viaPedida });
       // el de una pestaña sin permisos lo abrió la propia sesión, sin firma: «hecho y avisado»
       const quien = registro && registro.via === 'avisado' ? `la sesión ${registro.sesion} abrió sin firma (pestaña sin permisos)` : 'la coordinadora abrió';
       const a = so.avisar({ texto: `Arreglo rápido: ${quien} el de la sesión ${destino}: «${reason}» · hasta ${cupo} archivos, sin tocar lo sensible.`,
@@ -5662,10 +5662,8 @@ function cmdAdhoc(sub, payloadJson) {
     const via = r.via;
     const by = r.sesion || SID;
     const existing = io.readAdhoc(STATE_DIR, destino);
-    let maxFiles = payload.maxFiles !== undefined ? payload.maxFiles : (existing ? existing.maxFiles : 8);
-    const pedido = maxFiles;
-    // lo hecho y avisado en una pestaña sin permisos tiene el mismo cupo que la delegación
-    if (via === 'delegacion' || via === 'avisado') maxFiles = cupoDelegado(maxFiles);
+    const pedido = payload.maxFiles !== undefined ? payload.maxFiles : (existing ? existing.maxFiles : 8);
+    const maxFiles = cupoAlDeclarar({ pedido: payload.maxFiles, existing, via });
     // la marca del sobre cupo: la pone la firma nueva y se conserva mientras el cupo siga por encima del tope. Un carril
     // anterior con más de 8 no la tiene: termina con su número, sin pedirla
     const sobreCupo = firmaDelPedido === firmas.SOBRE_CUPO ? { sobreCupo: true, cupoPedido: maxFiles, eligio: 'persona' }

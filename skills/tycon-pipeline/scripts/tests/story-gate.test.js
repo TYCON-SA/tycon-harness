@@ -130,6 +130,17 @@ test('adhoc: pasa; cupo cuenta sólo implementación; archivo ya contado no cons
 
 const OCHO = Array.from({ length: 8 }, (_, i) => `${REPO}/src/f${i}.cs`);
 
+// 🔴 Falla con: volver a declarar sin número en una pestaña sin permisos, que achica lo que la persona eligió y lo traba.
+test('CupoAlDeclarar_SobreCupoSinNumero_ConservaLoElegido @story-8.181 @ac-14', () => {
+  const elegido = { maxFiles: 12, sobreCupo: true };
+  for (const via of ['delegacion', 'avisado', 'click', 'ventana']) assert.equal(gate.cupoAlDeclarar({ existing: elegido, via }), 12, via);
+  // con un número, o sin la elección de la persona, sigue el cupo delegado
+  assert.equal(gate.cupoAlDeclarar({ pedido: 12, existing: elegido, via: 'avisado' }), 5);
+  assert.equal(gate.cupoAlDeclarar({ existing: { maxFiles: 8 }, via: 'delegacion' }), 5);
+  assert.equal(gate.cupoAlDeclarar({ via: 'ventana' }), 8);
+  assert.equal(gate.cupoAlDeclarar({ pedido: 3, via: 'click' }), 3);
+});
+
 test('T16 StoryGate_RepoDelArnesConCarril_FrenaAlPasarElTope @story-8.181 @ac-7', () => {
   const adhoc = { reason: 'arreglo en el arnés', maxFiles: 8, files: OCHO };
   // un clon del arnés puede no tener `.tycon/`: igual rige el tope

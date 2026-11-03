@@ -560,12 +560,12 @@ test('CambioAUnControl_SiguePidiendoLaFirmaDeControl (T14)', (t) => {
 
 /** El carril de un camino rápido, firmado como lo deja `marker.js adhoc set`: la declaración con la hora de su firma y
  *  el renglón `adhoc-lane-signed` de esa hora en gates.log. Sin `firmado`, la declaración sola (no abre nada). */
-function carril(h, { files = [], firmado = true, lastTouch, sid = SID, maxFiles = 5, bases } = {}) {
+function carril(h, { files = [], firmado = true, lastTouch, sid = SID, maxFiles = 5, bases, rutas } = {}) {
   const ahora = new Date().toISOString();
   fs.mkdirSync(path.join(estado(h), 'adhoc'), { recursive: true });
   fs.writeFileSync(path.join(estado(h), 'adhoc', `${sid}.json`), JSON.stringify({
     reason: 'el combo muestra el nombre completo', maxFiles, files, declaredAt: lastTouch || ahora, lastTouch: lastTouch || ahora,
-    ...(firmado ? { firmadaEn: ahora } : {}), ...(bases ? { bases } : {}),
+    ...(firmado ? { firmadaEn: ahora } : {}), ...(bases ? { bases } : {}), ...(rutas ? { rutas } : {}),
   }));
   if (firmado) fs.appendFileSync(path.join(estado(h), 'gates.log'), `${JSON.stringify({ name: 'adhoc-lane-signed', status: 'ok', destino: sid, ts: ahora })}\n`);
 }
@@ -748,15 +748,137 @@ test('SaveBrake_SinSeguirAjeno_NoSuma_ElAnotadoSi @story-8.181 @ac-11', (t) => {
   assert.ok(!(guardar(d, h) || {}).texto);
 });
 
-// 🔴 Falla con: un `git add` en el mismo comando que sube archivos nuevos que el freno, que corre antes, no contó.
-test('SaveBrake_AddEnElMismoComando_CuentaLoSinSeguir @story-8.181 @ac-11', (t) => {
+// 🔴 Falla con: un solo comando que agrega, commitea y empuja archivos nuevos que el freno, que corre antes, no contó.
+test('SaveBrake_CommitYPushEnElMismoComando_CuentaLoSinSeguir @story-8.181 @ac-11', (t) => {
   const d = repoConOrigin(t);
   const h = home(t);
   for (let i = 0; i < 9; i++) escribir(d, `src/nuevo${i}.js`, 'x\n');
   carril(h, { maxFiles: 8 });
-  const r = brake().decidir({ command: 'git add -A && git commit -m x && git push', cwd: d, sid: SID, home: h });
-  assert.match((r || {}).texto || '', elTope);
-  assert.ok(!(guardar(d, h) || {}).texto, 'un commit sin add no los lleva');
+  for (const command of ['git add -A && git commit -m x && git push', 'git stage -A && git commit -m x && git push']) {
+    assert.match((brake().decidir({ command, cwd: d, sid: SID, home: h }) || {}).texto || '', elTope, command);
+  }
+  // la palabra en un mensaje o en una rama no sube nada; y sin empujar, el guardado siguiente los cuenta
+  for (const command of ['git commit -m x', 'git commit -m "add validation"', 'git push origin feature/add-login']) {
+    assert.ok(!(brake().decidir({ command, cwd: d, sid: SID, home: h }) || {}).texto, command);
+  }
+});
+
+// 🔴 Falla con: la ruta nueva sola de un archivo movido: mudar implementación a una carpeta que no suma la saca de la cuenta.
+test('Cuenta_MovidoAUnaRutaQueNoSuma_SigueContando @story-8.181 @ac-10', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  sh(d, 'checkout', '-q', 'main');
+  for (let i = 0; i < 9; i++) escribir(d, `src/m${i}.js`, `// contenido propio del archivo ${i}, largo para reconocerlo al moverlo\n`);
+  sh(d, 'add', '-A');
+  sh(d, 'commit', '-q', '-m', 'base');
+  sh(d, 'push', '-q', 'origin', 'main');
+  sh(d, 'checkout', '-q', RAMA);
+  sh(d, 'merge', '-q', '--no-edit', 'origin/main');
+  fs.mkdirSync(path.join(d, 'tests'));
+  for (let i = 0; i < 9; i++) sh(d, 'mv', `src/m${i}.js`, `tests/m${i}.js`);
+  sh(d, 'commit', '-q', '-m', 'muda');
+  carril(h, { maxFiles: 8 });
+  assert.strictEqual(cuenta(h, { repos: [d] }).archivos.length, 9);
+  assert.match((guardar(d, h) || {}).texto || '', elTope);
+});
+
+// El límite escrito: en `dev` con `main` traído y sin empujar, suma lo que ya está en una de las dos ramas. Se empuja, o se
+// elige con el click.
+// 🔴 Falla con: una regla que descuente lo igual a otra rama de integración: un revert masivo dejaría de sumar.
+test('Cuenta_DevQueTrajoMainSinEmpujar_Suma_ElEmpujeLoCorrige @story-8.181 @ac-12', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  sh(d, 'checkout', '-q', '-b', 'dev', 'origin/main');
+  commitDeArchivos(d, 'de-dev', 2);
+  sh(d, 'push', '-q', 'origin', 'dev');
+  sh(d, 'checkout', '-q', '-B', 'main', 'origin/main');
+  commitDeArchivos(d, 'de-main', 3);
+  sh(d, 'push', '-q', 'origin', 'main');
+  sh(d, 'checkout', '-q', 'dev');
+  sh(d, 'merge', '-q', '--no-edit', 'origin/main');
+  carril(h, { maxFiles: 8 });
+  assert.ok(cuenta(h, { repos: [d] }).archivos.length > 0, 'suma lo ya integrado: es el costo escrito');
+  sh(d, 'push', '-q', 'origin', 'dev');
+  assert.strictEqual(cuenta(h, { repos: [d] }).archivos.length, 0, 'empujado, no queda nada propio');
+});
+
+// 🔴 Falla con: lo igual a la otra rama de integración descontado: revertir o mudar en masa no sumaría.
+test('Cuenta_RevertYMudanzaConDosRamas_Suman @story-8.181 @ac-10', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  sh(d, 'checkout', '-q', '-b', 'dev', 'origin/main');
+  sh(d, 'push', '-q', 'origin', 'dev');
+  for (let i = 0; i < 9; i++) escribir(d, `src/m${i}.js`, `// contenido propio del archivo ${i}, largo para reconocerlo al moverlo\n`);
+  sh(d, 'add', '-A');
+  sh(d, 'commit', '-q', '-m', 'sólo en dev');
+  sh(d, 'push', '-q', 'origin', 'dev');
+  carril(h, { maxFiles: 8 });
+  sh(d, 'checkout', '-q', '-b', 'revierte');
+  sh(d, 'revert', '--no-edit', 'HEAD');
+  assert.strictEqual(cuenta(h, { repos: [d] }).archivos.length, 9, 'el revert');
+  sh(d, 'checkout', '-q', '-b', 'muda', 'origin/dev');
+  fs.mkdirSync(path.join(d, 'tests'));
+  for (let i = 0; i < 9; i++) sh(d, 'mv', `src/m${i}.js`, `tests/m${i}.js`);
+  sh(d, 'commit', '-q', '-m', 'muda');
+  assert.strictEqual(cuenta(h, { repos: [d] }).archivos.length, 9, 'la mudanza');
+});
+
+// 🔴 Falla con: contar lo sin seguir sólo con commit y push: un `--continue` no se lee, y dos empujes no suben nada nuevo.
+test('SaveBrake_OtroPasoAntesDeEmpujar_CuentaLoSinSeguir @story-8.181 @ac-11', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  for (let i = 0; i < 9; i++) escribir(d, `src/nuevo${i}.js`, 'x\n');
+  carril(h, { maxFiles: 8 });
+  const texto = (command) => (brake().decidir({ command, cwd: d, sid: SID, home: h }) || {}).texto || '';
+  assert.match(texto('git add -A && git merge --continue && git push'), elTope);
+  for (const command of ['git push -u origin x && gh pr create --fill', `cd ${d} && git push origin x`]) assert.doesNotMatch(texto(command), elTope, command);
+});
+
+// 🔴 Falla con: una variable sin expandir, que mete al carril la rama entera del repo donde corrió el comando.
+test('SaveBrake_VariableSinExpandir_NoTraeSuRepo_LaCarpetaBorradaSi @story-8.181 @ac-10', (t) => {
+  const d = repoConOrigin(t);
+  const otro = repoConOrigin(t, 'otro');
+  const h = home(t);
+  commitDeArchivos(otro, 'ajeno', 12);
+  commitDeArchivos(d, 'a', 1);
+  carril(h, { maxFiles: 8, files: [path.join(d, 'src', 'a0.js'), path.join(otro, '$L', 'p.js')] });
+  assert.ok(!(guardar(d, h) || {}).texto);
+  // una carpeta que se borró sigue diciendo de qué repo es: su guardado se mide
+  carril(h, { maxFiles: 8, files: [path.join(d, 'src', 'a0.js'), path.join(otro, 'borrada', 'g.js')] });
+  assert.match((guardar(otro, h) || {}).texto || '', elTope);
+});
+
+// 🔴 Falla con: una ruta anotada adentro de `.git`, leída como git que no contesta: frena todo guardado del carril.
+test('SaveBrake_RutaAdentroDeGit_NoEsNoPudoMedir @story-8.181 @ac-13', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  carril(h, { maxFiles: 8, rutas: [path.join(d, '.git', 'info', 'exclude')] });
+  const r = guardar(d, h);
+  assert.ok(!(r && r.texto), JSON.stringify(r));
+});
+
+// 🔴 Falla con: la misma ruta con otra grafía, sumada dos veces en un disco que no distingue mayúsculas.
+test('Cuenta_NombreConOtraGrafia_SumaUno @story-8.181 @ac-10', { skip: process.platform === 'linux' && 'en Linux son dos archivos' }, (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  escribir(d, 'src/File0.js', 'x\n');
+  sh(d, 'add', '-A');
+  sh(d, 'commit', '-q', '-m', 'uno');
+  carril(h, { maxFiles: 8, files: [path.join(d, 'src', 'file0.js')] });
+  assert.strictEqual(cuenta(h, { repos: [d] }).archivos.length, 1);
+});
+
+// 🔴 Falla con: la lista entera en cada intento: en una rama grande desplaza del registro la firma, y el carril deja de frenar.
+test('SaveBrake_RamaGrande_NoLlenaElRegistro @story-8.181 @ac-11', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  commitDeArchivos(d, 'a', 60);
+  carril(h, { maxFiles: 8 });
+  const r = guardar(d, h);
+  assert.match(r.texto, /y 10 más/);
+  assert.strictEqual((r.texto.match(/src\/a\d+\.js/g) || []).length, 50);
+  const renglon = fs.readFileSync(path.join(estado(h), 'gates.log'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).find((e) => e.archivos);
+  assert.strictEqual(renglon.archivos.length, 50);
 });
 
 // 🔴 Falla con: lo igual a MERGE_HEAD descontado de cualquier rama: armar el trabajo aparte lo saca de la cuenta.

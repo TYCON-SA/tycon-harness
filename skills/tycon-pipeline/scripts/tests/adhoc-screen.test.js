@@ -169,10 +169,38 @@ test('AdhocScreen_DobleDePrueba_NoEsPantalla @story-8.181 @ac-17', (t) => {
   const { r, h, m } = completo(t);
   const [uno] = textosDe(m);
   escribir(r, 'src/Combo.tsx', conLosTextosDe(m, [uno]));
-  for (const rel of ['src/__mocks__/Combo.tsx', 'src/comun/tests/Combo.tsx', 'src/e2e/Combo.tsx', 'src/Combo.cy.tsx', 'cypress/Combo.tsx', 'playwright/Combo.tsx']) escribir(r, rel, `<p>${uno}</p>\n`);
+  for (const rel of ['src/__mocks__/Combo.tsx', 'src/comun/tests/Combo.tsx', 'src/e2e/Combo.tsx', 'src/Combo.cy.tsx', 'cypress/Combo.tsx', 'playwright/Combo.tsx', 'spec/Combo.tsx', 'src/Combo.stories.tsx', 'src/__fixtures__/Combo.tsx']) escribir(r, rel, `<p>${uno}</p>\n`);
   git(r, 'add', '-A');
   const v = delCarril(h);
   assert.ok(v.faltan.some((f) => f.includes(`«${uno}»`)), JSON.stringify(v));
+});
+
+// 🔴 Falla con: la pantalla movida a una carpeta de pruebas, que deja de pedir maqueta y captura; borrarla sí las pide.
+test('AdhocScreen_PantallaMovidaAPruebas_SigueSiendoPantalla @story-8.181 @ac-21', (t) => {
+  const r = repo(t);
+  const h = home(t);
+  escribir(r, 'src/app/a/page.tsx', '<p>una pantalla con bastante contenido para reconocerla al moverla de lugar</p>\n');
+  git(r, 'add', '-A');
+  git(r, 'commit', '-qm', 'pantalla');
+  fs.mkdirSync(path.join(r, 'tests'));
+  git(r, 'mv', 'src/app/a/page.tsx', 'tests/page.tsx');
+  carril(h);
+  const v = revisar(leerCarril(h), [r]);
+  assert.ok(v.pantallas.some((p) => p.endsWith('src/app/a/page.tsx')), JSON.stringify(v));
+  // también a una carpeta que suma al tope y no es pantalla
+  git(r, 'mv', 'tests/page.tsx', 'src/app/a/page.tsx');
+  fs.mkdirSync(path.join(r, 'cypress'));
+  git(r, 'mv', 'src/app/a/page.tsx', 'cypress/page.tsx');
+  const w = revisar(leerCarril(h), [r]);
+  assert.ok(w.pantallas.some((p) => p.endsWith('src/app/a/page.tsx')), JSON.stringify(w));
+});
+
+// 🔴 Falla con: una carpeta `fixtures` a cualquier profundidad como prueba: la ruta `/fixtures` de una app es una pantalla.
+test('AdhocScreen_RutaFixtures_SigueSiendoPantalla @story-8.181 @ac-17', (t) => {
+  const r = repo(t);
+  const h = home(t);
+  carril(h, { files: [escribir(r, 'src/app/fixtures/page.tsx')] });
+  assert.ok(decidir(h, r).texto);
 });
 
 // 🔴 Falla con: una ruta de `git ls-files` que no está en el disco, contada como pantalla ilegible en lugar de nombrar el texto.
