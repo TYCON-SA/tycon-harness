@@ -510,8 +510,17 @@ function plant(parent,x,y,z,s=1,pot="#c4643c"){const gp=new THREE.Group();gp.pos
 plant(shelf,.45,2.98,0,.7);plant(shelf,-.5,2.18,.05,.5,"#d9c3a0");
 for(let i=0;i<14;i++)add(new THREE.SphereGeometry(.08,8,6),M(i%2?"#2f8f4e":"#3fae5e"),2.15+srnd()*.2,3.0-i*.12,.32+srnd()*.1);
 const lamp=new THREE.Group();lamp.position.set(3.05,0,.65);scene.add(lamp);add(new THREE.CylinderGeometry(.22,.26,.06,20),M("#3a2a20",{m:.4,r:.4}),0,.03,0,lamp);add(new THREE.CylinderGeometry(.025,.025,1.9,10),M("#3a2a20",{m:.5,r:.4}),0,.98,0,lamp);
-add(new THREE.CylinderGeometry(.22,.38,.42,24,1,true),new THREE.MeshStandardMaterial({color:"#ffd9a0",emissive:"#ffb25a",emissiveIntensity:.75,side:THREE.DoubleSide}),0,2.02,0,lamp,false);
+const lampShade=add(new THREE.CylinderGeometry(.22,.38,.42,24,1,true),new THREE.MeshStandardMaterial({color:"#ffd9a0",emissive:"#ffb25a",emissiveIntensity:.75,side:THREE.DoubleSide}),0,2.02,0,lamp,false);
 const lampLight=new THREE.PointLight("#ffb367",11,7,1.5);lampLight.position.set(3.05,1.9,.75);scene.add(lampLight);
+// la lámpara se prende y se apaga con un click, y cada navegador recuerda cómo la dejó
+const lampHit=add(new THREE.CylinderGeometry(.42,.42,2.4,12),new THREE.MeshBasicMaterial({visible:false}),0,1.2,0,lamp,false);
+const LAMPARA_KEY="office.lampara";
+function lamparaGuardada(){try{return localStorage.getItem(LAMPARA_KEY)!=="apagada"}catch(e){return true}}
+function guardarLampara(v){try{localStorage.setItem(LAMPARA_KEY,v?"prendida":"apagada")}catch(e){/* sin dónde guardarla, vale hasta recargar */}}
+let lamparaPrendida=true;
+function prenderLampara(v){lamparaPrendida=v;lampShade.material.emissiveIntensity=v?.75:0;lampLight.intensity=v?11:0}
+function tocarLampara(){prenderLampara(!lamparaPrendida);guardarLampara(lamparaPrendida)}
+prenderLampara(lamparaGuardada());
 const pnl=new THREE.Group();pnl.position.set(8.0,2.45,.06);scene.add(pnl);add(RB(2.95,2.5,.1,.06),M("#0f121c"),0,0,0,pnl);const pnlFace=add(new THREE.PlaneGeometry(2.82,2.35),new THREE.MeshBasicMaterial({map:texPanel,toneMapped:false}),0,0,.06,pnl,false);
 // racks: titilan más rápido cuantas más sesiones están trabajando
 const leds=[];function rack(x,z){const g=new THREE.Group();g.position.set(x,0,z);scene.add(g);add(RB(.75,2.05,.7,.04),M("#22252f",{r:.45,m:.3}),0,1.025,0,g);
@@ -665,14 +674,14 @@ function volar(){const W=stage.clientWidth,H=stage.clientHeight,now=performance.
     a3.project(cam);v.e.style.left=(a3.x+1)/2*W+"px";v.e.style.top=(1-a3.y)/2*H+"px"}}
 const ray=new THREE.Raycaster(),ptr=new THREE.Vector2();let down=null;
 renderer.domElement.addEventListener("pointerdown",e=>down=[e.clientX,e.clientY]);
-function apuntado(e){const r=renderer.domElement.getBoundingClientRect();ptr.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);ray.setFromCamera(ptr,cam);return ray.intersectObjects([pnlFace,...(sitio()?[signFace]:[]),...desks.map(d=>d.hit)])[0]}
+function apuntado(e){const r=renderer.domElement.getBoundingClientRect();ptr.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);ray.setFromCamera(ptr,cam);return ray.intersectObjects([pnlFace,lampHit,...(sitio()?[signFace]:[]),...desks.map(d=>d.hit)])[0]}
 // el cartel abre el sitio de la organización, sólo si el perfil trae su dirección
 const sitio=()=>T.site();
 renderer.domElement.addEventListener("pointermove",e=>{if(e.buttons)return;const h=sitio()&&apuntado(e);renderer.domElement.style.cursor=h&&h.object===signFace?"pointer":""});
 renderer.domElement.addEventListener("pointerup",e=>{if(!down||Math.hypot(e.clientX-down[0],e.clientY-down[1])>5)return;const h=apuntado(e);
   // en una pantalla táctil, con las etiquetas ocultas, tocar a alguien muestra la suya; el detalle se abre al tocar la etiqueta
-  if(stage.classList.contains("solo-mouse")&&e.pointerType==="touch"&&!(h&&(h.object===pnlFace||h.object===signFace))){verEtiqueta((h&&desks.find(x=>x.hit===h.object))||null);return}
-  if(!h)return;if(h.object===pnlFace){abrirTablero();return}if(h.object===signFace){const s=sitio();if(s)window.open(s,"_blank","noopener");return}const d=desks.find(x=>x.hit===h.object);if(d)abrir(d.agent.nombre)});
+  if(stage.classList.contains("solo-mouse")&&e.pointerType==="touch"&&!(h&&(h.object===pnlFace||h.object===signFace||h.object===lampHit))){verEtiqueta((h&&desks.find(x=>x.hit===h.object))||null);return}
+  if(!h)return;if(h.object===lampHit){tocarLampara();return}if(h.object===pnlFace){abrirTablero();return}if(h.object===signFace){const s=sitio();if(s)window.open(s,"_blank","noopener");return}const d=desks.find(x=>x.hit===h.object);if(d)abrir(d.agent.nombre)});
 let mueve=null;renderer.domElement.addEventListener("pointermove",e=>{if(mueve)return;mueve=requestAnimationFrame(()=>{mueve=null;const h=apuntado(e);renderer.domElement.style.cursor=h?"pointer":"grab";if(e.pointerType!=="touch"&&stage.classList.contains("solo-mouse"))verEtiqueta((h&&desks.find(x=>x.hit===h.object))||null)})});
 // con las etiquetas ocultas se ve sólo la de quien tiene el mouse encima, o la que tocó el dedo
 let deskVisto=null;

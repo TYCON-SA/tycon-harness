@@ -3050,7 +3050,7 @@ test('T284 Labels_Switch: siempre por defecto, y la elección se recuerda; si no
   assert.doesNotThrow(() => broken.guardarEtiquetas('mouse'));
   assert.match(html, /\.stage\.solo-mouse \.tag\{opacity:0;pointer-events:none\}/, 'ocultas, pero el teclado llega');
   assert.match(html, /\.stage\.solo-mouse \.tag\.ver,\.stage\.solo-mouse \.tag\.sel,\.stage\.solo-mouse \.tag:focus-visible\{opacity:1/);
-  assert.match(html, /e\.pointerType==="touch"&&!\(h&&\(h\.object===pnlFace\|\|h\.object===signFace\)\)\)\{verEtiqueta/, 'al tocar, muestra la etiqueta y no abre el detalle');
+  assert.match(html, /e\.pointerType==="touch"&&!\(h&&\(h\.object===pnlFace\|\|h\.object===signFace\|\|h\.object===lampHit\)\)\)\{verEtiqueta/, 'al tocar, muestra la etiqueta y no abre el detalle');
   assert.doesNotMatch(html, /solo-mouse[^}]*\.sobre/, 'el avioncito no se oculta');
 });
 
@@ -3179,6 +3179,39 @@ test('T293 Late_AlwaysAgainstThePromise: otra hora, anotada o de su paso, no pon
   assert.ok(!/tarde/.test(JSON.stringify(byName(data, 'Fila').fin)), 'ni en la tarjeta');
   assert.strictEqual(row('Dormida').promise, undefined, 'una ejecución dormida tampoco');
   assert.ok(!/tarde/.test(JSON.stringify(byName(data, 'Dormida').fin)), 'ni en la tarjeta');
+});
+
+test('T295 Lamp_TogglesAndRemembers: un click la prende y la apaga con su luz, se recuerda por navegador y no le avisa a nadie', () => {
+  const html = fs.readFileSync(path.join(path.dirname(OFFICE), 'office', 'page.html'), 'utf8');
+  const from = html.indexOf('const LAMPARA_KEY=');
+  const block = html.slice(from, html.indexOf('prenderLampara(lamparaGuardada());', from));
+  const load = (localStorage) => {
+    const lampShade = { material: { emissiveIntensity: 9 } };
+    const lampLight = { intensity: 9 };
+    // eslint-disable-next-line no-new-func
+    const api = new Function('localStorage', 'lampShade', 'lampLight', `${block};return{lamparaGuardada,prenderLampara,tocarLampara}`)(localStorage, lampShade, lampLight);
+    api.prenderLampara(api.lamparaGuardada());
+    return { ...api, lampShade, lampLight };
+  };
+  const store = new Map();
+  const memory = { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, v) };
+  const lit = (l) => [l.lampShade.material.emissiveIntensity, l.lampLight.intensity];
+  const first = load(memory);
+  assert.deepStrictEqual(lit(first), [0.75, 11], 'de entrada, prendida');
+  first.tocarLampara();
+  assert.deepStrictEqual(lit(first), [0, 0], 'apagada, sin su luz');
+  assert.deepStrictEqual(lit(load(memory)), [0, 0], 'el navegador la recuerda apagada');
+  first.tocarLampara();
+  assert.deepStrictEqual(lit(first), [0.75, 11]);
+  assert.deepStrictEqual(lit(load(memory)), [0.75, 11]);
+  const blocked = { getItem() { throw new Error('sin permiso'); }, setItem() { throw new Error('sin permiso'); } };
+  const noStore = load(blocked);
+  assert.deepStrictEqual(lit(noStore), [0.75, 11], 'sin dónde guardar, prendida');
+  noStore.tocarLampara();
+  assert.deepStrictEqual(lit(noStore), [0, 0], 'y el click anda igual');
+  assert.match(html, /intersectObjects\(\[pnlFace,lampHit,/, 'se puede apuntar, y el cursor cambia con lo apuntado');
+  assert.match(html, /if\(h\.object===lampHit\)\{tocarLampara\(\);return\}/, 'el click llega');
+  assert.ok(!/fetch|sendBeacon|XMLHttpRequest/.test(block), 'no le avisa a nadie: las sesiones no se enteran');
 });
 
 test('T288 Conversation_ButtonAtTheBottom: el botón va abajo de cada tarjeta, alineado entre las de la misma fila', () => {
