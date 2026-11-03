@@ -315,6 +315,26 @@ The quick fix (a code change with no story) is the `adhoc-lane` signature: the t
   it is the team profile and the designation the owner confirmed. With no designated session on the target machine, the
   quick fix is approved in the target tab's window.
 
+**Going past the limit does not go through you.** Asking for more than 8 files is the `adhoc-lane:sobre-cupo` signature,
+and the developer chooses it: with a click in the question box of the tab doing the work, or in their terminal. A click in
+your tab does not count, nor a forwarded «aprobado», nor the delegation; so a background session nobody is watching can only
+do it through the terminal. Only the implementation files the fix changed count: what came in from `main`, tests, guides
+and probes do not add up. Past the quota, the fix stops on edit and does not save, and the message recommends a story. Limit:
+it measures the branch being worked on and what is already on disk. Work built on another branch and pushed by its name, or
+created in the same command that pushes, does not add up. That does not let it into `main`, because the pull request still has
+its check and its review: it skips the notice, and it takes doing it on purpose. Conversely, on `dev` with `main` brought in and
+not pushed, what is already integrated counts too: push it, or choose with the click. A push with something else in the command
+(`| cat`, `&& echo`), or written with an alias or a variable in front, also counts what git does not track, even from another session: repeat the push alone. A real route
+named `tests`, `e2e`, `cypress` or `playwright` counts as a test, and asks for no mockup. With a fix that has nothing noted yet, a
+save in another folder is charged the limit of the session's branch: if it really is not part of that fix, choose with the click.
+And in a repo with no commits, a file with `git add -N` that goes up with `git commit -a` does not get the high-risk mark.
+
+**With the mockup and the screenshot, what was built is compared with the mockup.** It compares texts, not the drawing: if a
+text of the mockup is not in the fix's screens or in the other screens of its repos, it does not save. A text that already
+exists in another screen passes, even if the fix did not build it. A difference is declared in `<mockup>-diferencias.md`,
+with `- «<text>» — differs: <why>`, or `mockup-compare: no — <reason>` if it cannot be compared. The agent declares it,
+with no signature: it stays visible in the save question and in `gates.log`.
+
 **If the fix touches a screen, it does not save without three things.** What a screen is comes from the pipeline's own
 criterion (`lib/ui-signal.js`, with the organization's `screen_test` rule), file by file. A test does not count.
 

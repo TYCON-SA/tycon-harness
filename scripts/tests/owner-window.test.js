@@ -17,7 +17,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
-const { spawnSync } = require('child_process');
+const { spawnSync, execFileSync } = require('child_process');
 
 const ow = require('../lib/owner-window.js');
 
@@ -1639,7 +1639,7 @@ test('Freno_PestanaSinPermisos_RutinaHechaYAvisada', (t) => {
   const adhoc = path.join(casa, '.claude', '.tycon-pipeline', 'adhoc');
   fs.mkdirSync(adhoc, { recursive: true });
   fs.writeFileSync(path.join(adhoc, 'ses-a.json'), JSON.stringify({ reason: 'arreglo del sp', maxFiles: 3, files: [] }));
-  const sube = pedir(casa, `node ${MARKER} adhoc set '{"reason":"arreglo del sp","maxFiles":9}' --for-session ses-a`, { evento: { ...DE_LA_COORD, permission_mode: 'bypassPermissions' } });
+  const sube = pedir(casa, `node ${MARKER} adhoc set '{"reason":"arreglo del sp","maxFiles":7}' --for-session ses-a`, { evento: { ...DE_LA_COORD, permission_mode: 'bypassPermissions' } });
   assert.strictEqual(sube.decision, 'deny', sube.texto);
   assert.match(sube.texto, /subir el tope/);
   const igual = pedir(casa, `node ${MARKER} adhoc set '{"reason":"arreglo del sp","maxFiles":3}' --for-session ses-a`, { evento: { ...DE_LA_COORD, permission_mode: 'bypassPermissions' } });
@@ -1704,9 +1704,9 @@ test('8.141 T8 OwnerWindow_AdhocSet_PideLaVentana', (t) => {
   assert.strictEqual(c.decision, 'deny');
   assert.match(c.texto, /en tu terminal: marker\.js adhoc set --reason "<motivo>" \[--max-files N\] --terminal --for-session <id>/);
   assert.strictEqual(registros(codex).length, 0);
-  // el subcomando en una variable cuenta como el arreglo rápido, y la forma lo niega
+  // el subcomando en una variable cuenta como el arreglo que pasa el tope, y la forma lo niega
   const opaca = pedir(casaNueva(t), `S=set; node ${MARKER} adhoc "$S" '{"reason":"arreglo del sp"}'`);
-  assert.deepStrictEqual(opaca.firmas, ['adhoc-lane']);
+  assert.deepStrictEqual(opaca.firmas, ['adhoc-lane:sobre-cupo']);
   assert.strictEqual(opaca.decision, 'deny');
   // con el «Sí», el guion firma; sin pedido de la ventana, no
   const v = ow.exigir({ firma: 'adhoc-lane', argv: [MARKER, 'adhoc', 'set', '{"reason":"arreglo del sp","maxFiles":3}'], pid: 301, arbol: arbolDelGuion(casa, ADHOC), casa, ahora: AHORA + 60000, propia: 'ses-a' });
@@ -1729,7 +1729,9 @@ test('OwnerWindow_AdhocSet_ChequeoPrevio_MotivoLargoYTopeMenorQueLoTocado', (t) 
   assert.match(motivoLargo.niega, /hasta 200 caracteres/);
   const adhoc = path.join(casa, '.claude', '.tycon-pipeline', 'adhoc');
   fs.mkdirSync(adhoc, { recursive: true });
-  fs.writeFileSync(path.join(adhoc, 'ses-a.json'), JSON.stringify({ reason: 'arreglo del sp', maxFiles: 8, files: ['/r/a.js', '/r/b.js', '/r/c.js', '/r/d.js', '/r/e.js', '/r/f.js'] }));
+  execFileSync('git', ['init', '-q', casa]);
+  const tocados = ['a', 'b', 'c', 'd', 'e', 'f'].map((n) => { const f = path.join(casa, 'src', `${n}.js`); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, 'x\n'); return f; });
+  fs.writeFileSync(path.join(adhoc, 'ses-a.json'), JSON.stringify({ reason: 'arreglo del sp', maxFiles: 8, files: tocados }));
   const menor = ow.comprobarConElGuion({ firma: 'adhoc-lane', palabras: [MARKER, 'adhoc', 'set', JSON.stringify({ reason: 'arreglo del sp', maxFiles: 5 })], cwd: casa, sesion: 'ses-a', casa });
   assert.ok(menor && menor.niega, JSON.stringify(menor));
   assert.match(menor.niega, /ya tocó 6 archivos/);
@@ -2254,7 +2256,7 @@ test('Precheck_AprobarElPlan_FueraDeOrdenNiegaYEnOrdenNoEscribe', (t) => {
 // Las otras firmas de guion con requisitos propios pasan por el mismo chequeo. Quedan sin chequeo el carril, que no
 // tiene requisitos antes de la firma, y las cuatro firmas sobre un archivo.
 const CON_REQUISITOS = ['plan-approval', 'extra-round', 'save', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver',
-  'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran', 'adhoc-lane'];
+  'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran', 'adhoc-lane', 'adhoc-lane:sobre-cupo'];
 
 // 🔴 Falla con: una firma de guion con requisitos que abre la ventana sin preguntarle antes al guion.
 test('Precheck_LasFirmasConRequisitos_NoAbrenLaVentanaSiElGuionSeNiega', (t) => {
@@ -2283,8 +2285,8 @@ test('Precheck_LasFirmasConRequisitos_NoAbrenLaVentanaSiElGuionSeNiega', (t) => 
     comprobar: (o) => { visto = o; return { niega: 'falta un requisito' }; } });
   assert.strictEqual(r.decision, 'deny', r.texto);
   vistas.add(visto.firma);
-  // el ok de guardar tiene sus pruebas arriba
-  assert.deepStrictEqual(CON_REQUISITOS.filter((f) => !vistas.has(f)), ['save'], 'cada firma con su comando');
+  // el ok de guardar tiene sus pruebas arriba; pasar el tope, la suya: su chequeo corre después del click
+  assert.deepStrictEqual(CON_REQUISITOS.filter((f) => !vistas.has(f)), ['save', 'adhoc-lane:sobre-cupo'], 'cada firma con su comando');
 });
 
 /** Una foto de lo que hay en las carpetas: cada archivo con su contenido. */
@@ -2456,7 +2458,7 @@ test('Aprobacion_ConfirmarLaCoordinadora_ConUnClickEnSuPestana', (t) => {
 
 // Una firma delegada corre sin negar, y el cuadro sólo lo da el freno al negar: pedir más que el cupo y recortarlo callado
 // dejaba a la coordinadora sin cuadro que mostrar, y a la persona con un arreglo que no pidió.
-const ADHOC_GRANDE = `node ${MARKER} adhoc set '{"reason":"arreglo del sp","maxFiles":20}' --for-session ses-a`;
+const ADHOC_GRANDE = `node ${MARKER} adhoc set '{"reason":"arreglo del sp","maxFiles":7}' --for-session ses-a`;
 const pedirConDelegacion = (casa, cmd, o = {}) => pedirSinVentana(casa, cmd, { ...o, coordinadora: 'ses-coord', delegacion: () => ({ ok: true, maquina: 'm' }) });
 
 test('Adhoc_PideMasQueElCupoDelegado_NoDelega_DaElCuadro', (t) => {
@@ -2483,11 +2485,165 @@ test('Adhoc_ClickConElCuadroDelFreno_DejaElCupoPedido', (t) => {
 
 test('Adhoc_PestanaSinPermisos_PideMasQueElCupo_NoSeHaceAvisado', (t) => {
   const casa = casaNueva(t);
-  const r = pedirSinVentana(casa, `node ${MARKER} adhoc set '{"reason":"arreglo del sp","maxFiles":20}'`, { evento: { session_id: 'ses-a' } });
+  const r = pedirSinVentana(casa, `node ${MARKER} adhoc set '{"reason":"arreglo del sp","maxFiles":7}'`, { evento: { session_id: 'ses-a' } });
   assert.strictEqual(r.decision, 'deny', r.texto);
   assert.match(r.texto, /supera los 5 archivos/);
   const chico = pedirSinVentana(casaNueva(t), `node ${MARKER} adhoc set '{"reason":"arreglo del sp","maxFiles":5}'`, { evento: { session_id: 'ses-a' } });
   assert.deepStrictEqual([chico.decision, chico.via], ['allow', 'avisado'], chico.texto);
+});
+
+// --- pasar el tope del camino corto: lo elige la persona, con su click, en la pestaña que trabaja ---------------------
+const SOBRE_CUPO = 'adhoc-lane:sobre-cupo';
+const pedidoDe = (cupo, resto = '') => `node ${MARKER} adhoc set '{"reason":"arreglo del sp","maxFiles":${cupo}}'${resto}`;
+const DE_LA_PROPIA = { session_id: 'ses-a' };
+
+test('T1 AdhocSet_MasDeOcho_PideLaFirmaDeSobreCupo @story-8.181 @ac-1', (t) => {
+  assert.deepStrictEqual(ow.firmasDelComando(pedidoDe(9)), [SOBRE_CUPO]);
+  assert.deepStrictEqual(pedir(casaNueva(t), pedidoDe(9)).firmas, [SOBRE_CUPO]);
+});
+
+test('T2 AdhocSet_OchoJustos_SiguePidiendoLaFirmaComun @story-8.181 @ac-1', () => {
+  assert.deepStrictEqual(ow.firmasDelComando(pedidoDe(8)), ['adhoc-lane']);
+  assert.deepStrictEqual(ow.firmasDelComando(`node ${MARKER} adhoc set --reason "arreglo del sp" --max-files 8 --terminal`), ['adhoc-lane']);
+});
+
+test('T3 AdhocSet_SinCupoNiTecho_FirmaComunY51SeNiega @story-8.181 @ac-1', (t) => {
+  assert.deepStrictEqual(ow.firmasDelComando(`node ${MARKER} adhoc set '{"reason":"arreglo del sp"}'`), ['adhoc-lane']);
+  assert.deepStrictEqual(ow.firmasDelComando(`node ${MARKER} adhoc set --reason "arreglo del sp" --terminal`), ['adhoc-lane']);
+  assert.deepStrictEqual(ow.firmasDelComando(pedidoDe(50)), [SOBRE_CUPO]);
+  const casa = casaNueva(t);
+  const r = require('child_process').spawnSync(process.execPath, [MARKER, 'adhoc', 'set', '{"reason":"arreglo del sp","maxFiles":51}'],
+    { encoding: 'utf8', env: { ...process.env, HOME: casa, USERPROFILE: casa, CLAUDE_CODE_SESSION_ID: 'ses-a' } });
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.match(r.stderr, /de 1 a 50/);
+});
+
+test('T4 AdhocSet_AgrandarPasandoDeOcho_PideLaFirmaDeSobreCupo @story-8.181 @ac-1', (t) => {
+  const casa = casaNueva(t);
+  const adhoc = path.join(casa, '.claude', '.tycon-pipeline', 'adhoc');
+  fs.mkdirSync(adhoc, { recursive: true });
+  fs.writeFileSync(path.join(adhoc, 'ses-a.json'), JSON.stringify({ reason: 'arreglo del sp', maxFiles: 8, files: [] }));
+  const r = pedir(casa, pedidoDe(9));
+  assert.strictEqual(r.decision, 'deny', r.texto);
+  assert.deepStrictEqual(r.firmas, [SOBRE_CUPO]);
+});
+
+test('T5 OwnerWindow_CupoQueNoSePuedeLeer_CuentaComoSobreCupo @story-8.181 @ac-2', (t) => {
+  for (const cmd of [`node ${MARKER} adhoc set "$PEDIDO"`, `node ${MARKER} adhoc "$QUE"`, `node ${MARKER} adhoc set '{"reason":"roto"'`, `node ${MARKER} adhoc set`,
+    `node ${MARKER} adhoc set --reason "arreglo del sp" --max-files "$N" --terminal`, `node ${MARKER} adhoc set --reason "arreglo del sp" --max-files=9 --terminal`,
+    `node ${MARKER} adhoc set '{"reason":"arreglo del sp","maxFiles":"nueve"}'`]) {
+    assert.deepStrictEqual(ow.firmasDelComando(cmd), [SOBRE_CUPO], cmd);
+    assert.deepStrictEqual(pedir(casaNueva(t), cmd).firmas, [SOBRE_CUPO], cmd);
+  }
+  // un `$` dentro del motivo, entre comillas simples, no es una variable: el freno y el guion ven la misma firma
+  const conPesos = `node ${MARKER} adhoc set '{"reason":"el total en $ sale mal","maxFiles":3}'`;
+  assert.deepStrictEqual(ow.firmasDelComando(conPesos), ['adhoc-lane']);
+  assert.strictEqual(ow.canonicaDe(conPesos).id, 'adhoc-lane');
+});
+
+test('T6 AdhocSet_SobreCupo_NoSaleConDelegacion @story-8.181 @ac-3', (t) => {
+  const delegacion = () => ({ ok: true, maquina: 'm' });
+  // aunque el perfil la nombre: no se delega
+  const casa = casaNueva(t);
+  const r = pedir(casa, pedidoDe(9), { delegacion });
+  assert.strictEqual(r.decision, 'deny', r.texto);
+  assert.ok(r.cuadro && r.cuadro.soloClick, 'trae el cuadro para la persona');
+  assert.strictEqual(registros(casa).length, 0);
+  // y la coordinadora no lo pide por otra pestaña
+  const ajena = pedirConDelegacion(casaNueva(t), pedidoDe(9, ' --for-session ses-a'));
+  assert.strictEqual(ajena.decision, 'deny', ajena.texto);
+  assert.match(ajena.texto, /no se corre desde la pestaña de otra sesión/);
+});
+
+// 🔴 Falla con: la negativa desde otra pestaña sólo en el freno: el guion correría si el freno no lo mira.
+test('AdhocSet_SobreCupo_ParaOtraSesion_ElGuionTambienLoNiega @story-8.181 @ac-3', () => {
+  const r = ow.exigir({ firma: SOBRE_CUPO, argv: [MARKER, 'adhoc', 'set', '{"reason":"arreglo del sp","maxFiles":9}', '--for-session', 'ses-b'], propia: 'ses-a' });
+  assert.strictEqual(r.codigo, 1, JSON.stringify(r));
+  assert.match(r.motivo, /se corre desde la sesión destino/);
+});
+
+// 🔴 Falla con: la lista cruda, con pruebas y sondas, que niega un cupo que alcanza y empuja a la firma de sobre cupo.
+test('AdhocSet_ChequeoPrevio_PruebasYSondasNoCuentanContraElCupo @story-8.181 @ac-10', (t) => {
+  const casa = casaNueva(t);
+  execFileSync('git', ['init', '-q', casa]);
+  const real = path.join(casa, 'src', 'a.js');
+  fs.mkdirSync(path.dirname(real), { recursive: true });
+  fs.writeFileSync(real, 'x\n');
+  const adhoc = path.join(casa, '.claude', '.tycon-pipeline', 'adhoc');
+  fs.mkdirSync(adhoc, { recursive: true });
+  const crudos = [real, ...Array.from({ length: 9 }, (_, i) => path.join(casa, 'src', `a${i}.test.js`)), '/tmp/sonda.js', '$L/p.js'];
+  for (const f of crudos.slice(1, 10)) fs.writeFileSync(f, 'x\n');
+  fs.writeFileSync(path.join(adhoc, 'ses-a.json'), JSON.stringify({ reason: 'arreglo del sp', maxFiles: 8, files: crudos }));
+  const pedido = (cupo) => ow.comprobarConElGuion({ firma: 'adhoc-lane', palabras: [MARKER, 'adhoc', 'set', JSON.stringify({ reason: 'arreglo del sp', maxFiles: cupo })], cwd: casa, sesion: 'ses-a', casa });
+  assert.deepStrictEqual(pedido(8), { ok: true });
+  assert.deepStrictEqual(pedido(1), { ok: true }, 'un archivo de verdad entra en un cupo de 1');
+});
+
+test('T7 AdhocSet_SobreCupo_NoSaleConHechoYAvisado @story-8.181 @ac-3', (t) => {
+  const casa = casaNueva(t);
+  const r = pedirSinVentana(casa, pedidoDe(9), { evento: DE_LA_PROPIA });
+  assert.strictEqual(r.decision, 'deny', r.texto);
+  assert.ok(r.cuadro && r.texto.includes(r.cuadro.pregunta), 'trae el cuadro entero');
+  assert.doesNotMatch(r.texto, /«aprobado»/, 'no ofrece el mensaje escrito');
+  assert.doesNotMatch(r.texto, /coordinadora/, 'no ofrece la coordinadora');
+  assert.match(r.texto, /--terminal/, 'ofrece la terminal');
+  assert.strictEqual(registros(casa).length, 0);
+});
+
+test('T8 AdhocSet_SobreCupo_AprobadoEscrito_NoVale @story-8.181 @ac-4', (t) => {
+  const casa = casaNueva(t);
+  anotarAprobacion(casa, 'ses-a');
+  const r = pedirSinVentana(casa, pedidoDe(9), { evento: DE_LA_PROPIA });
+  assert.strictEqual(r.decision, 'deny', r.texto);
+  assert.strictEqual(oaReal.leerSesion(casa, 'ses-a').filter((a) => !oaReal.usada || !oaReal.usada(casa, a.id)).length, 1, 'el mensaje no se gastó');
+});
+
+test('T9 AdhocSet_SobreCupo_ClickEnLaCoordinadora_NoVale @story-8.181 @ac-4', (t) => {
+  const casa = casaNueva(t);
+  anotarAprobacion(casa, 'ses-coord', { tipo: 'click', tool_use_id: 'toolu_1' });
+  const r = pedirSinVentana(casa, pedidoDe(9), { evento: DE_LA_PROPIA, coordinadora: 'ses-coord' });
+  assert.strictEqual(r.decision, 'deny', r.texto);
+  // el click en la pestaña que trabaja, sí
+  const propia = casaNueva(t);
+  anotarAprobacion(propia, 'ses-a', { tipo: 'click', tool_use_id: 'toolu_2' });
+  const v = pedirSinVentana(propia, pedidoDe(9), { evento: DE_LA_PROPIA, coordinadora: 'ses-coord' });
+  assert.deepStrictEqual([v.decision, v.via], ['allow', 'click'], v.texto);
+});
+
+test('T10 AdhocSet_SobreCupo_ConPermisos_VaPorElCuadro @story-8.181 @ac-4', (t) => {
+  for (const evento of [undefined, { permission_mode: 'default' }, { permission_mode: 'acceptEdits' }]) {
+    const casa = casaNueva(t);
+    const r = pedir(casa, pedidoDe(9), { evento, aprobaciones: aprobacionesDePrueba() });
+    assert.strictEqual(r.decision, 'deny', r.texto);
+    assert.ok(r.cuadro && r.cuadro.descripciones, 'el cuadro con sus descripciones');
+    assert.strictEqual(registros(casa).length, 0);
+  }
+  // con el click, sale sin ventana: el renglón queda con su vía
+  const casa = casaNueva(t);
+  anotarAprobacion(casa, 'ses-a', { tipo: 'click', tool_use_id: 'toolu_1' });
+  const r = pedir(casa, pedidoDe(9), { aprobaciones: aprobacionesDePrueba() });
+  assert.deepStrictEqual([r.decision, r.via], ['allow', 'click'], r.texto);
+  // la firma común sigue por la ventana
+  assert.strictEqual(pedir(casaNueva(t), pedidoDe(8)).decision, 'ask');
+});
+
+test('Precheck_SobreCupo_ConElClick_NoLoGastaSiElGuionSeNiega @story-8.181 @ac-4', (t) => {
+  const casa = casaNueva(t);
+  anotarAprobacion(casa, 'ses-a', { tipo: 'click', tool_use_id: 'toolu_1' });
+  let visto = null;
+  const r = pedir(casa, pedidoDe(9), { aprobaciones: aprobacionesDePrueba(), comprobar: (o) => { visto = o; return { niega: 'falta un requisito' }; } });
+  assert.strictEqual(r.decision, 'deny', r.texto);
+  assert.strictEqual(visto.firma, SOBRE_CUPO);
+  // el click sigue sin gastar: vale para el pedido corregido
+  const otra = pedir(casa, pedidoDe(9), { aprobaciones: aprobacionesDePrueba() });
+  assert.deepStrictEqual([otra.decision, otra.via], ['allow', 'click'], otra.texto);
+});
+
+test('T11 AdhocSet_SobreCupo_Codex_VaALaTerminal @story-8.181 @ac-4', (t) => {
+  const r = pedir(casaNueva(t), pedidoDe(9), { evento: { turn_id: 'turn-1' } });
+  assert.strictEqual(r.decision, 'deny', r.texto);
+  assert.match(r.texto, /--terminal/);
+  assert.ok(!r.cuadro, 'en Codex no hay cuadro');
 });
 
 test('HechoYAvisado_MandaPorLosCanalesDeLaSesion', (t) => {
@@ -2789,6 +2945,24 @@ test('Windows_LineaMedida_OtroTextoEntreLosBloques_NoSeReconoce', () => {
   const mac = (bloques) => `/bin/zsh -c source /Users/dev/.claude/shell-snapshots/snapshot-zsh-1-a.sh 2>/dev/null || true && ${bloques}eval 'x' < /dev/null && pwd -P >| /tmp/claude-ab12-cwd`;
   assert.strictEqual(ow.desenvolver(mac(bloque + bloque), '/Users/dev'), 'x');
   assert.strictEqual(ow.desenvolver(mac(`otro.exe && ${bloque}`), '/Users/dev'), null);
+});
+
+// 🔴 Falla con: pasar el tope del camino corto saliendo en Windows por otro camino que el de una firma común.
+test('Windows_SobreCupo_ConElClick_Firma_SinElClick_NiegaConSuCuadro @story-8.181 @ac-4', (t) => {
+  const pedido = '{"reason":"subir el tope ñandú","maxFiles":9}';
+  const cmd = `node ${MARKER} adhoc set '${pedido}' --for-session ses-a`;
+  const sin = pedirWin(casaNueva(t), cmd, { evento: DE_LA_PROPIA });
+  assert.strictEqual(sin.decision, 'deny', sin.texto);
+  assert.deepStrictEqual(sin.firmas, [SOBRE_CUPO]);
+  assert.ok(sin.cuadro && sin.cuadro.soloClick && sin.texto.includes(sin.cuadro.pregunta), 'trae el cuadro entero');
+  assert.match(sin.texto, /Un mensaje escrito no vale/);
+  assert.match(sin.texto, /--terminal/, 'ofrece la terminal');
+  const casa = casaNueva(t);
+  const r = pedirWin(casa, cmd, { evento: DE_LA_PROPIA, aprobaciones: conClick() });
+  assert.deepStrictEqual([r.decision, r.via], ['allow', 'click'], r.texto);
+  const v = verificarWin(casa, SOBRE_CUPO, [MARKER, 'adhoc', 'set', pedido, '--for-session', 'ses-a'], arbolGuionWin(casa, cmd, { texto: lineaMedida(casa, cmd) }));
+  assert.ok(v.ok, v.motivo);
+  assert.strictEqual(v.registro.via, 'click');
 });
 
 test('Windows_SinAprobacion_NiegaConElCuadroYLaTerminal_NuncaLaVentana', (t) => {

@@ -50,7 +50,7 @@ en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.
 | `adhoc-lane` | 1 · rutina | dev y mantenimiento | abrir un arreglo rápido sin historia, dentro del cupo | `adhoc-lane` |
 | `refresh-after-main` | 1 · rutina | sólo mantenimiento | refirmar los controles tras traer main, sin cambio propio | `refresh-after-main` |
 | `save:sensible` | 2 · excepción | dev y mantenimiento | guardar cuando un commit toca algo de lo sensible | `save` |
-| `adhoc-lane:sobre-cupo` | 2 · excepción | dev y mantenimiento | abrir un arreglo rápido cuando ya se pasó el cupo | todavía no se pide |
+| `adhoc-lane:sobre-cupo` | 2 · excepción | dev y mantenimiento | abrir un arreglo rápido que pasa el tope de archivos del camino corto, aunque se recomienda una historia (cuentan sólo los archivos de implementación, sin pruebas ni guías) | `adhoc-lane:sobre-cupo` |
 | `escape:DOD_BYPASS` | 2 · excepción | dev y mantenimiento | saltear todos los controles del commit | `escape:DOD_BYPASS` |
 | `critical-waiver` | 2 · excepción | dev y mantenimiento | eximir un hallazgo crítico | `critical-waiver` |
 | `runtime-waiver` | 2 · excepción | dev y mantenimiento | aceptar un criterio imposible de probar en vivo, o eximir la historia entera | `runtime-waiver`, `escape:dod_runtime_exempt` |
@@ -269,6 +269,7 @@ vuelve a pedir la firma del dueño.
 | `adversarial-skip` | saltear el pase adversarial con constancia | `marker.js sign-adversarial-skip --story <S> --reason <R>` | no, en la pestaña de esa sesión | `marker.js sign-adversarial-skip --story <S> --reason <R> --terminal` |
 | `pending-approval` | abrir un pendiente nuevo en la lista de pendientes | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta>` | sí | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --terminal` |
 | `adhoc-lane` | abrir el arreglo rápido de una sesión, sin historia | `marker.js adhoc set '<json>'` | sí | `marker.js adhoc set --reason "<motivo>" [--max-files N] --terminal --for-session <id>` |
+| `adhoc-lane:sobre-cupo` | un arreglo rápido que pasa el tope de archivos del camino corto, aunque se recomienda una historia | `marker.js adhoc set '<json con maxFiles mayor que 8>'` | no, en la pestaña de esa sesión | `marker.js adhoc set --reason "<motivo>" --max-files <N> --terminal --for-session <id>` |
 | `save` | guardar la story: commit, push y los pull requests | `marker.js approve-save [--for-session <D>]` | sí | `marker.js approve-save --terminal --for-session <D>` |
 | `designation-confirm` | confirmar qué sesión es la coordinadora de esta máquina | `delegated-signing.js confirm-designation` | no, en la pestaña de esa sesión | `delegated-signing.js confirm-designation --terminal` |
 | `escape:TYCON_SAFETY_OFF` | apagar el freno de seguridad para un comando | `TYCON_SAFETY_OFF=1 <comando>` | no, sólo en tu terminal | `TYCON_SAFETY_OFF=1 <comando>` |
@@ -362,6 +363,14 @@ ventana sólo si se cumple todo esto:
 - esta máquina está en `approvals.delegated_machines`;
 - la sesión que la corre es la designada, y el dueño confirmó la designación (con su click en esa pestaña, o en su terminal);
 - la sesión destino no es la propia, ni trabaja la misma story que una ejecución abierta de la sesión designada.
+
+Pasar el tope de 8 archivos del camino corto es otra firma, `adhoc-lane:sobre-cupo`: la elige el dev con su click en el
+cuadro de la pestaña que hace el trabajo, o en su terminal, y queda anotado. Un «aprobado» escrito no la da, ni un click en
+otra pestaña, ni la delegación. Cuentan sólo los archivos de implementación, sin pruebas ni guías. Su renglón en el registro
+es `adhoc-lane:sobre-cupo-signed`, y abre el portón igual que `adhoc-lane-signed`.
+
+La maqueta aprobada de un arreglo que toca una pantalla se compara con lo construido por sus textos, no por el dibujo: el
+detalle está en `guides/coordination.md`.
 
 El arreglo rápido de otra pestaña (`adhoc-lane`) se declara así desde la sesión designada de la misma máquina, con
 `marker.js adhoc set '<json>' --for-session <sesión>`; por esta vía el cupo es de 5 archivos como mucho (pedir más se niega, y
