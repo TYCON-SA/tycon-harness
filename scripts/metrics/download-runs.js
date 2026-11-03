@@ -327,7 +327,7 @@ async function informeDeReescrituras(opts = {}) {
     else if (b.modificado - b.creado > 1000) c.reescritos += 1;
   };
   const total = cuenta();
-  const porTipo = { registros: cuenta(), volcado: cuenta(), hilo: cuenta(), cambio: cuenta(), huella: cuenta(), ignorado: cuenta() };
+  const porTipo = { registros: cuenta(), volcado: cuenta(), hilo: cuenta(), cambio: cuenta(), huella: cuenta(), instintos: cuenta(), ignorado: cuenta() };
   const porMaquina = new Map();
   for (const b of ls.blobs) {
     const forma = formaDelNombre(b.nombre);
