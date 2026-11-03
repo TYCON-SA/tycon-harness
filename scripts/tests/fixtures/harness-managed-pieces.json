@@ -98,6 +98,7 @@
     { "kind": "hook", "id": "SessionStart:@tcg:worktree-sweep.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "PostToolUse:@tcg:missing-path-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": false },
     { "kind": "hook", "id": "PostToolUse:@tcg:deprecated-read-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
+    { "kind": "hook", "id": "PostToolUse:@tcg:cover-secrets.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "PostToolUse:@tcg:failed-query-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "PostToolUse:@tcg:rebuild-before-verify.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "UserPromptSubmit:@tcg:rebuild-before-verify.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },

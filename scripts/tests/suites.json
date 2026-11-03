@@ -1753,6 +1753,16 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/cover-secrets.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/cover-secrets-real.test.js",
+      "requiere": ["modelo"]
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/office-server.test.js",
       "requiere": []
     },

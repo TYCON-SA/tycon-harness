@@ -1805,5 +1805,101 @@ subir "${T}" "${T}/h" maq-a --check-create-only
 [ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "no_medido" ] && campo "${T}" motivo | grep 'no se pudieron abrir para limpiar' >/dev/null && [ "$(puts "${T}/b")" = "0" ] \
   && ok "T42 el chequeo no manda el .gz que no abre, y dice por qué no midió" || mal "T42 rc=${RC} estado=$(campo "${T}" estado) motivo=$(campo "${T}" motivo) PUTs=$(puts "${T}/b")"
 
+# ── Los valores reales de la máquina (historia 8.188). La casa es de juguete y el entorno, vacío: una variable real con
+#    nombre de secreto de quien corre la prueba contaría como un origen leído.
+subir_con_casa() {
+  local c="$1" ori="$2" maq="$3" casa="$4"; shift 4
+  env -i PATH="${PATH}" HOME="${casa}" USERPROFILE="${casa}" TYCON_MAILBOX=1 \
+    TYCON_MAILBOX_JSON="${c}/cfg.json" TYCON_MAILBOX_URL_BASE="${URL_BUZON}" TYCON_TIMING_HISTORY="${ori}" \
+    TYCON_UPLOADS_LOG="${c}/estado/mailbox-uploads.json" TYCON_MACHINE="${maq}" \
+    node "${SUBIR}" --json "$@" > "${c}/out.json" 2> "${c}/err.txt"
+  RC=$?
+}
+
+# ── T16 · UploadRuns_RealValue_CoveredAlsoInsideGz (@story-8.188 @ac-16) ── 🔴 Atrapa: subir un valor real porque está dentro
+#    de un .gz o porque en el JSON lleva escapes, tocar el archivo local, anotar en el registro la huella de lo subido (la
+#    pasada siguiente volvería a subir) o chocar con la política que no deja pisar.
+T="${BASE}/t8188-16"; buzon "${T}/b"; config "${T}/cfg.json"; mkdir -p "${T}/h" "${T}/casa"
+VALOR_T16='valor.inventado-para-la-subida-16'
+VALOR_COMILLA_T16='valor"inventado-con-comilla-16'
+printf "export MI_TOKEN=%s\nexport OTRO_TOKEN='%s'\n" "${VALOR_T16}" "${VALOR_COMILLA_T16}" > "${T}/casa/.zshrc"
+python3 - "${T}/h/9.7-2026-10-15T0900.json" "${VALOR_T16}" "${VALOR_COMILLA_T16}" <<'PY'
+import json, sys
+json.dump({'marker': {'storyId': '9.7'}, 'salida': sys.argv[2], 'otra': sys.argv[3]}, open(sys.argv[1], 'w'))
+PY
+printf '{"salida":"antes %s despues"}\n' "${VALOR_T16}" | gzip -c > "${T}/h/9.7-2026-10-15T0900.hilo.jsonl.gz"
+cp "${T}/h/9.7-2026-10-15T0900.hilo.jsonl.gz" "${T}/hilo-antes"; cp "${T}/h/9.7-2026-10-15T0900.json" "${T}/volcado-antes"
+subir_con_casa "${T}" "${T}/h" maq-a "${T}/casa"
+BH="${T}/b/blobs/corridas/maq-a"
+SUBIDO_GZ="$(gunzip -c "${BH}/9.7-2026-10-15T0900.hilo.jsonl.gz" 2>&1)"
+if [ "${RC}" -eq 0 ] && ! grep -q "${VALOR_T16}" "${BH}/9.7-2026-10-15T0900.json" && ! grep -q 'con-comilla-16' "${BH}/9.7-2026-10-15T0900.json" \
+  && [ "$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d['salida'],d['otra'])" "${BH}/9.7-2026-10-15T0900.json")" = "«tapado» «tapado»" ] \
+  && case "${SUBIDO_GZ}" in *"${VALOR_T16}"*) false ;; *'antes «tapado» despues'*) true ;; *) false ;; esac; then
+  ok "T16 el volcado y el .gz suben con el valor tapado, también con escapes de JSON"
+else mal "T16 valor en el buzón: rc=${RC} $(head -c 200 "${T}/err.txt")"; fi
+cmp -s "${T}/hilo-antes" "${T}/h/9.7-2026-10-15T0900.hilo.jsonl.gz" && cmp -s "${T}/volcado-antes" "${T}/h/9.7-2026-10-15T0900.json" \
+  && ok "T16 el archivo local queda igual" || mal "T16 tocó el archivo local"
+[ "$(reg_campo "${T}" "maq-a/9.7-2026-10-15T0900.hilo.jsonl.gz" sha256)" = "$(python3 -c "import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" "${T}/hilo-antes")" ] \
+  && ok "T16 el registro anota la huella del archivo local" || mal "T16 el registro no trae la huella del local"
+PUTS_T16="$(puts "${T}/b")"; subir_con_casa "${T}" "${T}/h" maq-a "${T}/casa"
+[ "${RC}" -eq 0 ] && [ "$(puts "${T}/b")" = "${PUTS_T16}" ] && ok "T16 la pasada siguiente no vuelve a subir" || mal "T16 volvió a subir: ${PUTS_T16} → $(puts "${T}/b")"
+subir_con_casa "${T}" "${T}/h" maq-a "${T}/casa" --check-create-only
+[ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "no_medido" ] && campo "${T}" motivo | grep 'un valor real' >/dev/null && [ "$(puts "${T}/b")" = "${PUTS_T16}" ] \
+  && ok "T16 el chequeo de la política no reescribe un archivo con un valor" || mal "T16 chequeo: rc=${RC} motivo=$(campo "${T}" motivo)"
+
+# ── T33 · UploadRuns_CheckCreateOnly_NeverOverwritesACoveredBlob (@story-8.188 @ac-16) ── 🔴 Atrapa: el chequeo de la política pisa
+#    si la política lo deja. Con el valor ya rotado (o el origen sin leer), «no hay nada que tapar» no prueba que el blob sea igual al
+#    local: mandaría el original encima de lo que subió tapado.
+T="${BASE}/t8188-33"; buzon "${T}/b"; config "${T}/cfg.json"; mkdir -p "${T}/h" "${T}/casa"
+printf 'export MI_TOKEN=valor.inventado-que-despues-rota\n' > "${T}/casa/.zshrc"
+printf '{"marker":{"storyId":"9.6"},"salida":"valor.inventado-que-despues-rota"}\n' > "${T}/h/9.6-2026-10-15T0900.json"
+subir_con_casa "${T}" "${T}/h" maq-a "${T}/casa"
+[ "${RC}" -eq 0 ] && ok "T33 sube tapado" || mal "T33 subir: rc=${RC}"
+printf 'export MI_TOKEN=otro-valor.inventado-ya-rotado\n' > "${T}/casa/.zshrc"
+PUTS_T33="$(puts "${T}/b")"
+subir_con_casa "${T}" "${T}/h" maq-a "${T}/casa" --check-create-only
+[ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "no_medido" ] && [ "$(puts "${T}/b")" = "${PUTS_T33}" ] && ! grep -q 'valor.inventado-que-despues-rota' "${T}/b/blobs/corridas/maq-a/9.6-2026-10-15T0900.json" \
+  && ok "T33 con el valor rotado, el chequeo no pisa lo que subió tapado" || mal "T33 pisó: rc=${RC} estado=$(campo "${T}" estado) PUTs ${PUTS_T33} → $(puts "${T}/b")"
+
+# ── T34 · UploadRuns_ValueThatIsAUrlWithCredential_CoveredWhole (@story-8.188 @ac-16) ── 🔴 Atrapa: limpiar la credencial antes de buscar
+#    el valor: el valor ya no coincide exacto, y lo que no está entre :// y @ sube al buzón.
+T="${BASE}/t8188-34"; buzon "${T}/b"; config "${T}/cfg.json"; mkdir -p "${T}/h" "${T}/casa"
+printf 'export MI_TOKEN=https://usuario:clave-inventada-34@host.example/ruta-que-tambien-es-secreta\n' > "${T}/casa/.zshrc"
+printf '{"marker":{"storyId":"9.6"},"salida":"https://usuario:clave-inventada-34@host.example/ruta-que-tambien-es-secreta"}\n' > "${T}/h/9.6-2026-10-15T0900.json"
+subir_con_casa "${T}" "${T}/h" maq-a "${T}/casa"
+BH="${T}/b/blobs/corridas/maq-a/9.6-2026-10-15T0900.json"
+[ "${RC}" -eq 0 ] && ! grep -q 'ruta-que-tambien-es-secreta' "${BH}" && ! grep -q 'clave-inventada-34' "${BH}" && grep -q '«tapado»' "${BH}" \
+  && ok "T34 un valor con forma de dirección con credencial se tapa entero" || mal "T34 rc=${RC} $(head -c 200 "${BH}" 2>&1)"
+
+# ── T17 · UploadRuns_CannotOpen_NotUploadedAndSaid (@story-8.188 @ac-11) ── 🔴 Atrapa: que sumar los valores deje pasar sin limpiar
+#    un .gz que no se puede abrir, o que un valor real cambie el camino de la falla.
+T="${BASE}/t8188-17"; buzon "${T}/b"; config "${T}/cfg.json"; mkdir -p "${T}/casa"; corrida "${T}/h" "9.8-2026-10-15T0900"
+printf "export MI_TOKEN=valor.inventado-para-la-subida-17\n" > "${T}/casa/.zshrc"
+echo 'no es gzip' > "${T}/h/9.8-2026-10-15T0900.hilo.jsonl.gz"
+subir_con_casa "${T}" "${T}/h" maq-a "${T}/casa"
+BH="${T}/b/blobs/corridas/maq-a"
+[ "${RC}" -eq 1 ] && [ ! -e "${BH}/9.8-2026-10-15T0900.hilo.jsonl.gz" ] && [ -f "${BH}/9.8-2026-10-15T0900.json" ] && grep -q 'no se pudo abrir para limpiar' "${T}/out.json" "${T}/err.txt" \
+  && ok "T17 el .gz que no abre no sube y lo dice" || mal "T17 rc=${RC} buzón: $(ls "${BH}" 2>&1) $(head -c 200 "${T}/err.txt")"
+
+# ── T18 · UploadRuns_NoOriginReadable_UploadsAndSaysSo (@story-8.188 @ac-12) ── 🔴 Atrapa: callar que no se comprobó ningún valor
+#    (se leería como «no había nada»), o dejar de subir por eso. Con un origen legible y sin valores, no avisa: ahí sí se comprobó.
+T="${BASE}/t8188-18"; buzon "${T}/b"; config "${T}/cfg.json"; mkdir -p "${T}/casa"; corrida "${T}/h" "9.9-2026-10-15T0900"
+printf '{"marker":{"storyId":"9.9"},"origen":"https://usuario:clave-de-mentira-18@dev.example/r"}\n' > "${T}/h/9.9-2026-10-15T0900.json"
+subir_con_casa "${T}" "${T}/h" maq-a "${T}/casa"
+BH="${T}/b/blobs/corridas/maq-a"
+[ "${RC}" -eq 0 ] && [ "$(campo "${T}" valores_sin_comprobar)" = "true" ] && grep -q 'los valores no se pudieron comprobar' "${T}/err.txt" && ! grep -q 'clave-de-mentira-18' "${BH}/9.9-2026-10-15T0900.json" \
+  && ok "T18 sin ningún origen sube con la limpieza de direcciones y dice que no comprobó" || mal "T18 rc=${RC} campo=$(campo "${T}" valores_sin_comprobar) $(head -c 200 "${T}/err.txt")"
+T="${BASE}/t8188-18b"; buzon "${T}/b"; config "${T}/cfg.json"; mkdir -p "${T}/casa"; corrida "${T}/h" "9.9-2026-10-15T0900"
+echo 'export NADA=que-ver' > "${T}/casa/.zshrc"
+subir_con_casa "${T}" "${T}/h" maq-a "${T}/casa"
+[ "${RC}" -eq 0 ] && [ "$(campo "${T}" valores_sin_comprobar)" != "true" ] && ! grep -q 'no se pudieron comprobar' "${T}/err.txt" \
+  && ok "T18 con un origen legible y sin valores, no avisa" || mal "T18b rc=${RC} $(head -c 200 "${T}/err.txt")"
+# 🔴 Atrapa: un origen que no se pudo leer, con otro que sí: «no pude leerlo» no se puede leer como «no había nada».
+T="${BASE}/t8188-18c"; buzon "${T}/b"; config "${T}/cfg.json"; mkdir -p "${T}/casa/.zshrc"; corrida "${T}/h" "9.9-2026-10-15T0900"
+echo 'export NADA=que-ver' > "${T}/casa/.bashrc"
+subir_con_casa "${T}" "${T}/h" maq-a "${T}/casa"
+[ "${RC}" -eq 0 ] && [ "$(campo "${T}" valores_sin_comprobar)" != "true" ] && campo "${T}" valores_problemas | grep '.zshrc' >/dev/null && grep -q 'no se pudo leer' "${T}/err.txt" \
+  && ok "T18 con un origen roto y otro legible, sube y dice cuál no leyó" || mal "T18c rc=${RC} problemas=$(campo "${T}" valores_problemas) $(head -c 200 "${T}/err.txt")"
+
 echo
 [ "${FALLOS}" -eq 0 ] && { echo "subir-corridas: todo verde"; exit 0; } || { echo "${FALLOS} fallo(s)"; exit 1; }
