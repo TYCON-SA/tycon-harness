@@ -35,10 +35,10 @@ nothing.
 
    > This session is the coordinadora
 
-2. The session records it and asks you to confirm, with a click or from your terminal. Unconfirmed, she organizes the
-   others, but she signs nothing and does not take your signatures for another session.
-3. Type `/coordinate`. It shows you the state of the machine and makes her read her rules. **Without this step she has
-   not read them.**
+2. The session records it, is told to read her rules and asks you to confirm, with a click or from your terminal.
+   Unconfirmed, she organizes the others, but she signs nothing and does not take your signatures for another session.
+
+That is all. `/coordinate` shows you the state of the machine whenever you want to see it.
 
 There is one coordinator per machine. If you designate another, it replaces the previous one.
 
@@ -65,6 +65,7 @@ you through your organization's notice channels, if it has any.
 | **Signatures:** what the harness asks a person to sign | The detail questions of each session |
 | **Passwords:** what asks for your machine's password | Turns: who runs first what loads the machine |
 | **Product decisions:** what gets built, for whom and in what order | The state of each session, unless you ask |
+| **What leaves the house:** what goes to production for a product and what is sent to a client or to someone outside | Routine work: queuing requests of the harness or publishing material already approved |
 
 This is a rule she follows, not a control. If something else reaches you, or something of yours does not, tell her.
 
@@ -108,11 +109,14 @@ All three commands only look; they change nothing.
 
 - **She does not answer.** Check with `/wip` whether she is busy: she reads messages when she finishes the step she is on.
   If that tab was closed, the other sessions keep working, and whatever was waiting for a person reaches you.
-- **Her conversation restarted or was compacted.** She is still the coordinator, because it is the same conversation. She
-  may have lost her rules: type `/coordinate` again.
+- **Her conversation was compacted.** She is still the coordinator, because it is the same conversation, and she is told to
+  read her rules again.
+- **She restarted.** She is still the coordinator too. Here she is not told: if you notice she forgot the rules, type
+  `/coordinate`.
 - **You ran `/clear` or opened a new chat.** She stopped being the coordinator: for the harness it is another conversation,
-  even if it keeps the name. The other sessions go on. Until you designate her again, signatures reach you in each session's
-  tab. Repeating the three steps of "What you do" fixes it. The organization has nothing to set up.
+  even if it keeps the name. The other sessions go on. After a `/clear`, if the session has a name, she tells you how to get
+  it back. Until you designate her again, signatures reach you in each session's tab. Repeating the steps of "What you do"
+  fixes it. The organization has nothing to set up.
 - **`/coordinate` says this session does not coordinate.** The same output says what is missing: the organization's setup
   or your phrase.
 - **She does not accept your phrase.** The phrase must carry the exact name your organization set.

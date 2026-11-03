@@ -24,8 +24,12 @@ header .site{font:600 .9rem var(--body);color:var(--fg)}
 h1{font:700 1.7rem/1.1 var(--display);margin:0;letter-spacing:-.01em}
 h2{font:700 .8rem var(--display);text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 8px}
 .stamp{font:500 .85rem var(--mono);color:var(--muted)}
-.you{background:var(--surface);border:1px solid #a8640b;border-left:6px solid #a8640b;border-radius:6px;padding:12px 16px}
-.you h2{color:#a8640b}.you ul{margin:4px 0 0;padding-left:18px}
+.you h2{color:#a8640b}.you ul{margin:4px 0 0;padding-left:18px}.you .nada{list-style:none;margin-left:-18px;color:var(--muted)}
+.resumen{background:var(--surface);border:1px solid var(--line);border-left:6px solid var(--line);border-radius:6px}.resumen.pide{border-color:#a8640b}
+.resumen-linea{display:flex;align-items:center;gap:8px;width:100%;padding:10px 16px;border:0;background:none;color:var(--fg);font:600 1rem var(--body);text-align:left;cursor:pointer;border-radius:6px}.resumen-linea:disabled{cursor:default;color:var(--muted);font-weight:500}.resumen.pide .resumen-linea{color:#a8640b;font-weight:700}
+.resumen-listas{display:flex;flex-direction:column;gap:14px;padding:0 16px 14px}.resumen-listas[hidden]{display:none}
+.trabado[hidden]{display:none}.trabado h2{color:#b08a2e}.trabado h3{margin:8px 0 2px;font:600 .95rem var(--body)}.trabado ul{margin:0;padding-left:18px}
+.una-linea{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .empty{color:var(--muted);padding:18px;background:var(--surface);border:1px dashed var(--line);border-radius:6px;margin:0}
 /* la sala 3D es siempre de noche: un mundo propio, igual en tema claro y oscuro */
 .stage{position:relative;width:100%;aspect-ratio:16/10;max-height:82vh;border-radius:12px;overflow:hidden;background:radial-gradient(120% 90% at 50% 40%,#2a1f3a 0%,#120e1a 70%);color:#f4eefc;touch-action:none}
@@ -73,7 +77,10 @@ h2{font:700 .8rem var(--display);text-transform:uppercase;letter-spacing:.08em;c
 .chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.panel3 .chips .chip{margin-bottom:0}.panel3 .chips{margin-bottom:10px}
 .como-chip{display:inline-flex;align-items:center;gap:5px;font:500 .74rem var(--body);padding:1px 9px;border-radius:999px;border:1px solid var(--line);color:var(--fg)}.panel3 .como-chip{color:#e8e1f5;border-color:rgba(255,255,255,.28)}
 .verCharla{display:inline-flex;align-items:center;gap:7px;align-self:flex-start;margin-top:10px;font:600 .86rem var(--body);padding:7px 14px;border-radius:9px;border:0;background:#1f6feb;color:#fff;cursor:pointer}.verCharla:hover{background:#1a5fd0}.verCharla:focus-visible{outline:2px solid #fff;outline-offset:2px;box-shadow:0 0 0 4px #1f6feb}.verCharla .ico{width:16px;height:16px;margin:0}
-.ventana{position:fixed;inset:0;z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(8,6,14,.62)}.ventana[hidden]{display:none}
+.ventana{position:fixed;inset:0;z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(8,6,14,.62);overscroll-behavior:contain}.ventana[hidden]{display:none}
+/* con la ventana abierta sólo se mueve la ventana, también al llegar al principio o al final de la lista */
+.ventana .panel3>.pestanas{align-self:flex-start;margin:4px 0 10px}.ventana .panel3>.pestana{display:flex;flex-direction:column;flex:1 1 0;min-height:0}.ventana .panel3>.pestana[hidden]{display:none}
+html.con-ventana{overflow:hidden}.ventana .panel3,.ventana .chat{overscroll-behavior:contain}
 .ventana .panel3{position:static;display:flex;flex-direction:column;width:min(1120px,100%);height:min(920px,calc(100vh - 32px));height:min(920px,calc(100dvh - 32px));max-height:none;padding:18px 22px;color:#efe9fa}.ventana .panel3>*{flex:none}
 .ventana .panel3 h3{font-size:1.25rem}
 .ventana .panel3 .chat{flex:1 1 0;min-height:140px;max-height:none;gap:9px;overflow:hidden auto;padding-right:6px}
@@ -158,10 +165,16 @@ tr:last-child td{border-bottom:0}
     <span class="stamp" id="stamp"></span>
     <a class="site" id="site" hidden target="_blank" rel="noopener">Abrir el sitio</a>
   </header>
+  <div class="resumen" id="resumen">
+    <button type="button" class="resumen-linea" id="resumenLinea" aria-expanded="false" aria-controls="resumenListas"></button>
+    <div class="resumen-listas" id="resumenListas" hidden>
+      <div class="you" id="you"><h2>Te toca a vos</h2><ul id="youList"></ul></div>
+      <section class="trabado" id="trabado" hidden></section>
+    </div>
+  </div>
   <section class="office" id="office">
     <div class="stage" id="stage" role="img" aria-label="Las sesiones trabajando en la oficina"><div class="labels" id="labels"></div><p class="ovl" id="ovl" hidden></p><div class="hint">Arrastrá para girar · rueda para acercar · tocá a alguien o el panel de la pared para ver el detalle</div><aside class="panel3" id="panel" hidden></aside></div>
   </section>
-  <div class="you" id="you" hidden><h2>Te toca a vos</h2><ul id="youList"></ul></div>
   <section><h2>Las sesiones</h2><div class="crew" id="crew"></div><p class="nota" id="foot">«Prometido» es la hora que dio la ejecución al arrancar; «Termina» es la de ahora, que se recalcula al entrar a cada paso y queda fija hasta el próximo. La diferencia sale en rojo si va más de 15 minutos tarde y en verde si va más de 15 minutos antes.</p></section>
   <section class="trabajo" id="trabajo" hidden aria-labelledby="trabajoTitle">
     <div class="vistas"><h2 id="trabajoTitle">El trabajo</h2>
@@ -185,7 +198,7 @@ const el=(t,c,txt)=>{const e=document.createElement(t);if(c)e.className=c;if(txt
 const DAYS=["dom","lun","mar","mié","jue","vie","sáb"];
 const parse=s=>{const m=/^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d)$/.exec(s||"");return m?new Date(+m[1],m[2]-1,+m[3],+m[4],+m[5]):null};
 const fmt=s=>{const d=parse(s);return d?DAYS[d.getDay()]+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"):"—"};
-const AST={trabajando:["Trabajando","#3ddc84"],prueba:["Corriendo pruebas","#5aa9ff"],parada:["Parada","#c9b458"],espera:["Esperando entrar","#a59fc4"],firma:["Tu firma","#ffa53d"],libre:["Libre","#9aa3a0"],coordina:["Coordinando","#ff6fc0"],inactiva:["Inactiva","#6b6f6e"]};
+const AST={trabajando:["Trabajando","#3ddc84"],prueba:["Corriendo pruebas","#5aa9ff"],parada:["Parada","#c9b458"],espera:["Esperando entrar","#a59fc4"],esperando:["Esperando","#e8b84a"],firma:["Tu firma","#ffa53d"],pregunta:["Te pregunta","#ffa53d"],libre:["Libre","#9aa3a0"],coordina:["Coordinando","#ff6fc0"],inactiva:["Inactiva","#6b6f6e"]};
 const SHIRT=["#c2569b","#2f9e6a","#3b7ddd","#e08a1e","#7a5cc7","#d65a4a"];
 let agents,items,meta;
 function setData(d){DATA=d||{};agents=DATA.agents||[];items=DATA.items||[];meta=DATA.meta||null}
@@ -199,12 +212,11 @@ function renderBoard(){const body=document.getElementById("boardBody"),k=DATA.ka
   if(!k)return;
   const resumen=t&&t.resumen||"";
   const top=el("p","sum");top.textContent=resumen+(k.escrito?(resumen?" · ":"")+k.escrito:"");if(top.textContent)body.appendChild(top);
-  if(t&&(t.teToca||[]).length){const p=el("p","sum toca");p.textContent="Te toca: "+t.teToca.join(" · ");body.appendChild(p)}
   const cols=el("div","cols");
-  (k.columnas||[]).forEach(c=>{const col=el("div","col"),list=c.tarjetas||[];col.style.setProperty("--k",KC[c.id]||"var(--line)");col.appendChild(el("h3",null,c.nombre+" · "+list.length));
+  (k.columnas||[]).forEach(c=>{const col=el("div","col"),list=c.tarjetas||[];col.style.setProperty("--k",KC[c.id]||"var(--line)");col.appendChild(el("h3",null,c.nombre+" · "+list.filter(i=>!i.otro).length));
     if(c.nota)col.appendChild(el("p","none",c.nota));
     if(!list.length)col.appendChild(el("p","none","Nada"));
-    list.forEach(i=>{const card=el("div","item");card.appendChild(el("b",null,i.titulo||""));const line=[i.quien,i.hora,i.grupo].filter(Boolean).join(" · ");if(line)card.appendChild(el("span","m",line));
+    list.forEach(i=>{const card=el("div","item"),tit=el("b","una-linea",i.titulo||"");tit.title=i.titulo||"";card.appendChild(tit);const line=[i.quien,i.hora,i.grupo].filter(Boolean).join(" · ");if(line)card.appendChild(el("span","m",line));
       [i.espera?"Espera "+i.espera+".":"",i.marca,i.motivo,i.nota].forEach(v=>{if(v)card.appendChild(el("span","n",v))});col.appendChild(card)});
     cols.appendChild(col)});
   body.appendChild(cols);
@@ -218,7 +230,9 @@ function renderHalfway(){const sec=document.getElementById("halfway"),k=DATA.kan
 function renderTop(){
   document.getElementById("stamp").textContent=meta?"Al día a las "+meta.actualizado+(meta.pedidosLeidos?" · pedidos leídos a las "+meta.pedidosLeidos:""):"";
   const site=document.getElementById("site");if(SITE){site.href=SITE;site.hidden=false}else{site.removeAttribute("href");site.hidden=true}
-  const you=(meta&&meta.teToca)||[],ul=document.getElementById("youList");ul.replaceChildren();you.forEach(t=>ul.appendChild(el("li",null,t)));document.getElementById("you").hidden=!you.length;
+  const you=(meta&&meta.teToca)||[],ul=document.getElementById("youList");ul.replaceChildren();you.forEach(t=>ul.appendChild(el("li",null,t)));if(!you.length)ul.appendChild(el("li","nada","Nada por ahora: no hay firmas pendientes ni pedidos en el tablero."));
+  const tr=document.getElementById("trabado"),stuck=(meta&&meta.trabado)||[];tr.hidden=!stuck.length;tr.replaceChildren();if(stuck.length){tr.appendChild(el("h2",null,"Trabado"));stuck.forEach(g=>{tr.appendChild(el("h3",null,g.titulo));const u=el("ul");(g.filas||[]).forEach(f=>u.appendChild(el("li",null,f)));tr.appendChild(u)})}
+  pintarResumen(you.length,stuck.reduce((n,g)=>n+(g.filas||[]).length,0));
   const tb=document.getElementById("rows");tb.replaceChildren();(DATA.rows||[]).forEach(r=>{const tr=el("tr");[r.work,r.state,r.end,r.session,r.folder].forEach(v=>tr.appendChild(el("td",null,v||"")));tb.appendChild(tr)});
   if(!(DATA.rows||[]).length){const tr=el("tr");const td=el("td",null,"Nadie trabaja en esta máquina.");td.colSpan=5;tr.appendChild(td);tb.appendChild(tr)}
   const fl=document.getElementById("freeLine"),free=(DATA.free||[]).length?"Libres: "+DATA.free.join(", "):"";fl.textContent=free;fl.hidden=!free;
@@ -226,6 +240,15 @@ function renderTop(){
   renderBoard();renderTablas();renderHalfway();pintarVista()}
 // el trabajo se ve de a una vista, y la página recuerda la última: sólo esta persona y este navegador
 const VISTA_KEY="office.vista";
+// el bloque de arriba, en una línea que se abre al tocarla: destaca si algo te toca, y sin nada no hay qué abrir
+const RESUMEN_KEY="office.resumenAbierto";
+function resumenGuardado(){try{return localStorage.getItem(RESUMEN_KEY)==="1"}catch(e){return false}}
+function guardarResumen(v){try{localStorage.setItem(RESUMEN_KEY,v?"1":"0")}catch(e){/* sin dónde guardarlo, vale hasta recargar */}}
+let resumenAbierto=resumenGuardado();
+function lineaResumen(toca,trabados){const vacio=!toca&&!trabados;return{texto:vacio?"Nada por ahora":"Te toca: "+toca+" · Trabado: "+trabados,pide:toca>0,vacio}}
+function pintarResumen(toca,trabados){const r=lineaResumen(toca,trabados),b=document.getElementById("resumenLinea"),abierto=resumenAbierto&&!r.vacio;
+  document.getElementById("resumen").classList.toggle("pide",r.pide);b.disabled=r.vacio;b.setAttribute("aria-expanded",String(abierto));b.replaceChildren(...(r.vacio?[]:[el("span",null,abierto?"▾":"▸")]),document.createTextNode(r.texto));document.getElementById("resumenListas").hidden=!abierto;
+  b.onclick=()=>{resumenAbierto=!resumenAbierto;guardarResumen(resumenAbierto);pintarResumen(toca,trabados)}}
 function vistaGuardada(){try{const v=localStorage.getItem(VISTA_KEY);return v==="kanban"||v==="tablas"?v:null}catch(e){return null}}
 function guardarVista(v){try{localStorage.setItem(VISTA_KEY,v)}catch(e){/* sin dónde guardarla, vale hasta recargar */}}
 let vista=vistaGuardada()||"tablas";
@@ -236,7 +259,7 @@ function pintarVista(){const hay=Boolean(DATA.tablas),k=Boolean(DATA.kanban),v=v
 document.querySelectorAll('input[name="vista"]').forEach(i=>i.addEventListener("change",()=>{if(!i.checked)return;vista=i.value;guardarVista(vista);pintarVista()}));
 // los dos resúmenes, arriba del tablero, y cuándo se escribió cada uno. Todo va como texto, nunca como HTML
 function renderTablas(){const sec=document.getElementById("tablas"),ts=DATA.tablas;sec.replaceChildren();if(!ts)return;
-  ["hoy","pendientes"].forEach(k=>{const t=ts[k];if(!t)return;const d=el("div","una");d.appendChild(el("h2",null,t.titulo));d.appendChild(el("span","escrito",[t.escrito,t.cruce].filter(Boolean).join(" · ")));
+  ["hoy","pendientes","hechos"].forEach(k=>{const t=ts[k];if(!t)return;const d=el("div","una");d.appendChild(el("h2",null,t.titulo));d.appendChild(el("span","escrito",[t.escrito,t.cruce].filter(Boolean).join(" · ")));
     if(!(t.filas||[]).length){d.appendChild(el("p","none","Nada"));sec.appendChild(d);return}
     const tb=el("table"),hd=el("tr");t.columnas.forEach(c=>hd.appendChild(el("th",null,c)));const th=el("thead");th.appendChild(hd);tb.appendChild(th);const bd=el("tbody");
     const cuantas=g=>t.filas.filter(f=>f.grupo===g).length;let previo=null;t.filas.forEach(r=>{const tr=el("tr");[r.grupo===previo?"":t.contar&&r.grupo?r.grupo+" · "+cuantas(r.grupo):r.grupo,r.que,r.col].forEach(v=>tr.appendChild(el("td",null,v||"")));previo=r.grupo;bd.appendChild(tr)});tb.appendChild(bd);const w=el("div","table");w.appendChild(tb);d.appendChild(w);sec.appendChild(d)})}
@@ -274,7 +297,7 @@ const CHARLA_ICONO=["path",{d:"M4 5h16v11H10l-5 4v-4H4zM8 9h8M8 12h5"}];
 function botonCharla(nombre){const b=el("button","verCharla"),s=el("span","ico");s.setAttribute("aria-hidden","true");s.appendChild(dibujo(CHARLA_ICONO));b.appendChild(s);b.appendChild(document.createTextNode("Ver conversación"));b.type="button";b.onclick=()=>abrirCharla(nombre,b);return b}
 function pintarFicha(a,box,abiertos){const dl=el("dl");
   ficha(a).forEach(r=>{const dd=el("dd");if(r.pct!=null){const b=el("span","pbar"),i=el("i");i.style.width=r.pct+"%";b.appendChild(i);dd.appendChild(b);dd.appendChild(document.createTextNode(" "))}
-    dd.appendChild(document.createTextNode(r.v));if(r.dif){const x=el("em",r.cls||null," · "+r.dif);dd.appendChild(x)}dl.appendChild(el("dt",null,r.k));dl.appendChild(dd)});box.appendChild(dl);
+    if(r.k==="Trabajo"&&!abiertos){dd.className="una-linea";dd.title=r.v}dd.appendChild(document.createTextNode(r.v));if(r.dif){const x=el("em",r.cls||null," · "+r.dif);dd.appendChild(x)}dl.appendChild(el("dt",null,r.k));dl.appendChild(dd)});box.appendChild(dl);
   if(a.pasos&&a.pasos.length){const d=el("details","pasos");d.open=abiertos;d.appendChild(el("summary",null,"Pasos de la ejecución"));const ol=el("ol","steps");let now=false;
     a.pasos.forEach(p=>{const cur=!p.done&&!now;if(cur)now=true;const li=el("li",p.done?"done":cur?"now":"");li.appendChild(el("span",null,p.done?"✓":cur?"▸":"·"));li.appendChild(document.createTextNode(p.name));ol.appendChild(li)});d.appendChild(ol);box.appendChild(d)}
   // la conversación se lee con la oficina abierta en esta máquina: en la foto fija y en el sitio no hay de dónde
@@ -284,10 +307,10 @@ function etiquetaComo(como){const e=el("span","como-chip");e.appendChild(iconoCo
 let charlaDe=null,charlaVuelve=null,ultimoPedido=0;
 const ALCANCE="Sólo se ven en esta máquina: no se guardan ni se mandan a ningún lado.";
 const ventana=()=>document.getElementById("ventana");
-function abrirCharla(nombre,boton){const v=ventana(),box=v.firstElementChild;charlaDe=nombre;charlaVuelve=boton;v.hidden=false;
+function abrirCharla(nombre,boton){const v=ventana(),box=v.firstElementChild;charlaDe=nombre;charlaVuelve=boton;v.hidden=false;document.documentElement.classList.add("con-ventana");
   const cerrar=el("button","cerrar","Cerrar");cerrar.type="button";cerrar.onclick=cerrarCharla;box.replaceChildren(el("h3",null,"Conversación de "+nombre),el("p","m","Leyendo…"),cerrar);cerrar.focus();
   const yo=++ultimoPedido;fetch("conversacion?t="+encodeURIComponent(LIVE.token)+"&s="+encodeURIComponent(nombre)).then(r=>{if(!r.ok)throw new Error(String(r.status));return r.json()}).then(datos=>({datos}),()=>({falla:true})).then(c=>{if(yo===ultimoPedido&&charlaDe===nombre)pintarCharla(box,nombre,c,cerrar)})}
-function cerrarCharla(){const v=ventana();if(v.hidden)return;v.hidden=true;v.firstElementChild.replaceChildren();charlaDe=null;ultimoPedido+=1;if(charlaVuelve&&charlaVuelve.isConnected)charlaVuelve.focus();charlaVuelve=null}
+function cerrarCharla(){const v=ventana();if(v.hidden)return;v.hidden=true;document.documentElement.classList.remove("con-ventana");v.firstElementChild.replaceChildren();charlaDe=null;ultimoPedido+=1;if(charlaVuelve&&charlaVuelve.isConnected)charlaVuelve.focus({preventScroll:true});charlaVuelve=null}
 document.addEventListener("keydown",e=>{if(e.key==="Escape")cerrarCharla()});
 // El formato simple de un mensaje: negritas, código y listas. Todo se arma con nodos y textContent, así que lo que traiga
 // el mensaje nunca llega a ser HTML.
@@ -306,13 +329,19 @@ function formatear(texto){const out=[];let lista=null,codigo=null;
   return out}
 function msg(quien,cuando,texto,mio){const box=document.createElement("div");box.className="msg"+(mio?" mio":"");const b=document.createElement("b"),t=Number(cuando),hh=Number.isFinite(t)&&t>0?new Date(t):null;b.textContent=quien+(hh?" · "+String(hh.getHours()).padStart(2,"0")+":"+String(hh.getMinutes()).padStart(2,"0"):"");box.append(b,...formatear(texto));return box}
 // Abre como un chat: cada conversación en lo último, dentro de su caja.
+function listaCharla(filas,vacio){if(!filas.length)return el("p","m",vacio);const ch=el("div","chat");filas.forEach(f=>ch.append(f));return ch}
+// Las dos conversaciones de la coordinadora, de a una y con todo el alto: abre en la primera. La otra arranca en lo último al mostrarse.
+function pestanasCharla(partes){const tabs=el("div","seg pestanas"),paneles=[];tabs.setAttribute("role","radiogroup");tabs.setAttribute("aria-label","Con quién");
+  partes.forEach(([titulo,lista],i)=>{const l=document.createElement("label"),r=document.createElement("input"),p=el("div","pestana");r.type="radio";r.name="charlaCon";r.checked=i===0;p.hidden=i>0;p.append(lista);paneles.push(p);
+    r.onchange=()=>{paneles.forEach((x,j)=>{x.hidden=j!==i});if(lista.classList.contains("chat")&&!lista.dataset.vista){lista.dataset.vista="1";lista.scrollTop=lista.scrollHeight}};l.append(r,el("span",null,titulo));tabs.append(l)});
+  return [tabs,...paneles]}
 function pintarCharla(box,nombre,c,cerrar){const fin=x=>{box.insertBefore(x,cerrar)},seccion=(titulo,filas,vacio)=>{fin(el("h4",null,titulo));if(!filas.length){fin(el("p","m",vacio));return}const ch=el("div","chat");filas.forEach(f=>ch.append(f));fin(ch)};
   box.querySelector("p.m").remove();
   if(c.falla){fin(el("p","m","No se pudo leer la conversación de esta sesión."));return}
   const d=c.datos||{};if(d.sinCoordinadora){fin(el("p","m","Esta máquina no tiene coordinadora designada: no hay con quién cruzar los mensajes."));return}
   const alFinal=()=>box.querySelectorAll(".chat").forEach(ch=>{ch.scrollTop=ch.scrollHeight});
-  if(d.conVos){seccion("Con vos",d.conVos.map(m=>msg(m.quien==="vos"?"Vos":nombre,m.at,m.texto,m.quien==="vos")),"No hay mensajes con vos en lo último de su conversación.");
-    seccion("Con las sesiones",(d.conSesiones||[]).map(m=>msg(m.de===nombre?nombre+" a "+m.a:m.de,m.at,m.texto,m.de===nombre)),"No hay mensajes con las sesiones en lo último de su conversación.");
+  if(d.conVos){pestanasCharla([["Con vos",listaCharla(d.conVos.map(m=>msg(m.quien==="vos"?"Vos":nombre,m.at,m.texto,m.quien==="vos")),"No hay mensajes con vos en lo último de su conversación.")],
+      ["Con las sesiones",listaCharla((d.conSesiones||[]).map(m=>msg(m.de===nombre?nombre+" a "+m.a:m.de,m.at,m.texto,m.de===nombre)),"No hay mensajes con las sesiones en lo último de su conversación.")]]).forEach(fin);
     fin(el("p","m","Tus últimos 20 mensajes con sus respuestas, y los últimos 10 con las sesiones, en orden. "+ALCANCE+" Las contraseñas y las claves se tapan."));alFinal();return}
   const filas=(d.conCoordinadora||[]).map(m=>msg(m.propio?nombre:m.de,m.at,m.texto,m.propio));if(d.arranque)filas.unshift(msg("Mensaje de arranque",d.arranque.at,d.arranque.texto,false));
   seccion("Con la coordinadora",filas,"No hay mensajes con la coordinadora en lo último de su conversación.");
@@ -541,7 +570,7 @@ function crearPersonaje(a,ropa){
 
 // la pantalla de cada puesto cuenta su estado
 function drawScreen(d,t){const {g}=d.screen.userData,w=160,h=120,e=d.agent.estado;
-  if(e==="firma"){const on=Math.floor(t*2.5)%2;g.fillStyle=on?"#5a3200":"#7a4600";g.fillRect(0,0,w,h);g.strokeStyle="#ffd08a";g.lineWidth=4;g.beginPath();for(let x=26;x<120;x+=4)g.lineTo(x,70+Math.sin(x/7+t*3)*10);g.stroke();g.fillStyle="#ffa53d";g.save();g.translate(126,50);g.rotate(.7);g.fillRect(-4,-22,8,34);g.beginPath();g.moveTo(-4,12);g.lineTo(4,12);g.lineTo(0,20);g.fill();g.restore();g.fillStyle="#ffe2b8";g.font="700 15px monospace";g.fillText("TU FIRMA",40,106)}
+  if(e==="firma"||e==="pregunta"){const on=Math.floor(t*2.5)%2;g.fillStyle=on?"#5a3200":"#7a4600";g.fillRect(0,0,w,h);g.strokeStyle="#ffd08a";g.lineWidth=4;g.beginPath();for(let x=26;x<120;x+=4)g.lineTo(x,70+Math.sin(x/7+t*3)*10);g.stroke();g.fillStyle="#ffa53d";g.save();g.translate(126,50);g.rotate(.7);g.fillRect(-4,-22,8,34);g.beginPath();g.moveTo(-4,12);g.lineTo(4,12);g.lineTo(0,20);g.fill();g.restore();g.fillStyle="#ffe2b8";g.font="700 15px monospace";g.fillText("TU FIRMA",40,106)}
   else if(e==="prueba"){g.fillStyle="#0f1a33";g.fillRect(0,0,w,h);const n=Math.floor(t*1.6+d.t0)%6;for(let r=0;r<5;r++){const y=14+r*21;g.strokeStyle="#7fb2ff";g.lineWidth=2;g.strokeRect(14,y,14,14);g.fillStyle="#3a4a70";g.fillRect(38,y+4,70+((r*37)%40),6);if(r<n){g.fillStyle="#3ddc84";g.fillRect(14,y,14,14);g.strokeStyle="#0d2a18";g.lineWidth=3;g.beginPath();g.moveTo(17,y+7);g.lineTo(20,y+11);g.lineTo(26,y+3);g.stroke()}}}
   else if(e==="espera"){g.fillStyle="#141226";g.fillRect(0,0,w,h);const r=(t*.5)%1;g.save();g.translate(80,60);g.rotate(r>.85?(r-.85)/.15*Math.PI:0);g.strokeStyle="#c9c2ea";g.lineWidth=3;g.beginPath();g.moveTo(-18,-30);g.lineTo(18,-30);g.lineTo(-18,30);g.lineTo(18,30);g.closePath();g.stroke();g.fillStyle="#c9c2ea";const k=Math.min(r/.85,1);g.beginPath();g.moveTo(-14*(1-k),-26+26*k);g.lineTo(14*(1-k),-26+26*k);g.lineTo(0,0);g.fill();g.beginPath();g.moveTo(0,26-24*k);g.lineTo(14*k+2,26);g.lineTo(-14*k-2,26);g.fill();g.restore()}
   else if(e==="coordina"){g.fillStyle="#1f0f22";g.fillRect(0,0,w,h);g.strokeStyle="#ff8fd0";g.lineWidth=2;const B=[[60,10],[12,74],[60,74],[108,74]];B.forEach(([x,y],i)=>{g.globalAlpha=.55+.45*Math.abs(Math.sin(t*2+i));g.strokeRect(x,y,40,24)});g.globalAlpha=1;g.beginPath();g.moveTo(80,34);g.lineTo(80,54);g.moveTo(32,54);g.lineTo(128,54);[32,80,128].forEach(x=>{g.moveTo(x,54);g.lineTo(x,74)});g.stroke()}
@@ -558,22 +587,22 @@ function animar(d,t){const {up,head,arms}=d.person.userData,e=d.agent.estado,k=t
   else if(e==="espera"){lean=-.2+Math.sin(k*1.4)*.02;armL=armR=1.0;zL=.2;zR=-.2;hx=-.1;hy=Math.sin(k*.5)*.15}
   else if(e==="libre"){lean=-.24;armL=armR=1.0;zL=.2;zR=-.2;hx=.3+Math.sin(k*1.2)*.03}
   else if(e==="parada"){lean=-.16;armL=armR=1.05;zL=.18;zR=-.18;hx=.02;hy=Math.sin(k*.4)*.1}
-  else if(e==="firma"){armR=2.9+Math.sin(k*7)*.25;zR=-.25;armL=1.2;lean=-.06;hx=-.15;hy=.45}
+  else if(e==="firma"||e==="pregunta"){armR=2.9+Math.sin(k*7)*.25;zR=-.25;armL=1.2;lean=-.06;hx=-.15;hy=.45}
   const ease=(o,v)=>o+(v-o)*.15;up.rotation.x=ease(up.rotation.x,-lean);up.scale.y=1+Math.sin(k*2.2)*.012;
   arms[0].rotation.x=ease(arms[0].rotation.x,armL);arms[1].rotation.x=ease(arms[1].rotation.x,armR);arms[0].rotation.z=ease(arms[0].rotation.z,zL);arms[1].rotation.z=ease(arms[1].rotation.z,zR);
   head.rotation.x=ease(head.rotation.x,-hx);head.rotation.y=ease(head.rotation.y,hy);
-  d.ring.material.opacity=e==="firma"?.45+.4*Math.sin(t*5):0}
+  d.ring.material.opacity=e==="firma"||e==="pregunta"?.45+.4*Math.sin(t*5):0}
 
 // ---------- etiquetas ----------
 let desks=[],sel=null;
 const BOT='<svg class="bot" viewBox="0 0 24 24" fill="none" stroke="#c9b6ff" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="4" y="8" width="16" height="11" rx="4"/><path d="M12 8V4.5"/><circle cx="12" cy="3.5" r="1.2"/><circle cx="9" cy="13" r="1.3" fill="#c9b6ff"/><circle cx="15" cy="13" r="1.3" fill="#c9b6ff"/><path d="M2 12.5v3M22 12.5v3"/></svg>';
-const FX={firma:"!",espera:"⌛",coordina:"→",prueba:"✓",libre:"z",parada:"‖"};
+const FX={firma:"!",pregunta:"?",espera:"⌛",esperando:"⌛",coordina:"→",prueba:"✓",libre:"z",parada:"‖"};
 function nuevoTag(d){const e=document.createElement("button");e.type="button";e.className="tag";e.innerHTML=BOT+'<div class="tx"><b></b><span class="como"></span><span class="st"><span class="dot"></span><span class="es"></span></span><span class="more"><span class="fin"></span><span class="bar"><i></i></span></span></div><span class="fx"></span>';e.onclick=()=>abrir(d.agent.nombre);labelsEl.appendChild(e);d.el=e}
 function pintarTag(d){const a=d.agent,s=T.AST[a.estado]||[a.estado||"","#999"];d.el.style.setProperty("--c",s[1]);d.el.style.setProperty("--ropa",d.ropa);d.el.querySelector("b").textContent=a.nombre||"";d.el.querySelector(".como").replaceChildren(...(a.comoTrabaja?[T.iconoComo(a.comoTrabaja),a.comoTrabaja]:[]));
   d.el.querySelector(".es").textContent=s[0]+(a.mientras?" · y algo más":"");const f=T.finTxt(a),fin=d.el.querySelector(".fin");fin.replaceChildren();
   if(f){fin.append(f.hora);if(f.dif){const x=document.createElement("em");x.className=f.cls;x.textContent=" · "+f.dif;fin.append(x)}}
   const bar=d.el.querySelector(".bar");bar.hidden=a.avance==null;bar.firstChild.style.width=(a.avance||0)+"%";
-  const fx=d.el.querySelector(".fx");fx.textContent=FX[a.estado]||"";d.el.classList.toggle("alert",a.estado==="firma");d.el.classList.toggle("sel",sel===a.nombre);d.el.setAttribute("aria-label",(a.nombre||"")+": "+s[0])}
+  const fx=d.el.querySelector(".fx");fx.textContent=FX[a.estado]||"";d.el.classList.toggle("alert",a.estado==="firma"||a.estado==="pregunta");d.el.classList.toggle("sel",sel===a.nombre);d.el.setAttribute("aria-label",(a.nombre||"")+": "+s[0])}
 const tmp=new THREE.Vector3();
 function ubicarTags(){const W=stage.clientWidth,H=stage.clientHeight,cmp=stage.classList.contains("compact"),hr=cmp?11:20;
   const P=desks.map(d=>{tmp.copy(d.anchor);d.st.localToWorld(tmp);tmp.project(cam);const ax=(tmp.x+1)/2*W,ay=(1-tmp.y)/2*H;tmp.copy(d.headP);d.st.localToWorld(tmp);tmp.project(cam);
@@ -652,7 +681,7 @@ function resize(){const w=stage.clientWidth,h=stage.clientHeight;if(!w||!h)retur
 const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches,clock=new THREE.Clock();let lastScr=-1,ledRate=0,tagsAlDia=false;
 // Se dibuja con ritmo: más rápido mientras alguien toca la sala, a un ritmo tranquilo si hay personas que se mueven, muy de
 // vez en cuando si nadie se mueve, y nada si la sala no se ve. Con el movimiento reducido, sólo cuando algo cambia.
-const FPS_TOCANDO=30,FPS_MOVIMIENTO=15,FPS_QUIETA=4,TOCANDO_MS=2000,SOMBRA_CADA=3,PANTALLAS_S=.4,SE_MUEVEN=new Set(["trabajando","prueba","coordina","firma","espera"]);
+const FPS_TOCANDO=30,FPS_MOVIMIENTO=15,FPS_QUIETA=4,TOCANDO_MS=2000,SOMBRA_CADA=3,PANTALLAS_S=.4,SE_MUEVEN=new Set(["trabajando","prueba","coordina","firma","pregunta","espera"]);
 let hastaTocando=0,enVista=true,timer=null,cuadros=0;
 const ritmo=()=>reduce?0:performance.now()<hastaTocando?FPS_TOCANDO:desks.some(d=>SE_MUEVEN.has(d.agent.estado))?FPS_MOVIMIENTO:FPS_QUIETA;
 function programar(){clearTimeout(timer);timer=null;const f=ritmo();if(!f||!enVista||document.hidden)return;timer=setTimeout(()=>requestAnimationFrame(loop),1000/f)}

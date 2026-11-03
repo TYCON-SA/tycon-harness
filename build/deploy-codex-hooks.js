@@ -51,24 +51,27 @@ const SH_RUNNER = 'scripts/lib/run-sh-hook.js';
  * Reemplazando en cada texto, la ruta entra tal cual y quien serializa después la escapa.
  */
 function substitute(fragment, tcg0, skills0, { interp = harnessInterpreter(), platform = process.platform } = {}) {
-  // En Windows, Codex lanza cada gancho con `cmd.exe /C`, donde `bash` no está: un `.sh` va por el lanzador en Node, que
-  // busca Git Bash y hace fallar cerrado a un freno (scripts/lib/run-sh-hook.js). Las rutas, con barras normales
+  // En Windows, Codex lanza cada gancho con la consola de la sesión (`cmd` o PowerShell). Un `.sh` va por el lanzador en
+  // Node, porque `bash` no está en el camino de búsqueda; un freno, también el `.js`, porque PowerShell cambia su 2 por 1 y
+  // Codex sigue: el lanzador niega de una forma que no depende de la consola (scripts/lib/run-sh-hook.js). Barras normales
   const enWindows = platform === 'win32';
-  // cmd.exe corta o interpreta una ruta con `&`, `^` o `(` aunque no tenga espacios: el freno no arrancaría, y Codex sigue
+  // cmd corta o interpreta una ruta con `&`, `^` o `(` aunque no tenga espacios: el freno no arrancaría, y Codex sigue
   const needsQuotes = (v) => (enWindows ? /[^A-Za-z0-9_./:\\-]/ : /\s/).test(v);
   const tcg = enWindows ? String(tcg0).replace(/\\/g, '/') : tcg0;
   const skills = enWindows ? String(skills0).replace(/\\/g, '/') : skills0;
   const porLanzador = (x, ev) => {
-    const m = enWindows ? /^bash (\$\{(?:TCG|SKILLS)\}\/\S+\.sh)$/.exec(x) : null;
+    if (!enWindows) return x;
+    // todo gancho antes de una herramienta va como freno: sin depender de leer la lista, que si falla dejaría seguir
+    const m = (ev === 'PreToolUse' ? /^(?:bash|node) (\$\{(?:TCG|SKILLS)\}\/\S+\.(?:sh|js))$/ : /^bash (\$\{(?:TCG|SKILLS)\}\/\S+\.sh)$/).exec(x);
     if (!m) return x;
-    // todo `.sh` antes de una herramienta es un freno: sin depender de leer la lista, que si falla dejaría seguir
     return `node ${PH_TCG}/${SH_RUNNER}${ev === 'PreToolUse' ? ' --gate' : ''} ${m[1]}`;
   };
   // un comando del arnés que arranca con `node ` sale con el intérprete que decide
   // harness-node.js#interpreter MIRANDO EL DISCO (el Node propio del arnés, o `node`): la misma regla que el aplicador de
   // Claude Code, así quien despliega y quien audita (harness-parity.js, que llama a esta función) no se contradicen
   const prefix0 = (interp && interp.prefix) || 'node';
-  const prefix = needsQuotes(prefix0) && !prefix0.startsWith('"') ? `"${prefix0}"` : prefix0;
+  // en Windows el comando no puede empezar con comillas: PowerShell lo toma como un texto, da error y Codex sigue
+  const prefix = enWindows && needsQuotes(prefix0.replace(/"/g, '')) ? 'node' : needsQuotes(prefix0) && !prefix0.startsWith('"') ? `"${prefix0}"` : prefix0;
   // sin el Node del arnés (y sin apagarlo a propósito), un comando del arnés va por el piso de Node, como en el aplicador
   // de Claude Code: con un Node viejo en el PATH vuelve a lanzar con el del arnés o lo dice
   const floor = path.join(tcg, 'scripts', 'lib', 'node-floor.js');

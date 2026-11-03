@@ -32,9 +32,10 @@ También puede decidir qué firmas de rutina le delega y en qué máquinas. Si n
 
    > Esta sesión es la coordinadora
 
-2. La sesión lo anota y te pide que lo confirmes, con un click o desde tu terminal. Sin confirmar, ordena a las demás,
-   pero no firma nada ni recibe tus firmas para otra sesión.
-3. Escribí `/coordinate`. Te muestra el estado de la máquina y hace que ella lea sus reglas. **Sin este paso no las leyó.**
+2. La sesión lo anota, recibe la orden de leer sus reglas y te pide que lo confirmes, con un click o desde tu terminal. Sin
+   confirmar, ordena a las demás, pero no firma nada ni recibe tus firmas para otra sesión.
+
+Con eso ya está. `/coordinate` te muestra el estado de la máquina cuando quieras verlo.
 
 Hay una sola coordinadora por máquina. Si designás otra, reemplaza a la anterior.
 
@@ -61,6 +62,7 @@ llega a vos por los canales de aviso de tu organización, si tiene alguno.
 | **Firmas:** lo que el arnés pide firmado por una persona | Las dudas de detalle de cada sesión |
 | **Contraseñas:** lo que pide la contraseña de tu máquina | Los turnos: quién corre primero lo que carga la máquina |
 | **Decisiones de producto:** qué se construye, para quién y en qué orden | El estado de cada sesión, salvo que lo pidas |
+| **Lo que sale de la casa:** lo que sale a producción de un producto y lo que se le manda a un cliente o a alguien de afuera | Lo de rutina: encolar pedidos del arnés o publicar material ya aprobado |
 
 Esto es una regla que sigue ella, no un freno. Si te llega otra cosa, o algo tuyo no te llega, decíselo.
 
@@ -104,11 +106,13 @@ Los tres comandos sólo miran, no cambian nada.
 
 - **No contesta.** Mirá con `/wip` si está ocupada: lee los mensajes cuando termina el paso que está haciendo. Si esa
   pestaña se cerró, las otras sesiones siguen trabajando, y lo que esperaba a una persona te llega a vos.
-- **Se reinició o se compactó su conversación.** Sigue siendo la coordinadora, porque es la misma conversación. Puede
-  haber perdido las reglas: escribí `/coordinate` otra vez.
+- **Se compactó su conversación.** Sigue siendo la coordinadora, porque es la misma conversación, y recibe la orden de leer
+  sus reglas otra vez.
+- **Se reinició.** También sigue siéndolo. Acá no recibe esa orden: si notás que olvidó las reglas, escribí `/coordinate`.
 - **Hiciste `/clear` o abriste un chat nuevo.** Dejó de ser la coordinadora: para el arnés es otra conversación, aunque
-  conserve el nombre. Las otras sesiones siguen. Hasta que vuelvas a designarla, las firmas te llegan en la pestaña de cada
-  sesión. Se arregla repitiendo los tres pasos de «Lo que hacés vos». La organización no tiene que configurar nada.
+  conserve el nombre. Las otras sesiones siguen. Después de un `/clear`, si la sesión tiene nombre, ella te dice cómo
+  recuperarlo. Hasta que vuelvas a designarla, las firmas te llegan en la pestaña de cada sesión. Se arregla repitiendo los
+  pasos de «Lo que hacés vos». La organización no tiene que configurar nada.
 - **`/coordinate` dice que esta sesión no coordina.** La misma salida dice qué falta: la configuración de la organización
   o tu frase.
 - **No acepta tu frase.** La frase tiene que traer el nombre exacto que puso tu organización.

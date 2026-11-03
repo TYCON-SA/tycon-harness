@@ -82,6 +82,8 @@ function firstSentence(text) {
 
 // «Sos Ortega.»: el nombre que le dan a la sesión, no lo que le piden.
 const OWN_NAME = /^Sos\s+(?:la\s+|el\s+)?\S+\.?$/iu;
+// cómo trabajar, no qué hacer: «Avisale a la Coordinadora al arrancar», «Antes de pedir firma, medí…»
+const METHOD = /^(?:avis[aá]|actualiz[aá] tu fila|antes de|al arrancar|dec[ií]\b|ped[ií]\b|mand[aá]|no\b|se dice)/iu;
 // «Hacé el encargo de <archivo>» o «Leé y hacé <archivo>»: el archivo es el encargo. Si sólo lo nombra de paso, no lo es.
 const ENCARGO_FILE = /^(?:hac[eé]\s+el\s+encargo\s|le[eé]\s+y\s+hac[eé]\s).*?((?:~|\/)[^\s«»"']*encargo[^\s«»"']*\.md)(?=[\s.,:;]|$)/iu;
 const ENCARGO_FILE_MAX = 4096;
@@ -103,7 +105,7 @@ function titleOfEncargo(ruta) {
 // Lo que le piden a una sesión en su primer mensaje: sin «Sos X.». Si apunta a un archivo de encargo, su título; si una oración
 // no se puede decir entera por una ruta, lo que dice antes de los dos puntos; si no, la siguiente que se pueda decir.
 function encargoOf(text) {
-  for (const part of oneLine(text).split(SENTENCES).map((s) => s.trim()).filter((s) => s && !OWN_NAME.test(s))) {
+  for (const part of oneLine(text).split(SENTENCES).map((s) => s.trim()).filter((s) => s && !OWN_NAME.test(s) && !METHOD.test(s))) {
     const pointer = ENCARGO_FILE.exec(part);
     const title = pointer && titleOfEncargo(pointer[1]);
     if (title) return title;
