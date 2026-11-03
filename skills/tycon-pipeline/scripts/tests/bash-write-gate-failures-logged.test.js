@@ -178,7 +178,13 @@ test('T2 Falla_SinPrever_FrenaSoloLoQueEscribeUnaHistoria', () => {
 test('T3 Falla_ModuloDelArranque_FrenaSoloLoQueEscribeUnaHistoria', () => {
   const c = corral();
   try {
-    for (const m of ['state-dir.js', 'lib/story-gate.js', 'session-id.js']) matriz(c, { romper: m }, `sin ${m}`);
+    for (const m of ['lib/story-gate.js', 'session-id.js']) matriz(c, { romper: m }, `sin ${m}`);
+    // sin el lector de rutas no se sabe dónde vive el estado: frena igual, y dice dónde quedó el registro
+    const sinLector = enProceso(c, pedido(c.repo, `echo x > specs/story-x.md`), { romper: 'tycon-home.js' });
+    assert.strictEqual(sinLector.salida, 2, sinLector.stderr);
+    assert.match(sinLector.stderr, /La falla quedó en .*hook-errors\.log/);
+    const otro = enProceso(c, pedido(c.repo, `ls -la`), { romper: 'tycon-home.js' });
+    assert.strictEqual(otro.salida, 0, otro.stderr);
   } finally { fs.rmSync(c.home, { recursive: true, force: true }); }
 });
 

@@ -95,8 +95,9 @@ const LA_RED_ESCRIBE = new RegExp([...FORMAS_DE_ESCRIBIR,
 // lo que la antecede también cuenta (`echo x >specs/a.md`, `dd of=specs/a.md`)
 const LA_RED_NOMBRA = new RegExp(`${NOMBRA_RUTA_DE_HISTORIA.source}|\\bstory-[^\\s'"\`]*\\.md\\b|(?:^|[\\s/\\\\'"\`<>=(;:|&])(?:\\.?specs?|stories)(?:[\\\\/][^\\s'"\`]*\\.md\\b|[\\\\/]?(?=[\\s'"\`;&|)]|$))`, 'i');
 const frenaLaRed = (texto) => LA_RED_ESCRIBE.test(texto) && LA_RED_NOMBRA.test(texto);
+// sin el lector de rutas no se sabe dónde vive el estado: el registro va a la carpeta temporal, y el mensaje lo dice
 const carpetaDelEstado = () => {
-  try { return require('./lib/state-dir.js').stateDir(os.homedir()); } catch { return path.join(os.homedir(), '.claude', '.tycon-pipeline'); }
+  try { return stateDirOf(os.homedir()); } catch { return os.tmpdir(); }
 };
 /** Lo último que hace el freno cuando falló sin haber mirado el comando: frena o sigue, y lo deja dicho. */
 // en una entrada rota, los saltos de línea siguen escritos como `\n`. En un comando ya leído es otra cosa: `\rm` es `rm`
@@ -137,7 +138,8 @@ if (require.main === module) {
   });
 }
 
-const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // la carpeta del estado, de una sola pieza
+// la carpeta del estado, de una sola pieza. Sin `lib/state-dir.js`: la red de arriba la necesita aunque ese módulo no cargue
+const stateDirOf = (() => { const lib = path.join(__dirname, '..', '..', '..', 'scripts', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 const { isCodeFile, isManifestFile, NEVER_CODE_SEGMENTS } = require('./lib/story-gate.js');
 const { resolveSessionId } = require('./lib/session-id.js');
 // Con respaldo, como en dispatch.js y on-write-collision.js: sin la lib (un skill instalado a medias) el portón no puede
@@ -2602,7 +2604,8 @@ function corcheteDelShell(g, i) {
   }
   if (cualquiera || j - desde > CORCHETE_TOPE) return { fin: j, coincide: () => true };
   let clase;
-  try { clase = new RegExp(`^[${adentro.join('')}]$`, 'u'); } catch { return null; }
+  // un rango al revés no abarca nada: solo no nombra nada, y negado nombra cualquier carácter
+  try { clase = new RegExp(`^[${adentro.join('')}]$`, 'u'); } catch { return negado ? { fin: j, coincide: () => true } : null; }
   return { fin: j, coincide: (c) => clase.test(c) !== negado };
 }
 

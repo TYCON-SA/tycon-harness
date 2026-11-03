@@ -299,6 +299,12 @@ test('T16 Glob_PosixClass_Blocks', () => {
     assert.strictEqual(r.salida, 2, `${g}: ${r.stderr}`);
     assert.match(r.stderr, HISTORIA, g);
   }
+  // un rango al revés no abarca nada: negado, el shell lo lee como cualquier carácter
+  for (const g of ['[!z-a]', '[^z-a]']) {
+    const r = correr(c, `sed -i '' 's/a/b/' specs/${g}tory-1.1.md`);
+    assert.strictEqual(r.salida, 2, `${g}: ${r.stderr}`);
+    assert.match(r.stderr, HISTORIA, g);
+  }
   // el guion al final es un carácter más
   assert.doesNotMatch(correr(c, `sed -i '' 's/a/b/' specs/s[[:digit:]-]ory-1.1.md`).stderr, HISTORIA, 'esa clase no tiene la t');
   // la clase mira de verdad: el `1` no es una letra
