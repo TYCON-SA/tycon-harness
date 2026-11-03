@@ -1043,6 +1043,12 @@
       "requiere": []
     },
     {
+      "__nota": "la matriz juzga la evidencia contra el commit: un cambio de rama no la vence si el archivo no cambió. Laboratorios con repos de git de verdad.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/evidence-vs-commit.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "un criterio de pantalla sólo cuenta como probado con una captura o una grabación del navegador real atada a ese criterio (la matriz, el portón E2E y smoke-run.sh --capture).",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/visual-evidence.test.js",
