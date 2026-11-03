@@ -234,3 +234,76 @@ test('T14 Glob_LongClosedClass_StillBlocks', () => {
     assert.strictEqual(correr(c, `sed -i '' 's/a/b/' specs/story-[!${'x'.repeat(relleno)}].1.md`).salida, 2, `la negación de ${relleno} caracteres`);
   }
 });
+
+// T15 Glob_EscapedBracketInClass_Blocks
+// 🔴 Falla con: leer `\]` como el cierre del corchete: la clase termina antes, sobra un `]` y el comodín no nombra la
+//    historia que el shell sí expande.
+test('T15 Glob_EscapedBracketInClass_Blocks', (t) => {
+  if (process.platform === 'win32') return t.skip('en Windows la barra invertida separa carpetas');
+  const c = corral();
+  for (const g of ['[1\\]]', '[\\]1]', '[!\\]x]', '[1\\\\]']) {
+    for (const cmd of [`sed -i '' 's/a/b/' specs/story-${g}.1.md`, `echo x > specs/story-${g}.1.md`, `rm specs/story-${g}.1.md`]) {
+      const r = correr(c, cmd);
+      assert.strictEqual(r.salida, 2, `${cmd}: ${r.stderr}`);
+      assert.match(r.stderr, HISTORIA, cmd);
+    }
+  }
+  // afuera de un corchete, la barra escapa el carácter que sigue
+  const conBarra = correr(c, `sed -i '' 's/a/b/' specs/st\\ory-*.md`);
+  assert.strictEqual(conBarra.salida, 2, conBarra.stderr);
+  assert.match(conBarra.stderr, HISTORIA);
+  // también el punto de una carpeta oculta: pide los ocultos igual que sin la barra
+  fs.mkdirSync(path.join(c.dir, '.oculta'));
+  fs.copyFileSync(path.join(c.dir, 'specs', 'story-1.1.md'), path.join(c.dir, '.oculta', 'story-1.2.md'));
+  const oculta = correr(c, `sed -i '' 's/a/b/' \\.oculta/st*.md`);
+  assert.strictEqual(oculta.salida, 2, oculta.stderr);
+  assert.match(oculta.stderr, HISTORIA);
+  const tramo = correr(c, `sed -i '' 's/a/b/' .oculta/\\.*`);
+  assert.strictEqual(tramo.salida, 0, 'ahí no hay ocultos que nombren una historia');
+  fs.copyFileSync(path.join(c.dir, 'specs', 'story-1.1.md'), path.join(c.dir, '.oculta', '.story-1.3.md'));
+  const archivo = correr(c, `sed -i '' 's/a/b/' .oculta/\\.st*`);
+  assert.strictEqual(archivo.salida, 2, archivo.stderr);
+  fs.rmSync(path.join(c.dir, '.oculta'), { recursive: true });
+  // la clase sigue siendo una clase: la que no tiene el carácter no nombra la historia
+  const r = correr(c, `sed -i '' 's/a/b/' specs/story-[2\\]].1.md`);
+  assert.doesNotMatch(r.stderr, HISTORIA, 'esa clase no nombra story-1.1.md');
+});
+
+// T16 Glob_PosixClass_Blocks
+// 🔴 Falla con: leer `[[:digit:]]` como los caracteres de la palabra `digit`: la clase no coincide con el `1` y el comodín
+//    no nombra la historia; o inventar una regla para una clase que no se conoce, en lugar de frenar.
+test('T16 Glob_PosixClass_Blocks', () => {
+  const c = corral();
+  for (const g of ['[[:digit:]]', '[[:alnum:]]', '[[:digit:]x]', '[x[:digit:]]', '[![:alpha:]]', '[[:xdigit:]]', '[[:raro:]]', '[[:digit:]-_]', '[_-[:digit:]]']) {
+    for (const cmd of [`sed -i '' 's/a/b/' specs/story-${g}.1.md`, `echo x > specs/story-${g}.1.md`]) {
+      const r = correr(c, cmd);
+      assert.strictEqual(r.salida, 2, `${cmd}: ${r.stderr}`);
+      assert.match(r.stderr, HISTORIA, cmd);
+    }
+  }
+  // un guion pegado a una clase, con un carácter que la clase no tiene: del lado que frena
+  for (const cmd of [`sed -i '' 's/a/b/' specs/s[[:digit:]-_]ory-1.1.md`, `sed -i '' 's/a/b/' specs/s[[:xdigit:]-z]ory-1.1.md`, `sed -i '' 's/a/b/' specs/s[_-[:digit:]]ory-1.1.md`]) {
+    const r = correr(c, cmd);
+    assert.strictEqual(r.salida, 2, `${cmd}: ${r.stderr}`);
+    assert.match(r.stderr, HISTORIA, cmd);
+  }
+  // las clases de equivalencia y los símbolos, y un nombre que es una propiedad de todo objeto: del lado que frena
+  for (const g of ['[[=s=]]', '[[.s.]]', '[[:constructor:]]']) {
+    const r = correr(c, `sed -i '' 's/a/b/' specs/${g}tory-1.1.md`);
+    assert.strictEqual(r.salida, 2, `${g}: ${r.stderr}`);
+    assert.match(r.stderr, HISTORIA, g);
+  }
+  // lo que parece una clase cierra el único `]`: el corchete cierra ahí, y no es texto
+  for (const g of ['[[:bogus:]', '[[=s=]', '[[.s.]', '[x[:bogus:]']) {
+    const r = correr(c, `sed -i '' 's/a/b/' specs/${g}tory-1.1.md`);
+    assert.strictEqual(r.salida, 2, `${g}: ${r.stderr}`);
+    assert.match(r.stderr, HISTORIA, g);
+  }
+  // el guion al final es un carácter más
+  assert.doesNotMatch(correr(c, `sed -i '' 's/a/b/' specs/s[[:digit:]-]ory-1.1.md`).stderr, HISTORIA, 'esa clase no tiene la t');
+  // la clase mira de verdad: el `1` no es una letra
+  for (const g of ['[[:alpha:]]', '[![:digit:]]']) {
+    const r = correr(c, `sed -i '' 's/a/b/' specs/story-${g}.1.md`);
+    assert.doesNotMatch(r.stderr, HISTORIA, `${g} no nombra story-1.1.md`);
+  }
+});
