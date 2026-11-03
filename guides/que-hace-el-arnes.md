@@ -157,7 +157,7 @@ Cada artefacto **se commitea al repo**, al lado del código: versionado, con his
 cada punto de revisión se puede lanzar una pasada adversarial que verifica la concordancia entre los
 tres niveles — que un cambio en una story no rompa la arquitectura ni el PRD, y al revés.
 
-No todo pasa por la ceremonia completa: para un cambio chico está el **camino rápido** (abajo). El papel lo decide
+No todo pasa por la ceremonia completa: para algo chico está el **camino rápido** (abajo). El papel lo decide
 el tamaño; quién aprueba, el riesgo.
 
 ### La medida justa: cuánto papel lleva cada cambio
@@ -179,7 +179,7 @@ historia por historia, con la medida justa**: cada historia es su propia especif
 se escribe en la historia, y el documento de producto y la arquitectura no se vuelven a tocar salvo que una historia
 los cambie de verdad. Son **dos preguntas**, independientes, que se contestan **antes de tocar código**:
 
-**1. ¿Historia o camino rápido? Lo decide el tamaño.** La pregunta es si es un cambio chico: lo pedís en una frase y,
+**1. ¿Historia o camino rápido? Lo decide el tamaño.** La pregunta es si es algo chico, un arreglo o una función nueva: lo pedís en una frase y,
 al terminar, ves que quedó con sólo mirar el resultado y sus pruebas, sin una lista de criterios.
 
 - **Sí: camino rápido.** El papel es el motivo en una línea y la lista de archivos. Un motivo con varios temas no es
@@ -339,7 +339,7 @@ que sigue:
 - **Historia** — esto es trabajo de una story con spec. Se abre el **marcador** (un archivo
   de estado que dice *"hay una story en curso, es ésta"*), arranca el timer, y de ahí en más los
   frenos de edición saben contra qué verificar.
-- **Camino rápido** — un cambio chico: se abre el **carril**, con el motivo en una línea y la lista de
+- **Camino rápido** — algo chico: se abre el **carril**, con el motivo en una línea y la lista de
   archivos. Menos ceremonia, pero deja rastro.
 
 Sin uno de los dos, no se toca código. Ése es el portón del Momento 4.
@@ -746,7 +746,7 @@ frase.
 | **SDD** | *spec-driven development*: la spec antes que el código, y el código la sirve |
 | **BMAD** | el framework de agentes que produce y mantiene las specs |
 | **sesión coordinadora** | una sesión de agente, no una persona, que tu equipo puede usar para aprobar lo de rutina: con riesgo normal abre el camino rápido (hasta 5 archivos, y te avisa) y aprueba el plan si la revisión automática dio «aprobado»; sin ella, lo aprobás vos. Lo delicado lo aprobás siempre vos |
-| **camino rápido** | un cambio chico sin historia: el motivo en una línea y la lista de archivos |
+| **camino rápido** | algo chico, sin historia: el motivo en una línea y la lista de archivos |
 | **ADO** | Azure DevOps, donde viven los work items |
 | **banco de pruebas** | los casos que disparan los controles reales para verificar que bloquean lo que dicen |
 | **smoke** | prueba mínima contra el sistema corriendo de verdad, no contra el build |
