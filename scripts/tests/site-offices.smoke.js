@@ -83,6 +83,9 @@ async function delSitio(browser) {
     await m.page.goto(`${h.base}/offices`);
     await m.page.waitForSelector('.oficina[data-id="maquina-b"]', { timeout: ESPERA_MS });
     check((await m.page.locator('html').getAttribute('data-source')) === 'site', 'la página dice su fuente');
+    // dentro del armazón del sitio, como la maqueta: encabezado, barra lateral con la pestaña marcada y la letra del sitio
+    check(await m.page.locator('header.barra').isVisible() && await m.page.locator('aside.side a[aria-current="page"]').innerText().then((t) => /Oficinas/.test(t)), 'el encabezado y la barra lateral del sitio, con la pestaña marcada');
+    check(/Lato/.test(await m.page.locator('.oficina h2').first().evaluate((e) => getComputedStyle(e).fontFamily)), 'la letra del sitio');
     await m.page.waitForFunction(() => document.querySelectorAll('.oficina canvas').length === 2, null, { timeout: ESPERA_MS });
     check(await salas(m.page) === 2, 'las dos oficinas tienen su sala en 3D');
     check(await m.page.locator('.oficina[data-id="maquina-a"] .stats').innerText().then((t) => /4\s*sesiones/.test(t) && /1\s*trabajando/.test(t) && /1\s*esperan tu firma/.test(t) && /1\s*esperan o libres/.test(t) && /coordina\s*Coordinadora/.test(t)), 'el resumen de la oficina');

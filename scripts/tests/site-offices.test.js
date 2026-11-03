@@ -304,6 +304,19 @@ test('T34 Pagina_BajoLaPoliticaDelSitio — @story-8.171 @ac-17b @ac-10c', async
     // ni manejadores en línea, que la política no deja correr, ni token, ni datos
     assert.doesNotMatch(pagina.texto, /<[a-z][^>]*\son[a-z]+\s*=/i, 'sin manejadores en línea');
     assert.match(pagina.texto, /<html[^>]*data-source="site"/);
+    // dentro del armazón del sitio, como la maqueta: su encabezado, su barra lateral con la pestaña marcada, sus hojas y
+    // su pie; la oficina no trae barra propia ni los estilos de página que pisarían los del sitio
+    assert.match(pagina.texto, /<header class="barra">/, 'el encabezado del sitio');
+    assert.match(pagina.texto, /<aside class="side"><nav class="tabs"[^>]*>[\s\S]*?<a href="\/offices" class="activa" aria-current="page">/, 'la barra lateral, con la pestaña marcada');
+    assert.match(pagina.texto, /<link rel="stylesheet" href="\/static\/site\.css">/, 'las hojas del sitio');
+    assert.match(pagina.texto, /<footer class="pie">/, 'el pie del sitio');
+    assert.doesNotMatch(pagina.texto, /barra-sitio|id="estiloPagina"/, 'sin barra propia ni los estilos de página de la local');
+    assert.strictEqual((pagina.texto.match(/<h1\b/g) || []).length, 1, 'un solo título');
+    assert.match(pagina.texto, /<section class="oficinas" id="oficinas"/, 'la pestaña adentro');
+    // la local sigue con su página de siempre
+    const local = require(path.join(OFFICE_DIR, 'page-parts.js')).renderPage({ source: 'local', token: 'abc', urlOf: (k) => `/modules/${k}`, script: '/page.js?t=abc' });
+    assert.match(local, /id="estiloPagina"/);
+    assert.doesNotMatch(local, /class="side"/);
     assert.doesNotMatch(pagina.texto, /data-token|[?&]t=[0-9a-f]/, 'sin token');
     assert.doesNotMatch(pagina.texto, /id="officeData"/, 'los datos llegan por la conexión');
     assert.ok(scripts.some((s) => /src="\/offices\/page\.js"/.test(s[1])), 'el código desde page.js');
