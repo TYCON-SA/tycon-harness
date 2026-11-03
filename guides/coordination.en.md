@@ -365,8 +365,8 @@ it refers to.
 
 ## The board in the office
 
-The `/office` page shows pending work as a kanban with five columns: **Tu firma, En curso, Esperan entrar, Sin sesión and
-Hechos**. The first three build themselves from what each session is doing. The coordinator's board adds what the machine
+The `/office` page shows pending work as a kanban with five columns: **Sin sesión, En curso, Tu firma, Esperan entrar and
+Terminados**. En curso, Tu firma and Esperan entrar build themselves from what each session is doing. The coordinator's board adds what the machine
 does not know. The coordinator writes the whole board to `<state>/coordination/tablero.json` (first to a separate file and
 then renamed, so the office never reads it half written) every time it changes:
 
@@ -377,10 +377,32 @@ then renamed, so the office never reads it half written) every time it changes:
 - `historia` (for example `"2.81"`) and `pedido` (`{ "repo": "tycon-harness", "numero": 885 }`), both optional. With
   `historia` and a run of that story on this machine, the row adds no state or time: they come from the run, and the row
   adds its `nota`. With `pedido`, the state comes from asking for it, at most once a minute: open goes to «Esperan
-  entrar», with the reason if it is a draft or out of the queue; merged goes to «Hechos» with its time. If the query fails,
+  entrar», with the reason if it is a draft or out of the queue; merged goes to «Terminados» with its merge time. If the query fails,
   the row stays where `estado` says and the reason goes to «No se pudo leer». `repo` is the name of a repo of a run on this
   machine or of one declared in `team-repos.json`. `estado` only counts when there is nowhere else to get it from.
-- `meta`: `actualizado`, `resumen` and `teToca` (what the owner has to do, one line each).
+- `meta`: `actualizado`, `resumen` and `teToca` (what the owner has to do, one line each). «Te toca» comes from the
+  signatures, the open questions and this list: notes are not read, so what the owner has to do goes here.
+
+«Terminados» is what was done today, with its time; anything older, or with no `realIso`, goes to the «Hechos» table.
+
+### The «Hoy» and «Pendientes» tables
+
+The two tables build themselves from the same cards as the kanban, and nobody writes them: not the coordinator, not a
+session. A `tablas` key on the board is ignored, and `office.js --write-tables` answers that it no longer exists. «Hoy» holds
+«En curso», «Tu firma», «Esperan entrar» and «Terminados»; «Pendientes» holds what has no session and what was left halfway.
+There is one row per topic, naming up to two pieces of work, with a line counted from the cards: «5 en curso, el próximo
+termina a las 23:30 · 2 esperan entrar · 6 terminados hoy». Touching the row opens its work.
+
+A model picks the topic of each piece of work once, in the background, and it stays saved: it does not change when the work
+changes its time or its session. It is the organization's nightly model (`models.nightly`), or that same model through the
+local service if the machine does not have its key. It receives only the title of the new work and the topics already used.
+The title of another project is not sent: it goes to «Otro proyecto». Neither is one naming a person on the private list, if
+the list is on the machine: it goes to «Otros». With no model, the topic comes from the titles of recent pull requests, and
+the table says so. The spending has a daily cap; `node scripts/tools/office/topics.js --report` says how much has gone.
+
+If a topic came out wrong, fix it with `tema` on the board row: it wins over the model. A row cannot write the status line. An
+open row that names a live session in `quien`, and is the only one naming it, remembers the pull request of its branch: when
+that enters, the row moves to «Terminados» with its time, even if the session has closed.
 
 Without the file the kanban still shows, with the real-state columns. A broken file is reported below, under «No se pudo
 leer». The live office reads it again on its own when it changes, and the kanban says «Tablero escrito a las HH:MM», with

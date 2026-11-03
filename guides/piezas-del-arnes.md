@@ -146,7 +146,7 @@ nueva, hasta que se retire.
 
 **Qué es:** La guía del stack .NET para plugins Bizuit: `IBackendPlugin`, `SafeQueryBuilder`, transacciones y orquestador. Es del paquete bizuit, que viaja con el perfil del equipo.
 
-**Por qué existe:** Fija las convenciones del backend de plugins para que todos escriban igual.
+**Por qué existe:** Para que todos escriban igual.
 
 **Quién la usa:** Quien escribe o revisa backend .NET de plugins Bizuit.
 
@@ -158,7 +158,7 @@ nueva, hasta que se retire.
 
 **Qué es:** La guía del stack React/TS para plugins Bizuit: límites de Tailwind en producción, inputs `text-gray-900`, patrón fijo de modales, iconos, autenticación Bearer del SDK y pruebas con vitest. Es del paquete bizuit.
 
-**Por qué existe:** Fija las convenciones del frontend de plugins para que todos escriban igual.
+**Por qué existe:** Para que todos escriban igual.
 
 **Quién la usa:** Quien escribe o revisa frontend React de plugins Bizuit.
 
@@ -170,7 +170,7 @@ nueva, hasta que se retire.
 
 **Qué es:** La guía del stack Next.js (App Router) para plugins Bizuit: frontera servidor/cliente, carga de datos, API de metadata, Server Actions con validación, variables de entorno, Route Handlers y seguridad de hidratación. Es del paquete bizuit.
 
-**Por qué existe:** Fija las convenciones de Next.js para que todos escriban igual.
+**Por qué existe:** Para que todos escriban igual.
 
 **Quién la usa:** Quien escribe o revisa frontend Next.js de plugins Bizuit.
 
@@ -876,7 +876,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 ## guides/integrations/ado-cola-y-listados.md
 
-**Qué es:** La guía `guides/integrations/ado-cola-y-listados.md` con el porqué de las seis reglas del bloque de Azure DevOps de cada sesión.
+**Qué es:** La guía con el porqué de las seis reglas del bloque de Azure DevOps de cada sesión.
 
 **Por qué existe:** Un listado atrasado, vacío o fallido no es evidencia de lo que no muestra; las acciones con efectos se disparan por evidencia positiva. Explica cada regla con sus comandos.
 
@@ -888,7 +888,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 ## guides/integrations/clockify-mcp.md
 
-**Qué es:** La guía `guides/integrations/clockify-mcp.md` para instalar el MCP de la herramienta de horas en Claude Code (opcional).
+**Qué es:** La guía para instalar el MCP de la herramienta de horas en Claude Code (opcional).
 
 **Por qué existe:** Permite el seguimiento de horas desde la sesión. Trae los scripts `.sh` y `.ps1` de su integración, instala a nivel de usuario y usa una clave personal por dev.
 
@@ -900,7 +900,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 ## guides/integrations/clocki-tracking.md
 
-**Qué es:** La guía `guides/integrations/clocki-tracking.md` del seguimiento automático de horas.
+**Qué es:** La guía del seguimiento automático de horas.
 
 **Por qué existe:** Abre la entrada de tiempo al arrancar trabajo y la cierra al detectar más de 15 minutos de inactividad, con la hora de fin retroactiva. Asocia carpeta y proyecto solo.
 
@@ -912,7 +912,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 ## guides/integrations/codegraph-mcp.md
 
-**Qué es:** La guía `guides/integrations/codegraph-mcp.md` para instalar CodeGraph como MCP (opcional).
+**Qué es:** La guía para instalar CodeGraph como MCP (opcional).
 
 **Por qué existe:** Es un índice del código en una base local para consultar símbolos, llamadores y dependencias sin escanear archivos. Los scripts autodetectan repo suelto o contenedor; un hook de arranque configura cada repo nuevo.
 
@@ -924,7 +924,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 ## guides/signed-scope-guardrails.md
 
-**Qué es:** La guía `guides/signed-scope-guardrails.md` con cuatro mecanismos contra el corrimiento no autorizado de lo firmado por el cliente.
+**Qué es:** La guía con cuatro mecanismos contra el corrimiento no autorizado de lo firmado por el cliente.
 
 **Por qué existe:** Sin nada que cruce el plan con lo firmado, un corrimiento de sprint pasa días sin detectarse. Usa el frontmatter `signed_for_sprint`, un registro obligatorio de cambios, el validador VAL-C7 y una auditoría periódica.
 
@@ -936,7 +936,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 ## guides/integrations/ado-projects.md
 
-**Qué es:** La guía `guides/integrations/ado-projects.md` de la integración con Azure DevOps.
+**Qué es:** La guía de la integración con Azure DevOps.
 
 **Por qué existe:** Al crear una story se crea sola su work item. Cubre el hook `on-story-create.js`, la skill `tycon-story-work-item`, el esquema de `.tycon/ado-config.yaml`, el tipo de work item por plantilla, el vínculo al Epic y el ciclo de vida.
 
@@ -948,7 +948,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 ## guides/safety-guard.md
 
-**Qué es:** La guía `guides/safety-guard.md` del freno de mano: un hook que bloquea comandos destructivos irreversibles en Bash y PowerShell.
+**Qué es:** La guía del freno de mano: un hook que bloquea comandos destructivos irreversibles en Bash y PowerShell.
 
 **Por qué existe:** Frena `rm -rf /`, el push forzado a main, `curl|bash`, el borrado de bases de datos, `npm publish` o leer `.ssh`. Está prendido por defecto; se apaga con `TYCON_SAFETY_GUARD=0` y hay una salida de emergencia por comando, que la persona firma en su terminal.
 
@@ -960,7 +960,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 ## guides/maintaining/context-budget.md
 
-**Qué es:** La guía `guides/maintaining/context-budget.md` de la auditoría de tokens del arnés.
+**Qué es:** La guía de la auditoría de tokens del arnés.
 
 **Por qué existe:** Un script de Node mide cuántos tokens gasta el arnés (skills, agentes, MCPs, `CLAUDE.md`) al abrir cada sesión, señala los que más pesan y propone recortes ordenados por ahorro.
 
@@ -972,7 +972,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 ## guides/maintaining/skill-scout.md
 
-**Qué es:** La guía `guides/maintaining/skill-scout.md` de la skill que se dispara antes de crear una skill, agente, guía o hook.
+**Qué es:** La guía de la skill que se dispara antes de crear una skill, agente, guía o hook.
 
 **Por qué existe:** Evita capas duplicadas que dividen el conocimiento. Busca en el catálogo local y ofrece tres caminos: usar lo que existe, extenderlo o crear algo nuevo. No busca en GitHub ni en la web.
 
@@ -984,7 +984,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 ## guides/maintaining/rules-distill.md
 
-**Qué es:** La guía `guides/maintaining/rules-distill.md` de la auditoría del catálogo de reglas contra los revisores que las aplican.
+**Qué es:** La guía de la auditoría del catálogo de reglas contra los revisores que las aplican.
 
 **Por qué existe:** Un script de Node determinista detecta cinco clases de desajuste: referencias rotas, huérfanas, zombis, dueño equivocado y reglas aplicadas por hooks. El dueño de cada regla sale de `scripts/lib/rules-catalog.js`.
 
@@ -996,7 +996,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 ## guides/maintaining/harness-audit.md
 
-**Qué es:** La guía `guides/maintaining/harness-audit.md` del chequeo reproducible del arnés.
+**Qué es:** La guía del chequeo reproducible del arnés.
 
 **Por qué existe:** Puntúa de 0 a 10 siete categorías (cobertura de revisores, eficiencia de contexto, controles de calidad, memoria, integridad del catálogo, guardas de seguridad, cableado del pipeline) y lista las cinco acciones prioritarias. Reemplaza la auditoría manual.
 
@@ -1008,9 +1008,9 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 ## guides/integrations/instinct-mining.md
 
-**Qué es:** La guía `guides/integrations/instinct-mining.md` del grabador silencioso que propone reglas atómicas (instintos).
+**Qué es:** La guía del grabador silencioso que propone reglas atómicas (instintos).
 
-**Por qué existe:** La integración `integrations/instincts/` (la prende el perfil del equipo) graba de fondo llamadas de herramientas saneadas con el repo y la organización del remoto, y avisa una vez por máquina qué se graba; un observador propone instintos con el modelo y una segunda pasada descarta lo que repite algo ya decidido. El dev aprueba con `/tycon-instincts`. `scripts/instincts/instinct-dirs.js` dice dónde viven las propuestas.
+**Por qué existe:** La integración `integrations/instincts/` (la prende el perfil del equipo) graba de fondo llamadas de herramientas saneadas y avisa una vez qué se graba; un observador propone instintos y descarta lo que repite algo ya decidido. El dev aprueba con `/tycon-instincts`. `scripts/instincts/instinct-dirs.js` dice dónde viven las propuestas.
 
 **Quién la usa:** Los hooks de grabación y arranque, y el dev que revisa.
 
@@ -1020,7 +1020,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 ## guides/harness-cost-tiering.md
 
-**Qué es:** La guía `guides/harness-cost-tiering.md` para bajar el costo del pipeline: ejecutor barato para lo mecánico, modelo caro sólo para el juicio.
+**Qué es:** La guía para bajar el costo del pipeline: ejecutor barato para lo mecánico, modelo caro sólo para el juicio.
 
 **Por qué existe:** Reparte el modelo por trabajo: baja un revisor de nivel, `pipeline.js advisors --cost-tier lean` pide Haiku como opción y el orquestador sugiere un esfuerzo de sesión según la complejidad de la story. Cada movimiento se revierte por separado.
 
@@ -1466,9 +1466,9 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Qué es:** Avisa al abrir la sesión, en una línea, si a `dev` le faltan commits de `main` o si hay trabajo en `dev` que hace una semana no llega a `main`.
 
-**Por qué existe:** El paso de los pipelines de producto que lo avisaba escribía en el log de una ejecución verde, que nadie abre. Calla lo que es de diseño (los commits de versión del bot, el trabajo en curso) y dice «no sé» con datos viejos.
+**Por qué existe:** Lo avisaba un paso que escribía en el log de una ejecución verde, que nadie abre. Calla lo que es de diseño (los commits de versión, el trabajo en curso) y dice «no sé» con datos viejos.
 
-**Quién la usa:** El arranque de sesión, en los repos de producto de la organización del equipo. La oferta de poner `dev` al día sigue `guides/git-commit-conventions.md` §«Poner `dev` al día». Se apaga con `TYCON_DEV_BEHIND_NOTICE=0`.
+**Quién la usa:** El arranque de sesión, en los repos de producto. Ponerla al día sigue `guides/git-commit-conventions.md` §«Poner `dev` al día». Se apaga con `TYCON_DEV_BEHIND_NOTICE=0`.
 
 **Dónde se prueba:** `scripts/tests/dev-behind-main-notice.test.sh`
 
@@ -1555,6 +1555,18 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 **Dónde se prueba:** `skills/tycon-pipeline/scripts/tests/deprecated-gates.test.js` y el caso 64 del banco
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptson-deprecated-editjs)
+
+## scripts/hooks/cover-secrets.js
+
+**Qué es:** Cambia por `«tapado»` los valores reales de los secretos de la máquina en lo que devuelven los comandos, las lecturas y las búsquedas.
+
+**Por qué existe:** Un `env` filtrado o un guion imprimían un token, y la conversación sube al buzón. Un freno no ve lo que hace un guion; tapar mira el resultado.
+
+**Quién la usa:** El hook de cada herramienta; `upload-runs.js`, con la misma biblioteca (`known-secrets.js`). Se apaga con `TYCON_COVER_SECRETS=0`.
+
+**Dónde se prueba:** `scripts/tests/cover-secrets.test.js`, `controls-bench/cases/hooks/78-cover-secrets.json`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshookscover-secretsjs)
 
 ## scripts/hooks/failed-query-notice.js
 

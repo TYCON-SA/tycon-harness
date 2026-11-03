@@ -976,6 +976,12 @@ function lastTouched(sdir, sid, home, nowMs, unreadable, maxAgeMs = IDLE_MS) {
   return out;
 }
 
+// Cuándo tocó archivos una sesión sin ejecución, para saber si siguió trabajando después de anotar lo que esperaba.
+function touchedField(sdir, sid, home, nowMs, unreadable) {
+  const at = lastTouched(sdir, sid, home, nowMs, unreadable).newest;
+  return Number.isFinite(at) ? { touchedAt: at } : {};
+}
+
 // Los repos o carpetas de trabajo de una lista de archivos, si alguno estaba en una carpeta de trabajo que ya no existe, y si
 // alguno no se pudo leer.
 function rootsOf(paths, ctx) {
@@ -1402,7 +1408,7 @@ function buildWip(opts = {}) {
       const declaredAt = [a.untilAt, a.declaredAt].map((v) => Date.parse(v)).find(Number.isFinite);
       looseRows.set(sid, rows.length);
       addRow({ work, state: parts.join(' · '), end: hourVerdict({ endAt: until, hourAt: declaredAt, nowMs }) || declaredEnd(a.until, until), session: label, folder: folderOf(sid) }, sid,
-        { kind: 'loose', text: String(a.reason || ''), endAt: declared ? until : null, hourAt: declaredAt === undefined ? null : declaredAt, promiseAt: declaredAt === undefined ? null : declaredAt });
+        { ...touchedField(sdir, sid, home, nowMs, unreadable), kind: 'loose', text: String(a.reason || ''), endAt: declared ? until : null, hourAt: declaredAt === undefined ? null : declaredAt, promiseAt: declaredAt === undefined ? null : declaredAt });
     }
     else {
       // Se limpia con `adhoc clear-orphan`, que sólo borra pasadas las 24 h sin tocarse: antes, se dice desde cuándo.
@@ -1478,7 +1484,7 @@ function buildWip(opts = {}) {
     const until = Date.parse(d.endAt);
     const declared = Number.isFinite(until);
     addRow({ work, state: parts.join(' · '), end: d.waitingFor ? waitingEnd(d) : hourVerdict({ endAt: until, hourAt: at, nowMs }) || declaredEnd(d.endAt, until), session: label, folder: folderOf(sid) }, sid,
-      { kind: 'note', text: String(d.text || ''), endAt: declared ? until : null, hourAt: Number.isFinite(at) ? at : null, promiseAt: Number.isFinite(at) ? at : null, ...(finishedStory.has(sid) ? { finishedStoryId: finishedStory.get(sid) } : {}), ...hourOfNote(d) });
+      { ...touchedField(sdir, sid, home, nowMs, unreadable), kind: 'note', text: String(d.text || ''), endAt: declared ? until : null, hourAt: Number.isFinite(at) ? at : null, promiseAt: Number.isFinite(at) ? at : null, ...(finishedStory.has(sid) ? { finishedStoryId: finishedStory.get(sid) } : {}), ...hourOfNote(d) });
   }
 
   // sin arreglo ni nota: si lo último que tocó la sesión está en un repo que no es de su story, eso hace mientras tanto

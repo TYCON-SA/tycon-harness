@@ -44,6 +44,8 @@ Este archivo. Nace: el README se importa ENTERO en cada sesión y en cada subage
 
 ## scripts/tools/work-in-progress.js
 
+**El tema de las tablas de la oficina (`scripts/tools/office/topics.js`):** un modelo elige una vez el tema de cada trabajo, de fondo y con una página conectada, a lo sumo una vez por minuto; queda guardado en `<estado>/office/`. Se le manda sólo el título, con un tope de tokens por día (`--report` dice cuánto va). Las tablas se escribían a mano y hablaban de otra cosa que el kanban: de 33 filas escritas, sólo 9 tenían tarjeta. Por títulos de pedidos, 4 de cada 10 trabajos quedaban sin tema. Prueba: `scripts/tests/office-topics.test.js`.
+
 **De dónde sale el estado:** de si la sesión trabaja, no de su paso: en Claude, su archivo de sesión (`status`); en Codex, `busy` del archivo de estado, que anota el gancho con el mensaje de la persona y el fin de turno. Lo que espera al dueño (un plan, el ok de guardar, un permiso) es «Tu firma», también de una sesión cerrada, y le gana a una marca. La señal de guardar es el árbol del repo, no la falta de `saveOk`: cuenta lo de la rama de la historia, sin `.advisors/`, y lo terminado sin guardar no se poda ni desaparece a las 24 h. Una ejecución en fila o en pausa (`marker.js park`, o `paused_until:` en su historia) no se limpia ni se poda; una marca ilegible protege igual. Sin pipeline, /office lee el encargo, lo que hace y su última acción del principio y el final de su conversación (`scripts/lib/session-transcript.js`), sin guardarlos y sin rutas, números de historia, claves, correos ni teléfonos.
 
 ## story-format.md
@@ -490,6 +492,10 @@ Contesta «¿este cambio a la configuración de la herramienta saca un control d
 ## skills/tycon-pipeline/scripts/on-controls-off.js
 
 Editar la configuración de la herramienta para sacar un control del arnés frena antes de escribir (HARNESS-C2), con el control que se saca en el mensaje y sin decir cómo apagar el freno. Corre en la cadena de antes de editar del despachador, primero y en cualquier paso. Cada caso que frena tiene su gemelo inofensivo que pasa: otra clave, un hook agregado, una variable que no apaga, otro archivo.
+
+## scripts/hooks/cover-secrets.js
+
+**Tapa los valores reales de los secretos de la máquina** antes de que lleguen al modelo y a la conversación guardada. Compara por valor exacto con lo que lee `scripts/lib/known-secrets.js`: las variables con nombre de secreto, las asignaciones de `~/.zshrc`, `~/.zprofile`, `~/.bashrc` y de los canales, la configuración y el almacén de secretos de las integraciones. No tapa por forma: la mayoría de lo que tiene forma de clave son ejemplos de archivos de prueba. No frena: un freno mira el comando, y `node guion.js` no dice nada. Claude recibe `updatedToolOutput` con los mismos campos que trajo la respuesta; Codex no puede reescribir una salida, así que recibe `decision: "block"` con la salida tapada como motivo. Ante cualquier falla el valor pasa y queda anotado el motivo, sin valores. `upload-runs.js` tapa lo mismo al subir, también adentro de un `.gz`; el archivo local no cambia. Lo que no ataja está en `guides/safety-guard.md`.
 
 ## scripts/hooks/failed-query-notice.js
 

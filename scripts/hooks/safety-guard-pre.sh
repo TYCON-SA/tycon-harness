@@ -818,7 +818,7 @@ Primero lo que no necesita a la persona: lo de «Alternativa». Si no se puede, 
 }
 _ow_mira=0
 shopt -s nocasematch
-if [[ ${#OW_ESCAPES[@]} -gt 0 || -n "$_c3_perdida" || "$_esc_cmd" == *marker* || "$_esc_cmd" == *pipeline* || "$_esc_cmd" == *e2e-setup* || "$_esc_cmd" == *run-base-controls* ]]; then _ow_mira=1; fi
+if [[ ${#OW_ESCAPES[@]} -gt 0 || -n "$_c3_perdida" || "$_esc_cmd" == *marker* || "$_esc_cmd" == *pipeline* || "$_esc_cmd" == *e2e-setup* || "$_esc_cmd" == *run-base-controls* || "$_esc_cmd" == *delegated-signing* ]]; then _ow_mira=1; fi
 shopt -u nocasematch
 # lo que no consulta la ventana (no es una firma) vence igual los pedidos de su sesión
 if [[ "$_ow_mira" != "1" ]]; then ow_vencer; fi

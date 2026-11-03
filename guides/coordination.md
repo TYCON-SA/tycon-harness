@@ -353,8 +353,8 @@ que todavía no funciona le hace dar por resuelto algo que sigue roto. Una hora 
 
 ## El tablero en la oficina
 
-La oficina de `/office` muestra los pendientes en un kanban de cinco columnas: **Tu firma, En curso, Esperan entrar, Sin
-empezar y Hechos**. Las tres primeras se arman solas de lo que hace cada sesión. El tablero de la coordinadora suma lo que
+La oficina de `/office` muestra los pendientes en un kanban de cinco columnas: **Sin sesión, En curso, Tu firma, Esperan
+entrar y Terminados**. En curso, Tu firma y Esperan entrar se arman solas de lo que hace cada sesión. El tablero de la coordinadora suma lo que
 la máquina no sabe. La coordinadora lo escribe entero en `<estado>/coordination/tablero.json` (primero en un archivo
 aparte y después renombrado, para que la oficina nunca lo lea a medias), cada vez que lo cambia:
 
@@ -365,10 +365,32 @@ aparte y después renombrado, para que la oficina nunca lo lea a medias), cada v
 - `historia` (por ejemplo `"2.81"`) y `pedido` (`{ "repo": "tycon-harness", "numero": 885 }`), opcionales. Con `historia` y
   una ejecución de esa historia en esta máquina, la fila no aporta estado ni hora: salen de la ejecución, y la fila aporta
   su `nota`. Con `pedido`, el estado sale de consultarlo, a lo sumo una vez por minuto: abierto, «Esperan entrar», con el
-  motivo si está en borrador o fuera de la cola; entró, «Hechos» con su hora. Si la consulta falla, la fila queda donde dice
+  motivo si está en borrador o fuera de la cola; entró, «Terminados» con su hora de entrada. Si la consulta falla, la fila queda donde dice
   `estado` y el motivo va a «No se pudo leer». `repo` es el nombre de un repo de una ejecución de esta máquina o de los que
   declara `team-repos.json`. `estado` vale sólo cuando no hay de dónde sacarlo.
-- `meta`: `actualizado`, `resumen` y `teToca` (lo que le toca al dueño, una línea cada cosa).
+- `meta`: `actualizado`, `resumen` y `teToca` (lo que le toca al dueño, una línea cada cosa). «Te toca» sale de las firmas, de
+  las preguntas abiertas y de esta lista: las notas no se leen, así que lo que le toca al dueño va acá.
+
+«Terminados» es lo hecho hoy, con su hora; lo anterior, o sin `realIso`, va a la tabla «Hechos».
+
+### Las tablas «Hoy» y «Pendientes»
+
+Las dos tablas se arman solas de las mismas tarjetas que el kanban, y nadie las escribe: ni la coordinadora ni una sesión.
+Una clave `tablas` en el tablero se ignora, y `office.js --write-tables` contesta que ya no existe. «Hoy» trae «En curso»,
+«Tu firma», «Esperan entrar» y «Terminados»; «Pendientes», lo que no tiene sesión y lo que quedó a medio camino. Hay una fila
+por tema, con hasta dos trabajos nombrados y una línea contada de las tarjetas: «5 en curso, el próximo termina a las 23:30 ·
+2 esperan entrar · 6 terminados hoy». Al tocar la fila se abren sus trabajos.
+
+El tema de un trabajo lo elige una vez un modelo, de fondo, y queda guardado: no cambia si el trabajo cambia de hora o de
+sesión. Es el modelo de la noche de la organización (`models.nightly`), o el mismo por el servicio local si la máquina no
+tiene su llave. Se le manda sólo el título de los trabajos nuevos y los temas ya usados. El título de otro proyecto no se
+manda: va a «Otro proyecto». Tampoco el que nombra a una persona de la lista privada, si está en la máquina: va a «Otros». Sin
+modelo, el tema sale de los títulos de los pedidos recientes, y la tabla lo dice. El gasto tiene un tope por día; `node
+scripts/tools/office/topics.js --report` dice cuánto va.
+
+Si un tema quedó mal, se corrige con `tema` en la fila del tablero: gana sobre el modelo. Una fila no puede escribir la línea
+de estado. Una fila abierta que nombra en `quien` a una sesión viva, y es la única que la nombra, recuerda el pedido de su
+rama: cuando entra, pasa a «Terminados» con su hora, aunque la sesión ya esté cerrada.
 
 Sin el archivo el kanban sale igual, con las columnas del estado real. Un archivo roto se dice abajo, en «No se pudo leer».
 La oficina viva lo vuelve a leer sola cuando cambia, y el kanban dice «Tablero escrito a las HH:MM», con «(vieja)» si pasó

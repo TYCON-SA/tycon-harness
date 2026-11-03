@@ -810,6 +810,8 @@ async function main() {
       ...require('./tabs/runs.js').crearRutas({ cfg: v.cfg, fuentes, version: VERSION, skillsDir: env.TYCON_SKILLS_DIR || null, log }),
       // la pestaña Mantenimiento: lo que encontró la noche, que quien mantiene decide con un clic
       ...require('./tabs/findings.js').crearRutas({ cfg: v.cfg, fuentes, log }),
+      // la pestaña Oficinas: la misma página de la oficina local, con lo que llega de las máquinas
+      ...require('./tabs/offices.js').crearRutas({ log }),
       // la pestaña Ayuda: la guía del sitio que viaja en la imagen, con lo que le toca a cada rol
       ...require('./help.js').crearRutas({ log }),
     ];
