@@ -64,6 +64,7 @@ la fila aplica.
 | Un merge de **sólo documentación** construyó, desplegó a staging, subió la versión y pidió aprobación de PROD · qué rutas pueden ir en el `trigger` de un pipeline y cuáles no (`.tycon/**` no) · un sitio sin filtro de rutas | `scripts/ci/check-trigger-without-docs.js` (cabecera; se corre a mano sin argumentos) |
 | Escribí pruebas de navegador y quiero saber si el pipeline las corre · el control dice que un repo tiene pruebas sin correr | `scripts/ci/check-tests-without-ci.js` (cabecera; se corre a mano sin argumentos, avisa y no frena) |
 | **Correr CUALQUIER test** (vitest/jest/dotnet) — SIEMPRE antes de `npm test`/`dotnet test` | `guides/test-execution-discipline.md` |
+| Cambiar la matriz o un control de cierre: probarlos sobre un producto de tres repos, contar cuántas historias cambian entre dos versiones, sumar un caso al laboratorio | `scripts/tests/lib/product-lab.js` y `scripts/tools/compare-matrix.js` (cabeceras) |
 | Instalar el MCP de la herramienta de horas (opcional) | `guides/integrations/clockify-mcp.md` |
 | Registro automático de horas (timer con confirmación + cierre por inactividad) | `guides/integrations/clocki-tracking.md` |
 | Registrar horas en otra herramienta (opcional): la URL en el perfil, el token de cada dev, qué hace y qué avisa | `guides/integrations/solidtime.md` |

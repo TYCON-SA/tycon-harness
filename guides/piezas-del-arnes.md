@@ -68,7 +68,7 @@ nueva, hasta que se retire.
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidespiezas-del-arnesmd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidespiezas-del-arnesmd)
 
 ## guides/que-hace-el-arnes.md
 
@@ -80,7 +80,7 @@ nueva, hasta que se retire.
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesque-hace-el-arnesmd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidesque-hace-el-arnesmd)
 
 ## artifacts/mapa-arnes.html
 
@@ -92,7 +92,7 @@ nueva, hasta que se retire.
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#artifactsmapa-arneshtml)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#artifactsmapa-arneshtml)
 
 ## story-format.md
 
@@ -104,7 +104,7 @@ nueva, hasta que se retire.
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#story-formatmd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#story-formatmd)
 
 ## guides/integrations/engram-workflow.md
 
@@ -116,7 +116,7 @@ nueva, hasta que se retire.
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesintegrationsengram-workflowmd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidesintegrationsengram-workflowmd)
 
 ## guides/git-commit-conventions.md
 
@@ -128,7 +128,7 @@ nueva, hasta que se retire.
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesgit-commit-conventionsmd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidesgit-commit-conventionsmd)
 
 ## guides/workflow-orchestration.md
 
@@ -140,7 +140,7 @@ nueva, hasta que se retire.
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesworkflow-orchestrationmd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidesworkflow-orchestrationmd)
 
 ## packs/bizuit/guides/bizuit-plugin-dotnet.md
 
@@ -152,7 +152,7 @@ nueva, hasta que se retire.
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md)
 
 ## packs/bizuit/guides/bizuit-plugin-react.md
 
@@ -164,7 +164,7 @@ nueva, hasta que se retire.
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md)
 
 ## packs/bizuit/guides/bizuit-plugin-nextjs.md
 
@@ -176,7 +176,7 @@ nueva, hasta que se retire.
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md)
 
 ## packs/bizuit/guides/bizuit-bpmn-spec-contract.md
 
@@ -188,7 +188,7 @@ nueva, hasta que se retire.
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md)
 
 ## guides/agent-architecture.md
 
@@ -200,7 +200,7 @@ nueva, hasta que se retire.
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesagent-architecturemd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidesagent-architecturemd)
 
 ## packs/ (agent-skills) — paquetes de revisores
 
@@ -214,7 +214,7 @@ _`packs/<paquete>/pack.json` (en el perfil del equipo) · `skills/tycon-pipeline
 
 **Dónde se prueba:** `tycon-pipeline/scripts/tests/packs.test.js`, `package-equivalence.test.js`, `scripts/tests/installed-packs.test.js`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#packs-agent-skills--paquetes-de-revisores)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#packs-agent-skills--paquetes-de-revisores)
 
 ## scripts/lib/tycon-config.js + team-profile.json — la configuración del arnés
 
@@ -228,7 +228,7 @@ _`scripts/lib/tycon-config.js` · el perfil · `~/.claude/tycon.json` · el enla
 
 **Dónde se prueba:** `scripts/tests/tycon-config.test.js`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptslibtycon-configjs--team-profilejson--la-configuración-del-arnés)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptslibtycon-configjs--team-profilejson--la-configuración-del-arnés)
 
 ## guides/reglas-para-revisores.md
 
@@ -240,7 +240,7 @@ _`scripts/lib/tycon-config.js` · el perfil · `~/.claude/tycon.json` · el enla
 
 **Dónde se prueba:** `tycon-pipeline/scripts/tests/reviewer-rules.test.js`, `scripts/tests/reviewer-rules.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesreglas-para-revisoresmd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidesreglas-para-revisoresmd)
 
 ## guides/maintaining/bmad-contract.md
 
@@ -252,7 +252,7 @@ _`scripts/lib/tycon-config.js` · el perfil · `~/.claude/tycon.json` · el enla
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesmaintainingbmad-contractmd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidesmaintainingbmad-contractmd)
 
 ## guides/advisor-rules-catalog.md
 
@@ -264,7 +264,7 @@ _`scripts/lib/tycon-config.js` · el perfil · `~/.claude/tycon.json` · el enla
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesadvisor-rules-catalogmd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidesadvisor-rules-catalogmd)
 
 ## guides/accov-governance-protocol.md
 
@@ -276,7 +276,7 @@ _`scripts/lib/tycon-config.js` · el perfil · `~/.claude/tycon.json` · el enla
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesaccov-governance-protocolmd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidesaccov-governance-protocolmd)
 
 ## guides/guide-update-proposals.md
 
@@ -288,7 +288,7 @@ _`scripts/lib/tycon-config.js` · el perfil · `~/.claude/tycon.json` · el enla
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesguide-update-proposalsmd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidesguide-update-proposalsmd)
 
 ## packs/bizuit/guides/dotnet-hooks.md
 
@@ -300,7 +300,7 @@ _`scripts/lib/tycon-config.js` · el perfil · `~/.claude/tycon.json` · el enla
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md)
 
 ## guides/definition-of-done.md
 
@@ -312,7 +312,7 @@ _`scripts/lib/tycon-config.js` · el perfil · `~/.claude/tycon.json` · el enla
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesdefinition-of-donemd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidesdefinition-of-donemd)
 
 ## guides/test-execution-discipline.md
 
@@ -324,7 +324,7 @@ _`scripts/lib/tycon-config.js` · el perfil · `~/.claude/tycon.json` · el enla
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidestest-execution-disciplinemd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidestest-execution-disciplinemd)
 
 ## guides/git-worktrees.md
 
@@ -338,7 +338,7 @@ _(guides/git-worktrees.md + scripts/tools/tycon-worktree.sh)_
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesgit-worktreesmd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidesgit-worktreesmd)
 
 ## scripts/lib/tycon-telegram-notify.sh
 
@@ -350,7 +350,7 @@ _(guides/git-worktrees.md + scripts/tools/tycon-worktree.sh)_
 
 **Dónde se prueba:** `scripts/tests/telegram-notify.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptslibtycon-telegram-notifysh)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptslibtycon-telegram-notifysh)
 
 ## scripts/ci/release-notes.sh
 
@@ -362,7 +362,7 @@ _(guides/git-worktrees.md + scripts/tools/tycon-worktree.sh)_
 
 **Dónde se prueba:** `scripts/tests/release-notes.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscirelease-notessh)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptscirelease-notessh)
 
 ## scripts/ci/recompute-zip-notes.sh
 
@@ -374,7 +374,7 @@ _(guides/git-worktrees.md + scripts/tools/tycon-worktree.sh)_
 
 **Dónde se prueba:** `scripts/tests/recompute-zip-notes.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscirecompute-zip-notessh)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptscirecompute-zip-notessh)
 
 ## scripts/tools/release-notes-parity.js
 
@@ -386,7 +386,7 @@ _(guides/git-worktrees.md + scripts/tools/tycon-worktree.sh)_
 
 **Dónde se prueba:** `scripts/tests/release-notes-parity.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptstoolsrelease-notes-parityjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptstoolsrelease-notes-parityjs)
 
 ## scripts/ci/publish-bump.sh
 
@@ -398,7 +398,7 @@ _(guides/git-worktrees.md + scripts/tools/tycon-worktree.sh)_
 
 **Dónde se prueba:** `scripts/tests/publish-bump.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscipublish-bumpsh)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptscipublish-bumpsh)
 
 ## scripts/lib/meter-backup.sh
 
@@ -410,7 +410,7 @@ _(guides/git-worktrees.md + scripts/tools/tycon-worktree.sh)_
 
 **Dónde se prueba:** `scripts/tests/meter-backup.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptslibmeter-backupsh)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptslibmeter-backupsh)
 
 ## packs/bizuit/guides/deuda-de-pruebas-formularios.md
 
@@ -422,7 +422,7 @@ _(guides/git-worktrees.md + scripts/tools/tycon-worktree.sh)_
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md)
 
 ## scripts/ci/affected-forms.js
 
@@ -434,7 +434,7 @@ _(guides/git-worktrees.md + scripts/tools/tycon-worktree.sh)_
 
 **Dónde se prueba:** `scripts/tests/affected-forms.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsciaffected-formsjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptsciaffected-formsjs)
 
 ## scripts/ci/typecheck-forms.js
 
@@ -446,7 +446,7 @@ _(guides/git-worktrees.md + scripts/tools/tycon-worktree.sh)_
 
 **Dónde se prueba:** `scripts/tests/typecheck-forms.test.js`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscitypecheck-formsjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptscitypecheck-formsjs)
 
 ## scripts/ci/forms-to-version.sh
 
@@ -458,7 +458,7 @@ _(guides/git-worktrees.md + scripts/tools/tycon-worktree.sh)_
 
 **Dónde se prueba:** su propia suite de pruebas, bajo `scripts/tests/`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsciforms-to-versionsh)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptsciforms-to-versionsh)
 
 ## scripts/ci/backend-to-version.sh
 
@@ -470,7 +470,7 @@ _(guides/git-worktrees.md + scripts/tools/tycon-worktree.sh)_
 
 **Dónde se prueba:** `scripts/tests/backend-to-version.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscibackend-to-versionsh)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptscibackend-to-versionsh)
 
 ## scripts/ci/label-prs.sh
 
@@ -484,7 +484,7 @@ _scripts/ci/label-prs.sh + scripts/ci/run-base.sh_
 
 **Dónde se prueba:** `scripts/tests/label-prs.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscilabel-prssh)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptscilabel-prssh)
 
 ## scripts/ci/nightly-dod-notice.sh
 
@@ -496,7 +496,7 @@ _scripts/ci/label-prs.sh + scripts/ci/run-base.sh_
 
 **Dónde se prueba:** `scripts/tests/nightly-dod-notice.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscinightly-dod-noticesh)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptscinightly-dod-noticesh)
 
 ## scripts/ci/sql-compile.js
 
@@ -508,7 +508,7 @@ _scripts/ci/label-prs.sh + scripts/ci/run-base.sh_
 
 **Dónde se prueba:** `scripts/tests/sql-compile.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscisql-compilejs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptscisql-compilejs)
 
 ## scripts/ci/check-bash32-quoting.sh
 
@@ -520,7 +520,7 @@ _scripts/ci/label-prs.sh + scripts/ci/run-base.sh_
 
 **Dónde se prueba:** `scripts/tests/bash32-quoting.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscicheck-bash32-quotingsh)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptscicheck-bash32-quotingsh)
 
 ## scripts/ci/public-ci.sh
 
@@ -536,7 +536,7 @@ _scripts/ci/public-ci.sh + scripts/ci/check-public-workflow.js + el `ci.yml` de 
 
 **Guía:** [publicacion-espejo.md](maintaining/publicacion-espejo.md)
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscipublic-cish)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptscipublic-cish)
 
 ## scripts/ci/run-base-controls.sh
 
@@ -550,7 +550,7 @@ _(scripts/ci/run-base-controls.sh + scripts/ci/controls-from-base.json + scripts
 
 **Dónde se prueba:** `scripts/tests/base-controls.test.sh`, `scripts/tests/public-ci.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscirun-base-controlssh)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptscirun-base-controlssh)
 
 ## scripts/tests/clean-machine.test.sh
 
@@ -566,7 +566,7 @@ _(scripts/tests/clean-machine.test.sh + scripts/tests/clean-machine/ + scripts/t
 
 **Guía:** [publicacion-espejo.md](maintaining/publicacion-espejo.md)
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptstestsclean-machinetestsh)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptstestsclean-machinetestsh)
 
 ## scripts/ci/check-artifact-paths.js
 
@@ -578,7 +578,7 @@ _(scripts/tests/clean-machine.test.sh + scripts/tests/clean-machine/ + scripts/t
 
 **Dónde se prueba:** `scripts/tests/artifact-paths.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscicheck-artifact-pathsjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptscicheck-artifact-pathsjs)
 
 ## scripts/ci/rollback-guard.sh
 
@@ -590,7 +590,7 @@ _(scripts/tests/clean-machine.test.sh + scripts/tests/clean-machine/ + scripts/t
 
 **Dónde se prueba:** `scripts/tests/rollback-guard.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscirollback-guardsh)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptscirollback-guardsh)
 
 ## scripts/ci/smoke-plugin.sh
 
@@ -604,7 +604,7 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 **Dónde se prueba:** `scripts/tests/smoke.test.sh`, `scripts/tests/smoke-forms-reason.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscismoke-pluginsh)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptscismoke-pluginsh)
 
 ## scripts/ci/deploy-plugin.sh
 
@@ -616,7 +616,7 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 **Dónde se prueba:** `scripts/tests/deploy-plugin.test.sh`, `scripts/tests/deploy-plugin-config.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscideploy-pluginsh)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptscideploy-pluginsh)
 
 ## scripts/ci/deploy-record.sh
 
@@ -628,7 +628,7 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 **Dónde se prueba:** `scripts/tests/deploy-record.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscideploy-recordsh)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptscideploy-recordsh)
 
 ## scripts/ci/check-product-parity.js
 
@@ -640,7 +640,7 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 **Dónde se prueba:** `scripts/tests/product-parity.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscicheck-product-parityjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptscicheck-product-parityjs)
 
 ## scripts/ci/check-trigger-without-docs.js
 
@@ -652,7 +652,7 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 **Dónde se prueba:** `scripts/tests/trigger-without-docs.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscicheck-trigger-without-docsjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptscicheck-trigger-without-docsjs)
 
 ## scripts/ci/check-tests-without-ci.js
 
@@ -674,7 +674,7 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 **Dónde se prueba:** `scripts/tests/first-story.test.js`, T7 de `harness-state.test.js` y el grupo `UPGRADE` de `harness-questions.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptslibfirst-storyjs--la-primera-historia-de-la-máquina)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptslibfirst-storyjs--la-primera-historia-de-la-máquina)
 
 ## skills/tycon-pipeline/scripts/lib/models.js — el modelo de cada trabajo del pipeline
 
@@ -688,7 +688,7 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 **Guía:** [harness-cost-tiering](harness-cost-tiering.md)
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptslibmodelsjs--el-modelo-de-cada-trabajo-del-pipeline)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptslibmodelsjs--el-modelo-de-cada-trabajo-del-pipeline)
 
 ## scripts/lib/models-env.js — las variables de Claude Code sobre otro proveedor
 
@@ -748,7 +748,7 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 **Dónde se prueba:** `unit.test.js`, `test-runtime-matrix.js`, `dod-hook-smoke-test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptslibruntime-waiverjs--el-registro-de-firmas-de-la-matriz)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptslibruntime-waiverjs--el-registro-de-firmas-de-la-matriz)
 
 ## scripts/ci/check-stage-dependencies.js
 
@@ -760,7 +760,7 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 **Dónde se prueba:** `scripts/tests/stage-dependencies.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscicheck-stage-dependenciesjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptscicheck-stage-dependenciesjs)
 
 ## scripts/nightly/dependencies/
 
@@ -774,7 +774,7 @@ _(scripts/nightly/dependencies/ + scripts/ci/audit-dependencies.js)_
 
 **Dónde se prueba:** `scripts/tests/audit-dependencies.test.sh`, `scripts/tests/nightly-dependencies.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsnightlydependencies)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptsnightlydependencies)
 
 ## scripts/nightly/dependencies/work-items.js
 
@@ -786,7 +786,7 @@ _(scripts/nightly/dependencies/ + scripts/ci/audit-dependencies.js)_
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsnightlydependencieswork-itemsjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptsnightlydependencieswork-itemsjs)
 
 ## work-items.js state
 
@@ -800,7 +800,7 @@ _(work-items.js state + el cruce de scripts/nightly/dependencies/nightly-depende
 
 **Dónde se prueba:** `scripts/tests/nightly-dependencies.test.sh`, `scripts/tests/daily-summary.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#work-itemsjs-state)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#work-itemsjs-state)
 
 ## scripts/nightly/dependencies/daily-summary.js
 
@@ -812,7 +812,7 @@ _(work-items.js state + el cruce de scripts/nightly/dependencies/nightly-depende
 
 **Dónde se prueba:** `scripts/tests/daily-summary.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsnightlydependenciesdaily-summaryjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptsnightlydependenciesdaily-summaryjs)
 
 ## scripts/nightly/open-prs/open-prs.js
 
@@ -824,7 +824,7 @@ _(work-items.js state + el cruce de scripts/nightly/dependencies/nightly-depende
 
 **Dónde se prueba:** `scripts/tests/open-prs.test.sh`, `scripts/tests/daily-summary.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsnightlyopen-prsopen-prsjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptsnightlyopen-prsopen-prsjs)
 
 ## scripts/nightly/assigned/assigned-items.js
 
@@ -836,7 +836,7 @@ _(work-items.js state + el cruce de scripts/nightly/dependencies/nightly-depende
 
 **Dónde se prueba:** `scripts/tests/assigned-items.test.js`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsnightlyassignedassigned-itemsjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptsnightlyassignedassigned-itemsjs)
 
 ## scripts/nightly/deployments/deployments.js
 
@@ -848,7 +848,7 @@ _(work-items.js state + el cruce de scripts/nightly/dependencies/nightly-depende
 
 **Dónde se prueba:** `scripts/tests/nightly-deployments.test.js`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsnightlydeploymentsdeploymentsjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptsnightlydeploymentsdeploymentsjs)
 
 ## scripts/site/ — el sitio de la organización
 
@@ -884,7 +884,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesintegrationsado-cola-y-listadosmd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidesintegrationsado-cola-y-listadosmd)
 
 ## guides/integrations/clockify-mcp.md
 
@@ -896,7 +896,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesintegrationsclockify-mcpmd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidesintegrationsclockify-mcpmd)
 
 ## guides/integrations/clocki-tracking.md
 
@@ -908,7 +908,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesintegrationsclocki-trackingmd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidesintegrationsclocki-trackingmd)
 
 ## guides/integrations/codegraph-mcp.md
 
@@ -920,7 +920,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesintegrationscodegraph-mcpmd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidesintegrationscodegraph-mcpmd)
 
 ## guides/signed-scope-guardrails.md
 
@@ -932,7 +932,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidessigned-scope-guardrailsmd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidessigned-scope-guardrailsmd)
 
 ## guides/integrations/ado-projects.md
 
@@ -944,7 +944,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesintegrationsado-projectsmd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidesintegrationsado-projectsmd)
 
 ## guides/safety-guard.md
 
@@ -956,7 +956,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidessafety-guardmd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidessafety-guardmd)
 
 ## guides/maintaining/context-budget.md
 
@@ -968,7 +968,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesmaintainingcontext-budgetmd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidesmaintainingcontext-budgetmd)
 
 ## guides/maintaining/skill-scout.md
 
@@ -980,7 +980,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesmaintainingskill-scoutmd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidesmaintainingskill-scoutmd)
 
 ## guides/maintaining/rules-distill.md
 
@@ -992,7 +992,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesmaintainingrules-distillmd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidesmaintainingrules-distillmd)
 
 ## guides/maintaining/harness-audit.md
 
@@ -1004,7 +1004,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesmaintainingharness-auditmd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidesmaintainingharness-auditmd)
 
 ## guides/integrations/instinct-mining.md
 
@@ -1016,7 +1016,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 **Dónde se prueba:** `instinct-observe.test.js`, `instinct-dirs.test.js`, `instinct-outside-tree.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesintegrationsinstinct-miningmd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidesintegrationsinstinct-miningmd)
 
 ## guides/harness-cost-tiering.md
 
@@ -1028,7 +1028,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesharness-cost-tieringmd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidesharness-cost-tieringmd)
 
 ## scripts/nightly/watcher/vigilante.js
 
@@ -1042,7 +1042,7 @@ _(scripts/nightly/watcher/vigilante.js + inbox/watcher/)_
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsnightlywatchervigilantejs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptsnightlywatchervigilantejs)
 
 ## scripts/controls-bench/periodic-exam.js
 
@@ -1054,7 +1054,7 @@ _(scripts/nightly/watcher/vigilante.js + inbox/watcher/)_
 
 **Dónde se prueba:** `periodic-exam.test.js`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscontrols-benchperiodic-examjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptscontrols-benchperiodic-examjs)
 
 ## scripts/ci/push-nightly-data.js
 
@@ -1066,7 +1066,7 @@ _(scripts/nightly/watcher/vigilante.js + inbox/watcher/)_
 
 **Dónde se prueba:** `scripts/tests/push-nightly-data.test.js`, `scripts/tests/pipelines-push-guard.test.js`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscipush-nightly-datajs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptscipush-nightly-datajs)
 
 ## pipelines/azure-pipelines-banco.yml
 
@@ -1078,7 +1078,7 @@ _(scripts/nightly/watcher/vigilante.js + inbox/watcher/)_
 
 **Dónde se prueba:** `scripts/tests/bench-unmeasured.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#pipelinesazure-pipelines-bancoyml)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#pipelinesazure-pipelines-bancoyml)
 
 ## scripts/ci/suites-shard.js
 
@@ -1092,7 +1092,7 @@ _(scripts/ci/suites-shard.js + scripts/ci/suites-weights.json)_
 
 **Dónde se prueba:** `scripts/tests/suites-shard.test.js`, `scripts/tests/pr-suites-shards.test.js`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscisuites-shardjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptscisuites-shardjs)
 
 ## scripts/ci/suites-over-limit.json
 
@@ -1106,7 +1106,19 @@ _(scripts/ci/suites-over-limit.json + scripts/tests/lib/suite-parts.js + scripts
 
 **Dónde se prueba:** `scripts/tests/suite-parts.test.js`, `suites-coverage.test.js`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscisuites-over-limitjson)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptscisuites-over-limitjson)
+
+## scripts/tests/lib/product-lab.js
+
+_(scripts/tests/lib/product-lab.js + scripts/tests/product-lab-known-gaps.json + scripts/tools/compare-matrix.js)_
+
+**Qué es:** Un producto de prueba de tres repos, con fusiones reales, sobre el que corren la matriz y los cierres. `compare-matrix.js` cuenta cuántas historias cambian de resultado entre dos versiones.
+
+**Por qué existe:** Lo que depende de la forma de un producto no se ve en la prueba de una regla. Al cambiar la matriz o los cierres, la medida se corre antes y después, y los totales van en la historia. Un defecto de cierre hallado en un producto suma su caso en el mismo cambio, con nombres inventados.
+
+**Quién la usa:** La cola, la noche y quien cambia un control de cierre.
+
+**Dónde se prueba:** `scripts/tests/product-lab.test.js`, `compare-matrix.test.js`
 
 ## scripts/metrics/sdlc-stage-metrics.js
 
@@ -1120,7 +1132,7 @@ _(scripts/metrics/sdlc-stage-metrics.js + scripts/nightly/dashboard/dashboard.js
 
 **Dónde se prueba:** `scripts/tests/sdlc-transitions.test.js`, `scripts/tests/dashboard.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsmetricssdlc-stage-metricsjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptsmetricssdlc-stage-metricsjs)
 
 ## scripts/metrics/tokens-digest.js
 
@@ -1132,7 +1144,7 @@ _(scripts/metrics/sdlc-stage-metrics.js + scripts/nightly/dashboard/dashboard.js
 
 **Dónde se prueba:** `scripts/tests/tokens-digest.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsmetricstokens-digestjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptsmetricstokens-digestjs)
 
 ## scripts/metrics/reviewers-cost.js
 
@@ -1144,7 +1156,7 @@ _(scripts/metrics/sdlc-stage-metrics.js + scripts/nightly/dashboard/dashboard.js
 
 **Dónde se prueba:** `scripts/tests/reviewers-cost.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsmetricsreviewers-costjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptsmetricsreviewers-costjs)
 
 ## scripts/metrics/run-change.js
 
@@ -1156,7 +1168,7 @@ _(scripts/metrics/sdlc-stage-metrics.js + scripts/nightly/dashboard/dashboard.js
 
 **Dónde se prueba:** `scripts/tests/run-change.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsmetricsrun-changejs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptsmetricsrun-changejs)
 
 ## scripts/metrics/retro-heartbeat.js
 
@@ -1168,7 +1180,7 @@ _(scripts/metrics/sdlc-stage-metrics.js + scripts/nightly/dashboard/dashboard.js
 
 **Dónde se prueba:** `scripts/tests/retro-heartbeat.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsmetricsretro-heartbeatjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptsmetricsretro-heartbeatjs)
 
 ## pipeline.js dod-checker-needed
 
@@ -1182,7 +1194,7 @@ _(pipeline.js dod-checker-needed · deferrals-open · qa-legibilidad (AgentSkill
 
 **Dónde se prueba:** `scripts/tests/guard-record.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#pipelinejs-dod-checker-needed)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#pipelinejs-dod-checker-needed)
 
 ## scripts/lib/validator-verdict.js
 
@@ -1196,7 +1208,7 @@ _(scripts/lib/validator-verdict.js + el re-loop del validador en pipeline.js (Ag
 
 **Dónde se prueba:** `scripts/tests/validator-verdict.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptslibvalidator-verdictjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptslibvalidator-verdictjs)
 
 ## scripts/metrics/step-times.js
 
@@ -1210,7 +1222,7 @@ _(scripts/metrics/step-times.js + el carril de cada commit en scripts/hooks/unpu
 
 **Dónde se prueba:** `scripts/tests/step-times.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsmetricsstep-timesjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptsmetricsstep-timesjs)
 
 ## scripts/tools/work-in-progress.js
 
@@ -1224,7 +1236,7 @@ _(scripts/tools/work-in-progress.js + commands/wip.md; en 3D y en vivo: scripts/
 
 **Dónde se prueba:** `scripts/tests/`: `work-in-progress`, `office*`, `session-state`, `session-transcript`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptstoolswork-in-progressjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptstoolswork-in-progressjs)
 
 ## scripts/metrics/upload-runs.js
 
@@ -1238,7 +1250,7 @@ _(scripts/metrics/upload-runs.js + scripts/metrics/download-runs.js)_
 
 **Dónde se prueba:** `scripts/tests/upload-runs.test.sh`, `scripts/tests/download-runs.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsmetricsupload-runsjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptsmetricsupload-runsjs)
 
 ## scripts/lib/merge-metrics.js
 
@@ -1260,7 +1272,7 @@ _(scripts/metrics/upload-runs.js + scripts/metrics/download-runs.js)_
 
 **Dónde se prueba:** `scripts/tests/people.test.js`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptslibpeoplejs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptslibpeoplejs)
 
 ## scripts/lib/guard-record.js
 
@@ -1272,7 +1284,7 @@ _(scripts/metrics/upload-runs.js + scripts/metrics/download-runs.js)_
 
 **Dónde se prueba:** `scripts/tests/guard-record.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptslibguard-recordjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptslibguard-recordjs)
 
 ## scripts/nightly/dashboard/reducer.js
 
@@ -1284,7 +1296,7 @@ _(scripts/metrics/upload-runs.js + scripts/metrics/download-runs.js)_
 
 **Dónde se prueba:** `scripts/tests/reducer.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsnightlydashboardreducerjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptsnightlydashboardreducerjs)
 
 ## lib/installed-tree.js
 
@@ -1308,7 +1320,7 @@ _(test-gate.sh (AgentSkills) + la ficha «evaluaron el umbral»)_
 
 **Dónde se prueba:** `tycon-pipeline/scripts/tests/test-coverage-parser.js`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#test-gatesh)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#test-gatesh)
 
 ## scripts/nightly/dashboard/prune.js
 
@@ -1322,7 +1334,7 @@ _(scripts/nightly/dashboard/prune.js + scripts/metrics/collect-findings.js + scr
 
 **Dónde se prueba:** `scripts/tests/prune.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsnightlydashboardprunejs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptsnightlydashboardprunejs)
 
 ## pipelines/azure-pipelines-tablero.yml
 
@@ -1336,7 +1348,7 @@ _(pipelines/azure-pipelines-tablero.yml + scripts/nightly/dashboard/seal.js + sc
 
 **Dónde se prueba:** `scripts/tests/dashboard.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#pipelinesazure-pipelines-tableroyml)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#pipelinesazure-pipelines-tableroyml)
 
 ## scripts/controls-bench/report-name.js
 
@@ -1348,7 +1360,7 @@ _(pipelines/azure-pipelines-tablero.yml + scripts/nightly/dashboard/seal.js + sc
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscontrols-benchreport-namejs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptscontrols-benchreport-namejs)
 
 ## scripts/install-tycon-hooks.sh
 
@@ -1362,7 +1374,7 @@ _(scripts/install-tycon-hooks.sh y scripts/install-tycon-hooks.ps1)_
 
 **Dónde se prueba:** `scripts/tests/applier-batch.test.js`, `scripts/tests/installer-ps1.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsinstall-tycon-hookssh)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptsinstall-tycon-hookssh)
 
 ## .githooks/pre-commit
 
@@ -1376,7 +1388,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `scripts/tests/githook-livefire.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#githookspre-commit)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#githookspre-commit)
 
 ## scripts/hooks/git-post-commit-global.sh
 
@@ -1388,7 +1400,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `scripts/tests/githook-livefire.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksgit-post-commit-globalsh)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptshooksgit-post-commit-globalsh)
 
 ## scripts/hooks/session-collision-guard.js
 
@@ -1400,7 +1412,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `controls-bench/cases/hooks/38-session-collision-guard.json`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshookssession-collision-guardjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptshookssession-collision-guardjs)
 
 ## scripts/lib/canonical-path.js
 
@@ -1412,7 +1424,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `scripts/tests/canonical-path.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptslibcanonical-pathjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptslibcanonical-pathjs)
 
 ## scripts/lib/harness-repo.js
 
@@ -1424,7 +1436,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `controls-bench/cases/hooks/14-retro-pending.json`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptslibharness-repojs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptslibharness-repojs)
 
 ## scripts/lib/night-data.js
 
@@ -1436,7 +1448,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `scripts/tests/night-notices.test.js`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptslibnight-datajs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptslibnight-datajs)
 
 ## scripts/lib/repos-root.js
 
@@ -1448,7 +1460,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `scripts/tests/repos-root.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptslibrepos-rootjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptslibrepos-rootjs)
 
 ## scripts/hooks/worktree-sweep.js
 
@@ -1460,7 +1472,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `scripts/tests/worktree-sweep.test.js`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksworktree-sweepjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptshooksworktree-sweepjs)
 
 ## scripts/hooks/dev-behind-main-notice.js
 
@@ -1472,7 +1484,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `scripts/tests/dev-behind-main-notice.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksdev-behind-main-noticejs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptshooksdev-behind-main-noticejs)
 
 ## scripts/hooks/stuck-pr-notice.js
 
@@ -1494,7 +1506,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `scripts/tests/extension-notices.test.js` y el caso 63 del banco
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksextension-noticesjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptshooksextension-noticesjs)
 
 ## scripts/hooks/missing-path-notice.js
 
@@ -1506,7 +1518,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksmissing-path-noticejs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptshooksmissing-path-noticejs)
 
 ## scripts/hooks/deprecated-session-notice.js
 
@@ -1518,7 +1530,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `scripts/tests/deprecated-notices.test.js` y el caso 64 del banco
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksdeprecated-session-noticejs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptshooksdeprecated-session-noticejs)
 
 ## scripts/hooks/deprecated-read-notice.js
 
@@ -1530,7 +1542,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `scripts/tests/deprecated-notices.test.js` y el caso 64 del banco
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksdeprecated-read-noticejs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptshooksdeprecated-read-noticejs)
 
 ## skills/tycon-pipeline/scripts/lib/deprecated.js
 
@@ -1542,7 +1554,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `skills/tycon-pipeline/scripts/tests/deprecated.test.js`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptslibdeprecatedjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptslibdeprecatedjs)
 
 ## skills/tycon-pipeline/scripts/on-deprecated-edit.js
 
@@ -1554,7 +1566,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `skills/tycon-pipeline/scripts/tests/deprecated-gates.test.js` y el caso 64 del banco
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptson-deprecated-editjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptson-deprecated-editjs)
 
 ## scripts/hooks/cover-secrets.js
 
@@ -1578,7 +1590,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `controls-bench/cases/hooks/39-consulta-fallida-notice.json`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksfailed-query-noticejs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptshooksfailed-query-noticejs)
 
 ## scripts/hooks/context-size-notice.js
 
@@ -1600,7 +1612,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `scripts/tests/wait-notice.test.js`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshookswait-noticejs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptshookswait-noticejs)
 
 ## scripts/hooks/prod-access-guard.js
 
@@ -1614,7 +1626,7 @@ _(scripts/hooks/prod-access-guard.js + scripts/production/ + guides/produccion-c
 
 **Dónde se prueba:** `scripts/tests/prod-access-guard.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksprod-access-guardjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptshooksprod-access-guardjs)
 
 ## claude-md-blocks/budget.json
 
@@ -1628,7 +1640,7 @@ _(claude-md-blocks/budget.json + scripts/ci/check-claude-md-blocks.js)_
 
 **Dónde se prueba:** `scripts/tests/claude-md-blocks.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#claude-md-blocksbudgetjson)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#claude-md-blocksbudgetjson)
 
 ## scripts/hooks/harness-bootstrap-heal.sh
 
@@ -1640,7 +1652,7 @@ _(claude-md-blocks/budget.json + scripts/ci/check-claude-md-blocks.js)_
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksharness-bootstrap-healsh)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptshooksharness-bootstrap-healsh)
 
 ## tycon-pipeline/scripts/lib/guides-heal.js
 
@@ -1654,7 +1666,7 @@ _(tycon-pipeline/scripts/lib/guides-heal.js (en agent-skills) + scripts/hooks/br
 
 **Dónde se prueba:** `controls-bench/cases/hooks/37-guides-heal.json`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#tycon-pipelinescriptslibguides-healjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#tycon-pipelinescriptslibguides-healjs)
 
 ## mods/harness-mods/
 
@@ -1668,7 +1680,7 @@ _(mods/harness-mods/ + scripts/setup/harness/plugin-dirs.js)_
 
 **Dónde se prueba:** `scripts/tests/harness-mods.test.js`, `scripts/tests/harness-mods-plugin.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#modsharness-mods)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#modsharness-mods)
 
 ## claude-md-blocks/
 
@@ -1682,7 +1694,7 @@ _(claude-md-blocks/ + scripts/setup/sync-claude-md-blocks.sh / `scripts/setup/sy
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#claude-md-blocks)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#claude-md-blocks)
 
 ## scripts/setup/harness/tools.js
 
@@ -1698,7 +1710,7 @@ _(scripts/setup/harness/tools.js + `scripts/setup/harness/tool-change.js` + `scr
 
 **Guía:** [mecanismo-de-instalacion](maintaining/mecanismo-de-instalacion.md)
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptssetupharnesstoolsjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptssetupharnesstoolsjs)
 
 ## scripts/setup/harness/harness-node.js — el Node propio del arnés
 
@@ -1712,7 +1724,7 @@ _(scripts/setup/harness/harness-node.js + `scripts/lib/harness-node.sh` + `scrip
 
 **Dónde se prueba:** `scripts/tests/harness-node.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptssetupharnessharness-nodejs--el-node-propio-del-arnés)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptssetupharnessharness-nodejs--el-node-propio-del-arnés)
 
 ## scripts/setup/harness/release.js — el cambio de versión con enlaces (Windows)
 
@@ -1726,7 +1738,7 @@ _(scripts/setup/harness/release.js + `tycon-home.js` + `bootstrap.js` + `bootstr
 
 **Dónde se prueba:** `scripts/tests/harness-release-links.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptssetupharnessreleasejs--el-cambio-de-versión-con-enlaces-windows)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptssetupharnessreleasejs--el-cambio-de-versión-con-enlaces-windows)
 
 ## scripts/lib/canonical-path.js — las carpetas de skills y agentes, siempre reales
 
@@ -1740,7 +1752,7 @@ _(scripts/lib/canonical-path.js `ensureRepoLinks` + `scripts/hooks/branch-guard-
 
 **Dónde se prueba:** `scripts/tests/repo-links-real-folders.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptslibcanonical-pathjs--las-carpetas-de-skills-y-agentes-siempre-reales)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptslibcanonical-pathjs--las-carpetas-de-skills-y-agentes-siempre-reales)
 
 ## scripts/lib/maintainers-sync.js — el arranque pone al día el clon de mantenimiento
 
@@ -1754,7 +1766,7 @@ _(scripts/lib/maintainers-sync.js + `scripts/hooks/branch-guard-notice.js`)_
 
 **Dónde se prueba:** `scripts/tests/maintainers-sync.test.js`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptslibmaintainers-syncjs--el-arranque-pone-al-día-el-clon-de-mantenimiento)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptslibmaintainers-syncjs--el-arranque-pone-al-día-el-clon-de-mantenimiento)
 
 ## guides/response-style.md
 
@@ -1766,7 +1778,7 @@ _(scripts/lib/maintainers-sync.js + `scripts/hooks/branch-guard-notice.js`)_
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesresponse-stylemd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidesresponse-stylemd)
 
 ## engram-version
 
@@ -1780,7 +1792,7 @@ _engram-version + scripts/setup/check-engram-version.sh / `scripts/setup/check-e
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#engram-version)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#engram-version)
 
 ## scripts/setup/check-engram-project.sh
 
@@ -1792,7 +1804,7 @@ _engram-version + scripts/setup/check-engram-version.sh / `scripts/setup/check-e
 
 **Dónde se prueba:** `scripts/tests/engram-project-check.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptssetupcheck-engram-projectsh)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptssetupcheck-engram-projectsh)
 
 ## scripts/setup/install-effects.json
 
@@ -1806,7 +1818,7 @@ _engram-version + scripts/setup/check-engram-version.sh / `scripts/setup/check-e
 
 **Guía:** [mecanismo-de-instalacion.md](maintaining/mecanismo-de-instalacion.md)
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptssetupinstall-effectsjson)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptssetupinstall-effectsjson)
 
 ## scripts/setup/harness/plan.js y prompt.js
 
@@ -1820,7 +1832,7 @@ _engram-version + scripts/setup/check-engram-version.sh / `scripts/setup/check-e
 
 **Guía:** [mecanismo-de-instalacion.md](maintaining/mecanismo-de-instalacion.md)
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptssetupharnessplanjs-y-promptjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptssetupharnessplanjs-y-promptjs)
 
 ## scripts/setup/harness/profile.js
 
@@ -1834,7 +1846,7 @@ _engram-version + scripts/setup/check-engram-version.sh / `scripts/setup/check-e
 
 **Guía:** [mecanismo-de-instalacion.md](maintaining/mecanismo-de-instalacion.md)
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptssetupharnessprofilejs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptssetupharnessprofilejs)
 
 ## scripts/setup/harness/read-permissions.js
 
@@ -1846,7 +1858,7 @@ _engram-version + scripts/setup/check-engram-version.sh / `scripts/setup/check-e
 
 **Dónde se prueba:** `scripts/tests/read-permissions.test.js`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptssetupharnessread-permissionsjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptssetupharnessread-permissionsjs)
 
 ## scripts/setup/harness/questions.js
 
@@ -1860,7 +1872,7 @@ _engram-version + scripts/setup/check-engram-version.sh / `scripts/setup/check-e
 
 **Guía:** [mecanismo-de-instalacion.md](maintaining/mecanismo-de-instalacion.md)
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptssetupharnessquestionsjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptssetupharnessquestionsjs)
 
 ## scripts/publishing/public-files/scripts/setup/get-harness.sh y get-harness.ps1
 
@@ -1874,7 +1886,7 @@ _engram-version + scripts/setup/check-engram-version.sh / `scripts/setup/check-e
 
 **Guía:** [mecanismo-de-instalacion.md](maintaining/mecanismo-de-instalacion.md)
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptspublishingpublic-filesscriptssetupget-harnesssh-y-get-harnessps1)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptspublishingpublic-filesscriptssetupget-harnesssh-y-get-harnessps1)
 
 ## scripts/tools/tycon-backfill-followups.js
 
@@ -1888,7 +1900,7 @@ _engram-version + scripts/setup/check-engram-version.sh / `scripts/setup/check-e
 
 **Guía:** [story-format.md](../story-format.md)
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptstoolstycon-backfill-followupsjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptstoolstycon-backfill-followupsjs)
 
 ## scripts/lib/lint-story-frontmatter.js
 
@@ -1902,7 +1914,7 @@ _engram-version + scripts/setup/check-engram-version.sh / `scripts/setup/check-e
 
 **Guía:** [story-format.md](../story-format.md)
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsliblint-story-frontmatterjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptsliblint-story-frontmatterjs)
 
 ## guides/wiki-topics.md
 
@@ -1916,7 +1928,7 @@ _guides/wiki-topics.md + scripts/tools/lint-wiki.sh_
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guideswiki-topicsmd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guideswiki-topicsmd)
 
 ## scripts/hooks/engram-pre-commit.sh
 
@@ -1930,7 +1942,7 @@ _guides/wiki-topics.md + scripts/tools/lint-wiki.sh_
 
 **Guía:** [engram-workflow.md](integrations/engram-workflow.md)
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksengram-pre-commitsh)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptshooksengram-pre-commitsh)
 
 ## scripts/lib/manifest-engram.js
 
@@ -1942,7 +1954,7 @@ _guides/wiki-topics.md + scripts/tools/lint-wiki.sh_
 
 **Dónde se prueba:** su propia suite y el caso `04-rebuild-engram.json` del banco
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptslibmanifest-engramjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptslibmanifest-engramjs)
 
 ## guides/ci-gate.md
 
@@ -1956,7 +1968,7 @@ _guides/ci-gate.md + scripts/ci/tycon-ci-gate.js_
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesci-gatemd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidesci-gatemd)
 
 ## scripts/hooks/lane-llm-notice.js
 
@@ -1968,7 +1980,7 @@ _guides/ci-gate.md + scripts/ci/tycon-ci-gate.js_
 
 **Dónde se prueba:** `scripts/tests/lane-llm-notice.test.js`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshookslane-llm-noticejs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptshookslane-llm-noticejs)
 
 ## guides/maintaining/controls-bench.md
 
@@ -1982,7 +1994,7 @@ _guides/maintaining/controls-bench.md + scripts/controls-bench/_
 
 **Dónde se prueba:** `scripts/controls-bench/`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesmaintainingcontrols-benchmd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidesmaintainingcontrols-benchmd)
 
 ## build/
 
@@ -1996,7 +2008,7 @@ _build/ + adapters/_
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#build)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#build)
 
 ## guides/maintaining/codex-divergence-inventory.md
 
@@ -2010,7 +2022,7 @@ _build/ + adapters/_
 
 **Guía:** [codex-divergence-inventory.md](maintaining/codex-divergence-inventory.md)
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesmaintainingcodex-divergence-inventorymd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidesmaintainingcodex-divergence-inventorymd)
 
 ## scripts/publishing/detector.js
 
@@ -2024,7 +2036,7 @@ _scripts/publishing/_
 
 **Dónde se prueba:** `scripts/tests/publishing-detector.test.js`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptspublishingdetectorjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptspublishingdetectorjs)
 
 ## scripts/publishing/third-party-skills.json
 
@@ -2038,7 +2050,7 @@ _scripts/publishing/ + guides/maintaining/publicacion-espejo.md_
 
 **Dónde se prueba:** `third-party-skills.test.js`, `install-third-party.test.sh`, `third-party-real.test.sh` y `third-party-origin.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptspublishingthird-party-skillsjson)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptspublishingthird-party-skillsjson)
 
 ## scripts/publishing/export.js
 
@@ -2052,7 +2064,7 @@ _scripts/publishing/ + guides/maintaining/publicacion-espejo.md_
 
 **Dónde se prueba:** `scripts/tests/export.test.js`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptspublishingexportjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptspublishingexportjs)
 
 ## scripts/publishing/mirror.js
 
@@ -2066,7 +2078,7 @@ _scripts/publishing/ + guides/maintaining/publicacion-espejo.md_
 
 **Dónde se prueba:** `scripts/tests/mirror.test.js`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptspublishingmirrorjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptspublishingmirrorjs)
 
 ## pipelines/azure-pipelines-public-leak-check.yml
 
@@ -2080,7 +2092,7 @@ _pipelines/azure-pipelines-public-leak-check.yml + scripts/tests/mirror-pipeline
 
 **Dónde se prueba:** `scripts/tests/mirror-pipeline.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#pipelinesazure-pipelines-public-leak-checkyml)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#pipelinesazure-pipelines-public-leak-checkyml)
 
 ## scripts/hooks/public-push-guard.js
 
@@ -2094,7 +2106,7 @@ _scripts/hooks/public-push-guard.js + scripts/hooks/git-pre-push-global.sh + .gi
 
 **Dónde se prueba:** `scripts/tests/public-push-guard.test.js`, `scripts/tests/githook-pre-push.test.sh` y `scripts/tests/gh-pr.test.js`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshookspublic-push-guardjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptshookspublic-push-guardjs)
 
 ## scripts/tools/merge-pr.js
 
@@ -2108,7 +2120,7 @@ _scripts/tools/merge-pr.js + scripts/tests/merge-pr.test.js + skills/tycon-merge
 
 **Dónde se prueba:** `scripts/tests/merge-pr.test.js` y `scripts/tests/team-repos.test.js`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptstoolsmerge-prjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptstoolsmerge-prjs)
 
 ## scripts/ci/version-tag.js
 
@@ -2122,7 +2134,7 @@ _scripts/ci/version-tag.js + .github/workflows/version-tag.yml + scripts/setup/h
 
 **Dónde se prueba:** `scripts/tests/version-by-merge.test.js`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsciversion-tagjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptsciversion-tagjs)
 
 ## scripts/setup/npm/index.js
 
@@ -2138,7 +2150,7 @@ _scripts/setup/npm/index.js + home-paths.json + package.json + README.md_
 
 **Guía:** [paquete-npm.md](maintaining/paquete-npm.md)
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptssetupnpmindexjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptssetupnpmindexjs)
 
 ## .github/workflows/npm-publish.yml
 
@@ -2154,7 +2166,7 @@ _.github/workflows/npm-publish.yml + scripts/ci/check-public-workflow.js `--publ
 
 **Guía:** [guides/maintaining/paquete-npm.md](maintaining/paquete-npm.md)
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#githubworkflowsnpm-publishyml)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#githubworkflowsnpm-publishyml)
 
 ## scripts/ci/npm-package-version.js
 
@@ -2168,7 +2180,7 @@ _scripts/ci/npm-package-version.js + el paso `version` de scripts/ci/public-ci.s
 
 **Dónde se prueba:** `scripts/tests/npm-package.test.js` y `scripts/tests/public-ci.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscinpm-package-versionjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptscinpm-package-versionjs)
 
 ## scripts/setup/harness/team-init.js
 
@@ -2182,7 +2194,7 @@ _scripts/setup/harness/team-init.js + el comando `harness.js team-init` + gettin
 
 **Dónde se prueba:** `scripts/tests/harness-team-init.test.sh` y `scripts/tests/team-stories-templates.test.js`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptssetupharnessteam-initjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptssetupharnessteam-initjs)
 
 ## scripts/setup/harness/team-local.js
 
@@ -2208,7 +2220,7 @@ _scripts/publishing/ + guides/maintaining/publicacion-espejo.md_
 
 **Dónde se prueba:** `scripts/tests/new-names.test.js`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptspublishingnew-namesjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptspublishingnew-namesjs)
 
 ## scripts/lib/legacy-names.js
 
@@ -2222,7 +2234,7 @@ _scripts/lib/legacy-names.js/.sh/.ps1 + scripts/lib/renames.json + guides/mainta
 
 **Dónde se prueba:** `scripts/tests/legacy-names.test.js` y `scripts/tests/legacy-names-install.test.sh`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsliblegacy-namesjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptsliblegacy-namesjs)
 
 ## scripts/ci/legacy-options.sh y legacy-options.js
 
@@ -2236,7 +2248,7 @@ _scripts/ci/legacy-options.sh/.js + guides/maintaining/nombres-en-ingles.md_
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscilegacy-optionssh-y-legacy-optionsjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptscilegacy-optionssh-y-legacy-optionsjs)
 
 ## scripts/publishing/spanish-names.js
 
@@ -2250,7 +2262,7 @@ _scripts/publishing/ + scripts/lib/spanish-words.json + guides/maintaining/nombr
 
 **Dónde se prueba:** `scripts/tests/spanish-names.test.js`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptspublishingspanish-namesjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptspublishingspanish-namesjs)
 
 ## scripts/publishing/internal-history.js
 
@@ -2264,7 +2276,7 @@ _scripts/publishing/internal-history.js + internal-history.json + guides/maintai
 
 **Dónde se prueba:** `scripts/tests/internal-history-guard.test.js` y `scripts/tests/code-comments.test.js`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptspublishinginternal-historyjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptspublishinginternal-historyjs)
 
 ## scripts/lib/estimates.js
 
@@ -2276,7 +2288,7 @@ _scripts/publishing/internal-history.js + internal-history.json + guides/maintai
 
 **Dónde se prueba:** `scripts/tests/estimates.test.js`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptslibestimatesjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptslibestimatesjs)
 
 ## scripts/lib/similar-stories.js
 
@@ -2288,7 +2300,7 @@ _scripts/publishing/internal-history.js + internal-history.json + guides/maintai
 
 **Dónde se prueba:** `scripts/tests/similar-stories.test.js`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptslibsimilar-storiesjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptslibsimilar-storiesjs)
 
 ## skills/tycon-pipeline/scripts/lib/real-hours.js
 
@@ -2300,4 +2312,4 @@ _scripts/publishing/internal-history.js + internal-history.json + guides/maintai
 
 **Dónde se prueba:** `skills/tycon-pipeline/scripts/tests/estimate-real.test.js`
 
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptslibreal-hoursjs)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptslibreal-hoursjs)
