@@ -976,12 +976,13 @@ function anotar(event, cmd, punto, ctx) {
     ? (ctx.sha || git(root, ['rev-parse', 'HEAD']))
     : (git(root, ['rev-parse', `origin/${target}`]) || git(root, ['rev-parse', target]) || git(root, ['rev-parse', 'HEAD']));
   if (!sha) return null;
-  const entry = { ts: new Date().toISOString(), sessionId: sessionIdOf(event), repoPath: root, sha: sha.slice(0, 12), branch: target, cmd: cmd.slice(0, 120) };
+  // `branch` es la rama DESTINO; la de origen va aparte, antes de `cmd` (quien lee el registro espera `cmd` al final de
+  // la entrada que pide retrospectiva). Un pedido sin la rama a la vista no la inventa.
+  const origen = ctx.isPrCreate ? ctx.origen : branch;
+  const entry = { ts: new Date().toISOString(), sessionId: sessionIdOf(event), repoPath: root, sha: sha.slice(0, 12), branch: target,
+    ...(origen && origen !== 'HEAD' ? { origen } : {}), cmd: cmd.slice(0, 120) };
   if (juicio && juicio.exento) Object.assign(entry, { exento: juicio.exento, motivo: juicio.motivo, commits: juicio.commits, archivos: juicio.archivos.slice(0, 40) });
   if (ctx.isPrCreate && !ctx.sha && ctx.punta) entry.punta = ctx.punta;   // la punta cayó a HEAD, dicho
-  // `branch` es la rama DESTINO; la de origen va aparte. Un pedido sin la rama a la vista no la inventa.
-  const origen = ctx.isPrCreate ? ctx.origen : branch;
-  if (origen && origen !== 'HEAD') entry.origen = origen;
   const principal = carpetaPrincipal(root);
   if (principal && real(principal) !== real(root)) entry.principal = principal;
   if (readJsonl(LEDGER).some((e) => e.repoPath === root && e.sha === entry.sha)) return null;
