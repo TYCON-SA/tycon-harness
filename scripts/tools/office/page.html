@@ -4,9 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Oficina del arnés</title>
-<style>
+<style id="estiloPagina">
 /* La página de /office: arriba la sala en 3D; abajo una tarjeta por sesión y el trabajo, en tablas o en kanban. La tabla de
-   /wip sale sólo si el navegador no puede dibujar en 3D. Todo viene adentro. */
+   /wip sale sólo si el navegador no puede dibujar en 3D. Todo viene adentro. Estos estilos son los de la página local: en
+   el sitio la pestaña va dentro de su armazón, con sus colores y su tipografía, y lleva sólo los de abajo. */
 :root{
   --bg:#f5f6f4; --surface:#ffffff; --fg:#1d2321; --muted:#5d6763; --line:#dde2df; --accent:#1f6f5c;
   --display:system-ui,-apple-system,"Segoe UI",sans-serif; --body:system-ui,-apple-system,"Segoe UI",sans-serif; --mono:ui-monospace,Menlo,Consolas,monospace;
@@ -15,14 +16,21 @@
   --bg:#141917; --surface:#1c2220; --fg:#e6ebe8; --muted:#9aa5a0; --line:#2c3431; --accent:#5cc0a3; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#141917; --surface:#1c2220; --fg:#e6ebe8; --muted:#9aa5a0; --line:#2c3431; --accent:#5cc0a3; color-scheme:dark}
-*{box-sizing:border-box}
-[hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 var(--body);padding:24px 16px 48px}
 main{max-width:1600px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
 header{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px 20px;border-bottom:2px solid var(--fg);padding-bottom:12px}
 header .site{font:600 .9rem var(--body);color:var(--fg)}
 h1{font:700 1.7rem/1.1 var(--display);margin:0;letter-spacing:-.01em}
 h2{font:700 .8rem var(--display);text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 8px}
+</style>
+<style id="estiloOficina">
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+/* en el sitio: los colores y la tipografía del sitio, con los nombres que usa la oficina */
+.contenido-oficina{--fg:var(--ink);--display:var(--sans);--body:var(--sans);--mono:ui-monospace,Menlo,Consolas,monospace;display:flex;flex-direction:column;gap:20px}
+.contenido-oficina h2{font:700 .8rem var(--display);text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 8px}
+/* las etiquetas de las salas no pasan por encima del encabezado fijo del sitio al bajar la página */
+.contenido-oficina .offices{isolation:isolate}
 .stamp{font:500 .85rem var(--mono);color:var(--muted)}
 .you h2{color:#a8640b}.you ul{margin:4px 0 0;padding-left:18px}.you .nada{list-style:none;margin-left:-18px;color:var(--muted)}
 .resumen{background:var(--surface);border:1px solid var(--line);border-left:6px solid var(--line);border-radius:6px}.resumen.pide{border-color:#a8640b}
@@ -188,13 +196,8 @@ tr:last-child td{border-bottom:0}
 .board details.done ul{list-style:none;margin:6px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:4px 12px}
 .board details.done li{font-size:.85rem;overflow-wrap:anywhere} .board details.done li .m{font:500 .78rem var(--mono);color:var(--muted)}
 .board .toca{color:#a8640b}
-/* la pestaña del sitio: la barra de arriba, las oficinas chicas y la grande */
-.barra-sitio{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 20px;max-width:1600px;margin:0 auto 14px}
-.barra-sitio nav{display:flex;flex-wrap:wrap;gap:4px}
-.barra-sitio a{font:500 .88rem var(--body);color:var(--muted);text-decoration:none;padding:6px 12px;border-radius:6px}
-.barra-sitio a:hover{color:var(--fg)}.barra-sitio a[aria-current="page"]{background:var(--fg);color:var(--bg)}
-.barra-sitio .salir{display:flex;align-items:center;gap:8px;margin:0;font-size:.85rem;color:var(--muted);overflow-wrap:anywhere}
-.barra-sitio .salir button,.volver{font:500 .85rem var(--body);background:none;border:1px solid var(--line);color:var(--fg);border-radius:6px;padding:5px 12px;cursor:pointer}
+/* la pestaña del sitio: las oficinas chicas y la grande */
+.volver{font:500 .85rem var(--body);background:none;border:1px solid var(--line);color:var(--fg);border-radius:6px;padding:5px 12px;cursor:pointer}
 .franja-demo{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;max-width:1600px;margin:0 auto 14px;padding:8px 14px;border:1px dashed var(--accent);border-radius:8px;font-size:.88rem}
 .franja-demo form{display:flex;align-items:center;gap:8px;margin:0}
 .oficinas{display:flex;flex-direction:column;gap:16px}
@@ -231,8 +234,8 @@ tr:last-child td{border-bottom:0}
 </style>
 </head>
 <body>
-__OFFICE_BAR__
 <main>
+<!-- contenido -->
   <header>
     <h1>Oficina del arnés</h1>
     <span class="stamp" id="stamp"></span>
@@ -271,8 +274,9 @@ __OFFICE_BAR__
   </section>
   <p class="nota" id="noRead" hidden></p>
   <details class="tablewrap" id="tablewrap" hidden><summary>Ver como tabla</summary><div class="table"><table><thead><tr><th>Trabajo</th><th>Estado</th><th>Fin estimado</th><th>Sesión</th><th>Carpeta</th></tr></thead><tbody id="rows"></tbody></table></div><p class="empty" id="freeLine" hidden></p></details>
+  <div class="ventana" id="ventana" hidden><div class="panel3" role="dialog" aria-modal="true" aria-label="Conversación"></div></div>
+<!-- fin del contenido -->
 </main>
-<div class="ventana" id="ventana" hidden><div class="panel3" role="dialog" aria-modal="true" aria-label="Conversación"></div></div>
 __OFFICE_DATA_BLOCK__
 <script type="importmap">__OFFICE_IMPORTMAP__</script>
 __OFFICE_CODE__

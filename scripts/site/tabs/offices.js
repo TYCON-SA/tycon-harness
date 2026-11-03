@@ -21,7 +21,6 @@ const fs = require('fs');
 const TX = require('../texts.js');
 const views = require('../views.js');
 const access = require('../access.js');
-const { esc } = require('../../nightly/dashboard/common.js');
 
 // por su archivo, no por su carpeta: `tools/office` sin más se lee también como `tools/office.js`, que la imagen no trae
 const PARTS = require('../../tools/office/page-parts.js');
@@ -31,15 +30,15 @@ const JS = 'text/javascript; charset=utf-8';
 
 const direccionDelModulo = (clave) => `/offices/modules/${CLAVES.indexOf(clave)}.js`;
 
-/** La barra de arriba: las pestañas del sitio y la cuenta. La página no carga las hojas del sitio: se dibuja con las suyas. */
-function barraDelSitio(ctx) {
-  const idioma = views.idiomaDe(ctx);
-  const T = (k) => TX.t(idioma, k);
-  const enlaces = (ctx.pestanas || []).map((p) => `<a href="${esc(p.path)}"${ctx.activa === p.id ? ' aria-current="page"' : ''}>${esc(p.titulo)}</a>`).join('');
-  const cuenta = ctx.quien ? ctx.quien.correoDeIngreso || ctx.quien.email : '';
-  const tok = ctx.sesion && typeof ctx.sesion.tok === 'string' ? ctx.sesion.tok : '';
-  const salir = cuenta ? `<form class="salir" method="post" action="/auth/logout"><span>${esc(cuenta)}</span> <input type="hidden" name="tok" value="${esc(tok)}"> <button type="submit">${esc(T('barra.salir'))}</button></form>` : '';
-  return `<div class="barra-sitio"><nav aria-label="${esc(T('barra.pestanas'))}">${enlaces}</nav>${salir}</div>`;
+/**
+ * La pestaña dentro del armazón del sitio (views.layout), como cualquier otra: su encabezado, su barra lateral, sus hojas
+ * y su pie. De la oficina entran sus atributos en <html>, sus estilos y su contenido.
+ */
+function paginaEnElSitio(ctx, partes) {
+  const titulo = TX.t(views.idiomaDe(ctx), 'pestana.oficinas');
+  return views.layout(ctx, titulo, partes.body)
+    .replace(/<html /, () => `<html ${partes.attrs} `)
+    .replace('</head>', () => `<style>${partes.style}</style></head>`);
 }
 
 /** La política de la página: la del sitio, con el hash del mapa de importación. */
@@ -58,7 +57,7 @@ function crearRutas({ log = () => {}, demo = false, fuentes = null, oficinasDeEj
   function pagina(ctx) {
     let cuerpo;
     try {
-      cuerpo = PARTS.renderPage({ source: demo ? 'demo' : 'site', urlOf: direccionDelModulo, script: '/offices/page.js', bar: barraDelSitio(ctx) });
+      cuerpo = paginaEnElSitio(ctx, PARTS.siteParts({ source: demo ? 'demo' : 'site', urlOf: direccionDelModulo, script: '/offices/page.js' }));
     } catch (e) {
       // sin la página en la imagen se dice y el sitio sigue: el motivo trae rutas, va al registro
       log(`oficinas: la página no se pudo armar (${e.code || e.message})`);
@@ -97,4 +96,4 @@ function crearRutas({ log = () => {}, demo = false, fuentes = null, oficinasDeEj
   return rutas;
 }
 
-module.exports = { crearRutas, politicaDe, barraDelSitio };
+module.exports = { crearRutas, politicaDe };
