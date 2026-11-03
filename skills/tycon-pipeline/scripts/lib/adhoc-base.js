@@ -23,12 +23,15 @@ const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 
 const RAMA = 'main';
+const RAMA_DE_TRABAJO = 'dev';
 const TOPE_MS = Number(process.env.TYCON_ADHOC_BASE_TIMEOUT_MS) || 8000;
 
 // git en inglés (LC_ALL=C): `ubicar` reconoce «fuera de un repo» por el texto del error, que se traduce
 const GIT_ENV = { ...process.env, LC_ALL: 'C', LANG: 'C', LANGUAGE: 'C' };
+// el tope de salida por defecto es de 1 MB: en un repo grande, la lista de archivos lo pasa y parece que git no contestó
+const SALIDA_MAX = 64 * 1024 * 1024;
 function git(repo, args, timeout = 5000) {
-  return execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout, env: GIT_ENV }).trim();
+  return execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout, env: GIT_ENV, maxBuffer: SALIDA_MAX }).trim();
 }
 
 /**
@@ -92,6 +95,8 @@ function reposDelCarril(adhoc) { return reposYHuerfanas(adhoc).repos; }
 // (`--no-renames`): un archivo movido sale con su ruta vieja y la nueva, y la vieja puede ser la de riesgo alto.
 const rutasDeGit = (repo, [sub, ...resto]) => git(repo, ['-c', 'core.quotepath=false', sub, '-z',
   ...(sub === 'diff' ? ['--no-renames'] : []), ...resto]).split('\0').filter(Boolean);
+// Para contar lo propio: un archivo movido es un cambio, con su ruta nueva.
+const cambiosDeGit = (repo, args) => git(repo, ['-c', 'core.quotepath=false', 'diff', '-z', '--name-only', '--find-renames', ...args]).split('\0').filter(Boolean);
 const ES_SHA = /^[0-9a-f]{7,64}$/i;
 
 /**
@@ -138,23 +143,40 @@ function archivosDelCarril(adhoc, { repos: extra = [] } = {}) {
   return { porRepo, avisos, fallas };
 }
 
-/** ¿Sigue la carpeta de un repo anotado? Una que ya no está (un worktree borrado) no tiene nada que medir; otro error sube. */
+/**
+ * ¿Sigue siendo un repo la carpeta anotada? Una que ya no está (un worktree borrado), sin `.git`, o con un `.git` que apunta
+ * a un repo que ya no está (los restos de un worktree), no tiene nada que medir. Un repo roto sí: su `.git` está, y que git
+ * no conteste es «no pude medir». Otro error sube.
+ */
 function sigueElRepo(repo) {
-  try { fs.statSync(repo); return true; } catch (e) {
+  try {
+    fs.statSync(repo);
+    const punto = path.join(repo, '.git');
+    if (fs.statSync(punto).isDirectory()) return true;
+    const destino = /^gitdir:\s*(.+?)\s*$/m.exec(fs.readFileSync(punto, 'utf8'));
+    return !destino || fs.existsSync(path.resolve(repo, destino[1]));
+  } catch (e) {
     if (e.code === 'ENOENT' || e.code === 'ENOTDIR') return false;
     throw e;
   }
 }
 
 /**
- * Desde dónde se mide lo propio de un repo: la bifurcación con `main`, sin lo que entró de ahí. Sin esa rama, la base
- * anotada; sin ninguna de las dos, lo anotado y el commit, con el aviso. Git que no contesta, sube.
+ * Desde dónde se mide lo propio de un repo: la bifurcación con la rama de integración más cercana (`main` o `dev`), sin lo
+ * que entró de ahí. Sin ninguna, la base anotada; sin ésa, lo anotado y el commit, con el aviso. Git que no contesta, sube.
  */
 function basePropia(repo, adhoc) {
-  try { return { sha: git(repo, ['merge-base', 'HEAD', `origin/${RAMA}`]) }; } catch (e) {
-    // exit 1: historias sin relación. La rama que falta o el repo sin commits los dice el texto
-    if (e.status !== 1 && !/not a valid object name/i.test(String(e.stderr || e.message))) throw e;
+  const candidatas = [];
+  for (const rama of [RAMA, RAMA_DE_TRABAJO]) {
+    try {
+      const sha = git(repo, ['merge-base', 'HEAD', `origin/${rama}`]);
+      candidatas.push({ sha, adelante: Number(git(repo, ['rev-list', '--count', `${sha}..HEAD`])) });
+    } catch (e) {
+      // exit 1: historias sin relación. La rama que falta o el repo sin commits los dice el texto
+      if (e.status !== 1 && !/not a valid object name/i.test(String(e.stderr || e.message))) throw e;
+    }
   }
+  if (candidatas.length) return { sha: candidatas.sort((a, b) => a.adelante - b.adelante)[0].sha };
   const anotada = adhoc.bases && adhoc.bases[repo];
   if (anotada && anotada.sha && ES_SHA.test(anotada.sha)) return { sha: anotada.sha };
   let cabeza = null;
@@ -162,12 +184,24 @@ function basePropia(repo, adhoc) {
   return { sha: cabeza, aviso: `camino corto: ${repo} no tiene su base traída (${(anotada && anotada.motivo) || 'sin origin/main'}): la rama no se midió, sólo lo anotado y el commit` };
 }
 
+const esArchivo = (f) => { try { return fs.statSync(f).isFile(); } catch (_) { return false; } };
+
+function enMerge(repo) {
+  try { git(repo, ['rev-parse', '--verify', '-q', 'MERGE_HEAD']); return true; } catch (e) {
+    if (e.status === 1) return false;
+    throw e;
+  }
+}
+
 /**
  * Lo que este carril cambió de verdad, sin lo traído de `main`: `{ porRepo, avisos, fallas }`, como `archivosDelCarril`.
  * Lo anotado suma si existe o si git lo muestra borrado. Una sonda fuera de un repo, una ruta que nunca existió o un repo
- * borrado no son «no pude medir»: no suman.
+ * borrado no son «no pude medir»: no suman. Con `sinSeguir`, también lo que git no sigue: una pantalla nueva que un `git add
+ * -A` sube en el mismo comando. Sin él, un archivo sin seguir suma sólo si el carril lo anotó: puede ser de otra sesión, y si
+ * entra en un commit, el guardado siguiente lo cuenta. Con un merge en curso, lo que queda igual que en la otra rama es lo
+ * que el merge trae: `HEAD` todavía no lo tiene y la bifurcación no lo descuenta.
  */
-function propiosDelCarril(adhoc, { repos: extra = [] } = {}) {
+function propiosDelCarril(adhoc, { repos: extra = [], sinSeguir = false } = {}) {
   const porRepo = {};
   const avisos = [];
   const fallas = [];
@@ -184,12 +218,16 @@ function propiosDelCarril(adhoc, { repos: extra = [] } = {}) {
       if (!sigueElRepo(repo)) continue;
       const base = basePropia(repo, adhoc);
       if (base.aviso) avisos.push(base.aviso);
-      const set = new Set(rutasDeGit(repo, ['diff', '--cached', '--name-only']));
-      for (const l of rutasDeGit(repo, ['ls-files', '--others', '--exclude-standard'])) set.add(l);
-      if (base.sha) for (const l of rutasDeGit(repo, ['diff', '--name-only', base.sha, '--'])) set.add(l);
+      let set = new Set(cambiosDeGit(repo, ['--cached']));
+      if (base.sha) for (const l of cambiosDeGit(repo, [base.sha, '--'])) set.add(l);
+      if (enMerge(repo)) {
+        const distintos = new Set(cambiosDeGit(repo, ['MERGE_HEAD', '--']));
+        set = new Set([...set].filter((l) => distintos.has(l)));
+      }
+      if (sinSeguir) for (const l of rutasDeGit(repo, ['ls-files', '--others', '--exclude-standard'])) set.add(l);
       for (const f of reales) {
         const rel = path.relative(repo, f).replace(/\\/g, '/');
-        if (rel && !rel.startsWith('..') && !path.isAbsolute(rel) && fs.existsSync(f)) set.add(rel);
+        if (rel && !rel.startsWith('..') && !path.isAbsolute(rel) && esArchivo(f)) set.add(rel);
       }
       porRepo[repo] = [...set].sort();
     } catch (e) {
@@ -203,21 +241,25 @@ function propiosDelCarril(adhoc, { repos: extra = [] } = {}) {
 
 /**
  * Lo que suma para el tope: los archivos de implementación que el carril cambió, con su ruta entera. `{ archivos, avisos,
- * fallas }`. La maqueta y la captura anotadas no suman, aunque vivan en el repo.
+ * fallas }`. La maqueta y la captura anotadas no suman, aunque vivan en el repo. Un archivo suma una vez: un worktree dentro
+ * de otro repo del carril lo muestra en los dos, y Mac guarda un nombre con acento en una forma de Unicode y git lo lista en otra.
  */
 function cuentaDelCarril(adhoc, opciones) {
   const { isImplPath } = require('./atdd-order.js');
   const { isCodeFile } = require('./story-gate.js');
   const { porRepo, avisos, fallas } = propiosDelCarril(adhoc, opciones);
   const anotadas = new Set([adhoc && adhoc.mockup, adhoc && adhoc.capture].filter((x) => x && typeof x.file === 'string').map((x) => rutaReal(x.file)));
-  const archivos = [];
+  const archivos = new Map();
   for (const repo of Object.keys(porRepo)) {
     for (const rel of porRepo[repo]) {
       const abs = path.join(repo, rel);
-      if (isImplPath(rel) && isCodeFile(rel) && !anotadas.has(rutaReal(abs))) archivos.push(abs);
+      if (isImplPath(rel) && isCodeFile(rel) && !anotadas.has(rutaReal(abs))) {
+        const clave = abs.normalize('NFC');
+        if (!archivos.has(clave)) archivos.set(clave, abs);
+      }
     }
   }
-  return { archivos: archivos.sort(), avisos, fallas };
+  return { archivos: [...archivos.values()].sort(), avisos, fallas };
 }
 
 /**

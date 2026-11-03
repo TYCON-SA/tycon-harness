@@ -143,9 +143,9 @@ function fechaDelCambio(abs) {
   }
 }
 
-// Una prueba por su nombre o por una carpeta de pruebas en la raíz. Una carpeta `test/` más adentro puede ser una pantalla
-// de verdad (la ruta `/test` de `src/app/test/page.tsx`).
-const esPrueba = (rel) => /\.(test|spec)\.[^./]+$/i.test(rel) || /(^|\/)__tests__\//.test(rel) || /^(tests?|e2e)\//i.test(rel);
+// Una prueba por su nombre o por una carpeta de pruebas. Una carpeta `test/` más adentro puede ser una pantalla de verdad
+// (la ruta `/test` de `src/app/test/page.tsx`): ésa cuenta como prueba sólo en la raíz.
+const esPrueba = (rel) => /\.(test|spec|cy)\.[^./]+$/i.test(rel) || /(^|\/)(__tests__|__mocks__|tests|e2e|cypress|playwright)\//i.test(rel) || /^test\//i.test(rel);
 
 const TANDA_DE_PANTALLAS = 50;
 const MAS_NOMBRADOS = 5;
@@ -156,11 +156,16 @@ const topeDeComparar = () => { const v = process.env.TYCON_ADHOC_COMPARE_TIMEOUT
 /** El archivo de las diferencias, al lado de la maqueta. */
 const archivoDeDiferencias = (maqueta) => `${String(maqueta).replace(/\.html?$/i, '')}-diferencias.md`;
 
-/** El resto de las pantallas de un repo: las mismas extensiones que busca la revisión de una historia, sin las pruebas. */
+const esArchivo = (f) => { try { return fs.statSync(f).isFile(); } catch (_) { return false; } };
+
+/**
+ * El resto de las pantallas de un repo: las mismas extensiones que busca la revisión de una historia, sin las pruebas. Lo
+ * que git sigue y no está en el disco (borrado, o afuera por sparse-checkout) no tiene nada que comparar.
+ */
 function otrasPantallas(repo, yaMiradas) {
-  const lista = execFileSync('git', ['-C', repo, '-c', 'core.quotepath=false', 'ls-files', '-z'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 5000 });
+  const lista = execFileSync('git', ['-C', repo, '-c', 'core.quotepath=false', 'ls-files', '-z'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 5000, maxBuffer: 64 * 1024 * 1024 });
   return lista.split('\0').filter((rel) => rel && /\.(tsx|jsx|vue|svelte)$/i.test(rel) && !esPrueba(rel))
-    .map((rel) => ({ rel, abs: path.join(repo, rel) })).filter((s) => !yaMiradas.has(s.abs));
+    .map((rel) => ({ rel, abs: path.join(repo, rel) })).filter((s) => !yaMiradas.has(s.abs) && esArchivo(s.abs));
 }
 
 /**
@@ -176,7 +181,8 @@ function compararConLaMaqueta(adhoc, pantallas, repos) {
   const dif = archivoDeDiferencias(adhoc.mockup.file);
   const agotado = () => ({ sinMedir: `se agotaron los ${Math.round(tope / 1000)} segundos de la comparación: repetí el comando, o declará en ${enUnRenglon(dif)} la línea \`mockup-compare: no — <motivo>\`` });
   let md = '';
-  try { md = fs.readFileSync(dif, 'utf8'); } catch (e) {
+  // un editor de Windows lo deja con BOM y CRLF: se lee igual
+  try { md = fs.readFileSync(dif, 'utf8').replace(/^﻿/, '').replace(/\r\n/g, '\n'); } catch (e) {
     if (e.code !== 'ENOENT') return { sinMedir: `no pude leer ${enUnRenglon(dif)} (${e.code || e.message})` };
   }
   // la misma línea que lee la revisión de una historia (qa-guide.js): el motivo va en ese renglón
@@ -185,7 +191,7 @@ function compararConLaMaqueta(adhoc, pantallas, repos) {
   let textos;
   try { textos = mk.mockupTexts(fs.readFileSync(adhoc.mockup.file, 'utf8')); } catch (e) { return { sinMedir: `no pude leer la maqueta (${e.code || e.message})` }; }
   if (!textos) return { sinMedir: `${enUnRenglon(adhoc.mockup.file)} no es una maqueta de mockup.js` };
-  const legibles = pantallas.filter((abs) => fs.existsSync(abs)).map((abs) => ({ rel: abs, abs }));
+  const legibles = pantallas.filter(esArchivo).map((abs) => ({ rel: abs, abs }));
   if (!legibles.length) return { sinMedir: `el carril no tiene pantallas que se puedan leer: si sólo borró una, declará en ${enUnRenglon(dif)} la línea \`mockup-compare: no — <motivo>\`` };
   if (Date.now() - desde >= tope) return agotado();
   const delCarril = mk.compareWithScreens({ texts: textos, screens: legibles, md });
@@ -215,7 +221,7 @@ function revisar(adhoc, repos = []) {
   const { isCodeFile } = require('./story-gate.js');
   const { fileTouchesUi } = require('./ui-signal.js');
   // lo que el arreglo cambió de verdad: lo traído de `main` no pide maqueta ni captura
-  const { porRepo, fallas, avisos } = propiosDelCarril(adhoc, { repos });
+  const { porRepo, fallas, avisos } = propiosDelCarril(adhoc, { repos, sinSeguir: true });
   if (fallas.length) return { sinMedir: fallas[0] };
   const anotadas = new Set([adhoc.mockup, adhoc.capture].filter((x) => x && typeof x.file === 'string').map((x) => rutaReal(x.file)));
   const regla = reglaDePantalla();
@@ -229,7 +235,8 @@ function revisar(adhoc, repos = []) {
       const abs = path.join(repo, rel);
       if (anotadas.has(rutaReal(abs))) continue;
       const esPantalla = !esPrueba(rel) && fileTouchesUi(rel, repo, regla, nombre);
-      if (esPantalla) { pantallas.push(enUnRenglon(abs)); rutasDePantallas.push(abs); }
+      // un worktree dentro de otro repo del carril muestra la misma pantalla en los dos
+      if (esPantalla && !rutasDePantallas.includes(abs)) { pantallas.push(enUnRenglon(abs)); rutasDePantallas.push(abs); }
       if (!esPantalla && !isCodeFile(rel)) continue;
       ultimaEdicion = Math.max(ultimaEdicion, fechaDelCambio(abs));
     }

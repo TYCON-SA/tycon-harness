@@ -344,9 +344,13 @@ function appendLog(stateDir, fileName, sessionId, obj) {
 function carrilQueCuenta(adhoc) {
   const files = adhoc && Array.isArray(adhoc.files) ? adhoc.files : [];
   if (files.length < gate.cupoDelCarril(adhoc)) return adhoc;
+  return { ...adhoc, files: archivosQueSuman(files) };
+}
+
+function archivosQueSuman(files) {
   const { isImplPath } = require('./atdd-order.js');
   const { ubicar } = require('./adhoc-base.js');
-  return { ...adhoc, files: files.filter((f) => path.isAbsolute(String(f)) && isImplPath(f) && gate.isCodeFile(f) && fs.existsSync(f) && !ubicar(f).fuera) };
+  return files.filter((f) => path.isAbsolute(String(f)) && isImplPath(f) && gate.isCodeFile(f) && fs.existsSync(f) && !ubicar(f).fuera);
 }
 
 function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR, installedRoots }) {
@@ -442,6 +446,6 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
 
 module.exports = {
   DEFAULT_STATE_DIR, STALE_HOURS,
-  readMarker, readAdhoc, adhocFirmado, writeAdhoc, recordAdhocFile, anotarRutaDelCarril, adhocPath, listOtherMarkers,
+  readMarker, readAdhoc, adhocFirmado, writeAdhoc, recordAdhocFile, anotarRutaDelCarril, archivosQueSuman, adhocPath, listOtherMarkers,
   repoContext, gateEnabledForRepo, appendLog, evaluate, isHarnessRepo, defaultInstalledRoots,
 };

@@ -641,7 +641,7 @@ function validarEnClaude(a, { casa = os.homedir(), cwd, cuadro, destino, linea, 
   for (const c of [...new Set([cwd, cwdAprobacion].filter(Boolean))]) {
     const e = escuchasDelCuadro({ casa, cwd: c, linea });
     if (e.ilegibles.length) return { ok: false, motivo: `no pude leer ${e.ilegibles[0]}, y sin leerla no sé si un gancho contestó el cuadro` };
-    if (e.ajenos.length) return { ok: false, motivo: `un gancho que no es del arnés escucha el cuadro (${e.ajenos[0].evento} en ${e.ajenos[0].archivo}): mientras esté, el click no vale; escribí «aprobado»` };
+    if (e.ajenos.length) return { ok: false, motivo: `un gancho que no es del arnés escucha el cuadro (${e.ajenos[0].evento} en ${e.ajenos[0].archivo}): mientras esté, el click no vale; ${cuadro && cuadro.soloClick ? 'queda la terminal' : 'escribí «aprobado»'}` };
   }
   return clickEnLaTranscripcion(ruta, a, { pregunta: cuadro.pregunta, opciones: cuadro.opciones, descripciones: cuadro.descripciones });
 }

@@ -473,6 +473,22 @@ test('T15 AdhocClear_SobreCupo_AnotaLosArchivosTocados @story-8.181 @ac-6', () =
   assert.deepStrictEqual([c.sobreCupo, c.cupoPedido, c.eligio, c.contados, c.archivos], [true, 9, 'persona', 1, [a]]);
 });
 
+// 🔴 Falla con: la cuenta leída con `readAdhoc`, que da nada pasadas las 6 horas: se pierde el dato del sobre cupo.
+test('AdhocClear_SobreCupoVencido_AnotaLaCuentaIgual @story-8.181 @ac-6', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-')));
+  execFileSync('git', ['-C', repo, 'init', '-q']);
+  fs.mkdirSync(path.join(repo, 'src'));
+  const a = path.join(repo, 'src', 'a.js');
+  fs.writeFileSync(a, 'x\n');
+  const viejo = new Date(Date.now() - 7 * 3600000).toISOString();
+  fs.mkdirSync(path.dirname(io.adhocPath(estadoDe(home), 'sess-a')), { recursive: true });
+  fs.writeFileSync(io.adhocPath(estadoDe(home), 'sess-a'), JSON.stringify({ reason: 'arreglo grande', maxFiles: 9, sobreCupo: true, cupoPedido: 9, eligio: 'persona', files: [a], declaredAt: viejo, lastTouch: viejo }));
+  assert.equal(markerSinVentana(home, 'sess-a', ['adhoc', 'clear']).status, 0);
+  const c = adhocLog(home).find((e) => e.kind === 'ADHOC_CLEAR');
+  assert.deepStrictEqual([c.sobreCupo, c.cupoPedido, c.eligio, c.contados, c.archivos], [true, 9, 'persona', 1, [a]]);
+});
+
 test('T20 OnEdit_RepoDelArnes_CuentaElArchivo @story-8.181 @ac-9', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
   const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clon-')));
@@ -757,6 +773,22 @@ test('harness: sin la lib del arnés (máquina atrasada) decide la carpeta, como
   const suelto = repoGit(path.join(base, 'otro', 'x'));
   assert.equal(porton('/no/existe', path.join(enCarpeta, 'src', 'a.js')).action, 'pass');
   assert.equal(porton('/no/existe', path.join(suelto, 'src', 'a.js')).kind, 'no-lane');
+});
+
+// 🔴 Falla con: el tope reevaluado con `isHarness: false`, que deja pasar a un clon del arnés sin `.tycon/`.
+test('Evaluate_ClonDelArnesSinTycon_FrenaAlPasarElTope @story-8.181 @ac-7', () => {
+  const tcg = tcgDeMentira();
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'porton-'));
+  const clon = repoGit(path.join(fs.realpathSync(base), 'ES-ARNES'));
+  fs.rmSync(path.join(clon, '.tycon'), { recursive: true });
+  const hecho = path.join(clon, 'src', 'hecho.js');
+  fs.writeFileSync(hecho, 'x\n');
+  const v = enHijo(tcg, `const fs=require('fs'),path=require('path');const io=require(${JSON.stringify(IO)});const [f,hecho,st]=process.argv.slice(1);
+    const ahora=new Date().toISOString();const p=io.adhocPath(st,'s-h');fs.mkdirSync(path.dirname(p),{recursive:true});
+    fs.writeFileSync(p,JSON.stringify({reason:'arreglo en el arnés',maxFiles:1,files:[hecho],declaredAt:ahora,lastTouch:ahora,firmadaEn:ahora}));
+    fs.appendFileSync(path.join(st,'gates.log'),JSON.stringify({name:'adhoc-lane-signed',status:'ok',destino:'s-h',ts:ahora})+'\\n');
+    process.stdout.write(JSON.stringify(io.evaluate({filePath:f,sessionId:'s-h',via:'Edit',stateDir:st}).verdict))`, [path.join(clon, 'src', 'nuevo.js'), hecho]);
+  assert.deepStrictEqual([v.action, v.kind], ['block', 'adhoc-cap'], JSON.stringify(v));
 });
 
 test('harness: con el criterio REAL del arnés — clon por su remoto, producto bajo carpeta con nombre del arnés', (t) => {

@@ -5511,7 +5511,9 @@ function cmdAdhoc(sub, payloadJson) {
     process.exit(0);
   }
   if (sub === 'clear') {
-    const existing = io.readAdhoc(STATE_DIR, SID);
+    // sin mirar si venció: el que pasó el tope deja su cuenta aunque lleve horas sin tocarse
+    let existing = io.readAdhoc(STATE_DIR, SID);
+    if (!existing) { try { existing = JSON.parse(fs.readFileSync(io.adhocPath(STATE_DIR, SID), 'utf8')); } catch (_) { existing = null; } }
     try { fs.unlinkSync(io.adhocPath(STATE_DIR, SID)); } catch (e) {
       // sólo «no existe» es estar cerrado: otro error deja el atajo abierto, y eso se dice
       if (e.code !== 'ENOENT') { console.error(`marker.js adhoc clear: no pude borrar la declaración (${e.code || e.message}); el arreglo rápido sigue abierto.`); process.exit(1); }
@@ -5594,7 +5596,8 @@ function cmdAdhoc(sub, payloadJson) {
     // un tope menor que los archivos ya tocados deja el arreglo trabado: se frena antes de pedir la firma (también en el
     // chequeo previo de la ventana), con el número de archivos tocados
     const actual = io.readAdhoc(STATE_DIR, destino);
-    const tocados = actual ? (actual.files || []).length : 0;
+    // suman los de implementación: la lista cruda trae también pruebas y sondas de la consola
+    const tocados = actual ? io.archivosQueSuman(actual.files || []).length : 0;
     if (actual && payload.maxFiles !== undefined && payload.maxFiles < tocados) {
       console.error(`marker.js adhoc set: el arreglo rápido de la sesión ${destino} ya tocó ${tocados} archivos: un tope de ${payload.maxFiles} lo dejaría trabado. Pedí ${tocados} o más, o cerralo con \`adhoc clear\` y abrí uno nuevo.`);
       process.exit(2);

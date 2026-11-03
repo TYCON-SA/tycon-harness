@@ -17,7 +17,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
-const { spawnSync } = require('child_process');
+const { spawnSync, execFileSync } = require('child_process');
 
 const ow = require('../lib/owner-window.js');
 
@@ -1729,7 +1729,9 @@ test('OwnerWindow_AdhocSet_ChequeoPrevio_MotivoLargoYTopeMenorQueLoTocado', (t) 
   assert.match(motivoLargo.niega, /hasta 200 caracteres/);
   const adhoc = path.join(casa, '.claude', '.tycon-pipeline', 'adhoc');
   fs.mkdirSync(adhoc, { recursive: true });
-  fs.writeFileSync(path.join(adhoc, 'ses-a.json'), JSON.stringify({ reason: 'arreglo del sp', maxFiles: 8, files: ['/r/a.js', '/r/b.js', '/r/c.js', '/r/d.js', '/r/e.js', '/r/f.js'] }));
+  execFileSync('git', ['init', '-q', casa]);
+  const tocados = ['a', 'b', 'c', 'd', 'e', 'f'].map((n) => { const f = path.join(casa, 'src', `${n}.js`); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, 'x\n'); return f; });
+  fs.writeFileSync(path.join(adhoc, 'ses-a.json'), JSON.stringify({ reason: 'arreglo del sp', maxFiles: 8, files: tocados }));
   const menor = ow.comprobarConElGuion({ firma: 'adhoc-lane', palabras: [MARKER, 'adhoc', 'set', JSON.stringify({ reason: 'arreglo del sp', maxFiles: 5 })], cwd: casa, sesion: 'ses-a', casa });
   assert.ok(menor && menor.niega, JSON.stringify(menor));
   assert.match(menor.niega, /ya tocó 6 archivos/);
@@ -2551,6 +2553,30 @@ test('T6 AdhocSet_SobreCupo_NoSaleConDelegacion @story-8.181 @ac-3', (t) => {
   const ajena = pedirConDelegacion(casaNueva(t), pedidoDe(9, ' --for-session ses-a'));
   assert.strictEqual(ajena.decision, 'deny', ajena.texto);
   assert.match(ajena.texto, /no se corre desde la pestaña de otra sesión/);
+});
+
+// 🔴 Falla con: la negativa desde otra pestaña sólo en el freno: el guion correría si el freno no lo mira.
+test('AdhocSet_SobreCupo_ParaOtraSesion_ElGuionTambienLoNiega @story-8.181 @ac-3', () => {
+  const r = ow.exigir({ firma: SOBRE_CUPO, argv: [MARKER, 'adhoc', 'set', '{"reason":"arreglo del sp","maxFiles":9}', '--for-session', 'ses-b'], propia: 'ses-a' });
+  assert.strictEqual(r.codigo, 1, JSON.stringify(r));
+  assert.match(r.motivo, /se corre desde la sesión destino/);
+});
+
+// 🔴 Falla con: la lista cruda, con pruebas y sondas, que niega un cupo que alcanza y empuja a la firma de sobre cupo.
+test('AdhocSet_ChequeoPrevio_PruebasYSondasNoCuentanContraElCupo @story-8.181 @ac-10', (t) => {
+  const casa = casaNueva(t);
+  execFileSync('git', ['init', '-q', casa]);
+  const real = path.join(casa, 'src', 'a.js');
+  fs.mkdirSync(path.dirname(real), { recursive: true });
+  fs.writeFileSync(real, 'x\n');
+  const adhoc = path.join(casa, '.claude', '.tycon-pipeline', 'adhoc');
+  fs.mkdirSync(adhoc, { recursive: true });
+  const crudos = [real, ...Array.from({ length: 9 }, (_, i) => path.join(casa, 'src', `a${i}.test.js`)), '/tmp/sonda.js', '$L/p.js'];
+  for (const f of crudos.slice(1, 10)) fs.writeFileSync(f, 'x\n');
+  fs.writeFileSync(path.join(adhoc, 'ses-a.json'), JSON.stringify({ reason: 'arreglo del sp', maxFiles: 8, files: crudos }));
+  const pedido = (cupo) => ow.comprobarConElGuion({ firma: 'adhoc-lane', palabras: [MARKER, 'adhoc', 'set', JSON.stringify({ reason: 'arreglo del sp', maxFiles: cupo })], cwd: casa, sesion: 'ses-a', casa });
+  assert.deepStrictEqual(pedido(8), { ok: true });
+  assert.deepStrictEqual(pedido(1), { ok: true }, 'un archivo de verdad entra en un cupo de 1');
 });
 
 test('T7 AdhocSet_SobreCupo_NoSaleConHechoYAvisado @story-8.181 @ac-3', (t) => {

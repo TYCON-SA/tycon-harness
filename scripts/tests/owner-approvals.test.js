@@ -346,6 +346,20 @@ test('T12 Cuadro_SobreCupo_TextoFijoDeLasOpciones @story-8.181 @ac-5', () => {
   for (const d of c.descripciones) assert.doesNotMatch(d, /\d/, 'sin números en las opciones');
 });
 
+// 🔴 Falla con: un cuadro de sólo click con un gancho ajeno que manda a escribir «aprobado», que ahí nunca aprueba.
+test('Validar_SoloClickConGanchoAjeno_MandaALaTerminal @story-8.181 @ac-4', (t) => {
+  const casa = casaNueva(t);
+  transcripcion(casa, 'ses-a', []);
+  fs.mkdirSync(path.join(casa, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(casa, '.claude', 'settings.json'), JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'AskUserQuestion', hooks: [{ type: 'command', command: 'python3 ajeno.py' }] }] } }));
+  const motivo = (cuadro) => oa.validarEnClaude(click(), CTX(casa, { cwd: casa, cuadro })).motivo;
+  const delTope = motivo(cuadroDelTope());
+  assert.match(delTope, /un gancho que no es del arnés/);
+  assert.match(delTope, /--terminal|terminal/);
+  assert.doesNotMatch(delTope, /«aprobado»/);
+  assert.match(motivo(CTX(casa).cuadro), /escribí «aprobado»/, 'la firma común sigue con su salida');
+});
+
 // El mismo click de la coordinadora vale para una firma común: lo que lo niega es que el cuadro sea de sólo click.
 test('T9b Buscar_SoloClick_NoMiraLaCoordinadoraNiElMensaje @story-8.181 @ac-4', (t) => {
   const casa = casaNueva(t);

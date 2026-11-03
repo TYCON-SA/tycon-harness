@@ -647,6 +647,133 @@ test('T26 SaveBrake_TraerMain_NoSumaLoDeOtros @story-8.181 @ac-12', (t) => {
   assert.ok(!(guardar(d, h) || {}).texto, 'lo traído de main no suma');
 });
 
+const cuenta = (h, opciones) => require(path.join(SCRIPTS, 'lib', 'adhoc-base.js')).cuentaDelCarril(JSON.parse(fs.readFileSync(path.join(estado(h), 'adhoc', `${SID}.json`), 'utf8')), opciones);
+const nombres = (c) => c.archivos.map((f) => path.basename(f)).sort();
+
+// 🔴 Falla con: lo preparado por un merge contado como propio, que frena justo el commit que lo cierra.
+test('SaveBrake_MergeDeMainEnCurso_NoSumaLoTraido @story-8.181 @ac-12', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  escribir(d, 'src/comun.js', '// base\n');
+  sh(d, 'add', '-A');
+  sh(d, 'commit', '-q', '-m', 'comun');
+  sh(d, 'push', '-q', 'origin', `${RAMA}:main`);
+  commitDeArchivos(d, 'propio', 1);
+  escribir(d, 'src/comun.js', '// de la rama\n');
+  sh(d, 'commit', '-q', '-am', 'comun en la rama');
+  sh(d, 'fetch', '-q', 'origin', 'main');
+  sh(d, 'checkout', '-q', '-B', 'main', 'origin/main');
+  commitDeArchivos(d, 'ajeno', 12);
+  escribir(d, 'src/comun.js', '// de main\n');
+  sh(d, 'commit', '-q', '-am', 'comun en main');
+  sh(d, 'push', '-q', 'origin', 'main');
+  sh(d, 'checkout', '-q', RAMA);
+  assert.throws(() => sh(d, 'merge', '--no-edit', 'origin/main'), /git merge/, 'choca en comun.js');
+  escribir(d, 'src/comun.js', '// resuelto\n');
+  sh(d, 'add', '-A');
+  carril(h, { maxFiles: 3 });
+  assert.deepStrictEqual(nombres(cuenta(h, { repos: [d] })), ['comun.js', 'propio0.js'], 'lo resuelto sí es propio');
+  assert.ok(!(guardar(d, h) || {}).texto, 'el commit que cierra el merge guarda');
+});
+
+// 🔴 Falla con: la ruta de un worktree anidado sumada una vez por cada repo que la contiene.
+test('Cuenta_WorktreeAnidado_NoSumaDosVeces @story-8.181 @ac-10', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  escribir(d, '.gitignore', '.claude/\n');
+  sh(d, 'add', '-A');
+  sh(d, 'commit', '-q', '-m', 'ignora');
+  const w = path.join(d, '.claude', 'worktrees', 'w1');
+  sh(d, 'worktree', 'add', '-q', '-b', 'otra', w);
+  const anotados = [0, 1, 2].map((i) => { escribir(w, `src/w${i}.js`, 'x\n'); return path.join(w, 'src', `w${i}.js`); });
+  carril(h, { maxFiles: 8, files: anotados, bases: { [d]: { sha: sh(d, 'rev-parse', 'HEAD'), traida: true }, [fs.realpathSync(w)]: { sha: sh(d, 'rev-parse', 'HEAD'), traida: true } } });
+  assert.deepStrictEqual(cuenta(h).archivos.filter((f) => f.includes('worktrees')).length, 3, JSON.stringify(cuenta(h).archivos));
+});
+
+// 🔴 Falla con: `--no-renames` heredado del freno del riesgo, que cuenta la ruta vieja y la nueva.
+test('Cuenta_ArchivoMovido_SumaUno @story-8.181 @ac-10', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  sh(d, 'checkout', '-q', 'main');
+  for (let i = 0; i < 5; i++) escribir(d, `src/viejo${i}.js`, `// contenido propio del archivo ${i}, largo para reconocerlo al moverlo\n`);
+  sh(d, 'add', '-A');
+  sh(d, 'commit', '-q', '-m', 'viejos');
+  sh(d, 'push', '-q', 'origin', 'main');
+  sh(d, 'checkout', '-q', RAMA);
+  sh(d, 'merge', '-q', '--no-edit', 'origin/main');
+  for (let i = 0; i < 5; i++) sh(d, 'mv', `src/viejo${i}.js`, `src/nuevo${i}.js`);
+  sh(d, 'commit', '-q', '-m', 'mueve');
+  carril(h, { maxFiles: 8 });
+  assert.deepStrictEqual(nombres(cuenta(h, { repos: [d] })), [0, 1, 2, 3, 4].map((i) => `nuevo${i}.js`));
+  assert.ok(!(guardar(d, h) || {}).texto, 'mover 5 archivos no pasa un cupo de 8');
+});
+
+// 🔴 Falla con: los repos del carril armados sólo con sus archivos anotados: el commit en otro repo que anotó no se mide.
+test('SaveBrake_RepoAnotadoSinArchivos_TambienMide @story-8.181 @ac-11', (t) => {
+  const d = repoConOrigin(t);
+  const otro = repoConOrigin(t, 'otro');
+  const h = home(t);
+  commitDeArchivos(d, 'a', 3);
+  escribir(otro, 'src/b.js', 'x\n');
+  const sha = (r) => ({ sha: sh(r, 'rev-parse', 'origin/main'), traida: true });
+  carril(h, { maxFiles: 2, files: [path.join(otro, 'src', 'b.js')], bases: { [d]: sha(d), [otro]: sha(otro) } });
+  assert.match((guardar(d, h) || {}).texto || '', elTope);
+});
+
+// 🔴 Falla con: la base siempre en `origin/main`: en `dev`, lo que `dev` lleva adelante cuenta como propio del arreglo.
+test('Cuenta_EnDev_NoSumaLoQueDevLlevaAdelante @story-8.181 @ac-11', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  sh(d, 'checkout', '-q', '-b', 'dev', 'origin/main');
+  commitDeArchivos(d, 'de-dev', 12);
+  sh(d, 'push', '-q', 'origin', 'dev');
+  commitDeArchivos(d, 'propio', 1);
+  carril(h, { maxFiles: 3 });
+  assert.deepStrictEqual(nombres(cuenta(h, { repos: [d] })), ['propio0.js'], 'en dev');
+  sh(d, 'checkout', '-q', '-b', 'arreglo');
+  commitDeArchivos(d, 'otro', 1);
+  assert.deepStrictEqual(nombres(cuenta(h, { repos: [d] })), ['otro0.js', 'propio0.js'], 'en una rama que nace de dev');
+  // cerrar y reabrir sin empujar no empieza de cero: lo no empujado sigue contando
+  assert.ok(!(guardar(d, h) || {}).texto, 'un arreglo chico en dev guarda');
+});
+
+// 🔴 Falla con: todo archivo sin seguir sumado, aunque sea de otra sesión y el commit no lo lleve.
+test('SaveBrake_SinSeguirAjeno_NoSuma_ElAnotadoSi @story-8.181 @ac-11', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  for (let i = 0; i < 9; i++) escribir(d, `src/ajeno${i}.js`, 'x\n');
+  escribir(d, 'src/mio.js', 'x\n');
+  carril(h, { maxFiles: 8, files: [path.join(d, 'src', 'mio.js')] });
+  assert.deepStrictEqual(nombres(cuenta(h, { repos: [d] })), ['mio.js']);
+  assert.ok(!(guardar(d, h) || {}).texto);
+});
+
+// 🔴 Falla con: una carpeta anotada que sigue en el disco y ya no es un repo, leída como «git no contestó».
+test('SaveBrake_CarpetaQueYaNoEsUnRepo_NoEsNoPudoMedir @story-8.181 @ac-13', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  const suelta = tmp(t, 'freno-suelta-');
+  // los restos de un worktree: su `.git` apunta a un repo que ya no está
+  const restos = tmp(t, 'freno-restos-');
+  escribir(restos, '.git', `gitdir: ${path.join(restos, 'no-esta')}\n`);
+  const sha = sh(d, 'rev-parse', 'HEAD');
+  carril(h, { maxFiles: 8, bases: { [suelta]: { sha, traida: true }, [restos]: { sha, traida: true } } });
+  const r = guardar(d, h);
+  assert.ok(!(r && r.texto), `sigue: ${JSON.stringify(r)}`);
+});
+
+// 🔴 Falla con: la ruta anotada en una forma de Unicode y la de git en otra: el mismo archivo cuenta dos veces en Mac.
+test('Cuenta_NombreEnDosFormasDeUnicode_SumaUno @story-8.181 @ac-10', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  const nombre = 'señal.js'.normalize('NFD');
+  escribir(d, `src/${nombre}`, 'x\n');
+  sh(d, 'add', '-A');
+  sh(d, 'commit', '-q', '-m', 'con acento');
+  carril(h, { maxFiles: 8, files: [path.join(d, 'src', nombre)] });
+  assert.strictEqual(cuenta(h, { repos: [d] }).archivos.length, 1, JSON.stringify(cuenta(h, { repos: [d] }).archivos));
+});
+
 test('T27 SaveBrake_SinBaseTraida_MideMenosYAvisa @story-8.181 @ac-13', (t) => {
   const d = repoConOrigin(t);
   const h = home(t);

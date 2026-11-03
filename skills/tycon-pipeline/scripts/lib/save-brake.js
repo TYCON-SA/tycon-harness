@@ -991,12 +991,14 @@ function decidirCarril({ command, cwd, sid, home }) {
   const { cs, dudas } = leerComando(command, cwd || process.cwd(), 0, [], home);
   if (!cs.length && !dudas.length) return null;
   const reposDelComando = cs.map((c) => { try { return SO().raizDe(c.dir); } catch (_) { return null; } }).filter(Boolean);
+  // los repos que el carril anotó, aunque ahí no haya anotado ningún archivo de implementación
   const repos = [];
-  for (const f of Array.isArray(a.files) ? a.files : []) {
+  for (const f of [...(Array.isArray(a.files) ? a.files : []), ...(Array.isArray(a.rutas) ? a.rutas : [])]) {
     let r = null;
     try { r = SO().raizDe(path.dirname(String(f))); } catch (_) { r = null; }
     if (r && !repos.includes(r)) repos.push(r);
   }
+  for (const b of Object.keys(a.bases || {})) if (!repos.includes(b) && fs.existsSync(b)) repos.push(b);
   // el trabajo de otro repo no es de este carril: no le pide su maqueta. La pantalla va antes que el riesgo: la maqueta y
   // la captura pueden ser archivos del repo, y los revisores tienen que medir lo que se guarda con ellas
   const delCarril = !repos.length || dudas.length || reposDelComando.length < cs.length || cs.some((c) => c.opaco || c.tipo === 'pr') || reposDelComando.some((r) => repos.includes(r));

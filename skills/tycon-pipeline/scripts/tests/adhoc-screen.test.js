@@ -164,6 +164,57 @@ test('T37 AdhocScreen_ComparacionImposibleDeclarada_PasaYSeMuestra @story-8.181 
   assert.ok(v.registro.some((x) => x.includes('la pantalla arma sus textos en el servidor')));
 });
 
+// 🔴 Falla con: un doble de prueba que tiene el texto y hace pasar la comparación, sin que esté en la pantalla real.
+test('AdhocScreen_DobleDePrueba_NoEsPantalla @story-8.181 @ac-17', (t) => {
+  const { r, h, m } = completo(t);
+  const [uno] = textosDe(m);
+  escribir(r, 'src/Combo.tsx', conLosTextosDe(m, [uno]));
+  for (const rel of ['src/__mocks__/Combo.tsx', 'src/comun/tests/Combo.tsx', 'src/e2e/Combo.tsx', 'src/Combo.cy.tsx', 'cypress/Combo.tsx', 'playwright/Combo.tsx']) escribir(r, rel, `<p>${uno}</p>\n`);
+  git(r, 'add', '-A');
+  const v = delCarril(h);
+  assert.ok(v.faltan.some((f) => f.includes(`«${uno}»`)), JSON.stringify(v));
+});
+
+// 🔴 Falla con: una ruta de `git ls-files` que no está en el disco, contada como pantalla ilegible en lugar de nombrar el texto.
+test('AdhocScreen_PantallaQueNoEstaEnElDisco_NombraElTexto @story-8.181 @ac-16', (t) => {
+  const { r, h, m } = completo(t);
+  const [uno] = textosDe(m);
+  escribir(r, 'src/Combo.tsx', conLosTextosDe(m, [uno]));
+  escribir(r, 'src/Otra.tsx', '<p>otra</p>\n');
+  git(r, 'add', '-A');
+  git(r, 'commit', '-qm', 'otra pantalla');
+  fs.rmSync(path.join(r, 'src', 'Otra.tsx'));
+  // borrarla movió la fecha de la carpeta: la captura sigue siendo posterior
+  fs.utimesSync(path.join(r, 'src'), HOY, HOY);
+  const v = delCarril(h);
+  assert.ok(!v.sinMedir, JSON.stringify(v));
+  assert.ok(v.faltan.some((f) => f.includes(`«${uno}»`)), JSON.stringify(v));
+});
+
+// 🔴 Falla con: una carpeta anotada leída como pantalla: la lectura falla con EISDIR y no guarda con todos los textos.
+test('AdhocScreen_CarpetaAnotada_NoEsPantalla @story-8.181 @ac-20', (t) => {
+  const { r, h, pantalla, m, c } = completo(t);
+  const anidado = path.join(r, 'src', 'components', 'anidado');
+  fs.mkdirSync(anidado, { recursive: true });
+  carril(h, { files: [pantalla, anidado], mockup: conMaqueta(m), capture: { file: c } });
+  const v = delCarril(h);
+  assert.ok(!v.sinMedir, JSON.stringify(v));
+  assert.deepStrictEqual(v.faltan, [], JSON.stringify(v));
+});
+
+// 🔴 Falla con: el archivo de diferencias que cambia de sentido por el final de línea o el BOM de un editor de Windows.
+test('AdhocScreen_DiferenciasConCrlfYBom_ValenIgual @story-8.181 @ac-18 @ac-19', (t) => {
+  const { r, h, m } = completo(t);
+  const [uno] = textosDe(m);
+  escribir(r, 'src/Combo.tsx', conLosTextosDe(m, [uno]));
+  escribir(r, 'maqueta-diferencias.md', `﻿- «${uno}» — differs: el cliente pidió otra palabra\r\n`);
+  assert.deepStrictEqual(delCarril(h).faltan, [], 'la diferencia con CRLF y BOM');
+  escribir(r, 'maqueta-diferencias.md', '﻿mockup-compare: no — la pantalla arma sus textos en el servidor\r\n');
+  const v = delCarril(h);
+  assert.deepStrictEqual(v.faltan, [], JSON.stringify(v));
+  assert.ok(v.mostrar.includes('la pantalla arma sus textos en el servidor'), v.mostrar);
+});
+
 test('T38 AdhocScreen_PantallaIlegible_SinMedirNoGuarda @story-8.181 @ac-20', (t) => {
   if (process.platform === 'win32' || process.getuid() === 0) { console.log('⏭ pantalla sin permiso: NO MEDIDO — sin permisos de Unix'); return; }
   const { h, pantalla } = completo(t);
@@ -456,7 +507,8 @@ test('la captura que ya no es una imagen no vale', (t) => {
 test('sin medir no guarda, y queda en el registro', (t) => {
   const r = repo(t);
   const h = home(t);
-  const otra = tmp(t, 'sin-repo-');
+  const otra = tmp(t, 'repo-roto-');
+  escribir(otra, '.git/HEAD', 'esto no es un HEAD\n');
   carril(h, { files: [escribir(r, 'Api/Precio.cs')], bases: { [otra]: { sha: null, traida: false } } });
   const d = decidir(h, r);
   assert.match(d.texto, /no pude medir/);
