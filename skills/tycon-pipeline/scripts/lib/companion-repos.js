@@ -402,11 +402,14 @@ function huellasSinCommitear(raiz) {
   const git = (...a) => spawnSync('git', ['-C', repo, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 });
   const estado = git('status', '--porcelain', '-z', '--no-renames', '--untracked-files=all', '--', path.relative(repo, raiz) || '.');
   if (estado.error || estado.status !== 0) return { motivo: 'no pude leer sus cambios' };
-  const rutas = String(estado.stdout).split('\0').filter(Boolean).map((l) => l.slice(3));
-  if (rutas.length > TOPE_DE_HUELLAS) return { motivo: `tiene más de ${TOPE_DE_HUELLAS} archivos sin commitear` };
+  const lineas = String(estado.stdout).split('\0').filter(Boolean);
+  if (lineas.length > TOPE_DE_HUELLAS) return { motivo: `tiene más de ${TOPE_DE_HUELLAS} archivos sin commitear` };
   const huellas = {};
-  for (const rel of rutas) {
-    if (!esArchivo(path.join(repo, rel))) { huellas[rel] = null; continue; }
+  for (const linea of lineas) {
+    const rel = linea.slice(3);
+    // borrado es lo que git dice borrado; un archivo que no se puede leer no es un archivo borrado
+    if (linea[0] === 'D' || linea[1] === 'D') { huellas[rel] = null; continue; }
+    if (!esArchivo(path.join(repo, rel))) return { motivo: `no pude leer ${rel}` };
     const h = git('hash-object', '--', rel);
     if (h.error || h.status !== 0) return { motivo: `no pude leer ${rel}` };
     huellas[rel] = String(h.stdout).trim();

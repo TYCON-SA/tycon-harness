@@ -932,3 +932,53 @@ test('T53 Matriz_GateSinEspejo_NoAvisaLoQueContó @story-8.192 @ac-40', () => {
   assert.ok(r.warnings.some((w) => /SIN espejo/.test(w)), JSON.stringify(r.warnings));
   assert.ok(!r.warnings.some((w) => /sigue contando/.test(w)), JSON.stringify(r.warnings));
 });
+
+test('T54 Vigencia_GitSinRespuesta_EnLasOtrasPreguntas_NoCuenta @story-8.192 @ac-43', () => {
+  // la fusión propia sin poder comparar el archivo
+  const l = lab();
+  const ev = codigoEvidenciaFusion(l);
+  fusionar(l.back, 'feature/5-28-carga', T0 + 200);
+  assert.equal(juzgar(l.archivo, ev, { correrGit: juezQueNoContesta((a) => a[0] === 'diff-tree') }).cuenta, false, 'diff-tree');
+  // la prueba de otra historia sin poder saber qué fusión trajo el commit
+  const p = lab();
+  const evp = p.evidencia();
+  rama(p.back, 'feature/5-29-otra');
+  escribir(p.back, PRUEBA, '// otra historia\n');
+  commit(p.back, 'prueba', T0 + 150);
+  irA(p.back, 'main');
+  fusionar(p.back, 'feature/5-29-otra', T0 + 200);
+  assert.equal(juzgar(p.prueba, evp).cuenta, true, 'con git, cuenta');
+  assert.equal(juzgar(p.prueba, evp, { correrGit: juezQueNoContesta((a) => a[0] === 'merge-base') }).cuenta, false, 'merge-base');
+  // la huella de un archivo que no se puede leer: ese hermano queda sin ancla
+  const f = labMatriz();
+  const abs = escribir(f.back, 'src/Feature.cs', '// sin commitear\n');
+  fs.chmodSync(abs, 0o000);
+  try {
+    const [ancla] = require(path.join(SCRIPTS, 'lib', 'companion-repos.js')).anclasDeLaEvidencia(f.esp, '5.28');
+    assert.ok(ancla.sinAncla && !ancla.commit, JSON.stringify(ancla));
+  } finally { fs.chmodSync(abs, 0o644); }
+});
+
+test('T55 Ancla_GitSinRespuestaConHuellaDeBorrado_NoCuenta @story-8.192 @ac-43 @ac-44', () => {
+  const l = lab();
+  const base = git(l.back, ['rev-parse', 'HEAD']);
+  const ev = conAncla(l.evidencia(), [{ repo: 'Back', commit: base, huellas: { 'src/Feature.cs': null } }]);
+  fs.rmSync(l.archivo);
+  commit(l.back, 'lo borra', T0 + 300);
+  escribir(l.back, 'src/Feature.cs', '// vuelve sin commitear\n');
+  git(l.back, ['add', 'src/Feature.cs']);
+  git(l.back, ['commit', '-q', '-m', 'vuelve'], T0 + 400);
+  const sinRespuesta = juezQueNoContesta((a) => a[0] === 'rev-parse' && String(a[a.length - 1]).startsWith('HEAD:'));
+  assert.equal(juzgar(l.archivo, ev, { correrGit: sinRespuesta }).cuenta, false);
+});
+
+test('T56 Ancla_ArchivoBorradoDeVerdad_HuellaNull_EnlaceRoto_SinAncla @story-8.192 @ac-17', () => {
+  const f = labMatriz();
+  fs.rmSync(path.join(f.back, PRUEBA));
+  const [borrado] = require(path.join(SCRIPTS, 'lib', 'companion-repos.js')).anclasDeLaEvidencia(f.esp, '5.28');
+  assert.deepEqual(borrado.huellas, { [PRUEBA]: null }, JSON.stringify(borrado));
+  const g = labMatriz();
+  fs.symlinkSync(path.join(g.ws, 'no-existe'), path.join(g.back, 'src', 'roto.cs'));
+  const [roto] = require(path.join(SCRIPTS, 'lib', 'companion-repos.js')).anclasDeLaEvidencia(g.esp, '5.28');
+  assert.ok(roto.sinAncla && !roto.commit, JSON.stringify(roto));
+});

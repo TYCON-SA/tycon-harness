@@ -219,7 +219,9 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
     if (!rel) return null;
     if (ancla.huellas && Object.prototype.hasOwnProperty.call(ancla.huellas, rel)) {
       const enHead = preguntar(carpeta, ['rev-parse', '--verify', '-q', `HEAD:${rel}`]);
-      if (enHead.codigo !== 0) return ancla.huellas[rel] === null;
+      // 1 es «no está en HEAD»; cualquier otra respuesta es git que no contestó, y nunca da verde
+      if (enHead.codigo === 1) return ancla.huellas[rel] === null;
+      if (enHead.codigo !== 0) return null;
       return enHead.salida.trim() === ancla.huellas[rel];
     }
     const diff = preguntar(carpeta, ['diff-tree', '--quiet', '-r', ancla.commit, 'HEAD', '--', nombre]);
