@@ -35,10 +35,9 @@
 // igual más de 10 minutos, sale con el comando para encolarlo: nadie lo va a mergear. Lo mismo le llega a la coordinadora en
 // cada turno (`coordinatorLines`, desde scripts/tools/coordination.js), de la foto y sin salir a la red.
 //
-// DE QUIÉN ES CADA PEDIDO, para /office: la lectura de fondo deja en `recent-work.json` quién es la persona en cada plataforma,
-// los repos donde trabajó en esta máquina y las ramas de sus sesiones. Trabajar es abrir una sesión en esa carpeta o hacer un
-// commit propio en ese repo; una ejecución automática no es la persona, y tener el clon no cuenta. Medirlo tarda segundos: se
-// mide cada TRABAJO_MEDIDO_MS. Los pedidos de esos repos que no son del arnés se leen en cada refresco, y van en ese archivo.
+// LOS PEDIDOS DE LA PERSONA, para /office: la lectura de fondo deja en `own-prs.json` los pedidos abiertos cuyo autor es la
+// persona, de todos sus repos, con una consulta por lugar: una búsqueda en GitHub y una por cada organización de Azure de los
+// repos declarados. Quién es sale de las herramientas de la máquina; lo que no se puede saber o leer se dice en `fallos`.
 //
 // Nunca rompe el arranque: sale 0 siempre.
 // Variables: TYCON_STUCK_PR_HOURS (1), TYCON_GREEN_IDLE_MIN (10). Off: TYCON_STUCK_PR_NOTICE=0.
@@ -152,111 +151,44 @@ function lanzarRefresco(tree, dir, home) {
   } catch { return false; }
 }
 
-const TRABAJO_DIAS = 7;
-const TRABAJO_MEDIDO_MS = 30 * 60000;
-const TRABAJO_COMMITS_MS = 15000;
-const trabajoDe = (dir) => path.join(dir, 'recent-work.json');
-// cómo se abrió una conversación que no abrió una persona
-const AUTOMATICAS = new Set(['sdk-cli', 'codex_exec']);
-// una rama de todos no dice de quién es un pedido
-const RAMAS_DE_TODOS = new Set(['main', 'master', 'dev']);
-const esTemporal = (f) => String(f).toLowerCase().startsWith(os.tmpdir().toLowerCase()) || /^(?:\/private)?\/(?:tmp|var\/folders)\//.test(f);
+const propiosDe = (dir) => path.join(dir, 'own-prs.json');
+const PROPIOS_TOPE = 1000;
+const QUERY_PROPIOS = 'query { viewer { login } search(query: "is:pr is:open author:@me archived:false", type: ISSUE, first: 100) { nodes { ... on PullRequest { number title isDraft headRefName isInMergeQueue mergeable autoMergeRequest { enabledAt } author { login } repository { nameWithOwner } } } } }';
 
-function salidaDe(cmd, args, cwd) {
-  const r = spawnSync(cmd, args, { cwd, encoding: 'utf8', timeout: 15000, windowsHide: true, shell: process.platform === 'win32' });
+function salidaDe(cmd, args) {
+  const r = spawnSync(cmd, args, { encoding: 'utf8', timeout: 30000, windowsHide: true, shell: process.platform === 'win32', maxBuffer: 1 << 26 });
   return r.status === 0 ? String(r.stdout || '').trim() : '';
 }
+const jsonDe = (texto) => { try { return JSON.parse(texto); } catch { return null; } };
 
-/** Quién es la persona en cada plataforma, con la identidad de sus propias herramientas. La que no se sabe queda vacía. */
-function quienSoy(env = process.env) {
-  return {
-    github: salidaDe(env.TYCON_GH_CMD || 'gh', ['api', 'user', '--jq', '.login']).toLowerCase(),
-    azure: salidaDe(env.TYCON_ADO_CMD || 'az', ['account', 'show', '--query', 'user.name', '-o', 'tsv']).toLowerCase(),
-  };
-}
-
-/** Las carpetas donde una persona abrió una sesión de Claude o de Codex desde `desde`, de la cabeza de cada conversación. */
-function carpetasDeSesiones(home, desde, env = process.env) {
-  const out = new Set();
-  const mirar = (f) => {
-    let cabeza;
-    try {
-      if (fs.statSync(f).mtimeMs < desde) return;
-      const fd = fs.openSync(f, 'r');
-      const b = Buffer.alloc(65536);
-      const n = fs.readSync(fd, b, 0, b.length, 0);
-      fs.closeSync(fd);
-      cabeza = b.slice(0, n).toString('utf8').split('\n').slice(0, -1);
-    } catch { return; }
-    let cwd = null;
-    let como = null;
-    for (const l of cabeza) {
-      let j;
-      try { j = JSON.parse(l); } catch { continue; }
-      const p = j.payload || {};
-      cwd = cwd || p.cwd || j.cwd || null;
-      como = como || j.entrypoint || p.originator || null;
-      if (cwd && como) break;
+/** Los pedidos de la persona, de todos sus repos: `{ at, lecturas: { <repo>: { ok, value } }, fallos }`. */
+function leerPropios({ repos = [], ahora = Date.now(), env = process.env } = {}) {
+  const lecturas = {};
+  const fallos = [];
+  const anotar = (repo, p) => { (lecturas[repo] = lecturas[repo] || { ok: true, value: [] }).value.push(p); };
+  if (repos.some((r) => r.platform === 'github')) {
+    const d = jsonDe(salidaDe(env.TYCON_GH_CMD || 'gh', ['api', 'graphql', '-f', `query=${QUERY_PROPIOS}`]));
+    if (!d || !d.data || !d.data.viewer) fallos.push('GitHub');
+    else {
+      for (const p of d.data.search.nodes) {
+        if (p && p.repository) anotar(p.repository.nameWithOwner, { number: p.number, title: p.title, draft: p.isDraft === true, autoComplete: Boolean(p.autoMergeRequest), inQueue: p.isInMergeQueue === true, mergeState: p.mergeable === 'CONFLICTING' ? 'conflict' : '', sourceBranch: p.headRefName, author: p.author ? p.author.login : '' });
+      }
     }
-    if (cwd && !AUTOMATICAS.has(como)) out.add(cwd);
-  };
-  const recorrer = (d) => {
-    let es;
-    try { es = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
-    for (const e of es) {
-      const p = path.join(d, e.name);
-      if (e.isDirectory()) recorrer(p);
-      else if (e.name.endsWith('.jsonl')) mirar(p);
+  }
+  const organizaciones = [...new Set(repos.filter((r) => r.platform === 'azure').map((r) => r.org))];
+  const az = env.TYCON_ADO_CMD || 'az';
+  const yo = organizaciones.length ? salidaDe(az, ['account', 'show', '--query', 'user.name', '-o', 'tsv']).toLowerCase() : '';
+  for (const org of organizaciones) {
+    const d = yo ? jsonDe(salidaDe(az, ['devops', 'invoke', '--org', `https://dev.azure.com/${org}`, '--area', 'git', '--resource', 'pullRequests', '--query-parameters', 'searchCriteria.status=active', `$top=${PROPIOS_TOPE}`, '--api-version', '7.1', '-o', 'json'])) : null;
+    if (!d || !Array.isArray(d.value)) { fallos.push(org); continue; }
+    if (d.value.length >= PROPIOS_TOPE) fallos.push(`${org} (puede faltar alguno: hay más de ${PROPIOS_TOPE} abiertos)`);
+    for (const p of d.value) {
+      const autor = p.createdBy && String(p.createdBy.uniqueName || '').toLowerCase();
+      const r = p.repository;
+      if (autor === yo && r && r.project) anotar(`${org}/${r.project.name}/${r.name}`, { number: p.pullRequestId, title: p.title, draft: p.isDraft === true, autoComplete: Boolean(p.autoCompleteSetBy), mergeState: p.mergeStatus === 'conflicts' ? 'conflict' : '', sourceBranch: String(p.sourceRefName || '').replace(/^refs\/heads\//, ''), author: autor });
     }
-  };
-  // en las de Claude, las conversaciones de los subagentes viven más abajo y no son sesiones
-  const proyectos = path.join(home, '.claude', 'projects');
-  let carpetas = [];
-  try { carpetas = fs.readdirSync(proyectos); } catch { /* sin Claude en esta máquina */ }
-  for (const d of carpetas) {
-    let nombres = [];
-    try { nombres = fs.readdirSync(path.join(proyectos, d)); } catch { continue; }
-    for (const n of nombres) if (n.endsWith('.jsonl')) mirar(path.join(proyectos, d, n));
   }
-  recorrer(path.join(env.CODEX_HOME || path.join(home, '.codex'), 'sessions'));
-  return out;
-}
-
-/** Quién es la persona y dónde trabajó: `{ at, dias, persona, repos, ramas }`. `clones`: dónde buscar sus commits. */
-function medirTrabajo({ home = os.homedir(), ahora = Date.now(), env = process.env, clones, temporal = esTemporal } = {}) {
-  const W = require(path.join(ROOT, 'scripts', 'tools', 'work-in-progress.js'));
-  const repos = new Map();
-  const ramas = new Set();
-  const identidad = (f) => { const q = W.remoteOfFolder(f); return q && q.kind ? W.identityOf(q) : null; };
-  for (const f of carpetasDeSesiones(home, ahora - TRABAJO_DIAS * 86400000, env)) {
-    if (temporal(f) || !fs.existsSync(f)) continue;
-    const id = identidad(f);
-    if (!id) continue;
-    repos.set(claveDe(id), id);
-    const rama = salidaDe('git', ['branch', '--show-current'], f);
-    if (rama && !RAMAS_DE_TODOS.has(rama)) ramas.add(rama);
-  }
-  let dondeBuscar = clones;
-  if (!dondeBuscar) { try { dondeBuscar = require(path.join(ROOT, 'scripts', 'lib', 'repos-root.js')).sessionRepos({ home, env }); } catch { dondeBuscar = []; } }
-  const hasta = Date.now() + TRABAJO_COMMITS_MS;
-  for (const c of dondeBuscar || []) {
-    if (Date.now() > hasta) break;
-    const id = fs.existsSync(c) ? identidad(c) : null;
-    if (!id || repos.has(claveDe(id))) continue;
-    const correo = salidaDe('git', ['config', 'user.email'], c);
-    if (correo && salidaDe('git', ['log', '--all', `--since=${TRABAJO_DIAS}.days`, `--author=${correo}`, '-1', '--format=%h'], c)) repos.set(claveDe(id), id);
-  }
-  return { at: new Date(ahora).toISOString(), dias: TRABAJO_DIAS, persona: quienSoy(env), repos: [...repos.values()], ramas: [...ramas] };
-}
-
-/** Deja `recent-work.json` al día: lo medido si es reciente, y los pedidos de los repos que el arnés no lee. */
-async function refrescarTrabajo(tree, dir, ahora, delArnes) {
-  const previo = leerJson(trabajoDe(dir));
-  const vigente = previo && Number.isFinite(Date.parse(previo.at)) && ahora - Date.parse(previo.at) < TRABAJO_MEDIDO_MS;
-  const t = vigente ? previo : medirTrabajo({ ahora });
-  const ya = new Set(delArnes.map(claveDe));
-  const lecturasDeTrabajo = await leer((t.repos || []).filter((r) => !ya.has(claveDe(r))), tree, refrescoMs());
-  escribirJson(trabajoDe(dir), { ...t, lecturas: lecturasDeTrabajo });
+  return { at: new Date(ahora).toISOString(), lecturas, fallos };
 }
 
 /** La lectura de fondo: sin el apuro del arranque, deja la foto entera para el próximo. */
@@ -268,7 +200,7 @@ async function refrescar(tree) {
     const ahora = Date.now();
     const leidas = await leer(declarados.repos, tree, refrescoMs());
     escribirJson(fotoDe(dir), { at: new Date(ahora).toISOString(), repos: declarados.repos.map(claveDe), lecturas: leidas });
-    await refrescarTrabajo(tree, dir, ahora, declarados.repos);
+    escribirJson(propiosDe(dir), leerPropios({ repos: declarados.repos, ahora }));
   } finally {
     try { fs.rmSync(candadoDe(dir), { force: true }); } catch { /* vence solo */ }
   }
@@ -450,7 +382,7 @@ async function main() {
 
 // Si algo falla después de saber que el repo aplica, se dice; antes, se calla. El arranque nunca se rompe.
 let aplica = false;
-module.exports = { verdesSinEntrar, coordinatorLines, comandoParaEncolar, medirTrabajo, carpetasDeSesiones };
+module.exports = { verdesSinEntrar, coordinatorLines, comandoParaEncolar, leerPropios };
 if (require.main !== module) { /* lo usa la coordinadora: no corre el arranque */ } else if (process.argv[2] === '--refresh') {
   refrescar(path.resolve(process.argv[3] || ROOT)).catch(() => { /* la próxima lo intenta otra vez */ }).finally(() => process.exit(0));
 } else main().catch((e) => {

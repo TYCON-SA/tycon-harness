@@ -47,7 +47,7 @@ h2{font:700 .8rem var(--display);text-transform:uppercase;letter-spacing:.08em;c
 .tag .es{color:var(--c)}
 .tag .como{font:600 10.5px var(--mono);color:#cfc6e4;letter-spacing:.01em}
 .ico{display:inline-block;width:12px;height:12px;line-height:12px;text-align:center;margin-right:4px;vertical-align:-2px;font-weight:700}.ico svg{display:block;width:100%;height:100%}
-.sobre{position:absolute;z-index:4000;transform:translate(-50%,-140%);pointer-events:auto;cursor:pointer;display:flex;flex-direction:column;align-items:center;background:#f4f1ea;color:#1d1030;border:0;border-radius:8px;padding:3px 9px;font:700 11.5px var(--display);white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.45)}
+.sobre{position:absolute;z-index:4000;transform:translate(-50%,-230%);pointer-events:auto;cursor:pointer;display:flex;flex-direction:column;align-items:center;background:#f4f1ea;color:#1d1030;border:0;border-radius:8px;padding:3px 9px;font:700 11.5px var(--display);white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.45)}
 .interruptor{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin-bottom:-8px;font:600 .9rem var(--body);color:var(--muted)}
 /* con las etiquetas ocultas siguen en su lugar, para que el teclado llegue a ellas */
 .stage.solo-mouse .tag{opacity:0;pointer-events:none}.stage.solo-mouse .tag.ver,.stage.solo-mouse .tag.sel,.stage.solo-mouse .tag:focus-visible{opacity:1;pointer-events:auto}
@@ -156,7 +156,6 @@ tr:last-child td{border-bottom:0}
 .board .item b{font-weight:600;font-size:.9rem;line-height:1.3;overflow-wrap:anywhere}
 .board .item .m{font:500 .78rem var(--mono);color:var(--muted);overflow-wrap:anywhere}
 .board .item .n{font-size:.82rem;overflow-wrap:anywhere}
-.board details{margin-top:8px}.board summary{cursor:pointer;font:600 .85rem var(--body);color:var(--muted)}.board details details{margin:6px 0 0 12px}.board details .item{margin-top:6px}
 .board .item .estado-hora{align-self:flex-start;margin-top:2px;padding:0 7px;border:1px solid var(--k);border-radius:999px;color:var(--k);font:700 .74rem/1.5 var(--body)}
 .board details.done summary{cursor:pointer;font-size:.9rem;color:var(--muted)}
 .board details.done ul{list-style:none;margin:6px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:4px 12px}
@@ -217,12 +216,6 @@ const finTxt=a=>a.fin||null;
 // los pendientes: cinco columnas siempre, del estado real y del tablero de la coordinadora. Todo va como texto, nunca como HTML
 // cómo va una tarjeta de «En curso», de lo que ya dice su hora: lo calcula la oficina, con su margen de 15 minutos. Sin hora, nada
 function estadoDeHora(i){const h=i.hora||"";if(i.espera||/^espera\b|parada/.test(h))return ["Esperando","#d19a00"];if(/tarde|se pasó|estaba para/.test(h))return ["Pasada de la hora","#e5534b"];if(/en hora|antes$/.test(h))return ["En hora","#2fa866"];return null}
-// los pedidos de otros autores en los proyectos de la persona: cerrados, y siguen como estaban cuando la foto se redibuja
-const ABIERTOS=new Set();
-function plegable(clave,titulo){const d=el("details");d.open=ABIERTOS.has(clave);d.ontoggle=()=>{if(d.open)ABIERTOS.add(clave);else ABIERTOS.delete(clave)};d.appendChild(el("summary",null,titulo));return d}
-function tarjetaAjena(p){const c=el("div","item"),t=el("b","una-linea",p.titulo||"");t.title=p.titulo||"";c.appendChild(t);c.appendChild(el("span","m",[p.autor,p.numero,p.hora].filter(Boolean).join(" · ")));return c}
-function deTusProyectos(lista){const total=lista.reduce((n,x)=>n+x.pedidos.length,0),uno=lista.length===1,d=plegable("proyectos",(uno?"De tu proyecto · ":"De tus proyectos · ")+total);
-  lista.forEach(x=>{if(uno){x.pedidos.forEach(p=>d.appendChild(tarjetaAjena(p)));return}const s=plegable("proyecto:"+x.proyecto,x.proyecto+" · "+x.pedidos.length);x.pedidos.forEach(p=>s.appendChild(tarjetaAjena(p)));d.appendChild(s)});return d}
 function renderBoard(){const body=document.getElementById("boardBody"),k=DATA.kanban,t=DATA.tablero,KC={firma:"#ffa53d",curso:"#5aa9ff",entrando:"#a59fc4",sinEmpezar:"#9aa3a0",hechos:"#3ddc84"};body.replaceChildren();
   if(!k)return;
   const resumen=t&&t.resumen||"";
@@ -230,10 +223,9 @@ function renderBoard(){const body=document.getElementById("boardBody"),k=DATA.ka
   const cols=el("div","cols");
   (k.columnas||[]).forEach(c=>{const col=el("div","col"),list=c.tarjetas||[];col.style.setProperty("--k",KC[c.id]||"var(--line)");col.appendChild(el("h3",null,c.nombre+" · "+list.filter(i=>!i.otro).length));
     if(c.nota)col.appendChild(el("p","none",c.nota));
-    if(!list.length)col.appendChild(el("p","none","Nada"));else if(c.id==="entrando")col.appendChild(el("p","none","Tuyos"));
+    if(!list.length)col.appendChild(el("p","none","Nada"));
     list.forEach(i=>{const card=el("div","item"),tit=el("b","una-linea",i.titulo||"");tit.title=i.titulo||"";card.appendChild(tit);const line=[i.quien,i.hora,i.grupo].filter(Boolean).join(" · ");if(line)card.appendChild(el("span","m",line));const eh=c.id==="curso"&&estadoDeHora(i);if(eh){card.style.setProperty("--k",eh[1]);card.appendChild(el("span","estado-hora",eh[0]))}
       [i.espera?"Espera "+i.espera+".":"",i.marca,i.motivo,i.nota].forEach(v=>{if(v)card.appendChild(el("span","n",v))});col.appendChild(card)});
-    if(c.id==="entrando"&&(DATA.pedidosProyectos||[]).length)col.appendChild(deTusProyectos(DATA.pedidosProyectos));
     cols.appendChild(col)});
   body.appendChild(cols);
 }
@@ -650,8 +642,8 @@ function abrir(nombre,foto=false){panel.classList.remove("wide");const baja=foto
   if(foto)panel.scrollTop=baja}
 // ---------- los sobres: quién le habla a quién, unos segundos, sin el texto ----------
 const VUELO_MS=3000,MAX_VUELOS=3,vuelos=[],vistos=new Set(),a3=new THREE.Vector3(),b3=new THREE.Vector3();
-// el mensaje que cruza es un avioncito de papel: dos alas claras y una quilla azul, con la nariz hacia adelante
-const avionGeo=new THREE.BufferGeometry();avionGeo.setAttribute("position",new THREE.Float32BufferAttribute([0,0,1,-.85,.12,-.7,0,-.02,-.4,0,0,1,.85,.12,-.7,0,-.02,-.4,0,0,1,0,-.02,-.4,0,-.34,-.6],3));avionGeo.setAttribute("color",new THREE.Float32BufferAttribute([1,1,1,1,1,1,1,1,1,.86,.91,1,.86,.91,1,.86,.91,1,.12,.44,.92,.12,.44,.92,.12,.44,.92],3));
+// el mensaje que cruza es un avioncito de papel del tamaño de un monitor: alas con su pliegue, la cola en V y una quilla azul, con la nariz hacia adelante
+const avionGeo=new THREE.BufferGeometry();avionGeo.setAttribute("position",new THREE.Float32BufferAttribute([0,0,1,-.66,.24,-.9,-.17,.05,-.68,0,0,1,.66,.24,-.9,.17,.05,-.68,0,0,1,-.17,.05,-.68,0,-.04,-.46,0,0,1,.17,.05,-.68,0,-.04,-.46,0,0,1,0,-.04,-.46,0,-.3,-.62],3));avionGeo.setAttribute("color",new THREE.Float32BufferAttribute([1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,.66,.78,1,.66,.78,1,.66,.78,1,.66,.78,1,.66,.78,1,.66,.78,1,.12,.44,.92,.12,.44,.92,.12,.44,.92],3));
 const avionMat=new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.DoubleSide,toneMapped:false}),bordeGeo=new THREE.EdgesGeometry(avionGeo),bordeMat=new THREE.LineBasicMaterial({color:"#1f6feb",toneMapped:false});
 function lanzarSobres(){const nuevos=[];
   for(const s of T.sobres()){if(vistos.has(s.id))continue;vistos.add(s.id);nuevos.push(s)}
@@ -659,7 +651,7 @@ function lanzarSobres(){const nuevos=[];
   if(!nuevos.length||!enVista||document.hidden)return;
   const conLugar=nuevos.map(s=>({s,de:desks.find(d=>d.agent.nombre===s.de),a:desks.find(d=>d.agent.nombre===s.a)})).filter(v=>v.de&&v.a&&v.de!==v.a);
   const van=conLugar.slice(-Math.max(0,MAX_VUELOS-vuelos.length)),resto=conLugar.length-van.length;
-  van.forEach((v,i)=>{const m=new THREE.Group();m.rotation.order="YXZ";m.scale.setScalar(1.35);m.add(new THREE.Mesh(avionGeo,avionMat),new THREE.LineSegments(bordeGeo,bordeMat));scene.add(m);
+  van.forEach((v,i)=>{const m=new THREE.Group();m.rotation.order="YXZ";m.scale.setScalar(.55);m.add(new THREE.Mesh(avionGeo,avionMat),new THREE.LineSegments(bordeGeo,bordeMat));scene.add(m);
     const e=document.createElement("button");e.type="button";e.className="sobre";const fila=document.createElement("span"),dib=document.createElement("span");dib.className="dib";dib.append(T.dibujo(T.AVION_ICONO));dib.setAttribute("aria-hidden","true");fila.append(dib,v.s.de+" → "+v.s.a);e.append(fila);e.onclick=()=>abrir(v.s.de);
     if(resto&&i===van.length-1){const x=document.createElement("small");x.textContent="y "+resto+(resto===1?" mensaje más":" mensajes más");e.append(x)}
     labelsEl.appendChild(e);const vuelo={m,e,de:v.de,a:v.a,t0:performance.now()};vuelos.push(vuelo);
