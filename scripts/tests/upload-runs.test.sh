@@ -1687,5 +1687,123 @@ process.exit(bien && todos ? 0 : 1);
 RC=$?
 [ "${RC}" -eq 0 ] && ok "T35 la forma de los registros escapa todos los metacaracteres y reconoce los de siempre" || mal "T35 formaRegistro: rc=${RC}"
 
+# ── T36 · Direcciones_SinCredenciales_AlSubir ── 🔴 Atrapa: subir el hilo o el volcado con la credencial de una dirección
+#    (`usuario:clave@` o `clave@`), tocar el archivo local, o anotar en el registro de subidas otro tamaño que el local: la
+#    pasada siguiente volvería a subir el mismo archivo.
+T="${BASE}/t36"; buzon "${T}/b"; config "${T}/cfg.json"; mkdir -p "${T}/h"
+CLAVE_T36='clave-de-mentira-t36'
+printf '{"marker":{"storyId":"9.1"},"origen":"https://usuario:%s@dev.azure.example/org/_git/repo"}\n' "${CLAVE_T36}" > "${T}/h/9.1-2026-10-15T0900.json"
+printf '{"cmd":"git clone https://%s@git.acme.example/r.git"}\n{"ssh":"ssh://git@ssh.acme.example/r"}\n' "${CLAVE_T36}" | gzip -c > "${T}/h/9.1-2026-10-15T0900.hilo.jsonl.gz"
+cp "${T}/h/9.1-2026-10-15T0900.hilo.jsonl.gz" "${T}/hilo-antes"
+subir "${T}" "${T}/h" maq-a
+BH="${T}/b/blobs/corridas/maq-a"
+if [ "${RC}" -eq 0 ] && ! grep -q "${CLAVE_T36}" "${BH}/9.1-2026-10-15T0900.json" && grep -q 'https://<oculto>@dev.azure.example/org/_git/repo' "${BH}/9.1-2026-10-15T0900.json" \
+  && ! gunzip -c "${BH}/9.1-2026-10-15T0900.hilo.jsonl.gz" | grep "${CLAVE_T36}" >/dev/null && gunzip -c "${BH}/9.1-2026-10-15T0900.hilo.jsonl.gz" | grep 'https://<oculto>@git.acme.example/r.git' >/dev/null \
+  && gunzip -c "${BH}/9.1-2026-10-15T0900.hilo.jsonl.gz" | grep 'ssh://git@ssh.acme.example/r' >/dev/null; then
+  ok "T36 el volcado y el hilo suben sin la credencial, y el usuario git de ssh queda"
+else mal "T36 credencial en el buzón: rc=${RC} $(head -c 200 "${T}/err.txt")"; fi
+cmp -s "${T}/hilo-antes" "${T}/h/9.1-2026-10-15T0900.hilo.jsonl.gz" && grep -q "${CLAVE_T36}" "${T}/h/9.1-2026-10-15T0900.json" \
+  && ok "T36 el archivo local queda igual" || mal "T36 tocó el archivo local"
+PUTS_T36="$(puts "${T}/b")"; subir "${T}" "${T}/h" maq-a
+[ "${RC}" -eq 0 ] && [ "$(puts "${T}/b")" = "${PUTS_T36}" ] && ok "T36 la pasada siguiente no vuelve a subir lo limpiado" || mal "T36 volvió a subir: ${PUTS_T36} → $(puts "${T}/b")"
+
+# ── T37 · Direcciones_ArchivoQueNoAbre_NoSube ── 🔴 Atrapa: mandar sin limpiar un .gz que no se puede abrir, o frenar por él
+#    la subida del resto.
+T="${BASE}/t37"; buzon "${T}/b"; config "${T}/cfg.json"; corrida "${T}/h" "9.2-2026-10-15T0900"; corrida "${T}/h" "9.3-2026-10-15T0900"
+echo 'no es gzip' > "${T}/h/9.2-2026-10-15T0900.hilo.jsonl.gz"
+subir "${T}" "${T}/h" maq-a
+BH="${T}/b/blobs/corridas/maq-a"
+[ "${RC}" -eq 1 ] && [ ! -e "${BH}/9.2-2026-10-15T0900.hilo.jsonl.gz" ] && [ -f "${BH}/9.2-2026-10-15T0900.json" ] && [ -f "${BH}/9.3-2026-10-15T0900.hilo.jsonl.gz" ] \
+  && grep -q 'no se pudo abrir para limpiar' "${T}/out.json" "${T}/err.txt" \
+  && ok "T37 el .gz que no abre no sube, lo demás sí, y sale 1 diciéndolo" || mal "T37 rc=${RC} buzón: $(ls "${BH}" 2>&1) $(head -c 200 "${T}/err.txt")"
+
+# ── T38 · Direcciones_Formas_Y_Velocidad ── 🔴 Atrapa: dejar pasar una forma (clave con arroba, barras escritas en JSON, otro
+#    esquema), tapar lo que no es credencial, cambiar un byte que no es de la dirección, o tardar en un adjunto largo.
+node -e '
+const assert = require("assert"), zlib = require("zlib");
+const { sinCredencialesEnDirecciones: l } = require(process.argv[1]);
+const t = (s) => l(Buffer.from(s), "a.json").toString();
+assert.strictEqual(t("https://u:c@h/x"), "https://<oculto>@h/x");
+assert.strictEqual(t("https://c@h/x"), "https://<oculto>@h/x");
+assert.strictEqual(t("postgres://u:p@ss@h:5432/db"), "postgres://<oculto>@h:5432/db");
+assert.strictEqual(t("https:\\/\\/u:c@h"), "https:\\/\\/<oculto>@h");
+assert.strictEqual(t("\"https://c@h\""), "\"https://<oculto>@h\"");
+assert.strictEqual(t("https:\\\\\\\\/\\\\\\\\/c@h"), "https:\\\\\\\\/\\\\\\\\/<oculto>@h");
+assert.strictEqual(t("https://u:pa?s#s@h/x"), "https://<oculto>@h/x");
+for (const igual of ["https://h/a@b", "a@b.example", "git@github.com:o/r.git", "ssh://git@h/r", "https://<oculto>@h"]) assert.strictEqual(t(igual), igual);
+const sinCambio = Buffer.from("h\u00e9llo https://h/x");
+assert.strictEqual(l(sinCambio, "a.json"), sinCambio);
+assert.strictEqual(t("h\u00e9llo https://c@h"), "h\u00e9llo https://<oculto>@h");
+const gz = zlib.gzipSync(Buffer.from("sin nada"));
+assert.strictEqual(l(gz, "a.hilo.jsonl.gz"), gz);
+assert.throws(() => l(Buffer.from("no es gzip"), "a.gz"));
+assert.strictEqual(t("2https://c@h"), "2https://<oculto>@h");
+assert.strictEqual(t(`https://${"c".repeat(4000)}@h`), "https://<oculto>@h");
+const antes = Date.now();
+l(Buffer.from("A".repeat(5 * 1024 * 1024)), "a.json");
+l(Buffer.from(`https://${"A".repeat(5 * 1024 * 1024)}`), "a.json");
+l(Buffer.from("https://a ".repeat(500000)), "a.json");
+assert.ok(Date.now() - antes < 3000, "tardó de más en un texto largo");
+' "${SUBIR}"
+RC=$?
+[ "${RC}" -eq 0 ] && ok "T38 tapa cada forma, deja lo que no es credencial y no se traba con un texto largo" || mal "T38 limpieza: rc=${RC}"
+
+# ── T39 · Direcciones_Registros_Suben_SinCredencial ── 🔴 Atrapa: limpiar sólo las corridas y mandar los registros de frenos
+#    como se prepararon: `gates.log` guarda el comando entero.
+T="${BASE}/t39"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"
+printf '{"ts":"2026-09-14T12:00:00Z","name":"x","status":"green","cmd":"git clone https://%s@git.acme.example/r"}\n' "${CLAVE_T36}" >> "${T}/reg/gates.log"
+subir_reg "${T}" "${T}/no-existe" "${T}/reg" 2026-09-15 "maq-a"
+R="$(regdir "${T}")"
+if [ "${RC}" -eq 0 ] && [ -f "${R}/cobertura.json" ] && ! gunzip -c "${R}/gates.log.gz" | grep "${CLAVE_T36}" >/dev/null && gunzip -c "${R}/gates.log.gz" | grep 'https://<oculto>@git.acme.example/r' >/dev/null \
+  && gunzip -c "${T}/estado/registros-buzon/gates.log.gz" | grep "${CLAVE_T36}" >/dev/null; then
+  ok "T39 el registro sube sin la credencial, y la preparación local queda igual"
+else mal "T39 registro: rc=${RC} buzón: $(ls "${R}" 2>&1) $(head -c 200 "${T}/err.txt")"; fi
+
+# ── T40 · Direcciones_RegistroQueNoAbre_RetieneElJuego ── 🔴 Atrapa: seguir subiendo el resto de un juego con un registro que no
+#    se pudo limpiar, o retenerlo para siempre: la pasada siguiente lo re-prepara y lo sube entero.
+T="${BASE}/t40"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; echo 500 > "${T}/b/modo"
+subir_reg "${T}" "${T}/no-existe" "${T}/reg" 2026-09-15 "maq-a"
+echo ok > "${T}/b/modo"; echo 'no es gzip' > "${T}/estado/registros-buzon/gates.log.gz"
+subir_reg "${T}" "${T}/no-existe" "${T}/reg" 2026-09-15 "maq-a"
+R="$(regdir "${T}")"
+if [ "${RC}" -eq 1 ] && [ ! -e "${R}/gates.log.gz" ] && [ ! -e "${R}/cobertura.json" ] && grep -q 'no se pudo abrir para limpiar' "${T}/out.json" "${T}/err.txt"; then
+  ok "T40 el juego con un registro que no abre no se completa, no sube su cobertura y sale 1 diciéndolo"
+else mal "T40 retener: rc=${RC} buzón: $(ls "${R}" 2>&1) $(head -c 200 "${T}/err.txt")"; fi
+python3 -c "import json,sys; c=json.load(open(sys.argv[1])); assert 'preparado' not in c and c.get('invalidado'), c" "${T}/estado/registros-buzon/cobertura.json" 2>/dev/null \
+  && ok "T40 la preparación queda invalidada" || mal "T40 la preparación no se invalidó"
+subir_reg "${T}" "${T}/no-existe" "${T}/reg" 2026-09-15 "maq-a"
+R2="$(regdir "${T}")"
+[ "${RC}" -eq 0 ] && [ -f "${R2}/gates.log.gz" ] && [ -f "${R2}/bypass.log.gz" ] && [ -f "${R2}/cobertura.json" ] \
+  && ok "T40 la pasada siguiente lo re-prepara y lo sube entero" || mal "T40 re-preparar: rc=${RC} ${R2}: $(ls "${R2}" 2>&1 | tr '\n' ' ')"
+
+# ── T41 · Direcciones_ChequeoSoloCrear_NoUsaUnArchivoConCredencial ── 🔴 Atrapa: que `--check-create-only`, que pisa si la política lo
+#    deja, reemplace el blob por el archivo crudo (subiría la credencial) o por el limpio (reescribiría lo ya subido).
+T="${BASE}/t41"; buzon "${T}/b"; config "${T}/cfg.json"; mkdir -p "${T}/h"
+printf '{"marker":{"storyId":"9.4"},"origen":"https://usuario:%s@dev.azure.example/r"}\n' "${CLAVE_T36}" > "${T}/h/9.4-2026-10-15T0900.json"
+subir "${T}" "${T}/h" maq-a
+: > "${T}/b/pedidos.jsonl"
+subir "${T}" "${T}/h" maq-a --check-create-only
+[ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "no_medido" ] && campo "${T}" motivo | grep 'llevan una credencial' >/dev/null && [ "$(puts "${T}/b")" = "0" ] \
+  && ok "T41 el chequeo no usa un archivo con credencial, y dice por qué no midió" || mal "T41 solo: rc=${RC} motivo=$(campo "${T}" motivo) PUTs=$(puts "${T}/b")"
+printf '{"marker":{"storyId":"9.6"},"marca":"archivo mas grande que el de la credencial, para que el chequeo lo mire despues y tenga que saltear al otro"}\n' > "${T}/h/9.6-2026-10-15T0900.json"
+subir "${T}" "${T}/h" maq-a
+: > "${T}/b/pedidos.jsonl"
+subir "${T}" "${T}/h" maq-a --check-create-only
+[ "${RC}" -eq 1 ] && campo "${T}" motivo | grep 'dejó escribir' >/dev/null && grep -q '"ruta":"/corridas/maq-a/9.6-2026-10-15T0900.json"' "${T}/b/pedidos.jsonl" && [ "$(puts "${T}/b")" = "1" ] \
+  && ok "T41 con otro archivo sin credencial, el chequeo usa ése" || mal "T41 otro: rc=${RC} motivo=$(campo "${T}" motivo) $(cut -c1-200 "${T}/b/pedidos.jsonl")"
+
+# ── T42 · Direcciones_ChequeoSoloCrear_NoAbre_LoDice ── 🔴 Atrapa: mandar sin limpiar un .gz confirmado que no abre, o decir que
+#    ningún archivo tiene el sha256 confirmado cuando lo que falló fue la limpieza.
+T="${BASE}/t42"; buzon "${T}/b"; config "${T}/cfg.json"; mkdir -p "${T}/h" "${T}/estado"
+echo 'no es gzip' > "${T}/h/9.5-2026-10-15T0900.hilo.jsonl.gz"
+python3 - "${T}/h/9.5-2026-10-15T0900.hilo.jsonl.gz" "${T}/estado/mailbox-uploads.json" "${T}/cfg.json" <<'PY'
+import hashlib, json, os, sys
+b = open(sys.argv[1], 'rb').read(); c = json.load(open(sys.argv[3]))
+json.dump({'version': 1, 'destino': f"{c['cuenta']}/{c['contenedor']}", 'archivos': {'maq-a/9.5-2026-10-15T0900.hilo.jsonl.gz': {'size': len(b), 'sha256': hashlib.sha256(b).hexdigest(), 'blob': 'maq-a/9.5-2026-10-15T0900.hilo.jsonl.gz', 'version': None}}}, open(sys.argv[2], 'w'))
+PY
+subir "${T}" "${T}/h" maq-a --check-create-only
+[ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "no_medido" ] && campo "${T}" motivo | grep 'no se pudieron abrir para limpiar' >/dev/null && [ "$(puts "${T}/b")" = "0" ] \
+  && ok "T42 el chequeo no manda el .gz que no abre, y dice por qué no midió" || mal "T42 rc=${RC} estado=$(campo "${T}" estado) motivo=$(campo "${T}" motivo) PUTs=$(puts "${T}/b")"
+
 echo
 [ "${FALLOS}" -eq 0 ] && { echo "subir-corridas: todo verde"; exit 0; } || { echo "${FALLOS} fallo(s)"; exit 1; }
