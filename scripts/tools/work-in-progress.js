@@ -1541,15 +1541,38 @@ function buildWip(opts = {}) {
     const s = sessions.get(sid);
     if (s) { extra[i].cwd = s.cwd; extra[i].lastAt = s.last; }
   });
-  const notes = rowSids.map((sid, i) => stateNote(extra[i], details[i], files.get(String(sid))));
+  // el cuadro de una sesión de prueba no le toca a nadie: /wip no lo dice, como la oficina
+  const testSids = testSessionsOf(sessions, files, () => (opts.processes !== undefined ? opts.processes : require(path.join(ROOT, 'scripts', 'lib', 'owner-window.js')).leerArbol()));
+  const notes = rowSids.map((sid, i) => (testSids.has(String(sid)) ? '' : stateNote(extra[i], details[i], files.get(String(sid)))));
   // la libre que espera algo: /office la pone en «Tu firma» y /wip lo dice igual
   const freeNotes = new Map(free.map((name, i) => {
+    if (testSids.has(String(freeSids[i]))) return [name, 'sesión de prueba'];
     const r = realState({}, { status: freeStatus[i] }, files.get(String(freeSids[i])));
     return [name, r.estado === 'firma' ? `Tu firma: ${r.espera}` : r.estado === 'pregunta' ? `Te pregunta: ${r.espera}` : ''];
   }));
   // los repos de las corridas con fila: /office los reconoce al preguntar por un pedido que nombra el tablero
   const runRepos = [...new Set([...pipeRows.values()].map(({ m }) => m.repoPath).filter((p) => typeof p === 'string' && path.isAbsolute(p)))];
-  return { rows, details, extra, free, freeSids, freeStatus, idle, halfway, halfwayItems, halfwayReadAt: (gitCtx.memory && gitCtx.memory.halfwayReadAt) || nowMs, unreadable, wanted, runRepos, internal, text: render(rows, free, noData, idle, halfway, unreadable, internal, notes, freeNotes) };
+  return { testSids, rows, details, extra, free, freeSids, freeStatus, idle, halfway, halfwayItems, halfwayReadAt: (gitCtx.memory && gitCtx.memory.halfwayReadAt) || nowMs, unreadable, wanted, runRepos, internal, text: render(rows, free, noData, idle, halfway, unreadable, internal, notes, freeNotes) };
+}
+
+// De prueba es la sesión que lanzó otra sesión: ninguna de las de verdad desciende de otra. El árbol de procesos sólo se lee si
+// hay un cuadro abierto; sin árbol (Windows) no se sabe, y la sesión cuenta como una más.
+function testSessionsOf(sessions, files, readTree) {
+  const out = new Set();
+  const asking = [...sessions].filter(([sid, s]) => s.alive && Number.isInteger(s.pid) && ['firma', 'pregunta'].includes(realState({}, { status: s.status }, files.get(String(sid)) || null).estado));
+  if (!asking.length) return out;
+  const tree = readTree();
+  if (!Array.isArray(tree)) return out;
+  const parent = new Map(tree.map((p) => [Number(p.pid), Number(p.ppid)]));
+  const sessionPids = new Set([...sessions.values()].filter((s) => s.alive).map((s) => s.pid));
+  for (const [sid, s] of asking) {
+    let p = parent.get(s.pid);
+    for (let i = 0; p > 1 && i < 64; i += 1) {
+      if (sessionPids.has(p)) { out.add(String(sid)); break; }
+      p = parent.get(p);
+    }
+  }
+  return out;
 }
 
 // Los archivos de estado de las sesiones, por sesión. Los que no se pueden usar los dice la oficina; lo que tira al leer
