@@ -907,6 +907,12 @@
       "requiere": []
     },
     {
+      "__nota": "Un texto con forma de comodín que no se puede convertir no abre el freno: es texto. Tampoco lo abre una carpeta que no se puede leer, ni lo cuelga una tira de estrellas, y el registro dice «FAILED OPEN» sólo si dejó pasar el comando sin mirarlo.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-write-bracket.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "Nombrar un guion no es correrlo: la lista de archivos de un comando de sólo lectura de pipeline.js, o lo que lee un programa que sólo lee, no cuenta; el guion que corre sigue frenando, con cualquier envoltura, encadenado o en una variable.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/bash-write-named-script.test.js",
