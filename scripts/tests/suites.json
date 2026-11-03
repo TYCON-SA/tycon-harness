@@ -3914,6 +3914,12 @@
       "requiere": []
     },
     {
+      "__nota": "qué anota el reclamo de la retrospectiva al abrir un pedido (scripts/hooks/retro-pending.js): la punta del remoto antes que la local y la carpeta principal, y a qué carpeta manda el comando que lo paga. Repos de juguete con git de verdad. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/retro-pending-punta.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la revisión de la semana (scripts/nightly/weekly-review/weekly-review.js): repos de juguete con git de verdad y un agente inyectado; la semana, el tope, la regla de patrón, la lista de propuestas, «no pude leer», el disparador del examen, el resumen de la mañana y la clave weekly_review. Sin red y sin modelo.",
       "raiz": "arnes",
       "ruta": "tests/weekly-review.test.js",
