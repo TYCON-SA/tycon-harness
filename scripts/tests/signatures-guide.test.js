@@ -26,7 +26,7 @@ const GUIA = path.join(RAIZ, 'guides', 'firmas-del-arnes.md');
 // todas las firmas que piden los frenos hoy, escritas a mano para que una que se pierda del catálogo se note: cada escape
 // es su propia entrada
 const DE_LA_STORY = ['plan-approval', 'extra-round', 'refresh-after-main', 'control-change', 'critical-waiver',
-  'runtime-waiver', 'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'adhoc-lane',
+  'runtime-waiver', 'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'adhoc-lane', 'adhoc-lane:sobre-cupo',
   'escape:TYCON_SAFETY_OFF', 'escape:TYCON_PROD_LINT', 'escape:TYCON_NEW_NAMES', 'escape:TYCON_TEST_GATE',
   'escape:DOD_BYPASS', 'escape:TYCON_NO_DEEP_REVIEW', 'escape:TYCON_STATUS_GATE',
   'escape:story-skill-bypass', 'escape:set-autonomous', 'escape:cerrar-la-ejecucion', 'escape:cerrar-como-deuda',
@@ -86,6 +86,21 @@ test('8.139 T2 SignaturesGuide_DiceLoDelegadoNoEstaProtegido', () => {
     'sólo va lo de bajo riesgo']) {
     assert.ok(seccion.includes(frase), `la sección no dice «${frase}»`);
   }
+});
+
+test('T31 Firmas_SobreCupo_ApareceComoPedidaEnLaGuia @story-8.181 @ac-15', () => {
+  const cat = require(CATALOGO);
+  const texto = fs.readFileSync(GUIA, 'utf8');
+  const fila = tabla(texto, '## Las firmas').find((f) => f[0] === '`adhoc-lane:sobre-cupo`');
+  assert.ok(fila, 'está entre las firmas que se piden');
+  assert.strictEqual(fila[3], OTRA_SESION.no, 'no se corre desde la pestaña de otra sesión');
+  const nivel = texto.split('\n').find((l) => l.startsWith('| `adhoc-lane:sobre-cupo` | 2'));
+  assert.ok(nivel && !nivel.includes('todavía no se pide'), nivel);
+  assert.match(nivel, /`adhoc-lane:sobre-cupo` \|$/);
+  const s = cat.SIGNATURES.find((x) => x.id === 'adhoc-lane:sobre-cupo');
+  assert.strictEqual(s.soloClick, true);
+  assert.match(s.terminal, /--terminal/);
+  assert.match(texto, /cuentan sólo los archivos de implementación, sin pruebas ni guías/);
 });
 
 const TRES = ['escape:force-manual', 'escape:trust-ran', 'runtime-waiver'];
@@ -250,10 +265,10 @@ test('niveles T2 Catalogo_CadaFirmaApuntaASuNivel', () => {
     assert.strictEqual(s.level, Math.max(...cubre.map((id) => nivel[id].n)), `${s.id}: su nivel es el mayor de lo que cubre`);
     assert.deepStrictEqual([...s.profiles], ['dev', 'mant'].filter((p) => cubre.some((id) => nivel[id].p.includes(p))), `${s.id}: perfiles`);
   }
-  // cada id de la tabla lo pide alguna firma de hoy, salvo pasarse del cupo diario, que todavía no existe, y la
-  // emergencia, que se da con `harness.js sign` y no con una firma de hoy
+  // cada id de la tabla lo pide alguna firma de hoy, salvo la emergencia, que se da con `harness.js sign` y no con una
+  // firma de hoy
   const pedidos = new Set(cat.SIGNATURES.flatMap((s) => s.covers));
-  assert.deepStrictEqual(TABLA_DE_NIVELES.map(([id]) => id).filter((id) => !pedidos.has(id)), ['adhoc-lane:sobre-cupo', 'emergency']);
+  assert.deepStrictEqual(TABLA_DE_NIVELES.map(([id]) => id).filter((id) => !pedidos.has(id)), ['emergency']);
 });
 
 // niveles T3 Catalogo_NivelPorDelegacion

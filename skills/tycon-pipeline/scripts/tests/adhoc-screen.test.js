@@ -21,7 +21,8 @@ const SCRIPTS = path.join(__dirname, '..');
 const { conVentana } = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'tests', 'lib', 'window-passed.js'));
 const brake = require(path.join(SCRIPTS, 'lib', 'save-brake.js'));
 const { fileTouchesUi } = require(path.join(SCRIPTS, 'lib', 'ui-signal.js'));
-const { problemaDeLaCaptura, problemaDeLaMaqueta } = require(path.join(SCRIPTS, 'lib', 'adhoc-screen.js'));
+const { problemaDeLaCaptura, problemaDeLaMaqueta, revisar } = require(path.join(SCRIPTS, 'lib', 'adhoc-screen.js'));
+const { mockupTexts } = require(path.join(SCRIPTS, 'mockup.js'));
 
 const MARKER = path.join(SCRIPTS, 'marker.js');
 const MOCKUP = path.join(SCRIPTS, 'mockup.js');
@@ -89,12 +90,242 @@ function cli(h, args, { ventana = false } = {}) {
 function completo(t) {
   const r = repo(t);
   const h = home(t);
-  const pantalla = escribir(r, 'src/Combo.tsx');
   const m = maqueta(r);
+  const pantalla = escribir(r, 'src/Combo.tsx', conLosTextosDe(m));
   const c = escribir(r, 'captura.png', PNG, MANANA);
   carril(h, { files: [pantalla], mockup: conMaqueta(m), capture: { file: c } });
   return { r, h, pantalla, m, c };
 }
+
+// Una pantalla que dice todos los textos de la maqueta, salvo los de `sin`.
+const textosDe = (m) => [...new Set(mockupTexts(fs.readFileSync(m, 'utf8')).filter((x) => x.kind !== 'title').map((x) => x.text))];
+const conLosTextosDe = (m, sin = []) => textosDe(m).filter((x) => !sin.includes(x)).map((x) => `<p>${x}</p>`).join('\n') + '\n';
+const delCarril = (h) => revisar(leerCarril(h), []);
+const conTope = (ms, fn) => {
+  const antes = process.env.TYCON_ADHOC_COMPARE_TIMEOUT_MS;
+  process.env.TYCON_ADHOC_COMPARE_TIMEOUT_MS = String(ms);
+  try { return fn(); } finally { if (antes === undefined) delete process.env.TYCON_ADHOC_COMPARE_TIMEOUT_MS; else process.env.TYCON_ADHOC_COMPARE_TIMEOUT_MS = antes; }
+};
+
+test('T33 AdhocScreen_TextoQueFalta_NoGuarda @story-8.181 @ac-16', (t) => {
+  const { r, h, m, pantalla } = completo(t);
+  const [uno] = textosDe(m);
+  escribir(r, 'src/Combo.tsx', conLosTextosDe(m, [uno]));
+  assert.ok(pantalla);
+  const v = delCarril(h);
+  assert.ok(v.faltan.some((f) => f.includes(`«${uno}»`)), JSON.stringify(v));
+  assert.strictEqual(v.textosQueFaltan.total, 1);
+  const todos = textosDe(m);
+  escribir(r, 'src/Combo.tsx', '<p>otra cosa</p>\n');
+  const muchos = delCarril(h);
+  assert.strictEqual(muchos.textosQueFaltan.total, todos.length);
+  assert.ok(muchos.faltan.length <= 5, 'nombra hasta 5');
+});
+
+test('T34 AdhocScreen_TextoEnOtraPantallaDelRepo_Pasa @story-8.181 @ac-17', (t) => {
+  const { r, h, m } = completo(t);
+  const [uno] = textosDe(m);
+  escribir(r, 'src/Combo.tsx', conLosTextosDe(m, [uno]));
+  escribir(r, 'src/Otra.tsx', `<p>${uno}</p>\n`);
+  git(r, 'add', 'src/Otra.tsx');
+  git(r, 'commit', '-qm', 'otra pantalla');
+  const v = delCarril(h);
+  assert.deepStrictEqual(v.faltan, [], JSON.stringify(v));
+});
+
+test('T35 AdhocScreen_PruebasDelRepo_NoCuentanComoPantalla @story-8.181 @ac-17', (t) => {
+  const { r, h, m } = completo(t);
+  const [uno] = textosDe(m);
+  escribir(r, 'src/Combo.tsx', conLosTextosDe(m, [uno]));
+  escribir(r, 'src/Combo.test.tsx', `<p>${uno}</p>\n`);
+  git(r, 'add', 'src/Combo.test.tsx');
+  git(r, 'commit', '-qm', 'prueba');
+  assert.strictEqual(delCarril(h).textosQueFaltan.total, 1);
+});
+
+test('T36 AdhocScreen_DiferenciaDeclarada_PasaYSeMuestra @story-8.181 @ac-18', (t) => {
+  const { r, h, m } = completo(t);
+  const [uno] = textosDe(m);
+  escribir(r, 'src/Combo.tsx', conLosTextosDe(m, [uno]));
+  escribir(r, 'maqueta-diferencias.md', `- «${uno}» — differs: el cliente pidió otra palabra\n`);
+  const v = delCarril(h);
+  assert.deepStrictEqual(v.faltan, [], JSON.stringify(v));
+  assert.ok(v.mostrar.includes(uno) && v.mostrar.includes('el cliente pidió otra palabra'), v.mostrar);
+  assert.ok(v.registro.some((x) => x.includes('el cliente pidió otra palabra')));
+});
+
+test('T37 AdhocScreen_ComparacionImposibleDeclarada_PasaYSeMuestra @story-8.181 @ac-19', (t) => {
+  const { r, h } = completo(t);
+  escribir(r, 'src/Combo.tsx', '<p>otra cosa</p>\n');
+  escribir(r, 'maqueta-diferencias.md', 'mockup-compare: no — la pantalla arma sus textos en el servidor\n');
+  const v = delCarril(h);
+  assert.deepStrictEqual(v.faltan, [], JSON.stringify(v));
+  assert.ok(v.mostrar.includes('la pantalla arma sus textos en el servidor'), v.mostrar);
+  assert.ok(v.registro.some((x) => x.includes('la pantalla arma sus textos en el servidor')));
+});
+
+// 🔴 Falla con: un doble de prueba que tiene el texto y hace pasar la comparación, sin que esté en la pantalla real.
+test('AdhocScreen_DobleDePrueba_NoEsPantalla @story-8.181 @ac-17', (t) => {
+  const { r, h, m } = completo(t);
+  const [uno] = textosDe(m);
+  escribir(r, 'src/Combo.tsx', conLosTextosDe(m, [uno]));
+  for (const rel of ['src/__mocks__/Combo.tsx', 'src/comun/tests/Combo.tsx', 'src/e2e/Combo.tsx', 'src/Combo.cy.tsx', 'cypress/Combo.tsx', 'playwright/Combo.tsx', 'spec/Combo.tsx', 'src/Combo.stories.tsx', 'src/__fixtures__/Combo.tsx']) escribir(r, rel, `<p>${uno}</p>\n`);
+  git(r, 'add', '-A');
+  const v = delCarril(h);
+  assert.ok(v.faltan.some((f) => f.includes(`«${uno}»`)), JSON.stringify(v));
+});
+
+// 🔴 Falla con: la pantalla movida a una carpeta de pruebas, que deja de pedir maqueta y captura; borrarla sí las pide.
+test('AdhocScreen_PantallaMovidaAPruebas_SigueSiendoPantalla @story-8.181 @ac-21', (t) => {
+  const r = repo(t);
+  const h = home(t);
+  escribir(r, 'src/app/a/page.tsx', '<p>una pantalla con bastante contenido para reconocerla al moverla de lugar</p>\n');
+  git(r, 'add', '-A');
+  git(r, 'commit', '-qm', 'pantalla');
+  fs.mkdirSync(path.join(r, 'tests'));
+  git(r, 'mv', 'src/app/a/page.tsx', 'tests/page.tsx');
+  carril(h);
+  const v = revisar(leerCarril(h), [r]);
+  assert.ok(v.pantallas.some((p) => p.endsWith('src/app/a/page.tsx')), JSON.stringify(v));
+  // también a una carpeta que suma al tope y no es pantalla
+  git(r, 'mv', 'tests/page.tsx', 'src/app/a/page.tsx');
+  fs.mkdirSync(path.join(r, 'cypress'));
+  git(r, 'mv', 'src/app/a/page.tsx', 'cypress/page.tsx');
+  const w = revisar(leerCarril(h), [r]);
+  assert.ok(w.pantallas.some((p) => p.endsWith('src/app/a/page.tsx')), JSON.stringify(w));
+});
+
+// 🔴 Falla con: mover una pantalla a una ruta que no es pantalla: el arreglo la saca de su lugar y el freno no la ve.
+test('AdhocScreen_PantallaMovidaAUnaRutaQueNoEsPantalla_LaPide @story-8.181 @ac-21', (t) => {
+  for (const destino of ['notas/Vieja.txt', 'src/lib/vieja.ts']) {
+    const r = repo(t);
+    const h = home(t);
+    escribir(r, 'src/components/Vieja.tsx', '<p>una pantalla con bastante contenido para reconocerla al moverla de lugar</p>\n');
+    git(r, 'add', '-A');
+    git(r, 'commit', '-qm', 'pantalla');
+    git(r, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+    fs.mkdirSync(path.join(r, path.dirname(destino)), { recursive: true });
+    git(r, 'mv', 'src/components/Vieja.tsx', destino);
+    git(r, 'commit', '-qm', 'la muda');
+    carril(h);
+    const v = revisar(leerCarril(h), [r]);
+    assert.ok(v.pantallas.some((p) => p.endsWith('src/components/Vieja.tsx')), `${destino}: ${JSON.stringify(v)}`);
+  }
+});
+
+// 🔴 Falla con: lo anotado que sigue igual a `main` contado como propio: una edición restaurada pide maqueta y captura.
+test('AdhocScreen_PantallaAnotadaSinCambios_NoLaPide @story-8.181 @ac-21', (t) => {
+  const r = repo(t);
+  const h = home(t);
+  const f = escribir(r, 'src/components/V.tsx', '<p>sin cambios</p>\n');
+  git(r, 'add', '-A');
+  git(r, 'commit', '-qm', 'pantalla');
+  git(r, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  carril(h, { files: [f] });
+  assert.deepStrictEqual(revisar(leerCarril(h), [r]).pantallas, []);
+  // cambiada, sí
+  fs.writeFileSync(f, '<p>con cambios</p>\n');
+  assert.strictEqual(revisar(leerCarril(h), [r]).pantallas.length, 1);
+});
+
+// 🔴 Falla con: una carpeta `fixtures` a cualquier profundidad como prueba: la ruta `/fixtures` de una app es una pantalla.
+test('AdhocScreen_RutaFixtures_SigueSiendoPantalla @story-8.181 @ac-17', (t) => {
+  const r = repo(t);
+  const h = home(t);
+  carril(h, { files: [escribir(r, 'src/app/fixtures/page.tsx')] });
+  assert.ok(decidir(h, r).texto);
+});
+
+// 🔴 Falla con: una ruta de `git ls-files` que no está en el disco, contada como pantalla ilegible en lugar de nombrar el texto.
+test('AdhocScreen_PantallaQueNoEstaEnElDisco_NombraElTexto @story-8.181 @ac-16', (t) => {
+  const { r, h, m } = completo(t);
+  const [uno] = textosDe(m);
+  escribir(r, 'src/Combo.tsx', conLosTextosDe(m, [uno]));
+  escribir(r, 'src/Otra.tsx', '<p>otra</p>\n');
+  git(r, 'add', '-A');
+  git(r, 'commit', '-qm', 'otra pantalla');
+  fs.rmSync(path.join(r, 'src', 'Otra.tsx'));
+  // borrarla movió la fecha de la carpeta: la captura sigue siendo posterior
+  fs.utimesSync(path.join(r, 'src'), HOY, HOY);
+  const v = delCarril(h);
+  assert.ok(!v.sinMedir, JSON.stringify(v));
+  assert.ok(v.faltan.some((f) => f.includes(`«${uno}»`)), JSON.stringify(v));
+});
+
+// 🔴 Falla con: una carpeta anotada leída como pantalla: la lectura falla con EISDIR y no guarda con todos los textos.
+test('AdhocScreen_CarpetaAnotada_NoEsPantalla @story-8.181 @ac-20', (t) => {
+  const { r, h, pantalla, m, c } = completo(t);
+  const anidado = path.join(r, 'src', 'components', 'anidado');
+  fs.mkdirSync(anidado, { recursive: true });
+  carril(h, { files: [pantalla, anidado], mockup: conMaqueta(m), capture: { file: c } });
+  const v = delCarril(h);
+  assert.ok(!v.sinMedir, JSON.stringify(v));
+  assert.deepStrictEqual(v.faltan, [], JSON.stringify(v));
+});
+
+// 🔴 Falla con: el archivo de diferencias que cambia de sentido por el final de línea o el BOM de un editor de Windows.
+test('AdhocScreen_DiferenciasConCrlfYBom_ValenIgual @story-8.181 @ac-18 @ac-19', (t) => {
+  const { r, h, m } = completo(t);
+  const [uno] = textosDe(m);
+  escribir(r, 'src/Combo.tsx', conLosTextosDe(m, [uno]));
+  escribir(r, 'maqueta-diferencias.md', `﻿- «${uno}» — differs: el cliente pidió otra palabra\r\n`);
+  assert.deepStrictEqual(delCarril(h).faltan, [], 'la diferencia con CRLF y BOM');
+  escribir(r, 'maqueta-diferencias.md', '﻿mockup-compare: no — la pantalla arma sus textos en el servidor\r\n');
+  const v = delCarril(h);
+  assert.deepStrictEqual(v.faltan, [], JSON.stringify(v));
+  assert.ok(v.mostrar.includes('la pantalla arma sus textos en el servidor'), v.mostrar);
+});
+
+test('T38 AdhocScreen_PantallaIlegible_SinMedirNoGuarda @story-8.181 @ac-20', (t) => {
+  if (process.platform === 'win32' || process.getuid() === 0) { console.log('⏭ pantalla sin permiso: NO MEDIDO — sin permisos de Unix'); return; }
+  const { h, pantalla } = completo(t);
+  fs.chmodSync(pantalla, 0o000);
+  try {
+    assert.match(delCarril(h).sinMedir || '', /no pude leer/);
+    const d = decidir(h, path.dirname(path.dirname(pantalla)));
+    assert.match(d.texto, /no pude comparar/i);
+  } finally { fs.chmodSync(pantalla, 0o644); }
+});
+
+test('T39 AdhocScreen_TiempoAgotado_SinMedirNoGuarda @story-8.181 @ac-20', (t) => {
+  const { r, h } = completo(t);
+  const v = conTope(0, () => delCarril(h));
+  assert.match(v.sinMedir || '', /segundos/);
+  assert.match(v.sinMedir, /repetí el comando/);
+  assert.match(v.sinMedir, /mockup-compare: no — <motivo>/);
+  assert.match(conTope(0, () => decidir(h, r)).texto, /no pude comparar/i);
+});
+
+test('T40 AdhocScreen_ArchivosTraidosDeMain_NoPidenMaqueta @story-8.181 @ac-21', (t) => {
+  const r = repo(t);
+  const h = home(t);
+  git(r, 'checkout', '-qb', 'arreglo');
+  escribir(r, 'src/util.js');
+  git(r, 'add', '-A');
+  git(r, 'commit', '-qm', 'propio');
+  git(r, 'checkout', '-q', 'main');
+  escribir(r, 'src/DeOtro.tsx');
+  git(r, 'add', '-A');
+  git(r, 'commit', '-qm', 'de otro');
+  git(r, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  git(r, 'checkout', '-q', 'arreglo');
+  git(r, 'merge', '-q', '--no-edit', 'main');
+  const antes = git(r, 'rev-parse', 'HEAD~1');
+  carril(h, { files: [path.join(r, 'src', 'util.js')], bases: { [r]: { sha: antes, traida: true } } });
+  const v = delCarril(h);
+  assert.deepStrictEqual(v.pantallas, [], JSON.stringify(v));
+  assert.deepStrictEqual(v.faltan, []);
+});
+
+test('T41 AdhocScreen_SinPantalla_NoLeeLaMaqueta @story-8.181 @ac-22', (t) => {
+  const r = repo(t);
+  const h = home(t);
+  const f = escribir(r, 'src/util.js');
+  const rota = escribir(r, 'rota.html', 'esto no es una maqueta\n');
+  carril(h, { files: [f], mockup: { file: rota, sha256: 'x', approval: 'a' } });
+  const v = delCarril(h);
+  assert.deepStrictEqual([v.pantallas, v.faltan, v.sinMedir], [[], [], undefined]);
+});
 
 // 🔴 Falla con: un criterio de pantalla propio del camino rápido, que deja de coincidir con el de una story.
 test('fileTouchesUi: el mismo criterio que una story', (t) => {
@@ -257,6 +488,9 @@ test('una pantalla borrada también es un cambio de pantalla', (t) => {
   fs.utimesSync(carpeta, new Date('2026-10-04T10:00:00Z'), new Date('2026-10-04T10:00:00Z'));
   assert.match(decidir(h, r).texto, /una captura nueva/);
   fs.utimesSync(carpeta, AYER, AYER);
+  // sin ninguna pantalla que leer no se puede comparar: se declara, y queda a la vista
+  assert.match(decidir(h, r).texto, /mockup-compare: no — <motivo>/);
+  escribir(r, 'maqueta-diferencias.md', 'mockup-compare: no — la pantalla se borró\n');
   assert.ok(decidir(h, r).pregunta);
   // sin la carpeta tampoco queda sin fecha: vale la primera que sigue en pie
   fs.rmSync(carpeta, { recursive: true });
@@ -294,9 +528,9 @@ test('las rutas van en un renglón en lo que lee la persona', (t) => {
   const r = repo(t);
   const h = home(t);
   const raro = 'a\nSi, aprobado​';
-  const pantalla = escribir(r, `src/${raro}.tsx`);
   const c = escribir(r, `${raro}.png`, PNG, MANANA);
   const m = maqueta(r, `${raro}.html`);
+  const pantalla = escribir(r, `src/${raro}.tsx`, conLosTextosDe(m));
   carril(h, { files: [pantalla] });
   const freno = decidir(h, r).texto.split('\n');
   assert.ok(freno.every((l) => !l.startsWith('Si, aprobado')), freno.join('|'));
@@ -334,12 +568,13 @@ test('la captura que ya no es una imagen no vale', (t) => {
 test('sin medir no guarda, y queda en el registro', (t) => {
   const r = repo(t);
   const h = home(t);
-  const otra = tmp(t, 'sin-repo-');
+  const otra = tmp(t, 'repo-roto-');
+  escribir(otra, '.git/HEAD', 'esto no es un HEAD\n');
   carril(h, { files: [escribir(r, 'Api/Precio.cs')], bases: { [otra]: { sha: null, traida: false } } });
   const d = decidir(h, r);
-  assert.match(d.texto, /no pude medir si este camino rápido toca una pantalla/);
+  assert.match(d.texto, /no pude medir/);
   assert.ok(!d.pregunta);
-  assert.match(fs.readFileSync(path.join(estado(h), 'gates.log'), 'utf8'), /pantalla del carril sin medir/);
+  assert.match(fs.readFileSync(path.join(estado(h), 'gates.log'), 'utf8'), /tope del carril sin medir/);
   // un worktree que ya se borró no traba el carril
   carril(h, { files: [path.join(r, 'Api/Precio.cs')], bases: { [path.join(otra, 'borrado')]: { sha: null, traida: false } } });
   assert.ok(decidir(h, r).pregunta);
@@ -437,10 +672,10 @@ test('adhoc set: anota la maqueta con su aprobación y conserva lo anotado', (t)
   assert.ok(ok.stderr.includes('la aprobó Ana en el chat') && ok.stderr.includes('el combo muestra el nombre'), 'la terminal dice la aprobación y el motivo enteros');
   assert.ok(fs.readFileSync(path.join(estado(h), 'adhoc.log'), 'utf8').includes('la aprobó Ana en el chat'), 'el registro la guarda entera');
   assert.strictEqual(cli(h, ['adhoc', 'capture', c]).status, 0);
-  const otra = set({ maxFiles: 9 });
+  const otra = set({ maxFiles: 7 });
   assert.strictEqual(otra.status, 0, otra.stderr);
   const b = leerCarril(h);
-  assert.strictEqual(b.maxFiles, 9);
+  assert.strictEqual(b.maxFiles, 7);
   assert.deepStrictEqual(b.mockup, a.mockup, 'la maqueta aprobada sigue');
   assert.strictEqual(b.capture.file, c, 'la captura sigue');
   // ni la aprobación, ni el motivo, ni la ruta arman renglones falsos en lo que lee quien firma

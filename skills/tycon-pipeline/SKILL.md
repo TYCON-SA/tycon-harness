@@ -275,14 +275,14 @@ Hooks: `on-prompt.js` (intención de story, conflicto cross-sesión, "listo" con
 
 ## 🔒 Portón de carril
 
-En un repo bajo el arnés, un archivo de CÓDIGO no se edita sin (a) pipeline activo o (b) carril ad-hoc
-declarado: `marker.js adhoc set '{"reason":"<qué y por qué>"}'` (cupo 8 archivos, `adhoc.log`), que el dueño
-aprueba en ventana de permiso, click o «aprobado» (firma `adhoc-lane`; o `--terminal`). La designada de la
-máquina lo declara por otra pestaña con `--for-session <id>` si el perfil lo delega. Con marker y el plan sin
-aprobar, no se edita código. Escrituras directas a
-`~/.claude/.tycon-pipeline/` se deniegan siempre. El carril lo elige el USER: si no lo dijo, preguntar.
-Kill-switches del dev: `TYCON_STORY_GATE=off` (apaga el portón de edición, no la firma),
-`.tycon/advisors.yaml → pipeline.story_gate: false` (commiteado).
+En un repo del arnés, un archivo de CÓDIGO no se edita sin (a) pipeline activo o (b) carril ad-hoc:
+`marker.js adhoc set '{"reason":"<qué y por qué>"}'` (cupo 8, `adhoc.log`), que el dueño
+aprueba en ventana de permiso, click o «aprobado» (firma `adhoc-lane`; o `--terminal`). Más de 8: click aparte del dev en su
+pestaña, o terminal (`adhoc-lane:sobre-cupo`). La designada lo declara por otra pestaña con
+`--for-session <id>` si el perfil lo delega. Con el plan sin aprobar, no se edita código. Escribir en
+`~/.claude/.tycon-pipeline/` se niega siempre. El carril lo elige el USER: si no, preguntar.
+Kill-switches del dev: `TYCON_STORY_GATE=off` (apaga la edición, no la firma),
+`.tycon/advisors.yaml → pipeline.story_gate: false`.
 
 ## Terminación y logging
 

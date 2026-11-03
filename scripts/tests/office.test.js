@@ -526,6 +526,40 @@ test('T50 DeclaredHour_AfterMidnight: pasada la medianoche, una hora de anoche e
   assert.strictEqual(Date.parse(JSON.parse(fs.readFileSync(path.join(sdir, 'doing', 'n2.json'), 'utf8')).endAt), at(21, 0), 'trece horas adelante sigue siendo hoy');
 });
 
+test('T294 FirstCorrection_ReplacesThePromise: sólo la primera, en los 10 minutos de la primera hora; corregir seguido no renueva la ventana', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'office-correct-'));
+  const sdir = stateDir(home);
+  const at = (mi) => new Date(2026, 9, 31, 0, mi).getTime();
+  const hour = (h, mi) => new Date(2026, 9, 31, h, mi).getTime();
+  const note = (sid, mi, until) => {
+    const r = markerAt(home, sid, at(mi), ['doing', 'una tarea con su hora', '--until', until]);
+    assert.strictEqual(r.status, 0, r.stderr);
+    const d = JSON.parse(fs.readFileSync(path.join(sdir, 'doing', `${sid}.json`), 'utf8'));
+    return [Date.parse(d.endAt), d.promisedAt ? Date.parse(d.promisedAt) : null];
+  };
+  note('a', 8, '12:00');
+  assert.deepStrictEqual(note('a', 9, '01:30'), [hour(1, 30), null], 'la primera corrección reemplaza lo prometido');
+  assert.deepStrictEqual(note('a', 11, '02:30'), [hour(2, 30), hour(1, 30)], 'la segunda ya no: la promesa es la corregida');
+  assert.deepStrictEqual(note('a', 13, '03:30'), [hour(3, 30), hour(1, 30)], 'ni renueva la ventana');
+  note('justo', 8, '12:00');
+  assert.deepStrictEqual(note('justo', 18, '01:30'), [hour(1, 30), null], 'a los 10 minutos justos todavía corrige');
+  note('tarde', 8, '12:00');
+  assert.deepStrictEqual(note('tarde', 19, '01:30'), [hour(1, 30), hour(12, 0)], 'pasados los 10 minutos, la promesa queda');
+  note('igual', 8, '12:00');
+  note('igual', 9, '12:00');
+  assert.deepStrictEqual(note('igual', 10, '01:30'), [hour(1, 30), hour(12, 0)], 'repetir la misma hora la confirma: ya no se corrige');
+  // la misma hora tipeada, a un lado y otro del corte de 12 h, cae en otro día: la repite, no la corrige
+  const cross = (mi, h) => markerAt(home, 'corte', new Date(2026, 9, 31, h, mi).getTime(), ['doing', 'una tarea con su hora', '--until', '08:00']);
+  assert.strictEqual(cross(55, 19).status, 0);
+  assert.strictEqual(cross(5, 20).status, 0);
+  const corte = JSON.parse(fs.readFileSync(path.join(sdir, 'doing', 'corte.json'), 'utf8'));
+  assert.strictEqual(Date.parse(corte.promisedAt), new Date(2026, 9, 31, 8, 0).getTime(), 'la promesa se conserva');
+  assert.ok(!corte.hourCorrected, 'no gastó la corrección');
+  const vieja = path.join(sdir, 'doing', 'vieja.json');
+  fs.writeFileSync(vieja, JSON.stringify({ text: 'una tarea con su hora', at: new Date(at(8)).toISOString(), endAt: new Date(hour(12, 0)).toISOString() }));
+  assert.deepStrictEqual(note('vieja', 9, '01:30'), [hour(1, 30), hour(12, 0)], 'una nota de antes de este cambio no sabe cuándo se anotó: conserva su promesa');
+});
+
 test('T51 AdhocSet_KeepsDeclaredHour: agrandar el carril no borra la hora declarada', () => {
   const src = fs.readFileSync(MARKER, 'utf8');
   const set = src.slice(src.indexOf('const existing = io.readAdhoc(STATE_DIR, destino);'), src.indexOf('io.writeAdhoc(STATE_DIR, destino, obj);'));
@@ -2116,6 +2150,8 @@ test('T207 Note_Hour_FirstPromise_Waiting: la sesión anota su hora, se compara 
   assert.strictEqual(runMarker(m.home, 'nota-1', ['doing', 'mido el disco de la máquina', '--until', hh(now + 3600000)]), 0);
   const first = await collectAt(m, now);
   assert.strictEqual(byName(first, 'Ana').fin.dif, 'en hora');
+  // repetir la hora la confirma: lo que siga ya no es corregir un tipeo
+  assert.strictEqual(runMarker(m.home, 'nota-1', ['doing', '--until', hh(now + 3600000)]), 0);
   assert.strictEqual(runMarker(m.home, 'nota-1', ['doing', '--until', hh(now + 2 * 3600000)]), 0, 'sin texto, cambia sólo la hora');
   const later = byName(await collectAt(m, now), 'Ana');
   assert.strictEqual(later.titulo, 'mido el disco de la máquina');
@@ -2301,22 +2337,26 @@ test('T220 Step_RunTests_Codex_NotKnown: con Codex, no encontrarlas no dice que 
 // ── Las vistas del trabajo, «A medio camino» de verdad y los números que cierran ─────────────────────────────────────
 
 // El panel que se abre al tocar la pared, fuera del navegador.
-function openWallPanel(data) {
-  const fn = (page(data).match(/function abrirTablero\(\)\{[\s\S]*?\n\n/) || [])[0];
+const wallOrderCode = (html) => { const fn = (html.match(/function paredEnOrden\(K\)\{.*\}\n/) || [])[0]; assert.ok(fn, 'la página trae el orden del panel'); return fn; };
+function openWallPanel(data, abiertos) {
+  const html = page(data);
+  const fn = (html.match(/function abrirTablero\(\)\{[\s\S]*?\n\n/) || [])[0];
   assert.ok(fn, 'la página trae el panel');
   const { document } = tinyDom();
   const panel = document.createElement('aside');
   panel.classList = { add() {}, remove() {} };
-  new Function('document', 'panel', 'T', 'KCOL', 'HALF', 'stampOf', 'desks', 'pintarTag', `let sel=null;${fn};abrirTablero();`)(document, panel, { kanban: () => data.kanban, meta: () => data.meta }, {}, '#f00', () => 'sello', [], () => {});
+  if (abiertos) panel.abiertos = new Set(abiertos);
+  new Function('document', 'panel', 'T', 'KCOL', 'HALF', 'stampOf', 'desks', 'pintarTag', `let sel=null;${wallOrderCode(html)}${fn};abrirTablero();`)(document, panel, { kanban: () => data.kanban, meta: () => data.meta }, {}, '#f00', () => 'sello', [], () => {});
   return panel;
 }
 // Lo que dibuja el panel de la pared: cada texto, en orden.
 function wallTexts(data) {
-  const fn = (page(data).match(/function drawPanel\(\)\{[\s\S]*?texPanel\.needsUpdate=true\}/) || [])[0];
+  const html = page(data);
+  const fn = (html.match(/function drawPanel\(\)\{[\s\S]*?texPanel\.needsUpdate=true;\}/) || [])[0];
   assert.ok(fn, 'la página trae el dibujo de la pared');
   const said = [];
   const g = new Proxy({}, { get: (_, k) => (k === 'fillText' ? (t) => said.push(String(t)) : () => {}), set: () => true });
-  new Function('texPanel', 'T', 'KCOL', 'HALF', 'FONT', 'stampOf', `${fn};drawPanel();`)({ userData: { g } }, { kanban: () => data.kanban, meta: () => data.meta }, {}, '#f00', 'x', () => 'sello');
+  new Function('texPanel', 'T', 'KCOL', 'HALF', 'FONT', 'stampOf', `${wallOrderCode(html)}${fn};drawPanel();`)({ userData: { g } }, { kanban: () => data.kanban, meta: () => data.meta }, {}, '#f00', 'x', () => 'sello');
   return said;
 }
 // Datos con de todo: sesiones, pedidos reales, una fila del tablero y lo que quedó en una carpeta.
@@ -3224,7 +3264,7 @@ test('T283 Conversation_CoordinatorTabs: la coordinadora tiene dos pestañas y a
   const html = page({ agents: [], items: [], kanban: null, meta: null });
   const paint = html.slice(html.indexOf('function pintarCharla('), html.indexOf('\n// ', html.indexOf('function pintarCharla(')));
   assert.match(paint, /pestanasCharla\(\[\["Con vos",listaCharla\(/);
-  assert.match(paint, /\["Con las sesiones",listaCharla\(/);
+  assert.match(paint, /\["Con las sesiones",charlaPorSesion\(/);
   assert.match(paint, /seccion\("Con la coordinadora",filas/, 'las sesiones comunes siguen con su lista');
   const src = html.slice(html.indexOf('function listaCharla('), html.indexOf('function pintarCharla('));
   const node = (tag) => { const n = { tag, kids: [], dataset: {}, attrs: {}, classList: { contains: (c) => (n.className || '').split(' ').includes(c) }, append(...k) { n.kids.push(...k); }, setAttribute(k, v) { n.attrs[k] = v; } }; return n; };
@@ -3314,4 +3354,237 @@ test('T267 Conversation_OnlyInItsWindow: el botón va sólo con la oficina viva,
   assert.ok(opensAt >= 0);
   assert.strictEqual(html.indexOf('fetch("conversacion'), html.indexOf('fetch("conversacion', opensAt), 'se lee sólo al abrirla');
   assert.doesNotMatch(html.slice(html.indexOf('function abrir(nombre'), html.indexOf('los sobres: quién')), /conversacion|pintarCharla/, 'el detalle ya no la lee');
+});
+
+// A toy Codex base: one thread per entry, `{ id, source, thread_source }`. The real base has many more columns.
+function toyCodexBase(m, threads) {
+  const { DatabaseSync } = require('node:sqlite');
+  const dir = path.join(m.home, '.codex');
+  fs.mkdirSync(dir, { recursive: true });
+  const db = new DatabaseSync(path.join(dir, 'state_5.sqlite'));
+  db.exec('CREATE TABLE threads (id TEXT, name TEXT, source TEXT, thread_source TEXT)');
+  const add = db.prepare('INSERT INTO threads (id, source, thread_source) VALUES (?, ?, ?)');
+  for (const t of threads) add.run(t.id, t.source, t.thread_source || 'user');
+  db.close();
+  return dir;
+}
+const SESSION_STATE = require(path.join(__dirname, '..', 'lib', 'session-state.js'));
+const codexFile = (m, sid, patch = {}, now = NOW) => SESSION_STATE.update(m.state, sid, { sentence: SESSION_STATE.NO_PIPELINE, busy: false, ...patch }, { create: true, tool: 'codex', now });
+
+test('T296 CodexAgentsUnder: cuenta los agentes bajo la sesión, una vez cada uno, y no lo que sólo los nombra', () => {
+  const { codexAgentsUnder } = require(OFFICE);
+  const tree = [
+    { pid: 11, ppid: 10, comando: '/bin/zsh -c codex exec -p revisor' },
+    { pid: 12, ppid: 11, comando: 'node /opt/node/bin/codex exec -p revisor --sandbox read-only' },
+    { pid: 13, ppid: 12, comando: '/opt/node/lib/vendor/bin/codex exec -p revisor --sandbox read-only' },
+    { pid: 14, ppid: 10, comando: 'codex exec ok' },
+    { pid: 15, ppid: 10, comando: 'grep codex exec notas.txt' },
+    { pid: 16, ppid: 10, comando: 'node guion.js codex exec' },
+    { pid: 17, ppid: 10, comando: 'codex resume' },
+    { pid: 21, ppid: 20, comando: 'codex exec de otra sesion' },
+  ];
+  assert.strictEqual(codexAgentsUnder(10, tree), 2, 'el lanzador de Node y su programa son uno solo');
+  assert.strictEqual(codexAgentsUnder(99, tree), 0);
+  assert.strictEqual(codexAgentsUnder(10, null), null, 'sin la lista de procesos no se sabe');
+  assert.strictEqual(codexAgentsUnder(null, tree), null, 'sin el proceso de la sesión tampoco');
+});
+
+test('T297 ClaudeAgentsActive: cuenta los archivos de agentes tocados hace poco, sueltos y en tandas', () => {
+  const { claudeAgentsActive } = require(OFFICE);
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'office-agentes-'));
+  const transcript = path.join(root, 's.jsonl');
+  const subagents = path.join(root, 's', 'subagents');
+  const batch = path.join(subagents, 'workflows', 'wf_nueva');
+  const oldBatch = path.join(subagents, 'workflows', 'wf_vieja');
+  fs.mkdirSync(batch, { recursive: true });
+  fs.mkdirSync(oldBatch, { recursive: true });
+  const now = Date.now();
+  const write = (file, at) => { fs.writeFileSync(file, '{}\n'); fs.utimesSync(file, new Date(at), new Date(at)); };
+  write(path.join(subagents, 'agent-a.jsonl'), now - 60000);
+  write(path.join(subagents, 'agent-viejo.jsonl'), now - 4 * 60000);
+  write(path.join(subagents, 'agent-a.meta.json'), now - 60000);
+  write(path.join(batch, 'agent-b.jsonl'), now - 120000);
+  write(path.join(batch, 'journal.jsonl'), now - 1000);
+  write(path.join(oldBatch, 'agent-c.jsonl'), now - 1000);
+  fs.utimesSync(oldBatch, new Date(now - 7 * 3600000), new Date(now - 7 * 3600000));
+  assert.strictEqual(claudeAgentsActive(transcript, now), 2);
+  assert.strictEqual(claudeAgentsActive(path.join(root, 'sin-agentes.jsonl'), now), 0);
+});
+
+test('T298 Agents_SaidOnTheCard: cuántos y qué hacen; «Unos» sólo con agentes de Claude, y nada sin agentes', () => {
+  const said = (running, extra) => byName(buildOffice({
+    wip: wip([{ session: 'Tero', sid: 't', extra }]), runningAgents: running ? new Map([['t', running]]) : new Map(), nowMs: NOW,
+  }).data, 'Tero').agentesAhora;
+  const adversarial = { kind: 'pipeline', current: 'adversarial-pass' };
+  assert.strictEqual(said({ codex: 3, claude: 0 }, adversarial), '3 agentes revisando');
+  assert.strictEqual(said({ codex: 3, claude: 0 }, { kind: 'pipeline', current: 'reviewers' }), '3 agentes revisando');
+  assert.strictEqual(said({ codex: 3, claude: 0 }, { kind: 'pipeline', current: 'implement' }), '3 agentes trabajando');
+  assert.strictEqual(said({ codex: 3, claude: 0 }, { kind: 'loose' }), '3 agentes trabajando');
+  assert.strictEqual(said({ codex: 1, claude: 0 }, adversarial), '1 agente revisando');
+  assert.strictEqual(said({ codex: 1, claude: 2 }, adversarial), 'Unos 3 agentes revisando');
+  assert.strictEqual(said({ codex: 0, claude: 3 }, { kind: 'loose' }), 'Unos 3 agentes trabajando');
+  assert.strictEqual(said(null, adversarial), undefined, 'sin agentes el renglón no aparece');
+  const html = page({ agents: [], items: [], kanban: null, meta: null });
+  assert.match(html.slice(html.indexOf('function ficha(a)')), /if\(a\.agentesAhora\)r\.push\(\{k:"",v:a\.agentesAhora\}\)/, 'la tarjeta y el panel lo dicen');
+});
+
+test('T299 Agents_NotFree: una sesión quieta con agentes corriendo trabaja y sale de «Libres»; sin agentes sigue libre', () => {
+  const { data } = buildOffice({
+    wip: wip([], { free: ['Tero', 'Hornero'], freeSids: ['t', 'h'] }), runningAgents: new Map([['t', { codex: 0, claude: 2 }]]), nowMs: NOW,
+  });
+  assert.strictEqual(byName(data, 'Tero').estado, 'trabajando');
+  assert.strictEqual(byName(data, 'Tero').haciendo, 'Unos 2 agentes trabajando');
+  assert.strictEqual(byName(data, 'Hornero').estado, 'libre');
+  assert.deepStrictEqual(data.free, ['Hornero']);
+});
+
+test('T300 Agents_NotSessions: el Codex de un guion no ocupa lugar; una sesión de Codex y el que corre una ejecución sí', async () => {
+  const m = parkMachine();
+  const now = Date.now();
+  const codexHome = toyCodexBase(m, [
+    { id: '01a19f73-aaaa', source: 'exec' }, { id: '01a19f73-bbbb', source: 'exec' }, { id: 'sub-1', source: 'cli', thread_source: 'subagent' },
+    { id: 'persona', source: 'cli' }, { id: 'exec-con-paso', source: 'exec' }, { id: 'exec-con-trabajo', source: 'exec' },
+  ]);
+  for (const sid of ['01a19f73-aaaa', '01a19f73-bbbb', 'sub-1', 'persona']) codexFile(m, sid, {}, now);
+  codexFile(m, 'exec-con-paso', { step: 'Implementar' }, now);
+  codexFile(m, 'exec-con-trabajo', { sentence: 'Arregla los avisos.' }, now);
+  const data = await collectAt(m, now, { codexHome, processes: null });
+  const names = data.agents.map((a) => a.nombre);
+  assert.ok(!names.some((n) => n.startsWith('01a19f73') || n.startsWith('sub-1')), `salieron como personas: ${names}`);
+  for (const sid of ['persona', 'exec-con-paso', 'exec-con-trabajo']) assert.ok(names.includes(sid.slice(0, 8)), `falta ${sid}: ${names}`);
+  assert.deepStrictEqual(data.unreadable.filter((p) => /lista de sesiones de Codex/.test(p)), []);
+});
+
+test('T301 Agents_UnknownBase: si la base de Codex no se puede leer no se oculta a nadie, y se dice una sola vez', async () => {
+  const m = parkMachine();
+  const now = Date.now();
+  const dir = path.join(m.home, '.codex');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'state_5.sqlite'), 'esto no es una base');
+  codexFile(m, 'exec-1', {}, now);
+  codexFile(m, 'exec-2', {}, now);
+  const data = await collectAt(m, now, { codexHome: dir, processes: null });
+  assert.ok(data.agents.some((a) => a.nombre === 'exec-1'));
+  assert.ok(data.agents.some((a) => a.nombre === 'exec-2'));
+  const said = data.unreadable.filter((p) => p === 'No pude leer la lista de sesiones de Codex: alguna de estas personas puede ser un agente.');
+  assert.strictEqual(said.length, 1);
+});
+
+test('T302 Agents_CountedForTheirSession: la foto cuenta los agentes bajo el proceso de la sesión; sin procesos no dice cuántos', async () => {
+  const m = parkMachine();
+  const now = Date.now();
+  const codexHome = toyCodexBase(m, [{ id: 'agente-1', source: 'exec' }]);
+  codexFile(m, 'agente-1', { busy: true }, now);
+  fs.writeFileSync(path.join(m.sessions, `${process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: 'tero', name: 'Tero', status: 'idle', statusUpdatedAt: now - 3600000, updatedAt: now - 3600000 }));
+  const processes = [{ pid: process.pid + 100000, ppid: process.pid, comando: 'node /x/bin/codex exec -p revisor' }];
+  const withTree = await collectAt(m, now, { codexHome, processes });
+  assert.strictEqual(byName(withTree, 'Tero').haciendo, '1 agente trabajando');
+  assert.strictEqual(byName(withTree, 'agente-1'), undefined);
+  const noTree = await collectAt(m, now, { codexHome, processes: null });
+  assert.strictEqual(byName(noTree, 'Tero').estado, 'libre', 'sin la lista de procesos no dice cuántos, y nunca dice 0');
+  assert.ok(!/agente/.test(JSON.stringify(byName(noTree, 'Tero'))));
+});
+
+// The per-session conversation code of the page, on a small stand-in for the DOM: only what those functions touch.
+function perSessionCode() {
+  class Fake {
+    constructor(cls, text) { this.className = cls || ''; this.textContent = text || ''; this.children = []; this.attrs = {}; }
+    append(...kids) { for (const k of kids) { k.parent = this; this.children.push(k); } }
+    replaceChildren(...kids) { this.children = []; this.append(...kids); }
+    replaceWith(...kids) { const at = this.parent.children.indexOf(this); for (const k of kids) k.parent = this.parent; this.parent.children.splice(at, 1, ...kids); }
+    setAttribute(k, v) { this.attrs[k] = v; }
+    getAttribute(k) { return this.attrs[k]; }
+    focus() { Fake.focused = this; }
+  }
+  const html = page({ agents: [], items: [], kanban: null, meta: null });
+  const code = html.slice(html.indexOf('// Cuándo fue el último mensaje con una sesión'), html.indexOf('function pintarCharla('));
+  const stubs = {
+    el: (_tag, cls, text) => new Fake(cls, text),
+    msg: (quien, at, texto, mio) => Object.assign(new Fake('msg'), { quien, texto, mio }),
+    listaCharla: (filas, vacio) => { const box = new Fake(filas.length ? 'chat' : 'm', filas.length ? '' : vacio); box.append(...filas); return box; },
+    DAYS: ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'],
+  };
+  // eslint-disable-next-line no-new-func
+  return new Function(...Object.keys(stubs), `${code}; return { charlaPorSesion, horaDeSesion };`)(...Object.values(stubs));
+}
+const toySessions = (n) => Array.from({ length: n }, (_, i) => ({ sesion: `S${i}`, at: Date.now() - i * 60000, mensajes: [{ de: `S${i}`, texto: `de S${i}`, at: Date.now() }, { de: 'Coordinadora', texto: 'dale', at: Date.now() }] }));
+
+test('T303 PerSession_Buttons: la más reciente abierta, en orden, y sus mensajes con los propios marcados', () => {
+  const { charlaPorSesion } = perSessionCode();
+  const box = charlaPorSesion('Coordinadora', toySessions(3), 'nada');
+  const [fila, chat] = box.children;
+  assert.deepStrictEqual(fila.children.map((b) => b.textContent), ['S0', 'S1', 'S2']);
+  assert.deepStrictEqual(fila.children.map((b) => b.getAttribute('aria-pressed')), ['true', 'false', 'false']);
+  assert.deepStrictEqual(chat.children.map((m) => [m.quien, m.mio]), [['S0', false], ['Coordinadora', true]]);
+  assert.strictEqual(fila.children[0].children[0].textContent.length, 5, 'el botón dice su hora');
+});
+
+test('T304 PerSession_Choosing: tocar otra sesión cambia los mensajes y cuál está elegida', () => {
+  const { charlaPorSesion } = perSessionCode();
+  const box = charlaPorSesion('Coordinadora', toySessions(3), 'nada');
+  const fila = box.children[0];
+  fila.children[2].onclick();
+  assert.deepStrictEqual(fila.children.map((b) => b.getAttribute('aria-pressed')), ['false', 'false', 'true']);
+  assert.strictEqual(box.children[1].children[0].texto, 'de S2');
+  assert.strictEqual(box.children.length, 2, 'una sola conversación a la vista');
+});
+
+test('T305 PerSession_TheOthers: de más de 8 quedan «Las otras N», que al tocarlo muestra el resto y se va; con 8 no aparece', () => {
+  const { charlaPorSesion } = perSessionCode();
+  const fila = charlaPorSesion('Coordinadora', toySessions(13), 'nada').children[0];
+  assert.strictEqual(fila.children.length, 9);
+  const mas = fila.children[8];
+  assert.strictEqual(mas.textContent, 'Las otras 5');
+  mas.onclick();
+  assert.deepStrictEqual(fila.children.map((b) => b.textContent), Array.from({ length: 13 }, (_, i) => `S${i}`));
+  fila.children[12].onclick();
+  assert.strictEqual(fila.children[12].getAttribute('aria-pressed'), 'true', 'una de las otras se puede elegir');
+  assert.ok(!charlaPorSesion('Coordinadora', toySessions(8), 'nada').children[0].children.some((b) => b.className === 'mas'));
+});
+
+test('T306 PerSession_Empty_AndTheHour: sin mensajes lo dice; la hora lleva el día si no es de hoy', () => {
+  const { charlaPorSesion, horaDeSesion } = perSessionCode();
+  const empty = charlaPorSesion('Coordinadora', [], 'No hay mensajes con las sesiones en lo último de su conversación.');
+  assert.match(empty.textContent, /^No hay mensajes con las sesiones/);
+  const hoy = new Date();
+  hoy.setHours(9, 5, 0, 0);
+  assert.strictEqual(horaDeSesion(hoy.getTime()), '09:05');
+  const otro = new Date(hoy.getTime() - 3 * 86400000);
+  assert.match(horaDeSesion(otro.getTime()), /^(dom|lun|mar|mié|jue|vie|sáb) 09:05$/);
+  assert.strictEqual(horaDeSesion(null), '');
+});
+
+test('T307 PerSession_Page: la ventana usa la conversación por sesión y la nota habla de cada sesión', () => {
+  const html = page({ agents: [], items: [], kanban: null, meta: null });
+  assert.match(html, /\["Con las sesiones",charlaPorSesion\(nombre,d\.conSesiones\|\|\[\],/);
+  assert.match(html, /los últimos 10 con cada sesión, en orden; primero la que habló último\./);
+  assert.match(html, /@media \(max-width:600px\)\{\.ventana \.quienes\{flex-wrap:nowrap;overflow-x:auto/, 'en un teléfono, una sola fila');
+});
+
+const WALL_ORDER = ['Tu firma', 'En curso', 'Esperan entrar', 'A medio camino', 'Sin sesión', 'Terminados'];
+const toyCards = (n) => Array.from({ length: n }, (_, i) => ({ titulo: `Trabajo ${i}`, quien: 'Tero' }));
+const toyKanban = (over = {}) => ({ columnas: [['sinEmpezar', 'Sin sesión'], ['curso', 'En curso'], ['firma', 'Tu firma'], ['entrando', 'Esperan entrar'], ['hechos', 'Terminados']].map(([id, nombre]) => ({ id, nombre, tarjetas: toyCards(over[id] || 0) })), medioCamino: toyCards(over.medio || 0).map((c) => ({ titulo: c.titulo, accion: 'Abrí un pedido' })) });
+
+test('T308 Wall_Order: el panel y su detalle listan primero lo que se está trabajando, y «Te toca» va primero', () => {
+  const data = { agents: [], items: [], kanban: toyKanban({ sinEmpezar: 1, curso: 1, firma: 1, entrando: 1, hechos: 1, medio: 1 }), meta: { actualizado: '10:00', teToca: ['Firmar'] } };
+  const wall = wallTexts(data);
+  assert.deepStrictEqual(wall.filter((t) => WALL_ORDER.includes(t)), WALL_ORDER);
+  assert.ok(wall.indexOf('Te toca: 1') < wall.indexOf('Tu firma'), 'el dibujo dice «Te toca» antes que las cuentas');
+  const panel = openWallPanel(data);
+  assert.deepStrictEqual(all(panel, (n) => n.className === 'cnt').map((c) => textOf(c.children[1])), WALL_ORDER);
+  const heads = panel.children.filter((k) => k.tag === 'h4').map(textOf);
+  assert.deepStrictEqual(heads, ['Te toca', ...WALL_ORDER.map((n) => `${n} · 1`)]);
+});
+
+test('T309 Wall_Folds: Sin sesión y Terminados se pliegan con más de 5; lo que se trabaja nunca, y lo abierto sigue abierto', () => {
+  const data = { agents: [], items: [], kanban: toyKanban({ sinEmpezar: 12, curso: 7, hechos: 5, medio: 6 }), meta: { actualizado: '10:00', teToca: [] } };
+  const panel = openWallPanel(data);
+  const after = (name) => panel.children[panel.children.findIndex((k) => k.tag === 'h4' && textOf(k).startsWith(name)) + 1];
+  assert.strictEqual(after('Sin sesión').className, 'verTodos');
+  assert.strictEqual(textOf(after('Sin sesión')), 'Ver los 12');
+  assert.strictEqual(after('En curso').children.length, 7, 'lo que se trabaja, siempre a la vista');
+  assert.strictEqual(after('A medio camino').children.length, 6);
+  assert.strictEqual(after('Terminados').children.length, 5, 'con 5 todavía no se pliega');
+  const again = openWallPanel(data, ['sinEmpezar']);
+  assert.strictEqual(again.children[again.children.findIndex((k) => k.tag === 'h4' && textOf(k).startsWith('Sin sesión')) + 1].children.length, 12, 'abierta, sigue abierta con la foto nueva');
 });

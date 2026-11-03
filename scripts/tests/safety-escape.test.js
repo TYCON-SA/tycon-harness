@@ -1814,6 +1814,7 @@ test('T28 FrenoDeSeguridad_RenglonForjado_NoApruebaNada @story-8.139 @ac-28 — 
     ['escape:force-manual', ['node', M, 'set-check', 'tests', 'green', '--force-manual']],
     ['escape:trust-ran', ['node', P, 'check-count', '--repo', '/r', '--story', 's.md', '--trust-ran']],
     ['adhoc-lane', ['node', M, 'adhoc', 'set', '{"reason":"autorizo el arreglo rápido"}']],
+    ['adhoc-lane:sobre-cupo', ['node', M, 'adhoc', 'set', '{"reason":"autorizo el arreglo rápido","maxFiles":9}']],
     ['designation-confirm', ['node', D, 'confirm-designation']],
     ...['story-skill-bypass', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt', 'cambiar-el-estado']
       .map((n) => [`escape:${n}`, ['node', M, 'sign-file', n, '/r/specs/story-9.99.md']]),

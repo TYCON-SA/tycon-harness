@@ -359,7 +359,48 @@ test('T244 Conversation_WithPerson: cada mensaje con su respuesta, en orden; lo 
   ]);
   const got = readConversation(file, { coordinator: 'Coordinadora', isCoordinator: true });
   assert.deepStrictEqual(got.conVos.map((m) => [m.quien, m.texto]), [['vos', '¿Cómo va?'], ['coordinadora', 'Va bien.'], ['vos', 'Seguí.'], ['coordinadora', 'Le avisé.']]);
-  assert.deepStrictEqual(got.conSesiones.map((m) => [m.de, m.a, m.texto]), [['Bruno', 'Coordinadora', 'Terminé.'], ['Coordinadora', 'Bruno', 'Seguí vos.']]);
+  assert.deepStrictEqual(got.conSesiones.map((s) => s.sesion), ['Bruno']);
+  assert.deepStrictEqual(got.conSesiones[0].mensajes.map((m) => [m.de, m.texto]), [['Bruno', 'Terminé.'], ['Coordinadora', 'Seguí vos.']]);
+});
+
+test('T247 Conversation_PerSession: cada sesión con sus mensajes en orden, la que habló último primero', () => {
+  const file = path.join(dir(), 's.jsonl');
+  write(file, [
+    sent('Ana', 'Hacé lo tuyo.', 40), peer('Bruno', 'Arranco.', 35), peer('Ana', 'Hecho.', 30), sent('Bruno', 'Dale.', 20), peer('Carla', 'Listo.', 10),
+  ]);
+  const got = readConversation(file, { coordinator: 'Coordinadora', isCoordinator: true }).conSesiones;
+  assert.deepStrictEqual(got.map((s) => s.sesion), ['Carla', 'Bruno', 'Ana']);
+  assert.deepStrictEqual(got.map((s) => s.at), [at(10), at(20), at(30)].map((t) => Date.parse(t)));
+  assert.deepStrictEqual(got[1].mensajes.map((m) => [m.de, m.texto]), [['Bruno', 'Arranco.'], ['Coordinadora', 'Dale.']]);
+  assert.deepStrictEqual(got[2].mensajes.map((m) => [m.de, m.texto]), [['Coordinadora', 'Hacé lo tuyo.'], ['Ana', 'Hecho.']]);
+});
+
+test('T248 Conversation_TenPerSession: los últimos 10 son de cada sesión: una que habla mucho no tapa a las demás', () => {
+  const file = path.join(dir(), 's.jsonl');
+  const lines = [peer('Ana', 'la de antes', 500)];
+  for (let i = 30; i > 0; i -= 1) lines.push(peer('Bruno', `mensaje ${i}`, i));
+  write(file, lines);
+  const got = readConversation(file, { coordinator: 'Coordinadora', isCoordinator: true }).conSesiones;
+  assert.deepStrictEqual(got.map((s) => [s.sesion, s.mensajes.length]), [['Bruno', 10], ['Ana', 1]]);
+  assert.strictEqual(got[0].mensajes[0].texto, 'mensaje 10', 'los últimos, y en orden');
+  assert.strictEqual(got[0].mensajes[9].texto, 'mensaje 1');
+});
+
+test('T249 Conversation_OnlySessions: un subagente propio y un mensaje a sí misma no son una sesión', () => {
+  const file = path.join(dir(), 's.jsonl');
+  write(file, [sent('ae0aab4922fa72a97', 'Seguí.', 3), sent('Coordinadora', 'Nota.', 2), sent('Bruno [8e42be]', 'Hola.', 1)]);
+  const got = readConversation(file, { coordinator: 'Coordinadora', isCoordinator: true }).conSesiones;
+  assert.deepStrictEqual(got.map((s) => s.sesion), ['Bruno']);
+});
+
+test('T250 Conversation_ReadsSessionsAfterTheTwentyMessages: juntados los de la persona, sigue buscando sesiones', () => {
+  const file = path.join(dir(), 's.jsonl');
+  const lines = [peer('Ana', 'de hace mucho', 900)];
+  for (let i = 25; i > 0; i -= 1) lines.push(person(`mensaje ${i}`, i));
+  write(file, lines);
+  const got = readConversation(file, { coordinator: 'Coordinadora', isCoordinator: true });
+  assert.strictEqual(got.conVos.filter((m) => m.quien === 'vos').length, 20);
+  assert.deepStrictEqual(got.conSesiones.map((s) => s.sesion), ['Ana']);
 });
 
 test('T245 Conversation_Limits: se queda con los últimos 20 de la persona, y un tope de lectura lo corta sin romperse', () => {

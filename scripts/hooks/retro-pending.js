@@ -221,6 +221,40 @@ function gitOrNull(cwd, args) {
   try { return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, maxBuffer: 16 * 1024 * 1024 }).trim(); }
   catch { return null; }
 }
+// La sha de la rama que va a mergear un pedido, o null. Primero la del remoto: el pedido mergea lo que hay allá, y la rama
+// local la comparten todas las copias del repo, así que puede estar atrasada. Límite: un push que no mueve la referencia
+// de `origin` (a una URL escrita a mano, a otro remoto) deja esa referencia atrás: se anota la sha vieja, o nada si esa
+// sha ya estaba anotada.
+function puntaDeLaRama(root, rama) {
+  const corta = ramaCorta(rama);
+  return git(root, ['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${corta}`]) || git(root, ['rev-parse', '--verify', '--quiet', `refs/heads/${corta}`]) || null;
+}
+// La punta de la rama en la que está la carpeta, para el pedido que no nombra su rama; null con HEAD suelto.
+function puntaDeLaRamaActual(root) {
+  const rama = git(root, ['rev-parse', '--abbrev-ref', 'HEAD']);
+  return rama && rama !== 'HEAD' ? puntaDeLaRama(root, rama) : null;
+}
+// La carpeta principal del repo de `root` (la que tiene `.git` como directorio), o null si el repo no tiene una, como un submódulo.
+function carpetaPrincipal(root) {
+  const salida = git(root, ['rev-parse', '--git-common-dir']);
+  if (!salida) return null;
+  const common = path.resolve(root, salida);
+  return path.basename(common) === '.git' ? path.dirname(common) : null;
+}
+// La carpeta desde la que se puede pagar una entrada: la copia, o la principal si la copia ya no es un repo y la principal
+// sí. Sin ninguna de las dos, la ruta anotada: la entrada se sigue reclamando igual. La raíz tiene que ser la carpeta misma:
+// los restos de una copia adentro de otro repo le contestan a git con la raíz de ese otro. Se calcula una vez por proceso:
+// corre por cada entrada pendiente, en cada cierre de turno.
+const vigentes = new Map();
+function carpetaVigente(e) {
+  if (!e.principal) return e.repoPath;
+  const clave = `${e.repoPath}|${e.principal}`;
+  if (!vigentes.has(clave)) {
+    const esRaiz = (d) => { const r = raizGit(d); return Boolean(r) && real(r) === real(d); };
+    vigentes.set(clave, !esRaiz(e.repoPath) && esRaiz(e.principal) ? e.principal : e.repoPath);
+  }
+  return vigentes.get(clave);
+}
 
 // ── cubierto por una retrospectiva? (metrics-*.json con repo + merge_commit) ─────────────────────
 // Se mira en DOS lugares: el .dashboard/ del checkout
@@ -230,7 +264,7 @@ function gitOrNull(cwd, args) {
 // sobre un merge que ya la tiene — y bloquearía el cierre del turno por eso.
 function dashboardsDe(entry) {
   const out = [];
-  for (const d of [DASHBOARD_DIR, ...MACHINE_DASHBOARD_DIRS, path.join(String(entry.repoPath || ''), '.dashboard')].filter(Boolean)) {
+  for (const d of [DASHBOARD_DIR, ...MACHINE_DASHBOARD_DIRS, path.join(String(entry.repoPath || ''), '.dashboard'), entry.principal && path.join(String(entry.principal), '.dashboard')].filter(Boolean)) {
     const r = real(d);
     if (!out.includes(r)) out.push(r);
   }
@@ -246,7 +280,9 @@ function coveredByMetrics(entry) {
     if (!lista) continue;
     for (const m of lista) {
       if (m.roto) throw new TypeError(`metrics null en ${dir}`);
-      if (RETRO_COVERAGE.sameRepo(m, entry.repoPath) && RETRO_COVERAGE.sameSha(m.sha, String(entry.sha))) return true;
+      // la carpeta principal es el mismo repo: es donde corre el latido cuando la copia del pedido ya no está
+      const delRepo = RETRO_COVERAGE.sameRepo(m, entry.repoPath) || (entry.principal && RETRO_COVERAGE.sameRepo(m, entry.principal));
+      if (delRepo && RETRO_COVERAGE.sameSha(m.sha, String(entry.sha))) return true;
     }
   }
   return false;
@@ -290,7 +326,7 @@ function contarVentana(dias) {
 }
 // El comando que paga la deuda: el latido. Lo usan el gate y el aviso de arranque.
 function launchHint(e) {
-  return `node "${LATIDO}" --repo "${e.repoPath}" --merge ${e.sha} [--story <id> si el merge cierra una story]`;
+  return `node "${LATIDO}" --repo "${carpetaVigente(e)}" --merge ${e.sha} [--story <id> si el merge cierra una story]`;
 }
 
 // ── ¿repo de laboratorio? ──────────────
@@ -652,12 +688,13 @@ function pedidoDeUnaSentencia(s) {
     }
     if (!root) return { resuelto: false, st: s.st, motivo };
     const fuente = az.flagDe(seg, 'source-branch', 's');
-    const ref = fuente && !/[$`]/.test(fuente) ? [`refs/heads/${fuente.replace(/^refs\/heads\//, '')}`, `refs/remotes/origin/${fuente.replace(/^refs\/heads\//, '')}`]
-      .find((r) => git(root, ['rev-parse', '--verify', '--quiet', r])) : null;
+    const legible = fuente && !/[$`]/.test(fuente);
+    // sin --source-branch, `az` usa la rama en la que está la carpeta
+    const sha = legible ? puntaDeLaRama(root, fuente) : (fuente ? null : puntaDeLaRamaActual(root));
     // Sin la rama de --source-branch en este clon, la punta es la de HEAD, y la entrada lo dice (`punta`): puede no ser
     // lo que se mergea. No es un «no sé» que frene: HEAD es la mejor punta conocida y el merge sí fue de este repo.
-    const punta = ref ? null : (fuente && !/[$`]/.test(fuente) ? `HEAD: la rama ${fuente} no está en este clon` : 'HEAD: el pedido no nombra --source-branch legible');
-    return { resuelto: true, dir: root, st: s.st, sha: ref ? git(root, ['rev-parse', ref]) : null, punta };
+    const punta = sha ? null : (legible ? `HEAD: la rama ${fuente} no está en este clon` : 'HEAD: el pedido no nombra --source-branch legible');
+    return { resuelto: true, dir: root, st: s.st, sha, punta };
   }
 }
 
@@ -717,11 +754,11 @@ function pedidosDeGh(cmd, cwd, powershell) {
       const origen = identidadRemoto(git(root, ['remote', 'get-url', 'origin']));
       if (!origen || origen.ruta !== c.repo) { out.push({ resuelto: false }); continue; }
     }
-    // la punta: la de `--head` si nombra una rama de este clon, o la que el clon conoce del remoto (la rama se empujó
-    // desde otro lado); con `dueño:rama` es la de otro repo, y si no está en ningún lado, la de HEAD
+    // la punta: la de la rama de `--head` o, sin `--head`, la de la rama en la que está la carpeta; con `dueño:rama` es
+    // la de otro repo, y si no está en ningún lado, la de HEAD
     const propia = c.head && !c.head.includes(':') ? c.head : null;
-    const refDeLaRama = propia && [`refs/heads/${propia}`, `refs/remotes/origin/${propia}`].find((ref) => git(root, ['rev-parse', '--verify', '--quiet', ref]));
-    const rama = refDeLaRama ? propia : git(root, ['rev-parse', '--abbrev-ref', 'HEAD']);
+    const puntaPropia = propia && puntaDeLaRama(root, propia);
+    const rama = puntaPropia ? ramaCorta(propia) : git(root, ['rev-parse', '--abbrev-ref', 'HEAD']);
     let target = c.base;
     if (!target) {
       // una base que arma la terminal —o que quedó después de donde el lector tuvo que cortar— «no se sabe»: la principal
@@ -730,7 +767,7 @@ function pedidosDeGh(cmd, cwd, powershell) {
       if (porDefecto && !/^(main|master)$/.test(porDefecto)) continue;
       target = porDefecto || 'main';
     }
-    out.push({ resuelto: true, dir: root, target, sha: refDeLaRama ? git(root, ['rev-parse', refDeLaRama]) : null });
+    out.push({ resuelto: true, dir: root, target, sha: puntaPropia || (c.head || c.headDesconocida ? null : puntaDeLaRamaActual(root)) });
   }
   return out;
 }
@@ -769,8 +806,7 @@ function pedidosDeCapa(cmd, cwd) {
     const origen = identidadRemoto(git(root, ['remote', 'get-url', 'origin']));
     if (!quiere || !origen || origen.ruta !== quiere) { out.push({ resuelto: false }); continue; }
     const rama = typeof args.sourceBranch === 'string' ? ramaCorta(args.sourceBranch) : null;
-    const ref = rama && [`refs/heads/${rama}`, `refs/remotes/origin/${rama}`].find((r) => git(root, ['rev-parse', '--verify', '--quiet', r]));
-    out.push({ resuelto: true, dir: root, target: ramaCorta(args.targetBranch), sha: ref ? git(root, ['rev-parse', ref]) : null });
+    out.push({ resuelto: true, dir: root, target: ramaCorta(args.targetBranch), sha: rama ? puntaDeLaRama(root, rama) : puntaDeLaRamaActual(root) });
   }
   return out;
 }
@@ -819,6 +855,8 @@ function anotar(event, cmd, punto, ctx) {
   const entry = { ts: new Date().toISOString(), sessionId: sessionIdOf(event), repoPath: root, sha: sha.slice(0, 12), branch: target, cmd: cmd.slice(0, 120) };
   if (juicio && juicio.exento) Object.assign(entry, { exento: juicio.exento, motivo: juicio.motivo, commits: juicio.commits, archivos: juicio.archivos.slice(0, 40) });
   if (ctx.isPrCreate && !ctx.sha && ctx.punta) entry.punta = ctx.punta;   // la punta cayó a HEAD, dicho
+  const principal = carpetaPrincipal(root);
+  if (principal && real(principal) !== real(root)) entry.principal = principal;
   if (readJsonl(LEDGER).some((e) => e.repoPath === root && e.sha === entry.sha)) return null;
   fs.mkdirSync(STATE_DIR, { recursive: true });
   fs.appendFileSync(LEDGER, JSON.stringify(entry) + '\n', 'utf8');
@@ -916,7 +954,7 @@ function porRepo(entries) {
 // sesión pasaría a ser la mula de carga de todos los proyectos, que es justo lo que el aviso de
 // arranque evita.
 function nearEnough(entry, cwd) {
-  const r = real(entry.repoPath);
+  const r = real(carpetaVigente(entry));
   const c = real(cwd);
   if (underOrEqual(c, r)) return true;          // la sesión está DENTRO del repo
   if (!underOrEqual(r, c)) return false;
@@ -993,7 +1031,7 @@ function underOrEqual(a, b) {
 // Un pendiente "es de esta sesión" si su repo cae bajo el cwd (workspace que contiene repos, ej.
 // Ceibo/ → CeiboBackend) o el cwd cae dentro del repo (sesión abierta en un subdirectorio).
 function belongsToCwd(entry, cwd) {
-  const r = real(entry.repoPath);
+  const r = real(carpetaVigente(entry));
   const c = real(cwd);
   return underOrEqual(r, c) || underOrEqual(c, r);
 }

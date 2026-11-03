@@ -128,6 +128,43 @@ test('adhoc: pasa; cupo cuenta sólo implementación; archivo ya contado no cons
   assert.equal(gate.computeStoryGate({ ...BASE, adhoc: { reason: 'x fix', maxFiles: 'abc', files: new Array(8).fill('/z.cs') }, filePath: `${REPO}/src/Z9.cs` }).kind, 'adhoc-cap'); // default 8
 });
 
+const OCHO = Array.from({ length: 8 }, (_, i) => `${REPO}/src/f${i}.cs`);
+
+// 🔴 Falla con: volver a declarar sin número en una pestaña sin permisos, que achica lo que la persona eligió y lo traba.
+test('CupoAlDeclarar_SobreCupoSinNumero_ConservaLoElegido @story-8.181 @ac-14', () => {
+  const elegido = { maxFiles: 12, sobreCupo: true };
+  for (const via of ['delegacion', 'avisado', 'click', 'ventana']) assert.equal(gate.cupoAlDeclarar({ existing: elegido, via }), 12, via);
+  // con un número, o sin la elección de la persona, sigue el cupo delegado
+  assert.equal(gate.cupoAlDeclarar({ pedido: 12, existing: elegido, via: 'avisado' }), 5);
+  assert.equal(gate.cupoAlDeclarar({ existing: { maxFiles: 8 }, via: 'delegacion' }), 5);
+  assert.equal(gate.cupoAlDeclarar({ via: 'ventana' }), 8);
+  assert.equal(gate.cupoAlDeclarar({ pedido: 3, via: 'click' }), 3);
+});
+
+test('T16 StoryGate_RepoDelArnesConCarril_FrenaAlPasarElTope @story-8.181 @ac-7', () => {
+  const adhoc = { reason: 'arreglo en el arnés', maxFiles: 8, files: OCHO };
+  // un clon del arnés puede no tener `.tycon/`: igual rige el tope
+  const r = gate.computeStoryGate({ ...BASE, filePath: `${REPO}/src/nuevo.cs`, adhoc, isHarness: true, repoHasTycon: false, repoHasStories: false });
+  assert.deepStrictEqual([r.action, r.kind, r.tocados, r.cupo], ['block', 'adhoc-cap', 8, 8]);
+  assert.equal(gate.computeStoryGate({ ...BASE, filePath: `${REPO}/src/f0.cs`, adhoc, isHarness: true }).action, 'pass', 'ya contado');
+  assert.equal(gate.computeStoryGate({ ...BASE, filePath: `${REPO}/src/nuevo.cs`, adhoc, isHarness: true, gateEnabled: false }).action, 'pass', 'el portón apagado se respeta');
+});
+
+test('T17 StoryGate_RepoDelArnesSinCarril_SiguePasando @story-8.181 @ac-7', () => {
+  const marker = { storyId: '8.181', repoPath: REPO, stepScheme: 2, stepsPending: ['implement'], stepsCompleted: ['approve-plan'] };
+  const adhoc = { reason: 'arreglo en el arnés', maxFiles: 8, files: OCHO };
+  assert.equal(gate.computeStoryGate({ ...BASE, filePath: `${REPO}/src/nuevo.cs`, isHarness: true }).action, 'pass', 'sin carril');
+  assert.equal(gate.computeStoryGate({ ...BASE, filePath: `${REPO}/src/nuevo.cs`, adhoc, marker, isHarness: true }).action, 'pass', 'con una ejecución de historia');
+});
+
+test('T18 StoryGate_AlPasarElTope_RecomiendaHistoriaYOfreceElClick @story-8.181 @ac-8', () => {
+  const m = gate.blockMessage({ kind: 'adhoc-cap', reason: 'r', tocados: 8, cupo: 8 }, { filePath: `${REPO}/src/nuevo.cs` });
+  assert.match(m, /Ibas a tocar otro más/);
+  assert.ok(m.indexOf('historia') >= 0 && m.indexOf('historia') < m.indexOf('click'), m);
+  assert.doesNotMatch(m, /cupo mayor|re-declar/i);
+  assert.match(m, /sólo los archivos de implementación/);
+});
+
 test('blockMessage: cada kind tiene sus salidas; no-lane lista adopt-session si hay markers ajenos', () => {
   const nl = gate.blockMessage({ kind: 'no-lane' }, { filePath: BASE.filePath, repoRoot: REPO, otherMarkers: [{ sessionId: 'abc', storyId: '2.1' }] });
   assert.match(nl, /adopt-session abc/); assert.match(nl, /adhoc set/); assert.match(nl, /tycon-pipeline/); assert.match(nl, /Barry/);

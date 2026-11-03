@@ -654,14 +654,14 @@ test('T18 RamaAtrasada_LoPropioSigueFrenando', () => {
     fs.symlinkSync(path.join(r.dir, 'src/auth/x.ts'), enlace);
     return { rutas: [enlace], bases: { [r.dir]: adhocBase.traerBase(r.dir) }, riesgoAlto: marcaDe(enlace) };
   });
-  // git que falla a mitad de la medición (el freno de riesgo solo: el de pantalla ya frena por «no pude medir»): lo
-  // preparado se sigue midiendo y marca; con una marca puesta, no se levanta
+  // git que falla a mitad de la medición (el freno de riesgo: el de pantalla mide desde `origin/main` y no usa esta base):
+  // lo preparado se sigue midiendo y marca; con una marca puesta, no se levanta
   const rota = { sha: 'a'.repeat(40), traida: true };
   const incompleta = (nombre, armar) => {
     const r = ramaAtrasada(raiz, nombre);
     git(r.dir, 'remote', 'set-url', 'origin', path.join(raiz, 'no-existe.git'));
     const state = conCarril(home, nombre, { rutas: [r.propio], bases: { [r.dir]: rota }, ...armar(r) });
-    assert.match(guardar(r.dir, nombre, home).texto, /no pude medir si este camino rápido toca una pantalla/, nombre);
+    assert.match(guardar(r.dir, nombre, home).texto, /auth\/x\.ts/, nombre);
     const d = saveBrake.frenoDelRiesgo(leerCarril(state, nombre), nombre, home, [r.dir]);
     assert.ok(d && d.texto, `${nombre}: ${JSON.stringify(d)}`);
     assert.match(d.texto, /auth\/x\.ts/, nombre);
@@ -716,6 +716,8 @@ test('T20 Pantalla_LaDeOtroPedidoNoPideMaqueta', () => {
   const b = adhocBase.traerBase(dir);
   entraAMain('src/components/Otra.tsx');
   traerMain();
+  // la copia local de `main` se quedó atrás: la pantalla parece propia hasta traerlo otra vez
+  git(dir, 'update-ref', 'refs/remotes/origin/main', b.sha);
   const state = conCarril(home, 's20', { rutas: [propio], bases: { [dir]: b } });
   const d = guardar(dir, 's20', home);
   assert.ok(d && !d.texto && d.pregunta, JSON.stringify(d));
@@ -730,12 +732,59 @@ test('T20 Pantalla_LaDeOtroPedidoNoPideMaqueta', () => {
   const b2 = adhocBase.traerBase(r.dir);
   r.entraAMain('src/components/Otra.tsx');
   r.traerMain();
+  git(r.dir, 'update-ref', 'refs/remotes/origin/main', b2.sha);
   git(r.dir, 'remote', 'set-url', 'origin', path.join(raiz, 'no-existe.git'));
   const s2 = conCarril(home, 's20b', { rutas: [r.propio], bases: { [r.dir]: b2 } });
   const d3 = guardar(r.dir, 's20b', home);
   assert.ok(d3 && d3.texto, JSON.stringify(d3));
   assert.match(d3.texto, /toca una pantalla/);
   assert.match(fs.readFileSync(path.join(s2, 'gates.log'), 'utf8'), /sigue con la base anotada/);
+});
+
+// 🔴 Falla con: el freno del riesgo que sale sin mirar cuando la medición falló: con la base anotada rota, lo commiteado pasa.
+test('RiesgoCommiteado_ConLaBaseAnotadaRota_SigueFrenando @story-8.181 @ac-13', () => {
+  const raiz = tmp('base-rota-');
+  const home = tmp('home-');
+  const rota = { sha: 'a'.repeat(40), traida: true };
+  const armar = (nombre) => {
+    const r = ramaAtrasada(raiz, nombre);
+    escribir(r.dir, 'src/auth/nuevo.ts', 'propio\n');
+    git(r.dir, 'add', '.');
+    commitear(r.dir, 'lo propio de riesgo');
+    return r;
+  };
+  // con red: trae `main`, mide de nuevo y pone la marca
+  const conRed = armar('con-red');
+  const s1 = conCarril(home, 'con-red', { rutas: [conRed.propio], bases: { [conRed.dir]: rota } });
+  const d1 = guardar(conRed.dir, 'con-red', home);
+  assert.match(d1.texto, /auth\/nuevo\.ts/, d1.texto);
+  assert.ok(leerCarril(s1, 'con-red').riesgoAlto);
+  assert.notEqual(leerCarril(s1, 'con-red').bases[conRed.dir].sha, rota.sha);
+  // sin red: no pudo medir, y sin medir no guarda
+  const sinRed = armar('sin-red');
+  git(sinRed.dir, 'remote', 'set-url', 'origin', path.join(raiz, 'no-existe.git'));
+  conCarril(home, 'sin-red', { rutas: [sinRed.propio], bases: { [sinRed.dir]: rota } });
+  assert.match(guardar(sinRed.dir, 'sin-red', home).texto, /no pude medir si este camino corto toca una ruta de riesgo alto/);
+});
+
+// 🔴 Falla con: la marca de un worktree anidado borrado, que se levanta sola con su rama viva: lo de riesgo se empuja sin revisores.
+test('Marca_DeUnWorktreeBorrado_NoSeLevanta @story-8.181 @ac-13', () => {
+  const raiz = tmp('wt-borrado-');
+  const home = tmp('home-');
+  const { dir, propio } = ramaAtrasada(raiz, 'producto');
+  const wt = path.join(dir, '.claude', 'worktrees', 'x');
+  git(dir, 'worktree', 'add', '-q', '-b', 'story/x', wt);
+  escribir(wt, 'src/auth/y.ts', 'de riesgo\n');
+  git(wt, 'add', '.');
+  commitear(wt, 'lo de riesgo');
+  const b = adhocBase.traerBase(dir);
+  const f = path.join(wt, 'src/auth/y.ts');
+  const state = conCarril(home, 'sw', { rutas: [propio, f], bases: { [dir]: b, [wt]: b }, riesgoAlto: marcaDe(f) });
+  git(dir, 'worktree', 'remove', '--force', wt);
+  const d = saveBrake.decidir({ command: 'git push origin story/x', cwd: dir, sid: 'sw', home });
+  assert.ok(d && d.texto, JSON.stringify(d));
+  assert.match(d.texto, /faltan los revisores y el pase/);
+  assert.ok(leerCarril(state, 'sw').riesgoAlto, 'la marca queda');
 });
 
 test('T21 RepoAjeno_NoEntraAlCarrilAlGuardar', () => {

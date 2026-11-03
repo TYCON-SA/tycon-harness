@@ -1,0 +1,79 @@
+{
+  "__doc": "T32 Banco_TopeDelCaminoCorto @story-8.181 @ac-15. El tope del camino corto (AC 7-13): con un carril abierto, un commit que cambió más archivos de implementación que su cupo no guarda, y al editar el archivo que pasa el tope frena. Lo que entró por main, las pruebas y las sondas no suman. Pedir más de 8 es la firma adhoc-lane:sobre-cupo, que cubren owner-window.test.js y story-gate-cli.test.js.",
+  "hooks": [
+    {
+      "hook": "on-pre-commit.js",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-pre-commit.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "camino-corto-tope-commit-que-pasa-el-cupo-no-guarda",
+          "type": "must-block",
+          "_por_que": "tres archivos de implementación con cupo 2: no guarda, y nombra los archivos contados.",
+          "setup": [
+            "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && git update-ref refs/remotes/origin/main HEAD && git checkout -q -b arreglo",
+            "mkdir -p src && for i in 1 2 3; do echo x > src/a$i.js; done && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm tres",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"maxFiles\":2,\"files\":[],\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-tope.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-tope\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\""
+          ],
+          "stdin": { "session_id": "bench-tope", "tool_name": "Bash", "tool_input": { "command": "git commit -m 'feat: x'" } },
+          "expect": { "exit": 2, "stderr_re": ["PASÓ EL TOPE", "src/a3\\.js"] }
+        },
+        {
+          "id": "camino-corto-tope-pruebas-y-guias-no-suman",
+          "type": "must-emit",
+          "_por_que": "dos archivos de implementación con cupo 2, más pruebas y guías: pregunta como siempre, sin el tope.",
+          "setup": [
+            "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && git update-ref refs/remotes/origin/main HEAD && git checkout -q -b arreglo",
+            "mkdir -p src guides && for i in 1 2; do echo x > src/a$i.js; echo x > src/a$i.test.js; echo x > guides/g$i.md; done && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm dos",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"maxFiles\":2,\"files\":[],\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-tope.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-tope\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\""
+          ],
+          "stdin": { "session_id": "bench-tope", "tool_name": "Bash", "tool_input": { "command": "git commit -m 'feat: x'" } },
+          "expect": { "stdout_re": ["\"permissionDecision\":\"ask\""], "stdout_not_re": ["PASÓ EL TOPE"] }
+        },
+        {
+          "id": "camino-corto-tope-lo-traido-de-main-no-suma",
+          "type": "must-emit",
+          "_por_que": "la rama trajo main con tres archivos ajenos: suma sólo el propio.",
+          "setup": [
+            "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && git checkout -q -b arreglo && mkdir -p src && echo x > src/propio.js && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm propio",
+            "git checkout -q main && mkdir -p src && for i in 1 2 3; do echo x > src/ajeno$i.js; done && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm ajenos && git update-ref refs/remotes/origin/main HEAD && git checkout -q arreglo && git -c user.email=bench@example.com -c user.name=bench merge -q --no-edit main",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"maxFiles\":2,\"files\":[],\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-tope.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-tope\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\""
+          ],
+          "stdin": { "session_id": "bench-tope", "tool_name": "Bash", "tool_input": { "command": "git commit -m 'feat: x'" } },
+          "expect": { "stdout_re": ["\"permissionDecision\":\"ask\""], "stdout_not_re": ["PASÓ EL TOPE"] }
+        }
+      ]
+    },
+    {
+      "hook": "hook-pre-edit.js → on-story-gate (el tope del camino corto)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/hook-pre-edit.js",
+      "event": "PreToolUse",
+      "matcher": "Edit|Write",
+      "cases": [
+        {
+          "id": "camino-corto-tope-al-editar-frena-el-que-pasa",
+          "type": "must-block",
+          "_por_que": "con el cupo lleno de archivos de verdad, el archivo que pasa el tope no se edita, y el mensaje recomienda la historia primero.",
+          "setup": [
+            "git init -q -b main . && mkdir -p .tycon src && for i in 1 2; do echo x > src/a$i.js; done",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; R=$(pwd -P); T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"maxFiles\":2,\"files\":[\"%s/src/a1.js\",\"%s/src/a2.js\"],\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$R\" \"$R\" \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-tope.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-tope\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\""
+          ],
+          "stdin": { "session_id": "bench-tope", "tool_name": "Edit", "tool_input": { "file_path": "src/a3.js" } },
+          "expect": { "exit": 2, "stderr_re": ["PASÓ EL TOPE", "historia[\\s\\S]*click"] }
+        },
+        {
+          "id": "camino-corto-tope-al-editar-las-sondas-no-suman",
+          "type": "must-not-block",
+          "_por_que": "lo anotado llega al cupo, pero son sondas y rutas que nunca existieron: no frena.",
+          "setup": [
+            "git init -q -b main . && mkdir -p .tycon src",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"maxFiles\":2,\"files\":[\"/tmp/sonda-del-banco.js\",\"$L/p.js\"],\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-tope.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-tope\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\""
+          ],
+          "stdin": { "session_id": "bench-tope", "tool_name": "Edit", "tool_input": { "file_path": "src/a3.js" } },
+          "expect": { "exit": 0, "stderr_not_re": ["PASÓ EL TOPE"] }
+        }
+      ]
+    }
+  ]
+}
