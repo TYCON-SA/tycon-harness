@@ -11,7 +11,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const OFFICE = path.join(__dirname, '..', 'tools', 'office.js');
-const { buildOffice, page, importMap, MODULES, prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard } = require(OFFICE);
+const { buildOffice, page, importMap, MODULES, prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, projectsOfPrs } = require(OFFICE);
 
 const NOW = Date.parse('2026-10-18T14:00:00.000Z');
 const STEPS = [{ id: 'implement', name: 'Implementar', done: true }, { id: 'run-tests', name: 'Correr las pruebas', done: false }];
@@ -860,7 +860,8 @@ function drawKanban(data) {
   const el = (html.match(/const el=(\([^\n]*\});\n/) || [])[1];
   assert.ok(fn && el, 'la página trae la función y el ayudante');
   const { document, byId } = tinyDom();
-  new Function('document', 'DATA', `const el=${el};${fn};renderBoard();`)(document, data);
+  const state = (html.match(/function estadoDeHora\(i\)[^\n]*\n/) || [''])[0];
+  new Function('document', 'DATA', `const el=${el};${state}${fn};renderBoard();`)(document, data);
   return { html, fn, body: byId.boardBody, sec: byId.board };
 }
 
@@ -2462,7 +2463,8 @@ test('T229 OpenPrs_FromThePhoto: «Esperan entrar» cuenta los pedidos reales, d
   const m = toyMachine();
   const photo = (at, lecturas) => fs.writeFileSync(path.join(m.state, 'stuck-prs-photo.json'), JSON.stringify({ at: atIso(at), repos: Object.keys(lecturas), lecturas }));
   const read = () => collect({ stateDir: m.state, sessionsDir: m.sessions, home: m.root, now: atIso(NOW), siteUrl: async () => ({ code: 3, out: '' }), quietMinutes: async () => ({ code: 3, out: '' }) });
-  const pr = (number, more) => ({ number, title: `fix(algo): arreglo ${number}`, sourceBranch: `fix/${number}`, draft: false, autoComplete: false, inQueue: false, ...more });
+  const pr = (number, more) => ({ number, title: `fix(algo): arreglo ${number}`, sourceBranch: `fix/${number}`, draft: false, autoComplete: false, inQueue: false, author: 'yo', ...more });
+  fs.writeFileSync(path.join(m.state, 'recent-work.json'), JSON.stringify({ at: atIso(NOW - 60000), persona: { github: 'yo', azure: 'yo' }, repos: [], ramas: [] }));
   photo(NOW - 60000, {
     'org/pub': { ok: true, value: [pr(909, { inQueue: true }), pr(721), pr(800, { draft: true, autoComplete: true })] },
     'bizuit/proj/priv': { ok: true, value: [pr(6101, { autoComplete: true, mergeState: 'conflict' })] },
@@ -3100,6 +3102,82 @@ test('T287 InProgress_ByEndHour: lo que termina antes va arriba; lo que espera o
   assert.deepStrictEqual(order.slice(0, 2), ['Pronto', 'Tarde']);
   assert.deepStrictEqual(order.slice(2, 4).sort(), ['Espera', 'Sinhora']);
   assert.strictEqual(order[order.length - 1], 'Coord');
+});
+
+test('T289 InProgress_StateAtAGlance: cada tarjeta de «En curso» dice cómo va, de lo que calculó la oficina con su margen de 15 minutos', () => {
+  const end = (min, promised) => ({ kind: 'loose', text: 'algo', endAt: NOW + min * 60000, hourAt: NOW - 60000, promiseAt: NOW - 60000, promisedAt: NOW + promised * 60000 });
+  const { data } = buildOffice({
+    wip: wip([
+      { session: 'Enhora', extra: end(30, 30) },
+      { session: 'Margen', extra: end(40, 30) },
+      { session: 'Antes', extra: end(10, 60) },
+      { session: 'Tarde', extra: end(60, 30) },
+      { session: 'Pasada', extra: end(-10, -10) },
+      { session: 'Espera', extra: { kind: 'note', text: 'espera', waitingFor: 'un aviso', waitingSince: NOW - 60000 } },
+      { session: 'Sinhora', extra: { kind: 'loose', text: 'sin hora' } },
+    ]),
+    nowMs: NOW,
+  });
+  const html = page(data);
+  const fn = html.slice(html.indexOf('function estadoDeHora('), html.indexOf('function renderBoard('));
+  const stateOf = new Function(`${fn}; return estadoDeHora;`)();
+  const said = Object.fromEntries(col(data, 'curso').tarjetas.map((c) => [c.quien, (stateOf(c) || [null])[0]]));
+  assert.deepStrictEqual(said, { Enhora: 'En hora', Margen: 'En hora', Antes: 'En hora', Tarde: 'Pasada de la hora', Pasada: 'Pasada de la hora', Espera: 'Esperando', Sinhora: null });
+  assert.match(html, /c\.id==="curso"&&estadoDeHora\(i\)/, 'sólo en «En curso»');
+});
+
+// un correo de juguete, armado por partes: entero en el archivo lo frena el control de publicación
+const mail = (who) => [who, 'acme.com'].join('@');
+
+test('T290 OpenPrs_MineAndMyProjects: lo tuyo a la vista; lo de otros, sólo de donde trabajaste; tener el clon no cuenta', async () => {
+  const m = toyMachine();
+  const read = () => collect({ envelopes: createEnvelopes(), stateDir: m.state, sessionsDir: m.sessions, home: m.root, now: atIso(NOW), siteUrl: async () => ({ code: 3, out: '' }), quietMinutes: async () => ({ code: 3, out: '' }) });
+  const pr = (number, author, more) => ({ number, title: `fix(algo): arreglo ${number}`, sourceBranch: `fix/${number}`, draft: false, autoComplete: true, inQueue: false, author, ...more });
+  const work = (o) => fs.writeFileSync(path.join(m.state, 'recent-work.json'), JSON.stringify({ at: atIso(NOW - 60000), persona: { github: 'yo', azure: mail('yo') }, repos: [{ platform: 'github', org: 'org', repo: 'pub' }, { platform: 'azure', org: 'biz', project: 'Mora', repo: 'Back' }], ramas: ['fix/de-mi-sesion'], ...o }));
+  fs.writeFileSync(path.join(m.state, 'stuck-prs-photo.json'), JSON.stringify({ at: atIso(NOW - 60000), lecturas: {
+    'org/pub': { ok: true, value: [pr(1, 'YO'), pr(2, 'marina'), pr(3, 'beto', { sourceBranch: 'fix/de-mi-sesion' }), pr(4, 'nina', { draft: true })] },
+    'org/clon': { ok: true, value: [pr(5, 'marina'), pr(6, 'yo')] },
+  } }));
+  work({ lecturas: { 'biz/Mora/Back': { ok: true, value: [pr(7, mail('ana'), { inQueue: true }), pr(8, mail('yo'))] } } });
+  let data = await read();
+  assert.deepStrictEqual(col(data, 'entrando').tarjetas.map((t) => t.quien).sort(), ['pedido !8', 'pedido #1', 'pedido #3', 'pedido #6'], 'de la persona o de una rama de su sesión; en cualquier repo');
+  assert.deepStrictEqual(data.pedidosProyectos.map((x) => [x.proyecto, x.pedidos.map((p) => [p.numero, p.autor, p.hora])]).sort(), [
+    ['Back', [['!7', 'ana', 'en la cola']]],
+    ['pub', [['#2', 'marina', 'con auto-completar']]],
+  ], 'con su autor, sin el borrador, y nada del repo donde sólo está el clon');
+  assert.ok(!('pedidosProyectos' in await collect({ stateDir: m.state, sessionsDir: m.sessions, home: m.root, now: atIso(NOW), siteUrl: async () => ({ code: 3, out: '' }), quietMinutes: async () => ({ code: 3, out: '' }) })), 'la foto fija y el sitio no lo traen');
+  // sin saber quién es en una plataforma, no muestra los de esa plataforma y lo dice
+  work({ persona: { github: 'yo', azure: '' }, lecturas: { 'biz/Mora/Back': { ok: true, value: [pr(7, mail('ana')), pr(8, mail('yo'))] } } });
+  data = await read();
+  assert.deepStrictEqual(col(data, 'entrando').tarjetas.map((t) => t.quien).sort(), ['pedido #1', 'pedido #3', 'pedido #6']);
+  assert.deepStrictEqual(data.pedidosProyectos.map((x) => x.proyecto), ['pub']);
+  assert.match(col(data, 'entrando').nota, /No muestro pedidos de Back: no pude saber quién sos en esta máquina\.$/);
+  // sin la medición, o muy vieja, nada
+  fs.rmSync(path.join(m.state, 'recent-work.json'));
+  data = await read();
+  assert.deepStrictEqual(col(data, 'entrando').tarjetas, []);
+  assert.deepStrictEqual(data.pedidosProyectos, []);
+  assert.match(col(data, 'entrando').nota, /No muestro pedidos: no pude saber quién sos en esta máquina\.$/);
+  work({ at: atIso(NOW - 25 * 3600000) });
+  assert.deepStrictEqual(col(await read(), 'entrando').tarjetas, []);
+});
+
+test('T291 MyProjects_ByProduct: si la organización declara el producto, agrupa por producto; si no, por repo', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'office-prod-'));
+  const file = path.join(dir, 'lista.json');
+  fs.writeFileSync(file, JSON.stringify({ grupos: { backend: [{ producto: 'Mora', ado: 'Mi%20Proy/Back' }], forms: [{ producto: 'Mora', ado: 'Mi%20Proy/Forms' }] } }));
+  const p = (repo, number) => ({ repo, repoName: repo.split('/').pop(), mark: '!', number, title: 't', autor: 'a', inQueue: true });
+  const others = [p('biz/Mi Proy/Forms', 1), p('org/suelto', 2), p('biz/Mi%20Proy/Back', 3)];
+  assert.deepStrictEqual(projectsOfPrs(others, file).map((x) => [x.proyecto, x.pedidos.length]), [['Mora', 2], ['suelto', 1]]);
+  assert.deepStrictEqual(projectsOfPrs(others, path.join(dir, 'no-esta.json')).map((x) => x.proyecto).sort(), ['Back', 'Forms', 'suelto']);
+});
+
+test('T292 MyProjects_PageFolds: cerrado por defecto y por proyecto; con uno solo, sin el paso del medio; sigue abierto al redibujar', () => {
+  const html = page({ agents: [], items: [], kanban: null, meta: null });
+  assert.match(html, /c\.id==="entrando"&&\(DATA\.pedidosProyectos\|\|\[\]\)\.length\)col\.appendChild\(deTusProyectos/);
+  assert.match(html, /uno\?"De tu proyecto · ":"De tus proyectos · "/);
+  assert.match(html, /d\.open=ABIERTOS\.has\(clave\)/, 'una foto nueva no lo cierra');
+  assert.match(html, /\[p\.autor,p\.numero,p\.hora\]/, 'dice el autor');
 });
 
 test('T288 Conversation_ButtonAtTheBottom: el botón va abajo de cada tarjeta, alineado entre las de la misma fila', () => {
