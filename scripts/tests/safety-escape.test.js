@@ -1839,6 +1839,30 @@ test('T28 FrenoDeSeguridad_RenglonForjado_NoApruebaNada @story-8.139 @ac-28 — 
   }
 });
 
+// FrenoDeSeguridad_CadaGuionDeFirma_ConsultaLaVentana
+// 🔴 Falla con: un guion del catálogo que el filtro previo del freno no nombra. El freno no consulta la ventana, nunca hay
+//    cuadro para aprobar, y el guion niega con «no hay un pedido vigente», escriba como escriba el comando.
+test('FrenoDeSeguridad_CadaGuionDeFirma_ConsultaLaVentana — cada guion del catálogo llega a la ventana, y leerlo no pide firma', () => {
+  const { SIGNATURES } = require(path.join(RAIZ, 'scripts', 'lib', 'signatures.js'));
+  const LLAMADOS = {
+    'marker.js': 'waive-critical --rule SEC-C1 --reason "lo cubre otra capa"',
+    'pipeline.js': 'smart-reloop --iter 3 --extra-round',
+    'e2e-setup.js': 'prepare --repo /r --story s.md',
+    'run-base-controls.sh': 'approve',
+    'delegated-signing.js': 'confirm-designation',
+  };
+  const delCatalogo = [...new Set(SIGNATURES.filter((s) => s.kind === 'guion').map((s) => s.command.split(' ')[0]))];
+  assert.deepStrictEqual(Object.keys(LLAMADOS).sort(), delCatalogo.sort(), 'un guion de firma nuevo tiene que estar en esta tabla');
+  for (const [guion, llamado] of Object.entries(LLAMADOS)) {
+    const programa = guion.endsWith('.sh') ? 'bash' : 'node';
+    const r = freno(`${programa} /r/scripts/${guion} ${llamado}`);
+    assert.notStrictEqual(veredicto(r), 'allow', `${guion}: el freno no consultó la ventana`);
+  }
+  for (const leer of ['grep -n confirm-designation /r/scripts/delegated-signing.js', 'sed -n 1,3p /r/scripts/delegated-signing.js']) {
+    assert.strictEqual(veredicto(freno(leer)), 'allow', leer);
+  }
+});
+
 // FrenoDeSeguridad_SinEsperaNiLecturaDeConversacion
 // 🔴 Falla con: un freno que vuelve a abrir la conversación para decidir una firma: con la ruta en una tubería sin quien
 //    escriba se queda colgado, y con la conversación ausente decide distinto que con ella.
