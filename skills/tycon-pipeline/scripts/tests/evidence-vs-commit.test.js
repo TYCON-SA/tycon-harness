@@ -474,6 +474,28 @@ test('T14 Vigente_ArchivoBorrado_ComoHoy @story-8.186 @ac-12', () => {
   assert.equal(m.perAc[1].verdict, 'RUNTIME', m.warnings.join('\n'));
 });
 
+// ---------------------------------------------------------------- la lista con la ruta entre comillas
+
+const HISTORIA_CON_COMILLAS = HISTORIA_DOS.replace('  - src/Feature.cs', '  - "src/Feature.cs"');
+
+test('T15 Vigencia_ComillasEnRepoReal_CambioDeRamaSigueContando @story-8.191 @ac-13', () => {
+  const f = labMatriz({ historia: HISTORIA_CON_COMILLAS, enOtroCommit: true, armarEvidencia: ({ dod, gatesLog }) => gate(dod, gatesLog, HACE_DIEZ_MIN) });
+  irYVolverDeRama(f.repo, 'src/Feature.cs');
+  assert.ok(fs.statSync(f.archivo).mtimeMs > HACE_DIEZ_MIN, 'el cambio de rama tiene que reescribir la fecha');
+  const r = calcular(f);
+  assert.ok(r.codeMtime > 0, 'la matriz tiene que ver el archivo');
+  assert.equal(r.perAc[1].verdict, 'RUNTIME', r.warnings.join('\n'));
+});
+
+test('T16 Vigencia_ComillasEnRepoReal_CambioDeArchivo_NoCuenta @story-8.191 @ac-1 @ac-13', () => {
+  const f = labMatriz({ historia: HISTORIA_CON_COMILLAS, enOtroCommit: true, armarEvidencia: ({ dod, gatesLog }) => gate(dod, gatesLog, HACE_DIEZ_MIN) });
+  fs.appendFileSync(f.archivo, '// cambio de verdad\n');
+  const hash = commit(f.repo, 'cambio de verdad');
+  const r = calcular(f);
+  assert.notEqual(r.perAc[1].verdict, 'RUNTIME');
+  assert.ok(r.warnings.some((w) => w.includes('src/Feature.cs') && w.includes(hash)), r.warnings.join('\n'));
+});
+
 // ---------------------------------------------------------------- no-regresión
 
 test('T15 Matriz_SinEspejo_ArchivoIgual_NoCuenta @story-8.186 @ac-13', () => {
