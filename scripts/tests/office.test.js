@@ -2337,22 +2337,26 @@ test('T220 Step_RunTests_Codex_NotKnown: con Codex, no encontrarlas no dice que 
 // ── Las vistas del trabajo, «A medio camino» de verdad y los números que cierran ─────────────────────────────────────
 
 // El panel que se abre al tocar la pared, fuera del navegador.
-function openWallPanel(data) {
-  const fn = (page(data).match(/function abrirTablero\(\)\{[\s\S]*?\n\n/) || [])[0];
+const wallOrderCode = (html) => { const fn = (html.match(/function paredEnOrden\(K\)\{.*\}\n/) || [])[0]; assert.ok(fn, 'la página trae el orden del panel'); return fn; };
+function openWallPanel(data, abiertos) {
+  const html = page(data);
+  const fn = (html.match(/function abrirTablero\(\)\{[\s\S]*?\n\n/) || [])[0];
   assert.ok(fn, 'la página trae el panel');
   const { document } = tinyDom();
   const panel = document.createElement('aside');
   panel.classList = { add() {}, remove() {} };
-  new Function('document', 'panel', 'T', 'KCOL', 'HALF', 'stampOf', 'desks', 'pintarTag', `let sel=null;${fn};abrirTablero();`)(document, panel, { kanban: () => data.kanban, meta: () => data.meta }, {}, '#f00', () => 'sello', [], () => {});
+  if (abiertos) panel.abiertos = new Set(abiertos);
+  new Function('document', 'panel', 'T', 'KCOL', 'HALF', 'stampOf', 'desks', 'pintarTag', `let sel=null;${wallOrderCode(html)}${fn};abrirTablero();`)(document, panel, { kanban: () => data.kanban, meta: () => data.meta }, {}, '#f00', () => 'sello', [], () => {});
   return panel;
 }
 // Lo que dibuja el panel de la pared: cada texto, en orden.
 function wallTexts(data) {
-  const fn = (page(data).match(/function drawPanel\(\)\{[\s\S]*?texPanel\.needsUpdate=true;\}/) || [])[0];
+  const html = page(data);
+  const fn = (html.match(/function drawPanel\(\)\{[\s\S]*?texPanel\.needsUpdate=true;\}/) || [])[0];
   assert.ok(fn, 'la página trae el dibujo de la pared');
   const said = [];
   const g = new Proxy({}, { get: (_, k) => (k === 'fillText' ? (t) => said.push(String(t)) : () => {}), set: () => true });
-  new Function('texPanel', 'T', 'KCOL', 'HALF', 'FONT', 'stampOf', `${fn};drawPanel();`)({ userData: { g } }, { kanban: () => data.kanban, meta: () => data.meta }, {}, '#f00', 'x', () => 'sello');
+  new Function('texPanel', 'T', 'KCOL', 'HALF', 'FONT', 'stampOf', `${wallOrderCode(html)}${fn};drawPanel();`)({ userData: { g } }, { kanban: () => data.kanban, meta: () => data.meta }, {}, '#f00', 'x', () => 'sello');
   return said;
 }
 // Datos con de todo: sesiones, pedidos reales, una fila del tablero y lo que quedó en una carpeta.
@@ -3555,4 +3559,32 @@ test('T307 PerSession_Page: la ventana usa la conversación por sesión y la not
   assert.match(html, /\["Con las sesiones",charlaPorSesion\(nombre,d\.conSesiones\|\|\[\],/);
   assert.match(html, /los últimos 10 con cada sesión, en orden; primero la que habló último\./);
   assert.match(html, /@media \(max-width:600px\)\{\.ventana \.quienes\{flex-wrap:nowrap;overflow-x:auto/, 'en un teléfono, una sola fila');
+});
+
+const WALL_ORDER = ['Tu firma', 'En curso', 'Esperan entrar', 'A medio camino', 'Sin sesión', 'Terminados'];
+const toyCards = (n) => Array.from({ length: n }, (_, i) => ({ titulo: `Trabajo ${i}`, quien: 'Tero' }));
+const toyKanban = (over = {}) => ({ columnas: [['sinEmpezar', 'Sin sesión'], ['curso', 'En curso'], ['firma', 'Tu firma'], ['entrando', 'Esperan entrar'], ['hechos', 'Terminados']].map(([id, nombre]) => ({ id, nombre, tarjetas: toyCards(over[id] || 0) })), medioCamino: toyCards(over.medio || 0).map((c) => ({ titulo: c.titulo, accion: 'Abrí un pedido' })) });
+
+test('T308 Wall_Order: el panel y su detalle listan primero lo que se está trabajando, y «Te toca» va primero', () => {
+  const data = { agents: [], items: [], kanban: toyKanban({ sinEmpezar: 1, curso: 1, firma: 1, entrando: 1, hechos: 1, medio: 1 }), meta: { actualizado: '10:00', teToca: ['Firmar'] } };
+  const wall = wallTexts(data);
+  assert.deepStrictEqual(wall.filter((t) => WALL_ORDER.includes(t)), WALL_ORDER);
+  assert.ok(wall.indexOf('Te toca: 1') < wall.indexOf('Tu firma'), 'el dibujo dice «Te toca» antes que las cuentas');
+  const panel = openWallPanel(data);
+  assert.deepStrictEqual(all(panel, (n) => n.className === 'cnt').map((c) => textOf(c.children[1])), WALL_ORDER);
+  const heads = panel.children.filter((k) => k.tag === 'h4').map(textOf);
+  assert.deepStrictEqual(heads, ['Te toca', ...WALL_ORDER.map((n) => `${n} · 1`)]);
+});
+
+test('T309 Wall_Folds: Sin sesión y Terminados se pliegan con más de 5; lo que se trabaja nunca, y lo abierto sigue abierto', () => {
+  const data = { agents: [], items: [], kanban: toyKanban({ sinEmpezar: 12, curso: 7, hechos: 5, medio: 6 }), meta: { actualizado: '10:00', teToca: [] } };
+  const panel = openWallPanel(data);
+  const after = (name) => panel.children[panel.children.findIndex((k) => k.tag === 'h4' && textOf(k).startsWith(name)) + 1];
+  assert.strictEqual(after('Sin sesión').className, 'verTodos');
+  assert.strictEqual(textOf(after('Sin sesión')), 'Ver los 12');
+  assert.strictEqual(after('En curso').children.length, 7, 'lo que se trabaja, siempre a la vista');
+  assert.strictEqual(after('A medio camino').children.length, 6);
+  assert.strictEqual(after('Terminados').children.length, 5, 'con 5 todavía no se pliega');
+  const again = openWallPanel(data, ['sinEmpezar']);
+  assert.strictEqual(again.children[again.children.findIndex((k) => k.tag === 'h4' && textOf(k).startsWith('Sin sesión')) + 1].children.length, 12, 'abierta, sigue abierta con la foto nueva');
 });

@@ -752,6 +752,15 @@ function sameWorkScore(a, b) {
   return score >= SAME_WORK_SHARE ? score : 0;
 }
 
+// El pedido de una tarjeta, para su detalle. Con `org/repo` es de GitHub y con `org/proyecto/repo`, de Azure DevOps; con sólo el
+// nombre no se sabe dónde está, y dice su número sin enlace.
+function cardPr(repo, numero) {
+  const parts = String(repo || '').split('/').map(encodeURIComponent);
+  if (parts.length === 2) return { numero, url: `https://github.com/${parts.join('/')}/pull/${numero}` };
+  if (parts.length === 3) return { numero, url: `https://dev.azure.com/${parts[0]}/${parts[1]}/_git/${parts[2]}/pullrequest/${numero}` };
+  return { numero };
+}
+
 /**
  * El panel de pendientes: cinco columnas siempre en el mismo orden. En curso, Tu firma y Esperan entrar salen del estado real (una tarjeta
  * por cada sesión con trabajo, lo que quedó de las sesiones cerradas y las firmas del registro) y el tablero de la
@@ -808,7 +817,7 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
     if (!f.pedido && f.quien && ['firma', 'curso', 'entrando'].includes(f.columna) && people.has(firstWord(f.quien))) continue;
     // la hora de una fila también puede haber pasado
     const late = Number.isFinite(f.finAt) && f.finAt < nowMs;
-    const card = { titulo: f.titulo, quien: f.quien, hora: late ? OVERDUE : f.fin, ...(late ? { cls: 'late' } : {}), ...(f.nota ? { nota: f.nota } : {}), ...(f.marca ? { marca: f.marca } : {}), ...(f.grupo ? { grupo: f.grupo } : {}) };
+    const card = { titulo: f.titulo, quien: f.quien, hora: late ? OVERDUE : f.fin, ...(late ? { cls: 'late' } : {}), ...(f.nota ? { nota: f.nota } : {}), ...(f.marca ? { marca: f.marca } : {}), ...(f.grupo ? { grupo: f.grupo } : {}), ...(f.pedido ? { pedido: cardPr(f.pedido.repo, f.pedido.numero) } : {}) };
     let id = f.columna;
     const pr = f.pedido ? (prAnswers.get(`${f.pedido.repo}#${f.pedido.numero}`) || {}).pr : null;
     if (id === 'hechos') card.terminadoMs = f.realAt;
@@ -850,7 +859,7 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
   const onBoard = new Set(((board && board.filas) || []).filter((f) => f.pedido).map((f) => `${f.pedido.repo}#${f.pedido.numero}`.toLowerCase()));
   for (const p of openPrs) {
     if (!p.waiting || p.ajeno || onBoard.has(`${p.repoName}#${p.number}`.toLowerCase())) continue;
-    col('entrando').tarjetas.push({ titulo: p.title, quien: `pedido ${p.mark}${p.number}`, hora: p.inQueue ? 'en la cola' : 'con auto-completar', ...(p.conflict ? { motivo: 'choca con main' } : {}) });
+    col('entrando').tarjetas.push({ titulo: p.title, quien: `pedido ${p.mark}${p.number}`, hora: p.inQueue ? 'en la cola' : 'con auto-completar', pedido: cardPr(p.repo, p.number), ...(p.conflict ? { motivo: 'choca con main' } : {}) });
   }
   if (openPrsNote) col('entrando').nota = openPrsNote;
   const rank = (c) => inProgress.get(c) || { tier: 1 };
@@ -1245,7 +1254,7 @@ function readOpenPrs(sdir, nowMs) {
       for (const p of r.value) {
         if (!p || !Number.isInteger(p.number)) continue;
         const github = /^[^/]+\/[^/]+$/.test(repo);
-        prs.set(`${repo}#${p.number}`.toLowerCase(), { ajeno, repoName, number: p.number, mark: github ? '#' : '!', branch: p.sourceBranch || null, title: plain(String(p.title || '').replace(PR_KIND_PREFIX, '')) || 'Un pedido sin título', inQueue: p.inQueue === true, conflict: p.mergeState === 'conflict' || p.mergeState === 'dirty', waiting: !p.draft && (p.inQueue === true || p.autoComplete === true) });
+        prs.set(`${repo}#${p.number}`.toLowerCase(), { ajeno, repo, repoName, number: p.number, mark: github ? '#' : '!', branch: p.sourceBranch || null, title: plain(String(p.title || '').replace(PR_KIND_PREFIX, '')) || 'Un pedido sin título', inQueue: p.inQueue === true, conflict: p.mergeState === 'conflict' || p.mergeState === 'dirty', waiting: !p.draft && (p.inQueue === true || p.autoComplete === true) });
       }
     }
   };
@@ -1845,4 +1854,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, codexAgentsUnder, claudeAgentsActive,buildTables, writeTables, readTranscripts, readLastWrites, MODULES };
+module.exports = { prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, cardPr, codexAgentsUnder, claudeAgentsActive,buildTables, writeTables, readTranscripts, readLastWrites, MODULES };
