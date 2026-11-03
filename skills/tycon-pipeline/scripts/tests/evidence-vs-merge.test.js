@@ -982,3 +982,41 @@ test('T56 Ancla_ArchivoBorradoDeVerdad_HuellaNull_EnlaceRoto_SinAncla @story-8.1
   const [roto] = require(path.join(SCRIPTS, 'lib', 'companion-repos.js')).anclasDeLaEvidencia(g.esp, '5.28');
   assert.ok(roto.sinAncla && !roto.commit, JSON.stringify(roto));
 });
+
+test('T57 Gate_SinCarpetaDelEstado_SaleSinAncla @story-8.192 @ac-18 @ac-43', () => {
+  const f = labMatriz();
+  const front = path.join(f.ws, 'front');
+  const bin = path.join(f.ws, 'bin');
+  fs.mkdirSync(front);
+  fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, 'npx'), '#!/bin/sh\necho \'{}\'\n', { mode: 0o755 });
+  // un node que no contesta la carpeta del estado y sí todo lo demás
+  const real = spawnSync('sh', ['-c', 'command -v node'], { encoding: 'utf8' }).stdout.trim();
+  fs.writeFileSync(path.join(bin, 'node'), `#!/bin/sh\ncase "$*" in *stateDir*) exit 1;; esac\nexec "${real}" "$@"\n`, { mode: 0o755 });
+  const home = path.join(f.ws, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  const r = spawnSync('bash', [GATE, front, '5.28', f.dod, 'story.spec.ts'],
+    { cwd: f.esp, encoding: 'utf8', env: { ...entornoGit(), HOME: home, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
+  const g = fs.readdirSync(f.dod).find((x) => /e2e-gate-.*\.md$/.test(x));
+  const md = fs.readFileSync(path.join(f.dod, g), 'utf8');
+  assert.match(r.stderr, /el gate queda sin ancla/, r.stderr);
+  assert.doesNotMatch(md, /- hermanos:/, md);
+});
+
+test('T58 Gate_EscribeElAnclaDondeLaLeeLaMatriz @story-8.192 @ac-18', () => {
+  const f = labMatriz();
+  const front = path.join(f.ws, 'front');
+  const bin = path.join(f.ws, 'bin');
+  fs.mkdirSync(front);
+  fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, 'npx'), '#!/bin/sh\necho \'{}\'\n', { mode: 0o755 });
+  const home = path.join(f.ws, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  const env = { ...entornoGit(), HOME: home, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+  spawnSync('bash', [GATE, front, '5.28', f.dod, 'story.spec.ts'], { cwd: f.esp, encoding: 'utf8', env });
+  // la carpeta que usa la matriz para leer el espejo (defaultGatesLog), preguntada con ese mismo HOME
+  const lee = spawnSync(process.execPath, ['-e', `process.stdout.write(require(${JSON.stringify(path.join(SCRIPTS, 'lib', 'state-dir.js'))}).stateDir(require('os').homedir()))`],
+    { encoding: 'utf8', env }).stdout;
+  const espejo = fs.readFileSync(path.join(lee, 'gates.log'), 'utf8');
+  assert.match(espejo, /"type":"e2e-gate-anchor".*"story":"5\.28"/, espejo);
+});

@@ -78,8 +78,12 @@ HERMANOS_JSON="$(node "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/compani
 if [ -n "$HERMANOS_JSON" ] && [ "$HERMANOS_JSON" != "[]" ]; then
   # el espejo vive donde lo lee la matriz: la carpeta del estado la dice lib/state-dir.js
   ESTADO_DIR="$(node -e 'process.stdout.write(require(process.argv[1]).stateDir())' "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/state-dir.js")"
-  mkdir -p "$ESTADO_DIR"
-  printf '{"type":"e2e-gate-anchor","ts":"%s","story":"%s","hermanos":%s}\n' "$TS" "$STORY_ID" "$HERMANOS_JSON" >> "$ESTADO_DIR/gates.log"
+  # sin el espejo, el ancla del gate no vale: el gate sale sin ancla y se lee como antes, nunca con una a medias
+  if [ -z "$ESTADO_DIR" ] || ! mkdir -p "$ESTADO_DIR" \
+    || ! printf '{"type":"e2e-gate-anchor","ts":"%s","story":"%s","hermanos":%s}\n' "$TS" "$STORY_ID" "$HERMANOS_JSON" >> "$ESTADO_DIR/gates.log"; then
+    echo "⚠️  e2e-gate: no pude escribir el ancla en el espejo; el gate queda sin ancla" >&2
+    HERMANOS_JSON=""
+  fi
 else
   HERMANOS_JSON=""
 fi
