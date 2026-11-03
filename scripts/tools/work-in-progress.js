@@ -313,7 +313,7 @@ function sessionsBySid(dir, unreadable, projectsDir) {
     const cwd = typeof s.cwd === 'string' ? s.cwd : null;
     // el nombre es el del archivo de sesión, el que usan los mensajes; sin él, el último /rename de la conversación
     const name = (typeof s.name === 'string' && s.name.trim()) ? cut(oneLine(s.name), NAME_MAX) : sessionTitle(projectsDir, cwd, s.sessionId, unreadable);
-    const cur = { name: name || null, alive, busy: s.status === 'busy' || s.status === 'shell', status: typeof s.status === 'string' ? s.status : null, statusAt: Number(s.statusUpdatedAt) || null, nameSource: typeof s.nameSource === 'string' ? s.nameSource : null, kind: typeof s.kind === 'string' ? s.kind : null, jobId: typeof s.jobId === 'string' ? s.jobId : null, startedAt: Number(s.startedAt) || null, cwd, last: dates.length ? Math.max(...dates) : null, internal: isInternalAgent(cwd, s.nameSource) };
+    const cur = { name: name || null, pid, alive, busy: s.status === 'busy' || s.status === 'shell', status: typeof s.status === 'string' ? s.status : null, statusAt: Number(s.statusUpdatedAt) || null, nameSource: typeof s.nameSource === 'string' ? s.nameSource : null, kind: typeof s.kind === 'string' ? s.kind : null, jobId: typeof s.jobId === 'string' ? s.jobId : null, startedAt: Number(s.startedAt) || null, cwd, last: dates.length ? Math.max(...dates) : null, internal: isInternalAgent(cwd, s.nameSource) };
     // Dos archivos con la misma sesión: manda el vivo, y la actividad es la más nueva de los dos.
     const prev = out.get(s.sessionId);
     if (!prev || (!prev.alive && alive)) out.set(s.sessionId, prev && prev.last > nn(cur.last, -1) ? { ...cur, last: prev.last } : cur);
@@ -448,6 +448,9 @@ const STALLED = 'Pedidos sin encolar';
 const SAVE_WAITS = 'Terminó: espera el ok para guardar';
 const SAVE_OK = 'Terminó: ya tiene el ok para guardar';
 const WAITING_STATUS = /wait|input|permission/i;
+// cómo anota una sesión que abrió una pregunta (scripts/hooks/session-state.js), y cómo se dice
+const ANSWER_DIALOG = 'una respuesta';
+const ANSWER_WAIT = 'tu respuesta en su pantalla';
 const TESTING_STEPS = new Set(['run-tests', 'reviewers', 'adversarial-pass', 'live-check']);
 
 /**
@@ -457,8 +460,10 @@ const TESTING_STEPS = new Set(['run-tests', 'reviewers', 'adversarial-pass', 'li
  * legible, sale por su paso y no cuenta como parada.
  */
 function realState(x, d, f) {
-  if (f && f.waitingForOwner) return { estado: 'firma', espera: f.waitingFor || 'algo de vos' };
-  if (d && d.status && WAITING_STATUS.test(d.status)) return { estado: 'firma', espera: 'tu respuesta en su pantalla' };
+  // un cuadro abierto: un permiso o un plan piden tu firma, y una pregunta sólo tu respuesta
+  const plan = x.kind === 'pipeline' && x.current === 'approve-plan';
+  if (f && f.waitingForOwner) return f.waitingFor === ANSWER_DIALOG && !plan ? { estado: 'pregunta', espera: ANSWER_WAIT } : { estado: 'firma', espera: plan ? 'que apruebes el plan' : f.waitingFor || 'algo de vos' };
+  if (d && d.status && WAITING_STATUS.test(d.status)) return /permission/i.test(d.status) || plan ? { estado: 'firma', espera: plan ? 'que apruebes el plan' : ANSWER_WAIT } : { estado: 'pregunta', espera: ANSWER_WAIT };
   const codex = Boolean(f && f.tool === 'codex');
   const status = d && d.status;
   const busy = codex ? (typeof f.busy === 'boolean' ? f.busy : null) : status === 'busy' || status === 'shell' ? true : status === 'idle' ? false : null;
@@ -1540,7 +1545,7 @@ function buildWip(opts = {}) {
   // la libre que espera algo: /office la pone en «Tu firma» y /wip lo dice igual
   const freeNotes = new Map(free.map((name, i) => {
     const r = realState({}, { status: freeStatus[i] }, files.get(String(freeSids[i])));
-    return [name, r.estado === 'firma' ? `Tu firma: ${r.espera}` : ''];
+    return [name, r.estado === 'firma' ? `Tu firma: ${r.espera}` : r.estado === 'pregunta' ? `Te pregunta: ${r.espera}` : ''];
   }));
   // los repos de las corridas con fila: /office los reconoce al preguntar por un pedido que nombra el tablero
   const runRepos = [...new Set([...pipeRows.values()].map(({ m }) => m.repoPath).filter((p) => typeof p === 'string' && path.isAbsolute(p)))];
@@ -1561,6 +1566,7 @@ function sessionFileMap(sdir, unreadable) {
 // dice también en una fila marcada: la firma le gana a la marca.
 function stateNote(x, d, f) {
   const r = realState(x, d, f);
+  if (r.estado === 'pregunta') return `Te pregunta: ${r.espera}`;
   if (r.estado === 'firma') return x.kind === 'finished' && r.espera === 'el ok para guardar' && !x.mark ? '' : `Tu firma: ${r.espera}`;
   return x.mark || x.kind === 'finished' ? '' : r.parada || '';
 }

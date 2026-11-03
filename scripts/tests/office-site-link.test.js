@@ -267,7 +267,7 @@ function richFoto() {
   const step = { id: 'run-tests', name: 'Correr pruebas', done: false };
   const wip = {
     rows: ['Alfa', 'Beta', 'Gama', 'Delta', 'Epsilon', 'Zeta', 'Eta', 'Kappa'].map((name) => row(name)),
-    details: [{ sid: 's1', status: 'busy' }, { sid: 's2', status: 'busy' }, { sid: 's3', status: 'busy' }, { sid: 's4', status: 'waiting' }, { sid: 's5', status: 'idle', statusAt: nowMs - 60000 }, { sid: 's6', status: 'busy' }, { sid: 's7', status: 'busy' }, { sid: 's8', status: 'busy' }],
+    details: [{ sid: 's1', status: 'busy' }, { sid: 's2', status: 'busy' }, { sid: 's3', status: 'busy' }, { sid: 's4', status: 'waiting_for_permission' }, { sid: 's5', status: 'idle', statusAt: nowMs - 60000 }, { sid: 's6', status: 'busy' }, { sid: 's7', status: 'busy' }, { sid: 's8', status: 'busy' }],
     extra: [
       { kind: 'pipeline', title: '7.1 · La historia', batch: 'A-la-tanda', storyId: '7.1', steps: [step], current: 'run-tests', progress: 40, endAt: nowMs - 60000, promisedAt: nowMs - 120000, late: true, meanwhile: 'Revisa otra cosa' },
       { kind: 'entering', title: '7.2 · Otra', storyId: '7.2', endAt: nowMs - 60000 },
@@ -296,6 +296,7 @@ function richFoto() {
   // lo que collect() le agrega a la foto de buildOffice
   data.tablas = buildTables({ board, boardWrittenAt: nowMs - 60000, sessionTables: [], kanban: data.kanban, nowMs });
   data.tablero = { actualizado: board.actualizado, resumen: board.resumen, teToca: board.teToca };
+  data.kanban.columnas[0].tarjetas[0] = { ...data.kanban.columnas[0].tarjetas[0], otro: true };
   data.kanban.escrito = 'Tablero escrito a las 11:59';
   data.meta.pedidosLeidos = '11:59';
   data.meta.sitio = 'https://acme.example';
@@ -422,7 +423,7 @@ test('T1 Foto_LaMismaQueLaOficinaLocal: viaja sólo lo que lee la página; la li
   assert.ok(readBy('DATA')('sobres') && !('sobres' in FIELDS), 'los sobres no están en la lista');
   assert.ok(!('sobres' in pick({ sobres: [{ de: 'Alfa', a: 'Beta', texto: 'un mensaje' }] }, '/home/nadie')));
   assert.strictEqual(typeof sentOf('Alfa').comoTrabaja, 'string');
-  assert.deepStrictEqual(sent.tablero, { resumen: 'Resumen', teToca: ['Algo'] });
+  assert.deepStrictEqual(sent.tablero, { resumen: 'Resumen' });
   assert.strictEqual(sent.unreadable[0], 'algo que no se leyó');
   // un valor que no tiene la forma de su campo tampoco viaja
   assert.strictEqual(pick({ agents: [{ nombre: 'x', estado: 'rm -rf', avance: 'mucho', estimadaIso: 'mañana', fin: 'una hora' }] }, '/home/nadie').agents[0].estado, undefined);
@@ -1060,7 +1061,7 @@ test('T40 Eventos_LlegaEnDosSegundos_SinProcesoNoFrena: el aviso llega; sin proc
   await sleep(700);
   const waits = 'tu respuesta en su pantalla';
   assert.ok(!says(site, waits), 'el estado todavía no está escrito');
-  fs.writeFileSync(path.join(m.sessions, 's1.json'), JSON.stringify({ pid: process.pid, sessionId: 's1', name: 'Alfa', nameSource: 'user', status: 'waiting', statusUpdatedAt: 2000 }));
+  fs.writeFileSync(path.join(m.sessions, 's1.json'), JSON.stringify({ pid: process.pid, sessionId: 's1', name: 'Alfa', nameSource: 'user', status: 'waiting_for_permission', statusUpdatedAt: 2000 }));
   assert.ok(await until(() => says(page, waits) && says(site, waits), 3000), 'la espera llegó');
   assert.ok(says(site, waits).at - askedAt < 2000, 'en menos de 2 s');
   // quien espera sigue diciendo por qué paso va; lo que espera va aparte, y la tarjeta del sitio lo dice igual que la local
