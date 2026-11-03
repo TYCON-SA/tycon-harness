@@ -9,7 +9,7 @@ and the words it uses.
 
 https://github.com/user-attachments/assets/3fbe4538-6b96-4b56-b2ed-92d36be1c6f8
 
-**The organization site, with sample data and no account needed:** [https://is.gd/tyconharnessdemo](https://is.gd/tyconharnessdemo)
+**The organization site, with sample data and no account needed:** [open the demo](https://is.gd/tyconharnessdemo)
 
 **A development cycle for coding agents: complete, consistent, controlled and adaptable.**
 
@@ -184,8 +184,8 @@ https://github.com/user-attachments/assets/75368083-6788-405d-8cde-8bc3d8557e51
 Vitest, Jest, Node (`node --test`), pytest, Go, Maven, Gradle, Karma and Playwright. With another tool, that step does not recognize
 your tests yet until your team declares it in its configuration ("Your technology", on the site).
 
-Before you install you need your coding agent (Claude Code or Codex) signed in, and Node 22 or later. The full list
-is in [What you need](#what-you-need).
+Before you install you need your coding agent (Claude Code or Codex) signed in, and Node 22 or later. Full list:
+[What you need](#what-you-need).
 
 For your agent to follow the cycle, install the harness on your machine ([▶ video](https://github.com/user-attachments/assets/74a74b69-856e-4367-95bb-52159325c8af)). Open the terminal (on Windows, PowerShell 7)
 and type:
@@ -210,10 +210,10 @@ The full install adds the guards in the repos that work with the harness and cha
 
 ## Your first story
 
-A story is your request in writing, with its criteria and its tests: the agent follows it and the reviewers check it. Make the first one small, like a new function in one file: one like that takes about 10 minutes. · [▶ video](https://github.com/user-attachments/assets/e7504a1b-a65e-4956-919f-25753cf64e18)
+A story is your request in writing, with its criteria and its tests: the agent follows it and the reviewers check it. Make the first one small, like a new function in one file: about 10 minutes. · [▶ video](https://github.com/user-attachments/assets/e7504a1b-a65e-4956-919f-25753cf64e18)
 
 1. **Open your coding agent in your repo's folder**: that is where it writes the story, creates the branch and saves the changes. If it was open from before you installed, close it and open it again: the harness's rules load when it starts.
-2. **Say you trust the folder**: the first time you open your agent in that folder, it asks whether you trust it: say yes.
+2. **Say you trust the folder**: the first time you open your agent there, it asks whether you trust it: say yes.
 3. **If the idea is big, the stories come first.** Your agent takes it through stages —understanding the problem, the PRD, the architecture, the epics— until it leaves the stories; you review each stage, and each artifact is committed to the repo, next to the code. A bounded idea does not need it: ask for the story directly. · [▶ video](https://github.com/user-attachments/assets/24124d87-ebca-4069-8d82-d0b498f09518)
 4. **Ask for the story in your own words**, so the change is written down before any code: "create a story to add a date filter".
 5. **Review the story.** The agent builds it from your request, answering three plain questions (what it must do, how you can tell it works, and what it must not touch), and marks what it assumed. It shows it to you and writes it on your "yes". If your repo already has a `_bmad/` folder, it builds it with what is there.
@@ -282,9 +282,9 @@ An example: at ACME, Pedro is the admin and Juan writes code.
    empty repo, with access only for the team, and if he says yes it pushes it with his git. The operations repo is created
    separately (below, "What runs at night").
 2. Everything that is customized —where each repo lives, who gets the notices, the thresholds— is configured from the
-   **Configuration** tab of the [team site](guides/organization-site.en.md) (admins only): it validates with the
-   harness's own readers and proposes every change as a pull request, never a direct write to `main`. While ACME has no
-   site, each file is changed with a pull request to its repo. The harness works fully that way: what each case needs and
+   **Configuration** tab of the [team site](guides/organization-site.en.md) (admins only): it validates and proposes
+   every change as a pull request. While ACME has no
+   site, each file is changed with a pull request to its repo. What each case needs and
    where each setting lives, in [With or without the site](getting-started/reference.md#with-or-without-the-site).
 3. Juan installs with npx and the team repo: `npx @tyconsa/harness@latest --team acme/harness-team-profile` if it is on
    GitHub, or `npx @tyconsa/harness@latest --team https://dev.azure.com/acme/<project>/_git/harness-team-profile` if it
@@ -307,14 +307,10 @@ How the harness extends for your organization, with a worked example, in an
 
 - **It watches itself.** A test bench checks, on every change to the harness, that each check still blocks what it
   says it blocks. If you turn it on, it also watches your sessions and proposes new rules for you to approve.
-- **Checks born from incidents.** With the full install, the checks block, they do not just warn. Most of them were
-  born from a real incident.
-- **Reviewers for your stack.** Each organization adds its own in its team repo. TYCON brings its own for BIZUIT
+- **Checks born from incidents.** Most of them were born from a real incident.
+- **Reviewers for your stack.** TYCON brings its own for BIZUIT
   plugins, with the scripts that deploy to test and to production.
 - **What is still TYCON's own:** the production watcher is not published.
-
-The harness's words (story, workflow, guard, nightly jobs…), one line each, in
-[The harness's words](getting-started/reference.md#the-harnesss-words).
 
 ## Where to go next
 
@@ -324,7 +320,7 @@ The harness's words (story, workflow, guard, nightly jobs…), one line each, in
 | Know what it writes on your machine and how to turn each thing off | [What it writes on your machine](getting-started/reference.md#what-it-writes-on-your-machine-and-what-it-does-on-its-own) |
 | Update, go back or uninstall | [How it updates](getting-started/reference.md#how-it-updates) |
 | Use it with Codex | [What is optional](getting-started/reference.md#what-is-optional) |
-| Use it with an open model through Ollama, in either tool | [Use the harness with Ollama models](guides/integrations/ollama.en.md) |
+| Use it with an open model through Ollama | [Use the harness with Ollama models](guides/integrations/ollama.en.md) |
 | Use it with Cursor | [Use the harness with Cursor](guides/integrations/cursor.en.md) |
 | Understand a word of the harness | [The harness's words](getting-started/reference.md#the-harnesss-words) |
 | Change the harness | [CONTRIBUTING.md](.github/CONTRIBUTING.md) |

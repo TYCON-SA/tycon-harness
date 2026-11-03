@@ -9,7 +9,7 @@ las palabras que usa.
 
 https://github.com/user-attachments/assets/3fbe4538-6b96-4b56-b2ed-92d36be1c6f8
 
-**El sitio de la organización, con datos de ejemplo y sin cuenta:** [https://is.gd/tyconharnessdemo](https://is.gd/tyconharnessdemo)
+**El sitio de la organización, con datos de ejemplo y sin cuenta:** [abrí la demo](https://is.gd/tyconharnessdemo)
 
 **Un ciclo de desarrollo para agentes de código: completo, consistente, controlado y adaptable.**
 
@@ -185,7 +185,7 @@ Jest, Node (`node --test`), pytest, Go, Maven, Gradle, Karma y Playwright. Con o
 pruebas hasta que tu equipo la declara en su configuración («Tu tecnología», en el sitio).
 
 Antes de instalar necesitás tu agente de código (Claude Code o Codex) con tu sesión iniciada, y Node 22 o posterior.
-La lista completa está en [Qué necesitás](#qué-necesitás).
+Lista completa: [Qué necesitás](#qué-necesitás).
 
 Para que tu agente siga el ciclo, instalá el arnés en tu máquina ([▶ video](https://github.com/user-attachments/assets/74a74b69-856e-4367-95bb-52159325c8af)). Abrí la terminal (en Windows, PowerShell 7) y
 escribí:
@@ -209,10 +209,10 @@ La instalación completa suma los frenos en los repos que trabajan con el arnés
 
 ## Tu primera historia
 
-Una historia es tu pedido escrito, con sus criterios y sus pruebas: el agente la sigue y los revisores la controlan. Que la primera sea chica, como una función nueva en un archivo: una así tarda unos 10 minutos. · [▶ video](https://github.com/user-attachments/assets/e7504a1b-a65e-4956-919f-25753cf64e18)
+Una historia es tu pedido escrito, con sus criterios y sus pruebas: el agente la sigue y los revisores la controlan. Que la primera sea chica, como una función nueva en un archivo: unos 10 minutos. · [▶ video](https://github.com/user-attachments/assets/e7504a1b-a65e-4956-919f-25753cf64e18)
 
 1. **Abrí tu agente de código en la carpeta de tu repo**: ahí escribe la historia, crea la rama y guarda los cambios. Si lo tenías abierto desde antes de instalar, cerralo y abrilo de nuevo: las reglas del arnés entran al abrirlo.
-2. **Decí que confiás en la carpeta**: la primera vez que abrís tu agente en esa carpeta, te pregunta si confiás en ella: contestá que sí.
+2. **Decí que confiás en la carpeta**: la primera vez que abrís tu agente ahí, te pregunta si confiás en ella: contestá que sí.
 3. **Si la idea es grande, primero las historias.** Tu agente la lleva por etapas —entender el problema, el PRD, la arquitectura, las épicas— hasta dejar las historias; vos revisás cada etapa, y cada artefacto se commitea al repo, al lado del código. Para una idea acotada no hace falta: pedí la historia directo. · [▶ video](https://github.com/user-attachments/assets/24124d87-ebca-4069-8d82-d0b498f09518)
 4. **Pedí la historia con tus palabras**, para que el cambio quede escrito antes de programar: «creá una historia para agregar un filtro por fecha».
 5. **Revisá la historia.** El agente la arma con lo que le pediste, contestando tres preguntas en llano (qué tiene que hacer, cómo se ve que anda y qué no tiene que tocar), y te marca lo que supuso. Te la muestra y la escribe con tu «sí». Si tu repo ya trae la carpeta `_bmad/`, la arma con lo que hay ahí.
@@ -281,9 +281,9 @@ Un ejemplo: en ACME, Pedro es el admin y Juan programa.
    lo sube con su git.
    El repo de operaciones se crea aparte (abajo, «Lo que corre de noche»).
 2. Todo lo que se personaliza —dónde vive cada repo, a quién se le asignan los avisos, los umbrales— se configura desde
-   la pestaña **Configuración** del [sitio del equipo](guides/organization-site.md) (sólo para los admins): valida con
-   los mismos lectores del arnés y propone cada cambio con un pedido de cambio (pull request), nunca escribe `main`.
-   Mientras ACME no tiene su sitio, cada archivo se cambia con un pedido de cambio a su repo. El arnés funciona entero así: qué
+   la pestaña **Configuración** del [sitio del equipo](guides/organization-site.md) (sólo para los admins): valida y
+   propone cada cambio con un pedido de cambio (pull request).
+   Mientras ACME no tiene su sitio, cada archivo se cambia con un pedido de cambio a su repo. Qué
    necesita cada caso y dónde vive cada configuración, en [Con sitio o sin sitio](getting-started/reference.es.md#con-sitio-o-sin-sitio).
 3. Juan instala con npx y el repo del equipo: `npx @tyconsa/harness@latest --team acme/harness-team-profile` si está en
    GitHub, o `npx @tyconsa/harness@latest --team https://dev.azure.com/acme/<proyecto>/_git/harness-team-profile` si
@@ -306,14 +306,11 @@ Cómo se extiende el arnés para tu organización, con un recorrido de ejemplo, 
 
 - **Se vigila a sí mismo.** Un banco de pruebas comprueba, en cada cambio al arnés, que cada control siga frenando lo
   que dice. Si lo prendés, además observa tus sesiones y propone reglas nuevas, que vos aprobás.
-- **Controles que nacieron de incidentes.** Con la instalación completa, los controles frenan, no sólo avisan. La
+- **Controles que nacieron de incidentes.** La
   mayoría nació de un incidente real.
-- **Revisores para tu tecnología.** Cada organización suma los suyos en su repo del equipo. TYCON trae los suyos para
+- **Revisores para tu tecnología.** TYCON trae los suyos para
   plugins de BIZUIT, con los guiones que despliegan a pruebas y a producción.
 - **Lo que todavía es propio de TYCON:** el vigilante de producción no se publicó.
-
-Las palabras del arnés (historia, recorrido, freno, procesos de la noche…), una línea cada una, en
-[Las palabras del arnés](getting-started/reference.es.md#las-palabras-del-arnés).
 
 ## Dónde seguir
 
@@ -323,7 +320,7 @@ Las palabras del arnés (historia, recorrido, freno, procesos de la noche…), u
 | Saber qué escribe en tu máquina y cómo apagar cada cosa | [Qué escribe en tu máquina](getting-started/reference.es.md#qué-escribe-en-tu-máquina-y-qué-hace-solo) |
 | Actualizar, volver atrás o desinstalar | [Cómo se actualiza](getting-started/reference.es.md#cómo-se-actualiza) |
 | Usarlo con Codex | [Qué es opcional](getting-started/reference.es.md#qué-es-opcional) |
-| Usarlo con un modelo abierto por Ollama, en cualquiera de las dos herramientas | [Usar el arnés con modelos de Ollama](guides/integrations/ollama.md) |
+| Usarlo con un modelo abierto por Ollama | [Usar el arnés con modelos de Ollama](guides/integrations/ollama.md) |
 | Usarlo con Cursor | [Usar el arnés con Cursor](guides/integrations/cursor.md) |
 | Entender una palabra del arnés | [Las palabras del arnés](getting-started/reference.es.md#las-palabras-del-arnés) |
 | Cambiar el arnés | [CONTRIBUTING.md](.github/CONTRIBUTING.md) |

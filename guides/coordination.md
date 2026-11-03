@@ -424,8 +424,9 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
 - **Un rojo no se deja, aunque no sea del cambio propio.** Se avisa y se arregla antes de seguir. Por qué: los rojos
   tolerados tapan a los nuevos.
 - **Lo que afloja una revisión no va, aunque ahorre tiempo; lo que es sólo papeleo no se hace.** Si el código ya entró y
-  el uso real lo prueba, se cierra citando esa evidencia. La excepción es el código que decide cosas y nunca se revisó. Por
-  qué: la calidad vale más que los minutos, y una constancia que no encuentra nada cuesta horas.
+  el uso real lo prueba, se cierra citando esa evidencia. La excepción es el código que decide cosas y nunca se revisó. Esto no
+  saltea una firma ni una constancia que pida el arnés. Por qué: la calidad vale más que los minutos, y una constancia que
+  no encuentra nada cuesta horas.
 - **Un mensaje para el equipo se comprueba frase por frase antes de pasarlo.** Y a los devs se los molesta lo menos posible:
   un arreglo les llega solo; un paso a mano es el último recurso. Por qué: una promesa falsa llega a todas las máquinas.
 

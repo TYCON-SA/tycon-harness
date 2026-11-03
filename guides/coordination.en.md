@@ -440,7 +440,8 @@ They come from a whole day of coordinating several sessions. Each says what to d
   reds hide the new ones.
 - **What loosens a review does not go in, even if it saves time; what is only paperwork is not done.** If the code already
   went in and real use proves it, close it citing that evidence. The exception is code that decides things and was never
-  reviewed. Why: quality is worth more than the minutes, and a record that finds nothing costs hours.
+  reviewed. This does not skip a signature or a record the harness asks for. Why: quality is worth more than the minutes,
+  and a record that finds nothing costs hours.
 - **A message for the team is checked sentence by sentence before passing it on.** And devs are bothered as little as
   possible: a fix reaches them by itself; a manual step is the last resort. Why: a false promise reaches every machine.
 
