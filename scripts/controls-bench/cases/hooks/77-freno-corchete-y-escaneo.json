@@ -1,0 +1,105 @@
+{
+  "hooks": [
+    {
+      "hook": "on-bash-write-gate.js",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-bash-write-gate.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "corchete-sin-cerrar-en-un-guion-que-escribe-una-historia-frena",
+          "type": "must-block",
+          "_por_que": "Un corchete sin cerrar en un texto no es un comodín: si lanzara al armar la expresión, el freno entero se abriría y el comando escribiría la historia sin que nadie lo mire.",
+          "setup": [
+            "git init -q -b main . && mkdir -p specs .tycon",
+            "printf -- '---\\nstory: \"1.1\"\\nepic: \"1\"\\ntitle: \"x\"\\nstatus: in-progress\\n---\\n\\n# x\\n' > specs/story-1.1.md"
+          ],
+          "stdin": {
+            "session_id": "bench-corchete",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "python3 -c \"open('specs/story-1.1.md','w').write('x'); print('d[')\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "HISTORIA ESCRITA POR CONSOLA"
+            ]
+          }
+        },
+        {
+          "id": "corchete-sin-cerrar-en-un-guion-que-no-toca-historias-no-frena",
+          "type": "must-not-block",
+          "_por_que": "El arreglo no es frenar cada corchete: un `python3 -c` cualquiera sigue su camino.",
+          "setup": [
+            "git init -q -b main . && mkdir -p specs .tycon",
+            "printf -- '---\\nstory: \"1.1\"\\nepic: \"1\"\\ntitle: \"x\"\\nstatus: in-progress\\n---\\n\\n# x\\n' > specs/story-1.1.md"
+          ],
+          "stdin": {
+            "session_id": "bench-corchete",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "python3 -c \"open('salida.txt','w').write('x'); print('d[')\""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "guion-grande-en-repo-sin-historias-con-escaneo-incompleto-no-frena-por-la-palabra",
+          "type": "must-not-block",
+          "_por_que": "En un repo sin historias, el mismo comando no puede frenar o pasar según lo cargada que esté la máquina: un escaneo que no terminó se reintenta con más tiempo antes de decidir.",
+          "env": {
+            "TYCON_STORY_SCAN_BUDGET_MS": "1"
+          },
+          "setup": [
+            "git init -q -b main . && mkdir -p scripts",
+            "mkdir -p docs && for i in $(seq 1 600); do printf 'x\\n' > docs/n$i.md; done",
+            "{ printf \"# arma la historia de cada alumno\\nopen('salida.csv', 'w').write('x')\\n\"; yes '# xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' | head -n 6000; } > scripts/barrido.py",
+            "test \"$(wc -c < scripts/barrido.py)\" -gt 262144"
+          ],
+          "stdin": {
+            "session_id": "bench-guion-grande",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "python3 scripts/barrido.py datos.csv"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "guion-grande-en-repo-con-historias-con-escaneo-incompleto-sigue-frenando",
+          "type": "must-block",
+          "_por_que": "El reintento no afloja nada en un repo con historias: las encuentra y sigue el criterio estricto.",
+          "env": {
+            "TYCON_STORY_SCAN_BUDGET_MS": "1"
+          },
+          "setup": [
+            "git init -q -b main . && mkdir -p scripts spec/stories",
+            "mkdir -p docs && for i in $(seq 1 600); do printf 'x\\n' > docs/n$i.md; done",
+            "printf -- '---\\nstory: \"1.1\"\\nepic: \"1\"\\ntitle: \"x\"\\nstatus: in-progress\\n---\\n\\n# x\\n' > spec/stories/story-1.1.md",
+            "{ printf \"# cambia el estado de la historia\\nopen('salida.csv', 'w').write('x')\\n\"; yes '# xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' | head -n 6000; } > scripts/barrido.py",
+            "test \"$(wc -c < scripts/barrido.py)\" -gt 262144"
+          ],
+          "stdin": {
+            "session_id": "bench-guion-grande",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "python3 scripts/barrido.py datos.csv"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "GUION QUE NO SE PUEDE LEER ENTERO"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

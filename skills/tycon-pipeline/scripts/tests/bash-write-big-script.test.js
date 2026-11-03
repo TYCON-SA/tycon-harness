@@ -110,3 +110,104 @@ test('T4 BigScript_RepoWithStoriesElsewhere_StillBlocks', () => {
   guionGrande(tycon.dir, "# cambia el estado de la historia\n");
   assert.strictEqual(freno(tycon.estado, tycon.dir), FRENO, 'un repo con .tycon/ es del arnés');
 });
+
+/** Corre `fn` con el descubridor contestando lo que diga `respuestas` en cada llamada (la última se repite). */
+function conEscaneo(respuestas, fn) {
+  const sd = require(path.join(SCRIPTS, 'lib', 'story-discovery.js'));
+  const real = sd.discoverStories;
+  const pedidos = [];
+  // lo que el freno anota va a una carpeta personal de prueba, no al registro de la máquina
+  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'guion-grande-home-')));
+  sd.discoverStories = (raiz, opts) => {
+    pedidos.push(opts);
+    const r = respuestas[Math.min(pedidos.length - 1, respuestas.length - 1)];
+    if (r instanceof Error) throw r;
+    return r === 'real' ? real(raiz, opts) : { stories: [], excluded: [], warnings: [], partial: false, ...r };
+  };
+  try { return conEnv({ HOME: home, USERPROFILE: home }, () => ({ salida: fn(), pedidos, home })); } finally { sd.discoverStories = real; }
+}
+const UNA_HISTORIA = { id: '1.1', path: '/x/story-1.1.md' };
+
+// T5 IncompleteScan_NoStories_WordAloneDoesNotBlock
+// 🔴 Falla con: contar como repo con historias a un escaneo que no terminó y no encontró ninguna: el mismo comando frena o
+//    pasa según lo cargada que esté la máquina.
+test('T5 IncompleteScan_NoStories_WordAloneDoesNotBlock', () => {
+  const { estado, dir } = repo(null);
+  guionGrande(dir, "# arma la historia de cada alumno\n");
+  const reintento = conEscaneo([{ partial: true }, 'real'], () => freno(estado, dir));
+  assert.strictEqual(reintento.salida, '', 'con más tiempo terminó y no hay historias');
+  assert.ok(reintento.pedidos.some((o) => o.budgetMs > 500), 'el segundo intento lleva más presupuesto');
+  const nunca = conEscaneo([{ partial: true }], () => freno(estado, dir));
+  assert.strictEqual(nunca.salida, '', 'tampoco terminó con más tiempo: la palabra suelta sola no frena');
+  const registro = fs.readFileSync(path.join(nunca.home, '.claude', '.tycon-pipeline', 'hook-errors.log'), 'utf8');
+  assert.match(registro, /falla atrapada: Error: el escaneo de historias de .* no terminó/, 'el freno aflojó y queda dicho');
+});
+
+// T6 IncompleteScan_NoStories_PathOrRecordStillBlocks
+// 🔴 Falla con: soltar el guion entero cuando el escaneo no terminó: la ruta de una historia y la constancia frenan igual.
+test('T6 IncompleteScan_NoStories_PathOrRecordStillBlocks', () => {
+  for (const cuerpo of ["p = '/otro/repo/specs/story-1.1.md'\n", "p = 'control-changes/aprobado.json'\n"]) {
+    const { estado, dir } = repo(null);
+    guionGrande(dir, cuerpo);
+    assert.strictEqual(conEscaneo([{ partial: true }], () => freno(estado, dir)).salida, FRENO, cuerpo.trim());
+  }
+});
+
+// T7 IncompleteScan_StoriesFound_StillStrict
+// 🔴 Falla con: aflojar el freno en un repo con historias: las encontradas en un escaneo incompleto, en el primer intento
+//    o en el reintento, valen como un repo con historias. El escaneo que falla, también.
+test('T7 IncompleteScan_StoriesFound_StillStrict', () => {
+  for (const respuestas of [
+    [{ partial: true, stories: [UNA_HISTORIA] }],
+    [{ partial: true }, { partial: true, stories: [UNA_HISTORIA] }],
+    [{ partial: true }, { partial: false, stories: [UNA_HISTORIA] }],
+    [new Error('roto a propósito')],
+    [{ partial: true }, new Error('roto a propósito')],
+  ]) {
+    const { estado, dir } = repo(null);
+    guionGrande(dir, "# cambia el estado de la historia\n");
+    assert.strictEqual(conEscaneo(respuestas, () => freno(estado, dir)).salida, FRENO, JSON.stringify(respuestas));
+  }
+});
+
+const RAIZ_ARNES = path.resolve(SCRIPTS, '..', '..', '..');
+
+/** Un `marker.js` grande en el repo, y el freno sobre `command`, con esta copia del arnés como la instalada. */
+function frenoDeComando(command, opts = {}) {
+  const { estado, dir } = repo('specs', { tycon: true });
+  const relleno = '// ' + 'x'.repeat(200) + '\n';
+  const guion = path.join(dir, 'scripts', 'marker.js');
+  fs.writeFileSync(guion, `#!/usr/bin/env node\n// cambia el estado de la story\nrequire('fs').writeFileSync(process.argv[2], 'x');\n` + relleno.repeat(1600));
+  fs.chmodSync(guion, 0o755);
+  if (opts.plantado) fs.writeFileSync(path.join(dir, 'scripts', 'plantado.js'), 'process.exit(0);\n');
+  return conEnv(ENV, () => {
+    const r = bash.handle({ tool_name: 'Bash', session_id: 'sesion-guion-grande', cwd: dir, tool_input: { command } }, { stateDir: estado, installedRoots: [RAIZ_ARNES] });
+    return r && r.block ? r.block.split('\n').find((l) => l.trim()).trim() : '';
+  });
+}
+const MARKER = path.join(SCRIPTS, 'marker.js');
+const PIPELINE = path.join(SCRIPTS, 'pipeline.js');
+
+// T8 BigScript_GitAdd_OnlyNamesIt
+// 🔴 Falla con: contar `git add` como que corre el guion que nombra. Lo que corre detrás, o una opción de git antes, sigue
+//    contando.
+test('T8 BigScript_GitAdd_OnlyNamesIt', () => {
+  assert.strictEqual(frenoDeComando('git add scripts/marker.js'), '');
+  assert.strictEqual(frenoDeComando('git add -- scripts/marker.js README.md'), '');
+  assert.strictEqual(frenoDeComando('git add scripts/marker.js && ./scripts/marker.js specs/x.md'), FRENO, 'lo que corre detrás cuenta');
+  assert.strictEqual(frenoDeComando('git -c alias.add=!./scripts/marker.js add scripts/marker.js'), FRENO, 'con una opción de git antes, `add` puede ser otra cosa');
+});
+
+// T9 BigScript_RunCheckOfReadOnlyList_OnlyNamesIt
+// 🔴 Falla con: frenar la forma que pide el cartel de `complete-step reviewers`, o eximir de más: otro programa detrás del
+//    `--`, un `marker.js` que no es el instalado, o la vuelta extra de revisores.
+test('T9 BigScript_RunCheckOfReadOnlyList_OnlyNamesIt', () => {
+  const lista = '--files scripts/marker.js';
+  assert.strictEqual(frenoDeComando(`node ${MARKER} run-check advisors -- node ${PIPELINE} check-count ${lista}`), '');
+  assert.strictEqual(frenoDeComando(`node ${MARKER} run-check advisors -- ./scripts/marker.js specs/x.md`), FRENO, 'otro programa detrás del --');
+  assert.strictEqual(frenoDeComando(`node ${MARKER} run-check advisors -- node scripts/marker.js specs/x.md`), FRENO, 'otro guion detrás del --');
+  assert.strictEqual(frenoDeComando(`node scripts/plantado.js run-check advisors -- node ${PIPELINE} check-count ${lista}`, { plantado: true }), FRENO, 'un marker que no es el instalado');
+  assert.strictEqual(frenoDeComando(`node ${MARKER} run-check advisors -- node ${PIPELINE} smart-reloop --extra-round ${lista}`), FRENO, 'la vuelta extra');
+  assert.strictEqual(frenoDeComando(`node ${MARKER} run-check advisors -- node ${PIPELINE} complete-step reviewers ${lista}`), FRENO, 'un subcomando que no es de sólo lectura');
+  assert.strictEqual(frenoDeComando(`node ${MARKER} run-check $PASO -- node ${PIPELINE} check-count ${lista}`), FRENO, 'un paso que no se lee');
+});
