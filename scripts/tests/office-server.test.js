@@ -779,8 +779,8 @@ const officePage = require(OFFICE).page;
 
 test('T97 Card_Pr: el pedido de una tarjeta lleva su enlace sólo si se sabe dónde está', () => {
   const { cardPr } = require(OFFICE);
-  assert.deepStrictEqual(cardPr('acme/mi-repo', 912), { numero: 912, url: 'https://github.com/acme/mi-repo/pull/912' });
-  assert.deepStrictEqual(cardPr('acme/mi proyecto/repo', 6138), { numero: 6138, url: 'https://dev.azure.com/acme/mi%20proyecto/_git/repo/pullrequest/6138' });
+  assert.deepStrictEqual(cardPr('acme/mi-repo', 912), { numero: 912, sitio: 'github', ruta: 'acme/mi-repo/pull/912' });
+  assert.deepStrictEqual(cardPr('acme/mi proyecto/repo', 6138), { numero: 6138, sitio: 'azure', ruta: 'acme/mi%20proyecto/_git/repo/pullrequest/6138' });
   assert.deepStrictEqual(cardPr('tycon-harness', 912), { numero: 912 });
   assert.deepStrictEqual(cardPr(undefined, 912), { numero: 912 });
 });
@@ -812,7 +812,7 @@ function cardDetail(card, sessions = []) {
 }
 
 test('T98 Card_Detail_WithSession: título entero, lo que sabe la tarjeta y la misma ficha de la persona, sin repetir su hora', () => {
-  const d = cardDetail({ titulo: 'Las oficinas de cada dev, en vivo, en el sitio', quien: 'Tero', hora: 'mar 04:00', nota: 'espera el turno', pedido: { numero: 912, url: 'https://github.com/o/r/pull/912' } }, [{ nombre: 'Tero', estado: 'trabajando', fin: 'mar 04:00' }]);
+  const d = cardDetail({ titulo: 'Las oficinas de cada dev, en vivo, en el sitio', quien: 'Tero', hora: 'mar 04:00', nota: 'espera el turno', pedido: { numero: 912, sitio: 'github', ruta: 'o/r/pull/912' } }, [{ nombre: 'Tero', estado: 'trabajando', fin: 'mar 04:00' }]);
   assert.strictEqual(d.title, 'Las oficinas de cada dev, en vivo, en el sitio');
   assert.strictEqual(d.win.hidden, false);
   assert.deepStrictEqual(d.fichas, ['Tero']);
@@ -828,8 +828,8 @@ test('T98 Card_Detail_WithSession: título entero, lo que sabe la tarjeta y la m
   assert.strictEqual(d.last.focused, true);
 });
 
-test('T99 Card_Detail_NoSession: sin sesión, su hora y su pedido sin ficha; lo que no tiene no aparece; un enlace raro no se pone', () => {
-  const d = cardDetail({ titulo: 'Una fila del tablero', quien: 'Nadie Vivo', hora: 'estaba para lun 10:00', pedido: { numero: 7, url: 'javascript:alert(1)' } }, [{ nombre: 'Tero', estado: 'trabajando', fin: 'mar 04:00' }]);
+test('T99 Card_Detail_NoSession: sin sesión, su hora y su pedido sin ficha; lo que no tiene no aparece; un sitio desconocido no da enlace', () => {
+  const d = cardDetail({ titulo: 'Una fila del tablero', quien: 'Nadie Vivo', hora: 'estaba para lun 10:00', pedido: { numero: 7, sitio: 'constructor', ruta: 'x' } }, [{ nombre: 'Tero', estado: 'trabajando', fin: 'mar 04:00' }]);
   assert.deepStrictEqual(d.fichas, []);
   assert.strictEqual(d.rows['Cuándo'].textContent, 'estaba para lun 10:00');
   assert.strictEqual(d.rows['Pedido'].tag, '#text', 'sin enlace');

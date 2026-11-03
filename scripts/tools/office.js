@@ -756,8 +756,8 @@ function sameWorkScore(a, b) {
 // nombre no se sabe dónde está, y dice su número sin enlace.
 function cardPr(repo, numero) {
   const parts = String(repo || '').split('/').map(encodeURIComponent);
-  if (parts.length === 2) return { numero, url: `https://github.com/${parts.join('/')}/pull/${numero}` };
-  if (parts.length === 3) return { numero, url: `https://dev.azure.com/${parts[0]}/${parts[1]}/_git/${parts[2]}/pullrequest/${numero}` };
+  if (parts.length === 2) return { numero, sitio: 'github', ruta: `${parts.join('/')}/pull/${numero}` };
+  if (parts.length === 3) return { numero, sitio: 'azure', ruta: `${parts[0]}/${parts[1]}/_git/${parts[2]}/pullrequest/${numero}` };
   return { numero };
 }
 

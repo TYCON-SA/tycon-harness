@@ -356,7 +356,8 @@ function abrirTarjeta(i,card){const v=ventana(),box=v.firstElementChild,a=sesion
   const cerrar=el("button","cerrar","Cerrar");cerrar.type="button";cerrar.onclick=cerrarCharla;box.replaceChildren(el("h3",null,i.titulo||"Sin título"));
   const dl=el("dl"),fila=(k,x)=>{if(x==null||x==="")return;const dd=el("dd");dd.append(x);dl.append(el("dt",null,k),dd);};
   fila("Quién",i.quien);if(!a||String(i.hora||"")!==String((finTxt(a)||{}).hora||""))fila("Cuándo",i.hora);if(!a||i.espera!==a.espera)fila("Espera",i.espera);fila("Marca",i.marca);fila("Motivo",i.motivo);fila("Nota",i.nota);fila("Grupo",i.grupo);
-  if(i.pedido){const texto="Pedido "+i.pedido.numero;if(/^https:\/\//.test(i.pedido.url||"")){const l=el("a",null,texto);l.href=i.pedido.url;l.target="_blank";l.rel="noopener";fila("Pedido",l);}else fila("Pedido",texto);}
+  // el enlace sólo lleva a estos dos sitios: de los datos sale la ruta, nunca la dirección entera
+  if(i.pedido){const texto="Pedido "+i.pedido.numero,base=i.pedido.sitio==="github"?"https://github.com/":i.pedido.sitio==="azure"?"https://dev.azure.com/":null;if(base&&i.pedido.ruta){const l=el("a",null,texto);l.href=base+i.pedido.ruta;l.target="_blank";l.rel="noopener";fila("Pedido",l);}else fila("Pedido",texto);}
   if(dl.children.length)box.append(dl);
   if(a){const s=AST[a.estado]||[a.estado||"","#999"],chips=el("div","chips"),st=el("span","chip","● "+s[0]);st.style.setProperty("--c",s[1]);chips.append(st);if(a.comoTrabaja&&a.comoTrabaja!==s[0])chips.append(etiquetaComo(a.comoTrabaja));box.append(chips);pintarFicha(a,box,true);}
   box.append(cerrar);cerrar.focus();}
