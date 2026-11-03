@@ -1004,7 +1004,9 @@ function decidirCarril({ command, cwd, sid, home }) {
   const delCarril = !repos.length || dudas.length || reposDelComando.length < cs.length || cs.some((c) => c.opaco || c.tipo === 'pr') || reposDelComando.some((r) => repos.includes(r));
   // los del carril, aunque la carpeta de lo anotado ya no esté (se borró con su pantalla); sin ninguno, los del comando
   const reposDeLoQueSeGuarda = repos.length ? repos : reposDelComando;
-  const tope = delCarril ? frenoDelTope(a, sid, home, reposDeLoQueSeGuarda) : null;
+  // un `git add` en el mismo comando sube lo que git todavía no sigue, y este freno corre antes de que se agregue
+  const subeLoSinSeguir = dudas.length > 0 || cs.some((c) => c.opaco) || /\bgit\b[^;&|\n]*\badd\b/.test(String(command));
+  const tope = delCarril ? frenoDelTope(a, sid, home, reposDeLoQueSeGuarda, subeLoSinSeguir) : null;
   if (tope) return tope;
   const pantalla = delCarril ? frenoDePantalla(a, sid, home, reposDeLoQueSeGuarda) : null;
   if (pantalla && pantalla.texto) return pantalla;
@@ -1029,12 +1031,12 @@ function decidirCarril({ command, cwd, sid, home }) {
  * lo que el arreglo cambió de verdad, así que ve lo que el conteo al editar no vio, y cerrar y reabrir el carril en la misma
  * rama no empieza de cero. Dentro del cupo, null. Si git no contesta tampoco guarda: sin medir no hay verde.
  */
-function frenoDelTope(a, sid, home, repos) {
+function frenoDelTope(a, sid, home, repos, sinSeguir = false) {
   const io = require('./story-gate-io.js');
   const gate = require('./story-gate.js');
   const dir = path.dirname(path.dirname(require('./open-runs.js').markerPath(sid, home)));
   let c;
-  try { c = require('./adhoc-base.js').cuentaDelCarril(a, { repos }); } catch (e) { c = { archivos: [], avisos: [], fallas: [e.message] }; }
+  try { c = require('./adhoc-base.js').cuentaDelCarril(a, { repos, sinSeguir }); } catch (e) { c = { archivos: [], avisos: [], fallas: [e.message] }; }
   if (c.fallas.length) {
     io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `tope del carril sin medir: ${c.fallas[0]}` });
     return { texto: `🔒 GUARDAR: no pude medir cuántos archivos cambió este camino corto (${c.fallas[0]}). Sin medir no guarda: arreglá eso y repetí el comando.` };

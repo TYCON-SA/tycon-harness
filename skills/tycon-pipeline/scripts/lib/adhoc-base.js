@@ -186,11 +186,23 @@ function basePropia(repo, adhoc) {
 
 const esArchivo = (f) => { try { return fs.statSync(f).isFile(); } catch (_) { return false; } };
 
-function enMerge(repo) {
-  try { git(repo, ['rev-parse', '--verify', '-q', 'MERGE_HEAD']); return true; } catch (e) {
-    if (e.status === 1) return false;
+/**
+ * ¿Hay un merge en curso de lo que ya está en una rama de integración? Sólo eso es «traído». Una rama cualquiera, o varias a
+ * la vez, es trabajo propio: si no, armarlo aparte y mergearlo sin commitear lo sacaría de la cuenta.
+ */
+function traeDeIntegracion(repo) {
+  let puntas;
+  try { puntas = fs.readFileSync(path.resolve(repo, git(repo, ['rev-parse', '--git-path', 'MERGE_HEAD'])), 'utf8').split('\n').filter(Boolean); } catch (e) {
+    if (e.code === 'ENOENT') return false;
     throw e;
   }
+  if (puntas.length !== 1) return false;
+  return [RAMA, RAMA_DE_TRABAJO].some((rama) => {
+    try { git(repo, ['merge-base', '--is-ancestor', puntas[0], `origin/${rama}`]); return true; } catch (e) {
+      if (e.status === 1 || /not a valid object name/i.test(String(e.stderr || e.message))) return false;
+      throw e;
+    }
+  });
 }
 
 /**
@@ -198,8 +210,8 @@ function enMerge(repo) {
  * Lo anotado suma si existe o si git lo muestra borrado. Una sonda fuera de un repo, una ruta que nunca existió o un repo
  * borrado no son «no pude medir»: no suman. Con `sinSeguir`, también lo que git no sigue: una pantalla nueva que un `git add
  * -A` sube en el mismo comando. Sin él, un archivo sin seguir suma sólo si el carril lo anotó: puede ser de otra sesión, y si
- * entra en un commit, el guardado siguiente lo cuenta. Con un merge en curso, lo que queda igual que en la otra rama es lo
- * que el merge trae: `HEAD` todavía no lo tiene y la bifurcación no lo descuenta.
+ * entra en un commit, el guardado siguiente lo cuenta. Con un merge en curso de una rama de integración, lo que queda igual
+ * que en esa rama es lo que el merge trae: `HEAD` todavía no lo tiene y la bifurcación no lo descuenta.
  */
 function propiosDelCarril(adhoc, { repos: extra = [], sinSeguir = false } = {}) {
   const porRepo = {};
@@ -215,12 +227,12 @@ function propiosDelCarril(adhoc, { repos: extra = [], sinSeguir = false } = {}) 
   const reales = anotadas.map(rutaReal);
   for (const repo of [...new Set([...repos, ...extra.filter(Boolean)])]) {
     try {
-      if (!sigueElRepo(repo)) continue;
+      if (!sigueElRepo(repo)) { avisos.push(`camino corto: ${repo} ya no es un repo: no hay nada que medir ahí`); continue; }
       const base = basePropia(repo, adhoc);
       if (base.aviso) avisos.push(base.aviso);
       let set = new Set(cambiosDeGit(repo, ['--cached']));
       if (base.sha) for (const l of cambiosDeGit(repo, [base.sha, '--'])) set.add(l);
-      if (enMerge(repo)) {
+      if (traeDeIntegracion(repo)) {
         const distintos = new Set(cambiosDeGit(repo, ['MERGE_HEAD', '--']));
         set = new Set([...set].filter((l) => distintos.has(l)));
       }

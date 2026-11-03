@@ -5514,7 +5514,13 @@ function cmdAdhoc(sub, payloadJson) {
   if (sub === 'clear') {
     // sin mirar si venció: el que pasó el tope deja su cuenta aunque lleve horas sin tocarse
     let existing = io.readAdhoc(STATE_DIR, SID);
-    if (!existing) { try { existing = JSON.parse(fs.readFileSync(io.adhocPath(STATE_DIR, SID), 'utf8')); } catch (_) { existing = null; } }
+    let ilegible = null;
+    if (!existing) {
+      try { existing = JSON.parse(fs.readFileSync(io.adhocPath(STATE_DIR, SID), 'utf8')); } catch (e) {
+        existing = null;
+        if (e.code !== 'ENOENT') ilegible = `declaración ilegible: ${e.code || e.message}`;
+      }
+    }
     try { fs.unlinkSync(io.adhocPath(STATE_DIR, SID)); } catch (e) {
       // sólo «no existe» es estar cerrado: otro error deja el atajo abierto, y eso se dice
       if (e.code !== 'ENOENT') { console.error(`marker.js adhoc clear: no pude borrar la declaración (${e.code || e.message}); el arreglo rápido sigue abierto.`); process.exit(1); }
@@ -5525,9 +5531,10 @@ function cmdAdhoc(sub, payloadJson) {
     if (existing && existing.sobreCupo) {
       try {
         const c = require('./lib/adhoc-base.js').cuentaDelCarril(existing);
-        contados = { sobreCupo: true, cupoPedido: existing.cupoPedido, eligio: existing.eligio, contados: c.archivos.length, archivos: c.archivos, ...(c.fallas.length ? { sinMedir: c.fallas[0] } : {}) };
+        contados = { sobreCupo: true, cupoPedido: existing.cupoPedido, eligio: existing.eligio, contados: c.archivos.length, archivos: c.archivos, ...(c.avisos.length ? { medidoConMenos: c.avisos } : {}), ...(c.fallas.length ? { sinMedir: c.fallas[0] } : {}) };
       } catch (e) { contados = { sobreCupo: true, cupoPedido: existing.cupoPedido, eligio: existing.eligio, sinMedir: e.message }; }
     }
+    if (ilegible) contados = { sinMedir: ilegible };
     appendLog('adhoc.log', { kind: 'ADHOC_CLEAR', reason: existing ? existing.reason : null, files: existing ? (existing.files || []).length : 0, ...contados });
     syncSessionState(SID);
     process.stdout.write('adhoc: cleared\n');

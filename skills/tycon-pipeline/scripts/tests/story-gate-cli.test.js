@@ -489,6 +489,24 @@ test('AdhocClear_SobreCupoVencido_AnotaLaCuentaIgual @story-8.181 @ac-6', () => 
   assert.deepStrictEqual([c.sobreCupo, c.cupoPedido, c.eligio, c.contados, c.archivos], [true, 9, 'persona', 1, [a]]);
 });
 
+// 🔴 Falla con: una declaración ilegible o medida con menos que queda en el registro como un cierre normal.
+test('AdhocClear_RegistroDiceLoQueNoSeMidio @story-8.181 @ac-6', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-')));
+  execFileSync('git', ['-C', repo, 'init', '-q']);
+  fs.mkdirSync(path.join(repo, 'src'));
+  const a = path.join(repo, 'src', 'a.js');
+  fs.writeFileSync(a, 'x\n');
+  const p = io.adhocPath(estadoDe(home), 'sess-a');
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  fs.writeFileSync(p, JSON.stringify({ reason: 'arreglo grande', maxFiles: 9, sobreCupo: true, cupoPedido: 9, eligio: 'persona', files: [a], declaredAt: new Date().toISOString(), lastTouch: new Date().toISOString() }));
+  assert.equal(markerSinVentana(home, 'sess-a', ['adhoc', 'clear']).status, 0);
+  assert.match(adhocLog(home).find((e) => e.kind === 'ADHOC_CLEAR').medidoConMenos[0], /no tiene su base/, 'sin origin/main se midió con menos');
+  fs.writeFileSync(p, 'esto no es un json');
+  assert.equal(markerSinVentana(home, 'sess-a', ['adhoc', 'clear']).status, 0);
+  assert.match(adhocLog(home).filter((e) => e.kind === 'ADHOC_CLEAR').pop().sinMedir, /declaración ilegible/);
+});
+
 test('T20 OnEdit_RepoDelArnes_CuentaElArchivo @story-8.181 @ac-9', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
   const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clon-')));

@@ -361,7 +361,7 @@ test('Validar_SoloClickConGanchoAjeno_MandaALaTerminal @story-8.181 @ac-4', (t) 
 });
 
 // El mismo click de la coordinadora vale para una firma común: lo que lo niega es que el cuadro sea de sólo click.
-test('T9b Buscar_SoloClick_NoMiraLaCoordinadoraNiElMensaje @story-8.181 @ac-4', (t) => {
+test('T46 Buscar_SoloClick_NoMiraLaCoordinadoraNiElMensaje @story-8.181 @ac-4', (t) => {
   const casa = casaNueva(t);
   oa.anotar(casa, { ...click(), sesion: 'ses-b', herramienta: COORD });
   procesoDeLaSesion(casa);

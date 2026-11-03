@@ -748,6 +748,29 @@ test('SaveBrake_SinSeguirAjeno_NoSuma_ElAnotadoSi @story-8.181 @ac-11', (t) => {
   assert.ok(!(guardar(d, h) || {}).texto);
 });
 
+// 🔴 Falla con: un `git add` en el mismo comando que sube archivos nuevos que el freno, que corre antes, no contó.
+test('SaveBrake_AddEnElMismoComando_CuentaLoSinSeguir @story-8.181 @ac-11', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  for (let i = 0; i < 9; i++) escribir(d, `src/nuevo${i}.js`, 'x\n');
+  carril(h, { maxFiles: 8 });
+  const r = brake().decidir({ command: 'git add -A && git commit -m x && git push', cwd: d, sid: SID, home: h });
+  assert.match((r || {}).texto || '', elTope);
+  assert.ok(!(guardar(d, h) || {}).texto, 'un commit sin add no los lleva');
+});
+
+// 🔴 Falla con: lo igual a MERGE_HEAD descontado de cualquier rama: armar el trabajo aparte lo saca de la cuenta.
+test('SaveBrake_MergeDeOtraRamaEnCurso_Cuenta @story-8.181 @ac-11', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  sh(d, 'checkout', '-q', '-b', 'armada-aparte');
+  commitDeArchivos(d, 'aparte', 9);
+  sh(d, 'checkout', '-q', RAMA);
+  sh(d, 'merge', '-q', '--no-commit', '--no-ff', 'armada-aparte');
+  carril(h, { maxFiles: 8 });
+  assert.match((guardar(d, h) || {}).texto || '', elTope);
+});
+
 // 🔴 Falla con: una carpeta anotada que sigue en el disco y ya no es un repo, leída como «git no contestó».
 test('SaveBrake_CarpetaQueYaNoEsUnRepo_NoEsNoPudoMedir @story-8.181 @ac-13', (t) => {
   const d = repoConOrigin(t);
