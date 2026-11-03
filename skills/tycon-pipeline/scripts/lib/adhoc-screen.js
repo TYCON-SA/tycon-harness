@@ -221,20 +221,20 @@ function revisar(adhoc, repos = []) {
   const { isCodeFile } = require('./story-gate.js');
   const { fileTouchesUi } = require('./ui-signal.js');
   // lo que el arreglo cambió de verdad: lo traído de `main` no pide maqueta ni captura
-  const { porRepo, fallas, avisos } = propiosDelCarril(adhoc, { repos, sinSeguir: true, suma: (rel) => !esPrueba(rel) });
+  const regla = reglaDePantalla();
+  const esDePantalla = (rel, repo) => !esPrueba(rel) && fileTouchesUi(rel, repo, regla, nombreDelRepo(repo));
+  const { porRepo, fallas, avisos } = propiosDelCarril(adhoc, { repos, sinSeguir: true, soloCambiados: true, suma: esDePantalla });
   if (fallas.length) return { sinMedir: fallas[0] };
   const anotadas = new Set([adhoc.mockup, adhoc.capture].filter((x) => x && typeof x.file === 'string').map((x) => rutaReal(x.file)));
-  const regla = reglaDePantalla();
   const pantallas = [];
   // `pantallas` va al texto que lee la persona; la comparación abre las rutas tal cual
   const rutasDePantallas = [];
   let ultimaEdicion = -Infinity;
   for (const repo of Object.keys(porRepo)) {
-    const nombre = nombreDelRepo(repo);
     for (const rel of porRepo[repo]) {
       const abs = path.join(repo, rel);
       if (anotadas.has(rutaReal(abs))) continue;
-      const esPantalla = !esPrueba(rel) && fileTouchesUi(rel, repo, regla, nombre);
+      const esPantalla = esDePantalla(rel, repo);
       // un worktree dentro de otro repo del carril muestra la misma pantalla en los dos
       if (esPantalla && !rutasDePantallas.includes(abs)) { pantallas.push(enUnRenglon(abs)); rutasDePantallas.push(abs); }
       if (!esPantalla && !isCodeFile(rel)) continue;

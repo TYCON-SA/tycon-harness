@@ -195,6 +195,39 @@ test('AdhocScreen_PantallaMovidaAPruebas_SigueSiendoPantalla @story-8.181 @ac-21
   assert.ok(w.pantallas.some((p) => p.endsWith('src/app/a/page.tsx')), JSON.stringify(w));
 });
 
+// 🔴 Falla con: mover una pantalla a una ruta que no es pantalla: el arreglo la saca de su lugar y el freno no la ve.
+test('AdhocScreen_PantallaMovidaAUnaRutaQueNoEsPantalla_LaPide @story-8.181 @ac-21', (t) => {
+  for (const destino of ['notas/Vieja.txt', 'src/lib/vieja.ts']) {
+    const r = repo(t);
+    const h = home(t);
+    escribir(r, 'src/components/Vieja.tsx', '<p>una pantalla con bastante contenido para reconocerla al moverla de lugar</p>\n');
+    git(r, 'add', '-A');
+    git(r, 'commit', '-qm', 'pantalla');
+    git(r, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+    fs.mkdirSync(path.join(r, path.dirname(destino)), { recursive: true });
+    git(r, 'mv', 'src/components/Vieja.tsx', destino);
+    git(r, 'commit', '-qm', 'la muda');
+    carril(h);
+    const v = revisar(leerCarril(h), [r]);
+    assert.ok(v.pantallas.some((p) => p.endsWith('src/components/Vieja.tsx')), `${destino}: ${JSON.stringify(v)}`);
+  }
+});
+
+// 🔴 Falla con: lo anotado que sigue igual a `main` contado como propio: una edición restaurada pide maqueta y captura.
+test('AdhocScreen_PantallaAnotadaSinCambios_NoLaPide @story-8.181 @ac-21', (t) => {
+  const r = repo(t);
+  const h = home(t);
+  const f = escribir(r, 'src/components/V.tsx', '<p>sin cambios</p>\n');
+  git(r, 'add', '-A');
+  git(r, 'commit', '-qm', 'pantalla');
+  git(r, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  carril(h, { files: [f] });
+  assert.deepStrictEqual(revisar(leerCarril(h), [r]).pantallas, []);
+  // cambiada, sí
+  fs.writeFileSync(f, '<p>con cambios</p>\n');
+  assert.strictEqual(revisar(leerCarril(h), [r]).pantallas.length, 1);
+});
+
 // 🔴 Falla con: una carpeta `fixtures` a cualquier profundidad como prueba: la ruta `/fixtures` de una app es una pantalla.
 test('AdhocScreen_RutaFixtures_SigueSiendoPantalla @story-8.181 @ac-17', (t) => {
   const r = repo(t);

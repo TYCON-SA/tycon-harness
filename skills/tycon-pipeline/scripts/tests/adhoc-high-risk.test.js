@@ -741,6 +741,32 @@ test('T20 Pantalla_LaDeOtroPedidoNoPideMaqueta', () => {
   assert.match(fs.readFileSync(path.join(s2, 'gates.log'), 'utf8'), /sigue con la base anotada/);
 });
 
+// 🔴 Falla con: el freno del riesgo que sale sin mirar cuando la medición falló: con la base anotada rota, lo commiteado pasa.
+test('RiesgoCommiteado_ConLaBaseAnotadaRota_SigueFrenando @story-8.181 @ac-13', () => {
+  const raiz = tmp('base-rota-');
+  const home = tmp('home-');
+  const rota = { sha: 'a'.repeat(40), traida: true };
+  const armar = (nombre) => {
+    const r = ramaAtrasada(raiz, nombre);
+    escribir(r.dir, 'src/auth/nuevo.ts', 'propio\n');
+    git(r.dir, 'add', '.');
+    commitear(r.dir, 'lo propio de riesgo');
+    return r;
+  };
+  // con red: trae `main`, mide de nuevo y pone la marca
+  const conRed = armar('con-red');
+  const s1 = conCarril(home, 'con-red', { rutas: [conRed.propio], bases: { [conRed.dir]: rota } });
+  const d1 = guardar(conRed.dir, 'con-red', home);
+  assert.match(d1.texto, /auth\/nuevo\.ts/, d1.texto);
+  assert.ok(leerCarril(s1, 'con-red').riesgoAlto);
+  assert.notEqual(leerCarril(s1, 'con-red').bases[conRed.dir].sha, rota.sha);
+  // sin red: no pudo medir, y sin medir no guarda
+  const sinRed = armar('sin-red');
+  git(sinRed.dir, 'remote', 'set-url', 'origin', path.join(raiz, 'no-existe.git'));
+  conCarril(home, 'sin-red', { rutas: [sinRed.propio], bases: { [sinRed.dir]: rota } });
+  assert.match(guardar(sinRed.dir, 'sin-red', home).texto, /no pude medir si este camino corto toca una ruta de riesgo alto/);
+});
+
 test('T21 RepoAjeno_NoEntraAlCarrilAlGuardar', () => {
   const raiz = tmp('t21-');
   const home = tmp('home-');

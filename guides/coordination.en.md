@@ -323,7 +323,9 @@ and probes do not add up. Past the quota, the fix stops on edit and does not sav
 it measures the branch being worked on and what is already on disk. Work built on another branch and pushed by its name, or
 created in the same command that pushes, does not add up. That does not let it into `main`, because the pull request still has
 its check and its review: it skips the notice, and it takes doing it on purpose. Conversely, on `dev` with `main` brought in and
-not pushed, what is already integrated counts too: push it, or choose with the click.
+not pushed, what is already integrated counts too: push it, or choose with the click. A push with something else in the command
+(`| cat`, `&& echo`) also counts what git does not track, even from another session: repeat the push alone. And a real route
+named `tests`, `e2e`, `cypress` or `playwright` counts as a test, and asks for no mockup.
 
 **With the mockup and the screenshot, what was built is compared with the mockup.** It compares texts, not the drawing: if a
 text of the mockup is not in the fix's screens or in the other screens of its repos, it does not save. A text that already

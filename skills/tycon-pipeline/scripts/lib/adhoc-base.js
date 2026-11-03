@@ -169,7 +169,7 @@ function cambiosDeGit(repo, args, suma = sumaAlTope) {
     const estado = campos[i++];
     if (/^[RC]/.test(estado)) {
       const [vieja, nueva] = [campos[i++], campos[i++]];
-      rutas.push(suma(nueva) || !suma(vieja) ? nueva : vieja);
+      rutas.push(suma(nueva, repo) || !suma(vieja, repo) ? nueva : vieja);
     } else rutas.push(campos[i++]);
   }
   return rutas;
@@ -194,6 +194,9 @@ function archivosDelCarril(adhoc, { repos: extra = [] } = {}) {
   }
   // `extra`: los repos de lo que se guarda, aunque el carril todavía no haya anotado nada en ellos
   for (const repo of [...new Set([...repos, ...extra.filter(Boolean)])]) {
+    let vive = true;
+    try { vive = sigueElRepo(repo); } catch (_) { /* no se puede mirar: lo dice git, más abajo */ }
+    if (!vive) { avisos.push(`camino rápido: ${repo} ya no es un repo: no hay nada que medir ahí`); continue; }
     const set = new Set();
     for (const f of anotadas) {
       const rel = path.relative(repo, f).replace(/\\/g, '/');
@@ -258,7 +261,12 @@ function sigueElRepo(repo) {
  */
 function basePropia(repo, adhoc) {
   const candidatas = [];
-  for (const rama of [RAMA, RAMA_DE_TRABAJO]) {
+  const anotada = adhoc.bases && adhoc.bases[repo];
+  // un `origin` que ya no es el de la base anotada podría traer esta misma rama como `main`: no se le cree
+  let origenDeHoy = null;
+  try { origenDeHoy = git(repo, ['remote', 'get-url', 'origin']); } catch (_) { /* sin `origin`: tampoco es el anotado */ }
+  const otroOrigen = anotada && anotada.origen && anotada.origen !== origenDeHoy;
+  for (const rama of otroOrigen ? [] : [RAMA, RAMA_DE_TRABAJO]) {
     try {
       const sha = git(repo, ['merge-base', 'HEAD', `origin/${rama}`]);
       candidatas.push({ sha, adelante: Number(git(repo, ['rev-list', '--count', `${sha}..HEAD`])) });
@@ -268,14 +276,15 @@ function basePropia(repo, adhoc) {
     }
   }
   if (candidatas.length) return { sha: candidatas.sort((a, b) => a.adelante - b.adelante)[0].sha };
-  const anotada = adhoc.bases && adhoc.bases[repo];
-  if (anotada && anotada.sha && ES_SHA.test(anotada.sha)) return { sha: anotada.sha };
+  if (anotada && anotada.sha && ES_SHA.test(anotada.sha)) return { sha: puntoDeSalida(repo, anotada.sha) };
   let cabeza = null;
   try { cabeza = git(repo, ['rev-parse', '--verify', '-q', 'HEAD']); } catch (e) { if (e.status !== 1) throw e; }
   return { sha: cabeza, aviso: `camino corto: ${repo} no tiene su base traída (${(anotada && anotada.motivo) || 'sin origin/main'}): la rama no se midió, sólo lo anotado y el commit` };
 }
 
 const esArchivo = (f) => { try { return fs.statSync(f).isFile(); } catch (_) { return false; } };
+/** Una variable sin expandir (`$L/p.js`), no una ruta. Un archivo que existe con `$` en el nombre (`users.$id.tsx`) es real. */
+const sinExpandir = (f) => /[$`]/.test(String(f)) && !fs.existsSync(String(f));
 
 /**
  * ¿Hay un merge en curso de lo que ya está en una rama de integración? Sólo eso es «traído». Una rama cualquiera, o varias a
@@ -302,13 +311,18 @@ function traeDeIntegracion(repo) {
  * borrado no son «no pude medir»: no suman. Con `sinSeguir`, también lo que git no sigue: una pantalla nueva que un `git add
  * -A` sube en el mismo comando. Sin él, un archivo sin seguir suma sólo si el carril lo anotó: puede ser de otra sesión, y si
  * entra en un commit, el guardado siguiente lo cuenta. Con un merge en curso de una rama de integración, lo que queda igual
- * que en esa rama es lo que el merge trae: `HEAD` todavía no lo tiene y la bifurcación no lo descuenta.
+ * que en esa rama es lo que el merge trae: `HEAD` todavía no lo tiene y la bifurcación no lo descuenta. Con `soloCambiados`,
+ * lo anotado que git sigue y no cambió no suma: una pantalla restaurada, o que ya entró de `main`, no pide maqueta. La ruta
+ * de la marca de riesgo la puso el freno, no una edición: sola no cuenta como anotada.
  */
-function propiosDelCarril(adhoc, { repos: extra = [], sinSeguir = false, suma = sumaAlTope } = {}) {
+function propiosDelCarril(adhoc, { repos: extra = [], sinSeguir = false, suma = sumaAlTope, soloCambiados = false } = {}) {
   const porRepo = {};
   const avisos = [];
   const fallas = [];
-  const anotadas = [...((adhoc && adhoc.rutas) || []), ...((adhoc && adhoc.files) || [])].filter((f) => path.isAbsolute(String(f)));
+  const files = (adhoc && adhoc.files) || [];
+  const marca = adhoc && adhoc.riesgoAlto && adhoc.riesgoAlto.archivo;
+  const anotadas = [...((adhoc && adhoc.rutas) || []).filter((f) => f !== marca || files.includes(f)), ...files]
+    .filter((f) => path.isAbsolute(String(f)) && !sinExpandir(f));
   const { repos, huerfanas } = reposYHuerfanas({ bases: adhoc && adhoc.bases, rutas: anotadas.filter((f) => fs.existsSync(path.dirname(f))) });
   for (const f of huerfanas) {
     const m = `camino corto: no pude ubicar el repo de ${f}: queda sin medir`;
@@ -333,7 +347,13 @@ function propiosDelCarril(adhoc, { repos: extra = [], sinSeguir = false, suma = 
       if (sinSeguir) for (const l of rutasDeGit(repo, ['ls-files', '--others', '--exclude-standard'])) set.add(l);
       for (const f of reales) {
         const rel = path.relative(repo, f).replace(/\\/g, '/');
-        if (rel && !rel.startsWith('..') && !path.isAbsolute(rel) && esArchivo(f)) set.add(rel);
+        if (!rel || rel.startsWith('..') || path.isAbsolute(rel) || !esArchivo(f) || set.has(rel)) continue;
+        // sin base traída no se sabe qué cambió la rama: lo anotado suma
+        if (soloCambiados && !base.aviso) {
+          const etiqueta = git(repo, ['--literal-pathspecs', 'ls-files', '-v', '--', rel]);
+          if (etiqueta && !CON_BANDERA.test(etiqueta)) continue;
+        }
+        set.add(rel);
       }
       porRepo[repo] = [...set].sort();
     } catch (e) {
@@ -395,4 +415,4 @@ function huellaDelCarril(adhoc) {
 /** ¿La huella sirve para una constancia? Una incompleta, no. */
 const huellaCompleta = (h) => typeof h === 'string' && !h.startsWith('incompleta:');
 
-module.exports = { traerBase, conBase, conBasesAlDia, marcaSinSustento, reposDelCarril, archivosDelCarril, propiosDelCarril, cuentaDelCarril, sigueElRepo, huellaDelCarril, huellaCompleta, raizDe, ubicar, RAMA };
+module.exports = { traerBase, conBase, conBasesAlDia, marcaSinSustento, reposDelCarril, archivosDelCarril, propiosDelCarril, cuentaDelCarril, sigueElRepo, sinExpandir, huellaDelCarril, huellaCompleta, raizDe, ubicar, RAMA };
