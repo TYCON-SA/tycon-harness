@@ -3023,6 +3023,43 @@ test('T279 OtherProject_NotCounted: una sesión de un repo que el arnés no sigu
   assert.notStrictEqual(byName(await collectAt(m, now), 'Mesa').comoTrabaja, 'Otro proyecto', 'sin la lista de repos no se sabe');
 });
 
+test('T283 Conversation_CoordinatorTabs: la coordinadora tiene dos pestañas y abre en «Con vos»; una sesión común, una sola lista', () => {
+  const html = page({ agents: [], items: [], kanban: null, meta: null });
+  const paint = html.slice(html.indexOf('function pintarCharla('), html.indexOf('\n// ', html.indexOf('function pintarCharla(')));
+  assert.match(paint, /pestanasCharla\(\[\["Con vos",listaCharla\(/);
+  assert.match(paint, /\["Con las sesiones",listaCharla\(/);
+  assert.match(paint, /seccion\("Con la coordinadora",filas/, 'las sesiones comunes siguen con su lista');
+  const src = html.slice(html.indexOf('function listaCharla('), html.indexOf('function pintarCharla('));
+  const node = (tag) => { const n = { tag, kids: [], dataset: {}, attrs: {}, classList: { contains: (c) => (n.className || '').split(' ').includes(c) }, append(...k) { n.kids.push(...k); }, setAttribute(k, v) { n.attrs[k] = v; } }; return n; };
+  const el = (tag, className, text) => { const n = node(tag); if (className) n.className = className; if (text != null) n.textContent = text; return n; };
+  const { pestanasCharla, listaCharla } = new Function('el', 'document', `${src}; return { pestanasCharla, listaCharla };`)(el, { createElement: node });
+  const una = listaCharla([node('m')], 'vacío');
+  una.scrollHeight = 900;
+  const otra = listaCharla([node('m')], 'vacío');
+  otra.scrollHeight = 700;
+  const [tabs, primera, segunda] = pestanasCharla([['Con vos', una], ['Con las sesiones', otra]]);
+  const radios = tabs.kids.map((l) => l.kids[0]);
+  assert.deepStrictEqual(radios.map((r) => r.checked), [true, false], 'abre en «Con vos»');
+  assert.deepStrictEqual([primera.hidden, segunda.hidden], [false, true]);
+  radios[1].onchange();
+  assert.deepStrictEqual([primera.hidden, segunda.hidden], [true, false], 'una por vez');
+  assert.strictEqual(otra.scrollTop, 700, 'arranca en lo último');
+  otra.scrollTop = 10;
+  radios[0].onchange();
+  radios[1].onchange();
+  assert.strictEqual(otra.scrollTop, 10, 'volver no le mueve lo que estaba leyendo');
+  assert.strictEqual(listaCharla([], 'vacío').textContent, 'vacío');
+});
+
+test('T282 Conversation_PageStaysStill: con la ventana abierta la página de atrás no se mueve, y al cerrarla vuelve a moverse', () => {
+  const html = page({ agents: [], items: [], kanban: null, meta: null });
+  assert.match(html, /html\.con-ventana\{overflow:hidden\}/);
+  assert.match(html, /\.ventana \.panel3,\.ventana \.chat\{overscroll-behavior:contain\}/, 'llegar al final de la lista no pasa la rueda a la página');
+  const fn = (name) => { const at = html.indexOf(`function ${name}(`); return html.slice(at, html.indexOf('\n', at)); };
+  assert.match(html.slice(html.indexOf('function abrirCharla('), html.indexOf('function cerrarCharla(')), /classList\.add\("con-ventana"\)/);
+  assert.match(fn('cerrarCharla'), /classList\.remove\("con-ventana"\)/);
+});
+
 test('T281 Summary_OneLine: dice cuánto te toca y cuánto está trabado, destaca lo tuyo, y sin nada no hay qué abrir', () => {
   const html = page({ agents: [], items: [], kanban: null, meta: null });
   const src = html.slice(html.indexOf('const RESUMEN_KEY='), html.indexOf('function pintarResumen('));

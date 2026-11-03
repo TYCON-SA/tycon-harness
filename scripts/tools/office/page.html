@@ -77,7 +77,10 @@ h2{font:700 .8rem var(--display);text-transform:uppercase;letter-spacing:.08em;c
 .chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.panel3 .chips .chip{margin-bottom:0}.panel3 .chips{margin-bottom:10px}
 .como-chip{display:inline-flex;align-items:center;gap:5px;font:500 .74rem var(--body);padding:1px 9px;border-radius:999px;border:1px solid var(--line);color:var(--fg)}.panel3 .como-chip{color:#e8e1f5;border-color:rgba(255,255,255,.28)}
 .verCharla{display:inline-flex;align-items:center;gap:7px;align-self:flex-start;margin-top:10px;font:600 .86rem var(--body);padding:7px 14px;border-radius:9px;border:0;background:#1f6feb;color:#fff;cursor:pointer}.verCharla:hover{background:#1a5fd0}.verCharla:focus-visible{outline:2px solid #fff;outline-offset:2px;box-shadow:0 0 0 4px #1f6feb}.verCharla .ico{width:16px;height:16px;margin:0}
-.ventana{position:fixed;inset:0;z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(8,6,14,.62)}.ventana[hidden]{display:none}
+.ventana{position:fixed;inset:0;z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(8,6,14,.62);overscroll-behavior:contain}.ventana[hidden]{display:none}
+/* con la ventana abierta sólo se mueve la ventana, también al llegar al principio o al final de la lista */
+.ventana .panel3>.pestanas{align-self:flex-start;margin:4px 0 10px}.ventana .panel3>.pestana{display:flex;flex-direction:column;flex:1 1 0;min-height:0}.ventana .panel3>.pestana[hidden]{display:none}
+html.con-ventana{overflow:hidden}.ventana .panel3,.ventana .chat{overscroll-behavior:contain}
 .ventana .panel3{position:static;display:flex;flex-direction:column;width:min(1120px,100%);height:min(920px,calc(100vh - 32px));height:min(920px,calc(100dvh - 32px));max-height:none;padding:18px 22px;color:#efe9fa}.ventana .panel3>*{flex:none}
 .ventana .panel3 h3{font-size:1.25rem}
 .ventana .panel3 .chat{flex:1 1 0;min-height:140px;max-height:none;gap:9px;overflow:hidden auto;padding-right:6px}
@@ -304,10 +307,10 @@ function etiquetaComo(como){const e=el("span","como-chip");e.appendChild(iconoCo
 let charlaDe=null,charlaVuelve=null,ultimoPedido=0;
 const ALCANCE="Sólo se ven en esta máquina: no se guardan ni se mandan a ningún lado.";
 const ventana=()=>document.getElementById("ventana");
-function abrirCharla(nombre,boton){const v=ventana(),box=v.firstElementChild;charlaDe=nombre;charlaVuelve=boton;v.hidden=false;
+function abrirCharla(nombre,boton){const v=ventana(),box=v.firstElementChild;charlaDe=nombre;charlaVuelve=boton;v.hidden=false;document.documentElement.classList.add("con-ventana");
   const cerrar=el("button","cerrar","Cerrar");cerrar.type="button";cerrar.onclick=cerrarCharla;box.replaceChildren(el("h3",null,"Conversación de "+nombre),el("p","m","Leyendo…"),cerrar);cerrar.focus();
   const yo=++ultimoPedido;fetch("conversacion?t="+encodeURIComponent(LIVE.token)+"&s="+encodeURIComponent(nombre)).then(r=>{if(!r.ok)throw new Error(String(r.status));return r.json()}).then(datos=>({datos}),()=>({falla:true})).then(c=>{if(yo===ultimoPedido&&charlaDe===nombre)pintarCharla(box,nombre,c,cerrar)})}
-function cerrarCharla(){const v=ventana();if(v.hidden)return;v.hidden=true;v.firstElementChild.replaceChildren();charlaDe=null;ultimoPedido+=1;if(charlaVuelve&&charlaVuelve.isConnected)charlaVuelve.focus();charlaVuelve=null}
+function cerrarCharla(){const v=ventana();if(v.hidden)return;v.hidden=true;document.documentElement.classList.remove("con-ventana");v.firstElementChild.replaceChildren();charlaDe=null;ultimoPedido+=1;if(charlaVuelve&&charlaVuelve.isConnected)charlaVuelve.focus({preventScroll:true});charlaVuelve=null}
 document.addEventListener("keydown",e=>{if(e.key==="Escape")cerrarCharla()});
 // El formato simple de un mensaje: negritas, código y listas. Todo se arma con nodos y textContent, así que lo que traiga
 // el mensaje nunca llega a ser HTML.
@@ -326,13 +329,19 @@ function formatear(texto){const out=[];let lista=null,codigo=null;
   return out}
 function msg(quien,cuando,texto,mio){const box=document.createElement("div");box.className="msg"+(mio?" mio":"");const b=document.createElement("b"),t=Number(cuando),hh=Number.isFinite(t)&&t>0?new Date(t):null;b.textContent=quien+(hh?" · "+String(hh.getHours()).padStart(2,"0")+":"+String(hh.getMinutes()).padStart(2,"0"):"");box.append(b,...formatear(texto));return box}
 // Abre como un chat: cada conversación en lo último, dentro de su caja.
+function listaCharla(filas,vacio){if(!filas.length)return el("p","m",vacio);const ch=el("div","chat");filas.forEach(f=>ch.append(f));return ch}
+// Las dos conversaciones de la coordinadora, de a una y con todo el alto: abre en la primera. La otra arranca en lo último al mostrarse.
+function pestanasCharla(partes){const tabs=el("div","seg pestanas"),paneles=[];tabs.setAttribute("role","radiogroup");tabs.setAttribute("aria-label","Con quién");
+  partes.forEach(([titulo,lista],i)=>{const l=document.createElement("label"),r=document.createElement("input"),p=el("div","pestana");r.type="radio";r.name="charlaCon";r.checked=i===0;p.hidden=i>0;p.append(lista);paneles.push(p);
+    r.onchange=()=>{paneles.forEach((x,j)=>{x.hidden=j!==i});if(lista.classList.contains("chat")&&!lista.dataset.vista){lista.dataset.vista="1";lista.scrollTop=lista.scrollHeight}};l.append(r,el("span",null,titulo));tabs.append(l)});
+  return [tabs,...paneles]}
 function pintarCharla(box,nombre,c,cerrar){const fin=x=>{box.insertBefore(x,cerrar)},seccion=(titulo,filas,vacio)=>{fin(el("h4",null,titulo));if(!filas.length){fin(el("p","m",vacio));return}const ch=el("div","chat");filas.forEach(f=>ch.append(f));fin(ch)};
   box.querySelector("p.m").remove();
   if(c.falla){fin(el("p","m","No se pudo leer la conversación de esta sesión."));return}
   const d=c.datos||{};if(d.sinCoordinadora){fin(el("p","m","Esta máquina no tiene coordinadora designada: no hay con quién cruzar los mensajes."));return}
   const alFinal=()=>box.querySelectorAll(".chat").forEach(ch=>{ch.scrollTop=ch.scrollHeight});
-  if(d.conVos){seccion("Con vos",d.conVos.map(m=>msg(m.quien==="vos"?"Vos":nombre,m.at,m.texto,m.quien==="vos")),"No hay mensajes con vos en lo último de su conversación.");
-    seccion("Con las sesiones",(d.conSesiones||[]).map(m=>msg(m.de===nombre?nombre+" a "+m.a:m.de,m.at,m.texto,m.de===nombre)),"No hay mensajes con las sesiones en lo último de su conversación.");
+  if(d.conVos){pestanasCharla([["Con vos",listaCharla(d.conVos.map(m=>msg(m.quien==="vos"?"Vos":nombre,m.at,m.texto,m.quien==="vos")),"No hay mensajes con vos en lo último de su conversación.")],
+      ["Con las sesiones",listaCharla((d.conSesiones||[]).map(m=>msg(m.de===nombre?nombre+" a "+m.a:m.de,m.at,m.texto,m.de===nombre)),"No hay mensajes con las sesiones en lo último de su conversación.")]]).forEach(fin);
     fin(el("p","m","Tus últimos 20 mensajes con sus respuestas, y los últimos 10 con las sesiones, en orden. "+ALCANCE+" Las contraseñas y las claves se tapan."));alFinal();return}
   const filas=(d.conCoordinadora||[]).map(m=>msg(m.propio?nombre:m.de,m.at,m.texto,m.propio));if(d.arranque)filas.unshift(msg("Mensaje de arranque",d.arranque.at,d.arranque.texto,false));
   seccion("Con la coordinadora",filas,"No hay mensajes con la coordinadora en lo último de su conversación.");
