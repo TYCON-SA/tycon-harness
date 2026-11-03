@@ -592,6 +592,15 @@ test('T37 Sitio_EsquemaCerrado_DescartaYCierra_TextoEscapado — @story-8.171 @a
   const bien = limpiarFoto(FOTO());
   assert.strictEqual(bien.ok, true);
   assert.deepStrictEqual(bien.desconocidos, []);
+  // lo que arma la máquina pasa por el sitio tal cual, con cada forma de la lista: las filas de las tablas, con sus
+  // trabajos y una de otro proyecto, también
+  const fila = (grupo, otro) => ({ grupo, que: 'Dos trabajos', col: 'Haciendo', otro, trabajos: [{ titulo: 'La pestaña', quien: 'Ana', como: 'Haciendo · 14:10', otro }] });
+  const tabla = { titulo: 'Hoy', columnas: ['Tema', 'Qué', 'Cómo va'], filas: [fila('Oficinas', false), fila('Otro proyecto', true)], escrito: '14:10', cruce: '', vacio: 'Nada' };
+  const deLaMaquina = F.pick({ agents: [{ nombre: 'Ana', estado: 'trabajando' }], tablas: { hoy: tabla, pendientes: tabla, hechos: tabla } }, os.homedir());
+  const conTablas = limpiarFoto(deLaMaquina);
+  assert.strictEqual(conTablas.ok, true, 'una foto con filas en sus tablas no es una forma mala');
+  assert.deepStrictEqual(conTablas.foto, deLaMaquina, 'y llega igual que salió de la máquina');
+  assert.strictEqual(limpiarFoto({ tablas: { hoy: { filas: ['no es una fila'] } } }).ok, false, 'una fila que no es un objeto sigue siendo mala');
   assert.strictEqual(limpiarFoto({ agents: [{ nombre: 'x'.repeat(201) }] }).ok, false, 'un texto de más de 200');
   assert.strictEqual(limpiarFoto({ agents: 'no es una lista' }).ok, false, 'una forma que no corresponde');
   assert.strictEqual(limpiarFoto({ agents: [{ avance: 'mucho' }] }).ok, false, 'un número que no lo es');

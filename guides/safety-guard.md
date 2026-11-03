@@ -360,11 +360,32 @@ TYCON_SAFETY_GUARD=1 \
   bash ~/.claude/tycon-harness/scripts/install-tycon-hooks.sh
 ```
 
+## Los secretos de la máquina se tapan, no se frenan
+
+El freno mira el comando, y eso no alcanza para los secretos: `env | grep ALGO` parece inofensivo y `node guion.js` no dice qué imprime. Por eso hay otra pieza, `scripts/hooks/cover-secrets.js`, que mira el resultado: cambia por `«tapado»` cada aparición de un valor real de la máquina en lo que devuelven `Bash`, `PowerShell`, `Read` y `Grep`, y deja el resto igual byte por byte. El comando corre igual y con su código de salida. Podés seguir mirando tu configuración: ves todo salvo los valores. Vale para lo que termina bien: un comando que falla queda afuera (abajo).
+
+**Qué valores:** las variables de entorno con `TOKEN`, `SECRET`, `PASSWORD`, `PASSWD`, `API_KEY` o `APIKEY` en el nombre, con `_PAT_` en el medio, o que terminan en `_PAT` o `_KEY`; las asignaciones con esos nombres en `~/.zshrc`, `~/.zprofile`, `~/.bashrc` y `~/.claude/channels/*/.env`; las claves de la configuración de la máquina con esos nombres o de tipo `secreto`; y todos los valores del almacén de las integraciones, `secrets/<integración>.json` en la casa del arnés. Quedan fuera los de menos de 16 caracteres y, salvo en ese almacén, las rutas y las direcciones sin credencial. Se compara por valor exacto: una clave de ejemplo en un archivo de pruebas sale tal cual.
+
+**Para saber si algo está, sin verlo:** `tycon-config.js get <clave>` para una clave de la configuración; `[ -n "$VARIABLE" ] && echo está` para una variable. Se apaga con `TYCON_COVER_SECRETS=0`. Registro: `cover-secrets.jsonl` en la carpeta del estado, con la cantidad y el origen, nunca el valor ni el comando; errores en `cover-secrets-errors.log`, sin valores.
+
+**Lo que no se ataja:**
+
+- **Un comando que termina con error, en Claude.** Claude Code no pasa ese resultado por este gancho: lo manda a otro evento, que trae la salida y no deja cambiarla. Lo que imprime un comando que falla llega entero al modelo y a la conversación guardada. Al subir al buzón se tapa, si el valor se conoce.
+- **Codex.** No tiene forma de reescribir una salida: el gancho contesta `decision: "block"` con la salida tapada como motivo. El comando ya corrió y el modelo ve lo tapado, pero se lo presenta como un error del guion, y el original queda en el archivo de su conversación.
+- **Una salida grande de Claude.** Claude Code guarda el original completo en un archivo aparte, `tool-results/`, junto a la conversación. El modelo y la conversación guardada lo ven tapado, también si después lo lee, pero el archivo conserva el valor.
+- **Un gancho cortado por tiempo.** Si la herramienta lo corta, el valor pasa sin que quede anotado.
+- **Un archivo reescrito a partir de lo leído.** Un agente que lee `~/.zshrc` y lo vuelve a escribir entero puede guardar el literal `«tapado»` en lugar del valor.
+- **Una asignación de varias líneas en un archivo del shell:** se lee renglón por renglón, y ese valor no se conoce salvo que también esté en el entorno.
+- **Lo que la máquina no conoce:** la contraseña de la configuración de un producto, o un valor partido o codificado. Es contra el descuido, no contra quien quiera sacarlo a propósito.
+- **`Edit`.** No pasa por este gancho. El modelo no ve el valor, pero la conversación guardada conserva el archivo entero que trae su respuesta, aunque la lectura anterior haya salido tapada. Al subir al buzón se tapa, si el valor se conoce.
+- **Otras herramientas:** `mcp__*`, `WebFetch` y `Glob` no pasan por este gancho. En la medición ninguna devolvió un valor real.
+- **Lo que ya está en el buzón.** Tapar al subir no limpia lo subido antes: eso se resuelve cambiando los tokens.
+
 ## Limitations v1 + roadmap v2
 
 **v1 NO cubre:**
 
-- **Read/Edit/Write tool calls** — el hook solo intercepta `Bash`. Una llamada `Read` a `~/.ssh/id_rsa` sigue funcionando. Para cubrir eso necesitamos hook `PreToolUse` matcher `Read|Edit|Write` con denylist de paths. v2.
+- **Read/Edit/Write tool calls** — el hook solo intercepta `Bash`. Una llamada `Read` a `~/.ssh/id_rsa` sigue funcionando, aunque si el archivo trae un valor conocido sale tapado (arriba). Para cubrir eso necesitamos hook `PreToolUse` matcher `Read|Edit|Write` con denylist de paths. v2.
 - **Freeze mode** — limitar edits a un directorio. Requiere estado persistente entre invocations del hook (qué scope freezeaste). v2.
 - **Guard mode autónomo** — combinación Careful + Freeze auto-activada cuando `tycon-pipeline --autonomous`. v2.
 

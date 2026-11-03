@@ -49,6 +49,7 @@ const { Worker, isMainThread, parentPort, workerData } = require('worker_threads
 
 const WebSocket = require('./vendor/ws');
 const { createLink, linkedSite, lockOwner, OWNER_WAIT_MS } = require('./site-link.js');
+const topics = require('./topics.js');
 
 const ROOT = path.join(__dirname, '..', '..', '..');
 const { stateDir, claudeDir } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
@@ -56,6 +57,7 @@ const { stateDir, claudeDir } = require(path.join(ROOT, 'skills', 'tycon-pipelin
 const DEBOUNCE_MS = 250;
 const QUERY_TTL_MS = 60 * 1000;
 const PR_PHOTO_MS = 3 * 60 * 1000;
+const TOPICS_MS = 60 * 1000;
 const HALFWAY_MS = 15 * 60 * 1000;
 const HALFWAY_OPEN_FRESH_MS = 60 * 1000;
 const MAX_PAYLOAD = 1024;
@@ -98,7 +100,7 @@ function cachedQuery(query, { ttlMs = QUERY_TTL_MS, clock = Date.now } = {}) {
  */
 function watchedDirs(home, sdir) {
   return [path.join(sdir, 'active'), path.join(sdir, 'adhoc'), path.join(sdir, 'doing'), path.join(sdir, 'parked'), path.join(claudeDir(home), 'sessions'), path.join(sdir, 'sessions'),
-    path.join(sdir, 'coordination'), path.join(sdir, 'coordination', 'tablas'), path.join(sdir, 'gates.log')];
+    path.join(sdir, 'coordination'), path.join(sdir, 'gates.log')];
 }
 
 /**
@@ -212,7 +214,7 @@ async function serve() {
   const { sessionsBySid } = require(path.join(ROOT, 'scripts', 'tools', 'work-in-progress.js'));
   const testing = process.env.TYCON_OFFICE_TEST === '1';
   const token = crypto.randomBytes(16).toString('hex');
-  const counters = { reads: 0, sends: 0, intervals: 0, prRefreshes: 0 };
+  const counters = { reads: 0, sends: 0, intervals: 0, prRefreshes: 0, topicRuns: 0 };
   // en las pruebas, cada reloj que repite queda contado: el proceso no consulta cada tanto
   if (testing) {
     const every = global.setInterval;
@@ -319,6 +321,47 @@ async function serve() {
     prTimer.unref();
   };
 
+  // el tema de los trabajos nuevos, de fondo y a lo sumo una vez por minuto: armar la foto no espera al modelo. Sólo con una
+  // página conectada, trabajos por clasificar y pasado el plazo que dejó la última vez. En las pruebas sólo corre el guion que le den
+  const topicsRunner = testing ? process.env.TYCON_OFFICE_TOPICS_RUN : path.join(__dirname, 'topics.js');
+  const topicsEveryMs = numEnv('TYCON_OFFICE_TOPICS_MS', TOPICS_MS);
+  let topicsTimer = null;
+  let topicsRunning = false;
+  let topicsHoldUntil = 0;
+  // un proceso caído no dejó su plazo: sin esta espera se relanzaría cada minuto, y puede haber gastado modelo antes de caerse
+  const topicsFailed = (why) => {
+    topicsRunning = false;
+    topicsHoldUntil = Date.now() + topics.BACKOFF_MS;
+    noteOnce(`los temas no se pudieron clasificar: ${why}`);
+  };
+  const topicsDue = () => {
+    if (Date.now() < topicsHoldUntil) return false;
+    const { temas } = topics.readTopics(sdir);
+    const { nextAt, sinModelo } = topics.readState(sdir).state;
+    // sin nada que clasificar sólo hace falta mirar si el modelo volvió
+    if (!sinModelo && !topics.readPending(sdir).some((w) => w && w.clave && !temas[w.clave])) return false;
+    return !(Number.isFinite(nextAt) && Date.now() < nextAt);
+  };
+  const runTopics = () => {
+    if (topicsRunning || !topicsRunner || !topicsDue()) return;
+    topicsRunning = true;
+    counters.topicRuns += 1;
+    const child = spawn(process.execPath, [topicsRunner, '--classify'], { stdio: 'ignore', windowsHide: true, timeout: 2 * 60 * 1000 });
+    child.on('error', (e) => topicsFailed(e.message));
+    child.on('exit', (code, signal) => {
+      if (code !== 0) { topicsFailed(`el proceso terminó con ${signal || `el código ${code}`}`); return; }
+      topicsRunning = false;
+      schedule();
+    });
+    child.unref();
+  };
+  const topicsTick = () => {
+    if (!clients.size) { topicsTimer = null; return; }
+    runTopics();
+    topicsTimer = setTimeout(topicsTick, topicsEveryMs);
+    topicsTimer.unref();
+  };
+
   const halfwayEveryMs = numEnv('TYCON_OFFICE_HALFWAY_MS', HALFWAY_MS);
   let halfwayTimer = null;
   const reviseHalfwaySoon = () => { reviseNext = true; schedule(); };
@@ -381,6 +424,7 @@ async function serve() {
       });
       return;
     }
+    if (url.pathname === '/page.js') { send('text/javascript; charset=utf-8', fs.readFileSync(path.join(__dirname, 'page.js'))); return; }
     if (url.pathname === '/health') { send('application/json', JSON.stringify({ pid: process.pid, address: server.address().address })); return; }
     if (url.pathname.startsWith('/modules/')) {
       let key = null;
@@ -423,13 +467,14 @@ async function serve() {
       clients.add(ws);
       reviewLife();
       if (!prTimer) prTick();
+      if (!topicsTimer) topicsTick();
       halfwayOnOpen();
       // el canal de vuelta está cerrado: un mensaje cierra la conexión sin leerse
       ws.on('message', () => { ws.close(1008, 'el canal de vuelta está cerrado'); noteOnce(BACK_CHANNEL); });
       // un mensaje de más de 1 KB lo corta la librería sola, con 1009, antes de leerlo
       // sólo el corte por tamaño es un mensaje de la página; un corte de red no lo es (lo dice el `close`)
       ws.on('error', (e) => { if (e && e.code === 'WS_ERR_UNSUPPORTED_MESSAGE_LENGTH') noteOnce(BACK_CHANNEL); });
-      ws.on('close', () => { clients.delete(ws); reviewLife(); if (!clients.size) { clearTimeout(prTimer); prTimer = null; clearTimeout(halfwayTimer); halfwayTimer = null; } });
+      ws.on('close', () => { clients.delete(ws); reviewLife(); if (!clients.size) { clearTimeout(prTimer); prTimer = null; clearTimeout(topicsTimer); topicsTimer = null; clearTimeout(halfwayTimer); halfwayTimer = null; } });
       ready.then(() => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'foto', data: last })); })
         .catch((e) => { noteOnce(`una página no recibió la foto: ${e.message}`); try { ws.close(1011, 'sin foto'); } catch { /* ya cerrada */ } });
     });
@@ -458,7 +503,7 @@ async function serve() {
   function shutdown() {
     if (done) return;
     done = true;
-    clearTimeout(idle); clearTimeout(cap); clearTimeout(pending); clearTimeout(settle); clearTimeout(prTimer); clearTimeout(halfwayTimer); clearInterval(sessionCheck);
+    clearTimeout(idle); clearTimeout(cap); clearTimeout(pending); clearTimeout(settle); clearTimeout(prTimer); clearTimeout(topicsTimer); clearTimeout(halfwayTimer); clearInterval(sessionCheck);
     unwatch();
     if (link) link.stop();
     for (const c of clients) { try { c.close(1001, 'la oficina se cerró'); } catch { /* ya cerrada */ } }
