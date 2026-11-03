@@ -1217,6 +1217,22 @@ bash "${SCRIPT}" run --root "${R}" --base main --range main...banco > "${T}/t9b.
 is "T9 cambiar el guion del banco de la base sin constancia: rojo" "1" "${RC}"
 has "T9 …pide la firma del dueño" "${T}/t9b.out" "afloja un control sin la constancia del dueño: scripts/ci/bench-against-base.js"
 
+# T58 · los resultados que guarda el examen nocturno están en la lista «content» del inventario real: el público no los
+#       trae, y sin clasificar frena al repo que los lleva. Rojo: periodic-exam.js guarda uno que la lista no nombra.
+R="${T}/t58"; make_base "${R}"
+inv "${R}" "j.content=$(node -e 'console.log(JSON.stringify(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).content))' "${ROOT}/scripts/ci/controls-from-base.json")"
+GUARDA="$(grep -oE 'scripts/controls-bench/ultimo-[a-z-]+\.json' "${ROOT}/scripts/controls-bench/periodic-exam.js" | sort -u)"
+case "${GUARDA}" in *ultimo-guias.json*) ok "T58 el examen guarda el resultado de las guías" ;; *) no "T58 periodic-exam.js ya no nombra ultimo-guias.json" ;; esac
+mkdir -p "${R}/scripts/controls-bench"
+for F in ${GUARDA}; do
+  printf '{}\n' > "${R}/${F}"
+  printf '%s\n' "# lo guarda el examen: \"${F}\"" >> "${R}/scripts/ci/toy-check.sh"
+done
+commit "${R}" "lleva los resultados del examen"
+bash "${SCRIPT}" check-inventory --root "${R}" > "${T}/t58.out" 2>&1; RC=$?
+is "T58 un árbol con los resultados del examen: verde" "0" "${RC}"
+lacks "T58 …sin «sin clasificar»" "${T}/t58.out" "sin clasificar"
+
 echo
 if [ "${FAILS}" -eq 0 ]; then echo "✅ base-controls: ${TOTAL} verificaciones verdes"; exit 0; fi
 echo "❌ base-controls: ${FAILS} de ${TOTAL} en rojo"

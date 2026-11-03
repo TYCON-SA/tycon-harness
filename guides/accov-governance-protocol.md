@@ -450,3 +450,7 @@ el commit de la evidencia alcanza para juzgarla después.
 Las demás condiciones no cambian: el espejo en `gates.log`, las pruebas apagadas, la salida sellada y la clase del comando
 del humo. Una evidencia sin espejo no cuenta aunque el archivo no haya cambiado.
 
+Los archivos declarados son los de `files_to_create` y `files_to_modify`, escritos como estén: con comillas, con comentarios
+con sangría, en línea o a la misma sangría que la clave. Las pruebas y los guiones de humo que la historia declara también
+vencen la evidencia, porque cuentan como código.
+
