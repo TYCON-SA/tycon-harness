@@ -4443,8 +4443,9 @@ function sessionLiveness(sid) {
 // permiso: no toca el portón de carril ni el ad-hoc. Otro `doing` la reemplaza; `doing clear` la borra;
 // `doing clear-orphan <sid>` borra la nota de otra sesión que ya no vive. Archivo: doing/<sid>.json { text, at }; doing.log.
 // `--until HH:MM`: a qué hora dice que termina. Volver a anotar el mismo trabajo (el mismo texto, o sin texto) conserva en
-// `promisedAt` la primera hora que prometió, contra la que la oficina compara. `--waiting-for "<qué espera>"`: no tiene hora
-// porque depende de otro; queda desde cuándo (`waitingSince`), que no cambia mientras espere lo mismo.
+// `promisedAt` la primera hora que prometió, contra la que la oficina compara. La primera corrección, en los 10 minutos de
+// la primera hora anotada, es un error de tipeo y la reemplaza; una sola, para que corregir seguido no renueve la ventana.
+// `--waiting-for "<qué espera>"`: no tiene hora porque depende de otro; queda desde cuándo (`waitingSince`), que no cambia mientras espere lo mismo.
 // La hora de fin que declara una sesión, «HH:MM», como fecha completa: la de hoy; la de mañana si quedaría más de 12 h
 // antes de ahora (a las 23:00, «01:30» es de mañana); la de ayer si quedaría más de 18 h después (a las 00:10, «23:30» es
 // de anoche, y ya pasó). Una hora mal escrita es null.
@@ -4526,10 +4527,14 @@ function cmdDoing(sub, arg) {
   const now = new Date().toISOString();
   // el mismo trabajo, anotado hace menos de un día: la primera hora prometida y el arranque de la misma espera se conservan
   const same = prev && prev.text === text && Date.now() - Date.parse(prev.at) < 24 * 3600 * 1000;
-  const promisedAt = same ? prev.promisedAt || prev.endAt || null : null;
+  const firstHourAt = (same && prev.firstHourAt) || (endAt && !(same && prev.endAt) ? new Date(Date.now()).toISOString() : null);
+  // se compara la hora del reloj: la misma hora tipeada puede caer en otro día si pasó el corte de untilIso, y eso la repite, no la corrige
+  const clock = (iso) => new Date(iso).toTimeString().slice(0, 5);
+  const corrects = Boolean(same && endAt && prev.endAt && clock(endAt) !== clock(prev.endAt) && !prev.promisedAt && !prev.hourCorrected && prev.firstHourAt && Date.now() - Date.parse(prev.firstHourAt) <= 10 * 60000);
+  const promisedAt = same && !corrects ? prev.promisedAt || prev.endAt || null : null;
   const waitingSince = !waitingFor ? null : (same && prev.waitingFor === waitingFor && prev.waitingSince) || now;
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(file, JSON.stringify({ text, at: now, ...(endAt ? { endAt } : {}), ...(promisedAt ? { promisedAt } : {}), ...(waitingFor ? { waitingFor, waitingSince } : {}) }));
+  fs.writeFileSync(file, JSON.stringify({ text, at: now, ...(endAt ? { endAt } : {}), ...(promisedAt ? { promisedAt } : {}), ...(firstHourAt ? { firstHourAt } : {}), ...(corrects || (same && prev.hourCorrected) ? { hourCorrected: true } : {}), ...(waitingFor ? { waitingFor, waitingSince } : {}) }));
   avisarOficina();
   appendLog('doing.log', { kind: 'DOING_SET', text, ...(endAt ? { endAt } : {}), ...(waitingFor ? { waitingFor } : {}) });
   if (endAt) warnPastUntil('doing', endAt);

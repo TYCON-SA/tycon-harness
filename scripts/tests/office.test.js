@@ -526,6 +526,40 @@ test('T50 DeclaredHour_AfterMidnight: pasada la medianoche, una hora de anoche e
   assert.strictEqual(Date.parse(JSON.parse(fs.readFileSync(path.join(sdir, 'doing', 'n2.json'), 'utf8')).endAt), at(21, 0), 'trece horas adelante sigue siendo hoy');
 });
 
+test('T294 FirstCorrection_ReplacesThePromise: sólo la primera, en los 10 minutos de la primera hora; corregir seguido no renueva la ventana', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'office-correct-'));
+  const sdir = stateDir(home);
+  const at = (mi) => new Date(2026, 9, 31, 0, mi).getTime();
+  const hour = (h, mi) => new Date(2026, 9, 31, h, mi).getTime();
+  const note = (sid, mi, until) => {
+    const r = markerAt(home, sid, at(mi), ['doing', 'una tarea con su hora', '--until', until]);
+    assert.strictEqual(r.status, 0, r.stderr);
+    const d = JSON.parse(fs.readFileSync(path.join(sdir, 'doing', `${sid}.json`), 'utf8'));
+    return [Date.parse(d.endAt), d.promisedAt ? Date.parse(d.promisedAt) : null];
+  };
+  note('a', 8, '12:00');
+  assert.deepStrictEqual(note('a', 9, '01:30'), [hour(1, 30), null], 'la primera corrección reemplaza lo prometido');
+  assert.deepStrictEqual(note('a', 11, '02:30'), [hour(2, 30), hour(1, 30)], 'la segunda ya no: la promesa es la corregida');
+  assert.deepStrictEqual(note('a', 13, '03:30'), [hour(3, 30), hour(1, 30)], 'ni renueva la ventana');
+  note('justo', 8, '12:00');
+  assert.deepStrictEqual(note('justo', 18, '01:30'), [hour(1, 30), null], 'a los 10 minutos justos todavía corrige');
+  note('tarde', 8, '12:00');
+  assert.deepStrictEqual(note('tarde', 19, '01:30'), [hour(1, 30), hour(12, 0)], 'pasados los 10 minutos, la promesa queda');
+  note('igual', 8, '12:00');
+  note('igual', 9, '12:00');
+  assert.deepStrictEqual(note('igual', 10, '01:30'), [hour(1, 30), hour(12, 0)], 'repetir la misma hora la confirma: ya no se corrige');
+  // la misma hora tipeada, a un lado y otro del corte de 12 h, cae en otro día: la repite, no la corrige
+  const cross = (mi, h) => markerAt(home, 'corte', new Date(2026, 9, 31, h, mi).getTime(), ['doing', 'una tarea con su hora', '--until', '08:00']);
+  assert.strictEqual(cross(55, 19).status, 0);
+  assert.strictEqual(cross(5, 20).status, 0);
+  const corte = JSON.parse(fs.readFileSync(path.join(sdir, 'doing', 'corte.json'), 'utf8'));
+  assert.strictEqual(Date.parse(corte.promisedAt), new Date(2026, 9, 31, 8, 0).getTime(), 'la promesa se conserva');
+  assert.ok(!corte.hourCorrected, 'no gastó la corrección');
+  const vieja = path.join(sdir, 'doing', 'vieja.json');
+  fs.writeFileSync(vieja, JSON.stringify({ text: 'una tarea con su hora', at: new Date(at(8)).toISOString(), endAt: new Date(hour(12, 0)).toISOString() }));
+  assert.deepStrictEqual(note('vieja', 9, '01:30'), [hour(1, 30), hour(12, 0)], 'una nota de antes de este cambio no sabe cuándo se anotó: conserva su promesa');
+});
+
 test('T51 AdhocSet_KeepsDeclaredHour: agrandar el carril no borra la hora declarada', () => {
   const src = fs.readFileSync(MARKER, 'utf8');
   const set = src.slice(src.indexOf('const existing = io.readAdhoc(STATE_DIR, destino);'), src.indexOf('io.writeAdhoc(STATE_DIR, destino, obj);'));
@@ -2116,6 +2150,8 @@ test('T207 Note_Hour_FirstPromise_Waiting: la sesión anota su hora, se compara 
   assert.strictEqual(runMarker(m.home, 'nota-1', ['doing', 'mido el disco de la máquina', '--until', hh(now + 3600000)]), 0);
   const first = await collectAt(m, now);
   assert.strictEqual(byName(first, 'Ana').fin.dif, 'en hora');
+  // repetir la hora la confirma: lo que siga ya no es corregir un tipeo
+  assert.strictEqual(runMarker(m.home, 'nota-1', ['doing', '--until', hh(now + 3600000)]), 0);
   assert.strictEqual(runMarker(m.home, 'nota-1', ['doing', '--until', hh(now + 2 * 3600000)]), 0, 'sin texto, cambia sólo la hora');
   const later = byName(await collectAt(m, now), 'Ana');
   assert.strictEqual(later.titulo, 'mido el disco de la máquina');
