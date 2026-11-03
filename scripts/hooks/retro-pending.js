@@ -233,8 +233,10 @@ function puntaDeLaRama(root, rama) {
 }
 // Lo que contesta `origin` por esa rama, o null. SIEMPRE sin interacción y con tope corto: corre después de abrir el
 // pedido, y una clave que nadie puede tipear acá no tiene que colgar la herramienta (mismo cuidado que public-push-guard.js).
+// TYCON_RETRO_ASK_REMOTE=0 la apaga (las pruebas y el banco: sus repos de juguete no tienen un remoto que conteste).
 const REMOTO_MS = 5000;
 function puntaDelRemoto(root, corta) {
+  if (process.env.TYCON_RETRO_ASK_REMOTE === '0') return null;
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'GIT_ASKPASS' && k !== 'SSH_ASKPASS'));
   const ssh = env.GIT_SSH_COMMAND || git(root, ['config', '--get', 'core.sshCommand']) || (env.GIT_SSH ? `"${env.GIT_SSH}"` : 'ssh');
   Object.assign(env, { LC_ALL: 'C', LANG: 'C', GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never',

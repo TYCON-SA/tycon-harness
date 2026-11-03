@@ -1871,7 +1871,8 @@
         }
       ],
       "env": {
-        "TYCON_RETRO_LAB_DIRS": ""
+        "TYCON_RETRO_LAB_DIRS": "",
+        "TYCON_RETRO_ASK_REMOTE": "0"
       },
       "__env": "Las suites del banco arman sus repos en el temporal del sistema: acá se declara que no hay carpetas de laboratorio (TYCON_RETRO_LAB_DIRS vacía), para que los casos de siempre se midan como repos de verdad. Los casos de laboratorio (2026-10-14) declaran la suya, adentro del caso."
     },
@@ -2222,7 +2223,8 @@
         }
       ],
       "env": {
-        "TYCON_RETRO_LAB_DIRS": ""
+        "TYCON_RETRO_LAB_DIRS": "",
+        "TYCON_RETRO_ASK_REMOTE": "0"
       },
       "__env": "Las suites del banco arman sus repos en el temporal del sistema: acá se declara que no hay carpetas de laboratorio (TYCON_RETRO_LAB_DIRS vacía), para que los casos de siempre se midan como repos de verdad. Los casos de laboratorio (2026-10-14) declaran la suya, adentro del caso."
     },
@@ -2372,7 +2374,8 @@
         }
       ],
       "env": {
-        "TYCON_RETRO_LAB_DIRS": ""
+        "TYCON_RETRO_LAB_DIRS": "",
+        "TYCON_RETRO_ASK_REMOTE": "0"
       },
       "__env": "Las suites del banco arman sus repos en el temporal del sistema: acá se declara que no hay carpetas de laboratorio (TYCON_RETRO_LAB_DIRS vacía), para que los casos de siempre se midan como repos de verdad. Los casos de laboratorio (2026-10-14) declaran la suya, adentro del caso."
     }
