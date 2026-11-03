@@ -222,7 +222,9 @@ function revisar(adhoc, repos = []) {
   const { fileTouchesUi } = require('./ui-signal.js');
   // lo que el arreglo cambió de verdad: lo traído de `main` no pide maqueta ni captura
   const regla = reglaDePantalla();
-  const esDePantalla = (rel, repo) => !esPrueba(rel) && fileTouchesUi(rel, repo, regla, nombreDelRepo(repo));
+  const nombres = new Map();
+  const nombreDe = (repo) => { if (!nombres.has(repo)) nombres.set(repo, nombreDelRepo(repo)); return nombres.get(repo); };
+  const esDePantalla = (rel, repo) => !esPrueba(rel) && fileTouchesUi(rel, repo, regla, nombreDe(repo));
   const { porRepo, fallas, avisos } = propiosDelCarril(adhoc, { repos, sinSeguir: true, soloCambiados: true, suma: esDePantalla });
   if (fallas.length) return { sinMedir: fallas[0] };
   const anotadas = new Set([adhoc.mockup, adhoc.capture].filter((x) => x && typeof x.file === 'string').map((x) => rutaReal(x.file)));

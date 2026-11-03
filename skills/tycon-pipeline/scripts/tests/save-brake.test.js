@@ -845,6 +845,32 @@ test('SaveBrake_ComandoQueNoSeLee_SeMideDondeCorre @story-8.181 @ac-11', (t) => 
   commitDeArchivos(d, 'a', 9);
   carril(h, { maxFiles: 8 });
   assert.match((brake().decidir({ command: 'eval "$CMD"', cwd: d, sid: SID, home: h }) || {}).texto || '', elTope);
+  // uno que se lee y guarda en otra carpeta no le cobra el tope a la rama donde está parada la sesión
+  const fuera = tmp(t, 'fuera-');
+  const r = brake().decidir({ command: `cd ${fuera} && git init -q && git add -A && git commit -m x`, cwd: d, sid: SID, home: h });
+  assert.doesNotMatch((r || {}).texto || '', elTope);
+});
+
+// 🔴 Falla con: `git diff HEAD` en un repo sin su primer commit, leído como «no pude medir»: el commit que lo arregla queda frenado.
+test('SaveBrake_RepoSinCommits_GuardaElPrimero @story-8.181 @ac-13', (t) => {
+  const d = tmp(t, 'sin-commits-');
+  sh(d, 'init', '-q', '-b', 'main');
+  escribir(d, 'src/app.js', 'x\n');
+  const h = home(t);
+  carril(h, { maxFiles: 8, bases: { [fs.realpathSync(d)]: { sha: null, traida: false, motivo: 'sin origin' } } });
+  const r = brake().decidir({ command: 'git add -A && git commit -m init', cwd: d, sid: SID, home: h });
+  assert.ok(r && r.pregunta && !r.texto, JSON.stringify(r));
+});
+
+// 🔴 Falla con: el freno anotado dos veces, o uno que no ocurrió: el tablero de la noche los cuenta como frenos.
+test('SaveBrake_ElTopeQuedaUnaVezEnElRegistro @story-8.181 @ac-11', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  commitDeArchivos(d, 'a', 9);
+  carril(h, { maxFiles: 8 });
+  assert.match((guardar(d, h) || {}).texto || '', elTope);
+  const frenos = () => fs.readFileSync(path.join(estado(h), 'gates.log'), 'utf8').split('\n').filter((l) => l.includes('archivos de implementación con cupo'));
+  assert.strictEqual(frenos().length, 1);
 });
 
 // 🔴 Falla con: el tope que frena sin traer `main`, con la copia local atrasada: lo de otro pedido suma como propio.

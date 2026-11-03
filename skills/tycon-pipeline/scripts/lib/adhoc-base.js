@@ -114,6 +114,12 @@ function puntoDeSalida(repo, sha) {
  */
 function marcaSinSustento(marca, { porRepo, fallas }, alDia, bases, avisar = () => {}) {
   if (fallas.length || !marca || !marca.archivo) return false;
+  // el repo de la marca ya no está (un worktree borrado): su rama puede seguir viva, y desde el repo de afuera no se ve
+  for (const r of Object.keys(bases || {})) {
+    const dentro = path.relative(r, marca.archivo);
+    if (dentro.startsWith('..') || path.isAbsolute(dentro)) continue;
+    try { if (!sigueElRepo(r)) return false; } catch (_) { return false; }
+  }
   // un enlace: medir su destino no dice si el enlace cambió
   try { if (fs.lstatSync(marca.archivo).isSymbolicLink()) return false; } catch (_) { /* ya no está: se mide por su ruta */ }
   const abs = rutaReal(marca.archivo);
@@ -222,7 +228,10 @@ function archivosDelCarril(adhoc, { repos: extra = [] } = {}) {
           if (seguidos.has(rel) ? !CON_BANDERA.test(seguidos.get(rel)) : !fs.existsSync(path.join(repo, rel))) set.delete(rel);
         }
       } else {
-        for (const l of rutasDeGit(repo, ['diff', '--name-only', 'HEAD', '--'])) set.add(l);
+        // un repo sin su primer commit no tiene `HEAD`: lo preparado y lo sin seguir ya están medidos
+        let nacido = true;
+        try { git(repo, ['rev-parse', '--verify', '-q', 'HEAD']); } catch (e) { if (e.status === 1) nacido = false; else throw e; }
+        if (nacido) for (const l of rutasDeGit(repo, ['diff', '--name-only', 'HEAD', '--'])) set.add(l);
         avisos.push(`camino rápido: ${repo} no tiene su base traída (${(base && base.motivo) || 'sin anotar'}): la rama no se midió, sólo lo anotado y el commit`);
       }
     } catch (e) {

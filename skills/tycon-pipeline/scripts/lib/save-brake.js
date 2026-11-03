@@ -1007,12 +1007,12 @@ function decidirCarril({ command, cwd, sid, home }) {
   // los del carril, aunque la carpeta de lo anotado ya no esté (se borró con su pantalla); sin ninguno, los del comando; y
   // un comando que no se puede leer se mide donde corre
   let reposDeLoQueSeGuarda = repos.length ? repos : reposDelComando;
-  if (!reposDeLoQueSeGuarda.length) { try { const r = SO().raizDe(cwd); if (r) reposDeLoQueSeGuarda = [r]; } catch (_) { /* fuera de un repo: nada que medir */ } }
+  if (!reposDeLoQueSeGuarda.length && (dudas.length || cs.some((c) => c.opaco))) { try { const r = SO().raizDe(cwd); if (r) reposDeLoQueSeGuarda = [r]; } catch (_) { /* fuera de un repo: nada que medir */ } }
   // lo que git todavía no sigue puede subir en un solo comando que empuja después de hacer otra cosa, y este freno corre antes:
   // no hay un guardado siguiente que lo cuente. Sin empujar, el siguiente sí lo cuenta. No se busca el `git add` en el texto:
   // tiene sinónimos y atajos, y la palabra puede estar en un mensaje
   const subeLoSinSeguir = dudas.length > 0 || cs.some((c) => c.opaco) || (cs.some((c) => c.tipo === 'push' || c.tipo === 'pr') && !esSoloEmpujar(command, cs));
-  let tope = delCarril ? frenoDelTope(a, sid, home, reposDeLoQueSeGuarda, subeLoSinSeguir) : null;
+  let tope = delCarril ? frenoDelTope(a, sid, home, reposDeLoQueSeGuarda, subeLoSinSeguir, false) : null;
   if (tope) {
     // antes de frenar, con `main` traído otra vez: lo contado pudo venir de otro pedido, por una rama que ya lo tenía
     a = basesAlDia(a, sid, home).adhoc;
@@ -1060,14 +1060,15 @@ function esSoloEmpujar(command, guardados) {
  * lo que el arreglo cambió de verdad, así que ve lo que el conteo al editar no vio, y cerrar y reabrir el carril en la misma
  * rama no empieza de cero. Dentro del cupo, null. Si git no contesta tampoco guarda: sin medir no hay verde.
  */
-function frenoDelTope(a, sid, home, repos, sinSeguir = false) {
+// `registrar`: el freno queda en el registro una vez, en la medición que frena de verdad, no en la que el reintento corrige.
+function frenoDelTope(a, sid, home, repos, sinSeguir = false, registrar = true) {
   const io = require('./story-gate-io.js');
   const gate = require('./story-gate.js');
   const dir = path.dirname(path.dirname(require('./open-runs.js').markerPath(sid, home)));
   let c;
   try { c = require('./adhoc-base.js').cuentaDelCarril(a, { repos, sinSeguir }); } catch (e) { c = { archivos: [], avisos: [], fallas: [e.message] }; }
   if (c.fallas.length) {
-    io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `tope del carril sin medir: ${c.fallas[0]}` });
+    if (registrar) io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `tope del carril sin medir: ${c.fallas[0]}` });
     return { texto: `🔒 GUARDAR: no pude medir cuántos archivos cambió este camino corto (${c.fallas[0]}). Sin medir no guarda: arreglá eso y repetí el comando.` };
   }
   for (const m of c.avisos) {
@@ -1076,7 +1077,7 @@ function frenoDelTope(a, sid, home, repos, sinSeguir = false) {
   }
   const cupo = gate.cupoDelCarril(a);
   if (c.archivos.length <= cupo) return null;
-  io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `camino corto: ${c.archivos.length} archivos de implementación con cupo ${cupo}`, archivos: c.archivos.slice(0, gate.TOPE_DE_NOMBRES) });
+  if (registrar) io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `camino corto: ${c.archivos.length} archivos de implementación con cupo ${cupo}`, archivos: c.archivos.slice(0, gate.TOPE_DE_NOMBRES) });
   const harness = (() => { try { return io.isHarnessRepo(c.archivos[0]); } catch (_) { return true; } })();
   return { texto: `🔒 GUARDAR: no guarda.\n${gate.textoDelTope({ harness, tocados: c.archivos.length, cupo, archivos: c.archivos })}` };
 }

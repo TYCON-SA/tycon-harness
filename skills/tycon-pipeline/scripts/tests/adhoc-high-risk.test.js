@@ -767,6 +767,26 @@ test('RiesgoCommiteado_ConLaBaseAnotadaRota_SigueFrenando @story-8.181 @ac-13', 
   assert.match(guardar(sinRed.dir, 'sin-red', home).texto, /no pude medir si este camino corto toca una ruta de riesgo alto/);
 });
 
+// 🔴 Falla con: la marca de un worktree anidado borrado, que se levanta sola con su rama viva: lo de riesgo se empuja sin revisores.
+test('Marca_DeUnWorktreeBorrado_NoSeLevanta @story-8.181 @ac-13', () => {
+  const raiz = tmp('wt-borrado-');
+  const home = tmp('home-');
+  const { dir, propio } = ramaAtrasada(raiz, 'producto');
+  const wt = path.join(dir, '.claude', 'worktrees', 'x');
+  git(dir, 'worktree', 'add', '-q', '-b', 'story/x', wt);
+  escribir(wt, 'src/auth/y.ts', 'de riesgo\n');
+  git(wt, 'add', '.');
+  commitear(wt, 'lo de riesgo');
+  const b = adhocBase.traerBase(dir);
+  const f = path.join(wt, 'src/auth/y.ts');
+  const state = conCarril(home, 'sw', { rutas: [propio, f], bases: { [dir]: b, [wt]: b }, riesgoAlto: marcaDe(f) });
+  git(dir, 'worktree', 'remove', '--force', wt);
+  const d = saveBrake.decidir({ command: 'git push origin story/x', cwd: dir, sid: 'sw', home });
+  assert.ok(d && d.texto, JSON.stringify(d));
+  assert.match(d.texto, /faltan los revisores y el pase/);
+  assert.ok(leerCarril(state, 'sw').riesgoAlto, 'la marca queda');
+});
+
 test('T21 RepoAjeno_NoEntraAlCarrilAlGuardar', () => {
   const raiz = tmp('t21-');
   const home = tmp('home-');

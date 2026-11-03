@@ -312,7 +312,7 @@ pasar el cupo, el arreglo frena al editar y no guarda, y el mensaje recomienda l
 trabaja y lo que ya está en el disco. Trabajo armado en otra rama y empujado por su nombre, o creado en el mismo comando que
 empuja, no suma. Eso no lo deja entrar a `main`, porque el pedido sigue con su control y su revisión: esquiva el aviso, y hay
 que hacerlo a propósito. Al revés, en `dev` con `main` traído y sin empujar, lo ya integrado suma de más: se empuja, o se elige
-con el click. Un empuje con algo más en el comando (`| cat`, `&& echo`) cuenta también lo que git no sigue, aunque sea de otra
+con el click. Un empuje con algo más en el comando (`| cat`, `&& echo`), o escrito con un alias o una variable delante, cuenta también lo que git no sigue, aunque sea de otra
 sesión: se repite el empuje solo. Y una ruta real llamada `tests`, `e2e`, `cypress` o `playwright` cuenta como prueba, sin pedir
 maqueta.
 
