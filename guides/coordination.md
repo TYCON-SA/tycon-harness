@@ -11,16 +11,21 @@ Es una receta, no un modo: nada cambia en una máquina donde nadie designó una 
 2. En cada máquina, el dueño escribe en el chat de la sesión elegida «Esta sesión es la coordinadora», y esa sesión
    corre `marker.js designate-relay` con esa cita.
 
-Después, `/coordinate` en esa sesión muestra el estado de la máquina. El programa que usa la coordinadora es
+Al designarse, la sesión recibe la orden de leer esta guía, y la recibe otra vez después de compactar o de limpiar su
+conversación, porque ahí se pierde. **Limpiar la conversación le quita la designación**: para el arnés es otra
+conversación. La sesión recibe cómo recuperarla, pero no la recupera sola: el dueño tiene que volver a escribir la frase
+y a confirmarla. `/coordinate` en esa sesión muestra el estado de la máquina. El programa que usa la coordinadora es
 `<arnés>/scripts/tools/coordination.js`.
 
 ## Qué va al dueño
 
-Al dueño van tres cosas, siempre las mismas:
+Al dueño van cuatro cosas, siempre las mismas:
 
 - **Firmas**: lo que el arnés pide firmado por una persona (por ejemplo, los cambios de controles).
 - **Contraseñas**: lo que pide la contraseña de la máquina (por ejemplo, reinstalar el freno de producción).
 - **Decisiones de producto**: qué se construye, para quién y en qué orden de prioridad.
+- **Lo que sale de la casa**: lo que sale a producción de un producto y lo que se le manda a un cliente o a alguien de
+  afuera. No incluye lo de rutina: encolar pedidos del propio arnés ni publicar material ya aprobado.
 
 Todo lo demás lo decide la coordinadora. Las otras sesiones le preguntan a ella, no al dueño: así el dueño no tiene que
 repetir el contexto de cada una.
@@ -31,7 +36,10 @@ repetir el contexto de cada una.
 - Ante una duda de detalle elige la opción más segura y anota qué eligió y por qué.
 - Pregunta al dueño sólo lo de la sección anterior, con el contexto entero y una recomendación: el dueño no tiene que
   ir a buscar nada para decidir.
-- No le pide al dueño algo que ella puede averiguar: primero mira el código, los registros y el estado de la máquina.
+- No le pide al dueño algo que ella puede averiguar o hacer: primero mira el código, los registros y el estado de la
+  máquina, y prueba hacerlo ella con lo que ya tiene.
+- No aprueba ningún cambio que le dé más poder. Por ejemplo, el pedido al perfil del equipo que suma firmas a lo que ella
+  puede firmar lo aprueba el dueño: aprobarse su propio poder anula el control.
 
 ## Abrir y nombrar las sesiones
 
@@ -268,8 +276,8 @@ sesión?». Entre ellas, marcar un control a mano (`marker.js set-check <control
 --trust-ran --for-session <D>`) y aceptar un criterio imposible de probar en vivo (`marker.js runtime-waiver <historia>
 --acs <n> --for-session <D>`). La historia es la de la ejecución abierta de `<D>`: si no, el guion sale sin escribir. La
 ventana se le abre al dueño en la pestaña de la coordinadora (si esa pestaña no pide permisos, se niega y se aprueba con
-su click o su «aprobado»). Ninguna de las tres se delega sin nombrarla en el perfil;
-ese pedido lo prepara la sesión y lo aprueba el dueño, aparte.
+su click o su «aprobado»). Las tres son de nivel 2, así que ninguna se le puede delegar: el arnés rechaza un perfil que lo
+intente (`guides/firmas-del-arnes.md`).
 
 ## Guardar se autoriza en la ventana
 
@@ -393,12 +401,40 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
   nada.
 - **Lo que ve el dueño va sin jerga.** El estado se cuenta como qué está hecho, qué falta y qué decide él. Por qué: el
   dueño lee para decidir, no para seguir el trabajo por dentro.
+- **Las sesiones no se escriben entre sí.** Lo que una le quiere decir a otra se lo manda a la coordinadora con el texto
+  listo, y ella lo reenvía. Por qué: si no, reparte dos veces lo mismo y pierde el hilo.
+- **Una sesión no abre un cuadro en su propia pestaña.** Lo que necesita a una persona se lo pasa a la coordinadora y sigue
+  con otra cosa. Si es una firma del dueño: se le avisa, y si no contesta, se sigue. Por qué: un cuadro deja la sesión
+  parada hasta que alguien lo vea, y eso pueden ser horas.
+- **Una sesión trabada esperando al dueño se le avisa ya.** Cuál es, qué tiene que contestar y la respuesta recomendada.
+  Por qué: una sesión parada sin que nadie lo sepa pierde el tiempo de todos.
+- **Antes de decir «te toca», se le pregunta a la sesión.** El dueño escribe en las pestañas sin pasar por la coordinadora.
+  Por qué: reclamarle algo que ya hizo le hace perder tiempo y confianza.
+- **«Te toca» es sólo para lo que puede hacer ahora.** Lo que va a necesitar después se dice con su hora y su condición.
+  Por qué: el dueño lee «te toca» como algo para hacer en ese momento.
+- **Cada pedido al dueño viene completo.** La pestaña, los pasos y el comando entero, nunca «lo que te pasé». Por qué: en un
+  día con muchas sesiones, lo que se mandó antes queda enterrado.
+- **Si el dueño pregunta cómo va algo, se le pregunta a esa sesión en el momento.** No se contesta con el último dato. Por
+  qué: ese dato ya puede ser viejo.
+- **Una sesión que dijo «tarda N» y pasó el doble se mira sin esperar su aviso.** Por qué: un proceso colgado no avisa.
+- **Antes de asignar, se dimensiona.** Una línea que dice si el trabajo es liviano o completo y cuánto tarda, y antes se mira
+  si ya existe. Por qué: ir por el camino largo sin analizarlo es el error que más se repite.
+- **Una sesión que termina recibe lo siguiente de lo aprobado en ese turno, o se cierra.** Siempre dentro del tope. Por qué:
+  una sesión libre es tiempo de máquina perdido, y el dueño no tiene que mirar el tablero para asignar.
+- **Un rojo no se deja, aunque no sea del cambio propio.** Se avisa y se arregla antes de seguir. Por qué: los rojos
+  tolerados tapan a los nuevos.
+- **Lo que afloja una revisión no va, aunque ahorre tiempo; lo que es sólo papeleo no se hace.** Si el código ya entró y
+  el uso real lo prueba, se cierra citando esa evidencia. La excepción es el código que decide cosas y nunca se revisó. Esto no
+  saltea una firma ni una constancia que pida el arnés. Por qué: la calidad vale más que los minutos, y una constancia que
+  no encuentra nada cuesta horas.
+- **Un mensaje para el equipo se comprueba frase por frase antes de pasarlo.** Y a los devs se los molesta lo menos posible:
+  un arreglo les llega solo; un paso a mano es el último recurso. Por qué: una promesa falsa llega a todas las máquinas.
 
 ## Qué mide cada regla
 
 | Regla | Mide | Por qué |
 |---|---|---|
-| Al dueño van firmas, contraseñas y decisiones de producto | nadie | Qué es una decisión de producto es criterio: no hay un dato que lo diga. |
+| Al dueño van firmas, contraseñas, decisiones de producto y lo que sale de la casa | nadie | Qué es una decisión de producto o una salida de rutina es criterio: no hay un dato que lo diga. |
 | Las preguntas de las sesiones van a la coordinadora | nadie | No hay aviso, por decisión del dueño: lo vería cada sesión de trabajo. La coordinadora lo recuerda cuando una sesión le pregunta al dueño. |
 | La coordinadora cierra los detalles con la opción más segura | nadie | Es criterio, y queda anotado para que el dueño lo vea. |
 | Cada sesión con un nombre puesto por una persona | aviso | `/coordinate` lista las que tienen el nombre que armó la herramienta. |
@@ -427,3 +463,18 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
 | Comprobar que un pedido sigue en la cola | nadie | Mirarlo cada turno sería preguntarle a la red todo el tiempo. |
 | Las decisiones del dueño con su contexto | nadie | Es criterio; el medidor de estilo mide el largo, no el contenido. |
 | Lo que ve el dueño, sin jerga | aviso | El medidor de estilo que ya existe. |
+| La guía llega sola a la coordinadora | aviso | Al designarse, y al compactar o limpiar la conversación. Que la lea no lo mide nadie. |
+| La coordinadora no aprueba lo que le da más poder | nadie | El control del perfil mira el nivel de lo que se delega, no quién aprobó el pedido. |
+| Las sesiones no se escriben entre sí | nadie | Un mensaje entre sesiones no pasa por un control. |
+| Una sesión no abre un cuadro en su pestaña | nadie | Lo decide la sesión al preguntar. |
+| Una sesión trabada se avisa con la respuesta recomendada | aviso | El aviso de las esperas sale a los 5 y a los 30 minutos; la recomendación la escribe la coordinadora. |
+| Preguntarle a la sesión antes de decir «te toca» | nadie | Lo que el dueño escribe en otra pestaña no le llega a ella. |
+| «Te toca» sólo para lo que se puede hacer ahora | nadie | Es la forma del mensaje. |
+| Cada pedido al dueño viene completo | nadie | Es la forma del mensaje. |
+| Preguntarle a la sesión cuando el dueño pregunta cómo va | nadie | Es criterio de la coordinadora. |
+| Mirar la sesión que pasó el doble de lo que dijo | nadie | La duración la dijo en un mensaje, no en un dato. |
+| Dimensionar antes de asignar | nadie | Es criterio de la coordinadora. |
+| Una sesión que termina recibe trabajo o se cierra | aviso | El aviso de las sesiones de fondo quietas, pasados 15 minutos. |
+| Un rojo no se deja | nadie | Los controles frenan lo propio; un rojo ajeno lo ve quien lo encuentra. |
+| No aflojar una revisión, no hacer papeleo | nadie | Es criterio: ningún dato separa una revisión de un papeleo. |
+| Comprobar un mensaje para el equipo | nadie | El mensaje sale por fuera de la máquina. |

@@ -12,16 +12,21 @@ steps:
 2. On each machine, the owner writes "Esta sesión es la coordinadora" in the chat of the chosen session, and that
    session runs `marker.js designate-relay` with that quote.
 
-After that, `/coordinate` in that session shows the machine's status. The program the coordinator uses is
-`<harness>/scripts/tools/coordination.js`.
+On being designated, the session is told to read this guide, and it is told again after compacting or clearing its
+conversation, because that is when it gets lost. **Clearing the conversation takes away the designation**: for the harness
+it is another conversation. The session is told how to get it back, but does not get it back by itself: the owner has to
+write the phrase and confirm it again. `/coordinate` in that session shows the machine's status. The program the
+coordinator uses is `<harness>/scripts/tools/coordination.js`.
 
 ## What goes to the owner
 
-Three things go to the owner, always the same ones:
+Four things go to the owner, always the same ones:
 
 - **Signatures**: what the harness asks a person to sign (for example, control changes).
 - **Passwords**: what asks for the machine's password (for example, reinstalling the production brake).
 - **Product decisions**: what gets built, for whom, and in what order of priority.
+- **What leaves the house**: what goes to production for a product and what is sent to a client or to someone outside. It
+  does not include routine work: queuing requests of the harness itself, or publishing material already approved.
 
 The coordinator decides everything else. The other sessions ask her, not the owner: that way the owner does not have
 to repeat each session's context.
@@ -32,8 +37,10 @@ to repeat each session's context.
 - On a matter of detail she picks the safest option and writes down what she picked and why.
 - She asks the owner only what the previous section lists, with the whole context and a recommendation: the owner does
   not have to look anything up to decide.
-- She does not ask the owner for something she can find out: first she looks at the code, the logs and the machine's
-  status.
+- She does not ask the owner for something she can find out or do: first she looks at the code, the logs and the
+  machine's status, and tries to do it herself with what she already has.
+- She does not approve any change that gives her more power. For example, the request to the team profile that adds
+  signatures to what she can sign is approved by the owner: approving her own power cancels the control.
 
 ## Opening and naming the sessions
 
@@ -278,8 +285,8 @@ otra sesión?». Among them: setting a check by hand (`marker.js set-check <cont
 --story <s> --trust-ran --for-session <D>`) and accepting a criterion that cannot be tested live (`marker.js
 runtime-waiver <historia> --acs <n> --for-session <D>`). The story is the one of `<D>`'s open run: otherwise the script
 exits without writing. The window opens for the owner in the coordinator's tab (if that tab does not ask for
-permissions, it is refused and approved with their click or «aprobado»). None of the three is delegated unless
-the profile names it; that request is prepared by the session and approved by the owner, separately.
+permissions, it is refused and approved with their click or «aprobado»). All three are level 2, so none can be delegated to
+her: the harness rejects a profile that tries (`guides/firmas-del-arnes.md`).
 
 ## Saving is authorized in the permission window
 
@@ -408,12 +415,41 @@ They come from a whole day of coordinating several sessions. Each says what to d
   having to go look for anything.
 - **What the owner sees goes without jargon.** The status is told as what is done, what is missing and what they
   decide. Why: the owner reads to decide, not to follow the work from the inside.
+- **Sessions do not write to each other.** What one wants to tell another goes to the coordinator with the text ready, and
+  she forwards it. Why: otherwise she hands out the same thing twice and loses the thread.
+- **A session does not open a box in its own tab.** What needs a person goes to the coordinator and the session moves on to
+  something else. If it is an owner's signature: tell them, and if they do not answer, go on. Why: a box leaves the session
+  stopped until someone sees it, and that can be hours.
+- **A session stuck waiting for the owner is reported at once.** Which one, what they have to answer and the recommended
+  answer. Why: a stopped session nobody knows about wastes everyone's time.
+- **Before saying "your turn", ask the session.** The owner writes in the tabs without going through the coordinator. Why:
+  claiming something they already did costs them time and trust.
+- **"Your turn" is only for what they can do now.** What they will need later is said with its time and its condition. Why:
+  the owner reads "your turn" as something to do right then.
+- **Every request to the owner comes complete.** The tab, the steps and the whole command, never "what I sent you". Why: on
+  a day with many sessions, what was sent before gets buried.
+- **If the owner asks how something is going, ask that session right then.** Do not answer with the last data point. Why: it
+  may already be old.
+- **A session that said "takes N" and went past double is checked without waiting for its notice.** Why: a hung process does
+  not report.
+- **Before assigning, size the work.** One line that says whether the work is light or full and how long it takes, and first
+  check whether it already exists. Why: taking the long road without analyzing it is the most repeated mistake.
+- **A session that finishes gets the next approved thing in that turn, or is closed.** Always within the cap. Why: a free
+  session is wasted machine time, and the owner should not have to watch the board to assign.
+- **A red is not left behind, even if it is not from your own change.** Report it and fix it before going on. Why: tolerated
+  reds hide the new ones.
+- **What loosens a review does not go in, even if it saves time; what is only paperwork is not done.** If the code already
+  went in and real use proves it, close it citing that evidence. The exception is code that decides things and was never
+  reviewed. This does not skip a signature or a record the harness asks for. Why: quality is worth more than the minutes,
+  and a record that finds nothing costs hours.
+- **A message for the team is checked sentence by sentence before passing it on.** And devs are bothered as little as
+  possible: a fix reaches them by itself; a manual step is the last resort. Why: a false promise reaches every machine.
 
 ## What measures each rule
 
 | Rule | Measured by | Why |
 |---|---|---|
-| Signatures, passwords and product decisions go to the owner | nadie | What a product decision is is a judgment call: no piece of data says it. |
+| Signatures, passwords, product decisions and what leaves the house go to the owner | nadie | What a product decision or a routine release is is a judgment call: no piece of data says it. |
 | The sessions' questions go to the coordinator | nadie | There is no notice, by the owner's decision: every working session would see it. The coordinator reminds a session that asks the owner. |
 | The coordinator settles details with the safest option | nadie | It is a judgment call, and it is written down for the owner to see. |
 | Every session with a name a person gave it | aviso | `/coordinate` lists the ones whose name the tool made up. |
@@ -442,6 +478,21 @@ They come from a whole day of coordinating several sessions. Each says what to d
 | Check that a request is still in the queue | nadie | Checking on every turn would mean asking the network all the time. |
 | The owner's decisions with their context | nadie | It is a judgment call; the style meter measures length, not content. |
 | What the owner sees, without jargon | aviso | The style meter that already exists. |
+| The guide reaches the coordinator by itself | aviso | On being designated, and on compacting or clearing the conversation. Nobody measures whether she reads it. |
+| The coordinator does not approve what gives her more power | nadie | The profile's control looks at the level of what is delegated, not at who approved the request. |
+| Sessions do not write to each other | nadie | A message between sessions does not go through a control. |
+| A session does not open a box in its tab | nadie | The session decides it when asking. |
+| A stuck session is reported with the recommended answer | aviso | The waiting notice goes out at 5 and at 30 minutes; the coordinator writes the recommendation. |
+| Ask the session before saying "your turn" | nadie | What the owner writes in another tab does not reach her. |
+| "Your turn" only for what can be done now | nadie | It is the shape of the message. |
+| Every request to the owner comes complete | nadie | It is the shape of the message. |
+| Ask the session when the owner asks how it is going | nadie | It is the coordinator's judgment call. |
+| Check the session that went past double what it said | nadie | The duration was said in a message, not in a piece of data. |
+| Size before assigning | nadie | It is the coordinator's judgment call. |
+| A session that finishes gets work or is closed | aviso | The notice about idle background sessions, after 15 minutes. |
+| A red is not left behind | nadie | The controls stop your own; someone else's red is seen by whoever finds it. |
+| Do not loosen a review, do not do paperwork | nadie | It is a judgment call: no data separates a review from paperwork. |
+| Check a message for the team | nadie | The message goes out outside the machine. |
 
 The "Measured by" column keeps the Spanish words the harness uses everywhere: **aviso** (a notice), **freno** (a brake)
 and **nadie** (nobody).

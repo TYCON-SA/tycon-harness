@@ -99,7 +99,7 @@ const GUIDE = path.join(ROOT, 'guides', 'coordination.md');
 const GUIDE_EN = path.join(ROOT, 'guides', 'coordination.en.md');
 // What measures each rule of the guide, in the order of its table: a notice, a brake or nobody.
 const MEASURES = {
-  'Al dueño van firmas, contraseñas y decisiones de producto': 'nadie',
+  'Al dueño van firmas, contraseñas, decisiones de producto y lo que sale de la casa': 'nadie',
   'Las preguntas de las sesiones van a la coordinadora': 'nadie',
   'La coordinadora cierra los detalles con la opción más segura': 'nadie',
   'Cada sesión con un nombre puesto por una persona': 'aviso',
@@ -128,6 +128,21 @@ const MEASURES = {
   'Comprobar que un pedido sigue en la cola': 'nadie',
   'Las decisiones del dueño con su contexto': 'nadie',
   'Lo que ve el dueño, sin jerga': 'aviso',
+  'La guía llega sola a la coordinadora': 'aviso',
+  'La coordinadora no aprueba lo que le da más poder': 'nadie',
+  'Las sesiones no se escriben entre sí': 'nadie',
+  'Una sesión no abre un cuadro en su pestaña': 'nadie',
+  'Una sesión trabada se avisa con la respuesta recomendada': 'aviso',
+  'Preguntarle a la sesión antes de decir «te toca»': 'nadie',
+  '«Te toca» sólo para lo que se puede hacer ahora': 'nadie',
+  'Cada pedido al dueño viene completo': 'nadie',
+  'Preguntarle a la sesión cuando el dueño pregunta cómo va': 'nadie',
+  'Mirar la sesión que pasó el doble de lo que dijo': 'nadie',
+  'Dimensionar antes de asignar': 'nadie',
+  'Una sesión que termina recibe trabajo o se cierra': 'aviso',
+  'Un rojo no se deja': 'nadie',
+  'No aflojar una revisión, no hacer papeleo': 'nadie',
+  'Comprobar un mensaje para el equipo': 'nadie',
 };
 const COMMAND = path.join(ROOT, 'commands', 'coordinate.md');
 const headings = (file) => fs.readFileSync(file, 'utf8').split('\n').filter((l) => /^## /.test(l));
