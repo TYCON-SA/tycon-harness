@@ -435,8 +435,8 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
       a.estimadaIso = localIso(kept[key].at);
       a.pronosticoIso = localIso(endAt);
       if (x.late) a.atrasada = true;
-      // con la hora de su paso, el atraso se mide contra ésa, y lo prometido queda como dato
-      const reference = x.hourStep || x.noteEnd != null ? endAt : kept[key].at;
+      // el atraso se mide siempre contra lo prometido: anotar otra hora o pasar de paso cambia el pronóstico, no la promesa
+      const reference = kept[key].at;
       if (x.noteEnd != null) a.horaPorque = `la anotó a las ${hhmm(x.noteEndAt)}`;
       else if (x.hourStep) a.horaPorque = `recalculada al pasar a ${x.hourStep}`;
       // la hora pasó y no terminó: el atraso es el de ahora contra la prometida, no el de la hora vieja
