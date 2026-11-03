@@ -1150,70 +1150,39 @@ async function askBoardPrs(board, wip, opts, problems) {
 // renueva cada 3 (office/server.js).
 const OPEN_PRS_OLD_MS = 15 * 60000;
 const PR_KIND_PREFIX = /^[a-z]+(?:\([^)]*\))?!?:\s*/i;
-// quién es la persona y dónde trabajó, medido de fondo (`stuck-pr-notice.js`): más viejo que esto, no se sabe
-const RECENT_WORK_OLD_MS = 24 * 3600000;
-function readRecentWork(sdir, nowMs) {
-  try {
-    const w = JSON.parse(fs.readFileSync(path.join(sdir, 'recent-work.json'), 'utf8'));
-    return nowMs - Date.parse(w.at) <= RECENT_WORK_OLD_MS ? w : null;
-  } catch { return null; }
-}
-// El producto de cada repo de Azure, si la organización lo declara en su lista de paridad.
-function productsOfRepos(file = path.join(ROOT, 'scripts', 'ci', 'product-parity.json')) {
-  const out = new Map();
-  try {
-    const { grupos } = JSON.parse(fs.readFileSync(file, 'utf8'));
-    for (const r of Object.values(grupos).flat()) if (r && r.ado && r.producto) out.set(decodeURIComponent(r.ado).toLowerCase(), r.producto);
-  } catch { /* sin lista, cada repo es su proyecto */ }
-  return out;
-}
-// Los pedidos de otros autores, por proyecto: el que más tiene, primero.
-function projectsOfPrs(others, productsFile) {
-  const products = others.length ? productsOfRepos(productsFile) : new Map();
-  const groups = new Map();
-  for (const p of others) {
-    const parts = p.repo.split('/');
-    const proyecto = products.get(decodeURIComponent(parts.slice(1).join('/')).toLowerCase()) || p.repoName;
-    if (!groups.has(proyecto)) groups.set(proyecto, []);
-    groups.get(proyecto).push({ titulo: p.title, autor: p.autor, numero: `${p.mark}${p.number}`, hora: p.inQueue ? 'en la cola' : 'con auto-completar' });
-  }
-  return [...groups].map(([proyecto, pedidos]) => ({ proyecto, pedidos })).sort((a, b) => b.pedidos.length - a.pedidos.length);
-}
 /**
  * Los pedidos abiertos de los repos del arnés, de la última lectura que dejó `stuck-pr-notice.js` en
  * `<estado>/stuck-prs-photo.json`; armar la foto no sale a la red por esto. Sólo cuentan como esperando entrar los que no son
  * borrador y están en la cola o con auto-completar. Devuelve `{ prs, note }`; `note` dice qué se midió o que no se pudo.
  */
 function readOpenPrs(sdir, nowMs) {
-  const work = readRecentWork(sdir, nowMs);
-  const persona = (work && work.persona) || {};
-  const ramas = new Set((work && work.ramas) || []);
-  const worked = new Set(((work && work.repos) || []).map((r) => [r.org, r.project, r.repo].filter(Boolean).join('/').toLowerCase()));
-  const others = [];
-  const nobody = new Set();
   let photo;
   try { photo = JSON.parse(fs.readFileSync(path.join(sdir, 'stuck-prs-photo.json'), 'utf8')); } catch { photo = null; }
   const at = photo ? Date.parse(photo.at) : NaN;
   if (!photo || !photo.lecturas || !Number.isFinite(at) || nowMs - at > OPEN_PRS_OLD_MS) return { prs: [], measured: false, note: 'Los pedidos no se midieron: no hay una lectura de los últimos 15 minutos.' };
-  const prs = [];
+  let own;
+  try { own = JSON.parse(fs.readFileSync(path.join(sdir, 'own-prs.json'), 'utf8')); } catch { own = null; }
+  if (own && !(nowMs - Date.parse(own.at) <= OPEN_PRS_OLD_MS)) own = null;
+  const prs = new Map();
   const unread = [];
-  for (const [repo, r] of Object.entries({ ...photo.lecturas, ...((work && work.lecturas) || {}) })) {
-    const repoName = repo.split('/').pop();
-    if (!r || !r.ok || !Array.isArray(r.value)) { unread.push(repoName); continue; }
-    for (const p of r.value) {
-      if (!p || !Number.isInteger(p.number)) continue;
-      const github = /^[^/]+\/[^/]+$/.test(repo);
-      const me = persona[github ? 'github' : 'azure'];
-      if (!me) nobody.add(repoName);
-      const mine = Boolean(me) && (String(p.author || '').toLowerCase() === me || ramas.has(p.sourceBranch));
-      prs.push({ ajeno: !mine, repoName, number: p.number, mark: github ? '#' : '!', branch: p.sourceBranch || null, title: plain(String(p.title || '').replace(PR_KIND_PREFIX, '')) || 'Un pedido sin título', inQueue: p.inQueue === true, conflict: p.mergeState === 'conflict' || p.mergeState === 'dirty', waiting: !p.draft && (p.inQueue === true || p.autoComplete === true) });
-      const pr = prs[prs.length - 1];
-      if (me && !mine && pr.waiting && worked.has(repo.toLowerCase())) others.push({ repo, autor: String(p.author || 'sin autor').split('@')[0], ...pr });
+  const add = (lecturas, ajeno) => {
+    for (const [repo, r] of Object.entries(lecturas || {})) {
+      const repoName = repo.split('/').pop();
+      if (!r || !r.ok || !Array.isArray(r.value)) { unread.push(repoName); continue; }
+      for (const p of r.value) {
+        if (!p || !Number.isInteger(p.number)) continue;
+        const github = /^[^/]+\/[^/]+$/.test(repo);
+        prs.set(`${repo}#${p.number}`.toLowerCase(), { ajeno, repoName, number: p.number, mark: github ? '#' : '!', branch: p.sourceBranch || null, title: plain(String(p.title || '').replace(PR_KIND_PREFIX, '')) || 'Un pedido sin título', inQueue: p.inQueue === true, conflict: p.mergeState === 'conflict' || p.mergeState === 'dirty', waiting: !p.draft && (p.inQueue === true || p.autoComplete === true) });
+      }
     }
-  }
-  const whoNote = !work ? ' No muestro pedidos: no pude saber quién sos en esta máquina.' : nobody.size ? ` No muestro pedidos de ${[...nobody].join(', ')}: no pude saber quién sos en esta máquina.` : '';
-  const note = `Pedidos en la cola o con auto-completar, leídos a las ${hhmm(at)}.${unread.length ? ` No se pudo leer ${unread.join(', ')}.` : ''}${whoNote}`;
-  return { prs, others, measured: true, note, repos: Object.keys(photo.lecturas).map((repo) => repo.split('/').pop().toLowerCase()) };
+  };
+  // la lista de los repos del arnés sigue sabiendo si un pedido está abierto; la columna muestra sólo los de la persona
+  add(photo.lecturas, true);
+  if (own) add(own.lecturas, false);
+  const failed = own ? (own.fallos || []) : [];
+  const whoNote = !own ? ' No muestro pedidos: no pude saber quién sos en esta máquina.' : failed.length ? ` No pude leer tus pedidos de ${failed.join(', ')}.` : '';
+  const note = `Tus pedidos en la cola o con auto-completar, leídos a las ${hhmm(at)}.${unread.length ? ` No se pudo leer ${unread.join(', ')}.` : ''}${whoNote}`;
+  return { prs: [...prs.values()], measured: true, note, repos: Object.keys(photo.lecturas).map((repo) => repo.split('/').pop().toLowerCase()) };
 }
 
 // Un trabajo que quedó y nombra sus pedidos («#878», «!6008»): si todos entraron, entró, aunque su carpeta siga con otra cosa.
@@ -1602,8 +1571,6 @@ async function collect(opts = {}) {
   data.tablas = buildTables({ board: board.board, boardWrittenAt: board.writtenAt, sessionTables, kanban: data.kanban, nowMs, agents: data.agents, prsEnded: tablePrs });
   data.tablero = board.board ? { actualizado: board.board.actualizado, resumen: board.board.resumen, teToca: board.board.teToca } : null;
   if (opts.envelopes) {
-    // de cada persona, en su máquina: no viaja al sitio
-    data.pedidosProyectos = projectsOfPrs(open.others || []);
     opts.envelopes.coordinator = coordinatorSid ? { sid: coordinatorSid, name: coordinatorName } : null;
     data.sobres = readEnvelopes(opts.envelopes, wip, { home, nowMs, projectsDir: opts.projectsDir, sessions });
   }
@@ -1763,4 +1730,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { projectsOfPrs, prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, buildTables, writeTables, readTranscripts, readLastWrites, MODULES };
+module.exports = { prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, buildTables, writeTables, readTranscripts, readLastWrites, MODULES };
