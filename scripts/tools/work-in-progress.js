@@ -1326,7 +1326,7 @@ function buildWip(opts = {}) {
       if (mark) end = 'sin hora de fin';
       addRow({ work, state: step, end, session: label, folder: folderOf(sid, m.repoPath) }, sid,
         { kind, storyId: m.storyId ? String(m.storyId) : null, title, batch: storyBatch(m.storyPath), endAt: info.at == null ? null : info.at, late: Boolean(info.late), promisedAt, ...stages,
-          ...(mark ? { mark } : {}), ...(save === 'ok' ? { saveOk: true } : {}), ...(kind === 'finished' && !save ? { nothingToSave: true } : {}),
+          ...(verdict ? { hourInWords: true } : {}), ...(mark ? { mark } : {}), ...(save === 'ok' ? { saveOk: true } : {}), ...(kind === 'finished' && !save ? { nothingToSave: true } : {}),
           ...(info.step !== undefined ? { hourStep: stepName(info.step) || `paso ${info.step}`, hourAt: info.computedAt } : {}),
           runFolder: typeof m.repoPath === 'string' && m.repoPath ? tilde(m.repoPath) : null,
           activityAt: Number.isFinite(activityAt) ? activityAt : null, runStartedAt: Date.parse(m.startedAt) || null, closedAt: closed ? closedAtOf(m) : null });
@@ -1544,6 +1544,7 @@ function buildWip(opts = {}) {
   // el cuadro de una sesión de prueba no le toca a nadie: /wip no lo dice, como la oficina
   const testSids = testSessionsOf(sessions, files, () => (opts.processes !== undefined ? opts.processes : require(path.join(ROOT, 'scripts', 'lib', 'owner-window.js')).leerArbol()));
   const notes = rowSids.map((sid, i) => (testSids.has(String(sid)) ? '' : stateNote(extra[i], details[i], files.get(String(sid)))));
+  rows.forEach((r, i) => { const n = promiseNote(extra[i], nowMs); if (n) r.promise = n; });
   // la libre que espera algo: /office la pone en «Tu firma» y /wip lo dice igual
   const freeNotes = new Map(free.map((name, i) => {
     if (testSids.has(String(freeSids[i]))) return [name, 'sesión de prueba'];
@@ -1585,6 +1586,19 @@ function sessionFileMap(sdir, unreadable) {
   return out;
 }
 
+// El atraso contra lo prometido, para sumarlo a la columna «Fin estimado»: la misma cuenta y el mismo margen que la oficina. Una
+// marca, una espera o una hora que se dice en palabras (la ejecución dormida) no dicen atraso, ni lo que ya terminó.
+const PROMISE_MARGIN_MIN = 15;
+function promiseNote(x, nowMs) {
+  const end = Number.isFinite(x.noteEnd) ? x.noteEnd : x.endAt;
+  if (!Number.isFinite(x.promisedAt) || !Number.isFinite(end) || x.mark || x.waitingFor || x.hourInWords || ['entering', 'stalled', 'finished'].includes(x.kind)) return '';
+  const min = Math.round((end < nowMs ? nowMs - Math.min(x.promisedAt, end) : end - x.promisedAt) / 60000);
+  if (min <= PROMISE_MARGIN_MIN) return '';
+  const later = min < 60 ? `${min} min` : `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')}`;
+  const sameDay = new Date(x.promisedAt).toDateString() === new Date(nowMs).toDateString();
+  return `+${later} tarde, prometida ${sameDay ? '' : `el ${new Date(x.promisedAt).getDate()}, `}${hhmm(x.promisedAt)}`;
+}
+
 // El estado real de una fila, para sumarlo a la columna «Estado»: nada si la fila ya lo dice. Lo que espera al dueño se
 // dice también en una fila marcada: la firma le gana a la marca.
 function stateNote(x, d, f) {
@@ -1600,7 +1614,7 @@ function render(rows, free, noData, idle, halfway, unreadable, internal = 0, not
   if (!rows.length) lines.push('| (nada en curso) | | | | |');
   rows.forEach((r, i) => {
     const state = notes[i] ? `${r.state} · ${notes[i]}` : r.state;
-    lines.push(`| ${esc(r.work)} | ${esc(r.meanwhile ? `${state} · mientras tanto: ${r.meanwhile}` : state)} | ${esc(r.end)} | ${esc(r.session)} | ${esc(r.folder || '')} |`);
+    lines.push(`| ${esc(r.work)} | ${esc(r.meanwhile ? `${state} · mientras tanto: ${r.meanwhile}` : state)} | ${esc(r.promise ? `${r.end} · ${r.promise}` : r.end)} | ${esc(r.session)} | ${esc(r.folder || '')} |`);
   });
   const freeText = free.map((f) => (freeNotes.get(f) ? `${f} (${freeNotes.get(f)})` : noData.includes(f) ? `${f} (sin dato de actividad)` : f));
   lines.push('', `Libres: ${freeText.length ? freeText.join(', ') : 'ninguna'}`);

@@ -1435,14 +1435,14 @@ test('T105 Hour_StableBetweenPhotos @story-2.81 @ac-57: dos fotos del mismo paso
   assert.strictEqual(other.hourStep, undefined);
 });
 
-test('T106 Hour_RecalculatedOnStep_SaysWhy @story-2.81 @ac-57: al pasar de paso dice por qué cambió, y el atraso se mide contra esa hora', () => {
+test('T106 Hour_RecalculatedOnStep_SaysWhy @story-2.81 @ac-57: al pasar de paso dice por qué cambió, y el atraso se mide contra lo prometido', () => {
   const m = toyMachine();
   const at = NOW - 15 * 60000;
   runMarkerFile(m, 's', '9.1', 'Una', BEFORE_PLAN.concat('approve-plan', 'implement'), { startedAt: atIso(NOW - 5 * 3600000), estimate_min: 60, lastTouch: atIso(NOW - 60000), horaDelPaso: { step: 'run-tests', at: atIso(at), computedAt: atIso(NOW - 30 * 60000) } });
   sessionWith(m, 's', 'Una', 'busy');
   const { data } = buildOffice({ wip: buildWip({ stateDir: m.state, sessionsDir: m.sessions, now: atIso(NOW), home: m.root }), nowMs: NOW });
   const a = byName(data, 'Una');
-  assert.strictEqual(a.atrasoMin, 15, 'contra la hora del paso, no contra la promesa');
+  assert.strictEqual(a.atrasoMin, 240, 'contra la promesa, no contra la hora del paso');
   assert.deepStrictEqual([a.fin.hora, a.fin.cls], ['se pasó de la hora', 'late']);
   assert.match(a.fin.dif, /^sin novedades desde las \d\d:\d\d$/);
   assert.strictEqual(a.estimadaIso.slice(11), hm(NOW - 4 * 3600000), '«Prometido» sigue siendo la promesa del arranque');
@@ -3050,7 +3050,7 @@ test('T284 Labels_Switch: siempre por defecto, y la elección se recuerda; si no
   assert.doesNotThrow(() => broken.guardarEtiquetas('mouse'));
   assert.match(html, /\.stage\.solo-mouse \.tag\{opacity:0;pointer-events:none\}/, 'ocultas, pero el teclado llega');
   assert.match(html, /\.stage\.solo-mouse \.tag\.ver,\.stage\.solo-mouse \.tag\.sel,\.stage\.solo-mouse \.tag:focus-visible\{opacity:1/);
-  assert.match(html, /e\.pointerType==="touch"&&!\(h&&\(h\.object===pnlFace\|\|h\.object===signFace\)\)\)\{verEtiqueta/, 'al tocar, muestra la etiqueta y no abre el detalle');
+  assert.match(html, /e\.pointerType==="touch"&&!\(h&&\(h\.object===pnlFace\|\|h\.object===signFace\|\|h\.object===lampHit\)\)\)\{verEtiqueta/, 'al tocar, muestra la etiqueta y no abre el detalle');
   assert.doesNotMatch(html, /solo-mouse[^}]*\.sobre/, 'el avioncito no se oculta');
 });
 
@@ -3147,6 +3147,71 @@ test('T290 OpenPrs_OnlyMine: la columna muestra sólo los pedidos de la persona,
   assert.match(col(data, 'entrando').nota, /No muestro pedidos: no pude saber quién sos en esta máquina\.$/);
   own({ at: atIso(NOW - 16 * 60000), lecturas: { 'org/pub': { ok: true, value: [pr(1)] } } });
   assert.deepStrictEqual(col(await read(), 'entrando').tarjetas, [], 'una lectura vieja no dice qué sigue abierto');
+});
+
+test('T293 Late_AlwaysAgainstThePromise: otra hora, anotada o de su paso, no pone «en hora»; la tarjeta, el kanban y /wip dicen lo mismo', async () => {
+  const m = toyMachine();
+  const promised = { startedAt: atIso(NOW - 9 * 3600000), estimate_min: 60, lastTouch: atIso(NOW - 60000) };
+  const step = { step: 'run-tests', at: atIso(NOW + 30 * 60000), computedAt: atIso(NOW - 60000) };
+  runMarkerFile(m, 'p', '9.1', 'Paso', BEFORE_PLAN.concat('approve-plan', 'implement'), { ...promised, horaDelPaso: step });
+  sessionWith(m, 'p', 'Paso', 'busy');
+  runMarkerFile(m, 'j', '9.2', 'Justa', BEFORE_PLAN.concat('approve-plan', 'implement'), { startedAt: atIso(NOW - 3600000), estimate_min: 85, lastTouch: atIso(NOW - 60000), horaDelPaso: step });
+  sessionWith(m, 'j', 'Justa', 'busy');
+  runMarkerFile(m, 'f', '9.3', 'Fila', BEFORE_PLAN.concat('approve-plan', 'implement'), { ...promised, horaDelPaso: step });
+  sessionWith(m, 'f', 'Fila', 'idle');
+  fs.mkdirSync(path.join(m.state, 'parked'), { recursive: true });
+  fs.writeFileSync(path.join(m.state, 'parked', 'f.json'), JSON.stringify({ story: '9.3', kind: 'queue', at: atIso(NOW - 60000), by: 'alguien' }));
+  const old = NOW - 5 * 3600000;
+  runMarkerFile(m, 'd', '9.4', 'Dormida', BEFORE_PLAN.concat('approve-plan', 'implement'), { ...promised, lastTouch: atIso(old), horaDelPaso: { step: 'run-tests', at: atIso(old + 600000), computedAt: atIso(old) } });
+  sessionWith(m, 'd', 'Dormida', 'idle');
+  const wipData = buildWip({ stateDir: m.state, sessionsDir: m.sessions, now: atIso(NOW), home: m.root });
+  const { data } = buildOffice({ wip: wipData, nowMs: NOW });
+  const late = byName(data, 'Paso');
+  assert.deepStrictEqual([late.fin.dif, late.fin.cls], ['+8 h 30 tarde', 'late'], 'no se pone en hora por recalcular');
+  assert.deepStrictEqual([byName(data, 'Justa').fin.dif, byName(data, 'Justa').fin.cls], ['en hora', 'ontime'], 'dentro del margen sigue en hora');
+  const card = col(data, 'curso').tarjetas.find((c) => c.quien === 'Paso');
+  assert.match(card.hora, /\+8 h 30 tarde$/, 'el kanban dice lo mismo');
+  const row = (name) => wipData.rows.find((r) => String(r.session).includes(name));
+  assert.match(row('Paso').promise, /^\+8 h 30 tarde, prometida /, '/wip dice lo mismo');
+  assert.match(wipData.text, /· \+8 h 30 tarde, prometida /, 'y en su tabla');
+  assert.strictEqual(row('Justa').promise, undefined);
+  assert.strictEqual(row('Fila').promise, undefined, 'una ejecución en fila no dice atraso');
+  assert.ok(!/tarde/.test(JSON.stringify(byName(data, 'Fila').fin)), 'ni en la tarjeta');
+  assert.strictEqual(row('Dormida').promise, undefined, 'una ejecución dormida tampoco');
+  assert.ok(!/tarde/.test(JSON.stringify(byName(data, 'Dormida').fin)), 'ni en la tarjeta');
+});
+
+test('T295 Lamp_TogglesAndRemembers: un click la prende y la apaga con su luz, se recuerda por navegador y no le avisa a nadie', () => {
+  const html = fs.readFileSync(path.join(path.dirname(OFFICE), 'office', 'page.html'), 'utf8');
+  const from = html.indexOf('const LAMPARA_KEY=');
+  const block = html.slice(from, html.indexOf('prenderLampara(lamparaGuardada());', from));
+  const load = (localStorage) => {
+    const lampShade = { material: { emissiveIntensity: 9 } };
+    const lampLight = { intensity: 9 };
+    // eslint-disable-next-line no-new-func
+    const api = new Function('localStorage', 'lampShade', 'lampLight', `${block};return{lamparaGuardada,prenderLampara,tocarLampara}`)(localStorage, lampShade, lampLight);
+    api.prenderLampara(api.lamparaGuardada());
+    return { ...api, lampShade, lampLight };
+  };
+  const store = new Map();
+  const memory = { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, v) };
+  const lit = (l) => [l.lampShade.material.emissiveIntensity, l.lampLight.intensity];
+  const first = load(memory);
+  assert.deepStrictEqual(lit(first), [0.75, 11], 'de entrada, prendida');
+  first.tocarLampara();
+  assert.deepStrictEqual(lit(first), [0, 0], 'apagada, sin su luz');
+  assert.deepStrictEqual(lit(load(memory)), [0, 0], 'el navegador la recuerda apagada');
+  first.tocarLampara();
+  assert.deepStrictEqual(lit(first), [0.75, 11]);
+  assert.deepStrictEqual(lit(load(memory)), [0.75, 11]);
+  const blocked = { getItem() { throw new Error('sin permiso'); }, setItem() { throw new Error('sin permiso'); } };
+  const noStore = load(blocked);
+  assert.deepStrictEqual(lit(noStore), [0.75, 11], 'sin dónde guardar, prendida');
+  noStore.tocarLampara();
+  assert.deepStrictEqual(lit(noStore), [0, 0], 'y el click anda igual');
+  assert.match(html, /intersectObjects\(\[pnlFace,lampHit,/, 'se puede apuntar, y el cursor cambia con lo apuntado');
+  assert.match(html, /if\(h\.object===lampHit\)\{tocarLampara\(\);return\}/, 'el click llega');
+  assert.ok(!/fetch|sendBeacon|XMLHttpRequest/.test(block), 'no le avisa a nadie: las sesiones no se enteran');
 });
 
 test('T288 Conversation_ButtonAtTheBottom: el botón va abajo de cada tarjeta, alineado entre las de la misma fila', () => {
