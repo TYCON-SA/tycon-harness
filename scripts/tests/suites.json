@@ -1743,6 +1743,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/office-topics.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/hour-notice.test.js",
       "requiere": []
     },
@@ -1780,6 +1785,12 @@
       "__nota": "story 8.171: el sitio recibe las oficinas de las máquinas y las reparte a quien las puede ver",
       "raiz": "arnes",
       "ruta": "tests/site-live-hub.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.171: la pestaña «Oficinas» del sitio y /office, que la abre",
+      "raiz": "arnes",
+      "ruta": "tests/site-offices.test.js",
       "requiere": []
     },
     {

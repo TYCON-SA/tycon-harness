@@ -30,7 +30,11 @@ const oneOf = (values) => ({ form: 'state', values });
 const list = (of) => ({ form: 'list', of });
 const record = (fields) => ({ form: 'object', fields });
 const END = record({ hora: text, dif: text, cls: oneOf(END_CLASSES) });
-const TABLE = record({ titulo: text, columnas: list(text), filas: list(record({ grupo: text, que: text, col: text })), escrito: text, cruce: text, contar: flag });
+const OTHER_PROJECT = 'Otro proyecto';
+// Una fila de una tabla. El título de un trabajo de otro proyecto, o de uno que no se sabe de qué proyecto es, no sale de la
+// máquina: ni en la fila ni en sus trabajos.
+const tableRow = (fields) => ({ form: 'tableRow', fields });
+const TABLE = record({ titulo: text, columnas: list(text), filas: list(tableRow({ grupo: text, que: text, col: text, trabajos: list(record({ titulo: text, quien: text, como: text })) })), escrito: text, cruce: text, vacio: text });
 
 const FIELDS = {
   agents: list(record({
@@ -92,6 +96,17 @@ function cleaned(spec, value, home, sanitize) {
     case 'object':
       if (typeof value !== 'object' || Array.isArray(value)) return undefined;
       return pickFields(spec.fields, value, home, sanitize);
+    case 'tableRow': {
+      if (typeof value !== 'object' || Array.isArray(value)) return undefined;
+      const row = pickFields(spec.fields, value, home, sanitize);
+      if (value.otro !== true) return row;
+      // en una fila mezclada se tapa el trabajo que corresponde; la frase de la fila junta títulos, así que se tapa siempre. De
+      // «cómo va» queda sólo la columna: lo demás puede ser una nota de ese trabajo
+      const works = Array.isArray(value.trabajos) ? value.trabajos : [];
+      const marked = works.some((w) => w && w.otro === true);
+      const masked = (w) => ({ ...w, titulo: OTHER_PROJECT, ...(typeof w.como === 'string' ? { como: w.como.split(' · ')[0] } : {}) });
+      return { ...row, que: OTHER_PROJECT, ...(row.trabajos ? { trabajos: row.trabajos.map((w, i) => (!marked || (works[i] && works[i].otro === true) ? masked(w) : w)) } : {}) };
+    }
     default: return undefined;
   }
 }

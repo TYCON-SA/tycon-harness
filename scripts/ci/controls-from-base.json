@@ -67,6 +67,7 @@
     "onboarding/mini-class/i18n/en.json",
     "scripts/controls-bench/ultimo-banco.json",
     "scripts/controls-bench/ultimo-examen.json",
+    "scripts/controls-bench/ultimo-guias.json",
     "scripts/controls-bench/ultimo-suites.json",
     "adapters/codex/agents/MANIFEST.json",
     "adapters/codex/hooks.json",

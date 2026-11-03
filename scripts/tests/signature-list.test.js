@@ -530,8 +530,9 @@ test('OwnerNext_LineaDeComandos (T11, la orden) — @story-8.153 @ac-11', (t) =>
   const r = linea(toy, ['owner-next']);
   assert.strictEqual(r.status, 0, r.stderr);
   assert.match(r.stdout, /no hay nada|nada espera/i);
-  // con un renglón: el cuadro para mostrar, y que lo repita la sesión, que acá es ella misma
-  firma(toy);
+  // con un renglón: el cuadro para mostrar, y que lo repita la sesión, que acá es ella misma. La línea de comandos mira
+  // el reloj real: un renglón con la hora fija de esta prueba le vencería a las 24 horas
+  firma(toy, { ahora: Date.now() });
   const conRenglon = linea(toy, ['owner-next']);
   assert.strictEqual(conRenglon.status, 0, conRenglon.stderr);
   assert.match(conRenglon.stdout, /AskUserQuestion/);

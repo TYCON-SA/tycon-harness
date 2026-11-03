@@ -318,6 +318,8 @@ function crearModoDemo({ env = { SITE_DEMO: '1' }, dir, log = () => {}, ahora = 
     ...require('./tabs/runs.js').crearRutas({ cfg: { ...cfg, dataDir: dir }, fuentes, version, skillsDir, log }),
     // las fichas de la noche de ejemplo: confirmar dice lo que pasaría, sin abrir ningún pedido
     ...require('./tabs/findings.js').crearRutas({ ...comun, demo: true }),
+    // las oficinas inventadas: la misma página, sin conexión de ninguna máquina
+    ...require('./tabs/offices.js').crearRutas({ log, demo: true, fuentes, oficinasDeEjemplo: DATOS.oficinasDeEjemplo, ahora }),
     ...require('./help.js').crearRutas({ log }),
   ];
   // el token de la sesión de ejemplo: el mismo para todas las visitas (no hay nada que proteger de otra persona: nada se escribe)

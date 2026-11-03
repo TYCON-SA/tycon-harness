@@ -41,10 +41,9 @@ function makeWorkspace(opts = {}) {
     '---',
     'story: 9.9',
     'status: in-progress',
-    'files_to_modify:',
     // repo-relativo (como las stories reales de un repo del equipo); ws-relativo con opts.wsRelFiles
-    // (como las de un producto cuyas stories nombran el repo hermano en el path).
-    `  - ${opts.wsRelFiles ? 'Proj/src/Feature.cs' : 'src/Feature.cs'}`,
+    // (como las de un producto cuyas stories nombran el repo hermano en el path). `listaArchivos`: los renglones tal cual.
+    ...(opts.listaArchivos || ['files_to_modify:', `  - ${opts.wsRelFiles ? 'Proj/src/Feature.cs' : 'src/Feature.cs'}`]),
     ...(opts.ack || []),
     '---',
   ].join('\n');
@@ -1598,6 +1597,65 @@ withWaiverLog(() => {
     check('un gate con varios filtros atribuye a cada spec, no sólo al primero', r.perAc[1].verdict === 'RUNTIME',
       JSON.stringify(r.perAc[1]));
   }
+}
+
+// ---------------------------------------------------------------- la lista de archivos, escrita como esté
+// Una evidencia fresca de los tres criterios: el portón cubre el 1 y el 3, el humo el 2. Con `editadoDespues`, el archivo
+// tiene una fecha posterior a toda esa evidencia. Estos laboratorios no tienen git de verdad: nadie contesta que no cambió.
+{
+  const labLista = (listaArchivos, { editadoDespues = false } = {}) => {
+    const f = makeWorkspace({ listaArchivos });
+    writeGate(f.dodDir, '9.9', recentCompact(10), 'PASS', 'story-9-9.spec.ts', f.gatesLog);
+    writeMirroredSmoke(f.dodDir, f.gatesLog, '9.9', [2]);
+    writeTestsResult(f.advDir, '9.9', true, new Date().toISOString());
+    if (editadoDespues) {
+      const despues = new Date(Date.now() + 60 * 1000);
+      fs.utimesSync(f.codeFile, despues, despues);
+    }
+    return { f, r: rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog }) };
+  };
+  const vencida = ({ r }) => r.perAc[1].verdict === 'NOT-RUN' && r.perAc[2].verdict === 'NOT-RUN' && r.codeMtime > 0 && !r.green;
+  const leida = (nombre, lista) => {
+    const lab = labLista(lista, { editadoDespues: true });
+    check(nombre, vencida(lab), JSON.stringify({ ac1: lab.r.perAc[1].verdict, codeMtime: lab.r.codeMtime }));
+  };
+
+  leida('T1 Lista_ComillasDobles_ArchivoEditadoDespues_NoCuenta @story-8.191 @ac-1', ['files_to_modify:', '  - "src/Feature.cs"']);
+  leida('T2 Lista_ComillasSimples_ArchivoEditadoDespues_NoCuenta @story-8.191 @ac-1', ['files_to_modify:', "  - 'src/Feature.cs'"]);
+  leida('T3 Lista_ComentarioAntesDelPrimerItem_LeeLoQueSigue @story-8.191 @ac-2', ['files_to_modify:', '  # público', '  - src/Feature.cs']);
+  leida('T4 Lista_ComentarioEntreItems_LeeLoQueSigue @story-8.191 @ac-2', ['files_to_modify:', '  - src/Otro.cs', '  # público', '  - src/Feature.cs']);
+  leida('T5 Lista_ComentarioTrasLaClave_LaLee @story-8.191 @ac-3', ['files_to_modify:  # público', '  - src/Feature.cs']);
+  leida('T6 Lista_EnLinea_LaLee @story-8.191 @ac-4', ['files_to_modify: ["src/Feature.cs"]']);
+  leida('T7 Lista_ItemsALaMismaSangria_LosLee @story-8.191 @ac-5', ['files_to_modify:', '- src/Feature.cs']);
+  leida('T8 Item_ComentarioAlFinal_RutaLimpia @story-8.191 @ac-6', ['files_to_modify:', '  - "src/Feature.cs"  # AC1']);
+
+  const conAviso = labLista(['files_to_modify:', '  - "src/Feature.cs"'], { editadoDespues: true });
+  const aviso = conAviso.r.warnings.find((w) => /es ANTERIOR al último edit de código/.test(w)) || '';
+  check('T9 Aviso_NombraLaRutaSinComillas @story-8.191 @ac-7', aviso.includes('(src/Feature.cs:') && !aviso.includes('"src/Feature.cs"'), conAviso.r.warnings.join('\n'));
+
+  const fuente = fs.readFileSync(path.join(__dirname, '..', 'runtime-matrix.js'), 'utf8');
+  check('T10 Matriz_UsaElLectorCompartido @story-8.191 @ac-8',
+    /parseDeclaredFiles\(content, \{ allForms: true \}\)/.test(fuente) && !fuente.includes('frontmatterFileList'));
+
+  const sinComillas = ['files_to_modify:', '  - src/Feature.cs'];
+  const fresca = labLista(sinComillas);
+  check('T11 ListaSinComillas_ResultadoIgualQueHoy @story-8.191 @ac-9', fresca.r.green && vencida(labLista(sinComillas, { editadoDespues: true })), JSON.stringify(fresca.r.pendientes));
+
+  const conComillas = labLista(['files_to_modify:', '  - "src/Feature.cs"']);
+  check('T12 ComillasConEvidenciaPosterior_SigueVerde @story-8.191 @ac-10', conComillas.r.green, JSON.stringify(conComillas.r.pendientes));
+
+  const inexistente = labLista(['files_to_modify:', '  - "src/NoExiste.cs"'], { editadoDespues: true });
+  check('T13 ArchivoDeclaradoInexistente_NoVence @story-8.191 @ac-11', inexistente.r.green, JSON.stringify(inexistente.r.pendientes));
+
+  const noCodigo = makeWorkspace({ listaArchivos: ['files_to_modify:', '  - "docs/x.md"'] });
+  writeGate(noCodigo.dodDir, '9.9', recentCompact(10), 'PASS', 'story-9-9.spec.ts', noCodigo.gatesLog);
+  writeMirroredSmoke(noCodigo.dodDir, noCodigo.gatesLog, '9.9', [2]);
+  writeTestsResult(noCodigo.advDir, '9.9', true, new Date().toISOString());
+  const doc = path.join(noCodigo.repo, 'docs', 'x.md');
+  fs.mkdirSync(path.dirname(doc), { recursive: true });
+  fs.writeFileSync(doc, '# x\n');
+  const rDoc = rm.compute({ storyPath: noCodigo.storyPath, gatesLogPath: noCodigo.gatesLog });
+  check('T14 NoEsCodigoEntreComillas_NoVence @story-8.191 @ac-12', rDoc.green, JSON.stringify(rDoc.pendientes));
 }
 
 console.log('');

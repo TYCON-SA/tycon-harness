@@ -127,3 +127,128 @@ test('Confirmar_DesignacionPosterior_NoQuedaCubiertaPorLaVieja', (t) => {
   assert.strictEqual(confirmar(casa).status, 0);
   assert.strictEqual(oa.coordinadoraConfirmada(casa), COORDINADORA);
 });
+
+// --- `--terminal` en Windows: la terminal no se lee; el comando se corre otra vez en una ventana nueva y se firma adentro ---
+
+const rw = require(path.join(PIPELINE_LIB, 'runtime-waiver.js'));
+
+// Lo que le pregunta a Windows no corre fuera de Windows: la ventana se reemplaza, y `hasTty` dice si la consola se comprobó.
+const PRECARGA_TERMINAL = `
+const fs = require('fs');
+const os = require('os');
+const homedir = process.env.TEST_HOME;
+os.userInfo = () => ({ homedir, username: 'prueba', uid: 1, gid: 1, shell: null });
+const rw = require(process.env.TEST_WAIVER_LIB);
+rw.hasTty = () => process.env.TEST_CONSOLE === 'ok';
+rw.confirmarFrase = () => process.env.TEST_PHRASE === 'ok';
+rw.dentroDeLaVentana = () => fs.writeFileSync(process.env.TEST_INSIDE_FILE, '1');
+rw.abrirVentana = (o) => {
+  fs.writeFileSync(process.env.TEST_OPEN_FILE, JSON.stringify({ script: o.script, args: o.args }));
+  return JSON.parse(process.env.TEST_WINDOW);
+};
+require(process.env.TEST_WINDOW_LIB).exigir = () => { fs.writeFileSync(process.env.TEST_CALL_FILE, '1'); return { codigo: 1, motivo: 'sin firma' }; };
+`;
+
+function porTerminal(casa, { args = ['--terminal'], plataforma = 'win32', ventana = { estado: 'cerrada', codigo: 0 }, adentro = false, consola = false, frase = false } = {}) {
+  const precarga = path.join(casa, 'precarga-terminal.js');
+  const abrio = path.join(casa, 'abrio.json');
+  const dentro = path.join(casa, 'dentro');
+  const exigio = path.join(casa, 'exigio');
+  fs.writeFileSync(precarga, PRECARGA_TERMINAL);
+  const env = { PATH: process.env.PATH, HOME: casa, CLAUDE_CODE_SESSION_ID: COORDINADORA, TEST_HOME: casa, TEST_WINDOW: JSON.stringify(ventana), TEST_OPEN_FILE: abrio, TEST_INSIDE_FILE: dentro, TEST_CALL_FILE: exigio,
+    TEST_WAIVER_LIB: path.join(PIPELINE_LIB, 'runtime-waiver.js'), TEST_WINDOW_LIB: path.join(LIB, 'owner-window.js'), TYCON_WAIVER_PLATFORM: plataforma,
+    ...(adentro ? { [rw.MARCA_VENTANA]: '1' } : {}), ...(consola ? { TEST_CONSOLE: 'ok' } : {}), ...(frase ? { TEST_PHRASE: 'ok' } : {}) };
+  const r = spawnSync(process.execPath, ['-r', precarga, GUION, 'confirm-designation', ...args], { env, encoding: 'utf8' });
+  return { ...r, abrio: fs.existsSync(abrio) ? JSON.parse(fs.readFileSync(abrio, 'utf8')) : null, dentro: fs.existsSync(dentro), exigio: fs.existsSync(exigio) };
+}
+
+test('Terminal_EnWindows_AbreLaVentanaConElMismoComando', (t) => {
+  const casa = casaNueva(t);
+  designar(casa);
+  const r = porTerminal(casa);
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.deepStrictEqual(r.abrio, { script: GUION, args: ['confirm-designation', '--terminal'] });
+  assert.match(r.stderr, /ventana nueva/);
+  assert.deepStrictEqual(confirmados(casa), [], 'el proceso de afuera no confirma: confirma el de la ventana');
+});
+
+test('Terminal_EnWindows_DevuelveElCodigoDeLaVentana', (t) => {
+  const casa = casaNueva(t);
+  designar(casa);
+  assert.strictEqual(porTerminal(casa, { ventana: { estado: 'cerrada', codigo: 1 } }).status, 1);
+  assert.strictEqual(porTerminal(casa, { ventana: { estado: 'cerrada', codigo: 2 } }).status, 2);
+  assert.strictEqual(porTerminal(casa, { ventana: { estado: 'cerrada' } }).status, 1, 'una ventana que cierra sin código no es un sí');
+  assert.deepStrictEqual(confirmados(casa), []);
+});
+
+for (const [estado, ventana, texto] of [
+  ['vencida', { estado: 'vencida', tope: 300 }, /venció/],
+  ['no-abrio', { estado: 'no-abrio', motivo: 'sin consola' }, /no pude abrir la ventana \(sin consola\)/],
+]) {
+  test(`Terminal_EnWindows_Ventana_${estado}_NoConfirma`, (t) => {
+    const casa = casaNueva(t);
+    designar(casa);
+    const r = porTerminal(casa, { ventana });
+    assert.strictEqual(r.status, 1, r.stderr);
+    assert.match(r.stderr, texto);
+    assert.match(r.stderr, /no se confirmó nada/);
+    assert.deepStrictEqual(confirmados(casa), []);
+  });
+}
+
+test('Terminal_EnWindows_SinDesignacion_NoAbreLaVentana', (t) => {
+  const casa = casaNueva(t);
+  const r = porTerminal(casa);
+  assert.strictEqual(r.status, 1, r.stderr);
+  assert.match(r.stderr, /ninguna sesión de esta máquina está designada/);
+  assert.strictEqual(r.abrio, null);
+});
+
+test('Terminal_DentroDeLaVentana_ConLaFrase_Confirma', (t) => {
+  const casa = casaNueva(t);
+  designar(casa);
+  const r = porTerminal(casa, { adentro: true, consola: true, frase: true });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(r.abrio, null, 'adentro no abre otra');
+  assert.strictEqual(r.dentro, true, 'se anota, para que la cierren al vencer y espere un Enter al salir');
+  assert.strictEqual(confirmados(casa).length, 1);
+  assert.strictEqual(oa.coordinadoraConfirmada(casa), COORDINADORA);
+});
+
+test('Terminal_DentroDeLaVentana_SinLaFrase_NoConfirma', (t) => {
+  const casa = casaNueva(t);
+  designar(casa);
+  const r = porTerminal(casa, { adentro: true, consola: true, frase: false });
+  assert.strictEqual(r.status, 1, r.stderr);
+  assert.deepStrictEqual(confirmados(casa), []);
+});
+
+// 🔴 la marca la puede poner cualquiera: sin la consola comprobada no se pide la frase ni se confirma
+test('Terminal_MarcaDeLaVentanaSinSuConsola_NoConfirma', (t) => {
+  const casa = casaNueva(t);
+  designar(casa);
+  const r = porTerminal(casa, { adentro: true, consola: false, frase: true });
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.strictEqual(r.abrio, null);
+  assert.deepStrictEqual(confirmados(casa), []);
+});
+
+test('SinTerminal_EnWindows_NoAbreLaVentana_PideLaFirmaDeLaPestana', (t) => {
+  const casa = casaNueva(t);
+  designar(casa);
+  const r = porTerminal(casa, { args: [] });
+  assert.strictEqual(r.status, 1, r.stderr);
+  assert.strictEqual(r.abrio, null);
+  assert.strictEqual(r.exigio, true);
+  assert.deepStrictEqual(confirmados(casa), []);
+});
+
+test('Terminal_FueraDeWindows_NoAbreVentana_PideLaTerminal', (t) => {
+  if (process.platform === 'win32') { t.skip('en Windows la variable no vuelve a la rama de /dev/tty'); return; }
+  const casa = casaNueva(t);
+  designar(casa);
+  const r = porTerminal(casa, { plataforma: 'linux' });
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.strictEqual(r.abrio, null);
+  assert.match(r.stderr, /pide la terminal del dueño/);
+});

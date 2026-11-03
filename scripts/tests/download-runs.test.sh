@@ -727,6 +727,15 @@ bajar "${T}" "${T}/bin/az" --overwrites-report
 python3 -c "import json,sys;t=json.load(open(sys.argv[1]))['por_tipo'];assert t['huella']['blobs']==1 and t['volcado']['blobs']==1 and t['ignorado']['blobs']==0,t" "${T}/out.json" \
   && ok "T8171 el informe la cuenta con su propio tipo" || mal "T8171 el informe por tipo: $(cat "${T}/out.json")"
 
+# TINST · un día de instintos tiene su propia cuenta en el informe. Rojo: `tipoDelBlob` da un tipo que `porTipo` no trae,
+#         y el informe se cae con exit 1 y sin salida.
+T="${BASE}/t-informe-instintos"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+blob "${T}/b" "mac-a/1.1-2026-10-01T1000.json" 300
+blob "${T}/b" "mac-a/instincts/v20261001T100000000Z/2026-10-01.jsonl.gz" 100
+bajar "${T}" "${T}/bin/az" --overwrites-report
+[ "${RC}" -eq 0 ] && python3 -c "import json,sys;t=json.load(open(sys.argv[1]))['por_tipo'];assert t['instintos']['blobs']==1 and t['volcado']['blobs']==1 and t['ignorado']['blobs']==0,t" "${T}/out.json" \
+  && ok "TINST el informe no se cae y cuenta el día de instintos con su propio tipo" || mal "TINST rc=${RC} · $(head -c 400 "${T}/out.json") · $(head -2 "${T}/err.txt")"
+
 T="${BASE}/t224-18"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
 blob "${T}/b" "mac-a/1.1-2026-10-01T1000.json" 300
 blob "${T}/b" "mac-a/1.1-2026-10-01T1000.hilo.jsonl.gz" 300
