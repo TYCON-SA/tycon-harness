@@ -16,7 +16,8 @@ viven en `~/.claude/tycon-harness/guides/integrations/ado-cola-y-listados.md`. A
 Antes de encolar un run manual (o meter un trigger commit), confirmar por evidencia directa:
 (a) un `chore: bump version ... [skip ci]` posterior al commit propio ⇒ el run YA corrió, no
 encolar nada; (b) `az pipelines runs show --id <N>` con los ids siguientes al último conocido —
-el show por id NO laguea como el list; (c) la UI, o esperar ≥5 min desde el push.
+suele aparecer antes que el listado, pero también se atrasa: si no aparece, tampoco prueba nada;
+(c) la UI, o esperar ≥5 min desde el push. `manual` no prueba que lo haya lanzado una persona.
 
 ## 2. `runs list` tampoco ES la cola — la cola vive en el grupo de agentes
 
