@@ -77,7 +77,9 @@ function valorSegun(spec, value, donde, desconocidos) {
       }
       return out;
     }
-    case 'object': return camposSegun(spec.fields, value, donde, desconocidos);
+    // una fila de tabla llega como un objeto: lo que se tapa de otro proyecto ya lo tapó la máquina
+    case 'object':
+    case 'tableRow': return camposSegun(spec.fields, value, donde, desconocidos);
     default: return MALA;
   }
 }

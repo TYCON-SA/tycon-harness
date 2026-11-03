@@ -480,4 +480,40 @@ Un renglón por hallazgo: regla, archivo y línea, y qué cambiar. Sin hallazgos
 `,
 });
 
-module.exports = { PAQUETE_DE_REVISORES, CAMPOS_DE_RIESGO, LEAD, ANA, BRUNO, INVITADA, PERFIL, RECETA_NETFX, REPOS, ADVISORS_DE_EJEMPLO, VERSION_DE_EJEMPLO, diasDe, volcadoMinimo, volcadoDeEjecucion, blobsDelBuzon, archivosDeOperaciones, operaciones, archivosDelPerfil };
+/**
+ * Las oficinas de ejemplo: lo que una máquina le manda al sitio, con la forma de scripts/tools/office/fields.js. Una sin
+ * conexión desde hace un rato, para que se vea cómo queda. `ahora`: las horas salen de acá, y el sitio demo no envejece.
+ */
+function oficinasDeEjemplo(ahora = Date.now()) {
+  const hhmm = (ms) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+  const fin = (min) => ({ hora: hhmm(ahora + min * 60000), dif: '', cls: 'ontime' });
+  const PASOS = ['Arranque', 'Validar la historia', 'Armar el plan', 'Aprobar el plan', 'Implementar', 'Correr las pruebas', 'Revisores', 'Pase adversarial', 'Hallazgos', 'Probar en vivo', 'Preparar el commit'];
+  const pasos = (hechos) => PASOS.map((name, i) => ({ name, done: i < hechos }));
+  const sesion = (nombre, estado, extra = {}) => ({ nombre, estado, ...extra });
+  const foto = (agents) => ({
+    agents,
+    meta: { actualizado: hhmm(ahora), teToca: agents.filter((a) => a.estado === 'firma').map((a) => `${a.nombre}: ${a.espera}`) },
+    rows: agents.map((a) => ({ work: a.titulo || a.haciendo || '', state: a.estado, end: a.fin ? a.fin.hora : '', session: a.nombre, folder: 'portal' })),
+    free: agents.filter((a) => a.estado === 'libre').map((a) => a.nombre),
+    unreadable: [],
+  });
+  return [
+    { id: 'mac-lead', person: LEAD, conectada: true, sinConexionDesde: null, marcas: [], foto: foto([
+      sesion('Coordinadora', 'coordina', { haciendo: 'Reparte los turnos de las pruebas pesadas' }),
+      sesion('Atlas', 'prueba', { titulo: 'Aviso cuando un pedido sale de la cola', fin: fin(40), avance: 55, pasos: pasos(5) }),
+      sesion('Boro', 'firma', { titulo: 'Los avisos de espera llegan a quien corresponde', espera: 'el plan espera tu firma', fin: fin(65), avance: 27, pasos: pasos(3) }),
+      sesion('Cleo', 'trabajando', { titulo: 'La oficina se actualiza en tiempo real', fin: fin(90), avance: 73, pasos: pasos(8) }),
+      sesion('Dina', 'libre', { haciendo: 'Sin trabajo' }),
+    ]) },
+    { id: 'mac-ana', person: ANA, conectada: true, sinConexionDesde: null, marcas: [], foto: foto([
+      sesion('Eros', 'trabajando', { titulo: 'Comprobante de transferencias entre cuentas', fin: fin(25), avance: 45, pasos: pasos(5) }),
+      sesion('Fara', 'espera', { titulo: 'Exportar los reportes mensuales a planilla', haciendo: 'Espera su turno para entrar', fin: fin(50), avance: 91, pasos: pasos(10) }),
+      sesion('Gael', 'libre', { haciendo: 'Sin trabajo' }),
+    ]) },
+    { id: 'mac-bruno', person: BRUNO, conectada: false, sinConexionDesde: ahora - 42 * 60000, marcas: [], foto: foto([
+      sesion('Hugo', 'parada', { titulo: 'Revisa un error al iniciar sesión desde el celular', parada: 'sin novedades' }),
+    ]) },
+  ];
+}
+
+module.exports = { oficinasDeEjemplo, PAQUETE_DE_REVISORES, CAMPOS_DE_RIESGO, LEAD, ANA, BRUNO, INVITADA, PERFIL, RECETA_NETFX, REPOS, ADVISORS_DE_EJEMPLO, VERSION_DE_EJEMPLO, diasDe, volcadoMinimo, volcadoDeEjecucion, blobsDelBuzon, archivosDeOperaciones, operaciones, archivosDelPerfil };

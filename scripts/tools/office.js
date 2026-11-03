@@ -53,26 +53,8 @@ const signatureList = require(path.join(ROOT, 'scripts', 'lib', 'signature-list.
 const sessionState = require(path.join(ROOT, 'scripts', 'lib', 'session-state.js'));
 const { readTranscript, codexTranscript, peerMessagesSince, readConversation, readSessionTokens, TAIL_BYTES } = require(path.join(ROOT, 'scripts', 'lib', 'session-transcript.js'));
 
-const VENDOR = path.join(__dirname, 'office', 'vendor', 'three');
-const TEMPLATE = path.join(__dirname, 'office', 'page.html');
-// Los módulos de la librería que usa la escena, con el nombre con que se importan. Los archivos están copiados sin
-// cambios en una sola carpeta (`extras/`); el nombre con que se importan conserva la ruta original de la librería, que
-// es contra la que se resuelven sus importaciones relativas.
-const MODULES = {
-  three: 'three.module.min.js',
-  'three/addons/controls/OrbitControls.js': 'extras/OrbitControls.js',
-  'three/addons/geometries/RoundedBoxGeometry.js': 'extras/RoundedGeometry.js',
-  'three/addons/postprocessing/EffectComposer.js': 'extras/EffectComposer.js',
-  'three/addons/postprocessing/RenderPass.js': 'extras/RenderPass.js',
-  'three/addons/postprocessing/UnrealBloomPass.js': 'extras/UnrealBloomPass.js',
-  'three/addons/postprocessing/OutputPass.js': 'extras/OutputPass.js',
-  'three/addons/postprocessing/Pass.js': 'extras/Pass.js',
-  'three/addons/postprocessing/ShaderPass.js': 'extras/ShaderPass.js',
-  'three/addons/postprocessing/MaskPass.js': 'extras/MaskPass.js',
-  'three/addons/shaders/CopyShader.js': 'extras/CopyShader.js',
-  'three/addons/shaders/LuminosityHighPassShader.js': 'extras/LuminosityHighPassShader.js',
-  'three/addons/shaders/OutputShader.js': 'extras/OutputShader.js',
-};
+const PARTS = require('./office/page-parts.js');
+const { MODULES, moduleSource } = PARTS;
 // Los estados de una sesión que trabaja o espera: los únicos en que estar callada dice algo.
 const QUIET_STATES = new Set(['trabajando', 'prueba', 'firma', 'pregunta', 'espera', 'esperando']);
 // lo que le toca contestar a una persona: una firma o una pregunta. La coordinadora que espera eso no dice «Coordinando»
@@ -1204,32 +1186,18 @@ function readBoard(file) {
   }
 }
 
-// Un módulo de la librería con sus importaciones relativas cambiadas por el nombre con que figura en MODULES: un
-// módulo que viene de una dirección `data:` no tiene carpeta contra la cual resolverlas.
-function moduleSource(key, rel) {
-  const src = fs.readFileSync(path.join(VENDOR, rel), 'utf8');
-  if (key === 'three') return src;
-  const dir = path.posix.dirname(key);
-  return src.replace(/(from\s*|import\s*)(['"])(\.{1,2}\/[^'"]+)\2/g, (all, kw, q, spec) => `${kw}${q}${path.posix.normalize(path.posix.join(dir, spec))}${q}`);
-}
-
 // La foto fija lleva la librería adentro; la página del proceso local la pide a su dirección, con el token.
-function importMap(live = null) {
-  const imports = {};
-  for (const [key, rel] of Object.entries(MODULES)) {
-    imports[key] = live ? `/modules/${encodeURIComponent(key)}?t=${live.token}` : `data:text/javascript;base64,${Buffer.from(moduleSource(key, rel)).toString('base64')}`;
-  }
-  return JSON.stringify({ imports });
-}
+const moduleUrl = (live) => (key) => `/modules/${encodeURIComponent(key)}?t=${live.token}`;
+const importMap = (live = null) => PARTS.importMap(live ? moduleUrl(live) : null);
 
-/** La página entera, con los datos; con `live`, además el token para recibir las fotos nuevas del proceso local. */
+/**
+ * La página entera. Con `live`, la del proceso local: pide su código y sus datos con el token. Sin él, la foto fija, que
+ * lleva todo adentro. El enlace al sitio sale de acá, no de lo que llega después por la conexión.
+ */
 function page(data, { live = null } = {}) {
-  const safe = (v) => JSON.stringify(v).replace(/</g, '\\u003c');
-  return fs.readFileSync(TEMPLATE, 'utf8')
-    // los datos van últimos: un texto de una sesión que diga el nombre de otro marcador no lo reemplaza
-    .replace('__OFFICE_IMPORTMAP__', () => importMap(live).replace(/</g, '\\u003c'))
-    .replace('__OFFICE_LIVE__', () => safe(live ? { token: live.token } : null))
-    .replace('__OFFICE_DATA__', () => safe(data));
+  const site = data && data.meta && data.meta.sitio;
+  if (!live) return PARTS.renderPage({ data, site });
+  return PARTS.renderPage({ source: 'local', token: live.token, site, urlOf: moduleUrl(live), script: `page.js?t=${live.token}` });
 }
 
 // Una clave de la configuración, con el mismo lector que el comando /org-site: sale 0 con el valor, 3 si no está y 2 si
@@ -1898,12 +1866,26 @@ async function openLive(home = os.homedir()) {
   }
 }
 
+/**
+ * La dirección de la oficina de esta máquina en el sitio, o null si la oficina se ve sólo acá: sin sitio, con el enlace
+ * apagado, sin aprobar, o sin saber cómo se llama la máquina. El nombre es el de la subida al buzón: con él la conoce el sitio.
+ */
+function officeInSite(sdir) {
+  const { linkedSite, readLinkState } = require('./office/site-link.js');
+  const site = linkedSite(readSiteUrl());
+  if (!site || readLinkState(sdir) !== 'aprobada') return null;
+  let machine = null;
+  try { machine = require('../metrics/upload-runs.js').nombreDeMaquina(); } catch { /* sin nombre, la local */ }
+  return machine ? `${new URL(site).origin}/offices#${encodeURIComponent(machine)}` : null;
+}
+
 async function main(argv) {
   const opts = {};
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--json') opts.json = true;
     else if (a === '--open') opts.open = true;
+    else if (a === '--local') opts.local = true;
     else if (a === '--write-tables') {
       process.stderr.write('office.js: las tablas se arman solas: ya no se escriben. El tema de un trabajo se corrige con `tema` en su fila del tablero.\n');
       return 2;
@@ -1913,8 +1895,14 @@ async function main(argv) {
       opts[a.slice(2)] = v;
     } else { process.stderr.write(`office.js: opción desconocida ${a}\n`); return 2; }
   }
-  // --open sin foto fija: la oficina viva, del proceso local
+  // --open sin foto fija: la pestaña del sitio si esta máquina está aprobada; si no, la oficina viva, del proceso local
   if (opts.open && !opts.json && !opts.out && !opts.now) {
+    const inSite = opts.local ? null : officeInSite(stateDir(os.homedir()));
+    if (inSite) {
+      process.stdout.write(`La oficina está en el sitio: ${inSite}\n`);
+      if (process.env.TYCON_OFFICE_NO_BROWSER !== '1') openFile(inSite);
+      return 0;
+    }
     let r;
     try { r = await openLive(); } catch (e) { process.stderr.write(`office.js: ${String(e.message).split('\n')[0]}\n`); return 1; }
     process.stdout.write(r.reused ? `La oficina ya estaba abierta: ${r.url}\n` : `La oficina está abierta en ${r.url}\n`);
