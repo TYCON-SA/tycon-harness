@@ -409,3 +409,29 @@ no un olvido); (b) contenido — verificar que el par no traiga datos que no deb
 `covered_by:` en un AC `runtime_not_verifiable` tiene que ser un **T-ID con tag `@ac-N`**, nunca una
 ruta de archivo: `runtime-matrix.js` degrada una ruta a NOT-RUN en vez de WAIVED-USER.
 
+## 7. Qué vence una evidencia
+
+Un portón E2E o un humo prueba el código que había cuando corrió. La matriz por AC (`runtime-matrix.js`) no se lo cree si
+el código cambió después. Para saberlo no alcanza la fecha del archivo: git la reescribe en cada cambio de rama, aunque
+el contenido quede igual. Tampoco alcanza comparar la hora de la evidencia con la del commit: la evidencia se toma antes
+del commit que guarda el código.
+
+Por cada archivo de código declarado, la primera que aplica decide (`lib/evidence-vs-commit.js`):
+
+| Caso | La evidencia |
+|---|---|
+| La fecha del archivo es anterior o igual a la hora de la evidencia | Cuenta, sin preguntarle a git |
+| El archivo tiene cambios sin commitear, también preparados; no está en git, está marcado para que git no lo mire (`assume-unchanged`, `skip-worktree`), o git no contesta | No cuenta |
+| La evidencia no está en ningún commit alcanzable desde `HEAD` | No cuenta: pudo probar el código de otra rama |
+| Mismo repo: el archivo es igual en el commit de la evidencia y en `HEAD` | Cuenta, aunque haya cambiado y vuelto |
+| Mismo repo: el archivo es distinto | No cuenta, y el aviso nombra el archivo y el commit |
+| Otro repo: el último commit del archivo es anterior o igual al de la evidencia | Cuenta |
+| Otro repo: el último commit del archivo es posterior | No cuenta: entre repos sólo se pueden comparar horas |
+
+Un clon cortado no se compara: el aviso dice que no se pudo comparar contra git. Si la evidencia venció, se vuelve a
+correr. Lo que llega a un commit ya pasó por esta misma regla en el freno del commit, con el archivo sin commitear: por eso
+el commit de la evidencia alcanza para juzgarla después.
+
+Las demás condiciones no cambian: el espejo en `gates.log`, las pruebas apagadas, la salida sellada y la clase del comando
+del humo. Una evidencia sin espejo no cuenta aunque el archivo no haya cambiado.
+

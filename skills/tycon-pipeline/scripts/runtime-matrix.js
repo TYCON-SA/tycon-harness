@@ -47,7 +47,8 @@ if (require.main === module) { try { require('./lib/node-floor.js').guard(); } c
  *
  * Staleness (por clase de artefacto — calibrado con la regla de tests del equipo):
  *   - e2e gate / smoke ledger MÁS VIEJOS que el último edit de código → NO cuentan
- *     (re-correrlos es barato y scoped).
+ *     (re-correrlos es barato y scoped). Una fecha nueva sobre un archivo igual al del commit de la evidencia no es un
+ *     edit: git la reescribe en cada cambio de rama. La regla: lib/evidence-vs-commit.js.
  *   - tests-result.json más viejo que el código → WARNING, sigue contando: regenerarlo
  *     es la full suite, que por regla del equipo corre SOLO en el merge-gate
  *     (test-execution-discipline: una suite completa puede congelar la máquina del dev).
@@ -70,6 +71,7 @@ const os = require('os');
 const crypto = require('crypto');
 const smokeSecrets = require(path.join(__dirname, 'lib', 'smoke-secrets.js'));
 const e2eEvidence = require(path.join(__dirname, 'lib', 'e2e-evidence.js'));
+const evidenceVsCommit = require(path.join(__dirname, 'lib', 'evidence-vs-commit.js'));
 
 // Desde cuándo un AC de pantalla sin imagen bloquea: las stories que arrancaron antes de esta hora no se frenan a mitad
 // de su trabajo y reciben un aviso. Es la hora en que se publica la regla.
@@ -641,7 +643,8 @@ function readSmokeLedger(evidenceDirs, sid, gatesLogPath) {
       const salidaProblema = v2 && mirrored ? problemaDeSalida(e, dir, confirmadas) : null;
       // La imagen que el humo guardó con `--capture`, verificada contra el espejo como la salida.
       const imagen = mirrored ? imagenDelHumo(e, dir, confirmadas) : { ruta: null, problema: null };
-      entries.push({ ...e, path: f, tsMs: Date.parse(e.ts), mirrored, mutatesOk, evidenceKind: classifyCmd(e.cmd),
+      // `linea`: la línea entera, para encontrar en git el commit de ESTA corrida; un checkout puede dejarle el `\r`.
+      entries.push({ ...e, path: f, linea: line.replace(/\r$/, ''), tsMs: Date.parse(e.ts), mirrored, mutatesOk, evidenceKind: classifyCmd(e.cmd),
         v2, salidaProblema, visual: imagen.ruta, visualProblema: imagen.problema });
     }
   }
@@ -998,32 +1001,53 @@ function compute(opts) {
   // contra el workspace deja mtime=0 para los repo-relativos: el chequeo de frescura queda ciego
   // y los gates viejos cuentan.
   const declared = frontmatterFileList(fm).filter((f) => CODE_FILE_RE.test(f));
-  let maxCodeMtime = 0; let maxCodeFile = null;
+  let maxCodeMtime = 0;
   const kindMtime = { fe: 0, be: 0 };
+  const codeFiles = [];
   for (const rel of declared) {
     const candidates = [repoRoot, wsRoot].filter(Boolean).map((r) => path.join(r, rel));
     const abs = candidates.find(isFile) || candidates[0] || rel;
     const mt = mtimeMs(abs);
-    if (mt > maxCodeMtime) { maxCodeMtime = mt; maxCodeFile = rel; }
+    codeFiles.push({ rel, abs: path.resolve(abs), mt });
+    if (mt > maxCodeMtime) maxCodeMtime = mt;
     const kind = kindOf(rel, fePaths);
     if (mt > kindMtime[kind]) kindMtime[kind] = mt;
   }
+  // ¿La evidencia sigue valiendo para todo el código declarado? El archivo más nuevo primero: si ése está antes de la
+  // evidencia, todos lo están y no se le pregunta a git. El primero que no cuenta decide, y es el que nombra el aviso.
+  codeFiles.sort((a, b) => b.mt - a.mt);
+  const juez = evidenceVsCommit.crearJuez({ repoDelIndice: repoRoot });
+  const vigencias = new Map();
+  const vigenciaDe = (ev, evidencia) => {
+    if (!vigencias.has(ev)) {
+      let v = { cuenta: true };
+      for (const f of codeFiles) {
+        const r = juez.vigencia({ archivo: f.abs, mtimeMs: f.mt, evidencia });
+        if (!r.cuenta) { v = { ...r, rel: f.rel }; break; }
+      }
+      vigencias.set(ev, v);
+    }
+    return vigencias.get(ev);
+  };
+  const vigenciaGate = (g) => vigenciaDe(g, { ruta: g.path, tsMs: g.ts });
+  const vigenciaHumo = (e) => vigenciaDe(e, { ruta: e.path, tsMs: e.tsMs, linea: e.linea });
+  const porQueVencio = (v) => `(${v.rel}: ${evidenceVsCommit.motivoEnPalabras(v)})`;
 
   // --- evidencia runtime 1: gates E2E (frescura BLOQUEANTE + espejo en gates.log OBLIGATORIO)
   const allGates = readE2eGates(evidenceDirs, evKey, gatesLogPath, storyPath);
   // Un PASS con pruebas apagadas, o que no dice cuántas, no da la evidencia por completa: el verde puede ser
   // «se corrió una de diez». Se nombra y no cuenta; con cero, como siempre.
   const passCompleto = (g) => g.skipped === 0;
-  for (const g of allGates.filter((x) => x.verdict === 'PASS' && x.ts >= maxCodeMtime && x.mirrored && !passCompleto(x))) {
+  for (const g of allGates.filter((x) => x.verdict === 'PASS' && vigenciaGate(x).cuenta && x.mirrored && !passCompleto(x))) {
     warnings.push(g.skipped === null
       ? `Gate E2E ${path.basename(g.path)}: PASS que no informa cuántas pruebas se apagaron → no otorga evidencia completa. Re-corré el gate del arnés (anota \`- skipped: N\`) o agregá la línea al gate del repo.`
       : `Gate E2E ${path.basename(g.path)}: PASS con ${g.skipped} prueba(s) apagada(s) → no otorga evidencia completa. Prendé esas pruebas y re-corré el gate, o sacá del filtro el spec que las tiene.`);
   }
-  const freshPassGates = allGates.filter((g) => g.verdict === 'PASS' && g.ts >= maxCodeMtime && g.mirrored && passCompleto(g));
-  for (const g of allGates.filter((x) => x.verdict === 'PASS' && x.ts < maxCodeMtime)) {
-    warnings.push(`Gate E2E ${path.basename(g.path)} es ANTERIOR al último edit de código (${maxCodeFile}) → NO cuenta. Re-corré el gate (scoped, barato).`);
+  const freshPassGates = allGates.filter((g) => g.verdict === 'PASS' && vigenciaGate(g).cuenta && g.mirrored && passCompleto(g));
+  for (const g of allGates.filter((x) => x.verdict === 'PASS' && !vigenciaGate(x).cuenta)) {
+    warnings.push(`Gate E2E ${path.basename(g.path)} es ANTERIOR al último edit de código ${porQueVencio(vigenciaGate(g))} → NO cuenta. Re-corré el gate (scoped, barato).`);
   }
-  for (const g of allGates.filter((x) => x.verdict === 'PASS' && x.ts >= maxCodeMtime && !x.mirrored)) {
+  for (const g of allGates.filter((x) => x.verdict === 'PASS' && vigenciaGate(x).cuenta && !x.mirrored)) {
     warnings.push(`Gate E2E ${path.basename(g.path)} SIN espejo run-check en gates.log → NO cuenta (¿se escribió a mano en vez de correrse vía 'marker.js run-check dod -- bash <gate> ...'?).`);
   }
 
@@ -1032,7 +1056,7 @@ function compute(opts) {
   // La evidencia VIEJA de un número repetido (`<id>-*`): no cuenta para ninguna story —pertenecer es
   // explícito y esos archivos no dicen a cuál— y no se toca. Se NOMBRA, con su ruta.
   const orphans = evidenceKeyLib.legacyFiles(evidenceDirs, keyInfo);
-  const freshSmokes = ledger.filter((e) => e.mirrored && !e.salidaProblema && e.tsMs >= maxCodeMtime);
+  const freshSmokes = ledger.filter((e) => e.mirrored && !e.salidaProblema && vigenciaHumo(e).cuenta);
   for (const e of ledger.filter((x) => !x.mirrored)) {
     warnings.push(`Smoke ledger entry ${e.ts} SIN espejo en gates.log → no cuenta (¿se escribió a mano en vez de vía smoke-run.sh?).`);
   }
@@ -1043,8 +1067,8 @@ function compute(opts) {
         ? 'El humo no dejó su salida guardada (o se borró): re-correlo vía smoke-run.sh.'
         : 'Lo que quedó en el repo no es lo que selló el espejo al correr: re-correlo vía smoke-run.sh, no edites la evidencia.'));
   }
-  for (const e of ledger.filter((x) => x.mirrored && x.tsMs < maxCodeMtime)) {
-    warnings.push(`Smoke ${e.ts} anterior al último edit de código → no cuenta. Re-correlo vía smoke-run.sh.`);
+  for (const e of ledger.filter((x) => x.mirrored && !vigenciaHumo(x).cuenta)) {
+    warnings.push(`Smoke ${e.ts} anterior al último edit de código ${porQueVencio(vigenciaHumo(e))} → no cuenta. Re-correlo vía smoke-run.sh.`);
   }
   // La imagen del humo que no es la que se selló al correr no cuenta: el humo sigue valiendo, sin imagen.
   for (const e of ledger.filter((x) => x.mirrored && x.visualProblema)) {
