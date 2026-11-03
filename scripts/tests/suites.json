@@ -7,6 +7,16 @@
       "requiere": []
     },
     {
+      "raiz": "arnes",
+      "ruta": "tests/product-lab.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/compare-matrix.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la pieza que sirve un repo git por HTTP en las pruebas: un git sin http-backend no cuenta como «hay backend», y si el del PATH no lo trae se usa otro de la máquina (en Windows, Git para Windows completo).",
       "raiz": "arnes",
       "ruta": "tests/git-http-server.test.js",
