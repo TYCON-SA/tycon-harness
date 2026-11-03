@@ -173,6 +173,8 @@ tr:last-child td{border-bottom:0}
 .board{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
 .board .sum{margin:0;font-size:.95rem}
 .tablas .una{min-width:0} .tablas h2{margin:0 0 2px} .tablas .escrito{font-size:.8rem;color:var(--muted)} .tablas .table{overflow-x:auto} .tablas table{min-width:520px;margin-top:6px} .tablas td:first-child{white-space:nowrap}
+.temaFila{cursor:pointer} .temaFila:hover td{background:var(--line)} .temaBoton{all:unset;cursor:pointer;font-weight:700} .temaBoton:focus-visible{outline:2px solid var(--accent);outline-offset:2px} .temaBoton::before{content:"▸ ";color:var(--muted)} .temaBoton[aria-expanded="true"]::before{content:"▾ "}
+.temaTrabajos ul{list-style:none;margin:0;padding:2px 0 6px 14px} .temaTrabajos li{padding:3px 0;white-space:normal} .temaTrabajos b{display:block;font-weight:600} .temaTrabajos span{font-size:.85rem;color:var(--muted)}
 .board .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;align-items:start}
 .board .col{display:flex;flex-direction:column;gap:6px;min-width:0}
 .board .col h3{margin:0;font:700 .85rem var(--display);border-bottom:3px solid var(--k,var(--line));padding-bottom:4px}
@@ -296,12 +298,23 @@ function pintarVista(){const hay=Boolean(DATA.tablas),k=Boolean(DATA.kanban),v=v
   document.getElementById("trabajo").hidden=!hay&&!k;
   document.querySelectorAll('input[name="vista"]').forEach(i=>{i.checked=i.value===v})}
 document.querySelectorAll('input[name="vista"]').forEach(i=>i.addEventListener("change",()=>{if(!i.checked)return;vista=i.value;guardarVista(vista);pintarVista()}));
-// los dos resúmenes, arriba del tablero, y cuándo se escribió cada uno. Todo va como texto, nunca como HTML
-function renderTablas(){const sec=document.getElementById("tablas"),ts=DATA.tablas;sec.replaceChildren();if(!ts)return;
+// los dos resúmenes por tema, con la hora en que se armaron. Un tema se abre y muestra sus trabajos, y sigue abierto con la foto
+// nueva. Todo va como texto, nunca como HTML
+const temasAbiertos=new Set();
+function renderTablas(){const sec=document.getElementById("tablas"),ts=DATA.tablas,activo=document.activeElement,foco=activo&&activo.dataset?activo.dataset.tema:null;sec.replaceChildren();if(!ts)return;
   ["hoy","pendientes","hechos"].forEach(k=>{const t=ts[k];if(!t)return;const d=el("div","una");d.appendChild(el("h2",null,t.titulo));d.appendChild(el("span","escrito",[t.escrito,t.cruce].filter(Boolean).join(" · ")));
-    if(!(t.filas||[]).length){d.appendChild(el("p","none","Nada"));sec.appendChild(d);return;}
+    if(!(t.filas||[]).length){d.appendChild(el("p","none",t.vacio||"Nada"));sec.appendChild(d);return;}
     const tb=el("table"),hd=el("tr");t.columnas.forEach(c=>hd.appendChild(el("th",null,c)));const th=el("thead");th.appendChild(hd);tb.appendChild(th);const bd=el("tbody");
-    const cuantas=g=>t.filas.filter(f=>f.grupo===g).length;let previo=null;t.filas.forEach(r=>{const tr=el("tr");[r.grupo===previo?"":t.contar&&r.grupo?r.grupo+" · "+cuantas(r.grupo):r.grupo,r.que,r.col].forEach(v=>tr.appendChild(el("td",null,v||"")));previo=r.grupo;bd.appendChild(tr)});tb.appendChild(bd);const w=el("div","table");w.appendChild(tb);d.appendChild(w);sec.appendChild(d);})}
+    t.filas.forEach(r=>{const tr=el("tr");
+      if(!(r.trabajos||[]).length){[r.grupo,r.que,r.col].forEach(v=>tr.appendChild(el("td",null,v||"")));bd.appendChild(tr);return}
+      const id=k+"|"+r.grupo,b=el("button","temaBoton",r.grupo),primera=el("td"),det=el("tr","temaTrabajos"),dd=el("td"),ul=el("ul");
+      b.type="button";b.dataset.tema=id;primera.appendChild(b);tr.className="temaFila";tr.appendChild(primera);[r.que,r.col].forEach(v=>tr.appendChild(el("td",null,v||"")));
+      r.trabajos.forEach(w=>{const li=el("li");li.appendChild(el("b",null,w.titulo));li.appendChild(el("span",null,[w.quien,w.como].filter(Boolean).join(" · ")));ul.appendChild(li)});
+      dd.colSpan=3;dd.appendChild(ul);det.appendChild(dd);
+      const pintar=()=>{const abierta=temasAbiertos.has(id);det.hidden=!abierta;b.setAttribute("aria-expanded",String(abierta))};
+      tr.addEventListener("click",()=>{if(temasAbiertos.has(id))temasAbiertos.delete(id);else temasAbiertos.add(id);pintar()});pintar();
+      bd.appendChild(tr);bd.appendChild(det);if(foco===id)b.focus()});
+    tb.appendChild(bd);const w=el("div","table");w.appendChild(tb);d.appendChild(w);sec.appendChild(d);})}
 function renderCrew(){const c=document.getElementById("crew");c.replaceChildren();
   if(!agents.length){c.appendChild(el("p","empty","No hay sesiones abiertas en esta máquina."));return}
   agents.forEach((a,i)=>{const s=AST[a.estado]||[a.estado||"","#999"];const k=el("div","card");

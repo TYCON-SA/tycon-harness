@@ -2180,7 +2180,7 @@ test('T208 Note_Hour_OnALane: con un arreglo rápido abierto, la nota le da la h
   assert.strictEqual(a.fin.dif, 'en hora');
 });
 
-const { buildTables, writeTables } = require(path.join(__dirname, '..', 'tools', 'office.js'));
+const { buildTables } = require(path.join(__dirname, '..', 'tools', 'office.js'));
 const KANBAN_FOR_TABLES = { columnas: [
   { id: 'firma', tarjetas: [{ titulo: 'Firmar algo', hora: '' }] },
   { id: 'curso', tarjetas: [{ titulo: 'Con hora', hora: 'lun 12:00 · en hora' }, { titulo: 'Sin hora', hora: 'sin hora estimada' }] },
@@ -2188,47 +2188,6 @@ const KANBAN_FOR_TABLES = { columnas: [
   { id: 'sinEmpezar', tarjetas: [{ titulo: 'Después', hora: 'sáb 18:00' }] },
   { id: 'hechos', tarjetas: [{ titulo: 'Hecho', hora: 'lun 09:00' }] },
 ], medioCamino: [{ titulo: 'Quedó', accion: 'x' }] };
-
-test('T209 Tables_MadeByTheHarness: sin nadie que las escriba, se arman con lo que se sabe y no inventan probabilidades', () => {
-  const t = buildTables({ kanban: KANBAN_FOR_TABLES, nowMs: NOW });
-  assert.strictEqual(t.hoy.origen, 'arnes');
-  assert.deepStrictEqual(t.hoy.columnas, ['Grupo', 'Qué tendremos', 'Hora']);
-  assert.deepStrictEqual(t.hoy.filas.map((r) => [r.grupo, r.que, r.col]), [['En curso', 'Con hora', 'lun 12:00 · en hora'], ['En curso', 'Sin hora', 'sin hora'], ['Esperan entrar', 'En la cola', 'esperando entrar']]);
-  assert.deepStrictEqual(t.pendientes.filas.map((r) => [r.grupo, r.que]), [['Tu firma', 'Firmar algo'], ['Sin sesión', 'Después'], ['A medio camino', 'Quedó']]);
-  assert.match(t.hoy.escrito, /^Armada por el arnés a las/);
-  assert.ok(!/[Pp]robable/.test(JSON.stringify(t)));
-});
-
-test('T210 Tables_Written_NotOverwritten: dos sesiones no se pisan, la coordinadora manda, y una tabla vieja se nota', () => {
-  const sdir = fs.mkdtempSync(path.join(os.tmpdir(), 'office-tablas-'));
-  const hoy = (que) => ({ hoy: [{ grupo: 'G', que, hoy: 'Probable' }] });
-  writeTables(hoy('De Ana'), { sdir, sid: 'ana', coordinatorSid: null });
-  writeTables(hoy('De Eva'), { sdir, sid: 'eva', coordinatorSid: null });
-  const read = (sid) => JSON.parse(fs.readFileSync(path.join(sdir, 'coordination', 'tablas', `${sid}.json`), 'utf8'));
-  assert.strictEqual(read('ana').hoy[0].que, 'De Ana');
-  assert.strictEqual(read('eva').hoy[0].que, 'De Eva');
-  writeTables({ pendientes: [{ grupo: 'G', que: 'Otra', cuando: 'Hoy' }] }, { sdir, sid: 'ana', coordinatorSid: null });
-  assert.strictEqual(read('ana').hoy[0].que, 'De Ana', 'la tabla que no viene queda como estaba');
-  assert.throws(() => writeTables({ hoy: 'no' }, { sdir, sid: 'ana' }), /no es una lista/);
-  assert.throws(() => writeTables([], { sdir, sid: 'ana' }), /va un objeto/);
-  const rows = (que) => [{ grupo: 'G', que, col: 'Probable' }];
-  const both = buildTables({ sessionTables: [{ at: NOW - 3 * 3600000, hoy: rows('De Ana'), pendientes: [] }, { at: NOW - 3 * 3600000 + 5, hoy: [...rows('De Eva'), ...rows('De Ana')], pendientes: [] }], kanban: KANBAN_FOR_TABLES, nowMs: NOW });
-  assert.deepStrictEqual(both.hoy.filas.map((r) => r.que), ['De Ana', 'De Eva'], 'juntas y sin repetir');
-  assert.strictEqual(both.hoy.origen, 'sesiones');
-  assert.deepStrictEqual(both.hoy.columnas, ['Grupo', 'Qué tendremos', 'Hoy']);
-  assert.match(both.hoy.escrito, /\(vieja\)$/);
-  assert.strictEqual(both.pendientes.origen, 'arnes', 'cada tabla por su cuenta');
-  // la coordinadora: en su tablero y sin tocar lo demás
-  fs.mkdirSync(path.join(sdir, 'coordination'), { recursive: true });
-  const board = path.join(sdir, 'coordination', 'tablero.json');
-  fs.writeFileSync(board, JSON.stringify({ pendientes: [{ titulo: 'Una fila', estado: 'espera' }] }));
-  writeTables(hoy('De la coordinadora'), { sdir, sid: 'co', coordinatorSid: 'co', nowMs: NOW });
-  const parsed = buildBoard(JSON.parse(fs.readFileSync(board, 'utf8')));
-  assert.strictEqual(parsed.filas[0].titulo, 'Una fila');
-  const coord = buildTables({ board: parsed, boardWrittenAt: NOW, sessionTables: [{ at: NOW, hoy: rows('De Ana'), pendientes: [] }], kanban: KANBAN_FOR_TABLES, nowMs: NOW });
-  assert.deepStrictEqual(coord.hoy.filas.map((r) => [r.que, r.col]), [['De la coordinadora', 'Probable']], 'la suya manda');
-  assert.strictEqual(coord.hoy.escrito, `Escrita a las ${hm(NOW)}`);
-});
 
 test('T211 Tables_PageDrawsText: la página dibuja las tablas arriba del tablero, como texto', () => {
   const { data } = buildOffice({ wip: wip([]), nowMs: NOW });
@@ -2251,14 +2210,6 @@ test('T212 Card_And_Panel_OneFicha: la tarjeta y el panel pintan la misma ficha,
   const ficha = html.slice(html.indexOf('function ficha(a)'), html.indexOf('// sin 3D, la tabla queda abierta'));
   for (const k of ['Trabajo', 'De la historia', 'Encargo', 'Haciendo ahora', 'Haciendo', 'Última acción', 'Espera', 'Parada', 'Mientras tanto', 'En pausa', 'Termina', 'Por qué', 'Prometido', 'Avance', 'Carpeta', 'Pasos de la ejecución']) assert.ok(ficha.includes(`"${k}"`), k);
   assert.doesNotMatch(html, /Pasos de la corrida/);
-});
-
-test('T213 Tables_GroupOnce: las filas de un grupo van juntas y la página dice su nombre una sola vez', () => {
-  const rows = [{ grupo: 'A', que: 'uno', col: 'x' }, { grupo: 'B', que: 'dos', col: 'x' }, { grupo: 'A', que: 'tres', col: 'x' }];
-  const t = buildTables({ sessionTables: [{ at: NOW, hoy: rows, pendientes: [] }], kanban: KANBAN_FOR_TABLES, nowMs: NOW });
-  assert.deepStrictEqual(t.hoy.filas.map((r) => r.que), ['uno', 'tres', 'dos']);
-  const { data } = buildOffice({ wip: wip([]), nowMs: NOW });
-  assert.match(page(data), /r\.grupo===previo\?"":/);
 });
 
 test('T214 Halfway_NamedPr: un trabajo que nombra su pedido entró si el pedido entró; si no se pudo saber, lo dice', async () => {
@@ -2305,18 +2256,6 @@ test('T217 Plain_Dates_Survive: una fecha no es una ruta ni un teléfono', () =>
   assert.strictEqual(plainWhole('Llamé el 2026-05-12 1155551234 sin suerte.'), null, 'un teléfono después de una fecha sigue sin decirse');
   assert.strictEqual(plainWhole('Llamé el 2026-05-12 (11) 5555-1234 sin suerte.'), null);
   assert.strictEqual(plainWhole('El dato 12/34/5678/90 no es una fecha.'), null, 'con dos o más barras, sólo una fecha pasa');
-});
-
-test('T218 Tables_OneHourEach: reescribir una tabla no cambia la hora de la otra, y una mal formada se dice', () => {
-  const sdir = fs.mkdtempSync(path.join(os.tmpdir(), 'office-tablas-hora-'));
-  writeTables({ hoy: [{ grupo: 'G', que: 'A', hoy: 'x' }], pendientes: [{ grupo: 'G', que: 'B', cuando: 'y' }] }, { sdir, sid: 'ana', nowMs: NOW - 3 * 3600000 });
-  writeTables({ pendientes: [{ grupo: 'G', que: 'C', cuando: 'y' }] }, { sdir, sid: 'ana', nowMs: NOW });
-  const raw = JSON.parse(fs.readFileSync(path.join(sdir, 'coordination', 'tablas', 'ana.json'), 'utf8'));
-  const row = { at: raw.at, hoy: raw.hoy.map((r) => ({ grupo: r.grupo, que: r.que, col: r.hoy })), pendientes: raw.pendientes.map((r) => ({ grupo: r.grupo, que: r.que, col: r.cuando })) };
-  const t = buildTables({ sessionTables: [row], kanban: KANBAN_FOR_TABLES, nowMs: NOW });
-  assert.match(t.hoy.escrito, /\(vieja\)$/, 'la de hace tres horas');
-  assert.strictEqual(t.pendientes.escrito, `Escrita a las ${hm(NOW)}`);
-  assert.ok(buildBoard({ tablas: { hoy: 'mal' } }).avisos.some((x) => /«hoy» no es una lista/.test(x)));
 });
 
 test('T219 Room_Rhythm_NeverStops: la sala se dibuja con ritmo, y un error en un cuadro no la deja quieta', () => {
@@ -2523,17 +2462,6 @@ test('T229 OpenPrs_FromThePhoto: «Esperan entrar» cuenta los pedidos reales, d
   assert.match(old.nota, /no se midieron/);
   fs.rmSync(path.join(m.state, 'stuck-prs-photo.json'));
   assert.match(col(await read(), 'entrando').nota, /no se midieron/, 'sin foto, tampoco');
-});
-
-test('T230 Tables_SayTheyGroup: una tabla escrita dice que agrupa y los números del kanban; una armada cuenta por grupo', () => {
-  const written = buildTables({ sessionTables: [{ at: NOW, hoy: [{ grupo: 'A', que: 'uno, dos y tres', col: 'x' }], pendientes: [{ grupo: 'B', que: 'cuatro', col: 'y' }] }], kanban: KANBAN_FOR_TABLES, nowMs: NOW });
-  assert.strictEqual(written.hoy.cruce, 'Agrupa por tema: una fila puede juntar varios trabajos. En el kanban, de a uno: 2 en curso · 1 esperan entrar · 1 terminados.');
-  assert.strictEqual(written.pendientes.cruce, 'Agrupa por tema: una fila puede juntar varios trabajos. En el kanban, de a uno: 1 tu firma · 1 sin sesión.');
-  const made = buildTables({ kanban: KANBAN_FOR_TABLES, nowMs: NOW });
-  assert.strictEqual(made.hoy.contar, true);
-  assert.strictEqual(made.hoy.cruce, 'Una fila por tarjeta del kanban.');
-  assert.strictEqual(made.hoy.filas.filter((f) => f.grupo === 'En curso').length, KANBAN_FOR_TABLES.columnas[1].tarjetas.length);
-  assert.match(page({ agents: [], items: [], meta: { teToca: [] }, rows: [], free: [], unreadable: [] }), /t\.contar&&r\.grupo\?r\.grupo\+" · "\+cuantas\(r\.grupo\)/);
 });
 
 test('T231 Card_WaitAndNewHour: lo que espera lleva su pedido; la hora que anotó una ejecución manda si es suya o si la de su paso venció', () => {
@@ -2967,62 +2895,6 @@ test('T275 YourTurn_OnlySignaturesAndTheList: «Te toca» suma la lista del tabl
   assert.ok(html.indexOf('id="you"') > html.indexOf('id="resumenListas"'), 'las listas se abren desde la línea');
   assert.ok(html.indexOf('id="trabado"') > html.indexOf('id="resumenListas"'));
   assert.doesNotMatch(html, /"Te toca: "\+t\.teToca/, 'no se dice dos veces');
-});
-
-const crossTables = (hoy, pendientes = [], more = {}) => buildTables({
-  board: { tablas: { hoy, pendientes, at: NOW - 3600000 } },
-  kanban: { columnas: [{ id: 'curso', tarjetas: [] }, { id: 'entrando', tarjetas: [] }, { id: 'hechos', tarjetas: [] }, { id: 'firma', tarjetas: [] }, { id: 'sinEmpezar', tarjetas: [] }], anteriores: more.anteriores || [] },
-  nowMs: NOW,
-  agents: more.agents || [],
-  prsEnded: more.prsEnded || new Map(),
-});
-const rowOf = (que, col, grupo = 'G') => ({ grupo, que, col });
-
-test('T276 Tables_CrossedWithWhatIsReal: la sesión abierta dice lo de ahora; una nota vieja no se hace pasar por actual', () => {
-  const agents = [
-    { nombre: 'Quintero', estado: 'esperando', fin: { hora: 'espera la cola de la coordinadora' } },
-    { nombre: 'Paz', estado: 'trabajando', fin: { hora: '23:59' } },
-  ];
-  const t = crossTables([
-    rowOf('Lista de firmas', 'Quintero: suite y prueba en vivo; 19:30'),
-    rowOf('Tope', 'Paz espera el arreglo del freno'),
-    rowOf('Freno', 'Borre: pase; cierre cerca de las 19:30'),
-    rowOf('Tope viejo', 'Palavecino, en curso'),
-    rowOf('Suites', 'Beltrán: 10 de 11 arregladas y deudas renovadas; falta entrar'),
-    rowOf('Hora suelta', 'cierre a las 00:01'),
-    rowOf('Otro día', 'mar 18:00'),
-    rowOf('Del #915', 'esperando #915', 'P'),
-    rowOf('Del #916', 'nota', 'P'),
-  ], [], { agents, prsEnded: new Map([['#915', 'merged'], ['#916', 'closed']]) }).hoy.filas;
-  const of = (que) => t.find((r) => r.que === que).col;
-  assert.strictEqual(of('Lista de firmas'), 'Quintero: espera la cola de la coordinadora');
-  assert.strictEqual(of('Tope'), 'Paz: trabajando; termina 23:59');
-  assert.strictEqual(of('Freno'), 'Borre no está abierta; la nota decía: pase; cierre cerca de las 19:30');
-  assert.strictEqual(of('Tope viejo'), 'Palavecino no está abierta; la nota decía: en curso');
-  assert.strictEqual(of('Suites'), 'Beltrán: 10 de 11 arregladas y deudas renovadas; falta entrar', 'no pretende nada: queda');
-  assert.strictEqual(of('Hora suelta'), 'Vencida: 00:01');
-  assert.strictEqual(of('Otro día'), 'mar 18:00');
-  assert.strictEqual(of('Del #915'), 'El 915 ya entró');
-  assert.strictEqual(of('Del #916'), 'El 916 se cerró sin entrar');
-});
-
-test('T277 Tables_OneRowAndNoFinishedInToday: lo terminado sale de «Hoy» a «Hechos», lo que dice que falta se queda, y una historia va una vez', () => {
-  const t = crossTables([
-    rowOf('Vocabulario', 'Instalado'),
-    rowOf('Portada', 'En main'),
-    rowOf('Lista de firmas', 'En main; sin programar'),
-    rowOf('Oficinas', 'Tanda A en main; siguen B, C y D'),
-    rowOf('Baja de carga', 'Instalado; falta medir'),
-    rowOf('Firmas (8.153)', 'hoy'),
-  ], [rowOf('Firmas, otra vez (8.153)', 'Esta semana'), rowOf('Otra (8.170)', 'Esta semana')], {
-    anteriores: [{ titulo: 'Cada dev elige', quien: 'Uma', hora: 'dom 23:35' }, { titulo: 'La oficina arriba', quien: 'Almeida', hora: 'sin hora' }],
-  });
-  assert.deepStrictEqual(t.hoy.filas.map((r) => r.que), ['Lista de firmas', 'Oficinas', 'Baja de carga', 'Firmas (8.153)']);
-  assert.deepStrictEqual(t.pendientes.filas.map((r) => r.que), ['Otra (8.170)'], 'la misma historia no se repite');
-  assert.deepStrictEqual(t.hechos.columnas, ['Qué', 'Quién', 'Cuándo']);
-  assert.deepStrictEqual(t.hechos.filas.map((r) => [r.grupo, r.que, r.col]), [
-    ['Cada dev elige', 'Uma', 'dom 23:35'], ['La oficina arriba', 'Almeida', 'sin hora'], ['Vocabulario', '', 'hoy'], ['Portada', '', 'hoy'],
-  ]);
 });
 
 test('T278 Kanban_Finished_OnlyToday: «Terminados» es lo de hoy con su hora, lo último primero; lo demás va a la tabla «Hechos»', () => {

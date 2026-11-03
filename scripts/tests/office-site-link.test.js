@@ -294,7 +294,7 @@ function richFoto() {
     transcripts: new Map(['s3', 's8'].map((sid) => [sid, { encargo: 'Lo que le pidieron', haciendoAhora: 'Lo que hace ahora', ultimaAccion: 'Lo último que hizo', lastWriteMs: nowMs - 60000 }])),
   });
   // lo que collect() le agrega a la foto de buildOffice
-  data.tablas = buildTables({ board, boardWrittenAt: nowMs - 60000, sessionTables: [], kanban: data.kanban, nowMs });
+  data.tablas = buildTables({ kanban: data.kanban, nowMs });
   data.tablero = { actualizado: board.actualizado, resumen: board.resumen, teToca: board.teToca };
   data.kanban.columnas[0].tarjetas[0] = { ...data.kanban.columnas[0].tarjetas[0], otro: true };
   data.kanban.escrito = 'Tablero escrito a las 11:59';
@@ -353,6 +353,7 @@ test('T1 Foto_LaMismaQueLaOficinaLocal: viaja sólo lo que lee la página; la li
     ['tablas', foto.tablas, FIELDS.tablas.fields, (k) => fn('renderTablas').includes(`"${k}"`)],
     ['tabla', allOf(tableList), tableFields, readBy('t', fn('renderTablas'))],
     ['filas', allOf(tableList.flatMap((t) => t.filas)), tableFields.filas.of.fields, readBy('r', fn('renderTablas'))],
+    ['trabajos', allOf(tableList.flatMap((t) => t.filas).flatMap((r) => r.trabajos)), tableFields.filas.of.fields.trabajos.of.fields, readBy('w', fn('renderTablas'))],
     ['meta', foto.meta, FIELDS.meta.fields, (k) => readBy('meta')(k) || readBy('m', fn('umbral') + src.split('\n').find((l) => l.startsWith('const puestos=')))(k)],
     ['rows', foto.rows[0], FIELDS.rows.of.fields, readBy('r')],
     ['tablero', foto.tablero, FIELDS.tablero.fields, readBy('t', fn('renderBoard'))],
@@ -368,7 +369,7 @@ test('T1 Foto_LaMismaQueLaOficinaLocal: viaja sólo lo que lee la página; la li
       assert.ok(k in record, `${name}.${k} está en la lista y la foto de la prueba no lo trae: no se está cruzando`);
     }
   }
-  for (const k of ['atrasada', 'atrasoMin', 'termina', 'tipo', 'orden', 'origen', 'pronosticoIso']) assert.ok(seen.includes(k), `la foto de la prueba trae «${k}», que la página no lee`);
+  for (const k of ['atrasada', 'atrasoMin', 'termina', 'tipo', 'orden', 'pronosticoIso']) assert.ok(seen.includes(k), `la foto de la prueba trae «${k}», que la página no lee`);
   for (const k of ['pelo', 'gorra', 'piel', 'lentes', 'barba']) assert.ok(!(k in FIELDS.agents.of.fields), `«${k}» lo calcula la página, no viaja`);
   // los valores cerrados son los que la página sabe pintar: uno que falta acá llega al sitio sin estado
   const keysOf = (re) => { const m = re.exec(src); assert.ok(m, String(re)); return [...m[1].matchAll(/(\w+):[\[#"]/g)].map((x) => x[1]).sort(); };
@@ -416,8 +417,8 @@ test('T1 Foto_LaMismaQueLaOficinaLocal: viaja sólo lo que lee la página; la li
   assert.strictEqual(sent.kanban.medioCaminoNoSe, foto.kanban.medioCaminoNoSe);
   assert.deepStrictEqual(sent.tablas.hoy.filas.map((r) => r.que), foto.tablas.hoy.filas.map((r) => r.que));
   assert.deepStrictEqual(sent.tablas.pendientes.columnas, foto.tablas.pendientes.columnas);
-  assert.strictEqual(sent.tablas.hoy.contar, true);
-  assert.ok(!('origen' in sent.tablas.hoy), 'la página no lo lee');
+  assert.deepStrictEqual(sent.tablas.hoy.filas.map((r) => r.trabajos), foto.tablas.hoy.filas.map((r) => r.trabajos));
+  assert.strictEqual(sent.tablas.pendientes.vacio, foto.tablas.pendientes.vacio);
   assert.ok(foto.items.length > 0 && !('items' in sent), 'la página no lee los campos de `items`');
   // los mensajes entre sesiones son sólo de la oficina abierta en la máquina, aunque la página los lea
   assert.ok(readBy('DATA')('sobres') && !('sobres' in FIELDS), 'los sobres no están en la lista');
@@ -1227,6 +1228,29 @@ test('Regresion_LoQueSaleDeLaConversacion_ViajaSaneado: de la última acción no
   assert.strictEqual(pick({ agents: [{ ultimaAccion: 'Ejecutar un comando' }] }, '/h').agents[0].ultimaAccion, 'Ejecutar un comando');
   // un texto libre que no tiene forma de clave viaja: lo aceptó el dueño, con el encargo a la vista en la oficina local
   assert.strictEqual(conversation('La clave es hunter2. Seguí.').sent.encargo, 'La clave es hunter2.');
+});
+
+test('T28 Site_RowsTravel_OtherProjectDoesNot @story-8.184 @ac-26: viajan los trabajos; en `tablas`, el título de otro proyecto no', () => {
+  const { pick } = fields();
+  const { buildTables } = require(path.join(ROOT, 'scripts', 'tools', 'office.js'));
+  const kanban = { columnas: [
+    { id: 'curso', tarjetas: [
+      { titulo: 'Mesa secreta de otro cliente', quien: 'Rojas · Otro proyecto', hora: 'lun 12:00', clave: 'titulo:mesa', otro: true },
+      { titulo: 'Lo de la oficina', quien: 'Paz', hora: 'lun 13:00', clave: 'titulo:oficina', tema: 'Oficina' },
+    ] },
+  ], medioCamino: [], anteriores: [] };
+  const tablas = buildTables({ kanban, nowMs: Date.parse('2026-11-03T14:00:00Z') });
+  const sent = pick({ tablas }, '/home/nadie').tablas;
+  assert.ok(!JSON.stringify(sent).includes('Mesa secreta'), 'ni en la fila ni en sus trabajos');
+  const other = sent.hoy.filas.find((r) => r.grupo === 'Otro proyecto');
+  assert.strictEqual(other.que, 'Otro proyecto');
+  assert.deepStrictEqual(other.trabajos.map((w) => w.titulo), ['Otro proyecto']);
+  assert.strictEqual(other.col, '1 en curso', 'la cuenta sí viaja');
+  const own = sent.hoy.filas.find((r) => r.grupo === 'Oficina');
+  assert.deepStrictEqual(own.trabajos, [{ titulo: 'Lo de la oficina', quien: 'Paz', como: 'En curso · lun 13:00' }]);
+  assert.strictEqual(own.otro, undefined);
+  // en la máquina, el título se sigue viendo
+  assert.match(JSON.stringify(tablas), /Mesa secreta/);
 });
 
 test('Regresion_FotoReal_TodoLoQueTraeViajaOSeLoDeja: una sección nueva de la foto no se pierde en silencio', async () => {

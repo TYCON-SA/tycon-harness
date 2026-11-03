@@ -49,10 +49,11 @@ sesión sin pipeline dice su encargo, lo que está haciendo y su última acción
 conversación: nada de eso se guarda ni sale de la máquina. Su título es lo que ella anotó que hace, o su último mensaje; el
 encargo se muestra como encargo. La tarjeta y el panel al tocar a la persona dicen lo mismo.
 
-Arriba del tablero van dos tablas: «Hoy» y «Pendientes», cada una con la hora en que se escribió. Las escribe la coordinadora,
-y si no hay, cualquier sesión a pedido, con `office.js --write-tables <archivo.json>` (`{ "hoy": [{ "grupo", "que", "hoy" }],
-"pendientes": [{ "grupo", "que", "cuando" }] }`): las de varias sesiones se muestran juntas, sin pisarse. Sin nadie que las
-escriba, se arman con lo que el arnés sabe y dicen la hora anotada, sin probabilidades: ésas las juzga una persona.
+Las tablas «Hoy» y «Pendientes» se arman solas de las mismas tarjetas que el kanban: nadie las escribe. Tienen una fila por
+tema, con una línea de estado contada de las tarjetas, y al tocarla se abren sus trabajos. El tema de cada trabajo lo elige
+una vez el modelo de la noche de la organización, de fondo y sólo con la página abierta: armar la foto no lo espera, y se le
+manda sólo el título. Sin modelo, el tema sale de los títulos de los pedidos recientes. Si un tema quedó mal, se corrige con
+`tema` en la fila del tablero. Cuánto gastó: `node scripts/tools/office/topics.js --report`.
 
 La sala se dibuja con ritmo para no cargar la máquina: más rápido mientras la tocás, a un ritmo tranquilo si hay personas que se
 mueven, muy de vez en cuando si nadie se mueve, y nada si no se ve.
