@@ -15,6 +15,13 @@
  *   4. En el mismo repo: cuenta si el archivo es igual en el commit que guardó la evidencia y en HEAD.
  *   5. En otro repo no hay contenido que comparar: cuenta si el último commit del archivo es anterior o igual al de la
  *      evidencia. Esa hora se lee con --first-parent: un commit viejo que entra por un merge cuenta con la hora del merge.
+ *      Si no, cuenta si hay una fusión de pedido posterior cuya rama es de esta historia, y el archivo es igual en HEAD y en
+ *      esa rama a la hora de la evidencia. Supone que la evidencia corrió sobre esa rama: nada lo prueba, y por eso `via`
+ *      le pide a la matriz que lo avise. Sin saber de qué historia es la rama no se puede: un commit ajeno, viejo, que entra
+ *      por su fusión después de la evidencia tiene el mismo dibujo en git que el propio.
+ *   6. Después de la 4 y de la 5: un archivo de prueba cuenta si todos los commits que lo cambiaron después son de otra
+ *      historia. Afloja el control a propósito, por decisión del dueño: una prueba corregida por la misma historia quizá daba
+ *      verde por estar mal, y vence. De qué historia es un commit lo dice lib/commit-story.js; si no se sabe, vence.
  *
  * Una evidencia guardada en el mismo commit que un archivo editado después de la prueba da verde en la regla 4: no se
  * distingue en git. Lo frena antes el freno del commit, que calcula esta misma regla con el archivo sin commitear.
@@ -28,6 +35,8 @@
  */
 const { execFileSync } = require('child_process');
 const path = require('path');
+const { isTestPath } = require('./atdd-order.js');
+const { ramaDelAsunto, historiaDeLaRama } = require('./commit-story.js');
 
 const TIEMPO_MAX_MS = 10000;
 const FORMATO_DE_COMMIT = '%H %ct %h';
@@ -59,10 +68,18 @@ const SIN_RESPUESTA = (regla) => NO_CUENTA('sin-respuesta', regla);
 /**
  * Un juez por cálculo: guarda cada respuesta de git, así una pregunta se hace una sola vez.
  * `repoDelIndice`: la raíz del repo al que pertenece GIT_INDEX_FILE, si está puesta.
+ * `historia`: `{ numero, archivo, catalogo }`, con `catalogo()` la lista `[{ numero, archivo }]` del repo de la historia, o
+ * null si no se pudo leer. Sin ella no hay reglas que dependan de saber de qué historia es un commit.
  */
-function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null } = {}) {
+function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, historia = null } = {}) {
   const respuestas = new Map();
   const base = entornoBase();
+  let catalogoLeido;
+  const historiaDe = (rama) => {
+    if (!historia) return null;
+    if (catalogoLeido === undefined) catalogoLeido = historia.catalogo();
+    return historiaDeLaRama(rama, { propia: historia, catalogo: catalogoLeido });
+  };
 
   function preguntar(carpeta, args, env = base) {
     const clave = `${env === base ? '' : 'indice\0'}${carpeta}\0${args.join('\0')}`;
@@ -108,6 +125,48 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null } = {})
     return r.codigo === 0 ? r.salida.trim() || null : null;
   }
 
+  // La fusión de pedido de esta historia más nueva y posterior a `t`, con cómo estaba su rama a esa hora. `igual` si el archivo
+  // de HEAD es el de ese estado; alcanza con una de ellas.
+  function ramaPropia(carpeta, nombre, t) {
+    const fusiones = preguntar(carpeta, ['log', '--merges', `--since=@${t}`, '--format=%h %P%x09%s', 'HEAD']);
+    if (fusiones.codigo !== 0) return null;
+    let distinta = null;
+    for (const linea of fusiones.salida.split('\n').filter(Boolean)) {
+      const [ids, asunto] = linea.split('\t');
+      const [corto, , segundoPadre] = ids.split(' ');
+      if (!segundoPadre || historiaDe(ramaDelAsunto(asunto)) !== 'propia') continue;
+      const estado = preguntar(carpeta, ['rev-list', '-1', '--first-parent', `--before=@${t}`, segundoPadre]).salida.trim();
+      if (!estado) continue;
+      const diff = preguntar(carpeta, ['diff-tree', '--quiet', '-r', estado, 'HEAD', '--', nombre]);
+      if (diff.codigo === 0) return { igual: true, estado, fusion: corto };
+      if (diff.codigo === 1 && !distinta) distinta = { igual: false, estado, fusion: corto };
+    }
+    return distinta;
+  }
+
+  // Si el archivo es de prueba y todos los commits que lo cambiaron desde `desde` son de otra historia, el más nuevo con su
+  // historia. Sin commits y con el archivo distinto, lo cambió la resolución de una fusión: no se sabe.
+  function pruebaDeOtraHistoria(carpeta, nombre, desde) {
+    if (!historia || !desde) return null;
+    const ruta = preguntar(carpeta, ['ls-files', '--full-name', '--', nombre]);
+    if (ruta.codigo !== 0 || !isTestPath(ruta.salida.trim())) return null;
+    const commits = preguntar(carpeta, ['log', '--no-merges', '--format=%h', `${desde}..HEAD`, '--', nombre]);
+    const lista = commits.codigo === 0 ? commits.salida.split('\n').filter(Boolean) : [];
+    if (!lista.length) return null;
+    let delMasNuevo = null;
+    for (const c of lista) {
+      const fusiones = preguntar(carpeta, ['log', '--merges', '--ancestry-path', '--topo-order', '--reverse', '--format=%s', `${c}..HEAD`]);
+      if (fusiones.codigo !== 0) return null;
+      const rama = fusiones.salida.split('\n').map(ramaDelAsunto).find(Boolean);
+      const de = historiaDe(rama);
+      if (!de || de === 'propia') return null;
+      delMasNuevo = delMasNuevo || { commit: c, historia: de.numero };
+    }
+    return delMasNuevo;
+  }
+
+  const cuentaPorPrueba = (ajena) => ({ cuenta: true, regla: 6, commit: ajena.commit, historia: ajena.historia });
+
   /**
    * `archivo`: ruta absoluta · `mtimeMs`: su fecha en disco · `evidencia`: `{ ruta, tsMs, linea }`, con `linea` la línea
    * entera del registro si es un humo: el `ts` solo no identifica una corrida, porque puede haber dos en un segundo.
@@ -145,6 +204,8 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null } = {})
       const diff = preguntar(carpeta, ['diff-tree', '--quiet', '-r', guardada.commit, 'HEAD', '--', nombre]);
       if (diff.codigo === 0) return { cuenta: true, regla: 4 };
       if (diff.codigo !== 1) return SIN_RESPUESTA(4);
+      const ajena = pruebaDeOtraHistoria(carpeta, nombre, guardada.commit);
+      if (ajena) return cuentaPorPrueba(ajena);
       return NO_CUENTA('cambio-posterior', 4, { commit: ultimoCommitCorto(carpeta, nombre) });
     }
 
@@ -154,17 +215,29 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null } = {})
     const [, hora, corto] = ultimo.salida.trim().split(' ');
     if (!Number.isFinite(guardada.hora) || !Number.isFinite(Number(hora))) return SIN_RESPUESTA(5);
     if (Number(hora) <= guardada.hora) return { cuenta: true, regla: 5 };
-    return NO_CUENTA('otro-repo', 5, { commit: corto });
+    // la menor de las dos horas: una evidencia guardada mucho después de correr no prueba lo que se commiteó en el medio
+    const t = Math.min(guardada.hora, Math.floor(evidencia.tsMs / 1000));
+    const propia = historia ? ramaPropia(carpeta, nombre, t) : null;
+    if (propia && propia.igual) return { cuenta: true, regla: 5, via: 'fusion-propia', fusion: propia.fusion };
+    const desde = propia ? propia.estado : historia && preguntar(carpeta, ['rev-list', '-1', '--first-parent', `--before=@${t}`, 'HEAD']).salida.trim();
+    const ajena = pruebaDeOtraHistoria(carpeta, nombre, desde);
+    if (ajena) return cuentaPorPrueba(ajena);
+    const padres = preguntar(carpeta, ['log', '-1', '--format=%p', corto]).salida.trim().split(' ').filter(Boolean);
+    return NO_CUENTA('otro-repo', 5, { commit: corto, sinFusion: padres.length === 1 });
   }
 
   return { vigencia };
 }
 
 /** Por qué no cuenta, en una frase para el aviso de la matriz. Sin rutas ni texto de git: la matriz viaja por git. */
-function motivoEnPalabras({ motivo, commit }) {
+function motivoEnPalabras({ motivo, commit, sinFusion }) {
   switch (motivo) {
     case 'cambio-posterior': return `lo cambió el commit ${commit || '(sin identificar)'} después de guardarse la evidencia`;
-    case 'otro-repo': return `está en otro repo y su commit ${commit} es posterior al de la evidencia (entre repos sólo se pueden comparar horas)`;
+    case 'otro-repo': {
+      const causa = `está en otro repo y su commit ${commit} es posterior al de la evidencia (entre repos sólo se pueden comparar horas)`;
+      // un commit directo y un squash se ven igual: el squash borra la hora de cada cambio, y no queda con qué comparar
+      return sinFusion ? `${causa}; si es un squash de esta historia, borró la hora de cada cambio y hay que repetir la prueba` : causa;
+    }
     case 'sin-commitear': return 'tiene cambios sin commitear';
     case 'fuera-de-git': return 'no está en git';
     case 'oculto-para-git': return 'está marcado para que git no lo mire (assume-unchanged o skip-worktree)';

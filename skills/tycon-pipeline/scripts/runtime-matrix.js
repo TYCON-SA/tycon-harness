@@ -100,6 +100,25 @@ function kindOf(s, fePaths) {
   return (fePaths || []).some((t) => str.includes(t)) || GENERIC_FE_RE.test(str) ? 'fe' : 'be';
 }
 
+// ---------------------------------------------------------------- la historia de una rama
+
+// Las historias del repo, para saber de qué historia es una rama. Un recorrido a medias es «no sé»: una rama de una historia
+// que no se vio se leería como de nadie, o como de la equivocada.
+function catalogoDeHistorias(repoRoot, real) {
+  const discovery = require(path.join(__dirname, 'lib', 'story-discovery.js'));
+  const d = discovery.discoverStories(repoRoot, { cache: false });
+  if (d.partial) return null;
+  return [...d.stories, ...(d.excluded || [])].filter((s) => s && s.path && s.id)
+    .map((s) => ({ numero: String(s.id), archivo: real(path.resolve(repoRoot, s.path)) }));
+}
+
+// Por qué una evidencia siguió contando aunque el archivo cambió: lo que el control afloja se dice.
+function avisoDeLoQueContó({ rel, via, fusion, commit, historia }) {
+  return via
+    ? `${rel}: lo trajo la fusión ${fusion} de esta historia, igual a como estaba su rama a la hora de la evidencia; se supone que la evidencia corrió sobre esa rama → sigue contando.`
+    : `${rel}: lo cambió el commit ${commit} de la historia ${historia}, sólo en una prueba → la evidencia sigue contando.`;
+}
+
 // ---------------------------------------------------------------- parsing helpers
 
 function readStory(storyPath) {
@@ -1016,15 +1035,21 @@ function compute(opts) {
   // ¿La evidencia sigue valiendo para todo el código declarado? El archivo más nuevo primero: si ése está antes de la
   // evidencia, todos lo están y no se le pregunta a git. El primero que no cuenta decide, y es el que nombra el aviso.
   codeFiles.sort((a, b) => b.mt - a.mt);
-  const juez = evidenceVsCommit.crearJuez({ repoDelIndice: repoRoot });
+  const historiaPropia = { numero: sid, archivo: companionLib.real(opts.keyStoryPath || storyPath), catalogo: () => catalogoDeHistorias(repoRoot, companionLib.real) };
+  const juez = evidenceVsCommit.crearJuez({ repoDelIndice: repoRoot, historia: repoRoot ? historiaPropia : null });
   const vigencias = new Map();
+  const dejadasContar = new Set();
   const vigenciaDe = (ev, evidencia) => {
     if (!vigencias.has(ev)) {
       let v = { cuenta: true };
+      const contadas = [];
       for (const f of codeFiles) {
         const r = juez.vigencia({ archivo: f.abs, mtimeMs: f.mt, evidencia });
         if (!r.cuenta) { v = { ...r, rel: f.rel }; break; }
+        if (r.via || r.regla === 6) contadas.push({ ...r, rel: f.rel });
       }
+      // sólo si la evidencia cuenta: si otro archivo la venció, decir por qué siguió contando éste confunde
+      if (v.cuenta) for (const c of contadas) dejadasContar.add(avisoDeLoQueContó(c));
       vigencias.set(ev, v);
     }
     return vigencias.get(ev);
@@ -1089,6 +1114,8 @@ function compute(opts) {
   if (LEGACY_SMOKE_KINDS) {
     warnings.push('🚨 TYCON_RUNTIME_MATRIX_LEGACY=1 — todo smoke cuenta como RUNTIME sin mirar el comando. Es el bug que este gate vino a arreglar: la matriz PUEDE estar mintiendo. Sacá la variable en cuanto puedas.');
   }
+
+  for (const aviso of dejadasContar) warnings.push(aviso);
 
   // --- imagen de pantalla: de qué AC es cada captura o grabación que la matriz ya puede contar
   const imagenesE2e = imagenesDelE2e(freshPassGates, evKey, sellosDeCapturas(gatesLogPath));
