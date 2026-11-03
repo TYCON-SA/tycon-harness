@@ -68,7 +68,7 @@ The harness brakes, controls and control signatures belong to whoever maintains 
 
 ```mermaid
 flowchart TB
-  pedir(["<b>Request</b><br/>👤 You"]) --> chico{"<b>Is it something small?</b><br/>A fix or a new feature: you ask in one sentence,<br/>and when it's done you know it came out right without checking a list"}
+  pedir(["<b>Request</b><br/>👤 You"]) --> chico{"<b>Is it something small?</b>"}
   chico -- "Yes · Short path" --> r1
   chico -- "No · Story" --> h1
   subgraph corto [" "]

@@ -68,7 +68,7 @@ Los frenos, los controles y las firmas de control del arnés son de quien lo man
 
 ```mermaid
 flowchart TB
-  pedir(["<b>Pedir</b><br/>👤 Vos"]) --> chico{"<b>¿Es algo chico?</b><br/>Un arreglo o una función nueva: lo pedís en una frase,<br/>y al terminar sabés si quedó bien sin revisar una lista"}
+  pedir(["<b>Pedir</b><br/>👤 Vos"]) --> chico{"<b>¿Es algo chico?</b>"}
   chico -- "Sí · Camino corto" --> r1
   chico -- "No · Historia" --> h1
   subgraph corto [" "]
