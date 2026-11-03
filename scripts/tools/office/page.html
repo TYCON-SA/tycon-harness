@@ -29,6 +29,8 @@ h2{font:700 .8rem var(--display);text-transform:uppercase;letter-spacing:.08em;c
 /* en el sitio: los colores y la tipografía del sitio, con los nombres que usa la oficina */
 .contenido-oficina{--fg:var(--ink);--display:var(--sans);--body:var(--sans);--mono:ui-monospace,Menlo,Consolas,monospace;display:flex;flex-direction:column;gap:20px}
 .contenido-oficina h2{font:700 .8rem var(--display);text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 8px}
+/* las etiquetas de las salas no pasan por encima del encabezado fijo del sitio al bajar la página */
+.contenido-oficina .offices{isolation:isolate}
 .stamp{font:500 .85rem var(--mono);color:var(--muted)}
 .you h2{color:#a8640b}.you ul{margin:4px 0 0;padding-left:18px}.you .nada{list-style:none;margin-left:-18px;color:var(--muted)}
 .resumen{background:var(--surface);border:1px solid var(--line);border-left:6px solid var(--line);border-radius:6px}.resumen.pide{border-color:#a8640b}

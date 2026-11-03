@@ -86,6 +86,19 @@ async function delSitio(browser) {
     // dentro del armazón del sitio, como la maqueta: encabezado, barra lateral con la pestaña marcada y la letra del sitio
     check(await m.page.locator('header.barra').isVisible() && await m.page.locator('aside.side a[aria-current="page"]').innerText().then((t) => /Oficinas/.test(t)), 'el encabezado y la barra lateral del sitio, con la pestaña marcada');
     check(/Lato/.test(await m.page.locator('.oficina h2').first().evaluate((e) => getComputedStyle(e).fontFamily)), 'la letra del sitio');
+    // al bajar la página, el encabezado fijo del sitio tapa a las etiquetas de las salas, y no al revés
+    const tapa = await m.page.evaluate(async () => {
+      const tag = document.querySelector('.oficina .tag');
+      if (!tag) return 'sin etiquetas';
+      const alto = document.querySelector('header.barra').getBoundingClientRect().height;
+      window.scrollBy(0, tag.getBoundingClientRect().top - alto / 2);
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const r = tag.getBoundingClientRect();
+      const encima = document.elementFromPoint(r.left + r.width / 2, alto / 2);
+      window.scrollTo(0, 0);
+      return encima && encima.closest('header.barra') ? 'el encabezado' : (encima ? encima.className : 'nada');
+    });
+    check(tapa === 'el encabezado', `al bajar, el encabezado tapa a las etiquetas (encima: ${tapa})`);
     await m.page.waitForFunction(() => document.querySelectorAll('.oficina canvas').length === 2, null, { timeout: ESPERA_MS });
     check(await salas(m.page) === 2, 'las dos oficinas tienen su sala en 3D');
     check(await m.page.locator('.oficina[data-id="maquina-a"] .stats').innerText().then((t) => /4\s*sesiones/.test(t) && /1\s*trabajando/.test(t) && /1\s*esperan tu firma/.test(t) && /1\s*esperan o libres/.test(t) && /coordina\s*Coordinadora/.test(t)), 'el resumen de la oficina');
