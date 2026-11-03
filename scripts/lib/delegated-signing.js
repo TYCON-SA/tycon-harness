@@ -241,6 +241,16 @@ function cli(argv) {
     const cw = require(path.join(PIPELINE_LIB, 'critical-waivers.js'));
     const d = cw.designacionVigente({ dir: p.state });
     if (!d || d.error) { console.error((d && d.error) || 'ninguna sesión de esta máquina está designada'); return 1; }
+    // en Windows la terminal no se lee: el mismo comando corre en una ventana nueva, y la frase se escribe adentro
+    if (argv.includes('--terminal') && rw.esWindows()) {
+      if (process.env[rw.MARCA_VENTANA] !== '1') {
+        console.error('🪟 Abro una ventana nueva para la firma: seguí ahí.');
+        const v = rw.abrirVentana({ script: __filename, args: argv, titulo: 'Firma del dueño' });
+        if (v.estado === 'vencida' || v.estado === 'no-abrio') { console.error(`🔒 confirm-designation: ${v.estado === 'vencida' ? 'la ventana venció sin firmar' : `no pude abrir la ventana (${v.motivo})`}: no se confirmó nada.`); return 1; }
+        return v.codigo === 0 ? 0 : (v.codigo || 1);
+      }
+      rw.dentroDeLaVentana();
+    }
     // desde la pestaña de la sesión designada: la firma de la persona, en la ventana o con su click (owner-window.js). En
     // la terminal, la frase. Una firma que no dio una persona no confirma nada
     if (!argv.includes('--terminal') && !rw.hasTty()) {
