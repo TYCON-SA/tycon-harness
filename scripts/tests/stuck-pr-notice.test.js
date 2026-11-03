@@ -535,3 +535,35 @@ test('GreenIdle_CoordinatorReadsThePhoto — la coordinadora lo ve de la foto, s
   fs.writeFileSync(path.join(dir, 'stuck-prs-photo.json'), JSON.stringify({ at: new Date(ahora - 60000).toISOString(), repos, lecturas: { 'acme/harness': { ok: false, reason: 'no_medido' } } }));
   assert.match(SPN().coordinatorLines({ home: w.home, tree: w.tree, now: ahora }).problem, /la última lectura no pudo leer harness/);
 });
+
+// un correo de juguete, armado por partes: entero en el archivo lo frena el control de publicación
+const mail = (who) => [who, 'acme.com'].join('@');
+
+test('RecentWork_SessionsAndOwnCommits — trabajar es abrir una sesión o commitear; una automática o tener el clon no cuenta', () => {
+  const home = tmp('spn-work-');
+  const ahora = Date.now();
+  const repo = (nombre, url) => { const d = path.join(home, 'repos', nombre); fs.mkdirSync(d, { recursive: true }); execFileSync('git', ['init', '-q', d]); execFileSync('git', ['-C', d, 'remote', 'add', 'origin', url || `https://github.com/org/${nombre}.git`]); execFileSync('git', ['-C', d, 'config', 'user.email', mail('yo')]); execFileSync('git', ['-C', d, 'config', 'user.name', 'Yo']); return d; };
+  const commit = (d, correo = mail('yo')) => execFileSync('git', ['-C', d, '-c', `user.email=${correo}`, 'commit', '-q', '--allow-empty', '-m', 'algo']);
+  const charla = (nombre, linea, dias = 0) => { const dir = path.join(home, '.claude', 'projects', 'p'); fs.mkdirSync(dir, { recursive: true }); const f = path.join(dir, `${nombre}.jsonl`); fs.writeFileSync(f, `${JSON.stringify(linea)}\n`); const t = new Date(ahora - dias * 86400000); fs.utimesSync(f, t, t); };
+  const codex = (nombre, payload) => { const dir = path.join(home, '.codex', 'sessions', '2026', '11', '02'); fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, `${nombre}.jsonl`), `${JSON.stringify({ type: 'session_meta', payload })}\n`); };
+  const persona = repo('de-claude');
+  execFileSync('git', ['-C', persona, 'checkout', '-q', '-b', 'fix/mi-rama']);
+  charla('a', { cwd: persona, entrypoint: 'cli' });
+  charla('b', { cwd: repo('automatica'), entrypoint: 'sdk-cli' });
+  charla('c', { cwd: repo('vieja'), entrypoint: 'cli' }, 8);
+  charla('d', { cwd: path.join(home, 'ya-no-esta'), entrypoint: 'cli' });
+  codex('e', { cwd: repo('de-codex', 'https://dev.azure.com/biz/Mora/_git/Back'), originator: 'codex-tui' });
+  codex('f', { cwd: repo('codex-automatico'), originator: 'codex_exec' });
+  const conCommit = repo('con-commit');
+  commit(conCommit);
+  const ajeno = repo('commit-ajeno');
+  commit(ajeno, mail('otra'));
+  const sinNada = repo('solo-el-clon');
+
+  const fake = (nombre, salida) => { const f = path.join(home, nombre); fs.writeFileSync(f, salida == null ? '#!/bin/sh\nexit 1\n' : `#!/bin/sh\necho ${salida}\n`); fs.chmodSync(f, 0o755); return f; };
+  const medido = SPN().medirTrabajo({ home, ahora, temporal: () => false, clones: [conCommit, ajeno, sinNada], env: { ...process.env, TYCON_GH_CMD: fake('gh', 'YoEnGitHub'), TYCON_ADO_CMD: fake('az'), CODEX_HOME: path.join(home, '.codex') } });
+  assert.deepStrictEqual(medido.repos.map((r) => [r.org, r.project, r.repo].filter(Boolean).join('/')).sort(), ['biz/Mora/Back', 'org/con-commit', 'org/de-claude']);
+  assert.deepStrictEqual(medido.ramas, ['fix/mi-rama'], 'sólo las de sus sesiones, y no las ramas de todos');
+  assert.deepStrictEqual(medido.persona, { github: 'yoengithub', azure: '' }, 'la que no se sabe queda vacía');
+  assert.strictEqual(medido.dias, 7);
+});
