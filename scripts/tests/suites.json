@@ -2126,6 +2126,12 @@
       "requiere": []
     },
     {
+      "__nota": "qué versión de Claude se mira según cómo entró la persona: terminal, VS Code y Codex, el aviso al arrancar de verdad y que lo que no se lee sea «no sé».",
+      "raiz": "arnes",
+      "ruta": "tests/claude-versions.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 1.11: el aviso de arranque de dev atrasada habla sólo con atraso real o trabajo trabado, dice «no sé» con datos viejos, no sale a la red, no rompe el arranque y ofrece una vez por estado.",
       "raiz": "arnes",
       "ruta": "tests/dev-behind-main-notice.test.sh",

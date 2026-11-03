@@ -37,7 +37,9 @@
 // throttle a propósito: mientras la condición exista, cada sesión nueva la ve — un aviso que
 // se calla es exactamente el silencio que este hook combate.
 //
-// Off: TYCON_BRANCH_GUARD=0
+// También dice si la versión de Claude de esta sesión no alcanza para que el click firme (scripts/lib/claude-versions.js).
+//
+// Off: TYCON_BRANCH_GUARD=0 (todo) · TYCON_CLAUDE_VERSION_NOTICE=0 (sólo la versión de Claude)
 // Fail-open total: cualquier error → exit 0 sin output (nunca rompe el arranque).
 
 'use strict';
@@ -431,6 +433,11 @@ try {
       MS.launch();
     }
   } catch (_) { /* fail-open: una pieza rota no frena el arranque */ }
+  // La versión de Claude que usa esta sesión, si no alcanza para que el click firme. También se carga SI ESTÁ.
+  try {
+    const lib = path.join(__dirname, '..', 'lib', 'claude-versions.js');
+    if (fs.existsSync(lib)) harnessLines.push(...require(lib).startupNotice());
+  } catch (_) { /* fail-open */ }
 
   const hs = harnessState();
   const legacyLine = legacyRetireLine();

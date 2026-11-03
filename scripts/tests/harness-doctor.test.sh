@@ -1390,5 +1390,14 @@ J="$(TYCON_HARNESS_HEALTH=1 harness doctor --json 2>/dev/null)"
 [ "$(printf '%s' "$J" | jtxt "d['harness_node']['verified'] is None and d['harness_node']['own'] is True")" = True ] && ok "T28 bajo la comprobación de salud: verified en null, sin recalcular la huella" || mal "T28 salud: $(printf '%s' "$J" | jtxt "d.get('harness_node')")"
 export TYCON_HARNESS_NODE=0
 
+# Las versiones de Claude: doctor dice lo que usa esta sesión, lo que no usa dice «no la usás», y fuera de una sesión no
+# juzga nada. La comprobación de salud juzga el árbol: no las mira.
+J="$(CLAUDE_CODE_ENTRYPOINT=cli AI_AGENT=claude-code_2-1-292_agent harness doctor --json 2>/dev/null)"
+[ "$(printf '%s' "$J" | jtxt "any('consola de Claude está en 2.1.292' in w for w in d['warn']) and any('extensión de VS Code: no la usás' in o for o in d['ok'])")" = True ] && ok "VERSIONES terminal vieja: avisa la consola y la extensión no se usa" || mal "VERSIONES terminal vieja: ${J:0:300}"
+J="$(CLAUDE_CODE_ENTRYPOINT= AI_AGENT= harness doctor --json 2>/dev/null)"
+[ "$(printf '%s' "$J" | jtxt "any('Claude — no aplica acá' in o for o in d['ok']) and not any('Claude —' in w for w in d['warn'])")" = True ] && ok "VERSIONES fuera de una sesión: no aplica, sin aviso" || mal "VERSIONES fuera de una sesión: ${J:0:300}"
+J="$(CLAUDE_CODE_ENTRYPOINT=cli AI_AGENT=claude-code_2-1-292_agent TYCON_HARNESS_HEALTH=1 harness doctor --json 2>/dev/null)"
+[ "$(printf '%s' "$J" | jtxt "not any('Claude —' in i for k in ('ok','warn','fail') for i in d[k])")" = True ] && ok "VERSIONES bajo la comprobación de salud: no las mira" || mal "VERSIONES bajo la comprobación de salud: ${J:0:300}"
+
 if [ "$FALLOS" = 0 ]; then echo "✅ harness-doctor: todo verde"; exit 0; fi
 echo "❌ harness-doctor: $FALLOS fallo(s)"; exit 1
