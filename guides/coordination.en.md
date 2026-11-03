@@ -229,6 +229,37 @@ with something to say, one line says how many are waiting and which is the oldes
 the count changes. A pending entry whose file is gone does not count: the owner signed it and deleted it. Without a
 signatures folder there are no pending entries, and the notice never shows.
 
+### The signature list: written down and, on coming back, one at a time
+
+With `approvals.signature_list` set to `on`, what waits for the person stays written down in a single record, and `/office`
+counts it under «Tu firma». **The list does not sign anything:** a click is still good for one signature and one command. There
+is no signing in bulk: each row goes through its own box. With `off`, or without the key, it is as if it did not exist. It is
+turned on in the profile, or on the machine to try it out.
+
+- **What gets written down.** The brake writes down the signature it denies with its box to the target session itself. No row
+  comes from a request run by another session, a delegated signature, «done and notified», an open window,
+  `designation-confirm`, anything irreversible or Codex. What `coordination.js signature` leaves goes in the same record.
+- **What closes it.** The signature given for that target, 24 hours, or its session no longer being alive. If the sessions cannot
+  be read, it stays.
+- **How they go through, with a coordinator.** If the coordinator is confirmed and alive, it passes them all. The background
+  session does not show the box or send messages: the brake tells it to wait for the notice. When the person writes, the
+  coordinator gets a notice: answer what the person wrote and run `coordination.js owner-next`.
+- **How they go through, without a coordinator.** The target session gets the same notice, once per row, and runs `owner-next`.
+  If the person already answered «aprobado» to that box, it does not ask again.
+- **What `owner-next` gives.** One row, the oldest: a box to show without changing a letter, with a label («Firma 2/5»), and the
+  notice for the target session. **A permission goes first**, with its own counter and box. What goes through the terminal comes
+  last, with no box. If the plan has not been seen yet in that tab, it gives the plan to write out before the box. If a row
+  cannot be shown, or its repetition is denied, `owner-next --after <id>` gives the next one.
+- **The session that asked always repeats the command**, with or without a coordinator. On «Sí», the coordinator sends it the
+  notice and the session repeats the same command within 30 minutes. With an unused click, `owner-next` skips that row and says
+  the repetition is missing.
+- **On a «No»:** `coordination.js owner-reject <id>` removes the row and names the session to tell. A box that closes or
+  resolves by itself leaves the row, and the pass stops there.
+
+Limits: if the person leaves before answering, `/office` keeps counting them and they are asked next time. What another
+background session asks with `--for-session` still goes by message to the coordinator. A tab without permissions still shows its
+box: if the coordinator passes it too, one click is good, and the extra one expires by itself.
+
 ## The order of the requests
 
 Requests to the public repo go in through its queue. The private repo's requests start as drafts, and the coordinator

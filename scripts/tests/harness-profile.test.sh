@@ -429,7 +429,7 @@ PY
     T40_ADDED=(scripts/hooks/public-push-guard.js scripts/hooks/owner-email-notice.js scripts/hooks/wait-notice.js=6
       scripts/hooks/worktree-sweep.js scripts/hooks/unclosed-runs-notice.js scripts/hooks/deprecated-read-notice.js
       scripts/hooks/deprecated-session-notice.js scripts/hooks/extension-notices.js scripts/hooks/guard-update-notice.js
-      scripts/hooks/dev-behind-main-notice.js scripts/hooks/stuck-pr-notice.js scripts/hooks/coordination-notice.js
+      scripts/hooks/dev-behind-main-notice.js scripts/hooks/stuck-pr-notice.js scripts/hooks/coordination-notice.js=2
       scripts/hooks/why-blocked-notice.js scripts/hooks/session-state.js=7 scripts/hooks/owner-approval-record.js=2
       scripts/hooks/context-size-notice.js=2 scripts/hooks/session-cap-guard.js scripts/hooks/office-link-start.js)
     t40_apart() { # t40_apart <settings> <salida> → aparta los declarados del settings (lo reescribe); en <salida>, los que no están UNA vez

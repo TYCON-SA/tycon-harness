@@ -11,7 +11,7 @@ const os = require('os');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..', '..');
-const { readTranscript, peerMessagesSince, readConversation, coverSecrets, HEAD_BYTES, TAIL_BYTES } = require(path.join(ROOT, 'scripts', 'lib', 'session-transcript.js'));
+const { readTranscript, peerMessagesSince, readConversation, coverSecrets, readSessionTokens, contextLimit, encargoOf, HEAD_BYTES, TAIL_BYTES } = require(path.join(ROOT, 'scripts', 'lib', 'session-transcript.js'));
 
 const NOW = Date.parse('2026-11-01T22:00:00.000Z');
 const hm = (ms) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
@@ -42,7 +42,7 @@ test('T98 Transcript_EncargoNowLastAction @story-2.81 @ac-53 — el encargo, lo 
     { type: 'assistant', isSidechain: true, timestamp: at(1), message: { role: 'assistant', content: [{ type: 'text', text: 'Lo dice un agente interno.' }] } },
   ]);
   const r = readTranscript(file, { now: NOW });
-  assert.ok(r.encargo.startsWith('Sos Tina.'), r.encargo);
+  assert.ok(r.encargo.startsWith('ordená las pruebas'), r.encargo);
   assert.ok(Array.from(r.encargo).length <= 140, r.encargo);
   assert.doesNotMatch(r.encargo, /\/Users|story-8\.3|\n/);
   assert.strictEqual(r.haciendoAhora, 'Primero miro el código.', 'la primera oración de su último mensaje: su conclusión');
@@ -209,6 +209,103 @@ test('T222 Transcript_EncargoFirstSentence: del encargo, la primera oración; la
   const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'trans-encargo-')), 's.jsonl');
   fs.writeFileSync(f, `${JSON.stringify({ type: 'user', message: { content: 'Urgente: el freno no ve el click. Avisá a la Coordinadora al arrancar. Decí «ejecución».' } })}\n`);
   assert.strictEqual(readTranscript(f).encargo, 'Urgente: el freno no ve el click.');
+});
+
+test('T230 Encargo_NotTheName: «Sos X.» no es el encargo; un archivo de encargo dice su título', () => {
+  assert.strictEqual(encargoOf('Sos Paz. Retomá la historia. Decí ejecución.'), 'Retomá la historia.');
+  assert.strictEqual(encargoOf('Hacé la tanda de los tokens: leé en ~/x/encargo-otro.md los agregados. Sin programar.'), 'Hacé la tanda de los tokens');
+  const d = dir();
+  const file = path.join(d, 'encargo-tope.md');
+  fs.writeFileSync(file, '# Encargo: el tope de las sesiones\n\nEl detalle.\n');
+  assert.strictEqual(encargoOf(`Sos Pratto. Hacé el encargo de ${file}. Decí ejecución.`), 'el tope de las sesiones');
+  assert.strictEqual(encargoOf(`Leé y hacé ${file}.`), 'el tope de las sesiones');
+  // sin título o sin archivo, la siguiente oración que se pueda decir; otro archivo no se lee
+  assert.strictEqual(encargoOf(`Hacé el encargo de ${path.join(d, 'encargo-no-esta.md')}. Antes de encolar, la captura.`), 'Antes de encolar, la captura.');
+  const other = path.join(d, 'secreto.md');
+  fs.writeFileSync(other, '# Lo privado\n');
+  assert.strictEqual(encargoOf(`Hacé el encargo de ${other}. Con cuidado.`), 'Con cuidado.');
+  assert.strictEqual(encargoOf('Sos Paz.'), null);
+});
+
+// A turn with its count, the shape measured in real conversations.
+const usageLine = (id, u, extra = {}) => ({ type: 'assistant', message: { id, model: 'claude-opus-5-5', role: 'assistant', content: [], usage: u }, ...extra });
+const USAGE = { input_tokens: 10, cache_creation_input_tokens: 100, cache_read_input_tokens: 1000, output_tokens: 50 };
+
+test('T231 Tokens_OncePerMessage_OnlyGrowth: un turno en varios renglones cuenta una vez, y sólo se suma lo que creció', () => {
+  const file = path.join(dir(), 's.jsonl');
+  write(file, [usageLine('m1', USAGE), usageLine('m1', USAGE), usageLine('m2', USAGE)]);
+  const counts = new Map();
+  const first = readSessionTokens(file, counts, {});
+  assert.deepStrictEqual([first.lectura, first.escritura, first.cache, first.contexto], [220, 100, 2000, 1110]);
+  const reads = counts.get(file).offset;
+  assert.strictEqual(reads, fs.statSync(file).size);
+  fs.appendFileSync(file, `${JSON.stringify(usageLine('m3', { ...USAGE, cache_read_input_tokens: 5000 }))}\n`);
+  const second = readSessionTokens(file, counts, {});
+  assert.deepStrictEqual([second.lectura, second.cache, second.contexto], [330, 7000, 5110]);
+  // un renglón a medio escribir queda para la próxima
+  const half = JSON.stringify(usageLine('m4', USAGE));
+  fs.appendFileSync(file, half.slice(0, 40));
+  assert.strictEqual(readSessionTokens(file, counts, {}).lectura, 330);
+  fs.appendFileSync(file, `${half.slice(40)}\n`);
+  assert.strictEqual(readSessionTokens(file, counts, {}).lectura, 440);
+});
+
+test('T232 Tokens_WhatCounts: los agentes suman sin ser el contexto; lo sintético, lo de otro agente y lo roto no cuentan', () => {
+  const d = dir();
+  const file = path.join(d, 's.jsonl');
+  write(file, [usageLine('m1', USAGE), usageLine('x', { ...USAGE, input_tokens: 9999 }, { isSidechain: true }), '{roto "usage"', { type: 'assistant', message: { id: 's', model: '<synthetic>', usage: USAGE } }]);
+  const agents = path.join(d, 's', 'subagents');
+  fs.mkdirSync(agents, { recursive: true });
+  write(path.join(agents, 'agent-1.jsonl'), [usageLine('a1', { ...USAGE, cache_read_input_tokens: 777777 }, { isSidechain: true })]);
+  write(path.join(agents, 'agent-2.jsonl'), [usageLine('a2', USAGE, { isSidechain: true })]);
+  const t = readSessionTokens(file, new Map(), {});
+  assert.strictEqual(t.agentes, 2);
+  assert.strictEqual(t.contexto, 1110, 'el contexto es el de la sesión');
+  assert.strictEqual(t.lectura, 330);
+  assert.strictEqual(t.cache, 1000 + 777777 + 1000);
+});
+
+test('T233 Tokens_NotMeasured: sin un conteo legible no se inventa nada, y una conversación reescrita se cuenta de nuevo', () => {
+  const file = path.join(dir(), 's.jsonl');
+  write(file, [human('Hola')]);
+  assert.deepStrictEqual(readSessionTokens(file, new Map(), {}), { noMedido: true });
+  assert.deepStrictEqual(readSessionTokens(path.join(dir(), 'no-esta.jsonl'), new Map(), {}), { noMedido: true });
+  const counts = new Map();
+  write(file, [usageLine('m1', USAGE), usageLine('m2', USAGE)]);
+  assert.strictEqual(readSessionTokens(file, counts, {}).lectura, 220);
+  write(file, [usageLine('m3', USAGE)]);
+  assert.strictEqual(readSessionTokens(file, counts, {}).lectura, 110);
+});
+
+test('T234 Tokens_Codex: su conversación trae los totales y la ventana', () => {
+  const file = path.join(dir(), 'rollout.jsonl');
+  const count = (input, cached, output, last, ventana) => ({ type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: { input_tokens: input, cached_input_tokens: cached, output_tokens: output }, last_token_usage: { input_tokens: last }, model_context_window: ventana } } });
+  write(file, [count(100, 50, 5, 40, 258400), count(532881, 483200, 4753, 64593, 258400)]);
+  assert.deepStrictEqual(readSessionTokens(file, new Map(), {}), { contexto: 64593, limite: 258400, lectura: 49681, escritura: 4753, cache: 483200, agentes: 0 });
+  write(file, [count(100, 50, 5, 40, null)]);
+  assert.strictEqual(readSessionTokens(file, new Map(), {}).limite, null, 'sin ventana no hay porcentaje');
+});
+
+test('T235 ContextLimit: el límite donde compacta, si no la ventana del modelo; un modelo desconocido no tiene', () => {
+  const conf = { 'claude-opus-5-5': { autoCompactWindow: 700000 } };
+  assert.strictEqual(contextLimit('claude-opus-5-5', 610000, conf), 700000);
+  assert.strictEqual(contextLimit('claude-opus-5-5[1m]', 610000, conf), 700000, 'el sufijo no cambia de modelo');
+  assert.strictEqual(contextLimit('claude-opus-5-5', 610000, {}), 1000000, 'sin ajuste, la ventana');
+  assert.strictEqual(contextLimit('claude-opus-5-5', 800000, conf), 1000000, 'pasó el límite: ése no vale para esta sesión');
+  assert.strictEqual(contextLimit('claude-haiku-4-5', 150000, {}), 200000);
+  assert.strictEqual(contextLimit('claude-haiku-4-5', 300000, {}), null, 'más que la ventana: no se sabe');
+  assert.strictEqual(contextLimit('un-modelo-nuevo', 1000, conf), null);
+  assert.strictEqual(contextLimit(null, 1000, conf), null);
+});
+
+test('T236 Conversation_StartingMessage: una sesión de fondo muestra su mensaje de arranque, tapando las claves', () => {
+  const file = path.join(dir(), 's.jsonl');
+  const key = 'abcd1234efgh5678ijkl9012mnop';
+  write(file, [{ type: 'user', origin: { kind: 'human' }, timestamp: at(30), message: { content: `Sos Pratto. Hacé esto con ${key}.` } }, said('Arranco.', 20)]);
+  const bg = readConversation(file, { coordinator: 'Coordinadora', background: true });
+  assert.match(bg.arranque.texto, /^Sos Pratto\. Hacé esto con/);
+  assert.ok(!JSON.stringify(bg).includes(key), 'la clave se tapa');
+  assert.strictEqual(readConversation(file, { coordinator: 'Coordinadora' }).arranque, undefined, 'la que abrió una persona no lo muestra');
 });
 
 // Una conversación con mensajes entre sesiones, con la forma medida en las reales.

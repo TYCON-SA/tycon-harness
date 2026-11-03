@@ -220,6 +220,36 @@ algo que decir, una línea dice cuántas esperan y cuál es la más vieja, con s
 cambie. Un pendiente cuyo archivo ya no está no cuenta: el dueño lo firmó y lo borró. Sin carpeta de firmas, no hay
 pendientes y el aviso no sale.
 
+### La lista de firmas: anotadas y, al volver, de a una
+
+Con `approvals.signature_list` en `on`, lo que espera a la persona queda anotado en un solo registro, y `/office` lo cuenta en
+«Tu firma». **La lista no firma nada:** un click sigue valiendo para una firma y un comando. Sin firmar en lote: cada renglón
+pasa por su cuadro. Con `off`, o sin la llave, todo es como si no existiera. Se enciende en el perfil, o en la máquina para
+probarla.
+
+- **Qué se anota.** El freno anota la firma que niega con su cuadro a la propia sesión destino. No dejan renglón el pedido que
+  corre otra sesión, lo delegado, lo «hecho y avisado», una ventana abierta, `designation-confirm`, lo irreversible y Codex.
+  Lo que deja `coordination.js signature` queda en el mismo registro.
+- **Qué lo cierra.** La firma dada para ese destino, 24 horas o que su sesión ya no viva. Sin poder leer las sesiones, sigue.
+- **Cómo se pasan, con coordinadora.** Si está confirmada y viva, pasa todas ella. La sesión de fondo no muestra el cuadro ni
+  manda mensajes: el freno le dice que espere el aviso. Cuando la persona escribe, a la coordinadora le llega un aviso: que
+  conteste lo que escribió y corra `coordination.js owner-next`.
+- **Cómo se pasan, sin coordinadora.** Le llega el mismo aviso a la sesión destino, una vez por renglón, y ella corre
+  `owner-next`. Si la persona ya contestó «aprobado» a ese cuadro, no se pregunta de nuevo.
+- **Qué da `owner-next`.** Un renglón, el más viejo: un cuadro para mostrar sin cambiarle una letra, con un rótulo («Firma 2/5»),
+  y el aviso para la sesión destino. **Un permiso va primero**, con su contador y su cuadro. Lo de la terminal, al final y sin
+  cuadro. Si el plan todavía no se vio en esa pestaña, lo da para escribirlo antes del cuadro. Si un renglón no se puede mostrar,
+  o su repetición se niega, `owner-next --after <id>` da el siguiente.
+- **Siempre repite el comando la sesión que lo pidió**, con o sin coordinadora. Con el «Sí», la coordinadora le manda el aviso,
+  y la sesión repite el mismo comando dentro de los 30 minutos. Con un click sin usar, `owner-next` saltea ese renglón y dice
+  que falta repetir.
+- **Con un «No»:** `coordination.js owner-reject <id>` saca el renglón y nombra la sesión a la que hay que avisarle. Un cuadro
+  cerrado o resuelto solo deja el renglón, y la pasada se corta.
+
+Límites: si la persona se va antes de contestar, `/office` las sigue contando y se piden la próxima vez. Lo que pide otra
+sesión de fondo con `--for-session` sigue por mensaje a la coordinadora. Una pestaña sin permisos sigue mostrando su cuadro: si
+la coordinadora también lo pasa, vale un click, y el que sobra vence solo.
+
 ## El orden de los pedidos
 
 Los pedidos al repo público entran por su cola. Los del repo privado nacen en borrador, y la coordinadora los publica

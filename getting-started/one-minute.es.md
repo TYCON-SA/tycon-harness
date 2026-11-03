@@ -31,5 +31,6 @@ programar: en una historia chica lo aprueba solo, en las demás espera tu visto 
 | **carril** | por dónde va un cambio: con historia, o como ajuste puntual (un arreglo chico, con el permiso de una persona y un tope de archivos) |
 
 Si algo no anda: `/tycon-harness` en Claude Code dice qué falta, sin tocar nada; desde cualquier terminal,
-`node ~/.claude/tycon-harness/scripts/setup/harness.js doctor` hace lo mismo. Todo lo demás está en la
-[portada](../README.es.md).
+`node ~/.claude/tycon-harness/scripts/setup/harness.js doctor` hace lo mismo.
+¿Varias sesiones a la vez? [Trabajar con una coordinadora](../guides/working-with-a-coordinator.md). Todo lo demás está
+en la [portada](../README.es.md).

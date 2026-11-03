@@ -11,7 +11,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const OFFICE = path.join(__dirname, '..', 'tools', 'office.js');
-const { buildOffice, page, importMap, MODULES } = require(OFFICE);
+const { buildOffice, page, importMap, MODULES, prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard } = require(OFFICE);
 
 const NOW = Date.parse('2026-10-18T14:00:00.000Z');
 const STEPS = [{ id: 'implement', name: 'Implementar', done: true }, { id: 'run-tests', name: 'Correr las pruebas', done: false }];
@@ -1014,7 +1014,7 @@ test('T84 NoPid_OldFile_PhotoAndClockAgree @story-2.81 @ac-23 — sin pid y call
 
 const { spawnSync } = require('child_process');
 const { wipNow } = require(path.join(__dirname, '..', 'tools', 'work-in-progress.js'));
-const { collect, buildBoard } = require(OFFICE);
+const { collect, buildBoard, createEnvelopes } = require(OFFICE);
 const STEP_LIB = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'steps.js'));
 
 const col = (data, id) => data.kanban.columnas.find((c) => c.id === id);
@@ -1981,7 +1981,7 @@ test('T143 ClosedRunWithLane_ReadsItsConversation @story-2.81 @ac-53: la sesión
   const a = byName(data, 'Sol');
   assert.strictEqual(a.titulo, 'el carril');
   assert.strictEqual(a.haciendoAhora, undefined, 'su carril es lo anotado');
-  assert.strictEqual(a.encargo, 'Sos Sol.');
+  assert.strictEqual(a.encargo, 'El encargo', 'su nombre no es el encargo');
 });
 
 test('T144 HourForStep_NotFrozenOnGitTimeout @story-2.81 @ac-57: una hora calculada sin la entrada a un repo no se fija para todo el paso', () => {
@@ -2548,6 +2548,43 @@ test('T233 SameText_NoRepeat: si lo que hace es lo que anotó, la tarjeta no lo 
   assert.strictEqual(plainOf('espera que entren el #907 y el 6106'), 'espera que entren y el 6106', 'los títulos siguen sin números de pedido');
 });
 
+test('Office_UnaTarjetaPorSesion (T8) — @story-8.153 @ac-8: un renglón de la lista de firmas no duplica la tarjeta de su sesión', () => {
+  const fila = (destino, title, extra = {}) => ({ tipo: 'firma', id: `f-${destino}-${title}`, destino, title, at: NOW - 60000, ...extra });
+  // la sesión ya esperando la firma: una sola tarjeta, la suya
+  let { data } = buildOffice({ wip: wip([{ session: 'Alma', sid: 'a', status: 'waiting_for_input', extra: { kind: 'pipeline', current: 'implement', title: 'Lo de Alma' } }]),
+    signatures: [fila('a', 'marcar un criterio')], nowMs: NOW });
+  assert.strictEqual(col(data, 'firma').tarjetas.length, 1, JSON.stringify(col(data, 'firma').tarjetas));
+  assert.strictEqual(col(data, 'firma').tarjetas[0].quien, 'Alma');
+  assert.strictEqual(data.meta.teToca.length, 1, 'la pared cuenta lo mismo');
+  assert.match(data.meta.teToca[0], /marcar un criterio.*Alma/);
+  assert.match(page(data), /"Te toca: "\+toca\.length/, 'el contador de la pared es el largo de teToca');
+
+  // trabajando en otra cosa: dos tarjetas, cada una en su columna, y el renglón con su nombre
+  ({ data } = buildOffice({ wip: wip([{ session: 'Bruno', sid: 'b', status: 'busy', extra: { kind: 'pipeline', current: 'implement', title: 'Lo de Bruno' } }]),
+    signatures: [fila('b', 'marcar un criterio'), fila('b', 'otro criterio')], nowMs: NOW }));
+  assert.deepStrictEqual(titles(data, 'curso'), ['Lo de Bruno']);
+  assert.deepStrictEqual(titles(data, 'firma'), ['Firma: marcar un criterio y 1 más'], 'una por sesión');
+  assert.strictEqual(col(data, 'firma').tarjetas[0].quien, 'Bruno');
+  assert.strictEqual(data.meta.teToca.length, col(data, 'firma').tarjetas.length, 'coincide con la columna');
+
+  // un permiso de una sesión sin tarjeta: su título, sin el pedido
+  ({ data } = buildOffice({ wip: wip([]), signatures: [{ tipo: 'permiso', id: 'p', destino: 'sin-tarjeta', nombre: 'Ciro', herramienta: 'Bash', pedido: 'rm -rf algo-secreto', title: 'Permiso: Bash', at: NOW }], nowMs: NOW }));
+  assert.deepStrictEqual(titles(data, 'firma'), ['Permiso: Bash']);
+  assert.strictEqual(col(data, 'firma').tarjetas[0].quien, 'Ciro');
+  assert.doesNotMatch(JSON.stringify(data), /algo-secreto/);
+  assert.strictEqual(data.meta.teToca.length, 1);
+
+  // quien ya espera aprobar el plan no se cuenta dos veces
+  ({ data } = buildOffice({ wip: wip([{ session: 'Dora', sid: 'd', status: 'idle', extra: { kind: 'pipeline', current: 'approve-plan', title: 'Lo de Dora', storyId: '9.9' } }]),
+    signatures: [fila('d', 'aprobar el plan de una story')], nowMs: NOW }));
+  assert.strictEqual(col(data, 'firma').tarjetas.length, 1);
+  assert.strictEqual(data.meta.teToca.length, 1);
+  // lo de la terminal, como siempre
+  ({ data } = buildOffice({ wip: wip([]), signatures: [{ id: 't', title: 'por la terminal', at: NOW }], nowMs: NOW }));
+  assert.deepStrictEqual(data.meta.teToca, ['Firmar: por la terminal']);
+  assert.strictEqual(col(data, 'firma').tarjetas[0].quien, 'vos');
+});
+
 test('T246 WaysOfWorking_FromItsMark: una ejecución es una historia, un arreglo es camino corto, y lo demás es otra cosa', () => {
   const { data } = buildOffice({
     nowMs: NOW,
@@ -2616,5 +2653,193 @@ test('T250 WaysOfWorking_Icon: cada caso tiene su forma, y al ícono no entra el
   assert.strictEqual(shape('<img src=x onerror=alert(1)>'), shape('Otra cosa'), 'lo desconocido es otra cosa, y su texto no entra');
   assert.doesNotMatch(forms.join(''), /fill="(?!none)|stroke="#/, 'el ícono no depende de un color: usa el del texto');
   assert.match(html, /T\.iconoComo\(a\.comoTrabaja\)/, 'la etiqueta del dibujo lo lleva');
-  assert.match(html, /r\.k==="Cómo trabaja"\)dd\.appendChild\(iconoComo\(r\.v\)\)/, 'la tarjeta y el detalle lo llevan');
+  assert.match(html, /chips\.appendChild\(etiquetaComo\(a\.comoTrabaja\)\)/, 'la tarjeta lo lleva como etiqueta, junto al estado');
+  assert.match(html, /T\.etiquetaComo\(a\.comoTrabaja\)/, 'el detalle también');
+  assert.doesNotMatch(html, /add\("Cómo trabaja"/, 'ya no es un renglón');
+});
+
+// ── Cómo trabaja sale de su marca, no de la nota ─────────────────────────────────────────────────────────────────
+
+test('T260 WaysOfWorking_NoteKeepsTheRun: una nota no cambia cómo trabaja una sesión; un arreglo rápido más nuevo sí', () => {
+  const now = Date.parse('2026-11-02T20:00:00Z');
+  const fresh = { meanwhileAt: now - 60000, activityAt: now - 180000 };
+  const { data } = buildOffice({
+    wip: wip([
+      { session: 'Abierta', extra: { kind: 'pipeline', storyId: '8.90', title: 'La 8.90', ...fresh, meanwhileKind: 'note', meanwhile: 'segunda vuelta' } },
+      { session: 'Terminada', extra: { kind: 'note', text: 'espera la constancia', finishedStoryId: '8.153' } },
+      { session: 'SinMarca', extra: { kind: 'note', text: 'una medición' } },
+      { session: 'ConArreglo', extra: { kind: 'pipeline', storyId: '8.91', title: 'La 8.91', ...fresh, meanwhileKind: 'loose', meanwhile: 'un arreglo' } },
+      { session: 'EnEjecucion', extra: { kind: 'pipeline', storyId: '8.92', title: 'La 8.92' } },
+    ]),
+    nowMs: now,
+  });
+  const como = Object.fromEntries(data.agents.map((a) => [a.nombre, a.comoTrabaja]));
+  assert.deepStrictEqual(como, { Abierta: 'Historia 8.90', Terminada: 'Historia 8.153', SinMarca: 'Otra cosa', ConArreglo: 'Camino corto', EnEjecucion: 'Historia 8.92' });
+});
+
+// ── Las notas de espera que nombran un pedido ────────────────────────────────────────────────────────────────────
+
+test('T261 WaitingPrs_NamedInANote: reconoce las formas en uso, y un número suelto no es un pedido', () => {
+  const nums = (t) => prsNamedIn(t).map((n) => `${n.sign || ''}${n.numero}`);
+  assert.deepStrictEqual(nums('la cola del pedido 913'), ['913']);
+  assert.deepStrictEqual(nums('el aviso para encolar #915 y 6116'), ['#915', '6116']);
+  assert.deepStrictEqual(nums('que entre !6101, 6106 y #907'), ['!6101', '6106', '#907']);
+  assert.deepStrictEqual(nums('el pedido de la 8.182'), [], 'una historia no es un pedido');
+  assert.deepStrictEqual(nums('a las 1900 y 2000'), [], 'un número suelto tampoco');
+  assert.deepStrictEqual(nums(''), []);
+});
+
+test('T262 WaitingPrs_Said: dice lo que terminó; lo abierto o lo que no se sabe sigue como espera', () => {
+  const st = (...a) => a.map(([numero, state]) => ({ numero, state }));
+  assert.deepStrictEqual(waitedPrsSaid(st([913, 'merged'])), { text: 'El 913 ya entró', all: true });
+  assert.deepStrictEqual(waitedPrsSaid(st([913, 'closed'])), { text: 'El 913 se cerró sin entrar', all: true });
+  assert.deepStrictEqual(waitedPrsSaid(st([915, 'merged'], [6116, 'merged'])), { text: 'El 915 y el 6116 ya entraron', all: true });
+  assert.deepStrictEqual(waitedPrsSaid(st([915, 'merged'], [6116, null])), { text: 'El 915 ya entró', all: false });
+  assert.strictEqual(waitedPrsSaid(st([913, null])), null);
+});
+
+// A folder whose `origin` is that platform's: the question goes through the connector of the repo, whichever it is.
+function originRepo(m, name, url) {
+  const dir = path.join(m.root, name);
+  fs.mkdirSync(dir);
+  execFileSync('git', ['-c', 'maintenance.auto=false', '-C', dir, 'init', '-q'], { stdio: 'ignore' });
+  execFileSync('git', ['-C', dir, 'remote', 'add', 'origin', url], { stdio: 'ignore' });
+  return dir;
+}
+const PLATFORMS = [
+  ['GitHub', '#', 'https://github.com/acme/repo.git', '!'],
+  ['Azure DevOps', '!', 'https://dev.azure.com/acme/proy/_git/repo', '#'],
+];
+const waitingWip = (cwd, waitingFor, waitingSince = 1000) => wip([{ session: 'Paz', sid: 'p', extra: { kind: 'note', text: 'x', cwd, waitingFor, waitingSince } }]);
+const readerOf = (answers, asked = []) => async (qs) => qs.map((q) => { asked.push(q); return answers[q.numero] ? { pr: answers[q.numero] } : { error: 'no se pudo' }; });
+const NO_OPEN = { measured: true, prs: [] };
+
+for (const [name, sign, url, otherSign] of PLATFORMS) {
+  test(`T263 WaitingPrs_${name}: entró y se cerró se dicen igual, y se pregunta una sola vez`, async () => {
+    const m = parkMachine();
+    const dir = originRepo(m, 'repo', url);
+    const asked = [];
+    const known = new Map();
+    const opts = { queryPrs: readerOf({ 913: { state: 'merged', mergedAt: '2026-11-02T20:00:00Z' }, 914: { state: 'closed', mergedAt: null } }, asked) };
+    const said = await askWaitingPrs(waitingWip(dir, `la cola de ${sign}913`), NO_OPEN, opts, known);
+    assert.deepStrictEqual(said.get('p'), { text: 'El 913 ya entró', all: true });
+    assert.strictEqual(asked.length, 1);
+    assert.ok(asked[0].identity, 'pregunta por el conector del repo');
+    await askWaitingPrs(waitingWip(dir, `la cola de ${sign}913`), NO_OPEN, opts, known);
+    assert.strictEqual(asked.length, 1, 'lo que terminó no se vuelve a preguntar');
+    assert.deepStrictEqual((await askWaitingPrs(waitingWip(dir, `${sign}914`), NO_OPEN, opts, known)).get('p'), { text: 'El 914 se cerró sin entrar', all: true });
+    // la marca de la otra plataforma es de otro repo: no se le pregunta a éste
+    const before = asked.length;
+    assert.strictEqual((await askWaitingPrs(waitingWip(dir, `${otherSign}913`), NO_OPEN, opts, new Map())).size, 0);
+    assert.strictEqual(asked.length, before);
+  });
+}
+
+test('T264 WaitingPrs_OnlyWithEvidence: abierto, sin lectura, sin respuesta o de otro repo, la espera queda como está', async () => {
+  const m = parkMachine();
+  const dir = originRepo(m, 'repo', 'https://github.com/acme/repo.git');
+  const asked = [];
+  const merged = { state: 'merged', mergedAt: '2026-11-02T20:00:00Z' };
+  const opts = { queryPrs: readerOf({ 913: merged }, asked) };
+  const note = waitingWip(dir, 'el pedido #913');
+  const open = { measured: true, prs: [{ number: 913, mark: '#' }] };
+  assert.strictEqual((await askWaitingPrs(note, open, opts, new Map())).size, 0, 'sigue abierto');
+  assert.strictEqual(asked.length, 0, 'lo abierto no se pregunta');
+  assert.strictEqual((await askWaitingPrs(note, { measured: false, prs: [] }, opts, new Map())).size, 0, 'sin lectura de pedidos no se sabe');
+  assert.strictEqual(asked.length, 0);
+  assert.strictEqual((await askWaitingPrs(waitingWip(dir, 'el pedido #555'), NO_OPEN, opts, new Map())).size, 0, 'sin respuesta no dice que entró');
+  // un número sin marca puede ser de otro repo: entró antes de la nota, así que no es ése
+  const after = Date.parse(merged.mergedAt) + 1000;
+  assert.strictEqual((await askWaitingPrs(waitingWip(dir, 'la cola del pedido 913', after), NO_OPEN, opts, new Map())).size, 0);
+  const before = Date.parse(merged.mergedAt) - 1000;
+  assert.strictEqual((await askWaitingPrs(waitingWip(dir, 'la cola del pedido 913', before), NO_OPEN, opts, new Map())).get('p').text, 'El 913 ya entró');
+  const closed = { queryPrs: readerOf({ 913: { state: 'closed', mergedAt: null } }) };
+  assert.strictEqual((await askWaitingPrs(waitingWip(dir, 'la cola del pedido 913', before), NO_OPEN, closed, new Map())).size, 0, 'un cerrado sin marca no se puede cruzar');
+});
+
+test('T265 WaitingPrs_Card: lo que terminó reemplaza a la espera; si queda algo, sigue esperando', () => {
+  const now = Date.parse('2026-11-02T20:00:00Z');
+  const card = (said) => byName(buildOffice({ wip: waitingWip('/x', 'el aviso para #915 y 6116', now - 60000), nowMs: now, waitingPrs: said ? new Map([['p', said]]) : null }).data, 'Paz');
+  assert.match(card(null).termina, /^espera el aviso para #915 y 6116$/);
+  const partial = card({ text: 'El 915 ya entró', all: false });
+  assert.strictEqual(partial.termina, 'espera el aviso para #915 y 6116 · El 915 ya entró');
+  const all = card({ text: 'El 915 y el 6116 ya entraron', all: true });
+  assert.strictEqual(all.termina, 'El 915 y el 6116 ya entraron');
+  assert.strictEqual(all.fin.hora, 'El 915 y el 6116 ya entraron');
+  assert.ok(!all.fin.dif, 'ya no espera desde ninguna hora');
+  const html = page({ agents: [], items: [], kanban: null, meta: null });
+  assert.match(html, /add\("Espera",h\.slice\(7\)/, 'la espera se dice «Espera», no «Termina»');
+  assert.match(html, /\^El \\d\+ \/\.test\(h\)\)r\.push\(\{k:"",v:h\}\)/, 'lo que pasó con el pedido va sin título');
+});
+
+// ── Los tokens de la tarjeta ─────────────────────────────────────────────────────────────────────────────────────
+
+test('T266 Tokens_Plain: números en llano, y sin ventana no hay porcentaje', () => {
+  assert.deepStrictEqual([850, 1000, 762000, 999400, 999600, 1000000, 1040000, 4600000, 95600000, 1175000000].map(tokensTxt),
+    ['850', '1 mil', '762 mil', '999 mil', '1 millón', '1 millón', '1 millón', '4,6 millones', '95,6 millones', '1.175 millones']);
+  const base = { lectura: 762000, escritura: 233000, cache: 95600000, agentes: 12 };
+  assert.deepStrictEqual(tokensCard({ ...base, contexto: 610000, limite: 700000 }), { contexto: '610 mil de 700 mil · 87 %', consumidos: 'Read 762 mil · Write 233 mil · Cache Read 95,6 millones', agentes: 12 });
+  assert.strictEqual(tokensCard({ ...base, contexto: 180000, limite: null }).contexto, '180 mil · porcentaje no medido');
+  assert.deepStrictEqual(tokensCard({ noMedido: true }), { noMedido: true });
+});
+
+test('T268 Tokens_OnlyInTheOpenOffice: con la oficina abierta llegan por nombre; la foto fija no los lee y al sitio no viajan', async () => {
+  const m = parkMachine();
+  const now = Date.now();
+  const repo = toyRepo(m, 'cuenta');
+  fs.writeFileSync(path.join(m.sessions, 's.json'), JSON.stringify({ pid: process.pid, sessionId: 's', name: 'Sol', status: 'busy', statusUpdatedAt: now, cwd: repo }));
+  fs.writeFileSync(path.join(m.state, 'doing', 's.json'), JSON.stringify({ text: 'una medición', at: atIso(now - 60000) }));
+  const dir = path.join(m.home, '.claude', 'projects', repo.replace(/[^A-Za-z0-9-]/g, '-'));
+  fs.mkdirSync(dir, { recursive: true });
+  const usage = { input_tokens: 1000, cache_creation_input_tokens: 0, cache_read_input_tokens: 500000, output_tokens: 2000 };
+  fs.writeFileSync(path.join(dir, 's.jsonl'), `${JSON.stringify({ type: 'assistant', message: { id: 'm1', model: 'claude-opus-5-5', role: 'assistant', content: [], usage } })}\n`);
+  const live = await collectAt(m, now, { envelopes: createEnvelopes() });
+  assert.deepStrictEqual(live.tokens.Sol, { contexto: '501 mil de 1 millón · 50 %', consumidos: 'Read 1 mil · Write 2 mil · Cache Read 500 mil', agentes: 0 });
+  assert.strictEqual((await collectAt(m, now)).tokens, undefined, 'la foto fija no lee conversaciones enteras');
+  const { pick } = require(path.join(path.dirname(OFFICE), 'office', 'fields.js'));
+  assert.strictEqual(pick(live, m.home).tokens, undefined, 'no viajan al sitio');
+});
+
+test('T270 Tokens_CodexWithoutName: una sesión de Codex sin nombre propio tiene sus tokens bajo el nombre de su tarjeta', async () => {
+  const m = parkMachine();
+  const now = Date.now();
+  fs.mkdirSync(path.join(m.state, 'sessions'), { recursive: true });
+  fs.writeFileSync(path.join(m.state, 'sessions', 'cx-1.json'), JSON.stringify(sessionFile('cx-1', { tool: 'codex', pid: null, step: 'Implementar', sentence: 'Va por el paso «Implementar».', updatedAt: atIso(now - 60000) })));
+  const d = new Date(now);
+  const dir = path.join(m.home, '.codex', 'sessions', String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0'));
+  fs.mkdirSync(dir, { recursive: true });
+  const info = { total_token_usage: { input_tokens: 532881, cached_input_tokens: 483200, output_tokens: 4753 }, last_token_usage: { input_tokens: 64593 }, model_context_window: 258400 };
+  fs.writeFileSync(path.join(dir, 'rollout-2026-cx-1.jsonl'), `${JSON.stringify({ type: 'event_msg', payload: { type: 'token_count', info } })}\n`);
+  const data = await collectAt(m, now, { envelopes: createEnvelopes() });
+  const card = data.agents.find((a) => a.nombre === 'cx-1');
+  assert.ok(card, 'tiene su tarjeta');
+  assert.deepStrictEqual(data.tokens['cx-1'], { contexto: '65 mil de 258 mil · 25 %', consumidos: 'Read 50 mil · Write 5 mil · Cache Read 483 mil', agentes: 0 });
+});
+
+test('T269 WaysOfWorking_FinishedRunNote: una nota de la sesión cuya ejecución terminó sigue diciendo su historia', async () => {
+  const m = parkMachine();
+  const now = Date.now();
+  const repo = toyRepo(m, 'termino');
+  fs.writeFileSync(path.join(m.state, 'active', 's.json'), JSON.stringify({ sessionId: 's', storyId: '8.153', storyPath: storyFile(m, '8.153', 'La lista'), repoPath: repo, stepScheme: STEP_LIB.SCHEME, ...CLOSED, startedAt: oldHours(now, 3), lastTouch: oldHours(now, 1) }));
+  fs.writeFileSync(path.join(m.sessions, 's.json'), JSON.stringify({ pid: process.pid, sessionId: 's', name: 'Quintero', status: 'busy', statusUpdatedAt: now, cwd: repo }));
+  fs.writeFileSync(path.join(m.state, 'doing', 's.json'), JSON.stringify({ text: 'espera la cola', at: atIso(now - 60000) }));
+  const a = byName(await collectAt(m, now), 'Quintero');
+  assert.strictEqual(a.tipo, 'note');
+  assert.strictEqual(a.comoTrabaja, 'Historia 8.153');
+});
+
+test('T267 Conversation_OnlyInItsWindow: el botón va sólo con la oficina viva, la ventana se cierra con Esc y la foto no trae el texto', () => {
+  const html = page({ agents: [], items: [], kanban: null, meta: null });
+  assert.match(html, /if\(LIVE&&a\.nombre\)box\.appendChild\(botonCharla\(a\.nombre\)\)/, 'sin oficina viva no hay botón');
+  assert.match(html, /createTextNode\("Ver conversación"\)/);
+  assert.match(html, /s\.appendChild\(dibujo\(CHARLA_ICONO\)\)/, 'lleva su ícono, dibujado en la página');
+  assert.match(html, /\.ventana \.panel3\{[^}]*height:min\(920px,calc\(100dvh - 32px\)\)/, 'la ventana entra en la pantalla');
+  assert.match(html, /\.ventana \.panel3 \.chat\{[^}]*overflow:hidden auto/, 'y los mensajes suben y bajan adentro');
+  assert.match(html, /e\.key==="Escape"\)cerrarCharla\(\)/);
+  assert.match(html, /id="ventana" hidden/, 'arranca cerrada');
+  assert.match(html, /event\.target===this\)cerrarCharla\(\)/, 'tocando afuera se cierra');
+  const opensAt = html.indexOf('function abrirCharla(');
+  assert.ok(opensAt >= 0);
+  assert.strictEqual(html.indexOf('fetch("conversacion'), html.indexOf('fetch("conversacion', opensAt), 'se lee sólo al abrirla');
+  assert.doesNotMatch(html.slice(html.indexOf('function abrir(nombre'), html.indexOf('los sobres: quién')), /conversacion|pintarCharla/, 'el detalle ya no la lee');
 });

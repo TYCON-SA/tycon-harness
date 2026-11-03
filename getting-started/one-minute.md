@@ -31,5 +31,6 @@ before coding: in a small story it approves it itself, in the others it waits fo
 | **lane** | how a change travels: with a story, or as an ad-hoc fix (a small fix, with a person's permission and a cap on files) |
 
 If something doesn't work: `/tycon-harness` in Claude Code says what's missing, without touching anything; from any
-terminal, `node ~/.claude/tycon-harness/scripts/setup/harness.js doctor` does the same. Everything else is on the
-[cover page](../README.md).
+terminal, `node ~/.claude/tycon-harness/scripts/setup/harness.js doctor` does the same.
+Several sessions at once? [Working with a coordinator](../guides/working-with-a-coordinator.en.md). Everything else is on
+the [cover page](../README.md).

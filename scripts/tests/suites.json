@@ -2416,6 +2416,12 @@
       "requiere": []
     },
     {
+      "__nota": "la lista de lo que espera a la persona (scripts/lib/signature-list.js): el registro, lo que lo cierra, la pasada de a una y la llave.",
+      "raiz": "arnes",
+      "ruta": "tests/signature-list.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "`confirm-designation` de scripts/lib/delegated-signing.js: el guion de verdad con la firma reemplazada. Sólo una persona confirma (ventana, click o «aprobado», no la delegación ni lo «hecho y avisado»), desde la pestaña de la sesión designada, y el renglón queda atado a esa designación. Sin red, segundos.",
       "raiz": "arnes",
       "ruta": "tests/delegated-signing-confirm.test.js",
@@ -3067,6 +3073,12 @@
       "requiere": []
     },
     {
+      "__nota": "las sondas de Cursor (scripts/tools/cursor-probes.js): con un Cursor de mentira, la forma de la evidencia, el cuelgue y el error, y que de ~/.cursor/projects sólo se borre lo de la carpeta temporal. Todo en el temporal: nunca toca el Cursor real.",
+      "raiz": "arnes",
+      "ruta": "tests/cursor-probes.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el informe del aplicador no le manda a un juez viejo hooks con prefijos que no entiende (TYCON_REPORT_HOOK_PREFIXES); el lector y la salud de la 2026.10.20.52 (de git) aceptan el informe nuevo; el arranque corre la salud si la última no la corrió esta versión.",
       "raiz": "arnes",
       "ruta": "tests/old-judge-report.test.js",
@@ -3489,6 +3501,12 @@
       "__nota": "story 8.17, tanda W1 (T18): scripts/lib/git-bash.js con la plataforma, el PATH, las variables y el sistema de archivos inyectados — la variable CLAUDE_CODE_GIT_BASH_PATH, el bash.exe de la instalación del git del PATH, las dos carpetas por defecto, nunca el lanzador de WSL (System32, WindowsApps), null con su motivo, y fuera de Windows el bash del PATH. No usa bash.",
       "raiz": "arnes",
       "ruta": "tests/git-bash.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "los frenos de Codex en Windows: el lanzador que falla cerrado, la forma escrita en hooks.json, la medición viva de la auditoría y el enchufe sin Git",
+      "raiz": "arnes",
+      "ruta": "tests/run-sh-hook.test.js",
       "requiere": []
     },
     {

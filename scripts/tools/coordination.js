@@ -13,6 +13,11 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *                            deja el archivo que el dueño abre con doble clic para firmar en su terminal; sin carpeta
  *                            de firmas en esta máquina, sólo imprime el comando
  *   signature-done <id>      borra el archivo y su pendiente
+ *   owner-next [--after <id>]
+ *                            lo corre el agente: da lo que sigue de la lista de firmas (scripts/lib/signature-list.js), un
+ *                            renglón por vez, con el cuadro para mostrarle a la persona. Siempre repite el comando la
+ *                            sesión que lo pidió
+ *   owner-reject <id>        lo corre el agente ante un «No»: saca el renglón y nombra su sesión destino
  *   open --name <n> --cwd <carpeta> -- <encargo>
  *                            abre una sesión de fondo con ese nombre; nunca reintenta. Sin --name (o con --name auto)
  *                            toma el primero libre de `coordination.session_names` (el lector de configuración);
@@ -46,6 +51,7 @@ const { sesionQueReenvia, designacionVigente } = require(path.join(SKILL_LIB, 'c
 const { sessionsBySid, SAFE_SID } = require('./work-in-progress.js');
 const tyconConfig = require(path.join(__dirname, '..', 'lib', 'tycon-config.js'));
 const workSlots = require('./work-slots.js');
+const signatureList = require(path.join(__dirname, '..', 'lib', 'signature-list.js'));
 const { sessionNames } = tyconConfig;
 
 const CODEX_WINDOW_MS = 5 * 60000;
@@ -147,13 +153,11 @@ function markersBySid(home, problems) {
 }
 
 const openedFile = (home) => path.join(coordinationDir(home), 'opened.json');
-const signaturesFile = (home) => path.join(coordinationDir(home), 'signatures.json');
-// Las firmas pendientes. Un registro roto o que no es una lista tira con su motivo.
-function readPending(home) {
-  const list = readJson(signaturesFile(home), []);
-  if (!Array.isArray(list)) throw new Error(`${signaturesFile(home)} no es una lista`);
-  return list;
-}
+const signaturesFile = (home) => signatureList.archivo(home);
+// Los renglones de la lista de firmas, tal como están. Un registro roto o que no es una lista tira con su motivo.
+const readPending = (home) => signatureList.leer(home);
+// La firma por la terminal la pide un comando, no un freno: puede esperar más su turno con el candado de la lista.
+const SIGNATURE_LOCK_WAIT_MS = 5000;
 
 // Las sesiones abiertas hace menos de diez minutos. Un archivo roto, o una entrada sin nombre o sin fecha, se dice en
 // `problems`; una fecha futura (el reloj corrido) cuenta como recién abierta.
@@ -238,12 +242,16 @@ function status(opts = {}) {
   const adversarial = inFlight(markers, nameOf).map(({ sid, ...a }) => a);
   const r = recipe({ home, arnes: opts.arnes, env });
   if (r.problem) problems.push(r.problem);
-  let pending = [];
-  try { pending = readPending(home); } catch (e) { problems.push(e.message); }
+  const signatures = { terminal: 0, firma: 0, permiso: 0, delegated: 0 };
+  try {
+    const a = signatureList.abiertos(home, { arnes: opts.arnes, env, ahora: now });
+    problems.push(...a.problemas);
+    for (const f of a.filas) signatures[signatureList.tipoDe(f)] += 1;
+  } catch (e) { problems.push(e.message); }
   return {
     working, waiting, quiet, passWaiting, cap: r.max_working, adversarial,
     suite: suite ? { session: suite.session ? label(suite.session) : null, what: label(suite.what), since: suite.at } : null,
-    signatures: { terminal: pending.length, delegated: 0 },
+    signatures,
     unnamed, problems,
   };
 }
@@ -259,7 +267,7 @@ function statusText(s) {
   lines.push(`Pase adversarial en vuelo: ${s.adversarial.length ? s.adversarial.map((a) => `${a.storyId ? `la ${a.storyId}` : 'sin story'} (${a.session}, desde las ${hhmm(a.since)})`).join(' · ') : 'ninguno'}`);
   lines.push(`Suite completa en curso: ${s.suite ? `${s.suite.session || 'una sesión sin nombre'} (${s.suite.what}, desde las ${hhmm(s.suite.since)})` : 'ninguna'}`);
   lines.push(`De fondo y quietas: ${s.quiet.length ? s.quiet.map((q) => `${q.session} hace ${q.minutes} min`).join(' · ') : 'ninguna'}`);
-  lines.push(`Firmas pendientes: ${s.signatures.terminal} por la terminal · ${s.signatures.delegated} por delegación`);
+  lines.push(`Firmas pendientes: ${[`${s.signatures.terminal} por la terminal`, ...(s.signatures.firma ? [`${s.signatures.firma} con su cuadro`] : []), ...(s.signatures.permiso ? [`${s.signatures.permiso} permiso(s)`] : []), `${s.signatures.delegated} por delegación`].join(' · ')}`);
   lines.push(`Sin nombre puesto por una persona: ${s.unnamed.length ? s.unnamed.join(', ') : 'ninguna'}`);
   if (s.problems.length) lines.push(`No se pudo leer: ${s.problems.join(' · ')}`);
   return lines.join('\n');
@@ -309,6 +317,64 @@ function coordinatorRole(opts, sid) {
 }
 const sessionOf = (opts) => opts.sessionId || (opts.env || process.env).CLAUDE_CODE_SESSION_ID || null;
 
+// Las reglas se mandan a leer, no se pegan: son unos 32 KB, y cada contexto nuevo las necesita una sola vez.
+const GUIDE = path.join(__dirname, '..', '..', 'guides', 'coordination.md');
+
+// El último título de una conversación guardada. Va al principio y se repite cuando cambia; el archivo puede ser enorme,
+// así que se leen sólo sus dos puntas. Sin archivo o sin título, null.
+function titleIn(file) {
+  const SIDE = 256 * 1024;
+  let fd;
+  try { fd = fs.openSync(file, 'r'); } catch { return null; }
+  try {
+    const size = fs.fstatSync(fd).size;
+    const read = (pos) => {
+      const b = Buffer.alloc(Math.min(size, SIDE));
+      return b.toString('utf8', 0, fs.readSync(fd, b, 0, b.length, pos));
+    };
+    const last = (text) => {
+      let title = null;
+      for (const line of text.split('\n')) {
+        if (!line.includes('"agent-name"') && !line.includes('"custom-title"')) continue;
+        try { const r = JSON.parse(line); title = r.agentName || r.customTitle || title; } catch { /* una punta corta el renglón */ }
+      }
+      return title;
+    };
+    return last(read(Math.max(0, size - SIDE))) || last(read(0));
+  } finally { fs.closeSync(fd); }
+}
+
+// Limpiar la conversación da otro identificador y conserva el título, y la designación queda a nombre del identificador
+// viejo. Se la reconoce por el título de la conversación designada, y sólo se avisa: la designación da poder de firma y
+// la da una persona. Un título repetido da un aviso de más, nunca un permiso.
+function lostDesignation(opts, sid) {
+  const home = opts.home || require('os').homedir();
+  const d = designacionVigente({ home });
+  if (!d || d.error || !sid || !opts.title || !opts.transcript) return null;
+  const rol = sesionQueReenvia({ env: opts.env || process.env, home, arnes: opts.arnes });
+  if (!rol.valor) return null;
+  if (titleIn(path.join(path.dirname(opts.transcript), `${d.sesion}.jsonl`)) !== opts.title) return null;
+  const marker = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+  return [
+    `Coordinación: esta sesión era la ${rol.valor} de esta máquina y dejó de serlo al limpiar la conversación: para el arnés es otra conversación.`,
+    `Decile a la persona que, si quiere que siga siéndolo, escriba en este chat «Esta sesión es la ${rol.valor}». La frase la escribe ella, nunca vos.`,
+    `Con su frase, corré node ${marker} designate-relay --approved-by '<la persona>' --quote '<su frase, textual>' y seguí lo que te diga.`,
+  ].join('\n');
+}
+
+/**
+ * Lo que oye la coordinadora cuando empieza un contexto nuevo: que lea sus reglas otra vez, después de compactar o de
+ * limpiar la conversación. Si limpiarla le quitó la designación, cómo recuperarla. Al arrancar o al retomar una sesión,
+ * y en cualquier otra sesión, null.
+ */
+function guideNotice(opts = {}) {
+  if (opts.source !== 'compact' && opts.source !== 'clear') return null;
+  const sid = sessionOf(opts);
+  const who = coordinatorRole(opts, sid);
+  if (who) return who.role ? `Coordinación: sos la ${who.role} de esta máquina y tu conversación empezó de nuevo. Antes de seguir, leé tus reglas completas: ${GUIDE}` : null;
+  return opts.source === 'clear' ? lostDesignation(opts, sid) : null;
+}
+
 // La coordinadora que recibe primero la espera de otra sesión (scripts/hooks/wait-notice.js): `{ sid, name, role,
 // waitingName }`, o null sin rol, sin designación, con la designada cerrada o si la que espera es ella misma.
 function liveCoordinator(opts, waitingSid) {
@@ -349,8 +415,8 @@ function oldSignatures(opts, now, problems) {
   const home = opts.home || require('os').homedir();
   if (!recipe({ home, arnes: opts.arnes, env: opts.env || process.env }).owner_folder.value) return null;
   let list;
-  // Un registro roto ya lo dijo `status`.
-  try { list = readPending(home); } catch { return null; }
+  // Un registro roto ya lo dijo `status`. Los otros tipos no tienen archivo: esperan en la lista de firmas.
+  try { list = readPending(home).filter((p) => signatureList.tipoDe(p) === 'terminal'); } catch { return null; }
   const valid = list.filter((p) => p && Number.isFinite(p.at) && typeof p.file === 'string');
   if (valid.length < list.length) problems.push(`${list.length - valid.length} firma(s) pendiente(s) sin fecha o sin archivo en el registro`);
   const old = valid.filter((p) => now - p.at > OLD_SIGNATURE_MS && fs.existsSync(p.file)).sort((a, b) => a.at - b.at);
@@ -415,6 +481,65 @@ function capNotice(opts = {}) {
   lines.push(...waitLines(opts, sid, problems));
   if (problems.length) lines.push(`Coordinación: No pude leer ${oneLine(problems.join(' · ')).slice(0, 300)}.`);
   return lines.length ? lines.join('\n') : null;
+}
+
+const listNoticeFile = (home, sid) => path.join(coordinationDir(home), `list-notice-${sid}.json`);
+const plural = (n, una, varias) => `${n} ${n === 1 ? una : varias}`;
+
+/**
+ * El aviso de la lista de firmas. Con coordinadora confirmada y viva, es sólo para ella: cuántos esperan y, si la persona
+ * escribió y hay renglones que no avisó, que se los pase de a uno. Sin ella, para la sesión destino de cada renglón, sólo
+ * esa instrucción y una vez por renglón. Lo ya avisado se anota por sesión; si no se puede anotar, se repite.
+ */
+function listNotice(opts = {}) {
+  const home = opts.home || require('os').homedir();
+  const env = opts.env || process.env;
+  const sid = sessionOf(opts);
+  const llave = signatureList.llave({ casa: home, arnes: opts.arnes, env });
+  // apagada porque sí, calla. Apagada porque no se pudo leer, la coordinadora se entera con lo demás que no se pudo leer
+  if (!sid || !SAFE_SID.test(String(sid)) || (!llave.encendida && !llave.problema)) return null;
+  const s = signatureList.sesiones(home);
+  const coord = signatureList.coordinadoraViva(home, s);
+  if (coord && coord !== sid) return null;
+  let filas;
+  let problemas;
+  try { ({ filas, problemas } = signatureList.abiertos(home, { arnes: opts.arnes, env, ahora: opts.now == null ? Date.now() : Number(opts.now), s })); } catch (e) {
+    return coord ? `Coordinación: No pude leer la lista de firmas (${oneLine(e.message).slice(0, 200)}).` : null;
+  }
+  const noLeido = coord && problemas.length ? ` Ojo: ${oneLine(problemas.join('; ')).slice(0, 200)}.` : '';
+  const espera = filas.filter((f) => signatureList.tipoDe(f) !== 'terminal' && (coord || f.destino === sid));
+  if (!espera.length) return noLeido ? `Coordinación:${noLeido}` : null;
+  const firmas = espera.filter((f) => signatureList.tipoDe(f) === 'firma').length;
+  const permisos = espera.length - firmas;
+  const cuenta = [firmas ? plural(firmas, 'firma', 'firmas') : null, permisos ? plural(permisos, 'permiso', 'permisos') : null].filter(Boolean).join(' y ');
+  const dice = `${coord ? 'Coordinación: esperan' : 'Lista de firmas: de esta sesión esperan'} a la persona ${cuenta}.`;
+  const deLaPersona = signatureList.esDeLaPersona({ prompt: opts.prompt, kind: (s.mapa.get(sid) || {}).kind, transcript: opts.transcript });
+  let vistos = [];
+  try { const v = readJson(listNoticeFile(home, sid), null); vistos = v && Array.isArray(v.vistos) ? v.vistos : []; } catch { vistos = []; }
+  if (!deLaPersona || espera.every((f) => vistos.includes(f.id))) return coord ? `${dice}${noLeido}` : null;
+  try { writeJson(listNoticeFile(home, sid), { vistos: espera.map((f) => f.id) }); } catch { /* del lado seguro: se repite */ }
+  return `${dice}${noLeido} Si este mensaje lo escribió la persona y no un programa, contestale primero lo que escribió; después pasáselas de a una, sin firmar nada vos: node "${__filename}" owner-next, y mostrá el cuadro que da, sin cambiarle una letra.`;
+}
+
+/** Lo que imprime `owner-next`: lo que hay que hacer con ese renglón, para el agente. */
+function ownerNextText(r, sesion) {
+  const lines = [];
+  for (const p of r.problemas) lines.push(`Aviso: ${p}.`);
+  for (const f of r.faltaRepetir) lines.push(f.destino === sesion ? `${f.id} ya está aprobado y es de esta sesión: repetí el comando, si todavía no lo hiciste.` : `${f.id} ya está aprobado y falta que su sesión repita el comando. Si todavía no se lo mandaste, mandale este mensaje a ${f.nombre}; si ya se lo mandaste, no se lo repitas:`, f.aviso, '');
+  if (r.tipo === 'firma' || r.tipo === 'permiso') {
+    lines.push(`Renglón ${r.id}. Mostrá AskUserQuestion con una sola pregunta, sin cambiarle una letra, con «${r.rotulo}» como rótulo y las opciones «${r.opciones[0]}» y «${r.opciones[1]}».`);
+    if (r.nota) lines.push(`Decile también: ${r.nota}`);
+    lines.push('Pregunta:', r.pregunta, '');
+    lines.push(`Con «${r.opciones[1]}»: node "${__filename}" owner-reject ${r.id}, y seguí con owner-next.`);
+    lines.push('Si el cuadro se cierra o se resuelve solo: no corras nada; la pasada se corta y el renglón queda.');
+    if (r.tipo === 'firma') lines.push(`Con «${r.opciones[0]}», esto no se corre acá: lo repite su sesión. ${r.destino === sesion ? 'Es ésta: repetilo.' : `Mandale este mensaje a ${r.nombre}:`}`, r.aviso);
+    if (r.tipo === 'firma') lines.push(`Si la repetición se niega: owner-next --after ${r.id} da el siguiente, y el renglón queda.`);
+    return lines.join('\n');
+  }
+  if (r.tipo === 'plan') lines.push(r.texto, 'El plan:', r.plan);
+  else if (r.sigue) lines.push(r.texto, `Sigue con: ${r.sigue}`);
+  else lines.push(r.texto);
+  return lines.join('\n');
 }
 
 /**
@@ -490,17 +615,23 @@ function signature(opts = {}) {
   if (!folder && r.problem) return { wrote: false, file: null, id: null, message: `No sé si esta máquina tiene carpeta de firmas: ${r.problem}. El dueño corre en su terminal ${printed}` };
   if (!folder) return { wrote: false, file: null, id: null, printed: true, message: `Esta máquina no tiene carpeta de firmas: el dueño corre en su terminal ${printed}` };
   const dir = expandHome(String(folder), home);
-  let pending;
-  try { pending = readPending(home); } catch (e) { return { wrote: false, file: null, id: null, message: `${e.message}: no escribí la firma` }; }
+  try {
+    return signatureList.conCandado(home, () => writeSignature({ home, now, kind, title, cwd, command, dir }), { esperaMs: SIGNATURE_LOCK_WAIT_MS });
+  } catch (e) { return { wrote: false, file: null, id: null, message: `${e.message}: no escribí la firma` }; }
+}
+
+// Con el candado de la lista: escribe el archivo y su renglón sin perder los renglones ajenos.
+function writeSignature({ home, now, kind, title, cwd, command, dir }) {
+  const pending = readPending(home);
   const windows = process.platform === 'win32';
   const ext = windows ? '.cmd' : '.command';
   const body = signatureBody({ title, cwd, command, windows });
   const key = JSON.stringify([cwd, command]);
-  const same = pending.find((p) => p.key === key && fs.existsSync(p.file)) || sameInFolder(dir, ext, body);
+  const same = pending.find((p) => p && p.key === key && fs.existsSync(p.file)) || sameInFolder(dir, ext, body);
   if (same) return { wrote: false, file: same.file, id: same.id, message: `ya hay un archivo para esa firma: ${same.file}` };
   const base = `${localDate(now)}-${kind}`;
   fs.mkdirSync(dir, { recursive: true });
-  const usedIds = new Set(pending.map((p) => p.id));
+  const usedIds = new Set(pending.map((p) => p && p.id));
   let id = base;
   let file = null;
   // Se crea sin pisar nada: un archivo o un enlace con ese nombre, aunque esté roto, hace probar el siguiente.
@@ -511,7 +642,7 @@ function signature(opts = {}) {
     }
     id = `${base}-${n}`;
   }
-  writeJson(signaturesFile(home), [...pending.filter((p) => p.key !== key), { id, key, file, kind, title: oneLine(title), at: now }]);
+  signatureList.escribir(home, [...pending.filter((p) => !p || p.key !== key), { id, key, file, kind, title: oneLine(title), at: now }]);
   return { wrote: true, file, id, message: `Dejé la firma «${oneLine(title)}» en ${file}: el dueño la abre con doble clic.` };
 }
 
@@ -533,17 +664,22 @@ function sameInFolder(dir, ext, body) {
 function signatureDone(id, opts = {}) {
   const home = opts.home || require('os').homedir();
   const env = opts.env || process.env;
-  let pending;
-  try { pending = readPending(home); } catch (e) { return { ok: false, message: `${e.message}: no cerré la firma` }; }
-  const p = pending.find((x) => x.id === id);
-  if (!p) return { ok: false, message: `no hay una firma pendiente «${id}»` };
   const folder = recipe({ home, arnes: opts.arnes, env }).owner_folder.value;
+  try {
+    return signatureList.conCandado(home, () => closeSignature({ home, id, folder }), { esperaMs: SIGNATURE_LOCK_WAIT_MS });
+  } catch (e) { return { ok: false, message: `${e.message}: no cerré la firma` }; }
+}
+
+function closeSignature({ home, id, folder }) {
+  const pending = readPending(home);
+  const p = pending.find((x) => x && x.id === id);
+  if (!p) return { ok: false, message: `no hay una firma pendiente «${id}»` };
   const file = path.resolve(String(p.file || ''));
   if (!folder || path.dirname(file) !== path.resolve(expandHome(String(folder), home)) || !/\.(command|cmd)$/.test(file)) {
     return { ok: false, message: `la firma «${id}» apunta a ${file}, que no es un archivo de la carpeta de firmas: no lo borré` };
   }
   try { fs.rmSync(file, { force: true }); } catch (e) { return { ok: false, message: `no pude borrar ${file} (${e.code || e.message})` }; }
-  writeJson(signaturesFile(home), pending.filter((x) => x.id !== id));
+  signatureList.escribir(home, pending.filter((x) => !x || x.id !== id));
   return { ok: true, message: `Firma «${id}» cerrada: borré ${file}.` };
 }
 
@@ -966,6 +1102,26 @@ function main(argv) {
     process.stdout.write(`${r.message}\n`);
     return r.ok ? 0 : 1;
   }
+  if (cmd === 'owner-next' || cmd === 'owner-reject') {
+    const sesion = process.env.CLAUDE_CODE_SESSION_ID || null;
+    if (!sesion || !SAFE_SID.test(sesion)) {
+      process.stderr.write(`coordination.js: ${cmd} lo corre una sesión: no sé cuál es ésta.\n`);
+      return 2;
+    }
+    // la casa donde anota el freno, que no mira HOME
+    let home;
+    try { home = require('../lib/real-home.js').casaDeLaCuenta(); } catch (e) {
+      process.stderr.write(`coordination.js: ${e.message}\n`);
+      return 2;
+    }
+    if (cmd === 'owner-next') {
+      process.stdout.write(`${ownerNextText(signatureList.siguiente({ casa: home, sesion, after: f.after || null }), sesion)}\n`);
+      return 0;
+    }
+    const r = signatureList.rechazar({ casa: home, id: f.rest[0], sesion });
+    process.stdout.write(`${r.mensaje}\n`);
+    return r.ok ? 0 : 1;
+  }
   if (cmd === 'open') {
     // el modo no se elige: se copia el de la sesión que abre, así nunca queda más alto
     if (f['permission-mode'] !== undefined) {
@@ -981,10 +1137,10 @@ function main(argv) {
     process.stdout.write(`${r.message}\n`);
     return r.ok ? 0 : 1;
   }
-  process.stderr.write('uso: coordination.js status [--json] | coordinate | signature --kind <tema> --title <qué> --cwd <carpeta> -- <comando...> | signature-done <id> | open [--name <n>|auto] (--cwd <carpeta> | --repo <repo> [--branch <rama>]) -- <encargo> | close --name <n>\n');
+  process.stderr.write('uso: coordination.js status [--json] | coordinate | signature --kind <tema> --title <qué> --cwd <carpeta> -- <comando...> | signature-done <id> | owner-next [--after <id>] | owner-reject <id> | open [--name <n>|auto] (--cwd <carpeta> | --repo <repo> [--branch <rama>]) -- <encargo> | close --name <n>\n');
   return 2;
 }
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { status, statusText, readPending, capNotice, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, ORIGIN };
+module.exports = { status, statusText, readPending, capNotice, guideNotice, listNotice, ownerNextText, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, ORIGIN };
