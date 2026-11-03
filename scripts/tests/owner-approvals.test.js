@@ -321,6 +321,28 @@ test('Click_SinConstanciaDeQuienContesto_NoVale', (t) => {
   assert.match(oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), click(), { pregunta: PIDE, opciones: CUADRO.opciones }).motivo, /no dice quién contestó/);
 });
 
+test('Click_SinElDatoConVersionVieja_DiceQueActualizarYSigueSinValer', (t) => {
+  const casa = casaNueva(t);
+  const motivoCon = (extra) => {
+    transcripcion(casa, 'ses-a', [cuadro('toolu_1'), { ...respuesta('toolu_1', { decision: null }), ...extra }]);
+    const v = oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), click(), { pregunta: PIDE, opciones: CUADRO.opciones });
+    assert.strictEqual(v.ok, false);
+    return v.motivo;
+  };
+  const vscode = motivoCon({ entrypoint: 'claude-vscode', version: '2.1.289' });
+  assert.match(vscode, /no dice quién contestó/);
+  assert.match(vscode, /extensión de VS Code está en 2\.1\.289/);
+  assert.match(vscode, /recargá la ventana/);
+  const terminal = motivoCon({ entrypoint: 'cli', version: '2.1.292' });
+  assert.match(terminal, /consola de Claude está en 2\.1\.292/);
+  assert.match(terminal, /claude update/);
+  assert.doesNotMatch(terminal, /extensión/);
+  assert.match(motivoCon({ entrypoint: 'otra-forma', version: '2.1.292' }), /Claude Code está en 2\.1\.292/);
+  // con una versión que ya escribe el dato, o sin versión, actualizar no es la salida: no se aconseja
+  assert.strictEqual(motivoCon({ entrypoint: 'claude-vscode', version: '2.1.312' }), 'la transcripción no dice quién contestó el cuadro');
+  assert.strictEqual(motivoCon({}), 'la transcripción no dice quién contestó el cuadro');
+});
+
 test('Click_OpcionesQueNoSonLasDelGuion_NoVale', (t) => {
   const casa = casaNueva(t);
   transcripcion(casa, 'ses-a', [cuadro('toolu_1'), respuesta('toolu_1', { opciones: ['Sí, aprobar', 'Aprobado'] })]);

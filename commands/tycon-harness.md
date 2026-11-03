@@ -32,7 +32,9 @@ Arrancá con la conclusión, en tres renglones como mucho:
 1. **Versión**: el número, y si es la versión bajada (`managed`) o un clon de quien mantiene el arnés (`developer`).
 2. **Salud**: «todo en orden» si `doctor` no dejó avisos ni rojos. Si dejó algo, cada uno en una línea: qué pasa,
    dicho sin jerga, y **su arreglo en una línea**, tal como lo sugiere el propio `doctor` (casi siempre es una orden de
-   `harness.js`). Primero lo rojo, después los avisos. Las líneas con `✓` no se listan.
+   `harness.js`). Primero lo rojo, después los avisos. Las líneas con `✓` no se listan, salvo las que empiezan con
+   `Claude —`: esas van todas, tal como las dice `doctor`, también «no la usás» y «no sé». Nunca digas «falta» por lo que
+   no se usa ni «bien» por lo que no se pudo leer.
 3. **Versión nueva**: si `update --check` salió 3, el número que hay y cómo se aplica:
    - Si `doctor` dice `aplicación auto`, se aplica sola en el próximo arranque de una sesión.
    - Si dice `aplicación ask`, o si el usuario la quiere ya: que corra **él** en su terminal

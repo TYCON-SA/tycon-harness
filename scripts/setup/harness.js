@@ -3857,6 +3857,7 @@ function cmdDoctor(ctx) {
     doctorDeclaredReposItems(ctx, tree, add, extra);
     // el Node propio del arnés: dato o aviso, nunca rojo
     doctorHarnessNodeItems(ctx, tree, add, extra);
+    doctorClaudeVersionItems(ctx, add);
     if (state.notice) add('warn', `aviso pendiente: ${state.notice}`);
     if (state.hold) add('warn', `${holdText(state)}`);
     if (state.failed) {
@@ -3993,6 +3994,7 @@ function cmdDoctor(ctx) {
   doctorDeclaredReposItems(ctx, tree, add, extra);
   // el Node propio del arnés: dato o aviso, nunca rojo
   doctorHarnessNodeItems(ctx, tree, add, extra);
+  doctorClaudeVersionItems(ctx, add);
   const controlsEnv = Object.assign({}, env);
   for (const [k, v] of Object.entries(orgBrakes)) if (controlsEnv[k] === undefined || controlsEnv[k] === '') controlsEnv[k] = v;
   const controls = M.expectedControls({ platform: ctx.platform, tree, integrations, env: controlsEnv, home: ctx.home, profile: prof.ok ? prof.value : null });
@@ -4299,6 +4301,14 @@ function doctorHarnessNodeItems(ctx, tree, add, extra) {
   }
   extra.harness_node = f.json;
   add(f.level === 'warn' ? 'warn' : 'ok', f.line);
+}
+
+/** Qué versión de Claude usa esta sesión: dato o aviso, nunca rojo. La comprobación de salud juzga el árbol, no esto. */
+function doctorClaudeVersionItems(ctx, add) {
+  if (ctx.env.TYCON_HARNESS_HEALTH === '1') return;
+  try {
+    for (const it of require(path.join(__dirname, '..', 'lib', 'claude-versions.js')).doctorItems({ env: ctx.env, platform: ctx.platform })) add(it.level, it.text);
+  } catch (e) { add('warn', `Claude — no sé qué versión usás: no se pudo mirar (${e.message})`); }
 }
 
 function doctorPublishGuardItems(ctx, tree, prof, add, extra) {
