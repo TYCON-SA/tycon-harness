@@ -236,13 +236,14 @@ test('T7 Events_BurstOfChanges_OneSnapshot: cinco cambios juntos dan una foto; u
   const lock = readLock(m);
   const p = page(lock);
   await p.next();
-  const tablas = path.join(m.sdir, 'coordination', 'tablas');
-  fs.mkdirSync(tablas, { recursive: true });
-  for (let i = 0; i < 5; i += 1) fs.writeFileSync(path.join(tablas, `n${i}.json`), JSON.stringify({ at: new Date().toISOString(), hoy: [{ grupo: 'A', que: `fila ${i}`, hoy: 'x' }] }));
+  const coordination = path.join(m.sdir, 'coordination');
+  fs.mkdirSync(coordination, { recursive: true });
+  const board = path.join(coordination, 'tablero.json');
+  for (let i = 0; i < 5; i += 1) fs.writeFileSync(board, JSON.stringify({ pendientes: [{ titulo: `fila ${i}`, estado: 'espera' }] }));
   await p.next(2000);
   await sleep(800);
   assert.strictEqual(p.fotos.length, 2, 'una sola foto por la ráfaga');
-  fs.writeFileSync(path.join(tablas, 'n0.json'), fs.readFileSync(path.join(tablas, 'n0.json')));
+  fs.writeFileSync(board, fs.readFileSync(board));
   await sleep(900);
   assert.strictEqual(p.fotos.length, 2, 'la foto igual no se manda');
   p.close();
@@ -309,6 +310,90 @@ require('fs').writeFileSync(${JSON.stringify(own)}, JSON.stringify({ at: new Dat
   await sleep(500);
   assert.strictEqual(g.runs(), 0);
   q.close();
+});
+
+// Un clasificador de juguete que anota cada vez que corre. Es lento a propósito: la foto no lo espera.
+const fakeClassifier = (m) => {
+  const script = path.join(m.home, 'topics-falso.js');
+  fs.writeFileSync(script, `require('fs').appendFileSync(${JSON.stringify(`${script}.log`)}, process.argv[2] + '\\n');\nsetTimeout(() => {}, 300);\n`);
+  return { script, runs: () => { try { return fs.readFileSync(`${script}.log`, 'utf8').trim().split('\n'); } catch { return []; } } };
+};
+// un trabajo en un repo que el arnés sigue: de lo que no se sabe de qué proyecto es no se clasifica nada
+const withWork = (m) => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'office-repo-'));
+  spawnSync('git', ['-c', 'maintenance.auto=false', '-C', repo, 'init', '-q']);
+  spawnSync('git', ['-C', repo, 'remote', 'add', 'origin', 'https://github.com/acme/repo.git']);
+  fs.writeFileSync(path.join(m.sdir, 'stuck-prs-photo.json'), JSON.stringify({ at: new Date().toISOString(), lecturas: { 'acme/repo': { ok: true, value: [] } } }));
+  fs.writeFileSync(path.join(m.sdir, 'adhoc', 's1.json'), JSON.stringify({ reason: 'Un trabajo por clasificar', declaredAt: new Date().toISOString(), cwd: repo }));
+  fs.writeFileSync(path.join(m.sessions, 's1.json'), JSON.stringify({ pid: process.pid, sessionId: 's1', name: 'Alfa', status: 'busy', statusUpdatedAt: Date.now(), cwd: repo }));
+};
+
+test('T29 Server_ClassifiesOnlyWithAPage @story-8.184 @ac-11: sin páginas no lanza; con una, lanza de fondo; respeta el plazo', async () => {
+  const m = toy();
+  withWork(m);
+  const f = fakeClassifier(m);
+  openSync(m, { TYCON_OFFICE_TOPICS_RUN: f.script, TYCON_OFFICE_TOPICS_MS: '300' });
+  await sleep(900);
+  assert.deepStrictEqual(f.runs(), [], 'sin páginas no clasifica');
+  const p = page(readLock(m));
+  await p.next();
+  for (let i = 0; i < 50 && !f.runs().length; i += 1) await sleep(100);
+  assert.strictEqual(f.runs()[0], '--classify', 'con una página, lanza');
+  const pending = JSON.parse(fs.readFileSync(path.join(m.sdir, 'office', 'topics-pending.json'), 'utf8'));
+  assert.deepStrictEqual(pending.trabajos.map((w) => w.titulo), ['Un trabajo por clasificar']);
+  assert.deepStrictEqual(Object.keys(pending.trabajos[0]).sort(), ['clave', 'titulo'], 'sólo la clave y el título');
+  p.close();
+  await sleep(500);
+  const closed = f.runs().length;
+  await sleep(800);
+  assert.strictEqual(f.runs().length, closed, 'sin páginas deja de lanzar');
+  // con la hora del próximo intento por delante, no lanza; y sin nada por clasificar, tampoco
+  const n = toy();
+  withWork(n);
+  const g = fakeClassifier(n);
+  fs.mkdirSync(path.join(n.sdir, 'office'), { recursive: true });
+  fs.writeFileSync(path.join(n.sdir, 'office', 'topics-state.json'), JSON.stringify({ version: 1, nextAt: Date.now() + 3600000 }));
+  openSync(n, { TYCON_OFFICE_TOPICS_RUN: g.script, TYCON_OFFICE_TOPICS_MS: '200' });
+  const q = page(readLock(n));
+  await q.next();
+  await sleep(800);
+  assert.deepStrictEqual(g.runs(), [], 'espera su plazo');
+  q.close();
+  const o = toy();
+  const h = fakeClassifier(o);
+  openSync(o, { TYCON_OFFICE_TOPICS_RUN: h.script, TYCON_OFFICE_TOPICS_MS: '200' });
+  const r = page(readLock(o));
+  await r.next();
+  await sleep(800);
+  assert.deepStrictEqual(h.runs(), [], 'sin títulos no hay proceso ni llamada');
+  r.close();
+});
+
+test('Regresion_ElClasificadorSeCae_SeDiceYNoSeRepite @story-8.184 @ac-21: si el proceso se cae antes de dejar su plazo, no se relanza cada minuto y la página lo dice', async () => {
+  const m = toy();
+  withWork(m);
+  const script = path.join(m.home, 'topics-roto.js');
+  fs.writeFileSync(script, `require('fs').appendFileSync(${JSON.stringify(`${script}.log`)}, 'x\\n');\nprocess.exit(1);\n`);
+  openSync(m, { TYCON_OFFICE_TOPICS_RUN: script, TYCON_OFFICE_TOPICS_MS: '200' });
+  const p = page(readLock(m));
+  await p.next();
+  assert.ok(await until(() => p.fotos.some((f) => f.data.unreadable.some((u) => /los temas no se pudieron clasificar/.test(u))), 6000), 'llega la foto con el aviso');
+  await sleep(800);
+  assert.strictEqual(fs.readFileSync(`${script}.log`, 'utf8').trim().split('\n').length, 1, 'no se relanza enseguida');
+  p.close();
+});
+
+test('T30 Snapshot_NeverWaitsOrLaunches @story-8.184 @ac-11: la foto fija y --json no lanzan ni dejan pendientes', () => {
+  const m = toy();
+  withWork(m);
+  const f = fakeClassifier(m);
+  const env = envOf(m.home, { TYCON_OFFICE_TOPICS_RUN: f.script });
+  for (const args of [['--json'], ['--out', path.join(m.home, 'foto.html')]]) {
+    const r = spawnSync('node', [OFFICE, ...args], { input: '', env, encoding: 'utf8', timeout: 20000 });
+    assert.strictEqual(r.status, 0, r.stderr);
+  }
+  assert.deepStrictEqual(f.runs(), []);
+  assert.ok(!fs.existsSync(path.join(m.sdir, 'office', 'topics-pending.json')));
 });
 
 test('T9 Remote_QueriedAtMostOncePerMinute: los pedidos se preguntan una vez por minuto', async () => {

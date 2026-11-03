@@ -1743,6 +1743,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/office-topics.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/hour-notice.test.js",
       "requiere": []
     },

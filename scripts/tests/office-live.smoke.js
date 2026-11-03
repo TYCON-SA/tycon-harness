@@ -24,6 +24,58 @@ const fails = [];
 const check = (ok, what) => { console.log(`${ok ? 'ok ' : 'MAL'} ${what}`); if (!ok) fails.push(what); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Las tablas por tema: la oficina de verdad clasifica con un proveedor de juguete (un guion que deja los temas en su lugar), se
+// abre una fila y una foto nueva no la cierra. Deja una captura en OFFICE_E1_SHOT, si está.
+async function tablesByTopic(playwright, baseEnv, sdir) {
+  const classifier = path.join(path.dirname(sdir), 'topics-de-juguete.js');
+  fs.writeFileSync(classifier, `const fs = require('fs');
+const dir = ${JSON.stringify(path.join(sdir, 'office'))};
+const pending = JSON.parse(fs.readFileSync(dir + '/topics-pending.json', 'utf8')).trabajos;
+fs.writeFileSync(dir + '/topics.json', JSON.stringify({ version: 1, temas: Object.fromEntries(pending.map((w) => [w.clave, /banco/.test(w.titulo) ? 'Controles' : 'Oficina'])) }));
+`);
+  // las dos sesiones trabajan en un repo que el arnés sigue: de lo que no se sabe de qué proyecto es no se clasifica nada
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'office-e1-repo-'));
+  spawnSync('git', ['-c', 'maintenance.auto=false', '-C', repo, 'init', '-q']);
+  spawnSync('git', ['-C', repo, 'remote', 'add', 'origin', 'https://github.com/acme/repo.git']);
+  fs.writeFileSync(path.join(sdir, 'stuck-prs-photo.json'), JSON.stringify({ at: new Date().toISOString(), lecturas: { 'acme/repo': { ok: true, value: [] } } }));
+  const working = (sid, name, reason) => {
+    fs.writeFileSync(path.join(claudeDir(baseEnv.HOME), 'sessions', `${sid}.json`), JSON.stringify({ pid: process.pid, sessionId: sid, name, status: 'busy', statusUpdatedAt: Date.now(), cwd: repo }));
+    fs.writeFileSync(path.join(sdir, 'adhoc', `${sid}.json`), JSON.stringify({ reason, declaredAt: new Date().toISOString(), cwd: repo }));
+  };
+  working('s2', 'Beto', 'revisión del banco de controles');
+  working('s3', 'Cata', 'arreglo del banco de controles');
+  const env ={ ...baseEnv, TYCON_OFFICE_TOPICS_RUN: classifier, TYCON_OFFICE_TOPICS_MS: '300' };
+  const open = spawnSync(process.execPath, [OFFICE, '--open'], { input: '', env, encoding: 'utf8', timeout: 20000 });
+  const url = (open.stdout.match(/http:\/\/127\.0\.0\.1:\d+\/\?t=[0-9a-f]+/) || [])[0];
+  check(open.status === 0 && Boolean(url), 'E1: la oficina volvió a abrir');
+  if (!url) return;
+  const lock = JSON.parse(fs.readFileSync(path.join(sdir, 'office', 'server.json'), 'utf8'));
+  // sin 3D: las tablas no lo necesitan, y dos escenas a la vez traban al navegador con la máquina cargada
+  const browser = await playwright.chromium.launch({ args: ['--disable-3d-apis'] });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 1100 } });
+    await page.goto(url);
+    await page.waitForSelector('#tablas .temaBoton', { timeout: 15000 });
+    await page.waitForFunction(() => [...document.querySelectorAll('.temaBoton')].some((b) => b.textContent === 'Controles'), null, { timeout: 15000 });
+    check(true, 'E1: las filas salen por tema, con el tema que clasificó el proceso de fondo');
+    const hoy = page.locator('#tablas .una').first();
+    check((await hoy.locator('.escrito').innerText()).startsWith('Armada a las'), 'E1: dice «Armada a las…»');
+    // Beto y Cata: los dos trabajos hablan del banco de controles
+    check(/2 en curso/.test(await hoy.locator('.temaFila', { hasText: 'Controles' }).innerText()), 'E1: la línea sale contada de las tarjetas');
+    await hoy.locator('.temaBoton', { hasText: 'Controles' }).click();
+    const detail = hoy.locator('.temaTrabajos:not([hidden])');
+    check(/arreglo del banco de controles/.test(await detail.innerText()), 'E1: al tocarla se abren sus trabajos');
+    // una foto nueva: cambia algo, y la fila sigue abierta
+    working('s3', 'Cata', 'arreglo del banco de controles, segunda parte');
+    await page.waitForFunction(() => [...document.querySelectorAll('.temaTrabajos')].some((t) => t.textContent.includes('segunda parte')), null, { timeout: 8000 });
+    check(await hoy.locator('.temaTrabajos:not([hidden])').count() === 1, 'E1: una foto nueva no la cierra');
+    if (process.env.OFFICE_E1_SHOT) await page.locator('#tablas').screenshot({ path: process.env.OFFICE_E1_SHOT });
+  } finally {
+    await browser.close();
+    try { process.kill(lock.pid, 'SIGKILL'); } catch { /* ya salió */ }
+  }
+}
+
 async function main() {
   const playwright = PINNED_PW.load();
   if (!playwright) { console.error(`sin navegador: ${PINNED_PW.locate().why}`); return 2; }
@@ -38,7 +90,8 @@ async function main() {
   }
   fs.writeFileSync(path.join(sdir, 'adhoc', 's1.json'), JSON.stringify({ reason: 'arreglo de la oficina', declaredAt: new Date().toISOString() }));
 
-  const env = { ...process.env, HOME: home, USERPROFILE: home, TYCON_OFFICE_NO_BROWSER: '1', TYCON_OFFICE_LINK: '0' };
+  // en modo de prueba, el proceso sólo corre los guiones que le den: ni los pedidos reales ni el modelo de verdad
+  const env = { ...process.env, HOME: home, USERPROFILE: home, TYCON_OFFICE_NO_BROWSER: '1', TYCON_OFFICE_LINK: '0', TYCON_OFFICE_TEST: '1' };
   const open = spawnSync(process.execPath, [OFFICE, '--open'], { input: '', env, encoding: 'utf8', timeout: 20000 });
   const url = (open.stdout.match(/http:\/\/127\.0\.0\.1:\d+\/\?t=[0-9a-f]+/) || [])[0];
   check(open.status === 0 && Boolean(url), `la oficina viva arrancó (${url || open.stderr.trim()})`);
@@ -49,7 +102,8 @@ async function main() {
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     await page.goto(url);
-    await page.waitForFunction(() => window.tablero && window.tablero.started, null, { timeout: 15000 });
+    // con la máquina cargada, la escena llega a tardar más de 25 s
+    await page.waitForFunction(() => window.tablero && window.tablero.started, null, { timeout: 45000 });
     check(true, 'la escena 3D arrancó');
     // la cámara se mueve y se abre el detalle de una persona
     const stage = page.locator('#stage canvas');
@@ -91,6 +145,7 @@ async function main() {
     await page.waitForFunction(() => document.getElementById('ovl').textContent.includes('La oficina se cerró'), null, { timeout: 5000 });
     check(true, 'el aviso «La oficina se cerró…» apareció');
     check(await page.locator('.item', { hasText: 'revisión del banco de controles' }).count() === 1, 'la última foto quedó');
+    await tablesByTopic(playwright, env, sdir);
   } finally {
     await browser.close();
     try { process.kill(lock.pid, 'SIGKILL'); } catch { /* ya salió */ }
