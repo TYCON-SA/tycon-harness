@@ -845,10 +845,13 @@ test('SaveBrake_ComandoQueNoSeLee_SeMideDondeCorre @story-8.181 @ac-11', (t) => 
   commitDeArchivos(d, 'a', 9);
   carril(h, { maxFiles: 8 });
   assert.match((brake().decidir({ command: 'eval "$CMD"', cwd: d, sid: SID, home: h }) || {}).texto || '', elTope);
-  // uno que se lee y guarda en otra carpeta no le cobra el tope a la rama donde está parada la sesión
+  // el lector ubica mal estos `cd`: el guardado corre en la rama de la sesión, y se mide
   const fuera = tmp(t, 'fuera-');
-  const r = brake().decidir({ command: `cd ${fuera} && git init -q && git add -A && git commit -m x`, cwd: d, sid: SID, home: h });
-  assert.doesNotMatch((r || {}).texto || '', elTope);
+  for (const command of [`pushd ${fuera} && popd && git push origin x`, `false && cd ${fuera}; git commit -m x`, `cd ${fuera} && gh pr create --repo o/r --head x --title t`]) {
+    assert.match((brake().decidir({ command, cwd: d, sid: SID, home: h }) || {}).texto || '', elTope, command);
+  }
+  // el costo, escrito en la guía: un guardado de verdad en otra carpeta también cobra el tope de la rama de la sesión
+  assert.match((brake().decidir({ command: `cd ${fuera} && git init -q && git add -A && git commit -m x`, cwd: d, sid: SID, home: h }) || {}).texto || '', elTope);
 });
 
 // 🔴 Falla con: `git diff HEAD` en un repo sin su primer commit, leído como «no pude medir»: el commit que lo arregla queda frenado.

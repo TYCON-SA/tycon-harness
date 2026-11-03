@@ -1004,10 +1004,11 @@ function decidirCarril({ command, cwd, sid, home }) {
   // el trabajo de otro repo no es de este carril: no le pide su maqueta. La pantalla va antes que el riesgo: la maqueta y
   // la captura pueden ser archivos del repo, y los revisores tienen que medir lo que se guarda con ellas
   const delCarril = !repos.length || dudas.length || reposDelComando.length < cs.length || cs.some((c) => c.opaco || c.tipo === 'pr') || reposDelComando.some((r) => repos.includes(r));
-  // los del carril, aunque la carpeta de lo anotado ya no esté (se borró con su pantalla); sin ninguno, los del comando; y
-  // un comando que no se puede leer se mide donde corre
+  // los del carril, aunque la carpeta de lo anotado ya no esté (se borró con su pantalla); sin ninguno, los del comando; y sin
+  // ninguno, la carpeta de la sesión: el lector puede ubicar mal un `popd` o un `cd` que no ocurre. El costo está escrito en la
+  // guía: un guardado de verdad en otra carpeta cobra el tope de la rama de la sesión, y se sale con el click
   let reposDeLoQueSeGuarda = repos.length ? repos : reposDelComando;
-  if (!reposDeLoQueSeGuarda.length && (dudas.length || cs.some((c) => c.opaco))) { try { const r = SO().raizDe(cwd); if (r) reposDeLoQueSeGuarda = [r]; } catch (_) { /* fuera de un repo: nada que medir */ } }
+  if (!reposDeLoQueSeGuarda.length) { try { const r = SO().raizDe(cwd); if (r) reposDeLoQueSeGuarda = [r]; } catch (_) { /* fuera de un repo: nada que medir */ } }
   // lo que git todavía no sigue puede subir en un solo comando que empuja después de hacer otra cosa, y este freno corre antes:
   // no hay un guardado siguiente que lo cuente. Sin empujar, el siguiente sí lo cuenta. No se busca el `git add` en el texto:
   // tiene sinónimos y atajos, y la palabra puede estar en un mensaje
