@@ -3152,9 +3152,18 @@ function anotarBorradosDeLaStory({ stateDir, sessionId, marker, rutas, via }) {
     m.fileEvents = Array.isArray(m.fileEvents) ? m.fileEvents : [];
     for (const p of rutas) {
       if (!m.filesTouched.includes(p)) m.filesTouched.push(p);
-      m.fileEvents.push({ path: p, ts });
+      // la marca `code`, como on-edit: si la regla falla, pide otra vuelta (ante la duda, se revisa)
+      let code;
+      try { code = require('./lib/reloop-code.js').pideOtraVuelta(p, { storyPath: m.storyPath }); } catch (_) { code = true; }
+      m.fileEvents.push({ path: p, ts, code });
     }
     if (m.fileEvents.length > 500) m.fileEvents = m.fileEvents.slice(-500);
+    // `otraVuelta`, la decisión de `next` escrita para el cartel (lib/steps.js `otraVueltaDe`)
+    try {
+      const v = require('./lib/steps.js').otraVueltaDe(m);
+      if (v === undefined) delete m.otraVuelta;
+      else m.otraVuelta = v;
+    } catch (e) { delete m.otraVuelta; logHookError(e); }   // sin el campo, el cartel usa su regla de antes
     m.lastTouch = ts;
     const tmp = `${archivo}.${process.pid}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(m, null, 2) + '\n', 'utf8');
@@ -3686,7 +3695,7 @@ function handleCarrilEHistoria(event, opts = {}) {
   return null;
 }
 
-module.exports = { handle, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory };
+module.exports = { handle, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory };
 
 if (require.main === module) {
   const cruda = leerEntrada();
