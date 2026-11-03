@@ -2312,7 +2312,7 @@ function openWallPanel(data) {
 }
 // Lo que dibuja el panel de la pared: cada texto, en orden.
 function wallTexts(data) {
-  const fn = (page(data).match(/function drawPanel\(\)\{[\s\S]*?texPanel\.needsUpdate=true\}/) || [])[0];
+  const fn = (page(data).match(/function drawPanel\(\)\{[\s\S]*?texPanel\.needsUpdate=true;\}/) || [])[0];
   assert.ok(fn, 'la página trae el dibujo de la pared');
   const said = [];
   const g = new Proxy({}, { get: (_, k) => (k === 'fillText' ? (t) => said.push(String(t)) : () => {}), set: () => true });
@@ -3224,7 +3224,7 @@ test('T283 Conversation_CoordinatorTabs: la coordinadora tiene dos pestañas y a
   const html = page({ agents: [], items: [], kanban: null, meta: null });
   const paint = html.slice(html.indexOf('function pintarCharla('), html.indexOf('\n// ', html.indexOf('function pintarCharla(')));
   assert.match(paint, /pestanasCharla\(\[\["Con vos",listaCharla\(/);
-  assert.match(paint, /\["Con las sesiones",listaCharla\(/);
+  assert.match(paint, /\["Con las sesiones",charlaPorSesion\(/);
   assert.match(paint, /seccion\("Con la coordinadora",filas/, 'las sesiones comunes siguen con su lista');
   const src = html.slice(html.indexOf('function listaCharla('), html.indexOf('function pintarCharla('));
   const node = (tag) => { const n = { tag, kids: [], dataset: {}, attrs: {}, classList: { contains: (c) => (n.className || '').split(' ').includes(c) }, append(...k) { n.kids.push(...k); }, setAttribute(k, v) { n.attrs[k] = v; } }; return n; };
@@ -3443,4 +3443,80 @@ test('T302 Agents_CountedForTheirSession: la foto cuenta los agentes bajo el pro
   const noTree = await collectAt(m, now, { codexHome, processes: null });
   assert.strictEqual(byName(noTree, 'Tero').estado, 'libre', 'sin la lista de procesos no dice cuántos, y nunca dice 0');
   assert.ok(!/agente/.test(JSON.stringify(byName(noTree, 'Tero'))));
+});
+
+// The per-session conversation code of the page, on a small stand-in for the DOM: only what those functions touch.
+function perSessionCode() {
+  class Fake {
+    constructor(cls, text) { this.className = cls || ''; this.textContent = text || ''; this.children = []; this.attrs = {}; }
+    append(...kids) { for (const k of kids) { k.parent = this; this.children.push(k); } }
+    replaceChildren(...kids) { this.children = []; this.append(...kids); }
+    replaceWith(...kids) { const at = this.parent.children.indexOf(this); for (const k of kids) k.parent = this.parent; this.parent.children.splice(at, 1, ...kids); }
+    setAttribute(k, v) { this.attrs[k] = v; }
+    getAttribute(k) { return this.attrs[k]; }
+    focus() { Fake.focused = this; }
+  }
+  const html = page({ agents: [], items: [], kanban: null, meta: null });
+  const code = html.slice(html.indexOf('// Cuándo fue el último mensaje con una sesión'), html.indexOf('function pintarCharla('));
+  const stubs = {
+    el: (_tag, cls, text) => new Fake(cls, text),
+    msg: (quien, at, texto, mio) => Object.assign(new Fake('msg'), { quien, texto, mio }),
+    listaCharla: (filas, vacio) => { const box = new Fake(filas.length ? 'chat' : 'm', filas.length ? '' : vacio); box.append(...filas); return box; },
+    DAYS: ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'],
+  };
+  // eslint-disable-next-line no-new-func
+  return new Function(...Object.keys(stubs), `${code}; return { charlaPorSesion, horaDeSesion };`)(...Object.values(stubs));
+}
+const toySessions = (n) => Array.from({ length: n }, (_, i) => ({ sesion: `S${i}`, at: Date.now() - i * 60000, mensajes: [{ de: `S${i}`, texto: `de S${i}`, at: Date.now() }, { de: 'Coordinadora', texto: 'dale', at: Date.now() }] }));
+
+test('T303 PerSession_Buttons: la más reciente abierta, en orden, y sus mensajes con los propios marcados', () => {
+  const { charlaPorSesion } = perSessionCode();
+  const box = charlaPorSesion('Coordinadora', toySessions(3), 'nada');
+  const [fila, chat] = box.children;
+  assert.deepStrictEqual(fila.children.map((b) => b.textContent), ['S0', 'S1', 'S2']);
+  assert.deepStrictEqual(fila.children.map((b) => b.getAttribute('aria-pressed')), ['true', 'false', 'false']);
+  assert.deepStrictEqual(chat.children.map((m) => [m.quien, m.mio]), [['S0', false], ['Coordinadora', true]]);
+  assert.strictEqual(fila.children[0].children[0].textContent.length, 5, 'el botón dice su hora');
+});
+
+test('T304 PerSession_Choosing: tocar otra sesión cambia los mensajes y cuál está elegida', () => {
+  const { charlaPorSesion } = perSessionCode();
+  const box = charlaPorSesion('Coordinadora', toySessions(3), 'nada');
+  const fila = box.children[0];
+  fila.children[2].onclick();
+  assert.deepStrictEqual(fila.children.map((b) => b.getAttribute('aria-pressed')), ['false', 'false', 'true']);
+  assert.strictEqual(box.children[1].children[0].texto, 'de S2');
+  assert.strictEqual(box.children.length, 2, 'una sola conversación a la vista');
+});
+
+test('T305 PerSession_TheOthers: de más de 8 quedan «Las otras N», que al tocarlo muestra el resto y se va; con 8 no aparece', () => {
+  const { charlaPorSesion } = perSessionCode();
+  const fila = charlaPorSesion('Coordinadora', toySessions(13), 'nada').children[0];
+  assert.strictEqual(fila.children.length, 9);
+  const mas = fila.children[8];
+  assert.strictEqual(mas.textContent, 'Las otras 5');
+  mas.onclick();
+  assert.deepStrictEqual(fila.children.map((b) => b.textContent), Array.from({ length: 13 }, (_, i) => `S${i}`));
+  fila.children[12].onclick();
+  assert.strictEqual(fila.children[12].getAttribute('aria-pressed'), 'true', 'una de las otras se puede elegir');
+  assert.ok(!charlaPorSesion('Coordinadora', toySessions(8), 'nada').children[0].children.some((b) => b.className === 'mas'));
+});
+
+test('T306 PerSession_Empty_AndTheHour: sin mensajes lo dice; la hora lleva el día si no es de hoy', () => {
+  const { charlaPorSesion, horaDeSesion } = perSessionCode();
+  const empty = charlaPorSesion('Coordinadora', [], 'No hay mensajes con las sesiones en lo último de su conversación.');
+  assert.match(empty.textContent, /^No hay mensajes con las sesiones/);
+  const hoy = new Date();
+  hoy.setHours(9, 5, 0, 0);
+  assert.strictEqual(horaDeSesion(hoy.getTime()), '09:05');
+  const otro = new Date(hoy.getTime() - 3 * 86400000);
+  assert.match(horaDeSesion(otro.getTime()), /^(dom|lun|mar|mié|jue|vie|sáb) 09:05$/);
+  assert.strictEqual(horaDeSesion(null), '');
+});
+
+test('T307 PerSession_Page: la ventana usa la conversación por sesión y la nota habla de cada sesión', () => {
+  const html = page({ agents: [], items: [], kanban: null, meta: null });
+  assert.match(html, /\["Con las sesiones",charlaPorSesion\(nombre,d\.conSesiones\|\|\[\],/);
+  assert.match(html, /los últimos 10 con cada sesión, en orden; primero la que habló último\./);
+  assert.match(html, /@media \(max-width:600px\)\{\.ventana \.quienes\{flex-wrap:nowrap;overflow-x:auto/, 'en un teléfono, una sola fila');
 });

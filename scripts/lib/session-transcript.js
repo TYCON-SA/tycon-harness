@@ -305,6 +305,8 @@ const COORDINATOR_CONVERSATION_BYTES = 64 * 1024 * 1024;
 const WITH_COORDINATOR = 10;
 const FROM_PERSON = 20;
 const WITH_SESSIONS = 10;
+// El destinatario que es un subagente de la propia sesión, no otra sesión: `a` y su identificador
+const SUBAGENT_ID = /^a[0-9a-f]{12,}$/;
 
 // Lo que se saca de un renglón: quién habló y qué dijo. Los textos citados llevan las comillas escapadas, así que estas
 // marcas sólo aparecen en el renglón que es de verdad eso; igual se confirma después de leerlo.
@@ -441,8 +443,10 @@ function readSessionTokens(file, counts, { modelSettings } = {}) {
 
 /**
  * Los últimos mensajes de una sesión con la coordinadora, en orden: `{ conCoordinadora: [{ de, texto, at, propio }] }`.
- * De la coordinadora: `{ conVos: [{ quien: 'vos' | 'coordinadora', texto, at }], conSesiones: [{ de, a, texto, at }] }`.
- * Lee hacia atrás y termina al juntarlos, o en el tope. Sin el nombre de la coordinadora, no hay con quién cruzar.
+ * De la coordinadora: `{ conVos: [{ quien: 'vos' | 'coordinadora', texto, at }], conSesiones: [{ sesion, at, mensajes: [{ de, texto, at }] }] }`,
+ * con la sesión que habló último primero y a lo sumo los últimos 10 mensajes de cada una. Se agrupa por el nombre: es lo que trae
+ * el mensaje. Lee hacia atrás y termina al juntarlos, o en el tope: con la coordinadora siempre puede aparecer otra sesión, así
+ * que llega al tope. Sin el nombre de la coordinadora, no hay con quién cruzar.
  */
 function readConversation(file, { coordinator, isCoordinator = false, background = false, maxBytes } = {}) {
   if (!coordinator) return { sinCoordinadora: true };
@@ -461,7 +465,13 @@ function readConversation(file, { coordinator, isCoordinator = false, background
     return { conCoordinadora: out.slice(0, WITH_COORDINATOR).reverse(), ...(arranque ? { arranque } : {}) };
   }
   const conVos = [];
-  const conSesiones = [];
+  // un Map guarda el orden en que aparecen: leyendo hacia atrás, la que habló último va primero
+  const bySession = new Map();
+  const addTo = (sesion, m) => {
+    if (!bySession.has(sesion)) bySession.set(sesion, { sesion, at: m.at, mensajes: [] });
+    const row = bySession.get(sesion);
+    if (row.mensajes.length < WITH_SESSIONS) row.mensajes.push(m);
+  };
   let answer = null;
   let persons = 0;
   eachLineBackward(file, { maxBytes: maxBytes || COORDINATOR_CONVERSATION_BYTES }, (line) => {
@@ -474,14 +484,13 @@ function readConversation(file, { coordinator, isCoordinator = false, background
     const isPeer = line.includes('"kind":"peer"');
     const isSend = line.includes('"SendMessage"');
     const isText = line.includes('"type":"assistant"') && line.includes('"type":"text"');
-    if (!isPerson && !isPeer && !isSend && !isText) return false;
+    if (!isPeer && !isSend && (persons >= FROM_PERSON || (!isPerson && !isText))) return false;
     const d = parsed(line);
     if (!d) return false;
-    if (conSesiones.length < WITH_SESSIONS) {
-      const got = peerOf(d);
-      if (got) conSesiones.push({ de: got.de, a: coordinator, texto: got.texto, at: got.at });
-      for (const s of sentOf(d).reverse()) if (conSesiones.length < WITH_SESSIONS) conSesiones.push({ de: coordinator, a: s.a, texto: s.texto, at: s.at });
-    }
+    const got = peerOf(d);
+    if (got) addTo(got.de, { de: got.de, texto: got.texto, at: got.at });
+    for (const s of sentOf(d).reverse()) if (s.a !== coordinator && !SUBAGENT_ID.test(s.a)) addTo(s.a, { de: coordinator, texto: s.texto, at: s.at });
+    if (persons >= FROM_PERSON) return false;
     if (d.type === 'assistant' && answer === null && d.message) {
       const t = [...textsOf(d.message.content)].reverse().find((x) => x.trim());
       if (t) answer = { quien: 'coordinadora', texto: shownText(t), at: atOf(d) };
@@ -493,9 +502,9 @@ function readConversation(file, { coordinator, isCoordinator = false, background
       answer = null;
       persons += 1;
     }
-    return persons >= FROM_PERSON && conSesiones.length >= WITH_SESSIONS;
+    return false;
   });
-  return { conVos: conVos.reverse(), conSesiones: conSesiones.reverse() };
+  return { conVos: conVos.reverse(), conSesiones: [...bySession.values()].map((s) => ({ ...s, mensajes: s.mensajes.reverse() })) };
 }
 
 module.exports = { readTranscript, codexTranscript, peerMessagesSince, readConversation, coverSecrets, readSessionTokens, contextLimit, encargoOf, HEAD_BYTES, TAIL_BYTES, ENCARGO_MAX, FRASE_MAX };
