@@ -100,6 +100,25 @@ function kindOf(s, fePaths) {
   return (fePaths || []).some((t) => str.includes(t)) || GENERIC_FE_RE.test(str) ? 'fe' : 'be';
 }
 
+// ---------------------------------------------------------------- la historia de una rama
+
+// Las historias del repo, para saber de qué historia es una rama. Un recorrido a medias es «no sé»: una rama de una historia
+// que no se vio se leería como de nadie, o como de la equivocada.
+function catalogoDeHistorias(repoRoot, real) {
+  const discovery = require(path.join(__dirname, 'lib', 'story-discovery.js'));
+  const d = discovery.discoverStories(repoRoot, { cache: false });
+  if (d.partial) return null;
+  return [...d.stories, ...(d.excluded || [])].filter((s) => s && s.path && s.id)
+    .map((s) => ({ numero: String(s.id), archivo: real(path.resolve(repoRoot, s.path)) }));
+}
+
+// Por qué una evidencia siguió contando aunque el archivo cambió: lo que el control afloja se dice.
+function avisoDeLoQueContó({ rel, via, fusion, commit, historia }) {
+  return via
+    ? `${rel}: lo trajo la fusión ${fusion} de esta historia, igual a como estaba su rama a la hora de la evidencia; se supone que la evidencia corrió sobre esa rama → sigue contando.`
+    : `${rel}: lo cambió el commit ${commit} de la historia ${historia}, sólo en una prueba → la evidencia sigue contando.`;
+}
+
 // ---------------------------------------------------------------- parsing helpers
 
 function readStory(storyPath) {
@@ -304,7 +323,11 @@ function readE2eGates(evidenceDirs, sid, gatesLogPath, storyPath) {
           else if (/^##\s/.test(line)) break;
         }
       }
-      gates.push({ path: full, ts: compactTsToMs(m[1]), tsRaw: m[1], verdict, specFilter, specFilters, skipped, mirrored, titulos });
+      // El ancla cuenta sólo si el espejo dice lo mismo: el gate viaja con el código y se edita.
+      const deGate = (content.match(/^- hermanos: (.+)$/m) || [])[1];
+      const anclaEspejo = mirrorLines.find((e) => e.type === 'e2e-gate-anchor' && e.ts === m[1] && e.story === sid);
+      const ancla = deGate && anclaEspejo && deGate === JSON.stringify(anclaEspejo.hermanos) ? anclaEspejo.hermanos : undefined;
+      gates.push({ path: full, ts: compactTsToMs(m[1]), tsRaw: m[1], verdict, specFilter, specFilters, skipped, mirrored, titulos, ancla });
     }
   }
   gates.sort((a, b) => b.ts - a.ts);
@@ -621,6 +644,9 @@ function readSmokeLedger(evidenceDirs, sid, gatesLogPath) {
         l.includes('"type":"smoke-run"') && l.includes(`"ts":"${e.ts}"`) &&
         l.includes(`"story":"${e.story}"`) && l.includes(acsStr) && l.includes('"exit":0'));
       const mirrored = confirmadas.length > 0;
+      // El ancla cuenta sólo si una línea confirmada del espejo trae la misma: el registro viaja con el código y se edita.
+      const delRegistro = e.target && Array.isArray(e.target.hermanos) ? JSON.stringify(e.target.hermanos) : null;
+      const ancla = delRegistro && confirmadas.some((l) => l.includes(`"hermanos":${delRegistro}`)) ? e.target.hermanos : undefined;
       // (DODRT-C8) `--mutates` declarado en smoke-run.sh: cuenta SOLO si una línea
       // confirmada del espejo trae el flag. Es la vía de mutación para productos sin superficie
       // HTTP ni navegador.
@@ -633,7 +659,7 @@ function readSmokeLedger(evidenceDirs, sid, gatesLogPath) {
       // La imagen que el humo guardó con `--capture`, verificada contra el espejo como la salida.
       const imagen = mirrored ? imagenDelHumo(e, dir, confirmadas) : { ruta: null, problema: null };
       // `linea`: la línea entera, para encontrar en git el commit de ESTA corrida; un checkout puede dejarle el `\r`.
-      entries.push({ ...e, path: f, linea: line.replace(/\r$/, ''), tsMs: Date.parse(e.ts), mirrored, mutatesOk, evidenceKind: classifyCmd(e.cmd),
+      entries.push({ ...e, path: f, linea: line.replace(/\r$/, ''), tsMs: Date.parse(e.ts), mirrored, ancla, mutatesOk, evidenceKind: classifyCmd(e.cmd),
         v2, salidaProblema, visual: imagen.ruta, visualProblema: imagen.problema });
     }
   }
@@ -1005,21 +1031,25 @@ function compute(opts) {
   // ¿La evidencia sigue valiendo para todo el código declarado? El archivo más nuevo primero: si ése está antes de la
   // evidencia, todos lo están y no se le pregunta a git. El primero que no cuenta decide, y es el que nombra el aviso.
   codeFiles.sort((a, b) => b.mt - a.mt);
-  const juez = evidenceVsCommit.crearJuez({ repoDelIndice: repoRoot });
+  const historiaPropia = { numero: sid, archivo: companionLib.real(opts.keyStoryPath || storyPath), catalogo: () => catalogoDeHistorias(repoRoot, companionLib.real) };
+  const juez = evidenceVsCommit.crearJuez({ repoDelIndice: repoRoot, historia: repoRoot ? historiaPropia : null });
   const vigencias = new Map();
+  const dejadasContar = new Set();
   const vigenciaDe = (ev, evidencia) => {
     if (!vigencias.has(ev)) {
       let v = { cuenta: true };
+      const contadas = [];
       for (const f of codeFiles) {
         const r = juez.vigencia({ archivo: f.abs, mtimeMs: f.mt, evidencia });
         if (!r.cuenta) { v = { ...r, rel: f.rel }; break; }
+        if (r.via === 'fusion-propia' || r.regla === 6) contadas.push({ ...r, rel: f.rel });
       }
-      vigencias.set(ev, v);
+      vigencias.set(ev, { ...v, contadas: v.cuenta ? contadas : [] });
     }
     return vigencias.get(ev);
   };
-  const vigenciaGate = (g) => vigenciaDe(g, { ruta: g.path, tsMs: g.ts });
-  const vigenciaHumo = (e) => vigenciaDe(e, { ruta: e.path, tsMs: e.tsMs, linea: e.linea });
+  const vigenciaGate = (g) => vigenciaDe(g, { ruta: g.path, tsMs: g.ts, ancla: g.ancla });
+  const vigenciaHumo = (e) => vigenciaDe(e, { ruta: e.path, tsMs: e.tsMs, linea: e.linea, ancla: e.ancla });
   const porQueVencio = (v) => `(${v.rel}: ${evidenceVsCommit.motivoEnPalabras(v)})`;
 
   // --- evidencia runtime 1: gates E2E (frescura BLOQUEANTE + espejo en gates.log OBLIGATORIO)
@@ -1078,6 +1108,11 @@ function compute(opts) {
   if (LEGACY_SMOKE_KINDS) {
     warnings.push('🚨 TYCON_RUNTIME_MATRIX_LEGACY=1 — todo smoke cuenta como RUNTIME sin mirar el comando. Es el bug que este gate vino a arreglar: la matriz PUEDE estar mintiendo. Sacá la variable en cuanto puedas.');
   }
+
+  // Sólo de la evidencia que de verdad cuenta: un gate sin espejo o con pruebas apagadas no cuenta, y avisar por qué
+  // siguió contando uno de sus archivos confundiría.
+  for (const ev of [...freshPassGates, ...freshSmokes]) for (const c of vigencias.get(ev).contadas) dejadasContar.add(avisoDeLoQueContó(c));
+  for (const aviso of dejadasContar) warnings.push(aviso);
 
   // --- imagen de pantalla: de qué AC es cada captura o grabación que la matriz ya puede contar
   const imagenesE2e = imagenesDelE2e(freshPassGates, evKey, sellosDeCapturas(gatesLogPath));
