@@ -24,7 +24,7 @@ open models through [Ollama](guides/integrations/ollama.en.md), and with
 [Cursor](guides/integrations/cursor.en.md). The AI software development life cycle (AI SDLC), step by step:
 
 1. **Request and story:** you say what you want and the agent writes it as a story: what has to be done and how it is
-   tested. A small change goes by short path: the reason in one line and the list of files.
+   tested. Something small goes by short path: the reason in one line and the list of files.
 2. **Approved plan:** the agent builds the plan and shows it to you; it is approved before any code is written, never by itself. Who approves depends on the risk (below).
 3. **Tests and code:** it writes the tests and the code, and runs the tests.
 4. **Review:** on a story, specialized reviewers (security, conventions, coverage) check the change before the commit.
@@ -35,14 +35,16 @@ open models through [Ollama](guides/integrations/ollama.en.md), and with
 **The right measure.** When a product starts it is specified in full, once —product document, architecture, epics
 and stories—; then, story by story.
 
-- **Size decides: story or short path.** The question: is it a small change?
-  - **It is small** if you ask for it in one sentence and, when it is done, you know if it came out right without going
-    through a list: looking at the result and running its tests is enough. Example: "the province dropdown shows the full name instead of the abbreviation". It
+- **Size decides: story or short path.** The question: is it something small? A fix or a new feature: you ask in one
+  sentence, and when it's done you know it came out right without checking a list.
+  - **It is small** if you ask for it in one sentence, knowing it came out right only takes looking at the result and
+    running the tests, and it is one topic, in one session, without waiting on anyone outside. Examples: "the province dropdown shows the full name instead of the abbreviation" or "a button that exports this table to Excel". It
     goes by **short path**.
   - **It is not small** if knowing it is complete takes a list of criteria, if it takes more than one session or if it
     waits on someone outside. Example: "the dropdown loads its options from the database and remembers the last
     choice". It goes by **story**.
   - **If it bundles several topics**, it is not small: it is several short paths, or a story.
+  - **Risk is another matter.** A small high-risk feature also goes by short path, and the person approves it.
 
   **Who decides and who checks.** Whoever opens the work judges the size, but if you work with a coordinating session,
   you do not decide alone: the short path is approved by the coordinating session or you. The harness enforces it:
@@ -66,7 +68,7 @@ The harness brakes, controls and control signatures belong to whoever maintains 
 
 ```mermaid
 flowchart TB
-  pedir(["<b>Request</b><br/>👤 You"]) --> chico{"<b>Is it a small change?</b>"}
+  pedir(["<b>Request</b><br/>👤 You"]) --> chico{"<b>Is it something small?</b><br/>A fix or a new feature: you ask in one sentence,<br/>and when it's done you know it came out right without checking a list"}
   chico -- "Yes · Short path" --> r1
   chico -- "No · Story" --> h1
   subgraph corto [" "]

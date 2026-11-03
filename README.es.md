@@ -24,7 +24,7 @@ modelos abiertos vía [Ollama](guides/integrations/ollama.md), y con [Cursor](gu
 El ciclo de desarrollo con IA (AI SDLC), paso por paso:
 
 1. **Pedido e historia:** contás qué querés y el agente lo escribe como una historia (story): qué hay que hacer y cómo
-   se prueba. Un cambio chico va por camino corto: el motivo en una línea y la lista de archivos.
+   se prueba. Algo chico va por camino corto: el motivo en una línea y la lista de archivos.
 2. **Plan aprobado:** el agente arma el plan y te lo muestra; se aprueba antes de programar, nunca solo. Quién lo aprueba depende del riesgo (más abajo).
 3. **Pruebas y código:** escribe las pruebas y el código, y corre las pruebas.
 4. **Revisión:** en una historia, revisores especializados (seguridad, convenciones, cobertura) miran el cambio antes del commit.
@@ -35,13 +35,15 @@ El ciclo de desarrollo con IA (AI SDLC), paso por paso:
 **La medida justa.** Al arrancar un producto se especifica entero, una vez —documento de producto, arquitectura,
 épicos e historias—; después, historia por historia.
 
-- **El tamaño decide: historia o camino corto.** La pregunta: ¿es un cambio chico?
-  - **Es chico** si lo pedís en una frase y, al terminar, sabés si quedó bien sin revisar una lista: alcanza con mirar
-    el resultado y correr sus pruebas. Ejemplo: «el combo de provincia muestra el nombre completo en vez de la sigla». Va por **camino corto**.
+- **El tamaño decide: historia o camino corto.** La pregunta: ¿es algo chico? Un arreglo o una función nueva: lo pedís en
+  una frase, y al terminar sabés si quedó bien sin revisar una lista.
+  - **Es chico** si lo pedís en una frase, para saber que quedó bien alcanza con mirar el resultado y correr las pruebas,
+    y es un solo tema, en una sesión, sin esperar a nadie de afuera. Ejemplos: «el combo de provincia muestra el nombre completo en vez de la sigla» o «un botón que exporta esta tabla a Excel». Va por **camino corto**.
   - **No es chico** si para saber que quedó completo hace falta una lista de criterios, si lleva más de una sesión o si
     espera a alguien de afuera. Ejemplo: «el combo trae las opciones de la base y recuerda la última elección». Va por
     **historia**.
   - **Si junta varios temas**, no es chico: son varios caminos cortos, o una historia.
+  - **El riesgo es otra cosa.** Una función chica de riesgo alto también va por camino corto, y la aprueba la persona.
 
   **Quién decide y quién controla.** El tamaño lo juzga quien abre el trabajo, pero si trabajás con una sesión
   coordinadora, no lo decidís solo: el camino corto lo aprueba la sesión coordinadora o vos. Lo hace cumplir el arnés:
@@ -66,7 +68,7 @@ Los frenos, los controles y las firmas de control del arnés son de quien lo man
 
 ```mermaid
 flowchart TB
-  pedir(["<b>Pedir</b><br/>👤 Vos"]) --> chico{"<b>¿Es un cambio chico?</b>"}
+  pedir(["<b>Pedir</b><br/>👤 Vos"]) --> chico{"<b>¿Es algo chico?</b><br/>Un arreglo o una función nueva: lo pedís en una frase,<br/>y al terminar sabés si quedó bien sin revisar una lista"}
   chico -- "Sí · Camino corto" --> r1
   chico -- "No · Historia" --> h1
   subgraph corto [" "]
