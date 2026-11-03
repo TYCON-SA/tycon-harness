@@ -287,6 +287,7 @@ function renderCrew(){const c=document.getElementById("crew");c.replaceChildren(
 function ficha(a){const r=[],add=(k,v,x)=>{if(v!=null&&v!=="")r.push({k,v,...x})};
   add("Trabajo",a.titulo);add("De la historia",a.historia);add("Encargo",a.encargo);
   if(a.haciendoAhora)add("Haciendo ahora",a.haciendoAhora);else if(a.haciendo!==a.titulo&&!SOLO_COORDINA.test(a.haciendo||""))add("Haciendo",a.haciendo);
+  if(a.agentesAhora)r.push({k:"",v:a.agentesAhora});
   add("Última acción",a.ultimaAccion);add("Espera",a.espera);add("Parada",a.parada);add("Novedades",a.callada);
   const ms=AST[a.mientrasEstado];add("Mientras tanto",a.mientras?a.mientras+(ms?" ("+ms[0].toLowerCase()+")":""):"");
   add("En pausa",a.enPausa);

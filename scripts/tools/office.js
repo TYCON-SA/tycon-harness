@@ -225,6 +225,64 @@ function runningTests(pid, processes, tool = 'claude') {
   return tool === 'codex' ? null : false;
 }
 
+// Un agente de Codex en la línea de un proceso: `codex exec`, directo o por su lanzador de Node. Se mira qué programa corre:
+// un comando que sólo nombra a Codex (`grep "codex exec"`) no es un agente.
+const CODEX_AGENT = /^(?:\S*[\\/])?(?:(?:node|bun)(?:\.exe)?\s+\S*[\\/])?codex(?:\.js|\.exe)?\s+exec(?:\s|$)/i;
+// Un agente de Claude corre dentro de su sesión, sin proceso propio: cuenta como activo si su archivo se tocó hace menos que esto
+const CLAUDE_AGENT_ACTIVE_MS = 3 * 60000;
+// Una tanda de agentes con la carpeta quieta hace más que esto ya terminó: sus archivos no se miran
+const AGENT_BATCH_KEEP_MS = 6 * 3600000;
+const REVIEW_STEPS = new Set(['reviewers', 'adversarial-pass', 'Revisores', 'Pase adversarial']);
+
+/**
+ * Cuántos agentes de Codex corren bajo este proceso, mirando sus descendientes en `processes`. El lanzador de Node y su
+ * programa son el mismo agente: al encontrar uno no se sigue bajando. null sin la lista de procesos (Windows) o sin el proceso.
+ */
+function codexAgentsUnder(pid, processes) {
+  if (!Array.isArray(processes) || !Number.isInteger(pid) || pid <= 0) return null;
+  const children = new Map();
+  for (const p of processes) { if (!children.has(p.ppid)) children.set(p.ppid, []); children.get(p.ppid).push(p); }
+  const seen = new Set([pid]);
+  const queue = [pid];
+  let count = 0;
+  while (queue.length) {
+    for (const c of children.get(queue.pop()) || []) {
+      if (seen.has(c.pid)) continue;
+      seen.add(c.pid);
+      if (CODEX_AGENT.test(c.comando)) count += 1;
+      else queue.push(c.pid);
+    }
+  }
+  return count;
+}
+
+/** Cuántos agentes de Claude de esta conversación tocaron su archivo hace poco: una cuenta aproximada. Sólo mira fechas. */
+function claudeAgentsActive(transcript, nowMs) {
+  const root = path.join(path.dirname(transcript), path.basename(transcript, '.jsonl'), 'subagents');
+  const mtimeOf = (file) => { try { return fs.statSync(file).mtimeMs; } catch { return null; } };
+  const namesIn = (dir) => { try { return fs.readdirSync(dir); } catch { return []; } };
+  const activeIn = (dir) => namesIn(dir).filter((n) => /^agent-.*\.jsonl$/.test(n)).filter((n) => {
+    const at = mtimeOf(path.join(dir, n));
+    return at != null && nowMs - at < CLAUDE_AGENT_ACTIVE_MS;
+  }).length;
+  let count = activeIn(root);
+  const batches = path.join(root, 'workflows');
+  for (const n of namesIn(batches)) {
+    const dir = path.join(batches, n);
+    const at = mtimeOf(dir);
+    if (at != null && nowMs - at < AGENT_BATCH_KEEP_MS) count += activeIn(dir);
+  }
+  return count;
+}
+
+// Lo que dice una sesión de sus agentes: «Unos» si la cuenta incluye agentes de Claude, que es aproximada.
+function agentsSaid({ codex, claude }, reviewing) {
+  const total = codex + claude;
+  const doing = reviewing ? 'revisando' : 'trabajando';
+  if (total === 1) return `1 agente ${doing}`;
+  return `${claude ? 'Unos ' : ''}${total} agentes ${doing}`;
+}
+
 // El estado real, corregido por la conversación: quien la sigue escribiendo mucho después de que su estado dijo parada no
 // paró; y si dejó de escribir hace rato, paró cuando dejó de escribir.
 function notStoppedYet(real, lastWrite, statusAt, nowMs) {
@@ -293,7 +351,7 @@ function stuckGroups(agents, coordinatorName) {
  * Devuelve `{ data, promises }`, con las promesas ya al día para guardarlas.
  */
 function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorName = null, promises = {}, nowMs = Date.now(),
-  sessionFiles = [], codexNames: cxNames = new Map(), quietMin = QUIET_DEFAULT_MIN, isAlive, board = null, prAnswers = new Map(), transcripts = null, lastWrites = new Map(), processes = null, openPrs = [], openPrsNote = null, waitingPrs = null, testSessions = new Set(), personSessions = new Set(), otherProjects = new Set() } = {}) {
+  sessionFiles = [], codexNames: cxNames = new Map(), runningAgents = new Map(), quietMin = QUIET_DEFAULT_MIN, isAlive, board = null, prAnswers = new Map(), transcripts = null, lastWrites = new Map(), processes = null, openPrs = [], openPrsNote = null, waitingPrs = null, testSessions = new Set(), personSessions = new Set(), otherProjects = new Set() } = {}) {
   const kept = {};
   for (const [k, p] of Object.entries(promises || {})) {
     if (p && Number.isFinite(p.at) && Number.isFinite(p.seen) && nowMs - p.seen < PROMISE_KEEP_MS) kept[k] = p;
@@ -304,7 +362,9 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
   const used = new Set();
   // la sesión de cada tarjeta: desempata dos con el mismo nombre, para que no cambien de escritorio
   const sidOf = new Map();
-  const quiet = Number.isFinite(quietMin) && quietMin > 0 ? quietMin : QUIET_DEFAULT_MIN;
+  // el paso de cada tarjeta de una ejecución, para decir si sus agentes revisan
+  const stepOf = new Map();
+  const quiet =Number.isFinite(quietMin) && quietMin > 0 ? quietMin : QUIET_DEFAULT_MIN;
   const fileEnd = (f) => { const t = Date.parse(f && f.endAt); return Number.isFinite(t) ? t : null; };
   // la última novedad, para la página y su reloj: quieta más que el umbral, «sin novedades desde las HH:MM»
   const novelty = (a, f, ...newer) => {
@@ -487,6 +547,7 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     else if (d.sid != null && otherProjects.has(String(d.sid))) { a.comoTrabaja = 'Otro proyecto'; a.otroProyecto = true; }
     if (f && (QUIET_STATES.has(a.estado) || a.estado === 'parada')) novelty(a, f, x.activityAt, lastWrite);
     sidOf.set(a, d.sid);
+    if (x.current) stepOf.set(a, x.current);
     agents.push(a);
   });
   // la coordinadora quieta no está libre: coordina a las demás. Una libre que espera algo, por su archivo o por lo que dice
@@ -559,6 +620,18 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     }
     sidOf.set(a, sid);
     agents.push(a);
+  }
+  // la sesión dice cuántos agentes corren ahora; con agentes corriendo no está libre
+  const notFree = new Set();
+  for (const a of agents) {
+    const running = runningAgents.get(String(sidOf.get(a)));
+    if (!running || !(running.codex + running.claude)) continue;
+    const said = agentsSaid(running, REVIEW_STEPS.has(stepOf.get(a)) || REVIEW_STEPS.has(a.paso));
+    if (a.estado === 'libre') {
+      a.estado = 'trabajando';
+      a.haciendo = said;
+      notFree.add(a.nombre);
+    } else a.agentesAhora = said;
   }
   // un orden fijo para las tarjetas y los escritorios: la coordinadora primero y después por nombre, y entre nombres iguales
   // por sesión. Con más sesiones que escritorios, se eligen primero las que trabajan; entre los elegidos el orden sigue
@@ -638,7 +711,7 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
   };
   // la tabla dice lo mismo que las tarjetas, en llano
   const rows = agents.filter((a) => a.tipo).map((a) => ({ work: a.titulo || '', state: a.mientras ? `${a.haciendo} Mientras tanto: ${a.mientras}.` : a.haciendo, end: a.fin ? a.fin.hora + (a.fin.dif ? ` · ${a.fin.dif}` : '') : '', session: a.nombre, folder: a.carpeta || '' }));
-  return { data: { agents, items, kanban, meta, rows, free: wip.free || [], unreadable: wip.unreadable || [] }, promises: kept };
+  return { data: { agents, items, kanban, meta, rows, free: (wip.free || []).filter((name) => !notFree.has(name)), unreadable: wip.unreadable || [] }, promises: kept };
 }
 
 // Una carpeta que quedó sin terminar, en llano y con qué hacer.
@@ -1410,6 +1483,41 @@ function transcriptOf(dir, sid, cwd) {
   return null;
 }
 
+/**
+ * Los hilos de Codex que no son sesiones de una persona: los que lanzó un guion (`exec`) y los subagentes, de la base más
+ * nueva, en sólo lectura. Sin Codex, ninguno. Si la base no se puede leer no se sabe: no se oculta nada y se dice una vez.
+ */
+function codexAgentThreads(codexHome, problems) {
+  const unknown = () => { problems.push('No pude leer la lista de sesiones de Codex: alguna de estas personas puede ser un agente.'); return new Set(); };
+  let bases;
+  try { bases = fs.readdirSync(codexHome).filter((f) => /^state_\d+\.sqlite$/.test(f)); } catch (e) { return e.code === 'ENOENT' ? new Set() : unknown(); }
+  const newest = bases.sort((a, b) => Number(/\d+/.exec(a)[0]) - Number(/\d+/.exec(b)[0])).pop();
+  if (!newest) return new Set();
+  let db = null;
+  try {
+    const { DatabaseSync } = require('node:sqlite');
+    db = new DatabaseSync(path.join(codexHome, newest), { readOnly: true });
+    const cols = new Set(db.prepare('PRAGMA table_info(threads)').all().map((c) => c.name));
+    const where = [cols.has('source') ? "source = 'exec'" : null, cols.has('thread_source') ? "thread_source = 'subagent'" : null].filter(Boolean);
+    if (!where.length) return unknown();
+    return new Set(db.prepare(`SELECT id FROM threads WHERE ${where.join(' OR ')}`).all().map((r) => String(r.id)));
+  } catch { return unknown(); } finally { try { if (db) db.close(); } catch { /* ya cerrada */ } }
+}
+
+// Los agentes que corren ahora en cada sesión con persona en la oficina: `sesión → { codex, claude }`. Los de Codex, bajo su
+// proceso; una sesión de Codex no da el suyo y no se cuentan.
+function countRunningAgents(wip, sessions, processes, { dir, nowMs }) {
+  const out = new Map();
+  for (const p of peopleOf(wip)) {
+    const session = sessions.get(p.sid);
+    const codex = (session && session.alive && codexAgentsUnder(session.pid, processes)) || 0;
+    const file = transcriptOf(dir, p.sid, p.cwd);
+    const claude = file ? claudeAgentsActive(file, nowMs) : 0;
+    if (codex || claude) out.set(p.sid, { codex, claude });
+  }
+  return out;
+}
+
 // Cuándo se escribió por última vez la conversación de cada sesión de /wip, por sesión: sólo la fecha del archivo.
 function readLastWrites(wip, { home, projectsDir }) {
   const out = new Map();
@@ -1536,7 +1644,13 @@ async function collect(opts = {}) {
   // los archivos de estado de cada sesión; uno que no se puede usar se dice, y esa sesión sale como la deduce /wip
   const ss = sessionState.readAll(sdir);
   problems.push(...ss.problems);
-  const cxNames = ss.states.some((s) => s.tool === 'codex' && !s.name) ? codexNames(opts.codexHome || path.join(home, '.codex'), problems) : new Map();
+  // un agente lanzado por un guion escribe su archivo como cualquier Codex, pero no es una sesión: desde acá no existe. El que
+  // anotó un trabajo o va por un paso sí lo es
+  const mayBeAgent = (s) => s.tool === 'codex' && !s.step && (!s.sentence || s.sentence === sessionState.NO_PIPELINE);
+  const agentThreads = ss.states.some(mayBeAgent) ? codexAgentThreads(opts.codexHome || path.join(home, '.codex'), problems) : new Set();
+  const isAgent = (s) => mayBeAgent(s) && agentThreads.has(String(s.session));
+  const states = ss.states.filter((s) => !isAgent(s));
+  const cxNames = states.some((s) => s.tool === 'codex' && !s.name) ? codexNames(opts.codexHome || path.join(home, '.codex'), problems) : new Map();
   // el umbral de la sesión callada: un número entero de minutos, o el de por defecto
   let q;
   try { q = await (opts.quietMinutes || readQuietMinutes)(); } catch (e) { q = { code: 2, out: e.message }; }
@@ -1549,11 +1663,12 @@ async function collect(opts = {}) {
   if (board.board) problems.push(...board.board.avisos);
   const prAnswers = await askBoardPrs(board.board, wip, opts, problems);
   await askHalfwayPrs(wip, opts);
-  const transcripts = opts.noTranscripts ? null : readTranscripts(wip, ss.states, { home, nowMs, projectsDir: opts.projectsDir, codexHome: opts.codexHome }, problems);
+  const transcripts = opts.noTranscripts ? null : readTranscripts(wip, states, { home, nowMs, projectsDir: opts.projectsDir, codexHome: opts.codexHome }, problems);
   const lastWrites = readLastWrites(wip, { home, projectsDir: opts.projectsDir });
-  // los procesos se leen sólo si alguien está en un paso de pruebas
-  const needsTree = (wip.extra || []).some((x) => x && x.kind === 'pipeline');
+  // los procesos se leen sólo si alguien está en un paso de pruebas o hay un agente de Codex sin terminar
+  const needsTree = (wip.extra || []).some((x) => x && x.kind === 'pipeline') || ss.states.some((s) => isAgent(s) && s.busy !== false);
   const processes = opts.processes !== undefined ? opts.processes : needsTree ? require(path.join(ROOT, 'scripts', 'lib', 'owner-window.js')).leerArbol() : null;
+  const runningAgents = countRunningAgents(wip, sessions, processes, { dir: opts.projectsDir || path.join(claudeDir(home), 'projects'), nowMs });
   const open = readOpenPrs(sdir, nowMs);
   const waitingPrs = await askWaitingPrs(wip, open, opts, remembered.prsEnded);
   const sessionTables = readSessionTables(sdir, nowMs, problems);
@@ -1564,9 +1679,9 @@ async function collect(opts = {}) {
   const tablePrs = await askTablePrs(board.board, sessionTables, wip, open, opts, remembered.prsEnded, remoteOf);
   const testSessions = wip.testSids || new Set();
   const personSessions = new Set([...sessions].filter(([, s]) => s.kind === 'interactive').map(([sid]) => String(sid)));
-  const { data, promises } = buildOffice({ wip, signatures, coordinatorSid, coordinatorName, promises: saved.promises, nowMs, sessionFiles: ss.states, codexNames: cxNames, quietMin, board: board.board, prAnswers, transcripts, lastWrites, processes, openPrs: open.prs, openPrsNote: open.note, waitingPrs, testSessions, personSessions, otherProjects: otherProjectsOf(wip, open, remoteOf) });
+  const { data, promises } = buildOffice({ wip, signatures, coordinatorSid, coordinatorName, promises: saved.promises, nowMs, sessionFiles: states, codexNames: cxNames, runningAgents, quietMin, board: board.board, prAnswers, transcripts, lastWrites, processes, openPrs: open.prs, openPrsNote: open.note, waitingPrs, testSessions, personSessions, otherProjects: otherProjectsOf(wip, open, remoteOf) });
   // sólo con la oficina abierta: la primera pasada lee conversaciones enteras, y la foto fija y `--json` empezarían de cero cada vez
-  if (opts.envelopes && !opts.noTranscripts) data.tokens = readTokens(wip, ss.states, remembered.tokens, { home, nowMs, projectsDir: opts.projectsDir, codexHome: opts.codexHome, cxNames });
+  if (opts.envelopes && !opts.noTranscripts) data.tokens = readTokens(wip, states, remembered.tokens, { home, nowMs, projectsDir: opts.projectsDir, codexHome: opts.codexHome, cxNames });
   // lo del tablero que no es una fila: su resumen, lo que dice que le toca al dueño y cuándo se escribió
   data.tablas = buildTables({ board: board.board, boardWrittenAt: board.writtenAt, sessionTables, kanban: data.kanban, nowMs, agents: data.agents, prsEnded: tablePrs });
   data.tablero = board.board ? { actualizado: board.board.actualizado, resumen: board.board.resumen, teToca: board.board.teToca } : null;
@@ -1730,4 +1845,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, buildTables, writeTables, readTranscripts, readLastWrites, MODULES };
+module.exports = { prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, codexAgentsUnder, claudeAgentsActive,buildTables, writeTables, readTranscripts, readLastWrites, MODULES };

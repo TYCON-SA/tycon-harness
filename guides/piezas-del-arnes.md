@@ -1220,6 +1220,8 @@ _(scripts/tools/work-in-progress.js + commands/wip.md; en 3D y en vivo: scripts/
 
 **Por qué existe:** Saber qué hace cada sesión pedía leer los marcadores. La hora de fin es la mediana de los pasos medidos, fija al entrar a cada paso; sin datos, lo dice.
 
+**Los agentes de una sesión:** En `/office`, un agente no es una persona: el Codex lanzado por un guion no ocupa escritorio ni tarjeta, y la sesión dice cuántos corren ahora. Los de Codex se cuentan bajo el proceso de la sesión, y los de Claude por sus archivos de los últimos 3 minutos, por eso esa cuenta dice «Unos». No se sabe quién lanzó a los que ya terminaron, ni se cuentan los de Codex en Windows o los que lanza una sesión de Codex.
+
 **Quién la usa:** Quien coordina varias sesiones. Sólo lee: no limpia ni adopta.
 
 **Dónde se prueba:** `scripts/tests/`: `work-in-progress`, `office*`, `session-state`, `session-transcript`

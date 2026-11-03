@@ -3315,3 +3315,132 @@ test('T267 Conversation_OnlyInItsWindow: el botón va sólo con la oficina viva,
   assert.strictEqual(html.indexOf('fetch("conversacion'), html.indexOf('fetch("conversacion', opensAt), 'se lee sólo al abrirla');
   assert.doesNotMatch(html.slice(html.indexOf('function abrir(nombre'), html.indexOf('los sobres: quién')), /conversacion|pintarCharla/, 'el detalle ya no la lee');
 });
+
+// A toy Codex base: one thread per entry, `{ id, source, thread_source }`. The real base has many more columns.
+function toyCodexBase(m, threads) {
+  const { DatabaseSync } = require('node:sqlite');
+  const dir = path.join(m.home, '.codex');
+  fs.mkdirSync(dir, { recursive: true });
+  const db = new DatabaseSync(path.join(dir, 'state_5.sqlite'));
+  db.exec('CREATE TABLE threads (id TEXT, name TEXT, source TEXT, thread_source TEXT)');
+  const add = db.prepare('INSERT INTO threads (id, source, thread_source) VALUES (?, ?, ?)');
+  for (const t of threads) add.run(t.id, t.source, t.thread_source || 'user');
+  db.close();
+  return dir;
+}
+const SESSION_STATE = require(path.join(__dirname, '..', 'lib', 'session-state.js'));
+const codexFile = (m, sid, patch = {}, now = NOW) => SESSION_STATE.update(m.state, sid, { sentence: SESSION_STATE.NO_PIPELINE, busy: false, ...patch }, { create: true, tool: 'codex', now });
+
+test('T296 CodexAgentsUnder: cuenta los agentes bajo la sesión, una vez cada uno, y no lo que sólo los nombra', () => {
+  const { codexAgentsUnder } = require(OFFICE);
+  const tree = [
+    { pid: 11, ppid: 10, comando: '/bin/zsh -c codex exec -p revisor' },
+    { pid: 12, ppid: 11, comando: 'node /opt/node/bin/codex exec -p revisor --sandbox read-only' },
+    { pid: 13, ppid: 12, comando: '/opt/node/lib/vendor/bin/codex exec -p revisor --sandbox read-only' },
+    { pid: 14, ppid: 10, comando: 'codex exec ok' },
+    { pid: 15, ppid: 10, comando: 'grep codex exec notas.txt' },
+    { pid: 16, ppid: 10, comando: 'node guion.js codex exec' },
+    { pid: 17, ppid: 10, comando: 'codex resume' },
+    { pid: 21, ppid: 20, comando: 'codex exec de otra sesion' },
+  ];
+  assert.strictEqual(codexAgentsUnder(10, tree), 2, 'el lanzador de Node y su programa son uno solo');
+  assert.strictEqual(codexAgentsUnder(99, tree), 0);
+  assert.strictEqual(codexAgentsUnder(10, null), null, 'sin la lista de procesos no se sabe');
+  assert.strictEqual(codexAgentsUnder(null, tree), null, 'sin el proceso de la sesión tampoco');
+});
+
+test('T297 ClaudeAgentsActive: cuenta los archivos de agentes tocados hace poco, sueltos y en tandas', () => {
+  const { claudeAgentsActive } = require(OFFICE);
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'office-agentes-'));
+  const transcript = path.join(root, 's.jsonl');
+  const subagents = path.join(root, 's', 'subagents');
+  const batch = path.join(subagents, 'workflows', 'wf_nueva');
+  const oldBatch = path.join(subagents, 'workflows', 'wf_vieja');
+  fs.mkdirSync(batch, { recursive: true });
+  fs.mkdirSync(oldBatch, { recursive: true });
+  const now = Date.now();
+  const write = (file, at) => { fs.writeFileSync(file, '{}\n'); fs.utimesSync(file, new Date(at), new Date(at)); };
+  write(path.join(subagents, 'agent-a.jsonl'), now - 60000);
+  write(path.join(subagents, 'agent-viejo.jsonl'), now - 4 * 60000);
+  write(path.join(subagents, 'agent-a.meta.json'), now - 60000);
+  write(path.join(batch, 'agent-b.jsonl'), now - 120000);
+  write(path.join(batch, 'journal.jsonl'), now - 1000);
+  write(path.join(oldBatch, 'agent-c.jsonl'), now - 1000);
+  fs.utimesSync(oldBatch, new Date(now - 7 * 3600000), new Date(now - 7 * 3600000));
+  assert.strictEqual(claudeAgentsActive(transcript, now), 2);
+  assert.strictEqual(claudeAgentsActive(path.join(root, 'sin-agentes.jsonl'), now), 0);
+});
+
+test('T298 Agents_SaidOnTheCard: cuántos y qué hacen; «Unos» sólo con agentes de Claude, y nada sin agentes', () => {
+  const said = (running, extra) => byName(buildOffice({
+    wip: wip([{ session: 'Tero', sid: 't', extra }]), runningAgents: running ? new Map([['t', running]]) : new Map(), nowMs: NOW,
+  }).data, 'Tero').agentesAhora;
+  const adversarial = { kind: 'pipeline', current: 'adversarial-pass' };
+  assert.strictEqual(said({ codex: 3, claude: 0 }, adversarial), '3 agentes revisando');
+  assert.strictEqual(said({ codex: 3, claude: 0 }, { kind: 'pipeline', current: 'reviewers' }), '3 agentes revisando');
+  assert.strictEqual(said({ codex: 3, claude: 0 }, { kind: 'pipeline', current: 'implement' }), '3 agentes trabajando');
+  assert.strictEqual(said({ codex: 3, claude: 0 }, { kind: 'loose' }), '3 agentes trabajando');
+  assert.strictEqual(said({ codex: 1, claude: 0 }, adversarial), '1 agente revisando');
+  assert.strictEqual(said({ codex: 1, claude: 2 }, adversarial), 'Unos 3 agentes revisando');
+  assert.strictEqual(said({ codex: 0, claude: 3 }, { kind: 'loose' }), 'Unos 3 agentes trabajando');
+  assert.strictEqual(said(null, adversarial), undefined, 'sin agentes el renglón no aparece');
+  const html = page({ agents: [], items: [], kanban: null, meta: null });
+  assert.match(html.slice(html.indexOf('function ficha(a)')), /if\(a\.agentesAhora\)r\.push\(\{k:"",v:a\.agentesAhora\}\)/, 'la tarjeta y el panel lo dicen');
+});
+
+test('T299 Agents_NotFree: una sesión quieta con agentes corriendo trabaja y sale de «Libres»; sin agentes sigue libre', () => {
+  const { data } = buildOffice({
+    wip: wip([], { free: ['Tero', 'Hornero'], freeSids: ['t', 'h'] }), runningAgents: new Map([['t', { codex: 0, claude: 2 }]]), nowMs: NOW,
+  });
+  assert.strictEqual(byName(data, 'Tero').estado, 'trabajando');
+  assert.strictEqual(byName(data, 'Tero').haciendo, 'Unos 2 agentes trabajando');
+  assert.strictEqual(byName(data, 'Hornero').estado, 'libre');
+  assert.deepStrictEqual(data.free, ['Hornero']);
+});
+
+test('T300 Agents_NotSessions: el Codex de un guion no ocupa lugar; una sesión de Codex y el que corre una ejecución sí', async () => {
+  const m = parkMachine();
+  const now = Date.now();
+  const codexHome = toyCodexBase(m, [
+    { id: '01a19f73-aaaa', source: 'exec' }, { id: '01a19f73-bbbb', source: 'exec' }, { id: 'sub-1', source: 'cli', thread_source: 'subagent' },
+    { id: 'persona', source: 'cli' }, { id: 'exec-con-paso', source: 'exec' }, { id: 'exec-con-trabajo', source: 'exec' },
+  ]);
+  for (const sid of ['01a19f73-aaaa', '01a19f73-bbbb', 'sub-1', 'persona']) codexFile(m, sid, {}, now);
+  codexFile(m, 'exec-con-paso', { step: 'Implementar' }, now);
+  codexFile(m, 'exec-con-trabajo', { sentence: 'Arregla los avisos.' }, now);
+  const data = await collectAt(m, now, { codexHome, processes: null });
+  const names = data.agents.map((a) => a.nombre);
+  assert.ok(!names.some((n) => n.startsWith('01a19f73') || n.startsWith('sub-1')), `salieron como personas: ${names}`);
+  for (const sid of ['persona', 'exec-con-paso', 'exec-con-trabajo']) assert.ok(names.includes(sid.slice(0, 8)), `falta ${sid}: ${names}`);
+  assert.deepStrictEqual(data.unreadable.filter((p) => /lista de sesiones de Codex/.test(p)), []);
+});
+
+test('T301 Agents_UnknownBase: si la base de Codex no se puede leer no se oculta a nadie, y se dice una sola vez', async () => {
+  const m = parkMachine();
+  const now = Date.now();
+  const dir = path.join(m.home, '.codex');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'state_5.sqlite'), 'esto no es una base');
+  codexFile(m, 'exec-1', {}, now);
+  codexFile(m, 'exec-2', {}, now);
+  const data = await collectAt(m, now, { codexHome: dir, processes: null });
+  assert.ok(data.agents.some((a) => a.nombre === 'exec-1'));
+  assert.ok(data.agents.some((a) => a.nombre === 'exec-2'));
+  const said = data.unreadable.filter((p) => p === 'No pude leer la lista de sesiones de Codex: alguna de estas personas puede ser un agente.');
+  assert.strictEqual(said.length, 1);
+});
+
+test('T302 Agents_CountedForTheirSession: la foto cuenta los agentes bajo el proceso de la sesión; sin procesos no dice cuántos', async () => {
+  const m = parkMachine();
+  const now = Date.now();
+  const codexHome = toyCodexBase(m, [{ id: 'agente-1', source: 'exec' }]);
+  codexFile(m, 'agente-1', { busy: true }, now);
+  fs.writeFileSync(path.join(m.sessions, `${process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: 'tero', name: 'Tero', status: 'idle', statusUpdatedAt: now - 3600000, updatedAt: now - 3600000 }));
+  const processes = [{ pid: process.pid + 100000, ppid: process.pid, comando: 'node /x/bin/codex exec -p revisor' }];
+  const withTree = await collectAt(m, now, { codexHome, processes });
+  assert.strictEqual(byName(withTree, 'Tero').haciendo, '1 agente trabajando');
+  assert.strictEqual(byName(withTree, 'agente-1'), undefined);
+  const noTree = await collectAt(m, now, { codexHome, processes: null });
+  assert.strictEqual(byName(noTree, 'Tero').estado, 'libre', 'sin la lista de procesos no dice cuántos, y nunca dice 0');
+  assert.ok(!/agente/.test(JSON.stringify(byName(noTree, 'Tero'))));
+});
