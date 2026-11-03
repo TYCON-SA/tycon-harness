@@ -1400,6 +1400,15 @@ pasó el escáner y su firma se verificó; `stable` nunca vuelve atrás. Con eso
   ese candado: así se ve aunque el candado haya vencido, sin pasar antes por su inicio de sesión. El actualizador cambia
   la imagen, no la configuración del candado. Se hace una vez, a mano, con la orden de la receta de tu entorno (en su
   «Inicio de sesión»). Las instalaciones nuevas ya lo traen.
+- **El mismo paso, al pasar a una versión con las oficinas.** Las máquinas no tienen cómo pasar el candado de la
+  plataforma, así que `/live/machine` y `/live/enroll` tienen que quedar fuera. Sin eso, la prueba sin sesión avisa
+  «falta el paso de una vez», sin fallar: una organización que no usa oficinas no lo necesita. En Azure, es la misma orden de `--excluded-paths` de la receta, que ya las nombra. Hacelo
+  antes de poner `site.url` en el perfil.
+- **Y que el sitio vea la dirección de quien pide.** Detrás de un intermediario, todas las conexiones llegan desde su
+  dirección, y los topes por dirección valdrían para toda internet: dos conexiones sin firmar frenarían a cualquier
+  máquina. Las instalaciones nuevas ya lo traen. En una ya instalada, poné `SITE_TRUST_PROXY=1` en las variables del sitio
+  (la receta de tu entorno, en su «Inicio de sesión», trae la orden). Sólo si delante hay un intermediario: sin él,
+  cualquiera inventaría su dirección.
 
 ### Las dos formas de arrancarlo
 
@@ -1458,7 +1467,7 @@ quien corre el alta, como los otros secretos. Sin los dos, la pestaña Configura
 - **Inicio de sesión:** dos candados. Delante, el inicio integrado de la plataforma con el mismo registro de Entra ID.
   Detrás, el del sitio, que decide con su lista. `/healthz`, `/livez`, la página «Saliste» con lo que carga y `/idioma` quedan fuera del candado (sin eso, con el
   candado vencido, «Saliste» pasa antes por su inicio de sesión). Un sitio ya instalado se corrige una vez:
-  `az containerapp auth update -g <grupo> -n <app> --excluded-paths /healthz,/livez,/saliste,/idioma,/static/site.css,/static/site.js,/static/fonts/lato-400.woff2,/static/fonts/lato-700.woff2`. Con `microsoftAccounts`
+  `az containerapp auth update -g <grupo> -n <app> --excluded-paths /healthz,/livez,/saliste,/idioma,/static/site.css,/static/site.js,/static/fonts/lato-400.woff2,/static/fonts/lato-700.woff2,/live/machine,/live/enroll`; y para que los topes por dirección valgan, `az containerapp update -g <grupo> -n <app> --set-env-vars SITE_TRUST_PROXY=1`. Con `microsoftAccounts`
   en el archivo de configuración se elige el modo:
   - `organization` (por defecto): un solo inquilino. Si el registro tiene «asignación requerida», las personas se
     asignan una por una en el portal (asignar un grupo pide una licencia Entra ID P1/P2).

@@ -491,11 +491,12 @@ function runVariant({ ctx, v, facts, save, lab, out, platform, allowTemp, baseEn
     // (el registro recorta los renglones largos: la misma línea, cortada, no es otra — se identifica por su comienzo, con
     // qué paquetes y qué piezas)
     const keyOf = (l) => { const m = /(?:se sacaron|sacaría) \d+ pieza\(s\) de paquete\(s\) que la organización no activa \([^)]*\)/.exec(l); return m ? m[0] : null; };
-    const found = sessions.flatMap((x) => [...linesOf(x), ...(x.log_lines || [])]).flatMap((l) => l.split(' · ')).filter((l) => PACK_LINE.test(l));
+    // (sólo la del paquete que se mudó en este ensayo: los paquetes que el árbol ya trae dicen su propia línea al instalar)
+    const found = sessions.flatMap((x) => [...linesOf(x), ...(x.log_lines || [])]).flatMap((l) => l.split(' · ')).filter((l) => PACK_LINE.test(l) && l.includes(MOVED.pack));
     const said = [...new Set(found.map(keyOf).filter(Boolean))];
     // el texto que se muestra es la copia ENTERA (la que llega hasta dónde se activa), no una recortada por el registro
     const full = found.map((l) => l.replace(/^[\s\S]*?(se sacaron|sacaría)/, '$1').trim()).filter((l) => !/[\r\n]/.test(l)).sort((a, b) => Number(/activalo/.test(b)) - Number(/activalo/.test(a)) || b.length - a.length);
-    facts.pack_line = { count: said.length, text: full[0] ? L.clip(full[0], 600) : null };
+    facts.pack_line = { count: said.length, said: said.map((k) => L.clip(k, 140)), text: full[0] ? L.clip(full[0], 600) : null };
     facts.pieces = judgePieces({ before: facts.before.pieces, after: facts.after.pieces, renames: PZ.renamesOf(tree), packActive: v.team === true, packLine: facts.pack_line });
     for (const f of facts.pieces.findings) add(f);
     delete facts.pieces.findings;

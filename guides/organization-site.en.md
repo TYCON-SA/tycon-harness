@@ -1459,6 +1459,17 @@ una vez" (with the lock's session expired, the sign-out page goes through the pl
 missing (leave the sign-out page free); your environment's recipe has the command. The morning notice repeats it next
 to the link. What to fix is the lock's setting, not the image.
 
+It also asks for the machine routes (`/live/machine` and `/live/enroll`) without a session. Machines cannot get past the
+platform's lock, so if it answers them the check warns "falta el paso de una vez" (the one-time step is missing), without
+failing: an organization that does not use offices does not need it. In Azure, it is
+the same `--excluded-paths` command from the recipe, which already names them. Do it before setting `site.url` in the
+profile.
+
+The site also has to see who is asking. Behind an intermediary, every connection arrives from its address, and the limits
+per address would apply to the whole internet: two unsigned connections would hold back any machine. New installs already
+have this. On one already installed, set `SITE_TRUST_PROXY=1` in the site's variables (your environment's recipe has the
+command, under its sign-in section). Only with an intermediary in front: without one, anyone could make up their address.
+
 ## The recipes
 
 Each recipe says what changes compared with the common part. **None of the three recipes has been tested for real
@@ -1490,7 +1501,7 @@ Configuration tab says "falta el repo del perfil" (the profile repo is missing).
 - **Sign-in:** two locks. In front, the platform's built-in sign-in with the same Entra ID registration. Behind it, the
   site's own, which decides with its list. `/healthz`, `/livez`, the "You signed out" page with what it loads, and `/idioma` stay outside the lock (without that, with the
   lock's session expired, the "You signed out" page goes through its sign-in first). A site already installed is fixed once:
-  `az containerapp auth update -g <group> -n <app> --excluded-paths /healthz,/livez,/saliste,/idioma,/static/site.css,/static/site.js,/static/fonts/lato-400.woff2,/static/fonts/lato-700.woff2`. `microsoftAccounts` in the
+  `az containerapp auth update -g <group> -n <app> --excluded-paths /healthz,/livez,/saliste,/idioma,/static/site.css,/static/site.js,/static/fonts/lato-400.woff2,/static/fonts/lato-700.woff2,/live/machine,/live/enroll`; and for the limits per address to hold, `az containerapp update -g <group> -n <app> --set-env-vars SITE_TRUST_PROXY=1`. `microsoftAccounts` in the
   configuration file picks the mode:
   - `organization` (the default): a single tenant. If the registration has "assignment required", people are assigned
     one by one in the portal (assigning a group needs an Entra ID P1/P2 license).

@@ -20,6 +20,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/site/**'
+      - 'scripts/tools/office/**'
       - 'scripts/lib/**'
       - 'scripts/metrics/**'
       - 'scripts/instincts/instinct-upload.js'

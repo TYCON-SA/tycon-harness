@@ -42,6 +42,7 @@ const TX = require('../texts.js');
 // del pedido al salir de cada ruta (texts.js, `traducirRespuesta`)
 const M = (clave, valores) => TX.t('es', clave, valores);
 const { dentroDe, limpiarLinea } = require('../sources.js');
+const { displayFingerprint } = require('../../tools/office/fields.js');
 const LANG = require('../language.js');
 
 const TREE = path.join(__dirname, '..', '..', '..');
@@ -363,7 +364,7 @@ const ESPERA_REFRESCO_MS = 8 * 1000;
  * `remotos` ({ operaciones, perfil }: la plataforma de cada repo cuando la dirección no la dice) y `esperaRefrescoMs`.
  * `demo` (el sitio demo, demo.js): Proponer, Invitar y Revocar revisan como siempre y muestran lo que pasaría, sin abrir nada.
  */
-function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy = null, lectores = {}, fetch = globalThis.fetch, urlBase = {}, remotos = {}, log = () => {}, esperaRefrescoMs = ESPERA_REFRESCO_MS, invitaciones = null, clavesDelRepo = ORG.CLAVES_DEL_REPO, urlDeProducto = ORG.urlDeRepo, demo = false, repoDeEjemplo = null }) {
+function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy = null, lectores = {}, fetch = globalThis.fetch, urlBase = {}, remotos = {}, log = () => {}, esperaRefrescoMs = ESPERA_REFRESCO_MS, invitaciones = null, clavesDelRepo = ORG.CLAVES_DEL_REPO, urlDeProducto = ORG.urlDeRepo, demo = false, repoDeEjemplo = null, llaves = null }) {
   const dia = () => (hoy ? hoy() : new Date(ahora()).toISOString().slice(0, 10));
   const lector = (nombre) => ORG.loadReader(TREE, nombre, lectores);
   // los umbrales del arnés (los de la imagen): `{ thresholds, motivo }`; sin ellos, Umbrales no edita y lo dice
@@ -382,6 +383,33 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
 
   // ── la defensa de las escrituras ──
   const escritura = (ctx) => defensaDeEscritura(cfg, ctx);
+
+  // ── la oficina de cada máquina: se decide en el disco del sitio, sin pedido al repo ──
+  function contextoDeOficinas() {
+    const config = fuentes.config();
+    const site = isObject(config) && isObject(config.site) ? config.site : {};
+    const personas = typeof fuentes.personas === 'function' ? fuentes.personas() : null;
+    return { huellas: typeof fuentes.huellas === 'function' ? fuentes.huellas() : null, reglas: access.crearReglas({ config, modelo: fuentes.modelo(), personas }), conBuzon: isObject(site.mailbox) };
+  }
+  function vistaDeOficinas() {
+    if (!llaves) return null;
+    const ctx = contextoDeOficinas();
+    llaves.emparejar(ctx);
+    const v = llaves.vista(ctx);
+    return { pedidos: v.pedidos.map((p) => ({ ...p, huella: displayFingerprint(p.fingerprint) })), maquinas: v.maquinas, conBuzon: ctx.conBuzon, sinDisco: !cfg.dataDir, noGuarda: v.noGuarda };
+  }
+  function accionDeOficina(body, por) {
+    const { accion, fingerprint, maquina } = body;
+    const texto = (v) => (typeof v === 'string' ? v : '');
+    if (accion === 'approve') return llaves.aprobar(texto(fingerprint), por, contextoDeOficinas());
+    if (accion === 'reject') return llaves.rechazar(texto(fingerprint), por);
+    if (accion === 'confirm') return llaves.confirmarHuella(texto(fingerprint), por);
+    if (accion === 'disable') return llaves.darDeBaja(texto(maquina), por);
+    if (accion === 'reactivate') return llaves.reactivar(texto(maquina), por, contextoDeOficinas().reglas);
+    if (accion === 'revoke') return llaves.retirar(texto(maquina), por, contextoDeOficinas().reglas);
+    if (accion === 'clear_mark') return llaves.borrarMarca(texto(maquina), por);
+    return null;
+  }
 
   // ── la vista de una sección ──
   function contextoPersonas(doc) {
@@ -1326,8 +1354,24 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
         const todo = await leerTodoGuardado();
         // el estado de las invitaciones cambia con cada ciclo de fuentes: se arma fresco, fuera de lo guardado
         const inv = await estadoDeInvitaciones();
-        if (!inv) return json(200, todo);
-        return json(200, { ...todo, secciones: todo.secciones.map((x) => (x.id === 'sitio' ? { ...x, extras: { ...(x.extras || {}), invitaciones: inv } } : x)) });
+        // las oficinas, igual: cambian con cada conexión de una máquina
+        const oficinas = vistaDeOficinas();
+        if (!inv && !oficinas) return json(200, todo);
+        return json(200, { ...todo, secciones: todo.secciones.map((x) => {
+          if (x.id === 'sitio' && inv) return { ...x, extras: { ...(x.extras || {}), invitaciones: inv } };
+          if (x.id === 'personas' && oficinas) return { ...x, extras: { ...(x.extras || {}), oficinas } };
+          return x;
+        }) });
+      }),
+    },
+    {
+      method: 'POST', path: '/api/config/oficinas', needs: solo, handler: enIdioma(async (ctx) => {
+        const e = await escritura(ctx); if (e.error) return e.error;
+        if (!llaves) return rechazo(404, M('config.oficinaAccionRara'));
+        const r = accionDeOficina(e.body || {}, ctx.quien.email);
+        if (!r) return rechazo(400, M('config.oficinaAccionRara'));
+        if (!r.ok) return json(200, { ok: false, message: M('config.oficinaNoSePudo', { motivo: M(`config.oficinaMotivo.${r.motivo}`) }), oficinas: vistaDeOficinas() });
+        return json(200, { ok: true, oficinas: vistaDeOficinas() });
       }),
     },
     {

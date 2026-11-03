@@ -21,6 +21,10 @@
  *   host, o un 401/403 que el candado reconoce), la prueba lo dice como AVISO y no como falla: con el candado vencido, la
  *   página «Saliste» pasa antes por su inicio de sesión, y el paso de una sola vez que lo arregla es del candado, no de la imagen. Cualquier otra respuesta (200, 404 de
  *   un sitio viejo, un error de red) no avisa nada.
+ * · `/live/machine` y `/live/enroll`, las rutas de la máquina: si las contesta el candado de la plataforma, también es un
+ *   AVISO («falta el paso de una vez»): las máquinas no tienen cómo pasarlo y sus oficinas quedan afuera, pero nada se ve sin
+ *   sesión, y una organización que no usa oficinas no tiene por qué dar la prueba en rojo. Las reconoce el encabezado propio
+ *   del sitio; un sitio de antes, sin esas rutas, no avisa nada.
  * El primer pedido espera hasta `--wake-timeout` (90 s por defecto): un sitio dormido tarda ~1 minuto en despertar.
  *
  * ── USO ─────────────────────────────────────────────────────────────────────────────────────────
@@ -33,12 +37,14 @@
  *   si `TYCON_CHECK_DEPLOY_HTTP_URL` la da (las pruebas).
  */
 const fs = require('fs');
+const { SITE_HEADER: ENCABEZADO_DEL_SITIO } = require('../tools/office/fields.js');
 
 const MOTIVOS = Object.freeze(['/healthz cuenta de más', 'el sitio está frenado', 'el sitio responde sin iniciar sesión', '/api contesta con datos', 'falta no-store', 'acepta http',
   'sin Referer: el candado de la plataforma frenaría las escrituras de Configuración']);
 // lo que la prueba avisa sin fallar: la configuración del candado, no la imagen. Cerrado: el resumen de la mañana sólo repite lo de esta lista
-const AVISOS = Object.freeze(['la página de salida queda detrás del candado: con el candado vencido, «Saliste» pasa antes por el inicio de sesión de la plataforma; la receta de tu entorno trae la orden de una vez']);
-const [AVISO_SALIDA] = AVISOS;
+const AVISOS = Object.freeze(['la página de salida queda detrás del candado: con el candado vencido, «Saliste» pasa antes por el inicio de sesión de la plataforma; la receta de tu entorno trae la orden de una vez',
+  'falta el paso de una vez: el candado de la plataforma contesta las rutas de la máquina, y las oficinas no le llegan al sitio; la receta de tu entorno trae la orden']);
+const [AVISO_SALIDA, FALTA_PASO] = AVISOS;
 const [HEALTHZ_DE_MAS, FRENADO, SIN_SESION, API_CON_DATOS, SIN_NO_STORE, ACEPTA_HTTP, SIN_REFERER] = MOTIVOS;
 const WAKE_DEFAULT_S = 90;
 const PLAZO_MS = 15000;
@@ -143,6 +149,26 @@ async function salidaDetrasDelCandado(base) {
   return (r.status === 401 || r.status === 403) && esDelCandado(r.headers);
 }
 
+/**
+ * Las rutas de la máquina, sin sesión: ¿llegan al sitio? `{ capa, aviso, medido }`. Las contesta el candado: el aviso. Sin
+ * el encabezado del sitio (un sitio de antes de las oficinas): no se pudo medir, y no avisa nada.
+ */
+async function rutasDeLaMaquina(base) {
+  const pasos = [];
+  for (const ruta of ['/live/machine', '/live/enroll']) {
+    const r = await pedir(new URL(ruta, base), { plazoMs: PLAZO_MS });
+    pasos.push(String(r.status));
+    const loc = r.headers.get('location');
+    let alCandado = (r.status === 401 || r.status === 403) && esDelCandado(r.headers);
+    if (r.status >= 300 && r.status < 400 && loc) {
+      try { const d = new URL(loc, base); alCandado = d.origin === base.origin && d.pathname.startsWith('/.auth/'); } catch { alCandado = false; }
+    }
+    if (alCandado) return { capa: pasos.join(' · '), aviso: FALTA_PASO, medido: true };
+    if (!r.headers.get(ENCABEZADO_DEL_SITIO)) return { capa: `${pasos.join(' · ')} (sin las rutas de la máquina)`, aviso: null, medido: false };
+  }
+  return { capa: pasos.join(' · '), aviso: null, medido: true };
+}
+
 /** La gemela http: redirige a https o no contesta. `{ capa, falla }`. */
 async function gemelaHttp(base) {
   let url = process.env.TYCON_CHECK_DEPLOY_HTTP_URL || null;
@@ -196,6 +222,10 @@ async function probar(base, { wakeMs }) {
   if (g.falla) return { motivo: g.falla, capas };
   // 5. la página de salida: un aviso, nunca una falla
   const avisos = (await salidaDetrasDelCandado(base)) ? [AVISO_SALIDA] : [];
+  // 6. las rutas de la máquina: también un aviso. Un error de red acá no avisa nada, como en la página de salida
+  const maquina = await rutasDeLaMaquina(base).catch(() => ({ capa: 'no contesta', aviso: null }));
+  capas.maquina = maquina.capa;
+  if (maquina.aviso) avisos.push(maquina.aviso);
   return { motivo: null, capas, avisos };
 }
 
@@ -240,7 +270,7 @@ async function main(argv) {
   }
 }
 
-module.exports = { MOTIVOS, AVISOS };
+module.exports = { MOTIVOS, AVISOS, FALTA_PASO, ENCABEZADO_DEL_SITIO, rutasDeLaMaquina };
 
 if (require.main === module) {
   main(process.argv.slice(2)).then((c) => process.exit(c), (e) => {

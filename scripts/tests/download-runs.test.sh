@@ -714,6 +714,19 @@ fi
 
 # ── T18 · OverwritesReport_SoloListaYCuentaSinNombres ──────────────────────────────
 # 🔴 Falla con: el informe no existe (la bandera se ignora y baja todo), o nombra las máquinas (se llaman como personas).
+# T8171 · la huella de la oficina tiene su forma y su tipo: baja al espejo y no cuenta como volcado ni como ignorado.
+#         Rojo: `formaDelNombre` no la reconoce (cae en `ignorados`) o `tipoDelBlob` la cuenta como volcado.
+T="${BASE}/t8171"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+HUELLA="$(printf 'a%.0s' $(seq 1 64))"
+blob "${T}/b" "mac-a/1.1-2026-10-01T1000.json" 300
+blob "${T}/b" "mac-a/office-keys/${HUELLA}.json" 100
+bajar "${T}" "${T}/bin/az"
+[ -f "${T}/estado/corridas-buzon/mac-a/office-keys/${HUELLA}.json" ] && python3 -c "import json,sys;d=json.load(open(sys.argv[1]));assert d['ignorados']==0,d" "${T}/out.json" \
+  && ok "T8171 la huella baja al espejo y no se ignora" || mal "T8171 la huella no bajó al espejo o se ignoró: $(cat "${T}/out.json")"
+bajar "${T}" "${T}/bin/az" --overwrites-report
+python3 -c "import json,sys;t=json.load(open(sys.argv[1]))['por_tipo'];assert t['huella']['blobs']==1 and t['volcado']['blobs']==1 and t['ignorado']['blobs']==0,t" "${T}/out.json" \
+  && ok "T8171 el informe la cuenta con su propio tipo" || mal "T8171 el informe por tipo: $(cat "${T}/out.json")"
+
 T="${BASE}/t224-18"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
 blob "${T}/b" "mac-a/1.1-2026-10-01T1000.json" 300
 blob "${T}/b" "mac-a/1.1-2026-10-01T1000.hilo.jsonl.gz" 300

@@ -59,8 +59,9 @@ const FIELDS = {
 function validHour(value) {
   const m = LOCAL_HOUR.exec(value);
   if (!m) return false;
-  const d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
-  return d.getMonth() === +m[2] - 1 && d.getDate() === +m[3] && d.getHours() === +m[4] && d.getMinutes() === +m[5];
+  // en UTC: la hora es local de la máquina, y en la zona de quien valida puede caer justo en un cambio de hora
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]));
+  return d.getUTCMonth() === +m[2] - 1 && d.getUTCDate() === +m[3] && d.getUTCHours() === +m[4] && d.getUTCMinutes() === +m[5];
 }
 
 /** Sólo el último tramo de la ruta: una ruta entera dice la carpeta personal y cómo está ordenado el disco. */
@@ -116,7 +117,9 @@ function pick(foto, home) {
 
 // El protocolo. Lo que la máquina le puede mandar al sitio y lo único que acepta de él.
 const MESSAGES = Object.freeze({ toSite: ['auth', 'foto', 'ping'], toMachine: ['challenge', 'ack', 'pong'] });
-const CLOSE = Object.freeze({ pending: 4401, revoked: 4403, unknown: 4404, policy: 1008 });
+const CLOSE = Object.freeze({ pending: 4401, revoked: 4403, unknown: 4404, displaced: 4409, policy: 1008 });
+// lo pone el sitio al contestar sus rutas de la máquina: así se distingue del candado de la plataforma, que va delante
+const SITE_HEADER = 'x-tycon-offices';
 const SIGNATURE_PREFIX = 'tycon-office-v1';
 const NONCE_BYTES = 32;
 
@@ -141,4 +144,4 @@ const fingerprintOf = (publicKey) => crypto.createHash('sha256').update(Buffer.f
 /** La huella como la ven las personas: sus primeros 16 caracteres en grupos de cuatro, igual en la máquina y en el sitio. */
 const displayFingerprint = (fingerprint) => String(fingerprint).slice(0, 16).match(/.{1,4}/g).join('-');
 
-module.exports = { FIELDS, TEXT_MAX, MAX_MESSAGE_BYTES, AGENT_STATES, pick, MESSAGES, CLOSE, SIGNATURE_PREFIX, NONCE_BYTES, siteAddress, signedText, validNonce, machineUrl, fingerprintOf, displayFingerprint };
+module.exports = { FIELDS, TEXT_MAX, MAX_MESSAGE_BYTES, AGENT_STATES, validHour, pick, MESSAGES, CLOSE, SITE_HEADER, SIGNATURE_PREFIX, NONCE_BYTES, siteAddress, signedText, validNonce, machineUrl, fingerprintOf, displayFingerprint };

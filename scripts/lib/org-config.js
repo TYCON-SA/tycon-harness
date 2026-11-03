@@ -1807,6 +1807,11 @@ function pantalla(idioma = 'es') {
       lista.appendChild(mant);
     }
     var refresco = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.cadaCuantoSeActualizaEl') }), el('p', { class: 'sub-d', text: T('pantalla.queReleeElSitio') }), campo(T('pantalla.minutosEntre5Y120'), site.refresh_minutes, function (v) { site.refresh_minutes = v === '' ? undefined : numOTexto(v); }, 'site.refresh_minutes', pr, { inputmode: 'numeric' }), el('p', { class: 'sub-d', text: T('pantalla.siNoLoDeclarasQuinceMinutos') }));
+    // sin valor escrito vale el de fábrica: elegirlo saca la clave, no la escribe
+    lista.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.quienVeLasOficinas') }),
+      selector(T('pantalla.quienVeLasOficinas'), (site.offices && site.offices.visibility) || 'maintainers', [['maintainers', T('pantalla.oficinasMantiene')], ['everyone', T('pantalla.oficinasTodos')]], function (v) {
+        if (v === 'maintainers') delete site.offices; else site.offices = { visibility: v };
+      }, 'site.offices.visibility', pr)));
     // lo que no hace falta tocar: plegado, con su motivo en el título
     var avanzado = el('details', { class: 'mas-info avanzado' }, el('summary', { text: T('pantalla.avanzadoNoHaceFalta') }));
     lista.appendChild(avanzado);
@@ -1962,6 +1967,65 @@ function pantalla(idioma = 'es') {
     if (n.confirmar) caja.appendChild(el('div', { class: 'bar' }, el('button', { type: 'button', text: T('pantalla.confirmarYProponer'), disabled: proponiendo ? 'disabled' : undefined, onclick: function () { confirmarPropuesta(s); } }), el('button', { class: 'sec', type: 'button', text: T('pantalla.cancelar'), disabled: proponiendo ? 'disabled' : undefined, onclick: function () { S.notas[s.id] = null; S.fila = null; render(); } })));
     return caja;
   }
+  // La oficina de cada máquina: se aprueba, se rechaza y se da de baja en el disco del sitio, sin abrir un pedido
+  var OFICINAS = { enviando: null, nota: null };
+  function accionDeOficina(s, cuerpo) {
+    if (OFICINAS.enviando) return;
+    OFICINAS.enviando = cuerpo.fingerprint || cuerpo.maquina; OFICINAS.nota = null; render();
+    return api('/oficinas', cuerpo).then(function (r) {
+      OFICINAS.enviando = null;
+      if (r.oficinas && s.extras) s.extras.oficinas = r.oficinas;
+      if (!r.ok) OFICINAS.nota = mensajeLlano(r.message) || T('pantalla.hayQueCorregirLoMarcado');
+      render();
+    });
+  }
+  function tablaDeOficinas(columnas, filas) {
+    var cuerpo = el('tbody', {});
+    filas.forEach(function (f) {
+      var tr = el('tr', {});
+      f.forEach(function (c) { tr.appendChild(typeof c === 'string' ? el('td', { text: c }) : el('td', {}, c)); });
+      cuerpo.appendChild(tr);
+    });
+    var cabecera = el('tr', {});
+    columnas.forEach(function (c) { cabecera.appendChild(el('th', { text: c })); });
+    return el('table', { class: 'tabla' }, el('thead', {}, cabecera), cuerpo);
+  }
+  function bloqueOficinas(s, of) {
+    var caja = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.oficinaDeCadaMaquina') }), el('p', { class: 'sub-d', text: T('pantalla.oficinaDeCadaMaquinaAyuda') }));
+    var boton = function (texto, cuerpo) { return el('button', { type: 'button', text: texto, disabled: OFICINAS.enviando ? 'disabled' : undefined, onclick: function () { accionDeOficina(s, cuerpo); } }); };
+    if (!of.conBuzon) caja.appendChild(aviso('warn', T('pantalla.oficinaSinBuzon'), ''));
+    if (of.sinDisco) caja.appendChild(aviso('warn', T('pantalla.oficinaSinDisco'), ''));
+    if (of.noGuarda) caja.appendChild(aviso('warn', T('pantalla.oficinaNoGuarda'), ''));
+    if (OFICINAS.nota) caja.appendChild(el('div', { class: 'err', text: OFICINAS.nota }));
+    caja.appendChild(el('p', { class: 'sub-t', text: T('pantalla.oficinaPedidos') }));
+    if (!of.pedidos.length) caja.appendChild(el('p', { class: 'muted', text: T('pantalla.oficinaSinPedidos') }));
+    else {
+      var QUE_FALTA = { listo: 'pantalla.oficinaListo', esperando_huella: 'pantalla.oficinaEsperando', conflicto: 'pantalla.oficinaConflicto', dos_maquinas: 'pantalla.oficinaDosMaquinas', carpeta_llena: 'pantalla.oficinaLlena', sin_buzon: 'pantalla.oficinaSinBuzonFila', sin_leer: 'pantalla.oficinaSinLeer' };
+      caja.appendChild(tablaDeOficinas([T('pantalla.oficinaMaquina'), T('pantalla.oficinaDeQuien'), T('pantalla.oficinaHuella'), T('pantalla.oficinaQueFalta'), T('pantalla.oficinaQueHacer')], of.pedidos.map(function (p) {
+        var acciones = el('span', { class: 'acc' });
+        if (p.situacion === 'listo') acciones.appendChild(boton(T('pantalla.oficinaAprobar'), { accion: 'approve', fingerprint: p.fingerprint }));
+        if (p.situacion === 'conflicto') acciones.appendChild(boton(T('pantalla.oficinaLaVioElDev'), { accion: 'confirm', fingerprint: p.fingerprint }));
+        acciones.appendChild(boton(T('pantalla.oficinaRechazar'), { accion: 'reject', fingerprint: p.fingerprint }));
+        var maquina = p.situacion === 'dos_maquinas' ? (p.maquinas || []).join(T('pantalla.oficinaYotra')) : (p.maquina || T('pantalla.oficinaDiceLlamarse') + '«' + p.nombre + '»');
+        var dueno = p.situacion === 'dos_maquinas' ? T('pantalla.oficinaDosSubieron') : (p.person || T('pantalla.oficinaNoSeSabe'));
+        return [maquina, dueno, p.huella, T(QUE_FALTA[p.situacion] || 'pantalla.oficinaEsperando'), acciones];
+      })));
+    }
+    if (of.maquinas.length) {
+      caja.appendChild(el('p', { class: 'sub-t', text: T('pantalla.oficinaConOficina') }));
+      caja.appendChild(tablaDeOficinas([T('pantalla.oficinaMaquina'), T('pantalla.oficinaDeQuien'), T('pantalla.oficinaUltimaConexion'), T('pantalla.oficinaComoEsta'), T('pantalla.oficinaQueHacer')], of.maquinas.map(function (m) {
+        var acciones = el('span', { class: 'acc' });
+        if (m.deBaja) acciones.appendChild(boton(T('pantalla.oficinaReactivar'), { accion: 'reactivate', maquina: m.maquina }));
+        else acciones.appendChild(boton(T('pantalla.oficinaBaja'), { accion: 'disable', maquina: m.maquina }));
+        if (m.fingerprint) acciones.appendChild(boton(T('pantalla.oficinaRetirarClave'), { accion: 'revoke', maquina: m.maquina }));
+        if (m.copiada) acciones.appendChild(boton(T('pantalla.oficinaBorrarMarca'), { accion: 'clear_mark', maquina: m.maquina }));
+        var como = m.deBaja ? T('pantalla.oficinaDeBaja') : m.copiada ? T('pantalla.oficinaCopiada') : m.masNueva ? T('pantalla.oficinaMasNueva') : T('pantalla.oficinaAprobada');
+        var cuando = m.conectada ? T('pantalla.oficinaConectada') : (m.ultimaConexion ? new Date(m.ultimaConexion).toLocaleString() : T('pantalla.oficinaNunca'));
+        return [m.maquina, m.person || T('pantalla.oficinaNoSeSabe'), cuando, como, acciones];
+      })));
+    }
+    return caja;
+  }
   function editorPersonas(s, d, pr) {
     d.people = d.people || {};
     var box = el('div', { class: 'pila' });
@@ -1990,6 +2054,7 @@ function pantalla(idioma = 'es') {
       box.appendChild(el('div', {}, el('p', { class: 'sub-t', text: T('pantalla.sinActividad') + ex.sinActividad.length + ')' }),
         el('p', { class: 'muted', text: T('pantalla.carpetasDelBuzonQueNunca') }), sa));
     }
+    if (ex.oficinas) box.appendChild(bloqueOficinas(s, ex.oficinas));
     var machines = d.people.machines || {};
     var conf = el('ul', { class: 'renglones' });
     Object.keys(machines).forEach(function (m) {

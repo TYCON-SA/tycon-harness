@@ -243,6 +243,54 @@ function fotoDelDia(dir, patron, dia, raiz = dir, log = () => {}) {
   return r.doc || null;
 }
 
+const HUELLA_ARCHIVO = /^([0-9a-f]{64})\.json$/;
+const HUELLA_BYTES = 512;
+const HUELLAS_POR_CARPETA = 20;
+
+/**
+ * Las huellas de oficina que subió cada carpeta del buzón: `{ medido, carpetas: { <carpeta>: { huellas, llena } } }`. Una
+ * vale sólo si su nombre, su campo y el sha256 de su clave coinciden; lo demás se ignora y se anota. Una carpeta con más de
+ * 20 queda marcada. Se llama desde el hilo aparte: recorre el espejo en el disco montado.
+ */
+function leerHuellas(dirBuzon, log = () => {}) {
+  const { fingerprintOf } = require('../tools/office/fields.js');
+  const carpetas = {};
+  let maquinas;
+  try { maquinas = fs.readdirSync(dirBuzon, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name); } catch { return { medido: false, carpetas }; }
+  for (const carpeta of maquinas) {
+    const dir = path.join(dirBuzon, carpeta, 'office-keys');
+    let archivos;
+    try { archivos = fs.readdirSync(dir); } catch (e) {
+      if (e.code === 'ENOENT') continue;
+      // no poder leer una carpeta no es que no tenga huellas: con eso se soltaría una clave cuya huella sigue ahí
+      log(`oficinas: las huellas de ${carpeta} no se pudieron leer (${e.code || e.message})`);
+      return { medido: false, carpetas: {} };
+    }
+    const huellas = [];
+    // una línea por carpeta en cada lectura: una carpeta con mil archivos raros no llena el registro
+    const motivos = new Set();
+    let ignorados = 0;
+    const ignorar = (motivo) => { ignorados += 1; motivos.add(motivo); };
+    for (const a of archivos) {
+      const m = HUELLA_ARCHIVO.exec(a);
+      if (!m) { ignorar('el nombre del archivo no tiene la forma'); continue; }
+      let doc = null;
+      try {
+        const f = path.join(dir, a);
+        if (fs.statSync(f).size > HUELLA_BYTES) { ignorar(`pasa de ${HUELLA_BYTES} bytes`); continue; }
+        doc = JSON.parse(fs.readFileSync(f, 'utf8'));
+      } catch { ignorar('no se pudo leer'); continue; }
+      if (!isObject(doc) || doc.fingerprint !== m[1] || typeof doc.publicKey !== 'string' || fingerprintOf(doc.publicKey) !== m[1]) { ignorar('el nombre, el campo y la clave no coinciden'); continue; }
+      huellas.push(m[1]);
+    }
+    if (ignorados) log(`oficinas: archivos de huellas de ${carpeta} que se ignoran: ${ignorados} (${[...motivos].join('; ')})`);
+    // se cuentan los archivos, no las huellas que valen: una carpeta llena de basura también queda marcada
+    const llena = archivos.length > HUELLAS_POR_CARPETA;
+    if (huellas.length || llena) carpetas[carpeta] = { huellas, llena };
+  }
+  return { medido: true, carpetas };
+}
+
 /** Las corridas del espejo del buzón, contadas con `leerRegistro` de runs.js (las copias de una sesión, una vez). */
 function leerCorridas(dirBuzon) {
   const runs = require('../nightly/dashboard/runs.js');
@@ -582,7 +630,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
   const rutaEstado = path.join(dataDir, ARCHIVO_ESTADO);
   // `personas`: lo que la regla de quién es quién necesita y el modelo NO lleva — lo informado por cada máquina
   // (de la última bajada entera del buzón) y la lista de repos.json
-  const st = { perfil: cfg.profileRepo ? { estado: 'pendiente', motivo: 'el perfil del equipo todavía se está bajando' } : { estado: 'sin_configurar', motivo: 'no configurado: faltan SITE_PROFILE_REPO y SITE_PROFILE_TOKEN' }, cargado: false, ultimoBueno: null, fallaDesde: null, fallaMotivo: null, fallaRutas: null, frenado: null, bandaConfig: null, modelo: null, personas: { informados: null, repos: null }, fallas: { repo: null, buzon: null }, hilos: false, buzon: { completo: false, armable: false, generacion: 0, seguir: false, pendientes: 0 }, copia: null, copiaHora: null };
+  const st = { perfil: cfg.profileRepo ? { estado: 'pendiente', motivo: 'el perfil del equipo todavía se está bajando' } : { estado: 'sin_configurar', motivo: 'no configurado: faltan SITE_PROFILE_REPO y SITE_PROFILE_TOKEN' }, cargado: false, ultimoBueno: null, fallaDesde: null, fallaMotivo: null, fallaRutas: null, frenado: null, bandaConfig: null, modelo: null, personas: { informados: null, repos: null }, huellas: { medido: false, carpetas: {} }, fallas: { repo: null, buzon: null }, hilos: false, buzon: { completo: false, armable: false, generacion: 0, seguir: false, pendientes: 0 }, copia: null, copiaHora: null };
   // quien quiere saber que el refresco terminó (la pestaña Corridas rearma su vista si el espejo cambió)
   const oyentes = [];
   let temporizador = null;
@@ -903,6 +951,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
       guardarMemoria();
       const c = leido.corridas;
       st.personas.informados = leido.informados;
+      st.huellas = leido.huellas || st.huellas;
       if (st.personas.informados.no_medido) log(`lo informado por las máquinas no se pudo leer: ${st.personas.informados.no_medido}`);
       if (c.estado !== 'medido') log(`el espejo del buzón se bajó entero pero no se pudo leer${c._motivo ? `: ${c._motivo}` : ''}`);
       delete c._motivo;
@@ -1053,6 +1102,8 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     modelo: () => st.modelo,
     /** Lo que la regla de quién es quién necesita y el modelo no lleva: `{ informados, repos }` (nunca a una vista). */
     personas: () => st.personas,
+    /** Las huellas de oficina que subió cada carpeta del buzón (`leerHuellas`). */
+    huellas: () => st.huellas,
     detener() { if (temporizador) clearTimeout(temporizador); temporizador = null; },
     /**
      * Los clones que lee la pestaña Configuración: `{ operaciones: { dir } | null, perfil: { dir, estado, motivo } | null }`.
@@ -1097,4 +1148,4 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
   };
 }
 
-module.exports = { crearFuentes, nubes, prepararClonDeEscritura, construirDesdeClon, estadoDeLaConfiguracion, estadoDelSitio, leerRepos, estadoDeGit, limpiarLinea, leerCorridas, ultimaFoto, correr, dentroDe, PLAZO_CONFIG_MS };
+module.exports = { crearFuentes, nubes, prepararClonDeEscritura, construirDesdeClon, estadoDeLaConfiguracion, estadoDelSitio, leerRepos, estadoDeGit, limpiarLinea, leerCorridas, leerHuellas, ultimaFoto, correr, dentroDe, PLAZO_CONFIG_MS };

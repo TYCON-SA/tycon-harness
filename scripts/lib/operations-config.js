@@ -107,7 +107,9 @@ const GITHUB_REPO = /^(?!\.+\/)[A-Za-z0-9_.-]+\/(?!\.+$)[A-Za-z0-9_.-]+$/;
 const OWNER_KEYS = ['default', 'by_project'];
 const REVIEWER_KEYS = ['dependencies', 'watcher'];
 // el sitio de la organización. Todas opcionales; la pestaña Configuración del sitio la edita.
-const SITE_KEYS = ['access', 'maintainers', 'mailbox', 'refresh_minutes', 'url', 'brand', 'auto_apply', 'update', 'hidden_cards', 'invitations'];
+const SITE_KEYS = ['access', 'maintainers', 'mailbox', 'refresh_minutes', 'url', 'brand', 'auto_apply', 'update', 'hidden_cards', 'invitations', 'offices'];
+const OFFICES_KEYS = ['visibility'];
+const OFFICES_VISIBILITY = ['maintainers', 'everyone'];
 // la marca de cada persona invitada desde el sitio: quién la invitó y cuándo (la invitación la manda el sitio)
 const INVITATION_KEYS = ['por', 'el'];
 const FECHA = /^\d{4}-\d{2}-\d{2}$/;
@@ -262,6 +264,13 @@ function siteProblems(site) {
   // las fichas del tablero que el sitio no muestra: una lista de identificadores de scripts/site/tabs/cards.js
   if (site.hidden_cards !== undefined) problems.push(...hiddenCardsProblems(site.hidden_cards));
   if (site.invitations !== undefined) problems.push(...invitationsProblems(site.invitations, site.access));
+  if (site.offices !== undefined) {
+    if (!isObject(site.offices)) problems.push({ path: 'site.offices', message: 'tiene que ser un objeto { visibility }' });
+    else {
+      problems.push(...siteKeyProblems(site.offices, OFFICES_KEYS, 'site.offices'));
+      if (site.offices.visibility !== undefined && !OFFICES_VISIBILITY.includes(site.offices.visibility)) problems.push({ path: 'site.offices.visibility', message: `tiene que ser una de: ${OFFICES_VISIBILITY.join(', ')}` });
+    }
+  }
   if (site.update !== undefined && site.update !== 'auto' && site.update !== 'notice') problems.push({ path: 'site.update', message: 'tiene que ser "auto" o "notice"' });
   const b = site.brand;
   if (b !== undefined) {
@@ -587,7 +596,7 @@ function ownerFor(data, project) {
   return Object.prototype.hasOwnProperty.call(bp, project) ? bp[project] : data.owners.default;
 }
 
-module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, SITE_KEYS, INVITATION_KEYS, CARD_IDS,ACCESS_KEYS, ACCESS_ROLES, BRAND_KEYS, BRAND_LOGO, NOTIFY_CHANNELS, MAILBOX_PROVIDERS, REFRESH_MIN, REFRESH_MAX, EMAIL, ACCOUNT, CONTAINER, PEOPLE_KEYS, MACHINE_KEYS, PROJECT_KEYS, FORMA_MAQUINA, DEPLOYMENT_PROVIDERS, DEPLOYMENT_SIDES, GITHUB_REPO, SEVERITIES, WORK_ITEM_KEYS, FINDINGS_KEYS, RESOLVE_AFTER_MIN, RESOLVE_AFTER_MAX, WORK_ITEM_RESERVED, parse, load, ownerFor, workItemFieldOk };
+module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, SITE_KEYS, OFFICES_KEYS, OFFICES_VISIBILITY, INVITATION_KEYS, CARD_IDS,ACCESS_KEYS, ACCESS_ROLES, BRAND_KEYS, BRAND_LOGO, NOTIFY_CHANNELS, MAILBOX_PROVIDERS, REFRESH_MIN, REFRESH_MAX, EMAIL, ACCOUNT, CONTAINER, PEOPLE_KEYS, MACHINE_KEYS, PROJECT_KEYS, FORMA_MAQUINA, DEPLOYMENT_PROVIDERS, DEPLOYMENT_SIDES, GITHUB_REPO, SEVERITIES, WORK_ITEM_KEYS, FINDINGS_KEYS, RESOLVE_AFTER_MIN, RESOLVE_AFTER_MAX, WORK_ITEM_RESERVED, parse, load, ownerFor, workItemFieldOk };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

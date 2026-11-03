@@ -1767,6 +1767,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.171: el sitio recibe las oficinas de las máquinas y las reparte a quien las puede ver",
+      "raiz": "arnes",
+      "ruta": "tests/site-live-hub.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/coordination.test.js",
       "requiere": []
