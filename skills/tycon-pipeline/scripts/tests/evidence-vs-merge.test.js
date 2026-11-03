@@ -592,3 +592,207 @@ test('T43 Prueba_FusionPropiaYDespuesOtraHistoria_Cuenta @story-8.192 @ac-42', (
   assert.equal(r.cuenta, true, JSON.stringify(r));
   assert.equal(r.regla, 6);
 });
+
+// ---------------------------------------------------------------- evidencia nueva: el ancla
+
+const SMOKE = path.join(SCRIPTS, 'smoke-run.sh');
+const GATE = path.join(SCRIPTS, 'e2e-gate.sh');
+const conAncla = (ev, ancla) => ({ ...ev, ancla });
+
+/** Un humo de verdad, por `smoke-run.sh`, con una carpeta personal propia para el espejo. Devuelve la línea del registro. */
+function humoReal(f, story, acs = '1') {
+  const home = path.join(f.ws, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  const dod = path.join(f.esp, '.advisors', 'dod-runtime');
+  const r = spawnSync('bash', [SMOKE, dod, story, '--acs', acs, '--pass-if', 'contesta', '--', 'node', '-e', 'console.log("contesta")'],
+    { cwd: f.esp, encoding: 'utf8', env: { ...entornoGit(), HOME: home } });
+  assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  const lineas = fs.readFileSync(path.join(dod, '5.28-smoke-ledger.jsonl'), 'utf8').split('\n').filter(Boolean);
+  return { linea: JSON.parse(lineas[lineas.length - 1]), gates: path.join(home, '.claude', '.tycon-pipeline', 'gates.log'), salida: `${r.stdout}\n${r.stderr}` };
+}
+
+test('T17 Humo_AnotaElAncla_RegistroYEspejo @story-8.192 @ac-17', () => {
+  for (const conRuta of [false, true]) {
+    const f = labMatriz();
+    const commitLimpio = git(f.back, ['rev-parse', 'HEAD']);
+    const h = humoReal(f, conRuta ? f.storyPath : '5.28');
+    const [ancla] = h.linea.target.hermanos;
+    assert.deepEqual(ancla, { repo: 'Back', commit: commitLimpio }, JSON.stringify(h.linea.target));
+    assert.ok(fs.readFileSync(h.gates, 'utf8').includes(`"hermanos":[{"repo":"Back","commit":"${commitLimpio}"}]`), 'también en el espejo');
+    escribir(f.back, 'src/Feature.cs', '// sin commitear\n');
+    const blob = git(f.back, ['hash-object', 'src/Feature.cs']);
+    const sucio = humoReal(f, conRuta ? f.storyPath : '5.28').linea.target.hermanos[0];
+    assert.deepEqual(sucio, { repo: 'Back', commit: commitLimpio, huellas: { 'src/Feature.cs': blob } });
+  }
+});
+
+/** El gate de verdad, sin navegador: un `npx` falso y el repo de la historia con su hermano declarado. */
+function gateReal(f) {
+  const home = path.join(f.ws, 'home');
+  const bin = path.join(f.ws, 'bin');
+  const front = path.join(f.ws, 'front');
+  fs.mkdirSync(home, { recursive: true });
+  fs.mkdirSync(bin, { recursive: true });
+  fs.mkdirSync(front, { recursive: true });
+  fs.writeFileSync(path.join(bin, 'npx'), '#!/bin/sh\necho \'{}\'\n', { mode: 0o755 });
+  const dod = path.join(f.esp, '.advisors', 'dod-runtime');
+  spawnSync('bash', [GATE, front, '5.28', dod, 'story.spec.ts'], { cwd: f.esp, encoding: 'utf8', env: { ...entornoGit(), HOME: home, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
+  const archivo = fs.readdirSync(dod).find((n) => /^5\.28-e2e-gate-.*\.md$/.test(n));
+  return { md: fs.readFileSync(path.join(dod, archivo), 'utf8'), ts: archivo.match(/gate-(.*)\.md$/)[1], espejo: fs.readFileSync(path.join(home, '.claude', '.tycon-pipeline', 'gates.log'), 'utf8') };
+}
+
+test('T18 Gate_AnotaElAncla_GateYEspejo @story-8.192 @ac-18', () => {
+  const f = labMatriz();
+  const commitLimpio = git(f.back, ['rev-parse', 'HEAD']);
+  const g = gateReal(f);
+  const esperado = JSON.stringify([{ repo: 'Back', commit: commitLimpio }]);
+  assert.ok(g.md.includes(`- hermanos: ${esperado}`), g.md.slice(0, 600));
+  const linea = g.espejo.split('\n').filter(Boolean).map((l) => JSON.parse(l)).find((l) => l.type === 'e2e-gate-anchor');
+  assert.ok(linea, g.espejo);
+  assert.equal(linea.ts, g.ts);
+  assert.equal(linea.story, '5.28');
+  assert.equal(JSON.stringify(linea.hermanos), esperado);
+});
+
+test('T19 Ancla_SquashPropio_Cuenta @story-8.192 @ac-19', () => {
+  const l = lab();
+  rama(l.back, 'feature/5-28-carga');
+  escribir(l.back, 'src/Feature.cs', '// v2\n');
+  commit(l.back, 'codigo', T0 + 100);
+  const ancla = [{ repo: 'Back', commit: git(l.back, ['rev-parse', 'HEAD']) }];
+  const ev = l.evidencia();
+  irA(l.back, 'main');
+  juntar(l.back, 'feature/5-28-carga', T0 + 200);
+  assert.equal(juzgar(l.archivo, ev).cuenta, false, 'sin ancla, no');
+  const r = juzgar(l.archivo, conAncla(ev, ancla));
+  assert.equal(r.cuenta, true, JSON.stringify(r));
+  assert.equal(r.via, 'ancla');
+});
+
+test('T20 Ancla_ArchivoDistinto_NoCuenta @story-8.192 @ac-20', () => {
+  for (const camino of ['direct', 'merge', 'squash']) {
+    const l = lab();
+    const ancla = [{ repo: 'Back', commit: git(l.back, ['rev-parse', 'HEAD']) }];
+    const ev = l.evidencia();
+    if (camino === 'direct') {
+      escribir(l.back, 'src/Feature.cs', '// ajeno\n');
+      commit(l.back, 'ajeno', T0 + 50);
+    } else {
+      rama(l.back, 'feature/5-29-otra');
+      escribir(l.back, 'src/Feature.cs', '// ajeno\n');
+      commit(l.back, 'ajeno', T0 + 50);
+      irA(l.back, 'main');
+      if (camino === 'merge') fusionar(l.back, 'feature/5-29-otra', T0 + 60);
+      else juntar(l.back, 'feature/5-29-otra', T0 + 60);
+    }
+    // con la hora anterior a la evidencia: la línea principal diría que cuenta, y el ancla manda
+    assert.equal(juzgar(l.archivo, conAncla(ev, ancla)).cuenta, false, camino);
+  }
+});
+
+test('T21 Ancla_CommitAusente_SigueConLasOtras_NoCuenta @story-8.192 @ac-21', () => {
+  const ausente = [{ repo: 'Back', commit: 'a'.repeat(40) }];
+  const l = lab();
+  const ev = codigoEvidenciaFusion(l);
+  juntar(l.back, 'feature/5-28-carga', T0 + 200);
+  assert.equal(juzgar(l.archivo, conAncla(ev, ausente)).cuenta, false, 'ninguna otra manera da verde');
+  const m = lab();
+  const evm = codigoEvidenciaFusion(m);
+  fusionar(m.back, 'feature/5-28-carga', T0 + 200);
+  assert.equal(juzgar(m.archivo, conAncla(evm, ausente)).cuenta, true, 'la rama propia sí da verde');
+});
+
+/** Historia con código en una rama, humo real con ancla, y squash: con el ancla del espejo, la evidencia cuenta. */
+function squashConHumoReal() {
+  const f = labMatriz();
+  rama(f.back, 'feature/5-28-carga');
+  escribir(f.back, 'src/Feature.cs', '// v2\n');
+  commit(f.back, 'codigo', f.ahora - 100);
+  humoReal(f, '5.28');
+  const dod = path.join(f.esp, '.advisors', 'dod-runtime');
+  const led = path.join(dod, '5.28-smoke-ledger.jsonl');
+  const gates = path.join(f.ws, 'home', '.claude', '.tycon-pipeline', 'gates.log');
+  irA(f.back, 'main');
+  juntar(f.back, 'feature/5-28-carga', Math.floor(Date.now() / 1000) + 3600);
+  return { f, led, gates };
+}
+
+test('T22 Ancla_EditadaEnElRegistro_NoSeUsa @story-8.192 @ac-22', () => {
+  const bien = squashConHumoReal();
+  commit(bien.f.esp, 'evidencia', Math.floor(Date.now() / 1000));
+  assert.equal(bien.f.calcular({ gatesLogPath: bien.gates }).perAc[1].verdict, 'RUNTIME', 'con el ancla del espejo cuenta');
+
+  const mal = squashConHumoReal();
+  const otro = git(mal.f.back, ['rev-parse', 'HEAD']);
+  const editada = fs.readFileSync(mal.led, 'utf8').replace(/"commit":"[0-9a-f]{40}"(?=[,}]*\]|\})/, `"commit":"${otro}"`);
+  const conOtra = editada.replace(/("hermanos":\[\{"repo":"Back","commit":")[0-9a-f]{40}/, `$1${otro}`);
+  assert.notEqual(conOtra, fs.readFileSync(mal.led, 'utf8'), 'el laboratorio editó el ancla');
+  fs.writeFileSync(mal.led, conOtra);
+  commit(mal.f.esp, 'evidencia', Math.floor(Date.now() / 1000));
+  assert.equal(mal.f.calcular({ gatesLogPath: mal.gates }).perAc[1].verdict, 'NOT-RUN');
+});
+
+test('T23 SinAncla_SeLeeComoHoy @story-8.192 @ac-23', () => {
+  const f = labMatriz();
+  rama(f.back, 'feature/5-28-carga');
+  escribir(f.back, 'src/Feature.cs', '// v2\n');
+  commit(f.back, 'codigo', f.ahora - 100);
+  f.humo(f.ahora - 50);
+  assert.equal(f.calcular().perAc[1].verdict, 'RUNTIME');
+  irA(f.back, 'main');
+  juntar(f.back, 'feature/5-28-carga', f.ahora + 60);
+  assert.equal(f.calcular().perAc[1].verdict, 'NOT-RUN');
+});
+
+test('T40 Ancla_EditadaEnElGate_NoSeUsa @story-8.192 @ac-22', () => {
+  const caso = ({ editar, sinEspejo }) => {
+    const f = labMatriz({ tests: 'story-5-28.spec.ts::flujo' });
+    rama(f.back, 'feature/5-28-carga');
+    escribir(f.back, 'src/Feature.cs', '// v2\n');
+    commit(f.back, 'codigo', f.ahora - 100);
+    const delAncla = git(f.back, ['rev-parse', 'HEAD']);
+    const hermanos = JSON.stringify([{ repo: 'Back', commit: delAncla }]);
+    const ms = (f.ahora - 50) * 1000;
+    const ts = new Date(ms).toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+    irA(f.back, 'main');
+    juntar(f.back, 'feature/5-28-carga', f.ahora + 60);
+    const enElGate = editar ? JSON.stringify([{ repo: 'Back', commit: git(f.back, ['rev-parse', 'HEAD']) }]) : hermanos;
+    fs.writeFileSync(path.join(f.dod, `5.28-e2e-gate-${ts}.md`),
+      ['# Gate', '**Spec filter**: story-5-28.spec.ts', '```', 'verdict=PASS', '```', '- skipped: 0', `- hermanos: ${enElGate}`, ''].join('\n'));
+    fs.appendFileSync(f.gatesLog, `${JSON.stringify({ ts: new Date(ms).toISOString(), check: 'dod', status: 'green', provenance: 'run-check', cmd: 'bash e2e-gate.sh /fe 5.28 /dir story-5-28.spec.ts', exit: 0 })}\n`);
+    if (!sinEspejo) fs.appendFileSync(f.gatesLog, `{"type":"e2e-gate-anchor","ts":"${ts}","story":"5.28","hermanos":${hermanos}}\n`);
+    commit(f.esp, 'evidencia', f.ahora - 45);
+    return f.calcular().perAc[1].verdict;
+  };
+  assert.equal(caso({}), 'RUNTIME');
+  assert.equal(caso({ editar: true }), 'NOT-RUN', 'el gate dice otra cosa que el espejo');
+  assert.equal(caso({ sinEspejo: true }), 'NOT-RUN', 'sin su línea en el espejo');
+});
+
+test('T44 Ancla_CodigoSinCommitear_ComparaLaHuella @story-8.192 @ac-44', () => {
+  const ahora = (contenido) => {
+    const l = lab();
+    const base = git(l.back, ['rev-parse', 'HEAD']);
+    escribir(l.back, 'src/Feature.cs', '// probado\n');
+    const huella = git(l.back, ['hash-object', 'src/Feature.cs']);
+    const ev = l.evidencia();
+    escribir(l.back, 'src/Feature.cs', contenido);
+    commit(l.back, 'codigo', T0 + 300);
+    return juzgar(l.archivo, conAncla(ev, [{ repo: 'Back', commit: base, huellas: { 'src/Feature.cs': huella } }])).cuenta;
+  };
+  assert.equal(ahora('// probado\n'), true, 'igual a la huella');
+  assert.equal(ahora('// otra cosa\n'), false, 'distinto de la huella');
+});
+
+test('T45 Ancla_MasDeCincuentaArchivosSinCommitear_SinAncla @story-8.192 @ac-45', () => {
+  const f = labMatriz();
+  for (let i = 0; i < 51; i += 1) escribir(f.back, `gen/a${i}.js`, '// generado\n');
+  const h = humoReal(f, '5.28');
+  const [ancla] = h.linea.target.hermanos;
+  assert.equal(ancla.repo, 'Back');
+  assert.equal(ancla.commit, undefined);
+  assert.equal(ancla.huellas, undefined);
+  assert.ok(ancla.sinAncla);
+  assert.match(h.salida, /sin ancla/);
+  assert.ok(JSON.stringify(h.linea).length < 2000, 'la línea sigue siendo chica');
+});

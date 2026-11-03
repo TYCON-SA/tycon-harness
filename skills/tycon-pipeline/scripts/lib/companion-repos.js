@@ -380,15 +380,74 @@ function declaredIn(storyRepo, storyPath, companionRoot) {
   return out;
 }
 
+const TOPE_DE_HUELLAS = 50;
+
+/**
+ * El nombre de un repo, igual en su checkout principal y en sus worktrees: la carpeta que tiene `.git`. Sin rutas absolutas,
+ * porque el ancla viaja con la evidencia.
+ */
+function nombreDelRepo(dir) {
+  const r = spawnSync('git', ['-C', dir, 'rev-parse', '--git-common-dir'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 });
+  if (r.error || r.status !== 0) return null;
+  const comun = path.resolve(dir, String(r.stdout).trim());
+  return path.basename(path.basename(comun) === '.git' ? path.dirname(comun) : comun);
+}
+
+// Lo que el hermano tiene sin commitear, con la huella que tendría en git; `null` si el archivo se borró.
+function huellasSinCommitear(raiz) {
+  const git = (...a) => spawnSync('git', ['-C', raiz, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 });
+  const estado = git('status', '--porcelain', '-z', '--no-renames', '--untracked-files=all');
+  if (estado.error || estado.status !== 0) return { motivo: 'no pude leer sus cambios' };
+  const rutas = String(estado.stdout).split('\0').filter(Boolean).map((l) => l.slice(3));
+  if (rutas.length > TOPE_DE_HUELLAS) return { motivo: `tiene más de ${TOPE_DE_HUELLAS} archivos sin commitear` };
+  const huellas = {};
+  for (const rel of rutas) {
+    if (!esArchivo(path.join(raiz, rel))) { huellas[rel] = null; continue; }
+    const h = git('hash-object', '--', rel);
+    if (h.error || h.status !== 0) return { motivo: `no pude leer ${rel}` };
+    huellas[rel] = String(h.stdout).trim();
+  }
+  return { huellas };
+}
+
+/**
+ * Lo que la evidencia probó en cada hermano del repo de la evidencia: `{ repo, commit, huellas? }`, o `{ repo, sinAncla }`.
+ * Los hermanos salen de la configuración del repo, así que alcanza con el id de la historia. `historia`, su id o su ruta, sólo
+ * sirve para elegir el worktree de su rama.
+ */
+function anclasDeLaEvidencia(repo, historia) {
+  const numero = /\.md$/.test(historia || '') ? numeroDeLaStory(historia) : String(historia || '').split('__').pop();
+  const rama = ramaDe(repo);
+  return parseEvidenceConfig(repo).roots.map((declarado) => {
+    const raiz = enLaMismaRama(real(declarado), rama, /\d/.test(numero || '') ? numero : null);
+    const nombre = nombreDelRepo(raiz) || path.basename(raiz);
+    const head = spawnSync('git', ['-C', raiz, 'rev-parse', '--verify', '-q', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 });
+    const commit = head.status === 0 ? String(head.stdout).trim() : '';
+    if (!commit) return { repo: nombre, sinAncla: 'no pude leer su commit' };
+    const { huellas, motivo } = huellasSinCommitear(raiz);
+    if (motivo) return { repo: nombre, sinAncla: motivo };
+    return Object.keys(huellas).length ? { repo: nombre, commit, huellas } : { repo: nombre, commit };
+  });
+}
+
 module.exports = {
+  anclasDeLaEvidencia, nombreDelRepo,
   companionRoots, ramaDe, enLaMismaRama, ramaNombraLaStory, numeroDeLaStory, gitRootOf, label, ownerOf, groupByRepo, resolveDeclared, parseRepoPrefixed, resolveRepoRef,
   companionTargets, declaredHere, declaredIn, real,
 };
 
 if (require.main === module) {
   const [cmd, repo, story, otro] = process.argv.slice(2);
+  if (cmd === 'anchors' && repo) {
+    // Imprime el JSON de las anclas, y dice en stderr qué hermano quedó sin ancla. Falla callado hacia `[]`: la evidencia se lee como la vieja, y da rojo.
+    let anclas = [];
+    try { anclas = anclasDeLaEvidencia(repo, story); } catch (e) { process.stderr.write(`[hermanos] sin ancla: ${(e && e.message) || e}\n`); }
+    for (const a of anclas) if (a.sinAncla) process.stderr.write(`[hermanos] ${a.repo} queda sin ancla: ${a.sinAncla}\n`);
+    process.stdout.write(JSON.stringify(anclas));
+    process.exit(0);
+  }
   if (!['targets', 'declared-here', 'declared-in'].includes(cmd) || !repo || !story || (cmd === 'declared-in' && !otro)) {
-    process.stderr.write('uso: companion-repos.js targets|declared-here <repo> <story.md>  ·  declared-in <repo-de-la-story> <story.md> <hermano>\n');
+    process.stderr.write('uso: companion-repos.js targets|declared-here <repo> <story.md>  ·  declared-in <repo-de-la-story> <story.md> <hermano>  ·  anchors <repo> [<id o ruta de la historia>]\n');
     process.exit(2);
   }
   try {

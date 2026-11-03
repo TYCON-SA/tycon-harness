@@ -162,6 +162,12 @@ TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # Va a un temporal FUERA del repo (`mktemp` en $TMPDIR) y se borra siempre, también si el humo muere a mitad: la
 # salida sin tapar no puede quedar en `.advisors/`, que viaja por git. Un TERM/INT/HUP sale por `exit`, y eso dispara
 # el trap de EXIT.
+# Lo que la evidencia prueba en cada repo hermano, antes de correr: el commit y la huella de lo que tenga sin commitear. Con
+# el archivo en otro repo es lo único que dice qué se probó (lib/evidence-vs-commit.js). Sin node, o si no se puede, `[]`:
+# la evidencia se lee como una sin ancla.
+HERMANOS_JSON="$(node "$(cd "$(dirname "$0")" && pwd)/lib/companion-repos.js" anchors "$(git -C "$EVIDENCE_DIR" rev-parse --show-toplevel 2>/dev/null || pwd)" "$STORY_ID")"
+[ -n "$HERMANOS_JSON" ] || HERMANOS_JSON='[]'
+
 # La copia la hace un `tee` en una sustitución de proceso (`> >(…)`), no en una tubería: con `"$@" | tee`, bash
 # espera a que se cierre la salida y no al comando, y un humo que deja un proceso de fondo con la salida abierta
 # (arrancar la app para sembrar el «Given») colgaría el envoltorio; con un servidor, para siempre.
@@ -298,7 +304,7 @@ if git -C "$REPO_PATH" rev-parse --git-dir >/dev/null 2>&1; then
     if [ -n "$TGT_COMMIT" ] && [ -n "$(git -C "$REPO_PATH" branch -r --contains "$TGT_COMMIT" 2>/dev/null)" ]; then TGT_REMOTO="si"; fi
   fi
 fi
-TARGET_JSON="$(node -e 'const [r,c,e,o,x]=process.argv.slice(1);process.stdout.write(JSON.stringify({repo:r,commit:c||null,estado:e,en_remoto:o,sin_commitear:x==="true"}))' "$REPO_PATH" "$TGT_COMMIT" "$TGT_ESTADO" "$TGT_REMOTO" "$TGT_SUCIO")"
+TARGET_JSON="$(node -e 'const [r,c,e,o,x,h]=process.argv.slice(1);const t={repo:r,commit:c||null,estado:e,en_remoto:o,sin_commitear:x==="true"};const hs=JSON.parse(h);if(hs.length)t.hermanos=hs;process.stdout.write(JSON.stringify(t))' "$REPO_PATH" "$TGT_COMMIT" "$TGT_ESTADO" "$TGT_REMOTO" "$TGT_SUCIO" "$HERMANOS_JSON")"
 # sin node que conteste, la línea igual tiene que ser JSON válido: la procedencia queda «no se pudo anotar» (null)
 [ -n "$TARGET_JSON" ] || TARGET_JSON=null
 

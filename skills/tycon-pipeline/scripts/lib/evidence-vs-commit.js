@@ -13,7 +13,9 @@
  *      o git no contesta → no cuenta.
  *   3. La evidencia no está en ningún commit alcanzable desde HEAD → no cuenta: pudo probar el código de otra rama.
  *   4. En el mismo repo: cuenta si el archivo es igual en el commit que guardó la evidencia y en HEAD.
- *   5. En otro repo no hay contenido que comparar: cuenta si el último commit del archivo es anterior o igual al de la
+ *   5. En otro repo, una evidencia con ancla (el commit de ese repo al correr, y la huella de lo que tenía sin commitear) se
+ *      compara por contenido contra HEAD: igual cuenta, distinto no. Si el commit del ancla no está en este clon, sigue abajo.
+ *      Sin ancla no hay contenido que comparar: cuenta si el último commit del archivo es anterior o igual al de la
  *      evidencia. Esa hora se lee con --first-parent: un commit viejo que entra por un merge cuenta con la hora del merge.
  *      Si no, cuenta si hay una fusión de pedido posterior cuya rama es de esta historia, y el archivo es igual en HEAD y en
  *      esa rama a la hora de la evidencia. Supone que la evidencia corrió sobre esa rama: nada lo prueba, y por eso `via`
@@ -165,6 +167,30 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
     return delMasNuevo;
   }
 
+  // El ancla de la evidencia para este repo, si tiene. El nombre es el de su checkout principal, igual desde un worktree.
+  function anclaDelRepo(carpeta, evidencia) {
+    if (!Array.isArray(evidencia.ancla)) return null;
+    const comun = preguntar(carpeta, ['rev-parse', '--git-common-dir']);
+    if (comun.codigo !== 0) return null;
+    const dir = path.resolve(carpeta, comun.salida.trim());
+    const nombre = path.basename(path.basename(dir) === '.git' ? path.dirname(dir) : dir);
+    return evidencia.ancla.find((a) => a && a.repo === nombre && a.commit) || null;
+  }
+
+  // ¿El archivo de HEAD es el que probó la evidencia? true, false, o null si el commit del ancla no está en este clon.
+  function igualAlAncla(carpeta, nombre, ancla) {
+    const ruta = preguntar(carpeta, ['ls-files', '--full-name', '--', nombre]);
+    if (ruta.codigo !== 0) return null;
+    const rel = ruta.salida.trim();
+    if (ancla.huellas && Object.prototype.hasOwnProperty.call(ancla.huellas, rel)) {
+      const enHead = preguntar(carpeta, ['rev-parse', '--verify', '-q', `HEAD:${rel}`]);
+      if (enHead.codigo !== 0) return ancla.huellas[rel] === null;
+      return enHead.salida.trim() === ancla.huellas[rel];
+    }
+    const diff = preguntar(carpeta, ['diff-tree', '--quiet', '-r', ancla.commit, 'HEAD', '--', nombre]);
+    return diff.codigo === 0 ? true : diff.codigo === 1 ? false : null;
+  }
+
   const cuentaPorPrueba = (ajena) => ({ cuenta: true, regla: 6, commit: ajena.commit, historia: ajena.historia });
 
   /**
@@ -210,6 +236,16 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
     }
 
     if (!historiaEntera(carpeta)) return SIN_RESPUESTA(5);
+    const ancla = anclaDelRepo(carpeta, evidencia);
+    if (ancla) {
+      const igual = igualAlAncla(carpeta, nombre, ancla);
+      if (igual) return { cuenta: true, regla: 5, via: 'ancla' };
+      if (igual === false) {
+        const ajena = pruebaDeOtraHistoria(carpeta, nombre, ancla.commit);
+        if (ajena) return cuentaPorPrueba(ajena);
+        return NO_CUENTA('cambio-posterior', 5, { commit: ultimoCommitCorto(carpeta, nombre) });
+      }
+    }
     const ultimo = preguntar(carpeta, ['log', '-1', '--first-parent', `--format=${FORMATO_DE_COMMIT}`, 'HEAD', '--', nombre]);
     if (ultimo.codigo !== 0 || !ultimo.salida.trim()) return SIN_RESPUESTA(5);
     const [, hora, corto] = ultimo.salida.trim().split(' ');

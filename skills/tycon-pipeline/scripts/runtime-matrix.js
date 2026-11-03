@@ -334,7 +334,11 @@ function readE2eGates(evidenceDirs, sid, gatesLogPath, storyPath) {
           else if (/^##\s/.test(line)) break;
         }
       }
-      gates.push({ path: full, ts: compactTsToMs(m[1]), tsRaw: m[1], verdict, specFilter, specFilters, skipped, mirrored, titulos });
+      // El ancla cuenta sólo si el espejo dice lo mismo: el gate viaja con el código y se edita.
+      const deGate = (content.match(/^- hermanos: (.+)$/m) || [])[1];
+      const anclaEspejo = mirrorLines.find((e) => e.type === 'e2e-gate-anchor' && e.ts === m[1] && e.story === sid);
+      const ancla = deGate && anclaEspejo && deGate === JSON.stringify(anclaEspejo.hermanos) ? anclaEspejo.hermanos : undefined;
+      gates.push({ path: full, ts: compactTsToMs(m[1]), tsRaw: m[1], verdict, specFilter, specFilters, skipped, mirrored, titulos, ancla });
     }
   }
   gates.sort((a, b) => b.ts - a.ts);
@@ -651,6 +655,9 @@ function readSmokeLedger(evidenceDirs, sid, gatesLogPath) {
         l.includes('"type":"smoke-run"') && l.includes(`"ts":"${e.ts}"`) &&
         l.includes(`"story":"${e.story}"`) && l.includes(acsStr) && l.includes('"exit":0'));
       const mirrored = confirmadas.length > 0;
+      // El ancla cuenta sólo si una línea confirmada del espejo trae la misma: el registro viaja con el código y se edita.
+      const delRegistro = e.target && Array.isArray(e.target.hermanos) ? JSON.stringify(e.target.hermanos) : null;
+      const ancla = delRegistro && confirmadas.some((l) => l.includes(`"hermanos":${delRegistro}`)) ? e.target.hermanos : undefined;
       // (DODRT-C8) `--mutates` declarado en smoke-run.sh: cuenta SOLO si una línea
       // confirmada del espejo trae el flag. Es la vía de mutación para productos sin superficie
       // HTTP ni navegador.
@@ -663,7 +670,7 @@ function readSmokeLedger(evidenceDirs, sid, gatesLogPath) {
       // La imagen que el humo guardó con `--capture`, verificada contra el espejo como la salida.
       const imagen = mirrored ? imagenDelHumo(e, dir, confirmadas) : { ruta: null, problema: null };
       // `linea`: la línea entera, para encontrar en git el commit de ESTA corrida; un checkout puede dejarle el `\r`.
-      entries.push({ ...e, path: f, linea: line.replace(/\r$/, ''), tsMs: Date.parse(e.ts), mirrored, mutatesOk, evidenceKind: classifyCmd(e.cmd),
+      entries.push({ ...e, path: f, linea: line.replace(/\r$/, ''), tsMs: Date.parse(e.ts), mirrored, ancla, mutatesOk, evidenceKind: classifyCmd(e.cmd),
         v2, salidaProblema, visual: imagen.ruta, visualProblema: imagen.problema });
     }
   }
@@ -1046,7 +1053,7 @@ function compute(opts) {
       for (const f of codeFiles) {
         const r = juez.vigencia({ archivo: f.abs, mtimeMs: f.mt, evidencia });
         if (!r.cuenta) { v = { ...r, rel: f.rel }; break; }
-        if (r.via || r.regla === 6) contadas.push({ ...r, rel: f.rel });
+        if (r.via === 'fusion-propia' || r.regla === 6) contadas.push({ ...r, rel: f.rel });
       }
       // sólo si la evidencia cuenta: si otro archivo la venció, decir por qué siguió contando éste confunde
       if (v.cuenta) for (const c of contadas) dejadasContar.add(avisoDeLoQueContó(c));
@@ -1054,8 +1061,8 @@ function compute(opts) {
     }
     return vigencias.get(ev);
   };
-  const vigenciaGate = (g) => vigenciaDe(g, { ruta: g.path, tsMs: g.ts });
-  const vigenciaHumo = (e) => vigenciaDe(e, { ruta: e.path, tsMs: e.tsMs, linea: e.linea });
+  const vigenciaGate = (g) => vigenciaDe(g, { ruta: g.path, tsMs: g.ts, ancla: g.ancla });
+  const vigenciaHumo = (e) => vigenciaDe(e, { ruta: e.path, tsMs: e.tsMs, linea: e.linea, ancla: e.ancla });
   const porQueVencio = (v) => `(${v.rel}: ${evidenceVsCommit.motivoEnPalabras(v)})`;
 
   // --- evidencia runtime 1: gates E2E (frescura BLOQUEANTE + espejo en gates.log OBLIGATORIO)

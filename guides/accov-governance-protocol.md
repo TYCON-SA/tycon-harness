@@ -425,6 +425,8 @@ Por cada archivo de código declarado, la primera que aplica decide (`lib/eviden
 | La evidencia no está en ningún commit alcanzable desde `HEAD` | No cuenta: pudo probar el código de otra rama |
 | Mismo repo: el archivo es igual en el commit de la evidencia y en `HEAD` | Cuenta, aunque haya cambiado y vuelto |
 | Mismo repo: el archivo es distinto | No cuenta, y el aviso nombra el archivo y el commit |
+| Otro repo, evidencia con ancla: el archivo de `HEAD` es igual al del commit del ancla, o a la huella si estaba sin commitear | Cuenta |
+| Otro repo, evidencia con ancla: el archivo es distinto | No cuenta, y el aviso nombra el archivo y el commit |
 | Otro repo: el último commit del archivo es anterior o igual al de la evidencia | Cuenta |
 | Otro repo: el último commit del archivo es posterior, y una fusión de pedido de esta historia, posterior a la evidencia, trae el archivo tal como estaba su rama a la hora de la evidencia | Cuenta, y la matriz avisa: se supone que la evidencia corrió sobre esa rama |
 | Otro repo: el último commit del archivo es posterior, sin esa fusión | No cuenta: entre repos sólo se pueden comparar horas |
@@ -436,6 +438,10 @@ sabe, vence: un commit directo, un squash, `Merged PR N: título`, una rama sin 
 una prueba no vence por decisión del dueño, y afloja el control a propósito: una prueba que esa historia cambió puede no probar
 ya lo mismo. La misma historia que corrige su prueba después de la evidencia, sí la vence: esa prueba quizá daba verde por estar
 mal. Un cambio de código vence siempre, aunque venga junto con una prueba.
+
+El ancla la anotan el humo y el portón al correr, por cada repo hermano: su commit y la huella de hasta 50 archivos sin commitear. Vale
+la del espejo: el registro y el portón viajan con el código y se editan. Si su commit no está en el clon, o el hermano no dejó
+ancla, la evidencia se lee como una sin ancla.
 
 Un clon cortado no se compara: el aviso dice que no se pudo comparar contra git. Si la evidencia venció, se vuelve a
 correr. Lo que llega a un commit ya pasó por esta misma regla en el freno del commit, con el archivo sin commitear: por eso

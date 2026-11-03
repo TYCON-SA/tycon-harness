@@ -21,9 +21,9 @@ function ramaDelAsunto(asunto) {
   return m[1] ? m[2].replace(/^[^/]+\//, '') : m[2];
 }
 
-const palabrasDe = (texto) => String(texto).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').split(/[^a-z0-9]+/).filter(Boolean);
+const palabrasDe = (texto) => String(texto).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/[^a-z0-9]+/).filter(Boolean);
 
-/** Las palabras que siguen al número en un nombre: `feature/6-1-fondos` y `6.1` dan `['fondos']`. Con otro orden, nada. */
+/** Las palabras que siguen al número en un nombre: `<rama>-6-1-fondos` y `6.1` dan `['fondos']`. Con otro orden, nada. */
 function palabrasTrasElNumero(nombre, numero) {
   const todas = palabrasDe(nombre);
   const delNumero = palabrasDe(numero);
