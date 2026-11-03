@@ -165,6 +165,8 @@ TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # Lo que la evidencia prueba en cada repo hermano, antes de correr: el commit y la huella de lo que tenga sin commitear. Con
 # el archivo en otro repo es lo único que dice qué se probó (lib/evidence-vs-commit.js). Sin node, o si no se puede, `[]`:
 # la evidencia se lee como una sin ancla.
+# la carpeta de la evidencia tiene que existir: sin ella, el repo sale del que tenga la carpeta de trabajo
+mkdir -p "$EVIDENCE_DIR"
 HERMANOS_JSON="$(node "$(cd "$(dirname "$0")" && pwd)/lib/companion-repos.js" anchors "$(git -C "$EVIDENCE_DIR" rev-parse --show-toplevel 2>/dev/null || pwd)" "$STORY_ID")"
 [ -n "$HERMANOS_JSON" ] || HERMANOS_JSON='[]'
 

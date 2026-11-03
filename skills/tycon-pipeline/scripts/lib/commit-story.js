@@ -45,7 +45,8 @@ function coinciden(a, b) {
  * Si el número se repite entre temas, las palabras de la rama tienen que coincidir con las del archivo de una sola.
  */
 function historiaDeLaRama(rama, { propia, catalogo }) {
-  if (!rama || !Array.isArray(catalogo)) return null;
+  // sin la propia en el catálogo, una rama con su número parecería de otra historia
+  if (!rama || !Array.isArray(catalogo) || !catalogo.some((h) => h.archivo === propia.archivo)) return null;
   const nombradas = catalogo.filter((h) => ramaNombraLaStory(rama, h.numero));
   const numeros = new Set(nombradas.map((h) => palabrasDe(h.numero).join('.')));
   if (numeros.size !== 1) return null;

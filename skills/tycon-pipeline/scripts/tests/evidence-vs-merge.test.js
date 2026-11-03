@@ -796,3 +796,139 @@ test('T45 Ancla_MasDeCincuentaArchivosSinCommitear_SinAncla @story-8.192 @ac-45'
   assert.match(h.salida, /sin ancla/);
   assert.ok(JSON.stringify(h.linea).length < 2000, 'la línea sigue siendo chica');
 });
+
+// ---------------------------------------------------------------- lo que encontró el pase adversarial
+
+test('T46 Prueba_SinHistoria_YDespuesFusionAjenaQueNoLaToca_NoCuenta @story-8.192 @ac-27 @ac-25', () => {
+  const ajenaDespues = (l) => {
+    rama(l.back, 'feature/5-29-otra');
+    escribir(l.back, 'otro.txt', 'x');
+    commit(l.back, 'no toca la prueba', T0 + 300);
+    irA(l.back, 'main');
+    fusionar(l.back, 'feature/5-29-otra', T0 + 400);
+  };
+  const casos = {
+    directo: (l) => { escribir(l.back, PRUEBA, '// directo\n'); commit(l.back, 'prueba', T0 + 150); },
+    squashPropio: (l) => {
+      rama(l.back, 'feature/5-28-arreglo');
+      escribir(l.back, PRUEBA, '// propia\n');
+      commit(l.back, 'prueba', T0 + 150);
+      irA(l.back, 'main');
+      juntar(l.back, 'feature/5-28-arreglo', T0 + 200, 'Merged PR 3: arreglo');
+    },
+    mergedPr: (l) => {
+      rama(l.back, 'feature/5-28-arreglo');
+      escribir(l.back, PRUEBA, '// propia\n');
+      commit(l.back, 'prueba', T0 + 150);
+      irA(l.back, 'main');
+      fusionar(l.back, 'feature/5-28-arreglo', T0 + 200, 'Merged PR 3: arreglo de 5.28');
+    },
+  };
+  for (const [nombre, cambiar] of Object.entries(casos)) {
+    const l = lab();
+    const ev = l.evidencia();
+    cambiar(l);
+    ajenaDespues(l);
+    assert.equal(juzgar(l.prueba, ev).cuenta, false, nombre);
+  }
+});
+
+test('T47 Prueba_LaFusionPropiaLaReescribe_NoCuenta @story-8.192 @ac-29', () => {
+  const l = lab();
+  const ev = l.evidencia();
+  rama(l.back, 'feature/5-29-otra');
+  escribir(l.back, PRUEBA, '// otra historia\n');
+  commit(l.back, 'prueba', T0 + 150);
+  irA(l.back, 'main');
+  fusionar(l.back, 'feature/5-29-otra', T0 + 200);
+  rama(l.back, 'feature/5-28-carga');
+  escribir(l.back, 'otro.txt', 'x');
+  commit(l.back, 'otra cosa', T0 + 250);
+  irA(l.back, 'main');
+  git(l.back, ['merge', '-q', '--no-ff', '--no-commit', 'feature/5-28-carga']);
+  escribir(l.back, PRUEBA, '// reescrita en la fusión propia\n');
+  commit(l.back, asuntoDe('feature/5-28-carga'), T0 + 300);
+  assert.equal(juzgar(l.prueba, ev).cuenta, false);
+});
+
+test('T48 Rama_PropiaFueraDelCatalogo_NoSeSabe @story-8.192 @ac-13', () => {
+  const { historiaDeLaRama } = commitStory();
+  const otroTema = [{ numero: '5.28', archivo: '/h/otro-tema/5-28-otra-cosa.md' }];
+  assert.equal(historiaDeLaRama('feature/5-28-carga', { propia: CATALOGO[0], catalogo: otroTema }), null);
+});
+
+test('T49 RutaNoAscii_SeLeeCruda @story-8.192 @ac-24 @ac-44', () => {
+  const rel = 'tests/App.Tests/SeñalTests.cs';
+  const r = pruebaCambiadaPor('feature/5-29-otra', { rel });
+  assert.equal(r.cuenta, true, JSON.stringify(r));
+  const l = lab();
+  const abs = escribir(l.back, rel, '// probado\n');
+  const huella = git(l.back, ['hash-object', rel]);
+  const base = git(l.back, ['rev-parse', 'HEAD']);
+  const ev = l.evidencia();
+  commit(l.back, 'la prueba', T0 + 300);
+  assert.equal(juzgar(abs, conAncla(ev, [{ repo: 'Back', commit: base, huellas: { [rel]: huella } }])).cuenta, true);
+});
+
+test('T50 Ancla_HermanoSubcarpeta_HuellaDelArchivoReal @story-8.192 @ac-17 @ac-44', () => {
+  const ws = carpeta();
+  const mono = repoNuevo(ws, 'Mono');
+  escribir(mono, 'back/src/Feature.cs', '// v1\n');
+  escribir(mono, 'front/x.ts', '// x\n');
+  commit(mono, 'base', T0);
+  const esp = repoNuevo(ws, 'Historias');
+  escribir(esp, '.tycon/advisors.yaml', 'evidence:\n  companion_repos:\n    - ../Mono/back\n');
+  commit(esp, 'config', T0);
+  escribir(mono, 'back/src/Feature.cs', '// sin commitear\n');
+  escribir(mono, 'front/x.ts', '// fuera del hermano\n');
+  const [ancla] = require(path.join(SCRIPTS, 'lib', 'companion-repos.js')).anclasDeLaEvidencia(esp, '5.28');
+  assert.deepEqual(ancla.huellas, { 'back/src/Feature.cs': git(mono, ['hash-object', 'back/src/Feature.cs']) }, JSON.stringify(ancla));
+});
+
+test('T51 Ancla_PruebaSinCommitearAlCorrer_OtraHistoriaDespues_Cuenta @story-8.192 @ac-24 @ac-44', () => {
+  const l = lab();
+  const base = git(l.back, ['rev-parse', 'HEAD']);
+  rama(l.back, 'feature/5-28-carga');
+  escribir(l.back, PRUEBA, '// la probada\n');
+  const huella = git(l.back, ['hash-object', PRUEBA]);
+  const ev = l.evidencia();
+  commit(l.back, 'guarda lo probado', T0 + 150);
+  irA(l.back, 'main');
+  fusionar(l.back, 'feature/5-28-carga', T0 + 200);
+  rama(l.back, 'feature/5-29-otra');
+  escribir(l.back, PRUEBA, '// otra historia\n');
+  commit(l.back, 'prueba', T0 + 300);
+  irA(l.back, 'main');
+  fusionar(l.back, 'feature/5-29-otra', T0 + 400);
+  const r = juzgar(l.prueba, conAncla(ev, [{ repo: 'Back', commit: base, huellas: { [PRUEBA]: huella } }]));
+  assert.equal(r.cuenta, true, JSON.stringify(r));
+  assert.equal(r.regla, 6);
+});
+
+test('T52 Humo_PrimeraVez_AnclaDelRepoDeLaEvidencia @story-8.192 @ac-17', () => {
+  const f = labMatriz();
+  fs.rmSync(path.join(f.esp, '.advisors'), { recursive: true, force: true });
+  const home = path.join(f.ws, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  const dod = path.join(f.esp, '.advisors', 'dod-runtime');
+  const r = spawnSync('bash', [SMOKE, dod, '5.28', '--acs', '1', '--pass-if', 'contesta', '--', 'node', '-e', 'console.log("contesta")'],
+    { cwd: f.back, encoding: 'utf8', env: { ...entornoGit(), HOME: home } });
+  assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  const linea = JSON.parse(fs.readFileSync(path.join(dod, '5.28-smoke-ledger.jsonl'), 'utf8').trim().split('\n').pop());
+  assert.equal(linea.target.hermanos[0].repo, 'Back', JSON.stringify(linea.target));
+});
+
+test('T53 Matriz_GateSinEspejo_NoAvisaLoQueContó @story-8.192 @ac-40', () => {
+  const f = labMatriz({ tests: 'story-5-28.spec.ts::flujo' });
+  rama(f.back, 'feature/5-28-carga');
+  escribir(f.back, 'src/Feature.cs', '// v2\n');
+  commit(f.back, 'codigo', f.ahora - 100);
+  const ts = new Date((f.ahora - 50) * 1000).toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+  fs.writeFileSync(path.join(f.dod, `5.28-e2e-gate-${ts}.md`), ['# Gate', '**Spec filter**: story-5-28.spec.ts', '```', 'verdict=PASS', '```', '- skipped: 0', ''].join('\n'));
+  commit(f.esp, 'evidencia', f.ahora - 45);
+  irA(f.back, 'main');
+  fusionar(f.back, 'feature/5-28-carga', f.ahora + 60);
+  const r = f.calcular();
+  assert.ok(r.warnings.some((w) => /SIN espejo/.test(w)), JSON.stringify(r.warnings));
+  assert.ok(!r.warnings.some((w) => /sigue contando/.test(w)), JSON.stringify(r.warnings));
+});

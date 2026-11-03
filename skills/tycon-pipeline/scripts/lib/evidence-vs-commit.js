@@ -146,25 +146,61 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
     return distinta;
   }
 
+  // La ruta del archivo desde la raíz de su repo, cruda: sin -z, git la escribe entre comillas y con escapes si no es ASCII.
+  function rutaEnElRepo(carpeta, nombre) {
+    const r = preguntar(carpeta, ['ls-files', '-z', '--full-name', '--', nombre]);
+    return r.codigo === 0 ? r.salida.split('\0')[0] || null : null;
+  }
+
+  // La historia de la fusión que trajo el commit `c`: la primera, de la más vieja a la más nueva, que lo alcanza por su
+  // segundo padre y no por el primero. Una fusión posterior que no lo trajo no cuenta. Sin esa fusión (un commit directo,
+  // un squash) o con un asunto que no es de pedido, no se sabe.
+  function historiaDelCommit(carpeta, c) {
+    const fusiones = preguntar(carpeta, ['log', '--merges', '--ancestry-path', '--topo-order', '--reverse', '--format=%H %P%x09%s', `${c}..HEAD`]);
+    if (fusiones.codigo !== 0) return null;
+    for (const linea of fusiones.salida.split('\n').filter(Boolean)) {
+      const [ids, asunto] = linea.split('\t');
+      const [, primerPadre] = ids.split(' ');
+      const porElPrimero = preguntar(carpeta, ['merge-base', '--is-ancestor', c, primerPadre]);
+      if (porElPrimero.codigo === 0) continue;
+      if (porElPrimero.codigo !== 1) return null;
+      return historiaDe(ramaDelAsunto(asunto));
+    }
+    return null;
+  }
+
   // Si el archivo es de prueba y todos los commits que lo cambiaron desde `desde` son de otra historia, el más nuevo con su
-  // historia. Sin commits y con el archivo distinto, lo cambió la resolución de una fusión: no se sabe.
+  // historia. El archivo de HEAD tiene que ser el de uno de esos commits: si no, lo escribió la resolución de una fusión, y
+  // no se sabe de quién es.
   function pruebaDeOtraHistoria(carpeta, nombre, desde) {
     if (!historia || !desde) return null;
-    const ruta = preguntar(carpeta, ['ls-files', '--full-name', '--', nombre]);
-    if (ruta.codigo !== 0 || !isTestPath(ruta.salida.trim())) return null;
+    const rel = rutaEnElRepo(carpeta, nombre);
+    if (!rel || !isTestPath(rel)) return null;
     const commits = preguntar(carpeta, ['log', '--no-merges', '--format=%h', `${desde}..HEAD`, '--', nombre]);
     const lista = commits.codigo === 0 ? commits.salida.split('\n').filter(Boolean) : [];
     if (!lista.length) return null;
+    const enHead = preguntar(carpeta, ['rev-parse', '--verify', '-q', `HEAD:${rel}`]).salida.trim();
+    if (!enHead || !lista.some((c) => preguntar(carpeta, ['rev-parse', '--verify', '-q', `${c}:${rel}`]).salida.trim() === enHead)) return null;
     let delMasNuevo = null;
     for (const c of lista) {
-      const fusiones = preguntar(carpeta, ['log', '--merges', '--ancestry-path', '--topo-order', '--reverse', '--format=%s', `${c}..HEAD`]);
-      if (fusiones.codigo !== 0) return null;
-      const rama = fusiones.salida.split('\n').map(ramaDelAsunto).find(Boolean);
-      const de = historiaDe(rama);
+      const de = historiaDelCommit(carpeta, c);
       if (!de || de === 'propia') return null;
       delMasNuevo = delMasNuevo || { commit: c, historia: de.numero };
     }
     return delMasNuevo;
+  }
+
+  // Con la prueba sin commitear al correr, el commit que guardó justo lo probado no es un cambio posterior: se cuenta desde
+  // el primero que dejó el archivo igual a su huella. Si ninguno lo hizo, desde el ancla.
+  function desdeElAncla(carpeta, nombre, ancla) {
+    const rel = rutaEnElRepo(carpeta, nombre);
+    const huella = rel && ancla.huellas && ancla.huellas[rel];
+    if (!huella) return ancla.commit;
+    const commits = preguntar(carpeta, ['log', '--topo-order', '--reverse', '--format=%H', `${ancla.commit}..HEAD`, '--', nombre]);
+    if (commits.codigo !== 0) return ancla.commit;
+    const guardo = commits.salida.split('\n').filter(Boolean)
+      .find((c) => preguntar(carpeta, ['rev-parse', '--verify', '-q', `${c}:${rel}`]).salida.trim() === huella);
+    return guardo || ancla.commit;
   }
 
   // El ancla de la evidencia para este repo, si tiene. El nombre es el de su checkout principal, igual desde un worktree.
@@ -179,9 +215,8 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
 
   // ¿El archivo de HEAD es el que probó la evidencia? true, false, o null si el commit del ancla no está en este clon.
   function igualAlAncla(carpeta, nombre, ancla) {
-    const ruta = preguntar(carpeta, ['ls-files', '--full-name', '--', nombre]);
-    if (ruta.codigo !== 0) return null;
-    const rel = ruta.salida.trim();
+    const rel = rutaEnElRepo(carpeta, nombre);
+    if (!rel) return null;
     if (ancla.huellas && Object.prototype.hasOwnProperty.call(ancla.huellas, rel)) {
       const enHead = preguntar(carpeta, ['rev-parse', '--verify', '-q', `HEAD:${rel}`]);
       if (enHead.codigo !== 0) return ancla.huellas[rel] === null;
@@ -241,7 +276,7 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
       const igual = igualAlAncla(carpeta, nombre, ancla);
       if (igual) return { cuenta: true, regla: 5, via: 'ancla' };
       if (igual === false) {
-        const ajena = pruebaDeOtraHistoria(carpeta, nombre, ancla.commit);
+        const ajena = pruebaDeOtraHistoria(carpeta, nombre, desdeElAncla(carpeta, nombre, ancla));
         if (ajena) return cuentaPorPrueba(ajena);
         return NO_CUENTA('cambio-posterior', 5, { commit: ultimoCommitCorto(carpeta, nombre) });
       }

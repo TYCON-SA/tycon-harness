@@ -1044,9 +1044,7 @@ function compute(opts) {
         if (!r.cuenta) { v = { ...r, rel: f.rel }; break; }
         if (r.via === 'fusion-propia' || r.regla === 6) contadas.push({ ...r, rel: f.rel });
       }
-      // sólo si la evidencia cuenta: si otro archivo la venció, decir por qué siguió contando éste confunde
-      if (v.cuenta) for (const c of contadas) dejadasContar.add(avisoDeLoQueContó(c));
-      vigencias.set(ev, v);
+      vigencias.set(ev, { ...v, contadas: v.cuenta ? contadas : [] });
     }
     return vigencias.get(ev);
   };
@@ -1111,6 +1109,9 @@ function compute(opts) {
     warnings.push('🚨 TYCON_RUNTIME_MATRIX_LEGACY=1 — todo smoke cuenta como RUNTIME sin mirar el comando. Es el bug que este gate vino a arreglar: la matriz PUEDE estar mintiendo. Sacá la variable en cuanto puedas.');
   }
 
+  // Sólo de la evidencia que de verdad cuenta: un gate sin espejo o con pruebas apagadas no cuenta, y avisar por qué
+  // siguió contando uno de sus archivos confundiría.
+  for (const ev of [...freshPassGates, ...freshSmokes]) for (const c of vigencias.get(ev).contadas) dejadasContar.add(avisoDeLoQueContó(c));
   for (const aviso of dejadasContar) warnings.push(aviso);
 
   // --- imagen de pantalla: de qué AC es cada captura o grabación que la matriz ya puede contar

@@ -393,16 +393,20 @@ function nombreDelRepo(dir) {
   return path.basename(path.basename(comun) === '.git' ? path.dirname(comun) : comun);
 }
 
-// Lo que el hermano tiene sin commitear, con la huella que tendría en git; `null` si el archivo se borró.
+// Lo que el hermano tiene sin commitear, con la huella que tendría en git; `null` si el archivo se borró. Las rutas van desde la
+// raíz del repo, como las da git: un hermano declarado como subcarpeta mira sólo lo suyo.
 function huellasSinCommitear(raiz) {
-  const git = (...a) => spawnSync('git', ['-C', raiz, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 });
-  const estado = git('status', '--porcelain', '-z', '--no-renames', '--untracked-files=all');
+  const top = spawnSync('git', ['-C', raiz, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 });
+  if (top.error || top.status !== 0) return { motivo: 'no pude leer su raíz' };
+  const repo = String(top.stdout).trim();
+  const git = (...a) => spawnSync('git', ['-C', repo, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 });
+  const estado = git('status', '--porcelain', '-z', '--no-renames', '--untracked-files=all', '--', path.relative(repo, raiz) || '.');
   if (estado.error || estado.status !== 0) return { motivo: 'no pude leer sus cambios' };
   const rutas = String(estado.stdout).split('\0').filter(Boolean).map((l) => l.slice(3));
   if (rutas.length > TOPE_DE_HUELLAS) return { motivo: `tiene más de ${TOPE_DE_HUELLAS} archivos sin commitear` };
   const huellas = {};
   for (const rel of rutas) {
-    if (!esArchivo(path.join(raiz, rel))) { huellas[rel] = null; continue; }
+    if (!esArchivo(path.join(repo, rel))) { huellas[rel] = null; continue; }
     const h = git('hash-object', '--', rel);
     if (h.error || h.status !== 0) return { motivo: `no pude leer ${rel}` };
     huellas[rel] = String(h.stdout).trim();
