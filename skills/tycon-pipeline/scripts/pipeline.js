@@ -3112,7 +3112,9 @@ function computeNext() {
   const warnings = STEPS_TABLE.startWarningLines(marker);
 
   // Un arreglo después de Hallazgos (una edición de código posterior al último cierre de los revisores) pide otra vuelta.
+  // Si los revisores cerraron después de «Preparar el commit», lo preparado ya no es lo revisado: se prepara de nuevo.
   const reloop = STEPS_TABLE.reviewersRound(marker);
+  const ultimoViejo = STEPS_TABLE.prepareCommitStale(marker);
 
   const stepState = [];
   let nextStep = null;
@@ -3120,18 +3122,24 @@ function computeNext() {
     let done = STEPS_TABLE.isDone(marker, s.id);
     let skip = null;
     if (s.id === 'reviewers' && reloop) done = false;
+    if (s.id === 'prepare-commit' && ultimoViejo) done = false;
     if (s.id === 'live-check' && !done && story) {
       // el único salteo que deja constancia: sin ella «Preparar el commit» no cierra (ver NOTA_CIERRE_7C)
       if (storyIsExemptCheck(story)) skip = 'dod_runtime_exempt: true en frontmatter';
       else if (!storyRequiresRuntimeEvidenceCheck(story)) skip = 'story NO declara runtime tests (sin tests_done_*, sin E2E, sin tests/e2e/)';
     }
     const round = s.id === 'reviewers' && reloop ? reloop.round : undefined;
-    const entry = { step: s.id, number: s.number, name: STEPS_TABLE.stepName(s.id, round), file: path.join(STEPS_DIR, s.file), done, ...(skip ? { skip_mechanical: skip } : {}) };
+    const entry = { step: s.id, number: s.number, name: STEPS_TABLE.stepName(s.id, round), file: path.join(STEPS_DIR, s.file), done, ...(skip ? { skip_mechanical: skip } : {}),
+      ...(round ? { to_review: reloop.archivos } : {}), ...(s.id === 'prepare-commit' && ultimoViejo ? { again: 'los revisores cerraron después: lo preparado ya no es lo revisado' } : {}) };
     stepState.push(entry);
     if (!nextStep && !done) nextStep = { ...entry, ...(round ? { round } : {}) };
   }
   const exempt7c = !!nextStep && nextStep.step === 'live-check' && storyIsExemptCheck(story);
   const etiqueta = nextStep ? `«${nextStep.name}» (paso ${nextStep.number} de ${STEPS_TABLE.TOTAL})` : null;
+  // lo que falta revisar, por su nombre (hasta cinco), o por qué se prepara el commit otra vez
+  const faltaRevisar = nextStep && nextStep.to_review
+    ? ` Falta revisar lo cambiado después de los revisores: ${nextStep.to_review.slice(0, 5).join(', ')}${nextStep.to_review.length > 5 ? ` y ${nextStep.to_review.length - 5} más` : ''}.`
+    : nextStep && nextStep.again ? ` Otra vez: ${nextStep.again}.` : '';
 
   // Pre-condiciones del next conocidas por el script.
   const preconditions = [];
@@ -3218,7 +3226,7 @@ function computeNext() {
     note: exempt7c
       ? `${partes}Sigue ${etiqueta}. ${NOTA_7C_EXENTA}`
       : nextStep
-      ? `${partes}${pending && ['consultar-porton', 'lanzar-pase', 'esperar-turno-pase'].includes(pending.kind) ? `ANTES, pase adversarial: ${pending.message} ` : ''}Sigue ${etiqueta}. Leé SOLO ${path.basename(nextStep.file)} y ejecutalo. Los skips listados son mecánicos (verificables) — no infieras otros (regla E.i). Al completar: ${cierre(nextStep)}.${pending && pending.kind.endsWith('-pase-ajeno') ? ` ⚠️ ${pending.message} Regla: ${pending.rule} (${pending.why}).` : ''}${notaDelTamano(marker, nextStep) ? ` ${notaDelTamano(marker, nextStep)}` : ''}${warnings.length ? ` ${warnings.join(' · ')}.` : ''}`
+      ? `${partes}${pending && ['consultar-porton', 'lanzar-pase', 'esperar-turno-pase'].includes(pending.kind) ? `ANTES, pase adversarial: ${pending.message} ` : ''}Sigue ${etiqueta}.${faltaRevisar} Leé SOLO ${path.basename(nextStep.file)} y ejecutalo. Los skips listados son mecánicos (verificables) — no infieras otros (regla E.i). Al completar: ${cierre(nextStep)}.${pending && pending.kind.endsWith('-pase-ajeno') ? ` ⚠️ ${pending.message} Regla: ${pending.rule} (${pending.why}).` : ''}${notaDelTamano(marker, nextStep) ? ` ${notaDelTamano(marker, nextStep)}` : ''}${warnings.length ? ` ${warnings.join(' · ')}.` : ''}`
       : `No quedan pasos pendientes — cerrá con marker.js clear (o ${STEPS_TABLE.CLOSE_STEP.file} si vas a cerrar la story en ADO: «${STEPS_TABLE.CLOSE_STEP.name}»).`,
   };
 }

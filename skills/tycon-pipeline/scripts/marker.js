@@ -609,6 +609,8 @@ function cmdSet(payloadJson) {
     const {
       adversarial, deepReviewDone, workSignalStarted, clockiStarted, adoMarkedActive, atddBypass, atddBypassReason,
       checks, checksProvenance, dodRuntimeChecked, iterations, fileEvents, filesTouched, filesTouchedAt,
+      // la otra vuelta de revisores es de los cambios de la corrida: heredada, la story nueva pediría revisar lo de la vieja
+      otraVuelta,
       stepsCompleted, stepsPending, startedAt, evidenceDir, baseSha,
       // el esquema de los pasos y los avisos del Arranque son de la corrida
       stepScheme, startWarnings,
@@ -1270,6 +1272,21 @@ function cmdCompleteStep(nRaw, flags) {
       console.error('  El pipeline se recorre EN ORDEN: `pipeline.js next` te dice cuál va. Cerrá ese primero (con su evidencia).');
       console.error('  Escape consciente (raro — p.ej. retomando una corrida que ya los hizo): --out-of-order (queda en bypass.log).');
       process.exit(1);
+    }
+  }
+
+  // ── «Preparar el commit» no cierra con código sin revisar ──
+  // Un cambio de código posterior al último cierre de los revisores (la regla de `next`, lib/steps.js) pide otra vuelta
+  // antes: lo que se commitea es lo revisado. Una prueba o un texto no la piden. `--out-of-order` no lo saltea: no es
+  // el orden, es lo que se commitea. Con Hallazgos abierto también frena: `next` espera a que cierre, este paso no.
+  if (nuevo && ids.includes('prepare-commit')) {
+    const vuelta = STEPS_LIB.reviewersRound(marker, { aunConHallazgos: true });
+    if (vuelta) {
+      const nombres = vuelta.archivos.slice(0, 5).join(', ') + (vuelta.archivos.length > 5 ? ` y ${vuelta.archivos.length - 5} más` : '');
+      appendLog('gates.log', { name: 'unreviewed-code', status: 'blocked', story: marker.storyId, step: n, files: vuelta.archivos.length, round: vuelta.round });
+      console.error(`marker.js complete-step ${n} BLOQUEADO — cambió código después de los revisores: ${nombres}.`);
+      console.error('  Corré los revisores sobre lo cambiado (`pipeline.js next` dice cómo) y volvé a cerrar.');
+      process.exit(2);
     }
   }
 
@@ -2026,10 +2043,21 @@ function cmdCompleteStep(nRaw, flags) {
       marker.stepTimings[id] = { ...previo, completedAt: nowIso(), ...(nuevo && id === 'reviewers' ? { rounds: 1 } : {}) };
     }
   }
+  anotarOtraVuelta(marker);
   marker.lastTouch = nowIso();
   writeMarker(conHoraDelPaso(marker));
   syncSessionState(SID);
   process.stdout.write(JSON.stringify(marker, null, 2));
+}
+
+/**
+ * Escribe en el marcador `otraVuelta` (lib/steps.js `otraVueltaDe`): el cartel lo lee y no decide la vuelta por su
+ * cuenta. Lo llaman cada cierre de paso y cada cambio que se anota; un marcador por número no lo lleva.
+ */
+function anotarOtraVuelta(marker) {
+  const v = STEPS_LIB.otraVueltaDe(marker);
+  if (v === undefined) delete marker.otraVuelta;
+  else marker.otraVuelta = v;
 }
 
 /**
@@ -3836,11 +3864,15 @@ function cmdAppendFile(absPath) {
   // por nombres, y su fix no se re-auditaría. fileEvents conserva CADA edición con ts;
   // pipeline.js smart-reloop computa el delta como "archivos con evento posterior
   // al snapshot de la iter previa". Cap 500 entries (FIFO) para no crecer sin límite.
+  // `code`: si pide otra vuelta de revisores, como en on-edit; si la regla falla, pide (ante la duda, se revisa).
   marker.fileEvents = marker.fileEvents || [];
-  marker.fileEvents.push({ path: absPath, ts: nowIso() });
+  let code;
+  try { code = require('./lib/reloop-code.js').pideOtraVuelta(absPath, { storyPath: marker.storyPath }); } catch (_) { code = true; }
+  marker.fileEvents.push({ path: absPath, ts: nowIso(), code });
   if (marker.fileEvents.length > 500) {
     marker.fileEvents = marker.fileEvents.slice(-500);
   }
+  anotarOtraVuelta(marker);
   marker.lastTouch = nowIso();
   writeMarker(marker);
 }

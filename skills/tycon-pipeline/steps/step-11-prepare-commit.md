@@ -17,6 +17,12 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-ste
 
 El comando frena en código lo siguiente (no hace falta repetir la verificación a mano; sí leer su mensaje y arreglar):
 
+- **Código sin revisar** (`unreviewed-code`, no se abre con `--out-of-order`): un cambio de código posterior al último
+  cierre de los revisores, con la misma regla que `pipeline.js next` (una prueba o un texto no cuentan; ver
+  `step-07-reviewers.md` §«Otra vuelta»). Sale 2 y dice «cambió código después de los revisores: <hasta cinco rutas, y
+  «y N más»>. Corré los revisores sobre lo cambiado (`pipeline.js next` dice cómo) y volvé a cerrar». Si los revisores
+  vuelven a cerrar después de este paso, `next` lo pide otra vez («lo preparado ya no es lo revisado»), y cerrarlo de
+  nuevo retoma la foto del código. Recién entonces `next` dice que se cierre la ejecución.
 - **Cambios sin declarar** (`undeclared-changes`, va primero y no se abre con `DOD_BYPASS`): lo que cambió en el repo
   contra el commit de arranque (más lo no rastreado) y no pasó por Edit/Write ni está en `files_to_create`,
   `files_to_modify` o el File List del Dev Agent Record. Un lock cuenta si su manifiesto está declarado. La salida es
@@ -45,8 +51,8 @@ El comando frena en código lo siguiente (no hace falta repetir la verificación
 
 Lo que decide el agente, porque el comando no lo ve o no lo frena:
 
-- **Cambios después de la última vuelta de revisores**: si el diff actual difiere del que auditaron los revisores,
-  NO seguir: avisar «Detecté cambios al código desde la última corrida de revisores. Antes de armar el commit, vuelvo a
+- **Cambios después de la última vuelta de revisores que el registro no vio** (el comando frena los que vio): si el diff
+  actual difiere del que auditaron los revisores, NO seguir: avisar «Detecté cambios al código desde la última corrida de revisores. Antes de armar el commit, vuelvo a
   «Revisores» para re-auditar el diff actualizado.» y volver a `step-07-reviewers.md` (iteración N+1). Excepción:
   cambios sólo fuera del diff (`tasks/lessons.md`, `tasks/todo.md`, el Change Log de la spec), documentada en
   la pre-condición de este paso.
