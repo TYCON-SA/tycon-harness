@@ -59,8 +59,12 @@ La sala se dibuja con ritmo para no cargar la máquina: más rápido mientras la
 mueven, muy de vez en cuando si nadie se mueve, y nada si no se ve.
 
 La persona se mueve según su estado: teclea cuando trabaja, mira la pantalla cuando corre pruebas o revisores, se queda
-quieta cuando está parada, espera reclinada cuando su story espera entrar a los repos, levanta la mano con un aro naranja
-en el piso cuando la sesión espera algo del dueño, y señala cuando es la coordinadora. Al tocarla se abre su detalle, con
+quieta cuando está parada, espera reclinada cuando su story espera entrar a los repos, y señala cuando es la coordinadora.
+Levanta la mano, con un aro naranja que titila en el piso, sólo cuando su pantalla está frenada esperándote: un cuadro de
+permiso o una pregunta abiertos, el plan de su ejecución esperando que lo apruebes, o su ejecución terminada esperando el ok
+para guardar. Una firma que se da en la terminal no la mueve: va como tarjeta a la columna «Tu firma» del kanban, y la
+persona sigue sentada en su escritorio, con «Esperando» y un reloj de arena si la sesión anotó qué espera, o «Parada» si
+no anotó nada. Al tocarla se abre su detalle, con
 los pasos de su corrida. Abajo, los pendientes son un kanban de cinco columnas (Tu firma, En curso, Esperan entrar, Sin
 sesión, Hechos), con lo que quedó a medio camino plegado debajo. El panel de la pared cuenta esas columnas y al tocarlo
 las lista.
