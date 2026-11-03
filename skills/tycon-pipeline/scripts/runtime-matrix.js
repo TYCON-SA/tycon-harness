@@ -113,18 +113,7 @@ function readStory(storyPath) {
 // re-exporta desde acá para no romper a quien la importa de este archivo.
 const evidenceKeyLib = require(path.join(__dirname, 'lib', 'evidence-key.js'));
 const { storyIdFrom } = evidenceKeyLib;
-
-function frontmatterFileList(fm) {
-  // Entradas `- path` bajo files_to_create/files_to_modify (con o sin comentario #).
-  const files = [];
-  const re = /^\s*-\s*([^\s#][^#\n]*?)\s*(?:#.*)?$/gm;
-  const sections = fm.match(/files_to_(?:create|modify):\n((?:\s+-[^\n]*\n?)*)/g) || [];
-  for (const sec of sections) {
-    let m;
-    while ((m = re.exec(sec)) !== null) files.push(m[1].trim());
-  }
-  return files;
-}
+const { parseDeclaredFiles } = require(path.join(__dirname, 'lib', 'test-scope.js'));
 
 // Parsea el bloque `runtime_not_verifiable:` del frontmatter — la declaración por-AC de
 // "materialmente imposible de verificar corriendo la app" (con razón + test que lo cubre):
@@ -999,8 +988,8 @@ function compute(opts) {
   // Los paths del frontmatter vienen repo-relativos (ej. `mcp/src/...`) o ws-relativos
   // (ej. `<producto>/src/...`) — se prueba contra ambos roots y gana el que EXISTE. Resolver sólo
   // contra el workspace deja mtime=0 para los repo-relativos: el chequeo de frescura queda ciego
-  // y los gates viejos cuentan.
-  const declared = frontmatterFileList(fm).filter((f) => CODE_FILE_RE.test(f));
+  // y los gates viejos cuentan. Con `allForms`: acá leer más archivos declarados vence más evidencia, no menos.
+  const declared = parseDeclaredFiles(content, { allForms: true }).filter((f) => CODE_FILE_RE.test(f));
   let maxCodeMtime = 0;
   const kindMtime = { fe: 0, be: 0 };
   const codeFiles = [];
