@@ -824,6 +824,7 @@ test('computeDeepReviewGate: escalación por complejidad — la story pesada va 
 test('DeepReviewGate_NuncaOfreceFable — ninguna combinación del portón ofrece Fable ni manda a preguntar por él', () => {
   const heavy = path.join(os.tmpdir(), `dr-heavy-nf-${process.pid}.md`);
   const normal = path.join(os.tmpdir(), `dr-normal-nf-${process.pid}.md`);
+  const homeVacia = fs.mkdtempSync(path.join(os.tmpdir(), 'dr-home-nf-'));
   fs.writeFileSync(heavy, HEAVY_STORY);
   fs.writeFileSync(normal, '---\nstory: "1.1"\n---\n# x\n');
   const base = { repo: os.tmpdir(), files: [] };
@@ -840,13 +841,16 @@ test('DeepReviewGate_NuncaOfreceFable — ninguna combinación del portón ofrec
       assert.doesNotMatch(JSON.stringify(g), /requires_user_approval|preguntar al user/, `${donde}: no manda a preguntar por un modelo`);
     };
     for (const c of combinaciones) sinFable(computeDeepReviewGate({ ...base, ...c }), JSON.stringify(c).slice(0, 120));
-    // y por el comando real, con la story pesada
+    // y por el comando real, con la story pesada. Con una HOME vacía: el comando sale 3 si otra sesión de la máquina tiene
+    // un pase adversarial en vuelo, y eso no es lo que se prueba acá.
     const { spawnSync } = require('node:child_process');
-    const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'pipeline.js'), 'deep-review-gate', '--repo', os.tmpdir(), '--story', heavy], { encoding: 'utf8' });
+    const env = { ...process.env, HOME: homeVacia, USERPROFILE: homeVacia };
+    delete env.TYCON_HOME;
+    const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'pipeline.js'), 'deep-review-gate', '--repo', os.tmpdir(), '--story', heavy], { encoding: 'utf8', env });
     assert.equal(r.status, 0, r.stderr);
     sinFable(JSON.parse(r.stdout), 'el comando deep-review-gate');
     assert.doesNotMatch(r.stderr, /fable/i, 'el comando tampoco lo dice por la salida de error');
-  } finally { fs.unlinkSync(heavy); fs.unlinkSync(normal); }
+  } finally { fs.unlinkSync(heavy); fs.unlinkSync(normal); fs.rmSync(homeVacia, { recursive: true, force: true }); }
 });
 
 // ── computeToolingExpected — PIPE-C9 tooling esperado ────────────────────────
