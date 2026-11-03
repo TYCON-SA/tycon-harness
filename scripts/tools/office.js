@@ -469,6 +469,11 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
         a.fin = { hora: a.termina, dif: Number.isFinite(since) ? `desde las ${hhmm(since)}` : '', cls: '' };
       } else if (endAt != null) a.fin = { hora: dayHhmm(endAt), dif: 'parada, no anotó qué espera', cls: '' };
     }
+    // coordinar no tiene hora de fin
+    if (isCoordinator) {
+      for (const k of ['termina', 'estimadaIso', 'pronosticoIso', 'horaPorque', 'atrasada', 'atrasoMin']) delete a[k];
+      a.fin = null;
+    }
     a.tipo = x.kind || null;
     // sale de su marca: una nota no cambia cómo trabaja una sesión, y un arreglo rápido más nuevo sí
     if (x.kind === 'note' && (replaced || x.finishedStoryId)) a.comoTrabaja = waysOfWorking('pipeline', x0.storyId || x.finishedStoryId);
@@ -685,6 +690,8 @@ function sameWorkScore(a, b) {
 function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, signatures, board, prAnswers, openPrs = [], openPrsNote = null, nowMs = Date.now() }) {
   const cols = KANBAN_COLUMNS.map(([id, nombre]) => ({ id, nombre, tarjetas: [] }));
   const col = (id) => cols.find((c) => c.id === id);
+  // cómo se ordena «En curso»: lo que termina antes, arriba; después lo que espera o no tiene hora, y al final la coordinadora
+  const inProgress = new Map();
   const byStory = new Map();
   const people = new Set();
   for (const a of agents) {
@@ -698,6 +705,8 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
     if (!id || (a.estado === 'coordina' && !a.titulo)) continue;
     if (a.tipo === 'stalled') card.marca = 'riesgo';
     if (a.otroProyecto) { card.quien = `${a.nombre} · Otro proyecto`; card.otro = true; }
+    const hourAt = a.estado === 'esperando' ? NaN : Date.parse(a.pronosticoIso || a.estimadaIso);
+    inProgress.set(card, a.estado === 'coordina' ? { tier: 2 } : Number.isFinite(hourAt) ? { tier: 0, at: hourAt } : { tier: 1 });
     col(id).tarjetas.push(card);
     people.add(firstWord(a.nombre));
     if (storyOfAgent.has(a)) byStory.set(storyOfAgent.get(a), card);
@@ -745,6 +754,7 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
     // sin una sesión que la haga no hay nadie atrasado: se dice para cuándo estaba. Lo que espera la cola tampoco está atrasado
     if (late && id === 'sinEmpezar') { card.hora = `estaba para ${f.fin}`; delete card.cls; }
     if (late && id === 'entrando') { card.hora = 'esperando entrar'; delete card.cls; }
+    inProgress.set(card, Number.isFinite(f.finAt) ? { tier: 0, at: f.finAt } : { tier: 1 });
     col(id).tarjetas.push(card);
     boardCards.push({ f, id, card });
   }
@@ -766,10 +776,12 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
   // los pedidos reales que esperan entrar: los que ya tienen fila del tablero no se repiten
   const onBoard = new Set(((board && board.filas) || []).filter((f) => f.pedido).map((f) => `${f.pedido.repo}#${f.pedido.numero}`.toLowerCase()));
   for (const p of openPrs) {
-    if (!p.waiting || onBoard.has(`${p.repoName}#${p.number}`.toLowerCase())) continue;
+    if (!p.waiting || p.ajeno || onBoard.has(`${p.repoName}#${p.number}`.toLowerCase())) continue;
     col('entrando').tarjetas.push({ titulo: p.title, quien: `pedido ${p.mark}${p.number}`, hora: p.inQueue ? 'en la cola' : 'con auto-completar', ...(p.conflict ? { motivo: 'choca con main' } : {}) });
   }
   if (openPrsNote) col('entrando').nota = openPrsNote;
+  const rank = (c) => inProgress.get(c) || { tier: 1 };
+  col('curso').tarjetas.sort((p, q) => rank(p).tier - rank(q).tier || (rank(p).tier === 0 ? rank(p).at - rank(q).at : 0));
   // «Terminados» es lo de hoy, lo último primero; lo anterior, o lo que no dice cuándo, va a la tabla «Hechos» para que la
   // columna no crezca sin fin
   const today = new Date(nowMs).toDateString();
@@ -1138,29 +1150,70 @@ async function askBoardPrs(board, wip, opts, problems) {
 // renueva cada 3 (office/server.js).
 const OPEN_PRS_OLD_MS = 15 * 60000;
 const PR_KIND_PREFIX = /^[a-z]+(?:\([^)]*\))?!?:\s*/i;
+// quién es la persona y dónde trabajó, medido de fondo (`stuck-pr-notice.js`): más viejo que esto, no se sabe
+const RECENT_WORK_OLD_MS = 24 * 3600000;
+function readRecentWork(sdir, nowMs) {
+  try {
+    const w = JSON.parse(fs.readFileSync(path.join(sdir, 'recent-work.json'), 'utf8'));
+    return nowMs - Date.parse(w.at) <= RECENT_WORK_OLD_MS ? w : null;
+  } catch { return null; }
+}
+// El producto de cada repo de Azure, si la organización lo declara en su lista de paridad.
+function productsOfRepos(file = path.join(ROOT, 'scripts', 'ci', 'product-parity.json')) {
+  const out = new Map();
+  try {
+    const { grupos } = JSON.parse(fs.readFileSync(file, 'utf8'));
+    for (const r of Object.values(grupos).flat()) if (r && r.ado && r.producto) out.set(decodeURIComponent(r.ado).toLowerCase(), r.producto);
+  } catch { /* sin lista, cada repo es su proyecto */ }
+  return out;
+}
+// Los pedidos de otros autores, por proyecto: el que más tiene, primero.
+function projectsOfPrs(others, productsFile) {
+  const products = others.length ? productsOfRepos(productsFile) : new Map();
+  const groups = new Map();
+  for (const p of others) {
+    const parts = p.repo.split('/');
+    const proyecto = products.get(decodeURIComponent(parts.slice(1).join('/')).toLowerCase()) || p.repoName;
+    if (!groups.has(proyecto)) groups.set(proyecto, []);
+    groups.get(proyecto).push({ titulo: p.title, autor: p.autor, numero: `${p.mark}${p.number}`, hora: p.inQueue ? 'en la cola' : 'con auto-completar' });
+  }
+  return [...groups].map(([proyecto, pedidos]) => ({ proyecto, pedidos })).sort((a, b) => b.pedidos.length - a.pedidos.length);
+}
 /**
  * Los pedidos abiertos de los repos del arnés, de la última lectura que dejó `stuck-pr-notice.js` en
  * `<estado>/stuck-prs-photo.json`; armar la foto no sale a la red por esto. Sólo cuentan como esperando entrar los que no son
  * borrador y están en la cola o con auto-completar. Devuelve `{ prs, note }`; `note` dice qué se midió o que no se pudo.
  */
 function readOpenPrs(sdir, nowMs) {
+  const work = readRecentWork(sdir, nowMs);
+  const persona = (work && work.persona) || {};
+  const ramas = new Set((work && work.ramas) || []);
+  const worked = new Set(((work && work.repos) || []).map((r) => [r.org, r.project, r.repo].filter(Boolean).join('/').toLowerCase()));
+  const others = [];
+  const nobody = new Set();
   let photo;
   try { photo = JSON.parse(fs.readFileSync(path.join(sdir, 'stuck-prs-photo.json'), 'utf8')); } catch { photo = null; }
   const at = photo ? Date.parse(photo.at) : NaN;
   if (!photo || !photo.lecturas || !Number.isFinite(at) || nowMs - at > OPEN_PRS_OLD_MS) return { prs: [], measured: false, note: 'Los pedidos no se midieron: no hay una lectura de los últimos 15 minutos.' };
   const prs = [];
   const unread = [];
-  for (const [repo, r] of Object.entries(photo.lecturas)) {
+  for (const [repo, r] of Object.entries({ ...photo.lecturas, ...((work && work.lecturas) || {}) })) {
     const repoName = repo.split('/').pop();
     if (!r || !r.ok || !Array.isArray(r.value)) { unread.push(repoName); continue; }
     for (const p of r.value) {
       if (!p || !Number.isInteger(p.number)) continue;
       const github = /^[^/]+\/[^/]+$/.test(repo);
-      prs.push({ repoName, number: p.number, mark: github ? '#' : '!', branch: p.sourceBranch || null, title: plain(String(p.title || '').replace(PR_KIND_PREFIX, '')) || 'Un pedido sin título', inQueue: p.inQueue === true, conflict: p.mergeState === 'conflict' || p.mergeState === 'dirty', waiting: !p.draft && (p.inQueue === true || p.autoComplete === true) });
+      const me = persona[github ? 'github' : 'azure'];
+      if (!me) nobody.add(repoName);
+      const mine = Boolean(me) && (String(p.author || '').toLowerCase() === me || ramas.has(p.sourceBranch));
+      prs.push({ ajeno: !mine, repoName, number: p.number, mark: github ? '#' : '!', branch: p.sourceBranch || null, title: plain(String(p.title || '').replace(PR_KIND_PREFIX, '')) || 'Un pedido sin título', inQueue: p.inQueue === true, conflict: p.mergeState === 'conflict' || p.mergeState === 'dirty', waiting: !p.draft && (p.inQueue === true || p.autoComplete === true) });
+      const pr = prs[prs.length - 1];
+      if (me && !mine && pr.waiting && worked.has(repo.toLowerCase())) others.push({ repo, autor: String(p.author || 'sin autor').split('@')[0], ...pr });
     }
   }
-  const note = `Cuenta los pedidos de los repos del arnés en la cola o con auto-completar, leídos a las ${hhmm(at)}.${unread.length ? ` No se pudo leer ${unread.join(', ')}.` : ''}`;
-  return { prs, measured: true, note, repos: Object.keys(photo.lecturas).map((repo) => repo.split('/').pop().toLowerCase()) };
+  const whoNote = !work ? ' No muestro pedidos: no pude saber quién sos en esta máquina.' : nobody.size ? ` No muestro pedidos de ${[...nobody].join(', ')}: no pude saber quién sos en esta máquina.` : '';
+  const note = `Pedidos en la cola o con auto-completar, leídos a las ${hhmm(at)}.${unread.length ? ` No se pudo leer ${unread.join(', ')}.` : ''}${whoNote}`;
+  return { prs, others, measured: true, note, repos: Object.keys(photo.lecturas).map((repo) => repo.split('/').pop().toLowerCase()) };
 }
 
 // Un trabajo que quedó y nombra sus pedidos («#878», «!6008»): si todos entraron, entró, aunque su carpeta siga con otra cosa.
@@ -1298,27 +1351,6 @@ async function askTablePrs(board, sessionTables, wip, open, opts, known, remoteO
     });
   }
   for (const [label, key] of named) if (known.has(key)) out.set(label, known.get(key).state);
-  return out;
-}
-
-// De prueba es la sesión que lanzó otra sesión: ninguna de las de verdad desciende de otra. El árbol de procesos sólo se lee si
-// hay un cuadro abierto; sin árbol (Windows) no se sabe, y la sesión cuenta como una más.
-function testSessionsOf(sessions, states, readTree) {
-  const out = new Set();
-  const fileOf = new Map(states.map((f) => [String(f.session), f]));
-  const asking = [...sessions].filter(([sid, s]) => s.alive && Number.isInteger(s.pid) && ASKS_OWNER.has(realState({}, { status: s.status }, fileOf.get(String(sid)) || null).estado));
-  if (!asking.length) return out;
-  const tree = readTree();
-  if (!Array.isArray(tree)) return out;
-  const parent = new Map(tree.map((p) => [Number(p.pid), Number(p.ppid)]));
-  const sessionPids = new Set([...sessions.values()].filter((s) => s.alive).map((s) => s.pid));
-  for (const [sid, s] of asking) {
-    let p = parent.get(s.pid);
-    for (let i = 0; p > 1 && i < 64; i += 1) {
-      if (sessionPids.has(p)) { out.add(String(sid)); break; }
-      p = parent.get(p);
-    }
-  }
   return out;
 }
 
@@ -1561,7 +1593,7 @@ async function collect(opts = {}) {
     return remembered.remotes.get(cwd);
   };
   const tablePrs = await askTablePrs(board.board, sessionTables, wip, open, opts, remembered.prsEnded, remoteOf);
-  const testSessions = testSessionsOf(sessions, ss.states, () => (processes != null ? processes : opts.processes !== undefined ? opts.processes : require(path.join(ROOT, 'scripts', 'lib', 'owner-window.js')).leerArbol()));
+  const testSessions = wip.testSids || new Set();
   const personSessions = new Set([...sessions].filter(([, s]) => s.kind === 'interactive').map(([sid]) => String(sid)));
   const { data, promises } = buildOffice({ wip, signatures, coordinatorSid, coordinatorName, promises: saved.promises, nowMs, sessionFiles: ss.states, codexNames: cxNames, quietMin, board: board.board, prAnswers, transcripts, lastWrites, processes, openPrs: open.prs, openPrsNote: open.note, waitingPrs, testSessions, personSessions, otherProjects: otherProjectsOf(wip, open, remoteOf) });
   // sólo con la oficina abierta: la primera pasada lee conversaciones enteras, y la foto fija y `--json` empezarían de cero cada vez
@@ -1570,6 +1602,8 @@ async function collect(opts = {}) {
   data.tablas = buildTables({ board: board.board, boardWrittenAt: board.writtenAt, sessionTables, kanban: data.kanban, nowMs, agents: data.agents, prsEnded: tablePrs });
   data.tablero = board.board ? { actualizado: board.board.actualizado, resumen: board.board.resumen, teToca: board.board.teToca } : null;
   if (opts.envelopes) {
+    // de cada persona, en su máquina: no viaja al sitio
+    data.pedidosProyectos = projectsOfPrs(open.others || []);
     opts.envelopes.coordinator = coordinatorSid ? { sid: coordinatorSid, name: coordinatorName } : null;
     data.sobres = readEnvelopes(opts.envelopes, wip, { home, nowMs, projectsDir: opts.projectsDir, sessions });
   }
@@ -1729,4 +1763,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, buildTables, writeTables, readTranscripts, readLastWrites, MODULES };
+module.exports = { projectsOfPrs, prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, buildTables, writeTables, readTranscripts, readLastWrites, MODULES };

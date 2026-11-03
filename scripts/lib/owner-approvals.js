@@ -279,6 +279,11 @@ function mensajeEnLaTranscripcion(ruta, a, { sello, destino, pregunta } = {}) {
   return { ok: true };
 }
 
+function pistaDeVersion(renglon) {
+  // el click ya se negó: esto sólo agrega qué actualizar, y si no se puede cargar la negativa queda igual
+  try { return require('./claude-versions.js').clickHint(renglon); } catch (_) { return ''; }
+}
+
 /**
  * El cuadro en la transcripción: la pregunta es la que armó el guion, la respuesta es la del registro, a esa hora, y no la
  * dio un gancho. `{ ok }` o `{ ok: false, motivo }`.
@@ -294,7 +299,7 @@ function clickEnLaTranscripcion(ruta, a, { pregunta, opciones, descripciones } =
   if (!cerca(r, a.ts)) return { ok: false, motivo: 'la respuesta del cuadro no es de la hora del registro' };
   const d = r.permissionDecision || (r.toolUseResult && r.toolUseResult.permissionDecision);
   // sin ese dato no se sabe si lo contestó un gancho, y uno ajeno se puede sacar antes de que se mire la configuración
-  if (!d) return { ok: false, motivo: 'la transcripción no dice quién contestó el cuadro' };
+  if (!d) return { ok: false, motivo: `la transcripción no dice quién contestó el cuadro${pistaDeVersion(r)}` };
   if (d.source === 'hook' || d.reasonType === 'hook') return { ok: false, motivo: 'el cuadro lo contestó un gancho, no la persona' };
   if (d.decision && d.decision !== 'accept') return { ok: false, motivo: 'el cuadro no se aceptó' };
   const dijo = respuestaDelCuadro(r.toolUseResult);

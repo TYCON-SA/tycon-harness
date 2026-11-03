@@ -266,8 +266,9 @@ test('T8b PrPhoto_RenewedOnlyWhileSomeoneLooks: la lectura de pedidos se renueva
   const fake = (m) => {
     const script = path.join(m.sdir, 'fake-refresh.js');
     const photo = path.join(m.sdir, 'stuck-prs-photo.json');
+    fs.writeFileSync(path.join(m.sdir, 'recent-work.json'), JSON.stringify({ at: new Date().toISOString(), persona: { github: 'yo' }, repos: [], ramas: [] }));
     fs.writeFileSync(script, `require('fs').appendFileSync(${JSON.stringify(`${script}.log`)}, 'x\\n');
-require('fs').writeFileSync(${JSON.stringify(photo)}, JSON.stringify({ at: new Date().toISOString(), lecturas: { 'org/pub': { ok: true, value: [{ number: 909, title: 'arreglo', inQueue: true }] } } }));`);
+require('fs').writeFileSync(${JSON.stringify(photo)}, JSON.stringify({ at: new Date().toISOString(), lecturas: { 'org/pub': { ok: true, value: [{ number: 909, title: 'arreglo', inQueue: true, author: 'yo' }] } } }));`);
     return { script, runs: () => { try { return fs.readFileSync(`${script}.log`, 'utf8').trim().split('\n').length; } catch { return 0; } }, photo };
   };
   // sin lectura: la primera página la pide, la foto trae el pedido y sigue cada tanto

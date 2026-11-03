@@ -907,6 +907,12 @@
       "requiere": []
     },
     {
+      "__nota": "Un texto con forma de comodín que no se puede convertir no abre el freno: es texto. Tampoco lo abre una carpeta que no se puede leer, ni lo cuelga una tira de estrellas, y el registro dice «FAILED OPEN» sólo si dejó pasar el comando sin mirarlo.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-write-bracket.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "Nombrar un guion no es correrlo: la lista de archivos de un comando de sólo lectura de pipeline.js, o lo que lee un programa que sólo lee, no cuenta; el guion que corre sigue frenando, con cualquier envoltura, encadenado o en una variable.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/bash-write-named-script.test.js",
@@ -2123,6 +2129,12 @@
       "__nota": "story 8.5.1: el consejo del aviso de arranque para un clon trabado se CORRE y tiene que destrabarlo — DU (el retiro borró lo que el dev tocó) + UU, sólo UU, y rutas/carpetas con espacio citadas.",
       "raiz": "arnes",
       "ruta": "tests/branch-guard-notice.test.sh",
+      "requiere": []
+    },
+    {
+      "__nota": "qué versión de Claude se mira según cómo entró la persona: terminal, VS Code y Codex, el aviso al arrancar de verdad y que lo que no se lee sea «no sé».",
+      "raiz": "arnes",
+      "ruta": "tests/claude-versions.test.js",
       "requiere": []
     },
     {

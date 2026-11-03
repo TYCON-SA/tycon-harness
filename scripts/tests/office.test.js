@@ -11,7 +11,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const OFFICE = path.join(__dirname, '..', 'tools', 'office.js');
-const { buildOffice, page, importMap, MODULES, prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard } = require(OFFICE);
+const { buildOffice, page, importMap, MODULES, prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, projectsOfPrs } = require(OFFICE);
 
 const NOW = Date.parse('2026-10-18T14:00:00.000Z');
 const STEPS = [{ id: 'implement', name: 'Implementar', done: true }, { id: 'run-tests', name: 'Correr las pruebas', done: false }];
@@ -860,7 +860,8 @@ function drawKanban(data) {
   const el = (html.match(/const el=(\([^\n]*\});\n/) || [])[1];
   assert.ok(fn && el, 'la página trae la función y el ayudante');
   const { document, byId } = tinyDom();
-  new Function('document', 'DATA', `const el=${el};${fn};renderBoard();`)(document, data);
+  const state = (html.match(/function estadoDeHora\(i\)[^\n]*\n/) || [''])[0];
+  new Function('document', 'DATA', `const el=${el};${state}${fn};renderBoard();`)(document, data);
   return { html, fn, body: byId.boardBody, sec: byId.board };
 }
 
@@ -2462,7 +2463,8 @@ test('T229 OpenPrs_FromThePhoto: «Esperan entrar» cuenta los pedidos reales, d
   const m = toyMachine();
   const photo = (at, lecturas) => fs.writeFileSync(path.join(m.state, 'stuck-prs-photo.json'), JSON.stringify({ at: atIso(at), repos: Object.keys(lecturas), lecturas }));
   const read = () => collect({ stateDir: m.state, sessionsDir: m.sessions, home: m.root, now: atIso(NOW), siteUrl: async () => ({ code: 3, out: '' }), quietMinutes: async () => ({ code: 3, out: '' }) });
-  const pr = (number, more) => ({ number, title: `fix(algo): arreglo ${number}`, sourceBranch: `fix/${number}`, draft: false, autoComplete: false, inQueue: false, ...more });
+  const pr = (number, more) => ({ number, title: `fix(algo): arreglo ${number}`, sourceBranch: `fix/${number}`, draft: false, autoComplete: false, inQueue: false, author: 'yo', ...more });
+  fs.writeFileSync(path.join(m.state, 'recent-work.json'), JSON.stringify({ at: atIso(NOW - 60000), persona: { github: 'yo', azure: 'yo' }, repos: [], ramas: [] }));
   photo(NOW - 60000, {
     'org/pub': { ok: true, value: [pr(909, { inQueue: true }), pr(721), pr(800, { draft: true, autoComplete: true })] },
     'bizuit/proj/priv': { ok: true, value: [pr(6101, { autoComplete: true, mergeState: 'conflict' })] },
@@ -2543,7 +2545,7 @@ test('T232 Stopped_NotOnTime: una sesión parada no dice «en hora» sin decir q
 test('T233 SameText_NoRepeat: si lo que hace es lo que anotó, la tarjeta no lo dice dos veces; un título sigue sin números de pedido', () => {
   const { plain: plainOf } = require(OFFICE);
   const html = page(mixedOffice());
-  assert.match(html, /else if\(a\.haciendo!==a\.titulo\)add\("Haciendo",a\.haciendo\)/);
+  assert.match(html, /else if\(a\.haciendo!==a\.titulo&&!SOLO_COORDINA\.test\(a\.haciendo\|\|""\)\)add\("Haciendo",a\.haciendo\)/);
   assert.strictEqual(plainOf('espera que entren el #907 y el 6106', { keepPrs: true }), 'espera que entren el #907 y el 6106');
   assert.strictEqual(plainOf('espera que entren el #907 y el 6106'), 'espera que entren y el 6106', 'los títulos siguen sin números de pedido');
 });
@@ -2850,6 +2852,10 @@ test('T272 Dialogs_TestSession: la sesión que lanzó otra sesión no cuenta; si
   assert.ok(!['firma', 'pregunta'].includes(a.estado), a.estado);
   assert.ok(!a.espera, 'no dice que espera tu respuesta');
   assert.deepStrictEqual(seen.meta.teToca, [], 'no le toca a nadie');
+  const { wipNow } = require(path.join(path.dirname(OFFICE), 'work-in-progress.js'));
+  const said = await wipNow({ home: m.home, now: atIso(now), queryAll: noPrs, processes: tree });
+  assert.doesNotMatch(said.text, /Te pregunta|Tu firma/, '/wip dice lo mismo');
+  assert.match(said.text, /sonda/);
   const blind = await collectAt(m, now, { processes: null });
   assert.strictEqual(byName(blind, 'sonda').estado, 'pregunta', 'sin árbol no se sabe');
   const unrelated = await collectAt(m, now, { processes: [{ pid: process.pid, ppid: 1 }] });
@@ -3021,6 +3027,163 @@ test('T279 OtherProject_NotCounted: una sesión de un repo que el arnés no sigu
   assert.match(page(data), /list\.filter\(i=>!i\.otro\)\.length/, 'la columna no lo cuenta');
   fs.unlinkSync(path.join(m.state, 'stuck-prs-photo.json'));
   assert.notStrictEqual(byName(await collectAt(m, now), 'Mesa').comoTrabaja, 'Otro proyecto', 'sin la lista de repos no se sabe');
+});
+
+// ── Etiquetas, avioncito, coordinadora y orden ───────────────────────────────────────────────────────────────────
+
+test('T284 Labels_Switch: siempre por defecto, y la elección se recuerda; si no puede recordarla, vuelve a «Siempre»', () => {
+  const html = page({ agents: [], items: [], kanban: null, meta: null });
+  assert.match(html, /<input type="radio" name="etiquetas" value="siempre" checked>/, 'como hoy, por defecto');
+  assert.match(html, /value="mouse"><span>Al pasar el mouse<\/span>/);
+  assert.ok(html.indexOf('name="etiquetas"') < html.indexOf('id="stage"'), 'arriba del dibujo');
+  const src = html.slice(html.indexOf('const ETIQUETAS_KEY='), html.indexOf('function modoEtiquetas('));
+  const run = (storage) => new Function('localStorage', `${src}; return { etiquetasGuardadas, guardarEtiquetas };`)(storage);
+  const kept = new Map();
+  const ok = run({ getItem: (k) => kept.get(k) ?? null, setItem: (k, v) => kept.set(k, v) });
+  assert.strictEqual(ok.etiquetasGuardadas(), 'siempre');
+  ok.guardarEtiquetas('mouse');
+  assert.strictEqual(ok.etiquetasGuardadas(), 'mouse');
+  kept.set('office.etiquetas', '<raro>');
+  assert.strictEqual(ok.etiquetasGuardadas(), 'siempre');
+  const broken = run({ getItem() { throw new Error('bloqueado'); }, setItem() { throw new Error('bloqueado'); } });
+  assert.strictEqual(broken.etiquetasGuardadas(), 'siempre');
+  assert.doesNotThrow(() => broken.guardarEtiquetas('mouse'));
+  assert.match(html, /\.stage\.solo-mouse \.tag\{opacity:0;pointer-events:none\}/, 'ocultas, pero el teclado llega');
+  assert.match(html, /\.stage\.solo-mouse \.tag\.ver,\.stage\.solo-mouse \.tag\.sel,\.stage\.solo-mouse \.tag:focus-visible\{opacity:1/);
+  assert.match(html, /e\.pointerType==="touch"&&!\(h&&\(h\.object===pnlFace\|\|h\.object===signFace\)\)\)\{verEtiqueta/, 'al tocar, muestra la etiqueta y no abre el detalle');
+  assert.doesNotMatch(html, /solo-mouse[^}]*\.sobre/, 'el avioncito no se oculta');
+});
+
+test('T285 PaperPlane: el mensaje vuela como avioncito, apuntando adonde va, y su rótulo lleva un dibujo sin internet', () => {
+  const html = page({ agents: [], items: [], kanban: null, meta: null });
+  assert.doesNotMatch(html, /sobreGeo|solapaGeo|✉/, 'el sobre ya no está');
+  assert.match(html, /new THREE\.Mesh\(avionGeo,avionMat\)/);
+  assert.match(html, /v\.m\.rotation\.set\(-Math\.cos\(k\*Math\.PI\)\*\.3,Math\.atan2\(/, 'con la nariz hacia su destino');
+  assert.match(html, /dib\.append\(T\.dibujo\(T\.AVION_ICONO\)\)/);
+  assert.match(html, /v\.s\.de\+" → "\+v\.s\.a/, 'el rótulo dice quién a quién, sin el texto');
+});
+
+test('T286 Coordinator_NoHourNoRepeat: coordinar no tiene hora de fin, y «Coordinando» se dice una vez', () => {
+  const { data } = buildOffice({
+    wip: wip([{ session: 'Coord', sid: 'c', extra: { kind: 'note', text: 'el tablero', endAt: NOW - 3600000, hourAt: NOW - 7200000, promiseAt: NOW - 7200000 } }]),
+    coordinatorSid: 'c',
+    coordinatorName: 'Coord',
+    nowMs: NOW,
+  });
+  const a = byName(data, 'Coord');
+  assert.strictEqual(a.estado, 'coordina');
+  assert.strictEqual(a.fin, null);
+  for (const k of ['termina', 'estimadaIso', 'pronosticoIso', 'atrasada', 'atrasoMin']) assert.ok(!(k in a), k);
+  const html = page(data);
+  assert.match(html, /a\.comoTrabaja&&a\.comoTrabaja!==s\[0\]\)chips\.appendChild\(etiquetaComo/, 'en la tarjeta');
+  assert.match(html, /a\.comoTrabaja&&a\.comoTrabaja!==s\[0\]\)panel\.querySelector\("\.chips"\)/, 'en el detalle');
+  assert.match(html, /a\.comoTrabaja&&a\.comoTrabaja!==s\[0\]\?\[T\.iconoComo/, 'en el dibujo');
+  const only = html.slice(html.indexOf('const SOLO_COORDINA='), html.indexOf('\n', html.indexOf('const SOLO_COORDINA=')));
+  const re = new Function(`${only}; return SOLO_COORDINA;`)();
+  assert.ok(re.test('Coordina las sesiones de esta máquina') && re.test('Coordina las sesiones de esta máquina.'));
+  assert.ok(!re.test('Coordina las sesiones y revisa el tablero'), 'lo que diga algo más se muestra');
+});
+
+test('T287 InProgress_ByEndHour: lo que termina antes va arriba; lo que espera o no tiene hora, después; la coordinadora, al final', () => {
+  const end = (min) => ({ kind: 'loose', text: 'algo', endAt: NOW + min * 60000, hourAt: NOW - 60000, promiseAt: NOW - 60000 });
+  const { data } = buildOffice({
+    wip: wip([
+      { session: 'Coord', sid: 'c', extra: { kind: 'note', text: 'el tablero' } },
+      { session: 'Sinhora', extra: { kind: 'loose', text: 'sin hora' } },
+      { session: 'Espera', extra: { kind: 'note', text: 'espera', waitingFor: 'un aviso', waitingSince: NOW - 60000, endAt: NOW + 60000 } },
+      { session: 'Tarde', extra: end(90) },
+      { session: 'Pronto', extra: end(10) },
+    ]),
+    coordinatorSid: 'c',
+    coordinatorName: 'Coord',
+    nowMs: NOW,
+  });
+  const order = col(data, 'curso').tarjetas.map((c) => c.quien);
+  assert.deepStrictEqual(order.slice(0, 2), ['Pronto', 'Tarde']);
+  assert.deepStrictEqual(order.slice(2, 4).sort(), ['Espera', 'Sinhora']);
+  assert.strictEqual(order[order.length - 1], 'Coord');
+});
+
+test('T289 InProgress_StateAtAGlance: cada tarjeta de «En curso» dice cómo va, de lo que calculó la oficina con su margen de 15 minutos', () => {
+  const end = (min, promised) => ({ kind: 'loose', text: 'algo', endAt: NOW + min * 60000, hourAt: NOW - 60000, promiseAt: NOW - 60000, promisedAt: NOW + promised * 60000 });
+  const { data } = buildOffice({
+    wip: wip([
+      { session: 'Enhora', extra: end(30, 30) },
+      { session: 'Margen', extra: end(40, 30) },
+      { session: 'Antes', extra: end(10, 60) },
+      { session: 'Tarde', extra: end(60, 30) },
+      { session: 'Pasada', extra: end(-10, -10) },
+      { session: 'Espera', extra: { kind: 'note', text: 'espera', waitingFor: 'un aviso', waitingSince: NOW - 60000 } },
+      { session: 'Sinhora', extra: { kind: 'loose', text: 'sin hora' } },
+    ]),
+    nowMs: NOW,
+  });
+  const html = page(data);
+  const fn = html.slice(html.indexOf('function estadoDeHora('), html.indexOf('function renderBoard('));
+  const stateOf = new Function(`${fn}; return estadoDeHora;`)();
+  const said = Object.fromEntries(col(data, 'curso').tarjetas.map((c) => [c.quien, (stateOf(c) || [null])[0]]));
+  assert.deepStrictEqual(said, { Enhora: 'En hora', Margen: 'En hora', Antes: 'En hora', Tarde: 'Pasada de la hora', Pasada: 'Pasada de la hora', Espera: 'Esperando', Sinhora: null });
+  assert.match(html, /c\.id==="curso"&&estadoDeHora\(i\)/, 'sólo en «En curso»');
+});
+
+// un correo de juguete, armado por partes: entero en el archivo lo frena el control de publicación
+const mail = (who) => [who, 'acme.com'].join('@');
+
+test('T290 OpenPrs_MineAndMyProjects: lo tuyo a la vista; lo de otros, sólo de donde trabajaste; tener el clon no cuenta', async () => {
+  const m = toyMachine();
+  const read = () => collect({ envelopes: createEnvelopes(), stateDir: m.state, sessionsDir: m.sessions, home: m.root, now: atIso(NOW), siteUrl: async () => ({ code: 3, out: '' }), quietMinutes: async () => ({ code: 3, out: '' }) });
+  const pr = (number, author, more) => ({ number, title: `fix(algo): arreglo ${number}`, sourceBranch: `fix/${number}`, draft: false, autoComplete: true, inQueue: false, author, ...more });
+  const work = (o) => fs.writeFileSync(path.join(m.state, 'recent-work.json'), JSON.stringify({ at: atIso(NOW - 60000), persona: { github: 'yo', azure: mail('yo') }, repos: [{ platform: 'github', org: 'org', repo: 'pub' }, { platform: 'azure', org: 'biz', project: 'Mora', repo: 'Back' }], ramas: ['fix/de-mi-sesion'], ...o }));
+  fs.writeFileSync(path.join(m.state, 'stuck-prs-photo.json'), JSON.stringify({ at: atIso(NOW - 60000), lecturas: {
+    'org/pub': { ok: true, value: [pr(1, 'YO'), pr(2, 'marina'), pr(3, 'beto', { sourceBranch: 'fix/de-mi-sesion' }), pr(4, 'nina', { draft: true })] },
+    'org/clon': { ok: true, value: [pr(5, 'marina'), pr(6, 'yo')] },
+  } }));
+  work({ lecturas: { 'biz/Mora/Back': { ok: true, value: [pr(7, mail('ana'), { inQueue: true }), pr(8, mail('yo'))] } } });
+  let data = await read();
+  assert.deepStrictEqual(col(data, 'entrando').tarjetas.map((t) => t.quien).sort(), ['pedido !8', 'pedido #1', 'pedido #3', 'pedido #6'], 'de la persona o de una rama de su sesión; en cualquier repo');
+  assert.deepStrictEqual(data.pedidosProyectos.map((x) => [x.proyecto, x.pedidos.map((p) => [p.numero, p.autor, p.hora])]).sort(), [
+    ['Back', [['!7', 'ana', 'en la cola']]],
+    ['pub', [['#2', 'marina', 'con auto-completar']]],
+  ], 'con su autor, sin el borrador, y nada del repo donde sólo está el clon');
+  assert.ok(!('pedidosProyectos' in await collect({ stateDir: m.state, sessionsDir: m.sessions, home: m.root, now: atIso(NOW), siteUrl: async () => ({ code: 3, out: '' }), quietMinutes: async () => ({ code: 3, out: '' }) })), 'la foto fija y el sitio no lo traen');
+  // sin saber quién es en una plataforma, no muestra los de esa plataforma y lo dice
+  work({ persona: { github: 'yo', azure: '' }, lecturas: { 'biz/Mora/Back': { ok: true, value: [pr(7, mail('ana')), pr(8, mail('yo'))] } } });
+  data = await read();
+  assert.deepStrictEqual(col(data, 'entrando').tarjetas.map((t) => t.quien).sort(), ['pedido #1', 'pedido #3', 'pedido #6']);
+  assert.deepStrictEqual(data.pedidosProyectos.map((x) => x.proyecto), ['pub']);
+  assert.match(col(data, 'entrando').nota, /No muestro pedidos de Back: no pude saber quién sos en esta máquina\.$/);
+  // sin la medición, o muy vieja, nada
+  fs.rmSync(path.join(m.state, 'recent-work.json'));
+  data = await read();
+  assert.deepStrictEqual(col(data, 'entrando').tarjetas, []);
+  assert.deepStrictEqual(data.pedidosProyectos, []);
+  assert.match(col(data, 'entrando').nota, /No muestro pedidos: no pude saber quién sos en esta máquina\.$/);
+  work({ at: atIso(NOW - 25 * 3600000) });
+  assert.deepStrictEqual(col(await read(), 'entrando').tarjetas, []);
+});
+
+test('T291 MyProjects_ByProduct: si la organización declara el producto, agrupa por producto; si no, por repo', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'office-prod-'));
+  const file = path.join(dir, 'lista.json');
+  fs.writeFileSync(file, JSON.stringify({ grupos: { backend: [{ producto: 'Mora', ado: 'Mi%20Proy/Back' }], forms: [{ producto: 'Mora', ado: 'Mi%20Proy/Forms' }] } }));
+  const p = (repo, number) => ({ repo, repoName: repo.split('/').pop(), mark: '!', number, title: 't', autor: 'a', inQueue: true });
+  const others = [p('biz/Mi Proy/Forms', 1), p('org/suelto', 2), p('biz/Mi%20Proy/Back', 3)];
+  assert.deepStrictEqual(projectsOfPrs(others, file).map((x) => [x.proyecto, x.pedidos.length]), [['Mora', 2], ['suelto', 1]]);
+  assert.deepStrictEqual(projectsOfPrs(others, path.join(dir, 'no-esta.json')).map((x) => x.proyecto).sort(), ['Back', 'Forms', 'suelto']);
+});
+
+test('T292 MyProjects_PageFolds: cerrado por defecto y por proyecto; con uno solo, sin el paso del medio; sigue abierto al redibujar', () => {
+  const html = page({ agents: [], items: [], kanban: null, meta: null });
+  assert.match(html, /c\.id==="entrando"&&\(DATA\.pedidosProyectos\|\|\[\]\)\.length\)col\.appendChild\(deTusProyectos/);
+  assert.match(html, /uno\?"De tu proyecto · ":"De tus proyectos · "/);
+  assert.match(html, /d\.open=ABIERTOS\.has\(clave\)/, 'una foto nueva no lo cierra');
+  assert.match(html, /\[p\.autor,p\.numero,p\.hora\]/, 'dice el autor');
+});
+
+test('T288 Conversation_ButtonAtTheBottom: el botón va abajo de cada tarjeta, alineado entre las de la misma fila', () => {
+  const html = page({ agents: [], items: [], kanban: null, meta: null });
+  assert.match(html, /\.card\{[^}]*display:flex;flex-direction:column/, 'la tarjeta es una columna, y las de una fila miden lo mismo');
+  assert.match(html, /\.card \.verCharla\{margin-top:auto\}/);
 });
 
 test('T283 Conversation_CoordinatorTabs: la coordinadora tiene dos pestañas y abre en «Con vos»; una sesión común, una sola lista', () => {
