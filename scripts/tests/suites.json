@@ -1059,6 +1059,12 @@
       "requiere": []
     },
     {
+      "__nota": "la fusión de la propia historia no vence su evidencia, un cambio de otra historia en una prueba tampoco, y el código que la evidencia no probó sigue sin contar. Lab con repos de git de verdad; corre también la suite de la regla (8.192)",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/evidence-vs-merge.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "un criterio de pantalla sólo cuenta como probado con una captura o una grabación del navegador real atada a ese criterio (la matriz, el portón E2E y smoke-run.sh --capture).",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/visual-evidence.test.js",

@@ -72,6 +72,21 @@ LLAVE_NOTA=""
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
 mkdir -p "$EVIDENCE_DIR"
 EVIDENCE_FILE="$EVIDENCE_DIR/${STORY_ID}-e2e-gate-${TS}.md"
+# Lo que el gate prueba en cada repo hermano, antes de correr: va en el gate y en el espejo, porque el gate viaja con el código y
+# se edita. Sin eso, la evidencia se lee como una sin ancla (lib/evidence-vs-commit.js).
+HERMANOS_JSON="$(node "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/companion-repos.js" anchors "$(git -C "$EVIDENCE_DIR" rev-parse --show-toplevel 2>/dev/null || pwd)" "$STORY_ID")"
+if [ -n "$HERMANOS_JSON" ] && [ "$HERMANOS_JSON" != "[]" ]; then
+  # el espejo vive donde lo lee la matriz: la carpeta del estado la dice lib/state-dir.js
+  ESTADO_DIR="$(node -e 'process.stdout.write(require(process.argv[1]).stateDir())' "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/state-dir.js")"
+  # sin el espejo, el ancla del gate no vale: el gate sale sin ancla y se lee como antes, nunca con una a medias
+  if [ -z "$ESTADO_DIR" ] || ! mkdir -p "$ESTADO_DIR" \
+    || ! printf '{"type":"e2e-gate-anchor","ts":"%s","story":"%s","hermanos":%s}\n' "$TS" "$STORY_ID" "$HERMANOS_JSON" >> "$ESTADO_DIR/gates.log"; then
+    echo "⚠️  e2e-gate: no pude escribir el ancla en el espejo; el gate queda sin ancla" >&2
+    HERMANOS_JSON=""
+  fi
+else
+  HERMANOS_JSON=""
+fi
 
 escribir_evidencia() {
   local verdict="$1" total="$2" passed="$3" failed="$4" skipped="$5" exit_code="$6" extra="${7:-}"
@@ -91,6 +106,7 @@ escribir_evidencia() {
     echo "- scope: ${SPEC_FILTERS[*]:-full}"
     echo "- exit_code: $exit_code"
     echo "- frontend_dir: $FRONTEND_DIR"
+    [ -z "${HERMANOS_JSON:-}" ] || echo "- hermanos: $HERMANOS_JSON"
     # Sin esta línea, un verde sobre un bundle viejo es indistinguible de uno de verdad.
     echo "- bundle: ${BUNDLE_NOTA:-no declarado (e2e.bundle en .tycon/advisors.yaml)}"
     # Con qué llaves corrió: un verde en modo exigente y uno en modo permisivo se leen IGUAL si esto
