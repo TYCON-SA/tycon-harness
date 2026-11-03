@@ -128,7 +128,7 @@ test('T2 Fusion_PropiaYDevAMain_Cuenta @story-8.192 @ac-2', () => {
   irA(l.back, 'dev');
   fusionar(l.back, 'feature/5-28-carga', T0 + 200);
   irA(l.back, 'main');
-  fusionar(l.back, 'dev', T0 + 300, 'Merge pull request 900 from dev into main');
+  fusionar(l.back, 'dev', T0 + 300, 'Merge pull request 9 from dev into main');
   assert.equal(juzgar(l.archivo, ev).cuenta, true);
 });
 
@@ -472,10 +472,10 @@ test('T34 Criterio_SaleDeIsTestPath @story-8.192 @ac-34', () => {
 
 test('T35 Asunto_GitHubYAzure_LeeLaRama @story-8.192 @ac-1 @ac-14', () => {
   const { ramaDelAsunto } = commitStory();
-  assert.equal(ramaDelAsunto('Merge pull request 5662 from feature/5-28-carga into dev'), 'feature/5-28-carga');
+  assert.equal(ramaDelAsunto('Merge pull request 56 from feature/5-28-carga into dev'), 'feature/5-28-carga');
   assert.equal(ramaDelAsunto('Merge pull request #944 from TYCON-SA/story/8.181-los-cambios'), 'story/8.181-los-cambios');
   assert.equal(ramaDelAsunto('Merge pull request #7 from mi-fork:rama-1'), null);
-  for (const otro of ['Merged PR 5044: TC-1: retomar', "Merge branch 'feature/5-28-carga'", 'Merge remote-tracking branch \'origin/main\' into dev', 'feat: Merge pull request 5 from x']) {
+  for (const otro of ['Merged PR 50: TC-1: retomar', "Merge branch 'feature/5-28-carga'", 'Merge remote-tracking branch \'origin/main\' into dev', 'feat: Merge pull request 5 from x']) {
     assert.equal(ramaDelAsunto(otro), null, otro);
   }
 });

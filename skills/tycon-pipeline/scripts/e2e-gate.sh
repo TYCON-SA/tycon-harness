@@ -76,8 +76,10 @@ EVIDENCE_FILE="$EVIDENCE_DIR/${STORY_ID}-e2e-gate-${TS}.md"
 # se edita. Sin eso, la evidencia se lee como una sin ancla (lib/evidence-vs-commit.js).
 HERMANOS_JSON="$(node "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/companion-repos.js" anchors "$(git -C "$EVIDENCE_DIR" rev-parse --show-toplevel 2>/dev/null || pwd)" "$STORY_ID")"
 if [ -n "$HERMANOS_JSON" ] && [ "$HERMANOS_JSON" != "[]" ]; then
-  mkdir -p "$HOME/.claude/.tycon-pipeline"
-  printf '{"type":"e2e-gate-anchor","ts":"%s","story":"%s","hermanos":%s}\n' "$TS" "$STORY_ID" "$HERMANOS_JSON" >> "$HOME/.claude/.tycon-pipeline/gates.log"
+  # el espejo vive donde lo lee la matriz: la carpeta del estado la dice lib/state-dir.js
+  ESTADO_DIR="$(node -e 'process.stdout.write(require(process.argv[1]).stateDir())' "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/state-dir.js")"
+  mkdir -p "$ESTADO_DIR"
+  printf '{"type":"e2e-gate-anchor","ts":"%s","story":"%s","hermanos":%s}\n' "$TS" "$STORY_ID" "$HERMANOS_JSON" >> "$ESTADO_DIR/gates.log"
 else
   HERMANOS_JSON=""
 fi
