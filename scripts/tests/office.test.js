@@ -2888,6 +2888,7 @@ test('T274 Stuck_GroupedAndNeverGreen: quien declaró una espera sale «Esperand
       { session: 'Casco', extra: note('que la Coordinadora le muestre el texto') },
       { session: 'Solari', extra: note('la CI del #919 y la decisión de la coordinadora') },
       { session: 'Rojas', extra: note('que entren #915 y #6117') },
+      { session: 'Enzo', extra: note('la prueba del dueño') },
       { session: 'Paz', extra: { kind: 'note', text: 'sigue' } },
       { session: 'Dora', status: 'waiting_for_permission', extra: note('otra cosa') },
     ]),
@@ -2900,6 +2901,7 @@ test('T274 Stuck_GroupedAndNeverGreen: quien declaró una espera sale «Esperand
   assert.strictEqual(byName(data, 'Dora').estado, 'firma', 'lo que te pide a vos manda');
   assert.deepStrictEqual(data.meta.trabado, [
     { titulo: '2 esperan a la Coordinadora', filas: ['Casco: que la Coordinadora le muestre el texto', 'Solari: la CI del #919 y la decisión de la coordinadora'] },
+    { titulo: '1 espera al dueño', filas: ['Enzo: la prueba del dueño'] },
     { titulo: '1 espera otra cosa', filas: ['Rojas: que entren #915 y #6117'] },
   ]);
   const none = buildOffice({ wip: wip([{ session: 'Paz', extra: { kind: 'note', text: 'sigue' } }]), nowMs: NOW }).data;
@@ -2914,9 +2916,10 @@ test('T275 YourTurn_OnlySignaturesAndTheList: «Te toca» suma la lista del tabl
   assert.strictEqual(data.meta.teToca[1], 'Decidir el tercer cambio');
   const html = page(data);
   assert.match(html, /Nada por ahora: no hay firmas pendientes ni pedidos en el tablero\./);
-  assert.match(html, /<div class="you" id="you">/, 'siempre a la vista');
-  assert.ok(html.indexOf('id="you"') < html.indexOf('id="office"'), 'arriba de todo');
-  assert.ok(html.indexOf('id="trabado"') < html.indexOf('id="office"'));
+  assert.match(html, /<div class="resumen" id="resumen">/, 'siempre a la vista');
+  assert.ok(html.indexOf('id="resumen"') < html.indexOf('id="office"'), 'arriba de todo');
+  assert.ok(html.indexOf('id="you"') > html.indexOf('id="resumenListas"'), 'las listas se abren desde la línea');
+  assert.ok(html.indexOf('id="trabado"') > html.indexOf('id="resumenListas"'));
   assert.doesNotMatch(html, /"Te toca: "\+t\.teToca/, 'no se dice dos veces');
 });
 
@@ -3018,6 +3021,29 @@ test('T279 OtherProject_NotCounted: una sesión de un repo que el arnés no sigu
   assert.match(page(data), /list\.filter\(i=>!i\.otro\)\.length/, 'la columna no lo cuenta');
   fs.unlinkSync(path.join(m.state, 'stuck-prs-photo.json'));
   assert.notStrictEqual(byName(await collectAt(m, now), 'Mesa').comoTrabaja, 'Otro proyecto', 'sin la lista de repos no se sabe');
+});
+
+test('T281 Summary_OneLine: dice cuánto te toca y cuánto está trabado, destaca lo tuyo, y sin nada no hay qué abrir', () => {
+  const html = page({ agents: [], items: [], kanban: null, meta: null });
+  const src = html.slice(html.indexOf('const RESUMEN_KEY='), html.indexOf('function pintarResumen('));
+  const run = (storage) => new Function('localStorage', `${src}; return { lineaResumen, resumenGuardado, guardarResumen };`)(storage);
+  const { lineaResumen } = run({ getItem: () => null, setItem() {} });
+  assert.deepStrictEqual(lineaResumen(4, 4), { texto: 'Te toca: 4 · Trabado: 4', pide: true, vacio: false });
+  assert.deepStrictEqual(lineaResumen(0, 2), { texto: 'Te toca: 0 · Trabado: 2', pide: false, vacio: false });
+  assert.deepStrictEqual(lineaResumen(1, 0), { texto: 'Te toca: 1 · Trabado: 0', pide: true, vacio: false });
+  assert.deepStrictEqual(lineaResumen(0, 0), { texto: 'Nada por ahora', pide: false, vacio: true });
+  // se recuerda en ese navegador, y si no puede, no pasa nada
+  const kept = new Map();
+  const memory = run({ getItem: (k) => kept.get(k) ?? null, setItem: (k, v) => kept.set(k, v) });
+  assert.strictEqual(memory.resumenGuardado(), false, 'arranca cerrada');
+  memory.guardarResumen(true);
+  assert.strictEqual(memory.resumenGuardado(), true);
+  memory.guardarResumen(false);
+  assert.strictEqual(memory.resumenGuardado(), false);
+  const broken = run({ getItem() { throw new Error('bloqueado'); }, setItem() { throw new Error('bloqueado'); } });
+  assert.strictEqual(broken.resumenGuardado(), false);
+  assert.doesNotThrow(() => broken.guardarResumen(true));
+  assert.match(html, /pintarResumen\(you\.length,stuck\.reduce/, 'cada foto la vuelve a pintar');
 });
 
 test('T280 Titles_OneLine: en las tarjetas y el kanban, el título va en una línea; el detalle lo dice entero', () => {

@@ -266,21 +266,22 @@ function cardsOfSignatures(signatures, agents, sidOf) {
   return cards;
 }
 
-// Lo trabado, por a quién espera: la primera sesión abierta que nombra su espera; si no nombra ninguna, «otra cosa». La
-// tanda más grande primero, y «otra cosa» al final.
+// Lo trabado, por a quién espera: la primera sesión abierta que nombra su espera, o el dueño; si no nombra a nadie, «otra
+// cosa». La tanda más grande primero, y «otra cosa» al final.
+const OWNER_WAIT = Symbol('el dueño');
 function stuckGroups(agents, coordinatorName) {
   const groups = new Map();
   const names = agents.map((a) => a.nombre).filter(Boolean);
   for (const a of agents) {
     if (a.estado !== 'esperando') continue;
     const said = String(a.termina || '').replace(/^espera /, '');
-    const who = names.find((n) => n !== a.nombre && new RegExp(`(?<![\\p{L}\\p{N}])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'iu').test(said)) || null;
+    const who = names.find((n) => n !== a.nombre && new RegExp(`(?<![\\p{L}\\p{N}])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'iu').test(said)) || (/(?<![\p{L}\p{N}])dueñ[oa](?![\p{L}\p{N}])/iu.test(said) ? OWNER_WAIT : null);
     if (!groups.has(who)) groups.set(who, []);
     groups.get(who).push(`${a.nombre}: ${said}`);
   }
   const verb = (n) => `${n} ${n === 1 ? 'espera' : 'esperan'}`;
   return [...groups.entries()].sort(([p, x], [q, y]) => (p === null) - (q === null) || y.length - x.length)
-    .map(([who, filas]) => ({ titulo: who === null ? `${verb(filas.length)} otra cosa` : `${verb(filas.length)} a ${who === coordinatorName ? 'la ' : ''}${who}`, filas }));
+    .map(([who, filas]) => ({ titulo: who === null ? `${verb(filas.length)} otra cosa` : who === OWNER_WAIT ? `${verb(filas.length)} al dueño` : `${verb(filas.length)} a ${who === coordinatorName ? 'la ' : ''}${who}`, filas }));
 }
 
 /**
