@@ -46,8 +46,15 @@ arrancar. Una hora de fin que pasó no es un pronóstico: dice «se pasó de la 
 equipo trae la dirección del sitio de la organización, el encabezado tiene «Abrir el sitio» y el cartel de la pared también
 lo abre. Arriba de la etiqueta, una burbuja más chica dice lo que hace mientras tanto, si lo tocó en la última hora. Una
 sesión sin pipeline dice su encargo, lo que está haciendo y su última acción, leídos sólo del principio y del final de su
-conversación: nada de eso se guarda ni sale de la máquina. Su título es lo que ella anotó que hace, o su último mensaje; el
-encargo se muestra como encargo. La tarjeta y el panel al tocar a la persona dicen lo mismo.
+conversación. Su título es lo que ella anotó que hace, o su último mensaje; el encargo se muestra como encargo. La tarjeta
+y el panel al tocar a la persona dicen lo mismo.
+
+La conversación no se guarda ni sale de la máquina. Lo que sí sale, si la máquina está aprobada en el sitio de la
+organización: la foto de la oficina viaja a su pestaña «Oficinas», con el nombre de cada sesión, su título, su encargo,
+lo que está haciendo y su última acción. Cada texto viaja sin la carpeta personal ni las claves que se reconocen, y cortado
+a 200 caracteres; de la última acción, sólo qué hizo y a qué hora, sin el nombre del archivo. Del título de un trabajo de
+otro proyecto, en las tablas, viaja «Otro proyecto». Lo ven las personas con rol en el sitio: con la regla de fábrica,
+quien mantiene ve todas las máquinas y cada dev, las suyas. Una máquina sin aprobar no manda nada.
 
 Las tablas «Hoy» y «Pendientes» se arman solas de las mismas tarjetas que el kanban: nadie las escribe. Tienen una fila por
 tema, con una línea de estado contada de las tarjetas, y al tocarla se abren sus trabajos. El tema de cada trabajo lo elige
