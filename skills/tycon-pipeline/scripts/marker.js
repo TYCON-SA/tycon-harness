@@ -5186,6 +5186,7 @@ function cmdDesignateRelay(argv) {
     process.exit(2);
   }
   console.error(`✅ Esta sesión (${e.sesion}) es la «${e.rol}» de esta máquina, designada por ${e.quien}. Vale cuando una persona la confirma: corré node scripts/lib/delegated-signing.js confirm-designation en esta pestaña y aprobala con un click, o confirmala en su terminal`);
+  console.error(`   Antes de seguir, leé tus reglas completas: ${path.join(__dirname, '..', '..', '..', 'guides', 'coordination.md')}`);
   process.exit(0);
 }
 

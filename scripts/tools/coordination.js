@@ -317,6 +317,64 @@ function coordinatorRole(opts, sid) {
 }
 const sessionOf = (opts) => opts.sessionId || (opts.env || process.env).CLAUDE_CODE_SESSION_ID || null;
 
+// Las reglas se mandan a leer, no se pegan: son unos 32 KB, y cada contexto nuevo las necesita una sola vez.
+const GUIDE = path.join(__dirname, '..', '..', 'guides', 'coordination.md');
+
+// El último título de una conversación guardada. Va al principio y se repite cuando cambia; el archivo puede ser enorme,
+// así que se leen sólo sus dos puntas. Sin archivo o sin título, null.
+function titleIn(file) {
+  const SIDE = 256 * 1024;
+  let fd;
+  try { fd = fs.openSync(file, 'r'); } catch { return null; }
+  try {
+    const size = fs.fstatSync(fd).size;
+    const read = (pos) => {
+      const b = Buffer.alloc(Math.min(size, SIDE));
+      return b.toString('utf8', 0, fs.readSync(fd, b, 0, b.length, pos));
+    };
+    const last = (text) => {
+      let title = null;
+      for (const line of text.split('\n')) {
+        if (!line.includes('"agent-name"') && !line.includes('"custom-title"')) continue;
+        try { const r = JSON.parse(line); title = r.agentName || r.customTitle || title; } catch { /* una punta corta el renglón */ }
+      }
+      return title;
+    };
+    return last(read(Math.max(0, size - SIDE))) || last(read(0));
+  } finally { fs.closeSync(fd); }
+}
+
+// Limpiar la conversación da otro identificador y conserva el título, y la designación queda a nombre del identificador
+// viejo. Se la reconoce por el título de la conversación designada, y sólo se avisa: la designación da poder de firma y
+// la da una persona. Un título repetido da un aviso de más, nunca un permiso.
+function lostDesignation(opts, sid) {
+  const home = opts.home || require('os').homedir();
+  const d = designacionVigente({ home });
+  if (!d || d.error || !sid || !opts.title || !opts.transcript) return null;
+  const rol = sesionQueReenvia({ env: opts.env || process.env, home, arnes: opts.arnes });
+  if (!rol.valor) return null;
+  if (titleIn(path.join(path.dirname(opts.transcript), `${d.sesion}.jsonl`)) !== opts.title) return null;
+  const marker = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+  return [
+    `Coordinación: esta sesión era la ${rol.valor} de esta máquina y dejó de serlo al limpiar la conversación: para el arnés es otra conversación.`,
+    `Decile a la persona que, si quiere que siga siéndolo, escriba en este chat «Esta sesión es la ${rol.valor}». La frase la escribe ella, nunca vos.`,
+    `Con su frase, corré node ${marker} designate-relay --approved-by '<la persona>' --quote '<su frase, textual>' y seguí lo que te diga.`,
+  ].join('\n');
+}
+
+/**
+ * Lo que oye la coordinadora cuando empieza un contexto nuevo: que lea sus reglas otra vez, después de compactar o de
+ * limpiar la conversación. Si limpiarla le quitó la designación, cómo recuperarla. Al arrancar o al retomar una sesión,
+ * y en cualquier otra sesión, null.
+ */
+function guideNotice(opts = {}) {
+  if (opts.source !== 'compact' && opts.source !== 'clear') return null;
+  const sid = sessionOf(opts);
+  const who = coordinatorRole(opts, sid);
+  if (who) return who.role ? `Coordinación: sos la ${who.role} de esta máquina y tu conversación empezó de nuevo. Antes de seguir, leé tus reglas completas: ${GUIDE}` : null;
+  return opts.source === 'clear' ? lostDesignation(opts, sid) : null;
+}
+
 // La coordinadora que recibe primero la espera de otra sesión (scripts/hooks/wait-notice.js): `{ sid, name, role,
 // waitingName }`, o null sin rol, sin designación, con la designada cerrada o si la que espera es ella misma.
 function liveCoordinator(opts, waitingSid) {
@@ -1085,4 +1143,4 @@ function main(argv) {
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { status, statusText, readPending, capNotice, listNotice, ownerNextText, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, ORIGIN };
+module.exports = { status, statusText, readPending, capNotice, guideNotice, listNotice, ownerNextText, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, ORIGIN };
