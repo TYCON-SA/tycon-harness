@@ -102,6 +102,8 @@ const TEXTOS = {
 
   // ── las pestañas ───────────────────────────────────────────────────────────────────────────────────────────────
   'pestana.inicio': { es: 'Inicio', en: 'Home' },
+  'pestana.oficinas': { es: 'Oficinas', en: 'Offices' },
+  'oficinas.noSePudo': { es: 'Esta versión del sitio no pudo armar la pestaña. El detalle está en el registro.', en: 'This version of the site could not build the tab. The details are in the log.' },
   'pestana.corridas': { es: 'Ejecuciones', en: 'Runs' },
   'pestana.mantenimiento': { es: 'Mantenimiento', en: 'Maintenance' },
   'pestana.proyectos': { es: 'Proyectos', en: 'Projects' },

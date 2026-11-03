@@ -1778,6 +1778,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.171: la pestaña «Oficinas» del sitio y /office, que la abre",
+      "raiz": "arnes",
+      "ruta": "tests/site-offices.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/coordination.test.js",
       "requiere": []

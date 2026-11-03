@@ -424,6 +424,7 @@ async function serve() {
       });
       return;
     }
+    if (url.pathname === '/page.js') { send('text/javascript; charset=utf-8', fs.readFileSync(path.join(__dirname, 'page.js'))); return; }
     if (url.pathname === '/health') { send('application/json', JSON.stringify({ pid: process.pid, address: server.address().address })); return; }
     if (url.pathname.startsWith('/modules/')) {
       let key = null;

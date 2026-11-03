@@ -16,7 +16,7 @@ const { spawn, spawnSync } = require('child_process');
 const ROOT = path.join(__dirname, '..', '..');
 const OFFICE = path.join(ROOT, 'scripts', 'tools', 'office.js');
 const SERVER = path.join(ROOT, 'scripts', 'tools', 'office', 'server.js');
-const PAGE = path.join(ROOT, 'scripts', 'tools', 'office', 'page.html');
+const PAGE = path.join(ROOT, 'scripts', 'tools', 'office', 'page.js');
 const OWNER_WINDOW = path.join(ROOT, 'scripts', 'lib', 'owner-window.js');
 const WebSocket = require(path.join(ROOT, 'scripts', 'tools', 'office', 'vendor', 'ws'));
 const { stateDir, claudeDir } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
@@ -354,7 +354,8 @@ test('T1 Foto_LaMismaQueLaOficinaLocal: viaja sólo lo que lee la página; la li
     ['tabla', allOf(tableList), tableFields, readBy('t', fn('renderTablas'))],
     ['filas', allOf(tableList.flatMap((t) => t.filas)), tableFields.filas.of.fields, readBy('r', fn('renderTablas'))],
     ['trabajos', allOf(tableList.flatMap((t) => t.filas).flatMap((r) => r.trabajos)), tableFields.filas.of.fields.trabajos.of.fields, readBy('w', fn('renderTablas'))],
-    ['meta', foto.meta, FIELDS.meta.fields, (k) => readBy('meta')(k) || readBy('m', fn('umbral') + src.split('\n').find((l) => l.startsWith('const puestos=')))(k)],
+    // `sitio`: la oficina local lo muestra, pero lo lee del atributo que arma office.js, nunca de la foto
+    ['meta', foto.meta, FIELDS.meta.fields, (k) => k === 'sitio' || readBy('meta')(k) || readBy('m', fn('umbral') + src.split('\n').find((l) => l.startsWith('const puestos=')))(k)],
     ['rows', foto.rows[0], FIELDS.rows.of.fields, readBy('r')],
     ['tablero', foto.tablero, FIELDS.tablero.fields, readBy('t', fn('renderBoard'))],
   ];
