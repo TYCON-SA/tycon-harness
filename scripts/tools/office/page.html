@@ -121,11 +121,26 @@ html.con-ventana{overflow:hidden}.ventana .panel3,.ventana .chat{overscroll-beha
 ol.steps{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:3px;font-size:12.5px}
 ol.steps li{display:flex;gap:8px;color:#9d93b0} .panel3 ol.steps li.done{color:#d9d0ea} .card ol.steps li.done{color:var(--fg)} ol.steps li.now{color:var(--c);font-weight:600}
 ol.steps li span{width:14px;flex:none;text-align:center}
-.panel3 h4.toca{color:#ffb04d} .panel3 ul.toca li::marker{color:#ffb04d}
+.panel3 .verTodos{font:500 .85rem var(--body);padding:5px 14px;border-radius:8px;border:1px solid rgba(255,255,255,.28);background:transparent;color:inherit;cursor:pointer}
+.panel3 h4.toca{color:#ffb04d}.panel3 ul.toca li::marker{color:#ffb04d}
 .panel3 .close{position:absolute;right:8px;top:6px;background:none;border:0;color:#b6a9c9;font-size:22px;cursor:pointer;line-height:1}
 .ovl{position:absolute;left:50%;top:14px;transform:translateX(-50%);margin:0;background:rgba(18,14,26,.8);padding:6px 14px;border-radius:999px;font-size:13px;color:#e8dcff;text-align:center;max-width:calc(100% - 32px)}
 .hint{position:absolute;left:12px;bottom:10px;font-size:11.5px;color:#b6a9c9;background:rgba(18,14,26,.6);padding:3px 10px;border-radius:999px}
 .compact .hint{display:none}
+.zoom{position:absolute;right:12px;top:12px;z-index:4;display:flex;flex-direction:column;gap:4px}
+.zoom[hidden],.compact .zoom{display:none}
+.zoom button{width:32px;height:32px;border-radius:8px;border:1px solid rgba(255,255,255,.28);background:rgba(18,14,26,.72);color:#f4eefc;font:700 18px var(--body);cursor:pointer}
+.zoom button:hover{background:rgba(60,50,84,.9)}
+.zoom button:focus-visible{outline:2px solid #5cc0a3;outline-offset:2px}
+@media (hover:none){.zoom{display:none}}
+.avisoZoom{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:4;margin:0;padding:8px 16px;border-radius:10px;background:rgba(18,14,26,.86);color:#f4eefc;font:600 14px var(--body);pointer-events:none}
+.item.abre{cursor:pointer}
+.item.abre:hover{border-color:var(--k,var(--accent))}
+.item.abre:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.ventana .panel3.detalle{width:min(640px,100%);height:auto;max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);overflow:auto}
+.ventana .panel3.detalle dl{margin:8px 0}
+.ventana .panel3.detalle a{color:#8fd0ff}
+.ventana .panel3.detalle .chips{margin:8px 0}
 .crew{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:6px;min-width:0}
 .card h3{margin:0;font:700 1rem/1.3 var(--display);display:flex;align-items:center;gap:8px}
@@ -189,7 +204,7 @@ tr:last-child td{border-bottom:0}
   </div>
   <div class="interruptor"><span id="etiquetasTitulo">Etiquetas</span><div class="seg" role="radiogroup" aria-labelledby="etiquetasTitulo"><label><input type="radio" name="etiquetas" value="siempre" checked><span>Siempre</span></label><label><input type="radio" name="etiquetas" value="mouse"><span>Al pasar el mouse</span></label></div></div>
   <section class="office" id="office">
-    <div class="stage" id="stage" role="img" aria-label="Las sesiones trabajando en la oficina"><div class="labels" id="labels"></div><p class="ovl" id="ovl" hidden></p><div class="hint">Arrastrá para girar · rueda para acercar · tocá a alguien o el panel de la pared para ver el detalle</div><aside class="panel3" id="panel" hidden></aside></div>
+    <div class="stage" id="stage" role="img" aria-label="Las sesiones trabajando en la oficina"><div class="labels" id="labels"></div><p class="ovl" id="ovl" hidden></p><div class="hint">Arrastrá para girar · ⌘ o Ctrl más rueda, o pellizco, para acercar · tocá a alguien o el panel de la pared para ver el detalle</div><div class="zoom" id="zoom" hidden><button type="button" id="zoomMas" aria-label="Acercar">+</button><button type="button" id="zoomMenos" aria-label="Alejar">−</button></div><p class="avisoZoom" id="avisoZoom" role="status" hidden></p><aside class="panel3" id="panel" hidden></aside></div>
   </section>
   <section><h2>Las sesiones</h2><div class="crew" id="crew"></div><p class="nota" id="foot">«Prometido» es la hora que dio la ejecución al arrancar; «Termina» es la de ahora, que se recalcula al entrar a cada paso y queda fija hasta el próximo. La diferencia sale en rojo si va más de 15 minutos tarde y en verde si va más de 15 minutos antes.</p></section>
   <section class="trabajo" id="trabajo" hidden aria-labelledby="trabajoTitle">
@@ -234,7 +249,7 @@ function renderBoard(){const body=document.getElementById("boardBody"),k=DATA.ka
   (k.columnas||[]).forEach(c=>{const col=el("div","col"),list=c.tarjetas||[];col.style.setProperty("--k",KC[c.id]||"var(--line)");col.appendChild(el("h3",null,c.nombre+" · "+list.filter(i=>!i.otro).length));
     if(c.nota)col.appendChild(el("p","none",c.nota));
     if(!list.length)col.appendChild(el("p","none","Nada"));
-    list.forEach(i=>{const card=el("div","item"),tit=el("b","una-linea",i.titulo||"");tit.title=i.titulo||"";card.appendChild(tit);const line=[i.quien,i.hora,i.grupo].filter(Boolean).join(" · ");if(line)card.appendChild(el("span","m",line));const eh=c.id==="curso"&&estadoDeHora(i);if(eh){card.style.setProperty("--k",eh[1]);card.appendChild(el("span","estado-hora",eh[0]))}
+    list.forEach(i=>{const card=el("div","item abre"),tit=el("b","una-linea",i.titulo||"");tit.title=i.titulo||"";card.tabIndex=0;card.setAttribute("role","button");card.onclick=()=>{if(!String(window.getSelection?getSelection():""))abrirTarjeta(i,card);};card.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();abrirTarjeta(i,card);}};card.appendChild(tit);const line=[i.quien,i.hora,i.grupo].filter(Boolean).join(" · ");if(line)card.appendChild(el("span","m",line));const eh=c.id==="curso"&&estadoDeHora(i);if(eh){card.style.setProperty("--k",eh[1]);card.appendChild(el("span","estado-hora",eh[0]))}
       [i.espera?"Espera "+i.espera+".":"",i.marca,i.motivo,i.nota].forEach(v=>{if(v)card.appendChild(el("span","n",v))});col.appendChild(card)});
     cols.appendChild(col)});
   body.appendChild(cols);
@@ -334,10 +349,22 @@ function etiquetaComo(como){const e=el("span","como-chip");e.appendChild(iconoCo
 let charlaDe=null,charlaVuelve=null,ultimoPedido=0;
 const ALCANCE="Sólo se ven en esta máquina: no se guardan ni se mandan a ningún lado.";
 const ventana=()=>document.getElementById("ventana");
-function abrirCharla(nombre,boton){const v=ventana(),box=v.firstElementChild;charlaDe=nombre;charlaVuelve=boton;v.hidden=false;document.documentElement.classList.add("con-ventana");
+// Quién hace una tarjeta, si es una sesión de esta oficina. Una fila del tablero puede nombrar a más de una persona: cuenta la primera.
+function sesionDeTarjeta(i){const q=String(i.quien||"").trim(),primera=q.split(/[\s,]+/)[0];return agents.find(a=>a.nombre===q)||agents.find(a=>a.nombre===primera)||null;}
+// El detalle de una tarjeta del kanban, en la misma ventana que la conversación: su título entero, lo que sabe la tarjeta y, si la hace una sesión, su ficha.
+function abrirTarjeta(i,card){const v=ventana(),box=v.firstElementChild,a=sesionDeTarjeta(i);charlaDe=null;ultimoPedido+=1;charlaVuelve=card;v.hidden=false;box.classList.add("detalle");box.setAttribute("aria-label","Detalle de la tarjeta");document.documentElement.classList.add("con-ventana");
+  const cerrar=el("button","cerrar","Cerrar");cerrar.type="button";cerrar.onclick=cerrarCharla;box.replaceChildren(el("h3",null,i.titulo||"Sin título"));
+  const dl=el("dl"),fila=(k,x)=>{if(x==null||x==="")return;const dd=el("dd");dd.append(x);dl.append(el("dt",null,k),dd);};
+  fila("Quién",i.quien);if(!a||String(i.hora||"")!==String((finTxt(a)||{}).hora||""))fila("Cuándo",i.hora);if(!a||i.espera!==a.espera)fila("Espera",i.espera);fila("Marca",i.marca);fila("Motivo",i.motivo);fila("Nota",i.nota);fila("Grupo",i.grupo);
+  // el enlace sólo lleva a estos dos sitios: de los datos sale la ruta, nunca la dirección entera
+  if(i.pedido){const texto="Pedido "+i.pedido.numero,base=i.pedido.sitio==="github"?"https://github.com/":i.pedido.sitio==="azure"?"https://dev.azure.com/":null;if(base&&i.pedido.ruta){const l=el("a",null,texto);l.href=base+i.pedido.ruta;l.target="_blank";l.rel="noopener";fila("Pedido",l);}else fila("Pedido",texto);}
+  if(dl.children.length)box.append(dl);
+  if(a){const s=AST[a.estado]||[a.estado||"","#999"],chips=el("div","chips"),st=el("span","chip","● "+s[0]);st.style.setProperty("--c",s[1]);chips.append(st);if(a.comoTrabaja&&a.comoTrabaja!==s[0])chips.append(etiquetaComo(a.comoTrabaja));box.append(chips);pintarFicha(a,box,true);}
+  box.append(cerrar);cerrar.focus();}
+function abrirCharla(nombre,boton){const v=ventana(),box=v.firstElementChild;box.classList.remove("detalle");box.setAttribute("aria-label","Conversación");charlaDe=nombre;if(!v.contains(boton))charlaVuelve=boton;v.hidden=false;document.documentElement.classList.add("con-ventana");
   const cerrar=el("button","cerrar","Cerrar");cerrar.type="button";cerrar.onclick=cerrarCharla;box.replaceChildren(el("h3",null,"Conversación de "+nombre),el("p","m","Leyendo…"),cerrar);cerrar.focus();
   const yo=++ultimoPedido;fetch("conversacion?t="+encodeURIComponent(LIVE.token)+"&s="+encodeURIComponent(nombre)).then(r=>{if(!r.ok)throw new Error(String(r.status));return r.json()}).then(datos=>({datos}),()=>({falla:true})).then(c=>{if(yo===ultimoPedido&&charlaDe===nombre)pintarCharla(box,nombre,c,cerrar)});}
-function cerrarCharla(){const v=ventana();if(v.hidden)return;v.hidden=true;document.documentElement.classList.remove("con-ventana");v.firstElementChild.replaceChildren();charlaDe=null;ultimoPedido+=1;if(charlaVuelve&&charlaVuelve.isConnected)charlaVuelve.focus({preventScroll:true});charlaVuelve=null}
+function cerrarCharla(){const v=ventana();if(v.hidden)return;v.hidden=true;document.documentElement.classList.remove("con-ventana");v.firstElementChild.classList.remove("detalle");v.firstElementChild.replaceChildren();charlaDe=null;ultimoPedido+=1;if(charlaVuelve&&charlaVuelve.isConnected)charlaVuelve.focus({preventScroll:true});charlaVuelve=null}
 document.addEventListener("keydown",e=>{if(e.key==="Escape")cerrarCharla()});
 // El formato simple de un mensaje: negritas, código y listas. Todo se arma con nodos y textContent, así que lo que traiga
 // el mensaje nunca llega a ser HTML.
@@ -476,12 +503,14 @@ const texPanel=canvasTex(768,640,()=>{});
 // las columnas del kanban, con sus colores; lo que quedó a medio camino se cuenta aparte
 const KCOL={firma:"#ffb04d",curso:"#6cb6ff",entrando:"#c4bdf0",sinEmpezar:"#9aa3a0",hechos:"#3ddc84"},HALF="#ff6b80";
 const stampOf=(k,meta)=>k&&k.escrito||"Al día a las "+meta.actualizado;
+// El orden del panel de la pared y de su detalle: primero lo que se está trabajando.
+function paredEnOrden(K){const cols=(K&&K.columnas)||[];return ["firma","curso","entrando","medio","sinEmpezar","hechos"].map(id=>{if(id==="medio")return {id,nombre:"A medio camino",tarjetas:(K&&K.medioCamino)||[],color:HALF};const c=cols.find(x=>x.id===id);return c&&{id,nombre:c.nombre,tarjetas:c.tarjetas||[],color:KCOL[id]||"#9aa3a0"};}).filter(Boolean);}
 function drawPanel(){const {g}=texPanel.userData,w=768,h=640,k=T.kanban(),meta=T.meta();g.clearRect(0,0,w,h);g.fillStyle="#0e1220";g.beginPath();g.roundRect(4,4,w-8,h-8,26);g.fill();g.strokeStyle="#4a5a8a";g.lineWidth=8;g.stroke();
   g.fillStyle="#ffffff";g.font="800 64px "+FONT;g.fillText("Pendientes",36,76);
-  const stats=((k&&k.columnas)||[]).map(c=>[c.nombre,(c.tarjetas||[]).length,KCOL[c.id]||"#9aa3a0"]);stats.push(["A medio camino",((k&&k.medioCamino)||[]).length,HALF]);
-  stats.forEach(([l,n,c],i)=>{const x=36+(i%2)*356,y=96+Math.floor(i/2)*138;g.fillStyle="#1b2236";g.beginPath();g.roundRect(x,y,340,128,18);g.fill();g.fillStyle=c;g.fillRect(x,y,12,128);
+  const toca=(meta&&meta.teToca)||[];g.fillStyle="#ffb04d";g.font="800 46px "+FONT;g.textAlign="right";g.fillText("Te toca: "+toca.length,w-36,72);g.textAlign="left";
+  const stats=paredEnOrden(k).map(c=>[c.nombre,c.tarjetas.length,c.color]);
+  stats.forEach(([l,n,c],i)=>{const x=36+(i%2)*356,y=96+Math.floor(i/2)*156;g.fillStyle="#1b2236";g.beginPath();g.roundRect(x,y,340,128,18);g.fill();g.fillStyle=c;g.fillRect(x,y,12,128);
     g.font="800 84px "+FONT;g.fillText(String(n),x+30,y+82);g.fillStyle="#ffffff";g.font="700 32px "+FONT;g.fillText(l,x+30,y+116);});
-  const toca=(meta&&meta.teToca)||[];g.fillStyle="#ffb04d";g.font="800 46px "+FONT;g.fillText("Te toca: "+toca.length,36,558);
   g.fillStyle="#dfe6ff";g.font="600 26px "+FONT;g.textAlign="right";g.fillText("tocá para ver el detalle",w-36,612);g.textAlign="left";
   if(meta&&meta.actualizado){g.fillStyle="#9fb0d8";g.font="600 26px "+FONT;g.fillText(stampOf(k,meta),36,612);}texPanel.needsUpdate=true;}
 
@@ -715,16 +744,17 @@ stage.addEventListener("pointerleave",e=>{if(e.pointerType!=="touch")verEtiqueta
 function abrirTablero(){sel=null;desks.forEach(pintarTag);const K=T.kanban()||{},meta=T.meta();panel.hidden=false;panel.classList.add("wide");panel.style.setProperty("--c","#9cc2ff");panel.replaceChildren();
   const mk=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
   const cl=mk("button","close","×");cl.type="button";cl.setAttribute("aria-label","Cerrar");cl.onclick=()=>{panel.hidden=true;panel.classList.remove("wide")};panel.append(cl,mk("h3",null,"Pendientes"));
-  const cols=K.columnas||[],half=K.medioCamino||[];
-  const ct=mk("div","counts");cols.forEach(c=>{const k=mk("div","cnt");k.style.setProperty("--k",KCOL[c.id]||"#9aa3a0");k.append(mk("b",null,String((c.tarjetas||[]).length)),mk("span",null,c.nombre));ct.append(k)});
-  {const k=mk("div","cnt");k.style.setProperty("--k",HALF);k.append(mk("b",null,String(half.length)),mk("span",null,"A medio camino"));ct.append(k)}panel.append(ct);
+  const orden=paredEnOrden(K);panel.abiertos=panel.abiertos||new Set();
+  const ct=mk("div","counts");orden.forEach(c=>{const k=mk("div","cnt");k.style.setProperty("--k",c.color);k.append(mk("b",null,String(c.tarjetas.length)),mk("span",null,c.nombre));ct.append(k);});panel.append(ct);
   const toca=(meta&&meta.teToca)||[];if(toca.length){panel.append(mk("h4","toca","Te toca"));const ul=mk("ul","toca");toca.forEach(t=>ul.append(mk("li",null,t)));panel.append(ul)}
-  cols.forEach(c=>{const rows=c.tarjetas||[];if(!rows.length)return;const h=mk("h4",null,c.nombre+" · "+rows.length);h.style.color=KCOL[c.id]||"#9aa3a0";panel.append(h);const ul=mk("ul","list");
-    rows.forEach(r=>{const li=mk("li");li.append(mk("b",null,r.titulo||""));li.append(mk("span","m",[r.quien,r.hora,r.espera?"espera "+r.espera:"",r.marca,r.motivo].filter(Boolean).join(" · ")));if(r.nota)li.append(mk("span","m",r.nota));ul.append(li)});panel.append(ul)});
-  if(half.length){const h=mk("h4",null,"A medio camino · "+half.length);h.style.color=HALF;panel.append(h);const ul=mk("ul","list");half.forEach(r=>{const li=mk("li");li.append(mk("b",null,r.titulo||""),mk("span","m",r.accion||""));ul.append(li)});panel.append(ul)}
+  // lo que no se está trabajando no estira el detalle: con muchas, se abre a pedido, y sigue abierto cuando llega otra foto
+  orden.forEach(c=>{const rows=c.tarjetas;if(!rows.length)return;const h=mk("h4",null,c.nombre+" · "+rows.length);h.style.color=c.color;panel.append(h);
+    const lista=()=>{const ul=mk("ul","list");rows.forEach(r=>{const li=mk("li");li.append(mk("b",null,r.titulo||""));if(c.id==="medio")li.append(mk("span","m",r.accion||""));else{li.append(mk("span","m",[r.quien,r.hora,r.espera?"espera "+r.espera:"",r.marca,r.motivo].filter(Boolean).join(" · ")));if(r.nota)li.append(mk("span","m",r.nota));}ul.append(li);});return ul;};
+    if((c.id==="sinEmpezar"||c.id==="hechos")&&rows.length>5&&!panel.abiertos.has(c.id)){const b=mk("button","verTodos","Ver los "+rows.length);b.type="button";b.onclick=()=>{panel.abiertos.add(c.id);b.replaceWith(lista());};panel.append(b);}
+    else panel.append(lista());});
   if(K.medioCaminoLeido)panel.append(mk("p","m",K.medioCaminoLeido));
   if(K.medioCaminoNoSe)panel.append(mk("p","m",K.medioCaminoNoSe));
-  if(!half.length&&!cols.some(c=>(c.tarjetas||[]).length))panel.append(mk("p","m","No hay nada pendiente en esta máquina."));
+  if(!orden.some(c=>c.tarjetas.length))panel.append(mk("p","m","No hay nada pendiente en esta máquina."));
   if(meta&&meta.actualizado)panel.append(mk("p","m",stampOf(K,meta)))}
 
 // ---------- luces y postproceso ----------
@@ -746,7 +776,17 @@ const ritmo=()=>reduce?0:performance.now()<hastaTocando?FPS_TOCANDO:desks.some(d
 function programar(){clearTimeout(timer);timer=null;const f=ritmo();if(!f||!enVista||document.hidden)return;timer=setTimeout(()=>requestAnimationFrame(loop),1000/f)}
 function despertar(){clearTimeout(timer);timer=setTimeout(()=>requestAnimationFrame(loop),0)}
 function tocar(){hastaTocando=performance.now()+TOCANDO_MS;if(!timer)despertar()}
-["pointerdown","pointermove","wheel"].forEach(ev=>renderer.domElement.addEventListener(ev,tocar,{passive:true}));
+["pointerdown","pointermove"].forEach(ev=>renderer.domElement.addEventListener(ev,tocar,{passive:true}));
+// La rueda sola mueve la página: se la saca de camino antes de que llegue a los controles de la cámara, sin frenarla. Para acercar:
+// ⌘ o Ctrl más rueda (el pellizco del trackpad llega igual), el pellizco de Safari o los botones. Con dos dedos, los controles de siempre.
+const avisoZoom=document.getElementById("avisoZoom"),zoomBox=document.getElementById("zoom");let avisoTimer=null,zoomBase=1;
+avisoZoom.textContent=(/Mac|iPhone|iPad/.test(navigator.platform||"")?"⌘":"Ctrl")+" + rueda para acercar";
+function acercar(f){const z=Math.min(controls.maxZoom,Math.max(controls.minZoom,cam.zoom*f));if(z===cam.zoom)return;cam.zoom=z;cam.updateProjectionMatrix();tagsAlDia=false;tocar();}
+stage.addEventListener("wheel",e=>{if(e.target.closest(".panel3"))return;e.stopPropagation();if(e.ctrlKey||e.metaKey){e.preventDefault();avisoZoom.hidden=true;acercar(Math.exp(-e.deltaY*(Math.abs(e.deltaY)<50?.01:.002)));return;}
+  avisoZoom.hidden=false;clearTimeout(avisoTimer);avisoTimer=setTimeout(()=>{avisoZoom.hidden=true;},1500);},{capture:true,passive:false});
+stage.addEventListener("gesturestart",e=>{e.preventDefault();zoomBase=cam.zoom;});
+stage.addEventListener("gesturechange",e=>{e.preventDefault();acercar(zoomBase*e.scale/cam.zoom);});
+document.getElementById("zoomMas").onclick=()=>acercar(1.25);document.getElementById("zoomMenos").onclick=()=>acercar(.8);zoomBox.hidden=false;
 controls.addEventListener("change",()=>{tagsAlDia=false;tocar()});
 new IntersectionObserver(es=>{enVista=es[es.length-1].isIntersecting;if(enVista)despertar()}).observe(stage);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)despertar()});

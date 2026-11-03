@@ -772,3 +772,93 @@ test('T30 Envelope_InPhoto_NoText; Conversation_OnlyWithToken: el sobre dice qui
   assert.deepStrictEqual(JSON.parse(said.body), { sinCoordinadora: true }, 'sin coordinadora designada, no hay conversación');
   ws.close();
 });
+
+// ── La tarjeta que se abre y la rueda: el código de la página, sin levantar el proceso ──────────────────────────────
+
+const officePage = require(OFFICE).page;
+
+test('T97 Card_Pr: el pedido de una tarjeta lleva su enlace sólo si se sabe dónde está', () => {
+  const { cardPr } = require(OFFICE);
+  assert.deepStrictEqual(cardPr('acme/mi-repo', 912), { numero: 912, sitio: 'github', ruta: 'acme/mi-repo/pull/912' });
+  assert.deepStrictEqual(cardPr('acme/mi proyecto/repo', 6138), { numero: 6138, sitio: 'azure', ruta: 'acme/mi%20proyecto/_git/repo/pullrequest/6138' });
+  assert.deepStrictEqual(cardPr('tycon-harness', 912), { numero: 912 });
+  assert.deepStrictEqual(cardPr(undefined, 912), { numero: 912 });
+});
+
+// The card-detail code of the page, on a small stand-in for the DOM.
+function cardDetail(card, sessions = []) {
+  class Fake {
+    constructor(tag, cls, text) { this.tag = tag; this.className = cls || ''; this.textContent = text == null ? '' : String(text); this.children = []; this.hidden = true; this.style = { setProperty() {} }; this.classList = { add: (c) => { this.added = c; }, remove() {} }; }
+    append(...kids) { this.children.push(...kids.map((k) => (typeof k === 'string' ? new Fake('#text', '', k) : k))); }
+    replaceChildren(...kids) { this.children = []; this.append(...kids); }
+    focus() { this.focused = true; }
+    setAttribute() {}
+  }
+  const box = new Fake('div');
+  const win = new Fake('div');
+  win.firstElementChild = box;
+  const html = officePage({ agents: [], items: [], kanban: null, meta: null });
+  const code = html.slice(html.indexOf('// Quién hace una tarjeta'), html.indexOf('function abrirCharla('));
+  const fichas = [];
+  const stubs = {
+    el: (tag, cls, text) => new Fake(tag, cls, text), finTxt: (a) => (a.fin ? { hora: a.fin } : null), agents: sessions, AST: { trabajando: ['Trabajando', '#0f0'] }, etiquetaComo: (c) => new Fake('span', 'como', c), pintarFicha: (a) => fichas.push(a.nombre), ventana: () => win, cerrarCharla() {},
+    document: { documentElement: new Fake('html') },
+  };
+  new Function(...Object.keys(stubs), `let charlaDe=null,ultimoPedido=0,charlaVuelve=null;${code};abrirTarjeta(${JSON.stringify(card)},{});`)(...Object.values(stubs));
+  const rows = {};
+  const dl = box.children.find((k) => k.tag === 'dl');
+  if (dl) for (let i = 0; i < dl.children.length; i += 2) rows[dl.children[i].textContent] = dl.children[i + 1].children[0];
+  return { box, win, rows, fichas, title: box.children[0].textContent, last: box.children[box.children.length - 1] };
+}
+
+test('T98 Card_Detail_WithSession: título entero, lo que sabe la tarjeta y la misma ficha de la persona, sin repetir su hora', () => {
+  const d = cardDetail({ titulo: 'Las oficinas de cada dev, en vivo, en el sitio', quien: 'Tero', hora: 'mar 04:00', nota: 'espera el turno', pedido: { numero: 912, sitio: 'github', ruta: 'o/r/pull/912' } }, [{ nombre: 'Tero', estado: 'trabajando', fin: 'mar 04:00' }]);
+  assert.strictEqual(d.title, 'Las oficinas de cada dev, en vivo, en el sitio');
+  assert.strictEqual(d.win.hidden, false);
+  assert.deepStrictEqual(d.fichas, ['Tero']);
+  assert.strictEqual(d.rows['Quién'].textContent, 'Tero');
+  assert.strictEqual(d.rows['Nota'].textContent, 'espera el turno');
+  assert.ok(!('Cuándo' in d.rows), 'la misma hora la dice la ficha');
+  const other = cardDetail({ titulo: 'Otra fila de Tero', quien: 'Tero', hora: 'lun 10:00' }, [{ nombre: 'Tero', estado: 'trabajando', fin: 'mar 04:00' }]);
+  assert.strictEqual(other.rows['Cuándo'].textContent, 'lun 10:00', 'otra hora no se pierde');
+  assert.strictEqual(d.rows['Pedido'].tag, 'a');
+  assert.strictEqual(d.rows['Pedido'].href, 'https://github.com/o/r/pull/912');
+  assert.strictEqual(d.rows['Pedido'].rel, 'noopener');
+  assert.strictEqual(d.last.textContent, 'Cerrar');
+  assert.strictEqual(d.last.focused, true);
+});
+
+test('T99 Card_Detail_NoSession: sin sesión, su hora y su pedido sin ficha; lo que no tiene no aparece; un sitio desconocido no da enlace', () => {
+  const d = cardDetail({ titulo: 'Una fila del tablero', quien: 'Nadie Vivo', hora: 'estaba para lun 10:00', pedido: { numero: 7, sitio: 'constructor', ruta: 'x' } }, [{ nombre: 'Tero', estado: 'trabajando', fin: 'mar 04:00' }]);
+  assert.deepStrictEqual(d.fichas, []);
+  assert.strictEqual(d.rows['Cuándo'].textContent, 'estaba para lun 10:00');
+  assert.strictEqual(d.rows['Pedido'].tag, '#text', 'sin enlace');
+  assert.strictEqual(d.rows['Pedido'].textContent, 'Pedido 7');
+  assert.deepStrictEqual(Object.keys(d.rows).sort(), ['Cuándo', 'Pedido', 'Quién']);
+  assert.strictEqual(cardDetail({ titulo: 'Sin nada' }).box.children.some((k) => k.tag === 'dl'), false, 'sin datos, no hay lista vacía');
+});
+
+test('T100 Card_Opens_Everywhere: cada tarjeta del kanban se abre con un click o con el teclado, y seleccionar texto no la abre', () => {
+  const html = officePage({ agents: [], items: [], kanban: null, meta: null });
+  const board = html.slice(html.indexOf('function renderBoard('), html.indexOf('function renderHalfway('));
+  assert.match(board, /el\("div","item abre"\)/);
+  assert.match(board, /card\.tabIndex=0;card\.setAttribute\("role","button"\)/);
+  assert.match(board, /e\.key==="Enter"\|\|e\.key===" "/);
+  assert.match(board, /if\(!String\(window\.getSelection\?getSelection\(\):""\)\)abrirTarjeta\(i,card\)/);
+});
+
+test('T101 Wheel_MovesThePage: la rueda sola no llega a la cámara y no se frena; acercar es con ⌘ o Ctrl, el pellizco o los botones', () => {
+  const html = officePage({ agents: [], items: [], kanban: null, meta: null });
+  assert.match(html, /Arrastrá para girar · ⌘ o Ctrl más rueda, o pellizco, para acercar · tocá a alguien/);
+  assert.doesNotMatch(html, /· rueda para acercar ·/);
+  const wheel = html.slice(html.indexOf('stage.addEventListener("wheel"'), html.indexOf('stage.addEventListener("gesturestart"'));
+  assert.match(wheel, /^stage\.addEventListener\("wheel",e=>\{if\(e\.target\.closest\("\.panel3"\)\)return;e\.stopPropagation\(\);/, 'el detalle abierto sigue con su rueda');
+  assert.match(wheel, /if\(e\.ctrlKey\|\|e\.metaKey\)\{e\.preventDefault\(\);/, 'sólo acercando se frena la página');
+  assert.match(wheel, /\{capture:true,passive:false\}/, 'antes de que llegue a los controles');
+  assert.equal(wheel.match(/preventDefault/g).length, 1);
+  assert.match(html, /\+" \+ rueda para acercar"/);
+  assert.match(html, /\["pointerdown","pointermove"\]\.forEach\(ev=>renderer\.domElement/);
+  assert.match(html, /<div class="zoom" id="zoom" hidden>/, 'sin 3D no hay botones');
+  assert.match(html, /@media \(hover:none\)\{\.zoom\{display:none\}\}/, 'en un teléfono, tampoco');
+  assert.match(html, /gesturechange/);
+});
