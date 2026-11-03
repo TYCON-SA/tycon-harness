@@ -428,6 +428,8 @@ const MINIMAL_HOOKS = [
   // el freno de comandos destructivos y el portón de edición están en los dos perfiles: sin el
   // portón, en la mínima el agente implementa una historia sin recorrido y nadie se entera
   'PreToolUse:@tcg:safety-guard-pre.sh', 'PreToolUse:tycon-pipeline/scripts/hook-pre-edit.js',
+  // quien instala la mínima también merece no imprimir los secretos de su máquina
+  'PostToolUse:@tcg:cover-secrets.js',
   // los avisos de los paquetes reemplazan reglas que los paquetes escribían en el CLAUDE.md de los dos perfiles: sólo en
   // full, la mínima las perdería
   'SessionStart:@tcg:extension-notices.js',

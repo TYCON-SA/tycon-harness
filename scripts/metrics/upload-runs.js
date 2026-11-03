@@ -26,7 +26,8 @@
  * 🔴 NINGUNA DIRECCIÓN VIAJA CON SU CREDENCIAL. Todo lo que sube pasa antes por `sinCredencialesEnDirecciones`, que
  *    tapa lo que va entre `://` y `@` (`usuario:clave@`, `clave@`) y deja el resto del archivo byte por byte: el hilo trae
  *    los comandos y las salidas tal como se vieron. El archivo local no se toca, y el registro de subidas anota su
- *    tamaño y su sha256. El que no se puede abrir para limpiarlo no sube, y se dice.
+ *    tamaño y su sha256. El que no se puede abrir para limpiarlo no sube, y se dice. La misma limpieza tapa los valores
+ *    reales de los secretos de la máquina; si no pudo leer ningún origen, sube y dice que no los comprobó.
  *
  * 🔴 «NO SUBIDO» NUNCA SE LEE COMO «SUBIDO». Los códigos del servicio se separan (medidos en un contenedor de
  *    laboratorio): «ya existe» (409 BlobAlreadyExists, 403 UnauthorizedBlobOverwrite) se reintenta UNA
@@ -934,15 +935,33 @@ const OCULTO = '<oculto>';
 /**
  * El contenido listo para subir, sin credenciales en sus direcciones: usa latin1 para no cambiar un byte de lo demás, y
  * sin nada que tapar devuelve el mismo Buffer. `git@` no es una credencial: es el usuario fijo de las direcciones ssh.
- * Con `.gz` abre y vuelve a comprimir; si no se puede abrir, tira.
+ * Con `.gz` abre y vuelve a comprimir; si no se puede abrir, tira. Tapa también los valores reales de la máquina que recibe
+ * en `secretos`, comparando exacto (known-secrets.js).
  */
-function sinCredencialesEnDirecciones(cuerpo, archivo) {
+function limpioParaSubir(cuerpo, archivo, secretos) {
   const comprimido = /\.gz$/.test(archivo);
   const texto = (comprimido ? zlib.gunzipSync(cuerpo) : cuerpo).toString('latin1');
-  const limpio = texto.replace(CREDENCIAL_EN_DIRECCION, (todo, inicio, credencial) => (credencial === 'git' ? todo : `${inicio}${OCULTO}@`));
+  // primero los valores: limpiar antes una dirección con credencial la cambiaría, y su valor ya no coincidiría exacto
+  const sinValores = secretos.length ? require('../lib/known-secrets.js').coverInLatin1(texto, secretos) : texto;
+  const limpio = sinValores.replace(CREDENCIAL_EN_DIRECCION, (todo, inicio, credencial) => (credencial === 'git' ? todo : `${inicio}${OCULTO}@`));
   if (limpio === texto) return cuerpo;
   const salida = Buffer.from(limpio, 'latin1');
   return comprimido ? zlib.gzipSync(salida) : salida;
+}
+
+function sinCredencialesEnDirecciones(cuerpo, archivo) { return limpioParaSubir(cuerpo, archivo, []); }
+
+/**
+ * Los valores reales de esta máquina para tapar lo que sube. Los lee de nuevo en cada pasada. `comprobable: false` es que
+ * ningún origen se pudo leer: la subida sigue con la limpieza de direcciones, y lo dice. Una tarea programada corre con
+ * el entorno pobre: los valores salen entonces de los archivos. La biblioteca se carga acá: una copia suelta de este guion
+ * sin ella sube igual, y dice que no comprobó.
+ */
+function valoresDeLaMaquina() {
+  try {
+    const { secrets, readable, problems } = require('../lib/known-secrets.js').readKnownSecrets({ home: os.homedir(), env: process.env });
+    return { secretos: secrets, comprobable: readable > 0, problemas: problems };
+  } catch (_) { return { secretos: [], comprobable: false, problemas: [] }; }
 }
 
 /** Los archivos a subir del registro de corridas, en orden: el volcado, su cambio y su hilo quedan juntos. */
@@ -1353,6 +1372,14 @@ async function subir(opts = {}) {
   //    lo dispararía también por el hilo de una corrida (`*.hilo.jsonl.gz`).
   const esFallaDeRegistro = (x) => x.startsWith('registros de frenos y escapes') || REGISTROS.some((r) => x.startsWith(`${r}.gz `));
   let registroFallido = noLeidos.some(esFallaDeRegistro) || juegosFallidos.size > 0;
+  const valores = valoresDeLaMaquina();
+  if (!valores.comprobable) {
+    res.valores_sin_comprobar = true;
+    log('los valores no se pudieron comprobar: ningún origen de la máquina se pudo leer. Lo que sube lleva sólo la limpieza de direcciones');
+  } else if (valores.problemas.length) {
+    res.valores_problemas = valores.problemas;
+    log(`algún origen de los valores no se pudo leer, y lo suyo no se tapa: ${valores.problemas.join(' · ')}`);
+  }
   if (huellaPendiente) {
     const md5 = crypto.createHash('md5').update(oficina.cuerpo).digest('base64');
     const r = await ponerBlob(urlDe(blobOficina), oficina.cuerpo, md5, 30000);
@@ -1383,7 +1410,7 @@ async function subir(opts = {}) {
     // El archivo cambió entre el recorrido y la subida (el barrido de rescate lo reescribe): va lo de ahora.
     const sha256 = crypto.createHash('sha256').update(local).digest('hex');
     let cuerpo;
-    try { cuerpo = sinCredencialesEnDirecciones(local, p.f); }
+    try { cuerpo = limpioParaSubir(local, p.f, valores.secretos); }
     catch (e) {
       const motivo = `no se pudo abrir para limpiar sus direcciones: ${e.code || e.message}`;
       // un juego no queda a medias: se re-prepara en la pasada siguiente, como cuando un registro rebota
@@ -1426,7 +1453,7 @@ async function subir(opts = {}) {
     if (tipo !== 'creado') { noSubidos.push(`${p.f} (${codigo})`); if (esRegistro(p)) registroFallido = true; continue; }
     if (reintentado) res.ya_existian += 1;
     // 🔴 recién con el 201 se anota — y se persiste ya, archivo por archivo (con el blob y la versión)
-    registro.archivos[p.clave] = { size: local.length, mtimeMs: Math.min(stAntes.mtimeMs, p.mtimeMs), sha256, subido: new Date().toISOString(), blob, version: version || p.juego || null };
+    registro.archivos[p.clave] = { size: local.length, mtimeMs: Math.min(stAntes.mtimeMs, p.mtimeMs), sha256, subido: new Date().toISOString(), blob, version: version || p.juego || null, ...(cuerpo !== local ? { limpiado: true } : {}) };
     try { guardar(); }
     catch (e) { return fin(1, 'registro_ilegible', `${p.f} subió pero el registro de subidas ${rutaRegistro} no se pudo escribir (${e.code || e.message}): la pasada siguiente lo volvería a subir`); }
     res.subidos += 1;
@@ -1492,6 +1519,7 @@ async function chequearSoloCrear(opts = {}) {
     if (local) candidatos.push({ clave, e, f, local });
   }
   candidatos.sort((a, b) => a.e.size - b.e.size || (a.clave < b.clave ? -1 : 1));
+  const { secretos } = valoresDeLaMaquina();
   let sinUsar = 0;
   for (const c of candidatos) {
     let local;
@@ -1499,8 +1527,10 @@ async function chequearSoloCrear(opts = {}) {
     if (crypto.createHash('sha256').update(local).digest('hex') !== c.e.sha256) continue;
     // el chequeo pisa si la política lo deja: sólo sirve un archivo sin nada que tapar, igual byte por byte a lo confirmado.
     // Con una credencial no se sabe qué hay en el blob: el crudo la subiría, y el limpio reescribiría lo ya subido.
+    // Lo que subió limpio no sirve aunque hoy no haya nada que tapar: el valor pudo cambiar, y el crudo pisaría lo tapado.
+    if (c.e.limpiado) { sinUsar += 1; continue; }
     let limpio;
-    try { limpio = sinCredencialesEnDirecciones(local, c.f); } catch (_) { sinUsar += 1; continue; }
+    try { limpio = limpioParaSubir(local, c.f, secretos); } catch (_) { sinUsar += 1; continue; }
     if (limpio !== local) { sinUsar += 1; continue; }
     const cuerpo = local;
     const blob = typeof c.e.blob === 'string' && c.e.blob.startsWith(`${maquina}/`) ? c.e.blob : c.clave;
@@ -1516,7 +1546,7 @@ async function chequearSoloCrear(opts = {}) {
     if (r.status === 201) return fin(1, 'dejo_escribir', `la política dejó escribir, o el blob ya no estaba (201, política ${cfg.politica || '?'}): lo verifica con az storage blob show alguien con el rol de lectura. Se mandaron los mismos bytes confirmados: el blob quedó igual`);
     return fin(1, 'otro', `el buzón contestó ${codigo} al volver a subir los mismos bytes (política ${cfg.politica || '?'}): no prueba ni «sólo crear» ni lo contrario`);
   }
-  if (sinUsar) return fin(1, 'no_medido', `no medido: ${sinUsar} archivo(s) con el sha256 confirmado llevan una credencial o no se pudieron abrir para limpiar sus direcciones, y ningún otro sirve (${candidatos.length} anotado(s)): no se manda nada`);
+  if (sinUsar) return fin(1, 'no_medido', `no medido: ${sinUsar} archivo(s) con el sha256 confirmado llevan una credencial o un valor real, o no se pudieron abrir para limpiar sus direcciones, y ningún otro sirve (${candidatos.length} anotado(s)): no se manda nada`);
   return fin(1, 'no_medido', `no medido: ningún blob confirmado de esta máquina tiene todavía su archivo local con el mismo sha256 (${candidatos.length} anotado(s)): no se manda nada distinto de lo confirmado`);
 }
 
