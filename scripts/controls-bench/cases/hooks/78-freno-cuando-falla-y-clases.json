@@ -1,0 +1,71 @@
+{
+  "hooks": [
+    {
+      "hook": "on-bash-write-gate.js",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-bash-write-gate.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "corchete-con-barra-que-nombra-una-historia-frena",
+          "type": "must-block",
+          "_por_que": "Para el shell, `[1\\]]` es la clase de `1` y `]`, y expande la historia. Si el freno lee `\\]` como el cierre, el comando la escribe sin que nadie lo mire.",
+          "setup": [
+            "git init -q -b main . && mkdir -p specs .tycon",
+            "printf -- '---\\nstory: \"1.1\"\\nepic: \"1\"\\ntitle: \"x\"\\nstatus: in-progress\\n---\\n\\n# x\\n' > specs/story-1.1.md"
+          ],
+          "stdin": {
+            "session_id": "bench-red",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "sed -i '' 's/a/b/' specs/story-[1\\]].1.md"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": ["HISTORIA ESCRITA POR CONSOLA"]
+          }
+        },
+        {
+          "id": "corchete-con-barra-que-no-nombra-una-historia-no-frena",
+          "type": "must-not-block",
+          "_por_que": "El arreglo no es frenar cada corchete con barra: una clase sin el carácter no nombra la historia.",
+          "setup": [
+            "git init -q -b main . && mkdir -p specs .tycon",
+            "printf -- '---\\nstory: \"1.1\"\\nepic: \"1\"\\ntitle: \"x\"\\nstatus: in-progress\\n---\\n\\n# x\\n' > specs/story-1.1.md"
+          ],
+          "stdin": {
+            "session_id": "bench-red",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "sed -i '' 's/a/b/' datos/salida-[2\\]].txt"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "clase-posix-que-nombra-una-historia-frena-por-la-historia",
+          "type": "must-block",
+          "_por_que": "`[[:digit:]]` es un dígito para el shell: el comando escribe la historia, y el freno tiene que decirlo como tal.",
+          "setup": [
+            "git init -q -b main . && mkdir -p specs .tycon",
+            "printf -- '---\\nstory: \"1.1\"\\nepic: \"1\"\\ntitle: \"x\"\\nstatus: in-progress\\n---\\n\\n# x\\n' > specs/story-1.1.md"
+          ],
+          "stdin": {
+            "session_id": "bench-red",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "sed -i '' 's/a/b/' specs/story-[[:digit:]].1.md"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": ["HISTORIA ESCRITA POR CONSOLA"]
+          }
+        }
+      ]
+    }
+  ]
+}
