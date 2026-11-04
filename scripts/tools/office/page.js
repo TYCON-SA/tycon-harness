@@ -163,7 +163,9 @@ function abrirTarjeta(i,card){const v=ventana(),box=v.firstElementChild,a=sesion
   box.append(cerrar);cerrar.focus();}
 function abrirCharla(nombre,boton,p=null){const v=ventana(),box=v.firstElementChild;box.classList.remove("detalle");box.setAttribute("aria-label","Conversación");charlaDe=nombre;if(!v.contains(boton))charlaVuelve=boton;v.hidden=false;document.documentElement.classList.add("con-ventana");
   const cerrar=el("button","cerrar","Cerrar");cerrar.type="button";cerrar.onclick=cerrarCharla;box.replaceChildren(el("h3",null,"Conversación de "+nombre),el("p","m","Leyendo…"),cerrar);cerrar.focus();
-  const yo=++ultimoPedido;fetch(pedidoDeCharla(p||{...fuenteLocal(),nombre}),{credentials:"same-origin"}).then(r=>{if(!r.ok)throw new Error(String(r.status));return r.json()}).then(datos=>({datos}),()=>({falla:true})).then(c=>{if(yo===ultimoPedido&&charlaDe===nombre)pintarCharla(box,nombre,c,cerrar)});}
+  const yo=++ultimoPedido,pedido=p||{...fuenteLocal(),nombre},deSitio=pedido.fuente==="site";
+  // lo que falla queda en la consola: en la ventana, la persona ve sólo que no se pudo leer
+  fetch(pedidoDeCharla(pedido),{credentials:"same-origin"}).then(r=>{const que=charlaSegunRespuesta(r.status);if(que==="vacia")return {vacia:true,deSitio};if(que!=="datos")throw new Error("respondió "+r.status);return r.json().then(datos=>{if(!charlaConForma(datos))throw new Error("una conversación sin su forma");return {datos}})}).catch(e=>{console.warn("conversación de "+nombre+": "+(e&&e.message));return {falla:true}}).then(c=>{if(yo!==ultimoPedido||charlaDe!==nombre)return;try{pintarCharla(box,nombre,c,cerrar)}catch(e){console.warn("conversación de "+nombre+": "+(e&&e.message));pintarCharla(box,nombre,{falla:true},cerrar)}});}
 function cerrarCharla(){const v=ventana();if(v.hidden)return;v.hidden=true;document.documentElement.classList.remove("con-ventana");v.firstElementChild.classList.remove("detalle");v.firstElementChild.replaceChildren();charlaDe=null;ultimoPedido+=1;if(charlaVuelve&&charlaVuelve.isConnected)charlaVuelve.focus({preventScroll:true});charlaVuelve=null}
 document.addEventListener("keydown",e=>{if(e.key==="Escape")cerrarCharla()});
 // El formato simple de un mensaje: negritas, código y listas. Todo se arma con nodos y textContent, así que lo que traiga
@@ -203,7 +205,9 @@ function charlaPorSesion(nombre,sesiones,vacio){if(!sesiones.length)return lista
   if(resto.length){const mas=el("button","mas","Las otras "+resto.length);mas.type="button";mas.onclick=()=>{const nuevos=resto.map(boton);mas.replaceWith(...nuevos);nuevos[0].focus();};fila.append(mas);}
   elegir(sesiones[0],botones[0]);return box;}
 function pintarCharla(box,nombre,c,cerrar){const fin=x=>{box.insertBefore(x,cerrar)},seccion=(titulo,filas,vacio)=>{fin(el("h4",null,titulo));if(!filas.length){fin(el("p","m",vacio));return}const ch=el("div","chat");filas.forEach(f=>ch.append(f));fin(ch)};
-  box.querySelector("p.m").remove();
+  const leyendo=box.querySelector("p.m");if(leyendo)leyendo.remove();
+  // en el sitio, un 404 es que todavía no llegó; en la oficina local, que la sesión ya no está
+  if(c.vacia){fin(el("p","m",c.deSitio?"La conversación de esta sesión todavía no llegó al sitio.":"Esta sesión ya no está en la oficina."));return}
   if(c.falla){fin(el("p","m","No se pudo leer la conversación de esta sesión."));return}
   const d=c.datos||{};if(d.sinCoordinadora){fin(el("p","m","Esta máquina no tiene coordinadora designada: no hay con quién cruzar los mensajes."));return}
   const alFinal=()=>box.querySelectorAll(".chat").forEach(ch=>{ch.scrollTop=ch.scrollHeight});
@@ -644,6 +648,12 @@ function pedidoDeCharla(p){const s=encodeURIComponent(String(p&&p.nombre||""));
   return null}
 // los sobres de una oficina del sitio, de su foto
 function sobresDeOficina(foto){return foto&&Array.isArray(foto.sobres)?foto.sobres:[]}
+// qué se muestra según la respuesta del pedido de la conversación: un 404 es que todavía no está (no llegó, quedó afuera
+// del tope o el sitio se reinició), no una falla
+function charlaSegunRespuesta(status){return status===200?"datos":status===404?"vacia":"falla"}
+// un 200 vale sólo con la forma de una conversación: un cuerpo vacío no se muestra como «no hay mensajes»
+const CHARLA_CLAVES=["sinCoordinadora","conCoordinadora","arranque","conVos","conSesiones"];
+function charlaConForma(d){return Boolean(d)&&typeof d==="object"&&!Array.isArray(d)&&CHARLA_CLAVES.some(k=>Object.prototype.hasOwnProperty.call(d,k))}
 // fin de lo que se decide sin tocar la pantalla
 // la pestaña del sitio: el dibujo
 function hhmmDe(ms){const d=new Date(ms);return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0")}
@@ -660,7 +670,10 @@ function arrancarOficinas(){
   const seguro=f=>{try{f()}catch(e){console.error(e);decir("No pude dibujar la última novedad; muestro la anterior.")}};
   // cortada antes del primer mensaje y sin reintento: no hay nada cargando, y el aviso dice por qué
   function pintarVacio(){vacio.hidden=oficinas.size>0||(!llego&&cortada);document.querySelector(".interruptor").hidden=!oficinas.size;$("foot").hidden=!oficinas.size;vacio.textContent=llego?"Todavía no hay oficinas para mostrarte: aparecen cuando una máquina confirmada a tu nombre se conecta.":"Cargando las oficinas…"}
-  function ubicar(){const W=wrap.clientWidth,ancho=W>=900,G=18,cards=[...fichas.values()].map(f=>f.card);let H=0;
+  function ubicar(){const W=wrap.clientWidth,ancho=W>=900,G=18;
+    // en el orden del sitio, el mismo con que se eligen las salas: no en el de llegada, que cambia con lo que la página vio antes
+    const orden=[...new Set([...oficinas.keys(),...fichas.keys()])].filter(id=>fichas.has(id)),cards=orden.map(id=>fichas.get(id).card);
+    orden.forEach(id=>crews.append(fichas.get(id).bloque));let H=0;
     const pos=(c,x,y,w,h,mini)=>{Object.assign(c.style,{left:x+"px",top:y+"px",width:w+"px",height:h+"px"});c.classList.toggle("mini",mini);c.classList.toggle("on",c.dataset.id===elegida)};
     const big=elegida&&fichas.has(elegida)?fichas.get(elegida).card:null,otras=cards.filter(c=>c!==big);
     if(!big){if(ancho){const w=(W-G)/2,h=Math.round(Math.min(w*.72,innerHeight*.7));cards.forEach((c,i)=>pos(c,(i%2)*(w+G),Math.floor(i/2)*(h+G),w,h,false));H=Math.ceil(cards.length/2)*(h+G)-G}

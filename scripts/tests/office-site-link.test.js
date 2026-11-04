@@ -864,7 +864,8 @@ test('T9 AltaAutomatica_ClaveYPedidoSinComandos: el par, el pedido, la línea, e
   assert.ok(!/PRIVATE/.test(put.body));
   const noted = JSON.parse(fs.readFileSync(path.join(m.home, 'subidas.json'), 'utf8'));
   assert.ok(noted.archivos[`maquina-a/office-keys/${key.fingerprint}.json`], 'anotada en el registro de subidas');
-  await run(UPLOAD(), ['--json'], uploadEnv('subidas.json'));
+  // la segunda subida: su línea la mira T52, abajo
+  up = await run(UPLOAD(), ['--json'], uploadEnv('subidas.json'));
   assert.strictEqual(keyPuts().length, 1, 'la misma huella no se vuelve a subir');
   // T52: sin nada nuevo, la línea dice que la huella ya había subido y cuándo
   const subida = noted.archivos[`maquina-a/office-keys/${key.fingerprint}.json`].subido.slice(0, 10);
@@ -1667,7 +1668,7 @@ test('Regresion_LineaDeEspera_SoloConSitioYEnlace: sin site.url o con el enlace 
 // ── La capa del equipo mientras se trabaja, el enlace sin abrir sesión y el proceso que relee la dirección ─────
 
 // El gancho con lo que le manda la herramienta por la entrada: el evento.
-function hookOn(m, event, more = {}) {
+function hookOn(m, event, more = {}, prompt = 'seguí') {
   applySite(m);
   return new Promise((resolve) => {
     const t0 = Date.now();
@@ -1676,7 +1677,7 @@ function hookOn(m, event, more = {}) {
     c.stdout.on('data', (d) => { stdout += d; });
     c.stderr.on('data', (d) => { stderr += d; });
     c.on('close', (status) => resolve({ status, stdout, stderr, ms: Date.now() - t0 }));
-    c.stdin.end(JSON.stringify({ hook_event_name: event, session_id: 's1', prompt: 'seguí' }));
+    c.stdin.end(JSON.stringify({ hook_event_name: event, session_id: 's1', prompt }));
   });
 }
 // La puesta al día de juguete: cuenta cada corrida, tarda `sleepMs` y, si se le da `site`, deja esa dirección en el perfil
@@ -1741,6 +1742,12 @@ test('T44 CadaTreintaMinutos_SinEsperar: un pedido lanza la puesta al día apart
   fs.writeFileSync(stampOf(m), '{roto');
   assert.strictEqual((await hookOn(m, 'UserPromptSubmit', env)).status, 0);
   assert.ok(await until(() => fake.runs().length === 3, 8000), 'un sello roto no frena');
+  // un pedido largo (un registro pegado) pasa de lo que el gancho lee: igual es un pedido, no la apertura de una sesión
+  ageStamp(m, 31);
+  const long = await hookOn(m, 'UserPromptSubmit', env, 'x '.repeat(50 * 1024));
+  assert.strictEqual(long.status, 0);
+  assert.strictEqual(long.stdout, '', 'como pedido no dice nada');
+  assert.ok(await until(() => fake.runs().length === 4, 8000), 'con un pedido de más de 64 KB también lanza la puesta al día');
   // lo que no corrió también queda en el registro de la oficina; una instalación sin capa (`off`) no anota nada
   for (const [status, said] of [['busy', /otra sesión estaba actualizando/], ['none', /no miró nada/]]) {
     const other = refreshFake(m, { status });
@@ -1824,9 +1831,10 @@ test('T46 ProcesoVivo_ReleeSiteUrl: el proceso vivo se enlaza, cambia de sitio o
   assert.strictEqual(await postEvent(lock, { body: '{"type":"config"}' }), 204);
   assert.ok(await until(() => (logOf(m).match(/no se pudo leer la dirección del sitio/g) || []).length > before, 8000), 'y lo anota de nuevo');
   assert.strictEqual((await countersOf(lock)).linked.site, two.url, 'una dirección rechazada no corta el enlace');
-  // sin dirección, corta y vuelve a la vida de la oficina local: 2 min sin la página y 8 h de tope
-  m.url = null; applySite(m);
-  assert.strictEqual(await postEvent(lock, { body: '{"type":"config"}' }), 204);
+  // sin dirección, corta y vuelve a la vida de la oficina local: 2 min sin la página y 8 h de tope. La dirección la saca el
+  // arranque de una sesión, no la puesta al día de la capa: el gancho de la sesión nueva le avisa al proceso vivo
+  m.url = null;
+  assert.strictEqual((await hookOn(m, 'SessionStart')).status, 0);
   assert.ok(await until(() => two.closes.length >= 1, 8000), 'cortó el enlace');
   assert.deepStrictEqual((await countersOf(lock)).linked, { site: '', idleMs: 2 * 60 * 1000, capMs: 8 * 3600 * 1000 });
   await stopServer(m);
@@ -2053,6 +2061,19 @@ test('T48 Charla_ViajaAparte_SaneadaConTope: la conversación sale en su mensaje
   const inFoto = fields().pick({ agents: [{ nombre: named }] }, n.home).agents[0].nombre;
   assert.strictEqual(site.charlas[5].sesion, inFoto);
   assert.ok(!site.charlas[5].sesion.includes(fake) && !site.charlas[5].sesion.includes(n.home));
+  // el sitio descarta la conversación de una sesión que su foto no nombra: cuando llega la foto que la nombra por primera
+  // vez, sale de nuevo, sin esperar el minuto ni que crezca
+  clock.advance(CHARLA_EVERY_MS + 1);
+  link.charla('Gama', conv(1, 'antes que su foto'));
+  assert.ok(await until(() => site.charlas.length === 7), 'salió antes de que la foto la nombre');
+  link.update({ ...FOTO(), agents: [...FOTO().agents, { nombre: 'Gama', estado: 'trabajando' }] });
+  // sale a su turno, con el espacio entre conversaciones
+  clock.advance(CHARLA_GAP_MS);
+  assert.ok(await until(() => site.charlas.length === 8), 'con la foto que la nombra, sale de nuevo');
+  assert.strictEqual(site.charlas[7].sesion, 'Gama');
+  link.update({ ...FOTO('Otra cosa'), agents: [...FOTO('Otra cosa').agents, { nombre: 'Gama', estado: 'trabajando' }] });
+  await sleep(300);
+  assert.strictEqual(site.charlas.length, 8, 'una foto que ya la nombraba no la vuelve a mandar');
   // forSite decide qué sale: hoy, todo lo que trae la conversación de la oficina local
   const { forSite } = require(SERVER);
   assert.deepStrictEqual(forSite(conv(2)), conv(2));
@@ -2101,10 +2122,14 @@ test('T55 Charla_LeeSoloLoQueCrecio_YReintentaLoQueFalla: qué conversación se 
   out = changedTalks(office, envelopes, talked, now);
   assert.deepStrictEqual(Object.keys(out).sort(), ['Alfa', 'Gama']);
   assert.match(out.Alfa.conCoordinadora[0].texto, /nuevo/);
-  // vuelve a crecer dentro del minuto: espera; pasado el minuto, sale la última
+  // vuelve a crecer dentro del minuto: espera, y dice cuándo le toca (sin otra foto, el proceso la pide a esa hora);
+  // pasado el minuto, sale la última
   grow('Alfa', 'otra vez');
+  const readAt = now;
   now += 1000;
-  assert.deepStrictEqual(changedTalks(office, envelopes, talked, now), {}, 'dentro del minuto de su última lectura, espera');
+  const later = {};
+  assert.deepStrictEqual(changedTalks(office, envelopes, talked, now, [], later), {}, 'dentro del minuto de su última lectura, espera');
+  assert.strictEqual(later.at, readAt + CHARLA_EVERY_MS, 'cuándo le toca');
   now += CHARLA_EVERY_MS;
   out = changedTalks(office, envelopes, talked, now);
   assert.deepStrictEqual(Object.keys(out), ['Alfa']);

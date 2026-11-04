@@ -157,9 +157,10 @@ function forSite(conversation) {
 /**
  * Las conversaciones que cambiaron desde la última vez, por el nombre de su sesión: sólo de las que su archivo creció, y a
  * lo sumo una lectura por minuto por sesión, porque la de la coordinadora lee hasta 64 MB. Se olvida de las que se fueron.
- * Una lectura que falla no cuenta como hecha: se reintenta en la foto siguiente, y su motivo va a `failed`.
+ * Una lectura que falla no cuenta como hecha: se reintenta en la foto siguiente, y su motivo va a `failed`. La que creció
+ * antes del minuto espera, y `later.at` dice cuándo le toca: sin otra foto después, se perdería su último cambio.
  */
-function changedTalks(office, envelopes, talked, now = Date.now(), failed = []) {
+function changedTalks(office, envelopes, talked, now = Date.now(), failed = [], later = {}) {
   const { CHARLA_EVERY_MS } = require('./fields.js');
   const out = {};
   for (const name of talked.keys()) if (!envelopes.files.has(name)) talked.delete(name);
@@ -167,7 +168,12 @@ function changedTalks(office, envelopes, talked, now = Date.now(), failed = []) 
     let size;
     try { size = fs.statSync(e.file).size; } catch { continue; }
     const seen = talked.get(name);
-    if (seen && (seen.size === size || now - seen.at < CHARLA_EVERY_MS)) continue;
+    if (seen && seen.size === size) continue;
+    if (seen && now - seen.at < CHARLA_EVERY_MS) {
+      const due = seen.at + CHARLA_EVERY_MS;
+      if (later.at == null || due < later.at) later.at = due;
+      continue;
+    }
     let said = null;
     try { said = office.conversationOf(envelopes, name); } catch (err) { failed.push(`no se pudo leer la conversación de una sesión (${err.code || err.message}): se reintenta`); continue; }
     if (!said) continue;
@@ -207,8 +213,9 @@ function photoThread() {
       if (reread) talked.clear();
       const data = await office.collect({ home, queryAll: query, queryPrs, siteUrl: async () => once.site, quietMinutes: async () => once.quiet, envelopes, memory });
       const charlaFailures = [];
-      const said = charlas ? changedTalks(office, envelopes, talked, Date.now(), charlaFailures) : null;
-      parentPort.postMessage({ data, files: [...envelopes.files], coordinator: envelopes.coordinator, readAt: query.readAt(), halfwayReadAt: memory.halfwayReadAt, counted, charlas: said, charlaFailures });
+      const later = {};
+      const said = charlas ? changedTalks(office, envelopes, talked, Date.now(), charlaFailures, later) : null;
+      parentPort.postMessage({ data, files: [...envelopes.files], coordinator: envelopes.coordinator, readAt: query.readAt(), halfwayReadAt: memory.halfwayReadAt, counted, charlas: said, charlaFailures, charlaNextAt: later.at == null ? null : later.at });
     } catch (e) {
       parentPort.postMessage({ error: e && e.message ? e.message : String(e), stack: e && e.stack });
     }
@@ -277,6 +284,7 @@ async function serve() {
   let limits = lifeLimits(Boolean(link));
   let rereadNext = false;
   let pendingCharlas = null;
+  let charlaTimer = null;
   const deliverCharlas = () => {
     const charlas = pendingCharlas;
     pendingCharlas = null;
@@ -292,9 +300,14 @@ async function serve() {
     const request = { revise: reviseNext, pageOpen: clients.size > 0, reread: rereadNext, charlas: Boolean(link && link.takesCharla()) };
     reviseNext = false;
     rereadNext = false;
-    const { data, files, coordinator, readAt, halfwayReadAt: halfwayAt, counted, charlas, charlaFailures } = await askPhoto(request);
+    const { data, files, coordinator, readAt, halfwayReadAt: halfwayAt, counted, charlas, charlaFailures, charlaNextAt } = await askPhoto(request);
     // salen después de la foto (`deliverCharlas`): el sitio no guarda la conversación de una sesión que su foto no nombra
     pendingCharlas = charlas;
+    // una conversación que creció antes de su minuto se lee cuando le toca, aunque no cambie nada más
+    clearTimeout(charlaTimer);
+    charlaTimer = charlaNextAt == null ? null : setTimeout(() => { charlaTimer = null; if (!done) schedule(); }, Math.max(0, charlaNextAt - Date.now()) + 50);
+    // el reloj no mantiene vivo al proceso: su vida la deciden las sesiones y el tope
+    if (charlaTimer && charlaTimer.unref) charlaTimer.unref();
     if (link) link.keepTalks(files.map(([name]) => name));
     for (const failure of new Set(charlaFailures || [])) appendLog(sdir, failure);
     halfwayReadAt = halfwayAt;

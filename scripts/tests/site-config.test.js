@@ -6466,6 +6466,11 @@ test('T53 Botones_ConEspacio @story-8.171 @ac-30 — los botones de una fila de 
   const gap = /(?:^|;)gap:(\d+)px/.exec(regla[1]);
   assert.ok(gap && Number(gap[1]) >= 8, `al menos 8 px entre botones: ${regla[1]}`);
   assert.match(regla[1], /display:inline-flex/);
+  // en Configuración manda una regla más específica: es la que da el espacio que de verdad queda
+  const enConfig = /(?:^|\n)#config-app \.tabla \.acc\{([^}]*)\}/.exec(css);
+  assert.ok(enConfig, 'la regla de Configuración');
+  const gapConfig = /(?:^|;)gap:(\d+)px/.exec(enConfig[1]);
+  assert.ok(gapConfig && Number(gapConfig[1]) >= 8, `en Configuración, también al menos 8 px: ${enConfig[1]}`);
   const pantalla = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'org-config.js'), 'utf8');
   assert.ok((pantalla.match(/var acciones = el\('span', \{ class: 'acc' \}\);/g) || []).length >= 2, 'los pedidos y las máquinas usan esa fila');
 });
