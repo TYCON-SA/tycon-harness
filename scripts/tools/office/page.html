@@ -74,11 +74,11 @@ h2{font:700 .8rem var(--display);text-transform:uppercase;letter-spacing:.08em;c
 @media (prefers-reduced-motion:reduce){.tag.alert{animation:none}}
 .tag.alert-coord{--c:#5aa9ff;animation-name:pulso-coord}
 @keyframes pulso-coord{50%{box-shadow:0 0 0 4px rgba(90,169,255,.35),0 6px 18px rgba(0,0,0,.45)}}
-.num{display:inline-block;margin-right:6px;padding:0 6px;border-radius:9px;font:700 11px var(--body);background:var(--line);color:inherit;vertical-align:1px}
-.item.mano-coordinadora{box-shadow:inset 3px 0 0 #5aa9ff}
-.buscar{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.buscar input{width:7em}.item.marcada{outline:2px solid #ffd08a;outline-offset:2px}
-.item.mano-dueno{box-shadow:inset 3px 0 0 #ffa53d}
-.tag.sel{border-color:var(--c)}
+.num{display:inline-block;align-self:flex-start;width:auto;margin:0 6px 2px 0;padding:0 7px;border-radius:9px;font:700 11px/18px var(--body);background:rgba(127,127,127,.22);color:inherit;vertical-align:1px}
+.item .mano{align-self:flex-start;margin-top:4px;padding:0 8px;border-radius:9px;font:600 11px/18px var(--body)}
+.item .mano.coordinadora{background:rgba(90,169,255,.18);color:#2f7fd6}
+.item .mano.dueno{background:rgba(255,165,61,.2);color:#b86a10}
+.buscar{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.buscar input{width:7em}.item.marcada{outline:2px solid #ffd08a;outline-offset:2px}.tag.sel{border-color:var(--c)}
 .compact .tag{padding:4px 8px 4px 5px;gap:5px}
 .compact .tag .bot{width:18px;height:18px}
 .compact .tag .es,.compact .tag .more,.compact .tag .como{display:none}

@@ -76,6 +76,108 @@ fs.writeFileSync(dir + '/topics.json', JSON.stringify({ version: 1, temas: Objec
   }
 }
 
+// El número de cada tarea en la oficina de verdad: la fila cuyo `quien` es una sesión que hace otra cosa se ve, la línea
+// de arriba, la búsqueda, las ventanas que se cierran igual, las dos manos y el tablero que se mueve solo. Deja una
+// captura de cada cosa en OFFICE_8198_SHOTS, si está.
+async function taskNumbers(playwright) {
+  const BOARD = require(path.join(ROOT, 'scripts', 'tools', 'office', 'board.js'));
+  const shots = process.env.OFFICE_8198_SHOTS || null;
+  if (shots) fs.mkdirSync(shots, { recursive: true });
+  const shot = async (page, name, locator = null) => { if (shots) await (locator || page).screenshot({ path: path.join(shots, `${name}.png`) }); };
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'office-8198-'));
+  const sdir = stateDir(home);
+  for (const d of ['active', 'adhoc', 'doing', 'coordination']) fs.mkdirSync(path.join(sdir, d), { recursive: true });
+  const sessions = path.join(claudeDir(home), 'sessions');
+  fs.mkdirSync(sessions, { recursive: true });
+  const session = (sid, name, status = 'busy') => fs.writeFileSync(path.join(sessions, `${sid}.json`), JSON.stringify({ pid: process.pid, sessionId: sid, name, status, statusUpdatedAt: Date.now() }));
+  const doing = (sid, text, more = {}) => fs.writeFileSync(path.join(sdir, 'doing', `${sid}.json`), JSON.stringify({ text, at: new Date().toISOString(), ...more }));
+  // Sand hace otra cosa y no dice su fila: la fila tiene que verse. Funes dice T-2: va en su tarjeta. Pinola espera a la
+  // coordinadora. Rita pidió una firma que sigue pendiente. Y una ejecución de la historia 9.1 que arranca sola
+  session('s1', 'Sand'); doing('s1', 'arreglo de otra cosa');
+  session('s2', 'Funes'); doing('s2', 'T-2 · la búsqueda de la oficina');
+  session('s3', 'Pinola', 'idle'); doing('s3', 'espera el click', { waitingFor: 'la coordinadora', waitingSince: new Date(Date.now() - 60000).toISOString() });
+  session('s4', 'Rita'); doing('s4', 'el carril de Rita');
+  // una firma de la terminal pedida para la sesión de Rita (`--for-session`): la lista de firmas de la máquina de juguete
+  // está apagada, y ésas igual se leen
+  fs.writeFileSync(path.join(sdir, 'coordination', 'signatures.json'), JSON.stringify([{ id: 'f1', destino: 's4', title: 'el carril de Rita', at: Date.now() }]));
+  const saved = BOARD.save(sdir, { meta: { resumen: 'UN RESUMEN VIEJO' }, pendientes: [
+    { titulo: 'El arreglo que Sand dejó', estado: 'curso', quien: 'Sand', grupo: 'Hoy', orden: 1, nota: 'lo pidió el dueño' },
+    { titulo: 'La búsqueda por número', estado: 'curso', grupo: 'Hoy', orden: 2, nota: 'la nota de la fila' },
+    { titulo: 'La historia que arranca sola', estado: 'espera', historia: '9.1', grupo: 'Hoy', orden: 3 },
+  ] }, { home });
+  check(saved.code === 0, 'E1: el tablero de prueba se guardó con board.js y tiene números');
+  const env = { ...process.env, HOME: home, USERPROFILE: home, TYCON_OFFICE_NO_BROWSER: '1', TYCON_OFFICE_LINK: '0', TYCON_OFFICE_TEST: '1' };
+  const open = spawnSync(process.execPath, [OFFICE, '--open'], { input: '', env, encoding: 'utf8', timeout: 20000 });
+  const url = (open.stdout.match(/http:\/\/127\.0\.0\.1:\d+\/\?t=[0-9a-f]+/) || [])[0];
+  check(open.status === 0 && Boolean(url), `8.198: la oficina viva arrancó (${url || open.stderr.trim()})`);
+  if (!url) return;
+  const lock = JSON.parse(fs.readFileSync(path.join(sdir, 'office', 'server.json'), 'utf8'));
+  const browser = await playwright.chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 1360, height: 1100 } });
+    await page.goto(url);
+    await page.waitForFunction(() => window.tablero && window.tablero.started, null, { timeout: 45000 });
+    await page.locator('input[name="vista"][value="kanban"]').check({ force: true });
+    await page.waitForSelector('#boardBody .item[data-numero]');
+    // E1: los números, la fila de Sand a la vista, una sola tarjeta para T-2 y la línea de arriba sin `meta.resumen`
+    const sandRow = page.locator('#boardBody .item', { hasText: 'El arreglo que Sand dejó' });
+    check(await sandRow.count() === 1 && /T-1/.test(await sandRow.innerText()), 'E1: la fila de Sand se ve, con su número');
+    check(await page.locator('#boardBody .item[data-numero="T-2"]').count() === 1, 'E1: T-2 va en una sola tarjeta, la de Funes');
+    check(/Funes/.test(await page.locator('#boardBody .item[data-numero="T-2"]').innerText()), 'E1: la tarjeta de T-2 es la de Funes');
+    const top = await page.locator('#boardBody p.sum').innerText();
+    check(/Tu firma: \d+ · Trabado: \d+/.test(top) && !/UN RESUMEN VIEJO/.test(top), `E1: la línea de arriba se arma sola (${top})`);
+    await shot(page, 'e1-kanban-numeros', page.locator('#trabajo'));
+    // E2: buscar por número, y uno que no está
+    await page.fill('#buscarTarea', '2');
+    await page.press('#buscarTarea', 'Enter');
+    await page.waitForSelector('#ventana:not([hidden])');
+    check(/T-2/.test(await page.locator('#ventana').innerText()) && await page.locator('#boardBody .item.marcada').count() === 1, 'E2: «2» marca la tarjeta de T-2 y la abre');
+    await shot(page, 'e2-buscar-abre');
+    // E6: la ventana se cierra con Escape y el foco vuelve a la tarjeta
+    await page.keyboard.press('Escape');
+    check(await page.locator('#ventana').isHidden(), 'E6: Escape cierra la ventana');
+    await page.fill('#buscarTarea', 'T-99');
+    await page.press('#buscarTarea', 'Enter');
+    check(/no está en el tablero/.test(await page.locator('#buscarAviso').innerText()), 'E2: un número que no está lo dice debajo del campo');
+    await shot(page, 'e2-buscar-no-esta', page.locator('#trabajo'));
+    // E6: la X arriba, sin «Cerrar» abajo; tocar afuera cierra; seleccionar adentro y soltar afuera no
+    await page.locator('#boardBody .item[data-numero="T-1"]').click();
+    await page.waitForSelector('#ventana:not([hidden])');
+    check(await page.locator('#ventana button.close[aria-label="Cerrar"]').count() === 1 && await page.locator('#ventana button', { hasText: /^Cerrar$/ }).count() === 0, 'E6: la ventana tiene la X y no el botón de abajo');
+    await shot(page, 'e6-ventana-x');
+    const panelBox = await page.locator('#ventana .panel3').boundingBox();
+    await page.mouse.move(panelBox.x + 40, panelBox.y + 60);
+    await page.mouse.down();
+    await page.mouse.move(panelBox.x - 30, panelBox.y + 60, { steps: 4 });
+    await page.mouse.up();
+    check(await page.locator('#ventana').isVisible(), 'E6: seleccionar adentro y soltar afuera no la cierra');
+    await page.mouse.click(Math.max(5, panelBox.x - 15), panelBox.y + 10);
+    check(await page.locator('#ventana').isHidden(), 'E6: tocar afuera la cierra');
+    // E8: las manos, cada una con su color
+    await page.waitForFunction(() => document.querySelectorAll('.tag.alert').length >= 2, null, { timeout: 15000 });
+    check(await page.locator('.tag.alert-coord', { hasText: 'Pinola' }).count() === 1, 'E8: Pinola levanta la mano en azul: espera a la Coordinadora');
+    check(await page.locator('.tag.alert:not(.alert-coord)', { hasText: 'Rita' }).count() === 1, 'E8: Rita levanta la mano por su firma pendiente');
+    await shot(page, 'e8-manos', page.locator('#stage'));
+    await page.locator('.tag', { hasText: 'Rita' }).click();
+    await page.waitForSelector('#panel:not([hidden])');
+    check(/Firma: el carril de Rita/.test(await page.locator('#panel').innerText()), 'E8: al tocarla, dice qué firma espera');
+    await shot(page, 'e8-detalle-firma', page.locator('#panel'));
+    // E6: el panel de la persona con Escape, y el foco vuelve
+    await page.keyboard.press('Escape');
+    check(await page.locator('#panel').isHidden(), 'E6: Escape cierra el panel de la persona');
+    // E9: arranca una ejecución con historia y su fila pasa sola a «En curso», con quién la hace
+    session('s5', 'Ortega');
+    fs.writeFileSync(path.join(sdir, 'active', 's5.json'), JSON.stringify({ storyId: '9.1', sessionId: 's5', repoPath: home, stepsCompleted: ['start', 'validate-story', 'plan', 'approve-plan'], stepsPending: ['implement'], startedAt: new Date().toISOString() }));
+    let row = null;
+    for (let i = 0; i < 40 && !(row && row.estado === 'curso'); i += 1) { await sleep(500); row = JSON.parse(fs.readFileSync(path.join(sdir, 'coordination', 'tablero.json'), 'utf8')).pendientes.find((r) => r.historia === '9.1'); }
+    check(Boolean(row) && row.estado === 'curso' && row.quien === 'Ortega', `E9: la fila de la 9.1 pasó sola a «En curso» con Ortega (${row && row.estado} ${row && row.quien})`);
+    await shot(page, 'e9-se-movio-sola', page.locator('#trabajo'));
+  } finally {
+    await browser.close();
+    try { process.kill(lock.pid, 'SIGKILL'); } catch { /* ya salió */ }
+  }
+}
+
 async function main() {
   const playwright = PINNED_PW.load();
   if (!playwright) { console.error(`sin navegador: ${PINNED_PW.locate().why}`); return 2; }
@@ -146,6 +248,7 @@ async function main() {
     check(true, 'el aviso «La oficina se cerró…» apareció');
     check(await page.locator('.item', { hasText: 'revisión del banco de controles' }).count() === 1, 'la última foto quedó');
     await tablesByTopic(playwright, env, sdir);
+    await taskNumbers(playwright);
   } finally {
     await browser.close();
     try { process.kill(lock.pid, 'SIGKILL'); } catch { /* ya salió */ }

@@ -317,7 +317,8 @@ const HAND_LABEL = { dueno: 'Espera tu firma', coordinadora: 'Espera a la Coordi
 function raiseHands(agents, signatures, sidOf, coordinatorName) {
   // lo que espera una sesión de otro proyecto no sale con su título: se dice de qué es, como sus tarjetas
   const raise = (a, who, por) => { a.mano = who; a.manoEtiqueta = HAND_LABEL[who]; if (por) a.manoPor = a.otroProyecto ? 'Otro proyecto' : por; };
-  for (const a of agents) if (ASKS_OWNER.has(a.estado)) raise(a, 'dueno', a.espera ? `Espera ${a.espera}` : null);
+  // qué espera ya lo dice su renglón «Espera»: la mano sólo nombra la firma pendiente, que no sale de otro lado
+  for (const a of agents) if (ASKS_OWNER.has(a.estado)) raise(a, 'dueno', null);
   for (const s of [...signatures].sort((p, q) => (p.at || 0) - (q.at || 0))) {
     if (!s || !s.destino || !s.title) continue;
     const a = agents.find((x) => String(sidOf.get(x)) === String(s.destino));
@@ -327,7 +328,7 @@ function raiseHands(agents, signatures, sidOf, coordinatorName) {
   for (const a of agents) {
     if (a.mano || a.estado !== 'esperando') continue;
     const said = String(a.termina || '').replace(/^espera /, '');
-    if (word('coordinadora').test(said) || (coordinatorName && word(coordinatorName).test(said))) raise(a, 'coordinadora', `Espera ${said}`);
+    if (word('coordinadora').test(said) || (coordinatorName && word(coordinatorName).test(said))) raise(a, 'coordinadora', null);
   }
 }
 
