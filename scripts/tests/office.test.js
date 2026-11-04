@@ -2274,6 +2274,36 @@ test('T219 Room_Rhythm_NeverStops: la sala se dibuja con ritmo, y un error en un
   assert.match(html, /new IntersectionObserver\(/);
 });
 
+test('T310 Room_Rhythm_CameraChangeIsRealOnly: la cámara quieta no cuenta como toque, y una que se mueve o acerca sí', () => {
+  // 🔴 rojo: el control de la cámara ortogonal avisa «change» en cada cuadro, cada aviso contaba como toque y la sala
+  // dibujaba siempre a 30 cuadros por segundo
+  const src = PAGE_CODE();
+  const decl = (src.match(/const camVista=\{[^\n]*\};/) || [])[0];
+  const fn = (src.match(/function camaraCambio\(\)\{[^\n]*\}return c\}/) || [])[0];
+  assert.ok(decl && fn, 'la página trae camaraCambio');
+  assert.match(src, /controls\.addEventListener\("change",\(\)=>\{if\(!camaraCambio\(\)\)return;tagsAlDia=false;tocar\(\)\}\);/);
+  class V {
+    constructor(...n) { this.n = n; }
+    clone() { return new V(...this.n); }
+    copy(o) { this.n = [...o.n]; return this; }
+    distanceToSquared(o) { return this.n.reduce((s, x, i) => s + (x - o.n[i]) ** 2, 0); }
+    dot(o) { return this.n.reduce((s, x, i) => s + x * o.n[i], 0); }
+  }
+  const cam = { position: new V(35, 26.9, 35), quaternion: new V(0, 0, 0, 1), zoom: 1 };
+  const cambio = new Function('cam', `${decl}\n${fn}\nreturn camaraCambio;`)(cam);
+  assert.strictEqual(cambio(), false, 'sin moverse, no hay cambio');
+  assert.strictEqual(cambio(), false, 'ni en el cuadro siguiente');
+  cam.position.n[0] += 0.5;
+  assert.strictEqual(cambio(), true, 'la cámara que gira es un cambio');
+  assert.strictEqual(cambio(), false, 'y queda como la nueva vista');
+  cam.position.n[0] += 0.0001;
+  assert.strictEqual(cambio(), false, 'un resto de la amortiguación por debajo del umbral del control no cuenta');
+  cam.zoom = 1.25;
+  assert.strictEqual(cambio(), true, 'acercar es un cambio');
+  const a = Math.sin(0.1); cam.quaternion.n = [0, a, 0, Math.cos(0.1)];
+  assert.strictEqual(cambio(), true, 'girar sin moverse también');
+});
+
 test('T220 Step_RunTests_Codex_NotKnown: con Codex, no encontrarlas no dice que no haya', () => {
   const { data } = buildOffice({ wip: wip([{ session: 'Eva', sid: 'e', status: null, extra: { kind: 'pipeline', current: 'run-tests', steps: STEPS } }]), sessionFiles: [{ session: 'e', tool: 'codex', pid: 10, busy: true }], processes: [{ pid: 11, ppid: 10, comando: 'sleep 5' }], nowMs: NOW });
   assert.match(byName(data, 'Eva').haciendo, /No se sabe si hay pruebas corriendo\.$/);

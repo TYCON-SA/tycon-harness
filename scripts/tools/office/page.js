@@ -586,7 +586,11 @@ stage.addEventListener("wheel",e=>{if(e.target.closest(".panel3"))return;e.stopP
 stage.addEventListener("gesturestart",e=>{e.preventDefault();zoomBase=cam.zoom;});
 stage.addEventListener("gesturechange",e=>{e.preventDefault();acercar(zoomBase*e.scale/cam.zoom);});
 zoomBox.children[0].onclick=()=>acercar(1.25);zoomBox.children[1].onclick=()=>acercar(.8);zoomBox.hidden=false;
-controls.addEventListener("change",()=>{tagsAlDia=false;tocar()});
+// Con una cámara ortogonal, el control avisa «change» en cada actualización aunque nada se mueva (da el zoom por cambiado):
+// cuenta como toque sólo un cambio de verdad, con el mismo umbral del control. Si no, la sala nunca baja de su ritmo
+const camVista={p:cam.position.clone(),q:cam.quaternion.clone(),z:cam.zoom};
+function camaraCambio(){const c=camVista.p.distanceToSquared(cam.position)>1e-6||8*(1-camVista.q.dot(cam.quaternion))>1e-6||camVista.z!==cam.zoom;if(c){camVista.p.copy(cam.position);camVista.q.copy(cam.quaternion);camVista.z=cam.zoom}return c}
+controls.addEventListener("change",()=>{if(!camaraCambio())return;tagsAlDia=false;tocar()});
 const miraVista=new IntersectionObserver(es=>{enVista=es[es.length-1].isIntersecting;if(enVista)despertar()});miraVista.observe(stage);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)despertar()});
 function loop(){if(apagada||!enVista||document.hidden){timer=null;return}try{dibujar()}finally{programar()}}
