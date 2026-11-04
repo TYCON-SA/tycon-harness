@@ -57,19 +57,24 @@ const OTHER_PROJECT = 'Otro proyecto';
 // Una fila de una tabla. El título de un trabajo de otro proyecto, o de uno que no se sabe de qué proyecto es, no sale de la
 // máquina: ni en la fila ni en sus trabajos.
 const tableRow = (fields) => ({ form: 'tableRow', fields });
-const TABLE = record({ titulo: text, columnas: list(text), filas: list(tableRow({ grupo: text, que: text, col: text, trabajos: list(record({ titulo: text, quien: text, como: text })) })), escrito: text, cruce: text, vacio: text });
+const TABLE = record({ titulo: text, columnas: list(text), filas: list(tableRow({ grupo: text, que: text, col: text, trabajos: list(record({ titulo: text, numero: text, quien: text, como: text })) })), escrito: text, cruce: text, vacio: text });
+// a quién espera la mano levantada de una sesión
+const HANDS = ['dueno', 'coordinadora'];
 
 const FIELDS = {
   agents: list(record({
     nombre: text, estado: oneOf(AGENT_STATES), comoTrabaja: text, titulo: text, historia: text, encargo: text, haciendo: text, haciendoAhora: text, agentesAhora: text, ultimaAccion: action,
     espera: text, parada: text, callada: text, mientras: text, mientrasEstado: oneOf(AGENT_STATES), enPausa: text,
     fin: END, horaPorque: text, estimadaIso: hour, avance: number, carpeta: folder, pasos: list(record({ name: text, done: flag })), novedadMs: number, sinPid: flag,
+    // a quién espera la mano levantada
+    mano: oneOf(HANDS), manoEtiqueta: text, manoPor: text,
   })),
   kanban: record({
     escrito: text,
+    linea: text,
     columnas: list(record({
       id: oneOf(KANBAN_COLUMNS), nombre: text, nota: text,
-      tarjetas: list(record({ titulo: text, quien: text, hora: text, grupo: text, espera: text, marca: text, motivo: text, nota: text, otro: flag, pedido: record({ numero: number, sitio: oneOf(PR_SITES), ruta: text }) })),
+      tarjetas: list(record({ titulo: text, numero: text, quien: text, hora: text, grupo: text, espera: text, marca: text, motivo: text, nota: text, otro: flag, mano: oneOf(HANDS), pedido: record({ numero: number, sitio: oneOf(PR_SITES), ruta: text }) })),
     })),
     medioCamino: list(record({ titulo: text, quien: text, accion: text })),
     medioCaminoNoSe: text,
@@ -80,7 +85,7 @@ const FIELDS = {
   rows: list(record({ work: text, state: text, end: text, session: text, folder })),
   free: list(text),
   unreadable: list(text),
-  tablero: record({ resumen: text }),
+  tablero: record({}),
   tokens: byName(record({ contexto: text, consumidos: text, agentes: number, noMedido: flag })),
   sobres: list(record({ id: text, de: text, a: text, at: number })),
 };

@@ -520,6 +520,43 @@ test('T33 Ventanas_LasCuatro_XArribaYSinCerrarAbajo — @story-8.198 @ac-32', ()
   assert.match(html, /<div class="ventana" id="ventana" hidden><div class="panel3"/);
 });
 
+// ── Lo que viaja al sitio ───────────────────────────────────────────────────────────────────────────────────────
+
+test('T51 Sitio_Campos_NumeroModeloEsfuerzoMano — @story-8.198 @ac-55', () => {
+  const { pick } = require(path.join(__dirname, '..', 'tools', 'office', 'fields.js'));
+  const foto = {
+    agents: [{ nombre: 'Sand', estado: 'esperando', mano: 'coordinadora', manoEtiqueta: 'Espera a la Coordinadora', manoPor: 'Espera la Coordinadora', modelo: 'Opus 5.5', esfuerzo: 'High', secreto: 'no viaja' }],
+    kanban: { linea: 'Sale primero: T-52 Algo · Sand · 19:30', columnas: [{ id: 'curso', nombre: 'En curso', tarjetas: [{ titulo: 'Algo', numero: 'T-52', quien: 'Sand', hora: '19:30', mano: 'coordinadora' }] }] },
+  };
+  const sent = pick(JSON.parse(JSON.stringify(foto)), '/home/nadie');
+  const a = sent.agents[0];
+  assert.deepStrictEqual([a.mano, a.manoEtiqueta, a.manoPor, a.modelo, a.esfuerzo], ['coordinadora', 'Espera a la Coordinadora', 'Espera la Coordinadora', 'Opus 5.5', 'High']);
+  assert.ok(!('secreto' in a), 'lo que no está en la lista no viaja');
+  const t = sent.kanban.columnas[0].tarjetas[0];
+  assert.deepStrictEqual([t.numero, t.mano, sent.kanban.linea], ['T-52', 'coordinadora', 'Sale primero: T-52 Algo · Sand · 19:30']);
+  // una mano de una sesión de otro proyecto no saca el título de su firma
+  const { data } = buildOffice({ wip: wip([{ session: 'Sand', sid: 'sid-sand', extra: { kind: 'loose', text: 'trabaja' } }]), signatures: [{ id: 'f1', tipo: 'firma', destino: 'sid-sand', title: 'el título secreto', at: ONOW }], otherProjects: new Set(['sid-sand']), nowMs: ONOW });
+  assert.strictEqual(data.agents.find((x) => x.nombre === 'Sand').manoPor, 'Otro proyecto');
+});
+
+test('T52 Sitio_TarjetaLocalIgualALaDelSitio — @story-8.198 @ac-56', () => {
+  const { pick } = require(path.join(__dirname, '..', 'tools', 'office', 'fields.js'));
+  const { data } = buildOffice({
+    wip: wip([
+      { session: 'Sand', sid: 'sid-sand', status: 'idle', extra: { kind: 'note', text: 'T-1 espera el click', waitingFor: 'la Coordinadora', waitingSince: ONOW - 60000 } },
+      { session: 'Pinola', sid: 'sid-pin', extra: { kind: 'loose', text: 'trabaja' } },
+    ]),
+    signatures: [{ id: 'f1', tipo: 'firma', destino: 'sid-pin', title: 'el carril de Pinola', at: ONOW }],
+    board: numbered([{ titulo: 'La de Sand', estado: 'curso' }, { titulo: 'Suelta', estado: 'espera' }]),
+    nowMs: ONOW,
+  });
+  const sent = pick(JSON.parse(JSON.stringify(data)), '/home/nadie');
+  for (const [i, a] of data.agents.entries()) for (const k of ['mano', 'manoEtiqueta', 'manoPor']) assert.deepStrictEqual(sent.agents[i][k], a[k], `${a.nombre}: «${k}»`);
+  assert.ok(data.agents.some((a) => a.mano === 'coordinadora') && data.agents.some((a) => a.mano === 'dueno'));
+  for (const [c, col] of data.kanban.columnas.entries()) for (const [t, card] of col.tarjetas.entries()) for (const k of ['numero', 'mano', 'titulo']) assert.deepStrictEqual(sent.kanban.columnas[c].tarjetas[t][k], card[k], `«${card.titulo}»: «${k}»`);
+  assert.strictEqual(sent.kanban.linea, data.kanban.linea);
+});
+
 // ── La mano levantada ────────────────────────────────────────────────────────────────────────────────────────────
 
 test('T48 Mano_FirmaConDestino_LaLevantaYDiceCual — @story-8.198 @ac-50 @ac-51', () => {

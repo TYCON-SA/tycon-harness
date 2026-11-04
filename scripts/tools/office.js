@@ -315,7 +315,8 @@ function cardsOfSignatures(signatures, agents, sidOf) {
  */
 const HAND_LABEL = { dueno: 'Espera tu firma', coordinadora: 'Espera a la Coordinadora' };
 function raiseHands(agents, signatures, sidOf, coordinatorName) {
-  const raise = (a, who, por) => { a.mano = who; a.manoEtiqueta = HAND_LABEL[who]; if (por) a.manoPor = por; };
+  // lo que espera una sesión de otro proyecto no sale con su título: se dice de qué es, como sus tarjetas
+  const raise = (a, who, por) => { a.mano = who; a.manoEtiqueta = HAND_LABEL[who]; if (por) a.manoPor = a.otroProyecto ? 'Otro proyecto' : por; };
   for (const a of agents) if (ASKS_OWNER.has(a.estado)) raise(a, 'dueno', a.espera ? `Espera ${a.espera}` : null);
   for (const s of [...signatures].sort((p, q) => (p.at || 0) - (q.at || 0))) {
     if (!s || !s.destino || !s.title) continue;
