@@ -458,7 +458,7 @@ test('T13 Vigente_SinGitOCortado_NoCuenta_YLoDice @story-8.186 @ac-11', () => {
   }
 });
 
-test('T14 Vigente_ArchivoBorrado_ComoHoy @story-8.186 @ac-12', () => {
+test('T14 Vigente_ArchivoBorrado_JuezComoHoyMatrizRojo @story-8.186 @ac-12', () => {
   // un archivo que no está tiene fecha cero: la evidencia cuenta como hoy, y no se le pregunta a git
   const { repo, ev } = labBasico();
   const llamadas = [];
@@ -467,11 +467,14 @@ test('T14 Vigente_ArchivoBorrado_ComoHoy @story-8.186 @ac-12', () => {
   assert.equal(r.cuenta, true);
   assert.equal(llamadas.length, 0);
 
-  // y por la matriz: la historia declara un archivo que no está, y la evidencia cuenta como hoy
+  // y por la matriz: la historia declara un archivo que no está. Desde la 8.200 la matriz no se lo pregunta al juez: no
+  // pudo leerlo, la evidencia no cuenta y queda en rojo
   const f = labMatriz({ historia: HISTORIA_DOS.replace('src/Feature.cs', 'src/Borrado.cs'),
     armarEvidencia: ({ dod, gatesLog }) => gate(dod, gatesLog, HACE_DIEZ_MIN) });
   const m = calcular(f);
-  assert.equal(m.perAc[1].verdict, 'RUNTIME', m.warnings.join('\n'));
+  assert.equal(m.perAc[1].verdict, 'NOT-RUN', m.warnings.join('\n'));
+  assert.equal(m.green, false);
+  assert.match(m.warnings.join('\n'), /no pude leer src\/Borrado\.cs/i);
 });
 
 // ---------------------------------------------------------------- la lista con la ruta entre comillas

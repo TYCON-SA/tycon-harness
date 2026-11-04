@@ -622,7 +622,7 @@ const CASOS = [
     id: 'hermano-atrasado-matriz', ac: 14,
     prepara: (c) => ({ historia: hermanoAtrasado(c, 'forms/nuevo/helper.cs') }),
     corre: (c, x) => matriz(c, x.historia),
-    juzga: (m) => esperaRojo(m, { nombra: ['forms/nuevo/helper.cs'], aviso: /no se pud/i }),
+    juzga: (m) => esperaRojo(m, { nombra: ['forms/nuevo/helper.cs'], aviso: /no (se )?pud/i }),
   },
   {
     id: 'hermano-atrasado-guia', ac: 15,
@@ -772,7 +772,8 @@ const CASOS = [
       return { historia };
     },
     corre: (c, x) => matriz(c, x.historia),
-    juzga: (m) => esperaRojo(m, { nombra: ['forms/pedido/helper.cs'], aviso: /no se pud/i }),
+    // La matriz busca la ruta también en el hermano: la encuentra, y el aviso nombra el commit que la cambió después
+    juzga: (m) => esperaRojo(m, { nombra: ['forms/pedido/helper.cs'], aviso: /commit \w+ (es posterior|después)/i }),
   },
 ];
 

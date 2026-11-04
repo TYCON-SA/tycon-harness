@@ -1011,22 +1011,42 @@ function compute(opts) {
   const gatesLogPath = opts.gatesLogPath || path.join(stateDirOf(os.homedir()), 'gates.log');
 
   // Staleness: último edit de CÓDIGO de los archivos declarados por la story, por lado.
-  // Los paths del frontmatter vienen repo-relativos (ej. `mcp/src/...`) o ws-relativos
-  // (ej. `<producto>/src/...`) — se prueba contra ambos roots y gana el que EXISTE. Resolver sólo
-  // contra el workspace deja mtime=0 para los repo-relativos: el chequeo de frescura queda ciego
-  // y los gates viejos cuentan. Con `allForms`: acá leer más archivos declarados vence más evidencia, no menos.
+  // Los paths del frontmatter vienen repo-relativos (ej. `mcp/src/...`), ws-relativos (ej. `<producto>/src/...`) o
+  // relativos a un hermano declarado: se buscan en el repo de la historia, la carpeta de arriba, cada hermano y su
+  // worktree de la rama, y se juzga cada copia que existe. Un archivo que no se mira deja ciego el chequeo de frescura y
+  // la evidencia vieja cuenta. Con `allForms`: acá leer más archivos declarados vence más evidencia, no menos.
   const declared = parseDeclaredFiles(content, { allForms: true }).filter((f) => CODE_FILE_RE.test(f));
+  const lugares = [...new Set([repoRoot, wsRoot, ...evCfg.roots, ...enRama].filter(Boolean))];
   let maxCodeMtime = 0;
   const kindMtime = { fe: 0, be: 0 };
   const codeFiles = [];
+  // Una ruta de código sin ninguna copia no se pudo leer: ninguna evidencia cuenta, porque no se sabe si cambió.
+  const noLeidos = [];
   for (const rel of declared) {
-    const candidates = [repoRoot, wsRoot].filter(Boolean).map((r) => path.join(r, rel));
-    const abs = candidates.find(isFile) || candidates[0] || rel;
-    const mt = mtimeMs(abs);
-    codeFiles.push({ rel, abs: path.resolve(abs), mt });
-    if (mt > maxCodeMtime) maxCodeMtime = mt;
-    const kind = kindOf(rel, fePaths);
-    if (mt > kindMtime[kind]) kindMtime[kind] = mt;
+    const copias = new Map();
+    for (const lugar of lugares) {
+      const abs = path.resolve(lugar, rel);
+      if (!isFile(abs)) continue;
+      let real = abs;
+      try { real = fs.realpathSync(abs); } catch { /* se queda con la ruta tal cual */ }
+      if (!copias.has(real)) copias.set(real, { abs, lugar });
+    }
+    if (!copias.size) { noLeidos.push({ rel, lugares }); continue; }
+    for (const { abs, lugar } of copias.values()) {
+      const mt = mtimeMs(abs);
+      // Con más de una copia, el aviso dice de qué lugar es la que no cuenta.
+      codeFiles.push({ rel: copias.size > 1 ? `${rel} (en ${path.basename(lugar)})` : rel, abs, mt });
+      if (mt > maxCodeMtime) maxCodeMtime = mt;
+      const kind = kindOf(rel, fePaths);
+      if (mt > kindMtime[kind]) kindMtime[kind] = mt;
+    }
+  }
+  const historiaEnDone = /^status:\s*["']?done\b/m.test(String(content).split(/^---\s*$/m)[1] || '');
+  for (const { rel, lugares: donde } of noLeidos) {
+    warnings.push(`No pude leer ${rel}: es código declarado y no está en ${donde.join(', ')} → ninguna evidencia cuenta. ` +
+      (historiaEnDone
+        ? 'La historia está en done: traé el hermano al día o volvé a correr la evidencia; no edites la lista para ponerla en verde.'
+        : 'Si se movió, corregí la ruta en la lista de la historia; si es para crear, crealo o sacalo de la lista; si vive en un hermano atrasado, traelo al día.'));
   }
   // ¿La evidencia sigue valiendo para todo el código declarado? El archivo más nuevo primero: si ése está antes de la
   // evidencia, todos lo están y no se le pregunta a git. El primero que no cuenta decide, y es el que nombra el aviso.
@@ -1037,6 +1057,10 @@ function compute(opts) {
   const dejadasContar = new Set();
   const vigenciaDe = (ev, evidencia) => {
     if (!vigencias.has(ev)) {
+      if (noLeidos.length) {
+        vigencias.set(ev, { cuenta: false, motivo: 'no-leido', rel: noLeidos[0].rel, contadas: [] });
+        return vigencias.get(ev);
+      }
       let v = { cuenta: true };
       const contadas = [];
       for (const f of codeFiles) {
@@ -1051,6 +1075,9 @@ function compute(opts) {
   const vigenciaGate = (g) => vigenciaDe(g, { ruta: g.path, tsMs: g.ts, ancla: g.ancla });
   const vigenciaHumo = (e) => vigenciaDe(e, { ruta: e.path, tsMs: e.tsMs, linea: e.linea, ancla: e.ancla });
   const porQueVencio = (v) => `(${v.rel}: ${evidenceVsCommit.motivoEnPalabras(v)})`;
+  // Una evidencia que no cuenta por un archivo no leído no es «anterior al último edit»: no se sabe, y volver a correrla
+  // no lo arregla. El motivo es de la matriz, no del juez.
+  const noLeido = (v) => v.motivo === 'no-leido';
 
   // --- evidencia runtime 1: gates E2E (frescura BLOQUEANTE + espejo en gates.log OBLIGATORIO)
   const allGates = readE2eGates(evidenceDirs, evKey, gatesLogPath, storyPath);
@@ -1064,7 +1091,10 @@ function compute(opts) {
   }
   const freshPassGates = allGates.filter((g) => g.verdict === 'PASS' && vigenciaGate(g).cuenta && g.mirrored && passCompleto(g));
   for (const g of allGates.filter((x) => x.verdict === 'PASS' && !vigenciaGate(x).cuenta)) {
-    warnings.push(`Gate E2E ${path.basename(g.path)} es ANTERIOR al último edit de código ${porQueVencio(vigenciaGate(g))} → NO cuenta. Re-corré el gate (scoped, barato).`);
+    const v = vigenciaGate(g);
+    warnings.push(noLeido(v)
+      ? `Gate E2E ${path.basename(g.path)} → NO cuenta: no pude leer ${v.rel}.`
+      : `Gate E2E ${path.basename(g.path)} es ANTERIOR al último edit de código ${porQueVencio(v)} → NO cuenta. Re-corré el gate (scoped, barato).`);
   }
   for (const g of allGates.filter((x) => x.verdict === 'PASS' && vigenciaGate(x).cuenta && !x.mirrored)) {
     warnings.push(`Gate E2E ${path.basename(g.path)} SIN espejo run-check en gates.log → NO cuenta (¿se escribió a mano en vez de correrse vía 'marker.js run-check dod -- bash <gate> ...'?).`);
@@ -1087,7 +1117,10 @@ function compute(opts) {
         : 'Lo que quedó en el repo no es lo que selló el espejo al correr: re-correlo vía smoke-run.sh, no edites la evidencia.'));
   }
   for (const e of ledger.filter((x) => x.mirrored && !vigenciaHumo(x).cuenta)) {
-    warnings.push(`Smoke ${e.ts} anterior al último edit de código ${porQueVencio(vigenciaHumo(e))} → no cuenta. Re-correlo vía smoke-run.sh.`);
+    const v = vigenciaHumo(e);
+    warnings.push(noLeido(v)
+      ? `Smoke ${e.ts} → no cuenta: no pude leer ${v.rel}.`
+      : `Smoke ${e.ts} anterior al último edit de código ${porQueVencio(v)} → no cuenta. Re-correlo vía smoke-run.sh.`);
   }
   // La imagen del humo que no es la que se selló al correr no cuenta: el humo sigue valiendo, sin imagen.
   for (const e of ledger.filter((x) => x.mirrored && x.visualProblema)) {
@@ -1424,8 +1457,9 @@ function compute(opts) {
       `Arreglo: volvé a firmar desde tu terminal — marker.js runtime-waiver ${storyParaFirmar} (la firma nueva no depende de ninguna otra línea).`);
   }
 
-  // Verde SOLO si no queda nada NOT-RUN ni NOT-VERIFIABLE sin waivear.
-  const green = pendientes.length === 0;
+  // Verde SOLO si no queda nada NOT-RUN ni NOT-VERIFIABLE sin waivear, y si la matriz pudo leer todo el código declarado:
+  // un archivo que no se leyó puede haber cambiado, aunque los criterios estén cubiertos por pruebas.
+  const green = pendientes.length === 0 && noLeidos.length === 0;
 
   return {
     sid, key: evKey, keyInfo: { topic: keyInfo.topic, repeated: keyInfo.repeated, siblings: keyInfo.siblings }, orphans,
@@ -1435,6 +1469,8 @@ function compute(opts) {
     repoRoot,
     // la hora del último cambio de código declarado: la evidencia anterior no cuenta
     codeMtime: maxCodeMtime,
+    // el código declarado que no está en ningún lugar de búsqueda: deja la matriz en rojo
+    noLeidos,
     stats: {
       total: acs.length,
       runtime: acs.filter((n) => perAc[n].verdict === 'RUNTIME').length,
