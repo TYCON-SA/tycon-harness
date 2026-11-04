@@ -191,7 +191,7 @@ function riesgoDeLaRutaYSuReal(abs, repo) {
     else return { value: true, rule: 'no-pude-saber', file: null, reason: `no pude saber: no pude ubicar el repo de ${abs} (${u.falla})` };
   }
   const real = installedTree.realPath(abs);
-  let repoReal = repo;
+  let repoReal;
   try { repoReal = fs.realpathSync(repo); } catch (_) { repoReal = repo; }
   let ultimo = null;
   for (const [ruta, raiz] of [[abs, repo], [real, repoReal]]) {
