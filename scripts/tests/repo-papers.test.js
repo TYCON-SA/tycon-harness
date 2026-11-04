@@ -1617,8 +1617,8 @@ test('T80 TeamOnboardingText_InTeamLayer_GettingStartedWithoutRepoPermission —
 // aparece arriba. En «Empezá solo», qué lenguajes sirven hoy va antes de la línea npx: quien programa en otro lo sabe
 // antes de instalar.
 const COVER_OPENING = {
-  en: 'Today an AI agent writes in minutes the code that used to take hours.',
-  es: 'Hoy un agente de IA escribe en minutos el código que antes llevaba horas.',
+  en: 'Today an AI agent writes in minutes the code that used to take hours, and it solves tasks without anyone telling it each step.',
+  es: 'Hoy un agente de IA escribe en minutos el código que antes llevaba horas, y resuelve las tareas sin que nadie le indique cada paso.',
 };
 const COVER_PHRASE = {
   en: 'The agents bring the speed. TYCON Harness brings the method, the quality and the control. Together, they do software engineering with AI.',
