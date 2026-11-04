@@ -3895,11 +3895,13 @@ test('T18 TestGate_SuitesJson_DeferredInTestsResult — story 7.15: la diferida 
   assert.deepEqual(art2.totals.failures, ['diferible.test.sh']);
   assert.ok(fs.existsSync(path.join(b, '.advisors', 'dod-runtime', '9.2-tests-result.json')));
 
-  // 🔴 Sin marcador ni TYCON_COVERAGE_BASE la base cae a HEAD y lo commiteado
-  //    no se ve → «no sé» → corre todo, aunque la story diga que no toca publicación.
+  // 🔴 Sin marcador ni TYCON_COVERAGE_BASE la base es la bifurcación con main (gate-base-fork.test.js T9); sin rama
+  //    principal cae a HEAD y lo commiteado no se ve → «no sé» → corre todo, aunque la story diga que no toca
+  //    publicación.
   const c = armarArnes();
+  execFileSync('git', ['-C', c, 'branch', '-q', '-m', 'sin-principal'], { stdio: 'ignore' });
   const r3 = runTestGate(c, path.join(c, 'specs', 'no-toca.md'), fakeHome);
-  assert.notEqual(r3.status, 0, 'con la base por defecto (HEAD) no se difiere: la diferible corre');
+  assert.notEqual(r3.status, 0, 'sin rama principal la base cae a HEAD y no se difiere: la diferible corre');
   assert.match(r3.stdout + r3.stderr, /no pude saber qué archivos toca la story/);
 
   for (const d of [a, b, c, fakeHome]) fs.rmSync(d, { recursive: true, force: true });
