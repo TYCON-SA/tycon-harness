@@ -680,3 +680,33 @@ test('T38 Propuesto_YaNoApareceYMainLoTiene_NoDiceCerrado @story-8.203 @ac-10 �
   assert.ok(!txt.includes(es('pantalla.pedidoCerradoSinEntrar', { n: '123' })), txt);
   assert.ok(txt.includes(es('pantalla.alDia')), txt);
 });
+
+// 🔴 Falla con: `office` fuera de las claves que piden versión: el cambio no sube la capa y una máquina anterior a
+// OFFICE_SINCE rechaza el perfil entero.
+test('Regresion_Oficina_SubeLaCapa — cambiar o sumar office.quiet_minutes sube requires.harness a OFFICE_SINCE', () => {
+  const maquinas = [fila('mac-1', IMAGEN, diaHace(1))];
+  for (const actual of [{ office: { quiet_minutes: 10 } }, {}]) {
+    const doc = { office: { quiet_minutes: 20 } };
+    assert.deepStrictEqual(ORG.clavesQuePidenVersion({ actual, doc }), [['office', ORG.OFFICE_SINCE]], JSON.stringify(actual));
+    const r = ORG.capaQueSube({ layerText: capa('2026.10.20.3'), actual, doc, maquinas, versionImagen: IMAGEN, ahora: AHORA });
+    assert.ok(r && r.archivo, JSON.stringify(r));
+    assert.strictEqual(JSON.parse(r.contenido).requires.harness, `>= ${ORG.OFFICE_SINCE}`);
+    assert.strictEqual(r.clave, 'office');
+  }
+  assert.deepStrictEqual(ORG.clavesQuePidenVersion({ actual: { office: { quiet_minutes: 20 } }, doc: { office: { quiet_minutes: 20 } } }), [], 'sin cambio no pide nada');
+  const lista = ORG.clavesQuePidenVersion({ actual: { approvals: { relay_session: 'x' } }, doc: { approvals: { relay_session: 'x', signature_list: 'on' } } });
+  assert.ok(lista.some(([k, v]) => k === 'approvals.signature_list' && v === ORG.SIGNATURE_LIST_SINCE), JSON.stringify(lista));
+});
+
+// 🔴 Falla con: una sección nueva del lector del perfil sin su versión en pedidasDelPerfil.
+test('Regresion_CadaSeccionDelPerfil_PideSuVersion — toda sección que el primer lector publicado no conocía pide una versión', () => {
+  // las que ya leía v2026.10.16.1, el primer lector publicado; `models` es de la máquina: en el perfil es un error siempre
+  const deSiempre = ['rutas', 'github', 'azure', 'ado', 'telegram', 'integraciones', 'update', 'packs', 'install', 'adversarial'];
+  const deLaMaquina = ['models'];
+  const enArchivo = { rutas: 'paths', integraciones: 'integrations' };
+  for (const s of Object.keys(TC.VOCABULARIO).filter((k) => !deSiempre.includes(k) && !deLaMaquina.includes(k))) {
+    const clave = enArchivo[s] || s;
+    const pedidas = ORG.pedidasDelPerfil({ actual: {}, doc: { [clave]: {} } });
+    assert.ok(pedidas.some(([k]) => k === clave), `${clave} no pide versión: ${JSON.stringify(pedidas)}`);
+  }
+});
