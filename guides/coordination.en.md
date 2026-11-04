@@ -367,23 +367,73 @@ it refers to.
 
 The `/office` page shows pending work as a kanban with five columns: **Sin sesión, En curso, Tu firma, Esperan entrar and
 Terminados**. En curso, Tu firma and Esperan entrar build themselves from what each session is doing. The coordinator's board adds what the machine
-does not know. The coordinator writes the whole board to `<state>/coordination/tablero.json` (first to a separate file and
-then renamed, so the office never reads it half written) every time it changes:
+does not know, in `<state>/coordination/tablero.json`, and **it is written only with `board.js`**
+(`scripts/tools/office/board.js`), which checks every row before saving, gives it its number, and writes to a separate file
+and renames it, under a lock, so the office never reads it half written:
 
-- `pendientes`: a list; each item has `titulo`, `estado` (`hecho`, `curso`, `firma`, `riesgo`, `entrando`, `sin-empezar`, or
-  `espera`, which goes to «Sin sesión»; `curso` and `riesgo` go to «En curso» only if a live session is doing it, and otherwise also to «Sin sesión»), `grupo` (`Hoy`, `Esta semana`, `La semana que viene` or `Más adelante`), `orden`,
-  `quien`, `nota`, and its time: `pronosticoIso` or `estimadaIso` (local time, `YYYY-MM-DDTHH:MM`), or `termina` with its
-  own text. A done item carries `realIso`.
+```bash
+node <harness>/scripts/tools/office/board.js add titulo="Fix X" estado=espera grupo=Hoy    # a new pending item
+node <harness>/scripts/tools/office/board.js set T-41 estado=curso quien=Sand nota="…"     # change a row
+node <harness>/scripts/tools/office/board.js close T-41 [--real YYYY-MM-DDTHH:MM]          # close it
+node <harness>/scripts/tools/office/board.js save --from <your separate file>              # the whole board
+node <harness>/scripts/tools/office/board.js check                                         # check without writing
+```
+
+Writing it by hand (Edit, Write or the console) is stopped with the command that does the same. Reading it stays free, and
+the separate file for `save --from` lives outside the state folder. If something changed it without the command, the office
+says so once under «No se pudo leer». A badly written row is not saved: `board.js` exits 2 and names the row and the rule.
+
+- `pendientes`: a list; each item has `id` (its number, `T-41`: the command sets it), `titulo`, `estado` (`hecho`, `curso`,
+  `firma`, `riesgo`, `entrando`, `sin-empezar`, or `espera`, which goes to «Sin sesión»; `curso` and `riesgo` go to «En
+  curso» only if a live session is doing it, and otherwise also to «Sin sesión»), `grupo` (`Hoy`, `Esta semana`, `La semana
+  que viene` or `Más adelante`), `orden`, `quien`, `nota`, and its time: `pronosticoIso` (local time, `YYYY-MM-DDTHH:MM`),
+  or `termina` with its own text. A done item carries `realIso`. `estimadaIso` is not allowed. `ultimoHecho` is written
+  only by the board when it moves on its own.
 - `historia` (for example `"2.81"`) and `pedido` (`{ "repo": "tycon-harness", "numero": 885 }`), both optional. With
   `historia` and a run of that story on this machine, the row adds no state or time: they come from the run, and the row
   adds its `nota`. With `pedido`, the state comes from asking for it, at most once a minute: open goes to «Esperan
   entrar», with the reason if it is a draft or out of the queue; merged goes to «Terminados» with its merge time. If the query fails,
   the row stays where `estado` says and the reason goes to «No se pudo leer». `repo` is the name of a repo of a run on this
   machine or of one declared in `team-repos.json`. `estado` only counts when there is nowhere else to get it from.
-- `meta`: `actualizado`, `resumen` and `teToca` (what the owner has to do, one line each). «Te toca» comes from the
-  signatures, the open questions and this list: notes are not read, so what the owner has to do goes here.
+- `meta`: `actualizado` and `teToca` (what the owner has to do, one line each). «Te toca» comes from the signatures, the
+  open questions and this list: notes are not read, so what the owner has to do goes here. `meta.resumen` is ignored, like
+  `tablas`: the line above the kanban builds itself from the cards («Sale primero: T-52 … · 19:30 · Tu firma: 2 · Trabado:
+  1 · Tablero escrito a las 16:29», or «Nada con hora en curso»).
 
-«Terminados» is what was done today, with its time; anything older, or with no `realIso`, goes to the «Hechos» table.
+«Terminados» is what was done today, with its time; anything older, or with no `realIso`, goes to the «Hechos» table. «En
+curso» goes by end time: what ends first on top, what has no time after, and the coordinator last.
+
+### The number of each task
+
+Every row has a short fixed number, `T-41`, shown on its card, in the works of the tables and above the detail. The
+command sets it when the row is saved and it never changes, even if the title does; a closed one is never reused. A row
+that lost its `id` and has the exact title of a number already given gets it back. A row written by hand without a number
+says «sin número» until it is saved once.
+
+The coordinator puts the number in every assignment («You are Sand. T-41: …»), and the session carries it in what it says
+it is doing (`marker.js doing "T-41 · …"`). Then the row goes on that session's card: a single card, with the number and
+the row's note. A row whose `quien` names a live session that does not say its number is not hidden: it shows on its own,
+with its number, and `board.js` warns about it when saving.
+
+«How is T-41 going?»: `node <harness>/scripts/tools/office.js --task T-41` (or `41`) says it in one line; with `--json`,
+the whole card. In the office, the «Buscar» field switches to the kanban, marks the card and opens it.
+
+### The board moves on its own
+
+The coordinator writes only what is new: a pending item that has no session, story or pull request yet, with `board.js
+add`. The rest is moved by the board with what happens, through `board.js sync`, which the machine's office process calls
+after every snapshot:
+
+- a session that starts its story, or says a number in what it does, puts its row in «En curso» with who (if the story has
+  no row, it adds one);
+- a session waiting for the owner puts its row in «Tu firma», and back in «En curso» when it stops waiting;
+- when its pull request enters main, the row is done, with the merge time;
+- an abandoned pull request or a cut run says so in its note.
+
+Each fact is applied once: a correction with `set` is not overwritten until another fact arrives. It never deletes a row or
+changes its title or promised time, and a done row never goes back. If something could not be read, it does not apply what
+comes from not seeing it. On a board without numbers or with a badly written row it does not write: it says so under «No se
+pudo leer» until a `save` makes it sound.
 
 ### The «Hoy» and «Pendientes» tables
 
@@ -407,7 +457,7 @@ that enters, the row moves to «Terminados» with its time, even if the session 
 Without the file the kanban still shows, with the real-state columns. A broken file is reported below, under «No se pudo
 leer». The live office reads it again on its own when it changes, and the kanban says «Tablero escrito a las HH:MM», with
 «(vieja)» once it passes the quiet-session threshold (even a board that is up to date and unchanged: it is only written
-when it changes). A row of a person who already has a real-state card is not duplicated. The desks do not come from here:
+when it changes). The desks do not come from here:
 they come from what each session is doing.
 
 A run left on purpose is marked with `marker.js park <story> --queue` («En fila para pruebas») or `--until YYYY-MM-DD` («En

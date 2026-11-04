@@ -355,23 +355,72 @@ que todavía no funciona le hace dar por resuelto algo que sigue roto. Una hora 
 
 La oficina de `/office` muestra los pendientes en un kanban de cinco columnas: **Sin sesión, En curso, Tu firma, Esperan
 entrar y Terminados**. En curso, Tu firma y Esperan entrar se arman solas de lo que hace cada sesión. El tablero de la coordinadora suma lo que
-la máquina no sabe. La coordinadora lo escribe entero en `<estado>/coordination/tablero.json` (primero en un archivo
-aparte y después renombrado, para que la oficina nunca lo lea a medias), cada vez que lo cambia:
+la máquina no sabe, en `<estado>/coordination/tablero.json`, y **se escribe sólo con `board.js`**
+(`scripts/tools/office/board.js`), que valida cada fila antes de guardar, le pone su número y escribe aparte y renombra,
+con un candado, para que la oficina nunca lo lea a medias:
 
-- `pendientes`: una lista; cada uno con `titulo`, `estado` (`hecho`, `curso`, `firma`, `riesgo`, `entrando`, `sin-empezar`
-  o `espera`, que va a «Sin sesión»; «curso» y «riesgo» van a «En curso» sólo si una sesión viva lo hace, y si no, también a «Sin sesión»), `grupo` (`Hoy`, `Esta semana`, `La semana que viene` o `Más adelante`), `orden`,
-  `quien`, `nota`, y su hora: `pronosticoIso` o `estimadaIso` (hora local, `AAAA-MM-DDTHH:MM`), o `termina` con un texto
-  propio. Un hecho lleva `realIso`.
+```bash
+node <arnés>/scripts/tools/office/board.js add titulo="Arreglo X" estado=espera grupo=Hoy   # un pendiente nuevo
+node <arnés>/scripts/tools/office/board.js set T-41 estado=curso quien=Sand nota="…"      # cambiar una fila
+node <arnés>/scripts/tools/office/board.js close T-41 [--real AAAA-MM-DDTHH:MM]           # cerrarla
+node <arnés>/scripts/tools/office/board.js save --from <tu archivo aparte>                # el tablero entero
+node <arnés>/scripts/tools/office/board.js check                                          # validar sin escribir
+```
+
+Escribirlo a mano (Edit, Write o la consola) se frena con el comando que hace lo mismo. Leerlo sigue libre, y el archivo
+aparte para `save --from` va fuera de la carpeta de estado. Si algo lo cambió sin el comando, la oficina lo dice una vez en
+«No se pudo leer»: «el tablero se editó fuera del comando a las HH:MM: corré board.js check». Lo mal escrito no se guarda:
+`board.js` sale 2 y nombra la fila y la regla.
+
+- `pendientes`: una lista; cada uno con `id` (su número, `T-41`: lo pone el comando), `titulo`, `estado` (`hecho`, `curso`,
+  `firma`, `riesgo`, `entrando`, `sin-empezar` o `espera`, que va a «Sin sesión»; «curso» y «riesgo» van a «En curso» sólo
+  si una sesión viva lo hace, y si no, también a «Sin sesión»), `grupo` (`Hoy`, `Esta semana`, `La semana que viene` o
+  `Más adelante`), `orden`, `quien`, `nota`, y su hora: `pronosticoIso` (hora local, `AAAA-MM-DDTHH:MM`), o `termina` con
+  un texto propio. Un hecho lleva `realIso`. `estimadaIso` no va. `ultimoHecho` lo escribe sólo el tablero al moverse solo.
 - `historia` (por ejemplo `"2.81"`) y `pedido` (`{ "repo": "tycon-harness", "numero": 885 }`), opcionales. Con `historia` y
   una ejecución de esa historia en esta máquina, la fila no aporta estado ni hora: salen de la ejecución, y la fila aporta
   su `nota`. Con `pedido`, el estado sale de consultarlo, a lo sumo una vez por minuto: abierto, «Esperan entrar», con el
   motivo si está en borrador o fuera de la cola; entró, «Terminados» con su hora de entrada. Si la consulta falla, la fila queda donde dice
   `estado` y el motivo va a «No se pudo leer». `repo` es el nombre de un repo de una ejecución de esta máquina o de los que
   declara `team-repos.json`. `estado` vale sólo cuando no hay de dónde sacarlo.
-- `meta`: `actualizado`, `resumen` y `teToca` (lo que le toca al dueño, una línea cada cosa). «Te toca» sale de las firmas, de
-  las preguntas abiertas y de esta lista: las notas no se leen, así que lo que le toca al dueño va acá.
+- `meta`: `actualizado` y `teToca` (lo que le toca al dueño, una línea cada cosa). «Te toca» sale de las firmas, de
+  las preguntas abiertas y de esta lista: las notas no se leen, así que lo que le toca al dueño va acá. `meta.resumen` se
+  ignora, como `tablas`: la línea de arriba del kanban se arma sola de las tarjetas («Sale primero: T-52 … · 19:30 · Tu
+  firma: 2 · Trabado: 1 · Tablero escrito a las 16:29», o «Nada con hora en curso»).
 
-«Terminados» es lo hecho hoy, con su hora; lo anterior, o sin `realIso`, va a la tabla «Hechos».
+«Terminados» es lo hecho hoy, con su hora; lo anterior, o sin `realIso`, va a la tabla «Hechos». «En curso» va por hora de
+fin: lo que sale primero arriba, lo que no tiene hora después y la coordinadora al final.
+
+### El número de cada tarea
+
+Cada fila tiene un número corto y fijo, `T-41`, que se ve en su tarjeta, en los trabajos de las tablas y arriba del detalle.
+Lo pone el comando al guardarla y no cambia nunca, aunque cambie el título; uno cerrado no se reusa. Una fila que perdió su
+`id` y tiene el título exacto de un número dado lo recupera. Una fila escrita a mano sin número dice «sin número» hasta que
+se guarda una vez.
+
+La coordinadora pone el número en cada encargo («Sos Sand. T-41: …»), y la sesión lo lleva en lo que dice que hace
+(`marker.js doing "T-41 · …"`). Con eso, la fila va en la tarjeta de esa sesión: una sola tarjeta, con el número y la nota
+de la fila. Una fila cuyo `quien` nombra a una sesión viva que no dice su número no se esconde: se ve aparte, con su número,
+y `board.js` lo avisa al guardar.
+
+«¿Cómo va la T-41?»: `node <arnés>/scripts/tools/office.js --task T-41` (o `41`) lo dice en una línea; con `--json`, la
+tarjeta entera. En la oficina, el campo «Buscar» pasa al kanban, marca la tarjeta y la abre.
+
+### El tablero se mueve solo
+
+La coordinadora escribe sólo lo nuevo: un pendiente que todavía no tiene sesión, historia ni pedido, con `board.js add`. Lo
+demás lo mueve el tablero con lo que pasa, con `board.js sync`, que llama el proceso de la oficina de la máquina después de
+cada foto:
+
+- una sesión que arranca su historia, o que dice un número en lo que hace, pone su fila en «En curso» con quién (si la
+  historia no tiene fila, la agrega);
+- una sesión que espera al dueño pone su fila en «Tu firma», y vuelve a «En curso» cuando deja de esperar;
+- cuando su pedido entra a main, la fila pasa a hecha con la hora del merge;
+- un pedido abandonado o una ejecución cortada lo dicen en su nota.
+
+Cada hecho se aplica una vez: una corrección con `set` no se pisa hasta que llega otro. Nunca borra una fila ni le cambia el
+título o la hora prometida, y una hecha no vuelve atrás. Si algo no se pudo leer, no aplica lo que sale de no verlo. Sobre
+un tablero sin números o con una fila mal escrita no escribe: lo dice en «No se pudo leer» hasta que un `save` lo deje sano.
 
 ### Las tablas «Hoy» y «Pendientes»
 
@@ -394,9 +443,8 @@ rama: cuando entra, pasa a «Terminados» con su hora, aunque la sesión ya est�
 
 Sin el archivo el kanban sale igual, con las columnas del estado real. Un archivo roto se dice abajo, en «No se pudo leer».
 La oficina viva lo vuelve a leer sola cuando cambia, y el kanban dice «Tablero escrito a las HH:MM», con «(vieja)» si pasó
-más que el umbral de la sesión callada (también un tablero al día y sin cambios: se escribe sólo cuando cambia). La fila de
-una persona que ya tiene tarjeta del estado real no se duplica. Los escritorios no salen de acá: salen de lo que hace cada
-sesión.
+más que el umbral de la sesión callada (también un tablero al día y sin cambios: se escribe sólo cuando cambia). Los
+escritorios no salen de acá: salen de lo que hace cada sesión.
 
 Una ejecución dejada a propósito se marca con `marker.js park <historia> --queue` («En fila para pruebas») o
 `--until AAAA-MM-DD` («En pausa hasta…»), aunque su sesión esté cerrada. Con dos ejecuciones de la misma historia hay que

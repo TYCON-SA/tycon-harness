@@ -76,14 +76,23 @@ mueven, muy de vez en cuando si nadie se mueve, y nada si no se ve.
 
 La persona se mueve según su estado: teclea cuando trabaja, mira la pantalla cuando corre pruebas o revisores, se queda
 quieta cuando está parada, espera reclinada cuando su story espera entrar a los repos, y señala cuando es la coordinadora.
-Levanta la mano, con un aro naranja que titila en el piso, sólo cuando su pantalla está frenada esperándote: un cuadro de
-permiso o una pregunta abiertos, el plan de su ejecución esperando que lo apruebes, o su ejecución terminada esperando el ok
-para guardar. Una firma que se da en la terminal no la mueve: va como tarjeta a la columna «Tu firma» del kanban, y la
-persona sigue sentada en su escritorio, con «Esperando» y un reloj de arena si la sesión anotó qué espera, o «Parada» si
-no anotó nada. Al tocarla se abre su detalle, con
-los pasos de su corrida. Abajo, los pendientes son un kanban de cinco columnas (Tu firma, En curso, Esperan entrar, Sin
-sesión, Hechos), con lo que quedó a medio camino plegado debajo. El panel de la pared cuenta esas columnas y al tocarlo
-las lista.
+Levanta la mano, con un aro naranja que titila en el piso, cuando espera algo tuyo: su pantalla frenada esperándote (un
+cuadro de permiso o una pregunta abiertos, el plan de su ejecución esperando que lo apruebes, o su ejecución terminada
+esperando el ok para guardar), o una firma que pidió y sigue pendiente, en la terminal o por relevo a la coordinadora: cada
+tarjeta de «Tu firma» se une con la sesión que la pidió, y al tocarla, el detalle dice qué firma espera. Una firma de la
+terminal que no dice de qué sesión es queda como tarjeta tuya y no mueve a nadie. Si la sesión anotó que espera a la
+coordinadora (`marker.js doing … --waiting-for "la coordinadora"`), levanta la mano con un aro azul y dice «Espera a la
+Coordinadora». La mano baja cuando la firma deja de estar pendiente o la sesión cambia lo que espera. Si no espera nada,
+sigue sentada en su escritorio, con «Esperando» y un reloj de arena si anotó qué espera, o «Parada» si no anotó nada. Al
+tocarla se abre su detalle, con los pasos de su corrida. Abajo, los pendientes son un kanban de cinco columnas (Tu firma,
+En curso, Esperan entrar, Sin sesión, Hechos), con lo que quedó a medio camino plegado debajo. El panel de la pared cuenta
+esas columnas y al tocarlo las lista.
+
+Cada pendiente del tablero tiene su número, como `T-41`, en su tarjeta, en las tablas y en el detalle. «Buscar», junto a
+Tablas y Kanban, lo encuentra: escribí `T-41` o `41` y la oficina pasa al kanban, marca la tarjeta y la abre. Desde la
+terminal: `node scripts/tools/office.js --task T-41`. La línea de arriba del kanban se arma sola: lo que sale primero, con
+su hora, cuántas esperan tu firma y cuántas están trabadas. Las ventanas y los paneles se cierran todos igual: la X de
+arriba a la derecha, Escape (cierra la de arriba) o tocando afuera.
 
 La página no necesita internet: la librería 3D y la del WebSocket vienen con el arnés. Si el navegador no puede dibujar
 en 3D, lo dice y abre la tabla. Con `--json` el programa imprime los datos, y con `--out <archivo>` escribe la foto fija
