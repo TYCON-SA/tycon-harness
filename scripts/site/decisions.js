@@ -3,13 +3,15 @@
 //
 // Dos partes, separadas a propósito:
 //   · itemsDeLasColas(...) lee, del clon del repo de operaciones, las fichas de cada rubro de la foto diaria de cada
-//     cola y el pedido que anota cada ficha (`pr:` en inbox/<carpeta>/<estado>/<id>.yaml). La llama sources.js.
+//     cola y el seguimiento que anota cada ficha en inbox/<carpeta>/<estado>/<id>.yaml: su pedido (`pr:`), si se
+//     cerró (`pr_cerrado:`), si tiene tareas (`pedidos:`), su gravedad y sus noches. La llama sources.js.
 //   · decisiones(m, { operationsRepo }) arma el enlace de cada ficha a SU pedido, con la plataforma que reconoce
 //     `remoteOf` de scripts/lib/repo-proposal.js (`/pull/<n>` en GitHub, `/pullrequest/<n>` en la otra). No dibuja
 //     nada: el Inicio lo dibuja, y cualquier otra sección lo reusa.
 //
 // Una ficha sin pedido, o sin una dirección https del repo de operaciones, se lista igual, con `sinLugar` (un código;
-// fraseSinLugar lo dice en llano). Nunca se manda a la portada del repo: ahí no se ve qué decidir.
+// fraseSinLugar lo dice en llano). Nunca se manda a la portada del repo: ahí no se ve qué decidir. Una aceptada con
+// su pedido cerrado y sin tareas no muestra ese pedido como su seguimiento: dice que nadie la sigue, y va primero.
 // La fuente es una lista abierta ('dependencias', 'vigilante', 'ejecuciones', …): una fuente nueva se lista igual.
 //
 // Casos: scripts/tests/site-decisions.test.js.
@@ -35,22 +37,32 @@ function tituloDe(fuente, x) {
   return textoCorto(x.titulo);
 }
 
-/** El `pr:` de la ficha `id`, buscada en sus carpetas de estado; null si no lo anota o no está. */
-function pedidoDeLaFicha(clon, carpeta, id, dentroDe) {
+/**
+ * Lo que la ficha `id` anota de su seguimiento, buscada en sus carpetas de estado: { pr, prCerrado, conTarea,
+ * severidad, noches }. `pr` es null si no lo anota; `conTarea` dice si su lista `pedidos:` trae alguna tarea. Sin la
+ * ficha, todo vacío.
+ */
+function seguimientoDeLaFicha(clon, carpeta, id, dentroDe) {
+  const vacio = { pr: null, prCerrado: false, conTarea: false, severidad: null, noches: null };
   for (const estado of ESTADOS) {
     const archivo = path.join(clon, 'inbox', carpeta, estado, `${id}.yaml`);
     if (!dentroDe(clon, archivo) || !fs.existsSync(archivo)) continue;
     let texto = '';
-    try { texto = fs.readFileSync(archivo, 'utf8'); } catch { return null; }
-    const m = texto.match(/^pr:\s*(\d{1,9})\s*$/m);
-    return m ? Number(m[1]) : null;
+    try { texto = fs.readFileSync(archivo, 'utf8'); } catch { return vacio; }
+    const escalar = (clave) => { const m = texto.match(new RegExp(`^${clave}:[ \\t]*(.*?)[ \\t]*$`, 'm')); return m && m[1] ? m[1].replace(/^["']|["']$/g, '') : null; };
+    const pr = /^\d{1,9}$/.test(escalar('pr') || '') ? Number(escalar('pr')) : null;
+    // las tareas son los renglones `  - <proyecto>: <n>` que siguen a `pedidos:`, hasta la próxima clave
+    const tareas = texto.match(/^pedidos:[ \t]*\n((?:[ \t]+-[^\n]*\n?)*)/m);
+    const noches = /^\d{1,4}$/.test(escalar('noches') || '') ? Number(escalar('noches')) : null;
+    return { pr, prCerrado: !!escalar('pr_cerrado'), conTarea: !!(tareas && /\d/.test(tareas[1])), severidad: textoCorto(escalar('severidad'), 20), noches };
   }
-  return null;
+  return vacio;
 }
 
 /**
- * Las fichas de cada rubro de las fotos de las colas: [{ fuente, rubro, id, titulo, pr }]. `fotos` = { dependencias,
- * vigilante }: el documento de la foto de cada una (o null). Un id con forma de ruta no se lee.
+ * Las fichas de cada rubro de las fotos de las colas: [{ fuente, rubro, id, titulo, pr, prCerrado, conTarea, severidad,
+ * noches }]. `fotos` = { dependencias, vigilante }: el documento de la foto de cada una (o null). Un id con forma de
+ * ruta no se lee.
  */
 function itemsDeLasColas({ clon, fotos, dentroDe }) {
   const items = [];
@@ -64,7 +76,7 @@ function itemsDeLasColas({ clon, fotos, dentroDe }) {
       for (const x of valor) {
         const id = esObjeto(x) ? textoCorto(x.id || x.ficha, 130) : null;
         if (!id || !ID_SEGURO.test(id)) continue;
-        items.push({ fuente, rubro, id, titulo: tituloDe(fuente, x), pr: pedidoDeLaFicha(clon, cola.carpeta, id, dentroDe) });
+        items.push({ fuente, rubro, id, titulo: tituloDe(fuente, x), ...seguimientoDeLaFicha(clon, cola.carpeta, id, dentroDe) });
       }
     }
   }
@@ -85,10 +97,30 @@ function repoNavegable(operationsRepo, remoto = null) {
   return { base: r.web ? r.web.replace(/\.git$/, '').replace(/\/+$/, '') : null, plataforma: r.platform || null };
 }
 
+// La gravedad, de mayor a menor, con los nombres que puede traer una ficha; una que no se reconoce va después de todas
+const GRAVEDADES = Object.freeze(['critical', 'high', 'medium', 'low']);
+const SINONIMOS = Object.freeze({ critical: 'critical', critica: 'critical', 'crítica': 'critical', high: 'high', alta: 'high',
+  moderate: 'medium', medium: 'medium', media: 'medium', low: 'low', baja: 'low' });
+/** La gravedad de una ficha en uno de GRAVEDADES, o null si no se reconoce. */
+const gravedadNormal = (s) => (s && Object.hasOwn(SINONIMOS, String(s).toLowerCase()) ? SINONIMOS[String(s).toLowerCase()] : null);
+const rangoDeGravedad = (s) => { const g = gravedadNormal(s); return g ? GRAVEDADES.indexOf(g) : GRAVEDADES.length; };
+
 /**
- * Lo que hay que decidir, con su lugar: [{ fuente, rubro, id, titulo, pr, enlace, sinLugar }]. `enlace` es el pedido
- * exacto de la ficha o null; con null, `sinLugar` dice por qué ('sin_repo_https', 'plataforma_desconocida',
- * 'sin_pedido', 'en_su_tarea'). Sin la lista medida, [] (nunca un renglón inventado).
+ * El orden de las fichas: primero lo que nadie sigue; después, por gravedad (crítica, alta, media, baja); después, por
+ * cuántas noches lleva (más primero); a igualdad, por id, para que el orden no cambie entre noches.
+ */
+function compararDecisiones(a, b) {
+  const nadie = (d) => (d.sinLugar === 'nadie_lo_sigue' ? 0 : 1);
+  const noches = (d) => (Number.isInteger(d.noches) ? d.noches : -1);
+  return nadie(a) - nadie(b) || rangoDeGravedad(a.severidad) - rangoDeGravedad(b.severidad) || noches(b) - noches(a)
+    || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+}
+
+/**
+ * Lo que hay que decidir, con su lugar y en el orden de compararDecisiones: [{ fuente, rubro, id, titulo, pr, enlace,
+ * sinLugar, severidad, noches }]. `enlace` es el pedido exacto de la ficha o null; con null, `sinLugar` dice por qué
+ * ('sin_repo_https', 'plataforma_desconocida', 'sin_pedido', 'en_su_tarea', 'nadie_lo_sigue'). Sin la lista medida, []
+ * (nunca un renglón inventado).
  */
 function decisiones(m, { operationsRepo = null, remoto = null } = {}) {
   const d = m && m.decisiones;
@@ -96,21 +128,28 @@ function decisiones(m, { operationsRepo = null, remoto = null } = {}) {
   const repo = repoNavegable(operationsRepo, remoto);
   return d.items.filter(esObjeto).map((x) => {
     const pr = Number.isInteger(x.pr) && x.pr > 0 ? x.pr : null;
+    const aceptada = x.rubro === 'aceptadas_sin_resolver';
     let enlace = null;
     let sinLugar = null;
-    // una aceptada ya se decidió: sin pull request, se sigue en su tarea, en Mantenimiento (la noche no le abre otro)
-    if (!pr && x.rubro === 'aceptadas_sin_resolver') sinLugar = 'en_su_tarea';
+    // una aceptada ya se decidió: sin pull request, o con el suyo cerrado y una tarea, se sigue en su tarea, en
+    // Mantenimiento (la noche no le abre otro). Con el suyo cerrado y ninguna tarea, nadie la sigue: el pull request
+    // cerrado no es su seguimiento.
+    if (aceptada && pr && x.prCerrado === true && x.conTarea !== true) sinLugar = 'nadie_lo_sigue';
+    else if (aceptada && (!pr || x.prCerrado === true)) sinLugar = 'en_su_tarea';
     else if (!repo) sinLugar = 'sin_repo_https';
     else if (!repo.plataforma) sinLugar = 'plataforma_desconocida';
     else if (!pr) sinLugar = 'sin_pedido';
     else enlace = repo.plataforma === 'github' ? `${repo.base}/pull/${pr}` : `${repo.base}/pullrequest/${pr}`;
-    return { fuente: String(x.fuente || ''), rubro: String(x.rubro || ''), id: String(x.id || ''), titulo: x.titulo || null, pr, enlace, sinLugar };
-  });
+    return {
+      fuente: String(x.fuente || ''), rubro: String(x.rubro || ''), id: String(x.id || ''), titulo: x.titulo || null, pr, enlace, sinLugar,
+      severidad: textoCorto(x.severidad, 20), noches: Number.isInteger(x.noches) ? x.noches : null,
+    };
+  }).sort(compararDecisiones);
 }
 
-/** El motivo en llano de un `sinLugar`. */
-function fraseSinLugar(codigo, idioma = 'es') {
-  return require('./texts.js').t(idioma, `decidir.${codigo}`);
+/** El motivo en llano de un `sinLugar`; `vars` completa el texto (el número del pull request cerrado). */
+function fraseSinLugar(codigo, idioma = 'es', vars = undefined) {
+  return require('./texts.js').t(idioma, `decidir.${codigo}`, vars);
 }
 
-module.exports = { COLAS, itemsDeLasColas, decisiones, fraseSinLugar, repoNavegable };
+module.exports = { COLAS, itemsDeLasColas, decisiones, compararDecisiones, gravedadNormal, fraseSinLugar, repoNavegable };
