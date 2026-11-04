@@ -2,9 +2,9 @@
 
 [English](README.md) · Castellano
 
-**El arnés en cuatro minutos.**
+**El arnés en siete minutos** (con subtítulos).
 
-https://github.com/user-attachments/assets/3fbe4538-6b96-4b56-b2ed-92d36be1c6f8
+https://github.com/user-attachments/assets/cb68ec58-a1c5-4c64-8787-630c2d8d01a3
 
 Hoy un agente de IA escribe en minutos el código que antes llevaba horas. Los modelos programan tan bien que parece que ya no necesitan nada que les marque el camino, les pida pruebas y los frene cuando se equivocan.
 
@@ -42,7 +42,7 @@ Un administrador configura y sigue el SDLC desde un sitio web. El sitio lo insta
 
 **Sigue.** En cada producto, las historias en curso, paradas y bloqueadas, qué versión está en prueba y cuál en producción, las vulnerabilidades abiertas, y qué hace un producto que los otros no. Y cómo trabaja el agente: cada paso del proceso, con sus revisores y sus controles, y qué parte es del arnés y qué parte de la organización.
 
-**Mide.** El trabajo de los agentes: en cada historia o cambio, cuánto duró, cuánto consumió, dónde se fue el tiempo, qué revisores corrieron y qué encontraron o frenaron los controles. La calidad: cuánto trabajo vuelve y por qué, cuántas vueltas de revisión lleva un cambio, la cobertura de lo que se tocó, si las pruebas detectan errores puestos a propósito y cuánto tardan en correr. Las estimaciones: cuánto se estimó cada parte de un producto y, si se registran las horas, cuánto llevó de verdad. Y el riesgo: los cambios que entraron sin historia, los productos que dependen de una sola persona y los que no tienen un pipeline a producción.
+**Mide.** El trabajo de los agentes: en cada historia o cambio, cuánto duró, cuánto consumió, dónde se fue el tiempo, qué revisores corrieron y qué encontraron o frenaron los controles. La calidad: cuánto trabajo vuelve y por qué, cuántas vueltas de revisión lleva un cambio, la cobertura de lo que se tocó, si las pruebas detectan errores puestos a propósito y cuánto tardan en correr. Las estimaciones: cuánto se estimó cada parte de un producto y, si se registran las horas, cuánto llevó de verdad. Y el riesgo: los cambios que entraron sin historia y los productos que no tienen un pipeline a producción.
 
 **Decide.** Cada mañana recibe el resultado de la revisión nocturna: vulnerabilidades en los componentes de terceros, errores de producción, controles que fallaron y trabajos que quedaron trabados antes de sumarse al código. Lo que decide arreglar se convierte en una tarea para el equipo. Aprueba o descarta las mejoras que el arnés propone a partir de cómo trabaja el equipo. Y controla al propio arnés: si cada control sigue frenando lo que tiene que frenar, si los revisores siguen encontrando lo que deben, y qué reglas nunca encontraron nada y se pueden retirar.
 

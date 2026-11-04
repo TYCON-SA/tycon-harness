@@ -2,9 +2,9 @@
 
 English · [Castellano](README.es.md)
 
-**The harness in four minutes** (in Spanish, with subtitles).
+**The harness in seven minutes** (with subtitles).
 
-https://github.com/user-attachments/assets/3fbe4538-6b96-4b56-b2ed-92d36be1c6f8
+https://github.com/user-attachments/assets/fced8c8d-0363-453f-a04e-afd59adf3d22
 
 Today an AI agent writes in minutes the code that used to take hours. Models program so well that they seem to no longer need anything to guide them, ask them for tests and stop them when they get it wrong.
 
@@ -42,7 +42,7 @@ An administrator configures and follows the SDLC from a website. Each organizati
 
 **Follow.** In each product, the stories in progress, stopped and blocked, which version is in test and which in production, the open vulnerabilities, and what one product does that the others do not. And how the agent works: each step of the process, with its reviewers and its controls, and which part belongs to the harness and which to the organization.
 
-**Measure.** The agents' work: for each story or change, how long it took, how much it consumed, where the time went, which reviewers ran and what the controls found or stopped. Quality: how much work comes back and why, how many review rounds a change takes, the coverage of what was touched, whether the tests detect errors planted on purpose and how long they take to run. Estimates: how much each part of a product was estimated at and, if hours are recorded, how long it really took. And risk: the changes that came in without a story, the products that depend on a single person and those that have no pipeline to production.
+**Measure.** The agents' work: for each story or change, how long it took, how much it consumed, where the time went, which reviewers ran and what the controls found or stopped. Quality: how much work comes back and why, how many review rounds a change takes, the coverage of what was touched, whether the tests detect errors planted on purpose and how long they take to run. Estimates: how much each part of a product was estimated at and, if hours are recorded, how long it really took. And risk: the changes that came in without a story and the products that have no pipeline to production.
 
 **Decide.** Every morning, the result of the nightly review arrives: vulnerabilities in third-party components, production errors, controls that failed and work that got stuck before joining the code. What is chosen to be fixed becomes a task for the team. The improvements the harness proposes from how the team works are approved or discarded. And the harness itself is controlled: whether each control keeps stopping what it has to stop, whether the reviewers keep finding what they should, and which rules never found anything and can be retired.
 
