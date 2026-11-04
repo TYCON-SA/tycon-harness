@@ -176,30 +176,30 @@ const conAceptadas = (...items) => { const m = modelo(); m.decisiones.items = it
 
 // el pull request se abandonó y nadie le creó una tarea: no se muestra como su seguimiento
 test('Decisiones_PrCerradoSinTarea_NadieLoSigueYVaPrimero', () => {
-  const m = conAceptadas(aceptada('aaaa0001', { severidad: 'critical', noches: 7, conTarea: true }), aceptada('ffff0002', { pr: 5430, prCerrado: true, severidad: 'low' }));
+  const m = conAceptadas(aceptada('aaaa0001', { severidad: 'critical', noches: 7, conTarea: true }), aceptada('ffff0002', { pr: 42, prCerrado: true, severidad: 'low' }));
   const ds = decisions.decisiones(m, { operationsRepo: ADO });
   assert.deepStrictEqual(ds.map((d) => `${d.id}:${d.sinLugar}:${d.enlace}`), ['ffff0002:nadie_lo_sigue:null', 'aaaa0001:en_su_tarea:null'], 'sale primero aunque sea baja');
   const html = views.listasDeDecision(m, { enlaceOperaciones: ADO, ahora: AHORA });
   const seccion = html.split('id="decidir-dependencias_aceptadas_sin_resolver"')[1].split('</section>')[0];
-  assert.match(seccion, /<li><span>paquete-ffff0002 · baja · 1 noche — pull request #5430 cerrado sin resolver: nadie lo sigue<\/span><span class="muted">ffff0002<\/span><\/li>/);
-  assert.doesNotMatch(seccion, /pullrequest\/5430/, 'el pull request cerrado no es un enlace a su seguimiento');
+  assert.match(seccion, /<li><span>paquete-ffff0002 · baja · 1 noche — pull request #42 cerrado sin resolver: nadie lo sigue<\/span><span class="muted">ffff0002<\/span><\/li>/);
+  assert.doesNotMatch(seccion, /pullrequest\/42/, 'el pull request cerrado no es un enlace a su seguimiento');
   assert.ok(seccion.indexOf('ffff0002') < seccion.indexOf('aaaa0001'), 'en la página también va primero');
-  assert.match(decisions.fraseSinLugar('nadie_lo_sigue', 'en', { n: 5430 }), /#5430 closed without a fix: nobody follows it/);
+  assert.match(decisions.fraseSinLugar('nadie_lo_sigue', 'en', { n: 42 }), /#42 closed without a fix: nobody follows it/);
 });
 
-// el caso medido del 3/11: la noche del 29/10 anotó el pull request cerrado y creó las tareas en el mismo paso
+// la noche anota el pull request cerrado y crea las tareas en el mismo paso: la ficha se sigue en sus tareas
 test('Decisiones_PrCerradoConTarea_SeSigueEnSuTarea', () => {
-  const m = conAceptadas(aceptada('18eb40cc', { pr: 5430, prCerrado: true, conTarea: true }), aceptada('bbbb0003', { pr: 5300 }));
+  const m = conAceptadas(aceptada('dddd0005', { pr: 42, prCerrado: true, conTarea: true }), aceptada('bbbb0003', { pr: 57 }));
   const ds = decisions.decisiones(m, { operationsRepo: ADO });
-  assert.deepStrictEqual([ds.find((d) => d.id === '18eb40cc').sinLugar, ds.find((d) => d.id === '18eb40cc').enlace], ['en_su_tarea', null]);
+  assert.deepStrictEqual([ds.find((d) => d.id === 'dddd0005').sinLugar, ds.find((d) => d.id === 'dddd0005').enlace], ['en_su_tarea', null]);
   // un pull request todavía abierto sigue siendo su lugar
-  assert.strictEqual(ds.find((d) => d.id === 'bbbb0003').enlace, `${ADO}/pullrequest/5300`);
+  assert.strictEqual(ds.find((d) => d.id === 'bbbb0003').enlace, `${ADO}/pullrequest/57`);
   const html = views.listasDeDecision(m, { enlaceOperaciones: ADO, ahora: AHORA });
-  assert.match(html, /<li><span>paquete-18eb40cc · alta · 1 noche — <a href="\/mantenimiento">se sigue en su tarea<\/a><\/span><span class="muted">18eb40cc<\/span><\/li>/);
-  assert.doesNotMatch(html, /pull request #5430/);
+  assert.match(html, /<li><span>paquete-dddd0005 · alta · 1 noche — <a href="\/mantenimiento">se sigue en su tarea<\/a><\/span><span class="muted">dddd0005<\/span><\/li>/);
+  assert.doesNotMatch(html, /pull request #42/);
   // las otras colas no cambian: un pull request cerrado de otra lista no se reinterpreta
-  const nueva = decisions.decisiones(conAceptadas({ ...aceptada('cccc0004', { pr: 5431, prCerrado: true }), rubro: 'nuevos' }), { operationsRepo: ADO })[0];
-  assert.strictEqual(nueva.enlace, `${ADO}/pullrequest/5431`);
+  const nueva = decisions.decisiones(conAceptadas({ ...aceptada('cccc0004', { pr: 43, prCerrado: true }), rubro: 'nuevos' }), { operationsRepo: ADO })[0];
+  assert.strictEqual(nueva.enlace, `${ADO}/pullrequest/43`);
 });
 
 test('Decisiones_Orden_NadieGravedadNoches', () => {
@@ -227,19 +227,19 @@ test('Fuentes_LeeElSeguimientoDeLaFicha', (t) => {
   const escribir = (rel, cont) => { const p = path.join(clon, rel); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, typeof cont === 'string' ? cont : JSON.stringify(cont)); };
   escribir(`.dashboard/dependencias/dependencias-${HOY}.json`, { resumen: { rubros: {
     nuevos: { valor: [] }, rechazadas_sin_deuda: { valor: [] }, pedidos_cerrados_con_vivas: { valor: [] },
-    aceptadas_sin_resolver: { valor: [{ id: '18eb40cc', paquete: 'ws' }, { id: '2541df17', paquete: 'brace-expansion' }, { id: '9abc1234', paquete: 'otro' }] } } } });
+    aceptadas_sin_resolver: { valor: [{ id: 'dddd0005', paquete: 'paquete-d' }, { id: 'eeee0006', paquete: 'paquete-e' }, { id: '9abc1234', paquete: 'otro' }] } } } });
   // como la ficha real: pull request cerrado y sus tareas por proyecto
-  escribir('inbox/dependencies/promoted/18eb40cc.yaml', 'id: 18eb40cc\npaquete: ws\nseveridad: high\nnoches: 7\npr: 5430\npr_cerrado: 2026-10-29\nrepos:\n  - A/b\npedidos:\n  - Proyecto A: 5498\n  - Proyecto B: 5499\nasignados:\n  - 5498: alguien\n');
+  escribir('inbox/dependencies/promoted/dddd0005.yaml', 'id: dddd0005\npaquete: paquete-d\nseveridad: high\nnoches: 7\npr: 42\npr_cerrado: 2026-10-29\nrepos:\n  - A/b\npedidos:\n  - Proyecto A: 11\n  - Proyecto B: 12\nasignados:\n  - 11: alguien\n');
   // pull request cerrado y la lista de tareas vacía
-  escribir('inbox/dependencies/promoted/2541df17.yaml', 'id: 2541df17\nseveridad: critical\nnoches: 3\npr: 5257\npr_cerrado: 2026-10-29\npedidos:\nasignados:\n  - 5257: alguien\n');
+  escribir('inbox/dependencies/promoted/eeee0006.yaml', 'id: eeee0006\nseveridad: critical\nnoches: 3\npr: 31\npr_cerrado: 2026-10-29\npedidos:\nasignados:\n  - 31: alguien\n');
   escribir('inbox/dependencies/promoted/9abc1234.yaml', 'id: 9abc1234\nseveridad: low\n');
   const m = sources.construirDesdeClon(clon, { ahora: AHORA });
   const por = Object.fromEntries(m.decisiones.items.map((d) => [d.id, d]));
-  assert.deepStrictEqual([por['18eb40cc'].pr, por['18eb40cc'].prCerrado, por['18eb40cc'].conTarea, por['18eb40cc'].severidad, por['18eb40cc'].noches], [5430, true, true, 'high', 7]);
-  assert.deepStrictEqual([por['2541df17'].prCerrado, por['2541df17'].conTarea], [true, false], 'los asignados no son tareas');
+  assert.deepStrictEqual([por['dddd0005'].pr, por['dddd0005'].prCerrado, por['dddd0005'].conTarea, por['dddd0005'].severidad, por['dddd0005'].noches], [42, true, true, 'high', 7]);
+  assert.deepStrictEqual([por['eeee0006'].prCerrado, por['eeee0006'].conTarea], [true, false], 'los asignados no son tareas');
   assert.deepStrictEqual([por['9abc1234'].pr, por['9abc1234'].prCerrado, por['9abc1234'].conTarea, por['9abc1234'].noches], [null, false, false, null]);
   const ds = decisions.decisiones(m, { operationsRepo: ADO });
-  assert.deepStrictEqual(ds.map((d) => `${d.id}:${d.sinLugar}`), ['2541df17:nadie_lo_sigue', '18eb40cc:en_su_tarea', '9abc1234:en_su_tarea']);
+  assert.deepStrictEqual(ds.map((d) => `${d.id}:${d.sinLugar}`), ['eeee0006:nadie_lo_sigue', 'dddd0005:en_su_tarea', '9abc1234:en_su_tarea']);
 });
 
 // el orden se entiende al leer: cada fila dice su gravedad y cuántas noches lleva
