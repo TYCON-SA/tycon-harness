@@ -13,8 +13,9 @@
  *
  * EN PARALELO: en serie el gate del arnés tarda entre 50 y 68 min
  * (153 suites; exportador-real sola, 24-41):
- *   · corren W a la vez: `TYCON_SUITES_MAX_WORKERS` (entero positivo) o la mitad de los núcleos —
- *     el mismo 50 % que el gate le pone a jest y a vitest para no fundir la máquina del dev;
+ *   · corren W a la vez: `TYCON_SUITES_MAX_WORKERS` (entero positivo); en la CI, la mitad de los núcleos; si no,
+ *     min(núcleos − 2, núcleos − carga) con piso 1, y antes de cada suite se espera si la carga pasa el doble de los
+ *     núcleos y queda otra corriendo (lib/suite-times.js, `workersFor` y `waitForRoom`): no fundir la máquina del dev;
  *   · `"exclusive": true` en la entrada → corre sola, al final, de a una (comparte estado con otras);
  *   · `"gate_only_when_touching": ["<carpeta>/**"]` → se DIFIERE si el cambio real de la corrida no toca
  *     esas carpetas ni el archivo de la propia suite (`--touched <json de lib/touched-files.js>`). Sin `--touched`, con `known: false` o con
@@ -214,19 +215,54 @@ function saveFullOutput(out, r, ambiente, budget = { left: RUN_OUTPUT_MAX }, per
   }
 }
 
-function defaultWorkers() {
-  const cores = typeof os.availableParallelism === 'function' ? os.availableParallelism() : os.cpus().length;
-  return Math.max(1, Math.floor(cores / 2));
+/**
+ * W, por qué, si se espera por la carga y, si el valor de la variable no sirve, el aviso: la variable › en la CI la
+ * mitad de los núcleos › la máquina (lib/suite-times.js, `workersFor`).
+ */
+function resolveWorkers(env, maquina = suiteTimes.machine(env)) {
+  return suiteTimes.workersFor({ env, varName: 'TYCON_SUITES_MAX_WORKERS', maquina, ci: suiteTimes.isCI(env),
+    ciDefault: Math.max(1, Math.floor(maquina.nucleos / 2)) });
 }
 
-/** W y, si el valor de la variable no sirve, el aviso. */
-function resolveWorkers(env) {
-  const raw = env.TYCON_SUITES_MAX_WORKERS;
-  if (raw === undefined || raw === '') return { workers: defaultWorkers(), warning: null };
-  const n = Number(raw);
-  if (Number.isInteger(n) && n > 0) return { workers: n, warning: null };
-  const def = defaultWorkers();
-  return { workers: def, warning: `TYCON_SUITES_MAX_WORKERS=«${raw}» no es un entero positivo: uso ${def} (la mitad de los núcleos)` };
+/**
+ * Lo que corre antes de lanzar cada suite: espera mientras la carga pase el doble de los núcleos y quede otra corriendo.
+ * Cuenta en `esperas` ({ veces, ms }) los intervalos de reloj con algún carril esperando: varios carriles que esperan
+ * por la misma carga son una sola espera, como en las portables.
+ */
+function launchGate({ nucleos, load, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), esperas, stopped, now = Date.now }) {
+  let waiting = 0;
+  let since = 0;
+  return async (others) => {
+    let entered = false;
+    const counted = async (ms) => {
+      if (!entered) {
+        entered = true;
+        if (waiting++ === 0) { esperas.veces += 1; since = now(); }
+      }
+      await sleep(ms);
+    };
+    try {
+      await suiteTimes.waitForRoom({ nucleos, load, others, sleep: counted, stopped });
+    } finally {
+      if (entered && --waiting === 0) esperas.ms += now() - since;
+    }
+  };
+}
+
+/** Corre `items` de a `n` carriles; `beforeLaunch(otras)` se espera antes de lanzar cada uno. */
+async function pool(items, n, runOne, { stopped = () => false, beforeLaunch = null } = {}) {
+  let next = 0;
+  let running = 0;
+  const lane = async () => {
+    while (!stopped() && next < items.length) {
+      if (beforeLaunch) await beforeLaunch(() => running);
+      if (stopped() || next >= items.length) break;
+      const item = items[next++];
+      running += 1;
+      try { await runOne(item); } finally { running -= 1; }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, lane));
 }
 
 /** Lo que el gate sabe de lo tocado: { known, files, reason } o null si no se pasó. */
@@ -416,8 +452,10 @@ function main(argv, env = process.env) {
   }
 
   // la carga y los núcleos, antes de lanzar ninguna suite: la carga de ahora es la ajena
-  const maquina = suiteTimes.machine();
-  const { workers, warning } = resolveWorkers(env);
+  const maquina = suiteTimes.machine(env);
+  const decision = resolveWorkers(env, maquina);
+  const { workers, warning } = decision;
+  if (maquina.warning) console.error(`[suites.json] ⚠️  ${maquina.warning}`);
   if (warning) console.error(`[suites.json] ⚠️  ${warning}`);
   // la suite pedida sola corre aunque la difiera lo tocado o la corrida liviana
   const allSuites = env.TYCON_GATE_ALL_SUITES === '1' || Boolean(suiteOnly);
@@ -455,7 +493,7 @@ function main(argv, env = process.env) {
       portable: Array.isArray(s.requiere) && s.requiere.length === 0 };
   });
 
-  const resumen = { corridas: 0, verdes: 0, fallas: [], ausentes: [], suites: [], workers, wall_ms: 0, deferred_suites: [], unmeasured_suites: [], skills_root: skillsRoot, ...(light ? { light: true } : {}) };
+  const resumen = { corridas: 0, verdes: 0, fallas: [], ausentes: [], suites: [], workers, nucleos: maquina.nucleos, carga: maquina.carga, esperas: { veces: 0, ms: 0 }, wall_ms: 0, deferred_suites: [], unmeasured_suites: [], skills_root: skillsRoot, ...(light ? { light: true } : {}) };
   const results = new Array(plan.length).fill(null);
   const parallel = [];
   const exclusives = [];
@@ -557,7 +595,7 @@ function main(argv, env = process.env) {
   }
 
   const portables = [...parallel, ...exclusives].filter((p) => p.portable).length;
-  console.log(`[suites.json] workers: ${workers} · en paralelo: ${parallel.length} · solas al final: ${exclusives.length} · diferidas: ${resumen.deferred_suites.length}${portables ? ` · ${portables} portables con su HOME vacía, como en la CI` : ''}`);
+  console.log(`[suites.json] ${suiteTimes.describeWorkers(decision, maquina)} · en paralelo: ${parallel.length} · solas al final: ${exclusives.length} · diferidas: ${resumen.deferred_suites.length}${portables ? ` · ${portables} portables con su HOME vacía, como en la CI` : ''}`);
 
   // El turno de las ejecuciones grandes (scripts/tools/heavy-turn.js): lo que satura la máquina es cuántas suites corren, esté
   // acotada o no la ejecución, y en una máquina con coordinadora va una grande por vez. Con el turno de otro proceso vivo
@@ -722,18 +760,16 @@ function main(argv, env = process.env) {
     c.on('close', (code) => done(code, null));
   });
 
-  const pool = async (items, n) => {
-    let next = 0;
-    const lane = async () => {
-      while (!interrupted && next < items.length) await runOne(items[next++]);
-    };
-    await Promise.all(Array.from({ length: Math.min(n, items.length) }, lane));
-  };
+  const stopped = () => Boolean(interrupted);
+  // sólo cuando decide la máquina: con la variable o en la CI, como siempre
+  const beforeLaunch = decision.wait
+    ? launchGate({ nucleos: maquina.nucleos, load: () => suiteTimes.loadNow(env), esperas: resumen.esperas, stopped })
+    : null;
 
   const t0 = Date.now();
   return (async () => {
-    await pool(parallel, workers);
-    await pool(exclusives, 1);
+    await pool(parallel, workers, runOne, { stopped, beforeLaunch });
+    await pool(exclusives, 1, runOne, { stopped });
     releaseTurn();
     removeHomes();
     process.removeListener('SIGINT', onSignal);
@@ -805,7 +841,7 @@ function anotarTiempos({ env, repo, workers, maquina, wallMs, results, cortada }
     if (!t.file) return;
     const suites = results.filter((r) => r && !r.cortada).map((r) => ({ s: r.entrada.ruta, ms: r.ms, exit: r.exit }));
     const entry = suiteTimes.entryOf({ origen: 'gate', repo: path.basename(path.resolve(repo)),
-      head: suiteTimes.headOf(repo), workers, nucleos: maquina.nucleos, carga: maquina.carga, wallMs, cortada, suites });
+      head: suiteTimes.headOf(repo), workers, nucleos: maquina.nucleos, carga: maquina.carga, wallMs, cortada, fingida: maquina.fake, suites });
     const r = suiteTimes.append(entry, t.file);
     if (!r.ok) console.log(`[suites.json] ⚠️  no pude anotar los tiempos de las suites: ${r.reason}`);
   } catch (e) {
@@ -829,4 +865,4 @@ if (require.main === module) {
     process.exit(3);
   });
 }
-module.exports = { main, resolveWorkers, defaultWorkers, failedCases, capOutput, saveFullOutput, FULL_OUTPUT_MAX, RUN_OUTPUT_MAX };
+module.exports = { main, resolveWorkers, launchGate, pool, failedCases, capOutput, saveFullOutput, FULL_OUTPUT_MAX, RUN_OUTPUT_MAX };

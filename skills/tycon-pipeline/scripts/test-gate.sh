@@ -805,7 +805,7 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
   # Corre TODA la lista (diarias + semanales) con el mismo runner que usa el nocturno. El resumen
   # queda en $RESULTS_DIR/suites.json y el exit es el ACUMULADO: una roja o una AUSENTE = rojo.
   #
-  # Story 7.15 (2026-09-29): el runner corre en paralelo (la mitad de los núcleos) y DIFIERE las
+  # Story 7.15 (2026-09-29): el runner corre en paralelo (según los núcleos y la carga) y DIFIERE las
   # suites con `gate_only_when_touching` que la story no toca (hoy exportador-real, 24-41 min). Para
   # eso necesita saber qué toca la story: lo declarado + el diff contra la base de la corrida + lo sin
   # trackear (lib/touched-files.js). La base se resuelve ACÁ, antes de correr, y el parser la reusa.

@@ -42,7 +42,8 @@ corre al terminar el mismo gate sobre ese hermano, con el alcance deducido de es
 hermano rojo (un repo sin pruebas con el hermano verde sale `0`), y un total rojo deja el check `tests` en rojo. La
 copia sellada de evidencia es sólo la del repo de la story.
 
-**Repos con `scripts/tests/suites.json` (el arnés):** las suites corren en paralelo (la mitad de los núcleos;
+**Repos con `scripts/tests/suites.json` (el arnés):** las suites corren en paralelo (núcleos menos dos, o menos si
+la máquina está cargada, y esperan si la carga pasa el doble de los núcleos; en la CI, la mitad;
 `TYCON_SUITES_MAX_WORKERS=N` lo cambia, `=1` es la serie de antes), las `exclusive` corren solas al final, y las que
 declaran `gate_only_when_touching` se DIFIEREN si la story no toca esas carpetas (hoy export-real: sólo corre si la
 story toca `scripts/publishing/**`). Lo diferido queda en `tests-result.json` → `totals.deferred_suites`, con el motivo.
