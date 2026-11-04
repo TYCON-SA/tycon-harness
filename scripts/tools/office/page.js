@@ -88,14 +88,14 @@ function renderTablas(){const sec=document.getElementById("tablas"),ts=DATA.tabl
     if(!(t.filas||[]).length){d.appendChild(el("p","none",t.vacio||"Nada"));sec.appendChild(d);return;}
     const tb=el("table"),hd=el("tr");t.columnas.forEach(c=>hd.appendChild(el("th",null,c)));const th=el("thead");th.appendChild(hd);tb.appendChild(th);const bd=el("tbody");
     t.filas.forEach(r=>{const tr=el("tr");
-      if(!(r.trabajos||[]).length){[r.grupo,r.que,r.col].forEach(v=>tr.appendChild(el("td",null,v||"")));bd.appendChild(tr);return}
+      if(!(r.trabajos||[]).length){[r.grupo,r.que,r.col].forEach(v=>tr.appendChild(el("td",null,v||"")));bd.appendChild(tr);return;}
       const id=k+"|"+r.grupo,b=el("button","temaBoton",r.grupo),primera=el("td"),det=el("tr","temaTrabajos"),dd=el("td"),ul=el("ul");
       b.type="button";b.dataset.tema=id;primera.appendChild(b);tr.className="temaFila";tr.appendChild(primera);[r.que,r.col].forEach(v=>tr.appendChild(el("td",null,v||"")));
       r.trabajos.forEach(w=>{const li=el("li");li.appendChild(el("b",null,w.titulo));li.appendChild(el("span",null,[w.quien,w.como].filter(Boolean).join(" · ")));ul.appendChild(li)});
       dd.colSpan=3;dd.appendChild(ul);det.appendChild(dd);
       const pintar=()=>{const abierta=temasAbiertos.has(id);det.hidden=!abierta;b.setAttribute("aria-expanded",String(abierta))};
       tr.addEventListener("click",()=>{if(temasAbiertos.has(id))temasAbiertos.delete(id);else temasAbiertos.add(id);pintar()});pintar();
-      bd.appendChild(tr);bd.appendChild(det);if(foco===id)b.focus()});
+      bd.appendChild(tr);bd.appendChild(det);if(foco===id)b.focus();});
     tb.appendChild(bd);const w=el("div","table");w.appendChild(tb);d.appendChild(w);sec.appendChild(d);})}
 function renderCrew(){pintarTarjetas(document.getElementById("crew"),agents)}
 function pintarTarjetas(c,list,alTocar){c.replaceChildren();
@@ -103,7 +103,7 @@ function pintarTarjetas(c,list,alTocar){c.replaceChildren();
   list.forEach((a,i)=>{const s=AST[a.estado]||[a.estado||"","#999"];const k=el("div","card");
     const h=el("h3");const d=el("span","dot");d.style.background=SHIRT[i%SHIRT.length];h.appendChild(d);h.appendChild(document.createTextNode(a.nombre||""));k.appendChild(h);
     const st=el("span","st",s[0]);st.style.color=s[1];st.style.borderColor=s[1];const chips=el("div","chips");chips.appendChild(st);if(a.comoTrabaja&&a.comoTrabaja!==s[0])chips.appendChild(etiquetaComo(a.comoTrabaja));k.appendChild(chips);k.style.setProperty("--c",s[1]);
-    pintarFicha(a,k,false);if(alTocar){k.classList.add("abre");k.tabIndex=0;k.setAttribute("role","button");k.onclick=e=>{if(!e.target.closest("button,summary,a"))alTocar(a)};k.onkeydown=e=>{if(e.target===k&&(e.key==="Enter"||e.key===" ")){e.preventDefault();alTocar(a)}}}c.appendChild(k);})}
+    pintarFicha(a,k,false);if(alTocar){k.classList.add("abre");k.tabIndex=0;k.setAttribute("role","button");k.onclick=e=>{if(!e.target.closest("button,summary,a"))alTocar(a)};k.onkeydown=e=>{if(e.target===k&&(e.key==="Enter"||e.key===" ")){e.preventDefault();alTocar(a)}};}c.appendChild(k);})}
 // lo que se dice de una sesión, de un solo lugar: la tarjeta y el panel pintan esta lista y sólo cambia su estilo
 function ficha(a){const r=[],add=(k,v,x)=>{if(v!=null&&v!=="")r.push({k,v,...x})};
   add("Trabajo",a.titulo);add("De la historia",a.historia);add("Encargo",a.encargo);
@@ -166,7 +166,7 @@ function abrirCharla(nombre,boton,p=null){const v=ventana(),box=v.firstElementCh
   const yo=++ultimoPedido,pedido=p||{...fuenteLocal(),nombre},deSitio=pedido.fuente==="site";
   // lo que falla queda en la consola: en la ventana, la persona ve sólo que no se pudo leer
   fetch(pedidoDeCharla(pedido),{credentials:"same-origin"}).then(r=>{const que=charlaSegunRespuesta(r.status);if(que==="vacia")return {vacia:true,deSitio};if(que!=="datos")throw new Error("respondió "+r.status);return r.json().then(datos=>{if(!charlaConForma(datos))throw new Error("una conversación sin su forma");return {datos}})}).catch(e=>{console.warn("conversación de "+nombre+": "+(e&&e.message));return {falla:true}}).then(c=>{if(yo!==ultimoPedido||charlaDe!==nombre)return;try{pintarCharla(box,nombre,c,cerrar)}catch(e){console.warn("conversación de "+nombre+": "+(e&&e.message));pintarCharla(box,nombre,{falla:true},cerrar)}});}
-function cerrarCharla(){const v=ventana();if(v.hidden)return;v.hidden=true;document.documentElement.classList.remove("con-ventana");v.firstElementChild.classList.remove("detalle");v.firstElementChild.replaceChildren();charlaDe=null;ultimoPedido+=1;if(charlaVuelve&&charlaVuelve.isConnected)charlaVuelve.focus({preventScroll:true});charlaVuelve=null}
+function cerrarCharla(){const v=ventana();if(v.hidden)return;v.hidden=true;document.documentElement.classList.remove("con-ventana");v.firstElementChild.classList.remove("detalle");v.firstElementChild.replaceChildren();charlaDe=null;ultimoPedido+=1;if(charlaVuelve&&charlaVuelve.isConnected)charlaVuelve.focus({preventScroll:true});charlaVuelve=null;}
 document.addEventListener("keydown",e=>{if(e.key==="Escape")cerrarCharla()});
 // El formato simple de un mensaje: negritas, código y listas. Todo se arma con nodos y textContent, así que lo que traiga
 // el mensaje nunca llega a ser HTML.
@@ -231,7 +231,7 @@ function relojTick(list,now,m){const q=umbral(m)*60000,hh=t=>{const d=new Date(t
 // fin del reloj
 // el reloj corre también al abrir y con cada foto nueva: la foto y el minuto siguiente dicen lo mismo de cada sesión
 if(!CON_OFICINAS){relojTick(agents,Date.now(),meta);renderTop();renderCrew();
-  setInterval(()=>{relojTick(agents,Date.now(),meta);renderCrew();if(window.tablero.refresh)window.tablero.refresh()},60000)}
+  setInterval(()=>{relojTick(agents,Date.now(),meta);renderCrew();if(window.tablero.refresh)window.tablero.refresh()},60000);}
 // la oficina viva: cada foto nueva actualiza en el lugar; si el proceso se cierra, queda la última foto y el aviso
 const CERRADA="La oficina se cerró. Corré /office otra vez para verla al día.";
 function cerrada(){const o=document.getElementById("ovl");o.textContent=CERRADA;o.hidden=false;const fl=document.getElementById("freeLine");fl.textContent=CERRADA;fl.hidden=false}
@@ -545,7 +545,7 @@ function abrirTablero(){sel=null;desks.forEach(pintarTag);const K=T.kanban()||{}
   const cl=mk("button","close","×");cl.type="button";cl.setAttribute("aria-label","Cerrar");cl.onclick=()=>{panel.hidden=true;panel.classList.remove("wide")};panel.append(cl,mk("h3",null,"Pendientes"));
   const orden=paredEnOrden(K);panel.abiertos=panel.abiertos||new Set();
   const ct=mk("div","counts");orden.forEach(c=>{const k=mk("div","cnt");k.style.setProperty("--k",c.color);k.append(mk("b",null,String(c.tarjetas.length)),mk("span",null,c.nombre));ct.append(k);});panel.append(ct);
-  const toca=(meta&&meta.teToca)||[];if(toca.length){panel.append(mk("h4","toca","Te toca"));const ul=mk("ul","toca");toca.forEach(t=>ul.append(mk("li",null,t)));panel.append(ul)}
+  const toca=(meta&&meta.teToca)||[];if(toca.length){panel.append(mk("h4","toca","Te toca"));const ul=mk("ul","toca");toca.forEach(t=>ul.append(mk("li",null,t)));panel.append(ul);}
   // lo que no se está trabajando no estira el detalle: con muchas, se abre a pedido, y sigue abierto cuando llega otra foto
   orden.forEach(c=>{const rows=c.tarjetas;if(!rows.length)return;const h=mk("h4",null,c.nombre+" · "+rows.length);h.style.color=c.color;panel.append(h);
     const lista=()=>{const ul=mk("ul","list");rows.forEach(r=>{const li=mk("li");li.append(mk("b",null,r.titulo||""));if(c.id==="medio")li.append(mk("span","m",r.accion||""));else{li.append(mk("span","m",[r.quien,r.hora,r.espera?"espera "+r.espera:"",r.marca,r.motivo].filter(Boolean).join(" · ")));if(r.nota)li.append(mk("span","m",r.nota));}ul.append(li);});return ul;};
@@ -554,7 +554,7 @@ function abrirTablero(){sel=null;desks.forEach(pintarTag);const K=T.kanban()||{}
   if(K.medioCaminoLeido)panel.append(mk("p","m",K.medioCaminoLeido));
   if(K.medioCaminoNoSe)panel.append(mk("p","m",K.medioCaminoNoSe));
   if(!orden.some(c=>c.tarjetas.length))panel.append(mk("p","m","No hay nada pendiente en esta máquina."));
-  if(meta&&meta.actualizado)panel.append(mk("p","m",stampOf(K,meta)))}
+  if(meta&&meta.actualizado)panel.append(mk("p","m",stampOf(K,meta)));}
 
 // ---------- luces y postproceso ----------
 scene.add(new THREE.HemisphereLight("#ffd6b0","#5a3a6a",1.7));
@@ -620,7 +620,7 @@ T.refresh=()=>{const ps=puestos(),ags=T.agents().slice(0,ps.length);
   if(sel){if(T.agents().some(a=>a.nombre===sel))abrir(sel,true);else{sel=null;panel.hidden=true}}
   else if(!panel.hidden&&panel.classList.contains("wide"))abrirTablero()};
 T.abrir=n=>abrir(n);
-T.apagar=()=>{apagada=true;clearTimeout(timer);timer=null;miraVista.disconnect();miraTamano.disconnect();controls.dispose();labelsEl.replaceChildren();panel.hidden=true;renderer.dispose();renderer.forceContextLoss();renderer.domElement.remove();T.refresh=null};
+T.apagar=()=>{apagada=true;clearTimeout(timer);timer=null;miraVista.disconnect();miraTamano.disconnect();controls.dispose();labelsEl.replaceChildren();panel.hidden=true;renderer.dispose();renderer.forceContextLoss();renderer.domElement.remove();T.refresh=null;};
 // dónde está la cámara, para comprobar que una foto nueva no la mueve
 T.camara=()=>cam.position.toArray().map(n=>+n.toFixed(3));
 return function(){resize();poblar();alDia();lanzarSobres()};
@@ -696,7 +696,7 @@ function arrancarOficinas(){
     const cover=el("button","cover");cover.type="button";cover.onclick=()=>seguro(()=>foco(o.id));
     card.append(head,stage,cover);wrap.append(card);
     const bloque=el("div","crewblock"),titulo=el("h2"),crew=el("div","crew");bloque.dataset.id=o.id;bloque.append(titulo,crew);crews.append(bloque);
-    f={card,h,stats,stage,sinSala,cover,bloque,titulo,crew,T:null};fichas.set(o.id,f);return f}
+    f={card,h,stats,stage,sinSala,cover,bloque,titulo,crew,T:null};fichas.set(o.id,f);return f;}
   // el reloj corre antes del resumen: una sesión que pasó a inactiva se cuenta igual que la dice su tarjeta
   function pintarOficina(o){const lista=(o.foto&&o.foto.agents)||[];relojTick(lista,Date.now(),o.foto&&o.foto.meta);
     const f=fichaDe(o),r=resumenDeOficina(o.foto),quien=o.person||o.id;
@@ -735,10 +735,10 @@ function arrancarOficinas(){
   function recibir(m){if(!m||m.type!=="oficinas")return;oficinas=aplicarOficinas(oficinas,m);llego=true;pintarTodo(m.entera?null:new Set((m.oficinas||[]).map(o=>o.id)));requestAnimationFrame(()=>wrap.classList.add("anim"))}
   pintarVacio();
   // en la demo, un pedido común; en el sitio, la conexión. La página nunca le manda nada
-  if(SOURCE==="demo"){fetch("/offices/demo.json",{credentials:"same-origin"}).then(r=>{if(!r.ok)throw new Error(String(r.status));return r.json()}).then(recibir).catch(e=>{console.error(e);cortada=true;pintarVacio();decir("No pude traer las oficinas de ejemplo.")});return}
+  if(SOURCE==="demo"){fetch("/offices/demo.json",{credentials:"same-origin"}).then(r=>{if(!r.ok)throw new Error(String(r.status));return r.json()}).then(recibir).catch(e=>{console.error(e);cortada=true;pintarVacio();decir("No pude traer las oficinas de ejemplo.")});return;}
   let intento=0;
   (function conectar(){const ws=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host+"/live/offices");
     ws.onmessage=ev=>{intento=0;decir("");try{recibir(JSON.parse(ev.data))}catch(e){console.error(e);decir("No pude dibujar la última novedad; muestro la anterior.")}};
-    ws.onclose=ev=>{const r=alCerrarLaConexion(ev.code,intento);decir(r.texto);if(!r.reintenta){cortada=true;pintarVacio();return}intento+=1;setTimeout(conectar,r.esperaMs)}})()}
+    ws.onclose=ev=>{const r=alCerrarLaConexion(ev.code,intento);decir(r.texto);if(!r.reintenta){cortada=true;pintarVacio();return}intento+=1;setTimeout(conectar,r.esperaMs)}})();}
 // fin de la pestaña del sitio
 if(CON_OFICINAS)arrancarOficinas();else armarSala(document.getElementById("stage"),window.tablero);
