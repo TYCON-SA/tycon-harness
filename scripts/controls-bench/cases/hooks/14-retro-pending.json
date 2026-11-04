@@ -1098,6 +1098,31 @@
           "_por_que": "4 de los 28 avisos medidos en 60 días tienen esta forma exacta."
         },
         {
+          "id": "quiet-un-git-log-de-solo-lectura-en-main-no-deja-reclamo",
+          "type": "must-stay-quiet",
+          "__doc": "Un `git log`/`git reflog` de sólo lectura, con la sesión parada en main y con «push» y «main» en el comando (una ruta y una referencia), no publica nada: no deja entrada ni avisa. Caso de una entrada del 19/10 que se atribuyó a un `git log` (2026-11-03); con el código de hoy no se reproduce, y este caso fija que siga así.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git log --oneline origin/main..HEAD -- scripts/push.sh && git reflog show main | head -5"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_not_re": [
+              "retro-pending"
+            ],
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl"
+            ]
+          }
+        },
+        {
           "id": "registra-un-push-envuelto-en-time-sin-decir-que-no-pudo-resolverlo",
           "type": "must-block",
           "__doc": "ROJO PREVIO (pase adversarial 2026-09-15, hallazgo #2): el análisis por sentencia exige que la sentencia EMPIECE con `git`, así que `time git push origin main` —sin `cd` y sin `-C`, o sea sin nada que contradiga al cwd de la sesión— caía en \"no pude resolver\" y NO anotaba. Regresión de ruido Y de datos contra la versión anterior, que lo anotaba bien.",
@@ -1846,7 +1871,8 @@
         }
       ],
       "env": {
-        "TYCON_RETRO_LAB_DIRS": ""
+        "TYCON_RETRO_LAB_DIRS": "",
+        "TYCON_RETRO_ASK_REMOTE": "0"
       },
       "__env": "Las suites del banco arman sus repos en el temporal del sistema: acá se declara que no hay carpetas de laboratorio (TYCON_RETRO_LAB_DIRS vacía), para que los casos de siempre se midan como repos de verdad. Los casos de laboratorio (2026-10-14) declaran la suya, adentro del caso."
     },
@@ -2197,7 +2223,8 @@
         }
       ],
       "env": {
-        "TYCON_RETRO_LAB_DIRS": ""
+        "TYCON_RETRO_LAB_DIRS": "",
+        "TYCON_RETRO_ASK_REMOTE": "0"
       },
       "__env": "Las suites del banco arman sus repos en el temporal del sistema: acá se declara que no hay carpetas de laboratorio (TYCON_RETRO_LAB_DIRS vacía), para que los casos de siempre se midan como repos de verdad. Los casos de laboratorio (2026-10-14) declaran la suya, adentro del caso."
     },
@@ -2347,7 +2374,8 @@
         }
       ],
       "env": {
-        "TYCON_RETRO_LAB_DIRS": ""
+        "TYCON_RETRO_LAB_DIRS": "",
+        "TYCON_RETRO_ASK_REMOTE": "0"
       },
       "__env": "Las suites del banco arman sus repos en el temporal del sistema: acá se declara que no hay carpetas de laboratorio (TYCON_RETRO_LAB_DIRS vacía), para que los casos de siempre se midan como repos de verdad. Los casos de laboratorio (2026-10-14) declaran la suya, adentro del caso."
     }

@@ -222,12 +222,35 @@ function gitOrNull(cwd, args) {
   catch { return null; }
 }
 // La sha de la rama que va a mergear un pedido, o null. Primero la del remoto: el pedido mergea lo que hay allá, y la rama
-// local la comparten todas las copias del repo, así que puede estar atrasada. Límite: un push que no mueve la referencia
-// de `origin` (a una URL escrita a mano, a otro remoto) deja esa referencia atrás: se anota la sha vieja, o nada si esa
-// sha ya estaba anotada.
+// local la comparten todas las copias del repo, así que puede estar atrasada. Se le pregunta a `origin` mismo, porque su
+// referencia en la copia sólo se mueve al traer: una copia que no trajo la rama anotaba una punta vieja. Si la punta de
+// allá no está en la copia, se trae esa rama, para que el latido la encuentre. Sin respuesta del remoto, la referencia
+// local. Límite: un push que no mueve la referencia de `origin` (a una URL escrita a mano, a otro remoto) deja esa
+// referencia atrás: se anota la sha vieja, o nada si esa sha ya estaba anotada.
 function puntaDeLaRama(root, rama) {
   const corta = ramaCorta(rama);
-  return git(root, ['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${corta}`]) || git(root, ['rev-parse', '--verify', '--quiet', `refs/heads/${corta}`]) || null;
+  return puntaDelRemoto(root, corta) || git(root, ['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${corta}`]) || git(root, ['rev-parse', '--verify', '--quiet', `refs/heads/${corta}`]) || null;
+}
+// Lo que contesta `origin` por esa rama, o null. SIEMPRE sin interacción y con tope corto: corre después de abrir el
+// pedido, y una clave que nadie puede tipear acá no tiene que colgar la herramienta (mismo cuidado que public-push-guard.js).
+// TYCON_RETRO_ASK_REMOTE=0 la apaga (las pruebas y el banco: sus repos de juguete no tienen un remoto que conteste).
+const REMOTO_MS = 5000;
+function puntaDelRemoto(root, corta) {
+  if (process.env.TYCON_RETRO_ASK_REMOTE === '0') return null;
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'GIT_ASKPASS' && k !== 'SSH_ASKPASS'));
+  const ssh = env.GIT_SSH_COMMAND || git(root, ['config', '--get', 'core.sshCommand']) || (env.GIT_SSH ? `"${env.GIT_SSH}"` : 'ssh');
+  Object.assign(env, { LC_ALL: 'C', LANG: 'C', GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never',
+    GIT_SSH_COMMAND: `${ssh} ${/plink/i.test(ssh) ? '-batch' : '-oBatchMode=yes -oConnectTimeout=5'}` });
+  const preguntar = (args) => {
+    try { return execFileSync('git', ['-C', root, '-c', 'core.askPass=', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: REMOTO_MS, env }).trim(); }
+    catch { return null; }
+  };
+  const ref = `refs/heads/${corta}`;
+  const linea = String(preguntar(['ls-remote', 'origin', ref]) || '').split('\n').map((l) => l.split('\t')).find((p) => p.length === 2 && p[1].trim() === ref);
+  const sha = linea && /^[0-9a-f]{40,64}$/.test(linea[0].trim()) ? linea[0].trim() : null;
+  if (!sha) return null;
+  if (gitOrNull(root, ['cat-file', '-e', `${sha}^{commit}`]) === null) preguntar(['fetch', '--quiet', '--no-tags', 'origin', `+${ref}:refs/remotes/origin/${corta}`]);
+  return sha;
 }
 // La punta de la rama en la que está la carpeta, para el pedido que no nombra su rama; null con HEAD suelto.
 function puntaDeLaRamaActual(root) {
@@ -246,14 +269,120 @@ function carpetaPrincipal(root) {
 // los restos de una copia adentro de otro repo le contestan a git con la raíz de ese otro. Se calcula una vez por proceso:
 // corre por cada entrada pendiente, en cada cierre de turno.
 const vigentes = new Map();
+const esRaiz = (d) => { const r = raizGit(d); return Boolean(r) && real(r) === real(d); };
 function carpetaVigente(e) {
-  if (!e.principal) return e.repoPath;
-  const clave = `${e.repoPath}|${e.principal}`;
+  const clave = `${e.repoPath}|${e.principal || ''}|${e.sha}`;
   if (!vigentes.has(clave)) {
-    const esRaiz = (d) => { const r = raizGit(d); return Boolean(r) && real(r) === real(d); };
-    vigentes.set(clave, !esRaiz(e.repoPath) && esRaiz(e.principal) ? e.principal : e.repoPath);
+    let dir = e.repoPath;
+    if (e.principal) dir = !esRaiz(e.repoPath) && esRaiz(e.principal) ? e.principal : e.repoPath;
+    else if (!esRaiz(e.repoPath)) dir = principalPorNombre(e) || e.repoPath;
+    vigentes.set(clave, dir);
   }
   return vigentes.get(clave);
+}
+// La carpeta principal de una entrada que no la anotó (anterior al campo `principal`) y cuya copia ya no es un repo: el
+// hermano con el nombre sin el sufijo de copia (`--slot-N`, `--wt-…`, `--merge`). Vale sólo si es un repo y tiene el
+// commit de la entrada: un nombre parecido no alcanza.
+const SUFIJO_DE_COPIA = /--(merge|wt-[^\\/]*|slot-\d+)$/;
+function principalPorNombre(e) {
+  const ruta = String(e.repoPath || '');
+  const base = path.basename(ruta);
+  if (!SUFIJO_DE_COPIA.test(base)) return null;
+  const hermano = path.join(path.dirname(ruta), base.replace(SUFIJO_DE_COPIA, ''));
+  return esRaiz(hermano) && gitOrNull(hermano, ['cat-file', '-e', `${e.sha}^{commit}`]) !== null ? hermano : null;
+}
+
+// ── las correcciones de una entrada ──────────────────────────────────────────────────────────────
+// Una entrada que anotó el commit equivocado (un pedido abierto con la rama de origen vieja en esta copia) no se borra:
+// una persona dice cuál era el commit de verdad, con su motivo, y queda anotado quién y cuándo. Desde ahí la entrada
+// pide la retrospectiva del commit real. La corrección es otro renglón del mismo registro, sin `repoPath` ni `sha`: los
+// lectores que no la conocen (el comando de la skill de merge, `--report`) la saltean.
+function correcciones(lineas) {
+  const porEntrada = new Map();
+  for (const c of lineas) if (c && c.tipo === 'correccion' && c.entrada && c.real) porEntrada.set(`${c.entrada.repo}@${c.entrada.sha}`, c);
+  return porEntrada;
+}
+// Las entradas del registro con su corrección aplicada (la última, si hubo más de una).
+function entradasCorregidas() {
+  const lineas = readJsonl(LEDGER);
+  const porEntrada = correcciones(lineas);
+  return lineas.filter((e) => e && e.repoPath && e.sha).map((e) => {
+    const c = porEntrada.get(`${e.repoPath}@${e.sha}`);
+    if (!c) return e;
+    // la carpeta desde donde se corrigió hace de principal de una entrada que no tenía una
+    const principal = e.principal || (c.carpeta && real(c.carpeta) !== real(e.repoPath) ? c.carpeta : undefined);
+    return { ...e, sha: c.real, ...(principal ? { principal } : {}), corregida: { de: e.sha, motivo: c.motivo, quien: c.quien, ts: c.ts } };
+  });
+}
+
+// ¿El commit de la entrada ya estaba en la rama destino antes de abrir el pedido? Pasa cuando la copia tenía la rama de
+// origen atrasada: el pedido anotó un commit viejo, que ninguna retrospectiva de este merge va a cubrir. Sólo se avisa;
+// lo corrige una persona. Sólo para pedidos (un push a main anota lo que acaba de subir) y sólo si se puede leer en git.
+const RE_PEDIDO = /\bpr\s+(create|new)\b|change-request/;
+function yaEstabaEnMain(e) {
+  if (e.corregida || !RE_PEDIDO.test(String(e.cmd || ''))) return false;
+  const t = Date.parse(e.ts);
+  if (!t) return false;
+  const dir = carpetaVigente(e);
+  if (!esRaiz(dir)) return false;
+  const destino = ramaCorta(e.branch) || 'main';
+  const ref = gitOrNull(dir, ['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${destino}`]) ? `origin/${destino}` : destino;
+  const antes = gitOrNull(dir, ['rev-list', '-1', '--first-parent', `--before=${new Date(t).toISOString()}`, ref]);
+  return Boolean(antes) && gitOrNull(dir, ['merge-base', '--is-ancestor', e.sha, antes]) !== null;
+}
+function comandoDeCorregir(e) {
+  return `node "${__filename}" --correct --repo "${e.repoPath}" --sha ${e.sha} --real <commit del pedido> --reason "<por qué>"`;
+}
+const avisoYaEnMain = (e) => (yaEstabaEnMain(e) ? `\n      ⚠ ese commit ya estaba en ${ramaCorta(e.branch) || 'main'} antes del pedido: la entrada puede haber anotado una rama de origen vieja. Si es así, la corrige una persona con el commit real: ${comandoDeCorregir(e)}` : '');
+
+/**
+ * `--correct --sha <anotado> --real <commit> --reason "<texto>" [--repo <carpeta>]`: agrega la corrección de UNA
+ * entrada. Busca en todo el registro, también las entradas que hoy no se reclaman (viejas o de otra carpeta). `--repo`
+ * elige entre entradas con la misma sha: la carpeta anotada, o su principal. El commit real tiene que existir en el repo
+ * de la entrada: la corrección es una constancia, no una suposición.
+ */
+function corregir(argv) {
+  const valor = (n) => { const i = argv.indexOf(n); return i >= 0 && argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[i + 1] : null; };
+  const salir = (msg) => { process.stderr.write(`retro-pending --correct: ${msg}\n`); process.exitCode = 2; };
+  const sha = valor('--sha');
+  const realArg = valor('--real');
+  const motivo = String(valor('--reason') || '').trim();
+  const repo = valor('--repo');
+  if (!sha || !realArg || !motivo) return salir('uso: --correct --sha <anotado> --real <commit> --reason "<por qué>" [--repo <carpeta>]');
+  const prefijo = (a, b) => a.length >= 7 && b.length >= 7 && (a.startsWith(b) || b.startsWith(a));
+  const lineas = readJsonl(LEDGER);
+  let cand = lineas.filter((e) => e && e.repoPath && e.sha && !e.exento && prefijo(String(e.sha), sha));
+  if (repo) {
+    const r = real(path.resolve(repo));
+    const exactas = cand.filter((e) => real(e.repoPath) === r);
+    cand = exactas.length ? exactas : cand.filter((e) => (e.principal && real(e.principal) === r) || real(carpetaVigente(e)) === r);
+  }
+  // dos renglones de la misma entrada (mismo repo y sha) son una sola
+  cand = [...new Map(cand.map((e) => [`${e.repoPath}@${e.sha}`, e])).values()];
+  if (!cand.length) return salir(`ninguna entrada que pida retrospectiva con la sha ${sha}${repo ? ` en ${repo}` : ''}`);
+  if (cand.length > 1) return salir(`hay ${cand.length} entradas con la sha ${sha}: elegí una con --repo <carpeta anotada>:\n${cand.map((e) => `  - ${e.repoPath} (${String(e.ts || '').slice(0, 16)}, ${e.cmd || ''})`).join('\n')}`);
+  const e = cand[0];
+  // la carpeta de la entrada, o su principal; si ninguna está, la carpeta desde donde se corre, si es un repo con ese commit
+  const desdeAca = raizGit(process.cwd());
+  const dir = esRaiz(carpetaVigente(e)) ? carpetaVigente(e)
+    : desdeAca && gitOrNull(desdeAca, ['cat-file', '-e', `${e.sha}^{commit}`]) !== null ? desdeAca : null;
+  if (!dir) return salir(`la carpeta de la entrada (${e.repoPath}) ya no es un repo y no encontré su principal: corré el comando desde la carpeta principal del repo (la que tiene el commit ${e.sha})`);
+  const completo = gitOrNull(dir, ['rev-parse', '--verify', '--quiet', `${realArg}^{commit}`]);
+  if (!completo) return salir(`el commit ${realArg} no existe en ${dir}: traé la rama (git fetch) o revisá la sha`);
+  // el commit real viene después del anotado (el pedido mergeó una punta que ya lo traía): sin eso, una corrección podría
+  // saldar la entrada con cualquier commit que ya tenga su retrospectiva
+  if (gitOrNull(dir, ['merge-base', '--is-ancestor', e.sha, completo]) === null) return salir(`el commit ${realArg} no trae al anotado (${e.sha}): la corrección apunta al commit que el pedido mergeó, que lo contiene`);
+  const quien = git(dir, ['config', '--get', 'user.name']) || (() => { try { return os.userInfo().username; } catch { return null; } })() || 'sin nombre';
+  const c = { ts: new Date().toISOString(), tipo: 'correccion', entrada: { repo: e.repoPath, sha: e.sha, ts: e.ts }, real: completo.slice(0, 12), motivo, quien, carpeta: dir, sesion: sessionIdOf({}) };
+  // el catch de `main` se traga todo (un gancho no rompe nada): una corrección que no se pudo escribir se dice acá
+  try {
+    fs.mkdirSync(STATE_DIR, { recursive: true });
+    fs.appendFileSync(LEDGER, JSON.stringify(c) + '\n', 'utf8');
+  } catch (err) {
+    return salir(`no pude escribir la corrección en el registro ${LEDGER} (${err.code || err.message}): no se corrigió nada`);
+  }
+  const corregida = entradasCorregidas().find((x) => x.repoPath === e.repoPath && x.corregida && x.corregida.de === e.sha) || { ...e, sha: c.real };
+  process.stdout.write(`retro-pending: la entrada ${e.repoPath} @ ${e.sha} queda corregida a ${c.real} (${quien}: ${motivo}). La entrada no se borra; ahora pide la retrospectiva de ${c.real}: ${launchHint(corregida)}\n`);
 }
 
 // ── cubierto por una retrospectiva? (metrics-*.json con repo + merge_commit) ─────────────────────
@@ -290,8 +419,7 @@ function coveredByMetrics(entry) {
 function pendingEntries() {
   const seen = new Set();
   const out = [];
-  for (const e of readJsonl(LEDGER)) {
-    if (!e || !e.repoPath || !e.sha) continue;
+  for (const e of entradasCorregidas()) {
     // Exento (sólo tests/docs): contado, nunca reclamado — ni por el gate ni por el aviso.
     if (e.exento) continue;
     const key = `${real(e.repoPath)}@${e.sha}`;
@@ -311,8 +439,7 @@ function contarVentana(dias) {
   const desde = Date.now() - dias * 86400000;
   const seen = new Set();
   const c = { dias, conRetro: 0, exentos: 0, pendientes: 0, exentas: [] };
-  for (const e of readJsonl(LEDGER)) {
-    if (!e || !e.repoPath || !e.sha) continue;
+  for (const e of entradasCorregidas()) {
     const t = Date.parse(e.ts);
     if (!t || t < desde) continue;
     const key = `${real(e.repoPath)}@${e.sha}`;
@@ -488,7 +615,7 @@ function record(event) {
   let pedidoSinUbicar = false;
   for (const p of pedidosGh) {
     if (!p.resuelto) { pedidoSinUbicar = true; continue; }
-    const e = anotar(event, cmd, { dir: p.dir, st: cmd }, { isPrCreate: true, prTarget: p.target, sha: p.sha });
+    const e = anotar(event, cmd, { dir: p.dir, st: cmd }, { isPrCreate: true, prTarget: p.target, sha: p.sha, origen: p.origen });
     if (e) anotadas.push(e);
   }
   // 🔴 Cada entrega se juzga por SÍ MISMA. Un dedup por directorio descartaría entregas
@@ -499,7 +626,7 @@ function record(event) {
   // No hace falta dedup: `anotar` ya se niega a repetir una entry con el mismo repoPath + sha.
   for (const p of puntos) {
     if (!p.resuelto) { irresoluble = true; continue; }
-    const e = anotar(event, cmd, p, { isPrCreate, prTarget, sha: p.sha, punta: p.punta });
+    const e = anotar(event, cmd, p, { isPrCreate, prTarget, sha: p.sha, punta: p.punta, origen: p.origen });
     if (e) anotadas.push(e);
   }
   // "No pude saber a qué repo fue" no se publica como si fuera el repo de la sesión — que es
@@ -694,7 +821,8 @@ function pedidoDeUnaSentencia(s) {
     // Sin la rama de --source-branch en este clon, la punta es la de HEAD, y la entrada lo dice (`punta`): puede no ser
     // lo que se mergea. No es un «no sé» que frene: HEAD es la mejor punta conocida y el merge sí fue de este repo.
     const punta = sha ? null : (legible ? `HEAD: la rama ${fuente} no está en este clon` : 'HEAD: el pedido no nombra --source-branch legible');
-    return { resuelto: true, dir: root, st: s.st, sha, punta };
+    const origen = legible ? ramaCorta(fuente) : (fuente ? null : git(root, ['rev-parse', '--abbrev-ref', 'HEAD']) || null);
+    return { resuelto: true, dir: root, st: s.st, sha, punta, origen };
   }
 }
 
@@ -767,7 +895,8 @@ function pedidosDeGh(cmd, cwd, powershell) {
       if (porDefecto && !/^(main|master)$/.test(porDefecto)) continue;
       target = porDefecto || 'main';
     }
-    out.push({ resuelto: true, dir: root, target, sha: puntaPropia || (c.head || c.headDesconocida ? null : puntaDeLaRamaActual(root)) });
+    out.push({ resuelto: true, dir: root, target, sha: puntaPropia || (c.head || c.headDesconocida ? null : puntaDeLaRamaActual(root)),
+      origen: c.head || c.headDesconocida ? (propia ? ramaCorta(propia) : null) : rama });
   }
   return out;
 }
@@ -806,7 +935,8 @@ function pedidosDeCapa(cmd, cwd) {
     const origen = identidadRemoto(git(root, ['remote', 'get-url', 'origin']));
     if (!quiere || !origen || origen.ruta !== quiere) { out.push({ resuelto: false }); continue; }
     const rama = typeof args.sourceBranch === 'string' ? ramaCorta(args.sourceBranch) : null;
-    out.push({ resuelto: true, dir: root, target: ramaCorta(args.targetBranch), sha: rama ? puntaDeLaRama(root, rama) : puntaDeLaRamaActual(root) });
+    out.push({ resuelto: true, dir: root, target: ramaCorta(args.targetBranch), sha: rama ? puntaDeLaRama(root, rama) : puntaDeLaRamaActual(root),
+      origen: rama || git(root, ['rev-parse', '--abbrev-ref', 'HEAD']) || null });
   }
   return out;
 }
@@ -852,7 +982,11 @@ function anotar(event, cmd, punto, ctx) {
     ? (ctx.sha || git(root, ['rev-parse', 'HEAD']))
     : (git(root, ['rev-parse', `origin/${target}`]) || git(root, ['rev-parse', target]) || git(root, ['rev-parse', 'HEAD']));
   if (!sha) return null;
-  const entry = { ts: new Date().toISOString(), sessionId: sessionIdOf(event), repoPath: root, sha: sha.slice(0, 12), branch: target, cmd: cmd.slice(0, 120) };
+  // `branch` es la rama DESTINO; la de origen va aparte, antes de `cmd` (quien lee el registro espera `cmd` al final de
+  // la entrada que pide retrospectiva). Un pedido sin la rama a la vista no la inventa.
+  const origen = ctx.isPrCreate ? ctx.origen : branch;
+  const entry = { ts: new Date().toISOString(), sessionId: sessionIdOf(event), repoPath: root, sha: sha.slice(0, 12), branch: target,
+    ...(origen && origen !== 'HEAD' ? { origen } : {}), cmd: cmd.slice(0, 120) };
   if (juicio && juicio.exento) Object.assign(entry, { exento: juicio.exento, motivo: juicio.motivo, commits: juicio.commits, archivos: juicio.archivos.slice(0, 40) });
   if (ctx.isPrCreate && !ctx.sha && ctx.punta) entry.punta = ctx.punta;   // la punta cayó a HEAD, dicho
   const principal = carpetaPrincipal(root);
@@ -1002,14 +1136,14 @@ function gate(event) {
   const lines = [];
   if (mine.length) {
     lines.push(`  Merges de ESTA sesión sin su archivo (${mine.length}):`);
-    for (const e of mine) lines.push(`    - ${e.repoPath} @ ${e.sha} (${cuando(e)}) → ${launchHint(e)}`);
+    for (const e of mine) lines.push(`    - ${e.repoPath} @ ${e.sha} (${cuando(e)}) → ${launchHint(e)}${avisoYaEnMain(e)}`);
   }
   if (foreign.length) {
     const grupos = porRepo(foreign);
     lines.push(`  Repo(s) con merge(s) de OTRA sesión sin su archivo (${grupos.length}):`);
     for (const [primero, ...resto] of grupos) {
-      lines.push(`    - ${primero.repoPath} @ ${primero.sha} (${cuando(primero)}) → ${launchHint(primero)}`);
-      resto.forEach((e, i) => lines.push(`      ${i === 0 ? `y ${resto.length} más en ese repo: ` : '· '}${e.sha} (${cuando(e)}) → ${launchHint(e)}`));
+      lines.push(`    - ${primero.repoPath} @ ${primero.sha} (${cuando(primero)}) → ${launchHint(primero)}${avisoYaEnMain(primero)}`);
+      resto.forEach((e, i) => lines.push(`      ${i === 0 ? `y ${resto.length} más en ese repo: ` : '· '}${e.sha} (${cuando(e)}) → ${launchHint(e)}${avisoYaEnMain(e)}`));
     }
   }
   // El contador sube DESPUÉS de armar el mensaje: si algo revienta al renderizar, el catch global
@@ -1060,7 +1194,7 @@ function notice(event) {
     if (cuerpo) emitir(cuerpo);
     return;
   }
-  const lines = local.map((e) => `  - ${e.repoPath} @ ${e.sha} (${String(e.ts || '').slice(0, 16)})`);
+  const lines = local.map((e) => `  - ${e.repoPath} @ ${e.sha} (${String(e.ts || '').slice(0, 16)})${avisoYaEnMain(e)}`);
   const scopeLabel = scopeAll ? '' : ' de ESTE proyecto';
   process.stdout.write(`<system-reminder>\n🔴 retro-pending: ${local.length} merge(s) a main${scopeLabel} SIN retrospectiva (ningún metrics-*.json cubre ese repo+commit):\n${lines.join('\n')}\nLanzá el latido por cada uno, un segundo y sin modelo (${launchHint(local[0])}).${foreignLine ? '\n' + foreignLine : ''}${cuentaLine ? '\n' + cuentaLine : ''} Off: TYCON_RETRO_PENDING=0.\n</system-reminder>\n`);
 }
@@ -1076,12 +1210,14 @@ function main() {
   }
   // A mano, sin stdin: `--report` rinde la cuenta de la ventana (30 días, `--days N`) con las exenciones
   // una por una; `--judge [dir]` dice qué haría este hook con el ÚLTIMO push a main de ese repo (el
-  // mismo criterio, para que el paso 10b del skill de merge pregunte en vez de decidir por su cuenta).
+  // mismo criterio, para que el paso 10b del skill de merge pregunte en vez de decidir por su cuenta); `--correct`
+  // anota el commit real de una entrada que anotó otro, con quién y por qué (ver `corregir`).
   if (process.argv.includes('--report')) {
     const i = process.argv.indexOf('--days');
     process.stdout.write(JSON.stringify(contarVentana(i >= 0 ? Number(process.argv[i + 1]) || 30 : 30), null, 2) + '\n');
     return;
   }
+  if (process.argv.includes('--correct')) return corregir(process.argv);
   if (process.argv.includes('--judge')) {
     const i = process.argv.indexOf('--judge');
     const dir = process.argv[i + 1] && !process.argv[i + 1].startsWith('--') ? process.argv[i + 1] : process.cwd();

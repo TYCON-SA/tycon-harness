@@ -3969,6 +3969,12 @@
       "requiere": []
     },
     {
+      "__nota": "las entradas del reclamo de la retrospectiva que anotaron el commit equivocado (scripts/hooks/retro-pending.js): la punta que contesta el remoto al abrir el pedido, la rama de origen, la corrección con quién y por qué (--correct), el aviso de «ya estaba en main» y la carpeta principal por nombre. Repos de juguete con git de verdad y un remoto en una carpeta. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/retro-pending-correct.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la revisión de la semana (scripts/nightly/weekly-review/weekly-review.js): repos de juguete con git de verdad y un agente inyectado; la semana, el tope, la regla de patrón, la lista de propuestas, «no pude leer», el disparador del examen, el resumen de la mañana y la clave weekly_review. Sin red y sin modelo.",
       "raiz": "arnes",
       "ruta": "tests/weekly-review.test.js",
