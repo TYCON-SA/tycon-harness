@@ -179,7 +179,8 @@ El mismo aviso trae dos cosas más:
 - **La fila de la suite completa, parada.** Si no corre ninguna suite completa y alguna sesión anotó que espera turno
   (`marker.js doing --waiting-for` con «suite», «portón» o «turno»), sale «no corre ninguna suite completa y hay N
   esperando turno: dale el «arrancá» a X», con X la que espera hace más. Sin esa nota no sale: una sesión quieta no está
-  esperando turno. `status` muestra la fila entera.
+  esperando turno. La espera de un pase no cuenta: el pase corre en la nube, con su propio turno. `status` muestra la
+  fila entera.
 
 ## Lo pesado, con turno: la suite completa y los pases adversariales
 
