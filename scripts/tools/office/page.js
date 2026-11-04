@@ -121,8 +121,8 @@ function pintarTarjetas(c,list,alTocar){c.replaceChildren();
 function numeroDe(i){return i&&typeof i.numero==="string"?i.numero:""}
 // a quién espera la mano levantada: la que anotó la sesión, o el dueño si su pantalla espera una firma o una pregunta
 function manoDe(a){return a&&(a.mano||(a.estado==="firma"||a.estado==="pregunta"?"dueno":null))}
-// el cartel que sostiene en alto quien espera: su texto y su color, que es también el del aro del piso
-function cartelDe(m){return m==="coordinadora"?{texto:"Coordinadora",color:"#5aa9ff"}:m==="dueno"?{texto:"Tu firma",color:"#ffa53d"}:null}
+// el globito que flota sobre quien espera: su ícono y su color, que es también el del aro del piso
+function globoDe(m){return m==="coordinadora"?{icono:"✋",color:"#5aa9ff"}:m==="dueno"?{icono:"✋",color:"#ffa53d"}:null}
 // con qué modelo y qué esfuerzo corre una sesión: «Opus 5.5 · High», con «sin dato» en lo que no se leyó; nada en la foto fija
 function modeloDe(a){return a&&(a.modelo||a.esfuerzo)?(a.modelo||"sin dato")+" · "+(a.esfuerzo||"sin dato"):""}
 function ficha(a){const r=[],add=(k,v,x)=>{if(v!=null&&v!=="")r.push({k,v,...x})};
@@ -499,11 +499,10 @@ function crearPuesto(agent,i,slot){
   // aviso en el piso cuando espera la firma del dueño
   const ring=add(new THREE.RingGeometry(.55,.68,40),new THREE.MeshBasicMaterial({color:"#ffa53d",transparent:true,opacity:.0,toneMapped:false,side:THREE.DoubleSide}),0,.02,.18,st,false);ring.rotation.x=-Math.PI/2;
   const hit=new THREE.Mesh(new THREE.BoxGeometry(1.2,1.8,1.4),new THREE.MeshBasicMaterial({visible:false}));hit.position.set(0,.9,0);st.add(hit);
-  // el cartel en alto: un palo desde la mano levantada y una tabla sobre la cabeza, que mira siempre a la cámara
-  const cartel=new THREE.Group();cartel.position.set(.43,0,.18);cartel.visible=false;st.add(cartel);
-  add(new THREE.CylinderGeometry(.025,.025,.75,8),M("#6a4a2a",{r:.6}),0,1.85,0,cartel);
-  const tablaTex=canvasTex(520,248,()=>{}),tabla=add(new THREE.PlaneGeometry(1.3,.62),new THREE.MeshBasicMaterial({map:tablaTex,transparent:true,toneMapped:false}),0,2.4,0,cartel,false);
-  return {st,screen:scr,person:p,hit,ring,cartel,tabla,tablaTex,agent,ropa,anchor:new THREE.Vector3(0,1.85,.18),headP:new THREE.Vector3(0,1.5,.2),t0:i*1.7};
+  // el globito sobre la cabeza: un círculo que mira siempre a la cámara
+  const globoTex=canvasTex(256,256,()=>{}),globo=new THREE.Sprite(new THREE.SpriteMaterial({map:globoTex,transparent:true,toneMapped:false}));
+  globo.position.set(0,2.35,.18);globo.visible=false;st.add(globo);
+  return {st,screen:scr,person:p,hit,ring,globo,globoTex,agent,ropa,anchor:new THREE.Vector3(0,1.85,.18),headP:new THREE.Vector3(0,1.5,.2),t0:i*1.7};
 }
 function crearPersonaje(a,ropa){
   const g=new THREE.Group(),skin=M(a.piel,{r:.6}),hood=M(ropa,{r:.8}),pants=M("#2d3550",{r:.8}),dark=M("#1c1c24",{r:.5});
@@ -547,22 +546,20 @@ function animar(d,t){const {up,head,arms}=d.person.userData,e=d.agent.estado,k=t
   else if(e==="espera"){lean=-.2+Math.sin(k*1.4)*.02;armL=armR=1.0;zL=.2;zR=-.2;hx=-.1;hy=Math.sin(k*.5)*.15}
   else if(e==="libre"){lean=-.24;armL=armR=1.0;zL=.2;zR=-.2;hx=.3+Math.sin(k*1.2)*.03}
   else if(e==="parada"){lean=-.16;armL=armR=1.05;zL=.18;zR=-.18;hx=.02;hy=Math.sin(k*.4)*.1}
-  // quien espera sostiene el cartel: el brazo sube de costado, girando sobre el hombro, hasta el palo
-  // (un giro hacia adelante lo deja detrás de la cabeza)
-  const cartel=cartelDe(manoDe(d.agent));if(cartel){armR=0;zR=2.75;armL=1.2;lean=-.05;hx=-.15;hy=.3}
-  ponerCartel(d,cartel,k);
+  const globo=globoDe(manoDe(d.agent));ponerGlobo(d,globo,k);
   const ease=(o,v)=>o+(v-o)*.15;up.rotation.x=ease(up.rotation.x,-lean);up.scale.y=1+Math.sin(k*2.2)*.012;
   arms[0].rotation.x=ease(arms[0].rotation.x,armL);arms[1].rotation.x=ease(arms[1].rotation.x,armR);arms[0].rotation.z=ease(arms[0].rotation.z,zL);arms[1].rotation.z=ease(arms[1].rotation.z,zR);
   head.rotation.x=ease(head.rotation.x,-hx);head.rotation.y=ease(head.rotation.y,hy);
-  d.ring.material.color.set((cartel||cartelDe("dueno")).color);d.ring.material.opacity=cartel?.45+.4*Math.sin(t*5):0}
-// el cartel de una persona: se pinta cuando cambia su texto, mira a la cámara, y la etiqueta sube por encima de la tabla
-// para no taparla; las de los demás lo esquivan como esquivan una cabeza
-function ponerCartel(d,c,k){d.cartel.visible=Boolean(c);d.anchor.set(0,c?3.1:1.85,.18);d.headP.set(c?.43:0,c?2.5:1.5,c?.18:.2);if(!c){d.cartelTxt="";return}
-  if(d.cartelTxt!==c.texto){d.cartelTxt=c.texto;const {c:cv,g}=d.tablaTex.userData,w=cv.width,h=cv.height;g.clearRect(0,0,w,h);
-    g.fillStyle="#1b1424";g.fillRect(0,0,w,h);g.fillStyle=c.color;g.fillRect(8,8,w-16,h-16);
-    g.fillStyle="#1b1424";g.textAlign="center";g.textBaseline="middle";let fs=190;g.font="900 "+fs+"px "+FONT;
-    while(fs>40&&g.measureText(c.texto).width>w-36){fs-=6;g.font="900 "+fs+"px "+FONT}g.fillText(c.texto,w/2,h/2+fs*.05);d.tablaTex.needsUpdate=true}
-  d.tabla.quaternion.copy(d.st.quaternion).invert().multiply(cam.quaternion);d.tabla.position.y=2.5+Math.sin(k*3)*.03}
+  d.ring.material.color.set((globo||globoDe("dueno")).color);d.ring.material.opacity=globo?.45+.4*Math.sin(t*5):0}
+// el globito de una persona: se pinta cuando cambia su color, flota y late; la etiqueta sube por encima para no taparlo y
+// las de los demás lo esquivan como esquivan una cabeza
+function ponerGlobo(d,b,k){d.globo.visible=Boolean(b);d.anchor.set(0,b?2.95:1.85,.18);d.headP.set(0,b?2.35:1.5,b?.18:.2);if(!b){d.globoColor="";return}
+  if(d.globoColor!==b.color){d.globoColor=b.color;const {c:cv,g}=d.globoTex.userData,w=cv.width,h=cv.height,r=w/2-10;g.clearRect(0,0,w,h);
+    g.beginPath();g.arc(w/2,h/2+4,r,0,Math.PI*2);g.fillStyle="rgba(0,0,0,.35)";g.fill();
+    g.beginPath();g.arc(w/2,h/2,r,0,Math.PI*2);g.fillStyle="#ffffff";g.fill();
+    g.beginPath();g.arc(w/2,h/2,r-14,0,Math.PI*2);g.fillStyle=b.color;g.fill();
+    g.textAlign="center";g.textBaseline="middle";g.font="150px "+FONT;g.fillText(b.icono,w/2,h/2+8);d.globoTex.needsUpdate=true}
+  const late=.7*(1+.1*Math.sin(k*5));d.globo.scale.set(late,late,1);d.globo.position.y=2.35+Math.sin(k*2)*.06}
 
 // ---------- etiquetas ----------
 let desks=[],sel=null;
@@ -596,8 +593,8 @@ function ubicarTags(){const W=stage.clientWidth,H=stage.clientHeight,cmp=stage.c
     for(let up=0;up<8&&!pos;up++)for(const [dx,dy] of cands){const x=Math.min(Math.max(p.ax+dx,p.w/2+2),W-p.w/2-2),y=p.ay+dy-up*(p.h*.5+4);if(!choca(x,y,p.w,p.h,p)){pos=[x,y];break}}
     if(!pos)pos=[p.ax,p.ay];puestos.push({x:pos[0],y:pos[1],w:p.w,h:p.h});
     const el=p.d.el,beside=Math.abs(pos[0]-p.ax)>p.w/4;el.style.left=pos[0]+"px";el.style.top=pos[1]+"px";el.style.setProperty("--stem",beside?"0px":Math.max(0,p.ay-pos[1])+"px");el.style.zIndex=String(Math.round(p.ay));
-    // dónde quedó el cartel en la pantalla, para comprobar que ninguna etiqueta lo tapa
-    el.setAttribute("data-cartel",p.d.cartel.visible?Math.round(p.hx)+","+Math.round(p.hy):"")})}
+    // dónde quedó el globito en la pantalla, para comprobar que ninguna etiqueta lo tapa
+    el.setAttribute("data-globo",p.d.globo.visible?Math.round(p.hx)+","+Math.round(p.hy):"")})}
 
 // ---------- detalle de la sesión: la misma ficha que su tarjeta ----------
 // `foto`: lo pidió una foto nueva, no un toque. Mantiene lo que se estaba leyendo y no vuelve a pedir la conversación.

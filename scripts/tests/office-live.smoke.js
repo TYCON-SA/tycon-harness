@@ -185,23 +185,23 @@ async function taskNumbers(playwright) {
     // el brazo sube de a poco y la sala quieta dibuja pocas veces por segundo: la captura espera a que termine de subir
     await sleep(4000);
     await shot(page, 'e8-manos', page.locator('#stage'));
-    // E10: el cartel, con la oficina entera a la vista y sin acercar: está dibujado y ninguna etiqueta lo tapa
+    // E10: el globito, con la oficina entera a la vista y sin acercar: está dibujado y ninguna etiqueta lo tapa
     const tapado = await page.evaluate(() => {
       const tags = [...document.querySelectorAll('.tag')];
       return ['Rita', 'Pinola'].map((who) => {
         const t = tags.find((e) => e.textContent.includes(who));
-        const [x, y] = String(t && t.getAttribute('data-cartel') || '').split(',').map(Number);
-        if (!Number.isFinite(x) || !Number.isFinite(y)) return `${who}: sin cartel`;
+        const [x, y] = String(t && t.getAttribute('data-globo') || '').split(',').map(Number);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return `${who}: sin globito`;
         const encima = tags.filter((e) => { const r = e.getBoundingClientRect(), s = e.offsetParent.getBoundingClientRect(); return x + s.left >= r.left && x + s.left <= r.right && y + s.top >= r.top && y + s.top <= r.bottom; });
         return encima.length ? `${who}: lo tapa ${encima.map((e) => e.querySelector('b,strong,.n')?.textContent || 'una etiqueta').join(', ')}` : '';
       }).filter(Boolean);
     });
-    check(tapado.length === 0, `E10: los carteles de Rita y Pinola se ven, sin etiqueta encima${tapado.length ? ` (${tapado.join(' · ')})` : ''}`);
+    check(tapado.length === 0, `E10: los globitos de Rita y Pinola se ven, sin etiqueta encima${tapado.length ? ` (${tapado.join(' · ')})` : ''}`);
     if (shots) {
       await page.locator('#stage').evaluate((e) => e.scrollIntoView({ block: 'start' }));
-      await page.screenshot({ path: path.join(shots, 'e10-cartel-oficina.png') });
+      await page.screenshot({ path: path.join(shots, 'e10-globo-oficina.png') });
       const tag = await page.locator('.tag', { hasText: 'Rita' }).boundingBox();
-      await page.screenshot({ path: path.join(shots, 'e10-cartel-de-cerca.png'), clip: { x: Math.max(0, tag.x - 40), y: tag.y, width: Math.max(320, tag.width + 80), height: 300 } });
+      await page.screenshot({ path: path.join(shots, 'e10-globo-de-cerca.png'), clip: { x: Math.max(0, tag.x - 40), y: tag.y, width: Math.max(320, tag.width + 80), height: 300 } });
     }
     await page.locator('.tag', { hasText: 'Rita' }).click();
     await page.waitForSelector('#panel:not([hidden])');

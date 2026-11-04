@@ -722,35 +722,36 @@ test('T57 Mano_Baja_FirmaHechaOEsperaVencida — @story-8.198 @ac-50 @ac-53', ()
   assert.ok(!other.data.agents.find((a) => a.nombre === 'Sand').mano);
 });
 
-// ── El cartel en alto ───────────────────────────────────────────────────────────────────────────────────────────
-// la función del cartel, sacada de la página y corrida: es una sola línea, sin nada de la sala
-function cartelDePagina() {
+// ── El globito sobre la cabeza ──────────────────────────────────────────────────────────────────────────────────
+// la función del globito, sacada de la página y corrida: es una sola línea, sin nada de la sala
+function globoDePagina() {
   const code = fs.readFileSync(path.join(__dirname, '..', 'tools', 'office', 'page.js'), 'utf8');
-  const linea = code.split('\n').find((l) => l.startsWith('function cartelDe('));
-  assert.ok(linea, 'page.js tiene cartelDe en una línea');
-  return { code, cartelDe: new Function(`${linea}\nreturn cartelDe;`)() };
+  const linea = code.split('\n').find((l) => l.startsWith('function globoDe('));
+  assert.ok(linea, 'page.js tiene globoDe en una línea');
+  return { code, globoDe: new Function(`${linea}\nreturn globoDe;`)() };
 }
 
-test('T58 Cartel_TextoYColorPorAQuienEspera — @story-8.198 @ac-59', () => {
-  const { code, cartelDe } = cartelDePagina();
-  assert.deepStrictEqual(cartelDe('dueno'), { texto: 'Tu firma', color: '#ffa53d' });
-  assert.deepStrictEqual(cartelDe('coordinadora'), { texto: 'Coordinadora', color: '#5aa9ff' });
-  assert.strictEqual(cartelDe(null), null);
-  assert.strictEqual(cartelDe(undefined), null);
-  // el aro del piso toma el color del cartel, y el brazo ya no se levanta
-  assert.match(code, /d\.ring\.material\.color\.set\([^)]*cartelDe\(/);
-  assert.doesNotMatch(code, /zR=2\.55/);
+test('T58 Globo_ColorPorAQuienEspera — @story-8.198 @ac-59', () => {
+  const { code, globoDe } = globoDePagina();
+  assert.deepStrictEqual(globoDe('dueno'), { icono: '✋', color: '#ffa53d' });
+  assert.deepStrictEqual(globoDe('coordinadora'), { icono: '✋', color: '#5aa9ff' });
+  assert.strictEqual(globoDe(null), null);
+  assert.strictEqual(globoDe(undefined), null);
+  // el aro del piso toma el color del globito; el brazo no se levanta; no queda nada del cartel
+  assert.match(code, /d\.ring\.material\.color\.set\([^)]*globoDe\(/);
+  assert.doesNotMatch(code, /zR=2\.(55|75)/);
+  assert.doesNotMatch(code, /cartelDe|ponerCartel|data-cartel/);
 });
 
-test('T59 Cartel_ElSitioSirveElMismoDibujo — @story-8.198 @ac-59', async () => {
-  const { code } = cartelDePagina();
+test('T59 Globo_ElSitioSirveElMismoDibujo — @story-8.198 @ac-59', async () => {
+  const { code } = globoDePagina();
   const { montar, LEAD } = require('./lib/offices-harness.js');
   const h = await montar();
   try {
     const cookie = await h.entrar(LEAD);
     const servido = await h.pedir('/offices/page.js', { cookie });
     assert.strictEqual(servido.status, 200);
-    assert.match(servido.texto, /^function cartelDe\(/m);
+    assert.match(servido.texto, /^function globoDe\(/m);
     assert.strictEqual(servido.texto, code, 'el mismo dibujo que la oficina local');
   } finally { await h.cerrar(); }
 });
