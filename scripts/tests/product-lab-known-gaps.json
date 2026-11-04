@@ -3,8 +3,6 @@
   "gaps": [
     { "id": "comentario-sin-sangria", "match": "^esperaba rojo, dio verde", "pending": "8.194: un comentario sin sangría no corta la lista de archivos" },
     { "id": "lista-partida", "match": "^esperaba rojo, dio verde", "pending": "8.194: la matriz lee una lista partida en varias líneas" },
-    { "id": "hermano-atrasado-matriz", "match": "^esperaba rojo, dio verde", "pending": "DEF-matriz-lee-el-hermano-sin-mirar-su-estado" },
-    { "id": "ruta-relativa-al-hermano", "match": "^esperaba rojo, dio verde", "pending": "DEF-matriz-lee-el-hermano-sin-mirar-su-estado" },
     { "id": "hermano-atrasado-guia", "match": "^la guía no dice que la copia del hermano", "pending": "DEF-matriz-lee-el-hermano-sin-mirar-su-estado" },
     { "id": "dev-local-vieja", "match": "^reclama un commit que no es la punta real", "pending": "DEF-retro-reclama-la-punta-real-una-sola-vez" },
     { "id": "carpeta-borrada", "match": "^el aviso nombra una carpeta que ya no existe", "pending": "DEF-retro-reclama-la-punta-real-una-sola-vez" }
