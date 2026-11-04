@@ -1080,8 +1080,12 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
   const SEGUIR_MS = 10000;
   const proximoRefrescoMs = () => (st.buzon.seguir ? SEGUIR_MS : minutos() * 60000);
 
+  // a qué hora va la próxima lectura (ms): «esperando la huella» la dice, porque la huella puede estar ya en el buzón
+  let proximaEn = null;
   function programar() {
-    temporizador = setTimeout(async () => { await refrescar(); programar(); }, proximoRefrescoMs());
+    const ms = proximoRefrescoMs();
+    proximaEn = ahora() + ms;
+    temporizador = setTimeout(async () => { proximaEn = null; await refrescar(); programar(); }, ms);
     if (temporizador.unref) temporizador.unref();
   }
 
@@ -1143,6 +1147,8 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     espejoGeneracion: () => memoria.generacion,
     /** En cuántos ms va el próximo refresco (las pruebas lo miran). */
     proximoRefrescoMs,
+    /** A qué hora (ms) va la próxima lectura programada del buzón; null si todavía no hay una, o si está leyendo. */
+    proximaLectura: () => proximaEn,
     /** `fn` corre al terminar cada refresco (la pestaña Corridas mira si el espejo cambió). */
     alRefrescar(fn) { oyentes.push(fn); },
   };

@@ -154,7 +154,7 @@ function runServer(m, more, ms = 8000) {
 // qué le contesta a una firma: approve, pending (4401), revoked (4403), unknown (4404) o mute (nada). `noChallenge` acepta la
 // conexión y calla; `closeAfterAck` cierra enseguida de aceptar la firma.
 async function toySite({ mode = 'approve', port = 0 } = {}) {
-  const site = { mode, enrollStatus: 200, enrollDelayMs: 0, hangEnroll: false, muteHeartbeat: false, noChallenge: false, closeAfterAck: false, enrolls: [], connections: [], closes: [], auths: [], fotos: [], pings: [], raw: [], url: null };
+  const site = { mode, enrollStatus: 200, enrollDelayMs: 0, hangEnroll: false, muteHeartbeat: false, noChallenge: false, closeAfterAck: false, puede: null, enrolls: [], connections: [], closes: [], auths: [], fotos: [], charlas: [], pings: [], raw: [], url: null };
   const server = http.createServer((req, res) => {
     if (req.method === 'POST' && req.url === '/live/enroll') {
       let body = '';
@@ -188,11 +188,14 @@ async function toySite({ mode = 'approve', port = 0 } = {}) {
           site.auths.push({ ...msg, verified: verifies(site.url, nonce, msg) });
           if (site.mode === 'mute') return;
           if (site.mode === 'approve') {
-            ws.send(JSON.stringify({ type: 'ack' }));
+            // un sitio que entiende la conversación lo anuncia en el ack; uno que no, no anuncia nada
+            ws.send(JSON.stringify({ type: 'ack', ...(site.puede ? { puede: site.puede } : {}) }));
             if (site.closeAfterAck) ws.close(1008, 'el esquema no coincide');
           } else ws.close({ pending: 4401, revoked: 4403, unknown: 4404 }[site.mode], site.mode);
         } else if (msg.type === 'foto') {
           site.fotos.push({ data: msg.data, bytes: Buffer.byteLength(text), at: Date.now() });
+        } else if (msg.type === 'charla') {
+          site.charlas.push({ sesion: msg.sesion, datos: msg.datos, bytes: Buffer.byteLength(text) });
         } else if (msg.type === 'ping') {
           site.pings.push(msg);
           if (!site.muteHeartbeat) ws.send(JSON.stringify({ type: 'pong' }));
@@ -300,6 +303,11 @@ function richFoto() {
   data.kanban.escrito = 'Tablero escrito a las 11:59';
   data.meta.pedidosLeidos = '11:59';
   data.meta.sitio = 'https://acme.example';
+  // lo que collect() le agrega con la oficina viva, y lo que buildOffice arma con agentes corriendo o con un pedido
+  data.tokens = { Alfa: { contexto: '12k de 200k · 6 %', consumidos: 'Read 1k · Write 2k · Cache Read 3k', agentes: 1 } };
+  data.sobres = [{ id: 'm0', de: 'Alfa', a: 'Beta', at: nowMs }];
+  data.agents[0].agentesAhora = 'Con su agente';
+  data.kanban.columnas[1].tarjetas.push({ titulo: 'Con pedido', quien: 'Beta', hora: 'hoy', pedido: { numero: 3, sitio: 'azure', ruta: 'acme/proyecto/_git/repo/pullrequest/3' } });
   return data;
 }
 function allStrings(v, out = []) {
@@ -335,7 +343,7 @@ test('T1 Foto_LaMismaQueLaOficinaLocal: viaja sólo lo que lee la página; la li
   const readBy = (vars, text = src) => (k) => new RegExp(`\\b(?:${vars})\\.${k}\\b`).test(text);
   // lo que pinta cada parte de la página: las variables `i`, `r` y `t` significan otra cosa en otras funciones
   const fn = (name) => { const at = src.indexOf(`function ${name}(`); assert.ok(at >= 0, name); const end = src.indexOf('\nfunction ', at + 1); return src.slice(at, end < 0 ? undefined : end); };
-  const cardsSrc = fn('renderBoard') + fn('abrirTablero');
+  const cardsSrc = fn('renderBoard') + fn('abrirTablero') + fn('abrirTarjeta');
   const allOf = (records) => Object.assign({}, ...records);
   const cards = foto.kanban.columnas.flatMap((c) => c.tarjetas);
   const tableList = [foto.tablas.hoy, foto.tablas.pendientes];
@@ -349,7 +357,8 @@ test('T1 Foto_LaMismaQueLaOficinaLocal: viaja sólo lo que lee la página; la li
     ['kanban', foto.kanban, FIELDS.kanban.fields, readBy('k|K')],
     ['columnas', allOf(foto.kanban.columnas), FIELDS.kanban.fields.columnas.of.fields, readBy('c', fn('renderBoard'))],
     ['tarjetas', allOf(cards), FIELDS.kanban.fields.columnas.of.fields.tarjetas.of.fields, readBy('i|r', cardsSrc)],
-    ['medioCamino', allOf(foto.kanban.medioCamino), FIELDS.kanban.fields.medioCamino.of.fields, readBy('i', fn('renderHalfway'))],
+    // el panel de pendientes dibuja «A medio camino» como una columna más, con las mismas tarjetas
+    ['medioCamino', allOf(foto.kanban.medioCamino), FIELDS.kanban.fields.medioCamino.of.fields, (k) => readBy('i', fn('renderHalfway'))(k) || readBy('i|r', cardsSrc)(k)],
     ['tablas', foto.tablas, FIELDS.tablas.fields, (k) => fn('renderTablas').includes(`"${k}"`)],
     ['tabla', allOf(tableList), tableFields, readBy('t', fn('renderTablas'))],
     ['filas', allOf(tableList.flatMap((t) => t.filas)), tableFields.filas.of.fields, readBy('r', fn('renderTablas'))],
@@ -414,16 +423,16 @@ test('T1 Foto_LaMismaQueLaOficinaLocal: viaja sólo lo que lee la página; la li
   assert.deepStrictEqual(sent.kanban.columnas.map((c) => c.id), foto.kanban.columnas.map((c) => c.id));
   assert.deepStrictEqual(sent.kanban.columnas.map((c) => c.tarjetas.length), foto.kanban.columnas.map((c) => c.tarjetas.length));
   assert.ok(sent.kanban.columnas.find((c) => c.id === 'sinEmpezar').tarjetas.some((c) => c.nota === 'Nota' && c.grupo === 'Hoy'));
-  assert.deepStrictEqual(sent.kanban.medioCamino, foto.kanban.medioCamino.map(({ titulo, accion }) => ({ titulo, accion })));
+  assert.deepStrictEqual(sent.kanban.medioCamino, foto.kanban.medioCamino.map(({ titulo, quien, accion }) => ({ titulo, quien, accion })));
   assert.strictEqual(sent.kanban.medioCaminoNoSe, foto.kanban.medioCaminoNoSe);
   assert.deepStrictEqual(sent.tablas.hoy.filas.map((r) => r.que), foto.tablas.hoy.filas.map((r) => r.que));
   assert.deepStrictEqual(sent.tablas.pendientes.columnas, foto.tablas.pendientes.columnas);
   assert.deepStrictEqual(sent.tablas.hoy.filas.map((r) => r.trabajos), foto.tablas.hoy.filas.map((r) => r.trabajos));
   assert.strictEqual(sent.tablas.pendientes.vacio, foto.tablas.pendientes.vacio);
   assert.ok(foto.items.length > 0 && !('items' in sent), 'la página no lee los campos de `items`');
-  // los mensajes entre sesiones son sólo de la oficina abierta en la máquina, aunque la página los lea
-  assert.ok(readBy('DATA')('sobres') && !('sobres' in FIELDS), 'los sobres no están en la lista');
-  assert.ok(!('sobres' in pick({ sobres: [{ de: 'Alfa', a: 'Beta', texto: 'un mensaje' }] }, '/home/nadie')));
+  // los sobres viajan sin texto: el sitio lleva todo lo de la oficina local, y el mensaje va con la conversación (T47, T48)
+  assert.ok(readBy('DATA')('sobres') && 'sobres' in FIELDS, 'los sobres están en la lista');
+  assert.deepStrictEqual(pick({ sobres: [{ id: 'm1', de: 'Alfa', a: 'Beta', at: 5, texto: 'un mensaje' }] }, '/home/nadie').sobres, [{ id: 'm1', de: 'Alfa', a: 'Beta', at: 5 }]);
   assert.strictEqual(typeof sentOf('Alfa').comoTrabaja, 'string');
   assert.deepStrictEqual(sent.tablero, { resumen: 'Resumen' });
   assert.strictEqual(sent.unreadable[0], 'algo que no se leyó');
@@ -855,8 +864,13 @@ test('T9 AltaAutomatica_ClaveYPedidoSinComandos: el par, el pedido, la línea, e
   assert.ok(!/PRIVATE/.test(put.body));
   const noted = JSON.parse(fs.readFileSync(path.join(m.home, 'subidas.json'), 'utf8'));
   assert.ok(noted.archivos[`maquina-a/office-keys/${key.fingerprint}.json`], 'anotada en el registro de subidas');
-  await run(UPLOAD(), ['--json'], uploadEnv('subidas.json'));
+  // la segunda subida: su línea la mira T52, abajo
+  up = await run(UPLOAD(), ['--json'], uploadEnv('subidas.json'));
   assert.strictEqual(keyPuts().length, 1, 'la misma huella no se vuelve a subir');
+  // T52: sin nada nuevo, la línea dice que la huella ya había subido y cuándo
+  const subida = noted.archivos[`maquina-a/office-keys/${key.fingerprint}.json`].subido.slice(0, 10);
+  assert.match(up.stderr, new RegExp(`nada nuevo que subir desde maquina-a \\(la huella de la oficina ya había subido el ${subida}\\)`), up.stderr);
+  assert.strictEqual(JSON.parse(up.stdout).huella_oficina, `ya_subida:${subida}`);
   // un «ya existe» cuenta como subida
   answerExists = true;
   await run(UPLOAD(), ['--json'], uploadEnv('otra-subida.json'));
@@ -1649,6 +1663,481 @@ test('Regresion_LineaDeEspera_SoloConSitioYEnlace: sin site.url o con el enlace 
   assert.ok(c.stdout.includes('espera la aprobación'), c.stdout);
   await stopServer(on);
   await site.stop();
+});
+
+// ── La capa del equipo mientras se trabaja, el enlace sin abrir sesión y el proceso que relee la dirección ─────
+
+// El gancho con lo que le manda la herramienta por la entrada: el evento.
+function hookOn(m, event, more = {}, prompt = 'seguí') {
+  applySite(m);
+  return new Promise((resolve) => {
+    const t0 = Date.now();
+    const c = spawn(process.execPath, [HOOK()], { env: envOf(m, more), stdio: ['pipe', 'pipe', 'pipe'] });
+    let stdout = ''; let stderr = '';
+    c.stdout.on('data', (d) => { stdout += d; });
+    c.stderr.on('data', (d) => { stderr += d; });
+    c.on('close', (status) => resolve({ status, stdout, stderr, ms: Date.now() - t0 }));
+    c.stdin.end(JSON.stringify({ hook_event_name: event, session_id: 's1', prompt }));
+  });
+}
+// La puesta al día de juguete: cuenta cada corrida, tarda `sleepMs` y, si se le da `site`, deja esa dirección en el perfil
+// del árbol, como la capa nueva del equipo.
+function refreshFake(m, { sleepMs = 0, site = undefined, status = 'refreshed' } = {}) {
+  const dir = tmp('team-refresh-');
+  const file = path.join(dir, 'fake-harness.js');
+  const runs = path.join(dir, 'runs.log');
+  const profile = inTree('team-profile.json');
+  fs.writeFileSync(file, `const fs = require('fs');
+fs.appendFileSync(${JSON.stringify(runs)}, process.argv.slice(2).join(' ') + '\\n');
+setTimeout(() => {
+  const site = ${JSON.stringify(site === undefined ? null : site)};
+  if (site !== null) fs.writeFileSync(${JSON.stringify(profile)}, JSON.stringify({ site: { url: site } }));
+  console.log(JSON.stringify({ status: ${JSON.stringify(status)}, profileChanged: site !== null, lines: [] }));
+}, ${sleepMs});
+`);
+  return { file, runs: () => { try { return fs.readFileSync(runs, 'utf8').trim().split('\n').filter(Boolean); } catch { return []; } } };
+}
+const stampOf = (m) => path.join(m.sdir, 'office', 'team-refresh.json');
+const ageStamp = (m, minutes) => fs.writeFileSync(stampOf(m), JSON.stringify({ at: new Date(Date.now() - minutes * 60000).toISOString() }));
+function countersOf(lock) {
+  return new Promise((resolve, reject) => {
+    http.get({ host: '127.0.0.1', port: lock.port, path: `/debug/counters?t=${lock.token}`, headers: { host: `127.0.0.1:${lock.port}` } }, (res) => {
+      let body = '';
+      res.on('data', (d) => { body += d; });
+      res.on('end', () => resolve(JSON.parse(body)));
+    }).on('error', reject);
+  });
+}
+
+test('T44 CadaTreintaMinutos_SinEsperar: un pedido lanza la puesta al día aparte; dentro de los 30 min no; apagada o en un agente, nada', async () => {
+  const m = toy();
+  const fake = refreshFake(m, { sleepMs: 3000 });
+  const env = { TYCON_TEAM_REFRESH_RUN: fake.file };
+  const first = await hookOn(m, 'UserPromptSubmit', env);
+  assert.strictEqual(first.status, 0, first.stderr);
+  assert.strictEqual(first.stdout, '', 'al pedir no dice nada');
+  assert.ok(first.ms < 2500, `no espera la puesta al día, que tarda 3 s (${first.ms} ms)`);
+  assert.ok(fs.existsSync(stampOf(m)), 'el sello, escrito al lanzarla');
+  assert.ok(await until(() => fake.runs().length === 1, 8000), 'la puesta al día corrió aparte');
+  assert.deepStrictEqual(fake.runs(), ['team-refresh --json']);
+  // dentro de los 30 min, aunque la anterior no haya terminado: nada
+  assert.strictEqual((await hookOn(m, 'UserPromptSubmit', env)).status, 0);
+  await sleep(600);
+  assert.strictEqual(fake.runs().length, 1, 'dentro de los 30 min no lanza otra');
+  // pasados los 30 min, otra
+  ageStamp(m, 31);
+  assert.strictEqual((await hookOn(m, 'UserPromptSubmit', env)).status, 0);
+  assert.ok(await until(() => fake.runs().length === 2, 8000), 'pasados los 30 min, otra');
+  // apagada, en un agente de compilación, o al abrir la sesión (eso lo hace el arranque del arnés): nada
+  const agents = [{ CI: 'true' }, { TF_BUILD: 'True' }, { GITHUB_ACTIONS: 'true' }, { AGENT_ID: '7' }, { BUILD_BUILDID: '123' }, { SYSTEM_TEAMFOUNDATIONCOLLECTIONURI: 'https://dev.azure.com/acme/' }];
+  for (const more of [{ TYCON_TEAM_REFRESH: '0' }, ...agents, { TYCON_OFFICE_LINK: '0' }]) {
+    ageStamp(m, 31);
+    assert.strictEqual((await hookOn(m, 'UserPromptSubmit', { ...env, ...more })).status, 0);
+  }
+  ageStamp(m, 31);
+  assert.strictEqual((await hookOn(m, 'SessionStart', env)).status, 0);
+  await sleep(600);
+  assert.strictEqual(fake.runs().length, 2, 'apagada, en un agente o al abrir sesión, no lanza nada');
+  // un sello roto cuenta como vencido: no deja a la máquina sin puesta al día para siempre
+  fs.writeFileSync(stampOf(m), '{roto');
+  assert.strictEqual((await hookOn(m, 'UserPromptSubmit', env)).status, 0);
+  assert.ok(await until(() => fake.runs().length === 3, 8000), 'un sello roto no frena');
+  // un pedido largo (un registro pegado) pasa de lo que el gancho lee: igual es un pedido, no la apertura de una sesión
+  ageStamp(m, 31);
+  const long = await hookOn(m, 'UserPromptSubmit', env, 'x '.repeat(50 * 1024));
+  assert.strictEqual(long.status, 0);
+  assert.strictEqual(long.stdout, '', 'como pedido no dice nada');
+  assert.ok(await until(() => fake.runs().length === 4, 8000), 'con un pedido de más de 64 KB también lanza la puesta al día');
+  // lo que no corrió también queda en el registro de la oficina; una instalación sin capa (`off`) no anota nada
+  for (const [status, said] of [['busy', /otra sesión estaba actualizando/], ['none', /no miró nada/]]) {
+    const other = refreshFake(m, { status });
+    ageStamp(m, 31);
+    assert.strictEqual((await hookOn(m, 'UserPromptSubmit', { TYCON_TEAM_REFRESH_RUN: other.file })).status, 0);
+    assert.ok(await until(() => said.test(logOf(m)), 8000), `${status}: ${logOf(m)}`);
+  }
+  const off = refreshFake(m, { status: 'off' });
+  const lines = logOf(m).split('\n').length;
+  ageStamp(m, 31);
+  assert.strictEqual((await hookOn(m, 'UserPromptSubmit', { TYCON_TEAM_REFRESH_RUN: off.file })).status, 0);
+  assert.ok(await until(() => off.runs().length === 1, 8000));
+  await sleep(800);
+  assert.strictEqual(logOf(m).split('\n').length, lines, 'sin capa, nada que anotar cada 30 min');
+});
+
+test('T45 Enlace_LlegaSiteUrl_PideElAltaYLanza: la capa nueva trae site.url y la máquina pide el alta y lanza, sin abrir sesión', async () => {
+  const list = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'hooks-list.json'), 'utf8'));
+  const entries = (list.hooks || list).filter((h) => h.spec === '@tcg:office-link-start.js');
+  assert.deepStrictEqual(entries.map((h) => h.event).sort(), ['SessionStart', 'UserPromptSubmit']);
+  for (const h of entries) {
+    assert.strictEqual(h.platforms && h.platforms.windows, true, `${h.event}: también en Windows`);
+    assert.notStrictEqual(h.platforms && h.platforms.mac, false, `${h.event}: también en Mac`);
+  }
+
+  const site = await toySite();
+  const m = toy();
+  const fake = refreshFake(m, { site: site.url });
+  assert.strictEqual((await hookOn(m, 'UserPromptSubmit', { TYCON_TEAM_REFRESH_RUN: fake.file })).status, 0);
+  assert.ok(await until(() => site.enrolls.length === 1, 8000), 'pidió el alta sin abrir sesión');
+  assert.ok(siteLink().readKey(m.sdir), 'armó su clave');
+  assert.ok(await until(() => readLock(m), 8000), 'lanzó el proceso de la oficina');
+  started.add(readLock(m).pid);
+  assert.ok(await until(() => site.fotos.length >= 1, 8000), 'y la foto llegó al sitio, sin página abierta');
+  await stopServer(m);
+
+  // la puesta al día no trajo dirección: ni clave ni proceso
+  const n = toy();
+  const quiet = refreshFake(n, { status: 'same' });
+  applySite({ url: null });
+  assert.strictEqual((await hookOn(n, 'UserPromptSubmit', { TYCON_TEAM_REFRESH_RUN: quiet.file })).status, 0);
+  assert.ok(await until(() => quiet.runs().length === 1, 8000));
+  await sleep(800);
+  assert.strictEqual(siteLink().readKey(n.sdir), null, 'sin dirección no arma clave');
+  assert.strictEqual(readLock(n), null, 'ni lanza el proceso');
+  await site.stop();
+});
+
+test('T46 ProcesoVivo_ReleeSiteUrl: el proceso vivo se enlaza, cambia de sitio o se desenlaza al aviso, sin cortarlo', async () => {
+  const one = await toySite();
+  const two = await toySite();
+  const m = toy();
+  // la máquina ya pidió el alta y está aprobada: lo que se mide es el proceso que relee la dirección
+  siteLink().ensureKey(m.sdir);
+  siteLink().writeLinkState(m.sdir, 'aprobada');
+  // arranca sin dirección: sólo la oficina local, que se cierra sin la página abierta
+  assert.strictEqual((await openLocal(m, { TYCON_OFFICE_IDLE_MS: '60000' })).status, 0);
+  const lock = readLock(m);
+  started.add(lock.pid);
+  assert.deepStrictEqual((await countersOf(lock)).linked, { site: '', idleMs: 2 * 60 * 1000, capMs: 8 * 3600 * 1000 });
+  // aparece la dirección: el aviso de la capa nueva lo enlaza, con la foto entera y la vida de las sesiones
+  m.url = one.url; applySite(m);
+  assert.strictEqual(await postEvent(lock, { body: '{"type":"config"}' }), 204);
+  assert.ok(await until(() => one.fotos.length >= 1, 8000), 'se enlazó y mandó la foto entera');
+  assert.strictEqual(one.fotos[0].data.meta.sitio, one.url, 'la foto relee la dirección');
+  assert.deepStrictEqual((await countersOf(lock)).linked, { site: one.url, idleMs: 10 * 60 * 1000, capMs: 12 * 3600 * 1000 });
+  assert.strictEqual(readLock(m).pid, lock.pid, 'el mismo proceso');
+  // otra dirección: corta la vieja y abre la nueva (también con el aviso de una sesión)
+  m.url = two.url; applySite(m);
+  assert.strictEqual(await postEvent(lock, { body: '{"type":"session"}' }), 204);
+  assert.ok(await until(() => two.fotos.length >= 1 && one.closes.length >= 1, 8000), 'cambió de sitio');
+  assert.strictEqual(two.fotos[0].data.meta.sitio, two.url);
+  // la configuración ilegible: queda como estaba y lo anota
+  fs.writeFileSync(inTree('team-profile.json'), '{roto');
+  assert.strictEqual(await postEvent(lock, { body: '{"type":"config"}' }), 204);
+  assert.ok(await until(() => /no se pudo leer la dirección del sitio/.test(logOf(m)), 8000), logOf(m));
+  assert.strictEqual((await countersOf(lock)).linked.site, two.url, 'sigue enlazado al de antes');
+  // una dirección que no es web la rechaza el lector: es una configuración que no se lee, y el enlace queda como estaba
+  const before = (logOf(m).match(/no se pudo leer la dirección del sitio/g) || []).length;
+  m.url = 'ftp://sitio.acme.example'; applySite(m);
+  assert.strictEqual(await postEvent(lock, { body: '{"type":"config"}' }), 204);
+  assert.ok(await until(() => (logOf(m).match(/no se pudo leer la dirección del sitio/g) || []).length > before, 8000), 'y lo anota de nuevo');
+  assert.strictEqual((await countersOf(lock)).linked.site, two.url, 'una dirección rechazada no corta el enlace');
+  // sin dirección, corta y vuelve a la vida de la oficina local: 2 min sin la página y 8 h de tope. La dirección la saca el
+  // arranque de una sesión, no la puesta al día de la capa: el gancho de la sesión nueva le avisa al proceso vivo
+  m.url = null;
+  assert.strictEqual((await hookOn(m, 'SessionStart')).status, 0);
+  assert.ok(await until(() => two.closes.length >= 1, 8000), 'cortó el enlace');
+  assert.deepStrictEqual((await countersOf(lock)).linked, { site: '', idleMs: 2 * 60 * 1000, capMs: 8 * 3600 * 1000 });
+  await stopServer(m);
+  applySite({ url: null });
+  await one.stop();
+  await two.stop();
+});
+
+// Lo que la página lee y no es de la foto: propiedades del navegador y de JavaScript, y los objetos que arma ella sola (los
+// escritorios, la ropa y el pelo de cada persona).
+const NOT_PHOTO = new Set(['addEventListener', 'checked', 'className', 'filter', 'find', 'hidden', 'id', 'length', 'style', 'textContent', 'value', 'ay', 'st', 'hit', 'barba', 'gorra', 'lentes', 'pelo', 'pelocol', 'piel']);
+
+test('T47 Foto_TodoLoDeLaLocal_ListasComparadas: lo que lee la página está en la lista o en LOCAL_ONLY, con su motivo', () => {
+  const { pick, FIELDS, LOCAL_ONLY } = fields();
+  const src = fs.readFileSync(PAGE, 'utf8');
+  const fn = (name) => { const at = src.indexOf(`function ${name}(`); assert.ok(at >= 0, name); const end = src.indexOf('\nfunction ', at + 1); return src.slice(at, end < 0 ? undefined : end); };
+  const reads = (vars, text) => new Set([...text.matchAll(new RegExp(`\\b(?:${vars})\\.([A-Za-z_]\\w*)`, 'g'))].map((m) => m[1]).filter((k) => !NOT_PHOTO.has(k)));
+  // cada motivo de lo que no viaja está escrito
+  assert.ok(LOCAL_ONLY && typeof LOCAL_ONLY === 'object');
+  for (const [k, why] of Object.entries(LOCAL_ONLY)) assert.ok(typeof why === 'string' && why.length > 20, `«${k}» no dice por qué no viaja`);
+  const decided = (listed) => (k) => k in listed || k in LOCAL_ONLY;
+  // el primer nivel: cada DATA.<campo> de la página
+  for (const k of reads('DATA', src)) assert.ok(decided(FIELDS)(k), `la página lee DATA.${k} y nadie decidió si viaja`);
+  // la ficha de una sesión, el detalle de una tarjeta, los tokens, los sobres y el pedido
+  const agentFields = FIELDS.agents.of.fields;
+  for (const k of reads('a', fn('ficha') + fn('pintarFicha'))) assert.ok(decided(agentFields)(k), `la ficha lee a.${k} y no está en la lista`);
+  const cardFields = FIELDS.kanban.fields.columnas.of.fields.tarjetas.of.fields;
+  for (const k of reads('i', fn('abrirTarjeta'))) assert.ok(decided(cardFields)(k), `el detalle de una tarjeta lee i.${k} y no está en la lista`);
+  for (const k of reads('i\\.pedido', fn('abrirTarjeta'))) assert.ok(k in cardFields.pedido.fields, `el pedido de una tarjeta lee .${k}`);
+  for (const k of reads('tk', fn('ficha'))) assert.ok(k in FIELDS.tokens.of.fields, `los tokens leen tk.${k}`);
+  for (const k of reads('s|v\\.s', fn('lanzarSobres'))) assert.ok(k in FIELDS.sobres.of.fields, `los sobres leen .${k}`);
+  // y viajan: los tokens, los sobres, el pedido y los agentes de ahora
+  const foto = richFoto();
+  foto.tokens = { Alfa: { contexto: '12k de 200k · 6 %', consumidos: 'Read 1k · Write 2k · Cache Read 3k', agentes: 2 }, Beta: { noMedido: true } };
+  foto.sobres = [{ id: 'm1', de: 'Alfa', a: 'Beta', at: 1000, texto: 'el texto va por la conversación, no en el sobre' }];
+  foto.agents[0].agentesAhora = 'Con 2 agentes';
+  foto.kanban.columnas[0].tarjetas[0].pedido = { numero: 7, sitio: 'github', ruta: 'acme/repo/pull/7' };
+  const sent = pick(foto, '/home/nadie');
+  assert.deepStrictEqual(sent.tokens, foto.tokens);
+  assert.deepStrictEqual(sent.sobres, [{ id: 'm1', de: 'Alfa', a: 'Beta', at: 1000 }], 'el sobre viaja sin texto: el mensaje va con la conversación');
+  assert.strictEqual(sent.agents[0].agentesAhora, 'Con 2 agentes');
+  assert.deepStrictEqual(sent.kanban.columnas[0].tarjetas[0].pedido, { numero: 7, sitio: 'github', ruta: 'acme/repo/pull/7' });
+  // una ruta de pedido no puede ser una dirección entera, y un sitio de pedido desconocido no viaja
+  assert.strictEqual(pick({ kanban: { columnas: [{ id: 'curso', tarjetas: [{ pedido: { numero: 7, sitio: 'otro', ruta: 'x' } }] }] } }, '/h').kanban.columnas[0].tarjetas[0].pedido.sitio, undefined);
+  // los tokens de una persona con un nombre que trae un token de juguete: el nombre se sanea como cualquier texto
+  const fake = LOOSE_TOKENS()[0];
+  assert.ok(!JSON.stringify(pick({ tokens: { [`Alfa ${fake}`]: { noMedido: true } } }, '/h')).includes(fake));
+  assert.ok('items' in LOCAL_ONLY && !('items' in sent));
+  // la foto entera de collect(), campo por campo y a cualquier profundidad: cada uno está en la lista o en LOCAL_ONLY. Un
+  // campo nuevo que la página todavía no lee también tiene que decidirse
+  const undecided = [];
+  const walk = (value, spec, at) => {
+    if (!spec || value == null || typeof value !== 'object') return;
+    if (spec.form === 'list') { if (Array.isArray(value)) value.forEach((v) => walk(v, spec.of, `${at}[]`)); return; }
+    if (spec.form === 'byName') { Object.values(value).forEach((v) => walk(v, spec.of, `${at}{}`)); return; }
+    if (!spec.fields) return;
+    for (const [k, v] of Object.entries(value)) {
+      const route = `${at.replace(/^foto\.?/, '').replace(/\[\]|\{\}/g, '')}${at === 'foto' ? '' : '.'}${k}`;
+      if (k in LOCAL_ONLY || route in LOCAL_ONLY) continue;
+      // la marca de otro proyecto la lee la lista para taparlo (T1), no la página
+      if (k === 'otro' && v === true) continue;
+      if (!(k in spec.fields)) { undecided.push(`${at}.${k}`); continue; }
+      walk(v, spec.fields[k], `${at}.${k}`);
+    }
+  };
+  walk(richFoto(), { fields: FIELDS }, 'foto');
+  assert.deepStrictEqual([...new Set(undecided)], [], 'campos de la foto que nadie decidió si viajan');
+});
+
+// Las declaraciones de primer nivel de la página, por nombre: cada una va desde su renglón hasta el próximo que empieza sin
+// sangría. Así la ficha corre acá con el código de la página, no con una copia.
+function pageDecls(names) {
+  const lines = fs.readFileSync(PAGE, 'utf8').split('\n');
+  return names.map((name) => {
+    const at = lines.findIndex((l) => l.startsWith(`function ${name}(`) || l.startsWith(`const ${name}=`));
+    assert.ok(at >= 0, `la página no declara ${name}`);
+    let end = at + 1;
+    while (end < lines.length && /^\s/.test(lines[end])) end += 1;
+    return lines.slice(at, end).join('\n');
+  }).join('\n');
+}
+
+// Lo que la tarjeta del sitio puede mostrar distinto de la local, con su motivo: nada más.
+const CARD_DIFFERS = {
+  Carpeta: 'sale sólo el último tramo de la ruta: la ruta entera dice la carpeta personal y cómo está ordenado el disco',
+};
+
+test('T54 Tarjeta_IgualEnLaLocalYEnElSitio: cada renglón de la ficha y del detalle de una tarjeta es el mismo en las dos oficinas', () => {
+  const vm = require('vm');
+  const { pick } = fields();
+  const src = fs.readFileSync(PAGE, 'utf8');
+  const foto = richFoto();
+  const sent = pick(JSON.parse(JSON.stringify(foto)), '/home/nadie');
+  // la ficha de cada sesión, armada por la función de la página con la foto local y con la que llega al sitio
+  const ctx = vm.createContext({ DATA: null });
+  vm.runInContext(`${pageDecls(['DAYS', 'parse', 'fmt', 'AST', 'finTxt', 'SOLO_COORDINA', 'ficha'])}\nthis.ficha = ficha;`, ctx);
+  const rows = (data, a) => { ctx.DATA = data; return JSON.parse(JSON.stringify(ctx.ficha(a))); };
+  assert.ok(foto.agents.length >= 8, 'la foto de la prueba trae varias sesiones');
+  assert.strictEqual(sent.agents.length, foto.agents.length, 'llegan todas las sesiones');
+  let compared = 0;
+  for (const [i, a] of foto.agents.entries()) {
+    const local = rows(foto, a);
+    const site = rows(sent, sent.agents[i]);
+    assert.ok(local.length > 0, `${a.nombre}: la ficha local tiene renglones`);
+    assert.deepStrictEqual(site.map((r) => r.k), local.map((r) => r.k), `${a.nombre}: los renglones de la ficha del sitio no son los de la local`);
+    for (const [j, r] of local.entries()) {
+      compared += 1;
+      if (r.k in CARD_DIFFERS) { assert.ok(site[j].v, `${a.nombre}: «${r.k}» falta en el sitio`); continue; }
+      assert.deepStrictEqual(site[j], r, `${a.nombre}: «${r.k || r.v}» cambia entre la oficina local y la del sitio`);
+    }
+  }
+  assert.ok(compared > 30, `se compararon ${compared} renglones`);
+  for (const [k, why] of Object.entries(CARD_DIFFERS)) assert.ok(why.length > 20 && compared, `«${k}» no dice por qué cambia`);
+  // el nombre, el estado y cómo trabaja, que van en la tarjeta misma
+  for (const [i, a] of foto.agents.entries()) for (const k of ['nombre', 'estado', 'comoTrabaja', 'titulo']) assert.deepStrictEqual(sent.agents[i][k], a[k], `${a.nombre}: «${k}» cambia`);
+  // el detalle de una tarjeta del tablero: cada campo que lee la página llega igual
+  const fn = (name) => { const at = src.indexOf(`function ${name}(`); const end = src.indexOf('\nfunction ', at + 1); return src.slice(at, end < 0 ? undefined : end); };
+  const readsOfCard = [...new Set([...fn('abrirTarjeta').matchAll(/\bi\.([A-Za-z_]\w*)/g)].map((m) => m[1]))];
+  let cards = 0;
+  for (const [c, col] of foto.kanban.columnas.entries()) {
+    for (const [t, card] of col.tarjetas.entries()) {
+      cards += 1;
+      // la tarjeta de otro proyecto sale tapada a propósito (T1): no es una diferencia de la oficina del sitio
+      if (card.otro) continue;
+      for (const k of readsOfCard) assert.deepStrictEqual(sent.kanban.columnas[c].tarjetas[t][k], card[k], `la tarjeta «${card.titulo}»: «${k}» cambia`);
+    }
+  }
+  assert.ok(cards >= 3, `la foto trae ${cards} tarjetas`);
+  // «A medio camino» es una columna más del panel, con las mismas tarjetas
+  assert.ok(foto.kanban.medioCamino.length > 0, 'la foto trae trabajos a medio camino');
+  for (const [m, card] of foto.kanban.medioCamino.entries()) for (const k of [...readsOfCard, 'accion']) assert.deepStrictEqual(sent.kanban.medioCamino[m][k], card[k], `a medio camino «${card.titulo}»: «${k}» cambia`);
+  // y los sobres que vuelan entre escritorios
+  assert.deepStrictEqual(sent.sobres, foto.sobres);
+});
+
+test('T48 Charla_ViajaAparte_SaneadaConTope: la conversación sale en su mensaje, sólo a un sitio que la entiende', async () => {
+  const { MAX_MESSAGE_BYTES, CHARLA_TEXT_MAX, CHARLA_EVERY_MS, CHARLA_GAP_MS } = fields();
+  assert.strictEqual(CHARLA_TEXT_MAX, 8000);
+  assert.strictEqual(CHARLA_EVERY_MS, 60 * 1000);
+  assert.ok(CHARLA_GAP_MS >= 1000 / 5, 'a lo sumo cinco conversaciones por segundo: el sitio corta a las diez');
+  const fake = LOOSE_TOKENS()[0];
+  const conv = (n, texto = 'un mensaje') => ({ conCoordinadora: Array.from({ length: n }, (_, i) => ({ de: i % 2 ? null : 'Coordinadora', texto: `${texto} ${i}`, at: 1000 + i, propio: Boolean(i % 2) })) });
+  // un sitio de hoy: su ack no trae `puede`, y no le llega ninguna charla; la foto sigue
+  const today = await toySite();
+  const m = toy();
+  const { link: old, clock: oc } = linkOf(m, today, 'aprobada');
+  old.update(FOTO());
+  old.charla('Alfa', conv(2));
+  old.start();
+  assert.ok(await until(() => today.fotos.length === 1));
+  oc.advance(CHARLA_EVERY_MS + 1);
+  old.charla('Alfa', conv(3));
+  await sleep(200);
+  assert.ok(!today.raw.some((r) => r.includes('"charla"')), 'a un sitio de hoy no le llega ninguna charla');
+  assert.strictEqual(today.closes.length, 0, 'y la conexión sigue');
+  old.stop();
+  await today.stop();
+  // un sitio que la entiende
+  const site = await toySite();
+  site.puede = ['charla'];
+  const n = toy();
+  const { link, clock } = linkOf(n, site, 'aprobada');
+  link.update(FOTO());
+  link.charla('Alfa', conv(2, `con un token ${fake}`));
+  link.charla('Beta', conv(1));
+  link.start();
+  // al conectar salen todas, de a una: juntas pasarían el tope de mensajes por segundo del sitio
+  assert.ok(await until(() => site.charlas.length === 1), 'al conectar, la primera enseguida');
+  await sleep(150);
+  assert.strictEqual(site.charlas.length, 1, 'la segunda espera su turno');
+  clock.advance(CHARLA_GAP_MS);
+  assert.ok(await until(() => site.charlas.length === 2), 'al conectar, todas');
+  const alfa = site.charlas.find((c) => c.sesion === 'Alfa');
+  assert.ok(!JSON.stringify(alfa).includes(fake), 'saneada');
+  assert.strictEqual(alfa.datos.conCoordinadora.length, 2);
+  // igual no se manda; distinta antes del minuto, espera; pasado el minuto, sale
+  link.charla('Alfa', conv(2, `con un token ${fake}`));
+  link.charla('Alfa', conv(4));
+  await sleep(150);
+  assert.strictEqual(site.charlas.length, 2, 'dentro del minuto no sale otra de la misma sesión');
+  clock.advance(CHARLA_EVERY_MS + 1);
+  assert.ok(await until(() => site.charlas.length === 3), 'pasado el minuto, sale la última');
+  assert.strictEqual(site.charlas[2].datos.conCoordinadora.length, 4);
+  // cada texto hasta 8000; el mensaje hasta 64 KB, sacando los más viejos y con la marca
+  clock.advance(CHARLA_EVERY_MS + 1);
+  const t0 = Date.now();
+  link.charla('Beta', conv(30, 'palabra '.repeat(1200)));
+  assert.ok(Date.now() - t0 < 3000, `armar una conversación grande no traba el proceso (${Date.now() - t0} ms)`);
+  assert.ok(await until(() => site.charlas.length === 4));
+  const big = site.charlas[3];
+  assert.strictEqual(big.datos.recortada, true);
+  assert.ok(big.bytes <= MAX_MESSAGE_BYTES, `${big.bytes} bytes`);
+  assert.ok(big.datos.conCoordinadora.every((x) => x.texto.length <= 8000));
+  assert.strictEqual(big.datos.conCoordinadora[big.datos.conCoordinadora.length - 1].at, 1029, 'quedan los más nuevos');
+  assert.ok(big.datos.conCoordinadora[0].at > 1000, 'y salieron los más viejos');
+  // la de la coordinadora, con sus dos listas
+  clock.advance(CHARLA_EVERY_MS + 1);
+  link.charla('Coordinadora', { conVos: [{ quien: 'vos', texto: 'hola', at: 1 }], conSesiones: [{ sesion: 'Alfa', at: 2, mensajes: [{ de: 'Alfa', texto: 'listo', at: 2 }] }] });
+  assert.ok(await until(() => site.charlas.length === 5));
+  assert.deepStrictEqual(site.charlas[4].datos.conSesiones[0].mensajes[0], { de: 'Alfa', texto: 'listo', at: 2 });
+  // una tirada de miles de caracteres sin espacios no viaja, y se resuelve rápido: el saneador tarda segundos con ella
+  // entera. Vale para letras, puntos, guiones o lo que sea: lo que no es un espacio
+  const textOf = (texto, home = '/h') => fields().pickCharla({ conCoordinadora: [{ de: 'Alfa', texto, at: 1, propio: false }] }, home).conCoordinadora[0].texto;
+  for (const ch of ['x', '.', '-', 'á', '/']) {
+    const t1 = Date.now();
+    const run = textOf(`antes ${ch.repeat(16000)} después`);
+    assert.ok(Date.now() - t1 < 1000, `«${ch}»: ${Date.now() - t1} ms`);
+    assert.strictEqual(run, 'antes [16000 caracteres seguidos: no viajan] después', `«${ch}»`);
+  }
+  // muchas tiradas cortas también: un mensaje entero de ellas no traba el proceso
+  const t2 = Date.now();
+  textOf(`${'-'.repeat(200)} `.repeat(80));
+  assert.ok(Date.now() - t2 < 1000, `tiradas cortas: ${Date.now() - t2} ms`);
+  // el corte de un texto muy largo cae en un espacio: una clave en el borde no deja pasar su punta, aunque lo saneado achique
+  const home = '/Users/nadie';
+  const filler = `${home}/a `.repeat(Math.ceil((CHARLA_TEXT_MAX * 2 - 5) / `${home}/a `.length));
+  const edge = textOf(`${filler.slice(0, CHARLA_TEXT_MAX * 2 - 10)} ${fake}`, home);
+  assert.ok(!edge.includes(fake.slice(0, 8)), 'la punta de la clave del borde no viaja');
+  // el nombre de la sesión sale como en la foto: el sitio busca la conversación por ese valor
+  clock.advance(CHARLA_EVERY_MS + 1);
+  const named = `Sesión en ${n.home}/proyecto ${fake}`;
+  link.charla(named, conv(1));
+  assert.ok(await until(() => site.charlas.length === 6));
+  const inFoto = fields().pick({ agents: [{ nombre: named }] }, n.home).agents[0].nombre;
+  assert.strictEqual(site.charlas[5].sesion, inFoto);
+  assert.ok(!site.charlas[5].sesion.includes(fake) && !site.charlas[5].sesion.includes(n.home));
+  // el sitio descarta la conversación de una sesión que su foto no nombra: cuando llega la foto que la nombra por primera
+  // vez, sale de nuevo, sin esperar el minuto ni que crezca
+  clock.advance(CHARLA_EVERY_MS + 1);
+  link.charla('Gama', conv(1, 'antes que su foto'));
+  assert.ok(await until(() => site.charlas.length === 7), 'salió antes de que la foto la nombre');
+  link.update({ ...FOTO(), agents: [...FOTO().agents, { nombre: 'Gama', estado: 'trabajando' }] });
+  // sale a su turno, con el espacio entre conversaciones
+  clock.advance(CHARLA_GAP_MS);
+  assert.ok(await until(() => site.charlas.length === 8), 'con la foto que la nombra, sale de nuevo');
+  assert.strictEqual(site.charlas[7].sesion, 'Gama');
+  link.update({ ...FOTO('Otra cosa'), agents: [...FOTO('Otra cosa').agents, { nombre: 'Gama', estado: 'trabajando' }] });
+  await sleep(300);
+  assert.strictEqual(site.charlas.length, 8, 'una foto que ya la nombraba no la vuelve a mandar');
+  // forSite decide qué sale: hoy, todo lo que trae la conversación de la oficina local
+  const { forSite } = require(SERVER);
+  assert.deepStrictEqual(forSite(conv(2)), conv(2));
+  link.stop();
+  await site.stop();
+});
+
+test('T55 Charla_LeeSoloLoQueCrecio_YReintentaLoQueFalla: qué conversación se lee en cada foto', () => {
+  const { changedTalks } = require(SERVER);
+  const { CHARLA_EVERY_MS } = fields();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'charlas-'));
+  const fileOf = (name) => path.join(dir, `${name}.jsonl`);
+  const grow = (name, text = 'x') => fs.appendFileSync(fileOf(name), `${text}\n`);
+  ['Alfa', 'Beta', 'Gama'].forEach((n) => grow(n));
+  const envelopes = { files: new Map(['Alfa', 'Beta', 'Gama'].map((n) => [n, { file: fileOf(n) }])) };
+  const reads = [];
+  let behavior = { Gama: 'null' };
+  const office = { conversationOf: (_e, name) => {
+    reads.push(name);
+    if (behavior[name] === 'null') return null;
+    if (behavior[name] === 'throw') { const e = new Error('ilegible'); e.code = 'EIO'; throw e; }
+    return { conCoordinadora: [{ de: name, texto: fs.readFileSync(fileOf(name), 'utf8'), at: 1, propio: false }] };
+  } };
+  const talked = new Map();
+  let now = 1_000_000;
+  // la primera vez, todas; la que no se pudo leer no cuenta como leída
+  let failed = [];
+  let out = changedTalks(office, envelopes, talked, now, failed);
+  assert.deepStrictEqual(Object.keys(out).sort(), ['Alfa', 'Beta']);
+  assert.deepStrictEqual(reads.sort(), ['Alfa', 'Beta', 'Gama']);
+  assert.ok(!talked.has('Gama'), 'la que no se leyó no queda marcada');
+  // sin crecer, ninguna; Gama se reintenta aunque no haya crecido
+  reads.length = 0;
+  behavior = { Gama: 'throw' };
+  now += CHARLA_EVERY_MS + 1;
+  failed = [];
+  out = changedTalks(office, envelopes, talked, now, failed);
+  assert.deepStrictEqual(reads, ['Gama'], 'las que no crecieron no se leen; la que falló, sí');
+  assert.deepStrictEqual(out, {});
+  assert.strictEqual(failed.length, 1);
+  assert.match(failed[0], /no se pudo leer la conversación de una sesión \(EIO\): se reintenta/);
+  // creció: sale, y Gama, ya legible, también
+  behavior = {};
+  grow('Alfa', 'nuevo');
+  now += 1000;
+  out = changedTalks(office, envelopes, talked, now);
+  assert.deepStrictEqual(Object.keys(out).sort(), ['Alfa', 'Gama']);
+  assert.match(out.Alfa.conCoordinadora[0].texto, /nuevo/);
+  // vuelve a crecer dentro del minuto: espera, y dice cuándo le toca (sin otra foto, el proceso la pide a esa hora);
+  // pasado el minuto, sale la última
+  grow('Alfa', 'otra vez');
+  const readAt = now;
+  now += 1000;
+  const later = {};
+  assert.deepStrictEqual(changedTalks(office, envelopes, talked, now, [], later), {}, 'dentro del minuto de su última lectura, espera');
+  assert.strictEqual(later.at, readAt + CHARLA_EVERY_MS, 'cuándo le toca');
+  now += CHARLA_EVERY_MS;
+  out = changedTalks(office, envelopes, talked, now);
+  assert.deepStrictEqual(Object.keys(out), ['Alfa']);
+  assert.match(out.Alfa.conCoordinadora[0].texto, /otra vez/);
+  // la sesión que se fue se olvida
+  envelopes.files.delete('Beta');
+  changedTalks(office, envelopes, talked, now);
+  assert.ok(!talked.has('Beta'));
 });
 
 // ── El aislamiento de las suites ────────────────────────────────────────────────────────────────────────────────────

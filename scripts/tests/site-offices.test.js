@@ -34,7 +34,7 @@ function decisiones() {
   const desde = code.indexOf('// la pestaña del sitio: lo que se decide sin tocar la pantalla');
   const hasta_ = code.indexOf('// fin de lo que se decide sin tocar la pantalla');
   assert.ok(desde >= 0 && hasta_ > desde, 'page.js marca la parte que decide');
-  return new Function(`${code.slice(desde, hasta_)}; return { resumenDeOficina, alCerrarLaConexion, oficinaDelHash, oficinaAMostrar, aplicarOficinas, salasVivas, TOPE_DE_SALAS };`)();
+  return new Function(`${code.slice(desde, hasta_)}; return { resumenDeOficina, alCerrarLaConexion, oficinaDelHash, oficinaAMostrar, aplicarOficinas, salasVivas, TOPE_DE_SALAS, pedidoDeCharla, sobresDeOficina, charlaSegunRespuesta, charlaConForma };`)();
 }
 
 // ── La pestaña ──────────────────────────────────────────────────────────────────────────────
@@ -344,6 +344,71 @@ test('T34 Pagina_BajoLaPoliticaDelSitio — @story-8.171 @ac-17b @ac-10c', async
   const nuevo = code.slice(code.indexOf('// la pestaña del sitio: el dibujo'), code.indexOf('// fin de la pestaña del sitio'));
   assert.ok(nuevo.length > 0, 'page.js marca la parte de la pestaña');
   assert.doesNotMatch(nuevo, /innerHTML|insertAdjacentHTML|document\.write/);
+});
+
+test('T50 PaginaDelSitio_AvioncitoYConversacion — @story-8.171 @ac-26 @ac-27', async () => {
+  const d = decisiones();
+  // la conversación se pide a la fuente: a la oficina local con su token, al sitio con la máquina, sin token
+  assert.strictEqual(d.pedidoDeCharla({ fuente: 'local', token: 'abc', nombre: 'Sesion Uno' }), 'conversacion?t=abc&s=Sesion%20Uno');
+  assert.strictEqual(d.pedidoDeCharla({ fuente: 'site', maquina: 'maquina-a', nombre: 'Sesion Uno' }), '/offices/conversation?m=maquina-a&s=Sesion%20Uno');
+  assert.strictEqual(d.pedidoDeCharla({ fuente: 'demo', nombre: 'x' }), null, 'la demo no tiene conversación');
+  assert.strictEqual(d.pedidoDeCharla({ fuente: 'local', nombre: 'x' }), null, 'la foto fija tampoco');
+  // los sobres de una oficina, de su foto; sin foto o sin sobres, ninguno
+  assert.deepStrictEqual(d.sobresDeOficina({ sobres: [{ id: 'm1', de: 'A', a: 'B', at: 1 }] }), [{ id: 'm1', de: 'A', a: 'B', at: 1 }]);
+  assert.deepStrictEqual(d.sobresDeOficina(null), []);
+  assert.deepStrictEqual(d.sobresDeOficina({ sobres: 'no' }), []);
+  const code = fs.readFileSync(path.join(OFFICE_DIR, 'page.js'), 'utf8');
+  const fn = (name) => { const at = code.indexOf(`function ${name}(`); assert.ok(at >= 0, name); const end = code.indexOf('\nfunction ', at + 1); return code.slice(at, end < 0 ? undefined : end); };
+  // cada sala del sitio vuela con los sobres de su foto, y la ficha ofrece la conversación a quien la puede pedir
+  assert.match(fn('crearSala'), /sobres:\(\)=>sobresDeOficina\(foto\(\)\)/, 'la sala del sitio usa los sobres de su oficina');
+  // la ficha lee de DATA los tokens de la persona: en el sitio, mientras se pinta una oficina, DATA es su foto (si no,
+  // la tarjeta sale sin tokens; lo encontró la captura de «Probar en vivo»). El navegador lo mira en site-offices.smoke.js
+  assert.match(fn('crearSala'), /conLaMaquina=g=>\(\.\.\.x\)=>\{const antes=fuenteCharla,datos=DATA;.*?DATA=foto\(\);try\{return g\(\.\.\.x\)\}finally\{fuenteCharla=antes;DATA=datos\}/, 'la ficha de la sala lee la foto de su oficina');
+  assert.match(fn('pintarOficina'), /DATA=o\.foto\|\|\{\};\s*try\{pintarTarjetas\(/, 'las tarjetas de una oficina leen su foto');
+  assert.match(fn('pintarOficina'), /finally\{fuenteCharla=antes;DATA=datos\}/, 'y después vuelve a la de antes');
+  // las tarjetas van en el orden del sitio, el mismo con que se eligen las salas, no en el de llegada (que depende de lo
+  // que la página vio antes de reconectarse)
+  assert.match(fn('ubicar'), /const orden=\[\.\.\.new Set\(\[\.\.\.oficinas\.keys\(\),\.\.\.fichas\.keys\(\)\]\)\]/);
+  assert.match(fn('ubicar'), /cards=orden\.map\(/);
+  assert.match(fn('ponerSalas'), /salasVivas\(oficinas\.values\(\)/);
+  assert.match(fn('pintarFicha'), /pedidoDeCharla\(/, 'el botón aparece si hay de dónde pedirla');
+  assert.match(fn('abrirCharla'), /fetch\(pedidoDeCharla\(/, 'y se pide a la fuente');
+  // sin conversación guardada todavía (404) no es una falla: dice que no llegó; lo demás que no es 200, sí es una falla
+  assert.strictEqual(d.charlaSegunRespuesta(404), 'vacia');
+  for (const s of [500, 403, 0, undefined]) assert.strictEqual(d.charlaSegunRespuesta(s), 'falla', String(s));
+  assert.strictEqual(d.charlaSegunRespuesta(200), 'datos');
+  assert.match(fn('abrirCharla'), /charlaSegunRespuesta\(r\.status\)/, 'la página decide con el estado de la respuesta');
+  // en el sitio, el 404 es que todavía no llegó; en la oficina local, que la sesión ya no está
+  assert.match(fn('pintarCharla'), /c\.vacia\)\{fin\(el\("p","m",c\.deSitio\?"La conversación de esta sesión todavía no llegó al sitio\.":"Esta sesión ya no está en la oficina\."\)\)/);
+  assert.match(fn('abrirCharla'), /deSitio=pedido\.fuente==="site"/);
+  // un 200 vale sólo con la forma de una conversación; lo que falla queda en la consola, y un pintado que se rompe dice que falló
+  assert.strictEqual(d.charlaConForma({ conCoordinadora: [] }), true);
+  assert.strictEqual(d.charlaConForma({ sinCoordinadora: true }), true);
+  // la de una sesión de Codex: no se lee desde la oficina, pero se le puede escribir
+  assert.strictEqual(d.charlaConForma({ sinConversacion: true, oficina: { recibe: 'codex' } }), true);
+  for (const x of [null, [], {}, { otra: 1 }, 'texto']) assert.strictEqual(d.charlaConForma(x), false, JSON.stringify(x));
+  assert.match(fn('abrirCharla'), /if\(!charlaConForma\(datos\)\)throw/);
+  assert.match(fn('abrirCharla'), /\.catch\(e=>\{console\.warn\(/);
+  assert.match(fn('abrirCharla'), /try\{pintarCharla\(box,nombre,c,cerrar\)\}catch\(e\)\{console\.warn\([^}]*\);pintarCharla\(box,nombre,\{falla:true\},cerrar\)\}/);
+  assert.match(fn('pintarCharla'), /c\.falla\)\{fin\(el\("p","m","No se pudo leer la conversación de esta sesión\."\)\)/);
+  // el mensaje entero, por la ventana de siempre: el texto se pone con nodos, nunca como HTML
+  assert.doesNotMatch(fn('msg') + fn('formatear') + fn('enLinea'), /innerHTML|insertAdjacentHTML/);
+  // de punta a punta: una máquina manda su charla, el sitio la entrega y la página la pide por la ruta que arma
+  const h = await montar();
+  try {
+    const maquinas = await conectarMaquinas(h, { 'maquina-a': { agents: [{ nombre: 'Sesion de A', estado: 'trabajando' }], sobres: [{ id: 'm1', de: 'Sesion de A', a: 'Coordinadora', at: 1 }], free: [], unreadable: [] } });
+    maquinas['maquina-a'].ws.send(JSON.stringify({ type: 'charla', sesion: 'Sesion de A', datos: { conCoordinadora: [{ de: 'Coordinadora', texto: '<b>hola</b> entero', at: 1, propio: false }] } }));
+    const cookie = await h.entrar(LEAD);
+    let r = null;
+    for (let i = 0; i < 100 && (!r || r.status !== 200); i += 1) { r = await h.pedir(d.pedidoDeCharla({ fuente: 'site', maquina: 'maquina-a', nombre: 'Sesion de A' }), { cookie }); if (r.status !== 200) await pausa(20); }
+    assert.strictEqual(r.status, 200, r.texto);
+    assert.strictEqual(r.json.conCoordinadora[0].texto, '<b>hola</b> entero');
+    const nav = conectar(h, '/live/offices', { origin: h.base, headers: { cookie } });
+    await hasta(() => nav.msgs.some((m) => m.type === 'oficinas' && m.oficinas.some((o) => o.foto && o.foto.sobres)), 3000, 'los sobres en la foto');
+    const foto = nav.msgs.find((m) => m.type === 'oficinas').oficinas.find((o) => o.id === 'maquina-a').foto;
+    assert.deepStrictEqual(foto.sobres, [{ id: 'm1', de: 'Sesion de A', a: 'Coordinadora', at: 1 }]);
+    nav.ws.close();
+  } finally { await h.cerrar(); }
 });
 
 // ── La imagen ───────────────────────────────────────────────────────────────────────────────

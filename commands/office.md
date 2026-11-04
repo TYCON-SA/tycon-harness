@@ -21,6 +21,11 @@ trae el comando todavía y que se actualiza con `/tycon-harness`. No corras nada
 | 1 | no pudo arrancar el proceso local: decilo con el motivo que imprimió |
 | otro | el programa falló: mostrá el error tal cual |
 
+**Qué abre.** Con la dirección del sitio en el perfil del equipo y la máquina aprobada, abre la pestaña «Oficinas» del sitio,
+en la oficina de esta máquina. Sin sitio, con la máquina sin aprobar o si espera la aprobación, abre la página local;
+mientras espera la aprobación, la salida lo dice en una línea con la huella, que quien mantiene compara para aprobarla.
+`--local` abre siempre la página local.
+
 ## Qué le mostrás
 
 Una línea: la dirección que imprimió y que la página se actualiza sola mientras esté abierta. Si dice «ya estaba
@@ -31,8 +36,9 @@ abierta», es la misma de antes. No resumas lo que dice la página: para eso est
 Mientras la página está abierta, un proceso local (uno solo por máquina, sólo en esta máquina y con un token) vigila
 las carpetas del arnés y le manda cada cambio a la página por WebSocket: una sesión que cambia de paso, espera algo o
 termina se ve sin volver a correr nada. No consulta nada cada tantos segundos; los pedidos de git, Azure DevOps y
-GitHub se preguntan a lo sumo una vez por minuto. La página no le puede mandar órdenes al proceso. El proceso se cierra
-solo a los 2 minutos sin la página abierta y a las 8 horas; entonces la página dice «La oficina se cerró. Corré /office
+GitHub se preguntan a lo sumo una vez por minuto. La página no le puede mandar órdenes al proceso. Sin la dirección del
+sitio en el perfil, el proceso se cierra solo a los 2 minutos sin la página abierta y a las 8 horas; con ella vive con las
+sesiones: se cierra a los 10 minutos sin ninguna y a las 12 horas. Cuando se cierra, la página dice «La oficina se cerró. Corré /office
 otra vez para verla al día.» y deja la última foto.
 
 ## Qué trae la página
@@ -49,12 +55,15 @@ sesión sin pipeline dice su encargo, lo que está haciendo y su última acción
 conversación. Su título es lo que ella anotó que hace, o su último mensaje; el encargo se muestra como encargo. La tarjeta
 y el panel al tocar a la persona dicen lo mismo.
 
-La conversación no se guarda ni sale de la máquina. Lo que sí sale, si la máquina está aprobada en el sitio de la
-organización: la foto de la oficina viaja a su pestaña «Oficinas», con el nombre de cada sesión, su título, su encargo,
-lo que está haciendo y su última acción. Cada texto viaja sin la carpeta personal ni las claves que se reconocen, y cortado
-a 200 caracteres; de la última acción, sólo qué hizo y a qué hora, sin el nombre del archivo. Del título de un trabajo de
-otro proyecto, en las tablas, viaja «Otro proyecto». Lo ven las personas con rol en el sitio: con la regla de fábrica,
-quien mantiene ve todas las máquinas y cada dev, las suyas. Una máquina sin aprobar no manda nada.
+Si la máquina está aprobada en el sitio de la organización, a su pestaña «Oficinas» viaja todo lo que muestra esta página:
+el nombre de cada sesión, su título, su encargo, lo que está haciendo y su última acción, el tablero y las tablas, los
+tokens, los mensajes entre sesiones (los avioncitos) y la conversación de cada sesión, que allá también se abre con «Ver
+conversación». Cada texto viaja sin la carpeta personal ni las claves que se reconocen; los de la foto, cortados a 200
+caracteres, y los mensajes de la conversación, enteros hasta 8000. De la última acción, sólo qué hizo y a qué hora, sin el
+nombre del archivo. Del título de un trabajo de otro proyecto, en las tablas, viaja «Otro proyecto». La conversación sale
+a lo sumo una vez por minuto por sesión y sólo a un sitio que la entiende, y el sitio la guarda sólo en memoria, nunca en
+su disco. Lo ven las personas con rol en el sitio: con la regla de fábrica, quien mantiene ve todas las máquinas y cada
+dev, las suyas. Una máquina sin aprobar no manda nada.
 
 Las tablas «Hoy» y «Pendientes» se arman solas de las mismas tarjetas que el kanban: nadie las escribe. Tienen una fila por
 tema, con una línea de estado contada de las tarjetas, y al tocarla se abren sus trabajos. El tema de cada trabajo lo elige

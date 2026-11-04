@@ -72,8 +72,11 @@ async function delSitio(browser) {
   const extras = Array.from({ length: 9 }, (_, i) => `maquina-${i + 1}`);
   const h = await montar({ extras });
   try {
+    // los tokens de una sesión viven fuera de su registro (`tokens`, por nombre): la tarjeta los busca en la foto de su oficina
+    const fotoA = foto([sesion('Coordinadora', 'coordina', { titulo: undefined }), sesion('Atlas', 'prueba'), sesion('Boro', 'firma', { espera: 'el plan espera tu firma' }), sesion('Dina', 'libre', { titulo: undefined, haciendo: 'Sin trabajo' })]);
+    fotoA.tokens = { Atlas: { contexto: '84k de 200k · 42 %', consumidos: 'Read 31k', agentes: 2 } };
     await conectarMaquinas(h, {
-      'maquina-a': foto([sesion('Coordinadora', 'coordina', { titulo: undefined }), sesion('Atlas', 'prueba'), sesion('Boro', 'firma', { espera: 'el plan espera tu firma' }), sesion('Dina', 'libre', { titulo: undefined, haciendo: 'Sin trabajo' })]),
+      'maquina-a': fotoA,
       // un nombre con forma de código: tiene que verse como texto
       'maquina-b': foto([sesion('<img src=x onerror=window.__colado=1>', 'trabajando'), sesion('Cleo', 'parada', { parada: 'parada desde las 16:10' })]),
     });
@@ -103,6 +106,7 @@ async function delSitio(browser) {
     check(await salas(m.page) === 2, 'las dos oficinas tienen su sala en 3D');
     check(await m.page.locator('.oficina[data-id="maquina-a"] .stats').innerText().then((t) => /4\s*sesiones/.test(t) && /1\s*trabajando/.test(t) && /1\s*esperan tu firma/.test(t) && /1\s*esperan o libres/.test(t) && /coordina\s*Coordinadora/.test(t)), 'el resumen de la oficina');
     check(await m.page.locator('.crewblock[data-id="maquina-a"] .card').count() === 4, 'debajo, las tarjetas de sus sesiones');
+    check(await m.page.locator('.crewblock[data-id="maquina-a"] .card', { hasText: 'Atlas' }).innerText().then((t) => /Contexto\s*84k de 200k/.test(t) && /Incluye sus 2 agentes/.test(t)), 'la tarjeta trae los tokens de su oficina, como en la local');
     check(await m.page.locator('#oficinasVacio').isHidden(), 'con oficinas, no dice que no hay');
     await shot(m.page, '1-quien-mantiene-todas');
 

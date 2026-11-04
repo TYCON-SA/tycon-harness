@@ -2759,7 +2759,7 @@ test('T266 Tokens_Plain: números en llano, y sin ventana no hay porcentaje', ()
   assert.deepStrictEqual(tokensCard({ noMedido: true }), { noMedido: true });
 });
 
-test('T268 Tokens_OnlyInTheOpenOffice: con la oficina abierta llegan por nombre; la foto fija no los lee y al sitio no viajan', async () => {
+test('T268 Tokens_OnlyInTheOpenOffice: con la oficina abierta llegan por nombre; la foto fija no los lee; al sitio viajan', async () => {
   const m = parkMachine();
   const now = Date.now();
   const repo = toyRepo(m, 'cuenta');
@@ -2773,7 +2773,8 @@ test('T268 Tokens_OnlyInTheOpenOffice: con la oficina abierta llegan por nombre;
   assert.deepStrictEqual(live.tokens.Sol, { contexto: '501 mil de 1 millón · 50 %', consumidos: 'Read 1 mil · Write 2 mil · Cache Read 500 mil', agentes: 0 });
   assert.strictEqual((await collectAt(m, now)).tokens, undefined, 'la foto fija no lee conversaciones enteras');
   const { pick } = require(path.join(path.dirname(OFFICE), 'office', 'fields.js'));
-  assert.strictEqual(pick(live, m.home).tokens, undefined, 'no viajan al sitio');
+  // viajan al sitio: el sitio lleva todo lo de la oficina local
+  assert.deepStrictEqual(pick(live, m.home).tokens, live.tokens, 'viajan al sitio, por nombre');
 });
 
 test('T270 Tokens_CodexWithoutName: una sesión de Codex sin nombre propio tiene sus tokens bajo el nombre de su tarjeta', async () => {
@@ -3220,7 +3221,8 @@ test('T269 WaysOfWorking_FinishedRunNote: una nota de la sesión cuya ejecución
 
 test('T267 Conversation_OnlyInItsWindow: el botón va sólo con la oficina viva, la ventana se cierra con Esc y la foto no trae el texto', () => {
   const html = page({ agents: [], items: [], kanban: null, meta: null });
-  assert.match(html, /if\(LIVE&&a\.nombre\)box\.appendChild\(botonCharla\(a\.nombre\)\)/, 'sin oficina viva no hay botón');
+  // el botón va con de dónde pedirla: la oficina viva o el sitio; la foto fija no tiene
+  assert.match(html, /if\(a\.nombre&&pedidoDeCharla\(p\)\)box\.appendChild\(botonCharla\(a\.nombre,p\)\)/, 'sin de dónde pedirla no hay botón');
   assert.match(html, /createTextNode\("Ver conversación"\)/);
   assert.match(html, /s\.appendChild\(dibujo\(CHARLA_ICONO\)\)/, 'lleva su ícono, dibujado en la página');
   assert.match(html, /\.ventana \.panel3\{[^}]*height:min\(920px,calc\(100dvh - 32px\)\)/, 'la ventana entra en la pantalla');
@@ -3230,7 +3232,7 @@ test('T267 Conversation_OnlyInItsWindow: el botón va sólo con la oficina viva,
   assert.match(html, /getElementById\("ventana"\)\.addEventListener\("click",e=>\{if\(e\.target===e\.currentTarget\)cerrarCharla\(\)\}\)/, 'tocando afuera se cierra');
   const opensAt = html.indexOf('function abrirCharla(');
   assert.ok(opensAt >= 0);
-  assert.strictEqual(html.indexOf('fetch("conversacion'), html.indexOf('fetch("conversacion', opensAt), 'se lee sólo al abrirla');
+  assert.strictEqual(html.indexOf('fetch(pedidoDeCharla('), html.indexOf('fetch(pedidoDeCharla(', opensAt), 'se lee sólo al abrirla');
   assert.doesNotMatch(html.slice(html.indexOf('function abrir(nombre'), html.indexOf('los sobres: quién')), /conversacion|pintarCharla/, 'el detalle ya no la lee');
 });
 

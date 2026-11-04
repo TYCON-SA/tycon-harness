@@ -1843,6 +1843,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.171, tanda D: lo que las guías y /office dicen de las oficinas en el sitio",
+      "raiz": "arnes",
+      "ruta": "tests/office-site-guides.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/coordination.test.js",
       "requiere": []

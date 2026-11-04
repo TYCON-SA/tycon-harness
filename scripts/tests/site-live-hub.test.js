@@ -1564,3 +1564,92 @@ test('Regresion_ConfiarEnElIntermediario_LoDicenTodasLasRecetas — @story-8.171
   assert.match(leer('scripts/site/deploy/local/sitio.env.example'), /SITE_TRUST_PROXY=1/);
   for (const g of ['guides/organization-site.md', 'guides/organization-site.en.md']) assert.match(leer(g), /--set-env-vars SITE_TRUST_PROXY=1/, g);
 });
+
+// ── La conversación de cada sesión ─────────────────────────────────────────────────────────
+
+test('T49 Sitio_GuardaYEntregaLaCharla_ConLaRegla — @story-8.171 @ac-27', async () => {
+  const h = await montar();
+  try {
+    const { ma, mb } = await dosMaquinasConectadas(h);
+    // el sitio anuncia en el ack que entiende la charla
+    assert.deepStrictEqual(ma.msgs.find((m) => m.type === 'ack').puede, ['charla']);
+    const charla = { conCoordinadora: [{ de: 'Coordinadora', texto: 'mirá <script>alert(1)</script> esto', at: 1000, propio: false }, { de: null, texto: 'listo', at: 2000, propio: true }] };
+    ma.ws.send(JSON.stringify({ type: 'charla', sesion: 'Sesion de A', datos: charla }));
+    mb.ws.send(JSON.stringify({ type: 'charla', sesion: 'Sesion de B', datos: { conCoordinadora: [{ de: 'Coordinadora', texto: 'lo de B', at: 1, propio: false }] } }));
+    const ruta = (m, s) => `/offices/conversation?m=${encodeURIComponent(m)}&s=${encodeURIComponent(s)}`;
+    const cookieA = await h.entrar(A);
+    const cookieLead = await h.entrar(LEAD);
+    const pedirHasta = async (r0, cookie, status) => {
+      let r = null;
+      for (let i = 0; i < 100; i += 1) { r = await h.pedir(r0, { cookie }); if (r.status === status) return r; await pausa(20); }
+      return r;
+    };
+    const r = await pedirHasta(ruta('maquina-a', 'Sesion de A'), cookieA, 200);
+    assert.strictEqual(r.status, 200, r.texto);
+    assert.deepStrictEqual(r.json, charla, 'la entrega tal cual llegó: el texto va como dato y la página lo escapa');
+    assert.match(r.headers['content-type'], /application\/json/);
+    assert.strictEqual(r.headers['cache-control'], 'no-store');
+    // quien no ve esa máquina recibe lo mismo que para una que no existe
+    assert.strictEqual((await h.pedir(ruta('maquina-b', 'Sesion de B'), { cookie: cookieA })).status, 404);
+    assert.strictEqual((await h.pedir(ruta('maquina-z', 'Sesion de A'), { cookie: cookieA })).status, 404);
+    assert.strictEqual((await h.pedir(ruta('maquina-a', 'Otra'), { cookie: cookieA })).status, 404);
+    assert.strictEqual((await pedirHasta(ruta('maquina-b', 'Sesion de B'), cookieLead, 200)).status, 200, 'quien mantiene ve todas');
+    // sin sesión del sitio, nada
+    assert.notStrictEqual((await h.pedir(ruta('maquina-a', 'Sesion de A'))).status, 200);
+    // la sesión que sale de la foto se lleva su conversación
+    ma.ws.send(JSON.stringify({ type: 'foto', data: FOTO('Otra sesion') }));
+    assert.strictEqual((await pedirHasta(ruta('maquina-a', 'Sesion de A'), cookieA, 404)).status, 404, 'se fue con la sesión');
+    // una charla de forma mala cierra la conexión
+    mb.ws.send(JSON.stringify({ type: 'charla', sesion: 'Sesion de B', datos: { conCoordinadora: 'no es una lista' } }));
+    await hasta(() => mb.cerro !== null, 3000, 'el cierre');
+    assert.strictEqual(mb.cerro, F.CLOSE.policy);
+    // nada del texto llega al registro, ni al disco del sitio
+    assert.ok(!h.registro.join('\n').includes('alert(1)'), 'el registro no trae la conversación');
+    const enDisco = [];
+    const recorrer = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) recorrer(p); else enDisco.push(fs.readFileSync(p, 'utf8')); } };
+    recorrer(h.dir);
+    assert.ok(!enDisco.join('\n').includes('alert(1)'), 'ni el disco');
+    ma.ws.close();
+  } finally { await h.cerrar(); }
+});
+
+test('T49 Sitio_LaCharlaTieneTopes_PorOficinaPorSegundoYPorLargo — @story-8.171 @ac-27', async () => {
+  // el sitio no confía en el filtro de la máquina: una clave filtrada no le llena la memoria
+  const h = await montar({ opciones: { topes: { charlasPorOficina: 2, bytesCharlasPorOficina: 12000 } } });
+  try {
+    const { ma, mb } = await dosMaquinasConectadas(h);
+    ma.ws.send(JSON.stringify({ type: 'foto', data: { agents: ['S1', 'S2', 'S3'].map((nombre) => ({ nombre, estado: 'trabajando' })), free: [], unreadable: [] } }));
+    const de = (texto) => ({ conCoordinadora: [{ de: 'Coordinadora', texto, at: 1, propio: false }] });
+    const ruta = (s) => `/offices/conversation?m=maquina-a&s=${encodeURIComponent(s)}`;
+    const cookie = await h.entrar(LEAD);
+    const textoDe = async (s) => { const r = await h.pedir(ruta(s), { cookie }); return r.status === 200 ? r.json.conCoordinadora[0].texto : null; };
+    const hastaQue = async (fn, que) => { for (let i = 0; i < 100; i += 1) { if (await fn()) return; await pausa(20); } assert.fail(que); };
+    await pausa(100);
+    ma.ws.send(JSON.stringify({ type: 'charla', sesion: 'S1', datos: de('a '.repeat(1500)) }));
+    ma.ws.send(JSON.stringify({ type: 'charla', sesion: 'S2', datos: de('b '.repeat(1500)) }));
+    await hastaQue(async () => (await textoDe('S2')) !== null, 'guarda las dos primeras');
+    // la tercera sesión pasa el tope de cantidad: no se guarda, y queda anotado una vez
+    ma.ws.send(JSON.stringify({ type: 'charla', sesion: 'S3', datos: de('c') }));
+    await pausa(150);
+    assert.strictEqual(await textoDe('S3'), null, 'la tercera no se guarda');
+    // un texto de hasta 8000 entra entero; la de una sesión ya guardada se reemplaza
+    const largo = 'x '.repeat(3999) + 'y';
+    ma.ws.send(JSON.stringify({ type: 'charla', sesion: 'S1', datos: de(largo) }));
+    await hastaQue(async () => (await textoDe('S1')) === largo, 'un texto de 7999 caracteres entra entero');
+    // la que pasaría el tope de bytes de la oficina no se guarda: queda la anterior
+    ma.ws.send(JSON.stringify({ type: 'charla', sesion: 'S2', datos: de(largo) }));
+    await pausa(150);
+    assert.strictEqual(await textoDe('S2'), 'b '.repeat(1500), 'sin lugar, queda la anterior');
+    assert.strictEqual(h.registro.filter((l) => l.includes('llenó su tope de conversaciones')).length, 1, 'anotado una vez');
+    assert.strictEqual(ma.cerro, null, 'llenar el tope no corta la conexión');
+    // un texto de más de 8000 es una forma mala: cierra
+    mb.ws.send(JSON.stringify({ type: 'charla', sesion: 'Sesion de B', datos: de('z'.repeat(8001)) }));
+    await hasta(() => mb.cerro !== null, 3000, 'el cierre por largo');
+    assert.strictEqual(mb.cerro, F.CLOSE.policy);
+    // las charlas cuentan para el tope de mensajes por segundo, como las fotos
+    for (let i = 0; i < 12; i += 1) ma.ws.send(JSON.stringify({ type: 'charla', sesion: 'S1', datos: de(`ráfaga ${i}`) }));
+    await hasta(() => ma.cerro !== null, 3000, 'el cierre por ráfaga');
+    assert.strictEqual(ma.cerro, F.CLOSE.policy);
+    assert.ok(h.registro.some((l) => l.includes('mensajes por segundo')));
+  } finally { await h.cerrar(); }
+});

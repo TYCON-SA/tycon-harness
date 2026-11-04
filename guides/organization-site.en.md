@@ -402,6 +402,51 @@ updates**. A number next to a tab says how many things are waiting there.
 
 ![Configuration: the four cards at the top and the People tab](sitio-de-la-organizacion/capturas/configuracion-personas.png)
 
+## The «Offices» tab
+
+Each team machine's office, live: the same one `/office` draws on the machine, with one room per machine. Tapping one
+makes it big, and its sessions show below with the same columns as the local page.
+
+**Who sees what.** `site.offices.visibility` decides it, in Configuration. By default it is `maintainers`: maintainers see
+every office and each dev sees the offices of their confirmed machines, as in Runs. With `everyone`, everyone who signs in
+sees all of them, and that includes the whole conversation of every session of every dev, not only the snapshot: choose it
+knowing that. Without a role, none.
+
+**Joining takes zero steps for the dev.** Each team machine asks to join by itself: with the site address in the team
+profile, when a session opens, or while people work (the team layer updates itself every 30 minutes). The machine makes
+its key pair, sends the site only the public key and shows the dev one line with the fingerprint. The dev runs nothing.
+A maintainer approves it once, in Configuration → «People and machines»: approving is confirming that the request's
+fingerprint is the same one that machine left with its runs in the mailbox. Until it arrives, the request says it is
+waiting for the machine to leave its fingerprint, and at what time the site reads the mailbox again. The key is valid
+while the machine connects, and expires after 30 days without connecting: then the machine asks to join again, by
+itself. Disabling a machine cuts its connection.
+
+**What leaves the machine.** The same as the local office shows: each session with its name, its state, its work, its
+assignment, what it is doing and its last action; the board, the tables, the tokens, the messages between sessions (the
+paper planes) and each session's conversation, which opens with «See conversation», as on the machine. Each text leaves
+without the home folder or the keys that are recognized. The conversation travels apart from the snapshot, only to a site
+that understands it, and the site keeps it only in memory: nothing from the office stays on its disk. So maintainers see
+live what each dev is doing; each dev knows it from the fingerprint line.
+
+**What the owner decided.**
+- **D1** — The network: each machine opens an outgoing connection to the site (`wss://`, port 443). Nothing comes in.
+- **D1b** — A single copy of the site: each machine's last snapshot lives in its memory, and each recipe pins one replica.
+- **D2** — Joining is automatic, with the fingerprint also through the mailbox: an outside request has no way to upload it.
+- **D2b** — The key is not renewed: it expires only after 30 days without connecting, and disabling is per machine.
+- **D3** — What leaves is what the local office shows; there is a single list (`scripts/tools/office/fields.js`).
+- **D4** — The `site.offices.visibility` knob, by default `maintainers`.
+- **D5** — One process per machine, in the background, that reports each change and lives while there are sessions.
+- **D7** — The machine routes, `/live/machine` and `/live/enroll`, stay outside the platform lock.
+
+The back channel is closed: the site cannot send orders to the machine. A message the machine does not expect is
+dropped and cuts the connection.
+
+**An already installed site: the one-time step.** `/live/machine` and `/live/enroll` are in `RUTAS_SIN_SESION`, but the
+platform lock of an already installed site does not learn it by itself. In Azure, run once the recipe's
+`--excluded-paths` command, which already names them; in the local recipe with a tunnel, leave them free in the tunnel's
+lock. The sessionless check confirms it: `node scripts/site/check-deploy.js --url https://<site address>`, which warns
+«the one-time step is missing» if the lock covers them.
+
 ## Configuration, section by section
 
 Each section is a part of a configuration file that lives in an organization repo: the **operations repo** (the night's
