@@ -92,6 +92,8 @@ const RECENT_FILE_MS = 30 * 60 * 1000;
 const MARKER_JS = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
 const shortId = (sid) => String(sid || '').slice(0, 8) || '?';
 const oneLine = (s) => String(s).replace(/\s+/g, ' ').trim();
+// texto de afuera (una nota, un registro de otra herramienta) para mostrar: en una línea, sin caracteres de control, acotado
+const shown = (s, n = 160) => oneLine(String(s == null ? '' : s).replace(/[\p{Cc}\p{Cf}]/gu, ' ')).slice(0, n);
 const cut = (s, n) => {
   const chars = Array.from(oneLine(s));
   return chars.length > n ? `${chars.slice(0, n - 1).join('')}…` : chars.join('');
@@ -313,7 +315,7 @@ function sessionsBySid(dir, unreadable, projectsDir) {
     const cwd = typeof s.cwd === 'string' ? s.cwd : null;
     // el nombre es el del archivo de sesión, el que usan los mensajes; sin él, el último /rename de la conversación
     const name = (typeof s.name === 'string' && s.name.trim()) ? cut(oneLine(s.name), NAME_MAX) : sessionTitle(projectsDir, cwd, s.sessionId, unreadable);
-    const cur = { name: name || null, pid, alive, busy: s.status === 'busy' || s.status === 'shell', status: typeof s.status === 'string' ? s.status : null, statusAt: Number(s.statusUpdatedAt) || null, nameSource: typeof s.nameSource === 'string' ? s.nameSource : null, kind: typeof s.kind === 'string' ? s.kind : null, jobId: typeof s.jobId === 'string' ? s.jobId : null, startedAt: Number(s.startedAt) || null, cwd, last: dates.length ? Math.max(...dates) : null, internal: isInternalAgent(cwd, s.nameSource) };
+    const cur = { name: name || null, pid, alive, busy: s.status === 'busy' || s.status === 'shell', status: typeof s.status === 'string' ? s.status : null, waitingFor: typeof s.waitingFor === 'string' ? oneLine(s.waitingFor).slice(0, 80) : null, statusAt: Number(s.statusUpdatedAt) || null, nameSource: typeof s.nameSource === 'string' ? s.nameSource : null, kind: typeof s.kind === 'string' ? s.kind : null, jobId: typeof s.jobId === 'string' ? s.jobId : null, startedAt: Number(s.startedAt) || null, cwd, last: dates.length ? Math.max(...dates) : null, internal: isInternalAgent(cwd, s.nameSource) };
     // Dos archivos con la misma sesión: manda el vivo, y la actividad es la más nueva de los dos.
     const prev = out.get(s.sessionId);
     if (!prev || (!prev.alive && alive)) out.set(s.sessionId, prev && prev.last > nn(cur.last, -1) ? { ...cur, last: prev.last } : cur);
@@ -462,8 +464,15 @@ const TESTING_STEPS = new Set(['run-tests', 'reviewers', 'adversarial-pass', 'li
 function realState(x, d, f) {
   // un cuadro abierto: un permiso o un plan piden tu firma, y una pregunta sólo tu respuesta
   const plan = x.kind === 'pipeline' && x.current === 'approve-plan';
-  if (f && f.waitingForOwner) return f.waitingFor === ANSWER_DIALOG && !plan ? { estado: 'pregunta', espera: ANSWER_WAIT } : { estado: 'firma', espera: plan ? 'que apruebes el plan' : f.waitingFor || 'algo de vos' };
-  if (d && d.status && WAITING_STATUS.test(d.status)) return /permission/i.test(d.status) || plan ? { estado: 'firma', espera: plan ? 'que apruebes el plan' : ANSWER_WAIT } : { estado: 'pregunta', espera: ANSWER_WAIT };
+  // un permiso anotado lo confirma Claude cuando dice el estado: si no la da esperando, se negó o ya siguió
+  const permissionGone = Boolean(f && f.permission && d && typeof d.status === 'string' && d.status && !WAITING_STATUS.test(d.status));
+  if (f && f.waitingForOwner && !permissionGone) return f.waitingFor === ANSWER_DIALOG && !plan ? { estado: 'pregunta', espera: ANSWER_WAIT } : { estado: 'firma', espera: plan ? 'que apruebes el plan' : f.waitingFor || 'algo de vos' };
+  if (d && d.status && WAITING_STATUS.test(d.status)) {
+    if (/permission/i.test(d.status) || /permission/i.test(String(d.waitingFor || '')) || plan) return { estado: 'firma', espera: plan ? 'que apruebes el plan' : ANSWER_WAIT };
+    // sin un cuadro abierto, lo que la sesión anotó que espera (un turno, otra sesión) dice más que «esperando»
+    if (x.waitingFor) return { estado: 'espera', espera: shown(x.waitingFor, 120) };
+    return { estado: 'pregunta', espera: ANSWER_WAIT };
+  }
   const codex = Boolean(f && f.tool === 'codex');
   const status = d && d.status;
   const busy = codex ? (typeof f.busy === 'boolean' ? f.busy : null) : status === 'busy' || status === 'shell' ? true : status === 'idle' ? false : null;
@@ -1559,7 +1568,28 @@ function buildWip(opts = {}) {
   }));
   // los repos de las corridas con fila: /office los reconoce al preguntar por un pedido que nombra el tablero
   const runRepos = [...new Set([...pipeRows.values()].map(({ m }) => m.repoPath).filter((p) => typeof p === 'string' && path.isAbsolute(p)))];
-  return { testSids, rows, details, extra, free, freeSids, freeStatus, idle, halfway, halfwayItems, halfwayReadAt: (gitCtx.memory && gitCtx.memory.halfwayReadAt) || nowMs, unreadable, wanted, runRepos, internal, text: render(rows, free, noData, idle, halfway, unreadable, internal, notes, freeNotes) };
+  const retired = retiredNow(home, nowMs, sessions, unreadable);
+  const text = render(rows, free, noData, idle, halfway, unreadable, internal, notes, freeNotes) + renderRetired(retired);
+  return { testSids, rows, details, extra, free, freeSids, freeStatus, idle, halfway, halfwayItems, halfwayReadAt: (gitCtx.memory && gitCtx.memory.halfwayReadAt) || nowMs, unreadable, wanted, runRepos, internal, retired, text };
+}
+
+// Las sesiones de fondo que Claude Code cerró y no volvieron (scripts/lib/claude-retired.js). Un registro que existe y no se
+// pudo leer o entender se dice en `unreadable`; sin registro (otra máquina, Codex), nada.
+function retiredNow(home, nowMs, sessions, unreadable) {
+  try {
+    const r = require(path.join(ROOT, 'scripts', 'lib', 'claude-retired.js')).retiredSessions({ home, now: nowMs });
+    if (!r.measured && !/^no hay registro/.test(String(r.why))) unreadable.push(`las sesiones que cerró Claude Code: ${shown(r.why)}`);
+    return r.retired.filter((x) => !(x.sid && sessions.get(x.sid) && sessions.get(x.sid).alive));
+  } catch (e) {
+    unreadable.push(`las sesiones que cerró Claude Code (${shown((e && e.message) || e)})`);
+    return [];
+  }
+}
+
+// Su renglón en /wip, debajo de la tabla: qué pasó y el comando que la levanta.
+function renderRetired(retired) {
+  if (!retired || !retired.length) return '';
+  return `\n\nCerradas por Claude Code:\n${retired.map((x) => `- ${shown(x.session, 40)}: la cerró Claude Code (${shown(x.reason, 40)}), quieta ${x.idleMin} min — claude respawn ${x.short}`).join('\n')}`;
 }
 
 // De prueba es la sesión que lanzó otra sesión: ninguna de las de verdad desciende de otra. El árbol de procesos sólo se lee si
@@ -1707,4 +1737,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { buildWip, wipNow, createMemory, reviseHalfway, git, stepMedians, enteredMain, OVERDUE_HOUR, stagesOf, jsonOf, sessionsBySid, storyEntering, median, queryAll, readPrs, parseRemote, offQueueOf, identityOf, remoteOfFolder, endOf, hourForStep, hourVerdict, realState, replacedByNewer, storyPausedUntil, unsavedChanges, codexNames, PER_QUERY_MS, ALL_QUERIES_MS, SAFE_SID, LOOSE_STALE_MS };
+module.exports = { buildWip, wipNow, renderRetired, retiredNow, createMemory, reviseHalfway, git, stepMedians, enteredMain, OVERDUE_HOUR, stagesOf, jsonOf, sessionsBySid, storyEntering, median, queryAll, readPrs, parseRemote, offQueueOf, identityOf, remoteOfFolder, endOf, hourForStep, hourVerdict, realState, replacedByNewer, storyPausedUntil, unsavedChanges, codexNames, PER_QUERY_MS, ALL_QUERIES_MS, SAFE_SID, LOOSE_STALE_MS };

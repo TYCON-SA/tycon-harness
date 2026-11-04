@@ -123,6 +123,7 @@ skills_foto > "$T/skills-antes.txt"
 node - "$RAIZ" "${SK_REPO:-}" "$HAY_SKILLS" "$CASA" "$BIN" "$T" "$SUITES" "${SK_WHY:-}" <<'JS'
 'use strict';
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const [RAIZ, SK, HAY_SKILLS, CASA, BIN, T, SUITES, SK_WHY] = process.argv.slice(2);
@@ -189,6 +190,8 @@ function casaVacia() {
     // la máquina vacía tampoco tiene navegador: Chrome sin sesión se queda colgado para siempre en una HOME sin perfil
     // (medido con dashboard-runs.test.sh); el caso que lo necesita sale NO MEDIDO, no se cuelga
     TYCON_CHROME: '0',
+    // una suite que lance el corredor sobre su repo de juguete no anota en el registro de tiempos
+    TYCON_SUITE_TIMES: 'off',
     // el instalador lanza de FONDO el chequeo de paridad, que en un clon deja su reporte en scripts/controls-bench/.bench/
     // del árbol, a veces cuando la suite ya terminó: cada suite lo manda a su carpeta temporal (la foto del final lo controla)
     TYCON_PARITY_BENCH_DIR: path.join(tmp, 'parity-bench'),
@@ -207,6 +210,9 @@ const rojas = [];
 const noMedidas = [];
 let verdes = 0, vivos = 0;
 const inicio = Date.now();
+const tiempos = [];
+// la carga de antes de lanzar ninguna: la ajena
+const MAQUINA = { nucleos: os.availableParallelism ? os.availableParallelism() : os.cpus().length, carga: Math.round(os.loadavg()[0] * 100) / 100 };
 function seg(ms) { return `${Math.round(ms / 1000)}s`; }
 function siguiente() {
   while (vivos < POOL && cola.length) {
@@ -233,6 +239,7 @@ function siguiente() {
       vivos--;
       try { fs.rmSync(casa.home, { recursive: true, force: true }); } catch (_) { /* se borra entera al final igual */ }
       const b = path.basename(e.ruta);
+      tiempos.push({ s: e.ruta, ms: Date.now() - t0, exit: agotado ? 124 : (code === null ? 124 : code) });
       if (code === 0 && !agotado) { verdes++; console.log(`✅ ${b} (${seg(Date.now() - t0)})`); }
       else {
         const motivo = agotado ? `se agotó el tope de ${seg(TOPE_MS)}` : `exit ${code}`;
@@ -251,7 +258,27 @@ function siguiente() {
     });
   }
 }
+// Los segundos de cada suite al registro de tiempos (skills/tycon-pipeline/scripts/lib/suite-times.js): a
+// TYCON_SUITE_TIMES, o al de la máquina si las corre una persona. En la CI de GitHub, además, el renglón marcado al
+// final de la salida: el registro de la parte es lo que queda de la corrida. No poder anotar no cambia el veredicto.
+function anotarTiempos() {
+  let st;
+  try { st = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'suite-times.js')); } catch (e) {
+    console.log(`⚠️  suites-portables: no pude cargar el registro de tiempos (${e.code || e.message}): no anoto`); return;
+  }
+  const ci = Boolean(process.env.TYCON_PUBLIC_CI_OUT);
+  const entry = st.entryOf({ origen: ci ? 'ci-github' : 'portables', repo: path.basename(RAIZ), head: st.headOf(RAIZ),
+    workers: POOL, nucleos: MAQUINA.nucleos, carga: MAQUINA.carga, wallMs: Date.now() - inicio, suites: tiempos });
+  if (ci) console.log(`${st.MARK}${JSON.stringify(entry)}`);
+  try {
+    const t = st.target(process.env, { byDefault: !process.env.TYCON_SUITE_RUNNER && !ci });
+    if (!t.file) return;
+    const r = st.append(entry, t.file);
+    if (!r.ok) console.log(`⚠️  suites-portables: no pude anotar los tiempos: ${r.reason}`);
+  } catch (e) { console.log(`⚠️  suites-portables: no pude anotar los tiempos: ${e.message}`); }
+}
 function fin() {
+  anotarTiempos();
   const corridas = verdes + rojas.length;
   console.log(`\nsuites-portables: ${corridas} corridas · ${verdes} verdes · ${rojas.length} rojas · ${noMedidas.length} no medidas · ${seg(Date.now() - inicio)}`);
   if (rojas.length) {

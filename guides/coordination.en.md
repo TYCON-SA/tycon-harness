@@ -361,6 +361,42 @@ screen, it does not save either: nothing measured, nothing green.
 mockup. A closed quick fix (`adhoc clear`) or an expired one stops nothing on save, same as the high-risk guard. A screen
 recorded in a nested worktree that was deleted keeps asking for a mockup and a screenshot: the way out is `adhoc clear`.
 
+## A stuck session, instantly
+
+**When designated, and every time it ends, the coordinator runs `node scripts/tools/coordination.js owner-wait` in the
+background.** It looks every 2 seconds and ends with one line per novelty, and ending wakes the coordinator up:
+
+- "<session> espera un permiso desde las HH:MM: <tool> <what it asks for>. Para entrar: claude attach <session>": the
+  coordinator passes it to the owner with the session, what it asks for and a recommendation. A person answers the
+  permission, in the session's tab or with `claude attach`.
+- "<session> siguió: el permiso ya no está abierto" or "<session> se cerró con un permiso abierto": the owner is told if
+  they had been asked.
+- "<session>: la cerró Claude Code a las HH:MM por falta de memoria, quieta N min. Para levantarla: claude respawn <id>":
+  Claude Code closes quiet background sessions on its own when the machine runs out of memory, and the harness cannot
+  prevent it. The coordinator decides whether to bring it back: that uses memory again and counts for the cap.
+
+There is one per machine, and without a confirmed coordinator it exits at once. If it is not running, the notice of each
+turn says so with the command. `coordination.js status` shows the stuck sessions ("Trabadas") and the ones Claude Code
+closed ("Cerradas por Claude Code").
+
+**At every check, and before saying there is nothing for you, the coordinator looks at the office's waits** ("Tu firma"
+and the state of each session), not only at the messages it gets: the notice can fail.
+
+**The auto mode does not avoid the dialog.** Per the Claude Code documentation, in `auto` the dialog still opens with
+`ask` rules, with an `rm` on critical paths, on the first read outside the working folder, and after 3 blocks in a row or
+20 in total.
+
+Known limit: with a permission open, another tool ending does not close it, but two uses of the same tool at once can
+close it early.
+
+A session waiting for a turn notes it with `marker.js doing "<what I do>" --waiting-for "<what it waits for>"`: that wait
+reaches the coordinator, and the owner only after 2 hours, not after 30 minutes, even if the closing gate escalated.
+That noted wait also keeps its run from being pruned as old, for 24 h since it started waiting.
+
+**A pruned run can be recovered.** If it was pruned anyway ("abandonada: más de N h sin tocarse"), its marker was
+saved: the session that takes it back runs `marker.js restore <session>` (the pruned session), with the owner's usual
+signature, and it comes back with its done and pending steps, without repeating signatures.
+
 ## The notices to the owner
 
 Short and plain: what happened, what is missing and what the owner decides, in that order. One notice per batch of
@@ -584,7 +620,7 @@ They come from a whole day of coordinating several sessions. Each says what to d
 | The coordinator does not approve what gives her more power | nadie | The profile's control looks at the level of what is delegated, not at who approved the request. |
 | Sessions do not write to each other | nadie | A message between sessions does not go through a control. |
 | A session does not open a box in its tab | nadie | The session decides it when asking. |
-| A stuck session is reported with the recommended answer | aviso | The waiting notice goes out at 5 and at 30 minutes; the coordinator writes the recommendation. |
+| A stuck session is reported with the recommended answer | aviso | A permission, instantly, with `owner-wait`; the other waits, at 5 and at 30 minutes; the coordinator writes the recommendation. |
 | Ask the session before saying "your turn" | nadie | What the owner writes in another tab does not reach her. |
 | "Your turn" only for what can be done now | nadie | It is the shape of the message. |
 | Every request to the owner comes complete | nadie | It is the shape of the message. |

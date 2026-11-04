@@ -291,7 +291,7 @@ test('T34 Pagina_BajoLaPoliticaDelSitio — @story-8.171 @ac-17b @ac-10c', async
     const pagina = await h.pedir('/offices', { cookie });
     const csp = pagina.headers['content-security-policy'];
     // lo único en línea es el mapa de importación, con su hash, y sólo en esta ruta
-    const scripts = [...pagina.texto.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)];
+    const scripts = [...pagina.texto.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script[^>]*>/gi)];
     const enLinea = scripts.filter((s) => !/\bsrc=/.test(s[1]));
     assert.strictEqual(enLinea.length, 1, 'un solo guion en línea');
     assert.match(enLinea[0][1], /type="importmap"/);
