@@ -892,6 +892,69 @@ test('T65 Quitar_NoPudo_LoDiceYSigue — @story-8.198 @ac-63', () => {
   assert.match(code, /"No se pudo quitar: "\+/);
 });
 
+// ── Lo que confirmó el pase adversarial ─────────────────────────────────────────────────────────────────────────────
+
+test('Pase_BucleDeFotos_ElCandadoYLosArchivosDelTableroNoDisparanOtraFoto — @story-8.198 @ac-48', () => {
+  const { ignoredChange } = require(path.join(__dirname, '..', 'tools', 'office', 'server.js'));
+  for (const n of ['tablero.lock', 'tablero-numeros.json', 'tablero-hechos.json', 'tablero-huella.json', 'tablero.json.4242.tmp']) assert.strictEqual(ignoredChange(n), true, n);
+  for (const n of ['tablero.json', 'signatures.json', null]) assert.strictEqual(ignoredChange(n), false, String(n));
+  // sin hechos, sync no toca la carpeta: ni siquiera toma el candado
+  const sdir = synced([row('Una')]);
+  const dir = path.join(sdir, 'coordination');
+  const antes = fs.statSync(dir).mtimeMs;
+  const r = board.sync(sdir, [], { complete: true, now: NOW });
+  assert.strictEqual(r.written, false);
+  assert.strictEqual(fs.statSync(dir).mtimeMs, antes);
+});
+
+test('Pase_DosHechosEnLaMismaFila_GanaUnoSiempreYNoReescribe — @story-8.198 @ac-46', () => {
+  const hechos = [{ tipo: 'curso', clave: 'curso:s1', historia: '8.1', quien: 'Ana', at: at(9, 0) }, { tipo: 'firma', clave: 'firma:s2', historia: '8.1', quien: 'Beto', at: at(9, 0) }];
+  for (const orden of [hechos, [...hechos].reverse()]) {
+    const sdir = synced([row('H', { historia: '8.1' })]);
+    assert.strictEqual(board.sync(sdir, orden, { complete: true, now: NOW }).written, true);
+    assert.deepStrictEqual([readRows(sdir)[0].estado, readRows(sdir)[0].quien], ['firma', 'Beto'], 'la espera del dueño gana, en cualquier orden');
+    // la foto siguiente, con los mismos hechos, no escribe nada
+    assert.strictEqual(board.sync(sdir, orden, { complete: true, now: NOW }).written, false);
+    assert.strictEqual(board.readFacts(sdir).length, 1);
+  }
+});
+
+test('Pase_FilaSinTituloONula_NoSeGuarda — @story-8.198 @ac-35', () => {
+  const sdir = synced([row('Una')]);
+  assert.strictEqual(board.save(sdir, { pendientes: [{ estado: 'curso', grupo: 'Hoy' }] }, { now: NOW }).code, 2);
+  const nula = board.save(sdir, { pendientes: [null, row('Otra')] }, { now: NOW });
+  assert.strictEqual(nula.code, 2);
+  assert.match(nula.lines.join('\n'), /no es un objeto/);
+  const sin = board.set(sdir, 'T-1', ['titulo='], { now: NOW });
+  assert.strictEqual(sin.code, 2);
+  assert.match(sin.lines.join('\n'), /lleva título/);
+  assert.strictEqual(readRows(sdir)[0].titulo, 'Una');
+});
+
+test('Pase_HoraImposible_NoSeGuarda — @story-8.198 @ac-35', () => {
+  const sdir = synced([row('Una')]);
+  assert.strictEqual(board.close(sdir, 'T-1', { real: '2026-13-45T25:99', now: NOW }).code, 2);
+  assert.strictEqual(board.save(sdir, { pendientes: [row('Una', { id: 'T-1', estado: 'hecho', realIso: '2026-02-30T10:00' })] }, { now: NOW }).code, 2);
+  assert.strictEqual(board.close(sdir, 'T-1', { real: '2026-11-04T10:00', now: NOW }).code, 0);
+});
+
+test('Pase_BuscarTareaDeOtroDia_LaAbre — @story-8.198 @ac-15', () => {
+  const code = fs.readFileSync(path.join(__dirname, '..', 'tools', 'office', 'page.js'), 'utf8');
+  assert.match(code, /function buscarTarea[\s\S]*?DATA\.kanban\.anteriores[\s\S]*?abrirTarjeta\(/);
+});
+
+test('Pase_CorridaViva_NoDejaLaLecturaIncompleta — @story-8.198 @ac-57', () => {
+  const b = numbered([{ titulo: 'La historia', historia: '8.1', estado: 'curso', pedido: { repo: 'acme/x', numero: 7 } }]);
+  const r = buildOffice({ wip: wip([{ session: 'Ana', work: '8.1 · Una', extra: { kind: 'pipeline', title: 'Una', storyId: '8.1', current: 'implement', endAt: ONOW + 3600000 } }]), board: b, prAnswers: new Map(), nowMs: ONOW });
+  assert.strictEqual(r.factsComplete, true, 'el pedido de una historia en curso no se pregunta: no falta');
+});
+
+test('Pase_TarjetaConDosNumeros_LasDosSeEncuentran — @story-8.198 @ac-14', () => {
+  const { data } = buildOffice({ wip: wip([{ session: 'Ana', work: 'T-1 y T-2', extra: { kind: 'loose', text: 'T-1 y T-2' } }]), board: numbered([{ titulo: 'Uno' }, { titulo: 'Dos' }]), nowMs: ONOW });
+  assert.strictEqual(office.findTask(data, 'T-1', {}).code, 0);
+  assert.strictEqual(office.findTask(data, 'T-2', {}).code, 0);
+});
+
 // ── Lo que no falla en silencio ─────────────────────────────────────────────────────────────────────────────────────
 
 test('Regresion_GuardadoAbortado_NoGastaNumeros — @story-8.198 @ac-6', () => {

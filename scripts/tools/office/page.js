@@ -87,7 +87,8 @@ function numeroBuscado(t){const m=/^\s*(?:t-)?([1-9]\d*)\s*$/i.exec(String(t||""
 function buscarTarea(texto){const aviso=document.getElementById("buscarAviso"),n=numeroBuscado(texto);aviso.textContent="";
   if(!n){aviso.textContent="Escribí un número, como T-41 o 41.";return}
   const tarjetas=((DATA.kanban&&DATA.kanban.columnas)||[]).flatMap(c=>c.tarjetas||[]),i=tarjetas.find(t=>t.numero===n);
-  if(!i){aviso.textContent="La "+n+" no está en el tablero.";return}
+  // una terminada otro día no está en las columnas: se abre su detalle
+  if(!i){const vieja=((DATA.kanban&&DATA.kanban.anteriores)||[]).find(t=>t.numero===n);if(vieja){abrirTarjeta(vieja,document.activeElement);return}aviso.textContent="La "+n+" no está en el tablero.";return}
   numeroMarcado=n;vista="kanban";guardarVista(vista);pintarVista();
   const card=document.querySelector('#boardBody [data-numero="'+n+'"]');document.querySelectorAll("#boardBody .marcada").forEach(x=>x.classList.remove("marcada"));
   if(card){card.classList.add("marcada");card.scrollIntoView({block:"center"})}abrirTarjeta(i,card)}

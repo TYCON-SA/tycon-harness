@@ -752,9 +752,12 @@ function boardFacts({ agents, storyOfAgent, sidOf, board, prAnswers, halfwayCard
     const waits = a.mano === 'dueno';
     list.push({ tipo: waits ? 'firma' : 'curso', clave: `${waits ? 'firma' : 'curso'}:${sid}`, ...(tarea ? { tarea } : { historia }), quien: a.nombre, titulo: a.titulo || undefined, at: nowMs });
   }
+  // la historia que una sesión está haciendo no se pregunta a los repos (askBoardPrs la saltea): su pedido no falta
+  const inCourse = new Set(agents.map((a) => storyOfAgent.get(a) || a.historiaTrabajo).filter(Boolean).map(String));
   for (const f of (board && board.filas) || []) {
     const asked = f.pedido || f.recordado;
     if (!asked || !f.numero) continue;
+    if (f.historia && inCourse.has(String(f.historia))) continue;
     const answer = prAnswers.get(`${asked.repo}#${asked.numero}`);
     if (!answer || !answer.pr) { complete = false; continue; }
     const pr = answer.pr;
@@ -867,7 +870,9 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
     const tasks = tasksIn(a.titulo, a.haciendo);
     withWork(card, { historia: story, tarea: tasks[0], finMs: Number.isFinite(hourAt) ? hourAt : undefined, sinTitulo: !a.titulo, proyecto: a.otroProyecto ? 'otro' : a.proyecto, tituloTrabajo: a.tituloTrabajo, esNota: a.esNota || !a.titulo });
     col(id).tarjetas.push(card);
-    for (const t of tasks) byTask.set(t, [...(byTask.get(t) || []), card]);
+    // la tarjeta se une sólo a su primer número, el mismo que usa su hecho: si nombra otros, esas filas van en su propia
+    // tarjeta, porque una tarjeta lleva un solo número
+    if (tasks[0]) byTask.set(tasks[0], [...(byTask.get(tasks[0]) || []), card]);
     if (story) addStory(story, card);
   }
   for (const r of closedRuns) {

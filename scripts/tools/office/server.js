@@ -106,6 +106,11 @@ function watchedDirs(home, sdir) {
     path.join(sdir, 'coordination'), path.join(sdir, 'gates.log')];
 }
 
+// Lo que board.js escribe para sí mismo (el candado, el contador, el registro, la huella, los temporales) no es una
+// novedad: cada foto lo toca, y si disparara otra foto la oficina no pararía nunca
+const BOARD_OWN = /^(tablero\.lock|tablero-(numeros|hechos|huella)\.json(\.bak)?)$|\.tmp$/;
+const ignoredChange = (name) => name != null && BOARD_OWN.test(String(name));
+
 /**
  * Vigila cada carpeta; la que todavía no existe se espera desde la de arriba, y la que no se puede vigilar se anota en
  * `notes`. Devuelve una función que deja de vigilar.
@@ -117,7 +122,7 @@ function watchAll(dirs, onChange, notes) {
   const watchDir = (dir) => {
     try {
       if (failOn && path.basename(dir) === failOn) throw new Error('falla de prueba');
-      const w = fs.watch(dir, () => onChange());
+      const w = fs.watch(dir, (ev, name) => { if (!ignoredChange(name)) onChange(); });
       w.on('error', (e) => { note(dir, e); try { w.close(); } catch { /* ya cerrado */ } onChange(); });
       watchers.push(w);
     } catch (e) { note(dir, e); }
@@ -708,4 +713,4 @@ else if (require.main === module) {
   });
 }
 
-module.exports = { cachedQuery, watchedDirs, watchAll, lockPathOf, officeDirOf, lifeLimits, forSite, changedTalks };
+module.exports = { ignoredChange, cachedQuery, watchedDirs, watchAll, lockPathOf, officeDirOf, lifeLimits, forSite, changedTalks };

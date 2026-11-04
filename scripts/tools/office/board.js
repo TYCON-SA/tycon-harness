@@ -39,6 +39,13 @@ const ESTADOS = ['hecho', 'curso', 'firma', 'riesgo', 'entrando', 'sin-empezar',
 const GROUPS = ['Hoy', 'Esta semana', 'La semana que viene', 'Más adelante'];
 const ID = /^T-([1-9]\d*)$/;
 const LOCAL_HOUR = /^\d{4}-\d\d-\d\dT\d\d:\d\d$/;
+// la forma y además una hora que existe: «2026-02-30T25:99» tiene la forma, pero la oficina la correría a otro día
+function validLocalHour(s) {
+  if (!LOCAL_HOUR.test(s)) return false;
+  const [y, mo, d, h, mi] = s.split(/[-T:]/).map(Number);
+  const t = new Date(y, mo - 1, d, h, mi);
+  return t.getFullYear() === y && t.getMonth() === mo - 1 && t.getDate() === d && t.getHours() === h && t.getMinutes() === mi;
+}
 const LOCK_WAIT_MS = 5000;
 const LOCK_STALE_MS = 30 * 1000;
 const FACTS_KEPT = 500;
@@ -126,8 +133,10 @@ function rowProblems(rows, { ultimo }) {
   const out = [];
   const seen = new Map();
   for (const r of rows) {
+    if (!r || typeof r !== 'object' || Array.isArray(r)) { out.push({ fila: '(una fila)', regla: 'no es un objeto' }); continue; }
     const fila = nameOf(r);
-    if (!r || typeof r !== 'object') { out.push({ fila: '(una fila)', regla: 'no es un objeto' }); continue; }
+    // la oficina no dibuja una fila sin título: quedaría con su número y sin verse
+    if (!str(r.titulo)) out.push({ fila, regla: 'una fila lleva título' });
     if (r.id != null) {
       const n = numOf(r.id);
       if (n == null) out.push({ fila, regla: `su número «${r.id}» no tiene la forma T-<número>` });
@@ -136,7 +145,7 @@ function rowProblems(rows, { ultimo }) {
     }
     if (r.pedido != null && !(r.pedido && typeof r.pedido === 'object' && str(r.pedido.repo) && Number.isInteger(r.pedido.numero) && r.pedido.numero > 0)) out.push({ fila, regla: 'el pedido va como { repo: texto, numero: entero }' });
     if (!ESTADOS.includes(r.estado)) out.push({ fila, regla: `el estado «${r.estado == null ? '' : r.estado}» no es uno de ${ESTADOS.join(', ')}` });
-    if (r.estado === 'hecho' && !LOCAL_HOUR.test(str(r.realIso))) out.push({ fila, regla: 'una fila hecha lleva realIso (AAAA-MM-DDTHH:MM)' });
+    if (r.estado === 'hecho' && !validLocalHour(str(r.realIso))) out.push({ fila, regla: 'una fila hecha lleva realIso (AAAA-MM-DDTHH:MM, una hora que exista)' });
     if (r.estimadaIso != null) out.push({ fila, regla: 'estimadaIso no va: la hora es pronosticoIso o termina' });
   }
   for (const [id, filas] of seen) if (filas.length > 1) out.push({ fila: filas.join(' y '), regla: `el número ${id} está repetido` });
@@ -292,7 +301,7 @@ function set(sdir, id, pairs, opts = {}) {
 }
 
 function close(sdir, id, { real = null, ...opts } = {}) {
-  if (real != null && !LOCAL_HOUR.test(real)) return { code: 2, lines: ['⛔ --real va como AAAA-MM-DDTHH:MM'] };
+  if (real != null && !validLocalHour(real)) return { code: 2, lines: ['⛔ --real va como AAAA-MM-DDTHH:MM, con una hora que exista'] };
   return write(sdir, (raw) => {
     const r = findRow(raw, id);
     if (!r) return { code: 2, lines: [`⛔ no hay una fila ${taskId(id) || id} en el tablero`] };
@@ -347,6 +356,10 @@ function rowOfFact(rows, f) {
   return { row: null, nueva: !ofStory.length && f.tipo === 'curso' };
 }
 
+// el peso de cada hecho cuando varios caen en la misma fila: lo que la cierra, después lo que la frena, después la espera
+// del dueño y por último el trabajo
+const FACT_WEIGHT = { merge: 5, abandonado: 4, cortada: 3, firma: 2, curso: 1 };
+
 function applyFact(r, f) {
   if (f.tipo === 'curso') { r.estado = 'curso'; if (f.quien) r.quien = f.quien; } else if (f.tipo === 'firma') { r.estado = 'firma'; if (f.quien) r.quien = f.quien; } else if (f.tipo === 'merge') { r.estado = 'hecho'; r.realIso = localIso(f.at); } else if (f.tipo === 'abandonado') { r.estado = 'riesgo'; r.nota = `pedido abandonado a las ${hhmm(f.at)}`; } else if (f.tipo === 'cortada') { r.estado = 'riesgo'; r.nota = `la ejecución se cortó a las ${hhmm(f.at)}`; } else return false;
   r.ultimoHecho = { clave: f.clave, at: localIso(f.at) };
@@ -393,22 +406,34 @@ function lastFactLine(sdir, id) {
 function sync(sdir, facts, { complete = false, now = Date.now(), ...opts } = {}) {
   const checked = check(sdir);
   if (checked.code !== 0) return { code: 2, written: false, lines: checked.lines, aviso: 'el tablero no se movió solo: tiene filas sin número o que rompen una regla; corré board.js check' };
+  const usable = (facts || []).filter((f) => f && f.clave && Number.isFinite(f.at));
+  // sin hechos no se toma el candado: la oficina vigila la carpeta y cada foto pediría otra
+  if (!usable.length) return { code: 0, written: false, lines: ['sin hechos nuevos'] };
   const applied = [];
   let logAviso = null;
   const res = write(sdir, (raw) => {
     const rows = raw.pendientes;
-    for (const f of facts || []) {
-      if (!f || !f.clave || !Number.isFinite(f.at)) continue;
+    // un solo hecho por fila en cada foto, el de más peso, en cualquier orden: dos sesiones sobre la misma fila no la
+    // hacen ir y venir entre fotos
+    const best = new Map();
+    for (const f of usable) {
       const { row, nueva } = rowOfFact(rows, f);
-      if (!row) {
-        if (nueva) {
-          const r = { titulo: str(f.titulo) || `Historia ${f.historia}`, historia: f.historia, estado: 'curso', grupo: 'Hoy', ...(f.quien ? { quien: f.quien } : {}), ultimoHecho: { clave: f.clave, at: localIso(f.at) } };
-          rows.push(r);
-          applied.push({ r, f });
-        }
+      const target = row || (nueva ? `nueva:${f.historia}` : null);
+      if (!target) continue;
+      const prev = best.get(target);
+      if (!prev || FACT_WEIGHT[f.tipo] > FACT_WEIGHT[prev.tipo] || (FACT_WEIGHT[f.tipo] === FACT_WEIGHT[prev.tipo] && f.clave < prev.clave)) best.set(target, f);
+    }
+    for (const [target, f] of best) {
+      if (typeof target === 'string') {
+        const r = { titulo: str(f.titulo) || `Historia ${f.historia}`, historia: f.historia, estado: 'curso', grupo: 'Hoy', ...(f.quien ? { quien: f.quien } : {}), ultimoHecho: { clave: f.clave, at: localIso(f.at) } };
+        rows.push(r);
+        applied.push({ r, f });
         continue;
       }
+      const row = target;
       if (row.estado === 'hecho' || (row.ultimoHecho && row.ultimoHecho.clave === f.clave)) continue;
+      // ya está como ese hecho la deja: no se reescribe
+      if ((f.tipo === 'curso' || f.tipo === 'firma') && row.estado === f.tipo && (!f.quien || row.quien === f.quien)) continue;
       if (!complete && fromAbsence(f, row)) continue;
       if (applyFact(row, f)) applied.push({ r: row, f });
     }
