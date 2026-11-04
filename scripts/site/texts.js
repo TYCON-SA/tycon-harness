@@ -137,6 +137,7 @@ const TEXTOS = {
   'decidir.gravedad.low': { es: 'baja', en: 'low' },
   'decidir.unaNoche': { es: '1 noche', en: '1 night' },
   'decidir.noches': { es: '{n} noches', en: '{n} nights' },
+  'decidir.corto.en_su_tarea': { es: 'se sigue en su tarea', en: 'followed in its work item' },
   'decidir.nadie_lo_sigue': { es: 'pull request #{n} cerrado sin resolver: nadie lo sigue', en: 'pull request #{n} closed without a fix: nobody follows it' },
   'decidir.en_su_tarea': { es: 'ya decidida: se sigue en su tarea, en Mantenimiento', en: 'already decided: it is followed in its work item, under Maintenance' },
   'decidir.sin_pedido': { es: 'sin pull request abierto todavía: la noche lo abre en su próxima vuelta', en: 'no pull request open yet: the nightly run opens it on its next pass' },
