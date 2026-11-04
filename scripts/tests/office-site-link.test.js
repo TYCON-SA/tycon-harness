@@ -11,7 +11,7 @@ const os = require('os');
 const path = require('path');
 const http = require('http');
 const crypto = require('crypto');
-const { spawn, spawnSync } = require('child_process');
+const { spawn } = require('child_process');
 
 const ROOT = path.join(__dirname, '..', '..');
 const OFFICE = path.join(ROOT, 'scripts', 'tools', 'office.js');
@@ -855,7 +855,7 @@ test('T9 AltaAutomatica_ClaveYPedidoSinComandos: el par, el pedido, la línea, e
   assert.ok(!/PRIVATE/.test(put.body));
   const noted = JSON.parse(fs.readFileSync(path.join(m.home, 'subidas.json'), 'utf8'));
   assert.ok(noted.archivos[`maquina-a/office-keys/${key.fingerprint}.json`], 'anotada en el registro de subidas');
-  up = await run(UPLOAD(), ['--json'], uploadEnv('subidas.json'));
+  await run(UPLOAD(), ['--json'], uploadEnv('subidas.json'));
   assert.strictEqual(keyPuts().length, 1, 'la misma huella no se vuelve a subir');
   // un «ya existe» cuenta como subida
   answerExists = true;

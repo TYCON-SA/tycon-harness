@@ -102,7 +102,7 @@ function enProceso({ home, repo }, entrada, { romper, preparar } = {}) {
   fs.rmSync(log, { force: true });
   const args = [];
   const previa = path.join(home, 'previa.js');
-  if (romper) fs.writeFileSync(previa, `const M = require('module'); const c = M._load; M._load = function (p, ...r) { if (p.endsWith(${JSON.stringify(romper)})) throw new Error('roto: ${romper}'); return c.call(this, p, ...r); };`);
+  if (romper) fs.writeFileSync(previa, `const M = require('module'); const c = M._load; M._load = function (p, ...r) { if (p.endsWith(${JSON.stringify(romper)})) throw new Error(${JSON.stringify(`roto: ${romper}`)}); return c.call(this, p, ...r); };`);
   if (preparar) fs.writeFileSync(previa, preparar);
   if (romper || preparar) args.push('-r', previa);
   const base = {};
