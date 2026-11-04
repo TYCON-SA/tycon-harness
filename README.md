@@ -11,26 +11,51 @@ https://github.com/user-attachments/assets/3fbe4538-6b96-4b56-b2ed-92d36be1c6f8
 
 **The organization site, with sample data and no account needed:** [open the demo](https://is.gd/tyconharnessdemo)
 
-**A development cycle for coding agents: complete, consistent, controlled and adaptable.**
+Today an AI agent writes in minutes the code that used to take hours. Models program so well that they seem to no longer need anything to guide them, ask them for tests and stop them when they get it wrong.
 
-- **Complete:** it goes from the request to production and to measurement; it does not stop at writing code.
-- **Consistent:** every story follows the same workflow, on every machine of the team.
-- **Controlled:** the checks block, they do not just warn: they do not rely on the model remembering the rules. The
-  minimal install brings one (against destructive commands); the full install adds the rest.
-- **Adaptable:** each organization adds its own reviewers, skills and configuration.
+There is no longer any need to give them guides for each language and framework: good coding practices in React or in .NET, how errors are handled or how the data that reaches the system is validated. Nor do they need to be reminded of design patterns, such as separating responsibilities, injecting dependencies or keeping coupling low.
 
-Your coding agent writes fast; the harness makes it work with method. It works with Claude Code and Codex, also with
-open models through [Ollama](guides/integrations/ollama.en.md), and with
-[Cursor](guides/integrations/cursor.en.md). The AI software development life cycle (AI SDLC), step by step:
+But knowing a good practice is not the same as always applying it the same way in a project. And there is something they cannot know on their own: each organization's process, rules and decisions, because the organization defines them. For example, specifying before programming, writing and running the tests, showing a mockup to a person before building, or not closing a piece of work without meeting its definition of done. And even when they have all of that in writing, they sometimes forget or skip steps, and no one can depend on the developer reminding them every time.
 
-1. **Request and story:** you say what you want and the agent writes it as a story: what has to be done and how it is
-   tested. Something small goes by short path: the reason in one line and the list of files.
-2. **Approved plan:** the agent builds the plan and shows it to you; it is approved before any code is written, never by itself. Who approves depends on the risk (below).
-3. **Tests and code:** it writes the tests and the code, and runs the tests.
-4. **Review:** on a story, specialized reviewers (security, conventions, coverage) check the change before the commit.
-5. **Delivery:** the commit and the merge go through checks. Nothing is committed or pushed without your permission.
-6. **Operation and measurement:** every merge to main leaves its metrics file, and your organization's nightly jobs
-   review the dependencies and build the cycle dashboard.
+And when each team works with agents in its own way, it delivers with a quality different from the others. The client ends up seeing the difference, when something has to be redone or when a delivery runs late.
+
+Besides, the better the models get, the more work is delegated to them: longer tasks and several agents at once. For the developer, following everything the agents do becomes harder and harder. And the less can be watched, the more necessary it is for the process to enforce itself.
+
+That is why we created TYCON Harness, an agentic SDLC. It covers the complete software life cycle, from the requirement to operation in production. And it surrounds each AI agent with a harness: it guides it, decides what it can and cannot do, and stops it when it gets it wrong.
+
+The harness takes each agent through a defined process, step by step, and no step is skipped silently. Everything starts with a request: a new feature, an improvement or a fix. The agent writes a story together with whoever asked for it: what is being asked and what it has to meet. It does so with an AI-guided requirements specification method. The story is validated and a plan is built from it. If there is a screen, the agent builds a mockup, which is approved together with the plan. The plan is approved before programming. Then the tests are written, before the code, and the harness verifies that order. Before it joins the rest, that code and its tests are reviewed by other agents, different from the one that wrote them and each with its own rules. And the tests are tested too: the harness breaks the code on purpose and verifies that some test fails.
+
+Not all approvals weigh the same. What can be undone can be approved by a coordinator agent, if the organization enables it. What is delicate is always approved by a person: what the harness recognizes as production, data or security, and any change that loosens a control.
+
+Each step adds a review, but finding a problem during development costs much less than discovering it after delivery. For a small change, the process provides a short path, with fewer steps. To control spending, each organization chooses which model it uses in the different steps and can put a ceiling on the automatic steps. The site shows how much each run consumed.
+
+Once finished, the work moves on through the continuous integration and deployment pipeline. The harness brings ready-made pipelines for some platforms; for the others, it joins the one the organization already has. There it is built, the tests are run again and it is deployed to a test environment. In the pipelines the harness brings, production is reached only with a person's approval.
+
+And none of this depends on the model not forgetting or on the developer reminding it: the controls live outside the model. For example, if an agent tries to close a story without the evidence of its tests, the harness stops it on the machine. Before the work joins the code, the continuous integration pipeline verifies that the story carries the evidence of its tests and the record of who reviewed it. If a control has to be skipped, it is recorded and the person in charge sees it. Loosening a control is always approved by a person. And every night, the harness's controls are put to the test with examples built for that purpose: what each one has to stop and what it has to let through.
+
+So each piece of work that goes through the process is left with its story, its tests, which reviewers ran and who approved what was delicate. And what comes in through the short path, or directly outside the harness, is not lost: the site counts how many changes came in without a story. When a client asks how AI is used to work on their product, the answer is written down and can be shown. The stories, the evidence of the tests and the record of the reviewers are stored in the project's own repositories.
+
+Each organization adjusts it to its own measure: its rules, its reviewers and who approves what.
+
+And the cycle does not end there. Every night, TYCON Harness looks for vulnerabilities in the third-party components each product uses and reports each one so that a decision is made; if the decision is to fix it, a task is created for the team. It can also watch production errors and leave a diagnosis ready. In both cases, a person decides. It also learns from everyday work. It looks at which controls blocked too much or let something through. When a control blocks work that was fine, it is corrected, turned into a warning or retired, with a person's approval. That way the control stays useful. And it looks at how developers work with the agents. With that it proposes improvements to its rules and to its way of working. None is applied without a person approving it.
+
+An administrator configures and follows the SDLC from a website. Each organization installs the site on its own infrastructure. Everything that is measured stays there, and the organization decides who sees it. Each configuration change is recorded, with who asked for it. The organization decides whether, before it is applied, another person has to approve it. From the site, the administrator defines how the team works, follows and measures what happens, and decides.
+
+**Define.** First, what governs the work: who approves each thing and the organization's own reviewers, with the house rules. Then, the people and their permissions, the repositories and products, which model each kind of work uses, and each team's technology with its testing tools. Also the integrations: where the notices arrive, such as Telegram, Slack, Teams or email, and which tool records the hours. And which version of the harness each machine of the team has and how it is updated.
+
+**Follow.** In each product, the stories in progress, stopped and blocked, which version is in test and which in production, the open vulnerabilities, and what one product does that the others do not. And how the agent works: each step of the process, with its reviewers and its controls, and which part belongs to the harness and which to the organization.
+
+**Measure.** The agents' work: for each story or change, how long it took, how much it consumed, where the time went, which reviewers ran and what the controls found or stopped. Quality: how much work comes back and why, how many review rounds a change takes, the coverage of what was touched, whether the tests detect errors planted on purpose and how long they take to run. Estimates: how much each part of a product was estimated at and, if hours are recorded, how long it really took. And risk: the changes that came in without a story, the products that depend on a single person and those that have no pipeline to production.
+
+**Decide.** Every morning, the result of the nightly review arrives: vulnerabilities in third-party components, production errors, controls that failed and work that got stuck before joining the code. What is chosen to be fixed becomes a task for the team. The improvements the harness proposes from how the team works are approved or discarded. And the harness itself is controlled: whether each control keeps stopping what it has to stop, whether the reviewers keep finding what they should, and which rules never found anything and can be retired.
+
+The problem from the beginning remains: with several agents working at once, following what they do gets harder and harder. For that, the site gathers the offices of the whole team. Each developer's machine has its own: a virtual room where its agents work, each at its desk. At a glance, a lead sees all the work under way: what is moving, which agent got stuck and what is waiting for a decision. Without asking. Without interrupting anyone. On the side, a board shows what is pending, what is in progress and what is done, and it builds itself: no one has to fill it in. If someone disconnects, their office keeps showing the last thing they did.
+
+It works with the most widely used coding agents, such as Claude Code, Codex and Cursor. Each team keeps the agent it already uses, and what becomes the same for everyone is the process. It supports models from Anthropic, from OpenAI or open-weight models through Ollama. And it is not tied to any language: each organization configures it for its own technology.
+
+And it is open source: there is no license to pay and the code can be reviewed in full. It can start on a single machine, without a site, and add the team, the site and the nightly review later.
+
+The agents bring the speed. TYCON Harness brings the method, the quality and the control. Together, they do software engineering with AI.
 
 **The right measure.** When a product starts it is specified in full, once —product document, architecture, epics
 and stories—; then, story by story.
@@ -310,7 +335,6 @@ How the harness extends for your organization, with a worked example, in an
 - **Checks born from incidents.** Most of them were born from a real incident.
 - **Reviewers for your stack.** TYCON brings its own for BIZUIT
   plugins, with the scripts that deploy to test and to production.
-- **What is still TYCON's own:** the production watcher is not published.
 
 ## Where to go next
 

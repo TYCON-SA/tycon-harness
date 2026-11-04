@@ -11,26 +11,51 @@ https://github.com/user-attachments/assets/3fbe4538-6b96-4b56-b2ed-92d36be1c6f8
 
 **El sitio de la organización, con datos de ejemplo y sin cuenta:** [abrí la demo](https://is.gd/tyconharnessdemo)
 
-**Un ciclo de desarrollo para agentes de código: completo, consistente, controlado y adaptable.**
+Hoy un agente de IA escribe en minutos el código que antes llevaba horas. Los modelos programan tan bien que parece que ya no necesitan nada que les marque el camino, les pida pruebas y los frene cuando se equivocan.
 
-- **Completo:** va del pedido a producción y a la medición; no se queda en escribir código.
-- **Consistente:** cada historia hace el mismo recorrido, en cada máquina del equipo.
-- **Controlado:** los controles frenan, no sólo avisan: no dependen de que el modelo se acuerde de las reglas. La
-  instalación mínima trae uno (el de comandos destructivos); la completa suma los demás.
-- **Adaptable:** cada organización suma sus revisores, sus skills y su configuración.
+Ya no hay que darles guías para cada lenguaje y framework: buenas prácticas de codificación en React o en .NET, cómo se manejan los errores o cómo se validan los datos que llegan al sistema. Tampoco hay que recordarles patrones de diseño, como separar responsabilidades, inyectar dependencias o mantener bajo el acoplamiento.
 
-Tu agente de código escribe rápido; el arnés hace que lo haga con método. Anda con Claude Code y Codex, también con
-modelos abiertos vía [Ollama](guides/integrations/ollama.md), y con [Cursor](guides/integrations/cursor.md).
-El ciclo de desarrollo con IA (AI SDLC), paso por paso:
+Pero conocer una buena práctica no es lo mismo que aplicarla siempre igual en un proyecto. Y hay algo que no pueden saber solos: el proceso, las reglas y las decisiones de cada organización, porque los define ella. Por ejemplo, especificar antes de programar, escribir y correr las pruebas, mostrarle una maqueta a una persona antes de construir, o no cerrar un trabajo sin cumplir su definición de terminado. Y aunque tengan todo eso por escrito, a veces se olvidan o se saltean pasos, y no se puede depender de que el desarrollador se los recuerde cada vez.
 
-1. **Pedido e historia:** contás qué querés y el agente lo escribe como una historia (story): qué hay que hacer y cómo
-   se prueba. Algo chico va por camino corto: el motivo en una línea y la lista de archivos.
-2. **Plan aprobado:** el agente arma el plan y te lo muestra; se aprueba antes de programar, nunca solo. Quién lo aprueba depende del riesgo (más abajo).
-3. **Pruebas y código:** escribe las pruebas y el código, y corre las pruebas.
-4. **Revisión:** en una historia, revisores especializados (seguridad, convenciones, cobertura) miran el cambio antes del commit.
-5. **Entrega:** el commit y el merge pasan por controles. Nada se commitea ni se sube sin tu permiso.
-6. **Operación y medición:** cada merge a main deja su archivo de métricas, y los procesos de la noche de tu
-   organización revisan las dependencias y arman el tablero del ciclo.
+Y cuando cada equipo trabaja con agentes a su manera, entrega con una calidad distinta a la de los demás. La diferencia la termina viendo el cliente, cuando hay que rehacer algo o cuando una entrega se atrasa.
+
+Además, cuanto mejores son los modelos, más trabajo se les delega: tareas más largas y varios agentes a la vez. Para el desarrollador, seguir todo lo que hacen los agentes se vuelve cada vez más difícil. Y cuanto menos se puede mirar, más necesario es que el proceso se cumpla solo.
+
+Para eso creamos TYCON Harness, un SDLC agéntico. Cubre el ciclo de vida completo del software, desde el requerimiento hasta la operación en producción. Y rodea a cada agente de IA con un arnés: le marca el camino, decide qué puede hacer y qué no, y lo frena cuando se equivoca.
+
+El arnés lleva a cada agente por un proceso definido, paso por paso, y ningún paso se saltea en silencio. Todo arranca con un pedido: una funcionalidad nueva, una mejora o un arreglo. El agente escribe una historia junto con quien lo pidió: qué se pide y qué tiene que cumplir. Lo hace con un método de especificación de requerimientos guiado por IA. La historia se valida y con ella se arma un plan. Si hay pantalla, el agente arma una maqueta, que se aprueba junto con el plan. El plan se aprueba antes de programar. Después se escriben las pruebas, antes que el código, y el arnés verifica ese orden. Antes de sumarse al resto, ese código y sus pruebas los revisan otros agentes, distintos del que los escribió y cada uno con sus propias reglas. Y las pruebas también se prueban: el arnés rompe el código a propósito y verifica que alguna falle.
+
+Las aprobaciones no pesan todas igual. Lo que se puede deshacer puede aprobarlo un agente coordinador, si la organización lo habilita. Lo delicado lo aprueba siempre una persona: lo que el arnés reconoce como producción, datos o seguridad, y cualquier cambio que afloje un control.
+
+Cada paso agrega una revisión, pero encontrar un problema durante el desarrollo cuesta mucho menos que descubrirlo después de entregar. Para un cambio chico, el proceso prevé un camino corto, con menos pasos. Para controlar el gasto, cada organización elige qué modelo usa en los distintos pasos y puede ponerles un techo a los pasos automáticos. El sitio muestra cuánto consumió cada ejecución.
+
+Una vez terminado, el trabajo sigue por el pipeline de integración y despliegue continuo. El arnés trae pipelines listos para algunas plataformas; para las demás, se suma al que ya tiene la organización. Ahí se construye, se vuelven a correr las pruebas y se despliega en un entorno de prueba. En los pipelines que trae el arnés, a producción se pasa sólo con la aprobación de una persona.
+
+Y nada de esto depende de que el modelo no se olvide o de que el desarrollador se lo recuerde: los controles viven afuera del modelo. Por ejemplo, si un agente intenta cerrar una historia sin la evidencia de sus pruebas, el arnés lo frena en la máquina. Antes de que el trabajo se sume al código, el pipeline de integración continua verifica que la historia traiga la evidencia de sus pruebas y la constancia de quién la revisó. Si hace falta saltear un control, queda registrado y el responsable lo ve. Aflojar un control lo aprueba siempre una persona. Y cada noche, los controles del arnés se ponen a prueba con ejemplos armados para eso: lo que cada uno tiene que frenar y lo que tiene que dejar pasar.
+
+Así, cada trabajo que pasa por el proceso queda con su historia, sus pruebas, qué revisores corrieron y quién aprobó lo delicado. Y lo que entra por el camino corto, o directamente por fuera del arnés, no se pierde: el sitio cuenta cuántos cambios entraron sin historia. Cuando un cliente pregunta cómo se trabaja con IA en su producto, la respuesta está escrita y se puede mostrar. Las historias, la evidencia de las pruebas y la constancia de los revisores quedan guardadas en los repositorios del propio proyecto.
+
+Cada organización lo ajusta a su medida: sus reglas, sus revisores y quién aprueba qué.
+
+Y el ciclo no termina ahí. Cada noche, TYCON Harness busca vulnerabilidades en los componentes de terceros que usa cada producto y avisa de cada una para que se decida; si se decide arreglarla, se crea una tarea para el equipo. También puede vigilar los errores de producción y dejar un diagnóstico listo. En ambos casos, decide una persona. Además, aprende del trabajo de todos los días. Mira qué controles frenaron de más o dejaron pasar algo. Cuando un control frena trabajo que estaba bien, se corrige, se convierte en un aviso o se retira, con la aprobación de una persona. Así el control sigue siendo útil. Y mira cómo trabajan los desarrolladores con los agentes. Con eso propone mejoras a sus reglas y a su forma de trabajar. Ninguna se aplica sin que una persona la apruebe.
+
+Un administrador configura y sigue el SDLC desde un sitio web. El sitio lo instala cada organización en su propia infraestructura. Todo lo que se mide queda ahí, y es ella la que decide quién lo ve. Cada cambio de configuración queda registrado, con quién lo pidió. La organización decide si, antes de aplicarse, lo tiene que aprobar otra persona. Desde el sitio, el administrador define cómo trabaja el equipo, sigue y mide lo que pasa, y decide.
+
+**Define.** Primero, lo que gobierna el trabajo: quién aprueba cada cosa y los revisores propios de la organización, con las reglas de la casa. Después, las personas y sus permisos, los repositorios y productos, qué modelo usa cada tipo de trabajo, y la tecnología de cada equipo con sus herramientas de prueba. También las integraciones: por dónde llegan los avisos, como Telegram, Slack, Teams o correo, y con qué herramienta se registran las horas. Y qué versión del arnés tiene cada máquina del equipo y cómo se actualiza.
+
+**Sigue.** En cada producto, las historias en curso, paradas y bloqueadas, qué versión está en prueba y cuál en producción, las vulnerabilidades abiertas, y qué hace un producto que los otros no. Y cómo trabaja el agente: cada paso del proceso, con sus revisores y sus controles, y qué parte es del arnés y qué parte de la organización.
+
+**Mide.** El trabajo de los agentes: en cada historia o cambio, cuánto duró, cuánto consumió, dónde se fue el tiempo, qué revisores corrieron y qué encontraron o frenaron los controles. La calidad: cuánto trabajo vuelve y por qué, cuántas vueltas de revisión lleva un cambio, la cobertura de lo que se tocó, si las pruebas detectan errores puestos a propósito y cuánto tardan en correr. Las estimaciones: cuánto se estimó cada parte de un producto y, si se registran las horas, cuánto llevó de verdad. Y el riesgo: los cambios que entraron sin historia, los productos que dependen de una sola persona y los que no tienen un pipeline a producción.
+
+**Decide.** Cada mañana recibe el resultado de la revisión nocturna: vulnerabilidades en los componentes de terceros, errores de producción, controles que fallaron y trabajos que quedaron trabados antes de sumarse al código. Lo que decide arreglar se convierte en una tarea para el equipo. Aprueba o descarta las mejoras que el arnés propone a partir de cómo trabaja el equipo. Y controla al propio arnés: si cada control sigue frenando lo que tiene que frenar, si los revisores siguen encontrando lo que deben, y qué reglas nunca encontraron nada y se pueden retirar.
+
+Queda el problema del principio: con varios agentes trabajando a la vez, cada vez cuesta más seguir lo que hacen. Para eso, el sitio reúne las oficinas de todo el equipo. La máquina de cada desarrollador tiene la suya: una sala virtual donde sus agentes trabajan, cada uno en su escritorio. De un vistazo, un líder ve todo el trabajo en marcha: qué avanza, qué agente se trabó y qué espera una decisión. Sin preguntar. Sin interrumpir a nadie. Al costado, un tablero muestra lo pendiente, lo que está en curso y lo terminado, y se arma solo: nadie tiene que cargarlo. Si alguien se desconecta, su oficina sigue mostrando lo último que hizo.
+
+Funciona con los agentes de programación más usados, como Claude Code, Codex y Cursor. Cada equipo sigue con el agente que ya usa, y lo que pasa a ser igual para todos es el proceso. Soporta modelos de Anthropic, de OpenAI o de pesos abiertos a través de Ollama. Y no está atado a ningún lenguaje: cada organización lo configura para su propia tecnología.
+
+Y es open source: no hay licencia que pagar y el código se puede revisar entero. Se puede empezar en una sola máquina, sin sitio, y sumar después el equipo, el sitio y la revisión nocturna.
+
+Los agentes aportan la velocidad. TYCON Harness aporta el método, la calidad y el control. Juntos, hacen ingeniería de software con IA.
 
 **La medida justa.** Al arrancar un producto se especifica entero, una vez —documento de producto, arquitectura,
 épicos e historias—; después, historia por historia.
@@ -310,7 +335,6 @@ Cómo se extiende el arnés para tu organización, con un recorrido de ejemplo, 
   mayoría nació de un incidente real.
 - **Revisores para tu tecnología.** TYCON trae los suyos para
   plugins de BIZUIT, con los guiones que despliegan a pruebas y a producción.
-- **Lo que todavía es propio de TYCON:** el vigilante de producción no se publicó.
 
 ## Dónde seguir
 
