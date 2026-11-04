@@ -532,7 +532,11 @@ function animar(d,t){const {up,head,arms}=d.person.userData,e=d.agent.estado,k=t
   else if(e==="espera"){lean=-.2+Math.sin(k*1.4)*.02;armL=armR=1.0;zL=.2;zR=-.2;hx=-.1;hy=Math.sin(k*.5)*.15}
   else if(e==="libre"){lean=-.24;armL=armR=1.0;zL=.2;zR=-.2;hx=.3+Math.sin(k*1.2)*.03}
   else if(e==="parada"){lean=-.16;armL=armR=1.05;zL=.18;zR=-.18;hx=.02;hy=Math.sin(k*.4)*.1}
-  if(manoDe(d.agent)){armR=2.9+Math.sin(k*7)*.25;zR=-.25;armL=1.2;lean=-.06;hx=-.15;hy=.45}
+  // la mano levantada: el brazo arriba y bien abierto al costado, más grande, para que asome fuera de la etiqueta, que va
+  // justo encima de la cabeza
+  // (un giro hacia adelante lo deja detrás de la cabeza: sube de costado, girando sobre el hombro)
+  const alza=manoDe(d.agent);if(alza){armR=.15;zR=2.55+Math.sin(k*6)*.15;armL=1.2;lean=-.1;hx=-.2;hy=.45}
+  arms[1].scale.setScalar(arms[1].scale.x+((alza?1.7:1)-arms[1].scale.x)*.15);
   const ease=(o,v)=>o+(v-o)*.15;up.rotation.x=ease(up.rotation.x,-lean);up.scale.y=1+Math.sin(k*2.2)*.012;
   arms[0].rotation.x=ease(arms[0].rotation.x,armL);arms[1].rotation.x=ease(arms[1].rotation.x,armR);arms[0].rotation.z=ease(arms[0].rotation.z,zL);arms[1].rotation.z=ease(arms[1].rotation.z,zR);
   head.rotation.x=ease(head.rotation.x,-hx);head.rotation.y=ease(head.rotation.y,hy);
@@ -549,11 +553,13 @@ T.cerrarPanel=cerrarPanel;PANELES.add(cerrarPanel);
 const BOT='<svg class="bot" viewBox="0 0 24 24" fill="none" stroke="#c9b6ff" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="4" y="8" width="16" height="11" rx="4"/><path d="M12 8V4.5"/><circle cx="12" cy="3.5" r="1.2"/><circle cx="9" cy="13" r="1.3" fill="#c9b6ff"/><circle cx="15" cy="13" r="1.3" fill="#c9b6ff"/><path d="M2 12.5v3M22 12.5v3"/></svg>';
 const FX={firma:"!",pregunta:"?",espera:"⌛",esperando:"⌛",coordina:"→",prueba:"✓",libre:"z",parada:"‖"};
 function nuevoTag(d){const e=document.createElement("button");e.type="button";e.className="tag";e.innerHTML=BOT+'<div class="tx"><b></b><span class="como"></span><span class="st"><span class="dot"></span><span class="es"></span></span><span class="more"><span class="fin"></span><span class="bar"><i></i></span></span></div><span class="fx"></span>';e.onclick=()=>abrir(d.agent.nombre);labelsEl.appendChild(e);d.el=e}
-function pintarTag(d){const a=d.agent,s=T.AST[a.estado]||[a.estado||"","#999"];d.el.style.setProperty("--c",s[1]);d.el.style.setProperty("--outfit",d.ropa);d.el.querySelector("b").textContent=a.nombre||"";d.el.querySelector(".como").replaceChildren(...(a.comoTrabaja&&a.comoTrabaja!==s[0]?[T.iconoComo(a.comoTrabaja),a.comoTrabaja]:[]));
+function pintarTag(d){const a=d.agent,m=manoDe(a),s0=T.AST[a.estado]||[a.estado||"","#999"],
+  // con la mano levantada por otra cosa que su pantalla, la etiqueta dice a quién espera, con el color de su aro
+  s=m&&a.manoEtiqueta&&a.estado!=="firma"&&a.estado!=="pregunta"?[a.manoEtiqueta,m==="coordinadora"?"#5aa9ff":"#ffa53d"]:s0;d.el.style.setProperty("--c",s[1]);d.el.style.setProperty("--outfit",d.ropa);d.el.querySelector("b").textContent=a.nombre||"";d.el.querySelector(".como").replaceChildren(...(a.comoTrabaja&&a.comoTrabaja!==s[0]?[T.iconoComo(a.comoTrabaja),a.comoTrabaja]:[]));
   d.el.querySelector(".es").textContent=s[0]+(a.mientras?" · y algo más":"");const f=T.finTxt(a),fin=d.el.querySelector(".fin");fin.replaceChildren();
   if(f){fin.append(f.hora);if(f.dif){const x=document.createElement("em");x.className=f.cls;x.textContent=" · "+f.dif;fin.append(x);}}
   const bar=d.el.querySelector(".bar");bar.hidden=a.avance==null;bar.firstChild.style.width=(a.avance||0)+"%";
-  const fx=d.el.querySelector(".fx");fx.textContent=FX[a.estado]||"";d.el.classList.toggle("alert",Boolean(manoDe(a)));d.el.classList.toggle("alert-coord",manoDe(a)==="coordinadora");d.el.classList.toggle("sel",sel===a.nombre);d.el.setAttribute("aria-label",(a.nombre||"")+": "+s[0]);}
+  const fx=d.el.querySelector(".fx");fx.textContent=m?"✋":FX[a.estado]||"";d.el.classList.toggle("alert",Boolean(m));d.el.classList.toggle("alert-coord",m==="coordinadora");d.el.classList.toggle("sel",sel===a.nombre);d.el.setAttribute("aria-label",(a.nombre||"")+": "+s[0]);}
 const tmp=new THREE.Vector3();
 function ubicarTags(){const W=stage.clientWidth,H=stage.clientHeight,cmp=stage.classList.contains("compact"),hr=cmp?11:20;
   const P=desks.map(d=>{tmp.copy(d.anchor);d.st.localToWorld(tmp);tmp.project(cam);const ax=(tmp.x+1)/2*W,ay=(1-tmp.y)/2*H;tmp.copy(d.headP);d.st.localToWorld(tmp);tmp.project(cam);

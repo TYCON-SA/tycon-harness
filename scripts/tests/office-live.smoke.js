@@ -83,7 +83,17 @@ async function taskNumbers(playwright) {
   const BOARD = require(path.join(ROOT, 'scripts', 'tools', 'office', 'board.js'));
   const shots = process.env.OFFICE_8198_SHOTS || null;
   if (shots) fs.mkdirSync(shots, { recursive: true });
-  const shot = async (page, name, locator = null) => { if (shots) await (locator || page).screenshot({ path: path.join(shots, `${name}.png`) }); };
+  // la página se redibuja con cada foto: se fotografía el lugar del elemento, sin esperar a que quede quieto
+  const shot = async (page, name, locator = null) => {
+    if (!shots) return;
+    if (!locator) { await page.screenshot({ path: path.join(shots, `${name}.png`) }); return; }
+    await locator.evaluate((e) => e.scrollIntoView({ block: 'start' }));
+    await sleep(200);
+    const box = await locator.boundingBox();
+    const vp = page.viewportSize();
+    const clip = { x: Math.max(0, box.x), y: Math.max(0, box.y), width: Math.min(box.width, vp.width), height: Math.min(box.height, vp.height - Math.max(0, box.y)) };
+    await page.screenshot({ path: path.join(shots, `${name}.png`), clip });
+  };
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'office-8198-'));
   const sdir = stateDir(home);
   for (const d of ['active', 'adhoc', 'doing', 'coordination']) fs.mkdirSync(path.join(sdir, d), { recursive: true });
@@ -157,7 +167,13 @@ async function taskNumbers(playwright) {
     await page.waitForFunction(() => document.querySelectorAll('.tag.alert').length >= 2, null, { timeout: 15000 });
     check(await page.locator('.tag.alert-coord', { hasText: 'Pinola' }).count() === 1, 'E8: Pinola levanta la mano en azul: espera a la Coordinadora');
     check(await page.locator('.tag.alert:not(.alert-coord)', { hasText: 'Rita' }).count() === 1, 'E8: Rita levanta la mano por su firma pendiente');
+    // el brazo sube de a poco y la sala quieta dibuja pocas veces por segundo: la captura espera a que termine de subir
+    await sleep(4000);
     await shot(page, 'e8-manos', page.locator('#stage'));
+    if (shots) {
+      const tag = await page.locator('.tag', { hasText: 'Rita' }).boundingBox();
+      await page.screenshot({ path: path.join(shots, 'e8-mano-de-cerca.png'), clip: { x: Math.max(0, tag.x - 60), y: tag.y, width: 320, height: 260 } });
+    }
     await page.locator('.tag', { hasText: 'Rita' }).click();
     await page.waitForSelector('#panel:not([hidden])');
     check(/Firma: el carril de Rita/.test(await page.locator('#panel').innerText()), 'E8: al tocarla, dice qué firma espera');
