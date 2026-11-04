@@ -144,6 +144,10 @@ const MEASURES = {
   'Un rojo no se deja': 'nadie',
   'No aflojar una revisión, no hacer papeleo': 'nadie',
   'Comprobar un mensaje para el equipo': 'nadie',
+  'La coordinadora no cambia código ni guías ella misma': 'nadie',
+  'Un plan para el dueño pasa antes por un revisor aparte': 'nadie',
+  'Afirmar sólo lo comprobado, y medir el uso antes de sacar algo': 'nadie',
+  'Medir un cambio de velocidad en un día con carga': 'nadie',
 };
 const COMMAND = path.join(ROOT, 'commands', 'coordinate.md');
 const headings = (file) => fs.readFileSync(file, 'utf8').split('\n').filter((l) => /^## /.test(l));
