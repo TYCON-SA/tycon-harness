@@ -1665,6 +1665,36 @@ function readEnvelopes(env, wip, { home, nowMs, projectsDir, sessions }) {
   return [...env.recent.values()].sort((p, q) => p.at - q.at);
 }
 
+// Los estados en que su pantalla espera un cuadro de la persona (`ASKS_OWNER`) y en que está trabajando: un mensaje de la
+// oficina entra recién cuando contesta el cuadro o cuando termina el paso.
+const WORKING = ['trabajando', 'prueba'];
+
+/**
+ * A quién se le puede escribir desde la oficina, sólo en la oficina viva: a cada persona le pone `recibe` (`si`, `sin-vigilante`,
+ * `codex`, `apagado` o `espera-cierre`) y deja en `env.recipients` su sesión y su estado, para el proceso. La lista cerrada de
+ * lo que viaja al sitio (`office/fields.js`) no lo lleva.
+ */
+function markRecipients(data, env, states, sdir, { isAlive } = {}) {
+  const om = require(path.join(ROOT, 'scripts', 'lib', 'office-messages.js'));
+  const off = process.env.TYCON_OFFICE_MESSAGES === '0';
+  const codex = new Set(states.filter((s) => s.tool === 'codex').map((s) => s.name).filter(Boolean));
+  env.recipients = new Map();
+  for (const a of data.agents || []) {
+    if (!a || !a.nombre) continue;
+    const e = env.files.get(a.nombre);
+    let recibe;
+    if (off) recibe = 'apagado';
+    else if (codex.has(a.nombre)) recibe = 'codex';
+    else if (!e) continue;
+    else {
+      const w = om.watcherState(sdir, e.sid, isAlive ? { isAlive } : {});
+      recibe = w.alive ? 'si' : (Number.isFinite(w.deliveredAt) ? 'espera-cierre' : 'sin-vigilante');
+    }
+    a.recibe = recibe;
+    env.recipients.set(a.nombre, { sid: e ? e.sid : null, recibe, estado: a.estado, ocupada: WORKING.includes(a.estado), cuadro: ASKS_OWNER.has(a.estado) });
+  }
+}
+
 /** Los últimos mensajes de una persona que está en la oficina, a pedido; null si no está. Nada de esto se guarda. */
 function conversationOf(env, name) {
   const e = env.files.get(name);
@@ -1771,6 +1801,7 @@ async function collect(opts = {}) {
   if (opts.envelopes) {
     opts.envelopes.coordinator = coordinatorSid ? { sid: coordinatorSid, name: coordinatorName } : null;
     data.sobres = readEnvelopes(opts.envelopes, wip, { home, nowMs, projectsDir: opts.projectsDir, sessions });
+    markRecipients(data, opts.envelopes, states, sdir);
   }
   if (board.board && Number.isFinite(board.writtenAt)) data.kanban.escrito = `Tablero escrito a las ${hhmm(board.writtenAt)}${nowMs - board.writtenAt > quietMin * 60000 ? ' (vieja)' : ''}`;
   data.unreadable.push(...problems);
@@ -1935,4 +1966,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, cardPr, codexAgentsUnder, claudeAgentsActive, buildTables, rowPrsNow, applyRowPrs, settleRowPrs, workCards, readTranscripts, readLastWrites, MODULES };
+module.exports = { markRecipients, prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, cardPr, codexAgentsUnder, claudeAgentsActive, buildTables, rowPrsNow, applyRowPrs, settleRowPrs, workCards, readTranscripts, readLastWrites, MODULES };

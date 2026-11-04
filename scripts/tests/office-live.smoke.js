@@ -76,9 +76,146 @@ fs.writeFileSync(dir + '/topics.json', JSON.stringify({ version: 1, temas: Objec
   }
 }
 
+// Escribirle a una sesión desde la oficina (E1-E6). Una máquina de juguete con cuatro sesiones: Alfa, con su
+// vigilante «vivo» y una sesión falsa que toma el mensaje y contesta; Beto, sin vigilante; Cata, con un cuadro abierto; y
+// Gama, de Codex. Deja capturas en OFFICE_8183_SHOTS (una carpeta), si está.
+async function talkToSession(playwright) {
+  const om = require(path.join(ROOT, 'scripts', 'lib', 'office-messages.js'));
+  const http = require('http');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'office-8183-'));
+  const sdir = stateDir(home);
+  for (const d of ['active', 'adhoc', 'doing', 'sessions']) fs.mkdirSync(path.join(sdir, d), { recursive: true });
+  const sessions = path.join(claudeDir(home), 'sessions');
+  const projects = path.join(claudeDir(home), 'projects', 'toy');
+  fs.mkdirSync(sessions, { recursive: true });
+  fs.mkdirSync(projects, { recursive: true });
+  const now = () => new Date().toISOString();
+  const transcript = (sid) => path.join(projects, `${sid}.jsonl`);
+  const append = (sid, lines) => fs.appendFileSync(transcript(sid), lines.map((l) => `${JSON.stringify(l)}\n`).join(''));
+  for (const [sid, name] of [['s1', 'Alfa'], ['s2', 'Beto'], ['s3', 'Cata']]) {
+    fs.writeFileSync(path.join(sessions, `${sid}.json`), JSON.stringify({ pid: process.pid, sessionId: sid, name, status: 'idle', statusUpdatedAt: Date.now() }));
+    append(sid, [{ type: 'user', timestamp: now(), origin: { kind: 'human' }, message: { role: 'user', content: `Hola ${name}` } }, { type: 'assistant', timestamp: now(), message: { content: [{ type: 'text', text: `Hola, soy ${name}.` }] } }]);
+  }
+  fs.writeFileSync(path.join(sdir, 'sessions', 's3.json'), JSON.stringify({ schema: 1, session: 's3', tool: 'claude', name: 'Cata', waitingForOwner: true, waitingFor: 'una respuesta', pid: process.pid, updatedAt: now() }));
+  fs.writeFileSync(path.join(sdir, 'sessions', 'cx1.json'), JSON.stringify({ schema: 1, session: 'cx1', tool: 'codex', name: 'Gama', pid: process.pid, busy: false, updatedAt: now() }));
+  fs.mkdirSync(om.paths(sdir).watchers, { recursive: true });
+  for (const sid of ['s1', 's3']) fs.writeFileSync(om.paths(sdir).watcher(sid), JSON.stringify({ pid: process.pid, started: om.processStart(process.pid) }));
+  // la sesión falsa de Alfa: toma lo que llega y, un momento después, lo anota y contesta como lo anota la herramienta
+  let taking = true;
+  const taker = setInterval(() => {
+    if (!taking) return;
+    const got = om.take(sdir, 's1');
+    if (!got || got.estado !== 'recibido') return;
+    setTimeout(() => append('s1', [
+      { type: 'user', timestamp: now(), origin: { kind: 'task-notification', producer: 'session-task' }, promptSource: 'system', message: { role: 'user', content: `<task-notification>\n<summary>Stop hook feedback</summary>\n</task-notification>\n<system-reminder>\nStop hook blocking error from command "Stop": ${got.envelope}\n</system-reminder>` } },
+      { type: 'assistant', timestamp: now(), message: { content: [{ type: 'text', text: 'Listo: el pedido 12 está verde.' }] } },
+      { type: 'system', subtype: 'stop_hook_summary', timestamp: now() },
+    ]), 800);
+  }, 300);
+  const shots = process.env.OFFICE_8183_SHOTS || null;
+  if (shots) fs.mkdirSync(shots, { recursive: true });
+  const env = { ...process.env, HOME: home, USERPROFILE: home, TYCON_OFFICE_NO_BROWSER: '1', TYCON_OFFICE_LINK: '0', TYCON_OFFICE_TEST: '1', TYCON_OFFICE_MESSAGES: '', TYCON_OFFICE_MESSAGE_DEADLINE_MS: '2500' };
+  const open = spawnSync(process.execPath, [OFFICE, '--open'], { input: '', env, encoding: 'utf8', timeout: 20000 });
+  const url = (open.stdout.match(/http:\/\/127\.0\.0\.1:\d+\/\?t=[0-9a-f]+/) || [])[0];
+  check(open.status === 0 && Boolean(url), 'E1: la oficina con mensajes arrancó');
+  if (!url) { clearInterval(taker); return; }
+  const lock = JSON.parse(fs.readFileSync(path.join(sdir, 'office', 'server.json'), 'utf8'));
+  const browser = await playwright.chromium.launch();
+  const other = http.createServer((req, res) => { res.writeHead(200, { 'content-type': 'text/html' }); res.end('<!doctype html><title>otra</title>'); });
+  await new Promise((r) => other.listen(0, '127.0.0.1', r));
+  try {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    page.on('pageerror', (e) => console.log(`error de la página: ${e.message}`));
+    page.on('websocket', (s) => s.on('framereceived', (f) => { if (String(f.payload).includes('"mensaje"')) console.log(`aviso: ${String(f.payload).slice(0, 160)}`); }));
+    await page.goto(url);
+    await page.waitForFunction(() => window.tablero && window.tablero.started, null, { timeout: 45000 });
+    const ventana = page.locator('#ventana');
+    const abrirVentana = async (nombre) => {
+      if (await ventana.isVisible()) await page.keyboard.press('Escape');
+      await page.locator('.tag', { hasText: nombre }).click();
+      await page.waitForSelector('#panel:not([hidden])');
+      await page.locator('#panel .verCharla').click();
+      await page.waitForFunction(() => { const v = document.getElementById('ventana'); return v && !v.hidden && !v.querySelector('p.m') ? true : v && !v.hidden && ![...v.querySelectorAll('p.m')].some((p) => p.textContent === 'Leyendo…'); }, null, { timeout: 8000 });
+    };
+    const shot = async (name) => { if (shots) await ventana.screenshot({ path: path.join(shots, `${name}.png`) }); };
+
+    // E2: sin vigilante, no se ofrece y lo dice; Codex, lo mismo con su texto
+    await abrirVentana('Beto');
+    check(await ventana.locator('textarea').count() === 0, 'E2: a Beto, sin vigilante, no se ofrece escribirle');
+    check((await ventana.locator('.noRecibe').innerText()) === 'Esta sesión no puede recibir mensajes de la oficina. Escribile una vez en su pestaña y vuelve a poder.', 'E2: y la ventana dice por qué');
+    await shot('E2-sin-vigilante');
+    if (await page.locator('.tag', { hasText: 'Gama' }).count()) {
+      await abrirVentana('Gama');
+      check((await ventana.locator('.noRecibe').innerText()) === 'Esta sesión es de Codex: desde acá no se le puede escribir.', 'E2: a una sesión de Codex no se le escribe, y lo dice');
+      await shot('E2-codex');
+    } else check(true, 'E2: la sesión de Codex de juguete no tiene escritorio en esta máquina: su texto lo prueban T17 y T23');
+
+    // E5: con un cuadro abierto, dice que espera
+    await abrirVentana('Cata');
+    check((await ventana.locator('.estadoMensaje').innerText()) === 'Está esperando que contestes su cuadro: lo va a leer cuando lo hagas.', 'E5: con un cuadro abierto, dice que lo lee al contestar');
+    await shot('E5-cuadro-abierto');
+
+    // E1: mandar, el avioncito, «lo recibió» y la respuesta en «Con vos»
+    await abrirVentana('Alfa');
+    check((await ventana.locator('.mandarFijo').innerText()) === 'Esto le llega como un mensaje tuyo. No firma ni aprueba nada.', 'E1: el texto fijo');
+    await ventana.locator('textarea').fill('revisá el pedido 12');
+    await ventana.locator('.mandar .verCharla', { hasText: 'Mandar' }).click();
+    await page.waitForFunction(() => document.querySelectorAll('.sobre.desdeOficina').length > 0, null, { timeout: 4000 }).then(() => check(true, 'E1: el avioncito sale hacia Alfa'), () => check(false, 'E1: el avioncito sale hacia Alfa'));
+    check((await ventana.locator('textarea').inputValue()) === '', 'E1: el campo queda vacío');
+    await page.waitForFunction(() => document.querySelector('.estadoMensaje') && document.querySelector('.estadoMensaje').textContent === 'Lo recibió.', null, { timeout: 8000 }).then(() => check(true, 'E1: dice «Lo recibió.»'), () => check(false, 'E1: dice «Lo recibió.»'));
+    await page.waitForFunction(() => /Listo: el pedido 12 está verde\./.test(document.querySelector('.conVos') ? document.querySelector('.conVos').textContent : ''), null, { timeout: 15000 }).then(() => check(true, 'E1: la respuesta aparece en «Con vos»'), () => check(false, 'E1: la respuesta aparece en «Con vos»'));
+    check(/Vos · desde la oficina/.test(await ventana.locator('.conVos').innerText()), 'E1: el mensaje va marcado «desde la oficina»');
+    await shot('E1-mandar-y-respuesta');
+
+    // E6: «aprobado» avisa antes de mandar, y la ventana no tiene nada que apruebe
+    await ventana.locator('textarea').fill('aprobado');
+    await ventana.locator('.mandar .verCharla', { hasText: 'Mandar' }).click();
+    await page.waitForFunction(() => /Esto no aprueba nada: para aprobar, contestá el cuadro\./.test(document.querySelector('.estadoMensaje').textContent), null, { timeout: 4000 }).then(() => check(true, 'E6: avisa antes de mandar un «aprobado»'), () => check(false, 'E6: avisa antes de mandar un «aprobado»'));
+    const botones = await ventana.locator('button').allInnerTexts();
+    check(botones.every((b) => !/aprob|firm|s[ií],/i.test(b)), `E6: ningún botón aprueba ni firma (${botones.join(' · ')})`);
+    check(fs.readdirSync(om.paths(sdir).inbox('s1')).filter((f) => f.endsWith('.json')).length === 0, 'E6: no se mandó sin «Mandar igual»');
+    await shot('E6-parece-aprobacion');
+
+    // E4: otra página, en otro puerto del mismo navegador, no puede mandar aunque sepa el token
+    const page2 = await browser.newPage();
+    await page2.goto(`http://127.0.0.1:${other.address().port}/`);
+    const rejected = await page2.evaluate(async ([port, token]) => {
+      try { const r = await fetch(`http://127.0.0.1:${port}/mensaje?t=${token}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ s: 'Alfa', texto: 'desde otra página' }) }); return `contestó ${r.status}`; } catch (e) { return 'rechazado'; }
+    }, [lock.port, lock.token]);
+    check(rejected === 'rechazado', `E4: la otra página no puede mandar (${rejected})`);
+    check(!om.readLog(sdir).rows.some((x) => x.estado === 'mandado' && x.largo === 'desde otra página'.length), 'E4: nada llegó al buzón');
+    await page2.close();
+
+    // E3: nadie lo toma: «No le llegó» y el texto vuelve al campo; con la oficina caída, «No se pudo mandar»
+    taking = false;
+    await ventana.locator('textarea').fill('esto no lo toma nadie');
+    await ventana.locator('.mandar .verCharla', { hasText: 'Mandar' }).click();
+    await page.waitForFunction(() => document.querySelector('.estadoMensaje').textContent === 'No le llegó.', null, { timeout: 10000 }).then(() => check(true, 'E3: dice «No le llegó.»'), () => check(false, 'E3: dice «No le llegó.»'));
+    check((await ventana.locator('textarea').inputValue()) === 'esto no lo toma nadie', 'E3: el texto vuelve al campo');
+    await shot('E3-no-le-llego');
+    process.kill(lock.pid, 'SIGTERM');
+    await sleep(800);
+    await ventana.locator('textarea').fill('con la oficina caída');
+    await ventana.locator('.mandar .verCharla', { hasText: 'Mandar' }).click();
+    await page.waitForFunction(() => document.querySelector('.estadoMensaje').textContent === 'No se pudo mandar.', null, { timeout: 6000 }).then(() => check(true, 'E3: con la oficina caída, «No se pudo mandar.»'), () => check(false, 'E3: con la oficina caída, «No se pudo mandar.»'));
+    check((await ventana.locator('textarea').inputValue()) === 'con la oficina caída', 'E3: y el texto queda en el campo');
+    await shot('E3-oficina-caida');
+  } finally {
+    clearInterval(taker);
+    other.close();
+    await browser.close();
+    try { process.kill(lock.pid, 'SIGKILL'); } catch { /* ya salió */ }
+  }
+}
+
 async function main() {
   const playwright = PINNED_PW.load();
   if (!playwright) { console.error(`sin navegador: ${PINNED_PW.locate().why}`); return 2; }
+  if (process.argv.includes('--messages')) {
+    await talkToSession(playwright);
+    console.log(fails.length ? `E1-E6 (8.183): FALLA (${fails.length})` : 'E1-E6 (8.183): OK');
+    return fails.length ? 1 : 0;
+  }
 
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'office-e1-'));
   const sdir = stateDir(home);

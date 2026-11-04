@@ -94,6 +94,19 @@ const NEEDS = new Set(['telegram-plugin']);
 const STEP_RE = /^(all|[a-z][a-z0-9-]*)$/;
 const EFFECTS = ['blocks', 'warns', 'records'];
 const ASYNC_ALLOWED = true;
+// el plazo más largo que acepta la lista para un gancho: un día
+const MAX_TIMEOUT_S = 86400;
+
+/**
+ * El modo de fondo que despierta a la sesión (`asyncRewake`) y el plazo (`timeout`) de la lista, sobre el gancho escrito.
+ * true si cambió algo.
+ */
+function withRewake(hookObj, h) {
+  let changed = false;
+  if (h.asyncRewake && hookObj.asyncRewake !== true) { hookObj.asyncRewake = true; changed = true; }
+  if (h.timeout !== undefined && hookObj.timeout !== h.timeout) { hookObj.timeout = h.timeout; changed = true; }
+  return changed;
+}
 
 class ApplyError extends Error {}
 
@@ -141,6 +154,9 @@ function validateList(list) {
     if (h.needs !== undefined && !NEEDS.has(h.needs)) out.push(`${who}: needs «${h.needs}» fuera del vocabulario (${[...NEEDS].join(', ')})`);
     if (h.override !== undefined && !(typeof h.override === 'string' && /^TYCON_[A-Z_]+$/.test(h.override) && String(h.when).startsWith('integration:'))) out.push(`${who}: override es una variable TYCON_ y sólo va en un hook de integración`);
     if (h.async !== undefined && (h.async !== true || !ASYNC_ALLOWED)) out.push(`${who}: async sólo puede ser true`);
+    // el gancho de fondo que despierta a la sesión al terminar con 2 (el vigilante de la oficina) y su plazo en segundos
+    if (h.asyncRewake !== undefined && h.asyncRewake !== true) out.push(`${who}: asyncRewake sólo puede ser true`);
+    if (h.timeout !== undefined && !(Number.isInteger(h.timeout) && h.timeout > 0 && h.timeout <= MAX_TIMEOUT_S)) out.push(`${who}: timeout es un entero de segundos entre 1 y ${MAX_TIMEOUT_S}`);
     if (!h.platforms || typeof h.platforms !== 'object' || typeof h.platforms.windows !== 'boolean') out.push(`${who}: falta platforms.windows (true o false)`);
     // en qué pasos del pipeline actúa y qué hace: no cambian lo que se registra; los muestra «Cómo trabaja» del sitio
     // (que cada id sea un paso de verdad lo cruza la prueba del sitio contra la tabla de pasos). Sin ellos la lista se
@@ -538,7 +554,7 @@ function applyToSettings(settings, o) {
   const repoOf = (spec) => (spec.startsWith('@tcg:') ? path.dirname(path.dirname(o.hooksDir)) : (intSpec(spec) ? path.dirname(intDir) : path.dirname(o.skills)));
   if (!settings.hooks || typeof settings.hooks !== 'object' || Array.isArray(settings.hooks)) settings.hooks = settings.hooks && typeof settings.hooks === 'object' && !Array.isArray(settings.hooks) ? settings.hooks : {};
   const hooks = settings.hooks;
-  const r = { added: [], existed: [], removed: [], missing: [], notInstalled: [], deferred: [], normalized: [], reformed: [], present: [], topAdded: [], envAdded: [] };
+  const r = { added: [], existed: [], removed: [], missing: [], notInstalled: [], deferred: [], normalized: [], reformed: [], retimed: [], present: [], topAdded: [], envAdded: [] };
   // con qué se escribe un hook `.js`: lo decide harness-node.js#interpreter mirando el disco; quien no
   // lo pasa (una prueba, un llamador viejo) queda con `node`
   const jsPrefix = (o.interp && o.interp.prefix) || 'node';
@@ -738,6 +754,8 @@ function applyToSettings(settings, o) {
           || (cmdOf(hk) !== found.command && !deadSame(cmdOf(hk), h) && scriptOf(cmdOf(hk)) !== kept));
         if (keep.length !== entry.hooks.length) { r.removed.push({ event: h.event, relpath: h.spec, why: 'repetido con una ruta que ya no existe: queda el de la ruta estable' }); entry.hooks = keep; }
       }
+      // el modo de fondo y el plazo los manda la lista: uno ya registrado con otro valor se pone al día en su lugar
+      if (withRewake(found, h)) r.retimed.push({ event: h.event, relpath: h.spec });
       r.existed.push({ event: h.event, relpath: h.spec });
       r.present.push(id);
       warnRegistered();
@@ -760,6 +778,7 @@ function applyToSettings(settings, o) {
       if (next) { r.reformed.push({ event: h.event, relpath: h.spec, from: leadingInterpreter(cmdOf(hookObj)), to: runner === 'node' ? jsHead(h) : runner }); hookObj.command = next; }
     }
     else { hookObj = { type: 'command', command }; if (h.async) hookObj.async = true; }
+    withRewake(hookObj, h);
     let appended = false;
     for (const entry of bucket) {
       if (entry && typeof entry === 'object' && normMatcher(entry.matcher) === target) {
@@ -946,7 +965,7 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
     if (!planOk) throw new ApplyError(`no pude anotar los hooks en el plan (${env.TYCON_PLAN_PIECES}): el plan quedaría incompleto y no se escribe`);
   }
 
-  const changed = added.length > 0 || removed.length > 0 || r.normalized.length > 0 || r.reformed.length > 0;
+  const changed = added.length > 0 || removed.length > 0 || r.normalized.length > 0 || r.reformed.length > 0 || r.retimed.length > 0;
   let backup = null;
   if (!a.check && changed) {
     if (existed && !env.TYCON_HARNESS_SNAPSHOT_DIR) {

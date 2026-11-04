@@ -198,17 +198,68 @@ function charlaPorSesion(nombre,sesiones,vacio){if(!sesiones.length)return lista
   const resto=sesiones.slice(SESIONES_A_LA_VISTA);
   if(resto.length){const mas=el("button","mas","Las otras "+resto.length);mas.type="button";mas.onclick=()=>{const nuevos=resto.map(boton);mas.replaceWith(...nuevos);nuevos[0].focus();};fila.append(mas);}
   elegir(sesiones[0],botones[0]);return box;}
-function pintarCharla(box,nombre,c,cerrar){const fin=x=>{box.insertBefore(x,cerrar)},seccion=(titulo,filas,vacio)=>{fin(el("h4",null,titulo));if(!filas.length){fin(el("p","m",vacio));return}const ch=el("div","chat");filas.forEach(f=>ch.append(f));fin(ch)};
+// «Con vos», en toda sesión: lo que le escribiste (en su pestaña o desde la oficina) y lo que contestó.
+const VOS_VACIO="No hay mensajes con vos en lo último de su conversación.";
+const conVosLista=(nombre,lista)=>listaCharla((lista||[]).map(m=>msg(m.quien==="vos"?(m.oficina?"Vos · desde la oficina":"Vos"):nombre,m.at,m.texto,m.quien==="vos")),VOS_VACIO);
+// la lista «Con vos» de la ventana abierta: al llegar la respuesta se cambia sólo ella, sin tocar lo que está escrito en el campo
+let vosDe=null;
+function pintarCharla(box,nombre,c,cerrar){const fin=x=>{box.insertBefore(x,cerrar)};
   box.querySelector("p.m").remove();
   if(c.falla){fin(el("p","m","No se pudo leer la conversación de esta sesión."));return}
-  const d=c.datos||{};if(d.sinCoordinadora){fin(el("p","m","Esta máquina no tiene coordinadora designada: no hay con quién cruzar los mensajes."));return}
+  const d=c.datos||{},vos=el("div","conVos");vos.append(conVosLista(nombre,d.conVos));vosDe={nombre,vos};
   const alFinal=()=>box.querySelectorAll(".chat").forEach(ch=>{ch.scrollTop=ch.scrollHeight});
-  if(d.conVos){pestanasCharla([["Con vos",listaCharla(d.conVos.map(m=>msg(m.quien==="vos"?"Vos":nombre,m.at,m.texto,m.quien==="vos")),"No hay mensajes con vos en lo último de su conversación.")],
+  if(d.sinConversacion){fin(el("p","m","La conversación de esta sesión no se lee desde la oficina."));}
+  else if(d.sinCoordinadora){fin(el("h4",null,"Con vos"));fin(vos);fin(el("p","m","Esta máquina no tiene coordinadora designada: no hay con quién cruzar los mensajes. "+ALCANCE));}
+  else if(d.conSesiones){pestanasCharla([["Con vos",vos],
       ["Con las sesiones",charlaPorSesion(nombre,d.conSesiones||[],"No hay mensajes con las sesiones en lo último de su conversación.")]]).forEach(fin);
-    fin(el("p","m","Tus últimos 20 mensajes con sus respuestas, y los últimos 10 con cada sesión, en orden; primero la que habló último. "+ALCANCE+" Las contraseñas y las claves se tapan."));alFinal();return}
-  const filas=(d.conCoordinadora||[]).map(m=>msg(m.propio?nombre:m.de,m.at,m.texto,m.propio));if(d.arranque)filas.unshift(msg("Mensaje de arranque",d.arranque.at,d.arranque.texto,false));
-  seccion("Con la coordinadora",filas,"No hay mensajes con la coordinadora en lo último de su conversación.");
-  fin(el("p","m","Últimos 10 mensajes. "+ALCANCE));alFinal()}
+    fin(el("p","m","Tus últimos 20 mensajes con sus respuestas, y los últimos 10 con cada sesión, en orden; primero la que habló último. "+ALCANCE+" Las contraseñas y las claves se tapan."));}
+  else{const filas=(d.conCoordinadora||[]).map(m=>msg(m.propio?nombre:m.de,m.at,m.texto,m.propio));if(d.arranque)filas.unshift(msg("Mensaje de arranque",d.arranque.at,d.arranque.texto,false));
+    pestanasCharla([["Con vos",vos],["Con la coordinadora",listaCharla(filas,"No hay mensajes con la coordinadora en lo último de su conversación.")]]).forEach(fin);
+    fin(el("p","m","Tus últimos 20 mensajes con sus respuestas, y los últimos 10 con la coordinadora. "+ALCANCE+" Las contraseñas y las claves se tapan."));}
+  if(LIVE&&d.oficina)campoMandar(nombre,d.oficina,fin);
+  alFinal()}
+// ── Escribirle a la sesión, sólo con la oficina viva. Le llega como un mensaje de la persona y nunca firma ni aprueba nada:
+// la ventana no tiene ningún botón que apruebe o conteste un cuadro. El proceso dice en qué va cada mensaje por el WebSocket.
+const MANDAR_FIJO="Esto le llega como un mensaje tuyo. No firma ni aprueba nada.";
+const CUADRO_TXT="Está esperando que contestes su cuadro: lo va a leer cuando lo hagas.";
+const ESTADO_TXT={mandado:"Mandado.",recibido:"Lo recibió."};
+const TOPE_MENSAJE=4000;
+// los mensajes de esta página que todavía no terminaron: id → { nombre, texto, campo, estado }
+const enCurso=new Map();
+function campoMandar(nombre,ofi,fin){const sec=el("div","mandar");sec.setAttribute("role","group");sec.setAttribute("aria-label","Escribirle a "+nombre);
+  if(ofi.recibe!=="si"&&ofi.recibe!=="espera-cierre"){sec.append(el("p","m noRecibe",ofi.motivo||"Esta sesión no puede recibir mensajes de la oficina."));fin(sec);return}
+  const campo=document.createElement("textarea"),boton=el("button","verCharla","Mandar"),estado=el("p","m estadoMensaje");
+  campo.rows=3;campo.setAttribute("aria-label","Mensaje para "+nombre);boton.type="button";estado.setAttribute("role","status");
+  estado.textContent=ofi.cuadro?CUADRO_TXT:ofi.recibe==="espera-cierre"?"Lo va a recibir cuando termine lo que está haciendo.":"";
+  const mandar=igual=>{const texto=campo.value;
+    if(!texto.trim()){estado.textContent="El mensaje está vacío.";return}
+    if(Array.from(texto).length>TOPE_MENSAJE){estado.textContent="El mensaje pasa de "+TOPE_MENSAJE+" caracteres.";return}
+    boton.disabled=true;
+    fetch("mensaje?t="+encodeURIComponent(LIVE.token),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({s:nombre,texto,igual:Boolean(igual)})})
+      .then(r=>r.json().catch(()=>({})).then(j=>({ok:r.ok,j})))
+      .then(({ok,j})=>{boton.disabled=false;
+        if(ok&&j.id){campo.value="";enCurso.set(j.id,{nombre,texto,campo,estado});estado.textContent=j.motivo||(j.cuadro?CUADRO_TXT:ESTADO_TXT.mandado);if(window.tablero.avion)window.tablero.avion(nombre);
+          const antes=tempranos.get(j.id);if(antes){tempranos.delete(j.id);alMensaje(antes)}return}
+        if(j.parece==="aprobacion"){const igualB=el("button","mas","Mandar igual");igualB.type="button";igualB.onclick=()=>mandar(true);estado.replaceChildren(document.createTextNode(j.motivo+" "),igualB);return}
+        estado.textContent=j.motivo||"No se pudo mandar."})
+      .catch(()=>{boton.disabled=false;estado.textContent="No se pudo mandar."})};
+  boton.onclick=()=>mandar(false);
+  sec.append(el("p","m mandarFijo",MANDAR_FIJO),campo,boton,estado);fin(sec)}
+// lo que dice el proceso de un mensaje: recibido, no entregado (vuelve el texto al campo) o entregado y sin aparecer
+// un aviso puede llegar antes que la respuesta de «Mandar» (la sesión lo toma enseguida): se guarda y se aplica al conocer el mensaje
+const tempranos=new Map();
+function alMensaje(m){const p=enCurso.get(m.id);if(!p){if(tempranos.size<20)tempranos.set(m.id,m);return}
+  if(m.estado==="recibido"){p.estado.textContent=ESTADO_TXT.recibido;esperarRespuesta(p.nombre,m.id);return}
+  enCurso.delete(m.id);
+  if(m.estado==="no-entregado"){p.estado.textContent=m.motivo||"No le llegó.";if(!p.campo.value)p.campo.value=p.texto;return}
+  if(m.motivo)p.estado.textContent=m.motivo}
+// la respuesta aparece en «Con vos» de la misma ventana: se vuelve a leer la conversación hasta que el mensaje tenga la suya
+function esperarRespuesta(nombre,id,veces=0){if(veces>120||!vosDe||vosDe.nombre!==nombre||charlaDe!==nombre){enCurso.delete(id);return}
+  fetch("conversacion?t="+encodeURIComponent(LIVE.token)+"&s="+encodeURIComponent(nombre)).then(r=>r.ok?r.json():null).then(d=>{
+    if(!d||!vosDe||vosDe.nombre!==nombre)return;const lista=d.conVos||[],i=lista.findIndex(x=>x.oficina&&x.id===id);
+    if(i>=0){vosDe.vos.replaceChildren(conVosLista(nombre,lista));const ch=vosDe.vos.querySelector(".chat");if(ch)ch.scrollTop=ch.scrollHeight}
+    if(i>=0&&lista.slice(i+1).some(x=>x.quien!=="vos")){enCurso.delete(id);return}
+    setTimeout(()=>esperarRespuesta(nombre,id,veces+1),5000)}).catch(()=>setTimeout(()=>esperarRespuesta(nombre,id,veces+1),5000))}
 // sin 3D, la tabla queda abierta y la sala dice por qué
 function sinTresD(msg){const o=document.getElementById("ovl");o.textContent=msg;o.hidden=false;const t=document.getElementById("tablewrap");t.hidden=false;t.open=true}
 window.tablero={agents:()=>agents,items:()=>items,kanban:()=>DATA.kanban||null,meta:()=>meta,site:()=>SITE,sobres:()=>DATA.sobres||[],live:()=>LIVE,AST,SHIRT,fmt,finTxt,sinTresD,pintarFicha,iconoComo,etiquetaComo,dibujo,AVION_ICONO};
@@ -228,7 +279,7 @@ if(!CON_OFICINAS){relojTick(agents,Date.now(),meta);renderTop();renderCrew();
 const CERRADA="La oficina se cerró. Corré /office otra vez para verla al día.";
 function cerrada(){const o=document.getElementById("ovl");o.textContent=CERRADA;o.hidden=false;const fl=document.getElementById("freeLine");fl.textContent=CERRADA;fl.hidden=false}
 if(LIVE){const ws=new WebSocket("ws://"+location.host+"/live?t="+encodeURIComponent(LIVE.token));
-  ws.onmessage=ev=>{const o=document.getElementById("ovl"),FALLA="No pude dibujar la última novedad; la oficina muestra la anterior. Corré /office otra vez si sigue así.";try{const m=JSON.parse(ev.data);if(!m||m.type!=="foto")return;setData(m.data);relojTick(agents,Date.now(),meta);renderTop();renderCrew();if(o.textContent===FALLA){o.textContent="";o.hidden=true}if(window.tablero.refresh)window.tablero.refresh()}catch(e){console.error(e);o.textContent=FALLA;o.hidden=false}};
+  ws.onmessage=ev=>{const o=document.getElementById("ovl"),FALLA="No pude dibujar la última novedad; la oficina muestra la anterior. Corré /office otra vez si sigue así.";try{const m=JSON.parse(ev.data);if(m&&m.type==="mensaje"){alMensaje(m);return}if(!m||m.type!=="foto")return;setData(m.data);relojTick(agents,Date.now(),meta);renderTop();renderCrew();if(o.textContent===FALLA){o.textContent="";o.hidden=true}if(window.tablero.refresh)window.tablero.refresh()}catch(e){console.error(e);o.textContent=FALLA;o.hidden=false}};
   ws.onclose=cerrada;}
 if(!CON_OFICINAS)setTimeout(()=>{if(!window.tablero.started)sinTresD("Este navegador no pudo cargar la oficina en 3D; las tarjetas y la tabla tienen lo mismo.")},8000);
 document.getElementById("ventana").addEventListener("click",e=>{if(e.target===e.currentTarget)cerrarCharla()});
@@ -512,6 +563,14 @@ function lanzarSobres(){const nuevos=[];
   // mientras vuela, la sala se dibuja como si alguien la tocara; después vuelve a su ritmo
   if(van.length){hastaTocando=Math.max(hastaTocando,performance.now()+VUELO_MS);despertar()}}
 function quitarVuelo(v){const i=vuelos.indexOf(v);if(i>=0)vuelos.splice(i,1);scene.remove(v.m);v.e.remove()}
+// lo que la persona manda desde la ventana: el avioncito sale del frente de la sala (no hay persona de origen) y llega al escritorio
+const FRENTE={st:{position:new THREE.Vector3(0,0,7)}};
+T.avion=nombre=>{const a=desks.find(d=>d.agent.nombre===nombre);if(!a||!enVista||document.hidden)return;
+  const m=new THREE.Group();m.rotation.order="YXZ";m.scale.setScalar(.55);m.add(new THREE.Mesh(avionGeo,avionMat),new THREE.LineSegments(bordeGeo,bordeMat));scene.add(m);
+  const e=document.createElement("span");e.className="sobre desdeOficina";const dib=document.createElement("span");dib.className="dib";dib.append(T.dibujo(T.AVION_ICONO));dib.setAttribute("aria-hidden","true");e.append(dib,"Vos → "+nombre);
+  labelsEl.appendChild(e);const vuelo={m,e,de:FRENTE,a,t0:performance.now()};vuelos.push(vuelo);
+  if(reduce)setTimeout(()=>{quitarVuelo(vuelo);despertar()},VUELO_MS);
+  hastaTocando=Math.max(hastaTocando,performance.now()+VUELO_MS);despertar()};
 function volar(){const W=stage.clientWidth,H=stage.clientHeight,now=performance.now();
   for(const v of [...vuelos]){const k=reduce?.5:(now-v.t0)/VUELO_MS;if(k>=1){quitarVuelo(v);continue}
     a3.copy(v.de.st.position);b3.copy(v.a.st.position);a3.lerp(b3,k);a3.y=1.7+Math.sin(k*Math.PI)*1.1;v.m.position.copy(a3);v.m.rotation.set(-Math.cos(k*Math.PI)*.3,Math.atan2(b3.x-v.de.st.position.x,b3.z-v.de.st.position.z),Math.sin(k*Math.PI*2)*.25);
