@@ -22,6 +22,8 @@ const esperar = async () => { for (let i = 0; i < 20; i++) await new Promise((r)
 const HOY = '2026-11-04';
 const AHORA = Date.parse(`${HOY}T12:00:00Z`);
 const diaHace = (n) => new Date(AHORA - n * 86400000).toISOString().slice(0, 10);
+// si el texto nombra el sitio: compara el origen de cada dirección que trae, no un pedazo del texto
+const nombra = (texto, origen) => (String(texto).match(/https?:\/\/[\w.-]+(?::\d+)?/g) || []).some((u) => new URL(u).origin === origen);
 const capa = (v, extra = {}) => JSON.stringify({ schema: 1, name: 'acme', ...extra, requires: { harness: `>= ${v}` } });
 
 // ── la pantalla en un DOM falso ────────────────────────────────────────────────────────────────────────────────────────
@@ -96,11 +98,11 @@ test('T9 Direccion_LosNocturnosLeenElPerfil @story-8.203 @ac-9 — el resumen di
   const DS = require(path.join(ROOT, 'scripts', 'nightly', 'dependencies', 'daily-summary.js'));
   const prueba = { resultado: 'paso', hora: `${HOY}T09:00:00Z`, avisos: [] };
   const dos = DS.lineaDe({ operations: ops(B), perfil: perfil(A), prueba, hoy: HOY });
-  assert.ok(dos.linea.includes(A) && !dos.linea.includes(B), dos.linea);
-  assert.ok(dos.aviso && dos.aviso.includes(A) && dos.aviso.includes(B), 'con las dos distintas, el resumen lo dice en una línea');
+  assert.ok(nombra(dos.linea, A) && !nombra(dos.linea, B), dos.linea);
+  assert.ok(dos.aviso && nombra(dos.aviso, A) && nombra(dos.aviso, B), 'con las dos distintas, el resumen lo dice en una línea');
   const soloOps = DS.lineaDe({ operations: ops(B), perfil: perfil(null), prueba, hoy: HOY });
-  assert.ok(soloOps.linea.includes(B)); assert.ok(!soloOps.aviso);
-  assert.ok(DS.lineaDe({ operations: ops(B), perfil: null, prueba, hoy: HOY }).linea.includes(B), 'sin perfil, como hoy');
+  assert.ok(nombra(soloOps.linea, B)); assert.ok(!soloOps.aviso);
+  assert.ok(nombra(DS.lineaDe({ operations: ops(B), perfil: null, prueba, hoy: HOY }).linea, B), 'sin perfil, como hoy');
   // el ciclo de fichas: con la del perfil, las fichas se deciden en el sitio aunque operations.json no la tenga
   const CY = require(path.join(ROOT, 'scripts', 'nightly', 'findings', 'cycle.js'));
   assert.strictEqual(CY.sitioDecide(ops(null), { perfil: perfil(A) }).codigo, 0);
@@ -507,7 +509,7 @@ test('T34 Perfil_ConMarcaDeOrden_SeLee @story-8.203 @ac-9 — un team-profile.js
   assert.strictEqual(sitioUrl('--operations', ops, '--profile', perfil).stdout.trim(), 'https://perfil.acme.example');
   const DS = require(DS_CLI);
   const l = DS.lineaDe({ operations: ops, perfil, prueba: { resultado: 'paso', hora: `${HOY}T06:00:00Z` }, hoy: HOY });
-  assert.ok(l.linea.includes('https://perfil.acme.example'), l.linea);
+  assert.ok(nombra(l.linea, 'https://perfil.acme.example'), l.linea);
   assert.deepStrictEqual(ORG.leerPerfil(perfil), { site: { url: 'https://perfil.acme.example' } });
   assert.strictEqual(ORG.leerPerfil(path.join(d, 'no-esta.json')), null);
 });
@@ -625,11 +627,11 @@ test('T41 Noche_PerfilRotoODireccionConCredencial_LoDiceSinMostrarla @story-8.20
   const l = DS.lineaDe({ operations: ops, perfil: conClave, prueba, hoy: HOY });
   const todo = `${l.linea} ${l.aviso || ''}`;
   assert.ok(!/secreto|token=abc|quien/.test(todo), todo);
-  assert.ok(todo.includes('https://perfil.acme.example'), todo);
+  assert.ok(nombra(todo, 'https://perfil.acme.example'), todo);
   // un perfil que está pero no se puede leer no es «sin perfil»: lo dice, y sigue con operations.json
   const roto = path.join(d, 'roto.json'); fs.writeFileSync(roto, '{');
   const r = DS.lineaDe({ operations: ops, perfil: roto, prueba, hoy: HOY });
-  assert.ok(r.linea.includes('https://vieja.acme.example'), r.linea);
+  assert.ok(nombra(r.linea, 'https://vieja.acme.example'), r.linea);
   assert.ok(r.aviso && /perfil/.test(r.aviso) && /no se pudo leer/.test(r.aviso), JSON.stringify(r));
   const cli = sitioUrl('--operations', ops, '--profile', roto);
   assert.strictEqual(cli.stdout.trim(), 'https://vieja.acme.example');

@@ -102,12 +102,12 @@ function enProceso({ home, repo }, entrada, { romper, preparar } = {}) {
   fs.rmSync(log, { force: true });
   const args = [];
   const previa = path.join(home, 'previa.js');
-  if (romper) fs.writeFileSync(previa, `const M = require('module'); const c = M._load; M._load = function (p, ...r) { if (p.endsWith(${JSON.stringify(romper)})) throw new Error(${JSON.stringify(`roto: ${romper}`)}); return c.call(this, p, ...r); };`);
+  if (romper) fs.writeFileSync(previa, "const M = require('module'); const c = M._load; const broken = process.env.BREAK_MODULE; M._load = function (p, ...r) { if (p.endsWith(broken)) throw new Error('roto: ' + broken); return c.call(this, p, ...r); };");
   if (preparar) fs.writeFileSync(previa, preparar);
   if (romper || preparar) args.push('-r', previa);
   const base = {};
   for (const [k, v] of Object.entries(process.env)) if (!k.startsWith('TYCON_')) base[k] = v;
-  const r = spawnSync(process.execPath, [...args, GATE], { input: entrada, cwd: repo, env: { ...base, HOME: home, USERPROFILE: home, TYCON_NO_RUN_CHANGE: '1' }, encoding: 'utf8', timeout: 15000 });
+  const r = spawnSync(process.execPath, [...args, GATE], { input: entrada, cwd: repo, env: { ...base, HOME: home, USERPROFILE: home, TYCON_NO_RUN_CHANGE: '1', ...(romper ? { BREAK_MODULE: romper } : {}) }, encoding: 'utf8', timeout: 15000 });
   return { salida: r.status, stderr: String(r.stderr), log: fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : '' };
 }
 const pedido = (cwd, command) => JSON.stringify({ tool_name: 'Bash', session_id: 's-red', cwd, tool_input: { command } });
