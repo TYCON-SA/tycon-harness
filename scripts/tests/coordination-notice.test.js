@@ -585,6 +585,17 @@ test('Q7 Notice_SuiteIdleWithQueue_SaysWhoStarts: sin suite completa en curso y 
   assert.strictEqual(C.capNotice(t.opts), null, 'con la suite corriendo calla');
 });
 
+test('Q7c Notice_SuiteQueue_PassWaitNotCounted: una espera de pase no es de la fila de la suite: sin suite corriendo, no avisa', () => {
+  // 🔴 mutación: sacar el filtro de «pase» (avisa con «hay 1 esperando turno: … Pía»)
+  const t = toy();
+  const doing = path.join(t.state, 'doing');
+  fs.mkdirSync(doing, { recursive: true });
+  session(t, 's-pase', 'Pía');
+  fs.writeFileSync(path.join(doing, 's-pase.json'), JSON.stringify({ text: 'implementar la historia', at: new Date(mins(50)).toISOString(), waitingFor: 'turno de pase adversarial', waitingSince: new Date(mins(50)).toISOString() }));
+  assert.strictEqual(C.capNotice(t.opts), null, 'el pase corre en la nube: no ocupa ni espera el turno de la suite');
+  assert.deepStrictEqual(C.status({ ...t.opts, noTranscripts: true }).suiteWaiting, []);
+});
+
 test('Q7b Notice_SuiteQueue_BrokenNote_SaysSo: una nota que no se lee va a «no pude leer», no tira el aviso entero', () => {
   const t = toy();
   const doing = path.join(t.state, 'doing');

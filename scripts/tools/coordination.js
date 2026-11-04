@@ -190,10 +190,12 @@ function hasFreshDoing(home, sid, now) {
 
 // Desde cuándo la sesión espera el turno de la suite completa o del portón, según lo que anotó con `marker.js doing
 // --waiting-for`; null si no anotó una espera así. Sin nota no se supone nada: una sesión quieta no está «esperando turno».
+// La espera de un pase no cuenta: el pase corre en la nube y tiene su propio turno, no el de la suite.
 const SUITE_WAIT = /suite|port[oó]n|turno/i;
+const PASS_WAIT = /pase|adversarial/i;
 function suiteWaitSince(home, sid) {
   const note = readJson(path.join(stateDir(home), 'doing', `${sid}.json`), null);
-  if (!note || typeof note.waitingFor !== 'string' || !SUITE_WAIT.test(note.waitingFor)) return null;
+  if (!note || typeof note.waitingFor !== 'string' || !SUITE_WAIT.test(note.waitingFor) || PASS_WAIT.test(note.waitingFor)) return null;
   const since = Date.parse(note.waitingSince || note.at);
   return Number.isFinite(since) ? since : null;
 }
