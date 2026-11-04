@@ -34,7 +34,7 @@ function decisiones() {
   const desde = code.indexOf('// la pestaña del sitio: lo que se decide sin tocar la pantalla');
   const hasta_ = code.indexOf('// fin de lo que se decide sin tocar la pantalla');
   assert.ok(desde >= 0 && hasta_ > desde, 'page.js marca la parte que decide');
-  return new Function(`${code.slice(desde, hasta_)}; return { resumenDeOficina, alCerrarLaConexion, oficinaDelHash, oficinaAMostrar, aplicarOficinas, salasVivas, TOPE_DE_SALAS, pedidoDeCharla, sobresDeOficina };`)();
+  return new Function(`${code.slice(desde, hasta_)}; return { resumenDeOficina, alCerrarLaConexion, oficinaDelHash, oficinaAMostrar, aplicarOficinas, salasVivas, TOPE_DE_SALAS, pedidoDeCharla, sobresDeOficina, charlaSegunRespuesta, charlaConForma };`)();
 }
 
 // ── La pestaña ──────────────────────────────────────────────────────────────────────────────
@@ -101,7 +101,7 @@ test('T21 UnaSolaPagina_DosFuentes — @story-8.171 @ac-17', async () => {
   const { page } = require(path.join(ROOT, 'scripts', 'tools', 'office.js'));
   const plantilla = fs.readFileSync(path.join(OFFICE_DIR, 'page.html'), 'utf8');
   const codigo = fs.readFileSync(path.join(OFFICE_DIR, 'page.js'), 'utf8');
-  assert.doesNotMatch(plantilla, /<script>|<script type="module">/, 'la plantilla no trae código');
+  assert.doesNotMatch(plantilla, /<script>|<script type="module">/i, 'la plantilla no trae código');
 
   const local = page({ agents: [], meta: {} }, { live: { token: 'abc' } });
   assert.match(local, /<html[^>]*data-source="local"/);
@@ -291,7 +291,7 @@ test('T34 Pagina_BajoLaPoliticaDelSitio — @story-8.171 @ac-17b @ac-10c', async
     const pagina = await h.pedir('/offices', { cookie });
     const csp = pagina.headers['content-security-policy'];
     // lo único en línea es el mapa de importación, con su hash, y sólo en esta ruta
-    const scripts = [...pagina.texto.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)];
+    const scripts = [...pagina.texto.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)];
     const enLinea = scripts.filter((s) => !/\bsrc=/.test(s[1]));
     assert.strictEqual(enLinea.length, 1, 'un solo guion en línea');
     assert.match(enLinea[0][1], /type="importmap"/);
@@ -366,8 +366,31 @@ test('T50 PaginaDelSitio_AvioncitoYConversacion — @story-8.171 @ac-26 @ac-27',
   assert.match(fn('crearSala'), /conLaMaquina=g=>\(\.\.\.x\)=>\{const antes=fuenteCharla,datos=DATA;.*?DATA=foto\(\);try\{return g\(\.\.\.x\)\}finally\{fuenteCharla=antes;DATA=datos\}/, 'la ficha de la sala lee la foto de su oficina');
   assert.match(fn('pintarOficina'), /DATA=o\.foto\|\|\{\};\s*try\{pintarTarjetas\(/, 'las tarjetas de una oficina leen su foto');
   assert.match(fn('pintarOficina'), /finally\{fuenteCharla=antes;DATA=datos\}/, 'y después vuelve a la de antes');
+  // las tarjetas van en el orden del sitio, el mismo con que se eligen las salas, no en el de llegada (que depende de lo
+  // que la página vio antes de reconectarse)
+  assert.match(fn('ubicar'), /const orden=\[\.\.\.new Set\(\[\.\.\.oficinas\.keys\(\),\.\.\.fichas\.keys\(\)\]\)\]/);
+  assert.match(fn('ubicar'), /cards=orden\.map\(/);
+  assert.match(fn('ponerSalas'), /salasVivas\(oficinas\.values\(\)/);
   assert.match(fn('pintarFicha'), /pedidoDeCharla\(/, 'el botón aparece si hay de dónde pedirla');
   assert.match(fn('abrirCharla'), /fetch\(pedidoDeCharla\(/, 'y se pide a la fuente');
+  // sin conversación guardada todavía (404) no es una falla: dice que no llegó; lo demás que no es 200, sí es una falla
+  assert.strictEqual(d.charlaSegunRespuesta(404), 'vacia');
+  for (const s of [500, 403, 0, undefined]) assert.strictEqual(d.charlaSegunRespuesta(s), 'falla', String(s));
+  assert.strictEqual(d.charlaSegunRespuesta(200), 'datos');
+  assert.match(fn('abrirCharla'), /charlaSegunRespuesta\(r\.status\)/, 'la página decide con el estado de la respuesta');
+  // en el sitio, el 404 es que todavía no llegó; en la oficina local, que la sesión ya no está
+  assert.match(fn('pintarCharla'), /c\.vacia\)\{fin\(el\("p","m",c\.deSitio\?"La conversación de esta sesión todavía no llegó al sitio\.":"Esta sesión ya no está en la oficina\."\)\)/);
+  assert.match(fn('abrirCharla'), /deSitio=pedido\.fuente==="site"/);
+  // un 200 vale sólo con la forma de una conversación; lo que falla queda en la consola, y un pintado que se rompe dice que falló
+  assert.strictEqual(d.charlaConForma({ conCoordinadora: [] }), true);
+  assert.strictEqual(d.charlaConForma({ sinCoordinadora: true }), true);
+  // la de una sesión de Codex: no se lee desde la oficina, pero se le puede escribir
+  assert.strictEqual(d.charlaConForma({ sinConversacion: true, oficina: { recibe: 'codex' } }), true);
+  for (const x of [null, [], {}, { otra: 1 }, 'texto']) assert.strictEqual(d.charlaConForma(x), false, JSON.stringify(x));
+  assert.match(fn('abrirCharla'), /if\(!charlaConForma\(datos\)\)throw/);
+  assert.match(fn('abrirCharla'), /\.catch\(e=>\{console\.warn\(/);
+  assert.match(fn('abrirCharla'), /try\{pintarCharla\(box,nombre,c,cerrar\)\}catch\(e\)\{console\.warn\([^}]*\);pintarCharla\(box,nombre,\{falla:true\},cerrar\)\}/);
+  assert.match(fn('pintarCharla'), /c\.falla\)\{fin\(el\("p","m","No se pudo leer la conversación de esta sesión\."\)\)/);
   // el mensaje entero, por la ventana de siempre: el texto se pone con nodos, nunca como HTML
   assert.doesNotMatch(fn('msg') + fn('formatear') + fn('enLinea'), /innerHTML|insertAdjacentHTML/);
   // de punta a punta: una máquina manda su charla, el sitio la entrega y la página la pide por la ruta que arma

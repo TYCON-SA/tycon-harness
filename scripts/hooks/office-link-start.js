@@ -37,7 +37,10 @@ const stampFile = (sdir) => path.join(sdir, 'office', 'team-refresh.json');
 
 /** El evento de la herramienta, de lo que manda por la entrada; null si no se lee. */
 function eventOf(input) {
-  try { const d = JSON.parse(String(input || '')); return d && typeof d.hook_event_name === 'string' ? d.hook_event_name : null; } catch { return null; }
+  try { const d = JSON.parse(String(input || '')); return d && typeof d.hook_event_name === 'string' ? d.hook_event_name : null; } catch { /* abajo */ }
+  // un pedido largo (un registro pegado) pasa de lo que se lee: el evento se busca en el texto cortado
+  const m = /"hook_event_name"\s*:\s*"([A-Za-z]+)"/.exec(String(input || ''));
+  return m ? m[1] : null;
 }
 
 /** Lo de abrir una sesión: el alta si hace falta y el proceso. `notifyType` es el aviso al proceso que ya estaba. */
@@ -49,7 +52,9 @@ async function linkNow({ env, home, write, notifyType = 'session' }) {
   if (!read.ok) { appendLog(sdir, 'la configuración no se pudo leer: la máquina no se enlaza con el sitio hasta que se lea'); return; }
   const site = config.valor(read.config, 'site.url');
   const { machineUrl } = require('../tools/office/fields.js');
-  if (typeof site !== 'string' || !machineUrl(site)) return;
+  // sin dirección, un proceso vivo que sigue enlazado se tiene que enterar: la pudo sacar el arranque de la sesión, no
+  // sólo la puesta al día de la capa (sin proceso vivo, el aviso no llega a nadie)
+  if (typeof site !== 'string' || !machineUrl(site)) { require('../lib/office-event.js').notify(null, { home, type: 'config' }); return; }
   try {
     const line = await enrollIfNeeded({ site, sdir });
     if (line) write(line);

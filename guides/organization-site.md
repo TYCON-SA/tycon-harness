@@ -479,6 +479,31 @@ vive en tu navegador mientras la pestaña está abierta, nunca va al sitio. En u
 ventana privada, por ejemplo) la página anda igual, sin esa oferta. Las diferencias aceptadas entre productos no se
 mezclan: si su archivo cambió, piden recargar como antes.
 
+**Lo que hace cada botón.** Cada botón que le pide algo al sitio («Revisar cambios», «Confirmar y proponer», «Invitar»,
+los de las máquinas, «Ver sus pasos»…) se apaga mientras trabaja y dice qué hace: «Revisando…», «Proponiendo…»,
+«Guardando…». Un segundo toque no hace nada. Si pasan diez segundos, suma «sigue trabajando». Si falla, dice por qué al
+lado del botón, o en el lugar donde la sección dice sus errores, y el botón vuelve a quedar activo.
+
+**Lo propuesto no es lo guardado.** Mientras el pull request está abierto, la sección dice «Propuesto en el pull request
+N: todavía no entró», con el enlace, y no «sin cambios»: eso es lo que tiene main. Cuando entra, vuelve a decir «sin
+cambios». Si se cierra sin entrar, la sección lo dice, el campo vuelve a mostrar lo que tiene main y lo que escribiste
+queda para recuperarlo y volver a proponerlo.
+
+**La diferencia muestra lo que cambia de valor.** El sitio escribe cada archivo en su formato (dos espacios, un dato por
+renglón). Si el archivo de main estaba escrito de otra forma, la diferencia no llena la pantalla con eso: muestra sólo
+los renglones cuyo valor cambia, con lo cambiado marcado dentro del renglón, y una línea arriba dice «Además, el pull
+request acomoda el formato del archivo: renglones que cambian de forma, no de valor: N».
+
+**Cuando un dato nuevo necesita una versión más nueva del arnés.** Si lo que proponés en el perfil del equipo sólo lo
+lee una versión más nueva del arnés (los nombres de las sesiones, los niveles de las firmas, los canales de aviso…), el
+mismo pull request sube `requires.harness` de `team-layer.json` a esa versión, siempre que todas las **máquinas activas**
+(las que dieron noticias en los últimos 14 días) ya la tengan. Antes de confirmar, la sección lo dice: «El pull request
+también pide el arnés …, por …: las máquinas activas (N) ya lo tienen». Si alguna máquina activa está atrasada, o no se pudo leer
+su versión, no sube: frena y dice cuáles, con su persona y su versión; cuando se actualicen, proponé de nuevo. Una
+máquina sin noticias en los últimos 14 días no cuenta, y la sección dice cuáles quedaron afuera. Si no se sabe qué
+versión tienen las máquinas (ninguna activa, el buzón no se puede leer o el sitio no sabe su propia versión), tampoco
+sube. Una capa que no se puede leer no se pisa. Sin `team-layer.json`, el pull request lleva un solo archivo.
+
 **Descargar** baja el archivo cambiado, para
 cuando el sitio no puede proponer: se lo pasás a quien tiene acceso a ese repo, que lo sube con un pedido de cambio.
 
@@ -508,7 +533,8 @@ Las secciones, en el orden de la pantalla:
   Si alguien sale de la lista, en cuanto se aprueba el pedido y el sitio se actualiza (a lo sumo 15 minutos), su
   próxima página es la de «Tu cuenta no está en la lista», sin datos. Arriba de la lista se ve con qué se entra al
   sitio; eso se cambia en la instalación. Para alguien de afuera del directorio de la organización, **Invitar** (abajo,
-  «Invitar a alguien») lo suma y le manda la invitación de Microsoft. También van acá el buzón de ejecuciones, el refresco y la dirección del sitio.
+  «Invitar a alguien») lo suma y le manda la invitación de Microsoft. También van acá el buzón de ejecuciones y el
+  refresco. La dirección del sitio no: se escribe en un solo lugar, «La dirección del sitio en cada máquina».
   Queda en `operations.json`, en el repo de operaciones. Lo revisa otra persona que mantiene, salvo que la organización
   haya prendido «Los cambios de un mantenedor»: entonces el sitio lo aprueba solo. **«Cada cuánto se
   actualiza el sitio»** acepta de 5 a 120 minutos; sin declarar, 15. Más corto, un cambio se ve antes, pero el sitio
@@ -537,7 +563,10 @@ Las secciones, en el orden de la pantalla:
   en «Cómo se mantiene al día».
 - **La dirección del sitio en cada máquina**: la página que abre el comando `/org-site` en la máquina de cada persona
   del equipo (`site.url`). Tiene que empezar con `https`. Vale sólo desde el perfil del equipo: una máquina no la puede
-  cambiar. Sin dirección, el comando explica cómo cargarla. Queda en `team-profile.json`, en el repo del perfil.
+  cambiar. Sin dirección, el comando explica cómo cargarla. Queda en `team-profile.json`, en el repo del perfil. Es la
+  única dirección del sitio: la leen las máquinas y también los procesos de la noche (el resumen de la mañana, el ciclo
+  de las fichas). Si sólo está en `operations.json` (donde vivía antes), la sección lo dice y muestra el valor para
+  pasarlo al perfil; mientras tanto la noche sigue leyendo el de `operations.json`, que queda de respaldo.
 - **Personas y máquinas**: de quién es cada máquina que manda ejecuciones, y en qué proyectos trabaja cada persona. Una
   máquina nueva aparece en «Por confirmar» con el correo que dice ser; **Confirmar** la pone a nombre de esa persona.
   Queda en `operations.json`, en el repo de operaciones. Lo revisa quien mantiene.
@@ -748,9 +777,11 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   sitio no deja proponerlo. Queda en `team-profile.json` → `switches`, en el repo del perfil.
 - **Las sesiones de cada máquina**: cuando una sesión coordina a las demás, cuántas pueden estar trabajando al
   mismo tiempo en una máquina (de 1 a 20; sin valor, 3) antes de que la próxima espere su turno, y con qué nombres se
-  abren las nuevas: como hoy (los pone quien abre) o un tema de fábrica (animales, ríos, colores o árboles), con un
-  ejemplo de los nombres que salen. Cada máquina puede cambiar las dos cosas para sí; la lista propia de cada dev no se
-  edita acá: se la pide a su sesión. La carpeta donde quedan las firmas del dueño es de cada máquina y no se pone acá.
+  abren las nuevas: como hoy (los pone quien abre), un tema de fábrica (animales, ríos, colores o árboles) o una
+  **Lista propia**, con un ejemplo de los nombres que salen. La lista propia se escribe acá, un nombre por renglón:
+  letras sin acento, números, guion y guion bajo, hasta 40 caracteres y 200 nombres, sin repetidos; los renglones vacíos
+  no cuentan. La revisa el mismo lector de la máquina antes de proponerla. Cada máquina puede cambiar las dos cosas para
+  sí, y su lista gana sobre la del perfil. La carpeta donde quedan las firmas del dueño es de cada máquina y no se pone acá.
   Queda en `team-profile.json` → `coordination.max_working` y `coordination.session_names`; la receta entera está en
   `guides/coordination.md`.
 - **La oficina de /office**: cuántos minutos sin novedades tiene que pasar una sesión que trabaja para que la oficina diga
@@ -765,7 +796,8 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   Telegram, como hasta ahora. Con el correo, el servidor y su puerto. Nunca pide una credencial: los avisos de la sesión
   de cada dev usan las suyas (`harness.js config set notify.<clave>`, en su máquina; Telegram, el bot de la máquina) y
   los de la noche, las variables secretas del servidor (`pipelines/operations/README.md`). Guardar los canales sube
-  también `requires.harness` del perfil a la primera versión que los lee.
+  también `requires.harness` del perfil a la primera versión que los lee, con la regla de «Cuando un dato nuevo necesita
+  una versión más nueva del arnés», arriba.
 - **Conversaciones de las ejecuciones**: si el sitio baja también lo que se habló en cada ejecución; con eso, el detalle de
   Ejecuciones muestra los archivos que tocó. Queda en `operations.json`, en el repo de operaciones. Lo revisa quien
   mantiene.

@@ -316,6 +316,8 @@ function createLink({ site, sdir, home = os.homedir(), WebSocket = require('./ve
   const outbox = [];
   let gapTimer = null;
   let lastCharlaAt = -Infinity;
+  // los nombres de la última foto que llegó al sitio, como los guarda él
+  let fotoNames = new Set();
   let stopped = false;
   let attempts = 0;
   let retryTimer = null;
@@ -350,7 +352,8 @@ function createLink({ site, sdir, home = os.homedir(), WebSocket = require('./ve
 
   function sendFoto() {
     if (!sock || !authed || !latest) return;
-    const msg = JSON.stringify({ type: 'foto', data: pick(latest, home) });
+    const data = pick(latest, home);
+    const msg = JSON.stringify({ type: 'foto', data });
     if (msg === lastSent) return;
     const bytes = Buffer.byteLength(msg);
     if (bytes > MAX_MESSAGE_BYTES) {
@@ -360,6 +363,14 @@ function createLink({ site, sdir, home = os.homedir(), WebSocket = require('./ve
     notedSize = null;
     sock.send(msg);
     lastSent = msg;
+    // el sitio descarta la conversación de una sesión que su foto no nombra: la que ya había salido antes de la foto que
+    // la nombra por primera vez vuelve a salir ahora
+    const names = new Set([...(data.agents || []).map((a) => a && a.nombre), ...(data.free || [])].filter((n) => typeof n === 'string'));
+    for (const [name, t] of talks) {
+      const shown = sessionName(name, home);
+      if (t.sent && names.has(shown) && !fotoNames.has(shown)) { t.sent = null; sendCharla(name, true); }
+    }
+    fotoNames = names;
   }
 
   // a lo sumo una por minuto por sesión: lo que llega antes espera su turno, y sale la última. Al conectar salen todas
@@ -458,6 +469,7 @@ function createLink({ site, sdir, home = os.homedir(), WebSocket = require('./ve
     for (const t of talks.values()) t.sent = null;
     awaitingPong = false;
     lastSent = null;
+    fotoNames = new Set();
     clearBeat();
     clearGreet();
     if (stopped) return;
