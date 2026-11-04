@@ -66,8 +66,8 @@ const FIELDS = {
     nombre: text, estado: oneOf(AGENT_STATES), comoTrabaja: text, titulo: text, historia: text, encargo: text, haciendo: text, haciendoAhora: text, agentesAhora: text, ultimaAccion: action,
     espera: text, parada: text, callada: text, mientras: text, mientrasEstado: oneOf(AGENT_STATES), enPausa: text,
     fin: END, horaPorque: text, estimadaIso: hour, avance: number, carpeta: folder, pasos: list(record({ name: text, done: flag })), novedadMs: number, sinPid: flag,
-    // a quién espera la mano levantada
-    mano: oneOf(HANDS), manoEtiqueta: text, manoPor: text,
+    // a quién espera la mano levantada, y con qué modelo y qué esfuerzo corre la sesión
+    mano: oneOf(HANDS), manoEtiqueta: text, manoPor: text, modelo: text, esfuerzo: text,
   })),
   kanban: record({
     escrito: text,
@@ -105,8 +105,7 @@ const LOCAL_ONLY = Object.freeze({
   'kanban.anteriores': 'lo terminado otros días llega ya armado en `tablas`, que viaja',
   'kanban.columnas.tarjetas.cls': 'el color de la hora de una tarjeta lo calcula la página desde `hora`; la clase no se usa',
   'tablero.actualizado': 'la hora en que se escribió el tablero llega en `kanban.escrito`, que viaja',
-  'tablero.teToca': 'lo que te toca llega en `meta.teToca`, que lo junta con las firmas y viaja',
-});
+  'tablero.teToca': 'lo que te toca llega en `meta.teToca`, que lo junta con las firmas y viaja',});
 
 // La conversación de una sesión: lo que devuelve la ruta local de la conversación (`readConversation`), con cada texto
 // hasta CHARLA_TEXT_MAX. `recortada`: no entraba en 64 KB y se sacaron los mensajes más viejos.

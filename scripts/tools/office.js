@@ -1589,11 +1589,28 @@ function tokensTxt(n) {
   return `${said} millones`;
 }
 
-// Lo que dice la tarjeta de los tokens de una sesión.
+// El modelo con su nombre corto: `claude-opus-5-5` es «Opus 5.5», y el sufijo entre corchetes va en palabras
+// (`[1m]`, «(1M)»). Uno que no se conoce va tal como viene; sin modelo, «sin dato».
+const NO_DATA = 'sin dato';
+function modelWords(id) {
+  if (typeof id !== 'string' || !id) return NO_DATA;
+  const suffix = /\[([^\]]*)\]$/.exec(id);
+  const bare = id.replace(/\[[^\]]*\]$/, '');
+  const m = /^claude-(opus|sonnet|haiku|fable)-(\d+)-(\d+)$/.exec(bare);
+  const name = m ? `${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}.${m[3]}` : bare;
+  return suffix ? `${name} (${suffix[1].toUpperCase()})` : name;
+}
+// El esfuerzo con la palabra del selector de /model; uno que no se conoce va tal como viene.
+const EFFORT_WORDS = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max' };
+const effortWords = (e) => (typeof e === 'string' && e ? EFFORT_WORDS[e] || e : NO_DATA);
+
+// Lo que dice la tarjeta de los tokens de una sesión. Su modelo y su esfuerzo van en campos que no se enumeran: no salen
+// en `tokens` (ni al sitio por ahí); la foto los pasa a cada sesión, que es lo que la página lee.
 function tokensCard(t) {
-  if (!t || t.noMedido) return { noMedido: true };
+  const how = { modelo: { value: modelWords(t && t.modelo) }, esfuerzo: { value: effortWords(t && t.esfuerzo) } };
+  if (!t || t.noMedido) return Object.defineProperties({ noMedido: true }, how);
   const contexto = t.limite ? `${tokensTxt(t.contexto)} de ${tokensTxt(t.limite)} · ${Math.round((t.contexto / t.limite) * 100)} %` : `${tokensTxt(t.contexto)} · porcentaje no medido`;
-  return { contexto, consumidos: `Read ${tokensTxt(t.lectura)} · Write ${tokensTxt(t.escritura)} · Cache Read ${tokensTxt(t.cache)}`, agentes: t.agentes };
+  return Object.defineProperties({ contexto, consumidos: `Read ${tokensTxt(t.lectura)} · Write ${tokensTxt(t.escritura)} · Cache Read ${tokensTxt(t.cache)}`, agentes: t.agentes }, how);
 }
 
 // El ajuste de compactación de cada modelo, de la configuración de esta máquina. Sin él, cuenta la ventana del modelo.
@@ -1921,6 +1938,8 @@ async function collect(opts = {}) {
   if (opts.syncBoard && board.board && !opts.readOnly) syncBoardFromPhoto(sdir, facts, factsComplete && open.measured !== false, problems, { now: nowMs, home, sync: opts.boardSync });
   // sólo con la oficina abierta: la primera pasada lee conversaciones enteras, y la foto fija y `--json` empezarían de cero cada vez
   if (opts.envelopes && !opts.noTranscripts) data.tokens = readTokens(wip, states, remembered.tokens, { home, nowMs, projectsDir: opts.projectsDir, codexHome: opts.codexHome, cxNames });
+  // el modelo y el esfuerzo de cada sesión, de su última respuesta: van con la persona, a su etiqueta y a sus tarjetas
+  if (data.tokens) for (const a of data.agents) { const t = data.tokens[a.nombre]; if (t) { a.modelo = t.modelo; a.esfuerzo = t.esfuerzo; } }
   // lo del tablero que no es una fila: su resumen, lo que dice que le toca al dueño y cuándo se escribió
   const savedTopics = topics.readTopics(sdir);
   if (savedTopics.problem) problems.push(savedTopics.problem);

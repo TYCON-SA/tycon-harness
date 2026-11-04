@@ -520,6 +520,72 @@ test('T33 Ventanas_LasCuatro_XArribaYSinCerrarAbajo — @story-8.198 @ac-32', ()
   assert.match(html, /<div class="ventana" id="ventana" hidden><div class="panel3"/);
 });
 
+// ── Modelo y esfuerzo de cada sesión ────────────────────────────────────────────────────────────────────────────
+
+const { readSessionTokens } = require(path.join(__dirname, '..', 'lib', 'session-transcript.js'));
+// una conversación de Claude de juguete: cada respuesta con su modelo y su esfuerzo
+function claudeTalk(answers) {
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'charla-')), 's.jsonl');
+  const usage = { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
+  fs.writeFileSync(f, answers.map((a, i) => JSON.stringify({ type: 'assistant', uuid: `u${i}`, isSidechain: Boolean(a.agente), ...(a.effort !== undefined ? { effort: a.effort } : {}), ...(a.perTurnEffort !== undefined ? { perTurnEffort: a.perTurnEffort } : {}), message: { id: `m${i}`, model: a.model, usage } })).join('\n') + (answers.length ? '\n' : ''));
+  return f;
+}
+const said = (file) => { const c = office.tokensCard(readSessionTokens(file, new Map(), {})); return `${c.modelo} · ${c.esfuerzo}`; };
+
+test('T17 Transcript_UltimaRespuesta_ModeloYEsfuerzo — @story-8.198 @ac-17', () => {
+  const words = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max' };
+  for (const [k, w] of Object.entries(words)) assert.strictEqual(said(claudeTalk([{ model: 'claude-opus-5-5', perTurnEffort: k, effort: k }])), `Opus 5.5 · ${w}`);
+});
+
+test('T18 Transcript_EffortNullPerTurnEffortSi_UsaElQueHay — @story-8.198 @ac-17', () => {
+  assert.strictEqual(said(claudeTalk([{ model: 'claude-opus-5-5', effort: null, perTurnEffort: 'medium' }])), 'Opus 5.5 · Medium');
+  assert.strictEqual(said(claudeTalk([{ model: 'claude-opus-5-5', effort: 'low' }])), 'Opus 5.5 · Low');
+});
+
+test('T19 Transcript_CambioAMitad_ValeLaUltimaRespuesta — @story-8.198 @ac-18', () => {
+  assert.strictEqual(said(claudeTalk([{ model: 'claude-opus-5', perTurnEffort: 'high' }, { model: 'claude-opus-5-5', perTurnEffort: 'low' }])), 'Opus 5.5 · Low');
+  // la oficina viva lee lo nuevo de la conversación: un cambio después de la primera lectura se ve
+  const f = claudeTalk([{ model: 'claude-opus-5-5', perTurnEffort: 'high' }]);
+  const counts = new Map();
+  assert.strictEqual(office.tokensCard(readSessionTokens(f, counts, {})).esfuerzo, 'High');
+  fs.appendFileSync(f, `${JSON.stringify({ type: 'assistant', uuid: 'u9', perTurnEffort: 'low', message: { id: 'm9', model: 'claude-sonnet-5-5', usage: { input_tokens: 1, output_tokens: 1 } } })}\n`);
+  const c = office.tokensCard(readSessionTokens(f, counts, {}));
+  assert.deepStrictEqual([c.modelo, c.esfuerzo], ['Sonnet 5.5', 'Low']);
+});
+
+test('T20 Transcript_SinRespuestaOSinteticoOSinEsfuerzo_SinDato — @story-8.198 @ac-19', () => {
+  assert.strictEqual(said(claudeTalk([])), 'sin dato · sin dato');
+  assert.strictEqual(said(claudeTalk([{ model: '<synthetic>', perTurnEffort: 'high' }])), 'sin dato · sin dato');
+  assert.strictEqual(said(claudeTalk([{ model: 'claude-opus-5-5', perTurnEffort: 'high' }, { model: '<synthetic>', perTurnEffort: 'low' }])), 'Opus 5.5 · High');
+  assert.strictEqual(said(claudeTalk([{ model: 'claude-opus-5-5' }])), 'Opus 5.5 · sin dato');
+  // el valor de la máquina (settings.json con effortLevel) nunca completa lo que falta: la lectura no lo mira
+  const src = fs.readFileSync(path.join(__dirname, '..', 'lib', 'session-transcript.js'), 'utf8');
+  assert.doesNotMatch(src, /effortLevel/);
+});
+
+test('T21 Transcript_Codex_ModeloDelTurnoYEsfuerzoVacioSinDato — @story-8.198 @ac-20', () => {
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-')), 'r.jsonl');
+  const tc = (effort) => JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-6.1-sol', effort } });
+  const tokens = JSON.stringify({ type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: { input_tokens: 5, output_tokens: 2 }, last_token_usage: { input_tokens: 5 }, model_context_window: 1000 } } });
+  fs.writeFileSync(f, `${tc(null)}\n${tokens}\n`);
+  const counts = new Map();
+  let c = office.tokensCard(readSessionTokens(f, counts, {}));
+  assert.deepStrictEqual([c.modelo, c.esfuerzo], ['gpt-6.1-sol', 'sin dato']);
+  fs.appendFileSync(f, `${tc('medium')}\n`);
+  c = office.tokensCard(readSessionTokens(f, counts, {}));
+  assert.deepStrictEqual([c.modelo, c.esfuerzo], ['gpt-6.1-sol', 'Medium']);
+});
+
+test('T22 Transcript_Agentes_NoCuentan — @story-8.198 @ac-21', () => {
+  assert.strictEqual(said(claudeTalk([{ model: 'claude-opus-5-5', perTurnEffort: 'high' }, { model: 'claude-haiku-5-5', perTurnEffort: 'low', agente: true }])), 'Opus 5.5 · High');
+});
+
+test('T23 Transcript_SufijoYModeloDesconocido — @story-8.198 @ac-22', () => {
+  assert.strictEqual(said(claudeTalk([{ model: 'claude-opus-5-5[1m]', perTurnEffort: 'max' }])), 'Opus 5.5 (1M) · Max');
+  assert.strictEqual(said(claudeTalk([{ model: 'claude-nuevo-9', perTurnEffort: 'low' }])), 'claude-nuevo-9 · Low');
+  assert.strictEqual(said(claudeTalk([{ model: 'claude-fable-5-1', perTurnEffort: 'low' }])), 'Fable 5.1 · Low');
+});
+
 // ── Lo que viaja al sitio ───────────────────────────────────────────────────────────────────────────────────────
 
 test('T51 Sitio_Campos_NumeroModeloEsfuerzoMano — @story-8.198 @ac-55', () => {

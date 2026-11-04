@@ -33,7 +33,7 @@ function renderBoard(){const body=document.getElementById("boardBody"),k=DATA.ka
   (k.columnas||[]).forEach(c=>{const col=el("div","col"),list=c.tarjetas||[];col.style.setProperty("--k",KC[c.id]||"var(--line)");col.appendChild(el("h3",null,c.nombre+" · "+list.filter(i=>!i.otro).length));
     if(c.nota)col.appendChild(el("p","none",c.nota));
     if(!list.length)col.appendChild(el("p","none","Nada"));
-    list.forEach(i=>{const card=el("div","item abre"),tit=el("b","una-linea",i.titulo||"");tit.title=i.titulo||"";if(typeof i.numero==="string"){card.setAttribute("data-numero",i.numero);card.appendChild(el("span","num",i.numero))}card.tabIndex=0;card.setAttribute("role","button");card.onclick=()=>{if(!String(window.getSelection?getSelection():""))abrirTarjeta(i,card);};card.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();abrirTarjeta(i,card);}};card.appendChild(tit);const line=[i.quien,i.hora,i.grupo].filter(Boolean).join(" · ");if(line)card.appendChild(el("span","m",line));const eh=c.id==="curso"&&estadoDeHora(i);if(eh){card.style.setProperty("--k",eh[1]);card.appendChild(el("span","estado-hora",eh[0]))}
+    list.forEach(i=>{const card=el("div","item abre"),tit=el("b","una-linea",i.titulo||"");tit.title=i.titulo||"";if(typeof i.numero==="string"){card.setAttribute("data-numero",i.numero);card.appendChild(el("span","num",i.numero))}card.tabIndex=0;card.setAttribute("role","button");card.onclick=()=>{if(!String(window.getSelection?getSelection():""))abrirTarjeta(i,card);};card.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();abrirTarjeta(i,card);}};card.appendChild(tit);const line=[i.quien,i.hora,i.grupo].filter(Boolean).join(" · "),quienEs=(DATA.agents||[]).find(a=>a.nombre===String(i.quien||"").split(" · ")[0]),mod=quienEs&&(quienEs.modelo||quienEs.esfuerzo)?(quienEs.modelo||"sin dato")+" · "+(quienEs.esfuerzo||"sin dato"):"";if(mod)card.appendChild(el("span","m mod",mod));if(line)card.appendChild(el("span","m",line));const eh=c.id==="curso"&&estadoDeHora(i);if(eh){card.style.setProperty("--k",eh[1]);card.appendChild(el("span","estado-hora",eh[0]))}
       [i.espera?"Espera "+i.espera+".":"",i.marca,i.motivo,i.nota].forEach(v=>{if(v)card.appendChild(el("span","n",v))});if(i.mano)card.appendChild(el("span","mano "+i.mano,"✋ "+(i.mano==="coordinadora"?"Espera a la Coordinadora":"Espera tu firma")));col.appendChild(card)});
     cols.appendChild(col)});
   body.appendChild(cols);
@@ -119,12 +119,15 @@ function pintarTarjetas(c,list,alTocar){c.replaceChildren();
 function numeroDe(i){return i&&typeof i.numero==="string"?i.numero:""}
 // a quién espera la mano levantada: la que anotó la sesión, o el dueño si su pantalla espera una firma o una pregunta
 function manoDe(a){return a&&(a.mano||(a.estado==="firma"||a.estado==="pregunta"?"dueno":null))}
+// con qué modelo y qué esfuerzo corre una sesión: «Opus 5.5 · High», con «sin dato» en lo que no se leyó; nada en la foto fija
+function modeloDe(a){return a&&(a.modelo||a.esfuerzo)?(a.modelo||"sin dato")+" · "+(a.esfuerzo||"sin dato"):""}
 function ficha(a){const r=[],add=(k,v,x)=>{if(v!=null&&v!=="")r.push({k,v,...x})};
   add("Trabajo",a.titulo);add("De la historia",a.historia);add("Encargo",a.encargo);
   if(a.haciendoAhora)add("Haciendo ahora",a.haciendoAhora);else if(a.haciendo!==a.titulo&&!SOLO_COORDINA.test(a.haciendo||""))add("Haciendo",a.haciendo);
   if(a.agentesAhora)r.push({k:"",v:a.agentesAhora});
   add("Última acción",a.ultimaAccion);add("Espera",a.espera);add("Parada",a.parada);add("Novedades",a.callada);
   if(a.mano)add("Mano levantada",[a.manoEtiqueta,a.manoPor].filter(Boolean).join(" · "));
+  if(a.modelo||a.esfuerzo)add("Modelo",(a.modelo||"sin dato")+" · "+(a.esfuerzo||"sin dato"));
   const ms=AST[a.mientrasEstado];add("Mientras tanto",a.mientras?a.mientras+(ms?" ("+ms[0].toLowerCase()+")":""):"");
   add("En pausa",a.enPausa);
   // quien espera a otro no da una hora: dice qué espera, o qué pasó con los pedidos que esperaba
@@ -557,6 +560,7 @@ function pintarTag(d){const a=d.agent,m=manoDe(a),s0=T.AST[a.estado]||[a.estado|
   // con la mano levantada por otra cosa que su pantalla, la etiqueta dice a quién espera, con el color de su aro
   s=m&&a.manoEtiqueta&&a.estado!=="firma"&&a.estado!=="pregunta"?[a.manoEtiqueta,m==="coordinadora"?"#5aa9ff":"#ffa53d"]:s0;d.el.style.setProperty("--c",s[1]);d.el.style.setProperty("--outfit",d.ropa);d.el.querySelector("b").textContent=a.nombre||"";d.el.querySelector(".como").replaceChildren(...(a.comoTrabaja&&a.comoTrabaja!==s[0]?[T.iconoComo(a.comoTrabaja),a.comoTrabaja]:[]));
   d.el.querySelector(".es").textContent=s[0]+(a.mientras?" · y algo más":"");const f=T.finTxt(a),fin=d.el.querySelector(".fin");fin.replaceChildren();
+  let md=d.el.querySelector(".mod");if(!md){md=document.createElement("span");md.className="mod";fin.before(md)}md.textContent=modeloDe(a);md.hidden=!md.textContent;
   if(f){fin.append(f.hora);if(f.dif){const x=document.createElement("em");x.className=f.cls;x.textContent=" · "+f.dif;fin.append(x);}}
   const bar=d.el.querySelector(".bar");bar.hidden=a.avance==null;bar.firstChild.style.width=(a.avance||0)+"%";
   const fx=d.el.querySelector(".fx");fx.textContent=m?"✋":FX[a.estado]||"";d.el.classList.toggle("alert",Boolean(m));d.el.classList.toggle("alert-coord",m==="coordinadora");d.el.classList.toggle("sel",sel===a.nombre);d.el.setAttribute("aria-label",(a.nombre||"")+": "+s[0]);}

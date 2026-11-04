@@ -300,6 +300,9 @@ function richFoto() {
   // lo que collect() le agrega a la foto de buildOffice
   data.tablas = buildTables({ kanban: data.kanban, nowMs });
   data.tablero = { actualizado: board.actualizado, teToca: board.teToca };
+  // con la oficina abierta, el modelo y el esfuerzo de cada sesión, de su última respuesta
+  Object.assign(data.agents[0], { modelo: 'Opus 5.5', esfuerzo: 'High' });
+  Object.assign(data.agents[1], { modelo: 'Sonnet 5.5', esfuerzo: 'sin dato' });
   data.kanban.columnas[0].tarjetas[0] = { ...data.kanban.columnas[0].tarjetas[0], otro: true };
   data.kanban.escrito = 'Tablero escrito a las 11:59';
   data.meta.pedidosLeidos = '11:59';
