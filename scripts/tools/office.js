@@ -680,6 +680,11 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     }
   }
   for (const l of leftovers.values()) items.push(Object.defineProperties({ ...leftoverCard(l), estado: 'riesgo', quien: '—', estimadaIso: null, pronosticoIso: null, fin: null }, { trabajo: { value: l.work }, historia: { value: l.historia }, proyecto: { value: l.proyecto } }));
+  // la sesión de fondo que cerró Claude Code no está trabajando ni libre: se dice qué pasó y cómo se levanta
+  for (const r of wip.retired || []) {
+    const quien = plain(r.session) || r.short;
+    items.push({ titulo: `${quien}: la cerró Claude Code (${plain(r.reason)}), quieta ${r.idleMin} min`, quien, estado: 'riesgo', estimadaIso: null, pronosticoIso: null, fin: null, espera: `para levantarla: claude respawn ${r.short}` });
+  }
   // «te toca» es sólo lo que pide una firma o una decisión del dueño: las firmas, lo que le preguntan y la lista del tablero,
   // que mantiene la coordinadora. Las notas no se leen: una frase no dice si es para ahora
   const teToca = [...signatureCards.filter((s) => !s.yaAvisada).map((s) => s.linea), ...toldOwner, ...((board && board.teToca) || [])];

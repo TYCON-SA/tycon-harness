@@ -80,6 +80,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { touches, isValidPattern } = require('./touched-files');
 const { joinLcov } = require('./node-coverage');
+const suiteTimes = require('./suite-times');
 
 const MAX_BUFFER = 64 * 1024 * 1024;
 // Tope en bytes del archivo con la salida entera de una suite roja (se guardan la primera y la última mitad) y de lo que
@@ -111,6 +112,8 @@ function launch(p, covDir, env0) {
   const ej = p.ruta.endsWith('.js') ? process.execPath : 'bash';
   const env = { ...env0 };
   for (const k of DEL_PORTON) delete env[k];
+  // un corredor que una suite lance sobre su repo de juguete no anota en el registro de tiempos de la máquina
+  env.TYCON_SUITE_TIMES = 'off';
   if (!covDir) return [ej, [p.ruta], env];
   const e = { ...env };
   delete e.NODE_TEST_CONTEXT;
@@ -412,6 +415,8 @@ function main(argv, env = process.env) {
     }
   }
 
+  // la carga y los núcleos, antes de lanzar ninguna suite: la carga de ahora es la ajena
+  const maquina = suiteTimes.machine();
   const { workers, warning } = resolveWorkers(env);
   if (warning) console.error(`[suites.json] ⚠️  ${warning}`);
   // la suite pedida sola corre aunque la difiera lo tocado o la corrida liviana
@@ -584,6 +589,11 @@ function main(argv, env = process.env) {
   // El repo acota el portón y no se sabe qué se tocó: corre todo. Se dice acá, lo último antes de la primera suite, con la
   // cantidad y cómo acotarla: quien la lanzó puede cortarla. La base tiene que ser ancestro de HEAD: `origin/main` solo
   // no sirve en una rama atrasada.
+  const base = touched.base && touched.base.ref ? touched.base : null;
+  resumen.seleccion = { base: base ? base.ref : null, fuente: base ? base.source : null, tocados: touched.known ? touched.files.length : null, corren: count, total: plan.length };
+  console.log(touched.known
+    ? `[suites.json] acotado a lo tocado: ${touched.files.length} archivos${base ? ` desde ${base.ref.slice(0, 7)} (${base.source})` : ''}: corren ${count} de ${plan.length}`
+    : `[suites.json] sin acotar: ${touched.reason || 'no sé qué se tocó'}: corren ${count} de ${plan.length}`);
   if (fullSuiteBy && !allSuites && !touched.known) {
     console.log(`🟠 [suites.json] sin base: el repo acota el portón, pero no sé qué se tocó (${touched.reason || 'sin motivo'}): corren todas las suites (${count}). Para acotar, cortala y relanzá con TYCON_COVERAGE_BASE="$(git merge-base origin/main HEAD)"`);
   }
@@ -703,7 +713,8 @@ function main(argv, env = process.env) {
       const ms = Date.now() - t0;
       const exit = status === null ? 124 : status;   // null = murió por señal: se cuenta como rojo
       const salida = spawnError ? `${spawnError.message}\n` : Buffer.concat(chunks).toString('utf8');
-      results[p.idx] = { idx: p.idx, ruta: p.ruta, entrada: p.entrada, exit, ms, salida };
+      // la que termina por el corte no se midió: su tiempo no va al registro
+      results[p.idx] = { idx: p.idx, ruta: p.ruta, entrada: p.entrada, exit, ms, salida, ...(interrupted ? { cortada: true } : {}) };
       console.log(exit === 0 ? `ok       ${p.name} (${ms} ms)` : `ROJO(${exit}) ${p.ruta}`);
       resolve();
     };
@@ -762,6 +773,7 @@ function main(argv, env = process.env) {
         + `${j.unreadable.length ? ` · ${j.unreadable.length} ilegible(s): ${resumen.coverage.unreadable.map((u) => `${path.basename(u.ruta)} (${u.motivo})`).join(', ')}` : ''} → ${lcov}`);
     }
 
+    anotarTiempos({ env, repo, workers, maquina, wallMs: resumen.wall_ms, results, cortada: Boolean(interrupted) });
     if (interrupted) {
       console.error(`[suites.json] corrida interrumpida (${interrupted}) — maté las suites que estaban corriendo`);
       escribir(out, { ...resumen, no_medido: `corrida interrumpida (${interrupted})` });
@@ -783,6 +795,23 @@ function main(argv, env = process.env) {
     console.log(`[suites.json] ${resumen.corridas} corridas · ${resumen.verdes} verdes · ${rojas} rojas · ${ausentes} ausentes${unmeasured ? ` (${unmeasured} no medidas: su raíz no existe)` : ''} · ${resumen.deferred_suites.length} diferidas · ${(resumen.wall_ms / 60000).toFixed(1)} min con ${workers} a la vez`);
     return rojas === 0 && ausentes === 0 ? 0 : 1;
   })();
+}
+
+// Un renglón por corrida en el registro de tiempos (lib/suite-times.js dice dónde): las suites que terminaron, con su
+// `ruta` de suites.json. Un registro que no se deja escribir se dice y no cambia la salida de la corrida.
+function anotarTiempos({ env, repo, workers, maquina, wallMs, results, cortada }) {
+  try {
+    const t = suiteTimes.target(env);
+    if (!t.file) return;
+    const suites = results.filter((r) => r && !r.cortada).map((r) => ({ s: r.entrada.ruta, ms: r.ms, exit: r.exit }));
+    const entry = suiteTimes.entryOf({ origen: 'gate', repo: path.basename(path.resolve(repo)),
+      head: suiteTimes.headOf(repo), workers, nucleos: maquina.nucleos, carga: maquina.carga, wallMs, cortada, suites });
+    const r = suiteTimes.append(entry, t.file);
+    if (!r.ok) console.log(`[suites.json] ⚠️  no pude anotar los tiempos de las suites: ${r.reason}`);
+  } catch (e) {
+    // ni la carpeta de estado puede tumbar la corrida: se dice y la salida queda la de las suites
+    console.log(`[suites.json] ⚠️  no pude anotar los tiempos de las suites: ${e.message}`);
+  }
 }
 
 function escribir(out, obj) {

@@ -425,6 +425,7 @@ PY
     #   scripts/hooks/context-size-notice.js — avisa cuando la sesión lleva demasiado contexto
     #   scripts/hooks/session-cap-guard.js — frena abrir sesiones de más
     #   scripts/hooks/office-link-start.js — el proceso que le manda la oficina de la máquina al sitio de la organización
+    #     (al arrancar la sesión y al escribir un pedido: dos veces)
     #   scripts/hooks/cover-secrets.js — tapa los secretos de la máquina en lo que devuelven los comandos y las lecturas
     # «ruta=N»: registrado N veces (un hook en varios eventos); sin «=N», una.
     T40_ADDED=(scripts/hooks/public-push-guard.js scripts/hooks/owner-email-notice.js scripts/hooks/wait-notice.js=6

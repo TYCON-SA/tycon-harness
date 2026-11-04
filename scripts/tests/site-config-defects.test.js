@@ -22,6 +22,8 @@ const esperar = async () => { for (let i = 0; i < 20; i++) await new Promise((r)
 const HOY = '2026-11-04';
 const AHORA = Date.parse(`${HOY}T12:00:00Z`);
 const diaHace = (n) => new Date(AHORA - n * 86400000).toISOString().slice(0, 10);
+// si el texto nombra el sitio: compara el origen de cada dirección que trae, no un pedazo del texto
+const nombra = (texto, origen) => (String(texto).match(/https?:\/\/[\w.-]+(?::\d+)?/g) || []).some((u) => new URL(u).origin === origen);
 const capa = (v, extra = {}) => JSON.stringify({ schema: 1, name: 'acme', ...extra, requires: { harness: `>= ${v}` } });
 
 // ── la pantalla en un DOM falso ────────────────────────────────────────────────────────────────────────────────────────
@@ -96,11 +98,11 @@ test('T9 Direccion_LosNocturnosLeenElPerfil @story-8.203 @ac-9 — el resumen di
   const DS = require(path.join(ROOT, 'scripts', 'nightly', 'dependencies', 'daily-summary.js'));
   const prueba = { resultado: 'paso', hora: `${HOY}T09:00:00Z`, avisos: [] };
   const dos = DS.lineaDe({ operations: ops(B), perfil: perfil(A), prueba, hoy: HOY });
-  assert.ok(dos.linea.includes(A) && !dos.linea.includes(B), dos.linea);
-  assert.ok(dos.aviso && dos.aviso.includes(A) && dos.aviso.includes(B), 'con las dos distintas, el resumen lo dice en una línea');
+  assert.ok(nombra(dos.linea, A) && !nombra(dos.linea, B), dos.linea);
+  assert.ok(dos.aviso && nombra(dos.aviso, A) && nombra(dos.aviso, B), 'con las dos distintas, el resumen lo dice en una línea');
   const soloOps = DS.lineaDe({ operations: ops(B), perfil: perfil(null), prueba, hoy: HOY });
-  assert.ok(soloOps.linea.includes(B)); assert.ok(!soloOps.aviso);
-  assert.ok(DS.lineaDe({ operations: ops(B), perfil: null, prueba, hoy: HOY }).linea.includes(B), 'sin perfil, como hoy');
+  assert.ok(nombra(soloOps.linea, B)); assert.ok(!soloOps.aviso);
+  assert.ok(nombra(DS.lineaDe({ operations: ops(B), perfil: null, prueba, hoy: HOY }).linea, B), 'sin perfil, como hoy');
   // el ciclo de fichas: con la del perfil, las fichas se deciden en el sitio aunque operations.json no la tenga
   const CY = require(path.join(ROOT, 'scripts', 'nightly', 'findings', 'cycle.js'));
   assert.strictEqual(CY.sitioDecide(ops(null), { perfil: perfil(A) }).codigo, 0);
@@ -507,7 +509,7 @@ test('T34 Perfil_ConMarcaDeOrden_SeLee @story-8.203 @ac-9 — un team-profile.js
   assert.strictEqual(sitioUrl('--operations', ops, '--profile', perfil).stdout.trim(), 'https://perfil.acme.example');
   const DS = require(DS_CLI);
   const l = DS.lineaDe({ operations: ops, perfil, prueba: { resultado: 'paso', hora: `${HOY}T06:00:00Z` }, hoy: HOY });
-  assert.ok(l.linea.includes('https://perfil.acme.example'), l.linea);
+  assert.ok(nombra(l.linea, 'https://perfil.acme.example'), l.linea);
   assert.deepStrictEqual(ORG.leerPerfil(perfil), { site: { url: 'https://perfil.acme.example' } });
   assert.strictEqual(ORG.leerPerfil(path.join(d, 'no-esta.json')), null);
 });
@@ -625,11 +627,11 @@ test('T41 Noche_PerfilRotoODireccionConCredencial_LoDiceSinMostrarla @story-8.20
   const l = DS.lineaDe({ operations: ops, perfil: conClave, prueba, hoy: HOY });
   const todo = `${l.linea} ${l.aviso || ''}`;
   assert.ok(!/secreto|token=abc|quien/.test(todo), todo);
-  assert.ok(todo.includes('https://perfil.acme.example'), todo);
+  assert.ok(nombra(todo, 'https://perfil.acme.example'), todo);
   // un perfil que está pero no se puede leer no es «sin perfil»: lo dice, y sigue con operations.json
   const roto = path.join(d, 'roto.json'); fs.writeFileSync(roto, '{');
   const r = DS.lineaDe({ operations: ops, perfil: roto, prueba, hoy: HOY });
-  assert.ok(r.linea.includes('https://vieja.acme.example'), r.linea);
+  assert.ok(nombra(r.linea, 'https://vieja.acme.example'), r.linea);
   assert.ok(r.aviso && /perfil/.test(r.aviso) && /no se pudo leer/.test(r.aviso), JSON.stringify(r));
   const cli = sitioUrl('--operations', ops, '--profile', roto);
   assert.strictEqual(cli.stdout.trim(), 'https://vieja.acme.example');
@@ -677,4 +679,57 @@ test('T38 Propuesto_YaNoApareceYMainLoTiene_NoDiceCerrado @story-8.203 @ac-10 �
   const txt = p.textoDe('direccionSitio');
   assert.ok(!txt.includes(es('pantalla.pedidoCerradoSinEntrar', { n: '123' })), txt);
   assert.ok(txt.includes(es('pantalla.alDia')), txt);
+});
+
+// 🔴 Falla con: `office` fuera de las claves que piden versión: el cambio no sube la capa y una máquina anterior a
+// OFFICE_SINCE rechaza el perfil entero.
+test('Regresion_Oficina_SubeLaCapa — cambiar o sumar office.quiet_minutes sube requires.harness a OFFICE_SINCE', () => {
+  const maquinas = [fila('mac-1', IMAGEN, diaHace(1))];
+  for (const actual of [{ office: { quiet_minutes: 10 } }, {}]) {
+    const doc = { office: { quiet_minutes: 20 } };
+    assert.deepStrictEqual(ORG.clavesQuePidenVersion({ actual, doc }), [['office', ORG.OFFICE_SINCE]], JSON.stringify(actual));
+    const r = ORG.capaQueSube({ layerText: capa('2026.10.20.3'), actual, doc, maquinas, versionImagen: IMAGEN, ahora: AHORA });
+    assert.ok(r && r.archivo, JSON.stringify(r));
+    assert.strictEqual(JSON.parse(r.contenido).requires.harness, `>= ${ORG.OFFICE_SINCE}`);
+    assert.strictEqual(r.clave, 'office');
+  }
+  assert.deepStrictEqual(ORG.clavesQuePidenVersion({ actual: { office: { quiet_minutes: 20 } }, doc: { office: { quiet_minutes: 20 } } }), [], 'sin cambio no pide nada');
+  // la pantalla lo dice con su mensaje, y con la capa en la versión que lo lee no frena
+  const bajo = ORG.teamProfileGateProblem({ layerText: capa('2026.10.20.3'), versionImagen: '2026.10.15.48', doc: { office: { quiet_minutes: 20 } } });
+  assert.strictEqual(bajo, es('org.capaSinOffice', { req: '>= 2026.10.20.3', version: ORG.OFFICE_SINCE }));
+  assert.strictEqual(ORG.teamProfileGateProblem({ layerText: capa(ORG.OFFICE_SINCE), versionImagen: '2026.10.15.48', doc: { office: { quiet_minutes: 20 } } }), null);
+});
+
+// 🔴 Falla con: `approvals.signature_list` fuera de las claves que piden versión: un lector anterior la lee como rota y
+// la máquina se queda sin ninguna firma delegada.
+test('Regresion_ListaDeEspera_SubeLaCapa — sumar approvals.signature_list sube requires.harness a SIGNATURE_LIST_SINCE', () => {
+  const maquinas = [fila('mac-1', IMAGEN, diaHace(1))];
+  const doc = { approvals: { relay_session: 'x', signature_list: 'on' } };
+  for (const actual of [{ approvals: { relay_session: 'x' } }, {}]) {
+    const pide = ORG.clavesQuePidenVersion({ actual, doc });
+    assert.ok(pide.some(([k, v]) => k === 'approvals.signature_list' && v === ORG.SIGNATURE_LIST_SINCE), JSON.stringify(pide));
+    const r = ORG.capaQueSube({ layerText: capa('2026.10.20.3'), actual, doc, maquinas, versionImagen: IMAGEN, ahora: AHORA });
+    assert.strictEqual(JSON.parse(r.contenido).requires.harness, `>= ${ORG.SIGNATURE_LIST_SINCE}`, JSON.stringify(r));
+    assert.strictEqual(r.clave, 'approvals.signature_list');
+  }
+  assert.deepStrictEqual(ORG.clavesQuePidenVersion({ actual: doc, doc }), [], 'sin cambio no pide nada');
+  const bajo = ORG.teamProfileGateProblem({ layerText: capa(ORG.SESSION_NAMES_SINCE), versionImagen: '2026.10.15.48', doc: { approvals: { signature_list: 'on' } } });
+  assert.strictEqual(bajo, es('org.capaSinListaDeEspera', { req: `>= ${ORG.SESSION_NAMES_SINCE}`, version: ORG.SIGNATURE_LIST_SINCE }));
+  assert.strictEqual(ORG.teamProfileGateProblem({ layerText: capa(ORG.SIGNATURE_LIST_SINCE), versionImagen: '2026.10.15.48', doc: { approvals: { signature_list: 'on' } } }), null);
+});
+
+// 🔴 Falla con: una sección nueva del lector del perfil sin su versión en pedidasDelPerfil.
+test('Regresion_CadaSeccionDelPerfil_PideSuVersion — toda sección que el primer lector publicado no conocía pide una versión', () => {
+  // las que ya leía v2026.10.16.1, el primer lector publicado; `models` es de la máquina: en el perfil es un error siempre
+  const deSiempre = ['rutas', 'github', 'azure', 'ado', 'telegram', 'integraciones', 'update', 'packs', 'install', 'adversarial'];
+  const deLaMaquina = ['models'];
+  const enArchivo = { rutas: 'paths', integraciones: 'integrations' };
+  for (const s of Object.keys(TC.VOCABULARIO).filter((k) => !deSiempre.includes(k) && !deLaMaquina.includes(k))) {
+    const clave = enArchivo[s] || s;
+    const pedidas = ORG.pedidasDelPerfil({ actual: {}, doc: { [clave]: {} } });
+    assert.ok(pedidas.some(([k]) => k === clave), `${clave} no pide versión: ${JSON.stringify(pedidas)}`);
+  }
+  // el mensaje de cada clave que pide versión existe en los dos idiomas: sin él, la pantalla muestra la clave cruda
+  const todas = ORG.pedidasDelPerfil({ actual: {}, doc: { office: {}, approvals: { signature_list: 'on', levels: {}, owner_only: [], delegated_machines: [] }, coordination: { session_names: [] } } });
+  for (const [k, , mensaje] of todas) for (const idioma of ['es', 'en']) assert.ok(t(idioma, mensaje) && t(idioma, mensaje) !== mensaje, `${idioma} ${k}: ${mensaje}`);
 });

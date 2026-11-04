@@ -5,6 +5,9 @@
       "script": "${TCG}/scripts/hooks/office-link-start.js",
       "event": "SessionStart",
       "matcher": "",
+      "controles": [
+        "${TCG}/scripts/tools/office/site-link.js"
+      ],
       "tools": [
         "claude"
       ],
@@ -13,12 +16,12 @@
         {
           "id": "OficinaBench_CanalDeVuelta_UnaOrdenDelSitioSeDescartaYCierra",
           "type": "must-run",
-          "_por_que": "El sitio no le manda órdenes a la máquina: un mensaje con forma de orden, después de aceptarla, se descarta sin correr nada, cierra la conexión con 1008 y queda anotado. Lo prueba la conexión real de la oficina contra un sitio de juguete; el gancho de arranque, sin site.url en el perfil, no hace nada.",
+          "_por_que": "El sitio no le manda órdenes a la máquina: un mensaje con forma de orden, después de aceptarla, se descarta sin correr nada, cierra la conexión con 1008 y queda anotado. Lo prueba la conexión real de la oficina (site-link.js, que el armado corre a propósito y por eso está en `controles`) contra un sitio de juguete; el gancho de arranque, sin site.url en el perfil, no hace nada.",
           "files": {
-            "sitio-de-orden.js": "'use strict';\nconst path = require('path');\nconst fs = require('fs');\nconst http = require('http');\nconst crypto = require('crypto');\nconst TCG = process.argv[2];\nconst OUT = process.argv[3];\nconst WS = require(path.join(TCG, 'scripts', 'tools', 'office', 'vendor', 'ws'));\nconst SL = require(path.join(TCG, 'scripts', 'tools', 'office', 'site-link.js'));\nconst server = http.createServer();\nconst wss = new WS.WebSocketServer({ server });\nlet cierre = null;\nwss.on('connection', (ws) => {\n  ws.send(JSON.stringify({ type: 'challenge', nonce: crypto.randomBytes(32).toString('base64') }));\n  ws.on('message', (raw) => {\n    const m = JSON.parse(String(raw));\n    if (m.type !== 'auth') return;\n    ws.send(JSON.stringify({ type: 'ack' }));\n    ws.send(JSON.stringify({ type: 'ejecutar', comando: 'touch ' + path.join(OUT, 'corrio-la-orden') }));\n  });\n  ws.on('close', (code) => { if (cierre === null) cierre = code; });\n});\nserver.listen(0, '127.0.0.1', () => {\n  const site = 'http://127.0.0.1:' + server.address().port;\n  const sdir = path.join(OUT, 'estado');\n  SL.ensureKey(sdir);\n  SL.writeLinkState(sdir, 'aprobada');\n  const link = SL.createLink({ site, sdir, home: OUT, WebSocket: WS, random: () => 0 });\n  link.update({ agents: [], free: [], unreadable: [] });\n  link.start();\n  const desde = Date.now();\n  const espera = setInterval(() => {\n    if (cierre === null && Date.now() - desde < 8000) return;\n    clearInterval(espera);\n    link.stop();\n    fs.writeFileSync(path.join(OUT, 'resultado.json'), JSON.stringify({ cierre }));\n    server.close();\n    process.exit(0);\n  }, 50);\n});\n"
+            "sitio-de-orden.js": "'use strict';\nconst path = require('path');\nconst fs = require('fs');\nconst http = require('http');\nconst crypto = require('crypto');\nconst TCG = process.argv[2];\nconst OUT = process.argv[3];\nconst WS = require(path.join(TCG, 'scripts', 'tools', 'office', 'vendor', 'ws'));\nconst SL = require(process.argv[4]);\nconst server = http.createServer();\nconst wss = new WS.WebSocketServer({ server });\nlet cierre = null;\nwss.on('connection', (ws) => {\n  ws.send(JSON.stringify({ type: 'challenge', nonce: crypto.randomBytes(32).toString('base64') }));\n  ws.on('message', (raw) => {\n    const m = JSON.parse(String(raw));\n    if (m.type !== 'auth') return;\n    ws.send(JSON.stringify({ type: 'ack' }));\n    ws.send(JSON.stringify({ type: 'ejecutar', comando: 'touch ' + path.join(OUT, 'corrio-la-orden') }));\n  });\n  ws.on('close', (code) => { if (cierre === null) cierre = code; });\n});\nserver.listen(0, '127.0.0.1', () => {\n  const site = 'http://127.0.0.1:' + server.address().port;\n  const sdir = path.join(OUT, 'estado');\n  SL.ensureKey(sdir);\n  SL.writeLinkState(sdir, 'aprobada');\n  const link = SL.createLink({ site, sdir, home: OUT, WebSocket: WS, random: () => 0 });\n  link.update({ agents: [], free: [], unreadable: [] });\n  link.start();\n  const desde = Date.now();\n  const espera = setInterval(() => {\n    if (cierre === null && Date.now() - desde < 8000) return;\n    clearInterval(espera);\n    link.stop();\n    fs.writeFileSync(path.join(OUT, 'resultado.json'), JSON.stringify({ cierre }));\n    server.close();\n    process.exit(0);\n  }, 50);\n});\n"
           },
           "setup": [
-            "node sitio-de-orden.js \"$TCG\" \"$FIXTURE\""
+            "node sitio-de-orden.js \"$TCG\" \"$FIXTURE\" \"${TCG}/scripts/tools/office/site-link.js\""
           ],
           "stdin": { "hook_event_name": "SessionStart", "session_id": "banco-79", "source": "startup" },
           "expect": {
