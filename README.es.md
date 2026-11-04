@@ -2,9 +2,6 @@
 
 [English](README.md) · Castellano
 
-**¿Recién llegás?** [El arnés en un minuto](getting-started/one-minute.es.md): qué es, el primer día en tres pasos y
-las palabras que usa.
-
 **El arnés en cuatro minutos.**
 
 https://github.com/user-attachments/assets/3fbe4538-6b96-4b56-b2ed-92d36be1c6f8
@@ -56,6 +53,11 @@ Funciona con los agentes de programación más usados, como Claude Code, Codex y
 Y es open source: no hay licencia que pagar y el código se puede revisar entero. Se puede empezar en una sola máquina, sin sitio, y sumar después el equipo, el sitio y la revisión nocturna.
 
 Los agentes aportan la velocidad. TYCON Harness aporta el método, la calidad y el control. Juntos, hacen ingeniería de software con IA.
+
+**¿Querés arrancar ya?** [El arnés en un minuto](getting-started/one-minute.es.md): el primer día en tres pasos y
+las palabras que usa.
+
+## Cómo funciona
 
 **La medida justa.** Al arrancar un producto se especifica entero, una vez —documento de producto, arquitectura,
 épicos e historias—; después, historia por historia.

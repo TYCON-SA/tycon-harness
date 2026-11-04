@@ -2,7 +2,7 @@
 
 English · [Castellano](one-minute.es.md)
 
-**What it is.** A development cycle for your coding agent (Claude Code or Codex). The agent writes fast; the harness
+**What it is.** A development cycle for your coding agent (Claude Code, Codex or Cursor). The agent writes fast; the harness
 brings method to it: every change is written down first, tested, and reviewed by other agents. And there are checks
 that stop you, not just warn you.
 
@@ -17,7 +17,7 @@ that stop you, not just warn you.
    the plan, the tests, the code, the reviewers and the live check. At the end it leaves you the commit message.
 
 **What it never does without you:** it never commits or pushes without your permission, and it shows you the plan
-before coding: in a small story it approves it itself, in the others it waits for your go-ahead.
+before coding: it never approves it itself. You approve it or, if your team uses one, the coordinating session.
 
 **The harness's words:**
 
