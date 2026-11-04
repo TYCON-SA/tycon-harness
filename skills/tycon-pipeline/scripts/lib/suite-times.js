@@ -11,7 +11,8 @@
  * test-gate`, que exporta test-gate.sh) y las portables corridas a mano. Así una prueba que lanza el corredor sobre un
  * repo de juguete no ensucia el registro de la máquina; y el corredor les pasa `off` a las suites que lanza.
  *
- * EL RENGLÓN: { v, ts, origen, repo, head, workers, nucleos, carga, wall_ms, cortada?, suites: [{ s, ms, exit }] }.
+ * EL RENGLÓN: { v, ts, origen, repo, head, workers, nucleos, carga, wall_ms, cortada?, fingida?, suites: [{ s, ms, exit }] }.
+ * `fingida`: núcleos y carga de TYCON_FAKE_MACHINE, no de la máquina.
  * `s` es la `ruta` de suites.json. La carga es la de 1 min al arrancar.
  *
  * DOS A LA VEZ: agregar y rotar van bajo un candado (`<archivo>.lock`, creado exclusivo). Un candado de más de 60 s se
@@ -21,6 +22,12 @@
  * LEER (`readSources`): archivos y carpetas. Un renglón JSON se lee entero; uno con la marca `SUITE-TIMES ` (el que
  * las portables imprimen en el registro de la CI de GitHub) se lee desde la marca, aunque traiga la hora delante. Un
  * renglón que parece del registro y no se deja leer se cuenta como ilegible; el resto de un registro se ignora.
+ *
+ * CUÁNTAS A LA VEZ (`workersFor`, la usan el portón y las portables): fuera de la CI y sin variable,
+ * min(núcleos − 2, núcleos − carga), con piso 1; la carga es la de antes de lanzar ninguna, la ajena. Antes de cada
+ * suite, con la carga sobre el doble de los núcleos y otra propia corriendo, se espera mirando cada 5 s
+ * (`waitForRoom`). Con la variable o en la CI, la regla de antes y sin espera. `TYCON_FAKE_MACHINE=<núcleos>/<carga>`
+ * finge la máquina en las pruebas que lanzan un proceso.
  */
 const fs = require('fs');
 const os = require('os');
@@ -51,10 +58,84 @@ function headOf(repo) {
   return r.status === 0 ? r.stdout.trim() || null : null;
 }
 
+// La máquina de mentira de las pruebas que lanzan un proceso: TYCON_FAKE_MACHINE=<núcleos>/<carga>[/<carga después>].
+// La tercera cifra es la carga que ve la espera después del arranque. Un valor que no tiene esa forma se dice.
+function fakeMachine(env) {
+  const raw = String((env && env.TYCON_FAKE_MACHINE) || '').trim();
+  if (!raw) return null;
+  const m = /^([1-9]\d*)\/(\d+(?:\.\d+)?)(?:\/(\d+(?:\.\d+)?))?$/.exec(raw);
+  if (!m) return { invalid: raw };
+  return { nucleos: Number(m[1]), carga: Number(m[2]), despues: m[3] === undefined ? Number(m[2]) : Number(m[3]) };
+}
+
 /** Núcleos y carga de 1 min, medidos ahora. */
-function machine() {
+function machine(env = process.env) {
+  const fake = fakeMachine(env);
+  if (fake && !fake.invalid) return { nucleos: fake.nucleos, carga: fake.carga, fake: true };
   const nucleos = typeof os.availableParallelism === 'function' ? os.availableParallelism() : os.cpus().length;
-  return { nucleos, carga: Math.round(os.loadavg()[0] * 100) / 100 };
+  const real = { nucleos, carga: Math.round(os.loadavg()[0] * 100) / 100 };
+  if (fake) real.warning = `TYCON_FAKE_MACHINE=«${fake.invalid}» no es <núcleos>/<carga>[/<carga después>]: uso la máquina real`;
+  return real;
+}
+
+/** La carga de 1 min de ahora (la de mentira si la hay). */
+function loadNow(env = process.env) {
+  const fake = fakeMachine(env);
+  return fake && !fake.invalid ? fake.despues : os.loadavg()[0];
+}
+
+/** ¿Corre en la CI? GitHub (GITHUB_ACTIONS), Azure (TF_BUILD) o cualquiera que ponga CI. */
+function isCI(env = process.env) {
+  return ['CI', 'TF_BUILD', 'GITHUB_ACTIONS'].some((k) => {
+    const v = String(env[k] || '').trim().toLowerCase();
+    return v !== '' && v !== 'false' && v !== '0';
+  });
+}
+
+/** Cuántas a la vez según la máquina: dos núcleos quedan para la persona y la carga ajena se descuenta; piso 1. */
+function autoWorkers({ nucleos, carga }) {
+  return Math.max(1, Math.min(nucleos - 2, Math.floor(nucleos - carga)));
+}
+
+/**
+ * Cuántas a la vez: la variable `varName` si es un entero positivo; si no, en la CI `ciDefault` (como siempre) y fuera
+ * de ella la máquina. `wait` dice si antes de cada suite se mira la carga (sólo cuando decide la máquina).
+ */
+function workersFor({ env = process.env, varName, maquina, ci, ciDefault }) {
+  const raw = env[varName];
+  let warning = null;
+  if (raw !== undefined && raw !== '') {
+    const n = Number(raw);
+    if (Number.isInteger(n) && n > 0) return { workers: n, why: 'variable', varName, wait: false, warning: null };
+    warning = `${varName}=«${raw}» no es un entero positivo: uso ${ci ? `${ciDefault} (la regla de la CI)` : `${autoWorkers(maquina)} (por los núcleos y la carga)`}`;
+  }
+  if (ci) return { workers: ciDefault, why: 'ci', varName, wait: false, warning };
+  return { workers: autoWorkers(maquina), why: 'maquina', varName, wait: true, warning };
+}
+
+/** La carga pasa el doble de los núcleos: el doble porque la carga ya cuenta las suites propias y sus procesos. */
+function overloaded(nucleos, carga) {
+  return carga > 2 * nucleos;
+}
+
+/**
+ * Antes de lanzar una suite: mientras la carga pase el doble y quede otra propia corriendo, vuelve a mirar cada
+ * `intervalMs`. Devuelve los ms que esperó (0 si no esperó).
+ */
+async function waitForRoom({ nucleos, load, others, sleep, intervalMs = 5000, stopped = () => false }) {
+  let ms = 0;
+  while (!stopped() && others() > 0 && overloaded(nucleos, load())) {
+    await sleep(intervalMs);
+    ms += intervalMs;
+  }
+  return ms;
+}
+
+/** La línea de ambiente: «N a la vez (<núcleos> núcleos, carga <c> al arrancar)», con quién decidió si no fue la máquina. */
+function describeWorkers({ workers, why, varName }, { nucleos, carga, fake }, platform = process.platform) {
+  const por = why === 'variable' ? ` por ${varName}` : why === 'ci' ? ' por la CI' : '';
+  const c = fake || platform !== 'win32' ? `carga ${carga} al arrancar` : 'Windows no da la carga';
+  return `${workers} a la vez${por} (${nucleos} núcleos, ${c})${fake ? ' · máquina fingida por TYCON_FAKE_MACHINE' : ''}`;
 }
 
 function takeLock(lock, { waitMs, staleMs }) {
@@ -97,10 +178,12 @@ function append(entry, file, { max = MAX_RUNS, waitMs = LOCK_WAIT_MS, staleMs = 
 }
 
 /** Arma el renglón de una corrida. */
-function entryOf({ origen, repo, head, workers, nucleos, carga, wallMs, cortada, suites, ts = new Date().toISOString() }) {
+function entryOf({ origen, repo, head, workers, nucleos, carga, wallMs, cortada, fingida, suites, ts = new Date().toISOString() }) {
   const e = { v: 1, ts, origen, repo, head: head || null, workers, nucleos, carga, wall_ms: wallMs,
     suites: suites.map((x) => ({ s: x.s, ms: x.ms, exit: x.exit })) };
   if (cortada) e.cortada = true;
+  // núcleos y carga de TYCON_FAKE_MACHINE: el renglón no pasa por uno de la máquina real
+  if (fingida) e.fingida = true;
   return e;
 }
 
@@ -174,8 +257,9 @@ function readSources(sources) {
   return out;
 }
 
+// Una corrida con la máquina fingida (TYCON_FAKE_MACHINE) no mide esta máquina: no entra a medianas ni tendencias.
 function filterRuns(runs, { origen = null, maxLoad = null } = {}) {
-  return runs.filter((r) => (!origen || r.origen === origen) && (maxLoad === null || (typeof r.carga === 'number' && r.carga <= maxLoad)));
+  return runs.filter((r) => !r.fingida && (!origen || r.origen === origen) && (maxLoad === null || (typeof r.carga === 'number' && r.carga <= maxLoad)));
 }
 
 function median(xs) {
@@ -216,5 +300,5 @@ function runRow(r) {
     workers: r.workers, nucleos: r.nucleos, carga: r.carga, ...(r.cortada ? { cortada: true } : {}) };
 }
 
-module.exports = { target, headOf, machine, append, entryOf, fromTsv, routesByName, readSources, filterRuns, median, trend, slow, runRow,
+module.exports = { target, headOf, machine, loadNow, isCI, autoWorkers, workersFor, overloaded, waitForRoom, describeWorkers, append, entryOf, fromTsv, routesByName, readSources, filterRuns, median, trend, slow, runRow,
   MARK, MAX_RUNS, LOCK_WAIT_MS, LOCK_STALE_MS };

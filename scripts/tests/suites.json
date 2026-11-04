@@ -1115,6 +1115,12 @@
       "requiere": []
     },
     {
+      "__nota": "cuántas suites corren a la vez: núcleos menos dos o menos la carga, la espera cuando la carga pasa el doble, y la variable y la CI como antes, en el portón y en las portables.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/suite-workers.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "las listas de archivos de la story se leen en todas las formas de YAML para el alcance de la puerta de pruebas; los frenos siguen con la forma de siempre.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/test-scope-lists.test.js",
