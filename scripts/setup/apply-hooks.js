@@ -57,8 +57,9 @@ const PDmod = () => pluginDirs || (pluginDirs = require('./harness/plugin-dirs.j
 const SETUP_DIR = __dirname;
 const SCRIPTS_DIR = path.dirname(SETUP_DIR);
 
-// `Notification` y `SessionEnd` sirven al aviso de espera: el pedido de permiso y la sesión que se cierra
-const EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SessionStart', 'Notification', 'SessionEnd'];
+// `Notification` y `SessionEnd` sirven al aviso de espera: el pedido de permiso y la sesión que se cierra.
+// `PermissionRequest` anota en el momento qué permiso se pide; su matcher nunca alcanza al cuadro de firmas
+const EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SessionStart', 'Notification', 'SessionEnd', 'PermissionRequest'];
 // `time:<integración>`: un hook de una integración de horas, que va sólo si es la elegida (los suma loadList de su
 // manifiesto en integrations/)
 const WHEN_RE = /^(always|integration:[a-z]+|time:[a-z0-9-]+|optin:TYCON_[A-Z_]+)$/;

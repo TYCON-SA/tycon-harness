@@ -221,7 +221,7 @@ function canLaunch(cmd, ctx = {}) {
   return { ok: false, reason: seen.length ? `«${cmd}» está en ${seen[0]} pero no se puede ejecutar` : `«${cmd}» no está en el PATH` };
 }
 
-module.exports = { whichCommand, findBinary, runCheckLaunch, canLaunch };
+module.exports = { whichCommand, findBinary, windowsLookup, runCheckLaunch, canLaunch };
 
 // A mano (y desde test-gate.sh):  node lib/portable-tools.js can-launch <programa>   → 0 se puede · 1 no (motivo a stderr)
 if (require.main === module) {
