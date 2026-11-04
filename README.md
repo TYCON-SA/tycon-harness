@@ -4,7 +4,7 @@ English · [Castellano](README.es.md)
 
 **The harness in six minutes** (with subtitles).
 
-https://github.com/user-attachments/assets/fced8c8d-0363-453f-a04e-afd59adf3d22
+https://github.com/user-attachments/assets/8043bb21-8b32-4d14-8887-28075cff4e85
 
 Today an AI agent writes in minutes the code that used to take hours, and it solves tasks without anyone telling it each step. That autonomy is a great advantage, but it has a cost.
 

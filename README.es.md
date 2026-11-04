@@ -4,7 +4,7 @@
 
 **El arnés en seis minutos** (con subtítulos).
 
-https://github.com/user-attachments/assets/cb68ec58-a1c5-4c64-8787-630c2d8d01a3
+https://github.com/user-attachments/assets/0c339969-7bd4-40ce-b656-c95d141ae26d
 
 Hoy un agente de IA escribe en minutos el código que antes llevaba horas, y resuelve las tareas sin que nadie le indique cada paso. Esa autonomía es una gran ventaja, pero tiene un costo.
 
