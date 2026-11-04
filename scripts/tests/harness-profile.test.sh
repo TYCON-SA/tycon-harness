@@ -425,13 +425,15 @@ PY
     #   scripts/hooks/context-size-notice.js — avisa cuando la sesión lleva demasiado contexto
     #   scripts/hooks/session-cap-guard.js — frena abrir sesiones de más
     #   scripts/hooks/office-link-start.js — el proceso que le manda la oficina de la máquina al sitio de la organización
+    #   scripts/hooks/cover-secrets.js — tapa los secretos de la máquina en lo que devuelven los comandos y las lecturas
     # «ruta=N»: registrado N veces (un hook en varios eventos); sin «=N», una.
     T40_ADDED=(scripts/hooks/public-push-guard.js scripts/hooks/owner-email-notice.js scripts/hooks/wait-notice.js=6
       scripts/hooks/worktree-sweep.js scripts/hooks/unclosed-runs-notice.js scripts/hooks/deprecated-read-notice.js
       scripts/hooks/deprecated-session-notice.js scripts/hooks/extension-notices.js scripts/hooks/guard-update-notice.js
       scripts/hooks/dev-behind-main-notice.js scripts/hooks/stuck-pr-notice.js scripts/hooks/coordination-notice.js=2
       scripts/hooks/why-blocked-notice.js scripts/hooks/session-state.js=7 scripts/hooks/owner-approval-record.js=2
-      scripts/hooks/context-size-notice.js=2 scripts/hooks/session-cap-guard.js scripts/hooks/office-link-start.js)
+      scripts/hooks/context-size-notice.js=2 scripts/hooks/session-cap-guard.js scripts/hooks/office-link-start.js
+      scripts/hooks/cover-secrets.js)
     t40_apart() { # t40_apart <settings> <salida> → aparta los declarados del settings (lo reescribe); en <salida>, los que no están UNA vez
       rm -f "$2"
       python3 - "$1" "$2" "${T40_ADDED[@]}" <<'PY'
