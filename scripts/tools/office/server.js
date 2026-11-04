@@ -482,6 +482,28 @@ async function serve() {
     });
   };
 
+  // «Quitar» una sesión cerrada: como un mensaje, desde la ventana de la oficina y nada más; el proceso vuelve a mirar
+  // antes de borrar (office.removeClosed) y la foto siguiente ya no la tiene
+  const onRemove = (req, res) => {
+    const answer = (code, body) => { res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }); res.end(body ? JSON.stringify(body) : undefined); };
+    if (req.method !== 'POST') { req.resume(); answer(405); return; }
+    if (!okOrigin(req.headers.origin) || req.headers['sec-fetch-site'] !== 'same-origin') { req.resume(); answer(403); return; }
+    if (!/^application\/json(\s*;|$)/i.test(String(req.headers['content-type'] || ''))) { req.resume(); answer(415); return; }
+    const chunks = [];
+    let size = 0;
+    req.on('data', (d) => { size += d.length; if (size <= MAX_EVENT_BYTES) chunks.push(d); });
+    req.on('error', () => { /* la ventana cortó */ });
+    req.on('end', () => {
+      if (size > MAX_EVENT_BYTES) { answer(413); return; }
+      let id = null;
+      try { ({ id } = JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch { /* abajo: sin id */ }
+      const closedIds = ((last && last.cerradas) || []).map((c) => c.id).filter(Boolean);
+      const r = office.removeClosed(sdir, id, closedIds);
+      answer(r.status, r.motivo ? { motivo: r.motivo } : null);
+      if (r.status === 204) schedule();
+    });
+  };
+
   const messages = officeMessages({ sdir, envelopes, okOrigin, notify: (m) => { for (const c of clients) if (c.readyState === WebSocket.OPEN) c.send(JSON.stringify({ type: 'mensaje', ...m })); } });
 
   const server = http.createServer((req, res) => {
@@ -489,6 +511,7 @@ async function serve() {
     if (!url || !okHost(req.headers.host) || !okToken(url)) { deny(res); return; }
     const send = (type, body) => { res.writeHead(200, { 'content-type': type, 'cache-control': 'no-store' }); res.end(body); };
     if (url.pathname === '/event') { onEvent(req, res); return; }
+    if (url.pathname === '/quitar') { onRemove(req, res); return; }
     if (url.pathname === '/mensaje') { ready.then(() => messages.onPost(req, res), () => { req.resume(); res.writeHead(503, { 'cache-control': 'no-store' }); res.end(); }); return; }
     if (url.pathname === '/') {
       ready.then(() => send('text/html; charset=utf-8', office.page(last, { live: { token } }))).catch((e) => {

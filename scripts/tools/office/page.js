@@ -109,7 +109,14 @@ function renderTablas(){const sec=document.getElementById("tablas"),ts=DATA.tabl
       tr.addEventListener("click",()=>{if(temasAbiertos.has(id))temasAbiertos.delete(id);else temasAbiertos.add(id);pintar()});pintar();
       bd.appendChild(tr);bd.appendChild(det);if(foco===id)b.focus()});
     tb.appendChild(bd);const w=el("div","table");w.appendChild(tb);d.appendChild(w);sec.appendChild(d);})}
-function renderCrew(){pintarTarjetas(document.getElementById("crew"),agents)}
+function renderCrew(){const crew=document.getElementById("crew");pintarTarjetas(crew,agents);renderCerradas(cerradasJunto(crew),DATA.cerradas||[])}
+// «Cerradas», al final de «Las sesiones»: las de Claude cuyo proceso ya no existe. «Quitar» borra su archivo de estado y
+// está sólo en la oficina viva de la máquina: en el sitio la foto no trae el id
+function cerradasJunto(crew){let g=crew.nextElementSibling;if(!g||!g.classList.contains("cerradas-grupo")){g=el("div","cerradas-grupo");crew.after(g)}return g}
+function renderCerradas(g,lista){g.replaceChildren();g.hidden=!lista.length;if(!lista.length)return;g.appendChild(el("h3",null,"Cerradas"));lista.forEach(c=>{const fila=el("div","cerrada");fila.appendChild(el("b",null,c.nombre||""));fila.appendChild(el("small",null,horaDeSesion(c.ultimaNovedad)?"última novedad "+horaDeSesion(c.ultimaNovedad):"sin hora"));if(LIVE&&c.id){const b=el("button","quitar","Quitar");b.type="button";b.onclick=()=>quitarCerrada(c,b,fila);fila.appendChild(b)}g.appendChild(fila)})}
+function quitarCerrada(c,b,fila){b.disabled=true;const viejo=fila.querySelector(".falla");if(viejo)viejo.remove();
+  fetch("quitar?t="+encodeURIComponent(LIVE.token),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:c.id})}).then(r=>r.status===204?null:r.json().catch(()=>null).then(d=>(d&&d.motivo)||"respondió "+r.status)).catch(()=>"la oficina no contestó")
+    .then(motivo=>{if(motivo==null){b.textContent="Quitada";return}b.disabled=false;fila.appendChild(el("p","falla","No se pudo quitar: "+motivo+"."))})}
 function pintarTarjetas(c,list,alTocar){c.replaceChildren();
   if(!list.length){c.appendChild(el("p","empty","No hay sesiones abiertas en esta máquina."));return}
   list.forEach((a,i)=>{const s=AST[a.estado]||[a.estado||"","#999"];const k=el("div","card");
@@ -820,7 +827,7 @@ function arrancarOficinas(){
     f.cover.setAttribute("aria-label","Agrandar la oficina de "+quien);f.stage.setAttribute("aria-label","La oficina de "+quien);f.titulo.textContent="Las sesiones de "+quien;
     // la ficha lee de DATA lo que no es de la persona (sus tokens): mientras se pintan, DATA es la foto de esta oficina
     const antes=fuenteCharla,datos=DATA;fuenteCharla={fuente:"site",maquina:o.id};DATA=o.foto||{};
-    try{pintarTarjetas(f.crew,lista,a=>{const yaEra=elegida===o.id;if(!yaEra)seguro(()=>foco(o.id));const abrirla=n=>{if(f.T&&f.T.abrir)f.T.abrir(a.nombre);else if(n>0)setTimeout(()=>abrirla(n-1),200)};setTimeout(()=>abrirla(25),yaEra?0:750)})}finally{fuenteCharla=antes;DATA=datos}}
+    try{pintarTarjetas(f.crew,lista,a=>{const yaEra=elegida===o.id;if(!yaEra)seguro(()=>foco(o.id));const abrirla=n=>{if(f.T&&f.T.abrir)f.T.abrir(a.nombre);else if(n>0)setTimeout(()=>abrirla(n-1),200)};setTimeout(()=>abrirla(25),yaEra?0:750)});renderCerradas(cerradasJunto(f.crew),DATA.cerradas||[])}finally{fuenteCharla=antes;DATA=datos}}
   // las salas en 3D: hasta el tope, cada una con sus datos. Primero se apagan las que sobran, y sus lugares quedan libres
   function ponerSalas(cambiadas){const vivas=salasVivas(oficinas.values(),elegida,TOPE_DE_SALAS);
     fichas.forEach((f,id)=>{f.sinSala.hidden=vivas.has(id);if(f.T&&!vivas.has(id))apagarSala(f)});

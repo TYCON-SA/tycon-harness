@@ -107,6 +107,11 @@ async function taskNumbers(playwright) {
   session('s2', 'Funes'); doing('s2', 'T-2 · la búsqueda de la oficina');
   session('s3', 'Pinola', 'idle'); doing('s3', 'espera el click', { waitingFor: 'la coordinadora', waitingSince: new Date(Date.now() - 60000).toISOString() });
   session('s4', 'Rita'); doing('s4', 'el carril de Rita');
+  // Olvido se cerró sin que Claude Code avisara: queda su archivo de estado, con el pid de un proceso que ya terminó
+  const deadPid = Number(spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' }).stdout);
+  fs.mkdirSync(path.join(sdir, 'sessions'), { recursive: true });
+  const olvidoFile = path.join(sdir, 'sessions', 's8.json');
+  fs.writeFileSync(olvidoFile, JSON.stringify({ schema: 1, session: 's8', tool: 'claude', name: 'Olvido', pid: deadPid, updatedAt: new Date(Date.now() - 5 * 60000).toISOString() }));
   // una firma de la terminal pedida para la sesión de Rita (`--for-session`): la lista de firmas de la máquina de juguete
   // está apagada, y ésas igual se leen
   fs.writeFileSync(path.join(sdir, 'coordination', 'signatures.json'), JSON.stringify([{ id: 'f1', destino: 's4', title: 'el carril de Rita', at: Date.now() }]));
@@ -224,6 +229,14 @@ async function taskNumbers(playwright) {
     check(/Opus 5\.5 · High/.test(await page.locator('#boardBody .item[data-numero="T-2"]').innerText()), 'E3: su tarjeta del kanban también');
     check(/sin dato · sin dato/.test(await page.locator('.tag', { hasText: 'Sand' }).innerText()), 'E3: Sand, sin respuestas, dice «sin dato»');
     await shot(page, 'e3-modelo-y-esfuerzo', page.locator('#stage'));
+    // E11: Olvido no tiene escritorio; está en «Cerradas», al final de «Las sesiones», y «Quitar» la saca
+    check(await page.locator('.tag', { hasText: 'Olvido' }).count() === 0, 'E11: Olvido no tiene escritorio');
+    const grupo = page.locator('.cerradas-grupo .cerrada', { hasText: 'Olvido' });
+    check(await grupo.count() === 1 && /última novedad \d\d:\d\d/.test(await grupo.innerText()), 'E11: Olvido está en «Cerradas» con su última novedad');
+    await shot(page, 'e11-cerradas', page.locator('#crew').locator('xpath=..'));
+    await grupo.locator('button.quitar').evaluate((b) => b.click());
+    try { await page.waitForFunction(() => ![...document.querySelectorAll('.cerradas-grupo .cerrada')].some((c) => c.textContent.includes('Olvido')), null, { timeout: 20000 }); } catch { /* abajo lo dice */ }
+    check(!fs.existsSync(olvidoFile) && await page.locator('.cerradas-grupo .cerrada', { hasText: 'Olvido' }).count() === 0, 'E11: «Quitar» borró su archivo y la foto siguiente ya no la tiene');
     // E5: «Con las sesiones» de la coordinadora: la viva primero, después «Cerradas» con la cerrada en gris y su hora
     // la coordinadora llega recién ahora: antes, con más personas que escritorios, se habría llevado el de Rita
     session('c9', 'Coordinadora');

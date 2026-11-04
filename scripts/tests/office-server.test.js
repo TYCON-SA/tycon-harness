@@ -1149,6 +1149,10 @@ function cardDetail(card, sessions = []) {
   const code = html.slice(html.indexOf('// Quién hace una tarjeta'), html.indexOf('function abrirCharla('));
   const fichas = [];
   const stubs = {
+    // el número de la tarjeta (8.198): la misma regla que la página
+    numeroDe: (i) => (i && typeof i.numero === 'string' ? i.numero : ''),
+    // la X arriba de cada ventana (8.198)
+    botonCerrar: (alCerrar) => { const b = new Fake('button', 'close', '×'); b.onclick = alCerrar; return b; },
     el: (tag, cls, text) => new Fake(tag, cls, text), finTxt: (a) => (a.fin ? { hora: a.fin } : null), agents: sessions, AST: { trabajando: ['Trabajando', '#0f0'] }, etiquetaComo: (c) => new Fake('span', 'como', c), pintarFicha: (a) => fichas.push(a.nombre), ventana: () => win, cerrarCharla() {},
     document: { documentElement: new Fake('html') },
   };
@@ -1172,7 +1176,8 @@ test('T98 Card_Detail_WithSession: título entero, lo que sabe la tarjeta y la m
   assert.strictEqual(d.rows['Pedido'].tag, 'a');
   assert.strictEqual(d.rows['Pedido'].href, 'https://github.com/o/r/pull/912');
   assert.strictEqual(d.rows['Pedido'].rel, 'noopener');
-  assert.strictEqual(d.last.textContent, 'Cerrar');
+  // la X de arriba, como en las otras ventanas (8.198): ya no hay un «Cerrar» abajo
+  assert.strictEqual(d.last.textContent, '×');
   assert.strictEqual(d.last.focused, true);
 });
 

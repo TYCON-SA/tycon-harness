@@ -584,10 +584,14 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
   // está en /wip está sin uso hace horas: /wip la cuenta mejor y no se dibuja de nuevo. Inactiva de más de un día, no se
   // dibuja (sigue en disco)
   const fromFile = new Set();
+  // una de Claude con su proceso muerto (cerrada sin que Claude Code avisara): sin escritorio, en «Cerradas». El id
+  // sirve sólo para «Quitar» de la oficina local: no viaja al sitio
+  const cerradas = [];
   for (const [sid, f] of files) {
     if (used.has(sid)) continue;
     const stale = sessionState.isStale(f, { now: nowMs, ...(isAlive ? { isAlive } : {}) });
     const at = Date.parse(f.updatedAt);
+    if (stale && closedByPid(f)) { cerradas.push({ nombre: f.name || sid.slice(0, 8), ultimaNovedad: Number.isFinite(at) ? at : null, id: sid }); continue; }
     if (stale && (!Number.isFinite(at) || nowMs - at > SESSION_FILE_KEEP_MS)) continue;
     if (f.tool === 'claude' && !stale && !f.waitingForOwner) continue;
     const a = { nombre: f.name || cxNames.get(sid) || sid.slice(0, 8), titulo: null, carpeta: null };
@@ -726,7 +730,8 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
   const facts = boardFacts({ agents, storyOfAgent, sidOf, board, prAnswers, halfwayCards, nowMs });
   // la tabla dice lo mismo que las tarjetas, en llano
   const rows = agents.filter((a) => a.tipo).map((a) => ({ work: a.titulo || '', state: a.mientras ? `${a.haciendo} Mientras tanto: ${a.mientras}.` : a.haciendo, end: a.fin ? a.fin.hora + (a.fin.dif ? ` · ${a.fin.dif}` : '') : '', session: a.nombre, folder: a.carpeta || '' }));
-  return { data: { agents, items, kanban, meta, rows, free: (wip.free || []).filter((name) => !notFree.has(name)), unreadable: wip.unreadable || [] }, promises: kept, facts: facts.list, factsComplete: facts.complete && !halfwayUnknown };
+  cerradas.sort((a, b) => (b.ultimaNovedad || 0) - (a.ultimaNovedad || 0));
+  return { data: { agents, items, kanban, meta, rows, free: (wip.free || []).filter((name) => !notFree.has(name)), unreadable: wip.unreadable || [], cerradas }, promises: kept, facts: facts.list, factsComplete: facts.complete && !halfwayUnknown };
 }
 
 /**
@@ -993,6 +998,44 @@ function findTask(data, id, { dados = {} } = {}) {
 }
 
 /** El aviso de un tablero que cambió sin board.js (lo que el freno no vio); null si no cambió o no se puede saber. */
+// Cerrada por su proceso: una de Claude con un pid. Las que no tienen pid (Codex) siguen la regla de las horas.
+function closedByPid(f) {
+  const pid = Number(f && f.pid);
+  return Boolean(f) && f.tool === 'claude' && f.pid != null && Number.isInteger(pid) && pid > 0;
+}
+
+const REMOVE_REASONS = { open: 'ya no está cerrada', disabled: 'el registro de sesiones está apagado en esta máquina', error: 'la máquina no dejó borrarlo' };
+
+/**
+ * «Quitar» de una cerrada: borra su archivo de estado y nada más (el marcador de su corrida queda). Sólo si está entre
+ * las cerradas de la última foto y su archivo, releído, sigue siendo de Claude con el proceso muerto; justo antes de
+ * borrar lo relee otra vez y, si cambió (se reabrió), no lo borra. `{ status, motivo }`: 204 borrada o ya no estaba,
+ * 409 ya no está cerrada, 500 si no se pudo.
+ */
+function removeClosed(sdir, sid, closedIds, { isAlive: alive = isAlive, env = process.env, beforeUnlink = null, unlink = fs.unlinkSync } = {}) {
+  const no = (status, why) => ({ status, motivo: REMOVE_REASONS[why] });
+  if (typeof sid !== 'string' || !(closedIds || []).includes(sid)) return no(409, 'open');
+  if (!sessionState.enabled(env)) return no(500, 'disabled');
+  const file = sessionState.pathOf(sdir, sid);
+  const read = () => { try { return fs.readFileSync(file, 'utf8'); } catch (e) { if (e.code === 'ENOENT') return null; throw e; } };
+  let text;
+  try { text = read(); } catch { return no(500, 'error'); }
+  if (text == null) return { status: 204 };
+  let f;
+  try { f = JSON.parse(text); } catch { f = null; }
+  if (!closedByPid(f) || !sessionState.isStale(f, { isAlive: alive })) return no(409, 'open');
+  if (beforeUnlink) beforeUnlink();
+  try {
+    if (read() !== text) return no(409, 'open');
+    unlink(file);
+  } catch (e) {
+    if (e.code === 'ENOENT') return { status: 204 };
+    sessionState.logError(sdir, `sesión ${sid}: no pude quitar su estado (${e.code || e.message})`);
+    return no(500, 'error');
+  }
+  return { status: 204 };
+}
+
 function boardEditedNotice(sdir) {
   const p = boardTool.printCheck(sdir);
   if (p && p.ilegible) return `no se puede leer la huella del tablero (${p.motivo}): no sé si se editó fuera del comando; corré board.js check`;
@@ -2174,4 +2217,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { markRecipients, markClosedSessions, closedSessionLastAt, prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, boardLine, findTask, boardEditedNotice, syncBoardFromPhoto, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, cardPr, codexAgentsUnder, claudeAgentsActive, buildTables, rowPrsNow, applyRowPrs, settleRowPrs, workCards, readTranscripts, readLastWrites, MODULES };
+module.exports = { closedByPid, removeClosed, markRecipients, markClosedSessions, closedSessionLastAt, prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, boardLine, findTask, boardEditedNotice, syncBoardFromPhoto, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, cardPr, codexAgentsUnder, claudeAgentsActive, buildTables, rowPrsNow, applyRowPrs, settleRowPrs, workCards, readTranscripts, readLastWrites, MODULES };

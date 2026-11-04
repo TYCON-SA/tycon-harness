@@ -774,6 +774,124 @@ test('T59 Globo_ElSitioSirveElMismoDibujo — @story-8.198 @ac-59', async () => 
   } finally { await h.cerrar(); }
 });
 
+// ── Las sesiones cerradas no ocupan escritorio ──────────────────────────────────────────────────────────────────────
+
+const sessionState = require(path.join(__dirname, '..', 'lib', 'session-state.js'));
+const DEAD = 999991;
+const deadOrAlive = (pid) => pid !== DEAD;
+const stateFile = (session, more = {}) => ({ schema: 1, session, tool: 'claude', pid: DEAD, name: session, updatedAt: new Date(ONOW - 600000).toISOString(), ...more });
+
+test('T60 Cerradas_PidMuerto_SinEscritorioYEnCerradas — @story-8.198 @ac-60', () => {
+  const { data } = buildOffice({
+    wip: wip([]),
+    sessionFiles: [stateFile('sid-olvido', { name: 'Olvido' }), stateFile('sid-viva', { name: 'Viva', pid: 4242, waitingForOwner: true, sentence: 'espera' }), stateFile('sid-otra', { name: 'Otra', tool: 'codex' })],
+    isAlive: deadOrAlive,
+    nowMs: ONOW,
+  });
+  assert.ok(!data.agents.some((a) => a.nombre === 'Olvido'), 'sin escritorio');
+  assert.deepStrictEqual(data.cerradas, [{ nombre: 'Olvido', ultimaNovedad: ONOW - 600000, id: 'sid-olvido' }]);
+  assert.ok(data.agents.some((a) => a.nombre === 'Viva'), 'la viva no cambia');
+  assert.ok(!data.cerradas.some((c) => c.nombre === 'Otra'), 'un pid de otra herramienta no entra en las cerradas');
+  // en «Con las sesiones» de la coordinadora, la que no tiene escritorio cuenta como cerrada
+  const said = { conSesiones: [{ sesion: 'Olvido', at: 1, mensajes: [] }] };
+  const r = office.markClosedSessions(said, { files: new Map() }, { lastActivityOf: () => null });
+  assert.strictEqual(r.conSesiones[0].cerrada, true);
+});
+
+test('T61 Cerradas_SinPid_SigueLaReglaDeSiempre — @story-8.198 @ac-60', () => {
+  const { data } = buildOffice({
+    wip: wip([]),
+    sessionFiles: [stateFile('sid-tres', { name: 'Tres', tool: 'codex', pid: null, updatedAt: new Date(ONOW - 3 * 3600000).toISOString() }), stateFile('sid-vieja', { name: 'Vieja', tool: 'codex', pid: null, updatedAt: new Date(ONOW - 25 * 3600000).toISOString() })],
+    isAlive: deadOrAlive,
+    nowMs: ONOW,
+  });
+  assert.strictEqual(data.agents.find((a) => a.nombre === 'Tres').estado, 'inactiva');
+  assert.ok(!data.agents.some((a) => a.nombre === 'Vieja'));
+  assert.deepStrictEqual(data.cerradas, []);
+});
+
+test('T62 Quitar_BorraSoloUnaCerrada — @story-8.198 @ac-61', () => {
+  const sdir = stateDir();
+  const write = (sid, more = {}) => { fs.mkdirSync(sessionState.dirOf(sdir), { recursive: true }); fs.writeFileSync(sessionState.pathOf(sdir, sid), JSON.stringify(stateFile(sid, more))); };
+  const marker = path.join(sdir, 'active', 'sid-olvido.json');
+  fs.mkdirSync(path.dirname(marker), { recursive: true });
+  fs.writeFileSync(marker, '{}');
+  write('sid-olvido');
+  write('sid-viva', { pid: 4242 });
+  const closed = ['sid-olvido', 'sid-viva', 'sid-reabierta', 'sid-ida'];
+  const opts = { isAlive: deadOrAlive, env: {} };
+  assert.deepStrictEqual(office.removeClosed(sdir, 'sid-olvido', closed, opts), { status: 204 });
+  assert.ok(!fs.existsSync(sessionState.pathOf(sdir, 'sid-olvido')));
+  assert.ok(fs.existsSync(marker), 'el marcador de su corrida sigue');
+  assert.strictEqual(office.removeClosed(sdir, 'sid-viva', closed, opts).status, 409, 'una viva no se borra');
+  assert.ok(fs.existsSync(sessionState.pathOf(sdir, 'sid-viva')));
+  assert.strictEqual(office.removeClosed(sdir, 'sid-ajena', closed, opts).status, 409, 'una que no está en las cerradas de la foto');
+  // se reabre justo antes de borrar: el archivo cambió y no se borra
+  write('sid-reabierta');
+  const r = office.removeClosed(sdir, 'sid-reabierta', closed, { ...opts, beforeUnlink: () => write('sid-reabierta', { pid: 4242 }) });
+  assert.strictEqual(r.status, 409);
+  assert.ok(fs.existsSync(sessionState.pathOf(sdir, 'sid-reabierta')));
+  // una que ya no estaba: se dio por quitada
+  assert.deepStrictEqual(office.removeClosed(sdir, 'sid-ida', closed, opts), { status: 204 });
+});
+
+test('T63 Quitar_SinTokenUOtroOrigen_NoBorra — @story-8.198 @ac-61', async () => {
+  const http = require('http');
+  const { spawnSync } = require('child_process');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'quitar-'));
+  const { stateDir: sdirOf } = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'));
+  const sdir = sdirOf(home);
+  for (const d of ['active', 'doing', 'sessions']) fs.mkdirSync(path.join(sdir, d), { recursive: true });
+  // un proceso que ya terminó: su pid no tiene a nadie
+  const dead = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' }).stdout.trim();
+  const file = sessionState.pathOf(sdir, 'sid-olvido');
+  fs.writeFileSync(file, JSON.stringify(stateFile('sid-olvido', { name: 'Olvido', pid: Number(dead), updatedAt: new Date().toISOString() })));
+  const env = { ...process.env, HOME: home, USERPROFILE: home, TYCON_HOME: '', TYCON_OFFICE_NO_BROWSER: '1', TYCON_OFFICE_TEST: '1', TYCON_OFFICE_LINK: '0' };
+  const open = spawnSync(process.execPath, [OFFICE, '--open'], { input: '', env, encoding: 'utf8', timeout: 20000 });
+  const lock = JSON.parse(fs.readFileSync(path.join(sdir, 'office', 'server.json'), 'utf8'));
+  try {
+    assert.strictEqual(open.status, 0, open.stderr);
+    const post = (pathName, headers, method = 'POST') => new Promise((resolve, reject) => {
+      const req = http.request({ host: '127.0.0.1', port: lock.port, path: pathName, method, headers: { host: `127.0.0.1:${lock.port}`, origin: `http://127.0.0.1:${lock.port}`, 'sec-fetch-site': 'same-origin', 'content-type': 'application/json', ...headers } }, (res) => { res.resume(); res.on('end', () => resolve(res.statusCode)); });
+      req.on('error', reject);
+      req.end(method === 'POST' ? JSON.stringify({ id: 'sid-olvido' }) : undefined);
+    });
+    assert.strictEqual(await post('/quitar', {}), 403, 'sin token');
+    assert.strictEqual(await post(`/quitar?t=${lock.token}`, { origin: 'http://127.0.0.1:9', 'sec-fetch-site': 'same-site' }), 403, 'otro origen');
+    assert.strictEqual(await post(`/quitar?t=${lock.token}`, {}, 'GET'), 405);
+    assert.ok(fs.existsSync(file), 'el archivo sigue');
+    // con todo en orden, borra
+    let status = 409;
+    for (let i = 0; i < 40 && status === 409; i++) { status = await post(`/quitar?t=${lock.token}`, {}); if (status === 409) await new Promise((r) => setTimeout(r, 250)); }
+    assert.strictEqual(status, 204);
+    assert.ok(!fs.existsSync(file));
+  } finally { try { process.kill(lock.pid, 'SIGKILL'); } catch { /* ya salió */ } }
+});
+
+test('T64 Cerradas_ElSitioSinBotonNiId — @story-8.198 @ac-62', () => {
+  const fields = require(path.join(__dirname, '..', 'tools', 'office', 'fields.js'));
+  const { data } = buildOffice({ wip: wip([]), sessionFiles: [stateFile('sid-olvido-7f3a', { name: 'Olvido' })], isAlive: deadOrAlive, nowMs: ONOW });
+  const site = fields.pick(data);
+  assert.deepStrictEqual(site.cerradas, [{ nombre: 'Olvido', ultimaNovedad: ONOW - 600000 }]);
+  assert.ok(!JSON.stringify(site).includes('sid-olvido-7f3a'), 'ningún valor de la foto del sitio lleva el id');
+  // la página dibuja «Quitar» sólo con la oficina viva de la máquina
+  const code = fs.readFileSync(path.join(__dirname, '..', 'tools', 'office', 'page.js'), 'utf8');
+  assert.match(code, /function renderCerradas\([^\n]*if\(LIVE&&c\.id\)[^\n]*"Quitar"/);
+});
+
+test('T65 Quitar_NoPudo_LoDiceYSigue — @story-8.198 @ac-63', () => {
+  const sdir = stateDir();
+  fs.mkdirSync(sessionState.dirOf(sdir), { recursive: true });
+  fs.writeFileSync(sessionState.pathOf(sdir, 'sid-olvido'), JSON.stringify(stateFile('sid-olvido')));
+  const opts = { isAlive: deadOrAlive, env: {} };
+  assert.deepStrictEqual(office.removeClosed(sdir, 'sid-otra', ['sid-olvido'], opts), { status: 409, motivo: 'ya no está cerrada' });
+  assert.deepStrictEqual(office.removeClosed(sdir, 'sid-olvido', ['sid-olvido'], { ...opts, env: { TYCON_SESSION_STATE: '0' } }), { status: 500, motivo: 'el registro de sesiones está apagado en esta máquina' });
+  assert.deepStrictEqual(office.removeClosed(sdir, 'sid-olvido', ['sid-olvido'], { ...opts, unlink: () => { const e = new Error('no'); e.code = 'EACCES'; throw e; } }), { status: 500, motivo: 'la máquina no dejó borrarlo' });
+  assert.ok(fs.existsSync(sessionState.pathOf(sdir, 'sid-olvido')), 'la sesión sigue');
+  const code = fs.readFileSync(path.join(__dirname, '..', 'tools', 'office', 'page.js'), 'utf8');
+  assert.match(code, /"No se pudo quitar: "\+/);
+});
+
 // ── Lo que no falla en silencio ─────────────────────────────────────────────────────────────────────────────────────
 
 test('Regresion_GuardadoAbortado_NoGastaNumeros — @story-8.198 @ac-6', () => {

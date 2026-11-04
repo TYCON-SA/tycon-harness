@@ -85,6 +85,8 @@ const FIELDS = {
   rows: list(record({ work: text, state: text, end: text, session: text, folder })),
   free: list(text),
   unreadable: list(text),
+  // las sesiones cerradas, con su nombre y su última novedad; su id no viaja: el sitio no puede quitar nada
+  cerradas: list(record({ nombre: text, ultimaNovedad: number })),
   tablero: record({}),
   tokens: byName(record({ contexto: text, consumidos: text, agentes: number, noMedido: flag })),
   sobres: list(record({ id: text, de: text, a: text, at: number })),
