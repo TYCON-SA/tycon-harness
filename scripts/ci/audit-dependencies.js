@@ -294,8 +294,9 @@ function packagesConfigDe(repo) {
         // un enlace adentro del repo apunta a algo que el recorrido ya mira; uno que sale, no se mira
         let real = null;
         try { real = fs.realpathSync(path.join(repo, ruta)); } catch (_) { real = null; }
-        const r = real === null ? null : path.relative(raiz, real);
-        if (r === null || r.startsWith('..') || path.isAbsolute(r)) { sinMirar.push(`${ruta} (enlace fuera del repo)`); continue; }
+        if (real === null) { sinMirar.push(`${ruta} (enlace roto)`); continue; }
+        const r = path.relative(raiz, real);
+        if (r.startsWith('..') || path.isAbsolute(r)) { sinMirar.push(`${ruta} (enlace fuera del repo)`); continue; }
         dir = false;
         try { archivo = fs.statSync(real).isFile(); } catch (_) { archivo = false; }
       }

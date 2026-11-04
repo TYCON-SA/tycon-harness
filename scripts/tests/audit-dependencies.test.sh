@@ -174,6 +174,28 @@ echo '<packages />' > "$TMP/afuera/Lib/packages.config"; ln -s "$TMP/afuera/Lib"
 rc=$(corre --type nuget)
 { [ "$rc" -eq 2 ] && grep -q "Lib (enlace fuera del repo)" "$TMP/out.txt"; } \
   && ok "un enlace a una carpeta fuera del repo sale no medido y lo nombra" || no "enlace fuera del repo salió $rc: $(cat "$TMP/out.txt")"
+rm -rf "$TMP/repo"; mkdir -p "$TMP/repo"; : > "$TMP/repo/x.sln"; ln -s no-existe "$TMP/repo/Rota"
+rc=$(corre --type nuget)
+{ [ "$rc" -eq 2 ] && grep -q "Rota (enlace roto)" "$TMP/out.txt"; } \
+  && ok "un enlace roto sale no medido y dice que está roto" || no "enlace roto salió $rc: $(cat "$TMP/out.txt")"
+# un enlace a una carpeta del repo no se recorre dos veces: lo mira el recorrido de la carpeta real
+rm -rf "$TMP/repo"; mkdir -p "$TMP/repo/Real"; : > "$TMP/repo/x.sln"; ln -s Real "$TMP/repo/Atajo"
+echo '{"projects":[]}' > "$TMP/nuget.json"
+rc=$(corre --type nuget)
+[ "$rc" -eq 0 ] && ok "un enlace a una carpeta del repo no deja la revisión sin medir" || no "enlace interno salió $rc: $(cat "$TMP/out.txt")"
+# mayúsculas: Packages.Config cuenta, y BIN y una carpeta Packages al lado del .sln se saltean
+rm -rf "$TMP/repo"; mkdir -p "$TMP/repo/BIN" "$TMP/repo/Packages/Algo" "$TMP/repo/Api"; : > "$TMP/repo/x.sln"
+echo '<packages />' > "$TMP/repo/BIN/packages.config"; echo '<packages />' > "$TMP/repo/Packages/Algo/packages.config"
+echo '<packages />' > "$TMP/repo/Api/Packages.Config"
+rc=$(corre --type nuget)
+{ [ "$rc" -eq 2 ] && grep -q "packages.config: 1 proyecto" "$TMP/out.txt" && grep -q "Api/Packages.Config" "$TMP/out.txt"; } \
+  && ok "los nombres se comparan sin mayúsculas" || no "mayúsculas salió $rc: $(cat "$TMP/out.txt")"
+# con más de tres, el motivo nombra tres y cuenta el resto
+rm -rf "$TMP/repo"; mkdir -p "$TMP/repo"; : > "$TMP/repo/x.sln"
+for p in A B C D E; do mkdir -p "$TMP/repo/$p"; echo '<packages />' > "$TMP/repo/$p/packages.config"; done
+rc=$(corre --type nuget)
+{ [ "$rc" -eq 2 ] && grep -q "packages.config: 5 proyecto" "$TMP/out.txt" && grep -q "y 2 más" "$TMP/out.txt"; } \
+  && ok "con más de tres rutas el motivo nombra tres y cuenta el resto" || no "recorte salió $rc: $(cat "$TMP/out.txt")"
 if [ "$(id -u)" -ne 0 ]; then
   rm -rf "$TMP/repo"; mkdir -p "$TMP/repo/Cerrada"; : > "$TMP/repo/x.sln"; chmod 000 "$TMP/repo/Cerrada"
   rc=$(corre --type nuget); chmod 755 "$TMP/repo/Cerrada"
