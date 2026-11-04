@@ -473,7 +473,7 @@ test('T34 Criterio_SaleDeIsTestPath @story-8.192 @ac-34', () => {
 test('T35 Asunto_GitHubYAzure_LeeLaRama @story-8.192 @ac-1 @ac-14', () => {
   const { ramaDelAsunto } = commitStory();
   assert.equal(ramaDelAsunto('Merge pull request 56 from feature/5-28-carga into dev'), 'feature/5-28-carga');
-  assert.equal(ramaDelAsunto('Merge pull request #944 from TYCON-SA/story/8.181-los-cambios'), 'story/8.181-los-cambios');
+  assert.equal(ramaDelAsunto('Merge pull request #12 from mi-org/story/3.4-los-cambios'), 'story/3.4-los-cambios');
   assert.equal(ramaDelAsunto('Merge pull request #7 from mi-fork:rama-1'), null);
   for (const otro of ['Merged PR 50: TC-1: retomar', "Merge branch 'feature/5-28-carga'", 'Merge remote-tracking branch \'origin/main\' into dev', 'feat: Merge pull request 5 from x']) {
     assert.equal(ramaDelAsunto(otro), null, otro);
