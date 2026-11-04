@@ -680,3 +680,56 @@ test('T38 Propuesto_YaNoApareceYMainLoTiene_NoDiceCerrado @story-8.203 @ac-10 �
   assert.ok(!txt.includes(es('pantalla.pedidoCerradoSinEntrar', { n: '123' })), txt);
   assert.ok(txt.includes(es('pantalla.alDia')), txt);
 });
+
+// 🔴 Falla con: `office` fuera de las claves que piden versión: el cambio no sube la capa y una máquina anterior a
+// OFFICE_SINCE rechaza el perfil entero.
+test('Regresion_Oficina_SubeLaCapa — cambiar o sumar office.quiet_minutes sube requires.harness a OFFICE_SINCE', () => {
+  const maquinas = [fila('mac-1', IMAGEN, diaHace(1))];
+  for (const actual of [{ office: { quiet_minutes: 10 } }, {}]) {
+    const doc = { office: { quiet_minutes: 20 } };
+    assert.deepStrictEqual(ORG.clavesQuePidenVersion({ actual, doc }), [['office', ORG.OFFICE_SINCE]], JSON.stringify(actual));
+    const r = ORG.capaQueSube({ layerText: capa('2026.10.20.3'), actual, doc, maquinas, versionImagen: IMAGEN, ahora: AHORA });
+    assert.ok(r && r.archivo, JSON.stringify(r));
+    assert.strictEqual(JSON.parse(r.contenido).requires.harness, `>= ${ORG.OFFICE_SINCE}`);
+    assert.strictEqual(r.clave, 'office');
+  }
+  assert.deepStrictEqual(ORG.clavesQuePidenVersion({ actual: { office: { quiet_minutes: 20 } }, doc: { office: { quiet_minutes: 20 } } }), [], 'sin cambio no pide nada');
+  // la pantalla lo dice con su mensaje, y con la capa en la versión que lo lee no frena
+  const bajo = ORG.teamProfileGateProblem({ layerText: capa('2026.10.20.3'), versionImagen: '2026.10.15.48', doc: { office: { quiet_minutes: 20 } } });
+  assert.strictEqual(bajo, es('org.capaSinOffice', { req: '>= 2026.10.20.3', version: ORG.OFFICE_SINCE }));
+  assert.strictEqual(ORG.teamProfileGateProblem({ layerText: capa(ORG.OFFICE_SINCE), versionImagen: '2026.10.15.48', doc: { office: { quiet_minutes: 20 } } }), null);
+});
+
+// 🔴 Falla con: `approvals.signature_list` fuera de las claves que piden versión: un lector anterior la lee como rota y
+// la máquina se queda sin ninguna firma delegada.
+test('Regresion_ListaDeEspera_SubeLaCapa — sumar approvals.signature_list sube requires.harness a SIGNATURE_LIST_SINCE', () => {
+  const maquinas = [fila('mac-1', IMAGEN, diaHace(1))];
+  const doc = { approvals: { relay_session: 'x', signature_list: 'on' } };
+  for (const actual of [{ approvals: { relay_session: 'x' } }, {}]) {
+    const pide = ORG.clavesQuePidenVersion({ actual, doc });
+    assert.ok(pide.some(([k, v]) => k === 'approvals.signature_list' && v === ORG.SIGNATURE_LIST_SINCE), JSON.stringify(pide));
+    const r = ORG.capaQueSube({ layerText: capa('2026.10.20.3'), actual, doc, maquinas, versionImagen: IMAGEN, ahora: AHORA });
+    assert.strictEqual(JSON.parse(r.contenido).requires.harness, `>= ${ORG.SIGNATURE_LIST_SINCE}`, JSON.stringify(r));
+    assert.strictEqual(r.clave, 'approvals.signature_list');
+  }
+  assert.deepStrictEqual(ORG.clavesQuePidenVersion({ actual: doc, doc }), [], 'sin cambio no pide nada');
+  const bajo = ORG.teamProfileGateProblem({ layerText: capa(ORG.SESSION_NAMES_SINCE), versionImagen: '2026.10.15.48', doc: { approvals: { signature_list: 'on' } } });
+  assert.strictEqual(bajo, es('org.capaSinListaDeEspera', { req: `>= ${ORG.SESSION_NAMES_SINCE}`, version: ORG.SIGNATURE_LIST_SINCE }));
+  assert.strictEqual(ORG.teamProfileGateProblem({ layerText: capa(ORG.SIGNATURE_LIST_SINCE), versionImagen: '2026.10.15.48', doc: { approvals: { signature_list: 'on' } } }), null);
+});
+
+// 🔴 Falla con: una sección nueva del lector del perfil sin su versión en pedidasDelPerfil.
+test('Regresion_CadaSeccionDelPerfil_PideSuVersion — toda sección que el primer lector publicado no conocía pide una versión', () => {
+  // las que ya leía v2026.10.16.1, el primer lector publicado; `models` es de la máquina: en el perfil es un error siempre
+  const deSiempre = ['rutas', 'github', 'azure', 'ado', 'telegram', 'integraciones', 'update', 'packs', 'install', 'adversarial'];
+  const deLaMaquina = ['models'];
+  const enArchivo = { rutas: 'paths', integraciones: 'integrations' };
+  for (const s of Object.keys(TC.VOCABULARIO).filter((k) => !deSiempre.includes(k) && !deLaMaquina.includes(k))) {
+    const clave = enArchivo[s] || s;
+    const pedidas = ORG.pedidasDelPerfil({ actual: {}, doc: { [clave]: {} } });
+    assert.ok(pedidas.some(([k]) => k === clave), `${clave} no pide versión: ${JSON.stringify(pedidas)}`);
+  }
+  // el mensaje de cada clave que pide versión existe en los dos idiomas: sin él, la pantalla muestra la clave cruda
+  const todas = ORG.pedidasDelPerfil({ actual: {}, doc: { office: {}, approvals: { signature_list: 'on', levels: {}, owner_only: [], delegated_machines: [] }, coordination: { session_names: [] } } });
+  for (const [k, , mensaje] of todas) for (const idioma of ['es', 'en']) assert.ok(t(idioma, mensaje) && t(idioma, mensaje) !== mensaje, `${idioma} ${k}: ${mensaje}`);
+});
