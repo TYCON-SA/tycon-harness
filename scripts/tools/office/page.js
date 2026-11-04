@@ -652,7 +652,7 @@ function sobresDeOficina(foto){return foto&&Array.isArray(foto.sobres)?foto.sobr
 // del tope o el sitio se reinició), no una falla
 function charlaSegunRespuesta(status){return status===200?"datos":status===404?"vacia":"falla"}
 // un 200 vale sólo con la forma de una conversación: un cuerpo vacío no se muestra como «no hay mensajes»
-const CHARLA_CLAVES=["sinCoordinadora","conCoordinadora","arranque","conVos","conSesiones"];
+const CHARLA_CLAVES=["sinCoordinadora","sinConversacion","conCoordinadora","arranque","conVos","conSesiones"];
 function charlaConForma(d){return Boolean(d)&&typeof d==="object"&&!Array.isArray(d)&&CHARLA_CLAVES.some(k=>Object.prototype.hasOwnProperty.call(d,k))}
 // fin de lo que se decide sin tocar la pantalla
 // la pestaña del sitio: el dibujo

@@ -384,6 +384,8 @@ test('T50 PaginaDelSitio_AvioncitoYConversacion — @story-8.171 @ac-26 @ac-27',
   // un 200 vale sólo con la forma de una conversación; lo que falla queda en la consola, y un pintado que se rompe dice que falló
   assert.strictEqual(d.charlaConForma({ conCoordinadora: [] }), true);
   assert.strictEqual(d.charlaConForma({ sinCoordinadora: true }), true);
+  // la de una sesión de Codex: no se lee desde la oficina, pero se le puede escribir
+  assert.strictEqual(d.charlaConForma({ sinConversacion: true, oficina: { recibe: 'codex' } }), true);
   for (const x of [null, [], {}, { otra: 1 }, 'texto']) assert.strictEqual(d.charlaConForma(x), false, JSON.stringify(x));
   assert.match(fn('abrirCharla'), /if\(!charlaConForma\(datos\)\)throw/);
   assert.match(fn('abrirCharla'), /\.catch\(e=>\{console\.warn\(/);
