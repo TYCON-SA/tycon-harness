@@ -402,9 +402,10 @@ function corregir(argv) {
 // ── LOS PEDIDOS ABIERTOS ─────────────────────────────────────────────────────────────────────────
 // 🔴 Un pedido abierto no es una fusión. Al abrir un pedido hacia main se anota la punta de su rama de origen, que no
 // está en main: pedir su latido fabricaba constancias de fusiones que no hubo (la punta de una rama, una fusión a dev), y
-// el tablero las contaba. Por eso la entrada de un pedido guarda su número (de la salida de `az repos pr create` o
-// `gh pr create`) y queda `esperando`: no se reclama. Al cerrar un turno o al arrancar se le pregunta a la plataforma si
-// entró (`az repos pr show` / `gh pr view`), sin interacción, con tope de 10 s y a lo sumo una vez cada 10 min por pedido
+// el tablero las contaba. Por eso la entrada de un pedido guarda su número (de la salida del comando que lo abrió) y
+// queda `esperando`: no se reclama. Al cerrar un turno o al arrancar se le pregunta a la capa de plataforma si entró
+// (`platform.js change-request read`, con la identidad del `origin`), sin interacción, con tope de 10 s y a lo sumo una
+// vez cada 10 min por pedido
 // (la hora de cada consulta va en `retro-pending-consultas.json`, que se reescribe entero; ilegible = consultar de nuevo).
 // Lo que se sabe va al registro como un renglón propio (`tipo: 'pedido'`), como la corrección: la entrada no se toca.
 //   · entró → la entrada reclama el commit que el pedido dejó en main (también con fusión aplastada);
@@ -415,6 +416,7 @@ function corregir(argv) {
 // sin cubrir porque su latido se anuló no se pueden pagar con un latido (retro-heartbeat.js sólo acepta la línea de main):
 // no frenan, y el aviso de arranque las lista con el comando de `--correct`.
 const CONSULTAS = path.join(STATE_DIR, 'retro-pending-consultas.json');
+const CAPA = path.join(__dirname, '..', 'lib', 'platform', 'platform.js');
 const CONSULTA_CADA_MS = 10 * 60000;
 const CONSULTAS_POR_PASADA = 3;
 const topeDeConsulta = () => Number(process.env.TYCON_RETRO_ASK_PR_MS) > 0 ? Number(process.env.TYCON_RETRO_ASK_PR_MS) : 10000;
@@ -448,45 +450,49 @@ function guardarConsultas(d) {
 function consultarPedido(e) {
   const dir = carpetaVigente(e);
   if (!esRaiz(dir)) return { estado: 'no-se', motivo: `la carpeta del repo (${dir}) ya no es un repo` };
+  const identidad = identidadParaLaCapa(dir);
+  if (identidad.problema) return { estado: 'no-se', motivo: identidad.problema };
+  const tope = topeDeConsulta();
   const env = { ...process.env, GH_PROMPT_DISABLED: '1', GIT_TERMINAL_PROMPT: '0', AZURE_CORE_NO_COLOR: '1', AZURE_CORE_ONLY_SHOW_ERRORS: '1' };
-  let herramienta;
-  let args;
-  if (e.plataforma === 'github') {
-    herramienta = 'gh';
-    args = ['pr', 'view', String(e.pr), '--json', 'state,mergeCommit'];
-  } else {
-    herramienta = 'az';
-    args = ['repos', 'pr', 'show', '--id', String(e.pr), '--query', '{status:status,merge:lastMergeCommit.commitId}', '-o', 'json', '--only-show-errors'];
-    let id = null;
-    try { id = resolverRemoto(dir).id; } catch { id = null; }
-    if (id && id.org) args.push('--org', `https://dev.azure.com/${id.org}`);
-  }
+  const args = [CAPA, 'change-request', 'read', '--repo', JSON.stringify(identidad.valor), '--args', JSON.stringify({ number: e.pr, deadlineMs: Date.now() + tope })];
   let salida;
   try {
-    salida = execFileSync(herramienta, args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: topeDeConsulta(), env, maxBuffer: 1024 * 1024 });
+    // el tope corta la capa; lo que ella lanzó trae su propio tope (deadlineMs) y no se espera
+    salida = execFileSync(process.execPath, args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: tope, killSignal: 'SIGKILL', env, maxBuffer: 1024 * 1024, windowsHide: true });
   } catch (err) {
-    if (err && err.code === 'ENOENT') return { estado: 'no-se', motivo: `${herramienta} no está en esta máquina` };
-    if (err && (err.code === 'ETIMEDOUT' || err.signal)) return { estado: 'no-se', motivo: `${herramienta} no contestó en ${Math.round(topeDeConsulta() / 1000)} s` };
+    if (err && (err.code === 'ETIMEDOUT' || err.signal)) return { estado: 'no-se', motivo: `la capa de plataforma no contestó en ${Math.round(tope / 1000)} s` };
     const ultima = String((err && err.stderr) || '').trim().split('\n').filter(Boolean).pop();
-    return { estado: 'no-se', motivo: `${herramienta} salió con error${ultima ? ` (${ultima.slice(0, 160)})` : ''}` };
+    return { estado: 'no-se', motivo: `la capa de plataforma salió con error${ultima ? ` (${sinSecretos(ultima)})` : ''}` };
   }
   let d;
-  try { d = JSON.parse(salida); } catch { return { estado: 'no-se', motivo: `${herramienta} contestó algo que no es JSON` }; }
-  const commit = (s) => (/^[0-9a-f]{7,64}$/i.test(String(s || '')) ? String(s).toLowerCase().slice(0, 12) : null);
-  if (e.plataforma === 'github') {
-    const estado = String((d && d.state) || '').toUpperCase();
-    const merge = commit(d && d.mergeCommit && d.mergeCommit.oid);
-    if (estado === 'MERGED') return merge ? { estado: 'entro', merge } : { estado: 'no-se', motivo: 'gh dice que entró pero no da su commit' };
-    if (estado === 'CLOSED') return { estado: 'abandonado' };
-    if (estado === 'OPEN') return { estado: 'esperando' };
-    return { estado: 'no-se', motivo: `gh contestó un estado que no conozco (${estado || 'vacío'})` };
-  }
-  const estado = String((d && d.status) || '').toLowerCase();
-  const merge = commit(d && d.merge);
-  if (estado === 'completed') return merge ? { estado: 'entro', merge } : { estado: 'no-se', motivo: 'az dice que se completó pero no da su commit de fusión' };
-  if (estado === 'abandoned') return { estado: 'abandonado' };
-  if (estado === 'active' || estado === 'draft') return { estado: 'esperando' };
-  return { estado: 'no-se', motivo: `az contestó un estado que no conozco (${estado || 'vacío'})` };
+  try { d = JSON.parse(salida); } catch { return { estado: 'no-se', motivo: 'la capa de plataforma contestó algo que no es JSON' }; }
+  // cualquier «no» de la capa es no saber, también no_encontrado: la entrada no se cierra
+  if (!d || d.ok !== true) return { estado: 'no-se', motivo: `${(d && d.reason) || 'no_medido'}: ${sinSecretos((d && d.detail) || 'sin detalle')}` };
+  const v = d.value || {};
+  const merge = /^[0-9a-f]{40}$/i.test(String(v.mergeCommit || '')) ? String(v.mergeCommit).toLowerCase().slice(0, 12) : null;
+  if (v.state === 'merged') return merge ? { estado: 'entro', merge } : { estado: 'no-se', motivo: 'la plataforma dice que entró pero no da su commit de fusión' };
+  if (v.state === 'closed') return { estado: 'abandonado' };
+  if (v.state === 'open') return { estado: 'esperando' };
+  return { estado: 'no-se', motivo: `la plataforma contestó un estado que no conozco (${v.state ? sinSecretos(v.state) : 'vacío'})` };
+}
+
+// El texto de la plataforma va al archivo de consultas y al aviso: pasa por la limpieza de la capa (credenciales,
+// direcciones, correos). Si la capa no se puede cargar, no se muestra.
+function sinSecretos(t) {
+  try { return require(CAPA).limpiar(t).slice(0, 160); } catch { return '(detalle oculto: no pude cargar la limpieza de la capa)'; }
+}
+
+/**
+ * La identidad del repo de `dir` para la capa de plataforma, sacada de su `origin`: `{ valor }` o `{ problema }`. Sólo
+ * los dos hosts que la capa sabe nombrar; con otro, no se sabe a quién preguntarle.
+ */
+function identidadParaLaCapa(dir) {
+  let id = null;
+  try { id = resolverRemoto(dir).id; } catch { id = null; }
+  if (id && id.org && id.proyecto && id.repo) return { valor: { platform: 'azure', org: id.org, project: id.proyecto, repo: id.repo } };
+  const partes = id && id.host === 'github.com' ? String(id.ruta || '').split('/') : [];
+  if (partes.length === 2 && partes[0] && partes[1]) return { valor: { platform: 'github', org: partes[0], repo: id.nombre || partes[1] } };
+  return { problema: id ? `no sé en qué plataforma vive el origin de ${dir} (${id.host})` : `no sé en qué plataforma vive ${dir}: no tiene un origin legible` };
 }
 
 /**

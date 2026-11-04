@@ -234,7 +234,8 @@ function abrirPedido(args, ctx) {
 }
 
 /**
- * Un pedido por su número, activo o cerrado: `{ number, state: open|merged|closed, draft, autoComplete, mergedAt, title }`,
+ * Un pedido por su número, activo o cerrado: `{ number, state: open|merged|closed, draft, autoComplete, mergedAt, mergeCommit,
+ * title }`,
  * sin `inQueue`: Azure DevOps no tiene cola aparte, y lo que lo hace entrar solo es el auto-completar. Sus números son de
  * toda la organización: uno de otro repo no es éste. Uno que no existe es no_encontrado, nunca «entró».
  *   az repos pr show --id <n> --org <org> -o json
@@ -253,6 +254,8 @@ function leerPedido(args, ctx) {
   if (!p || typeof p !== 'object' || Number(p.pullRequestId) !== n) return no('no_medido', `az contestó el pedido !${n} sin forma`);
   if (String((p.repository && p.repository.name) || '').toLowerCase() !== String(repo.repo).toLowerCase()) return no('no_encontrado', `el pedido !${n} no es de ${repo.repo}`);
   const entro = p.status === 'completed';
+  // el commit que la fusión dejó en la rama destino; con el pedido abierto o abandonado, el de prueba no sirve
+  const fusion = String((p.lastMergeCommit && p.lastMergeCommit.commitId) || '');
   return {
     ok: true,
     value: {
@@ -261,6 +264,7 @@ function leerPedido(args, ctx) {
       draft: p.isDraft === true,
       autoComplete: Boolean(p.autoCompleteSetBy),
       mergedAt: entro && p.closedDate ? String(p.closedDate) : null,
+      mergeCommit: entro && /^[0-9a-f]{40}$/i.test(fusion) ? fusion.toLowerCase() : null,
       title: String(p.title || ''),
     },
   };

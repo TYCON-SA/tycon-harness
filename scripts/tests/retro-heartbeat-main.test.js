@@ -103,6 +103,8 @@ function laboratorio({ bin = null, extra = {} } = {}) {
   const gancho = path.join(arnes, 'scripts', 'hooks', 'retro-pending.js');
   fs.copyFileSync(path.join(ROOT, 'scripts', 'hooks', 'retro-pending.js'), gancho);
   fs.cpSync(path.join(ROOT, 'scripts', 'lib'), path.join(arnes, 'scripts', 'lib'), { recursive: true });
+  // la consulta del pedido va por la capa de plataforma, que lee sus conectores de integrations/
+  fs.cpSync(path.join(ROOT, 'integrations'), path.join(arnes, 'integrations'), { recursive: true });
   const estado = path.join(home, '.claude', '.tycon-pipeline');
   const ledger = path.join(estado, 'retro-pending.jsonl');
   const entorno = () => env(home, { ...(bin ? { PATH: `${bin}${path.delimiter}${process.env.PATH}` } : {}), ...extra });
@@ -176,6 +178,14 @@ test('T1 Pedido_Anota_NumeroYEsperando: el número del pedido de az y de gh, y s
   assert.match(sin.stderr, /no pude leer el número del pedido/);
 });
 
+// El `origin` que le da al gancho la identidad del repo para la capa de plataforma (sin fetch: nadie lo trae).
+const ORIGEN = { azure: 'https://dev.azure.com/acme/producto/_git/acme-backend', github: 'https://github.com/acme/acme-backend' };
+function conOrigen(dir, plataforma = 'azure') { git(dir, ['remote', 'add', 'origin', ORIGEN[plataforma]]); return dir; }
+/** El pedido 101 como lo contesta el az de verdad a `repos pr show` (lo que lee el conector). */
+const pedidoAz = (o = {}) => JSON.stringify({ pullRequestId: 101, status: 'active', isDraft: false, title: 'pedido', repository: { name: 'acme-backend' }, ...o });
+/** Ídem el gh de verdad a `api repos/<dueño>/<repo>/pulls/101`. */
+const pedidoGh = (o = {}) => JSON.stringify({ number: 101, state: 'open', title: 'pedido', draft: false, node_id: 'n101', ...o });
+
 function pedidoEsperando(lab, dir, salida = JSON.stringify({ pullRequestId: 101 })) {
   git(dir, ['checkout', '--quiet', 'pedido-abierto']);
   lab.pedido('az repos pr create --source-branch pedido-abierto --target-branch main', dir, salida);
@@ -196,9 +206,11 @@ test('T3 Pedido_Entro_ReclamaElCommitDeMain: la entrada reclama el commit de mai
   const base = tmp();
   const bin = binDeMentira(base);
   const lab = laboratorio({ bin });
+  conOrigen(caso.dir);
   pedidoEsperando(lab, caso.dir);
-  fs.writeFileSync(path.join(bin, 'respuesta-az'), JSON.stringify({ status: 'completed', merge: caso.fusionAMain }));
+  fs.writeFileSync(path.join(bin, 'respuesta-az'), pedidoAz({ status: 'completed', closedDate: '2026-11-01T10:00:00Z', lastMergeCommit: { commitId: caso.fusionAMain } }));
   const r = lab.cierre(caso.dir);
+  assert.ok(llamadas(bin).some((l) => /--id 101/.test(l)), `le preguntó a la plataforma por el pedido: ${llamadas(bin)}`);
   const motivo = motivoDelCierre(r);
   assert.match(motivo, new RegExp(caso.fusionAMain.slice(0, 12)), `reclama el commit de main: ${r.stdout}${r.stderr}`);
   assert.doesNotMatch(motivo, new RegExp(caso.puntaDeRama.slice(0, 12)), 'no la punta de la rama');
@@ -207,18 +219,31 @@ test('T3 Pedido_Entro_ReclamaElCommitDeMain: la entrada reclama el commit de mai
   assert.ok(caso.fusionAMain.startsWith(cambio.merge));
   latido(lab.dashboard, caso.dir, caso.fusionAMain);
   assert.strictEqual(lab.cierre(caso.dir).stdout, '', 'cubierta por el latido del commit de main');
+
+  // completado sin su commit: «no sé», nada que reclamar
+  const otro = conOrigen(repoDelCaso().dir);
+  const bin2 = binDeMentira(tmp());
+  const lab2 = laboratorio({ bin: bin2 });
+  pedidoEsperando(lab2, otro);
+  fs.writeFileSync(path.join(bin2, 'respuesta-az'), pedidoAz({ status: 'completed', closedDate: '2026-11-01T10:00:00Z' }));
+  assert.strictEqual(lab2.cierre(otro).stdout, '', 'sin commit no reclama');
+  assert.strictEqual(lab2.renglones().find((l) => l.tipo === 'pedido'), undefined, 'ni cierra ni pasa a entro');
+  const a = lab2.arranque(otro, { TYCON_RETRO_PENDING_MIN_AGE_MIN: '0' });
+  assert.match(a.stdout, /no sé si el pedido 101 entró: [^\n]*commit/, a.stdout);
 });
 
 test('T4 Pedido_Consulta_TopeYUnaCadaDiezMinutos: corta en el tope y no vuelve a consultar antes de diez minutos', () => {
   const { dir } = repoDelCaso();
   const bin = binDeMentira(tmp());
-  fs.writeFileSync(path.join(bin, 'demora'), '5');
-  fs.writeFileSync(path.join(bin, 'respuesta-az'), JSON.stringify({ status: 'completed', merge: 'x' }));
-  const lab = laboratorio({ bin, extra: { TYCON_RETRO_ASK_PR_MS: '400' } });
+  // el tope tiene que dejar arrancar a la capa (cargar node y sus conectores) con la máquina cargada; la demora lo pasa
+  fs.writeFileSync(path.join(bin, 'demora'), '20');
+  fs.writeFileSync(path.join(bin, 'respuesta-az'), pedidoAz({ status: 'completed' }));
+  const lab = laboratorio({ bin, extra: { TYCON_RETRO_ASK_PR_MS: '3000' } });
+  conOrigen(dir);
   pedidoEsperando(lab, dir);
   const t0 = Date.now();
   const r1 = lab.cierre(dir);
-  assert.ok(Date.now() - t0 < 4000, `cortó en el tope (${Date.now() - t0} ms)`);
+  assert.ok(Date.now() - t0 < 12000, `cortó en el tope (${Date.now() - t0} ms)`);
   assert.strictEqual(r1.stdout, '', 'una consulta que no contesta no frena');
   assert.strictEqual(llamadas(bin).length, 1);
   assert.ok(fs.existsSync(path.join(lab.estado, 'retro-pending-consultas.json')));
@@ -228,20 +253,35 @@ test('T4 Pedido_Consulta_TopeYUnaCadaDiezMinutos: corta en el tope y no vuelve a
   fs.writeFileSync(path.join(lab.estado, 'retro-pending-consultas.json'), '{roto');
   lab.cierre(dir);
   assert.strictEqual(llamadas(bin).length, 2);
+
+  // GitHub: su conector no mira deadlineMs, y el corte es el mismo
+  const otro = repoDelCaso().dir;
+  conOrigen(otro, 'github');
+  const bin2 = binDeMentira(tmp());
+  fs.writeFileSync(path.join(bin2, 'demora'), '20');
+  const lab2 = laboratorio({ bin: bin2, extra: { TYCON_RETRO_ASK_PR_MS: '3000' } });
+  git(otro, ['checkout', '--quiet', 'pedido-abierto']);
+  lab2.pedido('gh pr create --base main --title t --body b', otro, 'https://github.com/acme/acme-backend/pull/101\n');
+  git(otro, ['checkout', '--quiet', 'main']);
+  const t1 = Date.now();
+  assert.strictEqual(lab2.cierre(otro).stdout, '', 'gh que no contesta no frena');
+  assert.ok(Date.now() - t1 < 12000, `GitHub: cortó en el tope (${Date.now() - t1} ms)`);
+  assert.strictEqual(llamadas(bin2).filter((l) => /^gh /.test(l)).length, 1, 'le preguntó a gh');
 });
 
 test('T5 Pedido_Abandonado_SeCierra: abandonado en Azure y cerrado sin entrar en GitHub', () => {
   for (const [plataforma, respuesta, comando, salida] of [
-    ['az', { status: 'abandoned', merge: null }, 'az repos pr create --source-branch pedido-abierto --target-branch main', JSON.stringify({ pullRequestId: 101 })],
-    ['gh', { state: 'CLOSED', mergeCommit: null }, 'gh pr create --base main --title t --body b', 'https://github.com/acme/acme-backend/pull/101\n'],
+    ['az', pedidoAz({ status: 'abandoned', closedDate: '2026-11-01T10:00:00Z' }), 'az repos pr create --source-branch pedido-abierto --target-branch main', JSON.stringify({ pullRequestId: 101 })],
+    ['gh', pedidoGh({ state: 'closed', merged_at: null, merge_commit_sha: '1111111111111111111111111111111111111111' }), 'gh pr create --base main --title t --body b', 'https://github.com/acme/acme-backend/pull/101\n'],
   ]) {
     const { dir } = repoDelCaso();
+    conOrigen(dir, plataforma === 'az' ? 'azure' : 'github');
     const bin = binDeMentira(tmp());
     const lab = laboratorio({ bin });
     git(dir, ['checkout', '--quiet', 'pedido-abierto']);
     lab.pedido(comando, dir, salida);
     git(dir, ['checkout', '--quiet', 'main']);
-    fs.writeFileSync(path.join(bin, `respuesta-${plataforma}`), JSON.stringify(respuesta));
+    fs.writeFileSync(path.join(bin, `respuesta-${plataforma}`), respuesta);
     assert.strictEqual(lab.cierre(dir).stdout, '', plataforma);
     const cambio = lab.renglones().find((l) => l.tipo === 'pedido');
     assert.strictEqual(cambio && cambio.estado, 'abandonado', plataforma);
@@ -254,21 +294,31 @@ test('T5 Pedido_Abandonado_SeCierra: abandonado en Azure y cerrado sin entrar en
   }
 });
 
-test('T6 Pedido_NoSePudoConsultar_AvisoSinFrenar: sin la herramienta y con error de permiso', () => {
-  for (const sinHerramienta of [true, false]) {
+test('T6 Pedido_NoSePudoConsultar_AvisoSinFrenar: cada «no» de la capa es «no sé», y ninguno cierra la entrada', () => {
+  for (const [caso, error, motivo] of [
+    ['sin la herramienta', null, /no_medido/],
+    ['sin permiso', 'ERROR: TF400813: The user is not authorized to access this resource. Bearer abcdefghijklmnopqrstuvwxyz123456 https://dev.azure.com/acme/_apis?clave=xyz123', /sin_credencial/],
+    ['no existe', 'ERROR: TF401180: The requested pull request was not found.', /no_encontrado/],
+    ['sin origin', null, /no sé en qué plataforma|origin/],
+  ]) {
     const { dir } = repoDelCaso();
-    const bin = binDeMentira(tmp(), { conGit: !sinHerramienta });
-    if (!sinHerramienta) fs.writeFileSync(path.join(bin, 'error-az'), 'ERROR: TF400813: The user is not authorized to access this resource.');
+    if (caso !== 'sin origin') conOrigen(dir);
+    const bin = binDeMentira(tmp(), { conGit: caso !== 'sin la herramienta' });
+    if (error) fs.writeFileSync(path.join(bin, 'error-az'), error);
     // sin la herramienta: un PATH con sólo git
     const soloGit = path.join(tmp(), 'sologit');
     fs.mkdirSync(soloGit);
     fs.symlinkSync(spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim(), path.join(soloGit, 'git'));
-    const lab = laboratorio(sinHerramienta ? { extra: { PATH: soloGit } } : { bin });
+    const lab = laboratorio(caso === 'sin la herramienta' ? { extra: { PATH: soloGit } } : { bin });
     pedidoEsperando(lab, dir);
-    assert.strictEqual(lab.cierre(dir).stdout, '', 'no frena');
+    assert.strictEqual(lab.cierre(dir).stdout, '', `${caso}: no frena`);
+    assert.strictEqual(lab.renglones().find((l) => l.tipo === 'pedido'), undefined, `${caso}: la entrada sigue esperando`);
     const a = lab.arranque(dir, { TYCON_RETRO_PENDING_MIN_AGE_MIN: '0' });
-    assert.match(a.stdout, /no sé si el pedido 101 entró: /, a.stdout);
-    if (!sinHerramienta) assert.match(a.stdout, /not authorized|permiso|TF400813/);
+    assert.match(a.stdout, /no sé si el pedido 101 entró: /, `${caso}: ${a.stdout}`);
+    assert.match(a.stdout, motivo, `${caso}: ${a.stdout}`);
+    // el texto de la plataforma llega limpio: ni el token ni la dirección con su clave
+    const consultas = fs.readFileSync(path.join(lab.estado, 'retro-pending-consultas.json'), 'utf8');
+    for (const t of [a.stdout, consultas]) assert.doesNotMatch(t, /abcdefghijklmnopqrstuvwxyz123456|clave=xyz123/, `${caso}: ${t}`);
   }
 });
 
