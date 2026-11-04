@@ -87,8 +87,10 @@ function main(om, sdir, event, tool) {
       if (done) return;
       if (!mine()) { finish(0); return; }
       let got;
-      try { got = om.take(sdir, sid); } catch { finish(0); return; }
-      while (got && got.estado === 'vencido') got = om.take(sdir, sid);
+      try {
+        got = om.take(sdir, sid);
+        while (got && got.estado === 'vencido') got = om.take(sdir, sid);
+      } catch { finish(0); return; }
       if (got && got.estado === 'recibido') finish(2, got.envelope);
     };
     for (const sig of ['SIGTERM', 'SIGHUP', 'SIGINT']) process.on(sig, () => finish(0));

@@ -225,8 +225,13 @@ function take(sdir, sid, { now = Date.now() } = {}) {
     privateDir(p.taken(sid));
     const taken = path.join(p.taken(sid), `${msg.id}.json`);
     try { fs.renameSync(file, taken); } catch { continue; }
-    writePrivate(taken, JSON.stringify({ id: msg.id, sid: String(sid), at: msg.at, takenAt: now }));
-    record(sdir, { id: msg.id, sid, text: msg.text, estado: 'recibido', at: now });
+    // sin su renglón no se podría comprobar: si el registro falla, el mensaje vuelve al buzón y el error sube
+    try { record(sdir, { id: msg.id, sid, text: msg.text, estado: 'recibido', at: now }); } catch (e) {
+      try { fs.renameSync(taken, file); } catch { /* lo saca el barrido */ }
+      throw e;
+    }
+    // la marca sin el texto; si no se puede escribir, el barrido saca lo tomado sin su hora
+    try { writePrivate(taken, JSON.stringify({ id: msg.id, sid: String(sid), at: msg.at, takenAt: now })); } catch { /* idem */ }
     return { estado: 'recibido', id: msg.id, envelope: envelope(msg.text, { id: msg.id, looksLikeApproval: msg.approval }) };
   }
   return null;
