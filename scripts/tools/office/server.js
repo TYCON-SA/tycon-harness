@@ -484,7 +484,7 @@ async function serve() {
     });
   };
 
-  const messages = officeMessages({ sdir, envelopes, okOrigin, notify: (m) => { for (const c of clients) if (c.readyState === WebSocket.OPEN) c.send(JSON.stringify({ type: 'mensaje', ...m })); } });
+  const messages = officeMessages({ sdir, envelopes, okOrigin, log: (l) => appendLog(sdir, l), notify: (m) => { for (const c of clients) if (c.readyState === WebSocket.OPEN) c.send(JSON.stringify({ type: 'mensaje', ...m })); } });
 
   const server = http.createServer((req, res) => {
     const url = urlOf(req);

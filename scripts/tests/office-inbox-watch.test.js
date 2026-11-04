@@ -25,7 +25,7 @@ function toy() {
 }
 // el gancho de verdad, con el evento por su entrada; `done` resuelve con su código y lo que escribió
 function hook(m, { sid = 's1', env = {}, event = 'SessionStart' } = {}) {
-  const c = spawn(process.execPath, [HOOK], { env: { ...process.env, HOME: m.home, USERPROFILE: m.home, TYCON_OFFICE_WATCH_POLL_MS: '200', TYCON_OFFICE_WATCH_MAX_MS: '8000', TYCON_EVAL_SANDBOX: '', TYCON_OFFICE_MESSAGES: '', TYCON_OFFICE_WATCH_ANY_PARENT: '1', ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
+  const c = spawn(process.execPath, [HOOK], { env: { ...process.env, HOME: m.home, USERPROFILE: m.home, TYCON_OFFICE_WATCH_POLL_MS: '200', TYCON_OFFICE_WATCH_MAX_MS: '8000', TYCON_EVAL_SANDBOX: '', TYCON_OFFICE_MESSAGES: '', TYCON_OFFICE_WATCH_ANY_PARENT: '1', CLAUDE_CODE_ENTRYPOINT: 'cli', ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
   started.add(c);
   let out = ''; let err = '';
   c.stdout.on('data', (d) => { out += d; });
@@ -121,6 +121,20 @@ test('T43 Vigilante_SinLaHerramienta_SeVaEnseguida @story-8.183 @ac-40: lanzado 
   assert.strictEqual(r.err, '');
   assert.strictEqual(inboxFiles(m).length, 1);
   assert.ok(!fs.existsSync(om.paths(m.sdir).watcher('s1')));
+});
+
+test('T46 Vigilante_SinPantalla_SeVaEnseguida @story-8.183 @ac-40: bajo claude -p o el SDK sale 0 enseguida, sin candado y sin tomar nada', async () => {
+  for (const entry of ['sdk-cli', 'sdk-ts', '']) {
+    const m = toy();
+    om.leave(m.sdir, { sid: 's1', text: 'no debería salir', now: Date.now(), deadlineMs: 60000 });
+    const t0 = Date.now();
+    const r = await hook(m, { env: { CLAUDE_CODE_ENTRYPOINT: entry } }).done;
+    assert.ok(Date.now() - t0 < 3000, `${entry || 'sin la variable'}: tardó ${Date.now() - t0} ms`);
+    assert.strictEqual(r.code, 0);
+    assert.strictEqual(r.err, '');
+    assert.strictEqual(inboxFiles(m).length, 1, entry || 'sin la variable');
+    assert.ok(!fs.existsSync(om.paths(m.sdir).watcher('s1')));
+  }
 });
 
 test('T44 Vigilante_NombreDeLaHerramienta_LoReconoce @story-8.183 @ac-40: los nombres reales del proceso de la herramienta, y no otros', () => {

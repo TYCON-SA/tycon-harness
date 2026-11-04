@@ -66,7 +66,7 @@ const NOMBRA_RUTA_DE_HISTORIA = /control-changes|(?:^|[\\/'"`\s])(?:\.?specs?|st
 const GUION_ESCRIBE = /\b(?:writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream|copyFileSync|copyFile|cpSync|renameSync|rename|replace|unlinkSync|rmSync|truncateSync|write_text|write_bytes|copy|copyfile|copy2|copytree|move|remove|unlink|truncate)\s*\(|\bopen\s*\([^)]*,\s*["'][^"']*[wax+]|\bFile\.(?:write|delete|rename)\b|\bFileUtils\.\w+/;
 // las formas de escribir, borrar, mover o reponer un archivo desde un comando, sin contar un `open(` que puede ser de lectura
 const FORMAS_DE_ESCRIBIR = [
-  String.raw`(?:^|[\s;&|(])(?:[^\s;&|()'"]*[\\/])?\\?(?:rm|del|erase|unlink|remove-item|ri|mv|move|mi|move-item|rename-item|ren|cp|copy|copy-item|install|rsync|ditto|scp|dd|truncate)(?:\.exe)?(?=\s)`,
+  String.raw`(?:^|[\s;&|(])(?:[^\s;&|()'"]*[\\/])?\\?(?:rm|del|erase|unlink|remove-item|ri|mv|move|mi|move-item|rename-item|ren|cp|copy|copy-item|install|rsync|ditto|scp|dd|truncate|ln)(?:\.exe)?(?=\s)`,
   String.raw`\bgit\b[^\n;&|]*\s(?:checkout|restore|rm|mv)\b`,
   String.raw`\b(?:curl|wget)\b[^\n;&|]*\s(?:-o|-O|--output)`,
   String.raw`>{1,2}(?![&>])(?!\s*/dev/(?:null|stdout|stderr)\b)`,
@@ -81,7 +81,7 @@ const FORMAS_DE_ESCRIBIR = [
 // Del lado que frena: suma los editores y las formas de abrir para escribir que el freno normal lee por palabras.
 // También con una comilla antes: `bash -c 'rm h.md'`, y el primer comando de una entrada rota, pegado a su comilla.
 const LA_RED_ESCRIBE = new RegExp([...FORMAS_DE_ESCRIBIR,
-  String.raw`['"\`](?:[^\s;&|()'"]*[\\/])?\\?(?:rm|del|erase|unlink|remove-item|ri|mv|move|mi|move-item|rename-item|ren|cp|copy|copy-item|install|rsync|ditto|scp|dd|truncate)(?:\.exe)?(?=\s)`,
+  String.raw`['"\`](?:[^\s;&|()'"]*[\\/])?\\?(?:rm|del|erase|unlink|remove-item|ri|mv|move|mi|move-item|rename-item|ren|cp|copy|copy-item|install|rsync|ditto|scp|dd|truncate|ln)(?:\.exe)?(?=\s)`,
   String.raw`\b(?:g?sed|perl|ruby)\b[^\n;&|]*\s-(?:[A-Za-z0-9]*i|-in-place)`,
   String.raw`\bg?awk\b[^\n;&|]*\s-i\s*inplace\b`,
   String.raw`(?:^|[\s;&|('"\`])(?:ed|ex|sponge|patch)(?=\s)`,
@@ -457,10 +457,10 @@ function extractWriteTargets(cmd, { keep = null } = {}) {
         if (isCodeFile(t) || isManifestFile(t) || (keep && !esExpresion && keep(t))) out.add(t);
       }
     }
-    // 4) cp / mv → destino = último token del segmento. También sus formas de PowerShell (Copy-Item /
-    //    Move-Item y sus alias copy / cpi / move / mi; no distingue mayúsculas): por la herramienta PowerShell de
-    //    Windows.
-    if (/^(?:\w+=\S+\s+)*(?:sudo\s+)?(?:cp|mv)\b/.test(seg.trim()) || /^(?:copy-item|move-item|copy|cpi|move|mi)\b/i.test(seg.trim())) {
+    // 4) cp / mv / ln → destino = último token del segmento (un enlace también deja un archivo en su destino). También
+    //    las formas de PowerShell de cp y mv (Copy-Item / Move-Item y sus alias copy / cpi / move / mi; no distingue
+    //    mayúsculas): por la herramienta PowerShell de Windows.
+    if (/^(?:\w+=\S+\s+)*(?:sudo\s+)?(?:cp|mv|ln)\b/.test(seg.trim()) || /^(?:copy-item|move-item|copy|cpi|move|mi)\b/i.test(seg.trim())) {
       for (const t of cpMvDest(seg)) out.add(t);
     }
   }
@@ -1606,10 +1606,10 @@ function buzonTocado(cmd, cwd, stateDir) {
   const installedTree = require('./lib/installed-tree.js');
   const oficinas = [...new Set([stateDir, installedTree.realPath(stateDir)].filter(Boolean))].map((b) => path.join(b, 'office'));
   // por la ruta (el estado de cualquier cuenta) o por estar en el buzón de este estado, se llame como se llame su carpeta
-  const pieza = (r) => isOfficeMailboxRecord(r) || oficinas.some((o) => r === path.join(o, 'messages.jsonl')
-    || ['inbox', 'tomados', 'usados'].some((n) => r === path.join(o, n) || isInside(path.join(o, n), r)));
+  const pieza = (r) => isOfficeMailboxRecord(r) || oficinas.some((o) => r === path.join(o, 'messages.jsonl') || r === path.join(o, 'messages.jsonl.1')
+    || ['inbox', 'tomados', 'usados', 'vigilantes'].some((n) => r === path.join(o, n) || isInside(path.join(o, n), r)));
   return zonaTocada(cmd, cwd, stateDir, { carpeta: path.join('office', 'inbox'), nombres: ['office'], pieza,
-    enTexto: (t) => noSeResuelve(t) && /(^|[^\w.-])office[\\/](?:inbox|tomados|usados|messages\.jsonl)(?![\w.-])/i.test(t) });
+    enTexto: (t) => noSeResuelve(t) && /(^|[^\w.-])office[\\/](?:inbox|tomados|usados|vigilantes|messages\.jsonl(?:\.1)?)(?![\w.-])/i.test(t) });
 }
 
 /**

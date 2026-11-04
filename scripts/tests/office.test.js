@@ -3510,14 +3510,14 @@ test('T23 Foto_PuedeRecibir_SegunElVigilante @story-8.183 @ac-22 @ac-25: vivo «
   const env = createEnvelopes8183();
   for (const [name, sid] of [['Vivo', 's1'], ['Muerto', 's2'], ['Nada', 's3'], ['Entrego', 's4']]) env.files.set(name, { file: '/x', sid });
   fs.mkdirSync(om8183.paths(sdir).watchers, { recursive: true });
-  fs.writeFileSync(om8183.paths(sdir).watcher('s1'), JSON.stringify({ pid: 111, started: null }));
-  fs.writeFileSync(om8183.paths(sdir).watcher('s2'), JSON.stringify({ pid: 222, started: null }));
+  fs.writeFileSync(om8183.paths(sdir).watcher('s1'), JSON.stringify({ pid: 111, started: 'arranque-111' }));
+  fs.writeFileSync(om8183.paths(sdir).watcher('s2'), JSON.stringify({ pid: 222, started: 'arranque-222' }));
   fs.writeFileSync(om8183.paths(sdir).watcher('s4'), JSON.stringify({ pid: null, deliveredAt: NOW }));
   const data = { agents: [{ nombre: 'Vivo', estado: 'libre' }, { nombre: 'Muerto', estado: 'trabajando' }, { nombre: 'Nada', estado: 'pregunta' }, { nombre: 'Entrego', estado: 'trabajando' }, { nombre: 'Cx', estado: 'libre' }, { nombre: 'SinConversacion', estado: 'libre' }] };
   const saved = process.env.TYCON_OFFICE_MESSAGES;
   delete process.env.TYCON_OFFICE_MESSAGES;
   try {
-    markRecipients(data, env, [{ name: 'Cx', tool: 'codex' }], sdir, { isAlive: (pid) => pid === 111 });
+    markRecipients(data, env, [{ name: 'Cx', tool: 'codex' }], sdir, { isAlive: (pid) => pid === 111, startOf: (pid) => `arranque-${pid}` });
   } finally { if (saved !== undefined) process.env.TYCON_OFFICE_MESSAGES = saved; }
   assert.deepStrictEqual(data.agents.map((a) => [a.nombre, a.recibe]), [['Vivo', 'si'], ['Muerto', 'sin-vigilante'], ['Nada', 'sin-vigilante'], ['Entrego', 'espera-cierre'], ['Cx', 'codex'], ['SinConversacion', undefined]]);
   assert.strictEqual(env.recipients.get('Nada').cuadro, true);
@@ -3525,6 +3525,21 @@ test('T23 Foto_PuedeRecibir_SegunElVigilante @story-8.183 @ac-22 @ac-25: vivo «
   // lo que viaja al sitio es una lista cerrada: `recibe` no está
   const { FIELDS } = require(path.join(__dirname, '..', 'tools', 'office', 'fields.js'));
   assert.ok(!JSON.stringify(FIELDS).includes('recibe'));
+});
+
+test('T52 Foto_CodexSinNombre_DiceCodex @story-8.183 @ac-25: una sesión de Codex sin nombre en su archivo, con el nombre que le pone la oficina, recibe «codex»', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'office-codex-'));
+  const sdir = stateDir8183(home);
+  const sid = 'cx-sin-nombre-de-prueba';
+  for (const [states, nombre, cxNames] of [[[{ tool: 'codex', session: sid }], sid.slice(0, 8), new Map()], [[{ tool: 'codex', session: sid }], 'Delta', new Map([[sid, 'Delta']])]]) {
+    const env = createEnvelopes8183();
+    const data = { agents: [{ nombre, estado: 'libre' }] };
+    const saved = process.env.TYCON_OFFICE_MESSAGES;
+    delete process.env.TYCON_OFFICE_MESSAGES;
+    try { markRecipients(data, env, states, sdir, { cxNames }); } finally { if (saved !== undefined) process.env.TYCON_OFFICE_MESSAGES = saved; }
+    assert.strictEqual(data.agents[0].recibe, 'codex', nombre);
+    assert.strictEqual(env.recipients.get(nombre).recibe, 'codex', nombre);
+  }
 });
 
 test('T24 FotoFija_NoOfreceMandar @story-8.183 @ac-37: la foto fija no trae token ni oficina viva, y el campo sólo se arma con la oficina viva', () => {

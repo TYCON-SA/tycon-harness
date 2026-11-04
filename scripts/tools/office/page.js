@@ -262,7 +262,10 @@ function alMensaje(m){const p=enCurso.get(m.id);if(!p){if(tempranos.size<20)temp
   if(m.estado==="no-entregado"){p.estado.textContent=m.motivo||"No le llegó.";if(!p.campo.value)p.campo.value=p.texto;return}
   if(m.motivo)p.estado.textContent=m.motivo}
 // la respuesta aparece en «Con vos» de la misma ventana: se vuelve a leer la conversación hasta que el mensaje tenga la suya
-function esperarRespuesta(nombre,id,veces=0){if(veces>120||!vosDe||vosDe.nombre!==nombre||charlaDe!==nombre){enCurso.delete(id);return}
+const SIN_RESPUESTA="Todavía no contestó: mirá su conversación más tarde.";
+// pasados unos 10 minutos deja de mirar, y lo dice en la línea de estado del mensaje
+function esperarRespuesta(nombre,id,veces=0){if(veces>120){const c=enCurso.get(id);if(c&&c.estado&&c.estado.isConnected)c.estado.textContent=SIN_RESPUESTA}
+  if(veces>120||!vosDe||vosDe.nombre!==nombre||charlaDe!==nombre){enCurso.delete(id);return}
   fetch(pedidoDeCharla({fuente:"local",token:LIVE.token,nombre})).then(r=>r.ok?r.json():null).then(d=>{
     if(!d||!vosDe||vosDe.nombre!==nombre)return;const lista=d.conVos||[],i=lista.findIndex(x=>x.oficina&&x.id===id);
     if(i>=0){vosDe.vos.replaceChildren(conVosLista(nombre,lista));const ch=vosDe.vos.querySelector(".chat");if(ch)ch.scrollTop=ch.scrollHeight}

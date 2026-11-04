@@ -202,7 +202,7 @@ function isOwnerApprovalsRecord(p) { return OWNER_APPROVALS_DIR.test(norm(String
 // El buzón de la oficina (scripts/lib/office-messages.js): lo que la persona le manda a cada sesión, lo tomado, lo ya usado y
 // el registro. Lo escriben sólo el proceso de la oficina, el vigilante de cada sesión y `office-message.js verify`: escribirlo a
 // mano es fingir un mensaje de la persona, y borrar lo usado devuelve uno ya gastado. Sólo en el estado de la cuenta
-const OFFICE_MAILBOX = /(^|\/)(?:\.tycon\/state|\.tycon-pipeline)\/office\/(?:(?:inbox|tomados|usados)(\/|$)|messages\.jsonl$)/i;
+const OFFICE_MAILBOX = /(^|\/)(?:\.tycon\/state|\.tycon-pipeline)\/office\/(?:(?:inbox|tomados|usados|vigilantes)(\/|$)|messages\.jsonl(?:\.1)?$)/i;
 function isOfficeMailboxRecord(p) { return OFFICE_MAILBOX.test(norm(String(p || ''))); }
 /** ¿Es una constancia firmada que no se escribe a mano? `control-approvals`, `adversarial-skip-record`, `pending-approvals`, `owner-approvals`, `office-mailbox` o null. */
 function signedRecordKind(p) {

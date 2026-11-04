@@ -38,20 +38,28 @@ const SAYS = {
   'espera-cierre': 'Lo va a recibir cuando termine lo que está haciendo.',
 };
 
-// lo más reciente de una conversación, para ver si el mensaje entró: sólo el final, y sólo si alguien lo pregunta
-function appearsIn(file, id, { maxBytes = 2 * 1024 * 1024 } = {}) {
+// ¿el mensaje entró en la conversación? Se busca del final hacia atrás, de a 2 MB y con la memoria de un trozo: el trabajo
+// que el mensaje arrancó puede haber dejado mucho después. null si no se pudo leer
+function appearsIn(file, id, { chunkBytes = 2 * 1024 * 1024 } = {}) {
+  const needle = Buffer.from(`[oficina ${id}]`);
   let fd;
   try {
     fd = fs.openSync(file, 'r');
-    const size = fs.fstatSync(fd).size;
-    const len = Math.min(size, maxBytes);
-    const buf = Buffer.alloc(len);
-    fs.readSync(fd, buf, 0, len, size - len);
-    return buf.toString('utf8').includes(`[oficina ${id}]`);
+    let end = fs.fstatSync(fd).size;
+    while (end > 0) {
+      const start = Math.max(0, end - chunkBytes);
+      // el trozo se solapa con el siguiente lo justo para no partir la marca en dos
+      const len = Math.min(end - start + needle.length - 1, fs.fstatSync(fd).size - start);
+      const buf = Buffer.alloc(len);
+      fs.readSync(fd, buf, 0, len, start);
+      if (buf.includes(needle)) return true;
+      end = start;
+    }
+    return false;
   } catch { return null; } finally { if (fd !== undefined) fs.closeSync(fd); }
 }
 
-function officeMessages({ sdir, envelopes, okOrigin, notify, clock = Date.now }) {
+function officeMessages({ sdir, envelopes, okOrigin, notify, clock = Date.now, log = () => {} }) {
   const off = () => process.env.TYCON_OFFICE_MESSAGES === '0';
   const deadlineMs = () => numEnv('TYCON_OFFICE_MESSAGE_DEADLINE_MS', om.DEADLINE_MS);
   const longMs = () => numEnv('TYCON_OFFICE_MESSAGE_LONG_MS', 30 * 60 * 1000);
@@ -70,41 +78,51 @@ function officeMessages({ sdir, envelopes, okOrigin, notify, clock = Date.now })
     return { ...r, recibe: w.alive ? 'si' : (Number.isFinite(w.deliveredAt) ? 'espera-cierre' : 'sin-vigilante') };
   };
 
+  // un mensaje cuyo seguimiento falla (el registro o el buzón no se pueden escribir) se deja de seguir y se dice: el reloj
+  // sigue con los demás y el proceso no se cae
   const tick = () => {
     timer = null;
-    const now = clock();
     for (const [id, t] of tracked) {
-      if (t.estado === 'mandado') {
-        const inbox = path.join(om.paths(sdir).inbox(t.sid), `${id}.json`);
-        if (fs.existsSync(inbox)) {
-          if (now - t.at > t.deadline && om.expire(sdir, t.sid, id, { now, motivo: 'vencido' })) {
-            t.estado = 'no-entregado';
-            say({ id, s: t.s, estado: 'no-entregado', motivo: 'No le llegó.' });
-            tracked.delete(id);
-          }
-          continue;
-        }
-        if (fs.existsSync(path.join(om.paths(sdir).taken(t.sid), `${id}.json`))) {
-          t.estado = 'recibido';
-          t.quietFrom = now;
-          say({ id, s: t.s, estado: 'recibido' });
-        } else {
-          say({ id, s: t.s, estado: 'no-entregado', motivo: 'No le llegó.' });
-          tracked.delete(id);
-        }
-        continue;
+      try { follow(id, t); } catch (e) {
+        log(`oficina: no pude seguir el mensaje ${id} (${e.code || e.message})`);
+        say({ id, s: t.s, estado: 'no-entregado', motivo: 'No se pudo seguir el mensaje.' });
+        tracked.delete(id);
       }
-      // recibido: el reloj de «no aparece» corre sólo con la sesión quieta
-      const r = recipient(t.s);
-      if (r && (r.ocupada || r.cuadro)) { t.quietFrom = now; continue; }
-      if (now - t.quietFrom < appearMs()) continue;
-      const e = envelopes.files.get(t.s);
-      const seen = e ? appearsIn(e.file, id) : null;
-      if (seen === false) say({ id, s: t.s, estado: 'no-aparece', motivo: 'Se le entregó y no aparece en su conversación.' });
-      tracked.delete(id);
     }
     if (tracked.size) { timer = setTimeout(tick, numEnv('TYCON_OFFICE_MESSAGE_POLL_MS', 1000)); timer.unref(); }
   };
+  function follow(id, t) {
+    const now = clock();
+    if (t.estado === 'mandado') {
+      const inbox = path.join(om.paths(sdir).inbox(t.sid), `${id}.json`);
+      if (fs.existsSync(inbox)) {
+        if (now - t.at > t.deadline && om.expire(sdir, t.sid, id, { now, motivo: 'vencido' })) {
+          t.estado = 'no-entregado';
+          say({ id, s: t.s, estado: 'no-entregado', motivo: 'No le llegó.' });
+          tracked.delete(id);
+        }
+        return;
+      }
+      if (fs.existsSync(path.join(om.paths(sdir).taken(t.sid), `${id}.json`))) {
+        t.estado = 'recibido';
+        t.quietFrom = now;
+        say({ id, s: t.s, estado: 'recibido' });
+      } else {
+        say({ id, s: t.s, estado: 'no-entregado', motivo: 'No le llegó.' });
+        tracked.delete(id);
+      }
+      return;
+    }
+    // recibido: el reloj de «no aparece» corre sólo con la sesión quieta
+    const r = recipient(t.s);
+    if (r && (r.ocupada || r.cuadro)) { t.quietFrom = now; return; }
+    if (now - t.quietFrom < appearMs()) return;
+    const e = envelopes.files.get(t.s);
+    const seen = e ? appearsIn(e.file, id) : null;
+    if (seen === false) say({ id, s: t.s, estado: 'no-aparece', motivo: 'Se le entregó y no aparece en su conversación.' });
+    if (seen === null) log(`oficina: no pude leer la conversación de ${t.s} para ver si el mensaje ${id} apareció`);
+    tracked.delete(id);
+  }
   const watchSoon = () => { if (!timer) { timer = setTimeout(tick, numEnv('TYCON_OFFICE_MESSAGE_POLL_MS', 1000)); timer.unref(); } };
 
   const reject = (res, code, body, { name, sid = '', text = null, why } = {}) => {
@@ -161,7 +179,9 @@ function officeMessages({ sdir, envelopes, okOrigin, notify, clock = Date.now })
   }
 
   /** Al arrancar: lo que quedó vencido en el buzón no se entrega. */
-  const sweep = () => { try { return om.sweep(sdir, { now: clock() }); } catch { return []; } };
+  const sweep = () => {
+    try { return om.sweep(sdir, { now: clock() }); } catch (e) { log(`oficina: no pude barrer el buzón al arrancar (${e.code || e.message})`); return []; }
+  };
   const stop = () => { clearTimeout(timer); timer = null; };
 
   return { onPost, stateOf, sweep, stop, SAYS };
