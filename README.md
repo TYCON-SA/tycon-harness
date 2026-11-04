@@ -9,8 +9,6 @@ and the words it uses.
 
 https://github.com/user-attachments/assets/3fbe4538-6b96-4b56-b2ed-92d36be1c6f8
 
-**The organization site, with sample data and no account needed:** [open the demo](https://is.gd/tyconharnessdemo)
-
 Today an AI agent writes in minutes the code that used to take hours. Models program so well that they seem to no longer need anything to guide them, ask them for tests and stop them when they get it wrong.
 
 There is no longer any need to give them guides for each language and framework: good coding practices in React or in .NET, how errors are handled or how the data that reaches the system is validated. Nor do they need to be reminded of design patterns, such as separating responsibilities, injecting dependencies or keeping coupling low.
@@ -40,6 +38,8 @@ Each organization adjusts it to its own measure: its rules, its reviewers and wh
 And the cycle does not end there. Every night, TYCON Harness looks for vulnerabilities in the third-party components each product uses and reports each one so that a decision is made; if the decision is to fix it, a task is created for the team. It can also watch production errors and leave a diagnosis ready. In both cases, a person decides. It also learns from everyday work. It looks at which controls blocked too much or let something through. When a control blocks work that was fine, it is corrected, turned into a warning or retired, with a person's approval. That way the control stays useful. And it looks at how developers work with the agents. With that it proposes improvements to its rules and to its way of working. None is applied without a person approving it.
 
 An administrator configures and follows the SDLC from a website. Each organization installs the site on its own infrastructure. Everything that is measured stays there, and the organization decides who sees it. Each configuration change is recorded, with who asked for it. The organization decides whether, before it is applied, another person has to approve it. From the site, the administrator defines how the team works, follows and measures what happens, and decides.
+
+**See it with sample data and no account needed:** [open the site demo](https://is.gd/tyconharnessdemo)
 
 **Define.** First, what governs the work: who approves each thing and the organization's own reviewers, with the house rules. Then, the people and their permissions, the repositories and products, which model each kind of work uses, and each team's technology with its testing tools. Also the integrations: where the notices arrive, such as Telegram, Slack, Teams or email, and which tool records the hours. And which version of the harness each machine of the team has and how it is updated.
 
