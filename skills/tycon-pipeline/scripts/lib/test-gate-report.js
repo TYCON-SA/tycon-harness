@@ -655,6 +655,8 @@ function informe(argv) {
             deferred_suites: get(r, 'deferred_suites', []),
             workers: get(r, 'workers', null),
             wall_ms: get(r, 'wall_ms', null),
+            // qué eligió el corredor y desde qué base (run-suites-json.js)
+            ...(get(r, 'seleccion', null) ? { seleccion: r.seleccion } : {}),
           };
           // Lo que ya estaba rojo en el nocturno salió de las fallas: acá queda cuáles, para que la cuenta cierre.
           const heredadas = get(get(r, 'inherited', {}) || {}, 'suites', []);
