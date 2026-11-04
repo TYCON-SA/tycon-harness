@@ -937,7 +937,8 @@ withWaiverLog(() => {
 // 23. Sin repo git determinable NO hay atribución segura → NINGUNA evidencia cuenta,
 //     con el motivo escrito (fail-closed; un warning que igual suma es peor que nada).
 {
-  const f = makeWorkspace({ noGit: true });
+  // La ruta escrita desde la carpeta de arriba: sin repo git, es el único lugar donde la matriz puede leer el archivo.
+  const f = makeWorkspace({ noGit: true, wsRelFiles: true });
   writeGate(f.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9.spec.ts', f.gatesLog);
   writeTestsResult(f.advDir, '9.9', true, new Date().toISOString());
   const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog });
@@ -1644,8 +1645,10 @@ withWaiverLog(() => {
   const conComillas = labLista(['files_to_modify:', '  - "src/Feature.cs"']);
   check('T12 ComillasConEvidenciaPosterior_SigueVerde @story-8.191 @ac-10', conComillas.r.green, JSON.stringify(conComillas.r.pendientes));
 
+  // Desde la 8.200, un archivo de código declarado que no se puede leer deja la matriz en rojo, con comillas o sin ellas.
   const inexistente = labLista(['files_to_modify:', '  - "src/NoExiste.cs"'], { editadoDespues: true });
-  check('T13 ArchivoDeclaradoInexistente_NoVence @story-8.191 @ac-11', inexistente.r.green, JSON.stringify(inexistente.r.pendientes));
+  check('T13 ArchivoDeclaradoInexistente_Rojo @story-8.191 @ac-11',
+    !inexistente.r.green && inexistente.r.noLeidos.map((n) => n.rel).join() === 'src/NoExiste.cs', JSON.stringify(inexistente.r.noLeidos));
 
   const noCodigo = makeWorkspace({ listaArchivos: ['files_to_modify:', '  - "docs/x.md"'] });
   writeGate(noCodigo.dodDir, '9.9', recentCompact(10), 'PASS', 'story-9-9.spec.ts', noCodigo.gatesLog);
