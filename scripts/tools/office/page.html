@@ -72,6 +72,11 @@ h2{font:700 .8rem var(--display);text-transform:uppercase;letter-spacing:.08em;c
 .tag.alert{border-color:var(--c);animation:pulso 1.2s ease-in-out infinite}
 @keyframes pulso{50%{box-shadow:0 0 0 4px rgba(255,165,61,.35),0 6px 18px rgba(0,0,0,.45)}}
 @media (prefers-reduced-motion:reduce){.tag.alert{animation:none}}
+.tag.alert-coord{--c:#5aa9ff;animation-name:pulso-coord}
+@keyframes pulso-coord{50%{box-shadow:0 0 0 4px rgba(90,169,255,.35),0 6px 18px rgba(0,0,0,.45)}}
+.num{display:inline-block;margin-right:6px;padding:0 6px;border-radius:9px;font:700 11px var(--body);background:var(--line);color:inherit;vertical-align:1px}
+.item.mano-coordinadora{box-shadow:inset 3px 0 0 #5aa9ff}
+.item.mano-dueno{box-shadow:inset 3px 0 0 #ffa53d}
 .tag.sel{border-color:var(--c)}
 .compact .tag{padding:4px 8px 4px 5px;gap:5px}
 .compact .tag .bot{width:18px;height:18px}

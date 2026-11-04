@@ -71,10 +71,11 @@ function sameWorkScore(a, b) {
   return score >= SAME_WORK_SHARE ? score : 0;
 }
 
-/** La clave de un trabajo: su historia, si tiene; si no, su pedido; si no, su título normalizado. */
-function workKey({ historia, pedido, titulo } = {}) {
+/** La clave de un trabajo: su historia, si tiene; si no, su pedido; si no, su número del tablero; si no, su título normalizado. */
+function workKey({ historia, pedido, tarea, titulo } = {}) {
   if (historia) return `historia:${String(historia).toLowerCase()}`;
   if (pedido && pedido.repo && pedido.numero != null) return `pedido:${String(pedido.repo).toLowerCase()}#${pedido.numero}`;
+  if (tarea && /^T-\d+$/i.test(String(tarea))) return `tarea:${String(tarea).toLowerCase()}`;
   // un título sin letras ni números no se parece a ningún otro: se queda con lo que dice
   return `titulo:${plainWords(titulo).join(' ') || String(titulo || '').trim()}`;
 }

@@ -49,6 +49,9 @@ const { stateDir, claudeDir } = require(path.join(ROOT, 'skills', 'tycon-pipelin
 const { designacionVigente } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'critical-waivers.js'));
 const { OVERDUE_HOUR: OVERDUE, wipNow, sessionsBySid, codexNames, realState, replacedByNewer, hourVerdict, readPrs, offQueueOf, identityOf, remoteOfFolder, SAFE_SID, LOOSE_STALE_MS } = require('./work-in-progress.js');
 const topics = require(path.join(__dirname, 'office', 'topics.js'));
+const boardTool = require(path.join(__dirname, 'office', 'board.js'));
+// la fila escrita a mano sin numerar
+const NO_NUMBER = 'sin número';
 const signatureList = require(path.join(ROOT, 'scripts', 'lib', 'signature-list.js'));
 const sessionState = require(path.join(ROOT, 'scripts', 'lib', 'session-state.js'));
 const { readTranscript, codexTranscript, peerMessagesSince, readConversation, readSessionTokens, TAIL_BYTES } = require(path.join(ROOT, 'scripts', 'lib', 'session-transcript.js'));
@@ -303,6 +306,28 @@ function cardsOfSignatures(signatures, agents, sidOf) {
       linea: `${isPermission ? '' : 'Firmar: '}${plain(first.title)}${more} (${quien})` });
   }
   return cards;
+}
+
+/**
+ * La mano levantada y a quién espera (`mano`: `dueno` o `coordinadora`). Al dueño: la sesión con la pantalla frenada
+ * esperándolo, o la que pidió una firma que sigue pendiente en el registro, unida por el id de su sesión (`manoPor` dice
+ * cuál). A la coordinadora: la que anotó que la espera, por su nombre o por la palabra. Si espera a los dos, al dueño.
+ */
+const HAND_LABEL = { dueno: 'Espera tu firma', coordinadora: 'Espera a la Coordinadora' };
+function raiseHands(agents, signatures, sidOf, coordinatorName) {
+  const raise = (a, who, por) => { a.mano = who; a.manoEtiqueta = HAND_LABEL[who]; if (por) a.manoPor = por; };
+  for (const a of agents) if (ASKS_OWNER.has(a.estado)) raise(a, 'dueno', a.espera ? `Espera ${a.espera}` : null);
+  for (const s of [...signatures].sort((p, q) => (p.at || 0) - (q.at || 0))) {
+    if (!s || !s.destino || !s.title) continue;
+    const a = agents.find((x) => String(sidOf.get(x)) === String(s.destino));
+    if (a && !a.manoPor) raise(a, 'dueno', `${s.tipo === 'permiso' ? '' : 'Firma: '}${plain(s.title)}`);
+  }
+  const word = (n) => new RegExp(`(?<![\\p{L}\\p{N}])${String(n).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'iu');
+  for (const a of agents) {
+    if (a.mano || a.estado !== 'esperando') continue;
+    const said = String(a.termina || '').replace(/^espera /, '');
+    if (word('coordinadora').test(said) || (coordinatorName && word(coordinatorName).test(said))) raise(a, 'coordinadora', `Espera ${said}`);
+  }
 }
 
 // Lo trabado, por a quién espera: la primera sesión abierta que nombra su espera, o el dueño; si no nombra a nadie, «otra
@@ -639,6 +664,7 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     ...(a.marca ? { marca: a.marca } : {}),
   }));
   const signatureCards = cardsOfSignatures(signatures, agents, sidOf);
+  raiseHands(agents, signatures, sidOf, coordinatorName);
   for (const s of signatureCards) {
     if (s.conTarjeta) continue;
     items.push({ titulo: s.titulo, quien: s.quien, estado: 'firma', estimadaIso: s.at == null ? null : localIso(s.at), pronosticoIso: null, fin: s.at == null ? null : { hora: dayHhmm(s.at), dif: '', cls: '' } });
@@ -694,6 +720,7 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     puestos: deskSlots(agents.length),
     quietMin: quiet,
   };
+  kanban.linea = boardLine(kanban, { trabado: meta.trabado });
   // la tabla dice lo mismo que las tarjetas, en llano
   const rows = agents.filter((a) => a.tipo).map((a) => ({ work: a.titulo || '', state: a.mientras ? `${a.haciendo} Mientras tanto: ${a.mientras}.` : a.haciendo, end: a.fin ? a.fin.hora + (a.fin.dif ? ` · ${a.fin.dif}` : '') : '', session: a.nombre, folder: a.carpeta || '' }));
   return { data: { agents, items, kanban, meta, rows, free: (wip.free || []).filter((name) => !notFree.has(name)), unreadable: wip.unreadable || [] }, promises: kept };
@@ -736,10 +763,10 @@ const firstWord = (t) => String(t || '').trim().split(/\s+/)[0].toLowerCase();
 // De qué proyecto es: `otro` es la marca de siempre; si no se sabe (`sinSaber`) tampoco se manda al modelo ni viaja en las tablas.
 // El título de una tarjeta puede ser una nota de cómo va, o su conversación (`esNota`): en las tablas y para el modelo cuenta el
 // del trabajo (`tituloTrabajo`), que no cambia con cada nota.
-function withWork(card, { historia, pedido, finMs, tema, sinTitulo = false, proyecto, tituloTrabajo = null, esNota = false } = {}) {
+function withWork(card, { historia, pedido, tarea, finMs, tema, sinTitulo = false, proyecto, tituloTrabajo = null, esNota = false } = {}) {
   const own = (value) => ({ value, writable: true });
   if (proyecto === 'otro') card.otro = true;
-  return Object.defineProperties(card, { clave: own(topics.workKey({ historia, pedido, titulo: tituloTrabajo || card.titulo })), finMs: own(finMs), tema: own(tema || undefined), sinTitulo: own(sinTitulo && !tituloTrabajo), sinSaber: own(proyecto === 'nose'), tituloTrabajo: own(tituloTrabajo || undefined), esNota: own(esNota) });
+  return Object.defineProperties(card, { clave: own(topics.workKey({ historia, pedido, tarea, titulo: tituloTrabajo || card.titulo })), finMs: own(finMs), tema: own(tema || undefined), sinTitulo: own(sinTitulo && !tituloTrabajo), sinSaber: own(proyecto === 'nose'), tituloTrabajo: own(tituloTrabajo || undefined), esNota: own(esNota), pedidoTexto: own(pedido && pedido.repo ? `${pedido.repo}#${pedido.numero}` : undefined) });
 }
 
 // El tablero dice cuál es el trabajo de una tarjeta que sólo trae una nota.
@@ -747,8 +774,12 @@ function setWorkTitle(card, titulo) {
   if (!card.esNota || card.tituloTrabajo || !titulo) return;
   card.tituloTrabajo = titulo;
   card.sinTitulo = false;
-  if (!card.clave.startsWith('historia:')) card.clave = topics.workKey({ titulo });
+  if (!card.clave.startsWith('historia:') && !card.clave.startsWith('tarea:')) card.clave = topics.workKey({ titulo });
 }
+
+// Los números del tablero que nombra un texto: «T-41 · arreglo» nombra T-41.
+const TASK_IN_TEXT = /(?<![\p{L}\p{N}-])T-([1-9]\d*)(?![\p{L}\p{N}])/giu;
+const tasksIn = (...texts) => [...new Set(texts.filter(Boolean).flatMap((t) => [...String(t).matchAll(TASK_IN_TEXT)].map((m) => `T-${m[1]}`)))];
 
 // El pedido de una tarjeta, para su detalle. Con `org/repo` es de GitHub y con `org/proyecto/repo`, de Azure DevOps; con sólo el
 // nombre no se sabe dónde está, y dice su número sin enlace.
@@ -775,9 +806,10 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
   // una historia puede tener más de una tarjeta, y una persona también: el tema de su fila va a todas
   const byStory = new Map();
   const addStory = (id, card) => { const k = String(id); byStory.set(k, [...(byStory.get(k) || []), card]); };
-  const people = new Map();
+  // el número de una fila que una sesión dice en lo que hace: esa sesión hace esa fila
+  const byTask = new Map();
   for (const a of agents) {
-    const card = { titulo: a.titulo || a.haciendo, quien: a.nombre, hora: cardHour(a.fin), ...(a.fin && a.fin.cls ? { cls: a.fin.cls } : {}), ...(a.espera ? { espera: a.espera } : {}), ...(a.marca ? { marca: a.marca } : {}), ...(a.parada ? { motivo: a.parada } : {}) };
+    const card = { titulo: a.titulo || a.haciendo, quien: a.nombre, hora: cardHour(a.fin), ...(a.fin && a.fin.cls ? { cls: a.fin.cls } : {}), ...(a.espera ? { espera: a.espera } : {}), ...(a.marca ? { marca: a.marca } : {}), ...(a.parada ? { motivo: a.parada } : {}), ...(a.mano ? { mano: a.mano } : {}) };
     let id = null;
     if (a.estado === 'firma') id = 'firma';
     // la marcada con la sesión viva va a «En curso», salvo que espere firma
@@ -790,9 +822,10 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
     const hourAt = a.estado === 'esperando' ? NaN : Date.parse(a.pronosticoIso || a.estimadaIso);
     inProgress.set(card, a.estado === 'coordina' ? { tier: 2 } : Number.isFinite(hourAt) ? { tier: 0, at: hourAt } : { tier: 1 });
     const story = storyOfAgent.get(a) || a.historiaTrabajo;
-    withWork(card, { historia: story, finMs: Number.isFinite(hourAt) ? hourAt : undefined, sinTitulo: !a.titulo, proyecto: a.otroProyecto ? 'otro' : a.proyecto, tituloTrabajo: a.tituloTrabajo, esNota: a.esNota || !a.titulo });
+    const tasks = tasksIn(a.titulo, a.haciendo);
+    withWork(card, { historia: story, tarea: tasks[0], finMs: Number.isFinite(hourAt) ? hourAt : undefined, sinTitulo: !a.titulo, proyecto: a.otroProyecto ? 'otro' : a.proyecto, tituloTrabajo: a.tituloTrabajo, esNota: a.esNota || !a.titulo });
     col(id).tarjetas.push(card);
-    people.set(firstWord(a.nombre), [...(people.get(firstWord(a.nombre)) || []), card]);
+    for (const t of tasks) byTask.set(t, [...(byTask.get(t) || []), card]);
     if (story) addStory(story, card);
   }
   for (const r of closedRuns) {
@@ -816,10 +849,15 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
   }
   const boardCards = [];
   for (const f of (board && board.filas) || []) {
-    if (f.historia && byStory.has(f.historia)) {
-      const ofStory = byStory.get(f.historia);
-      if (f.nota) ofStory[ofStory.length - 1].nota = f.nota;
-      for (const c of ofStory) {
+    // la fila que hace una sesión, por su historia o por su número, va en la tarjeta de esa sesión: no suma otra
+    const joined = (f.historia && byStory.get(f.historia)) || (f.numero && byTask.get(f.numero));
+    if (joined) {
+      if (f.nota) joined[joined.length - 1].nota = f.nota;
+      for (const c of joined) {
+        if (f.numero) {
+          c.numero = f.numero;
+          if (!c.clave.startsWith('historia:')) c.clave = topics.workKey({ tarea: f.numero });
+        }
         if (f.tema) c.tema = f.tema;
         setWorkTitle(c, f.titulo);
       }
@@ -829,17 +867,9 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
     const asked = f.pedido || f.recordado;
     const answer = asked ? (prAnswers.get(`${asked.repo}#${asked.numero}`) || {}).pr : null;
     const pr = f.pedido || (answer && answer.state === 'merged') ? answer : null;
-    // la fila de una persona que ya tiene tarjeta del estado real no se duplica: «Ana» no es «Ananda»
-    if (!f.pedido && !pr && f.quien && ['firma', 'curso', 'entrando'].includes(f.columna) && people.has(firstWord(f.quien))) {
-      for (const c of people.get(firstWord(f.quien))) {
-        if (f.tema) c.tema = f.tema;
-        setWorkTitle(c, f.titulo);
-      }
-      continue;
-    }
     // la hora de una fila también puede haber pasado
     const late = Number.isFinite(f.finAt) && f.finAt < nowMs;
-    const card = withWork({ titulo: f.titulo, quien: f.quien, hora: late ? OVERDUE : f.fin, ...(late ? { cls: 'late' } : {}), ...(f.nota ? { nota: f.nota } : {}), ...(f.marca ? { marca: f.marca } : {}), ...(f.grupo ? { grupo: f.grupo } : {}), ...(f.pedido ? { pedido: cardPr(f.pedido.repo, f.pedido.numero) } : {}) }, { historia: f.historia, pedido: f.pedido, finMs: Number.isFinite(f.finAt) ? f.finAt : undefined, tema: f.tema, proyecto: f.pedido ? projectOfRepo(f.pedido.repo) : 'nuestro' });
+    const card = withWork({ titulo: f.titulo, numero: f.numero || NO_NUMBER, quien: f.quien, hora: late ? OVERDUE : f.fin, ...(late ? { cls: 'late' } : {}), ...(f.nota ? { nota: f.nota } : {}), ...(f.marca ? { marca: f.marca } : {}), ...(f.grupo ? { grupo: f.grupo } : {}), ...(f.pedido ? { pedido: cardPr(f.pedido.repo, f.pedido.numero) } : {}) }, { historia: f.historia, pedido: f.pedido, tarea: f.numero, finMs: Number.isFinite(f.finAt) ? f.finAt : undefined, tema: f.tema, proyecto: f.pedido ? projectOfRepo(f.pedido.repo) : 'nuestro' });
     let id = f.columna;
     if (id === 'hechos') card.terminadoMs = f.realAt;
     if (pr && pr.state === 'merged') {
@@ -894,6 +924,41 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
   col('hechos').tarjetas = done.filter(isToday).sort((p, q) => q.terminadoMs - p.terminadoMs);
   for (const c of done) delete c.terminadoMs;
   return { anteriores, columnas: cols, medioCamino: items.filter((i) => i.estado === 'riesgo' && i.accion).map((i) => Object.defineProperties({ titulo: i.titulo, quien: i.quien, accion: i.accion }, { trabajo: { value: i.trabajo }, historia: { value: i.historia }, proyecto: { value: i.proyecto } })) };
+}
+
+/**
+ * La línea de arriba del kanban, armada de las tarjetas: lo primero de «En curso» que tiene hora (ya van por hora), lo
+ * que espera la firma del dueño, lo trabado (lo mismo que cuenta el cuadro de resumen) y cuándo se escribió el tablero.
+ */
+function boardLine(kanban, { trabado = [], escritoAt = null, hourOf = (c) => c.finMs } = {}) {
+  const of = (id) => ((kanban.columnas || []).find((c) => c.id === id) || { tarjetas: [] }).tarjetas;
+  const first = of('curso').find((c) => Number.isFinite(hourOf(c)));
+  const parts = [first ? `Sale primero: ${first.numero && first.numero !== NO_NUMBER ? `${first.numero} ` : ''}${first.titulo} · ${first.quien} · ${first.hora}` : 'Nada con hora en curso'];
+  parts.push(`Tu firma: ${of('firma').length}`, `Trabado: ${trabado.reduce((n, g) => n + g.filas.length, 0)}`);
+  if (Number.isFinite(escritoAt)) parts.push(`Tablero escrito a las ${hhmm(escritoAt)}`);
+  return parts.join(' · ');
+}
+
+/**
+ * «¿Cómo va la T-41?»: la tarjeta con ese número, en una línea (columna, título, quién, hora, nota y pedido). `dados`: los
+ * números que dio el tablero, para decir si uno que no está se borró. `{ code: 0|1, line, card }`.
+ */
+function findTask(data, id, { dados = {} } = {}) {
+  const want = boardTool.taskId(id);
+  if (!want) return { code: 1, line: `«${id}» no es un número de tarea: va como T-41 o 41` };
+  for (const c of data.kanban.columnas) {
+    const card = c.tarjetas.find((t) => t.numero === want);
+    if (card) return { code: 0, card, line: [want, c.nombre, card.titulo, card.quien || '—', card.hora || '—', card.nota || '—', card.pedidoTexto ? `pedido ${card.pedidoTexto}` : 'sin pedido'].join(' · ') };
+  }
+  const old = (data.kanban.anteriores || []).find((t) => t.numero === want);
+  if (old) return { code: 0, card: old, line: [want, 'Hechos', old.titulo, old.quien || '—', old.hora || '—', old.nota || '—', old.pedidoTexto ? `pedido ${old.pedidoTexto}` : 'sin pedido'].join(' · ') };
+  return { code: 1, line: Object.prototype.hasOwnProperty.call(dados, want) ? `${want} no está en el tablero: esa fila se borró del tablero («${dados[want]}»)` : `${want} no está en el tablero` };
+}
+
+/** El aviso de un tablero que cambió sin board.js (lo que el freno no vio); null si no cambió o no se puede saber. */
+function boardEditedNotice(sdir) {
+  const p = boardTool.printCheck(sdir);
+  return p && p.cambiado ? `el tablero se editó fuera del comando a las ${hhmm(p.at)}: corré board.js check` : null;
 }
 
 // Las dos tablas: sus títulos, sus columnas y qué columnas del kanban cuenta cada una.
@@ -971,7 +1036,7 @@ function namedWorks(works) {
 // Un trabajo adentro de su tema: título, quién y cómo va.
 function workOfCard(id, c) {
   const hour = !c.hora || c.hora === 'sin hora estimada' ? '' : c.hora;
-  return { titulo: c.tituloTrabajo || c.titulo, quien: c.quien || '', como: [COLUMN_WORD[id], c.tituloTrabajo ? c.titulo : '', c.espera, c.motivo, hour].filter(Boolean).join(' · '), ...(c.otro || c.sinSaber ? { otro: true } : {}) };
+  return { titulo: c.tituloTrabajo || c.titulo, quien: c.quien || '', como: [COLUMN_WORD[id], c.tituloTrabajo ? c.titulo : '', c.espera, c.motivo, hour].filter(Boolean).join(' · '), ...(c.numero ? { numero: c.numero } : {}), ...(c.otro || c.sinSaber ? { otro: true } : {}) };
 }
 
 // Las tarjetas de una tabla, juntas por tema: de más a menos trabajos, y al final «Otro proyecto» y «Otros».
@@ -1039,8 +1104,11 @@ function buildTables({ kanban, nowMs, temas = {}, sinModelo = false, prs = [], n
   return out;
 }
 
-// La fila de cada pedido recordado: su clave no cambia con la hora ni con la sesión.
-const rowKey = (f) => topics.workKey({ historia: f.historia, titulo: f.titulo });
+// La fila de cada pedido recordado: su clave no cambia con la hora ni con la sesión, y con número tampoco con el título.
+// Lo recordado antes por el título sigue valiendo hasta que se guarda con la clave nueva.
+const rowKey = (f) => topics.workKey({ historia: f.historia, tarea: f.numero, titulo: f.titulo });
+const oldRowKey = (f) => topics.workKey({ historia: f.historia, titulo: f.titulo });
+const rememberedRow = (filas, f) => filas[rowKey(f)] || filas[oldRowKey(f)];
 
 // Las ramas que comparte todo el equipo: el pedido de `dev` no dice qué hace la sesión parada ahí.
 const SHARED_BRANCHES = new Set(['dev', 'develop', 'main', 'master']);
@@ -1073,7 +1141,7 @@ function rowPrsNow({ filas, memory, openPrs, sessions }) {
     for (const f of open) {
       const key = rowKey(f);
       if (f.pedido) continue;
-      if (memory.filas[key]) { next[key] = memory.filas[key]; continue; }
+      if (rememberedRow(memory.filas, f)) { next[key] = rememberedRow(memory.filas, f); continue; }
       const s = f.quien ? sessionOf(f.quien) : null;
       if (!s || named.get(s.sid) !== 1) continue;
       const p = prOf(s);
@@ -1093,7 +1161,7 @@ function rowPrsNow({ filas, memory, openPrs, sessions }) {
 /** Le pone a cada fila del tablero el pedido que se recuerda para ella. */
 function applyRowPrs(board, memory) {
   for (const f of (board && board.filas) || []) {
-    const r = memory.filas[rowKey(f)];
+    const r = rememberedRow(memory.filas, f);
     if (r && !f.pedido) f.recordado = r;
   }
 }
@@ -1104,6 +1172,7 @@ function settleRowPrs(board, answers, memory) {
   for (const f of (board && board.filas) || []) {
     if (!f.recordado) continue;
     const pr = (answers.get(`${f.recordado.repo}#${f.recordado.numero}`) || {}).pr;
+    if (oldRowKey(f) !== rowKey(f)) delete filas[oldRowKey(f)];
     if (pr && pr.state === 'merged') filas[rowKey(f)] = { ...f.recordado, mergedAt: pr.mergedAt };
     else if (pr && pr.state === 'closed') { delete filas[rowKey(f)]; delete f.recordado; }
   }
@@ -1163,11 +1232,15 @@ function buildBoard(raw) {
       finAt: estado === 'hecho' || text(p.termina) ? null : orElse(boardMs(p.pronosticoIso), boardMs(p.estimadaIso)),
       realAt: estado === 'hecho' ? boardMs(p.realIso) : null,
       estado, grupo: text(p.grupo), ...(text(p.tema) ? { tema: text(p.tema) } : {}), columna: Object.prototype.hasOwnProperty.call(BOARD_COLUMN, estado) ? BOARD_COLUMN[estado] : 'sinEmpezar', marca: estado === 'riesgo' ? 'riesgo' : null, historia, pedido,
+      numero: typeof p.id === 'string' && boardTool.ID.test(p.id) ? p.id : null,
     };
   });
+  // lo escribió alguien a mano sin numerar: la oficina no escribe el tablero, lo dice una vez con el comando
+  const sinNumero = filas.filter((f) => !f.numero).length;
+  if (sinNumero) avisos.push(`el tablero tiene ${sinNumero === 1 ? '1 fila' : `${sinNumero} filas`} sin número: guardalo una vez con board.js save --from <tu archivo aparte>`);
+  // `meta.resumen` no se muestra: la línea de arriba del kanban se arma sola de las tarjetas
   return {
     actualizado: boardHour(meta.actualizado) || text(meta.actualizado),
-    resumen: text(meta.resumen),
     teToca: (Array.isArray(meta.teToca) ? meta.teToca : []).map(text).filter(Boolean),
     filas,
     avisos,
@@ -1721,6 +1794,8 @@ async function collect(opts = {}) {
   const board = readBoard(path.join(sdir, 'coordination', 'tablero.json'));
   if (board.problem) problems.push(board.problem);
   if (board.board) problems.push(...board.board.avisos);
+  const edited = board.board ? boardEditedNotice(sdir) : null;
+  if (edited) problems.push(edited);
   const open = readOpenPrs(sdir, nowMs);
   const remoteOf = (cwd) => {
     if (!remembered.remotes.has(cwd)) remembered.remotes.set(cwd, remoteOfFolder(cwd));
@@ -1767,12 +1842,13 @@ async function collect(opts = {}) {
   if (opts.envelopes) {
     try { topics.writePending(sdir, topics.pendingWorks(workCards(data.kanban), savedTopics.temas)); } catch (e) { problems.push(`los trabajos por clasificar no se pudieron guardar (${e.code || e.message})`); }
   }
-  data.tablero =board.board ? { actualizado: board.board.actualizado, resumen: board.board.resumen, teToca: board.board.teToca } : null;
+  data.tablero = board.board ? { actualizado: board.board.actualizado, teToca: board.board.teToca } : null;
   if (opts.envelopes) {
     opts.envelopes.coordinator = coordinatorSid ? { sid: coordinatorSid, name: coordinatorName } : null;
     data.sobres = readEnvelopes(opts.envelopes, wip, { home, nowMs, projectsDir: opts.projectsDir, sessions });
   }
   if (board.board && Number.isFinite(board.writtenAt)) data.kanban.escrito = `Tablero escrito a las ${hhmm(board.writtenAt)}${nowMs - board.writtenAt > quietMin * 60000 ? ' (vieja)' : ''}`;
+  data.kanban.linea = boardLine(data.kanban, { trabado: data.meta.trabado, escritoAt: board.board ? board.writtenAt : null });
   data.unreadable.push(...problems);
   // el enlace al sitio, sólo con una dirección web: cualquier otra cosa no se muestra
   let site;
@@ -1935,4 +2011,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, cardPr, codexAgentsUnder, claudeAgentsActive, buildTables, rowPrsNow, applyRowPrs, settleRowPrs, workCards, readTranscripts, readLastWrites, MODULES };
+module.exports = { prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, boardLine, findTask, boardEditedNotice, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, cardPr, codexAgentsUnder, claudeAgentsActive, buildTables, rowPrsNow, applyRowPrs, settleRowPrs, workCards, readTranscripts, readLastWrites, MODULES };

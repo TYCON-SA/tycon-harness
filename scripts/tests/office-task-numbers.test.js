@@ -325,3 +325,201 @@ test('T56 Sync_YAdd_ALaVez_NoDuplicaLaFila — @story-8.198 @ac-47 @ac-58', asyn
   await Promise.all([go(['sync', '--facts', factFile, '--complete']), go(['add', 'titulo=Historia nueve', 'historia=8.9', 'estado=curso', 'grupo=Hoy'])]);
   assert.strictEqual(readRows(sdir).filter((r) => r.historia === '8.9').length, 1);
 });
+
+// ── La oficina: el número, la fila que no se esconde, la búsqueda, la línea de arriba y la mano ─────────────────────
+
+const OFFICE = path.join(__dirname, '..', 'tools', 'office.js');
+const office = require(OFFICE);
+const { buildOffice, buildBoard } = office;
+const ONOW = Date.parse('2026-11-04T14:00:00.000Z');
+
+// A /wip result with one row per entry, as office.test.js builds it.
+function wip(entries, more = {}) {
+  return {
+    rows: entries.map((e) => ({ work: e.work || `Story ${e.session}`, state: e.state || 'en curso', end: e.end || '15:00', session: e.session, folder: 'repo-a', ...(e.meanwhile ? { meanwhile: e.meanwhile } : {}) })),
+    details: entries.map((e) => ({ sid: e.sid || `sid-${e.session}`, status: 'status' in e ? e.status : 'busy', statusAt: e.statusAt || null })),
+    extra: entries.map((e) => e.extra || { kind: 'loose' }),
+    free: [], halfway: [], unreadable: [],
+    ...more,
+  };
+}
+const kcol = (data, id) => data.kanban.columnas.find((c) => c.id === id);
+const cards = (data) => data.kanban.columnas.flatMap((c) => c.tarjetas.map((t) => ({ ...t, col: c.id })));
+const numbered = (rows) => buildBoard({ pendientes: rows.map((r, i) => ({ estado: 'espera', grupo: 'Hoy', orden: i, id: `T-${i + 1}`, ...r })) });
+
+test('T8 Office_FilaSinNumero_SinNumeroYAvisoUnaVez — @story-8.198 @ac-7', () => {
+  const b = buildBoard({ pendientes: [{ titulo: 'Una', estado: 'espera' }, { titulo: 'Dos', estado: 'espera' }, { titulo: 'Tres', estado: 'espera', id: 'T-3' }] });
+  assert.deepStrictEqual(b.filas.map((f) => f.numero), [null, null, 'T-3']);
+  const avisos = b.avisos.filter((a) => /sin número/.test(a));
+  assert.strictEqual(avisos.length, 1);
+  assert.match(avisos[0], /board\.js save --from/);
+  const { data } = buildOffice({ wip: wip([]), board: b, nowMs: ONOW });
+  assert.strictEqual(cards(data).find((c) => c.titulo === 'Una').numero, 'sin número');
+  assert.strictEqual(cards(data).find((c) => c.titulo === 'Tres').numero, 'T-3');
+});
+
+test('T9 Kanban_QuienEsSesionVivaQueHaceOtraCosa_LaFilaSeVe — @story-8.198 @ac-8', () => {
+  const { data } = buildOffice({ wip: wip([{ session: 'Sand', extra: { kind: 'loose', text: 'arreglo Y' } }]), board: numbered([{ titulo: 'Arreglo de Sand', estado: 'curso', quien: 'Sand', nota: 'lo pidió el dueño' }]), nowMs: ONOW });
+  const c = kcol(data, 'sinEmpezar').tarjetas.find((t) => t.titulo === 'Arreglo de Sand');
+  assert.ok(c, 'la fila tiene su tarjeta en Sin sesión');
+  assert.deepStrictEqual([c.numero, c.nota], ['T-1', 'lo pidió el dueño']);
+});
+
+test('T28 Kanban_FirmaYEntrando_QuienEsSesionViva_LaFilaSeVe — @story-8.198 @ac-8', () => {
+  const { data } = buildOffice({ wip: wip([{ session: 'Sand', extra: { kind: 'loose', text: 'arreglo Y' } }]), board: numbered([{ titulo: 'Firma suelta', estado: 'firma', quien: 'Sand' }, { titulo: 'Entra', estado: 'entrando', quien: 'Sand' }]), nowMs: ONOW });
+  assert.ok(kcol(data, 'firma').tarjetas.some((t) => t.titulo === 'Firma suelta' && t.numero === 'T-1'));
+  assert.ok(kcol(data, 'entrando').tarjetas.some((t) => t.titulo === 'Entra' && t.numero === 'T-2'));
+});
+
+test('T10 Kanban_SesionMencionaElNumero_UnaSolaTarjeta — @story-8.198 @ac-9', () => {
+  const rows = Array.from({ length: 41 }, (_, i) => ({ titulo: `Fila ${i + 1}`, estado: 'hecho', realIso: '2026-11-01T10:00' }));
+  rows[40] = { titulo: 'Arreglo X', estado: 'curso', quien: 'Sand', nota: 'la nota de la fila' };
+  const { data } = buildOffice({ wip: wip([{ session: 'Sand', extra: { kind: 'loose', text: 'T-41 · arreglo X' } }]), board: numbered(rows), nowMs: ONOW });
+  const with41 = cards(data).filter((c) => c.numero === 'T-41');
+  assert.strictEqual(with41.length, 1, 'una sola tarjeta');
+  assert.strictEqual(with41[0].quien, 'Sand');
+  assert.strictEqual(with41[0].nota, 'la nota de la fila');
+});
+
+test('T11 Kanban_FilaConHistoriaYEjecucion_LaEjecucionLlevaElNumero — @story-8.198 @ac-10', () => {
+  const { data } = buildOffice({ wip: wip([{ session: 'Ana', work: '8.1 · Una', extra: { kind: 'pipeline', title: 'Una', storyId: '8.1', current: 'implement', endAt: ONOW + 3600000 } }]), board: numbered([{ titulo: 'La historia', historia: '8.1', estado: 'curso' }]), nowMs: ONOW });
+  const run = cards(data).filter((c) => c.numero === 'T-1');
+  assert.strictEqual(run.length, 1);
+  assert.strictEqual(run[0].quien, 'Ana');
+});
+
+test('T12 Kanban_DosSesionesMismoNumero_LasDosLoLlevan — @story-8.198 @ac-11', () => {
+  const { data } = buildOffice({ wip: wip([{ session: 'Sand', extra: { kind: 'loose', text: 'T-1 parte uno' } }, { session: 'Pinola', extra: { kind: 'loose', text: 'parte dos de T-1' } }]), board: numbered([{ titulo: 'Grande', estado: 'curso' }]), nowMs: ONOW });
+  const with1 = cards(data).filter((c) => c.numero === 'T-1');
+  assert.deepStrictEqual(with1.map((c) => c.quien).sort(), ['Pinola', 'Sand']);
+  assert.ok(!cards(data).some((c) => c.titulo === 'Grande' && c.col === 'sinEmpezar'));
+});
+
+test('T13 Kanban_CambioDeTitulo_ConservaTemaYPedido — @story-8.198 @ac-12', () => {
+  const topics = require(path.join(__dirname, '..', 'tools', 'office', 'topics.js'));
+  assert.strictEqual(topics.workKey({ tarea: 'T-5', titulo: 'Lo que sea' }), 'tarea:t-5');
+  // el pedido recordado por número sigue con otro título; uno recordado por el título viejo vale de respaldo
+  const memory = { filas: { 'tarea:t-5': { repo: 'acme/x', numero: 9 }, [topics.workKey({ titulo: 'Título viejo' })]: { repo: 'acme/y', numero: 3 } }, sesiones: {} };
+  const b = numbered([{ titulo: 'a' }, { titulo: 'b' }, { titulo: 'c' }, { titulo: 'Título viejo' }, { titulo: 'Título nuevo' }]);
+  office.applyRowPrs(b, memory);
+  assert.deepStrictEqual(b.filas[4].recordado, { repo: 'acme/x', numero: 9 });
+  assert.deepStrictEqual(b.filas[3].recordado, { repo: 'acme/y', numero: 3 });
+});
+
+test('T29 Kanban_TarjetaUnida_CambioDeTitulo_ConservaTema — @story-8.198 @ac-9 @ac-12', () => {
+  const { data } = buildOffice({ wip: wip([{ session: 'Sand', extra: { kind: 'loose', text: 'T-1 arreglo' } }]), board: numbered([{ titulo: 'Un título nuevo', estado: 'curso', tema: 'El tema' }]), nowMs: ONOW });
+  const raw = data.kanban.columnas.flatMap((c) => c.tarjetas).find((c) => c.quien === 'Sand');
+  assert.strictEqual(raw.clave, 'tarea:t-1');
+  assert.strictEqual(raw.tema, 'El tema');
+});
+
+test('T14 Kanban_NumeroEnTarjetaTablaYDetalle — @story-8.198 @ac-13', () => {
+  const { data } = buildOffice({ wip: wip([]), board: numbered([{ titulo: 'Con número', estado: 'espera' }]), nowMs: ONOW });
+  assert.strictEqual(cards(data).find((c) => c.titulo === 'Con número').numero, 'T-1');
+  assert.match(JSON.stringify(office.buildTables({ kanban: data.kanban, nowMs: ONOW })), /"numero":"T-1"/);
+  // la página lo pinta en la tarjeta del kanban, en los trabajos de la tabla y arriba del detalle
+  const code = fs.readFileSync(path.join(__dirname, '..', 'tools', 'office', 'page.js'), 'utf8');
+  assert.match(code, /function numeroDe\(/);
+  assert.match(code, /function abrirTarjeta[^\n]*numeroDe\(/);
+});
+
+test('T15 Task_Existe_UnaLineaYSale0 — @story-8.198 @ac-14', () => {
+  const { data } = buildOffice({ wip: wip([]), board: numbered([{ titulo: 'Primera' }, { titulo: 'Segunda', quien: 'Sand', nota: 'va', pedido: { repo: 'acme/x', numero: 4 } }]), nowMs: ONOW });
+  const r = office.findTask(data, 'T-2', { dados: { 'T-1': 'Primera', 'T-2': 'Segunda' } });
+  assert.strictEqual(r.code, 0);
+  assert.match(r.line, /^T-2 · Sin sesión · Segunda · Sand · [^·]+ · va · pedido acme\/x#4$/);
+  assert.strictEqual(office.findTask(data, '1', {}).card.titulo, 'Primera');
+});
+
+test('T16 Task_NoExisteOBorrada_Sale1ConMotivo — @story-8.198 @ac-15', () => {
+  const { data } = buildOffice({ wip: wip([]), board: numbered([{ titulo: 'Primera' }]), nowMs: ONOW });
+  const nunca = office.findTask(data, 'T-99', { dados: { 'T-1': 'Primera' } });
+  assert.deepStrictEqual([nunca.code, /no está en el tablero/.test(nunca.line)], [1, true]);
+  const borrada = office.findTask(data, 'T-3', { dados: { 'T-1': 'Primera', 'T-3': 'Vieja' } });
+  assert.deepStrictEqual([borrada.code, /se borró del tablero/.test(borrada.line)], [1, true]);
+});
+
+test('T24 Kanban_EnCurso_OrdenPorHoraDeFin — @story-8.198 @ac-25', () => {
+  const h = (hh, mm) => new Date(2026, 10, 4, hh, mm).getTime();
+  const now = h(18, 20);
+  const { data } = buildOffice({
+    wip: wip([
+      { session: 'A', work: 'a', extra: { kind: 'note', text: 'la de las diecinueve', endAt: h(19, 30) } },
+      { session: 'B', work: 'b', extra: { kind: 'note', text: 'la que pasó su hora', endAt: h(18, 0) } },
+      { session: 'C', work: 'c', extra: { kind: 'note', text: 'la que no tiene hora' } },
+      { session: 'D', work: 'd', extra: { kind: 'note', text: 'la de las dieciocho', endAt: h(18, 45) } },
+    ]),
+    nowMs: now,
+  });
+  assert.deepStrictEqual(kcol(data, 'curso').tarjetas.map((t) => t.quien), ['B', 'D', 'A', 'C']);
+  const hoy = office.buildTables({ kanban: data.kanban, nowMs: now }).hoy;
+  const quienes = hoy.filas.flatMap((f) => f.trabajos.map((w) => w.quien)).filter((q) => ['A', 'B', 'C', 'D'].includes(q));
+  assert.deepStrictEqual(quienes, ['B', 'D', 'A', 'C']);
+});
+
+test('T25 Kanban_LineaDeArriba_SeArmaDeLasTarjetas — @story-8.198 @ac-26', () => {
+  const primera = { titulo: 'Lo primero', numero: 'T-52', quien: 'Sand', hora: 'mié 19:30' };
+  const kanban = { columnas: [{ id: 'curso', tarjetas: [primera, { titulo: 'Otra', quien: 'Pinola', hora: 'sin hora' }] }, { id: 'firma', tarjetas: [{ titulo: 'x' }, { titulo: 'y' }] }] };
+  const line = office.boardLine(kanban, { trabado: [{ filas: ['a'] }], escritoAt: new Date(2026, 10, 4, 16, 29).getTime(), hourOf: (c) => (c === primera ? 1 : undefined) });
+  assert.strictEqual(line, 'Sale primero: T-52 Lo primero · Sand · mié 19:30 · Tu firma: 2 · Trabado: 1 · Tablero escrito a las 16:29');
+});
+
+test('T26 Kanban_LineaDeArriba_SinHoraEnCurso — @story-8.198 @ac-27', () => {
+  const kanban = { columnas: [{ id: 'curso', tarjetas: [{ titulo: 'Sin hora', quien: 'Sand', hora: 'sin hora estimada' }] }, { id: 'firma', tarjetas: [] }] };
+  assert.strictEqual(office.boardLine(kanban, { trabado: [], escritoAt: null, hourOf: () => undefined }), 'Nada con hora en curso · Tu firma: 0 · Trabado: 0');
+});
+
+test('T27 Kanban_MetaResumen_NoSeMuestra — @story-8.198 @ac-28', () => {
+  const b = buildBoard({ pendientes: [{ titulo: 'Una', estado: 'espera', id: 'T-1' }], meta: { resumen: 'UN RESUMEN VIEJO', teToca: ['firmar algo'] } });
+  assert.ok(!('resumen' in b));
+  assert.deepStrictEqual(b.teToca, ['firmar algo']);
+  const { data } = buildOffice({ wip: wip([]), board: b, nowMs: ONOW });
+  assert.ok(!JSON.stringify(data).includes('UN RESUMEN VIEJO'));
+  assert.ok(!/t\.resumen/.test(fs.readFileSync(path.join(__dirname, '..', 'tools', 'office', 'page.js'), 'utf8')));
+});
+
+test('T40 Office_TableroCambiadoSinElComando_AvisaUnaVez — @story-8.198 @ac-40', () => {
+  const sdir = stateDir();
+  board.save(sdir, { pendientes: [row('Una')] }, { now: NOW });
+  assert.strictEqual(office.boardEditedNotice(sdir), null, 'con la huella igual, nada');
+  fs.appendFileSync(boardFile(sdir), ' ');
+  assert.match(office.boardEditedNotice(sdir), /^el tablero se editó fuera del comando a las \d\d:\d\d: corré board\.js check$/);
+});
+
+// ── La mano levantada ────────────────────────────────────────────────────────────────────────────────────────────
+
+test('T48 Mano_FirmaConDestino_LaLevantaYDiceCual — @story-8.198 @ac-50 @ac-51', () => {
+  const { data } = buildOffice({ wip: wip([{ session: 'Sand', sid: 'sid-sand', extra: { kind: 'loose', text: 'trabaja' } }]), signatures: [{ id: 'f1', tipo: 'firma', destino: 'sid-sand', title: 'el carril de Sand', at: ONOW }], nowMs: ONOW });
+  const sand = data.agents.find((a) => a.nombre === 'Sand');
+  assert.deepStrictEqual([sand.mano, sand.manoPor, sand.manoEtiqueta], ['dueno', 'Firma: el carril de Sand', 'Espera tu firma']);
+});
+
+test('T49 Mano_FirmaDeTerminalSinDestino_NoMueveANadie — @story-8.198 @ac-52', () => {
+  const { data } = buildOffice({ wip: wip([{ session: 'Sand', extra: { kind: 'loose', text: 'trabaja' } }]), signatures: [{ id: 'f1', title: 'algo de la terminal', at: ONOW }], nowMs: ONOW });
+  assert.ok(data.agents.every((a) => !a.mano));
+  assert.ok(kcol(data, 'firma').tarjetas.some((t) => t.quien === 'vos'));
+});
+
+test('T50 Mano_EsperaALaCoordinadora_OtroColorYEtiqueta — @story-8.198 @ac-53 @ac-54', () => {
+  const { data } = buildOffice({
+    wip: wip([
+      { session: 'Sand', status: 'idle', extra: { kind: 'note', text: 'espera el click', waitingFor: 'la Coordinadora', waitingSince: ONOW - 60000 } },
+      { session: 'Pinola', status: 'waiting_for_permission', extra: { kind: 'note', text: 'espera', waitingFor: 'la coordinadora', waitingSince: ONOW - 60000 } },
+    ]),
+    nowMs: ONOW,
+  });
+  const sand = data.agents.find((a) => a.nombre === 'Sand');
+  const pinola = data.agents.find((a) => a.nombre === 'Pinola');
+  assert.deepStrictEqual([sand.mano, sand.manoEtiqueta], ['coordinadora', 'Espera a la Coordinadora']);
+  assert.deepStrictEqual([pinola.mano, pinola.manoEtiqueta], ['dueno', 'Espera tu firma']);
+  assert.strictEqual(cards(data).find((c) => c.quien === 'Sand').mano, 'coordinadora');
+});
+
+test('T57 Mano_Baja_FirmaHechaOEsperaVencida — @story-8.198 @ac-50 @ac-53', () => {
+  // sin la firma en la lista (firmada o vencida) y con la espera cambiada, la mano baja
+  const { data } = buildOffice({ wip: wip([{ session: 'Sand', sid: 'sid-sand', extra: { kind: 'loose', text: 'otra cosa' } }]), signatures: [], nowMs: ONOW });
+  assert.ok(!data.agents.find((a) => a.nombre === 'Sand').mano);
+  // un destino que no es el id de la sesión del mismo nombre no levanta a nadie
+  const other = buildOffice({ wip: wip([{ session: 'Sand', sid: 'sid-sand', extra: { kind: 'loose', text: 'trabaja' } }]), signatures: [{ id: 'f1', tipo: 'firma', destino: 'sid-otra', nombre: 'Sand', title: 'de otra', at: ONOW }], nowMs: ONOW });
+  assert.ok(!other.data.agents.find((a) => a.nombre === 'Sand').mano);
+});

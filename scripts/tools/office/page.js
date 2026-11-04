@@ -27,13 +27,13 @@ const finTxt=a=>a.fin||null;
 function estadoDeHora(i){const h=i.hora||"";if(i.espera||/^espera\b|parada/.test(h))return ["Esperando","#d19a00"];if(/tarde|se pasó|estaba para/.test(h))return ["Pasada de la hora","#e5534b"];if(/en hora|antes$/.test(h))return ["En hora","#2fa866"];return null}
 function renderBoard(){const body=document.getElementById("boardBody"),k=DATA.kanban,t=DATA.tablero,KC={firma:"#ffa53d",curso:"#5aa9ff",entrando:"#a59fc4",sinEmpezar:"#9aa3a0",hechos:"#3ddc84"};body.replaceChildren();
   if(!k)return;
-  const resumen=t&&t.resumen||"";
-  const top=el("p","sum");top.textContent=resumen+(k.escrito?(resumen?" · ":"")+k.escrito:"");if(top.textContent)body.appendChild(top);
+  // la línea de arriba se arma sola de las tarjetas; el tablero viejo sólo suma si quedó viejo
+  const top=el("p","sum");top.textContent=(k.linea||k.escrito||"")+(t&&/\(vieja\)$/.test(k.escrito||"")?" (vieja)":"");if(top.textContent)body.appendChild(top);
   const cols=el("div","cols");
   (k.columnas||[]).forEach(c=>{const col=el("div","col"),list=c.tarjetas||[];col.style.setProperty("--k",KC[c.id]||"var(--line)");col.appendChild(el("h3",null,c.nombre+" · "+list.filter(i=>!i.otro).length));
     if(c.nota)col.appendChild(el("p","none",c.nota));
     if(!list.length)col.appendChild(el("p","none","Nada"));
-    list.forEach(i=>{const card=el("div","item abre"),tit=el("b","una-linea",i.titulo||"");tit.title=i.titulo||"";card.tabIndex=0;card.setAttribute("role","button");card.onclick=()=>{if(!String(window.getSelection?getSelection():""))abrirTarjeta(i,card);};card.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();abrirTarjeta(i,card);}};card.appendChild(tit);const line=[i.quien,i.hora,i.grupo].filter(Boolean).join(" · ");if(line)card.appendChild(el("span","m",line));const eh=c.id==="curso"&&estadoDeHora(i);if(eh){card.style.setProperty("--k",eh[1]);card.appendChild(el("span","estado-hora",eh[0]))}
+    list.forEach(i=>{const card=el("div","item abre"),tit=el("b","una-linea",i.titulo||"");tit.title=i.titulo||"";if(typeof i.numero==="string"){card.setAttribute("data-numero",i.numero);card.appendChild(el("span","num",i.numero))}if(i.mano)card.classList.add("mano-"+i.mano);card.tabIndex=0;card.setAttribute("role","button");card.onclick=()=>{if(!String(window.getSelection?getSelection():""))abrirTarjeta(i,card);};card.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();abrirTarjeta(i,card);}};card.appendChild(tit);const line=[i.quien,i.hora,i.grupo].filter(Boolean).join(" · ");if(line)card.appendChild(el("span","m",line));const eh=c.id==="curso"&&estadoDeHora(i);if(eh){card.style.setProperty("--k",eh[1]);card.appendChild(el("span","estado-hora",eh[0]))}
       [i.espera?"Espera "+i.espera+".":"",i.marca,i.motivo,i.nota].forEach(v=>{if(v)card.appendChild(el("span","n",v))});col.appendChild(card)});
     cols.appendChild(col)});
   body.appendChild(cols);
@@ -91,7 +91,7 @@ function renderTablas(){const sec=document.getElementById("tablas"),ts=DATA.tabl
       if(!(r.trabajos||[]).length){[r.grupo,r.que,r.col].forEach(v=>tr.appendChild(el("td",null,v||"")));bd.appendChild(tr);return}
       const id=k+"|"+r.grupo,b=el("button","temaBoton",r.grupo),primera=el("td"),det=el("tr","temaTrabajos"),dd=el("td"),ul=el("ul");
       b.type="button";b.dataset.tema=id;primera.appendChild(b);tr.className="temaFila";tr.appendChild(primera);[r.que,r.col].forEach(v=>tr.appendChild(el("td",null,v||"")));
-      r.trabajos.forEach(w=>{const li=el("li");li.appendChild(el("b",null,w.titulo));li.appendChild(el("span",null,[w.quien,w.como].filter(Boolean).join(" · ")));ul.appendChild(li)});
+      r.trabajos.forEach(w=>{const li=el("li");if(typeof w.numero==="string")li.appendChild(el("span","num",w.numero));li.appendChild(el("b",null,w.titulo));li.appendChild(el("span",null,[w.quien,w.como].filter(Boolean).join(" · ")));ul.appendChild(li)});
       dd.colSpan=3;dd.appendChild(ul);det.appendChild(dd);
       const pintar=()=>{const abierta=temasAbiertos.has(id);det.hidden=!abierta;b.setAttribute("aria-expanded",String(abierta))};
       tr.addEventListener("click",()=>{if(temasAbiertos.has(id))temasAbiertos.delete(id);else temasAbiertos.add(id);pintar()});pintar();
@@ -105,11 +105,16 @@ function pintarTarjetas(c,list,alTocar){c.replaceChildren();
     const st=el("span","st",s[0]);st.style.color=s[1];st.style.borderColor=s[1];const chips=el("div","chips");chips.appendChild(st);if(a.comoTrabaja&&a.comoTrabaja!==s[0])chips.appendChild(etiquetaComo(a.comoTrabaja));k.appendChild(chips);k.style.setProperty("--c",s[1]);
     pintarFicha(a,k,false);if(alTocar){k.classList.add("abre");k.tabIndex=0;k.setAttribute("role","button");k.onclick=e=>{if(!e.target.closest("button,summary,a"))alTocar(a)};k.onkeydown=e=>{if(e.target===k&&(e.key==="Enter"||e.key===" ")){e.preventDefault();alTocar(a)}}}c.appendChild(k);})}
 // lo que se dice de una sesión, de un solo lugar: la tarjeta y el panel pintan esta lista y sólo cambia su estilo
+// el número de una tarea del tablero; una fila escrita a mano sin numerar dice «sin número»
+function numeroDe(i){return i&&typeof i.numero==="string"?i.numero:""}
+// a quién espera la mano levantada: la que anotó la sesión, o el dueño si su pantalla espera una firma o una pregunta
+function manoDe(a){return a&&(a.mano||(a.estado==="firma"||a.estado==="pregunta"?"dueno":null))}
 function ficha(a){const r=[],add=(k,v,x)=>{if(v!=null&&v!=="")r.push({k,v,...x})};
   add("Trabajo",a.titulo);add("De la historia",a.historia);add("Encargo",a.encargo);
   if(a.haciendoAhora)add("Haciendo ahora",a.haciendoAhora);else if(a.haciendo!==a.titulo&&!SOLO_COORDINA.test(a.haciendo||""))add("Haciendo",a.haciendo);
   if(a.agentesAhora)r.push({k:"",v:a.agentesAhora});
   add("Última acción",a.ultimaAccion);add("Espera",a.espera);add("Parada",a.parada);add("Novedades",a.callada);
+  if(a.mano)add("Mano levantada",[a.manoEtiqueta,a.manoPor].filter(Boolean).join(" · "));
   const ms=AST[a.mientrasEstado];add("Mientras tanto",a.mientras?a.mientras+(ms?" ("+ms[0].toLowerCase()+")":""):"");
   add("En pausa",a.enPausa);
   // quien espera a otro no da una hora: dice qué espera, o qué pasó con los pedidos que esperaba
@@ -152,8 +157,8 @@ const ventana=()=>document.getElementById("ventana");
 // Quién hace una tarjeta, si es una sesión de esta oficina. Una fila del tablero puede nombrar a más de una persona: cuenta la primera.
 function sesionDeTarjeta(i){const q=String(i.quien||"").trim(),primera=q.split(/[\s,]+/)[0];return agents.find(a=>a.nombre===q)||agents.find(a=>a.nombre===primera)||null;}
 // El detalle de una tarjeta del kanban, en la misma ventana que la conversación: su título entero, lo que sabe la tarjeta y, si la hace una sesión, su ficha.
-function abrirTarjeta(i,card){const v=ventana(),box=v.firstElementChild,a=sesionDeTarjeta(i);charlaDe=null;ultimoPedido+=1;charlaVuelve=card;v.hidden=false;box.classList.add("detalle");box.setAttribute("aria-label","Detalle de la tarjeta");document.documentElement.classList.add("con-ventana");
-  const cerrar=el("button","cerrar","Cerrar");cerrar.type="button";cerrar.onclick=cerrarCharla;box.replaceChildren(el("h3",null,i.titulo||"Sin título"));
+function abrirTarjeta(i,card){const v=ventana(),box=v.firstElementChild,a=sesionDeTarjeta(i),nro=numeroDe(i);charlaDe=null;ultimoPedido+=1;charlaVuelve=card;v.hidden=false;box.classList.add("detalle");box.setAttribute("aria-label","Detalle de la tarjeta");document.documentElement.classList.add("con-ventana");
+  const cerrar=el("button","cerrar","Cerrar");cerrar.type="button";cerrar.onclick=cerrarCharla;box.replaceChildren(...(nro?[el("p","num",nro)]:[]),el("h3",null,i.titulo||"Sin título"));
   const dl=el("dl"),fila=(k,x)=>{if(x==null||x==="")return;const dd=el("dd");dd.append(x);dl.append(el("dt",null,k),dd);};
   fila("Quién",i.quien);if(!a||String(i.hora||"")!==String((finTxt(a)||{}).hora||""))fila("Cuándo",i.hora);if(!a||i.espera!==a.espera)fila("Espera",i.espera);fila("Marca",i.marca);fila("Motivo",i.motivo);fila("Nota",i.nota);fila("Grupo",i.grupo);
   // el enlace sólo lleva a estos dos sitios: de los datos sale la ruta, nunca la dirección entera
@@ -460,11 +465,11 @@ function animar(d,t){const {up,head,arms}=d.person.userData,e=d.agent.estado,k=t
   else if(e==="espera"){lean=-.2+Math.sin(k*1.4)*.02;armL=armR=1.0;zL=.2;zR=-.2;hx=-.1;hy=Math.sin(k*.5)*.15}
   else if(e==="libre"){lean=-.24;armL=armR=1.0;zL=.2;zR=-.2;hx=.3+Math.sin(k*1.2)*.03}
   else if(e==="parada"){lean=-.16;armL=armR=1.05;zL=.18;zR=-.18;hx=.02;hy=Math.sin(k*.4)*.1}
-  else if(e==="firma"||e==="pregunta"){armR=2.9+Math.sin(k*7)*.25;zR=-.25;armL=1.2;lean=-.06;hx=-.15;hy=.45}
+  if(manoDe(d.agent)){armR=2.9+Math.sin(k*7)*.25;zR=-.25;armL=1.2;lean=-.06;hx=-.15;hy=.45}
   const ease=(o,v)=>o+(v-o)*.15;up.rotation.x=ease(up.rotation.x,-lean);up.scale.y=1+Math.sin(k*2.2)*.012;
   arms[0].rotation.x=ease(arms[0].rotation.x,armL);arms[1].rotation.x=ease(arms[1].rotation.x,armR);arms[0].rotation.z=ease(arms[0].rotation.z,zL);arms[1].rotation.z=ease(arms[1].rotation.z,zR);
   head.rotation.x=ease(head.rotation.x,-hx);head.rotation.y=ease(head.rotation.y,hy);
-  d.ring.material.opacity=e==="firma"||e==="pregunta"?.45+.4*Math.sin(t*5):0}
+  const m=manoDe(d.agent);d.ring.material.color.set(m==="coordinadora"?"#5aa9ff":"#ffa53d");d.ring.material.opacity=m?.45+.4*Math.sin(t*5):0}
 
 // ---------- etiquetas ----------
 let desks=[],sel=null;
@@ -475,7 +480,7 @@ function pintarTag(d){const a=d.agent,s=T.AST[a.estado]||[a.estado||"","#999"];d
   d.el.querySelector(".es").textContent=s[0]+(a.mientras?" · y algo más":"");const f=T.finTxt(a),fin=d.el.querySelector(".fin");fin.replaceChildren();
   if(f){fin.append(f.hora);if(f.dif){const x=document.createElement("em");x.className=f.cls;x.textContent=" · "+f.dif;fin.append(x);}}
   const bar=d.el.querySelector(".bar");bar.hidden=a.avance==null;bar.firstChild.style.width=(a.avance||0)+"%";
-  const fx=d.el.querySelector(".fx");fx.textContent=FX[a.estado]||"";d.el.classList.toggle("alert",a.estado==="firma"||a.estado==="pregunta");d.el.classList.toggle("sel",sel===a.nombre);d.el.setAttribute("aria-label",(a.nombre||"")+": "+s[0]);}
+  const fx=d.el.querySelector(".fx");fx.textContent=FX[a.estado]||"";d.el.classList.toggle("alert",Boolean(manoDe(a)));d.el.classList.toggle("alert-coord",manoDe(a)==="coordinadora");d.el.classList.toggle("sel",sel===a.nombre);d.el.setAttribute("aria-label",(a.nombre||"")+": "+s[0]);}
 const tmp=new THREE.Vector3();
 function ubicarTags(){const W=stage.clientWidth,H=stage.clientHeight,cmp=stage.classList.contains("compact"),hr=cmp?11:20;
   const P=desks.map(d=>{tmp.copy(d.anchor);d.st.localToWorld(tmp);tmp.project(cam);const ax=(tmp.x+1)/2*W,ay=(1-tmp.y)/2*H;tmp.copy(d.headP);d.st.localToWorld(tmp);tmp.project(cam);

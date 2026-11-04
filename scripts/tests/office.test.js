@@ -807,7 +807,7 @@ test('T68 Board_Grouped: las filas van en el orden de la semana y por su orden, 
   assert.strictEqual(t.filas[4].fin, 'sin hora estimada');
   assert.strictEqual(t.filas[2].fin, 'dom 09:10', 'un hecho dice su hora real');
   assert.deepStrictEqual(t.teToca, ['Firmar el ok de guardar de la B']);
-  assert.strictEqual(t.resumen, 'Dos cosas en curso y una esperando tu firma.');
+  assert.ok(!('resumen' in t), 'meta.resumen se ignora: la línea de arriba se arma sola (8.198, AC 28)');
   assert.strictEqual(t.actualizado, 'dom 10:55');
   assert.ok(!('agentes' in t), 'los escritorios salen de /wip: el tablero no los repite');
 });
@@ -825,7 +825,7 @@ test('T70 Board_OnlyStrings: lo que no es texto no llega a la página, y un reng
   const t = buildBoard({ pendientes: [{ titulo: { x: 1 } }, null, 'texto', { titulo: 'Bien', quien: 42, nota: ['a'], grupo: 7, estado: 'curso' }], meta: { teToca: ['ok', 3, null] } });
   assert.strictEqual(t.filas.length, 1);
   assert.strictEqual(t.filas[0].grupo, '');
-  assert.deepStrictEqual(t.filas[0], { titulo: 'Bien', quien: '', nota: '', fin: 'sin hora estimada', finAt: null, realAt: null, estado: 'curso', grupo: '', columna: 'curso', marca: null, historia: null, pedido: null });
+  assert.deepStrictEqual(t.filas[0], { titulo: 'Bien', quien: '', nota: '', fin: 'sin hora estimada', finAt: null, realAt: null, estado: 'curso', grupo: '', columna: 'curso', marca: null, historia: null, pedido: null, numero: null });
   assert.deepStrictEqual(t.teToca, ['ok']);
   // `historia` y `pedido` tienen forma: lo que no la tiene no llega a una consulta
   const p = buildBoard({ pendientes: [
@@ -839,7 +839,8 @@ test('T70 Board_OnlyStrings: lo que no es texto no llega a la página, y un reng
 
 test('T71 Board_Page_Panel: la página trae el panel del tablero y lo dibuja con texto, nunca como HTML', async () => {
   const data = await collectWith(JSON.stringify(BOARD));
-  assert.ok(data.tablero && data.tablero.resumen);
+  assert.ok(data.tablero && !('resumen' in data.tablero), 'meta.resumen se ignora (8.198, AC 28)');
+  assert.ok(data.kanban.linea, 'la línea de arriba se arma sola de las tarjetas');
   assert.ok(data.kanban.columnas.find((c) => c.id === 'sinEmpezar').tarjetas.some((t) => t.titulo === 'La oficina en vivo'), 'sin una sesión viva no está en curso');
   const html = page(data);
   assert.match(html, /id="board"/);
@@ -1320,9 +1321,10 @@ test('T93 Kanban_FiveColumns_FromRealStateAndBoard @story-2.81 @ac-50: cinco col
   });
   assert.deepStrictEqual(data.kanban.columnas.map((c) => c.nombre), ['Sin sesión', 'En curso', 'Tu firma', 'Esperan entrar', 'Terminados']);
   assert.deepStrictEqual(titles(data, 'firma').sort(), ['Firma: la primera firma', 'Firma: la segunda firma', 'Tres'].sort());
-  assert.deepStrictEqual(titles(data, 'curso').sort(), ['Dos', 'Una'].sort(), 'la fila de Ana no se suma: manda su tarjeta');
+  assert.deepStrictEqual(titles(data, 'curso').sort(), ['Dos', 'Una'].sort());
   assert.deepStrictEqual(titles(data, 'entrando'), ['Cuatro']);
-  assert.deepStrictEqual(titles(data, 'sinEmpezar').sort(), ['Lo de alguien sin sesión', 'Sin arrancar', 'Espera turno'].sort(), 'lo que nadie vivo hace va acá');
+  // la fila de Ana ya no se esconde detrás de su tarjeta: Ana no dice su número, así que va a «Sin sesión» (8.198, AC 8)
+  assert.deepStrictEqual(titles(data, 'sinEmpezar').sort(), ['Lo de alguien sin sesión', 'Lo de la persona con sesión', 'Sin arrancar', 'Espera turno'].sort(), 'lo que nadie vivo hace va acá');
   assert.deepStrictEqual(titles(data, 'hechos').sort(), ['Hecho dos', 'Hecho uno']);
   assert.deepStrictEqual(data.kanban.medioCamino, [], 'sin nada sin terminar en sus carpetas, no queda a medio camino');
   for (const c of data.kanban.columnas) for (const t of c.tarjetas) assert.ok('titulo' in t && 'quien' in t && 'hora' in t, JSON.stringify(t));
@@ -1961,7 +1963,9 @@ test('T139 Board_Forms @story-2.81 @ac-64 @ac-65: ids y pedidos reales, lo que n
   assert.strictEqual(f.b.historia, '8.85-E');
   assert.deepStrictEqual(f.b.pedido, { repo: 'Mi Repo', numero: 123 });
   assert.strictEqual(f.c.historia, null);
-  assert.strictEqual(b.avisos.length, 2, b.avisos.join(' | '));
+  // las dos de la historia y el pedido, y una de las filas sin número (8.198, AC 7)
+  assert.strictEqual(b.avisos.length, 3, b.avisos.join(' | '));
+  assert.match(b.avisos[2], /sin número/);
   assert.deepStrictEqual(b.filas.map((x) => x.titulo), ['c', 'a', 'b'], 'los grupos, en el orden en que aparecen');
 });
 
