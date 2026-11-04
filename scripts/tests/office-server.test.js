@@ -1094,6 +1094,18 @@ test('T39 Mensaje_TomadoSinAparecer_LoDice @story-8.183 @ac-24: sólo con la ses
   }
 });
 
+test('T45 Sitio_MensajesDeLaOficina_NoSalen @story-8.183 @ac-41: al sitio no van los mensajes escritos desde la oficina ni el estado del destinatario', () => {
+  const { forSite } = require(SERVER);
+  const enLaPestana = { quien: 'vos', at: '2026-11-04T10:00:00Z', texto: 'revisá el pedido' };
+  const respuesta = { quien: 'sesion', at: '2026-11-04T10:01:00Z', texto: 'listo' };
+  const desdeLaOficina = { quien: 'vos', at: '2026-11-04T10:02:00Z', texto: 'seguí con la tanda', oficina: true, id: '3f9c2a7d0b1e4c5a8d6e7f9012345678' };
+  const conv = { conVos: [enLaPestana, respuesta, desdeLaOficina], conCoordinadora: [], oficina: { recibe: 'si', cuadro: false } };
+  const antes = JSON.parse(JSON.stringify(conv));
+  const out = forSite(conv);
+  assert.deepStrictEqual(out, { conVos: [enLaPestana, respuesta], conCoordinadora: [] });
+  assert.deepStrictEqual(conv, antes, 'la conversación que recibe queda igual');
+});
+
 test('T40 Mensaje_EntreEntregaYCierre_Espera @story-8.183 @ac-38: tras una entrega, se acepta y espera; vencido el plazo largo, no-entregado', async () => {
   const m = toy();
   fs.mkdirSync(om.paths(m.sdir).watchers, { recursive: true });

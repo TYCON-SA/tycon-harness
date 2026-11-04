@@ -270,8 +270,10 @@ test('T18 — el paso 9b abre el pedido por la capa: sola en su llamada, con aut
   assert.ok(!/--auto(?!-complete)/.test(all), 'ningún bloque del 9b usa --auto suelto');
   // la ruta de los argumentos la da el plan: una fija bajo /tmp no es la misma para bash y para Node en Windows
   assert.ok(!all.includes('/tmp/'), 'ningún bloque del 9b nombra /tmp/');
-  // el orden: el plan, al día, versión, empujar, abrir, latido, verificar la versión
-  const order = ['merge-pr.js" plan', 'merge-pr.js" update-branch', 'merge-pr.js" bump-version', "push origin '<source>'", 'change-request open', 'retro-heartbeat.js', 'merge-pr.js" check-version'];
+  // el orden: el plan, al día, versión, empujar, abrir, verificar la versión. El latido no corre al abrir el pedido: se
+  // pide cuando entra, con el commit que dejó en main
+  const order = ['merge-pr.js" plan', 'merge-pr.js" update-branch', 'merge-pr.js" bump-version', "push origin '<source>'", 'change-request open', 'merge-pr.js" check-version'];
+  assert.ok(!all.includes('retro-heartbeat.js'), 'ningún bloque del 9b corre el latido al abrir el pedido');
   let at = -1;
   for (const step of order) {
     const found = all.indexOf(step, at + 1);

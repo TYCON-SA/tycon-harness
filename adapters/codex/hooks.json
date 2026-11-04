@@ -349,6 +349,13 @@
       "scripts": []
     },
     {
+      "log": "SessionStart y UserPromptSubmit · office-link-start.js — SOLO Claude Code, por ahora",
+      "verdict": "ASIMETRÍA A PROPÓSITO, PENDIENTE DE DECISIÓN (2026-11-04, story 8.171): el gancho pide el alta de la máquina en el sitio, lanza el proceso de la oficina y pone al día la capa del equipo mientras se trabaja. El proceso cuenta las sesiones por su archivo de sesión de Claude Code, así que una máquina que trabaja sólo con Codex no tendría qué mostrar. Si se suma Codex lo decide DEF-8.171-A-codex (tasks/todo.md del repo del equipo); hasta entonces, el caso 79 del banco corre sólo con Claude.",
+      "scripts": [
+        "office-link-start.js"
+      ]
+    },
+    {
       "log": "PostToolUse · Artifact — SOLO Claude Code (Codex no tiene la tool)",
       "verdict": "ASIMETRÍA A PROPÓSITO (2026-08-30): la tool Artifact (publicar páginas en claude.ai) existe únicamente en Claude Code — Codex nunca emite ese tool_name, así que no hay evento que registrar de su lado ni conducta que traducir. Los artefactos nacen sólo en sesiones Claude y el archivado al repo (<repo>/artifacts/ + índice con la URL) lo cubre el hook del lado Claude. Caso 28 del banco con tools:['claude'] y la misma asimetría declarada.",
       "scripts": [

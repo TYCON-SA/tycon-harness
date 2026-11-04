@@ -649,6 +649,38 @@ test('T122 PrRead_ContractAndConnectors @story-2.81 @ac-65', async () => {
   }
 });
 
+test('T22 Conector_LeerPedido_DevuelveMergeCommit @story-8.205 @ac-3', async () => {
+  const FUSION = 'abcdef1234567890abcdef1234567890abcdef12';
+  const PRUEBA = '1111111111111111111111111111111111111111';
+  // GitHub da merge_commit_sha también con el pedido abierto (el commit de prueba): sólo cuenta con merged_at
+  const pr = (number, o) => ({ number, title: `pedido ${number}`, head: { ref: `r${number}`, sha: 'a1' }, base: { repo: { full_name: 'acme/portal' } }, user: { login: 'x', type: 'User' }, ...o });
+  const m = mundo({ platform: { default: 'github' } });
+  const env = { ...m.env, TYCON_GH_CMD: FAKE_GH, FAKE_GH_STATE: estadoGh({ pulls: { 'acme/portal': [
+    pr(31, { state: 'open', merge_commit_sha: PRUEBA }),
+    pr(32, { state: 'closed', merged_at: '2026-11-01T18:30:00Z', merge_commit_sha: FUSION }),
+    pr(33, { state: 'closed', merged_at: null, merge_commit_sha: PRUEBA }),
+    pr(34, { state: 'closed', merged_at: '2026-11-01T18:30:00Z', merge_commit_sha: 'no es un commit' }),
+  ] } }) };
+  const gh = async (number) => { const r = await P().run('change-request.read', { number }, { env, repo: GH }); assert.strictEqual(r.ok, true, JSON.stringify(r)); return [r.value.state, r.value.mergeCommit]; };
+  assert.deepStrictEqual(await gh(31), ['open', null]);
+  assert.deepStrictEqual(await gh(32), ['merged', FUSION]);
+  assert.deepStrictEqual(await gh(33), ['closed', null]);
+  assert.deepStrictEqual(await gh(34), ['merged', null], 'un commit ilegible no se da');
+  // Azure DevOps
+  const w = mundoAzure([[]]);
+  fs.writeFileSync(path.join(w.fix, 'repos-pr.json'), JSON.stringify([
+    prAzure(41, { lastMergeCommit: { commitId: PRUEBA } }),
+    prAzure(42, { status: 'completed', closedDate: '2026-11-01T18:30:00Z', lastMergeCommit: { commitId: FUSION.toUpperCase() } }),
+    prAzure(43, { status: 'abandoned', closedDate: '2026-11-01T18:30:00Z', lastMergeCommit: { commitId: PRUEBA } }),
+    prAzure(44, { status: 'completed', closedDate: '2026-11-01T18:30:00Z' }),
+  ]));
+  const az = async (number) => { const r = await P().run('change-request.read', { number }, { env: w.env, repo: AZ }); assert.strictEqual(r.ok, true, JSON.stringify(r)); return [r.value.state, r.value.mergeCommit]; };
+  assert.deepStrictEqual(await az(41), ['open', null]);
+  assert.deepStrictEqual(await az(42), ['merged', FUSION], 'en minúsculas');
+  assert.deepStrictEqual(await az(43), ['closed', null]);
+  assert.deepStrictEqual(await az(44), ['merged', null], 'completado sin su commit');
+});
+
 test('T30 Contrato_EstimateEnCreateYUpdate @story-2.75 @ac-27', async () => {
   const { estimateProblem, ESTIMATE_OPERATIONS } = C();
   assert.deepStrictEqual([...ESTIMATE_OPERATIONS], ['work-item.create', 'work-item.update']);

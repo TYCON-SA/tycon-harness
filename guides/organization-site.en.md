@@ -402,6 +402,51 @@ updates**. A number next to a tab says how many things are waiting there.
 
 ![Configuration: the four cards at the top and the People tab](sitio-de-la-organizacion/capturas/configuracion-personas.png)
 
+## The «Offices» tab
+
+Each team machine's office, live: the same one `/office` draws on the machine, with one room per machine. Tapping one
+makes it big, and its sessions show below with the same columns as the local page.
+
+**Who sees what.** `site.offices.visibility` decides it, in Configuration. By default it is `maintainers`: maintainers see
+every office and each dev sees the offices of their confirmed machines, as in Runs. With `everyone`, everyone who signs in
+sees all of them, and that includes the whole conversation of every session of every dev, not only the snapshot: choose it
+knowing that. Without a role, none.
+
+**Joining takes zero steps for the dev.** Each team machine asks to join by itself: with the site address in the team
+profile, when a session opens, or while people work (the team layer updates itself every 30 minutes). The machine makes
+its key pair, sends the site only the public key and shows the dev one line with the fingerprint. The dev runs nothing.
+A maintainer approves it once, in Configuration → «People and machines»: approving is confirming that the request's
+fingerprint is the same one that machine left with its runs in the mailbox. Until it arrives, the request says it is
+waiting for the machine to leave its fingerprint, and at what time the site reads the mailbox again. The key is valid
+while the machine connects, and expires after 30 days without connecting: then the machine asks to join again, by
+itself. Disabling a machine cuts its connection.
+
+**What leaves the machine.** The same as the local office shows: each session with its name, its state, its work, its
+assignment, what it is doing and its last action; the board, the tables, the tokens, the messages between sessions (the
+paper planes) and each session's conversation, which opens with «See conversation», as on the machine. Each text leaves
+without the home folder or the keys that are recognized. The conversation travels apart from the snapshot, only to a site
+that understands it, and the site keeps it only in memory: nothing from the office stays on its disk. So maintainers see
+live what each dev is doing; each dev knows it from the fingerprint line.
+
+**What the owner decided.**
+- **D1** — The network: each machine opens an outgoing connection to the site (`wss://`, port 443). Nothing comes in.
+- **D1b** — A single copy of the site: each machine's last snapshot lives in its memory, and each recipe pins one replica.
+- **D2** — Joining is automatic, with the fingerprint also through the mailbox: an outside request has no way to upload it.
+- **D2b** — The key is not renewed: it expires only after 30 days without connecting, and disabling is per machine.
+- **D3** — What leaves is what the local office shows; there is a single list (`scripts/tools/office/fields.js`).
+- **D4** — The `site.offices.visibility` knob, by default `maintainers`.
+- **D5** — One process per machine, in the background, that reports each change and lives while there are sessions.
+- **D7** — The machine routes, `/live/machine` and `/live/enroll`, stay outside the platform lock.
+
+The back channel is closed: the site cannot send orders to the machine. A message the machine does not expect is
+dropped and cuts the connection.
+
+**An already installed site: the one-time step.** `/live/machine` and `/live/enroll` are in `RUTAS_SIN_SESION`, but the
+platform lock of an already installed site does not learn it by itself. In Azure, run once the recipe's
+`--excluded-paths` command, which already names them; in the local recipe with a tunnel, leave them free in the tunnel's
+lock. The sessionless check confirms it: `node scripts/site/check-deploy.js --url https://<site address>`, which warns
+«the one-time step is missing» if the lock covers them.
+
 ## Configuration, section by section
 
 Each section is a part of a configuration file that lives in an organization repo: the **operations repo** (the night's
@@ -436,6 +481,32 @@ something not yet proposed, the section offers **Recover what you were entering*
 does not allow storing it (a private window, for example) the page works the same, without that offer. The accepted
 differences between products are not merged: if their file changed, they ask you to reload as before.
 
+**What each button does.** Every button that asks the site for something ("Review changes", "Confirm and propose",
+"Invite", the machine buttons, "See its stages"…) turns off while it works and says what it is doing: "Checking…",
+"Proposing…", "Saving…". A second click does nothing. After ten seconds it adds "still working". If it fails, it says
+why next to the button, or where the section shows its errors, and the button is active again.
+
+**Proposed is not saved.** While the pull request is open, the section says "Proposed in pull request N: not merged
+yet", with the link, and not "no changes": that is what main has. When it goes in, it says "no changes" again. If it is
+closed without merging, the section says so, the field shows what main has again, and what you wrote is kept so you can
+recover it and propose it again.
+
+**The difference shows what changes in value.** The site writes each file in its own format (two spaces, one item per
+line). If the file in main was written another way, the difference does not fill the screen with that: it shows only
+the lines whose value changes, with the change marked inside the line, and a line above says "The pull request also
+reformats the file: lines that change in form, not in value: N".
+
+**When new data needs a newer harness.** If what you propose in the team profile is only read by a newer harness (the
+session names, the signature levels, the notification channels…), the same pull request raises `requires.harness` in
+`team-layer.json` to that version, as long as every **active machine** (the ones with news in the last 14 days)
+already has it. Before you confirm, the section says so: "The pull request also asks for harness …, because of …: the
+active machines (N) already have it". If an active machine is behind, or its version could not be read, it does not
+raise it: it stops and names them, with their person and version; propose again once they update. A machine with no
+news in the last 14 days does not count, and the section says which ones were left out. If it is not known which
+version the machines have (none active, the mailbox cannot be read, or the site does not know its own version), it
+does not raise it either. A layer that cannot be read is never overwritten. Without `team-layer.json`, the pull request
+carries one file.
+
 **Download** downloads the changed file, for when the
 site cannot propose: you hand it to whoever has access to that repo, who uploads it with a change request.
 
@@ -467,7 +538,8 @@ The sections, in the order of the screen:
   with a confirmed machine) and warns that it is not saved yet: it is saved when you propose it. If someone leaves the
   list, as soon as the request is approved and the site refreshes (at most 15 minutes), their next page is "Your
   account is not in the list", with no data. Above the list you see how people sign in to the site; that is changed at
-  installation. The runs mailbox, the refresh and the site's address go here too. It lives in `operations.json`, in the
+  installation. The runs mailbox and the refresh go here too. The site's address does not: it is written in one place
+  only, "The site's address on each machine". It lives in `operations.json`, in the
   operations repo. Another maintainer reviews it. **"How often the site updates"** takes 5 to 120 minutes; undeclared, 15. Shorter, a change shows sooner, but the site reads the operations
   repo, the profile repo and the mailbox again more often while it is awake: more reads to the cloud, which cost a bit
   more on an installation billed by use. It does not keep it awake: asleep it reads nothing, and on waking it reads
@@ -496,7 +568,10 @@ The sections, in the order of the screen:
   update nightly and its permission: the recipe, in "How it keeps itself up to date".
 - **The site's address on each machine**: the page that the `/org-site` command opens on each team member's machine
   (`site.url`). It must start with `https`. It only counts from the team profile: a machine cannot change it. Without
-  an address, the command explains how to set it. It lives in `team-profile.json`, in the profile repo.
+  an address, the command explains how to set it. It lives in `team-profile.json`, in the profile repo. It is the only
+  site address: the machines read it, and so do the night processes (the morning summary, the findings cycle). If it is
+  only in `operations.json` (where it used to live), the section says so and shows the value to move it to the profile;
+  meanwhile the night keeps reading the one in `operations.json`, which stays as a fallback.
 - **People and machines**: whose each machine that sends runs is, and which projects each
   person works on. A new machine shows up in "To confirm" with the email it claims; **Confirm**
   puts it in that person's name. It lives in `operations.json`, in the operations repo. A maintainer
@@ -725,8 +800,10 @@ be, to copy it and open the request by hand.
 - **The sessions on each machine**: when one session coordinates the others,
   how many can be working at the same time on one machine (1 to 20; empty means 3) before the next one waits its turn,
   and what names new ones get: as today (whoever opens names it) or a built-in theme (animals, rivers, colors or
-  trees), with an example of the names that come out. Each machine can change both for itself; each dev's own list is
-  not edited here: they ask their session for it. The folder where the owner's signatures are left belongs to each
+  trees) or an **Own list**, with an example of the names that come out. The own list is written here, one name per
+  line: letters without accents, digits, hyphen and underscore, up to 40 characters and 200 names, no repeats; empty
+  lines do not count. The machine's own reader checks it before it is proposed. Each machine can change both for
+  itself, and its list wins over the profile's. The folder where the owner's signatures are left belongs to each
   machine and is not set here. It lives in `team-profile.json` → `coordination.max_working` and
   `coordination.session_names`; the whole recipe is in `guides/coordination.en.md`.
 - **The /office office**: how many minutes without news a working session has to go before the office says «no news
@@ -741,7 +818,8 @@ be, to copy it and open the request by hand.
   as until now. With email, the server and its port. It never asks for a credential: each dev's session notices use
   their own (`harness.js config set notify.<key>`, on their machine; Telegram, the machine's bot) and the night ones,
   the server's secret variables (`pipelines/operations/README.md`). Saving the channels also raises the profile's
-  `requires.harness` to the first version that reads them.
+  `requires.harness` to the first version that reads them, with the rule in "When new data needs a newer harness",
+  above.
 - **Run conversations**: whether the site also downloads what was said in each run;
   with that, the Runs detail shows the files it touched. It lives in `operations.json`, in the operations repo. A
   maintainer reviews it.

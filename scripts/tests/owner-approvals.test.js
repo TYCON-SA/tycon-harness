@@ -188,6 +188,19 @@ test('Gancho_SoloLoQueLanzaLaHerramienta', () => {
   assert.ok(!oa.lanzadoPorLaHerramienta({ arbol: null, pid: 500 }).ok, 'sin árbol no anota');
 });
 
+test('OwnerApprovals_SinFoto_GanchoLanzadoPorConsolaSeNiega', () => {
+  const I = 'Sun Nov  1 20:00:00 2026';
+  const base = [{ pid: 1, ppid: 0, inicio: I, comando: '/sbin/launchd' }];
+  const tool = { pid: 100, ppid: 1, inicio: I, comando: '/Applications/x/claude --output-format stream-json' };
+  const gancho = { pid: 500, ppid: 300, inicio: I, comando: 'node /h/scripts/hooks/owner-approval-record.js' };
+  // la consola de una sesión que arrancó sin foto del ambiente: la forma medida (2.1.312), copiada de `envolverSinFoto`
+  // de owner-window.test.js, como la de arriba copia la forma con foto
+  const consola = { pid: 300, ppid: 100, inicio: I, comando: "/bin/zsh -c -l setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/null || true && eval 'node x' < /dev/null && pwd -P >| /tmp/claude-ab12-cwd" };
+  const r = oa.lanzadoPorLaHerramienta({ arbol: [...base, tool, consola, gancho], pid: 500, casa: '/c' });
+  assert.strictEqual(r.ok, false);
+  assert.match(r.motivo, /consola de un agente/);
+});
+
 // --- buscar y consumir ----------------------------------------------------------------------------------------------
 
 test('Buscar_SinClickNiMensaje_SeNiega', (t) => {

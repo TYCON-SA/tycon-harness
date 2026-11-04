@@ -1172,11 +1172,13 @@ _(scripts/metrics/sdlc-stage-metrics.js + scripts/nightly/dashboard/dashboard.js
 
 ## scripts/metrics/retro-heartbeat.js
 
-**Qué es:** Escribe, sin modelo y en una fracción de segundo, el archivo de retrospectiva de cada merge a main, en la carpeta de estado de la máquina (nunca en un clon). De ahí viaja por el buzón; sin llave, lo dice.
+**Qué es:** Escribe, sin modelo, el archivo de retrospectiva de cada merge a main, en la carpeta de estado de la máquina (nunca en un clon). De ahí viaja por el buzón; sin llave, lo dice.
 
 **Por qué existe:** Lanzar el capturador con modelo en cada merge costaba mucho tiempo y consumo para archivos casi vacíos. Acá sale la identidad del merge y la última vuelta de revisión; el resto queda en null con quién lo cubre.
 
 **Quién la usa:** El paso 10b de `/tycon-merge-to-main`, tras consultar `retro-pending.js --judge`. El capturador queda a pedido («retro con modelo»).
+
+Un pedido se reclama cuando entra, por su commit en main; el latido sólo acepta commits de la línea de main y se anula con `retro-heartbeat.js --annul --sha`.
 
 **Dónde se prueba:** `scripts/tests/retro-heartbeat.test.sh`
 
@@ -1249,6 +1251,22 @@ _(scripts/tools/work-in-progress.js + commands/wip.md; en 3D y en vivo: scripts/
 **Dónde se prueba:** `scripts/tests/`: `work-in-progress`, `office*`, `session-state`, `session-transcript`
 
 **Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptstoolswork-in-progressjs)
+
+## scripts/hooks/office-link-start.js
+
+_(scripts/hooks/office-link-start.js + `harness.js team-refresh`; la conexión: scripts/tools/office/site-link.js)_
+
+**Qué es:** Lo que enlaza la oficina de la máquina con el sitio de la organización sin que el dev haga nada: el alta con
+la huella al abrir una sesión, y la capa del equipo al día cada 30 min mientras se trabaja.
+
+**Por qué existe:** Una máquina con el arnés al día quedó sin oficina porque su capa del equipo seguía sin la dirección
+del sitio, y sólo un `update --yes` a mano la trajo.
+
+**Quién la usa:** Cada máquina del equipo, sola. Quien mantiene aprueba cada máquina una vez en el sitio.
+
+**Dónde se prueba:** `scripts/tests/`: `office-site-link`, `harness-team` (T43); el banco, caso 79
+
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptshooksoffice-link-startjs)
 
 ## scripts/metrics/upload-runs.js
 

@@ -21,11 +21,9 @@ const { spawnSync } = require('child_process');
 const SCRIPTS = path.join(__dirname, '..');
 const HOOK = path.join(SCRIPTS, 'on-pre-commit.js');
 const MARKER = path.join(SCRIPTS, 'marker.js');
-const PIPELINE = path.join(SCRIPTS, 'pipeline.js');
 const BRAKE_LIB = path.join(SCRIPTS, 'lib', 'save-brake.js');
 
 const ANTES = '2026-10-29T10:00:00.000Z';
-const DESPUES = '2026-10-29T11:00:00.000Z';
 const RAMA = 'story/la-prueba';
 const SID = 'ses-freno';
 // el texto del freno: lo distingue de los otros controles del gancho

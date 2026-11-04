@@ -432,7 +432,7 @@ PY
       scripts/hooks/deprecated-session-notice.js scripts/hooks/extension-notices.js scripts/hooks/guard-update-notice.js
       scripts/hooks/dev-behind-main-notice.js scripts/hooks/stuck-pr-notice.js scripts/hooks/coordination-notice.js=2
       scripts/hooks/why-blocked-notice.js scripts/hooks/session-state.js=7 scripts/hooks/owner-approval-record.js=2
-      scripts/hooks/context-size-notice.js=2 scripts/hooks/session-cap-guard.js scripts/hooks/office-link-start.js
+      scripts/hooks/context-size-notice.js=2 scripts/hooks/session-cap-guard.js scripts/hooks/office-link-start.js=2
       scripts/hooks/cover-secrets.js
       scripts/hooks/office-message-rule.js scripts/hooks/office-inbox-watch.js=2)
     t40_apart() { # t40_apart <settings> <salida> → aparta los declarados del settings (lo reescribe); en <salida>, los que no están UNA vez
