@@ -214,7 +214,8 @@ async function taskNumbers(playwright) {
     session('c9', 'Coordinadora');
     await page.waitForFunction(() => [...document.querySelectorAll('#crew > *')].some((c) => c.textContent.includes('Coordinadora')), null, { timeout: 20000 });
     // desde su ficha en «Las sesiones»
-    await page.locator('#crew > *', { hasText: 'Coordinadora' }).first().locator('button', { hasText: 'Ver conversación' }).evaluate((b) => b.click());
+    // por el nombre de la tarjeta: la de quien espera a la Coordinadora también la nombra
+    await page.locator('#crew > .card').filter({ has: page.locator('h3', { hasText: /^Coordinadora$/ }) }).locator('button', { hasText: 'Ver conversación' }).evaluate((b) => b.click());
     await page.waitForSelector('#ventana:not([hidden])');
     try { await page.waitForFunction(() => document.querySelector('#ventana').textContent.includes('Con las sesiones'), null, { timeout: 20000 }); } catch (e) {
       console.log(`E5: la ventana dice: ${(await page.locator('#ventana').innerText()).replace(/\s+/g, ' ').slice(0, 400)}`);
@@ -222,10 +223,12 @@ async function taskNumbers(playwright) {
     }
     await page.locator('#ventana label', { hasText: 'Con las sesiones' }).locator('input').check({ force: true });
     await page.waitForSelector('#ventana .quienes .cerradas', { timeout: 15000 });
-    const order = await page.locator('#ventana .quienes > *').allInnerTexts();
+    // el texto del código: el título de «Cerradas» se ve en mayúsculas
+    const order = await page.locator('#ventana .quienes > *').allTextContents();
     check(/^Funes/.test(order[0]) && order.some((t) => t === 'Cerradas') && /^Olvido/.test(order[order.length - 1]), `E5: la viva primero, después «Cerradas» (${order.join(' | ').replace(/\n/g, ' ')})`);
     check(/última actividad \d\d:\d\d/.test(await page.locator('#ventana .quienes button.cerrada').innerText()), 'E5: la cerrada dice su última actividad');
-    await page.locator('#ventana .quienes button.cerrada').click();
+    await page.locator('#ventana .quienes button.cerrada').evaluate((b) => b.click());
+    await page.waitForFunction(() => document.querySelector('#ventana').textContent.includes('Esta sesión está cerrada: no recibe mensajes.'), null, { timeout: 15000 }).catch(() => {});
     check(await page.locator('#ventana', { hasText: 'Esta sesión está cerrada: no recibe mensajes.' }).count() === 1, 'E5: al elegirla dice que no recibe mensajes');
     await shot(page, 'e5-sesiones-cerradas', page.locator('#ventana .panel3'));
   } finally {
