@@ -122,7 +122,7 @@ function numeroDe(i){return i&&typeof i.numero==="string"?i.numero:""}
 // a quién espera la mano levantada: la que anotó la sesión, o el dueño si su pantalla espera una firma o una pregunta
 function manoDe(a){return a&&(a.mano||(a.estado==="firma"||a.estado==="pregunta"?"dueno":null))}
 // el globito que flota sobre quien espera: su ícono y su color, que es también el del aro del piso
-function globoDe(m){return m==="coordinadora"?{icono:"✋",color:"#5aa9ff"}:m==="dueno"?{icono:"✋",color:"#ffa53d"}:null}
+function globoDe(m){return m==="coordinadora"?{icono:"✋",color:"#1f6fff"}:m==="dueno"?{icono:"✋",color:"#ff7a00"}:null}
 // con qué modelo y qué esfuerzo corre una sesión: «Opus 5.5 · High», con «sin dato» en lo que no se leyó; nada en la foto fija
 function modeloDe(a){return a&&(a.modelo||a.esfuerzo)?(a.modelo||"sin dato")+" · "+(a.esfuerzo||"sin dato"):""}
 function ficha(a){const r=[],add=(k,v,x)=>{if(v!=null&&v!=="")r.push({k,v,...x})};
@@ -557,8 +557,8 @@ function ponerGlobo(d,b,k){d.globo.visible=Boolean(b);d.anchor.set(0,b?2.95:1.85
   if(d.globoColor!==b.color){d.globoColor=b.color;const {c:cv,g}=d.globoTex.userData,w=cv.width,h=cv.height,r=w/2-10;g.clearRect(0,0,w,h);
     g.beginPath();g.arc(w/2,h/2+4,r,0,Math.PI*2);g.fillStyle="rgba(0,0,0,.35)";g.fill();
     g.beginPath();g.arc(w/2,h/2,r,0,Math.PI*2);g.fillStyle="#ffffff";g.fill();
-    g.beginPath();g.arc(w/2,h/2,r-14,0,Math.PI*2);g.fillStyle=b.color;g.fill();
-    g.textAlign="center";g.textBaseline="middle";g.font="150px "+FONT;g.fillText(b.icono,w/2,h/2+8);d.globoTex.needsUpdate=true}
+    g.beginPath();g.arc(w/2,h/2,r-10,0,Math.PI*2);g.fillStyle=b.color;g.fill();
+    g.textAlign="center";g.textBaseline="middle";g.font="118px "+FONT;g.fillText(b.icono,w/2,h/2+6);d.globoTex.needsUpdate=true}
   const late=.7*(1+.1*Math.sin(k*5));d.globo.scale.set(late,late,1);d.globo.position.y=2.35+Math.sin(k*2)*.06}
 
 // ---------- etiquetas ----------
@@ -574,12 +574,12 @@ const FX={firma:"!",pregunta:"?",espera:"⌛",esperando:"⌛",coordina:"→",pru
 function nuevoTag(d){const e=document.createElement("button");e.type="button";e.className="tag";e.innerHTML=BOT+'<div class="tx"><b></b><span class="como"></span><span class="st"><span class="dot"></span><span class="es"></span></span><span class="more"><span class="fin"></span><span class="bar"><i></i></span></span></div><span class="fx"></span>';e.onclick=()=>abrir(d.agent.nombre);labelsEl.appendChild(e);d.el=e}
 function pintarTag(d){const a=d.agent,m=manoDe(a),s0=T.AST[a.estado]||[a.estado||"","#999"],
   // con la mano levantada por otra cosa que su pantalla, la etiqueta dice a quién espera, con el color de su aro
-  s=m&&a.manoEtiqueta&&a.estado!=="firma"&&a.estado!=="pregunta"?[a.manoEtiqueta,m==="coordinadora"?"#5aa9ff":"#ffa53d"]:s0;d.el.style.setProperty("--c",s[1]);d.el.style.setProperty("--outfit",d.ropa);d.el.querySelector("b").textContent=a.nombre||"";d.el.querySelector(".como").replaceChildren(...(a.comoTrabaja&&a.comoTrabaja!==s[0]?[T.iconoComo(a.comoTrabaja),a.comoTrabaja]:[]));
+  s=m&&a.manoEtiqueta&&a.estado!=="firma"&&a.estado!=="pregunta"?[a.manoEtiqueta,globoDe(m).color]:s0;d.el.style.setProperty("--c",s[1]);d.el.style.setProperty("--outfit",d.ropa);d.el.querySelector("b").textContent=a.nombre||"";d.el.querySelector(".como").replaceChildren(...(a.comoTrabaja&&a.comoTrabaja!==s[0]?[T.iconoComo(a.comoTrabaja),a.comoTrabaja]:[]));
   d.el.querySelector(".es").textContent=s[0]+(a.mientras?" · y algo más":"");const f=T.finTxt(a),fin=d.el.querySelector(".fin");fin.replaceChildren();
   let md=d.el.querySelector(".mod");if(!md){md=document.createElement("span");md.className="mod";fin.before(md)}md.textContent=modeloDe(a);md.hidden=!md.textContent;
   if(f){fin.append(f.hora);if(f.dif){const x=document.createElement("em");x.className=f.cls;x.textContent=" · "+f.dif;fin.append(x);}}
   const bar=d.el.querySelector(".bar");bar.hidden=a.avance==null;bar.firstChild.style.width=(a.avance||0)+"%";
-  const fx=d.el.querySelector(".fx");fx.textContent=m?"✋":FX[a.estado]||"";d.el.classList.toggle("alert",Boolean(m));d.el.classList.toggle("alert-coord",m==="coordinadora");d.el.classList.toggle("sel",sel===a.nombre);d.el.setAttribute("aria-label",(a.nombre||"")+": "+s[0]);}
+  const fx=d.el.querySelector(".fx");fx.textContent=FX[a.estado]||"";d.el.classList.toggle("alert",Boolean(m));d.el.classList.toggle("alert-coord",m==="coordinadora");d.el.classList.toggle("sel",sel===a.nombre);d.el.setAttribute("aria-label",(a.nombre||"")+": "+s[0]);}
 const tmp=new THREE.Vector3();
 function ubicarTags(){const W=stage.clientWidth,H=stage.clientHeight,cmp=stage.classList.contains("compact"),hr=cmp?11:20;
   const P=desks.map(d=>{tmp.copy(d.anchor);d.st.localToWorld(tmp);tmp.project(cam);const ax=(tmp.x+1)/2*W,ay=(1-tmp.y)/2*H;tmp.copy(d.headP);d.st.localToWorld(tmp);tmp.project(cam);
