@@ -117,6 +117,9 @@ function cupoAlDeclarar({ pedido, existing, via }) {
 /** El cupo de un carril: el suyo, o el de siempre si no trae uno que se pueda leer. */
 const cupoDelCarril = (adhoc) => (Number.isFinite(Number(adhoc && adhoc.maxFiles)) && Number(adhoc.maxFiles) > 0 ? Number(adhoc.maxFiles) : DEFAULT_ADHOC_MAX_FILES);
 const MARKER_JS = '~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js';
+// el tablero de la oficina, en la carpeta de estado: lo escribe sólo su comando
+const BOARD_FILE = /(^|[\\/])coordination[\\/]tablero\.json$/;
+const BOARD_JS = '~/.tycon/harness/scripts/tools/office/board.js';
 
 function norm(p) {
   return String(p || '').replace(/\\/g, '/');
@@ -405,6 +408,15 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       '  Este cambio lo aprobás vos: abrí el camino rápido con tu sí en la ventana de permiso. Antes de guardar corren',
       '  los revisores y el pase adversarial sobre su diff.',
     ]).filter((l) => l !== '').join('\n');
+  }
+  if (r.kind === 'state-dir' && BOARD_FILE.test(String(f))) {
+    // el tablero de la oficina tiene su comando: valida cada fila y pone el número
+    return [
+      '⛔ El tablero se escribe sólo con board.js, que valida cada fila y pone el número.',
+      viaLine.replace(/\n$/, ''),
+      `   Para esto: node ${BOARD_JS} set T-41 estado=curso nota="…"`,
+      '   (una fila nueva: add; cerrarla: close T-41; el tablero entero: save --from <tu archivo aparte>)',
+    ].filter((l) => l !== '').join('\n');
   }
   if (r.kind === 'state-dir') {
     return [
