@@ -9,8 +9,6 @@ las palabras que usa.
 
 https://github.com/user-attachments/assets/3fbe4538-6b96-4b56-b2ed-92d36be1c6f8
 
-**El sitio de la organización, con datos de ejemplo y sin cuenta:** [abrí la demo](https://is.gd/tyconharnessdemo)
-
 Hoy un agente de IA escribe en minutos el código que antes llevaba horas. Los modelos programan tan bien que parece que ya no necesitan nada que les marque el camino, les pida pruebas y los frene cuando se equivocan.
 
 Ya no hay que darles guías para cada lenguaje y framework: buenas prácticas de codificación en React o en .NET, cómo se manejan los errores o cómo se validan los datos que llegan al sistema. Tampoco hay que recordarles patrones de diseño, como separar responsabilidades, inyectar dependencias o mantener bajo el acoplamiento.
@@ -40,6 +38,8 @@ Cada organización lo ajusta a su medida: sus reglas, sus revisores y quién apr
 Y el ciclo no termina ahí. Cada noche, TYCON Harness busca vulnerabilidades en los componentes de terceros que usa cada producto y avisa de cada una para que se decida; si se decide arreglarla, se crea una tarea para el equipo. También puede vigilar los errores de producción y dejar un diagnóstico listo. En ambos casos, decide una persona. Además, aprende del trabajo de todos los días. Mira qué controles frenaron de más o dejaron pasar algo. Cuando un control frena trabajo que estaba bien, se corrige, se convierte en un aviso o se retira, con la aprobación de una persona. Así el control sigue siendo útil. Y mira cómo trabajan los desarrolladores con los agentes. Con eso propone mejoras a sus reglas y a su forma de trabajar. Ninguna se aplica sin que una persona la apruebe.
 
 Un administrador configura y sigue el SDLC desde un sitio web. El sitio lo instala cada organización en su propia infraestructura. Todo lo que se mide queda ahí, y es ella la que decide quién lo ve. Cada cambio de configuración queda registrado, con quién lo pidió. La organización decide si, antes de aplicarse, lo tiene que aprobar otra persona. Desde el sitio, el administrador define cómo trabaja el equipo, sigue y mide lo que pasa, y decide.
+
+**Miralo con datos de ejemplo y sin cuenta:** [abrí la demo del sitio](https://is.gd/tyconharnessdemo)
 
 **Define.** Primero, lo que gobierna el trabajo: quién aprueba cada cosa y los revisores propios de la organización, con las reglas de la casa. Después, las personas y sus permisos, los repositorios y productos, qué modelo usa cada tipo de trabajo, y la tecnología de cada equipo con sus herramientas de prueba. También las integraciones: por dónde llegan los avisos, como Telegram, Slack, Teams o correo, y con qué herramienta se registran las horas. Y qué versión del arnés tiene cada máquina del equipo y cómo se actualiza.
 
