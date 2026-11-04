@@ -8,7 +8,7 @@
  * Inicio_SinRepoNavegable_LaListaLoDice        Inicio_Declarados_DicenDondeSeDecidenSinEnlace
  * Fuentes_LeeElPedidoDeCadaFicha               Decisiones_PrCerradoSinTarea_NadieLoSigueYVaPrimero
  * Decisiones_PrCerradoConTarea_SeSigueEnSuTarea Decisiones_Orden_NadieGravedadNoches
- * Fuentes_LeeElSeguimientoDeLaFicha
+ * Fuentes_LeeElSeguimientoDeLaFicha             Inicio_CadaFilaDiceSuGravedadYSusNoches
  */
 const test = require('node:test');
 const assert = require('node:assert');
@@ -180,7 +180,7 @@ test('Decisiones_PrCerradoSinTarea_NadieLoSigueYVaPrimero', () => {
   assert.deepStrictEqual(ds.map((d) => `${d.id}:${d.sinLugar}:${d.enlace}`), ['ffff0002:nadie_lo_sigue:null', 'aaaa0001:en_su_tarea:null'], 'sale primero aunque sea baja');
   const html = views.listasDeDecision(m, { enlaceOperaciones: ADO, ahora: AHORA });
   const seccion = html.split('id="decidir-dependencias_aceptadas_sin_resolver"')[1].split('</section>')[0];
-  assert.match(seccion, /ffff0002 · paquete-ffff0002 · pull request #5430 cerrado sin resolver: nadie lo sigue/);
+  assert.match(seccion, /ffff0002 · paquete-ffff0002 · baja · 1 noche · pull request #5430 cerrado sin resolver: nadie lo sigue/);
   assert.doesNotMatch(seccion, /pullrequest\/5430/, 'el pull request cerrado no es un enlace a su seguimiento');
   assert.ok(seccion.indexOf('ffff0002') < seccion.indexOf('aaaa0001'), 'en la página también va primero');
   assert.match(decisions.fraseSinLugar('nadie_lo_sigue', 'en', { n: 5430 }), /#5430 closed without a fix: nobody follows it/);
@@ -194,7 +194,7 @@ test('Decisiones_PrCerradoConTarea_SeSigueEnSuTarea', () => {
   // un pull request todavía abierto sigue siendo su lugar
   assert.strictEqual(ds.find((d) => d.id === 'bbbb0003').enlace, `${ADO}/pullrequest/5300`);
   const html = views.listasDeDecision(m, { enlaceOperaciones: ADO, ahora: AHORA });
-  assert.match(html, /<li><a href="\/mantenimiento">ya decidida: se sigue en su tarea, en Mantenimiento<\/a><span>18eb40cc · paquete-18eb40cc<\/span><\/li>/);
+  assert.match(html, /<li><a href="\/mantenimiento">ya decidida: se sigue en su tarea, en Mantenimiento<\/a><span>18eb40cc · paquete-18eb40cc · alta · 1 noche<\/span><\/li>/);
   assert.doesNotMatch(html, /pull request #5430/);
   // las otras colas no cambian: un pull request cerrado de otra lista no se reinterpreta
   const nueva = decisions.decisiones(conAceptadas({ ...aceptada('cccc0004', { pr: 5431, prCerrado: true }), rubro: 'nuevos' }), { operationsRepo: ADO })[0];
@@ -239,4 +239,21 @@ test('Fuentes_LeeElSeguimientoDeLaFicha', (t) => {
   assert.deepStrictEqual([por['9abc1234'].pr, por['9abc1234'].prCerrado, por['9abc1234'].conTarea, por['9abc1234'].noches], [null, false, false, null]);
   const ds = decisions.decisiones(m, { operationsRepo: ADO });
   assert.deepStrictEqual(ds.map((d) => `${d.id}:${d.sinLugar}`), ['2541df17:nadie_lo_sigue', '18eb40cc:en_su_tarea', '9abc1234:en_su_tarea']);
+});
+
+// el orden se entiende al leer: cada fila dice su gravedad y cuántas noches lleva
+test('Inicio_CadaFilaDiceSuGravedadYSusNoches', () => {
+  const m = conAceptadas(
+    aceptada('a1', { severidad: 'critical', noches: 7, conTarea: true }),
+    aceptada('a2', { severidad: 'moderate', noches: 1, conTarea: true }),
+    aceptada('a3', { severidad: 'rara', noches: null, conTarea: true }),
+  );
+  const seccion = (idioma) => views.listasDeDecision(m, { enlaceOperaciones: ADO, ahora: AHORA, idioma })
+    .split('id="decidir-dependencias_aceptadas_sin_resolver"')[1].split('</section>')[0];
+  const es = seccion('es');
+  assert.match(es, /<span>a1 · paquete-a1 · crítica · 7 noches<\/span>/);
+  assert.match(es, /<span>a2 · paquete-a2 · media · 1 noche<\/span>/, 'una noche, en singular; «moderate» es media');
+  assert.match(es, /<span>a3 · paquete-a3<\/span>/, 'sin gravedad reconocida ni noches, no se inventan');
+  assert.match(seccion('en'), /<span>a1 · paquete-a1 · critical · 7 nights<\/span>/);
+  assert.deepStrictEqual(['critical', 'CRÍTICA', 'high', 'moderate', 'baja', 'rara', null].map(decisions.gravedadNormal), ['critical', 'critical', 'high', 'medium', 'low', null, null]);
 });

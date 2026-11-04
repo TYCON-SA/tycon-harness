@@ -97,9 +97,13 @@ function repoNavegable(operationsRepo, remoto = null) {
   return { base: r.web ? r.web.replace(/\.git$/, '').replace(/\/+$/, '') : null, plataforma: r.platform || null };
 }
 
-// La gravedad, de mayor a menor; una que no se reconoce va después de todas
-const GRAVEDAD = Object.freeze({ critical: 0, critica: 0, high: 1, alta: 1, moderate: 2, medium: 2, media: 2, low: 3, baja: 3 });
-const rangoDeGravedad = (s) => (s && Object.hasOwn(GRAVEDAD, String(s).toLowerCase()) ? GRAVEDAD[String(s).toLowerCase()] : 4);
+// La gravedad, de mayor a menor, con los nombres que puede traer una ficha; una que no se reconoce va después de todas
+const GRAVEDADES = Object.freeze(['critical', 'high', 'medium', 'low']);
+const SINONIMOS = Object.freeze({ critical: 'critical', critica: 'critical', 'crítica': 'critical', high: 'high', alta: 'high',
+  moderate: 'medium', medium: 'medium', media: 'medium', low: 'low', baja: 'low' });
+/** La gravedad de una ficha en uno de GRAVEDADES, o null si no se reconoce. */
+const gravedadNormal = (s) => (s && Object.hasOwn(SINONIMOS, String(s).toLowerCase()) ? SINONIMOS[String(s).toLowerCase()] : null);
+const rangoDeGravedad = (s) => { const g = gravedadNormal(s); return g ? GRAVEDADES.indexOf(g) : GRAVEDADES.length; };
 
 /**
  * El orden de las fichas: primero lo que nadie sigue; después, por gravedad (crítica, alta, media, baja); después, por
@@ -148,4 +152,4 @@ function fraseSinLugar(codigo, idioma = 'es', vars = undefined) {
   return require('./texts.js').t(idioma, `decidir.${codigo}`, vars);
 }
 
-module.exports = { COLAS, itemsDeLasColas, decisiones, compararDecisiones, fraseSinLugar, repoNavegable };
+module.exports = { COLAS, itemsDeLasColas, decisiones, compararDecisiones, gravedadNormal, fraseSinLugar, repoNavegable };

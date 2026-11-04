@@ -445,7 +445,10 @@ function listasDeDecision(m, { enlaceOperaciones = null, remotoOperaciones = nul
     if (!medidas) { out.push(seccion(titulo, `<p class="q-note">${esc(conFecha(m.decisiones, idioma))}</p>`, null, `decidir-${clave}`)); continue; }
     const suyas = todas.filter((d) => d.fuente === def.fuente && d.rubro === def.rubro);
     const fila = (d) => {
-      const nombre = [esc(d.id), d.titulo ? esc(d.titulo) : null].filter(Boolean).join(' · ');
+      // la gravedad y las noches que lleva, para que se entienda el orden de la lista
+      const gravedad = DEC.gravedadNormal(d.severidad);
+      const noches = Number.isInteger(d.noches) ? (d.noches === 1 ? T('decidir.unaNoche') : T('decidir.noches', { n: d.noches })) : null;
+      const nombre = [esc(d.id), d.titulo ? esc(d.titulo) : null, gravedad ? esc(T(`decidir.gravedad.${gravedad}`)) : null, noches ? esc(noches) : null].filter(Boolean).join(' · ');
       return d.enlace && enlace(d.enlace)
         ? renglonDeLista(`<a href="${esc(d.enlace)}">${esc(T('decidir.pedido', { n: d.pr }))}</a>`, nombre)
         : d.sinLugar === 'en_su_tarea' ? renglonDeLista(`<a href="/mantenimiento">${esc(DEC.fraseSinLugar(d.sinLugar, idioma))}</a>`, nombre)
