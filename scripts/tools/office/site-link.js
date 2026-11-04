@@ -29,7 +29,7 @@ const https = require('https');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 
-const { MAX_MESSAGE_BYTES, CLOSE, MESSAGES, signedText, validNonce, machineUrl, fingerprintOf, displayFingerprint, pick } = require('./fields.js');
+const { MAX_MESSAGE_BYTES, CHARLA_EVERY_MS, CHARLA_GAP_MS, CLOSE, MESSAGES, signedText, validNonce, machineUrl, fingerprintOf, displayFingerprint, pick, pickCharla, sessionName } = require('./fields.js');
 
 const HEARTBEAT_MS = 60 * 1000;
 const RETRY_MIN_MS = 2 * 1000;
@@ -282,10 +282,40 @@ async function launchServer({ sdir, env = process.env, timeoutMs = 500 }) {
  * La conexión al sitio. `start()` la abre, `update(foto)` le pasa la foto de la oficina, `wake()` la intenta otra vez (una
  * sesión nueva) y `stop()` la cierra. El reloj, el azar y la librería se reciben para poder probarlos.
  */
-function createLink({ site, sdir, home = os.homedir(), WebSocket = require('./vendor/ws'), clock = { now: Date.now, setTimeout, clearTimeout }, random = Math.random }) {
+/**
+ * La conversación ya saneada, dentro de 64 KB como mensaje: si no entra, salen los mensajes más viejos, de la lista que
+ * sea, y queda marcada `recortada`. Devuelve el texto del mensaje, o null si ni vacía entra.
+ */
+function fitCharla(name, datos, home) {
+  const d = JSON.parse(JSON.stringify(datos));
+  const lists = () => [d.conCoordinadora, d.conVos, ...(d.conSesiones || []).map((s) => s.mensajes)].filter(Array.isArray);
+  // el nombre, como sale en la foto: el sitio la busca por ese valor
+  const sesion = sessionName(name, home);
+  for (;;) {
+    const msg = JSON.stringify({ type: 'charla', sesion, datos: d });
+    if (Buffer.byteLength(msg) <= MAX_MESSAGE_BYTES) return msg;
+    // el más viejo de todos sale primero; las listas van en orden, de lo viejo a lo nuevo
+    const withItems = lists().filter((l) => l.length);
+    if (!withItems.length) return null;
+    const oldest = withItems.reduce((a, b) => ((Number(a[0].at) || 0) <= (Number(b[0].at) || 0) ? a : b));
+    oldest.shift();
+    if (d.arranque && Buffer.byteLength(JSON.stringify(d.arranque)) > MAX_MESSAGE_BYTES / 2) delete d.arranque;
+    d.recortada = true;
+  }
+}
+
+function createLink({ site, sdir, home = os.homedir(), WebSocket = require('./vendor/ws'), clock = { now: Date.now, setTimeout, clearTimeout }, random = Math.random, onCharlaReady = () => {} }) {
   const url = machineUrl(site);
   let sock = null;
   let authed = false;
+  // ¿el sitio de esta conexión entiende la conversación? Lo dice su `ack`; uno anterior no la recibe nunca
+  let takesCharla = false;
+  // de cada sesión: su última conversación, lo último que se le mandó y a qué hora, y su envío pendiente
+  const talks = new Map();
+  // las que tocan salir, en orden, y cuándo salió la última
+  const outbox = [];
+  let gapTimer = null;
+  let lastCharlaAt = -Infinity;
   let stopped = false;
   let attempts = 0;
   let retryTimer = null;
@@ -332,6 +362,42 @@ function createLink({ site, sdir, home = os.homedir(), WebSocket = require('./ve
     lastSent = msg;
   }
 
+  // a lo sumo una por minuto por sesión: lo que llega antes espera su turno, y sale la última. Al conectar salen todas
+  function sendCharla(name, force = false) {
+    const t = talks.get(name);
+    if (!t || !sock || !authed || !takesCharla) return;
+    const wait = t.at == null || force ? 0 : CHARLA_EVERY_MS - (clock.now() - t.at);
+    if (wait > 0) {
+      if (t.timer == null) t.timer = clock.setTimeout(() => { t.timer = null; sendCharla(name); }, wait);
+      return;
+    }
+    if (!outbox.includes(name)) outbox.push(name);
+    drain();
+  }
+  // las que tocan salen de a una, con CHARLA_GAP_MS entre ellas: al conectar tocan todas, y juntas pasarían el tope del sitio
+  function drain() {
+    if (gapTimer != null || !sock || !authed || !takesCharla) return;
+    const wait = CHARLA_GAP_MS - (clock.now() - lastCharlaAt);
+    if (wait > 0) { if (outbox.length) gapTimer = clock.setTimeout(() => { gapTimer = null; drain(); }, wait); return; }
+    const name = outbox.shift();
+    const t = name == null ? null : talks.get(name);
+    if (!t) { if (outbox.length) drain(); return; }
+    const msg = fitCharla(name, pickCharla(t.datos, home), home);
+    if (msg === null) { if (!t.noted) { t.noted = true; note('la conversación de una sesión no entra en 64 KB ni vacía: no se mandó'); } }
+    else if (msg !== t.sent) {
+      sock.send(msg);
+      t.sent = msg;
+      t.at = clock.now();
+      lastCharlaAt = clock.now();
+    }
+    if (outbox.length) drain();
+  }
+  const clearTalkTimers = () => {
+    for (const t of talks.values()) if (t.timer != null) { clock.clearTimeout(t.timer); t.timer = null; }
+    if (gapTimer != null) { clock.clearTimeout(gapTimer); gapTimer = null; }
+    outbox.length = 0;
+  };
+
   function retry() {
     clearRetry();
     if (stopped) return;
@@ -364,10 +430,13 @@ function createLink({ site, sdir, home = os.homedir(), WebSocket = require('./ve
       // aceptado es después de firmar: un `ack` antes del desafío no abre nada
       if (authed || !state.signed) return;
       authed = true;
+      // de lo que trae el `ack` se lee sólo esto, y sólo para saber si el sitio entiende la conversación
+      takesCharla = Array.isArray(msg.puede) && msg.puede.includes('charla');
       clearGreet();
       setState('aprobada');
       armBeat();
       sendFoto();
+      if (takesCharla) { for (const name of talks.keys()) sendCharla(name, true); onCharlaReady(); }
       return;
     }
     if (state.signed) return;
@@ -384,6 +453,9 @@ function createLink({ site, sdir, home = os.homedir(), WebSocket = require('./ve
     const wasAuthed = authed;
     sock = null;
     authed = false;
+    takesCharla = false;
+    clearTalkTimers();
+    for (const t of talks.values()) t.sent = null;
     awaitingPong = false;
     lastSent = null;
     clearBeat();
@@ -437,6 +509,20 @@ function createLink({ site, sdir, home = os.homedir(), WebSocket = require('./ve
   return {
     start() { connect(readLinkState(sdir) === 'de-baja'); },
     update(foto) { latest = foto; sendFoto(); },
+    /** La conversación de una sesión, por su nombre: sale si cambió, al ritmo de una por minuto. */
+    charla(name, datos) {
+      const t = talks.get(name) || { datos: null, sent: null, at: null, timer: null, noted: false };
+      t.datos = datos;
+      talks.set(name, t);
+      sendCharla(name);
+    },
+    /** Se olvida de las sesiones que ya no están: su conversación no vuelve a salir. */
+    keepTalks(names) {
+      const keep = new Set(names);
+      for (const [name, t] of talks) if (!keep.has(name)) { if (t.timer != null) clock.clearTimeout(t.timer); talks.delete(name); }
+    },
+    /** ¿Vale la pena leer las conversaciones? Sólo con un sitio que las entiende. */
+    takesCharla() { return takesCharla; },
     wake() {
       attempts = 0;
       // una conexión abierta se resuelve sola: la cortan el reloj del saludo o el del latido, y reintenta desde la base
@@ -448,6 +534,7 @@ function createLink({ site, sdir, home = os.homedir(), WebSocket = require('./ve
       clearRetry();
       clearBeat();
       clearGreet();
+      clearTalkTimers();
       if (sock) { try { sock.close(1001, 'la oficina se cerró'); } catch { /* ya cerrada */ } }
     },
   };

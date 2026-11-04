@@ -115,6 +115,8 @@ table.tabla tbody tr:last-child th,table.tabla tbody tr:last-child td{border-bot
 table.tabla tbody tr:hover{background:var(--wash)}
 table.tabla .fecha{white-space:nowrap}
 table.tabla td.nm{color:var(--nm-ink);font-style:italic;background-image:repeating-linear-gradient(135deg,transparent 0 7px,var(--hatch) 7px 8px)}
+/* los botones de una fila (las oficinas: dar de baja, retirar la clave, aprobar, rechazar) van separados */
+table.tabla td > .acc{display:inline-flex;flex-wrap:wrap;gap:8px}
 .nota{font-size:12px;color:var(--muted);font-weight:400}
 .filtro{display:inline-flex;gap:8px;align-items:center;margin:0 0 12px;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
 .filtro input{padding:7px 10px;border-radius:8px;border:1px solid var(--line-strong);background:var(--surface);font-size:14px;text-transform:none;letter-spacing:0;color:var(--ink)}

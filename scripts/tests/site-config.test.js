@@ -6266,3 +6266,34 @@ test('Regresion_PantallaDeOficinas_ConLosTextosDeLaMaqueta @story-8.171 @ac-9 �
   const t2 = textosDe(vacia.creados.filter((n) => n.attrs.id === 'seccion-personas').pop()).join(' | ');
   for (const t of ['No hay solicitudes de alta.', 'Este sitio no sabe dónde dejan sus ejecuciones las máquinas', 'Este sitio no tiene disco propio']) assert.ok(t2.includes(t), `falta «${t}»`);
 });
+
+test('T52 Sitio_DiceCuandoRelee_YLaSubidaDiceLaHuella @story-8.171 @ac-29 — «esperando la huella» dice cuándo vuelve a mirar el buzón', async () => {
+  // 🔴 rojo: el pedido dice «esperando» aunque la huella ya esté en el buzón y sólo falte la relectura, sin decir cuándo.
+  const proxima = Date.parse('2026-11-03T22:15:00.000Z');
+  const hhmm = (ms) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+  const oficinas = { conBuzon: true, sinDisco: false, proximaLectura: proxima, maquinas: [], pedidos: [{ fingerprint: 'b'.repeat(64), huella: 'bbbb-bbbb-bbbb-bbbb', nombre: 'maquina-c', situacion: 'esperando_huella', maquina: null, person: null }] };
+  const r = await pantallaConPestanas({ secciones: TODAS.map((id) => (id === 'personas' ? SEC(id, { extras: { oficinas } }) : SEC(id))) });
+  const textos = textosDe(r.creados.filter((n) => n.attrs.id === 'seccion-personas').pop()).join(' | ');
+  assert.ok(textos.includes(`la próxima lectura, a las ${hhmm(proxima)}`), textos);
+  // sin la hora (un sitio que todavía no programó la lectura), el texto de siempre, sin hora inventada
+  const sin = await pantallaConPestanas({ secciones: TODAS.map((id) => (id === 'personas' ? SEC(id, { extras: { oficinas: { ...oficinas, proximaLectura: null } } }) : SEC(id))) });
+  assert.ok(!textosDe(sin.creados.filter((n) => n.attrs.id === 'seccion-personas').pop()).join(' | ').includes('la próxima lectura'));
+  // el sitio la saca de su lectura programada del buzón
+  const { crearFuentes } = require(path.join(ROOT, 'scripts', 'site', 'sources.js'));
+  assert.strictEqual(typeof crearFuentes, 'function');
+  assert.match(fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'sources.js'), 'utf8'), /proximaLectura: \(\) =>/);
+  assert.match(fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'tabs', 'config.js'), 'utf8'), /proximaLectura: typeof fuentes\.proximaLectura === 'function'/);
+});
+
+test('T53 Botones_ConEspacio @story-8.171 @ac-30 — los botones de una fila de oficinas van separados', () => {
+  // 🔴 rojo: «Dar de baja» y «Retirar esta clave» salen pegados.
+  const css = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'static', 'site.css'), 'utf8');
+  // con su elemento: en Ejecuciones «tabla» es la caja que envuelve la tabla (site-guide.test.js, T13)
+  const regla = /(?:^|\n)table\.tabla td > \.acc\{([^}]*)\}/.exec(css);
+  assert.ok(regla, 'una regla para la fila de botones de una tabla');
+  const gap = /(?:^|;)gap:(\d+)px/.exec(regla[1]);
+  assert.ok(gap && Number(gap[1]) >= 8, `al menos 8 px entre botones: ${regla[1]}`);
+  assert.match(regla[1], /display:inline-flex/);
+  const pantalla = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'org-config.js'), 'utf8');
+  assert.ok((pantalla.match(/var acciones = el\('span', \{ class: 'acc' \}\);/g) || []).length >= 2, 'los pedidos y las máquinas usan esa fila');
+});

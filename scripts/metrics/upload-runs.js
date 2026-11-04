@@ -1471,7 +1471,11 @@ async function subir(opts = {}) {
     return fin(1, 'parcial', `${partes.join(' · ')}${res.subidos ? ` — ${res.subidos} sí subieron` : ''}`);
   }
   if (!res.subidos) {
-    log(`nada nuevo que subir desde ${maquina}${res.sin_tiempo ? ` (${res.sin_tiempo} quedaron sin tiempo)` : ''}`);
+    // la huella de la oficina que ya había subido se dice: «nada nuevo» solo parecía que nunca había subido
+    const yaSubida = blobOficina && registro.archivos[blobOficina] ? String(registro.archivos[blobOficina].subido || '').slice(0, 10) : '';
+    if (yaSubida) res.huella_oficina = `ya_subida:${yaSubida}`;
+    const notas = [...(res.sin_tiempo ? [`${res.sin_tiempo} quedaron sin tiempo`] : []), ...(yaSubida ? [`la huella de la oficina ya había subido el ${yaSubida}`] : [])];
+    log(`nada nuevo que subir desde ${maquina}${notas.length ? ` (${notas.join('; ')})` : ''}`);
     return fin(0, res.sin_tiempo ? 'sin_tiempo' : 'nada_nuevo');
   }
   log(`subido: ${res.subidos} archivo(s), ${res.bytes} bytes, a ${maquina}/ en ${destino}${res.sin_tiempo ? ` · ${res.sin_tiempo} quedaron sin tiempo para el próximo arranque` : ''}`);

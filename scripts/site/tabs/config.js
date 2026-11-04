@@ -396,7 +396,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     const ctx = contextoDeOficinas();
     llaves.emparejar(ctx);
     const v = llaves.vista(ctx);
-    return { pedidos: v.pedidos.map((p) => ({ ...p, huella: displayFingerprint(p.fingerprint) })), maquinas: v.maquinas, conBuzon: ctx.conBuzon, sinDisco: !cfg.dataDir, noGuarda: v.noGuarda };
+    return { pedidos: v.pedidos.map((p) => ({ ...p, huella: displayFingerprint(p.fingerprint) })), maquinas: v.maquinas, conBuzon: ctx.conBuzon, sinDisco: !cfg.dataDir, noGuarda: v.noGuarda, proximaLectura: typeof fuentes.proximaLectura === 'function' ? fuentes.proximaLectura() : null };
   }
   function accionDeOficina(body, por) {
     const { accion, fingerprint, maquina } = body;

@@ -2008,7 +2008,13 @@ function pantalla(idioma = 'es') {
         acciones.appendChild(boton(T('pantalla.oficinaRechazar'), { accion: 'reject', fingerprint: p.fingerprint }));
         var maquina = p.situacion === 'dos_maquinas' ? (p.maquinas || []).join(T('pantalla.oficinaYotra')) : (p.maquina || T('pantalla.oficinaDiceLlamarse') + '«' + p.nombre + '»');
         var dueno = p.situacion === 'dos_maquinas' ? T('pantalla.oficinaDosSubieron') : (p.person || T('pantalla.oficinaNoSeSabe'));
-        return [maquina, dueno, p.huella, T(QUE_FALTA[p.situacion] || 'pantalla.oficinaEsperando'), acciones];
+        // la huella puede estar ya en el buzón y faltar sólo la relectura: se dice a qué hora vuelve a mirar
+        var falta = T(QUE_FALTA[p.situacion] || 'pantalla.oficinaEsperando');
+        if (p.situacion === 'esperando_huella' && typeof of.proximaLectura === 'number') {
+          var d = new Date(of.proximaLectura);
+          falta += ' · ' + T('pantalla.oficinaProximaLectura', { hora: String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') });
+        }
+        return [maquina, dueno, p.huella, falta, acciones];
       })));
     }
     if (of.maquinas.length) {

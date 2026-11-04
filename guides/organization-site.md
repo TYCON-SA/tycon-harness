@@ -401,6 +401,51 @@ esperan ahí.
 
 ![Configuración: las cuatro fichas de arriba y la pestaña Personas](sitio-de-la-organizacion/capturas/configuracion-personas.png)
 
+## La pestaña «Oficinas»
+
+La oficina de cada máquina del equipo, en vivo: la misma que `/office` dibuja en la máquina, con una sala por máquina.
+Tocar una la agranda y abajo salen sus sesiones, con las mismas columnas que la página local.
+
+**Quién ve qué.** Lo decide `site.offices.visibility`, en Configuración. De fábrica vale `maintainers`: quien mantiene ve
+todas las oficinas y cada dev, las de sus máquinas confirmadas, igual que en Ejecuciones. Con `everyone`, todos los que
+entran al sitio ven todas, y eso incluye la conversación entera de cada sesión de cada dev, no sólo la foto: elegilo
+sabiendo eso. Sin rol, ninguna.
+
+**Sumarse son cero pasos para el dev.** Cada máquina del equipo pide el alta sola: con la dirección del sitio en el perfil
+del equipo, al abrir una sesión, o mientras se trabaja (la capa del equipo se pone al día sola cada 30 min). La máquina
+arma su par de claves, manda al sitio sólo la pública y le muestra al dev una línea con la huella. El dev no corre nada.
+Quien mantiene la aprueba una vez, en Configuración → «Personas y máquinas»: aprobar es confirmar que la huella del pedido
+es la misma que esa máquina dejó con sus ejecuciones en el buzón. Mientras no llegó, el pedido dice «esperando que la
+máquina deje la huella» y a qué hora el sitio vuelve a leer el buzón. La clave vale mientras la máquina se conecte, y
+vence a los 30 días sin conectarse: entonces la máquina pide el alta de nuevo, sola. Dar de baja una máquina corta su
+conexión.
+
+**Qué sale de la máquina.** Lo mismo que muestra la oficina local: cada sesión con su nombre, su estado, su trabajo, su
+encargo, lo que está haciendo y su última acción; el tablero, las tablas, los tokens, los mensajes entre sesiones (los
+avioncitos) y la conversación de cada sesión, que se abre con «Ver conversación», como en la máquina. Cada texto sale sin
+la carpeta personal ni las claves que se reconocen. La conversación viaja aparte de la foto, sólo a un sitio que la
+entiende, y el sitio la guarda sólo en memoria: nada de la oficina queda en su disco. Así, quien mantiene ve en vivo qué
+hace cada dev; cada dev lo sabe por la línea de la huella.
+
+**Lo que decidió el dueño.**
+- **D1** — La red: cada máquina abre una conexión de salida al sitio (`wss://`, puerto 443). Nada entra a la máquina.
+- **D1b** — Una sola copia del sitio: la última foto de cada máquina vive en su memoria, y cada receta fija una réplica.
+- **D2** — El alta es automática, con la huella también por el buzón: un pedido de afuera no tiene cómo subirla.
+- **D2b** — La clave no se renueva: vence sólo tras 30 días sin conectarse, y la baja es de la máquina.
+- **D3** — Sale lo mismo que muestra la oficina local; la lista es una sola (`scripts/tools/office/fields.js`).
+- **D4** — La perilla `site.offices.visibility`, de fábrica `maintainers`.
+- **D5** — Un proceso por máquina, de fondo, que avisa cada cambio y vive mientras haya sesiones.
+- **D7** — Las rutas de la máquina, `/live/machine` y `/live/enroll`, quedan fuera del candado de la plataforma.
+
+El canal de vuelta está cerrado: el sitio no le puede mandar órdenes a la máquina. Un mensaje que no sea de los que
+espera la máquina se descarta y corta la conexión.
+
+**Un sitio ya instalado: el paso de una vez.** `/live/machine` y `/live/enroll` están en `RUTAS_SIN_SESION`, pero el
+candado de la plataforma de un sitio ya instalado no se entera solo. En Azure, se corre una vez la orden de
+`--excluded-paths` de la receta, que ya las nombra; en la receta local con túnel, se las deja libres en el candado del
+túnel. Lo comprueba la prueba sin sesión: `node scripts/site/check-deploy.js --url https://<dirección del sitio>`, que
+avisa «falta el paso de una vez» si el candado las tapa.
+
 ## Configuración, sección por sección
 
 Cada sección es una parte de un archivo de configuración que vive en un repo de la organización: el **repo de

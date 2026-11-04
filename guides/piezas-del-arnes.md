@@ -1238,6 +1238,22 @@ _(scripts/tools/work-in-progress.js + commands/wip.md; en 3D y en vivo: scripts/
 
 **Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptstoolswork-in-progressjs)
 
+## scripts/hooks/office-link-start.js
+
+_(scripts/hooks/office-link-start.js + `harness.js team-refresh`; la conexión: scripts/tools/office/site-link.js)_
+
+**Qué es:** Lo que enlaza la oficina de la máquina con el sitio de la organización sin que el dev haga nada: el alta con
+la huella al abrir una sesión, y la capa del equipo al día cada 30 min mientras se trabaja.
+
+**Por qué existe:** Una máquina con el arnés al día quedó sin oficina porque su capa del equipo seguía sin la dirección
+del sitio, y sólo un `update --yes` a mano la trajo.
+
+**Quién la usa:** Cada máquina del equipo, sola. Quien mantiene aprueba cada máquina una vez en el sitio.
+
+**Dónde se prueba:** `scripts/tests/`: `office-site-link`, `harness-team` (T43); el banco, caso 79
+
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptshooksoffice-link-startjs)
+
 ## scripts/metrics/upload-runs.js
 
 _(scripts/metrics/upload-runs.js + scripts/metrics/download-runs.js)_
