@@ -391,6 +391,12 @@ async function main() {
     console.log(fails.length ? `E1-E6 (8.183): FALLA (${fails.length})` : 'E1-E6 (8.183): OK');
     return fails.length ? 1 : 0;
   }
+  // sólo los números de tarea y las manos (8.198), con su propia oficina de juguete
+  if (process.argv.includes('--task-numbers')) {
+    await taskNumbers(playwright);
+    console.log(fails.length ? `8.198: FALLA (${fails.length})` : '8.198: OK');
+    return fails.length ? 1 : 0;
+  }
 
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'office-e1-'));
   const sdir = stateDir(home);
