@@ -1795,6 +1795,21 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/permission-notice.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/turn-wait-and-retired.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/pruned-run-restore.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/session-transcript.test.js",
       "requiere": []
     },

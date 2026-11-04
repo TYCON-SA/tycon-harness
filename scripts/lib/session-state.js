@@ -24,7 +24,7 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..', '..');
 const SCHEMA = 1;
 const TOOLS = ['claude', 'codex'];
-const FIELDS = ['schema', 'session', 'tool', 'name', 'sentence', 'step', 'endAt', 'endWithoutHour', 'waitingForOwner', 'waitingFor', 'updatedAt', 'pid', 'busy'];
+const FIELDS = ['schema', 'session', 'tool', 'name', 'sentence', 'step', 'endAt', 'endWithoutHour', 'waitingForOwner', 'waitingFor', 'updatedAt', 'pid', 'busy', 'permission'];
 // la oración de una sesión sin pipeline ni trabajo suelto declarado: la misma que dice la oficina
 const NO_PIPELINE = 'Trabaja sin pipeline.';
 const DEAD_AFTER_MS = 2 * 3600 * 1000;
@@ -94,6 +94,8 @@ const fresh = (sid, tool) => ({
   schema: SCHEMA, session: String(sid), tool, name: null, sentence: NO_PIPELINE, step: null, endAt: null, endWithoutHour: null,
   waitingForOwner: false, waitingFor: null, updatedAt: null, pid: null, busy: null,
 });
+// los campos que sólo se escriben con un valor: el permiso abierto, que la mayoría de las sesiones nunca tiene
+const ONLY_WITH_VALUE = new Set(['permission']);
 const withoutTime = (s) => JSON.stringify(FIELDS.filter((k) => k !== 'updatedAt').map((k) => s[k] === undefined ? null : s[k]));
 
 /**
@@ -119,7 +121,10 @@ function update(sdir, sid, patch = {}, { create = false, tool = null, retool = f
     if (cur.state && withoutTime(cur.state) === withoutTime(next)) return 'same';
     next.updatedAt = new Date(now).toISOString();
     const ordered = {};
-    for (const k of FIELDS) ordered[k] = next[k] === undefined ? null : next[k];
+    for (const k of FIELDS) {
+      if (ONLY_WITH_VALUE.has(k) && next[k] == null) continue;
+      ordered[k] = next[k] === undefined ? null : next[k];
+    }
     const file = pathOf(sdir, sid);
     // privado, como el candado del proceso de la oficina: dice el nombre de la sesión, qué hace y qué espera
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });

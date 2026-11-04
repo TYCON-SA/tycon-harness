@@ -340,6 +340,41 @@ toca una pantalla, tampoco guarda: sin medir no hay verde.
 arreglo rápido cerrado (`adhoc clear`) o vencido ya no frena nada al guardar, igual que el freno de riesgo alto. Una
 pantalla anotada en un worktree anidado que ya se borró sigue pidiendo maqueta y captura: la salida es `adhoc clear`.
 
+## Una sesión trabada, al instante
+
+**Al designarse, y cada vez que termina, la coordinadora lanza `node scripts/tools/coordination.js owner-wait` de
+fondo.** Mira cada 2 segundos y termina con una línea por novedad, y terminar la despierta:
+
+- «<sesión> espera un permiso desde las HH:MM: <herramienta> <qué pide>. Para entrar: claude attach <sesión>»: se lo
+  pasa al dueño con la sesión, qué pide y su recomendación. El permiso lo contesta una persona, en la pestaña de la
+  sesión o con `claude attach`.
+- «<sesión> siguió: el permiso ya no está abierto» o «<sesión> se cerró con un permiso abierto»: se le avisa al dueño si
+  se lo había pedido.
+- «<sesión>: la cerró Claude Code a las HH:MM por falta de memoria, quieta N min. Para levantarla: claude respawn <id>»:
+  Claude Code cierra solo las sesiones de fondo quietas cuando la máquina se queda sin memoria, y no se puede evitar
+  desde el arnés. La coordinadora decide si la levanta: levantarla vuelve a ocupar memoria y cuenta para el tope.
+
+Hay uno por máquina, y sin coordinadora confirmada sale enseguida. Si no está corriendo, el aviso de cada turno lo dice
+con el comando. `coordination.js status` muestra las «Trabadas» y las «Cerradas por Claude Code».
+
+**En cada chequeo, y antes de decir «no hay nada para vos», la coordinadora mira las esperas de la oficina** («Tu firma» y
+el estado de cada sesión), no sólo los mensajes que le llegan: el aviso puede fallar.
+
+**El modo automático no evita el cuadro.** Según la documentación de Claude Code, en `auto` el cuadro se abre igual con
+reglas `ask`, con un `rm` sobre rutas críticas, en la primera lectura fuera de la carpeta de trabajo, y después de 3
+bloqueos seguidos o 20 en total.
+
+Límite conocido: con un permiso abierto, terminar otra herramienta no lo cierra, pero dos usos a la vez de la misma
+herramienta lo pueden cerrar antes de tiempo.
+
+Una sesión que espera un turno lo anota con `marker.js doing "<qué hago>" --waiting-for "<qué espera>"`: esa espera le
+llega a la coordinadora y al dueño recién a las 2 horas, no a los 30 minutos, aunque el freno del cierre haya escalado.
+Esa espera anotada también protege a su ejecución de la poda por vieja durante 24 h desde que empezó a esperar.
+
+**Una ejecución podada se recupera.** Si igual se podó («abandonada: más de N h sin tocarse»), su marcador quedó
+guardado: la sesión que la retoma corre `marker.js restore <sesión>` (la sesión podada), con la firma del dueño de
+siempre, y vuelve con sus pasos hechos y pendientes, sin repetir firmas.
+
 ## Los avisos al dueño
 
 Cortos y llanos: qué pasó, qué falta y qué decide él, en ese orden. Un aviso por tanda de trabajo, no uno por sesión.
@@ -509,7 +544,7 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
 | La coordinadora no aprueba lo que le da más poder | nadie | El control del perfil mira el nivel de lo que se delega, no quién aprobó el pedido. |
 | Las sesiones no se escriben entre sí | nadie | Un mensaje entre sesiones no pasa por un control. |
 | Una sesión no abre un cuadro en su pestaña | nadie | Lo decide la sesión al preguntar. |
-| Una sesión trabada se avisa con la respuesta recomendada | aviso | El aviso de las esperas sale a los 5 y a los 30 minutos; la recomendación la escribe la coordinadora. |
+| Una sesión trabada se avisa con la respuesta recomendada | aviso | Un permiso, al instante, con `owner-wait`; las demás esperas, a los 5 y a los 30 minutos; la recomendación la escribe la coordinadora. |
 | Preguntarle a la sesión antes de decir «te toca» | nadie | Lo que el dueño escribe en otra pestaña no le llega a ella. |
 | «Te toca» sólo para lo que se puede hacer ahora | nadie | Es la forma del mensaje. |
 | Cada pedido al dueño viene completo | nadie | Es la forma del mensaje. |
