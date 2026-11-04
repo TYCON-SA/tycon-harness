@@ -182,8 +182,35 @@ function sesionQueReenvia({ env = process.env, home, arnes } = {}) {
 // reconoce por su número, que no cambia al reiniciar el proceso (sí con /clear o con un chat nuevo); el nombre visible
 // no cuenta, porque lo pone el sistema y otra sesión puede llevar el mismo.
 const DESIGNACION = 'relay-designation';
-const RE_ESTA_SESION = /(esta\s+(sesi[oó]n|conversaci[oó]n)|\bsos\b|this\s+(session|conversation))/i;
-const RE_NIEGA = /\b(no|nunca|jam[aá]s|not|never)\b|\bisn'?t\b|\bdeja\s+de\s+ser\b/i;
+// Las dos se aplican a la frase PLANA (ver `plana`): sin acentos y en minúsculas. «Esta sesión», «esta pestaña», «sos», y
+// en inglés «this session». Las formas que no nombran la sesión («esta es la…», «eres», «te designo»…) piden el rol
+// pegado: ver `formasConElRol`.
+const RE_ESTA_SESION = /\besta\s+(sesion|conversacion|pestana|ventana|terminal|instancia|chat)\b|\bsos\b|\bthis\s+(session|conversation|tab|window)\b/;
+const RE_NIEGA = /\b(no|nunca|jamas|tampoco|ni|not|never)\b|\bisn'?t\b|\bdej\w*\s+de\s+ser\b/;
+// una letra que la terminal cambió por «?» o por el carácter de reemplazo, entre otras dos («sesi?n»)
+const RE_TILDE_ROTA = /\p{L}[?�]\p{L}/u;
+
+/**
+ * La frase como se juzga: sin acentos (también los que llegan aparte de su letra), en minúsculas, y con cada letra que una
+ * terminal partió en dos («sesiÃ³n»: UTF-8 leído como Latin-1) reparada. Así una frase sin tilde, o con la tilde
+ * descompuesta, dice lo mismo que con ella.
+ */
+function plana(texto) {
+  return sinTildes(enLetrasComunes(texto));
+}
+// La frase con cada letra partida reparada (letra por letra: la frase puede traer otros caracteres, que no se tocan), las
+// letras de ancho completo y sus parecidas en su forma común (NFKC) y sin los caracteres invisibles: una «n» y una «o» con
+// un espacio de ancho cero en el medio siguen siendo «no».
+function enLetrasComunes(texto) {
+  return String(texto || '')
+    .replace(/[Â-ß][\u0080-¿]/g, (par) => Buffer.from(par, 'latin1').toString('utf8'))
+    .normalize('NFKC').replace(/\p{Cf}/gu, '').replace(/[\u2018\u2019\u02BC]/g, "'").toLowerCase();
+}
+const sinTildes = (t) => t.normalize('NFD').replace(/\p{M}/gu, '');
+// Una frase condicional o un pedido de averiguar no designa aunque no lleve «?»: «decime si eres la coordinadora»,
+// «cuando seas la coordinadora…». Se mira con las tildes, para que «Sí, esta sesión es…» no cuente como «si»; un «si» seguido
+// de una coma o de un signo es el «sí» escrito sin tilde.
+const RE_CONDICIONAL = /(?<![\p{L}\p{N}])(si(?!\s*[,.!])|cuando|cuándo|dime|decime|avisame|avisá|if|whether|when)(?![\p{L}\p{N}])/u;
 
 /**
  * El juez de la frase que designa: nombra el rol, dice que es ESTA sesión, no lo niega y no es una pregunta. Se aplica a
@@ -191,25 +218,33 @@ const RE_NIEGA = /\b(no|nunca|jam[aá]s|not|never)\b|\bisn'?t\b|\bdeja\s+de\s+se
  * sesión ya no es la coordinadora») tumba la designación. null = vale; si no, el motivo.
  */
 function juezDesignacion(rol) {
-  const r = String(rol || '').trim().toLowerCase();
+  const r = plana(String(rol || '').trim());
+  const rolRe = r.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // «Esta es la coordinadora», «Tú eres la coordinadora», «Quiero que seas la coordinadora», «Te designo coordinadora»,
+  // «You are the coordinadora»: el rol justo después, para que «esta es la tarea que pidió la coordinadora» no designe
+  const formasConElRol = new RegExp(`\\b(?:esta\\s+es|eres|seas|te\\s+designo(?:\\s+como)?|you\\s+are)\\s+(?:la\\s+|el\\s+|the\\s+)?${rolRe}(?![\\p{L}\\p{N}])`, 'u');
   const juez = (texto) => {
-    const t = String(texto || '').toLowerCase();
-    if (!r || !t.includes(r)) return `la frase no nombra el rol «${String(rol || '').trim()}»`;
-    if (!RE_ESTA_SESION.test(t)) return `la frase no dice que es esta sesión (por ejemplo «Esta sesión es la ${r}»)`;
+    // una tilde perdida no se puede reparar: se dice, para que se escriba sin tildes en vez de buscar otra frase
+    if (RE_TILDE_ROTA.test(String(texto || ''))) return `la frase llegó con una letra cambiada por «?» (la terminal no pasó una tilde): escribila sin tildes, por ejemplo «Esta sesion es la ${r}»`;
+    const t = plana(texto);
+    if (!r || !new RegExp(`(?<![\\p{L}\\p{N}])${rolRe}(?![\\p{L}\\p{N}])`, 'u').test(t)) return `la frase no nombra el rol «${String(rol || '').trim()}»`;
+    if (!RE_ESTA_SESION.test(t) && !formasConElRol.test(t)) return `la frase no dice que es esta sesión (por ejemplo «Esta sesión es la ${r}»)`;
     if (RE_NIEGA.test(t)) return 'la frase lo niega';
     if (/[?¿]/.test(t)) return 'la frase es una pregunta';
+    if (RE_CONDICIONAL.test(enLetrasComunes(texto))) return 'la frase es condicional o pide averiguar (si, cuando, decime…): no afirma que esta sesión sea el rol';
     return null;
   };
   // sólo una frase que niega el rol mismo («ya no sos la coordinadora», «esta sesión ya no es la coordinadora»): un «no»
   // cualquiera de otra charla no anula la designación
-  const rolRe = r.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const anula = new RegExp(`\\b(?:ya\\s+)?no\\s+(?:es|sos|ser[aá]s?)\\s+(?:m[aá]s\\s+)?(?:la\\s+|el\\s+)?${rolRe}(?![\\p{L}\\p{N}])`
-    + `|\\bdej[aáeó]s?\\s+de\\s+ser\\s+(?:la\\s+|el\\s+)?${rolRe}(?![\\p{L}\\p{N}])`
+    + `|\\bdej[aeo]s?\\s+de\\s+ser\\s+(?:la\\s+|el\\s+)?${rolRe}(?![\\p{L}\\p{N}])`
     + `|\\bya\\s+no\\s+(?:vas\\s+a\\s+ser|eres)\\s+(?:la\\s+|el\\s+)?${rolRe}(?![\\p{L}\\p{N}])`
     + `|${rolRe}\\s+ya\\s+no\\s+(?:sos|es|eres)\\b`
+    // las formas naturales, negadas: «tú no eres», «no quiero que seas», «no te designo»
+    + `|\\bno\\s+(?:eres|(?:quiero\\s+que\\s+)?seas|te\\s+designo(?:\\s+como)?)\\s+(?:la\\s+|el\\s+)?${rolRe}(?![\\p{L}\\p{N}])`
     + `|\\b(?:sac|quit|anul|revoc)\\p{L}*\\s+(?:la\\s+)?designaci[oó]n\\b`
     + `|\\b(?:is|are)\\s+(?:no\\s+longer|not)\\s+(?:the\\s+)?${rolRe}(?![\\p{L}\\p{N}])`, 'iu');
-  juez.retracta = (texto) => !!r && anula.test(String(texto || ''));
+  juez.retracta = (texto) => !!r && anula.test(plana(texto));
   return juez;
 }
 
