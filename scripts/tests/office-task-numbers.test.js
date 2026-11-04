@@ -263,7 +263,7 @@ test('T46 Sync_Limites_NoBorraNoCambiaTituloNiHoraNiReabre — @story-8.198 @ac-
   assert.match(board.lastFactLine(sdir, byTitle(rows, 'Prometida').id), /curso:s1:1/);
 });
 
-test('T47 Sync_TableroSinNumerosORoto_NoEscribeYAvisa — @story-8.198 @ac-48', () => {
+test('T47 Server_DespuesDeLaFoto_LlamaASyncSinPreguntarDeNuevo (un tablero sin números o roto) — @story-8.198 @ac-48', () => {
   for (const raw of [{ pendientes: [row('Sin número', { historia: '8.1' })] }, { pendientes: [row('Vieja', { historia: '8.1', id: 'T-1', estimadaIso: '2026-11-04T18:00' })] }]) {
     const sdir = stateDir();
     writeRaw(sdir, raw);
@@ -484,6 +484,40 @@ test('T40 Office_TableroCambiadoSinElComando_AvisaUnaVez — @story-8.198 @ac-40
   assert.strictEqual(office.boardEditedNotice(sdir), null, 'con la huella igual, nada');
   fs.appendFileSync(boardFile(sdir), ' ');
   assert.match(office.boardEditedNotice(sdir), /^el tablero se editó fuera del comando a las \d\d:\d\d: corré board\.js check$/);
+});
+
+test('T47 Server_DespuesDeLaFoto_LlamaASyncSinPreguntarDeNuevo — @story-8.198 @ac-48', () => {
+  // los hechos salen de la foto, sin otra consulta: la sesión con su historia y el pedido de la fila que ya contestó
+  const b = numbered([{ titulo: 'La historia', historia: '8.1' }, { titulo: 'Con pedido', estado: 'curso', pedido: { repo: 'acme/x', numero: 7 } }]);
+  const prAnswers = new Map([['acme/x#7', { pr: { state: 'merged', mergedAt: '2026-11-04T13:12:00Z' } }]]);
+  const r = buildOffice({ wip: wip([{ session: 'Ana', work: '8.1 · Una', extra: { kind: 'pipeline', title: 'Una', storyId: '8.1', current: 'implement', endAt: ONOW + 3600000 } }]), board: b, prAnswers, nowMs: ONOW });
+  assert.ok(r.facts.some((f) => f.tipo === 'curso' && f.historia === '8.1' && f.quien === 'Ana'));
+  assert.ok(r.facts.some((f) => f.tipo === 'merge' && f.tarea === 'T-2' && f.at === Date.parse('2026-11-04T13:12:00Z')));
+  assert.strictEqual(r.factsComplete, true);
+  // sin la respuesta de un pedido, la lectura no está completa
+  assert.strictEqual(buildOffice({ wip: wip([]), board: b, prAnswers: new Map(), nowMs: ONOW }).factsComplete, false);
+  // el proceso de la oficina lo pide en cada foto; un sync que tira no corta la foto: queda un aviso
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'tools', 'office', 'server.js'), 'utf8'), /office\.collect\(\{[^\n]*syncBoard: true/);
+  const problems = [];
+  office.syncBoardFromPhoto('/no/importa', [], true, problems, { sync: () => { throw new Error('roto'); } });
+  assert.deepStrictEqual(problems, ['el tablero no se movió solo: roto']);
+});
+
+test('T33 Ventanas_LasCuatro_XArribaYSinCerrarAbajo — @story-8.198 @ac-32', () => {
+  const code = fs.readFileSync(path.join(__dirname, '..', 'tools', 'office', 'page.js'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '..', 'tools', 'office', 'page.html'), 'utf8');
+  // el detalle y la conversación usan la misma X; el panel de la persona y el de «Pendientes», la suya, con la misma etiqueta
+  assert.match(code, /function botonCerrar\(alCerrar\)\{const b=el\("button","close","×"\);b\.type="button";b\.setAttribute\("aria-label","Cerrar"\)/);
+  assert.match(code, /function abrirTarjeta[\s\S]*?const cerrar=botonCerrar\(cerrarCharla\)/);
+  assert.match(code, /function abrirCharla[\s\S]*?const cerrar=botonCerrar\(cerrarCharla\)/);
+  assert.match(code, /panel\.innerHTML='<button class="close" type="button" aria-label="Cerrar">×<\/button>/);
+  assert.match(code, /mk\("button","close","×"\);cl\.type="button";cl\.setAttribute\("aria-label","Cerrar"\)/);
+  // ningún botón con el texto «Cerrar»: abajo no queda ninguno
+  assert.doesNotMatch(code, /el\("button",[^)]*,"Cerrar"\)/);
+  assert.doesNotMatch(code, /mk\("button",[^)]*,"Cerrar"\)/);
+  // la X va arriba a la derecha en las cuatro: las dos ventanas son .panel3, como los paneles
+  assert.match(html, /\.panel3 \.close\{position:absolute;right:8px;top:6px/);
+  assert.match(html, /<div class="ventana" id="ventana" hidden><div class="panel3"/);
 });
 
 // ── La mano levantada ────────────────────────────────────────────────────────────────────────────────────────────

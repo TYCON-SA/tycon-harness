@@ -3231,9 +3231,10 @@ test('T267 Conversation_OnlyInItsWindow: el botón va sólo con la oficina viva,
   assert.match(html, /s\.appendChild\(dibujo\(CHARLA_ICONO\)\)/, 'lleva su ícono, dibujado en la página');
   assert.match(html, /\.ventana \.panel3\{[^}]*height:min\(920px,calc\(100dvh - 32px\)\)/, 'la ventana entra en la pantalla');
   assert.match(html, /\.ventana \.panel3 \.chat\{[^}]*overflow:hidden auto/, 'y los mensajes suben y bajan adentro');
-  assert.match(html, /e\.key==="Escape"\)cerrarCharla\(\)/);
+  // Escape cierra la de arriba, y tocar afuera cierra sólo con un toque que empieza afuera (8.198, AC 33 y 34)
+  assert.match(html, /e\.key!=="Escape"\)return;if\(!ventana\(\)\.hidden\)\{cerrarCharla\(\);return\}/);
   assert.match(html, /id="ventana" hidden/, 'arranca cerrada');
-  assert.match(html, /getElementById\("ventana"\)\.addEventListener\("click",e=>\{if\(e\.target===e\.currentTarget\)cerrarCharla\(\)\}\)/, 'tocando afuera se cierra');
+  assert.match(html, /v\.addEventListener\("click",e=>\{if\(e\.target===e\.currentTarget&&empezoAfuera\)cerrarCharla\(\)/, 'tocando afuera se cierra');
   const opensAt = html.indexOf('function abrirCharla(');
   assert.ok(opensAt >= 0);
   assert.strictEqual(html.indexOf('fetch(pedidoDeCharla('), html.indexOf('fetch(pedidoDeCharla(', opensAt), 'se lee sólo al abrirla');

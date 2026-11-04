@@ -205,7 +205,8 @@ function photoThread() {
       if (!once || reread) once = { site: office.readSiteUrl(), quiet: office.readQuietMinutes() };
       // con otro sitio, todas las conversaciones salen de nuevo: el sitio nuevo no recibió ninguna
       if (reread) talked.clear();
-      const data = await office.collect({ home, queryAll: query, queryPrs, siteUrl: async () => once.site, quietMinutes: async () => once.quiet, envelopes, memory });
+      // este proceso tiene el candado de la oficina de la máquina: él mueve el tablero con los hechos de cada foto
+      const data = await office.collect({ home, queryAll: query, queryPrs, siteUrl: async () => once.site, quietMinutes: async () => once.quiet, envelopes, memory, syncBoard: true });
       const charlaFailures = [];
       const said = charlas ? changedTalks(office, envelopes, talked, Date.now(), charlaFailures) : null;
       parentPort.postMessage({ data, files: [...envelopes.files], coordinator: envelopes.coordinator, readAt: query.readAt(), halfwayReadAt: memory.halfwayReadAt, counted, charlas: said, charlaFailures });

@@ -721,9 +721,44 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     quietMin: quiet,
   };
   kanban.linea = boardLine(kanban, { trabado: meta.trabado });
+  const facts = boardFacts({ agents, storyOfAgent, sidOf, board, prAnswers, halfwayCards, nowMs });
   // la tabla dice lo mismo que las tarjetas, en llano
   const rows = agents.filter((a) => a.tipo).map((a) => ({ work: a.titulo || '', state: a.mientras ? `${a.haciendo} Mientras tanto: ${a.mientras}.` : a.haciendo, end: a.fin ? a.fin.hora + (a.fin.dif ? ` · ${a.fin.dif}` : '') : '', session: a.nombre, folder: a.carpeta || '' }));
-  return { data: { agents, items, kanban, meta, rows, free: (wip.free || []).filter((name) => !notFree.has(name)), unreadable: wip.unreadable || [] }, promises: kept };
+  return { data: { agents, items, kanban, meta, rows, free: (wip.free || []).filter((name) => !notFree.has(name)), unreadable: wip.unreadable || [] }, promises: kept, facts: facts.list, factsComplete: facts.complete && !halfwayUnknown };
+}
+
+/**
+ * Los hechos de esta foto para mover el tablero (`board.js sync`): cada sesión viva con su historia o con un número en lo que
+ * hace (arrancó, o espera al dueño), cada pedido de una fila que entró o se cerró sin entrar, y cada ejecución de una
+ * sesión cerrada que quedó cortada. `complete` es false si algún pedido no se pudo preguntar: entonces `sync` no aplica lo
+ * que sale de no ver algo.
+ */
+function boardFacts({ agents, storyOfAgent, sidOf, board, prAnswers, halfwayCards, nowMs }) {
+  const list = [];
+  let complete = true;
+  for (const a of agents) {
+    if (!a.tipo || a.estado === 'coordina' || a.estado === 'inactiva' || a.estado === 'libre') continue;
+    const historia = storyOfAgent.get(a) || a.historiaTrabajo || null;
+    const tarea = tasksIn(a.titulo, a.haciendo)[0] || null;
+    if (!historia && !tarea) continue;
+    const sid = String(sidOf.get(a) || a.nombre);
+    const waits = a.mano === 'dueno';
+    list.push({ tipo: waits ? 'firma' : 'curso', clave: `${waits ? 'firma' : 'curso'}:${sid}`, ...(tarea ? { tarea } : { historia }), quien: a.nombre, titulo: a.titulo || undefined, at: nowMs });
+  }
+  for (const f of (board && board.filas) || []) {
+    const asked = f.pedido || f.recordado;
+    if (!asked || !f.numero) continue;
+    const answer = prAnswers.get(`${asked.repo}#${asked.numero}`);
+    if (!answer || !answer.pr) { complete = false; continue; }
+    const pr = answer.pr;
+    if (pr.state === 'merged') list.push(...boardTool.mergeFacts([{ tarea: f.numero, pedidos: [{ repo: asked.repo, numero: asked.numero, state: 'merged', mergedAt: Date.parse(pr.mergedAt) || nowMs }] }]));
+    else if (pr.state === 'closed') list.push({ tipo: 'abandonado', clave: `abandonado:${String(asked.repo).toLowerCase()}#${asked.numero}`, tarea: f.numero, pedido: asked, at: Date.parse(pr.closedAt) || nowMs });
+  }
+  for (const h of halfwayCards) {
+    if (!h.storyId || h.columna === 'firma') continue;
+    list.push({ tipo: 'cortada', clave: `cortada:${h.storyId}`, historia: String(h.storyId), at: nowMs });
+  }
+  return { list, complete };
 }
 
 // Una carpeta que quedó sin terminar, en llano y con qué hacer.
@@ -1746,6 +1781,26 @@ function conversationOf(env, name) {
   return readConversation(e.file, { coordinator: c && c.name, isCoordinator: Boolean(c) && e.sid === c.sid, background: e.background });
 }
 
+/** Mueve el tablero con los hechos de la foto. La foto sale igual si falla: el motivo va una vez a lo que no se pudo leer. */
+function syncBoardFromPhoto(sdir, facts, complete, problems, { now, home, sync = boardTool.sync } = {}) {
+  try {
+    const r = sync(sdir, facts, { complete, now, home });
+    if (r && r.aviso) problems.push(r.aviso);
+    return r;
+  } catch (e) {
+    problems.push(`el tablero no se movió solo: ${e.message}`);
+    return null;
+  }
+}
+
+// El proceso de la oficina de esta máquina está vivo: es él quien mueve el tablero.
+function officeProcessAlive(sdir) {
+  try {
+    const { pid } = JSON.parse(fs.readFileSync(path.join(sdir, 'office', 'server.json'), 'utf8'));
+    return Number.isInteger(pid) && isAlive(pid);
+  } catch { return false; }
+}
+
 /** Lee todo lo de esta máquina y arma los datos; guarda las promesas al día. */
 async function collect(opts = {}) {
   const home = opts.home || os.homedir();
@@ -1829,7 +1884,9 @@ async function collect(opts = {}) {
   const waitingPrs = await askWaitingPrs(wip, open, { ...opts, sessionPrs: rowPrsAfter.sesiones }, remembered.prsEnded);
   const testSessions = wip.testSids || new Set();
   const personSessions = new Set([...sessions].filter(([, s]) => s.kind === 'interactive').map(([sid]) => String(sid)));
-  const { data, promises } = buildOffice({ wip, signatures, coordinatorSid, coordinatorName, promises: saved.promises, nowMs, sessionFiles: states, codexNames: cxNames, runningAgents, quietMin, board: board.board, prAnswers, transcripts, lastWrites, processes, openPrs: open.prs, openPrsNote: open.note, waitingPrs, testSessions, personSessions, otherProjects: otherProjectsOf(wip, open, remoteOf), projectOf, projectOfRepo });
+  const { data, promises, facts, factsComplete } = buildOffice({ wip, signatures, coordinatorSid, coordinatorName, promises: saved.promises, nowMs, sessionFiles: states, codexNames: cxNames, runningAgents, quietMin, board: board.board, prAnswers, transcripts, lastWrites, processes, openPrs: open.prs, openPrsNote: open.note, waitingPrs, testSessions, personSessions, otherProjects: otherProjectsOf(wip, open, remoteOf), projectOf, projectOfRepo });
+  // el tablero se mueve solo con los hechos de esta foto: lo hace sólo quien tiene el candado de la oficina, con board.js
+  if (opts.syncBoard && board.board && !opts.readOnly) syncBoardFromPhoto(sdir, facts, factsComplete && open.measured !== false, problems, { now: nowMs, home, sync: opts.boardSync });
   // sólo con la oficina abierta: la primera pasada lee conversaciones enteras, y la foto fija y `--json` empezarían de cero cada vez
   if (opts.envelopes && !opts.noTranscripts) data.tokens = readTokens(wip, states, remembered.tokens, { home, nowMs, projectsDir: opts.projectsDir, codexHome: opts.codexHome, cxNames });
   // lo del tablero que no es una fila: su resumen, lo que dice que le toca al dueño y cuándo se escribió
@@ -1965,7 +2022,7 @@ async function main(argv) {
     else if (a === '--write-tables') {
       process.stderr.write('office.js: las tablas se arman solas: ya no se escriben. El tema de un trabajo se corrige con `tema` en su fila del tablero.\n');
       return 2;
-    } else if (a === '--out' || a === '--now') {
+    } else if (a === '--out' || a === '--now' || a === '--task') {
       const v = argv[++i];
       if (!v || v.startsWith('--')) { process.stderr.write(`office.js: ${a} pide un valor\n`); return 2; }
       opts[a.slice(2)] = v;
@@ -1991,9 +2048,17 @@ async function main(argv) {
   }
   let data;
   // la foto que queda en un archivo no lleva nada de las conversaciones: eso sólo viaja en la foto viva
-  try { data = await collect({ now: opts.now, noTranscripts: !opts.json }); } catch (e) {
+  // sin el proceso de la oficina, el tablero lo mueve esta foto; una foto de otra hora no escribe nada
+  const sdir = stateDir(os.homedir());
+  try { data = await collect({ now: opts.now, noTranscripts: !opts.json && !opts.task, syncBoard: !opts.now && !officeProcessAlive(sdir) }); } catch (e) {
     if (e.code === 'NO_STATE' || e.code === 'BAD_ARG') { process.stderr.write(`office.js: ${e.message}\n`); return 2; }
     throw e;
+  }
+  if (opts.task) {
+    const r = findTask(data, opts.task, { dados: boardTool.readNumbers(sdir).dados });
+    if (opts.json && r.card) process.stdout.write(`${JSON.stringify(r.card, null, 2)}\n`);
+    else process.stdout.write(`${r.line}\n`);
+    return r.code;
   }
   if (opts.json) { process.stdout.write(`${JSON.stringify(data, null, 2)}\n`); return 0; }
   const file = opts.out ? path.resolve(opts.out) : path.join(os.tmpdir(), 'tycon-office', 'office.html');
@@ -2011,4 +2076,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, boardLine, findTask, boardEditedNotice, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, cardPr, codexAgentsUnder, claudeAgentsActive, buildTables, rowPrsNow, applyRowPrs, settleRowPrs, workCards, readTranscripts, readLastWrites, MODULES };
+module.exports = { prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, boardLine, findTask, boardEditedNotice, syncBoardFromPhoto, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, cardPr, codexAgentsUnder, claudeAgentsActive, buildTables, rowPrsNow, applyRowPrs, settleRowPrs, workCards, readTranscripts, readLastWrites, MODULES };

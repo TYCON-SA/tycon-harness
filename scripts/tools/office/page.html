@@ -76,6 +76,7 @@ h2{font:700 .8rem var(--display);text-transform:uppercase;letter-spacing:.08em;c
 @keyframes pulso-coord{50%{box-shadow:0 0 0 4px rgba(90,169,255,.35),0 6px 18px rgba(0,0,0,.45)}}
 .num{display:inline-block;margin-right:6px;padding:0 6px;border-radius:9px;font:700 11px var(--body);background:var(--line);color:inherit;vertical-align:1px}
 .item.mano-coordinadora{box-shadow:inset 3px 0 0 #5aa9ff}
+.buscar{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.buscar input{width:7em}.item.marcada{outline:2px solid #ffd08a;outline-offset:2px}
 .item.mano-dueno{box-shadow:inset 3px 0 0 #ffa53d}
 .tag.sel{border-color:var(--c)}
 .compact .tag{padding:4px 8px 4px 5px;gap:5px}
@@ -108,7 +109,7 @@ h2{font:700 .8rem var(--display);text-transform:uppercase;letter-spacing:.08em;c
 .ventana .quienes button:focus-visible{outline:2px solid #5cc0a3;outline-offset:2px}
 @media (max-width:600px){.ventana .quienes{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin}}
 html.con-ventana{overflow:hidden}.ventana .panel3,.ventana .chat{overscroll-behavior:contain}
-.ventana .panel3{position:static;display:flex;flex-direction:column;width:min(1120px,100%);height:min(920px,calc(100vh - 32px));height:min(920px,calc(100dvh - 32px));max-height:none;padding:18px 22px;color:#efe9fa}.ventana .panel3>*{flex:none}
+.ventana .panel3{position:relative;display:flex;flex-direction:column;width:min(1120px,100%);height:min(920px,calc(100vh - 32px));height:min(920px,calc(100dvh - 32px));max-height:none;padding:18px 22px;color:#efe9fa}.ventana .panel3>*{flex:none}
 .ventana .panel3 h3{font-size:1.25rem}
 .ventana .panel3 .chat{flex:1 1 0;min-height:140px;max-height:none;gap:9px;overflow:hidden auto;padding-right:6px}
 .ventana .panel3 .msg{gap:6px;max-width:86%;padding:10px 14px;font-size:15.5px;line-height:1.5}.ventana .panel3 .msg b{font-size:12.5px}.ventana .panel3 .msg code{font-size:14px}.ventana .panel3 .msg ul,.ventana .panel3 .msg ol{padding-left:20px;font-size:inherit}
@@ -272,7 +273,8 @@ tr:last-child td{border-bottom:0}
       <div class="seg" role="radiogroup" aria-labelledby="trabajoTitle">
         <label><input type="radio" name="vista" value="tablas" checked><span>Tablas</span></label>
         <label><input type="radio" name="vista" value="kanban"><span>Kanban</span></label>
-      </div></div>
+      </div>
+      <form class="buscar" id="buscar" role="search"><label for="buscarTarea">Buscar</label><input id="buscarTarea" type="search" placeholder="T-41" autocomplete="off" inputmode="text"><button type="submit">Ir</button><span class="m" id="buscarAviso" aria-live="polite"></span></form></div>
     <div class="board tablas" id="tablas" hidden></div>
     <div class="board" id="board" hidden><div id="boardBody"></div></div>
     <div class="board" id="halfway" hidden></div>

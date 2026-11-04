@@ -80,6 +80,16 @@ function pintarVista(){const hay=Boolean(DATA.tablas),k=Boolean(DATA.kanban),v=v
   document.getElementById("trabajo").hidden=!hay&&!k;
   document.querySelectorAll('input[name="vista"]').forEach(i=>{i.checked=i.value===v})}
 document.querySelectorAll('input[name="vista"]').forEach(i=>i.addEventListener("change",()=>{if(!i.checked)return;vista=i.value;guardarVista(vista);pintarVista()}));
+// «¿cómo va la T-41?»: «T-41» o «41» pasa al kanban, marca la tarjeta y la abre; si no está, lo dice debajo del campo
+function numeroBuscado(t){const m=/^\s*(?:t-)?([1-9]\d*)\s*$/i.exec(String(t||""));return m?"T-"+m[1]:""}
+function buscarTarea(texto){const aviso=document.getElementById("buscarAviso"),n=numeroBuscado(texto);aviso.textContent="";
+  if(!n){aviso.textContent="Escribí un número, como T-41 o 41.";return}
+  const tarjetas=((DATA.kanban&&DATA.kanban.columnas)||[]).flatMap(c=>c.tarjetas||[]),i=tarjetas.find(t=>t.numero===n);
+  if(!i){aviso.textContent="La "+n+" no está en el tablero.";return}
+  vista="kanban";guardarVista(vista);pintarVista();
+  const card=document.querySelector('#boardBody [data-numero="'+n+'"]');document.querySelectorAll("#boardBody .marcada").forEach(x=>x.classList.remove("marcada"));
+  if(card){card.classList.add("marcada");card.scrollIntoView({block:"center"})}abrirTarjeta(i,card)}
+{const f=document.getElementById("buscar");if(f)f.addEventListener("submit",e=>{e.preventDefault();buscarTarea(document.getElementById("buscarTarea").value)})}
 // los dos resúmenes por tema, con la hora en que se armaron. Un tema se abre y muestra sus trabajos, y sigue abierto con la foto
 // nueva. Todo va como texto, nunca como HTML
 const temasAbiertos=new Set();
@@ -154,11 +164,15 @@ function etiquetaComo(como){const e=el("span","como-chip");e.appendChild(iconoCo
 let charlaDe=null,charlaVuelve=null,ultimoPedido=0;
 const ALCANCE=SOURCE==="site"?"Llegan de la máquina al sitio, que los guarda sólo en su memoria.":"No se guardan en el disco. Si esta máquina está aprobada en el sitio de la organización, se ven también ahí.";
 const ventana=()=>document.getElementById("ventana");
+// las cuatro ventanas de la oficina se cierran igual: una X arriba a la derecha, Escape o tocar afuera
+// cómo se cierra el panel de cada sala: Escape cierra el primero abierto
+const PANELES=new Set();
+function botonCerrar(alCerrar){const b=el("button","close","×");b.type="button";b.setAttribute("aria-label","Cerrar");b.onclick=alCerrar;return b}
 // Quién hace una tarjeta, si es una sesión de esta oficina. Una fila del tablero puede nombrar a más de una persona: cuenta la primera.
 function sesionDeTarjeta(i){const q=String(i.quien||"").trim(),primera=q.split(/[\s,]+/)[0];return agents.find(a=>a.nombre===q)||agents.find(a=>a.nombre===primera)||null;}
 // El detalle de una tarjeta del kanban, en la misma ventana que la conversación: su título entero, lo que sabe la tarjeta y, si la hace una sesión, su ficha.
 function abrirTarjeta(i,card){const v=ventana(),box=v.firstElementChild,a=sesionDeTarjeta(i),nro=numeroDe(i);charlaDe=null;ultimoPedido+=1;charlaVuelve=card;v.hidden=false;box.classList.add("detalle");box.setAttribute("aria-label","Detalle de la tarjeta");document.documentElement.classList.add("con-ventana");
-  const cerrar=el("button","cerrar","Cerrar");cerrar.type="button";cerrar.onclick=cerrarCharla;box.replaceChildren(...(nro?[el("p","num",nro)]:[]),el("h3",null,i.titulo||"Sin título"));
+  const cerrar=botonCerrar(cerrarCharla);box.replaceChildren(...(nro?[el("p","num",nro)]:[]),el("h3",null,i.titulo||"Sin título"));
   const dl=el("dl"),fila=(k,x)=>{if(x==null||x==="")return;const dd=el("dd");dd.append(x);dl.append(el("dt",null,k),dd);};
   fila("Quién",i.quien);if(!a||String(i.hora||"")!==String((finTxt(a)||{}).hora||""))fila("Cuándo",i.hora);if(!a||i.espera!==a.espera)fila("Espera",i.espera);fila("Marca",i.marca);fila("Motivo",i.motivo);fila("Nota",i.nota);fila("Grupo",i.grupo);
   // el enlace sólo lleva a estos dos sitios: de los datos sale la ruta, nunca la dirección entera
@@ -167,10 +181,11 @@ function abrirTarjeta(i,card){const v=ventana(),box=v.firstElementChild,a=sesion
   if(a){const s=AST[a.estado]||[a.estado||"","#999"],chips=el("div","chips"),st=el("span","chip","● "+s[0]);st.style.setProperty("--c",s[1]);chips.append(st);if(a.comoTrabaja&&a.comoTrabaja!==s[0])chips.append(etiquetaComo(a.comoTrabaja));box.append(chips);pintarFicha(a,box,true);}
   box.append(cerrar);cerrar.focus();}
 function abrirCharla(nombre,boton,p=null){const v=ventana(),box=v.firstElementChild;box.classList.remove("detalle");box.setAttribute("aria-label","Conversación");charlaDe=nombre;if(!v.contains(boton))charlaVuelve=boton;v.hidden=false;document.documentElement.classList.add("con-ventana");
-  const cerrar=el("button","cerrar","Cerrar");cerrar.type="button";cerrar.onclick=cerrarCharla;box.replaceChildren(el("h3",null,"Conversación de "+nombre),el("p","m","Leyendo…"),cerrar);cerrar.focus();
+  const cerrar=botonCerrar(cerrarCharla);box.replaceChildren(el("h3",null,"Conversación de "+nombre),el("p","m","Leyendo…"),cerrar);cerrar.focus();
   const yo=++ultimoPedido;fetch(pedidoDeCharla(p||{...fuenteLocal(),nombre}),{credentials:"same-origin"}).then(r=>{if(!r.ok)throw new Error(String(r.status));return r.json()}).then(datos=>({datos}),()=>({falla:true})).then(c=>{if(yo===ultimoPedido&&charlaDe===nombre)pintarCharla(box,nombre,c,cerrar)});}
 function cerrarCharla(){const v=ventana();if(v.hidden)return;v.hidden=true;document.documentElement.classList.remove("con-ventana");v.firstElementChild.classList.remove("detalle");v.firstElementChild.replaceChildren();charlaDe=null;ultimoPedido+=1;if(charlaVuelve&&charlaVuelve.isConnected)charlaVuelve.focus({preventScroll:true});charlaVuelve=null}
-document.addEventListener("keydown",e=>{if(e.key==="Escape")cerrarCharla()});
+// Escape cierra sólo la de arriba: la ventana, si está abierta; si no, el panel de la sala
+document.addEventListener("keydown",e=>{if(e.key!=="Escape")return;if(!ventana().hidden){cerrarCharla();return}for(const c of PANELES)if(c())return});
 // El formato simple de un mensaje: negritas, código y listas. Todo se arma con nodos y textContent, así que lo que traiga
 // el mensaje nunca llega a ser HTML.
 function enLinea(padre,texto){for(const p of String(texto).split(/(\*\*[^*\n]+\*\*|`[^`\n]+`)/)){if(!p)continue;
@@ -240,7 +255,8 @@ if(LIVE){const ws=new WebSocket("ws://"+location.host+"/live?t="+encodeURICompon
   ws.onmessage=ev=>{const o=document.getElementById("ovl"),FALLA="No pude dibujar la última novedad; la oficina muestra la anterior. Corré /office otra vez si sigue así.";try{const m=JSON.parse(ev.data);if(!m||m.type!=="foto")return;setData(m.data);relojTick(agents,Date.now(),meta);renderTop();renderCrew();if(o.textContent===FALLA){o.textContent="";o.hidden=true}if(window.tablero.refresh)window.tablero.refresh()}catch(e){console.error(e);o.textContent=FALLA;o.hidden=false}};
   ws.onclose=cerrada;}
 if(!CON_OFICINAS)setTimeout(()=>{if(!window.tablero.started)sinTresD("Este navegador no pudo cargar la oficina en 3D; las tarjetas y la tabla tienen lo mismo.")},8000);
-document.getElementById("ventana").addEventListener("click",e=>{if(e.target===e.currentTarget)cerrarCharla()});
+// sólo cierra un toque que empieza y termina afuera: seleccionar texto adentro y soltar afuera no la cierra
+{const v=document.getElementById("ventana");let empezoAfuera=false;v.addEventListener("pointerdown",e=>{empezoAfuera=e.target===e.currentTarget});v.addEventListener("click",e=>{if(e.target===e.currentTarget&&empezoAfuera)cerrarCharla();empezoAfuera=false})}
 // la sala en 3D: una por oficina, cada una con su lugar en la página y sus datos
 let LIB_3D=null;
 const cargarTresD=()=>LIB_3D??=Promise.all([import("three"),import("three/addons/controls/OrbitControls.js"),import("three/addons/geometries/RoundedBoxGeometry.js"),import("three/addons/postprocessing/EffectComposer.js"),import("three/addons/postprocessing/RenderPass.js"),import("three/addons/postprocessing/UnrealBloomPass.js"),import("three/addons/postprocessing/OutputPass.js")]);
@@ -473,6 +489,12 @@ function animar(d,t){const {up,head,arms}=d.person.userData,e=d.agent.estado,k=t
 
 // ---------- etiquetas ----------
 let desks=[],sel=null;
+// el panel de una persona y el de «Pendientes» se cierran como las demás ventanas, y el foco vuelve a lo que lo abrió
+function cerrarPanel(){if(panel.hidden)return false;sel=null;panel.hidden=true;panel.classList.remove("wide");desks.forEach(pintarTag);const v=panel.vuelve;panel.vuelve=null;if(v&&v.isConnected)v.focus({preventScroll:true});return true}
+T.cerrarPanel=cerrarPanel;PANELES.add(cerrarPanel);
+// tocar afuera: un toque que empieza y termina afuera del panel, sin arrastrar (arrastrar gira la sala), y sin la ventana encima
+{let abajo=null;document.addEventListener("pointerdown",e=>{abajo=!panel.hidden&&ventana().hidden&&!panel.contains(e.target)&&!e.target.closest(".tag,.ventana")?{x:e.clientX,y:e.clientY}:null},true);
+  document.addEventListener("pointerup",e=>{const a=abajo;abajo=null;if(!a||panel.contains(e.target)||Math.hypot(e.clientX-a.x,e.clientY-a.y)>6)return;cerrarPanel()},true)}
 const BOT='<svg class="bot" viewBox="0 0 24 24" fill="none" stroke="#c9b6ff" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="4" y="8" width="16" height="11" rx="4"/><path d="M12 8V4.5"/><circle cx="12" cy="3.5" r="1.2"/><circle cx="9" cy="13" r="1.3" fill="#c9b6ff"/><circle cx="15" cy="13" r="1.3" fill="#c9b6ff"/><path d="M2 12.5v3M22 12.5v3"/></svg>';
 const FX={firma:"!",pregunta:"?",espera:"⌛",esperando:"⌛",coordina:"→",prueba:"✓",libre:"z",parada:"‖"};
 function nuevoTag(d){const e=document.createElement("button");e.type="button";e.className="tag";e.innerHTML=BOT+'<div class="tx"><b></b><span class="como"></span><span class="st"><span class="dot"></span><span class="es"></span></span><span class="more"><span class="fin"></span><span class="bar"><i></i></span></span></div><span class="fx"></span>';e.onclick=()=>abrir(d.agent.nombre);labelsEl.appendChild(e);d.el=e}
@@ -500,7 +522,7 @@ function ubicarTags(){const W=stage.clientWidth,H=stage.clientHeight,cmp=stage.c
 function abrir(nombre,foto=false){panel.classList.remove("wide");const baja=foto&&sel===nombre?panel.scrollTop:0;sel=nombre;const a=T.agents().find(x=>x.nombre===nombre);if(!a){sel=null;panel.hidden=true;return}const s=T.AST[a.estado]||[a.estado||"","#999"];panel.hidden=false;panel.style.setProperty("--c",s[1]);
   panel.innerHTML='<button class="close" type="button" aria-label="Cerrar">×</button><h3></h3><div class="chips"><span class="chip">● <span class="es"></span></span></div>';
   panel.querySelector("h3").textContent=a.nombre;panel.querySelector(".es").textContent=s[0];if(a.comoTrabaja&&a.comoTrabaja!==s[0])panel.querySelector(".chips").append(T.etiquetaComo(a.comoTrabaja));T.pintarFicha(a,panel,true);
-  panel.querySelector(".close").onclick=()=>{sel=null;panel.hidden=true;desks.forEach(pintarTag)};desks.forEach(pintarTag);
+  if(!foto)panel.vuelve=document.activeElement;panel.querySelector(".close").onclick=()=>T.cerrarPanel();desks.forEach(pintarTag);
   if(foto)panel.scrollTop=baja}
 // ---------- los sobres: quién le habla a quién, unos segundos, sin el texto ----------
 const VUELO_MS=3000,MAX_VUELOS=3,vuelos=[],vistos=new Set(),a3=new THREE.Vector3(),b3=new THREE.Vector3();
@@ -543,7 +565,8 @@ stage.addEventListener("pointerleave",e=>{if(e.pointerType!=="touch")verEtiqueta
 // el detalle de lo pendiente, plano y legible
 function abrirTablero(){sel=null;desks.forEach(pintarTag);const K=T.kanban()||{},meta=T.meta();panel.hidden=false;panel.classList.add("wide");panel.style.setProperty("--c","#9cc2ff");panel.replaceChildren();
   const mk=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
-  const cl=mk("button","close","×");cl.type="button";cl.setAttribute("aria-label","Cerrar");cl.onclick=()=>{panel.hidden=true;panel.classList.remove("wide")};panel.append(cl,mk("h3",null,"Pendientes"));
+  if(document.activeElement&&!panel.contains(document.activeElement))panel.vuelve=document.activeElement;
+  const cl=mk("button","close","×");cl.type="button";cl.setAttribute("aria-label","Cerrar");cl.onclick=()=>T.cerrarPanel();panel.append(cl,mk("h3",null,"Pendientes"));
   const orden=paredEnOrden(K);panel.abiertos=panel.abiertos||new Set();
   const ct=mk("div","counts");orden.forEach(c=>{const k=mk("div","cnt");k.style.setProperty("--k",c.color);k.append(mk("b",null,String(c.tarjetas.length)),mk("span",null,c.nombre));ct.append(k);});panel.append(ct);
   const toca=(meta&&meta.teToca)||[];if(toca.length){panel.append(mk("h4","toca","Te toca"));const ul=mk("ul","toca");toca.forEach(t=>ul.append(mk("li",null,t)));panel.append(ul)}
@@ -617,7 +640,7 @@ T.refresh=()=>{const ps=puestos(),ags=T.agents().slice(0,ps.length);
   if(sel){if(T.agents().some(a=>a.nombre===sel))abrir(sel,true);else{sel=null;panel.hidden=true}}
   else if(!panel.hidden&&panel.classList.contains("wide"))abrirTablero()};
 T.abrir=n=>abrir(n);
-T.apagar=()=>{apagada=true;clearTimeout(timer);timer=null;miraVista.disconnect();miraTamano.disconnect();controls.dispose();labelsEl.replaceChildren();panel.hidden=true;renderer.dispose();renderer.forceContextLoss();renderer.domElement.remove();T.refresh=null};
+T.apagar=()=>{apagada=true;PANELES.delete(cerrarPanel);clearTimeout(timer);timer=null;miraVista.disconnect();miraTamano.disconnect();controls.dispose();labelsEl.replaceChildren();panel.hidden=true;renderer.dispose();renderer.forceContextLoss();renderer.domElement.remove();T.refresh=null};
 // dónde está la cámara, para comprobar que una foto nueva no la mueve
 T.camara=()=>cam.position.toArray().map(n=>+n.toFixed(3));
 return function(){resize();poblar();alDia();lanzarSobres()};
