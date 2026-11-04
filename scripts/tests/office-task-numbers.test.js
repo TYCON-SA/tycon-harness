@@ -574,6 +574,10 @@ test('T21 Transcript_Codex_ModeloDelTurnoYEsfuerzoVacioSinDato — @story-8.198 
   fs.appendFileSync(f, `${tc('medium')}\n`);
   c = office.tokensCard(readSessionTokens(f, counts, {}));
   assert.deepStrictEqual([c.modelo, c.esfuerzo], ['gpt-6.1-sol', 'Medium']);
+  // la conversación reescrita, más corta y sin turno: el modelo de antes no queda pegado
+  fs.writeFileSync(f, `${tokens}\n`);
+  c = office.tokensCard(readSessionTokens(f, counts, {}));
+  assert.deepStrictEqual([c.modelo, c.esfuerzo], ['sin dato', 'sin dato']);
 });
 
 test('T22 Transcript_Agentes_NoCuentan — @story-8.198 @ac-21', () => {
@@ -722,6 +726,17 @@ test('T57 Mano_Baja_FirmaHechaOEsperaVencida — @story-8.198 @ac-50 @ac-53', ()
   assert.ok(!other.data.agents.find((a) => a.nombre === 'Sand').mano);
 });
 
+test('T53 Guia_LaCoordinadoraSoloAgregaPendientes — @story-8.198 @ac-49', () => {
+  // el texto corrido: un comando puede quedar partido entre dos renglones
+  const guia = (f) => fs.readFileSync(path.join(__dirname, '..', '..', 'guides', f), 'utf8').replace(/\s+/g, ' ');
+  const es = guia('coordination.md');
+  assert.match(es, /La coordinadora escribe sólo lo nuevo[^.]*con `board\.js add`/);
+  assert.match(es, /Lo demás lo mueve el tablero con lo que pasa, con `board\.js sync`/);
+  const en = guia('coordination.en.md');
+  assert.match(en, /The coordinator writes only what is new[^.]*with `board\.js add`/);
+  assert.match(en, /The rest is moved by the board with what happens, through `board\.js sync`/);
+});
+
 // ── El globito sobre la cabeza ──────────────────────────────────────────────────────────────────────────────────
 // la función del globito, sacada de la página y corrida: es una sola línea, sin nada de la sala
 function globoDePagina() {
@@ -757,4 +772,51 @@ test('T59 Globo_ElSitioSirveElMismoDibujo — @story-8.198 @ac-59', async () => 
     assert.match(servido.texto, /^function globoDe\(/m);
     assert.strictEqual(servido.texto, code, 'el mismo dibujo que la oficina local');
   } finally { await h.cerrar(); }
+});
+
+// ── Lo que no falla en silencio ─────────────────────────────────────────────────────────────────────────────────────
+
+test('Regresion_GuardadoAbortado_NoGastaNumeros — @story-8.198 @ac-6', () => {
+  const sdir = synced([row('Una')]);
+  const numeros = path.join(sdir, 'coordination', 'tablero-numeros.json');
+  const antes = fs.readFileSync(numeros, 'utf8');
+  // una fila nueva que pediría T-2, y una escritura a mano en el medio: no escribe y el contador queda como estaba
+  const r = board.save(sdir, { pendientes: [...readRows(sdir), row('Nueva')] }, { now: NOW, beforeRename: () => fs.appendFileSync(boardFile(sdir), ' ') });
+  assert.strictEqual(r.code, 2);
+  assert.strictEqual(fs.readFileSync(numeros, 'utf8'), antes);
+  // el próximo guardado le da a la nueva el número que sigue, sin hueco
+  const otra = stateDir();
+  fs.cpSync(path.join(sdir, 'coordination'), path.join(otra, 'coordination'), { recursive: true });
+  writeRaw(otra, JSON.parse(fs.readFileSync(boardFile(sdir), 'utf8').trim()));
+  board.save(otra, { pendientes: [...readRows(otra), row('Nueva')] }, { now: NOW });
+  assert.strictEqual(byTitle(readRows(otra), 'Nueva').id, 'T-2');
+});
+
+test('Regresion_RegistroDeHechosRoto_SeApartaYAvisa — @story-8.198 @ac-46', () => {
+  const sdir = synced([row('H', { historia: '8.1' })]);
+  const registro = path.join(sdir, 'coordination', 'tablero-hechos.json');
+  fs.writeFileSync(registro, '[{"id":"T-9", roto');
+  const r = board.sync(sdir, [{ tipo: 'curso', clave: 'curso:s1:1', historia: '8.1', quien: 'Sand', at: at(9, 0) }], { complete: true, now: NOW });
+  assert.strictEqual(r.code, 0, r.lines.join('\n'));
+  assert.strictEqual(fs.readFileSync(`${registro}.bak`, 'utf8'), '[{"id":"T-9", roto', 'el roto queda aparte, sin pisar');
+  assert.match(r.lines.join('\n'), /registro de hechos estaba roto/);
+  assert.strictEqual(board.readFacts(sdir).length, 1);
+  // un registro que no se puede leer ni escribir (una carpeta en su lugar) lo dice, y el tablero igual se mueve
+  const otro = synced([row('H', { historia: '8.2' })]);
+  fs.mkdirSync(path.join(otro, 'coordination', 'tablero-hechos.json'));
+  const r2 = board.sync(otro, [{ tipo: 'curso', clave: 'curso:s2:1', historia: '8.2', quien: 'Sand', at: at(9, 0) }], { complete: true, now: NOW });
+  assert.strictEqual(r2.code, 0);
+  assert.strictEqual(r2.written, true);
+  assert.match(r2.aviso || '', /registro de hechos no se pudo (leer|escribir)/);
+});
+
+test('Regresion_HuellaIlegible_Avisa — @story-8.198 @ac-40', () => {
+  const sdir = synced([row('Una')]);
+  assert.strictEqual(office.boardEditedNotice(sdir), null);
+  fs.writeFileSync(path.join(sdir, 'coordination', 'tablero-huella.json'), '{roto');
+  assert.deepStrictEqual(board.printCheck(sdir).ilegible, true);
+  assert.match(office.boardEditedNotice(sdir), /no se puede leer la huella del tablero/);
+  // sin huella nunca escrita, nada que decir
+  fs.rmSync(path.join(sdir, 'coordination', 'tablero-huella.json'));
+  assert.strictEqual(board.printCheck(sdir), null);
 });

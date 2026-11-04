@@ -995,6 +995,7 @@ function findTask(data, id, { dados = {} } = {}) {
 /** El aviso de un tablero que cambió sin board.js (lo que el freno no vio); null si no cambió o no se puede saber. */
 function boardEditedNotice(sdir) {
   const p = boardTool.printCheck(sdir);
+  if (p && p.ilegible) return `no se puede leer la huella del tablero (${p.motivo}): no sé si se editó fuera del comando; corré board.js check`;
   return p && p.cambiado ? `el tablero se editó fuera del comando a las ${hhmm(p.at)}: corré board.js check` : null;
 }
 

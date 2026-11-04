@@ -200,30 +200,37 @@ function quienWarnings(rows, live) {
  * Escribe el tablero que devuelve `change(raw)` con el candado. `change` recibe el tablero crudo leído adentro del candado
  * y devuelve `{ raw, lines }` o `{ code, lines }` para no escribir. Valida, numera, escribe aparte y renombra.
  */
-function write(sdir, change, { now = Date.now(), live = null, home = os.homedir(), beforeRename = null, sinNumerar = false } = {}) {
+function write(sdir, change, { now = Date.now(), live = null, home = os.homedir(), beforeRename = null, afterRename = null } = {}) {
   return withLock(sdir, () => {
     let current;
     let numbers;
-    try { current = readBoardRaw(sdir); numbers = readNumbers(sdir); } catch (e) { return { code: 2, lines: [`⛔ ${e.message}: no escribí nada`] }; }
+    let numbersText;
+    try { current = readBoardRaw(sdir); numbers = readNumbers(sdir); numbersText = readJson(paths(sdir).numbers, null).text; } catch (e) { return { code: 2, lines: [`⛔ ${e.message}: no escribí nada`] }; }
     const res = change(current.raw, numbers);
     if (res.code != null) return res;
     const raw = res.raw;
     const rows = raw.pendientes;
     const problems = rowProblems(rows, numbers);
     if (problems.length) return { code: 2, lines: ['⛔ no escribí nada: estas filas rompen una regla', ...problemLines(problems)] };
-    const n = sinNumerar ? { numbers, numeradas: [], recuperadas: [] } : numberRows(rows, numbers);
+    const n = numberRows(rows, numbers);
     const text = `${JSON.stringify({ ...raw, pendientes: rows }, null, 2)}\n`;
     const p = paths(sdir);
+    // el contador va antes que el tablero: un tablero con números que el contador no tiene los daría otra vez. Si el
+    // tablero no se escribe, el contador vuelve a como estaba y esos números no se gastan
+    const undoNumbers = () => { try { if (numbersText == null) fs.unlinkSync(p.numbers); else writeAtomic(p.numbers, numbersText); } catch { /* el próximo guardado lo recupera por título */ } };
     writeAtomic(p.numbers, `${JSON.stringify(n.numbers, null, 2)}\n`);
     const tmp = `${p.board}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, text);
-    if (beforeRename) beforeRename();
     let again = null;
-    try { again = fs.readFileSync(p.board, 'utf8'); } catch (e) { if (e.code !== 'ENOENT') throw e; }
-    if (again !== current.text) { try { fs.unlinkSync(tmp); } catch { /* ya no está */ } return { code: 2, lines: ['⛔ el tablero cambió mientras guardaba: volvé a correrlo'] }; }
-    fs.renameSync(tmp, p.board);
+    try {
+      fs.writeFileSync(tmp, text);
+      if (beforeRename) beforeRename();
+      try { again = fs.readFileSync(p.board, 'utf8'); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+      if (again !== current.text) { try { fs.unlinkSync(tmp); } catch { /* ya no está */ } undoNumbers(); return { code: 2, lines: ['⛔ el tablero cambió mientras guardaba: volvé a correrlo'] }; }
+      fs.renameSync(tmp, p.board);
+    } catch (e) { try { fs.unlinkSync(tmp); } catch { /* ya no está */ } undoNumbers(); throw e; }
     writeAtomic(p.print, `${JSON.stringify({ sha: sha(text), at: new Date(now).toISOString() })}\n`);
     const lines = [...(res.lines || [])];
+    if (afterRename) lines.push(...afterRename(rows));
     if (n.numeradas.length) lines.push(`numeré ${n.numeradas.length}: ${n.numeradas.join(', ')}`);
     if (n.recuperadas.length) lines.push(`recuperé por su título: ${n.recuperadas.join(', ')}`);
     lines.push(...quienWarnings(rows, live || liveSessions(home, sdir)));
@@ -350,6 +357,29 @@ function readFacts(sdir) {
   try { const v = JSON.parse(fs.readFileSync(paths(sdir).facts, 'utf8')); return Array.isArray(v) ? v : []; } catch { return []; }
 }
 
+/**
+ * Suma entradas al registro de hechos, con el candado tomado. Uno roto no se pisa: se aparta en `.bak` y se empieza otro.
+ * Devuelve `{ lines, aviso }`: lo que pasó con el registro, si no fue lo normal.
+ */
+function appendFacts(sdir, entries) {
+  const file = paths(sdir).facts;
+  const lines = [];
+  let log = [];
+  let raw = null;
+  try { raw = fs.readFileSync(file, 'utf8'); } catch (e) { if (e.code !== 'ENOENT') return { lines, aviso: `el registro de hechos no se pudo leer (${e.code || e.message})` }; }
+  if (raw != null) {
+    let v;
+    try { v = JSON.parse(raw); } catch { v = null; }
+    if (Array.isArray(v)) log = v;
+    else {
+      try { fs.renameSync(file, `${file}.bak`); } catch (e) { return { lines, aviso: `el registro de hechos estaba roto y no se pudo apartar (${e.code || e.message})` }; }
+      lines.push(`el registro de hechos estaba roto: lo dejé en ${path.basename(file)}.bak y empecé otro`);
+    }
+  }
+  try { writeAtomic(file, `${JSON.stringify([...log, ...entries].slice(-FACTS_KEPT), null, 2)}\n`); } catch (e) { return { lines, aviso: `el registro de hechos no se pudo escribir (${e.code || e.message})` }; }
+  return { lines, aviso: null };
+}
+
 /** El último hecho que movió una fila, en una línea; null si no hay. */
 function lastFactLine(sdir, id) {
   const e = [...readFacts(sdir)].reverse().find((x) => x.id === id);
@@ -364,6 +394,7 @@ function sync(sdir, facts, { complete = false, now = Date.now(), ...opts } = {})
   const checked = check(sdir);
   if (checked.code !== 0) return { code: 2, written: false, lines: checked.lines, aviso: 'el tablero no se movió solo: tiene filas sin número o que rompen una regla; corré board.js check' };
   const applied = [];
+  let logAviso = null;
   const res = write(sdir, (raw) => {
     const rows = raw.pendientes;
     for (const f of facts || []) {
@@ -383,23 +414,37 @@ function sync(sdir, facts, { complete = false, now = Date.now(), ...opts } = {})
     }
     if (!applied.length) return { code: 0, lines: ['sin hechos nuevos'] };
     return { raw, lines: [`moví ${applied.length} fila(s) con los hechos`] };
-  }, { now, ...opts, live: opts.live || [] });
+  }, {
+    now,
+    ...opts,
+    live: opts.live || [],
+    // el registro, con el mismo candado: dos que mueven el tablero a la vez no se pisan las entradas
+    afterRename: () => {
+      const r = appendFacts(sdir, applied.map(({ r: fila, f }) => ({ id: fila.id, tipo: f.tipo, clave: f.clave, hora: localIso(f.at), anotado: new Date(now).toISOString() })));
+      logAviso = r.aviso;
+      return r.lines;
+    },
+  });
   const written = res.code === 0 && applied.length > 0 && !/sin hechos nuevos/.test(res.lines[0]);
-  if (written) {
-    const log = [...readFacts(sdir), ...applied.map(({ r, f }) => ({ id: r.id, tipo: f.tipo, clave: f.clave, hora: localIso(f.at), anotado: new Date(now).toISOString() }))].slice(-FACTS_KEPT);
-    try { writeAtomic(paths(sdir).facts, `${JSON.stringify(log, null, 2)}\n`); } catch { /* el registro es para leer: sin él no cambia nada */ }
-  }
-  return { ...res, written, ...(res.code !== 0 ? { aviso: `el tablero no se movió solo: ${res.lines.join(' ').replace(/^⛔\s*/, '')}` } : {}) };
+  if (res.code !== 0) return { ...res, written, aviso: `el tablero no se movió solo: ${res.lines.join(' ').replace(/^⛔\s*/, '')}` };
+  return { ...res, written, ...(logAviso ? { aviso: logAviso } : {}) };
 }
 
-/** La huella anotada y la del archivo: `{ cambiado, at }`. Sin huella anotada (nunca se escribió con el comando), null. */
+/**
+ * La huella anotada y la del archivo: `{ cambiado, at }`. Sin huella anotada (nunca se escribió con el comando), null.
+ * Una huella o un tablero que no se pueden leer no son «sin huella»: `{ ilegible: true, motivo }`.
+ */
 function printCheck(sdir) {
   const p = paths(sdir);
   let print;
-  try { print = JSON.parse(fs.readFileSync(p.print, 'utf8')); } catch { return null; }
+  try { print = JSON.parse(fs.readFileSync(p.print, 'utf8')); } catch (e) {
+    if (e.code === 'ENOENT') return null;
+    return { ilegible: true, motivo: `la huella (${e.code || 'rota'})` };
+  }
+  if (!print || typeof print.sha !== 'string') return { ilegible: true, motivo: 'la huella (sin sha)' };
   let text;
   let mtime;
-  try { text = fs.readFileSync(p.board, 'utf8'); mtime = fs.statSync(p.board).mtimeMs; } catch { return null; }
+  try { text = fs.readFileSync(p.board, 'utf8'); mtime = fs.statSync(p.board).mtimeMs; } catch (e) { return { ilegible: true, motivo: `el tablero (${e.code || e.message})` }; }
   return sha(text) === print.sha ? { cambiado: false } : { cambiado: true, at: mtime };
 }
 

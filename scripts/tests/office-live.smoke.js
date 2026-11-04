@@ -142,7 +142,8 @@ async function taskNumbers(playwright) {
     const page = await browser.newPage({ viewport: { width: 1360, height: 1100 } });
     await page.goto(url);
     await page.waitForFunction(() => window.tablero && window.tablero.started, null, { timeout: 45000 });
-    await page.locator('input[name="vista"][value="kanban"]').check({ force: true });
+    // desde adentro de la página: con la máquina cargada, el clic del navegador se queda esperando que la sala se quede quieta
+    await page.locator('input[name="vista"][value="kanban"]').evaluate((r) => { r.checked = true; r.dispatchEvent(new Event('change', { bubbles: true })); });
     await page.waitForSelector('#boardBody .item[data-numero]');
     // E1: los números, la fila de Sand a la vista, una sola tarjeta para T-2 y la línea de arriba sin `meta.resumen`
     const sandRow = page.locator('#boardBody .item', { hasText: 'El arreglo que Sand dejó' });

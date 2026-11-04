@@ -362,7 +362,7 @@ function startingMessage(file) {
 }
 
 const TOKEN_STEP_BYTES = 1024 * 1024;
-const newCount = () => ({ offset: 0, byMessage: new Map(), lectura: 0, escritura: 0, cache: 0, ultimo: null, codex: null });
+const newCount = () => ({ offset: 0, byMessage: new Map(), lectura: 0, escritura: 0, cache: 0, ultimo: null, codex: null, codexTurno: null });
 
 function addTurn(count, id, u) {
   const now = { lectura: (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0), escritura: u.output_tokens || 0, cache: u.cache_read_input_tokens || 0 };
