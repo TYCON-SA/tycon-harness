@@ -580,9 +580,10 @@ test('T26 DependencyAudit_PruebaSinSesionAntesDelAviso (Azure) @story-2.30 @ac-1
   assert.ok(prueba >= 0 && aviso === prueba + 1, `la prueba justo antes del aviso (${prueba}, ${aviso})`);
   const p = steps(t)[prueba];
   assert.match(p, /scripts\/site\/check-deploy\.js --url "\$URL" --out "\$\{AGENT_TEMPDIRECTORY:-\$\{TMPDIR:-\/tmp\}\}\/site-check\.json"/);
-  assert.match(p, /c\.data\.site && c\.data\.site\.url/, 'sólo con site.url');
+  // la dirección es la que dice el resumen: la del perfil y, sin ella, la de operations.json
+  assert.match(p, /daily-summary\.js site-url --operations operations\.json/, 'con la dirección del perfil o la de operations.json');
   assert.match(p, /\n {10}exit 0\n {8}displayName:/, 'la prueba nunca frena la noche');
-  // un operations.json que no se pudo leer no es «sin site.url»: lo dice, y no prueba nada
+  // un operations.json que no se pudo leer, sin perfil, no es «sin dirección»: lo dice, y no prueba nada
   const cuerpo = stepScript('dependency-audit.yml', 'Probar el sitio sin sesión', { 'Build.SourcesDirectory': '/x' });
   const lab = fs.mkdtempSync(path.join(os.tmpdir(), 'ops-sitio-'));
   try {
@@ -590,8 +591,8 @@ test('T26 DependencyAudit_PruebaSinSesionAntesDelAviso (Azure) @story-2.30 @ac-1
     fs.writeFileSync(path.join(lab, 'operations.json'), '{ roto');
     const r = spawnSync('bash', ['-c', cuerpo.replace('cd "/x"', `cd "${lab}"`)], { encoding: 'utf8', timeout: 30000, env: { PATH: process.env.PATH } });
     assert.strictEqual(r.status, 0, r.stdout + r.stderr);
-    assert.match(r.stdout, /##vso\[task\.logissue type=warning\].*operations\.json no se pudo leer/);
-    assert.doesNotMatch(r.stdout, /sin site\.url/);
+    assert.match(r.stdout, /##vso\[task\.logissue type=warning\].*la dirección del sitio no se pudo leer/);
+    assert.doesNotMatch(r.stdout, /sin dirección del sitio/);
   } finally { fs.rmSync(lab, { recursive: true, force: true }); }
   const e = steps(t)[aviso];
   const cond = (e.match(/^ {8}condition: (.*)$/m) || [])[1] || '';
