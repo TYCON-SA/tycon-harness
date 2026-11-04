@@ -519,6 +519,11 @@ They come from a whole day of coordinating several sessions. Each says what to d
   check whether it already exists. Why: taking the long road without analyzing it is the most repeated mistake.
 - **A session that finishes gets the next approved thing in that turn, or is closed.** Always within the cap. Why: a free
   session is wasted machine time, and the owner should not have to watch the board to assign.
+- **With a long suite queue, no session is opened to program.** If more than two sessions are waiting for the suite or
+  gate turn, a new session is opened only for work that does not need the suite: writing a story, reviewing or
+  researching. Those that only wait for their turn can be closed and resumed with the same conversation when their turn
+  comes (`claude respawn <id>`), with the order written down. Why: the suite runs one at a time; one more session does not
+  speed anything up, it lengthens the queue and takes memory.
 - **A red is not left behind, even if it is not from your own change.** Report it and fix it before going on. Why: tolerated
   reds hide the new ones.
 - **What loosens a review does not go in, even if it saves time; what is only paperwork is not done.** If the code already
@@ -537,6 +542,7 @@ They come from a whole day of coordinating several sessions. Each says what to d
 | The coordinator settles details with the safest option | nadie | It is a judgment call, and it is written down for the owner to see. |
 | Every session with a name a person gave it | aviso | `/coordinate` lists the ones whose name the tool made up. |
 | No more sessions working than the cap | freno | `open` does not open at the cap. Nothing stops a session the owner opens by hand; `status` counts it and, at the cap, so does the coordinator's notice on each turn. |
+| With a long suite queue, no sessions are opened to program | nadie | Which work needs the suite is a judgment call; `status` shows who is waiting for the turn. |
 | One full suite at a time | freno | The suite runner and the whole portable run do not start with the turn held by another live process, and they say who holds it. A suite someone runs another way is not seen. |
 | Adversarial passes one at a time | freno | The pass's gate exits 3 and `next` asks to wait with another in flight. Nothing stops launching the pass without asking the gate, and a quick fix's pass is not noted as in flight. After an hour, it only warns. |
 | Idle background sessions get closed or given work | aviso | The coordinator's notice on each turn, after 15 minutes. |
