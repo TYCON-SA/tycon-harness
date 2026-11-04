@@ -290,7 +290,7 @@ test('T6 Slow_MedianaMaximoYOrigen — ordena por mediana de las últimas 5, con
   assert.equal(cli('slow', '--from', f, '--source', 'gate', '--json').stdout.includes('"corridas": 5'), true);
   assert.equal(JSON.parse(cli('slow', '--from', f, '--max-load', '4', '--json').stdout).corridas, 6);
   const txt = cli('slow', '--from', f, '--top', '2');
-  assert.match(txt.stdout, /de 7 corridas/);
+  assert.match(txt.stdout, /de 7 ejecuciones/);
   assert.match(txt.stdout, /gate 5/);
   assert.match(txt.stdout, /2026-11-01/);
 });
@@ -316,7 +316,7 @@ test('T8 SlowSinRegistroSale3_RunsLista — sin datos sale 3 con el motivo; runs
   for (const args of [['--from', path.join(dir, 'no-existe.jsonl')], ['--from', vacio], ['--from', registry([{ origen: 'gate', carga: 1, suites: [{ s: 'a', ms: 1, exit: 0 }] }]), '--source', 'ci-azure']]) {
     const r = cli('slow', ...args);
     assert.equal(r.status, 3, `${args.join(' ')}: ${r.stdout}`);
-    assert.match(`${r.stdout}${r.stderr}`, /no hay corridas/);
+    assert.match(`${r.stdout}${r.stderr}`, /no hay ejecuciones/);
   }
   const f = registry([
     { origen: 'gate', carga: 1.5, suites: [{ s: 'a', ms: 1000, exit: 0 }, { s: 'b', ms: 2000, exit: 0 }] },

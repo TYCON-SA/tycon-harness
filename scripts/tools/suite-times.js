@@ -70,7 +70,7 @@ function load(o) {
 function header(runs, read, o) {
   const origenes = {};
   for (const r of runs) origenes[r.origen] = (origenes[r.origen] || 0) + 1;
-  const parts = [`de ${runs.length} corridas (${Object.entries(origenes).map(([k, v]) => `${k} ${v}`).join(', ')})`,
+  const parts = [`de ${runs.length} ejecuciones (${Object.entries(origenes).map(([k, v]) => `${k} ${v}`).join(', ')})`,
     `del ${day(runs[0].ts)} al ${day(runs[runs.length - 1].ts)}`];
   if (o.max_load !== undefined) parts.push(`con carga de ${o.max_load} o menos al arrancar`);
   if (read.unreadable) parts.push(`${read.unreadable} renglón(es) ilegible(s)`);
@@ -79,8 +79,8 @@ function header(runs, read, o) {
 }
 
 function noRuns(l, o) {
-  const why = l.error || `no hay corridas en ${l.sources.join(', ')}${o.source || o.max_load !== undefined ? ' que pasen el filtro' : ''}`;
-  process.stdout.write(`suite-times: ${why.startsWith('no hay') ? why : `no hay corridas: ${why}`}\n`);
+  const why = l.error || `no hay ejecuciones en ${l.sources.join(', ')}${o.source || o.max_load !== undefined ? ' que pasen el filtro' : ''}`;
+  process.stdout.write(`suite-times: ${why.startsWith('no hay') ? why : `no hay ejecuciones: ${why}`}\n`);
   return 3;
 }
 
@@ -105,7 +105,7 @@ function runsCmd(o) {
   if (l.error || !l.runs.length) return noRuns(l, o);
   const rows = l.runs.slice(-(o.last === undefined ? 20 : o.last)).map(st.runRow);
   if (o.json) { process.stdout.write(`${JSON.stringify({ runs: rows }, null, 2)}\n`); return 0; }
-  const out = [`${rows.length} corridas, ${header(l.runs, l.read, o).line}`];
+  const out = [`${rows.length} ejecuciones, ${header(l.runs, l.read, o).line}`];
   for (const r of rows) {
     out.push(`  ${r.ts.slice(0, 16).replace('T', ' ')}  ${String(r.origen).padEnd(10)} ${String(r.repo).padEnd(22)} ${String(r.suites).padStart(4)} suites`
       + `  reloj ${secs(r.wall_ms || 0).padStart(7)}  suma ${secs(r.suma_ms).padStart(7)}  ${r.workers} a la vez · ${r.nucleos} núcleos · carga ${r.carga}${r.cortada ? '  (cortada)' : ''}`);
