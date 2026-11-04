@@ -136,6 +136,21 @@ n=$(grep -c '"paquete": "SSH.NET"' "$TMP/out.txt")
   && ok "el mismo paquete en 3 proyectos es 1 hallazgo, con la severidad más grave" \
   || no "agrupación NuGet: salió $rc con $n entradas"
 
+# ── 12b. 🔴 un proyecto con packages.config no sale en `dotnet list`: la lista vacía no es limpia ─────
+# Reproduce los repos de .NET Framework: restore y list salen 0 y la lista viene vacía, así que el informe decía
+# «limpio» sin haber mirado los paquetes de esos proyectos.
+rm -rf "$TMP/repo"; mkdir -p "$TMP/repo/Api" "$TMP/repo/Web"; : > "$TMP/repo/x.sln"
+echo '<packages />' > "$TMP/repo/Api/packages.config"; echo '<packages />' > "$TMP/repo/Web/packages.config"
+echo '{"projects":[]}' > "$TMP/nuget.json"
+rc=$(corre --type nuget --block)
+{ [ "$rc" -eq 2 ] && grep -q "NO MEDIDO" "$TMP/out.txt" && grep -q "packages.config: 2 proyecto" "$TMP/out.txt" && grep -q "Api/packages.config" "$TMP/out.txt"; } \
+  && ok "con packages.config sale 2 y lo nombra, aunque la lista de dotnet venga vacía" || no "packages.config salió $rc: $(cat "$TMP/out.txt")"
+# lo que está en lo restaurado o lo compilado no es un proyecto del repo
+rm -rf "$TMP/repo"; mkdir -p "$TMP/repo/packages/Algo.1.0" "$TMP/repo/Api/bin" "$TMP/repo/Api/obj" "$TMP/repo/node_modules/x"; : > "$TMP/repo/x.sln"
+for d in packages/Algo.1.0 Api/bin Api/obj node_modules/x; do echo '<packages />' > "$TMP/repo/$d/packages.config"; done
+rc=$(corre --type nuget --block)
+[ "$rc" -eq 0 ] && ok "un packages.config en packages, bin, obj o node_modules no frena la medición" || no "packages.config fuera de los proyectos salió $rc: $(cat "$TMP/out.txt")"
+
 # ── 13. un repo que no existe no se lee como limpio ──────────────────────────────────────────
 rc=$(FIX="$TMP" TYCON_DEP_CMD="$TMP/doble.sh" node "$GUION" --repo "$TMP/no-existe" --type npm >"$TMP/out.txt" 2>&1; echo $?)
 [ "$rc" -eq 2 ] && ok "un repo inexistente sale 2" || no "repo inexistente salió $rc"

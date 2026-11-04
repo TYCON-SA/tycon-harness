@@ -266,6 +266,28 @@ function proyectoNuget(repo, explicito) {
   return sln.length ? sln[0] : null;
 }
 
+// Las carpetas que no son código del repo: lo restaurado, lo compilado y la historia de git.
+const NO_SON_PROYECTO = new Set(['.git', 'node_modules', 'bin', 'obj', 'packages']);
+
+/**
+ * Los `packages.config` del repo (rutas relativas, ordenadas). Un proyecto que declara sus paquetes así (el formato de
+ * .NET Framework) no aparece en `dotnet list package --vulnerable`: la lista sale vacía, y vacía no es limpia.
+ */
+function packagesConfigDe(repo) {
+  const out = [];
+  const pendientes = [''];
+  while (pendientes.length) {
+    const rel = pendientes.pop();
+    let es;
+    try { es = fs.readdirSync(path.join(repo, rel), { withFileTypes: true }); } catch (_) { continue; }
+    for (const e of es) {
+      if (e.isDirectory() && !NO_SON_PROYECTO.has(e.name.toLowerCase())) pendientes.push(path.join(rel, e.name));
+      else if (e.isFile() && e.name.toLowerCase() === 'packages.config') out.push(path.join(rel, e.name));
+    }
+  }
+  return out.sort();
+}
+
 /**
  * `dotnet restore` y DESPUÉS `dotnet list package --vulnerable`.
  *
@@ -279,6 +301,11 @@ function auditarNuget(repo, proyectoRel) {
   if (!proy) return { medido: false, motivo: 'no se encontró un .sln en la raíz y no se indicó --project' };
   if (!dentroDelRepo(repo, proy)) return { medido: false, motivo: `--project ${proy} sale de la carpeta del repo: sólo se mide un proyecto del repo` };
   if (!fs.existsSync(path.join(repo, proy))) return { medido: false, motivo: `no existe el proyecto ${proy}` };
+  const viejos = packagesConfigDe(repo);
+  if (viejos.length) {
+    const muestra = viejos.slice(0, 3).join(', ') + (viejos.length > 3 ? ` y ${viejos.length - 3} más` : '');
+    return { medido: false, motivo: `packages.config: ${viejos.length} proyecto(s) declaran sus paquetes con packages.config (${muestra}), y dotnet list package --vulnerable no los ve` };
+  }
 
   const rest = correr('dotnet', ['restore', proy, '--nologo'], repo);
   if (!rest.ok) return { medido: false, motivo: rest.motivo };
