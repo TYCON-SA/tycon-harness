@@ -33,8 +33,8 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *                            máquina; sin coordinadora confirmada, o desde otra sesión, sale enseguida
  *
  * Además, sin línea de comandos: `capNotice` es el aviso que la coordinadora ve en cada turno
- * (scripts/hooks/coordination-notice.js): el tope, las sesiones de fondo quietas, los pedidos verdes que nadie encoló,
- * las firmas viejas. `adversarialTurn` es lo que frena a `deep-review-gate` y a `next` cuando otra sesión tiene un pase
+ * (scripts/hooks/coordination-notice.js): el tope, las sesiones de fondo quietas, la fila de la suite completa parada
+ * (ninguna corre y alguna anotó que espera turno), los pedidos verdes que nadie encoló, las firmas viejas. `adversarialTurn` es lo que frena a `deep-review-gate` y a `next` cuando otra sesión tiene un pase
  * adversarial en vuelo. El turno de la suite completa vive en scripts/tools/heavy-turn.js. Todo calla sin coordinadora
  * designada; lo de `owner-wait` (el comando que falta, la frenada de 2 minutos sin anunciar, la sesión que cerró Claude
  * Code), sin coordinadora confirmada.
@@ -188,6 +188,16 @@ function hasFreshDoing(home, sid, now) {
   try { return now - fs.statSync(path.join(stateDir(home), 'doing', `${sid}.json`)).mtimeMs < DOING_FRESH_MS; } catch { return false; }
 }
 
+// Desde cuándo la sesión espera el turno de la suite completa o del portón, según lo que anotó con `marker.js doing
+// --waiting-for`; null si no anotó una espera así. Sin nota no se supone nada: una sesión quieta no está «esperando turno».
+const SUITE_WAIT = /suite|port[oó]n|turno/i;
+function suiteWaitSince(home, sid) {
+  const note = readJson(path.join(stateDir(home), 'doing', `${sid}.json`), null);
+  if (!note || typeof note.waitingFor !== 'string' || !SUITE_WAIT.test(note.waitingFor)) return null;
+  const since = Date.parse(note.waitingSince || note.at);
+  return Number.isFinite(since) ? since : null;
+}
+
 // Quién tiene el turno de la suite completa: el renglón de heavy-turn.js, o null. No poder leerlo no frena el estado.
 function suiteHolder(home, now, problems) {
   try { return require('./heavy-turn.js').holder({ home, now }); } catch (e) { problems.push(`el turno de la suite completa (${e.message})`); return null; }
@@ -256,6 +266,7 @@ function status(opts = {}) {
   const unnamed = [];
   const quiet = [];
   const passWaiting = [];
+  const suiteWaiting = [];
   const suite = suiteHolder(home, now, problems);
   const opened = recentOpened(home, now, problems);
   const justOpened = new Set(opened.map((o) => o.name));
@@ -270,6 +281,10 @@ function status(opts = {}) {
     const m = markers.get(sid);
     const story = m && m.storyId ? `la ${m.storyId}` : null;
     if (s.nameSource === 'derived' && s.name) unnamed.push(label(s.name));
+    try {
+      const since = suiteWaitSince(home, sid);
+      if (since != null) suiteWaiting.push({ session: nameOf(sid), sid, since });
+    } catch (e) { problems.push(`la nota de ${nameOf(sid)} (${e.message})`); }
     const st = stalledOf(s, files.get(String(sid)), now);
     if (st) {
       const { key, ...rest } = st;
@@ -312,7 +327,7 @@ function status(opts = {}) {
   } catch (e) { problems.push(e.message); }
   const gone = retiredOf(home, now, sessions);
   return {
-    now, working, waiting, quiet, passWaiting, cap: r.max_working, adversarial, stalled,
+    now, working, waiting, quiet, passWaiting, suiteWaiting, cap: r.max_working, adversarial, stalled,
     retired: gone.retired, retiredMeasured: gone.measured, retiredWhy: gone.why,
     suite: suite ? { session: suite.session ? label(suite.session) : null, what: label(suite.what), since: suite.at } : null,
     signatures,
@@ -333,6 +348,7 @@ function statusText(s) {
   else if (s.retired && s.retired.length) lines.push(`Cerradas por Claude Code: ${s.retired.map(retiredLine).join(' · ')}`);
   lines.push(`Pase adversarial en vuelo: ${s.adversarial.length ? s.adversarial.map((a) => `${a.storyId ? `la ${a.storyId}` : 'sin story'} (${a.session}, desde las ${hhmm(a.since)})`).join(' · ') : 'ninguno'}`);
   lines.push(`Suite completa en curso: ${s.suite ? `${s.suite.session || 'una sesión sin nombre'} (${s.suite.what}, desde las ${hhmm(s.suite.since)})` : 'ninguna'}`);
+  if (s.suiteWaiting && s.suiteWaiting.length) lines.push(`Esperando turno de suite o portón: ${[...s.suiteWaiting].sort((a, b) => a.since - b.since).map((w) => `${w.session} desde las ${hhmm(w.since)}`).join(' · ')}`);
   lines.push(`De fondo y quietas: ${s.quiet.length ? s.quiet.map((q) => `${q.session} hace ${q.minutes} min`).join(' · ') : 'ninguna'}`);
   lines.push(`Firmas pendientes: ${[`${s.signatures.terminal} por la terminal`, ...(s.signatures.firma ? [`${s.signatures.firma} con su cuadro`] : []), ...(s.signatures.permiso ? [`${s.signatures.permiso} permiso(s)`] : []), `${s.signatures.delegated} por delegación`].join(' · ')}`);
   lines.push(`Sin nombre puesto por una persona: ${s.unnamed.length ? s.unnamed.join(', ') : 'ninguna'}`);
@@ -686,6 +702,9 @@ function capNotice(opts = {}) {
       ? `Coordinación: ${w.session} espera su turno de pase adversarial (lo tiene ${t.other_in_flight[0].session}): avisale cuando termine.`
       : `Coordinación: ${w.session} puede lanzar su pase adversarial, no hay otro en vuelo: avisale.`);
   }
+  // la máquina parada con gente en la fila: nadie arranca sola, el «arrancá» lo da la coordinadora
+  const queue = s.suiteWaiting.filter((x) => x.sid !== sid).sort((a, b) => a.since - b.since);
+  if (!s.suite && queue.length) lines.push(`Coordinación: no corre ninguna suite completa y hay ${queue.length} esperando turno: dale el «arrancá» a ${queue[0].session}.`);
   lines.push(...greenPrLines(opts, problems));
   const signatures = oldSignatures(opts, opts.now == null ? Date.now() : Number(opts.now), problems);
   if (signatures) lines.push(signatures);

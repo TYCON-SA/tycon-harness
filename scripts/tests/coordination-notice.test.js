@@ -557,6 +557,45 @@ test('Q6 Notice_WaitingForPassTurn_WakeHerUp: quien debe su pase no sale como qu
   assert.strictEqual(C.capNotice(t.opts), null);
 });
 
+test('Q7 Notice_SuiteIdleWithQueue_SaysWhoStarts: sin suite completa en curso y con esperas anotadas de turno, nombra a la que espera hace más', () => {
+  // 🔴 mutación: sacar la condición `!s.suite` (avisa con la suite corriendo), o tomar la última de la fila en vez de la
+  // primera (nombra a Beto), o contar a cualquier quieta sin nota (cuenta 3).
+  const t = toy();
+  const doing = path.join(t.state, 'doing');
+  fs.mkdirSync(doing, { recursive: true });
+  const note = (sid, name, waitingFor, minutesAgo) => {
+    session(t, sid, name);
+    fs.writeFileSync(path.join(doing, `${sid}.json`), JSON.stringify({ text: 'implementar la historia', at: new Date(mins(minutesAgo)).toISOString(), waitingFor, waitingSince: new Date(mins(minutesAgo)).toISOString() }));
+  };
+  // sin nadie esperando turno, la línea no sale aunque no corra ninguna suite
+  session(t, 's-sin-nota', 'Quieta');
+  note('s-otra', 'Otra', 'que el dueño conteste la pregunta', 90);
+  assert.strictEqual(C.capNotice(t.opts), null, 'sin espera anotada de turno no lo inventa');
+  note('s-beto', 'Beto', 'turno de la suite completa', 20);
+  note('s-ana', 'Ana', 'el portón de la coordinadora', 70);
+  note(COORD, 'Coordinadora', 'turno de suite', 120);
+  const n = C.capNotice(t.opts);
+  assert.match(n, /^Coordinación: no corre ninguna suite completa y hay 2 esperando turno: dale el «arrancá» a Ana\.$/m, n);
+  assert.ok(!/Quieta|Otra/.test(n), `sólo cuentan las esperas anotadas de turno: ${n}`);
+  const s = C.status({ ...t.opts, noTranscripts: true });
+  assert.match(C.statusText(s), /Esperando turno de suite o portón: Coordinadora desde las \d\d:\d\d · Ana desde las \d\d:\d\d · Beto desde las \d\d:\d\d/);
+  // con una suite completa en curso, la fila no está parada: no se dice nada
+  fs.mkdirSync(path.join(t.state, 'coordination'), { recursive: true });
+  fs.writeFileSync(path.join(t.state, 'coordination', 'suite-turn.json'), JSON.stringify({ pid: process.pid, sid: 's-x', session: 'ConSuite', what: 'suites portables', at: mins(5) }));
+  assert.strictEqual(C.capNotice(t.opts), null, 'con la suite corriendo calla');
+});
+
+test('Q7b Notice_SuiteQueue_BrokenNote_SaysSo: una nota que no se lee va a «no pude leer», no tira el aviso entero', () => {
+  const t = toy();
+  const doing = path.join(t.state, 'doing');
+  fs.mkdirSync(doing, { recursive: true });
+  session(t, 's-rota', 'Rota');
+  fs.writeFileSync(path.join(doing, 's-rota.json'), '{ no es json');
+  const n = C.capNotice(t.opts);
+  assert.match(n, /No pude leer la nota de Rota/);
+  assert.ok(!/esperando turno/.test(n), n);
+});
+
 test('Q5 DeepReviewGate_SecondPass_ExitsThreeAndSaysWho: el portón de verdad sale 3 y nombra quién tiene el lugar; sin otro pase, 0', { skip: process.platform === 'win32' ? 'enlaces simbólicos' : false }, () => {
   const t = toy();
   // un árbol con el perfil de juguete: quién es la coordinadora sale del perfil del árbol, y con los enlaces conservados
