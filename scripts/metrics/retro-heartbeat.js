@@ -50,8 +50,10 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *
  * Uso:
  *   node scripts/metrics/retro-heartbeat.js --repo <dir> --merge <sha> [--story <id>] [--out <dir>]
+ *   node scripts/metrics/retro-heartbeat.js --annul --sha <commit> --reason "<por qué>" [--repo <dir>] [--out <dir>]
  *   stdout: la ruta escrita · exit 0
- *   exit 2 + motivo por stderr: --repo no es git · --merge no resuelve · validate() rechaza · no escribió
+ *   exit 2 + motivo por stderr: --repo no es git · --merge no resuelve · el commit no está en la línea de main ·
+ *   validate() rechaza · no escribió · --annul sin motivo, sin latido o con latidos de dos repos sin --repo
  * Default de --out: la carpeta de estado de la máquina (`<stateDir>/dashboard`, la dice scripts/lib/night-data.js; ahí
  * lo busca retro-pending.js). Nunca el `.dashboard/` de un clon. De ahí lo sube upload-runs.js al buzón, y el nocturno
  * del tablero lo junta en `.dashboard/merges/` de operaciones. Sin llave del buzón, lo dice por stderr («no viaja»).
@@ -410,15 +412,131 @@ function salir(motivo) {
   process.exit(2);
 }
 
+// 🔴 UN LATIDO ES DE LO QUE ENTRÓ. El latido sólo se escribe para un commit de la línea principal de main (`--first-parent`):
+// una fusión a main o un commit directo (en el arnés casi todo va directo, sin fusión). La punta de la rama de un pedido
+// que no entró y una fusión a dev nunca están en esa línea, y un latido suyo sube al buzón y el tablero lo cuenta como
+// una fusión que no hubo. Primero se trae main de `origin` (sin interacción, tope corto); si no contesta, la referencia
+// local `origin/main` y, sin ella, la rama `main` local, y se dice; un repo sin `origin` usa su `main` local. Sin ninguna,
+// no se escribe.
+const TRAER_MS = 10000;
+function traerMain(repo, rama) {
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'GIT_ASKPASS' && k !== 'SSH_ASKPASS'));
+  Object.assign(env, { GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never', GIT_SSH_COMMAND: `${env.GIT_SSH_COMMAND || 'ssh'} -oBatchMode=yes -oConnectTimeout=5` });
+  try {
+    execFileSync('git', ['-C', repo, '-c', 'core.askPass=', 'fetch', '--quiet', '--no-tags', 'origin', `+refs/heads/${rama}:refs/remotes/origin/${rama}`],
+      { stdio: ['ignore', 'ignore', 'ignore'], timeout: TRAER_MS, env });
+    return true;
+  } catch { return false; }
+}
+/** La referencia de main contra la que se juzga: `{ ref, aviso }`, o `{ error }` si no hay ninguna. */
+function lineaDeMain(repo) {
+  const hay = (r) => git(repo, ['rev-parse', '--verify', '--quiet', `${r}^{commit}`]) !== null;
+  if (git(repo, ['remote', 'get-url', 'origin'])) {
+    for (const rama of ['main', 'master']) {
+      if (traerMain(repo, rama)) return { ref: `origin/${rama}` };
+    }
+    for (const rama of ['main', 'master']) {
+      if (hay(`refs/remotes/origin/${rama}`)) return { ref: `origin/${rama}`, aviso: `no pude traer main de origin: uso la referencia local origin/${rama}, que puede estar atrasada` };
+    }
+    for (const rama of ['main', 'master']) {
+      if (hay(`refs/heads/${rama}`)) return { ref: rama, aviso: `no pude traer main de origin y no hay origin/${rama}: uso la rama local ${rama}, que puede estar atrasada` };
+    }
+    return { error: 'no pude traer main de origin y no hay referencia de main (ni origin/main ni una rama main) en este repo' };
+  }
+  for (const rama of ['main', 'master']) if (hay(`refs/heads/${rama}`)) return { ref: rama };
+  return { error: 'no hay referencia de main en este repo (ni origin ni una rama main)' };
+}
+function enLaLinea(repo, ref, sha) {
+  const lista = (() => {
+    try { return execFileSync('git', ['-C', repo, 'rev-list', '--first-parent', ref], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 256 * 1024 * 1024, timeout: 30000 }); }
+    catch { return null; }
+  })();
+  if (lista === null) return null;
+  return lista.split('\n').includes(sha);
+}
+
+// ── anular un latido sin borrarlo ────────────────────────────────────────────────────────────────
+// `--annul --sha <commit> --reason "<texto>" [--repo <carpeta>] [--out <carpeta>]`: el latido de un commit que no era una
+// fusión a main (uno de antes de que el latido lo rechazara) no se borra —el buzón sólo crea: lo que subió queda—, se le
+// agrega `anulado: { quien, cuando, motivo }`. El archivo cambia, así que upload-runs.js lo sube como versión nueva, y la
+// bajada se queda con la más nueva. Un latido anulado no cuenta para nadie (retro-coverage.js, dashboard-metrics.js).
+function carpetasDeLatidos(out) {
+  if (out) return [path.resolve(out)];
+  const nightLib = path.join(__dirname, '..', 'lib', 'night-data.js');
+  const dirs = fs.existsSync(nightLib) ? require(nightLib).machineDashboardDirs(ARNES) : [];
+  return [...new Set([...dirs, path.join(ARNES, '.dashboard')])];
+}
+function anular(argv) {
+  const valor = (n) => { const i = argv.indexOf(n); return i >= 0 && argv[i + 1] !== undefined && !argv[i + 1].startsWith('--') ? argv[i + 1] : null; };
+  const sha = valor('--sha');
+  const motivo = String(valor('--reason') || '').trim();
+  const repoArg = valor('--repo');
+  if (!sha || !/^[0-9a-f]{7,64}$/i.test(sha)) salir('uso: retro-heartbeat.js --annul --sha <commit> --reason "<por qué>" [--repo <carpeta>] [--out <carpeta>]');
+  if (!motivo) salir('--annul pide --reason con el motivo: un latido se anula diciendo por qué');
+  const RC = require(path.join(__dirname, '..', 'lib', 'retro-coverage.js'));
+  const candidatos = [];
+  // lo que no se pudo leer se nombra: el latido a anular podía ser justo ése
+  const ilegibles = [];
+  for (const dir of carpetasDeLatidos(valor('--out'))) {
+    let nombres = [];
+    try { nombres = fs.readdirSync(dir).filter((f) => /^metrics-.*\.json$/.test(f)); }
+    catch (err) { if (err && err.code !== 'ENOENT') ilegibles.push(`${dir} (${err.code || err.message})`); continue; }
+    for (const f of nombres) {
+      const archivo = path.join(dir, f);
+      let d;
+      try { d = JSON.parse(fs.readFileSync(archivo, 'utf8')); } catch { ilegibles.push(archivo); continue; }
+      const m = d && String(d.merge_commit || '');
+      if (!m || !RC.sameSha(m.toLowerCase(), sha.toLowerCase())) continue;
+      if (repoArg && !RC.sameRepo({ repoStr: String(d.repo || '') }, path.resolve(repoArg))) continue;
+      candidatos.push({ archivo, d });
+    }
+  }
+  const noLeidos = ilegibles.length ? ` (y no pude leer ${ilegibles.length}: ${ilegibles.slice(0, 3).join(', ')}${ilegibles.length > 3 ? ', …' : ''})` : '';
+  if (!candidatos.length) salir(`ningún latido del commit ${sha}${repoArg ? ` en ${repoArg}` : ''} en ${carpetasDeLatidos(valor('--out')).join(', ')}${noLeidos}: no se anuló nada`);
+  if (ilegibles.length) process.stderr.write(`retro-latido: no pude leer ${ilegibles.length} archivo(s) de latidos: ${ilegibles.slice(0, 3).join(', ')}${ilegibles.length > 3 ? ', …' : ''}\n`);
+  const repos = [...new Set(candidatos.map((c) => real(String(c.d.repo || ''))))];
+  if (repos.length > 1) salir(`hay latidos del commit ${sha} de ${repos.length} repos: elegí uno con --repo <carpeta>:\n${repos.map((r) => `  - ${r}`).join('\n')}`);
+  const quien = (() => {
+    const nombre = git(repoArg ? path.resolve(repoArg) : process.cwd(), ['config', '--get', 'user.name']) || (() => { try { return os.userInfo().username; } catch { return null; } })() || 'sin nombre';
+    const sesion = process.env.CLAUDE_CODE_SESSION_ID || process.env.CODEX_SESSION_ID || process.env.TYCON_SESSION_ID;
+    return sesion ? `${nombre} (sesión ${sesion})` : nombre;
+  })();
+  const cuando = new Date().toISOString();
+  for (const { archivo, d } of candidatos) {
+    if (d.anulado) {
+      process.stdout.write(`${archivo}\nretro-latido: ya está anulado desde ${String(d.anulado.cuando || '').slice(0, 10)} (${d.anulado.quien}: ${d.anulado.motivo}); no lo cambio\n`);
+      continue;
+    }
+    const doc = { ...d, anulado: { quien, cuando, motivo } };
+    const v = validate(doc);
+    if (!v.ok) salir(`el validador de dashboard-metrics.js rechazó el latido anulado, no se tocó ${archivo}: ${v.errors.join(' · ')}`);
+    try {
+      const tmp = `${archivo}.${process.pid}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(doc, null, 2) + '\n', 'utf8');
+      fs.renameSync(tmp, archivo);
+    } catch (err) {
+      salir(`no se pudo reescribir ${archivo}: ${err && err.message ? err.message : err}`);
+    }
+    process.stdout.write(`${archivo}\nretro-latido: anulado: sube como versión nueva en la próxima subida\n`);
+  }
+}
+
 function main() {
+  if (process.argv.includes('--annul')) return anular(process.argv.slice(2));
   const a = args(process.argv.slice(2));
-  if (!a.repo || !a.merge) salir('uso: retro-heartbeat.js --repo <dir> --merge <sha> [--story <id>] [--out <dir>]');
+  if (!a.repo || !a.merge) salir('uso: retro-heartbeat.js --repo <dir> --merge <sha> [--story <id>] [--out <dir>] · retro-heartbeat.js --annul --sha <commit> --reason "<por qué>" [--repo <dir>]');
 
   const repoArg = path.resolve(a.repo);
   const repo = git(repoArg, ['rev-parse', '--show-toplevel']);
   if (!repo) salir(`--repo no es un repo git: ${repoArg}`);
   const merge = git(repo, ['rev-parse', '--verify', '--quiet', `${a.merge}^{commit}`]);
   if (!merge) salir(`--merge no resuelve a un commit en ${repo}: ${a.merge}`);
+  const linea = lineaDeMain(repo);
+  if (linea.error) salir(`no se escribió nada: ${linea.error}`);
+  if (linea.aviso) process.stderr.write(`retro-latido: ${linea.aviso}\n`);
+  const enMain = enLaLinea(repo, linea.ref, merge);
+  if (enMain === null) salir(`no pude leer la línea de ${linea.ref}: no se escribió nada`);
+  if (!enMain) salir(`${merge.slice(0, 7)} no está en la línea de main (${linea.ref}): un latido es de lo que entró`);
   const repoReal = real(repo);
   const story = a.story ? String(a.story) : null;
   const hoy = fechaLocal();
@@ -486,6 +604,15 @@ function main() {
   // empareja el merge con su archivo.
   const nombre = `metrics-${hoy}-${slug(nombreDeRepo(repo) || path.basename(repo))}-${story ? slug(story) : 'adhoc'}-${merge.slice(0, 7)}.json`;
   const destino = path.join(out, nombre);
+  // 🔴 Un merge cuyo latido se anuló no vuelve a latir: el latido nuevo pisaría la anulación (mismo nombre, mismo día) o
+  // la taparía con otro archivo que sí cuenta, sin que nadie lo decida. Desanular lo decide una persona.
+  {
+    const RC = require(path.join(__dirname, '..', 'lib', 'retro-coverage.js'));
+    for (const dir of [...new Set([out, ...carpetasDeLatidos(a.out)])]) {
+      const ya = (RC.anuladosIn(dir) || []).find((m) => RC.sameSha(m.sha, merge) && RC.sameRepo(m, repo));
+      if (ya) salir(`el latido de ${merge.slice(0, 7)} está anulado en ${dir}: no se vuelve a escribir (desanular un latido lo decide una persona)`);
+    }
+  }
   try {
     fs.mkdirSync(out, { recursive: true });
     const tmp = `${destino}.${process.pid}.tmp`;

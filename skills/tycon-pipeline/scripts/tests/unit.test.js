@@ -1181,7 +1181,7 @@ test('writeFollowups + followups-status: idempotente, preserva [x], acepta shape
   assert.equal(st.open, 2); assert.equal(st.has_section, true);
 
   // dev marca SEC-C3 resuelto a mano.
-  fs.writeFileSync(story, fs.readFileSync(story, 'utf8').split('- [ ] **[CRITICAL]** SEC-C3').join('- [x] **[CRITICAL]** SEC-C3'));
+  fs.writeFileSync(story, fs.readFileSync(story, 'utf8').replaceAll('- [ ] **[CRITICAL]** SEC-C3', '- [x] **[CRITICAL]** SEC-C3'));
   // 2da escritura: shape Step6 (rule_id/disposition) + 1 nuevo. Debe preservar SEC-C3 [x].
   const f2 = path.join(dir, 'f2.json');
   fs.writeFileSync(f2, JSON.stringify([
@@ -6712,17 +6712,20 @@ function bloque10b() {
   return s.slice(i, fin < 0 ? s.length : fin);
 }
 
-test('10b: en modo pr el latido recibe la punta de la source, no el sha del merge de Azure', () => {
-  // 🔴 Un texto que dijera «--merge <sha del merge>» sin distinguir modo hace fallar las cuatro aserciones de abajo.
+// Un pedido abierto no es una fusión. En modo pr el latido no va con la punta de la source al abrir el pedido (el
+// latido la rechaza: no está en main): se pide cuando el pedido entra, con el commit que dejó en main.
+test('10b: en modo pr el latido se pide cuando el pedido entra, con el commit que dejó en main', () => {
   const b = bloque10b();
   assert.ok(!/--merge <sha del merge>/.test(b),
-    '10b sigue mandando «--merge <sha del merge>»: en modo pr ese sha no existe todavía');
-  assert.match(b, /PUNTA DE LA SOURCE/,
-    '10b no nombra la punta de la source como el sha del modo pr');
-  assert.match(b, /el que anotó el ledger/,
-    '10b no dice que el sha que paga la deuda es el que anotó el ledger');
+    '10b sigue mandando «--merge <sha del merge>» sin distinguir modo');
+  assert.match(b, /no se corre el latido al abrir el pedido/,
+    '10b no dice que en modo pr el latido no se corre al abrir el pedido');
+  assert.match(b, /el commit que el pedido dejó en main/,
+    '10b no dice que se reclama el commit que el pedido dejó en main');
+  assert.match(b, /el que reclama el ledger/,
+    '10b no dice que el sha que paga la deuda es el que reclama el ledger');
   // El modo `push` no se toca: ahí el sha SÍ es el del merge recién pusheado.
-  assert.match(b, /En modo `push` ese sha es el del merge/,
+  assert.match(b, /En modo `push` es el del merge/,
     '10b dejó de decir qué sha va en modo push');
 });
 

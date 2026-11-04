@@ -3993,6 +3993,12 @@
       "requiere": []
     },
     {
+      "__nota": "un latido de retrospectiva es sólo de un commit que entró a main, y uno falso se anula sin borrarlo: el pedido abierto que espera, entra o se abandona (scripts/hooks/retro-pending.js), la línea de main y --annul (scripts/metrics/retro-heartbeat.js) y lo que no cuenta (retro-coverage.js, weekly-review.js, dashboard-metrics.js, sdlc-stage-metrics.js). Repos de juguete con git de verdad, az y gh de mentira en el PATH y un buzón de mentira en el mismo proceso. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/retro-heartbeat-main.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la revisión de la semana (scripts/nightly/weekly-review/weekly-review.js): repos de juguete con git de verdad y un agente inyectado; la semana, el tope, la regla de patrón, la lista de propuestas, «no pude leer», el disparador del examen, el resumen de la mañana y la clave weekly_review. Sin red y sin modelo.",
       "raiz": "arnes",
       "ruta": "tests/weekly-review.test.js",

@@ -302,16 +302,28 @@ function correcciones(lineas) {
   for (const c of lineas) if (c && c.tipo === 'correccion' && c.entrada && c.real) porEntrada.set(`${c.entrada.repo}@${c.entrada.sha}`, c);
   return porEntrada;
 }
-// Las entradas del registro con su corrección aplicada (la última, si hubo más de una).
+// Lo que se supo de cada pedido (`tipo: 'pedido'`, ver «LOS PEDIDOS ABIERTOS»): el último renglón por entrada.
+function estadosDePedido(lineas) {
+  const porEntrada = new Map();
+  for (const c of lineas) if (c && c.tipo === 'pedido' && c.entrada && c.estado) porEntrada.set(`${c.entrada.repo}@${c.entrada.sha}`, c);
+  return porEntrada;
+}
+// Las entradas del registro con su corrección aplicada (la última, si hubo más de una) y, si no la tienen, con lo que se
+// supo de su pedido: `entro` reclama el commit que el pedido dejó en main; `abandonado` cierra la entrada.
 function entradasCorregidas() {
   const lineas = readJsonl(LEDGER);
   const porEntrada = correcciones(lineas);
+  const pedidos = estadosDePedido(lineas);
   return lineas.filter((e) => e && e.repoPath && e.sha).map((e) => {
     const c = porEntrada.get(`${e.repoPath}@${e.sha}`);
+    const p = !c && e.pr ? pedidos.get(`${e.repoPath}@${e.sha}`) : null;
+    if (p && p.estado === 'entro' && p.merge) return { ...e, sha: p.merge, estado: 'entro', pedidoDe: e.sha };
+    if (p && p.estado === 'abandonado') return { ...e, estado: 'abandonado', motivoDeCierre: p.motivo };
     if (!c) return e;
     // la carpeta desde donde se corrigió hace de principal de una entrada que no tenía una
     const principal = e.principal || (c.carpeta && real(c.carpeta) !== real(e.repoPath) ? c.carpeta : undefined);
-    return { ...e, sha: c.real, ...(principal ? { principal } : {}), corregida: { de: e.sha, motivo: c.motivo, quien: c.quien, ts: c.ts } };
+    // una corrección la hizo una persona: manda sobre lo que se supo del pedido (la entrada deja de esperar)
+    return { ...e, sha: c.real, estado: undefined, ...(principal ? { principal } : {}), corregida: { de: e.sha, motivo: c.motivo, quien: c.quien, ts: c.ts } };
   });
 }
 
@@ -320,7 +332,8 @@ function entradasCorregidas() {
 // lo corrige una persona. Sólo para pedidos (un push a main anota lo que acaba de subir) y sólo si se puede leer en git.
 const RE_PEDIDO = /\bpr\s+(create|new)\b|change-request/;
 function yaEstabaEnMain(e) {
-  if (e.corregida || !RE_PEDIDO.test(String(e.cmd || ''))) return false;
+  // una entrada que entró reclama el commit que el pedido dejó en main: estar en main es lo esperado
+  if (e.corregida || e.estado === 'entro' || !RE_PEDIDO.test(String(e.cmd || ''))) return false;
   const t = Date.parse(e.ts);
   if (!t) return false;
   const dir = carpetaVigente(e);
@@ -331,7 +344,8 @@ function yaEstabaEnMain(e) {
   return Boolean(antes) && gitOrNull(dir, ['merge-base', '--is-ancestor', e.sha, antes]) !== null;
 }
 function comandoDeCorregir(e) {
-  return `node "${__filename}" --correct --repo "${e.repoPath}" --sha ${e.sha} --real <commit del pedido> --reason "<por qué>"`;
+  // la sha anotada (la de un pedido que entró es la de su rama, no la que reclama ahora): `--correct` busca por ésa
+  return `node "${__filename}" --correct --repo "${e.repoPath}" --sha ${e.pedidoDe || e.sha} --real <commit del pedido> --reason "<por qué>"`;
 }
 const avisoYaEnMain = (e) => (yaEstabaEnMain(e) ? `\n      ⚠ ese commit ya estaba en ${ramaCorta(e.branch) || 'main'} antes del pedido: la entrada puede haber anotado una rama de origen vieja. Si es así, la corrige una persona con el commit real: ${comandoDeCorregir(e)}` : '');
 
@@ -385,6 +399,161 @@ function corregir(argv) {
   process.stdout.write(`retro-pending: la entrada ${e.repoPath} @ ${e.sha} queda corregida a ${c.real} (${quien}: ${motivo}). La entrada no se borra; ahora pide la retrospectiva de ${c.real}: ${launchHint(corregida)}\n`);
 }
 
+// ── LOS PEDIDOS ABIERTOS ─────────────────────────────────────────────────────────────────────────
+// 🔴 Un pedido abierto no es una fusión. Al abrir un pedido hacia main se anota la punta de su rama de origen, que no
+// está en main: pedir su latido fabricaba constancias de fusiones que no hubo (la punta de una rama, una fusión a dev), y
+// el tablero las contaba. Por eso la entrada de un pedido guarda su número (de la salida del comando que lo abrió) y
+// queda `esperando`: no se reclama. Al cerrar un turno o al arrancar se le pregunta a la capa de plataforma si entró
+// (`platform.js change-request read`, con la identidad del `origin`), sin interacción, con tope de 10 s y a lo sumo una
+// vez cada 10 min por pedido
+// (la hora de cada consulta va en `retro-pending-consultas.json`, que se reescribe entero; ilegible = consultar de nuevo).
+// Lo que se sabe va al registro como un renglón propio (`tipo: 'pedido'`), como la corrección: la entrada no se toca.
+//   · entró → la entrada reclama el commit que el pedido dejó en main (también con fusión aplastada);
+//   · abandonado o cerrado sin entrar → la entrada se cierra y no se reclama nunca más;
+//   · no se pudo preguntar → no se reclama, y el aviso de arranque dice «no sé si el pedido N entró: <motivo>».
+// TYCON_RETRO_ASK_PR=0 apaga la consulta (las pruebas y el banco); TYCON_RETRO_ASK_PR_MS cambia el tope.
+// Las entradas viejas de pedidos (sin número), las `entro` cuyo commit quedó fuera de la línea de main y las que quedaron
+// sin cubrir porque su latido se anuló no se pueden pagar con un latido (retro-heartbeat.js sólo acepta la línea de main):
+// no frenan, y el aviso de arranque las lista con el comando de `--correct`.
+const CONSULTAS = path.join(STATE_DIR, 'retro-pending-consultas.json');
+const CAPA = path.join(__dirname, '..', 'lib', 'platform', 'platform.js');
+const CONSULTA_CADA_MS = 10 * 60000;
+const CONSULTAS_POR_PASADA = 3;
+const topeDeConsulta = () => Number(process.env.TYCON_RETRO_ASK_PR_MS) > 0 ? Number(process.env.TYCON_RETRO_ASK_PR_MS) : 10000;
+
+/** El número de cada pedido de la salida de la herramienta: `pullRequestId` de az, la dirección `…/pull/N` de gh. */
+function numerosDePedido(event) {
+  const r = event && event.tool_response;
+  const salida = typeof r === 'string' ? r : r && typeof r === 'object' ? [r.stdout, r.output, r.content].filter((x) => typeof x === 'string').join('\n') : '';
+  const az = [...salida.matchAll(/"pullRequestId"\s*:\s*(\d+)/g)].map((m) => Number(m[1]));
+  const web = [...salida.matchAll(/\/pull(?:request)?\/(\d+)\b/g)].map((m) => Number(m[1]));
+  // la capa de plataforma (`platform.js change-request open`) contesta `{ ok, value: { id, url } }`: el número es `value.id`
+  // (su url de Azure es la de la API, `…/pullRequests/N`, que no es la dirección web)
+  let capa = [];
+  try { const d = JSON.parse(salida.trim()); if (d && d.value && Number.isInteger(d.value.id)) capa = [d.value.id]; } catch { /* no es la salida de la capa */ }
+  return { az: [...new Set(az)], web: [...new Set(web)], capa };
+}
+
+function leerConsultas() {
+  try { const d = JSON.parse(fs.readFileSync(CONSULTAS, 'utf8')); return d && typeof d === 'object' && !Array.isArray(d) ? d : {}; } catch { return {}; }
+}
+function guardarConsultas(d) {
+  try {
+    fs.mkdirSync(STATE_DIR, { recursive: true });
+    const tmp = `${CONSULTAS}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(d, null, 2) + '\n', 'utf8');
+    fs.renameSync(tmp, CONSULTAS);
+  } catch { /* fail-open: la próxima pasada vuelve a consultar */ }
+}
+
+/** Lo que contesta la plataforma por el pedido de `e`: `{ estado: 'entro'|'abandonado'|'esperando'|'no-se', merge?, motivo? }`. */
+function consultarPedido(e) {
+  const dir = carpetaVigente(e);
+  if (!esRaiz(dir)) return { estado: 'no-se', motivo: `la carpeta del repo (${dir}) ya no es un repo` };
+  const identidad = identidadParaLaCapa(dir);
+  if (identidad.problema) return { estado: 'no-se', motivo: identidad.problema };
+  const tope = topeDeConsulta();
+  const env = { ...process.env, GH_PROMPT_DISABLED: '1', GIT_TERMINAL_PROMPT: '0', AZURE_CORE_NO_COLOR: '1', AZURE_CORE_ONLY_SHOW_ERRORS: '1' };
+  const args = [CAPA, 'change-request', 'read', '--repo', JSON.stringify(identidad.valor), '--args', JSON.stringify({ number: e.pr, deadlineMs: Date.now() + tope })];
+  let salida;
+  try {
+    // el tope corta la capa; lo que ella lanzó trae su propio tope (deadlineMs) y no se espera
+    salida = execFileSync(process.execPath, args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: tope, killSignal: 'SIGKILL', env, maxBuffer: 1024 * 1024, windowsHide: true });
+  } catch (err) {
+    if (err && (err.code === 'ETIMEDOUT' || err.signal)) return { estado: 'no-se', motivo: `la capa de plataforma no contestó en ${Math.round(tope / 1000)} s` };
+    const ultima = String((err && err.stderr) || '').trim().split('\n').filter(Boolean).pop();
+    return { estado: 'no-se', motivo: `la capa de plataforma salió con error${ultima ? ` (${sinSecretos(ultima)})` : ''}` };
+  }
+  let d;
+  try { d = JSON.parse(salida); } catch { return { estado: 'no-se', motivo: 'la capa de plataforma contestó algo que no es JSON' }; }
+  // cualquier «no» de la capa es no saber, también no_encontrado: la entrada no se cierra
+  if (!d || d.ok !== true) return { estado: 'no-se', motivo: `${(d && d.reason) || 'no_medido'}: ${sinSecretos((d && d.detail) || 'sin detalle')}` };
+  const v = d.value || {};
+  const merge = /^[0-9a-f]{40}$/i.test(String(v.mergeCommit || '')) ? String(v.mergeCommit).toLowerCase().slice(0, 12) : null;
+  if (v.state === 'merged') return merge ? { estado: 'entro', merge } : { estado: 'no-se', motivo: 'la plataforma dice que entró pero no da su commit de fusión' };
+  if (v.state === 'closed') return { estado: 'abandonado' };
+  if (v.state === 'open') return { estado: 'esperando' };
+  return { estado: 'no-se', motivo: `la plataforma contestó un estado que no conozco (${v.state ? sinSecretos(v.state) : 'vacío'})` };
+}
+
+// El texto de la plataforma va al archivo de consultas y al aviso: pasa por la limpieza de la capa (credenciales,
+// direcciones, correos). Si la capa no se puede cargar, no se muestra.
+function sinSecretos(t) {
+  try { return require(CAPA).limpiar(t).slice(0, 160); } catch { return '(detalle oculto: no pude cargar la limpieza de la capa)'; }
+}
+
+/**
+ * La identidad del repo de `dir` para la capa de plataforma, sacada de su `origin`: `{ valor }` o `{ problema }`. Sólo
+ * los dos hosts que la capa sabe nombrar; con otro, no se sabe a quién preguntarle.
+ */
+function identidadParaLaCapa(dir) {
+  let id = null;
+  try { id = resolverRemoto(dir).id; } catch { id = null; }
+  if (id && id.org && id.proyecto && id.repo) return { valor: { platform: 'azure', org: id.org, project: id.proyecto, repo: id.repo } };
+  const partes = id && id.host === 'github.com' ? String(id.ruta || '').split('/') : [];
+  if (partes.length === 2 && partes[0] && partes[1]) return { valor: { platform: 'github', org: partes[0], repo: id.nombre || partes[1] } };
+  return { problema: id ? `no sé en qué plataforma vive el origin de ${dir} (${id.host})` : `no sé en qué plataforma vive ${dir}: no tiene un origin legible` };
+}
+
+/**
+ * Pregunta por los pedidos que esperan (los que toca, ver la cabecera del bloque) y anota lo que se supo. Devuelve, por
+ * entrada que sigue esperando, lo último que se sabe (`{ estado, motivo }`, del archivo de consultas).
+ */
+function resolverPedidos() {
+  const saber = new Map();
+  const esperan = entradasCorregidas().filter((e) => e.estado === 'esperando' && e.pr && !e.exento);
+  if (!esperan.length) return saber;
+  const apagada = process.env.TYCON_RETRO_ASK_PR === '0';
+  const consultas = leerConsultas();
+  let hechas = 0;
+  let cambio = false;
+  const vistas = new Set();
+  for (const e of esperan) {
+    const k = `${e.repoPath}@${e.sha}`;
+    if (vistas.has(k)) continue;
+    vistas.add(k);
+    const previa = consultas[k];
+    const fresca = previa && Date.now() - (Date.parse(previa.ts) || 0) < CONSULTA_CADA_MS;
+    if (apagada || fresca || hechas >= CONSULTAS_POR_PASADA) { if (previa) saber.set(k, previa); continue; }
+    hechas++;
+    const r = consultarPedido(e);
+    consultas[k] = { ts: new Date().toISOString(), pr: e.pr, estado: r.estado, ...(r.motivo ? { motivo: r.motivo } : {}) };
+    cambio = true;
+    if (r.estado === 'entro' || r.estado === 'abandonado') {
+      const renglon = { ts: new Date().toISOString(), tipo: 'pedido', entrada: { repo: e.repoPath, sha: e.sha }, pr: e.pr, estado: r.estado,
+        ...(r.merge ? { merge: r.merge } : {}), ...(r.estado === 'abandonado' ? { motivo: `el pedido ${e.pr} se abandonó: no hay fusión que reclamar` } : {}) };
+      try { fs.appendFileSync(LEDGER, JSON.stringify(renglon) + '\n', 'utf8'); } catch { /* fail-open: se vuelve a preguntar */ }
+    } else saber.set(k, consultas[k]);
+  }
+  if (cambio) guardarConsultas(consultas);
+  return saber;
+}
+
+// ¿El commit de la entrada está en la línea principal de main (`--first-parent`)? true · false · null (no se puede leer:
+// la carpeta ya no es un repo, o no tiene main). Una lista por carpeta y rama, una vez por proceso.
+const lineasDeMain = new Map();
+function enLineaDeMain(e) {
+  const dir = carpetaVigente(e);
+  if (!esRaiz(dir)) return null;
+  const destino = ramaCorta(e.branch) || 'main';
+  const ref = gitOrNull(dir, ['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${destino}`]) ? `origin/${destino}`
+    : gitOrNull(dir, ['rev-parse', '--verify', '--quiet', `refs/heads/${destino}`]) ? destino : null;
+  if (!ref) return null;
+  const clave = `${real(dir)}|${ref}`;
+  if (!lineasDeMain.has(clave)) {
+    let lista = null;
+    try { lista = execFileSync('git', ['-C', dir, 'rev-list', '--first-parent', ref], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10000, maxBuffer: 256 * 1024 * 1024 }); } catch { lista = null; }
+    lineasDeMain.set(clave, lista === null ? null : new Set(lista.split('\n').filter(Boolean).map((s) => s.slice(0, 12))));
+  }
+  const linea = lineasDeMain.get(clave);
+  if (!linea) return null;
+  const sha = String(e.sha).toLowerCase();
+  if (linea.has(sha.slice(0, 12))) return true;
+  // una entrada que entró cuyo commit esta copia todavía no trajo (main atrasada): no se puede decir que esté fuera
+  if (e.estado === 'entro' && gitOrNull(dir, ['merge-base', '--is-ancestor', sha, ref]) === null) return null;
+  return false;
+}
+
 // ── cubierto por una retrospectiva? (metrics-*.json con repo + merge_commit) ─────────────────────
 // Se mira en DOS lugares: el .dashboard/ del checkout
 // donde vive el hook (el arnés canónico, donde el capturer escribe por contrato) Y el .dashboard/
@@ -416,23 +585,45 @@ function coveredByMetrics(entry) {
   }
   return false;
 }
-function pendingEntries() {
+// ¿La entrada la cubría un latido que después se anuló? (y ningún otro la cubre: eso ya lo miró `coveredByMetrics`)
+function cubiertaPorUnAnulado(entry) {
+  for (const dir of dashboardsDe(entry)) {
+    for (const m of RETRO_COVERAGE.anuladosIn(dir) || []) {
+      const delRepo = RETRO_COVERAGE.sameRepo(m, entry.repoPath) || (entry.principal && RETRO_COVERAGE.sameRepo(m, entry.principal));
+      if (delRepo && RETRO_COVERAGE.sameSha(m.sha, String(entry.sha))) return true;
+    }
+  }
+  return false;
+}
+/**
+ * El registro, juzgado: `pendientes` (lo que se reclama), `esperando` (pedidos que no entraron todavía: no se reclaman)
+ * y `fueraDeMain` (lo que un latido no puede pagar: una entrada de pedido cuyo commit no está en la línea de main, o una
+ * que sólo cubría un latido anulado; no frenan y el aviso de arranque las lista con `--correct`).
+ */
+function estadoDelRegistro() {
   const seen = new Set();
-  const out = [];
+  const out = { pendientes: [], esperando: [], fueraDeMain: [] };
   for (const e of entradasCorregidas()) {
     // Exento (sólo tests/docs): contado, nunca reclamado — ni por el gate ni por el aviso.
     if (e.exento) continue;
     const key = `${real(e.repoPath)}@${e.sha}`;
     if (seen.has(key)) continue;
     seen.add(key);
+    if (e.estado === 'abandonado') continue;
+    if (e.estado === 'esperando') { out.esperando.push(e); continue; }
     if (coveredByMetrics(e)) continue;
     // Una entrada vieja de un repo de laboratorio que sigue en pie no se reclama (cabecera). Si la carpeta ya no está,
     // no se puede juzgar: se reclama como siempre.
     if (fs.existsSync(e.repoPath) && juzgarLaboratorio(e.repoPath).laboratorio) continue;
-    out.push(e);
+    if (!e.corregida) {
+      if (cubiertaPorUnAnulado(e)) { out.fueraDeMain.push({ ...e, porAnulado: true }); continue; }
+      if ((e.pr || e.estado === 'entro' || RE_PEDIDO.test(String(e.cmd || ''))) && enLineaDeMain(e) === false) { out.fueraDeMain.push(e); continue; }
+    }
+    out.pendientes.push(e);
   }
   return out;
 }
+function pendingEntries() { return estadoDelRegistro().pendientes; }
 // Lo que el ledger dice de los últimos `dias` días: cuántos pushes tuvieron su retrospectiva, cuántos
 // quedaron exentos y cuántos siguen sin ella. Es el número que hace visible la exención.
 function contarVentana(dias) {
@@ -613,20 +804,36 @@ function record(event) {
   // Un pedido de GitHub que no se pudo ubicar (la carpeta o el repo los arma la terminal, o el `--repo` no es el
   // `origin` de esa carpeta) tampoco se anota contra el repo de la sesión: se dice, igual que el push de abajo.
   let pedidoSinUbicar = false;
-  for (const p of pedidosGh) {
-    if (!p.resuelto) { pedidoSinUbicar = true; continue; }
-    const e = anotar(event, cmd, { dir: p.dir, st: cmd }, { isPrCreate: true, prTarget: p.target, sha: p.sha, origen: p.origen });
+  // El número de cada pedido, de la salida de la herramienta («LOS PEDIDOS ABIERTOS»): uno por pedido, en orden; si no
+  // hay uno por pedido, ninguno (atribuir mal un número reclamaría la fusión de otro pedido).
+  const numeros = numerosDePedido(event);
+  const ghResueltos = pedidosGh.filter((p) => p.resuelto);
+  // los de `gh` toman los números de sus direcciones; los de la capa, los de su respuesta (`value.id`)
+  const deGh = ghResueltos.filter((p) => !p.capa);
+  const deCapa = ghResueltos.filter((p) => p.capa);
+  const numeroDe = (p) => {
+    const lista = p.capa ? (numeros.capa.length ? numeros.capa : numeros.web) : numeros.web;
+    const grupo = p.capa ? deCapa : deGh;
+    return lista.length === grupo.length ? lista[grupo.indexOf(p)] : null;
+  };
+  for (const p of ghResueltos) {
+    const e = anotar(event, cmd, { dir: p.dir, st: cmd }, { isPrCreate: true, prTarget: p.target, sha: p.sha, origen: p.origen, pr: numeroDe(p), plataforma: p.plataforma || 'github' });
     if (e) anotadas.push(e);
   }
+  if (ghResueltos.length !== pedidosGh.length) pedidoSinUbicar = true;
   // 🔴 Cada entrega se juzga por SÍ MISMA. Un dedup por directorio descartaría entregas
   // que nadie juzgó todavía: con `git push origin dev && git push origin main` desde una
   // sesión parada en dev, el primer push consumiría el repo, `anotar` devolvería null (no nombra main,
   // no está en main) y el segundo —el que SÍ va a main— se saltearía: exit 0, sin entrada y sin
   // aviso. Registrar de menos y en silencio es el peor modo de falla de esta pieza.
   // No hace falta dedup: `anotar` ya se niega a repetir una entry con el mismo repoPath + sha.
+  const azResueltos = isPrCreate ? puntos.filter((p) => p.resuelto).length : 0;
+  let iAz = 0;
   for (const p of puntos) {
     if (!p.resuelto) { irresoluble = true; continue; }
-    const e = anotar(event, cmd, p, { isPrCreate, prTarget, sha: p.sha, punta: p.punta, origen: p.origen });
+    const pr = isPrCreate && numeros.az.length === azResueltos ? numeros.az[iAz] : null;
+    if (isPrCreate) iAz++;
+    const e = anotar(event, cmd, p, { isPrCreate, prTarget, sha: p.sha, punta: p.punta, origen: p.origen, pr, plataforma: 'azure' });
     if (e) anotadas.push(e);
   }
   // "No pude saber a qué repo fue" no se publica como si fuera el repo de la sesión — que es
@@ -665,7 +872,16 @@ function record(event) {
   const reclamadas = anotadas.filter((e) => !e.exento);
   const exentas = anotadas.filter((e) => e.exento);
   const lineas = [];
-  if (reclamadas.length) lineas.push(`retro-pending: push a ${reclamadas[0].branch} registrado (${reclamadas.map(fmt).join(', ')}). Antes de cerrar el turno, corré el latido por ese merge (regla 10b — el Stop-gate exige el archivo): ${reclamadas.map(launchHint).join(' · ')}`);
+  // un pedido con su número espera a entrar: su latido no se puede escribir todavía (la punta de la rama no está en main)
+  for (const e of reclamadas.filter((x) => x.estado === 'esperando')) {
+    lineas.push(`retro-pending: pedido ${e.pr} a ${e.branch} anotado (${fmt(e)}): queda esperando que entre. Cuando entre, se pide el latido del commit que deje en ${e.branch}; NO lances el latido ahora.`);
+  }
+  // un pedido sin número queda por la punta de su rama, que no está en main: su latido no se puede escribir (sale 2), y la
+  // entrada no frena el cierre y sale en el aviso de arranque con su `--correct`. No se pide el latido.
+  const sinNumero = reclamadas.filter((x) => x.estado !== 'esperando' && RE_PEDIDO.test(String(x.cmd || '')));
+  if (sinNumero.length) lineas.push(`retro-pending: no pude leer el número del pedido en la salida de la herramienta (${sinNumero.map(fmt).join(', ')}): la entrada queda por la punta de la rama y no frena. Cuando el pedido entre, corregila con el commit que dejó en main: ${sinNumero.map(comandoDeCorregir).join(' · ')}`);
+  const aLatir = reclamadas.filter((x) => x.estado !== 'esperando' && !sinNumero.includes(x));
+  if (aLatir.length) lineas.push(`retro-pending: push a ${aLatir[0].branch} registrado (${aLatir.map(fmt).join(', ')}). Antes de cerrar el turno, corré el latido por ese merge (regla 10b — el Stop-gate exige el archivo): ${aLatir.map(launchHint).join(' · ')}`);
   // La exención se DICE, con los archivos: el agente que sigue el paso 10b del skill de merge necesita el
   // contra-aviso, y quien lea el log necesita poder discutir el criterio con el dato a la vista.
   for (const e of exentas) {
@@ -936,7 +1152,7 @@ function pedidosDeCapa(cmd, cwd) {
     if (!quiere || !origen || origen.ruta !== quiere) { out.push({ resuelto: false }); continue; }
     const rama = typeof args.sourceBranch === 'string' ? ramaCorta(args.sourceBranch) : null;
     out.push({ resuelto: true, dir: root, target: ramaCorta(args.targetBranch), sha: rama ? puntaDeLaRama(root, rama) : puntaDeLaRamaActual(root),
-      origen: rama || git(root, ['rev-parse', '--abbrev-ref', 'HEAD']) || null });
+      origen: rama || git(root, ['rev-parse', '--abbrev-ref', 'HEAD']) || null, plataforma: origen.org ? 'azure' : 'github', capa: true });
   }
   return out;
 }
@@ -985,8 +1201,10 @@ function anotar(event, cmd, punto, ctx) {
   // `branch` es la rama DESTINO; la de origen va aparte, antes de `cmd` (quien lee el registro espera `cmd` al final de
   // la entrada que pide retrospectiva). Un pedido sin la rama a la vista no la inventa.
   const origen = ctx.isPrCreate ? ctx.origen : branch;
+  // un pedido con su número queda esperando que entre («LOS PEDIDOS ABIERTOS»)
+  const pedido = ctx.isPrCreate && Number.isInteger(ctx.pr) ? { pr: ctx.pr, plataforma: ctx.plataforma || 'azure', estado: 'esperando' } : {};
   const entry = { ts: new Date().toISOString(), sessionId: sessionIdOf(event), repoPath: root, sha: sha.slice(0, 12), branch: target,
-    ...(origen && origen !== 'HEAD' ? { origen } : {}), cmd: cmd.slice(0, 120) };
+    ...(origen && origen !== 'HEAD' ? { origen } : {}), ...pedido, cmd: cmd.slice(0, 120) };
   if (juicio && juicio.exento) Object.assign(entry, { exento: juicio.exento, motivo: juicio.motivo, commits: juicio.commits, archivos: juicio.archivos.slice(0, 40) });
   if (ctx.isPrCreate && !ctx.sha && ctx.punta) entry.punta = ctx.punta;   // la punta cayó a HEAD, dicho
   const principal = carpetaPrincipal(root);
@@ -1104,6 +1322,7 @@ function gate(event) {
   // legítimo ya cumplido gastaría presupuesto y del 4º merge en adelante la sesión no frenaría nunca
   // más — justo las sesiones largas, que son las que mergean varias veces.
   const limpio = () => { try { fs.unlinkSync(stateFile); } catch { /* no existía */ } };
+  resolverPedidos();
   const pend = pendingEntries();
   const mine = pend.filter((e) => e.sessionId === sid);
   // Merges de OTRA sesión en el repo de ÉSTA: el aviso de arranque
@@ -1169,9 +1388,29 @@ function belongsToCwd(entry, cwd) {
   const c = real(cwd);
   return underOrEqual(r, c) || underOrEqual(c, r);
 }
+// Lo que no frena y se dice al arrancar, sólo de este repo/workspace: los pedidos de los que no se sabe si entraron y las
+// entradas que un latido no puede pagar, cada una con el comando de `--correct`.
+function lineasQueNoFrenan(registro, saber, cwd) {
+  const out = [];
+  const scopeAll = process.env.TYCON_RETRO_PENDING_SCOPE === 'all';
+  const deAca = (e) => scopeAll || belongsToCwd(e, cwd);
+  for (const e of registro.esperando.filter(deAca)) {
+    const s = saber.get(`${e.repoPath}@${e.sha}`);
+    if (s && s.estado === 'no-se') out.push(`ℹ️ retro-pending: no sé si el pedido ${e.pr} entró: ${s.motivo} (${e.repoPath}). No frena; se vuelve a preguntar en el próximo cierre.`);
+  }
+  const fuera = registro.fueraDeMain.filter(deAca);
+  if (fuera.length) {
+    out.push(`⚠️ retro-pending: ${fuera.length} entrada(s) que un latido no puede pagar (su commit no está en la línea de main, o su latido se anuló): no frenan. Las corrige una persona con el commit que el pedido dejó en main:`);
+    for (const e of fuera) out.push(`  - ${e.repoPath} @ ${e.sha} (${String(e.ts || '').slice(0, 16)}${e.porAnulado ? ', su latido se anuló' : ''}) → ${comandoDeCorregir(e)}`);
+  }
+  return out;
+}
 function notice(event) {
   const minAgeMs = Number(process.env.TYCON_RETRO_PENDING_MIN_AGE_MIN || 5) * 60000;
-  const old = pendingEntries().filter((e) => Date.now() - (Date.parse(e.ts) || 0) >= minAgeMs);
+  const saber = resolverPedidos();
+  const registro = estadoDelRegistro();
+  const noFrenan = lineasQueNoFrenan(registro, saber, event.cwd || process.cwd());
+  const old = registro.pendientes.filter((e) => Date.now() - (Date.parse(e.ts) || 0) >= minAgeMs);
   // La cuenta de la exención: se rinde SÓLO cuando hubo exenciones en la ventana — sin
   // ellas no hay nada que rendir, y una línea más en cada arranque es ruido que se deja de leer.
   const cuenta = contarVentana(30);
@@ -1179,7 +1418,8 @@ function notice(event) {
     ? `ℹ️ retro-pending (últimos ${cuenta.dias} días): ${cuenta.conRetro} push(es) a main con retrospectiva · ${cuenta.exentos} exento(s) por sólo tests/docs · ${cuenta.pendientes} sin retrospectiva. Detalle: node ${__filename} --report`
     : null;
   const emitir = (cuerpo) => process.stdout.write(`<system-reminder>\n${cuerpo}\n</system-reminder>\n`);
-  if (!old.length) { if (cuentaLine) emitir(cuentaLine); return; }
+  const extra = noFrenan.length ? noFrenan.join('\n') : null;
+  if (!old.length) { const cuerpo = [extra, cuentaLine].filter(Boolean).join('\n'); if (cuerpo) emitir(cuerpo); return; }
   const scopeAll = process.env.TYCON_RETRO_PENDING_SCOPE === 'all';
   const cwd = event.cwd || process.cwd();
   const local = scopeAll ? old : old.filter((e) => belongsToCwd(e, cwd));
@@ -1190,13 +1430,13 @@ function notice(event) {
     ? `ℹ️ Además hay ${foreign} merge(s) pendiente(s) de retrospectiva en OTROS proyectos — NO los lances desde esta sesión: se reclaman al abrir sesión en su propio repo (o TYCON_RETRO_PENDING_SCOPE=all para verlos).`
     : null;
   if (!local.length) {
-    const cuerpo = [foreignLine, cuentaLine].filter(Boolean).join('\n');
+    const cuerpo = [extra, foreignLine, cuentaLine].filter(Boolean).join('\n');
     if (cuerpo) emitir(cuerpo);
     return;
   }
   const lines = local.map((e) => `  - ${e.repoPath} @ ${e.sha} (${String(e.ts || '').slice(0, 16)})${avisoYaEnMain(e)}`);
   const scopeLabel = scopeAll ? '' : ' de ESTE proyecto';
-  process.stdout.write(`<system-reminder>\n🔴 retro-pending: ${local.length} merge(s) a main${scopeLabel} SIN retrospectiva (ningún metrics-*.json cubre ese repo+commit):\n${lines.join('\n')}\nLanzá el latido por cada uno, un segundo y sin modelo (${launchHint(local[0])}).${foreignLine ? '\n' + foreignLine : ''}${cuentaLine ? '\n' + cuentaLine : ''} Off: TYCON_RETRO_PENDING=0.\n</system-reminder>\n`);
+  process.stdout.write(`<system-reminder>\n🔴 retro-pending: ${local.length} merge(s) a main${scopeLabel} SIN retrospectiva (ningún metrics-*.json cubre ese repo+commit):\n${lines.join('\n')}\nLanzá el latido por cada uno, un segundo y sin modelo (${launchHint(local[0])}).${extra ? '\n' + extra : ''}${foreignLine ? '\n' + foreignLine : ''}${cuentaLine ? '\n' + cuentaLine : ''} Off: TYCON_RETRO_PENDING=0.\n</system-reminder>\n`);
 }
 
 function main() {

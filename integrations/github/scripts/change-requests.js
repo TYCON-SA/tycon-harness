@@ -269,7 +269,7 @@ function listaConCola(ctx, repo) {
 
 /**
  * Un pedido por su número, abierto o cerrado: `{ number, state: open|merged|closed, draft, autoComplete, inQueue, mergedAt,
- * title }`. Uno que no existe es no_encontrado, nunca «entró».
+ * mergeCommit, title }`. Uno que no existe es no_encontrado, nunca «entró».
  */
 function leerPedido(args, ctx) {
   const repo = repoDe(ctx);
@@ -292,6 +292,8 @@ function leerPedido(args, ctx) {
       // null: GitHub no lo dijo (quien lee no lo toma por «fuera de la cola»)
       inQueue: abierto ? (cola.has(String(p.node_id)) ? cola.get(String(p.node_id)) : null) : false,
       mergedAt: p.merged_at ? String(p.merged_at) : null,
+      // GitHub da `merge_commit_sha` también con el pedido abierto (el commit de prueba): sólo vale el de uno que entró
+      mergeCommit: p.merged_at && /^[0-9a-f]{40}$/i.test(String(p.merge_commit_sha || '')) ? String(p.merge_commit_sha).toLowerCase() : null,
       title: String(p.title || ''),
     },
   };
