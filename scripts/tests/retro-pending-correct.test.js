@@ -220,6 +220,29 @@ test('corrige una entrada que hoy no se reclama (vieja y de otra carpeta)', () =
   assert.strictEqual(lab.renglones().filter((c) => c.tipo === 'correccion').length, 1);
 });
 
+test('un commit real que no trae al anotado no corrige', () => {
+  const { dir, viejo, real } = repoConMain();
+  const lab = laboratorio();
+  lab.sembrar({ repoPath: dir, sha: corto(real) });
+  const r = lab.corregir(['--sha', corto(real), '--real', viejo, '--reason', 'm'], dir);
+  assert.strictEqual(r.status, 2);
+  assert.match(r.stderr, /no trae al anotado/);
+  assert.strictEqual(lab.renglones().length, 1);
+});
+
+test('si no puede escribir en el registro, lo dice y sale con error', () => {
+  const { dir, viejo, real } = repoConMain();
+  const lab = laboratorio();
+  lab.sembrar({ repoPath: dir, sha: corto(viejo) });
+  fs.chmodSync(lab.ledger, 0o444);
+  try {
+    const r = lab.corregir(['--sha', corto(viejo), '--real', real, '--reason', 'm'], dir);
+    assert.strictEqual(r.status, 2);
+    assert.match(r.stderr, /no pude escribir la corrección/);
+    assert.doesNotMatch(r.stdout, /queda corregida/);
+  } finally { fs.chmodSync(lab.ledger, 0o644); }
+});
+
 test('sin motivo no corrige', () => {
   const { dir, viejo, real } = repoConMain();
   const lab = laboratorio();
@@ -348,13 +371,6 @@ test('una copia --wt-… borrada también encuentra su hermano', () => {
   const { dir, real } = repoConMain();
   const lab = laboratorio();
   lab.sembrar({ repoPath: `${dir}--wt-tarea`, sha: corto(real), cmd: 'git push origin main' });
-  assert.ok(motivoDelCierre(lab, dir).includes(`--repo "${dir}" --merge ${corto(real)}`));
-});
-
-test('una copia borrada de .claude/worktrees encuentra el repo que la contenía', () => {
-  const { dir, real } = repoConMain();
-  const lab = laboratorio();
-  lab.sembrar({ repoPath: path.join(dir, '.claude', 'worktrees', 'x'), sha: corto(real), cmd: 'git push origin main' });
   assert.ok(motivoDelCierre(lab, dir).includes(`--repo "${dir}" --merge ${corto(real)}`));
 });
 

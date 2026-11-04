@@ -280,18 +280,16 @@ function carpetaVigente(e) {
   }
   return vigentes.get(clave);
 }
-// La carpeta principal de una entrada que no la anotó (anterior al campo `principal`) y cuya copia ya no es un repo: la
-// que la contiene (`<repo>/.claude/worktrees/<x>`) o el hermano con el nombre sin el sufijo de copia (`--slot-N`,
-// `--wt-…`, `--merge`). Vale sólo si es un repo y tiene el commit de la entrada: un nombre parecido no alcanza.
+// La carpeta principal de una entrada que no la anotó (anterior al campo `principal`) y cuya copia ya no es un repo: el
+// hermano con el nombre sin el sufijo de copia (`--slot-N`, `--wt-…`, `--merge`). Vale sólo si es un repo y tiene el
+// commit de la entrada: un nombre parecido no alcanza.
 const SUFIJO_DE_COPIA = /--(merge|wt-[^\\/]*|slot-\d+)$/;
 function principalPorNombre(e) {
   const ruta = String(e.repoPath || '');
-  const candidatas = [];
-  const adentro = ruta.match(/^(.+?)[\\/]\.claude[\\/]worktrees[\\/][^\\/]+[\\/]?$/);
-  if (adentro) candidatas.push(adentro[1]);
   const base = path.basename(ruta);
-  if (SUFIJO_DE_COPIA.test(base)) candidatas.push(path.join(path.dirname(ruta), base.replace(SUFIJO_DE_COPIA, '')));
-  return candidatas.find((d) => esRaiz(d) && gitOrNull(d, ['cat-file', '-e', `${e.sha}^{commit}`]) !== null) || null;
+  if (!SUFIJO_DE_COPIA.test(base)) return null;
+  const hermano = path.join(path.dirname(ruta), base.replace(SUFIJO_DE_COPIA, ''));
+  return esRaiz(hermano) && gitOrNull(hermano, ['cat-file', '-e', `${e.sha}^{commit}`]) !== null ? hermano : null;
 }
 
 // ── las correcciones de una entrada ──────────────────────────────────────────────────────────────
@@ -371,10 +369,18 @@ function corregir(argv) {
   if (!dir) return salir(`la carpeta de la entrada (${e.repoPath}) ya no es un repo y no encontré su principal: corré el comando desde la carpeta principal del repo (la que tiene el commit ${e.sha})`);
   const completo = gitOrNull(dir, ['rev-parse', '--verify', '--quiet', `${realArg}^{commit}`]);
   if (!completo) return salir(`el commit ${realArg} no existe en ${dir}: traé la rama (git fetch) o revisá la sha`);
+  // el commit real viene después del anotado (el pedido mergeó una punta que ya lo traía): sin eso, una corrección podría
+  // saldar la entrada con cualquier commit que ya tenga su retrospectiva
+  if (gitOrNull(dir, ['merge-base', '--is-ancestor', e.sha, completo]) === null) return salir(`el commit ${realArg} no trae al anotado (${e.sha}): la corrección apunta al commit que el pedido mergeó, que lo contiene`);
   const quien = git(dir, ['config', '--get', 'user.name']) || (() => { try { return os.userInfo().username; } catch { return null; } })() || 'sin nombre';
   const c = { ts: new Date().toISOString(), tipo: 'correccion', entrada: { repo: e.repoPath, sha: e.sha, ts: e.ts }, real: completo.slice(0, 12), motivo, quien, carpeta: dir, sesion: sessionIdOf({}) };
-  fs.mkdirSync(STATE_DIR, { recursive: true });
-  fs.appendFileSync(LEDGER, JSON.stringify(c) + '\n', 'utf8');
+  // el catch de `main` se traga todo (un gancho no rompe nada): una corrección que no se pudo escribir se dice acá
+  try {
+    fs.mkdirSync(STATE_DIR, { recursive: true });
+    fs.appendFileSync(LEDGER, JSON.stringify(c) + '\n', 'utf8');
+  } catch (err) {
+    return salir(`no pude escribir la corrección en el registro ${LEDGER} (${err.code || err.message}): no se corrigió nada`);
+  }
   const corregida = entradasCorregidas().find((x) => x.repoPath === e.repoPath && x.corregida && x.corregida.de === e.sha) || { ...e, sha: c.real };
   process.stdout.write(`retro-pending: la entrada ${e.repoPath} @ ${e.sha} queda corregida a ${c.real} (${quien}: ${motivo}). La entrada no se borra; ahora pide la retrospectiva de ${c.real}: ${launchHint(corregida)}\n`);
 }
