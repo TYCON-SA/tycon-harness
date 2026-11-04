@@ -145,11 +145,41 @@ echo '{"projects":[]}' > "$TMP/nuget.json"
 rc=$(corre --type nuget --block)
 { [ "$rc" -eq 2 ] && grep -q "NO MEDIDO" "$TMP/out.txt" && grep -q "packages.config: 2 proyecto" "$TMP/out.txt" && grep -q "Api/packages.config" "$TMP/out.txt"; } \
   && ok "con packages.config sale 2 y lo nombra, aunque la lista de dotnet venga vacía" || no "packages.config salió $rc: $(cat "$TMP/out.txt")"
+# un nombre de carpeta con un carácter de control no llega al informe tal cual
+rm -rf "$TMP/repo"; mkdir -p "$TMP/repo/$(printf 'Ra\033[31mro')"; : > "$TMP/repo/x.sln"
+echo '<packages />' > "$TMP/repo/$(printf 'Ra\033[31mro')/packages.config"
+rc=$(corre --type nuget)
+{ [ "$rc" -eq 2 ] && grep -q 'Ra?\[31mro/packages.config' "$TMP/out.txt" && ! grep -q "$(printf '\033')" "$TMP/out.txt"; } \
+  && ok "una ruta con un carácter de control sale saneada en el motivo" || no "ruta con control salió $rc: $(cat -v "$TMP/out.txt")"
 # lo que está en lo restaurado o lo compilado no es un proyecto del repo
 rm -rf "$TMP/repo"; mkdir -p "$TMP/repo/packages/Algo.1.0" "$TMP/repo/Api/bin" "$TMP/repo/Api/obj" "$TMP/repo/node_modules/x"; : > "$TMP/repo/x.sln"
 for d in packages/Algo.1.0 Api/bin Api/obj node_modules/x; do echo '<packages />' > "$TMP/repo/$d/packages.config"; done
 rc=$(corre --type nuget --block)
 [ "$rc" -eq 0 ] && ok "un packages.config en packages, bin, obj o node_modules no frena la medición" || no "packages.config fuera de los proyectos salió $rc: $(cat "$TMP/out.txt")"
+# `packages` sin un .sln al lado es un proyecto como cualquier otro
+rm -rf "$TMP/repo"; mkdir -p "$TMP/repo/src/packages/Foo"; : > "$TMP/repo/x.sln"
+echo '<packages />' > "$TMP/repo/src/packages/Foo/packages.config"
+rc=$(corre --type nuget)
+{ [ "$rc" -eq 2 ] && grep -q "src/packages/Foo/packages.config" "$TMP/out.txt"; } \
+  && ok "un proyecto dentro de una carpeta packages sin .sln al lado se mira" || no "packages anidado salió $rc: $(cat "$TMP/out.txt")"
+# un packages.config que llega por un enlace dentro del repo cuenta
+rm -rf "$TMP/repo"; mkdir -p "$TMP/repo/Api" "$TMP/repo/comun"; : > "$TMP/repo/x.sln"
+echo '<packages />' > "$TMP/repo/comun/paquetes.xml"; ln -s ../comun/paquetes.xml "$TMP/repo/Api/packages.config"
+rc=$(corre --type nuget)
+{ [ "$rc" -eq 2 ] && grep -q "Api/packages.config" "$TMP/out.txt"; } \
+  && ok "un packages.config enlazado se detecta" || no "packages.config enlazado salió $rc: $(cat "$TMP/out.txt")"
+# lo que no se pudo mirar no es «no hay»: un enlace que sale del repo y una carpeta ilegible
+rm -rf "$TMP/repo" "$TMP/afuera"; mkdir -p "$TMP/repo" "$TMP/afuera/Lib"; : > "$TMP/repo/x.sln"
+echo '<packages />' > "$TMP/afuera/Lib/packages.config"; ln -s "$TMP/afuera/Lib" "$TMP/repo/Lib"
+rc=$(corre --type nuget)
+{ [ "$rc" -eq 2 ] && grep -q "Lib (enlace fuera del repo)" "$TMP/out.txt"; } \
+  && ok "un enlace a una carpeta fuera del repo sale no medido y lo nombra" || no "enlace fuera del repo salió $rc: $(cat "$TMP/out.txt")"
+if [ "$(id -u)" -ne 0 ]; then
+  rm -rf "$TMP/repo"; mkdir -p "$TMP/repo/Cerrada"; : > "$TMP/repo/x.sln"; chmod 000 "$TMP/repo/Cerrada"
+  rc=$(corre --type nuget); chmod 755 "$TMP/repo/Cerrada"
+  { [ "$rc" -eq 2 ] && grep -q "Cerrada (EACCES)" "$TMP/out.txt"; } \
+    && ok "una carpeta ilegible sale no medido y la nombra" || no "carpeta ilegible salió $rc: $(cat "$TMP/out.txt")"
+fi
 
 # ── 13. un repo que no existe no se lee como limpio ──────────────────────────────────────────
 rc=$(FIX="$TMP" TYCON_DEP_CMD="$TMP/doble.sh" node "$GUION" --repo "$TMP/no-existe" --type npm >"$TMP/out.txt" 2>&1; echo $?)

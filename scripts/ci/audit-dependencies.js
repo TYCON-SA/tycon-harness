@@ -267,25 +267,43 @@ function proyectoNuget(repo, explicito) {
 }
 
 // Las carpetas que no son código del repo: lo restaurado, lo compilado y la historia de git.
-const NO_SON_PROYECTO = new Set(['.git', 'node_modules', 'bin', 'obj', 'packages']);
+// `packages` sólo es la carpeta de lo restaurado al lado de un .sln: más adentro puede ser un proyecto.
+const NO_SON_PROYECTO = new Set(['.git', 'node_modules', 'bin', 'obj']);
 
 /**
- * Los `packages.config` del repo (rutas relativas, ordenadas). Un proyecto que declara sus paquetes así (el formato de
- * .NET Framework) no aparece en `dotnet list package --vulnerable`: la lista sale vacía, y vacía no es limpia.
+ * Los `packages.config` del repo (rutas relativas, ordenadas) y lo que no se pudo mirar: una carpeta ilegible o un
+ * enlace que sale del repo. Un proyecto que declara sus paquetes así (el formato de .NET Framework) no aparece en
+ * `dotnet list package --vulnerable`: la lista sale vacía, y vacía no es limpia. Por eso lo que no se miró tampoco
+ * cuenta como «no hay».
  */
 function packagesConfigDe(repo) {
-  const out = [];
+  const raiz = fs.realpathSync(repo);
+  const viejos = [];
+  const sinMirar = [];
   const pendientes = [''];
   while (pendientes.length) {
     const rel = pendientes.pop();
     let es;
-    try { es = fs.readdirSync(path.join(repo, rel), { withFileTypes: true }); } catch (_) { continue; }
+    try { es = fs.readdirSync(path.join(repo, rel), { withFileTypes: true }); } catch (e) { sinMirar.push(`${rel || '.'} (${e.code || 'ilegible'})`); continue; }
+    const conSln = es.some((e) => e.name.toLowerCase().endsWith('.sln'));
     for (const e of es) {
-      if (e.isDirectory() && !NO_SON_PROYECTO.has(e.name.toLowerCase())) pendientes.push(path.join(rel, e.name));
-      else if (e.isFile() && e.name.toLowerCase() === 'packages.config') out.push(path.join(rel, e.name));
+      const ruta = path.join(rel, e.name);
+      const nombre = e.name.toLowerCase();
+      let dir = e.isDirectory(), archivo = e.isFile();
+      if (e.isSymbolicLink()) {
+        // un enlace adentro del repo apunta a algo que el recorrido ya mira; uno que sale, no se mira
+        let real = null;
+        try { real = fs.realpathSync(path.join(repo, ruta)); } catch (_) { real = null; }
+        const r = real === null ? null : path.relative(raiz, real);
+        if (r === null || r.startsWith('..') || path.isAbsolute(r)) { sinMirar.push(`${ruta} (enlace fuera del repo)`); continue; }
+        dir = false;
+        try { archivo = fs.statSync(real).isFile(); } catch (_) { archivo = false; }
+      }
+      if (dir && !NO_SON_PROYECTO.has(nombre) && !(conSln && nombre === 'packages')) pendientes.push(ruta);
+      else if (archivo && nombre === 'packages.config') viejos.push(ruta);
     }
   }
-  return out.sort();
+  return { viejos: viejos.sort(), sinMirar: sinMirar.sort() };
 }
 
 /**
@@ -301,11 +319,11 @@ function auditarNuget(repo, proyectoRel) {
   if (!proy) return { medido: false, motivo: 'no se encontró un .sln en la raíz y no se indicó --project' };
   if (!dentroDelRepo(repo, proy)) return { medido: false, motivo: `--project ${proy} sale de la carpeta del repo: sólo se mide un proyecto del repo` };
   if (!fs.existsSync(path.join(repo, proy))) return { medido: false, motivo: `no existe el proyecto ${proy}` };
-  const viejos = packagesConfigDe(repo);
-  if (viejos.length) {
-    const muestra = viejos.slice(0, 3).join(', ') + (viejos.length > 3 ? ` y ${viejos.length - 3} más` : '');
-    return { medido: false, motivo: `packages.config: ${viejos.length} proyecto(s) declaran sus paquetes con packages.config (${muestra}), y dotnet list package --vulnerable no los ve` };
-  }
+  const { viejos, sinMirar } = packagesConfigDe(repo);
+  // los nombres de carpeta son datos del repo: un carácter de control no llega al informe
+  const muestra = (l) => l.slice(0, 3).map((r) => r.replace(/[\u0000-\u001f\u007f]/g, '?')).join(', ') + (l.length > 3 ? ` y ${l.length - 3} más` : '');
+  if (viejos.length) return { medido: false, motivo: `packages.config: ${viejos.length} proyecto(s) declaran sus paquetes con packages.config (${muestra(viejos)}), y dotnet list package --vulnerable no los ve` };
+  if (sinMirar.length) return { medido: false, motivo: `no pude mirar si hay packages.config en ${muestra(sinMirar)}: dotnet list package --vulnerable no vería esos proyectos` };
 
   const rest = correr('dotnet', ['restore', proy, '--nologo'], repo);
   if (!rest.ok) return { medido: false, motivo: rest.motivo };
