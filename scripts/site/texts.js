@@ -131,6 +131,7 @@ const TEXTOS = {
   'inicio.queDecidir': { es: 'Qué decidir hoy', en: 'What to decide today' },
   'inicio.cadaFicha': { es: 'cada ficha lleva a su lista o a donde se decide', en: 'each card leads to its list or to where it is decided' },
   'decidir.pedido': { es: 'pull request #{n}', en: 'pull request #{n}' },
+  'decidir.nadie_lo_sigue': { es: 'pull request #{n} cerrado sin resolver: nadie lo sigue', en: 'pull request #{n} closed without a fix: nobody follows it' },
   'decidir.en_su_tarea': { es: 'ya decidida: se sigue en su tarea, en Mantenimiento', en: 'already decided: it is followed in its work item, under Maintenance' },
   'decidir.sin_pedido': { es: 'sin pull request abierto todavía: la noche lo abre en su próxima vuelta', en: 'no pull request open yet: the nightly run opens it on its next pass' },
   'decidir.sin_repo_https': { es: 'el repo de operaciones no tiene una dirección https navegable: no se puede enlazar su pull request', en: 'the operations repo has no browsable https address: its pull request cannot be linked' },

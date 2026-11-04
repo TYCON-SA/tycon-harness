@@ -449,7 +449,7 @@ function listasDeDecision(m, { enlaceOperaciones = null, remotoOperaciones = nul
       return d.enlace && enlace(d.enlace)
         ? renglonDeLista(`<a href="${esc(d.enlace)}">${esc(T('decidir.pedido', { n: d.pr }))}</a>`, nombre)
         : d.sinLugar === 'en_su_tarea' ? renglonDeLista(`<a href="/mantenimiento">${esc(DEC.fraseSinLugar(d.sinLugar, idioma))}</a>`, nombre)
-          : renglonDeLista(null, `${nombre} · ${esc(DEC.fraseSinLugar(d.sinLugar, idioma))}`);
+          : renglonDeLista(null, `${nombre} · ${esc(DEC.fraseSinLugar(d.sinLugar, idioma, { n: d.pr }))}`);
     };
     out.push(seccion(titulo, ul(suyas.map(fila)), T('vista.deLaNocheDel', { fecha: m.decisiones.fecha }), `decidir-${clave}`));
   }
