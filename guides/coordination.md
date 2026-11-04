@@ -176,6 +176,10 @@ El mismo aviso trae dos cosas más:
   va a la red. Los pedidos de un bot no salen. En Azure no sale: sin leer sus controles, «limpio» sólo dice que no choca.
 - **La sesión que espera lugar para su pase.** Tiene que lanzarlo y otra tiene el lugar: sale con quién lo tiene, y cuando
   se libera, con «puede lanzar». Nada la despierta sola: le avisa la coordinadora.
+- **La fila de la suite completa, parada.** Si no corre ninguna suite completa y alguna sesión anotó que espera turno
+  (`marker.js doing --waiting-for` con «suite», «portón» o «turno»), sale «no corre ninguna suite completa y hay N
+  esperando turno: dale el «arrancá» a X», con X la que espera hace más. Sin esa nota no sale: una sesión quieta no está
+  esperando turno. `status` muestra la fila entera.
 
 ## Lo pesado, con turno: la suite completa y los pases adversariales
 
