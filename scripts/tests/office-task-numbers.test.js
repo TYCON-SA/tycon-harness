@@ -721,3 +721,36 @@ test('T57 Mano_Baja_FirmaHechaOEsperaVencida — @story-8.198 @ac-50 @ac-53', ()
   const other = buildOffice({ wip: wip([{ session: 'Sand', sid: 'sid-sand', extra: { kind: 'loose', text: 'trabaja' } }]), signatures: [{ id: 'f1', tipo: 'firma', destino: 'sid-otra', nombre: 'Sand', title: 'de otra', at: ONOW }], nowMs: ONOW });
   assert.ok(!other.data.agents.find((a) => a.nombre === 'Sand').mano);
 });
+
+// ── El cartel en alto ───────────────────────────────────────────────────────────────────────────────────────────
+// la función del cartel, sacada de la página y corrida: es una sola línea, sin nada de la sala
+function cartelDePagina() {
+  const code = fs.readFileSync(path.join(__dirname, '..', 'tools', 'office', 'page.js'), 'utf8');
+  const linea = code.split('\n').find((l) => l.startsWith('function cartelDe('));
+  assert.ok(linea, 'page.js tiene cartelDe en una línea');
+  return { code, cartelDe: new Function(`${linea}\nreturn cartelDe;`)() };
+}
+
+test('T58 Cartel_TextoYColorPorAQuienEspera — @story-8.198 @ac-59', () => {
+  const { code, cartelDe } = cartelDePagina();
+  assert.deepStrictEqual(cartelDe('dueno'), { texto: 'Tu firma', color: '#ffa53d' });
+  assert.deepStrictEqual(cartelDe('coordinadora'), { texto: 'Coordinadora', color: '#5aa9ff' });
+  assert.strictEqual(cartelDe(null), null);
+  assert.strictEqual(cartelDe(undefined), null);
+  // el aro del piso toma el color del cartel, y el brazo ya no se levanta
+  assert.match(code, /d\.ring\.material\.color\.set\([^)]*cartelDe\(/);
+  assert.doesNotMatch(code, /zR=2\.55/);
+});
+
+test('T59 Cartel_ElSitioSirveElMismoDibujo — @story-8.198 @ac-59', async () => {
+  const { code } = cartelDePagina();
+  const { montar, LEAD } = require('./lib/offices-harness.js');
+  const h = await montar();
+  try {
+    const cookie = await h.entrar(LEAD);
+    const servido = await h.pedir('/offices/page.js', { cookie });
+    assert.strictEqual(servido.status, 200);
+    assert.match(servido.texto, /^function cartelDe\(/m);
+    assert.strictEqual(servido.texto, code, 'el mismo dibujo que la oficina local');
+  } finally { await h.cerrar(); }
+});
