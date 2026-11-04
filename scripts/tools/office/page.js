@@ -122,7 +122,7 @@ function numeroDe(i){return i&&typeof i.numero==="string"?i.numero:""}
 // a quién espera la mano levantada: la que anotó la sesión, o el dueño si su pantalla espera una firma o una pregunta
 function manoDe(a){return a&&(a.mano||(a.estado==="firma"||a.estado==="pregunta"?"dueno":null))}
 // el globito que flota sobre quien espera: su ícono y su color, que es también el del aro del piso
-function globoDe(m){return m==="coordinadora"?{icono:"✋",color:"#1f6fff"}:m==="dueno"?{icono:"✋",color:"#ff7a00"}:null}
+function globoDe(m){return m==="coordinadora"?{icono:"⏳",color:"#1f6fff"}:m==="dueno"?{icono:"✋",color:"#ff7a00"}:null}
 // con qué modelo y qué esfuerzo corre una sesión: «Opus 5.5 · High», con «sin dato» en lo que no se leyó; nada en la foto fija
 function modeloDe(a){return a&&(a.modelo||a.esfuerzo)?(a.modelo||"sin dato")+" · "+(a.esfuerzo||"sin dato"):""}
 function ficha(a){const r=[],add=(k,v,x)=>{if(v!=null&&v!=="")r.push({k,v,...x})};

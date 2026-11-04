@@ -734,7 +734,8 @@ function globoDePagina() {
 test('T58 Globo_ColorPorAQuienEspera — @story-8.198 @ac-59', () => {
   const { code, globoDe } = globoDePagina();
   assert.deepStrictEqual(globoDe('dueno'), { icono: '✋', color: '#ff7a00' });
-  assert.deepStrictEqual(globoDe('coordinadora'), { icono: '✋', color: '#1f6fff' });
+  // la espera a la coordinadora casi siempre es de turno: lleva el reloj de arena
+  assert.deepStrictEqual(globoDe('coordinadora'), { icono: '⏳', color: '#1f6fff' });
   // la etiqueta no repite la mano en su esquina: ahí queda la marca de su estado
   assert.match(code, /fx\.textContent=FX\[a\.estado\]\|\|""/);
   assert.strictEqual(globoDe(null), null);
