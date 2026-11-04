@@ -327,13 +327,17 @@ test('el aviso de arranque también lo dice', () => {
   assert.match(lab.arranque(dir).stdout, /ya estaba en main antes del pedido/);
 });
 
-test('un commit que no entró a main no lleva el aviso', () => {
+// La entrada vieja de un pedido cuyo commit no entró a main no frena el cierre: su latido no se puede escribir (el
+// latido sólo acepta la línea de main), y el aviso de arranque la lista con el comando de --correct.
+test('un commit que no entró a main no frena el cierre y sale en el aviso con --correct', () => {
   const { dir, fuera } = repoConMain();
   const lab = laboratorio();
   lab.sembrar({ repoPath: dir, sha: corto(fuera) });
   const motivo = motivoDelCierre(lab, dir);
-  assert.ok(motivo.includes(`--merge ${corto(fuera)}`), motivo);
-  assert.doesNotMatch(motivo, /ya estaba en main/);
+  assert.doesNotMatch(motivo, new RegExp(corto(fuera)), motivo);
+  const { stdout } = lab.arranque(dir);
+  assert.match(stdout, new RegExp(`${corto(fuera)}[^\\n]*--correct`), stdout);
+  assert.doesNotMatch(stdout, /ya estaba en main/);
 });
 
 test('un commit que entró a main después del pedido no lleva el aviso', () => {

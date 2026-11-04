@@ -697,10 +697,16 @@ function sinFallida(formato, txt) {
 }
 
 /**
- * ¿Las fichas se deciden en el sitio? Sí cuando operations.json tiene `site.url` (decisión 15): entonces la noche no
- * abre un pedido por ficha. `codigo` 0 sí, 1 no, 2 no se pudo leer (quien pregunta lo trata como «no» y lo dice).
+ * ¿Las fichas se deciden en el sitio? Sí cuando hay una dirección del sitio (decisión 15): la del perfil del equipo
+ * (`perfil`, la ruta a team-profile.json) o, sin ella, la de operations.json. Entonces la noche no abre un
+ * pedido por ficha. `codigo` 0 sí, 1 no, 2 no se pudo leer (quien pregunta lo trata como «no» y lo dice).
  */
-function sitioDecide(rutaOperations) {
+function sitioDecide(rutaOperations, { perfil = null } = {}) {
+  if (perfil) {
+    const doc = require('../../lib/org-config.js').leerPerfil(perfil);
+    const url = esObjeto(doc) && esObjeto(doc.site) ? doc.site.url : undefined;
+    if (typeof url === 'string' && url.trim()) return { codigo: 0, motivo: 'el perfil del equipo tiene site.url: las fichas se deciden en el sitio' };
+  }
   let txt;
   try { txt = fs.readFileSync(rutaOperations, 'utf8'); } catch (e) {
     if (e && e.code === 'ENOENT') return { codigo: 1, motivo: 'no hay operations.json: la noche abre un pedido por ficha' };
@@ -1152,7 +1158,7 @@ function decisionesDelPedido(dir) {
 }
 module.exports.decisionesDelPedido = decisionesDelPedido;
 
-// A mano: node scripts/nightly/findings/cycle.js site-decides --operations <operations.json>
+// A mano: node scripts/nightly/findings/cycle.js site-decides --operations <operations.json> [--profile <team-profile.json>]
 //         node scripts/nightly/findings/cycle.js site-decisions --dir <inbox/dependencies/decisions>
 if (require.main === module) {
   const a = process.argv.slice(2);
@@ -1169,12 +1175,13 @@ if (require.main === module) {
   }
   const i = a.indexOf('--operations');
   if (a[0] !== 'site-decides' || i < 0 || !a[i + 1]) {
-    process.stderr.write('uso: cycle.js site-decides --operations <operations.json>\n');
+    process.stderr.write('uso: cycle.js site-decides --operations <operations.json> [--profile <team-profile.json>]\n');
     process.exit(2);
   }
   // una excepción saldría con 1, que el guion lee como «no hay site.url»: cualquier falla es 2, «no se pudo preguntar»
+  const p = a.indexOf('--profile');
   let r;
-  try { r = sitioDecide(a[i + 1]); } catch { r = { codigo: 2, motivo: 'no se pudo preguntar si el sitio decide' }; }
+  try { r = sitioDecide(a[i + 1], { perfil: p >= 0 ? a[p + 1] || null : null }); } catch { r = { codigo: 2, motivo: 'no se pudo preguntar si el sitio decide' }; }
   process.stdout.write(`${r.motivo}\n`);
   process.exit(r.codigo);
 }

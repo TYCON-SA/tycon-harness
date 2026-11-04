@@ -53,6 +53,16 @@ function envolver(casa, cmd, { deFondo = false } = {}) {
     + ` && eval '${cmd.replace(/'/g, `'"'"'`)}'${deFondo ? '' : ' < /dev/null'} && pwd -P >| /tmp/claude-b725-cwd`;
 }
 
+/**
+ * La envoltura de una sesión que arrancó sin foto del ambiente (Mac, 2.1.312, medida el 3/11): `-c -l` en lugar del
+ * `source` de la foto, y el bloque propio de la consola. La de bash es un supuesto no medido.
+ */
+function envolverSinFoto(cmd, { deFondo = false, bash = false, unalias = true } = {}) {
+  return (bash ? '/bin/bash -c -l shopt -u extglob 2>/dev/null || true' : '/bin/zsh -c -l setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/null || true')
+    + (unalias ? " && { \\builtin unalias -- 'unsetenv'; \\builtin unset -f -- 'unsetenv'; } >/dev/null 2>&1 || true" : '')
+    + ` && eval '${cmd.replace(/'/g, `'"'"'`)}'${deFondo ? '' : ' < /dev/null'} && pwd -P >| /tmp/claude-9890-cwd`;
+}
+
 function arbolDelFreno({ tool = herramienta(), extra = [] } = {}) {
   return [...BASE, tool,
     { pid: 200, ppid: 100, inicio: INICIO, comando: '/bin/bash /h/scripts/hooks/safety-guard-pre.sh' },
@@ -991,6 +1001,117 @@ test('OwnerWindow_Envoltura_SeDesenvuelveTalCual', (t) => {
   assert.strictEqual(ow.desenvolver(envolver('/otra', 'x'), casa), null);
   assert.strictEqual(ow.desenvolver(envolver(casa, 'x').replace("eval 'x'", "eval 'x' ; 'y'"), casa), null);
   assert.strictEqual(ow.desenvolver(`bash -c 'x'`, casa), null);
+});
+
+test('OwnerWindow_SinFoto_SeDesenvuelveTalCual', (t) => {
+  const casa = casaNueva(t);
+  for (const cmd of ['x', `echo 'a' "b"`, GUIONES[0][1]]) {
+    assert.strictEqual(ow.desenvolver(envolver(casa, cmd), casa), cmd, `con foto: ${cmd}`);
+    assert.strictEqual(ow.desenvolver(envolverSinFoto(cmd), casa), cmd, `sin foto: ${cmd}`);
+  }
+  // la línea tal cual se midió, con la consola de bash (supuesto), de fondo y sin el bloque de unalias
+  const medida = String.raw`/bin/zsh -c -l setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/null || true && { \builtin unalias -- 'unsetenv'; \builtin unset -f -- 'unsetenv'; } >/dev/null 2>&1 || true && eval 'sh /tmp/linea.sh' < /dev/null && pwd -P >| /tmp/claude-9890-cwd`;
+  assert.strictEqual(ow.desenvolver(medida, casa), 'sh /tmp/linea.sh');
+  assert.strictEqual(ow.desenvolver(envolverSinFoto(`echo 'a'`, { deFondo: true }), casa), `echo 'a'`);
+  assert.strictEqual(ow.desenvolver(envolverSinFoto('x', { unalias: false }), casa), 'x');
+  assert.strictEqual(ow.desenvolver(envolverSinFoto(`echo 'a'`, { bash: true }), casa), `echo 'a'`);
+  assert.strictEqual(ow.desenvolver(envolverSinFoto('x', { bash: true }).replace('/bin/bash', '/opt/homebrew/bin/bash'), casa), 'x');
+});
+
+test('OwnerWindow_SinFoto_InyectadoSeRechaza', (t) => {
+  const casa = casaNueva(t);
+  const L = envolverSinFoto('x');
+  const noVale = {
+    'antes del bloque propio': L.replace('-c -l ', '-c -l echo y && '),
+    'entre bloques': L.replace(' && { \\builtin', ' && echo y && { \\builtin'),
+    'después del eval': L.replace("eval 'x'", "eval 'x' ; 'y'"),
+    'después del eval, con &&': L.replace("eval 'x'", "eval 'x' && echo y"),
+    'después de pwd': `${L} ; echo y`,
+    'salto de línea antes del eval': L.replace(' && eval', '\n&& eval'),
+    'salto de línea al final': `${L}\n`,
+    'salto de línea después de -l': L.replace('-c -l ', '-c -l\n'),
+    'retorno de carro al final': `${L}\r`,
+    'comilla suelta en el eval': L.replace("eval 'x'", "eval 'a'b'"),
+    'la cola embebida en el eval': L.replace("eval 'x'", "eval 'a' && pwd -P >| /tmp/claude-1-cwd'"),
+    'la cola en otra carpeta': L.replace('/tmp/claude-9890-cwd', '/tmp/x/claude-1-cwd'),
+    'la cola sin hexadecimal': L.replace('/tmp/claude-9890-cwd', '/tmp/claude-ZZ-cwd'),
+  };
+  // lo mismo con la consola de bash y sin el bloque de unalias
+  const B = envolverSinFoto('x', { bash: true });
+  const S = envolverSinFoto('x', { unalias: false });
+  Object.assign(noVale, {
+    'bash: antes del bloque propio': B.replace('-c -l ', '-c -l echo y && '),
+    'bash: entre bloques': B.replace(' && { \\builtin', ' && echo y && { \\builtin'),
+    'bash: después del eval': B.replace("eval 'x'", "eval 'x' && echo y"),
+    'sin unalias: antes del bloque propio': S.replace('-c -l ', '-c -l echo y && '),
+    'sin unalias: entre el bloque propio y el eval': S.replace(' && eval', ' && echo y && eval'),
+    'sin unalias: después de pwd': `${S} ; echo y`,
+  });
+  for (const [que, linea] of Object.entries(noVale)) assert.strictEqual(ow.desenvolver(linea, casa), null, que);
+});
+
+test('OwnerWindow_SinFoto_OtraBanderaSeRechaza', (t) => {
+  const casa = casaNueva(t);
+  const L = envolverSinFoto('x');
+  const noVale = {
+    '-l con la foto': L.replace('-c -l ', `-c -l source ${casa}/.claude/shell-snapshots/snapshot-zsh-1-a.sh 2>/dev/null || true && `),
+    '-c -l -l': L.replace('-c -l ', '-c -l -l '),
+    '-cl': L.replace('-c -l ', '-cl '),
+    '-lc': L.replace('-c -l ', '-lc '),
+    '-l -c': L.replace('-c -l ', '-l -c '),
+    '-c -lx': L.replace('-c -l ', '-c -lx '),
+    '-c -i': L.replace('-c -l ', '-c -i '),
+    '-c -x': L.replace('-c -l ', '-c -x '),
+    'sin el bloque propio': L.replace('setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/null || true && ', ''),
+    'la más corta': "/bin/zsh -c -l eval 'x' && pwd -P >| /tmp/claude-1-cwd",
+    'zsh con shopt': envolverSinFoto('x', { bash: true }).replace('/bin/bash', '/bin/zsh'),
+    'bash con setopt': L.replace('/bin/zsh', '/bin/bash'),
+  };
+  for (const [que, linea] of Object.entries(noVale)) assert.strictEqual(ow.desenvolver(linea, casa), null, que);
+});
+
+test('OwnerWindow_SinFoto_ElGuionFirmaSiElPadreEsLaHerramienta', (t) => {
+  const [firma, cmd, argv] = GUIONES[0];
+  let casa = casaNueva(t);
+  assert.strictEqual(pedir(casa, cmd).decision, 'ask');
+  const v = ow.verificar({ firma, argv, pid: 301, arbol: arbolDelGuion(casa, cmd, { consola: envolverSinFoto(cmd) }), casa, ahora: AHORA + 60000 });
+  assert.ok(v.ok, v.motivo);
+  assert.strictEqual(vigentes(casa).length, 0, 'el registro quedó consumido');
+  // la misma línea, lanzada a mano por la consola de un agente o por un proceso cualquiera
+  const padres = {
+    'la consola de un agente': { pid: 250, ppid: 100, inicio: INICIO, comando: envolver(casa, `/bin/zsh -c -l 'x'`) },
+    'un proceso cualquiera': { pid: 250, ppid: 1, inicio: INICIO, comando: 'python3 /tmp/lanza.py' },
+  };
+  for (const [que, padre] of Object.entries(padres)) {
+    casa = casaNueva(t);
+    pedir(casa, cmd);
+    const r = ow.verificar({ firma, argv, pid: 301, arbol: arbolDelGuion(casa, cmd, { consola: envolverSinFoto(cmd), padre: 250, extra: [padre] }), casa, ahora: AHORA + 60000 });
+    assert.strictEqual(r.ok, false, que);
+    assert.match(r.motivo, /la consola no es de la herramienta/, que);
+    assert.strictEqual(vigentes(casa).length, 1, `${que}: nada lo consumió`);
+  }
+});
+
+test('OwnerWindow_SinFoto_LasNegacionesLaVen', (t) => {
+  const [, cmd] = GUIONES[0];
+  // una consola sin foto por arriba de la herramienta
+  let casa = casaNueva(t);
+  let r = pedir(casa, cmd, { arbol: arbolDelFreno({ tool: { ...herramienta(), ppid: 90 }, extra: [{ pid: 90, ppid: 1, inicio: INICIO, comando: envolverSinFoto('claude') }] }) });
+  assert.strictEqual(r.decision, 'deny', r.texto);
+  assert.match(r.texto, /la lanzó otra herramienta o su consola/);
+  // una consola sin foto viva de fondo
+  casa = casaNueva(t);
+  r = pedir(casa, cmd, { arbol: arbolDelFreno({ extra: [{ pid: 400, ppid: 100, inicio: INICIO, comando: envolverSinFoto('sleep 600', { deFondo: true }) }] }) });
+  assert.strictEqual(r.decision, 'deny', r.texto);
+  assert.match(r.texto, /cerrá los procesos de fondo o firmá desde tu terminal/);
+  // sin consolas de fondo, la sesión sin foto pide la ventana como cualquiera
+  casa = casaNueva(t);
+  assert.strictEqual(pedir(casa, cmd).decision, 'ask');
+});
+
+test('OwnerWindow_SinFoto_WindowsIgual', (t) => {
+  const casa = casaNueva(t);
+  assert.strictEqual(ow.desenvolverWindows(envolverSinFoto('x'), casa), null);
 });
 
 // --- las cuatro firmas sobre un archivo (marker.js sign-file, AC 43) y las constancias (AC 30) ------------------------

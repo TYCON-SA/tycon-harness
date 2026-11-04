@@ -779,11 +779,12 @@ test('T26 DependencyAudit_PruebaSinSesionAntesDelAviso (GitHub) @story-2.30 @ac-
   assert.ok(prueba >= 0 && aviso > prueba, `la prueba antes del aviso: ${nombres.join(' | ')}`);
   const p = stepNamed(t, 'Probar el sitio sin sesión');
   assert.match(p, /scripts\/site\/check-deploy\.js --url "\$\{URL\}" --out "\$\{RUNNER_TEMP\}\/site-check\.json"/);
-  assert.match(p, /c\.data\.site && c\.data\.site\.url/, 'sólo con site.url');
+  // la dirección es la que dice el resumen: la del perfil y, sin ella, la de operations.json
+  assert.match(p, /daily-summary\.js site-url --operations operations\.json/, 'con la dirección del perfil o la de operations.json');
   assert.match(p, /\n {10}exit 0$/m, 'la prueba nunca frena la noche');
-  // un operations.json que no se pudo leer no es «sin site.url»: lo dice, y no prueba nada
-  assert.match(p, /::warning::.*operations\.json no se pudo leer/);
-  // y corrido de verdad, como el de Azure: con un operations.json roto avisa y no dice «sin site.url»
+  // un operations.json que no se pudo leer, sin perfil, no es «sin dirección»: lo dice, y no prueba nada
+  assert.match(p, /::warning::.*la dirección del sitio no se pudo leer/);
+  // y corrido de verdad, como el de Azure: con un operations.json roto avisa y no dice «sin dirección»
   const cuerpo = runLines(p).map((l) => l.replace(/^ {10}/, '')).join('\n');
   const lab = fs.mkdtempSync(path.join(os.tmpdir(), 'gh-sitio-'));
   try {
@@ -791,8 +792,8 @@ test('T26 DependencyAudit_PruebaSinSesionAntesDelAviso (GitHub) @story-2.30 @ac-
     fs.writeFileSync(path.join(lab, 'operations.json'), '{ roto');
     const r = spawnSync('bash', ['-c', cuerpo], { cwd: lab, encoding: 'utf8', timeout: 30000, env: { PATH: process.env.PATH, RUNNER_TEMP: lab } });
     assert.strictEqual(r.status, 0, r.stdout + r.stderr);
-    assert.match(r.stdout, /::warning::operations\.json no se pudo leer/);
-    assert.doesNotMatch(r.stdout, /sin site\.url/);
+    assert.match(r.stdout, /::warning::la dirección del sitio no se pudo leer/);
+    assert.doesNotMatch(r.stdout, /sin dirección del sitio/);
   } finally { fs.rmSync(lab, { recursive: true, force: true }); }
   const e = stepNamed(t, 'Entregar el resumen');
   assert.match(e, /^ {8}if: env\.EFFECTS == 'true'$/m, 'el paso corre siempre que haya efectos');

@@ -25,7 +25,8 @@
  * Write siguiente de esa sesión sobre ese archivo consume (`consumirArchivo`), dentro de los mismos 30 minutos.
  *
  * La envoltura de la consola es la medida en la Mac (`zsh -c source <foto del ambiente> … && eval '<comando>' <
- * /dev/null && pwd -P >| /tmp/claude-…-cwd`). Una que no coincide, un árbol que no se lee o una herramienta lanzada por
+ * /dev/null && pwd -P >| /tmp/claude-…-cwd`), o la de una sesión cuya foto no se sacó (`zsh -c -l setopt … && eval
+ * '<comando>' …`, medida con zsh; la de bash con `shopt` es un supuesto). Una que no coincide, un árbol que no se lee o una herramienta lanzada por
  * otra herramienta o por su consola se niegan: lo indecidible se firma en la terminal. Lo que no ve: una herramienta
  * abierta por el agente dentro de `tmux`, cuyo servidor no tiene padre (límite declarado en la guía).
  *
@@ -201,17 +202,22 @@ function sinPantalla(p) {
  * El comando que corre una consola de la herramienta, sacado de su envoltura medida; null si la línea no es esa
  * envoltura (otra casa en la foto del ambiente, otra forma, una comilla suelta adentro). La consola de fondo va sin
  * `< /dev/null`. La consola es la de la persona: zsh o bash, de cualquier carpeta (la del sistema o la de Homebrew).
+ * Una sesión que arrancó sin foto lanza `-c -l` sin el `source`; ahí el bloque propio de su consola (`setopt` en zsh,
+ * `shopt` en bash) es obligatorio, porque es el ancla que queda en lugar de la foto.
  */
 function desenvolver(linea, casa) {
-  const re = new RegExp('^(?:/[\\w.+-]+)*/(?:zsh|bash) -c source ' + escRe(casa)
+  const re = new RegExp('^(?:/[\\w.+-]+)*/(?<consola>zsh|bash) -c (?:source ' + escRe(casa)
     + '/\\.claude/shell-snapshots/snapshot-(?:zsh|bash)-[\\w.-]+\\.sh 2>/dev/null \\|\\| true && '
     + '(?:setopt(?: [A-Z_]+)+ 2>/dev/null \\|\\| true && )?'
     + '(?:shopt -u extglob 2>/dev/null \\|\\| true && )?'
+    + '|-l (?<propio>setopt(?: [A-Z_]+)+|shopt -u extglob) 2>/dev/null \\|\\| true && )'
     + "(?:\\{(?: \\\\builtin (?:unalias|unset -f) -- '[\\w-]+';)+ \\} >/dev/null 2>&1 \\|\\| true && )*"
-    + "eval '([\\s\\S]*)'(?: < /dev/null)? && pwd -P >\\| (?:/private)?/tmp/claude-[0-9a-f]+-cwd$");
+    + "eval '(?<comando>[\\s\\S]*)'(?: < /dev/null)? && pwd -P >\\| (?:/private)?/tmp/claude-[0-9a-f]+-cwd$");
   const m = re.exec(String(linea || ''));
   if (!m) return null;
-  const partes = m[1].split(`'"'"'`);
+  const { consola, propio, comando } = m.groups;
+  if (propio !== undefined && propio.startsWith('setopt') !== (consola === 'zsh')) return null;
+  const partes = comando.split(`'"'"'`);
   if (partes.some((p) => p.includes("'"))) return null;
   return partes.join("'");
 }

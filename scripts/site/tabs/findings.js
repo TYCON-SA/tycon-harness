@@ -36,6 +36,7 @@ const path = require('path');
 const crypto = require('crypto');
 const ORG = require('../../lib/org-config.js');
 const RP = require('../../lib/repo-proposal.js');
+const BUSY = require('../busy.js');
 const OPS = require('../../lib/operations-config.js');
 const SOURCES = require('../../nightly/findings/sources.js');
 // el proyecto declarado de un repo, con la misma regla que la noche usa para pedir las tareas
@@ -892,7 +893,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
 
     // la barra y la ayuda: sólo si hay algo para decidir
     const k = m.toca.filter((x) => x.recomendada).length;
-    const textos = { elegidas: 'mant.barra.elegidas', elegidaUna: 'mant.barra.elegidaUna', faltaMotivo: 'mant.barra.faltaMotivo', seguir: 'mant.barra.seguir', enviando: 'mant.envio.enviando', lento: 'mant.envio.lento', verificando: 'mant.envio.verificando', yaEnviado: 'mant.envio.yaEnviado', noLlego: 'mant.envio.noLlego', error: 'mant.envio.error', demo: 'mant.envio.demo', esperaTitulo: 'mant.espera.titulo', pedido: 'mant.espera.pedido', pedidoUna: 'mant.espera.pedidoUna' };
+    const textos = { elegidas: 'mant.barra.elegidas', elegidaUna: 'mant.barra.elegidaUna', faltaMotivo: 'mant.barra.faltaMotivo', seguir: 'mant.barra.seguir', enviando: 'mant.envio.enviando', lento: 'mant.envio.lento', verificando: 'mant.envio.verificando', yaEnviado: 'mant.envio.yaEnviado', noLlego: 'mant.envio.noLlego', error: 'mant.envio.error', demo: 'mant.envio.demo', esperaTitulo: 'mant.espera.titulo', pedido: 'mant.espera.pedido', pedidoUna: 'mant.espera.pedidoUna', sigue: 'pantalla.sigueTrabajando' };
     const datos = Object.entries(textos).map(([n, kk]) => ` data-t-${n.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}="${esc(T(idioma, kk))}"`).join('')
       + ` data-t-aceptar="${esc(accion('aceptar'))}" data-t-arreglar="${esc(accion('arreglar'))}" data-t-reject="${esc(accion('reject'))}" data-t-dep-aceptar="${esc(accion('aceptar', 'dependencias'))}"`;
     const barra = m.toca.length
@@ -1123,6 +1124,9 @@ const CLIENTE = `(function () {
   // en dependencias, aceptar es aceptar su pull request
   var etiqueta = function (k, a) { return k.indexOf('dependencias/') === 0 && a === 'aceptar' ? t('dep-aceptar') : t(a); };
   var enviando = false;
+  var alTerminarEnvio = null;
+${BUSY.TRABAJANDO}
+  TRABAJO.sigue = t('sigue') || TRABAJO.sigue;
   var hayRecomendadas = Boolean(s.querySelector('article[data-recomendada]'));
   function guardar() { try { localStorage.setItem(GUARDA, JSON.stringify(elecciones)); localStorage.setItem(GUARDA_MOTIVOS, JSON.stringify(motivos)); } catch (e) { /* sin almacenamiento: sólo se pierde la marca al recargar */ } }
   function pintar() {
@@ -1147,6 +1151,8 @@ const CLIENTE = `(function () {
     // la barra aparece cuando hay algo que enviar o una recomendación para seguir
     barra.hidden = n === 0 && !hayRecomendadas && !barra.querySelector('.m-estado').textContent;
     guardar();
+    // el envío terminó (bien, mal o sin saberse): el botón deja de decir que trabaja
+    if (!enviando && alTerminarEnvio) { var fin = alTerminarEnvio; alTerminarEnvio = null; fin({ ok: true }); }
   }
   s.addEventListener('click', function (ev) {
     var b = ev.target.closest('button[data-accion]');
@@ -1339,9 +1345,14 @@ const CLIENTE = `(function () {
       })
       .catch(function () { enviando = false; estado.textContent = t('no-llego'); pintar(); });
   }
+  // el botón dice que trabaja mientras dura el envío, con la misma línea de estado de siempre («enviando», «lento»)
   barra.querySelector('.m-enviar').addEventListener('click', function () {
     var ks = Object.keys(elecciones);
     if (!ks.length || faltaMotivo()) return;
+    trabajando(barra.querySelector('.m-enviar'), t('enviando'), function () { return new Promise(function (ok) { alTerminarEnvio = ok; enviar(ks); }); }, { muestraSuError: true })
+      .then(function () { pintar(); });
+  });
+  function enviar(ks) {
     var estado = barra.querySelector('.m-estado');
     enviando = true; estado.textContent = t('enviando'); pintar();
     var acciones = {};
@@ -1365,7 +1376,7 @@ const CLIENTE = `(function () {
       })
       .then(function (j) { if (j) terminar(j, ks, acciones); else averiguar(id, ks, acciones, 0); })
       .catch(function () { listo(); averiguar(id, ks, acciones, 0); });
-  });
+  }
   pintar();
 })();
 `;
