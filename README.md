@@ -2,9 +2,6 @@
 
 English · [Castellano](README.es.md)
 
-**New here?** [The harness in one minute](getting-started/one-minute.md): what it is, your first day in three steps,
-and the words it uses.
-
 **The harness in four minutes** (in Spanish, with subtitles).
 
 https://github.com/user-attachments/assets/3fbe4538-6b96-4b56-b2ed-92d36be1c6f8
@@ -56,6 +53,11 @@ It works with the most widely used coding agents, such as Claude Code, Codex and
 And it is open source: there is no license to pay and the code can be reviewed in full. It can start on a single machine, without a site, and add the team, the site and the nightly review later.
 
 The agents bring the speed. TYCON Harness brings the method, the quality and the control. Together, they do software engineering with AI.
+
+**Want to start right away?** [The harness in one minute](getting-started/one-minute.md): your first day in three
+steps and the words it uses.
+
+## How it works
 
 **The right measure.** When a product starts it is specified in full, once —product document, architecture, epics
 and stories—; then, story by story.

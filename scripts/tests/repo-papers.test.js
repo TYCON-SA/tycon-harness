@@ -83,10 +83,11 @@ const CONTACT = 'info@tycon.com.ar';
 const MIT_PERMISSION = 'Permission is hereby granted, free of charge, to any person obtaining a copy';
 
 // T13: las secciones de las dos portadas, en orden (inglés, castellano). La portada abre con el speech del arnés (sin
-// título: va antes del primer `##`) y sigue con el camino del dev solo —instalar y su primera historia—, lo que hace
+// título: va antes del primer `##`), sigue con cómo funciona y después con el camino del dev solo —instalar y su primera historia—, lo que hace
 // falta, la instalación guiada, el camino del equipo y lo demás. Debajo, la referencia, con las palabras del arnés
 // primero y lo que cambia la instalación completa junto a la elección de la instalación.
 const SECTIONS = [
+  ['How it works', 'Cómo funciona'],
   ['Start on your own', 'Empezá solo'],
   ['Your first story', 'Tu primera historia'],
   ['What you need', 'Qué necesitás'],

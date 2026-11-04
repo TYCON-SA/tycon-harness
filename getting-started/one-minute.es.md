@@ -2,7 +2,7 @@
 
 [English](one-minute.md) · Castellano
 
-**Qué es.** Un ciclo de desarrollo para tu agente de código (Claude Code o Codex). El agente escribe rápido; el arnés
+**Qué es.** Un ciclo de desarrollo para tu agente de código (Claude Code, Codex o Cursor). El agente escribe rápido; el arnés
 hace que lo haga con método: cada cambio queda escrito antes, se prueba y lo revisan otros agentes. Y hay controles que
 frenan, no sólo avisan.
 
@@ -17,7 +17,7 @@ frenan, no sólo avisan.
    revisores y la prueba en vivo. Al final te deja el mensaje del commit.
 
 **Lo que nunca hace sin vos:** nunca commitea ni sube cambios sin tu permiso, y el plan te lo muestra antes de
-programar: en una historia chica lo aprueba solo, en las demás espera tu visto bueno.
+programar: nunca se aprueba solo. Lo aprobás vos o, si tu equipo la usa, la sesión coordinadora.
 
 **Las palabras del arnés:**
 
