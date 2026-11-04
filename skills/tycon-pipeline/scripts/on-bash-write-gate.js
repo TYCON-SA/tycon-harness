@@ -1595,6 +1595,24 @@ function aprobacionesTocadas(cmd, cwd, stateDir) {
 }
 
 /**
+ * Lo que el comando borra o mueve del buzón de la oficina (`office/inbox`, `tomados`, `usados` y el registro, de cualquier
+ * estado): borrar lo usado devuelve un mensaje ya gastado, y mover algo al buzón finge uno de la persona. Sin interruptor.
+ */
+function buzonTocado(cmd, cwd, stateDir) {
+  const { isOfficeMailboxRecord } = require('./lib/story-gate.js');
+  const conCd = /(^|[;&|(\s])(?:cd|pushd)\s/.test(String(cmd || ''));
+  const noSeResuelve = (t) => /[\s$`(),'"]/.test(t) || (conCd && !/^(?:\/|~)/.test(t));
+  const { isInside } = require('./lib/atdd-preedit.js');
+  const installedTree = require('./lib/installed-tree.js');
+  const oficinas = [...new Set([stateDir, installedTree.realPath(stateDir)].filter(Boolean))].map((b) => path.join(b, 'office'));
+  // por la ruta (el estado de cualquier cuenta) o por estar en el buzón de este estado, se llame como se llame su carpeta
+  const pieza = (r) => isOfficeMailboxRecord(r) || oficinas.some((o) => r === path.join(o, 'messages.jsonl')
+    || ['inbox', 'tomados', 'usados'].some((n) => r === path.join(o, n) || isInside(path.join(o, n), r)));
+  return zonaTocada(cmd, cwd, stateDir, { carpeta: path.join('office', 'inbox'), nombres: ['office'], pieza,
+    enTexto: (t) => noSeResuelve(t) && /(^|[^\w.-])office[\\/](?:inbox|tomados|usados|messages\.jsonl)(?![\w.-])/i.test(t) });
+}
+
+/**
  * Lo que el comando borra o mueve de una zona del estado: `carpeta` y `nombres` adentro del estado, o lo que `pieza` dice.
  * `enTexto`: cuándo un texto la nombra sin que la ruta se pueda resolver (un guion que la arma por partes); sin él, el nombre de la carpeta del estado.
  */
@@ -3429,6 +3447,15 @@ function handleCarrilEHistoria(event, opts = {}) {
     const directo = aprobaciones.some((a) => /(^|[^\w.-])owner-approvals(?![\w.-])/i.test(String(a)));
     const tocados = directo || laneOff ? [] : marcadoresTocados(cmd, cwd, stateDir);
     return { block: (tocados.length ? sg.markerDeleteMessage(tocados, via) : sg.blockMessage({ kind: 'owner-approvals' }, { filePath: aprobaciones[0], via })) + '\n' };
+  }
+  // el buzón de la oficina, también al borrarlo o moverlo
+  const buzon = constancias.length ? [] : buzonTocado(cmd, cwd, stateDir);
+  if (buzon.length) {
+    const sg = require('./lib/story-gate.js');
+    const via = `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}`;
+    const directo = buzon.some((a) => /(^|[^\w.-])office[\\/](?:inbox|tomados|usados|messages\.jsonl)/i.test(String(a)) || /[\\/]office[\\/]?$/.test(String(a)));
+    const tocados = directo || laneOff ? [] : marcadoresTocados(cmd, cwd, stateDir);
+    return { block: (tocados.length ? sg.markerDeleteMessage(tocados, via) : sg.blockMessage({ kind: 'office-mailbox' }, { filePath: buzon[0], via })) + '\n' };
   }
   if (constancias.length) {
     const sg = require('./lib/story-gate.js');

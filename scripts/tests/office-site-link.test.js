@@ -2135,3 +2135,22 @@ test('Regresion_SuitesDeLaOficina_SeAislanDelSitio: con site.url en el perfil, l
     assert.match(fs.readFileSync(path.join(ROOT, 'scripts', 'tests', file), 'utf8'), /TYCON_OFFICE_LINK: '0'/, file);
   }
 });
+
+test('T21 Sitio_NoRecibeTextoNiOfreceMandar @story-8.183 @ac-21: ni quién puede recibir ni los mensajes viajan; un «mensaje» del sitio cierra con 1008 y no llega al buzón', async () => {
+  const { pick, FIELDS } = fields();
+  const sent = pick({ agents: [{ nombre: 'Alfa', estado: 'libre', recibe: 'si' }], mensajes: [{ id: 'x', texto: 'secreto' }], oficina: { recibe: 'si' } }, '/home/nadie');
+  assert.deepStrictEqual(Object.keys(sent.agents[0]).filter((k) => /recib|mensaj|oficina/i.test(k)), []);
+  assert.ok(!('mensajes' in sent) && !('oficina' in sent));
+  assert.ok(!/recibe|mensajes|oficina/.test(JSON.stringify(Object.keys(FIELDS))), 'la lista cerrada no los nombra');
+  const m = toy();
+  const site = await toySite();
+  const { link } = linkOf(m, site);
+  link.update(FOTO());
+  link.start();
+  assert.ok(await until(() => site.fotos.length === 1));
+  site.broadcast(JSON.stringify({ type: 'mensaje', s: 'Alfa', texto: 'desde el sitio' }));
+  assert.ok(await until(() => site.closes.length === 1), 'cierra');
+  assert.strictEqual(site.closes[0], 1008);
+  assert.ok(!fs.existsSync(path.join(m.sdir, 'office', 'inbox')), 'el sitio no deja nada en el buzón');
+  link.stop();
+});
