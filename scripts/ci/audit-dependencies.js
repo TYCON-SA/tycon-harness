@@ -296,7 +296,7 @@ function packagesConfigDe(repo) {
         try { real = fs.realpathSync(path.join(repo, ruta)); } catch (_) { real = null; }
         if (real === null) { sinMirar.push(`${ruta} (enlace roto)`); continue; }
         const r = path.relative(raiz, real);
-        if (r.startsWith('..') || path.isAbsolute(r)) { sinMirar.push(`${ruta} (enlace fuera del repo)`); continue; }
+        if (r === '..' || r.startsWith(`..${path.sep}`) || path.isAbsolute(r)) { sinMirar.push(`${ruta} (enlace fuera del repo)`); continue; }
         dir = false;
         try { archivo = fs.statSync(real).isFile(); } catch (_) { archivo = false; }
       }

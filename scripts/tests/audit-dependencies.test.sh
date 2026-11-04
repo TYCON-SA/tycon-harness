@@ -183,6 +183,9 @@ rm -rf "$TMP/repo"; mkdir -p "$TMP/repo/Real"; : > "$TMP/repo/x.sln"; ln -s Real
 echo '{"projects":[]}' > "$TMP/nuget.json"
 rc=$(corre --type nuget)
 [ "$rc" -eq 0 ] && ok "un enlace a una carpeta del repo no deja la revisión sin medir" || no "enlace interno salió $rc: $(cat "$TMP/out.txt")"
+rm -rf "$TMP/repo"; mkdir -p "$TMP/repo/..a" "$TMP/repo/x"; : > "$TMP/repo/x.sln"; ln -s ../..a "$TMP/repo/x/lnk"
+rc=$(corre --type nuget)
+[ "$rc" -eq 0 ] && ok "un enlace a una carpeta del repo que empieza con «..» sigue siendo del repo" || no "enlace a ..a salió $rc: $(cat "$TMP/out.txt")"
 # mayúsculas: Packages.Config cuenta, y BIN y una carpeta Packages al lado del .sln se saltean
 rm -rf "$TMP/repo"; mkdir -p "$TMP/repo/BIN" "$TMP/repo/Packages/Algo" "$TMP/repo/Api"; : > "$TMP/repo/x.sln"
 echo '<packages />' > "$TMP/repo/BIN/packages.config"; echo '<packages />' > "$TMP/repo/Packages/Algo/packages.config"
