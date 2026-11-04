@@ -5180,7 +5180,7 @@ function cmdDesignateRelay(argv) {
   const r = cw.designar({ approvedBy: val('--approved-by'), quote: val('--quote') });
   if (!r.ok) {
     console.error(`🚫 marker.js designate-relay: no se designó nada — ${r.motivo}.`);
-    console.error(`   Con una frase que nombra el rol (por ejemplo «Esta sesión es la coordinadora»): node ${__filename} designate-relay --approved-by '<el dev>' --quote '<la frase>'`);
+    console.error(`   Con una frase que nombra el rol (por ejemplo «Esta sesión es la coordinadora», con o sin tildes): node ${__filename} designate-relay --approved-by '<el dev>' --quote '<la frase>'`);
     process.exit(1);
   }
   const e = r.entrada;
