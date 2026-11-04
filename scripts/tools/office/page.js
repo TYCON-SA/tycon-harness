@@ -33,7 +33,7 @@ function renderBoard(){const body=document.getElementById("boardBody"),k=DATA.ka
   (k.columnas||[]).forEach(c=>{const col=el("div","col"),list=c.tarjetas||[];col.style.setProperty("--k",KC[c.id]||"var(--line)");col.appendChild(el("h3",null,c.nombre+" · "+list.filter(i=>!i.otro).length));
     if(c.nota)col.appendChild(el("p","none",c.nota));
     if(!list.length)col.appendChild(el("p","none","Nada"));
-    list.forEach(i=>{const card=el("div","item abre"),tit=el("b","una-linea",i.titulo||"");tit.title=i.titulo||"";if(typeof i.numero==="string"){card.setAttribute("data-numero",i.numero);card.appendChild(el("span","num",i.numero))}card.tabIndex=0;card.setAttribute("role","button");card.onclick=()=>{if(!String(window.getSelection?getSelection():""))abrirTarjeta(i,card);};card.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();abrirTarjeta(i,card);}};card.appendChild(tit);const line=[i.quien,i.hora,i.grupo].filter(Boolean).join(" · "),quienEs=(DATA.agents||[]).find(a=>a.nombre===String(i.quien||"").split(" · ")[0]),mod=quienEs&&(quienEs.modelo||quienEs.esfuerzo)?(quienEs.modelo||"sin dato")+" · "+(quienEs.esfuerzo||"sin dato"):"";if(mod)card.appendChild(el("span","m mod",mod));if(line)card.appendChild(el("span","m",line));const eh=c.id==="curso"&&estadoDeHora(i);if(eh){card.style.setProperty("--k",eh[1]);card.appendChild(el("span","estado-hora",eh[0]))}
+    list.forEach(i=>{const card=el("div","item abre"),tit=el("b","una-linea",i.titulo||"");tit.title=i.titulo||"";if(typeof i.numero==="string"){card.setAttribute("data-numero",i.numero);card.appendChild(el("span","num",i.numero));if(typeof numeroMarcado==="string"&&i.numero===numeroMarcado)card.classList.add("marcada")}card.tabIndex=0;card.setAttribute("role","button");card.onclick=()=>{if(!String(window.getSelection?getSelection():""))abrirTarjeta(i,card);};card.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();abrirTarjeta(i,card);}};card.appendChild(tit);const line=[i.quien,i.hora,i.grupo].filter(Boolean).join(" · "),quienEs=(DATA.agents||[]).find(a=>a.nombre===String(i.quien||"").split(" · ")[0]),mod=quienEs&&(quienEs.modelo||quienEs.esfuerzo)?(quienEs.modelo||"sin dato")+" · "+(quienEs.esfuerzo||"sin dato"):"";if(mod)card.appendChild(el("span","m mod",mod));if(line)card.appendChild(el("span","m",line));const eh=c.id==="curso"&&estadoDeHora(i);if(eh){card.style.setProperty("--k",eh[1]);card.appendChild(el("span","estado-hora",eh[0]))}
       [i.espera?"Espera "+i.espera+".":"",i.marca,i.motivo,i.nota].forEach(v=>{if(v)card.appendChild(el("span","n",v))});if(i.mano)card.appendChild(el("span","mano "+i.mano,"✋ "+(i.mano==="coordinadora"?"Espera a la Coordinadora":"Espera tu firma")));col.appendChild(card)});
     cols.appendChild(col)});
   body.appendChild(cols);
@@ -81,12 +81,14 @@ function pintarVista(){const hay=Boolean(DATA.tablas),k=Boolean(DATA.kanban),v=v
   document.querySelectorAll('input[name="vista"]').forEach(i=>{i.checked=i.value===v})}
 document.querySelectorAll('input[name="vista"]').forEach(i=>i.addEventListener("change",()=>{if(!i.checked)return;vista=i.value;guardarVista(vista);pintarVista()}));
 // «¿cómo va la T-41?»: «T-41» o «41» pasa al kanban, marca la tarjeta y la abre; si no está, lo dice debajo del campo
+// el número buscado sigue marcado aunque llegue una foto nueva y el kanban se vuelva a dibujar
+var numeroMarcado="";
 function numeroBuscado(t){const m=/^\s*(?:t-)?([1-9]\d*)\s*$/i.exec(String(t||""));return m?"T-"+m[1]:""}
 function buscarTarea(texto){const aviso=document.getElementById("buscarAviso"),n=numeroBuscado(texto);aviso.textContent="";
   if(!n){aviso.textContent="Escribí un número, como T-41 o 41.";return}
   const tarjetas=((DATA.kanban&&DATA.kanban.columnas)||[]).flatMap(c=>c.tarjetas||[]),i=tarjetas.find(t=>t.numero===n);
   if(!i){aviso.textContent="La "+n+" no está en el tablero.";return}
-  vista="kanban";guardarVista(vista);pintarVista();
+  numeroMarcado=n;vista="kanban";guardarVista(vista);pintarVista();
   const card=document.querySelector('#boardBody [data-numero="'+n+'"]');document.querySelectorAll("#boardBody .marcada").forEach(x=>x.classList.remove("marcada"));
   if(card){card.classList.add("marcada");card.scrollIntoView({block:"center"})}abrirTarjeta(i,card)}
 {const f=document.getElementById("buscar");if(f)f.addEventListener("submit",e=>{e.preventDefault();buscarTarea(document.getElementById("buscarTarea").value)})}
@@ -219,12 +221,16 @@ const SESIONES_A_LA_VISTA=8;
 function charlaPorSesion(nombre,sesiones,vacio){if(!sesiones.length)return listaCharla([],vacio);
   const box=el("div","porSesion"),fila=el("div","quienes");fila.setAttribute("role","group");fila.setAttribute("aria-label","Con qué sesión");
   let actual=null;
-  const boton=s=>{const b=el("button",null,s.sesion);b.type="button";b.setAttribute("aria-pressed","false");b.append(el("small",null,horaDeSesion(s.at)));b.onclick=()=>elegir(s,b);return b;},
-    elegir=(s,b)=>{if(actual)actual.setAttribute("aria-pressed","false");b.setAttribute("aria-pressed","true");actual=b;const ch=listaCharla(s.mensajes.map(m=>msg(m.de,m.at,m.texto,m.de===nombre)),vacio);box.replaceChildren(fila,ch);ch.scrollTop=ch.scrollHeight;};
-  const botones=sesiones.slice(0,SESIONES_A_LA_VISTA).map(boton);fila.append(...botones);
-  const resto=sesiones.slice(SESIONES_A_LA_VISTA);
+  // una cerrada dice su última actividad, que es lo que se sabe: la hora en que se cerró no está escrita
+  const boton=s=>{const b=el("button",s.cerrada?"cerrada":null,s.sesion);b.type="button";b.setAttribute("aria-pressed","false");b.append(el("small",null,s.cerrada?(horaDeSesion(s.ultimaActividad)?"última actividad "+horaDeSesion(s.ultimaActividad):"cerrada, sin hora"):horaDeSesion(s.at)));b.onclick=()=>elegir(s,b);return b;},
+    elegir=(s,b)=>{if(actual)actual.setAttribute("aria-pressed","false");b.setAttribute("aria-pressed","true");actual=b;const ch=listaCharla(s.mensajes.map(m=>msg(m.de,m.at,m.texto,m.de===nombre)),vacio);box.replaceChildren(fila,...(s.cerrada?[el("p","m","Esta sesión está cerrada: no recibe mensajes.")]:[]),ch);ch.scrollTop=ch.scrollHeight;};
+  // primero las vivas; después una línea «Cerradas» y las cerradas, en gris
+  const vivas=sesiones.filter(s=>!s.cerrada),cerradas=sesiones.filter(s=>s.cerrada);
+  const botones=vivas.slice(0,SESIONES_A_LA_VISTA).map(boton);fila.append(...botones);
+  const resto=vivas.slice(SESIONES_A_LA_VISTA);
   if(resto.length){const mas=el("button","mas","Las otras "+resto.length);mas.type="button";mas.onclick=()=>{const nuevos=resto.map(boton);mas.replaceWith(...nuevos);nuevos[0].focus();};fila.append(mas);}
-  elegir(sesiones[0],botones[0]);return box;}
+  const deCerradas=cerradas.map(boton);if(cerradas.length)fila.append(el("p","cerradas","Cerradas"),...deCerradas);
+  elegir(sesiones.find(s=>!s.cerrada)||cerradas[0],botones[0]||deCerradas[0]);return box;}
 // «Con vos», en toda sesión: lo que le escribiste (en su pestaña o desde la oficina) y lo que contestó.
 const VOS_VACIO="No hay mensajes con vos en lo último de su conversación.";
 const conVosLista=(nombre,lista)=>listaCharla((lista||[]).map(m=>msg(m.quien==="vos"?(m.oficina?"Vos · desde la oficina":"Vos"):nombre,m.at,m.texto,m.quien==="vos")),VOS_VACIO);

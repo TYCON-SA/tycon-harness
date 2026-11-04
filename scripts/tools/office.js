@@ -1823,11 +1823,56 @@ function markRecipients(data, env, states, sdir, { isAlive } = {}) {
 }
 
 /** Los últimos mensajes de una persona que está en la oficina, a pedido; null si no está. Nada de esto se guarda. */
-function conversationOf(env, name) {
+function conversationOf(env, name, { lastActivityOf = (n) => closedSessionLastAt(os.homedir(), n) } = {}) {
   const e = env.files.get(name);
   if (!e) return null;
   const c = env.coordinator;
-  return readConversation(e.file, { coordinator: c && c.name, isCoordinator: Boolean(c) && e.sid === c.sid, background: e.background });
+  const said = readConversation(e.file, { coordinator: c && c.name, isCoordinator: Boolean(c) && e.sid === c.sid, background: e.background });
+  return said && said.conSesiones ? markClosedSessions(said, env, { lastActivityOf }) : said;
+}
+
+/**
+ * «Con las sesiones» de la coordinadora: primero las vivas (las mismas que tienen escritorio), después las cerradas,
+ * cada grupo con la que habló último primero. A una cerrada se le pone la hora de su última actividad, o null si no se
+ * encuentra su conversación: la hora en que se cerró no está escrita en ningún lado.
+ */
+function markClosedSessions(said, env, { lastActivityOf }) {
+  const live = said.conSesiones.filter((s) => env.files.has(s.sesion));
+  const closed = said.conSesiones.filter((s) => !env.files.has(s.sesion)).map((s) => ({ ...s, cerrada: true, ultimaActividad: lastActivityOf(s.sesion) }));
+  return { ...said, conSesiones: [...live, ...closed] };
+}
+
+// La hora del último renglón de la conversación de una sesión ya cerrada, buscada por su nombre en el estado de las
+// sesiones de fondo (la más reciente con ese nombre); null si no se encuentra.
+function closedSessionLastAt(home, name) {
+  const dir = path.join(claudeDir(home), 'jobs');
+  let best = null;
+  let ids = [];
+  try { ids = fs.readdirSync(dir); } catch { return null; }
+  for (const id of ids) {
+    let s;
+    try { s = JSON.parse(fs.readFileSync(path.join(dir, id, 'state.json'), 'utf8')); } catch { continue; }
+    if (!s || s.name !== name || typeof s.linkScanPath !== 'string') continue;
+    if (!best || String(s.updatedAt) > String(best.updatedAt)) best = s;
+  }
+  if (!best) return null;
+  let tail;
+  try {
+    const fd = fs.openSync(best.linkScanPath, 'r');
+    try {
+      const size = fs.fstatSync(fd).size;
+      const len = Math.min(size, TAIL_BYTES);
+      const buf = Buffer.alloc(len);
+      fs.readSync(fd, buf, 0, len, size - len);
+      tail = buf.toString('utf8');
+    } finally { fs.closeSync(fd); }
+  } catch { return null; }
+  for (const line of tail.split('\n').reverse()) {
+    const m = /"timestamp":"([^"]+)"/.exec(line);
+    const at = m ? Date.parse(m[1]) : NaN;
+    if (Number.isFinite(at)) return at;
+  }
+  return null;
 }
 
 /** Mueve el tablero con los hechos de la foto. La foto sale igual si falla: el motivo va una vez a lo que no se pudo leer. */
@@ -2128,4 +2173,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { markRecipients, prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, boardLine, findTask, boardEditedNotice, syncBoardFromPhoto, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, cardPr, codexAgentsUnder, claudeAgentsActive, buildTables, rowPrsNow, applyRowPrs, settleRowPrs, workCards, readTranscripts, readLastWrites, MODULES };
+module.exports = { markRecipients, markClosedSessions, closedSessionLastAt, prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, boardLine, findTask, boardEditedNotice, syncBoardFromPhoto, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, cardPr, codexAgentsUnder, claudeAgentsActive, buildTables, rowPrsNow, applyRowPrs, settleRowPrs, workCards, readTranscripts, readLastWrites, MODULES };

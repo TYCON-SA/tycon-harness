@@ -115,7 +115,7 @@ const CHARLA = record({
   conCoordinadora: list(MESSAGE),
   arranque: record({ texto: longText, at: number }),
   conVos: list(record({ quien: text, texto: longText, at: number })),
-  conSesiones: list(record({ sesion: text, at: number, mensajes: list(MESSAGE) })),
+  conSesiones: list(record({ sesion: text, at: number, cerrada: flag, ultimaActividad: number, mensajes: list(MESSAGE) })),
   recortada: flag,
 });
 

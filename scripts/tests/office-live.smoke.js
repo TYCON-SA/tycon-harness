@@ -116,6 +116,21 @@ async function taskNumbers(playwright) {
     { titulo: 'La historia que arranca sola', estado: 'espera', historia: '9.1', grupo: 'Hoy', orden: 3 },
   ] }, { home });
   check(saved.code === 0, 'E1: el tablero de prueba se guardó con board.js y tiene números');
+  // E3: la conversación de Funes dice su modelo y su esfuerzo; la de Sand todavía no tiene respuestas
+  const projects = path.join(claudeDir(home), 'projects', 'juguete');
+  fs.mkdirSync(projects, { recursive: true });
+  const ts = (min) => new Date(Date.now() - min * 60000).toISOString();
+  const usage = { input_tokens: 1000, output_tokens: 200, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
+  fs.writeFileSync(path.join(projects, 's2.jsonl'), `${JSON.stringify({ type: 'assistant', uuid: 'a1', timestamp: ts(2), perTurnEffort: 'high', effort: 'high', message: { id: 'm1', model: 'claude-opus-5-5', usage } })}\n`);
+  fs.writeFileSync(path.join(projects, 's1.jsonl'), `${JSON.stringify({ type: 'user', uuid: 'u1', timestamp: ts(2), message: { role: 'user', content: 'hola' } })}\n`);
+  // E5: una coordinadora designada que habló con Funes (viva) y con Olvido (cerrada, con su conversación de fondo)
+  fs.appendFileSync(path.join(sdir, 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), name: 'relay-designation', status: 'ok', sesion: 'c9', rol: 'coordinadora', quien: 'el dueño', cita: 'Esta sesión es la coordinadora' })}\n`);
+  const peer = (name, body, min) => JSON.stringify({ type: 'user', isMeta: true, timestamp: ts(min), origin: { kind: 'peer', name, body, msg_id: `m-${name}-${min}` }, message: { role: 'user', content: `<cross-session-message from="x">${body}</cross-session-message>` } });
+  fs.writeFileSync(path.join(projects, 'c9.jsonl'), [peer('Olvido', 'Terminé lo mío.', 9), peer('Funes', 'Voy con la búsqueda.', 5)].join('\n') + '\n');
+  const olvido = path.join(home, 'olvido.jsonl');
+  fs.writeFileSync(olvido, `${JSON.stringify({ type: 'assistant', timestamp: ts(8) })}\n`);
+  fs.mkdirSync(path.join(claudeDir(home), 'jobs', 'j1'), { recursive: true });
+  fs.writeFileSync(path.join(claudeDir(home), 'jobs', 'j1', 'state.json'), JSON.stringify({ name: 'Olvido', updatedAt: ts(8), linkScanPath: olvido }));
   const env = { ...process.env, HOME: home, USERPROFILE: home, TYCON_OFFICE_NO_BROWSER: '1', TYCON_OFFICE_LINK: '0', TYCON_OFFICE_TEST: '1' };
   const open = spawnSync(process.execPath, [OFFICE, '--open'], { input: '', env, encoding: 'utf8', timeout: 20000 });
   const url = (open.stdout.match(/http:\/\/127\.0\.0\.1:\d+\/\?t=[0-9a-f]+/) || [])[0];
@@ -188,6 +203,31 @@ async function taskNumbers(playwright) {
     for (let i = 0; i < 40 && !(row && row.estado === 'curso'); i += 1) { await sleep(500); row = JSON.parse(fs.readFileSync(path.join(sdir, 'coordination', 'tablero.json'), 'utf8')).pendientes.find((r) => r.historia === '9.1'); }
     check(Boolean(row) && row.estado === 'curso' && row.quien === 'Ortega', `E9: la fila de la 9.1 pasó sola a «En curso» con Ortega (${row && row.estado} ${row && row.quien})`);
     await shot(page, 'e9-se-movio-sola', page.locator('#trabajo'));
+    // E3: el modelo y el esfuerzo, arriba de la persona y en su tarjeta; «sin dato» en la que no respondió
+    await page.waitForFunction(() => [...document.querySelectorAll('.tag')].some((t) => t.textContent.includes('Opus 5.5 · High')), null, { timeout: 20000 });
+    check(/Opus 5\.5 · High/.test(await page.locator('.tag', { hasText: 'Funes' }).innerText()), 'E3: la etiqueta de Funes dice «Opus 5.5 · High»');
+    check(/Opus 5\.5 · High/.test(await page.locator('#boardBody .item[data-numero="T-2"]').innerText()), 'E3: su tarjeta del kanban también');
+    check(/sin dato · sin dato/.test(await page.locator('.tag', { hasText: 'Sand' }).innerText()), 'E3: Sand, sin respuestas, dice «sin dato»');
+    await shot(page, 'e3-modelo-y-esfuerzo', page.locator('#stage'));
+    // E5: «Con las sesiones» de la coordinadora: la viva primero, después «Cerradas» con la cerrada en gris y su hora
+    // la coordinadora llega recién ahora: antes, con más personas que escritorios, se habría llevado el de Rita
+    session('c9', 'Coordinadora');
+    await page.waitForFunction(() => [...document.querySelectorAll('#crew > *')].some((c) => c.textContent.includes('Coordinadora')), null, { timeout: 20000 });
+    // desde su ficha en «Las sesiones»
+    await page.locator('#crew > *', { hasText: 'Coordinadora' }).first().locator('button', { hasText: 'Ver conversación' }).evaluate((b) => b.click());
+    await page.waitForSelector('#ventana:not([hidden])');
+    try { await page.waitForFunction(() => document.querySelector('#ventana').textContent.includes('Con las sesiones'), null, { timeout: 20000 }); } catch (e) {
+      console.log(`E5: la ventana dice: ${(await page.locator('#ventana').innerText()).replace(/\s+/g, ' ').slice(0, 400)}`);
+      throw e;
+    }
+    await page.locator('#ventana label', { hasText: 'Con las sesiones' }).locator('input').check({ force: true });
+    await page.waitForSelector('#ventana .quienes .cerradas', { timeout: 15000 });
+    const order = await page.locator('#ventana .quienes > *').allInnerTexts();
+    check(/^Funes/.test(order[0]) && order.some((t) => t === 'Cerradas') && /^Olvido/.test(order[order.length - 1]), `E5: la viva primero, después «Cerradas» (${order.join(' | ').replace(/\n/g, ' ')})`);
+    check(/última actividad \d\d:\d\d/.test(await page.locator('#ventana .quienes button.cerrada').innerText()), 'E5: la cerrada dice su última actividad');
+    await page.locator('#ventana .quienes button.cerrada').click();
+    check(await page.locator('#ventana', { hasText: 'Esta sesión está cerrada: no recibe mensajes.' }).count() === 1, 'E5: al elegirla dice que no recibe mensajes');
+    await shot(page, 'e5-sesiones-cerradas', page.locator('#ventana .panel3'));
   } finally {
     await browser.close();
     try { process.kill(lock.pid, 'SIGKILL'); } catch { /* ya salió */ }

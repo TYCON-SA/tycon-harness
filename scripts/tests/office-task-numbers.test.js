@@ -586,6 +586,67 @@ test('T23 Transcript_SufijoYModeloDesconocido — @story-8.198 @ac-22', () => {
   assert.strictEqual(said(claudeTalk([{ model: 'claude-fable-5-1', perTurnEffort: 'low' }])), 'Fable 5.1 · Low');
 });
 
+// ── Las sesiones cerradas, aparte ───────────────────────────────────────────────────────────────────────────────
+
+// la conversación de la coordinadora con tres sesiones: Sand y Pinola viven; Funes, cerrada, habló último
+function coordinatorWith(sessions) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coord-'));
+  const file = path.join(dir, 'c.jsonl');
+  fs.writeFileSync(file, '');
+  const env = { files: new Map([['Coordinadora', { file, sid: 'c1' }], ...sessions.map((n) => [n, { file, sid: n }])]), coordinator: { sid: 'c1', name: 'Coordinadora' } };
+  return env;
+}
+const CHARLA = { conVos: [], conSesiones: [
+  { sesion: 'Funes', at: Date.parse('2026-11-04T13:30:00Z'), mensajes: [{ de: 'Funes', texto: 'listo', at: 1 }] },
+  { sesion: 'Sand', at: Date.parse('2026-11-04T13:20:00Z'), mensajes: [] },
+  { sesion: 'Pinola', at: Date.parse('2026-11-04T13:10:00Z'), mensajes: [] },
+  { sesion: 'Olvido', at: Date.parse('2026-11-04T13:00:00Z'), mensajes: [] },
+] };
+
+test('T30 ConSesiones_VivasPrimeroLuegoCerradas — @story-8.198 @ac-29', () => {
+  const env = coordinatorWith(['Sand', 'Pinola']);
+  const r = office.markClosedSessions(JSON.parse(JSON.stringify(CHARLA)), env, { lastActivityOf: () => null });
+  assert.deepStrictEqual(r.conSesiones.map((s) => [s.sesion, Boolean(s.cerrada)]), [['Sand', false], ['Pinola', false], ['Funes', true], ['Olvido', true]]);
+  // la página: las vivas, la línea «Cerradas» y las cerradas en gris
+  const code = fs.readFileSync(path.join(__dirname, '..', 'tools', 'office', 'page.js'), 'utf8');
+  assert.match(code, /function charlaPorSesion[\s\S]*?"Cerradas"/);
+  assert.match(code, /"cerrada"/);
+});
+
+test('T31 ConSesiones_Cerrada_UltimaActividadOSinHora — @story-8.198 @ac-30', () => {
+  const env = coordinatorWith(['Sand']);
+  const at = new Date(2026, 10, 4, 10, 25).getTime();
+  const r = office.markClosedSessions(JSON.parse(JSON.stringify(CHARLA)), env, { lastActivityOf: (n) => (n === 'Funes' ? at : null) });
+  const funes = r.conSesiones.find((s) => s.sesion === 'Funes');
+  const olvido = r.conSesiones.find((s) => s.sesion === 'Olvido');
+  assert.strictEqual(funes.ultimaActividad, at);
+  assert.strictEqual(olvido.ultimaActividad, null);
+  const code = fs.readFileSync(path.join(__dirname, '..', 'tools', 'office', 'page.js'), 'utf8');
+  assert.match(code, /"última actividad "/);
+  assert.match(code, /"cerrada, sin hora"/);
+  assert.doesNotMatch(code, /cerró a las/);
+  // la hora sale del último renglón de su conversación, buscada por su nombre en las sesiones de fondo
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'jobs-'));
+  const jobs = path.join(home, '.claude', 'jobs');
+  const talk = path.join(home, 'funes.jsonl');
+  fs.writeFileSync(talk, `${JSON.stringify({ type: 'user', timestamp: '2026-11-04T13:00:00.000Z' })}\n${JSON.stringify({ type: 'assistant', timestamp: '2026-11-04T13:25:00.000Z' })}\n`);
+  for (const [id, updatedAt, file] of [['a', '2026-11-03T10:00:00Z', '/no/esta.jsonl'], ['b', '2026-11-04T13:26:00Z', talk]]) {
+    fs.mkdirSync(path.join(jobs, id), { recursive: true });
+    fs.writeFileSync(path.join(jobs, id, 'state.json'), JSON.stringify({ name: 'Funes', updatedAt, linkScanPath: file }));
+  }
+  assert.strictEqual(office.closedSessionLastAt(home, 'Funes'), Date.parse('2026-11-04T13:25:00.000Z'));
+  assert.strictEqual(office.closedSessionLastAt(home, 'Nadie'), null);
+});
+
+test('T32 ConSesiones_ElegirCerrada_DiceQueNoRecibe — @story-8.198 @ac-31', () => {
+  const code = fs.readFileSync(path.join(__dirname, '..', 'tools', 'office', 'page.js'), 'utf8');
+  assert.match(code, /"Esta sesión está cerrada: no recibe mensajes\."/);
+  // la conversación con la sesión cerrada se lee igual: sus mensajes siguen
+  const env = coordinatorWith([]);
+  const r = office.markClosedSessions(JSON.parse(JSON.stringify(CHARLA)), env, { lastActivityOf: () => null });
+  assert.deepStrictEqual(r.conSesiones.find((s) => s.sesion === 'Funes').mensajes, [{ de: 'Funes', texto: 'listo', at: 1 }]);
+});
+
 // ── Lo que viaja al sitio ───────────────────────────────────────────────────────────────────────────────────────
 
 test('T51 Sitio_Campos_NumeroModeloEsfuerzoMano — @story-8.198 @ac-55', () => {
