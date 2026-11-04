@@ -333,6 +333,33 @@ jobs:
           fi
         displayName: 'Correr la revisión de dependencias'
 
+      # El perfil de la organización, para los canales del resumen, y si su team-repos.json es el de operaciones (la noche
+      # lee el de operaciones; las máquinas, el del perfil). Si difieren, o si el perfil no se pudo leer, la corrida queda
+      # naranja (nunca roja) y lo dice; sin perfil, el resumen sale por el canal de operations.json → notify. Con el perfil
+      # leído deja TEAM_PROFILE para los pasos que siguen: va antes de los pedidos de trabajo, que preguntan como el pull
+      # request por ficha si las fichas se deciden en el sitio (la dirección del perfil). Necesita LECTURA sobre el repo
+      # del perfil.
+      - script: |
+          set -u
+          PERFIL="$(Agent.TempDirectory)/perfil"
+          SALIDA=$(node scripts/ci/team-repos-diff.js --team-repos "$(Build.SourcesDirectory)/team-repos.json" \
+            --clone-dir "$(Agent.TempDirectory)/retro-sweep" --profile-out "$PERFIL" 2>&1)
+          RC=$?
+          # si el comparador se cayó, el motivo es la línea del error, no la última (la versión de Node)
+          LINEA=$( { printf '%s\n' "$SALIDA" | grep -m1 -E '^[A-Za-z]*Error\b' || printf '%s\n' "$SALIDA" | grep -v '^[[:space:]]*$' | tail -n 1; } | sed 's/##vso/## vso/g')
+          if [ "$RC" = 0 ]; then
+            echo "$LINEA"
+          else
+            echo "##vso[task.logissue type=warning]$LINEA"
+            echo "##vso[task.complete result=SucceededWithIssues;]"
+          fi
+          # el perfil, sólo si el comparador terminó (0, 1 o 3): con 4 no pudo dejarlo, y lo que haya en la carpeta no vale
+          if [ "$RC" != 4 ] && [ -f "$PERFIL/team-profile.json" ]; then echo "##vso[task.setvariable variable=TEAM_PROFILE]$PERFIL/team-profile.json"; fi
+          exit 0
+        displayName: 'El perfil de la organización y su team-repos.json'
+        env:
+          CLONE_TOKEN: $(System.AccessToken)
+
       - script: |
           # Va ANTES de guardar: el id de cada pedido se escribe en la ficha y tiene que viajar en el mismo commit. No tumba
           # el guardado: si no pudo intentar nada, deja la marca y el rojo lo pone el último paso.
@@ -404,42 +431,20 @@ jobs:
           ANTHROPIC_API_KEY: $(ANTHROPIC_API_KEY)
           OLLAMA_API_KEY: $(OLLAMA_API_KEY)
 
-      # El perfil de la organización, para los canales del resumen, y si su team-repos.json es el de operaciones (la noche
-      # lee el de operaciones; las máquinas, el del perfil). Si difieren, o si el perfil no se pudo leer, la corrida queda
-      # naranja (nunca roja) y lo dice; sin perfil, el resumen sale por el canal de operations.json → notify. Con el perfil
-      # leído deja TEAM_PROFILE para los pasos que siguen. Necesita LECTURA sobre el repo del perfil.
-      - script: |
-          set -u
-          PERFIL="$(Agent.TempDirectory)/perfil"
-          SALIDA=$(node scripts/ci/team-repos-diff.js --team-repos "$(Build.SourcesDirectory)/team-repos.json" \
-            --clone-dir "$(Agent.TempDirectory)/retro-sweep" --profile-out "$PERFIL" 2>&1)
-          RC=$?
-          # si el comparador se cayó, el motivo es la línea del error, no la última (la versión de Node)
-          LINEA=$( { printf '%s\n' "$SALIDA" | grep -m1 -E '^[A-Za-z]*Error\b' || printf '%s\n' "$SALIDA" | grep -v '^[[:space:]]*$' | tail -n 1; } | sed 's/##vso/## vso/g')
-          if [ "$RC" = 0 ]; then
-            echo "$LINEA"
-          else
-            echo "##vso[task.logissue type=warning]$LINEA"
-            echo "##vso[task.complete result=SucceededWithIssues;]"
-          fi
-          # el perfil, sólo si el comparador terminó (0, 1 o 3): con 4 no pudo dejarlo, y lo que haya en la carpeta no vale
-          if [ "$RC" != 4 ] && [ -f "$PERFIL/team-profile.json" ]; then echo "##vso[task.setvariable variable=TEAM_PROFILE]$PERFIL/team-profile.json"; fi
-          exit 0
-        displayName: 'El perfil de la organización y su team-repos.json'
-        env:
-          CLONE_TOKEN: $(System.AccessToken)
-
       - script: |
           # La prueba sin sesión del sitio de la organización: el aviso lleva el enlace sólo si pasó ESTA
-          # mañana. Sin `site.url` en operations.json no se prueba. Nunca frena la noche: el resultado viaja al resumen
+          # mañana. La dirección es la que dice el resumen: la del perfil (TEAM_PROFILE) y, sin ella, la de
+          # operations.json; sin ninguna no se prueba. Nunca frena la noche: el resultado viaja al resumen
           # (--site-check del paso siguiente).
           set -uo pipefail
           cd "$(Build.SourcesDirectory)"
-          # un operations.json que no se pudo leer NO es «sin site.url»: el lector sale 3 y el aviso dirá «no se pudo probar»
-          URL=$(node -e 'const c = require("./scripts/lib/operations-config.js").load("operations.json"); if (!c.ok) process.exit(3); process.stdout.write(c.data.site && c.data.site.url ? c.data.site.url : "");')
+          # un operations.json que no se pudo leer, sin la dirección en el perfil, NO es «sin dirección»: sale 3 y el aviso
+          # dirá «no se pudo probar»
+          PF=(); [ -n "${TEAM_PROFILE:-}" ] && [ -f "$TEAM_PROFILE" ] && PF=(--profile "$TEAM_PROFILE")
+          URL=$(node scripts/nightly/dependencies/daily-summary.js site-url --operations operations.json ${PF[@]+"${PF[@]}"})
           LECTURA=$?
-          if [ "$LECTURA" != 0 ]; then echo "##vso[task.logissue type=warning]operations.json no se pudo leer (código $LECTURA): el sitio no se prueba y el aviso dirá «no se pudo probar»."; exit 0; fi
-          if [ -z "$URL" ]; then echo "sin site.url en operations.json: el sitio no se prueba (el aviso dirá «sitio: sin configurar»)"; exit 0; fi
+          if [ "$LECTURA" != 0 ]; then echo "##vso[task.logissue type=warning]la dirección del sitio no se pudo leer (código $LECTURA): el sitio no se prueba y el aviso dirá «no se pudo probar»."; exit 0; fi
+          if [ -z "$URL" ]; then echo "sin dirección del sitio (ni en el perfil ni en operations.json): el sitio no se prueba (el aviso dirá «sitio: sin configurar»)"; exit 0; fi
           node scripts/site/check-deploy.js --url "$URL" --out "${AGENT_TEMPDIRECTORY:-${TMPDIR:-/tmp}}/site-check.json"
           CODIGO=$?
           [ "$CODIGO" = 0 ] || echo "##vso[task.logissue type=warning]La prueba sin sesión del sitio no pasó (código $CODIGO): el aviso sale sin el enlace."

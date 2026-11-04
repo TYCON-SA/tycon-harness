@@ -342,6 +342,15 @@ ul.efectos p{margin:2px 0 8px 18px;font-size:13.5px}
 .dif-texto{white-space:pre;padding-right:10px}
 .dif-sale{background:color-mix(in srgb,var(--bad) 14%,var(--surface))}.dif-sale .dif-signo{color:var(--bad-ink)}
 .dif-entra{background:color-mix(in srgb,var(--good) 14%,var(--surface))}.dif-entra .dif-signo{color:var(--good-ink)}
+/* lo que cambió dentro de un renglón de la diferencia, y la línea de los renglones que sólo cambian de forma */
+.dif-texto mark{background:color-mix(in srgb,var(--ink) 18%,transparent);color:inherit;border-radius:3px;padding:0 1px}
+.dif-forma{margin:6px 0}
+/* los botones de una celda de tabla («Máquinas con oficina»): separados, también partidos en dos renglones */
+#config-app .tabla .acc{display:inline-flex;flex-wrap:wrap;gap:6px;align-items:center}
+/* un botón que le pidió algo al servidor y espera (scripts/site/busy.js), y el motivo cuando falla, al lado */
+button[aria-busy="true"]{cursor:progress;opacity:.75}
+.trabajando-motivo{color:var(--bad-ink);margin-left:8px;font-size:14px}
+.con-motivo{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px}
 .dif-salto{padding:2px 8px;color:var(--muted);font-style:italic;border-top:1px dashed var(--line);border-bottom:1px dashed var(--line)}
 .archivos-enteros{margin:0 0 10px}.archivos-enteros summary{cursor:pointer;color:var(--ink-2)}
 .archivos-enteros .antes-despues{margin-top:8px}.archivos-enteros pre{overflow-x:auto;max-width:100%}

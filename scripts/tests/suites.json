@@ -2899,6 +2899,18 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.203: los botones del sitio dicen que trabajan — el ayudante común trabajando() (apagado, aria-busy y lo que hace desde el toque; «sigue trabajando» a los 10 s; el motivo al lado si falla y el botón como estaba), cada botón medido de Configuración, «Cómo trabaja» y Hallazgos que lo usa, y la regla que lee el código del sitio y de la oficina: cada llamada al servidor va por el ayudante o está en la lista con su motivo. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/site-busy-buttons.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.203: los defectos del sitio — la dirección del sitio en un solo campo (el del perfil) y los procesos de la noche que la leen de ahí con operations.json de respaldo; «Propuesto en el pedido N» hasta que main lo trae, y el pedido cerrado sin entrar; la capa que sube sola en el mismo pedido si todas las máquinas activas tienen la versión, y cuándo frena; la lista propia de nombres; la diferencia por valor con la línea de la forma; los botones de las máquinas separados; los textos y la guía. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/site-config-defects.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 2.46: «Proponer» usable en la pestaña Configuración, la parte del servidor — la diferencia por renglones (sólo lo que cambia con tres de contexto, y un archivo enorme no cuelga), el resumen en castellano o inglés de lo que se cambia, la marca de cada propuesta (dos envíos con la misma marca crean un solo pedido y reciben la misma respuesta), la marca en el cuerpo del pedido, buscar el pedido de una marca en Azure DevOps y GitHub (abierto o completado en las últimas 24 horas, nunca uno abandonado) y la ruta de consulta, sólo para quien mantiene, que devuelve sólo el estado y el enlace. Levanta el servidor del sitio con una sesión inyectada, repos git locales por HTTP y una API falsa de Azure DevOps y de GitHub en el proceso; sin red.",
       "raiz": "arnes",
       "ruta": "tests/site-propose.test.js",

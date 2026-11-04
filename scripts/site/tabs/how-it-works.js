@@ -16,6 +16,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
 const TX = require('../texts.js');
+const BUSY = require('../busy.js');
 const views = require('../views.js');
 const RP = require('../../lib/repo-proposal.js');
 const ORG = require('../../lib/org-config.js');
@@ -692,8 +693,8 @@ function usoDe(r) {
 
 /** Los textos que usa el guion del navegador, en el idioma de la página. */
 function textosDelGuion(idioma) {
-  // y los nombres de los niveles de modelo, los mismos de Configuración
-  const claves = Object.keys(TX.TEXTOS).filter((k) => k.startsWith('comoTrabaja.') || k.startsWith('pantalla.nivel.'));
+  // y los nombres de los niveles de modelo, los mismos de Configuración, y lo que dicen los botones mientras trabajan
+  const claves = Object.keys(TX.TEXTOS).filter((k) => k.startsWith('comoTrabaja.') || k.startsWith('pantalla.nivel.') || BUSY.TEXTOS.includes(k));
   return Object.fromEntries(claves.map((k) => [k, TX.t(idioma, k)]));
 }
 
@@ -712,6 +713,8 @@ function T(k, v) { var s = TXT[k] || k; return s.replace(/\\{([A-Za-z][A-Za-z0-9
 function el(tag, a) { var e = document.createElement(tag); for (var k in a || {}) { if (a[k] == null) continue; if (k === 'text') e.textContent = a[k]; else if (k.slice(0, 2) === 'on') e[k] = a[k]; else e.setAttribute(k, a[k]); } for (var i = 2; i < arguments.length; i++) if (arguments[i]) e.appendChild(arguments[i]); return e; }
 var raiz = document.querySelector('.ct'); if (!raiz) return;
 var token = (document.querySelector('meta[name="site-token"]') || {}).content || '';
+${BUSY.TRABAJANDO}
+TRABAJO.sigue = T('pantalla.sigueTrabajando');
 function mostrar(id) {
   var hay = document.getElementById('paso-' + id); if (!hay) return;
   document.querySelectorAll('.ct-paso').forEach(function (s) { s.hidden = s.getAttribute('data-step') !== id; });
@@ -875,24 +878,32 @@ function editor(boton, draft, firmadas, modelos, aplicaSolo) {
       cabecera: { nombre: agente, descripcion: descripcion.value, modelo: modelo.value, herramientas: herramientas }, cuerpo: texto.value };
   }
   var revisar = el('button', { type: 'button', class: 'btn', 'data-action': 'check', text: T('comoTrabaja.revisar'), onclick: function () {
-    pedir('/api/como-trabaja/revisar', { draft: borrador() }).then(function (r) {
-      estado.textContent = '';
-      if (r.ok) {
-        if (!versiones && r.firma) versiones = { versions: r.versions, firma: r.firma };
-        revisado = true; proponer.removeAttribute('disabled');
-        motivo.textContent = T(aplicaSolo ? 'comoTrabaja.motivoRevisadoSolo' : 'comoTrabaja.motivoRevisado'); motivo.setAttribute('data-motivo', 'revisado');
-        estado.appendChild(el('p', { class: 'ct-ok', text: T('comoTrabaja.seLeeBien') }));
-      } else (r.problems || [r.message]).forEach(function (p) { estado.appendChild(el('p', { class: 'ct-error', text: p })); });
-    });
+    trabajando(revisar, T('pantalla.revisando'), function () {
+      return pedir('/api/como-trabaja/revisar', { draft: borrador() }).then(function (r) {
+        estado.textContent = '';
+        if (r.ok) {
+          if (!versiones && r.firma) versiones = { versions: r.versions, firma: r.firma };
+          revisado = true; proponer.removeAttribute('disabled');
+          motivo.textContent = T(aplicaSolo ? 'comoTrabaja.motivoRevisadoSolo' : 'comoTrabaja.motivoRevisado'); motivo.setAttribute('data-motivo', 'revisado');
+          estado.appendChild(el('p', { class: 'ct-ok', text: T('comoTrabaja.seLeeBien') }));
+        } else (r.problems || [r.message]).forEach(function (p) { estado.appendChild(el('p', { class: 'ct-error', text: p })); });
+        return r;
+      });
+    }, { muestraSuError: true });
   } });
   proponer.onclick = function () {
-    proponer.setAttribute('disabled', 'disabled');
-    pedir('/api/como-trabaja/proponer', { draft: borrador(), versions: versiones ? versiones.versions : {}, firma: versiones ? versiones.firma : null }).then(function (r) {
-      estado.textContent = '';
-      // el sitio demo no abre ningún pedido: dice lo que pasaría, igual que Configuración
-      if (r.ok && r.codigo === 'demo') estado.appendChild(el('p', { class: 'ct-ok', 'data-demo': 'si', text: r.message }));
-      else if (r.ok) { var p = el('p', { class: 'ct-ok' }, document.createTextNode(T(r.codigo === 'aplicado' ? 'comoTrabaja.aplicado' : 'comoTrabaja.propuesto', { enlace: '' }))); if (r.enlace) p.appendChild(el('a', { href: r.enlace, target: '_blank', rel: 'noopener', text: r.enlace })); estado.appendChild(p); }
-      else estado.appendChild(el('p', { class: 'ct-error', text: r.codigo === 'cambio' ? T('comoTrabaja.cambioEnMain') : T('comoTrabaja.noSePudo', { motivo: (r.problems || [r.message]).join(' · ') }) }));
+    trabajando(proponer, T('pantalla.proponiendoBoton'), function () {
+      return pedir('/api/como-trabaja/proponer', { draft: borrador(), versions: versiones ? versiones.versions : {}, firma: versiones ? versiones.firma : null }).then(function (r) {
+        estado.textContent = '';
+        // el sitio demo no abre ningún pedido: dice lo que pasaría, igual que Configuración
+        if (r.ok && r.codigo === 'demo') estado.appendChild(el('p', { class: 'ct-ok', 'data-demo': 'si', text: r.message }));
+        else if (r.ok) { var p = el('p', { class: 'ct-ok' }, document.createTextNode(T(r.codigo === 'aplicado' ? 'comoTrabaja.aplicado' : 'comoTrabaja.propuesto', { enlace: '' }))); if (r.enlace) p.appendChild(el('a', { href: r.enlace, target: '_blank', rel: 'noopener', text: r.enlace })); estado.appendChild(p); }
+        else estado.appendChild(el('p', { class: 'ct-error', text: r.codigo === 'cambio' ? T('comoTrabaja.cambioEnMain') : T('comoTrabaja.noSePudo', { motivo: (r.problems || [r.message]).join(' · ') }) }));
+        return r;
+      });
+    }, { muestraSuError: true }).then(function (r) {
+      // propuesto: no se propone dos veces; si falló, el ayudante ya lo dejó habilitado para volver a probar
+      if (r && r.ok) proponer.setAttribute('disabled', 'disabled');
     });
   };
   var panel = el('li', { class: 'ct-panel ct-editor' },
@@ -924,9 +935,11 @@ raiz.addEventListener('click', function (ev) {
   function noSeAbrio(motivo) { despuesDe(b, el('li', { class: 'ct-panel' }, el('p', { class: 'ct-error', text: T('comoTrabaja.noSePudo', { motivo: motivo }) }), el('div', { class: 'ct-pie' }, el('button', { type: 'button', class: 'btn', text: T('comoTrabaja.cerrar'), onclick: cerrarPaneles })))); }
   // uno nuevo pide sólo los modelos que puede elegir (sin «agent»); uno existente, su borrador y sus versiones
   var nuevo = accion === 'add';
-  fetch('/api/como-trabaja/revisor?pack=' + encodeURIComponent(b.getAttribute('data-pack')) + (nuevo ? '' : '&agent=' + encodeURIComponent(b.getAttribute('data-agent'))), { credentials: 'same-origin' })
-    .then(function (r) { return r.json().catch(function () { return { message: String(r.status) }; }); })
-    .then(function (r) { if (r && r.draft) { r.draft.avisoModelos = r.avisoModelos || null; editor(b, r.draft, nuevo ? null : { versions: r.versions, firma: r.firma }, r.modelos, r.aplicaSolo === true); } else noSeAbrio((r && r.message) || '?'); }, function (e) { noSeAbrio(String(e && e.message || e)); });
+  trabajando(b, T('pantalla.abriendo'), function () {
+    return fetch('/api/como-trabaja/revisor?pack=' + encodeURIComponent(b.getAttribute('data-pack')) + (nuevo ? '' : '&agent=' + encodeURIComponent(b.getAttribute('data-agent'))), { credentials: 'same-origin' })
+      .then(function (r) { return r.json().catch(function () { return { message: String(r.status) }; }); })
+      .then(function (r) { if (r && r.draft) { r.draft.avisoModelos = r.avisoModelos || null; editor(b, r.draft, nuevo ? null : { versions: r.versions, firma: r.firma }, r.modelos, r.aplicaSolo === true); return r; } noSeAbrio((r && r.message) || '?'); return { ok: false }; }, function (e) { noSeAbrio(String(e && e.message || e)); return { ok: false }; });
+  }, { muestraSuError: true });
 });
 })();
 `;
