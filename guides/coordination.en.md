@@ -180,6 +180,11 @@ The same notice carries two more things:
   only says it does not conflict.
 - **The session waiting for room for its pass.** It has to launch one and another holds the place: it shows up with who holds
   it, and once freed, with "can launch". Nothing wakes it by itself: the coordinator tells it.
+- **The full-suite queue, stalled.** If no full suite is running and some session noted that it waits for its turn
+  (`marker.js doing --waiting-for` with «suite», «portón» or «turno»), it shows "no corre ninguna suite completa y hay N
+  esperando turno: dale el «arrancá» a X", with X the one waiting longest. Without that note it does not show: an idle
+  session is not waiting for its turn. Waiting for a pass does not count: the pass runs in the cloud, with its own turn.
+  `status` shows the whole queue.
 
 ## Heavy work takes turns: the full suite and adversarial passes
 
