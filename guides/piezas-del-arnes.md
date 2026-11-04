@@ -1172,11 +1172,13 @@ _(scripts/metrics/sdlc-stage-metrics.js + scripts/nightly/dashboard/dashboard.js
 
 ## scripts/metrics/retro-heartbeat.js
 
-**Qué es:** Escribe, sin modelo y en una fracción de segundo, el archivo de retrospectiva de cada merge a main, en la carpeta de estado de la máquina (nunca en un clon). De ahí viaja por el buzón; sin llave, lo dice.
+**Qué es:** Escribe, sin modelo, el archivo de retrospectiva de cada merge a main, en la carpeta de estado de la máquina (nunca en un clon). De ahí viaja por el buzón; sin llave, lo dice.
 
 **Por qué existe:** Lanzar el capturador con modelo en cada merge costaba mucho tiempo y consumo para archivos casi vacíos. Acá sale la identidad del merge y la última vuelta de revisión; el resto queda en null con quién lo cubre.
 
 **Quién la usa:** El paso 10b de `/tycon-merge-to-main`, tras consultar `retro-pending.js --judge`. El capturador queda a pedido («retro con modelo»).
+
+Un pedido se reclama cuando entra, por su commit en main; el latido sólo acepta commits de la línea de main y se anula con `retro-heartbeat.js --annul --sha`.
 
 **Dónde se prueba:** `scripts/tests/retro-heartbeat.test.sh`
 
