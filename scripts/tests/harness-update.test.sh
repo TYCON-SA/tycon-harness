@@ -964,7 +964,7 @@ fi
 # escribe en ningún repo es el hash: de los dos bare y del .git del clon de la persona, antes y después de cada comando.
 # (El `pre-receive` sólo es la red de seguridad: `sources.js` corre git con core.hooksPath=/dev/null, que le llega también
 # a un receive-pack local.)
-arbol_hash() { ( cd "$1" && find . -type f | LC_ALL=C sort | while IFS= read -r f; do printf '%s ' "$f"; shasum -a 256 < "$f"; done ) | shasum -a 256 | cut -d' ' -f1; }
+arbol_hash() { ( cd "$1" && find . -type f -print0 | LC_ALL=C sort -z | tree_file_sums ) | shasum -a 256 | cut -d' ' -f1; }
 version_publica() { # version_publica <número> <piso>  — el version.json de la copia, con su lista de transformados
   printf '{ "version": "%s", "source": { "harness": "%s" }, "transformed": [ { "path": "guides/public.md", "transform": "toy-trim" } ] }\n' "$1" "$2"
 }

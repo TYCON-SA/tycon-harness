@@ -26,7 +26,7 @@ set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # la casa REAL del dev, por hash, ANTES de armar nada (el laboratorio cambia HOME)
 REAL_CASA="$HOME/.bizuit-sdd"
-casa_hash() { if [ -e "$1" ]; then find "$1" -type f -exec shasum {} \; 2>/dev/null | sort | shasum | cut -c1-40; else printf 'ausente'; fi; }
+casa_hash() { if [ -e "$1" ]; then find "$1" -type f -print0 2>/dev/null | xargs -0 -r shasum 2>/dev/null | sort | shasum | cut -c1-40; else printf 'ausente'; fi; }
 REAL_ANTES="$(casa_hash "$REAL_CASA")"
 source "$RAIZ/scripts/tests/lib/harness-lab.sh"
 export TYCON_UPDATE_APPLY=auto TYCON_STARTUP_DETACH=0

@@ -94,7 +94,15 @@ function isCI(env = process.env) {
 
 /** Cuántas a la vez según la máquina: dos núcleos quedan para la persona y la carga ajena se descuenta; piso 1. */
 function autoWorkers({ nucleos, carga }) {
-  return Math.max(1, Math.min(nucleos - 2, Math.floor(nucleos - carga)));
+  return Math.max(floorOf(nucleos), Math.min(nucleos - 2, Math.floor(nucleos - carga)));
+}
+
+/**
+ * El piso: cuatro, o núcleos menos dos en una máquina chica, y nunca menos de una. Con la máquina cargada (la carga de
+ * los demás arriba de los núcleos) la regla daba una a la vez y un portón de 380 suites no terminaba nunca.
+ */
+function floorOf(nucleos) {
+  return Math.max(1, Math.min(4, nucleos - 2));
 }
 
 /**
@@ -110,7 +118,9 @@ function workersFor({ env = process.env, varName, maquina, ci, ciDefault }) {
     warning = `${varName}=«${raw}» no es un entero positivo: uso ${ci ? `${ciDefault} (la regla de la CI)` : `${autoWorkers(maquina)} (por los núcleos y la carga)`}`;
   }
   if (ci) return { workers: ciDefault, why: 'ci', varName, wait: false, warning };
-  return { workers: autoWorkers(maquina), why: 'maquina', varName, wait: true, warning };
+  const floor = floorOf(maquina.nucleos);
+  const byFloor = Math.min(maquina.nucleos - 2, Math.floor(maquina.nucleos - maquina.carga)) < floor;
+  return { workers: autoWorkers(maquina), why: 'maquina', varName, wait: true, warning, floor, byFloor };
 }
 
 /** La carga pasa el doble de los núcleos: el doble porque la carga ya cuenta las suites propias y sus procesos. */
@@ -119,12 +129,12 @@ function overloaded(nucleos, carga) {
 }
 
 /**
- * Antes de lanzar una suite: mientras la carga pase el doble y quede otra propia corriendo, vuelve a mirar cada
- * `intervalMs`. Devuelve los ms que esperó (0 si no esperó).
+ * Antes de lanzar una suite: mientras la carga pase el doble y queden corriendo `floor` propias o más, vuelve a mirar
+ * cada `intervalMs`: el piso sale siempre. Devuelve los ms que esperó (0 si no esperó).
  */
-async function waitForRoom({ nucleos, load, others, sleep, intervalMs = 5000, stopped = () => false }) {
+async function waitForRoom({ nucleos, load, others, sleep, floor = 1, intervalMs = 5000, stopped = () => false }) {
   let ms = 0;
-  while (!stopped() && others() > 0 && overloaded(nucleos, load())) {
+  while (!stopped() && others() >= floor && overloaded(nucleos, load())) {
     await sleep(intervalMs);
     ms += intervalMs;
   }
@@ -132,8 +142,8 @@ async function waitForRoom({ nucleos, load, others, sleep, intervalMs = 5000, st
 }
 
 /** La línea de ambiente: «N a la vez (<núcleos> núcleos, carga <c> al arrancar)», con quién decidió si no fue la máquina. */
-function describeWorkers({ workers, why, varName }, { nucleos, carga, fake }, platform = process.platform) {
-  const por = why === 'variable' ? ` por ${varName}` : why === 'ci' ? ' por la CI' : '';
+function describeWorkers({ workers, why, varName, byFloor }, { nucleos, carga, fake }, platform = process.platform) {
+  const por = why === 'variable' ? ` por ${varName}` : why === 'ci' ? ' por la CI' : (byFloor ? ', el piso' : '');
   const c = fake || platform !== 'win32' ? `carga ${carga} al arrancar` : 'Windows no da la carga';
   return `${workers} a la vez${por} (${nucleos} núcleos, ${c})${fake ? ' · máquina fingida por TYCON_FAKE_MACHINE' : ''}`;
 }
@@ -293,6 +303,69 @@ function slow(runs, { top = 20 } = {}) {
   return rows.slice(0, top);
 }
 
+/**
+ * Cuánto va a tardar una corrida de `rutas` con `workers` a la vez: la mediana de las últimas 5 mediciones de cada suite
+ * en `runs` (o `defaultMs` sin medición), sumadas y repartidas entre los carriles. `{ ms, medidas, sinMedir }`.
+ */
+function estimateMs({ rutas, workers, runs, defaultMs }) {
+  const per = new Map();
+  for (const r of runs || []) for (const x of (r && r.suites) || []) {
+    if (!x || typeof x.s !== 'string' || typeof x.ms !== 'number') continue;
+    if (!per.has(x.s)) per.set(x.s, []);
+    per.get(x.s).push(x.ms);
+  }
+  let suma = 0;
+  let medidas = 0;
+  for (const s of rutas) {
+    const ms = per.get(s);
+    if (ms && ms.length) { suma += median(ms.slice(-5)); medidas += 1; } else suma += defaultMs;
+  }
+  return { ms: Math.round(suma / Math.max(1, workers)), medidas, sinMedir: rutas.length - medidas };
+}
+
+// ── El aviso del portón lento ─────────────────────────────────────────────────────────────────────────────────────
+// Un portón grande que arranca con menos de 3 a la vez deja `<estado>/slow-gates/<pid>.json` mientras corre: lo lee el
+// aviso de cada turno de la coordinadora (scripts/tools/coordination.js). Lleva la hora de arranque del proceso: un
+// número de proceso reusado por otro programa no cuenta como el portón.
+const SLOW_GATE_WORKERS = 3;
+const slowGatesDir = (home) => path.join(stateDir(home), 'slow-gates');
+
+/** La hora de arranque de un proceso según el sistema, o null (Windows, o el proceso no está). */
+function processStart(pid) {
+  if (process.platform === 'win32') return null;
+  // con el idioma y la zona fijos: quien escribe el aviso y quien lo lee pueden tener otro ambiente
+  const env = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).idiomaFijo(process.env, { TZ: 'UTC' });
+  const r = spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'ignore'] });
+  return r.status === 0 && r.stdout.trim() ? r.stdout.trim() : null;
+}
+
+function writeSlowGate(entry, home) {
+  const dir = slowGatesDir(home);
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `${process.pid}.json`);
+  fs.writeFileSync(file, `${JSON.stringify({ ...entry, pid: process.pid, procStart: processStart(process.pid) })}\n`);
+  return file;
+}
+
+/** Los avisos de los portones lentos vivos; los de un proceso que ya no está (o con otra hora de arranque) se borran. */
+function readSlowGates(home, { alive = (e) => {
+  try { process.kill(e.pid, 0); } catch (err) { if (err.code !== 'EPERM') return false; }
+  return !e.procStart || processStart(e.pid) === e.procStart;
+} } = {}) {
+  const dir = slowGatesDir(home);
+  let names = [];
+  try { names = fs.readdirSync(dir).filter((n) => /^\d+\.json$/.test(n)); } catch (_) { return []; }
+  const out = [];
+  for (const n of names) {
+    const file = path.join(dir, n);
+    let e = null;
+    try { e = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) { /* uno a medio escribir o roto: no cuenta */ }
+    if (e && Number.isInteger(e.pid) && alive(e)) out.push(e);
+    else if (e) { try { fs.rmSync(file, { force: true }); } catch (_) { /* lo borra la próxima */ } }
+  }
+  return out;
+}
+
 /** Una línea por corrida, para `runs`. */
 function runRow(r) {
   const suma = r.suites.reduce((a, x) => a + ((x && x.ms) || 0), 0);
@@ -300,5 +373,6 @@ function runRow(r) {
     workers: r.workers, nucleos: r.nucleos, carga: r.carga, ...(r.cortada ? { cortada: true } : {}) };
 }
 
-module.exports = { target, headOf, machine, loadNow, isCI, autoWorkers, workersFor, overloaded, waitForRoom, describeWorkers, append, entryOf, fromTsv, routesByName, readSources, filterRuns, median, trend, slow, runRow,
+module.exports = { target, headOf, machine, loadNow, isCI, autoWorkers, floorOf, workersFor, overloaded, waitForRoom, describeWorkers, append, entryOf, fromTsv, routesByName, readSources, filterRuns, median, trend, slow, runRow,
+  estimateMs, writeSlowGate, readSlowGates, slowGatesDir, processStart, SLOW_GATE_WORKERS,
   MARK, MAX_RUNS, LOCK_WAIT_MS, LOCK_STALE_MS };

@@ -109,6 +109,28 @@ paralelo. Lo que no puede leer (comillas sin cerrar, el texto de un shell armado
 El escape `TYCON_FULL_SUITE=1` vale cuando acompaña al comando de pruebas: como prefijo, con `env`, exportado o con
 `$env:` antes en el mismo comando. Nombrarlo en un texto (un `echo`, un mensaje de commit) no lo usa.
 
+## Las suites del arnés: cuántas a la vez, cuáles corren y cuáles son las lentas
+
+- **Cuántas a la vez.** El portón (`test-gate.sh`) y las portables corren `min(núcleos menos dos, núcleos menos la
+  carga de 1 min)` suites a la vez, nunca menos de cuatro (o de núcleos menos dos en una máquina chica). La carga se mide
+  antes de lanzar la primera: es la de los demás. Dos núcleos quedan para la persona, que sigue usando la máquina; con la
+  máquina libre se usa el resto, y con la máquina cargada las cuatro del piso siguen corriendo: de a una, un portón de
+  380 suites no terminaba. Antes de lanzar cada suite que pasa del piso se vuelve a mirar: con la carga sobre el doble de
+  los núcleos, espera a que termine otra. Un portón de 100 suites o más que arranca con menos de tres a la vez lo dice en
+  su primera línea, con la hora estimada de fin, y le avisa a la coordinadora mientras corre. `TYCON_SUITES_MAX_WORKERS` (portón) y `TYCON_PORTABLE_PARALLEL` (portables) mandan sobre la
+  regla; en la CI corre la mitad de los núcleos en el portón y 4 en las portables. La línea de arranque dice el número y
+  de dónde salió: «8 a la vez (10 núcleos, carga 1.2 al arrancar)».
+- **Cuáles corren.** Un portón corrido a mano, sin la ejecución del pipeline de este repo, acota desde la
+  bifurcación con main (`origin/HEAD`, `origin/main` o `main`): corren las suites que leen lo que la rama cambió,
+  también lo ya commiteado. Sin rama principal no acota y lo dice. La línea «acotado a lo tocado: N archivos desde <sha> (<fuente>):
+  corren M de T» dice cuántas y por qué.
+- **Cuáles son las lentas.** Cada ejecución deja los segundos de cada suite en el registro de la máquina
+  (`suite-times.jsonl`, en la carpeta de estado). `node scripts/tools/suite-times.js slow` lista las 20 más lentas por
+  la mediana de sus últimas mediciones, con su tendencia; `--max-load <c>` deja sólo las ejecuciones con la máquina
+  tranquila, y `runs` lista las ejecuciones. Antes de partir una suite o mandarla a la noche, conviene mirar dónde se va su
+  tiempo: casi siempre es trabajo repetido de la propia prueba (un proceso por archivo para sacar una huella, la misma
+  consulta a git por cada módulo que se importa), y bajarlo no cambia lo que prueba.
+
 ## El fix técnico durable (por proyecto)
 
 La disciplina de comportamiento no alcanza (un dev humano, o un agente futuro, puede correr la suite

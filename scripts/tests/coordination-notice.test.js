@@ -804,3 +804,27 @@ test('Aviso_SinCoordinadora (T10) — @story-8.153 @ac-10', () => {
   assert.match(oido(h, 'ses-a', 'volví'), PIDE);
   assert.strictEqual(oido(h, COORD, 'hola'), null);
 });
+
+// ── El portón lento ─────────────────────────────────────────────────────────────────────────────────────────────
+
+test('T29 Porton_LentoLoDiceYAvisa — la coordinadora ve el portón lento vivo, con su hora de fin; el de un proceso muerto no', () => {
+  // 🔴 mutación: no leer los avisos, mostrar el de un proceso que ya no está, o el de un número de proceso reusado.
+  const t = toy();
+  busy(t, 's-lenta', 'Borre', 10);
+  const dir = path.join(t.state, 'slow-gates');
+  fs.mkdirSync(dir, { recursive: true });
+  const ST = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'suite-times.js'));
+  const vivo = { sid: 's-lenta', repo: 'arbol', suites: 382, workers: 2, carga: 22.7, eta: '23:40', pid: process.pid, procStart: ST.processStart(process.pid) };
+  fs.writeFileSync(path.join(dir, `${process.pid}.json`), JSON.stringify(vivo));
+  const muerto = 2147483646;
+  fs.writeFileSync(path.join(dir, `${muerto}.json`), JSON.stringify({ ...vivo, sid: 's-x', pid: muerto }));
+  const n = C.capNotice(t.opts) || '';
+  assert.match(n, /Coordinación: portón lento de Borre: 2 a la vez para 382 suites \(carga 22\.7\), termina cerca de las 23:40/, n);
+  assert.strictEqual((n.match(/portón lento/g) || []).length, 1, 'el del proceso muerto no se muestra');
+  assert.ok(!fs.existsSync(path.join(dir, `${muerto}.json`)), 'y se borra');
+  // un número de proceso reusado: la hora de arranque no coincide
+  if (process.platform !== 'win32') {
+    fs.writeFileSync(path.join(dir, `${process.pid}.json`), JSON.stringify({ ...vivo, procStart: 'Mon Jan  1 00:00:00 2001' }));
+    assert.doesNotMatch(C.capNotice(t.opts) || '', /portón lento/);
+  }
+});
