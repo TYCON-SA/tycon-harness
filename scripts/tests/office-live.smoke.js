@@ -157,6 +157,21 @@ async function talkToSession(playwright) {
     check((await ventana.locator('.estadoMensaje').innerText()) === 'Está esperando que contestes su cuadro: lo va a leer cuando lo hagas.', 'E5: con un cuadro abierto, dice que lo lee al contestar');
     await shot('E5-cuadro-abierto');
 
+    // la ventana se cierra con una × arriba a la derecha, que se llama «Cerrar», o con Escape; abajo no queda otro botón
+    await abrirVentana('Alfa');
+    const equis = await page.evaluate(() => {
+      const p = document.querySelector('#ventana .panel3'), x = p && [...p.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Cerrar');
+      if (!x) return null;
+      const a = p.getBoundingClientRect(), b = x.getBoundingClientRect();
+      return { texto: x.textContent, arriba: b.top - a.top < 60, derecha: a.right - b.right < 60, otro: [...p.querySelectorAll('button')].some((y) => y.textContent.trim() === 'Cerrar') };
+    });
+    check(Boolean(equis) && equis.texto === '×' && equis.arriba && equis.derecha && !equis.otro, `X: la ventana se cierra con una × arriba a la derecha llamada «Cerrar» (${JSON.stringify(equis)})`);
+    await ventana.getByRole('button', { name: 'Cerrar' }).click();
+    check(await ventana.isHidden(), 'X: la × cierra la ventana');
+    await abrirVentana('Alfa');
+    await page.keyboard.press('Escape');
+    check(await ventana.isHidden(), 'X: Escape también la cierra');
+
     // E1: mandar, el avioncito, «lo recibió» y la respuesta en «Con vos»
     await abrirVentana('Alfa');
     check((await ventana.locator('.mandarFijo').innerText()) === 'Esto le llega como un mensaje tuyo. No firma ni aprueba nada.', 'E1: el texto fijo');
