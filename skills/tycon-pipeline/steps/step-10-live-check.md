@@ -360,6 +360,15 @@ considera ejecutado**. El hook `on-pre-commit.js` se puede extender en futura
 iteración para parsear la evidencia y verificar este checklist programáticamente
 (TODO en este step file).
 
+**La prueba de navegador simulada tampoco cuenta.**
+Una prueba de navegador con el servidor simulado no cierra «Probar en vivo» sin la firma de la persona. La matriz (`runtime-matrix.js`, parte 6) lo mide sola: un spec del portón E2E o un
+guion de humo que contesta, corta o reescribe un endpoint de negocio (`route.fulfill`, `routeFromHAR`, `msw`, `nock`…,
+las vías de `REAL-C2`/`REAL-C7`) no cuenta como prueba en vivo, ni por la acción ni por la imagen, y la matriz lo
+nombra en «Probados con servidor simulado» con el archivo y la línea. Se cierra probándolo contra el servidor real, o
+declarándolo en `runtime_not_verifiable:` y que la persona firme `marker.js runtime-waiver`. Si le ofreciste opciones a
+la persona para cerrar este paso y contestó otra cosa, la pregunta sigue abierta: no elijas por ella. Decile que sigue
+pendiente y esperá su respuesta.
+
 ### 🔴 Parte 3 — EJECUTAR EL GATE PLAYWRIGHT SCOPED (gate duro vía script, two-tier)
 
 **MANDATORY si la story toca frontend (`.tsx`/`.vue`/`.razor`) o tiene specs en
