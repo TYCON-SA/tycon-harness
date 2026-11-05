@@ -37,7 +37,8 @@ const computeDelicate = (o) => require(PIPELINE).computeDelicate(o);
 const COORD = 'ses-coord';
 const DESTINO = 'ses-a';
 const HUELLA = 'a1b2c3d4e5f60718';
-const PERFIL = { delegated_signing: ['plan-approval'], owner_only: [], delegated_machines: [{ id: HUELLA, label: 'Mac de prueba' }] };
+// la coordinadora firma por el dueño sólo con approvals.relay_session en el perfil
+const PERFIL = { relay_session: 'coordinadora', delegated_signing: ['plan-approval'], owner_only: [], delegated_machines: [{ id: HUELLA, label: 'Mac de prueba' }] };
 const delegacionReal = (perfil = PERFIL) => (o) => DS.delegaSinVentana({ ...o, perfil: () => perfil, huella: () => ({ huella: HUELLA }) });
 const AHORA = Date.now();
 const PLAN = '# Plan\n\n1. Tocar README.md.\n2. Agregar la prueba.\n';

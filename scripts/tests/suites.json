@@ -1826,6 +1826,12 @@
       "requiere": []
     },
     {
+      "__nota": "sin perfil del equipo la coordinadora ordena y no firma. También la corre el ensayo de firmas de Windows (scripts/tests/windows/waiver-probe.js).",
+      "raiz": "arnes",
+      "ruta": "tests/coordination-without-profile.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/session-cap-guard.test.js",
       "requiere": []

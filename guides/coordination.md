@@ -4,12 +4,19 @@ Esta guía es para una organización que trabaja con varias sesiones de agente a
 que una de ellas, **la coordinadora**, ordene a las demás. La coordinadora decide lo que no es del dueño, abre y nombra
 las sesiones, cuida que la máquina no se sature y le pasa al dueño sólo lo suyo.
 
-Es una receta, no un modo: nada cambia en una máquina donde nadie designó una coordinadora. Se prende en dos pasos:
+Es una receta, no un modo: nada cambia en una máquina donde nadie designó una coordinadora. Para que ordene alcanza un
+paso: en cada máquina, el dueño escribe en el chat de la sesión elegida «Esta sesión es la coordinadora», y esa sesión
+corre `marker.js designate-relay` con esa cita.
 
-1. El perfil del equipo nombra el rol en `approvals.relay_session` (en el sitio, la pestaña Configuración, «Quién
-   autoriza saltarse un control»).
-2. En cada máquina, el dueño escribe en el chat de la sesión elegida «Esta sesión es la coordinadora», y esa sesión
-   corre `marker.js designate-relay` con esa cita.
+La coordinadora hace dos cosas, y sólo la segunda pide el perfil del equipo:
+
+1. **Ordenar**: abrir y nombrar sesiones, el tope, los turnos de lo pesado, los avisos, las esperas y `/coordinate`.
+   Anda en la instalación mínima: sin perfil, el rol se llama «coordinadora» (o «coordinator»).
+2. **Firmar por el dueño**: pasar sus firmas a otras sesiones y firmar las de rutina que la organización delega. Pide
+   que el perfil del equipo nombre el rol en `approvals.relay_session` (en el sitio, la pestaña Configuración, «Quién
+   autoriza saltarse un control») y que el dueño confirme la designación. **Sin perfil, la coordinadora ordena y no firma**:
+   todo lo que firma va a la ventana del dueño, y `confirm-designation` se niega. Si la organización saca la clave del
+   perfil, una confirmación vieja deja de valer.
 
 Al designarse, la sesión recibe la orden de leer esta guía, y la recibe otra vez después de compactar o de limpiar su
 conversación, porque ahí se pierde. **Limpiar la conversación le quita la designación**: para el arnés es otra
