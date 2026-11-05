@@ -66,19 +66,10 @@ function confirmationRecord(designacion, ts) {
  * equipo del árbol de este arnés: sin perfil, o sin poder leerlo, la coordinadora ordena y no firma. `{ ok, motivo? }`.
  * `env` y `arnes`, para las pruebas.
  */
-function firmaPorElDueno({ env = process.env, home, arnes } = {}) {
-  let r;
-  try {
-    r = require('./tycon-config.js').cargar({ env, home, ...(arnes ? { arnes } : {}) });
-  } catch (e) { return { ok: false, motivo: claveFaltante(`el lector de configuración falló (${e.message})`) }; }
-  // la clave vale sólo desde el perfil: lo que esté roto en el archivo de la máquina no la tapa, y un perfil roto sí
-  const cfg = require('./tycon-config.js');
-  const delPerfil = (e) => String(e.clave || '').startsWith('approvals.relay_session')
-    || (e.clave == null && [cfg.NOMBRE_PERFIL, cfg.NOMBRE_PERFIL_VIEJO].includes(path.basename(String(e.archivo || ''))));
-  const roto = (r.errores || []).find(delPerfil);
-  if (roto) return { ok: false, motivo: claveFaltante(`el perfil del equipo no se pudo leer (${roto.archivo || '?'}${roto.clave ? ` · ${roto.clave}` : ''}: ${roto.motivo})`) };
-  const v = r.valores && r.valores.approvals ? r.valores.approvals.relay_session : undefined;
-  return typeof v === 'string' && v.trim() ? { ok: true } : { ok: false, motivo: claveFaltante(null) };
+function firmaPorElDueno({ env, home, arnes } = {}) {
+  // la misma lectura que el rol de ordenar (critical-waivers.js): los dos caminos no pueden contradecirse
+  const r = require(path.join(PIPELINE_LIB, 'critical-waivers.js')).sesionQueReenvia({ ...(env ? { env } : {}), home, ...(arnes ? { arnes } : {}) });
+  return r.valor ? { ok: true } : { ok: false, motivo: claveFaltante(r.aviso) };
 }
 const claveFaltante = (aviso) => `${aviso ? `${aviso.replace(/: nadie reenvía$/, '')}: ` : ''}sin approvals.relay_session en el perfil del equipo la coordinadora no firma: las firmas van a la ventana del dueño`;
 

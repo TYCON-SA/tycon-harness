@@ -154,16 +154,22 @@ function renglonesDeFaltantes(r) {
 /**
  * La sesión que la organización deja reenviar el ok de un dev: `approvals.relay_session` del perfil del equipo (sólo
  * de ahí: el lector ignora la variable y el archivo de la máquina). `{ valor, aviso? }`; sin clave, `valor: null`.
- * Con la configuración rota o un lector que no la conoce, nadie reenvía y se dice por qué.
+ * Con el perfil roto o un lector que no la conoce, nadie reenvía y se dice por qué. Lo que esté roto en otra parte (el
+ * archivo de la máquina, otra clave) no la tapa: es la misma lectura para ordenar y para firmar.
  */
 function sesionQueReenvia({ env = process.env, home, arnes } = {}) {
   // el lector de ESTE árbol, nunca uno señalado por una variable (TYCON_GUIDES_DIR la puede poner el agente)
   const lector = [path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'tycon-config.js')].find((f) => fs.existsSync(f));
   if (!lector) return { valor: null, aviso: 'no encontré el lector de configuración del arnés: nadie reenvía' };
   try {
-    const r = require(lector).cargar({ env, home, ...(arnes ? { arnes } : {}) });
-    if (r.errores && r.errores.length) {
-      const e = r.errores[0];
+    const cfg = require(lector);
+    const r = cfg.cargar({ env, home, ...(arnes ? { arnes } : {}) });
+    const perfiles = [cfg.NOMBRE_PERFIL, cfg.NOMBRE_PERFIL_VIEJO];
+    const delPerfil = (e) => String(e.clave || '').startsWith('approvals.relay_session')
+      || (e.clave == null && perfiles.includes(path.basename(String(e.archivo || ''))));
+    const roto = (r.errores || []).find(delPerfil);
+    if (roto) {
+      const e = roto;
       return { valor: null, aviso: `la configuración no se pudo leer (${e.archivo || '?'}${e.clave ? ` · ${e.clave}` : ''}: ${e.motivo}): nadie reenvía` };
     }
     const v = r.valores && r.valores.approvals ? r.valores.approvals.relay_session : undefined;

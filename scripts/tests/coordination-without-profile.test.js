@@ -62,6 +62,12 @@ function designate(m, sid = COORD, { rol = 'coordinadora', ts = new Date(NOW).to
 function confirm(m, d) {
   fs.appendFileSync(path.join(m.state, 'gates.log'), `${JSON.stringify(DS.confirmationRecord(d, new Date(NOW).toISOString()))}\n`);
 }
+// The machine's own config file, where the config reader looks for it in this HOME.
+function machineFile(m, data) {
+  const f = require(path.join(ROOT, 'scripts', 'lib', 'tycon-config.js')).rutaMaquina(m.home);
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  fs.writeFileSync(f, typeof data === 'string' ? data : JSON.stringify(data));
+}
 const gates = (m) => { try { return fs.readFileSync(path.join(m.state, 'gates.log'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch { return []; } };
 function cleanEnv(m, extra = {}) {
   const env = { ...process.env, HOME: m.home, USERPROFILE: m.home, ...extra };
@@ -282,7 +288,7 @@ test('T14 SinPerfil_AprobadoEnLaCoordinadora_NoCuenta @story-8.199 @ac-12: con d
   confirm(con, designate(con));
   assert.strictEqual(oa.coordinadoraConfirmada(con.home, { env: con.env, arnes: con.arnes }), COORD, 'con la clave, como hoy');
   // the key is read only from the profile: a broken value in the machine file does not hide it; a broken profile does
-  fs.writeFileSync(path.join(con.home, '.claude', 'tycon.json'), JSON.stringify({ approvals: { signature_list: 'si' } }));
+  machineFile(con, { approvals: { signature_list: 'si' } });
   assert.strictEqual(oa.coordinadoraConfirmada(con.home, { env: con.env, arnes: con.arnes }), COORD, 'el archivo de la máquina no la tapa');
   fs.writeFileSync(con.profileFile, '{ roto');
   assert.strictEqual(oa.coordinadoraConfirmada(con.home, { env: con.env, arnes: con.arnes }), null, 'un perfil roto no firma');
@@ -329,14 +335,24 @@ test('T17 SinPerfil_ListaDeFirmas_VaACadaSesion @story-8.199 @ac-15: la coordina
     assert.strictEqual(r.ok, false);
     assert.match(r.mensaje, /es de otra sesión/);
   });
-  // the twin with the key: the coordinator is alive and does take it out
+  // the notice and owner-next: the coordinator neither hears about the other session's row nor gets it to pass on
+  machineFile(m, { approvals: { signature_list: 'on' } });
+  withToyProfile(m, () => {
+    assert.strictEqual(C.listNotice({ ...m.opts, sessionId: COORD, prompt: 'hola' }), null, 'el aviso no le llega a la coordinadora');
+    const n = sl.siguiente({ casa: m.home, sesion: COORD, arnes: m.arnes, env: m.env, ahora: NOW });
+    assert.notStrictEqual(n.tipo, 'permiso', `owner-next no le da la fila ajena: ${n.texto}`);
+  });
+  // the twin with the key: the coordinator is alive, hears about it, gets it in owner-next and does take it out
   const con = toy(t, { profile: { approvals: { relay_session: 'coordinadora' } } });
   session(con, COORD, 'Coordinadora');
   session(con, 'ses-a', 'Una');
   confirm(con, designate(con));
+  machineFile(con, { approvals: { signature_list: 'on' } });
   withToyProfile(con, () => {
     assert.strictEqual(sl.coordinadoraViva(con.home), COORD);
     sl.anotarPermiso({ casa: con.home, herramienta: 'Bash', pedido: 'echo hola', carpeta: '/r', sesion: 'ses-a', pid: process.pid, ahora: NOW });
+    assert.match(C.listNotice({ ...con.opts, sessionId: COORD, prompt: 'hola' }) || '', /Coordinación: esperan a la persona 1 permiso/);
+    assert.strictEqual(sl.siguiente({ casa: con.home, sesion: COORD, arnes: con.arnes, env: con.env, ahora: NOW }).tipo, 'permiso');
     const [fila] = sl.leer(con.home);
     assert.strictEqual(sl.rechazar({ casa: con.home, sesion: COORD, id: fila.id }).ok, true);
   });
@@ -351,6 +367,28 @@ test('T18 PerfilSinClaveDespuesDeConfirmar_NoFirma @story-8.199 @ac-16: confirma
   assert.strictEqual(delega(m, lists()).ok, false);
 });
 
+test('T22 ConfigAjena_OrdenarYFirmarLeenLoMismo @story-8.199 @ac-4 @ac-12: un error ajeno a la clave no separa el rol de ordenar del de firmar', (t) => {
+  // a broken value in the machine file, and an unknown key in the profile next to relay_session
+  for (const [label, profile, machine] of [
+    ['el archivo de la máquina', { approvals: { relay_session: 'jefa' } }, { bogus_key: 1 }],
+    ['otra clave del perfil', { approvals: { relay_session: 'jefa' }, bogus: 1 }, null],
+  ]) {
+    const m = toy(t, { profile });
+    if (machine) machineFile(m, machine);
+    const r = cw.rolDeCoordinar({ env: m.env, home: m.home, arnes: m.arnes });
+    assert.deepStrictEqual([r.rol, r.firma], ['jefa', true], `${label}: ${r.aviso}`);
+    assert.strictEqual(DS.firmaPorElDueno({ env: m.env, home: m.home, arnes: m.arnes }).ok, true, label);
+    const d = designar(m, 'Esta sesión es la jefa');
+    assert.strictEqual(d.ok, true, `${label}: ${d.motivo}`);
+    assert.strictEqual(d.firma, true, label);
+    assert.strictEqual(designar(m, FRASE).ok, false, `${label}: con rol propio, el de fábrica no designa`);
+  }
+  // a broken profile: both say no, with the reason
+  const roto = toy(t, { profile: '{ roto' });
+  assert.strictEqual(cw.rolDeCoordinar({ env: roto.env, home: roto.home, arnes: roto.arnes }).firma, false);
+  assert.strictEqual(DS.firmaPorElDueno({ env: roto.env, home: roto.home, arnes: roto.arnes }).ok, false);
+});
+
 // ── The guides (AC 18) and Windows (AC 19) ───────────────────────────────────────────────────────────────────────
 
 test('T20 Guias_SinPerfil_OrdenaYNoFirma @story-8.199 @ac-18: las cuatro guías dicen que sin perfil la coordinadora ordena y no firma', () => {
@@ -360,9 +398,10 @@ test('T20 Guias_SinPerfil_OrdenaYNoFirma @story-8.199 @ac-18: las cuatro guías 
   for (const [f, re] of [['coordination.md', es], ['coordination.en.md', en], ['working-with-a-coordinator.md', es], ['working-with-a-coordinator.en.md', en]]) {
     const text = fs.readFileSync(path.join(ROOT, 'guides', f), 'utf8');
     assert.match(text, re, `${f}: dice que sin perfil no firma`);
+    // none of them still says the profile is a step to turn the coordinator on, or that without it there is none
+    assert.doesNotMatch(text, /se prende en dos pasos|turned on in two\s+steps/i, `${f}: el perfil ya no es un paso para ordenar`);
+    assert.doesNotMatch(text, /no usa una coordinadora|does not use a coordinator|sin (?:esa|la) clave[^.]*no hay coordinadora/i, `${f}: no dice que sin perfil no hay coordinadora`);
   }
-  const coordination = fs.readFileSync(path.join(ROOT, 'guides', 'coordination.md'), 'utf8');
-  assert.doesNotMatch(coordination, /sin (?:esa|la) clave[^.]*no hay coordinadora/i, 'ninguna dice que el perfil hace falta para ordenar');
 });
 
 test('T21 Windows_SuiteNueva_EnLaValidacion @story-8.199 @ac-19: la suite está en suites.json sin excluir Windows, y el escenario de firmas de Windows la corre', () => {
