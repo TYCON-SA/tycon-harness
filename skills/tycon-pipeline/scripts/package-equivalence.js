@@ -54,8 +54,10 @@ function raizDeRepos() {
 function arg(nombre, def) { const i = process.argv.indexOf(nombre); return i > -1 ? process.argv[i + 1] : def; }
 function flag(nombre) { return process.argv.includes(nombre); }
 function tmp(p) { return fs.mkdtempSync(path.join(os.tmpdir(), p)); }
+// git en inglés: un repo sin commits se reconoce por el texto del error, que git traduce
+const entornoDeGit = () => require(path.join(RAIZ, 'scripts', 'lib', 'clean-git-env.js'));
 function git(dir, args, opts = {}) {
-  const r = spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8', maxBuffer: 50 * 1024 * 1024, ...opts });
+  const r = spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8', maxBuffer: 50 * 1024 * 1024, ...opts, env: entornoDeGit().idiomaFijo(opts.env) });
   if (r.error) throw new Error(`git no se pudo ejecutar (${r.error.code || r.error.message})`);   // binario ausente ≠ comando fallido
   if (r.status !== 0) throw new Error(`git ${args.join(' ')} en ${dir}: ${r.stderr}`);
   return r.stdout;

@@ -1144,7 +1144,7 @@ function openNow(opts) {
 
 function gitIn(dir, args) {
   // la carpeta la dice el archivo de la sesión: su configuración no corre un programa por acá
-  const r = spawnSync('git', ['-C', dir, '-c', 'core.fsmonitor=false', '-c', 'protocol.ext.allow=never', ...args], { encoding: 'utf8', timeout: GIT_TIMEOUT_MS, windowsHide: true, env: { ...process.env, LC_ALL: 'C', LANG: 'C', LANGUAGE: 'C' } });
+  const r = spawnSync('git', ['-C', dir, '-c', 'core.fsmonitor=false', '-c', 'protocol.ext.allow=never', ...args], { encoding: 'utf8', timeout: GIT_TIMEOUT_MS, windowsHide: true, env: require('../lib/clean-git-env.js').idiomaFijo() });
   return { code: r.error ? null : r.status, out: String(r.stdout || '').trim(), err: String((r.error && r.error.message) || r.stderr || '').trim().split('\n')[0] };
 }
 

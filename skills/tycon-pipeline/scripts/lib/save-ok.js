@@ -25,6 +25,8 @@ const { spawnSync } = require('child_process');
 
 const RAIZ = path.join(__dirname, '..', '..', '..', '..');
 const catalogo = () => require(path.join(RAIZ, 'scripts', 'lib', 'signatures.js'));
+// git en inglés: `raizDe` reconoce «fuera de un repo» por el texto del error, que git traduce
+const entornoDeGit = () => require(path.join(RAIZ, 'scripts', 'lib', 'clean-git-env.js'));
 
 const BASE = 'origin/main';
 // la evidencia que escribe el pipeline (hallazgos, aprobaciones, la ronda de revisores): no es código de la story. Sólo
@@ -73,7 +75,7 @@ function esPapeleoDeLaHuella(rel, modo) {
 const EXIMEN = ['critical-waiver', 'runtime-waiver', 'escape:force-manual'];
 
 function git(repo, args, env, input) {
-  const r = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', input, env: env ? { ...process.env, ...env } : process.env, maxBuffer: 64 * 1024 * 1024 });
+  const r = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', input, env: entornoDeGit().idiomaFijo(process.env, env), maxBuffer: 64 * 1024 * 1024 });
   // `crudo` sin recortar: en `status --porcelain` el primer espacio es parte de la columna del estado
   return { ok: r.status === 0, out: String(r.stdout || '').trim(), crudo: String(r.stdout || ''), err: String(r.stderr || '').trim() };
 }

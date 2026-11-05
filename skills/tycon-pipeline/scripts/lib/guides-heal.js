@@ -83,7 +83,7 @@ function makeGit(env) {
       encoding: 'utf8',
       timeout: opts.timeout || 8000,
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: Object.assign({}, env, { GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' }),
+      env: require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).idiomaFijo(env, { GIT_TERMINAL_PROMPT: '0' }),
     }).trim();
   };
 }
