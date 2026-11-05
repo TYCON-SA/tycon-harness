@@ -10,6 +10,7 @@
  * T22 Office_AbreElSitioSiEstaAprobada    T23 Office_SinSitioSinAprobarOPendiente_Local
  * T24 Pagina_SinNombresAjenos             T25 Demo_OficinasInventadas_SinConexion
  * T34 Pagina_BajoLaPoliticaDelSitio       T36 Imagen_TraeLaOficina
+ * T52 Pagina_ConexionMudaUnMinuto_Reconecta
  */
 const test = require('node:test');
 const assert = require('node:assert');
@@ -34,7 +35,7 @@ function decisiones() {
   const desde = code.indexOf('// la pestaña del sitio: lo que se decide sin tocar la pantalla');
   const hasta_ = code.indexOf('// fin de lo que se decide sin tocar la pantalla');
   assert.ok(desde >= 0 && hasta_ > desde, 'page.js marca la parte que decide');
-  return new Function(`${code.slice(desde, hasta_)}; return { resumenDeOficina, alCerrarLaConexion, oficinaDelHash, oficinaAMostrar, aplicarOficinas, salasVivas, TOPE_DE_SALAS, pedidoDeCharla, sobresDeOficina, charlaSegunRespuesta, charlaConForma };`)();
+  return new Function(`${code.slice(desde, hasta_)}; return { resumenDeOficina, alCerrarLaConexion, oficinaDelHash, oficinaAMostrar, aplicarOficinas, salasVivas, TOPE_DE_SALAS, pedidoDeCharla, sobresDeOficina, charlaSegunRespuesta, charlaConForma, conexionMuerta, SIN_NOVEDAD_MS, REVISAR_CONEXION_MS, AVISO_SIN_NOVEDAD };`)();
 }
 
 // ── La pestaña ──────────────────────────────────────────────────────────────────────────────
@@ -94,6 +95,29 @@ test('T20 Pestana_ResumenYSesiones — @story-8.171 @ac-16 @ac-16b', async () =>
       assert.match(pagina.texto, /Volver a todas/);
     }
   } finally { await h.cerrar(); }
+});
+
+test('T52 Pagina_ConexionMudaUnMinuto_Reconecta — @fix-oficina-sitio-en-vivo', () => {
+  const P = decisiones();
+  const { PLAZOS } = require(path.join(H.SITE, 'live-hub.js'));
+  // la página espera un minuto sin nada: entran dos latidos del sitio, así uno demorado no corta una conexión viva
+  assert.strictEqual(P.SIN_NOVEDAD_MS, 60000);
+  assert.ok(2 * PLAZOS.latidoNavegadorMs < P.SIN_NOVEDAD_MS, `dos latidos (${PLAZOS.latidoNavegadorMs} ms) entran en el minuto`);
+  // lo revisa a menudo: desde que muere hasta que reconecta pasa menos de un minuto y unos segundos
+  assert.ok(P.REVISAR_CONEXION_MS <= 5000);
+  const t = 1_000_000;
+  assert.strictEqual(P.conexionMuerta(t, t), false);
+  assert.strictEqual(P.conexionMuerta(t, t + P.SIN_NOVEDAD_MS - 1), false);
+  assert.strictEqual(P.conexionMuerta(t, t + P.SIN_NOVEDAD_MS), true);
+  // el aviso dice que lo que se ve puede estar atrasado y que vuelve a conectar
+  assert.match(P.AVISO_SIN_NOVEDAD, /atrasado/);
+  assert.match(P.AVISO_SIN_NOVEDAD, /conectar/);
+  // la conexión: cada mensaje (el latido también) renueva la hora; la muerta se suelta y se abre otra, que trae la lista entera
+  const code = fs.readFileSync(path.join(OFFICE_DIR, 'page.js'), 'utf8');
+  const sitio = code.slice(code.indexOf('function arrancarOficinas('), code.indexOf('// fin de la pestaña del sitio'));
+  assert.match(sitio, /onmessage=ev=>\{ultimo=Date\.now\(\)/, 'cada mensaje renueva la hora');
+  assert.match(sitio, /setInterval\(\(\)=>\{if\(!viva\|\|!conexionMuerta\(ultimo,Date\.now\(\)\)\)return;[^\n]*?muerta\.onmessage=muerta\.onclose=null;[^\n]*?decir\(AVISO_SIN_NOVEDAD\);conectar\(\)/, 'la muerta se suelta, se avisa y se reconecta');
+  assert.match(sitio, /m\.type==="latido"/, 'el latido no se pinta como una novedad');
 });
 
 test('T21 UnaSolaPagina_DosFuentes — @story-8.171 @ac-17', async () => {

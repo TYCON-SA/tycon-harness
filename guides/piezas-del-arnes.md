@@ -1226,6 +1226,18 @@ _(scripts/metrics/step-times.js + el carril de cada commit en scripts/hooks/unpu
 
 **Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptsmetricsstep-timesjs)
 
+## scripts/lib/office-messages.js
+
+_(scripts/lib/office-messages.js + la ruta de la oficina scripts/tools/office/messages.js + los ganchos scripts/hooks/office-inbox-watch.js y office-message-rule.js + scripts/tools/office-message.js)_
+
+**Qué es:** Lo que la persona le escribe a una sesión desde `/office`: el buzón, el vigilante que la despierta y `office-message.js verify`, que la sesión corre antes de obedecer.
+
+**Por qué existe:** Darle indicaciones a una sesión sin buscar su pestaña. Llega como aviso del sistema, nunca como la persona: por eso no firma.
+
+**Quién la usa:** La ventana de una sesión en `/office` y cada sesión de Claude. Off: `TYCON_OFFICE_MESSAGES=0`.
+
+**Dónde se prueba:** `scripts/tests/office-messages.test.js`, `office-inbox-watch.test.js` y `owner-approvals.test.js`
+
 ## scripts/tools/work-in-progress.js
 
 _(scripts/tools/work-in-progress.js + commands/wip.md; en 3D y en vivo: scripts/tools/office.js; el estado de cada sesión: scripts/hooks/session-state.js)_

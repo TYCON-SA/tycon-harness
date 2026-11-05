@@ -6,11 +6,12 @@
  * `<carpeta de Claude>/daemon.log`:
  *
  *   [2026-11-04T02:20:54.928Z] [bg] bg retire aaaabbbb: idle-prompt, idle 27m [low memory]
+ *   [2026-11-04T21:57:58.601Z] [bg] bg retire ef549cad: idle-prompt, idle 2h [low memory]   ← quieta hace horas
  *   [2026-11-04T02:38:09.586Z] [bg] bg claimed-spare aaaabbbb (fleet)          ← se levantó (claude respawn)
  *
  * El id corto es el comienzo del id de la sesión; el nombre y el id entero están en `jobs/<id corto>/state.json`, que
  * queda después del retiro. Ese registro no es una interfaz documentada: lo que no se entiende es «no medido», nunca
- * «ninguna». Lee sólo el final del archivo y los renglones de las últimas 12 horas. No levanta ninguna sesión.
+ * «ninguna». Un motivo entre corchetes que no conoce se cuenta igual y se dice tal cual. Lee sólo el final del archivo y los renglones de las últimas 12 horas. No levanta ninguna sesión.
  */
 const fs = require('fs');
 const path = require('path');
@@ -18,8 +19,12 @@ const path = require('path');
 const TAIL_BYTES = 256 * 1024;
 const WINDOW_MS = 12 * 3600000;
 const LINE = /^\[(\d{4}-\d\d-\d\dT[\d:.]+Z)\] \[bg\] bg (retire|claimed-spare) ([0-9a-f]{8})\b(.*)$/;
-const RETIRE_TAIL = /^: ([\w-]+), idle (\d+)m(?: \[([\w ]+)\])?$/;
+const RETIRE_TAIL = /^: ([\w-]+), idle ((?:\d+[dhms])+)(?: \[([^\]]+)\])?$/;
 const REASONS = { 'low memory': 'falta de memoria' };
+const UNIT_MIN = { d: 1440, h: 60, m: 1, s: 1 / 60 };
+
+// «2h», «27m», «1h5m»: los minutos enteros
+const idleMinutes = (s) => Math.floor([...s.matchAll(/(\d+)([dhms])/g)].reduce((acc, [, n, u]) => acc + Number(n) * UNIT_MIN[u], 0));
 
 // un trozo de un renglón del registro, para decir qué no se entendió: en una línea, sin caracteres de control y acotado
 const piece = (s) => String(s).replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
@@ -74,7 +79,8 @@ function retiredSessions({ home, now = Date.now(), claudeDir } = {}) {
     if (kind === 'claimed-spare') { last.set(short, null); continue; }
     const r = RETIRE_TAIL.exec(rest);
     if (!r) return { measured: false, why: `no entiendo un retiro del registro de fondo de Claude Code: ${piece(line)}`, bytesRead: read.bytes, retired: [] };
-    last.set(short, { short, at, reason: REASONS[r[3]] || (r[3] ? r[3] : r[1]), idleMin: Number(r[2]) });
+    const reason = !r[3] ? r[1] : REASONS[r[3]] || `un motivo que no conozco: ${piece(r[3])}`;
+    last.set(short, { short, at, reason, idleMin: idleMinutes(r[2]) });
   }
   const retired = [];
   for (const x of last.values()) {
