@@ -144,6 +144,26 @@ with the session's id.
 what was kept with `git stash`. A branch deleted without merging is no longer seen. A branch squashed into one commit
 reads as not merged. A worktree of a repo with no working folder comes out as «no sé». `claude stop` and `claude rm` by hand do not go through this.
 
+### Finished but left open
+
+A run with every step done stays open until `marker.js clear`, and a shortcut lane until `marker.js adhoc clear`. The
+harness warns about it; it never closes it on its own, because it does not know which is the last push or the last pull
+request, and closing too early loses the run.
+
+- **At the end of every turn**, the session sees one line: the run of story <id> finished <time> ago and is still open,
+  or the shortcut lane «<reason>» has its pull request <N> open (or its branch already in main) and is still open. If
+  code changed after the reviewers, the line says it still needs reviewing, not closing. It does not block the turn.
+- **When a session starts**, a notice lists what the whole machine has in that state, up to five, with its session and
+  how to close it. If the session is alive, it closes it itself. If it died, the notice gives
+  `marker.js clear-session <session>`, or `adhoc clear-orphan <session>` for a shortcut lane. If its run is lost, it gives
+  `clear-session <session> --lost`, which the owner signs. If it cannot tell whether the session is alive (Codex leaves
+  no session record), it says so and gives no command.
+- **In the office and in `/wip`** the session shows «Terminado, falta cerrar» (finished, still to close), with the story
+  and since when, also after a day. It does not count as working.
+
+What the coordinator does: asks that session to close after its last push and its last pull request. If the session
+died, it runs the command from the notice; the `--lost` one goes to the owner.
+
 ## The cap: what counts as working
 
 **Working** is a live session whose session file says it is busy. A session waiting for CI, the queue or the owner has

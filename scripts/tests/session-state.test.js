@@ -742,3 +742,15 @@ test('T82 BrokenMarker_NotWrittenAsNoPipeline @story-2.81 @ac-26 — un marcador
   assert.strictEqual(stateOf(w, 's-rot').step, before.step, 'el paso queda');
   assert.match(fs.readFileSync(lib().errorsLogOf(w.sdir), 'utf8'), /s-rot[^\n]*JSON roto/);
 });
+
+test('T22 Oficina_TerminadaSinCerrar_LaTarjetaLoDice @story-8.195 @ac-22 — fromDisk: la terminada sin cerrar dice que falta cerrarla, también pasadas las 24 h', () => {
+  const w = world();
+  const ahora = Date.parse('2026-10-18T14:00:00.000Z');
+  for (const [sid, horas] of [['s-ter', 1], ['s-ter30', 30]]) {
+    const cerro = new Date(ahora - horas * HOUR).toISOString();
+    pipelineMarker(w, sid, { done: STEPS.STEPS.filter((s) => !s.flag).map((s) => s.id), extra: { lastTouch: cerro, stepTimings: { 'prepare-commit': { completedAt: cerro } } } });
+    const f = lib().fromDisk(w.sdir, sid, { home: w.home, now: ahora });
+    assert.strictEqual(f.sentence, 'Terminó la story 9.9: falta cerrarla.', sid);
+    assert.strictEqual(f.step, null);
+  }
+});

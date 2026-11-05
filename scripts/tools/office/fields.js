@@ -15,7 +15,7 @@ const path = require('path');
 const TEXT_MAX = 200;
 const MAX_MESSAGE_BYTES = 64 * 1024;
 
-const AGENT_STATES = ['trabajando', 'prueba', 'parada', 'espera', 'esperando', 'firma', 'pregunta', 'libre', 'coordina', 'inactiva'];
+const AGENT_STATES = ['trabajando', 'prueba', 'parada', 'espera', 'esperando', 'firma', 'pregunta', 'libre', 'coordina', 'inactiva', 'cerrar'];
 const END_CLASSES = ['late', 'early', 'ontime', ''];
 const KANBAN_COLUMNS = ['firma', 'curso', 'entrando', 'sinEmpezar', 'hechos'];
 const LOCAL_HOUR = /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d)$/;

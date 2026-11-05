@@ -78,6 +78,10 @@
           },
           {
             "type": "command",
+            "command": "node ${TCG}/scripts/hooks/finished-open-notice.js"
+          },
+          {
+            "type": "command",
             "command": "node ${TCG}/scripts/hooks/extension-notices.js"
           },
           {

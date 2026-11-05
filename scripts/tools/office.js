@@ -158,6 +158,11 @@ function sentenceOf(estado, x, row) {
   if (estado === 'firma') return 'Espera tu respuesta o un permiso.';
   if (estado === 'pregunta') return 'Te hizo una pregunta en su pantalla.';
   if (estado === 'coordina') return 'Coordina las sesiones de esta máquina.';
+  // terminado sin cerrar: la ejecución con todos sus pasos hechos, o el camino corto con su pedido
+  if (x.finishedOpen && x.kind === 'loose') return `Terminó «${plain(x.text) || 'un camino corto'}»: falta cerrar el camino corto${x.openPr ? ` (${x.openPr})` : ''}.`;
+  if (x.finishedOpen) return x.finishedReview
+    ? `Terminó la story ${x.storyId || '?'}: falta revisar lo cambiado después de los revisores.`
+    : `Terminó la story ${x.storyId || '?'}: falta cerrarla.`;
   if (x.kind === 'pipeline') {
     const step = (x.steps || []).find((s) => s.id === x.current);
     return step ? `Va por el paso «${step.name}».` : 'Implementa su historia.';

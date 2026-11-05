@@ -163,9 +163,15 @@ touch ~/.claude/.tycon-pipeline/STOP_AUTONOMY
 run | grep -q 'hard-escape' && echo "✓ H hard-escape (archivo) → escala" || { echo "✗ H"; fail=1; }
 rm -f ~/.claude/.tycon-pipeline/STOP_AUTONOMY
 
-# I) marker CORRUPTO → fail-open (allow, sin output). Un bug NO debe trabar a Claude.
+# I) marker CORRUPTO → fail-open (allow: sin decision). Un bug NO debe trabar a Claude. Desde la 8.195 (T26) el
+# aviso a la persona nombra el marcador que no pudo leer: no es «nada abierto».
 printf '{ no-es-json ' > "$MK"
-[ -z "$(run)" ] && echo "✓ I marker corrupto → allow (fail-open)" || { echo "✗ I — NO fail-open ante marker corrupto (foot-gun)"; fail=1; }
+run_strict
+if [ "$RC" -eq 0 ] && ! printf '%s' "$OUT" | grep -q '"decision"' && printf '%s' "$OUT" | grep -q 'no pude leer la ejecución de la sesión stoptest'; then
+  echo "✓ I marker corrupto → allow (fail-open) · T26 Avisos_MarcadorIlegible_LoNombran"
+else
+  echo "✗ I — NO fail-open ante marker corrupto (foot-gun), o no lo nombra: «${OUT}»"; fail=1
+fi
 
 # J) SIN marker → allow (sesión normal, no autónoma)
 rm -f "$MK"
@@ -278,6 +284,57 @@ if [ "$RA" -eq 2 ] && [ "$RB" -eq 2 ] && [ "$KB" -eq 0 ] && [ "$RC9" -eq 2 ] && 
   echo "✓ T19 mark-tests-not-scoped: sin el portón, con otro rojo o con otra procedencia, no cambia nada; con la salida 7 del portón, sí"
 else
   echo "✗ T19 mark-tests-not-scoped: sin portón=$RA otro rojo=$RB(intacto=$KB) otra procedencia=$RC9 el bueno=$RD"; fail=1
+fi
+
+# Lo terminado sin cerrar: el cierre de turno avisa a la persona, en toda sesión, sin frenar.
+TERM_H='"stepScheme":2,"stepsCompleted":["start","validate-story","plan","approve-plan","implement","run-tests","reviewers","adversarial-pass","findings","prepare-commit"],"stepsPending":[],"dodRuntimeChecked":true,"deepReviewDone":true,"stepTimings":{"reviewers":{"completedAt":"2026-10-15T10:00:00Z"},"findings":{"completedAt":"2026-10-15T10:10:00Z"},"prepare-commit":{"completedAt":"2026-10-15T10:30:00Z"}}'
+# solo stdout, con el JSON entero: sin decision (no frena) y con la línea en systemMessage
+mensaje() { printf '%s' "$OUT" | node -e 'const t=require("fs").readFileSync(0,"utf8").trim(); if(!t){process.exit(5)} const o=JSON.parse(t); if(o.decision) process.exit(6); process.stdout.write(o.systemMessage||"")'; }
+
+# T16) CierreDeTurno_TerminadaSinCerrar_Avisa: no autónoma y autónoma en verde, la misma línea; el turno cierra.
+echo "{\"storyId\":\"7.7\",\"autonomous\":false,$TERM_H}" > "$MK"
+run_strict; M16a=$(mensaje); R16a=$?
+echo "{\"storyId\":\"7.7\",\"autonomous\":true,\"checks\":{\"tests\":\"green\"},$TERM_H}" > "$MK"
+run_strict; M16b=$(mensaje); R16b=$?
+if [ "$RC" -eq 0 ] && [ "$R16a" -eq 0 ] && [ "$R16b" -eq 0 ] \
+  && printf '%s' "$M16a" | grep -q 'la ejecución de la story 7.7 terminó hace .* y sigue abierta: cerrala con `marker.js clear` después del último push y del último pedido' \
+  && [ "$M16a" = "$M16b" ]; then
+  echo "✓ T16 CierreDeTurno_TerminadaSinCerrar_Avisa: la línea en systemMessage, en toda sesión, y el turno cierra"
+else
+  echo "✗ T16 CierreDeTurno_TerminadaSinCerrar_Avisa: rc=$RC a=$R16a b=$R16b «${M16a}» «${M16b}»"; fail=1
+fi
+
+# T17) CierreDeTurno_ConOtraVuelta_DiceQueFaltaRevisar: un .js cambiado después de los revisores, fuera de todo repo (código).
+echo "{\"storyId\":\"7.7\",\"autonomous\":false,$TERM_H,\"fileEvents\":[{\"path\":\"$HOME/sin-repo/src/a.js\",\"ts\":\"2026-10-15T10:20:00Z\",\"code\":true}]}" > "$MK"
+run_strict; M17=$(mensaje)
+if printf '%s' "$M17" | grep -q 'tiene código cambiado después de los revisores' && ! printf '%s' "$M17" | grep -q 'marker.js clear'; then
+  echo "✓ T17 CierreDeTurno_ConOtraVuelta_DiceQueFaltaRevisar"
+else
+  echo "✗ T17 CierreDeTurno_ConOtraVuelta_DiceQueFaltaRevisar: «${M17}»"; fail=1
+fi
+
+# T27) CierreDeTurno_AvisoQueFalla_NoFrena: la biblioteca del aviso lanza; el turno cierra y la falla queda en gates.log.
+PRE="$HOME/rompe-finished-open.js"
+echo "require('$PWD/lib/finished-open.js').stopLines = () => { throw new Error('aviso roto t27'); };" > "$PRE"
+echo "{\"storyId\":\"7.7\",\"autonomous\":false,$TERM_H}" > "$MK"
+OUT27=$(printf '%s' "$EV" | node --require "$PRE" "$HOOK" 2>/dev/null); R27=$?
+if [ "$R27" -eq 0 ] && ! printf '%s' "$OUT27" | grep -q '"decision"' && grep -q 'aviso roto t27' ~/.claude/.tycon-pipeline/gates.log; then
+  echo "✓ T27 CierreDeTurno_AvisoQueFalla_NoFrena"
+else
+  echo "✗ T27 CierreDeTurno_AvisoQueFalla_NoFrena: rc=$R27 «${OUT27}»"; fail=1
+fi
+
+# T28) EnCurso_MitadDeCamino_SeVeComoHoy: una ejecución a mitad de camino no suma la línea nueva (la de pasos pendientes
+# sale como hoy), y un rojo autónomo frena igual.
+echo '{"storyId":"7.7","stepScheme":2,"autonomous":false,"stepsCompleted":["start"],"stepsPending":["implement"]}' > "$MK"
+run_strict; OUT28a="$OUT"
+echo '{"storyId":"7.7","stepScheme":2,"autonomous":true,"iter":0,"stepsCompleted":["start"],"stepsPending":["implement"],"checks":{"tests":"red:x"}}' > "$MK"
+run_strict; OUT28b="$OUT"
+if ! printf '%s' "$OUT28a" | grep -q '"decision"' && ! printf '%s%s' "$OUT28a" "$OUT28b" | grep -q 'sigue abierta\|terminó hace' \
+  && printf '%s' "$OUT28b" | grep -q '"decision":"block"'; then
+  echo "✓ T28 EnCurso_MitadDeCamino_SeVeComoHoy (cierre de turno)"
+else
+  echo "✗ T28 EnCurso_MitadDeCamino_SeVeComoHoy: «${OUT28a}» «${OUT28b}»"; fail=1
 fi
 
 rm -f ~/.claude/.tycon-pipeline/STOP_AUTONOMY
