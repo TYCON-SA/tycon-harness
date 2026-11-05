@@ -1023,7 +1023,8 @@ function launchedMatches(row, s) {
 function pruneLaunched({ home, now, drop = null, sessions = null }) {
   const list = readLaunched(home);
   const live = [...(sessions || sessionsBySid(path.join(claudeDir(home), 'sessions'), [], null)).values()].filter((s) => s.alive);
-  const keep = list.filter((r) => r && r.name !== drop && (now - r.at < LAUNCHED_KEEP_MS || live.some((s) => launchedMatches(r, s))));
+  const dropped = (r) => drop !== null && typeof r.name === 'string' && listedName(r.name) === listedName(drop);
+  const keep = list.filter((r) => r && !dropped(r) && (now - r.at < LAUNCHED_KEEP_MS || live.some((s) => launchedMatches(r, s))));
   if (keep.length !== list.length) writeJson(launchedFile(home), keep);
   return keep;
 }
@@ -1120,7 +1121,8 @@ function openNow(opts) {
     name = sessionNames.nextFree(names, taken);
     if (!name) return no('No quedó ningún nombre libre en la lista de esta máquina (coordination.session_names): no la abrí.');
   }
-  if (taken.has(name)) return no(`«${name}» ya lo usa otra sesión viva: no la abrí.`);
+  // los nombres de las sesiones vivas llegan recortados: uno largo se compara recortado igual
+  if (taken.has(name) || taken.has(listedName(name))) return no(`«${name}» ya lo usa otra sesión viva: no la abrí.`);
   if (!oneLine(task)) return no('Falta el encargo de la sesión: no la abrí.');
   if (s.atCap) return no(`Ya hay ${s.working.length} trabajando y el tope es ${s.cap.value} (${ORIGIN[s.cap.origin] || s.cap.origin}): no la abrí, espera su turno.`);
   if (cwd && opts.repo) return no('Va o la carpeta o el repo, no los dos: no la abrí.');

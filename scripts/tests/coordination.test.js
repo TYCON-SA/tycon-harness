@@ -1317,6 +1317,16 @@ test('T12 Open_AnotaLaLanzada @story-8.211 @ac-9: abrir bien deja { name, cwd, a
   const r3 = open(n, { name: 'n3', task: 'algo', launcher: launcher(n) });
   assert.strictEqual(r3.ok, true, r3.message);
   assert.match(r3.message, /No la pude anotar entre las que abrió la coordinadora/);
+  // un nombre largo ya tomado: la sesión viva lo lista recortado, y open lo ve igual (no pisa su renglón)
+  const l = toy();
+  const largo = 'Acme'.repeat(13);
+  session(l, 'sid-larga', largo, { kind: 'bg' });
+  fs.mkdirSync(path.dirname(C.launchedFile(l.home)), { recursive: true });
+  fs.writeFileSync(C.launchedFile(l.home), JSON.stringify([{ name: largo, cwd: l.root, at: NOW, por: CALLER_SID }]));
+  const r4 = open(l, { name: largo, task: 'algo', launcher: launcher(l) });
+  assert.strictEqual(r4.ok, false);
+  assert.match(r4.message, /ya lo usa otra sesión viva/);
+  assert.deepStrictEqual(launchedRows(l.home).map((x) => x.name), [largo]);
 });
 
 test('T13 OpenYClose_LimpianLaunched @story-8.211 @ac-10: lo viejo sin sesión viva se borra; close saca el suyo', () => {
