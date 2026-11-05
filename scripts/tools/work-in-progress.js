@@ -1457,6 +1457,8 @@ function buildWip(opts = {}) {
       else if (Number.isFinite(hour.endAt)) rows[looseRow].end = hourVerdict({ endAt: hour.endAt, hourAt: at, nowMs }) || declaredEnd(d.endAt, hour.endAt);
       continue;
     }
+    // una nota sin texto es la espera de una historia (`doing --waiting-for`): sin la historia abierta no dice qué hace
+    if (!pipe && !d.text) continue;
     if (pipe) {
       if (d.waitingFor) { Object.assign(extra[pipe.i], { waitingFor: String(d.waitingFor), waitingSince: hourOfNote(d).waitingSince }); rows[pipe.i].end = waitingEnd(d); }
       else {
