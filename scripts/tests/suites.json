@@ -2532,6 +2532,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.214: scripts/tools/catch-up-main.js pone al día con main una rama que choca sólo en specs/epics.md, specs/sprint-status.yaml y .tycon/runtime-waivers.jsonl. Laboratorios con un remoto propio: junta los dos lados y commitea el merge; un renglón por historia, el de la rama; una clave repetida que ya venía de main no se toca; las firmas, todas y en orden, con la cadena válida; otro choque, o un lado que borró, sale 1 sin tocar nada; empuja sin forzar y con el remoto adelantado sale 3; al día sale 0 y sucia sale 2; con git en castellano da lo mismo; un control que rechaza el commit sale 4 y deshace el merge; sin remoto o sin historia común sale 5.",
+      "raiz": "arnes",
+      "ruta": "tests/catch-up-main.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "al commitear en el público, el inventario de los controles se compara con el pre-commit propio del repo privado (de su origin/main): avisa el mismo día lo que antes salía rojo de noche, y en el privado no aplica.",
       "raiz": "arnes",
       "ruta": "tests/private-inventory.test.js",
@@ -3722,6 +3728,12 @@
       "__nota": "Freno de evidencia del commit (2026-10-14): un AC cuenta si aparece en la UNIÓN de las tres fuentes que escribe la máquina —registro de pruebas de humo (salida 0 y copia en gates.log), gates E2E PASS (filas E2E de la tabla ### Tests) y firmas del dev vigentes para la declaración—, leída de la matriz por AC. Corre el hook de verdad sobre un repo y una HOME temporales: los tres orígenes repartidos pasan sin -cierre.md; un AC en ninguna fuente frena y el mensaje nombra las tres; un smoke con salida distinta de 0 no cuenta aunque su texto nombre el AC; una firma vencida no cuenta; un -cierre.md que nombra todo sigue contando.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/closing-evidence-union.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.214: el freno de cierre no le cobra a un commit de merge lo que trae de main. Corre el hook de verdad sobre un repo con un merge en curso: la historia que main pasó a review y el índice tiene igual que MERGE_HEAD no se juzga; la historia propia de la rama sin evidencia sigue frenando, en el merge y en un commit común; la resuelta a mano (distinta de los dos lados) se juzga.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/closing-evidence-merge.test.js",
       "requiere": []
     },
     {
