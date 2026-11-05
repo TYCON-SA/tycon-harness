@@ -18,10 +18,18 @@ La coordinadora hace dos cosas, y sólo la segunda pide el perfil del equipo:
    todo lo que firma va a la ventana del dueño, y `confirm-designation` se niega. Si la organización saca la clave del
    perfil, una confirmación vieja deja de valer.
 
+Cómo se nombra: en cada máquina, el dueño le pide a la sesión elegida, con sus palabras, que sea la coordinadora. Con el
+perfil, esa sesión corre `marker.js designate-relay` sin frase: el freno da un cuadro con «Sí» y «No» que dice qué sesión
+es y en qué carpeta, y con el click del dueño queda nombrada y confirmada. El arnés no lee la frase. Para dejar de serlo,
+`marker.js withdraw-relay`, con su propio cuadro. Las dos firmas son sólo del dueño, con su click en la pestaña de esa
+sesión: no se delegan. Donde el click no se puede comprobar, el comando dice por qué y da los respaldos: la terminal del
+dueño (`designate-relay --terminal`) o la frase (`--quote` y después `confirm-designation`). Sin perfil, por ahora se
+nombra con la frase (`designate-relay --approved-by '<el dev>' --quote '<su frase>'`).
+
 Al designarse, la sesión recibe la orden de leer esta guía, y la recibe otra vez después de compactar o de limpiar su
 conversación, porque ahí se pierde. **Limpiar la conversación le quita la designación**: para el arnés es otra
-conversación. La sesión recibe cómo recuperarla, pero no la recupera sola: el dueño tiene que volver a escribir la frase
-y a confirmarla. `/coordinate` en esa sesión muestra el estado de la máquina. El programa que usa la coordinadora es
+conversación. La sesión recibe cómo recuperarla, pero no la recupera sola: el dueño tiene que volver a pedírselo y dar
+un click nuevo. `/coordinate` en esa sesión muestra el estado de la máquina. El programa que usa la coordinadora es
 `<arnés>/scripts/tools/coordination.js`.
 
 ## Qué va al dueño

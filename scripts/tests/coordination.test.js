@@ -224,8 +224,11 @@ test('T5 Coordinate_NotDesignated_AsksForThePhrase @story-8.122 @ac-5: con el ro
   session(t, 'otra-1', 'Otra', { status: 'busy' });
   const r = coordinate(t, { CLAUDE_CODE_SESSION_ID: 'otra-1' });
   assert.strictEqual(r.code, 1);
-  assert.match(r.text, /Esta sesión es la coordinadora/);
-  assert.match(r.text, /designate-relay/);
+  // el camino es el click; la frase queda de respaldo
+  assert.match(r.text, /designate-relay\n/);
+  assert.match(r.text, /el dueño hace click/);
+  assert.match(r.text, /withdraw-relay/);
+  assert.doesNotMatch(r.text, /«Esta sesión es la coordinadora»/);
   assert.ok(!fs.existsSync(path.join(t.state, 'gates.log')), 'no designa nada');
 });
 

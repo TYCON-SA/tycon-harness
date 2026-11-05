@@ -205,6 +205,8 @@ function rolDeCoordinar(o = {}) {
 // reconoce por su número, que no cambia al reiniciar el proceso (sí con /clear o con un chat nuevo); el nombre visible
 // no cuenta, porque lo pone el sistema y otra sesión puede llevar el mismo.
 const DESIGNACION = 'relay-designation';
+// el renglón con que la coordinadora deja de serlo (marker.js withdraw-relay): el registro queda completo
+const RETIRADA = 'retirada';
 // Las dos se aplican a la frase PLANA (ver `plana`): sin acentos y en minúsculas. «Esta sesión», «esta pestaña», «sos», y
 // en inglés «this session». Las formas que no nombran la sesión («esta es la…», «eres», «te designo»…) piden el rol
 // pegado: ver `formasConElRol`.
@@ -291,7 +293,11 @@ function designar({ approvedBy, quote, env = process.env, home, arnes } = {}) {
   return { ok: true, firma: declarada.firma, aviso: declarada.aviso, entrada: { sesion, rol: declarada.rol, quien: String(approvedBy).trim(), cita, cita_cuando: null } };
 }
 
-/** La última designación anotada en el gates.log de esta máquina: `{ sesion, rol, quien, cita, ts }`, null o `{ error }`. */
+/**
+ * La última designación anotada en el gates.log de esta máquina: `{ sesion, rol, quien, cita, via, ts }`, null o
+ * `{ error }`. Una designación por frase trae `cita`; una por click (marker.js designate-relay sin frase), `via` y
+ * `cita: null`. Si el último renglón de la designación es una retirada (`status: 'retirada'`), no hay coordinadora.
+ */
 function designacionVigente({ home, dir } = {}) {
   let raw;
   // `dir`: la carpeta del estado ya resuelta, para quien no la lee del ambiente (scripts/lib/delegated-signing.js)
@@ -299,12 +305,16 @@ function designacionVigente({ home, dir } = {}) {
     return e.code === 'ENOENT' ? null : { error: `no pude leer el registro del arnés (${e.code || e.message})` };
   }
   const lineas = raw.split('\n');
+  // una retirada anula sólo la designación de su propia sesión: la de otra sesión nombrada antes sigue vigente
+  const retiradas = new Set();
   for (let i = lineas.length - 1; i >= 0; i--) {
     if (!lineas[i].includes(DESIGNACION)) continue;
     let g;
     try { g = JSON.parse(lineas[i]); } catch (_e) { continue; }
-    if (g && g.name === DESIGNACION && g.status === 'ok' && /^[\w-]+$/.test(String(g.sesion || '')) && g.cita) {
-      return { sesion: g.sesion, rol: g.rol || null, quien: g.quien || null, cita: g.cita, ts: g.ts || null };
+    if (g && g.name === DESIGNACION && g.status === RETIRADA) { retiradas.add(String(g.sesion || '')); continue; }
+    if (g && g.name === DESIGNACION && g.status === 'ok' && /^[\w-]+$/.test(String(g.sesion || '')) && (g.cita || g.via)) {
+      if (retiradas.has(g.sesion)) return null;
+      return { sesion: g.sesion, rol: g.rol || null, quien: g.quien || null, cita: g.cita || null, via: g.via || null, ts: g.ts || null };
     }
   }
   return null;
@@ -321,4 +331,4 @@ function noEsPersona(quien) {
   return null;
 }
 
-module.exports = { DESIGNACION, RE_NIEGA, juezDesignacion, designar, designacionVigente, huella, fueraDelRegistro, constanciaInvalida, renglonesDeFaltantes, sh, reglaDe, revisar, noEsPersona, sesionQueReenvia, rolDeCoordinar, ROL_DE_FABRICA, FILE, clave, esCriticoEximido, anotar, leer, faltantes, verificarExenciones, caminos };
+module.exports = { DESIGNACION, RETIRADA, RE_NIEGA, juezDesignacion, designar, designacionVigente, huella, fueraDelRegistro, constanciaInvalida, renglonesDeFaltantes, sh, reglaDe, revisar, noEsPersona, sesionQueReenvia, rolDeCoordinar, ROL_DE_FABRICA, FILE, clave, esCriticoEximido, anotar, leer, faltantes, verificarExenciones, caminos };
