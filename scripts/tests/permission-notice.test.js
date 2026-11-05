@@ -48,7 +48,8 @@ function toy({ designated = COORD, confirmed = true } = {}) {
     const lines = [JSON.stringify(d), ...(confirmed ? [JSON.stringify(DS.confirmationRecord(d, new Date(NOW).toISOString()))] : [])];
     fs.writeFileSync(path.join(state, 'gates.log'), `${lines.join('\n')}\n`);
   }
-  const t = { root, home, state, arnes, opts: { home, arnes, env: {}, now: NOW, sessionId: COORD } };
+  // owner-wait también mira «Tu firma» de la oficina: acá, una lectura vacía, sin lanzar la oficina real
+  const t = { root, home, state, arnes, opts: { home, arnes, env: {}, now: NOW, sessionId: COORD, ownerWaits: () => ({ esperas: [], problemas: [] }) } };
   claudeFile(t, COORD, 'Coordinadora', { status: 'busy', statusUpdatedAt: mins(0) });
   return t;
 }
