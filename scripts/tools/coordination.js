@@ -235,7 +235,9 @@ function stalledOf(s, f, now) {
   if (!((waits && (/permission/i.test(String(s.waitingFor || '')) || p)) || (p && !known))) return null;
   const pSince = p ? Date.parse(p.since) : NaN;
   const since = Number.isFinite(pSince) ? pSince : (Number.isFinite(s.statusAt) ? s.statusAt : now);
-  return { tool: p ? label(p.tool) : null, detail: p && p.detail ? oneLine(p.detail).slice(0, 200) : null, since, key: Number.isFinite(pSince) ? `p:${pSince}` : 'claude' };
+  // el gancho ya lo anota tapado; se tapa otra vez por los archivos escritos antes de que una forma existiera
+  const detail = p && p.detail ? oneLine(require(path.join(__dirname, '..', 'hooks', 'wait-notice.js')).redact(p.detail)).slice(0, 200) : null;
+  return { tool: p ? label(p.tool) : null, detail, since, key: Number.isFinite(pSince) ? `p:${pSince}` : 'claude' };
 }
 
 // Las sesiones de fondo que Claude Code cerró y no se levantaron. Una que ya está viva de nuevo no sale.
