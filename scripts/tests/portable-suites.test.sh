@@ -19,7 +19,8 @@
 #     máquina vacía no tiene navegador (Chrome sin sesión se cuelga en una HOME sin perfil; el caso que lo usa sale NO MEDIDO).
 #   · Cada suite corre en su proceso, desde la raíz del arnés (como en el portón y el nocturno), con SU PROPIA
 #     HOME vacía y su TMPDIR (cuatro a la vez sobre una misma HOME se pisan: settings.json, sellos, registros),
-#     con un tope de tiempo, de a TYCON_PORTABLE_PARALLEL (4) a la vez. Un tope agotado es rojo, no «no medido».
+#     con un tope de tiempo. Cuántas a la vez: TYCON_PORTABLE_PARALLEL; en la CI, 4; a mano, la misma regla que el
+#     portón (núcleos y carga, lib/suite-times.js), y la línea de arranque lo dice. Un tope agotado es rojo, no «no medido».
 #
 # Dice cuántas corrió: CERO portables es un rojo, no un verde (una lista sin `requiere` daría 0 y silencio).
 # Las entradas de agent-skills se declaran NO MEDIDAS si el árbol no está; nunca se cuentan como verdes.
@@ -123,6 +124,7 @@ skills_foto > "$T/skills-antes.txt"
 node - "$RAIZ" "${SK_REPO:-}" "$HAY_SKILLS" "$CASA" "$BIN" "$T" "$SUITES" "${SK_WHY:-}" <<'JS'
 'use strict';
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const [RAIZ, SK, HAY_SKILLS, CASA, BIN, T, SUITES, SK_WHY] = process.argv.slice(2);
@@ -189,6 +191,8 @@ function casaVacia() {
     // la máquina vacía tampoco tiene navegador: Chrome sin sesión se queda colgado para siempre en una HOME sin perfil
     // (medido con dashboard-runs.test.sh); el caso que lo necesita sale NO MEDIDO, no se cuelga
     TYCON_CHROME: '0',
+    // una suite que lance el corredor sobre su repo de juguete no anota en el registro de tiempos
+    TYCON_SUITE_TIMES: 'off',
     // el instalador lanza de FONDO el chequeo de paridad, que en un clon deja su reporte en scripts/controls-bench/.bench/
     // del árbol, a veces cuando la suite ya terminó: cada suite lo manda a su carpeta temporal (la foto del final lo controla)
     TYCON_PARITY_BENCH_DIR: path.join(tmp, 'parity-bench'),
@@ -198,7 +202,20 @@ function casaVacia() {
     GIT_CONFIG_COUNT: '2', GIT_CONFIG_KEY_0: 'gc.auto', GIT_CONFIG_VALUE_0: '0', GIT_CONFIG_KEY_1: 'maintenance.auto', GIT_CONFIG_VALUE_1: 'false',
   } };
 }
-const POOL = Math.max(1, Number(process.env.TYCON_PORTABLE_PARALLEL || 4));
+// Cuántas a la vez: la misma función que el portón (lib/suite-times.js), con TYCON_PORTABLE_PARALLEL y 4 en la CI;
+// la carga es la de antes de lanzar ninguna, la ajena. Sin la librería, 4 (o la variable) y se dice.
+let ST = null;
+try { ST = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'suite-times.js')); } catch (e) {
+  console.log(`⚠️  suites-portables: no pude cargar la función de cuántas a la vez (${e.code || e.message}): uso ${Number(process.env.TYCON_PORTABLE_PARALLEL) > 0 ? process.env.TYCON_PORTABLE_PARALLEL : 4}`);
+}
+const MAQUINA = ST ? ST.machine(process.env) : { nucleos: os.availableParallelism ? os.availableParallelism() : os.cpus().length, carga: Math.round(os.loadavg()[0] * 100) / 100 };
+const DECISION = ST
+  ? ST.workersFor({ env: process.env, varName: 'TYCON_PORTABLE_PARALLEL', maquina: MAQUINA, ci: ST.isCI(process.env) || Boolean(process.env.TYCON_PUBLIC_CI_OUT), ciDefault: 4 })
+  : { workers: Number.isInteger(Number(process.env.TYCON_PORTABLE_PARALLEL)) && Number(process.env.TYCON_PORTABLE_PARALLEL) > 0 ? Number(process.env.TYCON_PORTABLE_PARALLEL) : 4, wait: false, warning: null };
+if (MAQUINA.warning) console.log(`⚠️  suites-portables: ${MAQUINA.warning}`);
+if (DECISION.warning) console.log(`⚠️  suites-portables: ${DECISION.warning}`);
+const POOL = DECISION.workers;
+if (ST) console.log(`suites-portables: ${ST.describeWorkers(DECISION, MAQUINA)}`);
 const TOPE_MS = Math.max(10000, Number(process.env.TYCON_PORTABLE_CAP_MS || 900000));
 const raizDe = (e) => (e.raiz === 'arnes' ? path.join(RAIZ, 'scripts') : path.join(SK || '', 'skills'));
 
@@ -207,9 +224,21 @@ const rojas = [];
 const noMedidas = [];
 let verdes = 0, vivos = 0;
 const inicio = Date.now();
+const tiempos = [];
 function seg(ms) { return `${Math.round(ms / 1000)}s`; }
+// La espera por la carga (sólo cuando decide la máquina): con la carga sobre el doble de los núcleos y otra corriendo,
+// no lanza la siguiente; vuelve a mirar cada 5 s, y la lanza cuando baja o cuando ya no queda ninguna corriendo.
+const esperas = { veces: 0, ms: 0 };
+let esperaDesde = null;
+let timerEspera = null;
 function siguiente() {
   while (vivos < POOL && cola.length) {
+    if (DECISION.wait && vivos > 0 && ST.overloaded(MAQUINA.nucleos, ST.loadNow(process.env))) {
+      if (esperaDesde === null) { esperaDesde = Date.now(); esperas.veces++; }
+      if (!timerEspera) timerEspera = setTimeout(() => { timerEspera = null; siguiente(); }, 5000);
+      return;
+    }
+    if (esperaDesde !== null) { esperas.ms += Date.now() - esperaDesde; esperaDesde = null; }
     const e = cola.shift();
     if (e.raiz === 'agent-skills' && HAY_SKILLS !== '1') { noMedidas.push(e.ruta); console.log(`⏭ ${path.basename(e.ruta)} — agent-skills no está en esta máquina: NO MEDIDA (${(SK_WHY || 'sin motivo').trim()})`); continue; }
     const abs = path.join(raizDe(e), e.ruta);
@@ -233,6 +262,7 @@ function siguiente() {
       vivos--;
       try { fs.rmSync(casa.home, { recursive: true, force: true }); } catch (_) { /* se borra entera al final igual */ }
       const b = path.basename(e.ruta);
+      tiempos.push({ s: e.ruta, ms: Date.now() - t0, exit: agotado ? 124 : (code === null ? 124 : code) });
       if (code === 0 && !agotado) { verdes++; console.log(`✅ ${b} (${seg(Date.now() - t0)})`); }
       else {
         const motivo = agotado ? `se agotó el tope de ${seg(TOPE_MS)}` : `exit ${code}`;
@@ -251,9 +281,27 @@ function siguiente() {
     });
   }
 }
+// Los segundos de cada suite al registro de tiempos (skills/tycon-pipeline/scripts/lib/suite-times.js): a
+// TYCON_SUITE_TIMES, o al de la máquina si las corre una persona. En la CI de GitHub, además, el renglón marcado al
+// final de la salida: el registro de la parte es lo que queda de la corrida. No poder anotar no cambia el veredicto.
+function anotarTiempos() {
+  const st = ST;
+  if (!st) { console.log('⚠️  suites-portables: no pude cargar el registro de tiempos: no anoto'); return; }
+  const ci = Boolean(process.env.TYCON_PUBLIC_CI_OUT);
+  const entry = st.entryOf({ origen: ci ? 'ci-github' : 'portables', repo: path.basename(RAIZ), head: st.headOf(RAIZ),
+    workers: POOL, nucleos: MAQUINA.nucleos, carga: MAQUINA.carga, fingida: MAQUINA.fake, wallMs: Date.now() - inicio, suites: tiempos });
+  if (ci) console.log(`${st.MARK}${JSON.stringify(entry)}`);
+  try {
+    const t = st.target(process.env, { byDefault: !process.env.TYCON_SUITE_RUNNER && !ci });
+    if (!t.file) return;
+    const r = st.append(entry, t.file);
+    if (!r.ok) console.log(`⚠️  suites-portables: no pude anotar los tiempos: ${r.reason}`);
+  } catch (e) { console.log(`⚠️  suites-portables: no pude anotar los tiempos: ${e.message}`); }
+}
 function fin() {
+  anotarTiempos();
   const corridas = verdes + rojas.length;
-  console.log(`\nsuites-portables: ${corridas} corridas · ${verdes} verdes · ${rojas.length} rojas · ${noMedidas.length} no medidas · ${seg(Date.now() - inicio)}`);
+  console.log(`\nsuites-portables: ${corridas} corridas · ${verdes} verdes · ${rojas.length} rojas · ${noMedidas.length} no medidas · ${seg(Date.now() - inicio)} con ${POOL} a la vez${esperas.veces ? ` · esperó ${esperas.veces} vez/veces (${seg(esperas.ms)}) por la carga` : ''}`);
   if (rojas.length) {
     console.log('❌ portables que en una HOME vacía y sin herramientas NO dieron verde — se corrige su `requiere` en suites.json (o la suite, si depende del HOME de quien la corre), nunca esta prueba:');
     for (const r of rojas) console.log(`   · ${r}`);

@@ -58,6 +58,45 @@ function isStale(obj) {
   return Date.now() - new Date(t).getTime() > STALE_HOURS * 3600 * 1000;
 }
 
+// Una espera anotada protege a su ejecución de las podas por vieja hasta esta edad: una olvidada no protege para siempre.
+const WAIT_TURN_MAX_MS = 24 * 3600 * 1000;
+
+/**
+ * La espera de turno que anotó la sesión (`marker.js doing --waiting-for`): `{ waitingFor, since }`, o null sin nota, sin
+ * espera o con la espera de más de 24 h. Una ejecución que espera su turno no está abandonada aunque no toque nada: la
+ * respetan las tres podas (marker.js, on-prompt.js y `listOtherMarkers`).
+ */
+function waitingTurn(stateDir, sessionId, now = Date.now()) {
+  const n = readJson(path.join(stateDir, 'doing', `${safeSid(sessionId)}.json`));
+  const what = n && typeof n.waitingFor === 'string' ? n.waitingFor.trim() : '';
+  if (!what) return null;
+  const since = Number.isFinite(Number(n.waitingSince)) ? Number(n.waitingSince) : Date.parse(n.waitingSince);
+  if (!Number.isFinite(since) || now - since > WAIT_TURN_MAX_MS) return null;
+  return { waitingFor: what, since };
+}
+
+/**
+ * Guarda el marcador de una ejecución que se poda en `<estado>/pruned/<sesión>.json`, para que `marker.js restore` la
+ * rearme con sus pasos. true si quedó guardado: sin la copia, no se poda.
+ */
+function savePruned(stateDir, sessionId, marker) {
+  try {
+    const dir = path.join(stateDir, 'pruned');
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const file = path.join(dir, `${safeSid(sessionId)}.json`);
+    const tmp = `${file}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify({ ...marker, prunedAt: new Date().toISOString() }, null, 2), { mode: 0o600 });
+    fs.renameSync(tmp, file);
+    return true;
+  } catch { return false; }
+}
+
+/** La copia de una ejecución podada, o null. */
+function readPruned(stateDir, sessionId) {
+  const m = readJson(path.join(stateDir, 'pruned', `${safeSid(sessionId)}.json`));
+  return m && m.storyId ? m : null;
+}
+
 // ── marker / ad-hoc ──────────────────────────────────────────────────────────────────────────────
 
 function markerPath(stateDir, sessionId) {
@@ -152,7 +191,7 @@ function riesgoDeLaRutaYSuReal(abs, repo) {
     else return { value: true, rule: 'no-pude-saber', file: null, reason: `no pude saber: no pude ubicar el repo de ${abs} (${u.falla})` };
   }
   const real = installedTree.realPath(abs);
-  let repoReal = repo;
+  let repoReal;
   try { repoReal = fs.realpathSync(repo); } catch (_) { repoReal = repo; }
   let ultimo = null;
   for (const [ruta, raiz] of [[abs, repo], [real, repoReal]]) {
@@ -209,7 +248,7 @@ function listOtherMarkers(stateDir, sessionId, filePath) {
   for (const f of files) {
     if (!f.endsWith('.json') || f === `${safeSid(sessionId)}.json`) continue;
     const m = readJson(path.join(dir, f));
-    if (!m || !m.storyId || isStale(m)) continue;
+    if (!m || !m.storyId || (isStale(m) && !waitingTurn(stateDir, m.sessionId || f.replace(/\.json$/, '')))) continue;
     if (Array.isArray(m.stepsPending) && m.stepsPending.length === 0) continue; // pipeline terminado
     if (m.repoPath && filePath && !isInside(m.repoPath, filePath)) continue;
     out.push({ sessionId: m.sessionId || f.replace(/\.json$/, ''), storyId: m.storyId, repoPath: m.repoPath || null });
@@ -451,7 +490,7 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
 }
 
 module.exports = {
-  DEFAULT_STATE_DIR, STALE_HOURS,
-  readMarker, readAdhoc, adhocFirmado, writeAdhoc, recordAdhocFile, anotarRutaDelCarril, archivosQueSuman, adhocPath, listOtherMarkers,
+  DEFAULT_STATE_DIR, STALE_HOURS, WAIT_TURN_MAX_MS,
+  waitingTurn, savePruned, readPruned, readMarker, readAdhoc, adhocFirmado, writeAdhoc, recordAdhocFile, anotarRutaDelCarril, archivosQueSuman, adhocPath, listOtherMarkers,
   repoContext, gateEnabledForRepo, appendLog, evaluate, isHarnessRepo, defaultInstalledRoots,
 };

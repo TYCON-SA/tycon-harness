@@ -34,7 +34,9 @@
  * La foto, la vigilancia y la conexión de la página son tres partes separadas. Con `site.url` en el perfil, cada foto nueva
  * sale también al sitio de la organización (office/site-link.js), y el proceso vive con las sesiones: se apaga tras 10 min
  * sin sesiones vivas ni páginas, con un tope de 12 h. Una sesión que muere sin avisar se ve en un repaso cada 30 s, que
- * existe sólo en este modo.
+ * existe sólo en este modo. La dirección se relee con el aviso de una sesión nueva (`session`) o de la capa del equipo nueva
+ * (`config`): el proceso vivo se enlaza, cambia de sitio o se desenlaza sin reiniciarse. Con un sitio que la entiende, la
+ * conversación de cada sesión sale también, en su propio mensaje (`forSite` decide qué sale).
  *
  * Hay uno por máquina. Al arrancar, si el candado es de otro proceso que contesta, éste se va sin escuchar ni tocarlo. Y un
  * proceso que ve otro candado encima del suyo (quedó congelado más que el plazo del que arrancaba) se apaga.
@@ -48,7 +50,8 @@ const { spawn } = require('child_process');
 const { Worker, isMainThread, parentPort, workerData } = require('worker_threads');
 
 const WebSocket = require('./vendor/ws');
-const { createLink, linkedSite, lockOwner, OWNER_WAIT_MS } = require('./site-link.js');
+const { createLink, linkedSite, lockOwner, appendLog, OWNER_WAIT_MS } = require('./site-link.js');
+const { officeMessages } = require('./messages.js');
 const topics = require('./topics.js');
 
 const ROOT = path.join(__dirname, '..', '..', '..');
@@ -62,7 +65,7 @@ const HALFWAY_MS = 15 * 60 * 1000;
 const HALFWAY_OPEN_FRESH_MS = 60 * 1000;
 const MAX_PAYLOAD = 1024;
 const MAX_EVENT_BYTES = 256;
-const EVENT_TYPES = ['changed', 'session'];
+const EVENT_TYPES = ['changed', 'session', 'config'];
 const SESSION_CHECK_MS = 30 * 1000;
 const EVENT_SETTLE_MS = 1000;
 const BACK_CHANNEL = 'la página mandó un mensaje: el canal de vuelta está cerrado';
@@ -144,6 +147,46 @@ function readLockFile(lockFile) {
   try { return JSON.parse(fs.readFileSync(lockFile, 'utf8')); } catch { return null; }
 }
 
+/**
+ * Lo que de la conversación de una sesión sale al sitio: lo que muestra la oficina local, sin los mensajes escritos desde
+ * la oficina ni el estado del destinatario (`oficina`). Escribirle a una sesión es sólo de la oficina local.
+ */
+function forSite(conversation) {
+  if (!conversation || typeof conversation !== 'object' || Array.isArray(conversation)) return conversation;
+  const { oficina, ...out } = conversation;
+  if (Array.isArray(out.conVos)) out.conVos = out.conVos.filter((m) => !(m && m.oficina));
+  return out;
+}
+
+/**
+ * Las conversaciones que cambiaron desde la última vez, por el nombre de su sesión: sólo de las que su archivo creció, y a
+ * lo sumo una lectura por minuto por sesión, porque la de la coordinadora lee hasta 64 MB. Se olvida de las que se fueron.
+ * Una lectura que falla no cuenta como hecha: se reintenta en la foto siguiente, y su motivo va a `failed`. La que creció
+ * antes del minuto espera, y `later.at` dice cuándo le toca: sin otra foto después, se perdería su último cambio.
+ */
+function changedTalks(office, envelopes, talked, now = Date.now(), failed = [], later = {}) {
+  const { CHARLA_EVERY_MS } = require('./fields.js');
+  const out = {};
+  for (const name of talked.keys()) if (!envelopes.files.has(name)) talked.delete(name);
+  for (const [name, e] of envelopes.files) {
+    let size;
+    try { size = fs.statSync(e.file).size; } catch { continue; }
+    const seen = talked.get(name);
+    if (seen && seen.size === size) continue;
+    if (seen && now - seen.at < CHARLA_EVERY_MS) {
+      const due = seen.at + CHARLA_EVERY_MS;
+      if (later.at == null || due < later.at) later.at = due;
+      continue;
+    }
+    let said = null;
+    try { said = office.conversationOf(envelopes, name); } catch (err) { failed.push(`no se pudo leer la conversación de una sesión (${err.code || err.message}): se reintenta`); continue; }
+    if (!said) continue;
+    talked.set(name, { size, at: now });
+    out[name] = forSite(said);
+  }
+  return out;
+}
+
 // El hilo de la foto: arma una por cada mensaje y contesta con ella, con lo que el proceso necesita para leer una
 // conversación y con cuánto consultó. Lo que recuerda de una foto a la otra vive sólo acá.
 function photoThread() {
@@ -161,15 +204,22 @@ function photoThread() {
   const memory = createMemory();
   // hasta dónde se leyó cada conversación y a quién corresponde cada nombre
   const envelopes = office.createEnvelopes();
-  // la dirección del sitio y el umbral de la sesión callada se leen una vez: no cambian mientras la página está abierta
+  // la dirección del sitio y el umbral de la sesión callada se leen una vez, y otra vez cuando el proceso relee la dirección
   let once = null;
-  parentPort.on('message', async ({ revise, pageOpen }) => {
+  // de cada conversación, hasta dónde creció cuando se leyó y a qué hora: una que no creció, o leída hace menos de un minuto, no se lee
+  const talked = new Map();
+  parentPort.on('message', async ({ revise, pageOpen, reread, charlas }) => {
     try {
       memory.pageOpen = pageOpen;
       if (revise) reviseHalfway(memory);
-      if (!once) once = { site: office.readSiteUrl(), quiet: office.readQuietMinutes() };
+      if (!once || reread) once = { site: office.readSiteUrl(), quiet: office.readQuietMinutes() };
+      // con otro sitio, todas las conversaciones salen de nuevo: el sitio nuevo no recibió ninguna
+      if (reread) talked.clear();
       const data = await office.collect({ home, queryAll: query, queryPrs, siteUrl: async () => once.site, quietMinutes: async () => once.quiet, envelopes, memory });
-      parentPort.postMessage({ data, files: [...envelopes.files], coordinator: envelopes.coordinator, readAt: query.readAt(), halfwayReadAt: memory.halfwayReadAt, counted });
+      const charlaFailures = [];
+      const later = {};
+      const said = charlas ? changedTalks(office, envelopes, talked, Date.now(), charlaFailures, later) : null;
+      parentPort.postMessage({ data, files: [...envelopes.files], recipients: [...(envelopes.recipients || [])], coordinator: envelopes.coordinator, readAt: query.readAt(), halfwayReadAt: memory.halfwayReadAt, counted, charlas: said, charlaFailures, charlaNextAt: later.at == null ? null : later.at });
     } catch (e) {
       parentPort.postMessage({ error: e && e.message ? e.message : String(e), stack: e && e.stack });
     }
@@ -226,13 +276,24 @@ async function serve() {
   let reviseNext = false;
   let halfwayReadAt = null;
   // a quién corresponde cada nombre, según la última foto: vive sólo en este proceso
-  const envelopes = { files: new Map(), coordinator: null };
+  const envelopes = { files: new Map(), recipients: new Map(), coordinator: null };
   let threadCounted = { queries: 0, intervals: 0 };
-  // el enlace al sitio se decide al arrancar: la dirección no cambia mientras el proceso vive
-  const siteAddress = linkedSite(office.readSiteUrl());
-  const linked = Boolean(siteAddress);
-  const link = linked ? createLink({ site: siteAddress, sdir, home }) : null;
-  const limits = lifeLimits(linked);
+  // el enlace al sitio se decide al arrancar, y otra vez con el aviso de una sesión nueva o de la capa del equipo nueva
+  // (`relink`, más abajo): la dirección puede llegar o cambiar con el proceso vivo
+  const startedAt = Date.now();
+  let siteAddress = linkedSite(office.readSiteUrl());
+  // con un sitio que entiende la conversación, la próxima foto la lee: si no, esperaría al próximo cambio
+  const charlaReady = () => schedule();
+  let link = siteAddress ? createLink({ site: siteAddress, sdir, home, onCharlaReady: charlaReady }) : null;
+  let limits = lifeLimits(Boolean(link));
+  let rereadNext = false;
+  let pendingCharlas = null;
+  let charlaTimer = null;
+  const deliverCharlas = () => {
+    const charlas = pendingCharlas;
+    pendingCharlas = null;
+    if (charlas && link) for (const [name, said] of Object.entries(charlas)) link.charla(name, said);
+  };
   // las mismas sesiones que cuenta /wip: vivas, sin los agentes internos de otras sesiones
   const liveSessions = () => [...sessionsBySid(path.join(claudeDir(home), 'sessions'), [], path.join(claudeDir(home), 'projects'))]
     .filter(([, s]) => s.alive && !s.internal).map(([sid]) => sid).sort();
@@ -240,11 +301,22 @@ async function serve() {
   // la foto: lo mismo que la foto fija, más lo que este proceso no pudo hacer
   const snapshot = async () => {
     counters.reads += 1;
-    const request = { revise: reviseNext, pageOpen: clients.size > 0 };
+    const request = { revise: reviseNext, pageOpen: clients.size > 0, reread: rereadNext, charlas: Boolean(link && link.takesCharla()) };
     reviseNext = false;
-    const { data, files, coordinator, readAt, halfwayReadAt: halfwayAt, counted } = await askPhoto(request);
+    rereadNext = false;
+    const { data, files, recipients, coordinator, readAt, halfwayReadAt: halfwayAt, counted, charlas, charlaFailures, charlaNextAt } = await askPhoto(request);
+    // salen después de la foto (`deliverCharlas`): el sitio no guarda la conversación de una sesión que su foto no nombra
+    pendingCharlas = charlas;
+    // una conversación que creció antes de su minuto se lee cuando le toca, aunque no cambie nada más
+    clearTimeout(charlaTimer);
+    charlaTimer = charlaNextAt == null ? null : setTimeout(() => { charlaTimer = null; if (!done) schedule(); }, Math.max(0, charlaNextAt - Date.now()) + 50);
+    // el reloj no mantiene vivo al proceso: su vida la deciden las sesiones y el tope
+    if (charlaTimer && charlaTimer.unref) charlaTimer.unref();
+    if (link) link.keepTalks(files.map(([name]) => name));
+    for (const failure of new Set(charlaFailures || [])) appendLog(sdir, failure);
     halfwayReadAt = halfwayAt;
     envelopes.files = new Map(files);
+    envelopes.recipients = new Map(recipients || []);
     envelopes.coordinator = coordinator;
     threadCounted = counted;
     data.unreadable.push(...notes);
@@ -278,6 +350,7 @@ async function serve() {
       const data = await snapshot();
       const json = JSON.stringify(data);
       if (json !== lastJson) { last = data; lastJson = json; broadcast(); }
+      deliverCharlas();
     } catch (e) {
       // la página se entera con la foto que tiene, más el aviso (uno solo); la próxima foto buena lo saca
       const failed = 'la foto no se pudo recalcular';
@@ -404,18 +477,21 @@ async function serve() {
       try { ({ type } = JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch { /* abajo: sin tipo */ }
       if (!EVENT_TYPES.includes(type)) { answer(400); return; }
       answer(204);
-      if (type === 'session' && link) link.wake();
+      if (type === 'session' || type === 'config') relink(type);
       schedule();
       clearTimeout(settle);
       settle = setTimeout(schedule, EVENT_SETTLE_MS);
     });
   };
 
+  const messages = officeMessages({ sdir, envelopes, okOrigin, log: (l) => appendLog(sdir, l), notify: (m) => { for (const c of clients) if (c.readyState === WebSocket.OPEN) c.send(JSON.stringify({ type: 'mensaje', ...m })); } });
+
   const server = http.createServer((req, res) => {
     const url = urlOf(req);
     if (!url || !okHost(req.headers.host) || !okToken(url)) { deny(res); return; }
     const send = (type, body) => { res.writeHead(200, { 'content-type': type, 'cache-control': 'no-store' }); res.end(body); };
     if (url.pathname === '/event') { onEvent(req, res); return; }
+    if (url.pathname === '/mensaje') { ready.then(() => messages.onPost(req, res), () => { req.resume(); res.writeHead(503, { 'cache-control': 'no-store' }); res.end(); }); return; }
     if (url.pathname === '/') {
       ready.then(() => send('text/html; charset=utf-8', office.page(last, { live: { token } }))).catch((e) => {
         noteOnce(`la página no se pudo armar: ${e.message}`);
@@ -438,9 +514,13 @@ async function serve() {
     // sólo se lee al tocar a una persona, y sólo una que está en la oficina: el nombre es una clave, nunca una ruta
     if (url.pathname === '/conversacion') {
       ready.then(() => {
-        const said = office.conversationOf(envelopes, url.searchParams.get('s') || '');
+        const name = url.searchParams.get('s') || '';
+        const said = office.conversationOf(envelopes, name);
+        // una sesión de Codex no tiene su conversación acá, y la ventana dice por qué no se le puede escribir
+        const codex = said ? null : messages.stateOf(name);
+        if (codex && codex.recibe === 'codex') { send('application/json; charset=utf-8', JSON.stringify({ sinConversacion: true, oficina: codex })); return; }
         if (!said) { res.writeHead(404, { 'cache-control': 'no-store' }); res.end(); return; }
-        send('application/json; charset=utf-8', JSON.stringify(said));
+        send('application/json; charset=utf-8', JSON.stringify({ ...said, oficina: messages.stateOf(name) }));
       }).catch((e) => {
         process.stderr.write(`${new Date().toISOString()} la conversación no se pudo leer: ${e && e.code ? e.code : 'error'}\n`);
         if (!res.headersSent) res.writeHead(500, { 'cache-control': 'no-store' });
@@ -448,7 +528,7 @@ async function serve() {
       });
       return;
     }
-    if (testing && url.pathname === '/debug/counters') { send('application/json', JSON.stringify({ ...counters, queries: threadCounted.queries, intervals: counters.intervals + threadCounted.intervals })); return; }
+    if (testing && url.pathname === '/debug/counters') { send('application/json', JSON.stringify({ ...counters, queries: threadCounted.queries, intervals: counters.intervals + threadCounted.intervals, linked: { site: siteAddress, idleMs: limits.idleMs, capMs: limits.capMs } })); return; }
     res.writeHead(404); res.end();
   });
 
@@ -494,6 +574,8 @@ async function serve() {
   fs.renameSync(tmp, lockFile);
   releaseStarting();
   if (testing) fs.appendFileSync(path.join(dir, 'starts.log'), `${process.pid}\n`);
+  // lo que quedó vencido en el buzón mientras la oficina estaba cerrada no se entrega
+  messages.sweep();
 
   const unwatch = testing && process.env.TYCON_OFFICE_NO_WATCH === '1' ? () => {} : watchAll(watchedDirs(home, sdir), schedule, notes);
 
@@ -505,6 +587,7 @@ async function serve() {
     done = true;
     clearTimeout(idle); clearTimeout(cap); clearTimeout(pending); clearTimeout(settle); clearTimeout(prTimer); clearTimeout(topicsTimer); clearTimeout(halfwayTimer); clearInterval(sessionCheck);
     unwatch();
+    messages.stop();
     if (link) link.stop();
     for (const c of clients) { try { c.close(1001, 'la oficina se cerró'); } catch { /* ya cerrada */ } }
     try {
@@ -524,11 +607,8 @@ async function serve() {
     if (clients.size || (link && liveSessions().length)) { clearTimeout(idle); idle = null; return; }
     if (idle == null) idle = setTimeout(shutdown, numEnv('TYCON_OFFICE_IDLE_MS', limits.idleMs));
   }
-  reviewLife();
-  cap = setTimeout(shutdown, numEnv('TYCON_OFFICE_MAX_MS', limits.capMs));
-  for (const sig of ['SIGTERM', 'SIGHUP', 'SIGINT']) process.on(sig, shutdown);
-  if (link) {
-    // una sesión que muere no toca ninguna carpeta: el repaso la ve
+  // con el sitio, una sesión que muere no toca ninguna carpeta: el repaso la ve
+  function watchSessions() {
     let seen = liveSessions().join('\n');
     sessionCheck = setInterval(() => {
       if (lockLost()) { shutdown(); return; }
@@ -537,6 +617,41 @@ async function serve() {
       reviewLife();
     }, numEnv('TYCON_OFFICE_SESSION_CHECK_MS', SESSION_CHECK_MS));
   }
+  // el tope cuenta desde que arrancó el proceso, con los límites del enlace de ahora
+  const armCap = () => { clearTimeout(cap); cap = setTimeout(shutdown, Math.max(0, numEnv('TYCON_OFFICE_MAX_MS', limits.capMs) - (Date.now() - startedAt))); };
+  /**
+   * Vuelve a decidir el enlace con la dirección de ahora: aparecida, se enlaza y vive con las sesiones; cambiada, corta el
+   * enlace viejo (aunque esté a mitad del saludo) y abre otro; ida, corta y vuelve a la vida de la oficina local. Con la
+   * configuración ilegible el enlace queda como estaba.
+   */
+  function relink(type) {
+    const read = office.readSiteUrl();
+    if (read.code !== 0 && read.code !== 3) {
+      appendLog(sdir, `no se pudo leer la dirección del sitio (${String(read.out || '').trim().split('\n')[0].slice(0, 160) || `salió ${read.code}`}): el enlace queda como estaba`);
+      return;
+    }
+    const next = linkedSite(read);
+    if (next === siteAddress) { if (type === 'session' && link) link.wake(); return; }
+    if (link) link.stop();
+    siteAddress = next;
+    link = next ? createLink({ site: next, sdir, home, onCharlaReady: charlaReady }) : null;
+    limits = lifeLimits(Boolean(link));
+    appendLog(sdir, link ? `el proceso de la oficina se enlazó con ${next}, sin reiniciarse` : 'el proceso de la oficina dejó el sitio: vuelve a vivir con la página local');
+    if (link && !sessionCheck) watchSessions();
+    if (!link && sessionCheck) { clearInterval(sessionCheck); sessionCheck = null; }
+    clearTimeout(idle); idle = null;
+    armCap();
+    reviewLife();
+    // la foto que sigue relee la dirección (`meta.sitio`) y sale entera, aunque lo demás no haya cambiado: el sitio nuevo
+    // no recibe la vieja, que nombra al otro. Antes de la primera foto, el enlace lo arranca el arranque
+    rereadNext = true;
+    lastJson = null;
+    if (link && last) link.start();
+  }
+  reviewLife();
+  armCap();
+  for (const sig of ['SIGTERM', 'SIGHUP', 'SIGINT']) process.on(sig, shutdown);
+  if (link) watchSessions();
 
   // mientras se arma la primera foto, un cambio deja pedida otra (`again`): se calcula apenas termina
   running = true;
@@ -572,4 +687,4 @@ else if (require.main === module) {
   });
 }
 
-module.exports = { cachedQuery, watchedDirs, watchAll, lockPathOf, officeDirOf, lifeLimits };
+module.exports = { cachedQuery, watchedDirs, watchAll, lockPathOf, officeDirOf, lifeLimits, forSite, changedTalks };

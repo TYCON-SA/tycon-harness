@@ -47,7 +47,7 @@ const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'har
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { loadManifest, DEFAULT_MANIFEST } = require('./third-party-coverage.js');
-const { sinGitDelPadre } = require('../lib/clean-git-env.js');
+const { sinGitDelPadre, idiomaFijo } = require('../lib/clean-git-env.js');
 
 const TAG = 'skills de terceros';
 const TMP_MARK = '.tycon-tmp';
@@ -69,7 +69,7 @@ function git(cwd, args, { input, timeout, binary = false } = {}) {
   const r = spawnSync('git', ['-C', cwd, ...args], {
     input, timeout, encoding: binary ? undefined : 'utf8', maxBuffer: 1024 * 1024 * 1024,
     // mensajes de git en inglés siempre: la clasificación de fallas (no-network / no-origin / missing-commit) los lee
-    env: sinGitDelPadre({ GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C', LANG: 'C', LANGUAGE: '' }),
+    env: idiomaFijo(sinGitDelPadre({ GIT_TERMINAL_PROMPT: '0' })),
   });
   const timedOut = !!(r.error && r.error.code === 'ETIMEDOUT');
   const stderr = Buffer.isBuffer(r.stderr) ? r.stderr.toString('utf8') : (r.stderr || '');

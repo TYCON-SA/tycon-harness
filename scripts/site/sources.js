@@ -707,7 +707,8 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     // las variables del sitio (sus credenciales) no viajan al proceso git: no las necesita
     const env = { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^SITE_/.test(k))), GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_COUNT: String(conf.length) };
     conf.forEach(([k, v], i) => { env[`GIT_CONFIG_KEY_${i}`] = k; env[`GIT_CONFIG_VALUE_${i}`] = v; });
-    return spawn(git, args, { cwd, env, timeout: 180000 });
+    // en inglés: `estadoDeGit` reconoce la credencial, el permiso y la rama por el texto del error, que git traduce
+    return spawn(git, args, { cwd, env: require('../lib/clean-git-env.js').idiomaFijo(env), timeout: 180000 });
   }
 
   /** Baja o pone al día un clon superficial de `main` (`url` en `dir`), con la cabecera `cab`. `nombre`: para el registro. */
@@ -1080,8 +1081,12 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
   const SEGUIR_MS = 10000;
   const proximoRefrescoMs = () => (st.buzon.seguir ? SEGUIR_MS : minutos() * 60000);
 
+  // a qué hora va la próxima lectura (ms): «esperando la huella» la dice, porque la huella puede estar ya en el buzón
+  let proximaEn = null;
   function programar() {
-    temporizador = setTimeout(async () => { await refrescar(); programar(); }, proximoRefrescoMs());
+    const ms = proximoRefrescoMs();
+    proximaEn = ahora() + ms;
+    temporizador = setTimeout(async () => { proximaEn = null; await refrescar(); programar(); }, ms);
     if (temporizador.unref) temporizador.unref();
   }
 
@@ -1143,6 +1148,8 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     espejoGeneracion: () => memoria.generacion,
     /** En cuántos ms va el próximo refresco (las pruebas lo miran). */
     proximoRefrescoMs,
+    /** A qué hora (ms) va la próxima lectura programada del buzón; null si todavía no hay una, o si está leyendo. */
+    proximaLectura: () => proximaEn,
     /** `fn` corre al terminar cada refresco (la pestaña Corridas mira si el espejo cambió). */
     alRefrescar(fn) { oyentes.push(fn); },
   };

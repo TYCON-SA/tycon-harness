@@ -51,6 +51,8 @@ const SECCIONES = Object.freeze({
     'Qué es y para qué sirve': TODOS,
     'El primer ingreso': TODOS,
     'Las pestañas': TODOS,
+    // cada dev ve las oficinas de sus máquinas: la sección le explica qué sale de la suya
+    'La pestaña «Oficinas»': TODOS,
     'Configuración, sección por sección': MANTIENE,
     'Qué ve cada rol': TODOS,
     'Problemas comunes': TODOS,
@@ -65,6 +67,7 @@ const SECCIONES = Object.freeze({
     'What it is and what it is for': TODOS,
     'Signing in for the first time': TODOS,
     'The tabs': TODOS,
+    'The «Offices» tab': TODOS,
     'Configuration, section by section': MANTIENE,
     'What each role sees': TODOS,
     'Common problems': TODOS,

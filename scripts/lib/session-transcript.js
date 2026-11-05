@@ -269,8 +269,8 @@ function peerMessagesSince(file, offset, { maxBytes = 1024 * 1024 } = {}) {
     for (const line of lines) {
       if (!line.includes('"kind":"peer"')) continue;
       const d = parsed(line);
-      const o = d && d.type === 'user' ? d.origin : null;
-      if (o && o.kind === 'peer' && o.name && o.msg_id) items.push({ id: String(o.msg_id), de: String(o.name), at: atOf(d) });
+      const got = d ? peerOf(d) : null;
+      if (got && got.id) items.push({ id: got.id, de: got.de, at: got.at });
     }
     return { offset: start + lastEnd + 1, items };
   } catch { return { offset, items: [] }; } finally { fs.closeSync(fd); }
@@ -308,9 +308,31 @@ const WITH_SESSIONS = 10;
 // El destinatario que es un subagente de la propia sesión, no otra sesión: `a` y su identificador
 const SUBAGENT_ID = /^a[0-9a-f]{12,}$/;
 
+// Un mensaje que llega con la sesión ocupada se anota como `attachment` (`queued_command`), con el mismo origen que el que
+// llega con la sesión quieta como `user`: los dos se leen igual. Devuelve el origen y el texto, o null.
+const queuedOf = (d) => (d.type === 'attachment' && d.attachment && d.attachment.type === 'queued_command' && d.attachment.origin && typeof d.attachment.origin === 'object'
+  ? { origin: d.attachment.origin, text: typeof d.attachment.prompt === 'string' ? d.attachment.prompt : '' } : null);
+const originOf = (d) => (d.type === 'user' ? d.origin : (queuedOf(d) || {}).origin) || null;
+
 // Lo que se saca de un renglón: quién habló y qué dijo. Los textos citados llevan las comillas escapadas, así que estas
 // marcas sólo aparecen en el renglón que es de verdad eso; igual se confirma después de leerlo.
-const peerOf = (d) => (d.type === 'user' && d.origin && d.origin.kind === 'peer' && d.origin.name ? { de: String(d.origin.name), texto: shownText(d.origin.body || ''), at: atOf(d) } : null);
+const peerOf = (d) => {
+  const o = originOf(d);
+  return o && o.kind === 'peer' && o.name ? { de: String(o.name), texto: shownText(o.body || ''), at: atOf(d), id: o.msg_id ? String(o.msg_id) : null } : null;
+};
+
+// El mensaje que la persona escribió en la oficina, tal como lo entrega el vigilante: el aviso de un gancho que la herramienta
+// anota como aviso del sistema (`origin.kind: task-notification`), con `[oficina <id>]` justo después del comando del gancho.
+// El mismo texto dentro de un resultado de herramienta, un archivo o un mensaje de la persona no cuenta.
+const OFFICE_HOOK = /hook blocking error from command "[^"\n]*": \[oficina ([0-9a-f]{32})\] [^\n]*?Dice: ([\s\S]*?)\n<\/system-reminder>/;
+const officeOf = (d) => {
+  const o = originOf(d);
+  if (!o || o.kind !== 'task-notification' || d.isSidechain) return null;
+  const q = queuedOf(d);
+  const text = q ? q.text : (d.message ? textsOf(d.message.content).join('\n') : '');
+  const m = OFFICE_HOOK.exec(text);
+  return m ? { id: m[1], texto: shownText(m[2]), at: atOf(d) } : null;
+};
 const sentOf = (d) => {
   if (d.type !== 'assistant' || !d.message || !Array.isArray(d.message.content)) return [];
   return d.message.content.filter((c) => c && c.type === 'tool_use' && c.name === 'SendMessage' && c.input && typeof c.input.message === 'string' && c.input.message)
@@ -442,29 +464,20 @@ function readSessionTokens(file, counts, { modelSettings } = {}) {
 }
 
 /**
- * Los últimos mensajes de una sesión con la coordinadora, en orden: `{ conCoordinadora: [{ de, texto, at, propio }] }`.
- * De la coordinadora: `{ conVos: [{ quien: 'vos' | 'coordinadora', texto, at }], conSesiones: [{ sesion, at, mensajes: [{ de, texto, at }] }] }`,
- * con la sesión que habló último primero y a lo sumo los últimos 10 mensajes de cada una. Se agrupa por el nombre: es lo que trae
- * el mensaje. Lee hacia atrás y termina al juntarlos, o en el tope: con la coordinadora siempre puede aparecer otra sesión, así
- * que llega al tope. Sin el nombre de la coordinadora, no hay con quién cruzar.
+ * Los últimos mensajes de una sesión, a pedido. En toda sesión, `conVos`: lo que la persona le escribió (tipeado en su
+ * pestaña, o desde la oficina con `oficina: true` e id) y la respuesta de cada turno: `[{ quien: 'vos' | 'sesion', texto, at }]`,
+ * los últimos 20 de la persona. En una sesión que no es la coordinadora, además `conCoordinadora: [{ de, texto, at, propio }]`
+ * (los últimos 10) y, si es de fondo, el mensaje con que arrancó (`arranque`), que no se cuenta como de la persona. En la
+ * coordinadora, `conSesiones: [{ sesion, at, mensajes: [{ de, texto, at }] }]`, con la sesión que habló último primero y a lo
+ * sumo los últimos 10 mensajes de cada una; sus respuestas van con `quien: 'coordinadora'`. Se agrupa por el nombre: es lo
+ * que trae el mensaje. Lee hacia atrás y termina al juntarlos, o en el tope: con la coordinadora siempre puede aparecer otra
+ * sesión, así que llega al tope. Sin coordinadora designada, `conVos` y `sinCoordinadora: true`.
  */
 function readConversation(file, { coordinator, isCoordinator = false, background = false, maxBytes } = {}) {
-  if (!coordinator) return { sinCoordinadora: true };
-  if (!isCoordinator) {
-    const arranque = background ? startingMessage(file) : null;
-    const out = [];
-    eachLineBackward(file, { maxBytes: maxBytes || SESSION_CONVERSATION_BYTES }, (line) => {
-      if (!line.includes('"kind":"peer"') && !line.includes('"SendMessage"')) return false;
-      const d = parsed(line);
-      if (!d) return false;
-      const got = peerOf(d);
-      if (got && got.de === coordinator) out.push({ de: got.de, texto: got.texto, at: got.at, propio: false });
-      for (const s of sentOf(d).reverse()) if (s.a === coordinator) out.push({ de: null, texto: s.texto, at: s.at, propio: true });
-      return out.length >= WITH_COORDINATOR;
-    });
-    return { conCoordinadora: out.slice(0, WITH_COORDINATOR).reverse(), ...(arranque ? { arranque } : {}) };
-  }
+  const coord = Boolean(coordinator) && isCoordinator;
+  const arranque = !coord && background ? startingMessage(file) : null;
   const conVos = [];
+  const conCoordinadora = [];
   // un Map guarda el orden en que aparecen: leyendo hacia atrás, la que habló último va primero
   const bySession = new Map();
   const addTo = (sesion, m) => {
@@ -474,7 +487,8 @@ function readConversation(file, { coordinator, isCoordinator = false, background
   };
   let answer = null;
   let persons = 0;
-  eachLineBackward(file, { maxBytes: maxBytes || COORDINATOR_CONVERSATION_BYTES }, (line) => {
+  const enough = () => persons >= FROM_PERSON && (!coordinator || conCoordinadora.length >= WITH_COORDINATOR);
+  eachLineBackward(file, { maxBytes: maxBytes || (coord ? COORDINATOR_CONVERSATION_BYTES : SESSION_CONVERSATION_BYTES) }, (line) => {
     if (line.includes('"stop_hook_summary"')) {
       // un turno que terminó: lo que se vea de acá para atrás ya es de otro
       answer = null;
@@ -483,28 +497,41 @@ function readConversation(file, { coordinator, isCoordinator = false, background
     const isPerson = line.includes('"kind":"human"');
     const isPeer = line.includes('"kind":"peer"');
     const isSend = line.includes('"SendMessage"');
+    const isOffice = line.includes('[oficina ');
     const isText = line.includes('"type":"assistant"') && line.includes('"type":"text"');
-    if (!isPeer && !isSend && (persons >= FROM_PERSON || (!isPerson && !isText))) return false;
+    if (!isPeer && !isSend && (persons >= FROM_PERSON || (!isPerson && !isText && !isOffice))) return false;
     const d = parsed(line);
     if (!d) return false;
     const got = peerOf(d);
-    if (got) addTo(got.de, { de: got.de, texto: got.texto, at: got.at });
-    for (const s of sentOf(d).reverse()) if (s.a !== coordinator && !SUBAGENT_ID.test(s.a)) addTo(s.a, { de: coordinator, texto: s.texto, at: s.at });
-    if (persons >= FROM_PERSON) return false;
+    if (coord) {
+      if (got) addTo(got.de, { de: got.de, texto: got.texto, at: got.at });
+      for (const s of sentOf(d).reverse()) if (s.a !== coordinator && !SUBAGENT_ID.test(s.a)) addTo(s.a, { de: coordinator, texto: s.texto, at: s.at });
+    } else if (coordinator && conCoordinadora.length < WITH_COORDINATOR) {
+      if (got && got.de === coordinator) conCoordinadora.push({ de: got.de, texto: got.texto, at: got.at, propio: false });
+      for (const s of sentOf(d).reverse()) if (s.a === coordinator) conCoordinadora.push({ de: null, texto: s.texto, at: s.at, propio: true });
+    }
+    if (persons >= FROM_PERSON) return coord ? false : enough();
     if (d.type === 'assistant' && answer === null && d.message) {
       const t = [...textsOf(d.message.content)].reverse().find((x) => x.trim());
-      if (t) answer = { quien: 'coordinadora', texto: shownText(t), at: atOf(d) };
+      if (t) answer = { quien: coord ? 'coordinadora' : 'sesion', texto: shownText(t), at: atOf(d) };
     }
-    const person = persons < FROM_PERSON ? personOf(d) : null;
-    if (person) {
+    const person = personOf(d);
+    const office = person ? null : officeOf(d);
+    const isStart = Boolean(person && arranque && person.at === arranque.at && person.texto === arranque.texto);
+    if ((person && !isStart) || office) {
       if (answer) conVos.push(answer);
-      conVos.push({ quien: 'vos', texto: person.texto, at: person.at });
+      conVos.push(office ? { quien: 'vos', texto: office.texto, at: office.at, oficina: true, id: office.id } : { quien: 'vos', texto: person.texto, at: person.at });
       answer = null;
       persons += 1;
     }
-    return false;
+    return coord ? false : enough();
   });
-  return { conVos: conVos.reverse(), conSesiones: [...bySession.values()].map((s) => ({ ...s, mensajes: s.mensajes.reverse() })) };
+  if (coord) return { conVos: conVos.reverse(), conSesiones: [...bySession.values()].map((s) => ({ ...s, mensajes: s.mensajes.reverse() })) };
+  const out = { conVos: conVos.reverse() };
+  if (coordinator) out.conCoordinadora = conCoordinadora.slice(0, WITH_COORDINATOR).reverse();
+  else out.sinCoordinadora = true;
+  if (arranque) out.arranque = arranque;
+  return out;
 }
 
-module.exports = { readTranscript, codexTranscript, peerMessagesSince, readConversation, coverSecrets, readSessionTokens, contextLimit, encargoOf, HEAD_BYTES, TAIL_BYTES, ENCARGO_MAX, FRASE_MAX };
+module.exports = { officeOf, peerOf, readTranscript, codexTranscript, peerMessagesSince, readConversation, coverSecrets, readSessionTokens, contextLimit, encargoOf, HEAD_BYTES, TAIL_BYTES, ENCARGO_MAX, FRASE_MAX };

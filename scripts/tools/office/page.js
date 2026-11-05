@@ -88,14 +88,14 @@ function renderTablas(){const sec=document.getElementById("tablas"),ts=DATA.tabl
     if(!(t.filas||[]).length){d.appendChild(el("p","none",t.vacio||"Nada"));sec.appendChild(d);return;}
     const tb=el("table"),hd=el("tr");t.columnas.forEach(c=>hd.appendChild(el("th",null,c)));const th=el("thead");th.appendChild(hd);tb.appendChild(th);const bd=el("tbody");
     t.filas.forEach(r=>{const tr=el("tr");
-      if(!(r.trabajos||[]).length){[r.grupo,r.que,r.col].forEach(v=>tr.appendChild(el("td",null,v||"")));bd.appendChild(tr);return}
+      if(!(r.trabajos||[]).length){[r.grupo,r.que,r.col].forEach(v=>tr.appendChild(el("td",null,v||"")));bd.appendChild(tr);return;}
       const id=k+"|"+r.grupo,b=el("button","temaBoton",r.grupo),primera=el("td"),det=el("tr","temaTrabajos"),dd=el("td"),ul=el("ul");
       b.type="button";b.dataset.tema=id;primera.appendChild(b);tr.className="temaFila";tr.appendChild(primera);[r.que,r.col].forEach(v=>tr.appendChild(el("td",null,v||"")));
       r.trabajos.forEach(w=>{const li=el("li");li.appendChild(el("b",null,w.titulo));li.appendChild(el("span",null,[w.quien,w.como].filter(Boolean).join(" · ")));ul.appendChild(li)});
       dd.colSpan=3;dd.appendChild(ul);det.appendChild(dd);
       const pintar=()=>{const abierta=temasAbiertos.has(id);det.hidden=!abierta;b.setAttribute("aria-expanded",String(abierta))};
       tr.addEventListener("click",()=>{if(temasAbiertos.has(id))temasAbiertos.delete(id);else temasAbiertos.add(id);pintar()});pintar();
-      bd.appendChild(tr);bd.appendChild(det);if(foco===id)b.focus()});
+      bd.appendChild(tr);bd.appendChild(det);if(foco===id)b.focus();});
     tb.appendChild(bd);const w=el("div","table");w.appendChild(tb);d.appendChild(w);sec.appendChild(d);})}
 function renderCrew(){pintarTarjetas(document.getElementById("crew"),agents)}
 function pintarTarjetas(c,list,alTocar){c.replaceChildren();
@@ -103,7 +103,7 @@ function pintarTarjetas(c,list,alTocar){c.replaceChildren();
   list.forEach((a,i)=>{const s=AST[a.estado]||[a.estado||"","#999"];const k=el("div","card");
     const h=el("h3");const d=el("span","dot");d.style.background=SHIRT[i%SHIRT.length];h.appendChild(d);h.appendChild(document.createTextNode(a.nombre||""));k.appendChild(h);
     const st=el("span","st",s[0]);st.style.color=s[1];st.style.borderColor=s[1];const chips=el("div","chips");chips.appendChild(st);if(a.comoTrabaja&&a.comoTrabaja!==s[0])chips.appendChild(etiquetaComo(a.comoTrabaja));k.appendChild(chips);k.style.setProperty("--c",s[1]);
-    pintarFicha(a,k,false);if(alTocar){k.classList.add("abre");k.tabIndex=0;k.setAttribute("role","button");k.onclick=e=>{if(!e.target.closest("button,summary,a"))alTocar(a)};k.onkeydown=e=>{if(e.target===k&&(e.key==="Enter"||e.key===" ")){e.preventDefault();alTocar(a)}}}c.appendChild(k);})}
+    pintarFicha(a,k,false);if(alTocar){k.classList.add("abre");k.tabIndex=0;k.setAttribute("role","button");k.onclick=e=>{if(!e.target.closest("button,summary,a"))alTocar(a)};k.onkeydown=e=>{if(e.target===k&&(e.key==="Enter"||e.key===" ")){e.preventDefault();alTocar(a)}};}c.appendChild(k);})}
 // lo que se dice de una sesión, de un solo lugar: la tarjeta y el panel pintan esta lista y sólo cambia su estilo
 function ficha(a){const r=[],add=(k,v,x)=>{if(v!=null&&v!=="")r.push({k,v,...x})};
   add("Trabajo",a.titulo);add("De la historia",a.historia);add("Encargo",a.encargo);
@@ -132,24 +132,28 @@ function iconoComo(como){const s=document.createElement("span");s.className="ico
 function dibujo(forma){const NS="http://www.w3.org/2000/svg",nodo=(tag,attrs)=>{const n=document.createElementNS(NS,tag);Object.entries(attrs).forEach(([a,v])=>n.setAttribute(a,v));return n},svg=nodo("svg",COMO_SVG);svg.appendChild(nodo(...forma));return svg}
 // el globo de diálogo del botón de la conversación
 const CHARLA_ICONO=["path",{d:"M4 5h16v11H10l-5 4v-4H4zM8 9h8M8 12h5"}];
-function botonCharla(nombre){const b=el("button","verCharla"),s=el("span","ico");s.setAttribute("aria-hidden","true");s.appendChild(dibujo(CHARLA_ICONO));b.appendChild(s);b.appendChild(document.createTextNode("Ver conversación"));b.type="button";b.onclick=()=>abrirCharla(nombre,b);return b}
+function botonCharla(nombre,p){const b=el("button","verCharla"),s=el("span","ico");s.setAttribute("aria-hidden","true");s.appendChild(dibujo(CHARLA_ICONO));b.appendChild(s);b.appendChild(document.createTextNode("Ver conversación"));b.type="button";b.onclick=()=>abrirCharla(nombre,b,p);return b}
+// de dónde sale la conversación de lo que se está pintando: la oficina local, o la máquina del sitio que se pinta ahora
+let fuenteCharla=null,maquinaDelDetalle=null;
+const fuenteLocal=()=>LIVE?{fuente:"local",token:LIVE.token}:SOURCE==="site"?{fuente:"site",maquina:maquinaDelDetalle}:{fuente:SOURCE};
 function pintarFicha(a,box,abiertos){const dl=el("dl");
   ficha(a).forEach(r=>{const dd=el("dd");if(r.pct!=null){const b=el("span","pbar"),i=el("i");i.style.width=r.pct+"%";b.appendChild(i);dd.appendChild(b);dd.appendChild(document.createTextNode(" "))}
     if(r.k==="Trabajo"&&!abiertos){dd.className="una-linea";dd.title=r.v}dd.appendChild(document.createTextNode(r.v));if(r.dif){const x=el("em",r.cls||null," · "+r.dif);dd.appendChild(x)}dl.appendChild(el("dt",null,r.k));dl.appendChild(dd)});box.appendChild(dl);
   if(a.pasos&&a.pasos.length){const d=el("details","pasos");d.open=abiertos;d.appendChild(el("summary",null,"Pasos de la ejecución"));const ol=el("ol","steps");let now=false;
     a.pasos.forEach(p=>{const cur=!p.done&&!now;if(cur)now=true;const li=el("li",p.done?"done":cur?"now":"");li.appendChild(el("span",null,p.done?"✓":cur?"▸":"·"));li.appendChild(document.createTextNode(p.name));ol.appendChild(li)});d.appendChild(ol);box.appendChild(d)}
-  // la conversación se lee con la oficina abierta en esta máquina: en la foto fija y en el sitio no hay de dónde
-  if(LIVE&&a.nombre)box.appendChild(botonCharla(a.nombre))}
+  // la conversación se pide a la oficina abierta en esta máquina, o al sitio; en la foto fija y en la demo no hay de dónde
+  const p={...(fuenteCharla||fuenteLocal()),nombre:a.nombre};
+  if(a.nombre&&pedidoDeCharla(p))box.appendChild(botonCharla(a.nombre,p))}
 function etiquetaComo(como){const e=el("span","como-chip");e.appendChild(iconoComo(como));e.appendChild(document.createTextNode(como));return e}
 // ---------- la conversación: se pide sólo al abrir su ventana, y nunca viaja en la foto ----------
 let charlaDe=null,charlaVuelve=null,ultimoPedido=0;
-const ALCANCE="Sólo se ven en esta máquina: no se guardan ni se mandan a ningún lado.";
+const ALCANCE=SOURCE==="site"?"Llegan de la máquina al sitio, que los guarda sólo en su memoria.":"No se guardan en el disco. Si esta máquina está aprobada en el sitio de la organización, se ven también ahí.";
 const ventana=()=>document.getElementById("ventana");
 // Quién hace una tarjeta, si es una sesión de esta oficina. Una fila del tablero puede nombrar a más de una persona: cuenta la primera.
 function sesionDeTarjeta(i){const q=String(i.quien||"").trim(),primera=q.split(/[\s,]+/)[0];return agents.find(a=>a.nombre===q)||agents.find(a=>a.nombre===primera)||null;}
 // El detalle de una tarjeta del kanban, en la misma ventana que la conversación: su título entero, lo que sabe la tarjeta y, si la hace una sesión, su ficha.
 function abrirTarjeta(i,card){const v=ventana(),box=v.firstElementChild,a=sesionDeTarjeta(i);charlaDe=null;ultimoPedido+=1;charlaVuelve=card;v.hidden=false;box.classList.add("detalle");box.setAttribute("aria-label","Detalle de la tarjeta");document.documentElement.classList.add("con-ventana");
-  const cerrar=el("button","cerrar","Cerrar");cerrar.type="button";cerrar.onclick=cerrarCharla;box.replaceChildren(el("h3",null,i.titulo||"Sin título"));
+  const cerrar=el("button","close","×");cerrar.type="button";cerrar.setAttribute("aria-label","Cerrar");cerrar.onclick=cerrarCharla;box.replaceChildren(el("h3",null,i.titulo||"Sin título"));
   const dl=el("dl"),fila=(k,x)=>{if(x==null||x==="")return;const dd=el("dd");dd.append(x);dl.append(el("dt",null,k),dd);};
   fila("Quién",i.quien);if(!a||String(i.hora||"")!==String((finTxt(a)||{}).hora||""))fila("Cuándo",i.hora);if(!a||i.espera!==a.espera)fila("Espera",i.espera);fila("Marca",i.marca);fila("Motivo",i.motivo);fila("Nota",i.nota);fila("Grupo",i.grupo);
   // el enlace sólo lleva a estos dos sitios: de los datos sale la ruta, nunca la dirección entera
@@ -157,10 +161,12 @@ function abrirTarjeta(i,card){const v=ventana(),box=v.firstElementChild,a=sesion
   if(dl.children.length)box.append(dl);
   if(a){const s=AST[a.estado]||[a.estado||"","#999"],chips=el("div","chips"),st=el("span","chip","● "+s[0]);st.style.setProperty("--c",s[1]);chips.append(st);if(a.comoTrabaja&&a.comoTrabaja!==s[0])chips.append(etiquetaComo(a.comoTrabaja));box.append(chips);pintarFicha(a,box,true);}
   box.append(cerrar);cerrar.focus();}
-function abrirCharla(nombre,boton){const v=ventana(),box=v.firstElementChild;box.classList.remove("detalle");box.setAttribute("aria-label","Conversación");charlaDe=nombre;if(!v.contains(boton))charlaVuelve=boton;v.hidden=false;document.documentElement.classList.add("con-ventana");
-  const cerrar=el("button","cerrar","Cerrar");cerrar.type="button";cerrar.onclick=cerrarCharla;box.replaceChildren(el("h3",null,"Conversación de "+nombre),el("p","m","Leyendo…"),cerrar);cerrar.focus();
-  const yo=++ultimoPedido;fetch("conversacion?t="+encodeURIComponent(LIVE.token)+"&s="+encodeURIComponent(nombre)).then(r=>{if(!r.ok)throw new Error(String(r.status));return r.json()}).then(datos=>({datos}),()=>({falla:true})).then(c=>{if(yo===ultimoPedido&&charlaDe===nombre)pintarCharla(box,nombre,c,cerrar)});}
-function cerrarCharla(){const v=ventana();if(v.hidden)return;v.hidden=true;document.documentElement.classList.remove("con-ventana");v.firstElementChild.classList.remove("detalle");v.firstElementChild.replaceChildren();charlaDe=null;ultimoPedido+=1;if(charlaVuelve&&charlaVuelve.isConnected)charlaVuelve.focus({preventScroll:true});charlaVuelve=null}
+function abrirCharla(nombre,boton,p=null){const v=ventana(),box=v.firstElementChild;box.classList.remove("detalle");box.setAttribute("aria-label","Conversación");charlaDe=nombre;if(!v.contains(boton))charlaVuelve=boton;v.hidden=false;document.documentElement.classList.add("con-ventana");
+  const cerrar=el("button","close","×");cerrar.type="button";cerrar.setAttribute("aria-label","Cerrar");cerrar.onclick=cerrarCharla;box.replaceChildren(el("h3",null,"Conversación de "+nombre),el("p","m","Leyendo…"),cerrar);cerrar.focus();
+  const yo=++ultimoPedido,pedido=p||{...fuenteLocal(),nombre},deSitio=pedido.fuente==="site";
+  // lo que falla queda en la consola: en la ventana, la persona ve sólo que no se pudo leer
+  fetch(pedidoDeCharla(pedido),{credentials:"same-origin"}).then(r=>{const que=charlaSegunRespuesta(r.status);if(que==="vacia")return {vacia:true,deSitio};if(que!=="datos")throw new Error("respondió "+r.status);return r.json().then(datos=>{if(!charlaConForma(datos))throw new Error("una conversación sin su forma");return {datos}})}).catch(e=>{console.warn("conversación de "+nombre+": "+(e&&e.message));return {falla:true}}).then(c=>{if(yo!==ultimoPedido||charlaDe!==nombre)return;try{pintarCharla(box,nombre,c,cerrar)}catch(e){console.warn("conversación de "+nombre+": "+(e&&e.message));pintarCharla(box,nombre,{falla:true},cerrar)}});}
+function cerrarCharla(){const v=ventana();if(v.hidden)return;v.hidden=true;document.documentElement.classList.remove("con-ventana");v.firstElementChild.classList.remove("detalle");v.firstElementChild.replaceChildren();charlaDe=null;ultimoPedido+=1;if(charlaVuelve&&charlaVuelve.isConnected)charlaVuelve.focus({preventScroll:true});charlaVuelve=null;}
 document.addEventListener("keydown",e=>{if(e.key==="Escape")cerrarCharla()});
 // El formato simple de un mensaje: negritas, código y listas. Todo se arma con nodos y textContent, así que lo que traiga
 // el mensaje nunca llega a ser HTML.
@@ -198,17 +204,73 @@ function charlaPorSesion(nombre,sesiones,vacio){if(!sesiones.length)return lista
   const resto=sesiones.slice(SESIONES_A_LA_VISTA);
   if(resto.length){const mas=el("button","mas","Las otras "+resto.length);mas.type="button";mas.onclick=()=>{const nuevos=resto.map(boton);mas.replaceWith(...nuevos);nuevos[0].focus();};fila.append(mas);}
   elegir(sesiones[0],botones[0]);return box;}
-function pintarCharla(box,nombre,c,cerrar){const fin=x=>{box.insertBefore(x,cerrar)},seccion=(titulo,filas,vacio)=>{fin(el("h4",null,titulo));if(!filas.length){fin(el("p","m",vacio));return}const ch=el("div","chat");filas.forEach(f=>ch.append(f));fin(ch)};
-  box.querySelector("p.m").remove();
+// «Con vos», en toda sesión: lo que le escribiste (en su pestaña o desde la oficina) y lo que contestó.
+const VOS_VACIO="No hay mensajes con vos en lo último de su conversación.";
+const conVosLista=(nombre,lista)=>listaCharla((lista||[]).map(m=>msg(m.quien==="vos"?(m.oficina?"Vos · desde la oficina":"Vos"):nombre,m.at,m.texto,m.quien==="vos")),VOS_VACIO);
+// la lista «Con vos» de la ventana abierta: al llegar la respuesta se cambia sólo ella, sin tocar lo que está escrito en el campo
+let vosDe=null;
+function pintarCharla(box,nombre,c,cerrar){const fin=x=>{box.insertBefore(x,cerrar)};
+  const leyendo=box.querySelector("p.m");if(leyendo)leyendo.remove();
+  // en el sitio, un 404 es que todavía no llegó; en la oficina local, que la sesión ya no está
+  if(c.vacia){fin(el("p","m",c.deSitio?"La conversación de esta sesión todavía no llegó al sitio.":"Esta sesión ya no está en la oficina."));return}
   if(c.falla){fin(el("p","m","No se pudo leer la conversación de esta sesión."));return}
-  const d=c.datos||{};if(d.sinCoordinadora){fin(el("p","m","Esta máquina no tiene coordinadora designada: no hay con quién cruzar los mensajes."));return}
+  const d=c.datos||{},vos=el("div","conVos");vos.append(conVosLista(nombre,d.conVos));vosDe={nombre,vos};
   const alFinal=()=>box.querySelectorAll(".chat").forEach(ch=>{ch.scrollTop=ch.scrollHeight});
-  if(d.conVos){pestanasCharla([["Con vos",listaCharla(d.conVos.map(m=>msg(m.quien==="vos"?"Vos":nombre,m.at,m.texto,m.quien==="vos")),"No hay mensajes con vos en lo último de su conversación.")],
+  if(d.sinConversacion){fin(el("p","m","La conversación de esta sesión no se lee desde la oficina."));}
+  else if(d.sinCoordinadora){fin(el("h4",null,"Con vos"));fin(vos);fin(el("p","m","Esta máquina no tiene coordinadora designada: no hay con quién cruzar los mensajes. "+ALCANCE));}
+  else if(d.conSesiones){pestanasCharla([["Con vos",vos],
       ["Con las sesiones",charlaPorSesion(nombre,d.conSesiones||[],"No hay mensajes con las sesiones en lo último de su conversación.")]]).forEach(fin);
-    fin(el("p","m","Tus últimos 20 mensajes con sus respuestas, y los últimos 10 con cada sesión, en orden; primero la que habló último. "+ALCANCE+" Las contraseñas y las claves se tapan."));alFinal();return}
-  const filas=(d.conCoordinadora||[]).map(m=>msg(m.propio?nombre:m.de,m.at,m.texto,m.propio));if(d.arranque)filas.unshift(msg("Mensaje de arranque",d.arranque.at,d.arranque.texto,false));
-  seccion("Con la coordinadora",filas,"No hay mensajes con la coordinadora en lo último de su conversación.");
-  fin(el("p","m","Últimos 10 mensajes. "+ALCANCE));alFinal()}
+    fin(el("p","m","Tus últimos 20 mensajes con sus respuestas, y los últimos 10 con cada sesión, en orden; primero la que habló último. "+ALCANCE+" Las contraseñas y las claves se tapan."));}
+  else{const filas=(d.conCoordinadora||[]).map(m=>msg(m.propio?nombre:m.de,m.at,m.texto,m.propio));if(d.arranque)filas.unshift(msg("Mensaje de arranque",d.arranque.at,d.arranque.texto,false));
+    pestanasCharla([["Con vos",vos],["Con la coordinadora",listaCharla(filas,"No hay mensajes con la coordinadora en lo último de su conversación.")]]).forEach(fin);
+    fin(el("p","m","Tus últimos 20 mensajes con sus respuestas, y los últimos 10 con la coordinadora. "+ALCANCE+" Las contraseñas y las claves se tapan."));}
+  if(LIVE&&d.oficina)campoMandar(nombre,d.oficina,fin);
+  alFinal()}
+// ── Escribirle a la sesión, sólo con la oficina viva. Le llega como un mensaje de la persona y nunca firma ni aprueba nada:
+// la ventana no tiene ningún botón que apruebe o conteste un cuadro. El proceso dice en qué va cada mensaje por el WebSocket.
+const MANDAR_FIJO="Esto le llega como un mensaje tuyo. No firma ni aprueba nada.";
+const CUADRO_TXT="Está esperando que contestes su cuadro: lo va a leer cuando lo hagas.";
+const ESTADO_TXT={mandado:"Mandado.",recibido:"Lo recibió."};
+const TOPE_MENSAJE=4000;
+// los mensajes de esta página que todavía no terminaron: id → { nombre, texto, campo, estado }
+const enCurso=new Map();
+function campoMandar(nombre,ofi,fin){const sec=el("div","mandar");sec.setAttribute("role","group");sec.setAttribute("aria-label","Escribirle a "+nombre);
+  if(ofi.recibe!=="si"&&ofi.recibe!=="espera-cierre"){sec.append(el("p","m noRecibe",ofi.motivo||"Esta sesión no puede recibir mensajes de la oficina."));fin(sec);return}
+  const campo=document.createElement("textarea"),boton=el("button","verCharla","Mandar"),estado=el("p","m estadoMensaje");
+  campo.rows=3;campo.setAttribute("aria-label","Mensaje para "+nombre);boton.type="button";estado.setAttribute("role","status");
+  estado.textContent=ofi.cuadro?CUADRO_TXT:ofi.recibe==="espera-cierre"?"Lo va a recibir cuando termine lo que está haciendo.":"";
+  const mandar=igual=>{const texto=campo.value;
+    if(!texto.trim()){estado.textContent="El mensaje está vacío.";return}
+    if(Array.from(texto).length>TOPE_MENSAJE){estado.textContent="El mensaje pasa de "+TOPE_MENSAJE+" caracteres.";return}
+    boton.disabled=true;
+    fetch("mensaje?t="+encodeURIComponent(LIVE.token),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({s:nombre,texto,igual:Boolean(igual)})})
+      .then(r=>r.json().catch(()=>({})).then(j=>({ok:r.ok,j})))
+      .then(({ok,j})=>{boton.disabled=false;
+        if(ok&&j.id){campo.value="";enCurso.set(j.id,{nombre,texto,campo,estado});estado.textContent=j.motivo||(j.cuadro?CUADRO_TXT:ESTADO_TXT.mandado);if(window.tablero.avion)window.tablero.avion(nombre);
+          const antes=tempranos.get(j.id);if(antes){tempranos.delete(j.id);alMensaje(antes)}return}
+        if(j.parece==="aprobacion"){const igualB=el("button","mas","Mandar igual");igualB.type="button";igualB.onclick=()=>mandar(true);estado.replaceChildren(document.createTextNode(j.motivo+" "),igualB);return}
+        estado.textContent=j.motivo||"No se pudo mandar."})
+      .catch(()=>{boton.disabled=false;estado.textContent="No se pudo mandar."})};
+  boton.onclick=()=>mandar(false);
+  sec.append(el("p","m mandarFijo",MANDAR_FIJO),campo,boton,estado);fin(sec)}
+// lo que dice el proceso de un mensaje: recibido, no entregado (vuelve el texto al campo) o entregado y sin aparecer
+// un aviso puede llegar antes que la respuesta de «Mandar» (la sesión lo toma enseguida): se guarda y se aplica al conocer el mensaje
+const tempranos=new Map();
+function alMensaje(m){const p=enCurso.get(m.id);if(!p){if(tempranos.size<20)tempranos.set(m.id,m);return}
+  if(m.estado==="recibido"){p.estado.textContent=ESTADO_TXT.recibido;esperarRespuesta(p.nombre,m.id);return}
+  enCurso.delete(m.id);
+  if(m.estado==="no-entregado"){p.estado.textContent=m.motivo||"No le llegó.";if(!p.campo.value)p.campo.value=p.texto;return}
+  if(m.motivo)p.estado.textContent=m.motivo}
+// la respuesta aparece en «Con vos» de la misma ventana: se vuelve a leer la conversación hasta que el mensaje tenga la suya
+const SIN_RESPUESTA="Todavía no contestó: mirá su conversación más tarde.";
+// pasados unos 10 minutos deja de mirar, y lo dice en la línea de estado del mensaje
+function esperarRespuesta(nombre,id,veces=0){if(veces>120){const c=enCurso.get(id);if(c&&c.estado&&c.estado.isConnected)c.estado.textContent=SIN_RESPUESTA}
+  if(veces>120||!vosDe||vosDe.nombre!==nombre||charlaDe!==nombre){enCurso.delete(id);return}
+  fetch(pedidoDeCharla({fuente:"local",token:LIVE.token,nombre})).then(r=>r.ok?r.json():null).then(d=>{
+    if(!d||!vosDe||vosDe.nombre!==nombre)return;const lista=d.conVos||[],i=lista.findIndex(x=>x.oficina&&x.id===id);
+    if(i>=0){vosDe.vos.replaceChildren(conVosLista(nombre,lista));const ch=vosDe.vos.querySelector(".chat");if(ch)ch.scrollTop=ch.scrollHeight}
+    if(i>=0&&lista.slice(i+1).some(x=>x.quien!=="vos")){enCurso.delete(id);return}
+    setTimeout(()=>esperarRespuesta(nombre,id,veces+1),5000)}).catch(()=>setTimeout(()=>esperarRespuesta(nombre,id,veces+1),5000))}
 // sin 3D, la tabla queda abierta y la sala dice por qué
 function sinTresD(msg){const o=document.getElementById("ovl");o.textContent=msg;o.hidden=false;const t=document.getElementById("tablewrap");t.hidden=false;t.open=true}
 window.tablero={agents:()=>agents,items:()=>items,kanban:()=>DATA.kanban||null,meta:()=>meta,site:()=>SITE,sobres:()=>DATA.sobres||[],live:()=>LIVE,AST,SHIRT,fmt,finTxt,sinTresD,pintarFicha,iconoComo,etiquetaComo,dibujo,AVION_ICONO};
@@ -223,12 +285,12 @@ function relojTick(list,now,m){const q=umbral(m)*60000,hh=t=>{const d=new Date(t
 // fin del reloj
 // el reloj corre también al abrir y con cada foto nueva: la foto y el minuto siguiente dicen lo mismo de cada sesión
 if(!CON_OFICINAS){relojTick(agents,Date.now(),meta);renderTop();renderCrew();
-  setInterval(()=>{relojTick(agents,Date.now(),meta);renderCrew();if(window.tablero.refresh)window.tablero.refresh()},60000)}
+  setInterval(()=>{relojTick(agents,Date.now(),meta);renderCrew();if(window.tablero.refresh)window.tablero.refresh()},60000);}
 // la oficina viva: cada foto nueva actualiza en el lugar; si el proceso se cierra, queda la última foto y el aviso
 const CERRADA="La oficina se cerró. Corré /office otra vez para verla al día.";
 function cerrada(){const o=document.getElementById("ovl");o.textContent=CERRADA;o.hidden=false;const fl=document.getElementById("freeLine");fl.textContent=CERRADA;fl.hidden=false}
 if(LIVE){const ws=new WebSocket("ws://"+location.host+"/live?t="+encodeURIComponent(LIVE.token));
-  ws.onmessage=ev=>{const o=document.getElementById("ovl"),FALLA="No pude dibujar la última novedad; la oficina muestra la anterior. Corré /office otra vez si sigue así.";try{const m=JSON.parse(ev.data);if(!m||m.type!=="foto")return;setData(m.data);relojTick(agents,Date.now(),meta);renderTop();renderCrew();if(o.textContent===FALLA){o.textContent="";o.hidden=true}if(window.tablero.refresh)window.tablero.refresh()}catch(e){console.error(e);o.textContent=FALLA;o.hidden=false}};
+  ws.onmessage=ev=>{const o=document.getElementById("ovl"),FALLA="No pude dibujar la última novedad; la oficina muestra la anterior. Corré /office otra vez si sigue así.";try{const m=JSON.parse(ev.data);if(m&&m.type==="mensaje"){alMensaje(m);return}if(!m||m.type!=="foto")return;setData(m.data);relojTick(agents,Date.now(),meta);renderTop();renderCrew();if(o.textContent===FALLA){o.textContent="";o.hidden=true}if(window.tablero.refresh)window.tablero.refresh()}catch(e){console.error(e);o.textContent=FALLA;o.hidden=false}};
   ws.onclose=cerrada;}
 if(!CON_OFICINAS)setTimeout(()=>{if(!window.tablero.started)sinTresD("Este navegador no pudo cargar la oficina en 3D; las tarjetas y la tabla tienen lo mismo.")},8000);
 document.getElementById("ventana").addEventListener("click",e=>{if(e.target===e.currentTarget)cerrarCharla()});
@@ -512,6 +574,14 @@ function lanzarSobres(){const nuevos=[];
   // mientras vuela, la sala se dibuja como si alguien la tocara; después vuelve a su ritmo
   if(van.length){hastaTocando=Math.max(hastaTocando,performance.now()+VUELO_MS);despertar()}}
 function quitarVuelo(v){const i=vuelos.indexOf(v);if(i>=0)vuelos.splice(i,1);scene.remove(v.m);v.e.remove()}
+// lo que la persona manda desde la ventana: el avioncito sale del frente de la sala (no hay persona de origen) y llega al escritorio
+const FRENTE={st:{position:new THREE.Vector3(0,0,7)}};
+T.avion=nombre=>{const a=desks.find(d=>d.agent.nombre===nombre);if(!a||!enVista||document.hidden)return;
+  const m=new THREE.Group();m.rotation.order="YXZ";m.scale.setScalar(.55);m.add(new THREE.Mesh(avionGeo,avionMat),new THREE.LineSegments(bordeGeo,bordeMat));scene.add(m);
+  const e=document.createElement("span");e.className="sobre desdeOficina";const dib=document.createElement("span");dib.className="dib";dib.append(T.dibujo(T.AVION_ICONO));dib.setAttribute("aria-hidden","true");e.append(dib,"Vos → "+nombre);
+  labelsEl.appendChild(e);const vuelo={m,e,de:FRENTE,a,t0:performance.now()};vuelos.push(vuelo);
+  if(reduce)setTimeout(()=>{quitarVuelo(vuelo);despertar()},VUELO_MS);
+  hastaTocando=Math.max(hastaTocando,performance.now()+VUELO_MS);despertar()};
 function volar(){const W=stage.clientWidth,H=stage.clientHeight,now=performance.now();
   for(const v of [...vuelos]){const k=reduce?.5:(now-v.t0)/VUELO_MS;if(k>=1){quitarVuelo(v);continue}
     a3.copy(v.de.st.position);b3.copy(v.a.st.position);a3.lerp(b3,k);a3.y=1.7+Math.sin(k*Math.PI)*1.1;v.m.position.copy(a3);v.m.rotation.set(-Math.cos(k*Math.PI)*.3,Math.atan2(b3.x-v.de.st.position.x,b3.z-v.de.st.position.z),Math.sin(k*Math.PI*2)*.25);
@@ -537,7 +607,7 @@ function abrirTablero(){sel=null;desks.forEach(pintarTag);const K=T.kanban()||{}
   const cl=mk("button","close","×");cl.type="button";cl.setAttribute("aria-label","Cerrar");cl.onclick=()=>{panel.hidden=true;panel.classList.remove("wide")};panel.append(cl,mk("h3",null,"Pendientes"));
   const orden=paredEnOrden(K);panel.abiertos=panel.abiertos||new Set();
   const ct=mk("div","counts");orden.forEach(c=>{const k=mk("div","cnt");k.style.setProperty("--k",c.color);k.append(mk("b",null,String(c.tarjetas.length)),mk("span",null,c.nombre));ct.append(k);});panel.append(ct);
-  const toca=(meta&&meta.teToca)||[];if(toca.length){panel.append(mk("h4","toca","Te toca"));const ul=mk("ul","toca");toca.forEach(t=>ul.append(mk("li",null,t)));panel.append(ul)}
+  const toca=(meta&&meta.teToca)||[];if(toca.length){panel.append(mk("h4","toca","Te toca"));const ul=mk("ul","toca");toca.forEach(t=>ul.append(mk("li",null,t)));panel.append(ul);}
   // lo que no se está trabajando no estira el detalle: con muchas, se abre a pedido, y sigue abierto cuando llega otra foto
   orden.forEach(c=>{const rows=c.tarjetas;if(!rows.length)return;const h=mk("h4",null,c.nombre+" · "+rows.length);h.style.color=c.color;panel.append(h);
     const lista=()=>{const ul=mk("ul","list");rows.forEach(r=>{const li=mk("li");li.append(mk("b",null,r.titulo||""));if(c.id==="medio")li.append(mk("span","m",r.accion||""));else{li.append(mk("span","m",[r.quien,r.hora,r.espera?"espera "+r.espera:"",r.marca,r.motivo].filter(Boolean).join(" · ")));if(r.nota)li.append(mk("span","m",r.nota));}ul.append(li);});return ul;};
@@ -546,7 +616,7 @@ function abrirTablero(){sel=null;desks.forEach(pintarTag);const K=T.kanban()||{}
   if(K.medioCaminoLeido)panel.append(mk("p","m",K.medioCaminoLeido));
   if(K.medioCaminoNoSe)panel.append(mk("p","m",K.medioCaminoNoSe));
   if(!orden.some(c=>c.tarjetas.length))panel.append(mk("p","m","No hay nada pendiente en esta máquina."));
-  if(meta&&meta.actualizado)panel.append(mk("p","m",stampOf(K,meta)))}
+  if(meta&&meta.actualizado)panel.append(mk("p","m",stampOf(K,meta)));}
 
 // ---------- luces y postproceso ----------
 scene.add(new THREE.HemisphereLight("#ffd6b0","#5a3a6a",1.7));
@@ -578,7 +648,11 @@ stage.addEventListener("wheel",e=>{if(e.target.closest(".panel3"))return;e.stopP
 stage.addEventListener("gesturestart",e=>{e.preventDefault();zoomBase=cam.zoom;});
 stage.addEventListener("gesturechange",e=>{e.preventDefault();acercar(zoomBase*e.scale/cam.zoom);});
 zoomBox.children[0].onclick=()=>acercar(1.25);zoomBox.children[1].onclick=()=>acercar(.8);zoomBox.hidden=false;
-controls.addEventListener("change",()=>{tagsAlDia=false;tocar()});
+// Con una cámara ortogonal, el control avisa «change» en cada actualización aunque nada se mueva (da el zoom por cambiado):
+// cuenta como toque sólo un cambio de verdad, con el mismo umbral del control. Si no, la sala nunca baja de su ritmo
+const camVista={p:cam.position.clone(),q:cam.quaternion.clone(),z:cam.zoom};
+function camaraCambio(){const c=camVista.p.distanceToSquared(cam.position)>1e-6||8*(1-camVista.q.dot(cam.quaternion))>1e-6||camVista.z!==cam.zoom;if(c){camVista.p.copy(cam.position);camVista.q.copy(cam.quaternion);camVista.z=cam.zoom}return c}
+controls.addEventListener("change",()=>{if(!camaraCambio())return;tagsAlDia=false;tocar()});
 const miraVista=new IntersectionObserver(es=>{enVista=es[es.length-1].isIntersecting;if(enVista)despertar()});miraVista.observe(stage);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)despertar()});
 function loop(){if(apagada||!enVista||document.hidden){timer=null;return}try{dibujar()}finally{programar()}}
@@ -608,7 +682,7 @@ T.refresh=()=>{const ps=puestos(),ags=T.agents().slice(0,ps.length);
   if(sel){if(T.agents().some(a=>a.nombre===sel))abrir(sel,true);else{sel=null;panel.hidden=true}}
   else if(!panel.hidden&&panel.classList.contains("wide"))abrirTablero()};
 T.abrir=n=>abrir(n);
-T.apagar=()=>{apagada=true;clearTimeout(timer);timer=null;miraVista.disconnect();miraTamano.disconnect();controls.dispose();labelsEl.replaceChildren();panel.hidden=true;renderer.dispose();renderer.forceContextLoss();renderer.domElement.remove();T.refresh=null};
+T.apagar=()=>{apagada=true;clearTimeout(timer);timer=null;miraVista.disconnect();miraTamano.disconnect();controls.dispose();labelsEl.replaceChildren();panel.hidden=true;renderer.dispose();renderer.forceContextLoss();renderer.domElement.remove();T.refresh=null;};
 // dónde está la cámara, para comprobar que una foto nueva no la mueve
 T.camara=()=>cam.position.toArray().map(n=>+n.toFixed(3));
 return function(){resize();poblar();alDia();lanzarSobres()};
@@ -616,6 +690,9 @@ return function(){resize();poblar();alDia();lanzarSobres()};
 }).catch(e=>{console.error(e);T.sinTresD("Este navegador no pudo cargar la oficina en 3D; las tarjetas y la tabla tienen lo mismo.")})}
 // la pestaña del sitio: lo que se decide sin tocar la pantalla
 const TOPE_DE_SALAS=8,ESPERA_MIN_MS=2000,ESPERA_MAX_MS=60000;
+// el sitio escribe cada 25 s aunque nada cambie: un minuto sin nada es una conexión que murió sin avisar
+const SIN_NOVEDAD_MS=60000,REVISAR_CONEXION_MS=5000,AVISO_SIN_NOVEDAD="Hace más de un minuto que no llega nada del sitio: lo que ves puede estar atrasado. Vuelvo a conectar.";
+function conexionMuerta(ultimoMs,ahoraMs){return ahoraMs-ultimoMs>=SIN_NOVEDAD_MS}
 // la coordinadora que espera una firma sigue coordinando: la foto la marca por cómo trabaja
 function resumenDeOficina(foto){const a=(foto&&foto.agents)||[],n=l=>a.filter(x=>l.includes(x.estado)).length,c=a.find(x=>x.estado==="coordina"||x.comoTrabaja==="Coordinando");
   return {sesiones:a.length,trabajando:n(["trabajando","prueba"]),firma:n(["firma","pregunta"]),esperanOLibres:n(["espera","esperando","parada","libre","inactiva"]),coordina:c?c.nombre:null}}
@@ -632,6 +709,20 @@ function aplicarOficinas(mapa,m){const out=m.entera?new Map():mapa;(m.oficinas||
 // qué oficinas tienen sala en 3D: la elegida siempre; después las que piden firma; después las que trabajan; después el resto
 function salasVivas(lista,elegida,tope){const peso=o=>{const r=resumenDeOficina(o.foto);return o.id===elegida?0:r.firma?1:r.trabajando?2:3};
   return new Set([...lista].map((o,i)=>[o,i]).sort((a,b)=>peso(a[0])-peso(b[0])||a[1]-b[1]).slice(0,tope).map(([o])=>o.id))}
+// de dónde se pide la conversación de una sesión: a la oficina local con su token, o al sitio con la máquina; sin de
+// dónde (la foto fija, la demo), null y no hay botón
+function pedidoDeCharla(p){const s=encodeURIComponent(String(p&&p.nombre||""));
+  if(p&&p.fuente==="local"&&p.token)return "conversacion?t="+encodeURIComponent(p.token)+"&s="+s;
+  if(p&&p.fuente==="site"&&p.maquina)return "/offices/conversation?m="+encodeURIComponent(p.maquina)+"&s="+s;
+  return null}
+// los sobres de una oficina del sitio, de su foto
+function sobresDeOficina(foto){return foto&&Array.isArray(foto.sobres)?foto.sobres:[]}
+// qué se muestra según la respuesta del pedido de la conversación: un 404 es que todavía no está (no llegó, quedó afuera
+// del tope o el sitio se reinició), no una falla
+function charlaSegunRespuesta(status){return status===200?"datos":status===404?"vacia":"falla"}
+// un 200 vale sólo con la forma de una conversación: un cuerpo vacío no se muestra como «no hay mensajes»
+const CHARLA_CLAVES=["sinCoordinadora","sinConversacion","conCoordinadora","arranque","conVos","conSesiones"];
+function charlaConForma(d){return Boolean(d)&&typeof d==="object"&&!Array.isArray(d)&&CHARLA_CLAVES.some(k=>Object.prototype.hasOwnProperty.call(d,k))}
 // fin de lo que se decide sin tocar la pantalla
 // la pestaña del sitio: el dibujo
 function hhmmDe(ms){const d=new Date(ms);return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0")}
@@ -648,7 +739,10 @@ function arrancarOficinas(){
   const seguro=f=>{try{f()}catch(e){console.error(e);decir("No pude dibujar la última novedad; muestro la anterior.")}};
   // cortada antes del primer mensaje y sin reintento: no hay nada cargando, y el aviso dice por qué
   function pintarVacio(){vacio.hidden=oficinas.size>0||(!llego&&cortada);document.querySelector(".interruptor").hidden=!oficinas.size;$("foot").hidden=!oficinas.size;vacio.textContent=llego?"Todavía no hay oficinas para mostrarte: aparecen cuando una máquina confirmada a tu nombre se conecta.":"Cargando las oficinas…"}
-  function ubicar(){const W=wrap.clientWidth,ancho=W>=900,G=18,cards=[...fichas.values()].map(f=>f.card);let H=0;
+  function ubicar(){const W=wrap.clientWidth,ancho=W>=900,G=18;
+    // en el orden del sitio, el mismo con que se eligen las salas: no en el de llegada, que cambia con lo que la página vio antes
+    const orden=[...new Set([...oficinas.keys(),...fichas.keys()])].filter(id=>fichas.has(id)),cards=orden.map(id=>fichas.get(id).card);
+    orden.forEach(id=>crews.append(fichas.get(id).bloque));let H=0;
     const pos=(c,x,y,w,h,mini)=>{Object.assign(c.style,{left:x+"px",top:y+"px",width:w+"px",height:h+"px"});c.classList.toggle("mini",mini);c.classList.toggle("on",c.dataset.id===elegida)};
     const big=elegida&&fichas.has(elegida)?fichas.get(elegida).card:null,otras=cards.filter(c=>c!==big);
     if(!big){if(ancho){const w=(W-G)/2,h=Math.round(Math.min(w*.72,innerHeight*.7));cards.forEach((c,i)=>pos(c,(i%2)*(w+G),Math.floor(i/2)*(h+G),w,h,false));H=Math.ceil(cards.length/2)*(h+G)-G}
@@ -667,7 +761,7 @@ function arrancarOficinas(){
     const cover=el("button","cover");cover.type="button";cover.onclick=()=>seguro(()=>foco(o.id));
     card.append(head,stage,cover);wrap.append(card);
     const bloque=el("div","crewblock"),titulo=el("h2"),crew=el("div","crew");bloque.dataset.id=o.id;bloque.append(titulo,crew);crews.append(bloque);
-    f={card,h,stats,stage,sinSala,cover,bloque,titulo,crew,T:null};fichas.set(o.id,f);return f}
+    f={card,h,stats,stage,sinSala,cover,bloque,titulo,crew,T:null};fichas.set(o.id,f);return f;}
   // el reloj corre antes del resumen: una sesión que pasó a inactiva se cuenta igual que la dice su tarjeta
   function pintarOficina(o){const lista=(o.foto&&o.foto.agents)||[];relojTick(lista,Date.now(),o.foto&&o.foto.meta);
     const f=fichaDe(o),r=resumenDeOficina(o.foto),quien=o.person||o.id;
@@ -678,7 +772,9 @@ function arrancarOficinas(){
     if(o.sinConexionDesde)f.stats.append(el("span","stat apagada","sin conexión desde "+hhmmDe(o.sinConexionDesde)));
     (o.marcas||[]).forEach(m=>f.stats.append(el("span","stat firma",m==="clave_copiada"?"posible clave copiada":m==="mas_nueva"?"más nueva que el sitio":m)));
     f.cover.setAttribute("aria-label","Agrandar la oficina de "+quien);f.stage.setAttribute("aria-label","La oficina de "+quien);f.titulo.textContent="Las sesiones de "+quien;
-    pintarTarjetas(f.crew,lista,a=>{const yaEra=elegida===o.id;if(!yaEra)seguro(()=>foco(o.id));const abrirla=n=>{if(f.T&&f.T.abrir)f.T.abrir(a.nombre);else if(n>0)setTimeout(()=>abrirla(n-1),200)};setTimeout(()=>abrirla(25),yaEra?0:750)})}
+    // la ficha lee de DATA lo que no es de la persona (sus tokens): mientras se pintan, DATA es la foto de esta oficina
+    const antes=fuenteCharla,datos=DATA;fuenteCharla={fuente:"site",maquina:o.id};DATA=o.foto||{};
+    try{pintarTarjetas(f.crew,lista,a=>{const yaEra=elegida===o.id;if(!yaEra)seguro(()=>foco(o.id));const abrirla=n=>{if(f.T&&f.T.abrir)f.T.abrir(a.nombre);else if(n>0)setTimeout(()=>abrirla(n-1),200)};setTimeout(()=>abrirla(25),yaEra?0:750)})}finally{fuenteCharla=antes;DATA=datos}}
   // las salas en 3D: hasta el tope, cada una con sus datos. Primero se apagan las que sobran, y sus lugares quedan libres
   function ponerSalas(cambiadas){const vivas=salasVivas(oficinas.values(),elegida,TOPE_DE_SALAS);
     fichas.forEach((f,id)=>{f.sinSala.hidden=vivas.has(id);if(f.T&&!vivas.has(id))apagarSala(f)});
@@ -686,9 +782,11 @@ function arrancarOficinas(){
       f.T.chica=id!==elegida;if(f.T.refresh&&(!cambiadas||cambiadas.has(id)))f.T.refresh()})}
   function apagarSala(f){f.T.cancelada=true;if(f.T.apagar)f.T.apagar();f.T=null}
   function crearSala(f,id){const foto=()=>(oficinas.get(id)||{}).foto||{};
-    f.T={...window.tablero,agents:()=>foto().agents||[],items:()=>[],kanban:()=>foto().kanban||null,meta:()=>foto().meta||null,site:()=>null,sobres:()=>[],live:()=>null,chica:id!==elegida,sinTresD:t=>{f.sinSala.textContent=t;f.sinSala.hidden=false}};
+    // los avioncitos de esa oficina vuelan en su sala, y la ficha de una persona pide su conversación a esa máquina
+    const conLaMaquina=g=>(...x)=>{const antes=fuenteCharla,datos=DATA;fuenteCharla={fuente:"site",maquina:id};DATA=foto();try{return g(...x)}finally{fuenteCharla=antes;DATA=datos}};
+    f.T={...window.tablero,agents:()=>foto().agents||[],items:()=>[],kanban:()=>foto().kanban||null,meta:()=>foto().meta||null,site:()=>null,sobres:()=>sobresDeOficina(foto()),live:()=>null,pintarFicha:conLaMaquina(window.tablero.pintarFicha),chica:id!==elegida,sinTresD:t=>{f.sinSala.textContent=t;f.sinSala.hidden=false}};
     armarSala(f.stage,f.T)}
-  function pintarDetalle(){const o=elegida&&oficinas.get(elegida);detalle.hidden=!o;if(!o)return;setData(o.foto);relojTick(agents,Date.now(),meta);renderTop()}
+  function pintarDetalle(){const o=elegida&&oficinas.get(elegida);detalle.hidden=!o;if(!o)return;maquinaDelDetalle=o.id;setData(o.foto);relojTick(agents,Date.now(),meta);renderTop()}
   function foco(id){const antes=elegida;elegida=id;pedida=id;history.replaceState(null,"",id?"#"+encodeURIComponent(id):location.pathname);pintarDetalle();ponerSalas(new Set([antes,id]));ubicar();pintarVacio()}
   function pintarTodo(cambiadas){fichas.forEach((f,id)=>{if(oficinas.has(id))return;if(f.T)apagarSala(f);f.card.remove();f.bloque.remove();fichas.delete(id)});
     oficinas.forEach((o,id)=>{if(!cambiadas||cambiadas.has(id))pintarOficina(o)});
@@ -702,10 +800,16 @@ function arrancarOficinas(){
   function recibir(m){if(!m||m.type!=="oficinas")return;oficinas=aplicarOficinas(oficinas,m);llego=true;pintarTodo(m.entera?null:new Set((m.oficinas||[]).map(o=>o.id)));requestAnimationFrame(()=>wrap.classList.add("anim"))}
   pintarVacio();
   // en la demo, un pedido común; en el sitio, la conexión. La página nunca le manda nada
-  if(SOURCE==="demo"){fetch("/offices/demo.json",{credentials:"same-origin"}).then(r=>{if(!r.ok)throw new Error(String(r.status));return r.json()}).then(recibir).catch(e=>{console.error(e);cortada=true;pintarVacio();decir("No pude traer las oficinas de ejemplo.")});return}
+  if(SOURCE==="demo"){fetch("/offices/demo.json",{credentials:"same-origin"}).then(r=>{if(!r.ok)throw new Error(String(r.status));return r.json()}).then(recibir).catch(e=>{console.error(e);cortada=true;pintarVacio();decir("No pude traer las oficinas de ejemplo.")});return;}
   let intento=0;
-  (function conectar(){const ws=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host+"/live/offices");
-    ws.onmessage=ev=>{intento=0;decir("");try{recibir(JSON.parse(ev.data))}catch(e){console.error(e);decir("No pude dibujar la última novedad; muestro la anterior.")}};
-    ws.onclose=ev=>{const r=alCerrarLaConexion(ev.code,intento);decir(r.texto);if(!r.reintenta){cortada=true;pintarVacio();return}intento+=1;setTimeout(conectar,r.esperaMs)}})()}
+  // la conexión que se murió sin avisar no dispara onclose: se suelta y se abre otra, que trae la lista entera
+  let ultimo=Date.now(),viva=null;
+  setInterval(()=>{if(!viva||!conexionMuerta(ultimo,Date.now()))return;const muerta=viva;viva=null;muerta.onmessage=muerta.onclose=null;try{muerta.close()}catch(e){}decir(AVISO_SIN_NOVEDAD);conectar()},REVISAR_CONEXION_MS);
+  function conectar(){const ws=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host+"/live/offices");viva=ws;ultimo=Date.now();
+    ws.onmessage=ev=>{ultimo=Date.now();let m;try{m=JSON.parse(ev.data)}catch(e){console.error(e);decir("No pude dibujar la última novedad; muestro la anterior.");return}
+      if(m&&m.type==="latido"){if(avisoEl.textContent===AVISO_SIN_NOVEDAD)decir("");return}
+      intento=0;decir("");try{recibir(m)}catch(e){console.error(e);decir("No pude dibujar la última novedad; muestro la anterior.")}};
+    ws.onclose=ev=>{if(viva===ws)viva=null;const r=alCerrarLaConexion(ev.code,intento);decir(r.texto);if(!r.reintenta){cortada=true;pintarVacio();return}intento+=1;setTimeout(conectar,r.esperaMs)}}
+  conectar();}
 // fin de la pestaña del sitio
 if(CON_OFICINAS)arrancarOficinas();else armarSala(document.getElementById("stage"),window.tablero);

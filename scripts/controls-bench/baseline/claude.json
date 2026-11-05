@@ -1586,6 +1586,8 @@
     "on-pre-commit.js::freno-de-guardar-registro-viejo-ya-no-frena-fuera-de-la-corrida": true,
     "on-pre-commit.js::freno-de-guardar-gemelo-fuera-de-una-corrida-pasa": true,
     "on-pre-commit.js::freno-de-guardar-commit-del-camino-rapido-pregunta": true,
-    "on-pre-commit.js::freno-de-guardar-gemelo-carril-sin-firma-pasa": true
+    "on-pre-commit.js::freno-de-guardar-gemelo-carril-sin-firma-pasa": true,
+    "office-link-start.js::OficinaBench_CanalDeVuelta_UnaOrdenDelSitioSeDescartaYCierra": true,
+    "office-link-start.js::OficinaBench_AlPedir_SinSitioNiPuestaAlDia_NoDiceNada": true
   }
 }

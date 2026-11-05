@@ -44,7 +44,9 @@ function parse(argv) {
 
 /** El contenido de un archivo en main del perfil, o null si no está; una falla de git que no es «no está» se lanza. */
 function show(dir, ref, file) {
-  const g = spawnSync('git', ['-C', dir, 'show', `${ref}:${file}`], { encoding: 'utf8', windowsHide: true, timeout: 60000 });
+  // git en inglés: «no está» se reconoce por el texto del error, que git traduce
+  const env = require('../lib/clean-git-env.js').idiomaFijo();
+  const g = spawnSync('git', ['-C', dir, 'show', `${ref}:${file}`], { encoding: 'utf8', windowsHide: true, timeout: 60000, env });
   if (g.status === 0) return g.stdout;
   if (/does not exist|exists on disk, but not in/i.test(String(g.stderr || ''))) return null;
   throw new Error(RS.clean(String(g.stderr || '').trim().split('\n')[0] || `git salió ${g.status}`));
