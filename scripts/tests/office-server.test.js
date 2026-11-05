@@ -1176,6 +1176,10 @@ function cardDetail(card, sessions = []) {
   const code = html.slice(html.indexOf('// Quién hace una tarjeta'), html.indexOf('function abrirCharla('));
   const fichas = [];
   const stubs = {
+    // el número de la tarjeta (8.198): la misma regla que la página
+    numeroDe: (i) => (i && typeof i.numero === 'string' ? i.numero : ''),
+    // la X arriba de cada ventana (8.198)
+    botonCerrar: (alCerrar) => { const b = new Fake('button', 'close', '×'); b.setAttribute('aria-label', 'Cerrar'); b.onclick = alCerrar; return b; },
     el: (tag, cls, text) => new Fake(tag, cls, text), finTxt: (a) => (a.fin ? { hora: a.fin } : null), agents: sessions, AST: { trabajando: ['Trabajando', '#0f0'] }, etiquetaComo: (c) => new Fake('span', 'como', c), pintarFicha: (a) => fichas.push(a.nombre), ventana: () => win, cerrarCharla() {},
     document: { documentElement: new Fake('html') },
   };

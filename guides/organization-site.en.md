@@ -713,9 +713,10 @@ be, to copy it and open the request by hand.
   own session's chat. The question is "Who passes on the authorization to skip a serious check?": "Each developer
   (default)" means the developer writes the OK in their own session's chat; with "A coordinating session", "What do you
   call it?" appears (stored in `approvals.relay_session`, by default «coordinadora»). It only counts from here, never from
-  a machine. Which session is the coordinator is designated on each machine: in that session's chat, the developer
-  writes a sentence that names the role (the name above) and says it is this session, and the session records it with
-  `marker.js designate-relay --approved-by "<the developer>" --quote "<their sentence>"`. It is recognized by its
+  a machine. Which session is the coordinator is designated on each machine: the developer asks that session in their
+  own words, the session runs `marker.js designate-relay`, and the developer clicks the box that says which session it
+  is and in which folder (with no click, the old sentence stays as the fallback). It is withdrawn with
+  `marker.js withdraw-relay`. It is recognized by its
   conversation, not by its name: it keeps counting after the session restarts, and has to be designated again after a
   new chat or a `/clear`. A session with the same name cannot relay.
   Below it is **who signs each thing**: one row for each signature in the catalog
@@ -773,9 +774,10 @@ be, to copy it and open the request by hand.
   - **C · who signs each thing and its level**: "Who signs each thing" (the harness brings the list, the same for
     everyone; the team does not add or remove rows) and "The level of each signature" (it goes up, never down; only
     routine is delegated).
-  - **On each machine**, the designation: the sentence in the chosen session's chat. For it to sign what is delegated,
-    that session also runs `node scripts/lib/delegated-signing.js confirm-designation` and the owner approves it with a
-    click in the options box, or runs it at their terminal (see
+  - **On each machine**, the designation: the owner asks the chosen session, the session runs
+    `marker.js designate-relay`, and the owner clicks its box; that click names it and confirms it to sign what is
+    delegated. With the fallback sentence, that session also runs `node scripts/lib/delegated-signing.js confirm-designation`
+    and the owner approves it with a click, or at their terminal (see
     `guides/firmas-del-arnes.md`, «Aprobar en nombre del dueño»). It is recognized by its conversation, keeps counting
     after a restart, and has to be repeated after a new chat or a `/clear`. If nobody designated it, nobody confirmed
     the designation, or the session is closed, there is no coordinator: everything goes to the developer.

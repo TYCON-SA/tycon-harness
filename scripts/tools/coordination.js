@@ -376,10 +376,21 @@ function coordinate(opts = {}) {
   if (d && d.error) return { code: 1, text: `No pude saber cuál es la coordinadora: ${d.error}.` };
   if (!d || !sid || d.sesion !== sid) {
     const marker = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+    // sin el rol en el perfil, el click no tiene qué nombrar: se nombra con la frase
+    if (!r.firma) {
+      return { code: 1, text: [
+        `Esta sesión no es la ${rol.valor} de esta máquina${d ? ' (hay otra designada)' : ''}.`,
+        `Para que lo sea, el dueño escribe en este chat «Esta sesión es la ${rol.valor}», y después esta sesión corre:`,
+        `  node ${marker} designate-relay --approved-by '<el dueño>' --quote '<su frase, textual>'`,
+      ].join('\n') };
+    }
     return { code: 1, text: [
       `Esta sesión no es la ${rol.valor} de esta máquina${d ? ' (hay otra designada)' : ''}.`,
-      `Para que lo sea, el dueño escribe en este chat «Esta sesión es la ${rol.valor}», y después esta sesión corre:`,
-      `  node ${marker} designate-relay --approved-by '<el dueño>' --quote '<su frase, textual>'`,
+      `Para que lo sea, el dueño se lo pide a esta sesión con sus palabras, y esta sesión corre:`,
+      `  node ${marker} designate-relay`,
+      'El freno da un cuadro con «Sí» y «No» que dice qué sesión es y en qué carpeta: el dueño hace click y queda nombrada.',
+      `Para dejar de serlo, la misma forma: node ${marker} withdraw-relay`,
+      `Si el click no se puede comprobar, el comando dice por qué y da los respaldos (su terminal, o su frase con --quote).`,
     ].join('\n') };
   }
   const firmas = r.firma ? '' : `\nFirmas: van a la ventana del dueño; sin approvals.relay_session en el perfil del equipo esta sesión ordena y no firma${r.aviso ? ` (${r.aviso.replace(/: nadie reenvía$/, '')})` : ''}.`;
@@ -436,13 +447,22 @@ function lostDesignation(opts, sid) {
   const home = opts.home || require('os').homedir();
   const d = designacionVigente({ home });
   if (!d || d.error || !sid || !opts.title || !opts.transcript) return null;
-  const rol = { valor: rolDeCoordinar({ env: opts.env || process.env, home, arnes: opts.arnes }).rol };
+  const r = rolDeCoordinar({ env: opts.env || process.env, home, arnes: opts.arnes });
+  const rol = { valor: r.rol };
   if (titleIn(path.join(path.dirname(opts.transcript), `${d.sesion}.jsonl`)) !== opts.title) return null;
   const marker = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+  // sin el rol en el perfil, el click no tiene qué nombrar: se recupera con la frase
+  if (!r.firma) {
+    return [
+      `Coordinación: esta sesión era la ${rol.valor} de esta máquina y dejó de serlo al limpiar la conversación: para el arnés es otra conversación.`,
+      `Decile a la persona que, si quiere que siga siéndolo, escriba en este chat «Esta sesión es la ${rol.valor}». La frase la escribe ella, nunca vos.`,
+      `Con su frase, corré node ${marker} designate-relay --approved-by '<la persona>' --quote '<su frase, textual>' y seguí lo que te diga.`,
+    ].join('\n');
+  }
   return [
     `Coordinación: esta sesión era la ${rol.valor} de esta máquina y dejó de serlo al limpiar la conversación: para el arnés es otra conversación.`,
-    `Decile a la persona que, si quiere que siga siéndolo, escriba en este chat «Esta sesión es la ${rol.valor}». La frase la escribe ella, nunca vos.`,
-    `Con su frase, corré node ${marker} designate-relay --approved-by '<la persona>' --quote '<su frase, textual>' y seguí lo que te diga.`,
+    `Decile a la persona que, si quiere que siga siéndolo, te lo pida con sus palabras. El pedido es de ella, nunca tuyo.`,
+    `Con su pedido, corré node ${marker} designate-relay: el freno te da un cuadro con «Sí» y «No» para mostrarle tal cual, y con su click queda nombrada. Si el click no se puede comprobar, el comando dice los respaldos.`,
   ].join('\n');
 }
 

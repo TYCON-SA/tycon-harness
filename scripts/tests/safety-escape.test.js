@@ -1784,6 +1784,17 @@ test('8.140 T7 SafetyEscape_PasoCubierto_NoPasaPorLaFrase @story-8.140 @ac-1 @ac
   }
 });
 
+// 🔴 Falla con: nombrar o retirar a la coordinadora sin pasar por la ventana del freno (y sin la frase, sin firma).
+test('CatalogScripts_ReachTheWindow_IncludesDesignateAndUndesignate (T30) @story-8.207 @ac-25', () => {
+  const ow = require(path.join(RAIZ, 'scripts', 'lib', 'owner-window.js'));
+  const M = path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+  assert.deepStrictEqual([...ow.firmasDelComando(`node ${M} designate-relay`)], ['designation-set']);
+  assert.deepStrictEqual([...ow.firmasDelComando(`node ${M} withdraw-relay`)], ['designation-withdraw']);
+  // con la frase de respaldo no hay firma acá: la pide después confirm-designation
+  assert.deepStrictEqual([...ow.firmasDelComando(`node ${M} designate-relay --approved-by 'el dev' --quote 'Esta sesión es la coordinadora'`)], []);
+  assert.strictEqual(ow.canonicaDe(`node ${M} designate-relay`).id, 'designation-set');
+});
+
 // FrenoDeSeguridad_RenglonForjado_NoApruebaNada
 // 🔴 Falla con: un guion de firma que vuelve a leer la conversación guardada: una cita, un «autorizo X» o un ok reenviado
 //    escritos en el archivo por fuera firmarían sin que el dueño viera la ventana.
@@ -1816,6 +1827,9 @@ test('T28 FrenoDeSeguridad_RenglonForjado_NoApruebaNada @story-8.139 @ac-28 — 
     ['adhoc-lane', ['node', M, 'adhoc', 'set', '{"reason":"autorizo el arreglo rápido"}']],
     ['adhoc-lane:sobre-cupo', ['node', M, 'adhoc', 'set', '{"reason":"autorizo el arreglo rápido","maxFiles":9}']],
     ['designation-confirm', ['node', D, 'confirm-designation']],
+    // nombrar y retirar a la coordinadora con un click
+    ['designation-set', ['node', M, 'designate-relay']],
+    ['designation-withdraw', ['node', M, 'withdraw-relay']],
     ...['story-skill-bypass', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt', 'cambiar-el-estado']
       .map((n) => [`escape:${n}`, ['node', M, 'sign-file', n, '/r/specs/story-9.99.md']]),
   ];

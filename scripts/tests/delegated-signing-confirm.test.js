@@ -256,3 +256,62 @@ test('Terminal_FueraDeWindows_NoAbreVentana_PideLaTerminal', (t) => {
   assert.strictEqual(r.abrio, null);
   assert.match(r.stderr, /pide la terminal del dueño/);
 });
+
+// --- la designación por click -----------------------------------------------------------------------------------------
+
+const ds = require(GUION);
+const cwLib = require(path.join(PIPELINE_LIB, 'critical-waivers.js'));
+const paths = (casa) => ds.accountPaths(casa);
+/** Una designación por click con su confirmación del mismo comando, como la deja marker.js designate-relay. */
+function porClick(casa, { sesion = COORDINADORA, ts = '2026-11-04T10:00:00.000Z', confirmada = true } = {}) {
+  const d = { name: 'relay-designation', status: 'ok', ts, sesion, rol: 'coordinadora', quien: 'el dueño', via: 'click' };
+  fs.appendFileSync(registro(casa), `${JSON.stringify(d)}\n`);
+  if (confirmada) fs.appendFileSync(registro(casa), `${JSON.stringify(ds.confirmationRecord({ ...d, cita: null }, ts, { via: 'click' }))}\n`);
+  return d;
+}
+
+// 🔴 Falla con: las dos lecturas de la confirmación que no coinciden para una designación sin frase.
+test('ConfirmedDesignation_And_CoordinadoraConfirmada_ClickDesignation_Agree (T6)', (t) => {
+  const casa = casaNueva(t);
+  porClick(casa);
+  assert.strictEqual(ds.confirmedDesignation(paths(casa)).ok, true);
+  assert.strictEqual(oa.coordinadoraConfirmada(casa), COORDINADORA);
+  const sin = casaNueva(t);
+  porClick(sin, { confirmada: false });
+  assert.strictEqual(ds.confirmedDesignation(paths(sin)).ok, false);
+  assert.strictEqual(oa.coordinadoraConfirmada(sin), null);
+});
+
+// 🔴 Falla con: la confirmación de un click viejo que confirma la designación siguiente de la misma sesión.
+test('ConfirmedDesignation_ConfirmationOfEarlierClick_DoesNotConfirmLater (T8)', (t) => {
+  const casa = casaNueva(t);
+  porClick(casa, { ts: '2026-11-04T09:00:00.000Z' });
+  porClick(casa, { ts: '2026-11-04T10:00:00.000Z', confirmada: false });
+  assert.strictEqual(cwLib.designacionVigente({ dir: paths(casa).state }).ts, '2026-11-04T10:00:00.000Z');
+  assert.strictEqual(ds.confirmedDesignation(paths(casa)).ok, false);
+  assert.strictEqual(oa.coordinadoraConfirmada(casa), null);
+});
+
+// 🔴 Falla con: un perfil que delega nombrar o retirar a la coordinadora, y la delegación que lo deja pasar.
+test('DesignationFirmas_InDelegatedSigning_NeverDelegated (T25)', (t) => {
+  const casa = casaNueva(t);
+  porClick(casa);
+  const perfil = () => ({ delegated_signing: ['designation-set', 'designation-withdraw', 'plan-approval'], delegated_machines: [{ id: 'm1' }] });
+  for (const firma of ['designation-set', 'designation-withdraw']) {
+    const r = ds.delegaSinVentana({ firma, sesion: COORDINADORA, destino: 'ses-otra', home: casa, estado: paths(casa).state, perfil, huella: () => ({ huella: 'm1' }) });
+    assert.strictEqual(r.ok, false, firma);
+    assert.match(r.motivo, /no se delega/, firma);
+  }
+});
+
+// 🔴 Falla con: una designación por frase de antes de esta historia que ya no confirma.
+test('ConfirmDesignation_QuoteDesignationFromBefore_StillConfirms (T31)', (t) => {
+  const casa = casaNueva(t);
+  designar(casa, { cita: 'vos coordinás' });
+  const d = cwLib.designacionVigente({ dir: paths(casa).state });
+  // el renglón que dejaba confirm-designation antes: con la huella de la frase
+  fs.appendFileSync(registro(casa), `${JSON.stringify({ name: 'relay-designation-confirmed', status: 'ok', ts: '2026-11-02T00:01:00.000Z', sesion: d.sesion, designacion_ts: d.ts,
+    cita_sha: require('crypto').createHash('sha256').update('vos coordinás').digest('hex') })}\n`);
+  assert.strictEqual(ds.confirmedDesignation(paths(casa)).ok, true);
+  assert.strictEqual(oa.coordinadoraConfirmada(casa), COORDINADORA);
+});

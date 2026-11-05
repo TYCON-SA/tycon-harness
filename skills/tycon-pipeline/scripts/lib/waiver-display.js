@@ -63,9 +63,8 @@ function leerMarcador(stateDir, sessionId) {
 }
 
 /** Los datos de cada criterio pedido que está pendiente de firma (declarado imposible), con la huella de su declaración. */
-function criteriosDe(storyPath, acs) {
-  const rm = require('../runtime-matrix.js');
-  const matrix = rm.compute({ storyPath });
+function criteriosDe(storyPath, acs, calculada = null) {
+  const matrix = calculada || require('../runtime-matrix.js').compute({ storyPath });
   if (matrix.structuralError) return { error: matrix.structuralError };
   const pend = new Set(matrix.notVerifiable || []);
   const lista = [];

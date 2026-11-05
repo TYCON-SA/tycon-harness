@@ -19,7 +19,7 @@ const AHORA = Date.parse('2026-11-01T23:30:00Z');
 const hace = (min) => new Date(AHORA - min * 60000).toISOString();
 const SIEMPRE = () => ({ ok: true });
 const FIRMA = 'save';
-const armar = (firma = FIRMA, destino = 'ses-a', huella = 'ab12cd34') => oa.cuadroDe({ firma, destino, que: 'guardar los cambios', detalle: 'el comando: marker.js approve-save', siSaleMal: 'se revierte el commit', huella });
+const armar = (firma = FIRMA, destino = 'ses-a', huella = 'ab12cd34') => oa.cuadroDe({ firma, destino, que: 'guardar los cambios', queHace: ['el comando: marker.js approve-save'], siSaleMal: 'se revierte el commit', huella });
 const CUADRO = armar();
 const PIDE = CUADRO.pregunta;
 const CTX = (casa, o = {}) => ({ casa, cuadro: CUADRO, destino: 'ses-a', ...o });
@@ -432,7 +432,7 @@ test('T13 Cuadro_SobreCupo_OtraDescripcion_NoVale @story-8.181 @ac-5', (t) => {
 // El detalle de la pregunta copia el motivo del comando, que escribió el agente: lo que dice ahí no es la sesión que firma.
 test('Sello_MotivoQueNombraOtraSesion_ElAprobadoVale', (t) => {
   const casa = casaNueva(t);
-  const c = oa.cuadroDe({ firma: FIRMA, destino: 'ses-a', que: 'guardar', detalle: 'el motivo: «sigue el carril de la sesion e573b06f»', siSaleMal: 'se revierte', huella: 'ab12cd34' });
+  const c = oa.cuadroDe({ firma: FIRMA, destino: 'ses-a', que: 'guardar', cita: 'sigue el carril de la sesion e573b06f', siSaleMal: 'se revierte', huella: 'ab12cd34' });
   transcripcion(casa, 'ses-a', [agente(c.pregunta), tipeado('Aprobado')]);
   assert.deepStrictEqual(oa.validarEnClaude(mensaje(), { ...CTX(casa), cuadro: c }), { ok: true });
   // fuera de la pregunta armada, nombrar otra sesión sigue invalidando
