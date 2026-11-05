@@ -726,17 +726,17 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 **Guía:** [harness-cost-tiering](harness-cost-tiering.md#el-tamaño-de-la-corrida-liviana-o-completa)
 
-## skills/tycon-pipeline/scripts/lib/suite-times.js — cuánto tarda cada suite y cuántas corren a la vez
+## skills/tycon-pipeline/scripts/lib/suite-times.js — tiempos y suites a la vez
 
-**Qué es:** El registro de los segundos de cada suite (`suite-times.jsonl`) y cuántas corren a la vez: núcleos menos dos, o menos la carga; dos núcleos para la persona.
+**Qué es:** Los segundos de cada suite y cuántas corren a la vez: núcleos menos dos o menos la carga; dos núcleos para la persona.
 
-**Por qué existe:** Los tiempos se perdían con cada ejecución. `suite-times.js slow` lista las lentas; un portón a mano acota desde la bifurcación con main.
+**Por qué existe:** `suite-times.js slow` lista las lentas; un portón a mano acota desde la bifurcación con main.
 
-**Quién la usa:** El portón, las portables y la validación de Azure.
+**Quién la usa:** El portón y las portables.
 
 **Dónde se prueba:** `suite-times.test.js`, `suite-workers.test.js`
 
-**Guía:** [test-execution-discipline](test-execution-discipline.md#las-suites-del-arnés-cuántas-a-la-vez-cuáles-corren-y-cuáles-son-las-lentas)
+**Guía:** [test-execution-discipline](test-execution-discipline.md)
 
 ## skills/tycon-pipeline/scripts/lib/story-review-record.js — la revisión de la historia antes de programar
 

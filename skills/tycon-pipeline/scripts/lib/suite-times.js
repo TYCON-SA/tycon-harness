@@ -334,7 +334,7 @@ const slowGatesDir = (home) => path.join(stateDir(home), 'slow-gates');
 function processStart(pid) {
   if (process.platform === 'win32') return null;
   // con el idioma y la zona fijos: quien escribe el aviso y quien lo lee pueden tener otro ambiente
-  const env = { ...process.env, LC_ALL: 'C', LANG: 'C', TZ: 'UTC' };
+  const env = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).idiomaFijo(process.env, { TZ: 'UTC' });
   const r = spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'ignore'] });
   return r.status === 0 && r.stdout.trim() ? r.stdout.trim() : null;
 }
