@@ -175,6 +175,22 @@ test('T35 Retiradas_SinRegistroOIlegible_NoMedido @story-8.202 @ac-31 @ac-32', (
   assert.doesNotThrow(() => R.retiredSessions({ home: path.join(t.root, 'no-existe'), now: NOW }));
 });
 
+test('T37 Retiradas_QuietaHorasYMotivoDesconocido_SeCuentan @story-8.202 @ac-31', () => {
+  const t = toy();
+  daemon(t, [
+    `[${iso(mins(50))}] [bg] bg retire aaaabbbb: idle-prompt, idle 2h [low memory]`,
+    `[${iso(mins(40))}] [bg] bg retire ccccdddd: idle-prompt, idle 1h5m [algo nuevo]`,
+    `[${iso(mins(30))}] [bg] bg retire eeeeffff: idle-prompt, idle 45s`,
+  ]);
+  const r = R.retiredSessions({ home: t.home, now: NOW });
+  assert.strictEqual(r.measured, true, r.why);
+  assert.deepStrictEqual(r.retired.map((x) => [x.short, x.idleMin, x.reason]), [
+    ['aaaabbbb', 120, 'falta de memoria'],
+    ['ccccdddd', 65, 'un motivo que no conozco: algo nuevo'],
+    ['eeeeffff', 0, 'idle-prompt'],
+  ]);
+});
+
 test('Adv5 Wip_Retiradas_VivaFueraEIlegibleDicho @story-8.202 @ac-30 @ac-31', () => {
   const t = toy();
   daemon(t, [retire(mins(40), 'aaaabbbb', 27), retire(mins(40), 'ccccdddd', 15)]);
