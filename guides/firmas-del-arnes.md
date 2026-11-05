@@ -163,7 +163,7 @@ Lo que tiene que cumplir esa aprobación:
 - **La pregunta la arma el freno.** Se la da al agente al negar el comando, con el sello «firma <id> · sesión <id> · código
   <huella>», y el agente la muestra sin cambiarle una letra. Tu click vale sólo con esa pregunta entera. Tu
   «aprobado» vale si lo último que te dijo el agente trae ese sello y no nombra otra sesión.
-- **La pregunta dice qué aprobás.** En este orden: lo que se aprueba («¿Aprobar el plan de una story?»), la historia con
+- **La pregunta dice qué aprobás.** En este orden: lo que se aprueba («¿Eximir un hallazgo crítico de los revisores?»), la historia con
   su título y la sesión, qué hace en hasta 3 líneas, qué archivos toca, dónde está lo completo (el plan, el diff de los
   controles, la historia, el informe de hallazgos), qué pasa si sale mal con esa firma y, al final, la cita de la sesión.
   Lo que hace sale de lo que firmarías si lo abrieras, no de lo que escribió la sesión. La huella del sello incluye eso
