@@ -82,8 +82,11 @@ function reading(version) {
  * Lo que usa esta sesión: `{ entrypoint, pieces }`, con `pieces.console` y `pieces.extension` en
  * `{ status: old | fine | unknown | unused, version }`. `pieces` es null sin una forma de entrar que se conozca.
  */
+/** Por dónde entró esta sesión, como lo dice la herramienta: `cli` en la terminal y de fondo, `sdk-cli` bajo `claude -p`. */
+const entrypointOf = (env = process.env) => String(env.CLAUDE_CODE_ENTRYPOINT || '');
+
 function versionsInUse({ env = process.env, platform = process.platform, run = spawnSync } = {}) {
-  const entrypoint = String(env.CLAUDE_CODE_ENTRYPOINT || '');
+  const entrypoint = entrypointOf(env);
   const running = runningVersion(env);
   if (CONSOLE_ENTRYPOINTS.includes(entrypoint)) {
     return { entrypoint, pieces: { console: reading(running), extension: { status: 'unused', version: null } } };
@@ -135,4 +138,4 @@ function clickHint(record) {
   return `. Tu Claude Code está en ${version}, y por debajo de ${MIN_VERSION} tu click en el cuadro no firma: actualizalo`;
 }
 
-module.exports = { MIN_VERSION, isOlder, runningVersion, consoleVersion, versionsInUse, startupNotice, doctorItems, clickHint };
+module.exports = { MIN_VERSION, isOlder, runningVersion, consoleVersion, versionsInUse, startupNotice, doctorItems, clickHint, entrypointOf };
