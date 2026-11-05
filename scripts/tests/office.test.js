@@ -3498,3 +3498,30 @@ test('T309 Wall_Folds: Sin sesión y Terminados se pliegan con más de 5; lo que
   const again = openWallPanel(data, ['sinEmpezar']);
   assert.strictEqual(again.children[again.children.findIndex((k) => k.tag === 'h4' && textOf(k).startsWith('Sin sesión')) + 1].children.length, 12, 'abierta, sigue abierta con la foto nueva');
 });
+
+test('T312 OldWait_BusySession_Works: una espera anotada hace rato no le gana a la sesión ocupada; la reciente, o con la sesión quieta, sigue', async () => {
+  const m = parkMachine();
+  const now = Date.now();
+  runMarkerFile(m, 'g', '9.3', 'La suite de Gallardo', BEFORE_PLAN.concat('approve-plan'), { startedAt: oldHours(now, 5), lastTouch: oldHours(now, 1) });
+  const wait = (sid, mins) => fs.writeFileSync(path.join(m.state, 'doing', `${sid}.json`), JSON.stringify({ at: atIso(now - mins * 60000), waitingFor: 'turno de suite (N.º 2)', waitingSince: atIso(now - mins * 60000) }));
+  wait('g', 40);
+  sessionWith(m, 'g', 'Gallardo', 'busy', now);
+  const said = async () => {
+    const w = await wipNow({ home: m.home, now: atIso(now), queryAll: noPrs });
+    const i = w.rows.findIndex((r) => r.session === 'Gallardo');
+    return { end: w.rows[i].end, card: byName(await collectAt(m, now), 'Gallardo') };
+  };
+  let r = await said();
+  assert.doesNotMatch(r.end, /espera turno de suite/, r.end);
+  assert.notStrictEqual(r.card.estado, 'esperando');
+  assert.strictEqual(r.card.titulo, 'La suite de Gallardo');
+  // quieta, la espera sigue siendo lo que hace
+  sessionWith(m, 'g', 'Gallardo', 'idle', now);
+  r = await said();
+  assert.strictEqual(r.card.estado, 'esperando');
+  // recién anotada, todavía es una espera aunque esté ocupada
+  wait('g', 1);
+  sessionWith(m, 'g', 'Gallardo', 'busy', now);
+  r = await said();
+  assert.strictEqual(r.card.estado, 'esperando');
+});
