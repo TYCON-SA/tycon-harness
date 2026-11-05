@@ -104,6 +104,7 @@ const MEASURES = {
   'La coordinadora cierra los detalles con la opción más segura': 'nadie',
   'Cada sesión con un nombre puesto por una persona': 'aviso',
   'No más sesiones trabajando que el tope': 'freno',
+  'Con la fila de la suite larga no se abren sesiones para programar': 'nadie',
   'Una suite completa por vez': 'freno',
   'Pases adversariales de a uno': 'freno',
   'Las sesiones de fondo quietas se cierran o reciben trabajo': 'aviso',
