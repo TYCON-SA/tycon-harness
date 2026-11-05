@@ -51,8 +51,9 @@ const APRUEBA = 'Sí, aprobar';
 const NIEGA = 'No';
 // lo que llega como prompt sin que lo haya escrito la persona: mensajes de otra sesión, de un canal, avisos de tareas
 const ENVUELTO = /<(?:cross-session-message|channel|task-notification|teammate-message|system-reminder|local-command|command-name)\b/i;
-// los ganchos del arnés que pueden escuchar el cuadro: el aviso de espera y el que anota el click
-const PERMITIDOS = ['wait-notice.js', 'owner-approval-record.js', 'session-state.js'];
+// los ganchos del arnés que pueden escuchar el cuadro: el aviso de espera, el que anota el click, el estado de la sesión y
+// el freno que no deja preguntar a una sesión abierta por la coordinadora
+const PERMITIDOS = ['wait-notice.js', 'owner-approval-record.js', 'session-state.js', 'background-question-guard.js'];
 // Cómo anota la herramienta un mensaje tipeado, medido en transcripciones reales: en la consola `cli · typed`, en la extensión
 // del editor `claude-vscode · sdk`. Otra sesión llega con `system`, y un programa (`claude -p`) con `sdk-cli`.
 const TIPEADO = { cli: ['typed'], 'claude-vscode': ['sdk'] };

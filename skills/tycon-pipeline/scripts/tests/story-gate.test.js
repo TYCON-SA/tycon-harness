@@ -933,6 +933,32 @@ test('Freno_RegistroDeAprobaciones_SoloEnElEstado', () => {
   }
 });
 
+test('T9 EscrituraDeLaunched_SeNiega @story-8.211 @ac-11', () => {
+  // por Edit o Write, en las dos carpetas del estado de la cuenta; uno con ese nombre en un producto no es el registro
+  for (const f of ['/home/u/.tycon/state/coordination/launched.json', '/home/u/.claude/.tycon-pipeline/coordination/launched.json']) {
+    assert.ok(gate.isLaunchedSessionsRecord(f), f);
+    // adentro del estado del pipeline lo frena primero ese freno; en la otra carpeta del estado, el suyo
+    const r = gate.computeStoryGate({ ...BASE, stateDir: '/otra/casa/.tycon-pipeline', filePath: f });
+    assert.equal(r.action, 'block', f);
+    assert.equal(r.kind, 'launched-sessions', f);
+    assert.match(gate.blockMessage(r, { filePath: f }), /sesiones que abrió la coordinadora/);
+    assert.equal(gate.computeStoryGate({ ...BASE, filePath: f }).action, 'block', f);
+  }
+  assert.notEqual(gate.computeStoryGate({ ...BASE, filePath: `${REPO}/coordination/launched.json` }).kind, 'launched-sessions');
+  // por la consola: borrar, mover, vaciar o escribir encima
+  const raiz = fs.mkdtempSync(path.join(os.tmpdir(), 'launched-'));
+  const stateDir = path.join(raiz, '.tycon', 'state');
+  fs.mkdirSync(path.join(stateDir, 'coordination'), { recursive: true });
+  const f = path.join(stateDir, 'coordination', 'launched.json');
+  fs.writeFileSync(f, '[]');
+  try {
+    for (const command of [`rm ${f}`, `mv ${f} ${raiz}/guardado.json`, `> ${f}`, `node -e "require('fs').unlinkSync('${f}')"`, `rm -rf ${stateDir}/coordination`]) {
+      const r = bash.handle({ tool_name: 'Bash', session_id: 's1', cwd: raiz, tool_input: { command } }, { stateDir, installedRoots: [] });
+      assert.ok(r && r.block, `${command}: ${JSON.stringify(r)}`);
+    }
+  } finally { fs.rmSync(raiz, { recursive: true, force: true }); }
+});
+
 test('T33 Freno_PowerShell_FormasNuevas', () => {
   const { stateDir, repo } = corridaAbierta();
   const ev = (command) => ({ tool_name: 'PowerShell', session_id: 's1', cwd: repo, tool_input: { command } });

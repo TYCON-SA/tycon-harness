@@ -691,10 +691,22 @@ function aprobacionExplicita({ pendientes, sesion, destino, casa, ahora, cwd, ap
  * formas de aprobarlo. Lo irreversible, sólo la terminal. `anotado`: ya quedó en la lista de firmas y una coordinadora
  * viva se lo va a pasar a la persona (`anotarNegativa`): la sesión sólo espera el aviso para repetir el comando.
  */
-function negarSinVentana(motivo, ids, sesion, cuadro = null, deFondo = false, anotado = false) {
+function negarSinVentana(motivo, ids, sesion, cuadro = null, deFondo = false, anotado = false, coordinadora = null) {
   if (vaATerminal(ids)) return negarCon(motivo, ids, sesion);
   const t = terminalDe(ids, sesion);
   const otraForma = `Si prefiere la terminal: ${t || 'el mismo comando con --terminal'}.`;
+  // una sesión que abrió la coordinadora no le muestra el cuadro a la persona (scripts/hooks/background-question-guard.js):
+  // se lo manda a la coordinadora, que lo muestra en su pestaña
+  const aQuien = coordinadora ? `«${coordinadora.name}» (${coordinadora.sid})` : null;
+  if (aQuien && cuadro && cuadro.soloClick) {
+    return { decision: 'deny', firmas: ids, cuadro, texto: `${motivo}. Esta sesión la abrió la coordinadora y esta firma sólo la aprueba un click en la pestaña que trabaja: no muestres el cuadro. `
+      + `Queda la terminal del dueño (${t || 'el mismo comando con --terminal'}): mandale eso a ${aQuien} por SendMessage, con lo que se decide en tres renglones, y esperá su aviso.` };
+  }
+  if (aQuien && !anotado && cuadro && !cuadro.error && ids.length === 1) {
+    return { decision: 'deny', firmas: ids, cuadro, texto: `${motivo}. Esta sesión la abrió la coordinadora: no le muestres el cuadro a la persona. `
+      + `Mandale a ${aQuien} por SendMessage esta pregunta exacta, sin cambiarle una letra: «${cuadro.pregunta}», con las opciones «${cuadro.opciones[0]}» y «${cuadro.opciones[1]}», el comando y lo que se decide en tres renglones. `
+      + `Ella la muestra en su pestaña; cuando te avise, repetí el mismo comando. ${otraForma}` };
+  }
   if (cuadro && cuadro.soloClick) {
     return { decision: 'deny', firmas: ids, cuadro, texto: `${motivo}. Esto lo elige la persona con un click en el cuadro de opciones de esta pestaña: mostrale AskUserQuestion con una sola pregunta, sin cambiarle una letra: «${cuadro.pregunta}», y las opciones «${cuadro.opciones[0]}», con la descripción «${cuadro.descripciones[0]}», y «${cuadro.opciones[1]}», con la descripción «${cuadro.descripciones[1]}». `
       + `Con su click, repetí el mismo comando. Un mensaje escrito no vale, ni un click en otra pestaña. ${deFondo ? 'Si nadie mira esta sesión de fondo, queda la terminal. ' : ''}${otraForma}` };
@@ -982,7 +994,10 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
         const donde = soloClick ? 'pasar el tope del camino corto no se aprueba en la ventana' : enWindows ? 'en Windows la ventana de permiso no firma' : deFondo ? 'esta sesión corre de fondo: la ventana de permiso no le llega a nadie seguro'
           : `esta pestaña no pide permisos (${una(modo, 40)}): la ventana se aprobaría sola, sin el Sí del dueño`;
         const anotado = anotarNegativa({ casa, sesion, destino, guion, pendientes, comando, palabras: can && can.palabras, cuadro, cwd: evento.cwd, ahora, deFondo, lista });
-        return negarSinVentana(`${donde}${rutina.motivo && !enWindows ? `, y ${rutina.motivo}` : ''}; ${a.motivo}`, pendientes, paraTerminal, cuadro, deFondo, anotado);
+        // sin el dato, el texto de siempre
+        let coordinadora = null;
+        if (deFondo) { try { coordinadora = require('../hooks/background-question-guard.js').coordinadoraDeLaLanzada({ home: casa, sid: sesion }); } catch (_) { coordinadora = null; } }
+        return negarSinVentana(`${donde}${rutina.motivo && !enWindows ? `, y ${rutina.motivo}` : ''}; ${a.motivo}`, pendientes, paraTerminal, cuadro, deFondo, anotado, coordinadora);
       }
     }
   }
@@ -1449,7 +1464,7 @@ function quienFirmo({ via, sesion } = {}, persona) {
 }
 
 module.exports = { VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
-  rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, esAnfitrionDeFondoDe };
+  rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, esAnfitrionDeFondoDe, negarSinVentana };
 
 if (require.main === module) {
   const argv = process.argv.slice(2);

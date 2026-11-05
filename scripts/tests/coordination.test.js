@@ -1291,3 +1291,43 @@ test('Close_FreesTheName: la sesión cerrada sale de las recién abiertas', () =
   assert.strictEqual(closeIt(t, 'limpia', { now: NOW }).closed, true);
   assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(t.state, 'coordination', 'opened.json'), 'utf8')).map((o) => o.name), ['otra']);
 });
+
+// ── The sessions `open` launched ──────────────────────────────────────────────────────────────────────────────────
+
+const launchedRows = (home) => { try { return JSON.parse(fs.readFileSync(C.launchedFile(home), 'utf8')); } catch { return null; } };
+
+test('T12 Open_AnotaLaLanzada @story-8.211 @ac-9: abrir bien deja { name, cwd, at, por }; un lanzador que falla, nada', () => {
+  const t = toy();
+  const r = open(t, { name: 'n1', task: 'algo', launcher: launcher(t) });
+  assert.strictEqual(r.ok, true, r.message);
+  const rows = launchedRows(t.home);
+  assert.strictEqual(rows.length, 1);
+  assert.deepStrictEqual({ ...rows[0], cwd: fs.realpathSync(rows[0].cwd) }, { name: 'n1', cwd: fs.realpathSync(t.root), at: NOW, por: CALLER_SID });
+  const f = toy();
+  assert.strictEqual(open(f, { name: 'n2', task: 'algo', launcher: launcher(f, 'error') }).ok, false);
+  assert.strictEqual(launchedRows(f.home), null, 'sin apertura, sin renglón');
+});
+
+test('T13 OpenYClose_LimpianLaunched @story-8.211 @ac-10: lo viejo sin sesión viva se borra; close saca el suyo', () => {
+  const t = closeLab();
+  const day = 24 * 3600000;
+  bg(t, 'viva', t.repo, { startedAt: NOW - 2 * day + 7000 });
+  bg(t, 'limpia', t.repo);
+  fs.mkdirSync(path.dirname(C.launchedFile(t.home)), { recursive: true });
+  fs.writeFileSync(C.launchedFile(t.home), JSON.stringify([
+    { name: 'vieja', cwd: t.repo, at: NOW - 2 * day, por: COORD_SID },
+    { name: 'viva', cwd: t.repo, at: NOW - 2 * day, por: COORD_SID },
+    { name: 'limpia', cwd: t.repo, at: NOW - 60000, por: COORD_SID },
+  ]));
+  assert.strictEqual(closeIt(t, 'limpia', { now: NOW }).closed, true);
+  assert.deepStrictEqual(launchedRows(t.home).map((r) => r.name), ['viva']);
+  const o = toy();
+  session(o, 'sid-otra', 'otra', { kind: 'bg', startedAt: NOW - 2 * day + 7000 });
+  fs.mkdirSync(path.dirname(C.launchedFile(o.home)), { recursive: true });
+  fs.writeFileSync(C.launchedFile(o.home), JSON.stringify([
+    { name: 'vieja', cwd: o.root, at: NOW - 2 * day, por: CALLER_SID },
+    { name: 'otra', cwd: o.root, at: NOW - 2 * day, por: CALLER_SID },
+  ]));
+  assert.strictEqual(open(o, { name: 'n3', task: 'algo', launcher: launcher(o) }).ok, true);
+  assert.deepStrictEqual(launchedRows(o.home).map((r) => r.name), ['otra', 'n3']);
+});

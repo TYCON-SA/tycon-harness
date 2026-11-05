@@ -990,6 +990,62 @@ function noteOpened({ home, now, name, cwd }) {
   writeJson(openedFile(home), [...recentOpened(home, now, []).filter((o) => o.name !== name), { name, cwd, at: now }]);
 }
 
+// ── Las sesiones que abrió `open` ──
+// `opened.json` vence a los diez minutos: sirve para el tope, no para saber horas después quién abrió una sesión. Este
+// registro dura mientras la sesión vive, y el freno de preguntas (scripts/hooks/background-question-guard.js) lo lee para
+// reconocer a una sesión de fondo abierta por la coordinadora, que el archivo de sesión no distingue de una abierta a mano.
+
+const LAUNCHED_KEEP_MS = 24 * 3600000;
+// el lanzador puede tardar hasta su plazo en dejar el archivo de sesión; el margen cubre una máquina cargada
+const LAUNCHED_EARLY_MS = 5000;
+const LAUNCHED_LATE_MS = LAUNCH_TIMEOUT_MS + 60000;
+const launchedFile = (home) => path.join(coordinationDir(home), 'launched.json');
+const realDir = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(String(p)); } };
+
+/** Los renglones de `launched.json`, tal como están. Sin archivo, vacío; roto o que no es una lista, tira con su motivo. */
+function readLaunched(home) {
+  const list = readJson(launchedFile(home), []);
+  if (!Array.isArray(list)) throw new Error(`${launchedFile(home)} no es una lista`);
+  return list;
+}
+
+/** ¿El renglón es de esta sesión? Mismo nombre y carpeta, y arrancó dentro de la ventana de su apertura. */
+function launchedMatches(row, s) {
+  if (!row || typeof row !== 'object' || !s || row.name !== s.name || !row.cwd || !s.cwd || !Number.isFinite(row.at)) return false;
+  if (realDir(row.cwd) !== realDir(s.cwd)) return false;
+  return Number.isFinite(s.startedAt) && s.startedAt >= row.at - LAUNCHED_EARLY_MS && s.startedAt <= row.at + LAUNCHED_LATE_MS;
+}
+
+/** Saca lo que ya no sirve: `drop` (el nombre que se cierra) y lo de más de un día sin una sesión viva que lo use. */
+function pruneLaunched({ home, now, drop = null, sessions = null }) {
+  const list = readLaunched(home);
+  const live = [...(sessions || sessionsBySid(path.join(claudeDir(home), 'sessions'), [], null)).values()].filter((s) => s.alive);
+  const keep = list.filter((r) => r && r.name !== drop && (now - r.at < LAUNCHED_KEEP_MS || live.some((s) => launchedMatches(r, s))));
+  if (keep.length !== list.length) writeJson(launchedFile(home), keep);
+  return keep;
+}
+
+/** Anota la sesión que `open` acaba de abrir. Tira si no puede. */
+function noteLaunched({ home, now, name, cwd, por }) {
+  const keep = pruneLaunched({ home, now, drop: name });
+  writeJson(launchedFile(home), [...keep, { name, cwd, at: now, por: por || null }]);
+}
+
+/**
+ * ¿La sesión `sid` la abrió `open`? `{ launched }`, o `{ problem }` si no se pudo leer su archivo de sesión o el registro:
+ * quien llama decide qué hace sin el dato.
+ */
+function launchedBy({ home, sid }) {
+  const unreadable = [];
+  const sessions = sessionsBySid(path.join(claudeDir(home), 'sessions'), unreadable, null);
+  const s = sessions.get(sid);
+  if (!s) return unreadable.length ? { problem: `no pude leer las sesiones (${unreadable[0]})` } : { launched: false };
+  if (!/^(bg|background)$/.test(String(s.kind))) return { launched: false };
+  let list;
+  try { list = readLaunched(home); } catch (e) { return { problem: e.message }; }
+  return { launched: list.some((r) => launchedMatches(r, s)) };
+}
+
 // Una apertura por vez en la máquina: dos `open` juntos elegían el mismo nombre de la lista y la segunda anotación de
 // `opened` pisaba la primera. La otra espera su turno; un candado de hace más de dos minutos es de una apertura que murió.
 const OPEN_LOCK_STALE_MS = 120000;
@@ -1114,6 +1170,16 @@ function openNow(opts) {
     return fail(`El lanzador falló: ${first || (r.signal ? `lo cortó la señal ${r.signal}` : `salió con código ${r.status}`)}. No reintenté.`);
   }
   const opened = `Abrí «${name}» en ${where}. Para entrar: claude attach ${name}, o desde claude.ai/code (control remoto «${name}»)`;
+  let unlaunched = '';
+  try { noteLaunched({ home, now, name, cwd: where, por: sessionOf({ ...opts, env }) }); } catch (e) {
+    unlaunched = ` No la pude anotar entre las que abrió la coordinadora (${e.code || e.message}): puede preguntarle a la persona.`;
+  }
+  if (unlaunched) {
+    try { noteOpened({ home, now, name, cwd: where }); } catch (e) {
+      return { ok: true, message: oneLine(`${opened}. Pero no la pude anotar (${e.code || e.message}): hasta que escriba su archivo de sesión no cuenta para el tope.${unlaunched}`) };
+    }
+    return { ok: true, message: oneLine(`${opened}.${unlaunched}`) };
+  }
   try {
     noteOpened({ home, now, name, cwd: where });
   } catch (e) {
@@ -1285,13 +1351,19 @@ function close(opts = {}) {
   }
   const rm = run1('rm');
   if (rm.error || rm.status !== 0) return no(`«${name}» quedó parada, pero no la pude borrar (${why(rm)}).`);
+  const now = opts.now == null ? Date.now() : Number(opts.now);
+  // su renglón entre las que abrió la coordinadora: sin poder sacarlo, otra sesión con el mismo nombre y carpeta no lo
+  // hereda (la reconoce también por la hora de arranque)
+  let unlaunched = '';
+  try { pruneLaunched({ home, now, drop: name, sessions }); } catch (e) { unlaunched = ` No pude sacarla de las que abrió la coordinadora (${e.code || e.message}).`; }
   // sin leer la lista no se la reescribe: vacía, el tope dejaría de contar a las recién abiertas
   const openedProblems = [];
-  const opened = recentOpened(home, opts.now == null ? Date.now() : Number(opts.now), openedProblems);
-  if (openedProblems.length) return { ok: true, closed: true, message: oneLine(`Cerré «${name}». Pero no pude leer las abiertas (${openedProblems[0]}): sigue contando para el tope hasta que venza.`) };
+  const opened = recentOpened(home, now, openedProblems);
+  if (openedProblems.length) return { ok: true, closed: true, message: oneLine(`Cerré «${name}». Pero no pude leer las abiertas (${openedProblems[0]}): sigue contando para el tope hasta que venza.${unlaunched}`) };
   try { writeJson(openedFile(home), opened.filter((o) => o.name !== name)); } catch (e) {
-    return { ok: true, closed: true, message: oneLine(`Cerré «${name}». Pero no pude sacarla de las abiertas (${e.code || e.message}).`) };
+    return { ok: true, closed: true, message: oneLine(`Cerré «${name}». Pero no pude sacarla de las abiertas (${e.code || e.message}).${unlaunched}`) };
   }
+  if (unlaunched) return { ok: true, closed: true, message: oneLine(`Cerré «${name}»: quedó limpia, sin nada pendiente.${unlaunched}`) };
   return { ok: true, closed: true, message: `Cerré «${name}»: quedó limpia, sin nada pendiente.` };
 }
 
@@ -1383,4 +1455,4 @@ function main(argv) {
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { status, statusText, readPending, capNotice, guideNotice, listNotice, ownerNextText, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, ownerWait, ownerWaitOnce, claudeLauncher, resolveLauncher, launchArgv, ORIGIN };
+module.exports = { LAUNCH_TIMEOUT_MS, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, status, statusText, readPending, capNotice, guideNotice, listNotice, ownerNextText, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, ownerWait, ownerWaitOnce, claudeLauncher, resolveLauncher, launchArgv, ORIGIN };

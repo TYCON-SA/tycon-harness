@@ -1595,6 +1595,18 @@ function aprobacionesTocadas(cmd, cwd, stateDir) {
 }
 
 /**
+ * Lo que el comando borra o mueve del registro de las sesiones que abrió la coordinadora (`coordination/launched.json`, de
+ * cualquier estado): sacar un renglón deja a esa sesión preguntarle a la persona. Sin interruptor.
+ */
+function lanzadasTocadas(cmd, cwd, stateDir) {
+  const { isLaunchedSessionsRecord } = require('./lib/story-gate.js');
+  const conCd = /(^|[;&|(\s])(?:cd|pushd)\s/.test(String(cmd || ''));
+  const noSeResuelve = (t) => /[\s$`(),'"]/.test(t) || (conCd && !/^(?:\/|~)/.test(t));
+  return zonaTocada(cmd, cwd, stateDir, { carpeta: path.join('coordination', 'launched.json'), nombres: [path.join('coordination', 'launched.json')], pieza: isLaunchedSessionsRecord,
+    enTexto: (t) => noSeResuelve(t) && /(^|[^\w.-])coordination[\\/]launched\.json(?![\w.-])/i.test(t) });
+}
+
+/**
  * Lo que el comando borra o mueve de una zona del estado: `carpeta` y `nombres` adentro del estado, o lo que `pieza` dice.
  * `enTexto`: cuándo un texto la nombra sin que la ruta se pueda resolver (un guion que la arma por partes); sin él, el nombre de la carpeta del estado.
  */
@@ -3429,6 +3441,12 @@ function handleCarrilEHistoria(event, opts = {}) {
     const directo = aprobaciones.some((a) => /(^|[^\w.-])owner-approvals(?![\w.-])/i.test(String(a)));
     const tocados = directo || laneOff ? [] : marcadoresTocados(cmd, cwd, stateDir);
     return { block: (tocados.length ? sg.markerDeleteMessage(tocados, via) : sg.blockMessage({ kind: 'owner-approvals' }, { filePath: aprobaciones[0], via })) + '\n' };
+  }
+  // el registro de las sesiones que abrió la coordinadora, también al borrarlo o moverlo
+  const lanzadas = constancias.length ? [] : lanzadasTocadas(cmd, cwd, stateDir);
+  if (lanzadas.length) {
+    const sg = require('./lib/story-gate.js');
+    return { block: sg.blockMessage({ kind: 'launched-sessions' }, { filePath: lanzadas[0], via: `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}` }) + '\n' };
   }
   if (constancias.length) {
     const sg = require('./lib/story-gate.js');
