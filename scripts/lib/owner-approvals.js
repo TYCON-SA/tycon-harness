@@ -363,10 +363,10 @@ function capas({ casa = os.homedir(), cwd, plataforma = process.platform, admini
 }
 
 /** Las carpetas que hay adentro de una raíz, siguiendo los enlaces (una skill instalada suele ser un enlace). */
-function subcarpetas(d, nombres = null) {
+function subcarpetas(d) {
   let es;
   try { es = fs.readdirSync(d); } catch (e) { return e.code === 'ENOENT' ? [] : [{ ilegible: d }]; }
-  return es.filter((n) => !nombres || nombres.includes(n)).map((n) => path.join(d, n)).filter((p) => { try { return fs.statSync(p).isDirectory(); } catch (_) { return false; } });
+  return es.map((n) => path.join(d, n)).filter((p) => { try { return fs.statSync(p).isDirectory(); } catch (_) { return false; } });
 }
 
 /**
