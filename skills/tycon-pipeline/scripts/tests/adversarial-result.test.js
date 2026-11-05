@@ -51,6 +51,14 @@ function entorno(home, sid, extra) {
   return { ...env, HOME: home, CLAUDE_CODE_SESSION_ID: sid, ...(extra || {}) };
 }
 
+// La prueba guardada de una lente limpia, al lado del resultado.
+function pruebaDeLente(dir, l) {
+  const d = path.join(dir, 'step-05b-probes', `caza-${l}`);
+  fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(path.join(d, 'COMO-SE-CORRIO.txt'), 'node probe.js\n→ ok\n');
+  return d;
+}
+
 // El 5b se anota con `--result <archivo>` (el JSON del pase). Estas pruebas miden otras cosas: a
 // una anotación 5b sin el archivo se le pasa uno medido con sus N confirmados. La exigencia en sí la fija
 // tests/adversarial-unmeasured.test.js (T10).
@@ -63,7 +71,7 @@ function conResultado(home, args) {
   fs.mkdirSync(home, { recursive: true });
   fs.writeFileSync(archivo, JSON.stringify({
     confirmed: Array.from({ length: n }, (_v, k) => ({ lens: 'l', summary: `h${k}` })),
-    lentes: ['a', 'b', 'c', 'd', 'e', 'f'].map((l) => ({ lens: l, estado: 'medida', count: 0 })), lentes_sin_medir: [], detalle: [], medido: true,
+    lentes: ['a', 'b', 'c', 'd', 'e', 'f'].map((l) => ({ lens: l, estado: 'medida', count: 0, probe_dir: pruebaDeLente(home, l) })), lentes_sin_medir: [], detalle: [], medido: true,
   }));
   return [...args, '--result', archivo];
 }

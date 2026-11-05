@@ -569,3 +569,62 @@ test('T30 OtraVuelta_SeEscribeEnElMarcador @story-8.195 @ac-30 — cada cambio d
   assert.strictEqual(otra.status, 0, otra.stderr);
   assert.strictEqual(E.leer(sid).otraVuelta, undefined, 'la otra story no hereda la vuelta');
 });
+
+// ───────────── Una corrida sin turno no cuenta como prueba roja ─────────────
+
+const SIN_TURNO = { tests: 'sin-turno', build: 'green' };
+const PROV = { tests: 'test-gate', build: 'run-check' };
+const DEUDA = { estado: 'deuda', motivo: 'x', deuda: 'DEF-9.9-angular', via: 'persona', at: '2026-10-22T20:00:00Z' };
+const frenaSinLlamarloRojo = (r, quien) => {
+  assert.strictEqual(r.status, 1, `${quien}: ${r.stderr}`);
+  assert.match(r.stderr, /turno/, quien);
+  assert.doesNotMatch(r.stderr, /en rojo|Arreglalas/, quien);
+};
+
+test('T10 8.215-SinTurno_CompleteStep_FrenaSinLlamarloRojo @story-8.215 @ac-10', () => {
+  const E = entorno({ todo: '- [ ] [DEF-9.9-angular] subir angular\n' });
+  E.arrancar('s-st10');
+  const base = { ...E.leer('s-st10'), checks: SIN_TURNO, checksProvenance: PROV };
+  E.escribir('s-st10', base);
+  frenaSinLlamarloRojo(E.correr('marker.js', ['complete-step', 'run-tests', '--out-of-order'], 's-st10'), 'run-tests');
+  E.escribir('s-st10', base);
+  frenaSinLlamarloRojo(E.correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order'], 's-st10'), 'prepare-commit');
+  // `next`: la precondición de las pruebas queda sin cumplir y lo nombra
+  const listo = ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers', 'findings', 'live-check'];
+  E.escribir('s-st10', { ...base, stepScheme: 2, stepsCompleted: listo, stepsPending: ['prepare-commit'], dodRuntimeChecked: true, deepReviewDone: true });
+  const n = JSON.parse(E.correr('pipeline.js', ['next'], 's-st10').stdout);
+  const p = (n.preconditions || []).find((x) => x.id === 'check-tests');
+  assert.ok(p, JSON.stringify(n).slice(0, 400));
+  assert.strictEqual(p.satisfied, false);
+  assert.match(p.detail, /turno/);
+});
+
+test('T19 8.215-Stop_SinTurno_DejaParar @story-8.215 @ac-14', () => {
+  const E = entorno();
+  E.arrancar('s-st19');
+  const stop = () => spawnSync(process.execPath, [path.join(SCRIPTS, 'on-stop-dod-gate.js')], {
+    encoding: 'utf8', input: JSON.stringify({ session_id: 's-st19' }), env: { ...process.env, HOME: E.home, USERPROFILE: E.home, TYCON_HOME: '' },
+  });
+  E.escribir('s-st19', { ...E.leer('s-st19'), autonomous: true, iter: 0, checks: SIN_TURNO, checksProvenance: PROV });
+  const r = stop();
+  assert.doesNotMatch(r.stdout, /"decision":"block"/, `con sin-turno deja parar: ${r.stdout}`);
+  assert.match(`${r.stdout}${r.stderr}`, /turno/, 'lo dice en una línea');
+  const m = E.leer('s-st19');
+  assert.strictEqual(m.iter || 0, 0, 'no suma una vuelta');
+  assert.notStrictEqual(m.needs_human, true, 'no escala a una persona');
+  // un rojo de verdad sigue frenando
+  E.escribir('s-st19', { ...m, checks: { tests: 'red:exit=1', build: 'green' } });
+  assert.match(stop().stdout, /"decision":"block"/);
+});
+
+test('T22 8.215-PrepareCommit_SinTurnoDespuesDeRunTests_Frena @story-8.215 @ac-10', () => {
+  const E = entorno({ todo: '- [ ] [DEF-9.9-angular] subir angular\n' });
+  E.arrancar('s-st22');
+  // «Correr las pruebas» ya cerrado, y después el portón salió sin turno
+  const hecho = ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests'];
+  const base = { ...E.leer('s-st22'), stepScheme: 2, stepsCompleted: hecho, checks: SIN_TURNO, checksProvenance: PROV };
+  for (const [quien, m] of [['sin deuda', base], ['en deuda', { ...base, cierre: DEUDA }]]) {
+    E.escribir('s-st22', m);
+    frenaSinLlamarloRojo(E.correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order'], 's-st22'), quien);
+  }
+});

@@ -1138,7 +1138,8 @@ if [[ "$RUNNER" =~ ^(dotnet|node-test|jest|vitest)$ && "$SUITE_EXIT" =~ ^[3-7]$ 
 fi
 
 # 77: el corredor no arrancó porque otra sesión tiene el turno de las ejecuciones grandes de la máquina (scripts/tools/heavy-turn.js;
-# ya dijo quién). `run-check` lo anotó como rojo, así que un verde viejo no queda en pie; para quien llama es un 75.
+# ya dijo quién). `run-check` lo anotó `sin-turno`: ni verde (un verde viejo no queda en pie) ni rojo (no hay prueba que
+# arreglar); los cierres de los pasos lo frenan pidiendo el turno. Para quien llama es un 75.
 if [[ "$SUITE_EXIT" == "77" && "$RUNNER" == "suites-json" ]]; then
   TG_NO_COMPANIONS="otra sesión tiene el turno de las ejecuciones grandes de la máquina"
   rm -f "$OUT_FILE"

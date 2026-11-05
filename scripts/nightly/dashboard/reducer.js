@@ -632,7 +632,7 @@ function textoCobertura(j) {
   return `${partes.join(' · ')} — ventana ${j.ventana.desde} → ${j.ventana.hasta}`;
 }
 
-module.exports = { juntar, textoCobertura, retencionValida, validarConfig, aliasDe, aliasDeNombre, leerUnionesDeCarpetas, duracionSuite, FUENTES, BALDES_GENERICOS, ESQUEMA };
+module.exports = { juntar, textoCobertura, retencionValida, validarConfig, aliasDe, aliasDeNombre, leerUnionesDeCarpetas, duracionSuite, esBloqueo, FUENTES, BALDES_GENERICOS, ESQUEMA };
 
 if (require.main === module) {
   // El nombre viejo de --alias-of sigue andando hasta el retiro
