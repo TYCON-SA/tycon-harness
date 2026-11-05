@@ -112,8 +112,11 @@ async function main() {
   const { lock } = office;
 
   // AC 10: la regla del arranque dice qué es un mensaje de la oficina y que se comprueba antes de actuar
-  const rule = spawnSync(process.execPath, [RULE], { input: JSON.stringify({ session_id: 's1', hook_event_name: 'SessionStart' }), env: baseEnv, encoding: 'utf8', timeout: 10000 });
+  const rule = spawnSync(process.execPath, [RULE], { input: JSON.stringify({ session_id: 's1', hook_event_name: 'SessionStart' }), env: watchEnv(), encoding: 'utf8', timeout: 10000 });
   check(rule.status === 0 && /\[oficina/.test(rule.stdout) && /office-message\.js verify/.test(rule.stdout), 'AC10: la regla del arranque nombra la marca y verify');
+  // donde el vigilante no se puede armar, la regla tampoco habla: no llegaría ningún mensaje
+  const quiet = spawnSync(process.execPath, [RULE], { input: JSON.stringify({ session_id: 's1', hook_event_name: 'SessionStart' }), env: { ...baseEnv, CLAUDE_CODE_ENTRYPOINT: 'cli' }, encoding: 'utf8', timeout: 10000 });
+  check(quiet.status === 0 && quiet.stdout === '' && quiet.stderr === '', 'AC10: lanzada por otra cosa que la herramienta, la regla no imprime nada');
 
   // AC 7: un vigilante vivo por sesión; el segundo se va sin tocar el candado
   const w1 = watcher('s1', watchEnv());
