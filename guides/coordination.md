@@ -176,6 +176,11 @@ El mismo aviso trae dos cosas más:
   va a la red. Los pedidos de un bot no salen. En Azure no sale: sin leer sus controles, «limpio» sólo dice que no choca.
 - **La sesión que espera lugar para su pase.** Tiene que lanzarlo y otra tiene el lugar: sale con quién lo tiene, y cuando
   se libera, con «puede lanzar». Nada la despierta sola: le avisa la coordinadora.
+- **La fila de la suite completa, parada.** Si no corre ninguna suite completa y alguna sesión anotó que espera turno
+  (`marker.js doing --waiting-for` con «suite», «portón» o «turno»), sale «no corre ninguna suite completa y hay N
+  esperando turno: dale el «arrancá» a X», con X la que espera hace más. Sin esa nota no sale: una sesión quieta no está
+  esperando turno. La espera de un pase no cuenta: el pase corre en la nube, con su propio turno. `status` muestra la
+  fila entera.
 
 ## Lo pesado, con turno: la suite completa y los pases adversariales
 
@@ -508,6 +513,10 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
   si ya existe. Por qué: ir por el camino largo sin analizarlo es el error que más se repite.
 - **Una sesión que termina recibe lo siguiente de lo aprobado en ese turno, o se cierra.** Siempre dentro del tope. Por qué:
   una sesión libre es tiempo de máquina perdido, y el dueño no tiene que mirar el tablero para asignar.
+- **Con la fila de la suite larga no se abre una sesión para programar.** Si más de dos sesiones esperan turno de suite o
+  portón, una sesión nueva se abre sólo para trabajo que no pide suite: escribir una historia, revisar o investigar. Las
+  que sólo esperan su turno se pueden cerrar y retomar con su misma conversación cuando les toca (`claude respawn <id>`),
+  con el orden anotado. Por qué: la suite corre de a una; una sesión más no adelanta nada, alarga la fila y ocupa memoria.
 - **Un rojo no se deja, aunque no sea del cambio propio.** Se avisa y se arregla antes de seguir. Por qué: los rojos
   tolerados tapan a los nuevos.
 - **Lo que afloja una revisión no va, aunque ahorre tiempo; lo que es sólo papeleo no se hace.** Si el código ya entró y
@@ -526,6 +535,7 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
 | La coordinadora cierra los detalles con la opción más segura | nadie | Es criterio, y queda anotado para que el dueño lo vea. |
 | Cada sesión con un nombre puesto por una persona | aviso | `/coordinate` lista las que tienen el nombre que armó la herramienta. |
 | No más sesiones trabajando que el tope | freno | `open` no abre en el tope. Una sesión que el dueño abre a mano no la frena nada; la cuenta `status` y, en el tope, el aviso de cada turno de la coordinadora. |
+| Con la fila de la suite larga no se abren sesiones para programar | nadie | Qué trabajo pide suite es criterio; `status` muestra quién espera turno. |
 | Una suite completa por vez | freno | El corredor de las suites y las portables enteras no arrancan con el turno de otro proceso vivo, y dicen quién lo tiene. Una suite que alguien corre por otro camino no la ve. |
 | Pases adversariales de a uno | freno | El portón del pase sale 3 y `next` pide esperar con otro en vuelo. Lanzar el pase sin consultar el portón no lo frena nada, y el de un arreglo rápido no queda anotado como en vuelo. Pasada una hora, sólo avisa. |
 | Las sesiones de fondo quietas se cierran o reciben trabajo | aviso | El aviso de cada turno de la coordinadora, pasados 15 minutos. |

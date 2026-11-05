@@ -690,6 +690,9 @@ return function(){resize();poblar();alDia();lanzarSobres()};
 }).catch(e=>{console.error(e);T.sinTresD("Este navegador no pudo cargar la oficina en 3D; las tarjetas y la tabla tienen lo mismo.")})}
 // la pestaña del sitio: lo que se decide sin tocar la pantalla
 const TOPE_DE_SALAS=8,ESPERA_MIN_MS=2000,ESPERA_MAX_MS=60000;
+// el sitio escribe cada 25 s aunque nada cambie: un minuto sin nada es una conexión que murió sin avisar
+const SIN_NOVEDAD_MS=60000,REVISAR_CONEXION_MS=5000,AVISO_SIN_NOVEDAD="Hace más de un minuto que no llega nada del sitio: lo que ves puede estar atrasado. Vuelvo a conectar.";
+function conexionMuerta(ultimoMs,ahoraMs){return ahoraMs-ultimoMs>=SIN_NOVEDAD_MS}
 // la coordinadora que espera una firma sigue coordinando: la foto la marca por cómo trabaja
 function resumenDeOficina(foto){const a=(foto&&foto.agents)||[],n=l=>a.filter(x=>l.includes(x.estado)).length,c=a.find(x=>x.estado==="coordina"||x.comoTrabaja==="Coordinando");
   return {sesiones:a.length,trabajando:n(["trabajando","prueba"]),firma:n(["firma","pregunta"]),esperanOLibres:n(["espera","esperando","parada","libre","inactiva"]),coordina:c?c.nombre:null}}
@@ -799,8 +802,14 @@ function arrancarOficinas(){
   // en la demo, un pedido común; en el sitio, la conexión. La página nunca le manda nada
   if(SOURCE==="demo"){fetch("/offices/demo.json",{credentials:"same-origin"}).then(r=>{if(!r.ok)throw new Error(String(r.status));return r.json()}).then(recibir).catch(e=>{console.error(e);cortada=true;pintarVacio();decir("No pude traer las oficinas de ejemplo.")});return;}
   let intento=0;
-  (function conectar(){const ws=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host+"/live/offices");
-    ws.onmessage=ev=>{intento=0;decir("");try{recibir(JSON.parse(ev.data))}catch(e){console.error(e);decir("No pude dibujar la última novedad; muestro la anterior.")}};
-    ws.onclose=ev=>{const r=alCerrarLaConexion(ev.code,intento);decir(r.texto);if(!r.reintenta){cortada=true;pintarVacio();return}intento+=1;setTimeout(conectar,r.esperaMs)}})();}
+  // la conexión que se murió sin avisar no dispara onclose: se suelta y se abre otra, que trae la lista entera
+  let ultimo=Date.now(),viva=null;
+  setInterval(()=>{if(!viva||!conexionMuerta(ultimo,Date.now()))return;const muerta=viva;viva=null;muerta.onmessage=muerta.onclose=null;try{muerta.close()}catch(e){}decir(AVISO_SIN_NOVEDAD);conectar()},REVISAR_CONEXION_MS);
+  function conectar(){const ws=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host+"/live/offices");viva=ws;ultimo=Date.now();
+    ws.onmessage=ev=>{ultimo=Date.now();let m;try{m=JSON.parse(ev.data)}catch(e){console.error(e);decir("No pude dibujar la última novedad; muestro la anterior.");return}
+      if(m&&m.type==="latido"){if(avisoEl.textContent===AVISO_SIN_NOVEDAD)decir("");return}
+      intento=0;decir("");try{recibir(m)}catch(e){console.error(e);decir("No pude dibujar la última novedad; muestro la anterior.")}};
+    ws.onclose=ev=>{if(viva===ws)viva=null;const r=alCerrarLaConexion(ev.code,intento);decir(r.texto);if(!r.reintenta){cortada=true;pintarVacio();return}intento+=1;setTimeout(conectar,r.esperaMs)}}
+  conectar();}
 // fin de la pestaña del sitio
 if(CON_OFICINAS)arrancarOficinas();else armarSala(document.getElementById("stage"),window.tablero);

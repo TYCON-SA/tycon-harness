@@ -104,6 +104,7 @@ const MEASURES = {
   'La coordinadora cierra los detalles con la opción más segura': 'nadie',
   'Cada sesión con un nombre puesto por una persona': 'aviso',
   'No más sesiones trabajando que el tope': 'freno',
+  'Con la fila de la suite larga no se abren sesiones para programar': 'nadie',
   'Una suite completa por vez': 'freno',
   'Pases adversariales de a uno': 'freno',
   'Las sesiones de fondo quietas se cierran o reciben trabajo': 'aviso',
@@ -277,6 +278,26 @@ test('T8b Status_AdversarialInFlightAndUnnamed @story-8.122 @ac-4: el pase en vu
   assert.deepStrictEqual(s.adversarial.map((a) => [a.storyId, a.session]), [['7.7', 'ConPase']]);
   assert.deepStrictEqual(s.unnamed, ['carpeta-9f']);
   assert.deepStrictEqual(s.cap, { value: 3, origin: 'sin-valor' });
+});
+
+test('T8d Status_SuiteQueue_FromWaitingNotes: la fila de la suite sale de las esperas anotadas de suite, portón o turno, de las vivas, en orden', () => {
+  // 🔴 mutación: leer la espera sin mirar qué espera (entra Otra), o sin mirar si la sesión está viva (entra Cerrada)
+  const t = toy();
+  const doing = path.join(t.state, 'doing');
+  fs.mkdirSync(doing, { recursive: true });
+  const note = (sid, waitingFor, minutesAgo) => fs.writeFileSync(path.join(doing, `${sid}.json`),
+    JSON.stringify({ text: 'implementar la historia', at: new Date(mins(minutesAgo)).toISOString(), waitingFor, waitingSince: new Date(mins(minutesAgo)).toISOString() }));
+  session(t, 's-1', 'Uno'); note('s-1', 'Turno de la suite completa', 10);
+  session(t, 's-2', 'Dos', { status: 'busy' }); note('s-2', 'que me den el portón', 40);
+  session(t, 's-3', 'Otra'); note('s-3', 'que el dueño conteste', 60);
+  session(t, 's-4', 'Cerrada', { pid: 999999 }); note('s-4', 'turno de suite', 90);
+  session(t, 's-5', 'SinNota');
+  const s = C.status(t.opts);
+  assert.deepStrictEqual(s.suiteWaiting.map((w) => [w.session, w.since]).sort((a, b) => a[1] - b[1]), [['Dos', mins(40)], ['Uno', mins(10)]]);
+  assert.strictEqual(s.suite, null);
+  // sin ninguna espera anotada, la línea del estado no sale
+  for (const sid of ['s-1', 's-2']) fs.unlinkSync(path.join(doing, `${sid}.json`));
+  assert.ok(!/Esperando turno de suite/.test(C.statusText(C.status(t.opts))));
 });
 
 test('T10 Signature_TerminalPath_WritesOnceOrPrints @story-8.122 @ac-10: uno escrito y ejecutable con su pendiente; el segundo no; sin carpeta sólo imprime; done borra los dos', () => {
