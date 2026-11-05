@@ -76,6 +76,195 @@ fs.writeFileSync(dir + '/topics.json', JSON.stringify({ version: 1, temas: Objec
   }
 }
 
+// El número de cada tarea en la oficina de verdad: la fila cuyo `quien` es una sesión que hace otra cosa se ve, la línea
+// de arriba, la búsqueda, las ventanas que se cierran igual, las dos manos y el tablero que se mueve solo. Deja una
+// captura de cada cosa en OFFICE_8198_SHOTS, si está.
+async function taskNumbers(playwright) {
+  const BOARD = require(path.join(ROOT, 'scripts', 'tools', 'office', 'board.js'));
+  const shots = process.env.OFFICE_8198_SHOTS || null;
+  if (shots) fs.mkdirSync(shots, { recursive: true });
+  // la página se redibuja con cada foto: se fotografía el lugar del elemento, sin esperar a que quede quieto
+  const shot = async (page, name, locator = null) => {
+    if (!shots) return;
+    if (!locator) { await page.screenshot({ path: path.join(shots, `${name}.png`) }); return; }
+    await locator.evaluate((e) => e.scrollIntoView({ block: 'start' }));
+    await sleep(200);
+    const box = await locator.boundingBox();
+    const vp = page.viewportSize();
+    const clip = { x: Math.max(0, box.x), y: Math.max(0, box.y), width: Math.min(box.width, vp.width), height: Math.min(box.height, vp.height - Math.max(0, box.y)) };
+    await page.screenshot({ path: path.join(shots, `${name}.png`), clip });
+  };
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'office-8198-'));
+  const sdir = stateDir(home);
+  for (const d of ['active', 'adhoc', 'doing', 'coordination']) fs.mkdirSync(path.join(sdir, d), { recursive: true });
+  const sessions = path.join(claudeDir(home), 'sessions');
+  fs.mkdirSync(sessions, { recursive: true });
+  const session = (sid, name, status = 'busy') => fs.writeFileSync(path.join(sessions, `${sid}.json`), JSON.stringify({ pid: process.pid, sessionId: sid, name, status, statusUpdatedAt: Date.now() }));
+  const doing = (sid, text, more = {}) => fs.writeFileSync(path.join(sdir, 'doing', `${sid}.json`), JSON.stringify({ text, at: new Date().toISOString(), ...more }));
+  // Sand hace otra cosa y no dice su fila: la fila tiene que verse. Funes dice T-2: va en su tarjeta. Pinola espera a la
+  // coordinadora. Rita pidió una firma que sigue pendiente. Y una ejecución de la historia 9.1 que arranca sola
+  session('s1', 'Sand'); doing('s1', 'arreglo de otra cosa');
+  session('s2', 'Funes'); doing('s2', 'T-2 · la búsqueda de la oficina');
+  session('s3', 'Pinola', 'idle'); doing('s3', 'espera el click', { waitingFor: 'la coordinadora', waitingSince: new Date(Date.now() - 60000).toISOString() });
+  session('s4', 'Rita'); doing('s4', 'el carril de Rita');
+  // Olvido se cerró sin que Claude Code avisara: queda su archivo de estado, con el pid de un proceso que ya terminó
+  const deadPid = Number(spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' }).stdout);
+  fs.mkdirSync(path.join(sdir, 'sessions'), { recursive: true });
+  const olvidoFile = path.join(sdir, 'sessions', 's8.json');
+  fs.writeFileSync(olvidoFile, JSON.stringify({ schema: 1, session: 's8', tool: 'claude', name: 'Olvido', pid: deadPid, updatedAt: new Date(Date.now() - 5 * 60000).toISOString() }));
+  // una firma de la terminal pedida para la sesión de Rita (`--for-session`): la lista de firmas de la máquina de juguete
+  // está apagada, y ésas igual se leen
+  fs.writeFileSync(path.join(sdir, 'coordination', 'signatures.json'), JSON.stringify([{ id: 'f1', destino: 's4', title: 'el carril de Rita', at: Date.now() }]));
+  const saved = BOARD.save(sdir, { meta: { resumen: 'UN RESUMEN VIEJO' }, pendientes: [
+    { titulo: 'El arreglo que Sand dejó', estado: 'curso', quien: 'Sand', grupo: 'Hoy', orden: 1, nota: 'lo pidió el dueño' },
+    { titulo: 'La búsqueda por número', estado: 'curso', grupo: 'Hoy', orden: 2, nota: 'la nota de la fila' },
+    { titulo: 'La historia que arranca sola', estado: 'espera', historia: '9.1', grupo: 'Hoy', orden: 3 },
+  ] }, { home });
+  check(saved.code === 0, 'E1: el tablero de prueba se guardó con board.js y tiene números');
+  // E3: la conversación de Funes dice su modelo y su esfuerzo; la de Sand todavía no tiene respuestas
+  const projects = path.join(claudeDir(home), 'projects', 'juguete');
+  fs.mkdirSync(projects, { recursive: true });
+  const ts = (min) => new Date(Date.now() - min * 60000).toISOString();
+  const usage = { input_tokens: 1000, output_tokens: 200, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
+  fs.writeFileSync(path.join(projects, 's2.jsonl'), `${JSON.stringify({ type: 'assistant', uuid: 'a1', timestamp: ts(2), perTurnEffort: 'high', effort: 'high', message: { id: 'm1', model: 'claude-opus-5-5', usage } })}\n`);
+  fs.writeFileSync(path.join(projects, 's1.jsonl'), `${JSON.stringify({ type: 'user', uuid: 'u1', timestamp: ts(2), message: { role: 'user', content: 'hola' } })}\n`);
+  // E5: una coordinadora designada que habló con Funes (viva) y con Olvido (cerrada, con su conversación de fondo)
+  fs.appendFileSync(path.join(sdir, 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), name: 'relay-designation', status: 'ok', sesion: 'c9', rol: 'coordinadora', quien: 'el dueño', cita: 'Esta sesión es la coordinadora' })}\n`);
+  const peer = (name, body, min) => JSON.stringify({ type: 'user', isMeta: true, timestamp: ts(min), origin: { kind: 'peer', name, body, msg_id: `m-${name}-${min}` }, message: { role: 'user', content: `<cross-session-message from="x">${body}</cross-session-message>` } });
+  fs.writeFileSync(path.join(projects, 'c9.jsonl'), [peer('Olvido', 'Terminé lo mío.', 9), peer('Funes', 'Voy con la búsqueda.', 5)].join('\n') + '\n');
+  const olvido = path.join(home, 'olvido.jsonl');
+  fs.writeFileSync(olvido, `${JSON.stringify({ type: 'assistant', timestamp: ts(8) })}\n`);
+  fs.mkdirSync(path.join(claudeDir(home), 'jobs', 'j1'), { recursive: true });
+  fs.writeFileSync(path.join(claudeDir(home), 'jobs', 'j1', 'state.json'), JSON.stringify({ name: 'Olvido', updatedAt: ts(8), linkScanPath: olvido }));
+  const env = { ...process.env, HOME: home, USERPROFILE: home, TYCON_OFFICE_NO_BROWSER: '1', TYCON_OFFICE_LINK: '0', TYCON_OFFICE_TEST: '1' };
+  const open = spawnSync(process.execPath, [OFFICE, '--open'], { input: '', env, encoding: 'utf8', timeout: 20000 });
+  const url = (open.stdout.match(/http:\/\/127\.0\.0\.1:\d+\/\?t=[0-9a-f]+/) || [])[0];
+  check(open.status === 0 && Boolean(url), `8.198: la oficina viva arrancó (${url || open.stderr.trim()})`);
+  if (!url) return;
+  const lock = JSON.parse(fs.readFileSync(path.join(sdir, 'office', 'server.json'), 'utf8'));
+  const browser = await playwright.chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 1360, height: 1100 } });
+    await page.goto(url);
+    await page.waitForFunction(() => window.tablero && window.tablero.started, null, { timeout: 45000 });
+    // desde adentro de la página: con la máquina cargada, el clic del navegador se queda esperando que la sala se quede quieta
+    await page.locator('input[name="vista"][value="kanban"]').evaluate((r) => { r.checked = true; r.dispatchEvent(new Event('change', { bubbles: true })); });
+    await page.waitForSelector('#boardBody .item[data-numero]');
+    // E1: los números, la fila de Sand a la vista, una sola tarjeta para T-2 y la línea de arriba sin `meta.resumen`
+    const sandRow = page.locator('#boardBody .item', { hasText: 'El arreglo que Sand dejó' });
+    check(await sandRow.count() === 1 && /T-1/.test(await sandRow.innerText()), 'E1: la fila de Sand se ve, con su número');
+    check(await page.locator('#boardBody .item[data-numero="T-2"]').count() === 1, 'E1: T-2 va en una sola tarjeta, la de Funes');
+    check(/Funes/.test(await page.locator('#boardBody .item[data-numero="T-2"]').innerText()), 'E1: la tarjeta de T-2 es la de Funes');
+    const top = await page.locator('#boardBody p.sum').innerText();
+    check(/Tu firma: \d+ · Trabado: \d+/.test(top) && !/UN RESUMEN VIEJO/.test(top), `E1: la línea de arriba se arma sola (${top})`);
+    await shot(page, 'e1-kanban-numeros', page.locator('#trabajo'));
+    // E2: buscar por número, y uno que no está
+    await page.fill('#buscarTarea', '2');
+    await page.press('#buscarTarea', 'Enter');
+    await page.waitForSelector('#ventana:not([hidden])');
+    check(/T-2/.test(await page.locator('#ventana').innerText()) && await page.locator('#boardBody .item.marcada').count() === 1, 'E2: «2» marca la tarjeta de T-2 y la abre');
+    await shot(page, 'e2-buscar-abre');
+    // E6: la ventana se cierra con Escape y el foco vuelve a la tarjeta
+    await page.keyboard.press('Escape');
+    check(await page.locator('#ventana').isHidden(), 'E6: Escape cierra la ventana');
+    await page.fill('#buscarTarea', 'T-99');
+    await page.press('#buscarTarea', 'Enter');
+    check(/no está en el tablero/.test(await page.locator('#buscarAviso').innerText()), 'E2: un número que no está lo dice debajo del campo');
+    await shot(page, 'e2-buscar-no-esta', page.locator('#trabajo'));
+    // E6: la X arriba, sin «Cerrar» abajo; tocar afuera cierra; seleccionar adentro y soltar afuera no
+    await page.locator('#boardBody .item[data-numero="T-1"]').click();
+    await page.waitForSelector('#ventana:not([hidden])');
+    check(await page.locator('#ventana button.close[aria-label="Cerrar"]').count() === 1 && await page.locator('#ventana button', { hasText: /^Cerrar$/ }).count() === 0, 'E6: la ventana tiene la X y no el botón de abajo');
+    await shot(page, 'e6-ventana-x');
+    const panelBox = await page.locator('#ventana .panel3').boundingBox();
+    await page.mouse.move(panelBox.x + 40, panelBox.y + 60);
+    await page.mouse.down();
+    await page.mouse.move(panelBox.x - 30, panelBox.y + 60, { steps: 4 });
+    await page.mouse.up();
+    check(await page.locator('#ventana').isVisible(), 'E6: seleccionar adentro y soltar afuera no la cierra');
+    await page.mouse.click(Math.max(5, panelBox.x - 15), panelBox.y + 10);
+    check(await page.locator('#ventana').isHidden(), 'E6: tocar afuera la cierra');
+    // E8: las manos, cada una con su color
+    await page.waitForFunction(() => document.querySelectorAll('.tag.alert').length >= 2, null, { timeout: 15000 });
+    check(await page.locator('.tag.alert-coord', { hasText: 'Pinola' }).count() === 1, 'E8: Pinola levanta la mano en azul: espera a la Coordinadora');
+    check(await page.locator('.tag.alert:not(.alert-coord)', { hasText: 'Rita' }).count() === 1, 'E8: Rita levanta la mano por su firma pendiente');
+    // el brazo sube de a poco y la sala quieta dibuja pocas veces por segundo: la captura espera a que termine de subir
+    await sleep(4000);
+    await shot(page, 'e8-manos', page.locator('#stage'));
+    // E10: el globito, con la oficina entera a la vista y sin acercar: está dibujado y ninguna etiqueta lo tapa
+    const tapado = await page.evaluate(() => {
+      const tags = [...document.querySelectorAll('.tag')];
+      return ['Rita', 'Pinola'].map((who) => {
+        const t = tags.find((e) => e.textContent.includes(who));
+        const [x, y] = String(t && t.getAttribute('data-globo') || '').split(',').map(Number);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return `${who}: sin globito`;
+        const encima = tags.filter((e) => { const r = e.getBoundingClientRect(), s = e.offsetParent.getBoundingClientRect(); return x + s.left >= r.left && x + s.left <= r.right && y + s.top >= r.top && y + s.top <= r.bottom; });
+        return encima.length ? `${who}: lo tapa ${encima.map((e) => e.querySelector('b,strong,.n')?.textContent || 'una etiqueta').join(', ')}` : '';
+      }).filter(Boolean);
+    });
+    check(tapado.length === 0, `E10: los globitos de Rita y Pinola se ven, sin etiqueta encima${tapado.length ? ` (${tapado.join(' · ')})` : ''}`);
+    if (shots) {
+      await page.locator('#stage').evaluate((e) => e.scrollIntoView({ block: 'start' }));
+      await page.screenshot({ path: path.join(shots, 'e10-globo-oficina.png') });
+      const tag = await page.locator('.tag', { hasText: 'Rita' }).boundingBox();
+      await page.screenshot({ path: path.join(shots, 'e10-globo-de-cerca.png'), clip: { x: Math.max(0, tag.x - 40), y: tag.y, width: Math.max(320, tag.width + 80), height: 300 } });
+    }
+    await page.locator('.tag', { hasText: 'Rita' }).click();
+    await page.waitForSelector('#panel:not([hidden])');
+    check(/Firma: el carril de Rita/.test(await page.locator('#panel').innerText()), 'E8: al tocarla, dice qué firma espera');
+    await shot(page, 'e8-detalle-firma', page.locator('#panel'));
+    // E6: el panel de la persona con Escape, y el foco vuelve
+    await page.keyboard.press('Escape');
+    check(await page.locator('#panel').isHidden(), 'E6: Escape cierra el panel de la persona');
+    // E9: arranca una ejecución con historia y su fila pasa sola a «En curso», con quién la hace
+    session('s5', 'Ortega');
+    fs.writeFileSync(path.join(sdir, 'active', 's5.json'), JSON.stringify({ storyId: '9.1', sessionId: 's5', repoPath: home, stepsCompleted: ['start', 'validate-story', 'plan', 'approve-plan'], stepsPending: ['implement'], startedAt: new Date().toISOString() }));
+    let row = null;
+    for (let i = 0; i < 40 && !(row && row.estado === 'curso'); i += 1) { await sleep(500); row = JSON.parse(fs.readFileSync(path.join(sdir, 'coordination', 'tablero.json'), 'utf8')).pendientes.find((r) => r.historia === '9.1'); }
+    check(Boolean(row) && row.estado === 'curso' && row.quien === 'Ortega', `E9: la fila de la 9.1 pasó sola a «En curso» con Ortega (${row && row.estado} ${row && row.quien})`);
+    await shot(page, 'e9-se-movio-sola', page.locator('#trabajo'));
+    // E3: el modelo y el esfuerzo, arriba de la persona y en su tarjeta; «sin dato» en la que no respondió
+    await page.waitForFunction(() => [...document.querySelectorAll('.tag')].some((t) => t.textContent.includes('Opus 5.5 · High')), null, { timeout: 20000 });
+    check(/Opus 5\.5 · High/.test(await page.locator('.tag', { hasText: 'Funes' }).innerText()), 'E3: la etiqueta de Funes dice «Opus 5.5 · High»');
+    check(/Opus 5\.5 · High/.test(await page.locator('#boardBody .item[data-numero="T-2"]').innerText()), 'E3: su tarjeta del kanban también');
+    check(/sin dato · sin dato/.test(await page.locator('.tag', { hasText: 'Sand' }).innerText()), 'E3: Sand, sin respuestas, dice «sin dato»');
+    await shot(page, 'e3-modelo-y-esfuerzo', page.locator('#stage'));
+    // E11: Olvido no tiene escritorio; está en «Cerradas», al final de «Las sesiones», y «Quitar» la saca
+    check(await page.locator('.tag', { hasText: 'Olvido' }).count() === 0, 'E11: Olvido no tiene escritorio');
+    const grupo = page.locator('.cerradas-grupo .cerrada', { hasText: 'Olvido' });
+    check(await grupo.count() === 1 && /última novedad \d\d:\d\d/.test(await grupo.innerText()), 'E11: Olvido está en «Cerradas» con su última novedad');
+    await shot(page, 'e11-cerradas', page.locator('#crew').locator('xpath=..'));
+    await grupo.locator('button.quitar').evaluate((b) => b.click());
+    try { await page.waitForFunction(() => ![...document.querySelectorAll('.cerradas-grupo .cerrada')].some((c) => c.textContent.includes('Olvido')), null, { timeout: 20000 }); } catch { /* abajo lo dice */ }
+    check(!fs.existsSync(olvidoFile) && await page.locator('.cerradas-grupo .cerrada', { hasText: 'Olvido' }).count() === 0, 'E11: «Quitar» borró su archivo y la foto siguiente ya no la tiene');
+    // E5: «Con las sesiones» de la coordinadora: la viva primero, después «Cerradas» con la cerrada en gris y su hora
+    // la coordinadora llega recién ahora: antes, con más personas que escritorios, se habría llevado el de Rita
+    session('c9', 'Coordinadora');
+    await page.waitForFunction(() => [...document.querySelectorAll('#crew > *')].some((c) => c.textContent.includes('Coordinadora')), null, { timeout: 20000 });
+    // desde su ficha en «Las sesiones»
+    // por el nombre de la tarjeta: la de quien espera a la Coordinadora también la nombra
+    await page.locator('#crew > .card').filter({ has: page.locator('h3', { hasText: /^Coordinadora$/ }) }).locator('button', { hasText: 'Ver conversación' }).evaluate((b) => b.click());
+    await page.waitForSelector('#ventana:not([hidden])');
+    try { await page.waitForFunction(() => document.querySelector('#ventana').textContent.includes('Con las sesiones'), null, { timeout: 20000 }); } catch (e) {
+      console.log(`E5: la ventana dice: ${(await page.locator('#ventana').innerText()).replace(/\s+/g, ' ').slice(0, 400)}`);
+      throw e;
+    }
+    await page.locator('#ventana label', { hasText: 'Con las sesiones' }).locator('input').check({ force: true });
+    await page.waitForSelector('#ventana .quienes .cerradas', { timeout: 15000 });
+    // el texto del código: el título de «Cerradas» se ve en mayúsculas
+    const order = await page.locator('#ventana .quienes > *').allTextContents();
+    check(/^Funes/.test(order[0]) && order.some((t) => t === 'Cerradas') && /^Olvido/.test(order[order.length - 1]), `E5: la viva primero, después «Cerradas» (${order.join(' | ').replace(/\n/g, ' ')})`);
+    check(/última actividad \d\d:\d\d/.test(await page.locator('#ventana .quienes button.cerrada').innerText()), 'E5: la cerrada dice su última actividad');
+    await page.locator('#ventana .quienes button.cerrada').evaluate((b) => b.click());
+    await page.waitForFunction(() => document.querySelector('#ventana').textContent.includes('Esta sesión está cerrada: no recibe mensajes.'), null, { timeout: 15000 }).catch(() => {});
+    check(await page.locator('#ventana', { hasText: 'Esta sesión está cerrada: no recibe mensajes.' }).count() === 1, 'E5: al elegirla dice que no recibe mensajes');
+    await shot(page, 'e5-sesiones-cerradas', page.locator('#ventana .panel3'));
+  } finally {
+    await browser.close();
+    try { process.kill(lock.pid, 'SIGKILL'); } catch { /* ya salió */ }
+  }
+}
+
 // Escribirle a una sesión desde la oficina (E1-E6). Una máquina de juguete con cuatro sesiones: Alfa, con su
 // vigilante «vivo» y una sesión falsa que toma el mensaje y contesta; Beto, sin vigilante; Cata, con un cuadro abierto; y
 // Gama, de Codex. Deja capturas en OFFICE_8183_SHOTS (una carpeta), si está.
@@ -257,6 +446,12 @@ async function main() {
     console.log(fails.length ? `E1-E6 (8.183): FALLA (${fails.length})` : 'E1-E6 (8.183): OK');
     return fails.length ? 1 : 0;
   }
+  // sólo los números de tarea y las manos (8.198), con su propia oficina de juguete
+  if (process.argv.includes('--task-numbers')) {
+    await taskNumbers(playwright);
+    console.log(fails.length ? `8.198: FALLA (${fails.length})` : '8.198: OK');
+    return fails.length ? 1 : 0;
+  }
 
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'office-e1-'));
   const sdir = stateDir(home);
@@ -324,6 +519,7 @@ async function main() {
     check(true, 'el aviso «La oficina se cerró…» apareció');
     check(await page.locator('.item', { hasText: 'revisión del banco de controles' }).count() === 1, 'la última foto quedó');
     await tablesByTopic(playwright, env, sdir);
+    await taskNumbers(playwright);
   } finally {
     await browser.close();
     try { process.kill(lock.pid, 'SIGKILL'); } catch { /* ya salió */ }

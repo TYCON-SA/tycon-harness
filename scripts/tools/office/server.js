@@ -106,6 +106,11 @@ function watchedDirs(home, sdir) {
     path.join(sdir, 'coordination'), path.join(sdir, 'gates.log')];
 }
 
+// Lo que board.js escribe para sí mismo (el candado, el contador, el registro, la huella, los temporales) no es una
+// novedad: cada foto lo toca, y si disparara otra foto la oficina no pararía nunca
+const BOARD_OWN = /^(tablero\.lock|tablero-(numeros|hechos|huella)\.json(\.bak)?)$|\.tmp$/;
+const ignoredChange = (name) => name != null && BOARD_OWN.test(String(name));
+
 /**
  * Vigila cada carpeta; la que todavía no existe se espera desde la de arriba, y la que no se puede vigilar se anota en
  * `notes`. Devuelve una función que deja de vigilar.
@@ -117,7 +122,7 @@ function watchAll(dirs, onChange, notes) {
   const watchDir = (dir) => {
     try {
       if (failOn && path.basename(dir) === failOn) throw new Error('falla de prueba');
-      const w = fs.watch(dir, () => onChange());
+      const w = fs.watch(dir, (ev, name) => { if (!ignoredChange(name)) onChange(); });
       w.on('error', (e) => { note(dir, e); try { w.close(); } catch { /* ya cerrado */ } onChange(); });
       watchers.push(w);
     } catch (e) { note(dir, e); }
@@ -215,7 +220,8 @@ function photoThread() {
       if (!once || reread) once = { site: office.readSiteUrl(), quiet: office.readQuietMinutes() };
       // con otro sitio, todas las conversaciones salen de nuevo: el sitio nuevo no recibió ninguna
       if (reread) talked.clear();
-      const data = await office.collect({ home, queryAll: query, queryPrs, siteUrl: async () => once.site, quietMinutes: async () => once.quiet, envelopes, memory });
+      // este proceso tiene el candado de la oficina de la máquina: él mueve el tablero con los hechos de cada foto
+      const data = await office.collect({ home, queryAll: query, queryPrs, siteUrl: async () => once.site, quietMinutes: async () => once.quiet, envelopes, memory, syncBoard: true });
       const charlaFailures = [];
       const later = {};
       const said = charlas ? changedTalks(office, envelopes, talked, Date.now(), charlaFailures, later) : null;
@@ -484,6 +490,28 @@ async function serve() {
     });
   };
 
+  // «Quitar» una sesión cerrada: como un mensaje, desde la ventana de la oficina y nada más; el proceso vuelve a mirar
+  // antes de borrar (office.removeClosed) y la foto siguiente ya no la tiene
+  const onRemove = (req, res) => {
+    const answer = (code, body) => { res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }); res.end(body ? JSON.stringify(body) : undefined); };
+    if (req.method !== 'POST') { req.resume(); answer(405); return; }
+    if (!okOrigin(req.headers.origin) || req.headers['sec-fetch-site'] !== 'same-origin') { req.resume(); answer(403); return; }
+    if (!/^application\/json(\s*;|$)/i.test(String(req.headers['content-type'] || ''))) { req.resume(); answer(415); return; }
+    const chunks = [];
+    let size = 0;
+    req.on('data', (d) => { size += d.length; if (size <= MAX_EVENT_BYTES) chunks.push(d); });
+    req.on('error', () => { /* la ventana cortó */ });
+    req.on('end', () => {
+      if (size > MAX_EVENT_BYTES) { answer(413); return; }
+      let id = null;
+      try { ({ id } = JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch { /* abajo: sin id */ }
+      const closedIds = ((last && last.cerradas) || []).map((c) => c.id).filter(Boolean);
+      const r = office.removeClosed(sdir, id, closedIds);
+      answer(r.status, r.motivo ? { motivo: r.motivo } : null);
+      if (r.status === 204) schedule();
+    });
+  };
+
   const messages = officeMessages({ sdir, envelopes, okOrigin, log: (l) => appendLog(sdir, l), notify: (m) => { for (const c of clients) if (c.readyState === WebSocket.OPEN) c.send(JSON.stringify({ type: 'mensaje', ...m })); } });
 
   const server = http.createServer((req, res) => {
@@ -491,6 +519,7 @@ async function serve() {
     if (!url || !okHost(req.headers.host) || !okToken(url)) { deny(res); return; }
     const send = (type, body) => { res.writeHead(200, { 'content-type': type, 'cache-control': 'no-store' }); res.end(body); };
     if (url.pathname === '/event') { onEvent(req, res); return; }
+    if (url.pathname === '/quitar') { onRemove(req, res); return; }
     if (url.pathname === '/mensaje') { ready.then(() => messages.onPost(req, res), () => { req.resume(); res.writeHead(503, { 'cache-control': 'no-store' }); res.end(); }); return; }
     if (url.pathname === '/') {
       ready.then(() => send('text/html; charset=utf-8', office.page(last, { live: { token } }))).catch((e) => {
@@ -687,4 +716,4 @@ else if (require.main === module) {
   });
 }
 
-module.exports = { cachedQuery, watchedDirs, watchAll, lockPathOf, officeDirOf, lifeLimits, forSite, changedTalks };
+module.exports = { ignoredChange, cachedQuery, watchedDirs, watchAll, lockPathOf, officeDirOf, lifeLimits, forSite, changedTalks };

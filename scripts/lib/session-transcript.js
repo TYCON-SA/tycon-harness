@@ -362,7 +362,7 @@ function startingMessage(file) {
 }
 
 const TOKEN_STEP_BYTES = 1024 * 1024;
-const newCount = () => ({ offset: 0, byMessage: new Map(), lectura: 0, escritura: 0, cache: 0, ultimo: null, codex: null });
+const newCount = () => ({ offset: 0, byMessage: new Map(), lectura: 0, escritura: 0, cache: 0, ultimo: null, codex: null, codexTurno: null });
 
 function addTurn(count, id, u) {
   const now = { lectura: (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0), escritura: u.output_tokens || 0, cache: u.cache_read_input_tokens || 0 };
@@ -373,7 +373,7 @@ function addTurn(count, id, u) {
 
 function countLine(line, count, isAgent) {
   const claude = line.includes('"usage"');
-  if (!claude && !line.includes('"token_count"')) return;
+  if (!claude && !line.includes('"token_count"') && !line.includes('"turn_context"')) return;
   let d;
   try { d = JSON.parse(line); } catch { return; }
   if (!d || typeof d !== 'object') return;
@@ -381,7 +381,14 @@ function countLine(line, count, isAgent) {
     const m = d.message;
     if (m.model === '<synthetic>' || (d.isSidechain && !isAgent)) return;
     addTurn(count, m.id || d.uuid, m.usage);
-    if (!isAgent) count.ultimo = { contexto: (m.usage.input_tokens || 0) + (m.usage.cache_creation_input_tokens || 0) + (m.usage.cache_read_input_tokens || 0), modelo: typeof m.model === 'string' ? m.model : null };
+    // el esfuerzo de esta respuesta: el del turno, o el de la sesión si el del turno falta. Nunca el de la configuración
+    const esfuerzo = typeof d.perTurnEffort === 'string' ? d.perTurnEffort : typeof d.effort === 'string' ? d.effort : null;
+    if (!isAgent) count.ultimo = { contexto: (m.usage.input_tokens || 0) + (m.usage.cache_creation_input_tokens || 0) + (m.usage.cache_read_input_tokens || 0), modelo: typeof m.model === 'string' ? m.model : null, esfuerzo };
+    return;
+  }
+  // Codex escribe el modelo y el esfuerzo de cada turno en su `turn_context`; el esfuerzo viene vacío si no se eligió
+  if (d.type === 'turn_context' && d.payload && typeof d.payload === 'object') {
+    count.codexTurno = { modelo: typeof d.payload.model === 'string' ? d.payload.model : null, esfuerzo: typeof d.payload.effort === 'string' ? d.payload.effort : null };
     return;
   }
   const p = d.type === 'event_msg' && d.payload;
@@ -437,7 +444,8 @@ function contextLimit(modelo, contexto, modelSettings) {
 }
 
 /**
- * Los tokens de una sesión: `{ contexto, limite, lectura, escritura, cache, agentes }`, o `{ noMedido: true }` sin un conteo
+ * Los tokens de una sesión: `{ contexto, limite, lectura, escritura, cache, agentes, modelo, esfuerzo }` (el modelo y el
+ * esfuerzo de su última respuesta, o null), o `{ noMedido: true }` sin un conteo
  * legible. `counts` recuerda por archivo hasta dónde se leyó, y vive lo que viva quien llama.
  */
 function readSessionTokens(file, counts, { modelSettings } = {}) {
@@ -447,9 +455,10 @@ function readSessionTokens(file, counts, { modelSettings } = {}) {
     const t = main.codex.total;
     const cached = t.cached_input_tokens || 0;
     const ventana = Number.isFinite(main.codex.ventana) && main.codex.ventana > 0 ? main.codex.ventana : null;
-    return { contexto: main.codex.contexto, limite: ventana, lectura: Math.max(0, (t.input_tokens || 0) - cached), escritura: t.output_tokens || 0, cache: cached, agentes: 0 };
+    const turno = main.codexTurno || {};
+    return { contexto: main.codex.contexto, limite: ventana, lectura: Math.max(0, (t.input_tokens || 0) - cached), escritura: t.output_tokens || 0, cache: cached, agentes: 0, modelo: turno.modelo || null, esfuerzo: turno.esfuerzo || null };
   }
-  if (!main.ultimo) return { noMedido: true };
+  if (!main.ultimo) return { noMedido: true, ...(main.codexTurno ? { modelo: main.codexTurno.modelo, esfuerzo: main.codexTurno.esfuerzo } : {}) };
   const dir = path.join(path.dirname(file), path.basename(file, '.jsonl'), 'subagents');
   let names = [];
   try { names = fs.readdirSync(dir).filter((n) => n.endsWith('.jsonl')); } catch { /* sin agentes */ }
@@ -459,8 +468,8 @@ function readSessionTokens(file, counts, { modelSettings } = {}) {
     const a = countTokens(f, countOf(f), { isAgent: true });
     for (const k of Object.keys(total)) total[k] += a[k];
   }
-  const { contexto, modelo } = main.ultimo;
-  return { contexto, limite: contextLimit(modelo, contexto, modelSettings), ...total, agentes: names.length };
+  const { contexto, modelo, esfuerzo } = main.ultimo;
+  return { contexto, limite: contextLimit(modelo, contexto, modelSettings), ...total, agentes: names.length, modelo, esfuerzo };
 }
 
 /**

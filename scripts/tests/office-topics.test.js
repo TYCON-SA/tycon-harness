@@ -737,8 +737,9 @@ test('Regresion_OtroProyecto_PorLaFotoReal @story-8.184 @ac-9 @ac-26: pedido pro
 });
 
 test('Regresion_TemaDeLaFila_LlegaALaTarjetaReal @story-8.184 @ac-7 @ac-8: fila con `quien` y sin historia; dos tarjetas de una historia', () => {
-  const board = buildBoard({ pendientes: [{ titulo: 'Lo de Paz', estado: 'curso', quien: 'Paz', tema: 'Tema corregido' }] });
-  const { data } = buildOffice({ wip: wip([{ session: 'Paz', sid: 'p', extra: { kind: 'note', text: 'Lo de Paz' } }]), board, nowMs: SUNDAY });
+  // la fila se une a la sesión por su número, no por el nombre de quien la hace
+  const board = buildBoard({ pendientes: [{ titulo: 'Lo de Paz', id: 'T-7', estado: 'curso', quien: 'Paz', tema: 'Tema corregido' }] });
+  const { data } = buildOffice({ wip: wip([{ session: 'Paz', sid: 'p', extra: { kind: 'note', text: 'T-7 Lo de Paz' } }]), board, nowMs: SUNDAY });
   assert.deepStrictEqual(pendingOf(data), [], 'no se le pregunta al modelo');
   assert.deepStrictEqual(tablesOf(data).hoy.filas.map((f) => f.grupo), ['Tema corregido']);
   const two = buildOffice({
@@ -911,7 +912,7 @@ test('Regresion_NotaDeEstado_NoEsElTitulo @story-8.184 @ac-1 @ac-7 @ac-10: en la
   const later = buildOffice({ wip: wip([{ session: 'Paz', sid: 'p', extra: { kind: 'entering', closedAt: SUNDAY - 3600000, storyId: '9.1', title: 'La historia de verdad', runFolder: '/x/repo', meanwhile: 'portón 62 de 62', meanwhileKind: 'note', meanwhileAt: SUNDAY - 1000 } }]), nowMs: SUNDAY }).data;
   assert.deepStrictEqual(T.pendingWorks(workCards(later.kanban), Object.fromEntries(T.pendingWorks(workCards(closed.kanban), {}).map((w) => [w.clave, 'Tema']))), []);
   // una nota con su fila del tablero: el título de la fila
-  const withRow = buildOffice({ wip: wip([{ session: 'Ana', sid: 'a', extra: { kind: 'note', text: 'en main; falta encolar' } }]), board: buildBoard({ pendientes: [{ titulo: 'El trabajo de la fila', estado: 'curso', quien: 'Ana' }] }), nowMs: SUNDAY }).data;
+  const withRow = buildOffice({ wip: wip([{ session: 'Ana', sid: 'a', extra: { kind: 'note', text: 'T-8 en main; falta encolar' } }]), board: buildBoard({ pendientes: [{ titulo: 'El trabajo de la fila', id: 'T-8', estado: 'curso', quien: 'Ana' }] }), nowMs: SUNDAY }).data;
   assert.strictEqual(tablesOf(withRow).hoy.filas[0].que, 'El trabajo de la fila');
   assert.deepStrictEqual(pendingOf(withRow), ['El trabajo de la fila']);
   // lo que dice su conversación tampoco es el título, si hay una fila

@@ -1496,6 +1496,11 @@
       "requiere": []
     },
     {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/board-write-gate.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.174: el camino rápido de riesgo alto — una sola regla de riesgo (risk-paths.js), la base del carril, el delegado que no la escribe, la marca, y los revisores y el pase antes de guardar.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/adhoc-high-risk.test.js",
@@ -1785,6 +1790,11 @@
     {
       "raiz": "arnes",
       "ruta": "tests/office.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/office-task-numbers.test.js",
       "requiere": []
     },
     {

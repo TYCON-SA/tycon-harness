@@ -290,15 +290,19 @@ function richFoto() {
       { kind: 'run', text: 'Otro trabajo', unknown: true },
     ],
   };
-  const board = buildBoard({ meta: { actualizado: '2026-06-01T10:00', resumen: 'Resumen', teToca: ['Algo'] }, pendientes: [{ titulo: 'Pendiente', estado: 'espera', grupo: 'Hoy', quien: 'Omega', nota: 'Nota', termina: 'hoy', orden: 1 }, { titulo: 'Hecho', estado: 'hecho', quien: 'Beta', realIso: '2026-06-01T09:00' }] });
+  const board = buildBoard({ meta: { actualizado: '2026-06-01T10:00', resumen: 'Resumen', teToca: ['Algo'] }, pendientes: [{ titulo: 'Pendiente', estado: 'espera', grupo: 'Hoy', quien: 'Omega', nota: 'Nota', termina: 'hoy', orden: 1, id: 'T-1' }, { titulo: 'Hecho', estado: 'hecho', quien: 'Beta', realIso: '2026-06-01T09:00', id: 'T-2' }] });
+  // una firma pedida por una sesión: su persona levanta la mano y la tarjeta dice a quién espera (8.198)
   const { data } = buildOffice({
-    wip, signatures: [{ title: 'Firma del plan', at: nowMs }], nowMs, board, openPrsNote: 'Los pedidos no se pudieron leer.',
+    wip, signatures: [{ title: 'Firma del plan', at: nowMs }, { id: 'f9', tipo: 'firma', destino: 's1', title: 'el carril de Alfa', at: nowMs }], nowMs, board, openPrsNote: 'Los pedidos no se pudieron leer.',
     sessionFiles: [{ session: 's3', tool: 'claude', pid: null, updatedAt: new Date(nowMs - 1800000).toISOString() }],
     transcripts: new Map(['s3', 's8'].map((sid) => [sid, { encargo: 'Lo que le pidieron', haciendoAhora: 'Lo que hace ahora', ultimaAccion: 'Lo último que hizo', lastWriteMs: nowMs - 60000 }])),
   });
   // lo que collect() le agrega a la foto de buildOffice
   data.tablas = buildTables({ kanban: data.kanban, nowMs });
-  data.tablero = { actualizado: board.actualizado, resumen: board.resumen, teToca: board.teToca };
+  data.tablero = { actualizado: board.actualizado, teToca: board.teToca };
+  // con la oficina abierta, el modelo y el esfuerzo de cada sesión, de su última respuesta
+  Object.assign(data.agents[0], { modelo: 'Opus 5.5', esfuerzo: 'High' });
+  Object.assign(data.agents[1], { modelo: 'Sonnet 5.5', esfuerzo: 'sin dato' });
   data.kanban.columnas[0].tarjetas[0] = { ...data.kanban.columnas[0].tarjetas[0], otro: true };
   data.kanban.escrito = 'Tablero escrito a las 11:59';
   data.meta.pedidosLeidos = '11:59';
@@ -434,7 +438,9 @@ test('T1 Foto_LaMismaQueLaOficinaLocal: viaja sólo lo que lee la página; la li
   assert.ok(readBy('DATA')('sobres') && 'sobres' in FIELDS, 'los sobres están en la lista');
   assert.deepStrictEqual(pick({ sobres: [{ id: 'm1', de: 'Alfa', a: 'Beta', at: 5, texto: 'un mensaje' }] }, '/home/nadie').sobres, [{ id: 'm1', de: 'Alfa', a: 'Beta', at: 5 }]);
   assert.strictEqual(typeof sentOf('Alfa').comoTrabaja, 'string');
-  assert.deepStrictEqual(sent.tablero, { resumen: 'Resumen' });
+  // meta.resumen se ignora: la línea de arriba del kanban se arma sola y viaja en `kanban.linea` (8.198, AC 28)
+  assert.deepStrictEqual(sent.tablero, {});
+  assert.strictEqual(sent.kanban.linea, foto.kanban.linea);
   assert.strictEqual(sent.unreadable[0], 'algo que no se leyó');
   // un valor que no tiene la forma de su campo tampoco viaja
   assert.strictEqual(pick({ agents: [{ nombre: 'x', estado: 'rm -rf', avance: 'mucho', estimadaIso: 'mañana', fin: 'una hora' }] }, '/home/nadie').agents[0].estado, undefined);
@@ -1281,7 +1287,8 @@ test('Regresion_FotoReal_TodoLoQueTraeViajaOSeLoDeja: una sección nueva de la f
   // `items` es la única que se queda, a propósito: la página no lee sus campos (T1)
   assert.deepStrictEqual(Object.keys(foto).filter((k) => !(k in FIELDS)), ['items'], 'cada sección de la foto real está en la lista');
   const sent = pick(foto, m.home);
-  assert.strictEqual(sent.tablero.resumen, 'Resumen real');
+  assert.ok(!('resumen' in sent.tablero), 'meta.resumen se ignora (8.198, AC 28)');
+  assert.match(sent.kanban.linea, /Tu firma: \d+ · Trabado: \d+/);
   assert.ok(sent.kanban.columnas.find((c) => c.id === 'sinEmpezar').tarjetas.some((c) => c.titulo === 'Pendiente real'));
   assert.strictEqual(sent.tablas.hoy.titulo, 'Hoy');
   assert.strictEqual(sent.tablas.pendientes.titulo, 'Pendientes');
