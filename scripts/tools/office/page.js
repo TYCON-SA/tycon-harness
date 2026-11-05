@@ -13,7 +13,7 @@ const el=(t,c,txt)=>{const e=document.createElement(t);if(c)e.className=c;if(txt
 const DAYS=["dom","lun","mar","mié","jue","vie","sáb"];
 const parse=s=>{const m=/^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d)$/.exec(s||"");return m?new Date(+m[1],m[2]-1,+m[3],+m[4],+m[5]):null};
 const fmt=s=>{const d=parse(s);return d?DAYS[d.getDay()]+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"):"—"};
-const AST={trabajando:["Trabajando","#3ddc84"],prueba:["Corriendo pruebas","#5aa9ff"],parada:["Parada","#c9b458"],espera:["Esperando entrar","#a59fc4"],esperando:["Esperando","#e8b84a"],firma:["Tu firma","#ffa53d"],pregunta:["Te pregunta","#ffa53d"],libre:["Libre","#9aa3a0"],coordina:["Coordinando","#ff6fc0"],inactiva:["Inactiva","#6b6f6e"]};
+const AST={trabajando:["Trabajando","#3ddc84"],prueba:["Corriendo pruebas","#5aa9ff"],parada:["Parada","#c9b458"],espera:["Esperando entrar","#a59fc4"],esperando:["Esperando","#e8b84a"],firma:["Tu firma","#ffa53d"],pregunta:["Te pregunta","#ffa53d"],libre:["Libre","#9aa3a0"],coordina:["Coordinando","#ff6fc0"],inactiva:["Inactiva","#6b6f6e"],cerrar:["Terminado, falta cerrar","#7fc8a9"]};
 const SHIRT=["#c2569b","#2f9e6a","#3b7ddd","#e08a1e","#7a5cc7","#d65a4a"];
 let agents,items,meta;
 function setData(d){DATA=d||{};agents=DATA.agents||[];items=DATA.items||[];meta=DATA.meta||null}

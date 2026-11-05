@@ -1456,6 +1456,11 @@
     },
     {
       "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/finished-open.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/controls-off.test.js",
       "requiere": []
     },
@@ -2283,6 +2288,12 @@
       "__nota": "El aviso de arranque de los pedidos trabados: en choque o sin entrar más de una hora con auto-completar, el reloj que vuelve a cero, «no medido» y nunca vacío, el tope de 5 s, la foto de 10 minutos y a lo sumo 5 líneas saneadas.",
       "raiz": "arnes",
       "ruta": "tests/stuck-pr-notice.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.195: el aviso de arranque de lo terminado sin cerrar lista lo de toda la máquina con el comando de cada sesión, y calla sin nada.",
+      "raiz": "arnes",
+      "ruta": "tests/finished-open-notice.test.js",
       "requiere": []
     },
     {

@@ -155,6 +155,25 @@ Lo que no puede mirar (una carpeta que no anotó o que ya no está, git que no c
 stash`. Una rama borrada sin entrar ya no se ve. Una rama que entró aplastada en un solo commit sale como que no entró. Un
 worktree de un repo sin carpeta de trabajo sale como «no sé». `claude stop` y `claude rm` a mano no pasan por acá.
 
+### Lo terminado sin cerrar
+
+Una ejecución con todos sus pasos hechos sigue abierta hasta `marker.js clear`, y un camino corto hasta
+`marker.js adhoc clear`. El arnés lo avisa; nunca lo cierra solo, porque no sabe cuál es el último push ni el último
+pedido, y un cierre de más pierde la ejecución.
+
+- **Al cerrar cada turno**, la sesión ve una línea: «la ejecución de la story <id> terminó hace <tiempo> y sigue
+  abierta», o «el camino corto «<motivo>» tiene su pedido <N> abierto (o su rama ya en main) y sigue abierto». Si cambió
+  código después de los revisores, la línea dice que falta revisarlo, no que se cierre. No frena el turno.
+- **Al arrancar una sesión**, un aviso lista lo de toda la máquina, hasta cinco, con su sesión y cómo se cierra. Si la
+  sesión vive, la cierra ella. Si murió, el aviso da `marker.js clear-session <sesión>`, o `adhoc clear-orphan <sesión>`
+  para un camino corto. Si su ejecución está perdida, da `clear-session <sesión> --lost`, que firma el dueño. Si no se
+  sabe si vive (Codex no deja registro de sesión), lo dice y no da comando.
+- **En la oficina y en `/wip`** la sesión sale «Terminado, falta cerrar», con la historia y desde cuándo, también pasado
+  un día. No cuenta como trabajando; si la sesión está ocupada en otra cosa, sale trabajando.
+
+Qué hace la coordinadora: le pide a esa sesión que cierre después de su último push y de su último pedido. Si la sesión
+murió, corre el comando del aviso; el de `--lost` se lo pasa al dueño.
+
 ## El tope: qué cuenta como trabajar
 
 **Trabajando** es una sesión viva cuyo archivo de sesión dice que está ocupada. Una sesión que espera la CI, la cola o

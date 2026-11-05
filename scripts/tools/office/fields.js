@@ -35,7 +35,7 @@ function headAtSpace(s, n) {
   return at > 0 ? head.slice(0, at) : head;
 }
 
-const AGENT_STATES = ['trabajando', 'prueba', 'parada', 'espera', 'esperando', 'firma', 'pregunta', 'libre', 'coordina', 'inactiva'];
+const AGENT_STATES = ['trabajando', 'prueba', 'parada', 'espera', 'esperando', 'firma', 'pregunta', 'libre', 'coordina', 'inactiva', 'cerrar'];
 const END_CLASSES = ['late', 'early', 'ontime', ''];
 const KANBAN_COLUMNS = ['firma', 'curso', 'entrando', 'sinEmpezar', 'hechos'];
 const LOCAL_HOUR = /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d)$/;
