@@ -24,7 +24,7 @@ trae el comando todavía y que se actualiza con `/tycon-harness`. No corras nada
 **Qué abre.** Con la dirección del sitio en el perfil del equipo y la máquina aprobada, abre la pestaña «Oficinas» del sitio,
 en la oficina de esta máquina. Sin sitio, con la máquina sin aprobar o si espera la aprobación, abre la página local;
 mientras espera la aprobación, la salida lo dice en una línea con la huella, que quien mantiene compara para aprobarla.
-`--local` abre siempre la página local.
+`--local` abre siempre la página local; `/office-local` corre eso mismo.
 
 ## Qué le mostrás
 
