@@ -3651,3 +3651,47 @@ test('DesignationFirmas_WrittenApproval_OwnOrCoordinatorTab_DoesNotCount (T21)',
     }
   }
 });
+
+// Calcular la matriz de una historia grande tarda segundos, y el freno tiene 20 s para todo: la calcula una sola vez por
+// consulta, con o sin ventana, y el chequeo del guion (otro proceso, que la calcula otra vez) tiene un plazo propio menor.
+test('OwnerWindow_RuntimeWaiver_LaMatrizSeCalculaUnaVezPorConsulta', (t) => {
+  const { story } = historiaConCriterio(t);
+  const rmx = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'runtime-matrix.js'));
+  const original = rmx.compute;
+  let veces = 0;
+  rmx.compute = (...a) => { veces += 1; return original.apply(rmx, a); };
+  t.after(() => { rmx.compute = original; });
+  for (const [extra, acs] of [[{}, ''], [{ permission_mode: 'bypassPermissions' }, ''], [{}, ' --acs 1'], [{ permission_mode: 'bypassPermissions' }, ' --acs 1']]) {
+    veces = 0;
+    const r = pedir(casaNueva(t), `node ${MARKER} runtime-waiver ${story}${acs}`, { evento: extra });
+    assert.match(r.texto, /AC 1: Given un pedido/, `${JSON.stringify(extra)}${acs}`);
+    assert.strictEqual(veces, 1, `${JSON.stringify(extra)}${acs}: la matriz se calculó ${veces} veces`);
+  }
+  // la memoria es de una consulta: la misma historia, editada entre dos consultas con la misma casa, se vuelve a calcular
+  // y el cuadro muestra lo que se va a firmar ahora, no lo de la consulta anterior
+  const otra = historiaConCriterio(t);
+  const casa = casaNueva(t);
+  const cmd = `node ${MARKER} runtime-waiver ${otra.story}`;
+  assert.match(pedir(casa, cmd).texto, /el aviso queda en el servicio externo\./);
+  fs.writeFileSync(otra.story, fs.readFileSync(otra.story, 'utf8').replace('el aviso queda en el servicio externo', 'el pago queda en el banco'));
+  veces = 0;
+  const r = pedir(casa, cmd);
+  assert.match(r.texto, /AC 1: Given un pedido Then el pago queda en el banco\./, r.texto);
+  assert.doesNotMatch(r.texto, /servicio externo\./);
+  assert.strictEqual(veces, 1);
+});
+
+test('OwnerWindow_Prechequeo_PlazoPropioMenorQueElDelFreno', (t) => {
+  const cp = require('child_process');
+  const original = cp.spawnSync;
+  const plazos = {};
+  cp.spawnSync = (cmd, args, o) => { plazos[args[1]] = o.timeout; return { status: 2, stdout: '', stderr: 'no' }; };
+  t.after(() => { cp.spawnSync = original; });
+  ow.comprobarConElGuion({ firma: 'runtime-waiver', palabras: [MARKER, 'runtime-waiver', '/r/specs/story-9.99.md'], cwd: os.tmpdir(), sesion: 'ses-a' });
+  ow.comprobarConElGuion({ firma: 'save', palabras: [MARKER, 'approve-save'], cwd: os.tmpdir(), sesion: 'ses-a' });
+  cp.spawnSync = original;
+  // el freno tiene 20 s para todo: el chequeo del guion espera menos, y el ok de guardar conserva el suyo
+  assert.strictEqual(plazos['runtime-waiver'], ow.PLAZO_DEL_PRECHEQUEO_MS);
+  assert.ok(ow.PLAZO_DEL_PRECHEQUEO_MS <= 12000, `el chequeo del guion espera ${ow.PLAZO_DEL_PRECHEQUEO_MS} ms`);
+  assert.strictEqual(plazos['approve-save'], 240000);
+});

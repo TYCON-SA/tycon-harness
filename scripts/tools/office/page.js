@@ -27,14 +27,14 @@ const finTxt=a=>a.fin||null;
 function estadoDeHora(i){const h=i.hora||"";if(i.espera||/^espera\b|parada/.test(h))return ["Esperando","#d19a00"];if(/tarde|se pasó|estaba para/.test(h))return ["Pasada de la hora","#e5534b"];if(/en hora|antes$/.test(h))return ["En hora","#2fa866"];return null}
 function renderBoard(){const body=document.getElementById("boardBody"),k=DATA.kanban,t=DATA.tablero,KC={firma:"#ffa53d",curso:"#5aa9ff",entrando:"#a59fc4",sinEmpezar:"#9aa3a0",hechos:"#3ddc84"};body.replaceChildren();
   if(!k)return;
-  const resumen=t&&t.resumen||"";
-  const top=el("p","sum");top.textContent=resumen+(k.escrito?(resumen?" · ":"")+k.escrito:"");if(top.textContent)body.appendChild(top);
+  // la línea de arriba se arma sola de las tarjetas; el tablero viejo sólo suma si quedó viejo
+  const top=el("p","sum");top.textContent=(k.linea||k.escrito||"")+(t&&/\(vieja\)$/.test(k.escrito||"")?" (vieja)":"");if(top.textContent)body.appendChild(top);
   const cols=el("div","cols");
   (k.columnas||[]).forEach(c=>{const col=el("div","col"),list=c.tarjetas||[];col.style.setProperty("--k",KC[c.id]||"var(--line)");col.appendChild(el("h3",null,c.nombre+" · "+list.filter(i=>!i.otro).length));
     if(c.nota)col.appendChild(el("p","none",c.nota));
     if(!list.length)col.appendChild(el("p","none","Nada"));
-    list.forEach(i=>{const card=el("div","item abre"),tit=el("b","una-linea",i.titulo||"");tit.title=i.titulo||"";card.tabIndex=0;card.setAttribute("role","button");card.onclick=()=>{if(!String(window.getSelection?getSelection():""))abrirTarjeta(i,card);};card.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();abrirTarjeta(i,card);}};card.appendChild(tit);const line=[i.quien,i.hora,i.grupo].filter(Boolean).join(" · ");if(line)card.appendChild(el("span","m",line));const eh=c.id==="curso"&&estadoDeHora(i);if(eh){card.style.setProperty("--k",eh[1]);card.appendChild(el("span","estado-hora",eh[0]))}
-      [i.espera?"Espera "+i.espera+".":"",i.marca,i.motivo,i.nota].forEach(v=>{if(v)card.appendChild(el("span","n",v))});col.appendChild(card)});
+    list.forEach(i=>{const card=el("div","item abre"),tit=el("b","una-linea",i.titulo||"");tit.title=i.titulo||"";if(typeof i.numero==="string"){card.setAttribute("data-numero",i.numero);card.appendChild(el("span","num",i.numero));if(typeof numeroMarcado==="string"&&i.numero===numeroMarcado)card.classList.add("marcada")}card.tabIndex=0;card.setAttribute("role","button");card.onclick=()=>{if(!String(window.getSelection?getSelection():""))abrirTarjeta(i,card);};card.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();abrirTarjeta(i,card);}};card.appendChild(tit);const line=[i.quien,i.hora,i.grupo].filter(Boolean).join(" · "),quienEs=(DATA.agents||[]).find(a=>a.nombre===String(i.quien||"").split(" · ")[0]),mod=quienEs&&(quienEs.modelo||quienEs.esfuerzo)?(quienEs.modelo||"sin dato")+" · "+(quienEs.esfuerzo||"sin dato"):"";if(mod)card.appendChild(el("span","m mod",mod));if(line)card.appendChild(el("span","m",line));const eh=c.id==="curso"&&estadoDeHora(i);if(eh){card.style.setProperty("--k",eh[1]);card.appendChild(el("span","estado-hora",eh[0]))}
+      [i.espera?"Espera "+i.espera+".":"",i.marca,i.motivo,i.nota].forEach(v=>{if(v)card.appendChild(el("span","n",v))});if(i.mano)card.appendChild(el("span","mano "+i.mano,"✋ "+(i.mano==="coordinadora"?"Espera a la Coordinadora":"Espera tu firma")));col.appendChild(card)});
     cols.appendChild(col)});
   body.appendChild(cols);
 }
@@ -80,6 +80,19 @@ function pintarVista(){const hay=Boolean(DATA.tablas),k=Boolean(DATA.kanban),v=v
   document.getElementById("trabajo").hidden=!hay&&!k;
   document.querySelectorAll('input[name="vista"]').forEach(i=>{i.checked=i.value===v})}
 document.querySelectorAll('input[name="vista"]').forEach(i=>i.addEventListener("change",()=>{if(!i.checked)return;vista=i.value;guardarVista(vista);pintarVista()}));
+// «¿cómo va la T-41?»: «T-41» o «41» pasa al kanban, marca la tarjeta y la abre; si no está, lo dice debajo del campo
+// el número buscado sigue marcado aunque llegue una foto nueva y el kanban se vuelva a dibujar
+var numeroMarcado="";
+function numeroBuscado(t){const m=/^\s*(?:t-)?([1-9]\d*)\s*$/i.exec(String(t||""));return m?"T-"+m[1]:""}
+function buscarTarea(texto){const aviso=document.getElementById("buscarAviso"),n=numeroBuscado(texto);aviso.textContent="";
+  if(!n){aviso.textContent="Escribí un número, como T-41 o 41.";return}
+  const tarjetas=((DATA.kanban&&DATA.kanban.columnas)||[]).flatMap(c=>c.tarjetas||[]),i=tarjetas.find(t=>t.numero===n);
+  // una terminada otro día no está en las columnas: se abre su detalle
+  if(!i){const vieja=((DATA.kanban&&DATA.kanban.anteriores)||[]).find(t=>t.numero===n);if(vieja){abrirTarjeta(vieja,document.activeElement);return}aviso.textContent="La "+n+" no está en el tablero.";return}
+  numeroMarcado=n;vista="kanban";guardarVista(vista);pintarVista();
+  const card=document.querySelector('#boardBody [data-numero="'+n+'"]');document.querySelectorAll("#boardBody .marcada").forEach(x=>x.classList.remove("marcada"));
+  if(card){card.classList.add("marcada");card.scrollIntoView({block:"center"})}abrirTarjeta(i,card)}
+{const f=document.getElementById("buscar");if(f)f.addEventListener("submit",e=>{e.preventDefault();buscarTarea(document.getElementById("buscarTarea").value)})}
 // los dos resúmenes por tema, con la hora en que se armaron. Un tema se abre y muestra sus trabajos, y sigue abierto con la foto
 // nueva. Todo va como texto, nunca como HTML
 const temasAbiertos=new Set();
@@ -91,13 +104,20 @@ function renderTablas(){const sec=document.getElementById("tablas"),ts=DATA.tabl
       if(!(r.trabajos||[]).length){[r.grupo,r.que,r.col].forEach(v=>tr.appendChild(el("td",null,v||"")));bd.appendChild(tr);return;}
       const id=k+"|"+r.grupo,b=el("button","temaBoton",r.grupo),primera=el("td"),det=el("tr","temaTrabajos"),dd=el("td"),ul=el("ul");
       b.type="button";b.dataset.tema=id;primera.appendChild(b);tr.className="temaFila";tr.appendChild(primera);[r.que,r.col].forEach(v=>tr.appendChild(el("td",null,v||"")));
-      r.trabajos.forEach(w=>{const li=el("li");li.appendChild(el("b",null,w.titulo));li.appendChild(el("span",null,[w.quien,w.como].filter(Boolean).join(" · ")));ul.appendChild(li)});
+      r.trabajos.forEach(w=>{const li=el("li");if(typeof w.numero==="string")li.appendChild(el("span","num",w.numero));li.appendChild(el("b",null,w.titulo));li.appendChild(el("span",null,[w.quien,w.como].filter(Boolean).join(" · ")));ul.appendChild(li)});
       dd.colSpan=3;dd.appendChild(ul);det.appendChild(dd);
       const pintar=()=>{const abierta=temasAbiertos.has(id);det.hidden=!abierta;b.setAttribute("aria-expanded",String(abierta))};
       tr.addEventListener("click",()=>{if(temasAbiertos.has(id))temasAbiertos.delete(id);else temasAbiertos.add(id);pintar()});pintar();
       bd.appendChild(tr);bd.appendChild(det);if(foco===id)b.focus();});
     tb.appendChild(bd);const w=el("div","table");w.appendChild(tb);d.appendChild(w);sec.appendChild(d);})}
-function renderCrew(){pintarTarjetas(document.getElementById("crew"),agents)}
+function renderCrew(){const crew=document.getElementById("crew");pintarTarjetas(crew,agents);renderCerradas(cerradasJunto(crew),DATA.cerradas||[])}
+// «Cerradas», al final de «Las sesiones»: las de Claude cuyo proceso ya no existe. «Quitar» borra su archivo de estado y
+// está sólo en la oficina viva de la máquina: en el sitio la foto no trae el id
+function cerradasJunto(crew){let g=crew.nextElementSibling;if(!g||!g.classList.contains("cerradas-grupo")){g=el("div","cerradas-grupo");crew.after(g)}return g}
+function renderCerradas(g,lista){g.replaceChildren();g.hidden=!lista.length;if(!lista.length)return;g.appendChild(el("h3",null,"Cerradas"));lista.forEach(c=>{const fila=el("div","cerrada");fila.appendChild(el("b",null,c.nombre||""));fila.appendChild(el("small",null,horaDeSesion(c.ultimaNovedad)?"última novedad "+horaDeSesion(c.ultimaNovedad):"sin hora"));if(LIVE&&c.id){const b=el("button","quitar","Quitar");b.type="button";b.onclick=()=>quitarCerrada(c,b,fila);fila.appendChild(b)}g.appendChild(fila)})}
+function quitarCerrada(c,b,fila){b.disabled=true;const viejo=fila.querySelector(".falla");if(viejo)viejo.remove();
+  fetch("quitar?t="+encodeURIComponent(LIVE.token),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:c.id})}).then(r=>r.status===204?null:r.json().catch(()=>null).then(d=>(d&&d.motivo)||"respondió "+r.status)).catch(()=>"la oficina no contestó")
+    .then(motivo=>{if(motivo==null){b.textContent="Quitada";return}b.disabled=false;fila.appendChild(el("p","falla","No se pudo quitar: "+motivo+"."))})}
 function pintarTarjetas(c,list,alTocar){c.replaceChildren();
   if(!list.length){c.appendChild(el("p","empty","No hay sesiones abiertas en esta máquina."));return}
   list.forEach((a,i)=>{const s=AST[a.estado]||[a.estado||"","#999"];const k=el("div","card");
@@ -105,11 +125,21 @@ function pintarTarjetas(c,list,alTocar){c.replaceChildren();
     const st=el("span","st",s[0]);st.style.color=s[1];st.style.borderColor=s[1];const chips=el("div","chips");chips.appendChild(st);if(a.comoTrabaja&&a.comoTrabaja!==s[0])chips.appendChild(etiquetaComo(a.comoTrabaja));k.appendChild(chips);k.style.setProperty("--c",s[1]);
     pintarFicha(a,k,false);if(alTocar){k.classList.add("abre");k.tabIndex=0;k.setAttribute("role","button");k.onclick=e=>{if(!e.target.closest("button,summary,a"))alTocar(a)};k.onkeydown=e=>{if(e.target===k&&(e.key==="Enter"||e.key===" ")){e.preventDefault();alTocar(a)}};}c.appendChild(k);})}
 // lo que se dice de una sesión, de un solo lugar: la tarjeta y el panel pintan esta lista y sólo cambia su estilo
+// el número de una tarea del tablero; una fila escrita a mano sin numerar dice «sin número»
+function numeroDe(i){return i&&typeof i.numero==="string"?i.numero:""}
+// a quién espera la mano levantada: la que anotó la sesión, o el dueño si su pantalla espera una firma o una pregunta
+function manoDe(a){return a&&(a.mano||(a.estado==="firma"||a.estado==="pregunta"?"dueno":null))}
+// el globito que flota sobre quien espera: su ícono y su color, que es también el del aro del piso
+function globoDe(m){return m==="coordinadora"?{icono:"⏳",color:"#1f6fff"}:m==="dueno"?{icono:"✋",color:"#ff7a00"}:null}
+// con qué modelo y qué esfuerzo corre una sesión: «Opus 5.5 · High», con «sin dato» en lo que no se leyó; nada en la foto fija
+function modeloDe(a){return a&&(a.modelo||a.esfuerzo)?(a.modelo||"sin dato")+" · "+(a.esfuerzo||"sin dato"):""}
 function ficha(a){const r=[],add=(k,v,x)=>{if(v!=null&&v!=="")r.push({k,v,...x})};
   add("Trabajo",a.titulo);add("De la historia",a.historia);add("Encargo",a.encargo);
   if(a.haciendoAhora)add("Haciendo ahora",a.haciendoAhora);else if(a.haciendo!==a.titulo&&!SOLO_COORDINA.test(a.haciendo||""))add("Haciendo",a.haciendo);
   if(a.agentesAhora)r.push({k:"",v:a.agentesAhora});
   add("Última acción",a.ultimaAccion);add("Espera",a.espera);add("Parada",a.parada);add("Novedades",a.callada);
+  if(a.mano)add("Mano levantada",[a.manoEtiqueta,a.manoPor].filter(Boolean).join(" · "));
+  if(a.modelo||a.esfuerzo)add("Modelo",(a.modelo||"sin dato")+" · "+(a.esfuerzo||"sin dato"));
   const ms=AST[a.mientrasEstado];add("Mientras tanto",a.mientras?a.mientras+(ms?" ("+ms[0].toLowerCase()+")":""):"");
   add("En pausa",a.enPausa);
   // quien espera a otro no da una hora: dice qué espera, o qué pasó con los pedidos que esperaba
@@ -149,11 +179,15 @@ function etiquetaComo(como){const e=el("span","como-chip");e.appendChild(iconoCo
 let charlaDe=null,charlaVuelve=null,ultimoPedido=0;
 const ALCANCE=SOURCE==="site"?"Llegan de la máquina al sitio, que los guarda sólo en su memoria.":"No se guardan en el disco. Si esta máquina está aprobada en el sitio de la organización, se ven también ahí.";
 const ventana=()=>document.getElementById("ventana");
+// las cuatro ventanas de la oficina se cierran igual: una X arriba a la derecha, Escape o tocar afuera
+// cómo se cierra el panel de cada sala: Escape cierra el primero abierto
+const PANELES=new Set();
+function botonCerrar(alCerrar){const b=el("button","close","×");b.type="button";b.setAttribute("aria-label","Cerrar");b.onclick=alCerrar;return b}
 // Quién hace una tarjeta, si es una sesión de esta oficina. Una fila del tablero puede nombrar a más de una persona: cuenta la primera.
 function sesionDeTarjeta(i){const q=String(i.quien||"").trim(),primera=q.split(/[\s,]+/)[0];return agents.find(a=>a.nombre===q)||agents.find(a=>a.nombre===primera)||null;}
 // El detalle de una tarjeta del kanban, en la misma ventana que la conversación: su título entero, lo que sabe la tarjeta y, si la hace una sesión, su ficha.
-function abrirTarjeta(i,card){const v=ventana(),box=v.firstElementChild,a=sesionDeTarjeta(i);charlaDe=null;ultimoPedido+=1;charlaVuelve=card;v.hidden=false;box.classList.add("detalle");box.setAttribute("aria-label","Detalle de la tarjeta");document.documentElement.classList.add("con-ventana");
-  const cerrar=el("button","close","×");cerrar.type="button";cerrar.setAttribute("aria-label","Cerrar");cerrar.onclick=cerrarCharla;box.replaceChildren(el("h3",null,i.titulo||"Sin título"));
+function abrirTarjeta(i,card){const v=ventana(),box=v.firstElementChild,a=sesionDeTarjeta(i),nro=numeroDe(i);charlaDe=null;ultimoPedido+=1;charlaVuelve=card;v.hidden=false;box.classList.add("detalle");box.setAttribute("aria-label","Detalle de la tarjeta");document.documentElement.classList.add("con-ventana");
+  const cerrar=botonCerrar(cerrarCharla);box.replaceChildren(...(nro?[el("p","num",nro)]:[]),el("h3",null,i.titulo||"Sin título"));
   const dl=el("dl"),fila=(k,x)=>{if(x==null||x==="")return;const dd=el("dd");dd.append(x);dl.append(el("dt",null,k),dd);};
   fila("Quién",i.quien);if(!a||String(i.hora||"")!==String((finTxt(a)||{}).hora||""))fila("Cuándo",i.hora);if(!a||i.espera!==a.espera)fila("Espera",i.espera);fila("Marca",i.marca);fila("Motivo",i.motivo);fila("Nota",i.nota);fila("Grupo",i.grupo);
   // el enlace sólo lleva a estos dos sitios: de los datos sale la ruta, nunca la dirección entera
@@ -162,12 +196,13 @@ function abrirTarjeta(i,card){const v=ventana(),box=v.firstElementChild,a=sesion
   if(a){const s=AST[a.estado]||[a.estado||"","#999"],chips=el("div","chips"),st=el("span","chip","● "+s[0]);st.style.setProperty("--c",s[1]);chips.append(st);if(a.comoTrabaja&&a.comoTrabaja!==s[0])chips.append(etiquetaComo(a.comoTrabaja));box.append(chips);pintarFicha(a,box,true);}
   box.append(cerrar);cerrar.focus();}
 function abrirCharla(nombre,boton,p=null){const v=ventana(),box=v.firstElementChild;box.classList.remove("detalle");box.setAttribute("aria-label","Conversación");charlaDe=nombre;if(!v.contains(boton))charlaVuelve=boton;v.hidden=false;document.documentElement.classList.add("con-ventana");
-  const cerrar=el("button","close","×");cerrar.type="button";cerrar.setAttribute("aria-label","Cerrar");cerrar.onclick=cerrarCharla;box.replaceChildren(el("h3",null,"Conversación de "+nombre),el("p","m","Leyendo…"),cerrar);cerrar.focus();
+  const cerrar=botonCerrar(cerrarCharla);box.replaceChildren(el("h3",null,"Conversación de "+nombre),el("p","m","Leyendo…"),cerrar);cerrar.focus();
   const yo=++ultimoPedido,pedido=p||{...fuenteLocal(),nombre},deSitio=pedido.fuente==="site";
   // lo que falla queda en la consola: en la ventana, la persona ve sólo que no se pudo leer
   fetch(pedidoDeCharla(pedido),{credentials:"same-origin"}).then(r=>{const que=charlaSegunRespuesta(r.status);if(que==="vacia")return {vacia:true,deSitio};if(que!=="datos")throw new Error("respondió "+r.status);return r.json().then(datos=>{if(!charlaConForma(datos))throw new Error("una conversación sin su forma");return {datos}})}).catch(e=>{console.warn("conversación de "+nombre+": "+(e&&e.message));return {falla:true}}).then(c=>{if(yo!==ultimoPedido||charlaDe!==nombre)return;try{pintarCharla(box,nombre,c,cerrar)}catch(e){console.warn("conversación de "+nombre+": "+(e&&e.message));pintarCharla(box,nombre,{falla:true},cerrar)}});}
 function cerrarCharla(){const v=ventana();if(v.hidden)return;v.hidden=true;document.documentElement.classList.remove("con-ventana");v.firstElementChild.classList.remove("detalle");v.firstElementChild.replaceChildren();charlaDe=null;ultimoPedido+=1;if(charlaVuelve&&charlaVuelve.isConnected)charlaVuelve.focus({preventScroll:true});charlaVuelve=null;}
-document.addEventListener("keydown",e=>{if(e.key==="Escape")cerrarCharla()});
+// Escape cierra sólo la de arriba: la ventana, si está abierta; si no, el panel de la sala
+document.addEventListener("keydown",e=>{if(e.key!=="Escape")return;if(!ventana().hidden){cerrarCharla();return}for(const c of PANELES)if(c())return;});
 // El formato simple de un mensaje: negritas, código y listas. Todo se arma con nodos y textContent, así que lo que traiga
 // el mensaje nunca llega a ser HTML.
 function enLinea(padre,texto){for(const p of String(texto).split(/(\*\*[^*\n]+\*\*|`[^`\n]+`)/)){if(!p)continue;
@@ -198,12 +233,16 @@ const SESIONES_A_LA_VISTA=8;
 function charlaPorSesion(nombre,sesiones,vacio){if(!sesiones.length)return listaCharla([],vacio);
   const box=el("div","porSesion"),fila=el("div","quienes");fila.setAttribute("role","group");fila.setAttribute("aria-label","Con qué sesión");
   let actual=null;
-  const boton=s=>{const b=el("button",null,s.sesion);b.type="button";b.setAttribute("aria-pressed","false");b.append(el("small",null,horaDeSesion(s.at)));b.onclick=()=>elegir(s,b);return b;},
-    elegir=(s,b)=>{if(actual)actual.setAttribute("aria-pressed","false");b.setAttribute("aria-pressed","true");actual=b;const ch=listaCharla(s.mensajes.map(m=>msg(m.de,m.at,m.texto,m.de===nombre)),vacio);box.replaceChildren(fila,ch);ch.scrollTop=ch.scrollHeight;};
-  const botones=sesiones.slice(0,SESIONES_A_LA_VISTA).map(boton);fila.append(...botones);
-  const resto=sesiones.slice(SESIONES_A_LA_VISTA);
+  // una cerrada dice su última actividad, que es lo que se sabe: la hora en que se cerró no está escrita
+  const boton=s=>{const b=el("button",s.cerrada?"cerrada":null,s.sesion);b.type="button";b.setAttribute("aria-pressed","false");b.append(el("small",null,s.cerrada?(horaDeSesion(s.ultimaActividad)?"última actividad "+horaDeSesion(s.ultimaActividad):"cerrada, sin hora"):horaDeSesion(s.at)));b.onclick=()=>elegir(s,b);return b;},
+    elegir=(s,b)=>{if(actual)actual.setAttribute("aria-pressed","false");b.setAttribute("aria-pressed","true");actual=b;const ch=listaCharla(s.mensajes.map(m=>msg(m.de,m.at,m.texto,m.de===nombre)),vacio);box.replaceChildren(fila,...(s.cerrada?[el("p","m","Esta sesión está cerrada: no recibe mensajes.")]:[]),ch);ch.scrollTop=ch.scrollHeight;};
+  // primero las vivas; después una línea «Cerradas» y las cerradas, en gris
+  const vivas=sesiones.filter(s=>!s.cerrada),cerradas=sesiones.filter(s=>s.cerrada);
+  const botones=vivas.slice(0,SESIONES_A_LA_VISTA).map(boton);fila.append(...botones);
+  const resto=vivas.slice(SESIONES_A_LA_VISTA);
   if(resto.length){const mas=el("button","mas","Las otras "+resto.length);mas.type="button";mas.onclick=()=>{const nuevos=resto.map(boton);mas.replaceWith(...nuevos);nuevos[0].focus();};fila.append(mas);}
-  elegir(sesiones[0],botones[0]);return box;}
+  const deCerradas=cerradas.map(boton);if(cerradas.length)fila.append(el("p","cerradas","Cerradas"),...deCerradas);
+  elegir(sesiones.find(s=>!s.cerrada)||cerradas[0],botones[0]||deCerradas[0]);return box;}
 // «Con vos», en toda sesión: lo que le escribiste (en su pestaña o desde la oficina) y lo que contestó.
 const VOS_VACIO="No hay mensajes con vos en lo último de su conversación.";
 const conVosLista=(nombre,lista)=>listaCharla((lista||[]).map(m=>msg(m.quien==="vos"?(m.oficina?"Vos · desde la oficina":"Vos"):nombre,m.at,m.texto,m.quien==="vos")),VOS_VACIO);
@@ -293,7 +332,8 @@ if(LIVE){const ws=new WebSocket("ws://"+location.host+"/live?t="+encodeURICompon
   ws.onmessage=ev=>{const o=document.getElementById("ovl"),FALLA="No pude dibujar la última novedad; la oficina muestra la anterior. Corré /office otra vez si sigue así.";try{const m=JSON.parse(ev.data);if(m&&m.type==="mensaje"){alMensaje(m);return}if(!m||m.type!=="foto")return;setData(m.data);relojTick(agents,Date.now(),meta);renderTop();renderCrew();if(o.textContent===FALLA){o.textContent="";o.hidden=true}if(window.tablero.refresh)window.tablero.refresh()}catch(e){console.error(e);o.textContent=FALLA;o.hidden=false}};
   ws.onclose=cerrada;}
 if(!CON_OFICINAS)setTimeout(()=>{if(!window.tablero.started)sinTresD("Este navegador no pudo cargar la oficina en 3D; las tarjetas y la tabla tienen lo mismo.")},8000);
-document.getElementById("ventana").addEventListener("click",e=>{if(e.target===e.currentTarget)cerrarCharla()});
+// sólo cierra un toque que empieza y termina afuera: seleccionar texto adentro y soltar afuera no la cierra
+{const v=document.getElementById("ventana");let empezoAfuera=false;v.addEventListener("pointerdown",e=>{empezoAfuera=e.target===e.currentTarget});v.addEventListener("click",e=>{if(e.target===e.currentTarget&&empezoAfuera)cerrarCharla();empezoAfuera=false})}
 // la sala en 3D: una por oficina, cada una con su lugar en la página y sus datos
 let LIB_3D=null;
 const cargarTresD=()=>LIB_3D??=Promise.all([import("three"),import("three/addons/controls/OrbitControls.js"),import("three/addons/geometries/RoundedBoxGeometry.js"),import("three/addons/postprocessing/EffectComposer.js"),import("three/addons/postprocessing/RenderPass.js"),import("three/addons/postprocessing/UnrealBloomPass.js"),import("three/addons/postprocessing/OutputPass.js")]);
@@ -474,7 +514,10 @@ function crearPuesto(agent,i,slot){
   // aviso en el piso cuando espera la firma del dueño
   const ring=add(new THREE.RingGeometry(.55,.68,40),new THREE.MeshBasicMaterial({color:"#ffa53d",transparent:true,opacity:.0,toneMapped:false,side:THREE.DoubleSide}),0,.02,.18,st,false);ring.rotation.x=-Math.PI/2;
   const hit=new THREE.Mesh(new THREE.BoxGeometry(1.2,1.8,1.4),new THREE.MeshBasicMaterial({visible:false}));hit.position.set(0,.9,0);st.add(hit);
-  return {st,screen:scr,person:p,hit,ring,agent,ropa,anchor:new THREE.Vector3(0,1.85,.18),headP:new THREE.Vector3(0,1.5,.2),t0:i*1.7};
+  // el globito sobre la cabeza: un círculo que mira siempre a la cámara
+  const globoTex=canvasTex(256,256,()=>{}),globo=new THREE.Sprite(new THREE.SpriteMaterial({map:globoTex,transparent:true,toneMapped:false}));
+  globo.position.set(0,2.35,.18);globo.visible=false;st.add(globo);
+  return {st,screen:scr,person:p,hit,ring,globo,globoTex,agent,ropa,anchor:new THREE.Vector3(0,1.85,.18),headP:new THREE.Vector3(0,1.5,.2),t0:i*1.7};
 }
 function crearPersonaje(a,ropa){
   const g=new THREE.Group(),skin=M(a.piel,{r:.6}),hood=M(ropa,{r:.8}),pants=M("#2d3550",{r:.8}),dark=M("#1c1c24",{r:.5});
@@ -518,22 +561,40 @@ function animar(d,t){const {up,head,arms}=d.person.userData,e=d.agent.estado,k=t
   else if(e==="espera"){lean=-.2+Math.sin(k*1.4)*.02;armL=armR=1.0;zL=.2;zR=-.2;hx=-.1;hy=Math.sin(k*.5)*.15}
   else if(e==="libre"){lean=-.24;armL=armR=1.0;zL=.2;zR=-.2;hx=.3+Math.sin(k*1.2)*.03}
   else if(e==="parada"){lean=-.16;armL=armR=1.05;zL=.18;zR=-.18;hx=.02;hy=Math.sin(k*.4)*.1}
-  else if(e==="firma"||e==="pregunta"){armR=2.9+Math.sin(k*7)*.25;zR=-.25;armL=1.2;lean=-.06;hx=-.15;hy=.45}
+  const globo=globoDe(manoDe(d.agent));ponerGlobo(d,globo,k);
   const ease=(o,v)=>o+(v-o)*.15;up.rotation.x=ease(up.rotation.x,-lean);up.scale.y=1+Math.sin(k*2.2)*.012;
   arms[0].rotation.x=ease(arms[0].rotation.x,armL);arms[1].rotation.x=ease(arms[1].rotation.x,armR);arms[0].rotation.z=ease(arms[0].rotation.z,zL);arms[1].rotation.z=ease(arms[1].rotation.z,zR);
   head.rotation.x=ease(head.rotation.x,-hx);head.rotation.y=ease(head.rotation.y,hy);
-  d.ring.material.opacity=e==="firma"||e==="pregunta"?.45+.4*Math.sin(t*5):0}
+  d.ring.material.color.set((globo||globoDe("dueno")).color);d.ring.material.opacity=globo?.45+.4*Math.sin(t*5):0}
+// el globito de una persona: se pinta cuando cambia su color, flota y late; la etiqueta sube por encima para no taparlo y
+// las de los demás lo esquivan como esquivan una cabeza
+function ponerGlobo(d,b,k){d.globo.visible=Boolean(b);d.anchor.set(0,b?2.95:1.85,.18);d.headP.set(0,b?2.35:1.5,b?.18:.2);if(!b){d.globoColor="";return}
+  if(d.globoColor!==b.color){d.globoColor=b.color;const {c:cv,g}=d.globoTex.userData,w=cv.width,h=cv.height,r=w/2-10;g.clearRect(0,0,w,h);
+    g.beginPath();g.arc(w/2,h/2+4,r,0,Math.PI*2);g.fillStyle="rgba(0,0,0,.35)";g.fill();
+    g.beginPath();g.arc(w/2,h/2,r,0,Math.PI*2);g.fillStyle="#ffffff";g.fill();
+    g.beginPath();g.arc(w/2,h/2,r-10,0,Math.PI*2);g.fillStyle=b.color;g.fill();
+    g.textAlign="center";g.textBaseline="middle";g.font="118px "+FONT;g.fillText(b.icono,w/2,h/2+6);d.globoTex.needsUpdate=true}
+  const late=.7*(1+.1*Math.sin(k*5));d.globo.scale.set(late,late,1);d.globo.position.y=2.35+Math.sin(k*2)*.06}
 
 // ---------- etiquetas ----------
 let desks=[],sel=null;
+// el panel de una persona y el de «Pendientes» se cierran como las demás ventanas, y el foco vuelve a lo que lo abrió
+function cerrarPanel(){if(panel.hidden)return false;sel=null;panel.hidden=true;panel.classList.remove("wide");desks.forEach(pintarTag);const v=panel.vuelve;panel.vuelve=null;if(v&&v.isConnected)v.focus({preventScroll:true});return true}
+T.cerrarPanel=cerrarPanel;PANELES.add(cerrarPanel);
+// tocar afuera: un toque que empieza y termina afuera del panel, sin arrastrar (arrastrar gira la sala), y sin la ventana encima
+{let abajo=null;document.addEventListener("pointerdown",e=>{abajo=!panel.hidden&&ventana().hidden&&!panel.contains(e.target)&&!e.target.closest(".tag,.ventana")?{x:e.clientX,y:e.clientY}:null},true);
+  document.addEventListener("pointerup",e=>{const a=abajo;abajo=null;if(!a||panel.contains(e.target)||Math.hypot(e.clientX-a.x,e.clientY-a.y)>6)return;cerrarPanel()},true)}
 const BOT='<svg class="bot" viewBox="0 0 24 24" fill="none" stroke="#c9b6ff" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="4" y="8" width="16" height="11" rx="4"/><path d="M12 8V4.5"/><circle cx="12" cy="3.5" r="1.2"/><circle cx="9" cy="13" r="1.3" fill="#c9b6ff"/><circle cx="15" cy="13" r="1.3" fill="#c9b6ff"/><path d="M2 12.5v3M22 12.5v3"/></svg>';
 const FX={firma:"!",pregunta:"?",espera:"⌛",esperando:"⌛",coordina:"→",prueba:"✓",libre:"z",parada:"‖"};
 function nuevoTag(d){const e=document.createElement("button");e.type="button";e.className="tag";e.innerHTML=BOT+'<div class="tx"><b></b><span class="como"></span><span class="st"><span class="dot"></span><span class="es"></span></span><span class="more"><span class="fin"></span><span class="bar"><i></i></span></span></div><span class="fx"></span>';e.onclick=()=>abrir(d.agent.nombre);labelsEl.appendChild(e);d.el=e}
-function pintarTag(d){const a=d.agent,s=T.AST[a.estado]||[a.estado||"","#999"];d.el.style.setProperty("--c",s[1]);d.el.style.setProperty("--outfit",d.ropa);d.el.querySelector("b").textContent=a.nombre||"";d.el.querySelector(".como").replaceChildren(...(a.comoTrabaja&&a.comoTrabaja!==s[0]?[T.iconoComo(a.comoTrabaja),a.comoTrabaja]:[]));
+function pintarTag(d){const a=d.agent,m=manoDe(a),s0=T.AST[a.estado]||[a.estado||"","#999"],
+  // con la mano levantada por otra cosa que su pantalla, la etiqueta dice a quién espera, con el color de su aro
+  s=m&&a.manoEtiqueta&&a.estado!=="firma"&&a.estado!=="pregunta"?[a.manoEtiqueta,globoDe(m).color]:s0;d.el.style.setProperty("--c",s[1]);d.el.style.setProperty("--outfit",d.ropa);d.el.querySelector("b").textContent=a.nombre||"";d.el.querySelector(".como").replaceChildren(...(a.comoTrabaja&&a.comoTrabaja!==s[0]?[T.iconoComo(a.comoTrabaja),a.comoTrabaja]:[]));
   d.el.querySelector(".es").textContent=s[0]+(a.mientras?" · y algo más":"");const f=T.finTxt(a),fin=d.el.querySelector(".fin");fin.replaceChildren();
+  let md=d.el.querySelector(".mod");if(!md){md=document.createElement("span");md.className="mod";fin.before(md)}md.textContent=modeloDe(a);md.hidden=!md.textContent;
   if(f){fin.append(f.hora);if(f.dif){const x=document.createElement("em");x.className=f.cls;x.textContent=" · "+f.dif;fin.append(x);}}
   const bar=d.el.querySelector(".bar");bar.hidden=a.avance==null;bar.firstChild.style.width=(a.avance||0)+"%";
-  const fx=d.el.querySelector(".fx");fx.textContent=FX[a.estado]||"";d.el.classList.toggle("alert",a.estado==="firma"||a.estado==="pregunta");d.el.classList.toggle("sel",sel===a.nombre);d.el.setAttribute("aria-label",(a.nombre||"")+": "+s[0]);}
+  const fx=d.el.querySelector(".fx");fx.textContent=FX[a.estado]||"";d.el.classList.toggle("alert",Boolean(m));d.el.classList.toggle("alert-coord",m==="coordinadora");d.el.classList.toggle("sel",sel===a.nombre);d.el.setAttribute("aria-label",(a.nombre||"")+": "+s[0]);}
 const tmp=new THREE.Vector3();
 function ubicarTags(){const W=stage.clientWidth,H=stage.clientHeight,cmp=stage.classList.contains("compact"),hr=cmp?11:20;
   const P=desks.map(d=>{tmp.copy(d.anchor);d.st.localToWorld(tmp);tmp.project(cam);const ax=(tmp.x+1)/2*W,ay=(1-tmp.y)/2*H;tmp.copy(d.headP);d.st.localToWorld(tmp);tmp.project(cam);
@@ -546,14 +607,16 @@ function ubicarTags(){const W=stage.clientWidth,H=stage.clientHeight,cmp=stage.c
   P.forEach(p=>{const sx=p.w/2+hr+4,cands=[[0,0],[-sx,p.h*.5],[sx,p.h*.5],[-sx,0],[sx,0]];let pos=null;
     for(let up=0;up<8&&!pos;up++)for(const [dx,dy] of cands){const x=Math.min(Math.max(p.ax+dx,p.w/2+2),W-p.w/2-2),y=p.ay+dy-up*(p.h*.5+4);if(!choca(x,y,p.w,p.h,p)){pos=[x,y];break}}
     if(!pos)pos=[p.ax,p.ay];puestos.push({x:pos[0],y:pos[1],w:p.w,h:p.h});
-    const el=p.d.el,beside=Math.abs(pos[0]-p.ax)>p.w/4;el.style.left=pos[0]+"px";el.style.top=pos[1]+"px";el.style.setProperty("--stem",beside?"0px":Math.max(0,p.ay-pos[1])+"px");el.style.zIndex=String(Math.round(p.ay))})}
+    const el=p.d.el,beside=Math.abs(pos[0]-p.ax)>p.w/4;el.style.left=pos[0]+"px";el.style.top=pos[1]+"px";el.style.setProperty("--stem",beside?"0px":Math.max(0,p.ay-pos[1])+"px");el.style.zIndex=String(Math.round(p.ay));
+    // dónde quedó el globito en la pantalla, para comprobar que ninguna etiqueta lo tapa
+    el.setAttribute("data-globo",p.d.globo.visible?Math.round(p.hx)+","+Math.round(p.hy):"")})}
 
 // ---------- detalle de la sesión: la misma ficha que su tarjeta ----------
 // `foto`: lo pidió una foto nueva, no un toque. Mantiene lo que se estaba leyendo y no vuelve a pedir la conversación.
 function abrir(nombre,foto=false){panel.classList.remove("wide");const baja=foto&&sel===nombre?panel.scrollTop:0;sel=nombre;const a=T.agents().find(x=>x.nombre===nombre);if(!a){sel=null;panel.hidden=true;return}const s=T.AST[a.estado]||[a.estado||"","#999"];panel.hidden=false;panel.style.setProperty("--c",s[1]);
   panel.innerHTML='<button class="close" type="button" aria-label="Cerrar">×</button><h3></h3><div class="chips"><span class="chip">● <span class="es"></span></span></div>';
   panel.querySelector("h3").textContent=a.nombre;panel.querySelector(".es").textContent=s[0];if(a.comoTrabaja&&a.comoTrabaja!==s[0])panel.querySelector(".chips").append(T.etiquetaComo(a.comoTrabaja));T.pintarFicha(a,panel,true);
-  panel.querySelector(".close").onclick=()=>{sel=null;panel.hidden=true;desks.forEach(pintarTag)};desks.forEach(pintarTag);
+  if(!foto)panel.vuelve=document.activeElement;panel.querySelector(".close").onclick=()=>T.cerrarPanel();desks.forEach(pintarTag);
   if(foto)panel.scrollTop=baja}
 // ---------- los sobres: quién le habla a quién, unos segundos, sin el texto ----------
 const VUELO_MS=3000,MAX_VUELOS=3,vuelos=[],vistos=new Set(),a3=new THREE.Vector3(),b3=new THREE.Vector3();
@@ -604,7 +667,8 @@ stage.addEventListener("pointerleave",e=>{if(e.pointerType!=="touch")verEtiqueta
 // el detalle de lo pendiente, plano y legible
 function abrirTablero(){sel=null;desks.forEach(pintarTag);const K=T.kanban()||{},meta=T.meta();panel.hidden=false;panel.classList.add("wide");panel.style.setProperty("--c","#9cc2ff");panel.replaceChildren();
   const mk=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
-  const cl=mk("button","close","×");cl.type="button";cl.setAttribute("aria-label","Cerrar");cl.onclick=()=>{panel.hidden=true;panel.classList.remove("wide")};panel.append(cl,mk("h3",null,"Pendientes"));
+  if(document.activeElement&&!panel.contains(document.activeElement))panel.vuelve=document.activeElement;
+  const cl=mk("button","close","×");cl.type="button";cl.setAttribute("aria-label","Cerrar");cl.onclick=()=>T.cerrarPanel();panel.append(cl,mk("h3",null,"Pendientes"));
   const orden=paredEnOrden(K);panel.abiertos=panel.abiertos||new Set();
   const ct=mk("div","counts");orden.forEach(c=>{const k=mk("div","cnt");k.style.setProperty("--k",c.color);k.append(mk("b",null,String(c.tarjetas.length)),mk("span",null,c.nombre));ct.append(k);});panel.append(ct);
   const toca=(meta&&meta.teToca)||[];if(toca.length){panel.append(mk("h4","toca","Te toca"));const ul=mk("ul","toca");toca.forEach(t=>ul.append(mk("li",null,t)));panel.append(ul);}
@@ -682,7 +746,7 @@ T.refresh=()=>{const ps=puestos(),ags=T.agents().slice(0,ps.length);
   if(sel){if(T.agents().some(a=>a.nombre===sel))abrir(sel,true);else{sel=null;panel.hidden=true}}
   else if(!panel.hidden&&panel.classList.contains("wide"))abrirTablero()};
 T.abrir=n=>abrir(n);
-T.apagar=()=>{apagada=true;clearTimeout(timer);timer=null;miraVista.disconnect();miraTamano.disconnect();controls.dispose();labelsEl.replaceChildren();panel.hidden=true;renderer.dispose();renderer.forceContextLoss();renderer.domElement.remove();T.refresh=null;};
+T.apagar=()=>{apagada=true;PANELES.delete(cerrarPanel);clearTimeout(timer);timer=null;miraVista.disconnect();miraTamano.disconnect();controls.dispose();labelsEl.replaceChildren();panel.hidden=true;renderer.dispose();renderer.forceContextLoss();renderer.domElement.remove();T.refresh=null;};
 // dónde está la cámara, para comprobar que una foto nueva no la mueve
 T.camara=()=>cam.position.toArray().map(n=>+n.toFixed(3));
 return function(){resize();poblar();alDia();lanzarSobres()};
@@ -774,7 +838,7 @@ function arrancarOficinas(){
     f.cover.setAttribute("aria-label","Agrandar la oficina de "+quien);f.stage.setAttribute("aria-label","La oficina de "+quien);f.titulo.textContent="Las sesiones de "+quien;
     // la ficha lee de DATA lo que no es de la persona (sus tokens): mientras se pintan, DATA es la foto de esta oficina
     const antes=fuenteCharla,datos=DATA;fuenteCharla={fuente:"site",maquina:o.id};DATA=o.foto||{};
-    try{pintarTarjetas(f.crew,lista,a=>{const yaEra=elegida===o.id;if(!yaEra)seguro(()=>foco(o.id));const abrirla=n=>{if(f.T&&f.T.abrir)f.T.abrir(a.nombre);else if(n>0)setTimeout(()=>abrirla(n-1),200)};setTimeout(()=>abrirla(25),yaEra?0:750)})}finally{fuenteCharla=antes;DATA=datos}}
+    try{pintarTarjetas(f.crew,lista,a=>{const yaEra=elegida===o.id;if(!yaEra)seguro(()=>foco(o.id));const abrirla=n=>{if(f.T&&f.T.abrir)f.T.abrir(a.nombre);else if(n>0)setTimeout(()=>abrirla(n-1),200)};setTimeout(()=>abrirla(25),yaEra?0:750)});renderCerradas(cerradasJunto(f.crew),DATA.cerradas||[])}finally{fuenteCharla=antes;DATA=datos}}
   // las salas en 3D: hasta el tope, cada una con sus datos. Primero se apagan las que sobran, y sus lugares quedan libres
   function ponerSalas(cambiadas){const vivas=salasVivas(oficinas.values(),elegida,TOPE_DE_SALAS);
     fichas.forEach((f,id)=>{f.sinSala.hidden=vivas.has(id);if(f.T&&!vivas.has(id))apagarSala(f)});

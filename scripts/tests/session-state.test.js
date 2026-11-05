@@ -300,11 +300,13 @@ test('T24 End_ClaudeDeletes_DeadOrUnknownGoesInactive @story-2.81 @ac-23 — Ses
   const out = execFileSync(process.execPath, [OFFICE, '--json'], { input: '', env: cleanEnv(w.home), encoding: 'utf8' });
   const data = JSON.parse(out);
   const inactive = data.agents.filter((a) => a.estado === 'inactiva');
-  assert.strictEqual(inactive.length, 3, JSON.stringify(data.agents));
+  assert.strictEqual(inactive.length, 2, JSON.stringify(data.agents));
   for (const a of inactive) assert.match(a.haciendo, /sin novedades desde las \d\d:\d\d/);
-  assert.ok(data.agents.some((a) => a.nombre === 'Muerta' && a.estado === 'inactiva'));
+  // la de Claude con su proceso muerto no está en la sala: va a «Cerradas»
+  assert.ok(!data.agents.some((a) => a.nombre === 'Muerta'));
+  assert.ok(data.cerradas.some((c) => c.nombre === 'Muerta'));
   for (const sid of ['s-cl-muerta', 's-cx-muerta', 's-cx-3h', 's-cx-25h']) assert.ok(stateOf(w, sid), `${sid} sigue en disco`);
-  assert.strictEqual(data.agents.length, 3, 'la de hace 25 h no se dibuja');
+  assert.strictEqual(data.agents.length, 2, 'la de hace 25 h no se dibuja');
   assert.strictEqual(L.isStale(stateOf(w, 's-cx-3h')), true);
   assert.strictEqual(L.isStale({ ...stateOf(w, 's-cx-3h'), updatedAt: ago(HOUR) }), false, 'sin pid, menos de 2 h: viva');
 });
