@@ -664,12 +664,12 @@ function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion, memo
     const c = criteriosDelPedido(palabras, cwd, { casa, destino, sesion, memo });
     if (c.error) return { error: c.error };
     const lineas = c.lista.map((x) => `AC ${x.ac}: ${una(x.text || '(sin texto en la historia)', 200)} (por qué no se prueba en vivo: ${una(x.reason || '(sin razón declarada)', 120)}; lo cubre: ${una(x.coveredBy || '(ninguna prueba declarada)', 60)})`);
-    partes = { queHace: lineas, completo: c.historia, fuente: lineas.join('\n') };
+    partes = { criterios: c.lista.map((x) => x.ac), queHace: lineas, completo: c.historia, fuente: lineas.join('\n') };
   }
   if (!partes) partes = { queHace: [detalleDe(firma, texto, palabras, cwd, casa)], fuente: '' };
   // la huella ata el click a lo que se mostró: el comando y la fuente de la pregunta
   const huella = sha256(`${texto}\0${partes.fuente || ''}`).slice(0, 8);
-  return require('./owner-approvals.js').cuadroDe({ firma, destino, que: s.approves, historia: fuentes.historiaDe(m), queHace: partes.queHace, archivos: partes.archivos,
+  return require('./owner-approvals.js').cuadroDe({ firma, destino, que: s.approves, historia: fuentes.historiaDe(m), criterios: partes.criterios, queHace: partes.queHace, nota: partes.nota, archivos: partes.archivos,
     completo: partes.completo, siSaleMal: s.ifWrong, cita: partes.cita, huella, soloClick: s.soloClick, descripciones: s.descripciones });
 }
 
