@@ -53,6 +53,11 @@ otra corrida o de otra sesión no cuenta.
   conversación se lee y el plan no está en lo que la persona vio, no cierra. Por qué: medido en un laboratorio, el
   agente dijo que el plan ya estaba en sus mensajes sin haberlo mostrado, preguntó a secas y la persona aprobó sin
   verlo.
+- ❓ **La pregunta de la firma sale del plan, no de la cita.** El cuadro que da el freno dice, en este orden: lo que se
+  aprueba, la historia con su título y la sesión, el «Qué hace» del plan (hasta 3 líneas), sus «Archivos», la ruta del
+  plan completo, qué pasa si sale mal y, al final, la cita que pusiste en `--approved`. La cita no reemplaza nada de lo
+  anterior. Si el plan no tiene `## Qué hace` y `## Archivos` (`step-03-plan.md`), el comando se niega antes de la
+  ventana. Si cambiás el plan después de mostrar el cuadro, el click ya no vale: pedí el cuadro de nuevo.
 - 🖥️ **Si no lo mostraste, lo muestra el arnés.** En Claude Code, antes de que corra `complete-step approve-plan`, el arnés le
   pone en pantalla a la persona el título del plan, cuántos pasos tiene y la ruta de su archivo («El plan de la historia
   … (te lo muestra el arnés)») y lo anota; el paso lo cuenta como mostrado. No reemplaza tu mensaje: si la persona pregunta por el plan, es ése. Por

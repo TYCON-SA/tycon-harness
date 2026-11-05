@@ -8,13 +8,17 @@ Es una receta, no un modo: nada cambia en una máquina donde nadie designó una 
 
 1. El perfil del equipo nombra el rol en `approvals.relay_session` (en el sitio, la pestaña Configuración, «Quién
    autoriza saltarse un control»).
-2. En cada máquina, el dueño escribe en el chat de la sesión elegida «Esta sesión es la coordinadora», y esa sesión
-   corre `marker.js designate-relay` con esa cita.
+2. En cada máquina, el dueño le pide a la sesión elegida, con sus palabras, que sea la coordinadora. Esa sesión corre
+   `marker.js designate-relay` sin frase: el freno da un cuadro con «Sí» y «No» que dice qué sesión es y en qué
+   carpeta, y con el click del dueño queda nombrada y confirmada. El arnés no lee la frase. Para dejar de serlo,
+   `marker.js withdraw-relay`, con su propio cuadro. Las dos firmas son sólo del dueño, con su click en la pestaña
+   de esa sesión: no se delegan. Donde el click no se puede comprobar, el comando dice por qué y da los respaldos: la
+   terminal del dueño (`designate-relay --terminal`) o la frase de antes (`--quote` y después `confirm-designation`).
 
 Al designarse, la sesión recibe la orden de leer esta guía, y la recibe otra vez después de compactar o de limpiar su
 conversación, porque ahí se pierde. **Limpiar la conversación le quita la designación**: para el arnés es otra
-conversación. La sesión recibe cómo recuperarla, pero no la recupera sola: el dueño tiene que volver a escribir la frase
-y a confirmarla. `/coordinate` en esa sesión muestra el estado de la máquina. El programa que usa la coordinadora es
+conversación. La sesión recibe cómo recuperarla, pero no la recupera sola: el dueño tiene que volver a pedírselo y dar
+un click nuevo. `/coordinate` en esa sesión muestra el estado de la máquina. El programa que usa la coordinadora es
 `<arnés>/scripts/tools/coordination.js`.
 
 ## Qué va al dueño

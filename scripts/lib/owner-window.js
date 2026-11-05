@@ -407,6 +407,10 @@ function firmaDeLlamado(guion, sub, args, llamada = null) {
     if (sub === 'sign-adversarial-skip') return 'adversarial-skip';
     if (sub === 'approve-pending') return 'pending-approval';
     if (sub === 'approve-save') return 'save';
+    // nombrar a la coordinadora: sin frase, con el click del dueño; con `--quote` (aun vacío), la frase de respaldo, que
+    // confirma después confirm-designation
+    if (sub === 'designate-relay') return pide('--quote') ? null : 'designation-set';
+    if (sub === 'withdraw-relay') return 'designation-withdraw';
     // declarar o cambiar el arreglo rápido; mirarlo o terminarlo, no. El subcomando en una variable cuenta como `set`
     if (sub === 'adhoc' && a[0] === 'set') return firmaDelPedidoAdhoc(args.slice(1));
     if (sub === 'adhoc' && /[$`]/.test(a[0] || '')) return SOBRE_CUPO;
@@ -571,30 +575,12 @@ function corridaDe(casa, destino) {
   try { return corridaDelMarcador(marcadorEn(path.join(stateDir(casa), 'active', `${destino}.json`))); } catch (_) { return { ilegible: true }; }
 }
 
-function detalleDe(id, comando, palabras, cwd) {
-  if (id === 'plan-approval' && palabras) {
-    const i = palabras.findIndex((w) => w === '--approved' || w === '--mockup-approved');
-    if (i >= 0 && palabras[i + 1]) return `la cita: «${una(palabras[i + 1], 200)}»`;
-  }
-  if ((id === 'adhoc-lane' || id === SOBRE_CUPO) && palabras && palabras[1] === 'adhoc' && palabras[2] === 'set') {
-    let p = null;
-    try { p = JSON.parse(palabras[3] || ''); } catch (_) { /* un JSON roto lo niega el guion: la ventana muestra el comando */ }
-    if (p && typeof p === 'object') {
-      const cupo = Number.isFinite(Number(p.maxFiles)) && Number(p.maxFiles) > 0 ? `hasta ${Number(p.maxFiles)} archivos de implementación, sin pruebas ni guías` : 'el cupo de siempre (8 archivos de implementación, o el que ya tenía)';
-      return `el motivo: «${una(String(p.reason || ''), 200)}» · ${cupo}`;
-    }
-  }
-  if ((id === 'control-change' || id === 'refresh-after-main') && palabras) {
-    const i = palabras.indexOf('--entries');
-    let e = null;
-    try { e = i >= 0 ? JSON.parse(palabras[i + 1]) : null; } catch (_) { /* un JSON roto lo niega el guion: se muestra el comando */ }
-    const rutas = Array.isArray(e) ? e.map((x) => x && x.path).filter(Boolean) : palabras.includes('--file') ? [palabras[palabras.indexOf('--file') + 1]] : [];
-    if (rutas.length) return `los archivos: ${una(rutas.join(', '), 600)}`;
-  }
+// «Qué hace» de las firmas sin fuente propia (signature-sources.js): lo que hace el comando, en llano
+function detalleDe(id, comando, palabras, cwd, casa) {
   if (id === DESIGNACION) {
     try {
-      const d = require(path.join(LIB, 'critical-waivers.js')).designacionVigente({ dir: stateDir(casaDeLaCuenta()) });
-      if (d && !d.error) return `la sesión designada: «${una(d.rol, 60)}» (${d.sesion}), desde ${d.ts}, con la frase «${una(d.cita, 200)}»`;
+      const d = require(path.join(LIB, 'critical-waivers.js')).designacionVigente({ dir: stateDir(casa === undefined ? casaDeLaCuenta() : casa) });
+      if (d && !d.error) return `la sesión designada: «${una(d.rol, 60)}» (${d.sesion}), desde ${d.ts}, ${d.cita ? `con la frase «${una(d.cita, 200)}»` : 'por click'}`;
     } catch (_) { /* sin leerla, el comando; el guion la vuelve a leer y niega si no está */ }
   }
   if (palabras && palabras[1] === 'sign-file' && palabras[3]) {
@@ -637,7 +623,7 @@ function criteriosDelPedido(palabras, cwd, { casa, destino, sesion } = {}) {
   const faltan = (pedidos || []).filter((n) => !c.lista.some((x) => x.ac === n));
   if (faltan.length) return { error: `el AC ${faltan.join(', ')} no es un criterio pendiente de firma en ${path.basename(abs)}` };
   if (!c.lista.length) return { error: `${path.basename(abs)} no tiene criterios pendientes de firma` };
-  return { texto: `los criterios a eximir: ${c.lista.map((x) => `AC ${x.ac}: ${una(x.text || '(sin texto en la historia)', 300)} · por qué no se prueba en vivo: ${una(x.reason || '(sin razón declarada)', 200)} · lo cubre: ${una(x.coveredBy || '(ninguna prueba declarada)', 100)}`).join(' | ')}` };
+  return { lista: c.lista, historia: abs, texto: `los criterios a eximir: ${c.lista.map((x) => `AC ${x.ac}: ${una(x.text || '(sin texto en la historia)', 300)} · por qué no se prueba en vivo: ${una(x.reason || '(sin razón declarada)', 200)} · lo cubre: ${una(x.coveredBy || '(ninguna prueba declarada)', 100)}`).join(' | ')}` };
 }
 
 /** El comando de la terminal; para un guion, con la sesión: en la terminal del dueño no hay variable de sesión. */
@@ -661,15 +647,21 @@ function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion }) {
   const i = palabras ? palabras.indexOf('--for-session') : -1;
   const sinDestino = palabras ? palabras.filter((w, k) => i < 0 || (k !== i && k !== i + 1)) : null;
   const texto = sinDestino ? [base(sinDestino[0]), ...sinDestino.slice(1)].join(' ') : String(comando).trim();
-  let detalle = detalleDe(firma, texto, palabras, cwd);
+  let m = null;
+  try { m = casa === undefined || !destino ? null : marcadorEn(path.join(stateDir(casa), 'active', `${destino}.json`)); } catch (_) { m = null; }
+  const fuentes = require('./signature-sources.js');
+  let partes = fuentes.partesDe({ firma, palabras, cwd, marcador: m, estado: casa === undefined ? null : stateDir(casa), destino });
   if (firma === 'runtime-waiver') {
     const c = criteriosDelPedido(palabras, cwd, { casa, destino, sesion });
     if (c.error) return { error: c.error };
-    detalle = c.texto;
+    const lineas = c.lista.map((x) => `AC ${x.ac}: ${una(x.text || '(sin texto en la historia)', 200)} (por qué no se prueba en vivo: ${una(x.reason || '(sin razón declarada)', 120)}; lo cubre: ${una(x.coveredBy || '(ninguna prueba declarada)', 60)})`);
+    partes = { queHace: lineas, completo: c.historia, fuente: lineas.join('\n') };
   }
-  const story = casa === undefined ? null : storyDe(casa, destino);
-  const que = story && story !== 'sin ejecución abierta' ? `${s.approves} (story ${story})` : s.approves;
-  return require('./owner-approvals.js').cuadroDe({ firma, destino, que, detalle, siSaleMal: s.ifWrong, huella: sha256(texto).slice(0, 8), soloClick: s.soloClick, descripciones: s.descripciones });
+  if (!partes) partes = { queHace: [detalleDe(firma, texto, palabras, cwd, casa)], fuente: '' };
+  // la huella ata el click a lo que se mostró: el comando y la fuente de la pregunta
+  const huella = sha256(`${texto}\0${partes.fuente || ''}`).slice(0, 8);
+  return require('./owner-approvals.js').cuadroDe({ firma, destino, que: s.approves, historia: fuentes.historiaDe(m), queHace: partes.queHace, archivos: partes.archivos,
+    completo: partes.completo, siSaleMal: s.ifWrong, cita: partes.cita, huella, soloClick: s.soloClick, descripciones: s.descripciones });
 }
 
 /**
@@ -781,7 +773,11 @@ const PRECHEQUEO_OK = 'tycon-sign-precheck: ok';
 // las firmas de guion con requisitos propios; el carril y las firmas sobre un archivo no comprueban nada antes de firmar
 // (`adhoc-lane`: el largo del motivo y un tope menor que lo ya tocado se niegan antes de la ventana)
 const CON_PRECHEQUEO = new Set(['extra-round', 'save', 'plan-approval', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver', 'adhoc-lane', SOBRE_CUPO,
-  'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran']);
+  'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran',
+  // nombrar sin id de sesión, o retirar desde una sesión que no es la coordinadora, se niega sin gastar el click
+  'designation-set', 'designation-withdraw']);
+// las de sólo click cuyo chequeo corre antes de dar el cuadro (el de pasar el tope corre después del click)
+const CHEQUEO_ANTES_DEL_CUADRO = new Set(['designation-set', 'designation-withdraw']);
 // lo que espera el chequeo: el ok de guardar corre además los controles del commit de cada repo, con su propio plazo de
 // 210 s (lib/save-ok.js)
 const PLAZO_DEL_CHEQUEO = { save: 240000 };
@@ -978,8 +974,14 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
       // sin aprobación: lo de rutina en una pestaña sin permisos sigue «hecho y avisado»; lo demás se niega y dice cómo
       // aprobarlo. En una sesión de fondo no hay «hecho y avisado»: nadie ve el aviso en la pestaña
       const rutina = rutinaSinPermisos({ guion: firmaGuion, pendientes, palabras: can && can.palabras, destino, casa });
+      // nombrar o retirar a la coordinadora: lo que el guion negaría se dice antes del cuadro, sin gastar el click
+      if (CHEQUEO_ANTES_DEL_CUADRO.has(firmaGuion)) {
+        let c = null;
+        try { c = comprobar({ firma: firmaGuion, palabras: can.palabras, cwd: evento.cwd, sesion, casa }); } catch (_) { c = null; }
+        if (c && c.niega) return { decision: 'deny', firmas: pendientes, texto: `No abrí la ventana ni te doy el cuadro: el comando se iba a negar antes de usar la firma, y el click se perdería. Lo que dijo: ${una(c.niega, 800)}` };
+      }
       if (enWindows || deFondo || !rutina.ok) {
-        const donde = soloClick ? 'pasar el tope del camino corto no se aprueba en la ventana' : enWindows ? 'en Windows la ventana de permiso no firma' : deFondo ? 'esta sesión corre de fondo: la ventana de permiso no le llega a nadie seguro'
+        const donde = soloClick ? (firmaGuion === SOBRE_CUPO ? 'pasar el tope del camino corto no se aprueba en la ventana' : 'esto lo firma el dueño con un click en esta pestaña, no la ventana') : enWindows ? 'en Windows la ventana de permiso no firma' : deFondo ? 'esta sesión corre de fondo: la ventana de permiso no le llega a nadie seguro'
           : `esta pestaña no pide permisos (${una(modo, 40)}): la ventana se aprobaría sola, sin el Sí del dueño`;
         const anotado = anotarNegativa({ casa, sesion, destino, guion, pendientes, comando, palabras: can && can.palabras, cuadro, cwd: evento.cwd, ahora, deFondo, lista });
         return negarSinVentana(`${donde}${rutina.motivo && !enWindows ? `, y ${rutina.motivo}` : ''}; ${a.motivo}`, pendientes, paraTerminal, cuadro, deFondo, anotado);
@@ -996,12 +998,9 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
       return { decision: 'deny', firmas: pendientes, texto: `No abrí la ventana: el comando se iba a negar antes de usar la firma, y el «Sí» se perdería. Lo que dijo: ${una(c.niega, 800)}. Arreglá eso y volvé a pedirla` };
     }
   }
-  let detalle = detalleDe(pendientes[0], comando, can && can.palabras, evento.cwd);
-  if (guion === 'runtime-waiver') {
-    const c = criteriosDelPedido(can.palabras, evento.cwd, { casa, destino, sesion });
-    if (c.error) return negar(c.error, pendientes);
-    detalle = c.texto;
-  }
+  // la ventana dice la misma pregunta que el cuadro de opciones y la lista de firmas (sin el sello)
+  const vista = pendientes.length === 1 ? cuadroPara({ firma: pendientes[0], comando, palabras: can && can.palabras, destino, cwd: evento.cwd, casa, sesion }) : null;
+  if (vista && vista.error) return negar(vista.error, pendientes);
   // la aprobación explícita se gasta recién acá, cuando el comando ya no se va a negar, y antes de escribir el pedido:
   // nunca queda un pedido vigente con una aprobación sin gastar. Si el pedido no se puede escribir, se devuelve
   const oa = aprobada ? (aprobaciones || require('./owner-approvals.js')) : null;
@@ -1029,8 +1028,9 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
     return { decision: 'allow', via: 'avisado', relevo: sesion, firmas: pendientes,
       texto: `hecho y avisado: esta pestaña no pide permisos, así que ${firmaDe(firmaGuion).approves} se hace sin firma, con los controles de la delegación, y queda en el registro de firmas` };
   }
-  const que = pendientes.map((id) => firmaDe(id).approves).join('; ');
-  const texto = `${aprobador(evento.cwd).label}: ${que}. Story ${storyDe(casa, destino)}, sesión ${destino}. Detalle: ${detalle}. `
+  const pregunta = vista ? vista.texto
+    : `${pendientes.map((id) => firmaDe(id).approves).join('; ')}. Story ${storyDe(casa, destino)}, sesión ${destino}. El comando: ${una(comando)}.`;
+  const texto = `${aprobador(evento.cwd).label}: ${pregunta} `
     + (sinDelegar ? `No se firmó por delegación: ${una(sinDelegar, 200)}. ` : '')
     + `Si preferís, firmala en tu terminal: ${terminalDe(pendientes, destino)}.`;
   return { decision: 'ask', firmas: pendientes, texto };

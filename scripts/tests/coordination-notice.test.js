@@ -176,9 +176,11 @@ test('Guide_ClearLosesDesignation_SaysHowToGetItBack: tras limpiar, con otro id 
   const transcript = saved(t, 'nueva', 'Coordinadora');
   const n = C.guideNotice({ ...t.opts, sessionId: 'nueva', source: 'clear', title: 'Coordinadora', transcript });
   assert.match(n, /era la coordinadora/);
-  assert.match(n, /«Esta sesión es la coordinadora»/);
-  assert.match(n, /nunca vos/, 'la frase la escribe la persona');
-  assert.match(n, /designate-relay/);
+  // se recupera con el click de la persona, no con una frase
+  assert.match(n, /te lo pida con sus palabras/);
+  assert.match(n, /nunca tuyo/, 'el pedido es de la persona');
+  assert.match(n, /designate-relay: el freno te da un cuadro/);
+  assert.doesNotMatch(n, /--quote/);
   assert.strictEqual(require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'critical-waivers.js')).designacionVigente({ home: t.home }).sesion, COORD, 'la designación no se movió');
   // the title that counts is the last one: she was renamed after starting
   saved(t, COORD, 'Vieja', 'Coordinadora');
@@ -234,10 +236,12 @@ test('Guide_Designate_SaysToReadTheRules: al designarse, el comando real manda a
   const r = spawnSync(process.execPath, [marker, 'designate-relay', '--approved-by', 'Dev de Prueba', '--quote', 'Esta sesión es la coordinadora'], { cwd: t.root, encoding: 'utf8', env });
   assert.strictEqual(r.status, 0, r.stderr);
   assert.ok(r.stderr.includes(guide), `manda a leer la guía: ${r.stderr}`);
-  // a failed designation sends nobody to read anything
+  // without a phrase it asks for the owner's click; with no click it designates nothing and sends nobody
+  // to read anything, but says the fallbacks
   const no = spawnSync(process.execPath, [marker, 'designate-relay', '--approved-by', 'Dev de Prueba'], { cwd: t.root, encoding: 'utf8', env });
   assert.notStrictEqual(no.status, 0);
   assert.ok(!no.stderr.includes(guide));
+  assert.match(no.stderr, /no pude comprobar el click/);
 });
 
 test('T20b Hook_WithoutCoordinator_Silent @story-8.122 @ac-20: el gancho real, sin coordinadora, no imprime nada y sale 0', () => {
@@ -753,4 +757,21 @@ test('Aviso_SinCoordinadora (T10) — @story-8.153 @ac-10', () => {
   fs.rmSync(path.join(h.home, '.claude', 'sessions', `${COORD}.json`));
   assert.match(oido(h, 'ses-a', 'volví'), PIDE);
   assert.strictEqual(oido(h, COORD, 'hola'), null);
+});
+
+// 🔴 Falla con: un texto que enseña la frase como el camino para nombrar a la coordinadora.
+test('Coordination_HowToDesignate_TeachesClick (T28) @story-8.207 @ac-23', () => {
+  const t = toy({ designated: null });
+  const sin = C.coordinate({ ...t.opts, env: { CLAUDE_CODE_SESSION_ID: 'otra-1' } });
+  assert.strictEqual(sin.code, 1);
+  assert.match(sin.text, /designate-relay\n/, 'sin frase');
+  assert.match(sin.text, /click/);
+  assert.match(sin.text, /withdraw-relay/);
+  assert.match(sin.text, /respaldos \(su terminal, o su frase con --quote\)/, 'la frase sólo como respaldo');
+  const u = toy();
+  saved(u, COORD, 'Coordinadora');
+  const transcript = saved(u, 'nueva', 'Coordinadora');
+  const tras = C.guideNotice({ ...u.opts, sessionId: 'nueva', source: 'clear', title: 'Coordinadora', transcript });
+  assert.match(tras, /designate-relay: el freno te da un cuadro/);
+  assert.doesNotMatch(tras, /--quote/);
 });

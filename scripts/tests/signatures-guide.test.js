@@ -31,7 +31,9 @@ const DE_LA_STORY = ['plan-approval', 'extra-round', 'refresh-after-main', 'cont
   'escape:DOD_BYPASS', 'escape:TYCON_NO_DEEP_REVIEW', 'escape:TYCON_STATUS_GATE',
   'escape:story-skill-bypass', 'escape:set-autonomous', 'escape:cerrar-la-ejecucion', 'escape:cerrar-como-deuda',
   'escape:force-manual', 'escape:trust-ran', 'escape:ALLOW_DOD_EVIDENCE_WRITE', 'escape:dod_runtime_exempt',
-  'escape:no-deep-review', 'escape:cambiar-el-estado', 'save', 'designation-confirm'];
+  'escape:no-deep-review', 'escape:cambiar-el-estado', 'save', 'designation-confirm',
+  // nombrar y retirar a la coordinadora con un click
+  'designation-set', 'designation-withdraw'];
 
 const OTRA_SESION = { yes: 'sí', no: 'no, en la pestaña de esa sesión', pending: 'todavía sin comando' };
 
@@ -225,7 +227,7 @@ const TABLA_DE_NIVELES = [
   ['escape:force-manual', 2, ['dev', 'mant']], ['escape:trust-ran', 2, ['dev', 'mant']],
   ['escape:TYCON_TEST_GATE', 2, ['dev', 'mant']], ['escape:TYCON_STATUS_GATE', 2, ['dev', 'mant']],
   ['escape:story-skill-bypass', 2, ['dev', 'mant']], ['escape:set-autonomous', 2, ['dev', 'mant']],
-  ['designation-confirm', 2, ['dev', 'mant']],
+  ['designation-confirm', 2, ['dev', 'mant']], ['designation-set', 2, ['dev', 'mant']], ['designation-withdraw', 2, ['dev', 'mant']],
   ['control-change', 3, ['mant']], ['escape:TYCON_SAFETY_OFF', 3, ['dev', 'mant']], ['escape:TYCON_PROD_LINT', 3, ['dev', 'mant']],
   ['escape:TYCON_NEW_NAMES', 3, ['mant']], ['emergency', 3, ['dev', 'mant']],
 ];
@@ -250,7 +252,7 @@ test('niveles T1 Catalogo_TablaDeNiveles', () => {
   const cat = require(CATALOGO);
   assert.deepStrictEqual(cat.LEVELS.map((l) => [l.id, l.level, [...l.profiles]]), TABLA_DE_NIVELES);
   const cuenta = [1, 2, 3].map((n) => cat.LEVELS.filter((l) => l.level === n).length);
-  assert.deepStrictEqual(cuenta, [7, 16, 5], '7 de rutina, 16 de excepción, 5 irreversibles');
+  assert.deepStrictEqual(cuenta, [7, 18, 5], '7 de rutina, 18 de excepción, 5 irreversibles');
   for (const l of cat.LEVELS) assert.ok(typeof l.approves === 'string' && l.approves.trim(), `${l.id}: falta qué aprueba`);
 });
 
@@ -309,4 +311,21 @@ test('niveles T5 Catalogo_ElPerfilSoloSube', () => {
   assert.strictEqual(cat.delegatedLevel('save', { 'save': 2 }), 2);
   assert.strictEqual(cat.delegatedLevel('escape:no-deep-review', { 'adversarial-skip': 3 }), 3, 'el escape sube con la firma que cubre');
   assert.strictEqual(cat.delegatedLevel('extra-round', null), 1, 'sin perfil, la tabla');
+});
+
+// 🔴 Falla con: la guía sin las firmas de nombrar y retirar a la coordinadora, o con ellas por otra pestaña.
+test('SignaturesGuide_ListsDesignationSetAndWithdraw (T29) @story-8.207 @ac-24', () => {
+  const cat = require(CATALOGO);
+  const texto = fs.readFileSync(GUIA, 'utf8');
+  for (const id of ['designation-set', 'designation-withdraw']) {
+    const s = cat.SIGNATURES.find((x) => x.id === id);
+    assert.ok(s, id);
+    assert.deepStrictEqual([s.otherSession, s.soloClick, s.kind], ['no', true, 'guion'], id);
+    const fila = texto.split('\n').find((l) => l.startsWith(`| \`${id}\``) && l.includes(s.approves));
+    assert.ok(fila, `${id}: su fila en la tabla de firmas`);
+    assert.ok(fila.includes(OTRA_SESION.no), `${id}: «${OTRA_SESION.no}»`);
+  }
+  // la de confirmar, como hoy: la pestaña de la sesión, sin ser de sólo click
+  const conf = cat.SIGNATURES.find((x) => x.id === 'designation-confirm');
+  assert.deepStrictEqual([conf.otherSession, !!conf.soloClick], ['no', false]);
 });

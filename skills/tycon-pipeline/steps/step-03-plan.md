@@ -78,6 +78,14 @@ El skill BMAD en plan mode debe producir:
 `step-02-bmad-plan.md`, antes de pasar a «Aprobar el plan». Es lo que se le muestra a la persona, y lo que revisa la
 revisión automática cuando lo aprueba la coordinadora («Aprobar el plan»). Ningún plan se aprueba solo.
 
+El plan escrito trae dos secciones, que son las que muestra la pregunta de la firma:
+
+- `## Qué hace`: hasta 3 líneas llanas, para alguien que no tocó el código.
+- `## Archivos`: los archivos que toca, uno por renglón (`- ruta`).
+
+Sin alguna de las dos, o con más de 3 líneas en «Qué hace», `complete-step approve-plan` se niega antes de abrir la
+ventana: el dueño no tendría con qué decidir.
+
 ## Guardrail — patrón de referencia verificado (stories de backend)
 
 🔴 **Para stories de backend**, antes de pasar el plan a «Aprobar el plan», el orquestador DEBE chequear:

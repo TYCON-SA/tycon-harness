@@ -293,8 +293,11 @@ function coordinate(opts = {}) {
     const marker = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
     return { code: 1, text: [
       `Esta sesión no es la ${rol.valor} de esta máquina${d ? ' (hay otra designada)' : ''}.`,
-      `Para que lo sea, el dueño escribe en este chat «Esta sesión es la ${rol.valor}», y después esta sesión corre:`,
-      `  node ${marker} designate-relay --approved-by '<el dueño>' --quote '<su frase, textual>'`,
+      `Para que lo sea, el dueño se lo pide a esta sesión con sus palabras, y esta sesión corre:`,
+      `  node ${marker} designate-relay`,
+      'El freno da un cuadro con «Sí» y «No» que dice qué sesión es y en qué carpeta: el dueño hace click y queda nombrada.',
+      `Para dejar de serlo, la misma forma: node ${marker} withdraw-relay`,
+      `Si el click no se puede comprobar, el comando dice por qué y da los respaldos (su terminal, o su frase con --quote).`,
     ].join('\n') };
   }
   return { code: 0, text: statusText(status(opts)) };
@@ -357,8 +360,8 @@ function lostDesignation(opts, sid) {
   const marker = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
   return [
     `Coordinación: esta sesión era la ${rol.valor} de esta máquina y dejó de serlo al limpiar la conversación: para el arnés es otra conversación.`,
-    `Decile a la persona que, si quiere que siga siéndolo, escriba en este chat «Esta sesión es la ${rol.valor}». La frase la escribe ella, nunca vos.`,
-    `Con su frase, corré node ${marker} designate-relay --approved-by '<la persona>' --quote '<su frase, textual>' y seguí lo que te diga.`,
+    `Decile a la persona que, si quiere que siga siéndolo, te lo pida con sus palabras. El pedido es de ella, nunca tuyo.`,
+    `Con su pedido, corré node ${marker} designate-relay: el freno te da un cuadro con «Sí» y «No» para mostrarle tal cual, y con su click queda nombrada. Si el click no se puede comprobar, el comando dice los respaldos.`,
   ].join('\n');
 }
 

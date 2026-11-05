@@ -9,13 +9,18 @@ steps:
 
 1. The team profile names the role in `approvals.relay_session` (on the site, the Configuration tab, "Who authorizes
    skipping a control").
-2. On each machine, the owner writes "Esta sesión es la coordinadora" in the chat of the chosen session, and that
-   session runs `marker.js designate-relay` with that quote.
+2. On each machine, the owner asks the chosen session, in their own words, to be the coordinator. That session runs
+   `marker.js designate-relay` with no sentence: the guard gives a box with "Sí" and "No" that says which session it is
+   and in which folder, and with the owner's click it is named and confirmed. The harness does not read the sentence. To
+   stop being it, `marker.js withdraw-relay`, with its own box. Both signatures belong only to the owner, with a
+   click in that session's tab: they are never delegated. Where the click cannot be checked, the command says why and
+   gives the fallbacks: the owner's terminal (`designate-relay --terminal`) or the old sentence (`--quote`, then
+   `confirm-designation`).
 
 On being designated, the session is told to read this guide, and it is told again after compacting or clearing its
 conversation, because that is when it gets lost. **Clearing the conversation takes away the designation**: for the harness
 it is another conversation. The session is told how to get it back, but does not get it back by itself: the owner has to
-write the phrase and confirm it again. `/coordinate` in that session shows the machine's status. The program the
+ask again and give a new click. `/coordinate` in that session shows the machine's status. The program the
 coordinator uses is `<harness>/scripts/tools/coordination.js`.
 
 ## What goes to the owner

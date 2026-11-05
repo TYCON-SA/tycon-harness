@@ -21,6 +21,8 @@ const path = require('path');
 
 const PIPELINE_LIB = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib');
 const CONFIRMED = 'relay-designation-confirmed';
+// nombrar y retirar a la coordinadora: aunque el perfil las liste, no tienen vía delegada
+const NUNCA_DELEGABLES = new Set(['designation-set', 'designation-withdraw']);
 
 const sha = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 const safeSid = (s) => String(s).replace(/[/\\]/g, '_');
@@ -56,9 +58,19 @@ function appendGatesLine(p, obj) {
   fs.appendFileSync(p.gates, `${JSON.stringify(obj)}\n`);
 }
 
-/** El renglón que deja `confirm-designation`: ata la confirmación a ESA designación (sesión, hora y frase). */
-function confirmationRecord(designacion, ts) {
-  return { name: CONFIRMED, status: 'ok', ts, sesion: designacion.sesion, designacion_ts: designacion.ts, cita_sha: sha(designacion.cita) };
+/**
+ * El renglón que confirma una designación y la ata a ESA designación: por sesión y por la hora de su renglón, que es
+ * única por designación, y por la frase si la tiene (una designación por click no tiene: `cita_sha: null`).
+ */
+function confirmationRecord(designacion, ts, extra = {}) {
+  return { name: CONFIRMED, status: 'ok', ts, sesion: designacion.sesion, designacion_ts: designacion.ts, cita_sha: designacion.cita ? sha(designacion.cita) : null, ...extra };
+}
+
+/** ¿Este renglón confirma esta designación? La única comparación: la usan confirmedDesignation y owner-approvals.js. */
+function confirmaLaDesignacion(linea, designacion) {
+  const want = confirmationRecord(designacion, null);
+  return !!linea && linea.name === CONFIRMED && linea.status === 'ok' && linea.sesion === want.sesion
+    && !!want.designacion_ts && linea.designacion_ts === want.designacion_ts && (linea.cita_sha === undefined ? null : linea.cita_sha) === want.cita_sha;
 }
 
 /** La designación vigente, confirmada en la terminal del dueño: `{ ok, designacion }` o `{ ok:false, reason }`. */
@@ -69,9 +81,7 @@ function confirmedDesignation(p) {
   if (d.error) return { ok: false, reason: d.error };
   const g = readGates(p);
   if (g.error) return { ok: false, reason: g.error };
-  const want = confirmationRecord(d, null);
-  const ok = g.lines.some((l) => l && l.name === CONFIRMED && l.status === 'ok' && l.sesion === want.sesion
-    && l.designacion_ts === want.designacion_ts && l.cita_sha === want.cita_sha);
+  const ok = g.lines.some((l) => confirmaLaDesignacion(l, d));
   if (!ok) return { ok: false, reason: 'la designación de la sesión no está confirmada por el dueño: la sesión designada corre `node scripts/lib/delegated-signing.js confirm-designation` y el dueño la aprueba con un click en el cuadro de opciones, o la confirma en su terminal' };
   return { ok: true, designacion: d };
 }
@@ -99,6 +109,7 @@ function delegaSinVentana({ firma, sesion, destino, home, estado, env, arnes, pe
   if (!sesion || !destino) return no('sin la sesión del pedido y la destino no se delega');
   // su constancia nombra al dueño en la huella: aunque el perfil la liste, no tiene vía delegada
   if (firma === 'adversarial-skip') return no('saltear el pase adversarial es sólo del dueño: no se delega');
+  if (NUNCA_DELEGABLES.has(firma)) return no('nombrar o retirar a la coordinadora lo firma el dueño con su click en la pestaña de esa sesión: no se delega');
   if (destino === sesion) {
     // la coordinadora que aprueba un pendiente sin nombrar la sesión que lo abrió ve por qué le toca la ventana
     if (SOBRE_UN_REPO.has(firma) && esLaDesignada(estado, sesion)) return no('un pendiente se aprueba por delegación con --for-session <la sesión que lo abrió>');
@@ -264,7 +275,7 @@ function cli(argv) {
       return 0;
     }
     if (!rw.hasTty()) { console.error('🔒 confirm-designation --terminal pide la terminal del dueño (/dev/tty).'); return 2; }
-    console.error(`La sesión designada es la «${d.rol}» (${d.sesion}), desde ${d.ts}, con la frase: «${d.cita}».`);
+    console.error(`La sesión designada es la «${d.rol}» (${d.sesion}), desde ${d.ts}, ${d.cita ? `con la frase: «${d.cita}»` : 'por click'}.`);
     console.error('Con esto, esa sesión firma sin ventana, en las otras sesiones, sólo las firmas que el perfil del equipo delega (approvals.delegated_signing), y sólo en las máquinas que nombra; las demás, y las de approvals.owner_only, las firmás vos.');
     if (!rw.confirmarFrase()) { console.error('No coincide: no se confirmó nada.'); return 1; }
     appendGatesLine(p, confirmationRecord(d, new Date().toISOString()));
@@ -275,6 +286,6 @@ function cli(argv) {
   return 2;
 }
 
-module.exports = { accountPaths, confirmationRecord, delegaSinVentana, signerOf };
+module.exports = { accountPaths, confirmationRecord, confirmaLaDesignacion, confirmedDesignation, delegaSinVentana, signerOf, NUNCA_DELEGABLES };
 
 if (require.main === module) process.exit(cli(process.argv.slice(2)));

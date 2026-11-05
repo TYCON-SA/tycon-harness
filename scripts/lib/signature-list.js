@@ -355,6 +355,14 @@ function limpiar(casa, { ahora = Date.now(), s = sesiones(casa) } = {}) {
 }
 
 /**
+ * El cuadro de una fila de firma, rearmado como lo arma el freno (owner-window.js `cuadroPara`): la misma pregunta, y la
+ * misma huella, que cambia si cambió lo que se mostró. `can`: la forma canónica del comando, si ya se leyó.
+ */
+function cuadroDeLaFila(f, casa, can = ow().canonicaDe(f.comando)) {
+  return ow().cuadroPara({ firma: f.firma, comando: f.comando, palabras: can && can.palabras, destino: f.destino, cwd: f.cwd, casa, sesion: f.destino });
+}
+
+/**
  * Lo que sigue en la pasada para la sesión `sesion`: un solo renglón, el más viejo; primero los permisos, después las
  * firmas y al final lo de la terminal. La coordinadora confirmada pasa todos; otra sesión, aquellos de los que es destino.
  * `tipo` dice qué salió: `permiso` o `firma` (con su cuadro), `plan` (hay que escribir el plan antes), `rota` y `sin-cuadro`
@@ -400,7 +408,7 @@ function siguiente({ casa, sesion, after = null, ahora = Date.now(), arnes, env,
     const can = ow().canonicaDe(f.comando);
     const esSuya = can && (can.id === f.firma || (f.firma === 'refresh-after-main' && can.id === 'control-change'));
     if (!esSuya) return sale({ tipo: 'rota', id: f.id, texto: `El renglón ${f.id} está roto: su comando no tiene la forma de la firma «${una(f.firma)}». No doy su cuadro.`, sigue: `owner-next --after ${f.id}` });
-    const cuadro = ow().cuadroPara({ firma: f.firma, comando: f.comando, palabras: can.palabras, destino: f.destino, cwd: f.cwd, casa, sesion: f.destino });
+    const cuadro = cuadroDeLaFila(f, casa, can);
     if (cuadro.error) return sale({ tipo: 'sin-cuadro', id: f.id, texto: `No pude armar el cuadro de ${f.id}: ${una(cuadro.error)}.`, sigue: `owner-next --after ${f.id}` });
     const aviso = avisoALaSesion(f, can.palabras);
     // no se pide un click ya dado. `buscar` sólo lee: vencido o con la coordinadora muerta, no lo encuentra y se vuelve a dar
@@ -497,4 +505,4 @@ function mensajesDe(ruta) {
   return fuera;
 }
 
-module.exports = { archivo, candado, tipoDe, leer, escribir, conCandado, llave, encendida, sesiones, vive, coordinadoraViva, abiertos, anotarFirma, anotarPermiso, alNegar, cuadroDePermiso, comandoParaRepetir, limpiar, siguiente, rechazar, esDeLaPersona };
+module.exports = { archivo, candado, tipoDe, cuadroDeLaFila, leer, escribir, conCandado, llave, encendida, sesiones, vive, coordinadoraViva, abiertos, anotarFirma, anotarPermiso, alNegar, cuadroDePermiso, comandoParaRepetir, limpiar, siguiente, rechazar, esDeLaPersona };
