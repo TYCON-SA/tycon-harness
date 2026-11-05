@@ -1855,10 +1855,11 @@ const WORKING = ['trabajando', 'prueba'];
  * `codex`, `apagado` o `espera-cierre`) y deja en `env.recipients` su sesión y su estado, para el proceso. La lista cerrada de
  * lo que viaja al sitio (`office/fields.js`) no lo lleva.
  */
-function markRecipients(data, env, states, sdir, { isAlive } = {}) {
+function markRecipients(data, env, states, sdir, { isAlive, startOf, cxNames = new Map() } = {}) {
   const om = require(path.join(ROOT, 'scripts', 'lib', 'office-messages.js'));
   const off = process.env.TYCON_OFFICE_MESSAGES === '0';
-  const codex = new Set(states.filter((s) => s.tool === 'codex').map((s) => s.name).filter(Boolean));
+  // con el mismo nombre que le pone la oficina a una sesión de Codex sin nombre en su archivo
+  const codex = new Set(states.filter((s) => s.tool === 'codex' && (s.name || s.session)).map((s) => s.name || cxNames.get(s.session) || String(s.session).slice(0, 8)));
   env.recipients = new Map();
   for (const a of data.agents || []) {
     if (!a || !a.nombre) continue;
@@ -1868,7 +1869,7 @@ function markRecipients(data, env, states, sdir, { isAlive } = {}) {
     else if (codex.has(a.nombre)) recibe = 'codex';
     else if (!e) continue;
     else {
-      const w = om.watcherState(sdir, e.sid, isAlive ? { isAlive } : {});
+      const w = om.watcherState(sdir, e.sid, { ...(isAlive ? { isAlive } : {}), ...(startOf ? { startOf } : {}) });
       recibe = w.alive ? 'si' : (Number.isFinite(w.deliveredAt) ? 'espera-cierre' : 'sin-vigilante');
     }
     a.recibe = recibe;
@@ -2053,7 +2054,7 @@ async function collect(opts = {}) {
   if (opts.envelopes) {
     opts.envelopes.coordinator = coordinatorSid ? { sid: coordinatorSid, name: coordinatorName } : null;
     data.sobres = readEnvelopes(opts.envelopes, wip, { home, nowMs, projectsDir: opts.projectsDir, sessions });
-    markRecipients(data, opts.envelopes, states, sdir);
+    markRecipients(data, opts.envelopes, states, sdir, { cxNames });
   }
   if (board.board && Number.isFinite(board.writtenAt)) data.kanban.escrito = `Tablero escrito a las ${hhmm(board.writtenAt)}${nowMs - board.writtenAt > quietMin * 60000 ? ' (vieja)' : ''}`;
   data.kanban.linea = boardLine(data.kanban, { trabado: data.meta.trabado, escritoAt: board.board ? board.writtenAt : null });

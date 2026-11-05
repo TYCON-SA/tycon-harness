@@ -2081,7 +2081,7 @@ test('T48 Charla_ViajaAparte_SaneadaConTope: la conversación sale en su mensaje
   link.update({ ...FOTO('Otra cosa'), agents: [...FOTO('Otra cosa').agents, { nombre: 'Gama', estado: 'trabajando' }] });
   await sleep(300);
   assert.strictEqual(site.charlas.length, 8, 'una foto que ya la nombraba no la vuelve a mandar');
-  // forSite decide qué sale: hoy, todo lo que trae la conversación de la oficina local
+  // forSite decide qué sale: una conversación sin mensajes escritos desde la oficina sale igual
   const { forSite } = require(SERVER);
   assert.deepStrictEqual(forSite(conv(2)), conv(2));
   link.stop();

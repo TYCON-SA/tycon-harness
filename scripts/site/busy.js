@@ -119,6 +119,8 @@ const EXCEPCIONES = Object.freeze([
   { archivo: 'scripts/lib/org-config.js', funcion: 'abrirRepo', motivo: 'abre el panel de un repo de producto, que ya dice «Leyendo…» mientras carga' },
   { archivo: 'scripts/site/tabs/findings.js', funcion: 'porLaLista', motivo: 'el último paso del envío de Hallazgos cuando el envío no contestó: corre mientras el botón ya dice que trabaja' },
   { archivo: 'scripts/tools/office/page.js', funcion: 'abrirCharla', motivo: 'leer la conversación de una sesión: la ventana ya dice «Leyendo…» y avisa si falla (AC 6)' },
+  { archivo: 'scripts/tools/office/page.js', funcion: 'mandar', motivo: 'mandarle un mensaje a una sesión desde la oficina local: el botón queda apagado mientras se manda y la línea de estado dice «Mandado.» o por qué no se pudo' },
+  { archivo: 'scripts/tools/office/page.js', funcion: 'esperarRespuesta', motivo: 'la espera de fondo de la respuesta a un mensaje ya mandado: no hay botón; la lista «Con vos» se pone al día sola' },
   { archivo: 'scripts/tools/office/page.js', funcion: 'arrancarOficinas', motivo: 'la carga de la pestaña de la demo: no hay botón; si falla, la página lo dice' },
 ]);
 

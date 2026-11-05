@@ -1094,6 +1094,33 @@ test('T39 Mensaje_TomadoSinAparecer_LoDice @story-8.183 @ac-24: sólo con la ses
   }
 });
 
+test('T45 Sitio_MensajesDeLaOficina_NoSalen @story-8.183 @ac-41: al sitio no van los mensajes escritos desde la oficina ni el estado del destinatario', () => {
+  const { forSite } = require(SERVER);
+  const enLaPestana = { quien: 'vos', at: '2026-11-04T10:00:00Z', texto: 'revisá el pedido' };
+  const respuesta = { quien: 'sesion', at: '2026-11-04T10:01:00Z', texto: 'listo' };
+  const desdeLaOficina = { quien: 'vos', at: '2026-11-04T10:02:00Z', texto: 'seguí con la tanda', oficina: true, id: '3f9c2a7d0b1e4c5a8d6e7f9012345678' };
+  const conv = { conVos: [enLaPestana, respuesta, desdeLaOficina], conCoordinadora: [], oficina: { recibe: 'si', cuadro: false } };
+  const antes = JSON.parse(JSON.stringify(conv));
+  const out = forSite(conv);
+  assert.deepStrictEqual(out, { conVos: [enLaPestana, respuesta], conCoordinadora: [] });
+  assert.deepStrictEqual(conv, antes, 'la conversación que recibe queda igual');
+});
+
+test('T53 NoAparece_ConversacionQueCrecio_LoEncuentra @story-8.183 @ac-24: el sobre entregado sigue encontrándose aunque después la conversación crezca más de 2 MB', () => {
+  const { appearsIn } = require(path.join(ROOT, 'scripts', 'tools', 'office', 'messages.js'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'office-aparece-'));
+  const file = path.join(dir, 't.jsonl');
+  const id = '3f9c2a7d0b1e4c5a8d6e7f9012345678';
+  fs.writeFileSync(file, `${JSON.stringify({ type: 'user', message: { content: `[oficina ${id}] Mensaje de la persona` } })}\n`);
+  assert.strictEqual(appearsIn(file, id), true);
+  const junk = `${JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', content: 'x'.repeat(4000) }] } })}\n`;
+  fs.appendFileSync(file, junk.repeat(700));
+  assert.ok(fs.statSync(file).size > 2.5 * 1024 * 1024);
+  assert.strictEqual(appearsIn(file, id), true, 'lo encuentra aunque quede lejos del final');
+  assert.strictEqual(appearsIn(file, 'a'.repeat(32)), false);
+  assert.strictEqual(appearsIn(path.join(dir, 'no-esta.jsonl'), id), null);
+});
+
 test('T40 Mensaje_EntreEntregaYCierre_Espera @story-8.183 @ac-38: tras una entrega, se acepta y espera; vencido el plazo largo, no-entregado', async () => {
   const m = toy();
   fs.mkdirSync(om.paths(m.sdir).watchers, { recursive: true });

@@ -12,8 +12,9 @@
  * Al limpiar la conversación (`/clear`) la sesión cambia de id: el vigilante nuevo despide a los de ids viejos del mismo
  * proceso de la herramienta.
  *
- * Sólo se arma si lo lanzó la herramienta: lanzado por otro proceso (un laboratorio, el chequeo de salud, el banco), que
- * espera a que el gancho termine, sale enseguida con 0.
+ * Sólo se arma si lo lanzó la herramienta, en una sesión de terminal o de fondo (la entrada `cli`): lanzado por
+ * otro proceso (un laboratorio, el chequeo de salud, el banco), o bajo `claude -p` o el SDK, que esperan a que el gancho
+ * termine para salir, sale enseguida con 0.
  *
  * Un mensaje que pasó su plazo no se entrega: sale del buzón anotado como no entregado, aunque la oficina esté cerrada.
  * Espera con `fs.watch` y repasa cada 5 s por si el aviso del sistema se pierde. Vive menos que el plazo del gancho
@@ -86,8 +87,10 @@ function main(om, sdir, event, tool) {
       if (done) return;
       if (!mine()) { finish(0); return; }
       let got;
-      try { got = om.take(sdir, sid); } catch { finish(0); return; }
-      while (got && got.estado === 'vencido') got = om.take(sdir, sid);
+      try {
+        got = om.take(sdir, sid);
+        while (got && got.estado === 'vencido') got = om.take(sdir, sid);
+      } catch { finish(0); return; }
       if (got && got.estado === 'recibido') finish(2, got.envelope);
     };
     for (const sig of ['SIGTERM', 'SIGHUP', 'SIGINT']) process.on(sig, () => finish(0));
@@ -120,6 +123,8 @@ async function run() {
   let event;
   try { event = JSON.parse(fs.readFileSync(0, 'utf8') || '{}'); } catch { return 0; }
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(String(event.session_id || ''))) return 0;
+  // medido: `cli` en una sesión de terminal y en una de fondo; `sdk-cli` bajo `claude -p`, que se quedaría esperando
+  if (require(path.join(__dirname, '..', 'lib', 'claude-versions.js')).entrypointOf() !== 'cli') return 0;
   const tool = toolPid();
   // TYCON_OFFICE_WATCH_ANY_PARENT=1: arma el vigilante aunque no lo haya lanzado la herramienta (sólo las pruebas del vigilante)
   if (tool === null && process.env.TYCON_OFFICE_WATCH_ANY_PARENT !== '1') return 0;

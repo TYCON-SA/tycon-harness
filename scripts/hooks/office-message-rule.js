@@ -8,6 +8,9 @@
  * `office-message.js verify` antes de actuar. La regla dice también lo que el mensaje no
  * es: nunca firma, aprueba, contesta un cuadro ni habilita una firma por delegación.
  *
+ * Habla sólo donde el vigilante se puede armar, con su mismo criterio (office-inbox-watch.js): lanzada por otra cosa que la
+ * herramienta, o bajo `claude -p`, no imprime nada, porque ahí no llega ningún mensaje.
+ *
  * Off: TYCON_OFFICE_MESSAGES=0 (apaga también el vigilante y la ruta de la oficina). Un error propio nunca frena la sesión.
  */
 
@@ -27,6 +30,9 @@ const RULE = 'Mensajes de la oficina (regla del arnés): la persona puede escrib
 
 function main() {
   if (process.env.TYCON_EVAL_SANDBOX === '1' || process.env.TYCON_OFFICE_MESSAGES === '0') return;
+  if (require(path.join(__dirname, '..', 'lib', 'claude-versions.js')).entrypointOf() !== 'cli') return;
+  // TYCON_OFFICE_WATCH_ANY_PARENT=1: la da aunque no la haya lanzado la herramienta (sólo las pruebas, como el vigilante)
+  if (require(path.join(__dirname, 'office-inbox-watch.js')).toolPid() === null && process.env.TYCON_OFFICE_WATCH_ANY_PARENT !== '1') return;
   process.stdout.write(`<system-reminder>\n${RULE}\n</system-reminder>\n`);
 }
 

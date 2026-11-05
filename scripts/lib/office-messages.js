@@ -15,8 +15,12 @@
  * oficina barre el buzón al arrancar. Una indicación vieja nunca llega como si fuera de ahora.
  *
  * Carpetas 0700 y archivos 0600, escritos enteros y renombrados. El registro (`messages.jsonl`) guarda el texto con las
- * claves tapadas (`coverSecrets`) y los últimos 2000 renglones; el texto entero vive sólo en el buzón, hasta que se toma.
- * El freno del pipeline no deja escribir el buzón ni el registro con Edit, Write o la consola (`isMailboxPath`).
+ * claves tapadas (`coverSecrets`); al pasar el tope el archivo se renombra a `messages.jsonl.1` y empieza otro, así un
+ * proceso que está agregando su renglón no lo pierde, y se leen los últimos 2000 de los dos. El texto entero vive sólo en
+ * el buzón, hasta que se toma: lo tomado queda como marca, sin el texto, y el barrido la saca al día.
+ * Nada de esto sigue un enlace: un archivo enlazado no se entrega y un registro enlazado no se puede comprobar.
+ * El freno del pipeline no deja escribir el buzón, el registro ni los candados con Edit, Write o la consola
+ * (`isMailboxPath`).
  */
 const fs = require('fs');
 const path = require('path');
@@ -32,6 +36,10 @@ const KEEP_LINES = 2000;
 // el registro se recorta pasado este margen, no en cada renglón
 const TRIM_SLACK = 200;
 const DEADLINE_MS = 10 * 1000;
+// cuánto queda la marca de un mensaje tomado: la oficina la mira para decir «lo recibió»
+const TAKEN_KEEP_MS = 24 * 3600 * 1000;
+// el cierre del aviso con que la herramienta envuelve lo que dice un gancho: un texto que lo traiga se mostraría cortado
+const HOOK_NOTICE_END = '</system-reminder>';
 const STATES = ['mandado', 'recibido', 'verificado', 'no-entregado', 'rechazado'];
 const SAFE_SID = /^[A-Za-z0-9_-]{1,128}$/;
 const SAFE_ID = /^[0-9a-f]{32}$/;
@@ -51,7 +59,22 @@ function paths(sdir) {
     watchers: path.join(dir, 'vigilantes'),
     watcher: (sid) => path.join(dir, 'vigilantes', `${sidOk(sid)}.json`),
     log: path.join(dir, 'messages.jsonl'),
+    logPrevious: path.join(dir, 'messages.jsonl.1'),
   };
+}
+
+const NOFOLLOW = fs.constants.O_NOFOLLOW || 0;
+/**
+ * El texto de un archivo común, sin seguir un enlace: un enlace blando no se abre y uno duro (más de un nombre) no se lee.
+ * Lanza con `code` como `fs.readFileSync` (`ENOENT`, `ELOOP`, `EMLINK`).
+ */
+function readOwn(file) {
+  const fd = fs.openSync(file, fs.constants.O_RDONLY | NOFOLLOW);
+  try {
+    const st = fs.fstatSync(fd);
+    if (!st.isFile() || st.nlink > 1) { const e = new Error('no es un archivo propio'); e.code = st.isFile() ? 'EMLINK' : 'ELOOP'; throw e; }
+    return fs.readFileSync(fd, 'utf8');
+  } finally { fs.closeSync(fd); }
 }
 
 function privateDir(d) {
@@ -86,6 +109,7 @@ function checkText(text) {
   const t = String(text == null ? '' : text);
   if (!t.trim()) return 'El mensaje está vacío.';
   if (Array.from(t).length > MAX_TEXT) return `El mensaje pasa de ${MAX_TEXT} caracteres.`;
+  if (t.toLowerCase().includes(HOOK_NOTICE_END)) return `El mensaje no puede llevar «${HOOK_NOTICE_END}».`;
   return null;
 }
 
@@ -95,45 +119,57 @@ function record(sdir, { id, sid, text, estado, motivo = null, at = Date.now() })
   const p = paths(sdir);
   privateTree(sdir, p.dir);
   const row = { id: String(id), at: new Date(at).toISOString(), sesion: String(sid), largo: text == null ? 0 : Array.from(String(text)).length, texto: text == null ? null : coverSecrets(String(text)), estado, motivo };
-  const fd = fs.openSync(p.log, 'a', 0o600);
+  const fd = fs.openSync(p.log, fs.constants.O_WRONLY | fs.constants.O_APPEND | fs.constants.O_CREAT | NOFOLLOW, 0o600);
   try { fs.writeSync(fd, `${JSON.stringify(row)}\n`); } finally { fs.closeSync(fd); }
   try { fs.chmodSync(p.log, 0o600); } catch { /* Windows */ }
   trimLog(sdir, { slack: TRIM_SLACK });
 }
 
-/** Deja los últimos 2000 renglones; con `slack`, sólo si pasa el tope por más que eso. */
+/**
+ * Pasado el tope (con `slack`, por más que eso) el registro se renombra a `messages.jsonl.1` y el siguiente renglón empieza
+ * otro. No se reescribe: un proceso que abrió el registro para agregar su renglón lo deja en el renombrado, que se sigue
+ * leyendo.
+ */
 function trimLog(sdir, { slack = 0 } = {}) {
   const p = paths(sdir);
   let text;
-  try { text = fs.readFileSync(p.log, 'utf8'); } catch { return; }
-  const lines = text.split('\n').filter(Boolean);
-  if (lines.length <= KEEP_LINES + slack) return;
-  writePrivate(p.log, `${lines.slice(-KEEP_LINES).join('\n')}\n`);
+  try { text = readOwn(p.log); } catch { return; }
+  if (text.split('\n').filter(Boolean).length <= KEEP_LINES + slack) return;
+  fs.renameSync(p.log, p.logPrevious);
 }
 
-/** `{ ok: true, rows }` o `{ ok: false, problem }` si el registro no se puede leer. Sin registro, ninguno. */
+/**
+ * `{ ok: true, rows }`, los últimos 2000 renglones del registro y del renombrado, o `{ ok: false, problem }` si alguno no se
+ * puede leer (también un enlace). Sin registro, ninguno.
+ */
 function readLog(sdir) {
-  let text;
-  try { text = fs.readFileSync(paths(sdir).log, 'utf8'); } catch (e) {
-    if (e.code === 'ENOENT') return { ok: true, rows: [] };
-    return { ok: false, problem: e.code || 'error' };
-  }
+  const p = paths(sdir);
   const rows = [];
-  for (const line of text.split('\n')) {
-    if (!line.trim()) continue;
-    try { rows.push(JSON.parse(line)); } catch { /* un renglón roto no cuenta */ }
+  for (const file of [p.logPrevious, p.log]) {
+    let text;
+    try { text = readOwn(file); } catch (e) {
+      if (e.code === 'ENOENT') continue;
+      return { ok: false, problem: e.code || 'error' };
+    }
+    for (const line of text.split('\n')) {
+      if (!line.trim()) continue;
+      try { rows.push(JSON.parse(line)); } catch { /* un renglón roto no cuenta */ }
+    }
   }
-  return { ok: true, rows };
+  return { ok: true, rows: rows.slice(-KEEP_LINES) };
 }
 
 const jsonFiles = (dir) => { try { return fs.readdirSync(dir).filter((f) => SAFE_ID.test(path.basename(f, '.json')) && f.endsWith('.json')); } catch { return []; } };
-const readJson = (file) => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } };
+const readJson = (file) => { try { return JSON.parse(readOwn(file)); } catch { return null; } };
 
-/** Los mensajes sin tomar de una sesión, del más viejo al más nuevo. */
+// el orden en que este proceso dejó sus mensajes: desempata dos con la misma hora
+let leftCount = 0;
+
+/** Los mensajes sin tomar de una sesión, del más viejo al más nuevo (a la misma hora, en el orden en que se dejaron). */
 function waiting(sdir, sid) {
   const dir = paths(sdir).inbox(sid);
   return jsonFiles(dir).map((f) => ({ file: path.join(dir, f), msg: readJson(path.join(dir, f)) }))
-    .filter((x) => x.msg && x.msg.id).sort((a, b) => a.msg.at - b.msg.at);
+    .filter((x) => x.msg && x.msg.id).sort((a, b) => (a.msg.at - b.msg.at) || ((a.msg.seq || 0) - (b.msg.seq || 0)));
 }
 
 /**
@@ -150,8 +186,14 @@ function leave(sdir, { sid, text, now = Date.now(), deadlineMs = DEADLINE_MS, ap
   const already = waiting(sdir, sid).length;
   if (already >= MAX_WAITING) return { ok: false, motivo: `Hay ${already} mensajes esperando que los lea.`, waiting: already };
   const id = newId();
-  writePrivate(path.join(dir, `${id}.json`), JSON.stringify({ id, sid: String(sid), text: String(text), at: now, deadlineMs, approval: Boolean(approval) }));
-  record(sdir, { id, sid, text, estado: 'mandado', at: now });
+  const file = path.join(dir, `${id}.json`);
+  leftCount += 1;
+  writePrivate(file, JSON.stringify({ id, sid: String(sid), text: String(text), at: now, seq: leftCount, deadlineMs, approval: Boolean(approval) }));
+  // sin su renglón el mensaje no se podría comprobar: si el registro falla, tampoco queda en el buzón
+  try { record(sdir, { id, sid, text, estado: 'mandado', at: now }); } catch (e) {
+    try { fs.unlinkSync(file); } catch { /* ya no estaba */ }
+    throw e;
+  }
   return { ok: true, id };
 }
 
@@ -169,7 +211,8 @@ function expire(sdir, sid, id, { now = Date.now(), motivo = 'vencido' } = {}) {
 
 /**
  * Lo que hace el vigilante: el mensaje más viejo de la sesión. Si venció, lo saca sin entregarlo (`{ estado: 'vencido' }`);
- * si no, lo mueve a `tomados/` y devuelve `{ estado: 'recibido', id, envelope }`. null si no hay ninguno.
+ * si no, lo mueve a `tomados/` (el `rename` es la toma), deja ahí la marca sin el texto y devuelve
+ * `{ estado: 'recibido', id, envelope }`. null si no hay ninguno.
  */
 function take(sdir, sid, { now = Date.now() } = {}) {
   for (const { file, msg } of waiting(sdir, sid)) {
@@ -180,20 +223,40 @@ function take(sdir, sid, { now = Date.now() } = {}) {
     const p = paths(sdir);
     privateTree(sdir, p.takenRoot);
     privateDir(p.taken(sid));
-    try { fs.renameSync(file, path.join(p.taken(sid), `${msg.id}.json`)); } catch { continue; }
-    record(sdir, { id: msg.id, sid, text: msg.text, estado: 'recibido', at: now });
+    const taken = path.join(p.taken(sid), `${msg.id}.json`);
+    try { fs.renameSync(file, taken); } catch { continue; }
+    // sin su renglón no se podría comprobar: si el registro falla, el mensaje vuelve al buzón y el error sube
+    try { record(sdir, { id: msg.id, sid, text: msg.text, estado: 'recibido', at: now }); } catch (e) {
+      try { fs.renameSync(taken, file); } catch { /* lo saca el barrido */ }
+      throw e;
+    }
+    // la marca sin el texto; si no se puede escribir, el barrido saca lo tomado sin su hora
+    try { writePrivate(taken, JSON.stringify({ id: msg.id, sid: String(sid), at: msg.at, takenAt: now })); } catch { /* idem */ }
     return { estado: 'recibido', id: msg.id, envelope: envelope(msg.text, { id: msg.id, looksLikeApproval: msg.approval }) };
   }
   return null;
 }
 
-/** Vence todo lo que pasó su plazo, en todas las sesiones. Devuelve los ids vencidos. */
+/**
+ * Vence todo lo que pasó su plazo, en todas las sesiones, y saca las marcas de lo tomado hace más de un día. Devuelve los
+ * ids vencidos.
+ */
 function sweep(sdir, { now = Date.now() } = {}) {
   const out = [];
+  const p = paths(sdir);
   let sids = [];
-  try { sids = fs.readdirSync(paths(sdir).inboxRoot).filter((s) => SAFE_SID.test(s)); } catch { return out; }
+  try { sids = fs.readdirSync(p.inboxRoot).filter((s) => SAFE_SID.test(s)); } catch (e) { if (e.code !== 'ENOENT') throw e; }
   for (const sid of sids) {
     for (const { msg } of waiting(sdir, sid)) if (overdue(msg, now) && expire(sdir, sid, msg.id, { now })) out.push(msg.id);
+  }
+  let takenSids = [];
+  try { takenSids = fs.readdirSync(p.takenRoot).filter((s) => SAFE_SID.test(s)); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+  for (const sid of takenSids) {
+    for (const f of jsonFiles(p.taken(sid))) {
+      const mark = readJson(path.join(p.taken(sid), f));
+      const at = mark && Number.isFinite(mark.takenAt) ? mark.takenAt : null;
+      if (at === null || now - at > TAKEN_KEEP_MS) { try { fs.unlinkSync(path.join(p.taken(sid), f)); } catch { /* ya no estaba */ } }
+    }
   }
   return out;
 }
@@ -227,12 +290,12 @@ function verify(sdir, id, sid, { now = Date.now() } = {}) {
   return { code: 0, text: sent.texto };
 }
 
-/** ¿La ruta es del buzón, de lo tomado, de lo usado o del registro? Es lo que el freno no deja escribir. */
+/** ¿La ruta es del buzón, de lo tomado, de lo usado, del registro o de un candado? Es lo que el freno no deja escribir. */
 function isMailboxPath(sdir, file) {
   const p = paths(sdir);
   const abs = path.resolve(String(file));
   const inside = (root) => abs === root || abs.startsWith(root + path.sep);
-  return inside(p.inboxRoot) || inside(p.takenRoot) || inside(p.used) || abs === p.log;
+  return inside(p.inboxRoot) || inside(p.takenRoot) || inside(p.used) || inside(p.watchers) || abs === p.log || abs === p.logPrevious;
 }
 
 // --- el vigilante de cada sesión ----------------------------------------------------------------------------------
@@ -248,21 +311,22 @@ const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch (e)
 
 /**
  * El estado del vigilante de una sesión: `{ alive: true }` con uno escuchando; `{ alive: false, deliveredAt }` si el último
- * entregó y se fue (la sesión arma otro al cerrar su turno); `{ alive: false }` sin ninguno.
+ * entregó y se fue (la sesión arma otro al cerrar su turno); `{ alive: false }` sin ninguno. Vivo es su pid vivo con la
+ * misma hora de arranque que anotó: un candado sin esa hora no pasa por vivo (salvo en Windows, donde no se sabe).
  */
 function watcherState(sdir, sid, { isAlive = pidAlive, startOf = processStart } = {}) {
   let lock;
   try { lock = readJson(paths(sdir).watcher(sid)); } catch { return { alive: false }; }
   if (!lock) return { alive: false };
   if (Number.isInteger(lock.pid) && isAlive(lock.pid)) {
-    const started = lock.started == null ? null : startOf(lock.pid);
-    if (lock.started == null || started === lock.started) return { alive: true, pid: lock.pid };
+    const started = startOf(lock.pid);
+    if (started === (lock.started == null ? null : lock.started) && (started !== null || process.platform === 'win32')) return { alive: true, pid: lock.pid };
   }
   return { alive: false, ...(Number.isFinite(lock.deliveredAt) ? { deliveredAt: lock.deliveredAt } : {}) };
 }
 
 module.exports = {
-  MAX_TEXT, MAX_WAITING, KEEP_LINES, DEADLINE_MS, STATES, PREFIX,
+  MAX_TEXT, MAX_WAITING, KEEP_LINES, DEADLINE_MS, TAKEN_KEEP_MS, STATES, PREFIX,
   paths, newId, envelope, looksLikeApproval, checkText, record, trimLog, readLog, waiting, leave, expire, take, sweep, verify,
   isMailboxPath, processStart, watcherState, writePrivate, privateDir, privateTree,
 };

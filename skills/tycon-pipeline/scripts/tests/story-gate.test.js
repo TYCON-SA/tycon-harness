@@ -955,7 +955,8 @@ test('T33 Freno_PowerShell_FormasNuevas', () => {
 
 test('T37 StoryGate_BuzonYRegistro_NoSeEscriben @story-8.183 @ac-20: Edit, Write y la consola no tocan el buzón ni el registro de la oficina', () => {
   for (const f of ['/home/u/.tycon/state/office/inbox/s1/a.json', '/home/u/.tycon/state/office/tomados/s1/a.json', '/home/u/.tycon/state/office/usados/abc',
-    '/home/u/.tycon/state/office/messages.jsonl', '/home/u/.Tycon/State/Office/Inbox/s1/a.json']) {
+    '/home/u/.tycon/state/office/messages.jsonl', '/home/u/.tycon/state/office/messages.jsonl.1', '/home/u/.tycon/state/office/vigilantes/s1.json',
+    '/home/u/.Tycon/State/Office/Inbox/s1/a.json']) {
     const r = gate.computeStoryGate({ ...BASE, filePath: f });
     assert.equal(r.action, 'block', f);
     assert.equal(r.kind, 'office-mailbox', f);
@@ -965,7 +966,7 @@ test('T37 StoryGate_BuzonYRegistro_NoSeEscriben @story-8.183 @ac-20: Edit, Write
   assert.equal(gate.computeStoryGate({ ...BASE, filePath: '/home/u/.claude/.tycon-pipeline/office/inbox/s1/a.json' }).action, 'block');
   assert.ok(gate.isOfficeMailboxRecord('/home/u/.claude/.tycon-pipeline/office/inbox'));
   // el candado del proceso de la oficina no es el buzón, y una carpeta de un producto con ese nombre tampoco
-  for (const f of ['/home/u/.tycon/state/office/server.json', '/home/u/.tycon/state/office/vigilantes/s1.json', `${REPO}/office/inbox/a.json`, `${REPO}/.tycon/state-x/office/messages.jsonl`]) {
+  for (const f of ['/home/u/.tycon/state/office/server.json', `${REPO}/office/inbox/a.json`, `${REPO}/.tycon/state-x/office/messages.jsonl`]) {
     assert.notEqual(gate.computeStoryGate({ ...BASE, filePath: f }).kind, 'office-mailbox', f);
   }
   const { stateDir, repo } = corridaAbierta();
@@ -980,5 +981,20 @@ test('T37 StoryGate_BuzonYRegistro_NoSeEscriben @story-8.183 @ac-20: Edit, Write
     }
     // la comprobación que corre la sesión no escribe a mano: la deja pasar
     assert.equal(bash.handle(ev('node /arnes/scripts/tools/office-message.js verify 3f9c2a7d0b1e4c5a8d6e7f9012345678'), { stateDir, installedRoots: [] }), null);
+  });
+});
+
+test('T51 StoryGate_EnlaceAlBuzon_Frena @story-8.183 @ac-20: un enlace (blando o duro) al buzón, al registro o a un candado de vigilante no pasa', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const E = stateDir;
+  fs.mkdirSync(path.join(E, 'office', 'inbox', 's1'), { recursive: true });
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  conEnv(SIN_REGISTRO, () => {
+    for (const cmd of [`ln -sf /tmp/x ${E}/office/messages.jsonl`, `ln /tmp/x ${E}/office/messages.jsonl`,
+      `ln -s /tmp/f.json ${E}/office/inbox/s1/3f9c2a7d0b1e4c5a8d6e7f9012345678.json`, `ln -sf /tmp/x ${E}/office/vigilantes/s1.json`,
+      `echo '{}' > ${E}/office/vigilantes/s1.json`]) {
+      const r = bash.handle(ev(cmd), { stateDir, installedRoots: [] });
+      assert.ok(r && r.block, cmd);
+    }
   });
 });

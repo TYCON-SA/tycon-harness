@@ -153,11 +153,14 @@ function readLockFile(lockFile) {
 }
 
 /**
- * Lo que de la conversación de una sesión sale al sitio. Hoy, todo lo que muestra la oficina local; acá se saca lo que no
- * tiene que salir (los mensajes escritos desde la oficina, cuando existan).
+ * Lo que de la conversación de una sesión sale al sitio: lo que muestra la oficina local, sin los mensajes escritos desde
+ * la oficina ni el estado del destinatario (`oficina`). Escribirle a una sesión es sólo de la oficina local.
  */
 function forSite(conversation) {
-  return conversation;
+  if (!conversation || typeof conversation !== 'object' || Array.isArray(conversation)) return conversation;
+  const { oficina, ...out } = conversation;
+  if (Array.isArray(out.conVos)) out.conVos = out.conVos.filter((m) => !(m && m.oficina));
+  return out;
 }
 
 /**
@@ -509,7 +512,7 @@ async function serve() {
     });
   };
 
-  const messages = officeMessages({ sdir, envelopes, okOrigin, notify: (m) => { for (const c of clients) if (c.readyState === WebSocket.OPEN) c.send(JSON.stringify({ type: 'mensaje', ...m })); } });
+  const messages = officeMessages({ sdir, envelopes, okOrigin, log: (l) => appendLog(sdir, l), notify: (m) => { for (const c of clients) if (c.readyState === WebSocket.OPEN) c.send(JSON.stringify({ type: 'mensaje', ...m })); } });
 
   const server = http.createServer((req, res) => {
     const url = urlOf(req);

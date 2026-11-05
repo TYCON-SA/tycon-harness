@@ -25,7 +25,7 @@ trae el comando todavía y que se actualiza con `/tycon-harness`. No corras nada
 **Qué abre.** Con la dirección del sitio en el perfil del equipo y la máquina aprobada, abre la pestaña «Oficinas» del sitio,
 en la oficina de esta máquina. Sin sitio, con la máquina sin aprobar o si espera la aprobación, abre la página local;
 mientras espera la aprobación, la salida lo dice en una línea con la huella, que quien mantiene compara para aprobarla.
-`--local` abre siempre la página local.
+`--local` abre siempre la página local; `/office-local` corre eso mismo.
 
 ## Qué le mostrás
 
@@ -37,10 +37,10 @@ abierta», es la misma de antes. No resumas lo que dice la página: para eso est
 Mientras la página está abierta, un proceso local (uno solo por máquina, sólo en esta máquina y con un token) vigila
 las carpetas del arnés y le manda cada cambio a la página por WebSocket: una sesión que cambia de paso, espera algo o
 termina se ve sin volver a correr nada. No consulta nada cada tantos segundos; los pedidos de git, Azure DevOps y
-GitHub se preguntan a lo sumo una vez por minuto. Por el WebSocket la página no le puede mandar nada al proceso; lo único
-que le manda es un mensaje para una sesión, por su propia ruta (abajo). Sin la dirección del sitio en el perfil, el
-proceso se cierra solo a los 2 minutos sin la página abierta y a las 8 horas; con ella vive con las sesiones: se cierra a
-los 10 minutos sin ninguna y a las 12 horas. Cuando se cierra, la página dice «La oficina se cerró. Corré /office
+GitHub se preguntan a lo sumo una vez por minuto. La página no le puede mandar órdenes al proceso; lo único que le manda
+es un mensaje para una sesión, por su propia ruta (abajo). Sin la dirección del
+sitio en el perfil, el proceso se cierra solo a los 2 minutos sin la página abierta y a las 8 horas; con ella vive con las
+sesiones: se cierra a los 10 minutos sin ninguna y a las 12 horas. Cuando se cierra, la página dice «La oficina se cerró. Corré /office
 otra vez para verla al día.» y deja la última foto.
 
 ## Qué trae la página
@@ -78,23 +78,14 @@ mueven, muy de vez en cuando si nadie se mueve, y nada si no se ve.
 
 La persona se mueve según su estado: teclea cuando trabaja, mira la pantalla cuando corre pruebas o revisores, se queda
 quieta cuando está parada, espera reclinada cuando su story espera entrar a los repos, y señala cuando es la coordinadora.
-Levanta la mano, con un aro naranja que titila en el piso, cuando espera algo tuyo: su pantalla frenada esperándote (un
-cuadro de permiso o una pregunta abiertos, el plan de su ejecución esperando que lo apruebes, o su ejecución terminada
-esperando el ok para guardar), o una firma que pidió y sigue pendiente, en la terminal o por relevo a la coordinadora: cada
-tarjeta de «Tu firma» se une con la sesión que la pidió, y al tocarla, el detalle dice qué firma espera. Una firma de la
-terminal que no dice de qué sesión es queda como tarjeta tuya y no mueve a nadie. Si la sesión anotó que espera a la
-coordinadora (`marker.js doing … --waiting-for "la coordinadora"`), levanta la mano con un aro azul y dice «Espera a la
-Coordinadora». La mano baja cuando la firma deja de estar pendiente o la sesión cambia lo que espera. Si no espera nada,
-sigue sentada en su escritorio, con «Esperando» y un reloj de arena si anotó qué espera, o «Parada» si no anotó nada. Al
-tocarla se abre su detalle, con los pasos de su corrida. Abajo, los pendientes son un kanban de cinco columnas (Tu firma,
-En curso, Esperan entrar, Sin sesión, Hechos), con lo que quedó a medio camino plegado debajo. El panel de la pared cuenta
-esas columnas y al tocarlo las lista.
-
-Cada pendiente del tablero tiene su número, como `T-41`, en su tarjeta, en las tablas y en el detalle. «Buscar», junto a
-Tablas y Kanban, lo encuentra: escribí `T-41` o `41` y la oficina pasa al kanban, marca la tarjeta y la abre. Desde la
-terminal: `node scripts/tools/office.js --task T-41`. La línea de arriba del kanban se arma sola: lo que sale primero, con
-su hora, cuántas esperan tu firma y cuántas están trabadas. Las ventanas y los paneles se cierran todos igual: la X de
-arriba a la derecha, Escape (cierra la de arriba) o tocando afuera.
+Levanta la mano, con un aro naranja que titila en el piso, sólo cuando su pantalla está frenada esperándote: un cuadro de
+permiso o una pregunta abiertos, el plan de su ejecución esperando que lo apruebes, o su ejecución terminada esperando el ok
+para guardar. Una firma que se da en la terminal no la mueve: va como tarjeta a la columna «Tu firma» del kanban, y la
+persona sigue sentada en su escritorio, con «Esperando» y un reloj de arena si la sesión anotó qué espera, o «Parada» si
+no anotó nada. Al tocarla se abre su detalle, con
+los pasos de su corrida. Abajo, los pendientes son un kanban de cinco columnas (Tu firma, En curso, Esperan entrar, Sin
+sesión, Hechos), con lo que quedó a medio camino plegado debajo. El panel de la pared cuenta esas columnas y al tocarlo
+las lista.
 
 ## Escribirle a una sesión
 

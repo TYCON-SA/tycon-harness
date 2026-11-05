@@ -285,6 +285,8 @@ async function talkToSession(playwright) {
     fs.writeFileSync(path.join(sessions, `${sid}.json`), JSON.stringify({ pid: process.pid, sessionId: sid, name, status: 'idle', statusUpdatedAt: Date.now() }));
     append(sid, [{ type: 'user', timestamp: now(), origin: { kind: 'human' }, message: { role: 'user', content: `Hola ${name}` } }, { type: 'assistant', timestamp: now(), message: { content: [{ type: 'text', text: `Hola, soy ${name}.` }] } }]);
   }
+  // Alfa trae más mensajes con vos de los que entran en la ventana: así se ve si la lista se desplaza en su lugar
+  for (let i = 1; i <= 12; i += 1) append('s1', [{ type: 'user', timestamp: now(), origin: { kind: 'human' }, message: { role: 'user', content: `Pregunta ${i}: ¿cómo va el pedido?` } }, { type: 'assistant', timestamp: now(), message: { content: [{ type: 'text', text: `Respuesta ${i}: todavía corre.` }] } }]);
   fs.writeFileSync(path.join(sdir, 'sessions', 's3.json'), JSON.stringify({ schema: 1, session: 's3', tool: 'claude', name: 'Cata', waitingForOwner: true, waitingFor: 'una respuesta', pid: process.pid, updatedAt: now() }));
   fs.writeFileSync(path.join(sdir, 'sessions', 'cx1.json'), JSON.stringify({ schema: 1, session: 'cx1', tool: 'codex', name: 'Gama', pid: process.pid, busy: false, updatedAt: now() }));
   fs.mkdirSync(om.paths(sdir).watchers, { recursive: true });
@@ -354,6 +356,30 @@ async function talkToSession(playwright) {
     await page.waitForFunction(() => document.querySelector('.estadoMensaje') && document.querySelector('.estadoMensaje').textContent === 'Lo recibió.', null, { timeout: 8000 }).then(() => check(true, 'E1: dice «Lo recibió.»'), () => check(false, 'E1: dice «Lo recibió.»'));
     await page.waitForFunction(() => /Listo: el pedido 12 está verde\./.test(document.querySelector('.conVos') ? document.querySelector('.conVos').textContent : ''), null, { timeout: 15000 }).then(() => check(true, 'E1: la respuesta aparece en «Con vos»'), () => check(false, 'E1: la respuesta aparece en «Con vos»'));
     check(/Vos · desde la oficina/.test(await ventana.locator('.conVos').innerText()), 'E1: el mensaje va marcado «desde la oficina»');
+    // la lista «Con vos» se desplaza dentro de su lugar: el último mensaje queda a la vista, con 16 px o más hasta el pie
+    const vista = await page.evaluate(() => {
+      const ch = document.querySelector('#ventana .conVos .chat'), ult = ch && ch.lastElementChild, caja = ch && (ch.closest('.pestana') || ch.closest('.conVos')), pie = caja && caja.nextElementSibling;
+      if (!ult || !pie) return null;
+      const c = ch.getBoundingClientRect(), u = ult.getBoundingClientRect(), p = pie.getBoundingClientRect();
+      return { dentro: u.bottom <= c.bottom + 1 && u.top >= c.top - 1, encima: c.bottom > p.top + 1, aire: Math.round(p.top - c.bottom) };
+    });
+    check(Boolean(vista) && vista.dentro && !vista.encima && vista.aire >= 16, `E1: el último mensaje de «Con vos» se ve y queda aire hasta el pie (${JSON.stringify(vista)})`);
+    // con coordinadora, «Con vos» va dentro de una pestaña: la misma forma, con el estilo de la página, también se desplaza
+    const enPestana = await page.evaluate(() => {
+      const v = document.createElement('div'); v.className = 'ventana'; v.style.cssText = 'position:fixed;inset:0;visibility:hidden';
+      const p3 = document.createElement('div'); p3.className = 'panel3'; p3.style.height = '600px';
+      const pest = document.createElement('div'); pest.className = 'pestana';
+      const vos = document.createElement('div'); vos.className = 'conVos';
+      const ch = document.createElement('div'); ch.className = 'chat';
+      for (let i = 0; i < 30; i += 1) { const m = document.createElement('div'); m.className = 'msg'; m.textContent = `mensaje ${i}`; ch.append(m); }
+      const pie = document.createElement('p'); pie.className = 'm'; pie.textContent = 'pie';
+      vos.append(ch); pest.append(vos); p3.append(pest, pie); v.append(p3); document.body.append(v);
+      ch.scrollTop = ch.scrollHeight;
+      const c = ch.getBoundingClientRect(), u = ch.lastElementChild.getBoundingClientRect(), q = pie.getBoundingClientRect();
+      v.remove();
+      return { dentro: u.bottom <= c.bottom + 1, encima: c.bottom > q.top + 1, aire: Math.round(q.top - c.bottom) };
+    });
+    check(enPestana.dentro && !enPestana.encima && enPestana.aire >= 16, `E1: en la pestaña «Con vos» la lista también se desplaza y queda aire hasta el pie (${JSON.stringify(enPestana)})`);
     await shot('E1-mandar-y-respuesta');
 
     // E6: «aprobado» avisa antes de mandar, y la ventana no tiene nada que apruebe
