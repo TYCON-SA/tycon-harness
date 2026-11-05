@@ -374,7 +374,10 @@ herramienta lo pueden cerrar antes de tiempo.
 
 Una sesión que espera un turno lo anota con `marker.js doing "<qué hago>" --waiting-for "<qué espera>"`: esa espera le
 llega a la coordinadora y al dueño recién a las 2 horas, no a los 30 minutos, aunque el freno del cierre haya escalado.
-Esa espera anotada también protege a su ejecución de la poda por vieja durante 24 h desde que empezó a esperar.
+Esa espera anotada también protege a su ejecución de la poda por vieja durante 24 h desde que empezó a esperar. Con una
+ejecución del pipeline abierta va sin texto, `marker.js doing --waiting-for "<qué espera>"`, y la tarjeta de la historia
+dice qué espera. Cualquier otra nota ahí `marker.js` la niega: el paso ya dice qué hace y a qué hora termina, y una nota
+encima mostraría la historia en pausa. Dejar la historia por otro trabajo es otra sesión.
 
 **Una ejecución podada se recupera.** Si igual se podó («abandonada: más de N h sin tocarse»), su marcador quedó
 guardado: la sesión que la retoma corre `marker.js restore <sesión>` (la sesión podada), con la firma del dueño de

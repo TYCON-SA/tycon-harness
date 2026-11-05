@@ -386,7 +386,10 @@ close it early.
 
 A session waiting for a turn notes it with `marker.js doing "<what I do>" --waiting-for "<what it waits for>"`: that wait
 reaches the coordinator, and the owner only after 2 hours, not after 30 minutes, even if the closing gate escalated.
-That noted wait also keeps its run from being pruned as old, for 24 h since it started waiting.
+That noted wait also keeps its run from being pruned as old, for 24 h since it started waiting. With a pipeline run open
+it goes without text, `marker.js doing --waiting-for "<what it waits for>"`, and the story's card says what it waits
+for. `marker.js` refuses any other note there: the step already says what the run does and when it ends, and a note on
+top would show the story paused. Leaving the story for other work is another session.
 
 **A pruned run can be recovered.** If it was pruned anyway ("abandonada: más de N h sin tocarse"), its marker was
 saved: the session that takes it back runs `marker.js restore <session>` (the pruned session), with the owner's usual

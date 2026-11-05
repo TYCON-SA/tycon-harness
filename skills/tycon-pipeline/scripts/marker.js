@@ -65,6 +65,7 @@
  *                                                  y lleva más de 24 h sin tocarse
  *   marker.js doing "<qué hago>" | doing clear  → anota (o borra) qué hace esta sesión sin story, para /wip; NO es un
  *                                                  permiso. `doing clear-orphan <sid>`: la de otra sesión que no vive.
+ *                                                  Con una story abierta sólo anota `doing --waiting-for "<qué espera>"`.
  *   marker.js adopt-session <sessionId>         → ADOPTA el marker completo de otra
  *                                                  sesión (resume cross-session sin pérdida:
  *                                                  filesTouched/iterations/checks/dodRuntimeChecked
@@ -4547,12 +4548,19 @@ function cmdDoing(sub, arg) {
     process.stdout.write('doing: borrada\n');
     return;
   }
+  // con una ejecución abierta, su paso ya dice qué hace y a qué hora termina: una nota encima la muestra en pausa. Pasa
+  // sólo la espera de un turno sin texto, que es de la historia (la respetan las podas y el aviso al dueño)
+  const run = readMarker();
+  if (run && sub !== '--waiting-for') {
+    console.error(`marker.js doing: no se anotó nada — esta sesión tiene abierta la historia ${run.storyId}, y su paso ya dice qué hace y a qué hora termina; si deja la historia por otro trabajo, eso es otra sesión (si espera un turno: marker.js doing --waiting-for "<qué espera>")`);
+    process.exit(3);
+  }
   let prev = null;
   try { prev = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_e) { /* sin nota, o rota: no hay nada que conservar */ }
   const onlyHour = sub === '--until' || sub === '--waiting-for';
-  if (onlyHour && !(prev && prev.text)) { console.error('marker.js doing: sin una nota anotada, la hora va con su texto — uso: marker.js doing "<qué hago>" --until HH:MM'); process.exit(2); }
-  const text = onlyHour ? prev.text : String(sub || '').replace(/\s+/g, ' ').trim();
-  if (text.length < 8 || text.length > 200) {
+  if (onlyHour && !run && !(prev && prev.text)) { console.error('marker.js doing: sin una nota anotada, la hora va con su texto — uso: marker.js doing "<qué hago>" --until HH:MM'); process.exit(2); }
+  const text = run ? '' : onlyHour ? prev.text : String(sub || '').replace(/\s+/g, ' ').trim();
+  if (!run && (text.length < 8 || text.length > 200)) {
     console.error('marker.js doing: el texto va de 8 a 200 caracteres — uso: marker.js doing "<qué hago>" [--until HH:MM | --waiting-for "<qué espera>"] | doing clear');
     process.exit(2);
   }
@@ -4571,7 +4579,7 @@ function cmdDoing(sub, arg) {
   }
   const now = new Date().toISOString();
   // el mismo trabajo, anotado hace menos de un día: la primera hora prometida y el arranque de la misma espera se conservan
-  const same = prev && prev.text === text && Date.now() - Date.parse(prev.at) < 24 * 3600 * 1000;
+  const same = prev && (prev.text || '') === text && Date.now() - Date.parse(prev.at) < 24 * 3600 * 1000;
   const firstHourAt = (same && prev.firstHourAt) || (endAt && !(same && prev.endAt) ? new Date(Date.now()).toISOString() : null);
   // se compara la hora del reloj: la misma hora tipeada puede caer en otro día si pasó el corte de untilIso, y eso la repite, no la corrige
   const clock = (iso) => new Date(iso).toTimeString().slice(0, 5);
@@ -4579,11 +4587,11 @@ function cmdDoing(sub, arg) {
   const promisedAt = same && !corrects ? prev.promisedAt || prev.endAt || null : null;
   const waitingSince = !waitingFor ? null : (same && prev.waitingFor === waitingFor && prev.waitingSince) || now;
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(file, JSON.stringify({ text, at: now, ...(endAt ? { endAt } : {}), ...(promisedAt ? { promisedAt } : {}), ...(firstHourAt ? { firstHourAt } : {}), ...(corrects || (same && prev.hourCorrected) ? { hourCorrected: true } : {}), ...(waitingFor ? { waitingFor, waitingSince } : {}) }));
+  fs.writeFileSync(file, JSON.stringify({ ...(text ? { text } : {}), at: now, ...(endAt ? { endAt } : {}), ...(promisedAt ? { promisedAt } : {}), ...(firstHourAt ? { firstHourAt } : {}), ...(corrects || (same && prev.hourCorrected) ? { hourCorrected: true } : {}), ...(waitingFor ? { waitingFor, waitingSince } : {}) }));
   avisarOficina();
-  appendLog('doing.log', { kind: 'DOING_SET', text, ...(endAt ? { endAt } : {}), ...(waitingFor ? { waitingFor } : {}) });
+  appendLog('doing.log', { kind: 'DOING_SET', ...(text ? { text } : {}), ...(endAt ? { endAt } : {}), ...(waitingFor ? { waitingFor } : {}) });
   if (endAt) warnPastUntil('doing', endAt);
-  process.stdout.write(`doing: ${text}${endAt ? ` (termina ${process.argv[u + 1]})` : waitingFor ? ` (espera ${waitingFor})` : ''}\n`);
+  process.stdout.write(`doing: ${text || `la historia ${run.storyId}`}${endAt ? ` (termina ${process.argv[u + 1]})` : waitingFor ? ` (espera ${waitingFor})` : ''}\n`);
 }
 
 function cmdAdhocClearOrphan(sid) {
