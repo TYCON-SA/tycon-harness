@@ -13,9 +13,13 @@ const os = require('node:os');
 const path = require('node:path');
 const { test } = require('node:test');
 
-const LIB = path.join(__dirname, '..', 'lib');
+// La confirmación pide approvals.relay_session en el perfil del árbol del arnés, y el clon de trabajo no
+// lo trae: el guion y sus bibliotecas corren desde una copia del arnés con ese perfil.
+const COPIA = require('./lib/harness-copy.js').harnessCopy();
+fs.writeFileSync(path.join(COPIA, 'team-profile.json'), JSON.stringify({ approvals: { relay_session: 'coordinadora' } }));
+const LIB = path.join(COPIA, 'scripts', 'lib');
 const GUION = path.join(LIB, 'delegated-signing.js');
-const PIPELINE_LIB = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib');
+const PIPELINE_LIB = path.join(COPIA, 'skills', 'tycon-pipeline', 'scripts', 'lib');
 const oa = require(path.join(LIB, 'owner-approvals.js'));
 
 const COORDINADORA = 'ses-coord';

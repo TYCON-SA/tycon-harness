@@ -5279,11 +5279,11 @@ function cmdSaveCheck(argv) {
   process.exit(0);
 }
 
-// `designate-relay --approved-by "<el dev>" --quote "<su frase>"` designa ESTA sesión, en esta máquina, como la que
-// firma en nombre del dueño (el rol de `approvals.relay_session`). La frase nombra el rol («Esta sesión es la
-// coordinadora»). Queda un renglón en el gates.log; una designación nueva reemplaza a la anterior. La designación vale
-// cuando el dueño la confirma, con un click en la pestaña de la sesión o en su terminal (scripts/lib/delegated-signing.js
-// `confirm-designation`).
+// `designate-relay --approved-by "<el dev>" --quote "<su frase>"` designa ESTA sesión, en esta máquina, como la
+// coordinadora: la que ordena las sesiones. La frase nombra el rol (el de `approvals.relay_session` o, sin perfil,
+// «coordinadora»). Queda un renglón en el gates.log; una designación nueva reemplaza a la anterior. Con el rol del perfil,
+// además firma en nombre del dueño cuando él la confirma, con un click en la pestaña de la sesión o en su terminal
+// (scripts/lib/delegated-signing.js `confirm-designation`); sin él, las firmas siguen yendo a la ventana del dueño.
 function cmdDesignateRelay(argv) {
   const cw = require('./lib/critical-waivers.js');
   const { val } = opcionesDe(argv);
@@ -5300,7 +5300,8 @@ function cmdDesignateRelay(argv) {
     console.error(`🚫 marker.js designate-relay: no pude dejar la designación en el registro del arnés${quedo && quedo.error ? ` (${quedo.error})` : ''}.`);
     process.exit(2);
   }
-  console.error(`✅ Esta sesión (${e.sesion}) es la «${e.rol}» de esta máquina, designada por ${e.quien}. Vale cuando una persona la confirma: corré node scripts/lib/delegated-signing.js confirm-designation en esta pestaña y aprobala con un click, o confirmala en su terminal`);
+  if (r.firma) console.error(`✅ Esta sesión (${e.sesion}) es la «${e.rol}» de esta máquina, designada por ${e.quien}. Vale cuando una persona la confirma: corré node scripts/lib/delegated-signing.js confirm-designation en esta pestaña y aprobala con un click, o confirmala en su terminal`);
+  else console.error(`✅ Esta sesión (${e.sesion}) es la «${e.rol}» de esta máquina, designada por ${e.quien}: ordena esta máquina, y las firmas siguen yendo a la ventana de la persona${r.aviso ? ` (${r.aviso.replace(/: nadie reenvía$/, '')})` : ' (el perfil del equipo no tiene approvals.relay_session)'}.`);
   console.error(`   Antes de seguir, leé tus reglas completas: ${path.join(__dirname, '..', '..', '..', 'guides', 'coordination.md')}`);
   process.exit(0);
 }

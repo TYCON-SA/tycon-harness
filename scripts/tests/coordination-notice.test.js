@@ -113,9 +113,8 @@ test('T13 DeepReviewGate_OtherPassInFlight @story-8.122 @ac-13: un pase de otra 
 
 // ── Quiet without a coordinator (AC 20) and own errors (AC 21) ───────────────────────────────────────────────────
 
-test('T20 NoRole_NothingSaid @story-8.122 @ac-20: sin rol, sin designación o en otra sesión, ni el tope ni el pase dicen nada', () => {
+test('T20 NoRole_NothingSaid @story-8.122 @ac-20 @story-8.199 @ac-6: sin designación o en otra sesión, ni el tope ni el pase dicen nada (sin rol en el perfil, la designada ordena igual)', () => {
   for (const [label, t, sid] of [
-    ['sin rol', toy({ role: null }), COORD],
     ['sin designación', toy({ designated: null }), COORD],
     ['otra sesión', toy(), 'otra-sesion'],
   ]) {
@@ -155,7 +154,7 @@ test('Guide_Designated_Compact_ReadsTheRules: la designada, al compactar y al li
   for (const source of ['startup', 'resume', undefined]) assert.strictEqual(C.guideNotice({ ...t.opts, source }), null, `${source}: calla`);
 });
 
-test('Guide_NotDesignated_Silent: otra sesión, sin designación o sin rol, compactar y limpiar no dicen nada', () => {
+test('Guide_NotDesignated_Silent @story-8.199 @ac-6: otra sesión o sin designación, compactar y limpiar no dicen nada', () => {
   const t = toy();
   saved(t, COORD, 'Coordinadora');
   const transcript = saved(t, 'otra', 'Vecina');
@@ -163,7 +162,7 @@ test('Guide_NotDesignated_Silent: otra sesión, sin designación o sin rol, comp
   assert.strictEqual(C.guideNotice({ ...t.opts, sessionId: 'otra', source: 'clear', title: 'Vecina', transcript }), null, 'limpiar con otro título');
   assert.strictEqual(C.guideNotice({ ...t.opts, sessionId: 'otra', source: 'clear', transcript }), null, 'sin título no hay con qué reconocerla');
   assert.strictEqual(C.guideNotice({ ...t.opts, sessionId: 'otra', source: 'clear', title: 'Coordinadora' }), null, 'sin conversación tampoco');
-  for (const [label, o] of [['sin designación', toy({ designated: null })], ['sin rol', toy({ role: null })]]) {
+  for (const [label, o] of [['sin designación', toy({ designated: null })]]) {
     const f = saved(o, COORD, 'Coordinadora');
     assert.strictEqual(C.guideNotice({ ...o.opts, sessionId: 'nueva', source: 'clear', title: 'Coordinadora', transcript: f }), null, label);
     assert.strictEqual(C.guideNotice({ ...o.opts, sessionId: COORD, source: 'compact' }), null, `${label}, al compactar`);
@@ -671,6 +670,14 @@ const sl = require(path.join(ROOT, 'scripts', 'lib', 'signature-list.js'));
 const DS = require(path.join(ROOT, 'scripts', 'lib', 'delegated-signing.js'));
 const MARKER = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
 const INTERACTIVA = { kind: 'interactive' };
+
+// The confirmed coordinator needs approvals.relay_session in the profile of the harness tree; the list
+// asks for it with the account home only, so these cases read it from a harness folder of their own that has the key.
+const OA = require(path.join(ROOT, 'scripts', 'lib', 'owner-approvals.js'));
+const CON_CLAVE = fs.mkdtempSync(path.join(os.tmpdir(), 'coord-notice-clave-'));
+fs.writeFileSync(path.join(CON_CLAVE, 'team-profile.json'), JSON.stringify({ approvals: { relay_session: 'coordinadora' } }));
+const confirmadaSinClave = OA.coordinadoraConfirmada;
+OA.coordinadoraConfirmada = (casa, o = {}) => confirmadaSinClave(casa, { arnes: CON_CLAVE, ...o });
 
 /** Una máquina con la llave encendida. `coord`: con la coordinadora confirmada y viva; si no, sin designar. */
 function conLista({ coord = true } = {}) {
