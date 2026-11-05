@@ -400,13 +400,30 @@ test('T8 Advisors_y_DeepReviewGate_ConAdhoc — @story-8.174 @ac-7', () => {
   assert.equal(typeof g.run, 'boolean');
   assert.ok(g.reason);
   // mark-adversarial-result --adhoc: la constancia del pase en el registro del carril
-  const res = path.join(raiz, 'pase.json');
-  fs.writeFileSync(res, JSON.stringify({ confirmed: [], lentes: [{ lens: 'a', estado: 'medida' }], detalle: [] }));
+  // (8.215, T16) una lente limpia sin su prueba guardada en disco: el carril no anota el pase
+  const res = path.join(raiz, 'step-05b-adversarial.json');
+  const cazaA = (dir) => path.join(dir, 'step-05b-probes', 'caza-a');
+  fs.writeFileSync(res, JSON.stringify({ confirmed: [], lentes: [{ lens: 'a', estado: 'medida', count: 0, probe_dir: cazaA(raiz) }], detalle: [] }));
+  const sinPrueba = cli(MARKER, ['mark-adversarial-result', '0', '--adhoc', '--result', res, '--model', 'sonnet'], ctx);
+  assert.equal(sinPrueba.status, 2, sinPrueba.stdout);
+  assert.match(sinPrueba.stderr, /sin medir/);
+  assert.equal(leerCarril(state, 's8').pase, undefined, 'no anotó nada');
+  // (8.215, T20) con su prueba al lado del resultado, anota
+  fs.mkdirSync(cazaA(raiz), { recursive: true });
+  fs.writeFileSync(path.join(cazaA(raiz), 'COMO-SE-CORRIO.txt'), 'node probe.js\n→ ok\n');
   const m = cli(MARKER, ['mark-adversarial-result', '0', '--adhoc', '--result', res, '--model', 'sonnet'], ctx);
   assert.equal(m.status, 0, m.stderr);
   const a3 = leerCarril(state, 's8');
   assert.equal(a3.pase.huella, adhocBase.huellaDelCarril(a3));
   assert.equal(a3.pase.confirmados, 0);
+  // (8.215, T20) y sin runDir: el resultado y la prueba en la carpeta por defecto del guion
+  const sinCorrida = path.join(raiz, '.advisors', 'pipeline-runs', 'adversarial-sin-corrida');
+  fs.mkdirSync(cazaA(sinCorrida), { recursive: true });
+  fs.writeFileSync(path.join(cazaA(sinCorrida), 'COMO-SE-CORRIO.txt'), 'node probe.js\n→ ok\n');
+  const res2 = path.join(sinCorrida, 'step-05b-adversarial.json');
+  fs.writeFileSync(res2, JSON.stringify({ confirmed: [], lentes: [{ lens: 'a', estado: 'medida', count: 0, probe_dir: cazaA(sinCorrida) }], detalle: [] }));
+  const m2 = cli(MARKER, ['mark-adversarial-result', '0', '--adhoc', '--result', res2, '--model', 'sonnet'], ctx);
+  assert.equal(m2.status, 0, m2.stderr);
   // cambiar un archivo entre pedir los revisores y contarlos: la cuenta no escribe la constancia
   assert.equal(cli(PIPELINE, ['advisors', '--adhoc'], ctx).status, 0);
   const lanzados = JSON.parse(cli(PIPELINE, ['advisors', '--adhoc'], ctx).stdout).all;

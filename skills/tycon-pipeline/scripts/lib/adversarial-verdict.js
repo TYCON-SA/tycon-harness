@@ -139,13 +139,46 @@ function reglaPaseAjeno(adv, opts = {}) {
 // `tests/adversarial-unmeasured.test.js` T9 compara las dos.
 const SALIDA_APROBADA = 'la salida aprobada: un pase propio con agentes de Claude — cazadores con Sonnet, un verificador aparte por hallazgo que corre el código, juicio con Opus, nunca Fable (workflow-lite.js --agents-dir, step-08-adversarial-pass.md §«Sin Codex ni Workflow»)';
 
+// Sin la hora del lanzamiento, la prueba de una lente limpia no puede ser más vieja que esto respecto del resultado.
+const VENTANA_SIN_LANZAMIENTO_MS = 12 * 60 * 60 * 1000;
+
+const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return path.resolve(p); } };
+
 /**
- * ¿El resultado del pase revisó todo? Pura: recibe el objeto que devolvió el guion y devuelve
+ * Por qué una lente que el guion dio por medida no cuenta, o null si cuenta. Una lente con hallazgos tiene que traer
+ * en `detalle` exactamente esos hallazgos; una limpia, su prueba en `<carpeta del resultado>/step-05b-probes/caza-<lente>`
+ * con un `COMO-SE-CORRIO.txt` no vacío y no anterior a `desde`. Se garantiza que la prueba exista, sea de este pase y se
+ * pueda abrir; su contenido no se juzga.
+ */
+function motivoDeLente(l, { detalle, resultado, repo, desde }) {
+  const n = l.count;
+  if (!Number.isInteger(n) || n < 0) return 'conteo ilegible';
+  if (n > 0) return detalle.filter((d) => d && d.lens === l.lens).length === n ? null : 'el conteo no coincide con el detalle';
+  if (!resultado) return 'sin la ruta del resultado no se puede mirar la prueba guardada';
+  const esperada = real(path.join(path.dirname(resultado), 'step-05b-probes', `caza-${l.lens}`));
+  if (typeof l.probe_dir !== 'string' || !l.probe_dir || real(path.resolve(repo || process.cwd(), l.probe_dir)) !== esperada) {
+    return 'la prueba no está en la carpeta de la lente';
+  }
+  let st;
+  try { st = fs.statSync(path.join(esperada, 'COMO-SE-CORRIO.txt')); } catch (_) { return 'sin prueba guardada en disco'; }
+  if (!st.isFile() || st.size === 0) return 'sin prueba guardada en disco';
+  let piso = Number.isFinite(desde) ? desde : NaN;
+  if (!Number.isFinite(piso)) {
+    try { piso = fs.statSync(resultado).mtimeMs - VENTANA_SIN_LANZAMIENTO_MS; } catch (_) { piso = NaN; }
+  }
+  if (Number.isFinite(piso) && st.mtimeMs < piso) return 'la prueba es de un pase anterior';
+  return null;
+}
+
+/**
+ * ¿El resultado del pase revisó todo? Recibe el objeto que devolvió el guion y devuelve
  * `{ medido, confirmados, lentes_sin_medir, hallazgos_sin_veredicto, motivo }`. Medido = todas las lentes con su
  * cazador contestado y ningún hallazgo sin veredicto. Un resultado sin el campo `lentes` o con la lista vacía
  * (sin archivos que auditar) no está medido: «no revisé nada» nunca es «limpio».
+ * Con `opts` (`resultado`: la ruta absoluta del archivo; `repo`: contra qué se resuelve un `probe_dir` relativo;
+ * `desde`: la hora del lanzamiento en ms) mira además en disco lo que pide `motivoDeLente`.
  */
-function medicionDelResultado(obj) {
+function medicionDelResultado(obj, opts = {}) {
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) throw new Error('el resultado no es un objeto JSON');
   // Sin la lista de confirmados no se sabe cuántos hubo: no se cuenta 0 (un `<N>` de 0 pasaría como `listo`).
   if (!Array.isArray(obj.confirmed)) throw new Error('el resultado no trae la lista `confirmed`: no se sabe cuántos hallazgos confirmó');
@@ -157,11 +190,17 @@ function medicionDelResultado(obj) {
   if (!obj.lentes.length) {
     return { medido: false, confirmados, lentes_sin_medir: [], hallazgos_sin_veredicto: 0, motivo: 'el pase no revisó ninguna lente (sin archivos de código)' };
   }
-  const sinMedir = obj.lentes.filter((l) => !l || l.estado !== 'medida').map((l) => (l && l.lens) || '?');
   const detalle = Array.isArray(obj.detalle) ? obj.detalle : [];
+  const motivos = {};
+  for (const l of obj.lentes) {
+    if (!l || l.estado !== 'medida') { motivos[(l && l.lens) || '?'] = (l && l.motivo) || 'su cazador no contestó'; continue; }
+    const m = motivoDeLente(l, { detalle, resultado: opts.resultado, repo: opts.repo, desde: opts.desde });
+    if (m) motivos[l.lens || '?'] = m;
+  }
+  const sinMedir = Object.keys(motivos);
   const sinVeredicto = detalle.filter((d) => d && d.estado === 'sin-veredicto').length;
   const partes = [];
-  if (sinMedir.length) partes.push(`${sinMedir.length} lente(s) sin medir (${sinMedir.join(', ')}): su cazador no contestó`);
+  if (sinMedir.length) partes.push(`${sinMedir.length} lente(s) sin medir (${sinMedir.map((k) => `${k}: ${motivos[k]}`).join('; ')})`);
   if (sinVeredicto) partes.push(`${sinVeredicto} hallazgo(s) sin veredicto: su verificador no contestó`);
   return { medido: partes.length === 0, confirmados, lentes_sin_medir: sinMedir, hallazgos_sin_veredicto: sinVeredicto, motivo: partes.join('; ') || null };
 }

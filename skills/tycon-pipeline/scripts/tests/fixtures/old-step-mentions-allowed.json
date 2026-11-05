@@ -27,6 +27,7 @@
   { "path": "skills/tycon-pipeline/steps/step-10-live-check.md", "contains": "step-07c-dod-gate.md", "reason": "Es el nombre del archivo de la prueba en vivo en la carpeta de una ejecución; las ejecuciones ya guardadas lo usan." },
 
   { "path": "skills/tycon-pipeline/scripts/adversarial-verify.workflow.js", "contains": "step-05b-probes", "reason": "Es el nombre de la carpeta de las pruebas del pase adversarial en la carpeta de una ejecución; el pase la escribe con ese nombre." },
+  { "path": "skills/tycon-pipeline/scripts/lib/adversarial-verdict.js", "contains": "step-05b-probes", "reason": "Es el nombre de la carpeta de las pruebas del pase adversarial en la carpeta de una ejecución; al anotar el resultado se busca ahí la prueba de cada lente limpia." },
   { "path": "skills/tycon-pipeline/scripts/lib/config-lint.js", "contains": "tycon-merge-to-main step-00 / step-09b", "reason": "Habla de los pasos de otra skill (tycon-merge-to-main), que tiene su propia numeración." },
   { "path": "skills/tycon-pipeline/scripts/lib/steps.js", "contains": "pasos por número: 0..9 con los sub-pasos 0b, 0c, 5b, 7b, 7c", "reason": "Describe a propósito el esquema viejo de pasos por número, que esta tabla sabe leer." },
   { "path": "skills/tycon-pipeline/scripts/lib/steps.js", "contains": "«7b» no es un paso", "reason": "Es el aviso que se muestra sólo con un marcador viejo (sin stepScheme 2), que sigue hablando por número." },
