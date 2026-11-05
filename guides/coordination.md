@@ -160,7 +160,7 @@ pedido, y un cierre de más pierde la ejecución.
   sesión vive, la cierra ella. Si murió, el aviso da `marker.js clear-session <sesión>`, o `adhoc clear-orphan <sesión>`
   para un camino corto. Si su ejecución está perdida, da `clear-session <sesión> --lost`, que firma el dueño. Si no se
   sabe si vive (Codex no deja registro de sesión), lo dice y no da comando.
-- **En la oficina y en `/wip`** la sesión sale «Terminado, falta cerrar», con la story y desde cuándo, también pasado
+- **En la oficina y en `/wip`** la sesión sale «Terminado, falta cerrar», con la historia y desde cuándo, también pasado
   un día. No cuenta como trabajando.
 
 Qué hace la coordinadora: le pide a esa sesión que cierre después de su último push y de su último pedido. Si la sesión
