@@ -63,8 +63,12 @@ function repoConRama({ entro = false } = {}) {
   git(repo, 'checkout', '-qb', 'fix/rapido');
   fs.writeFileSync(path.join(repo, 'a.js'), '2\n');
   git(repo, 'commit', '-qam', 'arreglo');
+  // entra como entra un pedido: con un merge en main
   if (entro) {
-    git(repo, 'push', '-q', 'origin', 'fix/rapido:main');
+    git(repo, 'checkout', '-q', 'main');
+    git(repo, 'merge', '-q', '--no-ff', '-m', 'merge del pedido', 'fix/rapido');
+    git(repo, 'push', '-q', 'origin', 'main');
+    git(repo, 'checkout', '-q', 'fix/rapido');
     git(repo, 'fetch', '-q', 'origin');
   }
   // el origin que se lee es el de GitHub; el remoto local sólo sirve para que origin/main exista
@@ -204,6 +208,107 @@ test('T19 Vida_TresRespuestas @story-8.195 @ac-19 — vive, murió o no se sabe;
   fs.writeFileSync(path.join(claudeDir(C.home), 'sessions', 'rota.json'), '{');
   assert.match(L.liveness('dddddddd-4', { home: C.home }).unknown, /rota\.json/);
   assert.match(fs.readFileSync(path.join(SCRIPTS, 'marker.js'), 'utf8'), /require\('\.\/lib\/session-liveness\.js'\)/, 'marker.js usa la biblioteca');
+});
+
+test('T19c Arranque_CaminoCortoDeSesionMuerta_ClearOrphan @story-8.195 @ac-19 — el camino corto de una sesión que murió lleva adhoc clear-orphan', () => {
+  const C = casa();
+  const { adhoc } = repoConRama({ entro: true });
+  C.carril('dddddddd-muerta', adhoc);
+  C.sesion('dddddddd-muerta', false);
+  const m = F.machine({ home: C.home, stateDir: C.sdir, now: AHORA, env: ghCon([]), markerJs: '/x/marker.js' });
+  assert.match(m.lines.join('\n'), /camino corto «arreglo chico del aviso» \(sesión dddddddd\): tiene su rama ya en main y sigue abierto; su sesión ya no está: node \/x\/marker\.js adhoc clear-orphan dddddddd-muerta/);
+});
+
+test('T19d Arranque_IdRaroORutaConEspacios_ComandoSeguro @story-8.195 @ac-19 — un id que la consola expandiría no lleva comando; una ruta con espacios va entre comillas', () => {
+  const C = casa();
+  const raro = 'x$(touch pwn)';
+  C.marcador(raro, terminada());
+  C.marcador('-empieza', terminada());
+  C.marcador('eeeeeeee-muerta', terminada());
+  C.sesion('eeeeeeee-muerta', false);
+  const out = F.machine({ home: C.home, stateDir: C.sdir, now: AHORA, markerJs: '/Mis Cosas/marker.js' }).lines.join('\n');
+  assert.doesNotMatch(out, /clear-session .*\$\(/, 'el id raro no va en un comando');
+  assert.doesNotMatch(out, /clear-session -empieza/, 'un id que empieza con guion no va en un comando');
+  assert.match(out, /id de sesión raro: no doy comando/);
+  assert.match(out, /node '\/Mis Cosas\/marker\.js' clear-session eeeeeeee-muerta/);
+});
+
+test('T26b Avisos_LoQueNoSePudoMedir_SeDice @story-8.195 @ac-26 — carpeta del carril que ya no está, carpeta de estado ilegible y ejecución perdida sin poder mirar: se dicen, no son «nada abierto»', () => {
+  const C = casa();
+  const { repo, adhoc } = repoConRama();
+  C.carril('s-26b', adhoc);
+  fs.rmSync(repo, { recursive: true, force: true });
+  assert.match(F.stopLines({ sid: 's-26b', home: C.home, stateDir: C.sdir, now: AHORA })[0], /no pude ver si el pedido del camino corto está abierto \(la carpeta .* ya no está\)/);
+  // la carpeta de las ejecuciones que no se puede leer
+  const activos = path.join(C.sdir, 'active');
+  fs.chmodSync(activos, 0o000);
+  try {
+    if (process.getuid && process.getuid() !== 0) assert.match(F.machine({ home: C.home, stateDir: C.sdir, now: AHORA }).lines.join('\n'), /no pude leer las ejecuciones de la máquina \(/);
+  } finally { fs.chmodSync(activos, 0o755); }
+  // si no se puede mirar si está perdida, no da el comando de cierre
+  const pre = require('../lib/open-runs.js');
+  const original = pre.perdida;
+  pre.perdida = () => { throw new Error('copias ilegibles'); };
+  try {
+    C.marcador('ffffffff-x', terminada());
+    C.sesion('ffffffff-x', false);
+    const out = F.machine({ home: C.home, stateDir: C.sdir, now: AHORA }).lines.join('\n');
+    assert.match(out, /no pude ver si su ejecución está perdida \(copias ilegibles\): no doy comando/);
+    assert.doesNotMatch(out, /clear-session ffffffff-x/);
+  } finally { pre.perdida = original; }
+});
+
+test('T23b Foto_ConFalla_SeDiceEnWip @story-8.195 @ac-23 @ac-25 — la falla guardada en la foto vuelve como falla; sin foto, nada', () => {
+  const C = casa();
+  const { repo, adhoc } = repoConRama();
+  assert.equal(F.adhocFromPhoto(adhoc, { home: C.home, stateDir: C.sdir, now: AHORA }), null, 'sin foto: como hoy');
+  fs.writeFileSync(path.join(C.sdir, 'finished-open-prs.json'), JSON.stringify({ [`${repo}|fix/rapido`]: { at: AHORA - 60000, error: 'sin red' } }));
+  assert.deepEqual(F.adhocFromPhoto(adhoc, { home: C.home, stateDir: C.sdir, now: AHORA }), { error: 'sin red' });
+});
+
+test('T18b CaminoCorto_RamaQueSoloTrajoMain_NoEntro @story-8.195 @ac-18 — una rama sin nada propio que sólo trajo main no «entró»; una que entró con su merge, sí', () => {
+  const C = casa();
+  const { repo, adhoc } = repoConRama();
+  const env = { ...process.env, GIT_AUTHOR_DATE: FECHA, GIT_COMMITTER_DATE: FECHA, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
+  const git = (...a) => execFileSync('git', ['-c', 'maintenance.auto=false', '-C', repo, ...a], { encoding: 'utf8', env }).trim();
+  // otra rama, sin nada propio, puesta al día con un main que avanzó
+  git('checkout', '-q', 'main');
+  fs.writeFileSync(path.join(repo, 'b.js'), '1\n');
+  git('add', '.'); git('commit', '-qm', 'otro en main');
+  git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+  git('checkout', '-qb', 'fix/solo-main', adhoc.bases[repo].sha);
+  git('merge', '-q', '--ff-only', 'origin/main');
+  C.carril('s-18b', adhoc);
+  assert.deepEqual(F.stopLines({ sid: 's-18b', home: C.home, stateDir: C.sdir, now: AHORA, env: ghCon([]) }), [], 'sólo trajo main: no entró');
+  // la rama con su trabajo, entrada a main con un merge
+  git('checkout', '-q', 'main');
+  git('merge', '-q', '--no-ff', '-m', 'merge del pedido', 'fix/rapido');
+  git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+  git('checkout', '-q', 'fix/rapido');
+  assert.match(F.stopLines({ sid: 's-18b', home: C.home, stateDir: C.sdir, now: AHORA, env: ghCon([]) })[0], /tiene su rama ya en main/);
+});
+
+test('T25b Pedido_TopeRecortado_NoSeGuardaEnLaFoto @story-8.195 @ac-25 — con poco tiempo del tope compartido, la consulta no deja una falla en la foto', () => {
+  const C = casa();
+  const { adhoc } = repoConRama();
+  // el gh de mentira tarda más que lo que queda del tope compartido
+  const lento = path.join(C.home, 'gh-lento.js');
+  fs.writeFileSync(lento, `#!/usr/bin/env node\nsetTimeout(() => require(${JSON.stringify(FAKE_GH)}), 800);\n`, { mode: 0o755 });
+  const env = { ...ghCon([{ number: 7, state: 'open', head: { ref: 'fix/rapido' }, base: { ref: 'main' }, title: 'x', user: { login: 'a' } }]), TYCON_GH_CMD: lento };
+  const ctx = { foto: {}, now: AHORA, env, until: Date.now() + 300, cambio: false };
+  const r = F.adhocState(adhoc, ctx);
+  assert.ok(r && r.error && r.sinTiempo, JSON.stringify(r));
+  assert.deepEqual(ctx.foto, {}, 'nada a la foto: el próximo pregunta con su tope entero');
+});
+
+test('T19e Vida_RegistroRotoDeOtra_NoCambiaLaRespuesta @story-8.195 @ac-19 — un registro roto de otra sesión no tapa el registro vivo, se llame como se llame', () => {
+  for (const roto of ['a.json', 'z.json']) {
+    const C = casa();
+    C.sesion('mmmmmmmm-viva', true);
+    fs.writeFileSync(path.join(claudeDir(C.home), 'sessions', roto), '{rot');
+    assert.equal(L.liveness('mmmmmmmm-viva', { home: C.home }).alive, true, roto);
+    assert.match(String(L.liveness('nnnnnnnn-otra', { home: C.home }).unknown), /\{rot|JSON|Unexpected|Expected/, `${roto}: sin el suyo, «no se sabe»`);
+  }
 });
 
 test('T29 BorradoAutomatico_MarcadorViejo_SinCambios @story-8.195 @ac-29 — un marcador terminado de 25 h lo borra pruneStale como hoy', () => {

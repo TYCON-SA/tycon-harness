@@ -89,3 +89,14 @@ test('T20 Avisos_NadaAbierto_Callan @story-8.195 @ac-20 — sin nada terminado, 
   // apagado, calla
   assert.equal(C.correr({ TYCON_FINISHED_OPEN_NOTICE: '0' }).stdout, '');
 });
+
+test('T21 Avisos_NoCierranNada @story-8.195 @ac-21 — el aviso de arranque no toca los marcadores que lista', () => {
+  const C = casa();
+  C.sesion('gggggggg-muerta', false);
+  C.marcador('gggggggg-muerta', terminada('9.10'));
+  const f = path.join(C.sdir, 'active', 'gggggggg-muerta.json');
+  const antes = fs.readFileSync(f, 'utf8');
+  const r = C.correr();
+  assert.match(r.stdout, /clear-session gggggggg-muerta/, 'da el comando');
+  assert.equal(fs.readFileSync(f, 'utf8'), antes, 'y no lo corre');
+});

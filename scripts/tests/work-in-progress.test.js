@@ -260,6 +260,44 @@ test('T23 Oficina_CaminoCortoConPedido_LaTarjetaLoDice @story-8.195 @ac-23 — /
   assert.match(conFoto.rows[0].state, /^terminado, falta cerrar · pedido 41 abierto/);
   assert.strictEqual(conFoto.extra[0].finishedOpen, true);
   assert.strictEqual(conFoto.extra[0].kind, 'loose');
+  // la foto guardó una falla: la fila queda como hoy y la falla se dice al pie
+  fs.writeFileSync(path.join(m.state, 'finished-open-prs.json'), JSON.stringify({ [`${repo}|fix/rapido`]: { at: Date.parse(NOW) - 60000, error: 'sin red' } }));
+  const conFalla = run(m);
+  assert.match(conFalla.rows[0].state, /^Trabajo suelto/);
+  assert.ok(conFalla.unreadable.some((u) => /arreglo chico.*no pude ver si su pedido está abierto \(sin red\)/.test(u)), conFalla.unreadable.join(' | '));
+});
+
+test('T23d Oficina_EjecucionTerminadaYCaminoCorto_LosDos @story-8.195 @ac-22 @ac-23 — con la ejecución terminada y un camino corto con pedido en la misma sesión, la fila dice las dos cosas', () => {
+  const m = toyMachine();
+  const repo = path.join(m.root, 'repo');
+  const env = { ...process.env, GIT_AUTHOR_DATE: '2026-10-18T10:00:00', GIT_COMMITTER_DATE: '2026-10-18T10:00:00', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
+  const g = (...a) => execFileSync('git', ['-c', 'maintenance.auto=false', '-C', repo, ...a], { encoding: 'utf8', env }).trim();
+  fs.mkdirSync(repo);
+  g('init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(repo, 'a.js'), '1\n');
+  g('add', '.'); g('commit', '-qm', 'inicio');
+  const sha = g('rev-parse', 'HEAD');
+  g('checkout', '-qb', 'fix/rapido');
+  marker(m, 'ambas000-1', hecha(m, '5.7', minsBeforeNow(120)));
+  fs.writeFileSync(path.join(m.state, 'adhoc', 'ambas000-1.json'), JSON.stringify({ reason: 'arreglo chico activo', bases: { [repo]: { sha } }, declaredAt: minsBeforeNow(2), lastTouch: minsBeforeNow(2) }));
+  fs.writeFileSync(path.join(m.state, 'finished-open-prs.json'), JSON.stringify({ [`${repo}|fix/rapido`]: { at: Date.parse(NOW) - 60000, prs: [41] } }));
+  session(m, process.pid, 'ambas000-1', 'ambas');
+  const r = run(m);
+  assert.strictEqual(r.rows.length, 1, JSON.stringify(r.rows));
+  assert.match(r.rows[0].state, /^terminado, falta cerrar/);
+  assert.match(r.rows[0].meanwhile, /arreglo rápido «arreglo chico activo».*pedido 41 abierto/);
+  assert.match(r.extra[0].meanwhile, /pedido 41 abierto/);
+});
+
+test('T28 EnCurso_MitadDeCamino_SeVeComoHoy @story-8.195 @ac-28 — /wip: una ejecución a mitad de camino no lleva finishedOpen y dice su paso', () => {
+  const m = toyMachine();
+  marker(m, 'medio000-1', hecha(m, '5.9', minsBeforeNow(10), { stepsCompleted: TODOS.slice(0, 4), stepsPending: TODOS.slice(4), lastTouch: NOW }));
+  session(m, process.pid, 'medio000-1', 'medio');
+  const r = run(m);
+  assert.strictEqual(r.rows.length, 1);
+  assert.strictEqual(r.rows[0].state, 'Implementar');
+  assert.strictEqual(r.extra[0].kind, 'pipeline');
+  assert.notStrictEqual(r.extra[0].finishedOpen, true);
 });
 
 test('T11 JsonRaro_SeDice: JSON que no es objeto, sesión sin id o pid raro se dicen y no tumban', () => {

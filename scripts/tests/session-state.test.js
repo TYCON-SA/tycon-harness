@@ -753,4 +753,17 @@ test('T22 Oficina_TerminadaSinCerrar_LaTarjetaLoDice @story-8.195 @ac-22 — fro
     assert.strictEqual(f.sentence, 'Terminó la story 9.9: falta cerrarla.', sid);
     assert.strictEqual(f.step, null);
   }
+  // con código cambiado después de los revisores, la misma oración que la fila de /wip y la tarjeta
+  const cerro = new Date(ahora - HOUR).toISOString();
+  pipelineMarker(w, 's-rev', { done: STEPS.STEPS.filter((s) => !s.flag).map((s) => s.id), extra: {
+    lastTouch: cerro, stepTimings: { reviewers: { completedAt: new Date(ahora - 3 * HOUR).toISOString() }, findings: { completedAt: new Date(ahora - 3 * HOUR).toISOString() }, 'prepare-commit': { completedAt: cerro } },
+    fileEvents: [{ path: path.join(w.home, 'sin-repo', 'a.js'), ts: new Date(ahora - 2 * HOUR).toISOString(), code: true }],
+  } });
+  assert.strictEqual(lib().fromDisk(w.sdir, 's-rev', { home: w.home, now: ahora }).sentence, 'Terminó la story 9.9: falta revisar lo cambiado después de los revisores.');
+  // con un carril abierto en la misma sesión, lo que hace ahora va primero: su motivo y su hora
+  const until = new Date(ahora + HOUR).toISOString();
+  fs.writeFileSync(path.join(w.sdir, 'adhoc', 's-ter.json'), JSON.stringify({ reason: 'Arreglo el aviso del pedido', until }));
+  const f = lib().fromDisk(w.sdir, 's-ter', { home: w.home, now: ahora });
+  assert.strictEqual(f.sentence, 'Arreglo el aviso del pedido');
+  assert.strictEqual(f.endAt, until);
 });

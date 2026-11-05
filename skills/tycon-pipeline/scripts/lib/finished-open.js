@@ -21,12 +21,18 @@ const { liveness } = require('./session-liveness.js');
 const TOPE_MS = 5000;
 const FOTO_MS = 10 * 60000;
 const MAX_LINEAS = 5;
+const SIN_TIEMPO = `se acabó el tope de ${TOPE_MS / 1000} s`;
 const RAMAS_PRINCIPALES = ['main', 'master'];
 const PREFIJO = '🔔 [tycon-pipeline] ';
 const RAIZ = path.join(__dirname, '..', '..', '..', '..');
 const PLATFORM = path.join(RAIZ, 'scripts', 'lib', 'platform', 'platform.js');
 const WIP = path.join(RAIZ, 'scripts', 'tools', 'work-in-progress.js');
-const SID_SEGURO = /^[\w.-]+$/;
+// Un id que va en un comando para copiar: sin nada que la consola expanda, y sin un guion adelante (se leería como opción)
+const SID_SEGURO = /^[A-Za-z0-9_][\w.-]*$/;
+// Lo que viene de un nombre de archivo o de un marcador, en una línea y sin caracteres de control
+const legible = (s) => String(s).replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ');
+// Una ruta en un comando para copiar: entre comillas simples si tiene algo más que letras, números y separadores
+const rutaParaLaConsola = (p) => (/^[\w./~-]+$/.test(String(p)) ? String(p) : `'${String(p).replace(/'/g, `'\\''`)}'`);
 
 const corto = (sid) => String(sid).slice(0, 8);
 const dia = (ms) => new Date(ms).toISOString().slice(0, 10);
@@ -86,10 +92,12 @@ function pedirPedidos(repo, rama, { env = process.env, topeMs = TOPE_MS } = {}) 
   const w = require(WIP);
   const q = w.parseRemote(origin.out);
   if (!q.kind) return { error: `no sé consultar pedidos en ${q.host}` };
-  if (topeMs <= 0) return { error: `se acabó el tope de ${TOPE_MS / 1000} s`, sinTiempo: true };
+  if (topeMs <= 0) return { error: SIN_TIEMPO, sinTiempo: true };
   const r = spawnSync(process.execPath, [PLATFORM, 'change-request', 'list', '--repo', JSON.stringify(w.identityOf(q)),
     '--args', JSON.stringify({ sourceBranch: rama, checks: false, deadlineMs: Date.now() + topeMs })], { encoding: 'utf8', env, timeout: topeMs, windowsHide: true });
-  if (r.error) return { error: r.error.code === 'ETIMEDOUT' ? `se pasó del tope de ${TOPE_MS / 1000} s` : r.error.message };
+  // con el tope recortado por las consultas de antes, vencerlo es falta de tiempo, no una falla de la plataforma
+  if (r.error) return r.error.code === 'ETIMEDOUT' && topeMs < TOPE_MS ? { error: SIN_TIEMPO, sinTiempo: true }
+    : { error: r.error.code === 'ETIMEDOUT' ? `se pasó del tope de ${TOPE_MS / 1000} s` : r.error.message };
   let v;
   try { v = JSON.parse(r.stdout); } catch { return { error: `respuesta ilegible (${String(r.stderr || r.stdout).split('\n')[0].slice(0, 160) || `salió ${r.status}`})` }; }
   if (!v || v.ok !== true) return { error: `${(v && v.reason) || 'no_medido'}: ${String((v && v.detail) || 'sin detalle').split('\n')[0].slice(0, 160)}` };
@@ -104,17 +112,32 @@ function pedirPedidos(repo, rama, { env = process.env, topeMs = TOPE_MS } = {}) 
 function adhocState(adhoc, ctx) {
   const { reposDelCarril } = require('./adhoc-base.js');
   const bases = (adhoc && adhoc.bases) || {};
+  // lo que no se pudo mirar se dice: nunca se lee como «nada abierto»
   let falla = null;
+  let sinTiempo = false;
+  const anotar = (motivo) => { falla = falla || motivo; };
   for (const repo of reposDelCarril(adhoc)) {
-    if (!fs.existsSync(repo)) continue;
+    if (!fs.existsSync(repo)) { anotar(`la carpeta ${repo} ya no está`); continue; }
     const head = git(repo, ['rev-parse', '--abbrev-ref', 'HEAD']);
-    const rama = head.status === 0 ? head.out : '';
+    if (head.status !== 0) { anotar(`no pude leer la rama de ${repo}: ${head.err.split('\n')[0]}`); continue; }
+    const rama = head.out;
     if (!rama || rama === 'HEAD' || RAMAS_PRINCIPALES.includes(rama)) continue;
-    // ya entró: algo propio desde la base del carril, y la punta en origin/main
+    // ya entró: la punta está en origin/main (1 = no es ancestro; otra salida, falla), es distinta de la base del carril y
+    // no está en la línea propia de main desde la base. Una rama que sólo trajo main tiene la punta en esa línea: no
+    // entró; una que entró con su merge la tiene del otro lado del merge. Una que entró sin merge (por avance rápido) no
+    // se distingue de la que sólo trajo main, y no se afirma
     const base = bases[repo] && bases[repo].sha;
-    if (base) {
-      const propio = git(repo, ['rev-list', '--count', `${base}..HEAD`]);
-      if (propio.status === 0 && Number(propio.out) > 0 && git(repo, ['merge-base', '--is-ancestor', 'HEAD', 'origin/main']).status === 0) return { entro: true };
+    // sin main remoto no hay con qué comparar: como sin base, no se afirma (no es una falla)
+    const hayMain = git(repo, ['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/main']).status === 0;
+    if (base && hayMain) {
+      const punta = git(repo, ['rev-parse', 'HEAD']);
+      const entro = git(repo, ['merge-base', '--is-ancestor', 'HEAD', 'origin/main']);
+      if (punta.status !== 0) anotar(`no pude leer la punta de ${repo}: ${punta.err.split('\n')[0]}`);
+      else if (entro.status === 0 && !punta.out.startsWith(base) && !base.startsWith(punta.out)) {
+        const linea = git(repo, ['rev-list', '--first-parent', `${base}..origin/main`]);
+        if (linea.status !== 0) anotar(`no pude leer la línea de main de ${repo}: ${linea.err.split('\n')[0]}`);
+        else if (!linea.out.split('\n').includes(punta.out)) return { entro: true };
+      } else if (entro.status !== 0 && entro.status !== 1) anotar(`no pude ver si ${repo} entró a main: ${entro.err.split('\n')[0]}`);
     }
     const clave = `${repo}|${rama}`;
     let r = ctx.foto[clave];
@@ -123,10 +146,11 @@ function adhocState(adhoc, ctx) {
       // lo que no se preguntó por falta de tiempo no se guarda: el próximo lo pregunta
       if (!r.sinTiempo) { ctx.foto[clave] = r; ctx.cambio = true; }
     }
-    if (r.error) { falla = falla || r.error; continue; }
+    if (r.sinTiempo) sinTiempo = true;
+    if (r.error) { anotar(r.error); continue; }
     if (r.prs && r.prs.length) return { pedido: r.prs[0] };
   }
-  return falla ? { error: falla } : null;
+  return falla ? { error: falla, ...(sinTiempo ? { sinTiempo: true } : {}) } : null;
 }
 
 function contexto({ home, stateDir, now, env }) {
@@ -154,7 +178,7 @@ const lineaEjecucion = (e, now) => (e.revisar
   ? `la ejecución de la story ${e.storyId} tiene código cambiado después de los revisores${e.archivos.length ? ` (${e.archivos.slice(0, 5).join(', ')}${e.archivos.length > 5 ? ` y ${e.archivos.length - 5} más` : ''})` : ''}: falta revisarlo; \`pipeline.js next\` dice cómo`
   : `la ejecución de la story ${e.storyId} terminó${e.desde === null ? '' : ` hace ${hace(e.desde, now)}`} y sigue abierta: cerrala con \`marker.js clear\` después del último push y del último pedido`);
 const queTiene = (a) => (a.entro ? 'su rama ya en main' : `su pedido ${a.pedido} abierto`);
-const motivo = (adhoc) => String((adhoc && adhoc.reason) || '(sin motivo)').replace(/\s+/g, ' ').slice(0, 80);
+const motivo = (adhoc) => legible((adhoc && adhoc.reason) || '(sin motivo)').replace(/\s+/g, ' ').slice(0, 80);
 
 /**
  * Las líneas de la sesión `sid` para el cierre de turno: su ejecución terminada y su camino corto con pedido. Vacía si no
@@ -165,10 +189,10 @@ function stopLines({ sid, home = os.homedir(), stateDir, now = Date.now(), env }
   const lines = [];
   const safe = String(sid || '_nosession').replace(/[/\\]/g, '_');
   const m = leer(path.join(ctx.sdir, 'active', `${safe}.json`));
-  if (m.error) lines.push(`no pude leer la ejecución de la sesión ${sid} (${m.error})`);
+  if (m.error) lines.push(`no pude leer la ejecución de la sesión ${legible(sid)} (${m.error})`);
   else if (m.data) { const e = runState(m.data); if (e) lines.push(lineaEjecucion(e, now)); }
   const a = leer(path.join(ctx.sdir, 'adhoc', `${safe}.json`));
-  if (a.error) lines.push(`no pude leer el camino corto de la sesión ${sid} (${a.error})`);
+  if (a.error) lines.push(`no pude leer el camino corto de la sesión ${legible(sid)} (${a.error})`);
   else if (a.data) {
     const s = adhocState(a.data, ctx);
     if (s && s.error) {
@@ -194,36 +218,50 @@ function comoSeCierra(vida, comando) {
 function machine({ home = os.homedir(), stateDir, now = Date.now(), env, markerJs = 'marker.js', isAlive } = {}) {
   const ctx = contexto({ home, stateDir, now, env });
   const items = [];
-  const nombres = (dir) => { try { return fs.readdirSync(dir).filter((n) => n.endsWith('.json')).sort(); } catch { return []; } };
+  // una carpeta que no existe es «nada»; una que no se puede leer se dice
+  const nombres = (dir, que) => {
+    try { return fs.readdirSync(dir).filter((n) => n.endsWith('.json')).sort(); } catch (e) {
+      if (e.code !== 'ENOENT') items.push({ sid: null, tipo: 'ilegible', texto: `no pude leer ${que} de la máquina (${e.code || e.message})` });
+      return [];
+    }
+  };
   const vidaDe = (sid) => liveness(sid, { home, ...(isAlive ? { isAlive } : {}) });
-  for (const n of nombres(path.join(ctx.sdir, 'active'))) {
+  const node = `node ${rutaParaLaConsola(markerJs)}`;
+  // un renglón que falla no tumba a los demás: se dice cuál
+  const cadaUno = (n, que, hacer) => {
+    try { hacer(); } catch (e) { items.push({ sid: null, tipo: 'ilegible', texto: `no pude mirar ${que} ${legible(n)} (${String(e.message || e).split('\n')[0]})` }); }
+  };
+  for (const n of nombres(path.join(ctx.sdir, 'active'), 'las ejecuciones')) cadaUno(n, 'la ejecución', () => {
     const sid = path.basename(n, '.json');
     const m = leer(path.join(ctx.sdir, 'active', n));
-    if (m.error) { items.push({ sid, tipo: 'ilegible', texto: `no pude leer la ejecución de la sesión ${sid} (${m.error})` }); continue; }
+    if (m.error) { items.push({ sid, tipo: 'ilegible', texto: `no pude leer la ejecución de la sesión ${legible(sid)} (${m.error})` }); return; }
     const e = m.data && runState(m.data);
-    if (!e) continue;
-    const quien = `story ${e.storyId} (sesión ${corto(sid)})`;
-    if (e.revisar) { items.push({ sid, tipo: 'ejecucion', texto: `${quien}: cambió código después de los revisores; falta revisarlo (\`pipeline.js next\` en su sesión)` }); continue; }
-    let perdida = null;
-    try { perdida = require('./open-runs.js').perdida({ sid, cwd: m.data.repoPath, home }); } catch { perdida = null; }
-    const segura = SID_SEGURO.test(sid) ? sid : JSON.stringify(sid);
-    const cierre = perdida
-      ? { texto: `su ejecución está perdida: node ${markerJs} clear-session ${segura} --lost (lo firma el dueño)` }
-      : comoSeCierra(vidaDe(sid), `node ${markerJs} clear-session ${segura}`);
+    if (!e) return;
+    const quien = `story ${legible(e.storyId)} (sesión ${legible(corto(sid))})`;
+    if (e.revisar) { items.push({ sid, tipo: 'ejecucion', texto: `${quien}: cambió código después de los revisores; falta revisarlo (\`pipeline.js next\` en su sesión)` }); return; }
+    let cierre;
+    if (!SID_SEGURO.test(sid)) cierre = { texto: 'id de sesión raro: no doy comando' };
+    else {
+      let perdida = null;
+      let noSe = null;
+      try { perdida = require('./open-runs.js').perdida({ sid, cwd: m.data.repoPath, home }); } catch (err) { noSe = String(err.message || err).split('\n')[0]; }
+      cierre = noSe ? { texto: `no pude ver si su ejecución está perdida (${noSe}): no doy comando` }
+        : perdida ? { texto: `su ejecución está perdida: ${node} clear-session ${sid} --lost (lo firma el dueño)` }
+          : comoSeCierra(vidaDe(sid), `${node} clear-session ${sid}`);
+    }
     items.push({ sid, tipo: 'ejecucion', texto: `${quien}: terminó${e.desde === null ? '' : ` hace ${hace(e.desde, now)}`} y sigue abierta; ${cierre.texto}` });
-  }
-  for (const n of nombres(path.join(ctx.sdir, 'adhoc'))) {
+  });
+  for (const n of nombres(path.join(ctx.sdir, 'adhoc'), 'los caminos cortos')) cadaUno(n, 'el camino corto', () => {
     const sid = path.basename(n, '.json');
     const a = leer(path.join(ctx.sdir, 'adhoc', n));
-    if (a.error) { items.push({ sid, tipo: 'ilegible', texto: `no pude leer el camino corto de la sesión ${sid} (${a.error})` }); continue; }
+    if (a.error) { items.push({ sid, tipo: 'ilegible', texto: `no pude leer el camino corto de la sesión ${legible(sid)} (${a.error})` }); return; }
     const s = a.data && adhocState(a.data, ctx);
-    if (!s) continue;
-    const quien = `camino corto «${motivo(a.data)}» (sesión ${corto(sid)})`;
-    if (s.error) { items.push({ sid, tipo: 'sin-medir', texto: `${quien}: no pude ver si su pedido está abierto (${s.error})` }); continue; }
-    const segura = SID_SEGURO.test(sid) ? sid : JSON.stringify(sid);
-    const cierre = comoSeCierra(vidaDe(sid), `node ${markerJs} adhoc clear-orphan ${segura}`);
+    if (!s) return;
+    const quien = `camino corto «${motivo(a.data)}» (sesión ${legible(corto(sid))})`;
+    if (s.error) { items.push({ sid, tipo: 'sin-medir', texto: `${quien}: no pude ver si su pedido está abierto (${s.error})` }); return; }
+    const cierre = SID_SEGURO.test(sid) ? comoSeCierra(vidaDe(sid), `${node} adhoc clear-orphan ${sid}`) : { texto: 'id de sesión raro: no doy comando' };
     items.push({ sid, tipo: 'camino-corto', texto: `${quien}: tiene ${queTiene(s)} y sigue abierto; ${cierre.texto}` });
-  }
+  });
   if (ctx.cambio) escribir(ctx.fotoFile, ctx.foto);
   const lines = items.slice(0, MAX_LINEAS).map((i) => i.texto);
   if (items.length > MAX_LINEAS) lines.push(`y ${items.length - MAX_LINEAS} más`);
@@ -231,14 +269,15 @@ function machine({ home = os.homedir(), stateDir, now = Date.now(), env, markerJ
 }
 
 /**
- * Lo que /wip y la oficina saben de un camino corto sin salir a la red: de la foto vigente, { pedido } o { entro }, o
- * null (sin foto, sin pedido o vieja). La rama ya en main sí se mira con git.
+ * Lo que /wip y la oficina saben de un camino corto sin salir a la red: de la foto vigente, { pedido } o { entro }; la
+ * falla que la foto guardó, o la de git, como { error }; null sin foto (lo único que faltó fue preguntar) o sin pedido.
+ * La rama ya en main sí se mira con git.
  */
 function adhocFromPhoto(adhoc, { home = os.homedir(), stateDir, now = Date.now() } = {}) {
   const ctx = contexto({ home, stateDir, now });
-  const conFoto = { ...ctx, until: 0 };
-  const s = adhocState(adhoc, conFoto);
-  return s && !s.error ? s : null;
+  const s = adhocState(adhoc, { ...ctx, until: 0 });
+  if (s && s.error && s.sinTiempo && s.error === SIN_TIEMPO) return null;
+  return s ? (s.error ? { error: s.error } : s) : null;
 }
 
 module.exports = { runState, adhocState, stopLines, machine, adhocFromPhoto, hace, TOPE_MS, FOTO_MS, PREFIJO };

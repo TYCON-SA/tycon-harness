@@ -479,8 +479,8 @@ function realState(x, d, f) {
   const status = d && d.status;
   const busy = codex ? (typeof f.busy === 'boolean' ? f.busy : null) : status === 'busy' || status === 'shell' ? true : status === 'idle' ? false : null;
   if (x.kind === 'entering' || x.kind === 'stalled') return { estado: 'espera' };
-  // terminado sin cerrar: no trabaja ni espera a nadie; falta cerrarlo
-  if (x.finishedOpen) return { estado: 'cerrar' };
+  // terminado sin cerrar: falta cerrarlo. Si la sesión está ocupada, trabaja (en otra cosa, o en cerrarlo) y lo dice
+  if (x.finishedOpen) return busy === true ? { estado: 'trabajando' } : { estado: 'cerrar' };
   // terminada sin nada que guardar (`nothingToSave`: una marcada con el árbol limpio) no espera ningún ok
   if (x.kind === 'finished') return busy === false && !x.saveOk && !x.nothingToSave ? { estado: 'firma', espera: 'el ok para guardar' } : { estado: 'trabajando' };
   if (busy === false) {
@@ -1412,10 +1412,18 @@ function buildWip(opts = {}) {
       // sin tocar hace más de 1 h puede haber terminado: se dice desde cuándo
       const last = [a.lastTouch, a.declaredAt].map((v) => Date.parse(v)).find(Number.isFinite);
       const old = last !== undefined && nowMs - last > LOOSE_STALE_MS ? ` (sin tocar desde ${hhmm(last)})` : '';
-      rows[pipe.i].meanwhile = `arreglo rápido «${work}»${old}`;
+      // junto a una ejecución terminada sin cerrar, el pedido del carril también se dice: si no, la fila de la ejecución lo tapa
+      let openLane = '';
+      if (extra[pipe.i].finishedOpen) {
+        let o = null;
+        try { o = require(FINISHED_OPEN).adhocFromPhoto(a, { home, stateDir: sdir, now: nowMs }); } catch (e) { o = { error: e.message }; }
+        if (o && o.error) unreadable.push(`ad-hoc «${work}»: no pude ver si su pedido está abierto (${o.error})`);
+        else if (o) openLane = ` · ${o.entro ? 'su rama ya entró a main' : `pedido ${o.pedido} abierto`}, falta cerrar el camino corto`;
+      }
+      rows[pipe.i].meanwhile = `arreglo rápido «${work}»${old}${openLane}`;
       const end = Date.parse(a.until);
       const declaredAt = [a.untilAt, a.declaredAt].map((v) => Date.parse(v)).find(Number.isFinite);
-      Object.assign(extra[pipe.i], { meanwhile: String(a.reason || ''), meanwhileKind: 'loose', meanwhileAt: last === undefined ? null : last, meanwhileEnd: Number.isFinite(end) ? end : null, meanwhileDeclaredAt: declaredAt === undefined ? null : declaredAt });
+      Object.assign(extra[pipe.i], { meanwhile: `${String(a.reason || '')}${openLane}`, meanwhileKind: 'loose', meanwhileAt: last === undefined ? null : last, meanwhileEnd: Number.isFinite(end) ? end : null, meanwhileDeclaredAt: declaredAt === undefined ? null : declaredAt });
       continue;
     }
     const label = liveName(sid);
@@ -1424,7 +1432,8 @@ function buildWip(opts = {}) {
       const last = [a.lastTouch, a.declaredAt].map((v) => Date.parse(v)).find(Number.isFinite);
       // su pedido abierto o su rama ya en main, de la foto del aviso (sin salir a la red): terminado, falta cerrarlo
       let open = null;
-      try { open = require(FINISHED_OPEN).adhocFromPhoto(a, { home, stateDir: sdir, now: nowMs }); } catch (e) { unreadable.push(`ad-hoc «${work}»: no pude ver si su pedido está abierto (${e.message})`); }
+      try { open = require(FINISHED_OPEN).adhocFromPhoto(a, { home, stateDir: sdir, now: nowMs }); } catch (e) { open = { error: e.message }; }
+      if (open && open.error) { unreadable.push(`ad-hoc «${work}»: no pude ver si su pedido está abierto (${open.error})`); open = null; }
       const openPr = open ? (open.entro ? 'su rama ya entró a main' : `pedido ${open.pedido} abierto`) : null;
       const parts = openPr ? [`terminado, falta cerrar · ${openPr}`] : ['Trabajo suelto'];
       if (last !== undefined) parts.push(`sin tocar desde ${hhmm(last)}`);

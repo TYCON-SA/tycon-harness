@@ -25,16 +25,20 @@ function liveness(sid, { home = os.homedir(), isAlive = procesoVivo } = {}) {
     if (e.code === 'ENOENT') return { alive: false, sinRegistro: true };
     return { unknown: `${dir}: ${e.message}` };
   }
+  // se leen todos antes de decidir: un registro vivo de la sesión gana; uno ilegible (puede ser el suyo, a medio escribir)
+  // da «no se sabe» sólo si no apareció el vivo. Así la respuesta no depende del orden de la carpeta
   let muerta = null;
-  for (const n of names) {
+  let ilegible = null;
+  for (const n of names.sort()) {
     let s;
-    try { s = JSON.parse(fs.readFileSync(path.join(dir, n), 'utf8')); } catch (e) { return { unknown: `${path.join(dir, n)}: ${e.message}` }; }
+    try { s = JSON.parse(fs.readFileSync(path.join(dir, n), 'utf8')); } catch (e) { ilegible = ilegible || `${path.join(dir, n)}: ${e.message}`; continue; }
     if (!s || s.sessionId !== sid) continue;
     const pid = Number(s.pid);
-    if (!Number.isInteger(pid) || pid <= 0) return { unknown: `${path.join(dir, n)}: pid ilegible` };
+    if (!Number.isInteger(pid) || pid <= 0) { ilegible = ilegible || `${path.join(dir, n)}: pid ilegible`; continue; }
     if (isAlive(pid)) return { alive: true, pid };
-    muerta = { alive: false, pid };
+    muerta = muerta || { alive: false, pid };
   }
+  if (ilegible) return { unknown: ilegible };
   return muerta || { alive: false, sinRegistro: true };
 }
 
