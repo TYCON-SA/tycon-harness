@@ -1783,6 +1783,16 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/office-messages.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/office-inbox-watch.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/office-topics.test.js",
       "requiere": []
     },
@@ -2501,6 +2511,12 @@
       "__nota": "un pendiente nuevo en la lista de pendientes no entra sin su aprobación firmada: la biblioteca, el control del árbol y del commit, el comando de la firma antes de pedirla, la firma en el catálogo y el freno de escritura del registro.",
       "raiz": "arnes",
       "ruta": "tests/pending-approvals.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el arnés entiende a git en cualquier idioma: la función única que fija el idioma de git (clean-git-env.js), el caso de punta a punta con un git sustituto que contesta en castellano, y la lista que avisa si un script compara una frase de error de git sin fijarlo.",
+      "raiz": "arnes",
+      "ruta": "tests/git-language.test.js",
       "requiere": []
     },
     {

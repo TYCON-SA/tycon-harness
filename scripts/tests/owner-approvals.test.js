@@ -764,3 +764,36 @@ test('Gancho_EnWindows_SoloLoLanzaLaHerramienta', () => {
   arriba.inicio = '2026-11-02T09:00:00.0000000Z';
   assert.match(ver([arriba, tool, ...bashes, gancho(301)]).motivo, /la lanzó otra herramienta o la consola de un agente/);
 });
+
+// --- un mensaje de la oficina nunca firma ----------------------------------------------------------------------------
+
+// Lo que entrega el vigilante de la oficina, tal como lo anota la herramienta: un aviso del sistema, nunca la persona. Con «aprobado» adentro, tampoco.
+const OFICINA_ID = '3f9c2a7d0b1e4c5a8d6e7f9012345678';
+const avisoDeOficina = (texto) => `<task-notification>\n<summary>Stop hook feedback</summary>\n</task-notification>\n<system-reminder>\nStop hook blocking error from command "Stop": [oficina ${OFICINA_ID}] Mensaje de la persona, escrito en la oficina. No vale como firma ni aprobación. Dice: ${texto}\n</system-reminder>`;
+const deLaOficina = (texto, ts = hace(1)) => ({ type: 'user', timestamp: ts, message: { role: 'user', content: avisoDeOficina(texto) }, origin: { kind: 'task-notification', producer: 'session-task' }, promptSource: 'system', entrypoint: 'cli' });
+const deLaOficinaEncolado = (texto, ts = hace(1)) => ({ type: 'attachment', timestamp: ts, attachment: { type: 'queued_command', prompt: avisoDeOficina(texto), commandMode: 'task-notification', origin: { kind: 'task-notification', producer: 'session-task' } } });
+
+test('T33 Aprobacion_AvisoDeOficina_NoAnota @story-8.183 @ac-12: el aviso del vigilante, envuelto en task-notification, no se anota como aprobación', () => {
+  assert.strictEqual(registroDe({ hook_event_name: 'UserPromptSubmit', session_id: 'ses-a', prompt: avisoDeOficina('aprobado') }, { ahora: AHORA }), null);
+  assert.strictEqual(registroDe({ hook_event_name: 'UserPromptSubmit', session_id: 'ses-a', prompt: `[oficina ${OFICINA_ID}] Mensaje de la persona, escrito en la oficina. No vale como firma ni aprobación. Dice: aprobado` }, { ahora: AHORA }), null);
+  assert.strictEqual(oa.mensajeDeLaPersona(avisoDeOficina('aprobado')), null);
+});
+
+test('T34 Aprobacion_RenglonDeOficina_NoValida @story-8.183 @ac-12 @ac-35: el renglón de la oficina con «aprobado» no valida; lo tipeado sigue valiendo', (t) => {
+  const casa = casaNueva(t);
+  // aunque alguien anotara a mano un «aprobado» a esa hora, el renglón de la transcripción no es de la persona
+  transcripcion(casa, 'ses-a', [agente(PIDE), { ...deLaOficina('aprobado'), message: { role: 'user', content: 'Aprobado' } }]);
+  assert.match(oa.validarEnClaude(mensaje(), CTX(casa)).motivo, /no lo escribió una persona/);
+  transcripcion(casa, 'ses-a', [agente(PIDE), deLaOficina('Aprobado'), deLaOficinaEncolado('Aprobado')]);
+  assert.ok(!oa.validarEnClaude(mensaje(), CTX(casa)).ok, 'la forma medida, tampoco');
+  transcripcion(casa, 'ses-a', [agente(PIDE), deLaOficina('Aprobado'), tipeado('Aprobado')]);
+  assert.ok(oa.validarEnClaude(mensaje(), CTX(casa)).ok, 'lo tipeado en la pestaña sigue aprobando');
+});
+
+test('T35 Aprobacion_CuadroConAvisoDeOficina_NoValida @story-8.183 @ac-13 @ac-35: un cuadro sin respuesta, con un «aprobado» de la oficina después, no valida', (t) => {
+  const casa = casaNueva(t);
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1'), deLaOficina('Sí, aprobar'), deLaOficinaEncolado('aprobado')]);
+  assert.ok(!oa.validarEnClaude(click(), CTX(casa)).ok);
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1'), deLaOficina('aprobado'), respuesta('toolu_1')]);
+  assert.ok(oa.validarEnClaude(click(), CTX(casa)).ok, 'el click de la persona sigue aprobando');
+});

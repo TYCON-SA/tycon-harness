@@ -203,12 +203,18 @@ function isOwnerApprovalsRecord(p) { return OWNER_APPROVALS_DIR.test(norm(String
 // preguntarle a la persona. Lo escribe sólo `coordination.js`; como el registro de arriba, sólo en el estado de la cuenta
 const LAUNCHED_SESSIONS_FILE = /(^|\/)(?:\.tycon\/state|\.tycon-pipeline)\/coordination\/launched\.json$/i;
 function isLaunchedSessionsRecord(p) { return LAUNCHED_SESSIONS_FILE.test(norm(String(p || ''))); }
-/** ¿Es una constancia firmada que no se escribe a mano? `control-approvals`, `adversarial-skip-record`, `pending-approvals`, `owner-approvals`, `launched-sessions` o null. */
+// El buzón de la oficina (scripts/lib/office-messages.js): lo que la persona le manda a cada sesión, lo tomado, lo ya usado y
+// el registro. Lo escriben sólo el proceso de la oficina, el vigilante de cada sesión y `office-message.js verify`: escribirlo a
+// mano es fingir un mensaje de la persona, y borrar lo usado devuelve uno ya gastado. Sólo en el estado de la cuenta
+const OFFICE_MAILBOX = /(^|\/)(?:\.tycon\/state|\.tycon-pipeline)\/office\/(?:(?:inbox|tomados|usados|vigilantes)(\/|$)|messages\.jsonl(?:\.1)?$)/i;
+function isOfficeMailboxRecord(p) { return OFFICE_MAILBOX.test(norm(String(p || ''))); }
+/** ¿Es una constancia firmada que no se escribe a mano? `control-approvals`, `adversarial-skip-record`, `pending-approvals`, `owner-approvals`, `launched-sessions`, `office-mailbox` o null. */
 function signedRecordKind(p) {
   if (isControlApproval(p)) return 'control-approvals';
   if (isPendingApprovalsRecord(p)) return 'pending-approvals';
   if (isOwnerApprovalsRecord(p)) return 'owner-approvals';
   if (isLaunchedSessionsRecord(p)) return 'launched-sessions';
+  if (isOfficeMailboxRecord(p)) return 'office-mailbox';
   return isAdversarialSkipRecord(p) ? 'adversarial-skip-record' : null;
 }
 
@@ -249,6 +255,9 @@ function computeStoryGate({
   }
   if (isLaunchedSessionsRecord(filePath) || isLaunchedSessionsRecord(real)) {
     return { action: 'block', kind: 'launched-sessions', reason: 'escritura a mano del registro de las sesiones que abrió la coordinadora' };
+  }
+  if (isOfficeMailboxRecord(filePath) || isOfficeMailboxRecord(real)) {
+    return { action: 'block', kind: 'office-mailbox', reason: 'escritura a mano del buzón de la oficina' };
   }
   // El arreglo rápido que abrió la coordinadora por delegación no toca lo sensible: eso lo firma el dueño. Antes del
   // portón apagado y del pase de los repos del arnés, que es donde están esos archivos. La lista de lo sensible vive en el
@@ -477,6 +486,16 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       '  preguntarle a la persona. Si una pregunta tiene que llegarle, mandásela a la coordinadora.',
     ].filter((l) => l !== '').join('\n');
   }
+  if (r.kind === 'office-mailbox') {
+    return [
+      '⛔ el buzón de la oficina no se toca a mano',
+      viaLine.replace(/\n$/, ''),
+      `  ${f}`,
+      '  Lo escriben sólo la oficina (/office), el vigilante de cada sesión y `office-message.js verify`: escribirlo es fingir',
+      '  un mensaje de la persona, y borrar lo usado devuelve uno ya gastado. Para hablarle a una sesión, la persona le',
+      '  escribe desde la oficina o en su pestaña.',
+    ].filter((l) => l !== '').join('\n');
+  }
   if (r.kind === 'pending-approvals') {
     return [
       '⛔ el registro de aprobaciones de pendientes no se escribe a mano',
@@ -633,7 +652,7 @@ function storyByConsoleMessage(rutas, via) {
 
 module.exports = {
   markerDeleteMessage, storyByConsoleMessage,
-  computeStoryGate, blockMessage, textoDelTope, TOPE_DE_NOMBRES, cupoDelCarril, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, isOwnerApprovalsRecord, isLaunchedSessionsRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
+  computeStoryGate, blockMessage, textoDelTope, TOPE_DE_NOMBRES, cupoDelCarril, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, isOwnerApprovalsRecord, isLaunchedSessionsRecord, isOfficeMailboxRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
   STORY_INTENT_PATTERNS,
   DEFAULT_ADHOC_MAX_FILES, DELEGATED_ADHOC_MAX_FILES, cupoDelegado, cupoAlDeclarar, EXTRA_CODE_EXTS, NEVER_CODE_SEGMENTS, HARNESS_REPO_SEGMENTS, MARKER_JS,
 };

@@ -1,6 +1,6 @@
 'use strict';
 // work-in-progress.test.js — the /wip table: work in progress on this machine, built from toy state folders.
-// Nothing here reads the real HOME: every folder comes in by argument.
+// Nothing here reads the real HOME: every folder comes in by argument, the HOME too.
 // stable-data: T22 and T37 read the clock only to measure how long a hung query takes, and the program's cap for reading
 // repos reads it too (T22 sets it below zero); T24's and T39's commits fix their dates and turn maintenance off; dates come in
 // by --now.
@@ -24,7 +24,16 @@ function toyMachine() {
   const sessions = path.join(root, 'sessions');
   for (const d of ['active', 'adhoc', 'timing-history']) fs.mkdirSync(path.join(state, d), { recursive: true });
   fs.mkdirSync(sessions, { recursive: true });
-  return { root, state, sessions };
+  // its own HOME, never the real one: Claude Code's background log of a toy machine, with a retirement idle for hours
+  // that came back up, so nothing shows as closed
+  const home = path.join(root, 'home');
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+  const ago = (min) => new Date(Date.parse(NOW) - min * 60000).toISOString();
+  fs.writeFileSync(path.join(home, '.claude', 'daemon.log'), [
+    `[${ago(90)}] [bg] bg retire ef549cad: idle-prompt, idle 2h [low memory]`,
+    `[${ago(60)}] [bg] bg claimed-spare ef549cad (fleet)`,
+  ].join('\n') + '\n');
+  return { root, state, sessions, home };
 }
 
 function story(root, id, title) {
@@ -58,7 +67,7 @@ function history(m, name, mins) {
     JSON.stringify({ archivedAt: new Date(t).toISOString(), marker: { startedAt, stepTimings } }));
 }
 
-const run = (m, extra = {}) => buildWip({ stateDir: m.state, sessionsDir: m.sessions, now: NOW, ...extra });
+const run = (m, extra = {}) => buildWip({ home: m.home, stateDir: m.state, sessionsDir: m.sessions, now: NOW, ...extra });
 
 test('T1 Tabla_UnaFilaPorTrabajo: dos marcadores y un ad-hoc dan tres filas de cuatro columnas', () => {
   const m = toyMachine();
@@ -1834,3 +1843,37 @@ test('T211 Halfway_ReadAt_FromMemoryOrNow: la hora es la de la última lectura; 
   assert.strictEqual(run(m, { memory }).halfwayReadAt, 1234);
 });
 
+
+test('T212 Doing_WithOpenRun_Refused: con una historia abierta no anota texto ni hora; la espera de turno sola y clear pasan', () => {
+  const h = toyHome();
+  const sid = 'doi00000-9';
+  fs.writeFileSync(path.join(h.state, 'active', `${sid}.json`), JSON.stringify({ sessionId: sid, storyId: '8.183', startedAt: new Date().toISOString() }));
+  for (const args of [['corro la suite de la 8.183'], ['corro la suite de la 8.183', '--until', '23:30'], ['espero el turno de la suite', '--waiting-for', 'turno de la suite'], ['--until', '23:30']]) {
+    assert.throws(() => doing(h, sid, ...args), (e) => e.status === 3 && /historia 8\.183/.test(e.stderr) && /otra sesión/.test(e.stderr) && e.stderr.trim().split('\n').length === 1, args.join(' '));
+    assert.ok(!fs.existsSync(doingFile(h, sid)), args.join(' '));
+  }
+  assert.match(doing(h, sid, '--waiting-for', 'turno de la suite'), /historia 8\.183 \(espera turno de la suite\)/);
+  const note = JSON.parse(fs.readFileSync(doingFile(h, sid), 'utf8'));
+  assert.strictEqual(note.text, undefined);
+  assert.strictEqual(note.waitingFor, 'turno de la suite');
+  const lib = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib');
+  assert.strictEqual(require(path.join(lib, 'story-gate-io.js')).waitingTurn(h.state, sid).waitingFor, 'turno de la suite', 'las podas la siguen respetando');
+  // cerrada la historia sin `doing clear`, la espera sin texto no abre una fila «(sin texto)»
+  session(h, process.pid, sid, 'Pepe', { status: 'busy' });
+  const active = path.join(h.state, 'active', `${sid}.json`);
+  const runFile = fs.readFileSync(active, 'utf8');
+  fs.rmSync(active);
+  assert.ok(!run(h).rows.some((r) => /sin texto/.test(r.work)), run(h).text);
+  fs.writeFileSync(active, runFile);
+  doing(h, sid, 'clear');
+  assert.ok(!fs.existsSync(doingFile(h, sid)));
+  // un marcador ilegible no es «sin historia»: frena, y clear sigue andando
+  fs.writeFileSync(path.join(h.state, 'active', `${sid}.json`), '{roto');
+  assert.throws(() => doing(h, sid, 'corro la suite de la 8.183'), (e) => e.status === 2 && /no se puede leer/.test(e.stderr));
+  assert.ok(!fs.existsSync(doingFile(h, sid)));
+  doing(h, sid, 'clear');
+  // sin la historia, anota como siempre
+  fs.rmSync(path.join(h.state, 'active', `${sid}.json`));
+  assert.match(doing(h, sid, 'mido el banco de controles', '--until', '23:30'), /mido el banco/);
+  assert.strictEqual(JSON.parse(fs.readFileSync(doingFile(h, sid), 'utf8')).text, 'mido el banco de controles');
+});

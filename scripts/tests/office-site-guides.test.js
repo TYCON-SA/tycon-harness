@@ -4,6 +4,7 @@
  *
  * T26 Guia_PestanaRolesAltaYDatos   la sección «Oficinas» de la guía del sitio, en los dos idiomas
  * T27 ComandoOffice_DiceQueAbre     `commands/office.md` dice cuándo abre el sitio y cuándo la página local
+ * T27b ComandoOfficeLocal_AbreLaLocal `commands/office-local.md` corre --open --local y dice la dirección en una línea
  * T51 Guia_DiceQueViajaTodo         las dos guías y el comando dicen que viajan los mensajes y la conversación, y que el
  *                                   sitio los guarda sólo en memoria
  *
@@ -91,6 +92,13 @@ test('T27 ComandoOffice_DiceQueAbre — @story-8.171 @ac-21: cuándo abre el sit
   assert.match(c, /`--local`/);
   assert.match(c, /sin sitio[^.]*la página local/i);
   assert.match(c, /espera la aprobación[^.]*huella/);
+  assert.match(c, /`\/office-local` corre eso mismo/);
+});
+
+test('T27b ComandoOfficeLocal_AbreLaLocal — el comando corre --open --local y dice la dirección en una línea', () => {
+  const c = read('commands/office-local.md');
+  assert.match(c, /office\.js --open --local < \/dev\/null/);
+  assert.match(c, /Una línea: la dirección local/);
 });
 
 test('T51 Guia_DiceQueViajaTodo — @story-8.171 @ac-28: viajan los mensajes entre sesiones y la conversación, sólo en memoria', () => {

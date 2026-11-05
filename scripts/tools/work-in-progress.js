@@ -620,7 +620,7 @@ function git(dir, args, ctx) {
 
 // git en inglés (LC_ALL=C): los motivos «not a git repository» y «No such remote» se reconocen por su texto.
 function gitNow(dir, args, ms) {
-  const r = spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8', windowsHide: true, timeout: ms, env: { ...process.env, LC_ALL: 'C' } });
+  const r = spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8', windowsHide: true, timeout: ms, env: require('../lib/clean-git-env.js').idiomaFijo() });
   if (r.status === 0) return { out: r.stdout.trim() };
   if (r.error) return { err: r.error.code === 'ETIMEDOUT' ? 'git se pasó del tope leyendo los repos' : `git: ${r.error.message}`, status: null };
   return { err: oneLine(r.stderr || `git salió con ${r.status}`).slice(0, 200), status: r.status };
@@ -1457,6 +1457,8 @@ function buildWip(opts = {}) {
       else if (Number.isFinite(hour.endAt)) rows[looseRow].end = hourVerdict({ endAt: hour.endAt, hourAt: at, nowMs }) || declaredEnd(d.endAt, hour.endAt);
       continue;
     }
+    // una nota sin texto es la espera de una historia (`doing --waiting-for`): sin la historia abierta no dice qué hace
+    if (!pipe && !d.text) continue;
     if (pipe) {
       if (d.waitingFor) { Object.assign(extra[pipe.i], { waitingFor: String(d.waitingFor), waitingSince: hourOfNote(d).waitingSince }); rows[pipe.i].end = waitingEnd(d); }
       else {
@@ -1466,6 +1468,8 @@ function buildWip(opts = {}) {
         const isOfRun = (run.storyId && String(d.text || '').includes(run.storyId)) || (Number.isFinite(runEnd) && runEnd < nowMs);
         if (isOfRun && Number.isFinite(Date.parse(d.endAt)) && Number.isFinite(at) && !(at < run.hourAt) && !(at < run.runStartedAt)) Object.assign(run, { noteEnd: Date.parse(d.endAt), noteEndAt: at });
       }
+      // la espera de un turno sin texto propio es de la historia, no otro trabajo encima: no la deja en pausa
+      if (d.waitingFor && !d.text && !d.endAt) continue;
       const old = Number.isFinite(at) && nowMs - at > LOOSE_STALE_MS ? ` (sin tocar desde ${hhmm(at)})` : '';
       // la nota más nueva que el arreglo es lo de ahora: un carril viejo no la tapa
       const priorAt = extra[pipe.i].meanwhileAt;

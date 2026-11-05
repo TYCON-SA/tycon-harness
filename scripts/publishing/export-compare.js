@@ -277,8 +277,8 @@ function snapshot(argv) {
     meta.shas = { arnes: harnessSha };
     // «el archivo no está en ese commit» es dato (nota); cualquier otro fallo de git (permisos, «dubious ownership», un
     // sha que no existe, git ausente) es no poder sacar la foto: nunca una foto que parece completa. Git en inglés
-    // (LC_ALL=C) para poder leer el motivo.
-    const shown = spawnSync('git', ['-C', repos.arnes, 'show', `${harnessSha}:${CEILING}`], { encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' } });
+    // para poder leer el motivo.
+    const shown = spawnSync('git', ['-C', repos.arnes, 'show', `${harnessSha}:${CEILING}`], { encoding: 'utf8', env: require('../lib/clean-git-env.js').idiomaFijo() });
     const gitSaid = String(shown.stderr || '').trim();
     if (shown.status === 0) {
       let ceiling;

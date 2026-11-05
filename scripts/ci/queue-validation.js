@@ -152,7 +152,7 @@ const isAzure = (url) => { const p = serverAndPath(url); return !!p && /(^|\.)(d
  * es el del público, y con eso si antes de encolar hay que mirar los pedidos abiertos).
  */
 function readOrigin() {
-  const env = Object.assign({}, process.env, { LC_ALL: 'C', LANGUAGE: 'C' });
+  const env = require('../lib/clean-git-env.js').idiomaFijo();
   try {
     return { ok: true, url: execFileSync('git', ['remote', 'get-url', 'origin'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env }).trim() };
   } catch (e) {
