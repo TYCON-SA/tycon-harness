@@ -790,6 +790,32 @@ test('T34 Aprobacion_RenglonDeOficina_NoValida @story-8.183 @ac-12 @ac-35: el re
   assert.ok(oa.validarEnClaude(mensaje(), CTX(casa)).ok, 'lo tipeado en la pestaña sigue aprobando');
 });
 
+// Los renglones reales de una sesión de la extensión de VS Code (2.1.310) despertada por el vigilante con «Aprobado»: el
+// primero, lo tipeado (`promptSource: sdk`); el segundo, el turno despertado. Medidos con el binario de la extensión.
+const DE_LA_EXTENSION = fs.readFileSync(path.join(__dirname, 'fixtures', 'office-wake-vscode-2.1.310.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+const despertadoEnLaExtension = (o = {}) => ({ ...DE_LA_EXTENSION[1], timestamp: hace(1), ...o });
+
+test('T6 Aprobacion_AvisoDeOficinaEnLaExtension_NoValida @story-8.213 @ac-8: el turno despertado en VS Code no aprueba ni contesta un cuadro; lo tipeado y el click sí', (t) => {
+  const real = DE_LA_EXTENSION[1];
+  assert.strictEqual(real.entrypoint, 'claude-vscode');
+  assert.strictEqual(real.origin.kind, 'task-notification');
+  assert.match(real.message.content, /\[oficina [0-9a-f]{32}\][^]*Dice: Aprobado/);
+  const casa = casaNueva(t);
+  transcripcion(casa, 'ses-a', [agente(PIDE), despertadoEnLaExtension()]);
+  assert.ok(!oa.validarEnClaude(mensaje(), CTX(casa)).ok, 'el renglón real, tal cual');
+  transcripcion(casa, 'ses-a', [agente(PIDE), despertadoEnLaExtension({ message: { role: 'user', content: 'Aprobado' } })]);
+  assert.match(oa.validarEnClaude(mensaje(), CTX(casa)).motivo, /no lo escribió una persona/, 'con el texto a secas');
+  transcripcion(casa, 'ses-a', [agente(PIDE), despertadoEnLaExtension({ message: { role: 'user', content: 'Aprobado' }, promptSource: 'sdk' })]);
+  assert.match(oa.validarEnClaude(mensaje(), CTX(casa)).motivo, /no lo escribió una persona/, 'el peor caso: con la fuente de lo tipeado en la extensión');
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1'), despertadoEnLaExtension()]);
+  assert.ok(!oa.validarEnClaude(click(), CTX(casa)).ok, 'un cuadro sin respuesta con el renglón real después');
+  // lo que sigue valiendo en la extensión
+  transcripcion(casa, 'ses-a', [agente(PIDE), despertadoEnLaExtension(), { ...tipeado('Aprobado'), entrypoint: 'claude-vscode', promptSource: 'sdk' }]);
+  assert.ok(oa.validarEnClaude(mensaje(), CTX(casa)).ok, 'lo tipeado en la pestaña de VS Code sigue aprobando');
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1'), despertadoEnLaExtension(), respuesta('toolu_1')]);
+  assert.ok(oa.validarEnClaude(click(), CTX(casa)).ok, 'el click de la persona sigue aprobando');
+});
+
 test('T35 Aprobacion_CuadroConAvisoDeOficina_NoValida @story-8.183 @ac-13 @ac-35: un cuadro sin respuesta, con un «aprobado» de la oficina después, no valida', (t) => {
   const casa = casaNueva(t);
   transcripcion(casa, 'ses-a', [cuadro('toolu_1'), deLaOficina('Sí, aprobar'), deLaOficinaEncolado('aprobado')]);

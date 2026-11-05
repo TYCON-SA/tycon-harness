@@ -12,7 +12,8 @@
  * Al limpiar la conversación (`/clear`) la sesión cambia de id: el vigilante nuevo despide a los de ids viejos del mismo
  * proceso de la herramienta.
  *
- * Sólo se arma si lo lanzó la herramienta, en una sesión de terminal o de fondo (la entrada `cli`): lanzado por
+ * Sólo se arma si lo lanzó la herramienta, en una entrada de `WAKE_ENTRYPOINTS` (una sesión de terminal o de fondo, o la
+ * extensión de VS Code): lanzado por
  * otro proceso (un laboratorio, el chequeo de salud, el banco), o bajo `claude -p` o el SDK, que esperan a que el gancho
  * termine para salir, sale enseguida con 0.
  *
@@ -40,6 +41,17 @@ const numEnv = (name, dflt) => { const n = Number(process.env[name]); return Num
 // El nombre del proceso de la herramienta tal como lo da `ps`: `claude`, con su ruta, `claude.exe`, o `claude bg-spare` en
 // una sesión de fondo.
 const isToolName = (comm) => /(^|\/)claude(\.exe)?(\s|$)/.test(String(comm || '').trim());
+
+// Las entradas de la herramienta donde un gancho de fondo despierta a la sesión. Cada una entra con su medición:
+// - `cli`: una sesión de terminal y una de fondo.
+// - `claude-vscode`: la extensión de VS Code; su proceso vive entre turnos y el gancho la despierta.
+// Afuera `sdk-cli` y `sdk-ts` (`claude -p` y el SDK), que esperan al gancho de fondo para salir y se quedarían colgados.
+// No es la lista de las entradas donde alguien lee los avisos del arranque (claude-versions.js): cada una cambia con su medición.
+const WAKE_ENTRYPOINTS = ['cli', 'claude-vscode'];
+
+function wakes(entry = require(path.join(__dirname, '..', 'lib', 'claude-versions.js')).entrypointOf()) {
+  return WAKE_ENTRYPOINTS.includes(entry);
+}
 
 // El proceso de la herramienta que lanzó este gancho: el padre, o el padre de una consola intermedia. La herramienta lanza el
 // gancho directo; quien lo lanza desde más lejos (un laboratorio, el chequeo de salud, una prueba) espera a que termine y no
@@ -123,8 +135,7 @@ async function run() {
   let event;
   try { event = JSON.parse(fs.readFileSync(0, 'utf8') || '{}'); } catch { return 0; }
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(String(event.session_id || ''))) return 0;
-  // medido: `cli` en una sesión de terminal y en una de fondo; `sdk-cli` bajo `claude -p`, que se quedaría esperando
-  if (require(path.join(__dirname, '..', 'lib', 'claude-versions.js')).entrypointOf() !== 'cli') return 0;
+  if (!wakes()) return 0;
   const tool = toolPid();
   // TYCON_OFFICE_WATCH_ANY_PARENT=1: arma el vigilante aunque no lo haya lanzado la herramienta (sólo las pruebas del vigilante)
   if (tool === null && process.env.TYCON_OFFICE_WATCH_ANY_PARENT !== '1') return 0;
@@ -137,4 +148,4 @@ if (require.main === module) {
   run().then((code) => { process.exit(code); }, () => { process.exit(0); });
 }
 
-module.exports = { toolPid, isToolName };
+module.exports = { toolPid, isToolName, WAKE_ENTRYPOINTS, wakes };

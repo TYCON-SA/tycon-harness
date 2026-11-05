@@ -98,7 +98,9 @@ Le llega por un vigilante de fondo que cada sesión arma al arrancar y al cerrar
 despierta si está quieta, o lo lee al terminar el paso si está trabajando. La herramienta lo anota como aviso del sistema,
 nunca como la persona, y la sesión lo comprueba con `office-message.js verify` antes de actuar. Por eso **un mensaje de la
 oficina nunca firma, aprueba ni contesta un cuadro**, ni siquiera un «aprobado»: la ventana avisa antes de mandarlo, y un
-cuadro abierto sigue esperando tu click. Lo que no se puede, la ventana lo dice: una sesión sin vigilante (abierta antes de
+cuadro abierto sigue esperando tu click. Reciben las sesiones de terminal, las de fondo y las de la extensión de VS Code;
+`claude -p` y el SDK no, porque esperan al vigilante para salir, y otro editor tampoco mientras no esté medido. Lo que no
+se puede, la ventana lo dice: una sesión sin vigilante (abierta antes de
 instalar, o en Windows, donde no está medido), una de Codex, un mensaje que no tomó nadie en 10 segundos («No le llegó», y
 el texto vuelve al campo), cinco esperando, o la función apagada (`TYCON_OFFICE_MESSAGES=0`). Cada intento queda en
 `<estado>/office/messages.jsonl`, con las claves tapadas; el sitio de la organización no recibe nada de esto.

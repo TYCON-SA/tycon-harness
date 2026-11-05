@@ -168,6 +168,53 @@ test('T57 Regla_SinVigilantePosible_NoHabla @story-8.183 @ac-10 @ac-40: lanzada 
   assert.match(run(ruleAsTool).stdout, /\[oficina <id>\]/);
 });
 
+test('T3 Regla_EnLaExtension_Habla @story-8.213 @ac-2 @ac-3: en una sesión de VS Code lanzada por la herramienta, la regla sale', () => {
+  const r = spawnSync(process.execPath, [RULE], { encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'SessionStart', session_id: 's1' }), env: { ...process.env, TYCON_OFFICE_MESSAGES: '', CLAUDE_CODE_ENTRYPOINT: 'claude-vscode', TYCON_OFFICE_WATCH_ANY_PARENT: '1' } });
+  assert.strictEqual(r.status, 0);
+  assert.match(r.stdout, /\[oficina <id>\]/);
+  assert.match(r.stdout, /office-message\.js verify <id>/);
+});
+
+test('T4 Regla_OtraEntrada_NoHabla @story-8.213 @ac-5 @ac-9 @ac-3: otra entrada, o VS Code sin la herramienta arriba, no imprime nada; y la regla sigue la lista del vigilante', () => {
+  const run = (env) => spawnSync(process.execPath, [RULE], { encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'SessionStart', session_id: 's1' }), env: { ...process.env, TYCON_OFFICE_MESSAGES: '', ...env } });
+  for (const entry of ['sdk-cli', 'sdk-ts', '', 'claude-otro-editor']) {
+    const r = run({ CLAUDE_CODE_ENTRYPOINT: entry, TYCON_OFFICE_WATCH_ANY_PARENT: '1' });
+    assert.strictEqual(r.status, 0, entry || 'sin la variable');
+    assert.strictEqual(r.stdout + r.stderr, '', entry || 'sin la variable');
+  }
+  const notTool = run({ CLAUDE_CODE_ENTRYPOINT: 'claude-vscode', TYCON_OFFICE_WATCH_ANY_PARENT: '' });
+  assert.strictEqual(notTool.status, 0);
+  assert.strictEqual(notTool.stdout + notTool.stderr, '', 'VS Code lanzada por la prueba, no por la herramienta');
+
+  // la misma lista: una entrada agregada a la del vigilante hace hablar a la regla, y sacada la calla
+  const { WAKE_ENTRYPOINTS } = require(path.join(path.dirname(RULE), 'office-inbox-watch.js'));
+  const { main } = require(RULE);
+  const toy = Object.fromEntries([['CLAUDE_CODE_ENTRYPOINT', 'claude-prueba'], ['TYCON_OFFICE_WATCH_ANY_PARENT', '1'], ['TYCON_OFFICE_MESSAGES', ''], ['TYCON_EVAL_SANDBOX', '']]);
+  const saved = Object.fromEntries(Object.keys(toy).map((k) => [k, process.env[k]]));
+  const write = process.stdout.write;
+  let out = '';
+  try {
+    Object.assign(process.env, toy);
+    process.stdout.write = (s) => { out += s; return true; };
+    WAKE_ENTRYPOINTS.push('claude-prueba');
+    main();
+    const withIt = out;
+    out = '';
+    WAKE_ENTRYPOINTS.splice(WAKE_ENTRYPOINTS.indexOf('claude-prueba'), 1);
+    main();
+    process.stdout.write = write;
+    assert.match(withIt, /\[oficina <id>\]/, 'con la entrada en la lista del vigilante, la regla habla');
+    assert.strictEqual(out, '', 'sin la entrada, la regla se calla');
+  } finally {
+    process.stdout.write = write;
+    const i = WAKE_ENTRYPOINTS.indexOf('claude-prueba');
+    if (i >= 0) WAKE_ENTRYPOINTS.splice(i, 1);
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
+  }
+});
+
 test('T28 Regla_VerifyRechazado_DiceNoActuar @story-8.183 @ac-32: la regla y las dos guías dicen que no se actúa y se avisa a la persona', () => {
   const rule = require(RULE).RULE;
   assert.match(rule, /si verify lo rechaza, no actúes y avisale a la persona/i);
