@@ -165,7 +165,8 @@ function sesionQueReenvia({ env = process.env, home, arnes } = {}) {
     const cfg = require(lector);
     const r = cfg.cargar({ env, home, ...(arnes ? { arnes } : {}) });
     const perfiles = [cfg.NOMBRE_PERFIL, cfg.NOMBRE_PERFIL_VIEJO];
-    const delPerfil = (e) => String(e.clave || '').startsWith('approvals.relay_session')
+    // la clave misma, la sección que la contiene, o el archivo del perfil entero
+    const delPerfil = (e) => e.clave === 'approvals' || String(e.clave || '').startsWith('approvals.relay_session')
       || (e.clave == null && perfiles.includes(path.basename(String(e.archivo || ''))));
     const roto = (r.errores || []).find(delPerfil);
     if (roto) {

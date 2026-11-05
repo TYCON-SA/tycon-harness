@@ -383,10 +383,16 @@ test('T22 ConfigAjena_OrdenarYFirmarLeenLoMismo @story-8.199 @ac-4 @ac-12: un er
     assert.strictEqual(d.firma, true, label);
     assert.strictEqual(designar(m, FRASE).ok, false, `${label}: con rol propio, el de fábrica no designa`);
   }
-  // a broken profile: both say no, with the reason
-  const roto = toy(t, { profile: '{ roto' });
-  assert.strictEqual(cw.rolDeCoordinar({ env: roto.env, home: roto.home, arnes: roto.arnes }).firma, false);
-  assert.strictEqual(DS.firmaPorElDueno({ env: roto.env, home: roto.home, arnes: roto.arnes }).ok, false);
+  // a broken profile, or its approvals section broken: both say no, and ordering says why
+  for (const [label, profile] of [['el perfil', '{ roto'], ['la sección approvals', { approvals: 'x' }]]) {
+    const roto = toy(t, { profile });
+    const r = cw.rolDeCoordinar({ env: roto.env, home: roto.home, arnes: roto.arnes });
+    assert.deepStrictEqual([r.rol, r.firma], ['coordinadora', false], label);
+    assert.match(r.aviso || '', /no se pudo leer/, `${label}: ordena y dice el motivo`);
+    const f = DS.firmaPorElDueno({ env: roto.env, home: roto.home, arnes: roto.arnes });
+    assert.strictEqual(f.ok, false, label);
+    assert.match(f.motivo, /no se pudo leer/, `${label}: la negativa dice que el perfil está roto`);
+  }
 });
 
 // ── The guides (AC 18) and Windows (AC 19) ───────────────────────────────────────────────────────────────────────
