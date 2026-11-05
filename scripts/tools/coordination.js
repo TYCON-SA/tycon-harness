@@ -660,6 +660,24 @@ function claudeLauncher(ctx = {}, what = 'no abrí la sesión') {
 const resolveLauncher = (opts, what) => opts.launcher || claudeLauncher(opts.windows || {}, what);
 const launchArgv = (launcher, args) => [...(launcher.prefix || []), ...args];
 
+/**
+ * Los portones grandes que arrancaron con menos de 3 a la vez y siguen vivos (los avisos de lib/suite-times.js): uno por
+ * línea, con quién, cuántas a la vez y la hora estimada de fin. Los de un proceso que ya no está los borra la lectura.
+ */
+function slowGateLines(opts, s, problems) {
+  try {
+    const gates = require(path.join(SKILL_LIB, 'suite-times.js')).readSlowGates(opts.home);
+    const nameOf = (sid) => ([...s.working, ...s.quiet].find((w) => w.sid === sid) || {}).session || null;
+    // el aviso es un archivo de la carpeta de estado: lo que no tiene la forma esperada no llega al texto
+    const num = (v) => (Number.isFinite(Number(v)) ? String(Number(v)) : '?');
+    const eta = (v) => (/^\d{2}:\d{2}$/.test(String(v)) ? v : '??:??');
+    return gates.map((g) => `Coordinación: portón lento de ${oneLine(nameOf(g.sid) || g.repo || `el proceso ${g.pid}`)}: ${num(g.workers)} a la vez para ${num(g.suites)} suites (carga ${num(g.carga)}), termina cerca de las ${eta(g.eta)}. Mirá si hay que liberar la máquina.`);
+  } catch (e) {
+    problems.push(`los avisos de portón lento (${e.code || e.message})`);
+    return [];
+  }
+}
+
 function capNotice(opts = {}) {
   const sid = sessionOf(opts);
   const who = coordinatorRole(opts, sid);
@@ -690,6 +708,7 @@ function capNotice(opts = {}) {
   const signatures = oldSignatures(opts, opts.now == null ? Date.now() : Number(opts.now), problems);
   if (signatures) lines.push(signatures);
   lines.push(...waitLines(opts, sid, problems));
+  lines.push(...slowGateLines(opts, s, problems));
   try { lines.push(...ownerWaitLines(opts, sid, s)); } catch (e) { problems.push(`lo de owner-wait (${e.code || e.message})`); }
   if (problems.length) lines.push(`Coordinación: No pude leer ${oneLine(problems.join(' · ')).slice(0, 300)}.`);
   return lines.length ? lines.join('\n') : null;

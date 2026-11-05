@@ -693,7 +693,9 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
     const crudo = valor.startsWith('~/') ? os.homedir() + valor.slice(1) : path.isAbsolute(valor) ? valor : `${base}${path.sep}${valor}`;
     try { return fs.realpathSync.native(crudo); } catch { return null; }
   };
-  const instalado = (real) => instalados.some((r) => isInsideReal(r, real)) || versionadoEnElArbolPropio(real);
+  // lo que git contestó, por esta llamada: un módulo que importan varios se pregunta una vez
+  const memo = { porRuta: new Map() };
+  const instalado = (real) => instalados.some((r) => isInsideReal(r, real)) || versionadoEnElArbolPropio(real, memo);
   const leer = (real) => {
     try {
       const st = fs.statSync(real);
@@ -828,8 +830,18 @@ function importsLocales(familia, texto, dir) {
  * versión bajada) es el arnés. En un clon de trabajo, el de quien lo mantiene, cuenta sólo lo versionado, sin cambios
  * y como está en main del servidor: un guion nuevo, cambiado ahí o que sólo trae otra rama no es del arnés. Si git no
  * responde, tampoco.
+ *
+ * `memo` (de una sola llamada del freno) guarda la respuesta por ruta, la rama principal y si HEAD tiene commits que
+ * ella no tiene: sin ninguno, ningún archivo tiene uno propio y no se pregunta archivo por archivo.
  */
-function versionadoEnElArbolPropio(real) {
+function versionadoEnElArbolPropio(real, memo = { porRuta: new Map() }) {
+  if (memo.porRuta.has(real)) return memo.porRuta.get(real);
+  const r = versionadoSinMemo(real, memo);
+  memo.porRuta.set(real, r);
+  return r;
+}
+
+function versionadoSinMemo(real, memo) {
   const arbol = (() => { try { return fs.realpathSync.native(path.resolve(__dirname, '..', '..', '..')); } catch { return null; } })();
   if (!arbol || !isInsideReal(arbol, real)) return false;
   const conGit = (() => {
@@ -858,9 +870,16 @@ function versionadoEnElArbolPropio(real) {
   if (cambios.status !== 0 || cambios.stdout.trim() !== '') return false;
   // un commit que no está en main del servidor y toca el guion no cuenta: lo pudo escribir quien llama, y empujarlo a
   // otra rama del servidor no lo hace revisado. Los que tocan otros archivos no cambian este guion. Sin main, no cuenta
-  const main = ['refs/remotes/origin/main', 'refs/remotes/origin/master']
-    .find((ref) => git(['rev-parse', '--verify', '-q', `${ref}^{commit}`]).status === 0);
+  if (!memo.arbol || memo.arbol.raiz !== arbol) {
+    const principal = ['refs/remotes/origin/main', 'refs/remotes/origin/master']
+      .find((ref) => git(['rev-parse', '--verify', '-q', `${ref}^{commit}`]).status === 0);
+    // sin commits propios en todo HEAD, tampoco los hay para un archivo; si git no contesta, se pregunta por archivo
+    const propios = principal ? git(['rev-list', '-n1', 'HEAD', '--not', principal]) : null;
+    memo.arbol = { raiz: arbol, main: principal, sinPropios: !!propios && propios.status === 0 && propios.stdout.trim() === '' };
+  }
+  const main = memo.arbol.main;
   if (!main) return false;
+  if (memo.arbol.sinPropios) return true;
   const locales = git(['rev-list', '-n1', '--full-history', 'HEAD', '--not', main, '--', rel]);
   if (locales.status !== 0) return false;
   if (locales.stdout.trim() === '') return true;

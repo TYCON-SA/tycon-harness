@@ -82,6 +82,7 @@ const { spawn } = require('child_process');
 const { touches, isValidPattern } = require('./touched-files');
 const { joinLcov } = require('./node-coverage');
 const suiteTimes = require('./suite-times');
+const { stateDir } = require('./state-dir.js');
 
 const MAX_BUFFER = 64 * 1024 * 1024;
 // Tope en bytes del archivo con la salida entera de una suite roja (se guardan la primera y la última mitad) y de lo que
@@ -107,7 +108,7 @@ const TURN_FROM_SUITES = 100;
 // con que run-check anota la procedencia del check `tests`: heredada, la suite del freno de cierre cambiaría de conducta
 // (roja dentro del portón, verde sola; casos: tests/run-suites-json.test.js T15b).
 const DEL_PORTON = ['TYCON_EVIDENCE_KEY', 'TYCON_EVIDENCE_KEY_FAILED', 'TYCON_TEST_GATE_COMPANION', 'TYCON_TEST_GATE_STORY_REPO',
-  'TYCON_TEST_GATE_CROSS_REPO', 'TYCON_TEST_GATE', 'TYCON_TEST_GATE_TREE_TOUCHED', 'TYCON_SUITE_HOMES_ROOT'];
+  'TYCON_TEST_GATE_CROSS_REPO', 'TYCON_TEST_GATE', 'TYCON_TEST_GATE_TREE_TOUCHED', 'TYCON_SUITE_HOMES_ROOT', 'TYCON_GATE_PROCESS'];
 
 function launch(p, covDir, env0) {
   const ej = p.ruta.endsWith('.js') ? process.execPath : 'bash';
@@ -229,7 +230,7 @@ function resolveWorkers(env, maquina = suiteTimes.machine(env)) {
  * Cuenta en `esperas` ({ veces, ms }) los intervalos de reloj con algún carril esperando: varios carriles que esperan
  * por la misma carga son una sola espera, como en las portables.
  */
-function launchGate({ nucleos, load, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), esperas, stopped, now = Date.now }) {
+function launchGate({ nucleos, floor = 1, load, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), esperas, stopped, now = Date.now }) {
   let waiting = 0;
   let since = 0;
   return async (others) => {
@@ -242,7 +243,7 @@ function launchGate({ nucleos, load, sleep = (ms) => new Promise((r) => setTimeo
       await sleep(ms);
     };
     try {
-      await suiteTimes.waitForRoom({ nucleos, load, others, sleep: counted, stopped });
+      await suiteTimes.waitForRoom({ nucleos, floor, load, others, sleep: counted, stopped });
     } finally {
       if (entered && --waiting === 0) esperas.ms += now() - since;
     }
@@ -595,7 +596,6 @@ function main(argv, env = process.env) {
   }
 
   const portables = [...parallel, ...exclusives].filter((p) => p.portable).length;
-  console.log(`[suites.json] ${suiteTimes.describeWorkers(decision, maquina)} · en paralelo: ${parallel.length} · solas al final: ${exclusives.length} · diferidas: ${resumen.deferred_suites.length}${portables ? ` · ${portables} portables con su HOME vacía, como en la CI` : ''}`);
 
   // El turno de las ejecuciones grandes (scripts/tools/heavy-turn.js): lo que satura la máquina es cuántas suites corren, esté
   // acotada o no la ejecución, y en una máquina con coordinadora va una grande por vez. Con el turno de otro proceso vivo
@@ -621,7 +621,14 @@ function main(argv, env = process.env) {
     }
     if (!t.taken) turn = null;
   }
-  const releaseTurn = () => { if (turn) { try { turn.release({}); } catch (_) { /* vence con el proceso */ } turn = null; } };
+  // con el turno ya tomado: un portón que no arranca no deja aviso ni dice su hora de fin
+  const slowGate = avisarSiLento({ env, repo, decision, maquina, items: [...parallel, ...exclusives] });
+  console.log(`[suites.json] ${suiteTimes.describeWorkers(decision, maquina)} · en paralelo: ${parallel.length} · solas al final: ${exclusives.length} · diferidas: ${resumen.deferred_suites.length}${portables ? ` · ${portables} portables con su HOME vacía, como en la CI` : ''}`);
+  const releaseTurn = () => {
+    if (turn) { try { turn.release({}); } catch (_) { /* vence con el proceso */ } turn = null; }
+    // el aviso de portón lento se va con la corrida; si queda, la coordinadora lo descarta por el proceso muerto
+    if (slowGate) { try { fs.rmSync(slowGate, { force: true }); } catch (_) { /* nada */ } }
+  };
   process.on('exit', releaseTurn);
 
   // El repo acota el portón y no se sabe qué se tocó: corre todo. Se dice acá, lo último antes de la primera suite, con la
@@ -645,6 +652,15 @@ function main(argv, env = process.env) {
   };
   process.on('SIGINT', onSignal);
   process.on('SIGTERM', onSignal);
+  // El portón que lanzó esta corrida (test-gate.sh, TYCON_GATE_PROCESS): si ya no está —lo mataron con kill -9, o se cerró
+  // su terminal—, nadie va a leer el resultado y el turno de las ejecuciones grandes quedaría tomado. Se corta solo.
+  const gatePid = Number(env.TYCON_GATE_PROCESS);
+  const watchGate = Number.isInteger(gatePid) && gatePid > 1 ? setInterval(() => {
+    try { process.kill(gatePid, 0); } catch (e) {
+      if (e.code === 'ESRCH') { console.error(`[suites.json] el portón que lanzó esta corrida (pid ${gatePid}) ya no está: corto las suites`); onSignal('SIGTERM'); }
+    }
+  }, 2000) : null;
+  if (watchGate) watchGate.unref();
 
   if (covDir) {
     // la carpeta es de esta corrida: un lcov de una corrida anterior no puede sumarse a éste (por eso, si igual no se
@@ -763,7 +779,7 @@ function main(argv, env = process.env) {
   const stopped = () => Boolean(interrupted);
   // sólo cuando decide la máquina: con la variable o en la CI, como siempre
   const beforeLaunch = decision.wait
-    ? launchGate({ nucleos: maquina.nucleos, load: () => suiteTimes.loadNow(env), esperas: resumen.esperas, stopped })
+    ? launchGate({ nucleos: maquina.nucleos, floor: decision.floor, load: () => suiteTimes.loadNow(env), esperas: resumen.esperas, stopped })
     : null;
 
   const t0 = Date.now();
@@ -774,6 +790,7 @@ function main(argv, env = process.env) {
     removeHomes();
     process.removeListener('SIGINT', onSignal);
     process.removeListener('SIGTERM', onSignal);
+    if (watchGate) clearInterval(watchGate);
     resumen.wall_ms = Date.now() - t0;
     resumen.ambiente = { ...gateEnvironment(env, runCheck, workers), empty_home: portables };
     const outputBudget = { left: RUN_OUTPUT_MAX };
@@ -831,6 +848,36 @@ function main(argv, env = process.env) {
     console.log(`[suites.json] ${resumen.corridas} corridas · ${resumen.verdes} verdes · ${rojas} rojas · ${ausentes} ausentes${unmeasured ? ` (${unmeasured} no medidas: su raíz no existe)` : ''} · ${resumen.deferred_suites.length} diferidas · ${(resumen.wall_ms / 60000).toFixed(1)} min con ${workers} a la vez`);
     return rojas === 0 && ausentes === 0 ? 0 : 1;
   })();
+}
+
+/**
+ * Un portón grande (desde TURN_FROM_SUITES suites) fuera de la CI que arranca con menos de 3 a la vez lo dice en su
+ * primera línea, con la hora estimada de fin, y deja su aviso para la coordinadora mientras corre (lib/suite-times.js).
+ * La hora sale de las medianas del registro de la máquina; sin medición, el peso por defecto de suites-weights.json.
+ * Devuelve la ruta del aviso (para borrarlo al terminar) o null. Nada de esto puede tumbar la corrida.
+ */
+function avisarSiLento({ env, repo, decision, maquina, items }) {
+  if (decision.why === 'ci' || items.length < TURN_FROM_SUITES || decision.workers >= suiteTimes.SLOW_GATE_WORKERS) return null;
+  try {
+    let defaultMs = 30000;
+    try {
+      const w = JSON.parse(fs.readFileSync(path.join(repo, 'scripts', 'ci', 'suites-weights.json'), 'utf8'));
+      const d = (w.pr && w.pr.default) || w.default;
+      if (Number(d) > 0) defaultMs = Number(d) * 1000;
+    } catch (_) { /* sin pesos, el valor de siempre */ }
+    let runs = [];
+    try { runs = suiteTimes.filterRuns(suiteTimes.readSources([path.join(stateDir(), 'suite-times.jsonl')]).runs); } catch (_) { /* sin registro, todo con el peso por defecto */ }
+    const est = suiteTimes.estimateMs({ rutas: items.map((p) => p.entrada.ruta), workers: decision.workers, runs, defaultMs });
+    const fin = new Date(Date.now() + est.ms);
+    const eta = `${String(fin.getHours()).padStart(2, '0')}:${String(fin.getMinutes()).padStart(2, '0')}`;
+    console.log(`🔴 [suites.json] portón lento: ${decision.workers} a la vez para ${items.length} suites (carga ${maquina.carga} al arrancar): termina cerca de las ${eta}${est.sinMedir ? ` (${est.sinMedir} sin medición, con el peso por defecto)` : ''}`);
+    // el nombre sale de la carpeta desde donde se lanza, como el del turno: en el árbol armado, `repo` es temporal
+    return suiteTimes.writeSlowGate({ sid: env.CLAUDE_CODE_SESSION_ID || null, repo: path.basename(process.cwd()), suites: items.length,
+      workers: decision.workers, carga: maquina.carga, eta });
+  } catch (e) {
+    console.log(`[suites.json] ⚠️  no pude dejar el aviso de portón lento: ${e.message}`);
+    return null;
+  }
 }
 
 // Un renglón por corrida en el registro de tiempos (lib/suite-times.js dice dónde): las suites que terminaron, con su
