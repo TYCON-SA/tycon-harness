@@ -73,7 +73,7 @@ test('T19b Arranque_EjecucionPerdida_ConLost @story-8.195 @ac-19 — la ejecuci�
     encoding: 'utf8', input: '{}', env: { ...process.env, HOME: C.home, USERPROFILE: C.home, TYCON_HOME: '', TYCON_EVAL_SANDBOX: '', TYCON_FINISHED_OPEN_NOTICE: '', TYCON_FINISHED_OPEN_NOW: '2026-10-15T12:00:00Z' },
   });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, new RegExp(`story 9\\.7 .*su ejecución está perdida: node \\S*marker\\.js clear-session ${sid} --lost \\(lo firma el dueño\\)`));
+  assert.match(r.stdout, new RegExp(`story 9\\.7 .*su ejecución está perdida: node \\S*marker\\.js clear-session ${sid} --lost \\(lo firma una persona\\)`));
 });
 
 test('T20 Avisos_NadaAbierto_Callan @story-8.195 @ac-20 — sin nada terminado, sin salida; con uno terminado, la línea', () => {

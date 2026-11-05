@@ -250,7 +250,7 @@ function machine({ home = os.homedir(), stateDir, now = Date.now(), env, markerJ
       let noSe = null;
       try { perdida = require('./open-runs.js').perdida({ sid, cwd: m.data.repoPath, home }); } catch (err) { noSe = causa(String(err.message || err).split('\n')[0]); }
       cierre = noSe ? { texto: `no pude ver si su ejecución está perdida (${noSe}): no doy comando` }
-        : perdida ? { texto: `su ejecución está perdida: ${node} clear-session ${sid} --lost (lo firma el dueño)` }
+        : perdida ? { texto: `su ejecución está perdida: ${node} clear-session ${sid} --lost (lo firma una persona)` }
           : comoSeCierra(vidaDe(sid), `${node} clear-session ${sid}`);
     }
     items.push({ sid, tipo: 'ejecucion', texto: `${quien}: terminó${e.desde === null ? '' : ` hace ${hace(e.desde, now)}`} y sigue abierta; ${cierre.texto}` });

@@ -6,7 +6,7 @@
 //
 // Muestra hasta cinco y «y N más». Cada renglón dice la story (o el motivo del camino corto), la sesión y cómo se cierra:
 // si la sesión vive, la cierra ella (sin comando); si murió, `marker.js clear-session <sesión>` (o `adhoc clear-orphan`
-// para un camino corto); si su ejecución está perdida, `clear-session <sesión> --lost`, que firma el dueño; si no se sabe
+// para un camino corto); si su ejecución está perdida, `clear-session <sesión> --lost`, que firma una persona; si no se sabe
 // si vive (Codex no deja registro de sesión), lo dice y no da comando. Nada se cierra solo: el aviso sólo mira.
 //
 // La consulta del pedido de un camino corto tiene un tope de 5 s para todos juntos y una foto de 10 minutos.
