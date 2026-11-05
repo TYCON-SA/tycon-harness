@@ -35,9 +35,10 @@ function temporal(t, prefijo) {
 
 /**
  * Una casa con la sesión `ses-a` corriendo la historia 9.99 en un repo propio, con su carpeta de corrida. `titulo: null`
- * escribe la historia sin título; `historia: false` no escribe el archivo.
+ * escribe la historia sin título; `historia: false` no escribe el archivo. `criterios`: los criterios de la historia
+ * (`[{ n, texto }]`) en lugar de los dos de siempre, todos cubiertos por T1.
  */
-function corrida(t, { titulo = TITULO, historia = true, story = '9.99', extraHistoria = [] } = {}) {
+function corrida(t, { titulo = TITULO, historia = true, story = '9.99', extraHistoria = [], criterios = null } = {}) {
   const casa = temporal(t, 'sigq-casa-');
   const repo = temporal(t, 'sigq-repo-');
   const estado = path.join(casa, '.claude', '.tycon-pipeline');
@@ -48,9 +49,10 @@ function corrida(t, { titulo = TITULO, historia = true, story = '9.99', extraHis
   const ruta = path.join(repo, 'specs', `story-${story}-prueba.md`);
   if (historia) {
     fs.writeFileSync(ruta, ['---', `story: "${story}"`, ...(titulo ? [`title: "${titulo}"`] : []), 'status: in-progress', ...extraHistoria, '---', '',
-      `# Story ${story}`, '', '## Acceptance Criteria', '', '1. **Given** un pedido **Then** el aviso queda en el servicio externo.',
-      '2. **Given** otro pedido **Then** se ve en la lista.', '', '### Tests', '', '| # | Test | AC | Nivel | Escenario | Resultado esperado |', '|---|---|---|---|---|---|',
-      '| T1 | `Aviso_QuedaRegistrado` | 1 | unit | x | y |', ''].join('\n'));
+      `# Story ${story}`, '', '## Acceptance Criteria', '',
+      ...(criterios ? criterios.map((x) => `${x.n}. ${x.texto}`) : ['1. **Given** un pedido **Then** el aviso queda en el servicio externo.',
+        '2. **Given** otro pedido **Then** se ve en la lista.']), '', '### Tests', '', '| # | Test | AC | Nivel | Escenario | Resultado esperado |', '|---|---|---|---|---|---|',
+      `| T1 | \`Aviso_QuedaRegistrado\` | ${criterios ? criterios.map((x) => x.n).join(', ') : 1} | unit | x | y |`, ''].join('\n'));
     fs.mkdirSync(path.join(repo, '.advisors'), { recursive: true });
     // stable-data: la matriz compara el resultado de las pruebas con la hora del código de la historia, que es la de ahora
     fs.writeFileSync(path.join(repo, '.advisors', 'tests-result.json'), JSON.stringify({ ts: new Date().toISOString(), story_id: story, suite_green: true }));
@@ -250,6 +252,63 @@ test('SignatureQuestion_WaiversAndExtraRound_FromTheirSource (T37)', (t) => {
   assert.ok(extra().includes(`Completo en: ${nota}.`), extra());
 });
 
+// Criterios largos que la matriz da por no verificables en vivo: con su razón y la prueba que los cubre
+const largo = (n) => `**Given** el criterio ${n} **Then** ${'pasa algo que se explica con muchas palabras '.repeat(9)}`;
+const eximibles = (ns) => ({
+  criterios: ns.map((n) => ({ n, texto: largo(n) })),
+  extraHistoria: ['runtime_not_verifiable:', ...ns.flatMap((n) => [`  - ac: ${n}`, `    reason: "el criterio ${n} no tiene ambiente de prueba ${'y lo explica largo '.repeat(6)}"`, '    covered_by: T1'])],
+});
+const lineaDeCriterios = (q) => (q.match(/Criterios: [^.]*\./) || [null])[0];
+
+// 🔴 Falla con: un cuadro de exención con criterios largos que no nombra a todos (el caso de la 8.198: el AC 63 no se vio).
+test('SignatureQuestion_WaiverTresCriteriosLargos_NombraLosTres', (t) => {
+  const c = corrida(t, eximibles([32, 56, 63]));
+  const q = conFirma('runtime-waiver')(c, `node ${MARKER} runtime-waiver ${c.ruta}`);
+  assert.ok(!q.error, q.error);
+  for (const s of [q.pregunta, q.texto]) {
+    assert.strictEqual(lineaDeCriterios(s), 'Criterios: AC 32, 56 y 63.', s);
+    assert.ok(posicion(s, 'Criterios: AC') < posicion(s, 'Qué hace:'), s);
+  }
+});
+
+// 🔴 Falla con: del cuarto criterio en adelante sólo se ve «y N más», sin los números.
+test('SignatureQuestion_WaiverCincoCriterios_NombraLosCincoAunqueResuma', (t) => {
+  const c = corrida(t, eximibles([2, 7, 9, 13, 40]));
+  const r = conFirma('runtime-waiver')(c, `node ${MARKER} runtime-waiver ${c.ruta} --acs 9,2,40,7,13`);
+  assert.ok(!r.error, r.error);
+  const q = r.pregunta;
+  assert.strictEqual(lineaDeCriterios(q), 'Criterios: AC 2, 7, 9, 13 y 40.', q);
+  assert.match(q, /Qué hace: .* · y 2 más\./);
+  escribirPlan(c);
+  assert.doesNotMatch(conFirma('plan-approval')(c, APRUEBA_PLAN).pregunta, /Criterios:/);
+});
+
+// 🔴 Falla con: la prueba a mano que no nombra todos sus criterios.
+test('SignatureQuestion_PruebaAMano_NombraTodos', (t) => {
+  const c = corrida(t, { criterios: [1, 4, 5, 8].map((n) => ({ n, texto: largo(n) })) });
+  const q = conFirma('manual-test')(c, `node ${MARKER} mark-tested --acs 1,4,5,8`).pregunta;
+  assert.strictEqual(lineaDeCriterios(q), 'Criterios: AC 1, 4, 5 y 8.', q);
+});
+
+// 🔴 Falla con: una prueba a mano sin historia en el marcador que muestra una línea de criterios sin dónde leerlos.
+test('SignatureQuestion_PruebaAManoSinHistoria_ComoHoy', (t) => {
+  const c = corrida(t);
+  const marcador = path.join(c.estado, 'active', 'ses-a.json');
+  const { storyPath, ...sinHistoria } = JSON.parse(fs.readFileSync(marcador, 'utf8'));
+  fs.writeFileSync(marcador, JSON.stringify(sinHistoria));
+  const q = conFirma('manual-test')(c, `node ${MARKER} mark-tested --acs 1,4`).pregunta;
+  assert.doesNotMatch(q, /Criterios:/);
+  assert.match(q, /Qué hace: /);
+});
+
+// 🔴 Falla con: una prueba a mano sin criterios que muestra una línea vacía.
+test('SignatureQuestion_PruebaAManoSinAcs_ComoHoy', (t) => {
+  const c = corrida(t);
+  const q = conFirma('manual-test')(c, `node ${MARKER} mark-tested`).pregunta;
+  assert.doesNotMatch(q, /Criterios:/);
+  assert.match(q, /Qué hace: /);
+});
+
 // 🔴 Falla con: un informe o una nota rotos que la pregunta presenta como si no existieran.
 test('SignatureQuestion_BrokenSource_SaysItCouldNotRead', (t) => {
   const c = corrida(t);
@@ -264,6 +323,19 @@ test('SignatureQuestion_BrokenSource_SaysItCouldNotRead', (t) => {
   // un plan que es una carpeta: está, pero no se puede leer
   fs.mkdirSync(path.join(c.runDir, 'step-02-bmad-plan.md'));
   assert.match(cuadro(c, APRUEBA_PLAN, { firma: 'plan-approval' }).pregunta, /no encuentro el plan escrito en .*step-02-bmad-plan\.md \(no pude leerlo: EISDIR\)/);
+});
+
+// 🔴 Falla con: una ruta larga que empuja la nota «(no pude leerlo…)» del plan fuera del recorte de «Qué hace».
+test('SignatureQuestion_PlanIlegibleRutaLarga_NotaVisible', (t) => {
+  const largo = temporal(t, `sigq-${'r'.repeat(120)}-`);
+  const antes = process.env.TMPDIR;
+  process.env.TMPDIR = largo;
+  t.after(() => { if (antes === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = antes; });
+  const c = corrida(t);
+  fs.mkdirSync(path.join(c.runDir, 'step-02-bmad-plan.md'));
+  const q = cuadro(c, APRUEBA_PLAN, { firma: 'plan-approval' }).pregunta;
+  assert.ok(`no encuentro el plan escrito en ${path.join(c.runDir, 'step-02-bmad-plan.md')}`.length > 200, 'la ruta tiene que pasar el recorte');
+  assert.ok(q.includes('step-02-bmad-plan.md (no pude leerlo: EISDIR).') || q.includes('… (no pude leerlo: EISDIR).'), q);
 });
 
 // 🔴 Falla con: un «si sale mal» igual para dos firmas que arriesgan cosas distintas.

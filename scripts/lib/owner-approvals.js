@@ -129,11 +129,13 @@ const masDe = (lista, tope, sep) => (lista.length > tope ? `${lista.slice(0, top
  * El cuadro de una firma: lo arma el guion, y el agente lo muestra tal cual. La pregunta dice, en este orden, lo que se
  * aprueba (`que`, con su verbo: no lleva «¿Aprobás» delante), la historia con su título (`historia`: { id, titulo }), qué
  * hace (`queHace`, hasta 3 líneas), qué archivos toca, dónde está lo completo, qué pasa si sale mal, y al final la cita de
- * la sesión, que no reemplaza nada de lo anterior. `sello`: lo que ata la aprobación a esa firma, esa sesión y lo que se
- * mostró (`huella`); `texto`: la pregunta sin el sello, la que muestra la ventana de permiso. Con `soloClick`, sólo lo
+ * la sesión, que no reemplaza nada de lo anterior. `criterios`: los números de los criterios que se eximen o se marcan;
+ * van todos, antes de «Qué hace» y sin recorte, porque el detalle sí se recorta y un número que no se ve no se aprobó.
+ * `nota`: por qué no se pudo leer la fuente; va al final de «Qué hace», también fuera del recorte. `sello`: lo que ata
+ * la aprobación a esa firma, esa sesión y lo que se mostró (`huella`); `texto`: la pregunta sin el sello, la que muestra la ventana de permiso. Con `soloClick`, sólo lo
  * aprueba un click en la sesión que trabaja, y el cuadro se muestra con sus `descripciones`.
  */
-function cuadroDe({ firma, destino, que, historia = null, queHace = [], archivos = [], completo = null, siSaleMal, cita = null, huella, soloClick = false, descripciones = null }) {
+function cuadroDe({ firma, destino, que, historia = null, criterios = [], queHace = [], nota = null, archivos = [], completo = null, siSaleMal, cita = null, huella, soloClick = false, descripciones = null }) {
   const sello = `firma ${firma} · sesión ${destino} · código ${huella}`;
   const lo = una(que, 200);
   const partes = [`¿${lo.charAt(0).toUpperCase()}${lo.slice(1)}?`];
@@ -141,8 +143,10 @@ function cuadroDe({ firma, destino, que, historia = null, queHace = [], archivos
   const ses = una(destino, 80);
   if (historia && historia.id) partes.push(historia.titulo ? `Historia ${una(historia.id, 40)}, «${una(historia.titulo, 160)}», sesión ${ses}.` : `Historia ${una(historia.id, 40)} (sin título en su archivo), sesión ${ses}.`);
   else if (destino) partes.push(`Sesión ${ses}.`);
+  const nums = [...new Set((criterios || []).map(Number).filter((n) => Number.isInteger(n) && n > 0))].sort((a, b) => a - b);
+  if (nums.length) partes.push(`Criterios: AC ${nums.length > 1 ? `${nums.slice(0, -1).join(', ')} y ${nums[nums.length - 1]}` : nums[0]}.`);
   const lineas = (queHace || []).map((l) => sinPunto(una(l, LARGO_DE_LINEA))).filter(Boolean);
-  if (lineas.length) partes.push(`Qué hace: ${masDe(lineas, LINEAS_QUE_HACE, ' · ')}.`);
+  if (lineas.length) partes.push(`Qué hace: ${masDe(lineas, LINEAS_QUE_HACE, ' · ')}${nota ? ` ${sinPunto(una(nota, LARGO_DE_LINEA))}` : ''}.`);
   const rutas = (archivos || []).map((a) => una(a, 200)).filter(Boolean);
   if (rutas.length) partes.push(`Archivos: ${masDe(rutas, ARCHIVOS_A_LA_VISTA, ', ')}.`);
   if (completo) partes.push(`Completo en: ${una(completo, 400)}.`);

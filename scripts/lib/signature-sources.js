@@ -92,7 +92,8 @@ function planDe(m) {
 function delPlan(palabras, m) {
   const cita = valor(palabras, '--approved') || valor(palabras, '--mockup-approved');
   const { ruta, texto } = planDe(m);
-  if (texto == null) return { queHace: [`no encuentro el plan escrito${ruta ? ` en ${ruta}${porQueNo(ruta)}` : ' (la sesión no tiene una ejecución con carpeta)'}`], fuente: '', cita };
+  // la nota de por qué no se leyó va aparte: la línea se recorta, y una ruta larga se la comería
+  if (texto == null) return { queHace: [`no encuentro el plan escrito${ruta ? ` en ${ruta}` : ' (la sesión no tiene una ejecución con carpeta)'}`], nota: porQueNo(ruta).trim() || null, fuente: '', cita };
   const s = seccionesDelPlan(texto);
   if (s.error) return { queHace: [s.error], completo: ruta, fuente: texto, cita };
   return { queHace: s.queHace, archivos: s.archivos, completo: ruta, fuente: texto, cita };
@@ -201,7 +202,7 @@ function deLaPruebaAMano(palabras, m) {
   let fallo = null;
   try { criterios = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'manual-checks.js')).criterios(historia); } catch (e) { fallo = e.code || e.message; }
   const lineas = acs.map((n) => { const c = criterios.find((x) => x.n === n); return `AC ${n}: ${c ? c.text : fallo ? `(no pude leer los criterios de la historia: ${fallo})` : '(no está en la historia)'}`; });
-  return lineas.length ? { queHace: lineas, completo: historia, fuente: lineas.join('\n') } : null;
+  return lineas.length ? { criterios: acs, queHace: lineas, completo: historia, fuente: lineas.join('\n') } : null;
 }
 
 function hallazgosDe(dir) {
