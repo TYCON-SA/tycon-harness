@@ -3503,6 +3503,25 @@ test('T309 Wall_Folds: Sin sesión y Terminados se pliegan con más de 5; lo que
   assert.strictEqual(again.children[again.children.findIndex((k) => k.tag === 'h4' && textOf(k).startsWith('Sin sesión')) + 1].children.length, 12, 'abierta, sigue abierta con la foto nueva');
 });
 
+test('T311 TurnWait_KeepsTheStory: la espera de un turno es de la historia, no otro trabajo; una nota con texto sí la tapa', async () => {
+  const m = parkMachine();
+  const now = Date.now();
+  runMarkerFile(m, 's', '9.3', 'Esperando turno', BEFORE_PLAN.concat('approve-plan'), { startedAt: oldHours(now, 5), lastTouch: oldHours(now, 3) });
+  sessionWith(m, 's', 'Sol', 'busy', now);
+  fs.writeFileSync(path.join(m.state, 'doing', 's.json'), JSON.stringify({ at: atIso(now - 60000), waitingFor: 'turno de la suite', waitingSince: atIso(now - 60000) }));
+  const w = await wipNow({ home: m.home, now: atIso(now), queryAll: noPrs });
+  const i = w.rows.findIndex((r) => r.session === 'Sol');
+  assert.notStrictEqual(w.rows[i].end, 'sin hora estimada (en pausa)', w.rows[i].end);
+  assert.strictEqual(w.extra[i].waitingFor, 'turno de la suite');
+  const data = await collectAt(m, now);
+  assert.strictEqual(byName(data, 'Sol').enPausa, undefined);
+  assert.strictEqual(byName(data, 'Sol').titulo, 'Esperando turno');
+  assert.strictEqual(byName(data, 'Sol').estado, 'esperando');
+  fs.writeFileSync(path.join(m.state, 'doing', 's.json'), JSON.stringify({ text: 'otro trabajo encima', at: atIso(now - 60000) }));
+  const w2 = await wipNow({ home: m.home, now: atIso(now), queryAll: noPrs });
+  assert.strictEqual(w2.rows[w2.rows.findIndex((r) => r.session === 'Sol')].end, 'sin hora estimada (en pausa)');
+});
+
 // ── Hablarle a una sesión desde la oficina ─────────────────────────────────────────────────────────────────────────
 
 const { markRecipients, conversationOf, createEnvelopes: createEnvelopes8183 } = require(OFFICE);

@@ -707,7 +707,8 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     // las variables del sitio (sus credenciales) no viajan al proceso git: no las necesita
     const env = { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^SITE_/.test(k))), GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_COUNT: String(conf.length) };
     conf.forEach(([k, v], i) => { env[`GIT_CONFIG_KEY_${i}`] = k; env[`GIT_CONFIG_VALUE_${i}`] = v; });
-    return spawn(git, args, { cwd, env, timeout: 180000 });
+    // en inglés: `estadoDeGit` reconoce la credencial, el permiso y la rama por el texto del error, que git traduce
+    return spawn(git, args, { cwd, env: require('../lib/clean-git-env.js').idiomaFijo(env), timeout: 180000 });
   }
 
   /** Baja o pone al día un clon superficial de `main` (`url` en `dir`), con la cabecera `cab`. `nombre`: para el registro. */

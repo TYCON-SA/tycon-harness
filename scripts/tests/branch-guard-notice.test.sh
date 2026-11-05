@@ -23,7 +23,8 @@ bad() { echo "❌ branch-guard-notice: $1"; FALLAS=$((FALLAS + 1)); }
 g() { env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_COMMON_DIR GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
   GIT_AUTHOR_NAME=Lab GIT_AUTHOR_EMAIL=lab@example.com GIT_COMMITTER_NAME=Lab GIT_COMMITTER_EMAIL=lab@example.com \
   git -c core.hooksPath=/dev/null "$@"; }
-HOOK_DIR="$BASE/sin-repo/scripts/hooks"; mkdir -p "$HOOK_DIR"; cp "$TCG/scripts/hooks/branch-guard-notice.js" "$HOOK_DIR/"
+HOOK_DIR="$BASE/sin-repo/scripts/hooks"; mkdir -p "$HOOK_DIR" "$BASE/sin-repo/scripts/lib"; cp "$TCG/scripts/hooks/branch-guard-notice.js" "$HOOK_DIR/"
+cp "$TCG/scripts/lib/clean-git-env.js" "$BASE/sin-repo/scripts/lib/"
 ( cd "$BASE/sin-repo" && git rev-parse --git-dir >/dev/null 2>&1 ) && { echo "❌ branch-guard-notice: ${BASE} quedó dentro de un repo"; exit 1; }
 
 # el aviso, como lo corre el arranque, con un HOME de juguete
@@ -264,8 +265,8 @@ else bad "A4 atraso contra la ref del estado (rc=$rc): $out"; fi
 # juguete los dos enlaces al MISMO clon (el de agent-skills, con el canonical-path.js real)
 single() {
   local h="$1" up="$1.up" cl="$1.clone"
-  g init -q -b main "$up"; mkdir -p "$up/scripts/hooks" "$up/skills/tycon-pipeline" "$up/agents"
-  cp "$TCG/scripts/hooks/branch-guard-notice.js" "$up/scripts/hooks/"
+  g init -q -b main "$up"; mkdir -p "$up/scripts/hooks" "$up/scripts/lib" "$up/skills/tycon-pipeline" "$up/agents"
+  cp "$TCG/scripts/hooks/branch-guard-notice.js" "$up/scripts/hooks/"; cp "$TCG/scripts/lib/clean-git-env.js" "$up/scripts/lib/"
   printf '# skill de juguete\n' > "$up/skills/tycon-pipeline/SKILL.md"; printf '# revisor de juguete\n' > "$up/agents/rev.md"
   g -C "$up" add -A && g -C "$up" commit -q -m A
   g clone -q "$up" "$cl"; mkdir -p "$h/.claude/.tycon-pipeline"
@@ -595,7 +596,7 @@ out="$(TYCON_BRANCH_GUARD=0 retiro 2026-11-21)"
 # nombre viejo se arma por partes (esta prueba sale en la copia pública) y el mapa de laboratorio lo declara.
 HOY_VIEJA="TYCON_$(printf 'H')OY"
 RDIR="$BASE/sin-repo-lib/scripts"; mkdir -p "$RDIR/hooks" "$RDIR/lib"
-cp "$TCG/scripts/hooks/branch-guard-notice.js" "$RDIR/hooks/"; cp "$TCG/scripts/lib/legacy-names.js" "$RDIR/lib/"
+cp "$TCG/scripts/hooks/branch-guard-notice.js" "$RDIR/hooks/"; cp "$TCG/scripts/lib/legacy-names.js" "$TCG/scripts/lib/clean-git-env.js" "$RDIR/lib/"
 printf '{ "__about": "laboratorio", "retire_after": "2026-11-20", "entries": [ { "kind": "env", "old": "%s", "new": "TYCON_TODAY", "batch": "lab" } ] }\n' "$HOY_VIEJA" > "$RMAP"
 usos "$U_ENV"
 out="$(env -u TYCON_TODAY "$HOY_VIEJA=2026-11-21" TYCON_LEGACY_NAMES_MAP="$RMAP" HOME="$RH" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null node "$RDIR/hooks/branch-guard-notice.js")"
@@ -615,7 +616,7 @@ source "$TCG/scripts/tests/lib/harness-lab.sh"
 export TYCON_STARTUP_DETACH=0
 export TYCON_UPDATE_APPLY=auto
 shape_notice() { node "$LAB_TREE/scripts/hooks/branch-guard-notice.js"; }   # el aviso del propio clon del arnés, con la HOME del laboratorio
-with_hook() { mkdir -p "$LAB_TREE/scripts/hooks" && cp "$TCG/scripts/hooks/branch-guard-notice.js" "$LAB_TREE/scripts/hooks/"; }
+with_hook() { mkdir -p "$LAB_TREE/scripts/hooks" "$LAB_TREE/scripts/lib" && cp "$TCG/scripts/hooks/branch-guard-notice.js" "$LAB_TREE/scripts/hooks/" && cp "$TCG/scripts/lib/clean-git-env.js" "$LAB_TREE/scripts/lib/"; }
 quiet() { ! grep -q 'ATRASADO\|FUERA de\|no pude leer' <<<"$1"; }
 if harness_lab_team_machine "$BASE/t36" toy >/dev/null && harness install --yes >/dev/null 2>&1 && harness_lab_cut && harness update >/dev/null 2>&1 && with_hook; then
   out="$(shape_notice)"

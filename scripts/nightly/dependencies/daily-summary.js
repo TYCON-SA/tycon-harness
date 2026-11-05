@@ -1563,8 +1563,10 @@ function perfilDeLaNoche(a) {
     const RS = require('../../metrics/retro-sweep.js');
     const o = RS.obtain({ nombre: r.data.profile.repo, fuente: TR.url(r.data.profile) }, a.cloneDir);
     if (!o.dir) return { archivo: null, problema: RS.clean(o.motivo) };
+    // git en inglés: «no está» se reconoce por el texto del error, que git traduce
+    const env = require('../../lib/clean-git-env.js').idiomaFijo();
     for (const nombre of ['team-profile.json', 'perfil-equipo.json']) {
-      const g = spawnSync('git', ['-C', o.dir, 'show', `${o.ref}:${nombre}`], { encoding: 'utf8', windowsHide: true, timeout: 60000 });
+      const g = spawnSync('git', ['-C', o.dir, 'show', `${o.ref}:${nombre}`], { encoding: 'utf8', windowsHide: true, timeout: 60000, env });
       if (g.status !== 0) {
         // que el archivo no esté en main es probar el otro nombre; cualquier otra falla de git se dice como tal
         if (/does not exist|exists on disk, but not in/i.test(String(g.stderr || ''))) continue;
