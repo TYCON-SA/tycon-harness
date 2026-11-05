@@ -15,6 +15,7 @@
  * T30 Alta_TopesPorDireccion_YVenceASieteDias         T31 Maquina_LaDiceLaClave_YLaNuevaDesplaza
  * T32 Revision_CadaSesentaSegundos                    T33 Replicas_UnaEnCadaReceta
  * T35 RutasSinSesion_ListaFijada_RecetaConTrustProxy  T42 Imagen_TraeLoQueCargaElCentro
+ * T51 Latido_AlNavegador_AunqueNadaCambie
  */
 const test = require('node:test');
 const assert = require('node:assert');
@@ -486,6 +487,25 @@ test('T16 Reparto_EnMenosDeDosSegundos — @story-8.171 @ac-12', async () => {
     assert.ok(nav.msgs.length - m0 <= 2, `agrupados: ${nav.msgs.length - m0}`);
     assert.ok(antes >= 1);
     nav.ws.close(); m.parar();
+  } finally { await h.cerrar(); }
+});
+
+test('T51 Latido_AlNavegador_AunqueNadaCambie — @fix-oficina-sitio-en-vivo', async () => {
+  // sin un mensaje cada tanto, la página no distingue «no cambió nada» de «la conexión murió sin avisar»
+  assert.strictEqual(PLAZOS.latidoNavegadorMs, 25000, 'el latido de cada 25 s');
+  const h = await montar({ opciones: { plazos: { latidoNavegadorMs: 100 } } });
+  try {
+    const { ma, mb } = await dosMaquinasConectadas(h);
+    const nav = await navegador(h, LEAD);
+    await hasta(() => oficinas(nav).has('maquina-a') && oficinas(nav).has('maquina-b'), 2000, 'las oficinas');
+    const desde = nav.msgs.length;
+    await hasta(() => nav.msgs.slice(desde).filter((m) => m.type === 'latido').length >= 2, 2000, 'dos latidos sin cambios');
+    // el latido no trae datos: sólo dice que la conexión sigue viva
+    for (const m of nav.msgs.filter((x) => x.type === 'latido')) assert.deepStrictEqual(m, { type: 'latido' });
+    // y no reemplaza al reparto: un cambio sigue llegando como siempre
+    ma.ws.send(JSON.stringify({ type: 'foto', data: FOTO('Despues del latido') }));
+    await hasta(() => oficinas(nav).get('maquina-a').foto.agents[0].nombre === 'Despues del latido', 2000, 'el cambio');
+    nav.ws.close(); ma.ws.close(); mb.ws.close();
   } finally { await h.cerrar(); }
 });
 

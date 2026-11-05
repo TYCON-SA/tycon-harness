@@ -166,7 +166,6 @@ function markersBySid(home, problems) {
 }
 
 const openedFile = (home) => path.join(coordinationDir(home), 'opened.json');
-const signaturesFile = (home) => signatureList.archivo(home);
 // Los renglones de la lista de firmas, tal como están. Un registro roto o que no es una lista tira con su motivo.
 const readPending = (home) => signatureList.leer(home);
 // La firma por la terminal la pide un comando, no un freno: puede esperar más su turno con el candado de la lista.

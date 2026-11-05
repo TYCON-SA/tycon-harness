@@ -104,6 +104,7 @@ const MEASURES = {
   'La coordinadora cierra los detalles con la opción más segura': 'nadie',
   'Cada sesión con un nombre puesto por una persona': 'aviso',
   'No más sesiones trabajando que el tope': 'freno',
+  'Con la fila de la suite larga no se abren sesiones para programar': 'nadie',
   'Una suite completa por vez': 'freno',
   'Pases adversariales de a uno': 'freno',
   'Las sesiones de fondo quietas se cierran o reciben trabajo': 'aviso',
@@ -143,6 +144,10 @@ const MEASURES = {
   'Un rojo no se deja': 'nadie',
   'No aflojar una revisión, no hacer papeleo': 'nadie',
   'Comprobar un mensaje para el equipo': 'nadie',
+  'La coordinadora no cambia código ni guías ella misma': 'nadie',
+  'Un plan para el dueño pasa antes por un revisor aparte': 'nadie',
+  'Afirmar sólo lo comprobado, y medir el uso antes de sacar algo': 'nadie',
+  'Medir un cambio de velocidad en un día con carga': 'nadie',
 };
 const COMMAND = path.join(ROOT, 'commands', 'coordinate.md');
 const headings = (file) => fs.readFileSync(file, 'utf8').split('\n').filter((l) => /^## /.test(l));

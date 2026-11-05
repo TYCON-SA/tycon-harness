@@ -18,6 +18,10 @@
  * llega aparte, también sólo en memoria y con la oficina; la máquina la manda porque el `ack` de este sitio la anuncia, y
  * se entrega a pedido (`conversacion`) con la misma regla de quién ve qué.
  *
+ * El sitio le manda a cada navegador un `latido` cada 25 s, cambie algo o no: una conexión que se cae en silencio (un
+ * intermediario que la corta, una máquina que se duerme) no avisa, y la página la da por muerta si pasa un minuto sin
+ * recibir nada. Al reconectar recibe la lista entera.
+ *
  * Los topes van por quien los pide, porque /live/machine está al alcance de cualquiera: uno que abusa se frena solo. Al
  * llegar al tope del total de conexiones sin autenticar se corta la más vieja, así una máquina aprobada siempre tiene lugar
  * para firmar. Las máquinas ya conectadas no cuentan en ese carril.
@@ -38,7 +42,8 @@ const TOPES = Object.freeze({
   // las conversaciones que guarda el sitio de una oficina: no confía en el filtro de la máquina
   charlasPorOficina: 30, bytesCharlasPorOficina: 1024 * 1024,
 });
-const PLAZOS = Object.freeze({ saludoMs: 5000, cierreMs: 2000, repartoMs: 500,revisionMs: 60000, sinLatidoMs: 3 * 60 * 1000, fotoMs: 24 * 60 * 60 * 1000 });
+// latidoNavegadorMs: el sitio le escribe a cada navegador aunque nada cambie, así la página se entera de una conexión muerta
+const PLAZOS = Object.freeze({ saludoMs: 5000, cierreMs: 2000, repartoMs: 500, revisionMs: 60000, sinLatidoMs: 3 * 60 * 1000, fotoMs: 24 * 60 * 60 * 1000, latidoNavegadorMs: 25000 });
 const CIERRE_MUY_GRANDE = 1009;
 const CIERRE_PROBA_DESPUES = 1013;
 const NONCE_BYTES = 32;
@@ -271,8 +276,10 @@ function crearCentro({ cfg, fuentes, llaves, sesionDe, ahora = Date.now, log = (
 
   const relojReparto = setInterval(() => { try { repartir(); } catch (e) { log(`oficinas: el reparto falló (${e.message})`); } }, P.repartoMs);
   const relojRevision = setInterval(() => { try { revisar(); } catch (e) { log(`oficinas: la revisión falló (${e.message})`); } }, P.revisionMs);
+  const relojLatido = setInterval(() => { try { for (const nav of navegadores) mandar(nav, { type: 'latido' }); } catch (e) { log(`oficinas: el latido falló (${e.message})`); } }, P.latidoNavegadorMs);
   relojReparto.unref();
   relojRevision.unref();
+  relojLatido.unref();
   // una baja o una aprobación desde Configuración no espera a la revisión
   llaves.alCambiar(() => {
     const reglas = reglasAhora();
@@ -521,6 +528,7 @@ function crearCentro({ cfg, fuentes, llaves, sesionDe, ahora = Date.now, log = (
     detener() {
       clearInterval(relojReparto);
       clearInterval(relojRevision);
+      clearInterval(relojLatido);
       for (const c of sinAutenticar) { if (c.reloj) clearTimeout(c.reloj); c.ws.terminate(); }
       for (const c of maquinas.values()) c.ws.terminate();
       for (const n of navegadores) n.ws.terminate();

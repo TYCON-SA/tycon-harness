@@ -197,7 +197,7 @@ function fromDisk(sdir, sid, { home = os.homedir(), now = Date.now() } = {}) {
     const pending = steps.schemeOf(m) !== null ? steps.pendingSteps(m) : [];
     const first = String(pending.length ? pending[0] : m.stepsPending[0]);
     const name = steps.stepName(first) || `paso ${first}`;
-    let end = { endAt: null, endWithoutHour: 'sin datos' };
+    let end;
     try { end = require(path.join(ROOT, 'scripts', 'tools', 'work-in-progress.js')).endOf(m, { home, stateDir: sdir, now }); } catch (e) {
       end = { endAt: null, endWithoutHour: `la hora no se pudo calcular (${e.code || e.message})` };
       logError(sdir, `sesión ${sid}: la hora de fin no se pudo calcular (${e.code || e.message})`);

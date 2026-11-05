@@ -519,6 +519,11 @@ They come from a whole day of coordinating several sessions. Each says what to d
   check whether it already exists. Why: taking the long road without analyzing it is the most repeated mistake.
 - **A session that finishes gets the next approved thing in that turn, or is closed.** Always within the cap. Why: a free
   session is wasted machine time, and the owner should not have to watch the board to assign.
+- **With a long suite queue, no session is opened to program.** If more than two sessions are waiting for the suite or
+  gate turn, a new session is opened only for work that does not need the suite: writing a story, reviewing or
+  researching. Those that only wait for their turn can be closed and resumed with the same conversation when their turn
+  comes (`claude respawn <id>`), with the order written down. Why: the suite runs one at a time; one more session does not
+  speed anything up, it lengthens the queue and takes memory.
 - **A red is not left behind, even if it is not from your own change.** Report it and fix it before going on. Why: tolerated
   reds hide the new ones.
 - **What loosens a review does not go in, even if it saves time; what is only paperwork is not done.** If the code already
@@ -527,6 +532,14 @@ They come from a whole day of coordinating several sessions. Each says what to d
   and a record that finds nothing costs hours.
 - **A message for the team is checked sentence by sentence before passing it on.** And devs are bothered as little as
   possible: a fix reaches them by itself; a manual step is the last resort. Why: a false promise reaches every machine.
+- **The coordinator does not change code or guides itself.** Every change goes to a session, which makes it with its
+  gate. Why: the shortcut skips the tests that pin down what changes, and the pull request drops without anyone seeing it.
+- **A plan or proposal for the owner first goes through a separate reviewer.** An agent that looks for where it fails,
+  and the owner sees what it found along with the plan. Why: whoever builds the plan does not see their own assumptions.
+- **What the coordinator states, it checked; if not, it says «I did not check it».** Before proposing to remove or
+  change something, it measures whether it is used. Why: a false statement costs the owner a badly made decision.
+- **A change that promises speed is measured before and after on a loaded day.** Not only with the machine idle. Why:
+  with the machine idle everything is fast, and the difference shows when several things run at once.
 
 ## What measures each rule
 
@@ -537,6 +550,7 @@ They come from a whole day of coordinating several sessions. Each says what to d
 | The coordinator settles details with the safest option | nadie | It is a judgment call, and it is written down for the owner to see. |
 | Every session with a name a person gave it | aviso | `/coordinate` lists the ones whose name the tool made up. |
 | No more sessions working than the cap | freno | `open` does not open at the cap. Nothing stops a session the owner opens by hand; `status` counts it and, at the cap, so does the coordinator's notice on each turn. |
+| With a long suite queue, no sessions are opened to program | nadie | Which work needs the suite is a judgment call; `status` shows who is waiting for the turn. |
 | One full suite at a time | freno | The suite runner and the whole portable run do not start with the turn held by another live process, and they say who holds it. A suite someone runs another way is not seen. |
 | Adversarial passes one at a time | freno | The pass's gate exits 3 and `next` asks to wait with another in flight. Nothing stops launching the pass without asking the gate, and a quick fix's pass is not noted as in flight. After an hour, it only warns. |
 | Idle background sessions get closed or given work | aviso | The coordinator's notice on each turn, after 15 minutes. |
@@ -576,6 +590,10 @@ They come from a whole day of coordinating several sessions. Each says what to d
 | A red is not left behind | nadie | The controls stop your own; someone else's red is seen by whoever finds it. |
 | Do not loosen a review, do not do paperwork | nadie | It is a judgment call: no data separates a review from paperwork. |
 | Check a message for the team | nadie | The message goes out outside the machine. |
+| The coordinator does not change code or guides itself | nadie | Nothing tells the coordinator apart from a session that writes today; the brake is a separate story. |
+| A plan for the owner first goes through a separate reviewer | nadie | It is a judgment call: no data separates a plan from any other message. |
+| State only what was checked, and measure use before removing something | nadie | It is the coordinator's judgment call. |
+| Measure a speed change on a loaded day | nadie | Which change promises speed is said in the message, not in a piece of data. |
 
 The "Measured by" column keeps the Spanish words the harness uses everywhere: **aviso** (a notice), **freno** (a brake)
 and **nadie** (nobody).
