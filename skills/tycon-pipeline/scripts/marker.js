@@ -1058,25 +1058,6 @@ function planDeLaCorrida(marker) {
 }
 
 /**
- * ¿Al plan escrito le falta lo que la pregunta de la firma muestra (signature-sources.js: «## Qué hace» en hasta 3 líneas
- * y «## Archivos»)? El motivo, o null si está todo.
- */
-function planSinSecciones(marker) {
-  const plan = planDeLaCorrida(marker);
-  // sin carpeta de corrida no puede haber plan escrito: la pregunta lo dice y no se frena, como antes de esta regla
-  if (plan.error) {
-    appendLog('gates.log', { name: 'plan-approval', status: 'skipped', story: marker.storyId, motivo: 'sin carpeta de corrida para el plan escrito', error: String(plan.error).slice(0, 200) });
-    return null;
-  }
-  let texto;
-  try { texto = fs.readFileSync(plan.file, 'utf8'); } catch (e) {
-    return e.code === 'ENOENT' ? `no encuentro el plan escrito en ${plan.file}` : `no pude leer el plan escrito ${plan.file} (${e.code || e.message})`;
-  }
-  const s = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signature-sources.js')).seccionesDelPlan(texto);
-  return s.error ? `${s.error}, en ${plan.file}` : null;
-}
-
-/**
  * ¿El plan está en lo que el agente le escribió a la persona en esta sesión? La lectura de la conversación vive en
  * lib/person-ok.js. `{ legible: false, motivo }` cuando la
  * conversación no se encuentra o no se lee —otra herramienta, como Codex, o una sesión sin registro—: quien llama falla
@@ -1338,14 +1319,6 @@ function cmdCompleteStep(nRaw, flags) {
       console.error(`marker.js complete-step ${n} BLOQUEADO — falta la aprobación del plan.`);
       console.error(`  marker.js complete-step ${n} --approved "<cita textual de la aprobación del user>"`);
       console.error(`  No se aprueba el plan sin decir QUIÉN aprobó. Ver steps/${STEPS_LIB.byId('approve-plan').file}.`);
-      process.exit(1);
-    }
-    // la pregunta de la firma sale del plan escrito: sin lo que hace y lo que toca, el dueño no tiene con qué decidir. Un
-    // plan ya aprobado (antes de que existiera esta regla) no se vuelve a pedir
-    const sinSecciones = STEPS_LIB.isDone(marker, 'approve-plan') ? null : planSinSecciones(marker);
-    if (sinSecciones) {
-      appendLog('gates.log', { name: 'plan-approval', status: 'blocked', story: marker.storyId, motivo: sinSecciones });
-      console.error(`marker.js complete-step ${n} BLOQUEADO — ${sinSecciones}. Ver steps/${STEPS_LIB.byId('plan').file}.`);
       process.exit(1);
     }
     // ── En una story con pantalla, la maqueta y su aprobación (también con LOW) ──
@@ -5262,7 +5235,7 @@ const delegatedSigning = () => require(path.join(__dirname, '..', '..', '..', 's
 // Los dos respaldos cuando el click no se pudo comprobar (o no se puede pedir): la terminal del dueño, o la frase.
 function respaldosDeDesignar(sesion) {
   const ds = path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'delegated-signing.js');
-  return [`   Respaldos: en la terminal del dueño, node ${__filename} designate-relay --terminal${sesion && sesion !== '_nosession' ? ` --for-session ${sesion}` : ''};`,
+  return [`   Respaldos: en la terminal de la persona, node ${__filename} designate-relay --terminal${sesion && sesion !== '_nosession' ? ` --for-session ${sesion}` : ''};`,
     `   o con su frase: node ${__filename} designate-relay --approved-by '<el dev>' --quote '<su frase>' y después node ${ds} confirm-designation --terminal`];
 }
 
@@ -5272,7 +5245,7 @@ function firmaDeLaDesignacion(firma, resumen, antes, alNegar) {
   const r = ownerWindow().exigir({ firma, argv: process.argv.slice(1), resumen, propia: PROPIA, antes });
   if (r.codigo !== 0) { alNegar(r.motivo); process.exit(r.codigo === 2 ? 2 : 1); }
   if (r.via !== 'click' && r.via !== 'terminal') {
-    alNegar(`la firma volvió por ${r.via}, y esto lo firma el dueño con su click o en su terminal`);
+    alNegar(`la firma volvió por ${r.via}, y esto lo firma la persona con su click o en su terminal`);
     process.exit(1);
   }
   return r;
@@ -5323,7 +5296,7 @@ function designarPorClick(cw) {
   if (previo) { noSeNombro(previo.motivo); process.exit(previo.codigo); }
   const rol = cw.sesionQueReenvia().valor;
   const r = firmaDeLaDesignacion('designation-set', `la sesión ${sesion} pasa a ser la «${rol}» de esta máquina`, antes, noSeNombro);
-  appendLog('gates.log', { name: cw.DESIGNACION, status: 'ok', ts: nowIso(), sesion, rol, quien: 'el dueño', via: r.via });
+  appendLog('gates.log', { name: cw.DESIGNACION, status: 'ok', ts: nowIso(), sesion, rol, quien: 'la persona', via: r.via });
   const quedo = cw.designacionVigente();
   if (!quedo || quedo.error || quedo.sesion !== sesion) {
     console.error(`🚫 marker.js designate-relay: no pude dejar la designación en el registro del arnés${quedo && quedo.error ? ` (${quedo.error})` : ''}.`);
@@ -5331,7 +5304,7 @@ function designarPorClick(cw) {
   }
   // el mismo click la confirma: el renglón se ata a esta designación por su hora, sin frase
   appendLog('gates.log', delegatedSigning().confirmationRecord(quedo, nowIso(), { via: r.via }));
-  console.error(`✅ Esta sesión (${sesion}) es la «${rol}» de esta máquina, nombrada por el dueño con ${r.via === 'click' ? 'su click' : 'su terminal'}.`);
+  console.error(`✅ Esta sesión (${sesion}) es la «${rol}» de esta máquina, nombrada por la persona con ${r.via === 'click' ? 'su click' : 'su terminal'}.`);
   console.error(`   Antes de seguir, leé tus reglas completas: ${path.join(__dirname, '..', '..', '..', 'guides', 'coordination.md')}`);
   process.exit(0);
 }
@@ -5352,13 +5325,13 @@ function cmdWithdrawRelay() {
   const previo = antes();
   if (previo) { noSeRetiro(previo.motivo); process.exit(previo.codigo); }
   const r = firmaDeLaDesignacion('designation-withdraw', `la sesión ${sesion} deja de ser la «${d.rol}» de esta máquina`, antes, noSeRetiro);
-  appendLog('gates.log', { name: cw.DESIGNACION, status: cw.RETIRADA, ts: nowIso(), sesion, rol: d.rol, quien: 'el dueño', via: r.via });
+  appendLog('gates.log', { name: cw.DESIGNACION, status: cw.RETIRADA, ts: nowIso(), sesion, rol: d.rol, quien: 'la persona', via: r.via });
   const quedo = cw.designacionVigente();
   if (quedo && !quedo.error && quedo.sesion === sesion) {
     console.error('🚫 marker.js withdraw-relay: no pude dejar la retirada en el registro del arnés.');
     process.exit(2);
   }
-  console.error(`✅ Esta sesión (${sesion}) dejó de ser la «${d.rol}» de esta máquina: las firmas vuelven al dueño hasta que nombre otra.`);
+  console.error(`✅ Esta sesión (${sesion}) dejó de ser la «${d.rol}» de esta máquina: las firmas vuelven a la persona hasta que nombre otra.`);
   process.exit(0);
 }
 

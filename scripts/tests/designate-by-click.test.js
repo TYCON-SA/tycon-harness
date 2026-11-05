@@ -89,7 +89,8 @@ test('DesignateRelay_NoQuote_NoClick_DeniesWithBoxNamingSession (T1)', (t) => {
   assert.strictEqual(r.decision, 'deny', r.texto);
   assert.deepStrictEqual(r.firmas, ['designation-set']);
   assert.ok(r.cuadro && r.cuadro.soloClick, JSON.stringify(r.cuadro));
-  assert.match(r.cuadro.pregunta, new RegExp(`La sesión ${SES}, en ${lab.carpeta.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}, pasa a ser la «coordinadora» de esta máquina`));
+  // la carpeta va en su propia línea: una ruta larga (las de la CI) no corta la que dice qué pasa
+  assert.ok(r.cuadro.pregunta.includes(`La sesión ${SES} pasa a ser la «coordinadora» de esta máquina · Su carpeta: ${lab.carpeta}.`), r.cuadro.pregunta);
   assert.match(r.texto, /Un mensaje escrito no vale, ni un click en otra pestaña/);
   assert.deepStrictEqual(lab.gates(), [], 'nada anotado');
 });

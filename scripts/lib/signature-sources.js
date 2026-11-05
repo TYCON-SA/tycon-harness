@@ -86,7 +86,7 @@ function planDe(m) {
 function delPlan(palabras, m) {
   const cita = valor(palabras, '--approved') || valor(palabras, '--mockup-approved');
   const { ruta, texto } = planDe(m);
-  if (texto == null) return { queHace: [`no encuentro el plan escrito${ruta ? ` en ${ruta}` : ' (la sesión no tiene una corrida con carpeta)'}`], fuente: '', cita };
+  if (texto == null) return { queHace: [`no encuentro el plan escrito${ruta ? ` en ${ruta}` : ' (la sesión no tiene una ejecución con carpeta)'}`], fuente: '', cita };
   const s = seccionesDelPlan(texto);
   if (s.error) return { queHace: [s.error], completo: ruta, fuente: texto, cita };
   return { queHace: s.queHace, archivos: s.archivos, completo: ruta, fuente: texto, cita };
@@ -163,7 +163,7 @@ function delCritico(palabras, m) {
   const nombre = `${regla}${archivo ? ` en ${archivo}` : ''}`;
   const h = hallazgosDe(carpetaDeLaCorrida(m));
   const archivos = archivo ? [archivo] : [];
-  if (!h.lista) return { queHace: [`Eximir ${nombre}: no hay informe de hallazgos en esta corrida`], archivos, completo: h.ruta, fuente: h.texto || '', cita };
+  if (!h.lista) return { queHace: [`Eximir ${nombre}: no hay informe de hallazgos en esta ejecución`], archivos, completo: h.ruta, fuente: h.texto || '', cita };
   const reglaDe = (f) => String(f.rule_id || f.ruleId || f.rule || '').trim();
   const iguales = h.lista.filter((f) => f && reglaDe(f) === regla && (!archivo || String(f.file || '') === archivo));
   if (!iguales.length) return { queHace: [`Eximir ${nombre}: no está en el informe de hallazgos`], archivos, completo: h.ruta, fuente: h.texto, cita };
@@ -204,8 +204,9 @@ function deLaDesignacion(firma, destino, cwd) {
   let rol = null;
   try { rol = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'critical-waivers.js')).sesionQueReenvia().valor; } catch (_) { rol = null; }
   const verbo = firma === 'designation-set' ? 'pasa a ser' : 'deja de ser';
-  const linea = `La sesión ${destino}, en ${cwd || process.cwd()}, ${verbo} la «${rol || 'coordinadora'}» de esta máquina`;
-  return { queHace: [linea], fuente: linea };
+  // dos líneas: una carpeta larga no corta la que dice qué pasa
+  const lineas = [`La sesión ${destino} ${verbo} la «${rol || 'coordinadora'}» de esta máquina`, `Su carpeta: ${cwd || process.cwd()}`];
+  return { queHace: lineas, fuente: lineas.join('\n') };
 }
 
 function partesDe({ firma, palabras, cwd, marcador, estado, destino } = {}) {

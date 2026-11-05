@@ -83,8 +83,8 @@ El plan escrito trae dos secciones, que son las que muestra la pregunta de la fi
 - `## Qué hace`: hasta 3 líneas llanas, para alguien que no tocó el código.
 - `## Archivos`: los archivos que toca, uno por renglón (`- ruta`).
 
-Sin alguna de las dos, o con más de 3 líneas en «Qué hace», `complete-step approve-plan` se niega antes de abrir la
-ventana: el dueño no tendría con qué decidir.
+Sin alguna de las dos, o con más de 3 líneas en «Qué hace», el comando no se frena, pero la pregunta de la firma dice
+qué falta y cómo agregarlo en lugar del resumen: el dueño ve que el plan no dice qué hace.
 
 ## Guardrail — patrón de referencia verificado (stories de backend)
 

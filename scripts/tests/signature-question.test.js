@@ -114,36 +114,24 @@ test('SignatureQuestion_PlanApproval_FromThePlan (T34)', (t) => {
 });
 
 // 🔴 Falla con: un plan sin sus dos secciones que llega a la ventana y gasta el click.
-test('ApprovePlan_PlanWithoutSections_PrecheckDenies_NoBox (T35)', (t) => {
+// 🔴 Falla con: un plan sin su resumen que llega al dueño sin aviso, o que frena las corridas de planes de antes.
+test('ApprovePlan_PlanWithoutSections_BoxSaysWhatIsMissing_DoesNotBlock (T35)', (t) => {
   const casos = [
-    // cada negativa dice qué sección falta y cómo agregarla
-    [PLAN.replace(/## Qué hace[\s\S]*?(?=## Archivos)/, ''), /el plan no dice qué hace en hasta 3 líneas: falta la sección «## Qué hace»\. Agregala/],
-    [PLAN.replace(/## Archivos[\s\S]*?(?=## Pasos)/, ''), /el plan no dice qué archivos toca: falta la sección «## Archivos»\. Agregala .*«- ruta»/],
+    // cada aviso dice qué sección falta y cómo agregarla
+    [PLAN.replace(/## Qué hace[\s\S]*?(?=## Archivos)/, ''), /Qué hace: el plan no dice qué hace en hasta 3 líneas: falta la sección «## Qué hace»\. Agregala/],
+    [PLAN.replace(/## Archivos[\s\S]*?(?=## Pasos)/, ''), /Qué hace: el plan no dice qué archivos toca: falta la sección «## Archivos»\. Agregala .*«- ruta»/],
     [PLAN.replace('Las preguntas de firma dicen qué se aprueba.', 'dos\ntres\ncuatro'), /su sección «## Qué hace» tiene 4\. Dejala en 3/],
-    [null, /no encuentro el plan escrito en /],
+    [null, /Qué hace: no encuentro el plan escrito en /],
   ];
-  for (const [texto, motivo] of casos) {
+  for (const [texto, aviso] of casos) {
     const c = corrida(t);
     fs.writeFileSync(path.join(c.estado, 'active', 'ses-a.json'), JSON.stringify({ sessionId: 'ses-a', storyId: '9.99', storyPath: c.ruta, repoPath: c.repo,
       startedAt: '2026-11-04T12:00:00Z', stepScheme: 2, stepsCompleted: ['validate-story', 'plan'], stepsPending: ['approve-plan', 'implement'] }));
     if (texto !== null) escribirPlan(c, texto);
-    const antes = fs.readFileSync(path.join(c.estado, 'active', 'ses-a.json'), 'utf8');
-    // el alias `3` ya lo niega el guion en las corridas de hoy: es ambiguo entre «plan» y «approve-plan»
-    for (const cmd of [APRUEBA_PLAN]) {
-      const r = ow.comprobarConElGuion({ palabras: ow.canonica(cmd), cwd: c.repo, sesion: 'ses-a', casa: c.casa });
-      assert.ok(r && r.niega, `${cmd}: ${JSON.stringify(r)}`);
-      assert.match(r.niega, motivo, cmd);
-    }
-    assert.strictEqual(fs.readFileSync(path.join(c.estado, 'active', 'ses-a.json'), 'utf8'), antes, 'nada anotado');
-  }
-  // un plan ya aprobado antes de esta regla no se vuelve a pedir: ni el plan ni la maqueta frenan por sus secciones
-  const c = corrida(t);
-  fs.writeFileSync(path.join(c.estado, 'active', 'ses-a.json'), JSON.stringify({ sessionId: 'ses-a', storyId: '9.99', storyPath: c.ruta, repoPath: c.repo,
-    startedAt: '2026-11-04T12:00:00Z', stepScheme: 2, stepsCompleted: ['start', 'validate-story', 'plan', 'approve-plan'], stepsPending: ['implement'] }));
-  escribirPlan(c, '# Plan viejo\n\n1. algo\n');
-  for (const cmd of [APRUEBA_PLAN, `node ${MARKER} approve-mockup --approved "va la maqueta"`]) {
-    const r = ow.comprobarConElGuion({ palabras: ow.canonica(cmd), cwd: c.repo, sesion: 'ses-a', casa: c.casa });
-    assert.ok(!(r && r.niega && /## Qué hace|## Archivos/.test(r.niega)), `${cmd}: ${JSON.stringify(r)}`);
+    assert.match(cuadro(c, APRUEBA_PLAN, { firma: 'plan-approval' }).pregunta, aviso);
+    // el guion no lo niega por eso: el aviso va en la pregunta, y el dueño decide
+    const r = ow.comprobarConElGuion({ palabras: ow.canonica(APRUEBA_PLAN), cwd: c.repo, sesion: 'ses-a', casa: c.casa });
+    assert.ok(!(r && r.niega && /## Qué hace|## Archivos|plan escrito/.test(r.niega)), JSON.stringify(r));
   }
 });
 
@@ -187,7 +175,7 @@ test('SignatureQuestion_WaiversAndExtraRound_FromTheirSource (T37)', (t) => {
   assert.ok(mt.includes(`Completo en: ${c.ruta}.`), mt);
   // el crítico: sin informe, sin coincidencia, con una y con varias
   const crit = (cmd) => conFirma('critical-waiver')(c, `node ${MARKER} waive-critical ${cmd} --reason "lo cubre otra capa"`).pregunta;
-  assert.match(crit('--rule SEC-C1 --file a.js'), /Qué hace: Eximir SEC-C1 en a\.js: no hay informe de hallazgos en esta corrida\./);
+  assert.match(crit('--rule SEC-C1 --file a.js'), /Qué hace: Eximir SEC-C1 en a\.js: no hay informe de hallazgos en esta ejecución\./);
   const informe = path.join(c.runDir, 'findings.json');
   const hallazgo = (n, file) => ({ rule_id: 'SEC-C1', severity: 'CRITICAL', file, summary: `secreto en el código ${n}`, disposition: 'open' });
   fs.writeFileSync(informe, JSON.stringify([hallazgo(1, 'a.js'), ...[2, 3, 4, 5].map((n) => hallazgo(n, `b${n}.js`))]));
