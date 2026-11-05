@@ -1226,6 +1226,18 @@ _(scripts/metrics/step-times.js + el carril de cada commit en scripts/hooks/unpu
 
 **Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptsmetricsstep-timesjs)
 
+## scripts/lib/office-messages.js
+
+_(scripts/lib/office-messages.js + la ruta de la oficina scripts/tools/office/messages.js + los ganchos scripts/hooks/office-inbox-watch.js y office-message-rule.js + scripts/tools/office-message.js)_
+
+**Qué es:** Lo que la persona le escribe a una sesión desde `/office`: el buzón, el vigilante que la despierta y `office-message.js verify`, que la sesión corre antes de obedecer.
+
+**Por qué existe:** Darle indicaciones a una sesión sin buscar su pestaña. Llega como aviso del sistema, nunca como la persona: por eso no firma.
+
+**Quién la usa:** La ventana de una sesión en `/office` y cada sesión de Claude. Off: `TYCON_OFFICE_MESSAGES=0`.
+
+**Dónde se prueba:** `scripts/tests/office-messages.test.js`, `office-inbox-watch.test.js` y `owner-approvals.test.js`
+
 ## scripts/tools/work-in-progress.js
 
 _(scripts/tools/work-in-progress.js + commands/wip.md; en 3D y en vivo: scripts/tools/office.js; el estado de cada sesión: scripts/hooks/session-state.js)_
@@ -1239,6 +1251,22 @@ _(scripts/tools/work-in-progress.js + commands/wip.md; en 3D y en vivo: scripts/
 **Dónde se prueba:** `scripts/tests/`: `work-in-progress`, `office*`, `session-state`, `session-transcript`
 
 **Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptstoolswork-in-progressjs)
+
+## scripts/hooks/office-link-start.js
+
+_(scripts/hooks/office-link-start.js + `harness.js team-refresh`; la conexión: scripts/tools/office/site-link.js)_
+
+**Qué es:** Lo que enlaza la oficina de la máquina con el sitio de la organización sin que el dev haga nada: el alta con
+la huella al abrir una sesión, y la capa del equipo al día cada 30 min mientras se trabaja.
+
+**Por qué existe:** Una máquina con el arnés al día quedó sin oficina porque su capa del equipo seguía sin la dirección
+del sitio, y sólo un `update --yes` a mano la trajo.
+
+**Quién la usa:** Cada máquina del equipo, sola. Quien mantiene aprueba cada máquina una vez en el sitio.
+
+**Dónde se prueba:** `scripts/tests/`: `office-site-link`, `harness-team` (T43); el banco, caso 79
+
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptshooksoffice-link-startjs)
 
 ## scripts/metrics/upload-runs.js
 

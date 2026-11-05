@@ -65,6 +65,7 @@
  *                                                  y lleva más de 24 h sin tocarse
  *   marker.js doing "<qué hago>" | doing clear  → anota (o borra) qué hace esta sesión sin story, para /wip; NO es un
  *                                                  permiso. `doing clear-orphan <sid>`: la de otra sesión que no vive.
+ *                                                  Con una story abierta sólo anota `doing --waiting-for "<qué espera>"`.
  *   marker.js adopt-session <sessionId>         → ADOPTA el marker completo de otra
  *                                                  sesión (resume cross-session sin pérdida:
  *                                                  filesTouched/iterations/checks/dodRuntimeChecked
@@ -298,8 +299,12 @@ function pruneStale() {
         }
         // el cierre es de la sesión podada, no de la que poda
         const podada = m.sessionId || f.replace(/\.json$/, '');
-        // una corrida dejada a propósito lleva días sin tocarse y no está abandonada: podarla pierde su trabajo
-        if (marcaDe(podada, m) || esperaGuardar(m)) continue;
+        // una corrida dejada a propósito lleva días sin tocarse y no está abandonada: podarla pierde su trabajo. Tampoco la
+        // que espera su turno con la espera anotada
+        const io = require('./lib/story-gate-io.js');
+        if (marcaDe(podada, m) || esperaGuardar(m) || io.waitingTurn(STATE_DIR, podada)) continue;
+        // sin su copia no se poda: `restore` la rearma desde ahí
+        if (!io.savePruned(STATE_DIR, podada, m)) continue;
         fs.unlinkSync(full);
         avisarOficina(podada);
         cerrarEjecucion(podada, m, { registrar: false, estado: 'abandonada', motivo: `podada: más de ${STALE_HOURS} h sin tocarse`, soloAbierta: true });
@@ -4392,8 +4397,14 @@ function cmdSalidaPerdida(modo, sesion) {
   const ult = or.vigente(sesion);
   const raiz = or.raizDeGit(process.cwd());
   const copias = raiz ? or.copiasDe(raiz, sesion) : [];
-  // la apertura: la vigente del registro o, sin registro, la copia del repo
-  const apertura = ult && ult.name === 'run-open' ? ult : copias.length ? copias[copias.length - 1].copia : null;
+  // la que se podó por vieja dejó su marcador guardado (lib/story-gate-io.js savePruned): restore vuelve con sus pasos
+  const io = require('./lib/story-gate-io.js');
+  const podada = modo === 'restore' ? io.readPruned(STATE_DIR, sesion) : null;
+  // el marcador no siempre trae su carpeta: la da la última apertura de esa sesión en el registro
+  const abierta = podada && !podada.runDir ? (() => { const r = or.leerEventos(); return r.ok ? [...r.eventos].reverse().find((e) => e.sesion === String(sesion) && e.name === 'run-open') : null; })() : null;
+  const dePodada = podada ? { name: 'pruned', story: String(podada.storyId), storyPath: podada.storyPath || null, repo: podada.repoPath || null, runDir: podada.runDir || (abierta && abierta.runDir) || null, ts: podada.startedAt || podada.lastTouch } : null;
+  // la apertura: la vigente del registro o, sin registro, la copia del repo, o la de la podada
+  const apertura = ult && ult.name === 'run-open' ? ult : copias.length ? copias[copias.length - 1].copia : dePodada;
   if (!apertura) {
     console.error(`marker.js ${nombre}: la sesión ${sesion} no tiene una ejecución abierta (ni apertura en el registro ni copia en este repo): no hay nada que ${modo === 'lost' ? 'cerrar' : 'restaurar'}.`);
     process.exit(1);
@@ -4436,13 +4447,16 @@ function cmdSalidaPerdida(modo, sesion) {
     previo = null;
   }
   const sigue = previo && String(previo.storyId) === String(base.story);
+  // de la podada vuelven sus pasos y lo que anotó, si es la misma historia
+  const guardada = !sigue && podada && String(podada.storyId) === String(base.story) ? (({ sessionId: _s, lastTouch: _l, prunedAt: _p, ...resto }) => resto)(podada) : null;
   writeMarker({
-    ...(sigue ? previo : {}),
+    ...(sigue ? previo : guardada || {}),
     storyId: String(base.story), storyPath: base.storyPath || null, repoPath: base.repo || null, runDir: base.runDir,
     sessionId: SID, lastTouch: nowIso(), restoredFrom: sesion, restoredAt: nowIso(), ...porDe(firma),
-    ...(sigue ? {} : { startedAt: nowIso(), stepScheme: STEPS_LIB.SCHEME, stepsCompleted: [], stepsPending: STEPS_LIB.STEPS.filter((s) => !s.flag).map((s) => s.id) }),
+    ...(sigue || guardada ? {} : { startedAt: nowIso(), stepScheme: STEPS_LIB.SCHEME, stepsCompleted: [], stepsPending: STEPS_LIB.STEPS.filter((s) => !s.flag).map((s) => s.id) }),
   });
   or.abrir({ sid: SID, story: base.story, storyPath: base.storyPath, repo: base.repo, runDir: base.runDir, motivo: 'restaurada' });
+  if (podada) { try { fs.unlinkSync(path.join(STATE_DIR, 'pruned', `${String(sesion).replace(/[/\\]/g, '_')}.json`)); } catch (_e) { /* ya no está */ } }
   sacarMarca(sesion);
   syncSessionState(SID);
   process.stdout.write(`restaurada: la ejecución de la story ${base.story} vuelve a la sesión ${SID}\n`);
@@ -4474,6 +4488,7 @@ function sessionLiveness(sid) {
 // `doing "<qué hago>"`: lo que hace una sesión sin story (un video, una medición), para que /wip lo diga. No es un
 // permiso: no toca el portón de carril ni el ad-hoc. Otro `doing` la reemplaza; `doing clear` la borra;
 // `doing clear-orphan <sid>` borra la nota de otra sesión que ya no vive. Archivo: doing/<sid>.json { text, at }; doing.log.
+// Con una ejecución abierta en la sesión sólo anota la espera de un turno sin texto; lo demás sale 3 sin escribir nada.
 // `--until HH:MM`: a qué hora dice que termina. Volver a anotar el mismo trabajo (el mismo texto, o sin texto) conserva en
 // `promisedAt` la primera hora que prometió, contra la que la oficina compara. La primera corrección, en los 10 minutos de
 // la primera hora anotada, es un error de tipeo y la reemplaza; una sola, para que corregir seguido no renueve la ventana.
@@ -4534,12 +4549,21 @@ function cmdDoing(sub, arg) {
     process.stdout.write('doing: borrada\n');
     return;
   }
+  // con una ejecución abierta, su paso ya dice qué hace y a qué hora termina: una nota encima la muestra en pausa. Pasa
+  // sólo la espera de un turno sin texto, que es de la historia (la respetan las podas y el aviso al dueño)
+  // un marcador ilegible no es «sin historia»: frena en vez de anotar como si no hubiera
+  frenarSiIlegible(markerFilePath(SID), SID, 'doing');
+  const run = readMarker();
+  if (run && sub !== '--waiting-for') {
+    console.error(`marker.js doing: no se anotó nada — esta sesión tiene abierta la historia ${run.storyId}, y su paso ya dice qué hace y a qué hora termina; si deja la historia por otro trabajo, eso es otra sesión (si espera un turno: marker.js doing --waiting-for "<qué espera>")`);
+    process.exit(3);
+  }
   let prev = null;
   try { prev = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_e) { /* sin nota, o rota: no hay nada que conservar */ }
   const onlyHour = sub === '--until' || sub === '--waiting-for';
-  if (onlyHour && !(prev && prev.text)) { console.error('marker.js doing: sin una nota anotada, la hora va con su texto — uso: marker.js doing "<qué hago>" --until HH:MM'); process.exit(2); }
-  const text = onlyHour ? prev.text : String(sub || '').replace(/\s+/g, ' ').trim();
-  if (text.length < 8 || text.length > 200) {
+  if (onlyHour && !run && !(prev && prev.text)) { console.error('marker.js doing: sin una nota anotada, la hora va con su texto — uso: marker.js doing "<qué hago>" --until HH:MM'); process.exit(2); }
+  const text = run ? '' : onlyHour ? prev.text : String(sub || '').replace(/\s+/g, ' ').trim();
+  if (!run && (text.length < 8 || text.length > 200)) {
     console.error('marker.js doing: el texto va de 8 a 200 caracteres — uso: marker.js doing "<qué hago>" [--until HH:MM | --waiting-for "<qué espera>"] | doing clear');
     process.exit(2);
   }
@@ -4558,7 +4582,7 @@ function cmdDoing(sub, arg) {
   }
   const now = new Date().toISOString();
   // el mismo trabajo, anotado hace menos de un día: la primera hora prometida y el arranque de la misma espera se conservan
-  const same = prev && prev.text === text && Date.now() - Date.parse(prev.at) < 24 * 3600 * 1000;
+  const same = prev && (prev.text || '') === text && Date.now() - Date.parse(prev.at) < 24 * 3600 * 1000;
   const firstHourAt = (same && prev.firstHourAt) || (endAt && !(same && prev.endAt) ? new Date(Date.now()).toISOString() : null);
   // se compara la hora del reloj: la misma hora tipeada puede caer en otro día si pasó el corte de untilIso, y eso la repite, no la corrige
   const clock = (iso) => new Date(iso).toTimeString().slice(0, 5);
@@ -4566,11 +4590,11 @@ function cmdDoing(sub, arg) {
   const promisedAt = same && !corrects ? prev.promisedAt || prev.endAt || null : null;
   const waitingSince = !waitingFor ? null : (same && prev.waitingFor === waitingFor && prev.waitingSince) || now;
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(file, JSON.stringify({ text, at: now, ...(endAt ? { endAt } : {}), ...(promisedAt ? { promisedAt } : {}), ...(firstHourAt ? { firstHourAt } : {}), ...(corrects || (same && prev.hourCorrected) ? { hourCorrected: true } : {}), ...(waitingFor ? { waitingFor, waitingSince } : {}) }));
+  fs.writeFileSync(file, JSON.stringify({ ...(text ? { text } : {}), at: now, ...(endAt ? { endAt } : {}), ...(promisedAt ? { promisedAt } : {}), ...(firstHourAt ? { firstHourAt } : {}), ...(corrects || (same && prev.hourCorrected) ? { hourCorrected: true } : {}), ...(waitingFor ? { waitingFor, waitingSince } : {}) }));
   avisarOficina();
-  appendLog('doing.log', { kind: 'DOING_SET', text, ...(endAt ? { endAt } : {}), ...(waitingFor ? { waitingFor } : {}) });
+  appendLog('doing.log', { kind: 'DOING_SET', ...(text ? { text } : {}), ...(endAt ? { endAt } : {}), ...(waitingFor ? { waitingFor } : {}) });
   if (endAt) warnPastUntil('doing', endAt);
-  process.stdout.write(`doing: ${text}${endAt ? ` (termina ${process.argv[u + 1]})` : waitingFor ? ` (espera ${waitingFor})` : ''}\n`);
+  process.stdout.write(`doing: ${text || `la historia ${run.storyId}`}${endAt ? ` (termina ${process.argv[u + 1]})` : waitingFor ? ` (espera ${waitingFor})` : ''}\n`);
 }
 
 function cmdAdhocClearOrphan(sid) {
@@ -5507,7 +5531,7 @@ function cmdRuntimeWaiver(storyArg, argv = []) {
 // tiene prioridad sobre él aunque siga existiendo.
 // ============================================================
 // el cupo más grande que declara la designada por otra pestaña: uno mayor lo aprueba el dueño en su ventana
-const { DELEGATED_ADHOC_MAX_FILES: ADHOC_TOPE_DELEGADO, cupoDelegado, cupoAlDeclarar } = require('./lib/story-gate.js');
+const { DELEGATED_ADHOC_MAX_FILES: ADHOC_TOPE_DELEGADO, cupoAlDeclarar } = require('./lib/story-gate.js');
 const ADHOC_MOTIVO_MAX = 200;
 const ADHOC_CUPO_MAX = 50;
 

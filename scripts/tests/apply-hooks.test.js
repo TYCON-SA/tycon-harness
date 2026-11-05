@@ -102,7 +102,7 @@ test('T33 HooksList_Schema_EveryRecordOnce_NoListLeftInAppliers', () => {
   const keys = list.hooks.map((h) => `${h.event}|${mod.normMatcher(h.matcher)}|${h.spec}`);
   assert.strictEqual(new Set(keys).size, keys.length, 'ningún registro repetido');
   for (const h of list.hooks) {
-    assert.ok(['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SessionStart', 'Notification', 'SessionEnd'].includes(h.event), `${h.spec}: evento ${h.event}`);
+    assert.ok(['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SessionStart', 'Notification', 'SessionEnd', 'PermissionRequest'].includes(h.event), `${h.spec}: evento ${h.event}`);
     assert.match(h.when, /^(always|integration:[a-z]+|optin:TYCON_[A-Z_]+)$/, `${h.spec}: when ${h.when}`);
     assert.strictEqual(typeof h.platforms.windows, 'boolean', `${h.spec}: platforms.windows`);
     assert.ok(h.label && typeof h.label === 'string', `${h.spec}: label`);
@@ -1080,3 +1080,37 @@ test('ApplyHooks_LanzadoDesdeLaCarpetaNumerada_ElPisoNombraElEnlace', (t) => {
   assert.ok(M.comandos().every((c) => !c.includes('versions')), `al actualizar: ${JSON.stringify(M.comandos())}`);
 });
 
+
+test('T36 ApplyHooks_AsyncRewake_SeEscribeYNoSeRepite @story-8.183 @ac-7: asyncRewake y timeout quedan; dos veces no duplica; los demás no cambian', (t) => {
+  const list = LIST_OF([
+    H('SessionStart', '', '@tcg:vigila.js', { asyncRewake: true, timeout: 86400 }),
+    H('Stop', '', '@tcg:vigila.js', { asyncRewake: true, timeout: 86400 }),
+    H('Stop', '', '@tcg:otro.js'),
+  ]);
+  const L = lab(t, { list, files: ['@tcg:vigila.js', '@tcg:otro.js'], settings: { hooks: {} } });
+  const r = run(L, [], { TYCON_HARNESS_SHARED_DONE: '1' });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const once = settingsOf(L);
+  const hooksOf = (s, ev) => (s.hooks[ev] || []).flatMap((e) => e.hooks || []);
+  const watch = (ev) => hooksOf(once, ev).filter((h) => h.command.includes('vigila.js'));
+  for (const ev of ['SessionStart', 'Stop']) {
+    assert.strictEqual(watch(ev).length, 1, `${ev}: uno solo`);
+    assert.strictEqual(watch(ev)[0].asyncRewake, true);
+    assert.strictEqual(watch(ev)[0].timeout, 86400);
+  }
+  const other = hooksOf(once, 'Stop').find((h) => h.command.includes('otro.js'));
+  assert.strictEqual(other.asyncRewake, undefined, 'el otro no se toca');
+  assert.strictEqual(other.timeout, undefined);
+  // una segunda vez no cambia nada; uno registrado con otro plazo se pone al día en su lugar
+  assert.strictEqual(run(L, [], { TYCON_HARNESS_SHARED_DONE: '1' }).status, 0);
+  assert.deepStrictEqual(settingsOf(L), once);
+  const viejo = settingsOf(L);
+  for (const h of hooksOf(viejo, 'Stop')) if (h.command.includes('vigila.js')) { h.timeout = 600; delete h.asyncRewake; }
+  fs.writeFileSync(L.settingsPath, JSON.stringify(viejo, null, 2) + '\n');
+  assert.strictEqual(run(L, [], { TYCON_HARNESS_SHARED_DONE: '1' }).status, 0);
+  assert.deepStrictEqual(settingsOf(L), once);
+  // la lista no acepta otros valores
+  const bad = mod.validateList(LIST_OF([H('Stop', '', '@tcg:x.js', { asyncRewake: 'si', timeout: 0 })]));
+  assert.ok(bad.some((m) => /asyncRewake sólo puede ser true/.test(m)), bad.join('\n'));
+  assert.ok(bad.some((m) => /timeout es un entero/.test(m)), bad.join('\n'));
+});

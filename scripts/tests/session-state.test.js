@@ -353,7 +353,7 @@ test('T28 Installer_RegistersHooks_Idempotent @story-2.81 @ac-27 — el aplicado
     return out;
   };
   for (let i = 0; i < 2; i += 1) { const r = apply(); assert.strictEqual(r.status, 0, r.stderr + r.stdout); }
-  const want = ['SessionStart·', 'SessionEnd·', 'Notification·permission_prompt', 'PreToolUse·AskUserQuestion|ExitPlanMode|mcp__spokenly__ask_user_dictation', 'PostToolUse·', 'UserPromptSubmit·', 'Stop·'];
+  const want = ['SessionStart·', 'SessionEnd·', 'Notification·permission_prompt', 'PermissionRequest·Bash|PowerShell|Edit|Write|MultiEdit|NotebookEdit|Read|Glob|Grep|WebFetch|WebSearch|mcp__.*', 'PreToolUse·AskUserQuestion|ExitPlanMode|mcp__spokenly__ask_user_dictation', 'PostToolUse·', 'UserPromptSubmit·', 'Stop·'];
   assert.deepStrictEqual(Object.keys(claudeCount()).sort(), [...want].sort());
   for (const [k, n] of Object.entries(claudeCount())) assert.strictEqual(n, 1, `${k} una sola vez`);
   // Codex

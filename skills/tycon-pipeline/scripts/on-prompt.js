@@ -74,6 +74,12 @@ function listAllMarkers(currentSessionId) {
         try { perdida = !!require('./lib/open-runs.js').perdida({ sid: m.sessionId || f.replace(/\.json$/, ''), cwd: m.repoPath || process.cwd() }); } catch { /* queda perdida */ }
         // no se poda, y sigue a la vista en la lista (las demás sesiones la ven como ocupada)
         if (perdida) { markers.push(m); continue; }
+        // una que espera su turno con la espera anotada no está abandonada: sigue, y cuenta como ocupada
+        const io = require('./lib/story-gate-io.js');
+        const podada = m.sessionId || f.replace(/\.json$/, '');
+        if (io.waitingTurn(path.dirname(ACTIVE_DIR), podada)) { markers.push(m); continue; }
+        // sin su copia no se poda: `marker.js restore` la rearma desde ahí
+        if (!io.savePruned(path.dirname(ACTIVE_DIR), podada, m)) { markers.push(m); continue; }
         try { fs.unlinkSync(full); } catch { /* best-effort */ }
         // el cierre de la sesión podada: sin él, su apertura sin marcador frenaría como perdida (lib/open-runs.js)
         try {

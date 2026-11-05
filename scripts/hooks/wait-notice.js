@@ -16,7 +16,10 @@
  * (30 minutos desde la apertura; `wait_notice.owner_minutes`; `TYCON_WAIT_NOTICE_OWNER_MS`), si sigue sin resolver.
  * Si el turno terminó con un mensaje a otra sesión (un turno pedido a la coordinadora), la espera es de esa sesión y no
  * de la persona: con coordinadora viva, al dueño recién a su propio plazo (120 minutos; `wait_notice.peer_owner_minutes`;
- * `TYCON_WAIT_NOTICE_PEER_OWNER_MS`). Sin coordinadora, como cualquier otra espera.
+ * `TYCON_WAIT_NOTICE_PEER_OWNER_MS`). Sin coordinadora, como cualquier otra espera. Lo mismo si la sesión anotó qué espera
+ * (`marker.js doing --waiting-for`, un turno): esa nota es la línea, también sobre la razón del freno del cierre.
+ * Con coordinadora confirmada, la espera de un permiso no le llega a ella por acá: se la avisa al instante
+ * `coordination.js owner-wait`.
  *
  *   Stop (también con stop_hook_active) · PreToolUse de las tres herramientas que esperan a la persona ·
  *   Notification con permission_prompt                                        → abre la espera
@@ -401,8 +404,33 @@ function timerSpawnOptions({ env = process.env } = {}) {
   return { detached: true, stdio: 'ignore', env, windowsHide: true };
 }
 
+/**
+ * De qué es la espera y qué línea lleva: `{ kind, line }`. Al cerrar el turno (`stop` o `peer`), si la sesión anotó qué
+ * espera (`marker.js doing --waiting-for`), es una espera de turno (`turn`): espera a otra sesión, no a la persona, y su
+ * nota gana también sobre la razón del freno del cierre. Si no, la razón del freno, si escaló, o la línea de siempre.
+ */
+function waitOf({ sid, marker, last, home: h }) {
+  if (last.kind === 'stop' || last.kind === 'peer') {
+    // el mismo lector que las podas, con su tope de 24 h: una nota de espera olvidada no apaga el aviso al dueño
+    let turn = null;
+    try { turn = require(path.join(SKILL_LIB, 'story-gate-io.js')).waitingTurn(stateDirOf(h || home()), sid); } catch (e) {
+      // sin el lector, la espera sigue como siempre (al dueño a los 30 min), y queda en el registro
+      turn = null;
+      try { logLine({ session: sid, event: 'turn-wait-unreadable', reason: String((e && e.message) || e).slice(0, 200) }); } catch { /* sin registro */ }
+    }
+    if (turn) return { kind: 'turn', line: `espera ${turn.waitingFor.replace(/\s+/g, ' ')}` };
+  }
+  const line = marker && marker.needs_human && marker.escalation_reason ? String(marker.escalation_reason) : last.line;
+  return { kind: last.kind, line };
+}
+
+/** El plazo del dueño según la espera: la de otra sesión (un mensaje o un turno) tiene el suyo, más largo. */
+function ownerDeadlineFor(kind, opts = {}) {
+  return kind === 'peer' || kind === 'turn' ? peerOwnerThresholdMs(opts) : ownerThresholdMs(opts);
+}
+
 /** Abre (o reemplaza) la espera de la sesión y lanza su proceso del plazo. */
-function openWait(sid, tp, kind, waiting) {
+function openWait(sid, tp, kindIn, waiting) {
   const marker = readMarker(sid);
   if (!marker || !marker.storyId) return;
   const step = currentStep(marker);
@@ -412,7 +440,7 @@ function openWait(sid, tp, kind, waiting) {
   if (step.unknown) logLine({ session: sid, event: 'unknown-step', step: step.id });
   const plazo = thresholdMs({});
   if (plazo.problem) logLine({ session: sid, event: 'config-problem', problem: plazo.problem });   // usa 5 min, y lo dice
-  const linea = marker.needs_human && marker.escalation_reason ? String(marker.escalation_reason) : waiting;
+  const { kind, line: linea } = waitOf({ sid, marker, last: { kind: kindIn, line: waiting } });
   const { records, prompts } = countRecords(tp);
   const wait = {
     session: sid, story: String(marker.storyId), step: step.id, stepName: step.name, kind, waiting: String(linea || '').slice(0, 2000),
@@ -470,11 +498,15 @@ function coordinatorLines({ home: h, coordinatorSid } = {}) {
   let names = [];
   try { names = fs.readdirSync(d.waits).filter((n) => n.endsWith('.json')); } catch { return []; }
   const botToken = process.env.TELEGRAM_BOT_TOKEN || '';
+  // con coordinadora confirmada, un permiso se lo avisa al instante `coordination.js owner-wait`: acá saldría dos veces
+  let confirmed = null;
+  try { confirmed = require(path.join(ROOT, 'scripts', 'lib', 'owner-approvals.js')).coordinadoraConfirmada(h || home()); } catch { confirmed = null; }
   const out = [];
   for (const n of names) {
     const p = path.join(d.waits, n);
     const w = readJson(p);
     if (!w || !coordinatorSid || w.coordinatorSid !== coordinatorSid || w.coordinatorShownAt || w.notified) continue;
+    if (w.kind === 'permission' && confirmed) continue;
     out.push(`Espera: ${w.waitingName || w.session} espera ${oneLine(w.waiting, botToken) || 'una respuesta'} (la ${w.story}, ${stepLabel(w.step).name}) desde las ${clock(w.openedAt)}; si sigue a las ${clock(w.ownerAt)}, el aviso va al dueño.`);
     try { writeJsonAtomic(p, { ...w, coordinatorShownAt: new Date().toISOString() }); } catch { /* sale de nuevo en el turno siguiente */ }
   }
@@ -494,7 +526,7 @@ function timer(sid, openedAt) {
   if (!w) return;
   const coord = coordinatorFor(sid);
   if (coord) {
-    const owner = w.kind === 'peer' ? peerOwnerThresholdMs({}) : ownerThresholdMs({});
+    const owner = ownerDeadlineFor(w.kind);
     if (owner.problem) logLine({ session: sid, event: 'config-problem', problem: owner.problem });   // usa el de fábrica, y lo dice
     const opened = Date.parse(openedAt);
     const coordinatorAt = new Date().toISOString();
@@ -625,7 +657,7 @@ function noteFindingsWait(sid, which = 'noteFindingsWait') {
   return true;
 }
 
-module.exports = { WAIT_TOOLS, stepLabel, currentStep, buildMessage, thresholdMs, ownerThresholdMs, peerOwnerThresholdMs, peerWait, coordinatorLines, noticeEnabled, orgWaitNotice, timerSpawnOptions, countRecords, isGenuineUserPrompt, backgroundPending, noteFindingsWait };
+module.exports = { WAIT_TOOLS, SECRET_SHAPES, redact, oneLine, waitOf, ownerDeadlineFor, stepLabel, currentStep, buildMessage, thresholdMs, ownerThresholdMs, peerOwnerThresholdMs, peerWait, coordinatorLines, noticeEnabled, orgWaitNotice, timerSpawnOptions, countRecords, isGenuineUserPrompt, backgroundPending, noteFindingsWait };
 
 if (require.main === module) {
   try {

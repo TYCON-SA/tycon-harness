@@ -6,9 +6,11 @@
  *
  * En cada turno de la sesión designada como coordinadora (guides/coordination.md) cuenta las sesiones que trabajan.
  * En el tope dice quiénes son; pasado el tope, por cuánto y cuál trabaja hace menos. Debajo del tope, nada. Las firmas
- * por la terminal que esperan hace más de un día salen en una línea, una vez por día. Con la lista de firmas encendida,
- * si escribió la persona y hay renglones sin avisar, pide pasarlos de a uno: a la coordinadora viva o, sin ella, a la sesión
- * destino de cada uno. Cualquier otra sesión no ve nada: sin coordinadora designada, o en otra sesión, el hook calla. El
+ * por la terminal que esperan hace más de un día salen en una línea, una vez por día. Sin suite completa en curso y con
+ * sesiones que anotaron que esperan su turno (de suite, de portón), nombra a la que espera hace más para que arranque. Con
+ * la lista de firmas encendida, si escribió la persona y hay renglones sin avisar, pide pasarlos de a uno: a la
+ * coordinadora viva o, sin ella, a la sesión destino de cada uno. Cualquier otra sesión no ve nada: sin coordinadora
+ * designada, o en otra sesión, el hook calla. El
  * tope no abre conversaciones; la lista mira la de esta sesión, sólo en una de fondo, para no contar su encargo como la persona.
  * Un error propio nunca frena el turno. Opt-out: TYCON_COORDINATION_NOTICE=0
  */

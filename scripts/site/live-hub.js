@@ -14,7 +14,13 @@
  * sitio no conoce se ignora, porque una máquina se actualiza antes que el sitio y cortarla congelaría su oficina.
  *
  * Quién ve qué lo decide `access.js` en cada reparto, con la configuración del momento, y el filtro va antes de mandar. Las
- * fotos viven sólo en memoria: al registro van los eventos, nunca el contenido.
+ * fotos viven sólo en memoria: al registro van los eventos, nunca el contenido. La conversación de cada sesión (`charla`)
+ * llega aparte, también sólo en memoria y con la oficina; la máquina la manda porque el `ack` de este sitio la anuncia, y
+ * se entrega a pedido (`conversacion`) con la misma regla de quién ve qué.
+ *
+ * El sitio le manda a cada navegador un `latido` cada 25 s, cambie algo o no: una conexión que se cae en silencio (un
+ * intermediario que la corta, una máquina que se duerme) no avisa, y la página la da por muerta si pasa un minuto sin
+ * recibir nada. Al reconectar recibe la lista entera.
  *
  * Los topes van por quien los pide, porque /live/machine está al alcance de cualquiera: uno que abusa se frena solo. Al
  * llegar al tope del total de conexiones sin autenticar se corta la más vieja, así una máquina aprobada siempre tiene lugar
@@ -24,7 +30,7 @@
  */
 const crypto = require('crypto');
 const { WebSocketServer } = require('../tools/office/vendor/ws');
-const { FIELDS, CLOSE, TEXT_MAX, MAX_MESSAGE_BYTES, MESSAGES, signedText, fingerprintOf, validHour } = require('../tools/office/fields.js');
+const { FIELDS, CHARLA, CAPABILITIES, CLOSE, TEXT_MAX, CHARLA_TEXT_MAX, MAX_MESSAGE_BYTES, MESSAGES, signedText, fingerprintOf, validHour } = require('../tools/office/fields.js');
 const access = require('./access.js');
 const session = require('./session.js');
 
@@ -33,8 +39,11 @@ const TOPES = Object.freeze({
   navegadoresPorCuenta: 5, navegadoresTotal: 200, sinAutenticarPorDireccion: 2, sinAutenticarTotal: 1000,
   // un navegador que no lee se corta antes de llenar la memoria del sitio
   bufferNavegadorBytes: 4 * 1024 * 1024,
+  // las conversaciones que guarda el sitio de una oficina: no confía en el filtro de la máquina
+  charlasPorOficina: 30, bytesCharlasPorOficina: 1024 * 1024,
 });
-const PLAZOS = Object.freeze({ saludoMs: 5000, cierreMs: 2000, repartoMs: 500,revisionMs: 60000, sinLatidoMs: 3 * 60 * 1000, fotoMs: 24 * 60 * 60 * 1000 });
+// latidoNavegadorMs: el sitio le escribe a cada navegador aunque nada cambie, así la página se entera de una conexión muerta
+const PLAZOS = Object.freeze({ saludoMs: 5000, cierreMs: 2000, repartoMs: 500, revisionMs: 60000, sinLatidoMs: 3 * 60 * 1000, fotoMs: 24 * 60 * 60 * 1000, latidoNavegadorMs: 25000 });
 const CIERRE_MUY_GRANDE = 1009;
 const CIERRE_PROBA_DESPUES = 1013;
 const NONCE_BYTES = 32;
@@ -56,6 +65,18 @@ function valorSegun(spec, value, donde, desconocidos) {
   switch (spec.form) {
     case 'text':
     case 'action': return typeof value === 'string' && value.length <= TEXT_MAX ? value : MALA;
+    case 'longText': return typeof value === 'string' && value.length <= CHARLA_TEXT_MAX ? value : MALA;
+    case 'byName': {
+      if (typeof value !== 'object' || Array.isArray(value)) return MALA;
+      const out = {};
+      for (const [k, v] of Object.entries(value)) {
+        if (k.length > TEXT_MAX || v === null) return MALA;
+        const x = valorSegun(spec.of, v, donde, desconocidos);
+        if (x === MALA) return MALA;
+        if (x !== undefined) out[k] = x;
+      }
+      return out;
+    }
     case 'folder': return typeof value === 'string' && value.length <= TEXT_MAX && !/[\\/]/.test(value) ? value : MALA;
     case 'number': return Number.isFinite(value) ? value : MALA;
     case 'flag': return typeof value === 'boolean' ? value : MALA;
@@ -107,6 +128,15 @@ function limpiarFoto(data) {
   if (foto === MALA) return { ok: false };
   return { ok: true, foto, desconocidos: [...desconocidos] };
 }
+
+/** La conversación de una sesión, por la forma de `CHARLA`: `{ ok: true, datos }` o `{ ok: false }`. Lo desconocido se ignora. */
+function limpiarCharla(datos) {
+  const datosLimpios = camposSegun(CHARLA.fields, datos, '', new Set());
+  return datosLimpios === MALA ? { ok: false } : { ok: true, datos: datosLimpios };
+}
+
+// Los nombres de la foto: una conversación se guarda sólo si su sesión está en la oficina
+const nombresDe = (foto) => new Set([...((foto && foto.agents) || []).map((a) => a && a.nombre), ...((foto && foto.free) || [])].filter((n) => typeof n === 'string'));
 
 function crearCentro({ cfg, fuentes, llaves, sesionDe, ahora = Date.now, log = () => {}, topes = {}, plazos = {}, repartoMs, firstMaintainer = null }) {
   const T = { ...TOPES, ...topes };
@@ -246,8 +276,10 @@ function crearCentro({ cfg, fuentes, llaves, sesionDe, ahora = Date.now, log = (
 
   const relojReparto = setInterval(() => { try { repartir(); } catch (e) { log(`oficinas: el reparto falló (${e.message})`); } }, P.repartoMs);
   const relojRevision = setInterval(() => { try { revisar(); } catch (e) { log(`oficinas: la revisión falló (${e.message})`); } }, P.revisionMs);
+  const relojLatido = setInterval(() => { try { for (const nav of navegadores) mandar(nav, { type: 'latido' }); } catch (e) { log(`oficinas: el latido falló (${e.message})`); } }, P.latidoNavegadorMs);
   relojReparto.unref();
   relojRevision.unref();
+  relojLatido.unref();
   // una baja o una aprobación desde Configuración no espera a la revisión
   llaves.alCambiar(() => {
     const reglas = reglasAhora();
@@ -301,7 +333,8 @@ function crearCentro({ cfg, fuentes, llaves, sesionDe, ahora = Date.now, log = (
     llaves.anotarConexion(id, true);
     const o = oficinas.get(id);
     if (o) { o.ultimoLatido = ahora(); o.sinConexionDesde = null; huboCambios = true; }
-    conn.ws.send(JSON.stringify({ type: 'ack' }));
+    // lo que este sitio entiende además de la foto: una máquina manda la conversación sólo si lo lee acá
+    conn.ws.send(JSON.stringify({ type: 'ack', puede: CAPABILITIES }));
     log(`oficinas: ${id} conectó`);
     return undefined;
   }
@@ -323,9 +356,42 @@ function crearCentro({ cfg, fuentes, llaves, sesionDe, ahora = Date.now, log = (
     llaves.anotarMasNueva(conn.id, masNueva);
     if (masNueva && !(previa && previa.anotada)) log(`oficinas: ${conn.id} es más nueva que el sitio: se ignora lo que el sitio no conoce (${r.desconocidos.slice(0, 5).join(', ')})`);
     version += 1;
-    oficinas.set(conn.id, { foto: r.foto, version, ultimoLatido: ahora(), sinConexionDesde: null, masNueva, anotada: Boolean(previa && previa.anotada) || masNueva });
+    // la conversación de una sesión que salió de la foto se va con ella
+    const charlas = previa && previa.charlas ? previa.charlas : new Map();
+    const nombres = nombresDe(r.foto);
+    for (const s of charlas.keys()) if (!nombres.has(s)) charlas.delete(s);
+    oficinas.set(conn.id, { foto: r.foto, version, ultimoLatido: ahora(), sinConexionDesde: null, masNueva, anotada: Boolean(previa && previa.anotada) || masNueva, charlas, charlasLlenas: Boolean(previa && previa.charlasLlenas) });
     huboCambios = true;
     return undefined;
+  }
+
+  /** La conversación de una sesión de la oficina de esa clave: sólo en memoria, y sólo de una sesión que está en su foto. */
+  function recibirCharla(conn, msg) {
+    const r = typeof msg.sesion === 'string' && msg.sesion.length <= TEXT_MAX ? limpiarCharla(msg.datos) : { ok: false };
+    if (!r.ok) { log(`oficinas: ${conn.id} mandó una conversación con una forma que no corresponde: se cierra`); return cerrar(conn.ws, CLOSE.policy, 'forma mala'); }
+    const o = oficinas.get(conn.id);
+    // antes de su primera foto, o de una sesión que no está en ella, no se guarda: no hay dónde mostrarla
+    if (!o || !nombresDe(o.foto).has(msg.sesion)) return undefined;
+    // con el tope de la oficina lleno, la nueva no se guarda y queda anotado una vez; la de una sesión ya guardada se reemplaza
+    const bytes = Buffer.byteLength(JSON.stringify(r.datos));
+    let otras = 0;
+    let total = bytes;
+    for (const [s, c] of o.charlas) if (s !== msg.sesion) { otras += 1; total += c.bytes; }
+    if (otras >= T.charlasPorOficina || total > T.bytesCharlasPorOficina) {
+      if (!o.charlasLlenas) { o.charlasLlenas = true; log(`oficinas: ${conn.id} llenó su tope de conversaciones (${T.charlasPorOficina} o ${T.bytesCharlasPorOficina} bytes): la nueva no se guarda`); }
+      return undefined;
+    }
+    o.charlas.set(msg.sesion, { datos: r.datos, bytes });
+    return undefined;
+  }
+
+  /** Lo que ve quien pide de la conversación de una sesión, o null: no la ve, o no existe (para quien pide es lo mismo). */
+  function conversacion(quien, id, sesion) {
+    if (!quien || !quien.rol || quien.rol === 'none') return null;
+    const o = oficinas.get(id);
+    if (!o || !o.charlas || !access.oficinasQueVe(quien, reglasAhora(), visibilidadAhora())(id)) return null;
+    const c = o.charlas.get(sesion);
+    return c ? c.datos : null;
   }
 
   function alMensajeDeMaquina(conn, raw) {
@@ -350,6 +416,7 @@ function crearCentro({ cfg, fuentes, llaves, sesionDe, ahora = Date.now, log = (
     if (tipo === 'auth') return cerrar(conn.ws, CLOSE.policy, 'ya firmó');
     latido(conn);
     if (tipo === 'ping') { conn.ws.send(JSON.stringify({ type: 'pong' })); return undefined; }
+    if (tipo === 'charla') return recibirCharla(conn, msg);
     return recibirFoto(conn, msg.data);
   }
 
@@ -455,12 +522,13 @@ function crearCentro({ cfg, fuentes, llaves, sesionDe, ahora = Date.now, log = (
   }
 
   return {
-    alUpgrade, revisar, repartir,
+    alUpgrade, revisar, repartir, conversacion,
     oficina: (id) => oficinas.get(id) || null,
     conectada: (id) => maquinas.has(id),
     detener() {
       clearInterval(relojReparto);
       clearInterval(relojRevision);
+      clearInterval(relojLatido);
       for (const c of sinAutenticar) { if (c.reloj) clearTimeout(c.reloj); c.ws.terminate(); }
       for (const c of maquinas.values()) c.ws.terminate();
       for (const n of navegadores) n.ws.terminate();
@@ -469,4 +537,4 @@ function crearCentro({ cfg, fuentes, llaves, sesionDe, ahora = Date.now, log = (
   };
 }
 
-module.exports = { crearCentro, limpiarFoto, direccionDe, TOPES, PLAZOS };
+module.exports = { crearCentro, limpiarFoto, limpiarCharla, direccionDe, TOPES, PLAZOS };

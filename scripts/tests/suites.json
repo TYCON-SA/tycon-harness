@@ -1103,6 +1103,24 @@
       "requiere": []
     },
     {
+      "__nota": "un portón corrido a mano, sin marcador, acota desde la bifurcación con main y dice qué eligió (no corre todas por no ver lo commiteado).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/gate-base-fork.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el registro de cuánto tarda cada suite (portón, portables, Azure y el renglón marcado de GitHub) y el comando que lista las lentas con su tendencia.",
+      "raiz": "arnes",
+      "ruta": "tests/suite-times.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "cuántas suites corren a la vez: núcleos menos dos o menos la carga, la espera cuando la carga pasa el doble, y la variable y la CI como antes, en el portón y en las portables.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/suite-workers.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "las listas de archivos de la story se leen en todas las formas de YAML para el alcance de la puerta de pruebas; los frenos siguen con la forma de siempre.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/test-scope-lists.test.js",
@@ -1765,6 +1783,16 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/office-messages.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/office-inbox-watch.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/office-topics.test.js",
       "requiere": []
     },
@@ -1795,6 +1823,21 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/permission-notice.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/turn-wait-and-retired.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/pruned-run-restore.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/session-transcript.test.js",
       "requiere": []
     },
@@ -1813,6 +1856,12 @@
       "__nota": "story 8.171: la pestaña «Oficinas» del sitio y /office, que la abre",
       "raiz": "arnes",
       "ruta": "tests/site-offices.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.171, tanda D: lo que las guías y /office dicen de las oficinas en el sitio",
+      "raiz": "arnes",
+      "ruta": "tests/office-site-guides.test.js",
       "requiere": []
     },
     {
@@ -2468,6 +2517,12 @@
       "__nota": "un pendiente nuevo en la lista de pendientes no entra sin su aprobación firmada: la biblioteca, el control del árbol y del commit, el comando de la firma antes de pedirla, la firma en el catálogo y el freno de escritura del registro.",
       "raiz": "arnes",
       "ruta": "tests/pending-approvals.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el arnés entiende a git en cualquier idioma: la función única que fija el idioma de git (clean-git-env.js), el caso de punta a punta con un git sustituto que contesta en castellano, y la lista que avisa si un script compara una frase de error de git sin fijarlo.",
+      "raiz": "arnes",
+      "ruta": "tests/git-language.test.js",
       "requiere": []
     },
     {
