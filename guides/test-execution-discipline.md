@@ -200,6 +200,23 @@ xUnit parallelization). El riesgo es menor, pero para suites grandes:
 - Para limitar paralelismo de xUnit: `xunit.runner.json` con `"maxParallelThreads": 2` o
   `"parallelizeAssembly": false`.
 
+## El chequeo de mutantes: pruebas acotadas, nunca la suite
+
+Al cerrar «Correr las pruebas», el chequeo de mutantes rompe el código nuevo a propósito y corre **sólo las pruebas que
+la historia declara**, una vez por mutante, sobre una copia del repo. Nunca la suite entera: si no puede acotar, sale
+«estructural» y no corre nada.
+
+- **Qué recetas mutan:** Jest y Vitest (con el binario del paquete, `node_modules/.bin/…`), .NET (`dotnet test` con el
+  `.csproj` de pruebas más cercano y un filtro por clase), pytest y `node --test`. Muta JavaScript/TypeScript, C# y
+  Python. La receta se elige por la estructura del paquete, nunca leyendo una prueba.
+- **Una receta de la organización** (`stack.test_runners`) muta si declara `scoped`: el comando que corre sólo algunas
+  pruebas, con `{files}` (los archivos) o `{classes}` (las clases de .NET). Sin `scoped`, el chequeo sale
+  «estructural» y lo dice.
+- **Los topes:** .NET, 8 min en total y 3 min por ejecución (recompila en cada mutante); las demás, 3 min en total y
+  2 min por ejecución. Ninguna ejecución pasa lo que queda del total; el portón lo mata a los 12 min como red. Antes de la
+  base imprime cuántos mutantes hay y cuánto puede tardar.
+- **La copia** no enlaza `bin/` ni `obj/`: .NET compila en la copia, nunca en el repo del dev.
+
 ## Suites que simulan la máquina del dev: la carpeta personal de prueba
 
 Una suite que instala, dispara controles o hace commits de juguete escribe constancias en
