@@ -20,9 +20,14 @@ La coordinadora va en Claude Code. Con Codex no se puede coordinar.
 
 ## Cómo se arranca
 
-**Lo que configura la organización, una sola vez.** En el [sitio de la organización](organization-site.md), pestaña
-Configuración, «Quién autoriza saltarse un control», elige «Una sesión coordinadora» y le pone nombre en «¿Cómo la
-llaman?». De fábrica se llama «coordinadora». Sin sitio, va en `approvals.relay_session` del perfil del equipo.
+**Para que ordene no hace falta configurar nada.** En la instalación mínima, sin perfil del equipo, la coordinadora
+ordena las sesiones (el tope, los turnos, los avisos, `/coordinate`) y se llama «coordinadora». Sin perfil, ordena y no
+firma: todo lo que firma va a tu ventana, como sin coordinadora.
+
+**Para que firme por vos, la organización la configura una sola vez.** En el [sitio de la organización](organization-site.md),
+pestaña Configuración, «Quién autoriza saltarse un control», elige «Una sesión coordinadora» y le pone nombre en «¿Cómo
+la llaman?». De fábrica se llama «coordinadora». Sin sitio, va en `approvals.relay_session` del perfil del equipo. Si la
+organización saca esa clave después, la confirmación que diste deja de valer.
 
 También puede decidir qué firmas de rutina le delega y en qué máquinas. Si no decide nada, no firma ninguna.
 
@@ -32,8 +37,9 @@ También puede decidir qué firmas de rutina le delega y en qué máquinas. Si n
 
    > Esta sesión es la coordinadora
 
-2. La sesión lo anota, recibe la orden de leer sus reglas y te pide que lo confirmes, con un click o desde tu terminal. Sin
-   confirmar, ordena a las demás, pero no firma nada ni recibe tus firmas para otra sesión.
+2. La sesión lo anota y recibe la orden de leer sus reglas. Con el rol en el perfil, te pide que lo confirmes, con un
+   click o desde tu terminal. Sin confirmar, o sin perfil, ordena a las demás, pero no firma nada ni recibe tus firmas
+   para otra sesión.
 
 Con eso ya está. `/coordinate` te muestra el estado de la máquina cuando quieras verlo.
 

@@ -192,6 +192,20 @@ el archivo de versión. Ese merge ya no vuelve a versionar los formularios: el d
 (`scripts/ci/forms-to-version.sh`). Poner `dev` al día **no** lleva a `main` el trabajo trabado en `dev`: eso es un
 merge a `main` con `/tycon-merge-to-main`, y el aviso lo ofrece aparte.
 
+## Un pedido en choque sólo por los índices o las firmas
+
+Dos historias en paralelo suman cada una su renglón en `specs/epics.md` y `specs/sprint-status.yaml`, y su firma en
+`.tycon/runtime-waivers.jsonl`. La que entra segunda choca en esos tres archivos, y el servidor de pedidos no aplica la
+unión de `.gitattributes`. Para eso está `node scripts/tools/catch-up-main.js --repo <dir> [--push]`:
+
+- trae `origin/main` con un merge y junta los dos lados de esos tres archivos. En los índices queda un renglón por
+  historia (el de la rama, si la rama lo cambió); en las firmas, todas, una vez y en orden de hora;
+- commitea el merge con un commit normal, con todos los controles. Con `--push` empuja sin forzar;
+- si choca en cualquier otro archivo, o un control rechaza el commit, deshace el merge y deja la rama como estaba.
+
+El freno de cierre no le cobra a ese merge las historias que trae `main`: lo que el índice tiene igual que la rama que
+se trae ya pasó por su propio pedido. Lo que se resolvió a mano sí se juzga.
+
 ## Lo que NO hay que hacer — nunca, bajo ninguna circunstancia
 
 ### Flags prohibidos

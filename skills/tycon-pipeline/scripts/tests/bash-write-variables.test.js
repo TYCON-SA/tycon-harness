@@ -757,6 +757,48 @@ test('T37d GuionDelArbolPropio_EnUnaRamaDelServidorQueNoEsMain_Frena', () => {
   });
 });
 
+// T37e GuionDelArbolPropio_UnaConsultaPorArchivo
+// Un guion del arnés importa módulos que se importan entre sí: el freno pregunta a git UNA vez por archivo en cada
+// llamada, y sin commits propios en el clon no pregunta archivo por archivo cuáles los tocan. El veredicto es el mismo.
+// Caso: `critical-shown` hacía ~1100 llamadas a git por llamada del freno (75 archivos), 94 s con la máquina cargada.
+// 🔴 Falla con: preguntar por un módulo cada vez que otro lo importa, buscar la rama principal por archivo, o recordar
+//    la respuesta entre dos llamadas (un guion cambiado después de la primera pasaría).
+test('T37e GuionDelArbolPropio_UnaConsultaPorArchivo', () => {
+  const { estado, repo, raiz } = corralConHistorias();
+  const ORIGEN = path.join(SCRIPTS, '..', '..', '..');
+  const clon = path.join(raiz, 'clon');
+  fs.cpSync(SCRIPTS, path.join(clon, 'skills', 'tycon-pipeline', 'scripts'), { recursive: true, filter: (s) => !/[\\/](?:tests|node_modules)$/.test(s) });
+  fs.cpSync(path.join(ORIGEN, 'scripts', 'lib'), path.join(clon, 'scripts', 'lib'), { recursive: true });
+  const ESCRIBE = `require('fs').writeFileSync(${JSON.stringify(path.join(repo, 'specs', 'story-x.md'))}, 'x');\n`;
+  const guiones = path.join(clon, 'skills', 'tycon-pipeline', 'scripts');
+  // orq-z importa a mod-a y mod-b; los dos importan a comun: comun aparece tres veces como importado
+  fs.writeFileSync(path.join(guiones, 'orq-z.js'), "require('./mod-a');\nrequire('./mod-b');\nrequire('./comun');\n");
+  fs.writeFileSync(path.join(guiones, 'mod-a.js'), "require('./comun');\n");
+  fs.writeFileSync(path.join(guiones, 'mod-b.js'), "require('./comun');\n");
+  fs.writeFileSync(path.join(guiones, 'comun.js'), ESCRIBE);
+  const GIT_ENV = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'b', GIT_AUTHOR_EMAIL: 'b@acme.test', GIT_COMMITTER_NAME: 'b', GIT_COMMITTER_EMAIL: 'b@acme.test' };
+  for (const k of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE']) delete GIT_ENV[k];
+  const git = (...a) => require('child_process').execFileSync('git', ['-C', clon, '-c', 'commit.gpgsign=false', ...a], { stdio: 'ignore', env: GIT_ENV });
+  git('init', '-q', '.'); git('add', '-A'); git('commit', '-q', '-m', 'base');
+  git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+  const traza = path.join(raiz, 'git-trace.log');
+  const freno = () => {
+    fs.rmSync(traza, { force: true });
+    return conEnv({ ...ENV, GIT_TRACE: traza }, () => tituloDe(require(path.join(guiones, 'on-bash-write-gate.js'))
+      .handle(ev(`node ${path.join(guiones, 'orq-z.js')}`, repo), { stateDir: estado, installedRoots: [] })));
+  };
+  const llamadas = (re) => (fs.existsSync(traza) ? fs.readFileSync(traza, 'utf8').split('\n').filter((l) => /trace: built-in: git /.test(l) && re.test(l)).length : 0);
+  assert.equal(freno(), '', 'todo versionado, sin cambios y en main: es el orquestador');
+  assert.equal(llamadas(/ ls-files .*comun\.js/), 1, 'comun.js se pregunta una vez, aunque lo importen tres');
+  assert.equal(llamadas(/ rev-parse --verify -q '?refs\/remotes\/origin\/main\^\{commit\}/), 1, 'la rama principal se busca una vez');
+  assert.equal(llamadas(/ rev-list .* -- /), 0, 'sin commits propios no pregunta archivo por archivo');
+  // un commit propio de comun.js: frena, y la memoria de la llamada anterior no lo esconde
+  fs.appendFileSync(path.join(guiones, 'comun.js'), '// local\n');
+  git('commit', '-q', '-am', 'comun local');
+  assert.equal(freno(), HISTORIA, 'el módulo commiteado sólo en el clon frena, también después de una llamada que pasó');
+  assert.equal(llamadas(/ rev-list .* -- .*comun\.js/), 1, 'con commits propios, comun.js se pregunta una vez');
+});
+
 // T38 HeredocQueElShellNoAbre_NoEscondeLoQueSigue
 // Un `<<` dentro de comillas, de `$((` o de `<<<`, o con la palabra pegada a una comilla, no abre un heredoc: el shell
 // corre las líneas siguientes, y el freno también las mira. Un heredoc de verdad sigue sin contar su cuerpo.

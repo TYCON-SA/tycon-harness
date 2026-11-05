@@ -24,6 +24,8 @@
  *   9. qué le llega a un programa desde PowerShell 5.1 y 7, con el JSON y con las banderas.
  *  10. la lectura de procesos del click (`leerArbolWindows`): la cadena de un proceso hasta esta sonda, con Git Bash de por
  *      medio, con los acentos de su línea intactos y cada padre arrancado antes que su hijo.
+ *  11. sin perfil del equipo, la coordinadora ordena y no firma: `coordination-without-profile.test.js` corre en Windows, y
+ *      si sale rojo queda como hallazgo.
  * Si la ventana ni siquiera arranca el comando en este agente, el paso 2 lo dice como hallazgo (no se probó la espera).
  *
  * Fuera de Windows no mide nada (no medido). Uso: node scripts/tests/windows/waiver-probe.js --lab <laboratorio> --out <carpeta del reporte>
@@ -149,7 +151,19 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, rec 
   // 10 · la lectura de procesos del click: la cadena real, con acentos y con Git Bash de por medio
   lecturaDeProcesos({ dir, env, rec });
 
+  // 11 · sin perfil del equipo, la coordinadora ordena y no firma: su suite, corrida en Windows
+  coordinadoraSinPerfil({ env, rec });
+
   return { status: L.STATUS.measured, reason: null };
+}
+
+const SIN_PERFIL = path.join(__dirname, '..', 'coordination-without-profile.test.js');
+
+function coordinadoraSinPerfil({ env, rec }) {
+  const r = L.run(process.execPath, ['--test', SIN_PERFIL], { env, timeoutMs: 300000 });
+  const fallas = String(r.stdout || '').split(/\r?\n/).filter((l) => /^\s*not ok\b|✖/.test(l)).slice(0, 5);
+  rec.fact('coordination_without_profile', { exit: r.exit, failures: fallas });
+  if (r.exit !== 0) rec.finding('waiver:coordination-without-profile-failed', 'waiver', `coordination-without-profile.test.js salió ${r.exit} en Windows${fallas.length ? `: ${fallas.join(' · ').slice(0, 300)}` : ''}`);
 }
 
 const OWNER_WINDOW = path.join(__dirname, '..', '..', 'lib', 'owner-window.js');

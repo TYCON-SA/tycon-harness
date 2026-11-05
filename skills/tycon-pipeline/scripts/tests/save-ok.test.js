@@ -316,7 +316,8 @@ function casaConDesignada(t, { confirmada = true } = {}) {
   fs.writeFileSync(path.join(estado, 'gates.log'), `${lineas.map((l) => JSON.stringify(l)).join('\n')}\n`);
   return { casa, estado };
 }
-const PERFIL = { delegated_signing: ['save'], owner_only: [], delegated_machines: [{ id: HUELLA, label: 'Mac de prueba' }] };
+// la coordinadora firma por el dueño sólo con approvals.relay_session en el perfil
+const PERFIL = { relay_session: 'coordinadora', delegated_signing: ['save'], owner_only: [], delegated_machines: [{ id: HUELLA, label: 'Mac de prueba' }] };
 const delega = (casa, estado, o = {}) => DS.delegaSinVentana({
   firma: 'save', sesion: o.sesion || 'ses-coord', destino: o.destino || 'ses-a', home: casa, estado,
   perfil: o.perfil || (() => PERFIL), huella: o.huella || (() => ({ huella: HUELLA })),

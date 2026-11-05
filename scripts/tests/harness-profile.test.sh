@@ -594,9 +594,7 @@ fi
 # ══ La parte del programa (T35 a T37): harness.js de verdad, con el aplicador real ═════════════════════════════════════
 # shellcheck source=lib/harness-lab.sh
 source "$RAIZ/scripts/tests/lib/harness-lab.sh"   # sólo por harness_lab_pty (la terminal de juguete)
-home_hash() { ( cd "$1" && find . -print | LC_ALL=C sort | while IFS= read -r f; do
-    if [ -L "$f" ]; then printf '%s -> %s\n' "$f" "$(readlink "$f")"; elif [ -f "$f" ]; then printf '%s ' "$f"; shasum -a 256 < "$f"; else printf '%s/\n' "$f"; fi
-  done ) | shasum -a 256 | cut -d' ' -f1; }
+home_hash() { tree_list "$1" | shasum -a 256 | cut -d' ' -f1; }
 # ══ HASH · HomeHash_SeesAStrayFile: la foto ve lo que aparece en la carpeta de inicio ═════════════════════════════════
 # (python ya no escribe su caché durante la prueba; la foto no se achica para eso y tiene que seguir viendo lo demás)
 if corre HASH; then

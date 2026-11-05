@@ -134,10 +134,12 @@ test('DesignateRelay_FraseDelDev_DesignaEstaSesion — la coordinadora se design
   for (const f of ['Esta sesion es la coordinadora', 'Esta sesiÃ³n es la coordinadora']) assert.equal(designa([delDev(f)], { quote: f }).ok, true, f);
   // quien aprueba es una persona, no el agente
   assert.equal(designa([delDev(FRASE)], { approvedBy: 'orquestador' }).ok, false);
-  // sin la clave en el perfil del árbol, la organización no usa sesión que reenvía: no hay qué designar
+  // sin la clave en el perfil del árbol, designa con el rol de fábrica: ordena y no firma
   const sinClave = tmp('cw-designa-sin-');
   fs.writeFileSync(path.join(sinClave, 'team-profile.json'), JSON.stringify({}));
-  assert.match(designa([delDev(FRASE)], { arnes: sinClave }).motivo, /no usa una sesión que reenvía/);
+  const sinPerfil = designa([delDev(FRASE)], { arnes: sinClave });
+  assert.equal(sinPerfil.ok, true, sinPerfil.motivo);
+  assert.equal(sinPerfil.entrada.rol, 'coordinadora');
   // la última designación anotada reemplaza a la anterior; un renglón roto no tapa a los demás
   assert.equal(cw.designacionVigente({ home }), null);
   designarCoordinadora(home, { sid: 's-vieja' });

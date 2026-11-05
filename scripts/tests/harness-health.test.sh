@@ -73,8 +73,8 @@ bloques() { grep -o 'TYCON_BLOCK:[^ ]* START' "$CLAUDE_MD_PATH" 2>/dev/null | LC
 # la copia fija de arranque: bootstrap* y program/ (sin copias de seguridad, registro ni candado)
 copia_fija_hash() {
   ( cd "$LAB_HOME/.claude/.tycon-pipeline/harness" 2>/dev/null || exit 0
-    { find . -maxdepth 1 -type f -name 'bootstrap*'; [ -d program ] && find ./program -type f; } | LC_ALL=C sort | while IFS= read -r f; do
-      printf '%s ' "$f"; shasum -a 256 < "$f"; done ) | shasum -a 256 | cut -d' ' -f1
+    { find . -maxdepth 1 -type f -name 'bootstrap*' -print0; [ -d program ] && find ./program -type f -print0; } | LC_ALL=C sort -z \
+      | tree_file_sums ) | shasum -a 256 | cut -d' ' -f1
 }
 sha_de() { shasum -a 256 < "$1" 2>/dev/null | cut -d' ' -f1; }
 # una versión nueva del árbol: VERSION y un comentario en bootstrap.js (si la copia fija se refrescara, se vería);
