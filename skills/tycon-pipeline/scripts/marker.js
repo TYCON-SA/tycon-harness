@@ -5316,15 +5316,20 @@ function cmdWithdrawRelay() {
   const sesion = SID;
   const d = cw.designacionVigente();
   const noSeRetiro = (motivo) => console.error(`🚫 marker.js withdraw-relay: no se retiró a la coordinadora — ${motivo}.`);
+  // se lee de nuevo en cada llamada: mientras la firma espera, otra sesión puede quedar nombrada
   const antes = () => {
-    if (!d) return { codigo: 1, motivo: 'no hay coordinadora en esta máquina' };
-    if (d.error) return { codigo: 2, motivo: d.error };
-    if (d.sesion !== sesion) return { codigo: 1, motivo: `esta sesión no es la coordinadora (la vigente es ${d.sesion})` };
+    const ahora = cw.designacionVigente();
+    if (!ahora) return { codigo: 1, motivo: 'no hay coordinadora en esta máquina' };
+    if (ahora.error) return { codigo: 2, motivo: ahora.error };
+    if (ahora.sesion !== sesion) return { codigo: 1, motivo: `esta sesión no es la coordinadora (la vigente es ${ahora.sesion})` };
+    if (d && !d.error && ahora.ts !== d.ts) return { codigo: 1, motivo: 'la designación cambió mientras se esperaba la firma: corré el comando de nuevo' };
     return null;
   };
   const previo = antes();
   if (previo) { noSeRetiro(previo.motivo); process.exit(previo.codigo); }
   const r = firmaDeLaDesignacion('designation-withdraw', `la sesión ${sesion} deja de ser la «${d.rol}» de esta máquina`, antes, noSeRetiro);
+  const despues = antes();
+  if (despues) { noSeRetiro(despues.motivo); process.exit(despues.codigo); }
   appendLog('gates.log', { name: cw.DESIGNACION, status: cw.RETIRADA, ts: nowIso(), sesion, rol: d.rol, quien: 'la persona', via: r.via });
   const quedo = cw.designacionVigente();
   if (quedo && !quedo.error && quedo.sesion === sesion) {

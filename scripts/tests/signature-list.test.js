@@ -725,3 +725,23 @@ test('Pase_RechazarFilaQueNoSeEntiende — @story-8.153 @ac-13', (t) => {
   assert.doesNotMatch(r.mensaje, /afuera/);
   assert.strictEqual(crudas(toy).length, 1, 'no se pierde');
 });
+
+// 🔴 Falla con: la coordinadora mostrando en su pestaña el cuadro de sólo click de otra sesión, que ahí nunca cuenta.
+test('OwnerNext_SoloClickDeOtraSesion_NoLePasaALaCoordinadora — @story-8.207 @ac-15', (t) => {
+  const toy = casaNueva(t);
+  designar(toy.casa);
+  sesion(toy.casa, 'ses-coord');
+  sesion(toy.casa, 'ses-a');
+  sesion(toy.casa, 'ses-b');
+  const nombrar = `node ${MARKER} designate-relay`;
+  sl.anotarFirma({ casa: toy.casa, firma: 'designation-set', titulo: 'nombrar a esta sesión coordinadora', sesion: 'ses-b', destino: 'ses-b', comando: nombrar, palabras: palabras(nombrar), cwd: '/r', ahora: antes(20) });
+  firma(toy);
+  const r = sl.siguiente(opts(toy, { sesion: 'ses-coord', validar: () => ({ ok: false }) }));
+  // la de otra sesión que no es de sólo click sí le llega
+  assert.strictEqual(r.tipo, 'firma', JSON.stringify(r));
+  assert.strictEqual(r.destino, 'ses-a');
+  const despues = sl.siguiente(opts(toy, { sesion: 'ses-coord', after: r.id, validar: () => ({ ok: false }) }));
+  assert.strictEqual(despues.tipo, 'nada', JSON.stringify(despues));
+  // el renglón sigue abierto para la sesión destino, que lo ve en su propia pestaña
+  assert.ok(sl.abiertos(toy.casa, { arnes: toy.arnes, env: toy.env, ahora: AHORA }).filas.some((f) => f.destino === 'ses-b' && f.firma === 'designation-set'));
+});

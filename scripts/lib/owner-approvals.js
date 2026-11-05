@@ -633,6 +633,11 @@ function buscar({ casa, sesion, destino = sesion, cuadro, coordinadora = null, a
     return !herramienta || r.sesion !== sesion || (r.herramienta && r.herramienta.pid === herramienta.pid && r.herramienta.inicio === herramienta.inicio);
   }).sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts));
   if (!candidatas.length) return { ok: false, motivo: soloClick ? 'no hay un click en el cuadro de esta pestaña de los últimos 30 minutos sin usar' : 'no hay un click en el cuadro ni un «aprobado» tuyo de los últimos 30 minutos sin usar' };
+  // un «Sí» a esta misma firma y sesión con otro código: la fuente (el plan, el diff, el hallazgo) cambió después del cuadro
+  const mismaFirma = cuadro.sello.slice(0, cuadro.sello.lastIndexOf('código '));
+  const cambio = candidatas.some((a) => a.tipo === 'click' && a.respuesta === APRUEBA && typeof a.pregunta === 'string'
+    && a.pregunta.includes(`(${mismaFirma}código `) && !a.pregunta.includes(`(${cuadro.sello})`));
+  if (cambio && !candidatas.some((a) => a.pregunta === cuadro.pregunta)) return { ok: false, motivo: 'lo que se mostró cambió: pedí el cuadro de nuevo' };
   const check = validar || ((a, ctx) => validarEnClaude(a, ctx));
   let leido = arbol;
   let motivo = null;

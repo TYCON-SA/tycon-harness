@@ -383,7 +383,9 @@ function siguiente({ casa, sesion, after = null, ahora = Date.now(), arnes, env,
     problemas.push(...a.problemas);
   } catch (e) { return { tipo: 'sin-leer', texto: `No pude leer la lista de firmas: ${una(e.message)}. No paso nada hasta arreglarla.`, faltaRepetir: [], problemas }; }
   const coord = oa().coordinadoraConfirmada(casa);
-  const suyas = coord && coord === sesion ? filas : filas.filter((f) => f.destino === sesion);
+  // la coordinadora pasa las de todas, salvo las de sólo click de otra sesión: ese click vale sólo en la pestaña destino
+  const soloClick = (f) => { const x = require('./signatures.js').SIGNATURES.find((s) => s.id === f.firma); return !!(x && x.soloClick); };
+  const suyas = coord && coord === sesion ? filas.filter((f) => f.destino === sesion || !soloClick(f)) : filas.filter((f) => f.destino === sesion);
   const porHora = (a, b) => (a.at || 0) - (b.at || 0);
   const de = (t) => suyas.filter((f) => tipoDe(f) === t).sort(porHora);
   const permisos = de('permiso');

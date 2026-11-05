@@ -282,12 +282,15 @@ function designacionVigente({ home, dir } = {}) {
     return e.code === 'ENOENT' ? null : { error: `no pude leer el registro del arnés (${e.code || e.message})` };
   }
   const lineas = raw.split('\n');
+  // una retirada anula sólo la designación de su propia sesión: la de otra sesión nombrada antes sigue vigente
+  const retiradas = new Set();
   for (let i = lineas.length - 1; i >= 0; i--) {
     if (!lineas[i].includes(DESIGNACION)) continue;
     let g;
     try { g = JSON.parse(lineas[i]); } catch (_e) { continue; }
-    if (g && g.name === DESIGNACION && g.status === RETIRADA) return null;
+    if (g && g.name === DESIGNACION && g.status === RETIRADA) { retiradas.add(String(g.sesion || '')); continue; }
     if (g && g.name === DESIGNACION && g.status === 'ok' && /^[\w-]+$/.test(String(g.sesion || '')) && (g.cita || g.via)) {
+      if (retiradas.has(g.sesion)) return null;
       return { sesion: g.sesion, rol: g.rol || null, quien: g.quien || null, cita: g.cita || null, via: g.via || null, ts: g.ts || null };
     }
   }

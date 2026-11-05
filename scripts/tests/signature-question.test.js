@@ -164,6 +164,57 @@ test('SignatureQuestion_ControlChange_DiffStatAndDiffFile (T36)', (t) => {
   assert.match(sinBase, /Firma 2 archivo\(s\) de control en su versión de la punta \(sin base para comparar\)/);
 });
 
+/** Un repo con scripts/ci/ctl.sh en las versiones dadas, un commit por versión y fechas fijas. */
+function repoDeControles(t, versiones) {
+  const c = corrida(t);
+  const fecha = '2026-11-04T12:00:00Z';
+  const git = (...a) => spawnSync('git', ['-C', c.repo, '-c', 'user.email=t@example.com', '-c', 'user.name=t', '-c', 'maintenance.auto=false', ...a],
+    { encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_DATE: fecha, GIT_COMMITTER_DATE: fecha } });
+  fs.mkdirSync(path.join(c.repo, 'scripts', 'ci'), { recursive: true });
+  git('init', '-q');
+  for (const v of versiones) { fs.writeFileSync(path.join(c.repo, 'scripts', 'ci', 'ctl.sh'), v); git('add', 'scripts'); git('commit', '-qm', v.trim()); }
+  return { c, git };
+}
+
+// 🔴 Falla con: una versión que la sesión escribió leída por git como opción (`--output=` pisa un archivo al armar el cuadro).
+test('SignatureQuestion_ControlChange_RevisionIsNeverAnOption', (t) => {
+  const { c } = repoDeControles(t, ['a=1\n', 'a=2\n']);
+  const victima = path.join(c.repo, 'victima.txt');
+  fs.writeFileSync(victima, 'DATOS\n');
+  const entries = JSON.stringify([{ path: 'scripts/ci/ctl.sh', blob: 'x' }]);
+  // --rev con --file, y --base con --entries: los dos salen de lo que escribió la sesión
+  for (const [opcion, resto] of [['--rev', '--file scripts/ci/ctl.sh'], ['--base', `--entries '${entries}'`]]) {
+    const q = conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} ${opcion} --output=${victima} ${resto}`).pregunta;
+    assert.strictEqual(fs.readFileSync(victima, 'utf8'), 'DATOS\n', `${opcion}: git pisó el archivo al armar el cuadro`);
+    assert.match(q, /Qué hace: no pude leer el cambio de 1 archivo\(s\) de control: «--output=/, `${opcion}: ${q}`);
+  }
+  // una carpeta que no es un repo: git no pudo contestar, que no es lo mismo que una versión que no existe
+  const suelta = temporal(t, 'sigq-suelta-');
+  const q = conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${suelta} --file scripts/ci/ctl.sh`).pregunta;
+  assert.match(q, /no pude leer el cambio de 1 archivo\(s\) de control: git no pudo leer /, q);
+  assert.doesNotMatch(q, /no es una versión/);
+});
+
+// 🔴 Falla con: con --file, una pregunta que muestra otra versión de la que se firma, o que no cambia cuando cambia el archivo.
+test('SignatureQuestion_ControlChange_FileShowsTheSignedVersion', (t) => {
+  const { c } = repoDeControles(t, ['a=1\n', 'a=2\n', 'a=999\n', 'a=5\n']);
+  const preguntar = (extra) => conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --file scripts/ci/ctl.sh ${extra}`);
+  // sin --rev firma la punta: muestra el cambio de la punta (a=999 → a=5)
+  const punta = preguntar('');
+  const diffDe = (q) => fs.readFileSync((q.pregunta.match(/Completo en: (\S+\.patch)\./) || [])[1], 'utf8');
+  assert.match(diffDe(punta), /-a=999\n\+a=5/, punta.pregunta);
+  // con --rev y --base, lo que se firma es --rev: se muestra su cambio (a=1 → a=2), no el de --base a la punta
+  const conRev = preguntar('--rev HEAD~2 --base HEAD~3');
+  assert.match(diffDe(conRev), /-a=1\n\+a=2/, conRev.pregunta);
+  // en un repo de un solo commit no hay padre: la huella lleva el contenido, y cambia si el archivo cambia
+  const solo = repoDeControles(t, ['a=1\n']);
+  const una = conFirma('control-change')(solo.c, `bash ${CONTROLES} approve --root ${solo.c.repo} --file scripts/ci/ctl.sh`);
+  assert.match(una.pregunta, /en su versión de [0-9a-f]{12} \(sin base para comparar\)/);
+  fs.writeFileSync(path.join(solo.c.repo, 'scripts', 'ci', 'ctl.sh'), 'a=2\n');
+  solo.git('commit', '-qam', 'a=2', '--amend');
+  assert.notStrictEqual(conFirma('control-change')(solo.c, `bash ${CONTROLES} approve --root ${solo.c.repo} --file scripts/ci/ctl.sh`).sello, una.sello);
+});
+
 // 🔴 Falla con: una exención o una vuelta extra que no dice qué exime ni dónde está lo completo.
 test('SignatureQuestion_WaiversAndExtraRound_FromTheirSource (T37)', (t) => {
   const c = corrida(t, { extraHistoria: ['runtime_not_verifiable:', '  - ac: 1', '    reason: "el servicio externo no tiene ambiente de prueba"', '    covered_by: T1'] });
@@ -178,12 +229,16 @@ test('SignatureQuestion_WaiversAndExtraRound_FromTheirSource (T37)', (t) => {
   assert.match(crit('--rule SEC-C1 --file a.js'), /Qué hace: Eximir SEC-C1 en a\.js: no hay informe de hallazgos en esta ejecución\./);
   const informe = path.join(c.runDir, 'findings.json');
   const hallazgo = (n, file) => ({ rule_id: 'SEC-C1', severity: 'CRITICAL', file, summary: `secreto en el código ${n}`, disposition: 'open' });
-  fs.writeFileSync(informe, JSON.stringify([hallazgo(1, 'a.js'), ...[2, 3, 4, 5].map((n) => hallazgo(n, `b${n}.js`))]));
+  fs.writeFileSync(informe, JSON.stringify([hallazgo(1, 'a.js'), ...[2, 3, 4, 5].map((n) => hallazgo(n, 'b.js')), hallazgo(6, undefined)]));
   assert.match(crit('--rule SEC-C9 --file a.js'), /Eximir SEC-C9 en a\.js: no está en el informe de hallazgos\./);
   const una = crit('--rule SEC-C1 --file a.js');
   assert.match(una, /Qué hace: SEC-C1 en a\.js: secreto en el código 1\./);
   assert.ok(una.includes(`Completo en: ${informe}.`), una);
-  assert.match(crit('--rule SEC-C1'), /secreto en el código 1 · SEC-C1 en b2\.js: secreto en el código 2 · SEC-C1 en b3\.js: secreto en el código 3 · y 2 más\./);
+  assert.match(crit('--rule SEC-C1 --file b.js'), /secreto en el código 2 · SEC-C1 en b\.js: secreto en el código 3 · SEC-C1 en b\.js: secreto en el código 4 · y 1 más\./);
+  // sin --file la exención se anota sin archivo (regla|): sólo exime, y sólo muestra, los hallazgos sin archivo
+  const sinArchivo = crit('--rule SEC-C1');
+  assert.match(sinArchivo, /Qué hace: SEC-C1: secreto en el código 6\./);
+  assert.doesNotMatch(sinArchivo, /a\.js|b\.js/);
   // la vuelta extra: con su nota, y sin ella
   const extra = () => conFirma('extra-round')(c, `node ${PIPELINE} smart-reloop --iter 3 --extra-round`).pregunta;
   assert.match(extra(), /Qué hace: Una vuelta 3 de revisores sobre lo que quedó abierto\./);
@@ -193,6 +248,22 @@ test('SignatureQuestion_WaiversAndExtraRound_FromTheirSource (T37)', (t) => {
   fs.writeFileSync(nota, JSON.stringify({ iter: 3, repeated: 'vuelve el hallazgo del tope', change: 'se parte el archivo en dos' }));
   assert.match(extra(), /Qué hace: Se repitió: vuelve el hallazgo del tope · Cambia: se parte el archivo en dos\./);
   assert.ok(extra().includes(`Completo en: ${nota}.`), extra());
+});
+
+// 🔴 Falla con: un informe o una nota rotos que la pregunta presenta como si no existieran.
+test('SignatureQuestion_BrokenSource_SaysItCouldNotRead', (t) => {
+  const c = corrida(t);
+  fs.writeFileSync(path.join(c.runDir, 'findings.json'), '{ roto');
+  const crit = conFirma('critical-waiver')(c, `node ${MARKER} waive-critical --rule SEC-C1 --file a.js --reason "x"`).pregunta;
+  assert.match(crit, /Eximir SEC-C1 en a\.js: no pude leer el informe de hallazgos \(no se entiende: .*Completo en: .*findings\.json\./);
+  assert.doesNotMatch(crit, /no hay informe/);
+  fs.mkdirSync(path.join(c.runDir, 'rethink'), { recursive: true });
+  fs.writeFileSync(path.join(c.runDir, 'rethink', 'iter-2.json'), '{ roto');
+  const vuelta = conFirma('extra-round')(c, `node ${PIPELINE} smart-reloop --iter 2 --extra-round`).pregunta;
+  assert.match(vuelta, /Una vuelta 2 de revisores sobre lo que quedó abierto \(su nota no se entiende: .*Completo en: .*iter-2\.json\./);
+  // un plan que es una carpeta: está, pero no se puede leer
+  fs.mkdirSync(path.join(c.runDir, 'step-02-bmad-plan.md'));
+  assert.match(cuadro(c, APRUEBA_PLAN, { firma: 'plan-approval' }).pregunta, /no encuentro el plan escrito en .*step-02-bmad-plan\.md \(no pude leerlo: EISDIR\)/);
 });
 
 // 🔴 Falla con: un «si sale mal» igual para dos firmas que arriesgan cosas distintas.
@@ -281,6 +352,24 @@ test('SignatureQuestion_SourceChangedAfterBox_ClickDoesNotCount (T43)', (t) => {
   const v = oa.clickEnLaTranscripcion(ruta, click, { pregunta: despues.pregunta, opciones: despues.opciones });
   assert.strictEqual(v.ok, false);
   assert.match(v.motivo, /no es la que armó el guion/);
+  // por el camino de la firma: el click anotado en la sesión no vale, y el guion dice por qué con la frase del AC 38
+  const ahora = Date.parse(ts) + 60000;
+  oa.anotar(c.casa, { id: 'click-1', ...click });
+  const r = oa.buscar({ casa: c.casa, sesion: 'ses-a', cuadro: despues, ahora, validar: () => ({ ok: true }) });
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.motivo, 'lo que se mostró cambió: pedí el cuadro de nuevo');
+  // y para el mismo cuadro de antes, el click sí se encuentra
+  assert.strictEqual(oa.buscar({ casa: c.casa, sesion: 'ses-a', cuadro: antes, ahora, validar: () => ({ ok: true }) }).ok, true);
+  // ídem con el diff de un control: otro contenido en la punta, otro sello y la misma frase
+  const { c: cc, git } = repoDeControles(t, ['a=1\n', 'a=2\n']);
+  const cmd = `bash ${CONTROLES} approve --root ${cc.repo} --file scripts/ci/ctl.sh`;
+  const visto = conFirma('control-change')(cc, cmd);
+  fs.writeFileSync(path.join(cc.repo, 'scripts', 'ci', 'ctl.sh'), 'a=3\n');
+  git('commit', '-qam', 'a=3');
+  const firmado = conFirma('control-change')(cc, cmd);
+  assert.notStrictEqual(firmado.sello, visto.sello);
+  oa.anotar(cc.casa, { id: 'click-2', tipo: 'click', sesion: 'ses-a', ts, tool_use_id: 'toolu_2', pregunta: visto.pregunta, respuesta: visto.opciones[0] });
+  assert.strictEqual(oa.buscar({ casa: cc.casa, sesion: 'ses-a', cuadro: firmado, ahora, validar: () => ({ ok: true }) }).motivo, 'lo que se mostró cambió: pedí el cuadro de nuevo');
 });
 
 // 🔴 Falla con: un corte que no se ve: una línea larga o una lista de archivos que se cae sin aviso.

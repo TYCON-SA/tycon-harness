@@ -32,9 +32,15 @@ function valor(palabras, opcion) {
   return pegado ? String(pegado).slice(opcion.length + 1) : null;
 }
 
+// por qué no se leyó la última ruta que no está: «no está» y «no pude leerla» le dicen cosas distintas a la persona
+const sinLeer = new Map();
 function leer(ruta) {
-  try { return fs.readFileSync(ruta, 'utf8'); } catch (_) { return null; }
+  try { return fs.readFileSync(ruta, 'utf8'); } catch (e) {
+    if (e.code !== 'ENOENT' && ruta) sinLeer.set(ruta, e.code || e.message); else sinLeer.delete(ruta);
+    return null;
+  }
 }
+const porQueNo = (ruta) => (ruta && sinLeer.has(ruta) ? ` (no pude leerlo: ${sinLeer.get(ruta)})` : '');
 
 function rutaDeLaHistoria(m) {
   if (!m || !m.storyPath) return null;
@@ -86,13 +92,40 @@ function planDe(m) {
 function delPlan(palabras, m) {
   const cita = valor(palabras, '--approved') || valor(palabras, '--mockup-approved');
   const { ruta, texto } = planDe(m);
-  if (texto == null) return { queHace: [`no encuentro el plan escrito${ruta ? ` en ${ruta}` : ' (la sesión no tiene una ejecución con carpeta)'}`], fuente: '', cita };
+  if (texto == null) return { queHace: [`no encuentro el plan escrito${ruta ? ` en ${ruta}${porQueNo(ruta)}` : ' (la sesión no tiene una ejecución con carpeta)'}`], fuente: '', cita };
   const s = seccionesDelPlan(texto);
   if (s.error) return { queHace: [s.error], completo: ruta, fuente: texto, cita };
   return { queHace: s.queHace, archivos: s.archivos, completo: ruta, fuente: texto, cita };
 }
 
-const git = (dir, args) => spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8', timeout: 20000, maxBuffer: 32 * 1024 * 1024 });
+// sin programas externos: el cuadro se arma antes de la firma, y el repo lo nombra el comando
+const git = (dir, args) => spawnSync('git', ['-c', 'core.fsmonitor=false', '-C', dir, ...args], { encoding: 'utf8', timeout: 20000, maxBuffer: 32 * 1024 * 1024 });
+
+/**
+ * El commit de una revisión que escribió la sesión: `{ sha }`, o `{ motivo }` con por qué no. Lo que empieza con «-»
+ * sería una opción de git, no una revisión.
+ */
+function commitDe(raiz, rev) {
+  const r = String(rev || '');
+  if (!r || r.startsWith('-') || /[\s\0]/.test(r)) return { motivo: `«${r}» no es una versión de ${raiz}` };
+  return objetoDe(raiz, `${r}^{commit}`, `«${r}» no es una versión de ${raiz}`);
+}
+
+/** El blob de una ruta en un commit ya resuelto: `{ sha }`, `{ sha: 'borrado' }` si no está, o `{ motivo, gitFallo }`. */
+function blobDe(raiz, commit, ruta) {
+  const b = objetoDe(raiz, `${commit}:${ruta}`, null);
+  return b.sha || b.gitFallo ? b : { sha: 'borrado' };
+}
+
+/** `rev-parse` de un objeto: `{ sha }`; `{ motivo }` si no existe; `{ motivo, gitFallo: true }` si git no pudo contestar. */
+function objetoDe(raiz, objeto, noExiste) {
+  const v = git(raiz, ['rev-parse', '--verify', '--quiet', '--end-of-options', objeto]);
+  if (v.status === 0) return { sha: v.stdout.trim() };
+  // con --quiet, lo que no existe sale 1 sin decir nada; lo demás es que git no pudo contestar
+  if (v.status === 1 && !String(v.stderr || '').trim()) return { motivo: noExiste };
+  const por = v.error ? (v.error.code || v.error.message) : String(v.stderr || '').trim().split('\n')[0] || `git salió ${v.status}`;
+  return { motivo: `git no pudo leer ${raiz} (${por})`, gitFallo: true };
+}
 
 /** El cambio de los controles: cuántas líneas, qué rutas y el diff completo en un archivo de la carpeta de estado. */
 function deControles(palabras, cwd, estado) {
@@ -100,18 +133,43 @@ function deControles(palabras, cwd, estado) {
   let rutas = [];
   let entradas = null;
   try { entradas = JSON.parse(valor(palabras, '--entries') || 'null'); } catch (_) { entradas = null; }
+  const archivo = valor(palabras, '--file');
   if (Array.isArray(entradas)) rutas = entradas.map((e) => e && e.path).filter((p) => typeof p === 'string');
-  else if (valor(palabras, '--file')) rutas = [valor(palabras, '--file')];
-  const base = valor(palabras, '--base');
-  const rev = valor(palabras, '--rev');
-  const rango = base ? [base, 'HEAD'] : rev ? [`${rev}^`, rev] : null;
+  else if (archivo) rutas = [archivo];
   if (!rutas.length) return null;
-  if (!rango) {
-    return { queHace: [`Firma ${rutas.length} archivo(s) de control en su versión de la punta (sin base para comparar)`], archivos: rutas,
-      completo: rutas.map((r) => path.join(raiz, r)).join(', '), fuente: JSON.stringify(entradas || rutas) };
+  // lo que se muestra es lo que se firma: con --file, la versión de --rev (o la punta); con --entries, sus blobs, que
+  // run-base-controls exige iguales a la punta, contra --base
+  const conArchivo = !Array.isArray(entradas);
+  const pedida = conArchivo ? (valor(palabras, '--rev') || 'HEAD') : valor(palabras, '--base');
+  const noPude = (que) => ({ queHace: [`no pude leer el cambio de ${rutas.length} archivo(s) de control: ${que}`], archivos: rutas, fuente: JSON.stringify(entradas || rutas) });
+  let rango = null;
+  let firmada = null;
+  if (conArchivo) {
+    const f = commitDe(raiz, pedida);
+    if (!f.sha) return noPude(f.motivo);
+    firmada = f.sha;
+    // un commit sin padre es el primero del repo: se firma sin base
+    const padre = commitDe(raiz, `${firmada}^`);
+    if (padre.sha) rango = [padre.sha, firmada];
+    else if (padre.gitFallo) return noPude(padre.motivo);
+  } else if (pedida) {
+    const base = commitDe(raiz, pedida);
+    const punta = commitDe(raiz, 'HEAD');
+    if (!base.sha || !punta.sha) return noPude((base.sha ? punta : base).motivo);
+    rango = [base.sha, punta.sha];
   }
-  const num = git(raiz, ['diff', '--numstat', ...rango, '--', ...rutas]);
-  const diff = git(raiz, ['diff', ...rango, '--', ...rutas]);
+  if (!rango) {
+    // sin base, la huella lleva el contenido que se firma: un click no vale para otra versión del archivo
+    const blobs = conArchivo ? rutas.map((r) => blobDe(raiz, firmada, r)) : null;
+    const sinBlob = (blobs || []).find((b) => b.gitFallo);
+    if (sinBlob) return noPude(sinBlob.motivo);
+    return { queHace: [`Firma ${rutas.length} archivo(s) de control en su versión ${conArchivo ? `de ${firmada.slice(0, 12)}` : 'de la punta'} (sin base para comparar)`], archivos: rutas,
+      completo: rutas.map((r) => path.join(raiz, r)).join(', '), fuente: JSON.stringify({ entradas: entradas || rutas, blobs }) };
+  }
+  // diff-tree, entre dos commits ya resueltos: el comando de bajo nivel no corre los conversores ni el diff externo
+  // que pueda configurar el repo
+  const num = git(raiz, ['diff-tree', '-r', '--numstat', ...rango, '--', ...rutas]);
+  const diff = git(raiz, ['diff-tree', '-r', '-p', ...rango, '--', ...rutas]);
   if (num.status !== 0 || diff.status !== 0) {
     return { queHace: [`no pude leer el cambio de ${rutas.length} archivo(s) de control contra ${rango[0]} (${String(num.stderr || diff.stderr || '').trim().split('\n')[0] || 'git falló'})`],
       archivos: rutas, fuente: JSON.stringify(entradas || rutas) };
@@ -140,17 +198,18 @@ function deLaPruebaAMano(palabras, m) {
   if (!historia) return null;
   const acs = acsDe(palabras);
   let criterios = [];
-  try { criterios = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'manual-checks.js')).criterios(historia); } catch (_) { criterios = []; }
-  const lineas = acs.map((n) => { const c = criterios.find((x) => x.n === n); return `AC ${n}: ${c ? c.text : '(no está en la historia)'}`; });
+  let fallo = null;
+  try { criterios = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'manual-checks.js')).criterios(historia); } catch (e) { fallo = e.code || e.message; }
+  const lineas = acs.map((n) => { const c = criterios.find((x) => x.n === n); return `AC ${n}: ${c ? c.text : fallo ? `(no pude leer los criterios de la historia: ${fallo})` : '(no está en la historia)'}`; });
   return lineas.length ? { queHace: lineas, completo: historia, fuente: lineas.join('\n') } : null;
 }
 
 function hallazgosDe(dir) {
   const ruta = dir ? path.join(dir, 'findings.json') : null;
   const texto = ruta ? leer(ruta) : null;
-  if (texto == null) return { ruta: null, lista: null };
+  if (texto == null) return { ruta: null, lista: null, roto: porQueNo(ruta) || null };
   let j;
-  try { j = JSON.parse(texto); } catch (_) { return { ruta, lista: null, texto }; }
+  try { j = JSON.parse(texto); } catch (e) { return { ruta, lista: null, texto, roto: ` (no se entiende: ${e.message})` }; }
   return { ruta, texto, lista: Array.isArray(j) ? j : (j && Array.isArray(j.findings) ? j.findings : []) };
 }
 
@@ -163,9 +222,10 @@ function delCritico(palabras, m) {
   const nombre = `${regla}${archivo ? ` en ${archivo}` : ''}`;
   const h = hallazgosDe(carpetaDeLaCorrida(m));
   const archivos = archivo ? [archivo] : [];
-  if (!h.lista) return { queHace: [`Eximir ${nombre}: no hay informe de hallazgos en esta ejecución`], archivos, completo: h.ruta, fuente: h.texto || '', cita };
+  if (!h.lista) return { queHace: [`Eximir ${nombre}: ${h.roto ? `no pude leer el informe de hallazgos${h.roto}` : 'no hay informe de hallazgos en esta ejecución'}`], archivos, completo: h.ruta, fuente: h.texto || '', cita };
   const reglaDe = (f) => String(f.rule_id || f.ruleId || f.rule || '').trim();
-  const iguales = h.lista.filter((f) => f && reglaDe(f) === regla && (!archivo || String(f.file || '') === archivo));
+  // la exención se anota con la clave regla|archivo (critical-waivers.js): sin --file sólo exime los que no tienen archivo
+  const iguales = h.lista.filter((f) => f && reglaDe(f) === regla && String(f.file || '').trim() === String(archivo || '').trim());
   if (!iguales.length) return { queHace: [`Eximir ${nombre}: no está en el informe de hallazgos`], archivos, completo: h.ruta, fuente: h.texto, cita };
   const lineas = iguales.map((f) => `${regla}${f.file ? ` en ${f.file}` : ''}: ${String(f.summary || f.title || f.reason || '(sin texto)').replace(/\s+/g, ' ').trim()}`);
   return { queHace: lineas, archivos: archivo ? archivos : [...new Set(iguales.map((f) => f.file).filter(Boolean))], completo: h.ruta, fuente: h.texto, cita };
@@ -179,8 +239,9 @@ function deLaVuelta(palabras, m) {
   const ruta = dir ? path.join(dir, 'rethink', `iter-${iter}.json`) : null;
   const texto = ruta ? leer(ruta) : null;
   let n = null;
-  try { n = texto ? JSON.parse(texto) : null; } catch (_) { n = null; }
-  if (!n) return { queHace: [`Una vuelta ${iter} de revisores sobre lo que quedó abierto`], completo: dir, fuente: '' };
+  let roto = porQueNo(ruta);
+  try { n = texto ? JSON.parse(texto) : null; } catch (e) { roto = ` (su nota no se entiende: ${e.message})`; }
+  if (!n) return { queHace: [`Una vuelta ${iter} de revisores sobre lo que quedó abierto${roto}`], completo: roto ? ruta : dir, fuente: texto || '' };
   const lineas = [n.repeated && `Se repitió: ${n.repeated}`, n.change ? `Cambia: ${n.change}` : n.keep && `Sigue igual: ${n.keep}`, n.story_change && `Cambia la historia: ${n.story_change}`].filter(Boolean);
   return { queHace: lineas, completo: ruta, fuente: texto };
 }

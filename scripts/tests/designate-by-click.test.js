@@ -40,6 +40,8 @@ require(process.env.TEST_CW_LIB).sesionQueReenvia = () => (process.env.TEST_RELA
 require(process.env.TEST_WINDOW_LIB).exigir = (o) => {
   fs.writeFileSync(process.env.TEST_CALL_FILE, JSON.stringify({ firma: o.firma, propia: o.propia, argv: o.argv }));
   if (o.antes) { const n = o.antes('click', null); if (n && n.codigo) return { codigo: n.codigo, motivo: n.motivo }; }
+  // lo que pasa en la máquina mientras la firma espera (otra sesión que queda nombrada)
+  if (process.env.TEST_DURING_WAIT) fs.appendFileSync(process.env.TEST_GATES, process.env.TEST_DURING_WAIT);
   return JSON.parse(process.env.TEST_SIGNATURE);
 };
 `;
@@ -59,9 +61,10 @@ function laboratorio(t, { perfil = { approvals: { relay_session: 'coordinadora' 
   if (perfil) { perfilRuta = path.join(base, 'team-profile.json'); fs.writeFileSync(perfilRuta, JSON.stringify(perfil)); }
   const rol = perfil && perfil.approvals ? perfil.approvals.relay_session || '' : '';
   const lab = { base, casa, carpeta, estado, llamada };
-  lab.correr = (args, { firma = { codigo: 0, via: 'click' }, sesion = SES } = {}) => {
+  lab.correr = (args, { firma = { codigo: 0, via: 'click' }, sesion = SES, durante = [] } = {}) => {
     try { fs.rmSync(llamada); } catch (_) { /* no había */ }
     const env = { PATH: process.env.PATH, HOME: casa, USERPROFILE: casa, TYCON_LANE_LLM: '0', TYCON_PROFILE: perfilRuta || '0',
+      ...(durante.length ? { TEST_DURING_WAIT: durante.map((l) => `${JSON.stringify(l)}\n`).join(''), TEST_GATES: path.join(estado, 'gates.log') } : {}),
       TEST_CALL_FILE: llamada, TEST_SIGNATURE: JSON.stringify(firma), TEST_WINDOW_LIB: path.join(LIB, 'owner-window.js'),
       TEST_CW_LIB: path.join(PIPELINE_LIB, 'critical-waivers.js'), TEST_RELAY: rol, ...(sesion ? { CLAUDE_CODE_SESSION_ID: sesion } : {}) };
     return spawnSync(process.execPath, ['-r', precarga, MARKER, ...args], { cwd: carpeta, env, encoding: 'utf8' });
@@ -179,6 +182,24 @@ test('UndesignateRelay_Click_WritesWithdrawn_VigenteIsNull (T12)', (t) => {
   // /coordinate la muestra sin coordinadora
   const co = spawnSync(process.execPath, [path.join(RAIZ, 'scripts', 'tools', 'coordination.js')], { env: { PATH: process.env.PATH, HOME: lab.casa, USERPROFILE: lab.casa, TYCON_PROFILE: path.join(lab.base, 'team-profile.json'), CLAUDE_CODE_SESSION_ID: SES }, encoding: 'utf8' });
   assert.doesNotMatch(`${co.stdout}${co.stderr}`, new RegExp(`coordinadora[^.\\n]*${SES}`));
+});
+
+// 🔴 Falla con: una retirada que, por esperar su firma, le borra en silencio el rol a la sesión nombrada mientras tanto.
+test('UndesignateRelay_OtherDesignatedWhileWaiting_DoesNotWithdrawIt', (t) => {
+  const lab = laboratorio(t);
+  assert.strictEqual(lab.correr(['designate-relay']).status, 0);
+  const otra = { name: 'relay-designation', status: 'ok', ts: '2026-11-05T09:00:00.000Z', sesion: OTRA, rol: 'coordinadora', quien: 'la persona', via: 'click' };
+  const r = lab.correr(['withdraw-relay'], { durante: [otra] });
+  assert.strictEqual(r.status, 1, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /no se retiró a la coordinadora — esta sesión no es la coordinadora \(la vigente es 66666666/);
+  assert.ok(!designaciones(lab).some((g) => g.status === 'retirada'), 'no se anotó la retirada');
+  assert.strictEqual(lab.vigente().sesion, OTRA);
+  // y una retirada de otra sesión no anula la designación que vino después
+  const estado = path.join(lab.estado, 'gates.log');
+  fs.appendFileSync(estado, `${JSON.stringify({ name: 'relay-designation', status: 'retirada', ts: '2026-11-05T09:01:00.000Z', sesion: SES, rol: 'coordinadora', via: 'click' })}\n`);
+  assert.strictEqual(lab.vigente().sesion, OTRA);
+  fs.appendFileSync(estado, `${JSON.stringify({ name: 'relay-designation', status: 'retirada', ts: '2026-11-05T09:02:00.000Z', sesion: OTRA, rol: 'coordinadora', via: 'click' })}\n`);
+  assert.strictEqual(lab.vigente(), null);
 });
 
 // 🔴 Falla con: retirar desde una sesión que no es la coordinadora, gastando el click.
