@@ -447,9 +447,18 @@ function lostDesignation(opts, sid) {
   const home = opts.home || require('os').homedir();
   const d = designacionVigente({ home });
   if (!d || d.error || !sid || !opts.title || !opts.transcript) return null;
-  const rol = { valor: rolDeCoordinar({ env: opts.env || process.env, home, arnes: opts.arnes }).rol };
+  const r = rolDeCoordinar({ env: opts.env || process.env, home, arnes: opts.arnes });
+  const rol = { valor: r.rol };
   if (titleIn(path.join(path.dirname(opts.transcript), `${d.sesion}.jsonl`)) !== opts.title) return null;
   const marker = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+  // sin el rol en el perfil, el click no tiene qué nombrar: se recupera con la frase
+  if (!r.firma) {
+    return [
+      `Coordinación: esta sesión era la ${rol.valor} de esta máquina y dejó de serlo al limpiar la conversación: para el arnés es otra conversación.`,
+      `Decile a la persona que, si quiere que siga siéndolo, escriba en este chat «Esta sesión es la ${rol.valor}». La frase la escribe ella, nunca vos.`,
+      `Con su frase, corré node ${marker} designate-relay --approved-by '<la persona>' --quote '<su frase, textual>' y seguí lo que te diga.`,
+    ].join('\n');
+  }
   return [
     `Coordinación: esta sesión era la ${rol.valor} de esta máquina y dejó de serlo al limpiar la conversación: para el arnés es otra conversación.`,
     `Decile a la persona que, si quiere que siga siéndolo, te lo pida con sus palabras. El pedido es de ella, nunca tuyo.`,
