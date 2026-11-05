@@ -167,7 +167,7 @@ request, and closing too early loses the run.
   `clear-session <session> --lost`, which the owner signs. If it cannot tell whether the session is alive (Codex leaves
   no session record), it says so and gives no command.
 - **In the office and in `/wip`** the session shows «Terminado, falta cerrar» (finished, still to close), with the story
-  and since when, also after a day. It does not count as working.
+  and since when, also after a day. It does not count as working; if the session is busy with something else, it shows as working.
 
 What the coordinator does: asks that session to close after its last push and its last pull request. If the session
 died, it runs the command from the notice; the `--lost` one goes to the owner.

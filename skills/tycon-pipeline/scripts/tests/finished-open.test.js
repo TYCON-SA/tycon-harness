@@ -233,6 +233,20 @@ test('T19d Arranque_IdRaroORutaConEspacios_ComandoSeguro @story-8.195 @ac-19 —
   assert.match(out, /node '\/Mis Cosas\/marker\.js' clear-session eeeeeeee-muerta/);
 });
 
+test('T19f Avisos_MotivoDeFallaConControles_SaleLimpio @story-8.195 @ac-19 @ac-26 — el motivo de una falla que viene de disco no lleva caracteres de control; una base que no es un sha no llega a git', () => {
+  const C = casa();
+  // el mensaje de JSON.parse trae un trozo del archivo: una secuencia de la consola adentro del marcador roto
+  C.marcador('s-19f', '{ "x": "\u001b]0;pwn\u0007' + 'a'.repeat(400));
+  const propias = F.stopLines({ sid: 's-19f', home: C.home, stateDir: C.sdir, now: AHORA }).join('\n');
+  assert.match(propias, /no pude leer la ejecución de la sesión s-19f \(/);
+  assert.doesNotMatch(propias, /[\u0000-\u001f\u007f-\u009f]/, 'sin caracteres de control');
+  assert.doesNotMatch(F.machine({ home: C.home, stateDir: C.sdir, now: AHORA }).lines.join('\n'), /[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/);
+  // una base que git leería como opción: no se afirma que entró y no es una falla
+  const { repo, adhoc } = repoConRama({ entro: true });
+  C.carril('s-19g', { ...adhoc, bases: { [repo]: { sha: '--output=/tmp/x' } } });
+  assert.deepEqual(F.stopLines({ sid: 's-19g', home: C.home, stateDir: C.sdir, now: AHORA, env: ghCon([]) }), []);
+});
+
 test('T26b Avisos_LoQueNoSePudoMedir_SeDice @story-8.195 @ac-26 — carpeta del carril que ya no está, carpeta de estado ilegible y ejecución perdida sin poder mirar: se dicen, no son «nada abierto»', () => {
   const C = casa();
   const { repo, adhoc } = repoConRama();

@@ -31,6 +31,10 @@ const WIP = path.join(RAIZ, 'scripts', 'tools', 'work-in-progress.js');
 const SID_SEGURO = /^[A-Za-z0-9_][\w.-]*$/;
 // Lo que viene de un nombre de archivo o de un marcador, en una línea y sin caracteres de control
 const legible = (s) => String(s).replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ');
+// El motivo de una falla que viene de disco o de git (un mensaje de JSON.parse trae un trozo del archivo): legible y corto
+const causa = (s) => legible(s).replace(/\s+/g, ' ').trim().slice(0, 160);
+// La base de un carril que se le pasa a git: sólo un sha, para que nada del archivo se lea como opción
+const SHA = /^[0-9a-f]{7,64}$/;
 // Una ruta en un comando para copiar: entre comillas simples si tiene algo más que letras, números y separadores
 const rutaParaLaConsola = (p) => (/^[\w./~-]+$/.test(String(p)) ? String(p) : `'${String(p).replace(/'/g, `'\\''`)}'`);
 
@@ -48,8 +52,8 @@ function hace(desde, now) {
 /** Un JSON del disco: { data }, { ausente: true } o { error: '<motivo>' }. */
 function leer(file) {
   let text;
-  try { text = fs.readFileSync(file, 'utf8'); } catch (e) { return e.code === 'ENOENT' ? { ausente: true } : { error: e.code || e.message }; }
-  try { return { data: JSON.parse(text) }; } catch (e) { return { error: `JSON roto: ${e.message}` }; }
+  try { text = fs.readFileSync(file, 'utf8'); } catch (e) { return e.code === 'ENOENT' ? { ausente: true } : { error: causa(e.code || e.message) }; }
+  try { return { data: JSON.parse(text) }; } catch (e) { return { error: causa(`JSON roto: ${e.message}`) }; }
 }
 function escribir(file, data) {
   try {
@@ -115,7 +119,7 @@ function adhocState(adhoc, ctx) {
   // lo que no se pudo mirar se dice: nunca se lee como «nada abierto»
   let falla = null;
   let sinTiempo = false;
-  const anotar = (motivo) => { falla = falla || motivo; };
+  const anotar = (motivo) => { falla = falla || causa(motivo); };
   for (const repo of reposDelCarril(adhoc)) {
     if (!fs.existsSync(repo)) { anotar(`la carpeta ${repo} ya no está`); continue; }
     const head = git(repo, ['rev-parse', '--abbrev-ref', 'HEAD']);
@@ -126,7 +130,7 @@ function adhocState(adhoc, ctx) {
     // no está en la línea propia de main desde la base. Una rama que sólo trajo main tiene la punta en esa línea: no
     // entró; una que entró con su merge la tiene del otro lado del merge. Una que entró sin merge (por avance rápido) no
     // se distingue de la que sólo trajo main, y no se afirma
-    const base = bases[repo] && bases[repo].sha;
+    const base = bases[repo] && SHA.test(String(bases[repo].sha)) ? bases[repo].sha : null;
     // sin main remoto no hay con qué comparar: como sin base, no se afirma (no es una falla)
     const hayMain = git(repo, ['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/main']).status === 0;
     if (base && hayMain) {
@@ -205,7 +209,7 @@ function stopLines({ sid, home = os.homedir(), stateDir, now = Date.now(), env }
 
 /** Cómo se cierra lo de otra sesión, según viva o no (ninguno si vive: la cierra ella). */
 function comoSeCierra(vida, comando) {
-  if (vida.unknown) return { vive: null, texto: `no sé si la sesión vive (${vida.unknown}): no doy comando` };
+  if (vida.unknown) return { vive: null, texto: `no sé si la sesión vive (${causa(vida.unknown)}): no doy comando` };
   if (vida.sinRegistro) return { vive: null, texto: 'no sé si la sesión vive (no tiene registro de sesión: puede ser de Codex, o estar cerrada): no doy comando' };
   if (vida.alive) return { vive: true, texto: 'la cierra su sesión' };
   return { vive: false, texto: `su sesión ya no está: ${comando}` };
@@ -221,7 +225,7 @@ function machine({ home = os.homedir(), stateDir, now = Date.now(), env, markerJ
   // una carpeta que no existe es «nada»; una que no se puede leer se dice
   const nombres = (dir, que) => {
     try { return fs.readdirSync(dir).filter((n) => n.endsWith('.json')).sort(); } catch (e) {
-      if (e.code !== 'ENOENT') items.push({ sid: null, tipo: 'ilegible', texto: `no pude leer ${que} de la máquina (${e.code || e.message})` });
+      if (e.code !== 'ENOENT') items.push({ sid: null, tipo: 'ilegible', texto: `no pude leer ${que} de la máquina (${causa(e.code || e.message)})` });
       return [];
     }
   };
@@ -229,7 +233,7 @@ function machine({ home = os.homedir(), stateDir, now = Date.now(), env, markerJ
   const node = `node ${rutaParaLaConsola(markerJs)}`;
   // un renglón que falla no tumba a los demás: se dice cuál
   const cadaUno = (n, que, hacer) => {
-    try { hacer(); } catch (e) { items.push({ sid: null, tipo: 'ilegible', texto: `no pude mirar ${que} ${legible(n)} (${String(e.message || e).split('\n')[0]})` }); }
+    try { hacer(); } catch (e) { items.push({ sid: null, tipo: 'ilegible', texto: `no pude mirar ${que} ${legible(n)} (${causa(String(e.message || e).split('\n')[0])})` }); }
   };
   for (const n of nombres(path.join(ctx.sdir, 'active'), 'las ejecuciones')) cadaUno(n, 'la ejecución', () => {
     const sid = path.basename(n, '.json');
@@ -244,7 +248,7 @@ function machine({ home = os.homedir(), stateDir, now = Date.now(), env, markerJ
     else {
       let perdida = null;
       let noSe = null;
-      try { perdida = require('./open-runs.js').perdida({ sid, cwd: m.data.repoPath, home }); } catch (err) { noSe = String(err.message || err).split('\n')[0]; }
+      try { perdida = require('./open-runs.js').perdida({ sid, cwd: m.data.repoPath, home }); } catch (err) { noSe = causa(String(err.message || err).split('\n')[0]); }
       cierre = noSe ? { texto: `no pude ver si su ejecución está perdida (${noSe}): no doy comando` }
         : perdida ? { texto: `su ejecución está perdida: ${node} clear-session ${sid} --lost (lo firma el dueño)` }
           : comoSeCierra(vidaDe(sid), `${node} clear-session ${sid}`);
