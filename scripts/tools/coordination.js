@@ -56,7 +56,7 @@ const { spawnSync } = require('child_process');
 const SKILL_LIB = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib');
 const { stateDir, claudeDir } = require(path.join(SKILL_LIB, 'state-dir.js'));
 const { adversarialInFlight } = require(path.join(SKILL_LIB, 'codex-reviewers.js'));
-const { sesionQueReenvia, designacionVigente } = require(path.join(SKILL_LIB, 'critical-waivers.js'));
+const { rolDeCoordinar, designacionVigente } = require(path.join(SKILL_LIB, 'critical-waivers.js'));
 const { sessionsBySid, SAFE_SID, listedName } = require('./work-in-progress.js');
 const tyconConfig = require(path.join(__dirname, '..', 'lib', 'tycon-config.js'));
 const workSlots = require('./work-slots.js');
@@ -235,7 +235,9 @@ function stalledOf(s, f, now) {
   if (!((waits && (/permission/i.test(String(s.waitingFor || '')) || p)) || (p && !known))) return null;
   const pSince = p ? Date.parse(p.since) : NaN;
   const since = Number.isFinite(pSince) ? pSince : (Number.isFinite(s.statusAt) ? s.statusAt : now);
-  return { tool: p ? label(p.tool) : null, detail: p && p.detail ? oneLine(p.detail).slice(0, 200) : null, since, key: Number.isFinite(pSince) ? `p:${pSince}` : 'claude' };
+  // el gancho ya lo anota tapado; se tapa otra vez por los archivos escritos antes de que una forma existiera
+  const detail = p && p.detail ? oneLine(require(path.join(__dirname, '..', 'hooks', 'wait-notice.js')).redact(p.detail)).slice(0, 200) : null;
+  return { tool: p ? label(p.tool) : null, detail, since, key: Number.isFinite(pSince) ? `p:${pSince}` : 'claude' };
 }
 
 // Las sesiones de fondo que Claude Code cerró y no se levantaron. Una que ya está viva de nuevo no sale.
@@ -359,17 +361,16 @@ function statusText(s) {
 
 const isCodex = (env) => Boolean(env.CODEX_SESSION_ID) && !env.CLAUDE_CODE_SESSION_ID;
 
-/** /coordinate: el estado para la sesión designada; a cualquier otra, qué falta. `{ code, text }`. */
+/**
+ * /coordinate: el estado para la sesión designada; a cualquier otra, cómo designarla. Sin rol en el perfil la
+ * coordinadora ordena igual, y el estado dice que las firmas van a la ventana del dueño. `{ code, text }`.
+ */
 function coordinate(opts = {}) {
   const env = opts.env || process.env;
   const home = opts.home || require('os').homedir();
   if (isCodex(env)) return { code: 1, text: 'Codex no puede coordinar: sus mensajes a otra sesión (codex queue) no pasan por una herramienta que el arnés pueda mirar. La coordinadora va en Claude Code.' };
-  const rol = sesionQueReenvia({ env, home, arnes: opts.arnes });
-  if (!rol.valor) {
-    return { code: 1, text: rol.aviso && !/no conoce/.test(rol.aviso)
-      ? `No sé si esta organización usa una coordinadora: ${rol.aviso}.`
-      : 'Esta organización no usa una coordinadora: se prende en la pestaña Configuración del sitio, en «Quién autoriza saltarse un control».' };
-  }
+  const r = rolDeCoordinar({ env, home, arnes: opts.arnes });
+  const rol = { valor: r.rol };
   const sid = env.CLAUDE_CODE_SESSION_ID || null;
   const d = designacionVigente({ home });
   if (d && d.error) return { code: 1, text: `No pude saber cuál es la coordinadora: ${d.error}.` };
@@ -381,23 +382,23 @@ function coordinate(opts = {}) {
       `  node ${marker} designate-relay --approved-by '<el dueño>' --quote '<su frase, textual>'`,
     ].join('\n') };
   }
-  return { code: 0, text: statusText(status(opts)) };
+  const firmas = r.firma ? '' : `\nFirmas: van a la ventana del dueño; sin approvals.relay_session en el perfil del equipo esta sesión ordena y no firma${r.aviso ? ` (${r.aviso.replace(/: nadie reenvía$/, '')})` : ''}.`;
+  return { code: 0, text: `${statusText(status(opts))}${firmas}` };
 }
 
 // ── Lo que ve la coordinadora sin pedirlo ──
 
-// El rol de la coordinadora, sólo si esta sesión es la designada. `{ role }`, `{ problem }` cuando la designación dice
-// que es ella pero la configuración no se lee, o null: sin rol, sin designación, en otra sesión o sin poder leer el
-// registro (en la duda, callar: el aviso no puede llegarle a una sesión de trabajo).
+// El rol de la coordinadora, sólo si esta sesión es la designada: `{ role, problem? }` (`problem`: la configuración no
+// se lee y el rol es el de fábrica), o null sin designación, en otra sesión o sin poder leer el registro (en la duda,
+// callar: el aviso no puede llegarle a una sesión de trabajo).
 function coordinatorRole(opts, sid) {
   const env = opts.env || process.env;
   const home = opts.home || require('os').homedir();
   if (!sid) return null;
   const d = designacionVigente({ home });
   if (!d || d.error || d.sesion !== sid) return null;
-  const rol = sesionQueReenvia({ env, home, arnes: opts.arnes });
-  if (rol.valor) return { role: rol.valor };
-  return rol.aviso && /no se pudo leer|falló/.test(rol.aviso) ? { problem: rol.aviso.replace(/: nadie reenvía$/, '') } : null;
+  const r = rolDeCoordinar({ env, home, arnes: opts.arnes });
+  return r.aviso && /no se pudo leer|falló/.test(r.aviso) ? { role: r.rol, problem: r.aviso.replace(/: nadie reenvía$/, '') } : { role: r.rol };
 }
 const sessionOf = (opts) => opts.sessionId || (opts.env || process.env).CLAUDE_CODE_SESSION_ID || null;
 
@@ -435,8 +436,7 @@ function lostDesignation(opts, sid) {
   const home = opts.home || require('os').homedir();
   const d = designacionVigente({ home });
   if (!d || d.error || !sid || !opts.title || !opts.transcript) return null;
-  const rol = sesionQueReenvia({ env: opts.env || process.env, home, arnes: opts.arnes });
-  if (!rol.valor) return null;
+  const rol = { valor: rolDeCoordinar({ env: opts.env || process.env, home, arnes: opts.arnes }).rol };
   if (titleIn(path.join(path.dirname(opts.transcript), `${d.sesion}.jsonl`)) !== opts.title) return null;
   const marker = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
   return [
@@ -455,19 +455,18 @@ function guideNotice(opts = {}) {
   if (opts.source !== 'compact' && opts.source !== 'clear') return null;
   const sid = sessionOf(opts);
   const who = coordinatorRole(opts, sid);
-  if (who) return who.role ? `Coordinación: sos la ${who.role} de esta máquina y tu conversación empezó de nuevo. Antes de seguir, leé tus reglas completas: ${GUIDE}` : null;
+  if (who) return `Coordinación: sos la ${who.role} de esta máquina y tu conversación empezó de nuevo. Antes de seguir, leé tus reglas completas: ${GUIDE}`;
   return opts.source === 'clear' ? lostDesignation(opts, sid) : null;
 }
 
 // La coordinadora que recibe primero la espera de otra sesión (scripts/hooks/wait-notice.js): `{ sid, name, role,
-// waitingName }`, o null sin rol, sin designación, con la designada cerrada o si la que espera es ella misma.
+// waitingName }`, o null sin designación, con la designada cerrada o si la que espera es ella misma.
 function liveCoordinator(opts, waitingSid) {
   const env = opts.env || process.env;
   const home = opts.home || require('os').homedir();
   const d = designacionVigente({ home });
   if (!d || d.error || d.sesion === waitingSid) return null;
-  const rol = sesionQueReenvia({ env, home, arnes: opts.arnes });
-  if (!rol.valor) return null;
+  const rol = { valor: rolDeCoordinar({ env, home, arnes: opts.arnes }).rol };
   const sessions = sessionsBySid(path.join(claudeDir(home), 'sessions'), [], null);
   const s = sessions.get(d.sesion);
   if (!s || !s.alive) return null;
@@ -677,6 +676,24 @@ function claudeLauncher(ctx = {}, what = 'no abrí la sesión') {
 const resolveLauncher = (opts, what) => opts.launcher || claudeLauncher(opts.windows || {}, what);
 const launchArgv = (launcher, args) => [...(launcher.prefix || []), ...args];
 
+/**
+ * Los portones grandes que arrancaron con menos de 3 a la vez y siguen vivos (los avisos de lib/suite-times.js): uno por
+ * línea, con quién, cuántas a la vez y la hora estimada de fin. Los de un proceso que ya no está los borra la lectura.
+ */
+function slowGateLines(opts, s, problems) {
+  try {
+    const gates = require(path.join(SKILL_LIB, 'suite-times.js')).readSlowGates(opts.home);
+    const nameOf = (sid) => ([...s.working, ...s.quiet].find((w) => w.sid === sid) || {}).session || null;
+    // el aviso es un archivo de la carpeta de estado: lo que no tiene la forma esperada no llega al texto
+    const num = (v) => (Number.isFinite(Number(v)) ? String(Number(v)) : '?');
+    const eta = (v) => (/^\d{2}:\d{2}$/.test(String(v)) ? v : '??:??');
+    return gates.map((g) => `Coordinación: portón lento de ${oneLine(nameOf(g.sid) || g.repo || `el proceso ${g.pid}`)}: ${num(g.workers)} a la vez para ${num(g.suites)} suites (carga ${num(g.carga)}), termina cerca de las ${eta(g.eta)}. Mirá si hay que liberar la máquina.`);
+  } catch (e) {
+    problems.push(`los avisos de portón lento (${e.code || e.message})`);
+    return [];
+  }
+}
+
 function capNotice(opts = {}) {
   const sid = sessionOf(opts);
   const who = coordinatorRole(opts, sid);
@@ -710,6 +727,7 @@ function capNotice(opts = {}) {
   const signatures = oldSignatures(opts, opts.now == null ? Date.now() : Number(opts.now), problems);
   if (signatures) lines.push(signatures);
   lines.push(...waitLines(opts, sid, problems));
+  lines.push(...slowGateLines(opts, s, problems));
   try { lines.push(...ownerWaitLines(opts, sid, s)); } catch (e) { problems.push(`lo de owner-wait (${e.code || e.message})`); }
   if (problems.length) lines.push(`Coordinación: No pude leer ${oneLine(problems.join(' · ')).slice(0, 300)}.`);
   return lines.length ? lines.join('\n') : null;
@@ -787,8 +805,7 @@ function adversarialTurn(opts = {}) {
   // no poder leerla no es «no hay coordinadora»: el pase no se frena, pero se dice que no se pudo mirar
   if (d && d.error) process.stderr.write(`coordination: no pude saber cuál es la coordinadora (${d.error}): no miro el turno del pase\n`);
   if (!d || d.error) return null;
-  const rol = sesionQueReenvia({ env, home, arnes: opts.arnes });
-  if (!rol.valor) return null;
+  const rol = { valor: rolDeCoordinar({ env, home, arnes: opts.arnes }).rol };
   const problems = [];
   const sessions = sessionsBySid(path.join(claudeDir(home), 'sessions'), problems, null);
   // Una coordinadora que ya se cerró no da turnos; el pase de una sesión que ya no vive quedó abandonado.
@@ -1152,7 +1169,10 @@ function openNow(opts) {
     return no(message);
   };
   // Lo pesado se pide: seis sesiones dentro del tope, cada una con lo suyo, llevaron la carga de una máquina a 52.
-  const rolTurno = sesionQueReenvia({ env, home, arnes: opts.arnes }).valor;
+  // con el rol del perfil o con una coordinadora designada; sin ninguno de los dos no hay a quién pedirle turno
+  const turno = rolDeCoordinar({ env, home, arnes: opts.arnes });
+  const designada = turno.firma ? null : designacionVigente({ home });
+  const rolTurno = turno.firma || (designada && !designada.error) ? turno.rol : null;
   const heavyRule = rolTurno ? ` — Nada pesado sin turno de la ${rolTurno}: suite completa, banco, examen, portón, revisores, pase.` : '';
   const job = slot
     ? `${task}${heavyRule} — Trabajás en el puesto ${slot.path}, en la rama ${slot.branch}. Al terminar, con todo commiteado, soltalo: node "${path.join(__dirname, 'work-slots.js')}" release "${slot.path}"`

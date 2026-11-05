@@ -19,11 +19,19 @@ const C = require('../tools/coordination.js');
 const DS = require('../lib/delegated-signing.js');
 const oa = require('../lib/owner-approvals.js');
 const ow = require('../lib/owner-window.js');
-const { stateDir } = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
+const { harnessCopy } = require('./lib/harness-copy.js');
+const { stateDir } = require(path.join(RAIZ,'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
 
 const AT = Date.parse('2026-11-04T23:03:39.000Z');
 const COORD = 'ses-coord';
 const LANZADA = 'ses-acme1';
+const PERFIL = { approvals: { relay_session: 'coordinadora' } };
+/** El gancho como proceso: corre desde una copia del arnés con el perfil del equipo en su árbol. */
+function ganchoConPerfil() {
+  const copia = harnessCopy();
+  fs.writeFileSync(path.join(copia, 'team-profile.json'), JSON.stringify(PERFIL));
+  return path.join(copia, 'scripts', 'hooks', 'background-question-guard.js');
+}
 
 function casaNueva(t) {
   const raiz = fs.mkdtempSync(path.join(os.tmpdir(), 'bg-question-'));
@@ -33,7 +41,11 @@ function casaNueva(t) {
   fs.mkdirSync(path.join(stateDir(casa), 'coordination'), { recursive: true });
   const carpeta = path.join(raiz, 'puesto-1');
   fs.mkdirSync(carpeta);
-  return { raiz, casa, carpeta };
+  // el perfil del equipo, en el árbol del arnés: sin approvals.relay_session no hay coordinadora confirmada
+  const arnes = path.join(raiz, 'arnes');
+  fs.mkdirSync(arnes);
+  fs.writeFileSync(path.join(arnes, 'team-profile.json'), JSON.stringify(PERFIL));
+  return { raiz, casa, carpeta, arnes };
 }
 
 /** Un archivo de sesión como lo escribe Claude Code: viva con este pid; muerta con uno que no existe. */
@@ -63,7 +75,7 @@ function maquina(t, { startedAt = AT + 7000, conRenglon = true } = {}) {
 
 const pregunta = (texto = '¿Aprobás el plan de la tanda C?') => ({ questions: [{ question: texto, header: 'Plan', multiSelect: false, options: [{ label: 'Sí', description: 'a' }, { label: 'No', description: 'b' }] }] });
 const evento = (sid, tool_name = 'AskUserQuestion', tool_input = pregunta()) => ({ hook_event_name: 'PreToolUse', session_id: sid, tool_name, tool_input, cwd: '/r' });
-const decidir = (toy, ev, env = {}) => G.decidir(ev, { home: toy.casa, env });
+const decidir = (toy, ev, env = {}) => G.decidir(ev, { home: toy.casa, env, arnes: toy.arnes });
 
 test('T1 Lanzada_AskUserQuestion_SeNiega @story-8.211 @ac-1', (t) => {
   const toy = maquina(t);
@@ -75,7 +87,7 @@ test('T1 Lanzada_AskUserQuestion_SeNiega @story-8.211 @ac-1', (t) => {
   assert.match(r.reason, /tres renglones/);
   assert.match(r.reason, /ruta/);
   // el gancho como proceso: la negativa sale como decisión de la herramienta
-  const p = spawnSync(process.execPath, [GANCHO], { input: JSON.stringify(evento(LANZADA)), encoding: 'utf8', env: { ...process.env, HOME: toy.casa, USERPROFILE: toy.casa, TYCON_BG_QUESTION_GUARD: '' } });
+  const p = spawnSync(process.execPath, [ganchoConPerfil()], { input: JSON.stringify(evento(LANZADA)), encoding: 'utf8', env: { ...process.env, HOME: toy.casa, USERPROFILE: toy.casa, TYCON_BG_QUESTION_GUARD: '' } });
   assert.strictEqual(p.status, 0, p.stderr);
   const out = JSON.parse(p.stdout);
   assert.strictEqual(out.hookSpecificOutput.permissionDecision, 'deny');
@@ -193,10 +205,14 @@ test('T10 FirmaEnLanzada_TextoALaCoordinadora @story-8.211 @ac-12', (t) => {
   }
   // la cadena entera: la sesión lanzada, con la coordinadora viva, da la coordinadora; otra, nada
   const toy = maquina(t);
-  assert.deepStrictEqual(G.coordinadoraDeLaLanzada({ home: toy.casa, sid: LANZADA }), { name: 'Coordinadora', sid: COORD, duda: false });
+  assert.deepStrictEqual(G.coordinadoraDeLaLanzada({ home: toy.casa, sid: LANZADA, arnes: toy.arnes }), { name: 'Coordinadora', sid: COORD, duda: false });
   sesion(toy, 'ses-otra', { nombre: 'Otra', kind: 'bg', startedAt: AT + 7000 });
-  assert.strictEqual(G.coordinadoraDeLaLanzada({ home: toy.casa, sid: 'ses-otra' }), null);
-  assert.strictEqual(G.coordinadoraDeLaLanzada({ home: toy.casa, sid: COORD }), null);
+  assert.strictEqual(G.coordinadoraDeLaLanzada({ home: toy.casa, sid: 'ses-otra', arnes: toy.arnes }), null);
+  assert.strictEqual(G.coordinadoraDeLaLanzada({ home: toy.casa, sid: COORD, arnes: toy.arnes }), null);
+  // sin approvals.relay_session en el perfil no hay coordinadora confirmada: la lanzada pregunta como siempre
+  fs.writeFileSync(path.join(toy.arnes, 'team-profile.json'), JSON.stringify({ approvals: {} }));
+  assert.strictEqual(G.coordinadoraDeLaLanzada({ home: toy.casa, sid: LANZADA, arnes: toy.arnes }), null, 'sin la clave del perfil');
+  fs.writeFileSync(path.join(toy.arnes, 'team-profile.json'), JSON.stringify(PERFIL));
   const lanzada = ow.negarSinVentana('esta sesión corre de fondo', ['plan-approval'], 's', cuadro, true, false, coord);
   assert.match(lanzada.texto, /SendMessage/);
   assert.match(lanzada.texto, /Coordinadora/);

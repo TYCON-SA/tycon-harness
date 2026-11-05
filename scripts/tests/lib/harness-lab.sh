@@ -651,6 +651,10 @@ harness_lab_home_hash() {
   ( cd "$LAB_HOME" && __harness_lab_tree_digest -path '*/.git' -prune ) | shasum -a 256 | cut -d' ' -f1
 }
 
+# la huella de un árbol con un solo shasum: tree_file_sums y tree_list
+# shellcheck source=tree-sums.sh
+source "$HARNESS_LAB_RAIZ/scripts/tests/lib/tree-sums.sh"
+
 # ══ La máquina del equipo en la transición ══════════════════════════════════════════
 # Los dos repos internos (el arnés y agent-skills) se unen en uno, y cada máquina del equipo sigue un tiempo
 # con sus DOS clones. Lo que hay que poder probar sin tocar ninguna máquina de verdad: que el instalador calle cuando el

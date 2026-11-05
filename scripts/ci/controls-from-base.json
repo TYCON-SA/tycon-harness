@@ -75,6 +75,7 @@
     "scripts/ci/pipeline-debt.json",
     "scripts/ci/heavy-suites.json",
     "scripts/ci/suites-over-limit.json",
+    "scripts/ci/suites-weights.json",
     "scripts/controls-bench/baseline/claude-advisors.json",
     "scripts/controls-bench/baseline/claude.json",
     "scripts/controls-bench/exam-config.json",

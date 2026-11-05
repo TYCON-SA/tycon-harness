@@ -4,13 +4,21 @@ This guide is for an organization that works with several agent sessions at once
 them, **the coordinator**, to organize the rest. The coordinator decides what is not the owner's to decide, opens and
 names the sessions, keeps the machine from being overloaded, and passes the owner only what is theirs.
 
-It is a recipe, not a mode: nothing changes on a machine where nobody designated a coordinator. It is turned on in two
-steps:
+It is a recipe, not a mode: nothing changes on a machine where nobody designated a coordinator. For her to organize, one
+step is enough: on each machine, the owner writes "Esta sesión es la coordinadora" (or "This session is the
+coordinator") in the chat of the chosen session, and that session runs `marker.js designate-relay` with that quote.
 
-1. The team profile names the role in `approvals.relay_session` (on the site, the Configuration tab, "Who authorizes
-   skipping a control").
-2. On each machine, the owner writes "Esta sesión es la coordinadora" in the chat of the chosen session, and that
-   session runs `marker.js designate-relay` with that quote.
+The coordinator does two things, and only the second needs the team profile:
+
+1. **Organizing**: opening and naming sessions, the cap, the turns for heavy work, the notices, the waits and
+   `/coordinate`. It works on the minimal install: without a profile, the role is called «coordinadora» (or
+   «coordinator»).
+2. **Signing for the owner**: passing the owner's signatures to other sessions and signing the routine ones the
+   organization delegates. It needs the team profile to name the role in `approvals.relay_session` (on the site, the
+   Configuration tab, "Who authorizes skipping a control") and the owner to confirm the designation. **Without a team
+   profile the coordinator organizes and does not sign**: everything she would sign goes to the owner's window, and
+   `confirm-designation` refuses. If the organization removes the key from the profile, an old confirmation stops
+   counting.
 
 On being designated, the session is told to read this guide, and it is told again after compacting or clearing its
 conversation, because that is when it gets lost. **Clearing the conversation takes away the designation**: for the harness

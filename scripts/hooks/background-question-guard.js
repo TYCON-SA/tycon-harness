@@ -67,11 +67,13 @@ function textoDeLaNegativa({ nombre, sid, firma = null, soloClick = false, duda 
  * el registro de las lanzadas (`duda`), con una coordinadora confirmada y viva que no es ella. Lo que no se pudo leer
  * queda en hook-errors.log; sin poder saber si es de fondo, pregunta. La usan este freno y el de firmas (owner-window.js).
  */
-function coordinadoraDeLaLanzada({ home = os.homedir(), sid }) {
+function coordinadoraDeLaLanzada({ home = os.homedir(), sid, env, arnes }) {
   try {
     const sl = require('../lib/signature-list.js');
     const s = sl.sesiones(home);
-    const coord = sl.coordinadoraViva(home, s);
+    // la misma confirmación que la lista de firmas, con el perfil del árbol `arnes` (en las pruebas, uno de juguete)
+    const confirmada = require('../lib/owner-approvals.js').coordinadoraConfirmada(home, { env, arnes });
+    const coord = confirmada && sl.vive(s, confirmada) === true ? confirmada : null;
     if (!coord || coord === sid) return null;
     const lanzada = require('../tools/coordination.js').launchedBy({ home, sid });
     if (lanzada.problem) {
@@ -87,16 +89,16 @@ function coordinadoraDeLaLanzada({ home = os.homedir(), sid }) {
 }
 
 /**
- * Lo que decide el freno: null (pasa) o `{ decision: 'deny', reason }`. `home` y `env` se pasan en las pruebas.
+ * Lo que decide el freno: null (pasa) o `{ decision: 'deny', reason }`. `home`, `env` y `arnes` (el árbol con el perfil del equipo) se pasan en las pruebas.
  */
-function decidir(evento, { home = os.homedir(), env = process.env } = {}) {
+function decidir(evento, { home = os.homedir(), env = process.env, arnes } = {}) {
   const d = evento && typeof evento === 'object' ? evento : {};
   if (env.TYCON_BG_QUESTION_GUARD === '0') return null;
   if (d.hook_event_name && d.hook_event_name !== 'PreToolUse') return null;
   if (!QUESTION_TOOLS.has(d.tool_name)) return null;
   const sid = d.session_id;
   if (!sid || !/^[\w-]+$/.test(String(sid))) return null;
-  const c = coordinadoraDeLaLanzada({ home, sid });
+  const c = coordinadoraDeLaLanzada({ home, sid, env, arnes });
   if (!c) return null;
   const m = SELLO.exec(textoDe(d.tool_input));
   const firma = m ? m[1] : null;
