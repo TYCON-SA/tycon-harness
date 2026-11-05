@@ -232,13 +232,13 @@ test('T5 Coordinate_NotDesignated_AsksForThePhrase @story-8.122 @ac-5: con el ro
   assert.ok(!fs.existsSync(path.join(t.state, 'gates.log')), 'no designa nada');
 });
 
-test('T6 Coordinate_NoRole_SaysHowToTurnItOn @story-8.122 @ac-6: sin rol en el perfil, una línea y sale', () => {
+test('T6 Coordinate_NoRole_SaysHowToTurnItOn @story-8.122 @ac-6 @story-8.199 @ac-5: sin rol en el perfil, en otra sesión, dice cómo designarla', () => {
   const t = toy();
   const r = coordinate(t, { CLAUDE_CODE_SESSION_ID: 'otra-1' });
   assert.strictEqual(r.code, 1);
-  assert.strictEqual(r.text.trim().split('\n').length, 1, r.text);
-  assert.match(r.text, /no usa una coordinadora/);
-  assert.match(r.text, /Configuración/);
+  assert.doesNotMatch(r.text, /no usa una coordinadora/);
+  assert.match(r.text, /Esta sesión es la coordinadora/);
+  assert.match(r.text, /designate-relay/);
 });
 
 test('T7 Coordinate_Codex_CannotCoordinate @story-8.122 @ac-7: en Codex lo dice y sale', () => {

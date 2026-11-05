@@ -335,6 +335,10 @@ test('DesignateRelay_Click_IsConfirmedForDelegation', (t) => {
   const lab = laboratorio(t);
   assert.strictEqual(lab.correr(['designate-relay']).status, 0);
   const p = { state: lab.estado, gates: path.join(lab.estado, 'gates.log') };
+  // firmar por el dueño pide el rol en el perfil del árbol del arnés: lo da la prueba, como al guion la precarga
+  const leer = cw.sesionQueReenvia;
+  cw.sesionQueReenvia = () => ({ valor: 'coordinadora' });
+  t.after(() => { cw.sesionQueReenvia = leer; });
   assert.strictEqual(ds.confirmedDesignation(p).ok, true);
   assert.strictEqual(oa.coordinadoraConfirmada(lab.casa), SES);
 });

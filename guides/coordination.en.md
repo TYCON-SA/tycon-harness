@@ -4,18 +4,30 @@ This guide is for an organization that works with several agent sessions at once
 them, **the coordinator**, to organize the rest. The coordinator decides what is not the owner's to decide, opens and
 names the sessions, keeps the machine from being overloaded, and passes the owner only what is theirs.
 
-It is a recipe, not a mode: nothing changes on a machine where nobody designated a coordinator. It is turned on in two
-steps:
+It is a recipe, not a mode: nothing changes on a machine where nobody designated a coordinator. For her to organize, one
+step is enough: on each machine, the owner writes "Esta sesión es la coordinadora" (or "This session is the
+coordinator") in the chat of the chosen session, and that session runs `marker.js designate-relay` with that quote.
 
-1. The team profile names the role in `approvals.relay_session` (on the site, the Configuration tab, "Who authorizes
-   skipping a control").
-2. On each machine, the owner asks the chosen session, in their own words, to be the coordinator. That session runs
-   `marker.js designate-relay` with no sentence: the guard gives a box with "Sí" and "No" that says which session it is
-   and in which folder, and with the owner's click it is named and confirmed. The harness does not read the sentence. To
-   stop being it, `marker.js withdraw-relay`, with its own box. Both signatures belong only to the owner, with a
-   click in that session's tab: they are never delegated. Where the click cannot be checked, the command says why and
-   gives the fallbacks: the owner's terminal (`designate-relay --terminal`) or the old sentence (`--quote`, then
-   `confirm-designation`).
+The coordinator does two things, and only the second needs the team profile:
+
+1. **Organizing**: opening and naming sessions, the cap, the turns for heavy work, the notices, the waits and
+   `/coordinate`. It works on the minimal install: without a profile, the role is called «coordinadora» (or
+   «coordinator»).
+2. **Signing for the owner**: passing the owner's signatures to other sessions and signing the routine ones the
+   organization delegates. It needs the team profile to name the role in `approvals.relay_session` (on the site, the
+   Configuration tab, "Who authorizes skipping a control") and the owner to confirm the designation. **Without a team
+   profile the coordinator organizes and does not sign**: everything she would sign goes to the owner's window, and
+   `confirm-designation` refuses. If the organization removes the key from the profile, an old confirmation stops
+   counting.
+
+How she is named: on each machine, the owner asks the chosen session, in their own words, to be the coordinator. With
+the profile, that session runs `marker.js designate-relay` with no sentence: the guard gives a box with "Sí" and "No"
+that says which session it is and in which folder, and with the owner's click it is named and confirmed. The harness
+does not read the sentence. To stop being it, `marker.js withdraw-relay`, with its own box. Both signatures belong only
+to the owner, with a click in that session's tab: they are never delegated. Where the click cannot be checked, the
+command says why and gives the fallbacks: the owner's terminal (`designate-relay --terminal`) or the sentence
+(`--quote`, then `confirm-designation`). Without a profile, for now she is named with the sentence
+(`designate-relay --approved-by '<the dev>' --quote '<their sentence>'`).
 
 On being designated, the session is told to read this guide, and it is told again after compacting or clearing its
 conversation, because that is when it gets lost. **Clearing the conversation takes away the designation**: for the harness

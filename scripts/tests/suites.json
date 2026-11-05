@@ -1115,6 +1115,12 @@
       "requiere": []
     },
     {
+      "__nota": "lo que las dos guías dicen de las suites del arnés: cuántas corren a la vez y por qué, cómo se listan las lentas y desde dónde acota un portón corrido a mano.",
+      "raiz": "arnes",
+      "ruta": "tests/slow-suites-goal.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "cuántas suites corren a la vez: núcleos menos dos o menos la carga, la espera cuando la carga pasa el doble, y la variable y la CI como antes, en el portón y en las portables.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/suite-workers.test.js",
@@ -1872,6 +1878,12 @@
     {
       "raiz": "arnes",
       "ruta": "tests/coordination-notice.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "sin perfil del equipo la coordinadora ordena y no firma. También la corre el ensayo de firmas de Windows (scripts/tests/windows/waiver-probe.js).",
+      "raiz": "arnes",
+      "ruta": "tests/coordination-without-profile.test.js",
       "requiere": []
     },
     {

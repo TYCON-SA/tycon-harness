@@ -56,6 +56,8 @@
 #   S16 · «deja» nombra ~/.claude/response-style/ y ~/.claude/safety-guard.log cuando existen.
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=lib/tree-sums.sh
+source "$RAIZ/scripts/tests/lib/tree-sums.sh"   # la huella del HOME, antes de armar el laboratorio
 INST="$RAIZ/scripts/install-tycon-hooks.sh"
 PS1="$RAIZ/scripts/install-tycon-hooks.ps1"
 SYNC_PS1="$RAIZ/scripts/setup/sync-claude-md-blocks.ps1"
@@ -621,11 +623,7 @@ lab_skills_repo() { # lab_skills_repo <home>
 }
 # un hash de todo el HOME de juguete (rutas, enlaces y contenido): «no tocó nada» se prueba comparando dos
 home_hash() {
-  ( cd "$1" && find . -print | LC_ALL=C sort | while IFS= read -r f; do
-      if [ -L "$f" ]; then printf '%s -> %s\n' "$f" "$(readlink "$f")"
-      elif [ -f "$f" ]; then printf '%s ' "$f"; shasum -a 256 < "$f"
-      else printf '%s/\n' "$f"; fi
-    done ) | shasum -a 256 | cut -d' ' -f1
+  tree_list "$1" | shasum -a 256 | cut -d' ' -f1
 }
 # el repo de producto con su AGENTS.md puntero (el texto con que lo deposita el aplicador), bajo la raíz de repos
 lab_product_repo() { # lab_product_repo <raíz de repos>

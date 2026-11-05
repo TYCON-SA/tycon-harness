@@ -587,11 +587,13 @@ function procesoQueLaAnoto({ a, arbol, casa }) {
 
 /**
  * La sesión coordinadora designada y confirmada por el dueño (la misma que lee la delegación, delegated-signing.js), o
- * null. Sin confirmar, un «aprobado» escrito en su pestaña no vale para otras sesiones.
+ * null. Sin confirmar, un «aprobado» escrito en su pestaña no vale para otras sesiones; sin `approvals.relay_session` en
+ * el perfil del equipo, tampoco: la coordinadora ordena y no firma. `env` y `arnes`, para las pruebas.
  */
-function coordinadoraConfirmada(casa) {
+function coordinadoraConfirmada(casa, { env, arnes } = {}) {
   try {
     const ds = require('./delegated-signing.js');
+    if (!ds.firmaPorElDueno({ env, home: casa, arnes }).ok) return null;
     const p = ds.accountPaths(casa);
     const d = require(path.join(LIB, 'critical-waivers.js')).designacionVigente({ dir: p.state });
     if (!d || d.error || !SESION.test(String(d.sesion || ''))) return null;

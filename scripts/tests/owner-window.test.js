@@ -21,6 +21,14 @@ const { spawnSync, execFileSync } = require('child_process');
 
 const ow = require('../lib/owner-window.js');
 
+// La coordinadora confirmada pide approvals.relay_session en el perfil del árbol del arnés, y el clon de
+// trabajo no lo trae: la lista de firmas y el freno, en el proceso de la prueba, lo leen de una carpeta con ese perfil.
+const CON_CLAVE = fs.mkdtempSync(path.join(os.tmpdir(), 'owner-window-clave-'));
+fs.writeFileSync(path.join(CON_CLAVE, 'team-profile.json'), JSON.stringify({ approvals: { relay_session: 'coordinadora' } }));
+const OA = require('../lib/owner-approvals.js');
+const confirmadaSinClave = OA.coordinadoraConfirmada;
+OA.coordinadoraConfirmada = (casa, o = {}) => confirmadaSinClave(casa, { arnes: CON_CLAVE, ...o });
+
 const RAIZ = path.join(__dirname, '..', '..');
 const MARKER = path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
 const PIPELINE = path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'pipeline.js');
@@ -558,7 +566,8 @@ test('OwnerWindow_FirmaDelFreno_VentanaSinRegistro (T34)', (t) => {
 // la delegación de verdad (delegated-signing.js) con el perfil y la huella inyectados, sobre la casa de la prueba
 const DS = require('../lib/delegated-signing.js');
 const HUELLA = 'a1b2c3d4e5f60718';
-const PERFIL = { delegated_signing: ['plan-approval', 'extra-round', 'refresh-after-main'], owner_only: ['control-change'], delegated_machines: [{ id: HUELLA, label: 'Mac de prueba' }] };
+// la coordinadora firma por el dueño sólo con approvals.relay_session en el perfil
+const PERFIL = { relay_session: 'coordinadora', delegated_signing: ['plan-approval', 'extra-round', 'refresh-after-main'], owner_only: ['control-change'], delegated_machines: [{ id: HUELLA, label: 'Mac de prueba' }] };
 /** La casa con la sesión `ses-coord` designada (y confirmada, salvo `confirmada: false`) y la ejecución de ses-a. */
 function casaConDesignada(t, { confirmada = true, designada = 'ses-coord' } = {}) {
   const casa = casaNueva(t);
@@ -740,7 +749,8 @@ test('OwnerWindow_SoloDelDueno_GanaAlGrupo + OwnerWindow_SesionPropia_NoSeDelega
   const conPerfil = (approvals) => {
     const arnes = fs.mkdtempSync(path.join(os.tmpdir(), 'owner-window-arnes-'));
     t.after(() => fs.rmSync(arnes, { recursive: true, force: true }));
-    fs.writeFileSync(path.join(arnes, 'team-profile.json'), JSON.stringify({ approvals }));
+    // la delegación pide también la clave de la coordinadora
+    fs.writeFileSync(path.join(arnes, 'team-profile.json'), JSON.stringify({ approvals: { relay_session: 'coordinadora', ...approvals } }));
     return DS.delegaSinVentana({ firma: 'plan-approval', sesion: 'ses-coord', destino: 'ses-a', home: casa, env: {}, arnes, estado: path.join(casa, '.claude', '.tycon-pipeline'), huella: () => ({ huella: HUELLA }) });
   };
   const leido = conPerfil({ delegated_signing: ['plan-approval'], delegated_machines: [{ id: HUELLA, label: 'Mac de prueba' }] });

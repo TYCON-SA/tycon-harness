@@ -19,6 +19,14 @@ const { appendSignature } = require('../lib/signature-log.js');
 const C = require('../tools/coordination.js');
 
 const RAIZ = path.join(__dirname, '..', '..');
+
+// La coordinadora confirmada pide approvals.relay_session en el perfil del árbol del arnés, y el clon de
+// trabajo no lo trae: en el proceso de la prueba se lee de una carpeta con ese perfil, y los comandos corren desde una
+// copia del arnés que lo tiene.
+const COPIA = require('./lib/harness-copy.js').harnessCopy();
+fs.writeFileSync(path.join(COPIA, 'team-profile.json'), JSON.stringify({ approvals: { relay_session: 'coordinadora' } }));
+const confirmadaSinClave = oa.coordinadoraConfirmada;
+oa.coordinadoraConfirmada = (casa, o = {}) => confirmadaSinClave(casa, { arnes: COPIA, ...o });
 const MARKER = path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
 const AHORA = Date.parse('2026-11-02T15:00:00.000Z');
 const antes = (min) => AHORA - min * 60000;
@@ -521,7 +529,7 @@ test('Llave_Apagada_YGuias (T16) — @story-8.153 @ac-16', (t) => {
 function linea(toy, args, { sid = 'ses-a', home = toy.casa } = {}) {
   const cuenta = path.join(toy.raiz, 'cuenta.js');
   fs.writeFileSync(cuenta, "require('os').userInfo = () => ({ homedir: process.env.TEST_ACCOUNT_HOME });\n");
-  return spawnSync(process.execPath, ['-r', cuenta, path.join(RAIZ, 'scripts', 'tools', 'coordination.js'), ...args], { encoding: 'utf8', env: { ...process.env, HOME: home, USERPROFILE: home, TEST_ACCOUNT_HOME: toy.casa, CLAUDE_CODE_SESSION_ID: sid, TYCON_PROFILE: '0' } });
+  return spawnSync(process.execPath, ['-r', cuenta, path.join(COPIA, 'scripts', 'tools', 'coordination.js'), ...args], { encoding: 'utf8', env: { ...process.env, HOME: home, USERPROFILE: home, TEST_ACCOUNT_HOME: toy.casa, CLAUDE_CODE_SESSION_ID: sid, TYCON_PROFILE: '0' } });
 }
 
 test('OwnerNext_LineaDeComandos (T11, la orden) — @story-8.153 @ac-11', (t) => {

@@ -21,10 +21,15 @@ The coordinator runs in Claude Code. Codex cannot coordinate.
 
 ## How to start
 
-**What the organization sets up, once.** On the [organization site](organization-site.en.md), Configuration tab, "Who
-authorizes skipping a control", it picks "A coordinating session" and names it under "What do you call it?". By default
-the name is «coordinadora», in Spanish, even on an English site. Without a site, it goes in `approvals.relay_session` of
-the team profile.
+**For her to organize, nothing needs setting up.** On the minimal install, without a team profile, the coordinator
+organizes the sessions (the cap, the turns, the notices, `/coordinate`) and is called «coordinadora». Without a team
+profile she organizes and does not sign: everything she would sign goes to your window, as without a coordinator.
+
+**For her to sign for you, the organization sets it up once.** On the [organization site](organization-site.en.md),
+Configuration tab, "Who authorizes skipping a control", it picks "A coordinating session" and names it under "What do
+you call it?". By default the name is «coordinadora», in Spanish, even on an English site. Without a site, it goes in
+`approvals.relay_session` of the team profile. If the organization removes that key later, the confirmation you gave
+stops counting.
 
 It can also decide which routine signatures to delegate to her, and on which machines. If it decides nothing, she signs
 nothing.
@@ -35,8 +40,9 @@ nothing.
 
    > This session is the coordinadora
 
-2. The session records it, is told to read her rules and asks you to confirm, with a click or from your terminal.
-   Unconfirmed, she organizes the others, but she signs nothing and does not take your signatures for another session.
+2. The session records it and is told to read her rules. With the role in the profile, it asks you to confirm, with a
+   click or from your terminal. Unconfirmed, or without a profile, she organizes the others, but she signs nothing and
+   does not take your signatures for another session.
 
 That is all. `/coordinate` shows you the state of the machine whenever you want to see it.
 
