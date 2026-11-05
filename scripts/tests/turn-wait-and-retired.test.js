@@ -16,6 +16,14 @@ const W = require(path.join(ROOT, 'scripts', 'tools', 'work-in-progress.js'));
 const O = require(path.join(ROOT, 'scripts', 'tools', 'office.js'));
 const R = require(path.join(ROOT, 'scripts', 'lib', 'claude-retired.js'));
 const DS = require(path.join(ROOT, 'scripts', 'lib', 'delegated-signing.js'));
+
+// La coordinadora confirmada pide approvals.relay_session en el perfil del árbol del arnés, y el clon de trabajo no lo
+// trae: estos casos la leen de una carpeta con ese perfil.
+const CON_CLAVE = fs.mkdtempSync(path.join(os.tmpdir(), 'turn-wait-clave-'));
+fs.writeFileSync(path.join(CON_CLAVE, 'team-profile.json'), JSON.stringify({ approvals: { relay_session: 'coordinadora' } }));
+const OA = require(path.join(ROOT, 'scripts', 'lib', 'owner-approvals.js'));
+const confirmadaSinClave = OA.coordinadoraConfirmada;
+OA.coordinadoraConfirmada = (casa, o = {}) => confirmadaSinClave(casa, { arnes: CON_CLAVE, ...o });
 const { stateDir } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
 
 const NOW = Date.parse('2026-11-04T14:00:00.000Z');

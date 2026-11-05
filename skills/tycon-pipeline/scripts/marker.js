@@ -5247,7 +5247,7 @@ function cmdDesignateRelay(argv) {
     process.exit(2);
   }
   if (r.firma) console.error(`✅ Esta sesión (${e.sesion}) es la «${e.rol}» de esta máquina, designada por ${e.quien}. Vale cuando una persona la confirma: corré node scripts/lib/delegated-signing.js confirm-designation en esta pestaña y aprobala con un click, o confirmala en su terminal`);
-  else console.error(`✅ Esta sesión (${e.sesion}) es la «${e.rol}» de esta máquina, designada por ${e.quien}: ordena esta máquina, y las firmas siguen yendo a la ventana del dueño${r.aviso ? ` (${r.aviso.replace(/: nadie reenvía$/, '')})` : ' (el perfil del equipo no tiene approvals.relay_session)'}.`);
+  else console.error(`✅ Esta sesión (${e.sesion}) es la «${e.rol}» de esta máquina, designada por ${e.quien}: ordena esta máquina, y las firmas siguen yendo a la ventana de la persona${r.aviso ? ` (${r.aviso.replace(/: nadie reenvía$/, '')})` : ' (el perfil del equipo no tiene approvals.relay_session)'}.`);
   console.error(`   Antes de seguir, leé tus reglas completas: ${path.join(__dirname, '..', '..', '..', 'guides', 'coordination.md')}`);
   process.exit(0);
 }

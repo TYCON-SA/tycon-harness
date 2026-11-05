@@ -24,7 +24,14 @@ const NOW = Date.parse('2026-11-04T14:00:00.000Z');
 const mins = (n) => NOW - n * 60000;
 const COORD = 'coord-sid-1';
 const OTRA = 'otra-sid-2';
-const COORD_SCRIPT = path.join(ROOT, 'scripts', 'tools', 'coordination.js');
+// La coordinadora confirmada pide approvals.relay_session en el perfil del árbol del arnés, y el clon de trabajo no lo
+// trae: en el proceso de la prueba se lee de una carpeta con ese perfil, y owner-wait corre desde una copia del arnés
+// que lo tiene.
+const CON_CLAVE = require('./lib/harness-copy.js').harnessCopy();
+fs.writeFileSync(path.join(CON_CLAVE, 'team-profile.json'), JSON.stringify({ approvals: { relay_session: 'coordinadora' } }));
+const confirmadaSinClave = OA.coordinadoraConfirmada;
+OA.coordinadoraConfirmada = (casa, o = {}) => confirmadaSinClave(casa, { arnes: CON_CLAVE, ...o });
+const COORD_SCRIPT = path.join(CON_CLAVE, 'scripts', 'tools', 'coordination.js');
 
 /** Una máquina de juguete: la carpeta de la persona, el estado y el perfil con el rol de coordinadora. */
 function toy({ designated = COORD, confirmed = true } = {}) {

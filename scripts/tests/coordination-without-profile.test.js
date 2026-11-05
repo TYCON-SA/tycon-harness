@@ -99,8 +99,7 @@ test('T1 SinPerfil_Designar_DesignaYDiceQueNoFirma @story-8.199 @ac-1: el comand
   assert.ok(d, 'quedó el renglón');
   assert.strictEqual(d.sesion, COORD);
   assert.strictEqual(d.rol, 'coordinadora');
-  assert.match(r.stderr, /firmas/);
-  assert.match(r.stderr, /dueño/);
+  assert.match(r.stderr, /firmas siguen yendo a la ventana de la persona/);
   assert.doesNotMatch(r.stderr, /confirm-designation/, 'no pide confirmar: sin perfil no hay firma que delegar');
   assert.ok(r.stderr.includes(path.join(r.copy, 'guides', 'coordination.md')), `manda a leer la guía: ${r.stderr}`);
 });
@@ -135,7 +134,7 @@ test('T4 ConfigRota_Designa_YDiceElMotivo @story-8.199 @ac-4: con el perfil roto
   const cmd = designateRelay(m, FRASE);
   assert.strictEqual(cmd.status, 0, cmd.stderr);
   assert.match(cmd.stderr, /no se pudo leer/, `dice el motivo: ${cmd.stderr}`);
-  assert.match(cmd.stderr, /dueño/);
+  assert.match(cmd.stderr, /ventana de la persona/);
   assert.doesNotMatch(cmd.stderr, /confirm-designation/);
 });
 
