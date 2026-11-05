@@ -128,6 +128,12 @@ const MODE_SUBMODULE = '160000';
 class Blind extends Error {}
 /** El tope de tiempo. Si para entonces ya había hallazgos, se dicen (y que no se terminó de mirar); si no, es «no pude mirar». */
 class OutOfTime extends Blind {}
+/** git en inglés (scripts/lib/clean-git-env.js), para poder leer sus errores. Si la biblioteca no carga, «no pude mirar». */
+function gitLanguage() {
+  try { return require(path.join(ROOT, 'scripts', 'lib', 'clean-git-env.js')); } catch (_) {
+    throw new Blind('no pude cargar scripts/lib/clean-git-env.js: sin ella no sé pedirle a git sus mensajes en inglés');
+  }
+}
 const CHUNK = 200;   // cuántos archivos se leen de git por vez: un empuje enorme no carga todo en memoria
 
 const short = (sha) => String(sha).slice(0, 10);
@@ -171,7 +177,7 @@ function toplevel(cwd) {
  * lo es — leído como «no es un clon», el `gh` corrido ahí saldría sin mirar. Se le pide a git en inglés para poder leerlo.
  */
 function repoAt(dir) {
-  const r = spawnSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', windowsHide: true, env: { ...process.env, LC_ALL: 'C', LANG: 'C' } });
+  const r = spawnSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', windowsHide: true, env: gitLanguage().idiomaFijo() });
   if (!r.error && r.status === 0 && String(r.stdout).trim()) return { top: path.resolve(String(r.stdout).trim()), known: true };
   return { top: null, known: !r.error && r.status === 128 && /not a git repository/i.test(String(r.stderr || '')) };
 }
@@ -437,7 +443,9 @@ function listClone(file, env) {
   let real;
   try { real = fs.realpathSync.native(file); } catch (_) { return { why: 'el archivo de la lista no está', clone: null }; }
   // a git se le pregunta en inglés (hay que leerle un error) y sin tomar candados: es una lectura
-  const local = { env, timeout: LIST_LOCAL_GIT_MS, extra: { LC_ALL: 'C', LANG: 'C', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' } };
+  let language;
+  try { language = gitLanguage(); } catch (e) { return { why: e.message, clone: null }; }
+  const local = { env, timeout: LIST_LOCAL_GIT_MS, extra: { ...language.IDIOMA_DE_GIT, GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' } };
   const ask = (dir, args, more = {}) => gitElsewhere(dir, [...LIST_CLONE_GIT, ...args], { ...local, ...more });
   const said = (r) => (!r.error && r.status === 0 ? String(r.stdout || '').trim() : null);
   const where = ask(path.dirname(real), ['rev-parse', '--show-toplevel']);
@@ -494,7 +502,7 @@ function listFreshness(file, { env = process.env, askRemote = false, remoteMs = 
     //     no corre nunca es lo que ese clon configure para OTRAS cosas (`core.fsmonitor`, protocolos externos, filtros).
     if (askRemote) {
       const quiet = Object.fromEntries(Object.entries(env).filter(([k]) => k !== 'GIT_ASKPASS' && k !== 'SSH_ASKPASS'));
-      const extra = { LC_ALL: 'C', LANG: 'C', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' };
+      const extra = { ...gitLanguage().IDIOMA_DE_GIT, GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' };
       const ssh = quiet.GIT_SSH_COMMAND || said(ask(clone, ['config', '--get', 'core.sshCommand'])) || (quiet.GIT_SSH ? `"${quiet.GIT_SSH}"` : 'ssh');
       extra.GIT_SSH_COMMAND = `${ssh} ${/plink/i.test(ssh) ? '-batch' : '-oBatchMode=yes -oConnectTimeout=5'}`;
       const r = ask(clone, ['-c', 'core.askPass=', 'ls-remote', 'origin', `refs/heads/${branch}`], { env: quiet, extra, timeout: remoteMs });
@@ -1019,6 +1027,7 @@ function prePush({ remoteName, url, input, cwd = process.cwd(), env = process.en
     if (!concernsHarness({ repo, top, lines, url: target, env })) { result.reason = 'no es un empuje del arnés'; return { code: 0, result }; }
     result.verdict = 'pass';
     if (!lines.some((l) => !ZERO.test(l.localSha))) return { code: 0, result };   // nada que publicar (o sólo borrados)
+    gitLanguage();   // sin la biblioteca del idioma de git, el freno no puede leer lo que git le diga: no deja pasar
     const list = resolveList(top, env, { pushing: true });
     result.list = { source: list.source };
     result.generic_only = list.generic;

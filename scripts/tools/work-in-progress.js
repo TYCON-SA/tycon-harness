@@ -620,7 +620,7 @@ function git(dir, args, ctx) {
 
 // git en inglés (LC_ALL=C): los motivos «not a git repository» y «No such remote» se reconocen por su texto.
 function gitNow(dir, args, ms) {
-  const r = spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8', windowsHide: true, timeout: ms, env: { ...process.env, LC_ALL: 'C' } });
+  const r = spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8', windowsHide: true, timeout: ms, env: require('../lib/clean-git-env.js').idiomaFijo() });
   if (r.status === 0) return { out: r.stdout.trim() };
   if (r.error) return { err: r.error.code === 'ETIMEDOUT' ? 'git se pasó del tope leyendo los repos' : `git: ${r.error.message}`, status: null };
   return { err: oneLine(r.stderr || `git salió con ${r.status}`).slice(0, 200), status: r.status };

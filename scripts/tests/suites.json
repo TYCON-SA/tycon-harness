@@ -2504,6 +2504,12 @@
       "requiere": []
     },
     {
+      "__nota": "el arnés entiende a git en cualquier idioma: la función única que fija el idioma de git (clean-git-env.js), el caso de punta a punta con un git sustituto que contesta en castellano, y la lista que avisa si un script compara una frase de error de git sin fijarlo.",
+      "raiz": "arnes",
+      "ruta": "tests/git-language.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "al commitear en el público, el inventario de los controles se compara con el pre-commit propio del repo privado (de su origin/main): avisa el mismo día lo que antes salía rojo de noche, y en el privado no aplica.",
       "raiz": "arnes",
       "ruta": "tests/private-inventory.test.js",

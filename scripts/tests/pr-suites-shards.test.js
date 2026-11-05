@@ -1189,7 +1189,7 @@ const GUARD_STEP = 'El freno de publicación sobre el pedido';
 const GUARD_TERM = 'Zorblax';   // inventado
 const GUARD_LIST = `${JSON.stringify({ terminos: [{ patron: GUARD_TERM, categoria: 'cliente' }], permitidos: [] }, null, 2)}\n`;
 const GUARD_PIECES = ['scripts/hooks/public-push-guard.js', 'scripts/lib/az-pr.js', 'scripts/lib/gh-pr.js', 'scripts/lib/harness-repo.js', 'scripts/lib/legacy-names.js',
-  'scripts/lib/guard-record.js', 'scripts/publishing/detector.js', 'scripts/publishing/internal-history.js', 'scripts/setup/harness/tycon-home.js'];
+  'scripts/lib/guard-record.js', 'scripts/publishing/detector.js', 'scripts/publishing/internal-history.js', 'scripts/setup/harness/tycon-home.js', 'scripts/lib/clean-git-env.js'];
 const GUARD_WHO = { name: 'Mantenedor De Prueba', email: '4242+mantenedor@users.noreply.github.com' };
 const TEXTS_STANDIN = [
   '#!/usr/bin/env node',
