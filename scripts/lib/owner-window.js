@@ -611,7 +611,16 @@ function detalleDe(id, comando, palabras, cwd) {
  * prueba en vivo y qué lo cubre. Sin `--acs`, todos los pendientes de firma. `{ texto }`, o `{ error }` si no se pueden
  * mostrar: sin ellos el dueño firmaría a ciegas.
  */
-function criteriosDelPedido(palabras, cwd, { casa, destino, sesion } = {}) {
+function criteriosDelPedido(palabras, cwd, { casa, destino, sesion, memo } = {}) {
+  // en una misma consulta del freno el cuadro y el detalle piden lo mismo: calcular la matriz tarda segundos
+  const clave = JSON.stringify([palabras, cwd, casa, destino, sesion]);
+  if (memo && memo.has(clave)) return memo.get(clave);
+  const c = criteriosSinMemo(palabras, cwd, { casa, destino, sesion });
+  if (memo) memo.set(clave, c);
+  return c;
+}
+
+function criteriosSinMemo(palabras, cwd, { casa, destino, sesion }) {
   const story = palabras[2] && !palabras[2].startsWith('-') ? palabras[2] : '';
   if (!story) return { error: 'el comando no nombra la historia: sin sus criterios a la vista no se firma' };
   const wd = require(path.join(LIB, 'waiver-display.js'));
@@ -631,7 +640,7 @@ function criteriosDelPedido(palabras, cwd, { casa, destino, sesion } = {}) {
   let c;
   try {
     c = wd.criteriosDe(abs, pedidos || []);
-    if (!c.error && !pedidos) c = wd.criteriosDe(abs, c.matrix.notVerifiable || []);
+    if (!c.error && !pedidos) c = wd.criteriosDe(abs, c.matrix.notVerifiable || [], c.matrix);
   } catch (e) { return { error: `no pude armar los criterios (${una((e && e.message) || String(e), 200)})` }; }
   if (c.error) return { error: `no pude armar los criterios: la matriz no computa (${una(c.error, 200)})` };
   const faltan = (pedidos || []).filter((n) => !c.lista.some((x) => x.ac === n));
@@ -655,7 +664,7 @@ const vaATerminal = (ids) => ids.some((id) => TERMINAL_SIEMPRE.has(id) || ((firm
  * comando da el mismo cuadro: la huella y el detalle salen de sus palabras sin la ruta del guion ni `--for-session`, así da
  * igual si lo corre la sesión destino o la coordinadora. `{ pregunta, sello, opciones }` o `{ error }`.
  */
-function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion }) {
+function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion, memo }) {
   const s = firmaDe(firma);
   if (!s) return { error: `«${firma}» no es una firma` };
   const i = palabras ? palabras.indexOf('--for-session') : -1;
@@ -663,7 +672,7 @@ function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion }) {
   const texto = sinDestino ? [base(sinDestino[0]), ...sinDestino.slice(1)].join(' ') : String(comando).trim();
   let detalle = detalleDe(firma, texto, palabras, cwd);
   if (firma === 'runtime-waiver') {
-    const c = criteriosDelPedido(palabras, cwd, { casa, destino, sesion });
+    const c = criteriosDelPedido(palabras, cwd, { casa, destino, sesion, memo });
     if (c.error) return { error: c.error };
     detalle = c.texto;
   }
@@ -785,6 +794,9 @@ const CON_PRECHEQUEO = new Set(['extra-round', 'save', 'plan-approval', 'control
 // lo que espera el chequeo: el ok de guardar corre además los controles del commit de cada repo, con su propio plazo de
 // 210 s (lib/save-ok.js)
 const PLAZO_DEL_CHEQUEO = { save: 240000 };
+// el de las demás: menos que los 20 s del freno entero, que antes calcula los criterios y después valida el click. Si el
+// guion no contesta a tiempo, la ventana se abre como siempre y el guion vuelve a comprobar todo al firmar
+const PLAZO_DEL_PRECHEQUEO_MS = 12000;
 
 /**
  * Corre en modo de chequeo el guion de este mismo árbol que nombran las `palabras` (las de la forma canónica), en la
@@ -796,7 +808,7 @@ function comprobarConElGuion({ firma, palabras, cwd, sesion, casa, env }) {
   const nombre = base(palabras[0]);
   const sh = nombre.endsWith('.sh');
   const guion = sh ? path.join(__dirname, '..', 'ci', nombre) : path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', nombre);
-  const r = require('child_process').spawnSync(sh ? 'bash' : process.execPath, [guion, ...palabras.slice(1)], { cwd: cwd || process.cwd(), encoding: 'utf8', timeout: PLAZO_DEL_CHEQUEO[firma] || 20000,
+  const r = require('child_process').spawnSync(sh ? 'bash' : process.execPath, [guion, ...palabras.slice(1)], { cwd: cwd || process.cwd(), encoding: 'utf8', timeout: PLAZO_DEL_CHEQUEO[firma] || PLAZO_DEL_PRECHEQUEO_MS,
     env: { ...(env || process.env), ...(casa ? { HOME: casa, USERPROFILE: casa } : {}), [PRECHEQUEO]: '1', ...(sesion ? { CLAUDE_CODE_SESSION_ID: sesion } : {}) } });
   if (r.error || r.status === null) return null;
   if (r.status === 0) return String(r.stdout).split('\n').includes(PRECHEQUEO_OK) ? { ok: true } : null;
@@ -853,6 +865,8 @@ function pasaDelCupoDelegado(palabras) {
  */
 function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ahora = Date.now(), delegacion, clasificar = clasificarConElGuion, comprobar = comprobarConElGuion, userInfo, aprobador = approverOf, aprobaciones, plataforma = process.platform, gitBash = buscarGitBash, lista } = {}) {
   const enWindows = plataforma === 'win32';
+  // los criterios de un runtime-waiver, calculados una vez para el cuadro y para el detalle
+  const criterios = new Map();
   const comando = String((evento.tool_input && evento.tool_input.command) || '');
   const sesion = evento.session_id == null ? '' : String(evento.session_id);
   // la terminal firma para la sesión destino en cuanto se conoce: antes, para la del evento
@@ -969,7 +983,7 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   let aprobada = null;
   let sinAprobacion = null;
   if (delegada || sinVentana || deFondo || enWindows || soloClick) {
-    const cuadro = pendientes.length === 1 ? cuadroPara({ firma: pendientes[0], comando, palabras: can && can.palabras, destino, cwd: evento.cwd, casa, sesion }) : null;
+    const cuadro = pendientes.length === 1 ? cuadroPara({ firma: pendientes[0], comando, palabras: can && can.palabras, destino, cwd: evento.cwd, casa, sesion, memo: criterios }) : null;
     const a = aprobacionExplicita({ pendientes, sesion, destino, casa, ahora, cwd: evento.cwd, aprobaciones, herramienta: { pid: tool.pid, inicio: tool.inicio }, cuadro: cuadro || {}, arbol });
     if (a.ok) { aprobada = a; delegada = null; }
     else if (delegada) sinAprobacion = a.motivo;
@@ -988,6 +1002,9 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   }
   let avisado = false;
   if (!delegada && !aprobada && sinVentana) avisado = true;
+  // los criterios se calculan antes del chequeo del guion, que tiene su propio plazo: así lo que tarda cada uno entra en
+  // los 20 s del freno. Lo que contesten se usa más abajo, en el mismo orden de siempre
+  if (guion === 'runtime-waiver') criteriosDelPedido(can.palabras, evento.cwd, { casa, destino, sesion, memo: criterios });
   // el guion dice antes si se negaría: entonces no hay ventana ni registro (sin respuesta, la ventana se abre como siempre)
   if (guion && !delegada && CON_PRECHEQUEO.has(firmaGuion)) {
     let c = null;
@@ -998,7 +1015,7 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   }
   let detalle = detalleDe(pendientes[0], comando, can && can.palabras, evento.cwd);
   if (guion === 'runtime-waiver') {
-    const c = criteriosDelPedido(can.palabras, evento.cwd, { casa, destino, sesion });
+    const c = criteriosDelPedido(can.palabras, evento.cwd, { casa, destino, sesion, memo: criterios });
     if (c.error) return negar(c.error, pendientes);
     detalle = c.texto;
   }
@@ -1448,7 +1465,7 @@ function quienFirmo({ via, sesion } = {}, persona) {
   return { tipo: 'manual', quien: persona, via: via === 'terminal' ? 'terminal' : 'ventana' };
 }
 
-module.exports = { VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
+module.exports = { VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
   rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, esAnfitrionDeFondoDe };
 
 if (require.main === module) {
