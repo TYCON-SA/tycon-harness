@@ -540,3 +540,49 @@ test('T26 Codex_NadaCambia @story-8.202 @ac-22', () => {
   assert.ok(!s || s.permission == null, 'Codex no anota permisos');
   assert.deepStrictEqual(C.status(t.opts).stalled, []);
 });
+
+// ── La cabecera Authorization ──────────────────────────────────────────────────────────────────────────────────────
+// Todos los valores son inventados y sin forma de proveedor.
+
+const CON_BEARER = 'curl -H "Authorization: Bearer inventado123.ABCdef-456" https://acme.example/api/pedidos';
+const CON_BASIC = 'curl -H "Authorization: Basic dXNlcjpwYXNz" https://acme.example/api/pedidos';
+const VALORES = /inventado123|ABCdef-456|dXNlcjpwYXNz|inventa…/;
+
+test('T6 PermissionRequest_Authorization_SeAnotaTapado @story-8.210 @ac-6', () => {
+  for (const cmd of [CON_BEARER, CON_BASIC]) {
+    const t = toy();
+    SS.handle(ev(OTRA, { tool_name: 'Bash', tool_input: { command: cmd } }), {}, t.home);
+    const d = readState(t, OTRA).permission.detail;
+    assert.doesNotMatch(d, VALORES, d);
+    assert.match(d, /Authorization: (Bearer|Basic) <tapado>/, d);
+  }
+});
+
+/** Todo lo que la coordinación muestra de una sesión trabada: `status` en texto y en JSON, y una vuelta de owner-wait. */
+function loQueSeVe(t) {
+  const s = C.status(t.opts);
+  return [C.statusText(s), JSON.stringify(s), ...vuelta(t).lines].join('\n');
+}
+
+test('T7 Status_YOwnerWait_SinElValor @story-8.210 @ac-7', () => {
+  const t = toy();
+  claudeFile(t, OTRA, 'hora-mensajes', { status: 'waiting', waitingFor: 'permission prompt' });
+  SS.handle(ev(OTRA, { tool_name: 'Bash', tool_input: { command: CON_BEARER } }), {}, t.home);
+  const visto = loQueSeVe(t);
+  assert.match(visto, /hora-mensajes espera un permiso/, 'owner-wait la anunció');
+  assert.match(visto, /Bearer <tapado>/);
+  assert.doesNotMatch(visto, VALORES);
+});
+
+test('T8 ArchivoViejo_SeTapaAlLeer @story-8.210 @ac-8', () => {
+  for (const detail of [CON_BEARER, 'curl -H "Authorization: Bearer inventa…']) {
+    const t = toy();
+    claudeFile(t, OTRA, 'hora-mensajes', { status: 'waiting', waitingFor: 'permission prompt' });
+    frenada(t, OTRA, 'Bash', detail, 0);   // un archivo escrito antes de que existiera la forma: el valor a la vista
+    assert.strictEqual(readState(t, OTRA).permission.detail, detail, 'el archivo trae el valor');
+    const visto = loQueSeVe(t);
+    assert.match(visto, /hora-mensajes espera un permiso/, 'owner-wait la anunció');
+    assert.match(visto, /Bearer <tapado>/);
+    assert.doesNotMatch(visto, VALORES);
+  }
+});
