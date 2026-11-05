@@ -1887,6 +1887,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/background-question-guard.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/coordination-notice.test.js",
       "requiere": []
     },
