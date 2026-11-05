@@ -167,14 +167,14 @@ async function talkToSession(playwright) {
     await page.waitForFunction(() => document.querySelector('.estadoMensaje') && document.querySelector('.estadoMensaje').textContent === 'Lo recibió.', null, { timeout: 8000 }).then(() => check(true, 'E1: dice «Lo recibió.»'), () => check(false, 'E1: dice «Lo recibió.»'));
     await page.waitForFunction(() => /Listo: el pedido 12 está verde\./.test(document.querySelector('.conVos') ? document.querySelector('.conVos').textContent : ''), null, { timeout: 15000 }).then(() => check(true, 'E1: la respuesta aparece en «Con vos»'), () => check(false, 'E1: la respuesta aparece en «Con vos»'));
     check(/Vos · desde la oficina/.test(await ventana.locator('.conVos').innerText()), 'E1: el mensaje va marcado «desde la oficina»');
-    // la lista «Con vos» se desplaza dentro de su lugar: el último mensaje queda a la vista y no se monta sobre el pie
+    // la lista «Con vos» se desplaza dentro de su lugar: el último mensaje queda a la vista, con 16 px o más hasta el pie
     const vista = await page.evaluate(() => {
       const ch = document.querySelector('#ventana .conVos .chat'), ult = ch && ch.lastElementChild, caja = ch && (ch.closest('.pestana') || ch.closest('.conVos')), pie = caja && caja.nextElementSibling;
       if (!ult || !pie) return null;
       const c = ch.getBoundingClientRect(), u = ult.getBoundingClientRect(), p = pie.getBoundingClientRect();
-      return { dentro: u.bottom <= c.bottom + 1 && u.top >= c.top - 1, encima: c.bottom > p.top + 1 };
+      return { dentro: u.bottom <= c.bottom + 1 && u.top >= c.top - 1, encima: c.bottom > p.top + 1, aire: Math.round(p.top - c.bottom) };
     });
-    check(Boolean(vista) && vista.dentro && !vista.encima, `E1: el último mensaje de «Con vos» se ve y la lista no tapa el pie (${JSON.stringify(vista)})`);
+    check(Boolean(vista) && vista.dentro && !vista.encima && vista.aire >= 16, `E1: el último mensaje de «Con vos» se ve y queda aire hasta el pie (${JSON.stringify(vista)})`);
     // con coordinadora, «Con vos» va dentro de una pestaña: la misma forma, con el estilo de la página, también se desplaza
     const enPestana = await page.evaluate(() => {
       const v = document.createElement('div'); v.className = 'ventana'; v.style.cssText = 'position:fixed;inset:0;visibility:hidden';
@@ -188,9 +188,9 @@ async function talkToSession(playwright) {
       ch.scrollTop = ch.scrollHeight;
       const c = ch.getBoundingClientRect(), u = ch.lastElementChild.getBoundingClientRect(), q = pie.getBoundingClientRect();
       v.remove();
-      return { dentro: u.bottom <= c.bottom + 1, encima: c.bottom > q.top + 1 };
+      return { dentro: u.bottom <= c.bottom + 1, encima: c.bottom > q.top + 1, aire: Math.round(q.top - c.bottom) };
     });
-    check(enPestana.dentro && !enPestana.encima, `E1: en la pestaña «Con vos» la lista también se desplaza y no tapa el pie (${JSON.stringify(enPestana)})`);
+    check(enPestana.dentro && !enPestana.encima && enPestana.aire >= 16, `E1: en la pestaña «Con vos» la lista también se desplaza y queda aire hasta el pie (${JSON.stringify(enPestana)})`);
     await shot('E1-mandar-y-respuesta');
 
     // E6: «aprobado» avisa antes de mandar, y la ventana no tiene nada que apruebe
