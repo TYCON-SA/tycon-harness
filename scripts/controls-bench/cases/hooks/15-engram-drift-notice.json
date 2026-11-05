@@ -12,7 +12,7 @@
           "type": "must-emit",
           "_por_que": "Es LA CAUSA: sin pin, engram adivina el nombre desde la carpeta y la memoria se parte sola. Si esto no grita, el hook no sirve para nada.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/engram-drift-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-audit.js tcg/scripts/lib/ && cp $TCG/scripts/lib/manifest-engram.js $TCG/scripts/lib/repos-root.js $TCG/scripts/lib/tycon-config.js $TCG/scripts/lib/skills-dir.js tcg/scripts/lib/ && mkdir -p $HOME/.claude && printf '{\"paths\":{\"repos\":\"~/SourceCode\"}}' > $HOME/.claude/tycon.json",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/engram-drift-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-audit.js tcg/scripts/lib/ && cp $TCG/scripts/lib/manifest-engram.js $TCG/scripts/lib/clean-git-env.js $TCG/scripts/lib/repos-root.js $TCG/scripts/lib/tycon-config.js $TCG/scripts/lib/skills-dir.js tcg/scripts/lib/ && mkdir -p $HOME/.claude && printf '{\"paths\":{\"repos\":\"~/SourceCode\"}}' > $HOME/.claude/tycon.json",
             "mkdir -p $HOME/SourceCode/repo-sin-pin/.engram/chunks"
           ],
           "stdin": {
@@ -36,7 +36,7 @@
           "type": "must-stay-quiet",
           "_por_que": "Silencio total en verde. Un aviso que aparece siempre se lee como ruido y se aprende a saltear — es el mismo criterio por el que el chequeo de al lado normaliza mayúsculas y excluye proyectos transversales.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/engram-drift-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-audit.js tcg/scripts/lib/ && cp $TCG/scripts/lib/manifest-engram.js $TCG/scripts/lib/repos-root.js $TCG/scripts/lib/tycon-config.js $TCG/scripts/lib/skills-dir.js tcg/scripts/lib/ && mkdir -p $HOME/.claude && printf '{\"paths\":{\"repos\":\"~/SourceCode\"}}' > $HOME/.claude/tycon.json",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/engram-drift-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-audit.js tcg/scripts/lib/ && cp $TCG/scripts/lib/manifest-engram.js $TCG/scripts/lib/clean-git-env.js $TCG/scripts/lib/repos-root.js $TCG/scripts/lib/tycon-config.js $TCG/scripts/lib/skills-dir.js tcg/scripts/lib/ && mkdir -p $HOME/.claude && printf '{\"paths\":{\"repos\":\"~/SourceCode\"}}' > $HOME/.claude/tycon.json",
             "mkdir -p $HOME/SourceCode/repo-con-pin/.engram/chunks",
             "node -e \"require('fs').writeFileSync(process.env.HOME+'/SourceCode/repo-con-pin/.engram/config.json',JSON.stringify({project_name:'mi-proyecto'}))\""
           ],
@@ -53,7 +53,7 @@
           "type": "must-stay-quiet",
           "_por_que": "Los repos viejos declaran el nombre en `.engram-project` y no en config.json. Si el hook no lo reconociera, acusaría a repos que SÍ están bien — cría lobos.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/engram-drift-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-audit.js tcg/scripts/lib/ && cp $TCG/scripts/lib/manifest-engram.js $TCG/scripts/lib/repos-root.js $TCG/scripts/lib/tycon-config.js $TCG/scripts/lib/skills-dir.js tcg/scripts/lib/ && mkdir -p $HOME/.claude && printf '{\"paths\":{\"repos\":\"~/SourceCode\"}}' > $HOME/.claude/tycon.json",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/engram-drift-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-audit.js tcg/scripts/lib/ && cp $TCG/scripts/lib/manifest-engram.js $TCG/scripts/lib/clean-git-env.js $TCG/scripts/lib/repos-root.js $TCG/scripts/lib/tycon-config.js $TCG/scripts/lib/skills-dir.js tcg/scripts/lib/ && mkdir -p $HOME/.claude && printf '{\"paths\":{\"repos\":\"~/SourceCode\"}}' > $HOME/.claude/tycon.json",
             "mkdir -p $HOME/SourceCode/repo-legacy/.engram/chunks",
             "printf 'mi-proyecto\\n' > $HOME/SourceCode/repo-legacy/.engram-project"
           ],
@@ -74,7 +74,7 @@
             "TYCON_ENGRAM_DRIFT": "0"
           },
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/engram-drift-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-audit.js tcg/scripts/lib/ && cp $TCG/scripts/lib/manifest-engram.js $TCG/scripts/lib/repos-root.js $TCG/scripts/lib/tycon-config.js $TCG/scripts/lib/skills-dir.js tcg/scripts/lib/ && mkdir -p $HOME/.claude && printf '{\"paths\":{\"repos\":\"~/SourceCode\"}}' > $HOME/.claude/tycon.json",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/engram-drift-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-audit.js tcg/scripts/lib/ && cp $TCG/scripts/lib/manifest-engram.js $TCG/scripts/lib/clean-git-env.js $TCG/scripts/lib/repos-root.js $TCG/scripts/lib/tycon-config.js $TCG/scripts/lib/skills-dir.js tcg/scripts/lib/ && mkdir -p $HOME/.claude && printf '{\"paths\":{\"repos\":\"~/SourceCode\"}}' > $HOME/.claude/tycon.json",
             "mkdir -p $HOME/SourceCode/repo-sin-pin/.engram/chunks"
           ],
           "stdin": {
@@ -87,7 +87,7 @@
           "type": "must-stay-quiet",
           "_por_que": "Con el sello fresco no vuelve a hablar en 24h. La consulta toca sqlite y descomprime chunks: en cada arranque sería un peaje por nada.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/engram-drift-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-audit.js tcg/scripts/lib/ && cp $TCG/scripts/lib/manifest-engram.js $TCG/scripts/lib/repos-root.js $TCG/scripts/lib/tycon-config.js $TCG/scripts/lib/skills-dir.js tcg/scripts/lib/ && mkdir -p $HOME/.claude && printf '{\"paths\":{\"repos\":\"~/SourceCode\"}}' > $HOME/.claude/tycon.json",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/engram-drift-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-audit.js tcg/scripts/lib/ && cp $TCG/scripts/lib/manifest-engram.js $TCG/scripts/lib/clean-git-env.js $TCG/scripts/lib/repos-root.js $TCG/scripts/lib/tycon-config.js $TCG/scripts/lib/skills-dir.js tcg/scripts/lib/ && mkdir -p $HOME/.claude && printf '{\"paths\":{\"repos\":\"~/SourceCode\"}}' > $HOME/.claude/tycon.json",
             "mkdir -p $HOME/SourceCode/repo-sin-pin/.engram/chunks",
             "mkdir -p $HOME/.claude/.tycon-pipeline && node -e \"require('fs').writeFileSync(process.env.HOME+'/.claude/.tycon-pipeline/engram-drift-last-run',new Date().toISOString())\""
           ],
@@ -104,7 +104,7 @@
           "type": "must-run",
           "_por_que": "El sello ES el throttle. Si el hook habla y no sella, vuelve a hablar en el próximo arranque y el aviso se vuelve ruido diario — que es la forma más rápida de que lo apaguen.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/engram-drift-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-audit.js tcg/scripts/lib/ && cp $TCG/scripts/lib/manifest-engram.js $TCG/scripts/lib/repos-root.js $TCG/scripts/lib/tycon-config.js $TCG/scripts/lib/skills-dir.js tcg/scripts/lib/ && mkdir -p $HOME/.claude && printf '{\"paths\":{\"repos\":\"~/SourceCode\"}}' > $HOME/.claude/tycon.json",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/engram-drift-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-audit.js tcg/scripts/lib/ && cp $TCG/scripts/lib/manifest-engram.js $TCG/scripts/lib/clean-git-env.js $TCG/scripts/lib/repos-root.js $TCG/scripts/lib/tycon-config.js $TCG/scripts/lib/skills-dir.js tcg/scripts/lib/ && mkdir -p $HOME/.claude && printf '{\"paths\":{\"repos\":\"~/SourceCode\"}}' > $HOME/.claude/tycon.json",
             "mkdir -p $HOME/SourceCode/repo-sin-pin/.engram/chunks"
           ],
           "stdin": {
@@ -124,7 +124,7 @@
           "type": "must-stay-quiet",
           "_por_que": "Una máquina recién configurada, sin ningún repo con memoria, no tiene nada roto. Fail-open: el hook no puede inventar un rojo donde no hay datos.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/engram-drift-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-audit.js tcg/scripts/lib/ && cp $TCG/scripts/lib/manifest-engram.js $TCG/scripts/lib/repos-root.js $TCG/scripts/lib/tycon-config.js $TCG/scripts/lib/skills-dir.js tcg/scripts/lib/ && mkdir -p $HOME/.claude && printf '{\"paths\":{\"repos\":\"~/SourceCode\"}}' > $HOME/.claude/tycon.json",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/engram-drift-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-audit.js tcg/scripts/lib/ && cp $TCG/scripts/lib/manifest-engram.js $TCG/scripts/lib/clean-git-env.js $TCG/scripts/lib/repos-root.js $TCG/scripts/lib/tycon-config.js $TCG/scripts/lib/skills-dir.js tcg/scripts/lib/ && mkdir -p $HOME/.claude && printf '{\"paths\":{\"repos\":\"~/SourceCode\"}}' > $HOME/.claude/tycon.json",
             "mkdir -p $HOME/SourceCode/repo-cualquiera/src"
           ],
           "stdin": {
@@ -156,7 +156,7 @@
           "type": "must-emit",
           "_por_que": "Sin `sqlite3` en el PATH, 2 de los 4 chequeos no pueden correr — y el hook se los tragaba en silencio. Una máquina sin sqlite3 quedaba con todo esto inerte y nadie se enteraba: el modo de falla que este hook existe para cazar, adentro del hook. 'No pude revisar' NO es 'está todo bien'. Ojo: tener engram no implica tener sqlite3 — engram lleva su propio SQLite compilado adentro (modernc.org/sqlite). 🔴 El setup crea una base de engram de mentira A PROPÓSITO: sin base no hay nada que verificar y el aviso correctamente NO aparece — 'no hay memoria' y 'no pude leer la memoria' son cosas distintas, y confundirlas hacía gritar en cualquier máquina que todavía no usa engram.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/engram-drift-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-audit.js $TCG/scripts/lib/engram-autoheal.js tcg/scripts/lib/ && cp $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/lib/manifest-engram.js $TCG/scripts/lib/repos-root.js $TCG/scripts/lib/tycon-config.js $TCG/scripts/lib/skills-dir.js tcg/scripts/lib/ && mkdir -p $HOME/.claude && printf '{\"paths\":{\"repos\":\"~/SourceCode\"}}' > $HOME/.claude/tycon.json",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/engram-drift-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-audit.js $TCG/scripts/lib/engram-autoheal.js tcg/scripts/lib/ && cp $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/lib/manifest-engram.js $TCG/scripts/lib/clean-git-env.js $TCG/scripts/lib/repos-root.js $TCG/scripts/lib/tycon-config.js $TCG/scripts/lib/skills-dir.js tcg/scripts/lib/ && mkdir -p $HOME/.claude && printf '{\"paths\":{\"repos\":\"~/SourceCode\"}}' > $HOME/.claude/tycon.json",
             "mkdir -p $HOME/SourceCode/repo-con-pin/.engram/chunks",
             "node -e \"require('fs').writeFileSync(process.env.HOME+'/SourceCode/repo-con-pin/.engram/config.json',JSON.stringify({project_name:'p'}))\"",
             "mkdir -p $HOME/shim && printf '#!/bin/sh\\nexit 1\\n' > $HOME/shim/sqlite3-roto && chmod +x $HOME/shim/sqlite3-roto",
@@ -181,7 +181,7 @@
           "type": "must-emit",
           "_por_que": "🔴 El aviso decía `node scripts/…/engram-rescue-unexported.js --reindex --apply`: una ruta RELATIVA, que sólo existe si estás parado en el clon del arnés. Este aviso se lee al abrir una sesión en CUALQUIER carpeta, así que el arreglo que recomendaba no corría justo donde se leía; y sin `--repo` tocaba los veinte repos en vez del que está roto. Ahora imprime la ruta absoluta del criterio y el repo concreto (story 1.6, AC 19).",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/engram-drift-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-audit.js tcg/scripts/lib/ && cp $TCG/scripts/lib/manifest-engram.js $TCG/scripts/lib/repos-root.js $TCG/scripts/lib/tycon-config.js $TCG/scripts/lib/skills-dir.js tcg/scripts/lib/ && mkdir -p $HOME/.claude && printf '{\"paths\":{\"repos\":\"~/SourceCode\"}}' > $HOME/.claude/tycon.json",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/engram-drift-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-audit.js tcg/scripts/lib/ && cp $TCG/scripts/lib/manifest-engram.js $TCG/scripts/lib/clean-git-env.js $TCG/scripts/lib/repos-root.js $TCG/scripts/lib/tycon-config.js $TCG/scripts/lib/skills-dir.js tcg/scripts/lib/ && mkdir -p $HOME/.claude && printf '{\"paths\":{\"repos\":\"~/SourceCode\"}}' > $HOME/.claude/tycon.json",
             "mkdir -p $HOME/SourceCode/repo-sin-pin/.engram/chunks",
             "mkdir -p $HOME/SourceCode/repo-en-deriva/.engram/chunks",
             "printf 'proj' > $HOME/SourceCode/repo-en-deriva/.engram-project",
@@ -236,7 +236,7 @@
           "type": "must-emit",
           "__doc": "story 8.3 (AC 9/10): con engram apagada (sin perfil, sin llave) el hook lo dice en una línea, sale 0 y NO hace la revisión — nada de «0 repos» ni silencio.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/engram-drift-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-audit.js tcg/scripts/lib/ && cp $TCG/scripts/lib/manifest-engram.js $TCG/scripts/lib/repos-root.js $TCG/scripts/lib/tycon-config.js $TCG/scripts/lib/skills-dir.js tcg/scripts/lib/ && mkdir -p $HOME/.claude && printf '{\"paths\":{\"repos\":\"~/SourceCode\"}}' > $HOME/.claude/tycon.json",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/engram-drift-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-audit.js tcg/scripts/lib/ && cp $TCG/scripts/lib/manifest-engram.js $TCG/scripts/lib/clean-git-env.js $TCG/scripts/lib/repos-root.js $TCG/scripts/lib/tycon-config.js $TCG/scripts/lib/skills-dir.js tcg/scripts/lib/ && mkdir -p $HOME/.claude && printf '{\"paths\":{\"repos\":\"~/SourceCode\"}}' > $HOME/.claude/tycon.json",
             "mkdir -p $HOME/SourceCode/repo-sin-pin/.engram/chunks"
           ],
           "stdin": {

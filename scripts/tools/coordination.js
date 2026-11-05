@@ -27,12 +27,21 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *                            trabajo (wt/<nombre> sin rama); sin puesto libre no la abre
  *   close --name <n>         cierra una sesión de fondo si quedó limpia; si falta algo, o no pudo mirarlo, no cierra y dice
  *                            qué. A una interactiva la verifica y avisa
+ *   owner-wait               lo lanza la coordinadora confirmada, de fondo: mira cada 2 s y termina, con una línea por
+ *                            novedad, cuando otra sesión queda frenada en un permiso, cuando una frenada sigue o se
+ *                            cierra, o cuando Claude Code cierra una sesión de fondo. Terminar la despierta. Uno por
+ *                            máquina; sin coordinadora confirmada, o desde otra sesión, sale enseguida
  *
  * Además, sin línea de comandos: `capNotice` es el aviso que la coordinadora ve en cada turno
- * (scripts/hooks/coordination-notice.js): el tope, las sesiones de fondo quietas, los pedidos verdes que nadie encoló,
- * las firmas viejas. `adversarialTurn` es lo que frena a `deep-review-gate` y a `next` cuando otra sesión tiene un pase
+ * (scripts/hooks/coordination-notice.js): el tope, las sesiones de fondo quietas, la fila de la suite completa parada
+ * (ninguna corre y alguna anotó que espera turno), los pedidos verdes que nadie encoló, las firmas viejas. `adversarialTurn` es lo que frena a `deep-review-gate` y a `next` cuando otra sesión tiene un pase
  * adversarial en vuelo. El turno de la suite completa vive en scripts/tools/heavy-turn.js. Todo calla sin coordinadora
- * designada.
+ * designada; lo de `owner-wait` (el comando que falta, la frenada de 2 minutos sin anunciar, la sesión que cerró Claude
+ * Code), sin coordinadora confirmada.
+ *
+ * Trabada es la sesión viva que espera un permiso: su archivo de Claude lo dice (`waiting` por un permiso) o su archivo
+ * de estado tiene `permission` y Claude no la da ocupada (tras una negación sigue trabajando). Gana sobre «recién
+ * abierta» y no cuenta para el tope. Las cerradas por Claude Code salen de scripts/lib/claude-retired.js.
  *
  * Trabaja una sesión cuyo archivo dice `busy`, una de Codex con actividad en los últimos 5 minutos y una que abrió
  * `open` hace menos de 10 minutos y todavía no escribió su archivo. Las sesiones se leen con lo mismo que usa /wip.
@@ -47,7 +56,7 @@ const { spawnSync } = require('child_process');
 const SKILL_LIB = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib');
 const { stateDir, claudeDir } = require(path.join(SKILL_LIB, 'state-dir.js'));
 const { adversarialInFlight } = require(path.join(SKILL_LIB, 'codex-reviewers.js'));
-const { sesionQueReenvia, designacionVigente } = require(path.join(SKILL_LIB, 'critical-waivers.js'));
+const { rolDeCoordinar, designacionVigente } = require(path.join(SKILL_LIB, 'critical-waivers.js'));
 const { sessionsBySid, SAFE_SID } = require('./work-in-progress.js');
 const tyconConfig = require(path.join(__dirname, '..', 'lib', 'tycon-config.js'));
 const workSlots = require('./work-slots.js');
@@ -67,6 +76,10 @@ const ADVERSARIAL_TURN_MAX_MS = 60 * 60000;
 const DOING_FRESH_MS = 3 * 3600000;
 const LAUNCH_TIMEOUT_MS = 30000;
 const GIT_TIMEOUT_MS = 20000;
+// owner-wait mira cada tanto (TYCON_OWNER_WAIT_POLL_MS para las pruebas); una frenada sin anunciar sale en el turno de la
+// coordinadora desde esta edad
+const OWNER_WAIT_POLL_MS = 2000;
+const STALLED_NOTICE_MS = 2 * 60000;
 // Empieza con letra o número: el nombre va como valor de `-n` y no puede leerse como una bandera.
 const { NAME_RE } = sessionNames;
 const KIND_RE = /^[a-z0-9-]+$/;
@@ -153,7 +166,6 @@ function markersBySid(home, problems) {
 }
 
 const openedFile = (home) => path.join(coordinationDir(home), 'opened.json');
-const signaturesFile = (home) => signatureList.archivo(home);
 // Los renglones de la lista de firmas, tal como están. Un registro roto o que no es una lista tira con su motivo.
 const readPending = (home) => signatureList.leer(home);
 // La firma por la terminal la pide un comando, no un freno: puede esperar más su turno con el candado de la lista.
@@ -175,6 +187,18 @@ function hasFreshDoing(home, sid, now) {
   try { return now - fs.statSync(path.join(stateDir(home), 'doing', `${sid}.json`)).mtimeMs < DOING_FRESH_MS; } catch { return false; }
 }
 
+// Desde cuándo la sesión espera el turno de la suite completa o del portón, según lo que anotó con `marker.js doing
+// --waiting-for`; null si no anotó una espera así. Sin nota no se supone nada: una sesión quieta no está «esperando turno».
+// La espera de un pase no cuenta: el pase corre en la nube y tiene su propio turno, no el de la suite.
+const SUITE_WAIT = /suite|port[oó]n|turno/i;
+const PASS_WAIT = /pase|adversarial/i;
+function suiteWaitSince(home, sid) {
+  const note = readJson(path.join(stateDir(home), 'doing', `${sid}.json`), null);
+  if (!note || typeof note.waitingFor !== 'string' || !SUITE_WAIT.test(note.waitingFor) || PASS_WAIT.test(note.waitingFor)) return null;
+  const since = Date.parse(note.waitingSince || note.at);
+  return Number.isFinite(since) ? since : null;
+}
+
 // Quién tiene el turno de la suite completa: el renglón de heavy-turn.js, o null. No poder leerlo no frena el estado.
 function suiteHolder(home, now, problems) {
   try { return require('./heavy-turn.js').holder({ home, now }); } catch (e) { problems.push(`el turno de la suite completa (${e.message})`); return null; }
@@ -188,6 +212,48 @@ function inFlight(markers, nameOf) {
   }
   return out;
 }
+
+// Los archivos de estado de las sesiones (scripts/lib/session-state.js), por sesión. Los que no se leen van a `problems`.
+function stateFiles(home, problems) {
+  const out = new Map();
+  try {
+    const r = require(path.join(__dirname, '..', 'lib', 'session-state.js')).readAll(stateDir(home));
+    for (const f of r.states || []) out.set(String(f.session), f);
+    problems.push(...(r.problems || []));
+  } catch (e) { problems.push(`los archivos de estado de las sesiones (${e.code || e.message})`); }
+  return out;
+}
+
+// Si la sesión viva está trabada en un permiso: `{ tool, detail, since, key }` o null. Cuando Claude dice el estado de la
+// sesión, manda él: el permiso está abierto sólo si la da esperando. Una negación (Esc o «No») corta el turno sin Stop ni
+// PostToolUse y la deja quieta con `permission` todavía anotado: no está trabada. Sin estado de Claude, el archivo de estado.
+// `key` identifica la espera para no anunciarla dos veces: la hora del permiso anotado, o la de Claude sin él.
+function stalledOf(s, f, now) {
+  const p = f && f.permission && typeof f.permission === 'object' ? f.permission : null;
+  const waits = s.status === 'waiting';
+  const known = typeof s.status === 'string' && s.status !== '';
+  if (!((waits && (/permission/i.test(String(s.waitingFor || '')) || p)) || (p && !known))) return null;
+  const pSince = p ? Date.parse(p.since) : NaN;
+  const since = Number.isFinite(pSince) ? pSince : (Number.isFinite(s.statusAt) ? s.statusAt : now);
+  // el gancho ya lo anota tapado; se tapa otra vez por los archivos escritos antes de que una forma existiera
+  const detail = p && p.detail ? oneLine(require(path.join(__dirname, '..', 'hooks', 'wait-notice.js')).redact(p.detail)).slice(0, 200) : null;
+  return { tool: p ? label(p.tool) : null, detail, since, key: Number.isFinite(pSince) ? `p:${pSince}` : 'claude' };
+}
+
+// Las sesiones de fondo que Claude Code cerró y no se levantaron. Una que ya está viva de nuevo no sale.
+function retiredOf(home, now, sessions) {
+  let r;
+  try { r = require(path.join(__dirname, '..', 'lib', 'claude-retired.js')).retiredSessions({ home, now }); } catch (e) {
+    return { measured: false, why: `no pude leer el registro de fondo de Claude Code (${e.code || e.message})`, retired: [] };
+  }
+  const retired = r.retired.filter((x) => !(x.sid && sessions.get(x.sid) && sessions.get(x.sid).alive)).map((x) => ({ ...x, session: label(x.session) }));
+  return { measured: r.measured, why: r.why, retired };
+}
+
+const permissionText = (x) => [x.tool || 'un permiso', x.detail].filter(Boolean).join(' ');
+// La línea de una sesión trabada para la coordinadora, y la de una que cerró Claude Code.
+const stalledLine = (x) => `${x.session} espera un permiso desde las ${hhmm(x.since)}: ${permissionText(x)}. Para entrar: claude attach ${x.session}`;
+const retiredLine = (x) => `${x.session}: la cerró Claude Code a las ${hhmm(x.at)} por ${x.reason}, quieta ${x.idleMin} min. Para levantarla: claude respawn ${x.short}`;
 
 /** El estado de la máquina, como datos. `noTranscripts`: sin abrir las conversaciones (el aviso de cada turno). */
 function status(opts = {}) {
@@ -203,10 +269,13 @@ function status(opts = {}) {
   const unnamed = [];
   const quiet = [];
   const passWaiting = [];
+  const suiteWaiting = [];
   const suite = suiteHolder(home, now, problems);
   const opened = recentOpened(home, now, problems);
   const justOpened = new Set(opened.map((o) => o.name));
   const alive = new Set();
+  const files = stateFiles(home, problems);
+  const stalled = [];
   for (const [sid, s] of sessions) {
     if (!s.alive) continue;
     // Un agente interno de otra sesión (carpeta temporal, nombre armado) no es una sesión de trabajo, salvo con marcador.
@@ -215,6 +284,17 @@ function status(opts = {}) {
     const m = markers.get(sid);
     const story = m && m.storyId ? `la ${m.storyId}` : null;
     if (s.nameSource === 'derived' && s.name) unnamed.push(label(s.name));
+    try {
+      const since = suiteWaitSince(home, sid);
+      if (since != null) suiteWaiting.push({ session: nameOf(sid), sid, since });
+    } catch (e) { problems.push(`la nota de ${nameOf(sid)} (${e.message})`); }
+    const st = stalledOf(s, files.get(String(sid)), now);
+    if (st) {
+      const { key, ...rest } = st;
+      // la clave de la espera no sale en --json: es sólo para owner-wait
+      stalled.push(Object.defineProperty({ session: nameOf(sid), sid, ...rest }, 'key', { value: key }));
+      continue;
+    }
     if (s.busy) working.push({ session: nameOf(sid), sid, why: story || 'trabajando sin pipeline', since: s.statusAt });
     else if (justOpened.has(s.name)) working.push({ session: nameOf(sid), sid, why: 'recién abierta, todavía arrancando', since: (opened.find((o) => o.name === s.name) || {}).at || null });
     else {
@@ -248,8 +328,10 @@ function status(opts = {}) {
     problems.push(...a.problemas);
     for (const f of a.filas) signatures[signatureList.tipoDe(f)] += 1;
   } catch (e) { problems.push(e.message); }
+  const gone = retiredOf(home, now, sessions);
   return {
-    working, waiting, quiet, passWaiting, cap: r.max_working, adversarial,
+    now, working, waiting, quiet, passWaiting, suiteWaiting, cap: r.max_working, adversarial, stalled,
+    retired: gone.retired, retiredMeasured: gone.measured, retiredWhy: gone.why,
     suite: suite ? { session: suite.session ? label(suite.session) : null, what: label(suite.what), since: suite.at } : null,
     signatures,
     unnamed, problems,
@@ -262,30 +344,33 @@ const hhmm = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()
 function statusText(s) {
   const lines = [`Trabajando: ${s.working.length} de ${s.cap.value} (tope ${ORIGIN[s.cap.origin] || s.cap.origin})`];
   for (const w of s.working) lines.push(`  · ${w.session} — ${w.why}`);
+  if (s.stalled && s.stalled.length) lines.push(`Trabadas: ${s.stalled.map((x) => `${x.session}: esperando un permiso${x.tool ? ` (${permissionText(x)})` : ''}, hace ${Math.max(0, Math.floor((s.now - x.since) / 60000))} min`).join(' · ')}`);
   lines.push(`Esperando: ${s.waiting.length}`);
   for (const w of s.waiting) lines.push(`  · ${w.session} — ${w.why}`);
+  if (s.retiredMeasured === false) lines.push(`Sesiones cerradas por Claude Code: no medido (${oneLine(s.retiredWhy).slice(0, 160)})`);
+  else if (s.retired && s.retired.length) lines.push(`Cerradas por Claude Code: ${s.retired.map(retiredLine).join(' · ')}`);
   lines.push(`Pase adversarial en vuelo: ${s.adversarial.length ? s.adversarial.map((a) => `${a.storyId ? `la ${a.storyId}` : 'sin story'} (${a.session}, desde las ${hhmm(a.since)})`).join(' · ') : 'ninguno'}`);
   lines.push(`Suite completa en curso: ${s.suite ? `${s.suite.session || 'una sesión sin nombre'} (${s.suite.what}, desde las ${hhmm(s.suite.since)})` : 'ninguna'}`);
+  if (s.suiteWaiting && s.suiteWaiting.length) lines.push(`Esperando turno de suite o portón: ${[...s.suiteWaiting].sort((a, b) => a.since - b.since).map((w) => `${w.session} desde las ${hhmm(w.since)}`).join(' · ')}`);
   lines.push(`De fondo y quietas: ${s.quiet.length ? s.quiet.map((q) => `${q.session} hace ${q.minutes} min`).join(' · ') : 'ninguna'}`);
   lines.push(`Firmas pendientes: ${[`${s.signatures.terminal} por la terminal`, ...(s.signatures.firma ? [`${s.signatures.firma} con su cuadro`] : []), ...(s.signatures.permiso ? [`${s.signatures.permiso} permiso(s)`] : []), `${s.signatures.delegated} por delegación`].join(' · ')}`);
   lines.push(`Sin nombre puesto por una persona: ${s.unnamed.length ? s.unnamed.join(', ') : 'ninguna'}`);
-  if (s.problems.length) lines.push(`No se pudo leer: ${s.problems.join(' · ')}`);
+  if (s.problems.length) lines.push(`No se pudo leer: ${oneLine(s.problems.join(' · ')).slice(0, 300)}`);
   return lines.join('\n');
 }
 
 const isCodex = (env) => Boolean(env.CODEX_SESSION_ID) && !env.CLAUDE_CODE_SESSION_ID;
 
-/** /coordinate: el estado para la sesión designada; a cualquier otra, qué falta. `{ code, text }`. */
+/**
+ * /coordinate: el estado para la sesión designada; a cualquier otra, cómo designarla. Sin rol en el perfil la
+ * coordinadora ordena igual, y el estado dice que las firmas van a la ventana del dueño. `{ code, text }`.
+ */
 function coordinate(opts = {}) {
   const env = opts.env || process.env;
   const home = opts.home || require('os').homedir();
   if (isCodex(env)) return { code: 1, text: 'Codex no puede coordinar: sus mensajes a otra sesión (codex queue) no pasan por una herramienta que el arnés pueda mirar. La coordinadora va en Claude Code.' };
-  const rol = sesionQueReenvia({ env, home, arnes: opts.arnes });
-  if (!rol.valor) {
-    return { code: 1, text: rol.aviso && !/no conoce/.test(rol.aviso)
-      ? `No sé si esta organización usa una coordinadora: ${rol.aviso}.`
-      : 'Esta organización no usa una coordinadora: se prende en la pestaña Configuración del sitio, en «Quién autoriza saltarse un control».' };
-  }
+  const r = rolDeCoordinar({ env, home, arnes: opts.arnes });
+  const rol = { valor: r.rol };
   const sid = env.CLAUDE_CODE_SESSION_ID || null;
   const d = designacionVigente({ home });
   if (d && d.error) return { code: 1, text: `No pude saber cuál es la coordinadora: ${d.error}.` };
@@ -297,23 +382,23 @@ function coordinate(opts = {}) {
       `  node ${marker} designate-relay --approved-by '<el dueño>' --quote '<su frase, textual>'`,
     ].join('\n') };
   }
-  return { code: 0, text: statusText(status(opts)) };
+  const firmas = r.firma ? '' : `\nFirmas: van a la ventana del dueño; sin approvals.relay_session en el perfil del equipo esta sesión ordena y no firma${r.aviso ? ` (${r.aviso.replace(/: nadie reenvía$/, '')})` : ''}.`;
+  return { code: 0, text: `${statusText(status(opts))}${firmas}` };
 }
 
 // ── Lo que ve la coordinadora sin pedirlo ──
 
-// El rol de la coordinadora, sólo si esta sesión es la designada. `{ role }`, `{ problem }` cuando la designación dice
-// que es ella pero la configuración no se lee, o null: sin rol, sin designación, en otra sesión o sin poder leer el
-// registro (en la duda, callar: el aviso no puede llegarle a una sesión de trabajo).
+// El rol de la coordinadora, sólo si esta sesión es la designada: `{ role, problem? }` (`problem`: la configuración no
+// se lee y el rol es el de fábrica), o null sin designación, en otra sesión o sin poder leer el registro (en la duda,
+// callar: el aviso no puede llegarle a una sesión de trabajo).
 function coordinatorRole(opts, sid) {
   const env = opts.env || process.env;
   const home = opts.home || require('os').homedir();
   if (!sid) return null;
   const d = designacionVigente({ home });
   if (!d || d.error || d.sesion !== sid) return null;
-  const rol = sesionQueReenvia({ env, home, arnes: opts.arnes });
-  if (rol.valor) return { role: rol.valor };
-  return rol.aviso && /no se pudo leer|falló/.test(rol.aviso) ? { problem: rol.aviso.replace(/: nadie reenvía$/, '') } : null;
+  const r = rolDeCoordinar({ env, home, arnes: opts.arnes });
+  return r.aviso && /no se pudo leer|falló/.test(r.aviso) ? { role: r.rol, problem: r.aviso.replace(/: nadie reenvía$/, '') } : { role: r.rol };
 }
 const sessionOf = (opts) => opts.sessionId || (opts.env || process.env).CLAUDE_CODE_SESSION_ID || null;
 
@@ -351,8 +436,7 @@ function lostDesignation(opts, sid) {
   const home = opts.home || require('os').homedir();
   const d = designacionVigente({ home });
   if (!d || d.error || !sid || !opts.title || !opts.transcript) return null;
-  const rol = sesionQueReenvia({ env: opts.env || process.env, home, arnes: opts.arnes });
-  if (!rol.valor) return null;
+  const rol = { valor: rolDeCoordinar({ env: opts.env || process.env, home, arnes: opts.arnes }).rol };
   if (titleIn(path.join(path.dirname(opts.transcript), `${d.sesion}.jsonl`)) !== opts.title) return null;
   const marker = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
   return [
@@ -371,19 +455,18 @@ function guideNotice(opts = {}) {
   if (opts.source !== 'compact' && opts.source !== 'clear') return null;
   const sid = sessionOf(opts);
   const who = coordinatorRole(opts, sid);
-  if (who) return who.role ? `Coordinación: sos la ${who.role} de esta máquina y tu conversación empezó de nuevo. Antes de seguir, leé tus reglas completas: ${GUIDE}` : null;
+  if (who) return `Coordinación: sos la ${who.role} de esta máquina y tu conversación empezó de nuevo. Antes de seguir, leé tus reglas completas: ${GUIDE}`;
   return opts.source === 'clear' ? lostDesignation(opts, sid) : null;
 }
 
 // La coordinadora que recibe primero la espera de otra sesión (scripts/hooks/wait-notice.js): `{ sid, name, role,
-// waitingName }`, o null sin rol, sin designación, con la designada cerrada o si la que espera es ella misma.
+// waitingName }`, o null sin designación, con la designada cerrada o si la que espera es ella misma.
 function liveCoordinator(opts, waitingSid) {
   const env = opts.env || process.env;
   const home = opts.home || require('os').homedir();
   const d = designacionVigente({ home });
   if (!d || d.error || d.sesion === waitingSid) return null;
-  const rol = sesionQueReenvia({ env, home, arnes: opts.arnes });
-  if (!rol.valor) return null;
+  const rol = { valor: rolDeCoordinar({ env, home, arnes: opts.arnes }).rol };
   const sessions = sessionsBySid(path.join(claudeDir(home), 'sessions'), [], null);
   const s = sessions.get(d.sesion);
   if (!s || !s.alive) return null;
@@ -449,6 +532,168 @@ function greenPrLines(opts, problems) {
  * hace más de un día. Sin nada de eso, null. Lo que no pudo leer va en una línea. No abre ninguna conversación ni sale a
  * la red.
  */
+// ── owner-wait: el despertador de la coordinadora ──
+
+const ownerWaitFile = (home) => path.join(coordinationDir(home), 'owner-wait.json');
+const ownerWaitPid = (home) => path.join(coordinationDir(home), 'owner-wait.pid');
+const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
+
+// La coordinadora confirmada y viva de esta máquina, o null.
+function confirmedCoordinator(home) {
+  const sid = require(path.join(__dirname, '..', 'lib', 'owner-approvals.js')).coordinadoraConfirmada(home);
+  if (!sid) return null;
+  const s = sessionsBySid(path.join(claudeDir(home), 'sessions'), [], null).get(sid);
+  return s && s.alive ? sid : null;
+}
+
+// El pid del owner-wait vivo de esta máquina, o null.
+function ownerWaitAlive(home) {
+  let pid;
+  try { pid = Number(fs.readFileSync(ownerWaitPid(home), 'utf8').trim()); } catch { return null; }
+  return Number.isInteger(pid) && pid > 0 && pidAlive(pid) ? pid : null;
+}
+
+// Lo ya anunciado: `{ waits: { <sesión>: { since, session } }, retired: { <id corto>@<hora>: true } }`.
+function readAnnounced(home) {
+  const a = readJson(ownerWaitFile(home), {});
+  return { waits: a && typeof a.waits === 'object' && a.waits ? a.waits : {}, retired: a && typeof a.retired === 'object' && a.retired ? a.retired : {} };
+}
+
+/**
+ * Una vuelta de owner-wait, sin dormir: `{ lines, stop }`. `lines` son las novedades, que quedan anotadas como
+ * anunciadas; `stop` es que su coordinadora ya no lo es (murió o se designó otra), y entonces no dice nada.
+ */
+function ownerWaitOnce(opts = {}) {
+  const home = opts.home || require('os').homedir();
+  const me = sessionOf(opts);
+  if (!me || confirmedCoordinator(home) !== me) return { lines: [], stop: true };
+  const s = status({ ...opts, noTranscripts: true });
+  const unread = [...s.problems];
+  const sessions = sessionsBySid(path.join(claudeDir(home), 'sessions'), unread, null);
+  const a = readAnnounced(home);
+  const lines = [];
+  const now = new Set();
+  for (const x of s.stalled.filter((y) => y.sid !== me)) {
+    now.add(x.sid);
+    // una espera ya anunciada no se anuncia de nuevo aunque su hora cambie de fuente (la de Claude y después la del
+    // permiso anotado); sólo un permiso nuevo, con otra hora anotada
+    const prev = a.waits[x.sid];
+    if (prev && !(String(prev.key).startsWith('p:') && String(x.key).startsWith('p:') && prev.key !== x.key)) continue;
+    lines.push(stalledLine(x));
+    a.waits[x.sid] = { since: x.since, session: x.session, key: x.key };
+  }
+  for (const [sid, prev] of Object.entries(a.waits)) {
+    if (now.has(sid)) continue;
+    // sin poder leer el estado, no se sabe si siguió: la espera queda anunciada hasta la próxima lectura buena
+    if (unread.length) continue;
+    const live = sessions.get(sid);
+    lines.push(live && live.alive ? `${prev.session} siguió: el permiso ya no está abierto` : `${prev.session} se cerró con un permiso abierto`);
+    delete a.waits[sid];
+  }
+  for (const x of s.retired.filter((y) => y.sid !== me)) {
+    const key = `${x.short}@${x.at}`;
+    if (a.retired[key]) continue;
+    lines.push(retiredLine(x));
+    a.retired[key] = true;
+  }
+  if (lines.length) writeJson(ownerWaitFile(home), a);
+  return { lines, stop: false };
+}
+
+/**
+ * El comando: sale enseguida sin coordinadora confirmada o desde otra sesión, y si ya hay uno vivo; si no, mira cada
+ * tanto y termina con las novedades. `{ code, text }`.
+ */
+function ownerWait(opts = {}) {
+  const home = opts.home || require('os').homedir();
+  const env = opts.env || process.env;
+  const me = sessionOf(opts);
+  if (!me || confirmedCoordinator(home) !== me) return { code: 0, text: 'no hay coordinadora confirmada en esta máquina: no espero nada' };
+  const other = ownerWaitAlive(home);
+  if (other && other !== process.pid) return { code: 0, text: `ya hay uno esperando (pid ${other}): no lanzo otro` };
+  fs.mkdirSync(coordinationDir(home), { recursive: true });
+  fs.writeFileSync(ownerWaitPid(home), String(process.pid));
+  const poll = /^\d+$/.test(String(env.TYCON_OWNER_WAIT_POLL_MS || '')) ? Number(env.TYCON_OWNER_WAIT_POLL_MS) : OWNER_WAIT_POLL_MS;
+  try {
+    for (;;) {
+      const r = ownerWaitOnce({ ...opts, home });
+      if (r.stop) return { code: 0, text: '' };
+      if (r.lines.length) return { code: 0, text: r.lines.join('\n') };
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, poll);
+    }
+  } finally {
+    try { if (Number(fs.readFileSync(ownerWaitPid(home), 'utf8').trim()) === process.pid) fs.unlinkSync(ownerWaitPid(home)); } catch { /* ya no está */ }
+  }
+}
+
+// Las líneas de owner-wait para el turno de la coordinadora confirmada: el comando si no corre, y lo que no anunció
+// (una trabada de 2 minutos o más, una cerrada por Claude Code).
+function ownerWaitLines(opts, sid, s) {
+  const home = opts.home || require('os').homedir();
+  const now = opts.now == null ? Date.now() : Number(opts.now);
+  if (confirmedCoordinator(home) !== sid) return [];
+  const out = [];
+  if (!ownerWaitAlive(home)) out.push(`Coordinación: owner-wait no está corriendo: lanzalo de fondo para enterarte al instante de una sesión trabada: node "${__filename}" owner-wait`);
+  const a = readAnnounced(home);
+  for (const x of s.stalled.filter((y) => y.sid !== sid)) {
+    if (now - x.since < STALLED_NOTICE_MS || a.waits[x.sid]) continue;
+    out.push(`Coordinación: ${stalledLine(x)}`);
+  }
+  for (const x of s.retired.filter((y) => y.sid !== sid)) if (!a.retired[`${x.short}@${x.at}`]) out.push(`Coordinación: ${retiredLine(x)}`);
+  return out;
+}
+
+// ── El lanzador de Claude Code ──
+
+/**
+ * Qué programa lanza `claude`: `{ bin, prefix }` o `{ error }`. Fuera de Windows, `claude` tal cual. En Windows se
+ * busca sólo en el camino de búsqueda (nunca en la carpeta actual): un `.exe` se lanza directo; el `.cmd` que deja npm
+ * se lee y se lanza el programa al que apunta, sin pasar por la consola, que exigiría escapar el encargo. `ctx` es
+ * inyectable para probar sin Windows: `platform`, `env`, `exists`, `read`, `nodePath`.
+ */
+function claudeLauncher(ctx = {}, what = 'no abrí la sesión') {
+  const platform = ctx.platform || process.platform;
+  if (platform !== 'win32') return { bin: 'claude', prefix: [] };
+  const win = path.win32;
+  const exists = ctx.exists || ((f) => { try { return fs.statSync(f).isFile(); } catch { return false; } });
+  const w = require(path.join(SKILL_LIB, 'portable-tools.js')).windowsLookup('claude', { env: ctx.env || process.env, exists });
+  if (w && w.exe) return { bin: w.exe, prefix: [] };
+  if (!w || !w.script) return { error: `Claude Code no está instalado en esta máquina (no encontré claude): ${what}.` };
+  const unreadable = { error: `encontré ${w.script} pero no pude leer a qué programa apunta: ${what}.` };
+  let text;
+  try { text = String((ctx.read || ((f) => fs.readFileSync(f, 'utf8')))(w.script)); } catch { return unreadable; }
+  const dir = win.dirname(w.script);
+  const js = /"%dp0%\\([^"%]+\.[cm]?js)"\s+%\*/i.exec(text);
+  if (js) {
+    const local = win.join(dir, 'node.exe');
+    return { bin: exists(local) ? local : (ctx.nodePath || process.execPath), prefix: [win.join(dir, js[1])] };
+  }
+  const exe = /"%dp0%\\([^"%]+\.exe)"\s+%\*/i.exec(text);
+  return exe ? { bin: win.join(dir, exe[1]), prefix: [] } : unreadable;
+}
+
+// El lanzador de open y close: el inyectado (las pruebas), o el de esta máquina.
+const resolveLauncher = (opts, what) => opts.launcher || claudeLauncher(opts.windows || {}, what);
+const launchArgv = (launcher, args) => [...(launcher.prefix || []), ...args];
+
+/**
+ * Los portones grandes que arrancaron con menos de 3 a la vez y siguen vivos (los avisos de lib/suite-times.js): uno por
+ * línea, con quién, cuántas a la vez y la hora estimada de fin. Los de un proceso que ya no está los borra la lectura.
+ */
+function slowGateLines(opts, s, problems) {
+  try {
+    const gates = require(path.join(SKILL_LIB, 'suite-times.js')).readSlowGates(opts.home);
+    const nameOf = (sid) => ([...s.working, ...s.quiet].find((w) => w.sid === sid) || {}).session || null;
+    // el aviso es un archivo de la carpeta de estado: lo que no tiene la forma esperada no llega al texto
+    const num = (v) => (Number.isFinite(Number(v)) ? String(Number(v)) : '?');
+    const eta = (v) => (/^\d{2}:\d{2}$/.test(String(v)) ? v : '??:??');
+    return gates.map((g) => `Coordinación: portón lento de ${oneLine(nameOf(g.sid) || g.repo || `el proceso ${g.pid}`)}: ${num(g.workers)} a la vez para ${num(g.suites)} suites (carga ${num(g.carga)}), termina cerca de las ${eta(g.eta)}. Mirá si hay que liberar la máquina.`);
+  } catch (e) {
+    problems.push(`los avisos de portón lento (${e.code || e.message})`);
+    return [];
+  }
+}
+
 function capNotice(opts = {}) {
   const sid = sessionOf(opts);
   const who = coordinatorRole(opts, sid);
@@ -475,10 +720,15 @@ function capNotice(opts = {}) {
       ? `Coordinación: ${w.session} espera su turno de pase adversarial (lo tiene ${t.other_in_flight[0].session}): avisale cuando termine.`
       : `Coordinación: ${w.session} puede lanzar su pase adversarial, no hay otro en vuelo: avisale.`);
   }
+  // la máquina parada con gente en la fila: nadie arranca sola, el «arrancá» lo da la coordinadora
+  const queue = s.suiteWaiting.filter((x) => x.sid !== sid).sort((a, b) => a.since - b.since);
+  if (!s.suite && queue.length) lines.push(`Coordinación: no corre ninguna suite completa y hay ${queue.length} esperando turno: dale el «arrancá» a ${queue[0].session}.`);
   lines.push(...greenPrLines(opts, problems));
   const signatures = oldSignatures(opts, opts.now == null ? Date.now() : Number(opts.now), problems);
   if (signatures) lines.push(signatures);
   lines.push(...waitLines(opts, sid, problems));
+  lines.push(...slowGateLines(opts, s, problems));
+  try { lines.push(...ownerWaitLines(opts, sid, s)); } catch (e) { problems.push(`lo de owner-wait (${e.code || e.message})`); }
   if (problems.length) lines.push(`Coordinación: No pude leer ${oneLine(problems.join(' · ')).slice(0, 300)}.`);
   return lines.length ? lines.join('\n') : null;
 }
@@ -555,8 +805,7 @@ function adversarialTurn(opts = {}) {
   // no poder leerla no es «no hay coordinadora»: el pase no se frena, pero se dice que no se pudo mirar
   if (d && d.error) process.stderr.write(`coordination: no pude saber cuál es la coordinadora (${d.error}): no miro el turno del pase\n`);
   if (!d || d.error) return null;
-  const rol = sesionQueReenvia({ env, home, arnes: opts.arnes });
-  if (!rol.valor) return null;
+  const rol = { valor: rolDeCoordinar({ env, home, arnes: opts.arnes }).rol };
   const problems = [];
   const sessions = sessionsBySid(path.join(claudeDir(home), 'sessions'), problems, null);
   // Una coordinadora que ya se cerró no da turnos; el pase de una sesión que ya no vive quedó abandonado.
@@ -857,16 +1106,20 @@ function openNow(opts) {
     return no(message);
   };
   // Lo pesado se pide: seis sesiones dentro del tope, cada una con lo suyo, llevaron la carga de una máquina a 52.
-  const rolTurno = sesionQueReenvia({ env, home, arnes: opts.arnes }).valor;
+  // con el rol del perfil o con una coordinadora designada; sin ninguno de los dos no hay a quién pedirle turno
+  const turno = rolDeCoordinar({ env, home, arnes: opts.arnes });
+  const designada = turno.firma ? null : designacionVigente({ home });
+  const rolTurno = turno.firma || (designada && !designada.error) ? turno.rol : null;
   const heavyRule = rolTurno ? ` — Nada pesado sin turno de la ${rolTurno}: suite completa, banco, examen, portón, revisores, pase.` : '';
   const job = slot
     ? `${task}${heavyRule} — Trabajás en el puesto ${slot.path}, en la rama ${slot.branch}. Al terminar, con todo commiteado, soltalo: node "${path.join(__dirname, 'work-slots.js')}" release "${slot.path}"`
     : `${task}${heavyRule}`;
-  const launcher = opts.launcher || { bin: 'claude', prefix: [] };
+  const launcher = resolveLauncher(opts);
+  if (launcher.error) return fail(launcher.error);
   const timeoutMs = opts.timeoutMs || LAUNCH_TIMEOUT_MS;
   // con control remoto a su nombre, el dueño la ve y la maneja desde claude.ai/code o el celular
   const modeArgs = pm.mode === 'default' ? [] : ['--permission-mode', pm.mode];
-  const r = spawnSync(launcher.bin, [...(launcher.prefix || []), '--bg', '-n', name, ...modeArgs, '--remote-control', name, '--', job], {
+  const r = spawnSync(launcher.bin, launchArgv(launcher, ['--bg', '-n', name, ...modeArgs, '--remote-control', name, '--', job]), {
     cwd: where, encoding: 'utf8', timeout: timeoutMs, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
   });
   if (r.error && r.error.code === 'ENOENT') return fail(`Claude Code no está instalado en esta máquina (no encontré ${launcher.bin}): no abrí la sesión.`);
@@ -892,7 +1145,7 @@ function openNow(opts) {
 
 function gitIn(dir, args) {
   // la carpeta la dice el archivo de la sesión: su configuración no corre un programa por acá
-  const r = spawnSync('git', ['-C', dir, '-c', 'core.fsmonitor=false', '-c', 'protocol.ext.allow=never', ...args], { encoding: 'utf8', timeout: GIT_TIMEOUT_MS, windowsHide: true, env: { ...process.env, LC_ALL: 'C', LANG: 'C', LANGUAGE: 'C' } });
+  const r = spawnSync('git', ['-C', dir, '-c', 'core.fsmonitor=false', '-c', 'protocol.ext.allow=never', ...args], { encoding: 'utf8', timeout: GIT_TIMEOUT_MS, windowsHide: true, env: require('../lib/clean-git-env.js').idiomaFijo() });
   return { code: r.error ? null : r.status, out: String(r.stdout || '').trim(), err: String((r.error && r.error.message) || r.stderr || '').trim().split('\n')[0] };
 }
 
@@ -1041,8 +1294,9 @@ function close(opts = {}) {
   if (!/^(bg|background)$/.test(String(s.kind))) return { ok: true, closed: false, message: `«${name}» quedó limpia. Es una pestaña interactiva: la cierra la persona.` };
   // el id va como argumento del lanzador: uno que empieza con guion se leería como una opción
   if (!/^\w[\w-]*$/.test(String(s.jobId || ''))) return no(`«${name}» quedó limpia, pero no anotó un id de fondo válido: no sé cómo cerrarla. Mirá el id con claude agents.`);
-  const launcher = opts.launcher || { bin: 'claude', prefix: [] };
-  const run1 = (verb) => spawnSync(launcher.bin, [...(launcher.prefix || []), verb, s.jobId], { encoding: 'utf8', timeout: opts.timeoutMs || LAUNCH_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+  const launcher = resolveLauncher(opts, 'no la cerré');
+  if (launcher.error) return no(`«${name}» quedó limpia, pero ${launcher.error}`);
+  const run1 = (verb) => spawnSync(launcher.bin, launchArgv(launcher, [verb, s.jobId]), { encoding: 'utf8', timeout: opts.timeoutMs || LAUNCH_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
   const why = (r) => (r.error ? (r.error.code || r.error.message) : (`${r.stderr || ''}\n${r.stdout || ''}`.split('\n').map((l) => l.trim()).find(Boolean) || `salió con código ${r.status}`));
   if (s.alive) {
     const stop = run1('stop');
@@ -1137,10 +1391,15 @@ function main(argv) {
     process.stdout.write(`${r.message}\n`);
     return r.ok ? 0 : 1;
   }
-  process.stderr.write('uso: coordination.js status [--json] | coordinate | signature --kind <tema> --title <qué> --cwd <carpeta> -- <comando...> | signature-done <id> | owner-next [--after <id>] | owner-reject <id> | open [--name <n>|auto] (--cwd <carpeta> | --repo <repo> [--branch <rama>]) -- <encargo> | close --name <n>\n');
+  if (cmd === 'owner-wait') {
+    const r = ownerWait(base);
+    if (r.text) process.stdout.write(`${r.text}\n`);
+    return r.code;
+  }
+  process.stderr.write('uso: coordination.js status [--json] | coordinate | signature --kind <tema> --title <qué> --cwd <carpeta> -- <comando...> | signature-done <id> | owner-next [--after <id>] | owner-reject <id> | open [--name <n>|auto] (--cwd <carpeta> | --repo <repo> [--branch <rama>]) -- <encargo> | close --name <n> | owner-wait\n');
   return 2;
 }
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { status, statusText, readPending, capNotice, guideNotice, listNotice, ownerNextText, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, ORIGIN };
+module.exports = { status, statusText, readPending, capNotice, guideNotice, listNotice, ownerNextText, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, ownerWait, ownerWaitOnce, claudeLauncher, resolveLauncher, launchArgv, ORIGIN };

@@ -239,7 +239,13 @@ function puntaDelRemoto(root, corta) {
   if (process.env.TYCON_RETRO_ASK_REMOTE === '0') return null;
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'GIT_ASKPASS' && k !== 'SSH_ASKPASS'));
   const ssh = env.GIT_SSH_COMMAND || git(root, ['config', '--get', 'core.sshCommand']) || (env.GIT_SSH ? `"${env.GIT_SSH}"` : 'ssh');
-  Object.assign(env, { LC_ALL: 'C', LANG: 'C', GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never',
+  // el idioma de git (scripts/lib/clean-git-env.js), si la biblioteca está al lado: acá no se lee el error de git, así
+  // que sin ella la pregunta sale igual
+  let idioma = {};
+  try { idioma = require(path.join(__dirname, '..', 'lib', 'clean-git-env.js')).IDIOMA_DE_GIT; } catch (e) {
+    if (!e || e.code !== 'MODULE_NOT_FOUND') throw e;   // sin biblioteca, sigue; una biblioteca rota no se calla
+  }
+  Object.assign(env, idioma, { GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never',
     GIT_SSH_COMMAND: `${ssh} ${/plink/i.test(ssh) ? '-batch' : '-oBatchMode=yes -oConnectTimeout=5'}` });
   const preguntar = (args) => {
     try { return execFileSync('git', ['-C', root, '-c', 'core.askPass=', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: REMOTO_MS, env }).trim(); }

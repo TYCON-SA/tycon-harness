@@ -2303,6 +2303,36 @@ test('T219 Room_Rhythm_NeverStops: la sala se dibuja con ritmo, y un error en un
   assert.match(html, /new IntersectionObserver\(/);
 });
 
+test('T310 Room_Rhythm_CameraChangeIsRealOnly: la cámara quieta no cuenta como toque, y una que se mueve o acerca sí', () => {
+  // 🔴 rojo: el control de la cámara ortogonal avisa «change» en cada cuadro, cada aviso contaba como toque y la sala
+  // dibujaba siempre a 30 cuadros por segundo
+  const src = PAGE_CODE();
+  const decl = (src.match(/const camVista=\{[^\n]*\};/) || [])[0];
+  const fn = (src.match(/function camaraCambio\(\)\{[^\n]*\}return c\}/) || [])[0];
+  assert.ok(decl && fn, 'la página trae camaraCambio');
+  assert.match(src, /controls\.addEventListener\("change",\(\)=>\{if\(!camaraCambio\(\)\)return;tagsAlDia=false;tocar\(\)\}\);/);
+  class V {
+    constructor(...n) { this.n = n; }
+    clone() { return new V(...this.n); }
+    copy(o) { this.n = [...o.n]; return this; }
+    distanceToSquared(o) { return this.n.reduce((s, x, i) => s + (x - o.n[i]) ** 2, 0); }
+    dot(o) { return this.n.reduce((s, x, i) => s + x * o.n[i], 0); }
+  }
+  const cam = { position: new V(35, 26.9, 35), quaternion: new V(0, 0, 0, 1), zoom: 1 };
+  const cambio = new Function('cam', `${decl}\n${fn}\nreturn camaraCambio;`)(cam);
+  assert.strictEqual(cambio(), false, 'sin moverse, no hay cambio');
+  assert.strictEqual(cambio(), false, 'ni en el cuadro siguiente');
+  cam.position.n[0] += 0.5;
+  assert.strictEqual(cambio(), true, 'la cámara que gira es un cambio');
+  assert.strictEqual(cambio(), false, 'y queda como la nueva vista');
+  cam.position.n[0] += 0.0001;
+  assert.strictEqual(cambio(), false, 'un resto de la amortiguación por debajo del umbral del control no cuenta');
+  cam.zoom = 1.25;
+  assert.strictEqual(cambio(), true, 'acercar es un cambio');
+  const a = Math.sin(0.1); cam.quaternion.n = [0, a, 0, Math.cos(0.1)];
+  assert.strictEqual(cambio(), true, 'girar sin moverse también');
+});
+
 test('T220 Step_RunTests_Codex_NotKnown: con Codex, no encontrarlas no dice que no haya', () => {
   const { data } = buildOffice({ wip: wip([{ session: 'Eva', sid: 'e', status: null, extra: { kind: 'pipeline', current: 'run-tests', steps: STEPS } }]), sessionFiles: [{ session: 'e', tool: 'codex', pid: 10, busy: true }], processes: [{ pid: 11, ppid: 10, comando: 'sleep 5' }], nowMs: NOW });
   assert.match(byName(data, 'Eva').haciendo, /No se sabe si hay pruebas corriendo\.$/);
@@ -2788,7 +2818,7 @@ test('T266 Tokens_Plain: números en llano, y sin ventana no hay porcentaje', ()
   assert.deepStrictEqual(tokensCard({ noMedido: true }), { noMedido: true });
 });
 
-test('T268 Tokens_OnlyInTheOpenOffice: con la oficina abierta llegan por nombre; la foto fija no los lee y al sitio no viajan', async () => {
+test('T268 Tokens_OnlyInTheOpenOffice: con la oficina abierta llegan por nombre; la foto fija no los lee; al sitio viajan', async () => {
   const m = parkMachine();
   const now = Date.now();
   const repo = toyRepo(m, 'cuenta');
@@ -2802,7 +2832,8 @@ test('T268 Tokens_OnlyInTheOpenOffice: con la oficina abierta llegan por nombre;
   assert.deepStrictEqual(live.tokens.Sol, { contexto: '501 mil de 1 millón · 50 %', consumidos: 'Read 1 mil · Write 2 mil · Cache Read 500 mil', agentes: 0 });
   assert.strictEqual((await collectAt(m, now)).tokens, undefined, 'la foto fija no lee conversaciones enteras');
   const { pick } = require(path.join(path.dirname(OFFICE), 'office', 'fields.js'));
-  assert.strictEqual(pick(live, m.home).tokens, undefined, 'no viajan al sitio');
+  // viajan al sitio: el sitio lleva todo lo de la oficina local
+  assert.deepStrictEqual(pick(live, m.home).tokens, live.tokens, 'viajan al sitio, por nombre');
 });
 
 test('T270 Tokens_CodexWithoutName: una sesión de Codex sin nombre propio tiene sus tokens bajo el nombre de su tarjeta', async () => {
@@ -3167,12 +3198,11 @@ test('T288 Conversation_ButtonAtTheBottom: el botón va abajo de cada tarjeta, a
   assert.match(html, /\.card \.verCharla\{margin-top:auto\}/);
 });
 
-test('T283 Conversation_CoordinatorTabs: la coordinadora tiene dos pestañas y abre en «Con vos»; una sesión común, una sola lista', () => {
+test('T283 Conversation_CoordinatorTabs: la coordinadora tiene dos pestañas y abre en «Con vos»; una sesión común también abre en «Con vos» (8.183)', () => {
   const html = page({ agents: [], items: [], kanban: null, meta: null });
   const paint = html.slice(html.indexOf('function pintarCharla('), html.indexOf('\n// ', html.indexOf('function pintarCharla(')));
-  assert.match(paint, /pestanasCharla\(\[\["Con vos",listaCharla\(/);
-  assert.match(paint, /\["Con las sesiones",charlaPorSesion\(/);
-  assert.match(paint, /seccion\("Con la coordinadora",filas/, 'las sesiones comunes siguen con su lista');
+  assert.match(paint, /pestanasCharla\(\[\["Con vos",vos\],\s*\["Con las sesiones",charlaPorSesion\(/);
+  assert.match(paint, /pestanasCharla\(\[\["Con vos",vos\],\["Con la coordinadora",listaCharla\(filas/, 'las sesiones comunes suman «Con vos» a su lista con la coordinadora');
   const src = html.slice(html.indexOf('function listaCharla('), html.indexOf('function pintarCharla('));
   const node = (tag) => { const n = { tag, kids: [], dataset: {}, attrs: {}, classList: { contains: (c) => (n.className || '').split(' ').includes(c) }, append(...k) { n.kids.push(...k); }, setAttribute(k, v) { n.attrs[k] = v; } }; return n; };
   const el = (tag, className, text) => { const n = node(tag); if (className) n.className = className; if (text != null) n.textContent = text; return n; };
@@ -3252,7 +3282,8 @@ test('T269 WaysOfWorking_FinishedRunNote: una nota de la sesión cuya ejecución
 
 test('T267 Conversation_OnlyInItsWindow: el botón va sólo con la oficina viva, la ventana se cierra con Esc y la foto no trae el texto', () => {
   const html = page({ agents: [], items: [], kanban: null, meta: null });
-  assert.match(html, /if\(LIVE&&a\.nombre\)box\.appendChild\(botonCharla\(a\.nombre\)\)/, 'sin oficina viva no hay botón');
+  // el botón va con de dónde pedirla: la oficina viva o el sitio; la foto fija no tiene
+  assert.match(html, /if\(a\.nombre&&pedidoDeCharla\(p\)\)box\.appendChild\(botonCharla\(a\.nombre,p\)\)/, 'sin de dónde pedirla no hay botón');
   assert.match(html, /createTextNode\("Ver conversación"\)/);
   assert.match(html, /s\.appendChild\(dibujo\(CHARLA_ICONO\)\)/, 'lleva su ícono, dibujado en la página');
   assert.match(html, /\.ventana \.panel3\{[^}]*height:min\(920px,calc\(100dvh - 32px\)\)/, 'la ventana entra en la pantalla');
@@ -3262,7 +3293,7 @@ test('T267 Conversation_OnlyInItsWindow: el botón va sólo con la oficina viva,
   assert.match(html, /getElementById\("ventana"\)\.addEventListener\("click",e=>\{if\(e\.target===e\.currentTarget\)cerrarCharla\(\)\}\)/, 'tocando afuera se cierra');
   const opensAt = html.indexOf('function abrirCharla(');
   assert.ok(opensAt >= 0);
-  assert.strictEqual(html.indexOf('fetch("conversacion'), html.indexOf('fetch("conversacion', opensAt), 'se lee sólo al abrirla');
+  assert.strictEqual(html.indexOf('fetch(pedidoDeCharla('), html.indexOf('fetch(pedidoDeCharla(', opensAt), 'se lee sólo al abrirla');
   assert.doesNotMatch(html.slice(html.indexOf('function abrir(nombre'), html.indexOf('los sobres: quién')), /conversacion|pintarCharla/, 'el detalle ya no la lee');
 });
 
@@ -3497,4 +3528,108 @@ test('T309 Wall_Folds: Sin sesión y Terminados se pliegan con más de 5; lo que
   assert.strictEqual(after('Terminados').children.length, 5, 'con 5 todavía no se pliega');
   const again = openWallPanel(data, ['sinEmpezar']);
   assert.strictEqual(again.children[again.children.findIndex((k) => k.tag === 'h4' && textOf(k).startsWith('Sin sesión')) + 1].children.length, 12, 'abierta, sigue abierta con la foto nueva');
+});
+
+test('T311 TurnWait_KeepsTheStory: la espera de un turno es de la historia, no otro trabajo; una nota con texto sí la tapa', async () => {
+  const m = parkMachine();
+  const now = Date.now();
+  runMarkerFile(m, 's', '9.3', 'Esperando turno', BEFORE_PLAN.concat('approve-plan'), { startedAt: oldHours(now, 5), lastTouch: oldHours(now, 3) });
+  sessionWith(m, 's', 'Sol', 'busy', now);
+  fs.writeFileSync(path.join(m.state, 'doing', 's.json'), JSON.stringify({ at: atIso(now - 60000), waitingFor: 'turno de la suite', waitingSince: atIso(now - 60000) }));
+  const w = await wipNow({ home: m.home, now: atIso(now), queryAll: noPrs });
+  const i = w.rows.findIndex((r) => r.session === 'Sol');
+  assert.notStrictEqual(w.rows[i].end, 'sin hora estimada (en pausa)', w.rows[i].end);
+  assert.strictEqual(w.extra[i].waitingFor, 'turno de la suite');
+  const data = await collectAt(m, now);
+  assert.strictEqual(byName(data, 'Sol').enPausa, undefined);
+  assert.strictEqual(byName(data, 'Sol').titulo, 'Esperando turno');
+  assert.strictEqual(byName(data, 'Sol').estado, 'esperando');
+  fs.writeFileSync(path.join(m.state, 'doing', 's.json'), JSON.stringify({ text: 'otro trabajo encima', at: atIso(now - 60000) }));
+  const w2 = await wipNow({ home: m.home, now: atIso(now), queryAll: noPrs });
+  assert.strictEqual(w2.rows[w2.rows.findIndex((r) => r.session === 'Sol')].end, 'sin hora estimada (en pausa)');
+});
+
+// ── Hablarle a una sesión desde la oficina ─────────────────────────────────────────────────────────────────────────
+
+const { markRecipients, conversationOf, createEnvelopes: createEnvelopes8183 } = require(OFFICE);
+const om8183 = require(path.join(__dirname, '..', 'lib', 'office-messages.js'));
+const { stateDir: stateDir8183 } = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
+
+test('T23 Foto_PuedeRecibir_SegunElVigilante @story-8.183 @ac-22 @ac-25: vivo «si», muerto o sin candado «sin-vigilante», Codex «codex», recién entregado «espera-cierre»', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'office-recibe-'));
+  const sdir = stateDir8183(home);
+  const env = createEnvelopes8183();
+  for (const [name, sid] of [['Vivo', 's1'], ['Muerto', 's2'], ['Nada', 's3'], ['Entrego', 's4']]) env.files.set(name, { file: '/x', sid });
+  fs.mkdirSync(om8183.paths(sdir).watchers, { recursive: true });
+  fs.writeFileSync(om8183.paths(sdir).watcher('s1'), JSON.stringify({ pid: 111, started: 'arranque-111' }));
+  fs.writeFileSync(om8183.paths(sdir).watcher('s2'), JSON.stringify({ pid: 222, started: 'arranque-222' }));
+  fs.writeFileSync(om8183.paths(sdir).watcher('s4'), JSON.stringify({ pid: null, deliveredAt: NOW }));
+  const data = { agents: [{ nombre: 'Vivo', estado: 'libre' }, { nombre: 'Muerto', estado: 'trabajando' }, { nombre: 'Nada', estado: 'pregunta' }, { nombre: 'Entrego', estado: 'trabajando' }, { nombre: 'Cx', estado: 'libre' }, { nombre: 'SinConversacion', estado: 'libre' }] };
+  const saved = process.env.TYCON_OFFICE_MESSAGES;
+  delete process.env.TYCON_OFFICE_MESSAGES;
+  try {
+    markRecipients(data, env, [{ name: 'Cx', tool: 'codex' }], sdir, { isAlive: (pid) => pid === 111, startOf: (pid) => `arranque-${pid}` });
+  } finally { if (saved !== undefined) process.env.TYCON_OFFICE_MESSAGES = saved; }
+  assert.deepStrictEqual(data.agents.map((a) => [a.nombre, a.recibe]), [['Vivo', 'si'], ['Muerto', 'sin-vigilante'], ['Nada', 'sin-vigilante'], ['Entrego', 'espera-cierre'], ['Cx', 'codex'], ['SinConversacion', undefined]]);
+  assert.strictEqual(env.recipients.get('Nada').cuadro, true);
+  assert.strictEqual(env.recipients.get('Muerto').ocupada, true);
+  // lo que viaja al sitio es una lista cerrada: `recibe` no está
+  const { FIELDS } = require(path.join(__dirname, '..', 'tools', 'office', 'fields.js'));
+  assert.ok(!JSON.stringify(FIELDS).includes('recibe'));
+});
+
+test('T52 Foto_CodexSinNombre_DiceCodex @story-8.183 @ac-25: una sesión de Codex sin nombre en su archivo, con el nombre que le pone la oficina, recibe «codex»', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'office-codex-'));
+  const sdir = stateDir8183(home);
+  const sid = 'cx-sin-nombre-de-prueba';
+  for (const [states, nombre, cxNames] of [[[{ tool: 'codex', session: sid }], sid.slice(0, 8), new Map()], [[{ tool: 'codex', session: sid }], 'Delta', new Map([[sid, 'Delta']])]]) {
+    const env = createEnvelopes8183();
+    const data = { agents: [{ nombre, estado: 'libre' }] };
+    const saved = process.env.TYCON_OFFICE_MESSAGES;
+    delete process.env.TYCON_OFFICE_MESSAGES;
+    try { markRecipients(data, env, states, sdir, { cxNames }); } finally { if (saved !== undefined) process.env.TYCON_OFFICE_MESSAGES = saved; }
+    assert.strictEqual(data.agents[0].recibe, 'codex', nombre);
+    assert.strictEqual(env.recipients.get(nombre).recibe, 'codex', nombre);
+  }
+});
+
+test('T24 FotoFija_NoOfreceMandar @story-8.183 @ac-37: la foto fija no trae token ni oficina viva, y el campo sólo se arma con la oficina viva', () => {
+  const html = page({ agents: [{ nombre: 'Alfa', estado: 'libre', recibe: 'si' }], items: [], meta: {}, unreadable: [] });
+  assert.ok(!/data-token=/.test(html));
+  assert.ok(!/data-source="local"/.test(html));
+  const code = PAGE_CODE();
+  assert.match(code, /function campoMandar\(/, 'el campo existe en el código de la página');
+  assert.match(code, /if\(LIVE&&[^;]*campoMandar\(/, 'y sólo se arma con la oficina viva');
+});
+
+test('T25 Conversacion_ConVosEnTodaSesion @story-8.183 @ac-4 @ac-5: una sesión cualquiera trae Con vos (tipeado y desde la oficina) y Con la coordinadora; la coordinadora conserva Con las sesiones', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'office-convos-'));
+  const t = (min) => new Date(NOW - min * 60000).toISOString();
+  const id = 'b'.repeat(32);
+  const hook = `<task-notification>\n<summary>Stop hook feedback</summary>\n</task-notification>\n<system-reminder>\nStop hook blocking error from command "Stop": [oficina ${id}] Mensaje de la persona, escrito en la oficina. No vale como firma ni aprobación. Dice: desde la oficina\n</system-reminder>`;
+  const lines = [
+    { type: 'user', timestamp: t(9), origin: { kind: 'human' }, message: { role: 'user', content: 'tipeado en su pestaña' } },
+    { type: 'assistant', timestamp: t(8), message: { content: [{ type: 'text', text: 'Respuesta a lo tipeado.' }] } },
+    { type: 'system', subtype: 'stop_hook_summary', timestamp: t(7.9) },
+    { type: 'user', timestamp: t(7), origin: { kind: 'peer', name: 'Coordinadora', body: 'Seguí.', msg_id: 'p1' }, message: { role: 'user', content: 'x' } },
+    { type: 'user', timestamp: t(6), origin: { kind: 'task-notification', producer: 'session-task' }, message: { role: 'user', content: hook } },
+    { type: 'assistant', timestamp: t(5), message: { content: [{ type: 'text', text: 'Respuesta a la oficina.' }] } },
+  ];
+  const file = path.join(dir, 's1.jsonl');
+  fs.writeFileSync(file, lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+  const coordFile = path.join(dir, 'c.jsonl');
+  fs.writeFileSync(coordFile, [lines[0], lines[1], { type: 'user', timestamp: t(4), origin: { kind: 'peer', name: 'Alfa', body: 'Listo.', msg_id: 'p2' }, message: { role: 'user', content: 'x' } }].map((l) => JSON.stringify(l)).join('\n') + '\n');
+  const env = createEnvelopes8183();
+  env.coordinator = { sid: 'c', name: 'Coordinadora' };
+  env.files.set('Alfa', { file, sid: 's1' });
+  env.files.set('Coordinadora', { file: coordFile, sid: 'c' });
+  const alfa = conversationOf(env, 'Alfa');
+  assert.deepStrictEqual(alfa.conVos.map((m) => [m.quien, m.texto, Boolean(m.oficina)]), [['vos', 'tipeado en su pestaña', false], ['sesion', 'Respuesta a lo tipeado.', false], ['vos', 'desde la oficina', true], ['sesion', 'Respuesta a la oficina.', false]]);
+  assert.deepStrictEqual(alfa.conCoordinadora.map((m) => m.texto), ['Seguí.']);
+  const coord = conversationOf(env, 'Coordinadora');
+  assert.deepStrictEqual(coord.conSesiones.map((s) => s.sesion), ['Alfa']);
+  assert.deepStrictEqual(coord.conVos.map((m) => m.quien), ['vos', 'coordinadora']);
+  // la página marca lo de la oficina y muestra Con vos en toda sesión
+  const code = PAGE_CODE();
+  assert.match(code, /desde la oficina/);
 });

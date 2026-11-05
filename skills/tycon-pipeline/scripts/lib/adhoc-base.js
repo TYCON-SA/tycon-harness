@@ -30,12 +30,14 @@ const RAMA = 'main';
 const RAMA_DE_TRABAJO = 'dev';
 const TOPE_MS = Number(process.env.TYCON_ADHOC_BASE_TIMEOUT_MS) || 8000;
 
-// git en inglés (LC_ALL=C): `ubicar` reconoce «fuera de un repo» por el texto del error, que se traduce
-const GIT_ENV = { ...process.env, LC_ALL: 'C', LANG: 'C', LANGUAGE: 'C' };
+// git en inglés: `ubicar` reconoce «fuera de un repo» por el texto del error, que se traduce. Se arma una vez, al
+// primer git: un script que carga este módulo sin llegar a git no carga la biblioteca.
+let gitEnv = null;
+const entornoDeGit = () => gitEnv || (gitEnv = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).idiomaFijo());
 // el tope de salida por defecto es de 1 MB: en un repo grande, la lista de archivos lo pasa y parece que git no contestó
 const SALIDA_MAX = 64 * 1024 * 1024;
 function git(repo, args, timeout = 5000) {
-  return execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout, env: GIT_ENV, maxBuffer: SALIDA_MAX }).trim();
+  return execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout, env: entornoDeGit(), maxBuffer: SALIDA_MAX }).trim();
 }
 
 /**

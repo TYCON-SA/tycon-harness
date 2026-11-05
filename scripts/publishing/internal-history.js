@@ -1059,8 +1059,8 @@ const TEAM_LAYER = (f) => f === 'perfil-equipo.json' || /^onboarding\/[^/]+\.md$
  * repo, como las de juguete de una prueba), todo. Una superposición que no trajo nada es un árbol mal armado: rojo.
  */
 function travels(repo) {
-  // con LC_ALL=C el mensaje de git sale en inglés, que es el que se reconoce abajo
-  const top = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: repo, env: { ...process.env, LC_ALL: 'C' }, encoding: 'utf8' });
+  // el mensaje de git en inglés, que es el que se reconoce abajo
+  const top = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: repo, env: require('../lib/clean-git-env.js').idiomaFijo(), encoding: 'utf8' });
   if (top.error) throw new CouldNot(`no pude correr git rev-parse (${top.error.code || top.error.message})`);
   // una carpeta fuera de todo repo no tiene superposición; cualquier otra falla de git no se toma por «no la hay»
   if (top.status !== 0 && !/not a git repository/i.test(String(top.stderr))) throw new CouldNot(`no pude saber si ${shown(repo)} es un árbol armado: git rev-parse falló (${shown(String(top.stderr).trim().split('\n')[0]) || `salió ${top.status}`})`);

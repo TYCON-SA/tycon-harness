@@ -25,7 +25,7 @@ const path = require('path');
 
 const SKILL_LIB = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib');
 const { stateDir, claudeDir } = require(path.join(SKILL_LIB, 'state-dir.js'));
-const { sesionQueReenvia, designacionVigente } = require(path.join(SKILL_LIB, 'critical-waivers.js'));
+const { rolDeCoordinar, designacionVigente } = require(path.join(SKILL_LIB, 'critical-waivers.js'));
 const { sessionsBySid } = require('./work-in-progress.js');
 
 // Las portables tardan cerca de una hora: tres ya no es una suite que corre.
@@ -40,14 +40,15 @@ const hhmm = (ms) => { const d = new Date(ms); return Number.isNaN(d.getTime()) 
 const alive = (pid) => { if (!Number.isInteger(pid) || pid <= 0) return false; try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
 
 // El rol sale del perfil del equipo, que viaja con el arnés instalado. Un clon de trabajo del repo público no lo trae: se
-// pregunta primero al árbol de este archivo y, sin respuesta, al instalado. Esta lectura sólo puede prender un freno.
+// pregunta primero al árbol de este archivo y, sin respuesta, al instalado. Sin rol en ninguno, el de fábrica: la
+// coordinadora ordena igual. Esta lectura sólo nombra a quién pedirle el turno.
 function roleOf({ home, env, arnes }) {
-  const own = sesionQueReenvia({ env, home, ...(arnes ? { arnes } : {}) });
-  if (own.valor || arnes) return own.valor;
+  const own = rolDeCoordinar({ env, home, ...(arnes ? { arnes } : {}) });
+  if (own.firma || arnes) return own.rol;
   try {
     const { harnessDir } = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'));
-    return sesionQueReenvia({ env, home, arnes: harnessDir(home) }).valor;
-  } catch { return null; }
+    return rolDeCoordinar({ env, home, arnes: harnessDir(home) }).rol;
+  } catch { return own.rol; }
 }
 
 /** El rol de la coordinadora si hay una designada y viva; null si no (y entonces no hay turno que pedir). */

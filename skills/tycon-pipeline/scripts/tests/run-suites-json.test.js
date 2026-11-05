@@ -434,11 +434,13 @@ test('T16 RunSuites_NothingLeftToRun_NotMeasured — si no queda nada para corre
 
 test('T17 RunSuites_BadWorkersEnv_FallsBack — valor inválido avisa y usa el defecto; 1 es la serie de siempre', () => {
   // 🔴 mutación: `parseInt('mucho')` → NaN → 0 procesos y el runner no corre nada (o cuelga).
-  const def = Math.max(1, Math.floor((os.availableParallelism ? os.availableParallelism() : os.cpus().length) / 2));
+  // el defecto es el de la máquina (suite-workers.test.js): con 10 núcleos y carga 1, fuera de la CI, 8
+  const def = 8;
+  const maquina = { TYCON_FAKE_MACHINE: '10/1', CI: '', TF_BUILD: '', GITHUB_ACTIONS: '' };
   for (const bad of ['0', '-2', 'mucho']) {
     const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/a.test.sh' }] });
     f.escribir('arnes', 'tests/a.test.sh', 'exit 0');
-    const r = runWith(f, { env: { TYCON_SUITES_MAX_WORKERS: bad } });
+    const r = runWith(f, { env: { TYCON_SUITES_MAX_WORKERS: bad, ...maquina } });
     assert.equal(r.status, 0);
     assert.equal(r.resumen.workers, def, `con «${bad}» usa el defecto`);
     assert.match(r.stderr, /TYCON_SUITES_MAX_WORKERS/, `con «${bad}» avisa`);

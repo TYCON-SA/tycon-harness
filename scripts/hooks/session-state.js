@@ -5,8 +5,12 @@
  * espera y el cierre, en los momentos de cada herramienta. Lo lee la oficina de /office.
  *
  *   Claude: SessionStart → crea el archivo (nombre y pid del archivo de sesión de Claude), con el paso del marcador si hay uno
- *           Notification permission_prompt → espera «un permiso» · PreToolUse de las preguntas → «una respuesta»
+ *           PermissionRequest → espera «un permiso» y anota `permission`: la herramienta, qué pide y desde cuándo
+ *           Notification permission_prompt → espera «un permiso»; sin `permission`, lo anota con la herramienta del texto
+ *           PreToolUse de las preguntas → «una respuesta»
  *           PostToolUse, UserPromptSubmit, Stop → ya no espera · SessionEnd → borra el archivo
+ *           Con un permiso abierto, el PostToolUse de otra herramienta (una en paralelo, un agente de la sesión) no lo
+ *           cierra: sólo el de la misma herramienta. Dos usos a la vez de la misma lo pueden cerrar antes de tiempo.
  *   Codex:  SessionStart → crea el archivo (sin nombre ni pid: Codex no da uno estable). Su arranque no trae `turn_id`:
  *           se lo reconoce por la carpeta de su conversación (toolOf), y el próximo momento corrige un archivo mal creado
  *           UserPromptSubmit → ocupada (`busy: true`) y ya no espera · Stop → parada (`busy: false`)
@@ -26,6 +30,9 @@ const LIB = path.join(ROOT, 'scripts', 'lib', 'session-state.js');
 const WAIT_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode', 'mcp__spokenly__ask_user_dictation']);
 const PERMISSION = 'un permiso';
 const ANSWER = 'una respuesta';
+const DETAIL_MAX = 200;
+// de dónde sale qué pide cada herramienta, en este orden
+const DETAIL_KEYS = ['command', 'file_path', 'notebook_path', 'path', 'url', 'pattern'];
 
 const readJson = (file) => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } };
 
@@ -76,8 +83,37 @@ function claudeSession(home, sid, { sdir = null, alive = isAlive } = {}) {
   return { name: found[0].name, pid: found[0].pid };
 }
 
-/** Lo que cambia en el archivo con este momento: `{ patch }`, `{ remove: true }` o null (nada que anotar). */
-function decide(d, codex) {
+/**
+ * El permiso que pide la sesión: `{ tool, detail, since }`. `detail` es el comando, la ruta, la dirección o el patrón, en
+ * una línea, con las credenciales tapadas y cortado; de una herramienta `mcp__…`, nada: su entrada puede traer cualquier
+ * cosa.
+ */
+function permissionOf(d, now = Date.now()) {
+  const tool = typeof d.tool_name === 'string' && d.tool_name ? d.tool_name : 'una herramienta';
+  const input = d.tool_input && typeof d.tool_input === 'object' ? d.tool_input : {};
+  let detail = null;
+  if (!tool.startsWith('mcp__')) {
+    const key = DETAIL_KEYS.find((k) => typeof input[k] === 'string' && input[k].trim());
+    if (key) {
+      // primero se tapa y después se corta, como en wait-notice.js: cortada, una credencial pierde su forma
+      const one = require('./wait-notice.js').redact(input[key].replace(/\s+/g, ' ').trim());
+      detail = one.length > DETAIL_MAX ? `${one.slice(0, DETAIL_MAX - 1)}…` : one;
+    }
+  }
+  return { tool, detail, since: new Date(now).toISOString() };
+}
+
+/** La herramienta que nombra la notificación del cuadro («permission to use Bash»), o null. */
+function toolOfNotification(d) {
+  const m = /permission to use ([\w.:-]+)/i.exec(String(d.message || ''));
+  return m ? m[1] : null;
+}
+
+/**
+ * Lo que cambia en el archivo con este momento: `{ patch }`, `{ remove: true }` o null (nada que anotar). `cur` es el
+ * archivo como está, para no pisar el permiso anotado.
+ */
+function decide(d, codex, cur = null, now = Date.now()) {
   const ev = d.hook_event_name;
   if (codex) {
     if (ev === 'Stop') return { patch: { busy: false } };
@@ -85,13 +121,19 @@ function decide(d, codex) {
     if (ev === 'SessionStart') return { patch: {} };
     return null;
   }
+  const open = cur && cur.permission && typeof cur.permission === 'object' ? cur.permission : null;
   if (ev === 'SessionEnd') return { remove: true };
+  if (ev === 'PermissionRequest') return { patch: { waitingForOwner: true, waitingFor: PERMISSION, permission: { ...permissionOf(d, now), via: 'request' } } };
   if (ev === 'Notification') {
     if (d.notification_type && d.notification_type !== 'permission_prompt') return null;
-    return { patch: { waitingForOwner: true, waitingFor: PERMISSION } };
+    if (open) return { patch: { waitingForOwner: true, waitingFor: PERMISSION } };
+    return { patch: { waitingForOwner: true, waitingFor: PERMISSION, permission: { tool: toolOfNotification(d) || 'una herramienta', detail: null, since: new Date(now).toISOString(), via: 'notification' } } };
   }
   if (ev === 'PreToolUse') return WAIT_TOOLS.has(d.tool_name) ? { patch: { waitingForOwner: true, waitingFor: ANSWER } } : null;
-  if (ev === 'PostToolUse' || ev === 'UserPromptSubmit' || ev === 'Stop') return { patch: { waitingForOwner: false, waitingFor: null } };
+  // sólo el pedido trae el nombre exacto de la herramienta: el de la notificación (el nombre visible, o ninguno) no se
+  // compara, y lo cierra el final de cualquier herramienta, como antes
+  if (ev === 'PostToolUse' && open && open.via === 'request' && open.tool !== d.tool_name) return null;
+  if (ev === 'PostToolUse' || ev === 'UserPromptSubmit' || ev === 'Stop') return { patch: { waitingForOwner: false, waitingFor: null, permission: null } };
   if (ev === 'SessionStart') return { patch: {} };
   return null;
 }
@@ -104,12 +146,12 @@ function handle(d, env = process.env, home = os.homedir()) {
   if (!sid) return;
   const { tool, certain } = toolOf(d, env);
   const codex = tool === 'codex';
-  const what = decide(d, codex);
+  const cur = lib.read(sdir, sid);
+  const what = decide(d, codex, cur.state);
   if (!what) return;
   if (what.remove) { lib.remove(sdir, sid, { env }); return; }
   const retool = certain;
   // un archivo que falta (o que está roto) se arma de nuevo, con el paso del marcador y quién es la sesión
-  const cur = lib.read(sdir, sid);
   if (cur.problem) lib.logError(sdir, `sesión ${sid}: su estado no se podía usar y se arma de nuevo (${cur.problem})`);
   if (!cur.state) {
     const who = codex ? { name: null, pid: null } : claudeSession(home, sid, { sdir });
@@ -130,7 +172,7 @@ function handle(d, env = process.env, home = os.homedir()) {
   lib.update(sdir, sid, { ...fix, ...what.patch }, { env, tool, retool });
 }
 
-module.exports = { decide, handle, claudeSession, toolOf, WAIT_TOOLS };
+module.exports = { decide, handle, claudeSession, toolOf, permissionOf, WAIT_TOOLS };
 
 if (require.main === module) {
   const env = process.env;

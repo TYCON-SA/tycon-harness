@@ -548,18 +548,20 @@ if (process.getuid && process.getuid() !== 0) {
       r3.source === 'HEAD' && r3.ref === head && r3.descartadas.some((d) => d.source === 'marcador' && /ancestro/.test(d.motivo)),
       JSON.stringify(r3));
     const r4 = cb.resolver({ repo, env: {}, marker: { repoPath: path.join(tmp, 'otro-repo'), baseSha: c1 } });
-    check('T9 un marcador de otro repo se descarta', r4.source === 'HEAD' && r4.descartadas.some((d) => d.source === 'marcador'),
+    // sin marcador de este repo la base es la bifurcación con main: acá, con el repo en main, es HEAD mismo
+    const headSha = execFileSync('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    check('T9 un marcador de otro repo se descarta', r4.source === 'bifurcacion' && r4.ref === headSha && r4.descartadas.some((d) => d.source === 'marcador'),
       JSON.stringify(r4));
     const r5 = cb.resolver({ repo, env: { TYCON_COVERAGE_BASE: 'no-existe' }, marker: null });
-    check('T9 una variable ilegible se descarta y sin marcador queda HEAD',
-      r5.source === 'HEAD' && r5.descartadas.some((d) => d.source === 'env'), JSON.stringify(r5));
+    check('T9 una variable ilegible se descarta y sin marcador queda la bifurcación',
+      r5.source === 'bifurcacion' && r5.descartadas.some((d) => d.source === 'env'), JSON.stringify(r5));
     const r6 = cb.resolver({ repo: path.join(tmp, 'no-git'), env: {}, marker: null });
     check('T9 fuera de git no hay base (ref null) y se dice', r6.ref === null && r6.descartadas.length > 0, JSON.stringify(r6));
     check('T9 …con el detalle de git, no sólo «no es un repo»', /cannot change|No such file|not a git/i.test(r6.descartadas[0].motivo || ''),
       JSON.stringify(r6.descartadas));
     const r7 = cb.resolver({ repo, env: {}, marker: null, markerError: 'marker.js get salió 1: boom' });
     check('T9 un marcador que no se pudo leer queda en descartadas',
-      r7.source === 'HEAD' && r7.descartadas.some((d) => d.source === 'marcador' && /boom/.test(d.motivo)), JSON.stringify(r7));
+      r7.source === 'bifurcacion' && r7.descartadas.some((d) => d.source === 'marcador' && /boom/.test(d.motivo)), JSON.stringify(r7));
   }
 }
 

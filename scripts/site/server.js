@@ -481,6 +481,15 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
   };
   // el centro de las oficinas: sin la demo, que no recibe datos reales, y sólo con el registro de las claves
   const centro = !demo && llaves ? require('./live-hub.js').crearCentro({ cfg, fuentes, llaves, sesionDe, ahora, log: (l) => registrar(l), firstMaintainer: cfg.firstMaintainer, ...centroOpciones }) : null;
+  // la conversación de una sesión de una oficina: vive en el centro, y la pide la pestaña al abrir «Ver conversación».
+  // A quien no ve esa máquina se le contesta igual que por una que no existe
+  if (centro) {
+    const charla = { method: 'GET', path: '/offices/conversation', needs: ['maintainer', 'person'], handler: (ctx) => {
+      const datos = centro.conversacion(ctx.quien, String(ctx.url.searchParams.get('m') || ''), String(ctx.url.searchParams.get('s') || ''));
+      return datos ? { status: 200, tipo: 'application/json; charset=utf-8', cuerpo: JSON.stringify(datos), extra: { 'Cache-Control': 'no-store' } } : { status: 404, tipo: 'text/plain; charset=utf-8', cuerpo: 'no existe' };
+    } };
+    rutas.push(...validarRutas([...rutas, charla]).slice(-1).map((r) => ({ ...r, coincide: patronDe(r.path) })));
+  }
   /** ¿El token del formulario es el de la sesión? Tiempo constante. */
   const mismoToken = (ses, recibido) => {
     const a = Buffer.from(typeof ses.tok === 'string' ? ses.tok : '');

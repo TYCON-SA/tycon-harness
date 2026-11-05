@@ -420,20 +420,23 @@ PY
     #   scripts/hooks/stuck-pr-notice.js — los pedidos trabados en choque o sin entrar
     #   scripts/hooks/coordination-notice.js — el tope de sesiones, sólo para la coordinadora designada
     #   scripts/hooks/why-blocked-notice.js — el último freno de la sesión, cuando la persona pregunta por qué la frenó
-    #   scripts/hooks/session-state.js — el estado real de cada sesión, en cada evento que lo cambia
+    #   scripts/hooks/session-state.js — el estado real de cada sesión, en cada evento que lo cambia (con el pedido de
+    #     permiso, ocho)
     #   scripts/hooks/owner-approval-record.js — anota el click o el «aprobado» de la persona
     #   scripts/hooks/context-size-notice.js — avisa cuando la sesión lleva demasiado contexto
     #   scripts/hooks/session-cap-guard.js — frena abrir sesiones de más
     #   scripts/hooks/office-link-start.js — el proceso que le manda la oficina de la máquina al sitio de la organización
+    #     (al arrancar la sesión y al escribir un pedido: dos veces)
     #   scripts/hooks/cover-secrets.js — tapa los secretos de la máquina en lo que devuelven los comandos y las lecturas
     # «ruta=N»: registrado N veces (un hook en varios eventos); sin «=N», una.
     T40_ADDED=(scripts/hooks/public-push-guard.js scripts/hooks/owner-email-notice.js scripts/hooks/wait-notice.js=6
       scripts/hooks/worktree-sweep.js scripts/hooks/unclosed-runs-notice.js scripts/hooks/deprecated-read-notice.js
       scripts/hooks/deprecated-session-notice.js scripts/hooks/extension-notices.js scripts/hooks/guard-update-notice.js
       scripts/hooks/dev-behind-main-notice.js scripts/hooks/stuck-pr-notice.js scripts/hooks/coordination-notice.js=2
-      scripts/hooks/why-blocked-notice.js scripts/hooks/session-state.js=7 scripts/hooks/owner-approval-record.js=2
-      scripts/hooks/context-size-notice.js=2 scripts/hooks/session-cap-guard.js scripts/hooks/office-link-start.js
-      scripts/hooks/cover-secrets.js)
+      scripts/hooks/why-blocked-notice.js scripts/hooks/session-state.js=8 scripts/hooks/owner-approval-record.js=2
+      scripts/hooks/context-size-notice.js=2 scripts/hooks/session-cap-guard.js scripts/hooks/office-link-start.js=2
+      scripts/hooks/cover-secrets.js
+      scripts/hooks/office-message-rule.js scripts/hooks/office-inbox-watch.js=2)
     t40_apart() { # t40_apart <settings> <salida> → aparta los declarados del settings (lo reescribe); en <salida>, los que no están UNA vez
       rm -f "$2"
       python3 - "$1" "$2" "${T40_ADDED[@]}" <<'PY'
@@ -591,9 +594,7 @@ fi
 # ══ La parte del programa (T35 a T37): harness.js de verdad, con el aplicador real ═════════════════════════════════════
 # shellcheck source=lib/harness-lab.sh
 source "$RAIZ/scripts/tests/lib/harness-lab.sh"   # sólo por harness_lab_pty (la terminal de juguete)
-home_hash() { ( cd "$1" && find . -print | LC_ALL=C sort | while IFS= read -r f; do
-    if [ -L "$f" ]; then printf '%s -> %s\n' "$f" "$(readlink "$f")"; elif [ -f "$f" ]; then printf '%s ' "$f"; shasum -a 256 < "$f"; else printf '%s/\n' "$f"; fi
-  done ) | shasum -a 256 | cut -d' ' -f1; }
+home_hash() { tree_list "$1" | shasum -a 256 | cut -d' ' -f1; }
 # ══ HASH · HomeHash_SeesAStrayFile: la foto ve lo que aparece en la carpeta de inicio ═════════════════════════════════
 # (python ya no escribe su caché durante la prueba; la foto no se achica para eso y tiene que seguir viendo lo demás)
 if corre HASH; then

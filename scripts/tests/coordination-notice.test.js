@@ -113,9 +113,8 @@ test('T13 DeepReviewGate_OtherPassInFlight @story-8.122 @ac-13: un pase de otra 
 
 // ── Quiet without a coordinator (AC 20) and own errors (AC 21) ───────────────────────────────────────────────────
 
-test('T20 NoRole_NothingSaid @story-8.122 @ac-20: sin rol, sin designación o en otra sesión, ni el tope ni el pase dicen nada', () => {
+test('T20 NoRole_NothingSaid @story-8.122 @ac-20 @story-8.199 @ac-6: sin designación o en otra sesión, ni el tope ni el pase dicen nada (sin rol en el perfil, la designada ordena igual)', () => {
   for (const [label, t, sid] of [
-    ['sin rol', toy({ role: null }), COORD],
     ['sin designación', toy({ designated: null }), COORD],
     ['otra sesión', toy(), 'otra-sesion'],
   ]) {
@@ -155,7 +154,7 @@ test('Guide_Designated_Compact_ReadsTheRules: la designada, al compactar y al li
   for (const source of ['startup', 'resume', undefined]) assert.strictEqual(C.guideNotice({ ...t.opts, source }), null, `${source}: calla`);
 });
 
-test('Guide_NotDesignated_Silent: otra sesión, sin designación o sin rol, compactar y limpiar no dicen nada', () => {
+test('Guide_NotDesignated_Silent @story-8.199 @ac-6: otra sesión o sin designación, compactar y limpiar no dicen nada', () => {
   const t = toy();
   saved(t, COORD, 'Coordinadora');
   const transcript = saved(t, 'otra', 'Vecina');
@@ -163,7 +162,7 @@ test('Guide_NotDesignated_Silent: otra sesión, sin designación o sin rol, comp
   assert.strictEqual(C.guideNotice({ ...t.opts, sessionId: 'otra', source: 'clear', title: 'Vecina', transcript }), null, 'limpiar con otro título');
   assert.strictEqual(C.guideNotice({ ...t.opts, sessionId: 'otra', source: 'clear', transcript }), null, 'sin título no hay con qué reconocerla');
   assert.strictEqual(C.guideNotice({ ...t.opts, sessionId: 'otra', source: 'clear', title: 'Coordinadora' }), null, 'sin conversación tampoco');
-  for (const [label, o] of [['sin designación', toy({ designated: null })], ['sin rol', toy({ role: null })]]) {
+  for (const [label, o] of [['sin designación', toy({ designated: null })]]) {
     const f = saved(o, COORD, 'Coordinadora');
     assert.strictEqual(C.guideNotice({ ...o.opts, sessionId: 'nueva', source: 'clear', title: 'Coordinadora', transcript: f }), null, label);
     assert.strictEqual(C.guideNotice({ ...o.opts, sessionId: COORD, source: 'compact' }), null, `${label}, al compactar`);
@@ -557,6 +556,56 @@ test('Q6 Notice_WaitingForPassTurn_WakeHerUp: quien debe su pase no sale como qu
   assert.strictEqual(C.capNotice(t.opts), null);
 });
 
+test('Q7 Notice_SuiteIdleWithQueue_SaysWhoStarts: sin suite completa en curso y con esperas anotadas de turno, nombra a la que espera hace más', () => {
+  // 🔴 mutación: sacar la condición `!s.suite` (avisa con la suite corriendo), o tomar la última de la fila en vez de la
+  // primera (nombra a Beto), o contar a cualquier quieta sin nota (cuenta 3).
+  const t = toy();
+  const doing = path.join(t.state, 'doing');
+  fs.mkdirSync(doing, { recursive: true });
+  const note = (sid, name, waitingFor, minutesAgo) => {
+    session(t, sid, name);
+    fs.writeFileSync(path.join(doing, `${sid}.json`), JSON.stringify({ text: 'implementar la historia', at: new Date(mins(minutesAgo)).toISOString(), waitingFor, waitingSince: new Date(mins(minutesAgo)).toISOString() }));
+  };
+  // sin nadie esperando turno, la línea no sale aunque no corra ninguna suite
+  session(t, 's-sin-nota', 'Quieta');
+  note('s-otra', 'Otra', 'que el dueño conteste la pregunta', 90);
+  assert.strictEqual(C.capNotice(t.opts), null, 'sin espera anotada de turno no lo inventa');
+  note('s-beto', 'Beto', 'turno de la suite completa', 20);
+  note('s-ana', 'Ana', 'el portón de la coordinadora', 70);
+  note(COORD, 'Coordinadora', 'turno de suite', 120);
+  const n = C.capNotice(t.opts);
+  assert.match(n, /^Coordinación: no corre ninguna suite completa y hay 2 esperando turno: dale el «arrancá» a Ana\.$/m, n);
+  assert.ok(!/Quieta|Otra/.test(n), `sólo cuentan las esperas anotadas de turno: ${n}`);
+  const s = C.status({ ...t.opts, noTranscripts: true });
+  assert.match(C.statusText(s), /Esperando turno de suite o portón: Coordinadora desde las \d\d:\d\d · Ana desde las \d\d:\d\d · Beto desde las \d\d:\d\d/);
+  // con una suite completa en curso, la fila no está parada: no se dice nada
+  fs.mkdirSync(path.join(t.state, 'coordination'), { recursive: true });
+  fs.writeFileSync(path.join(t.state, 'coordination', 'suite-turn.json'), JSON.stringify({ pid: process.pid, sid: 's-x', session: 'ConSuite', what: 'suites portables', at: mins(5) }));
+  assert.strictEqual(C.capNotice(t.opts), null, 'con la suite corriendo calla');
+});
+
+test('Q7c Notice_SuiteQueue_PassWaitNotCounted: una espera de pase no es de la fila de la suite: sin suite corriendo, no avisa', () => {
+  // 🔴 mutación: sacar el filtro de «pase» (avisa con «hay 1 esperando turno: … Pía»)
+  const t = toy();
+  const doing = path.join(t.state, 'doing');
+  fs.mkdirSync(doing, { recursive: true });
+  session(t, 's-pase', 'Pía');
+  fs.writeFileSync(path.join(doing, 's-pase.json'), JSON.stringify({ text: 'implementar la historia', at: new Date(mins(50)).toISOString(), waitingFor: 'turno de pase adversarial', waitingSince: new Date(mins(50)).toISOString() }));
+  assert.strictEqual(C.capNotice(t.opts), null, 'el pase corre en la nube: no ocupa ni espera el turno de la suite');
+  assert.deepStrictEqual(C.status({ ...t.opts, noTranscripts: true }).suiteWaiting, []);
+});
+
+test('Q7b Notice_SuiteQueue_BrokenNote_SaysSo: una nota que no se lee va a «no pude leer», no tira el aviso entero', () => {
+  const t = toy();
+  const doing = path.join(t.state, 'doing');
+  fs.mkdirSync(doing, { recursive: true });
+  session(t, 's-rota', 'Rota');
+  fs.writeFileSync(path.join(doing, 's-rota.json'), '{ no es json');
+  const n = C.capNotice(t.opts);
+  assert.match(n, /No pude leer la nota de Rota/);
+  assert.ok(!/esperando turno/.test(n), n);
+});
+
 test('Q5 DeepReviewGate_SecondPass_ExitsThreeAndSaysWho: el portón de verdad sale 3 y nombra quién tiene el lugar; sin otro pase, 0', { skip: process.platform === 'win32' ? 'enlaces simbólicos' : false }, () => {
   const t = toy();
   // un árbol con el perfil de juguete: quién es la coordinadora sale del perfil del árbol, y con los enlaces conservados
@@ -621,6 +670,14 @@ const sl = require(path.join(ROOT, 'scripts', 'lib', 'signature-list.js'));
 const DS = require(path.join(ROOT, 'scripts', 'lib', 'delegated-signing.js'));
 const MARKER = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
 const INTERACTIVA = { kind: 'interactive' };
+
+// The confirmed coordinator needs approvals.relay_session in the profile of the harness tree; the list
+// asks for it with the account home only, so these cases read it from a harness folder of their own that has the key.
+const OA = require(path.join(ROOT, 'scripts', 'lib', 'owner-approvals.js'));
+const CON_CLAVE = fs.mkdtempSync(path.join(os.tmpdir(), 'coord-notice-clave-'));
+fs.writeFileSync(path.join(CON_CLAVE, 'team-profile.json'), JSON.stringify({ approvals: { relay_session: 'coordinadora' } }));
+const confirmadaSinClave = OA.coordinadoraConfirmada;
+OA.coordinadoraConfirmada = (casa, o = {}) => confirmadaSinClave(casa, { arnes: CON_CLAVE, ...o });
 
 /** Una máquina con la llave encendida. `coord`: con la coordinadora confirmada y viva; si no, sin designar. */
 function conLista({ coord = true } = {}) {
@@ -753,4 +810,28 @@ test('Aviso_SinCoordinadora (T10) — @story-8.153 @ac-10', () => {
   fs.rmSync(path.join(h.home, '.claude', 'sessions', `${COORD}.json`));
   assert.match(oido(h, 'ses-a', 'volví'), PIDE);
   assert.strictEqual(oido(h, COORD, 'hola'), null);
+});
+
+// ── El portón lento ─────────────────────────────────────────────────────────────────────────────────────────────
+
+test('T29 Porton_LentoLoDiceYAvisa — la coordinadora ve el portón lento vivo, con su hora de fin; el de un proceso muerto no', () => {
+  // 🔴 mutación: no leer los avisos, mostrar el de un proceso que ya no está, o el de un número de proceso reusado.
+  const t = toy();
+  busy(t, 's-lenta', 'Borre', 10);
+  const dir = path.join(t.state, 'slow-gates');
+  fs.mkdirSync(dir, { recursive: true });
+  const ST = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'suite-times.js'));
+  const vivo = { sid: 's-lenta', repo: 'arbol', suites: 382, workers: 2, carga: 22.7, eta: '23:40', pid: process.pid, procStart: ST.processStart(process.pid) };
+  fs.writeFileSync(path.join(dir, `${process.pid}.json`), JSON.stringify(vivo));
+  const muerto = 2147483646;
+  fs.writeFileSync(path.join(dir, `${muerto}.json`), JSON.stringify({ ...vivo, sid: 's-x', pid: muerto }));
+  const n = C.capNotice(t.opts) || '';
+  assert.match(n, /Coordinación: portón lento de Borre: 2 a la vez para 382 suites \(carga 22\.7\), termina cerca de las 23:40/, n);
+  assert.strictEqual((n.match(/portón lento/g) || []).length, 1, 'el del proceso muerto no se muestra');
+  assert.ok(!fs.existsSync(path.join(dir, `${muerto}.json`)), 'y se borra');
+  // un número de proceso reusado: la hora de arranque no coincide
+  if (process.platform !== 'win32') {
+    fs.writeFileSync(path.join(dir, `${process.pid}.json`), JSON.stringify({ ...vivo, procStart: 'Mon Jan  1 00:00:00 2001' }));
+    assert.doesNotMatch(C.capNotice(t.opts) || '', /portón lento/);
+  }
 });

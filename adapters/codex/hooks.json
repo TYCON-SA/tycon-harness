@@ -353,6 +353,13 @@
       "scripts": []
     },
     {
+      "log": "SessionStart y UserPromptSubmit · office-link-start.js — SOLO Claude Code, por ahora",
+      "verdict": "ASIMETRÍA A PROPÓSITO, PENDIENTE DE DECISIÓN (2026-11-04, story 8.171): el gancho pide el alta de la máquina en el sitio, lanza el proceso de la oficina y pone al día la capa del equipo mientras se trabaja. El proceso cuenta las sesiones por su archivo de sesión de Claude Code, así que una máquina que trabaja sólo con Codex no tendría qué mostrar. Si se suma Codex lo decide DEF-8.171-A-codex (tasks/todo.md del repo del equipo); hasta entonces, el caso 79 del banco corre sólo con Claude.",
+      "scripts": [
+        "office-link-start.js"
+      ]
+    },
+    {
       "log": "PostToolUse · Artifact — SOLO Claude Code (Codex no tiene la tool)",
       "verdict": "ASIMETRÍA A PROPÓSITO (2026-08-30): la tool Artifact (publicar páginas en claude.ai) existe únicamente en Claude Code — Codex nunca emite ese tool_name, así que no hay evento que registrar de su lado ni conducta que traducir. Los artefactos nacen sólo en sesiones Claude y el archivado al repo (<repo>/artifacts/ + índice con la URL) lo cubre el hook del lado Claude. Caso 28 del banco con tools:['claude'] y la misma asimetría declarada.",
       "scripts": [
@@ -417,8 +424,8 @@
       ]
     },
     {
-      "log": "session-state.js — Claude: SessionStart, SessionEnd, Notification (permission_prompt), PreToolUse de las preguntas, PostToolUse, UserPromptSubmit y Stop ↔ Codex: SessionStart, UserPromptSubmit y Stop (story 2.81, tanda A)",
-      "verdict": "ASIMETRÍA A PROPÓSITO (2026-11-01, story 2.81, decisión 7): Codex no avisa cuando pide un permiso ni cuando la sesión se cierra, y no tiene la herramienta de preguntas con opciones. De su lado el archivo de estado se crea al arrancar, el mensaje de la persona deja la sesión ocupada y el fin del turno la deja parada, sin anotar una espera; un pedido de permiso de Codex no se ve, y la oficina no lo inventa. El fin de la sesión se infiere: sin pid estable (decisión 24d), una sesión sin cambios hace más de 2 h se muestra inactiva, y su archivo no se borra. En Claude se anotan los dos momentos que Codex no tiene: el pedido de permiso (Notification) y el cierre (SessionEnd, que borra el archivo).",
+      "log": "session-state.js — Claude: SessionStart, SessionEnd, PermissionRequest, Notification (permission_prompt), PreToolUse de las preguntas, PostToolUse, UserPromptSubmit y Stop ↔ Codex: SessionStart, UserPromptSubmit y Stop (story 2.81, tanda A)",
+      "verdict": "ASIMETRÍA A PROPÓSITO (2026-11-01, story 2.81, decisión 7): Codex no avisa cuando pide un permiso ni cuando la sesión se cierra, y no tiene la herramienta de preguntas con opciones. De su lado el archivo de estado se crea al arrancar, el mensaje de la persona deja la sesión ocupada y el fin del turno la deja parada, sin anotar una espera; un pedido de permiso de Codex no se ve, y la oficina no lo inventa. El fin de la sesión se infiere: sin pid estable (decisión 24d), una sesión sin cambios hace más de 2 h se muestra inactiva, y su archivo no se borra. En Claude se anotan los dos momentos que Codex no tiene: el pedido de permiso (PermissionRequest, con qué pide, y Notification) y el cierre (SessionEnd, que borra el archivo).",
       "scripts": [
         "session-state.js"
       ]

@@ -854,8 +854,298 @@ test('T30 Envelope_InPhoto_NoText; Conversation_OnlyWithToken: el sobre dice qui
   assert.strictEqual((await get(lock.port, `/conversacion?t=${lock.token}&s=${encodeURIComponent('../../etc/passwd')}`)).status, 404);
   const said = await get(lock.port, `/conversacion?t=${lock.token}&s=Alfa`);
   assert.strictEqual(said.status, 200);
-  assert.deepStrictEqual(JSON.parse(said.body), { sinCoordinadora: true }, 'sin coordinadora designada, no hay conversación');
+  const conv = JSON.parse(said.body);
+  assert.strictEqual(conv.sinCoordinadora, true, 'sin coordinadora designada, no hay con quién cruzar');
+  assert.deepStrictEqual(conv.conVos, [], 'lo de la persona se lee igual (8.183), y acá no hay nada suyo');
+  assert.ok(!JSON.stringify(conv).includes('el secreto del mensaje'), 'el mensaje de otra sesión no está en lo de la persona');
   ws.close();
+});
+
+// ── Hablarle a una sesión desde la oficina ─────────────────────────────────────────────────────────────────────────
+
+const om = require(path.join(ROOT, 'scripts', 'lib', 'office-messages.js'));
+const { officeMessages } = require(path.join(ROOT, 'scripts', 'tools', 'office', 'messages.js'));
+
+// un vigilante «vivo» para la sesión: el candado con el pid de esta prueba
+function watcherAlive(m, sid) {
+  fs.mkdirSync(om.paths(m.sdir).watchers, { recursive: true });
+  fs.writeFileSync(om.paths(m.sdir).watcher(sid), JSON.stringify({ pid: process.pid, started: om.processStart(process.pid) }));
+}
+// lo que manda la ventana: el token, el Host y el Origin de la oficina, Sec-Fetch-Site y el tipo; `drop` saca uno
+function post(port, token, body, { drop = null, headers = {}, method = 'POST' } = {}) {
+  const base = { host: `127.0.0.1:${port}`, origin: `http://127.0.0.1:${port}`, 'sec-fetch-site': 'same-origin', 'content-type': 'application/json' };
+  if (drop) delete base[drop];
+  const pathName = drop === 'token' ? '/mensaje' : `/mensaje?t=${token}`;
+  return new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port, path: pathName, method, headers: { ...base, ...headers } }, (res) => {
+      let text = '';
+      res.on('data', (d) => { text += d; });
+      res.on('end', () => { let json = null; try { json = JSON.parse(text); } catch { /* sin cuerpo */ } resolve({ status: res.statusCode, json, headers: res.headers }); });
+    });
+    req.on('error', reject);
+    req.end(body == null ? undefined : JSON.stringify(body));
+  });
+}
+const inboxOf = (m, sid = 's1') => { try { return fs.readdirSync(om.paths(m.sdir).inbox(sid)).filter((f) => f.endsWith('.json')); } catch { return []; } };
+const logOf = (m) => om.readLog(m.sdir).rows;
+
+// la oficina de verdad, con Alfa (s1) en la foto y su conversación
+async function messagingOffice(more = {}) {
+  const m = toy();
+  toyTranscript(m, 's1', [{ type: 'assistant', timestamp: new Date().toISOString(), message: { content: [{ type: 'text', text: 'Empiezo.' }] } }]);
+  const r = openSync(m, more);
+  assert.strictEqual(r.status, 0, r.stderr);
+  const lock = readLock(m);
+  const ws = page(lock);
+  await ws.opened;
+  await ws.next(8000);
+  return { m, lock, ws };
+}
+
+// la ruta montada en un servidor de la prueba, con los relojes cortos: los plazos se miden sin esperar minutos
+async function mountedRoute(m, recipients, env = {}) {
+  const saved = {};
+  for (const [k, v] of Object.entries({ TYCON_OFFICE_MESSAGE_POLL_MS: '50', ...env })) { saved[k] = process.env[k]; process.env[k] = v; }
+  const said = [];
+  const envelopes = { files: new Map(), recipients: new Map(Object.entries(recipients)) };
+  let port = 0;
+  const route = officeMessages({ sdir: m.sdir, envelopes, okOrigin: (o) => o === `http://127.0.0.1:${port}`, notify: (x) => said.push(x) });
+  const srv = http.createServer((req, res) => route.onPost(req, res));
+  await new Promise((resolve) => srv.listen(0, '127.0.0.1', resolve));
+  port = srv.address().port;
+  const close = () => { route.stop(); srv.close(); for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } };
+  return { port, said, envelopes, route, close, send: (body, o) => post(port, 'x', body, o) };
+}
+
+test('T1 Mensaje_PedidoCompleto_LoGuardaEnElBuzon @story-8.183 @ac-2 @ac-19: 200 y el mensaje en el buzón, 0600 en una carpeta 0700', async () => {
+  const { m, lock, ws } = await messagingOffice();
+  watcherAlive(m, 's1');
+  const r = await post(lock.port, lock.token, { s: 'Alfa', texto: 'revisá el pedido 12' });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.json));
+  assert.strictEqual(r.json.estado, 'mandado');
+  assert.match(r.json.id, /^[0-9a-f]{32}$/);
+  const files = inboxOf(m);
+  assert.deepStrictEqual(files, [`${r.json.id}.json`]);
+  if (!WIN) {
+    assert.strictEqual(fs.statSync(path.join(om.paths(m.sdir).inbox('s1'), files[0])).mode & 0o777, 0o600);
+    assert.strictEqual(fs.statSync(om.paths(m.sdir).inbox('s1')).mode & 0o777, 0o700);
+    assert.strictEqual(fs.statSync(om.paths(m.sdir).dir).mode & 0o777, 0o700);
+  }
+  assert.ok(logOf(m).some((x) => x.id === r.json.id && x.estado === 'mandado'));
+  ws.close();
+});
+
+test('T2 Mensaje_SinCadaControl_NoEscribeNada @story-8.183 @ac-16 @ac-29: sin token, Host, Origin, Sec-Fetch-Site o tipo: 403 o 415, sin buzón ni registro', async () => {
+  const { m, lock, ws } = await messagingOffice();
+  watcherAlive(m, 's1');
+  const cases = [['token', 403], ['host', 403], ['origin', 403], ['sec-fetch-site', 403], ['content-type', 415]];
+  for (const [drop, code] of cases) {
+    const r = await post(lock.port, lock.token, { s: 'Alfa', texto: 'hola' }, { drop, ...(drop === 'host' ? { headers: { host: `evil.example:${lock.port}` } } : {}) });
+    assert.strictEqual(r.status, code, `sin ${drop}`);
+  }
+  const wrongType = await post(lock.port, lock.token, { s: 'Alfa', texto: 'hola' }, { headers: { 'content-type': 'text/plain' } });
+  assert.strictEqual(wrongType.status, 415);
+  assert.deepStrictEqual(inboxOf(m), []);
+  assert.deepStrictEqual(logOf(m), []);
+  ws.close();
+});
+
+test('T3 Mensaje_OtroOrigen_NoPasaNiDaPermisos @story-8.183 @ac-17: otro Origin y el preflight se rechazan sin cabeceras CORS', async () => {
+  const { m, lock, ws } = await messagingOffice();
+  watcherAlive(m, 's1');
+  const other = await post(lock.port, lock.token, { s: 'Alfa', texto: 'hola' }, { headers: { origin: 'http://127.0.0.1:9', 'sec-fetch-site': 'same-site' } });
+  assert.strictEqual(other.status, 403);
+  const pre = await post(lock.port, lock.token, null, { method: 'OPTIONS', headers: { origin: 'http://127.0.0.1:9', 'access-control-request-method': 'POST' } });
+  assert.notStrictEqual(pre.status, 200);
+  for (const r of [other, pre]) assert.ok(!Object.keys(r.headers).some((h) => h.startsWith('access-control-')), JSON.stringify(r.headers));
+  assert.deepStrictEqual(inboxOf(m), []);
+  ws.close();
+});
+
+test('T4 Mensaje_DestinoQueNoEsPersona_404 @story-8.183 @ac-18: una ruta, constructor o un nombre desconocido dan 404 sin escribir en el buzón', async () => {
+  const { m, lock, ws } = await messagingOffice();
+  watcherAlive(m, 's1');
+  for (const s of ['../x', 'constructor', '__proto__', 'Nadie']) {
+    const r = await post(lock.port, lock.token, { s, texto: 'hola' });
+    assert.strictEqual(r.status, 404, s);
+  }
+  assert.deepStrictEqual(fs.existsSync(om.paths(m.sdir).inboxRoot) ? fs.readdirSync(om.paths(m.sdir).inboxRoot) : [], []);
+  assert.ok(logOf(m).every((x) => x.estado === 'rechazado'), 'quedan anotados como rechazados');
+  ws.close();
+});
+
+test('T19 CanalDeVuelta_SigueCerrado @story-8.183 @ac-34: un mensaje por el WebSocket cierra con 1008; /event con otro tipo, 400', async () => {
+  const { lock, ws } = await messagingOffice();
+  const p = page(lock);
+  await p.next();
+  p.send(JSON.stringify({ type: 'mensaje', s: 'Alfa', texto: 'hola' }));
+  assert.strictEqual(await Promise.race([p.closed, sleep(3000).then(() => 'abierta')]), 1008);
+  const ev = await new Promise((resolve) => {
+    const req = http.request({ host: '127.0.0.1', port: lock.port, path: `/event?t=${lock.token}`, method: 'POST', headers: { host: `127.0.0.1:${lock.port}` } }, (res) => { res.resume(); resolve(res.statusCode); });
+    req.end(JSON.stringify({ type: 'mensaje' }));
+  });
+  assert.strictEqual(ev, 400);
+  ws.close();
+});
+
+test('T14 Mensaje_SinTomar10s_NoEntregado @story-8.183 @ac-23: sin nadie que lo tome, sale del buzón, queda no-entregado y se avisa', async () => {
+  const m = toy();
+  watcherAlive(m, 's1');
+  const r = await mountedRoute(m, { Alfa: { sid: 's1', recibe: 'si' } }, { TYCON_OFFICE_MESSAGE_DEADLINE_MS: '300' });
+  try {
+    const sent = await r.send({ s: 'Alfa', texto: 'nadie me lee' });
+    assert.strictEqual(sent.status, 200);
+    const end = Date.now() + 4000;
+    while (Date.now() < end && !r.said.some((x) => x.estado === 'no-entregado')) await sleep(50);
+    assert.deepStrictEqual(r.said.map((x) => [x.id, x.estado]), [[sent.json.id, 'no-entregado']]);
+    assert.strictEqual(r.said[0].motivo, 'No le llegó.');
+    assert.deepStrictEqual(inboxOf(m), []);
+    assert.ok(logOf(m).some((x) => x.id === sent.json.id && x.estado === 'no-entregado'));
+  } finally { r.close(); }
+});
+
+test('T16 Mensaje_CincoEsperando_ElSextoNo @story-8.183 @ac-26: con 5 sin tomar, el sexto da 409 y no se guarda', async () => {
+  const m = toy();
+  watcherAlive(m, 's1');
+  const r = await mountedRoute(m, { Alfa: { sid: 's1', recibe: 'si' } }, { TYCON_OFFICE_MESSAGE_DEADLINE_MS: '60000' });
+  try {
+    for (let i = 0; i < 5; i += 1) assert.strictEqual((await r.send({ s: 'Alfa', texto: `m${i}` })).status, 200);
+    const sixth = await r.send({ s: 'Alfa', texto: 'el sexto' });
+    assert.strictEqual(sixth.status, 409);
+    assert.strictEqual(sixth.json.esperando, 5);
+    assert.match(sixth.json.motivo, /5 mensajes esperando/);
+    assert.strictEqual(inboxOf(m).length, 5);
+  } finally { r.close(); }
+});
+
+test('T17 Mensaje_SesionDeCodex_409 @story-8.183 @ac-25: a una sesión de Codex no se le escribe', async () => {
+  const m = toy();
+  const r = await mountedRoute(m, { Gamma: { sid: 'c1', recibe: 'codex' } });
+  try {
+    const got = await r.send({ s: 'Gamma', texto: 'hola' });
+    assert.strictEqual(got.status, 409);
+    assert.strictEqual(got.json.motivo, 'Esta sesión es de Codex: desde acá no se le puede escribir.');
+    assert.deepStrictEqual(inboxOf(m, 'c1'), []);
+  } finally { r.close(); }
+});
+
+test('T18 Mensaje_Apagado_409 @story-8.183 @ac-28: con TYCON_OFFICE_MESSAGES=0 contesta 409 y dice que está apagado', async () => {
+  const m = toy();
+  watcherAlive(m, 's1');
+  const r = await mountedRoute(m, { Alfa: { sid: 's1', recibe: 'si' } }, { TYCON_OFFICE_MESSAGES: '0' });
+  try {
+    const got = await r.send({ s: 'Alfa', texto: 'hola' });
+    assert.strictEqual(got.status, 409);
+    assert.match(got.json.motivo, /apagados/);
+    assert.deepStrictEqual(inboxOf(m), []);
+  } finally { r.close(); }
+});
+
+test('Mensaje_SinVigilante_409 (8.183 T23, ruta) @story-8.183 @ac-22: sin vigilante vivo, 409 con el texto de la ventana', async () => {
+  const m = toy();
+  const r = await mountedRoute(m, { Alfa: { sid: 's1', recibe: 'si' } });
+  try {
+    const got = await r.send({ s: 'Alfa', texto: 'hola' });
+    assert.strictEqual(got.status, 409);
+    assert.strictEqual(got.json.motivo, 'Esta sesión no puede recibir mensajes de la oficina. Escribile una vez en su pestaña y vuelve a poder.');
+    assert.deepStrictEqual(inboxOf(m), []);
+  } finally { r.close(); }
+});
+
+test('T27 Mensaje_NoEscribeEnAprobaciones @story-8.183 @ac-14 @ac-15: «aprobado» avisa antes; mandado igual, owner-approvals queda como estaba', async () => {
+  const m = toy();
+  watcherAlive(m, 's1');
+  const approvals = path.join(m.sdir, 'owner-approvals');
+  fs.mkdirSync(approvals, { recursive: true });
+  fs.writeFileSync(path.join(approvals, 'previa.json'), '{}');
+  const before = fs.readdirSync(approvals).sort();
+  const r = await mountedRoute(m, { Alfa: { sid: 's1', recibe: 'si' } }, { TYCON_OFFICE_MESSAGE_DEADLINE_MS: '60000' });
+  try {
+    const warned = await r.send({ s: 'Alfa', texto: 'aprobado' });
+    assert.strictEqual(warned.status, 409);
+    assert.strictEqual(warned.json.parece, 'aprobacion');
+    assert.strictEqual(warned.json.motivo, 'Esto no aprueba nada: para aprobar, contestá el cuadro.');
+    assert.deepStrictEqual(inboxOf(m), []);
+    const anyway = await r.send({ s: 'Alfa', texto: 'aprobado', igual: true });
+    assert.strictEqual(anyway.status, 200);
+    const got = om.take(m.sdir, 's1');
+    assert.match(got.envelope, /Parece una aprobación y no lo es\. Dice: aprobado$/);
+    assert.deepStrictEqual(fs.readdirSync(approvals).sort(), before);
+  } finally { r.close(); }
+});
+
+test('T39 Mensaje_TomadoSinAparecer_LoDice @story-8.183 @ac-24: sólo con la sesión quieta y el plazo vencido avisa que no aparece', async () => {
+  const m = toy();
+  watcherAlive(m, 's1');
+  const file = toyTranscript(m, 's1', [{ type: 'assistant', message: { content: [{ type: 'text', text: 'hola' }] } }]);
+  for (const [estado, shouldSay] of [['libre', true], ['pregunta', false], ['trabajando', false]]) {
+    const recipients = { Alfa: { sid: 's1', recibe: 'si', ocupada: estado === 'trabajando', cuadro: estado === 'pregunta' } };
+    const r = await mountedRoute(m, recipients, { TYCON_OFFICE_MESSAGE_DEADLINE_MS: '60000', TYCON_OFFICE_MESSAGE_APPEAR_MS: '300' });
+    r.envelopes.files.set('Alfa', { file, sid: 's1' });
+    try {
+      const sent = await r.send({ s: 'Alfa', texto: `mensaje con la sesión ${estado}` });
+      assert.strictEqual(sent.status, 200);
+      assert.strictEqual(om.take(m.sdir, 's1').estado, 'recibido');
+      await sleep(1200);
+      assert.ok(r.said.some((x) => x.estado === 'recibido'), `${estado}: dijo que lo recibió`);
+      assert.strictEqual(r.said.some((x) => x.estado === 'no-aparece'), shouldSay, estado);
+      if (shouldSay) assert.strictEqual(r.said.find((x) => x.estado === 'no-aparece').motivo, 'Se le entregó y no aparece en su conversación.');
+    } finally { r.close(); }
+  }
+});
+
+test('T45 Sitio_MensajesDeLaOficina_NoSalen @story-8.183 @ac-41: al sitio no van los mensajes escritos desde la oficina ni el estado del destinatario', () => {
+  const { forSite } = require(SERVER);
+  const enLaPestana = { quien: 'vos', at: '2026-11-04T10:00:00Z', texto: 'revisá el pedido' };
+  const respuesta = { quien: 'sesion', at: '2026-11-04T10:01:00Z', texto: 'listo' };
+  const desdeLaOficina = { quien: 'vos', at: '2026-11-04T10:02:00Z', texto: 'seguí con la tanda', oficina: true, id: '3f9c2a7d0b1e4c5a8d6e7f9012345678' };
+  const conv = { conVos: [enLaPestana, respuesta, desdeLaOficina], conCoordinadora: [], oficina: { recibe: 'si', cuadro: false } };
+  const antes = JSON.parse(JSON.stringify(conv));
+  const out = forSite(conv);
+  assert.deepStrictEqual(out, { conVos: [enLaPestana, respuesta], conCoordinadora: [] });
+  assert.deepStrictEqual(conv, antes, 'la conversación que recibe queda igual');
+});
+
+test('T53 NoAparece_ConversacionQueCrecio_LoEncuentra @story-8.183 @ac-24: el sobre entregado sigue encontrándose aunque después la conversación crezca más de 2 MB', () => {
+  const { appearsIn } = require(path.join(ROOT, 'scripts', 'tools', 'office', 'messages.js'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'office-aparece-'));
+  const file = path.join(dir, 't.jsonl');
+  const id = '3f9c2a7d0b1e4c5a8d6e7f9012345678';
+  fs.writeFileSync(file, `${JSON.stringify({ type: 'user', message: { content: `[oficina ${id}] Mensaje de la persona` } })}\n`);
+  assert.strictEqual(appearsIn(file, id), true);
+  const junk = `${JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', content: 'x'.repeat(4000) }] } })}\n`;
+  fs.appendFileSync(file, junk.repeat(700));
+  assert.ok(fs.statSync(file).size > 2.5 * 1024 * 1024);
+  assert.strictEqual(appearsIn(file, id), true, 'lo encuentra aunque quede lejos del final');
+  assert.strictEqual(appearsIn(file, 'a'.repeat(32)), false);
+  assert.strictEqual(appearsIn(path.join(dir, 'no-esta.jsonl'), id), null);
+});
+
+test('T40 Mensaje_EntreEntregaYCierre_Espera @story-8.183 @ac-38: tras una entrega, se acepta y espera; vencido el plazo largo, no-entregado', async () => {
+  const m = toy();
+  fs.mkdirSync(om.paths(m.sdir).watchers, { recursive: true });
+  fs.writeFileSync(om.paths(m.sdir).watcher('s1'), JSON.stringify({ pid: null, deliveredAt: Date.now() }));
+  const r = await mountedRoute(m, { Alfa: { sid: 's1', recibe: 'si' } }, { TYCON_OFFICE_MESSAGE_DEADLINE_MS: '50', TYCON_OFFICE_MESSAGE_LONG_MS: '600' });
+  try {
+    const sent = await r.send({ s: 'Alfa', texto: 'para cuando termine' });
+    assert.strictEqual(sent.status, 200);
+    assert.strictEqual(sent.json.motivo, 'Lo va a recibir cuando termine lo que está haciendo.');
+    await sleep(300);
+    assert.deepStrictEqual(inboxOf(m), [`${sent.json.id}.json`], 'pasado el plazo corto sigue esperando');
+    const end = Date.now() + 4000;
+    while (Date.now() < end && !r.said.some((x) => x.estado === 'no-entregado')) await sleep(50);
+    assert.ok(r.said.some((x) => x.id === sent.json.id && x.estado === 'no-entregado'));
+    assert.deepStrictEqual(inboxOf(m), []);
+  } finally { r.close(); }
+});
+
+test('Oficina_AlArrancar_BarreElBuzon (8.183 T41, oficina) @story-8.183 @ac-39: un mensaje vencido del buzón sale al abrir la oficina', async () => {
+  const m = toy();
+  const old = om.leave(m.sdir, { sid: 's1', text: 'de ayer', now: Date.now() - 3600 * 1000, deadlineMs: 10000 });
+  const r = openSync(m);
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.deepStrictEqual(inboxOf(m), []);
+  assert.ok(logOf(m).some((x) => x.id === old.id && x.estado === 'no-entregado' && x.motivo === 'vencido'));
 });
 
 // ── La tarjeta que se abre y la rueda: el código de la página, sin levantar el proceso ──────────────────────────────
@@ -877,7 +1167,7 @@ function cardDetail(card, sessions = []) {
     append(...kids) { this.children.push(...kids.map((k) => (typeof k === 'string' ? new Fake('#text', '', k) : k))); }
     replaceChildren(...kids) { this.children = []; this.append(...kids); }
     focus() { this.focused = true; }
-    setAttribute() {}
+    setAttribute(k, v) { (this.attrs = this.attrs || {})[k] = String(v); }
   }
   const box = new Fake('div');
   const win = new Fake('div');
@@ -909,7 +1199,10 @@ test('T98 Card_Detail_WithSession: título entero, lo que sabe la tarjeta y la m
   assert.strictEqual(d.rows['Pedido'].tag, 'a');
   assert.strictEqual(d.rows['Pedido'].href, 'https://github.com/o/r/pull/912');
   assert.strictEqual(d.rows['Pedido'].rel, 'noopener');
-  assert.strictEqual(d.last.textContent, 'Cerrar');
+  // se cierra con la × del panel lateral, que se llama «Cerrar»
+  assert.strictEqual(d.last.textContent, '×');
+  assert.strictEqual(d.last.className, 'close');
+  assert.strictEqual(d.last.attrs && d.last.attrs['aria-label'], 'Cerrar');
   assert.strictEqual(d.last.focused, true);
 });
 

@@ -13,8 +13,9 @@
  *
  * EN PARALELO: en serie el gate del arnés tarda entre 50 y 68 min
  * (153 suites; exportador-real sola, 24-41):
- *   · corren W a la vez: `TYCON_SUITES_MAX_WORKERS` (entero positivo) o la mitad de los núcleos —
- *     el mismo 50 % que el gate le pone a jest y a vitest para no fundir la máquina del dev;
+ *   · corren W a la vez: `TYCON_SUITES_MAX_WORKERS` (entero positivo); en la CI, la mitad de los núcleos; si no,
+ *     min(núcleos − 2, núcleos − carga) con piso 1, y antes de cada suite se espera si la carga pasa el doble de los
+ *     núcleos y queda otra corriendo (lib/suite-times.js, `workersFor` y `waitForRoom`): no fundir la máquina del dev;
  *   · `"exclusive": true` en la entrada → corre sola, al final, de a una (comparte estado con otras);
  *   · `"gate_only_when_touching": ["<carpeta>/**"]` → se DIFIERE si el cambio real de la corrida no toca
  *     esas carpetas ni el archivo de la propia suite (`--touched <json de lib/touched-files.js>`). Sin `--touched`, con `known: false` o con
@@ -80,6 +81,8 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { touches, isValidPattern } = require('./touched-files');
 const { joinLcov } = require('./node-coverage');
+const suiteTimes = require('./suite-times');
+const { stateDir } = require('./state-dir.js');
 
 const MAX_BUFFER = 64 * 1024 * 1024;
 // Tope en bytes del archivo con la salida entera de una suite roja (se guardan la primera y la última mitad) y de lo que
@@ -105,12 +108,14 @@ const TURN_FROM_SUITES = 100;
 // con que run-check anota la procedencia del check `tests`: heredada, la suite del freno de cierre cambiaría de conducta
 // (roja dentro del portón, verde sola; casos: tests/run-suites-json.test.js T15b).
 const DEL_PORTON = ['TYCON_EVIDENCE_KEY', 'TYCON_EVIDENCE_KEY_FAILED', 'TYCON_TEST_GATE_COMPANION', 'TYCON_TEST_GATE_STORY_REPO',
-  'TYCON_TEST_GATE_CROSS_REPO', 'TYCON_TEST_GATE', 'TYCON_TEST_GATE_TREE_TOUCHED', 'TYCON_SUITE_HOMES_ROOT'];
+  'TYCON_TEST_GATE_CROSS_REPO', 'TYCON_TEST_GATE', 'TYCON_TEST_GATE_TREE_TOUCHED', 'TYCON_SUITE_HOMES_ROOT', 'TYCON_GATE_PROCESS'];
 
 function launch(p, covDir, env0) {
   const ej = p.ruta.endsWith('.js') ? process.execPath : 'bash';
   const env = { ...env0 };
   for (const k of DEL_PORTON) delete env[k];
+  // un corredor que una suite lance sobre su repo de juguete no anota en el registro de tiempos de la máquina
+  env.TYCON_SUITE_TIMES = 'off';
   if (!covDir) return [ej, [p.ruta], env];
   const e = { ...env };
   delete e.NODE_TEST_CONTEXT;
@@ -211,19 +216,54 @@ function saveFullOutput(out, r, ambiente, budget = { left: RUN_OUTPUT_MAX }, per
   }
 }
 
-function defaultWorkers() {
-  const cores = typeof os.availableParallelism === 'function' ? os.availableParallelism() : os.cpus().length;
-  return Math.max(1, Math.floor(cores / 2));
+/**
+ * W, por qué, si se espera por la carga y, si el valor de la variable no sirve, el aviso: la variable › en la CI la
+ * mitad de los núcleos › la máquina (lib/suite-times.js, `workersFor`).
+ */
+function resolveWorkers(env, maquina = suiteTimes.machine(env)) {
+  return suiteTimes.workersFor({ env, varName: 'TYCON_SUITES_MAX_WORKERS', maquina, ci: suiteTimes.isCI(env),
+    ciDefault: Math.max(1, Math.floor(maquina.nucleos / 2)) });
 }
 
-/** W y, si el valor de la variable no sirve, el aviso. */
-function resolveWorkers(env) {
-  const raw = env.TYCON_SUITES_MAX_WORKERS;
-  if (raw === undefined || raw === '') return { workers: defaultWorkers(), warning: null };
-  const n = Number(raw);
-  if (Number.isInteger(n) && n > 0) return { workers: n, warning: null };
-  const def = defaultWorkers();
-  return { workers: def, warning: `TYCON_SUITES_MAX_WORKERS=«${raw}» no es un entero positivo: uso ${def} (la mitad de los núcleos)` };
+/**
+ * Lo que corre antes de lanzar cada suite: espera mientras la carga pase el doble de los núcleos y quede otra corriendo.
+ * Cuenta en `esperas` ({ veces, ms }) los intervalos de reloj con algún carril esperando: varios carriles que esperan
+ * por la misma carga son una sola espera, como en las portables.
+ */
+function launchGate({ nucleos, floor = 1, load, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), esperas, stopped, now = Date.now }) {
+  let waiting = 0;
+  let since = 0;
+  return async (others) => {
+    let entered = false;
+    const counted = async (ms) => {
+      if (!entered) {
+        entered = true;
+        if (waiting++ === 0) { esperas.veces += 1; since = now(); }
+      }
+      await sleep(ms);
+    };
+    try {
+      await suiteTimes.waitForRoom({ nucleos, floor, load, others, sleep: counted, stopped });
+    } finally {
+      if (entered && --waiting === 0) esperas.ms += now() - since;
+    }
+  };
+}
+
+/** Corre `items` de a `n` carriles; `beforeLaunch(otras)` se espera antes de lanzar cada uno. */
+async function pool(items, n, runOne, { stopped = () => false, beforeLaunch = null } = {}) {
+  let next = 0;
+  let running = 0;
+  const lane = async () => {
+    while (!stopped() && next < items.length) {
+      if (beforeLaunch) await beforeLaunch(() => running);
+      if (stopped() || next >= items.length) break;
+      const item = items[next++];
+      running += 1;
+      try { await runOne(item); } finally { running -= 1; }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, lane));
 }
 
 /** Lo que el gate sabe de lo tocado: { known, files, reason } o null si no se pasó. */
@@ -412,7 +452,11 @@ function main(argv, env = process.env) {
     }
   }
 
-  const { workers, warning } = resolveWorkers(env);
+  // la carga y los núcleos, antes de lanzar ninguna suite: la carga de ahora es la ajena
+  const maquina = suiteTimes.machine(env);
+  const decision = resolveWorkers(env, maquina);
+  const { workers, warning } = decision;
+  if (maquina.warning) console.error(`[suites.json] ⚠️  ${maquina.warning}`);
   if (warning) console.error(`[suites.json] ⚠️  ${warning}`);
   // la suite pedida sola corre aunque la difiera lo tocado o la corrida liviana
   const allSuites = env.TYCON_GATE_ALL_SUITES === '1' || Boolean(suiteOnly);
@@ -450,7 +494,7 @@ function main(argv, env = process.env) {
       portable: Array.isArray(s.requiere) && s.requiere.length === 0 };
   });
 
-  const resumen = { corridas: 0, verdes: 0, fallas: [], ausentes: [], suites: [], workers, wall_ms: 0, deferred_suites: [], unmeasured_suites: [], skills_root: skillsRoot, ...(light ? { light: true } : {}) };
+  const resumen = { corridas: 0, verdes: 0, fallas: [], ausentes: [], suites: [], workers, nucleos: maquina.nucleos, carga: maquina.carga, esperas: { veces: 0, ms: 0 }, wall_ms: 0, deferred_suites: [], unmeasured_suites: [], skills_root: skillsRoot, ...(light ? { light: true } : {}) };
   const results = new Array(plan.length).fill(null);
   const parallel = [];
   const exclusives = [];
@@ -552,7 +596,6 @@ function main(argv, env = process.env) {
   }
 
   const portables = [...parallel, ...exclusives].filter((p) => p.portable).length;
-  console.log(`[suites.json] workers: ${workers} · en paralelo: ${parallel.length} · solas al final: ${exclusives.length} · diferidas: ${resumen.deferred_suites.length}${portables ? ` · ${portables} portables con su HOME vacía, como en la CI` : ''}`);
 
   // El turno de las ejecuciones grandes (scripts/tools/heavy-turn.js): lo que satura la máquina es cuántas suites corren, esté
   // acotada o no la ejecución, y en una máquina con coordinadora va una grande por vez. Con el turno de otro proceso vivo
@@ -578,12 +621,24 @@ function main(argv, env = process.env) {
     }
     if (!t.taken) turn = null;
   }
-  const releaseTurn = () => { if (turn) { try { turn.release({}); } catch (_) { /* vence con el proceso */ } turn = null; } };
+  // con el turno ya tomado: un portón que no arranca no deja aviso ni dice su hora de fin
+  const slowGate = avisarSiLento({ env, repo, decision, maquina, items: [...parallel, ...exclusives] });
+  console.log(`[suites.json] ${suiteTimes.describeWorkers(decision, maquina)} · en paralelo: ${parallel.length} · solas al final: ${exclusives.length} · diferidas: ${resumen.deferred_suites.length}${portables ? ` · ${portables} portables con su HOME vacía, como en la CI` : ''}`);
+  const releaseTurn = () => {
+    if (turn) { try { turn.release({}); } catch (_) { /* vence con el proceso */ } turn = null; }
+    // el aviso de portón lento se va con la corrida; si queda, la coordinadora lo descarta por el proceso muerto
+    if (slowGate) { try { fs.rmSync(slowGate, { force: true }); } catch (_) { /* nada */ } }
+  };
   process.on('exit', releaseTurn);
 
   // El repo acota el portón y no se sabe qué se tocó: corre todo. Se dice acá, lo último antes de la primera suite, con la
   // cantidad y cómo acotarla: quien la lanzó puede cortarla. La base tiene que ser ancestro de HEAD: `origin/main` solo
   // no sirve en una rama atrasada.
+  const base = touched.base && touched.base.ref ? touched.base : null;
+  resumen.seleccion = { base: base ? base.ref : null, fuente: base ? base.source : null, tocados: touched.known ? touched.files.length : null, corren: count, total: plan.length };
+  console.log(touched.known
+    ? `[suites.json] acotado a lo tocado: ${touched.files.length} archivos${base ? ` desde ${base.ref.slice(0, 7)} (${base.source})` : ''}: corren ${count} de ${plan.length}`
+    : `[suites.json] sin acotar: ${touched.reason || 'no sé qué se tocó'}: corren ${count} de ${plan.length}`);
   if (fullSuiteBy && !allSuites && !touched.known) {
     console.log(`🟠 [suites.json] sin base: el repo acota el portón, pero no sé qué se tocó (${touched.reason || 'sin motivo'}): corren todas las suites (${count}). Para acotar, cortala y relanzá con TYCON_COVERAGE_BASE="$(git merge-base origin/main HEAD)"`);
   }
@@ -597,6 +652,15 @@ function main(argv, env = process.env) {
   };
   process.on('SIGINT', onSignal);
   process.on('SIGTERM', onSignal);
+  // El portón que lanzó esta corrida (test-gate.sh, TYCON_GATE_PROCESS): si ya no está —lo mataron con kill -9, o se cerró
+  // su terminal—, nadie va a leer el resultado y el turno de las ejecuciones grandes quedaría tomado. Se corta solo.
+  const gatePid = Number(env.TYCON_GATE_PROCESS);
+  const watchGate = Number.isInteger(gatePid) && gatePid > 1 ? setInterval(() => {
+    try { process.kill(gatePid, 0); } catch (e) {
+      if (e.code === 'ESRCH') { console.error(`[suites.json] el portón que lanzó esta corrida (pid ${gatePid}) ya no está: corto las suites`); onSignal('SIGTERM'); }
+    }
+  }, 2000) : null;
+  if (watchGate) watchGate.unref();
 
   if (covDir) {
     // la carpeta es de esta corrida: un lcov de una corrida anterior no puede sumarse a éste (por eso, si igual no se
@@ -703,7 +767,8 @@ function main(argv, env = process.env) {
       const ms = Date.now() - t0;
       const exit = status === null ? 124 : status;   // null = murió por señal: se cuenta como rojo
       const salida = spawnError ? `${spawnError.message}\n` : Buffer.concat(chunks).toString('utf8');
-      results[p.idx] = { idx: p.idx, ruta: p.ruta, entrada: p.entrada, exit, ms, salida };
+      // la que termina por el corte no se midió: su tiempo no va al registro
+      results[p.idx] = { idx: p.idx, ruta: p.ruta, entrada: p.entrada, exit, ms, salida, ...(interrupted ? { cortada: true } : {}) };
       console.log(exit === 0 ? `ok       ${p.name} (${ms} ms)` : `ROJO(${exit}) ${p.ruta}`);
       resolve();
     };
@@ -711,22 +776,21 @@ function main(argv, env = process.env) {
     c.on('close', (code) => done(code, null));
   });
 
-  const pool = async (items, n) => {
-    let next = 0;
-    const lane = async () => {
-      while (!interrupted && next < items.length) await runOne(items[next++]);
-    };
-    await Promise.all(Array.from({ length: Math.min(n, items.length) }, lane));
-  };
+  const stopped = () => Boolean(interrupted);
+  // sólo cuando decide la máquina: con la variable o en la CI, como siempre
+  const beforeLaunch = decision.wait
+    ? launchGate({ nucleos: maquina.nucleos, floor: decision.floor, load: () => suiteTimes.loadNow(env), esperas: resumen.esperas, stopped })
+    : null;
 
   const t0 = Date.now();
   return (async () => {
-    await pool(parallel, workers);
-    await pool(exclusives, 1);
+    await pool(parallel, workers, runOne, { stopped, beforeLaunch });
+    await pool(exclusives, 1, runOne, { stopped });
     releaseTurn();
     removeHomes();
     process.removeListener('SIGINT', onSignal);
     process.removeListener('SIGTERM', onSignal);
+    if (watchGate) clearInterval(watchGate);
     resumen.wall_ms = Date.now() - t0;
     resumen.ambiente = { ...gateEnvironment(env, runCheck, workers), empty_home: portables };
     const outputBudget = { left: RUN_OUTPUT_MAX };
@@ -762,6 +826,7 @@ function main(argv, env = process.env) {
         + `${j.unreadable.length ? ` · ${j.unreadable.length} ilegible(s): ${resumen.coverage.unreadable.map((u) => `${path.basename(u.ruta)} (${u.motivo})`).join(', ')}` : ''} → ${lcov}`);
     }
 
+    anotarTiempos({ env, repo, workers, maquina, wallMs: resumen.wall_ms, results, cortada: Boolean(interrupted) });
     if (interrupted) {
       console.error(`[suites.json] corrida interrumpida (${interrupted}) — maté las suites que estaban corriendo`);
       escribir(out, { ...resumen, no_medido: `corrida interrumpida (${interrupted})` });
@@ -785,6 +850,53 @@ function main(argv, env = process.env) {
   })();
 }
 
+/**
+ * Un portón grande (desde TURN_FROM_SUITES suites) fuera de la CI que arranca con menos de 3 a la vez lo dice en su
+ * primera línea, con la hora estimada de fin, y deja su aviso para la coordinadora mientras corre (lib/suite-times.js).
+ * La hora sale de las medianas del registro de la máquina; sin medición, el peso por defecto de suites-weights.json.
+ * Devuelve la ruta del aviso (para borrarlo al terminar) o null. Nada de esto puede tumbar la corrida.
+ */
+function avisarSiLento({ env, repo, decision, maquina, items }) {
+  if (decision.why === 'ci' || items.length < TURN_FROM_SUITES || decision.workers >= suiteTimes.SLOW_GATE_WORKERS) return null;
+  try {
+    let defaultMs = 30000;
+    try {
+      const w = JSON.parse(fs.readFileSync(path.join(repo, 'scripts', 'ci', 'suites-weights.json'), 'utf8'));
+      const d = (w.pr && w.pr.default) || w.default;
+      if (Number(d) > 0) defaultMs = Number(d) * 1000;
+    } catch (_) { /* sin pesos, el valor de siempre */ }
+    let runs = [];
+    try { runs = suiteTimes.filterRuns(suiteTimes.readSources([path.join(stateDir(), 'suite-times.jsonl')]).runs); } catch (_) { /* sin registro, todo con el peso por defecto */ }
+    const est = suiteTimes.estimateMs({ rutas: items.map((p) => p.entrada.ruta), workers: decision.workers, runs, defaultMs });
+    const fin = new Date(Date.now() + est.ms);
+    const eta = `${String(fin.getHours()).padStart(2, '0')}:${String(fin.getMinutes()).padStart(2, '0')}`;
+    console.log(`🔴 [suites.json] portón lento: ${decision.workers} a la vez para ${items.length} suites (carga ${maquina.carga} al arrancar): termina cerca de las ${eta}${est.sinMedir ? ` (${est.sinMedir} sin medición, con el peso por defecto)` : ''}`);
+    // el nombre sale de la carpeta desde donde se lanza, como el del turno: en el árbol armado, `repo` es temporal
+    return suiteTimes.writeSlowGate({ sid: env.CLAUDE_CODE_SESSION_ID || null, repo: path.basename(process.cwd()), suites: items.length,
+      workers: decision.workers, carga: maquina.carga, eta });
+  } catch (e) {
+    console.log(`[suites.json] ⚠️  no pude dejar el aviso de portón lento: ${e.message}`);
+    return null;
+  }
+}
+
+// Un renglón por corrida en el registro de tiempos (lib/suite-times.js dice dónde): las suites que terminaron, con su
+// `ruta` de suites.json. Un registro que no se deja escribir se dice y no cambia la salida de la corrida.
+function anotarTiempos({ env, repo, workers, maquina, wallMs, results, cortada }) {
+  try {
+    const t = suiteTimes.target(env);
+    if (!t.file) return;
+    const suites = results.filter((r) => r && !r.cortada).map((r) => ({ s: r.entrada.ruta, ms: r.ms, exit: r.exit }));
+    const entry = suiteTimes.entryOf({ origen: 'gate', repo: path.basename(path.resolve(repo)),
+      head: suiteTimes.headOf(repo), workers, nucleos: maquina.nucleos, carga: maquina.carga, wallMs, cortada, fingida: maquina.fake, suites });
+    const r = suiteTimes.append(entry, t.file);
+    if (!r.ok) console.log(`[suites.json] ⚠️  no pude anotar los tiempos de las suites: ${r.reason}`);
+  } catch (e) {
+    // ni la carpeta de estado puede tumbar la corrida: se dice y la salida queda la de las suites
+    console.log(`[suites.json] ⚠️  no pude anotar los tiempos de las suites: ${e.message}`);
+  }
+}
+
 function escribir(out, obj) {
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, JSON.stringify(obj, null, 2) + '\n');
@@ -800,4 +912,4 @@ if (require.main === module) {
     process.exit(3);
   });
 }
-module.exports = { main, resolveWorkers, defaultWorkers, failedCases, capOutput, saveFullOutput, FULL_OUTPUT_MAX, RUN_OUTPUT_MAX };
+module.exports = { main, resolveWorkers, launchGate, pool, failedCases, capOutput, saveFullOutput, FULL_OUTPUT_MAX, RUN_OUTPUT_MAX };

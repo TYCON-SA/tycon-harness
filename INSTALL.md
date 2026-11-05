@@ -231,6 +231,7 @@ apaga sólo con su variable en `0`, y el portón de edición, `hook-pre-edit.js`
 | `wait-notice.js` | SessionEnd | La sesión se cerró: su espera se cierra sin avisar | No | full | `TYCON_WAIT_NOTICE=0` |
 | `session-state.js` | SessionStart | Anota el estado de la sesión para /office: su nombre, su proceso y su paso | No | full | `TYCON_SESSION_STATE=0` |
 | `session-state.js` | Notification (permission_prompt) | Un pedido de permiso: la sesión espera «un permiso» | No | full | `TYCON_SESSION_STATE=0` |
+| `session-state.js` | PermissionRequest (Bash\|PowerShell\|Edit\|Write\|MultiEdit\|NotebookEdit\|Read\|Glob\|Grep\|WebFetch\|WebSearch\|mcp__.*) | Un pedido de permiso, en el momento: anota la herramienta y qué pide, para que la coordinadora se entere con `owner-wait` | No | full | `TYCON_SESSION_STATE=0` |
 | `session-state.js` | PreToolUse (AskUserQuestion\|ExitPlanMode\|mcp__spokenly__ask_user_dictation) | Una pregunta a la persona: la sesión espera «una respuesta» | No | full | `TYCON_SESSION_STATE=0` |
 | `session-state.js` | PostToolUse | Terminó el uso de una herramienta: la espera de un permiso se cierra | No | full | `TYCON_SESSION_STATE=0` |
 | `session-state.js` | UserPromptSubmit | La persona escribió: la espera se cierra | No | full | `TYCON_SESSION_STATE=0` |
@@ -267,6 +268,10 @@ apaga sólo con su variable en `0`, y el portón de edición, `hook-pre-edit.js`
 | `unpushed-work-notice.js` | PostToolUse (Bash) | Anota los repos donde se commiteó y, al subir a `main`, avisa si un repo hermano tiene trabajo sólo local | No | full | `TYCON_UNPUSHED_NOTICE=0` |
 | `unpushed-work-notice.js` | Stop | Si la sesión commiteó y quedó algo sin subir, frena el cierre una vez por repo y rama | Sí, una vez | full | `TYCON_UNPUSHED_NOTICE=0` |
 | `office-link-start.js` | SessionStart | Con la dirección del sitio en el perfil, pide el alta de la máquina en la oficina del sitio y lanza el proceso que le manda la foto | No | full | `TYCON_OFFICE_LINK=0` |
+| `office-message-rule.js` | SessionStart | Le dice a la sesión qué es un mensaje que la persona le escribe desde `/office`, cómo lo comprueba y que nunca firma | No | full | `TYCON_OFFICE_MESSAGES=0` |
+| `office-inbox-watch.js` | SessionStart | De fondo: espera los mensajes que la persona le escribe a esta sesión desde `/office` y la despierta con ellos | No | full | `TYCON_OFFICE_MESSAGES=0` |
+| `office-inbox-watch.js` | Stop | Al cerrar cada turno vuelve a armar el vigilante de los mensajes de `/office`, si el anterior ya entregó o se fue | No | full | `TYCON_OFFICE_MESSAGES=0` |
+| `office-link-start.js` | UserPromptSubmit | Mientras se trabaja, a lo sumo cada 30 min, pone al día la capa del equipo sin cambiar la versión y, si trae la dirección del sitio, enlaza la oficina sin abrir sesión | No | full | `TYCON_TEAM_REFRESH=0` |
 | `worktree-sweep.js` | SessionStart | Una vez por día borra las carpetas de trabajo (worktrees) limpias y ya mergeadas, con su rama; las que tienen trabajo sólo las nombra | No | full | `TYCON_WORKTREE_SWEEP=0` |
 | `missing-path-notice.js` | PostToolUse (Bash) | Avisa cuando un comando de lectura nombró una ruta que no existe | No | full | `TYCON_MISSING_PATH_NOTICE=0` |
 | `deprecated-read-notice.js` | PostToolUse (Read, Bash) | Al leer un archivo deprecado, le recuerda al modelo el motivo y que no lo copie | No | full | — (sin la clave, calla) |

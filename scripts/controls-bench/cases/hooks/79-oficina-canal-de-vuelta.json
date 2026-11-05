@@ -1,0 +1,52 @@
+{
+  "hooks": [
+    {
+      "hook": "office-link-start.js",
+      "script": "${TCG}/scripts/hooks/office-link-start.js",
+      "event": "SessionStart",
+      "matcher": "",
+      "controles": [
+        "${TCG}/scripts/tools/office/site-link.js"
+      ],
+      "tools": [
+        "claude"
+      ],
+      "asymmetry": "Por ahora sólo Claude Code: el proceso de la oficina cuenta las sesiones por su archivo de sesión de Claude Code, y si una máquina que trabaja sólo con Codex tiene oficina en el sitio está por decidir (DEF-8.171-A-codex, story 8.171).",
+      "cases": [
+        {
+          "id": "OficinaBench_CanalDeVuelta_UnaOrdenDelSitioSeDescartaYCierra",
+          "type": "must-run",
+          "_por_que": "El sitio no le manda órdenes a la máquina: un mensaje con forma de orden, después de aceptarla, se descarta sin correr nada, cierra la conexión con 1008 y queda anotado. Lo prueba la conexión real de la oficina (site-link.js, que el armado corre a propósito y por eso está en `controles`) contra un sitio de juguete; el gancho de arranque corre apagado (TYCON_OFFICE_LINK=0) y no hace nada. Apagado y no sólo sin site.url: el perfil del árbol que se prueba puede traer la dirección del sitio real, ninguna variable la saca (sólo vale la del perfil), y el gancho le pediría el alta al sitio de verdad.",
+          "env": { "TYCON_OFFICE_LINK": "0" },
+          "files": {
+            "sitio-de-orden.js": "'use strict';\nconst path = require('path');\nconst fs = require('fs');\nconst http = require('http');\nconst crypto = require('crypto');\nconst TCG = process.argv[2];\nconst OUT = process.argv[3];\nconst WS = require(path.join(TCG, 'scripts', 'tools', 'office', 'vendor', 'ws'));\nconst SL = require(process.argv[4]);\nconst server = http.createServer();\nconst wss = new WS.WebSocketServer({ server });\nlet cierre = null;\nwss.on('connection', (ws) => {\n  ws.send(JSON.stringify({ type: 'challenge', nonce: crypto.randomBytes(32).toString('base64') }));\n  ws.on('message', (raw) => {\n    const m = JSON.parse(String(raw));\n    if (m.type !== 'auth') return;\n    ws.send(JSON.stringify({ type: 'ack' }));\n    ws.send(JSON.stringify({ type: 'ejecutar', comando: 'touch ' + path.join(OUT, 'corrio-la-orden') }));\n  });\n  ws.on('close', (code) => { if (cierre === null) cierre = code; });\n});\nserver.listen(0, '127.0.0.1', () => {\n  const site = 'http://127.0.0.1:' + server.address().port;\n  const sdir = path.join(OUT, 'estado');\n  SL.ensureKey(sdir);\n  SL.writeLinkState(sdir, 'aprobada');\n  const link = SL.createLink({ site, sdir, home: OUT, WebSocket: WS, random: () => 0 });\n  link.update({ agents: [], free: [], unreadable: [] });\n  link.start();\n  const desde = Date.now();\n  const espera = setInterval(() => {\n    if (cierre === null && Date.now() - desde < 8000) return;\n    clearInterval(espera);\n    link.stop();\n    fs.writeFileSync(path.join(OUT, 'resultado.json'), JSON.stringify({ cierre }));\n    server.close();\n    process.exit(0);\n  }, 50);\n});\n"
+          },
+          "setup": [
+            "node sitio-de-orden.js \"$TCG\" \"$FIXTURE\" \"${TCG}/scripts/tools/office/site-link.js\""
+          ],
+          "stdin": { "hook_event_name": "SessionStart", "session_id": "banco-79", "source": "startup" },
+          "expect": {
+            "exit": 0,
+            "stdout_empty": true,
+            "file_contains": [
+              { "path": "${FIXTURE}/resultado.json", "re": "\"cierre\":1008" },
+              { "path": "${FIXTURE}/estado/office/site-link.log", "re": "el sitio mandó un mensaje «ejecutar»: se descartó y se cerró la conexión, el canal de vuelta está cerrado" }
+            ],
+            "file_absent": ["${FIXTURE}/corrio-la-orden"]
+          }
+        },
+        {
+          "id": "OficinaBench_AlPedir_SinSitioNiPuestaAlDia_NoDiceNada",
+          "type": "must-stay-quiet",
+          "_por_que": "En cada pedido de la persona el gancho decide en poco tiempo si toca la puesta al día de la capa: apagada, no lanza nada, no escribe su sello y no dice nada.",
+          "env": { "TYCON_TEAM_REFRESH": "0" },
+          "stdin": { "hook_event_name": "UserPromptSubmit", "session_id": "banco-79", "prompt": "seguí" },
+          "expect": {
+            "exit": 0,
+            "file_absent": ["${SANDBOX_HOME}/.claude/.tycon-pipeline/office/team-refresh.json"]
+          }
+        }
+      ]
+    }
+  ]
+}

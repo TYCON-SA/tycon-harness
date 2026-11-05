@@ -685,6 +685,11 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     }
   }
   for (const l of leftovers.values()) items.push(Object.defineProperties({ ...leftoverCard(l), estado: 'riesgo', quien: '—', estimadaIso: null, pronosticoIso: null, fin: null }, { trabajo: { value: l.work }, historia: { value: l.historia }, proyecto: { value: l.proyecto } }));
+  // la sesión de fondo que cerró Claude Code no está trabajando ni libre: se dice qué pasó y cómo se levanta
+  for (const r of wip.retired || []) {
+    const quien = plain(r.session) || r.short;
+    items.push({ titulo: `${quien}: la cerró Claude Code (${plain(r.reason)}), quieta ${r.idleMin} min`, quien, estado: 'riesgo', estimadaIso: null, pronosticoIso: null, fin: null, espera: `para levantarla: claude respawn ${r.short}` });
+  }
   // «te toca» es sólo lo que pide una firma o una decisión del dueño: las firmas, lo que le preguntan y la lista del tablero,
   // que mantiene la coordinadora. Las notas no se leen: una frase no dice si es para ahora
   const teToca = [...signatureCards.filter((s) => !s.yaAvisada).map((s) => s.linea), ...toldOwner, ...((board && board.teToca) || [])];
@@ -1670,6 +1675,37 @@ function readEnvelopes(env, wip, { home, nowMs, projectsDir, sessions }) {
   return [...env.recent.values()].sort((p, q) => p.at - q.at);
 }
 
+// Los estados en que su pantalla espera un cuadro de la persona (`ASKS_OWNER`) y en que está trabajando: un mensaje de la
+// oficina entra recién cuando contesta el cuadro o cuando termina el paso.
+const WORKING = ['trabajando', 'prueba'];
+
+/**
+ * A quién se le puede escribir desde la oficina, sólo en la oficina viva: a cada persona le pone `recibe` (`si`, `sin-vigilante`,
+ * `codex`, `apagado` o `espera-cierre`) y deja en `env.recipients` su sesión y su estado, para el proceso. La lista cerrada de
+ * lo que viaja al sitio (`office/fields.js`) no lo lleva.
+ */
+function markRecipients(data, env, states, sdir, { isAlive, startOf, cxNames = new Map() } = {}) {
+  const om = require(path.join(ROOT, 'scripts', 'lib', 'office-messages.js'));
+  const off = process.env.TYCON_OFFICE_MESSAGES === '0';
+  // con el mismo nombre que le pone la oficina a una sesión de Codex sin nombre en su archivo
+  const codex = new Set(states.filter((s) => s.tool === 'codex' && (s.name || s.session)).map((s) => s.name || cxNames.get(s.session) || String(s.session).slice(0, 8)));
+  env.recipients = new Map();
+  for (const a of data.agents || []) {
+    if (!a || !a.nombre) continue;
+    const e = env.files.get(a.nombre);
+    let recibe;
+    if (off) recibe = 'apagado';
+    else if (codex.has(a.nombre)) recibe = 'codex';
+    else if (!e) continue;
+    else {
+      const w = om.watcherState(sdir, e.sid, { ...(isAlive ? { isAlive } : {}), ...(startOf ? { startOf } : {}) });
+      recibe = w.alive ? 'si' : (Number.isFinite(w.deliveredAt) ? 'espera-cierre' : 'sin-vigilante');
+    }
+    a.recibe = recibe;
+    env.recipients.set(a.nombre, { sid: e ? e.sid : null, recibe, estado: a.estado, ocupada: WORKING.includes(a.estado), cuadro: ASKS_OWNER.has(a.estado) });
+  }
+}
+
 /** Los últimos mensajes de una persona que está en la oficina, a pedido; null si no está. Nada de esto se guarda. */
 function conversationOf(env, name) {
   const e = env.files.get(name);
@@ -1776,6 +1812,7 @@ async function collect(opts = {}) {
   if (opts.envelopes) {
     opts.envelopes.coordinator = coordinatorSid ? { sid: coordinatorSid, name: coordinatorName } : null;
     data.sobres = readEnvelopes(opts.envelopes, wip, { home, nowMs, projectsDir: opts.projectsDir, sessions });
+    markRecipients(data, opts.envelopes, states, sdir, { cxNames });
   }
   if (board.board && Number.isFinite(board.writtenAt)) data.kanban.escrito = `Tablero escrito a las ${hhmm(board.writtenAt)}${nowMs - board.writtenAt > quietMin * 60000 ? ' (vieja)' : ''}`;
   data.unreadable.push(...problems);
@@ -1940,4 +1977,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, cardPr, codexAgentsUnder, claudeAgentsActive, buildTables, rowPrsNow, applyRowPrs, settleRowPrs, workCards, readTranscripts, readLastWrites, MODULES };
+module.exports = { markRecipients, prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, cardPr, codexAgentsUnder, claudeAgentsActive, buildTables, rowPrsNow, applyRowPrs, settleRowPrs, workCards, readTranscripts, readLastWrites, MODULES };

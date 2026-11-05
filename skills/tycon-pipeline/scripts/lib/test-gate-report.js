@@ -655,6 +655,8 @@ function informe(argv) {
             deferred_suites: get(r, 'deferred_suites', []),
             workers: get(r, 'workers', null),
             wall_ms: get(r, 'wall_ms', null),
+            // qué eligió el corredor y desde qué base (run-suites-json.js)
+            ...(get(r, 'seleccion', null) ? { seleccion: r.seleccion } : {}),
           };
           // Lo que ya estaba rojo en el nocturno salió de las fallas: acá queda cuáles, para que la cuenta cierre.
           const heredadas = get(get(r, 'inherited', {}) || {}, 'suites', []);
@@ -786,6 +788,8 @@ function informe(argv) {
     const rel = (p) => (typeof p === 'string' && p ? path.relative(rutaReal(repoRun), rutaReal(p)).split('\\').join('/') : null);
     const resumenSuites = (() => { try { return leerJson(path.join(resultsDir, 'suites.json')); } catch (_) { return null; } })();
     const sc = resumenSuites && esObjeto(resumenSuites.coverage) ? resumenSuites.coverage : null;
+    // cerrada con lo guardado de una completa roja (lib/failed-first.js): la cobertura no es de una sola corrida, y se dice
+    if (sc && typeof sc.juntada === 'string' && sc.juntada) result.coverage.joined = sc.juntada;
     if (sc) {
       result.coverage.suites_without_coverage = {
         without_data: (Array.isArray(sc.without_data) ? sc.without_data : []).map(rel),

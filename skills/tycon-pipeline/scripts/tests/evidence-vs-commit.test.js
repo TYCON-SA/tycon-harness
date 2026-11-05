@@ -545,3 +545,38 @@ test('T18 Matriz_SuiteVieja_SinCambios_Verde @story-8.186 @ac-15', (t) => {
   const diff = spawnSync('git', ['diff', '--quiet', process.env.T18_BASE, '--', path.basename(vieja)], { cwd: __dirname, env: entornoGit() });
   assert.equal(diff.status, 0, 'la suite vieja cambió');
 });
+
+// Un registro de humos con muchas líneas, cada una en su commit; una sale y vuelve a entrar, y la última no está commiteada.
+// Lo que contestaba `git log -S` línea por línea (el commit más viejo que cambió cuántas veces aparece) lo tiene que
+// contestar igual una sola pasada de git por registro.
+test('T19 Registro_UnaPasadaDeGit_MismoCommitQueLaBusquedaPorLinea', () => {
+  const repo = repoNuevo(carpeta());
+  escribir(repo, 'src/feature.js', '// v1\n');
+  commit(repo, 'codigo', 1700000000);
+  const rel = '.advisors/dod-runtime/9.9-smoke-ledger.jsonl';
+  const lineas = [];
+  for (let i = 1; i <= 40; i += 1) {
+    lineas.push(JSON.stringify({ ts: `2026-01-01T00:00:${String(i).padStart(2, '0')}Z`, acs: [i], cmd: `node humo-${i}.js`, exit: 0 }));
+    escribir(repo, rel, `${lineas.join('\n')}\n`);
+    commit(repo, `humo ${i}`, 1700000000 + i * 60);
+  }
+  escribir(repo, rel, `${lineas.filter((_, k) => k !== 4).join('\n')}\n`);
+  commit(repo, 'saca la 5', 1700009000);
+  escribir(repo, rel, `${lineas.join('\n')}\n`);
+  commit(repo, 'vuelve la 5', 1700009060);
+  const suelta = JSON.stringify({ ts: '2026-01-02T00:00:00Z', acs: [99], cmd: 'node sin-commitear.js', exit: 0 });
+  const ev = escribir(repo, rel, `${lineas.join('\n')}\n${suelta}\n`);
+
+  const lib = evidencia();
+  const logs = [];
+  const juez = lib.crearJuez({ correrGit: (dir, args, env) => { if (args[0] === 'log') logs.push(args); return lib.correrGitDeVerdad(dir, args, env); } });
+  for (const linea of [...lineas, suelta]) {
+    const salida = git(path.dirname(ev), ['log', '--topo-order', '--format=%H %ct', `-S${linea}`, 'HEAD', '--', path.basename(ev)])
+      .split('\n').filter(Boolean);
+    const [hash, hora] = salida.length ? salida[salida.length - 1].split(' ') : [];
+    const antes = hash ? { commit: hash, hora: Number(hora) } : { commit: null };
+    assert.deepStrictEqual(juez.commitDeLaEvidencia({ ruta: ev, linea }), antes, `la línea ${linea}`);
+  }
+  assert.equal(logs.length, 1, `una sola pasada de git log por registro (fueron ${logs.length})`);
+  assert.ok(!logs[0].some((a) => String(a).startsWith('-S')), 'ya no busca línea por línea');
+});

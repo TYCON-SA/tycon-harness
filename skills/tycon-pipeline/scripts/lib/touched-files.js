@@ -108,7 +108,8 @@ function touchedFiles({ repo, storyPath, baseRef, baseSource } = {}) {
   // Con lo de la story commiteado antes de la base, el diff no ve nada de ella: lo que muestre (un archivo sin
   // seguimiento, un .md) no es la story. Sin un cambio de código con seguimiento, si la rama trae commits propios no se
   // sabe; tampoco si no hay rama principal contra la que contarlos.
-  if (!sources.diff.some((f) => !DOCS_RE.test(f))) {
+  // Con la bifurcación como base no hace falta: el diff ya ve todos los commits propios de la rama.
+  if (baseSource !== 'bifurcacion' && !sources.diff.some((f) => !DOCS_RE.test(f))) {
     const que = files.length ? 'lo tocado no trae código con seguimiento' : 'lo tocado sale vacío';
     const propios = branchCommits(repo);
     if (propios.error) return unknown(`${que} y ${propios.error}`);
@@ -117,7 +118,7 @@ function touchedFiles({ repo, storyPath, baseRef, baseSource } = {}) {
     }
   }
   // Una story ilegible con git sano: lo tocado de verdad sí se vio; se deja dicho igual.
-  return { known: true, files, sources, reason: storyError || null };
+  return { known: true, files, sources, reason: storyError || null, base: { ref: baseRef, source: baseSource || null } };
 }
 
 if (require.main === module) {

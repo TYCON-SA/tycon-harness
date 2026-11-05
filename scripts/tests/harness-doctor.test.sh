@@ -1137,7 +1137,8 @@ t79_has "$JSON" ok "'memoria del trabajo' in t" && mal "$T79 dice la línea de l
 # declara el de mantenimiento: lo nombra, la lista sale de él, está al día, y dice por dónde viaja la memoria
 t79_config "{ \"paths\": { \"maintainers\": \"$T79_CLONE\", \"maintained\": \"$T79_CLONE\" } }"
 # (el clon entero, con su .git: doctor tampoco puede dejarle una traída ni un candado)
-t79_clone_hash() { ( cd "$T79_CLONE" && find . \( -type f -o -type l \) -print | LC_ALL=C sort | while IFS= read -r f; do printf '%s ' "$f"; if [ -L "$f" ]; then readlink "$f"; else shasum -a 256 < "$f"; fi; done ) | shasum -a 256 | cut -d' ' -f1; }
+t79_clone_hash() { ( cd "$T79_CLONE" && exec 3< <(find . -type f -print0 | LC_ALL=C sort -z | tree_file_sums) \
+  && find . \( -type f -o -type l \) -print | LC_ALL=C sort | while IFS= read -r f; do if [ -L "$f" ]; then printf '%s ' "$f"; readlink "$f"; else IFS= read -r l <&3; printf '%s\n' "$l"; fi; done ) | shasum -a 256 | cut -d' ' -f1; }
 ANTES="$(harness_lab_home_hash)"; T79_HASH_BEFORE="$(t79_clone_hash)"
 doctor79
 [ "$(harness_lab_home_hash)" = "$ANTES" ] && [ "$(t79_clone_hash)" = "$T79_HASH_BEFORE" ] && ok "$T79 doctor no escribe nada: ni en la HOME ni en el clon de mantenimiento" || mal "$T79 doctor escribió algo (HOME o clon de mantenimiento)"
