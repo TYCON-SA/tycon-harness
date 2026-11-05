@@ -343,10 +343,13 @@ function readE2eGates(evidenceDirs, sid, gatesLogPath, storyPath) {
 // ---------------------------------------------------------------- servidor simulado
 
 const SPEC_FILE_RE = /\.(spec|test)\.(ts|tsx|js|jsx|mjs|cjs)$/;
+// Carpetas que no tienen specs propios (dependencias, compilados, reportes): recorrerlas gasta el tope de la búsqueda.
+const SPEC_SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', 'out', 'coverage', 'test-results', 'playwright-report']);
+const SPEC_MAX_ENTRIES = 20000;
 
 /**
  * Los specs que corrió un filtro del portón: `<frontend_dir>/<filtro>` si es un archivo; si no, los specs bajo
- * `frontend_dir` (sin `node_modules`) cuya ruta contiene el filtro, como hace Playwright. Un `frontend_dir` relativo se
+ * `frontend_dir` cuya ruta contiene el filtro, como hace Playwright (un filtro vacío: todos). Un `frontend_dir` relativo se
  * prueba contra cada raíz. → { archivos: [ruta], motivo } (motivo, si no hay ninguno).
  */
 function specsDelFiltro(frontendDir, filtro, raices) {
@@ -354,23 +357,25 @@ function specsDelFiltro(frontendDir, filtro, raices) {
   const candidatos = path.isAbsolute(frontendDir) ? [frontendDir] : raices.filter(Boolean).map((r) => path.resolve(r, frontendDir));
   const fe = candidatos.find(isDir);
   if (!fe) return { archivos: [], motivo: `no encontré su frontend_dir, ${frontendDir}` };
-  const directo = path.join(fe, filtro);
-  if (isFile(directo)) return { archivos: [directo], motivo: null };
+  const directo = filtro ? path.join(fe, filtro) : null;
+  if (directo && isFile(directo)) return { archivos: [directo], motivo: null };
   const archivos = [];
   const pendientes = [fe];
   let leidos = 0;
-  while (pendientes.length && leidos < 5000) {
+  while (pendientes.length && leidos < SPEC_MAX_ENTRIES) {
     const d = pendientes.pop();
     let entradas = [];
     try { entradas = fs.readdirSync(d, { withFileTypes: true }); } catch { continue; }
     for (const e of entradas) {
       leidos++;
       const p = path.join(d, e.name);
-      if (e.isDirectory()) { if (e.name !== 'node_modules' && e.name !== '.git') pendientes.push(p); continue; }
+      if (e.isDirectory()) { if (!SPEC_SKIP_DIRS.has(e.name)) pendientes.push(p); continue; }
       if (e.isFile() && SPEC_FILE_RE.test(e.name) && path.relative(fe, p).split(path.sep).join('/').includes(filtro)) archivos.push(p);
     }
   }
-  return archivos.length ? { archivos, motivo: null } : { archivos: [], motivo: `ningún spec bajo ${frontendDir} lo contiene` };
+  if (archivos.length) return { archivos, motivo: null };
+  const corte = pendientes.length ? `, y corté la búsqueda a las ${SPEC_MAX_ENTRIES} entradas` : '';
+  return { archivos: [], motivo: `ningún spec bajo ${frontendDir} lo contiene${corte}` };
 }
 
 /**
@@ -1166,10 +1171,11 @@ function compute(opts) {
   const listaSim = (hs) => hs.slice(0, 3).map((h) => `${relSim(h.archivo)}:${h.linea} (${h.via})`).join(', ') + (hs.length > 3 ? ` y ${hs.length - 3} más` : '');
   for (const g of freshPassGates) {
     const hallazgos = [];
-    for (const filtro of g.specFilters) {
+    // Sin filtro, el portón corrió todos los specs: se miran todos.
+    for (const filtro of (g.specFilters.length ? g.specFilters : [''])) {
       const { archivos, motivo } = specsDelFiltro(g.frontendDir, filtro, [repoRoot, wsRoot]);
       if (!archivos.length) {
-        warnings.push(`Gate E2E ${path.basename(g.path)}: no pude leer ${filtro} (${motivo}): no sé si simuló el servidor.`);
+        warnings.push(`Gate E2E ${path.basename(g.path)}: no pude leer ${filtro || 'sus specs'} (${motivo}): no sé si simuló el servidor.`);
         continue;
       }
       for (const a of archivos) {

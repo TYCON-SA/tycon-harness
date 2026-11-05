@@ -1861,6 +1861,21 @@ withWaiverLog(() => {
     frente(c, { 'tests/story-9-9.spec.ts': SPEC_SIMULADO });
     writeGate(c.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9.spec.ts', c.gatesLog, true, null, 0, 'web');
     const rC = calc(c);
+    // Un portón sin filtro corrió todos los specs: se miran todos. Las carpetas de compilación no se recorren.
+    // Se ve en la acción: el título `@mutates` de un portón sin filtro con un spec simulado no acredita nada.
+    const sinFiltro = (specs) => {
+      const w = makeWorkspace();
+      cambiarHistoria(w, '3. **Given** otra cosa, **Then** otro resultado.', '3. El usuario puede guardar el pedido.');
+      const feW = frente(w, specs);
+      writeGate(w.dodDir, '9.9', recentCompact(), 'PASS', '', w.gatesLog, true, ['@mutates guarda @ac-3'], 0, feW);
+      writeMirroredSmoke(w.dodDir, w.gatesLog, '9.9', [3], 'curl -s http://app/pedidos');
+      return calc(w).perAc[3];
+    };
+    const conSimulado = sinFiltro({ 'tests/real.spec.ts': SPEC_REAL, 'tests/sim.spec.ts': SPEC_SIMULADO });
+    const soloEnDist = sinFiltro({ 'tests/real.spec.ts': SPEC_REAL, 'dist/copia.spec.ts': SPEC_SIMULADO });
+    check('T8 un portón sin filtro mira todos los specs, sin carpetas de compilación @story-8.220 @ac-1',
+      conSimulado.mutacion === null && /@mutates/.test(soloEnDist.mutacion || ''),
+      JSON.stringify({ conSimulado: conSimulado.mutacion, soloEnDist: soloEnDist.mutacion }));
     check('T8 RuntimeMatrix_PortonSinSpecLegible_ComoHoyConAviso @story-8.220 @ac-5',
       rA.perAc[1].verdict === 'RUNTIME' && rA.warnings.some((w) => /no pude leer no-existe/.test(w)) &&
       rB.perAc[1].verdict === 'RUNTIME' && rB.warnings.some((w) => /no pude leer/.test(w) && /frontend_dir/.test(w)) &&
@@ -1917,6 +1932,17 @@ withWaiverLog(() => {
       ['en un comentario', "// await page.route('**/api/x', (r) => r.fulfill({}));", 0],
       ['en un bloque de comentario', "/* import 'msw'; */", 0],
       ['en una cadena', "const s = \"page.route('**/api/x', r => r.fulfill())\";", 0],
+      ['page.context().route', "await page.context().route('**/api/x', (r) => r.fulfill({}));", 1],
+      ['receptor con otro nombre', "await ctx.route('**/api/x', (r) => r.fulfill({}));", 1],
+      ['encadenado opcional', "await page?.route('**/api/x', (r) => r.fulfill({}));", 1],
+      ['import dinámico', "const m = await import('msw');", 1],
+      ['export from', "export * from 'msw';", 1],
+      ['manejador que delega', "await page.route('**/api/x', (r) => mockOk(r));", 1],
+      ['espía con registro', "await page.route('**/api/x', (r) => { log(r.request()); r.continue(); });", 0],
+      ['predicado con flecha y manejador con nombre', "await page.route((u) => u.pathname.startsWith('/api'), stub);", 1],
+      ['regex con paréntesis y comilla antes', "const re = /\\(\"'/;\nawait page.route('**/api/x', (r) => r.fulfill({}));", 1],
+      ['regex con comilla invertida antes', "const re = /`/;\nawait page.route('**/api/x', (r) => r.fulfill({}));\nconst t = `x`;", 1],
+      ['regex con paréntesis de cierre', "await page.route(/\\/api\\/x\\)/, (r) => r.fulfill({}));", 1],
     ];
     const fallas = casos.filter(([, t, n]) => via(t).length !== n).map(([nombre, t]) => `${nombre}: ${JSON.stringify(via(t))}`);
     const d = fs.mkdtempSync(path.join(os.tmpdir(), 'sim-ayudante-'));

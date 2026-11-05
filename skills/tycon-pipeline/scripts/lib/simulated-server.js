@@ -7,11 +7,12 @@
  * corrió el portón E2E y sobre los guiones que corrió un humo.
  *
  * Las vías son las de las reglas REAL-C2 y REAL-C7 del control de realismo (`agents/tycon-e2e-realness-checker.md`):
- *   - `page.route`, `context.route` o `browserContext.route` sobre un endpoint de negocio, cuyo manejador contesta
- *     (`fulfill`), corta (`abort`) o reescribe (`continue({ … })`). Un `continue()` sin cambios es un espía: no cuenta.
- *     Un manejador que no está escrito ahí (una función con nombre) cuenta: no se puede ver qué hace.
+ *   - `.route(` sobre un endpoint de negocio, con cualquier receptor (`page`, `context`, `page.context()`, un alias),
+ *     cuyo manejador contesta (`fulfill`), corta (`abort`) o reescribe (`continue({ … })`). Sólo se salva un espía: un
+ *     manejador que deja seguir la llamada sin cambios (`continue()`). Uno que delega en otra función o que no está
+ *     escrito ahí cuenta: no se puede ver qué hace.
  *   - `routeFromHAR`, siempre.
- *   - importar `msw`, `@mswjs/…`, `nock`, `fetch-mock` o `jest-fetch-mock`.
+ *   - importar `msw`, `@mswjs/…`, `nock`, `fetch-mock` o `jest-fetch-mock` (también con `import()` o `export … from`).
  * El patrón de la ruta pasa por la lista de endpoints de negocio; uno que no es un texto literal (una variable, una
  * función) cuenta como de negocio. Lo escrito dentro de un comentario o de una cadena no cuenta.
  *
@@ -69,6 +70,20 @@ function tapar(texto) {
       if (i < s.length) { out += '  '; i += 2; }
       continue;
     }
+    // Un literal de regex (una `/` donde no puede haber una división): su contenido se tapa entero, para que una
+    // comilla o un paréntesis de adentro no abran una cadena ni descuenten una llamada.
+    if (c === '/' && empiezaRegex(out)) {
+      out += c; i++;
+      let enClase = false;
+      while (i < s.length && s[i] !== '\n' && (enClase || s[i] !== '/')) {
+        if (s[i] === '\\') { out += '  '; i += 2; continue; }
+        if (s[i] === '[') enClase = true;
+        else if (s[i] === ']') enClase = false;
+        out += ' '; i++;
+      }
+      if (i < s.length && s[i] === '/') { out += '/'; i++; }
+      continue;
+    }
     if (c === '"' || c === "'" || c === '`') {
       out += c; i++;
       while (i < s.length && s[i] !== c) {
@@ -82,6 +97,14 @@ function tapar(texto) {
     out += c; i++;
   }
   return out;
+}
+
+/** ¿Una `/` en este punto empieza un literal de regex? Sí después de un operador, una apertura o una palabra clave. */
+function empiezaRegex(previo) {
+  const t = previo.replace(/\s+$/, '');
+  if (!t) return true;
+  if (/[(,=:[!&|?{};+\-*%<>~^]$/.test(t)) return true;
+  return /\b(return|typeof|case|do|else|in|of|new|delete|void|throw|await|yield)$/.test(t);
 }
 
 const lineaDe = (s, idx) => s.slice(0, idx).split('\n').length;
@@ -124,7 +147,8 @@ function simulaServidor(texto) {
   const original = String(texto);
   const tapado = tapar(original);
   const hallazgos = [];
-  const rutaRe = /\b(page|context|browserContext)\s*\.\s*route\s*\(/g;
+  // Cualquier receptor: `page`, `context`, `page.context()`, un alias, `page?.route`, `page['route']`.
+  const rutaRe = /(?:\?\.|\.)\s*route\s*\(|\[\s*['"]route['"]\s*\]\s*\(/g;
   let m;
   while ((m = rutaRe.exec(tapado))) {
     const abre = m.index + m[0].length - 1;
@@ -132,11 +156,14 @@ function simulaServidor(texto) {
     const arg = primerArgumento(original, tapado, abre);
     if (arg.literal && !esDeNegocio(arg.valor)) continue;
     const cuerpo = tapado.slice(abre, fin + 1);
-    let via = null;
-    if (/\.\s*fulfill\s*\(/.test(cuerpo)) via = `${m[1]}.route + fulfill`;
-    else if (/\.\s*abort\s*\(/.test(cuerpo)) via = `${m[1]}.route + abort`;
-    else if (/\.\s*continue\s*\(\s*[^)\s]/.test(cuerpo)) via = `${m[1]}.route + continue con cambios`;
-    else if (!/=>|\bfunction\b/.test(cuerpo)) via = `${m[1]}.route con un manejador de otro lado`;
+    let via;
+    if (/\.\s*fulfill\s*\(/.test(cuerpo)) via = 'route + fulfill';
+    else if (/\.\s*abort\s*\(/.test(cuerpo)) via = 'route + abort';
+    else if (/\.\s*continue\s*\(\s*[^)\s]/.test(cuerpo)) via = 'route + continue con cambios';
+    // Sólo un espía se salva: un manejador que deja seguir la llamada sin cambios. Uno que delega en otra función, o
+    // que no está escrito ahí, no se puede ver: cuenta.
+    else if (/\.\s*continue\s*\(\s*\)/.test(cuerpo)) via = null;
+    else via = 'route con un manejador que no se ve';
     if (via) hallazgos.push({ linea: lineaDe(original, m.index), via: arg.literal ? via : `${via} (patrón no literal)` });
   }
   const harRe = /\.\s*routeFromHAR\s*\(/g;
@@ -147,10 +174,13 @@ function simulaServidor(texto) {
   return hallazgos.sort((a, b) => a.linea - b.linea);
 }
 
-/** Lo que el texto importa (`import … from 'x'`, `import 'x'`, `require('x')`), fuera de comentarios: [{ de, linea }]. */
+/**
+ * Lo que el texto importa (`import … from 'x'`, `import 'x'`, `import('x')`, `export … from 'x'`, `require('x')`),
+ * fuera de comentarios: [{ de, linea }].
+ */
 function importaciones(original, tapado) {
   const out = [];
-  const re = /\b(?:import\s*(?:[^'"`;()]*?\bfrom\s*)?|require\s*\(\s*)(['"])/g;
+  const re = /\b(?:import\s*(?:\(\s*|[^'"`;()]*?\bfrom\s*)?|export\s[^'"`;()]*?\bfrom\s*|require\s*\(\s*)(['"])/g;
   let m;
   while ((m = re.exec(tapado))) {
     const abre = m.index + m[0].length - 1;
