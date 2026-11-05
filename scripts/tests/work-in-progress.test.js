@@ -193,16 +193,111 @@ test('T9 CLI_JsonYSinEstado: --json y salida 2 sin carpeta de estado', () => {
   assert.strictEqual(code, 2);
 });
 
-test('T10 Terminados_YViejos_NoCuentan: terminados y viejos no cuentan como en curso', () => {
+test('T10 Terminados_YViejos_NoCuentan: los viejos no cuentan como en curso; el terminado sin cerrar sale como tal (8.195)', () => {
   const m = toyMachine();
   marker(m, 'done0000-1', { storyId: '4.1', storyPath: story(m.root, '4.1', 't'), stepsCompleted: [0, 8], stepsPending: [], lastTouch: NOW });
   marker(m, 'old00000-2', { storyId: '4.2', storyPath: story(m.root, '4.2', 't'), stepsCompleted: [0], stepsPending: [4], lastTouch: '2026-10-16T10:00:00.000Z' });
   session(m, process.pid, 'done0000-1', 'a'); session(m, process.pid, 'old00000-2', 'b');
   const r = run(m);
-  assert.deepStrictEqual(r.rows, []);
+  // antes de la 8.195 la terminada se escondía; ahora dice que falta cerrarla, y no es «en curso»
+  assert.strictEqual(r.rows.length, 1, JSON.stringify(r.rows));
+  assert.match(r.rows[0].state, /^terminado, falta cerrar/);
+  assert.strictEqual(r.extra[0].finishedOpen, true);
+  assert.notStrictEqual(r.extra[0].kind, 'pipeline');
   assert.strictEqual(r.halfway.length, 0);
   assert.ok(r.unreadable.some((u) => /más de 24 h/.test(u)), r.unreadable.join('\n'));
   assert.ok(fs.existsSync(path.join(m.state, 'active', 'old00000-2.json')), 'sólo lee: no borra el viejo');
+});
+
+// Una ejecución con todos los pasos hechos, por nombre.
+const TODOS = ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers', 'adversarial-pass', 'findings', 'prepare-commit'];
+const minsBeforeNow = (min) => new Date(Date.parse(NOW) - min * 60000).toISOString();
+const hecha = (m, id, cerro, extra = {}) => ({
+  storyId: id, storyPath: story(m.root, id, `Terminada ${id}`), stepScheme: 2, stepsCompleted: TODOS, stepsPending: [],
+  dodRuntimeChecked: true, deepReviewDone: true, lastTouch: cerro,
+  stepTimings: { reviewers: { completedAt: minsBeforeNow(24 * 60 * 3) }, findings: { completedAt: minsBeforeNow(24 * 60 * 3 - 5) }, 'prepare-commit': { completedAt: cerro } }, ...extra,
+});
+
+test('T22 Oficina_TerminadaSinCerrar_LaTarjetaLoDice @story-8.195 @ac-22 — /wip: la terminada sin cerrar sale con finishedOpen, de hace 1 h y de hace 30 h', () => {
+  const m = toyMachine();
+  marker(m, 'hora0000-1', hecha(m, '5.1', minsBeforeNow(60)));
+  marker(m, 'vieja000-2', hecha(m, '5.2', minsBeforeNow(30 * 60)));
+  // con código cambiado después de los revisores: falta revisar, no cerrar (un .js fuera de todo repo es código)
+  marker(m, 'vuelta00-3', hecha(m, '5.3', minsBeforeNow(60), { fileEvents: [{ path: path.join(m.root, 'nada', 'a.js'), ts: minsBeforeNow(30), code: true }] }));
+  for (const [sid, n] of [['hora0000-1', 'a'], ['vieja000-2', 'b'], ['vuelta00-3', 'c']]) session(m, process.pid, sid, n);
+  const r = run(m);
+  const fila = (id) => r.rows.findIndex((x) => x.work.startsWith(`${id} ·`));
+  for (const id of ['5.1', '5.2']) {
+    const i = fila(id);
+    assert.ok(i >= 0, `${id}: ${JSON.stringify(r.rows)}`);
+    assert.match(r.rows[i].state, /^terminado, falta cerrar · desde \d\d:\d\d$/);
+    assert.strictEqual(r.extra[i].finishedOpen, true);
+    assert.strictEqual(r.extra[i].kind, 'finished');
+  }
+  assert.match(r.rows[fila('5.3')].state, /^terminado, falta revisar lo cambiado/);
+  assert.ok(!r.unreadable.some((u) => /pipeline cerrado hace más de 24 h/.test(u)), 'la de 30 h no se esconde');
+  assert.ok(!r.free.includes('b'));
+});
+
+test('T23 Oficina_CaminoCortoConPedido_LaTarjetaLoDice @story-8.195 @ac-23 — /wip: el camino corto con su pedido en la foto lo dice; sin foto, como hoy', () => {
+  const m = toyMachine();
+  const repo = path.join(m.root, 'repo');
+  const env = { ...process.env, GIT_AUTHOR_DATE: '2026-10-18T10:00:00', GIT_COMMITTER_DATE: '2026-10-18T10:00:00', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
+  const g = (...a) => execFileSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', repo, ...a], { encoding: 'utf8', env }).trim();
+  fs.mkdirSync(repo);
+  g('init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(repo, 'a.js'), '1\n');
+  g('add', '.'); g('commit', '-qm', 'inicio');
+  const sha = g('rev-parse', 'HEAD');
+  g('checkout', '-qb', 'fix/rapido');
+  fs.writeFileSync(path.join(m.state, 'adhoc', 'carril00-1.json'), JSON.stringify({ reason: 'arreglo chico', bases: { [repo]: { sha } }, declaredAt: minsBeforeNow(30) }));
+  session(m, process.pid, 'carril00-1', 'corto');
+  const sinFoto = run(m);
+  assert.match(sinFoto.rows[0].state, /^Trabajo suelto/, 'sin foto, como hoy');
+  assert.notStrictEqual(sinFoto.extra[0].finishedOpen, true);
+  fs.writeFileSync(path.join(m.state, 'finished-open-prs.json'), JSON.stringify({ [`${repo}|fix/rapido`]: { at: Date.parse(NOW) - 60000, prs: [41] } }));
+  const conFoto = run(m);
+  assert.match(conFoto.rows[0].state, /^terminado, falta cerrar · pedido 41 abierto/);
+  assert.strictEqual(conFoto.extra[0].finishedOpen, true);
+  assert.strictEqual(conFoto.extra[0].kind, 'loose');
+  // la foto guardó una falla: la fila queda como hoy y la falla se dice al pie
+  fs.writeFileSync(path.join(m.state, 'finished-open-prs.json'), JSON.stringify({ [`${repo}|fix/rapido`]: { at: Date.parse(NOW) - 60000, error: 'sin red' } }));
+  const conFalla = run(m);
+  assert.match(conFalla.rows[0].state, /^Trabajo suelto/);
+  assert.ok(conFalla.unreadable.some((u) => /arreglo chico.*no pude ver si su pedido está abierto \(sin red\)/.test(u)), conFalla.unreadable.join(' | '));
+});
+
+test('T23d Oficina_EjecucionTerminadaYCaminoCorto_LosDos @story-8.195 @ac-22 @ac-23 — con la ejecución terminada y un camino corto con pedido en la misma sesión, la fila dice las dos cosas', () => {
+  const m = toyMachine();
+  const repo = path.join(m.root, 'repo');
+  const env = { ...process.env, GIT_AUTHOR_DATE: '2026-10-18T10:00:00', GIT_COMMITTER_DATE: '2026-10-18T10:00:00', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
+  const g = (...a) => execFileSync('git', ['-c', 'maintenance.auto=false', '-C', repo, ...a], { encoding: 'utf8', env }).trim();
+  fs.mkdirSync(repo);
+  g('init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(repo, 'a.js'), '1\n');
+  g('add', '.'); g('commit', '-qm', 'inicio');
+  const sha = g('rev-parse', 'HEAD');
+  g('checkout', '-qb', 'fix/rapido');
+  marker(m, 'ambas000-1', hecha(m, '5.7', minsBeforeNow(120)));
+  fs.writeFileSync(path.join(m.state, 'adhoc', 'ambas000-1.json'), JSON.stringify({ reason: 'arreglo chico activo', bases: { [repo]: { sha } }, declaredAt: minsBeforeNow(2), lastTouch: minsBeforeNow(2) }));
+  fs.writeFileSync(path.join(m.state, 'finished-open-prs.json'), JSON.stringify({ [`${repo}|fix/rapido`]: { at: Date.parse(NOW) - 60000, prs: [41] } }));
+  session(m, process.pid, 'ambas000-1', 'ambas');
+  const r = run(m);
+  assert.strictEqual(r.rows.length, 1, JSON.stringify(r.rows));
+  assert.match(r.rows[0].state, /^terminado, falta cerrar/);
+  assert.match(r.rows[0].meanwhile, /arreglo rápido «arreglo chico activo».*pedido 41 abierto/);
+  assert.match(r.extra[0].meanwhile, /pedido 41 abierto/);
+});
+
+test('T28 EnCurso_MitadDeCamino_SeVeComoHoy @story-8.195 @ac-28 — /wip: una ejecución a mitad de camino no lleva finishedOpen y dice su paso', () => {
+  const m = toyMachine();
+  marker(m, 'medio000-1', hecha(m, '5.9', minsBeforeNow(10), { stepsCompleted: TODOS.slice(0, 4), stepsPending: TODOS.slice(4), lastTouch: NOW }));
+  session(m, process.pid, 'medio000-1', 'medio');
+  const r = run(m);
+  assert.strictEqual(r.rows.length, 1);
+  assert.strictEqual(r.rows[0].state, 'Implementar');
+  assert.strictEqual(r.extra[0].kind, 'pipeline');
+  assert.notStrictEqual(r.extra[0].finishedOpen, true);
 });
 
 test('T11 JsonRaro_SeDice: JSON que no es objeto, sesión sin id o pid raro se dicen y no tumban', () => {
@@ -349,12 +444,13 @@ test('T20 Entrando_ConPedido_Ocupada: el 8 cerrado y un pedido abierto dan la fi
   for (const words of ['Entrando a los repos', 'GitHub', 'Azure DevOps', 'sólo lee']) assert.ok(command.includes(words), words);
 });
 
-test('T21 SinPedidosAbiertos_Terminado: sin pedidos abiertos la story terminó y la sesión está libre', () => {
+test('T21 SinPedidosAbiertos_Terminado: sin pedidos abiertos la story terminó; desde la 8.195, falta cerrarla y la sesión no está libre', () => {
   const m = toyMachine();
   entering(m, 'ent00000-2', { repoPath: gitRepo(m.root, 'x', 'story/x', GH) });
   const r = run(m, { prs: () => ({ prs: [] }) });
-  assert.deepStrictEqual(r.rows, []);
-  assert.deepStrictEqual(r.free, ['ocupada']);
+  assert.strictEqual(r.rows.length, 1, JSON.stringify(r.rows));
+  assert.match(r.rows[0].state, /^terminado, falta cerrar/);
+  assert.deepStrictEqual(r.free, []);
   assert.deepStrictEqual(r.unreadable, []);
 });
 
@@ -425,7 +521,9 @@ test('T24 RamaPrincipal_YNoRepo_SeIgnoran: un repo en main y una carpeta que no 
   let asked = 0;
   const r = run(m, { prs: () => { asked += 1; return { prs: [] }; } });
   assert.strictEqual(asked, 0);
-  assert.deepStrictEqual(r.rows, []);
+  // nada entrando: desde la 8.195 la ejecución terminada sin cerrar no se esconde, dice que falta cerrarla
+  const soloTerminadas = (rows) => rows.every((x) => /^terminado, falta cerrar/.test(x.state));
+  assert.ok(soloTerminadas(r.rows), JSON.stringify(r.rows));
   assert.deepStrictEqual(r.unreadable, []);
   // a detached HEAD has no branch of its own: nothing to ask either
   const detached = gitRepo(m.root, 'd', 'story/x', GH);
@@ -435,7 +533,8 @@ test('T24 RamaPrincipal_YNoRepo_SeIgnoran: un repo en main y una carpeta que no 
   entering(m, 'ent00000-5', { repoPath: detached });
   const d = run(m, { prs: () => { asked += 1; return { prs: [] }; } });
   assert.strictEqual(asked, 0);
-  assert.deepStrictEqual([d.rows, d.unreadable], [[], []]);
+  assert.ok(soloTerminadas(d.rows), JSON.stringify(d.rows));
+  assert.deepStrictEqual(d.unreadable, []);
 });
 
 test('T25 SinPasoOcho_OSesionMuerta_ComoAntes: sin el 8 cerrado o con la sesión muerta, nada cambia', () => {
@@ -452,7 +551,7 @@ test('T25 SinPasoOcho_OSesionMuerta_ComoAntes: sin el 8 cerrado o con la sesión
   assert.deepStrictEqual(r.halfway, []);
   assert.deepStrictEqual(r.free, ['libre']);
   // a closed run untouched for two days: with its session dead it is finished and not counted; with its session
-  // alive it is counted at the foot, and the session shows what it does today (here nothing: free)
+  // alive, since 8.195 it is a run finished and left open (its pull requests are not asked)
   const old = toyMachine();
   const twoDaysAgo = '2026-10-16T10:00:00.000Z';
   marker(old, 'ent00000-8', { storyId: '5.4', storyPath: story(old.root, '5.4', 't'), repoPath: repo, stepsCompleted: [0, 8], stepsPending: [], lastTouch: twoDaysAgo });
@@ -461,8 +560,10 @@ test('T25 SinPasoOcho_OSesionMuerta_ComoAntes: sin el 8 cerrado o con la sesión
   assert.deepStrictEqual([o.rows, o.unreadable, asked], [[], [], 0]);
   session(old, process.pid, 'ent00000-8', 'vieja');
   const v = run(old, { prs: () => { asked += 1; return { prs: [{ number: 1, draft: false }] }; } });
-  assert.deepStrictEqual([v.rows, v.free, asked], [[], ['vieja'], 0]);
-  assert.ok(v.unreadable.some((u) => /1 story\(s\) con el pipeline cerrado hace más de 24 h y la sesión viva/.test(u)), v.unreadable.join(' | '));
+  assert.strictEqual(asked, 0, 'pasadas las 24 h no se consultan sus pedidos');
+  assert.strictEqual(v.rows.length, 1, JSON.stringify(v.rows));
+  assert.match(v.rows[0].state, /^terminado, falta cerrar/);
+  assert.deepStrictEqual(v.free, []);
 });
 
 // A fake tool in its own folder: a node script that logs its arguments next to itself.
@@ -1544,7 +1645,7 @@ test('wip · RepoDeOtraStory_NoSeLeAtribuye: un repo que tocó la corrida y hoy 
   assert.ok(!r.rows[0].state.includes('#99'), r.text);
 });
 
-test('wip · CerradoHaceMasDe24h_NoEscondeLaSesion: un cierre viejo no la esconde: sale con lo que hace, o libre', () => {
+test('wip · CerradoHaceMasDe24h_NoEscondeLaSesion: un cierre viejo no la esconde: desde la 8.195 dice que falta cerrarlo', () => {
   const m = toyMachine();
   const wt = gitRepo(m.root, 'mi-arreglo', 'fix/el-aviso', GH);
   marker(m, 'vie00000-1', { storyId: '5.1', storyPath: story(m.root, '5.1', 'Vieja'), stepsCompleted: [0, 1, 2, 3, 4, 5, 6, 8], stepsPending: [], lastTouch: new Date(minsBefore(25 * 60)).toISOString() });
@@ -1552,9 +1653,9 @@ test('wip · CerradoHaceMasDe24h_NoEscondeLaSesion: un cierre viejo no la escond
   const r = runP(m);
   assert.strictEqual(r.rows.length, 1, r.text);
   assert.strictEqual(r.rows[0].session, 'sesion-b');
-  assert.match(r.rows[0].state, /^Trabajando sin pipeline/);
+  assert.match(r.rows[0].state, /^terminado, falta cerrar/);
   session(m, process.pid, 'vie00000-1', 'sesion-b');
-  assert.deepStrictEqual(runP(m).free, ['sesion-b']);
+  assert.deepStrictEqual(runP(m).free, []);
 });
 
 test('wip · PasoConBandera_EsElQueSigue: con «Probar en vivo» sin hacer, el estado es ése y no «Preparar el commit»', () => {

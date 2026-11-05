@@ -204,6 +204,16 @@ function fromDisk(sdir, sid, { home = os.homedir(), now = Date.now() } = {}) {
     }
     return { step: name, sentence: `Va por el paso «${name}».`, endAt: end.endAt == null ? null : new Date(end.endAt).toISOString(), endWithoutHour: end.endAt == null ? end.endWithoutHour : null };
   }
+  // terminada sin cerrar: se dice mientras exista el marcador, también pasadas las 24 h (lo borra pruneStale). Un carril
+  // abierto de la misma sesión es lo que hace ahora: va primero, con su motivo y su hora
+  const carril = path.join(sdir, 'adhoc', `${safeSid(sid)}.json`);
+  if (m && Array.isArray(m.stepsPending) && !m.stepsPending.length && !fs.existsSync(carril)) {
+    const open = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'finished-open.js')).runState(m);
+    if (open) {
+      const sentence = open.revisar ? `Terminó la story ${open.storyId}: falta revisar lo cambiado después de los revisores.` : `Terminó la story ${open.storyId}: falta cerrarla.`;
+      return { step: null, sentence, endAt: null, endWithoutHour: null };
+    }
+  }
   const a = readJsonOrNull(path.join(sdir, 'adhoc', `${safeSid(sid)}.json`));
   if (a && typeof a.reason === 'string' && a.reason.trim()) {
     const { plain } = require(path.join(ROOT, 'scripts', 'tools', 'office.js'));

@@ -13,7 +13,7 @@ const el=(t,c,txt)=>{const e=document.createElement(t);if(c)e.className=c;if(txt
 const DAYS=["dom","lun","mar","mié","jue","vie","sáb"];
 const parse=s=>{const m=/^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d)$/.exec(s||"");return m?new Date(+m[1],m[2]-1,+m[3],+m[4],+m[5]):null};
 const fmt=s=>{const d=parse(s);return d?DAYS[d.getDay()]+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"):"—"};
-const AST={trabajando:["Trabajando","#3ddc84"],prueba:["Corriendo pruebas","#5aa9ff"],parada:["Parada","#c9b458"],espera:["Esperando entrar","#a59fc4"],esperando:["Esperando","#e8b84a"],firma:["Tu firma","#ffa53d"],pregunta:["Te pregunta","#ffa53d"],libre:["Libre","#9aa3a0"],coordina:["Coordinando","#ff6fc0"],inactiva:["Inactiva","#6b6f6e"]};
+const AST={trabajando:["Trabajando","#3ddc84"],prueba:["Corriendo pruebas","#5aa9ff"],parada:["Parada","#c9b458"],espera:["Esperando entrar","#a59fc4"],esperando:["Esperando","#e8b84a"],firma:["Tu firma","#ffa53d"],pregunta:["Te pregunta","#ffa53d"],libre:["Libre","#9aa3a0"],coordina:["Coordinando","#ff6fc0"],inactiva:["Inactiva","#6b6f6e"],cerrar:["Terminado, falta cerrar","#7fc8a9"]};
 const SHIRT=["#c2569b","#2f9e6a","#3b7ddd","#e08a1e","#7a5cc7","#d65a4a"];
 let agents,items,meta;
 function setData(d){DATA=d||{};agents=DATA.agents||[];items=DATA.items||[];meta=DATA.meta||null}
@@ -333,7 +333,7 @@ if(LIVE){const ws=new WebSocket("ws://"+location.host+"/live?t="+encodeURICompon
   ws.onclose=cerrada;}
 if(!CON_OFICINAS)setTimeout(()=>{if(!window.tablero.started)sinTresD("Este navegador no pudo cargar la oficina en 3D; las tarjetas y la tabla tienen lo mismo.")},8000);
 // sólo cierra un toque que empieza y termina afuera: seleccionar texto adentro y soltar afuera no la cierra
-{const v=document.getElementById("ventana");let empezoAfuera=false;v.addEventListener("pointerdown",e=>{empezoAfuera=e.target===e.currentTarget});v.addEventListener("click",e=>{if(e.target===e.currentTarget&&empezoAfuera)cerrarCharla();empezoAfuera=false})}
+{const v=document.getElementById("ventana");let empezoAfuera=false;v.addEventListener("pointerdown",e=>{empezoAfuera=e.target===e.currentTarget;});v.addEventListener("click",e=>{if(e.target===e.currentTarget&&empezoAfuera)cerrarCharla();empezoAfuera=false;});}
 // la sala en 3D: una por oficina, cada una con su lugar en la página y sus datos
 let LIB_3D=null;
 const cargarTresD=()=>LIB_3D??=Promise.all([import("three"),import("three/addons/controls/OrbitControls.js"),import("three/addons/geometries/RoundedBoxGeometry.js"),import("three/addons/postprocessing/EffectComposer.js"),import("three/addons/postprocessing/RenderPass.js"),import("three/addons/postprocessing/UnrealBloomPass.js"),import("three/addons/postprocessing/OutputPass.js")]);
@@ -591,7 +591,7 @@ function pintarTag(d){const a=d.agent,m=manoDe(a),s0=T.AST[a.estado]||[a.estado|
   // con la mano levantada por otra cosa que su pantalla, la etiqueta dice a quién espera, con el color de su aro
   s=m&&a.manoEtiqueta&&a.estado!=="firma"&&a.estado!=="pregunta"?[a.manoEtiqueta,globoDe(m).color]:s0;d.el.style.setProperty("--c",s[1]);d.el.style.setProperty("--outfit",d.ropa);d.el.querySelector("b").textContent=a.nombre||"";d.el.querySelector(".como").replaceChildren(...(a.comoTrabaja&&a.comoTrabaja!==s[0]?[T.iconoComo(a.comoTrabaja),a.comoTrabaja]:[]));
   d.el.querySelector(".es").textContent=s[0]+(a.mientras?" · y algo más":"");const f=T.finTxt(a),fin=d.el.querySelector(".fin");fin.replaceChildren();
-  let md=d.el.querySelector(".mod");if(!md){md=document.createElement("span");md.className="mod";fin.before(md)}md.textContent=modeloDe(a);md.hidden=!md.textContent;
+  let md=d.el.querySelector(".mod");if(!md){md=document.createElement("span");md.className="mod";fin.before(md);}md.textContent=modeloDe(a);md.hidden=!md.textContent;
   if(f){fin.append(f.hora);if(f.dif){const x=document.createElement("em");x.className=f.cls;x.textContent=" · "+f.dif;fin.append(x);}}
   const bar=d.el.querySelector(".bar");bar.hidden=a.avance==null;bar.firstChild.style.width=(a.avance||0)+"%";
   const fx=d.el.querySelector(".fx");fx.textContent=FX[a.estado]||"";d.el.classList.toggle("alert",Boolean(m));d.el.classList.toggle("alert-coord",m==="coordinadora");d.el.classList.toggle("sel",sel===a.nombre);d.el.setAttribute("aria-label",(a.nombre||"")+": "+s[0]);}
@@ -643,8 +643,8 @@ T.avion=nombre=>{const a=desks.find(d=>d.agent.nombre===nombre);if(!a||!enVista|
   const m=new THREE.Group();m.rotation.order="YXZ";m.scale.setScalar(.55);m.add(new THREE.Mesh(avionGeo,avionMat),new THREE.LineSegments(bordeGeo,bordeMat));scene.add(m);
   const e=document.createElement("span");e.className="sobre desdeOficina";const dib=document.createElement("span");dib.className="dib";dib.append(T.dibujo(T.AVION_ICONO));dib.setAttribute("aria-hidden","true");e.append(dib,"Vos → "+nombre);
   labelsEl.appendChild(e);const vuelo={m,e,de:FRENTE,a,t0:performance.now()};vuelos.push(vuelo);
-  if(reduce)setTimeout(()=>{quitarVuelo(vuelo);despertar()},VUELO_MS);
-  hastaTocando=Math.max(hastaTocando,performance.now()+VUELO_MS);despertar()};
+  if(reduce)setTimeout(()=>{quitarVuelo(vuelo);despertar();},VUELO_MS);
+  hastaTocando=Math.max(hastaTocando,performance.now()+VUELO_MS);despertar();};
 function volar(){const W=stage.clientWidth,H=stage.clientHeight,now=performance.now();
   for(const v of [...vuelos]){const k=reduce?.5:(now-v.t0)/VUELO_MS;if(k>=1){quitarVuelo(v);continue}
     a3.copy(v.de.st.position);b3.copy(v.a.st.position);a3.lerp(b3,k);a3.y=1.7+Math.sin(k*Math.PI)*1.1;v.m.position.copy(a3);v.m.rotation.set(-Math.cos(k*Math.PI)*.3,Math.atan2(b3.x-v.de.st.position.x,b3.z-v.de.st.position.z),Math.sin(k*Math.PI*2)*.25);
