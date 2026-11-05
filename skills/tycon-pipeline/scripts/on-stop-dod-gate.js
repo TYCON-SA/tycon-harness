@@ -210,6 +210,17 @@ function main() {
     try { require('./lib/story-gate-io.js').appendLog(STATE_DIR, 'gates.log', sessionId, { repoPath: null, name: 'pending-steps-line', status: 'unknown', kind: 'unknown-error', reason: String(e && e.message) }); } catch { /* el registro tampoco traba */ }
   }
 
+  // Lo terminado sin cerrar de esta sesión (lib/finished-open.js): su ejecución con todos los pasos hechos, o su camino
+  // corto con el pedido abierto o la rama ya en main. Un aviso a la persona en cada turno, en toda sesión, autónoma o no;
+  // nunca frena ni cierra nada. No se junta con la línea de pasos pendientes: ésa sale sólo con pasos pendientes.
+  try {
+    const lines = require('./lib/finished-open.js').stopLines({ sid: sessionId, stateDir: STATE_DIR });
+    if (lines.length) toPerson = toPerson ? `${toPerson}\n${lines.join('\n')}` : lines.join('\n');
+  } catch (e) {
+    // el aviso no traba el cierre, pero su falta queda anotada (no es «nada terminado sin cerrar»)
+    try { require('./lib/story-gate-io.js').appendLog(STATE_DIR, 'gates.log', sessionId, { repoPath: null, name: 'finished-open', status: 'unknown', kind: 'unknown-error', reason: String(e && e.message) }); } catch { /* el registro tampoco traba */ }
+  }
+
   // Scoping: solo el modo autónomo es atrapado por el portón.
   if (!marker || marker.autonomous !== true) return allowStop();
 

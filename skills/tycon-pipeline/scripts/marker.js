@@ -2082,11 +2082,22 @@ function cmdCompleteStep(nRaw, flags) {
 /**
  * Escribe en el marcador `otraVuelta` (lib/steps.js `otraVueltaDe`): el cartel lo lee y no decide la vuelta por su
  * cuenta. Lo llaman cada cierre de paso y cada cambio que se anota; un marcador por número no lo lleva.
+ *
+ * Si el cálculo falla, el cierre sigue: el campo viejo se borra (el cartel vuelve a su regla de antes, y `next` y el
+ * último paso deciden igual) y queda el rastro en hook-errors.log, como en on-edit.js.
  */
 function anotarOtraVuelta(marker) {
-  const v = STEPS_LIB.otraVueltaDe(marker);
-  if (v === undefined) delete marker.otraVuelta;
-  else marker.otraVuelta = v;
+  try {
+    const v = STEPS_LIB.otraVueltaDe(marker);
+    if (v === undefined) delete marker.otraVuelta;
+    else marker.otraVuelta = v;
+  } catch (e) {
+    delete marker.otraVuelta;
+    try {
+      fs.mkdirSync(STATE_DIR, { recursive: true });
+      fs.appendFileSync(path.join(STATE_DIR, 'hook-errors.log'), `[${new Date().toISOString()}] marker otraVuelta: ${(e && e.stack) || e}\n\n`, 'utf8');
+    } catch { /* el registro no corta el cierre */ }
+  }
 }
 
 /**
@@ -4606,22 +4617,9 @@ function cmdSalidaPerdida(modo, sesion) {
 // ¿Está viva la sesión? Lo dicen los archivos de sesión de Claude Code (la carpeta de sesiones, <pid>.json, con su
 // sessionId): viva si alguno la nombra y su proceso existe. Un archivo que no se puede leer podría ser el de esa
 // sesión, así que no se la puede dar por muerta: se devuelve cuál.
+// Sin registro de la sesión cuenta como muerta, como siempre (lib/session-liveness.js dice por qué puede no estar).
 function sessionLiveness(sid) {
-  const dir = path.join(claudeDirOf(os.homedir()), 'sessions');
-  let names = [];
-  try { names = fs.readdirSync(dir).filter((n) => n.endsWith('.json')); } catch (e) {
-    if (e.code === 'ENOENT') return { alive: false };
-    return { unknown: `${dir}: ${e.message}` };
-  }
-  for (const n of names) {
-    let s;
-    try { s = JSON.parse(fs.readFileSync(path.join(dir, n), 'utf8')); } catch (e) { return { unknown: `${path.join(dir, n)}: ${e.message}` }; }
-    if (!s || s.sessionId !== sid) continue;
-    const pid = Number(s.pid);
-    if (!Number.isInteger(pid) || pid <= 0) return { unknown: `${path.join(dir, n)}: pid ilegible` };
-    try { process.kill(pid, 0); return { alive: true, pid }; } catch (e) { if (e.code === 'EPERM') return { alive: true, pid }; }
-  }
-  return { alive: false };
+  return require('./lib/session-liveness.js').liveness(sid, { home: os.homedir() });
 }
 
 // `adhoc clear-orphan <sid>`: borra el ad-hoc que dejó una sesión que ya no está. Se borra sólo si la sesión no está viva

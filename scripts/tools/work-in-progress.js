@@ -90,6 +90,8 @@ const LOOSE_STALE_MS = 3600 * 1000;
 // una sesión quieta que tocó un archivo hace menos que esto sigue con algo: no está libre
 const RECENT_FILE_MS = 30 * 60 * 1000;
 const MARKER_JS = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+// lo terminado sin cerrar: qué ejecución terminó y qué camino corto tiene su pedido, sin salir a la red
+const FINISHED_OPEN = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'finished-open.js');
 const shortId = (sid) => String(sid || '').slice(0, 8) || '?';
 const oneLine = (s) => String(s).replace(/\s+/g, ' ').trim();
 // texto de afuera (una nota, un registro de otra herramienta) para mostrar: en una línea, sin caracteres de control, acotado
@@ -477,6 +479,8 @@ function realState(x, d, f) {
   const status = d && d.status;
   const busy = codex ? (typeof f.busy === 'boolean' ? f.busy : null) : status === 'busy' || status === 'shell' ? true : status === 'idle' ? false : null;
   if (x.kind === 'entering' || x.kind === 'stalled') return { estado: 'espera' };
+  // terminado sin cerrar: falta cerrarlo. Si la sesión está ocupada, trabaja (en otra cosa, o en cerrarlo) y lo dice
+  if (x.finishedOpen) return busy === true ? { estado: 'trabajando' } : { estado: 'cerrar' };
   // terminada sin nada que guardar (`nothingToSave`: una marcada con el árbol limpio) no espera ningún ok
   if (x.kind === 'finished') return busy === false && !x.saveOk && !x.nothingToSave ? { estado: 'firma', espera: 'el ok para guardar' } : { estado: 'trabajando' };
   if (busy === false) {
@@ -1295,9 +1299,10 @@ function buildWip(opts = {}) {
     // Con el paso 8 cerrado, lo que queda sin guardar espera al dueño aunque lleve días sin tocarse
     const tree = closed ? unsavedChanges(m, gitCtx) : null;
     const tellProblems = () => { for (const p of tree.problems) unreadable.push(`story ${m.storyId || '?'}: no se pudo leer si le quedan cambios sin guardar (${p})`); };
-    // un cerrado viejo con la sesión muerta es una corrida terminada; con la sesión viva no se sabe si sus pedidos
-    // entraron: se dice al pie, y la sesión sale con lo que hace hoy (o libre)
-    if (nowMs - touched > STALE_MS && !mark && !(tree && tree.dirty)) {
+    // un cerrado viejo con la sesión muerta es una corrida terminada. Con la sesión viva sigue abierta: sale como
+    // «terminado, falta cerrar» mientras exista el marcador (lo borra pruneStale), sin consultar sus pedidos
+    const oldOpen = closed && nowMs - touched > STALE_MS && !mark && !(tree && tree.dirty) && Boolean(liveName(sid));
+    if (nowMs - touched > STALE_MS && !mark && !(tree && tree.dirty) && !oldOpen) {
       if (!closed) stale += 1;
       else if (liveName(sid)) staleWaiting += 1;
       if (tree) tellProblems();
@@ -1307,13 +1312,19 @@ function buildWip(opts = {}) {
     // guardar (viva o no: espera el ok del dueño). `save`: 'waits' o, con el ok ya dado, 'ok'.
     let entering = null;
     let save = null;
+    // terminada, sin nada que guardar ni entrando, con la sesión viva: falta cerrarla (lib/finished-open.js runState)
+    let open = null;
     if (closed) {
       if (!liveName(sid) && !tree.dirty && !mark) { tellProblems(); continue; }
-      entering = enteringState(m, opts.prs, unreadable, wanted, gitCtx);
+      entering = oldOpen ? null : enteringState(m, opts.prs, unreadable, wanted, gitCtx);
       if (!entering) {
         tellProblems();
         if (tree.dirty) save = m.saveOk ? 'ok' : 'waits';
-        if (!save && !mark) { if (m.storyId) finishedStory.set(sid, String(m.storyId)); continue; }
+        if (!save && !mark) {
+          if (m.storyId) finishedStory.set(sid, String(m.storyId));
+          try { open = require(FINISHED_OPEN).runState(m); } catch (e) { unreadable.push(`story ${m.storyId || '?'}: no pude ver si terminó sin cerrar (${e.message})`); }
+          if (!open) continue;
+        }
       } else if (!liveName(sid) && !mark) continue;
     }
     busy.add(sid);
@@ -1324,7 +1335,9 @@ function buildWip(opts = {}) {
     }
     // con el esquema por nombre, el que sigue incluye los pasos de bandera («Probar en vivo»), que stepsPending no lista
     const saveText = save === 'waits' ? SAVE_WAITS : save === 'ok' ? SAVE_OK : null;
-    const step = mark || entering || saveText || (closed ? 'Terminó' : stateOf((schemeOf(m) === 2 && pendingSteps(m)[0]) || m.stepsPending[0]));
+    const openText = open && (open.revisar ? 'terminado, falta revisar lo cambiado después de los revisores'
+      : `terminado, falta cerrar${open.desde === null ? '' : ` · desde ${hhmm(open.desde)}`}`);
+    const step = mark || entering || saveText || openText || (closed ? 'Terminó' : stateOf((schemeOf(m) === 2 && pendingSteps(m)[0]) || m.stepsPending[0]));
     const work = `${m.storyId || '?'} · ${cut(title, TITLE_MAX)}`;
     const label = liveName(sid);
     const stages = stagesOf(m);
@@ -1342,6 +1355,7 @@ function buildWip(opts = {}) {
       addRow({ work, state: step, end, session: label, folder: folderOf(sid, m.repoPath) }, sid,
         { kind, storyId: m.storyId ? String(m.storyId) : null, title, batch: storyBatch(m.storyPath), endAt: info.at == null ? null : info.at, late: Boolean(info.late), promisedAt, ...stages,
           ...(verdict ? { hourInWords: true } : {}), ...(mark ? { mark } : {}), ...(save === 'ok' ? { saveOk: true } : {}), ...(kind === 'finished' && !save ? { nothingToSave: true } : {}),
+          ...(open ? { finishedOpen: true, ...(open.revisar ? { finishedReview: true } : {}) } : {}),
           ...(info.step !== undefined ? { hourStep: stepName(info.step) || `paso ${info.step}`, hourAt: info.computedAt } : {}),
           runFolder: typeof m.repoPath === 'string' && m.repoPath ? tilde(m.repoPath) : null,
           activityAt: Number.isFinite(activityAt) ? activityAt : null, runStartedAt: Date.parse(m.startedAt) || null, closedAt: closed ? closedAtOf(m) : null });
@@ -1398,26 +1412,41 @@ function buildWip(opts = {}) {
       // sin tocar hace más de 1 h puede haber terminado: se dice desde cuándo
       const last = [a.lastTouch, a.declaredAt].map((v) => Date.parse(v)).find(Number.isFinite);
       const old = last !== undefined && nowMs - last > LOOSE_STALE_MS ? ` (sin tocar desde ${hhmm(last)})` : '';
-      rows[pipe.i].meanwhile = `arreglo rápido «${work}»${old}`;
+      // junto a una ejecución terminada sin cerrar, el pedido del carril también se dice: si no, la fila de la ejecución lo tapa
+      let openLane = '';
+      if (extra[pipe.i].finishedOpen) {
+        let o = null;
+        try { o = require(FINISHED_OPEN).adhocFromPhoto(a, { home, stateDir: sdir, now: nowMs }); } catch (e) { o = { error: e.message }; }
+        if (o && o.error) unreadable.push(`ad-hoc «${work}»: no pude ver si su pedido está abierto (${o.error})`);
+        else if (o) openLane = ` · ${o.entro ? 'su rama ya entró a main' : `pedido ${o.pedido} abierto`}, falta cerrar el camino corto`;
+      }
+      rows[pipe.i].meanwhile = `arreglo rápido «${work}»${old}${openLane}`;
       const end = Date.parse(a.until);
       const declaredAt = [a.untilAt, a.declaredAt].map((v) => Date.parse(v)).find(Number.isFinite);
-      Object.assign(extra[pipe.i], { meanwhile: String(a.reason || ''), meanwhileKind: 'loose', meanwhileAt: last === undefined ? null : last, meanwhileEnd: Number.isFinite(end) ? end : null, meanwhileDeclaredAt: declaredAt === undefined ? null : declaredAt });
+      Object.assign(extra[pipe.i], { meanwhile: `${String(a.reason || '')}${openLane}`, meanwhileKind: 'loose', meanwhileAt: last === undefined ? null : last, meanwhileEnd: Number.isFinite(end) ? end : null, meanwhileDeclaredAt: declaredAt === undefined ? null : declaredAt });
       continue;
     }
     const label = liveName(sid);
     if (label) {
       // Desde cuándo no se toca: pasada 1 h, pregunta si terminó y dice cómo cerrarlo desde su sesión (no lo borra).
       const last = [a.lastTouch, a.declaredAt].map((v) => Date.parse(v)).find(Number.isFinite);
-      const parts = ['Trabajo suelto'];
+      // su pedido abierto o su rama ya en main, de la foto del aviso (sin salir a la red): terminado, falta cerrarlo
+      let open = null;
+      try { open = require(FINISHED_OPEN).adhocFromPhoto(a, { home, stateDir: sdir, now: nowMs }); } catch (e) { open = { error: e.message }; }
+      if (open && open.error) { unreadable.push(`ad-hoc «${work}»: no pude ver si su pedido está abierto (${open.error})`); open = null; }
+      const openPr = open ? (open.entro ? 'su rama ya entró a main' : `pedido ${open.pedido} abierto`) : null;
+      const parts = openPr ? [`terminado, falta cerrar · ${openPr}`] : ['Trabajo suelto'];
       if (last !== undefined) parts.push(`sin tocar desde ${hhmm(last)}`);
-      if (last !== undefined && nowMs - last > LOOSE_STALE_MS) parts.push(`¿terminó? cerralo desde su sesión: node ${MARKER_JS} adhoc clear`);
+      if (openPr) parts.push(`cerralo desde su sesión: node ${MARKER_JS} adhoc clear`);
+      else if (last !== undefined && nowMs - last > LOOSE_STALE_MS) parts.push(`¿terminó? cerralo desde su sesión: node ${MARKER_JS} adhoc clear`);
       const until = Date.parse(a.until);
       const declared = Number.isFinite(until);
       // cuándo se declaró la hora: la promesa es de esa declaración, y una declaración vieja ya no dice nada
       const declaredAt = [a.untilAt, a.declaredAt].map((v) => Date.parse(v)).find(Number.isFinite);
       looseRows.set(sid, rows.length);
       addRow({ work, state: parts.join(' · '), end: hourVerdict({ endAt: until, hourAt: declaredAt, nowMs }) || declaredEnd(a.until, until), session: label, folder: folderOf(sid) }, sid,
-        { ...touchedField(sdir, sid, home, nowMs, unreadable), kind: 'loose', text: String(a.reason || ''), endAt: declared ? until : null, hourAt: declaredAt === undefined ? null : declaredAt, promiseAt: declaredAt === undefined ? null : declaredAt });
+        { ...touchedField(sdir, sid, home, nowMs, unreadable), kind: 'loose', text: String(a.reason || ''), endAt: declared ? until : null, hourAt: declaredAt === undefined ? null : declaredAt, promiseAt: declaredAt === undefined ? null : declaredAt,
+          ...(openPr ? { finishedOpen: true, openPr } : {}) });
     }
     else {
       // Se limpia con `adhoc clear-orphan`, que sólo borra pasadas las 24 h sin tocarse: antes, se dice desde cuándo.

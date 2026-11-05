@@ -33,6 +33,55 @@ function wip(entries, more = {}) {
 
 const byName = (data, name) => data.agents.find((a) => a.nombre === name);
 
+test('T28 EnCurso_MitadDeCamino_SeVeComoHoy @story-8.195 @ac-28 — la tarjeta de una ejecución a mitad de camino sigue diciendo su paso', () => {
+  const { data } = buildOffice({ wip: wip([{ session: 'Medio', status: 'busy', extra: { kind: 'pipeline', current: 'implement', steps: STEPS, progress: 50 } }]), nowMs: NOW });
+  assert.strictEqual(byName(data, 'Medio').estado, 'trabajando');
+  assert.strictEqual(byName(data, 'Medio').haciendo, 'Va por el paso «Implementar».');
+});
+
+test('T22 Oficina_TerminadaSinCerrar_LaTarjetaLoDice @story-8.195 @ac-22 — la tarjeta de la terminada sin cerrar está en «cerrar» y lo dice', () => {
+  const { data } = buildOffice({
+    wip: wip([
+      { session: 'Hecha', status: 'idle', extra: { kind: 'finished', finishedOpen: true, nothingToSave: true, storyId: '7.7' } },
+      { session: 'Revisar', status: 'idle', extra: { kind: 'finished', finishedOpen: true, finishedReview: true, nothingToSave: true, storyId: '7.8' } },
+      { session: 'Ocupada', status: 'busy', extra: { kind: 'finished', finishedOpen: true, nothingToSave: true, storyId: '7.9' } },
+    ]),
+    nowMs: NOW,
+  });
+  assert.strictEqual(byName(data, 'Hecha').estado, 'cerrar');
+  assert.strictEqual(byName(data, 'Hecha').haciendo, 'Terminó la story 7.7: falta cerrarla.');
+  assert.strictEqual(byName(data, 'Revisar').estado, 'cerrar');
+  assert.strictEqual(byName(data, 'Revisar').haciendo, 'Terminó la story 7.8: falta revisar lo cambiado después de los revisores.');
+  // ocupada: trabaja, y la oración sigue diciendo que falta cerrarla
+  assert.strictEqual(byName(data, 'Ocupada').estado, 'trabajando');
+  assert.strictEqual(byName(data, 'Ocupada').haciendo, 'Terminó la story 7.9: falta cerrarla.');
+});
+
+test('T23 Oficina_CaminoCortoConPedido_LaTarjetaLoDice @story-8.195 @ac-23 — el camino corto con su pedido abierto está en «cerrar», con el número', () => {
+  const { data } = buildOffice({
+    wip: wip([{ session: 'Corto', status: 'idle', extra: { kind: 'loose', text: 'arreglo chico', finishedOpen: true, openPr: 'pedido 41 abierto' } }]),
+    nowMs: NOW,
+  });
+  assert.strictEqual(byName(data, 'Corto').estado, 'cerrar');
+  assert.strictEqual(byName(data, 'Corto').haciendo, 'Terminó «arreglo chico»: falta cerrar el camino corto (pedido 41 abierto).');
+});
+
+test('T23c Oficina_CaminoCortoConArchivoDeSesion_DiceQueFaltaCerrar @story-8.195 @ac-23 — con el archivo de la sesión, la tarjeta del camino corto con pedido sigue diciendo que falta cerrarlo', () => {
+  const { data } = buildOffice({
+    wip: wip([{ session: 'Corto', sid: 'sid-Corto', status: 'idle', extra: { kind: 'loose', text: 'arreglo chico', finishedOpen: true, openPr: 'pedido 41 abierto' } }]),
+    sessionFiles: [{ session: 'sid-Corto', tool: 'claude', sentence: 'arreglo chico', pid: 123, updatedAt: new Date(NOW - 60000).toISOString() }],
+    nowMs: NOW,
+  });
+  assert.strictEqual(byName(data, 'Corto').estado, 'cerrar');
+  assert.strictEqual(byName(data, 'Corto').haciendo, 'Terminó «arreglo chico»: falta cerrar el camino corto (pedido 41 abierto).');
+});
+
+test('T24 Oficina_EstadoNuevo_EnLaLista @story-8.195 @ac-24 — «cerrar» está en AGENT_STATES y en la página, con su texto', () => {
+  const { AGENT_STATES } = require(path.join(path.dirname(OFFICE), 'office', 'fields.js'));
+  assert.ok(AGENT_STATES.includes('cerrar'));
+  assert.match(PAGE_CODE(), /\bcerrar:\["Terminado, falta cerrar","#[0-9a-f]{6}"\]/);
+});
+
 test('T1 EstadoPorSesion: firma, coordina, espera, prueba, trabajando y libre salen de lo que dice /wip', () => {
   const { data } = buildOffice({
     wip: wip([
@@ -1221,13 +1270,13 @@ test('T121 SaveSignal_DirtyTree_NotSaveOk @story-2.81 @ac-46: la señal de guard
   };
   const dirty = await closed({ dirty: true });
   assert.strictEqual(byName(dirty.data, 'Guardar').estado, 'firma');
-  // limpio: como hoy, libre
+  // limpio: no espera ningún ok, y falta cerrarla
   const clean = await closed({ dirty: false });
-  assert.strictEqual(byName(clean.data, 'Guardar').estado, 'libre');
-  assert.deepStrictEqual(clean.w.rows, []);
+  assert.strictEqual(byName(clean.data, 'Guardar').estado, 'cerrar');
+  assert.ok(clean.w.rows.every((r) => /^terminado, falta cerrar/.test(r.state)), clean.w.text);
   // sólo la carpeta de la corrida sin commitear: no es trabajo sin guardar
   const onlyRun = await closed({ dirty: false }, {}, (repo) => { fs.mkdirSync(path.join(repo, '.advisors', 'pipeline-runs'), { recursive: true }); fs.writeFileSync(path.join(repo, '.advisors', 'pipeline-runs', 'x.md'), 'x'); });
-  assert.strictEqual(byName(onlyRun.data, 'Guardar').estado, 'libre', onlyRun.w.text);
+  assert.strictEqual(byName(onlyRun.data, 'Guardar').estado, 'cerrar', onlyRun.w.text);
   // con el ok ya dado, sigue trabajando
   const ok = await closed({ dirty: true }, { saveOk: { storyId: '9.9' } });
   assert.strictEqual(byName(ok.data, 'Guardar').estado, 'trabajando');
@@ -3248,8 +3297,12 @@ test('T269 WaysOfWorking_FinishedRunNote: una nota de la sesión cuya ejecución
   fs.writeFileSync(path.join(m.sessions, 's.json'), JSON.stringify({ pid: process.pid, sessionId: 's', name: 'Quintero', status: 'busy', statusUpdatedAt: now, cwd: repo }));
   fs.writeFileSync(path.join(m.state, 'doing', 's.json'), JSON.stringify({ text: 'espera la cola', at: atIso(now - 60000) }));
   const a = byName(await collectAt(m, now), 'Quintero');
-  assert.strictEqual(a.tipo, 'note');
+  // la ejecución terminada sin cerrar es la tarjeta, y la nota es lo que hace mientras tanto; ocupada, trabaja
+  assert.strictEqual(a.tipo, 'finished');
+  assert.strictEqual(a.estado, 'trabajando');
+  assert.strictEqual(a.haciendo, 'Terminó la story 8.153: falta cerrarla.');
   assert.strictEqual(a.comoTrabaja, 'Historia 8.153');
+  assert.strictEqual(a.mientras, 'espera la cola');
 });
 
 test('T267 Conversation_OnlyInItsWindow: el botón va sólo con la oficina viva, la ventana se cierra con Esc y la foto no trae el texto', () => {

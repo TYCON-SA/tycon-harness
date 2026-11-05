@@ -161,6 +161,11 @@ function sentenceOf(estado, x, row) {
   if (estado === 'firma') return 'Espera tu respuesta o un permiso.';
   if (estado === 'pregunta') return 'Te hizo una pregunta en su pantalla.';
   if (estado === 'coordina') return 'Coordina las sesiones de esta máquina.';
+  // terminado sin cerrar: la ejecución con todos sus pasos hechos, o el camino corto con su pedido
+  if (x.finishedOpen && x.kind === 'loose') return `Terminó «${plain(x.text) || 'un camino corto'}»: falta cerrar el camino corto${x.openPr ? ` (${x.openPr})` : ''}.`;
+  if (x.finishedOpen) return x.finishedReview
+    ? `Terminó la story ${x.storyId || '?'}: falta revisar lo cambiado después de los revisores.`
+    : `Terminó la story ${x.storyId || '?'}: falta cerrarla.`;
   if (x.kind === 'pipeline') {
     const step = (x.steps || []).find((s) => s.id === x.current);
     return step ? `Va por el paso «${step.name}».` : 'Implementa su historia.';
@@ -424,7 +429,8 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     if (replacesClosed) closedRuns.push({ titulo: runTitle, quien: row.session, storyId: x0.storyId, stalled: x0.kind === 'stalled', proyecto });
     // el archivo manda en lo que sabe: el paso mientras hay pipeline, el trabajo suelto declarado y la espera; lo que no
     // sabe (la entrada a los repos, la nota, la actividad sin marcador) sigue saliendo de /wip
-    const knows = !replaced && Boolean(f) && ((x.kind === 'pipeline' && f.step) || x.kind === 'loose');
+    // lo terminado sin cerrar lo sabe /wip, no el archivo: el archivo guarda el motivo del carril, no que falta cerrarlo
+    const knows = !replaced && Boolean(f) && !x.finishedOpen && ((x.kind === 'pipeline' && f.step) || x.kind === 'loose');
     const lastWrite = d.sid != null ? lastWrites.get(String(d.sid)) : undefined;
     const real = notStoppedYet(realState(x, dNow, fNow), lastWrite, Number(d.statusAt), nowMs);
     // «Corriendo pruebas» sólo con pruebas corriendo: estar en el paso no alcanza

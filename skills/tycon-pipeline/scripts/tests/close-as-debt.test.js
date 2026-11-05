@@ -478,6 +478,46 @@ test('T13 BorradoPorConsola_Y_AppendFile_LlevanLaMarca @story-8.195 @ac-13 — e
   assert.strictEqual('otraVuelta' in E.leer(sid), false, 'el borrado por consola: el campo viejo se borra');
 });
 
+test('T34 BorradoPorConsola_ReglaQueFalla_DejaElRastro @story-8.195 @ac-33 — el borrado por consola con la vuelta que falla marca code, borra el campo y deja su línea', () => {
+  const E = entorno();
+  const sid = 's-8195-t34';
+  listaParaElUltimo(E, sid);
+  E.escribir(sid, { ...E.leer(sid), otraVuelta: { round: 2, archivos: ['src/viejo.js'], desde: '2026-01-01T10:59:00.000Z' } });
+  const pasos = require(path.join(SCRIPTS, 'lib', 'steps.js'));
+  const reglas = require(path.join(SCRIPTS, 'lib', 'reloop-code.js'));
+  const [vuelta, regla, home] = [pasos.otraVueltaDe, reglas.pideOtraVuelta, process.env.HOME];
+  pasos.otraVueltaDe = () => { throw new Error('vuelta rota t34'); };
+  reglas.pideOtraVuelta = () => { throw new Error('regla rota t34'); };
+  // el freno escribe su registro en la carpeta de estado de la persona: la de la casa de prueba
+  process.env.HOME = E.home;
+  const borrado = path.join(E.repo, 'src', 'g.test.js');
+  try {
+    require(path.join(SCRIPTS, 'on-bash-write-gate.js')).anotarBorradosDeLaStory({ stateDir: E.dir(), sessionId: sid, marker: E.leer(sid), rutas: [borrado], via: 'git rm' });
+  } finally { [pasos.otraVueltaDe, reglas.pideOtraVuelta, process.env.HOME] = [vuelta, regla, home]; }
+  const m = E.leer(sid);
+  assert.strictEqual(m.fileEvents.find((e) => e.path === borrado).code, true, 'la regla que falla marca code: ante la duda, se revisa');
+  assert.strictEqual('otraVuelta' in m, false, 'el campo viejo se borra');
+  assert.match(fs.readFileSync(path.join(E.dir(), 'hook-errors.log'), 'utf8'), /on-bash-write-gate[^\n]*: Error: vuelta rota t34/);
+});
+
+test('T35 CompleteStep_OtraVueltaQueFalla_CierraIgual @story-8.195 @ac-34 — si el cálculo de otraVuelta falla, el paso cierra, el campo no queda y hay rastro', () => {
+  const E = entorno();
+  const sid = 's-8195-t35';
+  listaParaElUltimo(E, sid);
+  E.escribir(sid, { ...E.leer(sid), otraVuelta: { round: 2, archivos: ['src/viejo.js'], desde: '2026-01-01T10:59:00.000Z' } });
+  const rompe = path.join(E.repo, '..', 'rompe-vuelta-t35.js');
+  fs.writeFileSync(rompe, `require(${JSON.stringify(path.join(SCRIPTS, 'lib', 'steps.js'))}).otraVueltaDe = () => { throw new Error('vuelta rota t35'); };\n`);
+  const r = spawnSync(process.execPath, ['--require', rompe, path.join(SCRIPTS, 'marker.js'), 'complete-step', 'plan', '--out-of-order'], {
+    encoding: 'utf8', input: '', cwd: E.repo,
+    env: { ...process.env, HOME: E.home, USERPROFILE: E.home, CLAUDE_CODE_SESSION_ID: sid, TYCON_HOME: '', TYCON_LANE_LLM: '0', TYCON_TIME_TRACKING: 'none' },
+  });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const m = E.leer(sid);
+  assert.ok(m.stepsCompleted.includes('plan'), 'el paso cerró');
+  assert.strictEqual('otraVuelta' in m, false, 'el campo viejo no queda: el cartel vuelve a su regla de antes');
+  assert.match(fs.readFileSync(path.join(E.dir(), 'hook-errors.log'), 'utf8'), /marker otraVuelta: Error: vuelta rota t35/);
+});
+
 test('T15 UltimoPaso_MarcadorIlegible_NiegaComoHoy @story-8.195 @ac-15 — con el marcador roto, el último paso niega con el motivo de hoy', () => {
   const E = entorno();
   const sid = 's-8195-t15';

@@ -25,7 +25,6 @@ function stateDir() {
 const boardFile = (sdir) => path.join(sdir, 'coordination', 'tablero.json');
 const readRows = (sdir) => JSON.parse(fs.readFileSync(boardFile(sdir), 'utf8')).pendientes;
 const writeRaw = (sdir, raw) => fs.writeFileSync(boardFile(sdir), JSON.stringify(raw, null, 2));
-const fromFile = (sdir, raw) => { const f = path.join(sdir, 'mio.json'); fs.writeFileSync(f, JSON.stringify(raw)); return f; };
 const row = (titulo, more = {}) => ({ titulo, estado: 'espera', grupo: 'Hoy', ...more });
 const byTitle = (rows, t) => rows.find((r) => r.titulo === t);
 
