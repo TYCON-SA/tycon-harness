@@ -1311,6 +1311,12 @@ test('T12 Open_AnotaLaLanzada @story-8.211 @ac-9: abrir bien deja { name, cwd, a
   const f = toy();
   assert.strictEqual(open(f, { name: 'n2', task: 'algo', launcher: launcher(f, 'error') }).ok, false);
   assert.strictEqual(launchedRows(f.home), null, 'sin apertura, sin renglón');
+  // el registro que no se puede escribir: abre igual, y lo dice
+  const n = toy();
+  fs.mkdirSync(C.launchedFile(n.home), { recursive: true });
+  const r3 = open(n, { name: 'n3', task: 'algo', launcher: launcher(n) });
+  assert.strictEqual(r3.ok, true, r3.message);
+  assert.match(r3.message, /No la pude anotar entre las que abrió la coordinadora/);
 });
 
 test('T13 OpenYClose_LimpianLaunched @story-8.211 @ac-10: lo viejo sin sesión viva se borra; close saca el suyo', () => {

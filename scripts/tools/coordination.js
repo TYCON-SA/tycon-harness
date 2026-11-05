@@ -57,7 +57,7 @@ const SKILL_LIB = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', '
 const { stateDir, claudeDir } = require(path.join(SKILL_LIB, 'state-dir.js'));
 const { adversarialInFlight } = require(path.join(SKILL_LIB, 'codex-reviewers.js'));
 const { sesionQueReenvia, designacionVigente } = require(path.join(SKILL_LIB, 'critical-waivers.js'));
-const { sessionsBySid, SAFE_SID } = require('./work-in-progress.js');
+const { sessionsBySid, SAFE_SID, listedName } = require('./work-in-progress.js');
 const tyconConfig = require(path.join(__dirname, '..', 'lib', 'tycon-config.js'));
 const workSlots = require('./work-slots.js');
 const signatureList = require(path.join(__dirname, '..', 'lib', 'signature-list.js'));
@@ -1008,9 +1008,13 @@ function readLaunched(home) {
   return list;
 }
 
-/** ¿El renglón es de esta sesión? Mismo nombre y carpeta, y arrancó dentro de la ventana de su apertura. */
+/**
+ * ¿El renglón es de esta sesión? Mismo nombre y carpeta, y arrancó dentro de la ventana de su apertura. El nombre de la
+ * sesión llega recortado como lo lista `sessionsBySid`: el guardado se recorta igual, o uno largo no se reconocería nunca.
+ */
 function launchedMatches(row, s) {
-  if (!row || typeof row !== 'object' || !s || row.name !== s.name || !row.cwd || !s.cwd || !Number.isFinite(row.at)) return false;
+  if (!row || typeof row !== 'object' || !s || typeof row.name !== 'string' || !s.name || listedName(row.name) !== s.name) return false;
+  if (!row.cwd || !s.cwd || !Number.isFinite(row.at)) return false;
   if (realDir(row.cwd) !== realDir(s.cwd)) return false;
   return Number.isFinite(s.startedAt) && s.startedAt >= row.at - LAUNCHED_EARLY_MS && s.startedAt <= row.at + LAUNCHED_LATE_MS;
 }
@@ -1031,17 +1035,18 @@ function noteLaunched({ home, now, name, cwd, por }) {
 }
 
 /**
- * ¿La sesión `sid` la abrió `open`? `{ launched }`, o `{ problem }` si no se pudo leer su archivo de sesión o el registro:
- * quien llama decide qué hace sin el dato.
+ * ¿La sesión `sid` la abrió `open`? `{ launched }`, o `{ problem, background }` si no se pudo leer su archivo de sesión o
+ * el registro. `background` dice si se sabe que es de fondo (el registro no se leyó, su archivo sí): quien llama decide
+ * qué hace sin el dato.
  */
 function launchedBy({ home, sid }) {
   const unreadable = [];
   const sessions = sessionsBySid(path.join(claudeDir(home), 'sessions'), unreadable, null);
   const s = sessions.get(sid);
-  if (!s) return unreadable.length ? { problem: `no pude leer las sesiones (${unreadable[0]})` } : { launched: false };
+  if (!s) return unreadable.length ? { problem: `no pude leer las sesiones (${unreadable[0]})`, background: false } : { launched: false };
   if (!/^(bg|background)$/.test(String(s.kind))) return { launched: false };
   let list;
-  try { list = readLaunched(home); } catch (e) { return { problem: e.message }; }
+  try { list = readLaunched(home); } catch (e) { return { problem: e.message, background: true }; }
   return { launched: list.some((r) => launchedMatches(r, s)) };
 }
 

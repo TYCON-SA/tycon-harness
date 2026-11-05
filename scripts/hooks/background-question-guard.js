@@ -11,8 +11,9 @@
  * Toda pregunta, no sólo la de firma: una pregunta libre de la sesión también le llegaba a la persona por una pestaña que
  * no mira. ExitPlanMode no: es la salida del modo plan, y negarla dejaría a la sesión encerrada ahí.
  *
- * Lo que no se puede leer deja pasar y queda en `<estado>/hook-errors.log`: negar por un error frenaría a las sesiones
- * que abre la persona. Codex no abre sesiones de fondo: no hay gancho del lado Codex. Off: TYCON_BG_QUESTION_GUARD=0.
+ * Lo que no se puede leer queda en `<estado>/hook-errors.log`. Si la sesión es de fondo y no se pudo leer el registro de
+ * las lanzadas, ante la duda niega; si ni siquiera se sabe si es de fondo, deja pasar: negar por un error frenaría a las
+ * sesiones que abre la persona. Codex no abre sesiones de fondo: no hay gancho del lado Codex. Off: TYCON_BG_QUESTION_GUARD=0.
  */
 const fs = require('fs');
 const os = require('os');
@@ -36,19 +37,53 @@ function textoDe(input) {
   return String(i.question || i.prompt || i.message || i.text || '');
 }
 
-/** La negativa: a quién mandarle la pregunta y qué. `firma`: el id del sello, si la pregunta trae uno. */
-function textoDeLaNegativa({ nombre, sid, firma }) {
-  const partes = [
-    `Esta sesión la abrió la coordinadora: no le preguntes a la persona. Mandale a «${nombre}» (${sid}) por SendMessage la pregunta tal cual,`
-      + ' lo que se decide en tres renglones (el plan, si es un plan) y la ruta del archivo. Esperá su aviso.',
-  ];
-  if (firma) {
-    partes.push('Es una pregunta de firma: va tal cual, sin cambiarle una letra; la coordinadora la muestra en su pestaña, y con el click repetís el comando acá.');
-    let soloClick = false;
-    try { soloClick = !!((require('../lib/signatures.js').SIGNATURES.find((s) => s.id === firma) || {}).soloClick); } catch { /* sin la lista, como una firma más */ }
-    if (soloClick) partes.push('Esa firma sólo la aprueba un click en la pestaña que trabaja: acá queda la terminal del dueño, y eso es lo que le pasás a la coordinadora.');
+/** ¿La firma sólo la aprueba un click en la pestaña que trabaja? Sin la lista de firmas, no, y queda anotado. */
+function esSoloClick(home, firma) {
+  try { return !!((require('../lib/signatures.js').SIGNATURES.find((s) => s.id === firma) || {}).soloClick); } catch (e) {
+    logError(home, `no pude leer la lista de firmas (${(e && e.message) || e}): «${firma}» se trató como una firma más`);
+    return false;
   }
+}
+
+/**
+ * La negativa: a quién mandarle la pregunta y qué. `firma`: el id del sello, si la pregunta trae uno; `soloClick`, si esa
+ * firma sólo la aprueba un click en la pestaña que trabaja; `duda`: no se pudo leer el registro de las lanzadas.
+ */
+function textoDeLaNegativa({ nombre, sid, firma = null, soloClick = false, duda = false }) {
+  const partes = [
+    duda
+      ? `No pude leer qué sesiones abrió la coordinadora, y ésta es de fondo: ante la duda, no le preguntes a la persona. Mandale a «${nombre}» (${sid}) por SendMessage la pregunta tal cual,`
+      : `Esta sesión la abrió la coordinadora: no le preguntes a la persona. Mandale a «${nombre}» (${sid}) por SendMessage la pregunta tal cual,`,
+    'lo que se decide en tres renglones (el plan, si es un plan) y la ruta del archivo. Esperá su aviso.',
+  ];
+  if (firma && soloClick) partes.push('Es una firma que sólo aprueba un click en la pestaña que trabaja: no se aprueba desde la pestaña de la coordinadora. Queda la terminal del dueño, y eso es lo que le pasás.');
+  else if (firma) partes.push('Es una pregunta de firma: va tal cual, sin cambiarle una letra; la coordinadora la muestra en su pestaña, y con el click repetís el comando acá.');
   return partes.join(' ');
+}
+
+/**
+ * A quién va una pregunta de la sesión `sid`: `{ name, sid, duda }` de la coordinadora si la pregunta no le llega a la
+ * persona, o null si pregunta como siempre. No le llega si la sesión la abrió `open`, o si es de fondo y no se pudo leer
+ * el registro de las lanzadas (`duda`), con una coordinadora confirmada y viva que no es ella. Lo que no se pudo leer
+ * queda en hook-errors.log; sin poder saber si es de fondo, pregunta. La usan este freno y el de firmas (owner-window.js).
+ */
+function coordinadoraDeLaLanzada({ home = os.homedir(), sid }) {
+  try {
+    const sl = require('../lib/signature-list.js');
+    const s = sl.sesiones(home);
+    const coord = sl.coordinadoraViva(home, s);
+    if (!coord || coord === sid) return null;
+    const lanzada = require('../tools/coordination.js').launchedBy({ home, sid });
+    if (lanzada.problem) {
+      logError(home, `no pude saber si ${sid} la abrió la coordinadora (${lanzada.problem}): ${lanzada.background ? 'es de fondo, la frené' : 'la dejé preguntar'}`);
+      if (!lanzada.background) return null;
+    } else if (!lanzada.launched) return null;
+    const c = s.mapa.get(coord);
+    return { name: (c && c.name) || 'la coordinadora', sid: coord, duda: !!lanzada.problem };
+  } catch (e) {
+    logError(home, `${(e && e.message) || e}: dejé preguntar a ${sid}`);
+    return null;
+  }
 }
 
 /**
@@ -61,39 +96,11 @@ function decidir(evento, { home = os.homedir(), env = process.env } = {}) {
   if (!QUESTION_TOOLS.has(d.tool_name)) return null;
   const sid = d.session_id;
   if (!sid || !/^[\w-]+$/.test(String(sid))) return null;
-  try {
-    const sl = require('../lib/signature-list.js');
-    const s = sl.sesiones(home);
-    const coord = sl.coordinadoraViva(home, s);
-    if (!coord || coord === sid) return null;
-    const lanzada = require('../tools/coordination.js').launchedBy({ home, sid });
-    if (lanzada.problem) { logError(home, `no pude saber si ${sid} la abrió la coordinadora (${lanzada.problem}): la dejé preguntar`); return null; }
-    if (!lanzada.launched) return null;
-    const c = s.mapa.get(coord);
-    const nombre = (c && c.name) || 'la coordinadora';
-    const m = SELLO.exec(textoDe(d.tool_input));
-    return { decision: 'deny', reason: textoDeLaNegativa({ nombre, sid: coord, firma: m ? m[1] : null }) };
-  } catch (e) {
-    logError(home, `${(e && e.message) || e}: la dejé preguntar`);
-    return null;
-  }
-}
-
-/**
- * La coordinadora a quien mandarle una firma de esta sesión: `{ name, sid }` si la sesión la abrió `open` y hay una
- * coordinadora confirmada y viva que no es ella; null si no, o sin el dato. Lo usa el freno de firmas (owner-window.js).
- */
-function coordinadoraDeLaLanzada({ home = os.homedir(), sid }) {
-  try {
-    const sl = require('../lib/signature-list.js');
-    const s = sl.sesiones(home);
-    const coord = sl.coordinadoraViva(home, s);
-    if (!coord || coord === sid) return null;
-    const lanzada = require('../tools/coordination.js').launchedBy({ home, sid });
-    if (!lanzada.launched) return null;
-    const c = s.mapa.get(coord);
-    return { name: (c && c.name) || 'la coordinadora', sid: coord };
-  } catch { return null; }
+  const c = coordinadoraDeLaLanzada({ home, sid });
+  if (!c) return null;
+  const m = SELLO.exec(textoDe(d.tool_input));
+  const firma = m ? m[1] : null;
+  return { decision: 'deny', reason: textoDeLaNegativa({ nombre: c.name, sid: c.sid, firma, soloClick: firma ? esSoloClick(home, firma) : false, duda: c.duda }) };
 }
 
 module.exports = { QUESTION_TOOLS, decidir, textoDeLaNegativa, coordinadoraDeLaLanzada };

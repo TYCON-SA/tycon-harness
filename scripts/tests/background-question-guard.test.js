@@ -131,18 +131,38 @@ test('T6 RenglonDeOtraSesion_Pasa @story-8.211 @ac-6', (t) => {
   assert.strictEqual(decidir(otra, evento(LANZADA)), null, 'mismo nombre, otra carpeta');
   const vieja = maquina(t, { startedAt: AT + 2 * 3600000 });
   assert.strictEqual(decidir(vieja, evento(LANZADA)), null, 'mismo nombre y carpeta, arrancada dos horas después');
+  // un nombre de más de 40 letras: el archivo de sesión llega recortado, y el renglón se compara recortado igual
+  const largo = 'Acme'.repeat(13);
+  const larga = maquina(t, { conRenglon: false });
+  sesion(larga, LANZADA, { nombre: largo, kind: 'bg', startedAt: AT + 7000 });
+  lanzadas(larga, [{ name: largo, cwd: larga.carpeta, at: AT, por: COORD }]);
+  assert.strictEqual(decidir(larga, evento(LANZADA)).decision, 'deny', 'un nombre largo se reconoce');
 });
 
-test('T7 SinDato_PasaYAnota @story-8.211 @ac-7', (t) => {
+test('T7 SinDato_AnteLaDudaFrenaSiEsDeFondo @story-8.211 @ac-7', (t) => {
   const errores = (toy) => { try { return fs.readFileSync(path.join(stateDir(toy.casa), 'hook-errors.log'), 'utf8'); } catch { return ''; } };
+  // el registro roto con una sesión de fondo: ante la duda, niega, y queda anotado
   const rota = maquina(t);
   fs.writeFileSync(C.launchedFile(rota.casa), '{ no es json');
-  assert.strictEqual(decidir(rota, evento(LANZADA)), null);
-  assert.match(errores(rota), /background-question-guard/);
+  const r = decidir(rota, evento(LANZADA));
+  assert.strictEqual(r.decision, 'deny');
+  assert.match(r.reason, /ante la duda/);
+  assert.match(errores(rota), /background-question-guard: .*la frené/);
+  // el mismo registro roto con una pestaña interactiva: pregunta como siempre, y queda anotado
+  const interactiva = maquina(t);
+  fs.writeFileSync(C.launchedFile(interactiva.casa), '{ no es json');
+  sesion(interactiva, 'ses-tab', { nombre: 'Tab', kind: 'interactive' });
+  assert.strictEqual(decidir(interactiva, evento('ses-tab')), null);
+  // el archivo de la propia sesión ilegible: no se sabe si es de fondo, pregunta, y queda anotado
   const ilegible = maquina(t);
   fs.writeFileSync(path.join(ilegible.casa, '.claude', 'sessions', `${LANZADA}.json`), '{ roto');
   assert.strictEqual(decidir(ilegible, evento(LANZADA)), null);
-  assert.match(errores(ilegible), /background-question-guard/);
+  assert.match(errores(ilegible), /background-question-guard: .*la dejé preguntar/);
+  // la designación ilegible: no hay coordinadora que se pueda confirmar, pregunta
+  const sinDesignacion = maquina(t);
+  fs.rmSync(path.join(stateDir(sinDesignacion.casa), 'gates.log'));
+  fs.mkdirSync(path.join(stateDir(sinDesignacion.casa), 'gates.log'));
+  assert.strictEqual(decidir(sinDesignacion, evento(LANZADA)), null);
   const apagado = maquina(t);
   assert.strictEqual(decidir(apagado, evento(LANZADA), { TYCON_BG_QUESTION_GUARD: '0' }), null);
 });
@@ -150,14 +170,33 @@ test('T7 SinDato_PasaYAnota @story-8.211 @ac-7', (t) => {
 test('T8 OtraHerramienta_NoHaceNada @story-8.211 @ac-8', (t) => {
   const toy = maquina(t);
   assert.strictEqual(decidir(toy, evento(LANZADA, 'Bash', { command: 'ls' })), null);
+  assert.strictEqual(decidir(toy, { ...evento(LANZADA), hook_event_name: 'PostToolUse' }), null, 'otro momento');
+  assert.strictEqual(decidir(toy, { ...evento(LANZADA), session_id: '../x' }), null, 'una sesión que no se puede leer');
+  assert.strictEqual(decidir(toy, { ...evento(LANZADA), session_id: undefined }), null, 'sin sesión');
+  const roto = spawnSync(process.execPath, [GANCHO], { input: '{ no es json', encoding: 'utf8', env: { ...process.env, HOME: toy.casa, USERPROFILE: toy.casa } });
+  assert.strictEqual(roto.status, 0);
+  assert.strictEqual(roto.stdout, '');
   const p = spawnSync(process.execPath, [GANCHO], { input: JSON.stringify(evento(LANZADA, 'Bash', { command: 'ls' })), encoding: 'utf8', env: { ...process.env, HOME: toy.casa, USERPROFILE: toy.casa } });
   assert.strictEqual(p.status, 0);
   assert.strictEqual(p.stdout, '');
 });
 
-test('T10 FirmaEnLanzada_TextoALaCoordinadora @story-8.211 @ac-12', () => {
-  const cuadro = { pregunta: '¿Aprobás aprobar el plan? (firma plan-approval · sesión s · código 1)', sello: 'firma plan-approval · sesión s · código 1', opciones: ['Sí, aprobar', 'No'] };
+test('T10 FirmaEnLanzada_TextoALaCoordinadora @story-8.211 @ac-12', (t) => {
+  // el cuadro como lo arma el guion de las firmas
+  const cuadro = oa.cuadroDe({ firma: 'plan-approval', destino: 's', que: 'aprobar el plan', detalle: 'la cita: «x»', siSaleMal: 'se rehace', huella: 'abcd1234' });
   const coord = { name: 'Coordinadora', sid: COORD };
+  // varias firmas, o un cuadro que no se pudo armar: también a la coordinadora, sin «mostrale»
+  for (const [ids, c] of [[['plan-approval', 'save'], cuadro], [['plan-approval'], { error: 'no se pudo' }], [['plan-approval'], null]]) {
+    const r = ow.negarSinVentana('esta sesión corre de fondo', ids, 's', c, true, false, coord);
+    assert.match(r.texto, /SendMessage/, JSON.stringify(ids));
+    assert.doesNotMatch(r.texto, /mostrale AskUserQuestion/);
+  }
+  // la cadena entera: la sesión lanzada, con la coordinadora viva, da la coordinadora; otra, nada
+  const toy = maquina(t);
+  assert.deepStrictEqual(G.coordinadoraDeLaLanzada({ home: toy.casa, sid: LANZADA }), { name: 'Coordinadora', sid: COORD, duda: false });
+  sesion(toy, 'ses-otra', { nombre: 'Otra', kind: 'bg', startedAt: AT + 7000 });
+  assert.strictEqual(G.coordinadoraDeLaLanzada({ home: toy.casa, sid: 'ses-otra' }), null);
+  assert.strictEqual(G.coordinadoraDeLaLanzada({ home: toy.casa, sid: COORD }), null);
   const lanzada = ow.negarSinVentana('esta sesión corre de fondo', ['plan-approval'], 's', cuadro, true, false, coord);
   assert.match(lanzada.texto, /SendMessage/);
   assert.match(lanzada.texto, /Coordinadora/);

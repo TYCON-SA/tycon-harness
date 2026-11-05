@@ -707,6 +707,10 @@ function negarSinVentana(motivo, ids, sesion, cuadro = null, deFondo = false, an
       + `Mandale a ${aQuien} por SendMessage esta pregunta exacta, sin cambiarle una letra: «${cuadro.pregunta}», con las opciones «${cuadro.opciones[0]}» y «${cuadro.opciones[1]}», el comando y lo que se decide en tres renglones. `
       + `Ella la muestra en su pestaña; cuando te avise, repetí el mismo comando. ${otraForma}` };
   }
+  if (aQuien && !anotado) {
+    return { decision: 'deny', firmas: ids, texto: `${motivo}. Esta sesión la abrió la coordinadora: no le muestres nada a la persona. Corré cada firma sola, en su forma exacta: `
+      + `este freno te da la pregunta de cada una, y se la mandás a ${aQuien} por SendMessage con el comando y lo que se decide en tres renglones. ${otraForma}` };
+  }
   if (cuadro && cuadro.soloClick) {
     return { decision: 'deny', firmas: ids, cuadro, texto: `${motivo}. Esto lo elige la persona con un click en el cuadro de opciones de esta pestaña: mostrale AskUserQuestion con una sola pregunta, sin cambiarle una letra: «${cuadro.pregunta}», y las opciones «${cuadro.opciones[0]}», con la descripción «${cuadro.descripciones[0]}», y «${cuadro.opciones[1]}», con la descripción «${cuadro.descripciones[1]}». `
       + `Con su click, repetí el mismo comando. Un mensaje escrito no vale, ni un click en otra pestaña. ${deFondo ? 'Si nadie mira esta sesión de fondo, queda la terminal. ' : ''}${otraForma}` };
@@ -994,9 +998,14 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
         const donde = soloClick ? 'pasar el tope del camino corto no se aprueba en la ventana' : enWindows ? 'en Windows la ventana de permiso no firma' : deFondo ? 'esta sesión corre de fondo: la ventana de permiso no le llega a nadie seguro'
           : `esta pestaña no pide permisos (${una(modo, 40)}): la ventana se aprobaría sola, sin el Sí del dueño`;
         const anotado = anotarNegativa({ casa, sesion, destino, guion, pendientes, comando, palabras: can && can.palabras, cuadro, cwd: evento.cwd, ahora, deFondo, lista });
-        // sin el dato, el texto de siempre
+        // la sesión que abrió la coordinadora le manda el cuadro a ella; lo que no se pudo leer lo anota la función, y sin
+        // poder cargarla, el texto de siempre
         let coordinadora = null;
-        if (deFondo) { try { coordinadora = require('../hooks/background-question-guard.js').coordinadoraDeLaLanzada({ home: casa, sid: sesion }); } catch (_) { coordinadora = null; } }
+        if (deFondo) {
+          try { coordinadora = require('../hooks/background-question-guard.js').coordinadoraDeLaLanzada({ home: casa, sid: sesion }); } catch (e) {
+            try { fs.appendFileSync(path.join(stateDir(casa), 'hook-errors.log'), `[${new Date().toISOString()}] owner-window: no cargué el freno de preguntas (${e.message}): el texto de siempre\n\n`); } catch (_) { /* sin registro tampoco */ }
+          }
+        }
         return negarSinVentana(`${donde}${rutina.motivo && !enWindows ? `, y ${rutina.motivo}` : ''}; ${a.motivo}`, pendientes, paraTerminal, cuadro, deFondo, anotado, coordinadora);
       }
     }
