@@ -491,9 +491,11 @@ function indiceLocal(dir) {
 // si no está ignorado y `ls-files --error-unmatch` sale 1 si no está en git; cualquier otra salida es git que no
 // contestó (un repo con dueño dudoso, un .git roto), y eso no es «versionado».
 function modoDelIndice(dir) {
+  // en inglés: el «not a git repository» de abajo se lee igual en cualquier idioma de la máquina. Fuera del `try`: una
+  // biblioteca que no carga no es git que no contestó
+  const env = require('./clean-git-env.js').idiomaFijo();
   const correr = (args) => {
-    // LC_ALL=C: el «not a git repository» de abajo se lee en inglés, en cualquier idioma de la máquina
-    try { execFileSync('git', ['-C', dir, ...args], { stdio: ['ignore', 'ignore', 'pipe'], env: { ...process.env, LC_ALL: 'C' } }); return { rc: 0 }; }
+    try { execFileSync('git', ['-C', dir, ...args], { stdio: ['ignore', 'ignore', 'pipe'], env }); return { rc: 0 }; }
     catch (e) { return { rc: typeof e.status === 'number' ? e.status : null, motivo: String((e && e.stderr) || (e && e.message) || e).trim().split('\n')[0] }; }
   };
   const ignorado = correr(['check-ignore', '-q', '--', REL_INDICE]);
