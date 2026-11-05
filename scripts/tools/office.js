@@ -993,17 +993,19 @@ function boardLine(kanban, { trabado = [], escritoAt = null, hourOf = (c) => c.f
 
 /**
  * «¿Cómo va la T-41?»: la tarjeta con ese número, en una línea (columna, título, quién, hora, nota y pedido). `dados`: los
- * números que dio el tablero, para decir si uno que no está se borró. `{ code: 0|1, line, card }`.
+ * números que dio el tablero, para decir si uno que no está se borró. `ultimo`: el último hecho que movió la fila, en una
+ * línea, que va al final. `{ code: 0|1, line, card }`.
  */
-function findTask(data, id, { dados = {} } = {}) {
+function findTask(data, id, { dados = {}, ultimo = null } = {}) {
   const want = boardTool.taskId(id);
   if (!want) return { code: 1, line: `«${id}» no es un número de tarea: va como T-41 o 41` };
+  const line = (columna, card) => [want, columna, card.titulo, card.quien || '—', card.hora || '—', card.nota || '—', card.pedidoTexto ? `pedido ${card.pedidoTexto}` : 'sin pedido', ...(ultimo ? [ultimo] : [])].join(' · ');
   for (const c of data.kanban.columnas) {
     const card = c.tarjetas.find((t) => t.numero === want);
-    if (card) return { code: 0, card, line: [want, c.nombre, card.titulo, card.quien || '—', card.hora || '—', card.nota || '—', card.pedidoTexto ? `pedido ${card.pedidoTexto}` : 'sin pedido'].join(' · ') };
+    if (card) return { code: 0, card, line: line(c.nombre, card) };
   }
   const old = (data.kanban.anteriores || []).find((t) => t.numero === want);
-  if (old) return { code: 0, card: old, line: [want, 'Hechos', old.titulo, old.quien || '—', old.hora || '—', old.nota || '—', old.pedidoTexto ? `pedido ${old.pedidoTexto}` : 'sin pedido'].join(' · ') };
+  if (old) return { code: 0, card: old, line: line('Hechos', old) };
   return { code: 1, line: Object.prototype.hasOwnProperty.call(dados, want) ? `${want} no está en el tablero: esa fila se borró del tablero («${dados[want]}»)` : `${want} no está en el tablero` };
 }
 
@@ -2207,7 +2209,7 @@ async function main(argv) {
     throw e;
   }
   if (opts.task) {
-    const r = findTask(data, opts.task, { dados: boardTool.readNumbers(sdir).dados });
+    const r = findTask(data, opts.task, { dados: boardTool.readNumbers(sdir).dados, ultimo: boardTool.lastFactLine(sdir, boardTool.taskId(opts.task)) });
     if (opts.json && r.card) process.stdout.write(`${JSON.stringify(r.card, null, 2)}\n`);
     else process.stdout.write(`${r.line}\n`);
     return r.code;

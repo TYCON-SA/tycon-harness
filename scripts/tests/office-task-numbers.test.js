@@ -431,6 +431,21 @@ test('T15 Task_Existe_UnaLineaYSale0 — @story-8.198 @ac-14', () => {
   assert.strictEqual(office.findTask(data, '1', {}).card.titulo, 'Primera');
 });
 
+test('Regresion_Task_DiceElUltimoHecho — @story-8.198 @ac-47', () => {
+  const sdir = synced([row('Prometida', { historia: '8.1', pronosticoIso: '2026-11-04T18:00' })]);
+  board.sync(sdir, [{ tipo: 'curso', clave: 'curso:s1:1', historia: '8.1', quien: 'Sand', at: at(9, 0) }], { complete: true, now: NOW });
+  const id = readRows(sdir)[0].id;
+  const { data } = buildOffice({ wip: wip([]), board: numbered([{ titulo: 'Prometida' }]), nowMs: ONOW });
+  const r = office.findTask(data, id, { ultimo: board.lastFactLine(sdir, id) });
+  assert.strictEqual(r.code, 0);
+  assert.match(r.line, / · último hecho: curso:s1:1 \(curso\) a las \d\d:\d\d$/);
+  // sin hechos anotados, la línea queda como siempre
+  assert.doesNotMatch(office.findTask(data, id, { ultimo: null }).line, /último hecho/);
+  // el comando le pasa el último hecho de su registro
+  const code = fs.readFileSync(path.join(__dirname, '..', 'tools', 'office.js'), 'utf8');
+  assert.match(code, /findTask\(data, opts\.task, \{[^}]*ultimo: boardTool\.lastFactLine\(sdir, boardTool\.taskId\(opts\.task\)\)/);
+});
+
 test('T16 Task_NoExisteOBorrada_Sale1ConMotivo — @story-8.198 @ac-15', () => {
   const { data } = buildOffice({ wip: wip([]), board: numbered([{ titulo: 'Primera' }]), nowMs: ONOW });
   const nunca = office.findTask(data, 'T-99', { dados: { 'T-1': 'Primera' } });

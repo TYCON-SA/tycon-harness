@@ -396,7 +396,9 @@ function appendFacts(sdir, entries) {
 /** El último hecho que movió una fila, en una línea; null si no hay. */
 function lastFactLine(sdir, id) {
   const e = [...readFacts(sdir)].reverse().find((x) => x.id === id);
-  return e ? `último hecho: ${e.clave} (${e.tipo}) a las ${e.hora}` : null;
+  // la hora local se anota entera (AAAA-MM-DDTHH:MM): a la persona le basta la hora
+  const hora = /^\d{4}-\d\d-\d\dT(\d\d:\d\d)/.exec(String(e && e.hora));
+  return e ? `último hecho: ${e.clave} (${e.tipo}) a las ${hora ? hora[1] : e.hora}` : null;
 }
 
 /**
