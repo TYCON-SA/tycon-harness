@@ -1843,3 +1843,37 @@ test('T211 Halfway_ReadAt_FromMemoryOrNow: la hora es la de la última lectura; 
   assert.strictEqual(run(m, { memory }).halfwayReadAt, 1234);
 });
 
+
+test('T212 Doing_WithOpenRun_Refused: con una historia abierta no anota texto ni hora; la espera de turno sola y clear pasan', () => {
+  const h = toyHome();
+  const sid = 'doi00000-9';
+  fs.writeFileSync(path.join(h.state, 'active', `${sid}.json`), JSON.stringify({ sessionId: sid, storyId: '8.183', startedAt: new Date().toISOString() }));
+  for (const args of [['corro la suite de la 8.183'], ['corro la suite de la 8.183', '--until', '23:30'], ['espero el turno de la suite', '--waiting-for', 'turno de la suite'], ['--until', '23:30']]) {
+    assert.throws(() => doing(h, sid, ...args), (e) => e.status === 3 && /historia 8\.183/.test(e.stderr) && /otra sesión/.test(e.stderr) && e.stderr.trim().split('\n').length === 1, args.join(' '));
+    assert.ok(!fs.existsSync(doingFile(h, sid)), args.join(' '));
+  }
+  assert.match(doing(h, sid, '--waiting-for', 'turno de la suite'), /historia 8\.183 \(espera turno de la suite\)/);
+  const note = JSON.parse(fs.readFileSync(doingFile(h, sid), 'utf8'));
+  assert.strictEqual(note.text, undefined);
+  assert.strictEqual(note.waitingFor, 'turno de la suite');
+  const lib = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib');
+  assert.strictEqual(require(path.join(lib, 'story-gate-io.js')).waitingTurn(h.state, sid).waitingFor, 'turno de la suite', 'las podas la siguen respetando');
+  // cerrada la historia sin `doing clear`, la espera sin texto no abre una fila «(sin texto)»
+  session(h, process.pid, sid, 'Pepe', { status: 'busy' });
+  const active = path.join(h.state, 'active', `${sid}.json`);
+  const runFile = fs.readFileSync(active, 'utf8');
+  fs.rmSync(active);
+  assert.ok(!run(h).rows.some((r) => /sin texto/.test(r.work)), run(h).text);
+  fs.writeFileSync(active, runFile);
+  doing(h, sid, 'clear');
+  assert.ok(!fs.existsSync(doingFile(h, sid)));
+  // un marcador ilegible no es «sin historia»: frena, y clear sigue andando
+  fs.writeFileSync(path.join(h.state, 'active', `${sid}.json`), '{roto');
+  assert.throws(() => doing(h, sid, 'corro la suite de la 8.183'), (e) => e.status === 2 && /no se puede leer/.test(e.stderr));
+  assert.ok(!fs.existsSync(doingFile(h, sid)));
+  doing(h, sid, 'clear');
+  // sin la historia, anota como siempre
+  fs.rmSync(path.join(h.state, 'active', `${sid}.json`));
+  assert.match(doing(h, sid, 'mido el banco de controles', '--until', '23:30'), /mido el banco/);
+  assert.strictEqual(JSON.parse(fs.readFileSync(doingFile(h, sid), 'utf8')).text, 'mido el banco de controles');
+});
