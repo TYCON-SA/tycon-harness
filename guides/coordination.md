@@ -525,6 +525,14 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
   no encuentra nada cuesta horas.
 - **Un mensaje para el equipo se comprueba frase por frase antes de pasarlo.** Y a los devs se los molesta lo menos posible:
   un arreglo les llega solo; un paso a mano es el último recurso. Por qué: una promesa falsa llega a todas las máquinas.
+- **La coordinadora no cambia código ni guías ella misma.** Todo cambio va a una sesión, que lo hace con su portón. Por
+  qué: el atajo saltea las pruebas que fijan lo que cambia, y el pedido se cae sin que nadie lo vea.
+- **Un plan o una propuesta para el dueño pasa antes por un revisor aparte.** Un agente que busca dónde falla, y el dueño
+  ve lo que encontró junto con el plan. Por qué: quien arma el plan no ve sus propios supuestos.
+- **Lo que la coordinadora afirma, lo comprobó; si no, dice «no lo comprobé».** Antes de proponer sacar o cambiar algo,
+  mide si se usa. Por qué: una afirmación falsa le cuesta al dueño una decisión mal tomada.
+- **Un cambio que promete velocidad se mide antes y después en un día con carga.** No sólo con la máquina quieta. Por
+  qué: con la máquina quieta todo anda rápido, y la diferencia aparece cuando corren varias cosas a la vez.
 
 ## Qué mide cada regla
 
@@ -575,3 +583,7 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
 | Un rojo no se deja | nadie | Los controles frenan lo propio; un rojo ajeno lo ve quien lo encuentra. |
 | No aflojar una revisión, no hacer papeleo | nadie | Es criterio: ningún dato separa una revisión de un papeleo. |
 | Comprobar un mensaje para el equipo | nadie | El mensaje sale por fuera de la máquina. |
+| La coordinadora no cambia código ni guías ella misma | nadie | Nada distingue hoy a la coordinadora de una sesión que escribe; el freno es una historia aparte. |
+| Un plan para el dueño pasa antes por un revisor aparte | nadie | Es criterio: ningún dato separa un plan de un mensaje cualquiera. |
+| Afirmar sólo lo comprobado, y medir el uso antes de sacar algo | nadie | Es criterio de la coordinadora. |
+| Medir un cambio de velocidad en un día con carga | nadie | Qué cambio promete velocidad lo dice el mensaje, no un dato. |
