@@ -57,7 +57,7 @@ const SKILL_LIB = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', '
 const { stateDir, claudeDir } = require(path.join(SKILL_LIB, 'state-dir.js'));
 const { adversarialInFlight } = require(path.join(SKILL_LIB, 'codex-reviewers.js'));
 const { rolDeCoordinar, designacionVigente } = require(path.join(SKILL_LIB, 'critical-waivers.js'));
-const { sessionsBySid, SAFE_SID } = require('./work-in-progress.js');
+const { sessionsBySid, SAFE_SID, listedName } = require('./work-in-progress.js');
 const tyconConfig = require(path.join(__dirname, '..', 'lib', 'tycon-config.js'));
 const workSlots = require('./work-slots.js');
 const signatureList = require(path.join(__dirname, '..', 'lib', 'signature-list.js'));
@@ -376,10 +376,21 @@ function coordinate(opts = {}) {
   if (d && d.error) return { code: 1, text: `No pude saber cuál es la coordinadora: ${d.error}.` };
   if (!d || !sid || d.sesion !== sid) {
     const marker = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+    // sin el rol en el perfil, el click no tiene qué nombrar: se nombra con la frase
+    if (!r.firma) {
+      return { code: 1, text: [
+        `Esta sesión no es la ${rol.valor} de esta máquina${d ? ' (hay otra designada)' : ''}.`,
+        `Para que lo sea, el dueño escribe en este chat «Esta sesión es la ${rol.valor}», y después esta sesión corre:`,
+        `  node ${marker} designate-relay --approved-by '<el dueño>' --quote '<su frase, textual>'`,
+      ].join('\n') };
+    }
     return { code: 1, text: [
       `Esta sesión no es la ${rol.valor} de esta máquina${d ? ' (hay otra designada)' : ''}.`,
-      `Para que lo sea, el dueño escribe en este chat «Esta sesión es la ${rol.valor}», y después esta sesión corre:`,
-      `  node ${marker} designate-relay --approved-by '<el dueño>' --quote '<su frase, textual>'`,
+      `Para que lo sea, el dueño se lo pide a esta sesión con sus palabras, y esta sesión corre:`,
+      `  node ${marker} designate-relay`,
+      'El freno da un cuadro con «Sí» y «No» que dice qué sesión es y en qué carpeta: el dueño hace click y queda nombrada.',
+      `Para dejar de serlo, la misma forma: node ${marker} withdraw-relay`,
+      `Si el click no se puede comprobar, el comando dice por qué y da los respaldos (su terminal, o su frase con --quote).`,
     ].join('\n') };
   }
   const firmas = r.firma ? '' : `\nFirmas: van a la ventana del dueño; sin approvals.relay_session en el perfil del equipo esta sesión ordena y no firma${r.aviso ? ` (${r.aviso.replace(/: nadie reenvía$/, '')})` : ''}.`;
@@ -436,13 +447,22 @@ function lostDesignation(opts, sid) {
   const home = opts.home || require('os').homedir();
   const d = designacionVigente({ home });
   if (!d || d.error || !sid || !opts.title || !opts.transcript) return null;
-  const rol = { valor: rolDeCoordinar({ env: opts.env || process.env, home, arnes: opts.arnes }).rol };
+  const r = rolDeCoordinar({ env: opts.env || process.env, home, arnes: opts.arnes });
+  const rol = { valor: r.rol };
   if (titleIn(path.join(path.dirname(opts.transcript), `${d.sesion}.jsonl`)) !== opts.title) return null;
   const marker = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+  // sin el rol en el perfil, el click no tiene qué nombrar: se recupera con la frase
+  if (!r.firma) {
+    return [
+      `Coordinación: esta sesión era la ${rol.valor} de esta máquina y dejó de serlo al limpiar la conversación: para el arnés es otra conversación.`,
+      `Decile a la persona que, si quiere que siga siéndolo, escriba en este chat «Esta sesión es la ${rol.valor}». La frase la escribe ella, nunca vos.`,
+      `Con su frase, corré node ${marker} designate-relay --approved-by '<la persona>' --quote '<su frase, textual>' y seguí lo que te diga.`,
+    ].join('\n');
+  }
   return [
     `Coordinación: esta sesión era la ${rol.valor} de esta máquina y dejó de serlo al limpiar la conversación: para el arnés es otra conversación.`,
-    `Decile a la persona que, si quiere que siga siéndolo, escriba en este chat «Esta sesión es la ${rol.valor}». La frase la escribe ella, nunca vos.`,
-    `Con su frase, corré node ${marker} designate-relay --approved-by '<la persona>' --quote '<su frase, textual>' y seguí lo que te diga.`,
+    `Decile a la persona que, si quiere que siga siéndolo, te lo pida con sus palabras. El pedido es de ella, nunca tuyo.`,
+    `Con su pedido, corré node ${marker} designate-relay: el freno te da un cuadro con «Sí» y «No» para mostrarle tal cual, y con su click queda nombrada. Si el click no se puede comprobar, el comando dice los respaldos.`,
   ].join('\n');
 }
 
@@ -1006,6 +1026,68 @@ function noteOpened({ home, now, name, cwd }) {
   writeJson(openedFile(home), [...recentOpened(home, now, []).filter((o) => o.name !== name), { name, cwd, at: now }]);
 }
 
+// ── Las sesiones que abrió `open` ──
+// `opened.json` vence a los diez minutos: sirve para el tope, no para saber horas después quién abrió una sesión. Este
+// registro dura mientras la sesión vive, y el freno de preguntas (scripts/hooks/background-question-guard.js) lo lee para
+// reconocer a una sesión de fondo abierta por la coordinadora, que el archivo de sesión no distingue de una abierta a mano.
+
+const LAUNCHED_KEEP_MS = 24 * 3600000;
+// el lanzador puede tardar hasta su plazo en dejar el archivo de sesión; el margen cubre una máquina cargada
+const LAUNCHED_EARLY_MS = 5000;
+const LAUNCHED_LATE_MS = LAUNCH_TIMEOUT_MS + 60000;
+const launchedFile = (home) => path.join(coordinationDir(home), 'launched.json');
+const realDir = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(String(p)); } };
+
+/** Los renglones de `launched.json`, tal como están. Sin archivo, vacío; roto o que no es una lista, tira con su motivo. */
+function readLaunched(home) {
+  const list = readJson(launchedFile(home), []);
+  if (!Array.isArray(list)) throw new Error(`${launchedFile(home)} no es una lista`);
+  return list;
+}
+
+/**
+ * ¿El renglón es de esta sesión? Mismo nombre y carpeta, y arrancó dentro de la ventana de su apertura. El nombre de la
+ * sesión llega recortado como lo lista `sessionsBySid`: el guardado se recorta igual, o uno largo no se reconocería nunca.
+ */
+function launchedMatches(row, s) {
+  if (!row || typeof row !== 'object' || !s || typeof row.name !== 'string' || !s.name || listedName(row.name) !== s.name) return false;
+  if (!row.cwd || !s.cwd || !Number.isFinite(row.at)) return false;
+  if (realDir(row.cwd) !== realDir(s.cwd)) return false;
+  return Number.isFinite(s.startedAt) && s.startedAt >= row.at - LAUNCHED_EARLY_MS && s.startedAt <= row.at + LAUNCHED_LATE_MS;
+}
+
+/** Saca lo que ya no sirve: `drop` (el nombre que se cierra) y lo de más de un día sin una sesión viva que lo use. */
+function pruneLaunched({ home, now, drop = null, sessions = null }) {
+  const list = readLaunched(home);
+  const live = [...(sessions || sessionsBySid(path.join(claudeDir(home), 'sessions'), [], null)).values()].filter((s) => s.alive);
+  const dropped = (r) => drop !== null && typeof r.name === 'string' && listedName(r.name) === listedName(drop);
+  const keep = list.filter((r) => r && !dropped(r) && (now - r.at < LAUNCHED_KEEP_MS || live.some((s) => launchedMatches(r, s))));
+  if (keep.length !== list.length) writeJson(launchedFile(home), keep);
+  return keep;
+}
+
+/** Anota la sesión que `open` acaba de abrir. Tira si no puede. */
+function noteLaunched({ home, now, name, cwd, por }) {
+  const keep = pruneLaunched({ home, now, drop: name });
+  writeJson(launchedFile(home), [...keep, { name, cwd, at: now, por: por || null }]);
+}
+
+/**
+ * ¿La sesión `sid` la abrió `open`? `{ launched }`, o `{ problem, background }` si no se pudo leer su archivo de sesión o
+ * el registro. `background` dice si se sabe que es de fondo (el registro no se leyó, su archivo sí): quien llama decide
+ * qué hace sin el dato.
+ */
+function launchedBy({ home, sid }) {
+  const unreadable = [];
+  const sessions = sessionsBySid(path.join(claudeDir(home), 'sessions'), unreadable, null);
+  const s = sessions.get(sid);
+  if (!s) return unreadable.length ? { problem: `no pude leer las sesiones (${unreadable[0]})`, background: false } : { launched: false };
+  if (!/^(bg|background)$/.test(String(s.kind))) return { launched: false };
+  let list;
+  try { list = readLaunched(home); } catch (e) { return { problem: e.message, background: true }; }
+  return { launched: list.some((r) => launchedMatches(r, s)) };
+}
+
 // Una apertura por vez en la máquina: dos `open` juntos elegían el mismo nombre de la lista y la segunda anotación de
 // `opened` pisaba la primera. La otra espera su turno; un candado de hace más de dos minutos es de una apertura que murió.
 const OPEN_LOCK_STALE_MS = 120000;
@@ -1076,7 +1158,8 @@ function openNow(opts) {
     name = sessionNames.nextFree(names, taken);
     if (!name) return no('No quedó ningún nombre libre en la lista de esta máquina (coordination.session_names): no la abrí.');
   }
-  if (taken.has(name)) return no(`«${name}» ya lo usa otra sesión viva: no la abrí.`);
+  // los nombres de las sesiones vivas llegan recortados: uno largo se compara recortado igual
+  if (taken.has(name) || taken.has(listedName(name))) return no(`«${name}» ya lo usa otra sesión viva: no la abrí.`);
   if (!oneLine(task)) return no('Falta el encargo de la sesión: no la abrí.');
   if (s.atCap) return no(`Ya hay ${s.working.length} trabajando y el tope es ${s.cap.value} (${ORIGIN[s.cap.origin] || s.cap.origin}): no la abrí, espera su turno.`);
   if (cwd && opts.repo) return no('Va o la carpeta o el repo, no los dos: no la abrí.');
@@ -1133,6 +1216,16 @@ function openNow(opts) {
     return fail(`El lanzador falló: ${first || (r.signal ? `lo cortó la señal ${r.signal}` : `salió con código ${r.status}`)}. No reintenté.`);
   }
   const opened = `Abrí «${name}» en ${where}. Para entrar: claude attach ${name}, o desde claude.ai/code (control remoto «${name}»)`;
+  let unlaunched = '';
+  try { noteLaunched({ home, now, name, cwd: where, por: sessionOf({ ...opts, env }) }); } catch (e) {
+    unlaunched = ` No la pude anotar entre las que abrió la coordinadora (${e.code || e.message}): puede preguntarle a la persona.`;
+  }
+  if (unlaunched) {
+    try { noteOpened({ home, now, name, cwd: where }); } catch (e) {
+      return { ok: true, message: oneLine(`${opened}. Pero no la pude anotar (${e.code || e.message}): hasta que escriba su archivo de sesión no cuenta para el tope.${unlaunched}`) };
+    }
+    return { ok: true, message: oneLine(`${opened}.${unlaunched}`) };
+  }
   try {
     noteOpened({ home, now, name, cwd: where });
   } catch (e) {
@@ -1304,13 +1397,19 @@ function close(opts = {}) {
   }
   const rm = run1('rm');
   if (rm.error || rm.status !== 0) return no(`«${name}» quedó parada, pero no la pude borrar (${why(rm)}).`);
+  const now = opts.now == null ? Date.now() : Number(opts.now);
+  // su renglón entre las que abrió la coordinadora: sin poder sacarlo, otra sesión con el mismo nombre y carpeta no lo
+  // hereda (la reconoce también por la hora de arranque)
+  let unlaunched = '';
+  try { pruneLaunched({ home, now, drop: name, sessions }); } catch (e) { unlaunched = ` No pude sacarla de las que abrió la coordinadora (${e.code || e.message}).`; }
   // sin leer la lista no se la reescribe: vacía, el tope dejaría de contar a las recién abiertas
   const openedProblems = [];
-  const opened = recentOpened(home, opts.now == null ? Date.now() : Number(opts.now), openedProblems);
-  if (openedProblems.length) return { ok: true, closed: true, message: oneLine(`Cerré «${name}». Pero no pude leer las abiertas (${openedProblems[0]}): sigue contando para el tope hasta que venza.`) };
+  const opened = recentOpened(home, now, openedProblems);
+  if (openedProblems.length) return { ok: true, closed: true, message: oneLine(`Cerré «${name}». Pero no pude leer las abiertas (${openedProblems[0]}): sigue contando para el tope hasta que venza.${unlaunched}`) };
   try { writeJson(openedFile(home), opened.filter((o) => o.name !== name)); } catch (e) {
-    return { ok: true, closed: true, message: oneLine(`Cerré «${name}». Pero no pude sacarla de las abiertas (${e.code || e.message}).`) };
+    return { ok: true, closed: true, message: oneLine(`Cerré «${name}». Pero no pude sacarla de las abiertas (${e.code || e.message}).${unlaunched}`) };
   }
+  if (unlaunched) return { ok: true, closed: true, message: oneLine(`Cerré «${name}»: quedó limpia, sin nada pendiente.${unlaunched}`) };
   return { ok: true, closed: true, message: `Cerré «${name}»: quedó limpia, sin nada pendiente.` };
 }
 
@@ -1402,4 +1501,4 @@ function main(argv) {
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { status, statusText, readPending, capNotice, guideNotice, listNotice, ownerNextText, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, ownerWait, ownerWaitOnce, claudeLauncher, resolveLauncher, launchArgv, ORIGIN };
+module.exports = { LAUNCH_TIMEOUT_MS, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, status, statusText, readPending, capNotice, guideNotice, listNotice, ownerNextText, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, ownerWait, ownerWaitOnce, claudeLauncher, resolveLauncher, launchArgv, ORIGIN };

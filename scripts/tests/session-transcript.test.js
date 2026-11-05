@@ -282,7 +282,7 @@ test('T234 Tokens_Codex: su conversación trae los totales y la ventana', () => 
   const file = path.join(dir(), 'rollout.jsonl');
   const count = (input, cached, output, last, ventana) => ({ type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: { input_tokens: input, cached_input_tokens: cached, output_tokens: output }, last_token_usage: { input_tokens: last }, model_context_window: ventana } } });
   write(file, [count(100, 50, 5, 40, 258400), count(532881, 483200, 4753, 64593, 258400)]);
-  assert.deepStrictEqual(readSessionTokens(file, new Map(), {}), { contexto: 64593, limite: 258400, lectura: 49681, escritura: 4753, cache: 483200, agentes: 0 });
+  assert.deepStrictEqual(readSessionTokens(file, new Map(), {}), { contexto: 64593, limite: 258400, lectura: 49681, escritura: 4753, cache: 483200, agentes: 0, modelo: null, esfuerzo: null }, 'sin su turn_context no hay modelo ni esfuerzo');
   write(file, [count(100, 50, 5, 40, null)]);
   assert.strictEqual(readSessionTokens(file, new Map(), {}).limite, null, 'sin ventana no hay porcentaje');
 });

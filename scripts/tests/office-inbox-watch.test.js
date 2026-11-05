@@ -137,6 +137,36 @@ test('T46 Vigilante_SinPantalla_SeVaEnseguida @story-8.183 @ac-40: bajo claude -
   }
 });
 
+test('T1 Vigilante_EnLaExtension_SeArma @story-8.213 @ac-1 @ac-3: con la entrada de VS Code deja su candado, toma el mensaje y sale 2 con el sobre', async () => {
+  const { WAKE_ENTRYPOINTS, wakes } = require(HOOK);
+  assert.deepStrictEqual(WAKE_ENTRYPOINTS, ['cli', 'claude-vscode']);
+  assert.strictEqual(wakes('claude-vscode'), true);
+  const m = toy();
+  const h = hook(m, { env: { CLAUDE_CODE_ENTRYPOINT: 'claude-vscode' } });
+  assert.ok(await until(() => om.watcherState(m.sdir, 's1').alive), 'el vigilante quedó vivo');
+  const left = om.leave(m.sdir, { sid: 's1', text: 'revisá el pedido 12', now: Date.now() });
+  const r = await h.done;
+  assert.strictEqual(r.code, 2);
+  assert.strictEqual(r.err, om.envelope('revisá el pedido 12', { id: left.id }));
+  assert.deepStrictEqual(inboxFiles(m), []);
+});
+
+test('T2 Vigilante_OtraEntrada_SeVa @story-8.213 @ac-5 @ac-3: con sdk-cli, sdk-ts, vacía u otro editor sale 0 enseguida, sin candado y sin tomar nada', async () => {
+  const { wakes } = require(HOOK);
+  for (const entry of ['sdk-cli', 'sdk-ts', '', 'claude-otro-editor']) {
+    assert.strictEqual(wakes(entry), false, entry || 'sin la variable');
+    const m = toy();
+    om.leave(m.sdir, { sid: 's1', text: 'no debería salir', now: Date.now(), deadlineMs: 60000 });
+    const t0 = Date.now();
+    const r = await hook(m, { env: { CLAUDE_CODE_ENTRYPOINT: entry } }).done;
+    assert.ok(Date.now() - t0 < 3000, `${entry || 'sin la variable'}: tardó ${Date.now() - t0} ms`);
+    assert.strictEqual(r.code, 0);
+    assert.strictEqual(r.err, '');
+    assert.strictEqual(inboxFiles(m).length, 1, entry || 'sin la variable');
+    assert.ok(!fs.existsSync(om.paths(m.sdir).watcher('s1')));
+  }
+});
+
 test('T44 Vigilante_NombreDeLaHerramienta_LoReconoce @story-8.183 @ac-40: los nombres reales del proceso de la herramienta, y no otros', () => {
   const { isToolName } = require(HOOK);
   for (const yes of ['claude', '/usr/local/bin/claude', 'claude bg-spare', '/Users/x/.nvm/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe']) assert.strictEqual(isToolName(yes), true, yes);

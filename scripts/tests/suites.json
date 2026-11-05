@@ -1501,6 +1501,11 @@
       "requiere": []
     },
     {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/board-write-gate.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.174: el camino rápido de riesgo alto — una sola regla de riesgo (risk-paths.js), la base del carril, el delegado que no la escribe, la marca, y los revisores y el pase antes de guardar.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/adhoc-high-risk.test.js",
@@ -1794,6 +1799,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/office-task-numbers.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/office-messages.test.js",
       "requiere": []
     },
@@ -1878,6 +1888,11 @@
     {
       "raiz": "arnes",
       "ruta": "tests/coordination.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/background-question-guard.test.js",
       "requiere": []
     },
     {
@@ -2576,6 +2591,18 @@
       "__nota": "`confirm-designation` de scripts/lib/delegated-signing.js: el guion de verdad con la firma reemplazada. Sólo una persona confirma (ventana, click o «aprobado», no la delegación ni lo «hecho y avisado»), desde la pestaña de la sesión designada, y el renglón queda atado a esa designación. Sin red, segundos.",
       "raiz": "arnes",
       "ruta": "tests/delegated-signing-confirm.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "nombrar y retirar a la coordinadora con un click del dueño (marker.js designate-relay sin frase y withdraw-relay): el guion de verdad con la firma reemplazada y el freno en proceso; sin click no se anota nada, un click vencido, usado o de otra pregunta no vale, nadie la nombra por otra sesión, y sin click comprobable dice por qué y los respaldos. Sin red, segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/designate-by-click.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la pregunta de cada firma dice qué se aprueba (owner-approvals.js cuadroDe, owner-window.js cuadroPara y signature-sources.js): el verbo una vez, la historia con su título, qué hace en hasta 3 líneas, archivos, ruta, su «si sale mal» y la cita al final; el click atado a lo que se mostró. Sin red, segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/signature-question.test.js",
       "requiere": []
     },
     {

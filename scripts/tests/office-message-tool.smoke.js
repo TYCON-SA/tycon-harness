@@ -232,6 +232,17 @@ async function main() {
   check(expired && inbox('s1').length === 0, 'AC23: sin tomarlos en el plazo, salen del buzón como no entregados');
   try { process.kill(sleeper.pid); } catch { /* ya terminó */ }
 
+  // 8.213 T5: una sesión de la extensión de VS Code arma su vigilante, la oficina la ve con qué recibir y el mensaje le llega
+  const wx = watcher('s1', watchEnv({ CLAUDE_CODE_ENTRYPOINT: 'claude-vscode' }));
+  const armedX = await until(() => { try { return JSON.parse(fs.readFileSync(om.paths(sdir).watcher('s1'), 'utf8')).pid === wx.child.pid; } catch { return false; } }, 5000);
+  check(armedX && om.watcherState(sdir, 's1').alive === true, '8.213 T5: en la extensión, el vigilante deja su candado y la sesión puede recibir');
+  const sentX = await post(lock, { s: 'Alfa', texto: 'desde la oficina a VS Code' });
+  check(sentX.status === 200 && sentX.json && /^[0-9a-f]{32}$/.test(sentX.json.id), `8.213 T5: el mensaje a la sesión de la extensión se acepta (${sentX.status})`);
+  const gotX = await Promise.race([wx.done, sleep(8000).then(() => null)]);
+  const mX = gotX ? ENVELOPE.exec(gotX.err) : null;
+  check(Boolean(gotX) && gotX.code === 2 && Boolean(mX) && sentX.json && mX[1] === sentX.json.id && /Dice: desde la oficina a VS Code/.test(gotX.err), `8.213 T5: el vigilante de la extensión lo toma y sale 2 con su sobre (dio ${gotX && gotX.code})`);
+  check(inbox('s1').length === 0, '8.213 T5: el mensaje salió del buzón');
+
   // AC 20: el freno de la consola no deja escribir, mover ni enlazar en el buzón, el registro ni los candados
   for (const cmd of [`echo x > ${om.paths(sdir).inbox('s1')}/falso.json`, `ln -s /tmp/x ${om.paths(sdir).log}`, `mv /tmp/y ${om.paths(sdir).watcher('s1')}`]) {
     const g = spawnSync(process.execPath, [BASH_GATE], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd }, session_id: 's9' }), env: baseEnv, encoding: 'utf8', timeout: 10000 });
