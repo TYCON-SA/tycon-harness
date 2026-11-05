@@ -41,13 +41,17 @@ const { isTestPath } = require('./atdd-order.js');
 const { ramaDelAsunto, historiaDeLaRama } = require('./commit-story.js');
 
 const TIEMPO_MAX_MS = 10000;
+// La historia entera de un registro de humos con sus cambios cabe holgada; si no cabe, git no contesta y la evidencia no cuenta.
+const SALIDA_MAX_BYTES = 64 * 1024 * 1024;
 const FORMATO_DE_COMMIT = '%H %ct %h';
+// Abre cada commit en la historia de un registro: un byte que no aparece en un renglón de texto.
+const MARCA_DE_COMMIT = '\x01';
 
 /** `{ codigo, salida }`; `codigo: null` si git no pudo contestar (no está, no es un repo accesible, venció el tiempo). */
 function correrGitDeVerdad(carpeta, args, env) {
   try {
     const salida = execFileSync('git', args, {
-      cwd: carpeta, env, encoding: 'utf8', timeout: TIEMPO_MAX_MS, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'],
+      cwd: carpeta, env, encoding: 'utf8', timeout: TIEMPO_MAX_MS, maxBuffer: SALIDA_MAX_BYTES, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'],
     });
     return { codigo: 0, salida };
   } catch (e) {
@@ -109,18 +113,66 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
     return { ...base, GIT_INDEX_FILE: path.resolve(indice) };
   }
 
-  // Los commits salen del más nuevo al más viejo: el que guardó la evidencia es el último.
+  // La historia de un registro, del commit más nuevo al más viejo, con los renglones que cada uno agregó y sacó. Una sola
+  // pasada de git por registro: buscar renglón por renglón costaba una pasada por cada humo.
+  const historias = new Map();
+  function historiaDelRegistro(carpeta, nombre) {
+    const clave = `${carpeta}\0${nombre}`;
+    if (historias.has(clave)) return historias.get(clave);
+    const r = preguntar(carpeta, ['log', '--topo-order', '-p', '-U0', '--no-color', '--no-ext-diff', '--no-renames',
+      `--format=${MARCA_DE_COMMIT}${FORMATO_DE_COMMIT}`, 'HEAD', '--', nombre]);
+    let commits = null;
+    if (r.codigo === 0) {
+      commits = [];
+      let actual = null;
+      let enElCambio = false;
+      for (const renglon of r.salida.split('\n')) {
+        if (renglon.startsWith(MARCA_DE_COMMIT)) {
+          const [hash, hora] = renglon.slice(1).split(' ');
+          actual = { hash, hora: Number(hora), agregados: [], sacados: [] };
+          commits.push(actual);
+          enElCambio = false;
+        } else if (!actual) {
+          continue;
+        } else if (renglon.startsWith('@@')) {
+          enElCambio = true;
+        } else if (renglon.startsWith('diff ')) {
+          enElCambio = false;
+        } else if (enElCambio && renglon.startsWith('+')) {
+          actual.agregados.push(renglon.slice(1));
+        } else if (enElCambio && renglon.startsWith('-')) {
+          actual.sacados.push(renglon.slice(1));
+        }
+      }
+    }
+    historias.set(clave, commits);
+    return commits;
+  }
+
+  const vecesEn = (renglones, texto) => renglones.reduce((n, r) => n + r.split(texto).length - 1, 0);
+
+  // El commit que guardó la evidencia es el más viejo que cambió cuántas veces aparece su renglón: lo mismo que contesta
+  // `git log -S<renglón>` tomando el último de la salida.
   function commitDeLaEvidencia({ ruta, linea }) {
     const carpeta = path.dirname(ruta);
     const nombre = path.basename(ruta);
-    const filtro = linea ? [`-S${linea}`] : ['--diff-filter=A'];
-    const r = preguntar(carpeta, ['log', '--topo-order', `--format=${FORMATO_DE_COMMIT}`, ...filtro, 'HEAD', '--', nombre]);
-    if (r.codigo !== 0) return { fallo: true };
-    const lineas = r.salida.trim().split('\n').filter(Boolean);
-    if (!lineas.length) return { commit: null };
-    const [hash, hora] = lineas[lineas.length - 1].split(' ');
-    return { commit: hash, hora: Number(hora) };
+    if (!linea) {
+      const r = preguntar(carpeta, ['log', '--topo-order', `--format=${FORMATO_DE_COMMIT}`, '--diff-filter=A', 'HEAD', '--', nombre]);
+      if (r.codigo !== 0) return { fallo: true };
+      const lineas = r.salida.trim().split('\n').filter(Boolean);
+      if (!lineas.length) return { commit: null };
+      const [hash, hora] = lineas[lineas.length - 1].split(' ');
+      return { commit: hash, hora: Number(hora) };
+    }
+    const commits = historiaDelRegistro(carpeta, nombre);
+    if (!commits) return { fallo: true };
+    for (let i = commits.length - 1; i >= 0; i -= 1) {
+      const c = commits[i];
+      if (vecesEn(c.agregados, linea) !== vecesEn(c.sacados, linea)) return { commit: c.hash, hora: c.hora };
+    }
+    return { commit: null };
   }
+
 
   function ultimoCommitCorto(carpeta, nombre) {
     const r = preguntar(carpeta, ['log', '-1', '--format=%h', 'HEAD', '--', nombre]);
@@ -299,7 +351,7 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
     return NO_CUENTA('otro-repo', 5, { commit: corto, sinFusion: padres.length === 1 });
   }
 
-  return { vigencia };
+  return { vigencia, commitDeLaEvidencia };
 }
 
 /** Por qué no cuenta, en una frase para el aviso de la matriz. Sin rutas ni texto de git: la matriz viaja por git. */
