@@ -189,6 +189,10 @@ function repoNuevo(c, nombre) {
   const remoto = path.join(c.dir, 'remotos', `${nombre}.git`);
   fs.mkdirSync(remoto, { recursive: true });
   correrGit(c, remoto, ['init', '-q', '--bare', '-b', 'main']);
+  // el lado que recibe un empuje no ve los `-c` de correrGit (git los borra) y deja `maintenance run --auto --detach` de
+  // fondo: su candado en `objects/` aparecía y desaparecía en medio de la copia del laboratorio. Se apaga en el remoto
+  correrGit(c, remoto, ['config', 'receive.autogc', 'false']);
+  correrGit(c, remoto, ['config', 'maintenance.auto', 'false']);
   const repo = path.join(c.dir, 'repos', nombre);
   fs.mkdirSync(path.dirname(repo), { recursive: true });
   correrGit(c, path.dirname(repo), ['clone', '-q', remoto, repo]);
