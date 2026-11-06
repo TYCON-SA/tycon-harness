@@ -87,6 +87,8 @@ const WORKING_MS = 5 * 60 * 1000;
 const IDLE_MS = 3 * 3600 * 1000;
 // un trabajo suelto sin tocar hace más que esto pregunta si terminó
 const LOOSE_STALE_MS = 3600 * 1000;
+// una espera anotada hace más que esto no le gana a la sesión ocupada: está trabajando, no esperando
+const WAIT_OUTLIVED_MS = 5 * 60000;
 // una sesión quieta que tocó un archivo hace menos que esto sigue con algo: no está libre
 const RECENT_FILE_MS = 30 * 60 * 1000;
 const MARKER_JS = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
@@ -1476,6 +1478,12 @@ function buildWip(opts = {}) {
     if (busy.has(sid) && !pipe && looseRow === undefined) continue;
     let d;
     try { d = readObject(file); } catch (e) { unreadable.push(`${file}: ${e.message}`); continue; }
+    // la espera vieja de una sesión ocupada no gana sobre la actividad real: sin texto propio, la nota no dice nada
+    const waitSince = Date.parse(d.waitingSince);
+    if (d.waitingFor && sessions.get(sid) && sessions.get(sid).busy && Number.isFinite(waitSince) && nowMs - waitSince > WAIT_OUTLIVED_MS) {
+      if (!d.text) continue;
+      d = { ...d, waitingFor: undefined, waitingSince: undefined };
+    }
     const work = cut(String(d.text || '(sin texto)'), TITLE_MAX);
     const at = Date.parse(d.at);
     // con un arreglo rápido abierto, la nota no abre otra fila: le da su hora, o dice qué espera

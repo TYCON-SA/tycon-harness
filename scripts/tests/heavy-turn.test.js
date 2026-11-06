@@ -333,3 +333,24 @@ test('HT8 SuiteTurn_OlderThanThreeHours_Frees — una suite colgada no frena par
   assert.strictEqual(HT.holder({ home: m.home }), null);
   assert.strictEqual(HT.take({ home: m.home, arnes: m.arnes, env: {}, pid: process.pid }).taken, true);
 });
+
+test('HT9 Take_ClearsTheNotedWait — al tomar el turno de la suite, la espera anotada de esa sesión se borra sola', (t) => {
+  const m = toy();
+  const doing = path.join(stateDir(m.home), 'doing');
+  fs.mkdirSync(doing, { recursive: true });
+  const at = new Date(Date.now() - 600000).toISOString();
+  fs.writeFileSync(path.join(doing, 's-uma.json'), JSON.stringify({ at, waitingFor: 'turno de suite (N.º 2)', waitingSince: at }));
+  fs.writeFileSync(path.join(doing, 's-ana.json'), JSON.stringify({ at, waitingFor: 'turno de suite (N.º 3)', waitingSince: at }));
+  assert.strictEqual(HT.take({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: 's-uma' }, pid: process.pid, what: 'suite' }).taken, true);
+  assert.ok(!fs.existsSync(path.join(doing, 's-uma.json')), 'la espera de quien toma el turno ya no está');
+  assert.ok(fs.existsSync(path.join(doing, 's-ana.json')), 'la de otra sesión no se toca');
+  HT.release({ home: m.home, pid: process.pid });
+  // con texto propio, la nota queda y sólo se va la espera
+  fs.writeFileSync(path.join(doing, 's-uma.json'), JSON.stringify({ text: 'mido el banco de controles', at, waitingFor: 'turno de suite', waitingSince: at }));
+  HT.take({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: 's-uma' }, pid: process.pid, what: 'suite' });
+  const note = JSON.parse(fs.readFileSync(path.join(doing, 's-uma.json'), 'utf8'));
+  assert.strictEqual(note.text, 'mido el banco de controles');
+  assert.strictEqual(note.waitingFor, undefined);
+  assert.strictEqual(note.waitingSince, undefined);
+  HT.release({ home: m.home, pid: process.pid });
+});
