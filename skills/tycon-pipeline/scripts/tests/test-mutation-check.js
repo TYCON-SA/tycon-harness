@@ -1104,3 +1104,57 @@ test('la copia refleja lo que hay en el working tree (cambios sin commitear incl
   assert.ok(r.result.survived.some((m) => m.before.includes('a >= b')),
     'el mutante de la línea sin commitear existe: la copia tenía el cambio del working tree');
 });
+
+// ── Lo commiteado durante la corrida también se muta ───────────────────────────────────────────────
+// Las líneas a mutar salían de `git diff HEAD`: con la implementación ya commiteada no quedaba ninguna, y el chequeo
+// decía «no se verificó nada». Se miden contra la base de la corrida (lib/coverage-base.js).
+
+function repoCommiteado() {
+  const repo = mkRepo();
+  const base = sh('git', ['rev-parse', 'HEAD'], repo).trim();
+  sh('git', ['add', '.'], repo);
+  sh('git', ['commit', '-q', '-m', 'trabajo de la corrida'], repo);
+  return { repo, base };
+}
+
+test('con el trabajo commiteado, muta contra la base del marcador, no contra HEAD', async () => {
+  const { repo, base } = repoCommiteado();
+  const r = await checker.runMutationCheck({
+    repo, storyPath: path.join(repo, 'story-con-tests.md'),
+    marker: { baseSha: base, repoPath: repo },
+    runTests: ({ mutant }) => ({ code: mutant ? 1 : 0 }), log: () => {},
+  });
+  assert.equal(r.exitCode, 0, JSON.stringify(r.result));
+  assert.ok(r.result.total >= 1, `con la base de la corrida hay líneas que mutar (total=${r.result.total})`);
+});
+
+test('con el trabajo commiteado y sin marcador, muta lo posterior a la bifurcación con la rama principal', async () => {
+  const { repo, base } = repoCommiteado();
+  sh('git', ['update-ref', 'refs/remotes/origin/main', base], repo);
+  const r = await checker.runMutationCheck({
+    repo, storyPath: path.join(repo, 'story-con-tests.md'),
+    runTests: ({ mutant }) => ({ code: mutant ? 1 : 0 }), log: () => {},
+  });
+  assert.equal(r.exitCode, 0, JSON.stringify(r.result));
+  assert.ok(r.result.total >= 1, `lo de la rama se muta (total=${r.result.total})`);
+});
+
+test('un marcador que no se pudo leer se dice en el registro y la base queda en el resultado', async () => {
+  const { repo, base } = repoCommiteado();
+  sh('git', ['update-ref', 'refs/remotes/origin/main', base], repo);
+  const lineas = [];
+  const r = await checker.runMutationCheck({
+    repo, storyPath: path.join(repo, 'story-con-tests.md'), markerError: 'marker.js get salió 1',
+    runTests: ({ mutant }) => ({ code: mutant ? 1 : 0 }), log: (...a) => lineas.push(a.join(' ')),
+  });
+  assert.ok(lineas.some((l) => /base descartada \(marcador\).*marker\.js get salió 1/.test(l)), lineas.join('\n'));
+  assert.equal(r.result.base.fuente, 'bifurcacion');
+  assert.equal(r.result.base.ref, base);
+});
+
+test('un git diff que falla contra la base no se lee como «nada agregado»: devuelve null, no []', () => {
+  const { repo, base } = repoCommiteado();
+  assert.equal(checker.addedLinesOf(repo, 'calc.js', 'f'.repeat(40)), null);
+  assert.ok(checker.addedLinesOf(repo, 'calc.js', base).length > 0);
+  assert.deepEqual(checker.addedLinesOf(repo, 'calc.js', 'HEAD'), []);
+});
