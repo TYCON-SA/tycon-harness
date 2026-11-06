@@ -1954,7 +1954,9 @@ function conversationOf(env, name, { lastActivityOf = (n) => closedSessionLastAt
   const e = env.files.get(name);
   if (!e) return null;
   const c = env.coordinator;
-  const said = readConversation(e.file, { coordinator: c && c.name, isCoordinator: Boolean(c) && e.sid === c.sid, background: e.background });
+  // la designada puede no tener nombre (una sesión de VS Code nombrada por click): sigue siendo la coordinadora, y su
+  // ventana no dice que no hay. Se la llama por su cargo, como la nombran las sesiones; nunca por su identificador
+  const said = readConversation(e.file, { coordinator: c && (c.name || 'Coordinadora'), isCoordinator: Boolean(c) && e.sid === c.sid, background: e.background });
   return said && said.conSesiones ? markClosedSessions(said, env, { lastActivityOf }) : said;
 }
 
