@@ -874,7 +874,7 @@ function advance(ctx, j, H, { log, snap = null }) {
   // una excepción adentro de una etapa (un rename con EPERM/EBUSY, una unión que no se pudo crear) es un fallo DURANTE, no un
   // corte: se devuelve como tal para que quien llama deshaga y anote `failed`
   // `TYCON_MIGRATE_FAIL_AFTER=<etapa>` (sólo pruebas): un fallo DURANTE, justo al terminar esa etapa (quien llama deshace)
-  const run = (stage, fn) => { try { fn(); if (String(ctx.env.TYCON_MIGRATE_FAIL_AFTER || '') === stage) throw new Error('fallo de prueba'); writeStage(ctx, j, stage, log); return null; } catch (e) { return `la etapa «${stage}» falló: ${(e && e.message) || e}`; } };
+  const run = (stage, fn) => { try { fn(); if (String(ctx.env.TYCON_MIGRATE_FAIL_AFTER || '') === stage) throw new Error('fallo de prueba'); writeStage(ctx, j, stage, log); return null; } catch (e) { if (e && e.code === L.LOCK_LOST) throw e; return `la etapa «${stage}» falló: ${(e && e.message) || e}`; } };
   let reason = null;
   if (after('state-moved')) reason = run('state-moved', () => stageStateMoved(ctx, j, log));
   if (reason) return { ok: false, reason };
@@ -906,7 +906,7 @@ function advance(ctx, j, H, { log, snap = null }) {
   let state = null;
   if (after('replugged')) {
     let r;
-    try { r = stageReplugged(ctx, j, H, log, { snap }); } catch (e) { r = { ok: false, reason: `la etapa «replugged» falló: ${(e && e.message) || e}` }; }
+    try { r = stageReplugged(ctx, j, H, log, { snap }); } catch (e) { if (e && e.code === L.LOCK_LOST) throw e; r = { ok: false, reason: `la etapa «replugged» falló: ${(e && e.message) || e}` }; }
     if (!r.ok) return { ok: false, reason: r.reason };
     state = r.state;
     writeStage(ctx, j, 'replugged', log);
@@ -914,7 +914,7 @@ function advance(ctx, j, H, { log, snap = null }) {
   if (!state) {
     // cortada después de re-enchufar y antes de escribir el estado: se re-enchufa otra vez (idempotente) para tener el estado
     let r;
-    try { r = stageReplugged(ctx, j, H, log, { snap }); } catch (e) { r = { ok: false, reason: `la etapa «replugged» falló: ${(e && e.message) || e}` }; }
+    try { r = stageReplugged(ctx, j, H, log, { snap }); } catch (e) { if (e && e.code === L.LOCK_LOST) throw e; r = { ok: false, reason: `la etapa «replugged» falló: ${(e && e.message) || e}` }; }
     if (!r.ok) return { ok: false, reason: r.reason };
     state = r.state;
   }
