@@ -1148,7 +1148,12 @@ test('8.164-NocturnaJuzgaComoElFreno @story-8.164 @ac-1', () => {
   // dos leen la regla de `faltasDe`, y esto lo mide corriendo el freno de verdad.
   const { spawnSync } = require('child_process');
   const FRENO = path.join(ROOT, 'scripts', 'hooks', 'pr-auto-complete-guard.js');
-  const pasa = (c) => spawnSync(process.execPath, [FRENO], { input: JSON.stringify({ tool_input: { command: c } }), encoding: 'utf8' }).status === 0;
+  // 0 es «pasa» y 2 es «frena»; cualquier otra salida es un freno roto, no un freno que frenó.
+  const pasa = (c) => {
+    const r = spawnSync(process.execPath, [FRENO], { input: JSON.stringify({ tool_input: { command: c } }), encoding: 'utf8' });
+    assert.ok(r.status === 0 || r.status === 2, `el freno salió ${r.status} (no es ni pasa ni frena): ${c}\n${r.stderr}`);
+    return r.status === 0;
+  };
   const AZM = 'az repos pr create --org https://x --project P --repository R --target-branch main --title t --auto-complete true --squash false';
   const pedidos = [
     `${AZM} --source-branch story/x --delete-source-branch true`,

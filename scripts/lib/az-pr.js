@@ -148,8 +148,9 @@ function fichas(cmd, opts = {}) {
     if (!abierta) { abierta = true; empezoLibre = true; }
     // fuera de comillas también `$'…'` y `$"…"`: el citado ANSI-C arma el texto (`$'\x62'` es una letra)
     if (abreExpansion(c, n)) { expande = true; partida = true; } else if (c === '$' && (n === "'" || n === '"')) expande = true;
-    // `{a,b}` y `{a..c}` sin comillas: la terminal los abre en varias palabras (`-s{x,dev}` es `-sx -sdev`)
-    else if (c === '{' && /^\{[^{}\s'"]*(?:,|\.\.)[^{}\s'"]*\}/.test(s.slice(i))) { expande = true; partida = true; }
+    // `{a,b}` y `{a..c}` sin comillas: la terminal los abre en varias palabras (`-s{x,dev}` es `-sx -sdev`), también
+    // con comillas adentro de las llaves (`-s{x,"dev"}`)
+    else if (c === '{' && /^\{[^{}\s]*(?:,|\.\.)[^{}\s]*\}/.test(s.slice(i))) { expande = true; partida = true; }
     texto += c;
   }
   cerrar();
@@ -353,8 +354,9 @@ const A_MAIN = /^(?:refs\/heads\/)?(?:main|master)$/i;
  * es efímera: si el pedido no la borra, queda viva después del merge y se acumula.
  */
 const RAMAS_DE_LARGA_VIDA = Object.freeze(['dev', 'develop', 'main', 'master']);
-// Azure DevOps no distingue mayúsculas en los nombres de rama: `-s DEV` es `dev`, y `Refs/Heads/main` es `main`.
-const esDeLargaVida = (rama) => RAMAS_DE_LARGA_VIDA.includes(String(rama).replace(/^refs\/heads\//i, '').toLowerCase());
+// Azure DevOps no distingue mayúsculas en los nombres de rama: `-s DEV` es `dev`, y `Refs/Heads/main` es `main`. Los
+// espacios de los costados no cuentan: `-s ' dev'` se compara como `dev`, así frena de más y nunca de menos.
+const esDeLargaVida = (rama) => RAMAS_DE_LARGA_VIDA.includes(String(rama).trim().replace(/^refs\/heads\//i, '').toLowerCase());
 
 const ilegible = (bandera, v) => `no puedo leer \`${bandera} ${v.texto}\`: lo arma la terminal, trae un comodín o az lo lee de un archivo, y lo que no pude leer no está aprobado. Escribí el valor`;
 

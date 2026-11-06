@@ -366,8 +366,8 @@ for caso in \
   "pasa|$AZM --sour=story/x --delete-source-branch true" \
   "frena|$AZM -s story/x --delete-source-branch=true -s=main" \
   "pasa|az repos pr create --org https://x --project P --repository R -tdev --title t -s story/x" \
-  "frena|az repos pr create --org https://x --project P --repository R -tmain --title t -s story/x" \
-  "frena|az repos pr create --org https://x --project P --repository R -t story/y --target main --title t -s story/x" \
+  "frena-otra|az repos pr create --org https://x --project P --repository R -tmain --title t -s story/x" \
+  "frena-otra|az repos pr create --org https://x --project P --repository R -t story/y --target main --title t -s story/x" \
   "frena|$AZM -s \"\$BRANCH\" --delete-source-branch true" \
   "frena|$AZM -s \"\$(echo dev)\" --delete-source-branch true" \
   "frena|$AZM -s 'de*' --delete-source-branch true" \
@@ -400,13 +400,22 @@ for caso in \
   "pasa|X=\$Y $AZM -s story/x --delete-source-branch true" \
   "frena|timeout -s KILL 60 $AZM --delete-source-branch true" \
   "pasa|timeout -s KILL 60 $AZM -s story/x --delete-source-branch true" \
-  "pasa|$AZM -s story/x --delete-source-branch true --description 'arreglo {a,b} y \$HOME'"; do
+  "pasa|$AZM -s story/x --delete-source-branch true --description 'arreglo {a,b} y \$HOME'" \
+  "frena|$AZM -s{story/x,\"dev\"} --delete-source-branch true" \
+  "frena|$AZM -s ' dev' --delete-source-branch true" \
+  "frena|$AZM -s 'main ' --delete-source-branch true"; do
   esperado="${caso%%|*}"; cmd="${caso#*|}"
   rc=$(corre "$cmd")
   falta=$(node -e 'const az=require(process.argv[1]); const s=az.segmentos(process.argv[2])[0]; process.stdout.write(String(az.faltasDe(s).faltas.length > 0))' "$AQUI/scripts/lib/az-pr.js" "$cmd" 2>/dev/null)
+  # Un «frena» tiene que frenar por la regla de esta historia (la tercera bandera, lo que no se lee o una expansión
+  # partida), no por otra falta cualquiera. `frena-otra` es un caso que frena por las dos banderas de antes.
+  texto=$(node -e 'const az=require(process.argv[1]); process.stdout.write(az.faltasDe(az.segmentos(process.argv[2])[0]).faltas.join(" | "))' "$AQUI/scripts/lib/az-pr.js" "$cmd" 2>/dev/null)
   if [ "$esperado" = frena ]; then
+    [ "$rc" -eq 2 ] && [ "$falta" = true ] && echo "$texto" | grep -E -- 'delete-source-branch|no puedo leer|fuera de comillas' >/dev/null \
+      && ok "8.164-SinBorrarRama_Frena frena por la regla nueva y faltasDe coincide: $cmd" || no "8.164-SinBorrarRama_Frena dejó pasar o frenó por otra cosa ($rc, faltasDe=$falta, «${texto}»): $cmd"
+  elif [ "$esperado" = frena-otra ]; then
     [ "$rc" -eq 2 ] && [ "$falta" = true ] \
-      && ok "8.164-SinBorrarRama_Frena frena y faltasDe coincide: $cmd" || no "8.164-SinBorrarRama_Frena dejó pasar o no nombró la bandera ($rc, faltasDe=$falta): $cmd"
+      && ok "8.164-SinBorrarRama_Frena frena y faltasDe coincide: $cmd" || no "8.164-SinBorrarRama_Frena dejó pasar ($rc, faltasDe=$falta): $cmd"
   else
     [ "$rc" -eq 0 ] && [ "$falta" = false ] \
       && ok "8.164-SinBorrarRama_Frena pasa y faltasDe coincide: $cmd" || no "8.164-SinBorrarRama_Frena frenó un pedido bien armado ($rc, faltasDe=$falta): $cmd"
