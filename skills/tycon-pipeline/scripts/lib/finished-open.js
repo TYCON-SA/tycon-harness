@@ -282,7 +282,8 @@ function machine({ home = os.homedir(), stateDir, now = Date.now(), env, markerJ
  */
 async function unsavedFolders({ home = os.homedir(), now = Date.now(), env = process.env, repos, isAlive } = {}) {
   const until = Date.now() + TOPE_MS;
-  const gitEnv = { ...env, LC_ALL: 'C', GIT_OPTIONAL_LOCKS: '0' };
+  const { idiomaFijo, sinGitDelPadre } = require(path.join(RAIZ, 'scripts', 'lib', 'clean-git-env.js'));
+  const gitEnv = idiomaFijo(sinGitDelPadre(env), { GIT_OPTIONAL_LOCKS: '0' });
   const gitRaw = (dir, args) => new Promise((resolve) => {
     const ms = until - Date.now();
     if (ms <= 0) { resolve({ tarde: true }); return; }
