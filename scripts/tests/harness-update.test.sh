@@ -1155,5 +1155,36 @@ SH
   else mal "T39L una salida a la red pudo preguntar: $(sort -u "$TESTIGO" 2>/dev/null | head -3)"; fi
 fi
 
+# ═══ T10L · Lock_DisplacedOwner_ReleaseKeepsNewLock_WriteAborts (la parte integrada) ═════════════════════════════════
+# Una actualización detenida a mitad de camino (el aplicador de juguete duerme adentro del candado) a la que otro le
+# pisa el candado: al seguir, se va sin grabar el estado y no suelta el candado del otro.
+if corre T10L; then
+  harness_lab_create "$BASE/t10l" >/dev/null
+  harness install --yes >/dev/null 2>&1 || mal "T10L install previo falló"
+  harness_lab_publish tree "v2" VERSION 2; harness_lab_publish skills "v2" VERSION 2
+  CANDADO="$LAB_HOME/.claude/.tycon-pipeline/harness/harness.lock"
+  ESTADO_F="$LAB_HOME/.claude/.tycon-pipeline/harness-state.json"
+  CORRIDAS="$LAB_HOME/.claude/.tycon-pipeline/lab-applier.log"
+  ANTES_N="$(cat "$CORRIDAS" 2>/dev/null | wc -l | tr -d ' ')"
+  LAB_APPLIER_SLEEP=6 harness update > "$BASE/t10l/u.out" 2>&1 & PU=$!
+  # el aplicador anota su corrida antes de dormir: recién ahí la actualización está adentro del candado, a mitad
+  n=0; while [ "$(cat "$CORRIDAS" 2>/dev/null | wc -l | tr -d ' ')" -le "$ANTES_N" ] && [ "$n" -lt 150 ]; do sleep 0.2; n=$((n + 1)); done
+  if [ -d "$CANDADO" ] && kill -0 "$PU" 2>/dev/null; then
+    # otro pisa el candado: el mismo dueño escrito, otro token
+    DUENO="$(head -2 "$CANDADO/pid")"
+    printf '%s\notro-token-de-laboratorio\n' "$DUENO" > "$CANDADO/pid"
+    ANTES="$(cksum < "$ESTADO_F")"
+    wait "$PU"; RC=$?
+    [ "$RC" != 0 ] && grep -q "otro proceso tomó el candado mientras éste estaba detenido" "$BASE/t10l/u.out" \
+      && ok "T10L la actualización desplazada se va con su motivo (rc $RC)" || mal "T10L rc $RC: $(tail -3 "$BASE/t10l/u.out")"
+    [ "$(cksum < "$ESTADO_F")" = "$ANTES" ] && ok "T10L …sin grabar el estado" || mal "T10L la desplazada grabó el estado"
+    grep -q "otro-token-de-laboratorio" "$CANDADO/pid" 2>/dev/null && ok "T10L …y no soltó el candado del otro" || mal "T10L soltó el candado que ya no era suyo"
+    grep -q "no lo suelto" "$(LOG)" && ok "T10L el registro dice que no lo soltó" || mal "T10L el registro no lo dice: $(tail -3 "$(LOG)" 2>&1)"
+    rm -rf "$CANDADO"
+  else
+    mal "T10L la actualización no llegó al aplicador con el candado tomado: $(cat "$BASE/t10l/u.out")"; wait "$PU" 2>/dev/null
+  fi
+fi
+
 if [ "$FALLOS" = 0 ]; then echo "✅ harness-update: todo verde"; exit 0; fi
 echo "❌ harness-update: $FALLOS fallo(s)"; exit 1
