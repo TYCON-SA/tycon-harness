@@ -149,12 +149,37 @@ function rutaReal(f) {
 }
 
 /** Los repos del carril (los de su base y los de las rutas que anotó) y las rutas cuyo repo no se pudo ubicar. */
+/**
+ * ¿Un archivo anotado que ya no existe y que git no sigue? No deja nada que medir, y no mete su repo en el carril: una
+ * sonda escrita con ruta relativa en la carpeta de otra sesión, y borrada, si no le haría medir a esa carpeta entera.
+ * Uno que git sigue y se borró sí cuenta (es un cambio). Si git no contesta, cuenta: ante la duda, se mide.
+ */
+function fantasma(repo, f) {
+  if (fs.existsSync(f)) return false;
+  // la carpeta existente más cercana, resuelta: un enlace en el camino (como /tmp en mac) no cambia la ruta
+  let cerca = path.resolve(String(f));
+  const resto = [];
+  let real = null;
+  while (!real) {
+    try { real = path.join(fs.realpathSync(cerca), ...resto); } catch (_) {
+      const arriba = path.dirname(cerca);
+      if (arriba === cerca) return false;
+      resto.unshift(path.basename(cerca));
+      cerca = arriba;
+    }
+  }
+  const rel = path.relative(repo, real);
+  try {
+    // seguido en el índice, o en el último commit (un `git rm` lo saca del índice y el borrado sigue siendo un cambio)
+    return !git(repo, ['--literal-pathspecs', 'ls-files', '--', rel]) && !git(repo, ['--literal-pathspecs', 'ls-tree', '--name-only', 'HEAD', '--', rel]);
+  } catch (_) { return false; }
+}
 function reposYHuerfanas(adhoc) {
   const repos = new Set(Object.keys((adhoc && adhoc.bases) || {}));
   const huerfanas = [];
   for (const f of [...((adhoc && adhoc.rutas) || []), ...((adhoc && adhoc.files) || [])]) {
     const u = ubicar(f);
-    if (u.raiz) repos.add(u.raiz); else if (u.falla) huerfanas.push(String(f));
+    if (u.raiz) { if (!fantasma(u.raiz, f)) repos.add(u.raiz); } else if (u.falla) huerfanas.push(String(f));
   }
   return { repos: [...repos], huerfanas };
 }

@@ -23,6 +23,7 @@
  *   T25 con un carril que todavía no mide ningún repo, lo que escribe un subagente se anota
  *   T26 si git no ubica una ruta ya anotada, lo que escribe un subagente se anota
  *   T27 la sonda que un subagente escribe por consola no entra al carril; su código sí
+ *   T28 un archivo anotado que ya no existe y que git no sigue no mete su repo en el carril
  *
  * stable-data: crea repos de git en carpetas temporales con commits propios; nunca toca el repo real.
  * Correr: node --test skills/tycon-pipeline/scripts/tests/adhoc-high-risk.test.js
@@ -992,4 +993,46 @@ test('T27 SondaDeSubagentePorConsola_NoEntraAlCarril_ElCodigoSi', () => {
   // y la sesión misma sigue anotando lo que escribe fuera del repo, como siempre
   porConsola(path.join(lab, 'otra.js'));
   assert.ok((leerCarril(state, 's27').files || []).includes(path.join(lab, 'otra.js')));
+});
+
+// 🔴 Falla con: una sonda ya borrada, anotada con ruta relativa en el puesto de otra sesión, mete ese puesto en el
+// carril, y los archivos y los cambios de rama de la otra le vencen las constancias.
+test('T28 ArchivoAnotadoQueYaNoExiste_NoMeteSuRepoEnElCarril', () => {
+  const raiz = tmp('t28-');
+  const home = tmp('home-');
+  const dir = repoConOrigen(raiz, 'producto');
+  const puesto = repoConOrigen(raiz, 'puesto-ajeno');
+  const propio = path.join(dir, 'src/lib/x.js');
+  escribir(dir, 'src/lib/x.js', 'module.exports = 1;\n');
+  // la sonda que el pase escribió con ruta relativa en el puesto y después borró
+  const sonda = path.join(puesto, 'probe.js');
+  const state = conCarril(home, 's28', { rutas: [propio], files: [propio, sonda], bases: { [dir]: adhocBase.traerBase(dir) } });
+  assert.deepStrictEqual(adhocBase.reposDelCarril(leerCarril(state, 's28')), [dir], 'el puesto ajeno no es del carril');
+  const huella = adhocBase.huellaDelCarril(leerCarril(state, 's28'));
+  // la otra sesión trabaja en su puesto: un archivo sin commitear y otra rama
+  escribir(puesto, 'src/mutation-gate.js', 'module.exports = 2;\n');
+  git(puesto, 'checkout', '-q', '-b', 'otra-rama');
+  assert.equal(adhocBase.huellaDelCarril(leerCarril(state, 's28')), huella, 'lo de la otra sesión no mueve la huella');
+  // un archivo que git sigue y se borró sí mete su repo: el borrado es un cambio del carril
+  escribir(puesto, 'seguido.js', 'x\n');
+  git(puesto, 'add', 'seguido.js');
+  commitear(puesto, 'seguido');
+  fs.rmSync(path.join(puesto, 'seguido.js'));
+  const conBorrado = { ...leerCarril(state, 's28'), files: [propio, path.join(puesto, 'seguido.js')] };
+  assert.ok(adhocBase.reposDelCarril(conBorrado).includes(puesto), 'el borrado de un archivo seguido cuenta');
+  // y uno que existe, también
+  const existe = { ...leerCarril(state, 's28'), files: [propio, path.join(puesto, 'src/mutation-gate.js')] };
+  assert.ok(adhocBase.reposDelCarril(existe).includes(puesto), 'un archivo que existe cuenta');
+  // un borrado preparado con `git rm` también: sale del índice, pero sigue en el último commit
+  escribir(puesto, 'quitado.js', 'x\n');
+  git(puesto, 'add', 'quitado.js');
+  commitear(puesto, 'quitado');
+  git(puesto, 'rm', '-q', 'quitado.js');
+  const conGitRm = { ...leerCarril(state, 's28'), files: [propio, path.join(puesto, 'quitado.js')] };
+  assert.ok(adhocBase.reposDelCarril(conGitRm).includes(puesto), 'el borrado preparado cuenta');
+  // la sonda en una subcarpeta que ya no está, por un enlace al puesto: tampoco lo mete
+  const enlace = path.join(tmp('enlace.'), 'puesto');
+  fs.symlinkSync(puesto, enlace);
+  const porEnlace = { ...leerCarril(state, 's28'), files: [propio, path.join(enlace, 'sub-borrada/probe.js')] };
+  assert.deepStrictEqual(adhocBase.reposDelCarril(porEnlace), [dir], 'la sonda por un enlace no mete el puesto');
 });
