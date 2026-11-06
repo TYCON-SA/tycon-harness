@@ -158,6 +158,11 @@ Con Claude Code, la mayoría de las firmas no piden la terminal. El camino depen
   de rutina en una pestaña sin permisos se hace y se avisa (ver «Lo de rutina en una pestaña sin permisos»).
 - **En Windows:** siempre el click o el «aprobado», y la ventana de permiso no firma (ver «En Windows»).
 
+**El plan se aprueba con el cuadro.** Si el plan trae «Qué hace» y «Archivos», el cuadro de su firma los muestra con la
+ruta del plan completo, y tu click cuenta como plan visto: no hace falta que el agente lo pegue antes en la conversación.
+El plan entero te lo muestran si lo pedís. Vale sólo el click: un «aprobado» escrito, la ventana de permiso o la
+terminal no muestran esas secciones. Un plan sin esas dos secciones sí tiene que estar entero en la conversación.
+
 Lo que tiene que cumplir esa aprobación:
 
 - **Sirve para una sola firma y vence a los 30 minutos.** Un comando que pide dos firmas no la usa.
