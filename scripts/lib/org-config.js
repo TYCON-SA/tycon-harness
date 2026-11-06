@@ -2156,8 +2156,8 @@ function pantalla(idioma = 'es') {
   function editorRespuesta(s, d, pr) {
     var r = d.response || {}; var ex = s.extras || {}; var vg = ex.vigente || {}; var og = ex.origen || {};
     var box = el('div', { class: 'pila' });
-    box.appendChild(el('p', { class: 'muted', text: T('pantalla.hoy') + (hayTexto('estiloCorto_' + vg.style) ? TX['estiloCorto_' + vg.style] : vg.style) + ' · ' + ({ es: T('pantalla.castellano'), en: T('pantalla.ingles') }[vg.language] || vg.language) + ' · ' + vg.max_chars + T('pantalla.caracteres') + (og.style === 'perfil' ? T('pantalla.delPerfil') : T('pantalla.porDefecto')) + ')' }));
-    box.appendChild(selector(T('pantalla.idioma'), r.language, [['', T('pantalla.sinDeclararCastellano')], ['es', T('pantalla.castellano')], ['en', T('pantalla.ingles')]], function (v) { hoja(d, 'response', 'language', v); }, 'response.language', pr));
+    box.appendChild(el('p', { class: 'muted', text: T('pantalla.hoy') + (hayTexto('estiloCorto_' + vg.style) ? TX['estiloCorto_' + vg.style] : vg.style) + ' · ' + ({ es: T('pantalla.castellano'), en: T('pantalla.ingles'), auto: T('pantalla.idiomaDeLaPersona') }[vg.language] || vg.language) + ' · ' + vg.max_chars + T('pantalla.caracteres') + (og.style === 'perfil' ? T('pantalla.delPerfil') : T('pantalla.porDefecto')) + ')' }));
+    box.appendChild(selector(T('pantalla.idioma'), r.language, [['', T('pantalla.sinDeclararIdiomaDeLaPersona')], ['auto', T('pantalla.idiomaDeLaPersona')], ['es', T('pantalla.castellano')], ['en', T('pantalla.ingles')]], function (v) { hoja(d, 'response', 'language', v); }, 'response.language', pr));
     box.appendChild(selector(T('pantalla.estilo'), r.style, [['', T('pantalla.sinDeclararNeutro')]].concat(ESTILOS), function (v) { hoja(d, 'response', 'style', v); }, 'response.style', pr));
     box.appendChild(campo(T('pantalla.largoMaximoDeProsaEn'), r.max_chars, function (v) { hoja(d, 'response', 'max_chars', v === '' ? '' : numOTexto(v)); }, 'response.max_chars', pr, { inputmode: 'numeric' }));
     return box;

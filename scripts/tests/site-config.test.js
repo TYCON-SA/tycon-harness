@@ -1449,7 +1449,8 @@ test('2.31-T1 ResponseSection_ShowsCurrentValueAndSource @story-2.31 @ac-1 — i
   });
   await conEquipo({}, async ({ seccion }) => {
     const v = await seccion('respuesta');
-    assert.deepStrictEqual(v.extras.vigente, { language: 'es', style: 'neutral', max_chars: TC.TOPE_POR_ESTILO.neutral });
+    // sin idioma declarado vale el de fábrica: el de la persona
+    assert.deepStrictEqual(v.extras.vigente, { language: 'auto', style: 'neutral', max_chars: TC.TOPE_POR_ESTILO.neutral });
     assert.deepStrictEqual(v.extras.origen, { language: 'por defecto', style: 'por defecto', max_chars: 'del estilo' });
   });
   // la pantalla: los tres estilos con su línea, el idioma y el largo, y lo vigente dicho en llano
@@ -1458,6 +1459,39 @@ test('2.31-T1 ResponseSection_ShowsCurrentValueAndSource @story-2.31 @ac-1 — i
   const opciones = p.todo(p.sec('respuesta')).filter((n) => n.tag === 'option').map((n) => n.attrs.value);
   for (const o of ['executive', 'detailed', 'neutral', 'es', 'en']) assert.ok(opciones.includes(o), `opción ${o}: ${opciones}`);
   assert.match(p.textoDe('respuesta'), /Hoy: ejecutivo · castellano · 1300 caracteres \(del perfil\)/);
+});
+
+test('T6 Sitio_OfreceAuto @story-8.149 @ac-5 — el idioma de las respuestas ofrece auto, es el de fábrica y se muestra con su texto', async () => {
+  // la vista vigente de la pestaña: sin declarar, auto; declarado, el del perfil
+  await conEquipo({}, async ({ seccion }) => {
+    const v = await seccion('respuesta');
+    assert.deepStrictEqual([v.extras.vigente.language, v.extras.origen.language], ['auto', 'por defecto']);
+  });
+  await conEquipo({ profile: { ...PERFIL_TYCON, response: { language: 'auto' } } }, async ({ seccion }) => {
+    const v = await seccion('respuesta');
+    assert.deepStrictEqual([v.extras.vigente.language, v.extras.origen.language], ['auto', 'perfil']);
+  });
+  // la pantalla, en los dos idiomas del sitio
+  const textos = {
+    es: { persona: 'el idioma de la persona', fabrica: 'el idioma de la persona (de fábrica)', castellano: /castellano/ },
+    en: { persona: "the person's language", fabrica: "the person's language (default)", castellano: /Spanish/ },
+  };
+  for (const idioma of ['es', 'en']) {
+    const t = textos[idioma];
+    const p = await pantallaFalsa([{ ...seccionPerfil('respuesta', { response: {} }), extras: { vigente: { language: 'auto', style: 'neutral', max_chars: 2000 }, origen: { language: 'por defecto', style: 'por defecto', max_chars: 'del estilo' } } }], {}, idioma);
+    assert.strictEqual(p.error, null);
+    const opciones = p.todo(p.sec('respuesta')).filter((n) => n.tag === 'option');
+    const de = (valor) => opciones.find((n) => n.attrs.value === valor);
+    assert.ok(de('auto'), `${idioma}: ofrece auto (${opciones.map((n) => n.attrs.value)})`);
+    assert.strictEqual(de('auto').textContent, t.persona, `${idioma}: auto con su texto`);
+    // el rótulo de «sin declarar» ya no dice castellano: dice el de fábrica nuevo
+    assert.strictEqual(de('').textContent, t.fabrica, `${idioma}: sin declarar`);
+    assert.doesNotMatch(de('').textContent, t.castellano, `${idioma}: sin declarar ya no es castellano`);
+    // el renglón «hoy» nombra auto con su texto, no el código suelto
+    const hoy = p.todo(p.sec('respuesta')).map((n) => n.textContent).find((x) => x.includes(' · 2000'));
+    assert.ok(hoy && hoy.includes(` · ${t.persona} · `), `${idioma}: renglón hoy con el texto de auto: ${hoy}`);
+    assert.ok(!hoy.includes(' · auto · '), `${idioma}: sin el código suelto`);
+  }
 });
 
 test('2.31-T2 ResponseSection_ProposesOnlyResponseKey_RestByteIdentical @story-2.31 @ac-2 — sólo cambia response; el archivo entero pasa el lector del perfil', async () => {

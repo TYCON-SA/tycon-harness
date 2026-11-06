@@ -210,8 +210,9 @@ const VOCABULARIO = Object.freeze({
   // Cómo contesta el asistente: el idioma y el estilo del bloque de respuesta del CLAUDE.md (y del AGENTS.md),
   // y el tope de prosa que mide el medidor de estilo. Cerrados: cada estilo es un texto revisado en
   // claude-md-blocks/response-style/<estilo>.<idioma>.md, y un valor fuera de la lista es configuración ROTA (el
-  // sincronizador deja el bloque que había). Sin valor: `neutral` en `es`, y el tope del estilo (TOPE_POR_ESTILO).
-  response: Object.freeze({ language: 'opcion:es|en', style: 'opcion:executive|detailed|neutral', max_chars: 'entero:300-4000' }),
+  // sincronizador deja el bloque que había). `auto` contesta en el idioma en que escribe la persona: su texto,
+  // <estilo>.auto.md, es el de `es` más esa regla. Sin valor: `neutral` en `auto`, y el tope del estilo (TOPE_POR_ESTILO).
+  response: Object.freeze({ language: 'opcion:es|en|auto', style: 'opcion:executive|detailed|neutral', max_chars: 'entero:300-4000' }),
   // Quién puede reenviar el ok de un dev: el nombre de la sesión (la coordinadora de una organización) cuyos
   // mensajes valen como reenvío textual del ok del dev para eximir un crítico o firmar un criterio que no se puede probar
   // en vivo. Sin valor, nadie. Vale SÓLO desde el perfil del equipo (PROFILE_ONLY).
@@ -293,7 +294,7 @@ const TOPE_POR_ESTILO = Object.freeze({ executive: 1300, detailed: 3000, neutral
 const DEFAULTS = Object.freeze({
   'update.channel': 'stable', 'update.apply': 'ask', 'update.skills_source': 'separate', 'packs.default': 'none',
   'update.source': 'public', 'rutas.tree': '~/.claude/.tycon-pipeline/harness/tree',
-  'response.language': 'es', 'response.style': 'neutral', 'guard.update': 'password',
+  'response.language': 'auto', 'response.style': 'neutral', 'guard.update': 'password',
 });
 // Las claves en las que el PERFIL DEL EQUIPO le gana al archivo de la máquina (story 8.29, decisión del dueño del
 // 2026-10-11). Para todo lo demás el orden es el de siempre: variable › máquina › perfil. Para éstas: variable › perfil ›
