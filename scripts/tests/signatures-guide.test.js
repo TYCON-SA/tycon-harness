@@ -329,3 +329,38 @@ test('SignaturesGuide_ListsDesignationSetAndWithdraw (T29) @story-8.207 @ac-24',
   const conf = cat.SIGNATURES.find((x) => x.id === 'designation-confirm');
   assert.deepStrictEqual([conf.otherSession, !!conf.soloClick], ['no', false]);
 });
+
+test('Coordinadora_FirmasPorClick_ReglasEnLaGuia — el dueño firma desde el celular, y owner-wait no se lo impide', () => {
+  // 🔴 rojo: falta una regla en alguna de las dos guías de coordinación, o la guía de firmas no dice que owner-wait no frena
+  const es = fs.readFileSync(path.join(RAIZ, 'guides', 'coordination.md'), 'utf8');
+  const en = fs.readFileSync(path.join(RAIZ, 'guides', 'coordination.en.md'), 'utf8');
+  const seccion = (texto, titulo) => { const i = texto.indexOf(titulo); assert.ok(i >= 0, titulo); const j = texto.indexOf('\n## ', i + 1); return texto.slice(i, j < 0 ? undefined : j); };
+  const r = seccion(es, '### Reglas de firma para toda coordinadora');
+  for (const [que, re] of [
+    ['sin guion para la terminal, salvo lo irreversible', /ningún guion ni comando para la terminal del dueño[^\n]*\n?[^\n]*salvo lo irreversible/i],
+    ['cada firma es un renglón de la lista, pasado como cuadro', /renglón de la lista de firmas[^\n]*\n?[^\n]*cuadro/i],
+    ['dos líneas antes del cuadro', /dos líneas[^\n]*\n?[^\n]*qué cambia[^\n]*\n?[^\n]*recomendación/i],
+    ['una tanda por hora', /una tanda por hora/i],
+    ['la tanda nunca frena: lo que para va al instante, lo demás sigue con un supuesto marcado, las mejoras no esperan',
+      /la tanda nunca frena el trabajo[\s\S]*?deja parada a\s+una sesión va al dueño al instante[\s\S]*?supuesto marcado[\s\S]*?no espera a la tanda/i],
+    ['esperar al dueño sin otro trabajo cuenta como parada: primero trabajo de la fila, si no, al instante',
+      /espera al\s+dueño y no tiene otro trabajo cuenta como parada[\s\S]*?trabajo de la fila[\s\S]*?al dueño al instante/i],
+    ['un pedido sin código lo aprueba la coordinadora; con código, el dueño', /pedido sin código lo aprueba la coordinadora[\s\S]*?con un solo archivo de código, las dos siguen siendo del dueño/i],
+  ]) assert.match(r, re, `coordination.md: ${que}`);
+  const ren = seccion(en, '### Signing rules for every coordinator');
+  for (const re of [/no script or command for the owner's terminal[^\n]*\n?[^\n]*except what cannot be undone/i, /row of the signature list[^\n]*\n?[^\n]*box/i, /two lines[^\n]*\n?[^\n]*what changes[^\n]*\n?[^\n]*recommendation/i, /one batch per hour/i, /the batch never holds up the work[\s\S]*?stopped goes to the owner right away[\s\S]*?marked\s+assumption[\s\S]*?does not wait for the batch/i, /waits for the owner and has no other work counts as stopped[\s\S]*?work from\s+the queue[\s\S]*?to the owner right away/i, /request without code is approved by the coordinator[\s\S]*?with a single code file, both stay with the owner/i]) {
+    assert.match(ren, re, 'coordination.en.md');
+  }
+  // la regla madre va primero, antes de toda otra sección, en los dos idiomas
+  const madre = (texto, titulo) => { const i = texto.indexOf(titulo); assert.ok(i >= 0, titulo); assert.strictEqual(texto.indexOf('\n## '), i - 1, `${titulo}: es la primera sección`); return seccion(texto, titulo); };
+  const m = madre(es, '## La regla madre: la coordinadora mejora su propio proceso');
+  for (const re of [/sin que se lo pidan/, /cuántas veces[\s\S]*tiempo[\s\S]*tokens[\s\S]*qué encontró/, /recorte/, /«qué\s+costó de más y qué cambio»/]) assert.match(m, re, 'coordination.md: regla madre');
+  const men = madre(en, '## The mother rule: the coordinator improves her own process');
+  for (const re of [/without being asked/, /how many times[\s\S]*time[\s\S]*tokens[\s\S]*what it found/, /cut/, /"what cost too much and what I changed"/]) assert.match(men, re, 'coordination.en.md: regla madre');
+  // owner-wait se lanza con la ruta completa del arnés, que es la única forma que el freno deja pasar
+  assert.match(es, /`node "<arnés>\/scripts\/tools\/coordination\.js" owner-wait`/);
+  assert.match(en, /`node "<harness>\/scripts\/tools\/coordination\.js" owner-wait`/);
+  assert.doesNotMatch(es + en, /`node scripts\/tools\/coordination\.js owner-wait`/, 'sin la ruta relativa');
+  const guia = fs.readFileSync(GUIA, 'utf8');
+  assert.match(guia, /con una consola de fondo viva[^\n]*\n?[^\n]*salvo[^\n]*\n?[^\n]*owner-wait/, 'firmas-del-arnes.md: la excepción de owner-wait');
+});

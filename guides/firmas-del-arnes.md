@@ -193,7 +193,8 @@ La terminal también es la salida cuando el freno no puede decidir:
 - con el comando escondido detrás de otro (`cd … && <firma>`);
 - con la herramienta lanzada por otra herramienta o por su consola;
 - en una sesión sin pantalla (`-p`);
-- con una consola de fondo viva: se cierra, o se firma en la terminal.
+- con una consola de fondo viva: se cierra, o se firma en la terminal. Una sola no frena, salvo en Windows: el
+  `owner-wait` de la coordinadora, con la ruta completa de este mismo arnés y nada más en la línea.
 
 ### En Codex
 

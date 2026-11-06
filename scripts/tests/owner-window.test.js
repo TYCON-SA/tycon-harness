@@ -453,6 +453,43 @@ test('OwnerWindow_ProcesoDeFondo_Niega (T18)', (t) => {
   assert.strictEqual(r.decision, 'deny');
 });
 
+test('OwnerWindow_OwnerWaitDeFondo_NoFrena_YOtraCosaSi — el despertador de la coordinadora no le quita el click al dueño', (t) => {
+  // 🔴 rojo: con owner-wait de fondo la firma va a la terminal, o pasa algo que no es exactamente owner-wait de este arnés
+  const [, cmd] = GUIONES[0];
+  const propio = path.join(RAIZ, 'scripts', 'tools', 'coordination.js');
+  const fondo = (casa, linea) => ({ pid: 400, ppid: 100, inicio: INICIO, comando: envolver(casa, linea, { deFondo: true }) });
+  const pide = (linea) => { const casa = casaNueva(t); return pedir(casa, cmd, { arbol: arbolDelFreno({ extra: [fondo(casa, linea)] }) }); };
+  // como lo pide el aviso de coordination.js, con la ruta entre comillas, y sin comillas: pasa como si no hubiera consola
+  for (const linea of [`node "${propio}" owner-wait`, `node ${propio} owner-wait`, `/usr/local/bin/node "${propio}" owner-wait`]) {
+    assert.strictEqual(pide(linea).decision, 'ask', linea);
+  }
+  // cualquier otra cosa sigue frenando
+  const otro = fs.mkdtempSync(path.join(os.tmpdir(), 'otro-arnes-'));
+  t.after(() => fs.rmSync(otro, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(otro, 'scripts', 'tools'), { recursive: true });
+  const copia = path.join(otro, 'scripts', 'tools', 'coordination.js');
+  fs.copyFileSync(propio, copia);
+  for (const linea of [
+    `node "${propio}" owner-wait; sleep 600`, // algo más en la línea
+    `node "${propio}" owner-wait && sleep 600`,
+    `node "${propio}" owner-wait --x`, // otra palabra
+    `node "${propio}" status`, // otro subcomando
+    `node "${copia}" owner-wait`, // la misma herramienta de otra copia
+    `bash "${propio}" owner-wait`, // no la corre node
+    `node "$(echo ${propio})" owner-wait`, // armada
+    `node "${propio}" owner-wait > /tmp/x`, // con redirección
+  ]) {
+    const r = pide(linea);
+    assert.strictEqual(r.decision, 'deny', linea);
+    assert.match(r.texto, /cerrá los procesos de fondo o firmá desde tu terminal/, linea);
+  }
+  // owner-wait y otra consola de fondo: la otra frena
+  const casa = casaNueva(t);
+  const r = pedir(casa, cmd, { arbol: arbolDelFreno({ extra: [fondo(casa, `node "${propio}" owner-wait`), { ...fondo(casa, 'sleep 600'), pid: 401 }] }) });
+  assert.strictEqual(r.decision, 'deny');
+  assert.match(r.texto, /cerrá los procesos de fondo o firmá desde tu terminal/);
+});
+
 test('OwnerWindow_Indecidible_Niega (T19)', (t) => {
   const [firma, cmd, argv] = GUIONES[0];
   const terminal = /--terminal/;

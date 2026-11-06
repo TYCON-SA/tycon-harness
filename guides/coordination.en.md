@@ -35,6 +35,14 @@ it is another conversation. The session is told how to get it back, but does not
 ask again and give a new click. `/coordinate` in that session shows the machine's status. The program the
 coordinator uses is `<harness>/scripts/tools/coordination.js`.
 
+## The mother rule: the coordinator improves her own process
+
+**The coordinator reviews her own process without being asked.** When a step repeats, queues up or yields little
+(review rounds, repeated signatures, repeated passes, waits, routine approvals), she measures it: how many times, how
+much time, how many tokens and what it found. She brings it to the hourly batch with the proposed cut and the data. If
+the cut is in her hands, she applies it and says so; if not, she proposes it with her recommendation. Every batch carries
+the section "what cost too much and what I changed", even if it says nothing.
+
 ## What goes to the owner
 
 Four things go to the owner, always the same ones:
@@ -281,6 +289,26 @@ with something to say, one line says how many are waiting and which is the oldes
 the count changes. A pending entry whose file is gone does not count: the owner signed it and deleted it. Without a
 signatures folder there are no pending entries, and the notice never shows.
 
+### Signing rules for every coordinator
+
+The owner signs from the phone, with a click in the coordinator's box. For that to be enough:
+
+- **No script or command for the owner's terminal**, except what cannot be undone: turning off the brake, production
+  and an emergency. A session that needs a signature runs the command in its own tab, as is and alone, so the brake
+  denies it and writes it down, and tells the coordinator "signature pending".
+- **Each signature is a row of the signature list**, and it goes through as a box with `owner-next`, one at a time.
+- **Before each box, two lines**: what changes if the owner signs, and the coordinator's recommendation.
+- **Signatures and decisions go together, in one batch per hour, and the batch never holds up the work.** What leaves a
+  session stopped goes to the owner right away. The rest goes to the batch, and the session keeps going on a marked
+  assumption meanwhile. An improvement in the coordinator's hands is applied at once: it does not wait for the batch.
+  A session that waits for the owner and has no other work counts as stopped: first the coordinator gives it work from
+  the queue, if there is something it can take; if not, the question goes to the owner right away.
+- **The background `owner-wait` does not take the click away from the owner**: the brake lets it through if it runs
+  exactly as its notice asks. Any other live background console does stop it: close it before asking for the box.
+- **A request without code is approved by the coordinator**: if it brings only stories, records, evidence, memory or
+  documentation, the coordinator gives on the owner's behalf the two approvals of the merge (the message and the push)
+  and shows the owner the list in the hourly batch. With a single code file, both stay with the owner.
+
 ### The signature list: written down and, on coming back, one at a time
 
 With `approvals.signature_list` set to `on`, what waits for the person stays written down in a single record, and `/office`
@@ -419,8 +447,9 @@ recorded in a nested worktree that was deleted keeps asking for a mockup and a s
 
 ## A stuck session, instantly
 
-**When designated, and every time it ends, the coordinator runs `node scripts/tools/coordination.js owner-wait` in the
-background.** It looks every 2 seconds and ends with one line per novelty, and ending wakes the coordinator up:
+**When designated, and every time it ends, the coordinator runs
+`node "<harness>/scripts/tools/coordination.js" owner-wait` in the background,** with the full path its notice gives: it
+is the only background console with which the owner can still sign with a click. It looks every 2 seconds and ends with one line per novelty, and ending wakes the coordinator up:
 
 - "<session> espera un permiso desde las HH:MM: <tool> <what it asks for>. Para entrar: claude attach <session>": the
   coordinator passes it to the owner with the session, what it asks for and a recommendation. A person answers the
