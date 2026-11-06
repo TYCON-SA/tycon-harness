@@ -290,7 +290,7 @@ function richFoto() {
       { kind: 'run', text: 'Otro trabajo', unknown: true },
     ],
   };
-  const board = buildBoard({ meta: { actualizado: '2026-06-01T10:00', resumen: 'Resumen', teToca: ['Algo'] }, pendientes: [{ titulo: 'Pendiente', estado: 'espera', grupo: 'Hoy', quien: 'Omega', nota: 'Nota', termina: 'hoy', orden: 1, id: 'T-1' }, { titulo: 'Hecho', estado: 'hecho', quien: 'Beta', realIso: '2026-06-01T09:00', id: 'T-2' }] });
+  const board = buildBoard({ meta: { actualizado: '2026-06-01T10:00', resumen: 'Resumen', teToca: ['Algo'] }, pendientes: [{ titulo: 'Pendiente', estado: 'espera', grupo: 'Hoy', quien: 'Omega', nota: 'Nota', termina: 'hoy', orden: 1, id: 'T-1' }, { titulo: 'Hecho', estado: 'hecho', quien: 'Beta', realIso: '2026-06-01T09:00', id: 'T-2' }, { titulo: 'La recalculada', estado: 'curso', historia: '7.6', id: 'T-3' }] });
   // una firma pedida por una sesión: su persona levanta la mano y la tarjeta dice a quién espera (8.198)
   const { data } = buildOffice({
     wip, signatures: [{ title: 'Firma del plan', at: nowMs }, { id: 'f9', tipo: 'firma', destino: 's1', title: 'el carril de Alfa', at: nowMs }], nowMs, board, openPrsNote: 'Los pedidos no se pudieron leer.',
@@ -1937,14 +1937,15 @@ test('T54 Tarjeta_IgualEnLaLocalYEnElSitio: cada renglón de la ficha y del deta
   const sent = pick(JSON.parse(JSON.stringify(foto)), '/home/nadie');
   // la ficha de cada sesión, armada por la función de la página con la foto local y con la que llega al sitio
   const ctx = vm.createContext({ DATA: null });
-  vm.runInContext(`${pageDecls(['DAYS', 'parse', 'fmt', 'AST', 'finTxt', 'SOLO_COORDINA', 'ficha'])}\nthis.ficha = ficha;`, ctx);
-  const rows = (data, a) => { ctx.DATA = data; return JSON.parse(JSON.stringify(ctx.ficha(a))); };
+  vm.runInContext(`${pageDecls(['DAYS', 'parse', 'fmt', 'AST', 'finTxt', 'SOLO_COORDINA', 'historiaDe', 'ficha'])}\nthis.ficha = ficha;`, ctx);
+  const rows = (data, a, abiertos = false) => { ctx.DATA = data; return JSON.parse(JSON.stringify(ctx.ficha(a, abiertos))); };
   assert.ok(foto.agents.length >= 8, 'la foto de la prueba trae varias sesiones');
   assert.strictEqual(sent.agents.length, foto.agents.length, 'llegan todas las sesiones');
   let compared = 0;
-  for (const [i, a] of foto.agents.entries()) {
-    const local = rows(foto, a);
-    const site = rows(sent, sent.agents[i]);
+  // cerrada es la tarjeta; abierta, el panel y la ventana, que suman el renglón «Historia»
+  for (const [i, a] of foto.agents.entries()) for (const abiertos of [false, true]) {
+    const local = rows(foto, a, abiertos);
+    const site = rows(sent, sent.agents[i], abiertos);
     assert.ok(local.length > 0, `${a.nombre}: la ficha local tiene renglones`);
     assert.deepStrictEqual(site.map((r) => r.k), local.map((r) => r.k), `${a.nombre}: los renglones de la ficha del sitio no son los de la local`);
     for (const [j, r] of local.entries()) {
@@ -1954,9 +1955,11 @@ test('T54 Tarjeta_IgualEnLaLocalYEnElSitio: cada renglón de la ficha y del deta
     }
   }
   assert.ok(compared > 30, `se compararon ${compared} renglones`);
+  assert.ok(foto.agents.some((a) => a.tarea === 'T-3'), 'la foto de la prueba trae una sesión con su número de tarea');
+  assert.ok(foto.agents.some((a) => rows(foto, a, true).some((r) => r.k === 'Historia')), 'y una ficha abierta con su renglón «Historia»');
   for (const [k, why] of Object.entries(CARD_DIFFERS)) assert.ok(why.length > 20 && compared, `«${k}» no dice por qué cambia`);
   // el nombre, el estado y cómo trabaja, que van en la tarjeta misma
-  for (const [i, a] of foto.agents.entries()) for (const k of ['nombre', 'estado', 'comoTrabaja', 'titulo']) assert.deepStrictEqual(sent.agents[i][k], a[k], `${a.nombre}: «${k}» cambia`);
+  for (const [i, a] of foto.agents.entries()) for (const k of ['nombre', 'estado', 'comoTrabaja', 'titulo', 'historiaTitulo', 'tarea']) assert.deepStrictEqual(sent.agents[i][k], a[k], `${a.nombre}: «${k}» cambia`);
   // el detalle de una tarjeta del tablero: cada campo que lee la página llega igual
   const fn = (name) => { const at = src.indexOf(`function ${name}(`); const end = src.indexOf('\nfunction ', at + 1); return src.slice(at, end < 0 ? undefined : end); };
   const readsOfCard = [...new Set([...fn('abrirTarjeta').matchAll(/\bi\.([A-Za-z_]\w*)/g)].map((m) => m[1]))];
