@@ -44,7 +44,8 @@ function toy() {
   const d = { name: 'relay-designation', status: 'ok', ts: iso(NOW), sesion: COORD, rol: 'coordinadora', quien: 'el dueño', cita: 'Esta sesión es la coordinadora' };
   fs.writeFileSync(path.join(state, 'gates.log'), `${JSON.stringify(d)}\n${JSON.stringify(DS.confirmationRecord(d, iso(NOW)))}\n`);
   fs.writeFileSync(path.join(home, '.claude', 'sessions', `${COORD}.json`), JSON.stringify({ pid: process.pid, sessionId: COORD, name: 'Coordinadora', nameSource: 'user', status: 'busy', statusUpdatedAt: NOW, cwd: root }));
-  return { root, home, state, arnes, opts: { home, arnes, env: {}, now: NOW, sessionId: COORD } };
+  // owner-wait también mira «Tu firma» de la oficina: acá, una lectura vacía, sin lanzar la oficina real
+  return { root, home, state, arnes, opts: { home, arnes, env: {}, now: NOW, sessionId: COORD, ownerWaits: () => ({ esperas: [], problemas: [] }) } };
 }
 /** La nota de `marker.js doing` de una sesión. */
 const note = (t, sid, body) => { fs.mkdirSync(path.join(t.state, 'doing'), { recursive: true }); fs.writeFileSync(path.join(t.state, 'doing', `${sid}.json`), JSON.stringify(body)); };

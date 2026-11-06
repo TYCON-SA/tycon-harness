@@ -3662,6 +3662,86 @@ test('T25 Conversacion_ConVosEnTodaSesion @story-8.183 @ac-4 @ac-5: una sesión 
   assert.match(code, /desde la oficina/);
 });
 
+// ---------- lo de «Tu firma» le llega a la coordinadora: de qué sesión y de qué fuente es cada tarjeta (8.219) ----------
+
+const { ownerWaitsOf } = require(OFFICE);
+// una tarjeta de «Tu firma» como las deja la oficina: la sesión y la fuente no viajan en el JSON
+const firmaCard = (props, sid, origen) => Object.defineProperties({ ...props }, { sid: { value: sid }, origen: { value: origen } });
+const firmaData = (tarjetas) => ({ kanban: { columnas: [{ id: 'firma', nombre: 'Tu firma', tarjetas }] } });
+
+function firmaOffice() {
+  return buildOffice({
+    wip: wip([{ session: 'Pepa', sid: 's-pepa', status: 'idle', work: '9.3 · Tres', extra: { kind: 'pipeline', title: 'Tres', storyId: '9.3', current: 'approve-plan' } }],
+      { halfwayItems: [{ kind: 'run', text: 'Cinco', cleanAfter: null, sid: 's-rosa', name: 'Rosa', storyId: '9.5', awaits: 'plan' }] }),
+    signatures: [{ id: 'f1', title: 'la firma de otra', at: NOW, destino: 's-otra', nombre: 'Otra' }, { id: 'f2', title: 'la firma de la terminal', at: NOW }],
+    board: buildBoard({ pendientes: [{ titulo: 'Firma del tablero', estado: 'firma', quien: 'Rita' }] }),
+    nowMs: NOW,
+  }).data;
+}
+
+test('T1 TuFirma_TarjetasConSesionYOrigen @story-8.219 @ac-1: cada tarjeta de «Tu firma» dice de qué sesión y de qué fuente sale, sin cambiar lo que se ve', () => {
+  const data = firmaOffice();
+  const cards = col(data, 'firma').tarjetas;
+  const of = (titulo) => cards.find((t) => t.titulo === titulo);
+  assert.deepStrictEqual(cards.map((t) => t.titulo).sort(), ['Cinco', 'Firma del tablero', 'Firma: la firma de la terminal', 'Firma: la firma de otra', 'Tres'].sort());
+  assert.deepStrictEqual([of('Tres').sid, of('Tres').origen], ['s-pepa', 'sesion']);
+  assert.deepStrictEqual([of('Cinco').sid, of('Cinco').origen], ['s-rosa', 'medio']);
+  assert.deepStrictEqual([of('Firma: la firma de otra').sid, of('Firma: la firma de otra').origen], ['s-otra', 'lista']);
+  assert.strictEqual(of('Firma: la firma de la terminal').sid, null, 'la de la terminal, sin sesión');
+  assert.ok(Object.prototype.hasOwnProperty.call(of('Firma: la firma de la terminal'), 'sid'), 'sid: null explícito');
+  assert.strictEqual(of('Firma: la firma de la terminal').origen, 'lista');
+  assert.deepStrictEqual([of('Firma del tablero').sid, of('Firma del tablero').origen], [null, 'tablero']);
+  assert.doesNotMatch(JSON.stringify(cards), /"sid"|"origen"/, 'la tarjeta que se ve queda como hoy');
+});
+
+test('T2 OwnerWaitsOf_SoloSesionYMedio @story-8.219 @ac-2: sólo lo que espera una sesión, una vez por sesión, con sus respaldos', () => {
+  assert.deepStrictEqual(ownerWaitsOf(firmaOffice()), [
+    { sid: 's-pepa', quien: 'Pepa', trabajo: 'Tres', espera: 'que apruebes el plan', cerrada: false },
+    { sid: 's-rosa', quien: 'Rosa', trabajo: 'Cinco', espera: 'que apruebes el plan', cerrada: true },
+  ]);
+  // la misma sesión con tarjeta propia y a medio camino: una sola, la de la sesión
+  const doble = firmaData([firmaCard({ titulo: 'Seis', quien: 'Ida', espera: 'el ok para guardar' }, 's-ida', 'medio'), firmaCard({ titulo: 'Seis', quien: 'Ida', espera: 'que apruebes el plan' }, 's-ida', 'sesion')]);
+  assert.deepStrictEqual(ownerWaitsOf(doble), [{ sid: 's-ida', quien: 'Ida', trabajo: 'Seis', espera: 'que apruebes el plan', cerrada: false }]);
+  // trabajando, con una pregunta abierta y una sesión de prueba: no esperan al dueño en «Tu firma»
+  const plan = { kind: 'pipeline', title: 'Siete', storyId: '9.7', current: 'approve-plan' };
+  const { data } = buildOffice({
+    wip: wip([
+      { session: 'Uno', status: 'busy', extra: { kind: 'pipeline', current: 'implement' } },
+      { session: 'Preg', sid: 's-preg', status: 'busy', extra: { kind: 'pipeline', current: 'implement' } },
+      { session: 'Prueba', sid: 's-prueba', status: 'idle', extra: plan },
+    ]),
+    sessionFiles: [sessionFile('s-preg', { name: 'Preg', waitingForOwner: true, waitingFor: 'una respuesta' })],
+    testSessions: new Set(['s-prueba']),
+    nowMs: NOW,
+  });
+  assert.deepStrictEqual(ownerWaitsOf(data), []);
+  // los respaldos: sin nombre, el id corto; sin espera, «algo de vos»
+  const sinDatos = firmaData([firmaCard({ titulo: 'Ocho', quien: '—' }, 'abcdef1234567', 'medio'), firmaCard({ titulo: 'Nueve', quien: 'Ema' }, 's-ema', 'sesion')]);
+  assert.deepStrictEqual(ownerWaitsOf(sinDatos), [
+    { sid: 'abcdef1234567', quien: '— (abcdef12)', trabajo: 'Ocho', espera: 'algo de vos', cerrada: true },
+    { sid: 's-ema', quien: 'Ema', trabajo: 'Nueve', espera: 'algo de vos', cerrada: false },
+  ]);
+});
+
+// la lista de archivos de una carpeta con su tamaño y su fecha, para ver que nada cambió
+function filesOf(dir) {
+  const out = {};
+  const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) walk(p); else { const s = fs.statSync(p); out[path.relative(dir, p)] = `${s.size}:${s.mtimeMs}`; } } };
+  walk(dir);
+  return out;
+}
+
+test('T3 OwnerWaits_ComoProcesoSinEscribir @story-8.219 @ac-3: --owner-waits da la lista y no escribe nada en la casa', () => {
+  const { home, state } = toyHome();
+  const storyPath = storyFile({ root: home }, '9.7', 'Siete');
+  fs.writeFileSync(path.join(state, 'active', 's1.json'), JSON.stringify({ sessionId: 's1', storyId: '9.7', storyPath, stepScheme: STEP_LIB.SCHEME, stepsCompleted: BEFORE_PLAN, stepsPending: IDS.filter((s) => !BEFORE_PLAN.includes(s)) }));
+  const antes = filesOf(home);
+  const out = JSON.parse(run(home, ['--owner-waits', '--now', new Date(NOW).toISOString()]));
+  assert.ok(Array.isArray(out.problemas), JSON.stringify(out));
+  assert.deepStrictEqual(out.esperas.map((e) => [e.sid, e.quien, e.espera, e.cerrada]), [['s1', 'sesion-a', 'que apruebes el plan', false]]);
+  assert.deepStrictEqual(filesOf(home), antes, 'ningún archivo cambió ni apareció');
+});
+
 test('T312 Story_NumberAndTitle: el panel dice en un renglón fijo «Historia: número — título»; la tarjeta, sólo la historia', () => {
   const { data } = buildOffice({ wip: wip([]), nowMs: NOW });
   const html = page(data);
