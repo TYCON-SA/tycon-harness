@@ -443,6 +443,13 @@
       "scripts": [
         "background-question-guard.js"
       ]
+    },
+    {
+      "log": "PreToolUse · Task|Agent — SOLO Claude Code (los revisores esperan al pase adversarial)",
+      "verdict": "ASIMETRÍA A PROPÓSITO (2026-11-06): reviewer-launch-gate.js niega el lanzamiento de un revisor del arnés mientras el pase adversarial que corresponde no esté en vuelo. Codex no lanza los revisores con una herramienta del agente: los lanza el pipeline (pipeline.js reviewers-run, lib/codex-reviewers.js), así que de su lado no hay lanzamiento que frenar y el freno no se registra. on-advisor-run.js no descuenta nada en Codex.",
+      "scripts": [
+        "reviewer-launch-gate.js"
+      ]
     }
   ]
 }

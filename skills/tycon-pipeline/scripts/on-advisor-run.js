@@ -277,6 +277,27 @@ function recordLaunch(o) {
   return { sessionId, cwd, logPath, repo, story, ok: !lineError, ...(lineError ? { error: lineError } : {}) };
 }
 
+/**
+ * ¿El freno de lanzamiento de revisores está registrado en la configuración de Claude Code? Mira las cuatro: la de la
+ * casa y la del repo, con sus `.local`. Un archivo que no se lee no lo registra.
+ */
+function reviewerGateRegistered(cwd) {
+  const bases = [os.homedir(), ...(cwd ? [cwd] : [])];
+  for (const b of bases) {
+    for (const archivo of [path.join(b, '.claude', 'settings.json'), path.join(b, '.claude', 'settings.local.json')]) {
+      let conf;
+      try { conf = JSON.parse(fs.readFileSync(archivo, 'utf8')); } catch { continue; }
+      const grupos = conf && conf.hooks && Array.isArray(conf.hooks.PreToolUse) ? conf.hooks.PreToolUse : [];
+      for (const g of grupos) {
+        for (const h of (g && Array.isArray(g.hooks) ? g.hooks : [])) {
+          if (h && /reviewer-launch-gate\.js/.test(String(h.command || ''))) return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 function main() {
   let event;
   try {
@@ -307,8 +328,31 @@ function main() {
   const advisor = event.tool_name === 'collaborationspawn_agent' && !ti.agent_type ? rawName.replace(/_/g, '-') : rawName;
   const model = (event.tool_input && event.tool_input.model) || null;
 
+  // ── El lanzamiento que niega el freno de revisores no se anota ────────────
+  // El freno (`reviewer-launch-gate.js`) y este registro corren en el mismo PreToolUse, en cualquier orden: deciden con
+  // la misma función sobre el mismo marcador. Un lanzamiento negado no corrió, y anotarlo lo haría contar en
+  // `check-count`, en el registro de autoría y en la foto de la vuelta. Se descuenta sólo con el freno registrado en la
+  // configuración: con los guiones nuevos y la configuración vieja nadie lo frena, y entonces se anota y se avisa.
+  // Codex no pasa por el freno; su lanzador llama a `recordLaunch` directo.
+  let notaFreno = null;
+  if (event.tool_name !== 'collaborationspawn_agent') {
+    try {
+      const d = require('./reviewer-launch-gate.js').decide(event);
+      if (d.deny) {
+        if (reviewerGateRegistered(event.cwd)) return;
+        notaFreno = 'el freno de lanzamiento de revisores (reviewer-launch-gate.js) no está registrado en la configuración de Claude Code: '
+          + `este revisor salió sin el pase adversarial en vuelo (${d.kind}). El perfil minimal no lo trae; en full, lo instala install-tycon-hooks.`;
+      }
+    } catch { /* la consulta rota no cambia nada: se anota como siempre */ }
+  }
+
   const { cwd, logPath } = recordLaunch({ sessionId: event.session_id, cwd: event.cwd, advisor, model, transcriptPath: event.transcript_path, prompt: ti.prompt });
-  if (process.env.TYCON_SPAWN_GOVERNANCE === '0') return;
+  if (process.env.TYCON_SPAWN_GOVERNANCE === '0') {
+    if (notaFreno) {
+      try { process.stdout.write(JSON.stringify({ systemMessage: `[tycon-pipeline] lanzamiento \`${advisor}\`: ${notaFreno}` })); } catch { /* nunca romper el spawn */ }
+    }
+    return;
+  }
 
   // ── El techo de la organización ───────────────────────────────────────────
   // En Claude el techo lo cumple el modelo que da el pipeline; si un lanzamiento lo pasa (con `model:` o, sin él, el
@@ -333,8 +377,9 @@ function main() {
   }
 
   if (!ADHOC.has(advisor)) {
-    if (notaTecho) {
-      try { process.stdout.write(JSON.stringify({ systemMessage: `[tycon-pipeline] lanzamiento \`${advisor}\`: ${notaTecho}` })); } catch { /* nunca romper el spawn */ }
+    const notas = [notaFreno, notaTecho].filter(Boolean);
+    if (notas.length) {
+      try { process.stdout.write(JSON.stringify({ systemMessage: `[tycon-pipeline] lanzamiento \`${advisor}\`: ${notas.join(' · ')}` })); } catch { /* nunca romper el spawn */ }
     }
     return;
   }

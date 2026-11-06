@@ -169,7 +169,12 @@ de 3, candado anti-suite-completa en los cazadores). Kill-switch: `export TYCON_
 > lanzar, puntos 3 y 4), ANTES del primer revisor. El portón deja su veredicto anotado en la ejecución
 > (`adversarialGate`), y el apagado visto una vez vale para toda la ejecución (un `TYCON_5B_EARLY=0` en un comando suelto
 > alcanza; `=1` explícito lo vuelve a prender). Medido antes: 52 de 208 ejecuciones con pase lo lanzaron más de 2 min
-> después del primer revisor. Lo que sigue es el detalle de qué hacer en cada caso. 🔴 **La primera ejecución NORMAL con
+> después del primer revisor. **Además de recordarlo, lo frena**: el gancho `reviewer-launch-gate.js` niega el
+> lanzamiento de un revisor del arnés mientras `next` pida `consultar-porton`, `lanzar-pase` o `relanzar-pase-no-medido`,
+> y la negativa trae el mismo comando que `next`. Si el pase ya salió en este turno y falta anotarlo, se anota con
+> `mark-adversarial-launched` y no se relanza. El temprano apagado (`TYCON_5B_EARLY=0`, que el portón anota) también
+> lo apaga; el turno ocupado por otra sesión y un pase de otra sesión no frenan. Lo que sigue es el detalle de qué
+> hacer en cada caso. 🔴 **La primera ejecución NORMAL con
 > esto activo ES la de medición**: contar procesos pesados simultáneos (no solo cronometrar) y con eso ajustar el tope 2
 > de «Revisores»; si la máquina sufre, `TYCON_5B_EARLY=0` y se recalibra.
 
