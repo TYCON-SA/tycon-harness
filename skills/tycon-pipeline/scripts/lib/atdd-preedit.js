@@ -52,6 +52,7 @@
 
 const path = require('path');
 const { isTestPath, isImplPath, esMedicionNoDeclarada } = require('./atdd-order.js');
+const { homeCommand } = require('./home-command.js');
 
 /**
  * ¿`file` está dentro de `root`? Comparación por segmento — `/repo-viejo` no cuenta como `/repo`.
@@ -149,7 +150,7 @@ function preEditBlockMessage({ filePath, storyId, storyPath }) {
     '   (b) Si el orden invertido es legítimo y lo podés justificar (refactor sobre una red de tests',
     '       que ya existe, spike acordado), declarálo explícitamente:',
     '',
-    '         node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js set-flag atddBypass true --reason "<por qué>"',
+    `         ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js')} set-flag atddBypass true --reason "<por qué>"`,
     '',
     '       Queda en bypass.log con el detalle — no es un skip silencioso, y el cierre de ese paso',
     '       lo va a seguir reportando.',

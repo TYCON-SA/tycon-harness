@@ -16,6 +16,7 @@
 'use strict';
 
 const path = require('path');
+const { homeCommand } = require('./lib/home-command.js');
 
 function esConfigTycon(p) {
   const norm = String(p || '').replace(/\\/g, '/');
@@ -52,7 +53,7 @@ function handle(event) {
       'se leen como "está configurado" cuando no lo está:\n' +
       r.hallazgos.map((h) => `  · ${h.mensaje}`).join('\n') +
       '\n\nNo bloquea nada. Detalle completo: ' +
-      `\`node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js lint-config --repo ${raiz}\`` +
+      `\`${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js')} lint-config --repo ${raiz}\`` +
       ' · apagar: TYCON_CONFIG_LINT=0',
   };
 }

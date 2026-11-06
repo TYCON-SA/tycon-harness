@@ -27,7 +27,7 @@ const file = path.join(sdir, 'coordination', 'tablero.json');
 const before = fs.readFileSync(file, 'utf8');
 
 const hook = (script, event) => spawnSync(process.execPath, [path.join(SCRIPTS, script)], { input: JSON.stringify(event), env, encoding: 'utf8', timeout: 30000 });
-const blocked = (r) => r.status === 2 && /El tablero se escribe sólo con board\.js[\s\S]*board\.js set T-41/.test(`${r.stdout}${r.stderr}`);
+const blocked = (r) => r.status === 2 && /El tablero se escribe sólo con board\.js[\s\S]*board\.js" set T-41/.test(`${r.stdout}${r.stderr}`);
 
 const edit = hook('hook-pre-edit.js', { session_id: 'prueba-8198', tool_name: 'Edit', cwd: home, tool_input: { file_path: file, old_string: 'Una fila', new_string: 'Otra fila' } });
 check(blocked(edit), `un Edit sobre tablero.json frena con el comando (salió ${edit.status})`);

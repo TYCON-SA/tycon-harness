@@ -25,6 +25,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // la carpeta del estado, de una sola pieza
+const { homeCommand } = require('./lib/home-command.js');
 const { resolveSessionId } = require('./lib/session-id.js');
 const { stepNames } = require('./lib/steps.js');   // al dueño, los pasos por su nombre llano
 
@@ -338,10 +339,10 @@ if (!marker && matches(prompt, INTENT_PATTERNS)) {
           `→ leé el último summary.\n` +
           `       2. \`git status\` en el/los repo/s — verificá archivos pending.\n` +
           `       3. Setear MARKER en TU sessionId con el state heredado:\n` +
-          `          node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js set '{...}'.\n` +
+          `          ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js')} set '{...}'.\n` +
           `       4. Arrancar desde el primer paso pendiente (NO desde «Arranque»).\n\n` +
           `   (b) Si la otra sesión está MUERTA (Claude crasheó / dev cerró ventana): \n` +
-          `       node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js clear-session <sessionId>\n` +
+          `       ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js')} clear-session <sessionId>\n` +
           `       después podés arrancar fresh.\n\n` +
           `   (c) Si efectivamente querés DOS sesiones en paralelo sobre la misma story \n` +
           `       (uso muy raro — implica branches Git distintas): documentar ` +

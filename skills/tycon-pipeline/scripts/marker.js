@@ -154,6 +154,7 @@ const path = require('path');
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', '..', '..', 'scripts', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 const { resolveSessionId } = require('./lib/session-id.js');
+const { homeCommand, signatureCommand } = require('./lib/home-command.js');
 // la tabla de los pasos: nombres, orden, equivalencia con el marcador viejo
 const STEPS_LIB = require('./lib/steps.js');
 const { posixRelative } = require('./lib/path-forms.js');   // rutas relativas al repo con `/`, también en Windows
@@ -991,8 +992,8 @@ function cmdTouch() {
 const { veredictoPaseAdversarial, paseAtendido } = require('./lib/adversarial-verdict.js');
 
 function mensajeDelPaseAdversarial(v) {
-  const cmdResultado = `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run ${v.runId || '<runId>'} --model <modelo> --tests <k promovidas> [--own <p> --in "<rutas de prueba>"] [--deferred <d> --reason "<por qué>"]`;
-  const cmdSalteo = 'node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-skipped --files <archivos de código del diff>';
+  const cmdResultado = `${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js')} mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run ${v.runId || '<runId>'} --model <modelo> --tests <k promovidas> [--own <p> --in "<rutas de prueba>"] [--deferred <d> --reason "<por qué>"]`;
+  const cmdSalteo = `${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js')} mark-adversarial-skipped --files <archivos de código del diff>`;
   const e = (s) => console.error(s);
   if (v.motivo === 'registro-ilegible') {
     e(`marker.js complete-step prepare-commit BLOQUEADO — no pude leer el registro de pases adversariales: el campo \`${v.campo}\` del marker no es una lista.`);
@@ -1021,8 +1022,8 @@ function mensajeDelPaseAdversarial(v) {
     e(`marker.js complete-step prepare-commit BLOQUEADO — el pase adversarial (${cuando}) quedó NO MEDIDO: ${p.motivo_no_medido || 'no revisó todo'}.`);
     if (p.resultado) e(`  El resultado, con el texto de cada hallazgo: ${p.resultado}`);
     e('  Un pase que no revisó todo es un pase que falta. Relanzalo y anotá el resultado nuevo:');
-    e('    node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-launched <runId nuevo> 5b --relaunch');
-    e('    node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-result <N> --type 5b --result <RUN_DIR>/step-05b-adversarial.json …');
+    e(`    ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js')} mark-adversarial-launched <runId nuevo> 5b --relaunch`);
+    e(`    ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js')} mark-adversarial-result <N> --type 5b --result <RUN_DIR>/step-05b-adversarial.json …`);
     e(`  Si Codex no contesta y no hay herramienta Workflow: ${SALIDA_APROBADA}.`);
     e('  Abandonarlo lo firma una persona, no el agente: `mark-adversarial-skipped --files …` anota el pedido y da los comandos de `marker.js sign-adversarial-skip`.');
     return;
@@ -1475,7 +1476,7 @@ function cmdCompleteStep(nRaw, flags) {
         + (st === 'green' && !fresh ? ' de ESTA vuelta' : '') + '.');
       console.error(`  Estado: checks.advisors=${st || '(ausente)'} provenance=${prov || '(ausente)'}${prevClose ? ` · cierre previo de los revisores: ${prevClose}` : ''}`);
       console.error('  Registralo con el exit code REAL de check-count (lee el log de spawns, no tu --ran):');
-      console.error('    marker.js run-check advisors -- node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js check-count \\');
+      console.error(`    marker.js run-check advisors -- ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js')} check-count \\`);
       console.error('      --repo <repo> --story <story_path> --files <archivos modificados…>');
       console.error('  Set esperado vacío (mech-check sin advisors aplicables): check-count sale 0 con el expected:[] persistido.');
       console.error('  Una lista de revisores dada por vos (provenance trust-ran = self-report) NO alcanza. Declarar el control');
@@ -1806,7 +1807,7 @@ function cmdCompleteStep(nRaw, flags) {
         console.error(`marker.js complete-step ${n} BLOQUEADO — ${st.exists ? 'el findings.json NO es un array JSON válido' : 'FALTA el findings.json del paso de hallazgos'} en ${st.run_dir}.`);
         console.error('  Sin ese archivo, «no encontré nada» y «no lo escribí» son lo mismo: el criterio de poda del catálogo');
         console.error('  decide retiros de reglas con media muestra. Un run sin hallazgos igual lo escribe, con [].');
-        console.error(`    node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js write-findings --story ${storyPathF} --findings -`);
+        console.error(`    ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js')} write-findings --story ${storyPathF} --findings -`);
         console.error('    (el array sale del reporte consolidado del paso de hallazgos, con la disposition final de cada hallazgo)');
         anotar('bloqueo', st.exists ? 'findings.json inválido' : 'findings.json ausente');
       }
@@ -1943,7 +1944,7 @@ function cmdCompleteStep(nRaw, flags) {
           }
           if ((matrix.notVerifiable || []).length) {
             console.error(`  🟪 imposibles-declarados (esperan waiver del USUARIO): ${matrix.notVerifiable.map((n) => '#' + n).join(', ')}`);
-            console.error(`     node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js runtime-waiver ${storyPath}`);
+            console.error(`     ${signatureCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js')} runtime-waiver ${storyPath}`);
           }
           // La firma que existe pero se descartó se DICE: sin esto, «esperan waiver» parece que el dev no firmó.
           for (const l of require('./runtime-matrix.js').avisoFirmasDescartadas(matrix, storyPath)) console.error(`  ${l}`);

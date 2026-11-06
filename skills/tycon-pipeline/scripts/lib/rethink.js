@@ -10,6 +10,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { homeCommand } = require('./home-command.js');
 
 /** Desde esta vuelta el re-loop exige la nota. */
 const FIRST_ITER = 3;
@@ -207,7 +208,7 @@ function blockMessage({ iter, runDir, repeated, why }) {
     'La nota dice (cada campo, al menos ' + MIN_CHARS + ' caracteres): qué se repitió en las vueltas, y o bien qué cambia del enfoque, o bien por qué sigue igual. '
     + 'Si hace falta cambiar la story, primero se cambia la story (con su registro de cambios) y se pasa --story-change.',
   );
-  lines.push(`Comando: node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js rethink --iter ${iter} --repeated "<qué se repitió>" (--change "<qué cambia del enfoque>" | --keep "<por qué sigue igual>") [--story-change "<qué cambia de la story>"]`);
+  lines.push(`Comando: ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js')} rethink --iter ${iter} --repeated "<qué se repitió>" (--change "<qué cambia del enfoque>" | --keep "<por qué sigue igual>") [--story-change "<qué cambia de la story>"]`);
   if (runDir) lines.push(`La nota se guarda en ${notePath(runDir, iter)}.`);
   return lines.join('\n') + '\n';
 }

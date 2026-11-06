@@ -2360,7 +2360,7 @@ test('qa-guide gate: el mensaje trae el comando exacto para generarla', () => {
     storyPath: '/r/specs/e/stories/S1.md',
     guidePath: '/r/specs/e/qa/S1-guia-qa.html',
   });
-  assert.match(msg, /qa-guide\.js --story/, 'dice CÓMO generarla, no sólo que falta');
+  assert.match(msg, /qa-guide\.js" --story/, 'dice CÓMO generarla, no sólo que falta');
   assert.match(msg, /S1\.md/);
   assert.equal(commitGate.qaGuideMessage('ok', {}), '', 'sin hallazgo, sin ruido');
 });
