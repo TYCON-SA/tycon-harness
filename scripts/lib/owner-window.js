@@ -433,6 +433,8 @@ function firmaDeLlamado(guion, sub, args, llamada = null) {
     if (sub === 'withdraw-relay') return 'designation-withdraw';
     // declarar o cambiar el arreglo rápido; mirarlo o terminarlo, no. El subcomando en una variable cuenta como `set`
     if (sub === 'adhoc' && a[0] === 'set') return firmaDelPedidoAdhoc(args.slice(1));
+    // dejar pasar el freno de los datos; recomendar la historia o descartar no firma nada
+    if (sub === 'adhoc' && a[0] === 'allow-data-change') return opaca || (a.includes('--recommends') && a[a.indexOf('--recommends') + 1] === 'pasar') ? 'adhoc-lane:datos' : null;
     if (sub === 'adhoc' && /[$`]/.test(a[0] || '')) return SOBRE_CUPO;
     if (sub === 'restore' || (sub === 'clear-session' && a.includes('--lost'))) return 'lost-run';
     // la firma en una variable puede ser cualquiera de las cuatro: cuenta como una, y la forma canónica la niega
@@ -690,7 +692,7 @@ function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion, memo
   // la huella ata el click a lo que se mostró: el comando y la fuente de la pregunta
   const huella = sha256(`${texto}\0${partes.fuente || ''}`).slice(0, 8);
   return require('./owner-approvals.js').cuadroDe({ firma, destino, que: s.approves, historia: fuentes.historiaDe(m), criterios: partes.criterios, queHace: partes.queHace, nota: partes.nota, archivos: partes.archivos,
-    completo: partes.completo, siSaleMal: s.ifWrong, cita: partes.cita, huella, soloClick: s.soloClick, descripciones: s.descripciones });
+    completo: partes.completo, siSaleMal: s.ifWrong, cita: partes.cita, huella, soloClick: s.soloClick, clickDelDueno: s.clickDelDueno, descripciones: s.descripciones });
 }
 
 /**
@@ -731,6 +733,10 @@ function negarSinVentana(motivo, ids, sesion, cuadro = null, deFondo = false, an
   if (aQuien && !anotado) {
     return { decision: 'deny', firmas: ids, texto: `${motivo}. Esta sesión la abrió la coordinadora: no le muestres nada a la persona. Corré cada firma sola, en su forma exacta: `
       + `este freno te da la pregunta de cada una, y se la mandás a ${aQuien} por SendMessage con el comando y lo que se decide en tres renglones. ${otraForma}` };
+  }
+  if (cuadro && cuadro.clickDelDueno && !anotado && !cuadro.error) {
+    return { decision: 'deny', firmas: ids, cuadro, texto: `${motivo}. Esto lo aprueba sólo el click del dueño: mostrale AskUserQuestion con una sola pregunta, sin cambiarle una letra: «${cuadro.pregunta}», y las opciones «${cuadro.opciones[0]}» y «${cuadro.opciones[1]}». `
+      + `Con su click, repetí el mismo comando. Un «aprobado» escrito no vale. ${deFondo ? 'Si esta sesión corre de fondo, pasale la pregunta y el comando a la coordinadora: la muestra en su pestaña, y con el click repetís el comando acá. ' : ''}${otraForma}` };
   }
   if (cuadro && cuadro.soloClick) {
     return { decision: 'deny', firmas: ids, cuadro, texto: `${motivo}. Esto lo elige la persona con un click en el cuadro de opciones de esta pestaña: mostrale AskUserQuestion con una sola pregunta, sin cambiarle una letra: «${cuadro.pregunta}», y las opciones «${cuadro.opciones[0]}», con la descripción «${cuadro.descripciones[0]}», y «${cuadro.opciones[1]}», con la descripción «${cuadro.descripciones[1]}». `
@@ -822,9 +828,11 @@ const PRECHEQUEO_VIA = 'TYCON_SIGN_PRECHECK_VIA';
 const CON_PRECHEQUEO = new Set(['extra-round', 'save', 'plan-approval', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver', 'adhoc-lane', SOBRE_CUPO,
   'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran',
   // nombrar sin id de sesión, o retirar desde una sesión que no es la coordinadora, se niega sin gastar el click
-  'designation-set', 'designation-withdraw']);
+  'designation-set', 'designation-withdraw',
+  // dejar pasar el freno de los datos sin un freno anotado, o con un texto que el guion no acepta
+  'adhoc-lane:datos']);
 // las de sólo click cuyo chequeo corre antes de dar el cuadro (el de pasar el tope corre después del click)
-const CHEQUEO_ANTES_DEL_CUADRO = new Set(['designation-set', 'designation-withdraw']);
+const CHEQUEO_ANTES_DEL_CUADRO = new Set(['designation-set', 'designation-withdraw', 'adhoc-lane:datos']);
 // lo que espera el chequeo: el ok de guardar corre además los controles del commit de cada repo, con su propio plazo de
 // 210 s (lib/save-ok.js)
 const PLAZO_DEL_CHEQUEO = { save: 240000 };
@@ -997,7 +1005,9 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   // en Windows no se delega: sólo firman el click y el «aprobado»
   // lo que sólo aprueba un click en la pestaña que trabaja no se delega, aunque el perfil lo nombre, y tampoco va a la ventana
   const soloClick = pendientes.length === 1 && !!(firmaDe(pendientes[0]) || {}).soloClick;
-  if (!enWindows && !soloClick) try {
+  // lo que aprueba sólo el click del dueño tampoco se delega ni va a la ventana; su click vale también en la coordinadora
+  const clickDelDueno = pendientes.length === 1 && !!(firmaDe(pendientes[0]) || {}).clickDelDueno;
+  if (!enWindows && !soloClick && !clickDelDueno) try {
     const estado = stateDir(casa);
     const rs = pendientes.map((id) => delegacion({ firma: id, sesion, destino, home: casa, estado, cwd: evento.cwd, repo: repoDe(can && can.palabras) }));
     if (rs.every((r) => r && r.ok)) delegada = rs[0];
@@ -1018,7 +1028,7 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   // cuenta (un plan delicado, un guardado que toca algo sensible) pasa
   let aprobada = null;
   let sinAprobacion = null;
-  if (delegada || sinVentana || deFondo || enWindows || soloClick) {
+  if (delegada || sinVentana || deFondo || enWindows || soloClick || clickDelDueno) {
     const cuadro = pendientes.length === 1 ? cuadroPara({ firma: pendientes[0], comando, palabras: can && can.palabras, destino, cwd: evento.cwd, casa, sesion, memo: criterios }) : null;
     const a = aprobacionExplicita({ pendientes, sesion, destino, casa, ahora, cwd: evento.cwd, aprobaciones, herramienta: { pid: tool.pid, inicio: tool.inicio }, cuadro: cuadro || {}, arbol });
     if (a.ok) { aprobada = a; delegada = null; }
@@ -1035,7 +1045,8 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
         if (c && c.niega) return { decision: 'deny', firmas: pendientes, texto: `No abrí la ventana ni te doy el cuadro: el comando se iba a negar antes de usar la firma, y el click se perdería. Lo que dijo: ${una(c.niega, 800)}` };
       }
       if (enWindows || deFondo || !rutina.ok) {
-        const donde = soloClick ? (firmaGuion === SOBRE_CUPO ? 'pasar el tope del camino corto no se aprueba en la ventana' : 'esto lo firma el dueño con un click en esta pestaña, no la ventana') : enWindows ? 'en Windows la ventana de permiso no firma' : deFondo ? 'esta sesión corre de fondo: la ventana de permiso no le llega a nadie seguro'
+        const donde = soloClick ? (firmaGuion === SOBRE_CUPO ? 'pasar el tope del camino corto no se aprueba en la ventana' : 'esto lo firma el dueño con un click en esta pestaña, no la ventana')
+          : clickDelDueno ? 'esto lo firma sólo el click del dueño, no la ventana ni la delegación' : enWindows ? 'en Windows la ventana de permiso no firma' : deFondo ? 'esta sesión corre de fondo: la ventana de permiso no le llega a nadie seguro'
           : `esta pestaña no pide permisos (${una(modo, 40)}): la ventana se aprobaría sola, sin el Sí del dueño`;
         const anotado = anotarNegativa({ casa, sesion, destino, guion, pendientes, comando, palabras: can && can.palabras, cuadro, cwd: evento.cwd, ahora, deFondo, lista });
         // la sesión que abrió la coordinadora le manda el cuadro a ella; lo que no se pudo leer lo anota la función, y sin

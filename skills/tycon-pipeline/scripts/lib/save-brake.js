@@ -1029,10 +1029,17 @@ function decidirCarril({ command, cwd, sid, home }) {
     if (pantalla && pantalla.texto) return pantalla;
     require('./story-gate-io.js').writeAdhoc(path.dirname(path.dirname(require('./open-runs.js').markerPath(sid, home))), sid, a);
   }
+  // los datos van después de la pantalla y antes del riesgo: un freno por vez, en ese orden
+  let datos = delCarril ? frenoDeDatos(a, sid, home, reposDeLoQueSeGuarda, { sinSeguir: subeLoSinSeguir }) : null;
+  if (datos && datos.texto) {
+    a = basesAlDia(a, sid, home).adhoc;
+    datos = frenoDeDatos(a, sid, home, reposDeLoQueSeGuarda, { sinSeguir: subeLoSinSeguir });
+    if (datos && datos.texto) return { texto: datos.texto };
+  }
   const riesgo = frenoDelRiesgo(a, sid, home, reposDelComando);
   if (riesgo) return riesgo;
   const de = `del camino rápido «${String(a.reason).slice(0, 160)}»`;
-  const como = pantalla ? `${pantalla.mostrar} ${COMO_SE_AUTORIZA}` : COMO_SE_AUTORIZA;
+  const como = [pantalla && pantalla.mostrar, datos && datos.mostrar, COMO_SE_AUTORIZA].filter(Boolean).join(' ');
   if (dudas.length || cs.some((c) => c.opaco)) return { pregunta: `¿GUARDO? no pude leer este comando; si guarda, es ${de}. ${como}` };
   for (const c of cs) {
     if (c.tipo === 'pr') return { pregunta: `¿GUARDO? «${c.forma}», ${de}. ${como}` };
@@ -1140,6 +1147,58 @@ function textoDeLaMaqueta(r) {
     `   3. Con la pantalla ya construida, la captura: node ${marker} adhoc capture <ruta de la imagen>`,
     '  Un cambio de código después de la captura la vence.',
   ].join('\n');
+}
+
+// ── de dónde salen los datos y quién los ve ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Un carril cuyo cambio trae una señal fuerte (una llamada a un proceso, un chequeo de rol, la autorización de un
+ * endpoint: las declara el paquete del stack) no guarda: `{ texto, huella }`. Lo levanta sólo el click del dueño sobre esa
+ * huella (`datosPermitido`, de `marker.js adhoc allow-data-change`). Con sólo señales débiles, `{ mostrar }`: una línea
+ * para la ventana. Sin señales, null. Sin medir no guarda. El freno queda anotado en el carril (`frenoDatos`): de ahí lo
+ * leen el comando que pide el click y su cuadro. `opciones.cargar` y `opciones.medir` se pasan en las pruebas.
+ */
+function frenoDeDatos(a, sid, home, repos, { sinSeguir = false, cargar, medir } = {}) {
+  const io = require('./story-gate-io.js');
+  const ss = require('./source-signals.js');
+  const dir = path.dirname(path.dirname(require('./open-runs.js').markerPath(sid, home)));
+  let r;
+  try {
+    const porRepo = new Map();
+    const senales = (repo) => {
+      if (!porRepo.has(repo)) {
+        const c = (cargar || ss.cargar)({ repo });
+        for (const m of c.avisos) avisarSinMedir(m, sid, home);
+        porRepo.set(repo, c.senales);
+      }
+      return porRepo.get(repo);
+    };
+    r = (medir || ss.buscar)(a, senales, { repos, sinSeguir });
+  } catch (e) { r = { hallazgos: [], avisos: [], fallas: [e.message] }; }
+  if (r.fallas.length) {
+    io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `datos del carril sin medir: ${r.fallas[0]}` });
+    return { texto: `🔒 GUARDAR: no pude medir si este camino corto cambia de dónde sale un dato o quién lo ve (${r.fallas[0]}). Sin medir no guarda: arreglá eso y repetí el comando.` };
+  }
+  for (const m of r.avisos) avisarSinMedir(m, sid, home);
+  const fuertes = r.hallazgos.filter((h) => h.strength === 'strong');
+  const debiles = r.hallazgos.filter((h) => h.strength !== 'strong');
+  const mostrar = debiles.length ? `Aviso: el nombre de ${[...new Set(debiles.map((h) => h.file))].slice(0, 3).join(', ')} habla de roles o permisos; mirá que el cambio no toque quién ve qué.` : null;
+  if (!fuertes.length) return mostrar ? { mostrar } : null;
+  const huella = ss.huella(fuertes);
+  if (a.datosPermitido && a.datosPermitido.huella === huella) {
+    io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'ok', reason: `datos del carril: los dejó pasar una persona (${huella})` });
+    return mostrar ? { mostrar } : null;
+  }
+  io.writeAdhoc(dir, sid, { ...a, frenoDatos: { huella, hallazgos: fuertes.slice(0, 20), at: new Date().toISOString() } });
+  io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `camino corto que cambia de dónde sale un dato o quién lo ve: ${ss.descripcion(fuertes[0])}`, huella });
+  const marker = require('./story-gate.js').MARKER_JS;
+  const mas = fuertes.length > 1 ? `; y ${fuertes.length - 1} más` : '';
+  return { huella, texto: [
+    `🔴 No guardo: esto cambia de dónde sale un dato o quién lo ve (${ss.descripcion(fuertes[0])}${mas}).`,
+    `   Eso no es camino corto: va por historia, aunque sea corta. Ante la duda, historia.${a.datos === 'sin-cambio' ? ` Abriste el carril y declaraste que no («datos: sin-cambio»), y el cambio trae ${fuertes[0].says}.` : ''}`,
+    '   Si creés que es un falso positivo, lo decide una persona con un click: pedíselo a la coordinadora con',
+    `   node ${marker} adhoc allow-data-change --changed "<qué cambió, en una frase>" --recommends <pasar|historia|descartar> --why "<por qué>"`,
+  ].join('\n') };
 }
 
 // ── el camino rápido de riesgo alto ─────────────────────────────────────────────────────────────────────────────────
@@ -1253,4 +1312,4 @@ function frenoDelRiesgo(a, sid, home, reposDelComando = []) {
   return { texto: textoFaltanRevisoresYPase({ harness, regla: marca.regla, archivo: marca.archivo }) };
 }
 
-module.exports = { tramosDelShell, palabrasDelShell, commitsDelShell, comandosQueGuardan, leerComando, decidir, textoFaltanRevisoresYPase, textoDeLaMaqueta, frenoDelRiesgo };
+module.exports = { tramosDelShell, palabrasDelShell, commitsDelShell, comandosQueGuardan, leerComando, decidir, textoFaltanRevisoresYPase, textoDeLaMaqueta, frenoDelRiesgo, frenoDeDatos };

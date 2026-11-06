@@ -5773,6 +5773,106 @@ function cmdRuntimeWaiver(storyArg, argv = []) {
 const { DELEGATED_ADHOC_MAX_FILES: ADHOC_TOPE_DELEGADO, cupoAlDeclarar } = require('./lib/story-gate.js');
 const ADHOC_MOTIVO_MAX = 200;
 const ADHOC_CUPO_MAX = 50;
+// la respuesta al abrir un camino corto: ¿cambia de dónde salen los datos o quién los ve? (Casos: story-gate-cli.test.js)
+const DATOS_VALORES = ['sin-cambio', 'cambian'];
+const DATOS_TEXTO = { 'sin-cambio': 'no cambia de dónde salen los datos ni quién los ve' };
+// una palabra de un comando que se le da a alguien para que lo corra: entre comillas simples, sin nada que la consola
+// interprete
+const citar = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
+
+/**
+ * `adhoc allow-data-change --changed "<qué cambió>" --recommends <pasar|historia|descartar> --why "<por qué>"`: lo que
+ * sigue a un freno de los datos (save-brake.js `frenoDeDatos`, que lo anotó en el carril). `pasar` pide la firma
+ * `adhoc-lane:datos`, que aprueba sólo el click del dueño (o su terminal), y anota el click sobre la huella de ese freno;
+ * `historia` y `descartar` no firman: dicen qué hacer. Ante la duda, historia.
+ */
+function cmdAdhocAllowDataChange(io) {
+  const args = process.argv.slice(4);
+  const v = {};
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--terminal') continue;
+    if (a === '--for-session') { i++; continue; }
+    const clave = { '--changed': 'changed', '--recommends': 'recommends', '--why': 'why' }[a];
+    if (!clave) { console.error(`marker.js adhoc allow-data-change: no conozco «${String(a).slice(0, 60)}».`); process.exit(2); }
+    v[clave] = String(args[++i] == null ? '' : args[i]).trim();
+  }
+  const uso = 'Uso: marker.js adhoc allow-data-change --changed "<qué cambió, en una frase>" --recommends <pasar|historia|descartar> --why "<por qué>"';
+  if (!v.recommends) { console.error(`marker.js adhoc allow-data-change: falta --recommends (pasar, historia o descartar). Si no sabés por qué es un falso positivo, es historia.\n  ${uso}`); process.exit(2); }
+  if (!['pasar', 'historia', 'descartar'].includes(v.recommends)) { console.error(`marker.js adhoc allow-data-change: --recommends es pasar, historia o descartar.\n  ${uso}`); process.exit(2); }
+  if (!v.changed) { console.error(`marker.js adhoc allow-data-change: falta --changed: qué cambió de verdad, en una frase.\n  ${uso}`); process.exit(2); }
+  if (!v.why) { console.error(`marker.js adhoc allow-data-change: falta --why: por qué lo recomendás.\n  ${uso}`); process.exit(2); }
+  for (const k of ['changed', 'why']) {
+    if (v[k].length > ADHOC_MOTIVO_MAX) { console.error(`marker.js adhoc allow-data-change: --${k} de hasta ${ADHOC_MOTIVO_MAX} caracteres: el cuadro no muestra más.`); process.exit(2); }
+  }
+  const a = io.readAdhoc(STATE_DIR, SID);
+  if (!a) { console.error('marker.js adhoc allow-data-change: no hay un camino corto abierto en esta sesión.'); process.exit(1); }
+  const f = a.frenoDatos;
+  if (!f || !f.huella) { console.error('marker.js adhoc allow-data-change: no hay un freno de datos que destrabar en este carril: lo anota el freno de guardar cuando frena.'); process.exit(1); }
+  if (a.datosPermitido && a.datosPermitido.huella === f.huella) { process.stdout.write('adhoc: una persona ya dejó pasar este cambio; guardá como siempre.\n'); process.exit(0); }
+  if (v.recommends === 'historia') {
+    process.stdout.write([
+      'Escribí la historia: un cambio que cambia de dónde sale un dato o quién lo ve no es camino corto, aunque sea corto.',
+      `  1. Cerrá el carril: node ${__filename} adhoc clear (lo tocado queda en la copia de trabajo, sin guardar).`,
+      '  2. Creá la historia con la skill tycon-create-story, con lo que cambió y quién tiene que poder verlo.',
+    ].join('\n') + '\n');
+    process.exit(0);
+  }
+  if (v.recommends === 'descartar') {
+    // sólo los archivos del carril, cada uno contra la base que usa su repo; lo que no es del carril no se toca. Vuelve a
+    // la base lo que la base tiene; lo que no tiene es nuevo del carril, aunque ya esté guardado en la rama. Lo que no se
+    // puede saber no se manda a borrar
+    const base = require('./lib/adhoc-base.js');
+    const p = base.propiosDelCarril(a, { suma: () => true, sinSeguir: false });
+    const lineas = ['Descartá lo del carril: vuelven a su base sólo estos archivos, y después se cierra el carril.'];
+    for (const m of p.avisos) lineas.push(`  ⚠ ${m}`);
+    for (const repo of Object.keys(p.porRepo)) {
+      const rels = p.porRepo[repo];
+      if (!rels.length) continue;
+      const { sha, aviso } = base.basePropia(repo, a);
+      if (aviso) lineas.push(`  ⚠ ${aviso}`);
+      const enLaBase = [];
+      const nuevos = [];
+      const sinSaber = [];
+      for (const rel of rels) {
+        if (!sha) { sinSaber.push(rel); continue; }
+        const r = require('child_process').spawnSync('git', ['-C', repo, 'ls-tree', '-z', '--name-only', sha, '--', rel], { encoding: 'utf8' });
+        if (r.error || r.status !== 0) sinSaber.push(rel);
+        else (r.stdout.split('\0').includes(rel) ? enLaBase : nuevos).push(rel);
+      }
+      if (enLaBase.length) lineas.push(`  git -C ${citar(repo)} checkout ${citar(sha)} -- ${enLaBase.map(citar).join(' ')}`);
+      if (nuevos.length) lineas.push(`  archivos nuevos del carril, para borrar: ${nuevos.map((r) => citar(path.join(repo, r))).join(' ')}`);
+      for (const rel of sinSaber) lineas.push(`  ⚠ no pude saber si ${path.join(repo, rel)} está en la base: miralo a mano antes de restaurarlo o borrarlo.`);
+    }
+    for (const m of p.fallas) lineas.push(`  ⚠ ${m}`);
+    lineas.push(`  Después: node ${citar(__filename)} adhoc clear`);
+    process.stdout.write([...new Set(lineas)].join('\n') + '\n');
+    process.exit(0);
+  }
+  const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+  const ss = require('./lib/source-signals.js');
+  const h = Array.isArray(f.hallazgos) && f.hallazgos[0];
+  const { enUnRenglon } = require('./lib/adhoc-screen.js');
+  const r = ow.exigir({ firma: 'adhoc-lane:datos', argv: process.argv.slice(1),
+    resumen: enUnRenglon(`dejar pasar el freno de los datos de la sesión ${SID}${h ? `: ${ss.descripcion(h)}` : ''} · qué cambió: «${v.changed}» · la sesión recomienda pasar, porque «${v.why}»`),
+    propia: PROPIA, anotar: (renglon) => appendLog('gates.log', renglon) });
+  if (r.codigo !== 0) {
+    console.error(`🔒 marker.js adhoc allow-data-change: una persona no lo dejó pasar — ${r.motivo}`);
+    console.error('   Lo deja pasar sólo el click de una persona, en esta pestaña o en la de la coordinadora: pedíselo a ella con la pregunta que te da el freno, o en su terminal:');
+    console.error(`     node ${citar(__filename)} adhoc allow-data-change --changed ${citar(v.changed)} --recommends pasar --why ${citar(v.why)} --terminal --for-session ${citar(SID)}`);
+    process.exit(r.codigo === 2 ? 2 : 1);
+  }
+  if (!['click', 'terminal'].includes(r.via)) {
+    console.error(`🔒 marker.js adhoc allow-data-change: esto lo aprueba sólo el click de una persona o su terminal, y volvió por ${r.via}; no anoté nada.`);
+    process.exit(1);
+  }
+  const at = nowIso();
+  io.writeAdhoc(STATE_DIR, SID, { ...a, datosPermitido: { huella: f.huella, hallazgos: (f.hallazgos || []).slice(0, 5), cambio: v.changed, recomienda: v.recommends, porque: v.why, via: r.via, by: r.sesion || SID, at } });
+  appendLog('adhoc.log', { kind: 'ADHOC_DATA_ALLOWED', huella: f.huella, senal: h ? h.id : null, archivo: h ? `${h.file}${h.line ? `:${h.line}` : ''}` : null,
+    cambio: v.changed, recomienda: v.recommends, porque: v.why, via: r.via, by: r.sesion || SID });
+  process.stdout.write('adhoc: una persona dejó pasar este cambio de datos; guardá como siempre. Si el carril toca otra señal, frena de nuevo.\n');
+  process.exit(0);
+}
 
 function cmdAdhoc(sub, payloadJson) {
   if (sub === 'clear-orphan') return cmdAdhocClearOrphan(payloadJson);
@@ -5812,6 +5912,7 @@ function cmdAdhoc(sub, payloadJson) {
     process.stdout.write(`adhoc: captura anotada ${file}\n`);
     process.exit(0);
   }
+  if (sub === 'allow-data-change') return cmdAdhocAllowDataChange(io);
   if (sub === 'clear') {
     // sin mirar si venció: el que pasó el tope deja su cuenta aunque lleve horas sin tocarse
     let existing = io.readAdhoc(STATE_DIR, SID);
@@ -5848,7 +5949,7 @@ function cmdAdhoc(sub, payloadJson) {
       const p = require('./lib/adhoc-screen.js').pedidoPorBanderas(process.argv.slice(4));
       if (p.problema) {
         console.error(`marker.js adhoc set: ${p.problema}.`);
-        console.error('  Uso: marker.js adhoc set --reason "<qué y por qué>" [--max-files N] --terminal --for-session <id>');
+        console.error('  Uso: marker.js adhoc set --reason "<qué y por qué>" [--max-files N] --data sin-cambio|cambian --terminal --for-session <id>');
         process.exit(2);
       }
       payload = p.payload;
@@ -5905,6 +6006,23 @@ function cmdAdhoc(sub, payloadJson) {
     // un tope menor que los archivos ya tocados deja el arreglo trabado: se frena antes de pedir la firma (también en el
     // chequeo previo de la ventana), con el número de archivos tocados
     const actual = io.readAdhoc(STATE_DIR, destino);
+    // ¿cambia de dónde salen los datos o quién los ve? Lo responde la sesión al abrir; un carril abierto conserva lo que
+    // tenía, y uno de antes sigue sin la respuesta. «cambian» no es camino corto: no abre, y no cambia uno abierto
+    if (payload.datos !== undefined && !DATOS_VALORES.includes(payload.datos)) {
+      console.error(`marker.js adhoc set: "datos" es ${DATOS_VALORES.map((v) => `"${v}"`).join(' o ')}: si el cambio cambia de dónde sale un dato o quién lo puede ver (permisos, roles, la seguridad de un proceso).`);
+      process.exit(2);
+    }
+    if (payload.datos === undefined && !actual) {
+      console.error('marker.js adhoc set: falta "datos": ¿el cambio cambia de dónde sale un dato o quién lo puede ver (permisos, roles, la seguridad de un proceso)?');
+      console.error(`  "datos": "sin-cambio" si no; "datos": "cambian" si sí, y entonces va por historia. Con banderas: --data ${DATOS_VALORES.join('|')}.`);
+      process.exit(2);
+    }
+    if (payload.datos === 'cambian') {
+      console.error('🔒 marker.js adhoc set: esto va por historia, aunque sea corta: un cambio que cambia de dónde sale un dato o quién lo puede ver no es camino corto. Ante la duda, historia.');
+      if (actual) console.error(`  No cambié el arreglo rápido abierto: cerralo con node ${__filename} adhoc clear (lo tocado queda en la copia de trabajo, sin guardar) y escribí la historia.`);
+      console.error('  La historia se escribe con la skill tycon-create-story.');
+      process.exit(3);
+    }
     // suman los de implementación: la lista cruda trae también pruebas y sondas de la consola
     const tocados = actual ? io.archivosQueSuman(actual.files || []).length : 0;
     if (actual && payload.maxFiles !== undefined && payload.maxFiles < tocados) {
@@ -5928,7 +6046,8 @@ function cmdAdhoc(sub, payloadJson) {
     };
     // la maqueta va antes del motivo: el resumen se corta a los 200 caracteres, y lo que se aprueba de nuevo es ella. Entero
     // queda en la terminal, antes de la firma, y en adhoc.log
-    const conMaqueta = maqueta ? `, maqueta ${maqueta.file} aprobada por «${maqueta.approval}»` : '';
+    const datosDelCarril = payload.datos || (actual && actual.datos) || null;
+    const conMaqueta = `${maqueta ? `, maqueta ${maqueta.file} aprobada por «${maqueta.approval}»` : ''}${DATOS_TEXTO[datosDelCarril] ? `, ${DATOS_TEXTO[datosDelCarril]}` : ''}`;
     // lo lee quien firma: sin saltos de línea ni escapes que armen renglones falsos
     const { enUnRenglon } = require('./lib/adhoc-screen.js');
     if (maqueta) console.error(`marker.js adhoc set: anota la maqueta ${enUnRenglon(maqueta.file)}, aprobada por «${enUnRenglon(maqueta.approval)}», con el motivo «${enUnRenglon(reason)}».`);
@@ -5942,7 +6061,7 @@ function cmdAdhoc(sub, payloadJson) {
       const screen = require('./lib/adhoc-screen.js');
       const sinJson = screen.motivoSeCita(reason) && (porBanderas || (!maqueta && require('./lib/runtime-waiver.js').esWindows()));
       const pedidoEnJson = porBanderas ? JSON.stringify(payload) : String(payloadJson);
-      const pedidoEnTerminal = sinJson ? `--reason "${reason}"${payload.maxFiles !== undefined ? ` --max-files ${payload.maxFiles}` : ''}` : `'${pedidoEnJson.replace(/'/g, "'\\''")}'`;
+      const pedidoEnTerminal = sinJson ? `--reason "${reason}"${payload.maxFiles !== undefined ? ` --max-files ${payload.maxFiles}` : ''}${payload.datos ? ` --data ${payload.datos}` : ''}` : `'${pedidoEnJson.replace(/'/g, "'\\''")}'`;
       console.error(`🔒 marker.js adhoc set: la persona no lo aprobó — ${r.motivo}`);
       console.error('   El arreglo rápido lo aprueba una persona, no el agente: en la ventana de permiso, corriendo este comando solo y en su forma');
       console.error('   exacta (la ventana le muestra el motivo y el cupo), o en su terminal:');
@@ -5986,6 +6105,10 @@ function cmdAdhoc(sub, payloadJson) {
       ...(existing && existing.capture ? { capture: existing.capture } : {}),
       // y la base: anotar la maqueta no achica lo que se mide de la rama
       ...(existing && existing.bases ? { bases: existing.bases } : {}),
+      // la respuesta sobre los datos, y lo que anotó el freno de los datos y el click del dueño que lo dejó pasar
+      ...(payload.datos ? { datos: payload.datos } : existing && existing.datos ? { datos: existing.datos } : {}),
+      ...(existing && existing.frenoDatos ? { frenoDatos: existing.frenoDatos } : {}),
+      ...(existing && existing.datosPermitido ? { datosPermitido: existing.datosPermitido } : {}),
       ...(existing && existing.untilAt ? { untilAt: existing.untilAt } : {}),
     };
     io.writeAdhoc(STATE_DIR, destino, obj);
@@ -5996,7 +6119,7 @@ function cmdAdhoc(sub, payloadJson) {
     const maquina = r.registro && r.registro.maquina ? r.registro.maquina : null;
     appendLog('adhoc.log', { kind: existing ? 'ADHOC_UPDATE' : 'ADHOC_SET', reason, maxFiles, prevMaxFiles: existing ? existing.maxFiles : null,
       files: obj.files.length, cwd: process.cwd(), via, by, destino, ...sobreCupo, ...(maquina ? { maquina } : {}), ...(gateOn ? {} : { gate: 'off' }),
-      ...(maqueta ? { mockup: maqueta.file, mockupApproved: maqueta.approval } : {}) });
+      ...(maqueta ? { mockup: maqueta.file, mockupApproved: maqueta.approval } : {}), ...(obj.datos ? { datos: obj.datos } : {}) });
     if (!gateOn) appendLog('bypass.log', { kind: 'STORY_GATE_OFF_ADHOC', reason, cwd: process.cwd() });
     if (maxFiles < pedido) {
       const antes = Number(payload.maxFiles) > 0 ? `pediste ${pedido}` : `tenía ${pedido}`;
@@ -6005,7 +6128,7 @@ function cmdAdhoc(sub, payloadJson) {
     process.stdout.write(JSON.stringify(obj, null, 2) + '\n');
     process.exit(0);
   }
-  console.error('marker.js adhoc: uso — adhoc set \'{"reason":"…","maxFiles":N,"mockup":"<ruta>","mockupApproved":"<quién y por qué vía>"}\' [--for-session <id>] [--terminal] | adhoc capture <imagen> | adhoc until HH:MM | adhoc get | adhoc clear | adhoc clear-orphan <sessionId>');
+  console.error('marker.js adhoc: uso — adhoc set \'{"reason":"…","maxFiles":N,"mockup":"<ruta>","mockupApproved":"<quién y por qué vía>"}\' [--for-session <id>] [--terminal] | adhoc capture <imagen> | adhoc allow-data-change --changed "…" --recommends pasar|historia|descartar --why "…" | adhoc until HH:MM | adhoc get | adhoc clear | adhoc clear-orphan <sessionId>');
   process.exit(2);
 }
 

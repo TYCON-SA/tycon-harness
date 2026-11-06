@@ -50,6 +50,7 @@ en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.
 | `adhoc-lane` | 1 · rutina | dev y mantenimiento | abrir un arreglo rápido sin historia, dentro del cupo | `adhoc-lane` |
 | `refresh-after-main` | 1 · rutina | sólo mantenimiento | refirmar los controles tras traer main, sin cambio propio | `refresh-after-main` |
 | `save:sensible` | 2 · excepción | dev y mantenimiento | guardar cuando un commit toca algo de lo sensible | `save` |
+| `adhoc-lane:datos` | 2 · excepción | dev y mantenimiento | dejar pasar un arreglo rápido que cambia de dónde sale un dato o quién lo ve, sin historia (sólo el click del dueño) | `adhoc-lane:datos` |
 | `adhoc-lane:sobre-cupo` | 2 · excepción | dev y mantenimiento | abrir un arreglo rápido que pasa el tope de archivos del camino corto, aunque se recomienda una historia (cuentan sólo los archivos de implementación, sin pruebas ni guías) | `adhoc-lane:sobre-cupo` |
 | `escape:DOD_BYPASS` | 2 · excepción | dev y mantenimiento | saltear todos los controles del commit | `escape:DOD_BYPASS` |
 | `critical-waiver` | 2 · excepción | dev y mantenimiento | eximir un hallazgo crítico | `critical-waiver` |
@@ -212,8 +213,8 @@ gancho se ve igual que uno tipeado. Medido en Codex 0.162.1.
 En Windows firmás con un click en el cuadro de opciones o con un «aprobado» escrito, si el agente corre la firma por su
 consola Bash. El freno niega el comando la primera vez y le da al agente el cuadro para mostrarte; con tu click, el agente
 repite el mismo comando. La otra salida es `--terminal`, que abre una ventana nueva donde escribís tres palabras al azar.
-Para un arreglo rápido, ese comando es `marker.js adhoc set --reason "<motivo>" [--max-files N] --terminal --for-session
-<id>`, sin JSON.
+Para un arreglo rápido, ese comando es `marker.js adhoc set --reason "<motivo>" [--max-files N] --data sin-cambio
+--terminal --for-session <id>`, sin JSON.
 
 Esto no firma en Windows:
 
@@ -281,8 +282,9 @@ vuelve a pedir la firma del dueño.
 | `lost-run` | dar por perdida una ejecución y cerrarla | `marker.js clear-session --lost (o restore)` | sí | `marker.js clear-session --lost --terminal (o restore --terminal)` |
 | `adversarial-skip` | saltear el pase adversarial con constancia | `marker.js sign-adversarial-skip --story <S> --reason <R>` | no, en la pestaña de esa sesión | `marker.js sign-adversarial-skip --story <S> --reason <R> --terminal` |
 | `pending-approval` | abrir un pendiente nuevo en la lista de pendientes | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta>` | sí | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --terminal` |
-| `adhoc-lane` | abrir el arreglo rápido de una sesión, sin historia | `marker.js adhoc set '<json>'` | sí | `marker.js adhoc set --reason "<motivo>" [--max-files N] --terminal --for-session <id>` |
-| `adhoc-lane:sobre-cupo` | abrir un arreglo rápido que pasa el tope de archivos del camino corto, aunque se recomienda una historia | `marker.js adhoc set '<json con maxFiles mayor que 8>'` | no, en la pestaña de esa sesión | `marker.js adhoc set --reason "<motivo>" --max-files <N> --terminal --for-session <id>` |
+| `adhoc-lane` | abrir el arreglo rápido de una sesión, sin historia | `marker.js adhoc set '<json>'` | sí | `marker.js adhoc set --reason "<motivo>" [--max-files N] --data sin-cambio --terminal --for-session <id>` |
+| `adhoc-lane:sobre-cupo` | abrir un arreglo rápido que pasa el tope de archivos del camino corto, aunque se recomienda una historia | `marker.js adhoc set '<json con maxFiles mayor que 8>'` | no, en la pestaña de esa sesión | `marker.js adhoc set --reason "<motivo>" --max-files <N> --data sin-cambio --terminal --for-session <id>` |
+| `adhoc-lane:datos` | dejar pasar un arreglo rápido que cambia de dónde sale un dato o quién lo ve, sin historia | `marker.js adhoc allow-data-change --changed <qué cambió> --recommends pasar --why <por qué>` | no, en la pestaña de esa sesión | `marker.js adhoc allow-data-change --changed <qué cambió> --recommends pasar --why <por qué> --terminal --for-session <id>` |
 | `save` | guardar la story: commit, push y los pull requests | `marker.js approve-save [--for-session <D>]` | sí | `marker.js approve-save --terminal --for-session <D>` |
 | `designation-confirm` | confirmar qué sesión es la coordinadora de esta máquina | `delegated-signing.js confirm-designation` | no, en la pestaña de esa sesión | `delegated-signing.js confirm-designation --terminal` |
 | `designation-set` | nombrar a esta sesión coordinadora de la máquina | `marker.js designate-relay` | no, en la pestaña de esa sesión | `marker.js designate-relay --terminal` |
@@ -389,6 +391,15 @@ Pasar el tope de 8 archivos del camino corto es otra firma, `adhoc-lane:sobre-cu
 cuadro de la pestaña que hace el trabajo, o en su terminal, y queda anotado. Un «aprobado» escrito no la da, ni un click en
 otra pestaña, ni la delegación. Cuentan sólo los archivos de implementación, sin pruebas ni guías. Su renglón en el registro
 es `adhoc-lane:sobre-cupo-signed`, y abre el portón igual que `adhoc-lane-signed`.
+
+Un camino corto que cambia de dónde sale un dato o quién lo puede ver no guarda: el freno de guardar busca en las líneas
+del carril las señales del paquete del stack y, con una fuerte, frena. Al abrir, la sesión ya respondió esa pregunta
+(`"datos"`), y con «cambian» no abre. Dejarlo pasar es la firma `adhoc-lane:datos` (`marker.js adhoc allow-data-change`),
+de nivel 2: la aprueba sólo el click del dueño, en la pestaña que trabaja o en la de la coordinadora confirmada y viva, o
+su terminal. Un «aprobado» escrito no la da, ni la ventana de permiso, ni la delegación. El cuadro dice qué lo frenó, qué
+cambió de verdad y qué recomienda la sesión, con «Sí, aprobar» (dejar pasar) y «No» (la sesión escribe la historia, o
+descarta lo del carril si el dueño lo dice). El click cubre esas señales: otra línea con una señal, o la misma editada,
+frena de nuevo. Ante la duda, historia.
 
 La maqueta aprobada de un arreglo que toca una pantalla se compara con lo construido por sus textos, no por el dibujo: el
 detalle está en `guides/coordination.md`.

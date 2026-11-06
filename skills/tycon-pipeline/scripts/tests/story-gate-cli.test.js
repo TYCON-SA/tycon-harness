@@ -257,7 +257,7 @@ test('marker.js adhoc set/get/clear', () => {
   const sid = 'sess-a';
   let r = markerCli(home, sid, ['adhoc', 'set', '{"reason":"x"}']);
   assert.equal(r.status, 2, 'el motivo corto no llega a la firma');
-  r = markerCli(home, sid, ['adhoc', 'set', '{"reason":"hotfix botón guardar deshabilitado"}']);
+  r = markerCli(home, sid, ['adhoc', 'set', '{"reason":"hotfix botón guardar deshabilitado","datos":"sin-cambio"}']);
   assert.equal(r.status, 0, r.stderr);
   assert.equal(JSON.parse(r.stdout).maxFiles, 8);
   r = markerCli(home, sid, ['adhoc', 'get']);
@@ -275,11 +275,11 @@ test('marker.js adhoc set/get/clear', () => {
 test('8.141 T9 AdhocSet_SinFirma_NoEscribe', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
   const sid = 'sess-t9';
-  const SET = ['adhoc', 'set', '{"reason":"arreglo del sp de deudas","maxFiles":3}'];
+  const SET = ['adhoc', 'set', '{"reason":"arreglo del sp de deudas","maxFiles":3,"datos":"sin-cambio"}'];
   let r = markerSinVentana(home, sid, SET);
   assert.equal(r.status, 1, r.stderr);
   assert.match(r.stderr, /la persona no lo aprobó/);
-  assert.match(r.stderr, /adhoc set '\{"reason":"arreglo del sp de deudas","maxFiles":3\}' --terminal --for-session sess-t9/, 'dice el comando de la terminal entero');
+  assert.match(r.stderr, /adhoc set '\{"reason":"arreglo del sp de deudas","maxFiles":3,"datos":"sin-cambio"\}' --terminal --for-session sess-t9/, 'dice el comando de la terminal entero');
   assert.equal(declaracion(home, sid), null, 'sin firma no escribe');
   assert.equal(adhocLog(home).filter((e) => e.kind === 'ADHOC_SET').length, 0);
   r = markerCli(home, sid, SET);
@@ -320,7 +320,7 @@ test('8.141 T9b AdhocSet_LoQueSeFirmaSeVeEntero', () => {
     assert.equal(r.status, 2, `${JSON.stringify(payload)}: ${r.stderr}`);
     assert.equal(declaracion(home, sid), null);
   }
-  assert.equal(markerCli(home, sid, ['adhoc', 'set', JSON.stringify({ reason: 'x'.repeat(200), maxFiles: 8 })]).status, 0);
+  assert.equal(markerCli(home, sid, ['adhoc', 'set', JSON.stringify({ reason: 'x'.repeat(200), maxFiles: 8, datos: 'sin-cambio' })]).status, 0);
   const techo = markerEnTerminal(home, ['adhoc', 'set', JSON.stringify({ reason: 'x'.repeat(200), maxFiles: 50 }), '--terminal', '--for-session', sid], 'firmo');
   if (techo) assert.equal(techo.status, 0, `${techo.stdout}${techo.stderr}`);
 });
@@ -352,36 +352,36 @@ test('AdhocSet_PorBanderas_SoloEnLaTerminal_YQuedaIgualQueConJson', () => {
     assert.equal(declaracion(home, sid), null, `${args.join(' ')}: no escribe`);
   }
   assert.equal(adhocLog(home).length, 0);
-  const banderas = markerEnTerminal(home, ['adhoc', 'set', '--reason', 'arreglo del sp de deudas', '--max-files', '3', '--terminal', '--for-session', 'sess-b'], 'firmo');
+  const banderas = markerEnTerminal(home, ['adhoc', 'set', '--reason', 'arreglo del sp de deudas', '--max-files', '3', '--data', 'sin-cambio', '--terminal', '--for-session', 'sess-b'], 'firmo');
   if (!banderas) { console.log('⏭ la firma por banderas en la terminal: NO MEDIDO — sin Python (o en Windows) para abrir una terminal'); return; }
   assert.equal(banderas.status, 0, `${banderas.stdout}${banderas.stderr}`);
   assert.match(banderas.stdout, /«arreglo del sp de deudas» · hasta 3 archivos/, 'la terminal muestra el motivo y el cupo que se firman');
-  const json = markerEnTerminal(home, ['adhoc', 'set', '{"reason":"arreglo del sp de deudas","maxFiles":3}', '--terminal', '--for-session', 'sess-j'], 'firmo');
+  const json = markerEnTerminal(home, ['adhoc', 'set', '{"reason":"arreglo del sp de deudas","maxFiles":3,"datos":"sin-cambio"}', '--terminal', '--for-session', 'sess-j'], 'firmo');
   assert.equal(json.status, 0, `${json.stdout}${json.stderr}`);
   // lo único que cambia entre las dos es la sesión y la hora
   const loPedido = (d) => { const { declaredAt, lastTouch, firmadaEn, by, ...resto } = d; return resto; };
   assert.deepStrictEqual(loPedido(declaracion(home, 'sess-b')), loPedido(declaracion(home, 'sess-j')));
   assert.equal(declaracion(home, 'sess-b').via, 'terminal');
-  const no = markerEnTerminal(home, ['adhoc', 'set', '--reason', 'otro arreglo chico', '--terminal', '--for-session', 'sess-no'], 'no');
+  const no = markerEnTerminal(home, ['adhoc', 'set', '--reason', 'otro arreglo chico', '--data', 'sin-cambio', '--terminal', '--for-session', 'sess-no'], 'no');
   assert.equal(no.status, 1, `${no.stdout}${no.stderr}`);
   assert.equal(declaracion(home, 'sess-no'), null);
-  assert.match(`${no.stdout}${no.stderr}`, /adhoc set --reason "otro arreglo chico" --terminal --for-session sess-no/, 'dice el comando en la misma forma');
+  assert.match(`${no.stdout}${no.stderr}`, /adhoc set --reason "otro arreglo chico" --data sin-cambio --terminal --for-session sess-no/, 'dice el comando en la misma forma');
 });
 
 // En Windows la consola de la persona no se lleva bien con el JSON: el aviso da la forma sin él, salvo que no se pueda.
 test('AdhocSet_EnWindows_ElAvisoDaLaFormaSinJson', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
   const win = { TYCON_WAIVER_PLATFORM: 'win32' };
-  let r = markerSinVentana(home, 'sess-w', ['adhoc', 'set', '{"reason":"arreglo del sp de deudas","maxFiles":3}'], win);
+  let r = markerSinVentana(home, 'sess-w', ['adhoc', 'set', '{"reason":"arreglo del sp de deudas","maxFiles":3,"datos":"sin-cambio"}'], win);
   assert.equal(r.status, 1, r.stderr);
-  assert.match(r.stderr, /adhoc set --reason "arreglo del sp de deudas" --max-files 3 --terminal --for-session sess-w/);
-  r = markerSinVentana(home, 'sess-w', ['adhoc', 'set', '{"reason":"arreglo con \\"comillas\\" adentro"}'], win);
+  assert.match(r.stderr, /adhoc set --reason "arreglo del sp de deudas" --max-files 3 --data sin-cambio --terminal --for-session sess-w/);
+  r = markerSinVentana(home, 'sess-w', ['adhoc', 'set', '{"reason":"arreglo con \\"comillas\\" adentro","datos":"sin-cambio"}'], win);
   assert.equal(r.status, 1, r.stderr);
-  assert.match(r.stderr, /adhoc set '\{"reason":"arreglo con \\"comillas\\" adentro"\}' --terminal/, 'un motivo con comillas no se puede citar en esa forma');
+  assert.match(r.stderr, /adhoc set '\{"reason":"arreglo con \\"comillas\\" adentro","datos":"sin-cambio"\}' --terminal/, 'un motivo con comillas no se puede citar en esa forma');
   // 🔴 Falla con: un comando sugerido que su propia forma rechaza al pegarlo, o que la consola rompe
-  r = markerSinVentana(home, 'sess-w', ['adhoc', 'set', '{"reason":"-fix del boton rojo"}'], win);
+  r = markerSinVentana(home, 'sess-w', ['adhoc', 'set', '{"reason":"-fix del boton rojo","datos":"sin-cambio"}'], win);
   assert.equal(r.status, 1, r.stderr);
-  assert.match(r.stderr, /adhoc set '\{"reason":"-fix del boton rojo"\}' --terminal/, 'un motivo con «-» adelante, la forma con banderas lo rechaza');
+  assert.match(r.stderr, /adhoc set '\{"reason":"-fix del boton rojo","datos":"sin-cambio"\}' --terminal/, 'un motivo con «-» adelante, la forma con banderas lo rechaza');
   const { motivoSeCita, pedidoPorBanderas } = require('../lib/adhoc-screen.js');
   for (const motivo of ['arreglo del sp de deudas', 'con ñ, acentos y a/b']) {
     assert.equal(motivoSeCita(motivo), true, motivo);
@@ -404,7 +404,7 @@ test('8.141 T10 AdhocSet_ElChatNoAutoriza', () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
     const sid = 'sess-t10';
     mensajeConMarca(home, sid, texto, origin);
-    const r = markerSinVentana(home, sid, ['adhoc', 'set', '{"reason":"arreglo rápido: el botón de guardar"}']);
+    const r = markerSinVentana(home, sid, ['adhoc', 'set', '{"reason":"arreglo rápido: el botón de guardar","datos":"sin-cambio"}']);
     assert.equal(r.status, 1, `${nombre}: ${r.stderr}`);
     assert.equal(declaracion(home, sid), null, nombre);
     assert.equal(adhocLog(home).filter((e) => e.kind === 'ADHOC_SET').length, 0, nombre);
@@ -421,7 +421,7 @@ test('8.141 T11 AdhocSet_ForSession_Delegada_SinAviso_NoDeclara', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
   const coord = 'sess-coord';
   const destino = 'sess-dest';
-  const args = ['adhoc', 'set', '{"reason":"arreglo del sp de deudas","maxFiles":7}', '--for-session', destino];
+  const args = ['adhoc', 'set', '{"reason":"arreglo del sp de deudas","maxFiles":7,"datos":"sin-cambio"}', '--for-session', destino];
   const env = conVentana({ ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: coord }, { delegadaPor: coord });
   const r = spawnSync('node', [path.join(SCRIPTS, 'marker.js'), ...args], { encoding: 'utf8', env });
   assert.equal(r.status, 1, `${r.stdout}${r.stderr}`);
@@ -432,7 +432,7 @@ test('8.141 T11 AdhocSet_ForSession_Delegada_SinAviso_NoDeclara', () => {
 });
 
 const firmasDe = (home) => { try { return fs.readFileSync(path.join(estadoDe(home), 'signatures.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch (_) { return []; } };
-const PEDIDO_9 = '{"reason":"arreglo del sp de deudas","maxFiles":9}';
+const PEDIDO_9 = '{"reason":"arreglo del sp de deudas","maxFiles":9,"datos":"sin-cambio"}';
 
 test('T14 AdhocSet_SobreCupoAprobado_QuedaAnotadoQueLoEligioElDev @story-8.181 @ac-6', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
@@ -595,7 +595,7 @@ test('T30 AdhocSet_CarrilViejoConMasDeOcho_SigueConSuNumero @story-8.181 @ac-14'
 
 test('T45 AdhocSet_SobreCupo_PorTerminal_QuedaAnotado @story-8.181 @ac-4 @ac-6', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
-  const r = markerEnTerminal(home, ['adhoc', 'set', '--reason', 'arreglo del sp de deudas', '--max-files', '12', '--terminal', '--for-session', 'sess-b'], 'firmo');
+  const r = markerEnTerminal(home, ['adhoc', 'set', '--reason', 'arreglo del sp de deudas', '--max-files', '12', '--data', 'sin-cambio', '--terminal', '--for-session', 'sess-b'], 'firmo');
   if (!r) { console.log('⏭ la firma en la terminal: NO MEDIDO — sin Python (o en Windows) para abrir una terminal'); return; }
   assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
   const d = declaracion(home, 'sess-b');
@@ -609,7 +609,7 @@ test('T45 AdhocSet_SobreCupo_PorTerminal_QuedaAnotado @story-8.181 @ac-4 @ac-6',
 test('8.141 T14 AdhocSet_PortonApagado_SigueFirmando', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
   const sid = 'sess-t14';
-  const SET = ['adhoc', 'set', '{"reason":"arreglo del sp de deudas"}'];
+  const SET = ['adhoc', 'set', '{"reason":"arreglo del sp de deudas","datos":"sin-cambio"}'];
   let r = markerSinVentana(home, sid, SET, { TYCON_STORY_GATE: 'off' });
   assert.equal(r.status, 1, r.stderr);
   assert.equal(declaracion(home, sid), null);
@@ -1311,4 +1311,240 @@ test('T31 Freno_InterpreteConDestinoArmado_FormasQueSeEscapaban', () => {
       `python3 - <<'E'\ndef rep(p, pares):\n    open(p, 'w').write('x')\nrep('notas.md', [])\nrep(otro, [])\nE`,
     ]) assert.ok(INVISIBLE.test((bash.handle(ev(cmd), { stateDir, installedRoots: [] }) || {}).block || ''), `una lista con código frena: ${cmd}`);
   });
+});
+
+// ── la pregunta al abrir: ¿cambia de dónde salen los datos o quién los ve? ──────────────────────────────────────────
+const SIN_CAMBIO = 'no cambia de dónde salen los datos ni quién los ve';
+const pedidoConDatos = (datos, extra = {}) => JSON.stringify({ reason: 'el botón del comprobante', ...(datos === undefined ? {} : { datos }), ...extra });
+
+// 🔴 Falla con: la respuesta que no llega al resumen que firma la persona, o que no queda anotada.
+test('T1 AdhocSet_DatosSinCambio_EnElCuadroYAnotado @story-8.196 @ac-1 @ac-5', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const r = markerCli(home, 'ses-d1', ['adhoc', 'set', pedidoConDatos('sin-cambio')]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(declaracion(home, 'ses-d1').datos, 'sin-cambio');
+  const set = adhocLog(home).filter((e) => e.kind === 'ADHOC_SET');
+  assert.equal(set.length, 1);
+  assert.equal(set[0].datos, 'sin-cambio', 'el campo va dentro del evento ADHOC_SET');
+  const firmado = fs.readFileSync(path.join(estadoDe(home), 'gates.log'), 'utf8');
+  assert.ok(firmado.includes(SIN_CAMBIO), 'el resumen que firma la persona lo dice');
+  // el cuadro de la firma (el que muestra la persona) también, y otro `datos` da otro cuadro
+  const fuentes = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'lib', 'signature-sources.js'));
+  const partes = (p) => fuentes.partesDe({ firma: 'adhoc-lane', palabras: ['marker.js', 'adhoc', 'set', p] });
+  assert.ok(partes(pedidoConDatos('sin-cambio')).queHace.join(' ').includes(SIN_CAMBIO));
+  assert.notStrictEqual(partes(pedidoConDatos('sin-cambio')).fuente, partes(pedidoConDatos('cambian')).fuente);
+});
+
+test('T2 AdhocSet_DatosCambian_NoAbreYMandaAHistoria @story-8.196 @ac-2', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const r = markerCli(home, 'ses-d2', ['adhoc', 'set', pedidoConDatos('cambian')]);
+  assert.equal(r.status, 3, r.stderr);
+  assert.match(r.stderr, /esto va por historia, aunque sea corta/);
+  assert.match(r.stderr, /tycon-create-story/);
+  assert.equal(declaracion(home, 'ses-d2'), null);
+});
+
+test('T3 AdhocSet_SinDatosOValorRaro_NoAbreYDiceLosValores @story-8.196 @ac-3', () => {
+  for (const p of [pedidoConDatos(undefined), pedidoConDatos('quizas')]) {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+    const r = markerCli(home, 'ses-d3', ['adhoc', 'set', p]);
+    assert.equal(r.status, 2, r.stderr);
+    assert.match(r.stderr, /"datos"/);
+    assert.match(r.stderr, /sin-cambio/);
+    assert.match(r.stderr, /cambian/);
+    assert.equal(declaracion(home, 'ses-d3'), null);
+  }
+});
+
+test('T4 AdhocSet_FormaSinJson_AceptaDatos @story-8.196 @ac-3', () => {
+  const screen = require(path.join(SCRIPTS, 'lib', 'adhoc-screen.js'));
+  assert.deepStrictEqual(screen.pedidoPorBanderas(['--reason', 'el botón del comprobante', '--data', 'sin-cambio', '--terminal']).payload,
+    { reason: 'el botón del comprobante', datos: 'sin-cambio' });
+  assert.match(screen.pedidoPorBanderas(['--reason', 'x', '--data', '--terminal']).problema, /--data necesita un valor/);
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const r = markerEnTerminal(home, ['adhoc', 'set', '--reason', 'el botón del comprobante', '--data', 'sin-cambio', '--terminal', '--for-session', 'ses-d4'], 'firmo');
+  if (!r) return console.log('⏭ la forma de la terminal: NO MEDIDA — sin Python o en Windows');
+  assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.equal(declaracion(home, 'ses-d4').datos, 'sin-cambio');
+});
+
+test('T5 CarrilViejoSinDatos_SigueAndando @story-8.196 @ac-4', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  // un carril de antes, sin `datos`: un `set` que sólo sube el cupo no lo pide
+  fs.mkdirSync(path.join(estadoDe(home), 'adhoc'), { recursive: true });
+  fs.writeFileSync(io.adhocPath(estadoDe(home), 'ses-d5'), JSON.stringify({ reason: 'un arreglo de antes', maxFiles: 3, files: [] }));
+  let r = markerCli(home, 'ses-d5', ['adhoc', 'set', JSON.stringify({ reason: 'un arreglo de antes', maxFiles: 5 })]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(declaracion(home, 'ses-d5').datos, undefined);
+  // uno con `sin-cambio`, al que se le cambia el motivo: lo conserva
+  r = markerCli(home, 'ses-d6', ['adhoc', 'set', pedidoConDatos('sin-cambio')]);
+  assert.equal(r.status, 0, r.stderr);
+  r = markerCli(home, 'ses-d6', ['adhoc', 'set', JSON.stringify({ reason: 'el botón del comprobante, y su texto' })]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(declaracion(home, 'ses-d6').datos, 'sin-cambio');
+  assert.ok(fs.readFileSync(path.join(estadoDe(home), 'gates.log'), 'utf8').split('\n').filter((l) => l.includes('el botón del comprobante, y su texto')).some((l) => l.includes(SIN_CAMBIO)), 'el cuadro lo sigue diciendo');
+});
+
+test('T22 AdhocSet_CambianSobreCarrilAbierto_NoCambiaYMandaACerrar @story-8.196 @ac-4', () => {
+  for (const files of [['/r/src/a.ts', '/r/src/b.ts'], []]) {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+    fs.mkdirSync(path.join(estadoDe(home), 'adhoc'), { recursive: true });
+    const antes = { reason: 'el botón del comprobante', maxFiles: 8, files, datos: 'sin-cambio' };
+    fs.writeFileSync(io.adhocPath(estadoDe(home), 'ses-d7'), JSON.stringify(antes));
+    const r = markerCli(home, 'ses-d7', ['adhoc', 'set', pedidoConDatos('cambian')]);
+    assert.equal(r.status, 3, r.stderr);
+    assert.match(r.stderr, /adhoc clear/);
+    assert.match(r.stderr, /historia/);
+    assert.deepStrictEqual(declaracion(home, 'ses-d7'), antes, 'el carril sigue igual');
+  }
+});
+
+// ── el click del dueño sobre el freno de los datos ─────────────────────────────────────────────────────────────────
+const FRENO_DATOS = { huella: 'abc123', at: '2026-11-05T10:00:00.000Z', hallazgos: [{ id: 'proceso', strength: 'strong', says: 'una llamada a un proceso',
+  repo: '/r', file: 'src/pantallas/Detalle.tsx', line: 42, borrada: false, texto: 'sdk.process.start({ processName: "Comprobante" })' }] };
+function carrilFrenado(home, sid, extra = {}) {
+  fs.mkdirSync(path.join(estadoDe(home), 'adhoc'), { recursive: true });
+  fs.writeFileSync(io.adhocPath(estadoDe(home), sid), JSON.stringify({ reason: 'el botón del comprobante', maxFiles: 8, files: [], datos: 'sin-cambio', frenoDatos: FRENO_DATOS, ...extra }));
+}
+const ALLOW = (rec, extra = []) => ['adhoc', 'allow-data-change', '--changed', 'el botón deja de pedirlo al servicio propio', '--recommends', rec, '--why', 'el proceso tiene su propia seguridad', ...extra];
+
+test('T15 Cuadro_ArmaLaPreguntaConLasDosOpciones @story-8.196 @ac-13', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  carrilFrenado(home, 'ses-c1');
+  const fuentes = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'lib', 'signature-sources.js'));
+  const firmas = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'lib', 'signatures.js'));
+  const p = fuentes.partesDe({ firma: 'adhoc-lane:datos', palabras: ['marker.js', ...ALLOW('pasar')], estado: estadoDe(home), destino: 'ses-c1' });
+  const que = p.queHace.join(' · ');
+  assert.match(que, /una llamada a un proceso, src\/pantallas\/Detalle\.tsx:42/);
+  assert.match(que, /processName: "Comprobante"/, 'el texto de la línea');
+  assert.match(que, /deja de pedirlo al servicio propio/);
+  assert.match(que, /dejar pasar, porque el proceso tiene su propia seguridad/);
+  assert.match(que, /Ante la duda, historia/);
+  assert.ok(p.fuente.includes(FRENO_DATOS.huella), 'el código del cuadro sale de las señales');
+  const s = firmas.SIGNATURES.find((x) => x.id === 'adhoc-lane:datos');
+  assert.strictEqual(s.level, 2);
+  assert.strictEqual(s.clickDelDueno, true);
+  assert.match(s.descripciones[0], /^Dejar pasar: sigue por camino corto/);
+  assert.match(s.descripciones[1], /historia/);
+  assert.match(s.descripciones[1], /descart/);
+  // con otras señales, otro código
+  carrilFrenado(home, 'ses-c1', { frenoDatos: { ...FRENO_DATOS, huella: 'otra' } });
+  const q = fuentes.partesDe({ firma: 'adhoc-lane:datos', palabras: ['marker.js', ...ALLOW('pasar')], estado: estadoDe(home), destino: 'ses-c1' });
+  assert.notStrictEqual(q.fuente, p.fuente);
+});
+
+test('T25 Cuadro_DejarPasar_ConClick_GuardaYAnota @story-8.196 @ac-13', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  carrilFrenado(home, 'ses-c2');
+  const r = markerEnTerminal(home, [...ALLOW('pasar'), '--terminal', '--for-session', 'ses-c2'], 'firmo');
+  if (!r) return console.log('⏭ la firma por la terminal: NO MEDIDA — sin Python o en Windows');
+  assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+  const d = declaracion(home, 'ses-c2');
+  assert.strictEqual(d.datosPermitido.huella, FRENO_DATOS.huella);
+  assert.strictEqual(d.datosPermitido.recomienda, 'pasar');
+  const e = adhocLog(home).find((x) => x.kind === 'ADHOC_DATA_ALLOWED');
+  assert.ok(e, 'queda en adhoc.log');
+  assert.deepStrictEqual([e.senal, e.archivo, e.recomienda, e.via], ['proceso', 'src/pantallas/Detalle.tsx:42', 'pasar', 'terminal']);
+});
+
+test('T27 Cuadro_NoSeDelegaNiVaPorVentanaDeFondo @story-8.196 @ac-13', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  carrilFrenado(home, 'ses-c3');
+  // la ventana de la prueba (y la delegación) firman `via: ventana` / `delegacion`: el guion no lo acepta
+  for (const o of [{}, { delegadaPor: 'ses-coord' }]) {
+    const r = spawnSync('node', [path.join(SCRIPTS, 'marker.js'), ...ALLOW('pasar')], { encoding: 'utf8',
+      env: conVentana({ ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: 'ses-c3' }, o) });
+    assert.notEqual(r.status, 0, r.stderr);
+    assert.match(r.stderr, /click de una persona/);
+    assert.strictEqual(declaracion(home, 'ses-c3').datosPermitido, undefined);
+  }
+});
+
+test('T28 Cuadro_EscribirHistoriaYDescartar_TextosSinFirma @story-8.196 @ac-13', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-')));
+  const git = (...a) => execFileSync('git', ['-C', repo, ...a], { stdio: 'ignore' });
+  git('init', '-q', '-b', 'main'); git('config', 'user.email', 't@t'); git('config', 'user.name', 't');
+  fs.mkdirSync(path.join(repo, 'src'));
+  fs.writeFileSync(path.join(repo, 'src', 'a.ts'), 'a\n');
+  git('add', '.'); git('commit', '-qm', 'base');
+  fs.writeFileSync(path.join(repo, 'src', 'a.ts'), 'executeQuery("x");\n');
+  fs.writeFileSync(path.join(repo, 'src', 'nuevo.ts'), 'n\n');
+  carrilFrenado(home, 'ses-c4', { files: [path.join(repo, 'src', 'a.ts'), path.join(repo, 'src', 'nuevo.ts')] });
+  let r = markerSinVentana(home, 'ses-c4', ALLOW('historia'));
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /adhoc clear/);
+  assert.match(r.stdout, /historia/);
+  r = markerSinVentana(home, 'ses-c4', ALLOW('descartar'));
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /checkout '[0-9a-f]{7,}' -- 'src\/a\.ts'/);
+  assert.match(r.stdout, /src\/nuevo\.ts/);
+  assert.match(r.stdout, /adhoc clear/);
+  assert.strictEqual(declaracion(home, 'ses-c4').datosPermitido, undefined, 'sin firma');
+});
+
+// 🔴 Falla con: un archivo nuevo del carril ya guardado en la rama, mandado a «restaurar» contra una base donde no
+// existe; o un git que no contesta, que manda a borrar un archivo que la base sí tiene.
+test('T28 Cuadro_Descartar_ClasificaContraLaBase @story-8.196 @ac-13', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-')));
+  const git = (...a) => execFileSync('git', ['-C', repo, ...a], { encoding: 'utf8' }).trim();
+  git('init', '-q', '-b', 'main'); git('config', 'user.email', 't@t'); git('config', 'user.name', 't');
+  fs.mkdirSync(path.join(repo, 'src'));
+  fs.writeFileSync(path.join(repo, 'src', 'a.ts'), 'a\n');
+  git('add', '.'); git('commit', '-qm', 'base');
+  const base = git('rev-parse', 'HEAD');
+  fs.writeFileSync(path.join(repo, 'src', 'a.ts'), 'executeQuery("x");\n');
+  fs.writeFileSync(path.join(repo, 'src', 'hecho.ts'), 'h\n');
+  git('add', '.'); git('commit', '-qm', 'el carril');
+  const files = [path.join(repo, 'src', 'a.ts'), path.join(repo, 'src', 'hecho.ts')];
+  carrilFrenado(home, 'ses-c8', { files, bases: { [repo]: { sha: base, traida: true } } });
+  const r = markerSinVentana(home, 'ses-c8', ALLOW('descartar'));
+  assert.equal(r.status, 0, r.stderr);
+  const restaurar = r.stdout.split('\n').find((l) => / checkout /.test(l)) || '';
+  assert.match(restaurar, /'src\/a\.ts'/);
+  assert.doesNotMatch(restaurar, /hecho\.ts/, 'no está en la base: no se restaura');
+  assert.match(r.stdout.split('\n').find((l) => /para borrar/.test(l)) || '', /hecho\.ts/);
+  // la base no se puede leer: no clasifica, y no manda a borrar nada
+  carrilFrenado(home, 'ses-c9', { files, bases: { [repo]: { sha: 'f'.repeat(40), traida: true } } });
+  const sinBase = markerSinVentana(home, 'ses-c9', ALLOW('descartar'));
+  assert.equal(sinBase.status, 0, sinBase.stderr);
+  assert.doesNotMatch(sinBase.stdout, /para borrar/);
+  assert.doesNotMatch(sinBase.stdout, / checkout /);
+  assert.match(sinBase.stdout, /⚠ .*(no pude saber si .*a\.ts|git no contestó)/);
+  assert.strictEqual(new Set(sinBase.stdout.split('\n')).size, sinBase.stdout.split('\n').length, 'cada aviso una vez');
+});
+
+// 🔴 Falla con: el texto libre de la sesión pegado sin escapar en el comando que corre el dueño en su terminal.
+test('T29 Cuadro_ComandoParaElDueno_SinInyeccion @story-8.196 @ac-13', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  carrilFrenado(home, 'ses-c10');
+  const r = markerSinVentana(home, 'ses-c10', ['adhoc', 'allow-data-change', '--changed', 'el "botón" $(id)', '--recommends', 'pasar', '--why', "es `seguro' y punto"]);
+  assert.notEqual(r.status, 0, r.stderr);
+  assert.ok(r.stderr.includes(`--changed 'el "botón" $(id)'`), r.stderr);
+  assert.ok(r.stderr.includes(`--why 'es \`seguro'\\'' y punto'`), r.stderr);
+});
+
+test('T29 Cuadro_SinRecomendacionOSinPorque_NoArma @story-8.196 @ac-13', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  carrilFrenado(home, 'ses-c5');
+  const casos = [
+    [['adhoc', 'allow-data-change', '--changed', 'x', '--why', 'y'], /--recommends/],
+    [['adhoc', 'allow-data-change', '--changed', 'x', '--recommends', 'pasar'], /--why/],
+    [['adhoc', 'allow-data-change', '--changed', 'x', '--recommends', 'quizas', '--why', 'y'], /pasar, historia o descartar/],
+    [['adhoc', 'allow-data-change', '--recommends', 'pasar', '--why', 'y'], /--changed/],
+  ];
+  for (const [args, falta] of casos) {
+    const r = markerSinVentana(home, 'ses-c5', args);
+    assert.equal(r.status, 2, r.stderr);
+    assert.match(r.stderr, falta);
+  }
+  const sinCarril = markerSinVentana(fs.mkdtempSync(path.join(os.tmpdir(), 'home-')), 'ses-c6', ALLOW('pasar'));
+  assert.equal(sinCarril.status, 1);
+  assert.match(sinCarril.stderr, /no hay un camino corto abierto/);
+  const h2 = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  carrilFrenado(h2, 'ses-c7', { frenoDatos: undefined });
+  const sinFreno = markerSinVentana(h2, 'ses-c7', ALLOW('pasar'));
+  assert.equal(sinFreno.status, 1);
+  assert.match(sinFreno.stderr, /no hay un freno de datos/);
 });

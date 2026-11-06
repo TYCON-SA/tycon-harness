@@ -630,6 +630,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.196: el camino corto no cambia de dónde salen los datos ni quién los ve — las señales del paquete en las líneas del carril, cada repo contra su base, el freno de guardar y la huella que levanta el click del dueño.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/source-signals.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 7.46: una persona marca cada criterio de la guía como probado a mano — la opción de la organización, la muestra, la marca con el ok de la persona y el freno del cierre.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/manual-checks.test.js",
