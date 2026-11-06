@@ -2027,7 +2027,7 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
   if (!a.ok) return fail([a.reason], 'applier');
   H.recordPieces(ctx, state, a.report, a.shared);
   state.failed = { commit: t.version, sources: { harness: t.commit }, at: nowIso(), log: S.paths(ctx.home).log, reason: 'interrupted', pending: 'health' };
-  try { S.write(ctx.home, state); } catch (e) { if (log) log(`update: no pude grabar el estado antes de la salud (${e.message})`); }
+  try { S.write(ctx.home, state); } catch (e) { if (e && e.code === 'TYCON_LOCK_LOST') throw e; if (log) log(`update: no pude grabar el estado antes de la salud (${e.message})`); }
   const h = H.runHealth(ctx, state, { report: a.report, applierOut: a.out, log });
   if (!h.ok) return fail(h.failures.length ? h.failures : ['la salud no pasó'], 'health');
   state.failed = null;

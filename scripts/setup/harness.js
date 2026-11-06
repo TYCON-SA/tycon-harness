@@ -458,7 +458,11 @@ function normalizeTreeEol(ctx, tree, log = null) {
  * Codex, que no lo despliegue (`off`).
  */
 function runApplier(ctx, tree, { log, snapshotDir = null, tools = undefined, force = false, hooksPath = false } = {}) {
+  // el candado tiene que seguir siendo de esta toma antes de escribir, y otra vez al volver: el aplicador puede tardar
+  // (o la máquina dormirse) y otro haberlo pisado por el tope
+  mod('lock').assertStillMine(ctx.home);
   const a = runApplierOnly(ctx, tree, { log, snapshotDir, tools, force });
+  mod('lock').assertStillMine(ctx.home);
   // la carpeta global de hooks de git: sólo en lo que pide una persona (`install`, `apply`, la mudanza), nunca
   // en el arranque. El aplicador sólo avisa que git no tiene ninguna; acá se pone, si corresponde (git-hooks-path.js)
   if (hooksPath && a.ok) {
@@ -1609,6 +1613,7 @@ function runRepoint(ctx, state, policy, { log = null, manual = false, apply = tr
       write: () => mod('state').write(ctx.home, state),
     }) || none;
   } catch (e) {
+    if (e && e.code === mod('lock').LOCK_LOST) throw e;   // el candado perdido no es una falla de la mudanza: se va hasta main
     // nunca una pila, y nunca un arranque caído por la llave: se dice, y no se mueve ninguna fuente en esta corrida
     const text = `una mudanza del clon de skills no se pudo mirar (falla interna: ${e && e.message ? e.message : e}): no se mueve ninguna fuente; harness.js doctor lo detalla`;
     if (log) log(`repoint: ${text}${e && e.stack ? ` ${e.stack}` : ''}`);
@@ -2426,7 +2431,10 @@ function failUpdate(ctx, state, { snap, rec, before, after, tips, failures, reas
       restored = RB.restore(Object.assign({}, ctx, { tree: state.tree }), state, copy, Object.assign({
         why: reason, runApplier, log, snapshotDir: snap.dir, isOwnPiece: (p) => isOwnPiece(ctx, p),
       }, layerHooks(ctx, state, log))) || restored;
-    } catch (e) { restored = { ok: false, lines: [`la vuelta atrás automática falló: ${e.message}`] }; }
+    } catch (e) {
+      if (e && e.code === mod('lock').LOCK_LOST) throw e;   // otro tiene el candado: la vuelta atrás no sigue
+      restored = { ok: false, lines: [`la vuelta atrás automática falló: ${e.message}`] };
+    }
   } else if (!RB) {
     restored = { ok: false, lines: ['sin rollback.js en esta versión: no hubo vuelta atrás automática'] };
   }
@@ -2937,6 +2945,7 @@ function doUpdate(ctx, state, { mode = 'apply', log = null, snapshot = null, per
   const moved = [];
   for (const { src, p } of plans) {
     if (p.upToDate) continue;
+    mod('lock').assertStillMine(ctx.home);   // antes de mover un árbol: el candado sigue siendo de esta toma
     const a = SRC.advance(src, { env, home: ctx.home });
     if (!a.ok) {
       // un reset/merge a medias (Windows: «unable to unlink») deja ESTA fuente a mitad de camino: también
@@ -2997,7 +3006,7 @@ function doUpdate(ctx, state, { mode = 'apply', log = null, snapshot = null, per
   // el `doctor` del árbol nuevo (parte de la salud) lee el estado del disco: se graba antes, con la constancia de que la
   // salud quedó PENDIENTE — si la sesión muere en el medio, el arranque siguiente la corre
   state.failed = pendingHealth(ctx, { commit: after, sources: tips, applierOut: applier.out });
-  try { S.write(ctx.home, state); } catch (e) { if (log) log(`update: no pude grabar el estado antes de la salud (${e.message})`); }
+  try { S.write(ctx.home, state); } catch (e) { if (e && e.code === mod('lock').LOCK_LOST) throw e; if (log) log(`update: no pude grabar el estado antes de la salud (${e.message})`); }
   const done = finishHealth(ctx, state, { snap, ownSnap, rec, before, after, tips, report: applier.report, applierOut: applier.out, log, moved });
   if (done.status === 'applied' && layerMoves.length) done.lines = [done.lines[0], ...layerLines, ...layerNotes, ...done.lines.slice(1)];
   if (done.status === 'applied') { const pl = packRetiredLine(applier); if (pl) { done.lines.push(pl); if (log) log(`update: ${pl}`); } }
@@ -3028,7 +3037,7 @@ function finishHealth(ctx, state, { snap, ownSnap = null, rec, before, after, ti
   // y el estado se graba YA: un corte entre la copia nueva y el S.write de cierre (un reinicio de Windows en medio del
   // aplicador) dejaría la copia fija de la versión nueva con el estado de la vieja, y el arranque siguiente lo
   // leería como «alguien la tocó», daría la salud por roja y volvería atrás
-  try { mod('state').write(ctx.home, state); } catch (e) { if (log) log(`update: no pude grabar el estado tras refrescar la copia fija (${e.message})`); }
+  try { mod('state').write(ctx.home, state); } catch (e) { if (e && e.code === mod('lock').LOCK_LOST) throw e; if (log) log(`update: no pude grabar el estado tras refrescar la copia fija (${e.message})`); }
   finishSnapshot(ctx, ownSnap, log);
   const stashNotes = moved.filter((m) => m.a && m.a.kept).map((m) => `${m.src.name}: lo local no se pudo reaplicar y quedó en git stash list`);
   return { status: 'applied', code: 0, lines: [`arnés ${before} → ${after}`, ...stashNotes], from: before, to: after, backup: snap && snap.dir ? snap.dir : null };
@@ -3085,7 +3094,7 @@ function cmdStartup(ctx) {
     try {
       const rep = mod('move-home').repair(ctx, migrateHelpers(ctx), { log });
       if (rep.repaired) log(`startup: ${rep.lines.join(' · ')}`);
-    } catch (e) { log(`startup: la reparación de la mudanza falló: ${e.message}`); }
+    } catch (e) { if (e && e.code === L.LOCK_LOST) throw e; log(`startup: la reparación de la mudanza falló: ${e.message}`); }
     const r = loadState(ctx);
     if (r.status !== 'ok') { log(`startup: ${S.fail(r, { home: ctx.home }).line}`); return say(); }
     const state = r.state;
@@ -4662,7 +4671,9 @@ function cmdRollback(ctx) {
     // la copia de ANTES de volver, siempre nueva: con ella un rollback se deshace con otro. Su retención no
     // puede borrar la copia destino
     const before = takeSnapshot(ctx, state.tree, { reason: 'before-rollback', from: state.version && state.version.number, to: pick.copy.manifest.from || null, log, force: true, state, protect: [pick.copy.dir] });
-    // con capa: el público vuelve con su reset y la capa se re-apila desde el commit anterior
+    // con capa: el público vuelve con su reset y la capa se re-apila desde el commit anterior. Antes de mover los
+    // árboles, el candado sigue siendo de esta toma
+    mod('lock').assertStillMine(ctx.home);
     const res = RB.restore(Object.assign({}, ctx, { tree: state.tree }), state, pick.copy, Object.assign({
       why: 'rollback', runApplier, log, filesOnly: pick.filesOnly, snapshotDir: before && before.dir, isOwnPiece: (p) => isOwnPiece(ctx, p),
     }, layerHooks(ctx, state, log)));
@@ -5129,7 +5140,16 @@ function main(argv) {
   try {
     r = HANDLERS[p.cmd](ctx) || { code: 0 };
   } catch (e) {
-    // nunca una pila: una línea con el motivo (startup sale 0 igual: una sesión no se frena por el arnés)
+    // nunca una pila: una línea con el motivo (startup sale 0 igual: una sesión no se frena por el arnés). El candado
+    // que otro pisó mientras éste estaba detenido no es una falla interna: sale 3, como «otra sesión está actualizando»
+    if (e && e.code === mod('lock').LOCK_LOST) {
+      const lost = `harness.js ${p.cmd}: ${e.message}`;
+      try { mod('report').log(ctx.home, lost); } catch (_) { /* sin registro */ }
+      r = { code: p.cmd === 'startup' ? 0 : 3, lines: [lost] };
+      if (detachedRun) mod('detach').writeResult(r.code, r.lines);
+      for (const l of r.lines) (r.code === 0 ? process.stdout : process.stderr).write(l + '\n');
+      return r.code;
+    }
     const line = `harness.js ${p.cmd}: falla interna: ${e && e.message ? e.message : e}`;
     try { mod('report').log(ctx.home, `${line}\n${e && e.stack ? e.stack : ''}`); } catch (_) { /* sin registro */ }
     r = { code: p.cmd === 'startup' ? 0 : 2, lines: [line] };
