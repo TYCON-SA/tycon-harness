@@ -7,7 +7,7 @@
  * estar acotada o no: el corte lo pone quien pide el turno (`TURN_FROM_SUITES` de run-suites-json.js; las portables enteras
  * siempre). Una grande y un pase adversarial o una tanda de revisores de otra sesión sí pueden ir juntos (corren en la
  * nube). El corredor toma el turno al arrancar y lo suelta al terminar; con el turno tomado por otro proceso vivo, no
- * arranca y dice quién lo tiene.
+ * arranca y dice quién lo tiene. Al tomarlo se borra la espera que esa sesión anotó: ya no espera.
  *
  *   take --what <qué corre> [--process <pid>]   0 = turno tomado (o no hay coordinadora) · 77 = lo tiene otro, y dice quién
  *   release [--process <pid>]                   suelta el turno si es de ese proceso; el de otro no lo toca
@@ -112,6 +112,21 @@ function evict(file, now) {
   } finally { try { fs.rmdirSync(lock); } catch { /* vence solo */ } }
 }
 
+// La sesión que toma el turno ya no lo espera: su espera anotada (`marker.js doing --waiting-for`) se va, para que /wip y
+// la oficina no la sigan mostrando esperando mientras corre. Con texto propio, la nota queda sin la espera. No poder
+// borrarla no frena la suite.
+function clearWait(home, sid) {
+  if (!sid) return;
+  const file = path.join(stateDir(home), 'doing', `${String(sid).replace(/[/\\]/g, '_')}.json`);
+  try {
+    const note = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (!note || !note.waitingFor) return;
+    if (!note.text) { fs.unlinkSync(file); return; }
+    const { waitingFor: _w, waitingSince: _s, ...rest } = note;
+    fs.writeFileSync(file, JSON.stringify(rest));
+  } catch { /* sin nota, o ilegible: no hay espera que borrar */ }
+}
+
 /** Toma el turno para `pid`. `{ ok, taken, message }`: ok false = lo tiene otro proceso vivo, y el mensaje dice quién. */
 function take({ home = require('os').homedir(), env = process.env, arnes, pid = process.pid, what, now = Date.now() } = {}) {
   const role = coordinator({ home, env, arnes });
@@ -123,10 +138,10 @@ function take({ home = require('os').homedir(), env = process.env, arnes, pid = 
   // unos pocos intentos: entre sacar un turno vencido y publicar el propio puede entrar otro, o estar sacándolo otro
   for (let i = 0; i < 20; i += 1) {
     if (i) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
-    if (publish(file, mine)) return { ok: true, taken: true, message: null };
+    if (publish(file, mine)) { clearWait(home, sid); return { ok: true, taken: true, message: null }; }
     const t = readTurn(file);
     if (inForce(t, now)) {
-      if (Number(t.pid) === pid) return { ok: true, taken: true, message: null };
+      if (Number(t.pid) === pid) { clearWait(home, sid); return { ok: true, taken: true, message: null }; }
       return { ok: false, taken: false, holder: t, message: `Ya corre una ejecución grande de pruebas en esta máquina: ${describe(t)}. Va una por vez (guides/coordination.md, «Lo pesado, con turno»): esperá que termine, o pedile turno a la ${role}. Si quedó colgada, se destraba con heavy-turn.js release --process ${Number(t.pid)}.` };
     }
     evict(file, now);
