@@ -3527,7 +3527,7 @@ test('8.63 Seccion_ReenvioDelOk @story-8.63 @ac-12 — la sección valida con el
   for (const idioma of ['es', 'en']) {
     const js = ORG.pantalla(idioma);
     assert.match(js, /aprobaciones: editorAprobaciones/);
-    assert.match(js, /'respuesta', 'modelos', 'suites', 'cobertura', 'revision', 'tecnologia', 'aprobaciones'/);
+    assert.match(js, /'respuesta', 'modelos', 'suites', 'cobertura', 'revisionSemanal', 'revision', 'tecnologia', 'aprobaciones'/);
     // sí o no: el «sí» escribe el rol que ya tenga o «coordinadora» (su nombre se cambia aparte; la prueba de abajo);
     // la sesión se designa en la máquina, así que la pantalla nunca pide el nombre de una sesión
     assert.match(js, /selector\(T\('pantalla\.quienReenviaElOk'\), rol \? 'si' : ''/);
@@ -6338,6 +6338,155 @@ test('DeepReviewDefault_EditableOnSite_NoOff @story-7.54 @ac-6 — la política 
   assert.strictEqual(r.panelDe('seccion-paseAdversarial').attrs.id, 'pestana-claude');
   const { TEXTOS } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
   assert.ok(TEXTOS['pantalla.paseAdversarialTitulo'] && TEXTOS['pantalla.paseAdversarialAyuda'], 'los textos de la sección');
+});
+
+// ── la revisión de la semana se configura desde el sitio ─────────────────────────────────────────────────────────────
+const SEC_WR = (extra = {}) => SEC('revisionSemanal', Object.assign({ repo: 'perfil', borrador: {} }, extra));
+const WR_PATHS = ['weekly_review.enabled', 'weekly_review.budget_usd', 'weekly_review.max_chars'];
+
+test('RevisionSemanal_SeccionConSusTresCampos @story-2.58 @ac-1 — la sección muestra sus tres campos, con los valores del archivo o vacíos', async () => {
+  // 🔴 rojo: la sección no existe, le falta un campo, o no muestra lo que dice el archivo.
+  const s = ORG.seccionPorId('revisionSemanal');
+  assert.ok(s, 'hay una sección de la revisión de la semana');
+  assert.deepStrictEqual([s.titulo, s.archivo, s.repo, s.lector, s.claves, s.idCorto], ['Revisión de la semana', 'team-repos.json', 'perfil', 'team-repos.js', ['weekly_review'], 'repos']);
+  // sin la clave: los tres campos, vacíos
+  const vacia = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC_WR()] });
+  const camposVacios = nodosDe(vacia, 'revisionSemanal', (x) => WR_PATHS.includes(x.attrs['data-path']));
+  assert.deepStrictEqual(camposVacios.map((x) => x.attrs['data-path']).sort(), [...WR_PATHS].sort(), 'los tres campos');
+  for (const c of camposVacios.filter((x) => x.tag === 'input')) assert.strictEqual(c.attrs.value, '', `${c.attrs['data-path']} vacío`);
+  assert.strictEqual(camposVacios.find((x) => x.attrs['data-path'] === 'weekly_review.enabled').value, '', 'sin la clave: «de fábrica»');
+  // con la clave: los valores del archivo
+  const llena = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('cobertura'), SEC_WR({ borrador: { weekly_review: { enabled: false, budget_usd: 2.5, max_chars: 300000 } } })] });
+  const valor = (p) => nodosDe(llena, 'revisionSemanal', (x) => x.attrs['data-path'] === p).pop();
+  assert.strictEqual(valor('weekly_review.budget_usd').attrs.value, '2.5');
+  assert.strictEqual(valor('weekly_review.max_chars').attrs.value, '300000');
+  assert.strictEqual(valor('weekly_review.enabled').value, 'false', 'el selector muestra «apagada»');
+  // en «Cómo trabaja el agente», justo después de «Cobertura de las pruebas»
+  const panel = llena.panelDe('seccion-revisionSemanal');
+  assert.strictEqual((panel || { attrs: {} }).attrs.id, 'pestana-claude');
+  const orden = []; const walk = (x) => { if (/^seccion-/.test(x.attrs.id || '')) orden.push(x.attrs.id); (x.hijos || []).forEach(walk); }; walk(panel);
+  assert.strictEqual(orden[orden.indexOf('seccion-cobertura') + 1], 'seccion-revisionSemanal');
+});
+
+// todos los textos de la sección, en los dos idiomas, y el renglón de cada guía: las reglas recorren la clase entera
+const WR_TEXTOS = () => {
+  const { TEXTOS } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const claves = Object.keys(TEXTOS).filter((k) => /^pantalla\.revisionSemanal/.test(k) || k === 'pantalla.para.revisionSemanal');
+  return { TEXTOS, claves, textos: claves.flatMap((k) => ['es', 'en'].map((idioma) => ({ k, idioma, t: TEXTOS[k][idioma] || '' }))) };
+};
+const WR_GUIA = (archivo, titulo) => {
+  const g = fs.readFileSync(path.join(ROOT, 'guides', archivo), 'utf8');
+  const desde = g.indexOf(`- **${titulo}**`);
+  assert.ok(desde >= 0, `${archivo} nombra la sección`);
+  const hasta = g.indexOf('\n- **', desde + 1);
+  return g.slice(desde, hasta < 0 ? undefined : hasta);
+};
+// los límites salen de los mensajes del lector, no copiados: un número suelto en las tres grafías (10000, 10.000, 10,000)
+const WR_LIMITES = () => TR.weeklyReviewProblems({ budget_usd: 0, max_chars: 10 })
+  .flatMap((p) => (p.message.replace(/\(es [^)]*\)/, '').match(/\d+/g) || []).map(Number)).filter((n) => n > 0);
+const WR_GRAFIAS = (n) => [String(n), n.toLocaleString('de-DE'), n.toLocaleString('en-US')];
+const WR_REPITE_LIMITE = (t) => WR_LIMITES().flatMap(WR_GRAFIAS)
+  .find((g) => new RegExp(`(?<![\\d.,])${g.replace(/[.,]/g, '\\$&')}(?![\\d.,])`).test(t));
+// en castellano «merge» no va en ninguna forma; en inglés «merged» sí, «merge» y «merges» como palabra no
+const WR_MERGE = { es: /\bmerge\w*/i, en: /\bmerges?\b/i };
+
+test('RevisionSemanal_ValorFueraDeRango_NoSePropone @story-2.58 @ac-2 — un valor que el lector rechaza se marca en su campo y no se propone', async () => {
+  // 🔴 rojo: el valor pasa, o el campo no muestra el mensaje del lector.
+  const rev = (wr) => ORG.revisar({ seccion: 'revisionSemanal', texto: ORG.formatJson(TR_BASE), borrador: { weekly_review: wr }, lectores: { 'team-repos.js': TR } });
+  const bien = rev({ enabled: true, budget_usd: 3, max_chars: 200000 });
+  assert.strictEqual(bien.ok, true, JSON.stringify(bien.problems));
+  assert.deepStrictEqual(JSON.parse(bien.texto), { ...TR_BASE, weekly_review: { enabled: true, budget_usd: 3, max_chars: 200000 } }, 'el resto del archivo igual');
+  const malo = rev({ budget_usd: 0, max_chars: 10 });
+  assert.strictEqual(malo.ok, false);
+  assert.ok(!malo.texto, 'no arma el pedido');
+  assert.deepStrictEqual(malo.problems.map((p) => p.path).sort(), ['weekly_review.budget_usd', 'weekly_review.max_chars']);
+  const delLector = TR.weeklyReviewProblems({ budget_usd: 0, max_chars: 10 });
+  assert.deepStrictEqual(malo.problems.map((p) => p.message).sort(), delLector.map((p) => p.message).sort(), 'el mensaje es el del lector');
+  // en la pantalla, cada campo con su mensaje
+  const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC_WR({ borrador: { weekly_review: { budget_usd: 0, max_chars: 10 } }, problems: malo.problems })] });
+  for (const p of ['weekly_review.budget_usd', 'weekly_review.max_chars']) {
+    const input = nodosDe(r, 'revisionSemanal', (x) => x.tag === 'input' && x.attrs['data-path'] === p).pop();
+    assert.strictEqual(input.attrs.class, 'bad', `${p} marcado`);
+    const msg = malo.problems.find((x) => x.path === p).message;
+    assert.ok(nodosDe(r, 'revisionSemanal', (x) => x.attrs.class === 'err' && x.textContent === msg).length, `${p} con el mensaje del lector`);
+  }
+  // los rangos los dice el lector al revisar: ningún texto de la sección, en ningún idioma, los repite
+  assert.deepStrictEqual(WR_LIMITES(), [100, 10000, 2000000], 'los límites, leídos de los mensajes del lector');
+  const { TEXTOS, textos } = WR_TEXTOS();
+  for (const { k, idioma, t } of textos) {
+    assert.strictEqual(WR_REPITE_LIMITE(t), undefined, `${k} (${idioma}) repite un límite del lector: ${t}`);
+    assert.doesNotMatch(t, /más de 0 a|more than 0, up to/i, `${k} (${idioma})`);
+  }
+  // los dos campos, en los dos idiomas, sí dicen su valor de fábrica
+  for (const idioma of ['es', 'en']) {
+    assert.match(TEXTOS['pantalla.revisionSemanalTopeDeFabrica'][idioma], /(?<![\d.,])5(?![\d.,])/, `tope (${idioma})`);
+    assert.match(TEXTOS['pantalla.revisionSemanalMaterialDeFabrica'][idioma], /(?<![\d.,])600[.,]?000(?![\d.,])/, `material (${idioma})`);
+  }
+  for (const [archivo, titulo] of [['organization-site.md', 'Revisión de la semana'], ['organization-site.en.md', 'Weekly review']]) {
+    assert.strictEqual(WR_REPITE_LIMITE(WR_GUIA(archivo, titulo)), undefined, `${archivo} repite un límite del lector`);
+  }
+  // dónde está el problema, con el nombre de su campo: el tope de material no se llama como el largo de las respuestas
+  const donde = await pantallaConPestanas({ secciones: TODAS.map((id) => SEC(id, id === 'sitio' ? { problems: [
+    { path: 'weekly_review.max_chars', message: 'x', sinCampo: true },
+    { path: 'response.max_chars', message: 'y', sinCampo: true },
+  ] } : {})) });
+  const lineas = []; const walk = (n) => { if (n.textContent) lineas.push(n.textContent); (n.hijos || []).forEach(walk); }; walk(donde.panelDe('seccion-sitio'));
+  const err = lineas.filter((t) => / › /.test(t)).join('\n');
+  assert.match(err, /Revisión de la semana › Tope de material, en caracteres: x/, err);
+  assert.match(err, /› Largo máximo de cada respuesta, en caracteres: y/, err);
+  // la tabla de nombres no repite claves: una clave repetida pisa en silencio a la otra
+  const fuente = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'org-config.js'), 'utf8');
+  const desde = fuente.indexOf('var PALABRAS = {');
+  const tabla = fuente.slice(desde, fuente.indexOf('\n  };', desde));
+  const claves = [...tabla.matchAll(/(?:^|[{,\s])'?([A-Za-z_][\w.]*)'?\s*:\s*T\(/g)].map((m) => m[1]);
+  assert.ok(claves.length > 50, `la tabla de nombres se leyó entera (${claves.length})`);
+  assert.deepStrictEqual(claves.filter((k, i) => claves.indexOf(k) !== i), [], 'sin claves repetidas en la tabla de nombres');
+});
+
+test('RevisionSemanal_VacioEsPorDefecto @story-2.58 @ac-3 — vaciar un campo saca su subclave; vaciar los tres saca weekly_review', async () => {
+  // 🔴 rojo: un campo vacío queda escrito, o queda `weekly_review: {}` en el archivo.
+  const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC_WR({ borrador: { weekly_review: { enabled: false, budget_usd: 2, max_chars: 300000 } } })] });
+  const nodo = (pred) => nodosDe(r, 'revisionSemanal', pred).pop();
+  const escribir = (p, v) => nodo((x) => x.tag === 'input' && x.attrs['data-path'] === p).on.input({ target: { value: v } });
+  const elegir = (v) => nodo((x) => x.tag === 'select' && x.attrs['data-path'] === 'weekly_review.enabled').on.change({ target: { value: v } });
+  const revisar = async () => {
+    nodo((x) => x.tag === 'button' && x.textContent === 'Revisar cambios').on.click();
+    for (let i = 0; i < 10; i++) await new Promise((x) => setImmediate(x));
+    return r.llamadas.filter((l) => /revisar/.test(l.ruta)).pop().cuerpo.borrador;
+  };
+  escribir('weekly_review.budget_usd', '');
+  assert.deepStrictEqual((await revisar()).weekly_review, { enabled: false, max_chars: 300000 }, 'sale sólo budget_usd');
+  escribir('weekly_review.max_chars', '');
+  elegir('');
+  assert.strictEqual((await revisar()).weekly_review, undefined, 'sin subclaves, sin weekly_review');
+});
+
+test('RevisionSemanal_PideSuVersion @story-2.58 @ac-4 — con weekly_review en el archivo, el perfil pide la versión de la 1.27', () => {
+  // 🔴 rojo: la clave no pide versión, o pide una inventada.
+  assert.strictEqual(ORG.WEEKLY_REVIEW_SINCE, '2026.10.19.20', 'la etiqueta del merge de la 1.27 en el público');
+  assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, weekly_review: { enabled: false } }).version, ORG.WEEKLY_REVIEW_SINCE);
+});
+
+test('RevisionSemanal_TextosYGuia @story-2.58 @ac-5 @ac-6 — los textos en castellano y en inglés, y las dos guías nombran la sección', () => {
+  // 🔴 rojo: falta un texto o un idioma, o una guía no nombra la sección.
+  const { TEXTOS } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const claves = Object.keys(TEXTOS).filter((k) => /^pantalla\.revisionSemanal/.test(k));
+  assert.ok(claves.length >= 6, `título, ayuda, tres campos y sus valores de fábrica (hay ${claves.length})`);
+  for (const k of [...claves, 'pantalla.para.revisionSemanal']) {
+    assert.ok(TEXTOS[k] && TEXTOS[k].es && TEXTOS[k].en, `${k} en los dos idiomas`);
+  }
+  assert.match(fs.readFileSync(path.join(ROOT, 'guides', 'organization-site.md'), 'utf8'), /\*\*Revisión de la semana\*\*/);
+  assert.match(fs.readFileSync(path.join(ROOT, 'guides', 'organization-site.en.md'), 'utf8'), /\*\*Weekly review\*\*/);
+  // en palabras llanas: ningún texto ni renglón de guía dice «merge», con la regla de cada idioma
+  for (const { k, idioma, t } of WR_TEXTOS().textos) assert.doesNotMatch(t, WR_MERGE[idioma], `${k} (${idioma})`);
+  assert.match(TEXTOS['pantalla.revisionSemanalAyuda'].es, /los trabajos sumados/);
+  assert.match(TEXTOS['pantalla.revisionSemanalAyuda'].en, /merged work/);
+  const guiaEs = WR_GUIA('organization-site.md', 'Revisión de la semana');
+  const guiaEn = WR_GUIA('organization-site.en.md', 'Weekly review');
+  assert.doesNotMatch(guiaEs, WR_MERGE.es, 'la guía en castellano');
+  assert.match(guiaEs, /los trabajos sumados/);
+  assert.doesNotMatch(guiaEn, WR_MERGE.en, 'la guía en inglés');
+  assert.match(guiaEn, /merged work/);
 });
 
 const textosDe = (raiz) => { const out = []; const walk = (x) => { if (x.textContent) out.push(x.textContent); if (x.attrs && x.attrs.text) out.push(x.attrs.text); (x.hijos || []).forEach((h) => { if (typeof h === 'string') out.push(h); else walk(h); }); }; walk(raiz); return out; };
