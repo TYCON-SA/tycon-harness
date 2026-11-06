@@ -30,7 +30,7 @@ function casa() {
     JSON.stringify({ sessionId: sid, pid: vive ? process.pid : 2147483646 }));
   const correr = (env = {}) => spawnSync(process.execPath, [HOOK], {
     encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'SessionStart', session_id: 'nueva-0000' }),
-    env: { ...process.env, HOME: home, USERPROFILE: home, TYCON_HOME: '', TYCON_EVAL_SANDBOX: '', TYCON_FINISHED_OPEN_NOTICE: '', TYCON_FINISHED_OPEN_NOW: '2026-10-15T12:00:00Z', ...env },
+    env: { ...process.env, HOME: home, USERPROFILE: home, TYCON_HOME: '', TYCON_EVAL_SANDBOX: '', TYCON_FINISHED_OPEN_NOTICE: '', TYCON_FINISHED_OPEN_NOW: '2026-10-15T12:00:00Z', TYCON_UNSAVED_FOLDERS: '0', ...env },
   });
   return { home, sdir, marcador, sesion, correr };
 }
@@ -70,7 +70,7 @@ test('T19b Arranque_EjecucionPerdida_ConLost @story-8.195 @ac-19 — la ejecuci�
   const lost = path.join(C.home, 'lost.js');
   fs.writeFileSync(lost, `require(${JSON.stringify(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'open-runs.js'))}).perdida = () => ({ caso: 'sin-marcador' });\n`);
   const r = spawnSync(process.execPath, ['--require', lost, HOOK], {
-    encoding: 'utf8', input: '{}', env: { ...process.env, HOME: C.home, USERPROFILE: C.home, TYCON_HOME: '', TYCON_EVAL_SANDBOX: '', TYCON_FINISHED_OPEN_NOTICE: '', TYCON_FINISHED_OPEN_NOW: '2026-10-15T12:00:00Z' },
+    encoding: 'utf8', input: '{}', env: { ...process.env, HOME: C.home, USERPROFILE: C.home, TYCON_HOME: '', TYCON_EVAL_SANDBOX: '', TYCON_FINISHED_OPEN_NOTICE: '', TYCON_FINISHED_OPEN_NOW: '2026-10-15T12:00:00Z', TYCON_UNSAVED_FOLDERS: '0' },
   });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, new RegExp(`story 9\\.7 .*su ejecución está perdida: node \\S*marker\\.js clear-session ${sid} --lost \\(lo firma una persona\\)`));
@@ -99,4 +99,49 @@ test('T21 Avisos_NoCierranNada @story-8.195 @ac-21 — el aviso de arranque no t
   const r = C.correr();
   assert.match(r.stdout, /clear-session gggggggg-muerta/, 'da el comando');
   assert.equal(fs.readFileSync(f, 'utf8'), antes, 'y no lo corre');
+});
+
+// las carpetas de trabajo sin commitear: un repo de prueba con tres worktrees (sucio sin sesión, sucio con una sesión
+// viva adentro, limpio); sólo el primero se dice
+function repoConWorktrees(home) {
+  const g = (dir, ...args) => {
+    const r = spawnSync('git', ['-c', 'maintenance.auto=false', '-C', dir, ...args], { encoding: 'utf8', env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t', GIT_AUTHOR_DATE: '2026-10-15T10:00:00Z', GIT_COMMITTER_DATE: '2026-10-15T10:00:00Z' } });
+    assert.equal(r.status, 0, r.stderr);
+  };
+  const repo = path.join(home, 'repos', 'producto');
+  fs.mkdirSync(repo, { recursive: true });
+  g(repo, 'init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(repo, 'a.txt'), 'a\n');
+  g(repo, 'add', 'a.txt');
+  g(repo, 'commit', '-q', '-m', 'base');
+  const wt = (nombre) => { const d = path.join(home, 'repos', nombre); g(repo, 'worktree', 'add', '-q', '-b', `story/${nombre}`, d); return d; };
+  const tirada = wt('tirada');
+  const ocupada = wt('ocupada');
+  wt('limpia');
+  fs.writeFileSync(path.join(tirada, 'a.txt'), 'cambiado\n');
+  fs.writeFileSync(path.join(tirada, 'nuevo.js'), 'x\n');
+  fs.writeFileSync(path.join(ocupada, 'a.txt'), 'cambiado\n');
+  return { repo, tirada, ocupada };
+}
+
+test('T-133a CarpetasSinCommitear_SoloLaQueNadieUsa — dice carpeta, rama, cuántos archivos y desde cuándo; calla la ocupada y la limpia', async () => {
+  const C = casa();
+  const { repo, ocupada } = repoConWorktrees(C.home);
+  fs.writeFileSync(path.join(claudeDir(C.home), 'sessions', '1.json'), JSON.stringify({ sessionId: 'viva', pid: process.pid, cwd: path.join(ocupada, 'sub') }));
+  const lib = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'finished-open.js'));
+  const lines = await lib.unsavedFolders({ home: C.home, now: Date.now() + 2 * 3600e3, repos: [repo] });
+  assert.equal(lines.length, 1, lines.join('\n'));
+  assert.match(lines[0], /repos[\\/]tirada \(rama story\/tirada\): 2 archivos sin commitear, sin tocar hace 2 h; ninguna sesión viva trabaja ahí/);
+});
+
+test('T-133b CarpetasSinCommitear_ElGancho_NoTocaNada — el aviso sale al arrancar y la carpeta queda igual', () => {
+  const C = casa();
+  const { tirada } = repoConWorktrees(C.home);
+  const antes = fs.readFileSync(path.join(tirada, 'a.txt'), 'utf8');
+  const r = C.correr({ TYCON_UNSAVED_FOLDERS: '', TYCON_REPOS_ROOT: path.join(C.home, 'repos') });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^🔔 carpetas de trabajo con cambios sin commitear y sin sesión/m);
+  assert.match(r.stdout, /^\s+· \S*tirada \(rama story\/tirada\): 2 archivos sin commitear/m);
+  assert.equal(fs.readFileSync(path.join(tirada, 'a.txt'), 'utf8'), antes);
+  assert.equal(C.correr({ TYCON_UNSAVED_FOLDERS: '0', TYCON_REPOS_ROOT: path.join(C.home, 'repos') }).stdout, '', 'apagado, calla');
 });

@@ -6,7 +6,8 @@
       "event": "SessionStart",
       "matcher": "*",
       "env": {
-        "TYCON_FINISHED_OPEN_NOW": "2026-10-15T12:00:00Z"
+        "TYCON_FINISHED_OPEN_NOW": "2026-10-15T12:00:00Z",
+        "TYCON_UNSAVED_FOLDERS": "0"
       },
       "cases": [
         {
