@@ -148,6 +148,8 @@ function fichas(cmd, opts = {}) {
     if (!abierta) { abierta = true; empezoLibre = true; }
     // fuera de comillas también `$'…'` y `$"…"`: el citado ANSI-C arma el texto (`$'\x62'` es una letra)
     if (abreExpansion(c, n)) { expande = true; partida = true; } else if (c === '$' && (n === "'" || n === '"')) expande = true;
+    // `{a,b}` y `{a..c}` sin comillas: la terminal los abre en varias palabras (`-s{x,dev}` es `-sx -sdev`)
+    else if (c === '{' && /^\{[^{}\s'"]*(?:,|\.\.)[^{}\s'"]*\}/.test(s.slice(i))) { expande = true; partida = true; }
     texto += c;
   }
   cerrar();
@@ -200,15 +202,21 @@ function flagDe(seg, nombre, corta = null) {
  * nada. Devuelve `{ texto, literal }` o `null`. `literal` es falso si el valor lo arma la terminal (una expansión), si
  * trae un `*`, `?` o `[` (git no los admite en una rama) o si empieza con `@` (az lo lee de un archivo).
  * `flagDe` sigue leyendo sólo las formas largas y la corta separada: lo usan otros lectores que esto no cambia.
+ *
+ * Mira sólo lo que va después del `az` del pedido (`delPedido`): el `-s` de `timeout -s KILL` no es el origen. Y lee
+ * también una bandera escrita entre comillas (`'--delete-source-branch' true`): la terminal saca las comillas y az la
+ * lee como bandera. Lo que no es una bandera para az es una ficha con un espacio adentro (`--title "usá -s dev"`).
  */
+const esOpcion = (t) => /^-/.test(t) && !/\s/.test(t);
 function valorDe(seg, nombre, corta = null) {
   const largo = `--${nombre}`;
   const esPrefijo = (n) => n.length > 2 && largo.startsWith(n);
   const leer = (texto, expande) => ({ texto: String(texto), literal: !expande && !/[*?[]/.test(texto) && !String(texto).startsWith('@') });
+  const pedido = delPedido(seg);
   let val = null;
-  for (let i = 0; i < seg.length; i++) {
-    const f = seg[i];
-    if (!f.esBandera) continue;
+  for (let i = 0; i < pedido.length; i++) {
+    const f = pedido[i];
+    if (!esOpcion(f.texto)) continue;
     const t = f.texto;
     if (t.startsWith('--')) {
       const igual = t.indexOf('=');
@@ -219,11 +227,19 @@ function valorDe(seg, nombre, corta = null) {
       const resto = t.slice(2);
       if (resto) { val = leer(resto.startsWith('=') ? resto.slice(1) : resto, f.expande); continue; }
     } else continue;
-    const sig = seg[i + 1];
+    const sig = pedido[i + 1];
     // Sin valor detrás, o con otra bandera detrás: forma corta — para az vale `true`.
-    val = (!sig || (sig.esBandera && /^-/.test(sig.texto))) ? leer('true', false) : leer(sig.texto, sig.expande);
+    val = (!sig || esOpcion(sig.texto)) ? leer('true', false) : leer(sig.texto, sig.expande);
   }
   return val;
+}
+
+/** Las fichas que van después del `az` del pedido (`az [globales] repos pr <verbo> …`), o el segmento entero si no lo hay. */
+function delPedido(seg) {
+  for (let i = 0; i < seg.length; i++) {
+    if (seg[i].esBandera && /(^|\/|\\)az(\.cmd|\.exe)?$/i.test(seg[i].texto) && verboDePr(seg.slice(i))) return seg.slice(i + 1);
+  }
+  return seg;
 }
 
 const esCierto = (v) => v !== null && v !== undefined && CIERTO.has(String(v).toLowerCase());
@@ -377,8 +393,11 @@ function faltaDeBorrarRamaUpdate(borrar, publica) {
   return null;
 }
 
-/** Una ficha con una expansión fuera de comillas: la terminal la parte en palabras y puede meter una bandera. */
-const partidas = (seg) => seg.filter((f) => f.partida).map((f) => `\`${f.texto}\` lo arma la terminal fuera de comillas: puede meter una bandera que no veo, y lo que no pude leer no está aprobado. Ponelo entre comillas o escribí el valor`);
+/**
+ * Una ficha del pedido con una expansión fuera de comillas: la terminal la parte en palabras y puede meter una bandera.
+ * Lo de antes del `az` no cuenta: el lado derecho de `VAR=$X az …` no se parte.
+ */
+const partidas = (seg) => delPedido(seg).filter((f) => f.partida).map((f) => `\`${f.texto}\` lo arma la terminal fuera de comillas: puede meter una bandera que no veo, y lo que no pude leer no está aprobado. Ponelo entre comillas o escribí el valor`);
 
 /**
  * La regla del freno de pedidos sobre UN segmento, sin mirar el escape: `{ verbo, juzgado, borrador, faltas }`.
@@ -403,10 +422,14 @@ function faltasDe(seg) {
   const draft = v.draft && v.draft.literal ? v.draft.texto : null;
   if (verbo === 'create') {
     // Sólo los que van a main: el skill es el camino de esa rama. Un destino ilegible puede ser main.
-    if (v.destino && v.destino.literal && !A_MAIN.test(v.destino.texto)) return res;
-    if (esCierto(draft)) { res.borrador = true; return res; }
+    // Una ficha partida va antes que todo: puede meter `--target-branch main` o `--draft false` detrás de lo que se ve,
+    // y en az gana la última.
+    const partes = partidas(seg);
+    if (partes.length) { res.juzgado = true; res.faltas.push(...partes); }
+    if (!partes.length && v.destino && v.destino.literal && !A_MAIN.test(v.destino.texto)) return res;
+    if (!partes.length && esCierto(draft)) { res.borrador = true; return res; }
     res.juzgado = true;
-    res.faltas.push(...ilegibles, ...partidas(seg));
+    res.faltas.push(...ilegibles);
     if (v.autoComplete && !v.autoComplete.literal) return res;
     if (!esCierto(autoComplete)) res.faltas.push('sin `--auto-complete true`: el PR queda abierto para siempre, nadie lo completa');
     if (v.squash === null) res.faltas.push(`sin \`--squash false\` explícito: la estrategia la decide la política de la rama, y si es squash ${ROMPE_SQUASH}`);
@@ -419,8 +442,8 @@ function faltasDe(seg) {
     return res;
   }
   res.juzgado = true;
-  const tocaLoQueSeJuzga = [v.autoComplete, v.squash, v.draft, v.borrar].some(Boolean);
-  if (tocaLoQueSeJuzga) res.faltas.push(...ilegibles, ...partidas(seg));
+  // Una ficha partida es falta en todo `update`: puede meter `--delete-source-branch true` que no se ve.
+  res.faltas.push(...ilegibles, ...partidas(seg));
   if (esFalso(autoComplete)) res.faltas.push('apaga el auto-complete de un PR ya creado: queda abierto para siempre');
   if (esCierto(squash)) res.faltas.push(`prende el squash de un PR ya creado: ${ROMPE_SQUASH}`);
   // Publicar un borrador es CREARLO de verdad: la tercera puerta al mismo resultado.

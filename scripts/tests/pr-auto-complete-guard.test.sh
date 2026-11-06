@@ -387,7 +387,20 @@ for caso in \
   "frena|az repos pr update --id 5 --draft false --auto-complete true --squash false --delete-source-branch true" \
   "frena|az repos pr update --id 5 --delete-source-branch true" \
   "frena|az repos pr update --id 5 --delete-source-branch" \
-  "frena|az repos pr update --id 5 --draft false --auto-complete true --squash false --delete-source true"; do
+  "frena|az repos pr update --id 5 --draft false --auto-complete true --squash false --delete-source true" \
+  "frena|$AZM -s dev --delete-source-branch false '--delete-source-branch' true" \
+  "frena|$AZM -s story/x --delete-source-branch true '-s' dev" \
+  "frena|$AZM -s story/x --delete-source-branch true \"--source-branch\" dev" \
+  "frena|$AZM -s story/x --delete-source-branch false --draft true \$X" \
+  "frena|az repos pr create --org https://x --project P --repository R --target-branch dev --title t \$X" \
+  "frena|az repos pr update --id 5 \$X" \
+  "frena|$AZM --source-branch={feat,dev} --delete-source-branch true" \
+  "frena|$AZM -s{feature/x,dev} --delete-source-branch true" \
+  "frena|$AZM -s story/{a..c} --delete-source-branch true" \
+  "pasa|X=\$Y $AZM -s story/x --delete-source-branch true" \
+  "frena|timeout -s KILL 60 $AZM --delete-source-branch true" \
+  "pasa|timeout -s KILL 60 $AZM -s story/x --delete-source-branch true" \
+  "pasa|$AZM -s story/x --delete-source-branch true --description 'arreglo {a,b} y \$HOME'"; do
   esperado="${caso%%|*}"; cmd="${caso#*|}"
   rc=$(corre "$cmd")
   falta=$(node -e 'const az=require(process.argv[1]); const s=az.segmentos(process.argv[2])[0]; process.stdout.write(String(az.faltasDe(s).faltas.length > 0))' "$AQUI/scripts/lib/az-pr.js" "$cmd" 2>/dev/null)
