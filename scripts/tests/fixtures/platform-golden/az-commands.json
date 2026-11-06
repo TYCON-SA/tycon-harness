@@ -76,7 +76,7 @@
     "* `az repos pr create` suelto: sin `--auto-complete true` (el PR",
     "* resultado: un `az repos pr update` que APAGUE el auto-complete o PRENDA el squash, y el que",
     "TYCON_PR_BY_HAND=1 az repos pr ...",
-    "az repos pr create ... --auto-complete true --squash false"
+    "az repos pr create ... --source-branch <rama> --auto-complete true --squash false --delete-source-branch true"
   ],
   "scripts/hooks/pr-one-per-repo-guard.js": [
     "* QUÉ HACE. Antes de que `az repos pr create` se ejecute, pregunta si ese repositorio ya tiene un",

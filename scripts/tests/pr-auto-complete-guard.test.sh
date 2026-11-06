@@ -31,7 +31,8 @@ corre(){ # <comando>
   echo $?
 }
 BASE='az repos pr create --organization https://dev.azure.com/org-del-equipo --project Ceibo --repository CeiboBackend --source-branch fix/health-build-info --target-branch main --title "fix(health): x"'
-BIEN="$BASE --auto-complete true --squash false"
+# Con la tercera bandera (8.164): sin `--delete-source-branch` explícito el pedido ya no está bien armado.
+BIEN="$BASE --auto-complete true --squash false --delete-source-branch true"
 
 # ---------------------------------------------------------------- 1. 🔴 EL COMANDO TAL CUAL SE TIPEÓ
 rc=$(corre "$BASE --description \"a\" \"\" \"b\" -o json")
@@ -41,8 +42,8 @@ grep -q "auto-complete true --squash false" "$TMP/err.txt" && ok "…y las dos b
 grep -q "source=fix/health-build-info" "$TMP/err.txt" && ok "…con la rama del comando ya puesta en la invocación del skill" || no "no propagó la rama"
 
 # ---------------------------------------------------------------- 2. el comando del skill pasa
-rc=$(corre "$BASE --description \"\$(cat /tmp/pr-body.md)\" --auto-complete true --delete-source-branch false --squash false -o json")
-[ "$rc" -eq 0 ] && ok "el comando que arma el skill (auto-complete true, squash false) pasa" || no "🔴 bloqueó al skill ($rc)"
+rc=$(corre "$BASE --description \"\$(cat /tmp/pr-body.md)\" --auto-complete true --delete-source-branch true --squash false -o json")
+[ "$rc" -eq 0 ] && ok "el comando que arma el skill (auto-complete true, squash false, borrar la rama) pasa" || no "🔴 bloqueó al skill ($rc)"
 
 # ---------------------------------------------------------------- 3. auto-complete puesto pero con squash → bloquea
 rc=$(corre "$BASE --auto-complete true --squash true")
@@ -54,7 +55,7 @@ rc=$(corre "$BASE --auto-complete false --squash false")
 [ "$rc" -eq 2 ] && ok "--auto-complete false explícito también bloquea" || no "🔴 dejó pasar --auto-complete false ($rc)"
 
 # ---------------------------------------------------------------- 5. la forma --flag=valor también se entiende
-rc=$(corre "$BASE --auto-complete=true --squash=false")
+rc=$(corre "$BASE --auto-complete=true --squash=false --delete-source-branch=true")
 [ "$rc" -eq 0 ] && ok "la forma --auto-complete=true se reconoce" || no "🔴 no entendió --flag=valor ($rc)"
 
 # ---------------------------------------------------------------- 6. un borrador no se toca, y lo dice
@@ -106,11 +107,11 @@ rc=$(corre "if [ -n \"\$ID\" ]; then az repos pr update --id \$ID --auto-complet
 # ---------------------------------------------------------------- 13. 🔴 la forma corta: `--squash` a secas vale true para az
 rc=$(corre "$BASE --auto-complete true --squash -o json")
 [ "$rc" -eq 2 ] && ok "🔴 '--squash' a secas (= true) BLOQUEA aunque le siga '-o json'" || no "🔴 leyó '--squash -o' como squash=-o y dejó pasar ($rc)"
-rc=$(corre "$BASE --auto-complete --squash false")
+rc=$(corre "$BASE --auto-complete --squash false --delete-source-branch")
 [ "$rc" -eq 0 ] && ok "'--auto-complete' a secas (= true) pasa" || no "🔴 bloqueó '--auto-complete' a secas, que para az es true ($rc)"
 
 # ---------------------------------------------------------------- 14. 🔴 los sinónimos de az: yes/no/1/0/y/n/t/f
-rc=$(corre "$BASE --auto-complete yes --squash no")
+rc=$(corre "$BASE --auto-complete yes --squash no --delete-source-branch y")
 [ "$rc" -eq 0 ] && ok "'--auto-complete yes --squash no' pasa (az los acepta)" || no "🔴 rechazó sinónimos válidos ($rc)"
 rc=$(corre "$BASE --auto-complete true --squash yes")
 [ "$rc" -eq 2 ] && ok "🔴 '--squash yes' BLOQUEA" || no "🔴 dejó pasar '--squash yes' ($rc)"
@@ -127,7 +128,7 @@ rc=$(corre "$BASE --auto-complete true")
 grep -q "política de la rama" "$TMP/err.txt" && ok "…y explica por qué hace falta explícito" || no "no explicó el squash implícito"
 
 # ---------------------------------------------------------------- 17. 🔴 el comando partido en varias líneas con \\ es UN comando
-rc=$(corre "$(printf 'az repos pr create --org https://x --project P --repository R \\\n  --source-branch fix/x --target-branch main --title t \\\n  --auto-complete \\\n  true \\\n  --squash false')")
+rc=$(corre "$(printf 'az repos pr create --org https://x --project P --repository R \\\n  --source-branch fix/x --target-branch main --title t \\\n  --auto-complete \\\n  true \\\n  --squash false --delete-source-branch true')")
 [ "$rc" -eq 0 ] && ok "🔴 con continuaciones de línea, el valor en la línea siguiente se lee bien" || no "🔴 leyó la barra de continuación como valor ($rc)"
 
 # ---------------------------------------------------------------- 18. 🔴 la otra puerta: `pr update` que apaga lo que hay que tener
@@ -141,7 +142,7 @@ rc=$(corre "az repos pr update --id 2859 --title \"otro título\"")
 [ "$rc" -eq 0 ] && ok "'pr update' que no toca esas dos banderas pasa" || no "🔴 bloqueó un update inocente ($rc)"
 
 # ---------------------------------------------------------------- 19. 🔴 el valor ENTRE COMILLAS es válido para az
-rc=$(corre "$BASE --auto-complete \"true\" --squash 'false'")
+rc=$(corre "$BASE --auto-complete \"true\" --squash 'false' --delete-source-branch \"true\"")
 [ "$rc" -eq 0 ] && ok "🔴 '--auto-complete \"true\"' (comillas en el VALOR) pasa: es válido para az" || no "🔴 bloqueó un comando correcto por las comillas ($rc) — un freno que corta el camino bueno se apaga"
 rc=$(corre "az repos pr update --id 5 --squash \"true\"")
 [ "$rc" -eq 2 ] && ok "🔴 …y '--squash \"true\"' en un update sigue BLOQUEANDO" || no "🔴 las comillas abrieron la puerta del update ($rc)"
@@ -162,8 +163,8 @@ rc=$(corre "az repos pr \\
 # ---------------------------------------------------------------- 22. 🔴 publicar un borrador es la tercera puerta
 rc=$(corre "az repos pr update --id 5 --draft false")
 [ "$rc" -eq 2 ] && ok "🔴 publicar un borrador ('--draft false') sin las banderas BLOQUEA" || no "🔴 el camino borrador→publicar quedó abierto ($rc)"
-rc=$(corre "az repos pr update --id 5 --draft false --auto-complete true --squash false")
-[ "$rc" -eq 0 ] && ok "…y publicarlo CON las dos banderas pasa" || no "🔴 bloqueó una publicación correcta ($rc)"
+rc=$(corre "az repos pr update --id 5 --draft false --auto-complete true --squash false --delete-source-branch true")
+[ "$rc" -eq 0 ] && ok "…y publicarlo CON las tres banderas pasa" || no "🔴 bloqueó una publicación correcta ($rc)"
 
 # ---------------------------------------------------------------- 23. 🔴 código adentro de una cadena que ejecuta otro intérprete
 rc=$(corre "bash -c \"az repos pr create --target-branch main --title t\"")
@@ -219,7 +220,7 @@ rc=$(corre "$(printf 'cat > f <<%sEOF%s\ntexto cualquiera\nEOF\naz repos pr crea
 # forma corta del destino, TODO PR a dev quedaría bloqueado y nadie se enteraría.
 rc=$(corre "az repos pr create --org https://x -s feat/x -t dev --title t")
 [ "$rc" -eq 0 ] && ok "🔴 un PR a dev con la forma CORTA del destino ('-t dev') tampoco se toca" || no "🔴 la forma corta del destino no se lee: todo PR a dev quedaría bloqueado ($rc)"
-rc=$(corre "$BASE --auto-complete true --squash false --target-branch refs/heads/main")
+rc=$(corre "$BASE --auto-complete true --squash false --delete-source-branch true --target-branch refs/heads/main")
 [ "$rc" -eq 0 ] && ok "el destino escrito como 'refs/heads/main' se reconoce igual" || no "🔴 no reconoció refs/heads/main ($rc)"
 rc=$(corre "az repos pr update --id 42 --auto-complete false")
 grep -q "va a main" "$TMP/err.txt" && no "🔴 el mensaje del update afirma 'va a main' y el update NO dice a qué rama apunta" || ok "🔴 el mensaje del update NO afirma 'a main': ese comando no lleva el destino"
@@ -242,7 +243,7 @@ while IFS='|' read -r esperado cmd; do
 done <<EOF
 paso|$BIEN
 ninguna|$BASE --draft true
-paso|az repos pr update $ORG --id 4919 --draft false --auto-complete true --squash false
+paso|az repos pr update $ORG --id 4919 --draft false --auto-complete true --squash false --delete-source-branch true
 paso|az repos pr update $ORG --id 4920 --description "otra descripción"
 ninguna|az repos pr create $ORG -s feat/x -t dev --title t
 EOF
@@ -365,6 +366,46 @@ limpia; rc=$(corre "$GH_AUTO")
 [ "$rc" -eq 0 ] && ok "P8 sin cwd en el evento no aplica" || no "P8 frenó sin cwd ($rc)"
 limpia; rc=$(correEn "$JUG" "gh pr view 77 && echo gh pr merge 77 --auto")
 [ "$rc" -eq 0 ] && ok "P8 ver un pedido, o escribir el comando con echo, no encola" || no "P8 frenó algo que no encola ($rc)"
+
+# ---------------------------------------------------------------- 8.164-SinBorrarRama_Frena @story-8.164 @ac-1 (T1)
+# 🔴 Sin `--delete-source-branch` explícito, la rama sobrevive al pedido: el 1/11 había 1.019 ramas ya entradas. `false`
+# sólo vale desde una rama de larga vida (§9b.4 del paso de merge), que el freno tiene que poder VER en el comando.
+limpia
+AZM='az repos pr create --org https://x --project P --repository R --target-branch main --title t --auto-complete true --squash false'
+for caso in \
+  "frena|$AZM --source-branch story/x" \
+  "frena|$AZM --source-branch story/x --delete-source-branch false" \
+  "frena|$AZM --delete-source-branch false" \
+  "pasa|$AZM --source-branch dev --delete-source-branch false" \
+  "pasa|$AZM -s refs/heads/main --delete-source-branch false" \
+  "pasa|$AZM --source-branch story/x --delete-source-branch true" \
+  "frena|az repos pr update --id 5 --draft false --auto-complete true --squash false" \
+  "pasa|az repos pr update --id 5 --draft false --auto-complete true --squash false --delete-source-branch false" \
+  "pasa|az repos pr update --id 5 --auto-complete true --squash false"; do
+  esperado="${caso%%|*}"; cmd="${caso#*|}"
+  rc=$(corre "$cmd")
+  falta=$(node -e 'const az=require(process.argv[1]); const s=az.segmentos(process.argv[2])[0]; process.stdout.write(String(az.faltasDe(s).faltas.length > 0))' "$AQUI/scripts/lib/az-pr.js" "$cmd" 2>/dev/null)
+  if [ "$esperado" = frena ]; then
+    [ "$rc" -eq 2 ] && grep -q -- "--delete-source-branch" "$TMP/err.txt" && [ "$falta" = true ] \
+      && ok "8.164-SinBorrarRama_Frena frena y faltasDe coincide: $cmd" || no "8.164-SinBorrarRama_Frena dejó pasar o no nombró la bandera ($rc, faltasDe=$falta): $cmd"
+  else
+    [ "$rc" -eq 0 ] && [ "$falta" = false ] \
+      && ok "8.164-SinBorrarRama_Frena pasa y faltasDe coincide: $cmd" || no "8.164-SinBorrarRama_Frena frenó un pedido bien armado ($rc, faltasDe=$falta): $cmd"
+  fi
+done
+corre "$AZM --source-branch story/x" >/dev/null
+grep -q -- "--auto-complete true --squash false --delete-source-branch" "$TMP/err.txt" \
+  && ok "8.164-SinBorrarRama_Frena el mensaje trae el comando con las tres banderas" || no "8.164-SinBorrarRama_Frena el mensaje no trae las tres banderas juntas"
+rm -f "$HOME/.claude/.tycon-pipeline/bypass.log"
+rc=$(corre "TYCON_PR_BY_HAND=1 $AZM --source-branch story/x")
+[ "$rc" -eq 0 ] && grep -q "PR_A_MANO" "$HOME/.claude/.tycon-pipeline/bypass.log" 2>/dev/null \
+  && ok "8.164-SinBorrarRama_Frena el escape lo saltea y queda registrado" || no "8.164-SinBorrarRama_Frena el escape no pasó o no dejó constancia ($rc)"
+# La lista de larga vida del freno es la del paso de merge, la única declarada (§9b.4).
+PASO="$AQUI/skills/tycon-merge-to-main/steps/step-09b-create-change-request.md"
+del_paso=$(grep -m1 'Declaradas acá' "$PASO" | grep -o '`[a-z]*`' | tr -d '`' | sort | tr '\n' ' ')
+del_freno=$(node -e 'process.stdout.write(require(process.argv[1]).RAMAS_DE_LARGA_VIDA.slice().sort().join(" ") + " ")' "$AQUI/scripts/lib/az-pr.js" 2>/dev/null)
+[ -n "$del_freno" ] && [ "$(echo "$del_paso" | tr -s ' ')" = "$(echo "$del_freno" | tr -s ' ')" ] \
+  && ok "8.164-SinBorrarRama_Frena la lista de larga vida del freno es la de §9b.4 ($del_freno)" || no "8.164-SinBorrarRama_Frena las listas difieren: paso «${del_paso}» · freno «${del_freno}»"
 
 echo "─────────────"
 [ "$fallos" -eq 0 ] && { echo "✅ pr-sin-auto-complete: todo verde ($casos casos)"; exit 0; } || { echo "❌ pr-sin-auto-complete: $fallos falla(s) de $casos"; exit 1; }

@@ -127,6 +127,19 @@ Agente:  git merge dev -m "merge dev to main"    ← igual de inútil
 - Un pipeline que publica notas de versión extrae el **mensaje del merge commit**. Un `--no-edit` o un mensaje genérico deja a los clientes sin visibilidad de qué cambió.
 - Siempre `--no-ff` (merge commit explícito) — no fast-forward.
 
+### La rama se borra al entrar
+
+Una rama que no se borra cuando su pedido entra queda viva para siempre: el 2026-11-01 había 1.019 ramas remotas ya
+entradas a `main` entre los dos repos del arnés.
+
+- **Azure DevOps**: un pedido a `main` armado a mano con auto-completar dice explícito si borra la rama:
+  `--auto-complete true --squash false --delete-source-branch true`. `false` sólo desde una rama de larga vida (`dev`,
+  `develop`, `main`, `master`, la lista de §9b.4 del paso de merge), y escrita en `--source-branch`. El freno de
+  pedidos lo exige; el skill de merge ya lo hace solo.
+- **GitHub** (tarea humana, una vez por repo, la hace quien administra el repo): prender
+  **«Automatically delete head branches»** en **Settings → General → Pull Requests**. Ahí no hay bandera que el arnés
+  pueda pedir: lo borra la plataforma.
+
 ---
 
 ## Adónde va un cambio de PIPELINE, y la trampa de medirlo mal (2026-09-04)

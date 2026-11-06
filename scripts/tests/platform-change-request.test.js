@@ -598,7 +598,7 @@ test('Guards_ReadBothPlatforms @story-8.85 @ac-15', () => {
   assert.match(escape.stderr, /TYCON_PR_BY_HAND=1/);
   // lo de Azure DevOps sigue como estaba
   assert.strictEqual(freno(AUTO, m.env, 'az repos pr create --org https://dev.azure.com/acme -p P -r R -s feat/x -t main --title t').status, 2);
-  assert.strictEqual(freno(AUTO, m.env, 'az repos pr create --org https://dev.azure.com/acme -p P -r R -s feat/x -t main --title t --auto-complete true --squash false').status, 0);
+  assert.strictEqual(freno(AUTO, m.env, 'az repos pr create --org https://dev.azure.com/acme -p P -r R -s feat/x -t main --title t --auto-complete true --squash false --delete-source-branch true').status, 0);
 
   // el freno de un pedido por repo: en GitHub frena sólo con la CI de otro pedido corriendo
   const uno = (estado, command) => {

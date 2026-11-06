@@ -294,6 +294,30 @@ const ROMPE_SQUASH = 'los commits desaparecen de main y las notas de versión co
 const A_MAIN = /^(?:refs\/heads\/)?(?:main|master)$/i;
 
 /**
+ * Las ramas de origen que NO se borran al completar un pedido. La lista declarada es la de §9b.4 del paso de merge
+ * (`skills/tycon-merge-to-main/steps/step-09b-create-change-request.md`, «Ramas de larga vida»); ésta es su copia para
+ * el freno, y `scripts/tests/pr-auto-complete-guard.test.sh` falla si las dos difieren. Cualquier otra rama de origen
+ * es efímera: si el pedido no la borra, queda viva después del merge y se acumula.
+ */
+const RAMAS_DE_LARGA_VIDA = Object.freeze(['dev', 'develop', 'main', 'master']);
+const esDeLargaVida = (rama) => RAMAS_DE_LARGA_VIDA.includes(String(rama).replace(/^refs\/heads\//, ''));
+
+/**
+ * La falta de un pedido que se crea (o un borrador que se publica) sobre «borrar la rama al completar», o null.
+ * `origen === undefined` es un `update`: no dice la rama, así que vale `true` o `false` explícito.
+ */
+function faltaDeBorrarRama(borrar, origen) {
+  const regla = 'en `true`, o en `false` sólo desde una rama de larga vida (dev, develop, main o master)';
+  if (borrar === null) return `sin \`--delete-source-branch\` explícito: la rama queda viva después del merge. Va ${regla}`;
+  if (esCierto(borrar)) return null;
+  if (!esFalso(borrar)) return `con \`--delete-source-branch ${borrar}\`: no es un valor que entienda. Va ${regla}`;
+  if (origen === undefined) return null;
+  if (origen === null) return 'con `--delete-source-branch false` y sin `--source-branch`: no puedo ver si la rama es de larga vida. Escribí la rama, o borrala al completar (`true`)';
+  if (!esDeLargaVida(origen)) return `con \`--delete-source-branch false\` desde \`${origen}\`: la rama queda viva después del merge. Va ${regla}`;
+  return null;
+}
+
+/**
  * La regla del freno de pedidos sobre UN segmento, sin mirar el escape: `{ verbo, juzgado, borrador, faltas }`.
  * `juzgado: false` es un segmento que la regla no mira (otro verbo, un pedido que no va a main, un borrador recién
  * creado: `borrador: true`). Un segmento juzgado sin `faltas` cumple la regla. La usan el freno (que agrega el escape,
@@ -316,6 +340,11 @@ function faltasDe(seg) {
     if (!esCierto(autoComplete)) res.faltas.push('sin `--auto-complete true`: el PR queda abierto para siempre, nadie lo completa');
     if (squash === null) res.faltas.push(`sin \`--squash false\` explícito: la estrategia la decide la política de la rama, y si es squash ${ROMPE_SQUASH}`);
     else if (!esFalso(squash)) res.faltas.push(`con \`--squash ${squash}\`: ${ROMPE_SQUASH}`);
+    // Sólo con auto-completar: sin él ya hay una falta, y la rama no se borra porque el pedido no se completa solo.
+    if (esCierto(autoComplete)) {
+      const falta = faltaDeBorrarRama(flagDe(seg, 'delete-source-branch'), flagDe(seg, 'source-branch', 's'));
+      if (falta) res.faltas.push(falta);
+    }
     return res;
   }
   res.juzgado = true;
@@ -325,8 +354,14 @@ function faltasDe(seg) {
   if (esFalso(draft)) {
     if (!esCierto(autoComplete)) res.faltas.push('publica un borrador (`--draft false`) sin `--auto-complete true`: queda un PR normal que nadie completa');
     if (squash === null || !esFalso(squash)) res.faltas.push('publica un borrador sin `--squash false` explícito: la estrategia la decide la política de la rama');
+    // El borrador se creó sin que el freno lo juzgara. Un `update` común no se mira: az conserva la opción que el
+    // pedido ya tenía (`update_pull_request` parte de `existing_pr.completion_options`).
+    if (esCierto(autoComplete)) {
+      const falta = faltaDeBorrarRama(flagDe(seg, 'delete-source-branch'), undefined);
+      if (falta) res.faltas.push(`publica un borrador ${falta}`);
+    }
   }
   return res;
 }
 
-module.exports = { fichas, pareceAzPr, segmentos, flagDe, esCierto, esFalso, verboDePr, pasaCodigoAUnInterprete, pideAyuda, textoDe, tieneEscape, faltasDe, ROMPE_SQUASH };
+module.exports = { fichas, pareceAzPr, segmentos, flagDe, esCierto, esFalso, verboDePr, pasaCodigoAUnInterprete, pideAyuda, textoDe, tieneEscape, faltasDe, ROMPE_SQUASH, RAMAS_DE_LARGA_VIDA };

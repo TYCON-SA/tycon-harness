@@ -48,7 +48,7 @@
           "stdin": {
             "tool_name": "Bash",
             "tool_input": {
-              "command": "az repos pr create --org https://x --project P --repository R --source-branch ci/a --target-branch main --title \"$(head -1 /tmp/pr-body.md)\" --description \"$(cat /tmp/pr-body.md)\" --auto-complete true --delete-source-branch false --squash false -o json"
+              "command": "az repos pr create --org https://x --project P --repository R --source-branch ci/a --target-branch main --title \"$(head -1 /tmp/pr-body.md)\" --description \"$(cat /tmp/pr-body.md)\" --auto-complete true --delete-source-branch true --squash false -o json"
             }
           },
           "expect": {
@@ -241,7 +241,7 @@
           "stdin": {
             "tool_name": "Bash",
             "tool_input": {
-              "command": "TYCON_PR_BY_HAND=1 az repos pr create --org https://x --project P --repository R --source-branch ci/a --target-branch main --title t --auto-complete true --squash false"
+              "command": "TYCON_PR_BY_HAND=1 az repos pr create --org https://x --project P --repository R --source-branch ci/a --target-branch main --title t --auto-complete true --squash false --delete-source-branch true"
             }
           },
           "expect": {
@@ -277,7 +277,7 @@
           "stdin": {
             "tool_name": "Bash",
             "tool_input": {
-              "command": "az repos pr create --org https://x --project P --repository R --source-branch ci/a --target-branch main --title t --auto-complete \"true\" --squash 'false'"
+              "command": "az repos pr create --org https://x --project P --repository R --source-branch ci/a --target-branch main --title t --auto-complete \"true\" --squash 'false' --delete-source-branch \"true\""
             }
           },
           "expect": {
@@ -355,11 +355,12 @@
         },
         {
           "id": "deja-publicar-un-borrador-con-las-dos-banderas",
+          "_por_que": "Con la tercera (8.164): publicar un borrador también dice si borra la rama. El id queda como estaba: lo nombra la línea de base del banco.",
           "type": "must-not-block",
           "stdin": {
             "tool_name": "Bash",
             "tool_input": {
-              "command": "az repos pr update --id 5 --draft false --auto-complete true --squash false"
+              "command": "az repos pr update --id 5 --draft false --auto-complete true --squash false --delete-source-branch true"
             }
           },
           "expect": {
@@ -467,7 +468,7 @@
           "stdin": {
             "tool_name": "Bash",
             "tool_input": {
-              "command": "PR=$(az repos pr create --org https://x --project P --repository R --source-branch ci/a --target-branch main --title t --auto-complete true --squash false)"
+              "command": "PR=$(az repos pr create --org https://x --project P --repository R --source-branch ci/a --target-branch main --title t --auto-complete true --squash false --delete-source-branch true)"
             }
           },
           "expect": {
@@ -623,11 +624,29 @@
           "stdin": {
             "tool_name": "Bash",
             "tool_input": {
-              "command": "gh pr create --repo acme/widgets --base main --head feat/x --title t --body b; az repos pr create --org https://x --project P --repository R --source-branch ci/a --target-branch main --title \"$(head -1 /tmp/pr-body.md)\" --description \"$(cat /tmp/pr-body.md)\" --auto-complete true --delete-source-branch false --squash false -o json"
+              "command": "gh pr create --repo acme/widgets --base main --head feat/x --title t --body b; az repos pr create --org https://x --project P --repository R --source-branch ci/a --target-branch main --title \"$(head -1 /tmp/pr-body.md)\" --description \"$(cat /tmp/pr-body.md)\" --auto-complete true --delete-source-branch true --squash false -o json"
             }
           },
           "expect": {
             "exit": 0
+          }
+        },
+        {
+          "id": "bloquea-sin-borrar-la-rama-al-entrar",
+          "_por_que": "Story 8.164 (AC 1): sin `--delete-source-branch` explícito la rama queda viva después del merge (1.019 ramas así el 2026-11-01). `false` desde una rama que no es de larga vida, tampoco.",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --org https://x --project P --repository R --source-branch story/x --target-branch main --title t --auto-complete true --squash false && az repos pr create --org https://x --project P --repository R --source-branch fix/y --target-branch main --title t --auto-complete true --squash false --delete-source-branch false"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "delete-source-branch",
+              "fix/y"
+            ]
           }
         }
       ]

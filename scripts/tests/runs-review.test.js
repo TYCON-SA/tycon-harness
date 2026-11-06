@@ -925,8 +925,8 @@ test('T63 PrefijoDeMasYHechoUnaVez @story-4.10 @ac-30', () => {
   const P = 'TYCON_PR_BY_HAND=1 az repos pr';
   const comandos = [
     `${P} create --source-branch x --target-branch main --draft true --title t`,
-    `${P} create --source-branch x --target-branch main --auto-complete true --squash false --title t`,
-    `${P} update --id 5 --draft false --auto-complete true --squash false`,
+    `${P} create --source-branch x --target-branch main --auto-complete true --squash false --delete-source-branch true --title t`,
+    `${P} update --id 5 --draft false --auto-complete true --squash false --delete-source-branch true`,
     `${P} create --source-branch x --target-branch main --title t`,
   ];
   const lineas = comandos.map((command) => ({ ts: ts(), type: 'PR_A_MANO', command }));
@@ -956,12 +956,12 @@ test('T63 PrefijoDeMasYHechoUnaVez @story-4.10 @ac-30', () => {
   assert.deepStrictEqual(cats(rv({ hilo: dos, bypass: [lineas[1]] }), 'RR-ESCAPE'), ['PR_A_MANO/sobra:1', 'PR_A_MANO/sobra:1']);
   const suiteDos = [...cmd('TYCON_FULL_SUITE=1 npm test'), ...cmd('TYCON_FULL_SUITE=1 npm test')];
   assert.deepStrictEqual(cats(rv({ hilo: suiteDos, bypass: [{ ts: ts(), type: 'FULL_SUITE_RUN' }] }), 'RR-ESCAPE'), ['FULL_SUITE_RUN:1', 'TYCON_FULL_SUITE:1']);
-  const largo = `${P} create --source-branch x --target-branch main --description "${'d'.repeat(600)}" --auto-complete true --squash false`;
+  const largo = `${P} create --source-branch x --target-branch main --description "${'d'.repeat(600)}" --auto-complete true --squash false --delete-source-branch true`;
   const cortada = { ts: ts(), type: 'PR_A_MANO', command: largo.slice(0, 500) };
   assert.deepStrictEqual(cats(rv({ hilo: cmd(largo), bypass: [cortada] }), 'RR-ESCAPE'), ['PR_A_MANO/sobra:1']);
   assert.deepStrictEqual(cats(rv({ hilo: null, bypass: [cortada] }), 'RR-ESCAPE'), ['PR_A_MANO:1'], 'sin la conversación, un texto cortado no da el pedido por bueno');
   // una línea tapa su comando igual, no uno parecido con más banderas
-  const parecido = `${comandos[1]} --delete-source-branch true`;
+  const parecido = `${comandos[1]} -o json`;
   // una línea que es el comienzo de un pedido más largo se empareja con él (los frenos cortan el texto): cuenta una vez,
   // por el registro (trae `con_motivo`, la de la conversación no)
   const p = regla(rv({ hilo: cmd(parecido), bypass: [lineas[1]] }), 'RR-ESCAPE');
@@ -1149,13 +1149,13 @@ test('T4 TextoFielDelPedido @story-4.12 @ac-4', () => {
   const casos = [
     [`${P} --title t --description 'x " --auto-complete true --squash false "'`, 'PR_A_MANO:1'],
     [`${P} --title fix\\ --auto-complete\\ true\\ --squash\\ false`, 'PR_A_MANO:1'],
-    [`${P} --auto-complete true --squash false --description 'x " --squash true "'`, 'PR_A_MANO/sobra:1'],
-    [`${P} --title 'a\\b' --auto-complete true --squash false`, 'PR_A_MANO/sobra:1'],
+    [`${P} --auto-complete true --squash false --delete-source-branch true --description 'x " --squash true "'`, 'PR_A_MANO/sobra:1'],
+    [`${P} --title 'a\\b' --auto-complete true --squash false --delete-source-branch true`, 'PR_A_MANO/sobra:1'],
     // el pase adversarial: una ficha que expande con comillas adentro, y una libre que sigue entre comillas con un
     // salto de línea
-    [`${P} --title "$T"'x"y' --auto-complete true --squash false`, 'PR_A_MANO/sobra:1'],
-    [`${P} --title a"b\nc" --auto-complete true --squash false`, 'PR_A_MANO/sobra:1'],
-    [`${P} --title "it's" --description '$HOME y \`x\`' --auto-complete true --squash false`, 'PR_A_MANO/sobra:1'],
+    [`${P} --title "$T"'x"y' --auto-complete true --squash false --delete-source-branch true`, 'PR_A_MANO/sobra:1'],
+    [`${P} --title a"b\nc" --auto-complete true --squash false --delete-source-branch true`, 'PR_A_MANO/sobra:1'],
+    [`${P} --title "it's" --description '$HOME y \`x\`' --auto-complete true --squash false --delete-source-branch true`, 'PR_A_MANO/sobra:1'],
   ];
   for (const [c, esperada] of casos) {
     const seg = AZ.segmentos(c)[0];
