@@ -685,7 +685,7 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   `team-repos.json`, en el repo del perfil. Lo revisa quien mantiene.
 - **Cobertura de las pruebas**: el porcentaje de líneas nuevas cubiertas por debajo del cual el control de pruebas
   avisa (avisa, no frena). Queda en `team-repos.json`, en el repo del perfil. Lo revisa quien mantiene.
-- **Revisión de la semana**: si corre la revisión que una vez por semana lee juntos los merges y propone un control por
+- **Revisión de la semana**: si corre la revisión que una vez por semana lee juntos los trabajos sumados y propone un control por
   cada causa que se repite (vacío, prendida), su tope en dólares por ejecución (vacío, 5) y su tope de material en
   caracteres (vacío, 600.000). Nunca aplica nada: las propuestas las decide una persona. Queda en `team-repos.json`, en
   el repo del perfil. Lo revisa quien mantiene.

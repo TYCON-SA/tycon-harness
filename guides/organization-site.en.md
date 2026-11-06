@@ -698,7 +698,7 @@ be, to copy it and open the request by hand.
   with its rule. It lives in `team-repos.json`, in the profile repo. A maintainer reviews it.
 - **Test coverage**: the percentage of covered new lines below which the test control gives
   notice (it warns, it does not stop). It lives in `team-repos.json`, in the profile repo. A maintainer reviews it.
-- **Weekly review**: whether the review that reads the week's merges together once a week and proposes a control for each
+- **Weekly review**: whether the review that reads the week's merged work together once a week and proposes a control for each
   cause that repeats runs at all (empty, on), its cap in dollars per run (empty, 5) and its material cap in characters
   (empty, 600,000). It never applies anything: a person decides each proposal. It lives in `team-repos.json`, in the
   profile repo. A maintainer reviews it.

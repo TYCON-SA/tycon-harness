@@ -6368,6 +6368,28 @@ test('RevisionSemanal_SeccionConSusTresCampos @story-2.58 @ac-1 — la sección 
   assert.strictEqual(orden[orden.indexOf('seccion-cobertura') + 1], 'seccion-revisionSemanal');
 });
 
+// todos los textos de la sección, en los dos idiomas, y el renglón de cada guía: las reglas recorren la clase entera
+const WR_TEXTOS = () => {
+  const { TEXTOS } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const claves = Object.keys(TEXTOS).filter((k) => /^pantalla\.revisionSemanal/.test(k) || k === 'pantalla.para.revisionSemanal');
+  return { TEXTOS, claves, textos: claves.flatMap((k) => ['es', 'en'].map((idioma) => ({ k, idioma, t: TEXTOS[k][idioma] || '' }))) };
+};
+const WR_GUIA = (archivo, titulo) => {
+  const g = fs.readFileSync(path.join(ROOT, 'guides', archivo), 'utf8');
+  const desde = g.indexOf(`- **${titulo}**`);
+  assert.ok(desde >= 0, `${archivo} nombra la sección`);
+  const hasta = g.indexOf('\n- **', desde + 1);
+  return g.slice(desde, hasta < 0 ? undefined : hasta);
+};
+// los límites salen de los mensajes del lector, no copiados: un número suelto en las tres grafías (10000, 10.000, 10,000)
+const WR_LIMITES = () => TR.weeklyReviewProblems({ budget_usd: 0, max_chars: 10 })
+  .flatMap((p) => (p.message.replace(/\(es [^)]*\)/, '').match(/\d+/g) || []).map(Number)).filter((n) => n > 0);
+const WR_GRAFIAS = (n) => [String(n), n.toLocaleString('de-DE'), n.toLocaleString('en-US')];
+const WR_REPITE_LIMITE = (t) => WR_LIMITES().flatMap(WR_GRAFIAS)
+  .find((g) => new RegExp(`(?<![\\d.,])${g.replace(/[.,]/g, '\\$&')}(?![\\d.,])`).test(t));
+// en castellano «merge» no va en ninguna forma; en inglés «merged» sí, «merge» y «merges» como palabra no
+const WR_MERGE = { es: /\bmerge\w*/i, en: /\bmerges?\b/i };
+
 test('RevisionSemanal_ValorFueraDeRango_NoSePropone @story-2.58 @ac-2 — un valor que el lector rechaza se marca en su campo y no se propone', async () => {
   // 🔴 rojo: el valor pasa, o el campo no muestra el mensaje del lector.
   const rev = (wr) => ORG.revisar({ seccion: 'revisionSemanal', texto: ORG.formatJson(TR_BASE), borrador: { weekly_review: wr }, lectores: { 'team-repos.js': TR } });
@@ -6387,6 +6409,21 @@ test('RevisionSemanal_ValorFueraDeRango_NoSePropone @story-2.58 @ac-2 — un val
     assert.strictEqual(input.attrs.class, 'bad', `${p} marcado`);
     const msg = malo.problems.find((x) => x.path === p).message;
     assert.ok(nodosDe(r, 'revisionSemanal', (x) => x.attrs.class === 'err' && x.textContent === msg).length, `${p} con el mensaje del lector`);
+  }
+  // los rangos los dice el lector al revisar: ningún texto de la sección, en ningún idioma, los repite
+  assert.deepStrictEqual(WR_LIMITES(), [100, 10000, 2000000], 'los límites, leídos de los mensajes del lector');
+  const { TEXTOS, textos } = WR_TEXTOS();
+  for (const { k, idioma, t } of textos) {
+    assert.strictEqual(WR_REPITE_LIMITE(t), undefined, `${k} (${idioma}) repite un límite del lector: ${t}`);
+    assert.doesNotMatch(t, /más de 0 a|more than 0, up to/i, `${k} (${idioma})`);
+  }
+  // los dos campos, en los dos idiomas, sí dicen su valor de fábrica
+  for (const idioma of ['es', 'en']) {
+    assert.match(TEXTOS['pantalla.revisionSemanalTopeDeFabrica'][idioma], /(?<![\d.,])5(?![\d.,])/, `tope (${idioma})`);
+    assert.match(TEXTOS['pantalla.revisionSemanalMaterialDeFabrica'][idioma], /(?<![\d.,])600[.,]?000(?![\d.,])/, `material (${idioma})`);
+  }
+  for (const [archivo, titulo] of [['organization-site.md', 'Revisión de la semana'], ['organization-site.en.md', 'Weekly review']]) {
+    assert.strictEqual(WR_REPITE_LIMITE(WR_GUIA(archivo, titulo)), undefined, `${archivo} repite un límite del lector`);
   }
 });
 
@@ -6424,6 +6461,16 @@ test('RevisionSemanal_TextosYGuia @story-2.58 @ac-5 @ac-6 — los textos en cast
   }
   assert.match(fs.readFileSync(path.join(ROOT, 'guides', 'organization-site.md'), 'utf8'), /\*\*Revisión de la semana\*\*/);
   assert.match(fs.readFileSync(path.join(ROOT, 'guides', 'organization-site.en.md'), 'utf8'), /\*\*Weekly review\*\*/);
+  // en palabras llanas: ningún texto ni renglón de guía dice «merge», con la regla de cada idioma
+  for (const { k, idioma, t } of WR_TEXTOS().textos) assert.doesNotMatch(t, WR_MERGE[idioma], `${k} (${idioma})`);
+  assert.match(TEXTOS['pantalla.revisionSemanalAyuda'].es, /los trabajos sumados/);
+  assert.match(TEXTOS['pantalla.revisionSemanalAyuda'].en, /merged work/);
+  const guiaEs = WR_GUIA('organization-site.md', 'Revisión de la semana');
+  const guiaEn = WR_GUIA('organization-site.en.md', 'Weekly review');
+  assert.doesNotMatch(guiaEs, WR_MERGE.es, 'la guía en castellano');
+  assert.match(guiaEs, /los trabajos sumados/);
+  assert.doesNotMatch(guiaEn, WR_MERGE.en, 'la guía en inglés');
+  assert.match(guiaEn, /merged work/);
 });
 
 const textosDe = (raiz) => { const out = []; const walk = (x) => { if (x.textContent) out.push(x.textContent); if (x.attrs && x.attrs.text) out.push(x.attrs.text); (x.hijos || []).forEach((h) => { if (typeof h === 'string') out.push(h); else walk(h); }); }; walk(raiz); return out; };
