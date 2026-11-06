@@ -478,7 +478,7 @@
             "exit": 2,
             "stderr_re": [
               "BORRADO DEL ESTADO DEL PIPELINE",
-              "marker\\.js clear"
+              "marker\\.js\"? clear"
             ]
           }
         },
