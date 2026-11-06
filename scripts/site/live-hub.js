@@ -174,7 +174,7 @@ function crearCentro({ cfg, fuentes, llaves, sesionDe, ahora = Date.now, log = (
     const marcas = [];
     if (mantiene && llaves.copiada(id)) marcas.push('clave_copiada');
     if (mantiene && o.masNueva) marcas.push('mas_nueva');
-    return { id, foto: o.foto, conectada: maquinas.has(id) && o.sinConexionDesde === null, sinConexionDesde: o.sinConexionDesde, marcas, ...(mantiene ? { person: reglas.maquina(id).person || null } : {}) };
+    return { id, foto: o.foto, conectada: maquinas.has(id) && o.sinConexionDesde === null, sinConexionDesde: o.sinConexionDesde, fotoDesde: o.fotoVieja ? o.fotoEn : null, marcas, ...(mantiene ? { person: reglas.maquina(id).person || null } : {}) };
   }
 
   function mandar(nav, msg) {
@@ -197,7 +197,7 @@ function crearCentro({ cfg, fuentes, llaves, sesionDe, ahora = Date.now, log = (
       const fuera = [];
       for (const [id, o] of oficinas) {
         if (ve(id)) {
-          const firma = `${o.version}|${o.sinConexionDesde}|${maquinas.has(id)}|${mantiene}|${mantiene && llaves.copiada(id)}|${mantiene ? reglas.maquina(id).person : ''}`;
+          const firma = `${o.version}|${o.sinConexionDesde}|${o.fotoVieja}|${maquinas.has(id)}|${mantiene}|${mantiene && llaves.copiada(id)}|${mantiene ? reglas.maquina(id).person : ''}`;
           if (nav.vistas.get(id) !== firma) { nav.vistas.set(id, firma); cambiadas.push(oficinaPara(id, o, mantiene, reglas)); }
         }
       }
@@ -360,7 +360,7 @@ function crearCentro({ cfg, fuentes, llaves, sesionDe, ahora = Date.now, log = (
     const charlas = previa && previa.charlas ? previa.charlas : new Map();
     const nombres = nombresDe(r.foto);
     for (const s of charlas.keys()) if (!nombres.has(s)) charlas.delete(s);
-    oficinas.set(conn.id, { foto: r.foto, version, ultimoLatido: ahora(), sinConexionDesde: null, masNueva, anotada: Boolean(previa && previa.anotada) || masNueva, charlas, charlasLlenas: Boolean(previa && previa.charlasLlenas) });
+    oficinas.set(conn.id, { foto: r.foto, version, ultimoLatido: ahora(), fotoEn: ahora(), fotoVieja: false, sinConexionDesde: null, masNueva, anotada: Boolean(previa && previa.anotada) || masNueva, charlas, charlasLlenas: Boolean(previa && previa.charlasLlenas) });
     huboCambios = true;
     return undefined;
   }
@@ -415,9 +415,24 @@ function crearCentro({ cfg, fuentes, llaves, sesionDe, ahora = Date.now, log = (
     }
     if (tipo === 'auth') return cerrar(conn.ws, CLOSE.policy, 'ya firmó');
     latido(conn);
-    if (tipo === 'ping') { conn.ws.send(JSON.stringify({ type: 'pong' })); return undefined; }
+    if (tipo === 'ping') { fotoRetenida(conn.id, msg.retenida); conn.ws.send(JSON.stringify({ type: 'pong' })); return undefined; }
     if (tipo === 'charla') return recibirCharla(conn, msg);
     return recibirFoto(conn, msg.data);
+  }
+
+  /**
+   * El latido de una máquina dice si tiene una foto que no pudo mandar (`retenida`, desde cuándo): una oficina quieta no
+   * manda fotos, así que sin esto la que muestra el sitio no se distingue de una vieja. Con eso, la oficina dice de cuándo
+   * es la que se ve; la próxima foto que llega, o un latido sin el dato, la saca.
+   */
+  function fotoRetenida(id, retenida) {
+    const o = oficinas.get(id);
+    if (!o) return;
+    const vieja = Number.isFinite(retenida);
+    if (vieja === Boolean(o.fotoVieja)) return;
+    o.fotoVieja = vieja;
+    huboCambios = true;
+    if (vieja) log(`oficinas: ${id} tiene una foto que no pudo mandar: el sitio muestra la de antes`);
   }
 
   /** Lugar para una conexión sin autenticar. false: esa dirección ya tiene las suyas. */
