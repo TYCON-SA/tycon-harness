@@ -1233,6 +1233,88 @@ bash "${SCRIPT}" check-inventory --root "${R}" > "${T}/t58.out" 2>&1; RC=$?
 is "T58 un árbol con los resultados del examen: verde" "0" "${RC}"
 lacks "T58 …sin «sin clasificar»" "${T}/t58.out" "sin clasificar"
 
+# Lo ya firmado no se pide de nuevo. Rojo: `pending` imprime el comando de firma con la constancia del dueño de ese
+# mismo hash en la rama (la sesión que lo lee vuelve a pedir la firma), o la da por firmada con una que la revisión no
+# acepta. Las pruebas van por nombre: el archivo ya usa sus números para otras cosas.
+# firmado_base <carpeta>: el pedido afloja la regla y trae la constancia del dueño de su hash; deja E1 y H1
+firmado_base() {
+  local r="$1"; make_base "${r}"; inv "${r}" "j.approvals=[\"${CARPETA}\",\".tycon/control-changes.jsonl\"]"
+  mkdir -p "${r}/scripts/lib"; cp "${ROOT}/scripts/lib/refresh-after-main.js" "${r}/scripts/lib/refresh-after-main.js"
+  regla "${r}" block '"docs/permitido.txt"' uno; commit "${r}" "regla en líneas"
+  pr "${r}"
+  regla "${r}" block '"docs/permitido.txt", "docs/malo.txt"' uno
+  printf 'PROHIBIDO\n' > "${r}/docs/malo.txt"; commit "${r}"
+  bash "${SCRIPT}" pending --root "${r}" --base main --range main...pedido > "${r}.p0" 2>&1
+  E1="$(sed -n "s/^.* --entries '\(.*\)'\$/\1/p" "${r}.p0" | head -n 1)"; H1="$(hash_de "${E1}")"
+}
+pendiente() { bash "${SCRIPT}" pending --root "$1" --base main --range main...pedido > "$2" 2>&1; }
+YA='no hace falta firmar: el dueño ya firmó este mismo cambio'
+
+# BaseControls_PendingSaysAlreadySigned @story-8.226 @ac-13
+R="${T}/ya-carpeta"; firmado_base "${R}"
+mkdir -p "${R}/${CARPETA}"; firma "${E1}" > "${R}/${CARPETA}${H1}.json"; commit "${R}" "la firma del dueño"
+pendiente "${R}" "${T}/ya-carpeta.out"; RC=$?
+is "PendingSaysAlreadySigned: con la constancia en la carpeta sale 0" "0" "${RC}"
+has "PendingSaysAlreadySigned: …dice que ya está firmado" "${T}/ya-carpeta.out" "${YA}"
+has "PendingSaysAlreadySigned: …con la ruta de la constancia" "${T}/ya-carpeta.out" "${CARPETA}${H1}.json"
+lacks "PendingSaysAlreadySigned: …sin el comando de firma" "${T}/ya-carpeta.out" "run-base-controls.sh approve"
+R="${T}/ya-jsonl"; firmado_base "${R}"
+mkdir -p "${R}/.tycon"; firma "${E1}" > "${R}/.tycon/control-changes.jsonl"; commit "${R}" "la firma del dueño en el registro"
+pendiente "${R}" "${T}/ya-jsonl.out"
+has "PendingSaysAlreadySigned: en el .jsonl también vale" "${T}/ya-jsonl.out" "${YA} (.tycon/control-changes.jsonl)"
+R="${T}/ya-delegada"; firmado_base "${R}"
+mkdir -p "${R}/${CARPETA}"; firma_delegada "${E1}" "" >"${R}/${CARPETA}${H1}.json"; commit "${R}" "una firma por delegación"
+pendiente "${R}" "${T}/ya-delegada.out"
+lacks "PendingSaysAlreadySigned: una por delegación no cuenta" "${T}/ya-delegada.out" "${YA}"
+has "PendingSaysAlreadySigned: …y pide la firma" "${T}/ya-delegada.out" "run-base-controls.sh approve"
+R="${T}/ya-otro"; firmado_base "${R}"
+OTRO="$(node -e 'const e=JSON.parse(process.argv[1]);e[0].blob="0".repeat(40);console.log(JSON.stringify(e))' "${E1}")"
+mkdir -p "${R}/${CARPETA}"; firma "${OTRO}" > "${R}/${CARPETA}$(hash_de "${OTRO}").json"; commit "${R}" "la firma de otro cambio"
+pendiente "${R}" "${T}/ya-otro.out"
+lacks "PendingSaysAlreadySigned: la de otro hash no cuenta" "${T}/ya-otro.out" "${YA}"
+has "PendingSaysAlreadySigned: …y pide la firma" "${T}/ya-otro.out" "run-base-controls.sh approve"
+R="${T}/ya-rota"; firmado_base "${R}"
+mkdir -p "${R}/${CARPETA}"; printf '{ no es json\n' > "${R}/${CARPETA}${H1}.json"; commit "${R}" "una constancia ilegible"
+pendiente "${R}" "${T}/ya-rota.out"
+lacks "PendingSaysAlreadySigned: la ilegible no cuenta" "${T}/ya-rota.out" "${YA}"
+has "PendingSaysAlreadySigned: …y pide la firma" "${T}/ya-rota.out" "run-base-controls.sh approve"
+R="${T}/ya-disco"; firmado_base "${R}"
+mkdir -p "${R}/${CARPETA}"; firma "${E1}" > "${R}/${CARPETA}${H1}.json"
+pendiente "${R}" "${T}/ya-disco.out"
+lacks "PendingSaysAlreadySigned: la del disco sin commitear no cuenta" "${T}/ya-disco.out" "${YA}"
+has "PendingSaysAlreadySigned: …y pide la firma" "${T}/ya-disco.out" "run-base-controls.sh approve"
+
+# BaseControls_CatchingUpMainWithoutSignedChangeNeedsNoSignature @story-8.226 @ac-12
+R="${T}/ya-main"; firmado_base "${R}"
+mkdir -p "${R}/${CARPETA}"; firma "${E1}" > "${R}/${CARPETA}${H1}.json"; commit "${R}" "la firma del dueño"
+lab_git -C "${R}" checkout -q main; printf 'otro\n' > "${R}/docs/otro.txt"; commit "${R}" "main cambia otro archivo"
+lab_git -C "${R}" checkout -q pedido; lab_git -C "${R}" merge -q --no-edit main > /dev/null 2>&1
+pendiente "${R}" "${T}/ya-main.out"
+has "CatchingUpMainWithoutSignedChange: traer main no cambia el hash" "${T}/ya-main.out" "hash: ${H1}"
+has "CatchingUpMainWithoutSignedChange: …y pending no pide firmar" "${T}/ya-main.out" "${YA}"
+lacks "CatchingUpMainWithoutSignedChange: …ni imprime el comando" "${T}/ya-main.out" "run-base-controls.sh approve"
+bash "${SCRIPT}" run --root "${R}" --base main --range main...pedido > "${T}/ya-main.run" 2>&1; RC=$?
+is "CatchingUpMainWithoutSignedChange: la revisión da verde" "0" "${RC}"
+
+# BaseControls_ApproveStillSkipsWindowForSigned @story-8.226 @ac-14: el chequeo antes de la ventana se niega
+( cd "${R}" && TYCON_SIGN_PRECHECK=1 bash "${SCRIPT}" approve --root "${R}" --base main --out "${CARPETA}" --entries "${E1}" < /dev/null ) > "${T}/ya-approve.out" 2>&1; RC=$?
+is "ApproveStillSkipsWindowForSigned: el chequeo previo se niega" "1" "${RC}"
+has "ApproveStillSkipsWindowForSigned: …porque ya trae esta firma" "${T}/ya-approve.out" "ya trae esta misma firma: no hace falta firmar de nuevo"
+
+# BaseControls_MainChangedSignedFileWithCleanMerge @story-8.226 @ac-15: sigue el renglón de la refirma
+R="${T}/ya-refirma"; refirma_base "${R}"
+pendiente "${R}" "${T}/ya-refirma.out"
+has "MainChangedSignedFileWithCleanMerge: dice la refirma de siempre" "${T}/ya-refirma.out" "más lo que trajo main, con fusión limpia"
+lacks "MainChangedSignedFileWithCleanMerge: …no la de este mismo cambio" "${T}/ya-refirma.out" "${YA}"
+
+# BaseControls_BranchChangesSignedFileAgain @story-8.226 @ac-15
+R="${T}/ya-otra-vez"; firmado_base "${R}"
+mkdir -p "${R}/${CARPETA}"; firma "${E1}" > "${R}/${CARPETA}${H1}.json"; commit "${R}" "la firma del dueño"
+regla "${R}" block '"docs/permitido.txt", "docs/malo.txt", "docs/peor.txt"' uno; commit "${R}" "afloja más"
+pendiente "${R}" "${T}/ya-otra-vez.out"
+lacks "BranchChangesSignedFileAgain: lo cambiado después no está firmado" "${T}/ya-otra-vez.out" "${YA}"
+has "BranchChangesSignedFileAgain: …y pide la firma" "${T}/ya-otra-vez.out" "run-base-controls.sh approve"
+
 echo
 if [ "${FAILS}" -eq 0 ]; then echo "✅ base-controls: ${TOTAL} verificaciones verdes"; exit 0; fi
 echo "❌ base-controls: ${FAILS} de ${TOTAL} en rojo"

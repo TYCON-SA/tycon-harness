@@ -414,6 +414,18 @@
       "form": "date",
       "value": "2019-08-01",
       "reason": "la versión de la API de Azure (`api-version`) que el comentario nombra: es un dato del servicio, no una fecha del equipo"
+    },
+    {
+      "file": "scripts/tests/fixtures/story-index/expected-sprint-status.yaml",
+      "form": "story-number",
+      "value": "Épica 1",
+      "reason": "la salida esperada del generador de índices, byte por byte: el comentario de cada épica es parte de lo que escribe, con el número inventado del repo de juguete"
+    },
+    {
+      "file": "scripts/tests/fixtures/story-index/expected-sprint-status.yaml",
+      "form": "story-number",
+      "value": "Épica 2",
+      "reason": "la salida esperada del generador de índices, byte por byte: el comentario de cada épica es parte de lo que escribe, con el número inventado del repo de juguete"
     }
   ]
 }

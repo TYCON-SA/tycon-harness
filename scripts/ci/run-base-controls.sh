@@ -832,10 +832,23 @@ function cmdPending() {
   printChanges(a);
   if (!a.changed.length) { console.log('base-controls: no hay nada que firmar'); return; }
   console.log(`hash: ${a.hash}`);
+  // las constancias del dueño (sin `via`) de lo commiteado, con el archivo de donde salió cada una
+  const rev = a.prHead || a.tip;
+  const deDueno = [];
+  for (const file of approvalFiles(a.inv)) {
+    for (const x of readApprovals(a.root, rev, [file])) if (x.via === undefined) deDueno.push({ x, file });
+  }
+  // la constancia de este mismo cambio ya está: la sesión que lee esto no tiene que pedir la firma otra vez
+  const mismo = deDueno.find(({ x }) => x.hash === a.hash && Array.isArray(x.rules) && hashOf(x.rules) === a.hash);
+  if (mismo) {
+    const donde = isApprovalDir(mismo.file) ? `${mismo.file}${a.hash}.json` : mismo.file;
+    console.log(`base-controls: no hace falta firmar: el dueño ya firmó este mismo cambio (${safe(donde)}); la revisión vuelve a pasar los controles con ella`);
+    return;
+  }
   // lo firmado más lo que trajo main: la revisión lo acepta con la constancia que ya está, sin firma nueva
   const work = fs.mkdtempSync(path.join(os.tmpdir(), 'base-controls-'));
   let deMain = null;
-  try { deMain = refreshedFrom(a, work, readApprovals(a.root, a.prHead || a.tip, approvalFiles(a.inv)).filter((x) => x.via === undefined), baseApprovalHashes(a.root, a.base)); } finally { fs.rmSync(work, { recursive: true, force: true }); }
+  try { deMain = refreshedFrom(a, work, deDueno.map(({ x }) => x), baseApprovalHashes(a.root, a.base)); } finally { fs.rmSync(work, { recursive: true, force: true }); }
   if (deMain) { console.log(`base-controls: no hace falta firmar: es lo que el dueño firmó (${deMain.slice(0, 12)}) más lo que trajo main, con fusión limpia`); return; }
   const firma = signCommand(a.root, a.entries, a.approvalsOut, a.baseArg);
   console.log(`la firma, desde la sesión (el dueño la aprueba en la ventana de permiso, o, donde la ventana no llega, con su click en el cuadro de opciones o su «aprobado»): ${firma}`);

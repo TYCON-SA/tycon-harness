@@ -344,6 +344,32 @@ test('Ayudante_MergeYaEnCurso_NoEmpieza', (t) => {
   assert.equal(enCurso(lab), true, 'no toca el merge de la persona');
 });
 
+// Con los índices generados (la cabecera de story-index.js en la versión de main), el choque en los dos índices no se
+// une: se regeneran desde el frontmatter mezclado. Las firmas siguen por unión.
+test('CatchUpMain_RegeneratesIndexesInsteadOfUnion (T15) @story-8.226 @ac-10', (t) => {
+  const INDEX = path.join(REPO, 'scripts', 'tools', 'story-index.js');
+  const historia = (n, titulo) => `---\nepic: 8\nstory: "${n}"\ntitle: "${titulo}"\nstatus: ready-for-dev\n---\n\n# Story ${n}: ${titulo}\n`;
+  const generar = (l) => {
+    const r = spawnSync(process.execPath, [INDEX, '--repo', l.repo, '--write'], { encoding: 'utf8', env: l.env });
+    assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+  };
+  const lab = armar(t, {
+    ramaHace: (l) => { l.escribir('specs/story-8.3-nueva-rama.md', historia('8.3', 'La nueva de la rama')); generar(l); firma(l.repo, '8.3', '2026-11-05T09:00:00.000Z'); },
+    mainHace: (l) => { l.escribir('specs/story-8.4-entro-a-main.md', historia('8.4', 'La que entró a main')); generar(l); firma(l.repo, '8.4', '2026-11-05T08:00:00.000Z'); },
+  });
+  const r = correr(lab);
+  assert.equal(r.code, 0, r.out);
+  assert.equal(enCurso(lab), false, 'el merge quedó commiteado');
+  const sprint = lab.leer(SPRINT);
+  assert.ok(sinMarcas(sprint) && sinMarcas(lab.leer(EPICS)));
+  assert.match(sprint, /^ {2}8-3-nueva-rama: ready-for-dev\n {2}8-4-entro-a-main: ready-for-dev$/m, 'regenerado desde las dos historias');
+  assert.ok(sprint.startsWith('# Generado por scripts/tools/story-index.js'), 'con la cabecera del generado, no una unión');
+  const chk = spawnSync(process.execPath, [INDEX, '--repo', lab.repo, '--check'], { encoding: 'utf8', env: lab.env });
+  assert.equal(chk.status, 0, `el índice commiteado es el generado: ${chk.stdout}`);
+  assert.equal(cuenta(lab.leer(FIRMAS), /"story":"8\.[34]"/), 2, 'las firmas siguen por unión');
+  assert.match(r.out, /se regeneraron desde el frontmatter/);
+});
+
 test('Ayudante_FirmaSinHora_NoResuelveYDejaLaRama', (t) => {
   const lab = armar(t, {
     mainHace: (l) => {

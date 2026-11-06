@@ -16,7 +16,8 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *   2. Si choca sólo en esos tres archivos, junta los dos lados de cada uno con `git merge-file --union` sobre sus tres
  *      versiones (base, rama, main). En los índices queda un renglón por historia: si la rama cambió el de una historia
  *      y la unión lo repitió, queda el de la rama. En las firmas, cada línea una vez, en orden de hora, y ninguna firma
- *      que era válida en un lado queda descartada por la cadena.
+ *      que era válida en un lado queda descartada por la cadena. Si los índices de main son generados (traen la
+ *      cabecera de `scripts/tools/story-index.js`), no se unen: se regeneran desde el frontmatter ya mezclado.
  *   3. Commitea el merge con un commit normal, con todos los controles, y con `--push` lo empuja sin forzar.
  *
  * CÓDIGOS DE SALIDA. 0 hecho, o la rama ya estaba al día · 1 un choque que no resuelve (otro archivo, un lado borró uno
@@ -146,6 +147,19 @@ function resolver(git, repo, archivo, tmp) {
   if (a.code !== 0) throw new Salida(5, `git add ${archivo} falló: ${a.err.trim()}`);
 }
 
+// la cabecera que escribe scripts/tools/story-index.js: el índice de ese repo se genera desde el frontmatter
+const GENERADO = /^# Generado por scripts\/tools\/story-index\.js/;
+
+/** Regenera los dos índices desde las historias del árbol mezclado y los agrega al merge. */
+function regenerar(git, repo) {
+  const index = require(path.join(RAIZ, 'scripts', 'tools', 'story-index.js'));
+  const b = index.build(repo);
+  if (b.problems.length) throw new Salida(1, `los índices se generan desde el frontmatter y no pude regenerarlos: ${b.problems.join('; ')}`);
+  index.writeFiles(repo, b.files);
+  const a = git(['add', '--', EPICS, SPRINT]);
+  if (a.code !== 0) throw new Salida(5, `git add de los índices falló: ${a.err.trim()}`);
+}
+
 function ponerAlDia({ repo, push }, log) {
   const git = crearGit(repo);
   const raiz = git(['rev-parse', '--show-toplevel']);
@@ -176,6 +190,7 @@ function ponerAlDia({ repo, push }, log) {
   };
   const merge = git(['merge', '--no-commit', '--no-ff', 'origin/main']);
   let resueltos = [];
+  let regenerados = [];
   if (merge.code !== 0) {
     const u = git(['diff', '--name-only', '--diff-filter=U', '-z']);
     if (u.code !== 0) throw new Salida(5, `no pude listar los choques (git diff salió ${u.code}: ${u.err.trim()}). ${deshacer()}`);
@@ -187,10 +202,15 @@ function ponerAlDia({ repo, push }, log) {
     if (otros.length) {
       throw new Salida(1, `el merge choca en archivos que no resuelvo: ${otros.join(', ')}. ${deshacer()}`);
     }
+    // con los índices generados (la cabecera de story-index.js en la versión de main) no se unen: se regeneran desde el
+    // frontmatter ya mezclado, que es la única fuente
+    const generado = (f) => (f === EPICS || f === SPRINT) && GENERADO.test(git(['show', `origin/main:${SPRINT}`]).out);
+    const aRegenerar = chocan.filter(generado);
     let tmp = null;
     try {
       tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catch-up-main-'));
-      for (const f of chocan) resolver(git, repo, f, tmp);
+      for (const f of chocan.filter((x) => !aRegenerar.includes(x))) resolver(git, repo, f, tmp);
+      if (aRegenerar.length) regenerar(git, repo);
     } catch (e) {
       const como = deshacer();
       if (e instanceof Salida) { e.message += `. ${como}`; throw e; }
@@ -199,6 +219,7 @@ function ponerAlDia({ repo, push }, log) {
       if (tmp) fs.rmSync(tmp, { recursive: true, force: true });
     }
     resueltos = chocan;
+    regenerados = aRegenerar;
   }
 
   const mensaje = [`Merge origin/main en ${nombre}`];
@@ -208,6 +229,7 @@ function ponerAlDia({ repo, push }, log) {
     throw new Salida(4, `el commit del merge no pasó (lo rechazó un control, o git falló: la salida de abajo dice cuál). ${deshacer()} Dijo:\n${(commit.out + commit.err).trimEnd()}`);
   }
   log(resueltos.length ? `Merge de origin/main commiteado; choques resueltos: ${resueltos.join(', ')}.` : 'Merge de origin/main commiteado, sin choques.');
+  if (regenerados.length) log(`Los índices (${regenerados.join(', ')}) se regeneraron desde el frontmatter mezclado: en este repo son generados.`);
 
   if (!push) {
     log(`Para empujar: git -C ${repo} push origin ${nombre}`);
