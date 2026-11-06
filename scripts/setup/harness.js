@@ -325,14 +325,18 @@ function separateSkills(ctx, tree) {
   try { return fs.statSync(out).isDirectory() ? out : null; } catch (_) { return null; }
 }
 
-/** Lo que el aplicador tiene que saber del juez que va a leer su informe: los prefijos de hook que entiende. */
+/** Lo que el aplicador tiene que saber del juez que va a leer su informe: los prefijos y los eventos de hook que entiende. */
 function applierReportEnv(log = null) {
   let prefixes = [];
   try { prefixes = mod('health').HOOK_PREFIXES || []; } catch (e) {
     // sin salud el aplicador informa sólo lo que entiende cualquier juez; se dice, porque entonces nadie revisa los demás
     if (log) log(`aplicador: no pude leer qué prefijos de hook entiende la salud (${e.code || e.message}): el informe va sin ellos`);
   }
-  return { TYCON_REPORT_HOOK_PREFIXES: prefixes.join(',') };
+  let events = [];
+  try { events = mod('managed').EVENTS || []; } catch (e) {
+    if (log) log(`aplicador: no pude leer qué eventos de hook entiende la salud (${e.code || e.message}): el informe va sin los nuevos`);
+  }
+  return { TYCON_REPORT_HOOK_PREFIXES: prefixes.join(','), TYCON_REPORT_HOOK_EVENTS: events.join(',') };
 }
 
 /** ¿El aplicador del árbol conoce `--report-json`? Uno viejo, que no la trae, no se rompe por la opción. */
@@ -1828,7 +1832,7 @@ function redetectSources(state, detected, tree, notes, blind = []) {
 function releaseHelpers(ctx) {
   const S = mod('state');
   return {
-    takeSnapshot, finishSnapshot, runApplier, noteHooksPath, hooksPathUnattended, runHealth, recordPieces, ensureLink, linkResolvesTo, ensureImport, copyBootstrap,
+    takeSnapshot, finishSnapshot, runApplier, applierReportEnv, noteHooksPath, hooksPathUnattended, runHealth, recordPieces, ensureLink, linkResolvesTo, ensureImport, copyBootstrap,
     settingsPath, policyOf, fixedLine, applyPolicy, installQuestions, codegraphInstall, writeAnswers, profileOf, machineProfile, holdText, availableText,
     applyHint, releaseApplyHint, REEVALUATED_NOTICE, engramOn, missingRequirement, installNodeProblem, profileSwitch, dropForProfile, profileSwitchNotes, toolChoice, withAnswers, toolNotice,
     harnessNodeNotice, packRetiredLine,

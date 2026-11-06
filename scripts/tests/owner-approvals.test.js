@@ -532,6 +532,40 @@ test('Escuchas_LosGanchosDelArnesInstalados_ElClickVale', (t) => {
   assert.deepStrictEqual(oa.escuchasDelCuadro({ casa, cwd: casa, plataforma: 'linux' }).ajenos, []);
 });
 
+test('Escuchas_GanchoDelArnesSinArchivo_NoAnulaElClick_YUnoAjenoSi', (t) => {
+  // una versión que volvió atrás puede dejar registrado un gancho del arnés que ya no tiene su archivo: no corre nada, y
+  // no anula el click. Uno ajeno, o uno del arnés que sí está pero no se conoce, sigue anulándolo
+  const casa = casaNueva(t);
+  fs.mkdirSync(path.join(casa, '.claude'), { recursive: true });
+  const hooksDir = path.join(casa, '.tycon', 'harness', 'scripts', 'hooks');
+  fs.mkdirSync(hooksDir, { recursive: true });
+  const conGancho = (command) => {
+    fs.writeFileSync(path.join(casa, '.claude', 'settings.json'), JSON.stringify({ hooks: {
+      PreToolUse: [{ matcher: 'AskUserQuestion', hooks: [{ type: 'command', command }] }],
+    } }));
+    return oa.escuchasDelCuadro({ casa, cwd: casa, plataforma: 'linux' }).ajenos.length > 0;
+  };
+  const nuevo = path.join(hooksDir, 'guardian-de-otra-version.js');
+  const nodo = path.join(casa, '.tycon', 'node', 'current', 'bin', 'node');
+  assert.strictEqual(conGancho(`"${nodo}" "${nuevo}"`), false, 'del arnés instalado y sin archivo: no anula');
+  assert.strictEqual(conGancho(`node ${nuevo}`), false, 'con el node del PATH y sin comillas, igual');
+  assert.strictEqual(conGancho(`"${process.execPath}" "${nuevo}"`), false, 'con el Node que corre esto, igual');
+  // un programa llamado node en otra carpeta puede ser cualquier cosa, y contestaría el cuadro
+  assert.strictEqual(conGancho(`/tmp/x/node "${nuevo}"`), true, 'otro programa llamado node: anula');
+  // fuera de Windows el shell come la barra invertida: `hooks\evil.js` corre `hooksevil.js`, otro archivo (pase adversarial)
+  if (process.platform !== 'win32') {
+    fs.writeFileSync(path.join(casa, '.tycon', 'harness', 'scripts', 'hooksevil.js'), '// contesta\n');
+    assert.strictEqual(conGancho(`node ${hooksDir}\\evil.js`), true, 'una barra invertida fuera de Windows: anula');
+  }
+  assert.strictEqual(conGancho(`"${path.join(casa, '.tycon', 'node', '..', 'otro', 'node')}" "${nuevo}"`), true, 'saliendo de la carpeta del Node del arnés: anula');
+  fs.writeFileSync(nuevo, '// existe\n');
+  assert.strictEqual(conGancho(`"${nodo}" "${nuevo}"`), true, 'del arnés pero con archivo y desconocido: anula');
+  fs.rmSync(nuevo);
+  assert.strictEqual(conGancho(`"${nodo}" "${path.join(casa, 'otra', 'scripts', 'hooks', 'guardian-de-otra-version.js')}"`), true, 'ajeno sin archivo: anula');
+  assert.strictEqual(conGancho(`"${nodo}" "${nuevo}"; python3 contesta.py`), true, 'con algo más en la línea: anula');
+  assert.strictEqual(conGancho(`python3 "${nuevo}"`), true, 'otro intérprete: anula');
+});
+
 test('Escuchas_GanchoAjenoSobreElCuadro_ElClickNoVale', (t) => {
   const casa = casaNueva(t);
   const cwd = path.join(casa, 'proyecto');
