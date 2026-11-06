@@ -1978,3 +1978,18 @@ test('T212 Doing_WithOpenRun_Refused: con una historia abierta no anota texto ni
   assert.match(doing(h, sid, 'mido el banco de controles', '--until', '23:30'), /mido el banco/);
   assert.strictEqual(JSON.parse(fs.readFileSync(doingFile(h, sid), 'utf8')).text, 'mido el banco de controles');
 });
+
+test('T213 LooseNote_TaskNumber_OnlyItsOwn: el texto de la nota de un camino corto llega a la oficina sólo si es de este camino corto', () => {
+  const at = (min) => new Date(Date.parse(NOW) - min * 60000).toISOString();
+  const m = toyMachine();
+  fs.mkdirSync(path.join(m.state, 'doing'), { recursive: true });
+  for (const [sid, noteMin] of [['nueva000-1', 10], ['vieja000-2', 120]]) {
+    fs.writeFileSync(path.join(m.state, 'adhoc', `${sid}.json`), JSON.stringify({ reason: 'un arreglo sin número', declaredAt: at(30), lastTouch: at(5) }));
+    fs.writeFileSync(path.join(m.state, 'doing', `${sid}.json`), JSON.stringify({ text: 'T-50: sigo con el arreglo', at: at(noteMin) }));
+    session(m, process.pid, sid, sid.slice(0, 5), { status: 'busy' });
+  }
+  const r = run(m);
+  const extraOf = (name) => r.extra[r.rows.findIndex((x) => x.session.startsWith(name))];
+  assert.strictEqual(extraOf('nueva').noteText, 'T-50: sigo con el arreglo');
+  assert.strictEqual(extraOf('vieja').noteText, undefined, 'la nota de antes de abrir el camino corto no une su fila');
+});
