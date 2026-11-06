@@ -168,6 +168,9 @@ pedido, y un cierre de más pierde la ejecución.
   sesión vive, la cierra ella. Si murió, el aviso da `marker.js clear-session <sesión>`, o `adhoc clear-orphan <sesión>`
   para un camino corto. Si su ejecución está perdida, da `clear-session <sesión> --lost`, que firma el dueño. Si no se
   sabe si vive (Codex no deja registro de sesión), lo dice y no da comando.
+- **Al arrancar, también las carpetas de trabajo sin commitear**: cada worktree de los repos del arnés y de la raíz de repos
+  con cambios sin commitear y ninguna sesión viva adentro, con su rama, cuántos archivos y desde cuándo nadie los toca.
+  No toca nada. `TYCON_UNSAVED_FOLDERS=0` lo apaga.
 - **En la oficina y en `/wip`** la sesión sale «Terminado, falta cerrar», con la historia y desde cuándo, también pasado
   un día. No cuenta como trabajando; si la sesión está ocupada en otra cosa, sale trabajando.
 
@@ -416,6 +419,7 @@ bloqueos seguidos o 20 en total.
 Límite conocido: con un permiso abierto, terminar otra herramienta no lo cierra, pero dos usos a la vez de la misma
 herramienta lo pueden cerrar antes de tiempo.
 
+Antes de quedarse esperando un turno, la sesión commitea y empuja su trabajo a su rama: si se cierra esperando, no pierde nada.
 Una sesión que espera un turno lo anota con `marker.js doing "<qué hago>" --waiting-for "<qué espera>"`: esa espera le
 llega a la coordinadora y al dueño recién a las 2 horas, no a los 30 minutos, aunque el freno del cierre haya escalado.
 Esa espera anotada también protege a su ejecución de la poda por vieja durante 24 h desde que empezó a esperar. Con una

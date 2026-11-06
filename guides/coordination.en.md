@@ -175,6 +175,9 @@ request, and closing too early loses the run.
   `marker.js clear-session <session>`, or `adhoc clear-orphan <session>` for a shortcut lane. If its run is lost, it gives
   `clear-session <session> --lost`, which the owner signs. If it cannot tell whether the session is alive (Codex leaves
   no session record), it says so and gives no command.
+- **At startup, also the work folders with uncommitted changes**: each worktree of the harness repos and of the repos
+  root with uncommitted changes and no live session inside, with its branch, how many files and how long nobody has
+  touched them. It changes nothing. `TYCON_UNSAVED_FOLDERS=0` turns it off.
 - **In the office and in `/wip`** the session shows «Terminado, falta cerrar» (finished, still to close), with the story
   and since when, also after a day. It does not count as working; if the session is busy with something else, it shows as working.
 
@@ -431,6 +434,7 @@ and the state of each session), not only at the messages it gets: the notice can
 Known limit: with a permission open, another tool ending does not close it, but two uses of the same tool at once can
 close it early.
 
+Before it sits waiting for a turn, the session commits and pushes its work to its branch: if it closes while waiting, nothing is lost.
 A session waiting for a turn notes it with `marker.js doing "<what I do>" --waiting-for "<what it waits for>"`: that wait
 reaches the coordinator, and the owner only after 2 hours, not after 30 minutes, even if the closing gate escalated.
 That noted wait also keeps its run from being pruned as old, for 24 h since it started waiting. With a pipeline run open

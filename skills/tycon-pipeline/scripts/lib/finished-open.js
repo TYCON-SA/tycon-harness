@@ -13,7 +13,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { spawnSync, execFile } = require('child_process');
 const STEPS = require('./steps.js');
 const { stateDir: stateDirOf } = require('./state-dir.js');
 const { liveness } = require('./session-liveness.js');
@@ -21,6 +21,7 @@ const { liveness } = require('./session-liveness.js');
 const TOPE_MS = 5000;
 const FOTO_MS = 10 * 60000;
 const MAX_LINEAS = 5;
+const POOL = 8;
 const SIN_TIEMPO = `se acabó el tope de ${TOPE_MS / 1000} s`;
 const RAMAS_PRINCIPALES = ['main', 'master'];
 const PREFIJO = '🔔 [tycon-pipeline] ';
@@ -273,6 +274,91 @@ function machine({ home = os.homedir(), stateDir, now = Date.now(), env, markerJ
 }
 
 /**
+ * Las carpetas de trabajo (los worktrees de los repos del arnés y de la raíz de repos) con cambios sin commitear y sin
+ * ninguna sesión viva adentro: el trabajo que quedó tirado al cerrarse su sesión. Una línea por carpeta, con su rama,
+ * cuántos archivos y desde cuándo nadie los toca (el cambio más nuevo). Hasta cinco y «y N más»; el mismo tope de 5 s,
+ * con varias consultas a git a la vez. `repos`: los repos principales a mirar; sin él, el clon del arnés, agent-skills y
+ * los de la raíz de repos (hasta dos niveles). No toca nada: sólo `git worktree list` y `git status`.
+ */
+async function unsavedFolders({ home = os.homedir(), now = Date.now(), env = process.env, repos, isAlive } = {}) {
+  const until = Date.now() + TOPE_MS;
+  const gitEnv = { ...env, LC_ALL: 'C', GIT_OPTIONAL_LOCKS: '0' };
+  const gitRaw = (dir, args) => new Promise((resolve) => {
+    const ms = until - Date.now();
+    if (ms <= 0) { resolve({ tarde: true }); return; }
+    execFile('git', ['-C', dir, ...args], { encoding: 'utf8', timeout: ms, maxBuffer: 16 * 1024 * 1024, windowsHide: true, env: gitEnv },
+      (err, out) => resolve(err ? (err.killed ? { tarde: true } : { error: true }) : { out: String(out) }));
+  });
+  // de a POOL consultas a la vez, en el orden dado (los del arnés primero)
+  const enTanda = async (lista, hacer) => {
+    const res = new Array(lista.length);
+    let sig = 0;
+    await Promise.all(Array.from({ length: Math.min(POOL, lista.length) }, async () => {
+      while (sig < lista.length) { const i = sig++; res[i] = await hacer(lista[i]); }
+    }));
+    return res;
+  };
+  const vivas = require('./session-liveness.js').liveCwds({ home, ...(isAlive ? { isAlive } : {}) });
+  if (vivas.unknown) return [`no sé qué sesiones viven (${causa(vivas.unknown)}): no miro las carpetas sin commitear`];
+  // la ruta real del ancestro que existe, más lo que falta: una sesión puede estar en una subcarpeta ya borrada
+  const real = (p) => {
+    const abs = path.resolve(p);
+    for (let d = abs; ; d = path.dirname(d)) {
+      try { return path.join(fs.realpathSync(d), path.relative(d, abs)); } catch { if (path.dirname(d) === d) return abs; }
+    }
+  };
+  const dentro = (hijo, padre) => hijo === padre || hijo.startsWith(padre.endsWith(path.sep) ? padre : padre + path.sep);
+  const ocupadas = vivas.cwds.map(real);
+  if (!repos) {
+    repos = [RAIZ, path.join(require('./state-dir.js').claudeDir(home), 'agent-skills')];
+    let roots = [];
+    try { roots = require(path.join(RAIZ, 'scripts', 'lib', 'repos-root.js')).resolveReposRoot(undefined, { env, home }).roots || []; } catch { /* sin raíz: sólo los del arnés */ }
+    const hijos = (d) => { try { return fs.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules').map((e) => path.join(d, e.name)); } catch { return []; } };
+    for (const r of roots) for (const a of hijos(r)) { repos.push(a); for (const b of hijos(a)) repos.push(b); }
+  }
+  // sólo un repo principal (`.git` carpeta): sus worktrees salen de su lista, estén donde estén
+  const principales = [...new Set(repos.filter((r) => { try { return fs.statSync(path.join(r, '.git')).isDirectory(); } catch { return false; } }).map(real))];
+  let sinMirar = 0;
+  const carpetas = new Map();
+  for (const [i, l] of (await enTanda(principales, (r) => gitRaw(r, ['worktree', 'list', '--porcelain']))).entries()) {
+    if (l.tarde) { sinMirar += 1; continue; }
+    if (!l.out) continue;
+    for (const b of l.out.split(/\n\n+/).map((x) => x.split('\n')).slice(1)) {   // el primero es el checkout principal
+      const dir = (b.find((x) => x.startsWith('worktree ')) || '').slice(9);
+      if (!dir || b.some((x) => x.startsWith('prunable')) || !fs.existsSync(dir)) continue;
+      const rdir = real(dir);
+      if (carpetas.has(rdir) || ocupadas.some((c) => dentro(c, rdir))) continue;
+      const rama = (b.find((x) => x.startsWith('branch ')) || '').replace(/^branch (refs\/heads\/)?/, '');
+      carpetas.set(rdir, { dir, rama, orden: i });
+    }
+  }
+  const lista = [...carpetas.values()];
+  const estados = await enTanda(lista, (c) => gitRaw(c.dir, ['status', '--porcelain', '-z', '--untracked-files=normal']));
+  const items = [];
+  lista.forEach((c, k) => {
+    const st = estados[k];
+    if (st.tarde) { sinMirar += 1; return; }
+    if (st.error) { items.push({ cuando: -1, texto: `${legible(c.dir)}: no pude ver si tiene cambios sin commitear` }); return; }
+    const entradas = st.out.split('\0');
+    const archivos = [];
+    for (let i = 0; i < entradas.length; i += 1) {
+      const e = entradas[i];
+      if (!e.trim()) continue;
+      archivos.push(e.slice(3));
+      if (/[RC]/.test(e.slice(0, 2))) i += 1;   // un renombre o una copia traen su origen en la entrada siguiente
+    }
+    if (!archivos.length) return;
+    const fechas = archivos.map((f) => { try { return fs.lstatSync(path.join(c.dir, f)).mtimeMs; } catch { return NaN; } }).filter(Number.isFinite);
+    items.push({ cuando: fechas.length ? Math.max(...fechas) : -1, texto: `${legible(c.dir)} (${c.rama ? `rama ${legible(c.rama)}` : 'sin rama'}): ${archivos.length} archivo${archivos.length === 1 ? '' : 's'} sin commitear${fechas.length ? `, sin tocar hace ${hace(Math.max(...fechas), now)}` : ''}; ninguna sesión viva trabaja ahí` });
+  });
+  // lo tocado más recién primero: lo que se acaba de perder pesa más que lo que lleva semanas así
+  const lines = items.sort((a, b) => b.cuando - a.cuando).slice(0, MAX_LINEAS).map((i) => i.texto);
+  if (items.length > MAX_LINEAS) lines.push(`y ${items.length - MAX_LINEAS} más`);
+  if (sinMirar) lines.push(`${sinMirar} sin mirar: ${SIN_TIEMPO}`);
+  return lines;
+}
+
+/**
  * Lo que /wip y la oficina saben de un camino corto sin salir a la red: de la foto vigente, { pedido } o { entro }; la
  * falla que la foto guardó, o la de git, como { error }; null sin foto (lo único que faltó fue preguntar) o sin pedido.
  * La rama ya en main sí se mira con git.
@@ -284,4 +370,4 @@ function adhocFromPhoto(adhoc, { home = os.homedir(), stateDir, now = Date.now()
   return s ? (s.error ? { error: s.error } : s) : null;
 }
 
-module.exports = { runState, adhocState, stopLines, machine, adhocFromPhoto, hace, TOPE_MS, FOTO_MS, PREFIJO };
+module.exports = { runState, adhocState, stopLines, machine, unsavedFolders, adhocFromPhoto, hace, TOPE_MS, FOTO_MS, PREFIJO };
