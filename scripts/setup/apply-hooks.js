@@ -943,7 +943,7 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
   const where = settingsPath;
   const outOfReport = env.TYCON_REPORT_PIECES ? r.present.filter((id) => !reportableHookId(id, env)) : [];
   if (outOfReport.length) {
-    process.stdout.write(`tycon: ${outOfReport.length} hook(s) con un prefijo que quien me lanzó no declara entender no van al informe ` +
+    process.stdout.write(`tycon: ${outOfReport.length} hook(s) con un prefijo o un evento que quien me lanzó no declara entender no van al informe ` +
       `(siguen registrados): ${outOfReport.join(', ')}\n`);
   }
   appendLines(env.TYCON_REPORT_PIECES, [

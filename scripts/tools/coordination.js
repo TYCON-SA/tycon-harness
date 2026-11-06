@@ -784,9 +784,22 @@ function claudeLauncher(ctx = {}, what = 'no abrí la sesión') {
   if (platform !== 'win32') return { bin: 'claude', prefix: [] };
   const win = path.win32;
   const exists = ctx.exists || ((f) => { try { return fs.statSync(f).isFile(); } catch { return false; } });
-  const w = require(path.join(SKILL_LIB, 'portable-tools.js')).windowsLookup('claude', { env: ctx.env || process.env, exists });
+  const env = ctx.env || process.env;
+  const { windowsLookup } = require(path.join(SKILL_LIB, 'portable-tools.js'));
+  // en Windows el nombre de una variable no distingue mayúsculas
+  const envGet = (name) => { const k = Object.keys(env).find((x) => x.toLowerCase() === name.toLowerCase() && env[x]); return k === undefined ? undefined : env[k]; };
+  let w = windowsLookup('claude', { env, exists });
+  // la extensión de VS Code lanza la sesión sin la carpeta de npm en el PATH: después del PATH, donde dejan claude npm
+  // y el instalador nativo. Sólo carpetas absolutas y sin «;»: la búsqueda parte por «;», y lo de después sería una ruta
+  // relativa, la carpeta de la sesión
+  const extra = [[envGet('APPDATA'), 'npm'], [envGet('USERPROFILE'), '.local', 'bin']]
+    .filter(([base]) => base && /^[A-Za-z]:\\[^;]*$/.test(String(base))).map((p) => win.join(...p));
+  for (const dir of extra) {
+    if (w && (w.exe || w.script)) break;
+    w = windowsLookup('claude', { env: { PATH: dir, PATHEXT: envGet('PATHEXT') || '' }, exists });
+  }
   if (w && w.exe) return { bin: w.exe, prefix: [] };
-  if (!w || !w.script) return { error: `Claude Code no está instalado en esta máquina (no encontré claude): ${what}.` };
+  if (!w || !w.script) return { error: `Claude Code no está instalado en esta máquina (no encontré claude en el PATH${extra.length ? `, en ${extra.join(' ni en ')}` : ''}): ${what}.` };
   const unreadable = { error: `encontré ${w.script} pero no pude leer a qué programa apunta: ${what}.` };
   let text;
   try { text = String((ctx.read || ((f) => fs.readFileSync(f, 'utf8')))(w.script)); } catch { return unreadable; }
