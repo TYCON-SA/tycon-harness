@@ -1082,10 +1082,12 @@ function leerArmado(expr, script, argv) {
  */
 function destinosArmados(cmd, guiones = scriptsInline(cmd)) {
   const vistos = new Map();
-  for (const { script, argv } of guiones) {
+  for (const [n, { script, argv }] of guiones.entries()) {
+    // la misma expresión en dos guiones es otro destino: `p` vale lo que asigna cada guion
     const add = (e) => {
       const x = String(e || '').trim();
-      if (x && !DESTINO_LITERAL.test(x) && !vistos.has(x)) vistos.set(x, { expr: x, ...leerArmado(x, script, argv) });
+      const clave = `${n}\u0000${x}`;
+      if (x && !DESTINO_LITERAL.test(x) && !vistos.has(clave)) vistos.set(clave, { expr: x, ...leerArmado(x, script, argv) });
     };
     const llamadas = (re, quePasa) => {
       for (const m of script.matchAll(re)) {
@@ -3610,12 +3612,31 @@ function handleCarrilEHistoria(event, opts = {}) {
       return { block: require('./lib/story-gate.js').storyByConsoleMessage(historias, `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}`) + '\n' };
     }
   }
-  if (!targets.length) return null;
+  // Lo que un guion escribe a un destino armado (`p = 'src/x.js'` y después `open(p, 'w')`): la ruta que se lee de su
+  // asignación o de sus argumentos es un destino más. La que no se lee se juzga abajo, como código en la carpeta donde
+  // corre, cuando no hay carril ni ejecución abiertos. Sin esto, sin carril, sólo frenaban las rutas escritas a la vista.
+  const armadosAbs = [];
+  const armadosSinLeer = [];
+  for (const a of destinosArmados(cmd)) {
+    const lits = a.literal ? [a.literal] : (a.literales || []);
+    if (lits.length) {
+      for (const l of lits) {
+        const ex = expandirRuta(cmd, l);
+        // con una variable que no se resuelve (`"$F"` sin definir) la ruta no se lee: puede ser cualquier archivo
+        if (ex.sinResolver.length) armadosSinLeer.push(l);
+        else armadosAbs.push(resolveTarget(ex.valor, cwd, process.platform, { homeVariable: true }));
+      }
+      continue;
+    }
+    if (a.ext && !isCodeFile(`x${a.ext}`) && !isManifestFile(a.cola)) continue;
+    armadosSinLeer.push(a.expr);
+  }
+  if (!targets.length && !armadosAbs.length && !armadosSinLeer.length) return null;
 
   const sessionId = resolveSessionId(event?.session_id);
   // Con las variables del comando (y del ambiente) expandidas; lo no resuelto queda anotado para el mensaje
   const resueltos = destinosResueltos(cmdDestinos, cwd, process.platform, { keep });
-  const absTargets = resueltos.map((d) => d.abs);
+  const absTargets = [...new Set([...resueltos.map((d) => d.abs), ...armadosAbs])];
   const sinResolverDe = new Map(resueltos.filter((d) => d.sinResolver.length).map((d) => [d.abs, d]));
   // Antes de decidir y aunque los frenos estén apagados: dónde escribió la consola es un dato de la
   // corrida, no una decisión del freno.
@@ -3630,6 +3651,14 @@ function handleCarrilEHistoria(event, opts = {}) {
     // destinos ya leídos van todos al portón, que decide
     let delegado = false;
     try { const a = io.readAdhoc(stateDir, sessionId); delegado = !!(a && a.via === 'delegacion'); } catch (e) { logHookError(e); }
+    // un destino armado que no se lee puede ser cualquier archivo: se le pregunta al portón como si fuera código de la
+    // carpeta donde corre, y frena lo que no tiene carril y la ejecución a la que le falta una pieza (no dependen del
+    // archivo). Con un carril o una ejecución sana pasa: no se sabe qué archivo es, y no se gasta el cupo con uno inventado
+    if (armadosSinLeer.length) {
+      const r = io.evaluate({ filePath: path.join(cwd, 'destino-armado.js'), sessionId, cwd, stateDir, installedRoots,
+        via: `${via} (un guion escribe a una ruta que no se puede leer: ${armadosSinLeer.map((x) => String(x).slice(0, 60)).join(', ')})` });
+      if (r.verdict.action === 'block' && (r.verdict.kind === 'no-lane' || r.verdict.kind === 'ejecucion-perdida')) return { block: r.message + '\n' };
+    }
     for (const abs of absTargets) {
       // un destino con una variable sin resolver PUEDE ser código aunque su ruta cruda no tenga la extensión
       // (`cat > $F`, `src/x.$EXT`): para el registro cuenta como código

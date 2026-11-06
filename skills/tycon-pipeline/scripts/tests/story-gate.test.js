@@ -1024,3 +1024,46 @@ test('T51 StoryGate_EnlaceAlBuzon_Frena @story-8.183 @ac-20: un enlace (blando o
     }
   });
 });
+
+// Un guion que escribe a una ruta guardada en una variable, sin carril: la ruta que se lee de su asignación frena como
+// cualquier código; la que no se lee (reasignada, del ambiente) frena como código de la carpeta donde corre. Fuera de un
+// repo del arnés, a un archivo que no es código o con el carril firmado, pasa.
+// 🔴 mutación: sin sumar los destinos armados al portón → los tres primeros comandos pasan sin carril.
+test('on-bash-write-gate.handle: un guion que escribe a una ruta en una variable, sin carril, frena', () => {
+  const stateDir = tmpState();
+  const repo = mkRepo(true);
+  const ev = (command, cwd = repo, sid = 's220') => ({ tool_name: 'Bash', session_id: sid, cwd, tool_input: { command } });
+  const frena = (c, cwd) => { const r = bash.handle(ev(c, cwd), { stateDir, installedRoots: [] }); return !!(r && /CÓDIGO SIN CARRIL/.test(r.block)); };
+  const leida = "python3 - <<'PY'\np = 'src/Foo.cs'\nopen(p, 'w').write('x')\nPY";
+  // una variable reasignada entre una ruta de código y una que no lo es: en los dos órdenes, frena sólo si cuentan las dos
+  const reasignada = "python3 - <<'PY'\np = 'src/A.cs'\nopen(p, 'w').write('x')\np = 'notas.md'\nopen(p, 'w').write('y')\nPY";
+  const alReves = "python3 - <<'PY'\np = 'notas.md'\nopen(p, 'w').write('y')\np = 'src/A.cs'\nopen(p, 'w').write('x')\nPY";
+  const delAmbiente = "python3 -c \"import os; open(os.environ['F'], 'w').write('x')\"";
+  assert.ok(frena(leida), 'la ruta leída de la asignación');
+  assert.ok(frena(reasignada), 'una variable reasignada: cuentan sus dos rutas');
+  assert.ok(frena(alReves), 'en el otro orden, también');
+  // dos guiones del mismo comando con la misma variable: cada uno cuenta con lo que asigna
+  assert.ok(frena(`python3 -c "p='n.md';open(p,'w')" && python3 -c "p='src/A.cs';open(p,'w')"`), 'el segundo guion con la misma variable cuenta');
+  assert.ok(frena(delAmbiente), 'una ruta del ambiente no se lee: cuenta como código de la carpeta');
+  assert.ok(frena("python3 - <<'PY'\nimport os\nd = os.environ['D']\nopen(d + '/package.json', 'w').write('{}')\nPY"), 'armada con cola de manifiesto, frena');
+  assert.ok(frena(`python3 -c "import sys; open(sys.argv[1], 'w').write('x')" "$NO_DEFINIDA_220"`), 'una ruta con una variable sin definir no se lee, frena');
+  assert.ok(!frena("python3 - <<'PY'\np = 'notas.md'\nopen(p, 'w').write('x')\nPY"), 'a un archivo leído que no es código, pasa');
+  // no se lee, pero la cola dice que no es código: pasa
+  assert.ok(!frena("python3 - <<'PY'\nimport os\nd = os.environ['D']\nopen(d + '/notas.md', 'w').write('x')\nPY"), 'armada con cola .md, pasa');
+  // la ruta leída manda sobre la carpeta: una ruta fuera del repo, con la sesión parada en el repo, pasa
+  const afuera = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'afuera-')), 'x.cs');
+  assert.ok(!frena(`python3 - <<'PY'\np = '${afuera}'\nopen(p, 'w').write('x')\nPY`), 'la ruta leída fuera del repo, pasa');
+  const otro = mkRepo(false);
+  assert.ok(!frena(leida, otro), 'leída, fuera de un repo del arnés, pasa');
+  assert.ok(!frena(delAmbiente, otro), 'sin leer, fuera de un repo del arnés, pasa');
+  // con una ejecución abierta, lo que no se lee no frena por falta de carril
+  fs.writeFileSync(path.join(stateDir, 'active', 's220.json'), JSON.stringify({ storyId: '9.9', repoPath: repo, sessionId: 's220', stepsCompleted: [0, 1, 2, 3], stepsPending: [4, 5, 6, 7, 8] }));
+  assert.ok(!frena(delAmbiente), 'con ejecución abierta, no es «sin carril»');
+  fs.unlinkSync(path.join(stateDir, 'active', 's220.json'));
+  adhocFirmado(stateDir, 's220', { reason: 'hotfix x', files: [], declaredAt: new Date().toISOString(), lastTouch: new Date().toISOString() });
+  assert.ok(!frena(delAmbiente), 'sin leer, con el carril firmado, pasa');
+  // con el carril firmado y el cupo lleno, lo que no se lee tampoco frena: no se sabe qué archivo es
+  io.writeAdhoc(stateDir, 's220', { ...io.readAdhoc(stateDir, 's220'), maxFiles: 1, files: [path.join(repo, 'src', 'Otro.cs')] });
+  assert.ok(!bash.handle(ev(delAmbiente), { stateDir, installedRoots: [] }), 'el cupo lleno no frena lo que no se lee');
+  assert.ok(!frena(leida), 'leída, con el carril firmado, pasa');
+});
