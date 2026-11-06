@@ -212,6 +212,17 @@ test('T9 ConfigSet_AutoConFrenoViejo_NoLoEscribe @story-8.149 @ac-11 — con un 
   assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /no reconozco cómo declara «response\.language».*install-guard\.sh/s);
   assert.doesNotMatch(r.stderr, /no acepta/);
+  // la sección y la clave se buscan como texto, no como expresión regular: un punto no encaja con otra letra y un
+  // paréntesis no rompe la búsqueda
+  const C = require(LIB);
+  const freno = path.join(dir, 'nuevo.js');
+  assert.strictEqual(C.guardAccepts(freno, 'response', 'language', 'auto'), true, 'la forma de siempre se reconoce');
+  assert.strictEqual(C.guardAccepts(freno, 'respo.se', 'langua.e', 'auto'), false, 'un punto no encaja con «n» ni con «g»');
+  assert.strictEqual(C.guardKnows(freno, 'respo.se', 'langua.e'), false);
+  assert.doesNotThrow(() => C.guardKnows(freno, 'response(', 'language'));
+  assert.strictEqual(C.guardKnows(freno, 'response(', 'language'), false);
+  assert.doesNotThrow(() => C.guardAccepts(freno, 'response', 'language)', 'auto'));
+  assert.notStrictEqual(C.guardAccepts(freno, 'response', 'language)', 'auto'), true);
   // con el freno de ahora, auto se escribe
   const h2 = casa();
   r = set(h2, 'auto', 'nuevo.js');
