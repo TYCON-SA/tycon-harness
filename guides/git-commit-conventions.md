@@ -134,8 +134,10 @@ entradas a `main` entre los dos repos del arnés.
 
 - **Azure DevOps**: un pedido a `main` armado a mano con auto-completar dice explícito si borra la rama:
   `--auto-complete true --squash false --delete-source-branch true`. `false` sólo desde una rama de larga vida (`dev`,
-  `develop`, `main`, `master`, la lista de §9b.4 del paso de merge), y escrita en `--source-branch`. El freno de
-  pedidos lo exige; el skill de merge ya lo hace solo.
+  `develop`, `main`, `master`, la lista de §9b.4 del paso de merge), y escrita en `--source-branch`; `true` desde una
+  de esas ramas la borraría. Un `az repos pr update` no dice la rama de origen: para publicar un borrador va
+  `--delete-source-branch false`, y con `true` el freno frena. El freno de pedidos lo exige; el skill de merge ya lo
+  hace solo.
 - **GitHub** (tarea humana, una vez por repo, la hace quien administra el repo): prender
   **«Automatically delete head branches»** en **Settings → General → Pull Requests**. Ahí no hay bandera que el arnés
   pueda pedir: lo borra la plataforma.

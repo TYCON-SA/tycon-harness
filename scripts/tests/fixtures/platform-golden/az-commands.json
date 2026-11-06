@@ -75,7 +75,7 @@
     "* Al ACTUALIZAR no se puede acotar igual: `az repos pr update` identifica el PR por número y **no",
     "* QUÉ HACE. Para cada `az repos pr create` del comando —cada uno con SUS banderas, aunque vengan",
     "* `az repos pr create` suelto: sin `--auto-complete true` (el PR",
-    "* resultado: un `az repos pr update` que APAGUE el auto-complete o PRENDA el squash, y el que",
+    "* además las otras dos puertas al mismo resultado: un `az repos pr update` que APAGUE el auto-complete o PRENDA el",
     "TYCON_PR_BY_HAND=1 az repos pr ...",
     "az repos pr create ... --source-branch <rama> --auto-complete true --squash false --delete-source-branch true"
   ],

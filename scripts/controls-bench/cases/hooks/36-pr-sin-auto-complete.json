@@ -355,8 +355,52 @@
         },
         {
           "id": "deja-publicar-un-borrador-con-las-dos-banderas",
-          "_por_que": "Con la tercera (8.164): publicar un borrador también dice si borra la rama. El id queda como estaba: lo nombra la línea de base del banco.",
+          "_por_que": "Con la tercera (8.164): publicar un borrador también dice si borra la rama, y en `false`: el update no dice la rama, así que con `true` frena. El id queda como estaba: lo nombra la línea de base del banco.",
           "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr update --id 5 --draft false --auto-complete true --squash false --delete-source-branch false"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "bloquea-borrar-dev-al-entrar",
+          "_por_que": "8.164: con --delete-source-branch true desde dev, la plataforma borraría dev al completar el pedido, sin vuelta atrás.",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --org https://x --project P --repository R --source-branch dev --target-branch main --title t --auto-complete true --squash false --delete-source-branch true"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": ["borraría `dev`"]
+          }
+        },
+        {
+          "id": "bloquea-borrar-la-rama-sin-escribirla",
+          "_por_que": "8.164: con --delete-source-branch true y sin --source-branch, az toma la rama actual, que puede ser dev.",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --org https://x --project P --repository R --target-branch main --title t --auto-complete true --squash false --delete-source-branch true"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": ["az toma la rama actual"]
+          }
+        },
+        {
+          "id": "bloquea-el-update-que-borra-la-rama",
+          "_por_que": "8.164: el update no dice la rama de origen; con --delete-source-branch true el freno no puede ver si borraría dev (consultar a Azure es la 8.225).",
+          "type": "must-block",
           "stdin": {
             "tool_name": "Bash",
             "tool_input": {
@@ -364,7 +408,8 @@
             }
           },
           "expect": {
-            "exit": 0
+            "exit": 2,
+            "stderr_re": ["el `update` no dice la rama de origen"]
           }
         },
         {

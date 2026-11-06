@@ -19,13 +19,15 @@
  *
  * QUÉ HACE. Para cada `az repos pr create` del comando —cada uno con SUS banderas, aunque vengan
  * varios encadenados— exige `--auto-complete true` y `--squash false` explícitos (sin el segundo la
- * estrategia la decide la política de la rama), y `--delete-source-branch` explícito: `true`, o `false` sólo desde
- * una rama de larga vida que se vea en `--source-branch` (sin borrarla, la rama queda viva después del merge; la
- * lista es la de §9b.4 del paso de merge). Cierra además las otras dos puertas al mismo
- * resultado: un `az repos pr update` que APAGUE el auto-complete o PRENDA el squash, y el que
- * PUBLIQUE un borrador (`--draft false`) sin llevar las tres banderas. Un `update` común no se juzga por la tercera:
- * az conserva la que el pedido ya tenía. Mira sólo el texto del
- * comando —nada de red— con el lector de scripts/lib/az-pr.js (`faltasDe`).
+ * estrategia la decide la política de la rama), y `--delete-source-branch` explícito: `true` desde una rama efímera
+ * que se vea en `--source-branch`, o `false` sólo desde una de larga vida (sin borrarla, la rama queda viva después
+ * del merge; con `true` desde `dev`, la plataforma la borraría; la lista es la de §9b.4 del paso de merge). Cierra
+ * además las otras dos puertas al mismo resultado: un `az repos pr update` que APAGUE el auto-complete o PRENDA el
+ * squash, y el que PUBLIQUE un borrador (`--draft false`) sin llevar las tres banderas. El `update` no dice la rama de
+ * origen: con `--delete-source-branch true` frena siempre, y para publicar va `false`. Un `update` común sin la
+ * bandera no se juzga por ella: az conserva la que el pedido ya tenía. Lo que no puede leer (un valor que arma la
+ * terminal, un comodín, un `@archivo`) es una falta. Mira sólo el texto del comando —nada de red— con el lector de
+ * scripts/lib/az-pr.js (`faltasDe`).
  *
  * QUÉ NO HACE. Un borrador recién creado no se toca (no se completa solo por definición) y lo dice.
  * `--help`, listar, mostrar y abandonar tampoco. Salida para el caso puntual —incluido el legítimo
@@ -255,7 +257,7 @@ const soloUpdates = problemas.every((p) => p.verbo === 'update');
 const esperaAprobacion = problemas.some((p) => p.verbo === 'create' && !az.esCierto(az.flagDe(p.seg, 'auto-complete')));
 const retiene = problemas.some((p) => p.verbo === 'update' && az.esFalso(az.flagDe(p.seg, 'auto-complete')));
 const formas = [
-  esperaAprobacion ? 'Si el pedido espera una aprobación, crealo en borrador (`--draft true`) y, cuando se apruebe, publicalo con `--draft false --auto-complete true --squash false --delete-source-branch true` (`false` sólo si la rama es dev, develop, main o master).' : null,
+  esperaAprobacion ? 'Si el pedido espera una aprobación, crealo en borrador (`--draft true`) y, cuando se apruebe, publicalo con `--draft false --auto-complete true --squash false --delete-source-branch false` (el `update` no dice la rama, así que con `true` frena; la rama se borra a mano o con el skill de merge).' : null,
   retiene ? 'Para retener una entrega ya encolada (apagar la entrada automática), el prefijo es la salida: `TYCON_PR_BY_HAND=1` pegado a ese mismo `update`.' : null,
 ].filter(Boolean);
 console.error(`🔴 Este pull request se está armando A MANO y no va a quedar bien${soloUpdates ? '' : ' (va a main)'}:

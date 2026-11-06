@@ -163,7 +163,7 @@ rc=$(corre "az repos pr \\
 # ---------------------------------------------------------------- 22. 🔴 publicar un borrador es la tercera puerta
 rc=$(corre "az repos pr update --id 5 --draft false")
 [ "$rc" -eq 2 ] && ok "🔴 publicar un borrador ('--draft false') sin las banderas BLOQUEA" || no "🔴 el camino borrador→publicar quedó abierto ($rc)"
-rc=$(corre "az repos pr update --id 5 --draft false --auto-complete true --squash false --delete-source-branch true")
+rc=$(corre "az repos pr update --id 5 --draft false --auto-complete true --squash false --delete-source-branch false")
 [ "$rc" -eq 0 ] && ok "…y publicarlo CON las tres banderas pasa" || no "🔴 bloqueó una publicación correcta ($rc)"
 
 # ---------------------------------------------------------------- 23. 🔴 código adentro de una cadena que ejecuta otro intérprete
@@ -243,7 +243,7 @@ while IFS='|' read -r esperado cmd; do
 done <<EOF
 paso|$BIEN
 ninguna|$BASE --draft true
-paso|az repos pr update $ORG --id 4919 --draft false --auto-complete true --squash false --delete-source-branch true
+paso|az repos pr update $ORG --id 4919 --draft false --auto-complete true --squash false --delete-source-branch false
 paso|az repos pr update $ORG --id 4920 --description "otra descripción"
 ninguna|az repos pr create $ORG -s feat/x -t dev --title t
 EOF
@@ -304,7 +304,7 @@ g(){ GIT_AUTHOR_DATE="2026-01-01T00:00:00Z" GIT_COMMITTER_DATE="2026-01-01T00:00
 g init -q -b main; g add -A; g commit -qm base; g update-ref refs/remotes/origin/main HEAD; g checkout -qb fix/instalador
 echo cambio > "$JUG/scripts/setup/instalar.js"; g commit -qam "toca el instalador"
 GH_AUTO='gh pr merge 77 --merge --auto'
-AZ_PUBLICA="az repos pr update $ORG --id 6081 --draft false --auto-complete true --squash false -o json"
+AZ_PUBLICA="az repos pr update $ORG --id 6081 --draft false --auto-complete true --squash false --delete-source-branch false -o json"
 
 # E1 — encolar un cambio del instalador pasa, y el freno no menciona pruebas ni deja constancia de otro freno
 limpia; rc=$(correEn "$JUG" "$GH_AUTO")
@@ -341,12 +341,58 @@ for caso in \
   "pasa|$AZM --source-branch story/x --delete-source-branch true" \
   "frena|az repos pr update --id 5 --draft false --auto-complete true --squash false" \
   "pasa|az repos pr update --id 5 --draft false --auto-complete true --squash false --delete-source-branch false" \
-  "pasa|az repos pr update --id 5 --auto-complete true --squash false"; do
+  "pasa|az repos pr update --id 5 --auto-complete true --squash false" \
+  "frena|$AZM --source-branch dev --delete-source-branch true" \
+  "frena|$AZM -s refs/heads/main --delete-source-branch true" \
+  "frena|$AZM -s DEV --delete-source-branch true" \
+  "frena|$AZM -s Refs/Heads/Master --delete-source-branch true" \
+  "frena|$AZM --delete-source-branch true" \
+  "frena|$AZM -s dev --delete-source-branch" \
+  "pasa|$AZM -s story/dev --delete-source-branch true" \
+  "pasa|$AZM -s dev-fix --delete-source-branch true" \
+  "pasa|$AZM -s feature/master --delete-source-branch true" \
+  "frena|$AZM -s story/dev --delete-source-branch false" \
+  "frena|$AZM -s story/x --delete-source-branch maybe" \
+  "frena|$AZM -s story/x --delete-source-branch 2" \
+  "frena|$AZM -s story/x --delete-source-branch=" \
+  "pasa|$AZM --sour dev -s story/x --delete-source-branch true" \
+  "frena|$AZM -s story/x --sour dev --delete-source-branch true" \
+  "pasa|$AZM -s dev --delete-source-branch true --delete-source-branch false" \
+  "frena|$AZM -s dev --delete-source-branch false --delete-source-branch true" \
+  "frena|$AZM -sdev --delete-source-branch true" \
+  "pasa|$AZM -sstory/x --delete-source-branch true" \
+  "frena|$AZM -s=dev --delete-source-branch true" \
+  "frena|$AZM --sour=dev --delete-source-branch true" \
+  "pasa|$AZM --sour=story/x --delete-source-branch true" \
+  "frena|$AZM -s story/x --delete-source-branch=true -s=main" \
+  "pasa|az repos pr create --org https://x --project P --repository R -tdev --title t -s story/x" \
+  "frena|az repos pr create --org https://x --project P --repository R -tmain --title t -s story/x" \
+  "frena|az repos pr create --org https://x --project P --repository R -t story/y --target main --title t -s story/x" \
+  "frena|$AZM -s \"\$BRANCH\" --delete-source-branch true" \
+  "frena|$AZM -s \"\$(echo dev)\" --delete-source-branch true" \
+  "frena|$AZM -s 'de*' --delete-source-branch true" \
+  "frena|$AZM -s 'de?' --delete-source-branch true" \
+  "frena|$AZM -s 'd[e]v' --delete-source-branch true" \
+  "frena|$AZM -s @rama.txt --delete-source-branch true" \
+  "frena|az repos pr create --org https://x --project P --repository R -t \"\$T\" --title t -s story/x --auto-complete true --squash false --delete-source-branch true" \
+  "frena|$AZM -s story/x --delete-source-branch \"\$B\"" \
+  "frena|az repos pr create --org https://x --project P --repository R --target-branch main --title t -s story/x --auto-complete \"\$A\" --squash false --delete-source-branch true" \
+  "frena|az repos pr create --org https://x --project P --repository R --target-branch main --title t -s story/x --auto-complete true --squash \"\$Q\" --delete-source-branch true" \
+  "frena|az repos pr update --id 5 --draft \"\$D\" --auto-complete true --squash false --delete-source-branch false" \
+  "frena|az repos pr create --org https://x --project P --repository R --target-branch main --title \$T -s story/x --auto-complete true --squash false --delete-source-branch true" \
+  "pasa|az repos pr create --org https://x --project P --repository R --target-branch main --title \"\$T\" -s story/x --auto-complete true --squash false --delete-source-branch true" \
+  "pasa|az repos pr create --org https://x --project P --repository R --target-branch main --title=x\"\$T\" -s story/x --auto-complete true --squash false --delete-source-branch true" \
+  "pasa|$AZM -s story/x --delete-source-branch true --description \"\$(cat x)\"" \
+  "pasa|$AZM -s story/x --delete-source-branch true --description @desc.md" \
+  "frena|az repos pr update --id 5 --draft false --auto-complete true --squash false --delete-source-branch true" \
+  "frena|az repos pr update --id 5 --delete-source-branch true" \
+  "frena|az repos pr update --id 5 --delete-source-branch" \
+  "frena|az repos pr update --id 5 --draft false --auto-complete true --squash false --delete-source true"; do
   esperado="${caso%%|*}"; cmd="${caso#*|}"
   rc=$(corre "$cmd")
   falta=$(node -e 'const az=require(process.argv[1]); const s=az.segmentos(process.argv[2])[0]; process.stdout.write(String(az.faltasDe(s).faltas.length > 0))' "$AQUI/scripts/lib/az-pr.js" "$cmd" 2>/dev/null)
   if [ "$esperado" = frena ]; then
-    [ "$rc" -eq 2 ] && grep -q -- "--delete-source-branch" "$TMP/err.txt" && [ "$falta" = true ] \
+    [ "$rc" -eq 2 ] && [ "$falta" = true ] \
       && ok "8.164-SinBorrarRama_Frena frena y faltasDe coincide: $cmd" || no "8.164-SinBorrarRama_Frena dejó pasar o no nombró la bandera ($rc, faltasDe=$falta): $cmd"
   else
     [ "$rc" -eq 0 ] && [ "$falta" = false ] \
@@ -356,6 +402,18 @@ done
 corre "$AZM --source-branch story/x" >/dev/null
 grep -q -- "--auto-complete true --squash false --delete-source-branch" "$TMP/err.txt" \
   && ok "8.164-SinBorrarRama_Frena el mensaje trae el comando con las tres banderas" || no "8.164-SinBorrarRama_Frena el mensaje no trae las tres banderas juntas"
+# Un `update` no dice la rama: la falta pide `false` (o el skill, o el escape) y no recomienda `true`, que también frena.
+for cmd in "az repos pr update --id 5 --draft false --auto-complete true --squash false" \
+           "az repos pr update --id 5 --draft false --auto-complete true --squash false --delete-source-branch true"; do
+  texto=$(node -e 'const az=require(process.argv[1]); process.stdout.write(az.faltasDe(az.segmentos(process.argv[2])[0]).faltas.join(" | "))' "$AQUI/scripts/lib/az-pr.js" "$cmd" 2>/dev/null)
+  echo "$texto" | grep -- '--delete-source-branch false' >/dev/null && ! echo "$texto" | grep 'Va en `true`' >/dev/null \
+    && ok "8.164-SinBorrarRama_Frena la falta de un update pide false y no recomienda true: ${cmd:26:60}" \
+    || no "8.164-SinBorrarRama_Frena la falta de un update no pide false o recomienda true («${texto}»): ${cmd:26:60}"
+done
+# Lo que no se puede leer se nombra: el aviso dice cuál valor no pudo leer.
+corre "$AZM -s \"\$BRANCH\" --delete-source-branch true" >/dev/null
+grep -q 'no puedo leer' "$TMP/err.txt" && grep -q -- '\$BRANCH' "$TMP/err.txt" \
+  && ok "8.164-SinBorrarRama_Frena un origen ilegible se nombra en el aviso" || no "8.164-SinBorrarRama_Frena el aviso no nombra el valor ilegible: $(head -c 300 "$TMP/err.txt")"
 rm -f "$HOME/.claude/.tycon-pipeline/bypass.log"
 rc=$(corre "TYCON_PR_BY_HAND=1 $AZM --source-branch story/x")
 [ "$rc" -eq 0 ] && grep -q "PR_A_MANO" "$HOME/.claude/.tycon-pipeline/bypass.log" 2>/dev/null \
