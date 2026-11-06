@@ -188,6 +188,12 @@ al terminar, ves que quedó con sólo mirar el resultado y sus pruebas, sin una 
   También va por historia lo que necesita varias sesiones o espera a alguien de afuera.
 - **Si el camino rápido crece**, se cierra el carril, el código queda en su rama y se escribe la historia que lo
   retoma.
+- **Si cambia de dónde sale un dato o quién lo puede ver** (permisos, roles, la seguridad de un proceso), va por
+  historia aunque sea chico. Al abrir el camino rápido, la sesión lo responde (`"datos": "sin-cambio"` o `"cambian"`;
+  con «cambian» no abre). Al guardar, un freno busca en las líneas que el carril cambió las señales que declara el
+  paquete del stack: una llamada a un proceso, un chequeo de rol, la autorización de un endpoint. Con una, no guarda.
+  Lo destraba sólo el click del dueño, en un cuadro «Sí, aprobar» (dejar pasar) o «No» (historia, o descartar). Ante la
+  duda, historia.
 
 **2. ¿Quién aprueba? Lo decide el riesgo.**
 

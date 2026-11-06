@@ -12,6 +12,7 @@
  *                             después no es de la rama); sin base, lo anotado, lo preparado y lo cambiado contra HEAD, con
  *                             el aviso de que la rama no se midió.
  *   propiosDelCarril(adhoc)   lo que el arreglo cambió de verdad, contra la rama de integración más cercana.
+ *   basePropia(repo, adhoc)   el commit contra el que se mide lo propio de ese repo: `{ sha, aviso? }`.
  *   cuentaDelCarril(adhoc)    `{ archivos, avisos, fallas }`: de lo propio, lo que suma para el tope.
  *   marcaSinSustento(…)       ¿la marca de riesgo alto nombra un archivo que ya no es del carril?
  *   huellaDelCarril(adhoc)    el sha256 del contenido de sus archivos de código, en cada repo: un cambio después de una
@@ -426,4 +427,4 @@ function huellaDelCarril(adhoc) {
 /** ¿La huella sirve para una constancia? Una incompleta, no. */
 const huellaCompleta = (h) => typeof h === 'string' && !h.startsWith('incompleta:');
 
-module.exports = { traerBase, conBase, conBasesAlDia, marcaSinSustento, reposDelCarril, archivosDelCarril, propiosDelCarril, cuentaDelCarril, sigueElRepo, sinExpandir, huellaDelCarril, huellaCompleta, raizDe, ubicar, RAMA };
+module.exports = { traerBase, conBase, conBasesAlDia, marcaSinSustento, reposDelCarril, archivosDelCarril, propiosDelCarril, basePropia, cuentaDelCarril, sigueElRepo, sinExpandir, huellaDelCarril, huellaCompleta, raizDe, ubicar, RAMA };

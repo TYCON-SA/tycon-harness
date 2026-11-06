@@ -384,6 +384,17 @@ named `tests`, `e2e`, `cypress` or `playwright` counts as a test, and asks for n
 save in another folder is charged the limit of the session's branch: if it really is not part of that fix, choose with the click.
 And in a repo with no commits, a file with `git add -N` that goes up with `git commit -a` does not get the high-risk mark.
 
+**A change to the data is not a short path.** On opening, the session answers whether the change alters where a piece of
+data comes from or who can see it (`"datos": "sin-cambio"` or `"cambian"`); with «cambian» it does not open, and an open
+lane does not change. On saving, the brake looks for the stack pack's signals (a call to a process, a role check, an
+endpoint's authorization) in the lines the lane adds or removes, each repo against its own base, and with one it does not
+save. If the session thinks it is a false positive, it runs `marker.js adhoc allow-data-change --changed "<what changed>"
+--recommends <pasar|historia|descartar> --why "<why>"` and sends you the question the brake gives it: what stopped it,
+with the line's text, what really changed and what it recommends. The signature is `adhoc-lane:datos`, and only the
+owner's click approves it, in their tab or in yours: «Sí, aprobar» lets it through, and «No» sends the session to write the
+story, or to discard what the lane did if the owner says so. A written «aprobado», the permission window and delegation do
+not count. The click covers those signals: another line with a signal stops it again. When in doubt, a story.
+
 **With the mockup and the screenshot, what was built is compared with the mockup.** It compares texts, not the drawing: if a
 text of the mockup is not in the fix's screens or in the other screens of its repos, it does not save. A text that already
 exists in another screen passes, even if the fix did not build it. A difference is declared in `<mockup>-diferencias.md`,

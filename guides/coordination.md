@@ -370,6 +370,17 @@ maqueta. Con un carril sin nada anotado, un guardado en otra carpeta cobra el to
 ese arreglo, se elige con el click. Y en un repo sin commits, un archivo con `git add -N` que sube con `git commit -a` no lleva
 la marca de riesgo.
 
+**Un cambio de los datos no es camino corto.** Al abrir, la sesión responde si el cambio cambia de dónde sale un dato o
+quién lo puede ver (`"datos": "sin-cambio"` o `"cambian"`); con «cambian» no abre, y un carril abierto no cambia. Al
+guardar, el freno busca en las líneas que el carril agrega o borra las señales del paquete del stack (una llamada a un
+proceso, un chequeo de rol, la autorización de un endpoint), cada repo contra su base, y con una no guarda. Si la sesión
+cree que es un falso positivo, corre `marker.js adhoc allow-data-change --changed "<qué cambió>" --recommends
+<pasar|historia|descartar> --why "<por qué>"` y te manda la pregunta que le da el freno: qué lo frenó, con el texto de la
+línea, qué cambió de verdad y qué recomienda. La firma es `adhoc-lane:datos` y la aprueba sólo el click del dueño, en su
+pestaña o en la tuya: «Sí, aprobar» la deja pasar, y «No» manda a la sesión a escribir la historia, o a descartar lo del
+carril si el dueño lo dice. No vale un «aprobado» escrito, la ventana ni la delegación. El click cubre esas señales: otra
+línea con una señal frena de nuevo. Ante la duda, historia.
+
 **Con la maqueta y la captura, lo construido se compara con la maqueta.** Compara textos, no el dibujo: si un texto de la
 maqueta no está en las pantallas del carril ni en las demás de sus repos, no guarda. Un texto que ya existe en otra pantalla
 pasa, aunque el arreglo no lo haya construido. Una diferencia se declara en `<maqueta>-diferencias.md`, con

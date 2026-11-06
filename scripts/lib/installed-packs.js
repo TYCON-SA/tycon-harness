@@ -25,7 +25,7 @@
  *
  * Uso:
  *   const { leerPaquetes, prefijosDePaquetes } = require('./lib/installed-packs.js');
- *   leerPaquetes()  → { dir, paquetes: [{ nombre, dir, archivo, descripcion, guias, revisores: [{ agente, grupo, prefijos }], hermanos: [{ ruta, nombre }] }], errores: [{ archivo, motivo }] }
+ *   leerPaquetes()  → { dir, paquetes: [{ nombre, dir, archivo, descripcion, guias, revisores: [{ agente, grupo, prefijos }], hermanos: [{ ruta, nombre }], senales: [...] }], errores: [{ archivo, motivo }] }
  *   prefijosDePaquetes() → { PREFIJO: agente }   (lo usa scripts/instincts/instinct-draft.js; harness-audit.js recorre leerPaquetes())
  *   siblingsFromPacks() → [{ ruta, nombre }]   (los hermanos del corral del banco; lo usa controls-bench/advisor-runner.js)
  *
@@ -121,6 +121,9 @@ function leerPaquetes({ packsDir, explicito } = {}) {
       agentes: path.join(carpeta, typeof json.agents === 'string' && json.agents ? json.agents : 'agents'),
       revisores,
       hermanos: hermanos.lista,
+      // las señales del camino corto, tal como las declara (una que no es lista también): las valida
+      // skills/tycon-pipeline/scripts/lib/source-signals.js, que avisa lo roto
+      senales: json.shortPathSignals == null ? [] : json.shortPathSignals,
     });
   }
   return out;
