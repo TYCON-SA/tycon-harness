@@ -1455,7 +1455,7 @@ test('T27 Cuadro_NoSeDelegaNiVaPorVentanaDeFondo @story-8.196 @ac-13', () => {
     const r = spawnSync('node', [path.join(SCRIPTS, 'marker.js'), ...ALLOW('pasar')], { encoding: 'utf8',
       env: conVentana({ ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: 'ses-c3' }, o) });
     assert.notEqual(r.status, 0, r.stderr);
-    assert.match(r.stderr, /click del dueño/);
+    assert.match(r.stderr, /click de una persona/);
     assert.strictEqual(declaracion(home, 'ses-c3').datosPermitido, undefined);
   }
 });

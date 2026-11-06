@@ -5795,7 +5795,7 @@ function cmdAdhocAllowDataChange(io) {
   if (!a) { console.error('marker.js adhoc allow-data-change: no hay un camino corto abierto en esta sesión.'); process.exit(1); }
   const f = a.frenoDatos;
   if (!f || !f.huella) { console.error('marker.js adhoc allow-data-change: no hay un freno de datos que destrabar en este carril: lo anota el freno de guardar cuando frena.'); process.exit(1); }
-  if (a.datosPermitido && a.datosPermitido.huella === f.huella) { process.stdout.write('adhoc: el dueño ya dejó pasar este cambio; guardá como siempre.\n'); process.exit(0); }
+  if (a.datosPermitido && a.datosPermitido.huella === f.huella) { process.stdout.write('adhoc: una persona ya dejó pasar este cambio; guardá como siempre.\n'); process.exit(0); }
   if (v.recommends === 'historia') {
     process.stdout.write([
       'Escribí la historia: un cambio que cambia de dónde sale un dato o quién lo ve no es camino corto, aunque sea corto.',
@@ -5843,20 +5843,20 @@ function cmdAdhocAllowDataChange(io) {
     resumen: enUnRenglon(`dejar pasar el freno de los datos de la sesión ${SID}${h ? `: ${ss.descripcion(h)}` : ''} · qué cambió: «${v.changed}» · la sesión recomienda pasar, porque «${v.why}»`),
     propia: PROPIA, anotar: (renglon) => appendLog('gates.log', renglon) });
   if (r.codigo !== 0) {
-    console.error(`🔒 marker.js adhoc allow-data-change: el dueño no lo dejó pasar — ${r.motivo}`);
-    console.error('   Lo deja pasar sólo el click del dueño, en esta pestaña o en la de la coordinadora: pedíselo a ella con la pregunta que te da el freno, o en su terminal:');
+    console.error(`🔒 marker.js adhoc allow-data-change: una persona no lo dejó pasar — ${r.motivo}`);
+    console.error('   Lo deja pasar sólo el click de una persona, en esta pestaña o en la de la coordinadora: pedíselo a ella con la pregunta que te da el freno, o en su terminal:');
     console.error(`     node ${citar(__filename)} adhoc allow-data-change --changed ${citar(v.changed)} --recommends pasar --why ${citar(v.why)} --terminal --for-session ${citar(SID)}`);
     process.exit(r.codigo === 2 ? 2 : 1);
   }
   if (!['click', 'terminal'].includes(r.via)) {
-    console.error(`🔒 marker.js adhoc allow-data-change: esto lo aprueba sólo el click del dueño o su terminal, y volvió por ${r.via}; no anoté nada.`);
+    console.error(`🔒 marker.js adhoc allow-data-change: esto lo aprueba sólo el click de una persona o su terminal, y volvió por ${r.via}; no anoté nada.`);
     process.exit(1);
   }
   const at = nowIso();
   io.writeAdhoc(STATE_DIR, SID, { ...a, datosPermitido: { huella: f.huella, hallazgos: (f.hallazgos || []).slice(0, 5), cambio: v.changed, recomienda: v.recommends, porque: v.why, via: r.via, by: r.sesion || SID, at } });
   appendLog('adhoc.log', { kind: 'ADHOC_DATA_ALLOWED', huella: f.huella, senal: h ? h.id : null, archivo: h ? `${h.file}${h.line ? `:${h.line}` : ''}` : null,
     cambio: v.changed, recomienda: v.recommends, porque: v.why, via: r.via, by: r.sesion || SID });
-  process.stdout.write('adhoc: el dueño dejó pasar este cambio de datos; guardá como siempre. Si el carril toca otra señal, frena de nuevo.\n');
+  process.stdout.write('adhoc: una persona dejó pasar este cambio de datos; guardá como siempre. Si el carril toca otra señal, frena de nuevo.\n');
   process.exit(0);
 }
 

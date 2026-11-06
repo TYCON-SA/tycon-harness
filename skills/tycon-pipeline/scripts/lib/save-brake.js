@@ -1186,7 +1186,7 @@ function frenoDeDatos(a, sid, home, repos, { sinSeguir = false, cargar, medir } 
   if (!fuertes.length) return mostrar ? { mostrar } : null;
   const huella = ss.huella(fuertes);
   if (a.datosPermitido && a.datosPermitido.huella === huella) {
-    io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'ok', reason: `datos del carril: los dejó pasar el dueño (${huella})` });
+    io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'ok', reason: `datos del carril: los dejó pasar una persona (${huella})` });
     return mostrar ? { mostrar } : null;
   }
   io.writeAdhoc(dir, sid, { ...a, frenoDatos: { huella, hallazgos: fuertes.slice(0, 20), at: new Date().toISOString() } });
@@ -1196,7 +1196,7 @@ function frenoDeDatos(a, sid, home, repos, { sinSeguir = false, cargar, medir } 
   return { huella, texto: [
     `🔴 No guardo: esto cambia de dónde sale un dato o quién lo ve (${ss.descripcion(fuertes[0])}${mas}).`,
     `   Eso no es camino corto: va por historia, aunque sea corta. Ante la duda, historia.${a.datos === 'sin-cambio' ? ` Abriste el carril y declaraste que no («datos: sin-cambio»), y el cambio trae ${fuertes[0].says}.` : ''}`,
-    '   Si creés que es un falso positivo, lo decide el dueño con un click: pedíselo a la coordinadora con',
+    '   Si creés que es un falso positivo, lo decide una persona con un click: pedíselo a la coordinadora con',
     `   node ${marker} adhoc allow-data-change --changed "<qué cambió, en una frase>" --recommends <pasar|historia|descartar> --why "<por qué>"`,
   ].join('\n') };
 }
