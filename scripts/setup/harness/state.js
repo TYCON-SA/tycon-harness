@@ -221,12 +221,17 @@ function writeAtomic(file, text) {
   throw lastError;
 }
 
+// La guarda del candado la instala `lock.js` al cargarse (este archivo no lo carga: `lock.js` carga éste, y la copia
+// fija del programa lleva cada módulo después de los que pide). Quien tomó el candado ya cargó `lock.js`.
+let writeGuard = null;
+function setWriteGuard(fn) { writeGuard = typeof fn === 'function' ? fn : null; }
+
 /**
  * Escribe el estado (atómico). Sólo dentro de `lock.withLock`: ésa es la regla, no la impone este archivo. Lo que sí
  * mira: si este proceso tomó el candado y otro se lo pisó mientras estaba detenido, tira `TYCON_LOCK_LOST` y no escribe.
  */
 function write(home, state) {
-  require('./lock.js').assertStillMine(home);   // al llamarla: lock.js requiere este archivo
+  if (writeGuard) writeGuard(home);
   const { file } = paths(home);
   const out = Object.assign({}, state, { schema: Number.isInteger(state.schema) ? state.schema : SCHEMA });
   return writeAtomic(file, `${JSON.stringify(out, null, 2)}\n`);
@@ -257,4 +262,5 @@ function fail(status, extra = {}) {
 module.exports = {
   SCHEMA, FILE_NAME, SOURCE_VALUES, KINDS, TREE_SOURCE, LAYER_SOURCE,
   paths, defaults, firstInstall, read, write, writeAtomic, fail, kindOf, layerSources, releaseSource, isRelease,
+  setWriteGuard,
 };

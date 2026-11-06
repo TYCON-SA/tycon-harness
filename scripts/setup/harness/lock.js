@@ -38,7 +38,8 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { paths } = require('./state.js');
+const STATE = require('./state.js');
+const { paths } = STATE;
 
 const STALE_MS = 10 * 60 * 1000;       // huérfano por edad: dueño de otra máquina o ilegible, 10 minutos
 const HARD_STALE_MS = 2 * 60 * 60 * 1000;   // el tope para un dueño que parece vivo: un pid reusado sin reinicio
@@ -256,6 +257,8 @@ function assertStillMine(home = os.homedir()) {
   e.code = LOCK_LOST;
   throw e;
 }
+// toda grabación del estado pregunta por el candado (state.js no carga este archivo: se la instala éste)
+if (typeof STATE.setWriteGuard === 'function') STATE.setWriteGuard(assertStillMine);
 
 module.exports = {
   STALE_MS, HARD_STALE_MS, BOOT_MARGIN_MS, TAKEOVER_STALE_MS, UNREADABLE_MS, HELD_VAR,
