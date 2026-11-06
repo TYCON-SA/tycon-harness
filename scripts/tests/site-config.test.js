@@ -6425,6 +6425,22 @@ test('RevisionSemanal_ValorFueraDeRango_NoSePropone @story-2.58 @ac-2 — un val
   for (const [archivo, titulo] of [['organization-site.md', 'Revisión de la semana'], ['organization-site.en.md', 'Weekly review']]) {
     assert.strictEqual(WR_REPITE_LIMITE(WR_GUIA(archivo, titulo)), undefined, `${archivo} repite un límite del lector`);
   }
+  // dónde está el problema, con el nombre de su campo: el tope de material no se llama como el largo de las respuestas
+  const donde = await pantallaConPestanas({ secciones: TODAS.map((id) => SEC(id, id === 'sitio' ? { problems: [
+    { path: 'weekly_review.max_chars', message: 'x', sinCampo: true },
+    { path: 'response.max_chars', message: 'y', sinCampo: true },
+  ] } : {})) });
+  const lineas = []; const walk = (n) => { if (n.textContent) lineas.push(n.textContent); (n.hijos || []).forEach(walk); }; walk(donde.panelDe('seccion-sitio'));
+  const err = lineas.filter((t) => / › /.test(t)).join('\n');
+  assert.match(err, /Revisión de la semana › Tope de material, en caracteres: x/, err);
+  assert.match(err, /› Largo máximo de cada respuesta, en caracteres: y/, err);
+  // la tabla de nombres no repite claves: una clave repetida pisa en silencio a la otra
+  const fuente = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'org-config.js'), 'utf8');
+  const desde = fuente.indexOf('var PALABRAS = {');
+  const tabla = fuente.slice(desde, fuente.indexOf('\n  };', desde));
+  const claves = [...tabla.matchAll(/(?:^|[{,\s])'?([A-Za-z_][\w.]*)'?\s*:\s*T\(/g)].map((m) => m[1]);
+  assert.ok(claves.length > 50, `la tabla de nombres se leyó entera (${claves.length})`);
+  assert.deepStrictEqual(claves.filter((k, i) => claves.indexOf(k) !== i), [], 'sin claves repetidas en la tabla de nombres');
 });
 
 test('RevisionSemanal_VacioEsPorDefecto @story-2.58 @ac-3 — vaciar un campo saca su subclave; vaciar los tres saca weekly_review', async () => {
