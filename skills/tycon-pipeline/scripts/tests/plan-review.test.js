@@ -699,7 +699,20 @@ test('Aprobado_ParaOtraSesion_NoFirmaElPlanDeLaPestana', (t) => {
 });
 
 test('Delicado_ConAprobadoSinElPlanALaVista_RiesgoBajo_NoGastaLaAprobacion', (t) => {
+  // un plan sin «Qué hace» ni «Archivos»: el cuadro no los puede mostrar, y el plan entero tiene que estar a la vista
+  const lab = laboratorio(t, { sensible: 'seguridad', plan: '# Plan\n\n1. Tocar el README.md del repositorio de juguete.\n' });
+  aprobadoDelDueno(lab, preguntaDe(lab, lab.comando(APROBAR)));
+  const p = lab.pedir(lab.comando(APROBAR), { delegada: true });
+  assert.strictEqual(p.decision, 'deny', p.texto);
+  assert.match(p.texto, /aprobó sin ver el plan/);
+  assert.deepStrictEqual(fs.existsSync(path.join(oa.carpeta(lab.home), 'usadas')) ? fs.readdirSync(path.join(oa.carpeta(lab.home), 'usadas')) : [], []);
+});
+
+test('Delicado_ConAprobadoEscritoYQueHaceYArchivos_RiesgoBajo_NoGastaLaAprobacion', (t) => {
+  // el plan trae «Qué hace» y «Archivos», pero un «aprobado» escrito no pasó por el cuadro que los muestra: sólo el click
+  // cuenta como verlo, y la aprobación no se gasta
   const lab = laboratorio(t, { sensible: 'seguridad' });
+  assert.ok(!require(path.join(RAIZ, 'scripts', 'lib', 'signature-sources.js')).seccionesDelPlan(PLAN).error, 'el plan de juguete trae las dos secciones');
   aprobadoDelDueno(lab, preguntaDe(lab, lab.comando(APROBAR)));
   const p = lab.pedir(lab.comando(APROBAR), { delegada: true });
   assert.strictEqual(p.decision, 'deny', p.texto);

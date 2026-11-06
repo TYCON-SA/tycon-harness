@@ -298,6 +298,9 @@ The owner signs from the phone, with a click in the coordinator's box. For that 
   denies it and writes it down, and tells the coordinator "signature pending".
 - **Each signature is a row of the signature list**, and it goes through as a box with `owner-next`, one at a time.
 - **Before each box, two lines**: what changes if the owner signs, and the coordinator's recommendation.
+- **The plan is not pasted into the chat before its signature.** The plan approval box brings "What it does", the files
+  and the path of the full plan, and the click on that box is enough. The full plan is shown only if the owner asks for
+  it. A plan without those two sections is shown in full before the box.
 - **Signatures and decisions go together, in one batch per hour, and the batch never holds up the work.** What leaves a
   session stopped goes to the owner right away. The rest goes to the batch, and the session keeps going on a marked
   assumption meanwhile. An improvement in the coordinator's hands is applied at once: it does not wait for the batch.
@@ -328,7 +331,8 @@ turned on in the profile, or on the machine to try it out.
   If the person already answered «aprobado» to that box, it does not ask again.
 - **What `owner-next` gives.** One row, the oldest: a box to show without changing a letter, with a label («Firma 2/5»), and the
   notice for the target session. **A permission goes first**, with its own counter and box. What goes through the terminal comes
-  last, with no box. If the plan has not been seen yet in that tab, it gives the plan to write out before the box. If a row
+  last, with no box. If the plan has not been seen yet in that tab and does not bring "What it does" and "Files", it
+  gives the plan to write out before the box. If a row
   cannot be shown, or its repetition is denied, `owner-next --after <id>` gives the next one.
 - **The session that asked always repeats the command**, with or without a coordinator. On «Sí», the coordinator sends it the
   notice and the session repeats the same command within 30 minutes. With an unused click, `owner-next` skips that row and says

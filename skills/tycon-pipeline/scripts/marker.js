@@ -1086,9 +1086,19 @@ function planParaLaPersona(planTxt) {
  * ¿La persona vio el plan? En lo que le escribió el agente, o porque se lo mostró el arnés en pantalla antes de este
  * comando (la constancia `plan-shown` de lib/plan-display.js: la misma sesión, la misma historia y el mismo plan).
  */
-function planVisto(marker, planTxt) {
+function planVisto(marker, planTxt, { porElCuadro = false } = {}) {
   const visto = planEnLaConversacion(planTxt);
   if (!visto.legible || visto.mostrado) return visto;
+  // el cuadro de la firma muestra «Qué hace», los archivos y la ruta del plan completo (signature-sources.js): con esas
+  // dos secciones legibles, el click en el cuadro es aprobar viéndolo. Un «aprobado» escrito, la ventana o la terminal
+  // no lo muestran. El plan entero se muestra si la persona lo pide
+  if (porElCuadro) {
+    let secciones = null;
+    try { secciones = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signature-sources.js')).seccionesDelPlan(planTxt); } catch (e) {
+      appendLog('gates.log', { name: 'plan-approval', status: 'skipped', story: marker.storyId, motivo: 'no pude leer las secciones del plan para el cuadro', error: String(e.code || e.message).slice(0, 200) });
+    }
+    if (secciones && !secciones.error) return { ...visto, mostrado: true, porElCuadro: true };
+  }
   const pd = require('./lib/plan-display.js');
   return pd.mostradoPorElArnes({ stateDir: STATE_DIR, sessionId: SID, storyId: marker.storyId, planTxt }) ? { ...visto, mostrado: true, porElArnes: true } : visto;
 }
@@ -1377,7 +1387,8 @@ function cmdCompleteStep(nRaw, flags) {
     // Con riesgo bajo el plan queda escrito en la corrida: un ok a una pregunta que no lo traía no aprueba (medido: el
     // agente preguntó «¿lo apruebo?» a secas y la persona aprobó sin verlo). Sin conversación legible no hay cómo saber:
     // la cita alcanza, como antes. Con riesgo normal no cambia. Devuelve el motivo para no firmar, o null.
-    const sinVerElPlan = () => {
+    // `porElCuadro`: la aprobación llegó, o todavía puede llegar, por el click en el cuadro de la firma
+    const sinVerElPlan = (porElCuadro) => {
       if (!approved) return null;
       const plan = planDeLaCorrida(marker);
       let planTxt = '';
@@ -1387,7 +1398,7 @@ function cmdCompleteStep(nRaw, flags) {
           if (e.code !== 'ENOENT') appendLog('gates.log', { name: 'plan-approval', status: 'skipped', story: marker.storyId, motivo: 'no pude leer el plan', error: String(e.code || e.message).slice(0, 200) });
         }
       }
-      const visto = planTxt.trim() ? planVisto(marker, planTxt) : null;
+      const visto = planTxt.trim() ? planVisto(marker, planTxt, { porElCuadro }) : null;
       if (!visto || !visto.legible || visto.mostrado) return null;
       let rc = null;
       try { rc = require('./pipeline.js').computeRiskClass({ story: resolveStoryPath(marker.storyPath, marker) }); } catch (e) { rc = { error: e.message }; }
@@ -1404,19 +1415,22 @@ function cmdCompleteStep(nRaw, flags) {
     // en la propia sesión, antes de pedir nada (como siempre); para otra sesión, con el pedido a la vista: por la
     // delegación no hay persona que mire, y lo que cuenta es la revisión automática
     const paraOtra = !!(PEDIDA && PEDIDA !== PROPIA);
+    // sin la vía todavía: un click en el cuadro puede llegar (con la terminal, no). La vía se mira antes de firmar
     if (!paraOtra) {
-      const m = sinVerElPlan();
+      const m = sinVerElPlan(!process.argv.includes('--terminal'));
       if (m) { console.error(`marker.js ${m}`); process.exit(1); }
     }
     let revision = null;
-    const antesDelPlan = (via) => {
+    const antesDelPlan = (via, registro) => {
       if (via === 'delegacion') {
         const r = require('./lib/plan-review.js').antesDeAprobar({ estado: STATE_DIR, firmante: PROPIA, destino: SID, marker });
         if (r.codigo) return r;
         revision = r.constancia;
         return { via: 'revision', resumen: `plan de ${marker.storyId}: revisión ${revision.id} ${revision.veredicto} (${revision.modelo})` };
       }
-      const m = paraOtra ? sinVerElPlan() : null;
+      // con la aprobación a la vista, sólo su click en el cuadro cuenta como ver el plan; sin ella (el chequeo previo del
+      // freno, antes de dar el cuadro), el click todavía puede llegar
+      const m = sinVerElPlan(registro ? registro.via === 'click' : via !== 'terminal');
       return m ? { codigo: 1, motivo: m } : null;
     };
     // lo que aprueba una persona (el plan y la maqueta) es una firma del dueño; por delegación, con la revisión

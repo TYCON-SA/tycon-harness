@@ -363,4 +363,10 @@ test('Coordinadora_FirmasPorClick_ReglasEnLaGuia — el dueño firma desde el ce
   assert.doesNotMatch(es + en, /`node scripts\/tools\/coordination\.js owner-wait`/, 'sin la ruta relativa');
   const guia = fs.readFileSync(GUIA, 'utf8');
   assert.match(guia, /con una consola de fondo viva[^\n]*\n?[^\n]*salvo[^\n]*\n?[^\n]*owner-wait/, 'firmas-del-arnes.md: la excepción de owner-wait');
+  // el plan se aprueba con el cuadro: no se pega en el chat, salvo que el dueño lo pida o falten las dos secciones
+  assert.match(guia, /\*\*El plan se aprueba con el cuadro\.\*\*[\s\S]*?Qué hace[\s\S]*?Archivos[\s\S]*?ruta del plan completo[\s\S]*?si lo pedís[\s\S]*?Vale sólo el click/, 'firmas-del-arnes.md');
+  assert.match(r, /El plan no se pega en el chat antes de su firma[\s\S]*?ruta del plan completo[\s\S]*?sólo si el dueño lo\s+pide/i, 'coordination.md');
+  assert.match(ren, /plan is not pasted into the chat before its signature[\s\S]*?path of the full plan[\s\S]*?only if the owner asks/i, 'coordination.en.md');
+  const paso = fs.readFileSync(path.join(RAIZ, 'skills', 'tycon-pipeline', 'steps', 'step-04-approve-plan.md'), 'utf8');
+  assert.match(paso, /Salvo con el cuadro de la firma[\s\S]*?cuenta como plan visto/, 'step-04-approve-plan.md');
 });

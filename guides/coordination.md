@@ -287,6 +287,9 @@ El dueño firma desde el celular, con un click en el cuadro de la coordinadora. 
   niegue y lo anote, y le avisa a la coordinadora «firma pendiente».
 - **Cada firma es un renglón de la lista de firmas**, y se pasa como cuadro con `owner-next`, de a uno.
 - **Antes de cada cuadro, dos líneas**: qué cambia si firma y la recomendación de la coordinadora.
+- **El plan no se pega en el chat antes de su firma.** El cuadro de la aprobación del plan trae «Qué hace», los
+  archivos y la ruta del plan completo, y el click en ese cuadro alcanza. El plan entero se muestra sólo si el dueño lo
+  pide. Un plan sin esas dos secciones sí se muestra entero antes del cuadro.
 - **Firmas y decisiones van juntas, en una tanda por hora, y la tanda nunca frena el trabajo.** Lo que deja parada a
   una sesión va al dueño al instante. Lo demás va a la tanda, y la sesión sigue con un supuesto marcado mientras tanto.
   Una mejora que está en mano de la coordinadora se aplica enseguida: no espera a la tanda. Una sesión que espera al
@@ -316,7 +319,8 @@ probarla.
   `owner-next`. Si la persona ya contestó «aprobado» a ese cuadro, no se pregunta de nuevo.
 - **Qué da `owner-next`.** Un renglón, el más viejo: un cuadro para mostrar sin cambiarle una letra, con un rótulo («Firma 2/5»),
   y el aviso para la sesión destino. **Un permiso va primero**, con su contador y su cuadro. Lo de la terminal, al final y sin
-  cuadro. Si el plan todavía no se vio en esa pestaña, lo da para escribirlo antes del cuadro. Si un renglón no se puede mostrar,
+  cuadro. Si el plan todavía no se vio en esa pestaña y no trae «Qué hace» y «Archivos», lo da para escribirlo antes
+  del cuadro. Si un renglón no se puede mostrar,
   o su repetición se niega, `owner-next --after <id>` da el siguiente.
 - **Siempre repite el comando la sesión que lo pidió**, con o sin coordinadora. Con el «Sí», la coordinadora le manda el aviso,
   y la sesión repite el mismo comando dentro de los 30 minutos. Con un click sin usar, `owner-next` saltea ese renglón y dice

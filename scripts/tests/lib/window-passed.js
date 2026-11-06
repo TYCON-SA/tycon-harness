@@ -22,6 +22,8 @@
  *                       (el registro que dejó el freno de la prueba) con el árbol de procesos y la hora que dice la
  *                       prueba, y la casa de juguete
  *   conVentana(env, { sesionEn: '<archivo>' }) → al salir, el guion deja en ese archivo su variable de sesión
+ *   conVentana(env, { via: 'click' }) → la firma queda con esa vía (`click`: el click en el cuadro; `mensaje`: un
+ *                       «aprobado» escrito) en vez de `ventana`
  *   arbolDelFreno() / arbolDelGuion(casa, cmd) → los árboles de procesos de la prueba: el del freno, para `decidir`
  *                       (pid 201), y el del guion que corre `cmd` (pid 301)
  */
@@ -34,12 +36,13 @@ const RAIZ = path.resolve(__dirname, '..', '..', '..');
 const { casaDeLaCuenta } = require(path.join(RAIZ, 'scripts', 'lib', 'real-home.js'));
 const MODULO_DE_LA_VENTANA = /[\\/]scripts[\\/]lib[\\/]owner-window\.js$/;
 
-function conVentana(env = process.env, { delegadaPor, arbol, sesionEn } = {}) {
+function conVentana(env = process.env, { delegadaPor, arbol, sesionEn, via } = {}) {
   const previas = String(env.NODE_OPTIONS || '').trim();
   const out = { ...env, NODE_OPTIONS: `${previas ? `${previas} ` : ''}--require ${__filename}` };
   if (delegadaPor) out.WINDOW_PASSED_DELEGATED_BY = delegadaPor;
   if (arbol) out.WINDOW_PASSED_TREE = JSON.stringify(arbol);
   if (sesionEn) out.WINDOW_PASSED_SESSION_OUT = sesionEn;
+  if (via) out.WINDOW_PASSED_VIA = via;
   return out;
 }
 
@@ -112,7 +115,7 @@ function darPorPasada(ow) {
     // la delegación firma para otra sesión desde la coordinadora; sin ella, el pedido para otra sesión va por el de verdad
     if (pedida && o.propia && pedida !== o.propia && !delegadaPor) return exigir(o);
     const destino = pedida || o.propia || null;
-    const via = delegadaPor ? 'delegacion' : 'ventana';
+    const via = delegadaPor ? 'delegacion' : process.env.WINDOW_PASSED_VIA || 'ventana';
     const sesion = delegadaPor || destino;
     // como la ventana de verdad: lo que el guion comprueba antes de firmar, y los campos que suma a la firma
     if (o.antes) {
