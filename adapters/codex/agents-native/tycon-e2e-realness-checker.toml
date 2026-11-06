@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-e2e-realness-checker.md
-# source_sha256: 84a373e296e3a031db058147b96deba6d55ec723d6875399b39048be47fe8f59
+# source_sha256: 7c881accd4045fa98dcb345bd795da4dc426ee41d878a7c354856122ffccb6d1
 # Formato SUBAGENTE NATIVO: se despliega como $CODEX_HOME/agents/tycon-e2e-realness-checker.toml y una
 # sesión codex lo spawnea (collaborationspawn_agent → tool_input.agent_type = "tycon-e2e-realness-checker").
 # El ledger de check-count lo registra on-advisor-run.js por agent_type (sonda G-1).
@@ -124,6 +124,7 @@ Por spec (y, cuando aplica, por `test()` block). **Se cuentan también los helpe
 2. **NO matchea** ninguna exclusión. Exclusiones canónicas, por **segmento** de path: `auth`, `login`, `logout`, `token`, `refresh`, `session`, `me`, `health`, `healthz`, `ping`, `ready`, `metrics`, `telemetry`, `analytics`. Más, por **prefijo**: `/assets/`, `/static/`, `/_next/`. Más, por **extensión**: imágenes, fuentes, `.css`, `.map`. El repo puede sumar exclusiones con `.tycon/advisors.yaml → e2e_realness.business_endpoint_excludes`; **no puede quitarlas**.
 3. **Orden declarado**: exclusión gana sobre inclusión. `/api/` a secas matchea todo, incluidas las exclusiones — por eso el orden no es opcional: sin él, Claude y Codex pueden leerlo distinto y las dos corridas pasan el banco.
 4. Una intercepción excluida sigue necesitando su comentario inline diciendo por qué ese path no es de negocio (ej. `// auth refresh only`, `// static asset`) — sin el comentario, se reporta como `REAL-W3` (exención sin razón auditable), no como CRITICAL.
+5. **La lista entera**, con su copia exacta en `skills/tycon-pipeline/scripts/lib/simulated-server.js` (la matriz de verificación la usa y una prueba compara las dos): segmentos `auth` `login` `logout` `token` `refresh` `session` `me` `health` `healthz` `ping` `ready` `metrics` `telemetry` `analytics`; prefijos `/assets/` `/static/` `/_next/`; extensiones `.png` `.jpg` `.jpeg` `.gif` `.svg` `.webp` `.ico` `.avif` `.woff` `.woff2` `.ttf` `.otf` `.eot` `.css` `.map`; inclusión `/(api|graphql|rpc)/`.
 
 ### `REAL-C3` — por qué es PROJECT-gated
 
