@@ -212,6 +212,7 @@ apaga sólo con su variable en `0`, y el portón de edición, `hook-pre-edit.js`
 | `push-phantom-ref-notice.js` | PreToolUse (Bash) | Antes de subir cambios, avisa si nombran un archivo de código que no existe en el repo | No | full | `TYCON_PUSH_GHOST=0` |
 | `pr-one-per-repo-guard.js` | PreToolUse (Bash) | Apagado de fábrica. Prendido, frena abrir un pull request en Azure DevOps si ese repo ya tiene uno abierto | Sí, sólo prendido | full | `TYCON_PR_ONE_PER_REPO=1` lo prende |
 | `pr-auto-complete-guard.js` | PreToolUse (Bash) | Frena el pull request a `main` armado con `az` sin `--auto-complete true` y `--squash false` explícitos | Sí | full | `TYCON_PR_AUTO_COMPLETE_GUARD=0` · puntual: `TYCON_PR_BY_HAND=1` pegado al comando |
+| `session-cap-guard.js` | PreToolUse (Bash) | Frena abrir una sesión de Claude de fondo, por cualquier camino, cuando la máquina ya está en el tope de sesiones trabajando; si no puede contarlas, frena igual. Dice el camino: `coordination.js open`, que espera turno | Sí | full | ninguno: el tope lo cambia una persona (`coordination.max_working`) |
 | `public-push-guard.js` | PreToolUse (Bash) | En un clon del arnés con un remoto público, frena el `gh` que publica un texto que no puede salir (un secreto, un correo, una ruta de máquina, un término de la lista privada) o que no se puede leer desde el comando | Sí | full | ninguno: de un freno falso se sale con una excepción con motivo en la lista privada |
 | `tycon-pipeline/scripts/on-bash-write-gate.js` | PreToolUse (Bash) | El portón de carril por la terminal: deniega escribir código con `sed -i`, heredoc, `tee` o `cp` sin pipeline ni ad-hoc declarado | Sí | full | `TYCON_STORY_GATE=off` |
 | `tycon-pipeline/scripts/on-advisor-run.js` | PreToolUse (Task\|Agent) | Anota cada subagente lanzado: es lo que cuenta el pipeline para saber qué revisores corrieron | No | minimal y full | ninguno propio |
@@ -222,13 +223,25 @@ apaga sólo con su variable en `0`, y el portón de edición, `hook-pre-edit.js`
 | `wait-notice.js` | PreToolUse (AskUserQuestion\|ExitPlanMode\|mcp__spokenly__ask_user_dictation) | Una pregunta a la persona abre la espera del aviso | No | full | `TYCON_WAIT_NOTICE=0` |
 | `wait-notice.js` | PostToolUse (AskUserQuestion\|ExitPlanMode\|mcp__spokenly__ask_user_dictation) | La respuesta cierra la espera del aviso | No | full | `TYCON_WAIT_NOTICE=0` |
 | `wait-notice.js` | UserPromptSubmit | La persona escribió: la espera del aviso se cierra | No | full | `TYCON_WAIT_NOTICE=0` |
+| `background-question-guard.js` | PreToolUse (AskUserQuestion\|mcp__spokenly__ask_user_dictation) | Una sesión de fondo que abrió la coordinadora no le pregunta a la persona: con la coordinadora confirmada y viva, niega y dice qué mandarle | Sí | full | `TYCON_BG_QUESTION_GUARD=0` |
+| `owner-approval-record.js` | UserPromptSubmit | Anota el «aprobado» que escribe la persona, para que una firma pendiente lo use sin terminal, una vez | No | minimal y full | `TYCON_OWNER_APPROVALS=0` |
+| `owner-approval-record.js` | PostToolUse (AskUserQuestion) | Anota el click de la persona en el cuadro de opciones, para que una firma pendiente lo use sin terminal, una vez | No | minimal y full | `TYCON_OWNER_APPROVALS=0` |
 | `context-size-notice.js` | UserPromptSubmit | Cuando la sesión pasa el umbral de tokens (300 mil), le pide al agente que recomiende `/clear` o una sesión nueva al terminar el paso; otra vez cada 100 mil más | No | full | `TYCON_CONTEXT_NOTICE=0` |
 | `context-size-notice.js` | SessionStart | Después de `/clear` o de compactar, el aviso de contexto vuelve a cero | No | full | `TYCON_CONTEXT_NOTICE=0` |
 | `wait-notice.js` | Notification (permission_prompt) | Un pedido de permiso abre la espera del aviso | No | full | `TYCON_WAIT_NOTICE=0` |
 | `wait-notice.js` | SessionEnd | La sesión se cerró: su espera se cierra sin avisar | No | full | `TYCON_WAIT_NOTICE=0` |
+| `session-state.js` | SessionStart | Anota el estado de la sesión para /office: su nombre, su proceso y su paso | No | full | `TYCON_SESSION_STATE=0` |
+| `session-state.js` | Notification (permission_prompt) | Un pedido de permiso: la sesión espera «un permiso» | No | full | `TYCON_SESSION_STATE=0` |
+| `session-state.js` | PermissionRequest (Bash\|PowerShell\|Edit\|Write\|MultiEdit\|NotebookEdit\|Read\|Glob\|Grep\|WebFetch\|WebSearch\|mcp__.*) | Un pedido de permiso, en el momento: anota la herramienta y qué pide, para que la coordinadora se entere con `owner-wait` | No | full | `TYCON_SESSION_STATE=0` |
+| `session-state.js` | PreToolUse (AskUserQuestion\|ExitPlanMode\|mcp__spokenly__ask_user_dictation) | Una pregunta a la persona: la sesión espera «una respuesta» | No | full | `TYCON_SESSION_STATE=0` |
+| `session-state.js` | PostToolUse | Terminó el uso de una herramienta: la espera de un permiso se cierra | No | full | `TYCON_SESSION_STATE=0` |
+| `session-state.js` | UserPromptSubmit | La persona escribió: la espera se cierra | No | full | `TYCON_SESSION_STATE=0` |
+| `session-state.js` | Stop | El turno se cerró: la espera se cierra | No | full | `TYCON_SESSION_STATE=0` |
+| `session-state.js` | SessionEnd | La sesión se cerró: su archivo de estado se borra | No | full | `TYCON_SESSION_STATE=0` |
 | `blocking-meter.js` | Stop | Mide la herramienta bloqueante más larga del turno y los mensajes que quedaron esperando | No | full | `TYCON_BLOCKING_METER=0` |
 | `blocking-notice.js` | UserPromptSubmit | Cobra el veredicto del medidor de bloqueo del turno anterior | No | full | `TYCON_BLOCKING_METER=0` |
 | `coordination-notice.js` | UserPromptSubmit | Sólo en la sesión coordinadora: avisa cuando la máquina está en el tope de sesiones trabajando o lo pasó, y una vez por día de las firmas que esperan hace más de un día | No | full | `TYCON_COORDINATION_NOTICE=0` |
+| `coordination-notice.js` | SessionStart | Después de compactar o de limpiar la conversación, le pide a la sesión coordinadora que lea sus reglas otra vez; si limpiarla le quitó la designación, le dice cómo recuperarla | No | full | `TYCON_COORDINATION_NOTICE=0` |
 | `why-blocked-notice.js` | UserPromptSubmit | Cuando preguntás por qué te frenó el arnés, le pasa al asistente el último freno de la sesión para que te lo explique en llano | No | full | `TYCON_WHY_BLOCKED_NOTICE=0` |
 | `large-read-meter.js` | Stop | Mide cuánto se leyó de un solo archivo en el turno; anota y no avisa | No | full | `TYCON_READ_METER=0` |
 | `harness-bootstrap-heal.sh` | SessionStart | Si la línea de arranque hace los `git pull` pero no corre el instalador, le agrega la llamada (con copia de seguridad) | No | minimal y full | `TYCON_NO_BOOTSTRAP_HEAL=1` |
@@ -250,13 +263,20 @@ apaga sólo con su variable en `0`, y el portón de edición, `hook-pre-edit.js`
 | `engram-drift-notice.js` | SessionStart | Revisa la memoria de engram una vez por día: proyectos sin nombre fijo, memoria repartida, observaciones sin exportar | No | minimal y full | `TYCON_ENGRAM_DRIFT=0`; integración engram (`TYCON_ENGRAM=0`) |
 | `unpushed-work-notice.js` | SessionStart | Avisa las ramas del repo y de su grupo con commits que no están en el remoto | No | full | `TYCON_UNPUSHED_NOTICE=0` |
 | `dev-behind-main-notice.js` | SessionStart | En un repo de producto del equipo, avisa si a `dev` le faltan commits de `main` o tiene trabajo trabado hace una semana | No | full | `TYCON_DEV_BEHIND_NOTICE=0` |
+| `finished-open-notice.js` | SessionStart | Avisa las ejecuciones que terminaron todos sus pasos y siguen abiertas, y los caminos cortos con su pedido abierto o ya en main, con cómo se cierra cada uno; no cierra nada | No | full | `TYCON_FINISHED_OPEN_NOTICE=0` |
 | `stuck-pr-notice.js` | SessionStart | En un repo del arnés, avisa qué pedidos con auto-completar llevan más de una hora en choque o sin entrar | No | full | `TYCON_STUCK_PR_NOTICE=0` |
 | `extension-notices.js` | SessionStart | Dice los avisos de los paquetes activos (su `notices.json`) que aplican en el repo de la sesión, una vez por sesión | No | minimal y full | `TYCON_EXTENSION_NOTICES=0` |
 | `unpushed-work-notice.js` | PostToolUse (Bash) | Anota los repos donde se commiteó y, al subir a `main`, avisa si un repo hermano tiene trabajo sólo local | No | full | `TYCON_UNPUSHED_NOTICE=0` |
 | `unpushed-work-notice.js` | Stop | Si la sesión commiteó y quedó algo sin subir, frena el cierre una vez por repo y rama | Sí, una vez | full | `TYCON_UNPUSHED_NOTICE=0` |
+| `office-link-start.js` | SessionStart | Con la dirección del sitio en el perfil, pide el alta de la máquina en la oficina del sitio y lanza el proceso que le manda la foto | No | full | `TYCON_OFFICE_LINK=0` |
+| `office-message-rule.js` | SessionStart | Le dice a la sesión qué es un mensaje que la persona le escribe desde `/office`, cómo lo comprueba y que nunca firma | No | full | `TYCON_OFFICE_MESSAGES=0` |
+| `office-inbox-watch.js` | SessionStart | De fondo: espera los mensajes que la persona le escribe a esta sesión desde `/office` y la despierta con ellos | No | full | `TYCON_OFFICE_MESSAGES=0` |
+| `office-inbox-watch.js` | Stop | Al cerrar cada turno vuelve a armar el vigilante de los mensajes de `/office`, si el anterior ya entregó o se fue | No | full | `TYCON_OFFICE_MESSAGES=0` |
+| `office-link-start.js` | UserPromptSubmit | Mientras se trabaja, a lo sumo cada 30 min, pone al día la capa del equipo sin cambiar la versión y, si trae la dirección del sitio, enlaza la oficina sin abrir sesión | No | full | `TYCON_TEAM_REFRESH=0` |
 | `worktree-sweep.js` | SessionStart | Una vez por día borra las carpetas de trabajo (worktrees) limpias y ya mergeadas, con su rama; las que tienen trabajo sólo las nombra | No | full | `TYCON_WORKTREE_SWEEP=0` |
 | `missing-path-notice.js` | PostToolUse (Bash) | Avisa cuando un comando de lectura nombró una ruta que no existe | No | full | `TYCON_MISSING_PATH_NOTICE=0` |
 | `deprecated-read-notice.js` | PostToolUse (Read, Bash) | Al leer un archivo deprecado, le recuerda al modelo el motivo y que no lo copie | No | full | — (sin la clave, calla) |
+| `cover-secrets.js` | PostToolUse (Bash, Read, Grep) | Tapa los valores reales de los secretos de la máquina en lo que devuelven las herramientas | No | minimal y full | `TYCON_COVER_SECRETS=0` |
 | `failed-query-notice.js` | PostToolUse (Bash) | Avisa cuando una consulta a un servicio volvió vacía con el código de salida tapado | No | full | `TYCON_FAILED_QUERY_NOTICE=0` |
 | `rebuild-before-verify.js` | PostToolUse (Edit\|Write, Bash) | Marca el frontend como «sucio» al editar un componente y lo limpia al correr el build de desarrollo que declara el repo | No | full | `TYCON_REBUILD_VERIFY=0` |
 | `rebuild-before-verify.js` | UserPromptSubmit | Con el frontend sucio, recuerda correr el build antes de pedir una verificación visual | No | full | `TYCON_REBUILD_VERIFY=0` |

@@ -21,6 +21,7 @@
       { "path": "team-profile.json", "optional": true },
       { "path": "perfil-equipo.json", "optional": true }
     ] },
+    { "name": "public-push-guard", "script": "scripts/hooks/public-push-guard.js", "rules": [] },
     { "name": "provider-secret-shapes", "script": "scripts/lib/provider-secret-shapes.js", "rules": [] },
     { "name": "spanish-names", "script": "scripts/publishing/spanish-names.js", "rules": [
       "scripts/lib/spanish-words.json",
@@ -29,6 +30,9 @@
     ] },
     { "name": "tool-names", "script": "scripts/ci/tool-names.js", "rules": [
       "scripts/ci/tool-names.json"
+    ] },
+    { "name": "vocabulary", "script": "scripts/ci/vocabulary.js", "rules": [
+      "scripts/ci/vocabulary.json"
     ] },
     { "name": "internal-history", "script": "scripts/publishing/internal-history.js", "rules": [
       "scripts/publishing/internal-history.json",
@@ -53,7 +57,7 @@
     { "name": "version", "script": "scripts/ci/version-tag.js", "rules": [] },
     { "name": "npm-package-version", "script": "scripts/ci/npm-package-version.js", "rules": [] },
     { "name": "workflow-shape", "script": "scripts/ci/check-public-workflow.js", "rules": [] },
-    { "name": "base-controls", "script": "scripts/ci/run-base-controls.sh", "rules": [{ "path": ".test-gate.yaml", "optional": true, "sign_on_change": true }, { "path": "scripts/ci/run-base-controls.sh", "sign_on_change": true }, { "path": "scripts/ci/controls-from-base.json", "sign_on_change": true }, { "path": "scripts/lib/refresh-after-main.js", "sign_on_change": true }, { "path": "scripts/lib/owner-window.js", "sign_on_change": true }, { "path": "scripts/lib/delegated-signing.js", "sign_on_change": true }, { "path": "scripts/ci/run-base-controls-window.js", "sign_on_change": true }, { "path": "scripts/ci/bench-against-base.js", "sign_on_change": true }] }
+    { "name": "base-controls", "script": "scripts/ci/run-base-controls.sh", "rules": [{ "path": ".test-gate.yaml", "optional": true, "sign_on_change": true }, { "path": "scripts/ci/run-base-controls.sh", "sign_on_change": true }, { "path": "scripts/ci/controls-from-base.json", "sign_on_change": true }, { "path": "scripts/lib/refresh-after-main.js", "sign_on_change": true }, { "path": "scripts/lib/owner-window.js", "sign_on_change": true }, { "path": "scripts/lib/owner-approvals.js", "sign_on_change": true }, { "path": "scripts/hooks/owner-approval-record.js", "sign_on_change": true }, { "path": "scripts/lib/delegated-signing.js", "sign_on_change": true }, { "path": "scripts/ci/run-base-controls-window.js", "sign_on_change": true }, { "path": "scripts/ci/bench-against-base.js", "sign_on_change": true }] }
   ],
   "content": [
     ".engram/config.json",
@@ -63,6 +67,7 @@
     "onboarding/mini-class/i18n/en.json",
     "scripts/controls-bench/ultimo-banco.json",
     "scripts/controls-bench/ultimo-examen.json",
+    "scripts/controls-bench/ultimo-guias.json",
     "scripts/controls-bench/ultimo-suites.json",
     "adapters/codex/agents/MANIFEST.json",
     "adapters/codex/hooks.json",
@@ -70,6 +75,7 @@
     "scripts/ci/pipeline-debt.json",
     "scripts/ci/heavy-suites.json",
     "scripts/ci/suites-over-limit.json",
+    "scripts/ci/suites-weights.json",
     "scripts/controls-bench/baseline/claude-advisors.json",
     "scripts/controls-bench/baseline/claude.json",
     "scripts/controls-bench/exam-config.json",

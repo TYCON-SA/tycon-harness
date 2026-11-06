@@ -6,7 +6,9 @@
  * Decisiones_PorFicha_EnlaceAlPedidoExacto     Decisiones_FichaSinPr_ApareceConElPorQue
  * Decisiones_FuenteAbierta_SeListaIgual        Inicio_NingunaTarjetaALaPortada
  * Inicio_SinRepoNavegable_LaListaLoDice        Inicio_Declarados_DicenDondeSeDecidenSinEnlace
- * Fuentes_LeeElPedidoDeCadaFicha
+ * Fuentes_LeeElPedidoDeCadaFicha               Decisiones_PrCerradoSinTarea_NadieLoSigueYVaPrimero
+ * Decisiones_PrCerradoConTarea_SeSigueEnSuTarea Decisiones_Orden_NadieGravedadNoches
+ * Fuentes_LeeElSeguimientoDeLaFicha             Inicio_CadaFilaDiceSuGravedadYSusNoches
  */
 const test = require('node:test');
 const assert = require('node:assert');
@@ -80,7 +82,8 @@ test('Decisiones_AceptadaSinPr_SeSigueEnSuTarea', () => {
   const html = views.listasDeDecision(m, { enlaceOperaciones: ADO, ahora: AHORA });
   const seccion = html.split('id="decidir-dependencias_aceptadas_sin_resolver"')[1].split('</section>')[0];
   // la fila en dos partes, para que la grilla alinee todas: el enlace adelante y el texto después
-  assert.match(seccion, /<li><a href="\/mantenimiento">ya decidida: se sigue en su tarea, en Mantenimiento<\/a><span>9abc1234 · paquete-c<\/span><\/li>/);
+  // el paquete adelante, después su seguimiento con el enlace; el id de la ficha al final, en gris
+  assert.match(seccion, /<li><span>paquete-c — <a href="\/mantenimiento">se sigue en su tarea<\/a><\/span><span class="muted">9abc1234<\/span><\/li>/);
   assert.doesNotMatch(seccion, /la noche lo abre/);
 });
 
@@ -165,4 +168,93 @@ test('8.101-Decisiones_SinRemotoComoHoy_ConRemotoEnlaza', () => {
   assert.strictEqual(gh.find((d) => d.id === '2026-10-16-tienda-58d02289').enlace, `${GH}/pull/4669`);
   // un remoto sin plataforma no inventa un enlace
   assert.strictEqual(decisions.decisiones(modelo(), { operationsRepo: remoto.web, remoto: { platform: null, web: remoto.web } })[0].sinLugar, 'plataforma_desconocida');
+});
+
+/** Una aceptada como la arma sources.js, con lo que anota su ficha. */
+const aceptada = (id, extra) => ({ fuente: 'dependencias', rubro: 'aceptadas_sin_resolver', id, titulo: `paquete-${id}`, pr: null, prCerrado: false, conTarea: false, severidad: 'high', noches: 1, ...extra });
+const conAceptadas = (...items) => { const m = modelo(); m.decisiones.items = items; return m; };
+
+// el pull request se abandonó y nadie le creó una tarea: no se muestra como su seguimiento
+test('Decisiones_PrCerradoSinTarea_NadieLoSigueYVaPrimero', () => {
+  const m = conAceptadas(aceptada('aaaa0001', { severidad: 'critical', noches: 7, conTarea: true }), aceptada('ffff0002', { pr: 42, prCerrado: true, severidad: 'low' }));
+  const ds = decisions.decisiones(m, { operationsRepo: ADO });
+  assert.deepStrictEqual(ds.map((d) => `${d.id}:${d.sinLugar}:${d.enlace}`), ['ffff0002:nadie_lo_sigue:null', 'aaaa0001:en_su_tarea:null'], 'sale primero aunque sea baja');
+  const html = views.listasDeDecision(m, { enlaceOperaciones: ADO, ahora: AHORA });
+  const seccion = html.split('id="decidir-dependencias_aceptadas_sin_resolver"')[1].split('</section>')[0];
+  assert.match(seccion, /<li><span>paquete-ffff0002 · baja · 1 noche — pull request #42 cerrado sin resolver: nadie lo sigue<\/span><span class="muted">ffff0002<\/span><\/li>/);
+  assert.doesNotMatch(seccion, /pullrequest\/42/, 'el pull request cerrado no es un enlace a su seguimiento');
+  assert.ok(seccion.indexOf('ffff0002') < seccion.indexOf('aaaa0001'), 'en la página también va primero');
+  assert.match(decisions.fraseSinLugar('nadie_lo_sigue', 'en', { n: 42 }), /#42 closed without a fix: nobody follows it/);
+});
+
+// la noche anota el pull request cerrado y crea las tareas en el mismo paso: la ficha se sigue en sus tareas
+test('Decisiones_PrCerradoConTarea_SeSigueEnSuTarea', () => {
+  const m = conAceptadas(aceptada('dddd0005', { pr: 42, prCerrado: true, conTarea: true }), aceptada('bbbb0003', { pr: 57 }));
+  const ds = decisions.decisiones(m, { operationsRepo: ADO });
+  assert.deepStrictEqual([ds.find((d) => d.id === 'dddd0005').sinLugar, ds.find((d) => d.id === 'dddd0005').enlace], ['en_su_tarea', null]);
+  // un pull request todavía abierto sigue siendo su lugar
+  assert.strictEqual(ds.find((d) => d.id === 'bbbb0003').enlace, `${ADO}/pullrequest/57`);
+  const html = views.listasDeDecision(m, { enlaceOperaciones: ADO, ahora: AHORA });
+  assert.match(html, /<li><span>paquete-dddd0005 · alta · 1 noche — <a href="\/mantenimiento">se sigue en su tarea<\/a><\/span><span class="muted">dddd0005<\/span><\/li>/);
+  assert.doesNotMatch(html, /pull request #42/);
+  // las otras colas no cambian: un pull request cerrado de otra lista no se reinterpreta
+  const nueva = decisions.decisiones(conAceptadas({ ...aceptada('cccc0004', { pr: 43, prCerrado: true }), rubro: 'nuevos' }), { operationsRepo: ADO })[0];
+  assert.strictEqual(nueva.enlace, `${ADO}/pullrequest/43`);
+});
+
+test('Decisiones_Orden_NadieGravedadNoches', () => {
+  const m = conAceptadas(
+    aceptada('a-baja', { severidad: 'low', noches: 9, conTarea: true }),
+    aceptada('a-media', { severidad: 'moderate', noches: 9, conTarea: true }),
+    aceptada('a-alta-1', { severidad: 'high', noches: 1, conTarea: true }),
+    aceptada('a-alta-7', { severidad: 'high', noches: 7, conTarea: true }),
+    aceptada('a-critica', { severidad: 'critical', noches: 2, conTarea: true }),
+    aceptada('a-sin-gravedad', { severidad: null, noches: 30, conTarea: true }),
+    aceptada('z-nadie-alta', { pr: 1, prCerrado: true, severidad: 'high', noches: 1 }),
+    aceptada('y-nadie-critica', { pr: 2, prCerrado: true, severidad: 'critical', noches: 1 }),
+  );
+  assert.deepStrictEqual(decisions.decisiones(m, { operationsRepo: ADO }).map((d) => d.id),
+    ['y-nadie-critica', 'z-nadie-alta', 'a-critica', 'a-alta-7', 'a-alta-1', 'a-media', 'a-baja', 'a-sin-gravedad']);
+  // a igualdad de todo, por id: el orden no depende del orden de la foto
+  const iguales = [aceptada('b2'), aceptada('b1')];
+  assert.deepStrictEqual(decisions.decisiones(conAceptadas(...iguales), {}).map((d) => d.id), ['b1', 'b2']);
+  assert.deepStrictEqual(decisions.decisiones(conAceptadas(...iguales.reverse()), {}).map((d) => d.id), ['b1', 'b2']);
+});
+
+test('Fuentes_LeeElSeguimientoDeLaFicha', (t) => {
+  const clon = fs.mkdtempSync(path.join(os.tmpdir(), 'decisiones-'));
+  t.after(() => fs.rmSync(clon, { recursive: true, force: true }));
+  const escribir = (rel, cont) => { const p = path.join(clon, rel); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, typeof cont === 'string' ? cont : JSON.stringify(cont)); };
+  escribir(`.dashboard/dependencias/dependencias-${HOY}.json`, { resumen: { rubros: {
+    nuevos: { valor: [] }, rechazadas_sin_deuda: { valor: [] }, pedidos_cerrados_con_vivas: { valor: [] },
+    aceptadas_sin_resolver: { valor: [{ id: 'dddd0005', paquete: 'paquete-d' }, { id: 'eeee0006', paquete: 'paquete-e' }, { id: '9abc1234', paquete: 'otro' }] } } } });
+  // como la ficha real: pull request cerrado y sus tareas por proyecto
+  escribir('inbox/dependencies/promoted/dddd0005.yaml', 'id: dddd0005\npaquete: paquete-d\nseveridad: high\nnoches: 7\npr: 42\npr_cerrado: 2026-10-29\nrepos:\n  - A/b\npedidos:\n  - Proyecto A: 11\n  - Proyecto B: 12\nasignados:\n  - 11: alguien\n');
+  // pull request cerrado y la lista de tareas vacía
+  escribir('inbox/dependencies/promoted/eeee0006.yaml', 'id: eeee0006\nseveridad: critical\nnoches: 3\npr: 31\npr_cerrado: 2026-10-29\npedidos:\nasignados:\n  - 31: alguien\n');
+  escribir('inbox/dependencies/promoted/9abc1234.yaml', 'id: 9abc1234\nseveridad: low\n');
+  const m = sources.construirDesdeClon(clon, { ahora: AHORA });
+  const por = Object.fromEntries(m.decisiones.items.map((d) => [d.id, d]));
+  assert.deepStrictEqual([por['dddd0005'].pr, por['dddd0005'].prCerrado, por['dddd0005'].conTarea, por['dddd0005'].severidad, por['dddd0005'].noches], [42, true, true, 'high', 7]);
+  assert.deepStrictEqual([por['eeee0006'].prCerrado, por['eeee0006'].conTarea], [true, false], 'los asignados no son tareas');
+  assert.deepStrictEqual([por['9abc1234'].pr, por['9abc1234'].prCerrado, por['9abc1234'].conTarea, por['9abc1234'].noches], [null, false, false, null]);
+  const ds = decisions.decisiones(m, { operationsRepo: ADO });
+  assert.deepStrictEqual(ds.map((d) => `${d.id}:${d.sinLugar}`), ['eeee0006:nadie_lo_sigue', 'dddd0005:en_su_tarea', '9abc1234:en_su_tarea']);
+});
+
+// el orden se entiende al leer: cada fila dice su gravedad y cuántas noches lleva
+test('Inicio_CadaFilaDiceSuGravedadYSusNoches', () => {
+  const m = conAceptadas(
+    aceptada('a1', { severidad: 'critical', noches: 7, conTarea: true }),
+    aceptada('a2', { severidad: 'moderate', noches: 1, conTarea: true }),
+    aceptada('a3', { severidad: 'rara', noches: null, conTarea: true }),
+  );
+  const seccion = (idioma) => views.listasDeDecision(m, { enlaceOperaciones: ADO, ahora: AHORA, idioma })
+    .split('id="decidir-dependencias_aceptadas_sin_resolver"')[1].split('</section>')[0];
+  const es = seccion('es');
+  assert.match(es, /<span>paquete-a1 · crítica · 7 noches — <a href="\/mantenimiento">se sigue en su tarea<\/a><\/span><span class="muted">a1<\/span>/);
+  assert.match(es, /<span>paquete-a2 · media · 1 noche — <a href="\/mantenimiento">/,'una noche, en singular; «moderate» es media');
+  assert.match(es, /<span>paquete-a3 — <a href="\/mantenimiento">se sigue en su tarea<\/a><\/span>/, 'sin gravedad reconocida ni noches, no se inventan');
+  assert.match(seccion('en'), /<span>paquete-a1 · critical · 7 nights — <a href="\/mantenimiento">followed in its work item<\/a><\/span>/);
+  assert.deepStrictEqual(['critical', 'CRÍTICA', 'high', 'moderate', 'baja', 'rara', null].map(decisions.gravedadNormal), ['critical', 'critical', 'high', 'medium', 'low', null, null]);
 });

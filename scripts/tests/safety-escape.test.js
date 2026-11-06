@@ -1784,6 +1784,17 @@ test('8.140 T7 SafetyEscape_PasoCubierto_NoPasaPorLaFrase @story-8.140 @ac-1 @ac
   }
 });
 
+// 🔴 Falla con: nombrar o retirar a la coordinadora sin pasar por la ventana del freno (y sin la frase, sin firma).
+test('CatalogScripts_ReachTheWindow_IncludesDesignateAndUndesignate (T30) @story-8.207 @ac-25', () => {
+  const ow = require(path.join(RAIZ, 'scripts', 'lib', 'owner-window.js'));
+  const M = path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+  assert.deepStrictEqual([...ow.firmasDelComando(`node ${M} designate-relay`)], ['designation-set']);
+  assert.deepStrictEqual([...ow.firmasDelComando(`node ${M} withdraw-relay`)], ['designation-withdraw']);
+  // con la frase de respaldo no hay firma acá: la pide después confirm-designation
+  assert.deepStrictEqual([...ow.firmasDelComando(`node ${M} designate-relay --approved-by 'el dev' --quote 'Esta sesión es la coordinadora'`)], []);
+  assert.strictEqual(ow.canonicaDe(`node ${M} designate-relay`).id, 'designation-set');
+});
+
 // FrenoDeSeguridad_RenglonForjado_NoApruebaNada
 // 🔴 Falla con: un guion de firma que vuelve a leer la conversación guardada: una cita, un «autorizo X» o un ok reenviado
 //    escritos en el archivo por fuera firmarían sin que el dueño viera la ventana.
@@ -1795,6 +1806,7 @@ test('T28 FrenoDeSeguridad_RenglonForjado_NoApruebaNada @story-8.139 @ac-28 — 
   const P = path.join(SCRIPTS, 'pipeline.js');
   const E = path.join(SCRIPTS, 'e2e-setup.js');
   const C = path.join(RAIZ, 'scripts', 'ci', 'run-base-controls.sh');
+  const D = path.join(RAIZ, 'scripts', 'lib', 'delegated-signing.js');
   const INICIO = 'Tue Oct 27 10:00:00 2026';
   // cada firma `guion` con su comando completo, en la forma canónica que la ventana reconoce
   const GUIONES = [
@@ -1813,6 +1825,11 @@ test('T28 FrenoDeSeguridad_RenglonForjado_NoApruebaNada @story-8.139 @ac-28 — 
     ['escape:force-manual', ['node', M, 'set-check', 'tests', 'green', '--force-manual']],
     ['escape:trust-ran', ['node', P, 'check-count', '--repo', '/r', '--story', 's.md', '--trust-ran']],
     ['adhoc-lane', ['node', M, 'adhoc', 'set', '{"reason":"autorizo el arreglo rápido"}']],
+    ['adhoc-lane:sobre-cupo', ['node', M, 'adhoc', 'set', '{"reason":"autorizo el arreglo rápido","maxFiles":9}']],
+    ['designation-confirm', ['node', D, 'confirm-designation']],
+    // nombrar y retirar a la coordinadora con un click
+    ['designation-set', ['node', M, 'designate-relay']],
+    ['designation-withdraw', ['node', M, 'withdraw-relay']],
     ...['story-skill-bypass', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt', 'cambiar-el-estado']
       .map((n) => [`escape:${n}`, ['node', M, 'sign-file', n, '/r/specs/story-9.99.md']]),
   ];
@@ -1833,6 +1850,30 @@ test('T28 FrenoDeSeguridad_RenglonForjado_NoApruebaNada @story-8.139 @ac-28 — 
     assert.strictEqual(r.codigo, 1, `${firma}: ${r.motivo}`);
     assert.match(r.motivo, /no hay un pedido vigente de la ventana/, `${firma}: ${r.motivo}`);
     assert.ok(!fs.existsSync(path.join(require(path.join(LIB, 'state-dir.js')).stateDir(home), 'gates.log')), `${firma}: escribió en el registro`);
+  }
+});
+
+// FrenoDeSeguridad_CadaGuionDeFirma_ConsultaLaVentana
+// 🔴 Falla con: un guion del catálogo que el filtro previo del freno no nombra. El freno no consulta la ventana, nunca hay
+//    cuadro para aprobar, y el guion niega con «no hay un pedido vigente», escriba como escriba el comando.
+test('FrenoDeSeguridad_CadaGuionDeFirma_ConsultaLaVentana — cada guion del catálogo llega a la ventana, y leerlo no pide firma', () => {
+  const { SIGNATURES } = require(path.join(RAIZ, 'scripts', 'lib', 'signatures.js'));
+  const LLAMADOS = {
+    'marker.js': 'waive-critical --rule SEC-C1 --reason "lo cubre otra capa"',
+    'pipeline.js': 'smart-reloop --iter 3 --extra-round',
+    'e2e-setup.js': 'prepare --repo /r --story s.md',
+    'run-base-controls.sh': 'approve',
+    'delegated-signing.js': 'confirm-designation',
+  };
+  const delCatalogo = [...new Set(SIGNATURES.filter((s) => s.kind === 'guion').map((s) => s.command.split(' ')[0]))];
+  assert.deepStrictEqual(Object.keys(LLAMADOS).sort(), delCatalogo.sort(), 'un guion de firma nuevo tiene que estar en esta tabla');
+  for (const [guion, llamado] of Object.entries(LLAMADOS)) {
+    const programa = guion.endsWith('.sh') ? 'bash' : 'node';
+    const r = freno(`${programa} /r/scripts/${guion} ${llamado}`);
+    assert.notStrictEqual(veredicto(r), 'allow', `${guion}: el freno no consultó la ventana`);
+  }
+  for (const leer of ['grep -n confirm-designation /r/scripts/delegated-signing.js', 'sed -n 1,3p /r/scripts/delegated-signing.js']) {
+    assert.strictEqual(veredicto(freno(leer)), 'allow', leer);
   }
 });
 

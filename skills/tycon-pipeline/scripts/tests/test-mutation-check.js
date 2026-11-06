@@ -849,7 +849,9 @@ test('H3: archivos nuevos declarados por la story (untracked, sin `git add`) gen
 // Qué runner sabe correr el chequeo se decide por ESTRUCTURA (extensión
 // ejecutable por `node --test`), JAMÁS escaneando el repo en busca de palabras
 // como «vitest» (ningún control decide buscando frases).
-test('N3a: test declarado .ts → exit 2 estructural honesto («sólo sé correr node --test»), sin correr nada', async () => {
+// El chequeo elige la receta del paquete (casos: test-mutation-runners.js). Un `.ts` sin Jest ni Vitest
+// no tiene receta: sigue siendo exit 2 estructural honesto, y el motivo dice que no encontró receta.
+test('N3a: test declarado .ts sin receta → exit 2 estructural honesto («no encontré una receta»), sin correr nada', async () => {
   const repo = mkRepo();
   fs.mkdirSync(path.join(repo, 'tests'), { recursive: true });
   fs.writeFileSync(path.join(repo, 'tests', 'calc.test.ts'), 'export {};\n');
@@ -873,7 +875,7 @@ test('N3a: test declarado .ts → exit 2 estructural honesto («sólo sé correr
     log: () => {},
   });
   assert.equal(r.exitCode, 2);
-  assert.match(r.result.motivo || '', /node --test/, 'el motivo dice qué sabe correr el chequeo');
+  assert.match(r.result.motivo || '', /no encontré una receta de pruebas/, 'el motivo dice que no hay receta para esa prueba');
   assert.match(r.result.motivo || '', /calc\.test\.ts/, 'y cita el test que no puede correr');
   assert.ok(!/ROJO/i.test(r.result.motivo || ''), 'nunca afirmar que la suite está rota cuando no la sabemos correr');
 });
@@ -911,6 +913,9 @@ test('H4b: tests .NET declarados (FooTests.cs) → exit 2 honesto, no «la story
     '# Story fixture .NET',
     '',
   ].join('\n'));
+  // .NET tiene receta sólo con un `.csproj` de pruebas: sin él, el motivo dice que no hay receta.
+  fs.mkdirSync(path.join(repo, 'apinetcore', 'Api.Tests'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'apinetcore', 'Api.Tests', 'CalcTests.cs'), 'public class CalcTests {}\n');
   const r = await checker.runMutationCheck({
     repo,
     storyPath: path.join(repo, 'story-dotnet.md'),
@@ -918,7 +923,7 @@ test('H4b: tests .NET declarados (FooTests.cs) → exit 2 honesto, no «la story
     log: () => {},
   });
   assert.equal(r.exitCode, 2);
-  assert.match(r.result.motivo || '', /node --test/, 'dice qué sabe correr');
+  assert.match(r.result.motivo || '', /no encontré una receta de pruebas para apinetcore\/Api\.Tests\/CalcTests\.cs/, 'dice que no hay receta, y para cuál');
   assert.ok(!/no declara ning/i.test(r.result.motivo || ''), 'la story SÍ declara tests — decir lo contrario es falso');
 });
 

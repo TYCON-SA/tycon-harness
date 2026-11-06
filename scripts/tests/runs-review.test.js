@@ -1442,6 +1442,7 @@ test('T47 Escape_AutorizadoNoCreaFicha @story-4.11 @ac-38', async () => {
   assert.deepStrictEqual(revisar(cmd(NO_DEEP), { registros: conFrenos([freno('no-deep-review')]) }).reglas, [], 'el nombre de la bandera también autoriza');
   // el Sí del dueño en la ventana de permiso también autoriza
   assert.deepStrictEqual(revisar(cmd(NO_DEEP), { registros: conFrenos([freno('TYCON_NO_DEEP_REVIEW', { via: 'ventana' })]) }).reglas, [], 'la vía ventana autoriza');
+  for (const via of ['click', 'mensaje']) assert.deepStrictEqual(revisar(cmd(NO_DEEP), { registros: conFrenos([freno('TYCON_NO_DEEP_REVIEW', { via })]) }).reglas, [], `la vía ${via} autoriza`);
   // el salteo autorizado con la variable en línea: el freno deja UNA línea y marker.js una en bypass.log
   const salteo = cmd(`TYCON_NO_DEEP_REVIEW=1 node ${MARKER} mark-adversarial-skipped --files a.js`);
   const lineaSalteo = [{ ts: `${HOY}T15:00:01.000Z`, kind: 'ADVERSARIAL_SKIP_FORZADO', sessionId: 's' }];

@@ -21,6 +21,15 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
+// La épica es un número: va dentro de una expresión regular, y otro texto la cambiaría (`.*` encontraría todo, y
+// `(a+)+` la colgaría). Las funciones que se exportan la validan también, no sólo la entrada del guion.
+const EPIC_RE = /^\d+$/;
+function epicOf(epic) {
+  const e = String(epic == null ? '' : epic).trim();
+  if (!EPIC_RE.test(e)) throw new Error(`story-number.js: la épica tiene que ser un número, no ${JSON.stringify(epic)}`);
+  return e;
+}
+
 // `story-<épica>.<n>-<título>.md` (formato del arnés) o `<épica>-<n>-<título>.md` (formato de BMAD)
 function numberOfFile(name, epic) {
   const m = String(name).match(/^(?:story-)?(\d+)[.-](\d+)[-.]/i);
@@ -31,7 +40,7 @@ function numberOfFile(name, epic) {
 // el número de la épica que nombra una rama, con punto o guion (`<épica>.<n>` o `<épica>-<n>`), en cualquier lugar del nombre
 function numbersOfBranch(ref, epic) {
   const out = [];
-  const re = new RegExp(`(?:^|[^\\d])${epic}[.-](\\d+)(?!\\d)`, 'g');
+  const re = new RegExp(`(?:^|[^\\d])${epicOf(epic)}[.-](\\d+)(?!\\d)`, 'g');
   for (const m of String(ref).matchAll(re)) out.push(Number(m[1]));
   return out;
 }
@@ -39,7 +48,7 @@ function numbersOfBranch(ref, epic) {
 // renglones `8-153-titulo: draft` de sprint-status.yaml
 function numbersOfSprintStatus(text, epic) {
   const out = [];
-  const re = new RegExp(`^\\s*${epic}-(\\d+)-[\\w-]*\\s*:`, 'gm');
+  const re = new RegExp(`^\\s*${epicOf(epic)}-(\\d+)-[\\w-]*\\s*:`, 'gm');
   for (const m of String(text || '').matchAll(re)) out.push(Number(m[1]));
   return out;
 }
@@ -58,7 +67,8 @@ function filesOnDisk(dir) {
   try { return fs.readdirSync(dir); } catch (_) { return null; }
 }
 
-function collect({ repo, epic, specs = 'specs', fetch = true }) {
+function collect({ repo, epic: rawEpic, specs = 'specs', fetch = true }) {
+  const epic = epicOf(rawEpic);
   const used = [];
   const doubts = [];
   const add = (n, where) => { if (Number.isInteger(n)) used.push({ n, where }); };
@@ -117,7 +127,7 @@ function main(argv) {
   const cmd = argv[0];
   const repo = arg(argv, '--repo');
   const epic = arg(argv, '--epic');
-  if (cmd !== 'next' || !repo || !/^\d+$/.test(String(epic || ''))) {
+  if (cmd !== 'next' || !repo || !EPIC_RE.test(String(epic || ''))) {
     process.stderr.write('uso: story-number.js next --repo <repo de historias> --epic <n> [--specs <carpeta>] [--no-fetch]\n');
     return 2;
   }

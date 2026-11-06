@@ -166,6 +166,17 @@ function crearReglas({ config, modelo, personas } = {}) {
   };
 }
 
+/**
+ * Qué oficinas recibe quien pide: una función de máquina a sí o no. La regla es la de las ejecuciones, con la perilla
+ * `site.offices.visibility`: con `maintainers`, quien mantiene todas y cada persona las de sus máquinas confirmadas; con
+ * `everyone`, todos los que entran. Sin rol, ninguna.
+ */
+function oficinasQueVe(quien, reglas, visibilidad) {
+  if (quien.rol !== 'maintainer' && quien.rol !== 'person') return () => false;
+  if (quien.rol === 'maintainer' || visibilidad === 'everyone') return () => true;
+  return (maquina) => reglas.puedeVer(quien.email, { maquina });
+}
+
 const copia = (x) => (x === undefined ? undefined : JSON.parse(JSON.stringify(x)));
 
 /**
@@ -286,4 +297,4 @@ function filtrarCorridas(M, quien, reglas) {
   return out;
 }
 
-module.exports = { quienPide, mantenedores, listaDeAcceso, crearReglas, filtrar, filtrarCorridas, FRASE_IDENTIDAD, FRASE_PROYECTOS };
+module.exports = { quienPide, mantenedores, listaDeAcceso, crearReglas, oficinasQueVe, filtrar, filtrarCorridas, FRASE_IDENTIDAD, FRASE_PROYECTOS };

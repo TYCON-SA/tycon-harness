@@ -13,9 +13,11 @@
  * de ATDD fuera del pipeline):
  *   - exit 1 del chequeo (CERO mutantes muertos habiendo generado alguno)
  *     → BLOQUEA `complete-step run-tests`. Es el único caso que frena: los tests no
- *     ejercen el código nuevo.
+ *     ejercen el código nuevo. Con una receta que no es `node --test`, hasta
+ *     MUTATION_NOTICE_UNTIL avisa y deja pasar (las recetas nuevas entran avisando).
  *   - exit 0 con sobrevivientes → AVISA (archivo:línea [operador]) y deja pasar.
  *   - exit 0 limpio / SIN_MUTANTES → sigue en silencio.
+ *   - exit 0 con DEADLINE_SIN_CORRER o SIN_MEDIR (no se midió ningún mutante) → AVISA y deja pasar.
  *   - exit 2 (estructural: story sin tests declarados, etc.) → AVISA y deja
  *     pasar — una story de docs o de config no tiene por qué trabarse.
  *   - Cualquier cosa inesperada (script ausente, excepción, exit raro) →
@@ -27,11 +29,12 @@
  * `complete-step run-tests --no-mutation` (saltea esa corrida, queda en bypass.log).
  *
  * Presupuesto (números medidos, no deseados): el
- * costo es (duración de la suite declarada) × (1 base + mutantes ejecutados) —
- * NO un fijo. Frenos: --max-mutants 12 · deadline 180s ENTRE mutantes (los
- * restantes quedan skipped) · cap 120s por corrida de suite · timeout duro del
- * spawn 300s. Peor caso: el cierre de «Correr las pruebas» puede irse hasta ~5 minutos
- * con una suite lenta (medido); con la suite del harness (~10s) queda en ~1 min.
+ * costo es (duración de las pruebas declaradas) × (1 base + mutantes ejecutados) —
+ * NO un fijo. Frenos: --max-mutants 12 · los topes por receta del chequeo (.NET
+ * 8 min en total y 3 por corrida; las demás 3 y 2; los restantes quedan skipped)
+ * · timeout duro del spawn 12 min, igual para todas. Peor caso: el cierre de «Correr
+ * las pruebas» puede irse hasta ~8 minutos en .NET; con la suite del harness (~10s), ~1 min.
+ * Cada línea de gates.log dice su receta (`runner`).
  *
  * Testeable por inyección: `invokeCheck` (reemplaza el spawn), `appendLog` y
  * `log`. El borde real `defaultInvokeCheck` (flags del CLI, --json, parseo)
@@ -45,21 +48,26 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const DEFAULT_MAX_MUTANTS = 12;
-// El corte de presupuesto lo maneja el RUNNER entre mutantes (corta limpio
-// y reporta los restantes como skipped). El timeout del spawn queda como red de
-// ÚLTIMO recurso, MÁS ALTO que el deadline — si se dispara, el hijo murió por
-// señal y sus handlers restauraron (o gritaron); el gate igual avisa.
-const DEFAULT_DEADLINE_MS = 180000;
-const HARD_TIMEOUT_MS = 300000;
+// El corte de presupuesto lo maneja el CHEQUEO, por receta (BUDGETS de mutation-check.js: .NET 8 min, las demás 3):
+// sólo él sabe qué receta corre. El timeout del spawn queda como red de ÚLTIMO recurso, igual para todas y MÁS ALTO que
+// el tope más largo — si se dispara, el hijo murió por señal y sus handlers restauraron (o gritaron); el gate igual avisa.
+const HARD_TIMEOUT_MS = 720000;
+
+// Las recetas nuevas del chequeo (todas menos `node --test`) entran avisando: hasta esta fecha, cero mutantes cazados
+// avisa y deja pasar; desde esta fecha, frena como `node --test`. Son dos semanas desde que las recetas nuevas entran:
+// el tiempo para que cada equipo agregue las pruebas que faltan antes de que el chequeo frene.
+const MUTATION_NOTICE_UNTIL = '2026-11-18';
 
 // Borde real: spawnea mutation-check.js y devuelve { code, result, stderr,
 // timedOut } con el exit code REAL y el JSON parseado (o null si no parseó).
-function defaultInvokeCheck({ scriptPath, repo, storyPath, maxMutants, deadlineMs = DEFAULT_DEADLINE_MS }) {
+// La salida de errores del chequeo pasa en el momento (heredada): el aviso «Chequeo de mutantes: N mutantes en
+// <receta>; puede tardar hasta M min» se ve antes de la espera, no al final.
+function defaultInvokeCheck({ scriptPath, repo, storyPath, maxMutants, deadlineMs = null }) {
   const r = spawnSync(
     process.execPath,
     [scriptPath, '--repo', repo, '--story', storyPath,
-      '--max-mutants', String(maxMutants), '--deadline-ms', String(deadlineMs), '--json'],
-    { encoding: 'utf8', timeout: HARD_TIMEOUT_MS },
+      '--max-mutants', String(maxMutants), ...(deadlineMs ? ['--deadline-ms', String(deadlineMs)] : []), '--json'],
+    { encoding: 'utf8', timeout: HARD_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'inherit'] },
   );
   const stderr = r.stderr || '';
   if (r.error && r.error.code === 'ETIMEDOUT') return { code: null, result: null, stderr, timedOut: true };
@@ -84,6 +92,7 @@ function runMutationGate({
   maxMutants = DEFAULT_MAX_MUTANTS,
   scriptPath = path.join(__dirname, '..', 'mutation-check.js'),
   invokeCheck = null,
+  today = new Date(),
 }) {
   // Apagado global: no se invoca y no avisa, pero queda en bypass.log para que la revisión de la noche lo cuente.
   if (String(env.TYCON_MUTATION_CHECK || '').toLowerCase() === 'off') {
@@ -141,7 +150,13 @@ function runMutationGate({
     survived: survived.length,
     verdict: res.verdict || null,
     maxMutants,
+    // la receta que corrió (del JSON del chequeo); sin JSON, no se sabe
+    runner: res.runner || 'desconocido',
   };
+  // «midió X de N»: un corte por tope dejó mutantes sin correr; el veredicto es sobre los medidos
+  if (typeof res.mutants === 'number' && typeof res.total === 'number' && res.total < res.mutants) {
+    log(`⚠️  Chequeo de mutantes: midió ${res.total} de ${res.mutants} (el tope de ${res.runner || 'la receta'} cortó antes; el veredicto es sobre los medidos).`);
+  }
   // Cuando el chequeo falla, el stderr del hijo es la ÚNICA pista del dev
   // — capturarlo y no mostrarlo lo dejaría a ciegas. Acotado a 15 líneas.
   const volcarStderr = () => {
@@ -185,6 +200,17 @@ function runMutationGate({
     volcarStderr();
     return { invoked: true, block: false, reason: 'exit1-incoherente' };
   }
+  // Período de aviso de las recetas nuevas: cero cazados avisa y deja pasar hasta MUTATION_NOTICE_UNTIL.
+  const hoy = (today instanceof Date ? today : new Date(today)).toISOString().slice(0, 10);
+  if (code === 1 && res.runner && res.runner !== 'node-test' && hoy < MUTATION_NOTICE_UNTIL) {
+    appendLog('gates.log', { ...entryBase, status: 'warn-notice', until: MUTATION_NOTICE_UNTIL });
+    log(`⚠️  Chequeo de mutantes (${res.runner}): NINGÚN mutante murió — los tests no ejercen el código que la story agregó.`);
+    for (const m of survived.slice(0, 3)) {
+      log(`    · ${m.file}:${m.line} [${m.operator}] — ${String(m.before).trim()} → ${String(m.after).trim()}`);
+    }
+    log(`   Avisa y deja pasar: la receta ${res.runner} entra frenando el ${MUTATION_NOTICE_UNTIL}.`);
+    return { invoked: true, block: false, reason: 'aviso-receta-nueva' };
+  }
   if (code === 1) {
     appendLog('gates.log', { ...entryBase, status: 'blocked' });
     log('marker.js complete-step run-tests BLOQUEADO — chequeo de mutantes: NINGÚN mutante murió.');
@@ -204,7 +230,16 @@ function runMutationGate({
 
   // exit 0 — pasó; con sobrevivientes AVISA, limpio sigue en silencio.
   if (code === 0) {
-    if (survived.length) {
+    if (res.verdict === 'DEADLINE_SIN_CORRER') {
+      // un corte que no llegó a medir ninguno: avisa y deja pasar
+      appendLog('gates.log', { ...entryBase, status: 'warn-deadline' });
+      log(`⚠️  Chequeo de mutantes: el tope cortó antes de medir un solo mutante (${res.runner || 'receta desconocida'}) — no se verificó nada; sigue sin frenar.`);
+    } else if (res.verdict === 'SIN_MEDIR') {
+      // ningún mutante llegó a medirse (no compilan, o el resultado no se pudo leer): avisa, no es un verde
+      const motivo = Array.isArray(res.skipped) && res.skipped[0] ? res.skipped[0].reason : 'sin motivo';
+      appendLog('gates.log', { ...entryBase, status: 'warn-unmeasured', reason: motivo });
+      log(`⚠️  Chequeo de mutantes: no se pudo medir ningún mutante (${res.runner || 'receta desconocida'}: ${motivo}) — no se verificó nada; sigue sin frenar.`);
+    } else if (survived.length) {
       appendLog('gates.log', { ...entryBase, status: 'warn-survivors' });
       log(`⚠️  Chequeo de mutantes: ${survived.length} de ${entryBase.total} mutantes SOBREVIVIERON (nadie los probó). Avisa, no frena:`);
       for (const m of survived) log(`    · ${m.file}:${m.line} [${m.operator}]`);
@@ -232,4 +267,4 @@ function runMutationGate({
   return { invoked: true, block: false, reason: 'exit-raro' };
 }
 
-module.exports = { runMutationGate, defaultInvokeCheck, DEFAULT_MAX_MUTANTS };
+module.exports = { runMutationGate, defaultInvokeCheck, DEFAULT_MAX_MUTANTS, HARD_TIMEOUT_MS, MUTATION_NOTICE_UNTIL };

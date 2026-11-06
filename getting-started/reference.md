@@ -43,8 +43,10 @@ Ten words, each with a single meaning on these pages:
 
 - **No GitHub account**: this repository is public, and the harness is downloaded from it without a credential.
 - **Your coding agent**: Claude Code or Codex, installed and signed in.
-- **On Windows, native**: Node 24 (Node 22 or later is enough), PowerShell 7 and `tar` (Windows 10 and later bring it). Git and Python
-  are not needed. Through WSL, the same as on Mac and Linux, inside WSL.
+- **On Windows, native**: Node 24 (Node 22 or later is enough), PowerShell 7, `tar` (Windows 10 and later bring it) and Git for
+  Windows. Git is needed so the controls that are bash scripts run, the safety guard among them, and to sign with a click.
+  What happens to those controls without it was not measured: that is why it is required. The harness still downloads as
+  files. Python is not needed. Through WSL, the same as on Mac and Linux, inside WSL.
 - **On Mac and Linux**: Bash, Python 3, `tar`, `curl` and Node 24 (Node 22 or later is enough; tested on 22 and 24). Git is not needed.
 - **Node 20**: 20 is tolerated only to update an existing installation; it is not tested.
 - **The reviewers for your stack** that your team brings may need more (the .NET ones, the .NET SDK your plugin
@@ -81,6 +83,7 @@ missing, from any terminal:
 ```powershell
 winget install OpenJS.NodeJS.LTS
 winget install Microsoft.PowerShell
+winget install Git.Git
 ```
 
 Close the terminal and open **PowerShell 7** (that is its name in the Start menu): every command on this page runs
@@ -349,7 +352,7 @@ There are two, `minimal` and `full`, and there is no default: `install` asks if 
 pass `--profile`.
 
 - **`minimal`**: the guides, the skills, the reviewers, the story workflow and the new-version notice. It does not
-  change how the assistant answers. It registers nine hooks (six that only take notes, the one that shows package notices, the brake against
+  change how the assistant answers. It registers 12 hooks (eight that only take notes, the one that shows package notices, the one that covers the machine's secrets, the brake against
   destructive commands and the one against editing code without a story or a one-off fix), plus those of each optional connection you turn on, and brings the links, commands and third-party skills.
 - **`full`**: everything in `minimal`, plus the other brakes (the same gate for code written from the
   terminal, and the one against committing a story without the evidence it asks for), the three blocks that change how the assistant answers in all your projects (in Spanish,
@@ -444,7 +447,7 @@ writes three blocks of rules into `~/.claude/CLAUDE.md`, between their own marke
 - `background-execution`: steps longer than two minutes run in the background and are announced first. Another hook
   measures what kept the conversation blocked (`TYCON_BLOCKING_METER=0`).
 - `tool-names`: the table with the exact name of every tool those rules mention.
-- The import line loads the harness `INDEX.md` in every session: about 15 KB, in Spanish, with the index of the
+- The import line loads the harness `INDEX.md` in every session: about 17 KB, in Spanish, with the index of the
   guides and the always-on rules.
 - The links in `~/.claude/skills` and `~/.claude/agents` make the harness skills and reviewers available in all your
   sessions: the name and description of each one load in every session.

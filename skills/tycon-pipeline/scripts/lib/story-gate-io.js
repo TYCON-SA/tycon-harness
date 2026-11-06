@@ -58,6 +58,45 @@ function isStale(obj) {
   return Date.now() - new Date(t).getTime() > STALE_HOURS * 3600 * 1000;
 }
 
+// Una espera anotada protege a su ejecución de las podas por vieja hasta esta edad: una olvidada no protege para siempre.
+const WAIT_TURN_MAX_MS = 24 * 3600 * 1000;
+
+/**
+ * La espera de turno que anotó la sesión (`marker.js doing --waiting-for`): `{ waitingFor, since }`, o null sin nota, sin
+ * espera o con la espera de más de 24 h. Una ejecución que espera su turno no está abandonada aunque no toque nada: la
+ * respetan las tres podas (marker.js, on-prompt.js y `listOtherMarkers`).
+ */
+function waitingTurn(stateDir, sessionId, now = Date.now()) {
+  const n = readJson(path.join(stateDir, 'doing', `${safeSid(sessionId)}.json`));
+  const what = n && typeof n.waitingFor === 'string' ? n.waitingFor.trim() : '';
+  if (!what) return null;
+  const since = Number.isFinite(Number(n.waitingSince)) ? Number(n.waitingSince) : Date.parse(n.waitingSince);
+  if (!Number.isFinite(since) || now - since > WAIT_TURN_MAX_MS) return null;
+  return { waitingFor: what, since };
+}
+
+/**
+ * Guarda el marcador de una ejecución que se poda en `<estado>/pruned/<sesión>.json`, para que `marker.js restore` la
+ * rearme con sus pasos. true si quedó guardado: sin la copia, no se poda.
+ */
+function savePruned(stateDir, sessionId, marker) {
+  try {
+    const dir = path.join(stateDir, 'pruned');
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const file = path.join(dir, `${safeSid(sessionId)}.json`);
+    const tmp = `${file}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify({ ...marker, prunedAt: new Date().toISOString() }, null, 2), { mode: 0o600 });
+    fs.renameSync(tmp, file);
+    return true;
+  } catch { return false; }
+}
+
+/** La copia de una ejecución podada, o null. */
+function readPruned(stateDir, sessionId) {
+  const m = readJson(path.join(stateDir, 'pruned', `${safeSid(sessionId)}.json`));
+  return m && m.storyId ? m : null;
+}
+
 // ── marker / ad-hoc ──────────────────────────────────────────────────────────────────────────────
 
 function markerPath(stateDir, sessionId) {
@@ -108,10 +147,10 @@ function firmaDelAdhoc(stateDir, sessionId, adhoc) {
   } catch (e) { return { ok: false, motivo: `no pude leer el registro de firmas (${e.code || e.message})` }; }
   const sid = String(sessionId);
   for (const linea of txt.split('\n')) {
-    if (!linea.includes('adhoc-lane-signed')) continue;
+    if (!linea.includes('adhoc-lane')) continue;
     let o;
     try { o = JSON.parse(linea); } catch { continue; }
-    if (o.name !== 'adhoc-lane-signed' || o.status !== 'ok' || String(o.destino) !== sid) continue;
+    if (!['adhoc-lane-signed', 'adhoc-lane:sobre-cupo-signed'].includes(o.name) || o.status !== 'ok' || String(o.destino) !== sid) continue;
     const t = Date.parse(o.ts || '');
     if (!Number.isNaN(t) && t <= hasta && t >= hasta - FIRMA_ADHOC_MARGEN_MS) return { ok: true };
   }
@@ -152,7 +191,7 @@ function riesgoDeLaRutaYSuReal(abs, repo) {
     else return { value: true, rule: 'no-pude-saber', file: null, reason: `no pude saber: no pude ubicar el repo de ${abs} (${u.falla})` };
   }
   const real = installedTree.realPath(abs);
-  let repoReal = repo;
+  let repoReal;
   try { repoReal = fs.realpathSync(repo); } catch (_) { repoReal = repo; }
   let ultimo = null;
   for (const [ruta, raiz] of [[abs, repo], [real, repoReal]]) {
@@ -209,7 +248,7 @@ function listOtherMarkers(stateDir, sessionId, filePath) {
   for (const f of files) {
     if (!f.endsWith('.json') || f === `${safeSid(sessionId)}.json`) continue;
     const m = readJson(path.join(dir, f));
-    if (!m || !m.storyId || isStale(m)) continue;
+    if (!m || !m.storyId || (isStale(m) && !waitingTurn(stateDir, m.sessionId || f.replace(/\.json$/, '')))) continue;
     if (Array.isArray(m.stepsPending) && m.stepsPending.length === 0) continue; // pipeline terminado
     if (m.repoPath && filePath && !isInside(m.repoPath, filePath)) continue;
     out.push({ sessionId: m.sessionId || f.replace(/\.json$/, ''), storyId: m.storyId, repoPath: m.repoPath || null });
@@ -336,6 +375,29 @@ function appendLog(stateDir, fileName, sessionId, obj) {
  * @param {string} [p.stateDir] override para tests
  * @returns {{ verdict: {action, kind?, reason}, message: string|null, ctx: object }}
  */
+/**
+ * El carril con la lista de archivos que suma para el tope al editar: de implementación, que existen y dentro de un repo.
+ * Sólo se filtra cuando la lista cruda ya llegó al cupo: por debajo no puede frenar, y así una edición no suma llamadas a git.
+ * Si git no contesta, el archivo cuenta.
+ */
+function carrilQueCuenta(adhoc) {
+  const files = adhoc && Array.isArray(adhoc.files) ? adhoc.files : [];
+  if (files.length < gate.cupoDelCarril(adhoc)) return adhoc;
+  return { ...adhoc, files: archivosQueSuman(files) };
+}
+
+function archivosQueSuman(files) {
+  const { isImplPath } = require('./atdd-order.js');
+  const { ubicar } = require('./adhoc-base.js');
+  return files.filter((f) => {
+    if (!path.isAbsolute(String(f)) || !gate.isCodeFile(f) || !fs.existsSync(f)) return false;
+    const u = ubicar(f);
+    if (u.fuera) return false;
+    // relativa al repo: un repo que vive debajo de una carpeta `tests` no hace pruebas de todos sus archivos
+    return isImplPath(u.raiz ? path.relative(u.raiz, fs.realpathSync(f)).replace(/\\/g, '/') : f);
+  });
+}
+
 function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR, installedRoots }) {
   const abs = path.isAbsolute(String(filePath)) ? String(filePath) : path.resolve(cwd || process.cwd(), String(filePath));
   // Una ejecución abierta a la que le falta una pieza frena antes que nada: ni el carril, ni un ad-hoc, ni
@@ -359,7 +421,7 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
   const marker = readMarker(stateDir, sessionId);
   const declarado = readAdhoc(stateDir, sessionId);
   const firma = firmaDelAdhoc(stateDir, sessionId, declarado);
-  const adhoc = firma.ok ? declarado : null;
+  const adhoc = firma.ok ? carrilQueCuenta(declarado) : null;
   // una declaración sin firma reconocida no abre, y el bloqueo dice por qué (no es lo mismo que no haber declarado)
   const adhocSinFirma = declarado && !firma.ok ? firma.motivo : null;
 
@@ -385,15 +447,17 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
     marker, adhoc, isHarness, realFilePath, installedRoots: roots, realStateDir, adhocRepoRoot, riesgoAlto,
   });
   let pre = hipotetico(false);
-  if (pre.action === 'block' && pre.kind !== 'state-dir' && pre.kind !== 'installed-tree' && pre.kind !== 'control-approvals' && isHarnessRepo(abs)) pre = hipotetico(true);
+  let esDelArnes = false;
+  if (pre.action === 'block' && pre.kind !== 'state-dir' && pre.kind !== 'installed-tree' && pre.kind !== 'control-approvals' && isHarnessRepo(abs)) { esDelArnes = true; pre = hipotetico(true); }
   // Si con un repo "hipotéticamente bajo el arnés" ya pasa, pasa (no-código, harness, marker OK, ad-hoc OK).
   // Si bloquea por state-dir, installed-tree o plan, bloquea sin mirar el repo. Sólo no-lane / adhoc-cap dependen del repo.
   let repo = { repoRoot: null, repoHasTycon: false, repoHasStories: false, discoveryPartial: false };
   let verdict = pre;
   if (pre.action === 'block' && (pre.kind === 'no-lane' || pre.kind === 'adhoc-cap')) {
     repo = repoContext(abs);
+    // el tope en un repo del arnés se reevalúa como tal: con `isHarness: false`, un clon sin `.tycon/` dejaría pasar
     verdict = gate.computeStoryGate({
-      filePath: abs, stateDir, homeDir: os.homedir(), ...repo, marker, adhoc, isHarness: false,
+      filePath: abs, stateDir, homeDir: os.homedir(), ...repo, marker, adhoc, isHarness: esDelArnes,
       realFilePath, installedRoots: roots, realStateDir,
       gateEnabled: gateEnabledForRepo(repo.repoRoot),
     });
@@ -417,7 +481,7 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
     story: marker ? marker.storyId : null, reason: verdict.reason, ...(adhocSinFirma ? { adhocSinFirma } : {}),
   });
   let message = gate.blockMessage(verdict, { filePath: abs, repoRoot: repo.repoRoot, marker, otherMarkers, via,
-    harness: verdict.kind === 'adhoc-high-risk' ? isHarnessRepo(abs) : true });
+    harness: verdict.kind === 'adhoc-high-risk' || verdict.kind === 'adhoc-cap' ? isHarnessRepo(abs) : true });
   if (adhocSinFirma && verdict.kind === 'no-lane') {
     message += `\n\n  ⚠️ Hay una declaración del arreglo rápido para esta sesión, pero sin su firma: ${adhocSinFirma}. No abre el\n`
       + '     portón. Si la persona quiere el arreglo rápido, se vuelve a declarar con `marker.js adhoc set`, que ella aprueba en la ventana.';
@@ -426,7 +490,7 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
 }
 
 module.exports = {
-  DEFAULT_STATE_DIR, STALE_HOURS,
-  readMarker, readAdhoc, adhocFirmado, writeAdhoc, recordAdhocFile, anotarRutaDelCarril, adhocPath, listOtherMarkers,
+  DEFAULT_STATE_DIR, STALE_HOURS, WAIT_TURN_MAX_MS,
+  waitingTurn, savePruned, readPruned, readMarker, readAdhoc, adhocFirmado, writeAdhoc, recordAdhocFile, anotarRutaDelCarril, archivosQueSuman, adhocPath, listOtherMarkers,
   repoContext, gateEnabledForRepo, appendLog, evaluate, isHarnessRepo, defaultInstalledRoots,
 };

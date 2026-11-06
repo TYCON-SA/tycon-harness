@@ -15,7 +15,7 @@
           "id": "grita-dev-atrasada-con-commits-reales",
           "type": "must-emit",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/dev-behind-main-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/dev-behind-main-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js $TCG/scripts/lib/clean-git-env.js tcg/scripts/lib/",
             "git init -q --bare -b main o.git",
             "git init -q -b main prod && cd prod && git -c user.email=b@b -c user.name=b -c core.hooksPath=/dev/null commit -q --allow-empty -m base && git remote add origin ../o.git && git push -q origin main && git push -q origin main:dev && git fetch -q origin",
             "cd prod && git -c user.email=b@b -c user.name=b -c core.hooksPath=/dev/null commit -q --allow-empty -m 'feat: real' && git -c user.email=b@b -c user.name=b -c core.hooksPath=/dev/null commit -q --allow-empty -m 'chore: bump version to 1.0.1 [skip ci]' && git push -q origin main && git fetch -q origin",
@@ -38,7 +38,7 @@
           "id": "quiet-dev-al-dia",
           "type": "must-stay-quiet",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/dev-behind-main-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/dev-behind-main-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js $TCG/scripts/lib/clean-git-env.js tcg/scripts/lib/",
             "git init -q --bare -b main o.git",
             "git init -q -b main prod && cd prod && git -c user.email=b@b -c user.name=b -c core.hooksPath=/dev/null commit -q --allow-empty -m base && git remote add origin ../o.git && git push -q origin main && git push -q origin main:dev && git fetch -q origin",
             "cd prod && git remote set-url origin https://dev.azure.com/acme/Prod/_git/Backend"
@@ -54,7 +54,7 @@
           "id": "quiet-solo-commits-del-bot",
           "type": "must-stay-quiet",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/dev-behind-main-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/dev-behind-main-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js $TCG/scripts/lib/clean-git-env.js tcg/scripts/lib/",
             "git init -q --bare -b main o.git",
             "git init -q -b main prod && cd prod && git -c user.email=b@b -c user.name=b -c core.hooksPath=/dev/null commit -q --allow-empty -m base && git remote add origin ../o.git && git push -q origin main && git push -q origin main:dev && git fetch -q origin",
             "cd prod && git -c user.email=b@b -c user.name=b -c core.hooksPath=/dev/null commit -q --allow-empty -m 'chore: update form versions' && git push -q origin main && git fetch -q origin",
@@ -71,7 +71,7 @@
           "id": "quiet-remoto-de-afuera",
           "type": "must-stay-quiet",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/dev-behind-main-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/dev-behind-main-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js $TCG/scripts/lib/clean-git-env.js tcg/scripts/lib/",
             "git init -q --bare -b main o.git",
             "git init -q -b main prod && cd prod && git -c user.email=b@b -c user.name=b -c core.hooksPath=/dev/null commit -q --allow-empty -m base && git remote add origin ../o.git && git push -q origin main && git push -q origin main:dev && git fetch -q origin",
             "cd prod && git -c user.email=b@b -c user.name=b -c core.hooksPath=/dev/null commit -q --allow-empty -m 'feat: real' && git push -q origin main && git fetch -q origin && git remote set-url origin https://github.com/acme/prod.git"

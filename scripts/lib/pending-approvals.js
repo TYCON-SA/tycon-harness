@@ -42,7 +42,10 @@ const RECORD_DIR = 'tasks/pending-approvals';
 const ARCHIVO = /^[A-Za-z0-9._-]+\.json$/;
 const FIRMA = 'pending-approval';
 const FIRMADA = `${FIRMA}-signed`;
-const VIAS = ['delegacion', 'ventana', 'terminal'];
+// `click` y `mensaje`: la aprobación explícita de la persona en una pestaña sin permisos, un click en el cuadro de
+// opciones o su «aprobado» escrito (owner-approvals.js). `avisado`: la rutina de una pestaña sin permisos, hecha sin firma
+// y avisada a la persona (owner-window.js `RUTINA_SIN_PERMISOS`)
+const VIAS = ['delegacion', 'ventana', 'terminal', 'click', 'mensaje', 'avisado'];
 // el código de un pendiente: lo que va entre corchetes al principio del renglón
 const CODIGO = /^[A-Za-z0-9._-]+$/;
 // una casilla abierta de primer nivel, con cualquiera de las tres viñetas de markdown; con dos espacios o más adelante es

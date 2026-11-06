@@ -42,6 +42,7 @@ const TX = require('../texts.js');
 // del pedido al salir de cada ruta (texts.js, `traducirRespuesta`)
 const M = (clave, valores) => TX.t('es', clave, valores);
 const { dentroDe, limpiarLinea } = require('../sources.js');
+const { displayFingerprint } = require('../../tools/office/fields.js');
 const LANG = require('../language.js');
 
 const TREE = path.join(__dirname, '..', '..', '..');
@@ -84,7 +85,8 @@ function leer(dir, rel, indice = null) {
   if (r.status !== 0) return { estado: 'ilegible', motivo: M('config.gitSinVersion', { rel }) };
   return { estado: 'leido', texto, oid: r.stdout.trim() };
 }
-const docDe = (t) => { try { const v = JSON.parse(t); return isObject(v) ? v : null; } catch { return null; } };
+// con la marca de orden de bytes, como la lee la máquina (team.js)
+const docDe = (t) => { try { const v = JSON.parse(String(t).replace(/^﻿/, '')); return isObject(v) ? v : null; } catch { return null; } };
 /** El archivo de una sección en un clon: el de hoy, o el de antes (`archivoViejo`) si el repo todavía sólo trae ése. */
 const archivoDe = (s, dir) => (s.archivoViejo && dir && !fs.existsSync(path.join(dir, s.archivo)) && fs.existsSync(path.join(dir, s.archivoViejo)) ? s.archivoViejo : s.archivo);
 /**
@@ -363,7 +365,7 @@ const ESPERA_REFRESCO_MS = 8 * 1000;
  * `remotos` ({ operaciones, perfil }: la plataforma de cada repo cuando la dirección no la dice) y `esperaRefrescoMs`.
  * `demo` (el sitio demo, demo.js): Proponer, Invitar y Revocar revisan como siempre y muestran lo que pasaría, sin abrir nada.
  */
-function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy = null, lectores = {}, fetch = globalThis.fetch, urlBase = {}, remotos = {}, log = () => {}, esperaRefrescoMs = ESPERA_REFRESCO_MS, invitaciones = null, clavesDelRepo = ORG.CLAVES_DEL_REPO, urlDeProducto = ORG.urlDeRepo, demo = false, repoDeEjemplo = null }) {
+function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy = null, lectores = {}, fetch = globalThis.fetch, urlBase = {}, remotos = {}, log = () => {}, esperaRefrescoMs = ESPERA_REFRESCO_MS, invitaciones = null, clavesDelRepo = ORG.CLAVES_DEL_REPO, urlDeProducto = ORG.urlDeRepo, demo = false, repoDeEjemplo = null, llaves = null }) {
   const dia = () => (hoy ? hoy() : new Date(ahora()).toISOString().slice(0, 10));
   const lector = (nombre) => ORG.loadReader(TREE, nombre, lectores);
   // los umbrales del arnés (los de la imagen): `{ thresholds, motivo }`; sin ellos, Umbrales no edita y lo dice
@@ -382,6 +384,33 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
 
   // ── la defensa de las escrituras ──
   const escritura = (ctx) => defensaDeEscritura(cfg, ctx);
+
+  // ── la oficina de cada máquina: se decide en el disco del sitio, sin pedido al repo ──
+  function contextoDeOficinas() {
+    const config = fuentes.config();
+    const site = isObject(config) && isObject(config.site) ? config.site : {};
+    const personas = typeof fuentes.personas === 'function' ? fuentes.personas() : null;
+    return { huellas: typeof fuentes.huellas === 'function' ? fuentes.huellas() : null, reglas: access.crearReglas({ config, modelo: fuentes.modelo(), personas }), conBuzon: isObject(site.mailbox) };
+  }
+  function vistaDeOficinas() {
+    if (!llaves) return null;
+    const ctx = contextoDeOficinas();
+    llaves.emparejar(ctx);
+    const v = llaves.vista(ctx);
+    return { pedidos: v.pedidos.map((p) => ({ ...p, huella: displayFingerprint(p.fingerprint) })), maquinas: v.maquinas, conBuzon: ctx.conBuzon, sinDisco: !cfg.dataDir, noGuarda: v.noGuarda, proximaLectura: typeof fuentes.proximaLectura === 'function' ? fuentes.proximaLectura() : null };
+  }
+  function accionDeOficina(body, por) {
+    const { accion, fingerprint, maquina } = body;
+    const texto = (v) => (typeof v === 'string' ? v : '');
+    if (accion === 'approve') return llaves.aprobar(texto(fingerprint), por, contextoDeOficinas());
+    if (accion === 'reject') return llaves.rechazar(texto(fingerprint), por);
+    if (accion === 'confirm') return llaves.confirmarHuella(texto(fingerprint), por);
+    if (accion === 'disable') return llaves.darDeBaja(texto(maquina), por);
+    if (accion === 'reactivate') return llaves.reactivar(texto(maquina), por, contextoDeOficinas().reglas);
+    if (accion === 'revoke') return llaves.retirar(texto(maquina), por, contextoDeOficinas().reglas);
+    if (accion === 'clear_mark') return llaves.borrarMarca(texto(maquina), por);
+    return null;
+  }
 
   // ── la vista de una sección ──
   function contextoPersonas(doc) {
@@ -905,11 +934,19 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     // lo que cambia, para mostrarlo antes de proponer: la diferencia por renglones y el resumen en palabras
     const cambia = bueno && typeof r.texto === 'string';
     const resumen = cambia ? resumenDe(s, docDe(texto || '') || {}, docDe(r.texto) || {}, views.idiomaDe(ctx)) : [];
-    const diferencia = cambia ? ORG.diferencia(texto || '', r.texto) : [];
+    // la diferencia por valor: el sitio reescribe el archivo en su formato, y eso se cuenta aparte (`forma`)
+    const dif = cambia ? ORG.diferenciaDeJson(texto || '', r.texto) : { tramos: [], forma: 0 };
+    // antes de confirmar: si el pedido también sube la versión que pide la capa, o por qué no se va a poder proponer
+    let aviso = r.aviso || null;
+    if (cambia && s.repo === 'perfil' && s.archivo === 'team-profile.json' && clones().perfil) {
+      const sube = capaPara(docDe(r.texto), texto, clones().perfil.dir);
+      if (sube && sube.problema) advertencia = advertencia ? `${advertencia} ${sube.problema}` : sube.problema;
+      else if (sube && sube.aviso) aviso = aviso ? `${aviso} ${sube.aviso}` : sube.aviso;
+    }
     // la versión sobre la que se armó el texto: la de la página, o la del sitio para lo que se arma siempre sobre la versión
     // de hoy («Confirmar máquina»). «Proponer» la necesita para comparar contra la misma
     const version = { texto, oid: texto === v.texto ? v.oid : body.oid };
-    return { ...r, ok: bueno, problems, texto: bueno ? r.texto : null, borrador, advertencia, resumen, diferencia, version };
+    return { ...r, ok: bueno, problems, texto: bueno ? r.texto : null, borrador, advertencia, aviso, resumen, diferencia: dif.tramos, forma: dif.forma, version };
   }
 
   /** El texto que llega a «Proponer» se vuelve a validar entero, con el lector de su archivo: nunca se confía en la pantalla. */
@@ -938,7 +975,17 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     if (s.archivo === 'operations.json' && isObject(doc.site) && Array.isArray(doc.site.access) && !mantenedoresDe(doc.site).length) return SIN_MANTENEDORES;
     if (s.repo === 'perfil') {
       const capa = leerDe(clones().perfil.dir, 'team-layer.json');
-      const layerText = capa.estado === 'leido' ? capa.texto : '';
+      let layerText = capa.estado === 'leido' ? capa.texto : '';
+      // el perfil del equipo: una clave que pide una versión del arnés sube la capa en el mismo pedido si todas las
+      // máquinas activas la tienen (capaQueSube); si no, frena y dice cuáles. Con la capa que sube, el portón de abajo
+      // mira la capa nueva (sigue frenando una lista de paquetes que el sitio no conoce). Sin capa, ninguna máquina
+      // aplica el perfil: no hay versión que pedir
+      if (s.archivo === 'team-profile.json') {
+        if (capa.estado !== 'leido') return null;
+        const sube = capaPara(doc, actualTexto, clones().perfil.dir);
+        if (sube && sube.problema) return sube.problema;
+        if (sube) layerText = sube.contenido;
+      }
       // la sección Paquetes vive en un archivo que cualquier versión lee; sólo una LISTA pide una versión que la conozca
       // el perfil del equipo: una lista de paquetes y `response` piden su versión; team-repos.json, la suya
       const gate = s.archivo === 'team-profile.json'
@@ -947,6 +994,37 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       if (gate) return gate;
     }
     return null;
+  }
+
+  /**
+   * Las máquinas del buzón con su versión (`versionesDeMaquinas`), para la regla de la capa: `{ maquinas, motivo }`, con
+   * `maquinas` null si el espejo no se puede leer. Un espejo que todavía no existe es un buzón sin máquinas.
+   */
+  function maquinasDelBuzon() {
+    try { fs.readdirSync(fuentes.dirBuzon); } catch (e) {
+      if (e && e.code === 'ENOENT') return { maquinas: [], motivo: null };
+      return { maquinas: null, motivo: M('config.espejoIlegible', { codigo: (e && e.code) || 'error' }) };
+    }
+    const cl = clones();
+    const opsDoc = cl.operaciones ? docDe((leerDe(cl.operaciones.dir, 'operations.json').texto) || '') : null;
+    const machines = (opsDoc || fuentes.config() || {}).people;
+    const quien = Object.fromEntries(Object.entries(isObject(machines) && isObject(machines.machines) ? machines.machines : {}).filter(([, e]) => isObject(e)).map(([m, e]) => [m, norm(e.person)]));
+    return { maquinas: ORG.versionesDeMaquinas({ espejo: fuentes.dirBuzon, versionImagen, ahora: ahora(), personas: quien }), motivo: null };
+  }
+  /**
+   * La capa que acompaña a un cambio de team-profile.json (ORG.capaQueSube), leída del clon `dir`: null, `{ archivo,
+   * contenido, oid, aviso }` o `{ problema }`. Una capa que no se puede leer frena con su motivo; sin capa, null.
+   */
+  function capaPara(doc, actualTexto, dir) {
+    const actual = docDe(actualTexto || '');
+    // sin una clave que pida versión, ni la capa ni el buzón se leen: una capa rota no frena lo que no la necesita
+    if (!ORG.clavesQuePidenVersion({ actual, doc }).length) return null;
+    const capa = leerDe(dir, 'team-layer.json');
+    if (capa.estado === 'ilegible') return { problema: capa.motivo };
+    if (capa.estado !== 'leido') return null;
+    const { maquinas, motivo } = maquinasDelBuzon();
+    const sube = ORG.capaQueSube({ layerText: capa.texto, actual, doc, maquinas, maquinasMotivo: motivo, versionImagen, ahora: ahora() });
+    return sube && !sube.problema ? { ...sube, oid: capa.oid } : sube;
   }
 
   async function proponer(s, body, ctx) {
@@ -982,17 +1060,13 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       if (!e || !e.dir) return { ok: false, message: M('config.clonFallo', { motivo: (e && e.motivo) || M('config.noSeArmoClon') }) };
       dir = e.dir;
     }
-    // la herramienta de horas y los canales de aviso: el mismo pedido sube la versión que pide el perfil, si es anterior
-    // a la que los lee (una máquina vieja rechaza la capa nueva y sigue con la de antes)
+    // una clave del perfil que sólo lee una versión nueva del arnés: el mismo pedido sube `requires.harness` de la capa,
+    // si todas las máquinas activas ya la tienen (ORG.capaQueSube; una máquina vieja rechazaría el perfil entero)
     let archivos = null;
-    const antes = docDe(base ? base.texto || '' : v.texto || '');
-    // la capa se lee sólo si el pedido cambia una de esas claves: prender o apagar otra integración no la necesita
-    if (s.id === 'integraciones' && ORG.cambiaLaCapa({ actual: antes, doc: docDe(texto) })) {
-      const capa = leerDe(dir, 'team-layer.json');
-      if (capa.estado === 'ilegible') return { ok: false, message: capa.motivo };
-      const sube = ORG.timeTrackingLayer({ layerText: capa.estado === 'leido' ? capa.texto : null, actual: antes, doc: docDe(texto) });
+    if (s.repo === 'perfil' && s.archivo === 'team-profile.json') {
+      const sube = capaPara(docDe(texto), base ? base.texto || '' : v.texto || '', dir);
       if (sube && sube.problema) return { ok: false, message: sube.problema };
-      if (sube) archivos = [{ archivo: v.archivo, contenido: texto, oidEsperado: body.oid }, { archivo: sube.archivo, contenido: sube.contenido, oidEsperado: capa.estado === 'leido' ? capa.oid : null }];
+      if (sube) archivos = [{ archivo: v.archivo, contenido: texto, oidEsperado: body.oid }, { archivo: sube.archivo, contenido: sube.contenido, oidEsperado: sube.oid }];
     }
     const r = await RP.proponer({
       clon: dir, ...(archivos ? { archivos } : { archivo: v.archivo, contenido: texto, oidEsperado: body.oid }), idCorto: s.idCorto,
@@ -1025,9 +1099,10 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     if (!r.ok || typeof r.texto !== 'string') return { ok: false, codigo: 'no_valida', message: M('config.reaplicadoNoValida', { detalle: (r.problems || []).map((p) => `${p.path || '(el archivo)'}: ${p.message}`).join(' · ') }), conflictos: [], borrador, seccion };
     const problema = validarTexto(s, r.texto, punta.texto);
     if (problema) return { ok: false, codigo: 'no_valida', message: problema, conflictos: [], borrador, seccion };
+    const dif = ORG.diferenciaDeJson(punta.texto || '', r.texto);
     return {
       ok: false, codigo: 'reaplicado', message: M('config.reaplicado'), texto: r.texto, borrador, seccion,
-      diferencia: ORG.diferencia(punta.texto || '', r.texto), resumen: resumenDe(s, actual, docDe(r.texto) || {}, views.idiomaDe(ctx)),
+      diferencia: dif.tramos, forma: dif.forma, resumen: resumenDe(s, actual, docDe(r.texto) || {}, views.idiomaDe(ctx)),
     };
   }
 
@@ -1326,8 +1401,24 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
         const todo = await leerTodoGuardado();
         // el estado de las invitaciones cambia con cada ciclo de fuentes: se arma fresco, fuera de lo guardado
         const inv = await estadoDeInvitaciones();
-        if (!inv) return json(200, todo);
-        return json(200, { ...todo, secciones: todo.secciones.map((x) => (x.id === 'sitio' ? { ...x, extras: { ...(x.extras || {}), invitaciones: inv } } : x)) });
+        // las oficinas, igual: cambian con cada conexión de una máquina
+        const oficinas = vistaDeOficinas();
+        if (!inv && !oficinas) return json(200, todo);
+        return json(200, { ...todo, secciones: todo.secciones.map((x) => {
+          if (x.id === 'sitio' && inv) return { ...x, extras: { ...(x.extras || {}), invitaciones: inv } };
+          if (x.id === 'personas' && oficinas) return { ...x, extras: { ...(x.extras || {}), oficinas } };
+          return x;
+        }) });
+      }),
+    },
+    {
+      method: 'POST', path: '/api/config/oficinas', needs: solo, handler: enIdioma(async (ctx) => {
+        const e = await escritura(ctx); if (e.error) return e.error;
+        if (!llaves) return rechazo(404, M('config.oficinaAccionRara'));
+        const r = accionDeOficina(e.body || {}, ctx.quien.email);
+        if (!r) return rechazo(400, M('config.oficinaAccionRara'));
+        if (!r.ok) return json(200, { ok: false, message: M('config.oficinaNoSePudo', { motivo: M(`config.oficinaMotivo.${r.motivo}`) }), oficinas: vistaDeOficinas() });
+        return json(200, { ok: true, oficinas: vistaDeOficinas() });
       }),
     },
     {
@@ -1467,4 +1558,4 @@ async function defensaDeEscritura(cfg, ctx) {
   try { return { body: cuerpo.texto ? JSON.parse(cuerpo.texto) : {} }; } catch { return { error: rechazo(400, M('config.noEsJson')) }; }
 }
 
-module.exports = { crearRutas, defensaDeEscritura };
+module.exports = { crearRutas, defensaDeEscritura, docDe };

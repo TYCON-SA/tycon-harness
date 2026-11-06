@@ -824,6 +824,7 @@ test('computeDeepReviewGate: escalación por complejidad — la story pesada va 
 test('DeepReviewGate_NuncaOfreceFable — ninguna combinación del portón ofrece Fable ni manda a preguntar por él', () => {
   const heavy = path.join(os.tmpdir(), `dr-heavy-nf-${process.pid}.md`);
   const normal = path.join(os.tmpdir(), `dr-normal-nf-${process.pid}.md`);
+  const homeVacia = fs.mkdtempSync(path.join(os.tmpdir(), 'dr-home-nf-'));
   fs.writeFileSync(heavy, HEAVY_STORY);
   fs.writeFileSync(normal, '---\nstory: "1.1"\n---\n# x\n');
   const base = { repo: os.tmpdir(), files: [] };
@@ -840,13 +841,16 @@ test('DeepReviewGate_NuncaOfreceFable — ninguna combinación del portón ofrec
       assert.doesNotMatch(JSON.stringify(g), /requires_user_approval|preguntar al user/, `${donde}: no manda a preguntar por un modelo`);
     };
     for (const c of combinaciones) sinFable(computeDeepReviewGate({ ...base, ...c }), JSON.stringify(c).slice(0, 120));
-    // y por el comando real, con la story pesada
+    // y por el comando real, con la story pesada. Con una HOME vacía: el comando sale 3 si otra sesión de la máquina tiene
+    // un pase adversarial en vuelo, y eso no es lo que se prueba acá.
     const { spawnSync } = require('node:child_process');
-    const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'pipeline.js'), 'deep-review-gate', '--repo', os.tmpdir(), '--story', heavy], { encoding: 'utf8' });
+    const env = { ...process.env, HOME: homeVacia, USERPROFILE: homeVacia };
+    delete env.TYCON_HOME;
+    const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'pipeline.js'), 'deep-review-gate', '--repo', os.tmpdir(), '--story', heavy], { encoding: 'utf8', env });
     assert.equal(r.status, 0, r.stderr);
     sinFable(JSON.parse(r.stdout), 'el comando deep-review-gate');
     assert.doesNotMatch(r.stderr, /fable/i, 'el comando tampoco lo dice por la salida de error');
-  } finally { fs.unlinkSync(heavy); fs.unlinkSync(normal); }
+  } finally { fs.unlinkSync(heavy); fs.unlinkSync(normal); fs.rmSync(homeVacia, { recursive: true, force: true }); }
 });
 
 // ── computeToolingExpected — PIPE-C9 tooling esperado ────────────────────────
@@ -1177,7 +1181,7 @@ test('writeFollowups + followups-status: idempotente, preserva [x], acepta shape
   assert.equal(st.open, 2); assert.equal(st.has_section, true);
 
   // dev marca SEC-C3 resuelto a mano.
-  fs.writeFileSync(story, fs.readFileSync(story, 'utf8').split('- [ ] **[CRITICAL]** SEC-C3').join('- [x] **[CRITICAL]** SEC-C3'));
+  fs.writeFileSync(story, fs.readFileSync(story, 'utf8').replace(/- \[ \] \*\*\[CRITICAL\]\*\* SEC-C3/g, '- [x] **[CRITICAL]** SEC-C3'));
   // 2da escritura: shape Step6 (rule_id/disposition) + 1 nuevo. Debe preservar SEC-C3 [x].
   const f2 = path.join(dir, 'f2.json');
   fs.writeFileSync(f2, JSON.stringify([
@@ -1668,12 +1672,19 @@ function gatesLines(fakeHome) {
   const f = path.join(fakeHome, '.claude', '.tycon-pipeline', 'gates.log');
   return fs.existsSync(f) ? fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
 }
-// El 5b se anota con `--result <archivo>`: el JSON del pase, medido, con sus N confirmados.
+// El 5b se anota con `--result <archivo>`: el JSON del pase, medido, con sus N confirmados y la prueba de cada lente
+// limpia guardada al lado.
 function resultadoMedido(dir, n) {
   const archivo = path.join(dir, `resultado-${n}-${process.hrtime.bigint()}.json`);
+  const prueba = (l) => {
+    const d = path.join(dir, 'step-05b-probes', `caza-${l}`);
+    fs.mkdirSync(d, { recursive: true });
+    fs.writeFileSync(path.join(d, 'COMO-SE-CORRIO.txt'), 'node probe.js\n→ ok\n');
+    return d;
+  };
   fs.writeFileSync(archivo, JSON.stringify({
     confirmed: Array.from({ length: n }, (_v, k) => ({ lens: 'l', summary: `h${k}` })),
-    lentes: ['a', 'b', 'c', 'd', 'e', 'f'].map((l) => ({ lens: l, estado: 'medida', count: 0 })), lentes_sin_medir: [], detalle: [], medido: true,
+    lentes: ['a', 'b', 'c', 'd', 'e', 'f'].map((l) => ({ lens: l, estado: 'medida', count: 0, probe_dir: prueba(l) })), lentes_sin_medir: [], detalle: [], medido: true,
   }));
   return archivo;
 }
@@ -3891,11 +3902,13 @@ test('T18 TestGate_SuitesJson_DeferredInTestsResult — story 7.15: la diferida 
   assert.deepEqual(art2.totals.failures, ['diferible.test.sh']);
   assert.ok(fs.existsSync(path.join(b, '.advisors', 'dod-runtime', '9.2-tests-result.json')));
 
-  // 🔴 Sin marcador ni TYCON_COVERAGE_BASE la base cae a HEAD y lo commiteado
-  //    no se ve → «no sé» → corre todo, aunque la story diga que no toca publicación.
+  // 🔴 Sin marcador ni TYCON_COVERAGE_BASE la base es la bifurcación con main (gate-base-fork.test.js T9); sin rama
+  //    principal cae a HEAD y lo commiteado no se ve → «no sé» → corre todo, aunque la story diga que no toca
+  //    publicación.
   const c = armarArnes();
+  execFileSync('git', ['-C', c, 'branch', '-q', '-m', 'sin-principal'], { stdio: 'ignore' });
   const r3 = runTestGate(c, path.join(c, 'specs', 'no-toca.md'), fakeHome);
-  assert.notEqual(r3.status, 0, 'con la base por defecto (HEAD) no se difiere: la diferible corre');
+  assert.notEqual(r3.status, 0, 'sin rama principal la base cae a HEAD y no se difiere: la diferible corre');
   assert.match(r3.stdout + r3.stderr, /no pude saber qué archivos toca la story/);
 
   for (const d of [a, b, c, fakeHome]) fs.rmSync(d, { recursive: true, force: true });
@@ -6708,17 +6721,20 @@ function bloque10b() {
   return s.slice(i, fin < 0 ? s.length : fin);
 }
 
-test('10b: en modo pr el latido recibe la punta de la source, no el sha del merge de Azure', () => {
-  // 🔴 Un texto que dijera «--merge <sha del merge>» sin distinguir modo hace fallar las cuatro aserciones de abajo.
+// Un pedido abierto no es una fusión. En modo pr el latido no va con la punta de la source al abrir el pedido (el
+// latido la rechaza: no está en main): se pide cuando el pedido entra, con el commit que dejó en main.
+test('10b: en modo pr el latido se pide cuando el pedido entra, con el commit que dejó en main', () => {
   const b = bloque10b();
   assert.ok(!/--merge <sha del merge>/.test(b),
-    '10b sigue mandando «--merge <sha del merge>»: en modo pr ese sha no existe todavía');
-  assert.match(b, /PUNTA DE LA SOURCE/,
-    '10b no nombra la punta de la source como el sha del modo pr');
-  assert.match(b, /el que anotó el ledger/,
-    '10b no dice que el sha que paga la deuda es el que anotó el ledger');
+    '10b sigue mandando «--merge <sha del merge>» sin distinguir modo');
+  assert.match(b, /no se corre el latido al abrir el pedido/,
+    '10b no dice que en modo pr el latido no se corre al abrir el pedido');
+  assert.match(b, /el commit que el pedido dejó en main/,
+    '10b no dice que se reclama el commit que el pedido dejó en main');
+  assert.match(b, /el que reclama el ledger/,
+    '10b no dice que el sha que paga la deuda es el que reclama el ledger');
   // El modo `push` no se toca: ahí el sha SÍ es el del merge recién pusheado.
-  assert.match(b, /En modo `push` ese sha es el del merge/,
+  assert.match(b, /En modo `push` es el del merge/,
     '10b dejó de decir qué sha va en modo push');
 });
 

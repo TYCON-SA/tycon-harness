@@ -41,10 +41,9 @@ function makeWorkspace(opts = {}) {
     '---',
     'story: 9.9',
     'status: in-progress',
-    'files_to_modify:',
     // repo-relativo (como las stories reales de un repo del equipo); ws-relativo con opts.wsRelFiles
-    // (como las de un producto cuyas stories nombran el repo hermano en el path).
-    `  - ${opts.wsRelFiles ? 'Proj/src/Feature.cs' : 'src/Feature.cs'}`,
+    // (como las de un producto cuyas stories nombran el repo hermano en el path). `listaArchivos`: los renglones tal cual.
+    ...(opts.listaArchivos || ['files_to_modify:', `  - ${opts.wsRelFiles ? 'Proj/src/Feature.cs' : 'src/Feature.cs'}`]),
     ...(opts.ack || []),
     '---',
   ].join('\n');
@@ -94,12 +93,14 @@ function writeMirroredSmoke(dodDir, gatesLog, sid, acs, cmd = 'curl -s http://ap
 // `marker.js run-check dod -- bash <gate> ... <specFilter>` en producción. Pasar
 // mirror=false para simular un gate forjado a mano (sin espejo → no debe contar).
 // `skipped`: las pruebas apagadas que anota el gate (`- skipped: N`, como el del arnés); null = constancia sin la línea.
-function writeGate(dodDir, sid, tsCompact, verdict, specFilter, gatesLog, mirror = true, titulos = null, skipped = 0) {
+// `frontendDir`: la línea `- frontend_dir:` que escribe el gate del arnés; null = constancia sin la línea.
+function writeGate(dodDir, sid, tsCompact, verdict, specFilter, gatesLog, mirror = true, titulos = null, skipped = 0, frontendDir = null) {
   fs.writeFileSync(path.join(dodDir, `${sid}-e2e-gate-${tsCompact}.md`), [
     `# DoD Runtime Evidence — Story ${sid} — Playwright Gate (scoped)`,
     `**Spec filter**: ${specFilter}`,
     '```', `verdict=${verdict}`, 'total=1', `passed=${verdict === 'PASS' ? 1 : 0}`, '```',
     ...(skipped === null ? [] : [`- skipped: ${skipped}`]),
+    ...(frontendDir === null ? [] : [`- frontend_dir: ${frontendDir}`]),
     // Contrato DODRT-C8: los títulos de los tests que pasaron.
     ...(titulos ? ['', '## Tests corridos (títulos completos — contrato DODRT-C8)', ...titulos.map((t) => `- ${t}`), ''] : []),
   ].join('\n'));
@@ -938,7 +939,8 @@ withWaiverLog(() => {
 // 23. Sin repo git determinable NO hay atribución segura → NINGUNA evidencia cuenta,
 //     con el motivo escrito (fail-closed; un warning que igual suma es peor que nada).
 {
-  const f = makeWorkspace({ noGit: true });
+  // La ruta escrita desde la carpeta de arriba: sin repo git, es el único lugar donde la matriz puede leer el archivo.
+  const f = makeWorkspace({ noGit: true, wsRelFiles: true });
   writeGate(f.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9.spec.ts', f.gatesLog);
   writeTestsResult(f.advDir, '9.9', true, new Date().toISOString());
   const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog });
@@ -1410,8 +1412,13 @@ withWaiverLog(() => {
   // dan EXACTAMENTE lo mismo que el dorado de la sección de arriba.
   {
     const f = makeWorkspace();
+    // El spec y el guion existen y no simulan el servidor: sin ellos, la matriz avisa que no los pudo leer.
+    const fe = path.join(f.repo, 'web');
+    fs.mkdirSync(fe, { recursive: true });
+    fs.writeFileSync(path.join(fe, 'story-9-9.spec.ts'), "test('flujo: abre la vista @ac-1', async ({ page }) => { await page.goto('/'); });\n");
+    fs.writeFileSync(path.join(f.repo, '.advisors', 'smoke-e2e.mjs'), "await fetch('http://app/x', { method: 'POST' });\n");
     writeGate(f.dodDir, '9.9', recentCompact(20), 'PASS', 'story-9-9.spec.ts', f.gatesLog, true,
-      ['flujo: abre la vista @ac-1']);
+      ['flujo: abre la vista @ac-1'], 0, fe);
     L.append({ dodDir: f.dodDir, gatesLog: f.gatesLog, story: '9.9', acs: [2], cmd: 'curl -s http://app/x' });
     L.append({ dodDir: f.dodDir, gatesLog: f.gatesLog, story: '9.9', acs: [3], cmd: 'node .advisors/smoke-e2e.mjs', mutates: true });
     const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog });
@@ -1597,6 +1604,403 @@ withWaiverLog(() => {
     const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog });
     check('un gate con varios filtros atribuye a cada spec, no sólo al primero', r.perAc[1].verdict === 'RUNTIME',
       JSON.stringify(r.perAc[1]));
+  }
+}
+
+// ---------------------------------------------------------------- la lista de archivos, escrita como esté
+// Una evidencia fresca de los tres criterios: el portón cubre el 1 y el 3, el humo el 2. Con `editadoDespues`, el archivo
+// tiene una fecha posterior a toda esa evidencia. Estos laboratorios no tienen git de verdad: nadie contesta que no cambió.
+{
+  const labLista = (listaArchivos, { editadoDespues = false } = {}) => {
+    const f = makeWorkspace({ listaArchivos });
+    writeGate(f.dodDir, '9.9', recentCompact(10), 'PASS', 'story-9-9.spec.ts', f.gatesLog);
+    writeMirroredSmoke(f.dodDir, f.gatesLog, '9.9', [2]);
+    writeTestsResult(f.advDir, '9.9', true, new Date().toISOString());
+    if (editadoDespues) {
+      const despues = new Date(Date.now() + 60 * 1000);
+      fs.utimesSync(f.codeFile, despues, despues);
+    }
+    return { f, r: rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog }) };
+  };
+  const vencida = ({ r }) => r.perAc[1].verdict === 'NOT-RUN' && r.perAc[2].verdict === 'NOT-RUN' && r.codeMtime > 0 && !r.green;
+  const leida = (nombre, lista) => {
+    const lab = labLista(lista, { editadoDespues: true });
+    check(nombre, vencida(lab), JSON.stringify({ ac1: lab.r.perAc[1].verdict, codeMtime: lab.r.codeMtime }));
+  };
+
+  leida('T1 Lista_ComillasDobles_ArchivoEditadoDespues_NoCuenta @story-8.191 @ac-1', ['files_to_modify:', '  - "src/Feature.cs"']);
+  leida('T2 Lista_ComillasSimples_ArchivoEditadoDespues_NoCuenta @story-8.191 @ac-1', ['files_to_modify:', "  - 'src/Feature.cs'"]);
+  leida('T3 Lista_ComentarioAntesDelPrimerItem_LeeLoQueSigue @story-8.191 @ac-2', ['files_to_modify:', '  # público', '  - src/Feature.cs']);
+  leida('T4 Lista_ComentarioEntreItems_LeeLoQueSigue @story-8.191 @ac-2', ['files_to_modify:', '  - src/Otro.cs', '  # público', '  - src/Feature.cs']);
+  leida('T5 Lista_ComentarioTrasLaClave_LaLee @story-8.191 @ac-3', ['files_to_modify:  # público', '  - src/Feature.cs']);
+  leida('T6 Lista_EnLinea_LaLee @story-8.191 @ac-4', ['files_to_modify: ["src/Feature.cs"]']);
+  leida('T7 Lista_ItemsALaMismaSangria_LosLee @story-8.191 @ac-5', ['files_to_modify:', '- src/Feature.cs']);
+  leida('T8 Item_ComentarioAlFinal_RutaLimpia @story-8.191 @ac-6', ['files_to_modify:', '  - "src/Feature.cs"  # AC1']);
+
+  const conAviso = labLista(['files_to_modify:', '  - "src/Feature.cs"'], { editadoDespues: true });
+  const aviso = conAviso.r.warnings.find((w) => /es ANTERIOR al último edit de código/.test(w)) || '';
+  check('T9 Aviso_NombraLaRutaSinComillas @story-8.191 @ac-7', aviso.includes('(src/Feature.cs:') && !aviso.includes('"src/Feature.cs"'), conAviso.r.warnings.join('\n'));
+
+  const fuente = fs.readFileSync(path.join(__dirname, '..', 'runtime-matrix.js'), 'utf8');
+  check('T10 Matriz_UsaElLectorCompartido @story-8.191 @ac-8',
+    /parseDeclaredFiles\(content, \{ allForms: true \}\)/.test(fuente) && !fuente.includes('frontmatterFileList'));
+
+  const sinComillas = ['files_to_modify:', '  - src/Feature.cs'];
+  const fresca = labLista(sinComillas);
+  check('T11 ListaSinComillas_ResultadoIgualQueHoy @story-8.191 @ac-9', fresca.r.green && vencida(labLista(sinComillas, { editadoDespues: true })), JSON.stringify(fresca.r.pendientes));
+
+  const conComillas = labLista(['files_to_modify:', '  - "src/Feature.cs"']);
+  check('T12 ComillasConEvidenciaPosterior_SigueVerde @story-8.191 @ac-10', conComillas.r.green, JSON.stringify(conComillas.r.pendientes));
+
+  // Desde la 8.200, un archivo de código declarado que no se puede leer deja la matriz en rojo, con comillas o sin ellas.
+  const inexistente = labLista(['files_to_modify:', '  - "src/NoExiste.cs"'], { editadoDespues: true });
+  check('T13 ArchivoDeclaradoInexistente_Rojo @story-8.191 @ac-11',
+    !inexistente.r.green && inexistente.r.noLeidos.map((n) => n.rel).join() === 'src/NoExiste.cs', JSON.stringify(inexistente.r.noLeidos));
+
+  const noCodigo = makeWorkspace({ listaArchivos: ['files_to_modify:', '  - "docs/x.md"'] });
+  writeGate(noCodigo.dodDir, '9.9', recentCompact(10), 'PASS', 'story-9-9.spec.ts', noCodigo.gatesLog);
+  writeMirroredSmoke(noCodigo.dodDir, noCodigo.gatesLog, '9.9', [2]);
+  writeTestsResult(noCodigo.advDir, '9.9', true, new Date().toISOString());
+  const doc = path.join(noCodigo.repo, 'docs', 'x.md');
+  fs.mkdirSync(path.dirname(doc), { recursive: true });
+  fs.writeFileSync(doc, '# x\n');
+  const rDoc = rm.compute({ storyPath: noCodigo.storyPath, gatesLogPath: noCodigo.gatesLog });
+  check('T14 NoEsCodigoEntreComillas_NoVence @story-8.191 @ac-12', rDoc.green, JSON.stringify(rDoc.pendientes));
+}
+
+// ---------------------------------------------------------------- servidor simulado
+// Una prueba con el servidor simulado no cuenta como prueba en vivo: ni por el portón E2E ni por un humo.
+{
+  let sim = {};
+  try { sim = require(path.join(__dirname, '..', 'lib', 'simulated-server.js')); } catch (e) { check('lib/simulated-server.js se carga', false, e.message); }
+  const REPO_ROOT = path.join(__dirname, '..', '..', '..', '..');
+  const vacio = () => fs.mkdtempSync(path.join(os.tmpdir(), 'sim-active-'));
+  const calc = (f, extra = {}) => rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, activeDir: vacio(), ...extra });
+  const SPEC_SIMULADO = [
+    "import { test, expect } from '@playwright/test';",
+    "test('flujo @ac-1 @ac-3', async ({ page }) => {",
+    "  await page.route('**/api/pedidos', (r) => r.fulfill({ json: [] }));",
+    "  await page.goto('/');",
+    '});',
+  ].join('\n');
+  const SPEC_REAL = "import { test } from '@playwright/test';\ntest('mira @ac-3', async ({ page }) => { await page.goto('/'); });\n";
+  // Un frontend de laboratorio con sus specs: { 'tests/story-9-9.spec.ts': texto }.
+  const frente = (f, specs) => {
+    const fe = path.join(f.repo, 'web');
+    for (const [rel, texto] of Object.entries(specs)) {
+      fs.mkdirSync(path.dirname(path.join(fe, rel)), { recursive: true });
+      fs.writeFileSync(path.join(fe, rel), texto);
+    }
+    return fe;
+  };
+  const cambiarHistoria = (f, de, a) => fs.writeFileSync(f.storyPath, fs.readFileSync(f.storyPath, 'utf8').replace(de, a));
+  const simDe = (r, ac) => (r.simulados || []).filter((s) => s.ac === ac);
+
+  // T1 — un spec del portón que contesta /api/pedidos con route.fulfill no cuenta en vivo; tampoco un .spec.tsx.
+  {
+    const f = makeWorkspace();
+    const fe = frente(f, { 'tests/story-9-9.spec.ts': SPEC_SIMULADO });
+    writeGate(f.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9.spec.ts', f.gatesLog, true, null, 0, fe);
+    const r = calc(f);
+    const s = simDe(r, 1);
+    check('T1 RuntimeMatrix_SpecConFulfillDeNegocio_NoCuentaEnVivo @story-8.220 @ac-1',
+      r.perAc[1].verdict === 'NOT-RUN' && !r.green && s.length === 1 && /story-9-9\.spec\.ts$/.test(s[0].archivo) && s[0].linea === 3,
+      JSON.stringify({ v: r.perAc[1].verdict, s }));
+    const md = rm.renderMd(r);
+    check('T1 la salida nombra el archivo, la regla y no elegir por la persona @story-8.220 @ac-1 @ac-7',
+      /Probados con servidor simulado/.test(md) && /story-9-9\.spec\.ts:3/.test(md) && /runtime-waiver/.test(md) && /no elijas por ella/.test(md), md.slice(-1500));
+
+    const g = makeWorkspace();
+    const feX = frente(g, { 'src/story-9-9.spec.tsx': SPEC_SIMULADO });
+    writeGate(g.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9', g.gatesLog, true, null, 0, feX);
+    const rX = calc(g);
+    check('T1 un .spec.tsx del filtro también se mira @story-8.220 @ac-1', rX.perAc[1].verdict === 'NOT-RUN' && simDe(rX, 1).length === 1,
+      JSON.stringify({ v: rX.perAc[1].verdict, s: rX.simulados }));
+  }
+
+  // T2 — el mismo criterio declarado espera la firma de la persona, y con la firma queda perdonado.
+  withWaiverLog(() => {
+    const f = makeWorkspace({ ack: ['runtime_not_verifiable:', '  - ac: 1', '    reason: "sólo se probó con el servidor simulado"', '    covered_by: E1'] });
+    const fe = frente(f, { 'tests/story-9-9.spec.ts': SPEC_SIMULADO });
+    writeGate(f.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9.spec.ts', f.gatesLog, true, null, 0, fe);
+    const r1 = calc(f);
+    check('T2 RuntimeMatrix_SimuladoDeclarado_EsperaFirma @story-8.220 @ac-2',
+      r1.perAc[1].verdict === 'NOT-VERIFIABLE' && simDe(r1, 1).length === 1 && /AC#1: `[^`]*story-9-9\.spec\.ts:3`/.test(rm.renderMd(r1)),
+      JSON.stringify({ v: r1.perAc[1].verdict, s: r1.simulados }));
+    waiverLib.appendWaiver({ story: '9.9', acs: [1], matrixHash: r1.hash, approvedBy: 'DevA', nowIso: new Date().toISOString(),
+      declHashByAc: { 1: waiverLib.declHashFor('sólo se probó con el servidor simulado', 'E1') } });
+    const r2 = calc(f);
+    check('T2 con la firma queda WAIVED-USER @story-8.220 @ac-2', r2.perAc[1].verdict === 'WAIVED-USER', r2.perAc[1].verdict);
+  });
+
+  // T3 — las rutas excluidas no son simulación; en un spec con las dos, sólo se nombra la de negocio.
+  {
+    const f = makeWorkspace();
+    const fe = frente(f, { 'tests/story-9-9.spec.ts': [
+      "test('flujo @ac-1', async ({ page }) => {",
+      "  await page.route('**/api/auth/refresh', (r) => r.fulfill({ json: {} })); // auth refresh only",
+      "  await page.route('**/health', (r) => r.fulfill({ body: 'ok' }));",
+      '});',
+    ].join('\n') });
+    writeGate(f.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9.spec.ts', f.gatesLog, true, null, 0, fe);
+    const r = calc(f);
+    check('T3 RuntimeMatrix_SoloRutasExcluidas_SigueEnVivo @story-8.220 @ac-3',
+      r.perAc[1].verdict === 'RUNTIME' && !(r.simulados || []).length, JSON.stringify({ v: r.perAc[1].verdict, s: r.simulados }));
+
+    const g = makeWorkspace();
+    const lineas = ['// línea 1', '// línea 2', '// línea 3', "test('flujo @ac-1', async ({ page }) => {",
+      "  await page.route('**/api/auth/refresh', (r) => r.fulfill({ json: {} }));", '  // línea 6', '  // línea 7', '  // línea 8',
+      "  await page.route('**/api/pedidos', (r) => r.fulfill({ json: [] }));", '});'];
+    const feG = frente(g, { 'tests/story-9-9.spec.ts': lineas.join('\n') });
+    writeGate(g.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9.spec.ts', g.gatesLog, true, null, 0, feG);
+    const s = simDe(calc(g), 1);
+    check('T3 sólo la línea de negocio (9), no la excluida (5) @story-8.220 @ac-3',
+      s.length === 1 && s[0].linea === 9, JSON.stringify(s));
+  }
+
+  // T4 — un humo cuyo guion simula el servidor no cuenta en vivo, ni por la acción ni por la imagen.
+  {
+    const f = makeWorkspace();
+    fs.writeFileSync(path.join(f.repo, 'probe.mjs'), "import { setupServer } from 'msw/node';\nsetupServer().listen();\n");
+    writeMirroredSmoke(f.dodDir, f.gatesLog, '9.9', [1], 'node probe.mjs');
+    const r = calc(f);
+    const s = simDe(r, 1);
+    check('T4 RuntimeMatrix_HumoConGuionQueSimula_NoCuentaEnVivo @story-8.220 @ac-4',
+      r.perAc[1].verdict !== 'RUNTIME' && s.length === 1 && /probe\.mjs$/.test(s[0].archivo) && s[0].linea === 1 &&
+      /AC#1: `probe\.mjs:1`/.test(rm.renderMd(r)) &&
+      !r.warnings.some((w) => /NO ejercita la app/.test(w)), JSON.stringify({ v: r.perAc[1].verdict, s, w: r.warnings }));
+
+    const g = makeWorkspace();
+    const abs = path.join(g.repo, 'tools', 'probe.mjs');
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, "// sonda\nawait page.routeFromHAR('pedidos.har');\n");
+    writeMirroredSmoke(g.dodDir, g.gatesLog, '9.9', [1], `node ${abs}`);
+    const rG = calc(g);
+    check('T4 ruta absoluta y routeFromHAR @story-8.220 @ac-4',
+      rG.perAc[1].verdict !== 'RUNTIME' && simDe(rG, 1).some((x) => x.linea === 2), JSON.stringify({ v: rG.perAc[1].verdict, s: rG.simulados }));
+
+    // Un curl no es un guion: la URL y la salida de -o no se leen, aunque terminen en .js.
+    const c = makeWorkspace();
+    fs.writeFileSync(path.join(c.repo, 'salida.js'), "import 'msw';\n");
+    writeMirroredSmoke(c.dodDir, c.gatesLog, '9.9', [1], 'curl -s -o salida.js http://app/static/app.js');
+    const rC = calc(c);
+    check('T4 un curl con -o y una URL en .js no es simulación @story-8.220 @ac-4',
+      rC.perAc[1].verdict === 'RUNTIME' && !(rC.simulados || []).length, JSON.stringify({ v: rC.perAc[1].verdict, s: rC.simulados }));
+
+    // Criterio de pantalla y de acción: el humo simulado con --mutates y --capture no aporta ni la acción ni la imagen.
+    const p = makeWorkspace();
+    cambiarHistoria(p, '3. **Given** otra cosa, **Then** otro resultado.', '3. El usuario puede guardar el pedido. @pantalla');
+    fs.writeFileSync(path.join(p.repo, 'probe.mjs'), "import nock from 'nock';\n");
+    const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('captura')]);
+    fs.writeFileSync(path.join(p.dodDir, 'guardar.png'), PNG);
+    const shaPng = crypto717.createHash('sha256').update(PNG).digest('hex');
+    const ts = new Date(Date.now() - 60 * 1000).toISOString().replace(/\.\d+Z$/, 'Z');
+    fs.appendFileSync(path.join(p.dodDir, '9.9-smoke-ledger.jsonl'), JSON.stringify({ ts, story: '9.9', acs: [3], cmd: 'node probe.mjs', exit: 0,
+      via: 'smoke-run.sh', mutates: true, capture: 'guardar.png', capture_sha: shaPng }) + '\n');
+    fs.appendFileSync(p.gatesLog, JSON.stringify({ type: 'smoke-run', ts, story: '9.9', acs: [3], exit: 0, mutates: true, capture_sha: shaPng }) + '\n');
+    writeMirroredSmoke(p.dodDir, p.gatesLog, '9.9', [3], 'curl -s http://app/pedidos');
+    const rP = calc(p);
+    check('T4 el humo simulado no aporta la acción ni la imagen @story-8.220 @ac-4',
+      rP.perAc[3].mutacion === null && !(rP.perAc[3].visual || []).includes('guardar.png') && rP.perAc[3].verdict !== 'RUNTIME',
+      JSON.stringify(rP.perAc[3]));
+  }
+
+  // T5 — el guion del humo ya no está: cuenta como hoy, con aviso. Lo mismo un humo que corre un guion sin nombrar
+  // ninguno que se pueda leer (`npm run smoke`), y un ayudante importado que no se puede leer.
+  {
+    const f = makeWorkspace();
+    writeMirroredSmoke(f.dodDir, f.gatesLog, '9.9', [1], 'node probe.mjs');
+    const r = calc(f);
+    check('T5 RuntimeMatrix_HumoConGuionIlegible_ComoHoyConAviso @story-8.220 @ac-5',
+      r.perAc[1].verdict === 'RUNTIME' && r.warnings.some((w) => /no pude leer probe\.mjs/.test(w)), JSON.stringify({ v: r.perAc[1].verdict, w: r.warnings }));
+
+    const g = makeWorkspace();
+    const sinGuion = ['npm run smoke', 'cd web && npm run smoke', './smoke.sh', 'make smoke'];
+    for (const cmd of sinGuion) writeMirroredSmoke(g.dodDir, g.gatesLog, '9.9', [1], cmd);
+    writeMirroredSmoke(g.dodDir, g.gatesLog, '9.9', [3], 'curl -s http://app/x');
+    writeMirroredSmoke(g.dodDir, g.gatesLog, '9.9', [3], 'wget -qO- http://app/x | grep ok');
+    const rG = calc(g);
+    const avisosSinGuion = rG.warnings.filter((w) => /no sé si simuló/.test(w));
+    check('T5 un humo que corre un guion sin nombrarlo avisa; un curl o un wget no @story-8.220 @ac-5',
+      rG.perAc[1].verdict === 'RUNTIME' && avisosSinGuion.length === sinGuion.length &&
+      sinGuion.every((c) => avisosSinGuion.some((w) => w.includes(c))), JSON.stringify(rG.warnings));
+
+    const h = makeWorkspace();
+    fs.writeFileSync(path.join(h.repo, 'probe.mjs'), "import { arma } from './falta.mjs';\nawait fetch('http://app/x');\n");
+    writeMirroredSmoke(h.dodDir, h.gatesLog, '9.9', [1], 'node probe.mjs');
+    const rH = calc(h);
+    check('T5 un ayudante importado que no está se avisa @story-8.220 @ac-5',
+      rH.perAc[1].verdict === 'RUNTIME' && rH.warnings.some((w) => /falta\.mjs/.test(w) && /no sé si simuló/.test(w)), JSON.stringify(rH.warnings));
+  }
+
+  // T6 — una historia que arrancó antes de la regla: el simulado sigue contando y se avisa (portón y humo).
+  {
+    const antes = new Date(Date.parse(rm.SIMULATED_SERVER_FROM) - 24 * 60 * 60 * 1000).toISOString();
+    const f = makeWorkspace();
+    const fe = frente(f, { 'tests/story-9-9.spec.ts': SPEC_SIMULADO });
+    writeGate(f.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9.spec.ts', f.gatesLog, true, null, 0, fe);
+    const r = calc(f, { startedAt: antes });
+    const g = makeWorkspace();
+    fs.writeFileSync(path.join(g.repo, 'probe.mjs'), "import { setupServer } from 'msw/node';\n");
+    writeMirroredSmoke(g.dodDir, g.gatesLog, '9.9', [1], 'node probe.mjs');
+    const rG = calc(g, { startedAt: antes });
+    check('T6 RuntimeMatrix_SimuladoEnHistoriaVieja_SoloAvisa @story-8.220 @ac-6',
+      r.perAc[1].verdict === 'RUNTIME' && r.warnings.some((w) => /story-9-9\.spec\.ts/.test(w) && /simulad/.test(w)) &&
+      rG.perAc[1].verdict === 'RUNTIME' && rG.warnings.some((w) => /probe\.mjs/.test(w) && /simulad/.test(w)),
+      JSON.stringify({ a: r.perAc[1].verdict, b: rG.perAc[1].verdict, w: r.warnings.concat(rG.warnings) }));
+  }
+
+  // T7 — la lista del agente del control de realismo y la de la lib son la misma.
+  {
+    const agente = fs.readFileSync(path.join(REPO_ROOT, 'agents', 'tycon-e2e-realness-checker.md'), 'utf8');
+    const linea = agente.split('\n').find((l) => l.includes('lib/simulated-server.js')) || '';
+    const tramo = (nombre) => ((linea.match(new RegExp(`${nombre} ([^;]+)`)) || [])[1] || '').match(/`[^`]+`/g) || [];
+    const limpio = (xs) => xs.map((x) => x.slice(1, -1)).sort();
+    const iguales = (a, b) => JSON.stringify(a) === JSON.stringify([...b].sort());
+    const seg = limpio(tramo('segmentos'));
+    const pre = limpio(tramo('prefijos'));
+    const ext = limpio(tramo('extensiones'));
+    check('T7 SimulatedServer_ListaDeNegocio_IgualAlControlDeRealismo @story-8.220 @ac-3',
+      seg.length === 14 && pre.length === 3 && ext.length > 0 &&
+      iguales(seg, sim.SEGMENTOS) && iguales(pre, sim.PREFIJOS) && iguales(ext, sim.EXTENSIONES) &&
+      linea.includes('`/(api|graphql|rpc)/`') && String(sim.INCLUSION) === '/(api|graphql|rpc)/',
+      JSON.stringify({ seg, pre, ext, lib: [sim.SEGMENTOS, sim.PREFIJOS, sim.EXTENSIONES] }));
+  }
+
+  // T8 — el portón no lleva a un spec legible: cuenta como hoy, con aviso; un frontend_dir relativo se resuelve.
+  {
+    const a = makeWorkspace();
+    cambiarHistoria(a, '`story-9-9.spec.ts::flujo`', '`no-existe::flujo`');
+    const feA = frente(a, { 'tests/otro.spec.ts': SPEC_SIMULADO });
+    writeGate(a.dodDir, '9.9', recentCompact(), 'PASS', 'no-existe', a.gatesLog, true, null, 0, feA);
+    const rA = calc(a);
+    const b = makeWorkspace();
+    frente(b, { 'tests/story-9-9.spec.ts': SPEC_SIMULADO });
+    writeGate(b.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9.spec.ts', b.gatesLog);
+    const rB = calc(b);
+    const c = makeWorkspace();
+    frente(c, { 'tests/story-9-9.spec.ts': SPEC_SIMULADO });
+    writeGate(c.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9.spec.ts', c.gatesLog, true, null, 0, 'web');
+    const rC = calc(c);
+    // Un portón sin filtro corrió todos los specs: se miran todos. Las carpetas de compilación no se recorren.
+    // Se ve en la acción: el título `@mutates` de un portón sin filtro con un spec simulado no acredita nada.
+    const sinFiltro = (specs) => {
+      const w = makeWorkspace();
+      cambiarHistoria(w, '3. **Given** otra cosa, **Then** otro resultado.', '3. El usuario puede guardar el pedido.');
+      const feW = frente(w, specs);
+      writeGate(w.dodDir, '9.9', recentCompact(), 'PASS', '', w.gatesLog, true, ['@mutates guarda @ac-3'], 0, feW);
+      writeMirroredSmoke(w.dodDir, w.gatesLog, '9.9', [3], 'curl -s http://app/pedidos');
+      return calc(w).perAc[3];
+    };
+    const conSimulado = sinFiltro({ 'tests/real.spec.ts': SPEC_REAL, 'tests/sim.spec.ts': SPEC_SIMULADO });
+    const soloEnDist = sinFiltro({ 'tests/real.spec.ts': SPEC_REAL, 'dist/copia.spec.ts': SPEC_SIMULADO });
+    check('T8 un portón sin filtro mira todos los specs, sin carpetas de compilación @story-8.220 @ac-1',
+      conSimulado.mutacion === null && /@mutates/.test(soloEnDist.mutacion || ''),
+      JSON.stringify({ conSimulado: conSimulado.mutacion, soloEnDist: soloEnDist.mutacion }));
+    // Un filtro que sale de la carpeta del frontend no se lee.
+    const e = makeWorkspace();
+    cambiarHistoria(e, '`story-9-9.spec.ts::flujo`', '`../afuera.spec.ts::flujo`');
+    const feE = frente(e, { 'tests/real.spec.ts': SPEC_REAL });
+    fs.writeFileSync(path.join(e.repo, 'afuera.spec.ts'), SPEC_SIMULADO);
+    writeGate(e.dodDir, '9.9', recentCompact(), 'PASS', '../afuera.spec.ts', e.gatesLog, true, null, 0, feE);
+    const rE = calc(e);
+    check('T8 un filtro que sale del frontend_dir no se lee @story-8.220 @ac-5',
+      rE.perAc[1].verdict === 'RUNTIME' && !(rE.simulados || []).length && rE.warnings.some((w) => /afuera\.spec\.ts/.test(w) && /no sé si simuló/.test(w)),
+      JSON.stringify({ v: rE.perAc[1].verdict, s: rE.simulados, w: rE.warnings }));
+    // Una carpeta que no se puede leer, con otro spec que sí: se avisa que faltó mirar.
+    if (process.getuid && process.getuid() !== 0) {
+      const u = makeWorkspace();
+      const feU = frente(u, { 'tests/story-9-9.spec.ts': SPEC_REAL, 'cerrada/story-9-9.spec.ts': SPEC_SIMULADO });
+      fs.chmodSync(path.join(feU, 'cerrada'), 0o000);
+      writeGate(u.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9', u.gatesLog, true, null, 0, feU);
+      const rU = calc(u);
+      fs.chmodSync(path.join(feU, 'cerrada'), 0o755);
+      check('T8 una carpeta ilegible bajo el frontend_dir se avisa @story-8.220 @ac-5',
+        rU.warnings.some((w) => /no pude leer/.test(w) && /cerrada/.test(w)), JSON.stringify(rU.warnings));
+    }
+    check('T8 RuntimeMatrix_PortonSinSpecLegible_ComoHoyConAviso @story-8.220 @ac-5',
+      rA.perAc[1].verdict === 'RUNTIME' && rA.warnings.some((w) => /no pude leer no-existe/.test(w)) &&
+      rB.perAc[1].verdict === 'RUNTIME' && rB.warnings.some((w) => /no pude leer/.test(w) && /frontend_dir/.test(w)) &&
+      rC.perAc[1].verdict === 'NOT-RUN',
+      JSON.stringify({ a: rA.perAc[1].verdict, b: rB.perAc[1].verdict, c: rC.perAc[1].verdict, wa: rA.warnings, wb: rB.warnings }));
+  }
+
+  // T9 — un portón con un spec simulado no acredita la acción ni aporta su captura; con un filtro real y otro simulado,
+  // el portón entero es simulado.
+  {
+    const f = makeWorkspace();
+    cambiarHistoria(f, '3. **Given** otra cosa, **Then** otro resultado.', '3. El usuario puede guardar el pedido. @pantalla');
+    cambiarHistoria(f, '| E1 | `story-9-9.spec.ts::flujo` | 1,3 | e2e | x | y |',
+      '| E1 | `real.spec.ts::mira` | 3 | e2e | x | y |\n| E2 | `sim.spec.ts::guarda` | 3 | e2e | x | y |');
+    const fe = frente(f, { 'tests/real.spec.ts': SPEC_REAL, 'tests/sim.spec.ts': SPEC_SIMULADO });
+    writeGate(f.dodDir, '9.9', recentCompact(20), 'PASS', 'real.spec.ts', f.gatesLog, true, ['mira @ac-3'], 0, fe);
+    const tsSim = recentCompact(10);
+    writeGate(f.dodDir, '9.9', tsSim, 'PASS', 'sim.spec.ts', f.gatesLog, true, ['@mutates guarda @ac-3'], 0, fe);
+    const dir = path.join(f.dodDir, `9.9-captures-${tsSim}`);
+    fs.mkdirSync(dir, { recursive: true });
+    const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('guardado')]);
+    fs.writeFileSync(path.join(dir, '01-guarda.png'), PNG);
+    const crudo = JSON.stringify([{ file: '01-guarda.png', title: '@mutates guarda @ac-3', acs: [3], sha256: crypto717.createHash('sha256').update(PNG).digest('hex') }]);
+    fs.writeFileSync(path.join(dir, 'captures.json'), crudo);
+    fs.appendFileSync(f.gatesLog, JSON.stringify({ type: 'e2e-captures', ts: new Date().toISOString(), folder: path.basename(dir),
+      sha256: crypto717.createHash('sha256').update(crudo).digest('hex') }) + '\n');
+    const r = calc(f);
+    check('T9 RuntimeMatrix_PortonSimulado_NoAcreditaAccionNiImagen @story-8.220 @ac-1',
+      r.perAc[3].mutacion === null && !(r.perAc[3].visual || []).some((v) => /01-guarda\.png/.test(v)) && r.perAc[3].verdict !== 'RUNTIME',
+      JSON.stringify(r.perAc[3]));
+
+    const m = makeWorkspace();
+    cambiarHistoria(m, '| E1 | `story-9-9.spec.ts::flujo` | 1,3 | e2e | x | y |', '| E1 | `real.spec.ts::mira` | 1 | e2e | x | y |');
+    const feM = frente(m, { 'tests/real.spec.ts': SPEC_REAL, 'tests/sim.spec.ts': SPEC_SIMULADO });
+    writeGate(m.dodDir, '9.9', recentCompact(), 'PASS', 'real.spec.ts sim.spec.ts', m.gatesLog, true, null, 0, feM);
+    const rM = calc(m);
+    check('T9 un portón con un filtro real y otro simulado es simulado entero @story-8.220 @ac-1',
+      rM.perAc[1].verdict === 'NOT-RUN' && simDe(rM, 1).length > 0, JSON.stringify({ v: rM.perAc[1].verdict, s: rM.simulados }));
+  }
+
+  // T10 — cada vía de simulación, una por caso.
+  {
+    const via = (texto) => sim.simulaServidor(texto);
+    const casos = [
+      ['route.fulfill', "await page.route('**/api/x', (r) => r.fulfill({}));", 1],
+      ['context.route', "await context.route('**/api/x', (r) => r.fulfill({}));", 1],
+      ['routeFromHAR', "await page.routeFromHAR('x.har');", 1],
+      ['continue con cambios', "await page.route('**/api/x', (r) => r.continue({ headers: {} }));", 1],
+      ['continue sin cambios', "await page.route('**/api/x', (r) => r.continue());", 0],
+      ['abort', "await page.route('**/api/x', (r) => r.abort());", 1],
+      ['import msw', "import { http } from 'msw';", 1],
+      ['require nock', "const nock = require('nock');", 1],
+      ['patrón no literal', "await page.route(URL_PEDIDOS, (r) => r.fulfill({}));", 1],
+      ['en un comentario', "// await page.route('**/api/x', (r) => r.fulfill({}));", 0],
+      ['en un bloque de comentario', "/* import 'msw'; */", 0],
+      ['en una cadena', "const s = \"page.route('**/api/x', r => r.fulfill())\";", 0],
+      ['page.context().route', "await page.context().route('**/api/x', (r) => r.fulfill({}));", 1],
+      ['receptor con otro nombre', "await ctx.route('**/api/x', (r) => r.fulfill({}));", 1],
+      ['encadenado opcional', "await page?.route('**/api/x', (r) => r.fulfill({}));", 1],
+      ['import dinámico', "const m = await import('msw');", 1],
+      ['export from', "export * from 'msw';", 1],
+      ['manejador que delega', "await page.route('**/api/x', (r) => mockOk(r));", 1],
+      ['espía con registro', "await page.route('**/api/x', (r) => { log(r.request()); r.continue(); });", 0],
+      ['predicado con flecha y manejador con nombre', "await page.route((u) => u.pathname.startsWith('/api'), stub);", 1],
+      ['regex con paréntesis y comilla antes', "const re = /\\(\"'/;\nawait page.route('**/api/x', (r) => r.fulfill({}));", 1],
+      ['regex con comilla invertida antes', "const re = /`/;\nawait page.route('**/api/x', (r) => r.fulfill({}));\nconst t = `x`;", 1],
+      ['regex con paréntesis de cierre', "await page.route(/\\/api\\/x\\)/, (r) => r.fulfill({}));", 1],
+    ];
+    const fallas = casos.filter(([, t, n]) => via(t).length !== n).map(([nombre, t]) => `${nombre}: ${JSON.stringify(via(t))}`);
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'sim-ayudante-'));
+    fs.writeFileSync(path.join(d, 'ayudante.ts'), "export async function stub(page) {\n  await page.route('**/api/x', (r) => r.fulfill({}));\n}\n");
+    fs.writeFileSync(path.join(d, 'a.spec.ts'), "import { stub } from './ayudante';\ntest('x', async ({ page }) => { await stub(page); });\n");
+    const ay = sim.deArchivo(path.join(d, 'a.spec.ts'));
+    const delAyudante = ay.leido && ay.hallazgos.some((h) => /ayudante\.ts$/.test(h.archivo) && h.linea === 2);
+    check('T10 SimulatedServer_Vias_UnaPorCaso @story-8.220 @ac-1', !fallas.length && delAyudante, JSON.stringify({ fallas, ay }));
+  }
+
+  // T11 — el paso «Probar en vivo» escribe las dos reglas.
+  {
+    const paso = fs.readFileSync(path.join(__dirname, '..', '..', 'steps', 'step-10-live-check.md'), 'utf8');
+    check('T11 StepLiveCheck_SimuladoYPreguntaAbierta_Escritas @story-8.220 @ac-7',
+      paso.includes('Una prueba de navegador con el servidor simulado no cierra «Probar en vivo» sin la firma de la persona') &&
+      paso.includes('la pregunta sigue abierta: no elijas por ella'), '');
   }
 }
 

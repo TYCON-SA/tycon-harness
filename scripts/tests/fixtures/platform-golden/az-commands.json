@@ -46,6 +46,7 @@
     "`shared/` entra sin CI; se verifica con `az pipelines runs show` (el commit no aparece en NINGÚN"
   ],
   "pipelines/operations/README.md": [
+    "`az pipelines run --id <id de dependency-audit> --branch <rama del pedido> --parameters efectos=false --project my-project`",
     "az pipelines create --name stage-metrics --repository operations --repository-type tfsgit --branch main \\",
     "mano con el parámetro **efectos** destildado (*Run pipeline → efectos*, o `az pipelines run --id <N> --branch <rama>"
   ],
@@ -143,6 +144,7 @@
     "process=$(az devops project show \\"
   ],
   "integrations/azure-devops/scripts/change-requests.js": [
+    "*   az repos pr show --id <n> --org <org> -o json",
     "//   az devops invoke --area git --resource pullRequests --route-parameters project=<proyecto>",
     "//   az repos pr create --org <org> --project <proyecto> --repository <repo> --source-branch <rama> --target-branch <destino>",
     "//   az repos pr list --org <org> --project <proyecto> --repository <repo> --source-branch <rama> --target-branch <destino>",

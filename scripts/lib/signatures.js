@@ -17,7 +17,12 @@
  *   command       el comando que la pide.
  *   otherSession  'yes' si el comando se puede correr desde la pestaña de otra sesión, 'no' si no, 'pending' si la firma
  *                 todavía no tiene comando.
- *   terminal      cómo la firma el dueño en su terminal, o null mientras no tenga comando.
+ *   soloClick     la persona la aprueba sólo con su click, en la pestaña que trabaja, o en su terminal; `descripciones`
+ *                 son las de las dos opciones de su cuadro, en el orden de las opciones.
+ *   terminal      cómo la firma el dueño en su terminal si lo prefiere (salvo lo irreversible, una firma también se aprueba
+ *                 sin terminal: en la ventana de permiso o, donde no llega, con un click en el cuadro de opciones o un
+ *                 «aprobado» escrito; owner-window.js), o null mientras no tenga comando.
+ *   ifWrong       qué pasa si sale mal, en llano: lo muestra el cuadro de opciones.
  *   covers        los ids de LEVELS que aprueba: el suyo, o dos si la firma de hoy junta dos cosas de distinto peso,
  *                 u otro si es un escape que hace lo mismo que otra firma.
  *   level         el mayor nivel de lo que cubre.
@@ -37,6 +42,11 @@
 const AMBOS = Object.freeze(['dev', 'mant']);
 const MANT = Object.freeze(['mant']);
 
+// el tope del camino corto: hasta acá alcanza la firma común; más lo elige la persona con su click
+const TOPE = 8;
+const ADHOC = 'adhoc-lane';
+const SOBRE_CUPO = 'adhoc-lane:sobre-cupo';
+
 // qué aprueba cada id de la tabla, en inglés: la pantalla del sitio lo muestra en ese idioma
 const LEVELS_EN = Object.freeze({
   'plan-approval': 'approve the plan (level 2 if the story is sensitive: risk-class works it out; the coordinator approves level 1 only with the approved verdict of the automatic review)',
@@ -47,7 +57,7 @@ const LEVELS_EN = Object.freeze({
   'adhoc-lane': 'open a quick fix without a story, within the quota',
   'refresh-after-main': 're-sign the controls after pulling main, with no change of your own',
   'save:sensible': 'save when a commit touches something sensitive',
-  'adhoc-lane:sobre-cupo': 'open a quick fix when the quota is already used up',
+  'adhoc-lane:sobre-cupo': 'open a quick fix that goes past the file limit of the short path, though a story is recommended (only implementation files count, not tests or guides)',
   'escape:DOD_BYPASS': 'skip every control of the commit',
   'critical-waiver': 'waive a critical finding',
   'runtime-waiver': 'accept a criterion that cannot be tested live, or exempt the whole story',
@@ -61,6 +71,9 @@ const LEVELS_EN = Object.freeze({
   'escape:TYCON_STATUS_GATE': "change a story's status by hand",
   'escape:story-skill-bypass': 'write a story without the story skill',
   'escape:set-autonomous': 'change the autonomous mode of a run',
+  'designation-confirm': 'confirm which session is the coordinator of this machine',
+  'designation-set': "name a session as this machine's coordinator, with a click in its tab",
+  'designation-withdraw': "withdraw this machine's coordinator, with a click in its tab",
   'control-change': 'any change to a control',
   'escape:TYCON_SAFETY_OFF': 'turn off the safety guard for one command',
   'escape:TYCON_PROD_LINT': 'turn off the production query control',
@@ -78,7 +91,7 @@ const LEVELS = Object.freeze([
   ['adhoc-lane', 1, AMBOS, 'abrir un arreglo rápido sin historia, dentro del cupo'],
   ['refresh-after-main', 1, MANT, 'refirmar los controles tras traer main, sin cambio propio'],
   ['save:sensible', 2, AMBOS, 'guardar cuando un commit toca algo de lo sensible'],
-  ['adhoc-lane:sobre-cupo', 2, AMBOS, 'abrir un arreglo rápido cuando ya se pasó el cupo'],
+  ['adhoc-lane:sobre-cupo', 2, AMBOS, 'abrir un arreglo rápido que pasa el tope de archivos del camino corto, aunque se recomienda una historia (cuentan sólo los archivos de implementación, sin pruebas ni guías)'],
   ['escape:DOD_BYPASS', 2, AMBOS, 'saltear todos los controles del commit'],
   ['critical-waiver', 2, AMBOS, 'eximir un hallazgo crítico'],
   ['runtime-waiver', 2, AMBOS, 'aceptar un criterio imposible de probar en vivo, o eximir la historia entera'],
@@ -92,6 +105,9 @@ const LEVELS = Object.freeze([
   ['escape:TYCON_STATUS_GATE', 2, AMBOS, 'cambiar a mano el estado de una historia'],
   ['escape:story-skill-bypass', 2, AMBOS, 'escribir una historia sin la skill de historias'],
   ['escape:set-autonomous', 2, AMBOS, 'cambiar el modo autónomo de una ejecución'],
+  ['designation-confirm', 2, AMBOS, 'confirmar qué sesión es la coordinadora de esta máquina'],
+  ['designation-set', 2, AMBOS, 'nombrar a una sesión coordinadora de esta máquina, con un click en su pestaña'],
+  ['designation-withdraw', 2, AMBOS, 'retirar a la coordinadora de esta máquina, con un click en su pestaña'],
   ['control-change', 3, MANT, 'cualquier cambio de control'],
   ['escape:TYCON_SAFETY_OFF', 3, AMBOS, 'apagar el freno de seguridad para un comando'],
   ['escape:TYCON_PROD_LINT', 3, AMBOS, 'apagar el control de consultas a producción'],
@@ -142,8 +158,50 @@ const CON_NOMBRE = [
   ['cambiar-el-estado', 'cambiar a mano el estado de una story', 'file'],
 ];
 
+// qué pasa si sale mal: lo dice el cuadro de opciones que arma el guion de la firma (owner-window.js `cuadroPara`). Cada
+// firma trae el suyo, escapes incluidos: un mismo texto para todas no le dice a la persona qué arriesga con ésta
+const SI_SALE_MAL = Object.freeze({
+  'escape:TYCON_SAFETY_OFF': 'un comando que el freno de seguridad para, como un borrado grande o un push forzado, corre sin freno',
+  'escape:TYCON_PROD_LINT': 'una consulta a producción corre sin que nadie mire si escribe o borra datos',
+  'escape:TYCON_NEW_NAMES': 'un nombre viejo o interno sale en lo que se publica',
+  'escape:TYCON_TEST_GATE': 'el commit entra sin correr las pruebas, y una prueba rota llega al pedido',
+  'escape:DOD_BYPASS': 'el commit entra sin ningún control de cierre, y un criterio sin probar puede llegar a main; queda anotado',
+  'escape:TYCON_NO_DEEP_REVIEW': 'la ejecución sigue sin el pase adversarial, y un error que él encontraría puede llegar a main',
+  'escape:no-deep-review': 'la ejecución arranca sin el pase adversarial, y un error que él encontraría puede llegar a main',
+  'escape:TYCON_STATUS_GATE': 'la historia cambia de estado sin los controles del orquestador, y puede quedar como hecha sin estarlo',
+  'escape:cambiar-el-estado': 'el estado de la historia se escribe a mano, y puede quedar como hecha sin estarlo',
+  'escape:story-skill-bypass': 'la historia se escribe sin el validador ni la revisión previa, y puede llegar al plan con huecos',
+  'escape:set-autonomous': 'la ejecución cambia cómo se frena sola ante un control en rojo',
+  'escape:cerrar-la-ejecucion': 'la ejecución se cierra con un control en rojo, y lo que frenaba queda sin arreglar',
+  'escape:cerrar-como-deuda': 'la ejecución se cierra y lo que falta queda anotado como deuda, sin hacer',
+  'escape:force-manual': 'un control queda en el estado escrito a mano, aunque nadie lo haya medido',
+  'escape:trust-ran': 'los revisores cuentan como corridos sin constancia, y uno que no corrió pasa por corrido',
+  'escape:ALLOW_DOD_EVIDENCE_WRITE': 'la evidencia de la prueba en vivo queda escrita a mano, y puede decir algo que no pasó',
+  'escape:dod_runtime_exempt': 'la historia entera queda sin prueba en vivo, y un error puede llegar a producción',
+  'plan-approval': 'se implementa un plan que no querías; se frena la ejecución y se rehace, y nada entra a main sin revisión',
+  'extra-round': 'se gasta una vuelta más de revisores; no cambia el código',
+  'refresh-after-main': 'queda firmado un control con lo que trajo main; se revierte con otro pedido',
+  'control-change': 'un control queda cambiado y lo que frenaba puede pasar; se revierte con otro pedido',
+  'critical-waiver': 'un hallazgo crítico entra sin arreglar',
+  'runtime-waiver': 'un criterio queda sin probar en vivo, y un error puede llegar a producción',
+  'manual-test': 'un criterio queda como probado sin una prueba automática que lo repita',
+  'browser-test': 'se prepara la prueba con navegador, o queda sin ella y un error de pantalla puede pasar',
+  'lost-run': 'la ejecución se cierra y lo que le faltaba queda sin hacer',
+  'adversarial-skip': 'el código entra sin el pase adversarial, y un error que él encontraría puede llegar a main',
+  'pending-approval': 'queda un pendiente de más en la lista; se cierra a mano',
+  'adhoc-lane': 'la sesión escribe código sin historia; se cierra el arreglo, y nada entra a main sin revisión',
+  'adhoc-lane:sobre-cupo': 'un cambio grande entra sin el plan ni las pruebas de una historia; se cierra el arreglo, y nada entra a main sin revisión',
+  save: 'se guarda en el repo y se abre el pedido; se revierte con otro commit',
+  'designation-confirm': 'esa sesión firma en tu nombre lo que el perfil delega, hasta que se designe otra',
+  'designation-set': 'una sesión que no querías firma en tu nombre lo que el perfil delega, hasta que la retires o nombres otra',
+  'designation-withdraw': 'las firmas que delegabas vuelven a vos hasta que nombres otra coordinadora',
+});
+
 // qué aprueba cada firma, en inglés: lo muestra la pantalla de Configuración en ese idioma
 const APPROVES_EN = {
+  'designation-confirm': 'confirm which session is the coordinator of this machine',
+  'designation-set': "name this session as the machine's coordinator",
+  'designation-withdraw': "withdraw this session as the machine's coordinator",
   'plan-approval': "approve a story's plan",
   'extra-round': 'one more round of reviewers',
   'refresh-after-main': 'sign the controls again after bringing in main, with no change of its own',
@@ -156,6 +214,7 @@ const APPROVES_EN = {
   'adversarial-skip': 'skip the adversarial pass with a signed record',
   'pending-approval': 'open a new item in the pending list',
   'adhoc-lane': "open a session's quick fix, with no story",
+  'adhoc-lane:sobre-cupo': 'open a quick fix that goes past the file limit of the short path, though a story is recommended',
   save: 'save the story: commit, push and the pull requests',
   'escape:TYCON_SAFETY_OFF': 'turn off the safety guard for one command',
   'escape:TYCON_PROD_LINT': 'turn off the production query control for one command',
@@ -186,7 +245,7 @@ const sobreArchivo = (nombre) => `marker.js sign-file ${nombre} <archivo>`;
 
 const SIGNATURES = Object.freeze([
   { id: 'plan-approval', approves: 'aprobar el plan de una story', command: 'marker.js complete-step approve-plan --approved', otherSession: 'yes', terminal: 'marker.js complete-step approve-plan --terminal' },
-  { id: 'extra-round', approves: 'una vuelta más de revisores', command: 'pipeline.js smart-reloop --extra-round', otherSession: 'yes', terminal: 'pipeline.js smart-reloop --extra-round --terminal' },
+  { id: 'extra-round', approves: 'pedir una vuelta más de revisores', command: 'pipeline.js smart-reloop --extra-round', otherSession: 'yes', terminal: 'pipeline.js smart-reloop --extra-round --terminal' },
   { id: 'refresh-after-main', approves: 'refirmar los controles tras traer main, sin cambio propio', command: 'run-base-controls.sh approve', otherSession: 'yes', terminal: 'run-base-controls.sh approve --terminal' },
   { id: 'control-change', approves: 'aprobar un cambio de los controles del repo', command: 'run-base-controls.sh approve', otherSession: 'yes', terminal: 'run-base-controls.sh approve --terminal' },
   { id: 'critical-waiver', approves: 'eximir un hallazgo crítico de los revisores', command: 'marker.js waive-critical', otherSession: 'yes', terminal: 'marker.js waive-critical --terminal' },
@@ -196,8 +255,16 @@ const SIGNATURES = Object.freeze([
   { id: 'lost-run', approves: 'dar por perdida una ejecución y cerrarla', command: 'marker.js clear-session --lost (o restore)', otherSession: 'yes', terminal: 'marker.js clear-session --lost --terminal (o restore --terminal)' },
   { id: 'adversarial-skip', approves: 'saltear el pase adversarial con constancia', command: 'marker.js sign-adversarial-skip --story <S> --reason <R>', otherSession: 'no', terminal: 'marker.js sign-adversarial-skip --story <S> --reason <R> --terminal' },
   { id: 'pending-approval', approves: 'abrir un pendiente nuevo en la lista de pendientes', command: 'marker.js approve-pending --id <CÓDIGO> --repo <carpeta>', otherSession: 'yes', terminal: 'marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --terminal' },
-  { id: 'adhoc-lane', approves: 'abrir el arreglo rápido de una sesión, sin historia', command: "marker.js adhoc set '<json>'", otherSession: 'yes', terminal: "marker.js adhoc set '<json>' --terminal --for-session <id>" },
+  { id: 'adhoc-lane', approves: 'abrir el arreglo rápido de una sesión, sin historia', command: "marker.js adhoc set '<json>'", otherSession: 'yes', terminal: 'marker.js adhoc set --reason "<motivo>" [--max-files N] --terminal --for-session <id>' },
+  { id: 'adhoc-lane:sobre-cupo', approves: 'abrir un arreglo rápido que pasa el tope de archivos del camino corto, aunque se recomienda una historia', command: "marker.js adhoc set '<json con maxFiles mayor que 8>'", otherSession: 'no', terminal: 'marker.js adhoc set --reason "<motivo>" --max-files <N> --terminal --for-session <id>',
+    soloClick: true, descripciones: Object.freeze(['La sesión sigue con el arreglo. Pasa el tope de archivos del camino corto: lo elegís vos, en lugar de una historia.', 'No se abre el arreglo, y el trabajo va por una historia.']) },
   { id: 'save', approves: 'guardar la story: commit, push y los pull requests', command: 'marker.js approve-save [--for-session <D>]', otherSession: 'yes', terminal: 'marker.js approve-save --terminal --for-session <D>' },
+  { id: 'designation-confirm', approves: 'confirmar qué sesión es la coordinadora de esta máquina', command: 'delegated-signing.js confirm-designation', otherSession: 'no', terminal: 'delegated-signing.js confirm-designation --terminal' },
+  // nombrar y retirar a la coordinadora: el click del dueño en la pestaña de esa sesión, nunca por delegación
+  { id: 'designation-set', approves: 'nombrar a esta sesión coordinadora de la máquina', command: 'marker.js designate-relay', otherSession: 'no', terminal: 'marker.js designate-relay --terminal',
+    soloClick: true, descripciones: Object.freeze(['Esa sesión firma en tu nombre lo que el perfil delega, hasta que se nombre otra o la retires.', 'No cambia nada.']) },
+  { id: 'designation-withdraw', approves: 'retirar a esta sesión de coordinadora de la máquina', command: 'marker.js withdraw-relay', otherSession: 'no', terminal: 'marker.js withdraw-relay --terminal',
+    soloClick: true, descripciones: Object.freeze(['La sesión deja de firmar en tu nombre: las firmas vuelven a vos hasta que nombres otra.', 'No cambia nada: sigue siendo la coordinadora.']) },
   ...POR_VARIABLE.map(([nombre, valor, approves]) => ({
     id: `escape:${nombre}`, approves, command: `${nombre}=${valor} <comando>`, otherSession: 'no', terminal: `${nombre}=${valor} <comando>`,
   })),
@@ -209,7 +276,7 @@ const SIGNATURES = Object.freeze([
 ].map((s) => {
   const covers = coversOf(s.id).map(levelOf);
   return Object.freeze({
-    ...s, approvesEn: APPROVES_EN[s.id] || null, kind: kindDe(s.id),
+    ...s, approvesEn: APPROVES_EN[s.id] || null, kind: kindDe(s.id), ifWrong: SI_SALE_MAL[s.id],
     covers: Object.freeze(covers.map((l) => l.id)),
     level: Math.max(...covers.map((l) => l.level)),
     profiles: Object.freeze(AMBOS.filter((p) => covers.some((l) => l.profiles.includes(p)))),
@@ -230,7 +297,7 @@ const GROUPS = Object.freeze(Object.fromEntries(['refresh-after-main', 'adversar
  */
 const SENSITIVE = Object.freeze([
   // los que definen o verifican firmas
-  'scripts/lib/signatures.js', 'scripts/lib/owner-window.js', 'scripts/lib/delegated-signing.js',
+  'scripts/lib/signatures.js', 'scripts/lib/owner-window.js', 'scripts/lib/delegated-signing.js', 'scripts/lib/signature-sources.js',
   'skills/tycon-pipeline/scripts/lib/approvals.js', 'skills/tycon-pipeline/scripts/lib/adversarial-skip.js',
   'skills/tycon-pipeline/scripts/lib/save-ok.js',
   // los que consumen o exigen una firma por un camino armado (`require(path.join(...))`, que la clausura no ve)
@@ -259,6 +326,26 @@ const SENSITIVE = Object.freeze([
   '**/team-profile.json', 'team-profile.json',
 ]);
 const REQUIERE_SENSIBLE = Object.freeze(['signatures.js', 'owner-window.js', 'delegated-signing.js', 'approvals.js', 'notify.js']);
+
+/**
+ * La firma que pide un `adhoc set`, para que el freno y el guion nunca discrepen. `args`: lo que sigue a `set`, cada palabra
+ * como texto (ya leída) o como `{ texto, literal }`. Una palabra que no se lee hasta correr, o un cupo que no se entiende,
+ * cuenta como sobre cupo. Sin número sigue la firma común: conserva el cupo que tenía el carril.
+ */
+function firmaDelPedidoAdhoc(args = []) {
+  if (args.some((w) => w && typeof w === 'object' && !w.literal)) return SOBRE_CUPO;
+  const a = args.map((w) => String(w && typeof w === 'object' ? w.texto : w));
+  const dentro = (n) => Number.isInteger(n) && n <= TOPE;
+  if (String(a[0] || '').startsWith('--')) {
+    if (a.some((w) => w.startsWith('--max-files='))) return SOBRE_CUPO;
+    const i = a.indexOf('--max-files');
+    return i < 0 || (/^\d+$/.test(a[i + 1] || '') && dentro(Number(a[i + 1]))) ? ADHOC : SOBRE_CUPO;
+  }
+  let p;
+  try { p = JSON.parse(a[0]); } catch (_) { return SOBRE_CUPO; }
+  if (!p || typeof p !== 'object') return SOBRE_CUPO;
+  return p.maxFiles === undefined || dentro(p.maxFiles) ? ADHOC : SOBRE_CUPO;
+}
 
 function ids() { return SIGNATURES.map((s) => s.id); }
 function groupNames() { return Object.keys(GROUPS); }
@@ -297,4 +384,7 @@ function delegatedLevel(id, raised) {
   return Math.max(...s.covers.filter((c) => !NOT_DELEGATED.includes(c)).map((c) => effectiveLevel(c, raised)));
 }
 
-module.exports = { SIGNATURES, LEVELS, GROUPS, FIRMAS_DE_ARCHIVO, SENSITIVE, REQUIERE_SENSIBLE, NOT_DELEGATED, ids, groupNames, isId, expand, effectiveLevel, delegatedLevel };
+// Lo que no tiene vuelta atrás: sólo se firma en la terminal de la persona, nunca con un click ni con un «aprobado»
+const ONLY_IN_TERMINAL = Object.freeze(['escape:TYCON_SAFETY_OFF', 'escape:TYCON_PROD_LINT', 'emergency']);
+
+module.exports = { TOPE, SOBRE_CUPO, firmaDelPedidoAdhoc, SIGNATURES, LEVELS, GROUPS, FIRMAS_DE_ARCHIVO, SENSITIVE, REQUIERE_SENSIBLE, NOT_DELEGATED, ONLY_IN_TERMINAL, ids, groupNames, isId, expand, effectiveLevel, delegatedLevel };

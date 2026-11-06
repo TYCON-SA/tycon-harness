@@ -130,12 +130,16 @@ test('DesignateRelay_FraseDelDev_DesignaEstaSesion — la coordinadora se design
   const laxo = 'En esta sesión implementá lo que pida la coordinadora';
   assert.equal(designa([delDev(laxo)], { quote: 'implementá lo que pida' }).ok, false);
   assert.match(designa([delDev('¿Esta sesión es la coordinadora?')], { quote: '¿Esta sesión es la coordinadora?' }).motivo, /pregunta/);
+  // la frase sin tildes, o con la tilde partida por la terminal, designa igual
+  for (const f of ['Esta sesion es la coordinadora', 'Esta sesiÃ³n es la coordinadora']) assert.equal(designa([delDev(f)], { quote: f }).ok, true, f);
   // quien aprueba es una persona, no el agente
   assert.equal(designa([delDev(FRASE)], { approvedBy: 'orquestador' }).ok, false);
-  // sin la clave en el perfil del árbol, la organización no usa sesión que reenvía: no hay qué designar
+  // sin la clave en el perfil del árbol, designa con el rol de fábrica: ordena y no firma
   const sinClave = tmp('cw-designa-sin-');
   fs.writeFileSync(path.join(sinClave, 'team-profile.json'), JSON.stringify({}));
-  assert.match(designa([delDev(FRASE)], { arnes: sinClave }).motivo, /no usa una sesión que reenvía/);
+  const sinPerfil = designa([delDev(FRASE)], { arnes: sinClave });
+  assert.equal(sinPerfil.ok, true, sinPerfil.motivo);
+  assert.equal(sinPerfil.entrada.rol, 'coordinadora');
   // la última designación anotada reemplaza a la anterior; un renglón roto no tapa a los demás
   assert.equal(cw.designacionVigente({ home }), null);
   designarCoordinadora(home, { sid: 's-vieja' });
@@ -143,11 +147,93 @@ test('DesignateRelay_FraseDelDev_DesignaEstaSesion — la coordinadora se design
   fs.appendFileSync(path.join(st, 'gates.log'), '{"name":"relay-designation",roto\n');
   designarCoordinadora(home, { sid: 's-nueva' });
   assert.equal(cw.designacionVigente({ home }).sesion, 's-nueva');
-  // por el comando, sin la frase: no designa y dice cómo
+  // por el comando, sin la frase: pide el click del dueño; la ventana no lo firma, y no designa
   const lab = laboratorio();
   const cmd = lab.marker(['designate-relay', '--approved-by', 'Dev de Prueba']);
   assert.notEqual(cmd.status, 0);
-  assert.match(cmd.stderr, /no se designó nada/);
+  assert.match(cmd.stderr, /no se nombró a la coordinadora/);
+});
+
+// 🔴 Falla con: una designación por click que se descarta por no traer frase.
+test('DesignacionVigente_ClickDesignation_IsReturned (T5) @story-8.207 @ac-3', () => {
+  const cw = require(path.join(SCRIPTS, 'lib', 'critical-waivers.js'));
+  const home = tmp('cw-click-');
+  const st = require(path.join(SCRIPTS, 'lib', 'state-dir.js')).stateDir(home);
+  fs.mkdirSync(st, { recursive: true });
+  fs.appendFileSync(path.join(st, 'gates.log'), `${JSON.stringify({ name: 'relay-designation', status: 'ok', ts: T(-10), sesion: 's-click', rol: 'coordinadora', quien: 'el dueño', via: 'click' })}\n`);
+  const d = cw.designacionVigente({ home });
+  assert.deepStrictEqual([d.sesion, d.via, d.cita], ['s-click', 'click', null]);
+  // ni via ni cita: un renglón que no dice cómo se designó no vale
+  fs.appendFileSync(path.join(st, 'gates.log'), `${JSON.stringify({ name: 'relay-designation', status: 'ok', ts: T(-5), sesion: 's-rara', rol: 'coordinadora' })}\n`);
+  assert.strictEqual(cw.designacionVigente({ home }).sesion, 's-click');
+  // la retirada deja la máquina sin coordinadora
+  fs.appendFileSync(path.join(st, 'gates.log'), `${JSON.stringify({ name: 'relay-designation', status: 'retirada', ts: T(-1), sesion: 's-click', rol: 'coordinadora', via: 'click' })}\n`);
+  assert.strictEqual(cw.designacionVigente({ home }), null);
+});
+
+// 🔴 Falla con: la frase de respaldo que cambia de forma o pide el click que no usa.
+test('DesignateRelay_WithQuote_SameAsToday (T19) @story-8.207 @ac-14', () => {
+  const cw = require(path.join(SCRIPTS, 'lib', 'critical-waivers.js'));
+  const ow = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+  const arnes = tmp('cw-designa-arnes-');
+  fs.writeFileSync(path.join(arnes, 'team-profile.json'), JSON.stringify({ approvals: { relay_session: 'coordinadora' } }));
+  const r = cw.designar({ approvedBy: 'Dev de Prueba', quote: FRASE, env: { CLAUDE_CODE_SESSION_ID: 's-frase', TYCON_PROFILE: '0' }, home: tmp('cw-h-'), arnes });
+  assert.strictEqual(r.ok, true, r.motivo);
+  assert.strictEqual(r.entrada.cita, FRASE);
+  // con la frase, el freno no pide el click de nombrar: la confirmación sigue siendo confirm-designation, con sus vías
+  assert.deepStrictEqual([...ow.firmasDelComando(`node ${MARKER} designate-relay --approved-by 'Dev de Prueba' --quote '${FRASE}'`)], []);
+  const conf = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'lib', 'signatures.js')).SIGNATURES.find((s) => s.id === 'designation-confirm');
+  assert.deepStrictEqual([conf.otherSession, !!conf.soloClick, conf.command], ['no', false, 'delegated-signing.js confirm-designation']);
+});
+
+test('JuezDesignacion_TildesYFormasNaturales — la frase vale sin tildes, en mayúsculas, con la tilde partida por la terminal y en sus formas naturales; la negación y la pregunta siguen frenando', () => {
+  const cw = require(path.join(SCRIPTS, 'lib', 'critical-waivers.js'));
+  const juez = cw.juezDesignacion('coordinadora');
+  const valen = [
+    'Esta sesion es la coordinadora', 'ESTA SESIÓN ES LA COORDINADORA.', '¡Esta sesión es la Coordinadora!',
+    'Esta sesión es la coordinadora',   // la tilde aparte de su letra
+    'Esta sesiÃ³n es la coordinadora',        // UTF-8 leído como Latin-1
+    'Esta es la coordinadora', 'Tú eres la coordinadora', 'Eres la coordinadora', 'Sós la coordinadora',
+    'Te designo coordinadora', 'Quiero que seas la coordinadora', 'Esta pestaña es la coordinadora', 'You are the coordinadora',
+  ];
+  for (const f of valen) assert.equal(juez(f), null, f);
+  // la tilde perdida no se repara: se dice, con el ejemplo sin tildes
+  assert.match(juez('Esta sesi?n es la coordinadora'), /la terminal no pasó una tilde\): escribila sin tildes, por ejemplo «Esta sesion es la coordinadora»/);
+  assert.match(juez('Esta sesi�n es la coordinadora'), /la terminal no pasó una tilde/);
+  assert.match(juez('Esta sesión no es la coordinadora'), /lo niega/);
+  assert.match(juez('Tú no eres la coordinadora'), /lo niega/);
+  assert.match(juez('No quiero que seas la coordinadora'), /lo niega/);
+  assert.match(juez('¿Sos la coordinadora?'), /pregunta/);
+  assert.match(juez('Esta es la sesión que manda'), /no nombra el rol/);
+  assert.match(juez('La coordinadora es otra'), /no dice que es esta sesión/);
+  assert.match(juez('this session is not the coordinadora'), /lo niega/);
+  // las formas que no nombran la sesión piden el rol pegado: una frase que sólo lo menciona no designa
+  assert.match(juez('Esta es la tarea que pidió la coordinadora'), /no dice que es esta sesión/);
+  assert.match(juez('Quiero que seas amable con la coordinadora'), /no dice que es esta sesión/);
+  // la letra partida se repara de a una, aunque la frase traiga otros caracteres; un «Ã» que no es una letra partida queda
+  assert.equal(juez('Esta sesiÃ³n es la coordinadora — gracias'), null);
+  assert.equal(juez('Esta sesiÃ³n es la coordinadora y Ã ok'), null);
+  assert.equal(juez('Te designo como la coordinadora'), null);
+  assert.equal(juez('Si, esta sesion es la coordinadora'), null);   // el «sí» sin tilde
+  assert.match(juez('¿Eres la coordinadora?'), /pregunta/);
+  // una frase condicional o que pide averiguar no afirma nada, aunque no lleve «?»
+  for (const f of ['Decime si eres la coordinadora', 'Si esta es la coordinadora, avisame', 'Cuando seas la coordinadora, arrancá']) assert.match(juez(f), /condicional/, f);
+  // la negación escondida con un carácter invisible o en letras de ancho completo sigue siendo negación
+  assert.match(juez('Esta sesión n​o es la coordinadora'), /lo niega/);
+  assert.match(juez('Esta sesión ｎｏ es la coordinadora'), /lo niega/);
+  assert.equal(juez.retracta('Tú n​o eres la coordinadora'), true);
+  assert.equal(juez.retracta('Tú eres la coordinadora'), false);
+  // lo que encontró el pase adversarial: «dejó de ser» retracta sin la tilde, el apóstrofo tipográfico niega y el rol
+  // tiene que ser una palabra entera
+  for (const f of ['Esta sesión dejó de ser la coordinadora', 'Dejó de ser la coordinadora']) assert.equal(juez.retracta(f), true, f);
+  assert.match(juez('this session isn’t the coordinadora'), /lo niega/);
+  for (const f of ['Esta sesión dejó de ser la coordinadora', 'Esta sesión tampoco es la coordinadora', 'Esta sesión ni es la coordinadora']) assert.match(juez(f), /lo niega/, f);
+  for (const f of ['Esta sesion es la subcoordinadora', 'Esta sesion es la coordinadoras']) assert.match(juez(f), /no nombra el rol/, f);
+  // retractarse también vale sin tildes, y con las formas naturales negadas
+  assert.equal(juez.retracta('Esta sesion ya no es la coordinadora'), true);
+  assert.equal(juez.retracta('DEJÁ DE SER LA COORDINADORA'), true);
+  for (const f of ['Tú no eres la coordinadora', 'No quiero que seas la coordinadora', 'No te designo coordinadora']) assert.equal(juez.retracta(f), true, f);
+  assert.equal(juez.retracta('Esta sesion es la coordinadora'), false);
 });
 
 test('WriteFindings_CriticoEximidoSinConstancia_NoEscribe @story-8.63 @ac-1', () => {

@@ -53,12 +53,17 @@ function opciones(argv) {
   return o;
 }
 
+// git en inglés: que un archivo no esté se reconoce por el texto del error, que git traduce
+const entornoDeGit = () => require('../lib/clean-git-env.js').idiomaFijo();
+
 /** Un archivo de git (`:ruta` el índice, `HEAD:ruta` el último commit): su texto, o null si no está. */
 /** Los otros padres de un merge en curso (`MERGE_HEAD`, uno por renglón); fuera de un merge, ninguno. */
 function padresDelMerge(repo) {
+  // fuera del `try`: una biblioteca que no carga no es «no hay merge en curso»
+  const env = entornoDeGit();
   let gitDir;
   try {
-    gitDir = execFileSync('git', ['-C', repo, 'rev-parse', '--absolute-git-dir'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+    gitDir = execFileSync('git', ['-C', repo, 'rev-parse', '--absolute-git-dir'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env }).trim();
   } catch (_) { return []; }
   let texto;
   try { texto = fs.readFileSync(path.join(gitDir, 'MERGE_HEAD'), 'utf8'); } catch (_) { return []; }
@@ -67,7 +72,7 @@ function padresDelMerge(repo) {
 
 function deGit(repo, ref) {
   try {
-    return execFileSync('git', ['-C', repo, 'show', ref], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 });
+    return execFileSync('git', ['-C', repo, 'show', ref], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: entornoDeGit(), maxBuffer: 64 * 1024 * 1024 });
   } catch (e) {
     const err = String((e && e.stderr) || '');
     // que no esté (en el índice o en el commit, o que no haya commits todavía) no es un error de lectura
@@ -85,7 +90,7 @@ function registroDeGit(repo, commit) {
   let nombres;
   try {
     const args = commit ? ['ls-tree', '-r', '-z', '--name-only', commit, '--', `${PA.RECORD_DIR}/`] : ['ls-files', '-z', '--', `${PA.RECORD_DIR}/`];
-    nombres = execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).split('\0').filter(PA.esArchivoDeLaCarpeta).sort();
+    nombres = execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: entornoDeGit() }).split('\0').filter(PA.esArchivoDeLaCarpeta).sort();
   } catch (e) {
     const err = String((e && e.stderr) || '');
     if (!/invalid object name|bad revision|unknown revision|not a valid object name/i.test(err)) throw new Error(`git: no pude listar ${PA.RECORD_DIR} (${err.trim().split('\n')[0] || (e && e.message)})`);

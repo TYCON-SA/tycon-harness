@@ -222,14 +222,14 @@
           "test-scope-guard",
           "pr-uno-por-repo",
           "pr-sin-auto-complete",
-          "pr-sin-portables",
           "push-referencia-fantasma",
           "prod-access-guard",
           "engram-manifest",
           "new-names",
           "spanish-names",
           "public-push-guard",
-          "internal-history"
+          "internal-history",
+          "session-cap-guard"
         ]
       },
       "frenos_escapes": {
@@ -243,7 +243,6 @@
           "test-scope-guard",
           "pr-uno-por-repo",
           "pr-sin-auto-complete",
-          "pr-sin-portables",
           "push-referencia-fantasma",
           "prod-access-guard",
           "engram-manifest",

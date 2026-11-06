@@ -1137,7 +1137,8 @@ t79_has "$JSON" ok "'memoria del trabajo' in t" && mal "$T79 dice la línea de l
 # declara el de mantenimiento: lo nombra, la lista sale de él, está al día, y dice por dónde viaja la memoria
 t79_config "{ \"paths\": { \"maintainers\": \"$T79_CLONE\", \"maintained\": \"$T79_CLONE\" } }"
 # (el clon entero, con su .git: doctor tampoco puede dejarle una traída ni un candado)
-t79_clone_hash() { ( cd "$T79_CLONE" && find . \( -type f -o -type l \) -print | LC_ALL=C sort | while IFS= read -r f; do printf '%s ' "$f"; if [ -L "$f" ]; then readlink "$f"; else shasum -a 256 < "$f"; fi; done ) | shasum -a 256 | cut -d' ' -f1; }
+t79_clone_hash() { ( cd "$T79_CLONE" && exec 3< <(find . -type f -print0 | LC_ALL=C sort -z | tree_file_sums) \
+  && find . \( -type f -o -type l \) -print | LC_ALL=C sort | while IFS= read -r f; do if [ -L "$f" ]; then printf '%s ' "$f"; readlink "$f"; else IFS= read -r l <&3; printf '%s\n' "$l"; fi; done ) | shasum -a 256 | cut -d' ' -f1; }
 ANTES="$(harness_lab_home_hash)"; T79_HASH_BEFORE="$(t79_clone_hash)"
 doctor79
 [ "$(harness_lab_home_hash)" = "$ANTES" ] && [ "$(t79_clone_hash)" = "$T79_HASH_BEFORE" ] && ok "$T79 doctor no escribe nada: ni en la HOME ni en el clon de mantenimiento" || mal "$T79 doctor escribió algo (HOME o clon de mantenimiento)"
@@ -1389,6 +1390,15 @@ lista839 "$NV" "$SHA839"
 J="$(TYCON_HARNESS_HEALTH=1 harness doctor --json 2>/dev/null)"
 [ "$(printf '%s' "$J" | jtxt "d['harness_node']['verified'] is None and d['harness_node']['own'] is True")" = True ] && ok "T28 bajo la comprobación de salud: verified en null, sin recalcular la huella" || mal "T28 salud: $(printf '%s' "$J" | jtxt "d.get('harness_node')")"
 export TYCON_HARNESS_NODE=0
+
+# Las versiones de Claude: doctor dice lo que usa esta sesión, lo que no usa dice «no la usás», y fuera de una sesión no
+# juzga nada. La comprobación de salud juzga el árbol: no las mira.
+J="$(CLAUDE_CODE_ENTRYPOINT=cli AI_AGENT=claude-code_2-1-292_agent harness doctor --json 2>/dev/null)"
+[ "$(printf '%s' "$J" | jtxt "any('consola de Claude está en 2.1.292' in w for w in d['warn']) and any('extensión de VS Code: no la usás' in o for o in d['ok'])")" = True ] && ok "VERSIONES terminal vieja: avisa la consola y la extensión no se usa" || mal "VERSIONES terminal vieja: ${J:0:300}"
+J="$(CLAUDE_CODE_ENTRYPOINT= AI_AGENT= harness doctor --json 2>/dev/null)"
+[ "$(printf '%s' "$J" | jtxt "any('Claude — no aplica acá' in o for o in d['ok']) and not any('Claude —' in w for w in d['warn'])")" = True ] && ok "VERSIONES fuera de una sesión: no aplica, sin aviso" || mal "VERSIONES fuera de una sesión: ${J:0:300}"
+J="$(CLAUDE_CODE_ENTRYPOINT=cli AI_AGENT=claude-code_2-1-292_agent TYCON_HARNESS_HEALTH=1 harness doctor --json 2>/dev/null)"
+[ "$(printf '%s' "$J" | jtxt "not any('Claude —' in i for k in ('ok','warn','fail') for i in d[k])")" = True ] && ok "VERSIONES bajo la comprobación de salud: no las mira" || mal "VERSIONES bajo la comprobación de salud: ${J:0:300}"
 
 if [ "$FALLOS" = 0 ]; then echo "✅ harness-doctor: todo verde"; exit 0; fi
 echo "❌ harness-doctor: $FALLOS fallo(s)"; exit 1

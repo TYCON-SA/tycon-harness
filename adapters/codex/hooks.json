@@ -78,6 +78,10 @@
           },
           {
             "type": "command",
+            "command": "node ${TCG}/scripts/hooks/finished-open-notice.js"
+          },
+          {
+            "type": "command",
             "command": "node ${TCG}/scripts/hooks/extension-notices.js"
           },
           {
@@ -95,6 +99,10 @@
           {
             "type": "command",
             "command": "node ${TCG}/scripts/hooks/context-size-notice.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/session-state.js"
           }
         ]
       }
@@ -129,6 +137,10 @@
           {
             "type": "command",
             "command": "node ${TCG}/scripts/hooks/why-blocked-notice.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/session-state.js"
           }
         ]
       }
@@ -230,6 +242,10 @@
           {
             "type": "command",
             "command": "node ${TCG}/scripts/hooks/failed-query-notice.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/cover-secrets.js"
           }
         ]
       },
@@ -277,6 +293,10 @@
           {
             "type": "command",
             "command": "node ${TCG}/scripts/hooks/wait-notice.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/session-state.js"
           }
         ]
       }
@@ -333,6 +353,13 @@
       "scripts": []
     },
     {
+      "log": "SessionStart y UserPromptSubmit · office-link-start.js — SOLO Claude Code, por ahora",
+      "verdict": "ASIMETRÍA A PROPÓSITO, PENDIENTE DE DECISIÓN (2026-11-04, story 8.171): el gancho pide el alta de la máquina en el sitio, lanza el proceso de la oficina y pone al día la capa del equipo mientras se trabaja. El proceso cuenta las sesiones por su archivo de sesión de Claude Code, así que una máquina que trabaja sólo con Codex no tendría qué mostrar. Si se suma Codex lo decide DEF-8.171-A-codex (tasks/todo.md del repo del equipo); hasta entonces, el caso 79 del banco corre sólo con Claude.",
+      "scripts": [
+        "office-link-start.js"
+      ]
+    },
+    {
       "log": "PostToolUse · Artifact — SOLO Claude Code (Codex no tiene la tool)",
       "verdict": "ASIMETRÍA A PROPÓSITO (2026-08-30): la tool Artifact (publicar páginas en claude.ai) existe únicamente en Claude Code — Codex nunca emite ese tool_name, así que no hay evento que registrar de su lado ni conducta que traducir. Los artefactos nacen sólo en sesiones Claude y el archivado al repo (<repo>/artifacts/ + índice con la URL) lo cubre el hook del lado Claude. Caso 28 del banco con tools:['claude'] y la misma asimetría declarada.",
       "scripts": [
@@ -367,6 +394,7 @@
         "safety-guard-pre.sh",
         "test-scope-guard-pre.sh",
         "failed-query-notice.js",
+        "cover-secrets.js",
         "rebuild-before-verify.js",
         "session-collision-guard.js",
         "on-bash-write-gate.js",
@@ -393,6 +421,27 @@
       "verdict": "ASIMETRÍA DECLARADA (2026-10-22, story 8.95): deprecated-read-notice.js avisa al leer un archivo deprecado. Del lado Claude se registra con matcher Read|Bash|PowerShell; Codex no emite evento para su herramienta propia de lectura, así que de su lado el aviso corre sólo por la terminal (su evento Bash: cat, sed -n, head…). Lo que Codex lea sin la terminal queda cubierto por la instrucción del arranque (deprecated-session-notice.js) y por los revisores, que reciben marcados los archivos deprecados del diff.",
       "scripts": [
         "deprecated-read-notice.js"
+      ]
+    },
+    {
+      "log": "session-state.js — Claude: SessionStart, SessionEnd, PermissionRequest, Notification (permission_prompt), PreToolUse de las preguntas, PostToolUse, UserPromptSubmit y Stop ↔ Codex: SessionStart, UserPromptSubmit y Stop (story 2.81, tanda A)",
+      "verdict": "ASIMETRÍA A PROPÓSITO (2026-11-01, story 2.81, decisión 7): Codex no avisa cuando pide un permiso ni cuando la sesión se cierra, y no tiene la herramienta de preguntas con opciones. De su lado el archivo de estado se crea al arrancar, el mensaje de la persona deja la sesión ocupada y el fin del turno la deja parada, sin anotar una espera; un pedido de permiso de Codex no se ve, y la oficina no lo inventa. El fin de la sesión se infiere: sin pid estable (decisión 24d), una sesión sin cambios hace más de 2 h se muestra inactiva, y su archivo no se borra. En Claude se anotan los dos momentos que Codex no tiene: el pedido de permiso (PermissionRequest, con qué pide, y Notification) y el cierre (SessionEnd, que borra el archivo).",
+      "scripts": [
+        "session-state.js"
+      ]
+    },
+    {
+      "log": "PreToolUse · Bash|PowerShell — SOLO Claude Code (el tope de sesiones por cualquier camino)",
+      "verdict": "ASIMETRÍA A PROPÓSITO (2026-11-01, story 8.178): session-cap-guard.js frena las sesiones de fondo que abre el agente con la máquina en el tope. Codex no abre sesiones de fondo (coordination.js open ya se lo niega), así que de su lado no hay nada que frenar y el freno no se registra.",
+      "scripts": [
+        "session-cap-guard.js"
+      ]
+    },
+    {
+      "log": "PreToolUse · AskUserQuestion|mcp__spokenly__ask_user_dictation — SOLO Claude Code (las preguntas de una sesión que abrió la coordinadora)",
+      "verdict": "ASIMETRÍA A PROPÓSITO (2026-11-04, story 8.211): background-question-guard.js le niega el cuadro de opciones y el dictado a una sesión de fondo que abrió coordination.js open, con la coordinadora confirmada y viva. Codex no abre sesiones de fondo (coordination.js open se lo niega) ni tiene esas herramientas en el modo normal, así que de su lado no hay a quién frenar y el freno no se registra.",
+      "scripts": [
+        "background-question-guard.js"
       ]
     }
   ]

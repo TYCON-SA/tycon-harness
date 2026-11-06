@@ -105,7 +105,21 @@ const DEFAULT_ADHOC_MAX_FILES = 8;
 // el arreglo rápido que abre la coordinadora por delegación: más chico que el que firma una persona
 const DELEGATED_ADHOC_MAX_FILES = 5;
 const cupoDelegado = (pedido) => Math.min(pedido, DELEGATED_ADHOC_MAX_FILES);
+/**
+ * El cupo que queda al declarar: el pedido, el que ya tenía o el de siempre. Lo hecho por delegación o en una pestaña sin
+ * permisos va con el cupo delegado. Pedir sin número no achica lo que la persona ya eligió con su click: trabaría el arreglo.
+ */
+function cupoAlDeclarar({ pedido, existing, via }) {
+  const cupo = pedido !== undefined ? pedido : (existing ? existing.maxFiles : DEFAULT_ADHOC_MAX_FILES);
+  const porDelegacion = via === 'delegacion' || via === 'avisado';
+  return porDelegacion && !(pedido === undefined && existing && existing.sobreCupo) ? cupoDelegado(cupo) : cupo;
+}
+/** El cupo de un carril: el suyo, o el de siempre si no trae uno que se pueda leer. */
+const cupoDelCarril = (adhoc) => (Number.isFinite(Number(adhoc && adhoc.maxFiles)) && Number(adhoc.maxFiles) > 0 ? Number(adhoc.maxFiles) : DEFAULT_ADHOC_MAX_FILES);
 const MARKER_JS = '~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js';
+// el tablero de la oficina, en la carpeta de estado: lo escribe sólo su comando
+const BOARD_FILE = /(^|[\\/])coordination[\\/]tablero\.json$/;
+const BOARD_JS = '~/.tycon/harness/scripts/tools/office/board.js';
 
 function norm(p) {
   return String(p || '').replace(/\\/g, '/');
@@ -183,10 +197,27 @@ function isAdversarialSkipRecord(p) { return ADVERSARIAL_SKIP_FILE.test(norm(Str
 // El archivo de antes y la carpeta de un archivo por aprobación (la carpeta misma también: `cp x tasks/pending-approvals/`)
 const PENDING_APPROVALS_FILE = /(^|\/)tasks\/pending-approvals(\.jsonl$|\/|$)/i;
 function isPendingApprovalsRecord(p) { return PENDING_APPROVALS_FILE.test(norm(String(p || ''))); }
-/** ¿Es una constancia firmada que no se escribe a mano? `control-approvals`, `adversarial-skip-record`, `pending-approvals` o null. */
+// El registro de las aprobaciones de la persona (scripts/lib/owner-approvals.js) y lo ya gastado (`usadas/`): lo escribe sólo
+// su gancho, y borrar una usada devuelve una aprobación ya gastada. Sólo se lee del estado de la cuenta, en una de sus dos
+// carpetas (la carpeta misma también): una con ese nombre en un producto no es el registro
+const OWNER_APPROVALS_DIR = /(^|\/)(?:\.tycon\/state|\.tycon-pipeline)\/owner-approvals(\/|$)/i;
+function isOwnerApprovalsRecord(p) { return OWNER_APPROVALS_DIR.test(norm(String(p || ''))); }
+// Las sesiones que abrió la coordinadora (scripts/tools/coordination.js `noteLaunched`): sacar un renglón deja a esa sesión
+// preguntarle a la persona. Lo escribe sólo `coordination.js`; como el registro de arriba, sólo en el estado de la cuenta
+const LAUNCHED_SESSIONS_FILE = /(^|\/)(?:\.tycon\/state|\.tycon-pipeline)\/coordination\/launched\.json$/i;
+function isLaunchedSessionsRecord(p) { return LAUNCHED_SESSIONS_FILE.test(norm(String(p || ''))); }
+// El buzón de la oficina (scripts/lib/office-messages.js): lo que la persona le manda a cada sesión, lo tomado, lo ya usado y
+// el registro. Lo escriben sólo el proceso de la oficina, el vigilante de cada sesión y `office-message.js verify`: escribirlo a
+// mano es fingir un mensaje de la persona, y borrar lo usado devuelve uno ya gastado. Sólo en el estado de la cuenta
+const OFFICE_MAILBOX = /(^|\/)(?:\.tycon\/state|\.tycon-pipeline)\/office\/(?:(?:inbox|tomados|usados|vigilantes)(\/|$)|messages\.jsonl(?:\.1)?$)/i;
+function isOfficeMailboxRecord(p) { return OFFICE_MAILBOX.test(norm(String(p || ''))); }
+/** ¿Es una constancia firmada que no se escribe a mano? `control-approvals`, `adversarial-skip-record`, `pending-approvals`, `owner-approvals`, `launched-sessions`, `office-mailbox` o null. */
 function signedRecordKind(p) {
   if (isControlApproval(p)) return 'control-approvals';
   if (isPendingApprovalsRecord(p)) return 'pending-approvals';
+  if (isOwnerApprovalsRecord(p)) return 'owner-approvals';
+  if (isLaunchedSessionsRecord(p)) return 'launched-sessions';
+  if (isOfficeMailboxRecord(p)) return 'office-mailbox';
   return isAdversarialSkipRecord(p) ? 'adversarial-skip-record' : null;
 }
 
@@ -222,6 +253,15 @@ function computeStoryGate({
   if (isPendingApprovalsRecord(filePath) || isPendingApprovalsRecord(real)) {
     return { action: 'block', kind: 'pending-approvals', reason: 'escritura a mano del registro de aprobaciones de pendientes' };
   }
+  if (isOwnerApprovalsRecord(filePath) || isOwnerApprovalsRecord(real)) {
+    return { action: 'block', kind: 'owner-approvals', reason: 'escritura a mano del registro de aprobaciones de la persona' };
+  }
+  if (isLaunchedSessionsRecord(filePath) || isLaunchedSessionsRecord(real)) {
+    return { action: 'block', kind: 'launched-sessions', reason: 'escritura a mano del registro de las sesiones que abrió la coordinadora' };
+  }
+  if (isOfficeMailboxRecord(filePath) || isOfficeMailboxRecord(real)) {
+    return { action: 'block', kind: 'office-mailbox', reason: 'escritura a mano del buzón de la oficina' };
+  }
   // El arreglo rápido que abrió la coordinadora por delegación no toca lo sensible: eso lo firma el dueño. Antes del
   // portón apagado y del pase de los repos del arnés, que es donde están esos archivos. La lista de lo sensible vive en el
   // arnés (scripts/lib/signatures.js): unas skills instaladas aparte no la alcanzan, y sin la lista el carril delegado
@@ -256,7 +296,9 @@ function computeStoryGate({
   if (!isCodeFile(filePath)) return { action: 'pass', reason: 'no es código' };
   // `isHarness` booleano = el borde ya leyó el remoto; sin él decide la carpeta (respaldo).
   const harness = typeof isHarness === 'boolean' ? isHarness : isHarnessPath(filePath);
-  if (harness) return { action: 'pass', reason: 'repo del harness (agent-skills / el arnés)' };
+  // con un carril abierto rige su tope también en el arnés; sin carril, o con una ejecución de historia, el arnés pasa
+  const carrilEnElArnes = harness && adhoc && adhoc.reason && !(marker && marker.storyId);
+  if (harness && !carrilEnElArnes) return { action: 'pass', reason: 'repo del harness (agent-skills / el arnés)' };
 
   // ── Carril STORY (pipeline activo) — se mira ANTES que el repo ───────────────────────────────
   if (marker && marker.storyId) {
@@ -279,15 +321,15 @@ function computeStoryGate({
 
   if (!repoRoot) return { action: 'pass', reason: 'archivo fuera de un repo git' };
   if (homeDir && sameFile(repoRoot, homeDir)) return { action: 'pass', reason: 'el "repo" es el home (dotfiles) — no cuenta' };
-  if (!repoHasTycon && !repoHasStories) {
+  // un clon del arnés puede no tener `.tycon/`: trabaja con el arnés igual
+  if (!harness && !repoHasTycon && !repoHasStories) {
     return { action: 'pass', reason: 'el repo no trabaja con el arnés (sin .tycon/ ni stories Mary+GOLD)' };
   }
 
   // ── Carril AD-HOC (hotfix / ajuste chico, sin story) ─────────────────────────────────────────
   if (adhoc && adhoc.reason) {
     const files = Array.isArray(adhoc.files) ? adhoc.files : [];
-    const max = Number.isFinite(Number(adhoc.maxFiles)) && Number(adhoc.maxFiles) > 0
-      ? Number(adhoc.maxFiles) : DEFAULT_ADHOC_MAX_FILES;
+    const max = cupoDelCarril(adhoc);
     const already = files.some((f) => sameFile(f, filePath));
     // Al cupo cuentan sólo los archivos de IMPLEMENTACIÓN (un hotfix .cs + su test = 1).
     const countsTowardCap = isImplPath(filePath);
@@ -295,6 +337,8 @@ function computeStoryGate({
       return {
         action: 'block',
         kind: 'adhoc-cap',
+        tocados: files.length,
+        cupo: max,
         reason: `el ad-hoc "${adhoc.reason}" ya tocó ${files.length} archivo(s) de implementación (cupo ${max})`,
       };
     }
@@ -332,6 +376,34 @@ const PREGUNTA_SIN_CARRIL = [
   'Lo tenés que escribir vos en el chat: el cuadro de botones no vale.',
 ];
 
+/**
+ * El mensaje al pasar el tope, al editar y al guardar: recomienda la historia y nombra el click aparte como segunda salida,
+ * en los dos perfiles. En un producto lo lee el dev («vos») y no nombra las piezas de la capa de mantenimiento.
+ */
+// Cuántos archivos se nombran: en una rama grande, una lista entera repetida en cada intento desplaza del registro el
+// renglón de la firma del carril, y el carril deja de contar como abierto.
+const TOPE_DE_NOMBRES = 50;
+
+function textoDelTope({ harness = true, tocados, cupo, archivos = [], ibaA = null, via = '' }) {
+  const pedido = `node ${MARKER_JS} adhoc set '{"reason":"<qué y por qué>","maxFiles":<N>}'`;
+  return [
+    '⛔ camino corto — PASÓ EL TOPE DE ARCHIVOS',
+    via,
+    `  Este arreglo ya cambió ${tocados} archivo(s) de implementación (cupo ${cupo}).${ibaA ? ` Ibas a tocar otro más: ${ibaA}.` : ''}`,
+    ...archivos.slice(0, TOPE_DE_NOMBRES).map((a) => `   · ${a}`),
+    ...(archivos.length > TOPE_DE_NOMBRES ? [`   · y ${archivos.length - TOPE_DE_NOMBRES} más`] : []),
+    '  Se recomienda que siga por una historia, con su plan aprobado, las pruebas primero y sus revisores:',
+    '   `Skill(skill="tycon-create-story", …)` si no existe, y después `Skill(skill="tycon-pipeline", args="implementemos la story X.Y")`.',
+    ...(harness ? [
+      '  Si el dev elige seguir sin historia, es su click aparte, en esta pestaña; la coordinadora no lo da:',
+    ] : [
+      '  Si preferís seguir sin historia, lo elegís vos con un click aparte, en esta pestaña:',
+    ]),
+    `   ${pedido}`,
+    '  Ese comando trae el cuadro. Cuentan sólo los archivos de implementación, sin pruebas ni guías.',
+  ].filter((l) => l !== '').join('\n');
+}
+
 function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, harness = true } = {}) {
   const f = norm(filePath);
   const viaLine = via ? `  (detectado en ${via})\n` : '';
@@ -353,6 +425,15 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       '  Este cambio lo aprobás vos: abrí el camino rápido con tu sí en la ventana de permiso. Antes de guardar corren',
       '  los revisores y el pase adversarial sobre su diff.',
     ]).filter((l) => l !== '').join('\n');
+  }
+  if (r.kind === 'state-dir' && BOARD_FILE.test(String(f))) {
+    // el tablero de la oficina tiene su comando: valida cada fila y pone el número
+    return [
+      '⛔ El tablero se escribe sólo con board.js, que valida cada fila y pone el número.',
+      viaLine.replace(/\n$/, ''),
+      `   Para esto: node ${BOARD_JS} set T-41 estado=curso nota="…"`,
+      '   (una fila nueva: add; cerrarla: close T-41; el tablero entero: save --from <tu archivo aparte>)',
+    ].filter((l) => l !== '').join('\n');
   }
   if (r.kind === 'state-dir') {
     return [
@@ -398,6 +479,35 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       '  ventana de permiso o en su terminal (`--terminal`). Sin ella, el pase corre.',
     ].filter((l) => l !== '').join('\n');
   }
+  if (r.kind === 'owner-approvals') {
+    return [
+      '⛔ el registro de las aprobaciones de la persona no se toca a mano',
+      viaLine.replace(/\n$/, ''),
+      `  ${f}`,
+      '  Lo escribe sólo el gancho que anota su click en el cuadro de opciones o su «aprobado», y lo gastado queda en',
+      '  `usadas/`: escribirlo es fingir una aprobación, y borrar ahí devuelve una que ya se usó. Si falta una firma, pedile',
+      '  la aprobación a la persona.',
+    ].filter((l) => l !== '').join('\n');
+  }
+  if (r.kind === 'launched-sessions') {
+    return [
+      '⛔ el registro de las sesiones que abrió la coordinadora no se toca a mano',
+      viaLine.replace(/\n$/, ''),
+      `  ${f}`,
+      '  Lo escribe sólo `coordination.js` al abrir y cerrar una sesión de fondo: sacar un renglón deja a esa sesión',
+      '  preguntarle a la persona. Si una pregunta tiene que llegarle, mandásela a la coordinadora.',
+    ].filter((l) => l !== '').join('\n');
+  }
+  if (r.kind === 'office-mailbox') {
+    return [
+      '⛔ el buzón de la oficina no se toca a mano',
+      viaLine.replace(/\n$/, ''),
+      `  ${f}`,
+      '  Lo escriben sólo la oficina (/office), el vigilante de cada sesión y `office-message.js verify`: escribirlo es fingir',
+      '  un mensaje de la persona, y borrar lo usado devuelve uno ya gastado. Para hablarle a una sesión, la persona le',
+      '  escribe desde la oficina o en su pestaña.',
+    ].filter((l) => l !== '').join('\n');
+  }
   if (r.kind === 'pending-approvals') {
     return [
       '⛔ el registro de aprobaciones de pendientes no se escribe a mano',
@@ -430,20 +540,7 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
     ].join('\n');
   }
   if (r.kind === 'adhoc-cap') {
-    return [
-      '⛔ tycon-pipeline — EL AD-HOC YA NO ES UN AJUSTE CHICO',
-      viaLine + '',
-      `  ${r.reason}. Ibas a tocar otro más: ${f}.`,
-      '  Un hotfix no recorre media base de código. Si el trabajo creció, es una funcionalidad y va por',
-      '  story + pipeline (con plan aprobado, tests primero, advisors, DoD).',
-      '',
-      '  Salidas (la decide el USER, no vos — preguntale):',
-      '   (a) Story + pipeline → `Skill(skill="tycon-create-story", …)` (si no existe) y después',
-      '       `Skill(skill="tycon-pipeline", args="implementemos la story X.Y")`.',
-      '   (b) El user confirma que sigue siendo un ajuste acotado → re-declará con cupo mayor y motivo:',
-      `        node ${MARKER_JS} adhoc set '{"reason":"<qué y por qué>","maxFiles":<N>}'`,
-      '       Lo aprueba una persona en la ventana de permiso (queda en adhoc.log con el cupo anterior y el nuevo).',
-    ].join('\n');
+    return textoDelTope({ harness, tocados: r.tocados, cupo: r.cupo, ibaA: f, via: viaLine.replace(/\n$/, '') });
   }
   // no-lane
   const resume = otherMarkers.length
@@ -567,7 +664,7 @@ function storyByConsoleMessage(rutas, via) {
 
 module.exports = {
   markerDeleteMessage, storyByConsoleMessage,
-  computeStoryGate, blockMessage, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
+  computeStoryGate, blockMessage, textoDelTope, TOPE_DE_NOMBRES, cupoDelCarril, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, isOwnerApprovalsRecord, isLaunchedSessionsRecord, isOfficeMailboxRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
   STORY_INTENT_PATTERNS,
-  DEFAULT_ADHOC_MAX_FILES, DELEGATED_ADHOC_MAX_FILES, cupoDelegado, EXTRA_CODE_EXTS, NEVER_CODE_SEGMENTS, HARNESS_REPO_SEGMENTS, MARKER_JS,
+  DEFAULT_ADHOC_MAX_FILES, DELEGATED_ADHOC_MAX_FILES, cupoDelegado, cupoAlDeclarar, EXTRA_CODE_EXTS, NEVER_CODE_SEGMENTS, HARNESS_REPO_SEGMENTS, MARKER_JS,
 };

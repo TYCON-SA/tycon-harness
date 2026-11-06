@@ -175,6 +175,8 @@ function retrosDe(dir, ref, into, ilegibles) {
     try { d = JSON.parse(body); } catch { rotas++; continue; }
     const sha = d && String(d.merge_commit || d.mergeCommit || d.commit || '');
     if (!/^[0-9a-f]{40}$/.test(sha)) continue;
+    // un latido anulado (`retro-heartbeat.js --annul`) no es la retro de nada
+    if (d.anulado) continue;
     const tipo = RC.kindOf({ generatedBy: typeof d.generated_by === 'string' ? d.generated_by : null });
     const prev = into.get(sha);
     // una retro con aprendizajes gana sobre un latido del mismo merge; entre latidos, el de merges/

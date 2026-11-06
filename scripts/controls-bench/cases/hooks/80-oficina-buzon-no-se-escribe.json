@@ -1,0 +1,55 @@
+{
+  "hooks": [
+    {
+      "hook": "hook-pre-edit.js → on-story-gate (el buzón de la oficina)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/hook-pre-edit.js",
+      "event": "PreToolUse",
+      "matcher": "Edit|Write",
+      "_por_que": "Lo que la persona le manda a una sesión desde /office, lo tomado, lo usado y su registro los escriben sólo la oficina, el vigilante y office-message.js verify (story 8.183). Escribirlo con Write o Edit finge un mensaje de la persona, y reescribir el registro devuelve uno ya usado.",
+      "cases": [
+        {
+          "id": "oficina-buzon-write-frena",
+          "type": "must-block",
+          "_por_que": "Un mensaje dejado a mano en el buzón le llegaría a la sesión como si lo hubiera escrito la persona.",
+          "stdin": { "session_id": "bench-oficina", "tool_name": "Write", "tool_input": { "file_path": "${SANDBOX_HOME}/.tycon/state/office/inbox/s1/3f9c2a7d0b1e4c5a8d6e7f9012345678.json", "content": "{}" } },
+          "expect": { "exit": 2, "stderr_re": ["ESTADO DEL PIPELINE|buzón de la oficina no se toca a mano"] }
+        },
+        {
+          "id": "oficina-registro-edit-frena",
+          "type": "must-block",
+          "_por_que": "El registro es lo que mira verify: un renglón escrito a mano haría pasar un id inventado.",
+          "stdin": { "session_id": "bench-oficina", "tool_name": "Edit", "tool_input": { "file_path": "${SANDBOX_HOME}/.tycon/state/office/messages.jsonl", "old_string": "a", "new_string": "b" } },
+          "expect": { "exit": 2, "stderr_re": ["ESTADO DEL PIPELINE|buzón de la oficina no se toca a mano"] }
+        }
+      ]
+    },
+    {
+      "hook": "on-bash-write-gate.js (el buzón de la oficina)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-bash-write-gate.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "_por_que": "Desde la consola, el buzón tampoco: borrar lo usado devuelve un mensaje gastado, y copiar uno al buzón lo finge.",
+      "cases": [
+        {
+          "id": "oficina-usados-rm-frena",
+          "type": "must-block",
+          "stdin": { "session_id": "bench-oficina", "tool_name": "Bash", "tool_input": { "command": "rm -rf ${SANDBOX_HOME}/.tycon/state/office/usados" } },
+          "expect": { "exit": 2, "stderr_re": ["buzón de la oficina no se toca a mano|ESTADO DEL PIPELINE|BORRADO"] }
+        },
+        {
+          "id": "oficina-buzon-cp-frena",
+          "type": "must-block",
+          "stdin": { "session_id": "bench-oficina", "tool_name": "Bash", "tool_input": { "command": "cp /tmp/x.json ${SANDBOX_HOME}/.tycon/state/office/inbox/s1/3f9c2a7d0b1e4c5a8d6e7f9012345678.json" } },
+          "expect": { "exit": 2, "stderr_re": ["buzón de la oficina no se toca a mano|ESTADO DEL PIPELINE|EDICIÓN INVISIBLE"] }
+        },
+        {
+          "id": "oficina-verify-pasa",
+          "type": "must-not-block",
+          "_por_que": "La comprobación que corre la sesión antes de obedecer no escribe a mano: pasa.",
+          "stdin": { "session_id": "bench-oficina", "tool_name": "Bash", "tool_input": { "command": "node ${TCG}/scripts/tools/office-message.js verify 3f9c2a7d0b1e4c5a8d6e7f9012345678" } },
+          "expect": { "exit": 0 }
+        }
+      ]
+    }
+  ]
+}

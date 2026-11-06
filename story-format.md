@@ -119,6 +119,8 @@ Cuando una story es grande y se entrega en varias tandas (backend / frontend / s
 
 Es **opcional** — si la story se entrega de una sola vez, no se necesita. Si se difiere algo, **es obligatorio** declarar la tanda diferida con su `blocked_by` y los ACs/tasks/tests que cubre.
 
+**Cuándo NO partir: si dos tandas tocan los mismos archivos y ninguna sirve sola (no se puede usar ni entregar por separado), van en una sola tanda.** Cada tanda suma su plan, sus revisores, sus pruebas y sus firmas: una historia partida en dos tandas sobre la misma pantalla costó dos planes, dos guardados y dos vueltas de revisores, y nadie podía usar la primera sin la segunda. Se parte cuando cada tanda sirve sola, o cuando algo de afuera las separa (`blocked_by`). Si dos tandas comparten archivos y cada una sirve sola, cada una lo dice en `delivers`: qué puede usar o entregar alguien con sólo esa tanda adentro. Sin eso avisa `tycon-story-validator` (**VAL-W19**).
+
 ```yaml
 ---
 epic: 2
@@ -160,6 +162,7 @@ pipelines:
 | `acs` | int[] | cuando `status: done` o `status: in-progress` (acs efectivamente cubiertos en esa tanda). |
 | `tasks` | int[] | cuando `status: done` o `status: in-progress` (tasks cubiertos). |
 | `tasks_partial` | list de `{id, done, pending}` | si una task se cubrió parcial — declarar subtasks done vs pending. |
+| `delivers` | string no vacío | cuando la tanda comparte archivos con otra que todavía no está `done`: qué puede usar o entregar alguien con sólo esta tanda adentro (VAL-W19 si falta). |
 | `blocked_by` | string no vacío | **obligatorio cuando `status: blocked`** (regla VAL-C6 CRITICAL si falta). Describir el bloqueo concreto (story/task/file que debe completarse primero). |
 | `acs_pending` | int[] | cuando `status: blocked` o `status: pending` — ACs que NO se cubren en esa tanda. |
 | `tasks_pending` | int[] | cuando `status: blocked` o `status: pending` — tasks que NO se cubren. |
@@ -171,6 +174,7 @@ pipelines:
 - Un AC NO puede aparecer en `acs` y `acs_pending` al mismo tiempo.
 - Pipeline con `status: blocked` requiere `blocked_by` no vacío → **VAL-C6 CRITICAL** si falta.
 - Cuando todos los pipelines tienen `status: done`, el `status` global de la story DEBE ser `done`.
+- Dos tandas sin terminar que nombran el mismo archivo tienen que decir, cada una, qué entrega sola (`delivers`); si ninguna sirve sola, se juntan en una → **VAL-W19 WARNING** si alguna no lo dice.
 
 **Tracking cruzado por `tycon-deferral-tracker`**:
 

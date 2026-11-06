@@ -409,3 +409,57 @@ no un olvido); (b) contenido — verificar que el par no traiga datos que no deb
 `covered_by:` en un AC `runtime_not_verifiable` tiene que ser un **T-ID con tag `@ac-N`**, nunca una
 ruta de archivo: `runtime-matrix.js` degrada una ruta a NOT-RUN en vez de WAIVED-USER.
 
+## 7. Qué vence una evidencia
+
+Un portón E2E o un humo prueba el código que había cuando corrió. La matriz por AC (`runtime-matrix.js`) no se lo cree si
+el código cambió después. Para saberlo no alcanza la fecha del archivo: git la reescribe en cada cambio de rama, aunque
+el contenido quede igual. Tampoco alcanza comparar la hora de la evidencia con la del commit: la evidencia se toma antes
+del commit que guarda el código.
+
+Por cada archivo de código declarado, la primera que aplica decide (`lib/evidence-vs-commit.js`):
+
+| Caso | La evidencia |
+|---|---|
+| La fecha del archivo es anterior o igual a la hora de la evidencia | Cuenta, sin preguntarle a git |
+| El archivo tiene cambios sin commitear, también preparados; no está en git, está marcado para que git no lo mire (`assume-unchanged`, `skip-worktree`), o git no contesta | No cuenta |
+| La evidencia no está en ningún commit alcanzable desde `HEAD` | No cuenta: pudo probar el código de otra rama |
+| Mismo repo: el archivo es igual en el commit de la evidencia y en `HEAD` | Cuenta, aunque haya cambiado y vuelto |
+| Mismo repo: el archivo es distinto | No cuenta, y el aviso nombra el archivo y el commit |
+| Otro repo, evidencia con ancla: el archivo de `HEAD` es igual al del commit del ancla, o a la huella si estaba sin commitear | Cuenta |
+| Otro repo, evidencia con ancla: el archivo es distinto | No cuenta, y el aviso nombra el archivo y el commit |
+| Otro repo: el último commit del archivo es anterior o igual al de la evidencia | Cuenta |
+| Otro repo: el último commit del archivo es posterior, y una fusión de pedido de esta historia, posterior a la evidencia, trae el archivo tal como estaba su rama a la hora de la evidencia | Cuenta, y la matriz avisa: se supone que la evidencia corrió sobre esa rama |
+| Otro repo: el último commit del archivo es posterior, sin esa fusión | No cuenta: entre repos sólo se pueden comparar horas |
+| Mismo repo u otro: el archivo cambió, es una prueba y todos sus cambios posteriores son de otra historia | Cuenta, y la matriz avisa |
+
+Qué es una prueba lo dice `isTestPath` de `lib/atdd-order.js`, con los ayudantes de una carpeta de pruebas adentro y los datos
+de prueba afuera. De qué historia es un commit se lee del nombre de la rama, en el asunto de la fusión de su pedido; si no se
+sabe, vence: un commit directo, un squash, `Merged PR N: título`, una rama sin historia o con dos. Un cambio de otra historia en
+una prueba no vence por decisión del dueño, y afloja el control a propósito: una prueba que esa historia cambió puede no probar
+ya lo mismo. La misma historia que corrige su prueba después de la evidencia, sí la vence: esa prueba quizá daba verde por estar
+mal. Un cambio de código vence siempre, aunque venga junto con una prueba.
+
+El ancla la anotan el humo y el portón al correr, por cada repo hermano: su commit y la huella de hasta 50 archivos sin commitear. Vale
+la del espejo: el registro y el portón viajan con el código y se editan. Si su commit no está en el clon, o el hermano no dejó
+ancla, la evidencia se lee como una sin ancla.
+
+Un clon cortado no se compara: el aviso dice que no se pudo comparar contra git. Si la evidencia venció, se vuelve a
+correr. Lo que llega a un commit ya pasó por esta misma regla en el freno del commit, con el archivo sin commitear: por eso
+el commit de la evidencia alcanza para juzgarla después.
+
+Las demás condiciones no cambian: el espejo en `gates.log`, las pruebas apagadas, la salida sellada y la clase del comando
+del humo. Una evidencia sin espejo no cuenta aunque el archivo no haya cambiado.
+
+Los archivos declarados son los de `files_to_create` y `files_to_modify`, escritos como estén: con comillas, con comentarios
+con sangría, en línea o a la misma sangría que la clave. Las pruebas y los guiones de humo que la historia declara también se
+miran: vencen la evidencia como el código, salvo lo que se dijo arriba de una prueba cambiada por otra historia.
+
+La matriz busca cada archivo declarado en el repo de la historia, en la carpeta de arriba, en cada hermano declarado y en su copia de la rama de la historia, en ese orden y sin repetir. Juzga cada copia que encuentra, con el commit de su
+propio repo, y la primera que no cuenta decide. Si la misma ruta está en más de un lugar, el aviso dice en cuál.
+
+Un archivo de código declarado que la matriz no puede leer la deja en rojo: ninguna evidencia cuenta, aunque los criterios
+estén cubiertos por pruebas, porque no se sabe si cambió. El aviso nombra la ruta y los lugares donde la buscó. Con la
+historia abierta, la salida es corregir la ruta si el archivo se movió, crearlo o sacarlo de la lista si era para crear, o
+traer el hermano al día. En `done`, traer el hermano al día o volver a correr la evidencia: la lista no se edita para ponerla
+en verde. Un archivo que no es código no se mira, esté o no.
+

@@ -13,7 +13,9 @@
 **Ningún plan se aprueba solo**: ni el de riesgo bajo, ni por la misma sesión que lo escribió.
 La opción vieja de aprobarlo solo sale 2 sin escribir nada. Lo aprueba:
 
-- **una persona**, en la ventana de permiso o en su terminal (`--approved "<su respuesta>"`, o `--terminal`); o
+- **una persona**, en la ventana de permiso; donde la ventana no llega (una pestaña sin permisos, una sesión de fondo),
+  con un click en el cuadro de opciones o un «aprobado» escrito, según `guides/firmas-del-arnes.md`, «Aprobar sin
+  terminal»; o en su terminal (`--approved "<su respuesta>"`, o `--terminal`); o
 - **la coordinadora, por delegación, sólo con la revisión automática.** La revisión es el pase adversarial en **modo
   plan**: cuatro lentes (un AC sin cubrir, una suposición falsa sobre el código, un riesgo sin defensa, una prueba que
   falta) con su verificador, sobre la story, el plan y el repo, nunca sobre el hilo de la sesión que planeó.
@@ -51,6 +53,12 @@ otra corrida o de otra sesión no cuenta.
   conversación se lee y el plan no está en lo que la persona vio, no cierra. Por qué: medido en un laboratorio, el
   agente dijo que el plan ya estaba en sus mensajes sin haberlo mostrado, preguntó a secas y la persona aprobó sin
   verlo.
+- ❓ **La pregunta de la firma sale del plan, no de la cita.** El cuadro que da el freno dice, en este orden: lo que se
+  aprueba, la historia con su título y la sesión, el «Qué hace» del plan (hasta 3 líneas), sus «Archivos», la ruta del
+  plan completo, qué pasa si sale mal y, al final, la cita que pusiste en `--approved`. La cita no reemplaza nada de lo
+  anterior. Si el plan no tiene `## Qué hace` y `## Archivos` (`step-03-plan.md`), la pregunta dice qué falta en lugar
+  del resumen: agregalas antes de pedir la firma. Si cambiás el plan después de mostrar el cuadro, el click ya no vale:
+  pedí el cuadro de nuevo.
 - 🖥️ **Si no lo mostraste, lo muestra el arnés.** En Claude Code, antes de que corra `complete-step approve-plan`, el arnés le
   pone en pantalla a la persona el título del plan, cuántos pasos tiene y la ruta de su archivo («El plan de la historia
   … (te lo muestra el arnés)») y lo anota; el paso lo cuenta como mostrado. No reemplaza tu mensaje: si la persona pregunta por el plan, es ése. Por
@@ -63,8 +71,9 @@ otra corrida o de otra sesión no cuenta.
     (sin página estática, `--url <dirección donde corre la app>`, que se le pregunta);
   - el no → `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/e2e-setup.js defer --repo <repo> --story <spec> --approved-by "<el dev>" --no "<su respuesta>"`:
     la historia queda con la prueba con navegador pendiente, y la próxima historia con pantalla vuelve a recibir la oferta.
-  Los dos comandos los aprueba la persona en la ventana de permiso, que le muestra el comando, o los firma en su
-  terminal con `--terminal`. Lo escrito en el chat o reenviado por otra sesión no firma; el no, además, va después de
+  Los dos comandos los aprueba la persona en la ventana de permiso, que le muestra el comando; donde la ventana no llega,
+  con un click o un «aprobado» escrito; o los firma en su terminal con `--terminal`. Lo reenviado por otra sesión no
+  firma, ni un mensaje suyo donde hay ventana; el no, además, va después de
   la oferta, con su respuesta en `--no`, que queda en la historia. Por qué: medido en un repo nuevo, el agente instaló Playwright fuera del repo sin preguntar, y sin eso
   el cierre frenaba sin salida.
 - **Con la persona** → checkpoint HITL exactamente como se describe abajo (con riesgo bajo o normal).

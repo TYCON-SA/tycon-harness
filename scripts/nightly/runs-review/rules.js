@@ -536,9 +536,9 @@ const AUTORIZABLES = Object.freeze({
   DOD_BYPASS_ACMATRIX: ['DOD_BYPASS'],
   'RR-APAGO': ['set-autonomous'],
 });
-// las vías con el permiso de una persona: la ventana de permiso, y las de antes (su frase en la conversación, o la que
-// reenvió la sesión relevo), que siguen en las líneas viejas
-const VIAS_QUE_AUTORIZAN = ['ventana', 'persona', 'reenvio'];
+// las vías con el permiso de una persona: la ventana de permiso, su click o su «aprobado», y las de antes (su frase en la
+// conversación, o la que reenvió la sesión relevo), que siguen en las líneas viejas
+const VIAS_QUE_AUTORIZAN = ['ventana', 'click', 'mensaje', 'persona', 'reenvio'];
 
 /**
  * Las autorizaciones de una ejecución, de las líneas de frenos.jsonl de su máquina (`null`: el registro no se midió y

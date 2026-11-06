@@ -41,13 +41,22 @@ const readVar = (() => {
 })();
 
 // git sin las variables que deja un hook de git, sin preguntar nada por la terminal y con mensajes en inglés
-const GIT_ENV = (() => {
-  const e = { ...process.env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' };
-  for (const k of ['GIT_DIR', 'GIT_INDEX_FILE', 'GIT_WORK_TREE', 'GIT_COMMON_DIR']) delete e[k];
-  return e;
-})();
+// (scripts/lib/clean-git-env.js). Se arma una vez, al primer git, y SI ESTÁ la biblioteca: sin ella no se lanza git sin
+// el idioma fijo, y se hace lo mismo que cuando git no contesta (no se avisa nada).
+let gitEnv;
+function entornoDeGit() {
+  if (gitEnv === undefined) {
+    try {
+      const e = require(path.join(__dirname, '..', 'lib', 'clean-git-env.js')).idiomaFijo(process.env, { GIT_TERMINAL_PROMPT: '0' });
+      for (const k of ['GIT_DIR', 'GIT_INDEX_FILE', 'GIT_WORK_TREE', 'GIT_COMMON_DIR']) delete e[k];
+      gitEnv = e;
+    } catch (_) { gitEnv = null; }
+  }
+  if (!gitEnv) throw new Error('scripts/lib/clean-git-env.js no carga');
+  return gitEnv;
+}
 function git(cwd, args) {
-  return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: GIT_TIMEOUT_MS, env: GIT_ENV }).trim();
+  return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: GIT_TIMEOUT_MS, env: entornoDeGit() }).trim();
 }
 function gitOr(cwd, args, fallback = '') { try { return git(cwd, args); } catch { return fallback; } }
 const hasRef = (root, ref) => gitOr(root, ['rev-parse', '-q', '--verify', `${ref}^{commit}`]) !== '';

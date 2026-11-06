@@ -160,18 +160,16 @@ pedido corriendo, la retrospectiva pendiente al apuntar a `main`. En GitHub, el 
 texto por el freno de publicación antes de abrir: si frena, devuelve `rechazado` y dice dónde está el problema, nunca
 el texto. Se corrige el mensaje y se vuelve al 9b.4. No se busca otra forma de abrirlo.
 
-### 9b.6 — El latido de la retrospectiva, mientras espera
+### 9b.6 — El latido de la retrospectiva: cuando el pedido entre
 
-Es la regla 10b de `SKILL.md`, y en este paso corre **acá**: la espera puede terminar el turno, y el control de cierre
-reclama la entrada que la llamada del 9b.5 acaba de dejar. Va con **la punta que anotó el registro** (la de la rama al
-abrir el pedido), no con el commit de merge: en modo `pr` el registro empareja por esa punta.
+Es la regla 10b de `SKILL.md`, y en este paso **no se corre el latido**. Un pedido abierto no es una fusión: el registro
+lo anota con su número, lo deja «esperando que entre» y no frena el cierre del turno. El latido sólo acepta commits de
+la línea de main, así que con la punta de la rama sale 2.
 
-```bash
-node "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/scripts/metrics/retro-heartbeat.js" --repo <repo> --merge <la punta anotada> --story <id>
-```
-
-La punta anotada se saca como dice el 10b (del registro, no de `HEAD`). Sin entrada en el registro —un repo del arnés,
-un pedido reusado que no nació en esta sesión— no hay deuda: decilo en una línea y seguí.
+Cuando el pedido entra, el cierre del turno o el aviso de arranque reclaman el commit que el pedido dejó en main, con el
+comando del latido ya armado: se corre ése, con `--story <id>`. Si el pedido se abandona, la entrada se cierra sola. Sin
+entrada en el registro —un repo del arnés, un pedido reusado que no nació en esta sesión— no hay deuda: decilo en una
+línea y seguí.
 
 ### 9b.7 — Leer el resultado
 

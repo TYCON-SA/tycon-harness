@@ -1,0 +1,286 @@
+'use strict';
+/**
+ * signature-sources.js — de dónde sale lo que dice la pregunta de cada firma (owner-approvals.js `cuadroDe`).
+ *
+ * Lo que la sesión escribe en el comando es una cita: puede no decir lo que se aprueba. Lo que la pregunta dice que hace
+ * la firma, qué archivos toca y dónde está lo completo sale de lo mismo que el dueño firmaría si lo abriera: el plan
+ * escrito, el diff de los controles, los criterios de la historia, el informe de hallazgos o la nota de la vuelta.
+ *
+ *   · `partesDe({ firma, palabras, cwd, marcador, estado })` → `{ queHace, archivos, completo, fuente, cita }`, o null si
+ *     la firma no tiene fuente propia (la pregunta dice lo que hace el comando). `fuente` es el texto exacto que se
+ *     mostró: entra a la huella del sello, así un click no vale si la fuente cambió después del cuadro.
+ *   · `historiaDe(marcador)` → `{ id, titulo }` de la historia de la corrida, o null sin corrida.
+ *   · `seccionesDelPlan(texto)` → `{ queHace, archivos }` o `{ error }`: el plan dice qué hace en hasta 3 líneas y qué
+ *     archivos toca, o no se firma (lo comprueba `marker.js complete-step approve-plan` antes de la ventana).
+ */
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+const { spawnSync } = require('child_process');
+
+const PIPELINE = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'pipeline.js');
+const PLAN_FILE = 'step-02-bmad-plan.md';
+const LINEAS_DEL_PLAN = 3;
+const sha = (t) => crypto.createHash('sha256').update(String(t)).digest('hex');
+
+/** El valor de `--opcion` en las palabras del comando (también `--opcion=valor`), o null. */
+function valor(palabras, opcion) {
+  const p = palabras || [];
+  const i = p.indexOf(opcion);
+  if (i >= 0) return p[i + 1] != null ? String(p[i + 1]) : null;
+  const pegado = p.find((w) => String(w).startsWith(`${opcion}=`));
+  return pegado ? String(pegado).slice(opcion.length + 1) : null;
+}
+
+// por qué no se leyó la última ruta que no está: «no está» y «no pude leerla» le dicen cosas distintas a la persona
+const sinLeer = new Map();
+function leer(ruta) {
+  try { return fs.readFileSync(ruta, 'utf8'); } catch (e) {
+    if (e.code !== 'ENOENT' && ruta) sinLeer.set(ruta, e.code || e.message); else sinLeer.delete(ruta);
+    return null;
+  }
+}
+const porQueNo = (ruta) => (ruta && sinLeer.has(ruta) ? ` (no pude leerlo: ${sinLeer.get(ruta)})` : '');
+
+function rutaDeLaHistoria(m) {
+  if (!m || !m.storyPath) return null;
+  return path.isAbsolute(m.storyPath) ? m.storyPath : path.join(m.repoPath || process.cwd(), m.storyPath);
+}
+
+/** La historia de la corrida con su título (`title:` del frontmatter), o null sin corrida. */
+function historiaDe(m) {
+  if (!m || !m.storyId) return null;
+  const texto = leer(rutaDeLaHistoria(m) || '');
+  const fm = texto && /^---\r?\n([\s\S]*?)\r?\n---/.exec(texto);
+  const t = fm && /^title:\s*(.+?)\s*$/m.exec(fm[1]);
+  const titulo = t ? t[1].replace(/^(["'])(.*)\1$/, '$2').trim() : null;
+  return { id: String(m.storyId), titulo: titulo || null };
+}
+
+/** La carpeta de la corrida de la sesión del marcador, sin crearla; null sin corrida o sin clave. */
+function carpetaDeLaCorrida(m) {
+  if (!m || !m.storyId) return null;
+  try { return require(PIPELINE).resolveRunDir(m.repoPath || process.cwd(), String(m.storyId), false, rutaDeLaHistoria(m) || undefined); } catch (_) { return null; }
+}
+
+/** El cuerpo de la sección `## <titulo>` del markdown, sin el título; null si no está. */
+function seccion(texto, titulo) {
+  const lineas = String(texto).split(/\r?\n/);
+  const i = lineas.findIndex((l) => new RegExp(`^##\\s+${titulo}\\s*$`, 'i').test(l.trim()));
+  if (i < 0) return null;
+  const fin = lineas.findIndex((l, k) => k > i && /^#{1,2}\s/.test(l));
+  return lineas.slice(i + 1, fin < 0 ? undefined : fin);
+}
+const renglones = (cuerpo) => (cuerpo || []).map((l) => l.replace(/^\s*(?:[-*]|\d+\.)\s+/, '').trim()).filter(Boolean);
+
+function seccionesDelPlan(texto) {
+  const queHace = renglones(seccion(texto, 'Qué hace'));
+  if (!queHace.length) return { error: 'el plan no dice qué hace en hasta 3 líneas: falta la sección «## Qué hace». Agregala al plan con hasta 3 líneas llanas de qué cambia' };
+  if (queHace.length > LINEAS_DEL_PLAN) return { error: `el plan no dice qué hace en hasta 3 líneas: su sección «## Qué hace» tiene ${queHace.length}. Dejala en 3 líneas llanas` };
+  const archivos = renglones(seccion(texto, 'Archivos')).flatMap((l) => l.split(/,\s+/)).map((a) => a.replace(/`/g, '').trim()).filter(Boolean);
+  if (!archivos.length) return { error: 'el plan no dice qué archivos toca: falta la sección «## Archivos». Agregala al plan con un archivo por renglón («- ruta»)' };
+  return { queHace, archivos };
+}
+
+/** El plan escrito de la corrida: `{ ruta, texto }`; `texto` null si no está. */
+function planDe(m) {
+  const dir = carpetaDeLaCorrida(m);
+  const ruta = dir ? path.join(dir, PLAN_FILE) : null;
+  return { ruta, texto: ruta ? leer(ruta) : null };
+}
+
+function delPlan(palabras, m) {
+  const cita = valor(palabras, '--approved') || valor(palabras, '--mockup-approved');
+  const { ruta, texto } = planDe(m);
+  // la nota de por qué no se leyó va aparte: la línea se recorta, y una ruta larga se la comería
+  if (texto == null) return { queHace: [`no encuentro el plan escrito${ruta ? ` en ${ruta}` : ' (la sesión no tiene una ejecución con carpeta)'}`], nota: porQueNo(ruta).trim() || null, fuente: '', cita };
+  const s = seccionesDelPlan(texto);
+  if (s.error) return { queHace: [s.error], completo: ruta, fuente: texto, cita };
+  return { queHace: s.queHace, archivos: s.archivos, completo: ruta, fuente: texto, cita };
+}
+
+// sin programas externos: el cuadro se arma antes de la firma, y el repo lo nombra el comando
+const git = (dir, args) => spawnSync('git', ['-c', 'core.fsmonitor=false', '-C', dir, ...args], { encoding: 'utf8', timeout: 20000, maxBuffer: 32 * 1024 * 1024 });
+
+/**
+ * El commit de una revisión que escribió la sesión: `{ sha }`, o `{ motivo }` con por qué no. Lo que empieza con «-»
+ * sería una opción de git, no una revisión.
+ */
+function commitDe(raiz, rev) {
+  const r = String(rev || '');
+  if (!r || r.startsWith('-') || /[\s\0]/.test(r)) return { motivo: `«${r}» no es una versión de ${raiz}` };
+  return objetoDe(raiz, `${r}^{commit}`, `«${r}» no es una versión de ${raiz}`);
+}
+
+/** El blob de una ruta en un commit ya resuelto: `{ sha }`, `{ sha: 'borrado' }` si no está, o `{ motivo, gitFallo }`. */
+function blobDe(raiz, commit, ruta) {
+  const b = objetoDe(raiz, `${commit}:${ruta}`, null);
+  return b.sha || b.gitFallo ? b : { sha: 'borrado' };
+}
+
+/** `rev-parse` de un objeto: `{ sha }`; `{ motivo }` si no existe; `{ motivo, gitFallo: true }` si git no pudo contestar. */
+function objetoDe(raiz, objeto, noExiste) {
+  const v = git(raiz, ['rev-parse', '--verify', '--quiet', '--end-of-options', objeto]);
+  if (v.status === 0) return { sha: v.stdout.trim() };
+  // con --quiet, lo que no existe sale 1 sin decir nada; lo demás es que git no pudo contestar
+  if (v.status === 1 && !String(v.stderr || '').trim()) return { motivo: noExiste };
+  const por = v.error ? (v.error.code || v.error.message) : String(v.stderr || '').trim().split('\n')[0] || `git salió ${v.status}`;
+  return { motivo: `git no pudo leer ${raiz} (${por})`, gitFallo: true };
+}
+
+/** El cambio de los controles: cuántas líneas, qué rutas y el diff completo en un archivo de la carpeta de estado. */
+function deControles(palabras, cwd, estado) {
+  const raiz = path.resolve(cwd || process.cwd(), valor(palabras, '--root') || '.');
+  let rutas = [];
+  let entradas = null;
+  try { entradas = JSON.parse(valor(palabras, '--entries') || 'null'); } catch (_) { entradas = null; }
+  const archivo = valor(palabras, '--file');
+  if (Array.isArray(entradas)) rutas = entradas.map((e) => e && e.path).filter((p) => typeof p === 'string');
+  else if (archivo) rutas = [archivo];
+  if (!rutas.length) return null;
+  // lo que se muestra es lo que se firma: con --file, la versión de --rev (o la punta); con --entries, sus blobs, que
+  // run-base-controls exige iguales a la punta, contra --base
+  const conArchivo = !Array.isArray(entradas);
+  const pedida = conArchivo ? (valor(palabras, '--rev') || 'HEAD') : valor(palabras, '--base');
+  const noPude = (que) => ({ queHace: [`no pude leer el cambio de ${rutas.length} archivo(s) de control: ${que}`], archivos: rutas, fuente: JSON.stringify(entradas || rutas) });
+  let rango = null;
+  let firmada = null;
+  if (conArchivo) {
+    const f = commitDe(raiz, pedida);
+    if (!f.sha) return noPude(f.motivo);
+    firmada = f.sha;
+    // un commit sin padre es el primero del repo: se firma sin base
+    const padre = commitDe(raiz, `${firmada}^`);
+    if (padre.sha) rango = [padre.sha, firmada];
+    else if (padre.gitFallo) return noPude(padre.motivo);
+  } else if (pedida) {
+    const base = commitDe(raiz, pedida);
+    const punta = commitDe(raiz, 'HEAD');
+    if (!base.sha || !punta.sha) return noPude((base.sha ? punta : base).motivo);
+    rango = [base.sha, punta.sha];
+  }
+  if (!rango) {
+    // sin base, la huella lleva el contenido que se firma: un click no vale para otra versión del archivo
+    const blobs = conArchivo ? rutas.map((r) => blobDe(raiz, firmada, r)) : null;
+    const sinBlob = (blobs || []).find((b) => b.gitFallo);
+    if (sinBlob) return noPude(sinBlob.motivo);
+    return { queHace: [`Firma ${rutas.length} archivo(s) de control en su versión ${conArchivo ? `de ${firmada.slice(0, 12)}` : 'de la punta'} (sin base para comparar)`], archivos: rutas,
+      completo: rutas.map((r) => path.join(raiz, r)).join(', '), fuente: JSON.stringify({ entradas: entradas || rutas, blobs }) };
+  }
+  // diff-tree, entre dos commits ya resueltos: el comando de bajo nivel no corre los conversores ni el diff externo
+  // que pueda configurar el repo
+  const num = git(raiz, ['diff-tree', '-r', '--numstat', ...rango, '--', ...rutas]);
+  const diff = git(raiz, ['diff-tree', '-r', '-p', ...rango, '--', ...rutas]);
+  if (num.status !== 0 || diff.status !== 0) {
+    return { queHace: [`no pude leer el cambio de ${rutas.length} archivo(s) de control contra ${rango[0]} (${String(num.stderr || diff.stderr || '').trim().split('\n')[0] || 'git falló'})`],
+      archivos: rutas, fuente: JSON.stringify(entradas || rutas) };
+  }
+  let mas = 0;
+  let menos = 0;
+  for (const l of num.stdout.split('\n')) {
+    const [a, b] = l.split('\t');
+    if (/^\d+$/.test(a)) mas += Number(a);
+    if (/^\d+$/.test(b)) menos += Number(b);
+  }
+  let completo = null;
+  if (estado) {
+    const dir = path.join(estado, 'firmas');
+    completo = path.join(dir, `diff-${sha(diff.stdout).slice(0, 16)}.patch`);
+    try { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(completo, diff.stdout); } catch (_) { completo = null; }
+  }
+  return { queHace: [`Cambia ${rutas.length} archivo(s) de control: +${mas} −${menos} líneas`], archivos: rutas, completo, fuente: diff.stdout };
+}
+
+const acsDe = (palabras) => [...new Set(String(valor(palabras, '--acs') || '').split(/[,\s]+/).filter(Boolean).map(Number))].filter((n) => Number.isInteger(n) && n > 0);
+
+/** Los criterios que se marcan probados a mano, de la historia de la corrida. */
+function deLaPruebaAMano(palabras, m) {
+  const historia = rutaDeLaHistoria(m);
+  if (!historia) return null;
+  const acs = acsDe(palabras);
+  let criterios = [];
+  let fallo = null;
+  try { criterios = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'manual-checks.js')).criterios(historia); } catch (e) { fallo = e.code || e.message; }
+  const lineas = acs.map((n) => { const c = criterios.find((x) => x.n === n); return `AC ${n}: ${c ? c.text : fallo ? `(no pude leer los criterios de la historia: ${fallo})` : '(no está en la historia)'}`; });
+  return lineas.length ? { criterios: acs, queHace: lineas, completo: historia, fuente: lineas.join('\n') } : null;
+}
+
+function hallazgosDe(dir) {
+  const ruta = dir ? path.join(dir, 'findings.json') : null;
+  const texto = ruta ? leer(ruta) : null;
+  if (texto == null) return { ruta: null, lista: null, roto: porQueNo(ruta) || null };
+  let j;
+  try { j = JSON.parse(texto); } catch (e) { return { ruta, lista: null, texto, roto: ` (no se entiende: ${e.message})` }; }
+  return { ruta, texto, lista: Array.isArray(j) ? j : (j && Array.isArray(j.findings) ? j.findings : []) };
+}
+
+/** El hallazgo crítico que se exime, del informe de hallazgos de la corrida. */
+function delCritico(palabras, m) {
+  const regla = valor(palabras, '--rule');
+  if (!regla) return null;
+  const archivo = valor(palabras, '--file');
+  const cita = valor(palabras, '--reason');
+  const nombre = `${regla}${archivo ? ` en ${archivo}` : ''}`;
+  const h = hallazgosDe(carpetaDeLaCorrida(m));
+  const archivos = archivo ? [archivo] : [];
+  if (!h.lista) return { queHace: [`Eximir ${nombre}: ${h.roto ? `no pude leer el informe de hallazgos${h.roto}` : 'no hay informe de hallazgos en esta ejecución'}`], archivos, completo: h.ruta, fuente: h.texto || '', cita };
+  const reglaDe = (f) => String(f.rule_id || f.ruleId || f.rule || '').trim();
+  // la exención se anota con la clave regla|archivo (critical-waivers.js): sin --file sólo exime los que no tienen archivo
+  const iguales = h.lista.filter((f) => f && reglaDe(f) === regla && String(f.file || '').trim() === String(archivo || '').trim());
+  if (!iguales.length) return { queHace: [`Eximir ${nombre}: no está en el informe de hallazgos`], archivos, completo: h.ruta, fuente: h.texto, cita };
+  const lineas = iguales.map((f) => `${regla}${f.file ? ` en ${f.file}` : ''}: ${String(f.summary || f.title || f.reason || '(sin texto)').replace(/\s+/g, ' ').trim()}`);
+  return { queHace: lineas, archivos: archivo ? archivos : [...new Set(iguales.map((f) => f.file).filter(Boolean))], completo: h.ruta, fuente: h.texto, cita };
+}
+
+/** La vuelta extra: su nota, o la carpeta de la corrida sin ella. */
+function deLaVuelta(palabras, m) {
+  const iter = valor(palabras, '--iter');
+  const dir = carpetaDeLaCorrida(m);
+  if (!iter || !/^\d+$/.test(iter)) return dir ? { queHace: ['Una vuelta más de revisores sobre lo que quedó abierto'], completo: dir, fuente: '' } : null;
+  const ruta = dir ? path.join(dir, 'rethink', `iter-${iter}.json`) : null;
+  const texto = ruta ? leer(ruta) : null;
+  let n = null;
+  let roto = porQueNo(ruta);
+  try { n = texto ? JSON.parse(texto) : null; } catch (e) { roto = ` (su nota no se entiende: ${e.message})`; }
+  if (!n) return { queHace: [`Una vuelta ${iter} de revisores sobre lo que quedó abierto${roto}`], completo: roto ? ruta : dir, fuente: texto || '' };
+  const lineas = [n.repeated && `Se repitió: ${n.repeated}`, n.change ? `Cambia: ${n.change}` : n.keep && `Sigue igual: ${n.keep}`, n.story_change && `Cambia la historia: ${n.story_change}`].filter(Boolean);
+  return { queHace: lineas, completo: ruta, fuente: texto };
+}
+
+/** El arreglo rápido: el cupo es lo que se firma; el motivo lo escribió la sesión y va como cita. */
+function delArreglo(palabras) {
+  if (!palabras || palabras[1] !== 'adhoc' || palabras[2] !== 'set') return null;
+  let p = null;
+  try { p = JSON.parse(palabras[3] || ''); } catch (_) { p = null; }
+  if (!p || typeof p !== 'object') return null;
+  const cupo = Number.isFinite(Number(p.maxFiles)) && Number(p.maxFiles) > 0 ? `hasta ${Number(p.maxFiles)} archivos de implementación, sin pruebas ni guías` : 'el cupo de siempre (8 archivos de implementación, o el que ya tenía)';
+  return { queHace: [`Abre un arreglo rápido sin historia, con ${cupo}`], fuente: palabras[3], cita: String(p.reason || '') || null };
+}
+
+/**
+ * Nombrar o retirar a la coordinadora: qué sesión, en qué carpeta. El id solo no le dice nada al dueño; la carpeta sí.
+ * El rol es el que nombra el perfil del equipo (`approvals.relay_session`).
+ */
+function deLaDesignacion(firma, destino, cwd) {
+  if (!destino) return null;
+  let rol = null;
+  try { rol = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'critical-waivers.js')).sesionQueReenvia().valor; } catch (_) { rol = null; }
+  const verbo = firma === 'designation-set' ? 'pasa a ser' : 'deja de ser';
+  // dos líneas: una carpeta larga no corta la que dice qué pasa
+  const lineas = [`La sesión ${destino} ${verbo} la «${rol || 'coordinadora'}» de esta máquina`, `Su carpeta: ${cwd || process.cwd()}`];
+  return { queHace: lineas, fuente: lineas.join('\n') };
+}
+
+function partesDe({ firma, palabras, cwd, marcador, estado, destino } = {}) {
+  if (firma === 'designation-set' || firma === 'designation-withdraw') return deLaDesignacion(firma, destino, cwd);
+  if (!palabras) return null;
+  if (firma === 'plan-approval') return delPlan(palabras, marcador);
+  if (firma === 'control-change' || firma === 'refresh-after-main') return deControles(palabras, cwd, estado);
+  if (firma === 'manual-test') return deLaPruebaAMano(palabras, marcador);
+  if (firma === 'critical-waiver') return delCritico(palabras, marcador);
+  if (firma === 'extra-round') return deLaVuelta(palabras, marcador);
+  if (firma === 'adhoc-lane' || firma === 'adhoc-lane:sobre-cupo') return delArreglo(palabras);
+  return null;
+}
+
+module.exports = { partesDe, historiaDe, seccionesDelPlan, planDe, carpetaDeLaCorrida, valor };

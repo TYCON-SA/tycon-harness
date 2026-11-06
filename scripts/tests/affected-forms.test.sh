@@ -156,8 +156,10 @@ R15=$(corre "shared-vieja/s.ts")
 # más cambia de todas. Sin esa entrada, un `findings.json` de una corrida vieja
 # mandaría a versionar y redesplegar los CUATRO formularios.
 mundo
+# pending-live-handles.json: T28 AffectedForms_ListaDeConsultasVivas_NoAfectaANinguno (las excepciones del detector de
+# consultas vivas no versionan formularios).
 for inerte in pending-tests.json pending-vulnerabilities.json \
-              pending-form-vulnerabilities.json .tycon/advisors.yaml \
+              pending-form-vulnerabilities.json pending-live-handles.json .tycon/advisors.yaml \
               .gitleaks.toml .gitleaksignore .gitignore \
               .advisors/pipeline-runs/CO-3-20260822-0918/findings.json \
               .advisors/pipeline-runs/SP-1-2026-09-22/review-roster.json \

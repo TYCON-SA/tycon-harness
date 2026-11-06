@@ -1,0 +1,30 @@
+#!/bin/sh
+# git-in-spanish/git — un git que contesta en castellano, como el de una máquina con git traducido (Homebrew, Git for
+# Windows). El git de Apple no trae traducciones: sin este sustituto, una prueba en esta Mac no ve nunca el caso.
+#
+# Lanza el git de verdad ($GIT_DE_VERDAD, que pone la prueba antes de cambiar el PATH) y, si el idioma efectivo no es
+# C, traduce su salida de error con tres frases del es.po de git. El idioma efectivo es el de gettext: LC_ALL, si no
+# LC_MESSAGES, si no LANG; vacío, C o POSIX es inglés. La salida normal y el código de salida no cambian.
+#
+# Con GIT_SUSTITUTO_LOG, anota en ese archivo una línea por llamada con el idioma que recibió.
+
+: "${GIT_DE_VERDAD:?el git sustituto necesita GIT_DE_VERDAD con la ruta del git de verdad}"
+
+idioma="${LC_ALL:-${LC_MESSAGES:-$LANG}}"
+if [ -n "$GIT_SUSTITUTO_LOG" ]; then
+  printf '%s\t%s\n' "${idioma:-<vacío>}" "$*" >>"$GIT_SUSTITUTO_LOG"
+fi
+
+case "$idioma" in
+  ''|C|C.*|POSIX) exec "$GIT_DE_VERDAD" "$@" ;;
+esac
+
+err="$(mktemp "${TMPDIR:-/tmp}/git-en-castellano.XXXXXX")" || exit 125
+"$GIT_DE_VERDAD" "$@" 2>"$err"
+rc=$?
+sed -e "s/not a git repository (or any of the parent directories)/no es un repositorio git (ni ninguno de los directorios superiores)/" \
+    -e "s/path '\(.*\)' does not exist/la ruta '\1' no existe/" \
+    -e "s/unknown revision or path not in the working tree/revisión desconocida o ruta fuera del árbol de trabajo/" \
+    "$err" >&2
+rm -f "$err"
+exit $rc

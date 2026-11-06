@@ -165,7 +165,7 @@ function enLaMismaRama(declarado, rama, numero) {
   const deLaStory = rama ? `la rama ${rama}` : `la story ${numero}`;
   // Un declarado que no es un repo git no tiene ramas ni worktrees: se usa tal cual y se dice una vez, con el motivo
   // exacto (suele ser una ruta mal declarada). Cualquier otra falla de git (un .git roto) sigue al aviso de abajo.
-  const repo = spawnSync('git', ['-C', declarado, 'rev-parse', '--git-dir'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env: { ...process.env, LC_ALL: 'C' } });
+  const repo = spawnSync('git', ['-C', declarado, 'rev-parse', '--git-dir'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env: require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).idiomaFijo() });
   if (!repo.error && repo.status !== 0 && /not a git repository/i.test(String(repo.stderr || ''))) {
     avisar(`no pude listar los worktrees de ${declarado}: no es un repo git, uso la carpeta tal cual (¿la ruta de companion_repos está bien declarada?)`);
     return declarado;
@@ -380,15 +380,81 @@ function declaredIn(storyRepo, storyPath, companionRoot) {
   return out;
 }
 
+const TOPE_DE_HUELLAS = 50;
+
+/**
+ * El nombre de un repo, igual en su checkout principal y en sus worktrees: la carpeta que tiene `.git`. Sin rutas absolutas,
+ * porque el ancla viaja con la evidencia.
+ */
+function nombreDelRepo(dir) {
+  const r = spawnSync('git', ['-C', dir, 'rev-parse', '--git-common-dir'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 });
+  if (r.error || r.status !== 0) return null;
+  const comun = path.resolve(dir, String(r.stdout).trim());
+  return path.basename(path.basename(comun) === '.git' ? path.dirname(comun) : comun);
+}
+
+// Lo que el hermano tiene sin commitear, con la huella que tendría en git; `null` si el archivo se borró. Las rutas van desde la
+// raíz del repo, como las da git: un hermano declarado como subcarpeta mira sólo lo suyo.
+function huellasSinCommitear(raiz) {
+  const top = spawnSync('git', ['-C', raiz, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 });
+  if (top.error || top.status !== 0) return { motivo: 'no pude leer su raíz' };
+  const repo = String(top.stdout).trim();
+  const git = (...a) => spawnSync('git', ['-C', repo, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 });
+  const estado = git('status', '--porcelain', '-z', '--no-renames', '--untracked-files=all', '--', path.relative(repo, raiz) || '.');
+  if (estado.error || estado.status !== 0) return { motivo: 'no pude leer sus cambios' };
+  const lineas = String(estado.stdout).split('\0').filter(Boolean);
+  if (lineas.length > TOPE_DE_HUELLAS) return { motivo: `tiene más de ${TOPE_DE_HUELLAS} archivos sin commitear` };
+  const huellas = {};
+  for (const linea of lineas) {
+    const rel = linea.slice(3);
+    // borrado es lo que git dice borrado; un archivo que no se puede leer no es un archivo borrado
+    if (linea[0] === 'D' || linea[1] === 'D') { huellas[rel] = null; continue; }
+    if (!esArchivo(path.join(repo, rel))) return { motivo: `no pude leer ${rel}` };
+    const h = git('hash-object', '--', rel);
+    if (h.error || h.status !== 0) return { motivo: `no pude leer ${rel}` };
+    huellas[rel] = String(h.stdout).trim();
+  }
+  return { huellas };
+}
+
+/**
+ * Lo que la evidencia probó en cada hermano del repo de la evidencia: `{ repo, commit, huellas? }`, o `{ repo, sinAncla }`.
+ * Los hermanos salen de la configuración del repo, así que alcanza con el id de la historia. `historia`, su id o su ruta, sólo
+ * sirve para elegir el worktree de su rama.
+ */
+function anclasDeLaEvidencia(repo, historia) {
+  const numero = /\.md$/.test(historia || '') ? numeroDeLaStory(historia) : String(historia || '').split('__').pop();
+  const rama = ramaDe(repo);
+  return parseEvidenceConfig(repo).roots.map((declarado) => {
+    const raiz = enLaMismaRama(real(declarado), rama, /\d/.test(numero || '') ? numero : null);
+    const nombre = nombreDelRepo(raiz) || path.basename(raiz);
+    const head = spawnSync('git', ['-C', raiz, 'rev-parse', '--verify', '-q', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 });
+    const commit = head.status === 0 ? String(head.stdout).trim() : '';
+    if (!commit) return { repo: nombre, sinAncla: 'no pude leer su commit' };
+    const { huellas, motivo } = huellasSinCommitear(raiz);
+    if (motivo) return { repo: nombre, sinAncla: motivo };
+    return Object.keys(huellas).length ? { repo: nombre, commit, huellas } : { repo: nombre, commit };
+  });
+}
+
 module.exports = {
+  anclasDeLaEvidencia, nombreDelRepo,
   companionRoots, ramaDe, enLaMismaRama, ramaNombraLaStory, numeroDeLaStory, gitRootOf, label, ownerOf, groupByRepo, resolveDeclared, parseRepoPrefixed, resolveRepoRef,
   companionTargets, declaredHere, declaredIn, real,
 };
 
 if (require.main === module) {
   const [cmd, repo, story, otro] = process.argv.slice(2);
+  if (cmd === 'anchors' && repo) {
+    // Imprime el JSON de las anclas, y dice en stderr qué hermano quedó sin ancla. Falla callado hacia `[]`: la evidencia se lee como la vieja, y da rojo.
+    let anclas = [];
+    try { anclas = anclasDeLaEvidencia(repo, story); } catch (e) { process.stderr.write(`[hermanos] sin ancla: ${(e && e.message) || e}\n`); }
+    for (const a of anclas) if (a.sinAncla) process.stderr.write(`[hermanos] ${a.repo} queda sin ancla: ${a.sinAncla}\n`);
+    process.stdout.write(JSON.stringify(anclas));
+    process.exit(0);
+  }
   if (!['targets', 'declared-here', 'declared-in'].includes(cmd) || !repo || !story || (cmd === 'declared-in' && !otro)) {
-    process.stderr.write('uso: companion-repos.js targets|declared-here <repo> <story.md>  ·  declared-in <repo-de-la-story> <story.md> <hermano>\n');
+    process.stderr.write('uso: companion-repos.js targets|declared-here <repo> <story.md>  ·  declared-in <repo-de-la-story> <story.md> <hermano>  ·  anchors <repo> [<id o ruta de la historia>]\n');
     process.exit(2);
   }
   try {

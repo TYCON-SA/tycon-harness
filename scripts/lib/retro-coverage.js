@@ -25,13 +25,17 @@ function real(p) {
 
 // Cada carpeta se lee y se parsea UNA vez por proceso: releer los cientos de archivos por cada merge hacía tardar
 // segundos al aviso del arranque. null = carpeta ilegible (quien llama la saltea).
+// Un latido anulado (`anulado`, lo agrega `retro-heartbeat.js --annul`) no cubre nada: queda aparte, en `anuladosIn`.
 const memo = new Map();
+const anuladosMemo = new Map();
 function metricsIn(dir) {
   if (memo.has(dir)) return memo.get(dir);
   let list = null;
+  let anulados = null;
   try {
     const files = fs.readdirSync(dir).filter((f) => f.endsWith('.json'));
     list = [];
+    anulados = [];
     for (const f of files) {
       let d;
       try { d = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch { continue; }
@@ -40,11 +44,18 @@ function metricsIn(dir) {
       const repo = d.repo || d.repo_path || d.repoPath;
       const sha = String(d.merge_commit || d.mergeCommit || d.commit || '');
       if (!repo || !sha) continue;
-      list.push({ repoStr: String(repo), sha, generatedBy: typeof d.generated_by === 'string' ? d.generated_by : null });
+      const registro = { repoStr: String(repo), sha, generatedBy: typeof d.generated_by === 'string' ? d.generated_by : null };
+      if (d.anulado) anulados.push(registro); else list.push(registro);
     }
-  } catch { list = null; }
+  } catch { list = null; anulados = null; }
   memo.set(dir, list);
+  anuladosMemo.set(dir, anulados);
   return list;
+}
+/** Los latidos anulados de `dir`, con la misma forma que `metricsIn`; null = carpeta ilegible. */
+function anuladosIn(dir) {
+  if (!anuladosMemo.has(dir)) metricsIn(dir);
+  return anuladosMemo.get(dir);
 }
 
 /** ¿El archivo `m` es del repo `repoPath`? */
@@ -72,4 +83,4 @@ function coveringRecords({ repoPath, sha }, dirs) {
 
 const kindOf = (m) => (m.generatedBy === HEARTBEAT ? 'latido' : 'aprendizajes');
 
-module.exports = { HEARTBEAT, real, metricsIn, sameRepo, sameSha, coveringRecords, kindOf };
+module.exports = { HEARTBEAT, real, metricsIn, anuladosIn, sameRepo, sameSha, coveringRecords, kindOf };

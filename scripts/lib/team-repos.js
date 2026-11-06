@@ -151,6 +151,10 @@ function runnersProblems(value) {
     if (r.coverage !== undefined && (!isObject(r.coverage) || !RUNNER_COVERAGE_FORMATS.includes(r.coverage.format) || typeof r.coverage.path !== 'string')) {
       out.push({ path: `${p}.coverage.format`, message: `la cobertura tiene que ser ${RUNNER_COVERAGE_FORMATS.join(', ')}, con su path` });
     }
+    // el comando que corre sólo algunas pruebas (el chequeo de mutantes): lleva {files} o {classes}
+    if (r.scoped !== undefined && !(typeof r.scoped === 'string' && (r.scoped.includes('{files}') || r.scoped.includes('{classes}')))) {
+      out.push({ path: `${p}.scoped`, message: 'el comando para correr sólo algunas pruebas tiene que llevar {files} o {classes}' });
+    }
     out.push(...runnerDetailProblems(r, p));
     if (typeof r.name === 'string') nombres.add(r.name);
   });

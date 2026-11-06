@@ -29,7 +29,7 @@ la fila aplica.
 | Entender en detalle UNA pieza — su porqué, su medición, su red de pruebas | `guides/piezas-del-arnes.md` (este archivo es el índice; el detalle está ahí) |
 | Ver qué versión del arnés tenés, si está bien instalado y si hay una nueva | el comando `/tycon-harness` (sólo mira, no cambia nada) |
 | Ver qué está en curso en esta máquina: qué hace cada sesión, en qué paso va, a qué hora termina y qué sesiones están libres | el comando `/wip` (sólo mira, no cambia nada) |
-| Ver lo mismo dibujado como una oficina en 3D: una persona por sesión, con su estado, su hora de fin y los pasos de su corrida | el comando `/office` (sólo mira, no cambia nada) |
+| Ver lo mismo dibujado como una oficina en 3D: una persona por sesión, con su estado, su hora de fin y los pasos de su corrida · escribirle a una sesión desde su ventana · recibir un aviso de gancho que empieza con `[oficina <id>]` | el comando `/office` (no cambia nada; lo que le escribís a una sesión nunca firma) · `commands/office.md` §«Escribirle a una sesión»; `/office-local` abre la página local aunque la máquina esté aprobada en el sitio |
 | Abrir el sitio de la organización en el navegador · el comando dice que la organización no cargó la dirección | el comando `/org-site` (sólo abre, no cambia nada; la dirección es `site.url` del perfil del equipo) |
 | Coordinar varias sesiones en una máquina: qué va al dueño, abrir y nombrar sesiones, el tope, los turnos del pase adversarial, las firmas · el comando `/coordinate` | `guides/coordination.md` (en inglés, `guides/coordination.en.md`) + `scripts/tools/coordination.js` |
 | Dar de alta una organización nueva: el repo del perfil del equipo con sus tres archivos | `harness.js team-init` (`getting-started/reference.es.md` §Dar de alta tu organización) |
@@ -44,6 +44,7 @@ la fila aplica.
 | Memoria persistente con engram (si la integración está prendida) | `guides/integrations/engram-workflow.md` |
 | Commit, push, merge, cualquier cosa de git | `guides/git-commit-conventions.md` |
 | Nombrar algo que ejecuta la máquina · frenó el freno de castellano · renombrar sin romper a nadie (`renames.json`) | `guides/maintaining/nombres-en-ingles.md` |
+| Qué palabra va en una guía en castellano (historia, revisor, ejecución, arnés, portón, historial) · avisó el control de las palabras de las guías | `guides/maintaining/vocabulario.md` |
 | Escribir o revisar los comentarios del código (qué hace y por qué, en presente; sin historia ni referencias internas) | `guides/maintaining/estilo-de-codigo.md` |
 | Sumar o actualizar una skill de terceros · de quién es cada cosa y con qué licencia | el manifiesto `scripts/publishing/third-party-skills.json` + `guides/maintaining/publicacion-espejo.md` §«Las skills de terceros» |
 | Correr 2 pipelines/stories en paralelo en el mismo repo · mergear sin congelar el working tree del dev · aislar escrituras de agentes paralelos | `guides/git-worktrees.md` (helper: `scripts/tools/tycon-worktree.sh`) |
@@ -63,6 +64,7 @@ la fila aplica.
 | Un merge de **sólo documentación** construyó, desplegó a staging, subió la versión y pidió aprobación de PROD · qué rutas pueden ir en el `trigger` de un pipeline y cuáles no (`.tycon/**` no) · un sitio sin filtro de rutas | `scripts/ci/check-trigger-without-docs.js` (cabecera; se corre a mano sin argumentos) |
 | Escribí pruebas de navegador y quiero saber si el pipeline las corre · el control dice que un repo tiene pruebas sin correr | `scripts/ci/check-tests-without-ci.js` (cabecera; se corre a mano sin argumentos, avisa y no frena) |
 | **Correr CUALQUIER test** (vitest/jest/dotnet) — SIEMPRE antes de `npm test`/`dotnet test` | `guides/test-execution-discipline.md` |
+| Cambiar la matriz o un control de cierre: probarlos sobre un producto de tres repos, contar cuántas historias cambian entre dos versiones, sumar un caso al laboratorio | `scripts/tests/lib/product-lab.js` y `scripts/tools/compare-matrix.js` (cabeceras) |
 | Instalar el MCP de la herramienta de horas (opcional) | `guides/integrations/clockify-mcp.md` |
 | Registro automático de horas (timer con confirmación + cierre por inactividad) | `guides/integrations/clocki-tracking.md` |
 | Registrar horas en otra herramienta (opcional): la URL en el perfil, el token de cada dev, qué hace y qué avisa | `guides/integrations/solidtime.md` |

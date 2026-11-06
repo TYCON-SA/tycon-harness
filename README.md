@@ -2,100 +2,137 @@
 
 English · [Castellano](README.es.md)
 
-**New here?** [The harness in one minute](getting-started/one-minute.md): what it is, your first day in three steps,
-and the words it uses.
+**The harness in six minutes** (with subtitles).
 
-**The harness in four minutes** (in Spanish, with subtitles).
+https://github.com/user-attachments/assets/8043bb21-8b32-4d14-8887-28075cff4e85
 
-https://github.com/user-attachments/assets/3fbe4538-6b96-4b56-b2ed-92d36be1c6f8
+Today an AI agent writes in minutes the code that used to take hours, and it solves tasks without anyone telling it each step. That autonomy is a great advantage, but it has a cost.
 
-**The organization site, with sample data and no account needed:** [https://is.gd/tyconharnessdemo](https://is.gd/tyconharnessdemo)
+There is no longer any need to give it guides for each language and framework: good coding practices in React or in .NET, how errors are handled or how the data that reaches the system is validated. Nor does it need to be reminded of design patterns, such as separating responsibilities, injecting dependencies or keeping coupling low.
 
-**A development cycle for coding agents: complete, consistent, controlled and adaptable.**
+But the agent knows the good practices and does not always apply them. And there is something it cannot know on its own: each organization's process, rules and decisions, because the organization defines them. For example, specifying before programming, writing and running the tests, showing a mockup to a person before building, or not closing a piece of work without meeting its definition of done. Even when they are written into its instructions, it sometimes forgets them or skips steps, and no one can rely on the developer reminding it every time.
 
-- **Complete:** it goes from the request to production and to measurement; it does not stop at writing code.
-- **Consistent:** every story follows the same workflow, on every machine of the team.
-- **Controlled:** the checks block, they do not just warn: they do not rely on the model remembering the rules. The
-  minimal install brings one (against destructive commands); the full install adds the rest.
-- **Adaptable:** each organization adds its own reviewers, skills and configuration.
+So each team ends up working with its agents its own way, and the client gets a different quality depending on which team they got: something has to be redone, or a delivery runs late.
 
-Your coding agent writes fast; the harness makes it work with method. It works with Claude Code and Codex, also with
-open models through [Ollama](guides/integrations/ollama.en.md), and with
-[Cursor](guides/integrations/cursor.en.md). The AI software development life cycle (AI SDLC), step by step:
+And the problem grows as more work is delegated to them: longer tasks and several agents at once. For the developer, following everything they do becomes harder and harder. And the less anyone can review what they do, the more it takes a process that is followed even when no one is watching.
 
-1. **Request and story:** you say what you want and the agent writes it as a story: what has to be done and how it is
-   tested. A small change goes by quick path: the reason in one line and the list of files.
-2. **Approved plan:** the agent builds the plan and shows it to you; it is approved before any code is written, never by itself. Who approves depends on the risk (below).
-3. **Tests and code:** it writes the tests and the code, and runs the tests.
-4. **Review:** on a story, specialized reviewers (security, conventions, coverage) check the change before the commit; on a quick path, only with high risk.
-5. **Delivery:** the commit and the merge go through checks. Nothing is committed or pushed without your permission.
-6. **Operation and measurement:** every merge to main leaves its metrics file, and your organization's nightly jobs
-   review the dependencies and build the cycle dashboard.
+That is why we created TYCON Harness, an agentic SDLC. It covers the complete software life cycle, from the requirement to operation in production. And it surrounds each AI agent with a harness: it guides it, decides what it can and cannot do, and stops it when it gets it wrong.
+
+The harness takes each agent through a defined process, step by step, and no step is skipped silently. Everything starts with a requirement: a new feature, a change, or a bug to fix. The agent writes a story together with whoever asked for it: what is being asked and what it has to meet. It does so with an AI-guided requirements specification method. The story is validated and a plan is built from it. If there is a screen, the agent builds a mockup, which is approved together with the plan. The plan is approved before programming. Then the agent writes the tests, before the code, and the harness verifies that order. Before it joins the rest, that code and its tests are reviewed by other agents, different from the one that wrote them and each with its own rules. And before closing, it is tested running and compared with the approved mockup. The tests are tested too: the harness breaks the code on purpose and verifies that some test fails.
+
+Not all approvals weigh the same. What can be undone can be approved by a coordinator agent, if the organization enables it. What is delicate is always approved by a person: what the harness recognizes as production, data or security, and any change that loosens a control.
+
+For a small change, the process provides a short path, with fewer steps. To control spending, each organization chooses the AI model for each task and can set the most expensive one the reviewers may use. The site shows how much each run consumed.
+
+Once finished, the work moves on through the continuous integration and deployment pipeline. The harness brings ready-made pipelines for some platforms; for the others, it joins the one the organization already has. There it is built, the tests are run again and it is deployed to a test environment. In the pipelines the harness brings, production is reached only with a person's approval.
+
+And none of this depends on the model not forgetting or on the developer reminding it: the controls live outside the model. For example, if an agent tries to close a story without the evidence of its tests, the harness stops it on the machine. Before the work joins the code, the continuous integration pipeline verifies that the story carries the evidence of its tests and the record of who reviewed it. If a control has to be skipped, it is recorded and the person in charge sees it. Loosening a control is always approved by a person. And every night, the harness's controls are put to the test with examples built for that purpose: what each one has to stop and what it has to let through.
+
+So each piece of work that goes through the process is left with its story, its tests, which reviewers ran and who approved what was delicate. And what comes in through the short path, or directly outside the harness, is not lost: the site counts how many changes came in without a story. When a client asks how AI is used to work on their product, everything is recorded and can be shown. The stories, the evidence of the tests and the record of the reviewers are stored in the project's own repositories.
+
+Each organization adjusts it to its own measure: its rules, its reviewers and who approves what.
+
+And the cycle does not end there. Every night, TYCON Harness looks for vulnerabilities in the third-party components each product uses and reports each one so that a decision is made; if the decision is to fix it, a task is created for the team. It can also watch production errors and leave a diagnosis ready. In both cases, the administrator decides. It also learns from everyday work. It looks at which controls blocked too much or let something through. When a control blocks work that was fine, it is corrected, turned into a warning or retired, with the administrator's approval. That way the control stays useful. And it looks at how developers work with the agents. With that it proposes improvements to its rules and to its way of working. None is applied without the administrator approving it.
+
+An administrator configures and follows the SDLC from a website. Each organization installs the site on its own infrastructure. Everything that is measured stays there, and the organization decides who sees it. Each configuration change is recorded, with who asked for it. The organization decides whether, before it is applied, another person has to approve it. From the site, the administrator defines how the team works, follows and measures what happens, and decides.
+
+**See it with sample data and no account needed:** [open the site demo](https://is.gd/tyconharnessdemo)
+
+**Define.** First, what governs the work: who approves each thing and the organization's own reviewers, with the house rules. Then, the people and their permissions, the repositories and products, which model each kind of work uses, and each team's technology with its testing tools. Also the integrations: where the notices arrive, such as Telegram, Slack, Teams or email, and which tool records the hours. And which version of the harness each machine of the team has and how it is updated.
+
+**Follow.** In each product, the stories in progress, stopped and blocked, which version is in test and which in production, the open vulnerabilities, and what one product does that the others do not. And how the agent works: each step of the process, with its reviewers and its controls, and which part belongs to the harness and which to the organization.
+
+**Measure.** The agents' work: for each story or change, how long it took, how much it consumed, where the time went, which reviewers ran and what the controls found or stopped. Quality: how much work comes back and why, how many review rounds a change takes, the coverage of what was touched, whether the tests detect errors planted on purpose and how long they take to run. Estimates: how much each part of a product was estimated at and, if hours are recorded, how long it really took. And risk: the changes that came in without a story and the products that have no pipeline to production.
+
+**Decide.** Every morning, the result of the nightly review arrives: vulnerabilities in third-party components, production errors, controls that failed and work that got stuck before joining the code. What is chosen to be fixed becomes a task for the team. The improvements the harness proposes from how the team works are approved or discarded. And the harness itself is controlled: whether each control keeps stopping what it has to stop, whether the reviewers keep finding what they should, and which rules never found anything and can be retired.
+
+With several agents working at once, coordinating them becomes a job in itself: knowing what each agent is doing, what it is waiting for, and what needs to be decided. For that, the site gathers the offices of the whole team. Each developer's machine has its own: a virtual room where its agents work, each at its desk. Each developer sees all of their agents at a glance. And a lead sees each developer's work: what is moving forward, what is stuck, and what is waiting for a decision, without having to ask anyone. On the side, a board shows what is pending, what is in progress and what is done, and it builds itself: no one has to fill it in. If someone disconnects, their office keeps showing the last thing they did.
+
+It works with the most widely used coding agents, such as Claude Code, Codex and Cursor. Each team keeps the agent it already uses, and what becomes the same for everyone is the process. It supports models from Anthropic, from OpenAI or open-weight models through Ollama. And it is not tied to any language: each organization configures it for its own technology.
+
+And it is open source: no license cost, and the code can be reviewed in full. It can start on a single machine, without a site, and add the team, the site and the nightly review later.
+
+The agents bring the speed. TYCON Harness brings the method, the quality and the control. Together, they do software engineering with AI.
+
+**Want to start right away?** [The harness in one minute](getting-started/one-minute.md): your first day in three
+steps and the words it uses.
+
+## How it works
 
 **The right measure.** When a product starts it is specified in full, once —product document, architecture, epics
 and stories—; then, story by story.
 
-- **Size decides: story or quick path.** The question: is it a small change?
-  - **It is small** if you ask for it in one sentence and, when it is done, you see it came out right by looking at the
-    result and running its tests. Example: "the province dropdown shows the full name instead of the abbreviation". It
-    goes by **quick path**.
+- **Size decides: story or short path.** The question: is it something small? A fix or a new feature: you ask in one
+  sentence, and when it's done you know it came out right without checking a list.
+  - **It is small** if you ask for it in one sentence, knowing it came out right only takes looking at the result and
+    running the tests, and it is one topic, in one session, without waiting on anyone outside. Examples: "the province dropdown shows the full name instead of the abbreviation" or "a button that exports this table to Excel". It
+    goes by **short path**.
   - **It is not small** if knowing it is complete takes a list of criteria, if it takes more than one session or if it
     waits on someone outside. Example: "the dropdown loads its options from the database and remembers the last
     choice". It goes by **story**.
-  - **If it bundles several topics**, it is not small: it is several quick paths, or a story.
+  - **If it bundles several topics**, it is not small: it is several short paths, or a story.
+  - **Risk is another matter.** A small high-risk feature also goes by short path, and the person approves it.
 
   **Who decides and who checks.** Whoever opens the work judges the size, but if you work with a coordinating session,
-  you do not decide alone: the quick path is approved by the coordinating session or you. The harness enforces it:
-  - Without an open quick path or a story, the harness **does not let you write code**.
-  - The quick path has a **file cap**: 5 if the coordinating session approved it, 8 if you did. Past it, the harness
-    **closes it** and asks for a story.
-  - A quick path with several topics in its reason **cannot be approved by the coordinating session**.
+  you do not decide alone: the short path is approved by the coordinating session or you. The harness enforces it:
+  - Without an open short path or a story, the harness **does not let you write code**.
+  - The short path has a **file cap**: one if the coordinating session approved it, another if you did. Each organization sets the caps; by default, 5 and 8. Past it, the harness
+    **closes it** and recommends a story. To stay on the short path, you ask with a separate click, which is recorded; the coordinating session cannot.
+  - A short path with several topics in its reason **cannot be approved by the coordinating session**.
 - **Risk decides who approves.**
   - **High risk** is when the change touches something sensitive in the repo, such as production, a migration or
     security. Also when it brings a decision for you or your organization: scope, security, a new dependency, money,
     customers or other people. When in doubt, high risk.
   - **The coordinating session** is an agent session your team can use to approve routine work; it is not a person.
-  - **Who approves what:** you always approve the delicate work. With normal risk, the
-    coordinating session opens the quick path with the list of files and tells you, and approves the plan if the
-    automatic review said "approved". With high risk, you approve it. Without a coordinating session, you approve its
-    part. The plan never approves itself.
-- **Saving is the yes in the permission window, on both paths.** Before every commit, push and pull request the agent
-  asks "save?", and with a yes it saves. There is no signature and no command.
+  - **Who approves what:** you always approve the delicate work. The rest goes as the diagram shows, and the
+    coordinating session tells you when it opens a short path. Without one, you approve its part.
+- **Saving is a click or a written "Aprobado".** Before every commit, push and pull
+  request the agent asks "save?". If your tab asks for permissions, the yes goes in the permission window. There is no
+  signature and no command.
 
 The harness brakes, controls and control signatures belong to whoever maintains it. The detail:
 [The right measure](guides/que-hace-el-arnes.md#la-medida-justa-cuánto-papel-lleva-cada-cambio) (in Spanish).
 
 ```mermaid
 flowchart TB
-  pedir(["<b>Request</b>"]) --> chico{"<b>Is it a small change?</b><br/>you ask for it in one sentence and see it came out right just by looking"}
-  chico -- "Yes · Quick path" --> r1
+  pedir(["<b>Request</b><br/>👤 You"]) --> chico{"<b>Is it something small?</b>"}
+  chico -- "Yes · Short path" --> r1
   chico -- "No · Story" --> h1
-  subgraph rapido [" "]
+  subgraph corto [" "]
     direction TB
-    r1["<b>Open the lane</b><br/>with the list of files<br/>normal risk: the coordinating session, up to 5<br/>high risk: you, up to 8"] --> r2["<b>Code with the test first</b><br/>at saving, the harness warns if it was the other way round"]
+    r1["<b>Open the lane</b><br/>🤖 the coordinating session: normal risk, up to its cap<br/>👤 You: high risk, up to the short path cap<br/>past the cap: the harness recommends a story, or a separate click from you"] --> r0m["<b>Build the mockup</b><br/>if it has a screen · by the agent"]
+    r0m --> r1m["<b>Approve the mockup</b><br/>if it has a screen · before building<br/>👤 You"]
+    r1m --> r2["<b>Code with the test first</b><br/>at saving, the harness warns if it was reversed"]
     r2 --> r3["<b>Run its tests</b>"]
-    r3 --> r4["<b>Reviewers and adversarial pass</b><br/>only with high risk"]
+    r3 --> r3c["<b>Validate against the mockup</b><br/>if it has a screen · the harness compares the texts"]
+    r3c --> r4["<b>Reviewers and adversarial pass</b><br/>only with high risk"]
   end
   subgraph historia [" "]
     direction TB
     h1["<b>Validate the story</b>"] --> h2["<b>Build the plan</b>"]
-    h2 --> h3["<b>Approve the plan</b><br/>normal risk: the coordinating session, if the automatic review said «approved»<br/>high risk: you"]
-    h3 --> h4["<b>Code with the tests first</b>"]
+    h2 --> h2m["<b>Build the mockup</b><br/>if it has a screen · by the agent, with the plan"]
+    h2m --> h3["<b>Approve the plan</b><br/>🤖 the coordinating session: normal risk, if the automatic review said «approved»<br/>👤 You: high risk"]
+    h3 --> h3m["<b>Approve the mockup</b><br/>if it has a screen · together with the plan<br/>🤖 or 👤 You: whoever approves the plan"]
+    h3m --> h4["<b>Code with the tests first</b>"]
     h4 --> h5["<b>Run the tests</b>"]
     h5 --> h6["<b>Reviewers</b><br/>picked based on the change"]
-    h6 --> h7["<b>Adversarial pass</b><br/>not on a small low-risk story, nor on documentation or tests only"]
-    h7 --> h8["<b>Live check, criterion by criterion</b>"]
+    h6 --> h7["<b>Adversarial pass</b><br/>not on a small low-risk story, nor on docs or tests only"]
+    h7 --> h8["<b>Live check, criterion by criterion</b><br/>👤 You sign what could not be tested live"]
+    h8 --> hq["<b>Build the QA guide</b><br/>if it can be operated by hand · by the agent"]
+    hq --> h9["<b>Validate against the mockup</b><br/>if it has a screen · the harness compares the texts"]
   end
-  r4 --> g1["<b>Save</b><br/>the yes in the permission window"]
-  h8 --> g1
+  r4 --> g1["<b>Save</b><br/>👤 You: a click in the box, or a written «Aprobado»<br/>with a screen, you check the captures against the mockup"]
+  h9 --> g1
   g1 --> g2["<b>Pull request</b><br/>CI"]
+  g2 -- "Story" --> g3["<b>Move the story to «done»</b><br/>👤 You or QA, testing with the guide"]
+  hq -.-> g3
   classDef decide fill:#2f6fde,stroke:#1f4fa8,color:#ffffff
   classDef control fill:#F15A24,stroke:#b8410f,color:#ffffff
-  class r1,h3,g1 decide
-  class r4,h4,h5,h6,h7,h8,g2 control
+  class pedir,r1,r1m,h3,h3m,g1,g3 decide
+  class r3c,r4,h4,h5,h6,h7,h8,h9,g2 control
 ```
 
-<sub>🟦 Someone decides: you, or the coordinating session with normal risk · 🟧 A control that is not skipped</sub>
+<sub>🟦 Someone decides: 👤 **You** · 🤖 the coordinating session · 🟧 A control that is not skipped</sub>
 
 The checks are one part of the cycle: they guard every step. There are two ways to start it: [on your own, on your
 machine](#start-on-your-own), or [for your team](#for-teams).
@@ -174,8 +211,8 @@ https://github.com/user-attachments/assets/75368083-6788-405d-8cde-8bc3d8557e51
 Vitest, Jest, Node (`node --test`), pytest, Go, Maven, Gradle, Karma and Playwright. With another tool, that step does not recognize
 your tests yet until your team declares it in its configuration ("Your technology", on the site).
 
-Before you install you need your coding agent (Claude Code or Codex) signed in, and Node 22 or later. The full list
-is in [What you need](#what-you-need).
+Before you install you need your coding agent (Claude Code or Codex) signed in, and Node 22 or later. Full list:
+[What you need](#what-you-need).
 
 For your agent to follow the cycle, install the harness on your machine ([▶ video](https://github.com/user-attachments/assets/74a74b69-856e-4367-95bb-52159325c8af)). Open the terminal (on Windows, PowerShell 7)
 and type:
@@ -200,15 +237,15 @@ The full install adds the guards in the repos that work with the harness and cha
 
 ## Your first story
 
-A story is your request in writing, with its criteria and its tests: the agent follows it and the reviewers check it. Make the first one small, like a new function in one file: one like that takes about 10 minutes. · [▶ video](https://github.com/user-attachments/assets/e7504a1b-a65e-4956-919f-25753cf64e18)
+A story is your request in writing, with its criteria and its tests: the agent follows it and the reviewers check it. Make the first one small, like a new function in one file: about 10 minutes. · [▶ video](https://github.com/user-attachments/assets/e7504a1b-a65e-4956-919f-25753cf64e18)
 
 1. **Open your coding agent in your repo's folder**: that is where it writes the story, creates the branch and saves the changes. If it was open from before you installed, close it and open it again: the harness's rules load when it starts.
-2. **Say you trust the folder**: the first time you open your agent in that folder, it asks whether you trust it: say yes.
+2. **Say you trust the folder**: the first time you open your agent there, it asks whether you trust it: say yes.
 3. **If the idea is big, the stories come first.** Your agent takes it through stages —understanding the problem, the PRD, the architecture, the epics— until it leaves the stories; you review each stage, and each artifact is committed to the repo, next to the code. A bounded idea does not need it: ask for the story directly. · [▶ video](https://github.com/user-attachments/assets/24124d87-ebca-4069-8d82-d0b498f09518)
 4. **Ask for the story in your own words**, so the change is written down before any code: "create a story to add a date filter".
 5. **Review the story.** The agent builds it from your request, answering three plain questions (what it must do, how you can tell it works, and what it must not touch), and marks what it assumed. It shows it to you and writes it on your "yes". If your repo already has a `_bmad/` folder, it builds it with what is there.
 6. **Ask "implementemos la story" (let's implement the story)**, to start the run: the phrase stays in Spanish. If there is no git, it initializes it; if you are on `main`, it creates the branch. It validates the story and, if something is missing, asks whether to fix it. It shows you the plan and waits for your "yes" before any code. Then it writes the tests and the code, runs the tests and the reviewers, and checks each criterion by running it.
-7. **Read the summary.** Before committing it asks "save?" in the permission window, and with a yes it saves: it never commits or pushes without your permission. When the first story closes, it offers you the full install.
+7. **Read the summary.** Before committing it asks "save?" and saves with your yes: it never commits or pushes without your permission. When the first story closes, it offers you the full install.
 8. **A story with a screen.** The agent builds a mockup for you to approve before any code; if your repo has no way to test in a browser, it offers to set it up; and it leaves a guide for testing it by hand. · [▶ video](https://github.com/user-attachments/assets/8aa2c03a-03d7-42ab-b4ae-daf90a53e3c9)
 9. **Your project's own rules.** Ask your agent for a reviewer that checks a rule of yours (for example, "a customer's email is never shown in full"): it lives in your rules repo and reviews every story along with the harness's own. · [▶ video](https://github.com/user-attachments/assets/1ef473c6-f088-413f-8560-9d801e6a0c75)
 
@@ -218,8 +255,8 @@ If something doesn't work, `/tycon-harness` (in Claude Code) or `node ~/.claude/
 
 - Your coding agent, Claude Code or Codex, installed and signed in: it is where you use the harness.
 - Node 24 and `tar` (Node 22 or later is enough to run the install line). On Mac and Linux, also Python 3.
-- Windows 11 with PowerShell 7, Mac or Linux. WSL was not tested.
-- Git is **not** needed to install the harness: it is downloaded as files, not cloned.
+- Windows 11 with PowerShell 7 and Git for Windows, Mac or Linux. WSL was not tested.
+- Git is **not** needed to download the harness: it comes as files.
   A GitHub account is not needed either: this repository is public. To commit your stories you do need git, with
   your name and email set (`git config --global user.name` and `user.email`).
 - Your Node is needed to install. After that the harness downloads its own Node 24 (about 50 MB, from nodejs.org) and
@@ -269,36 +306,27 @@ An example: at ACME, Pedro is the admin and Juan writes code.
    asks for the name, the platform and the address of the team repo, builds its three files (`team-layer.json`,
    `team-profile.json` and `team-repos.json`) from [an example](https://github.com/TYCON-SA/harness-team-profile-example)
    and validates them before writing. It creates no repos and asks for no credentials: it tells him where to create the
-   empty repo, with access only for the team, and if he says yes it pushes it with his git. With the harness already
-   installed, the same is `node ~/.tycon/harness/scripts/setup/harness.js team-init`. The operations repo is created
-   separately (below, "The nightly jobs").
+   empty repo, with access only for the team, and if he says yes it pushes it with his git. The operations repo is created
+   separately (below, "What runs at night").
 2. Everything that is customized —where each repo lives, who gets the notices, the thresholds— is configured from the
-   **Configuration** tab of the [team site](guides/organization-site.en.md) (admins only): it validates with the
-   harness's own readers and proposes every change as a pull request, never a direct write to `main`. While ACME has no
-   site, each file is changed with a pull request to its repo: what reaches the machines, to the team repo; what is for
-   the nightly jobs and the site, to the operations repo. The harness works fully that way: what each case needs and
+   **Configuration** tab of the [team site](guides/organization-site.en.md) (admins only): it validates and proposes
+   every change as a pull request. While ACME has no
+   site, each file is changed with a pull request to its repo. What each case needs and
    where each setting lives, in [With or without the site](getting-started/reference.md#with-or-without-the-site).
-   The local page (`node ~/.tycon/harness/scripts/setup/harness.js team-config`) shows, read-only and with nothing on
-   the internet, what is in his clones and the problems the readers see; it saves and proposes nothing.
 3. Juan installs with npx and the team repo: `npx @tyconsa/harness@latest --team acme/harness-team-profile` if it is on
    GitHub, or `npx @tyconsa/harness@latest --team https://dev.azure.com/acme/<project>/_git/harness-team-profile` if it
    is on Azure DevOps. Since only the team sees that repo, before downloading anything the line checks that it can read
    it and, if not, asks him for read permission. From then on, every update also brings him what belongs to the team.
 
-How the harness extends for your organization —what each organization adds, the configuration page and a worked example— in an
+How the harness extends for your organization, with a worked example, in an
 [interactive map](https://www.bizuit.com/sdd-harness/more/mapa-del-arnes.html).
-
-**The nightly jobs.** On Azure DevOps, the dependency review, the cycle metrics and the dashboard run in your
-organization with three model jobs and your operations repo: [how to set them up](pipelines/operations/README.md)
-(in Spanish). On GitHub, the same three run as GitHub Actions workflows, and the dependency findings become issues in
-each product repo: [how to set them up](pipelines/operations/github/README.md) (in Spanish).
 
 **Step by step, for whoever sets up the team.**
 
-1. **Understand the three layers.** This repo, the harness, the same for everybody; the team repo, with what reaches every machine; and the team operations, with what runs at night. The table above says what each one holds. · [▶ video](https://github.com/user-attachments/assets/582a4581-141c-486e-a19d-1f5eb01d6129)
+1. **Understand the three layers.** This repo, the harness, the same for everybody; the team repo, with what reaches every machine; and the team operations, with what runs at night. · [▶ video](https://github.com/user-attachments/assets/582a4581-141c-486e-a19d-1f5eb01d6129)
 2. **Set up your team.** `npx @tyconsa/harness@latest --audience org` installs your machine and goes on with `harness.js team-init`, which builds the three files of the team repo and validates them. Create the empty repo, with access only for the team, and push them. Each dev installs with `npx @tyconsa/harness@latest --team <team repo>`. · [▶ video](https://github.com/user-attachments/assets/fa77d543-85b8-4564-8530-d583679b15c5)
-3. **Look at the organization site.** Each person signs in with the organization's account and sees their own: their runs, their pull requests, what is assigned to them; whoever maintains the harness sees everything. It is optional: the harness works fully without it. **See it without installing anything:** the demo site, [https://is.gd/tyconharnessdemo](https://is.gd/tyconharnessdemo), opens without an account with sample data from a made-up organization and writes nothing; the first visit may take a few seconds while it wakes up. [Setting up the site: step-by-step guide](guides/organization-site.en.md#what-you-need-first) (try it with Docker, Azure Container Apps, Render or your own machine). · [▶ video](https://github.com/user-attachments/assets/9cc321d7-9410-43ef-a842-9d27f98e4dc5)
-4. **Configure from the site.** The **Configuration** tab (maintainers only) customizes the organization: who is responsible for what, the notice channel, the thresholds. It validates every change and proposes it as a pull request; it never writes `main`. Without the site, the same change goes as a pull request to the right repo. · [▶ video](https://github.com/user-attachments/assets/61438ad4-9f29-4719-b298-c74dddb19d93)
+3. **Look at the organization site.** Each person signs in with the organization's account and sees their own: their runs, their pull requests, what is assigned to them; whoever maintains the harness sees everything. It is optional: the harness works fully without it. **See it without installing:** the [demo site](https://is.gd/tyconharnessdemo) opens without an account, with made-up data, and writes nothing; the first visit may take a few seconds. [Setting up the site, step by step](guides/organization-site.en.md#what-you-need-first) (Docker, Azure Container Apps, Render or your own machine). · [▶ video](https://github.com/user-attachments/assets/9cc321d7-9410-43ef-a842-9d27f98e4dc5)
+4. **Configure from the site.** The **Configuration** tab (maintainers only) customizes the organization: who is responsible for what, the notice channel, the thresholds. It validates every change and proposes it as a pull request; it never writes `main`. · [▶ video](https://github.com/user-attachments/assets/61438ad4-9f29-4719-b298-c74dddb19d93)
 5. **From commit to production.** The commit and the merge go through controls on each machine, and [the CI gate](guides/ci-gate.md) (in Spanish) checks again on the server what reached `main`. If you declare in `operations.json → deployments` the staging and production pipelines of each product, the dashboard shows their deployments ([how](pipelines/operations/README.md), in Spanish). · [▶ video](https://github.com/user-attachments/assets/41082543-3c5e-4e25-9e64-3e0c48fd985c)
 6. **What runs at night.** The dependency review, the cycle metrics and the dashboard run in your organization with your operations repo, and in the morning the notice arrives (Telegram, Slack or Teams) with counts and the link to the site. How to set them up: on [Azure DevOps](pipelines/operations/README.md) or on [GitHub](pipelines/operations/github/README.md) (in Spanish). · [▶ video](https://github.com/user-attachments/assets/0fc6e458-74d8-4338-b997-3e87841680c6)
 
@@ -306,14 +334,9 @@ each product repo: [how to set them up](pipelines/operations/github/README.md) (
 
 - **It watches itself.** A test bench checks, on every change to the harness, that each check still blocks what it
   says it blocks. If you turn it on, it also watches your sessions and proposes new rules for you to approve.
-- **Checks born from incidents.** With the full install, the checks block, they do not just warn. Most of them were
-  born from a real incident.
-- **Reviewers for your stack.** Each organization adds its own in its team repo. TYCON brings its own for BIZUIT
+- **Checks born from incidents.** Most of them were born from a real incident.
+- **Reviewers for your stack.** TYCON brings its own for BIZUIT
   plugins, with the scripts that deploy to test and to production.
-- **What is still TYCON's own:** the production watcher is not published.
-
-The harness's words (story, workflow, guard, nightly jobs…), one line each, in
-[The harness's words](getting-started/reference.md#the-harnesss-words).
 
 ## Where to go next
 
@@ -323,8 +346,9 @@ The harness's words (story, workflow, guard, nightly jobs…), one line each, in
 | Know what it writes on your machine and how to turn each thing off | [What it writes on your machine](getting-started/reference.md#what-it-writes-on-your-machine-and-what-it-does-on-its-own) |
 | Update, go back or uninstall | [How it updates](getting-started/reference.md#how-it-updates) |
 | Use it with Codex | [What is optional](getting-started/reference.md#what-is-optional) |
-| Use it with an open model through Ollama, in either tool | [Use the harness with Ollama models](guides/integrations/ollama.en.md) |
+| Use it with an open model through Ollama | [Use the harness with Ollama models](guides/integrations/ollama.en.md) |
 | Use it with Cursor | [Use the harness with Cursor](guides/integrations/cursor.en.md) |
+| Work with several sessions at once | [Working with a coordinator](guides/working-with-a-coordinator.en.md) |
 | Understand a word of the harness | [The harness's words](getting-started/reference.md#the-harnesss-words) |
 | Change the harness | [CONTRIBUTING.md](.github/CONTRIBUTING.md) |
 
