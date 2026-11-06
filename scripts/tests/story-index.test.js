@@ -337,4 +337,138 @@ test('TeamRepos_StoryIndexKeyPerRepo (T19) @story-8.226 @ac-7 @ac-8', () => {
   assert.ok(mal.ok, 'un modo mal escrito no invalida el archivo entero');
   assert.ok((mal.sectionProblems.story_index || []).some((p) => p.path === 'story_index.repos.0.mode'), 'otro valor es un problema');
   assert.strictEqual(TR.storyIndexFor(mal.data, repo).mode, 'manual', 'y cae a manual');
+  // el perfil que declara la clave pide la versión del arnés que la lee: un lector anterior descartaría el archivo entero
+  const ORG = require(path.join(REPO, 'scripts', 'lib', 'org-config.js'));
+  const pide = ORG.versionQuePide({ ...base, story_index: { repos: [{ repo, mode: 'generated' }] } });
+  assert.ok(pide.claves.includes('story_index'));
+  assert.strictEqual(pide.version, ORG.STORY_INDEX_SINCE);
+});
+
+// ── los bordes que encontró el pase adversarial ──────────────────────────────────────────────────
+
+test('StoryIndex_GuardSeesRenamesAndBlankLines (T9) @story-8.226 @ac-8', () => {
+  const home = tmp('home');
+  const tr = perfil('generated');
+  const dir = repoConIndice('t9-bordes', home);
+  git(dir, ['checkout', '-qb', 'story/x'], home);
+  git(dir, ['mv', EPICS, 'specs/epics-viejo.md'], home);
+  assert.strictEqual(guard(dir, home, tr).code, 1, 'renombrar el índice es sacarlo');
+  git(dir, ['mv', 'specs/epics-viejo.md', EPICS], home);
+  fs.appendFileSync(path.join(dir, SPRINT), '\n\n\n');
+  git(dir, ['add', SPRINT], home);
+  assert.strictEqual(guard(dir, home, tr).code, 1, 'renglones en blanco de más tampoco son el generado');
+});
+
+test('StoryIndex_GuardComparesWithStagedStories (T9) @story-8.226 @ac-8', () => {
+  const home = tmp('home');
+  const tr = perfil('generated');
+  const dir = repoConIndice('t9-preparado', home);
+  git(dir, ['checkout', '-qb', 'story/x'], home);
+  fs.writeFileSync(path.join(dir, 'specs', 'story-1.2-alfa.md'), historia(1, '1.2', 'Alfa', 'review'));
+  assert.strictEqual(correr(['--repo', dir, '--write']).code, 0);
+  git(dir, ['add', EPICS, SPRINT], home);
+  assert.strictEqual(guard(dir, home, tr).code, 1, 'el índice tiene que ser el de las historias que se commitean, no el del disco');
+  git(dir, ['add', '-A'], home);
+  assert.strictEqual(guard(dir, home, tr).code, 0);
+  // un borrador sin seguir en specs/ no entra en lo que se compara
+  fs.writeFileSync(path.join(dir, 'specs', 'story-1.60-borrador.md'), historia(1, '1.60', 'Borrador', 'draft'));
+  assert.strictEqual(guard(dir, home, tr).code, 0, 'lo que no está preparado no cuenta');
+});
+
+test('StoryIndex_GuardWithUnreadableRemoteDoesNotBlock (T9) @story-8.226 @ac-8', () => {
+  const home = tmp('home');
+  const dir = repoConIndice('t9-remoto', home);
+  git(dir, ['remote', 'remove', 'origin'], home);
+  git(dir, ['checkout', '-qb', 'story/x'], home);
+  fs.appendFileSync(path.join(dir, SPRINT), '  1-99-a-mano: draft\n');
+  git(dir, ['add', SPRINT], home);
+  const r = guard(dir, home, perfil('generated'));
+  assert.strictEqual(r.code, 0, 'sin remoto no sé qué repo es: manual');
+});
+
+test('StoryIndex_IncoherentIdsAreReported (T5) @story-8.226 @ac-5', () => {
+  const casos = [
+    ['otra-epica', 'story-9.3-b.md', historia(1, '9.3', 'B', 'draft'), /story-9\.3-b\.md.*épica/],
+    ['guiones', 'story-2-10-c.md', historia(2, '2-10', 'C', 'draft'), /story-2-10-c\.md.*épica/],
+    ['fuera-sin-nombre', 'material.md', '---\nepic: 1\nstory: "EV-2"\ntitle: "Insumo"\nstatus: draft\n---\n', /material\.md.*fuera del patrón/],
+  ];
+  for (const [nombre, archivo, texto, motivo] of casos) {
+    const dir = juguete(`t5-${nombre}`);
+    fs.writeFileSync(path.join(dir, 'specs', archivo), texto);
+    const r = correr(['--repo', dir, '--write']);
+    assert.strictEqual(r.code, 1, `${nombre}: ${r.out}`);
+    assert.match(r.out, motivo, nombre);
+  }
+  const dir = juguete('t5-repetida');
+  fs.writeFileSync(path.join(dir, 'specs', 'story-2.17-1-epsilon.md'), historia(2, '2.17', 'Otra', 'draft'));
+  const r = correr(['--repo', dir, '--write']);
+  assert.strictEqual(r.code, 1);
+  assert.match(r.out, /2-17-1-epsilon.*repetida/, 'dos historias con la misma clave');
+});
+
+test('StoryIndex_UnreadableInputsDoNotWrite (T5) @story-8.226 @ac-5', { skip: process.platform === 'win32' || process.getuid?.() === 0 ? 'los permisos de archivo no frenan en Windows ni como root' : false }, () => {
+  const dir = juguete('t5-intro', { sinEsperados: false });
+  fs.chmodSync(path.join(dir, 'specs', 'epics-intro.md'), 0o000);
+  try {
+    const r = correr(['--repo', dir, '--write']);
+    assert.strictEqual(r.code, 1, r.out);
+    assert.match(r.out, /epics-intro\.md/, 'una introducción que no se puede leer no es «sin introducción»');
+    assert.strictEqual(leer(dir, EPICS), esperado('expected-epics.md'), 'no escribió');
+  } finally { fs.chmodSync(path.join(dir, 'specs', 'epics-intro.md'), 0o644); }
+  const idx = require(TOOL);
+  fs.chmodSync(path.join(dir, SPRINT), 0o000);
+  try {
+    assert.strictEqual(idx.handWritten(dir), SPRINT, 'un índice que no se puede leer se trata como a mano: no se pisa');
+    const m = correr(['--repo', dir, '--migrate', '--report', path.join(dir, 'specs', 'qa', 'm.md')]);
+    assert.strictEqual(m.code, 1, `la migración no toma por vacío un índice que no se lee: ${m.out}`);
+    assert.match(m.out, /sprint-status\.yaml/);
+    assert.ok(!fs.existsSync(path.join(dir, 'specs', 'qa', 'm.md')), 'no escribió el informe');
+  } finally { fs.chmodSync(path.join(dir, SPRINT), 0o644); }
+});
+
+test('StoryIndex_RegenerationOnMainSkipsHandWrittenEpics (T16) @story-8.226 @ac-9', () => {
+  const home = tmp('home');
+  const { remoto, clon } = remotoYClon('t16c', home);
+  fs.rmSync(path.join(clon, SPRINT));
+  fs.writeFileSync(path.join(clon, EPICS), '# Épicas\n\nLa prosa a mano.\n');
+  git(clon, ['add', '-A'], home); git(clon, ['commit', '-qm', 'epics a mano'], home); git(clon, ['push', '-q', 'origin', 'main'], home);
+  const tope = git(clon, ['ls-remote', remoto, 'main'], home);
+  const r = regenerar(clon, home);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /todavía se escribe a mano/);
+  assert.strictEqual(git(clon, ['ls-remote', remoto, 'main'], home), tope);
+});
+
+test('StoryIndex_MigrationEdgeCases (T18) @story-8.226 @ac-11', () => {
+  const dir = juguete('t18-bordes');
+  // un nombre propio de esta corrida: el de afuera de specs/ cae en la carpeta temporal compartida
+  const fuera = `fuera-${path.basename(dir)}`;
+  // una historia con CRLF recibe su nota en su Change Log, sin otro encabezado
+  fs.writeFileSync(path.join(dir, 'specs', 'story-1.2-alfa.md'), '---\r\nepic: 1\r\nstory: "1.2"\r\ntitle: "Alfa"\r\nstatus: done\r\n---\r\n\r\n## Change Log\r\n\r\n- antes\r\n');
+  // un archivo que ya existe con el nombre de la historia mínima no se pisa
+  fs.writeFileSync(path.join(dir, 'specs', 'story-1.70-ocupada.md'), 'no es una historia\n');
+  fs.writeFileSync(path.join(dir, SPRINT), [
+    'development_status:',
+    '  1-2-alfa: done   # nota de alfa',
+    '  1-70-ocupada: backlog',
+    '  1-80-2-factores: backlog   # ambigua: 1.80 o 1.80.2',
+    `  1-91-a/../../../${fuera}: backlog   # un slug que saldría de specs/`,
+    '',
+  ].join('\n'));
+  const informe = path.join(dir, 'specs', 'qa', 'm.md');
+  const r = correr(['--repo', dir, '--migrate', '--report', informe]);
+  assert.strictEqual(r.code, 1, `un archivo ocupado frena la migración: ${r.out}`);
+  assert.match(r.out, /story-1\.70-ocupada\.md/, 'nombra el archivo ocupado');
+  assert.strictEqual(leer(dir, 'specs/story-1.70-ocupada.md'), 'no es una historia\n', 'no lo pisó');
+  fs.rmSync(path.join(dir, 'specs', 'story-1.70-ocupada.md'));
+  const ok = correr(['--repo', dir, '--migrate', '--report', informe]);
+  assert.strictEqual(ok.code, 0, ok.out);
+  const alfa = leer(dir, 'specs/story-1.2-alfa.md');
+  assert.strictEqual((alfa.match(/## Change Log/g) || []).length, 1, 'con CRLF encontró su Change Log');
+  assert.match(alfa, /nota de alfa/);
+  const txt = fs.readFileSync(informe, 'utf8');
+  assert.match(txt, /1-80-2-factores.*ambigu/, 'una clave ambigua va al informe');
+  assert.ok(!fs.readdirSync(path.join(dir, 'specs')).some((f) => f.startsWith('story-1.80')), 'y no inventa una historia');
+  assert.match(txt, new RegExp(`1-91-a/\\.\\./\\.\\./\\.\\./${fuera}.*no va en un nombre de archivo`), 'un slug con / o .. va al informe');
+  assert.ok(!fs.existsSync(path.join(dir, '..', `${fuera}.md`)) && !fs.existsSync(path.join(dir, `${fuera}.md`)), 'y no escribe fuera de specs/');
 });

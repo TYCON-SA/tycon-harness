@@ -147,13 +147,31 @@ function resolver(git, repo, archivo, tmp) {
   if (a.code !== 0) throw new Salida(5, `git add ${archivo} falló: ${a.err.trim()}`);
 }
 
-// la cabecera que escribe scripts/tools/story-index.js: el índice de ese repo se genera desde el frontmatter
-const GENERADO = /^# Generado por scripts\/tools\/story-index\.js/;
+// la marca que escribe scripts/tools/story-index.js en los dos índices: el índice de ese repo se genera desde el frontmatter
+const GENERADO = /Generado por scripts\/tools\/story-index\.js/;
 
-/** Regenera los dos índices desde las historias del árbol mezclado y los agrega al merge. */
+/**
+ * ¿Los índices de origin/main son generados? true si alguno de los dos trae la marca, false si ninguno (o no están),
+ * null si uno está y no se pudo leer: eso no es «escrito a mano».
+ */
+function esGenerado(git) {
+  let alguno = false;
+  for (const f of [SPRINT, EPICS]) {
+    if (git(['cat-file', '-e', `origin/main:${f}`]).code !== 0) continue;
+    const r = git(['show', `origin/main:${f}`]);
+    if (r.code !== 0) return null;
+    if (GENERADO.test(r.out.split('\n').slice(0, 5).join('\n'))) alguno = true;
+  }
+  return alguno;
+}
+
+/**
+ * Regenera los dos índices desde las historias del árbol mezclado —lo preparado para el commit del merge, no el disco:
+ * un borrador sin seguir no entra— y los agrega al merge.
+ */
 function regenerar(git, repo) {
   const index = require(path.join(RAIZ, 'scripts', 'tools', 'story-index.js'));
-  const b = index.build(repo);
+  const b = index.buildFromIndex(repo);
   if (b.problems.length) throw new Salida(1, `los índices se generan desde el frontmatter y no pude regenerarlos: ${b.problems.join('; ')}`);
   index.writeFiles(repo, b.files);
   const a = git(['add', '--', EPICS, SPRINT]);
@@ -204,8 +222,9 @@ function ponerAlDia({ repo, push }, log) {
     }
     // con los índices generados (la cabecera de story-index.js en la versión de main) no se unen: se regeneran desde el
     // frontmatter ya mezclado, que es la única fuente
-    const generado = (f) => (f === EPICS || f === SPRINT) && GENERADO.test(git(['show', `origin/main:${SPRINT}`]).out);
-    const aRegenerar = chocan.filter(generado);
+    const indiceGenerado = esGenerado(git);
+    if (indiceGenerado === null) throw new Salida(5, `no pude leer los índices de origin/main para saber si son generados. ${deshacer()}`);
+    const aRegenerar = indiceGenerado ? chocan.filter((f) => f === EPICS || f === SPRINT) : [];
     let tmp = null;
     try {
       tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catch-up-main-'));

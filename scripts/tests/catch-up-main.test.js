@@ -370,6 +370,21 @@ test('CatchUpMain_RegeneratesIndexesInsteadOfUnion (T15) @story-8.226 @ac-10', (
   assert.match(r.out, /se regeneraron desde el frontmatter/);
 });
 
+// Un borrador sin seguir en specs/ no entra en los índices que se regeneran: son los del árbol mezclado, no los del disco.
+test('CatchUpMain_RegeneratesFromMergedTreeNotDisk (T15) @story-8.226 @ac-10', (t) => {
+  const INDEX = path.join(REPO, 'scripts', 'tools', 'story-index.js');
+  const historia = (n, titulo) => `---\nepic: 8\nstory: "${n}"\ntitle: "${titulo}"\nstatus: ready-for-dev\n---\n\n# Story ${n}: ${titulo}\n`;
+  const generar = (l) => assert.equal(spawnSync(process.execPath, [INDEX, '--repo', l.repo, '--write'], { encoding: 'utf8', env: l.env }).status, 0);
+  const lab = armar(t, {
+    ramaHace: (l) => { l.escribir('specs/story-8.3-nueva-rama.md', historia('8.3', 'La nueva de la rama')); generar(l); },
+    mainHace: (l) => { l.escribir('specs/story-8.4-entro-a-main.md', historia('8.4', 'La que entró a main')); generar(l); },
+  });
+  fs.writeFileSync(lab.ruta('specs/story-8.9-borrador.md'), historia('8.9', 'Un borrador sin seguir'));
+  const r = correr(lab);
+  assert.equal(r.code, 0, r.out);
+  assert.doesNotMatch(lab.git('show', `HEAD:${SPRINT}`), /8-9-borrador/, 'el borrador no entró al índice commiteado');
+});
+
 test('Ayudante_FirmaSinHora_NoResuelveYDejaLaRama', (t) => {
   const lab = armar(t, {
     mainHace: (l) => {

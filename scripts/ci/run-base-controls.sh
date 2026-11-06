@@ -834,9 +834,14 @@ function cmdPending() {
   console.log(`hash: ${a.hash}`);
   // las constancias del dueño (sin `via`) de lo commiteado, con el archivo de donde salió cada una
   const rev = a.prHead || a.tip;
-  const deDueno = [];
+  const todas = [];
   for (const file of approvalFiles(a.inv)) {
-    for (const x of readApprovals(a.root, rev, [file])) if (x.via === undefined) deDueno.push({ x, file });
+    for (const x of readApprovals(a.root, rev, [file])) todas.push({ x, file });
+  }
+  const deDueno = todas.filter(({ x }) => x.via === undefined);
+  // una de este mismo cambio que no es del dueño: se dice por qué no cuenta, así nadie la da por buena
+  for (const { x, file } of todas) {
+    if (x.via !== undefined && x.hash === a.hash) console.log(`base-controls: hay una constancia de este cambio en ${safe(file)}, pero es por delegación: no cuenta como la firma del dueño`);
   }
   // la constancia de este mismo cambio ya está: la sesión que lee esto no tiene que pedir la firma otra vez
   const mismo = deDueno.find(({ x }) => x.hash === a.hash && Array.isArray(x.rules) && hashOf(x.rules) === a.hash);

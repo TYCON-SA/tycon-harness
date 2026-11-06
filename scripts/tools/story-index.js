@@ -76,8 +76,8 @@ function cmpNums(a, b) {
 /** El slug de una historia: el nombre del archivo sin `story-<número>-` ni `.md`. */
 function slugOf(file) { return path.basename(file, '.md').replace(/^story-\d+(?:\.\d+)*-?/, ''); }
 
-/** El id completo (con la épica adelante) y la clave de `sprint-status.yaml`: `8.17.1` → `8-17-1-<slug>`. */
-function fullId(s) { const id = String(s.id); return id.startsWith(`${s.epic}.`) ? id : `${s.epic}.${id}`; }
+/** El id (ya trae la épica adelante: `collect` lo exige) y la clave de `sprint-status.yaml`: `8.17.1` → `8-17-1-<slug>`. */
+function fullId(s) { return String(s.id); }
 function keyOf(s) { const slug = slugOf(s.rel); return `${fullId(s).replace(/\./g, '-')}${slug ? `-${slug}` : ''}`; }
 
 /** Lo que hay entre las rayas del frontmatter de un archivo, o null. */
@@ -92,7 +92,12 @@ function frontmatter(abs) {
 function readIntro(repo) {
   const out = new Map();
   let text;
-  try { text = fs.readFileSync(path.join(repo, INTRO), 'utf8'); } catch (_) { return out; }
+  // sin el archivo, cada épica sale «sin introducción»; uno que está y no se puede leer frena: no es lo mismo
+  try { text = fs.readFileSync(path.join(repo, INTRO), 'utf8'); } catch (e) {
+    if (e && e.code === 'ENOENT') return out;
+    out.problem = `${INTRO}: no se puede leer (${(e && e.code) || e}): sin él se perdería la prosa de cada épica`;
+    return out;
+  }
   let cur = null;
   for (const line of text.split(/\r?\n/)) {
     const h = /^## Épica (\S+?)(?: — (.*))?$/.exec(line);
@@ -120,9 +125,16 @@ function collect(repo) {
   for (const s of res.stories.filter((x) => inSpecs(x.path))) {
     seen.add(rel(s.path));
     if (!s.epic) { problems.push(`${rel(s.path)}: le falta epic en el frontmatter`); continue; }
+    // el id tiene que ser <épica>.<n>[.<n>…] con la épica del frontmatter: si no, la historia saldría en otra épica
+    if (!new RegExp(`^${String(s.epic).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\.\\d+)+$`).test(String(s.id))) {
+      problems.push(`${rel(s.path)}: su id «${s.id}» no es <épica>.<número> con su épica (${s.epic})`);
+      continue;
+    }
     stories.push({ id: s.id, epic: String(s.epic), title: s.title || '', status: s.status, rel: rel(s.path) });
   }
   const outside = new Set(res.excluded.filter((x) => inSpecs(x.path)).map((x) => rel(x.path)));
+  // lo que el descubridor dejó afuera por su id, se llame como se llame
+  for (const r of [...outside].sort()) if (!/^story-.*\.md$/.test(path.posix.basename(r))) problems.push(`${r}: su id está fuera del patrón de ids de historia`);
   let files = [];
   try { files = fs.readdirSync(path.join(repo, SPECS)).filter((f) => /^story-.*\.md$/.test(f)); } catch (_) { files = []; }
   for (const f of files.sort()) {
@@ -136,6 +148,10 @@ function collect(repo) {
     problems.push(`${r}: le falta ${missing.length ? missing.join(' y ') : 'story o status legible'} en el frontmatter`);
   }
   stories.sort((a, b) => cmpNums(nums(a.epic), nums(b.epic)) || cmpNums(nums(fullId(a)), nums(fullId(b))) || (a.rel < b.rel ? -1 : 1));
+  // dos historias con la misma clave (`8.17` con slug `1-x` y `8.17.1` con slug `x`) serían un solo renglón
+  const byKey = new Map();
+  for (const s of stories) byKey.set(keyOf(s), [...(byKey.get(keyOf(s)) || []), s.rel]);
+  for (const [k, rels] of byKey) if (rels.length > 1) problems.push(`la clave ${k} está repetida: ${rels.join(', ')}`);
   return { stories, problems, partial: !!res.partial };
 }
 
@@ -166,7 +182,9 @@ function render(stories, intro) {
 function build(repo) {
   const c = collect(repo);
   if (c.problems.length) return { files: null, problems: c.problems };
-  return { files: render(c.stories, readIntro(repo)), problems: [] };
+  const intro = readIntro(repo);
+  if (intro.problem) return { files: null, problems: [intro.problem] };
+  return { files: render(c.stories, intro), problems: [] };
 }
 
 function writeFiles(repo, files) {
@@ -195,8 +213,36 @@ function differences(repo, files) {
 // ── git ────────────────────────────────────────────────────────────────────────────────────────
 
 function git(repo, args) {
-  const r = spawnSync('git', args, { cwd: repo, encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' } });
-  return { ok: r.status === 0, out: String(r.stdout || '').trim(), err: String(r.stderr || '').trim() };
+  const r = gitRaw(repo, args);
+  return { ok: r.ok, out: r.out.trim(), err: r.err };
+}
+// la salida tal cual: un archivo comparado byte por byte no puede perder sus renglones en blanco
+function gitRaw(repo, args) {
+  const r = spawnSync('git', args, { cwd: repo, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, LC_ALL: 'C' } });
+  return { ok: r.status === 0, out: String(r.stdout || ''), err: String(r.stderr || '').trim() };
+}
+
+/**
+ * Lo mismo que `build`, pero con las historias que están preparadas para el commit (el índice de git), no con las del
+ * disco: un borrador sin seguir, o un cambio sin preparar, no entra. Copia a una carpeta temporal los `.md` de `specs/`
+ * y la configuración de ids del repo, tal como están en el índice de git.
+ */
+function buildFromIndex(repo) {
+  const ls = gitRaw(repo, ['ls-files', '-z', '--', SPECS, '.tycon/advisors.yaml']);
+  if (!ls.ok) return { files: null, problems: [`no pude listar lo preparado (${ls.err})`] };
+  const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'story-index-'));
+  try {
+    for (const rel of ls.out.split('\0').filter(Boolean)) {
+      // el propio índice no es entrada (en un merge puede estar a medias, con su choque)
+      if (rel === EPICS || !(rel === '.tycon/advisors.yaml' || (path.posix.dirname(rel) === SPECS && rel.endsWith('.md')))) continue;
+      const show = gitRaw(repo, ['show', `:${rel}`]);
+      if (!show.ok) return { files: null, problems: [`no pude leer ${rel} de lo preparado (${show.err})`] };
+      fs.mkdirSync(path.join(tmp, path.dirname(rel)), { recursive: true });
+      fs.writeFileSync(path.join(tmp, rel), show.out);
+    }
+    fs.mkdirSync(path.join(tmp, SPECS), { recursive: true });
+    return build(tmp);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 }
 
 // ── el freno del pre-commit ────────────────────────────────────────────────────────────────────
@@ -210,6 +256,7 @@ function modeOf(repo, teamReposFile) {
   let identity = null;
   try {
     const where = require(path.join(TREE, 'scripts', 'tools', 'merge-pr.js')).hostOf(repo);
+    if (where && where.problem) return { unreadable: where.problem };
     identity = require(path.join(TREE, 'scripts', 'lib', 'platform', 'platform.js')).identityFromRemote(where);
   } catch (e) { return { unreadable: `no pude leer el remoto de ${repo} (${String((e && e.message) || e).split('\n')[0]})` }; }
   if (!identity) return { mode: 'manual' };
@@ -220,7 +267,8 @@ function guard(repo, teamReposFile) {
   const m = modeOf(repo, teamReposFile);
   if (m.unreadable) { console.log(`⚠️ story-index: ${m.unreadable}: no sé si los índices son generados, no freno`); return 0; }
   if (m.mode !== 'generated') return 0;
-  const staged = git(repo, ['diff', '--cached', '--name-only']);
+  // sin detectar renombres: renombrar un índice es sacarlo, y el nombre viejo tiene que aparecer
+  const staged = git(repo, ['diff', '--cached', '--name-only', '--no-renames']);
   if (!staged.ok) { console.log(`⚠️ story-index: no pude leer lo preparado (${staged.err}): no freno`); return 0; }
   const touched = staged.out.split('\n').filter((f) => f === EPICS || f === SPRINT);
   if (!touched.length) return 0;
@@ -228,20 +276,33 @@ function guard(repo, teamReposFile) {
   if (gitDir.ok && fs.existsSync(path.resolve(repo, gitDir.out, 'MERGE_HEAD'))) return 0;
   const branch = git(repo, ['symbolic-ref', '-q', '--short', 'HEAD']);
   if (branch.ok && branch.out === 'main') return 0;
-  const b = build(repo);
+  const b = buildFromIndex(repo);
   const cmd = `${SELF} --repo ${repo} --write`;
   if (b.problems.length) {
     for (const p of b.problems) console.log(`   ${p}`);
     console.log(`🔒 story-index: preparaste ${touched.join(' y ')}, y no puedo generarlos para compararlos (arriba el motivo). En este repo se generan: arreglá el frontmatter y corré ${cmd}`);
     return 1;
   }
-  const distintos = touched.filter((f) => git(repo, ['show', `:${f}`]).out + '\n' !== b.files[f]);
+  // un índice sacado (borrado o renombrado) no está en lo preparado: también es distinto del generado
+  const distintos = touched.filter((f) => { const s = gitRaw(repo, ['show', `:${f}`]); return !s.ok || s.out !== b.files[f]; });
   if (!distintos.length) return 0;
   console.log(`🔒 story-index: ${distintos.join(' y ')} se generan desde el frontmatter y en una rama no se editan a mano. Cambiá el frontmatter de la historia y regeneralos: ${cmd} (después, git add de los dos)`);
   return 1;
 }
 
 // ── la regeneración en main ────────────────────────────────────────────────────────────────────
+
+/** El índice que todavía se escribe a mano (está y no trae la cabecera del generado), o null si ninguno. */
+function handWritten(repo) {
+  const marks = { [SPRINT]: SPRINT_HEADER[0], [EPICS]: EPICS_HEADER[2] };
+  for (const [rel, mark] of Object.entries(marks)) {
+    let now = null;
+    // uno que está y no se puede leer cuenta como escrito a mano: no se pisa lo que no se pudo mirar
+    try { now = fs.readFileSync(path.join(repo, rel), 'utf8'); } catch (e) { if (!e || e.code !== 'ENOENT') return rel; }
+    if (now !== null && !now.includes(mark)) return rel;
+  }
+  return null;
+}
 
 function regenerateOnMain(repo, { remote = 'origin', beforePush = null } = {}) {
   for (let i = 1; i <= TRIES; i++) {
@@ -250,10 +311,9 @@ function regenerateOnMain(repo, { remote = 'origin', beforePush = null } = {}) {
     const co = git(repo, ['checkout', '-q', '-B', 'main', `${remote}/main`]);
     if (!co.ok) { console.log(`🔒 story-index: no pude ponerme en ${remote}/main (${co.err}): no regenero`); return 1; }
     // un índice que todavía no se migró (sin la cabecera del generado) no se pisa: perdería lo escrito a mano
-    let now = null;
-    try { now = fs.readFileSync(path.join(repo, SPRINT), 'utf8'); } catch (_) { now = null; }
-    if (now !== null && !now.startsWith(SPRINT_HEADER[0])) {
-      console.log(`story-index: ${SPRINT} todavía se escribe a mano (no trae la cabecera del generado): no regenero. Para pasarlo a generado: ${SELF} --repo <repo> --migrate --report <archivo>`);
+    const aMano = handWritten(repo);
+    if (aMano) {
+      console.log(`story-index: ${aMano} todavía se escribe a mano (no trae la cabecera del generado): no regenero. Para pasarlo a generado: ${SELF} --repo <repo> --migrate --report <archivo>`);
       return 0;
     }
     const b = build(repo);
@@ -279,29 +339,48 @@ function regenerateOnMain(repo, { remote = 'origin', beforePush = null } = {}) {
 
 // ── la migración ───────────────────────────────────────────────────────────────────────────────
 
-/** Los renglones de historia de un `sprint-status.yaml` escrito a mano: `[{ key, id, slug, status, note }]`. */
+/**
+ * Los renglones de historia de un `sprint-status.yaml` escrito a mano: `[{ key, ids, status, note }]`. `ids` son las
+ * lecturas posibles de la clave: en `8-17-1-foo` el `1` puede ser parte del id (`8.17.1`, slug `foo`) o del slug
+ * (`8.17`, slug `1-foo`); cada una trae su `id` y su `slug`.
+ */
 function oldEntries(text) {
   const out = [];
   for (const line of String(text).split(/\r?\n/)) {
-    const m = /^\s*((\d+(?:-\d+)+)(?:-([^\s:]*?))?)\s*:\s*([^\s#]+)\s*(?:#\s*(.*))?$/.exec(line);
+    const m = /^\s*(\d+(?:-[^\s:#]+)+)\s*:\s*([^\s#]+)\s*(?:#\s*(.*))?$/.exec(line);
     if (!m) continue;
-    out.push({ key: m[1], id: m[2].replace(/-/g, '.'), slug: m[3] || '', status: m[4].replace(/^["']|["']$/g, ''), note: (m[5] || '').trim() });
+    const parts = m[1].split('-');
+    let run = 0;
+    while (run < parts.length && /^\d+$/.test(parts[run])) run++;
+    if (run < 2) continue;
+    const ids = [];
+    for (let k = 2; k <= run; k++) ids.push({ id: parts.slice(0, k).join('.'), slug: parts.slice(k).join('-') });
+    out.push({ key: m[1], ids, status: m[2].replace(/^["']|["']$/g, ''), note: (m[3] || '').trim() });
   }
   return out;
 }
 
+/** Suma un renglón al principio del Change Log de una historia (lo crea si no está), con los finales de renglón del archivo. */
 function addToChangeLog(abs, line) {
   const text = fs.readFileSync(abs, 'utf8');
-  const at = text.indexOf('\n## Change Log\n');
-  if (at < 0) { fs.writeFileSync(abs, `${text.replace(/\n*$/, '\n')}\n## Change Log\n\n${line}\n`); return; }
-  const start = at + '\n## Change Log\n'.length;
-  const rest = text.slice(start).replace(/^\n*/, '');
-  fs.writeFileSync(abs, `${text.slice(0, start)}\n${line}\n${rest}`);
+  const eol = text.includes('\r\n') ? '\r\n' : '\n';
+  const head = `${eol}## Change Log${eol}`;
+  const at = text.indexOf(head);
+  if (at < 0) { fs.writeFileSync(abs, `${text.replace(/(\r?\n)*$/, eol)}${eol}## Change Log${eol}${eol}${line}${eol}`); return; }
+  const start = at + head.length;
+  const rest = text.slice(start).replace(/^(\r?\n)*/, '');
+  fs.writeFileSync(abs, `${text.slice(0, start)}${eol}${line}${eol}${rest}`);
 }
 
 function migrate(repo, report, date) {
   let old = '';
-  try { old = fs.readFileSync(path.join(repo, SPRINT), 'utf8'); } catch (_) { old = ''; }
+  // sin el archivo no hay nada que migrar; uno que está y no se lee no es un índice vacío
+  try { old = fs.readFileSync(path.join(repo, SPRINT), 'utf8'); } catch (e) {
+    if (!e || e.code !== 'ENOENT') {
+      console.log(`🔒 story-index: no migro: ${SPRINT} está y no se puede leer (${(e && e.code) || e})`);
+      return 1;
+    }
+  }
   const entries = oldEntries(old);
   const c = collect(repo);
   if (c.problems.length) {
@@ -312,18 +391,37 @@ function migrate(repo, report, date) {
   const byId = new Map(c.stories.map((s) => [fullId(s), s]));
   const distintas = [];
   const sinArchivo = [];
+  const ambiguas = [];
+  const conNota = [];
+  const invalidas = [];
   for (const e of entries) {
-    const s = byId.get(e.id);
-    if (!s) { sinArchivo.push(e); continue; }
-    if (s.status !== e.status) distintas.push({ e, s });
-    if (e.note) addToChangeLog(path.join(repo, s.rel), `- ${date}: nota de su renglón en sprint-status.yaml, al pasar los índices a generados: ${e.note}`);
+    // la clave arma un nombre de archivo: con una barra o un `..` saldría de specs/, y no se toca
+    if (/[/\\]|(^|-)\.\.?(-|$)/.test(e.key)) { invalidas.push(e); continue; }
+    // la lectura de la clave que coincide con una historia existente; sin ninguna, sólo vale una clave sin dudas
+    const found = e.ids.filter((x) => byId.has(x.id));
+    if (found.length === 1) {
+      const s = byId.get(found[0].id);
+      if (s.status !== e.status) distintas.push({ e, s });
+      if (e.note) conNota.push({ s, note: e.note });
+      continue;
+    }
+    if (found.length === 0 && e.ids.length === 1) { sinArchivo.push({ ...e, ...e.ids[0] }); continue; }
+    ambiguas.push(e);
   }
+  // ninguna historia mínima pisa un archivo que ya está: se mira todo antes de escribir nada
+  const minima = (e) => `${SPECS}/story-${e.id}${e.slug ? `-${e.slug}` : ''}.md`;
+  const ocupados = sinArchivo.filter((e) => fs.existsSync(path.join(repo, minima(e))));
+  if (ocupados.length) {
+    for (const e of ocupados) console.log(`   ${minima(e)}: ya existe y no es la historia ${e.id}`);
+    console.log('🔒 story-index: no migro: la historia mínima de un renglón sin archivo pisaría un archivo que ya está (arriba la ruta)');
+    return 1;
+  }
+  for (const { s, note } of conNota) addToChangeLog(path.join(repo, s.rel), `- ${date}: nota de su renglón en sprint-status.yaml, al pasar los índices a generados: ${note}`);
   for (const e of sinArchivo) {
     const epic = e.id.split('.')[0];
     const title = e.slug ? e.slug.replace(/-/g, ' ') : e.id;
-    const rel = `${SPECS}/story-${e.id}${e.slug ? `-${e.slug}` : ''}.md`;
     const note = e.note ? ` Nota de su renglón en sprint-status.yaml: ${e.note}` : '';
-    fs.writeFileSync(path.join(repo, rel), [
+    fs.writeFileSync(path.join(repo, minima(e)), [
       '---', `epic: ${epic}`, `story: "${e.id}"`, `title: ${JSON.stringify(title)}`, `status: ${e.status}`, 'minimal: true', '---', '',
       `# Story ${e.id}: ${title}`, '', 'Historia mínima: reserva su número. No tiene criterios todavía.', '',
       '## Change Log', '', `- ${date}: creada al pasar los índices a generados: era un renglón de sprint-status.yaml sin archivo.${note}`, '',
@@ -332,18 +430,23 @@ function migrate(repo, report, date) {
   const lines = [
     `# Migración de los índices de historias a generados (${date})`, '',
     `Renglones de historia en el sprint-status.yaml escrito a mano: ${entries.length}. Con el estado distinto del de su`,
-    `historia: ${distintas.length} (gana el frontmatter). Sin archivo: ${sinArchivo.length} (cada uno pasa a una historia mínima).`, '',
+    `historia: ${distintas.length} (gana el frontmatter). Sin archivo: ${sinArchivo.length} (cada uno pasa a una historia`,
+    `mínima). Ambiguos: ${ambiguas.length} (no se tocan: los decide una persona).`, '',
     '## Estado distinto (gana el frontmatter)', '',
     ...(distintas.length ? distintas.map(({ e, s }) => `- \`${e.key}\`: el índice decía ${e.status}; el frontmatter dice ${s.status} (\`${s.rel}\`)`) : ['- ninguna']), '',
     '## Sin archivo (pasan a historia mínima)', '',
     ...(sinArchivo.length ? sinArchivo.map((e) => `- \`${e.key}\`: ${e.status}${e.note ? ` — ${e.note}` : ''}`) : ['- ninguna']), '',
+    '## Ambiguos (no se tocan)', '',
+    ...(ambiguas.length ? ambiguas.map((e) => `- \`${e.key}\`: ${e.status} — la clave es ambigua: puede ser ${e.ids.map((x) => x.id).join(' o ')}${e.note ? ` (${e.note})` : ''}`) : ['- ninguno']), '',
+    '## Claves que no van en un nombre de archivo (no se tocan)', '',
+    ...(invalidas.length ? invalidas.map((e) => `- \`${e.key}\`: ${e.status} — tiene una barra o un «..»: no va en un nombre de archivo`) : ['- ninguna']), '',
   ];
   fs.mkdirSync(path.dirname(path.resolve(repo, report)), { recursive: true });
   fs.writeFileSync(path.resolve(repo, report), lines.join('\n'));
   const b = build(repo);
   if (b.problems.length) { for (const p of b.problems) console.log(`   ${p}`); console.log('🔒 story-index: migré pero no pude regenerar los índices'); return 1; }
   writeFiles(repo, b.files);
-  console.log(`story-index: migración hecha: ${distintas.length} con estado distinto, ${sinArchivo.length} historias mínimas; informe en ${report}`);
+  console.log(`story-index: migración hecha: ${distintas.length} con estado distinto, ${sinArchivo.length} historias mínimas, ${ambiguas.length} ambiguas; informe en ${report}`);
   return 0;
 }
 
@@ -384,6 +487,6 @@ function main(argv) {
   return 1;
 }
 
-module.exports = { build, collect, render, readIntro, keyOf, slugOf, writeFiles, differences, guard, regenerateOnMain, migrate, oldEntries, EPICS, SPRINT, INTRO };
+module.exports = { build, buildFromIndex, handWritten, collect, render, readIntro, keyOf, slugOf, writeFiles, differences, guard, regenerateOnMain, migrate, oldEntries, EPICS, SPRINT, INTRO };
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
