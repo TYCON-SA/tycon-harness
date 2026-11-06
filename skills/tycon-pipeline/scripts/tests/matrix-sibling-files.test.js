@@ -261,3 +261,81 @@ test('E3 Guia_Seccion7_DiceDondeBuscaYElRojo @story-8.200 @ac-14', () => {
   assert.match(s7, /en el repo de la historia, en la carpeta de arriba, en cada hermano declarado y en su copia de la rama de la historia/);
   assert.match(s7, /Un archivo de código declarado que la matriz no puede leer la deja en rojo/);
 });
+
+// ---------------------------------------------------------------- lo que es de una tanda bloqueada
+
+/**
+ * Una historia en dos tandas: la A (AC 1) se entrega ahora; la C (AC 2) está bloqueada. `crear` son los archivos a
+ * crear, cada uno con su comentario; `tareas` y `filasC`, cómo la historia ata archivos a la C por tarea o por prueba.
+ */
+function labTandas({ crear, estadoC = 'blocked', tareas = [], filasC = [] }) {
+  const ws = carpeta();
+  const esp = repoNuevo(ws, 'Historias');
+  const ahora = Math.floor(Date.now() / 1000) - 3600;
+  const cuerpo = ['---', 'story: 5.28', 'status: in-progress',
+    'pipelines:',
+    '  - name: A-lo-de-ahora', '    status: pending', '    acs_pending: [1]', '    tasks_pending: [1]', '    tests_pending: ["E1"]',
+    '  - name: C-lo-de-despues', `    status: ${estadoC}`, '    blocked_by: "la tanda A en main"', '    acs_pending: [2]', '    tasks_pending: [3]', '    tests_pending: ["T2"]',
+    'files_to_create:', ...crear.map((c) => `  - ${c}`), '---', '',
+    '## Acceptance Criteria', '', '1. **Given** algo, **When** pasa, **Then** resultado.', '', '2. **Given** otra cosa, **When** pasa, **Then** otro resultado.', '',
+    '### Tests', '',
+    '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|', '| E1 | `curl la pantalla` | 1 | e2e | x | y |',
+    ...filasC.map((f) => `| T2 | ${f} | 2 | unit | x | y |`), '',
+    '## Tasks', '', ...tareas, ''].join('\n');
+  const storyPath = escribir(esp, 'specs/stories/5-28-carga.md', cuerpo);
+  commit(esp, 'historias', ahora - 900);
+  const dod = path.join(esp, '.advisors', 'dod-runtime');
+  fs.mkdirSync(dod, { recursive: true });
+  const gatesLog = path.join(ws, 'gates.log');
+  ledgerLine.append({ dodDir: dod, gatesLog, story: '5.28', acs: [1], ts: new Date((ahora - 50) * 1000).toISOString().replace(/\.\d+Z$/, 'Z'), cmd: 'curl -s http://localhost:5000/pantalla', mirror: true });
+  commit(esp, 'evidencia', ahora - 45);
+  return rm.compute({ storyPath, gatesLogPath: gatesLog, testsResults: [] });
+}
+
+test('T12 ArchivoACrearDeTandaBloqueada_NoAnulaLaEvidencia', () => {
+  // la forma de la historia del caso: el código de la tanda bloqueada por su comentario, su prueba por la tabla y otro por su tarea
+  const r = labTandas({
+    crear: ['src/barrido.js                 # tanda C: lo de después', 'tests/barrido.test.js', 'src/aviso.js', '"src/citado.js"                # tanda C', 'src/final.js', 'src/entero.js                  # tanda C-lo-de-despues'],
+    filasC: ['`barrido.test.js` · `5.28-Barre`'],
+    tareas: ['- [ ] [SEQ] Task 1: tanda A — lo de ahora', '- [ ] [SEQ] Task 3: tanda C — `aviso.js`,', '  con su prueba y el que cierra la frase: final.js.'],
+  });
+  assert.equal(r.perAc[1].verdict, 'RUNTIME', avisos(r));
+  assert.equal(r.green, true, avisos(r));
+  assert.deepEqual(r.noLeidos, []);
+  const aviso = r.warnings.find((w) => /tanda bloqueada/.test(w)) || '';
+  for (const f of ['src/barrido.js', 'tests/barrido.test.js', 'src/aviso.js', 'src/citado.js', 'src/final.js', 'src/entero.js']) assert.ok(aviso.includes(`${f} (C-lo-de-despues)`), aviso);
+  assert.deepEqual(r.deTandaBloqueada.map((d) => d.rel).sort(), ['src/aviso.js', 'src/barrido.js', 'src/citado.js', 'src/entero.js', 'src/final.js', 'tests/barrido.test.js']);
+});
+
+test('T13 ArchivoACrearQueNoEsSoloDeLaBloqueada_SigueRojo', () => {
+  // sin atar a ninguna tanda, atado a la que se entrega, o a las dos: la evidencia no cuenta, como siempre
+  const casos = [
+    { crear: ['src/suelto.js'], rel: 'src/suelto.js' },
+    { crear: ['src/ahora.js                   # tanda A'], rel: 'src/ahora.js' },
+    { crear: ['src/las-dos.js                 # tanda C'], tareas: ['- [ ] Task 1: tanda A — `las-dos.js`'], rel: 'src/las-dos.js' },
+    // entre comillas y atado a la que se entrega, aunque una prueba de la bloqueada lo nombre
+    { crear: ['"src/citado.js"                # tanda A'], filasC: ['`citado.js`'], rel: 'src/citado.js' },
+    // un párrafo después de la tarea, tras un renglón en blanco, no es de la tarea
+    { crear: ['src/zz.js'], tareas: ['- [ ] Task 3: tanda C — otra cosa', '', 'Una nota sobre zz.js que no es de la tarea.'], rel: 'src/zz.js' },
+    // ni lo que sigue bajo un título pegado a la tarea
+    { crear: ['src/tt.js'], tareas: ['- [ ] Task 3: tanda C — otra cosa', '## Dev Notes', 'tt.js va en la tanda A'], rel: 'src/tt.js' },
+    // una tarea que no está en ninguna tanda no ata
+    { crear: ['src/sin-tanda.js'], tareas: ['- [ ] Task 2: `sin-tanda.js`'], rel: 'src/sin-tanda.js' },
+    // dos archivos con el mismo nombre: la tarea de la bloqueada que dice sólo el nombre no ata al de la que se entrega
+    { crear: ['src/a/index.js', 'src/b/index.js                 # tanda C'], tareas: ['- [ ] Task 3: tanda C — `index.js`'], rel: 'src/a/index.js' },
+    // ni la cola de una ruta más larga que la bloqueada nombra entera
+    { crear: ['src/a/index.js', 'lib/src/a/index.js'], tareas: ['- [ ] Task 3: tanda C — `lib/src/a/index.js`'], rel: 'src/a/index.js' },
+  ];
+  for (const c of casos) {
+    const r = labTandas(c);
+    assert.equal(r.green, false, `${c.rel}: ${avisos(r)}`);
+    assert.deepEqual(r.noLeidos.map((n) => n.rel), [c.rel]);
+    assert.ok(r.warnings.some((w) => w.startsWith(`No pude leer ${c.rel}`)), avisos(r));
+  }
+});
+
+test('T14 TandaQueDejaDeEstarBloqueada_SuArchivoVuelveAContar', () => {
+  const r = labTandas({ crear: ['src/barrido.js                 # tanda C'], estadoC: 'pending' });
+  assert.equal(r.green, false, avisos(r));
+  assert.deepEqual(r.noLeidos.map((n) => n.rel), ['src/barrido.js']);
+});
