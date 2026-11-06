@@ -1029,10 +1029,17 @@ function decidirCarril({ command, cwd, sid, home }) {
     if (pantalla && pantalla.texto) return pantalla;
     require('./story-gate-io.js').writeAdhoc(path.dirname(path.dirname(require('./open-runs.js').markerPath(sid, home))), sid, a);
   }
+  // los datos van después de la pantalla y antes del riesgo: un freno por vez, en ese orden
+  let datos = delCarril ? frenoDeDatos(a, sid, home, reposDeLoQueSeGuarda, { sinSeguir: subeLoSinSeguir }) : null;
+  if (datos && datos.texto) {
+    a = basesAlDia(a, sid, home).adhoc;
+    datos = frenoDeDatos(a, sid, home, reposDeLoQueSeGuarda, { sinSeguir: subeLoSinSeguir });
+    if (datos && datos.texto) return { texto: datos.texto };
+  }
   const riesgo = frenoDelRiesgo(a, sid, home, reposDelComando);
   if (riesgo) return riesgo;
   const de = `del camino rápido «${String(a.reason).slice(0, 160)}»`;
-  const como = pantalla ? `${pantalla.mostrar} ${COMO_SE_AUTORIZA}` : COMO_SE_AUTORIZA;
+  const como = [pantalla && pantalla.mostrar, datos && datos.mostrar, COMO_SE_AUTORIZA].filter(Boolean).join(' ');
   if (dudas.length || cs.some((c) => c.opaco)) return { pregunta: `¿GUARDO? no pude leer este comando; si guarda, es ${de}. ${como}` };
   for (const c of cs) {
     if (c.tipo === 'pr') return { pregunta: `¿GUARDO? «${c.forma}», ${de}. ${como}` };
@@ -1106,28 +1113,91 @@ function frenoDePantalla(a, sid, home, repos) {
     for (const reason of r.registro || []) io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'ok', reason });
     return { mostrar: r.mostrar };
   }
+  if (r.textosQueFaltan) io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `faltan ${r.textosQueFaltan.total} textos de la maqueta` });
+  return { texto: textoDeLaMaqueta(r) };
+}
+
+/**
+ * El texto del freno de pantalla cuando falta algo de la maqueta: los textos que no aparecen (`textosQueFaltan`) o la
+ * maqueta, su ok y la captura. Aprobar la maqueta es una firma: se imprime con la ruta absoluta (signatureCommand).
+ */
+function textoDeLaMaqueta(r) {
+  const gate = require('./story-gate.js');
+  const { homePath, signatureCommand } = require('./home-command.js');
   const marker = gate.MARKER_JS;
+  const aprobar = `${signatureCommand(gate.MARKER_REL)} adhoc set '{"reason":"<el motivo>","mockup":"<ruta>","mockupApproved":"<quién la aprobó y por qué vía>"}'`;
   if (r.textosQueFaltan) {
-    io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `faltan ${r.textosQueFaltan.total} textos de la maqueta` });
-    return { texto: [
+    return [
       `🔒 GUARDAR: este camino corto toca una pantalla (${r.pantallas[0]}) y le faltan ${r.textosQueFaltan.total} texto(s) de su maqueta aprobada:`,
       ...r.faltan.map((f) => `  · ${f}`),
       '  Se completa de una de estas tres formas:',
       '   1. Corregí la pantalla, para que diga ese texto.',
-      `   2. Volvé a aprobar la maqueta, si lo que cambió es ella: node ${marker} adhoc set '{"reason":"<el motivo>","mockup":"<ruta>","mockupApproved":"<quién la aprobó y por qué vía>"}'`,
+      `   2. Volvé a aprobar la maqueta, si lo que cambió es ella: ${aprobar}`,
       `   3. Declará la diferencia en ${r.textosQueFaltan.diferencias}, con un renglón \`- «<texto>» — differs: <por qué>\`. Si no se puede comparar: \`mockup-compare: no — <motivo>\`.`,
       '  Se comparan los textos, no el dibujo: un texto que ya existe en otra pantalla del repo pasa.',
-    ].join('\n') };
+    ].join('\n');
   }
-  const mockup = marker.replace(/marker\.js$/, 'mockup.js');
-  return { texto: [
+  const mockup = homePath(gate.MARKER_REL.replace(/marker\.js$/, 'mockup.js'));
+  return [
     `🔒 GUARDAR: este camino rápido toca una pantalla (${r.pantallas[0]}) y le falta:`,
     ...r.faltan.map((f) => `  · ${f}`),
     '  Cómo se completa, en este orden:',
     `   1. La maqueta: node ${mockup} render --data <modelo.json> --out <ruta> (la forma del modelo: node ${mockup} schema).`,
-    `   2. Mostrásela a la persona y, con su ok: node ${marker} adhoc set '{"reason":"<el motivo>","mockup":"<ruta>","mockupApproved":"<quién la aprobó y por qué vía>"}'`,
+    `   2. Mostrásela a la persona y, con su ok: ${aprobar}`,
     `   3. Con la pantalla ya construida, la captura: node ${marker} adhoc capture <ruta de la imagen>`,
     '  Un cambio de código después de la captura la vence.',
+  ].join('\n');
+}
+
+// ── de dónde salen los datos y quién los ve ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Un carril cuyo cambio trae una señal fuerte (una llamada a un proceso, un chequeo de rol, la autorización de un
+ * endpoint: las declara el paquete del stack) no guarda: `{ texto, huella }`. Lo levanta sólo el click del dueño sobre esa
+ * huella (`datosPermitido`, de `marker.js adhoc allow-data-change`). Con sólo señales débiles, `{ mostrar }`: una línea
+ * para la ventana. Sin señales, null. Sin medir no guarda. El freno queda anotado en el carril (`frenoDatos`): de ahí lo
+ * leen el comando que pide el click y su cuadro. `opciones.cargar` y `opciones.medir` se pasan en las pruebas.
+ */
+function frenoDeDatos(a, sid, home, repos, { sinSeguir = false, cargar, medir } = {}) {
+  const io = require('./story-gate-io.js');
+  const ss = require('./source-signals.js');
+  const dir = path.dirname(path.dirname(require('./open-runs.js').markerPath(sid, home)));
+  let r;
+  try {
+    const porRepo = new Map();
+    const senales = (repo) => {
+      if (!porRepo.has(repo)) {
+        const c = (cargar || ss.cargar)({ repo });
+        for (const m of c.avisos) avisarSinMedir(m, sid, home);
+        porRepo.set(repo, c.senales);
+      }
+      return porRepo.get(repo);
+    };
+    r = (medir || ss.buscar)(a, senales, { repos, sinSeguir });
+  } catch (e) { r = { hallazgos: [], avisos: [], fallas: [e.message] }; }
+  if (r.fallas.length) {
+    io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `datos del carril sin medir: ${r.fallas[0]}` });
+    return { texto: `🔒 GUARDAR: no pude medir si este camino corto cambia de dónde sale un dato o quién lo ve (${r.fallas[0]}). Sin medir no guarda: arreglá eso y repetí el comando.` };
+  }
+  for (const m of r.avisos) avisarSinMedir(m, sid, home);
+  const fuertes = r.hallazgos.filter((h) => h.strength === 'strong');
+  const debiles = r.hallazgos.filter((h) => h.strength !== 'strong');
+  const mostrar = debiles.length ? `Aviso: el nombre de ${[...new Set(debiles.map((h) => h.file))].slice(0, 3).join(', ')} habla de roles o permisos; mirá que el cambio no toque quién ve qué.` : null;
+  if (!fuertes.length) return mostrar ? { mostrar } : null;
+  const huella = ss.huella(fuertes);
+  if (a.datosPermitido && a.datosPermitido.huella === huella) {
+    io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'ok', reason: `datos del carril: los dejó pasar una persona (${huella})` });
+    return mostrar ? { mostrar } : null;
+  }
+  io.writeAdhoc(dir, sid, { ...a, frenoDatos: { huella, hallazgos: fuertes.slice(0, 20), at: new Date().toISOString() } });
+  io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `camino corto que cambia de dónde sale un dato o quién lo ve: ${ss.descripcion(fuertes[0])}`, huella });
+  const marker = require('./story-gate.js').MARKER_JS;
+  const mas = fuertes.length > 1 ? `; y ${fuertes.length - 1} más` : '';
+  return { huella, texto: [
+    `🔴 No guardo: esto cambia de dónde sale un dato o quién lo ve (${ss.descripcion(fuertes[0])}${mas}).`,
+    `   Eso no es camino corto: va por historia, aunque sea corta. Ante la duda, historia.${a.datos === 'sin-cambio' ? ` Abriste el carril y declaraste que no («datos: sin-cambio»), y el cambio trae ${fuertes[0].says}.` : ''}`,
+    '   Si creés que es un falso positivo, lo decide una persona con un click: pedíselo a la coordinadora con',
+    `   node ${marker} adhoc allow-data-change --changed "<qué cambió, en una frase>" --recommends <pasar|historia|descartar> --why "<por qué>"`,
   ].join('\n') };
 }
 
@@ -1140,7 +1210,7 @@ function frenoDePantalla(a, sid, home, repos) {
 function textoFaltanRevisoresYPase({ harness, regla, archivo }) {
   const gate = require('./story-gate.js');
   const marker = gate.MARKER_JS;
-  const pipeline = marker.replace(/marker\.js$/, 'pipeline.js');
+  const pipeline = require('./home-command.js').homePath(gate.MARKER_REL.replace(/marker\.js$/, 'pipeline.js'));
   const que = `${archivo} (regla: ${regla})`;
   return (harness ? [
     `🔒 GUARDAR: faltan los revisores y el pase. Este camino rápido toca una ruta de riesgo alto: ${que}.`,
@@ -1242,4 +1312,4 @@ function frenoDelRiesgo(a, sid, home, reposDelComando = []) {
   return { texto: textoFaltanRevisoresYPase({ harness, regla: marca.regla, archivo: marca.archivo }) };
 }
 
-module.exports = { tramosDelShell, palabrasDelShell, commitsDelShell, comandosQueGuardan, leerComando, decidir, textoFaltanRevisoresYPase, frenoDelRiesgo };
+module.exports = { tramosDelShell, palabrasDelShell, commitsDelShell, comandosQueGuardan, leerComando, decidir, textoFaltanRevisoresYPase, textoDeLaMaqueta, frenoDelRiesgo, frenoDeDatos };

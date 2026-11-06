@@ -85,7 +85,10 @@ const UPSTREAM_REF = `${NS}/upstream`;
 const CLONE_RECORD = 'tycon-repoint.json';                       // la constancia de la mudanza, dentro del .git del clon
 const SEED_TIMEOUT_MS = 10 * 60 * 1000;
 const TREE_TIMEOUT_MS = 5 * 60 * 1000;
-const HARNESS_JS = `node ~/.claude/${require('./place.js').PLACE_NAME}/scripts/setup/harness.js`;   // el lugar
+// el comando con la carpeta de la persona lo arma skills/tycon-pipeline/scripts/lib/home-command.js; desde la copia fija
+// del programa, que no trae las skills, este archivo escribe el mismo texto
+const homeCommand = (() => { const lib = path.join(__dirname, '..', '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'home-command.js'); return fs.existsSync(lib) ? require(lib).homeCommand : (r) => `node "$HOME/${r}"`; })();
+const HARNESS_JS = `${homeCommand(`.claude/${require('./place.js').PLACE_NAME}/scripts/setup/harness.js`)}`;   // el lugar
 const UPDATE_CMD = `${HARNESS_JS} update`;
 const INSTALL_CMD = `${HARNESS_JS} install`;
 const OLD_URL = '<URL-del-repo-viejo>';                         // lo que la persona reemplaza en un remedio a mano

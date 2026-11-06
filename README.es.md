@@ -71,6 +71,9 @@ las palabras que usa.
     **historia**.
   - **Si junta varios temas**, no es chico: son varios caminos cortos, o una historia.
   - **El riesgo es otra cosa.** Una función chica de riesgo alto también va por camino corto, y la aprueba la persona.
+  - **Salvo los datos.** Un cambio que cambia de dónde sale un dato o quién lo puede ver va por historia, aunque sea
+    chico (permisos, roles, la seguridad de un proceso), salvo que el dueño lo deje pasar con un click; ante la duda,
+    historia.
 
   **Quién decide y quién controla.** El tamaño lo juzga quien abre el trabajo, pero si trabajás con una sesión
   coordinadora, no lo decidís solo: el camino corto lo aprueba la sesión coordinadora o vos. Lo hace cumplir el arnés:

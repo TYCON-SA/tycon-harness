@@ -133,9 +133,10 @@ const masDe = (lista, tope, sep) => (lista.length > tope ? `${lista.slice(0, top
  * van todos, antes de «Qué hace» y sin recorte, porque el detalle sí se recorta y un número que no se ve no se aprobó.
  * `nota`: por qué no se pudo leer la fuente; va al final de «Qué hace», también fuera del recorte. `sello`: lo que ata
  * la aprobación a esa firma, esa sesión y lo que se mostró (`huella`); `texto`: la pregunta sin el sello, la que muestra la ventana de permiso. Con `soloClick`, sólo lo
- * aprueba un click en la sesión que trabaja, y el cuadro se muestra con sus `descripciones`.
+ * aprueba un click en la sesión que trabaja, y el cuadro se muestra con sus `descripciones`. Con `clickDelDueno`, lo aprueba
+ * sólo un click, también en la pestaña de la coordinadora, y lo que hace cada opción va en la pregunta.
  */
-function cuadroDe({ firma, destino, que, historia = null, criterios = [], queHace = [], nota = null, archivos = [], completo = null, siSaleMal, cita = null, huella, soloClick = false, descripciones = null }) {
+function cuadroDe({ firma, destino, que, historia = null, criterios = [], queHace = [], nota = null, archivos = [], completo = null, siSaleMal, cita = null, huella, soloClick = false, clickDelDueno = false, descripciones = null }) {
   const sello = `firma ${firma} · sesión ${destino} · código ${huella}`;
   const lo = una(que, 200);
   const partes = [`¿${lo.charAt(0).toUpperCase()}${lo.slice(1)}?`];
@@ -152,8 +153,11 @@ function cuadroDe({ firma, destino, que, historia = null, criterios = [], queHac
   if (completo) partes.push(`Completo en: ${una(completo, 400)}.`);
   partes.push(`Si sale mal: ${sinPunto(una(siSaleMal, 200))}.`);
   if (cita) partes.push(`Cita de la sesión: «${una(cita, 200)}».`);
+  // el click del dueño: lo que hace cada opción va en la pregunta, que la coordinadora muestra tal cual desde su lista
+  if (clickDelDueno && !soloClick && Array.isArray(descripciones)) partes.push(`«${APRUEBA}»: ${sinPunto(una(descripciones[0], 200))}. «${NIEGA}»: ${sinPunto(una(descripciones[1], 200))}. Sólo vale tu click.`);
   const texto = partes.join(' ');
-  return { sello, texto, pregunta: `${texto} (${sello})`, opciones: [APRUEBA, NIEGA], ...(soloClick ? { soloClick: true, descripciones } : {}) };
+  return { sello, texto, pregunta: `${texto} (${sello})`, opciones: [APRUEBA, NIEGA], ...(soloClick ? { soloClick: true, descripciones } : {}),
+    ...(clickDelDueno && !soloClick ? { clickDelDueno: true } : {}) };
 }
 
 /**
@@ -629,17 +633,21 @@ function buscar({ casa, sesion, destino = sesion, cuadro, coordinadora = null, a
   if (!cuadro || !cuadro.pregunta || !cuadro.sello) return { ok: false, motivo: 'no pude armar el cuadro de esta firma' };
   // un cuadro de sólo click vale en la pestaña que hace el trabajo: ni la coordinadora ni un mensaje escrito lo contestan
   const soloClick = !!cuadro.soloClick;
+  // un cuadro de «click del dueño» lo contesta su click, también en la pestaña de la coordinadora confirmada: no un mensaje
+  const sinMensaje = soloClick || !!cuadro.clickDelDueno;
   const sesiones = [sesion, ...(!soloClick && coordinadora && coordinadora !== sesion && SESION.test(coordinadora) ? [coordinadora] : [])];
   let candidatas = [];
   try { for (const s of sesiones) candidatas.push(...leerSesion(casa, s).filter((r) => r.sesion === s)); } catch (e) { return { ok: false, motivo: e.message }; }
   candidatas = candidatas.filter((r) => {
     const edad = ahora - Date.parse(r.ts);
-    if (!(edad >= 0 && edad <= VENCE_MIN * 60000 && (r.tipo === 'click' || (r.tipo === 'mensaje' && !soloClick)) && !usada(casa, r.id))) return false;
+    if (!(edad >= 0 && edad <= VENCE_MIN * 60000 && (r.tipo === 'click' || (r.tipo === 'mensaje' && !sinMensaje)) && !usada(casa, r.id))) return false;
     // la de la propia sesión la anotó el mismo proceso de la herramienta que firma: otra copia de la sesión (abierta con
     // `--resume` por un agente) no aprueba por ella
     return !herramienta || r.sesion !== sesion || (r.herramienta && r.herramienta.pid === herramienta.pid && r.herramienta.inicio === herramienta.inicio);
   }).sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts));
-  if (!candidatas.length) return { ok: false, motivo: soloClick ? 'no hay un click en el cuadro de esta pestaña de los últimos 30 minutos sin usar' : 'no hay un click en el cuadro ni un «aprobado» tuyo de los últimos 30 minutos sin usar' };
+  if (!candidatas.length) return { ok: false, motivo: soloClick ? 'no hay un click en el cuadro de esta pestaña de los últimos 30 minutos sin usar'
+    : sinMensaje ? 'no hay un click del dueño en el cuadro, en esta pestaña o en la de la coordinadora, de los últimos 30 minutos sin usar'
+      : 'no hay un click en el cuadro ni un «aprobado» tuyo de los últimos 30 minutos sin usar' };
   // un «Sí» a esta misma firma y sesión con otro código: la fuente (el plan, el diff, el hallazgo) cambió después del cuadro
   const mismaFirma = cuadro.sello.slice(0, cuadro.sello.lastIndexOf('código '));
   const cambio = candidatas.some((a) => a.tipo === 'click' && a.respuesta === APRUEBA && typeof a.pregunta === 'string'
@@ -681,7 +689,7 @@ function validarEnClaude(a, { casa = os.homedir(), cwd, cuadro, destino, linea, 
   for (const c of [...new Set([cwd, cwdAprobacion].filter(Boolean))]) {
     const e = escuchasDelCuadro({ casa, cwd: c, linea });
     if (e.ilegibles.length) return { ok: false, motivo: `no pude leer ${e.ilegibles[0]}, y sin leerla no sé si un gancho contestó el cuadro` };
-    if (e.ajenos.length) return { ok: false, motivo: `un gancho que no es del arnés escucha el cuadro (${e.ajenos[0].evento} en ${e.ajenos[0].archivo}): mientras esté, el click no vale; ${cuadro && cuadro.soloClick ? 'queda la terminal' : 'escribí «aprobado»'}` };
+    if (e.ajenos.length) return { ok: false, motivo: `un gancho que no es del arnés escucha el cuadro (${e.ajenos[0].evento} en ${e.ajenos[0].archivo}): mientras esté, el click no vale; ${cuadro && (cuadro.soloClick || cuadro.clickDelDueno) ? 'queda la terminal' : 'escribí «aprobado»'}` };
   }
   return clickEnLaTranscripcion(ruta, a, { pregunta: cuadro.pregunta, opciones: cuadro.opciones, descripciones: cuadro.descripciones });
 }

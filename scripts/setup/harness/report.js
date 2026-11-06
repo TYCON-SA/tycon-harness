@@ -19,6 +19,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { paths } = require('./state.js');
+// el comando con la carpeta de la persona lo arma skills/tycon-pipeline/scripts/lib/home-command.js; desde la copia fija
+// del programa, que no trae las skills, este archivo escribe el mismo texto
+const homeCommand = (() => { const lib = path.join(__dirname, '..', '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'home-command.js'); return fs.existsSync(lib) ? require(lib).homeCommand : (r) => `node "$HOME/${r}"`; })();
 const TH = require('./tycon-home.js');
 const sources = require('./sources.js');
 
@@ -160,7 +163,7 @@ function versionJson(state, opts = {}) {
 // que le agregaron ni los avisos. El cierre cuenta lo que quedó, por tipo, desde el
 // reporte del aplicador; dice cuántos hooks pueden frenar según la lista de efectos; repite cada aviso del aplicador tal
 // cual; y dice dónde quedó la copia de respaldo, cómo volver, dónde está el registro y qué sigue.
-const HARNESS_CMD = `node ~/.claude/${require('./place.js').PLACE_NAME}/scripts/setup/harness.js`;   // el lugar
+const HARNESS_CMD = `${homeCommand(`.claude/${require('./place.js').PLACE_NAME}/scripts/setup/harness.js`)}`;   // el lugar
 const WARNING_LINE = /^\s*(⚠|🔴|🛑)/u;
 // el instalador de Windows escribe los mismos avisos con «! » y «!! » (no usa los emojis): sin esto, en Windows el
 // cierre no repetiría ninguno

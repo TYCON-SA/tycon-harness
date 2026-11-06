@@ -23,7 +23,7 @@
               "memoria de engram",
               "SIN nombre de proyecto fijado",
               "repo-sin-pin",
-              "Detalle y score: node \\S*/scripts/lib/harness-audit\\.js --verbose"
+              "Detalle y score: node \\S*/scripts/lib/harness-audit\\.js\"? --verbose"
             ]
           },
           "_8_12": "story 8.12 (R3, T28): harness-audit vive en scripts/lib/ — el arnés de mentira lo trae de ahí, sin el reemplazo de su ruta vieja, y el comando que el aviso imprime dice la ruta nueva",

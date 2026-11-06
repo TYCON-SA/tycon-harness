@@ -17,6 +17,11 @@
  *   T19 traer `main` a la rama no vence las constancias si lo propio no cambió
  *   T20 la pantalla de otro pedido que la rama trajo no pide maqueta; sin red sigue pidiéndola y lo anota
  *   T21 guardar en un repo ajeno no lo suma al carril
+ *   T22 la sonda de un agente del pase no entra al carril ni vence las constancias; el código de un subagente, sí entra
+ *   T23 si git no contesta al ubicar lo que escribe un subagente, se anota igual
+ *   T24 una ruta que sólo parece de la carpeta de sondas (con `..`, o dentro de src/) se anota
+ *   T25 con un carril que todavía no mide ningún repo, lo que escribe un subagente se anota
+ *   T26 si git no ubica una ruta ya anotada, lo que escribe un subagente se anota
  *
  * stable-data: crea repos de git en carpetas temporales con commits propios; nunca toca el repo real.
  * Correr: node --test skills/tycon-pipeline/scripts/tests/adhoc-high-risk.test.js
@@ -814,4 +819,122 @@ test('T21 RepoAjeno_NoEntraAlCarrilAlGuardar', () => {
   const state = conCarril(home, 's21', { rutas: [propio, f], bases: { [dir]: adhocBase.traerBase(dir) }, riesgoAlto: marcaDe(f) });
   assert.ok(guardar(ajeno.dir, 's21', home).texto);
   assert.deepStrictEqual(Object.keys(leerCarril(state, 's21').bases), [dir]);
+});
+
+// Un subagente que escribe: el gancho corre como en el uso real y no se puede caer (si se cayera, «no anotó» pasaría por bueno).
+function comoSubagente(home, sid, file, env = {}) {
+  const r = spawnSync(process.execPath, [ON_EDIT], {
+    input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Write', session_id: sid, agent_id: 'agente-del-pase', agent_type: 'general-purpose', tool_input: { file_path: file } }),
+    env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, ...env }, encoding: 'utf8',
+  });
+  assert.equal(r.status, 0, `el gancho se cayó: ${r.stderr}`);
+  return r;
+}
+
+// 🔴 Falla con: la sonda de un agente del pase (en su laboratorio o en step-05b-probes) entra al carril y vence las constancias.
+test('T22 SondaDeSubagente_NoEntraAlCarril_ElCodigoDeUnSubagenteSi', () => {
+  const raiz = tmp('t22-');
+  const home = tmp('home-');
+  const dir = repoConOrigen(raiz, 'producto');
+  escribir(dir, '.gitignore', '**/.advisors/*\n');
+  git(dir, 'add', '.');
+  commitear(dir, 'ignora la evidencia');
+  const propio = path.join(dir, 'src/lib/x.js');
+  escribir(dir, 'src/lib/x.js', 'module.exports = 1;\n');
+  const state = conCarril(home, 's22', { rutas: [propio], bases: { [dir]: adhocBase.traerBase(dir) } });
+  const huella = adhocBase.huellaDelCarril(leerCarril(state, 's22'));
+  // (a) la sonda en su laboratorio, con su propio repo, fuera de los repos del carril
+  const lab = path.join(tmp('probe.'), 'lab');
+  execFileSync('git', ['init', '-q', lab]);
+  escribir(lab, 'probe.js', 'console.log(1);\n');
+  comoSubagente(home, 's22', path.join(lab, 'probe.js'));
+  // (a') la sonda en una carpeta suelta, que no es de ningún repo
+  const suelta = tmp('probe.');
+  escribir(suelta, 'probe.js', 'console.log(3);\n');
+  assert.ok(adhocBase.ubicar(path.join(suelta, 'probe.js')).fuera, 'la carpeta suelta está fuera de todo repo');
+  comoSubagente(home, 's22', path.join(suelta, 'probe.js'));
+  // (b) la sonda guardada como prueba del hallazgo, dentro del repo del carril
+  const guardada = path.join(dir, '.advisors/pipeline-runs/x-1/step-05b-probes/lente-1/probe.js');
+  escribir(dir, '.advisors/pipeline-runs/x-1/step-05b-probes/lente-1/probe.js', 'console.log(2);\n');
+  comoSubagente(home, 's22', guardada);
+  const despues = leerCarril(state, 's22');
+  assert.deepStrictEqual(despues.rutas, [propio], 'ninguna sonda se anotó');
+  assert.deepStrictEqual(Object.keys(despues.bases), [dir], 'ningún repo nuevo');
+  assert.equal(adhocBase.huellaDelCarril(despues), huella, 'la huella de las constancias no cambia');
+  // el código que escribe un subagente dentro del repo del carril se sigue anotando y cambia la huella
+  const delSubagente = path.join(dir, 'src/lib/y.js');
+  escribir(dir, 'src/lib/y.js', 'module.exports = 2;\n');
+  comoSubagente(home, 's22', delSubagente);
+  const conCodigo = leerCarril(state, 's22');
+  assert.ok(conCodigo.rutas.includes(delSubagente), 'el código del subagente se anota');
+  assert.notEqual(adhocBase.huellaDelCarril(conCodigo), huella);
+  // la sesión misma sigue anotando lo que escribe fuera del repo, como siempre
+  onEdit(home, 's22', path.join(lab, 'probe.js'));
+  assert.ok(leerCarril(state, 's22').rutas.includes(path.join(lab, 'probe.js')));
+});
+
+// 🔴 Falla con: git no contesta al ubicar el archivo y el código que un subagente escribe en el repo del carril se toma por sonda.
+test('T23 SubagenteConGitQueNoContesta_SeAnotaIgual', { skip: process.platform === 'win32' && 'el git falso es un guion de sh' }, () => {
+  const raiz = tmp('t23-');
+  const home = tmp('home-');
+  const dir = repoConOrigen(raiz, 'producto');
+  const state = conCarril(home, 's23', { rutas: [], bases: { [dir]: adhocBase.traerBase(dir) } });
+  const bin = tmp('bin-');
+  const disparo = path.join(bin, 'disparo');
+  const gitReal = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
+  const src = path.join(dir, 'src');
+  fs.writeFileSync(path.join(bin, 'git'), `#!/bin/sh\ncase "$*" in *"${src}"*"rev-parse --show-toplevel"*) : > "${disparo}"; echo "fatal: unable to read index" >&2; exit 128;; esac\nexec "${gitReal}" "$@"\n`, { mode: 0o755 });
+  const archivo = path.join(dir, 'src/a.js');
+  escribir(dir, 'src/a.js', 'module.exports = 1;\n');
+  comoSubagente(home, 's23', archivo, { PATH: `${bin}${path.delimiter}${process.env.PATH}` });
+  assert.ok(fs.existsSync(disparo), 'el git falso contestó con error: la prueba mide esa rama');
+  assert.deepStrictEqual(adhocBase.ubicar(archivo).raiz, dir, 'con git sano el archivo está en el repo del carril');
+  assert.ok(leerCarril(state, 's23').rutas.includes(archivo), 'ante la duda, se anota');
+});
+
+// 🔴 Falla con: un nombre que sólo parece de la carpeta de sondas (con `..`, o con `.advisors` dentro de src/) deja código sin anotar.
+test('T24 RutaQueSoloPareceDeSondas_SeAnota', () => {
+  const raiz = tmp('t24-');
+  const home = tmp('home-');
+  const dir = repoConOrigen(raiz, 'producto');
+  const state = conCarril(home, 's24', { rutas: [], bases: { [dir]: adhocBase.traerBase(dir) } });
+  escribir(dir, 'src/evil.js', 'module.exports = 1;\n');
+  fs.mkdirSync(path.join(dir, '.advisors/pipeline-runs/x/step-05b-probes'), { recursive: true });
+  comoSubagente(home, 's24', path.join(dir, '.advisors/pipeline-runs/x/step-05b-probes/../../../../src/evil.js'));
+  assert.ok(leerCarril(state, 's24').rutas.some((r) => path.resolve(r) === path.join(dir, 'src/evil.js')), 'el `..` no esconde el código');
+  const adentro = path.join(dir, 'src/.advisors/pipeline-runs/x/step-05b-probes/a.js');
+  escribir(dir, 'src/.advisors/pipeline-runs/x/step-05b-probes/a.js', 'module.exports = 2;\n');
+  comoSubagente(home, 's24', adentro);
+  assert.ok(leerCarril(state, 's24').rutas.includes(adentro), 'la carpeta de sondas cuelga de la raíz del repo');
+});
+
+// 🔴 Falla con: un carril que todavía no mide ningún repo deja sin anotar lo que escribe un subagente.
+test('T25 CarrilSinRepos_LoDelSubagenteSeAnota', () => {
+  const home = tmp('home-');
+  const state = conCarril(home, 's25', { rutas: [], bases: {} });
+  const suelta = tmp('t25-');
+  escribir(suelta, 'a.js', 'module.exports = 1;\n');
+  comoSubagente(home, 's25', path.join(suelta, 'a.js'));
+  assert.ok(leerCarril(state, 's25').rutas.includes(path.join(suelta, 'a.js')), 'sin repos que comparar, se anota');
+});
+
+// 🔴 Falla con: git no ubica una ruta ya anotada, su repo falta en la lista y el código de un subagente en ese repo se toma por sonda.
+test('T26 RutaDelCarrilSinUbicar_LoDelSubagenteSeAnota', { skip: process.platform === 'win32' && 'el git falso es un guion de sh' }, () => {
+  const raiz = tmp('t26-');
+  const home = tmp('home-');
+  const a = repoConOrigen(raiz, 'producto');
+  const b = repoConOrigen(raiz, 'otro');
+  const anotada = path.join(b, 'lib/vieja.js');
+  escribir(b, 'lib/vieja.js', 'module.exports = 0;\n');
+  const state = conCarril(home, 's26', { rutas: [anotada], bases: { [a]: adhocBase.traerBase(a) } });
+  const bin = tmp('bin-');
+  const disparo = path.join(bin, 'disparo');
+  const gitReal = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
+  const lib = path.join(b, 'lib');
+  fs.writeFileSync(path.join(bin, 'git'), `#!/bin/sh\ncase "$*" in *"${lib}"*"rev-parse --show-toplevel"*) : > "${disparo}"; echo "fatal: unable to read index" >&2; exit 128;; esac\nexec "${gitReal}" "$@"\n`, { mode: 0o755 });
+  const archivo = path.join(b, 'src/nuevo.js');
+  escribir(b, 'src/nuevo.js', 'module.exports = 1;\n');
+  comoSubagente(home, 's26', archivo, { PATH: `${bin}${path.delimiter}${process.env.PATH}` });
+  assert.ok(fs.existsSync(disparo), 'git no ubicó la ruta anotada: la prueba mide esa rama');
+  assert.ok(leerCarril(state, 's26').rutas.includes(archivo), 'con la lista de repos incompleta, se anota');
 });

@@ -1839,9 +1839,9 @@ test('Config_ModelQuestion_Retirada_ValidaConAviso — la pregunta de Fable ya n
 test('Response_ClosedVocabulary_IntegerRange_DefaultsByStyle @story-2.31 @ac-1 @ac-4 @ac-6 — cómo contesta el asistente: vocabulario cerrado, largo acotado y el tope del estilo', () => {
   const C = lib();
   const con = (perfil, env = {}) => cargar({ home: casa(), arnes: arnesCon(perfil), env });
-  // sin valor: neutral, es, y el tope del estilo
+  // sin valor: neutral, el idioma de la persona y el tope del estilo
   let c = con({});
-  assert.deepEqual(C.respuesta(c), { language: 'es', style: 'neutral', max_chars: C.TOPE_POR_ESTILO.neutral, origen: { language: 'default', style: 'default', max_chars: 'estilo' } });
+  assert.deepEqual(C.respuesta(c), { language: 'auto', style: 'neutral', max_chars: C.TOPE_POR_ESTILO.neutral, origen: { language: 'default', style: 'default', max_chars: 'estilo' } });
   assert.deepEqual(C.TOPE_POR_ESTILO, { executive: 1300, detailed: 3000, neutral: 2000 });
   // el perfil de TYCON
   c = con({ response: { language: 'es', style: 'executive', max_chars: 1300 } });
@@ -1864,10 +1864,36 @@ test('Response_ClosedVocabulary_IntegerRange_DefaultsByStyle @story-2.31 @ac-1 @
   fs.writeFileSync(p, JSON.stringify({ response: { style: 'executive' } }));
   const ok = cli(['response', '--json'], { home, env: { TYCON_PROFILE: p } });
   assert.equal(ok.status, 0, ok.stderr);
-  assert.deepEqual(JSON.parse(ok.stdout), { language: 'es', style: 'executive', max_chars: 1300, origen: { language: 'default', style: 'perfil', max_chars: 'estilo' } });
+  assert.deepEqual(JSON.parse(ok.stdout), { language: 'auto', style: 'executive', max_chars: 1300, origen: { language: 'default', style: 'perfil', max_chars: 'estilo' } });
   fs.writeFileSync(p, JSON.stringify({ response: { style: 'fancy' } }));
   const rota = cli(['response', '--json'], { home, env: { TYCON_PROFILE: p } });
   assert.equal(rota.status, 2); assert.equal(rota.stdout, '');
+});
+
+test('T1 ResponseLanguage_AceptaAuto @story-8.149 @ac-1 — response.language acepta es, en y auto; otro valor es configuración rota', () => {
+  const C = lib();
+  const con = (perfil, env = {}) => cargar({ home: casa(), arnes: arnesCon(perfil), env });
+  for (const v of ['es', 'en', 'auto']) {
+    const c = con({ response: { language: v } });
+    assert.deepEqual(c.errores, [], `${v} vale`);
+    assert.equal(C.respuesta(c).language, v);
+    assert.equal(C.respuesta(c).origen.language, 'perfil');
+    assert.deepEqual(con({}, { TYCON_RESPONSE_LANGUAGE: v }).errores, [], `${v} por variable vale`);
+  }
+  assert.ok(con({ response: { language: 'fr' } }).errores.some((e) => /response\.language/.test(e.clave)), 'fr es configuración rota');
+  assert.ok(con({}, { TYCON_RESPONSE_LANGUAGE: 'fr' }).errores.some((e) => e.clave === 'TYCON_RESPONSE_LANGUAGE'), 'fr por variable, rota');
+});
+
+test('T3 ResponseLanguage_FabricaEsAuto @story-8.149 @ac-2 — sin valor declarado, response.language es auto, con el origen de fábrica', () => {
+  const C = lib();
+  const c = cargar({ home: casa(), arnes: arnesCon({}), env: {} });
+  assert.equal(C.DEFAULTS['response.language'], 'auto');
+  assert.deepEqual([C.respuesta(c).language, C.respuesta(c).origen.language], ['auto', 'default']);
+  // `response --json`, lo que leen los sincronizadores
+  const home = casa();
+  const r = cli(['response', '--json'], { home, env: { TYCON_PROFILE: '0' } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual([JSON.parse(r.stdout).language, JSON.parse(r.stdout).origen.language], ['auto', 'default']);
 });
 
 

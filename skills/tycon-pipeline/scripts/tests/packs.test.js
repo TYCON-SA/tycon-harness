@@ -1188,3 +1188,48 @@ test('T15 ClientesMudado_LeenLasDosVersiones @story-2.63 @ac-10 — el paquete c
   // y el anterior aceptaba el revisor en la raíz, que el nuevo ya no
   assert.deepStrictEqual(anterior.validateTree(paqueteConRevisor({ enElPaquete: false, enLaRaiz: true })), []);
 });
+
+// ── las señales del camino corto en el manifiesto ──────────────────────────────────────────────────────────────────
+const SENAL = { id: 'proceso', strength: 'strong', files: ['**/*.ts'], pattern: 'executeQuery\\(', says: 'una llamada a un proceso' };
+
+// 🔴 Falla con: la clave nueva que vuelve roto al paquete («fuera del vocabulario»), una señal rota que también, o un
+// lector liviano que no la devuelve.
+test('T23 Packs_ShortPathSignals_EnElVocabularioYEnElLector @story-8.196 @ac-15', () => {
+  const packs = require('../lib/packs.js');
+  packs.resetCache();
+  const conSenales = { ...PRUEBA, shortPathSignals: [SENAL, { id: 'rota', strength: 'strong', pattern: '(' }] };
+  const packsDir = paquetes({ prueba: conSenales });
+  const cargados = packs.cargarPaquetes({ packsDir, agentsDir: agentes(), banderas: packs.BANDERAS });
+  assert.equal(cargados.length, 1, 'la señal rota no vuelve roto al paquete');
+  assert.ok(cargados[0].revisores.length > 0, 'sus revisores siguen cargando');
+  assert.deepEqual(cargados[0].senales.map((s) => s.id), ['proceso', 'rota']);
+  const v = require('../lib/source-signals.js').validarSenales(cargados[0].senales, 'prueba');
+  assert.deepEqual(v.validas.map((s) => s.id), ['proceso']);
+  assert.match(v.avisos.join('\n'), /paquete «prueba», señal «rota»/);
+  // y el freno las carga con un paquete cuyos revisores usan condiciones de detección (como los del stack)
+  const antes = process.env.TYCON_PACKS_DEFAULT;
+  process.env.TYCON_PACKS_DEFAULT = 'all';
+  try {
+    packs.resetCache();
+    const c = require('../lib/source-signals.js').cargar({ repo: repo(), packsDir });
+    assert.deepEqual(c.senales.map((s) => s.id), ['proceso', 'nombre-de-archivo']);
+    assert.equal(c.avisos.length, 1);
+  } finally { if (antes === undefined) delete process.env.TYCON_PACKS_DEFAULT; else process.env.TYCON_PACKS_DEFAULT = antes; }
+  const liviano = require(path.join(RAIZ, 'scripts', 'lib', 'installed-packs.js')).leerPaquetes({ packsDir });
+  assert.deepEqual(liviano.errores, []);
+  assert.deepEqual(liviano.paquetes[0].senales.map((s) => s.id), ['proceso', 'rota']);
+  // una que no es lista llega tal cual, para que el aviso diga «no es una lista» en vez de perderla en silencio
+  const malformada = require(path.join(RAIZ, 'scripts', 'lib', 'installed-packs.js')).leerPaquetes({ packsDir: paquetes({ prueba: { ...PRUEBA, shortPathSignals: { id: 'x' } } }) });
+  assert.deepEqual(malformada.paquetes[0].senales, { id: 'x' });
+  assert.match(require('../lib/source-signals.js').validarSenales(malformada.paquetes[0].senales, 'prueba').avisos.join('\n'), /no es una lista/);
+});
+
+test('T18 Pack_Bizuit_SenalesValidas @story-8.196 @ac-6 @ac-15', (t) => {
+  const archivo = path.join(PACKS_REALES, 'bizuit', 'pack.json');
+  if (!fs.existsSync(archivo)) { t.skip(`NO MEDIDO: el paquete del stack no está en ${PACKS_REALES} (${SKIP_PUBLIC || 'copia sin el paquete'}); se mide en el repo del equipo`); return; }
+  const json = JSON.parse(fs.readFileSync(archivo, 'utf8'));
+  const v = require('../lib/source-signals.js').validarSenales(json.shortPathSignals, 'bizuit');
+  assert.deepEqual(v.avisos, []);
+  assert.deepEqual(v.validas.map((s) => s.id).sort(), ['autorizacion', 'proceso', 'rol-en-pantalla']);
+  assert.ok(v.validas.every((s) => s.strength === 'strong'));
+});

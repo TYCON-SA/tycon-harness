@@ -6,13 +6,13 @@
   "blocks": {
     "ado-runs-list-lag": 4500,
     "background-execution": 4000,
-    "response-style": 7000,
+    "response-style": 7200,
     "tool-names": 2500,
     "tool-names.codex": 4700
   },
   "_reasons": {
     "ado-runs-list-lag": "4.134 tras la poda del 2026-09-06: de 9.979 a 4.134 (−59 %) sin perder una regla. Las seis reglas quedaron con sus comandos; los seis casos disparadores —fechas, capturas, citas del dev— se fueron a guides/integrations/ado-cola-y-listados.md, que es donde se leen cuando hacen falta. La poda también borró una coletilla que ya era FALSA: la regla del trigger `.cs` de FRESNOBZExtBackend se retiró el 2026-09-02 y el bloque la seguía dando por vigente. El techo es el tamaño de hoy más margen, no un permiso para crecer.",
-    "response-style": "6.270 tras la poda del 2026-09-03; lo que quedó adentro está a propósito (guides/response-style.md dice qué y por qué).",
+    "response-style": "6.270 tras la poda del 2026-09-03; lo que quedó adentro está a propósito (guides/response-style.md dice qué y por qué). Subido de 7.000 a 7.200 el 2026-11-01 (story 8.149, decisión del dueño al firmar el plan): con `response.language: auto` el texto es `<estilo>.auto.md`, el de castellano más la regla de idioma (≈170 bytes), y `executive.es.md` ya pesaba 6.959. Los 200 bytes son para esa regla, no un permiso para crecer.",
     "background-execution": "2.756 tras la auditoría de instrucciones del 2026-09-23: el caso disparador salió del bloque. No sumar casos al bloque: van a la guía.",
     "tool-names": "1.873; es una tabla de nombres, crece sólo si aparece una tool nueva.",
     "tool-names.codex": "4.569 al 2026-09-06: la variante de Codex trae la tabla de nombres de las dos herramientas más los MCP de Codex; es una tabla, crece sólo si aparece una tool nueva.",

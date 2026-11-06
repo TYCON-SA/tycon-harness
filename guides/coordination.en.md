@@ -35,6 +35,14 @@ it is another conversation. The session is told how to get it back, but does not
 ask again and give a new click. `/coordinate` in that session shows the machine's status. The program the
 coordinator uses is `<harness>/scripts/tools/coordination.js`.
 
+## The mother rule: the coordinator improves her own process
+
+**The coordinator reviews her own process without being asked.** When a step repeats, queues up or yields little
+(review rounds, repeated signatures, repeated passes, waits, routine approvals), she measures it: how many times, how
+much time, how many tokens and what it found. She brings it to the hourly batch with the proposed cut and the data. If
+the cut is in her hands, she applies it and says so; if not, she proposes it with her recommendation. Every batch carries
+the section "what cost too much and what I changed", even if it says nothing.
+
 ## What goes to the owner
 
 Four things go to the owner, always the same ones:
@@ -281,6 +289,29 @@ with something to say, one line says how many are waiting and which is the oldes
 the count changes. A pending entry whose file is gone does not count: the owner signed it and deleted it. Without a
 signatures folder there are no pending entries, and the notice never shows.
 
+### Signing rules for every coordinator
+
+The owner signs from the phone, with a click in the coordinator's box. For that to be enough:
+
+- **No script or command for the owner's terminal**, except what cannot be undone: turning off the brake, production
+  and an emergency. A session that needs a signature runs the command in its own tab, as is and alone, so the brake
+  denies it and writes it down, and tells the coordinator "signature pending".
+- **Each signature is a row of the signature list**, and it goes through as a box with `owner-next`, one at a time.
+- **Before each box, two lines**: what changes if the owner signs, and the coordinator's recommendation.
+- **The plan is not pasted into the chat before its signature.** The plan approval box brings "What it does", the files
+  and the path of the full plan, and the click on that box is enough. The full plan is shown only if the owner asks for
+  it. A plan without those two sections is shown in full before the box.
+- **Signatures and decisions go together, in one batch per hour, and the batch never holds up the work.** What leaves a
+  session stopped goes to the owner right away. The rest goes to the batch, and the session keeps going on a marked
+  assumption meanwhile. An improvement in the coordinator's hands is applied at once: it does not wait for the batch.
+  A session that waits for the owner and has no other work counts as stopped: first the coordinator gives it work from
+  the queue, if there is something it can take; if not, the question goes to the owner right away.
+- **The background `owner-wait` does not take the click away from the owner**: the brake lets it through if it runs
+  exactly as its notice asks. Any other live background console does stop it: close it before asking for the box.
+- **A request without code is approved by the coordinator**: if it brings only stories, records, evidence, memory or
+  documentation, the coordinator gives on the owner's behalf the two approvals of the merge (the message and the push)
+  and shows the owner the list in the hourly batch. With a single code file, both stay with the owner.
+
 ### The signature list: written down and, on coming back, one at a time
 
 With `approvals.signature_list` set to `on`, what waits for the person stays written down in a single record, and `/office`
@@ -300,7 +331,8 @@ turned on in the profile, or on the machine to try it out.
   If the person already answered «aprobado» to that box, it does not ask again.
 - **What `owner-next` gives.** One row, the oldest: a box to show without changing a letter, with a label («Firma 2/5»), and the
   notice for the target session. **A permission goes first**, with its own counter and box. What goes through the terminal comes
-  last, with no box. If the plan has not been seen yet in that tab, it gives the plan to write out before the box. If a row
+  last, with no box. If the plan has not been seen yet in that tab and does not bring "What it does" and "Files", it
+  gives the plan to write out before the box. If a row
   cannot be shown, or its repetition is denied, `owner-next --after <id>` gives the next one.
 - **The session that asked always repeats the command**, with or without a coordinator. On «Sí», the coordinator sends it the
   notice and the session repeats the same command within 30 minutes. With an unused click, `owner-next` skips that row and says
@@ -384,6 +416,17 @@ named `tests`, `e2e`, `cypress` or `playwright` counts as a test, and asks for n
 save in another folder is charged the limit of the session's branch: if it really is not part of that fix, choose with the click.
 And in a repo with no commits, a file with `git add -N` that goes up with `git commit -a` does not get the high-risk mark.
 
+**A change to the data is not a short path.** On opening, the session answers whether the change alters where a piece of
+data comes from or who can see it (`"datos": "sin-cambio"` or `"cambian"`); with «cambian» it does not open, and an open
+lane does not change. On saving, the brake looks for the stack pack's signals (a call to a process, a role check, an
+endpoint's authorization) in the lines the lane adds or removes, each repo against its own base, and with one it does not
+save. If the session thinks it is a false positive, it runs `marker.js adhoc allow-data-change --changed "<what changed>"
+--recommends <pasar|historia|descartar> --why "<why>"` and sends you the question the brake gives it: what stopped it,
+with the line's text, what really changed and what it recommends. The signature is `adhoc-lane:datos`, and only the
+owner's click approves it, in their tab or in yours: «Sí, aprobar» lets it through, and «No» sends the session to write the
+story, or to discard what the lane did if the owner says so. A written «aprobado», the permission window and delegation do
+not count. The click covers those signals: another line with a signal stops it again. When in doubt, a story.
+
 **With the mockup and the screenshot, what was built is compared with the mockup.** It compares texts, not the drawing: if a
 text of the mockup is not in the fix's screens or in the other screens of its repos, it does not save. A text that already
 exists in another screen passes, even if the fix did not build it. A difference is declared in `<mockup>-diferencias.md`,
@@ -408,8 +451,9 @@ recorded in a nested worktree that was deleted keeps asking for a mockup and a s
 
 ## A stuck session, instantly
 
-**When designated, and every time it ends, the coordinator runs `node scripts/tools/coordination.js owner-wait` in the
-background.** It looks every 2 seconds and ends with one line per novelty, and ending wakes the coordinator up:
+**When designated, and every time it ends, the coordinator runs
+`node "<harness>/scripts/tools/coordination.js" owner-wait` in the background,** with the full path its notice gives: it
+is the only background console with which the owner can still sign with a click. It looks every 2 seconds and ends with one line per novelty, and ending wakes the coordinator up:
 
 - "<session> espera un permiso desde las HH:MM: <tool> <what it asks for>. Para entrar: claude attach <session>": the
   coordinator passes it to the owner with the session, what it asks for and a recommendation. A person answers the

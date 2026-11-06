@@ -71,6 +71,7 @@
 const path = require('path');
 const { isTestPath, isImplPath } = require('./atdd-order.js');
 const { isInside } = require('./atdd-preedit.js');
+const { homePath, signatureCommand } = require('./home-command.js');
 
 // Código = lo que `atdd-order` ya considera código, más lo que en los stacks del equipo se edita
 // como implementación y no es "markup de specs": SQL (migraciones), estilos, templates .NET/HTML.
@@ -116,10 +117,13 @@ function cupoAlDeclarar({ pedido, existing, via }) {
 }
 /** El cupo de un carril: el suyo, o el de siempre si no trae uno que se pueda leer. */
 const cupoDelCarril = (adhoc) => (Number.isFinite(Number(adhoc && adhoc.maxFiles)) && Number(adhoc.maxFiles) > 0 ? Number(adhoc.maxFiles) : DEFAULT_ADHOC_MAX_FILES);
-const MARKER_JS = '~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js';
+// la ruta de marker.js bajo la carpeta de la persona: `node ${MARKER_JS} …` imprime `node "$HOME/…"`, que anda también en
+// PowerShell; una firma se imprime con la ruta absoluta (signatureCommand), porque la forma de la firma exige un literal
+const MARKER_REL = '.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js';
+const MARKER_JS = homePath(MARKER_REL);
 // el tablero de la oficina, en la carpeta de estado: lo escribe sólo su comando
 const BOARD_FILE = /(^|[\\/])coordination[\\/]tablero\.json$/;
-const BOARD_JS = '~/.tycon/harness/scripts/tools/office/board.js';
+const BOARD_JS = homePath('.tycon/harness/scripts/tools/office/board.js');
 
 function norm(p) {
   return String(p || '').replace(/\\/g, '/');
@@ -385,7 +389,7 @@ const PREGUNTA_SIN_CARRIL = [
 const TOPE_DE_NOMBRES = 50;
 
 function textoDelTope({ harness = true, tocados, cupo, archivos = [], ibaA = null, via = '' }) {
-  const pedido = `node ${MARKER_JS} adhoc set '{"reason":"<qué y por qué>","maxFiles":<N>}'`;
+  const pedido = `${signatureCommand(MARKER_REL)} adhoc set '{"reason":"<qué y por qué>","maxFiles":<N>}'`;
   return [
     '⛔ camino corto — PASÓ EL TOPE DE ARCHIVOS',
     via,
@@ -530,7 +534,7 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       '      presentáselo al user. NO codees "mientras tanto".',
       '   2. Si el user YA aprobó el plan (palabras claras de proceder, sin condiciones) →',
       // el paso como lo acepta el marcador de esta ejecución: por nombre en el nuevo, por número en el viejo
-      `        node ${MARKER_JS} complete-step ${require('./steps.js').schemeOf(marker) === 2 ? 'approve-plan' : '3'} --approved "<cita textual de la aprobación>"`,
+      `        ${signatureCommand(MARKER_REL)} complete-step ${require('./steps.js').schemeOf(marker) === 2 ? 'approve-plan' : '3'} --approved "<cita textual de la aprobación>"`,
       ...(storyNeedsMockup(marker) ? ['        --mockup-approved "<cita: quién aprobó la maqueta y por qué vía>"   (story con pantalla: la maqueta la ve una persona)'] : []),
       '      (ningún plan se aprueba solo: lo aprueba el user, o la coordinadora con la revisión automática).',
       '   3. Si estás retomando un pipeline (sesión nueva / compactación) → `pipeline.js next` +',
@@ -566,7 +570,9 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
     '       El pipeline setea el marker en el «Arranque» y este portón se abre solo.',
     '',
     '   (b) HOTFIX / AJUSTE CHICO SIN STORY (bug puntual, refactor acotado, cleanup) → carril ad-hoc:',
-    `         node ${MARKER_JS} adhoc set '{"reason":"<qué y por qué>"}'`,
+    `         ${signatureCommand(MARKER_REL)} adhoc set '{"reason":"<qué y por qué>","datos":"sin-cambio"}'`,
+    '       "datos": "sin-cambio" sólo si el cambio no cambia de dónde sale un dato ni quién lo puede ver; si lo cambia, va',
+    '       por historia, aunque sea corta. Ante la duda, historia.',
     '       Lo aprueba una persona en la ventana de permiso, que le muestra el motivo y el cupo: corré el comando solo, en',
     `       su forma exacta. Cupo por default: ${DEFAULT_ADHOC_MAX_FILES} archivos de implementación distintos (ajustable con "maxFiles"). Queda en adhoc.log.`,
     ...resume,
@@ -666,5 +672,5 @@ module.exports = {
   markerDeleteMessage, storyByConsoleMessage,
   computeStoryGate, blockMessage, textoDelTope, TOPE_DE_NOMBRES, cupoDelCarril, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, isOwnerApprovalsRecord, isLaunchedSessionsRecord, isOfficeMailboxRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
   STORY_INTENT_PATTERNS,
-  DEFAULT_ADHOC_MAX_FILES, DELEGATED_ADHOC_MAX_FILES, cupoDelegado, cupoAlDeclarar, EXTRA_CODE_EXTS, NEVER_CODE_SEGMENTS, HARNESS_REPO_SEGMENTS, MARKER_JS,
+  DEFAULT_ADHOC_MAX_FILES, DELEGATED_ADHOC_MAX_FILES, cupoDelegado, cupoAlDeclarar, EXTRA_CODE_EXTS, NEVER_CODE_SEGMENTS, HARNESS_REPO_SEGMENTS, MARKER_JS, MARKER_REL,
 };

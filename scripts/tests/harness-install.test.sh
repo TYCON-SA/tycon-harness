@@ -1189,11 +1189,11 @@ if corre S16; then
   COPIA="$(printf '%s\n' "$SALIDA" | sed -n 's/^copia de respaldo: \(.*\) · volver: .*$/\1/p' | head -1)"
   [ -n "$COPIA" ] && [ -d "$COPIA" ] && case "$COPIA" in "$LAB_HOME/.claude/.tycon-pipeline/harness/backups/"*) ok "S16-T8 dice dónde quedó la copia de respaldo, y la carpeta existe" ;; *) mal "S16-T8 la copia no está bajo backups/: $COPIA" ;; esac \
     || mal "S16-T8 no dice una carpeta de copia que exista («${COPIA}»): $SALIDA"
-  case "$SALIDA" in *"volver: node ~/.claude/$PLACE_NAME/scripts/setup/harness.js rollback --list"*) ok "S16-T8 …y cómo volver (por el lugar: story 8.19)" ;; *) mal "S16-T8 no dice cómo volver: $SALIDA" ;; esac
+  case "$SALIDA" in *"volver: node \"\$HOME/.claude/$PLACE_NAME/scripts/setup/harness.js\" rollback --list"*) ok "S16-T8 …y cómo volver (por el lugar: story 8.19)" ;; *) mal "S16-T8 no dice cómo volver: $SALIDA" ;; esac
   case "$SALIDA" in *"registro: $LAB_HOME/.claude/.tycon-pipeline/harness/startup.log"*) ok "S16-T8 dice la ruta del registro" ;; *) mal "S16-T8 no dice la ruta del registro: $SALIDA" ;; esac
   DESPUES="$(printf '%s\n' "$SALIDA" | sed -n "$((N_SIG + 1)),\$p" | grep -c .)"
   [ "$DESPUES" = 3 ] && ok "S16-T8 «qué sigue» son tres líneas, las últimas" || mal "S16-T8 «qué sigue» tiene $DESPUES líneas: $SALIDA"
-  case "$SALIDA" in *"harness.js doctor"*) ok "S16-T8 «qué sigue» nombra doctor" ;; *) mal "S16-T8 «qué sigue» no nombra doctor" ;; esac
+  case "$SALIDA" in *"harness.js\" doctor"*) ok "S16-T8 «qué sigue» nombra doctor" ;; *) mal "S16-T8 «qué sigue» no nombra doctor" ;; esac
   # la segunda corrida
   SALIDA="$(harness install --yes 2>&1)"; RC=$?
   [ "$RC" = 0 ] && case "$SALIDA" in *"sin cambios"*) ok "S16-T8 la segunda ejecución dice «sin cambios»" ;; *) mal "S16-T8 la segunda ejecución no dice «sin cambios»: $SALIDA" ;; esac || mal "S16-T8 segunda ejecución rc $RC: $SALIDA"
@@ -1253,11 +1253,11 @@ if corre S16; then
   a_medias() { # a_medias <caso>
     [ "$RC" = 1 ] && ok "S16-T10 $1: install sale 1" || mal "S16-T10 $1: rc $RC: $SALIDA"
     case "$SALIDA" in *"quedó a medias"*) ok "S16-T10 $1: dice que la instalación quedó a medias" ;; *) mal "S16-T10 $1: no dice «quedó a medias»: $SALIDA" ;; esac
-    case "$SALIDA" in *"harness.js doctor"*) ok "S16-T10 $1: manda a doctor por el detalle" ;; *) mal "S16-T10 $1: no nombra doctor: $SALIDA" ;; esac
+    case "$SALIDA" in *"harness.js\" doctor"*) ok "S16-T10 $1: manda a doctor por el detalle" ;; *) mal "S16-T10 $1: no nombra doctor: $SALIDA" ;; esac
     case "$SALIDA" in *"registro: $LAB_HOME/.claude/.tycon-pipeline/harness/startup.log"*) ok "S16-T10 $1: dice el registro" ;; *) mal "S16-T10 $1: no dice el registro: $SALIDA" ;; esac
     local copia; copia="$(printf '%s\n' "$SALIDA" | sed -n 's/^copia de respaldo: \(.*\) · volver: .*$/\1/p' | head -1)"
     [ -n "$copia" ] && [ -d "$copia" ] && ok "S16-T10 $1: dice la copia de respaldo, y existe" || mal "S16-T10 $1: no dice una copia que exista («${copia}»): $SALIDA"
-    case "$SALIDA" in *"harness.js install"*"harness.js uninstall"*) ok "S16-T10 $1: da las dos salidas (install otra vez, o uninstall)" ;; *) mal "S16-T10 $1: no da las dos salidas: $SALIDA" ;; esac
+    case "$SALIDA" in *"harness.js\" install"*"harness.js\" uninstall"*) ok "S16-T10 $1: da las dos salidas (install otra vez, o uninstall)" ;; *) mal "S16-T10 $1: no da las dos salidas: $SALIDA" ;; esac
     case "$SALIDA" in *"qué sigue:"*) mal "S16-T10 $1: imprime «qué sigue» con la instalación a medias" ;; *) ok "S16-T10 $1: no imprime «qué sigue»" ;; esac
   }
   a_medias "el aplicador sale 1"

@@ -600,7 +600,7 @@ if corre T32; then
   SALIDA="$(ask startup 2>&1)"; RC=$?
   [ "$RC" = 0 ] && [ "$(head_de "$LAB_TREE")" = "$ANTES" ] && ok "T32 ask con versión nueva: startup no aplica" || mal "T32 ask aplicó o falló: rc $RC HEAD $(head_de "$LAB_TREE"): $SALIDA"
   N="$(estado "d.get('notice') or ''")"
-  case "$N" in "arnés "*"+${NUEVO:0:7} disponible (instalada "*"+${ANTES:0:7}, canal stable) · aplicar: node "*"harness.js update --yes · cambios: "*) ok "T32 el aviso: número de la nueva con su sha, la instalada, el canal y el comando" ;; *) mal "T32 aviso: $N" ;; esac
+  case "$N" in "arnés "*"+${NUEVO:0:7} disponible (instalada "*"+${ANTES:0:7}, canal stable) · aplicar: node \"\$HOME/"*"harness.js\" update --yes · cambios: "*) ok "T32 el aviso: número de la nueva con su sha, la instalada, el canal y el comando" ;; *) mal "T32 aviso: $N" ;; esac
   case "$N" in *"cambios: git -C $(cd "$LAB_TREE" && pwd -P) log ${ANTES:0:7}..${NUEVO:0:7}") ok "T32 remoto interno: «cambios» es el git log a..b para pegar" ;; *) mal "T32 cambios (interno): $N" ;; esac
   case "$N" in *"/compare/"*) mal "T32 remoto interno con un enlace de comparación: $N" ;; *) ok "T32 …y sin enlace" ;; esac
   # dos pasos: lo que escribió ESTE arranque lo imprime el hook síncrono de la sesión siguiente, dirigido a la persona
@@ -760,7 +760,7 @@ if corre T32; then
   SALIDA="$(ask update 2>&1)"; RC=$?
   [ "$RC" = 3 ] && [ "$(head_de "$LAB_TREE")" = "$ANTES" ] || mal "T32 (h) update en ask sin --yes: rc $RC HEAD $(head_de "$LAB_TREE"): $SALIDA"
   N="$(estado "d.get('notice') or ''")"
-  case "$N" in "arnés "*"+${NUEVO:0:7} disponible (instalada "*"+${ANTES:0:7}, canal stable) · aplicar: node "*"harness.js update --yes · cambios: git -C "*" log ${ANTES:0:7}..${NUEVO:0:7}") ok "T32 update sin --yes en ask deja el aviso de la versión nueva" ;; *) mal "T32 (h) update sin --yes no dejó el aviso: «${N}»" ;; esac
+  case "$N" in "arnés "*"+${NUEVO:0:7} disponible (instalada "*"+${ANTES:0:7}, canal stable) · aplicar: node \"\$HOME/"*"harness.js\" update --yes · cambios: git -C "*" log ${ANTES:0:7}..${NUEVO:0:7}") ok "T32 update sin --yes en ask deja el aviso de la versión nueva" ;; *) mal "T32 (h) update sin --yes no dejó el aviso: «${N}»" ;; esac
   SALIDA="$(TYCON_UPDATE_APPLY=ask node "$HOOK_DIR/branch-guard-notice.js" 2>&1)"; RC=$?
   [ "$RC" = 0 ] && case "$SALIDA" in *"decile a la persona: arnés "*" disponible"*"update --yes"*) true ;; *) false ;; esac && ok "T32 …y el hook síncrono de la sesión siguiente lo muestra" || mal "T32 (h) hook síncrono (rc $RC): $SALIDA"
   rm -f "$LAB_TREE/.git/FETCH_HEAD"
@@ -888,7 +888,7 @@ if corre S16; then
   [ -n "$COPIA" ] && [ -d "$COPIA" ] && case "$COPIA" in "$LAB_HOME/.claude/.tycon-pipeline/harness/backups/"*) ok "S16-T9 dice la carpeta de la copia de antes, y existe" ;; *) mal "S16-T9 la copia no está bajo backups/: $COPIA" ;; esac \
     || mal "S16-T9 no dice una copia de antes que exista («${COPIA}»): $SALIDA"
   [ -n "$COPIA" ] && [ "$(j "$COPIA/manifest.json" "d['reason']")" = update ] && ok "S16-T9 …y es la copia que tomó ese update" || mal "S16-T9 la copia nombrada no es la del update: $(cat "$COPIA/manifest.json" 2>&1 | head -3)"
-  case "$SALIDA" in *"volver: node ~/.claude/tycon-harness/scripts/setup/harness.js rollback"*) ok "S16-T9 …y cómo volver (por el lugar: story 8.19)" ;; *) mal "S16-T9 no dice cómo volver: $SALIDA" ;; esac
+  case "$SALIDA" in *"volver: node \"\$HOME/.claude/tycon-harness/scripts/setup/harness.js\" rollback"*) ok "S16-T9 …y cómo volver (por el lugar: story 8.19)" ;; *) mal "S16-T9 no dice cómo volver: $SALIDA" ;; esac
   # sin nada que aplicar no promete una copia
   SALIDA="$(TYCON_UPDATE_APPLY=auto harness update 2>&1)"; RC=$?
   [ "$RC" = 0 ] && case "$SALIDA" in *"copia de antes en"*) mal "S16-T9 al día y nombra una copia: $SALIDA" ;; *) ok "S16-T9 al día: no nombra ninguna copia" ;; esac || mal "S16-T9 al día: rc $RC: $SALIDA"

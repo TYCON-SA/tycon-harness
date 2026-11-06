@@ -123,6 +123,66 @@ function avisoDeLoQueContó({ rel, via, fusion, commit, historia }) {
     : `${rel}: lo cambió el commit ${commit} de la historia ${historia}, sólo en una prueba → la evidencia sigue contando.`;
 }
 
+/**
+ * Las tandas bloqueadas a las que la historia ata un archivo, o null. Un archivo a crear de una tanda bloqueada todavía
+ * no existe, y no por eso se deja de saber si el código cambió: no anula la evidencia. Se ata con lo que la historia
+ * escribe: el comentario de su renglón en la lista que nombra la tanda (`# tanda` y su nombre o su letra), una fila
+ * de la tabla de pruebas de esa tanda (`tests_pending`) o una tarea de esa tanda (`tasks_pending`) que lo nombra. Vale sólo si TODAS las tandas que lo
+ * nombran están bloqueadas: uno que nombra también la que se entrega, o ninguna, sigue sin poder leerse.
+ */
+function tandasBloqueadasDe(content, rel) {
+  const fm = (String(content).match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1] || '';
+  const cuerpo = String(content).slice(fm.length);
+  const lineas = fm.split(/\r?\n/);
+  const tandas = [];
+  const inicio = lineas.findIndex((l) => /^pipelines\s*:\s*$/.test(l));
+  for (let i = inicio + 1; inicio >= 0 && i < lineas.length; i++) {
+    const l = lineas[i];
+    if (/^\S/.test(l) && !/^-\s/.test(l)) break;
+    const nombre = l.match(/^\s*-\s*name\s*:\s*["']?([\w-]+)/);
+    if (nombre) { tandas.push({ name: nombre[1], status: null, tests: [], tasks: [] }); continue; }
+    const t = tandas[tandas.length - 1];
+    if (!t) continue;
+    const estado = l.match(/^\s+status\s*:\s*["']?([\w-]+)/);
+    if (estado) t.status = estado[1];
+    const pruebas = l.match(/^\s+tests_pending\s*:\s*\[(.*)\]/);
+    if (pruebas) t.tests = pruebas[1].split(',').map((s) => s.replace(/["'\s]/g, '')).filter(Boolean);
+    const tareas = l.match(/^\s+tasks_pending\s*:\s*\[(.*)\]/);
+    if (tareas) t.tasks = (tareas[1].match(/\d+/g) || []).map(Number);
+  }
+  if (!tandas.some((t) => t.status === 'blocked')) return null;
+  const sinPunto = (r) => r.replace(/^\.\//, '');
+  const items = lineas.map((l) => l.match(/^\s*-\s+(?:(["'])(.*?)\1|([^\s#]+))(.*)$/)).filter(Boolean)
+    .map((m) => ({ ruta: sinPunto((m[2] !== undefined ? m[2] : m[3]).trim()), resto: m[4] }));
+  // el nombre del archivo, entero: ni pegado a otra palabra ni seguido de otra extensión (un punto final sí lo cierra).
+  // Si otro archivo declarado se llama igual, el nombre solo no dice cuál es: hace falta la ruta entera.
+  const gemelos = items.filter((it) => path.basename(it.ruta) === path.basename(rel) && it.ruta !== sinPunto(rel)).length;
+  const buscado = (gemelos ? sinPunto(rel) : path.basename(rel)).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // con la ruta entera, tampoco vale como cola de otra ruta más larga (`lib/src/a/x.js` no nombra a `src/a/x.js`)
+  const antes = gemelos ? '[^\\w./-]' : '[^\\w.-]';
+  const nombra = (texto) => new RegExp(`(^|${antes})${buscado}($|[^\\w.-]|\\.(?![\\w-]))`).test(texto);
+  const atadas = new Set();
+  // el comentario de su renglón en la lista que nombra la tanda, con la ruta como la lee la lista (entre comillas o no)
+  for (const it of items) {
+    if (it.ruta !== sinPunto(rel)) continue;
+    for (const [, letra] of (it.resto.split('#')[1] || '').matchAll(/\btanda\s+([\w-]+)/gi)) {
+      for (const t of tandas) if (t.name.toLowerCase() === letra.toLowerCase() || t.name.split('-')[0].toLowerCase() === letra.toLowerCase()) atadas.add(t);
+    }
+  }
+  // una fila de la tabla de pruebas, por su ID
+  for (const l of cuerpo.split(/\r?\n/)) {
+    const fila = l.match(/^\|\s*([A-Za-z]+\d+\w*)\s*\|/);
+    if (fila && nombra(l)) for (const t of tandas) if (t.tests.includes(fila[1])) atadas.add(t);
+  }
+  // una tarea, con sus renglones de continuación: hasta un renglón en blanco o un título
+  for (const bloque of cuerpo.split(/\r?\n(?=\s*-\s*\[.\])/)) {
+    const tarea = bloque.match(/^\s*-\s*\[.\][^\n]*?\bTask\s+(\d+)\b/);
+    if (tarea && nombra(bloque.split(/\r?\n(?=\s*(?:#|\r?$))/m)[0])) for (const t of tandas) if (t.tasks.includes(Number(tarea[1]))) atadas.add(t);
+  }
+  if (!atadas.size || [...atadas].some((t) => t.status !== 'blocked')) return null;
+  return [...atadas].map((t) => t.name);
+}
+
 // ---------------------------------------------------------------- parsing helpers
 
 function readStory(storyPath) {
@@ -1058,7 +1118,7 @@ function compute(opts) {
     // Si la causa es el PARSER (que no ve ACs de la sección), el aviso tiene que apuntar al parser.
     // Un aviso que apunta al lugar equivocado es peor que no tenerlo: consume la atención y la manda
     // al lado contrario.
-    if (onlyTable.length) warnings.push(`ACs que aporta SOLO la tabla de Tests, no la sección AC: ${onlyTable.join(', ')}. La cobertura de acá abajo los incluye igual (la tabla también vota). Antes de tocar la story, descartar que sea el parser: \`node -e "console.log(require('~/.claude/agent-skills/skills/tycon-pipeline/scripts/lib/story-checks.js').parseAcsFromSpec(require('fs').readFileSync('<story>','utf8')))"\` — si eso cuenta menos ACs de los que la sección declara a simple vista, el bug es del parser, no del formato.`);
+    if (onlyTable.length) warnings.push(`ACs que aporta SOLO la tabla de Tests, no la sección AC: ${onlyTable.join(', ')}. La cobertura de acá abajo los incluye igual (la tabla también vota). Antes de tocar la story, descartar que sea el parser: \`node -e "console.log(require(require('os').homedir()+'/.claude/agent-skills/skills/tycon-pipeline/scripts/lib/story-checks.js').parseAcsFromSpec(require('fs').readFileSync('<story>','utf8')))"\` — si eso cuenta menos ACs de los que la sección declara a simple vista, el bug es del parser, no del formato.`);
   }
 
   const wsRoot = opts.workspaceRoot || discoverWorkspaceRoot(storyPath);
@@ -1107,6 +1167,7 @@ function compute(opts) {
   const codeFiles = [];
   // Una ruta de código sin ninguna copia no se pudo leer: ninguna evidencia cuenta, porque no se sabe si cambió.
   const noLeidos = [];
+  const deTandaBloqueada = [];
   for (const rel of declared) {
     const copias = new Map();
     for (const lugar of lugares) {
@@ -1116,7 +1177,12 @@ function compute(opts) {
       try { real = fs.realpathSync(abs); } catch { /* se queda con la ruta tal cual */ }
       if (!copias.has(real)) copias.set(real, { abs, lugar });
     }
-    if (!copias.size) { noLeidos.push({ rel, lugares }); continue; }
+    if (!copias.size) {
+      const tandas = tandasBloqueadasDe(content, rel);
+      if (tandas) deTandaBloqueada.push({ rel, tandas });
+      else noLeidos.push({ rel, lugares });
+      continue;
+    }
     for (const { abs, lugar } of copias.values()) {
       const mt = mtimeMs(abs);
       // Con más de una copia, el aviso dice de qué lugar es la que no cuenta.
@@ -1125,6 +1191,10 @@ function compute(opts) {
       const kind = kindOf(rel, fePaths);
       if (mt > kindMtime[kind]) kindMtime[kind] = mt;
     }
+  }
+  if (deTandaBloqueada.length) {
+    warnings.push(`Todavía sin crear, de una tanda bloqueada: ${deTandaBloqueada.map((d) => `${d.rel} (${d.tandas.join(', ')})`).join(' · ')}. ` +
+      'No anulan la evidencia; vuelven a contar cuando su tanda deje de estar bloqueada.');
   }
   const historiaEnDone = /^status:\s*["']?done\b/m.test(String(content).split(/^---\s*$/m)[1] || '');
   for (const { rel, lugares: donde } of noLeidos) {
@@ -1623,6 +1693,7 @@ function compute(opts) {
     codeMtime: maxCodeMtime,
     // el código declarado que no está en ningún lugar de búsqueda: deja la matriz en rojo
     noLeidos,
+    deTandaBloqueada,
     stats: {
       total: acs.length,
       runtime: acs.filter((n) => perAc[n].verdict === 'RUNTIME').length,

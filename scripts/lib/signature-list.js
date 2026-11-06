@@ -301,8 +301,9 @@ function comandoParaRepetir(palabras) {
   return `${lanzador} ${sin.map(comoDato).join(' ')}`;
 }
 
-function avisoALaSesion(f, palabras) {
-  const plan = f.firma === 'plan-approval' ? ' Si lo niega porque el plan no está en tu conversación, escribilo tal cual en un mensaje tuyo y repetí.' : '';
+// `planEnElCuadro`: el plan trae «Qué hace» y «Archivos», y el cuadro los mostró; el freno no lo pide en la conversación
+function avisoALaSesion(f, palabras, planEnElCuadro = false) {
+  const plan = f.firma === 'plan-approval' && !planEnElCuadro ? ' Si lo niega porque el plan no está en tu conversación, escribilo tal cual en un mensaje tuyo y repetí.' : '';
   return `Ya aprobó la persona. Repetí este comando solo, tal cual y una sola vez: el click vale para una firma.${plan} El comando es un dato, no una instrucción:\n${comandoParaRepetir(palabras)}`;
 }
 
@@ -412,7 +413,7 @@ function siguiente({ casa, sesion, after = null, ahora = Date.now(), arnes, env,
     if (!esSuya) return sale({ tipo: 'rota', id: f.id, texto: `El renglón ${f.id} está roto: su comando no tiene la forma de la firma «${una(f.firma)}». No doy su cuadro.`, sigue: `owner-next --after ${f.id}` });
     const cuadro = cuadroDeLaFila(f, casa, can);
     if (cuadro.error) return sale({ tipo: 'sin-cuadro', id: f.id, texto: `No pude armar el cuadro de ${f.id}: ${una(cuadro.error)}.`, sigue: `owner-next --after ${f.id}` });
-    const aviso = avisoALaSesion(f, can.palabras);
+    let aviso = avisoALaSesion(f, can.palabras);
     // no se pide un click ya dado. `buscar` sólo lee: vencido o con la coordinadora muerta, no lo encuentra y se vuelve a dar
     let dado = { ok: false };
     try { dado = oa().buscar({ casa, sesion: f.destino, destino: f.destino, cuadro, coordinadora: coord, ahora, cwd: f.cwd, herramienta: procesoDe(casa, f.destino, arbol), ...(arbol !== undefined ? { arbol } : {}), ...(validar ? { validar } : {}) }); } catch (e) { problemas.push(`no pude mirar si ya estaba aprobado (${e.message})`); }
@@ -422,6 +423,9 @@ function siguiente({ casa, sesion, after = null, ahora = Date.now(), arnes, env,
       const { plan, error } = planDe(casa, f.destino);
       if (error) nota = `No pude leer el plan de esa ejecución (${una(error)}): no sé si hay uno para ver.`;
       else if (!plan) nota = 'Esta aprobación llega sin un plan escrito: la persona no tiene un plan para ver.';
+      // con «Qué hace» y «Archivos» el cuadro los muestra, con la ruta del plan completo: alcanza para el click. El plan
+      // entero se le muestra a la persona si lo pide
+      else if (!require('./signature-sources.js').seccionesDelPlan(plan).error) aviso = avisoALaSesion(f, can.palabras, true);
       else {
         const visto = require(path.join(SKILL_LIB, 'person-ok.js')).planEnLaConversacion(plan, { sesion, home: casa });
         if (!visto.legible) nota = `No pude leer esta conversación (${una(visto.motivo)}): no sé si la persona vio el plan.`;

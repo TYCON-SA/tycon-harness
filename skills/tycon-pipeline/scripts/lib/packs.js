@@ -32,7 +32,9 @@
  * ── EL MANIFIESTO (vocabulario cerrado — VOCABULARIO, abajo) ─────────────────────────────────────
  *   { "name", "description", "guides": [...], "skills"?: "<carpeta>", "agents"?: "<carpeta>", "reviewers": [ { "agent", "group", "when",
  *     "surface", "depth", "prefixes", "needsStory"?, "prompt"?, "model"?, "note"? } ],
- *     "siblings"?: [ { "path", "name" } ] }   ← los plugins hermanos del corral del banco
+ *     "siblings"?: [ { "path", "name" } ],   ← los plugins hermanos del corral del banco
+ *     "shortPathSignals"?: [ { "id", "strength", "pattern", "files"?, "exclude"?, "says" } ] }   ← lo que el freno del camino
+ *   corto busca en las líneas del cambio (lib/source-signals.js); una señal rota es un aviso, no un paquete roto
  *   `skills` y `agents`: carpetas DEL PAQUETE (rutas relativas a su carpeta, sin salir de ella) con sus skills
  *   y sus agentes. Un revisor se busca primero en `agents` del paquete y después en la carpeta de agentes de la raíz; el
  *   mismo nombre en los dos lugares es un paquete roto (no se sabe cuál corre).
@@ -62,7 +64,7 @@ const path = require('path');
 const RAIZ_AGENT_SKILLS = path.resolve(__dirname, '..', '..', '..', '..');
 
 const VOCABULARIO = Object.freeze({
-  manifiesto: Object.freeze(['name', 'description', 'guides', 'skills', 'agents', 'reviewers', 'siblings']),
+  manifiesto: Object.freeze(['name', 'description', 'guides', 'skills', 'agents', 'reviewers', 'siblings', 'shortPathSignals']),
   hermano: Object.freeze(['path', 'name']),
   revisor: Object.freeze(['agent', 'group', 'when', 'surface', 'depth', 'prefixes', 'needsStory', 'prompt', 'model', 'note']),
   condicion: Object.freeze(['all', 'any', 'no', 'detection', 'files', 'added']),
@@ -376,6 +378,8 @@ function cargarPaquetes({ packsDir, agentsDir, nucleo = [], banderas = [] } = {}
       agentes: path.join(p.dir, json.agents || 'agents'),
       revisores: json.reviewers.map(normalizarRevisor),
       hermanos: (json.siblings || []).map((h) => ({ ruta: h.path, nombre: h.name })),
+      // las señales del camino corto: las valida source-signals.js, y una rota es un aviso, no un paquete roto
+      senales: json.shortPathSignals == null ? [] : json.shortPathSignals,
     });
   }
   if (errores.length) throw new PackError(errores);

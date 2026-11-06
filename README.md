@@ -72,6 +72,9 @@ and stories—; then, story by story.
     choice". It goes by **story**.
   - **If it bundles several topics**, it is not small: it is several short paths, or a story.
   - **Risk is another matter.** A small high-risk feature also goes by short path, and the person approves it.
+  - **Except for data.** A change to where a piece of data comes from, or who can see it, goes through a story, even a
+    small one (permissions, roles, a process's own security), unless the owner lets it through with a click; when in
+    doubt, a story.
 
   **Who decides and who checks.** Whoever opens the work judges the size, but if you work with a coordinating session,
   you do not decide alone: the short path is approved by the coordinating session or you. The harness enforces it:

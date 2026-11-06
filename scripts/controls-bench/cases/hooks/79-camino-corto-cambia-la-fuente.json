@@ -1,0 +1,73 @@
+{
+  "__doc": "B1 Banco_CaminoCortoCambiaLaFuente @story-8.196 @ac-7 @ac-8. El caso real, de juguete: el servicio de un formulario deja de pedir un dato al endpoint propio y pasa a pedírselo a un proceso, por camino corto. El freno de guardar busca las señales del paquete en las líneas del carril y no guarda: va por historia. Un arreglo chico de texto en el mismo archivo guarda. Va en un .ts de servicio: una pantalla frenaría antes por su maqueta (8.181).",
+  "hooks": [
+    {
+      "hook": "on-pre-commit.js",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-pre-commit.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "camino-corto-cambia-la-fuente-no-guarda",
+          "type": "must-block",
+          "_por_que": "el arreglo pasa a pedir el dato a un proceso: cambia de dónde sale y quién lo ve, y eso no es camino corto.",
+          "env": {
+            "TYCON_PACKS_DIR": "${FIXTURE}/.senales",
+            "TYCON_PACKS_DEFAULT": "all"
+          },
+          "setup": [
+            "git init -q -b main . && mkdir -p src/servicios && printf 'import { pedir } from \"./servicios\";\\nconst c = await pedir(id);\\n' > src/servicios/comprobante.ts && printf '.senales/\\n' > .gitignore && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && git update-ref refs/remotes/origin/main HEAD && git checkout -q -b arreglo",
+            "mkdir -p .senales/acme/agents && printf -- '---\\nname: rev-acme\\n---\\n# rev-acme\\n' > .senales/acme/agents/rev-acme.md && printf '%s' '{\"name\":\"acme\",\"description\":\"señales del banco\",\"reviewers\":[{\"agent\":\"rev-acme\",\"group\":\"base\",\"when\":{\"detection\":\"csModified\"},\"surface\":{\"paths\":[\"**/*.cs\"]},\"depth\":\"lean\",\"prefixes\":[\"ACM\"]}],\"shortPathSignals\":[{\"id\":\"proceso\",\"strength\":\"strong\",\"files\":[\"**/*.ts\"],\"pattern\":\"\\\\.process\\\\.\\\\w+\\\\(|processName\\\\s*:\",\"says\":\"una llamada a un proceso\"}]}' > .senales/acme/pack.json",
+            "printf 'import { sdk } from \"./sdk\";\\nconst c = await sdk.process.start({ processName: \"Comprobante\", id });\\n' > src/servicios/comprobante.ts && git add src/servicios/comprobante.ts",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; R=$(pwd -P); T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el botón del comprobante\",\"maxFiles\":5,\"datos\":\"sin-cambio\",\"files\":[\"%s/src/servicios/comprobante.ts\"],\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$R\" \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-datos.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-datos\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\""
+          ],
+          "stdin": {
+            "session_id": "bench-datos",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m 'fix: el botón'"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "cambia de dónde sale un dato o quién lo ve",
+              "una llamada a un proceso, src/servicios/comprobante\\.ts:2",
+              "va por historia",
+              "declaraste que no",
+              "adhoc allow-data-change"
+            ]
+          }
+        },
+        {
+          "id": "camino-corto-texto-guarda-con-la-pregunta",
+          "type": "must-emit",
+          "_por_que": "un arreglo chico de texto en el mismo archivo no trae ninguna señal: guarda con la pregunta de siempre.",
+          "env": {
+            "TYCON_PACKS_DIR": "${FIXTURE}/.senales",
+            "TYCON_PACKS_DEFAULT": "all"
+          },
+          "setup": [
+            "git init -q -b main . && mkdir -p src/servicios && printf 'import { pedir } from \"./servicios\";\\nconst c = await pedir(id);\\n' > src/servicios/comprobante.ts && printf '.senales/\\n' > .gitignore && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && git update-ref refs/remotes/origin/main HEAD && git checkout -q -b arreglo",
+            "mkdir -p .senales/acme/agents && printf -- '---\\nname: rev-acme\\n---\\n# rev-acme\\n' > .senales/acme/agents/rev-acme.md && printf '%s' '{\"name\":\"acme\",\"description\":\"señales del banco\",\"reviewers\":[{\"agent\":\"rev-acme\",\"group\":\"base\",\"when\":{\"detection\":\"csModified\"},\"surface\":{\"paths\":[\"**/*.cs\"]},\"depth\":\"lean\",\"prefixes\":[\"ACM\"]}],\"shortPathSignals\":[{\"id\":\"proceso\",\"strength\":\"strong\",\"files\":[\"**/*.ts\"],\"pattern\":\"\\\\.process\\\\.\\\\w+\\\\(|processName\\\\s*:\",\"says\":\"una llamada a un proceso\"}]}' > .senales/acme/pack.json",
+            "printf 'import { pedir } from \"./servicios\";\\nconst c = await pedir(id); // el comprobante\\n' > src/servicios/comprobante.ts && git add src/servicios/comprobante.ts",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; R=$(pwd -P); T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el botón del comprobante\",\"maxFiles\":5,\"datos\":\"sin-cambio\",\"files\":[\"%s/src/servicios/comprobante.ts\"],\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$R\" \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-datos.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-datos\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\""
+          ],
+          "stdin": {
+            "session_id": "bench-datos",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m 'fix: el botón'"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "\"permissionDecision\":\"ask\"",
+              "¿GUARDO\\?"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -26,7 +26,7 @@ const GUIA = path.join(RAIZ, 'guides', 'firmas-del-arnes.md');
 // todas las firmas que piden los frenos hoy, escritas a mano para que una que se pierda del catálogo se note: cada escape
 // es su propia entrada
 const DE_LA_STORY = ['plan-approval', 'extra-round', 'refresh-after-main', 'control-change', 'critical-waiver',
-  'runtime-waiver', 'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'adhoc-lane', 'adhoc-lane:sobre-cupo',
+  'runtime-waiver', 'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'adhoc-lane', 'adhoc-lane:sobre-cupo', 'adhoc-lane:datos',
   'escape:TYCON_SAFETY_OFF', 'escape:TYCON_PROD_LINT', 'escape:TYCON_NEW_NAMES', 'escape:TYCON_TEST_GATE',
   'escape:DOD_BYPASS', 'escape:TYCON_NO_DEEP_REVIEW', 'escape:TYCON_STATUS_GATE',
   'escape:story-skill-bypass', 'escape:set-autonomous', 'escape:cerrar-la-ejecucion', 'escape:cerrar-como-deuda',
@@ -157,7 +157,7 @@ test('8.141 T7 Signatures_AdhocLane_FueraDeLosGrupos', () => {
   assert.strictEqual(s.approves, 'abrir el arreglo rápido de una sesión, sin historia');
   assert.strictEqual(s.approvesEn, "open a session's quick fix, with no story");
   assert.strictEqual(s.command, "marker.js adhoc set '<json>'");
-  assert.strictEqual(s.terminal, 'marker.js adhoc set --reason "<motivo>" [--max-files N] --terminal --for-session <id>');
+  assert.strictEqual(s.terminal, 'marker.js adhoc set --reason "<motivo>" [--max-files N] --data sin-cambio --terminal --for-session <id>');
   for (const g of cat.groupNames()) assert.ok(!cat.expand(g).includes('adhoc-lane'), `el grupo ${g} no la trae`);
   assert.deepStrictEqual(cat.expand('adhoc-lane'), ['adhoc-lane'], 'por su nombre sí');
 });
@@ -221,7 +221,7 @@ const TABLA_DE_NIVELES = [
   ['plan-approval', 1, ['dev', 'mant']], ['extra-round', 1, ['dev', 'mant']], ['pending-approval', 1, ['dev', 'mant']],
   ['save', 1, ['dev', 'mant']], ['browser-test:prepare', 1, ['dev', 'mant']], ['adhoc-lane', 1, ['dev', 'mant']],
   ['refresh-after-main', 1, ['mant']],
-  ['save:sensible', 2, ['dev', 'mant']], ['adhoc-lane:sobre-cupo', 2, ['dev', 'mant']], ['escape:DOD_BYPASS', 2, ['dev', 'mant']],
+  ['save:sensible', 2, ['dev', 'mant']], ['adhoc-lane:datos', 2, ['dev', 'mant']], ['adhoc-lane:sobre-cupo', 2, ['dev', 'mant']], ['escape:DOD_BYPASS', 2, ['dev', 'mant']],
   ['critical-waiver', 2, ['dev', 'mant']], ['runtime-waiver', 2, ['dev', 'mant']], ['manual-test', 2, ['dev', 'mant']],
   ['browser-test:no', 2, ['dev', 'mant']], ['adversarial-skip', 2, ['dev', 'mant']], ['lost-run', 2, ['dev', 'mant']],
   ['escape:force-manual', 2, ['dev', 'mant']], ['escape:trust-ran', 2, ['dev', 'mant']],
@@ -252,7 +252,7 @@ test('niveles T1 Catalogo_TablaDeNiveles', () => {
   const cat = require(CATALOGO);
   assert.deepStrictEqual(cat.LEVELS.map((l) => [l.id, l.level, [...l.profiles]]), TABLA_DE_NIVELES);
   const cuenta = [1, 2, 3].map((n) => cat.LEVELS.filter((l) => l.level === n).length);
-  assert.deepStrictEqual(cuenta, [7, 18, 5], '7 de rutina, 18 de excepción, 5 irreversibles');
+  assert.deepStrictEqual(cuenta, [7, 19, 5], '7 de rutina, 19 de excepción, 5 irreversibles');
   for (const l of cat.LEVELS) assert.ok(typeof l.approves === 'string' && l.approves.trim(), `${l.id}: falta qué aprueba`);
 });
 
@@ -328,4 +328,45 @@ test('SignaturesGuide_ListsDesignationSetAndWithdraw (T29) @story-8.207 @ac-24',
   // la de confirmar, como hoy: la pestaña de la sesión, sin ser de sólo click
   const conf = cat.SIGNATURES.find((x) => x.id === 'designation-confirm');
   assert.deepStrictEqual([conf.otherSession, !!conf.soloClick], ['no', false]);
+});
+
+test('Coordinadora_FirmasPorClick_ReglasEnLaGuia — el dueño firma desde el celular, y owner-wait no se lo impide', () => {
+  // 🔴 rojo: falta una regla en alguna de las dos guías de coordinación, o la guía de firmas no dice que owner-wait no frena
+  const es = fs.readFileSync(path.join(RAIZ, 'guides', 'coordination.md'), 'utf8');
+  const en = fs.readFileSync(path.join(RAIZ, 'guides', 'coordination.en.md'), 'utf8');
+  const seccion = (texto, titulo) => { const i = texto.indexOf(titulo); assert.ok(i >= 0, titulo); const j = texto.indexOf('\n## ', i + 1); return texto.slice(i, j < 0 ? undefined : j); };
+  const r = seccion(es, '### Reglas de firma para toda coordinadora');
+  for (const [que, re] of [
+    ['sin guion para la terminal, salvo lo irreversible', /ningún guion ni comando para la terminal del dueño[^\n]*\n?[^\n]*salvo lo irreversible/i],
+    ['cada firma es un renglón de la lista, pasado como cuadro', /renglón de la lista de firmas[^\n]*\n?[^\n]*cuadro/i],
+    ['dos líneas antes del cuadro', /dos líneas[^\n]*\n?[^\n]*qué cambia[^\n]*\n?[^\n]*recomendación/i],
+    ['una tanda por hora', /una tanda por hora/i],
+    ['la tanda nunca frena: lo que para va al instante, lo demás sigue con un supuesto marcado, las mejoras no esperan',
+      /la tanda nunca frena el trabajo[\s\S]*?deja parada a\s+una sesión va al dueño al instante[\s\S]*?supuesto marcado[\s\S]*?no espera a la tanda/i],
+    ['esperar al dueño sin otro trabajo cuenta como parada: primero trabajo de la fila, si no, al instante',
+      /espera al\s+dueño y no tiene otro trabajo cuenta como parada[\s\S]*?trabajo de la fila[\s\S]*?al dueño al instante/i],
+    ['un pedido sin código lo aprueba la coordinadora; con código, el dueño', /pedido sin código lo aprueba la coordinadora[\s\S]*?con un solo archivo de código, las dos siguen siendo del dueño/i],
+  ]) assert.match(r, re, `coordination.md: ${que}`);
+  const ren = seccion(en, '### Signing rules for every coordinator');
+  for (const re of [/no script or command for the owner's terminal[^\n]*\n?[^\n]*except what cannot be undone/i, /row of the signature list[^\n]*\n?[^\n]*box/i, /two lines[^\n]*\n?[^\n]*what changes[^\n]*\n?[^\n]*recommendation/i, /one batch per hour/i, /the batch never holds up the work[\s\S]*?stopped goes to the owner right away[\s\S]*?marked\s+assumption[\s\S]*?does not wait for the batch/i, /waits for the owner and has no other work counts as stopped[\s\S]*?work from\s+the queue[\s\S]*?to the owner right away/i, /request without code is approved by the coordinator[\s\S]*?with a single code file, both stay with the owner/i]) {
+    assert.match(ren, re, 'coordination.en.md');
+  }
+  // la regla madre va primero, antes de toda otra sección, en los dos idiomas
+  const madre = (texto, titulo) => { const i = texto.indexOf(titulo); assert.ok(i >= 0, titulo); assert.strictEqual(texto.indexOf('\n## '), i - 1, `${titulo}: es la primera sección`); return seccion(texto, titulo); };
+  const m = madre(es, '## La regla madre: la coordinadora mejora su propio proceso');
+  for (const re of [/sin que se lo pidan/, /cuántas veces[\s\S]*tiempo[\s\S]*tokens[\s\S]*qué encontró/, /recorte/, /«qué\s+costó de más y qué cambio»/]) assert.match(m, re, 'coordination.md: regla madre');
+  const men = madre(en, '## The mother rule: the coordinator improves her own process');
+  for (const re of [/without being asked/, /how many times[\s\S]*time[\s\S]*tokens[\s\S]*what it found/, /cut/, /"what cost too much and what I changed"/]) assert.match(men, re, 'coordination.en.md: regla madre');
+  // owner-wait se lanza con la ruta completa del arnés, que es la única forma que el freno deja pasar
+  assert.match(es, /`node "<arnés>\/scripts\/tools\/coordination\.js" owner-wait`/);
+  assert.match(en, /`node "<harness>\/scripts\/tools\/coordination\.js" owner-wait`/);
+  assert.doesNotMatch(es + en, /`node scripts\/tools\/coordination\.js owner-wait`/, 'sin la ruta relativa');
+  const guia = fs.readFileSync(GUIA, 'utf8');
+  assert.match(guia, /con una consola de fondo viva[^\n]*\n?[^\n]*salvo[^\n]*\n?[^\n]*owner-wait/, 'firmas-del-arnes.md: la excepción de owner-wait');
+  // el plan se aprueba con el cuadro: no se pega en el chat, salvo que el dueño lo pida o falten las dos secciones
+  assert.match(guia, /\*\*El plan se aprueba con el cuadro\.\*\*[\s\S]*?Qué hace[\s\S]*?Archivos[\s\S]*?ruta del plan completo[\s\S]*?si lo pedís[\s\S]*?Vale sólo el click/, 'firmas-del-arnes.md');
+  assert.match(r, /El plan no se pega en el chat antes de su firma[\s\S]*?ruta del plan completo[\s\S]*?sólo si el dueño lo\s+pide/i, 'coordination.md');
+  assert.match(ren, /plan is not pasted into the chat before its signature[\s\S]*?path of the full plan[\s\S]*?only if the owner asks/i, 'coordination.en.md');
+  const paso = fs.readFileSync(path.join(RAIZ, 'skills', 'tycon-pipeline', 'steps', 'step-04-approve-plan.md'), 'utf8');
+  assert.match(paso, /Salvo con el cuadro de la firma[\s\S]*?cuenta como plan visto/, 'step-04-approve-plan.md');
 });

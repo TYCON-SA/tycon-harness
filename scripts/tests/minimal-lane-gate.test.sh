@@ -55,12 +55,12 @@ else mal "no se negó o el mensaje no trae la pregunta: rc=$RC $(head -c 300 <<<
 echo "T3 · MinimalLab_AdhocSigned_Allowed @story-8.74 @ac-3 @story-8.141 @ac-4"
 # el ajuste puntual es una firma del dueño (adhoc-lane): sin la ventana no se declara; con la ventana dada por pasada
 # (scripts/tests/lib/window-passed.js), como la deja el «Sí» del dueño, se declara y la edición pasa
-if ( cd "$R" && HOME="$H" CLAUDE_CODE_SESSION_ID=s874b node "$SKILL/marker.js" adhoc set '{"reason":"es un ajuste chico, sin story"}' ) >"$T/adhoc-sin.out" 2>&1; then
+if ( cd "$R" && HOME="$H" CLAUDE_CODE_SESSION_ID=s874b node "$SKILL/marker.js" adhoc set '{"reason":"es un ajuste chico, sin story","datos":"sin-cambio"}' ) >"$T/adhoc-sin.out" 2>&1; then
   mal "el ajuste puntual se declaró sin la firma del dueño"
 elif [ -f "$H/.claude/.tycon-pipeline/adhoc/s874b.json" ]; then mal "sin la firma quedó escrita la declaración"
 else ok "sin la firma del dueño, el ajuste puntual no se declara"; fi
 AD="$( cd "$R" && HOME="$H" CLAUDE_CODE_SESSION_ID=s874b NODE_OPTIONS="--require $ROOT/scripts/tests/lib/window-passed.js" \
-  node "$SKILL/marker.js" adhoc set '{"reason":"es un ajuste chico, sin story"}' 2>&1 )" \
+  node "$SKILL/marker.js" adhoc set '{"reason":"es un ajuste chico, sin story","datos":"sin-cambio"}' 2>&1 )" \
   || mal "no se pudo declarar el ajuste puntual con la firma: $(head -c 300 <<<"$AD")"
 editar s874b "$R/src/formato.js"
 pasa && ok "con el ajuste puntual firmado, la edición pasa" || mal "el ajuste puntual firmado no pasó: rc=$RC $(head -c 300 <<<"$OUT")"

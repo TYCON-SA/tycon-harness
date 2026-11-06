@@ -453,6 +453,43 @@ test('OwnerWindow_ProcesoDeFondo_Niega (T18)', (t) => {
   assert.strictEqual(r.decision, 'deny');
 });
 
+test('OwnerWindow_OwnerWaitDeFondo_NoFrena_YOtraCosaSi — el despertador de la coordinadora no le quita el click al dueño', (t) => {
+  // 🔴 rojo: con owner-wait de fondo la firma va a la terminal, o pasa algo que no es exactamente owner-wait de este arnés
+  const [, cmd] = GUIONES[0];
+  const propio = path.join(RAIZ, 'scripts', 'tools', 'coordination.js');
+  const fondo = (casa, linea) => ({ pid: 400, ppid: 100, inicio: INICIO, comando: envolver(casa, linea, { deFondo: true }) });
+  const pide = (linea) => { const casa = casaNueva(t); return pedir(casa, cmd, { arbol: arbolDelFreno({ extra: [fondo(casa, linea)] }) }); };
+  // como lo pide el aviso de coordination.js, con la ruta entre comillas, y sin comillas: pasa como si no hubiera consola
+  for (const linea of [`node "${propio}" owner-wait`, `node ${propio} owner-wait`, `/usr/local/bin/node "${propio}" owner-wait`]) {
+    assert.strictEqual(pide(linea).decision, 'ask', linea);
+  }
+  // cualquier otra cosa sigue frenando
+  const otro = fs.mkdtempSync(path.join(os.tmpdir(), 'otro-arnes-'));
+  t.after(() => fs.rmSync(otro, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(otro, 'scripts', 'tools'), { recursive: true });
+  const copia = path.join(otro, 'scripts', 'tools', 'coordination.js');
+  fs.copyFileSync(propio, copia);
+  for (const linea of [
+    `node "${propio}" owner-wait; sleep 600`, // algo más en la línea
+    `node "${propio}" owner-wait && sleep 600`,
+    `node "${propio}" owner-wait --x`, // otra palabra
+    `node "${propio}" status`, // otro subcomando
+    `node "${copia}" owner-wait`, // la misma herramienta de otra copia
+    `bash "${propio}" owner-wait`, // no la corre node
+    `node "$(echo ${propio})" owner-wait`, // armada
+    `node "${propio}" owner-wait > /tmp/x`, // con redirección
+  ]) {
+    const r = pide(linea);
+    assert.strictEqual(r.decision, 'deny', linea);
+    assert.match(r.texto, /cerrá los procesos de fondo o firmá desde tu terminal/, linea);
+  }
+  // owner-wait y otra consola de fondo: la otra frena
+  const casa = casaNueva(t);
+  const r = pedir(casa, cmd, { arbol: arbolDelFreno({ extra: [fondo(casa, `node "${propio}" owner-wait`), { ...fondo(casa, 'sleep 600'), pid: 401 }] }) });
+  assert.strictEqual(r.decision, 'deny');
+  assert.match(r.texto, /cerrá los procesos de fondo o firmá desde tu terminal/);
+});
+
 test('OwnerWindow_Indecidible_Niega (T19)', (t) => {
   const [firma, cmd, argv] = GUIONES[0];
   const terminal = /--terminal/;
@@ -1840,7 +1877,7 @@ test('8.141 T8 OwnerWindow_AdhocSet_PideLaVentana', (t) => {
   const codex = casaNueva(t);
   const c = pedir(codex, ADHOC, { evento: { turn_id: 'turn-1' } });
   assert.strictEqual(c.decision, 'deny');
-  assert.match(c.texto, /en tu terminal: marker\.js adhoc set --reason "<motivo>" \[--max-files N\] --terminal --for-session <id>/);
+  assert.match(c.texto, /en tu terminal: marker\.js adhoc set --reason "<motivo>" \[--max-files N\] --data sin-cambio --terminal --for-session <id>/);
   assert.strictEqual(registros(codex).length, 0);
   // el subcomando en una variable cuenta como el arreglo que pasa el tope, y la forma lo niega
   const opaca = pedir(casaNueva(t), `S=set; node ${MARKER} adhoc "$S" '{"reason":"arreglo del sp"}'`);
@@ -2396,7 +2433,7 @@ test('Precheck_AprobarElPlan_FueraDeOrdenNiegaYEnOrdenNoEscribe', (t) => {
 // tiene requisitos antes de la firma, y las cuatro firmas sobre un archivo.
 const CON_REQUISITOS = ['plan-approval', 'extra-round', 'save', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver',
   'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran', 'adhoc-lane', 'adhoc-lane:sobre-cupo',
-  'designation-set', 'designation-withdraw'];
+  'designation-set', 'designation-withdraw', 'adhoc-lane:datos'];
 
 // 🔴 Falla con: una firma de guion con requisitos que abre la ventana sin preguntarle antes al guion.
 test('Precheck_LasFirmasConRequisitos_NoAbrenLaVentanaSiElGuionSeNiega', (t) => {
@@ -2410,6 +2447,8 @@ test('Precheck_LasFirmasConRequisitos_NoAbrenLaVentanaSiElGuionSeNiega', (t) => 
     // nombrar y retirar a la coordinadora: el chequeo corre antes de dar el cuadro de sólo click
     ['designation-set', `node ${MARKER} designate-relay`],
     ['designation-withdraw', `node ${MARKER} withdraw-relay`],
+    // dejar pasar el freno de los datos: también antes de dar el cuadro
+    ['adhoc-lane:datos', `node ${MARKER} adhoc allow-data-change --changed "el botón pide al proceso" --recommends pasar --why "el proceso tiene su seguridad"`],
   ];
   const vistas = new Set();
   for (const [firma, cmd] of [...GUIONES, ...otras]) {
@@ -3115,7 +3154,7 @@ test('Windows_SinAprobacion_NiegaConElCuadroYLaTerminal_NuncaLaVentana', (t) => 
     assert.strictEqual(r.decision, 'deny', `${modo}: ni ventana ni hecho y avisado`);
     assert.match(r.texto, /en Windows la ventana de permiso no firma/);
     assert.ok(r.cuadro && r.texto.includes(r.cuadro.pregunta), 'da el cuadro');
-    assert.match(r.texto, /adhoc set --reason "<motivo>" \[--max-files N\] --terminal --for-session <id>/, 'y el comando de la terminal');
+    assert.match(r.texto, /adhoc set --reason "<motivo>" \[--max-files N\] --data sin-cambio --terminal --for-session <id>/, 'y el comando de la terminal');
   }
   assert.strictEqual(vigentes(casa).length, 0, 'no queda un pedido escrito');
 });
@@ -3694,4 +3733,50 @@ test('OwnerWindow_Prechequeo_PlazoPropioMenorQueElDelFreno', (t) => {
   assert.strictEqual(plazos['runtime-waiver'], ow.PLAZO_DEL_PRECHEQUEO_MS);
   assert.ok(ow.PLAZO_DEL_PRECHEQUEO_MS <= 12000, `el chequeo del guion espera ${ow.PLAZO_DEL_PRECHEQUEO_MS} ms`);
   assert.strictEqual(plazos['approve-save'], 240000);
+});
+
+// --- dejar pasar el freno de los datos: sólo el click del dueño -------------------------------------------------------
+const DATOS = 'adhoc-lane:datos';
+const pideDatos = (rec = 'pasar', resto = '') => `node ${MARKER} adhoc allow-data-change --changed "el botón pide al proceso" --recommends ${rec} --why "el proceso tiene su seguridad"${resto}`;
+function conFrenoDeDatos(casa) {
+  const adhoc = path.join(casa, '.claude', '.tycon-pipeline', 'adhoc');
+  fs.mkdirSync(adhoc, { recursive: true });
+  fs.writeFileSync(path.join(adhoc, 'ses-a.json'), JSON.stringify({ reason: 'el botón', maxFiles: 8, files: [], frenoDatos: { huella: 'h1', hallazgos: [{ id: 'proceso', strength: 'strong', says: 'una llamada a un proceso', file: 'src/a.tsx', line: 3, borrada: false, texto: 'executeQuery(x)' }] } }));
+  return casa;
+}
+
+// 🔴 Falla con: el freno de los datos que se destraba por la delegación del perfil o por la ventana de permiso.
+test('T27 OwnerWindow_ClickDelDueno_NoDelegaNiVentana @story-8.196 @ac-13', (t) => {
+  assert.deepStrictEqual(ow.firmasDelComando(pideDatos()), [DATOS]);
+  assert.deepStrictEqual(ow.firmasDelComando(pideDatos('historia')), [], 'recomendar la historia no firma');
+  assert.deepStrictEqual(ow.firmasDelComando(pideDatos('descartar')), []);
+  // por delegación: no se delega, aunque el perfil la nombre, y trae el cuadro
+  const delegada = pedir(conFrenoDeDatos(casaNueva(t)), pideDatos(), { delegacion: () => ({ ok: true, maquina: 'm' }) });
+  assert.strictEqual(delegada.decision, 'deny', delegada.texto);
+  assert.ok(delegada.cuadro && delegada.cuadro.clickDelDueno, 'el cuadro del click del dueño');
+  assert.match(delegada.texto, /sólo el click del dueño/);
+  assert.match(delegada.cuadro.pregunta, /una llamada a un proceso, src\/a\.tsx:3/);
+  // en una pestaña que pregunta: no abre la ventana
+  const casa = conFrenoDeDatos(casaNueva(t));
+  const ventana = pedir(casa, pideDatos());
+  assert.strictEqual(ventana.decision, 'deny', ventana.texto);
+  assert.strictEqual(registros(casa).length, 0, 'no queda un pedido para la ventana');
+  // con el click del dueño, firma por click
+  const conElClick = pedir(conFrenoDeDatos(casaNueva(t)), pideDatos(), { aprobaciones: conClick() });
+  assert.deepStrictEqual([conElClick.decision, conElClick.via], ['allow', 'click'], conElClick.texto);
+});
+
+// 🔴 Falla con: el cuadro del click del dueño para un comando que marker.js rechaza después (sin freno anotado, un
+// --why demasiado largo): el click se gasta y no destraba nada.
+test('T27 OwnerWindow_DatosQueSeNegaria_NoDaElCuadro @story-8.196 @ac-13', (t) => {
+  const casa = conFrenoDeDatos(casaNueva(t));
+  let visto = null;
+  const r = pedir(casa, pideDatos(), { comprobar: (o) => { visto = o; return { niega: 'no hay un freno de datos que destrabar' }; } });
+  assert.strictEqual(r.decision, 'deny', r.texto);
+  assert.match(r.texto, /ni te doy el cuadro.*no hay un freno de datos/);
+  assert.ok(!r.cuadro, 'sin cuadro: el click se perdería');
+  assert.strictEqual(visto && visto.firma, DATOS);
+  // si el guion no se niega, el cuadro sale como siempre
+  const sigue = pedir(conFrenoDeDatos(casaNueva(t)), pideDatos(), { comprobar: () => ({ ok: true }) });
+  assert.ok(sigue.cuadro && sigue.cuadro.clickDelDueno, sigue.texto);
 });

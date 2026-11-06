@@ -32,6 +32,14 @@ conversación. La sesión recibe cómo recuperarla, pero no la recupera sola: el
 un click nuevo. `/coordinate` en esa sesión muestra el estado de la máquina. El programa que usa la coordinadora es
 `<arnés>/scripts/tools/coordination.js`.
 
+## La regla madre: la coordinadora mejora su propio proceso
+
+**La coordinadora revisa su propio proceso sin que se lo pidan.** Cuando un paso se repite, hace fila o rinde poco
+(vueltas de revisión, firmas repetidas, pases repetidos, esperas, aprobaciones de trámite), lo mide: cuántas veces,
+cuánto tiempo, cuántos tokens y qué encontró. Lo lleva a la tanda de la hora con el recorte propuesto y los datos. Si el
+recorte está en su mano, lo aplica y avisa; si no, lo propone con su recomendación. Toda tanda trae la sección «qué
+costó de más y qué cambio», aunque diga que nada.
+
 ## Qué va al dueño
 
 Al dueño van cuatro cosas, siempre las mismas:
@@ -270,6 +278,29 @@ algo que decir, una línea dice cuántas esperan y cuál es la más vieja, con s
 cambie. Un pendiente cuyo archivo ya no está no cuenta: el dueño lo firmó y lo borró. Sin carpeta de firmas, no hay
 pendientes y el aviso no sale.
 
+### Reglas de firma para toda coordinadora
+
+El dueño firma desde el celular, con un click en el cuadro de la coordinadora. Para que eso alcance:
+
+- **Ningún guion ni comando para la terminal del dueño**, salvo lo irreversible: apagar el freno, producción y una
+  emergencia. Una sesión que necesita una firma corre el comando en su pestaña, tal cual y solo, para que el freno lo
+  niegue y lo anote, y le avisa a la coordinadora «firma pendiente».
+- **Cada firma es un renglón de la lista de firmas**, y se pasa como cuadro con `owner-next`, de a uno.
+- **Antes de cada cuadro, dos líneas**: qué cambia si firma y la recomendación de la coordinadora.
+- **El plan no se pega en el chat antes de su firma.** El cuadro de la aprobación del plan trae «Qué hace», los
+  archivos y la ruta del plan completo, y el click en ese cuadro alcanza. El plan entero se muestra sólo si el dueño lo
+  pide. Un plan sin esas dos secciones sí se muestra entero antes del cuadro.
+- **Firmas y decisiones van juntas, en una tanda por hora, y la tanda nunca frena el trabajo.** Lo que deja parada a
+  una sesión va al dueño al instante. Lo demás va a la tanda, y la sesión sigue con un supuesto marcado mientras tanto.
+  Una mejora que está en mano de la coordinadora se aplica enseguida: no espera a la tanda. Una sesión que espera al
+  dueño y no tiene otro trabajo cuenta como parada: primero la coordinadora le da trabajo de la fila, si hay algo que
+  pueda tomar; si no hay, la pregunta va al dueño al instante.
+- **El `owner-wait` de fondo no le quita el click al dueño**: el freno lo deja pasar, si corre exactamente como lo pide su
+  aviso. Cualquier otra consola de fondo viva sí lo frena: se cierra antes de pedir el cuadro.
+- **Un pedido sin código lo aprueba la coordinadora**: si trae sólo historias, registros, evidencia, memoria o
+  documentación, la coordinadora da en nombre del dueño las dos aprobaciones del merge (el mensaje y la subida) y le
+  muestra la lista en la tanda de la hora. Con un solo archivo de código, las dos siguen siendo del dueño.
+
 ### La lista de firmas: anotadas y, al volver, de a una
 
 Con `approvals.signature_list` en `on`, lo que espera a la persona queda anotado en un solo registro, y `/office` lo cuenta en
@@ -288,7 +319,8 @@ probarla.
   `owner-next`. Si la persona ya contestó «aprobado» a ese cuadro, no se pregunta de nuevo.
 - **Qué da `owner-next`.** Un renglón, el más viejo: un cuadro para mostrar sin cambiarle una letra, con un rótulo («Firma 2/5»),
   y el aviso para la sesión destino. **Un permiso va primero**, con su contador y su cuadro. Lo de la terminal, al final y sin
-  cuadro. Si el plan todavía no se vio en esa pestaña, lo da para escribirlo antes del cuadro. Si un renglón no se puede mostrar,
+  cuadro. Si el plan todavía no se vio en esa pestaña y no trae «Qué hace» y «Archivos», lo da para escribirlo antes
+  del cuadro. Si un renglón no se puede mostrar,
   o su repetición se niega, `owner-next --after <id>` da el siguiente.
 - **Siempre repite el comando la sesión que lo pidió**, con o sin coordinadora. Con el «Sí», la coordinadora le manda el aviso,
   y la sesión repite el mismo comando dentro de los 30 minutos. Con un click sin usar, `owner-next` saltea ese renglón y dice
@@ -370,6 +402,17 @@ maqueta. Con un carril sin nada anotado, un guardado en otra carpeta cobra el to
 ese arreglo, se elige con el click. Y en un repo sin commits, un archivo con `git add -N` que sube con `git commit -a` no lleva
 la marca de riesgo.
 
+**Un cambio de los datos no es camino corto.** Al abrir, la sesión responde si el cambio cambia de dónde sale un dato o
+quién lo puede ver (`"datos": "sin-cambio"` o `"cambian"`); con «cambian» no abre, y un carril abierto no cambia. Al
+guardar, el freno busca en las líneas que el carril agrega o borra las señales del paquete del stack (una llamada a un
+proceso, un chequeo de rol, la autorización de un endpoint), cada repo contra su base, y con una no guarda. Si la sesión
+cree que es un falso positivo, corre `marker.js adhoc allow-data-change --changed "<qué cambió>" --recommends
+<pasar|historia|descartar> --why "<por qué>"` y te manda la pregunta que le da el freno: qué lo frenó, con el texto de la
+línea, qué cambió de verdad y qué recomienda. La firma es `adhoc-lane:datos` y la aprueba sólo el click del dueño, en su
+pestaña o en la tuya: «Sí, aprobar» la deja pasar, y «No» manda a la sesión a escribir la historia, o a descartar lo del
+carril si el dueño lo dice. No vale un «aprobado» escrito, la ventana ni la delegación. El click cubre esas señales: otra
+línea con una señal frena de nuevo. Ante la duda, historia.
+
 **Con la maqueta y la captura, lo construido se compara con la maqueta.** Compara textos, no el dibujo: si un texto de la
 maqueta no está en las pantallas del carril ni en las demás de sus repos, no guarda. Un texto que ya existe en otra pantalla
 pasa, aunque el arreglo no lo haya construido. Una diferencia se declara en `<maqueta>-diferencias.md`, con
@@ -394,8 +437,9 @@ pantalla anotada en un worktree anidado que ya se borró sigue pidiendo maqueta 
 
 ## Una sesión trabada, al instante
 
-**Al designarse, y cada vez que termina, la coordinadora lanza `node scripts/tools/coordination.js owner-wait` de
-fondo.** Mira cada 2 segundos y termina con una línea por novedad, y terminar la despierta:
+**Al designarse, y cada vez que termina, la coordinadora lanza `node "<arnés>/scripts/tools/coordination.js" owner-wait`
+de fondo,** con la ruta completa que da su aviso: es la única consola de fondo con la que el dueño sigue firmando con un
+click. Mira cada 2 segundos y termina con una línea por novedad, y terminar la despierta:
 
 - «<sesión> espera un permiso desde las HH:MM: <herramienta> <qué pide>. Para entrar: claude attach <sesión>»: se lo
   pasa al dueño con la sesión, qué pide y su recomendación. El permiso lo contesta una persona, en la pestaña de la
