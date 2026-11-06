@@ -1501,6 +1501,12 @@ test('T6 Sitio_OfreceAuto @story-8.149 @ac-5 — el idioma de las respuestas ofr
     assert.ok(hoy && hoy.includes(` · ${t.persona} · `), `${idioma}: renglón hoy con el texto de auto: ${hoy}`);
     assert.ok(!hoy.includes(' · auto · '), `${idioma}: sin el código suelto`);
   }
+  // lo que el sitio y la portada cuentan del bloque de estilo dice la fábrica nueva, no castellano
+  const efecto = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'install-effects.json'), 'utf8')).effects.find((e) => e.id === 'TYCON_BLOCK:response-style');
+  assert.match(efecto.does, /sin elegir: [^)]*idioma en que le escribís\)/, efecto.does);
+  assert.doesNotMatch(efecto.does, /sin elegir: [^)]*castellano/, efecto.does);
+  assert.match(efecto.en.does, /by default: [^)]*language you write in\)/, efecto.en.does);
+  assert.doesNotMatch(efecto.en.does, /by default: [^)]*Spanish/, efecto.en.does);
 });
 
 test('2.31-T2 ResponseSection_ProposesOnlyResponseKey_RestByteIdentical @story-2.31 @ac-2 — sólo cambia response; el archivo entero pasa el lector del perfil', async () => {
