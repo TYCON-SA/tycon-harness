@@ -77,7 +77,7 @@ test('T44 Arranque_PasosDeOtraCarpeta_Frena @story-8.93 @ac-23 — pasos de una 
   assert.match(n.stderr, /arnés viejo/);
   assert.match(n.stderr, new RegExp(path.join('.claude', 'agent-skills').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(n.stderr, new RegExp(fs.realpathSync(path.join(SCRIPTS, '..', 'steps')).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  assert.match(n.stderr, /harness\.js install/);
+  assert.match(n.stderr, /harness\.js" install/);
   // la carpeta correcta sin el paso que toca: frena igual
   const r = F().revisar({ stepsDir: path.join(SCRIPTS, '..', 'steps'), nextFile: path.join(SCRIPTS, '..', 'steps', 'step-00b-clocki-start.md'),
     scriptDir: SCRIPTS, leerEstado: () => ({ status: 'missing' }) });
@@ -108,7 +108,7 @@ test('T45 Arranque_VersionAtras_LoDiceAntesDeLasHoras @story-8.93 @ac-23 — el 
   for (const notice of ['hay una versión nueva: 2026.10.22.60 (con harness.js update)', 'la actualización 2026.10.20.36 → 2026.10.22.41 no quedó sana']) {
     const r = revisar({ status: 'ok', state: { mode: 'developer', tree: RAIZ, notice } });
     assert.ok(r.aviso.includes(notice), r.aviso);
-    assert.match(r.aviso, /harness\.js doctor/);
+    assert.match(r.aviso, /harness\.js" doctor/);
   }
   assert.deepStrictEqual(revisar({ status: 'ok', state: { mode: 'developer', tree: RAIZ, notice: null } }), {}, 'sin aviso, nada');
   assert.deepStrictEqual(revisar({ status: 'missing', state: null }), {}, 'sin estado (un clon, una casa de prueba), nada');

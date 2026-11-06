@@ -39,6 +39,7 @@
 const fs = require('fs');
 const path = require('path');
 const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // La carpeta del estado, de una sola pieza
+const { homeCommand } = require('./lib/home-command.js');
 const os = require('os');
 // execFileSync (arg array, sin shell) en vez de execSync con strings
 // interpolados — evita rotura/inyección con paths que tengan metacaracteres de shell.
@@ -1842,7 +1843,7 @@ function main() {
       for (const viejo of (v.legacy || [])) lines.push(`       no cuenta (carpeta vieja bajo un número que comparten varias stories — no dice de cuál es; no se tocó): ${viejo}`);
       lines.push('     Salidas:');
       lines.push('       (a) Correr el pipeline sobre la story (con sus revisores):');
-      lines.push('           node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js start --story <spec> --repo <repo>');
+      lines.push(`           ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js')} start --story <spec> --repo <repo>`);
       lines.push('       (b) Story SIN nada que auditar (docs/config puros) — lo decide el DEV, en el frontmatter:');
       lines.push('           advisors_exempt: true');
       lines.push('           advisors_exempt_reason: "<razón concreta>"');

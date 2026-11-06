@@ -44,6 +44,9 @@
 
 'use strict';
 const path = require('path');
+// El comando con la carpeta de la persona lo arma skills/tycon-pipeline/scripts/lib/home-command.js; suelto, este
+// archivo escribe el mismo texto.
+const homeCommand = (() => { const lib = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'home-command.js'); return require('fs').existsSync(lib) ? require(lib).homeCommand : (r) => `node "$HOME/${r}"`; })();
 // La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
 // archivo viaja suelto (al banco, a laboratorios de pruebas); ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
@@ -456,7 +459,7 @@ try {
   if (hs.status === 'broken') {
     harnessLines.push(
       `🔔 TYCON — el estado del mecanismo de instalación (~/.claude/.tycon-pipeline/harness-state.json) ${hs.why || 'no se puede leer'}.`,
-      '   Decile a la persona; `node ~/.claude/tycon-harness/scripts/setup/harness.js doctor` lo detalla. No lo arregles sin que te lo pida.',
+      `   Decile a la persona; \`${homeCommand('.claude/tycon-harness/scripts/setup/harness.js')} doctor\` lo detalla. No lo arregles sin que te lo pida.`,
     );
   } else if (hs.status === 'ok' && hs.state.notice) {
     harnessLines.push(
@@ -474,7 +477,7 @@ try {
     const since = typeof hold.at === 'string' && hold.at ? ` desde el ${hold.at.slice(0, 16).replace('T', ' ')} (UTC)` : '';
     harnessLines.push(
       `🔔 TYCON — retención del arnés — decile a la persona: se deshizo la versión ${hold.commit || '(sin número)'}${since}; el arnés no se actualiza solo mientras siga la retención.`,
-      '   Para volver a actualizar: node ~/.claude/tycon-harness/scripts/setup/harness.js rollback --release (o npx @tyconsa/harness@latest). No lo hagas sin que te lo pida.',
+      `   Para volver a actualizar: ${homeCommand('.claude/tycon-harness/scripts/setup/harness.js')} rollback --release (o npx @tyconsa/harness@latest). No lo hagas sin que te lo pida.`,
     );
   }
   // ¿el atraso se grita? Sólo sin estado (lo de hoy), con estado roto, o en managed con apply: auto y sin retención
@@ -580,7 +583,7 @@ try {
       // actualización), un `checkout` de esa rama fallaría: la crea `update`
       ...offInstalled.map((o) => (o.installed
         ? `Volver: git -C ${sh(o.dir)} checkout ${o.home}`
-        : `Volver: node ~/.claude/tycon-harness/scripts/setup/harness.js update   # "${o.home}" todavía no existe: la crea la primera actualización, o dice por qué no`)),
+        : `Volver: ${homeCommand('.claude/tycon-harness/scripts/setup/harness.js')} update   # "${o.home}" todavía no existe: la crea la primera actualización, o dice por qué no`)),
     );
   }
   if (stale.length > 0) {
@@ -606,7 +609,7 @@ try {
     // una fuente que se reescribe no se arregla con un merge (su rama no desciende de la anterior): la mueve `update`
     for (const s of stale) {
       out.push(...(s.rewritten
-        ? ['node ~/.claude/tycon-harness/scripts/setup/harness.js update   # dice por qué no avanza, o avanza']
+        ? [`${homeCommand('.claude/tycon-harness/scripts/setup/harness.js')} update   # dice por qué no avanza, o avanza`]
         : manualAdvice(s.dir, s.stuck, s.unmerged, s.collide)).map((l) => `  ${l}`));
     }
     out.push('Avisale al dev en una línea.');

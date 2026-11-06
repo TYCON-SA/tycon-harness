@@ -64,6 +64,7 @@ function parseCodexSession(raw) {
 const fs = require('fs');
 const path = require('path');
 const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // la carpeta del estado, de una sola pieza
+const { homeCommand } = require('./lib/home-command.js');
 const os = require('os');
 const honesty = require('./lib/ledger-honesty.js');
 const companionLib = require('./lib/companion-repos.js');   // el repo hermano de una story de dos repos
@@ -2545,7 +2546,7 @@ function computePreflightFrontmatter({ storyPath, targetStatus, targetPipelineDo
     blocking_hook: 'on-frontmatter-write.js + on-pre-commit.js + hook-pre-edit.js',
     how_to_satisfy: evidenceExists
       ? null
-      : `Correr: node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/step-7c-macro.js --story ${storyPath} --scenario <scenario.json> --evidence-dir ${evidDir}  (o escribir el archivo manualmente con formato hook-compliant — ver PRE-2)`,
+      : `Correr: ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/step-7c-macro.js')} --story ${storyPath} --scenario <scenario.json> --evidence-dir ${evidDir}  (o escribir el archivo manualmente con formato hook-compliant — ver PRE-2)`,
   });
 
   // Pre-condition 2: si la story declara E2E reales, el evidence debe tener
@@ -5299,7 +5300,7 @@ function computeNextStory(args) {
     warnings.push(
       `0 stories Mary+GOLD bajo ${scanRoot}. Una story es un .md cuyo frontmatter declara \`story:\` y \`status:\`, ` +
       `y cuyo id tiene forma de trabajo (${scanned.id_criterion}). Diagnóstico: ` +
-      'node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/lib/story-discovery.js --doctor --repo <dir>',
+      `${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/lib/story-discovery.js')} --doctor --repo <dir>`,
     );
   }
 

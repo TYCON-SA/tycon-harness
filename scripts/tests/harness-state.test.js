@@ -2145,7 +2145,7 @@ test('T38·módulo · doctorItems: en transición calla (lo dice harness.js); pe
   const blocked = Object.assign({}, base, { repoint: { blocked: { direction: 'unified', cause: 'branch', reason: 'está en la rama x y no en main', fix: 'git checkout main', transient: false, at: 'hoy' } } });
   let items = repoint.doctorItems(blocked, 'unified', {});
   assert.deepStrictEqual(items.map((i) => i.level), ['fail']);
-  assert.ok(items[0].text.startsWith(repoint.PHRASE.unified) && /rama x/.test(items[0].text) && /harness\.js update/.test(items[0].text), items[0].text);
+  assert.ok(items[0].text.startsWith(repoint.PHRASE.unified) && /rama x/.test(items[0].text) && /harness\.js" update/.test(items[0].text), items[0].text);
   assert.deepStrictEqual(levels(blocked, 'unified', { health: true }), ['warn'], 'bajo la comprobación de salud un intento anotado es historia: no tira abajo una actualización sana');
   const applied = Object.assign({}, base, { repoint: { applied: { at: 'hoy', from: { url: 'old', commit: 'a'.repeat(40) }, to: { url: 'u', commit: 'b'.repeat(40) } } } });
   items = repoint.doctorItems(applied, 'unified', {});

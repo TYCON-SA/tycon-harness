@@ -42,6 +42,7 @@
 const fs = require('fs');
 const path = require('path');
 const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // la carpeta del estado, de una sola pieza
+const { homeCommand, homePath } = require('./lib/home-command.js');
 const os = require('os');
 const { sessionIdFileKey } = require('./lib/session-id.js');
 
@@ -424,7 +425,7 @@ function estadoAMano(event, filePath, oldContent, newContent, casa) {
     } catch { /* ayuda, no evidencia */ }
   }
   if (ok) return null;
-  const marker = '~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js';
+  const marker = homePath('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js');
   const destino = isCriticalStatus(t.estado) || !/^pipelines\./.test(t.estado) ? t.estado : `done en ${t.estado}`;
   const titulo = `🚨 BLOQUEADO — la story ${t.storyId} pasa a ${destino} escribiendo el archivo a mano.`;
   return {
@@ -619,13 +620,13 @@ function handle(event, { casa } = {}) {
       pl.push('');
       // La ruta del archivo sale de tmp-path.js: con una ruta fija bajo /tmp, en Windows bash escribiría
       // en la carpeta temporal del usuario y Node leería C:\tmp — quien escribe y quien lee usan "$E2ECFG".
-      pl.push('  E2ECFG=$(node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/lib/tmp-path.js e2ecfg <repo>)');
-      pl.push('  node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js e2e-config --repo <repo> > "$E2ECFG"');
+      pl.push(`  E2ECFG=$(${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/lib/tmp-path.js')} e2ecfg <repo>)`);
+      pl.push(`  ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js')} e2e-config --repo <repo> > "$E2ECFG"`);
       pl.push('  GATE=$(node -e \'process.stdout.write(require(process.argv[1]).gate||"")\' "$E2ECFG")');
       pl.push('  FE=$(node -e \'process.stdout.write(require(process.argv[1]).frontend_dir||"")\' "$E2ECFG")');
       // En un monorepo `APPS` puede traer MÁS DE UNA app: el gate va una vez por app tocada.
       // Sugerir el comando de una sola app dejaría sin gate a las demás.
-      pl.push(`  EVID=$(node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js evidence-dir --story <spec> --repo <repo> --plain)   # el repo de la STORY`);
+      pl.push(`  EVID=$(${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js')} evidence-dir --story <spec> --repo <repo> --plain)   # el repo de la STORY`);
       pl.push(`  echo "$APPS" | while read -r FE; do [ -n "$FE" ] || continue; \\`);
       pl.push(`    bash "$GATE" "$FE" ${storyId} "$EVID" || exit 1; done   # [spec-filter...] = scoped`);
       pl.push('');
