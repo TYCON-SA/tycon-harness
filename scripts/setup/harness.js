@@ -453,12 +453,6 @@ function normalizeTreeEol(ctx, tree, log = null) {
  * lista lo enchufa este programa y al aplicador se le avisa (`TYCON_HARNESS_CODEX=done`) para que saltee su bloque; sin
  * Codex, que no lo despliegue (`off`).
  */
-/** Graba el estado, si el candado sigue siendo de esta toma (si otro lo pisó, tira y no escribe nada). */
-function writeState(ctx, state) {
-  mod('lock').assertStillMine(ctx.home);
-  mod('state').write(ctx.home, state);
-}
-
 function runApplier(ctx, tree, { log, snapshotDir = null, tools = undefined, force = false, hooksPath = false } = {}) {
   // el candado tiene que seguir siendo de esta toma antes de escribir, y otra vez al volver: el aplicador puede tardar
   // (o la máquina dormirse) y otro haberlo pisado por el tope
@@ -1615,6 +1609,7 @@ function runRepoint(ctx, state, policy, { log = null, manual = false, apply = tr
       write: () => mod('state').write(ctx.home, state),
     }) || none;
   } catch (e) {
+    if (e && e.code === mod('lock').LOCK_LOST) throw e;   // el candado perdido no es una falla de la mudanza: se va hasta main
     // nunca una pila, y nunca un arranque caído por la llave: se dice, y no se mueve ninguna fuente en esta corrida
     const text = `una mudanza del clon de skills no se pudo mirar (falla interna: ${e && e.message ? e.message : e}): no se mueve ninguna fuente; harness.js doctor lo detalla`;
     if (log) log(`repoint: ${text}${e && e.stack ? ` ${e.stack}` : ''}`);
@@ -2088,7 +2083,7 @@ function cmdInstall(ctx) {
       applyPolicy(ctx, state, policy0);
       const prof0 = profileOf(ctx, tree);
       if (prof0.ok) state.profile = { value: prof0.value, origin: prof0.origin };
-      writeState(ctx, state);
+      S.write(ctx.home, state);
       return { code: 0, lines: [`arnés ya instalado en modo ${state.mode} · ${tree}`, ...R.installSummary({ version: state.version.number, channel: state.channel, apply: policy0.apply, changed: false, baseline: installBaseline(ctx), profile: PR.label(prof0), configLines: asked.head, notes: [...(asked.hint ? [asked.hint] : []), ...cloneNote] })] };
     }
 
@@ -2199,7 +2194,7 @@ function cmdInstall(ctx) {
     // arriba, `quiet`), no las piezas propias: un hook borrado a mano no es una pieza propia, y sin esto el atajo diría «sin
     // cambios» después de que el plan prometiera reponerlo
     if (fromExisting && existing && !pieces.length && real(existing.tree) === tree && !notes.length) {
-      writeState(ctx, state);   // la política vigente (state.policy) puede haber cambiado sin que nada más cambie
+      S.write(ctx.home, state);   // la política vigente (state.policy) puede haber cambiado sin que nada más cambie
       finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`));
       return { code: 0, lines: [`arnés ya instalado en modo ${state.mode} · ${tree}`, ...R.installSummary({ version: state.version.number, channel: state.channel, apply: policy.apply, changed: false, baseline: fromExisting ? null : installBaseline(ctx) })] };
     }
@@ -2243,7 +2238,7 @@ function cmdInstall(ctx) {
         // …y queda dicho en el estado, como cuando falla la salud: el cierre manda a `doctor` por el detalle, y un
         // `doctor` corrido después, en otra sesión, tiene que verlo (lo saca la corrida de `install` que termine bien)
         state.failed = { commit: state.version.number, sources: currentSources(ctx, state), at: nowIso(), log: S.paths(ctx.home).log, reason: 'applier', stage: 'install' };
-        writeState(ctx, state);
+        S.write(ctx.home, state);
         finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`));
         // quedó a medias: qué falló, el registro, la copia y las dos salidas; y las notas
         // (la causa puede ser una de ellas, «no pude mirar la fuente…»)
@@ -2265,12 +2260,12 @@ function cmdInstall(ctx) {
       // el doctor de la salud lee el estado del disco; se graba con la constancia de salud pendiente, como en update: si
       // la sesión muere en el medio, el arranque siguiente la corre
       state.failed = pendingHealth(ctx, { commit: versionLabel(ctx, state), sources: currentSources(ctx, state), applierOut: a.out });
-      writeState(ctx, state);
+      S.write(ctx.home, state);
       const h = runHealth(ctx, state, { report: a.report, applierOut: a.out, log: (l) => R.log(ctx.home, `install: ${l}`) });
       if (!h.ok) {
         state.failed = { commit: state.version.number, sources: currentSources(ctx, state), at: nowIso(), log: S.paths(ctx.home).log, reason: 'health', stage: 'install' };
         state.last_health = null;   // a medias: `install` otra vez la retoma en vez de decir «sin cambios»
-        writeState(ctx, state);
+        S.write(ctx.home, state);
         finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`));
         // las notas van igual: la causa de la salud que no pasó puede ser justo una de ellas («no pude mirar la fuente…»)
         return { code: 1, lines: [...R.installFailure({ what: `la comprobación de salud no pasó: ${h.failures.join(' · ')}`, log: S.paths(ctx.home).log, backup: snap && snap.dir, warnings: a.warnings }), ...notes] };
@@ -2284,7 +2279,7 @@ function cmdInstall(ctx) {
     }
 
     const changed = pieces.length > 0 || JSON.stringify(existing) !== JSON.stringify(state);
-    if (changed) writeState(ctx, state);
+    if (changed) S.write(ctx.home, state);
     // una instalación que salió bien deja la máquina al día: el aviso «no se pudo actualizar desde …» de antes ya no vale
     // (con una fuente que no se pudo mirar la instalación sale 1, y el aviso queda)
     if (!blind.length) mod('report').clearUpdateFailure(ctx.home);
@@ -2432,7 +2427,10 @@ function failUpdate(ctx, state, { snap, rec, before, after, tips, failures, reas
       restored = RB.restore(Object.assign({}, ctx, { tree: state.tree }), state, copy, Object.assign({
         why: reason, runApplier, log, snapshotDir: snap.dir, isOwnPiece: (p) => isOwnPiece(ctx, p),
       }, layerHooks(ctx, state, log))) || restored;
-    } catch (e) { restored = { ok: false, lines: [`la vuelta atrás automática falló: ${e.message}`] }; }
+    } catch (e) {
+      if (e && e.code === mod('lock').LOCK_LOST) throw e;   // otro tiene el candado: la vuelta atrás no sigue
+      restored = { ok: false, lines: [`la vuelta atrás automática falló: ${e.message}`] };
+    }
   } else if (!RB) {
     restored = { ok: false, lines: ['sin rollback.js en esta versión: no hubo vuelta atrás automática'] };
   }
@@ -3004,7 +3002,7 @@ function doUpdate(ctx, state, { mode = 'apply', log = null, snapshot = null, per
   // el `doctor` del árbol nuevo (parte de la salud) lee el estado del disco: se graba antes, con la constancia de que la
   // salud quedó PENDIENTE — si la sesión muere en el medio, el arranque siguiente la corre
   state.failed = pendingHealth(ctx, { commit: after, sources: tips, applierOut: applier.out });
-  try { writeState(ctx, state); } catch (e) { if (e && e.code === mod('lock').LOCK_LOST) throw e; if (log) log(`update: no pude grabar el estado antes de la salud (${e.message})`); }
+  try { S.write(ctx.home, state); } catch (e) { if (e && e.code === mod('lock').LOCK_LOST) throw e; if (log) log(`update: no pude grabar el estado antes de la salud (${e.message})`); }
   const done = finishHealth(ctx, state, { snap, ownSnap, rec, before, after, tips, report: applier.report, applierOut: applier.out, log, moved });
   if (done.status === 'applied' && layerMoves.length) done.lines = [done.lines[0], ...layerLines, ...layerNotes, ...done.lines.slice(1)];
   if (done.status === 'applied') { const pl = packRetiredLine(applier); if (pl) { done.lines.push(pl); if (log) log(`update: ${pl}`); } }
@@ -3035,7 +3033,7 @@ function finishHealth(ctx, state, { snap, ownSnap = null, rec, before, after, ti
   // y el estado se graba YA: un corte entre la copia nueva y el S.write de cierre (un reinicio de Windows en medio del
   // aplicador) dejaría la copia fija de la versión nueva con el estado de la vieja, y el arranque siguiente lo
   // leería como «alguien la tocó», daría la salud por roja y volvería atrás
-  try { mod('state').write(ctx.home, state); } catch (e) { if (log) log(`update: no pude grabar el estado tras refrescar la copia fija (${e.message})`); }
+  try { mod('state').write(ctx.home, state); } catch (e) { if (e && e.code === mod('lock').LOCK_LOST) throw e; if (log) log(`update: no pude grabar el estado tras refrescar la copia fija (${e.message})`); }
   finishSnapshot(ctx, ownSnap, log);
   const stashNotes = moved.filter((m) => m.a && m.a.kept).map((m) => `${m.src.name}: lo local no se pudo reaplicar y quedó en git stash list`);
   return { status: 'applied', code: 0, lines: [`arnés ${before} → ${after}`, ...stashNotes], from: before, to: after, backup: snap && snap.dir ? snap.dir : null };
@@ -3080,7 +3078,7 @@ function cmdStartup(ctx) {
     if (read.status === 'tree_missing' && read.state) {
       L.withLock(ctx.home, () => {
         const again = loadState(ctx);
-        if (again.status === 'tree_missing' && again.state) { R.setNotice(again.state, `${f.line} — el arranque no hace nada hasta arreglarlo`); writeState(ctx, again.state); }
+        if (again.status === 'tree_missing' && again.state) { R.setNotice(again.state, `${f.line} — el arranque no hace nada hasta arreglarlo`); S.write(ctx.home, again.state); }
       }, { env: ctx.env, onBusy: () => null });
     }
     return say(read.status === 'missing' ? f.line : `${f.line} — no toco nada`);
@@ -3092,7 +3090,7 @@ function cmdStartup(ctx) {
     try {
       const rep = mod('move-home').repair(ctx, migrateHelpers(ctx), { log });
       if (rep.repaired) log(`startup: ${rep.lines.join(' · ')}`);
-    } catch (e) { log(`startup: la reparación de la mudanza falló: ${e.message}`); }
+    } catch (e) { if (e && e.code === L.LOCK_LOST) throw e; log(`startup: la reparación de la mudanza falló: ${e.message}`); }
     const r = loadState(ctx);
     if (r.status !== 'ok') { log(`startup: ${S.fail(r, { home: ctx.home }).line}`); return say(); }
     const state = r.state;
@@ -3281,7 +3279,7 @@ function cmdStartup(ctx) {
     if (a.ok) notice = hooksPathUnattended(ctx, state, tree, policy, { mode: 'startup', log: (l) => log(`startup: ${l}`), notice }).notice;
     else notice = mod('git-hooks-path').stripNotices(notice);
     if (notice) R.setNotice(state, notice); else R.clearNotice(state);
-    writeState(ctx, state);
+    S.write(ctx.home, state);
     // este arranque tuvo el candado y llegó al final: lo anotado por «candado ocupado» ya no vale (lo de la red
     // lo borra sólo una mirada sana, más arriba)
     R.clearUpdateFailure(ctx.home, { kind: 'busy' });
@@ -3392,7 +3390,7 @@ function cmdUpdate(ctx) {
     // el aviso de lo que no pasó queda para el hook síncrono; también el de «sin constancia», que no frena y sigue valiendo
     if (mode !== 'dry-run' && rp.notice && (!rp.proceed || rp.status === 'waiting' || rp.status === 'blocked')) R.setNotice(state, rp.notice);
     if (!rp.proceed) {
-      writeState(ctx, state);
+      S.write(ctx.home, state);
       return { code: 2, lines: rp.lines.map((l) => (/^harness\.js update: /.test(l) ? l : `harness.js update: ${l}`)) };
     }
     // el tope corre desde que arrancó el comando; si se le preguntó a la persona, desde que contestó
@@ -3419,7 +3417,7 @@ function cmdUpdate(ctx) {
       if (hp.line) u.lines = [...u.lines, ...hp.line.split('\n')];
       if (hp.notice) R.setNotice(state, hp.notice); else R.clearNotice(state);
     }
-    writeState(ctx, state);
+    S.write(ctx.home, state);
     if (mode === 'check' && u.status === 'new') {
       // la persona ya vio las fuentes y la diferencia arriba, y contestó que no: sólo la línea de siempre
       if (asked === false) return { code: 3, lines: [`la política es «ask»: aplicá con ${applyHint}`] };
@@ -3503,7 +3501,7 @@ function cmdApply(ctx) {
       else if (a.gitHooksPath && a.gitHooksPath.status === 'failed') extra.push(...a.gitHooksPath.line.split('\n'));
       if (sw.profile && sw.profile.ok && dropped !== null) r.state.profile = { value: sw.profile.value, origin: sw.profile.origin };
     }
-    writeState(ctx, r.state);
+    S.write(ctx.home, r.state);
     finishSnapshot(ctx, snap, log);
     if (a.ok && (sw.switching || sw.notice)) return { code: 0, lines: [`aplicador corrido desde ${r.state.tree}`, ...(sw.switching ? [`perfil de instalación: ${sw.profile.value} (copia de antes en ${snap ? snap.dir : '—'})`] : []), ...(sw.notice ? [sw.notice] : []), ...extra] };
     return { code: a.ok ? 0 : 1, lines: a.ok ? [`aplicador corrido desde ${r.state.tree}`, ...extra] : [`harness.js apply: ${a.reason}`, ...(a.out ? a.out.split('\n').slice(-5) : [])] };
@@ -4505,7 +4503,7 @@ function cmdChannel(ctx) {
       // el cambio de canal se mira en el próximo arranque, sin esperar la ventana de la mirada anterior
       if (state.channel !== after.channel) state.last_fetch = null;
       applyPolicy(ctx, state, after);
-      writeState(ctx, state);
+      S.write(ctx.home, state);
       // «no bajar», dicho ya si se puede saber sin salir a la red (con lo último que se trajo de `main`): quien pasa a
       // `stable` con lo instalado más nuevo se entera ahí; si no hay nada traído, lo dice el próximo `update`
       if (after.channel === 'stable') {
@@ -4552,7 +4550,7 @@ function cmdLink(ctx) {
       state.tree = clone;
       const hs = state.sources.find((s) => s.name === 'harness');
       if (hs) hs.dir = clone;
-      writeState(ctx, state);
+      S.write(ctx.home, state);
       return { code: 0, lines: [`modo desarrollador: ${clone}; actualizar es tuyo (update y startup no tocan su git; el aplicador corre desde ahí). Volver: harness.js link --managed`] };
     }, { env: ctx.env, onBusy: busy });
   }
@@ -4573,7 +4571,7 @@ function cmdLink(ctx) {
     state.tree_before = null;
     const hs = state.sources.find((s) => s.name === 'harness');
     if (hs) hs.dir = target;
-    writeState(ctx, state);
+    S.write(ctx.home, state);
     return { code: 0, lines: [`modo managed sobre ${target}`] };
   }, { env: ctx.env, onBusy: busy });
 }
@@ -4630,7 +4628,7 @@ function cmdRollback(ctx) {
       const was = r.state.hold.commit;
       r.state.hold = null;
       if (r.state.notice && /^retención:/.test(r.state.notice)) R.clearNotice(r.state);
-      writeState(ctx, r.state);
+      S.write(ctx.home, r.state);
       log(`retención levantada (había deshecho ${was})`);
       return { code: 0, lines: [`retención levantada (había deshecho ${was}): el próximo arranque actualiza según la política`] };
     }, { env: ctx.env, onBusy: busy });
@@ -4652,7 +4650,7 @@ function cmdRollback(ctx) {
         R.setNotice(state, holdText(state));
         res.lines.push(holdText(state));
       }
-      writeState(ctx, state);
+      S.write(ctx.home, state);
       log(`${res.undone} → ${state.version.number} (versión bajada)`);
       return { code: 0, lines: res.lines };
     }
@@ -4706,7 +4704,7 @@ function cmdRollback(ctx) {
     } else if (!moved.length) {
       lines.push(pick.filesOnly ? 'los árboles no se movieron (la copia no sabe a qué commits)' : `los árboles quedaron en ${state.version.number}`);
     }
-    writeState(ctx, state);
+    S.write(ctx.home, state);
     finishSnapshot(ctx, before, log);
     log(`${undone} → ${state.version.number} · ${(res.lines || []).join(' · ')}`);
     return { code: res.ok ? 0 : 1, lines: [...lines, ...(res.lines || [])] };
@@ -4856,7 +4854,7 @@ function cmdRelocate(ctx) {
     const snap = takeSnapshot(ctx, state.tree, { reason: 'relocate', from: version, to: version, log, force: true, state });
     RL.dieAt(ctx, 'after-snapshot');
     const res = RL.apply(ctx, state, pre);
-    if (res.pieces) writeState(ctx, state);
+    if (res.pieces) S.write(ctx.home, state);
     finishSnapshot(ctx, snap, log);
     log(`${res.total} cambio(s): ${res.reroot.files.map((f) => `${f.label} ${f.rerooted}`).concat(res.import ? ['CLAUDE.md'] : []).join(', ')}`);
     return { code: 0, lines: RL.describe(res, { snapshot: snap ? `${snap.dir} (harness.js rollback --to ${path.basename(snap.dir)} vuelve a ella lo que nadie tocó después)` : null }) };

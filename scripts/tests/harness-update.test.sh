@@ -1175,7 +1175,7 @@ if corre T10L; then
     printf '%s\notro-token-de-laboratorio\n' "$DUENO" > "$CANDADO/pid"
     ANTES="$(cksum < "$ESTADO_F")"
     wait "$PU"; RC=$?
-    [ "$RC" != 0 ] && grep -q "otro proceso tomó el candado mientras éste estaba detenido" "$BASE/t10l/u.out" \
+    [ "$RC" = 3 ] && grep -q "otro proceso tomó el candado mientras éste estaba detenido" "$BASE/t10l/u.out" \
       && ok "T10L la actualización desplazada se va con su motivo (rc $RC)" || mal "T10L rc $RC: $(tail -3 "$BASE/t10l/u.out")"
     [ "$(cksum < "$ESTADO_F")" = "$ANTES" ] && ok "T10L …sin grabar el estado" || mal "T10L la desplazada grabó el estado"
     grep -q "otro-token-de-laboratorio" "$CANDADO/pid" 2>/dev/null && ok "T10L …y no soltó el candado del otro" || mal "T10L soltó el candado que ya no era suyo"

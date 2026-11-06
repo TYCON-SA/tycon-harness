@@ -221,8 +221,12 @@ function writeAtomic(file, text) {
   throw lastError;
 }
 
-/** Escribe el estado (atómico). Sólo dentro de `lock.withLock`: ésa es la regla, no la impone este archivo. */
+/**
+ * Escribe el estado (atómico). Sólo dentro de `lock.withLock`: ésa es la regla, no la impone este archivo. Lo que sí
+ * mira: si este proceso tomó el candado y otro se lo pisó mientras estaba detenido, tira `TYCON_LOCK_LOST` y no escribe.
+ */
 function write(home, state) {
+  require('./lock.js').assertStillMine(home);   // al llamarla: lock.js requiere este archivo
   const { file } = paths(home);
   const out = Object.assign({}, state, { schema: Number.isInteger(state.schema) ? state.schema : SCHEMA });
   return writeAtomic(file, `${JSON.stringify(out, null, 2)}\n`);

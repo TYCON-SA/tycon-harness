@@ -834,7 +834,13 @@ test('T8 BootstrapLock_SameRuleAsLockJs @story-8.223 @ac-1 @ac-2 @ac-3 @ac-4 @ac
   lockWith(p, { pid: process.pid, ageMs: 11 * MIN });
   const r = boot.acquireLock();
   assert.strictEqual(r.ok, false, `el lanzador pisó a un dueño vivo de 11 min: ${JSON.stringify(r)}`);
-  fs.rmSync(p.lockDir, { recursive: true, force: true });
+  // un dueño muerto sí se pisa, y el registro dice por qué
+  lockWith(p, { pid: 2147483646, ageMs: 1 * MIN });
+  const dead = boot.acquireLock();
+  assert.strictEqual(dead.ok, true, `el lanzador no pisó a un dueño muerto: ${JSON.stringify(dead)}`);
+  assert.match(logOf(home), /el candado era del pid 2147483646, que ya no existe: lo piso/);
+  boot.releaseLock(dead);
+  assert.ok(!fs.existsSync(p.lockDir), 'el lanzador no soltó su propio candado');
 });
 
 test('T10 Lock_DisplacedOwner_ReleaseKeepsNewLock_WriteAborts @story-8.223 @ac-4 — el desplazado no suelta el candado del nuevo', () => {
@@ -868,6 +874,33 @@ test('T10 Lock_DisplacedOwner_ReleaseKeepsNewLock_WriteAborts @story-8.223 @ac-4
   boot.releaseLock(c);
   assert.ok(fs.existsSync(p.lockDir), 'el lanzador soltó un candado que ya no era suyo');
   fs.rmSync(p.lockDir, { recursive: true, force: true });
+  // grabar el estado pregunta por el candado, sea quien sea el que graba (harness.js, el cambio de herramienta, la
+  // mudanza, la instalación): con el token pisado tira y el archivo queda como estaba
+  const S = mod('state');
+  const before = fs.existsSync(p.file) ? fs.readFileSync(p.file, 'utf8') : null;
+  const w = lock.withLock(home, () => {
+    fs.writeFileSync(path.join(p.lockDir, 'pid'), `${process.pid}\n${os.hostname()}\ntoken-de-otro\n`);
+    try { S.write(home, { schema: 1, marker: 'PISADO' }); return 'escribió'; } catch (e) { return e.code; }
+  }, { env });
+  assert.strictEqual(w, lock.LOCK_LOST, `grabó el estado con el candado de otro: ${w}`);
+  assert.strictEqual(fs.existsSync(p.file) ? fs.readFileSync(p.file, 'utf8') : null, before, 'el estado cambió');
+  fs.rmSync(p.lockDir, { recursive: true, force: true });
+  // fuera del candado (sin token propio) grabar sigue igual que siempre
+  S.write(home, { schema: 1, marker: 'libre' });
+  assert.match(fs.readFileSync(p.file, 'utf8'), /"libre"/);
+  // la vuelta atrás no convierte «perdí el candado» en «el aplicador falló»: el aviso sube hasta harness.js
+  const R = rollbackLab('t10-8223-rollback');
+  const lost = () => { throw Object.assign(new Error('candado perdido'), { code: lock.LOCK_LOST }); };
+  assert.throws(() => R.restore(R.v1, R.st, lost), (e) => e.code === lock.LOCK_LOST);
+  // las dos mudanzas tampoco: la del clon de skills al grabar «en curso», y la de la carpeta en una etapa (sin deshacer)
+  const U = repointRig(unifiedLab('t10-8223-repoint'));
+  assert.throws(() => mod('repoint').run(U.ctx, U.state, U.opts({ want: 'unified', manual: true, write: lost })), (e) => e.code === lock.LOCK_LOST);
+  const mh = casa('t10-8223-move-home');
+  const oldTree = path.join(mh, 'clon'); fs.mkdirSync(path.join(oldTree, 'scripts'), { recursive: true });
+  const j = { stage: 'installed', oldTree, links: { skills: { kind: 'absent' } }, notes: [] };
+  const mctx = { home: mh, env: { TYCON_HOME: path.join(mh, '.tycon') }, platform: process.platform, opts: {} };
+  fs.mkdirSync(path.join(mh, '.tycon', 'harness'), { recursive: true });
+  assert.throws(() => mod('move-home').__test.advance(mctx, j, { ensureLink: lost }, { log: () => {} }), (e) => e.code === lock.LOCK_LOST);
 });
 
 test('T2 · withLock corre fn y suelta; tomado → onBusy; si fn tira igual suelta; con LOCK_HELD no suelta el del padre', () => {
@@ -2871,13 +2904,13 @@ function rollbackLab(name) {
   fs.writeFileSync(file, AFTER);
   const calls = { applier: 0 };
   /** Corre la vuelta atrás al commit `to`, con la fuente `source` (la del laboratorio si no se pasa otra). */
-  const restore = (to, source = st) => {
+  const restore = (to, source = st, runApplier = () => { calls.applier += 1; return { ok: true, report: null }; }) => {
     const s = state.defaults({ tree: st.dir, sources: [Object.assign({}, source)], mode: 'managed' });
     const copy = {
       dir: copyDir, name: 'copy-1',
       manifest: { seq: 1, reason: 'before-update', sources: { harness: to }, files: [{ path: file, existed: true, sha256: sha256(BEFORE), sha256_after: sha256(AFTER), copy: path.join('files', 'settings.json') }] },
     };
-    return rollback.restore({ home: L.home, env: L.env, tree: st.dir }, s, copy, { runApplier: () => { calls.applier += 1; return { ok: true, report: null }; } });
+    return rollback.restore({ home: L.home, env: L.env, tree: st.dir }, s, copy, { runApplier });
   };
   /** La vuelta atrás frenada antes de tocar nada: ni árboles, ni archivos, ni aplicador. */
   const untouched = (r, what) => {

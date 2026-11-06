@@ -343,7 +343,10 @@ function restore(ctx, state, copy, { why = 'rollback', runApplier = null, log = 
   // (3) el aplicador de ese árbol, con el reporte de lo que dejó
   if (typeof runApplier !== 'function') { result.ok = false; say('sin aplicador para correr: no quito piezas ni toco el registro'); return result; }
   let a;
-  try { a = runApplier(ctx, tree, { log, snapshotDir }); } catch (e) { a = { ok: false, report: null, reason: e.message }; }
+  try { a = runApplier(ctx, tree, { log, snapshotDir }); } catch (e) {
+    if (e && e.code === 'TYCON_LOCK_LOST') throw e;   // otro proceso tiene el candado: no es un fallo del aplicador
+    a = { ok: false, report: null, reason: e.message };
+  }
   if (!a || !a.ok) {
     result.ok = false;
     say(`el aplicador de ${tree} falló (${(a && a.reason) || 'sin motivo'}): no quito piezas ni toco el registro`);

@@ -73,6 +73,8 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const SRC = require('./sources.js');
+// el candado que otro pisó (`lock.js`): una grabación del estado que lo tira no es un fallo de la mudanza, se va hasta arriba
+const LOCK_LOST = 'TYCON_LOCK_LOST';
 
 const MAIN = SRC.MAIN_REF;
 const VISIBLE = Object.freeze(['agents', 'packs', 'skills']);   // lo que el clon re-apuntado muestra, además de la raíz
@@ -819,6 +821,7 @@ function forward(ctx, state, o) {
   const kept = state.repoint && state.repoint.blocked;
   state.repoint = { pending: { step: 'forward', from: fromRec, to: toRec, at } };
   try { if (o.write) o.write(); } catch (e) {
+    if (e && e.code === LOCK_LOST) throw e;
     state.repoint = kept ? { blocked: kept } : undefined; tidy(state); if (state.repoint === undefined) delete state.repoint;
     finish();
     return cleanStop({ cause: 'state', reason: `no pude anotar la mudanza en el estado (${e.code || e.message})`, transient: true });
@@ -849,7 +852,7 @@ function forward(ctx, state, o) {
 
   skills.url = harness.url; skills.commit = target; skills.previous = from;
   state.repoint = { applied: { at, from: fromRec, to: toRec } };
-  try { if (o.write) o.write(); } catch (e) { log(`repoint: el clon ya está re-apuntado y no pude grabar el estado ahora (${e.code || e.message}): lo graba el final de esta ejecución`); }
+  try { if (o.write) o.write(); } catch (e) { if (e && e.code === LOCK_LOST) throw e; log(`repoint: el clon ya está re-apuntado y no pude grabar el estado ahora (${e.code || e.message}): lo graba el final de esta ejecución`); }
   finish();
   const text = `skills re-apuntadas: ${dir} ahora sigue al repo unificado (${harness.url}) y quedó en el mismo commit que el arnés (${sha7(target)}); venía de ${oldUrl} @ ${sha7(from)}. Lo tuyo —sin versionar, ignorado, stash— no se movió. Se deshace con la llave update.skills_source en «separate»`;
   log(`repoint: ${text}`);
@@ -921,6 +924,7 @@ function back(ctx, state, o) {
   const finish = () => { if (o.finish) o.finish(snap); };
   state.repoint = { applied, pending: { step: 'back', from, to: applied.to, at: nowIso() } };
   try { if (o.write) o.write(); } catch (e) {
+    if (e && e.code === LOCK_LOST) throw e;
     state.repoint = { applied };
     finish();
     return stop({ cause: 'state', reason: `no pude anotar la mudanza en el estado (${e.code || e.message})`, transient: true });
@@ -934,7 +938,7 @@ function back(ctx, state, o) {
   }
   skills.url = from.url; skills.commit = from.commit; skills.previous = from.previous === undefined ? null : from.previous;
   delete state.repoint;
-  try { if (o.write) o.write(); } catch (e) { log(`repoint: el clon ya volvió y no pude grabar el estado ahora (${e.code || e.message}): lo graba el final de esta ejecución`); }
+  try { if (o.write) o.write(); } catch (e) { if (e && e.code === LOCK_LOST) throw e; log(`repoint: el clon ya volvió y no pude grabar el estado ahora (${e.code || e.message}): lo graba el final de esta ejecución`); }
   finish();
   for (const n of u.notes) log(`repoint: ${n}`);
   const text = `skills de vuelta en el repo viejo: ${dir} volvió a ${from.url} @ ${sha7(from.commit)} y muestra todo otra vez (la llave update.skills_source está en «separate»)${u.notes.length ? ` — ${u.notes.join('; ')}` : ''}`;
@@ -1027,7 +1031,7 @@ function decide(ctx, state, o) {
     skills.url = pending.from.url; skills.commit = pending.from.commit; skills.previous = pending.from.previous === undefined ? null : pending.from.previous;
     delete state.repoint;
     for (const n of u.notes) log(`repoint: ${n}`);
-    try { if (o.write) o.write(); } catch (e) { log(`repoint: no pude grabar el estado ahora (${e.code || e.message})`); }
+    try { if (o.write) o.write(); } catch (e) { if (e && e.code === LOCK_LOST) throw e; log(`repoint: no pude grabar el estado ahora (${e.code || e.message})`); }
   }
 
   // el estado se contrasta con el clon de verdad en cada pasada: una mudanza «aplicada» cuyo clon ya no sigue al repo
