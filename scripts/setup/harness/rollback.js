@@ -408,4 +408,57 @@ function restore(ctx, state, copy, { why = 'rollback', runApplier = null, log = 
   return result;
 }
 
-module.exports = { pickTarget, restore, newestFirst, defaultIsOwnPiece };
+/**
+ * La vuelta sola de una versión bajada que no quedó sana (release.js): los árboles ya volvieron y el aplicador de la
+ * versión que quedó ya corrió (`applied`, su `{ report, shared }`). Quita lo registrado que ese reporte ya no trae —lo
+ * que agregó la versión que falló, como un gancho cuyo archivo ya no está—, salvo lo propio de harness.js, y el registro
+ * sale de ese reporte. Sin reporte no se sabe qué es de quién: no quita nada. `{ ok, lines, removed, kept }`; muta
+ * `state.managed`.
+ *
+ * El aplicador deja afuera del reporte los hooks cuyo evento o prefijo no declara quien lo lanza (`declared`, el
+ * `{ TYCON_REPORT_HOOK_EVENTS, TYCON_REPORT_HOOK_PREFIXES }` con que corrió): que no viajen no quiere decir que la versión
+ * ya no los traiga. Un hook se quita sólo si su evento y su prefijo están declarados; sin `declared`, ninguno.
+ */
+function dropUnreported(state, applied, { home = os.homedir(), env = process.env, tree = null, log = null, version = null, isOwnPiece = null, declared = null } = {}) {
+  const result = { ok: true, lines: [], removed: [], kept: [] };
+  const say = (l) => { result.lines.push(l); try { if (log) log(`vuelta: ${l}`); } catch (_) { /* el registro nunca frena */ } };
+  const rep = applied && Array.isArray(applied.report) ? shared.union(applied.report, applied.shared) : null;
+  if (!rep) { result.ok = false; say('el aplicador no devolvió el reporte de piezas: no quito nada y el registro queda como estaba'); return result; }
+  const own = typeof isOwnPiece === 'function' ? isOwnPiece : defaultIsOwnPiece(home);
+  const opts = { home, env, isStartupLine: startupLine.isNew };
+  const reported = new Set(rep.map(pieceKey));
+  const prev = (Array.isArray(state.managed) ? state.managed : []).filter((p) => isObject(p) && p.kind && p.where && p.id);
+  const lista = (k) => String((declared && declared[k]) || '').split(',').map((s) => s.trim()).filter(Boolean);
+  const eventos = lista('TYCON_REPORT_HOOK_EVENTS');
+  const prefijos = ['@tcg:', ...lista('TYCON_REPORT_HOOK_PREFIXES')];
+  const viaja = (p) => {
+    if (p.kind !== 'hook') return true;
+    const h = managed.hookId(String(p.id));
+    const pre = /^(@[a-z0-9-]+:)/.exec(h.relpath);
+    return h.event !== null && eventos.includes(h.event) && (!pre || prefijos.includes(pre[1]));
+  };
+  const gone = prev.filter((p) => !reported.has(pieceKey(p)) && !own(p) && viaja(p) && managed.present(p, opts) !== false);
+  const removedKeys = new Set();
+  if (gone.length) {
+    const R = loadRemove();
+    if (!R || typeof R.removePieces !== 'function') {
+      result.ok = false;
+      say(`no puedo quitar ${gone.length} pieza(s) que esta versión ya no trae (falta remove.js): ${gone.map(describe).join(', ')}`);
+    } else {
+      let res;
+      try { res = R.removePieces(gone, { home, env, tree, log }); } catch (e) { res = { removed: [], kept: gone.map((p) => ({ piece: p, why: `no pude quitarla (${e.message})`, error: true })) }; }
+      result.removed = Array.isArray(res && res.removed) ? res.removed : [];
+      result.kept = Array.isArray(res && res.kept) ? res.kept : [];
+      for (const p of result.removed) { if (isObject(p)) removedKeys.add(pieceKey(p)); say(`quitada (esta versión ya no la trae): ${describe(p)}`); }
+      for (const k of result.kept) say(`quedó: ${describe(k)}`);
+      if (result.kept.some((k) => isObject(k) && k.error === true)) result.ok = false;
+    }
+  }
+  state.managed = managed.merge(prev.filter((p) => !removedKeys.has(pieceKey(p))), rep, {
+    version,
+    present: (p) => (own(p) ? true : managed.present(p, opts)),
+  });
+  return result;
+}
+
+module.exports = { pickTarget, restore, dropUnreported, newestFirst, defaultIsOwnPiece };

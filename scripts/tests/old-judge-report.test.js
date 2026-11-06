@@ -68,12 +68,12 @@ function applyIds(L, env = {}) {
 const commandsOf = (L) => JSON.stringify(JSON.parse(fs.readFileSync(L.settingsPath, 'utf8')).hooks);
 
 /** El árbol de la versión vieja en una carpeta temporal, o null (prueba NO MEDIDA) si el commit no está en este clon. */
-function oldTree(t) {
-  const has = spawnSync('git', ['-C', ROOT, 'cat-file', '-e', `${OLD_REF}^{commit}`], { encoding: 'utf8' });
-  if (has.status !== 0) { t.skip(`NO MEDIDO: el commit ${OLD_REF} (v2026.10.20.52) no está en la historia de este clon`); return null; }
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'old-judge-2052-'));
+function oldTree(t, ref = OLD_REF, version = 'v2026.10.20.52') {
+  const has = spawnSync('git', ['-C', ROOT, 'cat-file', '-e', `${ref}^{commit}`], { encoding: 'utf8' });
+  if (has.status !== 0) { t.skip(`NO MEDIDO: el commit ${ref} (${version}) no está en la historia de este clon`); return null; }
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'old-judge-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  const tar = spawnSync('bash', ['-c', `git -C "${ROOT}" archive ${OLD_REF} scripts | tar -x -C "${dir}"`], { encoding: 'utf8' });
+  const tar = spawnSync('bash', ['-c', `git -C "${ROOT}" archive ${ref} scripts | tar -x -C "${dir}"`], { encoding: 'utf8' });
   assert.strictEqual(tar.status, 0, tar.stderr);
   return dir;
 }
@@ -100,7 +100,7 @@ test('Harness_PassesHealthPrefixes_ToApplier @story-8.105 @ac-2', () => {
   const health = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'health.js'));
   assert.deepStrictEqual(health.HOOK_PREFIXES, ['@tcg:', '@int:']);
   const harness = require(path.join(ROOT, 'scripts', 'setup', 'harness.js'));
-  assert.deepStrictEqual(harness.applierReportEnv(), { TYCON_REPORT_HOOK_PREFIXES: '@tcg:,@int:' });
+  assert.strictEqual(harness.applierReportEnv().TYCON_REPORT_HOOK_PREFIXES, '@tcg:,@int:');
   // y llega al proceso del aplicador: el ambiente con que se lanza la incluye
   const hsrc = fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'harness.js'), 'utf8');
   assert.match(hsrc, /TYCON_HARNESS_GIT_BASH_HEALTH: '1' \}, applierReportEnv\(log\)\)/, 'runClaudeApplier no le pasa los prefijos al aplicador');
@@ -229,4 +229,49 @@ test('OldMerge_SettingsKeepIntHooks_NextStartupRecordsThem @story-8.105 @ac-6', 
   const nuevo = applyIds(L, { TYCON_REPORT_HOOK_PREFIXES: '@tcg:,@int:' }).ids.map((id) => ({ kind: 'hook', where: L.settingsPath, id }));
   const back = M.merge(merged, nuevo, { version: '2026.10.24.1', present: (p) => M.present(p, { home: L.home, env: {} }) });
   assert.ok(back.some((p) => p.id === intPiece.id && p.kind === 'hook'), 'el arranque siguiente no lo volvió a anotar');
+});
+
+// ── un evento de hook que el juez viejo no conoce ──────────────────────────────────────────────────────────────────────
+// El caso: la 2026.11.04.19 no tiene `PermissionRequest` en su lista de eventos. Su salud lee
+// `PermissionRequest:@tcg:session-state.js` entero como una ruta de agent-skills, no la encuentra, y cada versión nueva
+// vuelve sola. Lo mismo que con los prefijos: el aplicador informa un evento que no conoce el juez más viejo en uso sólo
+// si quien lo lanza lo declara en `TYCON_REPORT_HOOK_EVENTS`.
+const OLD_EVENTS_REF = '62af6107';   // v2026.11.04.19: la versión que quedó trabada en Windows
+
+test('OldJudge_UnknownEvent_NotInReport_AndContrastReproduces', (t) => {
+  const old = oldTree(t, OLD_EVENTS_REF, 'v2026.11.04.19');
+  if (!old) return;
+  const oldManaged = require(path.join(old, 'scripts', 'setup', 'harness', 'managed.js'));
+  const oldHealth = require(path.join(old, 'scripts', 'setup', 'harness', 'health.js'));
+  assert.ok(!oldManaged.EVENTS.includes('PermissionRequest'), 'la versión vieja ya conoce el evento: la prueba no reproduce nada');
+  const judge = (L, ids) => oldHealth.check({ home: L.home, env: { PATH: process.env.PATH, HOME: L.home }, platform: process.platform, tree: L.tcg },
+    { tree: L.tcg, skillsDir: L.skills, report: ids.map((id) => ({ kind: 'hook', where: L.settingsPath, id })), applierOut: '', harnessJs: path.join(L.base, 'no-hay.js'), hookTimeoutMs: 5000 });
+  const porHooks = (r) => (r.failures || []).filter((f) => /registrado y su archivo no está/.test(f));
+  const L = lab(t, [H('PermissionRequest', '@tcg:p.js')]);
+  // sin la variable (lo lanza la versión vieja): el hook queda en settings.json pero no viaja, y el juez viejo pasa
+  const { ids } = applyIds(L);
+  assert.ok(!ids.some((id) => id.startsWith('PermissionRequest:')), `viajó al juez viejo: ${ids.join(', ')}`);
+  assert.match(commandsOf(L), /"PermissionRequest"/, 'el hook igual queda registrado en settings.json');
+  assert.deepStrictEqual(porHooks(judge(L, ids)), []);
+  // contraste: con el evento en el informe, el juez viejo se traba como en la máquina
+  const conEvento = applyIds(lab(t, [H('PermissionRequest', '@tcg:p.js')]), { TYCON_REPORT_HOOK_EVENTS: 'PermissionRequest' });
+  assert.ok(conEvento.ids.includes('PermissionRequest:@tcg:p.js'), 'con la variable tiene que viajar');
+  assert.ok(porHooks(judge(L, conEvento.ids)).some((f) => /PermissionRequest:@tcg:p\.js/.test(f)), 'el contraste no reprodujo la traba');
+});
+
+test('NewEvent_NeverReachesAJudgeThatDoesNotDeclareIt', () => {
+  const A = require(APPLY);
+  assert.strictEqual(A.reportableHookId('PreToolUse:@tcg:p.js', {}), true, 'un evento que conoce cualquier juez viaja');
+  assert.strictEqual(A.reportableHookId('PermissionRequest:@tcg:session-state.js', {}), false);
+  assert.strictEqual(A.reportableHookId('PermissionRequest:@tcg:session-state.js', { TYCON_REPORT_HOOK_EVENTS: 'PermissionRequest' }), true);
+  // un id sin evento (el aplicador de laboratorio) sigue viajando
+  assert.strictEqual(A.reportableHookId('@tcg:p.js', {}), true);
+  // la lista congelada: los eventos que conoce el juez más viejo en uso; agrandarla rompe a las versiones viejas
+  assert.deepStrictEqual(A.OLD_JUDGE_EVENTS, ['PreToolUse', 'PostToolUse', 'SessionStart', 'SessionEnd', 'Stop', 'SubagentStop', 'UserPromptSubmit', 'Notification', 'PreCompact']);
+});
+
+test('Harness_PassesHealthEvents_ToApplier', () => {
+  const HJ = require(path.join(ROOT, 'scripts', 'setup', 'harness.js'));
+  const M = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'managed.js'));
+  assert.deepStrictEqual(HJ.applierReportEnv().TYCON_REPORT_HOOK_EVENTS.split(','), M.EVENTS);
 });

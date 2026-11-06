@@ -85,7 +85,13 @@ function intSpec(spec) {
 // más viejo en uso; agrandarla rompe a las versiones viejas) o uno que quien lo lanza declara en
 // `TYCON_REPORT_HOOK_PREFIXES`. El hook igual queda registrado en settings.json: sólo no viaja.
 const OLD_JUDGE_PREFIXES = Object.freeze(['@tcg:']);
+// Lo mismo con el evento: el juez lee `<evento>:<ruta>` sólo con un evento de su lista, y con otro toma el id entero por
+// la ruta. Viaja un evento de esta lista, CONGELADA (la del juez más viejo en uso), o uno que quien lo lanza declara en
+// `TYCON_REPORT_HOOK_EVENTS`.
+const OLD_JUDGE_EVENTS = Object.freeze(['PreToolUse', 'PostToolUse', 'SessionStart', 'SessionEnd', 'Stop', 'SubagentStop', 'UserPromptSubmit', 'Notification', 'PreCompact']);
 function reportableHookId(id, env = process.env) {
+  const ev = /^([A-Za-z]+):(?=.)/.exec(String(id));
+  if (ev && !OLD_JUDGE_EVENTS.includes(ev[1]) && !String((env && env.TYCON_REPORT_HOOK_EVENTS) || '').split(',').map((s) => s.trim()).includes(ev[1])) return false;
   const spec = String(id).replace(/^[A-Za-z]+:(?=.)/, '');
   const m = /^(@[a-z0-9-]+:)/.exec(spec);
   if (!m || OLD_JUDGE_PREFIXES.includes(m[1])) return true;
@@ -1015,6 +1021,6 @@ function cli(argv, opts = {}) {
   }
 }
 
-module.exports = { OLD_JUDGE_PREFIXES, reportableHookId, scriptOf, NODE_FLOOR, TOP_CANONICAL, ENV_CANONICAL, lugarCanonico, harnessIndexOf, validateList, loadList, loadMinimalIds, readConfig, envWithOrgSwitches, decide, applyToSettings, normMatcher, invokesRepoPath, namesFile, runnerFor, normalizePullLine, main, cli, ApplyError };
+module.exports = { OLD_JUDGE_PREFIXES, OLD_JUDGE_EVENTS, reportableHookId, scriptOf, NODE_FLOOR, TOP_CANONICAL, ENV_CANONICAL, lugarCanonico, harnessIndexOf, validateList, loadList, loadMinimalIds, readConfig, envWithOrgSwitches, decide, applyToSettings, normMatcher, invokesRepoPath, namesFile, runnerFor, normalizePullLine, main, cli, ApplyError };
 
 if (require.main === module) process.exitCode = cli(process.argv.slice(2));
