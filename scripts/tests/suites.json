@@ -1437,6 +1437,11 @@
     },
     {
       "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adhoc-spawn-notice.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/steps-names.test.js",
       "requiere": []
     },
@@ -3301,6 +3306,12 @@
       "__nota": "story 2.31: cómo contesta el asistente y la tabla de nombres, según la configuración — sin `response`, el bloque neutro; el perfil de TYCON deja el bloque de antes salvo el título; el medidor toma `response.max_chars`; un estilo inventado deja el bloque que había; las filas con su integración apagada no se escriben y, sin saber, quedan como estaban; los títulos sin fecha; las seis variantes en su techo. Corre los tres sincronizadores (bash, PowerShell si hay pwsh —en la CI es obligatorio— y el de Codex) sobre una HOME de juguete; sin red.",
       "raiz": "arnes",
       "ruta": "tests/response-style-variants.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.149: el asistente contesta en el idioma de la persona — la copia del lector del freno acepta `auto`; con `auto`, los tres sincronizadores (bash, PowerShell si hay pwsh y el de Codex) escriben el bloque en castellano con la regla de idioma, y cada `<estilo>.auto.md` sigue a su `.es.md` byte a byte; con `es` o `en` declarados, y con el perfil de TYCON, el bloque de antes byte a byte; `AUTO` o `auto ` son configuración rota. Sobre una HOME de juguete; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/response-language.test.js",
       "requiere": []
     },
     {

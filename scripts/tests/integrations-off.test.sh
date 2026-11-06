@@ -398,9 +398,10 @@ for p in sorted(glob.glob(os.path.join(sys.argv[1], "*.md"))):
     while lines and (lines[0].startswith("<!-- requires-integration:") or lines[0].startswith("<!-- requires-profile:")):
         lines = lines[1:]
     # un bloque que declara sus variantes (story 2.31) trae el texto de la que elige la configuración: sin perfil, la
-    # neutra en castellano, con el tope de su estilo (2000) y sus renglones (20)
+    # neutra en `auto` (el castellano con la regla de idioma, story 8.149), con el tope de su estilo (2000) y sus
+    # renglones (20)
     if lines and lines[0].startswith("<!-- variants: response -->"):
-        lines = open(os.path.join(sys.argv[1], n, "neutral.es.md"), encoding="utf-8").read().split("\n")
+        lines = open(os.path.join(sys.argv[1], n, "neutral.auto.md"), encoding="utf-8").read().split("\n")
         while lines and lines[0].startswith("<!-- requires-"):
             lines = lines[1:]
         lines = "\n".join(lines).replace("{{max_chars}}", "2000").replace("{{max_lines}}", "20").split("\n")
