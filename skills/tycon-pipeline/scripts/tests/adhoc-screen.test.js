@@ -655,7 +655,7 @@ test('adhoc set: anota la maqueta con su aprobación y conserva lo anotado', (t)
   const h = home(t);
   const m = maqueta(r);
   const c = escribir(r, 'captura.png', PNG);
-  const set = (o) => cli(h, ['adhoc', 'set', JSON.stringify({ reason: 'el combo muestra el nombre', ...o })], { ventana: true });
+  const set = (o) => cli(h, ['adhoc', 'set', JSON.stringify({ reason: 'el combo muestra el nombre', datos: 'sin-cambio', ...o })], { ventana: true });
   assert.strictEqual(set({ mockup: m }).status, 2, 'sin aprobación');
   assert.strictEqual(set({ mockupApproved: 'Ana' }).status, 2, 'sin maqueta');
   assert.strictEqual(set({ mockup: m, mockupApproved: 'x'.repeat(201) }).status, 2, 'una aprobación que la ventana recortaría');

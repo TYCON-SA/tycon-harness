@@ -411,6 +411,29 @@ test('T46 Buscar_SoloClick_NoMiraLaCoordinadoraNiElMensaje @story-8.181 @ac-4', 
   assert.strictEqual(oa.buscar({ casa: propia, sesion: 'ses-a', cuadro: soloClick, ahora: AHORA, validar: SIEMPRE }).via, 'click');
 });
 
+// 🔴 Falla con: el freno de los datos destrabado por un «aprobado» escrito, o con el click de una coordinadora que ya no
+// está vigente; o sin poder destrabarlo con el click del dueño en la pestaña de la coordinadora.
+test('T27 Buscar_ClickDelDueno_ValeEnLaCoordinadoraVigente_NoElMensaje @story-8.196 @ac-13', (t) => {
+  const casa = casaNueva(t);
+  oa.anotar(casa, { ...click(), sesion: 'ses-b', herramienta: COORD });
+  procesoDeLaSesion(casa);
+  const delDueno = { ...CUADRO, clickDelDueno: true };
+  const busca = (coordinadora, arbol = ARBOL_COORD) => oa.buscar({ casa, sesion: 'ses-a', cuadro: delDueno, coordinadora, ahora: AHORA, validar: SIEMPRE, arbol });
+  assert.strictEqual(busca('ses-b').via, 'click', 'el click en la coordinadora confirmada y viva vale');
+  assert.ok(!busca(null).ok, 'una coordinadora sin confirmar (vencida) no cuenta');
+  assert.ok(!busca('ses-b', []).ok, 'una coordinadora sin su proceso vivo no cuenta');
+  const propia = casaNueva(t);
+  oa.anotar(propia, mensaje('Aprobado'));
+  const r = oa.buscar({ casa: propia, sesion: 'ses-a', cuadro: delDueno, ahora: AHORA, validar: SIEMPRE });
+  assert.ok(!r.ok, 'un «aprobado» escrito no vale');
+  assert.match(r.motivo, /click del dueño/);
+  // y la pregunta dice qué hace cada opción: la coordinadora la muestra tal cual
+  const c = oa.cuadroDe({ firma: 'adhoc-lane:datos', destino: 'ses-a', que: 'dejar pasar', siSaleMal: 'x', huella: 'h1', clickDelDueno: true, descripciones: ['Dejar pasar: sigue', 'No pasa: historia'] });
+  assert.match(c.pregunta, /«Sí, aprobar»: Dejar pasar: sigue\. «No»: No pasa: historia\. Sólo vale tu click\./);
+  assert.strictEqual(c.clickDelDueno, true);
+  assert.strictEqual(c.descripciones, undefined, 'las descripciones van en la pregunta, no aparte');
+});
+
 test('T13 Cuadro_SobreCupo_OtraDescripcion_NoVale @story-8.181 @ac-5', (t) => {
   const casa = casaNueva(t);
   const c = cuadroDelTope();

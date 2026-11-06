@@ -177,7 +177,7 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   anotar `pipeline.js qa-readability --story <s> --repo <r> --marks <n>`), o `<sid>-legibilidad-ui.md` (la misma
   pasada sobre los textos y capturas de la pantalla, `--ui-texts`; sus marcas se arreglan EN LA PANTALLA; `--scope ui`)
   · DODRT-C8 AC de acción ejecutado.
-  Aprobaciones viejas de la matriz (del home al repo): `scripts/migrate-waivers-to-repo.js --repos <dirs> [--apply]` — `--apply` vuelve a firmar: lo corre el DEV en su terminal (pide `/dev/tty`); el agente, sólo el dry-run.
+  Aprobaciones viejas de la matriz al repo: `scripts/migrate-waivers-to-repo.js --repos <dirs> [--apply]`; `--apply` firma: lo corre el DEV en su terminal; el agente, el dry-run.
 - **ATDD fuera del pipeline** (I.i.b · I.i.c + I.i.c.1 · I.i.d + I.i.d.1 · I.i.e): `on-pre-commit.js` avisa inversión test/código por eventos del repo
   (`TYCON_ATDD_COMMIT_GATE=block|off`); las stories se descubren por frontmatter (`lib/story-discovery.js`,
   `TYCON_STORY_SCAN_BUDGET_MS`; diagnóstico `node lib/story-discovery.js --doctor [--budget <ms>]`); aviso de guía de QA faltante o vieja; `lib/story-evidence-gate.js` avisa ACs
@@ -196,7 +196,7 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
 - **Flags**: `--no-autonomous`/`--autonomous` · `--deep-review`/`--no-deep-review`/`--ultracode`/
   `--deep-review-fable` · `--cost-tier lean|deep` · `--visual-plan` · `--force-full-reloop` ·
   `--out-of-order` · `--relaunch` · `--no-atdd` · `--no-mutation` · `--max-mutants N` · `--evidence-dir` ·
-  `--brief` (sólo `start`: lo que el orquestador consume + la RUTA del JSON entero).
+  `--brief` (`start`: lo usado + la ruta del JSON).
 - **Env**: `TYCON_PIPELINE_NO_AUTONOMOUS` · `STOP_AUTONOMY` · `TYCON_NO_DEEP_REVIEW` · `TYCON_5B_EARLY` ·
   `TYCON_PACKS_DIR` · `TYCON_AGENTS_DIR` (paquetes de revisores y carpeta de agentes) ·
   `TYCON_READ_METER` · `TYCON_READ_MAX_CHARS` ·
@@ -276,10 +276,11 @@ Hooks: `on-prompt.js` (intención de story, conflicto cross-sesión, "listo" con
 ## 🔒 Portón de carril
 
 En un repo del arnés, un archivo de CÓDIGO no se edita sin (a) pipeline activo o (b) carril ad-hoc:
-`marker.js adhoc set '{"reason":"<qué y por qué>"}'` (cupo 8, `adhoc.log`), que el dueño
-aprueba en ventana de permiso, click o «aprobado» (firma `adhoc-lane`; o `--terminal`). Más de 8: click aparte del dev en su
-pestaña, o terminal (`adhoc-lane:sobre-cupo`). La designada lo declara por otra pestaña con
-`--for-session <id>` si el perfil lo delega. Con el plan sin aprobar, no se edita código. Escribir en
+`marker.js adhoc set '{"reason":"<qué y por qué>","datos":"sin-cambio"}'` (cupo 8), que el dueño
+aprueba en ventana de permiso, click o «aprobado» (firma `adhoc-lane`; o `--terminal`). Más de 8: click del dev en su
+pestaña o terminal (`adhoc-lane:sobre-cupo`). Si cambia de dónde sale un dato: historia salvo click del dueño;
+ante la duda, historia. La designada lo declara por otra pestaña con
+`--for-session <id>` si el perfil lo delega. Sin plan aprobado no se edita código. Escribir en
 `~/.claude/.tycon-pipeline/` se niega siempre. El carril lo elige el USER: si no, preguntar.
 Kill-switches del dev: `TYCON_STORY_GATE=off` (apaga la edición, no la firma),
 `.tycon/advisors.yaml → pipeline.story_gate: false`.

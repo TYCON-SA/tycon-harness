@@ -254,7 +254,33 @@ function delArreglo(palabras) {
   try { p = JSON.parse(palabras[3] || ''); } catch (_) { p = null; }
   if (!p || typeof p !== 'object') return null;
   const cupo = Number.isFinite(Number(p.maxFiles)) && Number(p.maxFiles) > 0 ? `hasta ${Number(p.maxFiles)} archivos de implementación, sin pruebas ni guías` : 'el cupo de siempre (8 archivos de implementación, o el que ya tenía)';
-  return { queHace: [`Abre un arreglo rápido sin historia, con ${cupo}`], fuente: palabras[3], cita: String(p.reason || '') || null };
+  const datos = { 'sin-cambio': 'La sesión declara que no cambia de dónde salen los datos ni quién los ve', cambian: 'La sesión declara que cambia de dónde salen los datos o quién los ve' }[p.datos];
+  return { queHace: [`Abre un arreglo rápido sin historia, con ${cupo}`, ...(datos ? [datos] : [])], fuente: palabras[3], cita: String(p.reason || '') || null };
+}
+
+/** El valor de una bandera de las palabras del comando (`--changed <texto>`), o null. */
+function bandera(palabras, nombre) {
+  const i = palabras.indexOf(nombre);
+  return i >= 0 && typeof palabras[i + 1] === 'string' ? palabras[i + 1] : null;
+}
+
+const RECOMIENDA = { pasar: 'dejar pasar', historia: 'escribir la historia', descartar: 'descartar lo del carril' };
+/**
+ * Dejar pasar el freno de los datos: qué lo frenó (lo anotó el freno de guardar en el carril, con el texto de la línea),
+ * qué cambió de verdad y qué recomienda la sesión. El código del cuadro sale de esas señales: con otras, otro cuadro.
+ */
+function delFrenoDeDatos(palabras, estado, destino) {
+  let a = null;
+  try { a = JSON.parse(fs.readFileSync(path.join(estado, 'adhoc', `${destino}.json`), 'utf8')); } catch (_) { a = null; }
+  const f = a && a.frenoDatos;
+  const ss = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'source-signals.js'));
+  const h = f && Array.isArray(f.hallazgos) && f.hallazgos[0];
+  const lo = h ? `Qué lo frenó: ${ss.descripcion(h)} («${String(h.texto || '').slice(0, 120)}»)${f.hallazgos.length > 1 ? `, y ${f.hallazgos.length - 1} más` : ''}`
+    : 'Qué lo frenó: no hay un freno de datos anotado en este carril';
+  const rec = bandera(palabras, '--recommends');
+  const lineas = [lo, `Qué cambió de verdad: ${bandera(palabras, '--changed') || '(sin decir)'}`,
+    `La sesión recomienda: ${RECOMIENDA[rec] || rec || '(sin decir)'}, porque ${bandera(palabras, '--why') || '(sin decir)'}. Ante la duda, historia`];
+  return { queHace: lineas, fuente: `${(f && f.huella) || ''}\n${lineas.join('\n')}` };
 }
 
 /**
@@ -280,6 +306,7 @@ function partesDe({ firma, palabras, cwd, marcador, estado, destino } = {}) {
   if (firma === 'critical-waiver') return delCritico(palabras, marcador);
   if (firma === 'extra-round') return deLaVuelta(palabras, marcador);
   if (firma === 'adhoc-lane' || firma === 'adhoc-lane:sobre-cupo') return delArreglo(palabras);
+  if (firma === 'adhoc-lane:datos' && estado && destino) return delFrenoDeDatos(palabras, estado, destino);
   return null;
 }
 
