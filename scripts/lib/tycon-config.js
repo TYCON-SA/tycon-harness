@@ -1661,6 +1661,24 @@ const GUARD_INSTALL = 'sudo bash ~/.tycon/harness/scripts/production/install-gua
 // aviso de «configuración ROTA» en cada sesión por haber elegido nombres es un costo que no vale. Se escribe después de
 // poner al día el freno.
 const GUARD_FIRST = Object.freeze(['coordination.session_names']);
+// Lo mismo, por valor: una opción nueva de una clave que el freno instalado ya conoce. Con un freno anterior, `auto` en
+// el archivo de la máquina es una opción fuera de su lista y la configuración entera queda ROTA para él. El perfil del
+// equipo no cuenta: el freno instalado no lo lee.
+const GUARD_FIRST_VALUES = Object.freeze({ 'response.language': Object.freeze(['auto']) });
+/** ¿El lector del freno instalado acepta `valor` en `seccion.clave`? `true` (o no hay freno) · `false` · el motivo si no
+ *  se pudo leer. Lee la lista de la opción tal como está escrita en el vocabulario de esa copia. */
+function guardAccepts(guardLib, seccion, clave, valor) {
+  const sabe = guardKnows(guardLib, seccion, clave);
+  if (sabe !== true) return sabe;
+  let texto;
+  try { texto = fs.readFileSync(guardLib, 'utf8'); } catch (e) {
+    if (e && e.code === 'ENOENT') return true;
+    return `no pude leerlo (${(e && e.code) || e.message})`;
+  }
+  const cuerpo = new RegExp(`\\b${seccion}\\s*:\\s*(?:Object\\.freeze\\s*\\(\\s*)?\\{([^}]*)\\}`).exec(texto);
+  const opcion = cuerpo && new RegExp(`(?:^|[\\s,{])${clave}\\s*:\\s*'opcion:([^']*)'`).exec(cuerpo[1]);
+  return !!opcion && opcion[1].split('|').includes(valor);
+}
 /** ¿El lector del freno instalado conoce la sección (y, con `clave`, la clave dentro de ella)? `true` (o no hay freno) ·
  *  `false` · el motivo si no se pudo leer (no poder leerlo no es «lo conoce»: se avisa igual, con el motivo). */
 function guardKnows(guardLib, seccion, clave) {
@@ -1743,6 +1761,10 @@ function setKey(home = os.homedir(), clave, valorNuevo, { env = process.env, gua
   if (GUARD_FIRST.includes(`${seccion}.${k}`)) {
     const sabe = guardKnows(guardLib, seccion, k);
     if (sabe !== true) return { ok: false, file, reason: `no lo escribí: el freno de producción instalado (${guardLib}) ${sabe === false ? `es anterior a la clave «${enArchivo(seccion)}.${k}»` : sabe}, y con ella en ${file} diría «configuración ROTA» en cada sesión. Primero ponelo al día (pide tu contraseña): ${GUARD_INSTALL} — y después volvé a correr este comando` };
+  }
+  if ((GUARD_FIRST_VALUES[`${seccion}.${k}`] || []).includes(valorEscrito)) {
+    const acepta = guardAccepts(guardLib, seccion, k, valorEscrito);
+    if (acepta !== true) return { ok: false, file, reason: `no lo escribí: el freno de producción instalado (${guardLib}) ${acepta === false ? `no acepta «${enArchivo(seccion)}.${k}: ${valorEscrito}»` : acepta}, y con él en ${file} diría «configuración ROTA» en cada sesión. Primero ponelo al día (pide tu contraseña): ${GUARD_INSTALL} — y después volvé a correr este comando` };
   }
   const lm = leerJson(file);
   if (lm.estado === 'roto') return { ok: false, file, reason: `${file}: ${lm.motivo} — no se escribe sobre un archivo roto; arreglalo primero (node scripts/lib/tycon-config.js validate)` };

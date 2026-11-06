@@ -7,7 +7,9 @@
 //     texto sale de `<estilo>.auto.md`, que es `<estilo>.es.md` byte a byte más la regla; los selectores de Windows
 //     arman el mismo nombre de archivo — T4;
 //   · con `es` o `en` declarados, y con el perfil de TYCON, el bloque es el mismo que antes del cambio, byte a byte — T5;
-//   · `auto ` con espacio o `AUTO` son configuración rota, como cualquier valor fuera de la lista — T7.
+//   · `auto ` con espacio o `AUTO` son configuración rota, como cualquier valor fuera de la lista — T7;
+//   · `config set` no escribe `auto` en el archivo de la máquina si el freno de producción instalado no lo acepta: ese
+//     freno lee el archivo de la máquina y diría «configuración ROTA» hasta reinstalarlo — T9.
 // Las referencias de T5 (fixtures/response-language/) las escribió el sincronizador de Mac antes del cambio.
 const test = require('node:test');
 const assert = require('node:assert');
@@ -83,7 +85,7 @@ test('T2 LectorDelFreno_AceptaAuto @story-8.149 @ac-1 — la copia del lector de
   assert.strictEqual(G.VOCABULARIO.response.language, require(LIB).VOCABULARIO.response.language);
 });
 
-test('T4 Auto_EscribeLaReglaDeIdioma @story-8.149 @ac-3 — con auto, el bloque en castellano con la regla de idioma, en CLAUDE.md y AGENTS.md', () => {
+test('T4 Auto_EscribeLaReglaDeIdioma @story-8.149 @ac-3 — con auto, el bloque en castellano con la regla de idioma, en CLAUDE.md y AGENTS.md', (t) => {
   // cada .auto.md es su .es.md byte a byte más la misma regla, corta
   const rules = STYLES.map(ruleOf);
   assert.strictEqual(new Set(rules).size, 1, 'la regla es la misma en los tres .auto.md');
@@ -108,6 +110,22 @@ test('T4 Auto_EscribeLaReglaDeIdioma @story-8.149 @ac-3 — con auto, el bloque 
       const bytes = Buffer.byteLength(read(path.join(VARIANTS, `${style}.${lang}.md`)).replace(/\{\{max_chars\}\}/g, '4000'));
       assert.ok(bytes <= ceiling, `${style}.${lang}: ${bytes} > ${ceiling}`);
     }
+  }
+  // el plan del instalador de Windows, corrido de verdad: con `auto` compara contra el .auto.md. Un CLAUDE.md escrito con
+  // `auto` queda «keep»; uno escrito con `es` (sin la regla) pide «update»
+  if (HAS_PWSH) {
+    for (const [written, expected] of [['auto', 'keep'], ['es', 'update']]) {
+      const l = lab({ install: { profile: 'full' }, response: { language: written, style: 'neutral' } });
+      assert.strictEqual(spawnSync('bash', [SYNC_SH], { env: l.env, encoding: 'utf8' }).status, 0, 'sync de Mac');
+      fs.writeFileSync(l.env.TYCON_PROFILE, JSON.stringify({ install: { profile: 'full' }, response: { language: 'auto', style: 'neutral' } }));
+      const plan = path.join(l.home, 'plan.json');
+      const r = spawnSync('pwsh', ['-NoProfile', '-File', INSTALL_PS1, '-Check', '-PlanJson', plan], { env: Object.assign({}, l.env, { TYCON_HARNESS_LOCK_HELD: '1' }), encoding: 'utf8' });
+      assert.ok(fs.existsSync(plan), `el instalador no escribió su plan: ${r.stdout}${r.stderr}`);
+      const piece = JSON.parse(read(plan)).find((x) => x.id === 'TYCON_BLOCK:response-style');
+      assert.strictEqual(piece && piece.action, expected, `instalador de Windows, CLAUDE.md escrito con ${written}: ${JSON.stringify(piece)}`);
+    }
+  } else {
+    t.diagnostic('no medido: sin pwsh en esta máquina, el plan del instalador de Windows no se corrió');
   }
   // y el control del techo del pre-commit las mide a las tres nuevas (no sólo las de dos letras)
   const check = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'ci', 'check-claude-md-blocks.js')], { cwd: ROOT, encoding: 'utf8' });
@@ -158,4 +176,36 @@ test('T7 Auto_ValorFueraDeLista_Rota @story-8.149 @ac-1 — auto en mayúsculas 
     fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
     assert.ok(C.cargar({ home, arnes: fs.mkdtempSync(path.join(os.tmpdir(), 'resp-lang-env-arnes-')), env: { TYCON_RESPONSE_LANGUAGE: 'AUTO' } }).errores.some((e) => e.clave === 'TYCON_RESPONSE_LANGUAGE'), `${path.relative(ROOT, file)}: variable AUTO rota`);
   }
+});
+
+test('T9 ConfigSet_AutoConFrenoViejo_NoLoEscribe @story-8.149 @ac-11 — con un freno instalado que no acepta auto, config set no lo escribe en el archivo de la máquina', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'resp-lang-freno-'));
+  const nuevo = read(GUARD_LIB);
+  const viejo = nuevo.replace("language: 'opcion:es|en|auto'", "language: 'opcion:es|en'");
+  assert.notStrictEqual(viejo, nuevo, 'la copia del freno acepta auto');
+  fs.writeFileSync(path.join(dir, 'viejo.js'), viejo);
+  fs.writeFileSync(path.join(dir, 'nuevo.js'), nuevo);
+  const casa = () => { const h = fs.mkdtempSync(path.join(os.tmpdir(), 'resp-lang-set-')); fs.mkdirSync(path.join(h, '.claude'), { recursive: true }); return h; };
+  const set = (home, valor, freno) => {
+    const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^TYCON_/.test(k)));
+    return spawnSync(process.execPath, [LIB, 'set', 'response.language', valor], {
+      encoding: 'utf8', env: Object.assign(env, { HOME: home, USERPROFILE: home, TYCON_PROFILE: '0', TYCON_GUARD_LIB_FOR_TEST: path.join(dir, freno) }),
+    });
+  };
+  const leido = (home) => require(LIB).respuesta(require(LIB).cargar({ home, env: { TYCON_PROFILE: '0' } })).language;
+  // con el freno viejo, auto no se escribe y el motivo dice cómo ponerlo al día
+  const h1 = casa();
+  let r = set(h1, 'auto', 'viejo.js');
+  assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /no lo escribí.*response\.language.*auto.*install-guard\.sh/s);
+  assert.deepStrictEqual([fs.readdirSync(path.join(h1, '.claude')), fs.existsSync(path.join(h1, '.tycon', 'config.json'))], [[], false], 'no escribió nada');
+  // con el freno viejo, es se escribe igual: ese freno ya lo acepta
+  r = set(h1, 'es', 'viejo.js');
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(leido(h1), 'es');
+  // con el freno de ahora, auto se escribe
+  const h2 = casa();
+  r = set(h2, 'auto', 'nuevo.js');
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(leido(h2), 'auto');
 });
