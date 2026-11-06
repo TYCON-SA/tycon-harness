@@ -26,7 +26,8 @@ function gh(ctx, method, ruta, body) {
     args.push('--input', path.join(dir, 'cuerpo.json'));
   }
   let r;
-  try { r = spawnSync(bin, args, { env: ctx.env, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, timeout: 120000 }); } finally {
+  // oculto: la oficina lee los pedidos de fondo cada pocos minutos, y en Windows gh abriría una consola cada vez
+  try { r = spawnSync(bin, args, { env: ctx.env, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, timeout: 120000, windowsHide: true }); } finally {
     if (dir) fs.rmSync(dir, { recursive: true, force: true });
   }
   if (r.error) return { problem: no('no_medido', `${cmd} no se pudo ejecutar (${r.error.code || r.error.message})`) };
