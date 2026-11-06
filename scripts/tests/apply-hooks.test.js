@@ -102,7 +102,7 @@ test('T33 HooksList_Schema_EveryRecordOnce_NoListLeftInAppliers', () => {
   const keys = list.hooks.map((h) => `${h.event}|${mod.normMatcher(h.matcher)}|${h.spec}`);
   assert.strictEqual(new Set(keys).size, keys.length, 'ningún registro repetido');
   for (const h of list.hooks) {
-    assert.ok(['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SessionStart', 'Notification', 'SessionEnd'].includes(h.event), `${h.spec}: evento ${h.event}`);
+    assert.ok(['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SessionStart', 'Notification', 'SessionEnd', 'PermissionRequest'].includes(h.event), `${h.spec}: evento ${h.event}`);
     assert.match(h.when, /^(always|integration:[a-z]+|optin:TYCON_[A-Z_]+)$/, `${h.spec}: when ${h.when}`);
     assert.strictEqual(typeof h.platforms.windows, 'boolean', `${h.spec}: platforms.windows`);
     assert.ok(h.label && typeof h.label === 'string', `${h.spec}: label`);
@@ -947,4 +947,170 @@ test('T4 Health_ScriptDelHookInexistente_Rojo @story-8.93 @ac-3', (t) => {
   assert.ok(r2.warnings.some((w) => w.includes('$HOME') && w.includes('la expande el shell')));
   assert.ok(r2.failures.some((f) => f.includes('USUARI~1') && f.includes('no existe')), `un ~ en el medio se mira: ${JSON.stringify(r2.failures)}`);
   assert.ok(r2.warnings.some((w) => w.includes('~/.tycon') && w.includes('la expande el shell')), 'un ~ al principio lo expande el shell');
+});
+
+// Instalar y actualizar, por la forma con enlaces: `~/.tycon/harness` apunta a la carpeta numerada, y el aplicador se lanza
+// con la ruta numerada, que es la que resuelve Node. Medido en Windows: 50 ganchos quedaban en la versión de la instalación
+// después de actualizar y de correr el aplicador, y el freno tomaba por ajenos a los del cuadro.
+// 🔴 Falla con: un aplicador que deja una ruta numerada porque su archivo sigue en el disco.
+function maquinaConVersiones(t) {
+  const base = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), 'apply-hooks-versiones-'));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const home = path.join(base, 'home');
+  const propia = path.join(home, '.tycon');
+  const version = (v) => {
+    const raiz = path.join(propia, 'versions', v);
+    for (const f of ['wait-notice.js', 'session-state.js', 'safety-guard-pre.sh']) {
+      fs.mkdirSync(path.join(raiz, 'scripts', 'hooks'), { recursive: true });
+      fs.writeFileSync(path.join(raiz, 'scripts', 'hooks', f), '// gancho de juguete\n');
+    }
+    return raiz;
+  };
+  const enlace = path.join(propia, 'harness');
+  const skills = path.join(base, 'skills');
+  fs.mkdirSync(skills, { recursive: true });
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+  const listPath = path.join(base, 'hooks-list.json');
+  fs.writeFileSync(listPath, JSON.stringify({ __doc: 'prueba', hooks: [
+    H('PreToolUse', 'AskUserQuestion', '@tcg:wait-notice.js'), H('PreToolUse', 'AskUserQuestion', '@tcg:session-state.js'), H('PreToolUse', 'Bash', '@tcg:safety-guard-pre.sh'),
+  ], superseded: [], legacy_files: [], known_specs: [] }, null, 2));
+  const settingsPath = path.join(home, '.claude', 'settings.json');
+  const apuntar = (raiz) => {
+    if (fs.existsSync(enlace)) fs.unlinkSync(enlace);
+    fs.symlinkSync(raiz, enlace);
+  };
+  const aplicar = (raiz, platform) => spawnSync(process.execPath, [APPLY, '--settings', settingsPath, '--hooks-dir', path.join(raiz, 'scripts', 'hooks'), '--skills', skills,
+    '--list', listPath, '--effects', EFFECTS, '--platform', platform], { encoding: 'utf8', env: { PATH: process.env.PATH, HOME: home, USERPROFILE: home, TYCON_PROFILE: '0', TYCON_NO_NIGHTLY_EXAM: '1', TYCON_HARNESS_SHARED_DONE: '1' } });
+  const comandos = () => Object.values(JSON.parse(fs.readFileSync(settingsPath, 'utf8')).hooks).flat().flatMap((g) => g.hooks.map((h) => h.command));
+  return { home, version, apuntar, aplicar, comandos, settingsPath, skills, listPath };
+}
+
+test('ApplyHooks_InstalarYActualizar_LosGanchosNombranElEnlace', (t) => {
+  const oa = require(path.join(ROOT, 'scripts', 'lib', 'owner-approvals.js'));
+  for (const platform of ['posix', 'windows']) {
+    const M = maquinaConVersiones(t);
+    const vieja = M.version('2026.11.02.24');
+    M.apuntar(vieja);
+    let r = M.aplicar(vieja, platform);
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.ok(M.comandos().length === 3 && M.comandos().every((c) => c.includes('/.tycon/harness/') && !c.includes('versions')), `${platform}, al instalar: ${JSON.stringify(M.comandos())}`);
+    const nueva = M.version('2026.11.02.29');
+    M.apuntar(nueva);
+    r = M.aplicar(nueva, platform);
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.ok(M.comandos().every((c) => c.includes('/.tycon/harness/')), `${platform}, al actualizar: ${JSON.stringify(M.comandos())}`);
+    assert.deepStrictEqual(oa.escuchasDelCuadro({ casa: M.home, cwd: path.join(M.home, 'proyecto'), administrada: path.join(M.home, 'no-hay') }).ajenos, []);
+  }
+});
+
+// La configuración que quedó en una máquina ya instalada: rutas de una versión anterior que sigue en el disco, en `.js` y
+// en `.sh`. Es la forma medida; sin sanarla, el dev corre los ganchos viejos y su click no vale.
+test('ApplyHooks_RutasDeUnaVersionVieja_SeSanan', (t) => {
+  const oa = require(path.join(ROOT, 'scripts', 'lib', 'owner-approvals.js'));
+  for (const platform of ['posix', 'windows']) {
+    const M = maquinaConVersiones(t);
+    const vieja = M.version('2026.11.02.24');
+    const nueva = M.version('2026.11.02.29');
+    M.apuntar(nueva);
+    const de = (raiz, n) => path.join(raiz, 'scripts', 'hooks', n).replace(/\\/g, '/');
+    fs.writeFileSync(M.settingsPath, JSON.stringify({ hooks: { PreToolUse: [
+      { matcher: 'AskUserQuestion', hooks: [{ type: 'command', command: `node "${de(vieja, 'wait-notice.js')}"` }, { type: 'command', command: `node "${de(vieja, 'session-state.js')}"` }] },
+      { matcher: 'Bash', hooks: [{ type: 'command', command: `bash "${de(vieja, 'safety-guard-pre.sh')}"` }] },
+      { matcher: 'AskUserQuestion', hooks: [{ type: 'command', command: 'node "/otro/lado/gancho-del-dev.js"' }] },
+    ] } }, null, 2));
+    const antes = oa.escuchasDelCuadro({ casa: M.home, cwd: path.join(M.home, 'proyecto'), administrada: path.join(M.home, 'no-hay') }).ajenos.map((a) => a.comando);
+    assert.ok(antes.some((c) => c.includes('versions')), 'el control: antes de sanar, los del cuadro se toman por ajenos');
+    const r = M.aplicar(nueva, platform);
+    assert.strictEqual(r.status, 0, r.stderr);
+    const c = M.comandos();
+    assert.ok(c.filter((x) => x.includes('/.tycon/harness/')).length === 3, `${platform}: ${JSON.stringify(c)}`);
+    assert.ok(!c.some((x) => x.includes('versions')), `${platform}, ninguna ruta numerada: ${JSON.stringify(c)}`);
+    assert.ok(c.includes('node "/otro/lado/gancho-del-dev.js"'), 'el gancho del dev no se toca');
+    assert.deepStrictEqual(oa.escuchasDelCuadro({ casa: M.home, cwd: path.join(M.home, 'proyecto'), administrada: path.join(M.home, 'no-hay') }).ajenos.map((a) => a.comando), ['node "/otro/lado/gancho-del-dev.js"'], 'el único ajeno es el del dev');
+  }
+});
+
+// 🔴 Falla con: un enlace buscado sólo en la casa de la cuenta, que con TYCON_HOME deja la ruta numerada escrita.
+test('ThroughLink_ConTyconHome_UsaElEnlaceDeEsaCasa', (t) => {
+  const { throughLink } = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tools.js'));
+  const base = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), 'through-link-'));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const armar = (raiz) => {
+    const hooks = path.join(raiz, 'versions', 'v2', 'scripts', 'hooks');
+    fs.mkdirSync(hooks, { recursive: true });
+    fs.mkdirSync(path.join(raiz, 'versions', 'v1'), { recursive: true });
+    fs.symlinkSync(path.join(raiz, 'versions', 'v2'), path.join(raiz, 'harness'));
+    return hooks;
+  };
+  const home = path.join(base, 'home');
+  const hooks = armar(path.join(home, '.tycon'));
+  const propia = path.join(base, 'otra-casa');
+  const hooksPropia = armar(propia);
+  assert.strictEqual(throughLink(hooks, home, {}), path.join(home, '.tycon', 'harness', 'scripts', 'hooks'));
+  assert.strictEqual(throughLink(hooksPropia, home, { TYCON_HOME: propia }), path.join(propia, 'harness', 'scripts', 'hooks'));
+  // una versión a la que el enlace no apunta, y una carpeta sin enlace, quedan como están
+  assert.strictEqual(throughLink(path.join(home, '.tycon', 'versions', 'v1'), home, {}), path.join(home, '.tycon', 'versions', 'v1'));
+  assert.strictEqual(throughLink(base, path.join(base, 'sin-enlace'), {}), base);
+});
+
+// Sin Node propio del arnés, cada `.js` se registra por el piso de Node: si éste nombra la carpeta numerada, borrar esa
+// versión deja muertos todos los ganchos. El aplicador se lanza desde la carpeta numerada, como lo hace un instalador.
+// 🔴 Falla con: un piso que sale de la carpeta del aplicador sin pasar por el enlace, en la instalación o al sanar.
+test('ApplyHooks_LanzadoDesdeLaCarpetaNumerada_ElPisoNombraElEnlace', (t) => {
+  const M = maquinaConVersiones(t);
+  const vieja = M.version('2026.11.02.24');
+  const nueva = M.version('2026.11.02.29');
+  for (const raiz of [vieja, nueva]) for (const d of ['setup', 'lib']) fs.cpSync(path.join(ROOT, 'scripts', d), path.join(raiz, 'scripts', d), { recursive: true });
+  const aplicar = (raiz) => {
+    const r = spawnSync(process.execPath, [path.join(raiz, 'scripts', 'setup', 'apply-hooks.js'), '--settings', M.settingsPath, '--hooks-dir', path.join(raiz, 'scripts', 'hooks'), '--skills', M.skills, '--list', M.listPath, '--effects', EFFECTS, '--platform', 'posix'],
+      { encoding: 'utf8', env: { PATH: process.env.PATH, HOME: M.home, USERPROFILE: M.home, TYCON_PROFILE: '0', TYCON_NO_NIGHTLY_EXAM: '1', TYCON_HARNESS_SHARED_DONE: '1' } });
+    assert.strictEqual(r.status, 0, r.stderr);
+  };
+  M.apuntar(vieja);
+  aplicar(vieja);
+  const conPiso = M.comandos().filter((c) => c.includes('node-floor.js'));
+  assert.strictEqual(conPiso.length, 2, `los dos .js van por el piso: ${JSON.stringify(M.comandos())}`);
+  assert.ok(M.comandos().every((c) => !c.includes('versions')), `al instalar: ${JSON.stringify(M.comandos())}`);
+  // un piso de la versión anterior ya escrito se sana al actualizar
+  const f = path.join(vieja, 'scripts', 'lib', 'node-floor.js');
+  const g = path.join(vieja, 'scripts', 'hooks', 'wait-notice.js');
+  fs.writeFileSync(M.settingsPath, JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'AskUserQuestion', hooks: [{ type: 'command', command: `node "${f}" "${g}"` }] }] } }, null, 2));
+  M.apuntar(nueva);
+  aplicar(nueva);
+  assert.ok(M.comandos().every((c) => !c.includes('versions')), `al actualizar: ${JSON.stringify(M.comandos())}`);
+});
+
+
+test('T36 ApplyHooks_AsyncRewake_SeEscribeYNoSeRepite @story-8.183 @ac-7: asyncRewake y timeout quedan; dos veces no duplica; los demás no cambian', (t) => {
+  const list = LIST_OF([
+    H('SessionStart', '', '@tcg:vigila.js', { asyncRewake: true, timeout: 86400 }),
+    H('Stop', '', '@tcg:vigila.js', { asyncRewake: true, timeout: 86400 }),
+    H('Stop', '', '@tcg:otro.js'),
+  ]);
+  const L = lab(t, { list, files: ['@tcg:vigila.js', '@tcg:otro.js'], settings: { hooks: {} } });
+  const r = run(L, [], { TYCON_HARNESS_SHARED_DONE: '1' });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const once = settingsOf(L);
+  const hooksOf = (s, ev) => (s.hooks[ev] || []).flatMap((e) => e.hooks || []);
+  const watch = (ev) => hooksOf(once, ev).filter((h) => h.command.includes('vigila.js'));
+  for (const ev of ['SessionStart', 'Stop']) {
+    assert.strictEqual(watch(ev).length, 1, `${ev}: uno solo`);
+    assert.strictEqual(watch(ev)[0].asyncRewake, true);
+    assert.strictEqual(watch(ev)[0].timeout, 86400);
+  }
+  const other = hooksOf(once, 'Stop').find((h) => h.command.includes('otro.js'));
+  assert.strictEqual(other.asyncRewake, undefined, 'el otro no se toca');
+  assert.strictEqual(other.timeout, undefined);
+  // una segunda vez no cambia nada; uno registrado con otro plazo se pone al día en su lugar
+  assert.strictEqual(run(L, [], { TYCON_HARNESS_SHARED_DONE: '1' }).status, 0);
+  assert.deepStrictEqual(settingsOf(L), once);
+  const viejo = settingsOf(L);
+  for (const h of hooksOf(viejo, 'Stop')) if (h.command.includes('vigila.js')) { h.timeout = 600; delete h.asyncRewake; }
+  fs.writeFileSync(L.settingsPath, JSON.stringify(viejo, null, 2) + '\n');
+  assert.strictEqual(run(L, [], { TYCON_HARNESS_SHARED_DONE: '1' }).status, 0);
+  assert.deepStrictEqual(settingsOf(L), once);
+  // la lista no acepta otros valores
+  const bad = mod.validateList(LIST_OF([H('Stop', '', '@tcg:x.js', { asyncRewake: 'si', timeout: 0 })]));
+  assert.ok(bad.some((m) => /asyncRewake sólo puede ser true/.test(m)), bad.join('\n'));
+  assert.ok(bad.some((m) => /timeout es un entero/.test(m)), bad.join('\n'));
 });

@@ -520,8 +520,10 @@ H="$P/h-rota"; mkdir -p "$H"; sync_lab "$A" "$H" TYCON_INSTALL_PROFILE=full TYCO
 { grep -q 'no pude leer integrations/rota/integration.json' "$P/sync.out" && tiene_filas "$H/CLAUDE.md" "$ONE" tool-names.md; } \
   && ok "T69 un manifiesto que no se lee: lo dice y las filas de la elegida van igual" || mal "T69 manifiesto roto: $(head -3 "$P/sync.out" | tr '\n' ' ')"
 rm -rf "$A/integrations/rota" "$A/integrations/otra"
-# un manifiesto anidado de más (el lector de JSON se queda sin pila): es uno que no se lee, y el sync sigue
-mkdir -p "$A/integrations/honda" && python3 -c "print('['*100000 + ']'*100000)" > "$A/integrations/honda/integration.json"
+# un manifiesto anidado de más (el lector de JSON se queda sin pila): es uno que no se lee, y el sync sigue.
+# Un millón de niveles y no cien mil: desde Python 3.14 el tope de anidamiento sale de la pila real, y en
+# Linux cien mil entran y el archivo se lee.
+mkdir -p "$A/integrations/honda" && python3 -c "print('['*1000000 + ']'*1000000)" > "$A/integrations/honda/integration.json"
 H="$P/h-honda"; mkdir -p "$H"; sync_lab "$A" "$H" TYCON_INSTALL_PROFILE=full TYCON_TIME_TRACKING="$ONE"
 { grep -q 'no pude leer integrations/honda/integration.json' "$P/sync.out" && tiene_filas "$H/CLAUDE.md" "$ONE" tool-names.md; } \
   && ok "T69 un manifiesto anidado de más: lo dice y el sync escribe igual las filas de la elegida" || mal "T69 manifiesto anidado: $(head -3 "$P/sync.out" | tr '\n' ' ')"

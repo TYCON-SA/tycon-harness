@@ -86,7 +86,7 @@ if (!isMainThread && workerData && workerData.__bajar) {
   trabajo(() => require(workerData.modulo).bajarBuzon({ ...workerData.opts, log: (l) => parentPort.postMessage({ __linea: String(l) }) }));
 }
 if (!isMainThread && workerData && workerData.__leerEspejo) {
-  trabajo(() => ({ corridas: require('./sources.js').leerCorridas(workerData.buzon), informados: require('../lib/people.js').leerCorreosInformados(workerData.buzon) }));
+  trabajo(() => ({ corridas: require('./sources.js').leerCorridas(workerData.buzon), informados: require('../lib/people.js').leerCorreosInformados(workerData.buzon), huellas: require('./sources.js').leerHuellas(workerData.buzon, (l) => parentPort.postMessage({ __linea: String(l) })) }));
 }
 if (!isMainThread && workerData && workerData.__huella) {
   trabajo(() => require('./tabs/runs.js').huellaDelEspejo(workerData.dir, workerData.extra));

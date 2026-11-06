@@ -102,6 +102,7 @@ test('T30 PersonOk_SoloLoQueNoEsFirma @story-8.139 @ac-29 @ac-30 — exporta só
   };
   for (const d of ['skills', 'scripts']) recorrer(path.join(RAIZ, d));
   assert.deepEqual(importan.sort(), [
+    'scripts/lib/signature-list.js',
     'skills/tycon-pipeline/scripts/lib/external-flags.js',
     'skills/tycon-pipeline/scripts/lib/plan-display.js',
     'skills/tycon-pipeline/scripts/lib/story-claim-check.js',

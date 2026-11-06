@@ -52,7 +52,7 @@ function bloque({ storyId, criterios }) {
   return [
     `Te piden firmar ${criterios.length === 1 ? 'un criterio' : `${criterios.length} criterios`} de la historia ${storyId} que no se ${criterios.length === 1 ? 'puede' : 'pueden'} probar en vivo (te lo muestra el arnés). Un criterio firmado cuenta como probado sin haberlo corrido contra la aplicación.`,
     ...criterios.map((c) => `AC ${c.ac}: ${c.text || '(sin texto en la historia)'} · Por qué no se puede probar en vivo: ${c.reason || '(sin razón declarada)'} · Qué lo cubre: ${c.coveredBy || '(ninguna prueba declarada)'}`),
-    'Si estás de acuerdo, aprobalo en la ventana de permiso que sale a continuación; si no, elegí «No». Una respuesta en el chat no lo firma.',
+    'Si estás de acuerdo, aprobalo en la ventana de permiso que sale a continuación o, donde no sale, en el cuadro de opciones; si no, elegí «No». Lo firma esa aprobación, no otra respuesta en el chat.',
   ].join('\n');
 }
 
@@ -63,9 +63,8 @@ function leerMarcador(stateDir, sessionId) {
 }
 
 /** Los datos de cada criterio pedido que está pendiente de firma (declarado imposible), con la huella de su declaración. */
-function criteriosDe(storyPath, acs) {
-  const rm = require('../runtime-matrix.js');
-  const matrix = rm.compute({ storyPath });
+function criteriosDe(storyPath, acs, calculada = null) {
+  const matrix = calculada || require('../runtime-matrix.js').compute({ storyPath });
   if (matrix.structuralError) return { error: matrix.structuralError };
   const pend = new Set(matrix.notVerifiable || []);
   const lista = [];

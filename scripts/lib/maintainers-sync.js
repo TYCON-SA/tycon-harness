@@ -121,7 +121,7 @@ function classifyFetchError(stderr, timedOut) {
 }
 
 function gitEnv(env) {
-  const e = Object.assign({}, env, { LC_ALL: 'C', GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never', GIT_ASKPASS: '', SSH_ASKPASS: '' });
+  const e = require('./clean-git-env.js').idiomaFijo(env, { GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never', GIT_ASKPASS: '', SSH_ASKPASS: '' });
   // por nombre en mayúsculas: en Windows el ambiente no distingue `Git_Dir` de `GIT_DIR`, y la copia sí
   for (const k of Object.keys(e)) {
     const up = k.toUpperCase();

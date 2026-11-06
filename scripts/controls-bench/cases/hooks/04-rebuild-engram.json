@@ -1101,7 +1101,7 @@
             "git add -A && git -c user.email=b@b -c user.name=b commit -qm base",
             "printf '%s' '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > truncado.json",
             "printf '#!/bin/sh\\ncp truncado.json .engram/manifest.json\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram",
-            "mkdir -p copia/scripts/hooks copia/scripts/lib && cp $TCG/scripts/hooks/engram-pre-commit.sh copia/scripts/hooks/ && cp $TCG/scripts/lib/manifest-engram.js copia/scripts/lib/"
+            "mkdir -p copia/scripts/hooks copia/scripts/lib && cp $TCG/scripts/hooks/engram-pre-commit.sh copia/scripts/hooks/ && cp $TCG/scripts/lib/manifest-engram.js $TCG/scripts/lib/clean-git-env.js copia/scripts/lib/"
           ],
           "env": {
             "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",

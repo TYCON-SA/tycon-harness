@@ -450,7 +450,17 @@ function applyScreenRule(content, repoRoot, rule = 'ui', { scope, changed } = {}
   return { ui, note: null };
 }
 
+/**
+ * ¿Un archivo suelto toca pantalla? El mismo veredicto que una story que lo declara en su lista de archivos, con la regla
+ * `screen_test`. Lo usa el camino rápido, que no tiene story. `repoName`: el nombre del repo, que en una story va como
+ * prefijo de la entrada y puede ser distinto de la carpeta (un worktree).
+ */
+function fileTouchesUi(rel, repoRoot, rule = 'ui', repoName = null) {
+  const entry = repoName ? `(${repoName}) ${rel}` : rel;
+  return applyScreenRule(`---\nfiles_to_modify:\n  - ${JSON.stringify(entry)}\n---\n`, repoRoot, rule).ui;
+}
+
 module.exports = {
-  storyTouchesUi, touchesUiParts, uiSignalDetail, proseDropNotice, applyScreenRule, screenScope, changedFiles, blockedScreenTouched,
+  storyTouchesUi, touchesUiParts, uiSignalDetail, proseDropNotice, applyScreenRule, screenScope, changedFiles, blockedScreenTouched, fileTouchesUi,
   UI_FM_FILES_RE, UI_FM_PATHS_RE, UI_BODY_RE,
 };

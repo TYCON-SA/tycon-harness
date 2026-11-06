@@ -401,6 +401,51 @@ esperan ahí.
 
 ![Configuración: las cuatro fichas de arriba y la pestaña Personas](sitio-de-la-organizacion/capturas/configuracion-personas.png)
 
+## La pestaña «Oficinas»
+
+La oficina de cada máquina del equipo, en vivo: la misma que `/office` dibuja en la máquina, con una sala por máquina.
+Tocar una la agranda y abajo salen sus sesiones, con las mismas columnas que la página local.
+
+**Quién ve qué.** Lo decide `site.offices.visibility`, en Configuración. De fábrica vale `maintainers`: quien mantiene ve
+todas las oficinas y cada dev, las de sus máquinas confirmadas, igual que en Ejecuciones. Con `everyone`, todos los que
+entran al sitio ven todas, y eso incluye la conversación entera de cada sesión de cada dev, no sólo la foto: elegilo
+sabiendo eso. Sin rol, ninguna.
+
+**Sumarse son cero pasos para el dev.** Cada máquina del equipo pide el alta sola: con la dirección del sitio en el perfil
+del equipo, al abrir una sesión, o mientras se trabaja (la capa del equipo se pone al día sola cada 30 min). La máquina
+arma su par de claves, manda al sitio sólo la pública y le muestra al dev una línea con la huella. El dev no corre nada.
+Quien mantiene la aprueba una vez, en Configuración → «Personas y máquinas»: aprobar es confirmar que la huella del pedido
+es la misma que esa máquina dejó con sus ejecuciones en el buzón. Mientras no llegó, el pedido dice «esperando que la
+máquina deje la huella» y a qué hora el sitio vuelve a leer el buzón. La clave vale mientras la máquina se conecte, y
+vence a los 30 días sin conectarse: entonces la máquina pide el alta de nuevo, sola. Dar de baja una máquina corta su
+conexión.
+
+**Qué sale de la máquina.** Lo mismo que muestra la oficina local: cada sesión con su nombre, su estado, su trabajo, su
+encargo, lo que está haciendo y su última acción; el tablero, las tablas, los tokens, los mensajes entre sesiones (los
+avioncitos) y la conversación de cada sesión, que se abre con «Ver conversación», como en la máquina. Cada texto sale sin
+la carpeta personal ni las claves que se reconocen. La conversación viaja aparte de la foto, sólo a un sitio que la
+entiende, y el sitio la guarda sólo en memoria: nada de la oficina queda en su disco. Así, quien mantiene ve en vivo qué
+hace cada dev; cada dev lo sabe por la línea de la huella.
+
+**Lo que decidió el dueño.**
+- **D1** — La red: cada máquina abre una conexión de salida al sitio (`wss://`, puerto 443). Nada entra a la máquina.
+- **D1b** — Una sola copia del sitio: la última foto de cada máquina vive en su memoria, y cada receta fija una réplica.
+- **D2** — El alta es automática, con la huella también por el buzón: un pedido de afuera no tiene cómo subirla.
+- **D2b** — La clave no se renueva: vence sólo tras 30 días sin conectarse, y la baja es de la máquina.
+- **D3** — Sale lo mismo que muestra la oficina local; la lista es una sola (`scripts/tools/office/fields.js`).
+- **D4** — La perilla `site.offices.visibility`, de fábrica `maintainers`.
+- **D5** — Un proceso por máquina, de fondo, que avisa cada cambio y vive mientras haya sesiones.
+- **D7** — Las rutas de la máquina, `/live/machine` y `/live/enroll`, quedan fuera del candado de la plataforma.
+
+El canal de vuelta está cerrado: el sitio no le puede mandar órdenes a la máquina. Un mensaje que no sea de los que
+espera la máquina se descarta y corta la conexión.
+
+**Un sitio ya instalado: el paso de una vez.** `/live/machine` y `/live/enroll` están en `RUTAS_SIN_SESION`, pero el
+candado de la plataforma de un sitio ya instalado no se entera solo. En Azure, se corre una vez la orden de
+`--excluded-paths` de la receta, que ya las nombra; en la receta local con túnel, se las deja libres en el candado del
+túnel. Lo comprueba la prueba sin sesión: `node scripts/site/check-deploy.js --url https://<dirección del sitio>`, que
+avisa «falta el paso de una vez» si el candado las tapa.
+
 ## Configuración, sección por sección
 
 Cada sección es una parte de un archivo de configuración que vive en un repo de la organización: el **repo de
@@ -434,6 +479,31 @@ vive en tu navegador mientras la pestaña está abierta, nunca va al sitio. En u
 ventana privada, por ejemplo) la página anda igual, sin esa oferta. Las diferencias aceptadas entre productos no se
 mezclan: si su archivo cambió, piden recargar como antes.
 
+**Lo que hace cada botón.** Cada botón que le pide algo al sitio («Revisar cambios», «Confirmar y proponer», «Invitar»,
+los de las máquinas, «Ver sus pasos»…) se apaga mientras trabaja y dice qué hace: «Revisando…», «Proponiendo…»,
+«Guardando…». Un segundo toque no hace nada. Si pasan diez segundos, suma «sigue trabajando». Si falla, dice por qué al
+lado del botón, o en el lugar donde la sección dice sus errores, y el botón vuelve a quedar activo.
+
+**Lo propuesto no es lo guardado.** Mientras el pull request está abierto, la sección dice «Propuesto en el pull request
+N: todavía no entró», con el enlace, y no «sin cambios»: eso es lo que tiene main. Cuando entra, vuelve a decir «sin
+cambios». Si se cierra sin entrar, la sección lo dice, el campo vuelve a mostrar lo que tiene main y lo que escribiste
+queda para recuperarlo y volver a proponerlo.
+
+**La diferencia muestra lo que cambia de valor.** El sitio escribe cada archivo en su formato (dos espacios, un dato por
+renglón). Si el archivo de main estaba escrito de otra forma, la diferencia no llena la pantalla con eso: muestra sólo
+los renglones cuyo valor cambia, con lo cambiado marcado dentro del renglón, y una línea arriba dice «Además, el pull
+request acomoda el formato del archivo: renglones que cambian de forma, no de valor: N».
+
+**Cuando un dato nuevo necesita una versión más nueva del arnés.** Si lo que proponés en el perfil del equipo sólo lo
+lee una versión más nueva del arnés (los nombres de las sesiones, los niveles de las firmas, los canales de aviso…), el
+mismo pull request sube `requires.harness` de `team-layer.json` a esa versión, siempre que todas las **máquinas activas**
+(las que dieron noticias en los últimos 14 días) ya la tengan. Antes de confirmar, la sección lo dice: «El pull request
+también pide el arnés …, por …: las máquinas activas (N) ya lo tienen». Si alguna máquina activa está atrasada, o no se pudo leer
+su versión, no sube: frena y dice cuáles, con su persona y su versión; cuando se actualicen, proponé de nuevo. Una
+máquina sin noticias en los últimos 14 días no cuenta, y la sección dice cuáles quedaron afuera. Si no se sabe qué
+versión tienen las máquinas (ninguna activa, el buzón no se puede leer o el sitio no sabe su propia versión), tampoco
+sube. Una capa que no se puede leer no se pisa. Sin `team-layer.json`, el pull request lleva un solo archivo.
+
 **Descargar** baja el archivo cambiado, para
 cuando el sitio no puede proponer: se lo pasás a quien tiene acceso a ese repo, que lo sube con un pedido de cambio.
 
@@ -463,7 +533,8 @@ Las secciones, en el orden de la pantalla:
   Si alguien sale de la lista, en cuanto se aprueba el pedido y el sitio se actualiza (a lo sumo 15 minutos), su
   próxima página es la de «Tu cuenta no está en la lista», sin datos. Arriba de la lista se ve con qué se entra al
   sitio; eso se cambia en la instalación. Para alguien de afuera del directorio de la organización, **Invitar** (abajo,
-  «Invitar a alguien») lo suma y le manda la invitación de Microsoft. También van acá el buzón de ejecuciones, el refresco y la dirección del sitio.
+  «Invitar a alguien») lo suma y le manda la invitación de Microsoft. También van acá el buzón de ejecuciones y el
+  refresco. La dirección del sitio no: se escribe en un solo lugar, «La dirección del sitio en cada máquina».
   Queda en `operations.json`, en el repo de operaciones. Lo revisa otra persona que mantiene, salvo que la organización
   haya prendido «Los cambios de un mantenedor»: entonces el sitio lo aprueba solo. **«Cada cuánto se
   actualiza el sitio»** acepta de 5 a 120 minutos; sin declarar, 15. Más corto, un cambio se ve antes, pero el sitio
@@ -492,7 +563,10 @@ Las secciones, en el orden de la pantalla:
   en «Cómo se mantiene al día».
 - **La dirección del sitio en cada máquina**: la página que abre el comando `/org-site` en la máquina de cada persona
   del equipo (`site.url`). Tiene que empezar con `https`. Vale sólo desde el perfil del equipo: una máquina no la puede
-  cambiar. Sin dirección, el comando explica cómo cargarla. Queda en `team-profile.json`, en el repo del perfil.
+  cambiar. Sin dirección, el comando explica cómo cargarla. Queda en `team-profile.json`, en el repo del perfil. Es la
+  única dirección del sitio: la leen las máquinas y también los procesos de la noche (el resumen de la mañana, el ciclo
+  de las fichas). Si sólo está en `operations.json` (donde vivía antes), la sección lo dice y muestra el valor para
+  pasarlo al perfil; mientras tanto la noche sigue leyendo el de `operations.json`, que queda de respaldo.
 - **Personas y máquinas**: de quién es cada máquina que manda ejecuciones, y en qué proyectos trabaja cada persona. Una
   máquina nueva aparece en «Por confirmar» con el correo que dice ser; **Confirmar** la pone a nombre de esa persona.
   Queda en `operations.json`, en el repo de operaciones. Lo revisa quien mantiene.
@@ -625,13 +699,14 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   vivo. La pregunta es «¿Quién pasa la autorización para saltarse un control grave?»: «Cada programador (de fábrica)»
   quiere decir que el ok lo escribe el dev en el chat de su sesión; con «Una sesión coordinadora» aparece «¿Cómo la
   llaman?» (se guarda en `approvals.relay_session`, de fábrica «coordinadora»). Vale sólo desde acá, nunca desde una
-  máquina. Cuál sesión es la coordinadora se designa en cada máquina: el dev escribe en el chat de esa sesión «Esta
-  sesión es la <nombre>», con el nombre de arriba, y la sesión lo anota con
-  `marker.js designate-relay --approved-by "<el dev>" --quote "<su frase>"`. Se la reconoce por su conversación, no por
+  máquina. Cuál sesión es la coordinadora se designa en cada máquina: el dev se lo pide a esa sesión con sus palabras,
+  la sesión corre `marker.js designate-relay` y el dev hace click en el cuadro que dice qué sesión es y en qué carpeta
+  (sin click, la frase de antes queda de respaldo). Se retira con `marker.js withdraw-relay`. Se la reconoce por su conversación, no por
   su nombre: sigue valiendo si la sesión se reinicia, y hay que volver a designarla si se abre un chat nuevo o se hace
   `/clear`. Una sesión que se llama igual no puede reenviar.
   Debajo está **quién firma cada cosa**: una fila por cada firma del catálogo (`guides/firmas-del-arnes.md`), con tres
-  opciones. «A la ventana del dueño» es lo de fábrica: el dueño contesta en la ventana de permiso o firma en su terminal.
+  opciones. «A la ventana del dueño» es lo de fábrica: el dueño contesta en la ventana de permiso; donde la ventana no
+  llega, aprueba con un click en el cuadro de opciones o un «aprobado» escrito; o firma en su terminal.
   «Delegada a la coordinadora» (`approvals.delegated_signing`) deja que esa sesión la firme en nombre del dueño, y su
   frase queda registrada; lo delegado no está protegido contra un agente: si la coordinadora decide aprobarlo por su
   cuenta, el arnés no lo distingue de un ok del dueño, así que se delega sólo lo de bajo riesgo. «Sólo del dueño»
@@ -649,8 +724,9 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   leerlo y lo avisa como ignorada; lo demás se sigue delegando. Volver al nivel de fábrica saca la firma de
   `approvals.levels`. Proponer niveles pide que la capa del equipo exija una versión del arnés que ya sepa leerlos.
   Quién firma cada nivel: el 1, la coordinadora si el perfil se lo delega (el plan, sólo con el veredicto aprobado de la
-  revisión automática que ella lanza), y si no el dev en la ventana; el 2,
-  siempre una persona en la ventana; el 3, una persona, y la emergencia en su terminal. Sin nadie que conteste, todo lo
+  revisión automática que ella lanza), y si no el dev; el 2, siempre una persona; el 3, una persona, y la emergencia en
+  su terminal. La persona aprueba en la ventana; donde la ventana no llega (una pestaña sin permisos, una sesión de
+  fondo), con un click o un «aprobado». Sin nadie que conteste, todo lo
   que no está delegado espera: el sistema no mira la hora, pide la firma igual y, si nadie contesta, la sesión queda
   frenada en ese paso. Con Codex, que no tiene ventana, todo se firma en la terminal. La matriz completa
   está en `guides/firmas-del-arnes.md`, «Quién firma cada nivel».
@@ -678,9 +754,10 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   - **B · en qué máquinas**: «En qué máquinas vale lo delegado», cada una por su huella.
   - **C · quién firma cada cosa y su nivel**: «Quién firma cada cosa» (la lista la trae el arnés, igual para todos;
     el equipo no agrega ni saca filas) y «El nivel de cada firma» (se sube, nunca se baja; sólo la rutina se delega).
-  - **En cada máquina**, la designación: «Esta sesión es la <nombre>» en el chat de la sesión elegida. Para que firme
-    lo delegado, además, el dueño la confirma en su terminal con `node scripts/lib/delegated-signing.js
-    confirm-designation` (ver `guides/firmas-del-arnes.md`, «Aprobar en nombre del dueño»). Se la reconoce por su
+  - **En cada máquina**, la designación: el dueño se lo pide a la sesión elegida, la sesión corre
+    `marker.js designate-relay` y el dueño hace click en su cuadro; ese click la nombra y la confirma para firmar lo
+    delegado. Con la frase de respaldo, además corre `node scripts/lib/delegated-signing.js confirm-designation` y el
+    dueño lo aprueba con un click, o en su terminal (ver `guides/firmas-del-arnes.md`, «Aprobar en nombre del dueño»). Se la reconoce por su
     conversación, sigue valiendo si se reinicia, y hay que repetirla tras un chat nuevo o un `/clear`. Si nadie la
     designó, nadie confirmó la designación, o la sesión está cerrada, no hay coordinadora: todo le llega al dev.
 - **Prueba a mano de cada punto**: si, además de lo que prueba el arnés, una persona tiene que marcar cada criterio de
@@ -699,11 +776,19 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   valor, cada uno como viene de fábrica. Ojo con otro valor escrito a mano (un número, un texto que no es ninguno de
   éstos): el lector no lo entiende y da por rota la configuración entera de cada máquina, no sólo este interruptor; el
   sitio no deja proponerlo. Queda en `team-profile.json` → `switches`, en el repo del perfil.
-- **Cuántas sesiones trabajan a la vez**: cuando una sesión coordina a las demás, cuántas pueden estar trabajando al
-  mismo tiempo en una máquina (de 1 a 20; sin valor, 3) antes de que la próxima espere su turno. Cada máquina puede
-  cambiarlo para sí, porque cuánto aguanta depende de ella. La carpeta donde quedan las firmas del dueño es de cada
-  máquina y no se pone acá. Queda en `team-profile.json` → `coordination.max_working`; la receta entera está en
+- **Las sesiones de cada máquina**: cuando una sesión coordina a las demás, cuántas pueden estar trabajando al
+  mismo tiempo en una máquina (de 1 a 20; sin valor, 3) antes de que la próxima espere su turno, y con qué nombres se
+  abren las nuevas: como hoy (los pone quien abre), un tema de fábrica (animales, ríos, colores o árboles) o una
+  **Lista propia**, con un ejemplo de los nombres que salen. La lista propia se escribe acá, un nombre por renglón:
+  letras sin acento, números, guion y guion bajo, hasta 40 caracteres y 200 nombres, sin repetidos; los renglones vacíos
+  no cuentan. La revisa el mismo lector de la máquina antes de proponerla. Cada máquina puede cambiar las dos cosas para
+  sí, y su lista gana sobre la del perfil. La carpeta donde quedan las firmas del dueño es de cada máquina y no se pone acá.
+  Queda en `team-profile.json` → `coordination.max_working` y `coordination.session_names`; la receta entera está en
   `guides/coordination.md`.
+- **La oficina de /office**: cuántos minutos sin novedades tiene que pasar una sesión que trabaja para que la oficina diga
+  «sin novedades desde las HH:MM» (de 1 a 1440; sin valor, 15). Lo mide la página con su propio reloj, sin preguntarle
+  nada a la máquina; una sesión en un paso largo sigue viva y sólo se marca callada. Queda en `team-profile.json` →
+  `office.quiet_minutes`.
 - **Integraciones**: qué servicios usa cada máquina (el reloj de horas, la memoria, el buzón, la noche, el índice de
   código de CodeGraph); una máquina puede apagar una para ella sola. Con CodeGraph prendido, el instalador se lo instala
   a cada dev y el arnés avisa si una máquina no lo tiene. Queda en `team-profile.json`, en el repo del perfil. Lo
@@ -712,7 +797,8 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   Telegram, como hasta ahora. Con el correo, el servidor y su puerto. Nunca pide una credencial: los avisos de la sesión
   de cada dev usan las suyas (`harness.js config set notify.<clave>`, en su máquina; Telegram, el bot de la máquina) y
   los de la noche, las variables secretas del servidor (`pipelines/operations/README.md`). Guardar los canales sube
-  también `requires.harness` del perfil a la primera versión que los lee.
+  también `requires.harness` del perfil a la primera versión que los lee, con la regla de «Cuando un dato nuevo necesita
+  una versión más nueva del arnés», arriba.
 - **Conversaciones de las ejecuciones**: si el sitio baja también lo que se habló en cada ejecución; con eso, el detalle de
   Ejecuciones muestra los archivos que tocó. Queda en `operations.json`, en el repo de operaciones. Lo revisa quien
   mantiene.
@@ -1304,7 +1390,12 @@ Con Microsoft en «sólo la organización», alguien de afuera del directorio (u
 empresa) entra recién cuando está en el directorio y en la lista del sitio. En Configuración → Personas, «Quién entra al
 sitio» → **Invitar a alguien**: su correo y sus productos. «Invitar» abre un pedido que lo suma a la lista como dev, con
 sus productos y una marca (`site.invitations`: quién invitó y cuándo). Cuando el pedido se aprueba y el sitio lee la
-lista nueva, el sitio le manda la invitación de Microsoft, que lo lleva al sitio. Al lado de su correo se ve el estado:
+lista nueva, el sitio le manda la invitación de Microsoft, que lo lleva al sitio. La invitación sale en el primer ciclo
+del sitio después de aprobado el pedido; si nadie lo usa, puede tardar hasta que alguien entre. Microsoft no
+reenvía el correo a una dirección invitada hace poco (medido: una segunda invitación al mismo correo, 36 minutos
+después, quedó creada y sin correo). Para ese caso, quien administra el directorio puede pedir el enlace de canje de
+la invitación y pasárselo a la persona. El correo de invitación puede caer en spam; el remitente es
+`invites@<directorio>.onmicrosoft.com`. Al lado de su correo se ve el estado:
 «invitación enviada, todavía no entró», «aceptada» (ya entró), «esperando el tope de mañana» o «no se pudo enviar» con
 el motivo; una falla se reintenta sola en el próximo refresco (si Microsoft no llegó a contestar, la persona puede
 recibir un segundo correo). Hasta 10 invitaciones por día
@@ -1387,6 +1478,15 @@ pasó el escáner y su firma se verificó; `stable` nunca vuelve atrás. Con eso
   ese candado: así se ve aunque el candado haya vencido, sin pasar antes por su inicio de sesión. El actualizador cambia
   la imagen, no la configuración del candado. Se hace una vez, a mano, con la orden de la receta de tu entorno (en su
   «Inicio de sesión»). Las instalaciones nuevas ya lo traen.
+- **El mismo paso, al pasar a una versión con las oficinas.** Las máquinas no tienen cómo pasar el candado de la
+  plataforma, así que `/live/machine` y `/live/enroll` tienen que quedar fuera. Sin eso, la prueba sin sesión avisa
+  «falta el paso de una vez», sin fallar: una organización que no usa oficinas no lo necesita. En Azure, es la misma orden de `--excluded-paths` de la receta, que ya las nombra. Hacelo
+  antes de poner `site.url` en el perfil.
+- **Y que el sitio vea la dirección de quien pide.** Detrás de un intermediario, todas las conexiones llegan desde su
+  dirección, y los topes por dirección valdrían para toda internet: dos conexiones sin firmar frenarían a cualquier
+  máquina. Las instalaciones nuevas ya lo traen. En una ya instalada, poné `SITE_TRUST_PROXY=1` en las variables del sitio
+  (la receta de tu entorno, en su «Inicio de sesión», trae la orden). Sólo si delante hay un intermediario: sin él,
+  cualquiera inventaría su dirección.
 
 ### Las dos formas de arrancarlo
 
@@ -1445,7 +1545,7 @@ quien corre el alta, como los otros secretos. Sin los dos, la pestaña Configura
 - **Inicio de sesión:** dos candados. Delante, el inicio integrado de la plataforma con el mismo registro de Entra ID.
   Detrás, el del sitio, que decide con su lista. `/healthz`, `/livez`, la página «Saliste» con lo que carga y `/idioma` quedan fuera del candado (sin eso, con el
   candado vencido, «Saliste» pasa antes por su inicio de sesión). Un sitio ya instalado se corrige una vez:
-  `az containerapp auth update -g <grupo> -n <app> --excluded-paths /healthz,/livez,/saliste,/idioma,/static/site.css,/static/site.js,/static/fonts/lato-400.woff2,/static/fonts/lato-700.woff2`. Con `microsoftAccounts`
+  `az containerapp auth update -g <grupo> -n <app> --excluded-paths /healthz,/livez,/saliste,/idioma,/static/site.css,/static/site.js,/static/fonts/lato-400.woff2,/static/fonts/lato-700.woff2,/live/machine,/live/enroll`; y para que los topes por dirección valgan, `az containerapp update -g <grupo> -n <app> --set-env-vars SITE_TRUST_PROXY=1`. Con `microsoftAccounts`
   en el archivo de configuración se elige el modo:
   - `organization` (por defecto): un solo inquilino. Si el registro tiene «asignación requerida», las personas se
     asignan una por una en el portal (asignar un grupo pide una licencia Entra ID P1/P2).

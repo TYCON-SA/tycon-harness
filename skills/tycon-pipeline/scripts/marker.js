@@ -57,10 +57,15 @@
  *                                                  (lib/open-runs.js); pide la frase del dueño
  *   marker.js restore <sessionId>               → rearma en esta sesión el marcador de una ejecución perdida, desde
  *                                                  la copia de su apertura; pide la frase del dueño
+ *   marker.js park <historia> --queue | --until AAAA-MM-DD [--session <id>] → marca una corrida dejada a propósito («en
+ *                                                  fila» o «en pausa»), aunque su sesión esté cerrada: nunca se ofrece
+ *                                                  limpiarla, y clear-session se niega. Sin firma: la marca no autoriza nada.
+ *   marker.js unpark <historia>                 → saca esa marca
  *   marker.js adhoc clear-orphan <sessionId>    → borra el ad-hoc de OTRA sesión, sólo si no está viva
  *                                                  y lleva más de 24 h sin tocarse
  *   marker.js doing "<qué hago>" | doing clear  → anota (o borra) qué hace esta sesión sin story, para /wip; NO es un
  *                                                  permiso. `doing clear-orphan <sid>`: la de otra sesión que no vive.
+ *                                                  Con una story abierta sólo anota `doing --waiting-for "<qué espera>"`.
  *   marker.js adopt-session <sessionId>         → ADOPTA el marker completo de otra
  *                                                  sesión (resume cross-session sin pérdida:
  *                                                  filesTouched/iterations/checks/dodRuntimeChecked
@@ -220,6 +225,11 @@ function paraOtraSesion(argv) {
     return;
   }
   if (!PEDIDA || PEDIDA === PROPIA) return;
+  // nombrar o retirar a la coordinadora: desde su propia pestaña, o la terminal del dueño que nombra esa sesión
+  if ((argv[2] === 'designate-relay' || argv[2] === 'withdraw-relay') && !(PROPIA === '_nosession' && process.argv.includes('--terminal'))) {
+    console.error(`🔒 marker.js ${argv[2]}: se corre desde la sesión que se nombra, no para otra (--for-session ${PEDIDA}). No se escribió nada.`);
+    process.exit(1);
+  }
   const no = (m) => { console.error(`🔒 marker.js: --for-session ${PEDIDA}: ${m}. No se escribió nada.`); process.exit(2); };
   // en la terminal del dueño --for-session dice su sesión; sin variable de sesión y sin terminal no hay quién la pida
   if (PROPIA === '_nosession') {
@@ -294,7 +304,14 @@ function pruneStale() {
         }
         // el cierre es de la sesión podada, no de la que poda
         const podada = m.sessionId || f.replace(/\.json$/, '');
+        // una corrida dejada a propósito lleva días sin tocarse y no está abandonada: podarla pierde su trabajo. Tampoco la
+        // que espera su turno con la espera anotada
+        const io = require('./lib/story-gate-io.js');
+        if (marcaDe(podada, m) || esperaGuardar(m) || io.waitingTurn(STATE_DIR, podada)) continue;
+        // sin su copia no se poda: `restore` la rearma desde ahí
+        if (!io.savePruned(STATE_DIR, podada, m)) continue;
         fs.unlinkSync(full);
+        avisarOficina(podada);
         cerrarEjecucion(podada, m, { registrar: false, estado: 'abandonada', motivo: `podada: más de ${STALE_HOURS} h sin tocarse`, soloAbierta: true });
       }
     } catch (_e) { /* ignore */ }
@@ -398,6 +415,12 @@ function sinFirmaNoSeEscribe() {
   process.exit(2);
 }
 
+// Cambió lo que la oficina muestra de una sesión (un marcador, un arreglo rápido o una nota). El aviso no espera ni cambia
+// el resultado: este archivo viaja suelto, y sin el aviso se pierde en silencio.
+function avisarOficina(sesion = SID) {
+  try { require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'office-event.js')).notify(sesion); } catch (_e) { /* la vigilancia de la oficina lo ve después */ }
+}
+
 function writeMarker(marker) {
   sinFirmaNoSeEscribe();
   ensureActiveDir();
@@ -406,6 +429,25 @@ function writeMarker(marker) {
   const tmp = `${p}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(marker, null, 2) + '\n', 'utf8');
   fs.renameSync(tmp, p);
+  avisarOficina();
+}
+
+// El archivo de estado de la sesión que el comando cambió: su paso, su oración y su hora de fin, de lo que dice el
+// disco. Sólo si ya existe: lo crea el gancho de la sesión. Nunca cambia la salida del comando.
+function syncSessionState(sid) {
+  if (PREVIO || SOLO_LECTURA) return;
+  let lib = null;
+  try {
+    lib = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'session-state.js'));
+    lib.refresh(STATE_DIR, String(sid));
+  } catch (e) {
+    // sin la librería, la oficina deduce como antes; el motivo queda en el registro del estado de las sesiones
+    const text = `sesión ${sid}: marker.js no pudo poner al día su estado (${e && e.message ? e.message : e})`;
+    try {
+      if (lib) lib.logError(STATE_DIR, text);
+      else fs.appendFileSync(path.join(STATE_DIR, 'office', 'session-state-errors.log'), `${new Date().toISOString()} ${text.replace(/\s+/g, ' ').slice(0, 500)}\n`);
+    } catch (_e) { /* sin registro tampoco: el comando no cambia su salida */ }
+  }
 }
 
 function clearMarker() {
@@ -430,6 +472,7 @@ function clearMarker() {
       }
     } catch (_e) { /* ignore */ }
   }
+  avisarOficina();
 }
 
 // El cierre de la ejecución de `sesion` en el registro, con su carpeta, y la copia de la apertura borrada
@@ -576,6 +619,8 @@ function cmdSet(payloadJson) {
     const {
       adversarial, deepReviewDone, workSignalStarted, clockiStarted, adoMarkedActive, atddBypass, atddBypassReason,
       checks, checksProvenance, dodRuntimeChecked, iterations, fileEvents, filesTouched, filesTouchedAt,
+      // la otra vuelta de revisores es de los cambios de la corrida: heredada, la story nueva pediría revisar lo de la vieja
+      otraVuelta,
       stepsCompleted, stepsPending, startedAt, evidenceDir, baseSha,
       // el esquema de los pasos y los avisos del Arranque son de la corrida
       stepScheme, startWarnings,
@@ -721,6 +766,8 @@ function cmdSet(payloadJson) {
     // `reviewers-run`)
     ...(payload.sessionModel !== undefined ? { sessionModel: payload.sessionModel } : {}),
     ...(payload.codexSession !== undefined ? { codexSession: payload.codexSession } : {}),
+    // la hora de este paso sigue valiendo si se retoma la misma story; una story nueva no la hereda
+    ...(at(existing, 'horaDelPaso') ? { horaDelPaso: at(existing, 'horaDelPaso') } : {}),
   };
   // Un marcador que no es de ningún esquema (números y nombres mezclados, o un paso que la tabla no conoce) no se
   // escribe: los portones no sabrían si el plan está aprobado.
@@ -736,6 +783,8 @@ function cmdSet(payloadJson) {
     if (conArranque) marker.stepTimings = conArranque.stepTimings;
   }
   writeMarker(marker);
+  // un set que retoma con otros pasos o reemplaza la story cambia lo que el archivo de estado dice
+  syncSessionState(SID);
   process.stdout.write(JSON.stringify(marker, null, 2));
 }
 
@@ -1145,6 +1194,20 @@ function firmadoEnLaTerminal(firma, resumen) {
   return trabajarSobreElDestino(ow, { via: 'terminal', sesion, destino: SID || null });
 }
 
+/**
+ * Las pruebas sin turno (`checks.tests === 'sin-turno'`): el portón no corrió porque otra sesión tenía el turno de las
+ * ejecuciones grandes. Frena el paso diciendo eso, sin llamarlo rojo: no hay prueba que arreglar, hay que esperar el
+ * turno. La deuda no lo cubre: no es un rojo que se deja a propósito, es una medición que falta.
+ */
+function frenarSinTurno(marker, n) {
+  if (!marker.checks || marker.checks.tests !== 'sin-turno') return;
+  appendLog('gates.log', { name: 'tests-no-turn', status: 'blocked', story: marker.storyId || null, step: n });
+  console.error(`marker.js complete-step ${n} BLOQUEADO — las pruebas no corrieron: el portón no tuvo el turno de las ejecuciones grandes.`);
+  console.error('  No hay pruebas que fallaran: falta medirlas. Cuando la coordinadora te dé el turno, corré el portón:');
+  console.error('    bash <skills>/tycon-pipeline/scripts/test-gate.sh <repo> <ruta de la story>');
+  process.exit(1);
+}
+
 function cmdCompleteStep(nRaw, flags) {
   const marker = readMarker();
   if (!marker) {
@@ -1193,6 +1256,8 @@ function cmdCompleteStep(nRaw, flags) {
       appendLog('gates.log', { name: 'expected-red', status: 'accepted', story: marker.storyId, check: k, deuda: marker.cierre.deuda });
       console.error(`⚠️  ${k}: ${v} — aceptado por la deuda ${marker.cierre.deuda} (${((marker.expectedRed || {})[k] || {}).tests || []})`);
     }
+    // Las pruebas sin turno tampoco llegan al commit, ni con la deuda: no es un rojo que se deja, es una medición que falta.
+    frenarSinTurno(marker, n);
     // Un control en rojo común tampoco llega al commit sin la deuda: o se arregla, o se cierra como deuda con la frase.
     const rojos = Object.entries(marker.checks || {}).filter(([, v]) => /^red\b/.test(String(v)));
     if (rojos.length && !enDeuda) {
@@ -1233,6 +1298,21 @@ function cmdCompleteStep(nRaw, flags) {
       console.error('  El pipeline se recorre EN ORDEN: `pipeline.js next` te dice cuál va. Cerrá ese primero (con su evidencia).');
       console.error('  Escape consciente (raro — p.ej. retomando una corrida que ya los hizo): --out-of-order (queda en bypass.log).');
       process.exit(1);
+    }
+  }
+
+  // ── «Preparar el commit» no cierra con código sin revisar ──
+  // Un cambio de código posterior al último cierre de los revisores (la regla de `next`, lib/steps.js) pide otra vuelta
+  // antes: lo que se commitea es lo revisado. Una prueba o un texto no la piden. `--out-of-order` no lo saltea: no es
+  // el orden, es lo que se commitea. Con Hallazgos abierto también frena: `next` espera a que cierre, este paso no.
+  if (nuevo && ids.includes('prepare-commit')) {
+    const vuelta = STEPS_LIB.reviewersRound(marker, { aunConHallazgos: true });
+    if (vuelta) {
+      const nombres = vuelta.archivos.slice(0, 5).join(', ') + (vuelta.archivos.length > 5 ? ` y ${vuelta.archivos.length - 5} más` : '');
+      appendLog('gates.log', { name: 'unreviewed-code', status: 'blocked', story: marker.storyId, step: n, files: vuelta.archivos.length, round: vuelta.round });
+      console.error(`marker.js complete-step ${n} BLOQUEADO — cambió código después de los revisores: ${nombres}.`);
+      console.error('  Corré los revisores sobre lo cambiado (`pipeline.js next` dice cómo) y volvé a cerrar.');
+      process.exit(2);
     }
   }
 
@@ -1353,12 +1433,14 @@ function cmdCompleteStep(nRaw, flags) {
     appendLog('gates.log', { name: 'plan-approval', status: 'ok', story: marker.storyId, mode: marker.planApproval.mode, text: marker.planApproval.text, ...firmaPlan.constancia });
     // `--approved` sin `--approved-by` ni `--delegated-by` queda automática «sin nombrar»; por la revisión, automática a
     // nombre de la revisión. La maqueta la aprueba quien aprobó el plan, en el mismo comando.
+    // con su click o su «aprobado», aprobó la persona: nadie vio este comando, así que un nombre escrito en él no cuenta
+    const delDueno = ['click', 'mensaje'].includes(firmaPlan.via) ? { tipo: 'manual', quien: process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona' } : null;
     const quienPlan = porRevision
       ? { tipo: 'automatica', quien: `revisión automática (${revision.modelo})`, delegacion: `coordinadora (sesión ${PROPIA})` }
-      : quienDeLasOpciones(optVal);
+      : delDueno || quienDeLasOpciones(optVal);
     anotarAprobacion(marker, { que: 'plan', cuando: at3, via: `complete-step ${n} ${porRevision ? '· revisión automática' : '--approved'}`, ...quienPlan, ...porDe(firmaPlan) });
     if (mockupPlan) {
-      anotarAprobacion(marker, { que: 'maqueta', cuando: at3, via: `complete-step ${n} --mockup-approved`, ...quienDeLasOpciones(optVal), ...porDe(firmaPlan) });
+      anotarAprobacion(marker, { que: 'maqueta', cuando: at3, via: `complete-step ${n} --mockup-approved`, ...(delDueno || quienDeLasOpciones(optVal)), ...porDe(firmaPlan) });
     }
     // La decisión se anota SIEMPRE, para que «Preparar el commit» vea una pantalla que apareció después del plan.
     marker.mockupDecision = { screen: sc.screen, signal: sc.signal || null, at: at3 };
@@ -1501,6 +1583,9 @@ function cmdCompleteStep(nRaw, flags) {
       console.error('  No le dictes cómo: si pregunta cómo seguir, señalale la guía del freno (guides/safety-guard.md, regla ESC-C3).');
       process.exit(1);
     }
+
+    // ── «Sin turno»: frena, sin llamarlo rojo ─────────────────────────────────────────────────
+    frenarSinTurno(marker, n);
 
     // ── «Sin acotar»: se acepta anunciándolo ──────────────────────────────────────────────────
     // La corrida del repo hermano no se pudo acotar a lo tocado y no corrió nada (salida 7 de test-gate.sh). Correr la
@@ -1987,9 +2072,32 @@ function cmdCompleteStep(nRaw, flags) {
       marker.stepTimings[id] = { ...previo, completedAt: nowIso(), ...(nuevo && id === 'reviewers' ? { rounds: 1 } : {}) };
     }
   }
+  anotarOtraVuelta(marker);
   marker.lastTouch = nowIso();
-  writeMarker(marker);
+  writeMarker(conHoraDelPaso(marker));
+  syncSessionState(SID);
   process.stdout.write(JSON.stringify(marker, null, 2));
+}
+
+/**
+ * Escribe en el marcador `otraVuelta` (lib/steps.js `otraVueltaDe`): el cartel lo lee y no decide la vuelta por su
+ * cuenta. Lo llaman cada cierre de paso y cada cambio que se anota; un marcador por número no lo lleva.
+ *
+ * Si el cálculo falla, el cierre sigue: el campo viejo se borra (el cartel vuelve a su regla de antes, y `next` y el
+ * último paso deciden igual) y queda el rastro en hook-errors.log, como en on-edit.js.
+ */
+function anotarOtraVuelta(marker) {
+  try {
+    const v = STEPS_LIB.otraVueltaDe(marker);
+    if (v === undefined) delete marker.otraVuelta;
+    else marker.otraVuelta = v;
+  } catch (e) {
+    delete marker.otraVuelta;
+    try {
+      fs.mkdirSync(STATE_DIR, { recursive: true });
+      fs.appendFileSync(path.join(STATE_DIR, 'hook-errors.log'), `[${new Date().toISOString()}] marker otraVuelta: ${(e && e.stack) || e}\n\n`, 'utf8');
+    } catch { /* el registro no corta el cierre */ }
+  }
 }
 
 /**
@@ -2042,7 +2150,8 @@ function cmdStartStep(nRaw) {
   const nuevo = anotarArranque(marker, n, nowIso());
   if (!nuevo) process.exit(0);
   nuevo.lastTouch = nowIso();
-  writeMarker(nuevo);
+  writeMarker(conHoraDelPaso(nuevo));
+  syncSessionState(SID);
 }
 
 // ============================================================
@@ -2351,10 +2460,14 @@ function cmdMarkTestsNotScoped(motivo) {
  *   · `record --summary <resumen> --repo <repo>`: reemplaza las de ese repo con las fallas del resumen de
  *     run-suites-json.js (sin resumen legible, ninguna) y borra `checks['tests-suite']`, para que no quede en pie el rojo
  *     de una suite sola anterior;
- *   · `clear --path <ruta> --repo <repo>`: saca esa ruta (la suite sola salió verde);
+ *   · `clear --path <ruta> --repo <repo> [--summary <resumen> --tree <árbol> [--coverage-file <lcov>]]`: saca esa ruta (la suite
+ *     sola salió verde); con el resumen de la suite sola y la foto de su carpeta, la suma a lo guardado de la completa
+ *     roja, con su cobertura;
  *   · `pending --suites <suites.json> --gate <test-gate.sh> --repo <repo> [--story <story>]`: saca las rutas que ya no
- *     están en suites.json (y lo dice); si queda alguna, nombra cada una con su comando y sale 76.
- * `record` y `clear` escriben lo que mide la puerta: sólo los llama test-gate.sh (TYCON_TEST_GATE=1).
+ *     están en suites.json (y lo dice); si queda alguna, nombra cada una con su comando y sale 76;
+ *   · `save-red`, `red-full` y `drop-red`: lo guardado de la última completa roja del repo (`testsRedFull`, con su
+ *     carpeta en `red-full/` y su hash), para que repetir solas las rojas cierre sin otra completa (lib/failed-first.js).
+ * `record`, `clear`, `save-red` y `drop-red` escriben lo que mide la puerta: sólo los llama test-gate.sh (TYCON_TEST_GATE=1).
  * Sin corrida abierta: sale 0, no escribe nada y lo dice.
  */
 const TESTS_FAILED_PENDING = 76;
@@ -2362,21 +2475,24 @@ const TESTS_FAILED_PENDING = 76;
 function cmdTestsFailed(argv) {
   const accion = argv[0];
   const opt = (k) => { const i = argv.indexOf(k); return i >= 0 && argv[i + 1] ? argv[i + 1] : null; };
-  const uso = 'marker.js tests-failed: uso — tests-failed record --summary <f> --repo <r> | clear --path <ruta> --repo <r> | pending --suites <json> --gate <test-gate.sh> --repo <r> [--story <s>]';
-  if (!['record', 'clear', 'pending'].includes(accion) || !opt('--repo')
+  const uso = 'marker.js tests-failed: uso — tests-failed record --summary <f> --repo <r> | clear --path <ruta> --repo <r> [--summary <f> --tree <árbol> [--coverage-file <f>]] | pending --suites <json> --gate <test-gate.sh> --repo <r> [--story <s>] | save-red --summary <f> --measured <f> [--coverage-file <f>] [--base <sha>] [--trim <t>] --repo <r> | red-full --repo <r> | drop-red --repo <r>';
+  if (!['record', 'clear', 'pending', 'save-red', 'red-full', 'drop-red'].includes(accion) || !opt('--repo')
     || (accion === 'record' && !opt('--summary')) || (accion === 'clear' && !opt('--path'))
-    || (accion === 'pending' && (!opt('--suites') || !opt('--gate')))) {
+    || (accion === 'pending' && (!opt('--suites') || !opt('--gate')))
+    || (accion === 'save-red' && (!opt('--summary') || !opt('--measured')))) {
     console.error(uso);
     process.exit(2);
   }
-  if (accion !== 'pending' && process.env.TYCON_TEST_GATE !== '1') {
+  if (!['pending', 'red-full'].includes(accion) && process.env.TYCON_TEST_GATE !== '1') {
     console.error(`marker.js tests-failed ${accion}: sólo lo usa test-gate.sh (TYCON_TEST_GATE=1)`);
     process.exit(2);
   }
   const ff = require('./lib/failed-first.js');
   const marker = readMarker();
   if (!marker) {
-    process.stdout.write(`marker.js tests-failed ${accion}: sin corrida abierta en esta sesión, no anoto nada\n`);
+    // red-full lo lee test-gate.sh como JSON: sin corrida, no hay nada guardado
+    if (accion === 'red-full') process.stdout.write('null\n');
+    else process.stdout.write(`marker.js tests-failed ${accion}: sin corrida abierta en esta sesión, no anoto nada\n`);
     return;
   }
   const real = (x) => { try { return fs.realpathSync(x); } catch { return path.resolve(x); } };
@@ -2397,10 +2513,57 @@ function cmdTestsFailed(argv) {
     if (nuevas.length) process.stderr.write(`[test-gate] suites que fallaron, anotadas para repetir primero: ${nuevas.map((x) => x.ruta).join(', ')}\n`);
     return;
   }
+  // Lo guardado de la última completa roja de este repo («repetir solas cierra»): vive en la carpeta de
+  // estado, `red-full/<sesión>-<repo>`, y el marcador anota su hash. Ver lib/failed-first.js.
+  const rojas = Array.isArray(marker.testsRedFull) ? marker.testsRedFull : (marker.testsRedFull ? [marker.testsRedFull] : []);
+  const roja = rojas.find((x) => x && x.repo === repo) || null;
+  const otrasRojas = rojas.filter((x) => x && x.repo !== repo);
+  const guardarRojas = (lista2) => { marker.testsRedFull = lista2.length ? lista2 : undefined; if (!lista2.length) delete marker.testsRedFull; };
+  if (accion === 'red-full') {
+    process.stdout.write(`${JSON.stringify(roja)}\n`);
+    return;
+  }
+  if (accion === 'drop-red') {
+    if (!roja) return;
+    // sólo se borra lo que está en su carpeta: un `dir` de otro lado no se toca, se dice
+    const casa = path.join(STATE_DIR, 'red-full') + path.sep;
+    if (typeof roja.dir === 'string' && path.resolve(roja.dir).startsWith(casa)) {
+      try { fs.rmSync(roja.dir, { recursive: true, force: true }); } catch (e) {
+        process.stderr.write(`[test-gate] ⚠️  no pude borrar lo guardado de la completa roja (${e.message}): queda la carpeta, el marcador ya no la nombra\n`);
+      }
+    } else process.stderr.write(`[test-gate] ⚠️  lo guardado de la completa roja apunta fuera de ${casa}: no borro nada, sólo lo saco del marcador\n`);
+    guardarRojas(otrasRojas);
+    marker.lastTouch = nowIso();
+    writeMarker(marker);
+    return;
+  }
+  if (accion === 'save-red') {
+    const dir = path.join(STATE_DIR, 'red-full', `${marker.sessionId || 'sesion'}-${require('crypto').createHash('sha1').update(repo).digest('hex').slice(0, 12)}`);
+    let hash;
+    try {
+      hash = ff.saveRed({ dir, summaryFile: opt('--summary'), lcovFile: opt('--coverage-file'), measuredFile: opt('--measured'), base: opt('--base'), recorte: opt('--trim') || '' });
+    } catch (e) {
+      process.stderr.write(`[test-gate] ⚠️  no pude guardar la completa roja (${e.message}): repetir solas no va a cerrar «Correr las pruebas»\n`);
+      return;
+    }
+    guardarRojas([...otrasRojas, { repo, dir, hash, at: nowIso() }]);
+    marker.lastTouch = nowIso();
+    writeMarker(marker);
+    process.stderr.write('[test-gate] guardé lo que midió esta completa roja: con las rojas repetidas solas en verde, la próxima completa cierra sin correr todo\n');
+    return;
+  }
   if (accion === 'clear') {
     const ruta = opt('--path');
     if (!lista.some((x) => x.ruta === ruta)) return;
     const quedan = lista.filter((x) => x.ruta !== ruta);
+    // con lo guardado de la completa roja, la repetición verde se suma con la foto de la carpeta en que corrió
+    if (roja && opt('--summary') && opt('--tree')) {
+      try {
+        const sola = JSON.parse(fs.readFileSync(opt('--summary'), 'utf8'));
+        const entry = (sola.suites || [])[0] || null;
+        if (entry && entry.exit === 0) roja.hash = ff.addRepeat(roja.dir, ruta, { tree: opt('--tree'), entry, lcovFile: opt('--coverage-file') });
+      } catch (e) { process.stderr.write(`[test-gate] ⚠️  no pude sumar la repetición a lo guardado (${e.message}): la completa va a correr entera\n`); }
+    }
     marker.testsFailed = [...ajenas, ...quedan];
     marker.lastTouch = nowIso();
     writeMarker(marker);
@@ -2677,7 +2840,10 @@ function cmdRunCheck(argv) {
     if (terminado) return;
     terminado = true;
     try {
-      registrarRunCheck(name, cmdArgv, marker, exitCode, Date.now() - t0, Buffer.concat(trozos).toString('utf8'));
+      // el 77 del turno se anota aparte: `registrarRunCheck` sólo sabe de verde y rojo, y está congelada
+      if (esSinTurno(name, cmdArgv, exitCode)) registrarSinTurno(name, cmdArgv, marker, exitCode, Date.now() - t0);
+      else if (marcaQueNoPisaSinTurno(name, exitCode)) process.exitCode = exitCode;
+      else registrarRunCheck(name, cmdArgv, marker, exitCode, Date.now() - t0, Buffer.concat(trozos).toString('utf8'));
     } finally {
       soltar();
     }
@@ -2716,6 +2882,62 @@ function cmdRunCheck(argv) {
     }
     terminar(c);
   });
+}
+
+/**
+ * ¿Este comando es el corredor de suites? Es el único que pide el turno de las ejecuciones grandes, así que sólo su 77
+ * es «sin turno». Se reconoce por un argumento cuyo nombre de archivo es exactamente `run-suites-json.js`, o por una
+ * palabra con ese nombre dentro del texto que sigue a `-c` (el portón lo lanza también con `bash -c`).
+ */
+function esCorredorDeSuites(cmdArgv) {
+  const es = (s) => path.basename(String(s || '').replace(/^['"]|['"]$/g, '')) === 'run-suites-json.js';
+  return cmdArgv.some((a, i) => es(a) || (i > 0 && cmdArgv[i - 1] === '-c' && String(a).split(/[\s;&|()]+/).some(es)));
+}
+
+/** ¿Es el 77 del turno? El del corredor de suites, en el check `tests`, lanzado por el portón. */
+function esSinTurno(name, cmdArgv, exitCode) {
+  return exitCode === 77 && name === 'tests' && process.env.TYCON_TEST_GATE === '1' && esCorredorDeSuites(cmdArgv);
+}
+
+/**
+ * ¿Es una marca en rojo del portón (`marcar_tests_en_rojo` de test-gate.sh: un hermano o una parte que salió 75, un
+ * corte, el total en rojo) sobre un check que ya quedó `sin-turno`? Ese 75 puede venir del turno, y el rojo lo
+ * volvería una prueba que arreglar. Los dos dicen «no se midió»: queda `sin-turno`, que además dice qué hacer, y se
+ * anota en gates.log que la marca no lo pisó.
+ */
+function marcaQueNoPisaSinTurno(name, exitCode) {
+  if (name !== 'tests' || exitCode === 0 || process.env.TYCON_TEST_GATE_MARK !== '1') return false;
+  const m = readMarker();
+  if (!m || !m.checks || m.checks.tests !== 'sin-turno') return false;
+  appendLog('gates.log', { check: name, status: 'sin-turno', provenance: 'test-gate', exit: exitCode, storyId: m.storyId || null,
+    motivo: 'la marca en rojo del portón no pisa el sin-turno: no se midió' });
+  process.stdout.write(`check ${name}: sin-turno (la marca en rojo del portón no lo pisa)\n`);
+  return true;
+}
+
+/**
+ * Anota el 77 del turno: el portón no corrió nada porque otra sesión tiene el turno de las ejecuciones grandes. No es
+ * verde (el verde de antes no queda en pie: el código pudo cambiar) ni rojo (no hay prueba que arreglar): `sin-turno`,
+ * que los cierres de los pasos frenan pidiendo el turno. Relee el marcador antes de escribir, como `registrarRunCheck`.
+ */
+function registrarSinTurno(name, cmdArgv, marker, exitCode, durationMs) {
+  if (marker) {
+    const fresh = readMarker();
+    if (fresh) {
+      fresh.checks = fresh.checks || {};
+      fresh.checks[name] = 'sin-turno';
+      fresh.checksProvenance = fresh.checksProvenance || {};
+      fresh.checksProvenance[name] = 'test-gate';
+      fresh.checksAt = fresh.checksAt || {};
+      fresh.checksAt[name] = nowIso();
+      fresh.lastTouch = nowIso();
+      writeMarker(fresh);
+    }
+  }
+  appendLog('gates.log', { check: name, status: 'sin-turno', provenance: 'test-gate', cmd: cmdArgv.join(' '), exit: exitCode,
+    durationMs, storyId: marker ? marker.storyId : null });
+  process.stdout.write(`check ${name}: sin-turno (test-gate, ${durationMs}ms)\n`);
+  process.exitCode = exitCode;
 }
 
 function registrarRunCheck(name, cmdArgv, marker, exitCode, durationMs, salida) {
@@ -3243,7 +3465,8 @@ function cmdMarkAdversarialSkipped(argsGate) {
     [path.join(__dirname, 'pipeline.js'), 'deep-review-gate', ...args],
     { encoding: 'utf8', env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
   let gate = null;
-  if (r.status === 0) { try { gate = JSON.parse(r.stdout); } catch (_e) { gate = null; } }
+  // la salida 3 es «corre, y espera su turno»: un veredicto legible, que niega el salteo como cualquier otro `run: true`
+  if (r.status === 0 || r.status === 3) { try { gate = JSON.parse(r.stdout); } catch (_e) { gate = null; } }
   if (!gate || typeof gate !== 'object') {
     const detalle = String(r.stderr || '').trim()
       || (r.error && r.error.message)
@@ -3375,7 +3598,10 @@ function anotarPaseDelCarril({ confirmados, marker, flag }) {
   const ruta = flag('--result');
   if (!ruta) salir('el pase se anota con --result <archivo>: el JSON que devolvió. El número sale de ahí, no del que anota.');
   let medicion;
-  try { medicion = require('./lib/adversarial-verdict.js').medicionDelResultado(JSON.parse(fs.readFileSync(path.resolve(ruta), 'utf8'))); } catch (e) {
+  try {
+    medicion = require('./lib/adversarial-verdict.js').medicionDelResultado(JSON.parse(fs.readFileSync(path.resolve(ruta), 'utf8')),
+      { resultado: path.resolve(ruta), repo: process.cwd() });
+  } catch (e) {
     salir(`--result ${ruta}: no lo pude leer (${String(e.message).split('\n')[0]}) — no se anotó nada.`);
   }
   if (medicion.confirmados !== confirmados) salir(`<N> = ${confirmados} pero el resultado trae ${medicion.confirmados} confirmado(s) — no se anotó nada.`);
@@ -3438,11 +3664,12 @@ function cmdMarkAdversarialResult(countRaw) {
       console.error(`marker.js mark-adversarial-result: --result ${abs}: no lo pude leer como JSON (${e.message.split('\n')[0]}) — no se anotó nada.`);
       process.exit(2);
     }
-    try { medicion = medicionDelResultado(obj); } catch (e) {
+    const lanz = corrida && corrida.adversarial && typeof corrida.adversarial === 'object' ? Date.parse(corrida.adversarial.launchedAt) : NaN;
+    // la prueba de cada lente limpia se mira en disco: junto al resultado, de este pase (desde su lanzamiento)
+    try { medicion = medicionDelResultado(obj, { resultado: abs, repo: (corrida && corrida.repoPath) || process.cwd(), desde: lanz }); } catch (e) {
       console.error(`marker.js mark-adversarial-result: --result ${abs}: ${e.message} — no se anotó nada.`);
       process.exit(2);
     }
-    const lanz = corrida && corrida.adversarial && typeof corrida.adversarial === 'object' ? Date.parse(corrida.adversarial.launchedAt) : NaN;
     if (!Number.isFinite(lanz)) {
       console.error(`⚠️  marker.js mark-adversarial-result: no hay lanzamiento del pase con fecha en esta corrida: no pude comprobar que ${abs} sea de este pase y no de otro.`);
     } else if (fs.statSync(abs).mtimeMs < lanz) {
@@ -3794,11 +4021,15 @@ function cmdAppendFile(absPath) {
   // por nombres, y su fix no se re-auditaría. fileEvents conserva CADA edición con ts;
   // pipeline.js smart-reloop computa el delta como "archivos con evento posterior
   // al snapshot de la iter previa". Cap 500 entries (FIFO) para no crecer sin límite.
+  // `code`: si pide otra vuelta de revisores, como en on-edit; si la regla falla, pide (ante la duda, se revisa).
   marker.fileEvents = marker.fileEvents || [];
-  marker.fileEvents.push({ path: absPath, ts: nowIso() });
+  let code;
+  try { code = require('./lib/reloop-code.js').pideOtraVuelta(absPath, { storyPath: marker.storyPath }); } catch (_) { code = true; }
+  marker.fileEvents.push({ path: absPath, ts: nowIso(), code });
   if (marker.fileEvents.length > 500) {
     marker.fileEvents = marker.fileEvents.slice(-500);
   }
+  anotarOtraVuelta(marker);
   marker.lastTouch = nowIso();
   writeMarker(marker);
 }
@@ -4126,6 +4357,7 @@ function cmdClear(rest = []) {
     cerrarEjecucion(SID, marcadorAntes, { registrar: false, estado: 'abortada', motivo: 'clear: no pude archivar la ejecución ni calcular cómo terminó' });
   }
   clearMarker();
+  syncSessionState(SID);
 }
 
 function cmdIsActive() {
@@ -4173,6 +4405,106 @@ function cmdFindByStory(storyId) {
   process.stdout.write(JSON.stringify(matches, null, 2));
 }
 
+// La marca de una corrida dejada a propósito: `<estado>/parked/<sesión>.json` con `{story, kind: queue | until, until, at,
+// by}`. Vive junto a las corridas y no adentro: sin firma no se escribe el marcador de otra sesión, y las de la fila tienen
+// la sesión cerrada. No autoriza nada, sólo protege y cambia lo que se muestra: ni ponerla ni sacarla piden firma.
+const parkedPath = (sid) => path.join(STATE_DIR, 'parked', `${String(sid).replace(/[/\\]/g, '_')}.json`);
+function sacarMarca(sid) {
+  try { fs.unlinkSync(parkedPath(sid)); } catch (e) { if (e.code !== 'ENOENT') console.error(`⚠️  marker.js: no pude sacar la marca de la sesión ${sid} (${e.code || e.message}).`); }
+}
+// La marca que protege a esta corrida: la de su historia, puesta después de que arrancó (una corrida nueva no la hereda), o
+// la fecha de `paused_until:` de su historia, que /wip y la oficina muestran igual. Una marca que está y no se puede leer
+// protege: no poder preguntar no es estar sin marca.
+function marcaDe(sid, m) {
+  let mark = null;
+  try { mark = JSON.parse(fs.readFileSync(parkedPath(sid), 'utf8')); } catch (e) {
+    if (e.code !== 'ENOENT' && e.code !== 'ENOTDIR') {
+      process.stderr.write(`[marker] no pude leer la marca de la sesión ${sid} (${e.code || e.message}): la trato como marcada.\n`);
+      return { kind: 'ilegible' };
+    }
+  }
+  if (mark && String(mark.story) === String(m && m.storyId) && !(Date.parse(mark.at) < Date.parse(m.startedAt))) return mark;
+  let until = null;
+  try { until = require(path.join(__dirname, '..', '..', '..', 'scripts', 'tools', 'work-in-progress.js')).storyPausedUntil(m && m.storyPath); } catch (e) {
+    // sin ese lector, sólo cuenta la marca: se dice, porque esto protege trabajo
+    process.stderr.write(`[marker] no pude ver si la historia ${m && m.storyId} está en pausa (${e.message}).\n`);
+  }
+  return until ? { kind: 'historia', until } : null;
+}
+// Una corrida terminada con cambios sin guardar espera el ok del dueño, aunque lleve días sin tocarse: no está abandonada.
+// Si no se puede leer el repo tampoco se poda.
+function esperaGuardar(m) {
+  if (!m || !Array.isArray(m.stepsPending) || m.stepsPending.length) return false;
+  try {
+    const t = require(path.join(__dirname, '..', '..', '..', 'scripts', 'tools', 'work-in-progress.js')).unsavedChanges(m, { until: Date.now() + 3000, cache: new Map() });
+    return t.dirty || t.problems.length > 0;
+  } catch (_e) { return true; }
+}
+// Las corridas abiertas de una historia, con las viejas: una dejada en fila puede llevar días sin tocarse.
+function corridasDe(storyId) {
+  let files = [];
+  try { files = fs.readdirSync(ACTIVE_DIR).filter((f) => f.endsWith('.json')); } catch (_e) { return []; }
+  const out = [];
+  for (const f of files) {
+    try {
+      const m = JSON.parse(fs.readFileSync(path.join(ACTIVE_DIR, f), 'utf8'));
+      if (m && String(m.storyId) === String(storyId)) out.push(m.sessionId || f.replace(/\.json$/, ''));
+    } catch (e) { process.stderr.write(`[marker] no pude leer ${f} (${e.message}): no sé si es de la historia ${storyId}.\n`); }
+  }
+  return out;
+}
+
+function cmdPark(storyId, rest = []) {
+  const uso = 'uso: marker.js park <historia> --queue | --until AAAA-MM-DD [--session <id>]';
+  if (!storyId || String(storyId).startsWith('--')) { console.error(`marker.js park: falta la historia — ${uso}`); process.exit(2); }
+  const queue = rest.includes('--queue');
+  const u = rest.indexOf('--until');
+  const until = u >= 0 ? rest[u + 1] : null;
+  if (queue === (u >= 0)) { console.error(`marker.js park: va con --queue o con --until, uno de los dos — ${uso}`); process.exit(2); }
+  // una fecha de verdad: un 31 de febrero no es una. Se compara en UTC, así da lo mismo el huso de la máquina
+  const when = until && /^\d{4}-\d\d-\d\d$/.test(until) ? new Date(`${until}T00:00:00Z`) : null;
+  if (u >= 0 && !(when && !Number.isNaN(when.getTime()) && when.toISOString().slice(0, 10) === until)) { console.error(`marker.js park: --until va con una fecha AAAA-MM-DD (es ${until}) — ${uso}`); process.exit(2); }
+  const s = rest.indexOf('--session');
+  const pedida = s >= 0 ? String(rest[s + 1] || '').replace(/[/\\]/g, '_') : null;
+  const corridas = corridasDe(storyId);
+  const elegidas = pedida ? corridas.filter((c) => c === pedida) : corridas;
+  if (!elegidas.length) { console.error(`marker.js park: no hay una corrida de la historia ${storyId}${pedida ? ` en la sesión ${pedida}` : ''}: no se marcó nada.`); process.exit(1); }
+  if (elegidas.length > 1) { console.error(`marker.js park: hay ${elegidas.length} corridas de la historia ${storyId}: ${elegidas.join(', ')}. Decí cuál con --session <id>: no se marcó nada.`); process.exit(1); }
+  const file = parkedPath(elegidas[0]);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, `${JSON.stringify({ story: String(storyId), kind: queue ? 'queue' : 'until', until: queue ? null : until, at: nowIso(), by: SID })}\n`);
+  fs.renameSync(tmp, file);
+  appendLog('parked.log', { kind: 'PARK', story: String(storyId), sessionId: elegidas[0], until: queue ? null : until, by: SID });
+  process.stdout.write(`park: la corrida de la historia ${storyId} (sesión ${elegidas[0]}) queda ${queue ? 'en fila para pruebas' : `en pausa hasta ${until}`}\n`);
+}
+
+function cmdUnpark(storyId) {
+  if (!storyId) { console.error('marker.js unpark: falta la historia — uso: marker.js unpark <historia>'); process.exit(2); }
+  const dir = path.join(STATE_DIR, 'parked');
+  let files = [];
+  try { files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')); } catch (_e) { /* sin carpeta, ninguna marca */ }
+  const marcadas = files.filter((f) => { try { return String(JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')).story) === String(storyId); } catch (_e) { return false; } });
+  if (!marcadas.length) { console.error(`marker.js unpark: no hay una marca de la historia ${storyId}.`); process.exit(1); }
+  for (const f of marcadas) sacarMarca(f.replace(/\.json$/, ''));
+  appendLog('parked.log', { kind: 'UNPARK', story: String(storyId), by: SID });
+  process.stdout.write(`unpark: la corrida de la historia ${storyId} ya no está marcada\n`);
+}
+
+// La hora de este paso, para que /wip y la oficina digan la misma aunque nadie mire y cambien las medianas. Si no se puede
+// calcular, el marcador queda sin ella y se calcula como antes.
+function conHoraDelPaso(marker) {
+  if (PREVIO) return marker;
+  try {
+    const hora = require(path.join(__dirname, '..', '..', '..', 'scripts', 'tools', 'work-in-progress.js')).hourForStep(marker, { home: os.homedir(), stateDir: STATE_DIR });
+    if (hora) marker.horaDelPaso = hora; else delete marker.horaDelPaso;
+  } catch (e) {
+    delete marker.horaDelPaso;
+    try { require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'session-state.js')).logError(STATE_DIR, `marker.js no pudo calcular la hora del paso (${e && e.message ? e.message : e})`); } catch (_e) { /* sin registro tampoco */ }
+  }
+  return marker;
+}
+
 function cmdClearSession(sid, rest = []) {
   if (!sid) {
     console.error('marker.js clear-session: sessionId requerido');
@@ -4189,11 +4521,22 @@ function cmdClearSession(sid, rest = []) {
   frenarSiIlegible(p, safe, `clear-session ${safe}`);
   const m = JSON.parse(fs.readFileSync(p, 'utf8'));
   frenarSiPerdida(safe, 'clear-session', m.repoPath);
+  // limpiar una corrida dejada a propósito pierde el trabajo: primero se saca la marca, a conciencia
+  const marca = marcaDe(safe, m);
+  if (marca) {
+    console.error(`marker.js clear-session: la corrida de la historia ${m.storyId} está marcada (en fila o en pausa) y limpiarla pierde su trabajo: no se borró nada.`);
+    if (marca.kind === 'historia') console.error(`  La pausa viene de \`paused_until: ${marca.until}\` de su historia: si de verdad hay que limpiarla, primero sacá esa línea.`);
+    else if (marca.kind === 'ilegible') console.error(`  Su marca no se puede leer: mirá ${parkedPath(safe)} y, si de verdad hay que limpiarla, sacala primero.`);
+    else console.error(`  Si de verdad hay que limpiarla, primero: marker.js unpark ${m.storyId}`);
+    process.exit(1);
+  }
   try { fs.unlinkSync(p); } catch (e) {
     console.error(`marker.js clear-session: no pude borrar ${p}: ${e.message}`);
     process.exit(1);
   }
+  avisarOficina(safe);
   cerrarEjecucion(safe, m, { registrar: false, estado: 'abortada', motivo: SID === safe ? 'clear-session de la propia sesión' : `clear-session desde la sesión ${SID}` });
+  syncSessionState(safe);
   process.stdout.write(`cleared: ${safe}.json\n`);
 }
 
@@ -4206,8 +4549,14 @@ function cmdSalidaPerdida(modo, sesion) {
   const ult = or.vigente(sesion);
   const raiz = or.raizDeGit(process.cwd());
   const copias = raiz ? or.copiasDe(raiz, sesion) : [];
-  // la apertura: la vigente del registro o, sin registro, la copia del repo
-  const apertura = ult && ult.name === 'run-open' ? ult : copias.length ? copias[copias.length - 1].copia : null;
+  // la que se podó por vieja dejó su marcador guardado (lib/story-gate-io.js savePruned): restore vuelve con sus pasos
+  const io = require('./lib/story-gate-io.js');
+  const podada = modo === 'restore' ? io.readPruned(STATE_DIR, sesion) : null;
+  // el marcador no siempre trae su carpeta: la da la última apertura de esa sesión en el registro
+  const abierta = podada && !podada.runDir ? (() => { const r = or.leerEventos(); return r.ok ? [...r.eventos].reverse().find((e) => e.sesion === String(sesion) && e.name === 'run-open') : null; })() : null;
+  const dePodada = podada ? { name: 'pruned', story: String(podada.storyId), storyPath: podada.storyPath || null, repo: podada.repoPath || null, runDir: podada.runDir || (abierta && abierta.runDir) || null, ts: podada.startedAt || podada.lastTouch } : null;
+  // la apertura: la vigente del registro o, sin registro, la copia del repo, o la de la podada
+  const apertura = ult && ult.name === 'run-open' ? ult : copias.length ? copias[copias.length - 1].copia : dePodada;
   if (!apertura) {
     console.error(`marker.js ${nombre}: la sesión ${sesion} no tiene una ejecución abierta (ni apertura en el registro ni copia en este repo): no hay nada que ${modo === 'lost' ? 'cerrar' : 'restaurar'}.`);
     process.exit(1);
@@ -4228,8 +4577,11 @@ function cmdSalidaPerdida(modo, sesion) {
   const desde = (firma.constancia && firma.constancia.por) || SID;
   if (modo === 'lost') {
     try { fs.unlinkSync(markerFilePath(sesion)); } catch (_e) { /* ya no estaba: es lo perdido */ }
+    avisarOficina(sesion);
     or.cerrar({ sid: SID, sesion, runDir: apertura.runDir, story: apertura.story, estado: 'perdida', via, cita, extra: porDe(firma),
       motivo: `cerrada como perdida desde la sesión ${desde}` });
+    sacarMarca(sesion);
+    syncSessionState(sesion);
     process.stdout.write(`cerrada como perdida: la ejecución de la story ${apertura.story} (sesión ${sesion})\n`);
     return;
   }
@@ -4247,35 +4599,27 @@ function cmdSalidaPerdida(modo, sesion) {
     previo = null;
   }
   const sigue = previo && String(previo.storyId) === String(base.story);
+  // de la podada vuelven sus pasos y lo que anotó, si es la misma historia
+  const guardada = !sigue && podada && String(podada.storyId) === String(base.story) ? (({ sessionId: _s, lastTouch: _l, prunedAt: _p, ...resto }) => resto)(podada) : null;
   writeMarker({
-    ...(sigue ? previo : {}),
+    ...(sigue ? previo : guardada || {}),
     storyId: String(base.story), storyPath: base.storyPath || null, repoPath: base.repo || null, runDir: base.runDir,
     sessionId: SID, lastTouch: nowIso(), restoredFrom: sesion, restoredAt: nowIso(), ...porDe(firma),
-    ...(sigue ? {} : { startedAt: nowIso(), stepScheme: STEPS_LIB.SCHEME, stepsCompleted: [], stepsPending: STEPS_LIB.STEPS.filter((s) => !s.flag).map((s) => s.id) }),
+    ...(sigue || guardada ? {} : { startedAt: nowIso(), stepScheme: STEPS_LIB.SCHEME, stepsCompleted: [], stepsPending: STEPS_LIB.STEPS.filter((s) => !s.flag).map((s) => s.id) }),
   });
   or.abrir({ sid: SID, story: base.story, storyPath: base.storyPath, repo: base.repo, runDir: base.runDir, motivo: 'restaurada' });
+  if (podada) { try { fs.unlinkSync(path.join(STATE_DIR, 'pruned', `${String(sesion).replace(/[/\\]/g, '_')}.json`)); } catch (_e) { /* ya no está */ } }
+  sacarMarca(sesion);
+  syncSessionState(SID);
   process.stdout.write(`restaurada: la ejecución de la story ${base.story} vuelve a la sesión ${SID}\n`);
 }
 
 // ¿Está viva la sesión? Lo dicen los archivos de sesión de Claude Code (la carpeta de sesiones, <pid>.json, con su
 // sessionId): viva si alguno la nombra y su proceso existe. Un archivo que no se puede leer podría ser el de esa
 // sesión, así que no se la puede dar por muerta: se devuelve cuál.
+// Sin registro de la sesión cuenta como muerta, como siempre (lib/session-liveness.js dice por qué puede no estar).
 function sessionLiveness(sid) {
-  const dir = path.join(claudeDirOf(os.homedir()), 'sessions');
-  let names = [];
-  try { names = fs.readdirSync(dir).filter((n) => n.endsWith('.json')); } catch (e) {
-    if (e.code === 'ENOENT') return { alive: false };
-    return { unknown: `${dir}: ${e.message}` };
-  }
-  for (const n of names) {
-    let s;
-    try { s = JSON.parse(fs.readFileSync(path.join(dir, n), 'utf8')); } catch (e) { return { unknown: `${path.join(dir, n)}: ${e.message}` }; }
-    if (!s || s.sessionId !== sid) continue;
-    const pid = Number(s.pid);
-    if (!Number.isInteger(pid) || pid <= 0) return { unknown: `${path.join(dir, n)}: pid ilegible` };
-    try { process.kill(pid, 0); return { alive: true, pid }; } catch (e) { if (e.code === 'EPERM') return { alive: true, pid }; }
-  }
-  return { alive: false };
+  return require('./lib/session-liveness.js').liveness(sid, { home: os.homedir() });
 }
 
 // `adhoc clear-orphan <sid>`: borra el ad-hoc que dejó una sesión que ya no está. Se borra sólo si la sesión no está viva
@@ -4283,6 +4627,11 @@ function sessionLiveness(sid) {
 // `doing "<qué hago>"`: lo que hace una sesión sin story (un video, una medición), para que /wip lo diga. No es un
 // permiso: no toca el portón de carril ni el ad-hoc. Otro `doing` la reemplaza; `doing clear` la borra;
 // `doing clear-orphan <sid>` borra la nota de otra sesión que ya no vive. Archivo: doing/<sid>.json { text, at }; doing.log.
+// Con una ejecución abierta en la sesión sólo anota la espera de un turno sin texto; lo demás sale 3 sin escribir nada.
+// `--until HH:MM`: a qué hora dice que termina. Volver a anotar el mismo trabajo (el mismo texto, o sin texto) conserva en
+// `promisedAt` la primera hora que prometió, contra la que la oficina compara. La primera corrección, en los 10 minutos de
+// la primera hora anotada, es un error de tipeo y la reemplaza; una sola, para que corregir seguido no renueve la ventana.
+// `--waiting-for "<qué espera>"`: no tiene hora porque depende de otro; queda desde cuándo (`waitingSince`), que no cambia mientras espere lo mismo.
 // La hora de fin que declara una sesión, «HH:MM», como fecha completa: la de hoy; la de mañana si quedaría más de 12 h
 // antes de ahora (a las 23:00, «01:30» es de mañana); la de ayer si quedaría más de 18 h después (a las 00:10, «23:30» es
 // de anoche, y ya pasó). Una hora mal escrita es null.
@@ -4325,6 +4674,7 @@ function cmdDoing(sub, arg) {
       process.exit(3);
     }
     try { fs.unlinkSync(file); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+    avisarOficina(sid);
     appendLog('doing.log', { kind: 'DOING_CLEAR_ORPHAN', sessionId: sid, by: SID });
     process.stdout.write(`doing: borrada la nota de la sesión ${sid}\n`);
     return;
@@ -4333,13 +4683,27 @@ function cmdDoing(sub, arg) {
   const file = path.join(dir, `${safe(SID)}.json`);
   if (sub === 'clear') {
     try { fs.unlinkSync(file); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+    avisarOficina();
     appendLog('doing.log', { kind: 'DOING_CLEAR' });
     process.stdout.write('doing: borrada\n');
     return;
   }
-  const text = String(sub || '').replace(/\s+/g, ' ').trim();
-  if (text.length < 8 || text.length > 200) {
-    console.error('marker.js doing: el texto va de 8 a 200 caracteres — uso: marker.js doing "<qué hago>" | doing clear');
+  // con una ejecución abierta, su paso ya dice qué hace y a qué hora termina: una nota encima la muestra en pausa. Pasa
+  // sólo la espera de un turno sin texto, que es de la historia (la respetan las podas y el aviso al dueño)
+  // un marcador ilegible no es «sin historia»: frena en vez de anotar como si no hubiera
+  frenarSiIlegible(markerFilePath(SID), SID, 'doing');
+  const run = readMarker();
+  if (run && sub !== '--waiting-for') {
+    console.error(`marker.js doing: no se anotó nada — esta sesión tiene abierta la historia ${run.storyId}, y su paso ya dice qué hace y a qué hora termina; si deja la historia por otro trabajo, eso es otra sesión (si espera un turno: marker.js doing --waiting-for "<qué espera>")`);
+    process.exit(3);
+  }
+  let prev = null;
+  try { prev = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_e) { /* sin nota, o rota: no hay nada que conservar */ }
+  const onlyHour = sub === '--until' || sub === '--waiting-for';
+  if (onlyHour && !run && !(prev && prev.text)) { console.error('marker.js doing: sin una nota anotada, la hora va con su texto — uso: marker.js doing "<qué hago>" --until HH:MM'); process.exit(2); }
+  const text = run ? '' : onlyHour ? prev.text : String(sub || '').replace(/\s+/g, ' ').trim();
+  if (!run && (text.length < 8 || text.length > 200)) {
+    console.error('marker.js doing: el texto va de 8 a 200 caracteres — uso: marker.js doing "<qué hago>" [--until HH:MM | --waiting-for "<qué espera>"] | doing clear');
     process.exit(2);
   }
   // `--until HH:MM`: la hora a la que la sesión dice que termina, para /wip y /office
@@ -4349,11 +4713,27 @@ function cmdDoing(sub, arg) {
     console.error('marker.js doing: --until va con una hora HH:MM (por ejemplo 19:30)');
     process.exit(2);
   }
+  const w = process.argv.indexOf('--waiting-for');
+  const waitingFor = w >= 0 ? String(process.argv[w + 1] || '').replace(/\s+/g, ' ').trim() : '';
+  if (w >= 0 && (waitingFor.length < 3 || waitingFor.length > 120 || u >= 0)) {
+    console.error('marker.js doing: --waiting-for va con qué espera (de 3 a 120 caracteres) y sin --until: quien espera no da una hora');
+    process.exit(2);
+  }
+  const now = new Date().toISOString();
+  // el mismo trabajo, anotado hace menos de un día: la primera hora prometida y el arranque de la misma espera se conservan
+  const same = prev && (prev.text || '') === text && Date.now() - Date.parse(prev.at) < 24 * 3600 * 1000;
+  const firstHourAt = (same && prev.firstHourAt) || (endAt && !(same && prev.endAt) ? new Date(Date.now()).toISOString() : null);
+  // se compara la hora del reloj: la misma hora tipeada puede caer en otro día si pasó el corte de untilIso, y eso la repite, no la corrige
+  const clock = (iso) => new Date(iso).toTimeString().slice(0, 5);
+  const corrects = Boolean(same && endAt && prev.endAt && clock(endAt) !== clock(prev.endAt) && !prev.promisedAt && !prev.hourCorrected && prev.firstHourAt && Date.now() - Date.parse(prev.firstHourAt) <= 10 * 60000);
+  const promisedAt = same && !corrects ? prev.promisedAt || prev.endAt || null : null;
+  const waitingSince = !waitingFor ? null : (same && prev.waitingFor === waitingFor && prev.waitingSince) || now;
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(file, JSON.stringify({ text, at: new Date().toISOString(), ...(endAt ? { endAt } : {}) }));
-  appendLog('doing.log', { kind: 'DOING_SET', text, ...(endAt ? { endAt } : {}) });
+  fs.writeFileSync(file, JSON.stringify({ ...(text ? { text } : {}), at: now, ...(endAt ? { endAt } : {}), ...(promisedAt ? { promisedAt } : {}), ...(firstHourAt ? { firstHourAt } : {}), ...(corrects || (same && prev.hourCorrected) ? { hourCorrected: true } : {}), ...(waitingFor ? { waitingFor, waitingSince } : {}) }));
+  avisarOficina();
+  appendLog('doing.log', { kind: 'DOING_SET', ...(text ? { text } : {}), ...(endAt ? { endAt } : {}), ...(waitingFor ? { waitingFor } : {}) });
   if (endAt) warnPastUntil('doing', endAt);
-  process.stdout.write(`doing: ${text}${endAt ? ` (termina ${process.argv[u + 1]})` : ''}\n`);
+  process.stdout.write(`doing: ${text || `la historia ${run.storyId}`}${endAt ? ` (termina ${process.argv[u + 1]})` : waitingFor ? ` (espera ${waitingFor})` : ''}\n`);
 }
 
 function cmdAdhocClearOrphan(sid) {
@@ -4390,12 +4770,14 @@ function cmdAdhocClearOrphan(sid) {
     deny(`lleva menos de ${STALE_HOURS} h sin tocarse: se podrá después de las ${hhmm} del ${d.toISOString().slice(0, 10)}`);
   }
   try { fs.unlinkSync(file); } catch (e) { deny(`no pude borrar ${file}: ${e.message}`, 1); }
+  avisarOficina(sid);
   // appendLog no frena si no puede escribir: se mira que la línea haya quedado y, si no, se avisa.
   const logFile = path.join(STATE_DIR, 'adhoc.log');
   const size = () => { try { return fs.statSync(logFile).size; } catch (_e) { return -1; } };
   const before = size();
   appendLog('adhoc.log', { kind: 'ADHOC_CLEAR_ORPHAN', sessionId: sid, reason, lastTouch: new Date(touched).toISOString(), by: SID });
   if (size() <= before) console.error(`marker.js adhoc clear-orphan: ⚠ se borró, pero no pude dejar la constancia en ${logFile}`);
+  syncSessionState(sid);
   process.stdout.write(`adhoc: borrado el de la sesión ${sid} («${reason}»)\n`);
   process.exit(0);
 }
@@ -4443,6 +4825,12 @@ function cmdAdoptSession(sid) {
   const adopted = { ...other, sessionId: SID, lastTouch: nowIso(), adoptedFrom: safe, adoptedAt: nowIso() };
   writeMarker(adopted);
   try { fs.unlinkSync(otherPath); } catch (_e) { /* pruneStale lo limpia */ }
+  // quien adopta una corrida en fila la retoma: deja de estar dejada a propósito
+  sacarMarca(safe);
+  // el trabajo cambia de escritorio: la sesión vieja queda sin paso y la nueva toma el suyo
+  syncSessionState(safe);
+  syncSessionState(SID);
+  avisarOficina(safe);
   // la ejecución cambia de sesión: se cierra la de la otra y se abre en ésta, con la misma carpeta
   try {
     const or = require('./lib/open-runs.js');
@@ -4976,17 +5364,42 @@ function cmdSaveCheck(argv) {
   process.exit(0);
 }
 
-// `designate-relay --approved-by "<el dev>" --quote "<su frase>"` designa ESTA sesión, en esta máquina, como la que
-// firma en nombre del dueño (el rol de `approvals.relay_session`). La frase nombra el rol («Esta sesión es la
-// coordinadora»). Queda un renglón en el gates.log; una designación nueva reemplaza a la anterior. La designación vale
-// cuando el dueño la confirma en su terminal (scripts/lib/delegated-signing.js `confirm-designation`).
+const delegatedSigning = () => require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'delegated-signing.js'));
+
+// Los dos respaldos cuando el click no se pudo comprobar (o no se puede pedir): la terminal del dueño, o la frase.
+function respaldosDeDesignar(sesion) {
+  const ds = path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'delegated-signing.js');
+  return [`   Respaldos: en la terminal de la persona, node ${__filename} designate-relay --terminal${sesion && sesion !== '_nosession' ? ` --for-session ${sesion}` : ''};`,
+    `   o con su frase: node ${__filename} designate-relay --approved-by '<el dev>' --quote '<su frase>' y después node ${ds} confirm-designation --terminal`];
+}
+
+// La firma de nombrar o retirar: sólo el click del dueño en la pestaña de esa sesión, o su terminal (signatures.js
+// `soloClick`). `{ via }`, o sale con el motivo.
+function firmaDeLaDesignacion(firma, resumen, antes, alNegar) {
+  const r = ownerWindow().exigir({ firma, argv: process.argv.slice(1), resumen, propia: PROPIA, antes });
+  if (r.codigo !== 0) { alNegar(r.motivo); process.exit(r.codigo === 2 ? 2 : 1); }
+  if (r.via !== 'click' && r.via !== 'terminal') {
+    alNegar(`la firma volvió por ${r.via}, y esto lo firma la persona con su click o en su terminal`);
+    process.exit(1);
+  }
+  return r;
+}
+
+// `designate-relay` designa ESTA sesión, en esta máquina, como la coordinadora: la que ordena las sesiones. Sin frase,
+// con el click del dueño en el cuadro que dice qué sesión es y en qué carpeta (firma `designation-set`): el arnés no lee
+// ninguna frase, y anota la designación y su confirmación en un paso. Con `--approved-by "<el dev>" --quote "<su frase>"`,
+// el respaldo: la frase nombra el rol (el de `approvals.relay_session` o, sin perfil, «coordinadora») y, con el rol del
+// perfil, la sesión firma en nombre del dueño cuando él la confirma (scripts/lib/delegated-signing.js
+// `confirm-designation`); sin él, las firmas siguen yendo a la ventana del dueño. Una designación nueva reemplaza a la
+// anterior.
 function cmdDesignateRelay(argv) {
   const cw = require('./lib/critical-waivers.js');
   const { val } = opcionesDe(argv);
+  if (!argv.some((a) => a === '--quote' || a.startsWith('--quote='))) return designarPorClick(cw);
   const r = cw.designar({ approvedBy: val('--approved-by'), quote: val('--quote') });
   if (!r.ok) {
     console.error(`🚫 marker.js designate-relay: no se designó nada — ${r.motivo}.`);
-    console.error(`   Con una frase que nombra el rol (por ejemplo «Esta sesión es la coordinadora»): node ${__filename} designate-relay --approved-by '<el dev>' --quote '<la frase>'`);
+    console.error(`   Con una frase que nombra el rol (por ejemplo «Esta sesión es la coordinadora», con o sin tildes): node ${__filename} designate-relay --approved-by '<el dev>' --quote '<la frase>'`);
     process.exit(1);
   }
   const e = r.entrada;
@@ -4996,19 +5409,82 @@ function cmdDesignateRelay(argv) {
     console.error(`🚫 marker.js designate-relay: no pude dejar la designación en el registro del arnés${quedo && quedo.error ? ` (${quedo.error})` : ''}.`);
     process.exit(2);
   }
-  console.error(`✅ Esta sesión (${e.sesion}) es la «${e.rol}» de esta máquina, designada por ${e.quien}. Vale cuando una persona la confirma en su terminal: node scripts/lib/delegated-signing.js confirm-designation`);
+  if (r.firma) console.error(`✅ Esta sesión (${e.sesion}) es la «${e.rol}» de esta máquina, designada por ${e.quien}. Vale cuando una persona la confirma: corré node scripts/lib/delegated-signing.js confirm-designation en esta pestaña y aprobala con un click, o confirmala en su terminal`);
+  else console.error(`✅ Esta sesión (${e.sesion}) es la «${e.rol}» de esta máquina, designada por ${e.quien}: ordena esta máquina, y las firmas siguen yendo a la ventana de la persona${r.aviso ? ` (${r.aviso.replace(/: nadie reenvía$/, '')})` : ' (el perfil del equipo no tiene approvals.relay_session)'}.`);
+  console.error(`   Antes de seguir, leé tus reglas completas: ${path.join(__dirname, '..', '..', '..', 'guides', 'coordination.md')}`);
+  process.exit(0);
+}
+
+function designarPorClick(cw) {
+  const sesion = SID;
+  const noSeNombro = (motivo) => {
+    console.error(`🚫 marker.js designate-relay: no se nombró a la coordinadora — no pude comprobar el click: ${motivo}.`);
+    for (const l of respaldosDeDesignar(sesion)) console.error(l);
+  };
+  const antes = () => {
+    if (!/^[\w-]+$/.test(String(sesion || '')) || sesion === '_nosession') return { codigo: 1, motivo: 'la sesión no dice su identificador' };
+    const declarada = cw.sesionQueReenvia();
+    if (!declarada.valor) return { codigo: 1, motivo: `la organización no usa una sesión que reenvía el ok de un dev (approvals.relay_session del perfil del equipo)${declarada.aviso ? `: ${declarada.aviso}` : ''}` };
+    return null;
+  };
+  // antes de pedir la firma: sin id de sesión o sin rol en el perfil, el click no tendría qué nombrar
+  const previo = antes();
+  if (previo) { noSeNombro(previo.motivo); process.exit(previo.codigo); }
+  const rol = cw.sesionQueReenvia().valor;
+  const r = firmaDeLaDesignacion('designation-set', `la sesión ${sesion} pasa a ser la «${rol}» de esta máquina`, antes, noSeNombro);
+  appendLog('gates.log', { name: cw.DESIGNACION, status: 'ok', ts: nowIso(), sesion, rol, quien: 'la persona', via: r.via });
+  const quedo = cw.designacionVigente();
+  if (!quedo || quedo.error || quedo.sesion !== sesion) {
+    console.error(`🚫 marker.js designate-relay: no pude dejar la designación en el registro del arnés${quedo && quedo.error ? ` (${quedo.error})` : ''}.`);
+    process.exit(2);
+  }
+  // el mismo click la confirma: el renglón se ata a esta designación por su hora, sin frase
+  appendLog('gates.log', delegatedSigning().confirmationRecord(quedo, nowIso(), { via: r.via }));
+  console.error(`✅ Esta sesión (${sesion}) es la «${rol}» de esta máquina, nombrada por la persona con ${r.via === 'click' ? 'su click' : 'su terminal'}.`);
+  console.error(`   Antes de seguir, leé tus reglas completas: ${path.join(__dirname, '..', '..', '..', 'guides', 'coordination.md')}`);
+  process.exit(0);
+}
+
+// `withdraw-relay` retira a la coordinadora: lo corre ella misma, y el dueño lo firma con su click en el cuadro de
+// esa sesión (`designation-withdraw`) o en su terminal. Queda un renglón `retirada`: el registro no se borra.
+function cmdWithdrawRelay() {
+  const cw = require('./lib/critical-waivers.js');
+  const sesion = SID;
+  const d = cw.designacionVigente();
+  const noSeRetiro = (motivo) => console.error(`🚫 marker.js withdraw-relay: no se retiró a la coordinadora — ${motivo}.`);
+  // se lee de nuevo en cada llamada: mientras la firma espera, otra sesión puede quedar nombrada
+  const antes = () => {
+    const ahora = cw.designacionVigente();
+    if (!ahora) return { codigo: 1, motivo: 'no hay coordinadora en esta máquina' };
+    if (ahora.error) return { codigo: 2, motivo: ahora.error };
+    if (ahora.sesion !== sesion) return { codigo: 1, motivo: `esta sesión no es la coordinadora (la vigente es ${ahora.sesion})` };
+    if (d && !d.error && ahora.ts !== d.ts) return { codigo: 1, motivo: 'la designación cambió mientras se esperaba la firma: corré el comando de nuevo' };
+    return null;
+  };
+  const previo = antes();
+  if (previo) { noSeRetiro(previo.motivo); process.exit(previo.codigo); }
+  const r = firmaDeLaDesignacion('designation-withdraw', `la sesión ${sesion} deja de ser la «${d.rol}» de esta máquina`, antes, noSeRetiro);
+  const despues = antes();
+  if (despues) { noSeRetiro(despues.motivo); process.exit(despues.codigo); }
+  appendLog('gates.log', { name: cw.DESIGNACION, status: cw.RETIRADA, ts: nowIso(), sesion, rol: d.rol, quien: 'la persona', via: r.via });
+  const quedo = cw.designacionVigente();
+  if (quedo && !quedo.error && quedo.sesion === sesion) {
+    console.error('🚫 marker.js withdraw-relay: no pude dejar la retirada en el registro del arnés.');
+    process.exit(2);
+  }
+  console.error(`✅ Esta sesión (${sesion}) dejó de ser la «${d.rol}» de esta máquina: las firmas vuelven a la persona hasta que nombre otra.`);
   process.exit(0);
 }
 
 // `mark-tested --acs <n,m> [--approved-by <quién>] [--terminal]` deja la marca de que una persona probó a mano esos
 // criterios de la guía, si la organización lo pide (`qa.manual_check: required`, lib/manual-checks.js). La aprueba la
-// persona en la ventana de permiso, o la firma en su terminal. Un reenvío de otra sesión no marca: la marca es de quien probó.
+// persona en la ventana de permiso, con su click o su «aprobado», o en su terminal. Un reenvío de otra sesión no marca: la marca es de quien probó.
 function cmdMarkTested(argv) {
   const mc = require('./lib/manual-checks.js');
   const { val, tiene } = opcionesDe(argv);
   const acs = [...new Set(String(val('--acs') || '').split(/[,\s]+/).filter(Boolean).map(Number))];
   if (!acs.length || acs.some((n) => !Number.isInteger(n) || n <= 0)) {
-    console.error('marker.js mark-tested: falta --acs <números de criterio, separados por coma> (la persona lo aprueba en la ventana de permiso, o con --terminal).');
+    console.error('marker.js mark-tested: falta --acs <números de criterio, separados por coma> (la persona lo aprueba en la ventana de permiso, con un click o un «aprobado», o con --terminal).');
     process.exit(2);
   }
   const p = mc.prendida();
@@ -5279,7 +5755,7 @@ function cmdRuntimeWaiver(storyArg, argv = []) {
 // tiene prioridad sobre él aunque siga existiendo.
 // ============================================================
 // el cupo más grande que declara la designada por otra pestaña: uno mayor lo aprueba el dueño en su ventana
-const { DELEGATED_ADHOC_MAX_FILES: ADHOC_TOPE_DELEGADO, cupoDelegado } = require('./lib/story-gate.js');
+const { DELEGATED_ADHOC_MAX_FILES: ADHOC_TOPE_DELEGADO, cupoAlDeclarar } = require('./lib/story-gate.js');
 const ADHOC_MOTIVO_MAX = 200;
 const ADHOC_CUPO_MAX = 50;
 
@@ -5298,28 +5774,75 @@ function cmdAdhoc(sub, payloadJson) {
     if (!until) { console.error('marker.js adhoc until: va con una hora HH:MM (por ejemplo 19:30)'); process.exit(2); }
     const existing = io.readAdhoc(STATE_DIR, SID);
     if (!existing) { console.error('marker.js adhoc until: esta sesión no tiene un arreglo rápido abierto: no hay dónde anotar la hora'); process.exit(1); }
-    io.writeAdhoc(STATE_DIR, SID, { ...existing, until });
+    // `untilAt`: cuándo se declaró esta hora; una declaración nueva empieza su propia promesa, y una de hace rato es vieja
+    io.writeAdhoc(STATE_DIR, SID, { ...existing, until, untilAt: nowIso() });
+    syncSessionState(SID);
+    avisarOficina();
     appendLog('adhoc.log', { kind: 'ADHOC_UNTIL', until });
     warnPastUntil('adhoc until', until);
     process.stdout.write(`adhoc: termina ${String(payloadJson).trim()}\n`);
     process.exit(0);
   }
-  if (sub === 'clear') {
+  // `adhoc capture <imagen>`: la captura de la pantalla construida. No pide firma: no aprueba nada, y el freno de guardar
+  // mide que sea posterior al último cambio.
+  if (sub === 'capture') {
+    if (!payloadJson) { console.error('marker.js adhoc capture: va con la ruta de la imagen'); process.exit(2); }
+    const file = path.resolve(String(payloadJson));
     const existing = io.readAdhoc(STATE_DIR, SID);
+    if (!existing) { console.error('marker.js adhoc capture: esta sesión no tiene un arreglo rápido abierto: no hay dónde anotar la captura'); process.exit(1); }
+    const problema = require('./lib/adhoc-screen.js').problemaDeLaCaptura(file);
+    if (problema) { console.error(`marker.js adhoc capture: ${problema}`); process.exit(2); }
+    io.writeAdhoc(STATE_DIR, SID, { ...existing, capture: { file, at: nowIso() } });
+    appendLog('adhoc.log', { kind: 'ADHOC_CAPTURE', file });
+    process.stdout.write(`adhoc: captura anotada ${file}\n`);
+    process.exit(0);
+  }
+  if (sub === 'clear') {
+    // sin mirar si venció: el que pasó el tope deja su cuenta aunque lleve horas sin tocarse
+    let existing = io.readAdhoc(STATE_DIR, SID);
+    let ilegible = null;
+    if (!existing) {
+      try { existing = JSON.parse(fs.readFileSync(io.adhocPath(STATE_DIR, SID), 'utf8')); } catch (e) {
+        existing = null;
+        if (e.code !== 'ENOENT') ilegible = `declaración ilegible: ${e.code || e.message}`;
+      }
+    }
     try { fs.unlinkSync(io.adhocPath(STATE_DIR, SID)); } catch (e) {
       // sólo «no existe» es estar cerrado: otro error deja el atajo abierto, y eso se dice
       if (e.code !== 'ENOENT') { console.error(`marker.js adhoc clear: no pude borrar la declaración (${e.code || e.message}); el arreglo rápido sigue abierto.`); process.exit(1); }
     }
-    appendLog('adhoc.log', { kind: 'ADHOC_CLEAR', reason: existing ? existing.reason : null, files: existing ? (existing.files || []).length : 0 });
+    avisarOficina();
+    // el arreglo que pasó el tope deja lo que contó: es lo que mide si elegirlo valió la pena
+    let contados = {};
+    if (existing && existing.sobreCupo) {
+      try {
+        const c = require('./lib/adhoc-base.js').cuentaDelCarril(existing);
+        contados = { sobreCupo: true, cupoPedido: existing.cupoPedido, eligio: existing.eligio, contados: c.archivos.length, archivos: c.archivos, ...(c.avisos.length ? { medidoConMenos: c.avisos } : {}), ...(c.fallas.length ? { sinMedir: c.fallas[0] } : {}) };
+      } catch (e) { contados = { sobreCupo: true, cupoPedido: existing.cupoPedido, eligio: existing.eligio, sinMedir: e.message }; }
+    }
+    if (ilegible) contados = { sinMedir: ilegible };
+    appendLog('adhoc.log', { kind: 'ADHOC_CLEAR', reason: existing ? existing.reason : null, files: existing ? (existing.files || []).length : 0, ...contados });
+    syncSessionState(SID);
     process.stdout.write('adhoc: cleared\n');
     process.exit(0);
   }
   if (sub === 'set') {
     let payload;
-    try { payload = JSON.parse(payloadJson || ''); } catch (err) {
-      console.error('marker.js adhoc set: payload JSON inválido —', err.message);
-      console.error('  Uso: marker.js adhoc set \'{"reason":"<qué y por qué>","maxFiles":8}\'');
-      process.exit(2);
+    const porBanderas = String(payloadJson || '').startsWith('--');
+    if (porBanderas) {
+      const p = require('./lib/adhoc-screen.js').pedidoPorBanderas(process.argv.slice(4));
+      if (p.problema) {
+        console.error(`marker.js adhoc set: ${p.problema}.`);
+        console.error('  Uso: marker.js adhoc set --reason "<qué y por qué>" [--max-files N] --terminal --for-session <id>');
+        process.exit(2);
+      }
+      payload = p.payload;
+    } else {
+      try { payload = JSON.parse(payloadJson || ''); } catch (err) {
+        console.error('marker.js adhoc set: payload JSON inválido —', err.message);
+        console.error('  Uso: marker.js adhoc set \'{"reason":"<qué y por qué>","maxFiles":8}\'');
+        process.exit(2);
+      }
     }
     const reason = String((payload && payload.reason) || '').trim();
     if (reason.length < 8) {
@@ -5334,6 +5857,23 @@ function cmdAdhoc(sub, payloadJson) {
     if (payload.maxFiles !== undefined && !(Number.isInteger(payload.maxFiles) && payload.maxFiles >= 1 && payload.maxFiles <= ADHOC_CUPO_MAX)) {
       console.error(`marker.js adhoc set: "maxFiles" es un número entero de 1 a ${ADHOC_CUPO_MAX}.`);
       process.exit(2);
+    }
+    // la maqueta y quién la aprobó van juntas, y la firma de este comando las cubre: la ventana muestra las dos
+    let maqueta = null;
+    if (payload.mockup !== undefined || payload.mockupApproved !== undefined) {
+      const approval = String(payload.mockupApproved || '').trim();
+      if (!String(payload.mockup || '').trim() || !approval) {
+        console.error('marker.js adhoc set: "mockup" y "mockupApproved" van juntos: la ruta de la maqueta y quién la aprobó y por qué vía.');
+        process.exit(2);
+      }
+      if (approval.length > ADHOC_MOTIVO_MAX) {
+        console.error(`marker.js adhoc set: "mockupApproved" de hasta ${ADHOC_MOTIVO_MAX} caracteres: la ventana no muestra más.`);
+        process.exit(2);
+      }
+      const file = path.resolve(String(payload.mockup));
+      const m = require('./lib/adhoc-screen.js').problemaDeLaMaqueta(file);
+      if (m.problema) { console.error(`marker.js adhoc set: ${m.problema}`); process.exit(2); }
+      maqueta = { file, sha256: m.sha256, approval };
     }
     // la sesión destino: la de --for-session (la designada declara por otra pestaña, o el dueño desde su terminal), o la propia
     const k = process.argv.indexOf('--for-session');
@@ -5350,49 +5890,70 @@ function cmdAdhoc(sub, payloadJson) {
     // un tope menor que los archivos ya tocados deja el arreglo trabado: se frena antes de pedir la firma (también en el
     // chequeo previo de la ventana), con el número de archivos tocados
     const actual = io.readAdhoc(STATE_DIR, destino);
-    const tocados = actual ? (actual.files || []).length : 0;
+    // suman los de implementación: la lista cruda trae también pruebas y sondas de la consola
+    const tocados = actual ? io.archivosQueSuman(actual.files || []).length : 0;
     if (actual && payload.maxFiles !== undefined && payload.maxFiles < tocados) {
       console.error(`marker.js adhoc set: el arreglo rápido de la sesión ${destino} ya tocó ${tocados} archivos: un tope de ${payload.maxFiles} lo dejaría trabado. Pedí ${tocados} o más, o cerralo con \`adhoc clear\` y abrí uno nuevo.`);
       process.exit(2);
     }
     const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
     // en la terminal el dueño ve este resumen: el motivo y el cupo, como en la ventana
-    const cupoPedido = payload.maxFiles !== undefined ? `hasta ${payload.maxFiles} archivos` : 'el cupo de siempre (8 archivos, o el que ya tenía)';
+    const cupoPedido = payload.maxFiles !== undefined ? `hasta ${payload.maxFiles} archivos de implementación, sin pruebas ni guías` : 'el cupo de siempre (8 archivos de implementación, o el que ya tenía)';
     // por delegación, el dueño se entera antes de la constancia, por los canales del perfil: sin entrega, no hay arreglo
     const antes = (viaPedida, registro) => {
       if (viaPedida !== 'delegacion') return null;
       const so = require('./lib/save-ok.js');
       const notify = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'notify.js'));
-      const cupo = cupoDelegado(payload.maxFiles !== undefined ? payload.maxFiles : 8);
+      const cupo = cupoAlDeclarar({ pedido: payload.maxFiles, existing: actual, via: viaPedida });
       // el de una pestaña sin permisos lo abrió la propia sesión, sin firma: «hecho y avisado»
       const quien = registro && registro.via === 'avisado' ? `la sesión ${registro.sesion} abrió sin firma (pestaña sin permisos)` : 'la coordinadora abrió';
       const a = so.avisar({ texto: `Arreglo rápido: ${quien} el de la sesión ${destino}: «${reason}» · hasta ${cupo} archivos, sin tocar lo sensible.`,
         canales: () => notify.canalesDeLaSesion(), mandar: (o) => notify.avisar(o) });
       return a.ok ? null : { codigo: 1, motivo: `sin aviso a la persona, la coordinadora no abre el arreglo rápido (${a.motivo})` };
     };
-    const r = ow.exigir({ firma: 'adhoc-lane', argv: process.argv.slice(1), resumen: `arreglo rápido de la sesión ${destino}: «${reason}» · ${cupoPedido}`,
+    // la maqueta va antes del motivo: el resumen se corta a los 200 caracteres, y lo que se aprueba de nuevo es ella. Entero
+    // queda en la terminal, antes de la firma, y en adhoc.log
+    const conMaqueta = maqueta ? `, maqueta ${maqueta.file} aprobada por «${maqueta.approval}»` : '';
+    // lo lee quien firma: sin saltos de línea ni escapes que armen renglones falsos
+    const { enUnRenglon } = require('./lib/adhoc-screen.js');
+    if (maqueta) console.error(`marker.js adhoc set: anota la maqueta ${enUnRenglon(maqueta.file)}, aprobada por «${enUnRenglon(maqueta.approval)}», con el motivo «${enUnRenglon(reason)}».`);
+    const firmas = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signatures.js'));
+    // la misma regla que mira el freno: pasar el tope es otra firma
+    const firmaDelPedido = firmas.firmaDelPedidoAdhoc(process.argv.slice(4));
+    const r = ow.exigir({ firma: firmaDelPedido, argv: process.argv.slice(1), resumen: enUnRenglon(`arreglo rápido de la sesión ${destino}${conMaqueta}: «${reason}» · ${cupoPedido}`),
       propia: PROPIA, anotar: (renglon) => appendLog('gates.log', renglon), antes });
     if (r.codigo !== 0) {
-      const json = String(payloadJson).replace(/'/g, "'\\''");
+      // la forma con JSON sólo si hace falta: la maqueta no entra en la otra, y hay motivos que no se pueden citar en ella
+      const screen = require('./lib/adhoc-screen.js');
+      const sinJson = screen.motivoSeCita(reason) && (porBanderas || (!maqueta && require('./lib/runtime-waiver.js').esWindows()));
+      const pedidoEnJson = porBanderas ? JSON.stringify(payload) : String(payloadJson);
+      const pedidoEnTerminal = sinJson ? `--reason "${reason}"${payload.maxFiles !== undefined ? ` --max-files ${payload.maxFiles}` : ''}` : `'${pedidoEnJson.replace(/'/g, "'\\''")}'`;
       console.error(`🔒 marker.js adhoc set: la persona no lo aprobó — ${r.motivo}`);
       console.error('   El arreglo rápido lo aprueba una persona, no el agente: en la ventana de permiso, corriendo este comando solo y en su forma');
       console.error('   exacta (la ventana le muestra el motivo y el cupo), o en su terminal:');
-      console.error(`     node ${__filename} adhoc set '${json}' --terminal --for-session ${destino}`);
+      console.error(`     node ${__filename} adhoc set ${pedidoEnTerminal} --terminal --for-session ${destino}`);
       console.error('   Si la persona no lo pidió, preguntale en castellano llano si lo quiere como ajuste puntual o con story.');
       process.exit(r.codigo === 2 ? 2 : 1);
     }
     // una vía que este guion no conoce no se cuenta como ventana: no se declara
-    if (!['delegacion', 'avisado', 'terminal', 'ventana'].includes(r.via)) {
+    if (!['delegacion', 'avisado', 'terminal', 'ventana', 'click', 'mensaje'].includes(r.via)) {
       console.error(`🔒 marker.js adhoc set: la firma volvió por una vía que no conozco (${r.via}); no declaré nada.`);
+      process.exit(1);
+    }
+    // pasar el tope lo elige una persona: su click o su terminal
+    if (firmaDelPedido === firmas.SOBRE_CUPO && !['click', 'terminal'].includes(r.via)) {
+      console.error(`🔒 marker.js adhoc set: pasar el tope lo aprueba sólo el click de la persona o su terminal, y volvió por ${r.via}; no declaré nada.`);
       process.exit(1);
     }
     const via = r.via;
     const by = r.sesion || SID;
     const existing = io.readAdhoc(STATE_DIR, destino);
-    let maxFiles = payload.maxFiles !== undefined ? payload.maxFiles : (existing ? existing.maxFiles : 8);
-    const pedido = maxFiles;
-    // lo hecho y avisado en una pestaña sin permisos tiene el mismo cupo que la delegación
-    if (via === 'delegacion' || via === 'avisado') maxFiles = cupoDelegado(maxFiles);
+    const pedido = payload.maxFiles !== undefined ? payload.maxFiles : (existing ? existing.maxFiles : 8);
+    const maxFiles = cupoAlDeclarar({ pedido: payload.maxFiles, existing, via });
+    // la marca del sobre cupo: la pone la firma nueva y se conserva mientras el cupo siga por encima del tope. Un carril
+    // anterior con más de 8 no la tiene: termina con su número, sin pedirla
+    const sobreCupo = firmaDelPedido === firmas.SOBRE_CUPO ? { sobreCupo: true, cupoPedido: maxFiles, eligio: 'persona' }
+      : existing && existing.sobreCupo && maxFiles > firmas.TOPE ? { sobreCupo: true, cupoPedido: existing.cupoPedido, eligio: existing.eligio } : {};
     const obj = {
       reason, maxFiles,
       files: existing ? (existing.files || []) : [],
@@ -5400,17 +5961,27 @@ function cmdAdhoc(sub, payloadJson) {
       lastTouch: nowIso(),
       cwd: process.cwd(),
       via, by,
-      // la hora de la firma: el portón acepta la declaración sólo con el renglón `adhoc-lane-signed` de esta hora
+      ...sobreCupo,
+      // la hora de la firma: el portón acepta la declaración sólo con el renglón `-signed` de su firma, de esta hora
       firmadaEn: nowIso(),
       // la hora de fin que declaró la sesión con `adhoc until` sigue valiendo al agrandar el carril
       ...(existing && existing.until ? { until: existing.until } : {}),
+      // la maqueta aprobada y la captura también: el freno de guardar mide si siguen valiendo
+      ...(maqueta ? { mockup: { ...maqueta, at: nowIso() } } : (existing && existing.mockup ? { mockup: existing.mockup } : {})),
+      ...(existing && existing.capture ? { capture: existing.capture } : {}),
+      // y la base: anotar la maqueta no achica lo que se mide de la rama
+      ...(existing && existing.bases ? { bases: existing.bases } : {}),
+      ...(existing && existing.untilAt ? { untilAt: existing.untilAt } : {}),
     };
     io.writeAdhoc(STATE_DIR, destino, obj);
+    syncSessionState(destino);
+    avisarOficina(destino);
     // el portón de edición apagado no apaga la firma; queda igual en bypass.log, que la revisión de la noche cuenta
     const gateOn = String(process.env.TYCON_STORY_GATE || '').toLowerCase() !== 'off';
     const maquina = r.registro && r.registro.maquina ? r.registro.maquina : null;
     appendLog('adhoc.log', { kind: existing ? 'ADHOC_UPDATE' : 'ADHOC_SET', reason, maxFiles, prevMaxFiles: existing ? existing.maxFiles : null,
-      files: obj.files.length, cwd: process.cwd(), via, by, destino, ...(maquina ? { maquina } : {}), ...(gateOn ? {} : { gate: 'off' }) });
+      files: obj.files.length, cwd: process.cwd(), via, by, destino, ...sobreCupo, ...(maquina ? { maquina } : {}), ...(gateOn ? {} : { gate: 'off' }),
+      ...(maqueta ? { mockup: maqueta.file, mockupApproved: maqueta.approval } : {}) });
     if (!gateOn) appendLog('bypass.log', { kind: 'STORY_GATE_OFF_ADHOC', reason, cwd: process.cwd() });
     if (maxFiles < pedido) {
       const antes = Number(payload.maxFiles) > 0 ? `pediste ${pedido}` : `tenía ${pedido}`;
@@ -5419,7 +5990,7 @@ function cmdAdhoc(sub, payloadJson) {
     process.stdout.write(JSON.stringify(obj, null, 2) + '\n');
     process.exit(0);
   }
-  console.error('marker.js adhoc: uso — adhoc set \'{"reason":"…","maxFiles":N}\' [--for-session <id>] [--terminal] | adhoc get | adhoc clear | adhoc clear-orphan <sessionId>');
+  console.error('marker.js adhoc: uso — adhoc set \'{"reason":"…","maxFiles":N,"mockup":"<ruta>","mockupApproved":"<quién y por qué vía>"}\' [--for-session <id>] [--terminal] | adhoc capture <imagen> | adhoc until HH:MM | adhoc get | adhoc clear | adhoc clear-orphan <sessionId>');
   process.exit(2);
 }
 
@@ -5656,6 +6227,9 @@ switch (cmd) {
   case 'designate-relay':
     cmdDesignateRelay(process.argv.slice(3));
     break;
+  case 'withdraw-relay':
+    cmdWithdrawRelay();
+    break;
   case 'mark-tested':
     cmdMarkTested(process.argv.slice(3));
     break;
@@ -5692,11 +6266,17 @@ switch (cmd) {
   case 'rethink':
     cmdRethink(process.argv.slice(3));
     break;
+  case 'park':
+    cmdPark(arg1, process.argv.slice(4));
+    break;
+  case 'unpark':
+    cmdUnpark(arg1);
+    break;
   default:
     console.error(`marker.js: comando desconocido '${cmd}'`);
     console.error(
       'Usage: marker.js <set|get|touch|complete-step|append-file|clear|is-active|' +
-        'list-all|find-by-story|clear-session|adopt-session|update-story-status|' +
+        'list-all|find-by-story|clear-session|park|unpark|adopt-session|update-story-status|' +
         'mark-dod-runtime-checked|set-autonomous|set-check|run-check|set-flag|set-size|snapshot-iter|' +
         'mark-adversarial-launched|mark-adversarial-result|mark-adversarial-skipped|mark-adversarial-gate|promote-probe|adhoc|story-skill-bypass|' +
         'approve-mockup|rethink> [arg] [arg2]',

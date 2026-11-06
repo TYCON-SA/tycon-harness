@@ -113,6 +113,7 @@ const COMMANDS = {
   config:    { opts: {}, positional: ['set', 'unset', 'show', 'github.token', 'azure.token', 'paths.maintained', 'paths.maintainers', 'paths.team', 'paths.operations'], extraPositional: (a) => { try { return require('../lib/integrations.js').isSecretKey(a); } catch (_) { return false; } }, freeAfter: 2, help: 'la configuración propia del arnés en ~/.tycon/config.json (story 8.23, tanda B): `config set <clave> [<valor>]` guarda el valor (por argumento, por stdin, o pedido en la terminal); `config set github.token` lee el permiso de sólo lectura de GitHub por stdin o lo pide en la terminal SIN eco —nunca por argumento, nunca lo imprime— y lo guarda sólo para tu usuario; `config set azure.token` hace lo mismo con el PAT de Azure DevOps del repo del equipo (story 8.25); `config unset <clave>` lo saca; `config show` dice qué claves hay (sin valores)' },
   startup:   { opts: { '--force': 'flag' }, help: 'lo que corre la línea de arranque de cada sesión (sale 0 siempre)' },
   update:    { opts: { '--check': 'flag', '--dry-run': 'flag', '--yes': 'flag' }, help: 'trae la punta del canal de cada fuente y, si hay versión nueva, la aplica (0 al día · 3 hay nueva · 2 no pude mirar, con --check)' },
+  'team-refresh': { opts: { '--json': 'flag' }, help: 'pone al día sólo la capa del equipo, con el candado del arnés: no instala versión ni corre el aplicador (lo lanza el gancho de la oficina cada 30 min mientras se trabaja). 0 hecho o sin nada que hacer · 3 otra sesión tiene el candado; --json, el resultado en una línea' },
   apply:     { opts: { '--dry-run': 'flag' }, help: 'corre el aplicador (install-tycon-hooks.sh / .ps1); --dry-run muestra lo que cambiaría, sin escribir' },
   version:   { opts: { '--json': 'flag' }, help: 'versión instalada, canal, modo, fuentes y shas' },
   doctor:    { opts: { '--json': 'flag', '--fetch': 'flag' }, help: 'diagnóstico de sólo lectura (--fetch es la única excepción: escribe FETCH_HEAD; además le pregunta al remoto del clon de la lista del freno antes de publicar si está al día, sin escribir nada)' },
@@ -561,7 +562,9 @@ function harnessNodeNotice(notice, a) {
   return add ? (clean ? `${clean} · ${add}` : add) : clean;
 }
 
-function runApplierOnly(ctx, tree, { log, snapshotDir = null, tools = undefined, force = false } = {}) {
+function runApplierOnly(ctx, treeGiven, { log, snapshotDir = null, tools = undefined, force = false } = {}) {
+  // lo que escriben el aplicador y el enchufe de Codex nombra el enlace, no la carpeta numerada que resolvió Node
+  const tree = mod('tools').throughLink(treeGiven, ctx.home, ctx.env);
   const T = mod('tools');
   if (tools === undefined) {
     const st = loadState(ctx);
@@ -3280,6 +3283,26 @@ function cmdStartup(ctx) {
   } });
 }
 
+/**
+ * La capa del equipo sola, sin versión nueva ni aplicador: la lanza el gancho de la oficina, aparte y cada 30 min, para que
+ * un perfil nuevo llegue a una máquina que trabaja sin abrir sesión. Lo que hace queda en el registro de arranque. Con un
+ * clon, o en modo desarrollador, no hay capa que refrescar.
+ */
+function cmdTeamRefresh(ctx) {
+  const S = mod('state'), L = mod('lock'), R = mod('report');
+  const log = (l) => R.log(ctx.home, `team-refresh: ${l}`);
+  const out = (r) => (ctx.opts.json ? { code: r.code, lines: [JSON.stringify({ status: r.status, profileChanged: Boolean(r.profileChanged), lines: r.lines })] } : { code: r.code, lines: r.lines });
+  const need = needState(ctx);
+  if (need.fail) return out({ code: need.fail.code, status: 'failed', lines: [need.fail.line] });
+  // `off`, no `none`: el gancho anota cada `none`, y una instalación sin capa no tiene nada que anotar cada 30 min
+  if (need.state.mode === 'developer' || !S.isRelease(need.state)) return out({ code: 0, status: 'off', lines: ['sin capa que refrescar en esta instalación'] });
+  return L.withLock(ctx.home, () => {
+    const r = loadState(ctx);
+    if (r.status !== 'ok') { const f = S.fail(r, { home: ctx.home }); return out({ code: f.code, status: 'failed', lines: [f.line] }); }
+    return out(mod('release').cmdTeamRefresh(ctx, r.state, releaseHelpers(ctx), { log }));
+  }, { env: ctx.env, onBusy: (lock) => { log(lock.reason || 'otra sesión está actualizando'); return out({ code: 3, status: 'busy', lines: [`harness.js: ${lock.reason || 'otra sesión está actualizando'}`] }); } });
+}
+
 function cmdUpdate(ctx) {
   const S = mod('state'), L = mod('lock'), R = mod('report');
   const need = needState(ctx);
@@ -3767,6 +3790,8 @@ function cmdDoctor(ctx) {
   // actualización sana ni hacerla volver atrás. Corrido por una persona, es rojo.
   const requirementLevel = ctx.env.TYCON_HARNESS_HEALTH === '1' ? 'warn' : 'fail';
   const requirementItems = () => { for (const r of requirementChecks(ctx, { release: read.status === 'ok' && S.isRelease(read.state) })) add(r.problem ? requirementLevel : 'ok', r.problem || `requisito ${r.name}: ${r.version} (${r.path})`); };
+  // en Windows sin Git es un aviso: no impide instalar ni pone rojo el diagnóstico
+  const windowsGitItem = () => { try { const n = require(path.join(__dirname, '..', 'lib', 'git-bash.js')).windowsGitNotice({ platform: ctx.platform, env: ctx.env }); if (n) add(n.level, n.text); } catch (e) { add('warn', `Git para Windows: no pude mirarlo (${e.message})`); } };
   // la línea de arranque en su forma VIEJA: doctor daría «nada en rojo» en una máquina que no se actualiza
   // sola —en Windows esa línea ni corre: Claude Code lanza los hooks por Git Bash—. `startup` la migra.
   const startupLineItem = () => {
@@ -3780,6 +3805,7 @@ function cmdDoctor(ctx) {
   };
   if (read.status === 'missing') {
     requirementItems();
+    windowsGitItem();
     startupLineItem();
     facts = placeFacts(ctx, ctx.tree);
     placeItems(ctx, facts, add);
@@ -3799,7 +3825,7 @@ function cmdDoctor(ctx) {
   const withClaude = plugged.includes('claude');
   // Node y los demás requisitos del aplicador
   add('ok', `Node ${process.versions.node} (piso ${NODE_FLOOR})`);
-  if (withClaude) requirementItems();
+  if (withClaude) { requirementItems(); windowsGitItem(); }
   if (TOOLS.recorded(state)) add('ok', `herramientas enchufadas: ${TOOLS.names(plugged)}`);
   // una herramienta instalada y sin enchufar: se enchufa en la próxima instalación, no sola; se dice antes
   { const tn = toolNotice(ctx, tree, state); if (tn) add('ok', tn); }
@@ -3852,6 +3878,7 @@ function cmdDoctor(ctx) {
     doctorDeclaredReposItems(ctx, tree, add, extra);
     // el Node propio del arnés: dato o aviso, nunca rojo
     doctorHarnessNodeItems(ctx, tree, add, extra);
+    doctorClaudeVersionItems(ctx, add);
     if (state.notice) add('warn', `aviso pendiente: ${state.notice}`);
     if (state.hold) add('warn', `${holdText(state)}`);
     if (state.failed) {
@@ -3988,6 +4015,7 @@ function cmdDoctor(ctx) {
   doctorDeclaredReposItems(ctx, tree, add, extra);
   // el Node propio del arnés: dato o aviso, nunca rojo
   doctorHarnessNodeItems(ctx, tree, add, extra);
+  doctorClaudeVersionItems(ctx, add);
   const controlsEnv = Object.assign({}, env);
   for (const [k, v] of Object.entries(orgBrakes)) if (controlsEnv[k] === undefined || controlsEnv[k] === '') controlsEnv[k] = v;
   const controls = M.expectedControls({ platform: ctx.platform, tree, integrations, env: controlsEnv, home: ctx.home, profile: prof.ok ? prof.value : null });
@@ -4294,6 +4322,14 @@ function doctorHarnessNodeItems(ctx, tree, add, extra) {
   }
   extra.harness_node = f.json;
   add(f.level === 'warn' ? 'warn' : 'ok', f.line);
+}
+
+/** Qué versión de Claude usa esta sesión: dato o aviso, nunca rojo. La comprobación de salud juzga el árbol, no esto. */
+function doctorClaudeVersionItems(ctx, add) {
+  if (ctx.env.TYCON_HARNESS_HEALTH === '1') return;
+  try {
+    for (const it of require(path.join(__dirname, '..', 'lib', 'claude-versions.js')).doctorItems({ env: ctx.env, platform: ctx.platform })) add(it.level, it.text);
+  } catch (e) { add('warn', `Claude — no sé qué versión usás: no se pudo mirar (${e.message})`); }
 }
 
 function doctorPublishGuardItems(ctx, tree, prof, add, extra) {
@@ -5058,6 +5094,7 @@ const HANDLERS = {
   startup: cmdStartup,
   config: cmdConfig,
   update: cmdUpdate,
+  'team-refresh': cmdTeamRefresh,
   apply: cmdApply,
   version: cmdVersion,
   doctor: cmdDoctor,

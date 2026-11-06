@@ -186,15 +186,58 @@ function readEvent() {
   }
 }
 
+// Los archivos que cambia este commit. En un merge en curso (`MERGE_HEAD`), lo que el índice tiene igual que la rama que
+// se trae no es un cambio de este commit: ya pasó por su propio pedido, y cobrárselo frenaría el merge por historias
+// ajenas. Quedan afuera el archivo cuyo contenido en el índice es el de `MERGE_HEAD` y el borrado que tampoco existe
+// ahí. Lo que se resolvió a mano (distinto de los dos lados) sigue adentro.
 function getStagedDiff(cwd) {
+  let diff;
   try {
-    return execFileSync('git', ['diff', '--cached', '--name-only'], {
+    diff = execFileSync('git', ['diff', '--cached', '--name-only'], {
       cwd,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'ignore'],
     });
   } catch {
     return '';
+  }
+  const archivos = diff.split('\n').filter(Boolean);
+  if (archivos.length === 0) return diff;
+  const env = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).idiomaFijo();
+  const git = (args, dir = cwd) => execFileSync('git', args, {
+    cwd: dir, encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024, env,
+  });
+  try {
+    git(['rev-parse', '-q', '--verify', 'MERGE_HEAD^{commit}']);
+  } catch {
+    return diff;
+  }
+  try {
+    // Todo desde la raíz y con `-z`: las rutas del diff son de la raíz (desde una subcarpeta, `ls-files` y `ls-tree` las
+    // leerían relativas a ella) y sin `-z` git cita las que tienen caracteres no ASCII, que así no se encuentran.
+    const raiz = git(['rev-parse', '--show-toplevel']).trim();
+    const crudas = git(['diff', '--cached', '--name-only', '-z'], raiz).split('\0').filter(Boolean);
+    // Las dos listas salen en el mismo orden; se devuelve la forma de siempre, la que leen los que llaman.
+    if (crudas.length !== archivos.length) throw new Error('las dos listas del diff no coinciden');
+    // Cada registro es `<campos>\t<ruta>`: `ls-files -s` da modo, objeto y etapa; `ls-tree` da modo, tipo y objeto.
+    const objetos = (salida, campoObjeto, soloEtapa0) => {
+      const m = new Map();
+      for (const reg of salida.split('\0').filter(Boolean)) {
+        const tab = reg.indexOf('\t');
+        const campos = reg.slice(0, tab).split(' ');
+        if (soloEtapa0 && campos[2] !== '0') continue;
+        m.set(reg.slice(tab + 1), campos[campoObjeto]);
+      }
+      return m;
+    };
+    const enIndice = objetos(git(['ls-files', '-s', '-z', '--', ...crudas], raiz), 1, true);
+    const enMerge = objetos(git(['ls-tree', '-r', '-z', 'MERGE_HEAD', '--', ...crudas], raiz), 2, false);
+    const propios = archivos.filter((_, i) => enIndice.get(crudas[i]) !== enMerge.get(crudas[i]));
+    return propios.length ? propios.join('\n') + '\n' : '';
+  } catch (e) {
+    // sin poder comparar con MERGE_HEAD, se juzga todo como antes
+    process.stderr.write(`⚠ freno de cierre: no pude comparar el merge con MERGE_HEAD (${(e && e.message) || e}); juzgo todos los archivos del commit\n`);
+    return diff;
   }
 }
 
@@ -1928,7 +1971,7 @@ function main() {
 module.exports = {
   prepararIndiceConLosAdd,
   isGitCommit, usaNoVerify, parseAcsFromSpec, parseAcsFromEvidence, findDodEvidence, evidenciaDeclaraFail, findAdvisorsEvidence,
-  looksLikeStorySpec, selectStorySpecs, revisarRosterLocal, checkSelfAudit, REGLA_DE_MOTIVO, storyIsUiStory,
+  looksLikeStorySpec, selectStorySpecs, revisarRosterLocal, checkSelfAudit, REGLA_DE_MOTIVO, storyIsUiStory, getStagedDiff,
 };
 
 if (require.main === module) {

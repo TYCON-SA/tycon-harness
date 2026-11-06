@@ -1195,6 +1195,15 @@ test('Mensajes_EnLlano_SinRutasNiClaves — la pantalla muestra dónde con los n
 // ── dónde corren las suites al mergear y los modelos de cada trabajo ──────────────────────
 const GH = (repo) => ({ platform: 'github', org: 'acme', repo });
 const TR_BASE = { version: 1, public: GH('harness'), profile: GH('profile'), operations: GH('ops') };
+/** El espejo del buzón con máquinas que dieron noticias el día de la prueba, cada una con su versión del arnés. */
+function buzonConMaquinas(maquinas = { 'mac-1': '2026.11.03.40' }) {
+  const d = tmp('site-config-buzon-');
+  for (const [m, version] of Object.entries(maquinas)) {
+    fs.mkdirSync(path.join(d, m, 'registros'), { recursive: true });
+    fs.writeFileSync(path.join(d, m, 'registros', 'place.json'), JSON.stringify({ day: HOY, install: { version } }));
+  }
+  return d;
+}
 const PERFIL_ENV = { SITE_PROFILE_REPO: 'https://git.acme.example/perfil.git', SITE_PROFILE_TOKEN: 't' };
 const capa = (v) => ({ requires: { harness: `>= ${v}` } });
 /** La pestaña con el perfil: `team-repos.json` y `team-layer.json` dados; `fn` recibe lo mismo que conPestana más `seccion(id)`. */
@@ -3663,12 +3672,12 @@ test('org-site · Config_DireccionSitio_SeccionYPedido — la sección, sus text
   assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.SITE_SINCE)), versionImagen: '2026.10.15.48', doc: CON }), null);
 });
 
-// ── Cuántas sesiones trabajan a la vez (coordination.max_working) ──────────────────────────────────────────────────────
+// ── Las sesiones de cada máquina: el tope (coordination.max_working) ───────────────────────────────────────────────────
 // El tope es del equipo y va en la pestaña; la carpeta de las firmas del dueño es de cada máquina y no aparece.
 test('8.122 T9 · Config_CoordinationCap_SectionAndRequest @story-8.122 @ac-9', async () => {
   const s = ORG.seccionPorId('coordinacion');
   assert.ok(s, 'la sección existe');
-  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.rutas, s.necesita], ['team-profile.json', 'perfil', 'harness-config', ['coordination'], ['coordination.max_working'], ['coordination']]);
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.rutas, s.necesita], ['team-profile.json', 'perfil', 'harness-config', ['coordination'], ['coordination.max_working', 'coordination.session_names'], ['coordination']]);
   const rev = (borrador) => ORG.revisar({ seccion: 'coordinacion', texto: ORG.formatJson(PERFIL_TYCON), borrador, lectores: { 'harness-config': TC } });
   const ok = rev({ coordination: { max_working: 5 } });
   assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
@@ -3693,6 +3702,57 @@ test('8.122 T9 · Config_CoordinationCap_SectionAndRequest @story-8.122 @ac-9', 
   const bajo = ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.QA_SINCE)), versionImagen: '2026.10.15.48', doc: CON });
   assert.match(bajo, /todavía no se puede proponer/); assert.ok(bajo.includes(`>= ${ORG.COORDINATION_SINCE}`), bajo);
   assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.COORDINATION_SINCE)), versionImagen: '2026.10.15.48', doc: CON }), null);
+});
+
+// ── Los nombres de las sesiones nuevas (coordination.session_names) ─────────────────────────────────────────────────────
+// El sitio elige para la organización «como hoy» o un tema de fábrica; la lista propia de cada dev va en su máquina y la
+// arma su sesión. Una lista escrita a mano en el perfil se muestra y no se pisa.
+test('Config_SessionNames_ThemeFromTheSite', async () => {
+  assert.deepStrictEqual(ORG.seccionPorId('coordinacion').rutas, ['coordination.max_working', 'coordination.session_names']);
+  const rev = (borrador) => ORG.revisar({ seccion: 'coordinacion', texto: ORG.formatJson(PERFIL_TYCON), borrador, lectores: { 'harness-config': TC } });
+  const ok = rev({ coordination: { session_names: 'rivers' } });
+  assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
+  assert.strictEqual(ok.texto, ORG.formatJson({ ...PERFIL_TYCON, coordination: { session_names: 'rivers' } }));
+  assert.strictEqual(rev({ coordination: { session_names: 'dinosaurios' } }).ok, false, 'un tema que no existe no se propone');
+  const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const temas = Object.keys(TC.temasDeSesion());
+  assert.ok(temas.length >= 3, temas.join(','));
+  for (const idioma of ['es', 'en']) {
+    for (const k of ['pantalla.nombresTitulo', 'pantalla.nombresAyuda', 'pantalla.nombresDeDonde', 'pantalla.nombresComoHoy', 'pantalla.nombresEjemplo', 'pantalla.nombresEjemploComoHoy', 'pantalla.nombresListaPropiaOpcion', 'pantalla.nombresUnoPorRenglon', 'org.capaSinNombresDeSesion', ...temas.map((id) => `pantalla.nombresTema.${id}`)]) {
+      assert.ok(textos.t(idioma, k) && textos.t(idioma, k) !== k, `${idioma} ${k}`);
+    }
+  }
+  // la pantalla: un selector con «como hoy», cada tema y «Lista propia», y el ejemplo de los nombres (la
+  // lista propia se escribe acá; el texto que la mandaba a la sesión ya no está)
+  let p = await pantallaFalsa([seccionPerfil('coordinacion', { coordination: { session_names: 'animals' } })]);
+  assert.strictEqual(p.error, null);
+  const sel = p.todo(p.sec('coordinacion')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'coordination.session_names');
+  assert.ok(sel, 'hay un selector de nombres');
+  assert.deepStrictEqual(sel.hijos.map((o) => o.attrs.value), ['', ...temas, '__propia']);
+  assert.strictEqual(sel.value, 'animals');
+  const texto = p.textoDe('coordinacion');
+  assert.ok(texto.includes(`Así salen: ${TC.temasDeSesion().animals.slice(0, 5).join(', ')}`), texto);
+  assert.doesNotMatch(texto, /pedísela a tu sesión/);
+  // una lista escrita en el perfil: «Lista propia», con su campo de un nombre por renglón
+  p = await pantallaFalsa([seccionPerfil('coordinacion', { coordination: { session_names: ['Norte', 'Sur'] } })]);
+  const sel2 = p.todo(p.sec('coordinacion')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'coordination.session_names');
+  assert.strictEqual(sel2.value, '__propia');
+  assert.strictEqual(p.todo(p.sec('coordinacion')).find((n) => n.tag === 'textarea').textContent, 'Norte\nSur');
+  assert.match(p.textoDe('coordinacion'), /Así salen: Norte, Sur/);
+  // elegir un tema y volver a la lista repone la lista en lo que se revisa
+  const pedidos = [];
+  p = await pantallaFalsa([seccionPerfil('coordinacion', { coordination: { session_names: ['Norte', 'Sur'] } })], { '/api/config/revisar': (cuerpo) => { pedidos.push(cuerpo); return { ok: true, problems: [] }; } });
+  const sel3 = p.todo(p.sec('coordinacion')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'coordination.session_names');
+  const cambiar = (x) => { sel3.value = x; (sel3.on.change || sel3.onchange)({ target: sel3 }); };
+  cambiar('animals'); cambiar(''); cambiar('__propia');
+  await p.click('Revisar cambios', 'coordinacion');
+  assert.deepStrictEqual(pedidos.pop().borrador.coordination.session_names, ['Norte', 'Sur']);
+  // la capa: proponer los nombres pide la versión que los lee; el tope solo no la pide
+  const CON = { ...PERFIL_TYCON, coordination: { max_working: 5, session_names: 'trees' } };
+  const bajo = ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.COORDINATION_SINCE)), versionImagen: '2026.10.15.48', actual: { ...PERFIL_TYCON, coordination: { max_working: 5 } }, doc: CON });
+  assert.match(bajo, /coordination\.session_names/); assert.ok(bajo.includes(`>= ${ORG.SESSION_NAMES_SINCE}`), bajo);
+  assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.SESSION_NAMES_SINCE)), versionImagen: '2026.10.15.48', doc: CON }), null);
+  assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.COORDINATION_SINCE)), versionImagen: '2026.10.15.48', actual: PERFIL_TYCON, doc: { ...PERFIL_TYCON, coordination: { max_working: 5 } } }), null);
 });
 
 // ── Frenos y medidores (switches) ─────────────────────────────────────────────────────────────────────────────────────
@@ -4951,7 +5011,8 @@ test('Config_TimeTracking_RaisesRequiresAndDropsOldKey @story-7.40 @ac-10', { sk
     ado.st.politicas = [{ isEnabled: true, isBlocking: true, type: { displayName: 'Minimum number of reviewers' }, settings: { minimumApproverCount: 1, creatorVoteCounts: false, scope: [{ refName: 'refs/heads/main', matchKind: 'Exact', repositoryId: ado.st.repoId }] } }];
     ({ r, dir } = await opsPorHttp({ 'team-profile.json': PERFIL_TYCON, 'team-layer.json': capa(ORG.RESPONSE_SINCE), 'team-repos.json': TR_BASE }));
     const remotos = { perfil: { platform: 'azure', org: 'acme', project: 'Proy', repo: 'perfil', web: 'https://dev.azure.com/acme/Proy/_git/perfil' } };
-    await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': opsBase() }), perfil: dir }), env: { ...PERFIL_ENV, SITE_PROFILE_WRITE_TOKEN: ESCRITURA }, opciones: { remotos, urlBase: { azure: ado.base } } }, async (ctx) => {
+    // la capa sube sólo si todas las máquinas activas tienen la versión: una al día en el buzón
+    await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': opsBase() }), perfil: dir, espejo: buzonConMaquinas() }), env: { ...PERFIL_ENV, SITE_PROFILE_WRITE_TOKEN: ESCRITURA }, opciones: { remotos, urlBase: { azure: ado.base } } }, async (ctx) => {
       const lead = await ctx.entrar(LEAD); const tok = await ctx.token(lead);
       const { clockify: _c, ...integSinVieja } = PERFIL_TYCON.integrations;
       const rev = (await ctx.escribir('/api/config/revisar', lead, tok, { seccion: 'integraciones', borrador: { integrations: { ...integSinVieja, timeTracking: 'clockify' } } })).json;
@@ -5029,7 +5090,8 @@ test('T54 Config_NotifyChannels_RaisesRequires @story-7.40 @ac-18', { skip: SIN_
     ado.st.politicas = [{ isEnabled: true, isBlocking: true, type: { displayName: 'Minimum number of reviewers' }, settings: { minimumApproverCount: 1, creatorVoteCounts: false, scope: [{ refName: 'refs/heads/main', matchKind: 'Exact', repositoryId: ado.st.repoId }] } }];
     ({ r, dir } = await opsPorHttp({ 'team-profile.json': PERFIL_TYCON, 'team-layer.json': capa(ORG.RESPONSE_SINCE), 'team-repos.json': TR_BASE }));
     const remotos = { perfil: { platform: 'azure', org: 'acme', project: 'Proy', repo: 'perfil', web: 'https://dev.azure.com/acme/Proy/_git/perfil' } };
-    await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': opsBase() }), perfil: dir }), env: { ...PERFIL_ENV, SITE_PROFILE_WRITE_TOKEN: ESCRITURA }, opciones: { remotos, urlBase: { azure: ado.base } } }, async (ctx) => {
+    // la capa sube sólo si todas las máquinas activas tienen la versión: una al día en el buzón
+    await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': opsBase() }), perfil: dir, espejo: buzonConMaquinas() }), env: { ...PERFIL_ENV, SITE_PROFILE_WRITE_TOKEN: ESCRITURA }, opciones: { remotos, urlBase: { azure: ado.base } } }, async (ctx) => {
       const lead = await ctx.entrar(LEAD); const tok = await ctx.token(lead);
       const rev = (await ctx.escribir('/api/config/revisar', lead, tok, { seccion: 'integraciones', borrador: { integrations: { ...PERFIL_TYCON.integrations, notify: { channels: ['slack', 'mail'], mail_host: 'smtp.acme.example' } } } })).json;
       assert.strictEqual(rev.ok, true, JSON.stringify(rev.problems));
@@ -5446,6 +5508,165 @@ test('T76 Config_Pedidos_EnNavegadorReal @story-4.11 @ac-43', { skip: SIN_NAVEGA
       } finally { await navegador.close(); }
     });
   } finally { await cerrarTodos(r, gh); }
+});
+
+// ── E1-E3: en un navegador de verdad, contra el sitio entero ───────────────────────────────────────────────────────────
+// Las capturas quedan en TYCON_E2E_CAPTURE (la carpeta de evidencia de la historia) o en una carpeta temporal.
+const capturas8203 = () => { const d = process.env.TYCON_E2E_CAPTURE || tmp('capturas-8203-'); fs.mkdirSync(d, { recursive: true }); return d; };
+/** Un navegador con la sesión de quien mantiene; `alPedir(ruta, rt)` puede contestar una ruta de la API (si no, la contesta el sitio). */
+async function navegadorConSesion(h, lead, { ancho = 1280, alPedir = null } = {}, fn) {
+  const navegador = await PLAYWRIGHT.chromium.launch();
+  try {
+    const ctx = await navegador.newContext({ viewport: { width: ancho, height: 900 } });
+    await ctx.setExtraHTTPHeaders({ cookie: lead });
+    const page = await ctx.newPage();
+    await page.route('**/api/config**', async (rt) => {
+      if (alPedir && await alPedir(new URL(rt.request().url()).pathname, rt)) return;
+      await rt.fulfill({ response: await rt.fetch({ headers: { ...rt.request().headers(), cookie: lead, origin: 'http://127.0.0.1' } }) });
+    });
+    await fn(page);
+  } finally { await navegador.close(); }
+}
+const textoDeSeccion = async (sec) => sec.innerText().catch(() => '(no está)');
+
+// E1 E2E_Sitio_RevisarCambiosDiceRevisando @story-8.203 @ac-1 @ac-2 @ac-3
+// 🔴 Falla con: un «Revisar cambios» que no se apaga ni dice «Revisando…» mientras el servidor tarda, que no dice el
+//    motivo cuando falla, o que queda apagado después.
+test('E1 E2E_Sitio_RevisarCambiosDiceRevisando @story-8.203 @ac-1 @ac-2 @ac-3 — el servidor tarda 3 s y falla: «Revisando…» apagado, el motivo y habilitado otra vez', { skip: SIN_NAVEGADOR, timeout: 120000 }, async () => {
+  assert.ok(PLAYWRIGHT, `con la llave exigente prendida, Playwright tiene que estar: ${PINNED_PW.locate().why}`);
+  const fuentes = fuentesCon({ ops: clon({ 'operations.json': opsBase() }) });
+  await conPestana({ fuentes }, async ({ h, entrar }) => {
+    const lead = await entrar(LEAD);
+    // «Revisar» tarda 3 s y contesta un error del servidor; el resto de la API, el sitio de verdad
+    const alPedir = async (ruta, rt) => {
+      if (ruta !== '/api/config/revisar') return false;
+      await new Promise((r) => setTimeout(r, 3000));
+      await rt.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ ok: false, message: 'el lector se cayó a propósito' }) });
+      return true;
+    };
+    await navegadorConSesion(h, lead, { alPedir }, async (page) => {
+      await page.goto(`${h.base}/configuracion#seccion-responsables`);
+      const sec = page.locator('#seccion-responsables');
+      await sec.getByRole('button', { name: 'Revisar cambios' }).click({ timeout: 20000 });
+      const ocupado = sec.locator('button[aria-busy="true"]');
+      await ocupado.waitFor({ timeout: 1000 });
+      assert.strictEqual((await ocupado.textContent()).trim(), 'Revisando…');
+      assert.ok(await ocupado.isDisabled(), 'apagado mientras trabaja');
+      await page.screenshot({ path: path.join(capturas8203(), 'e1-revisando.png') });
+      await sec.getByText('el lector se cayó a propósito').waitFor({ timeout: 10000 })
+        .catch(async (e) => { throw new Error(`${e.message}\nla sección dice: ${await textoDeSeccion(sec)}`); });
+      assert.strictEqual(await sec.locator('button[aria-busy="true"]').count(), 0);
+      assert.ok(await sec.getByRole('button', { name: 'Revisar cambios' }).isEnabled(), 'habilitado otra vez');
+      await page.screenshot({ path: path.join(capturas8203(), 'e1-fallo.png') });
+    });
+  });
+});
+
+/** El perfil del equipo servido por HTTP, con Azure DevOps de juguete que pide un revisor, y el buzón con dos máquinas. */
+async function conPerfilEscribible(archivos, fn) {
+  const { arrancarAdoFalso } = require('./lib/fake-ado-api.js');
+  let ado; let r; let dir;
+  try {
+    ado = await arrancarAdoFalso({ org: 'acme', project: 'Proy', repo: 'perfil' });
+    ado.st.politicas = [{ isEnabled: true, isBlocking: true, type: { displayName: 'Minimum number of reviewers' }, settings: { minimumApproverCount: 1, creatorVoteCounts: false, scope: [{ refName: 'refs/heads/main', matchKind: 'Exact', repositoryId: ado.st.repoId }] } }];
+    ({ r, dir } = await opsPorHttp(archivos));
+    const remotos = { perfil: { platform: 'azure', org: 'acme', project: 'Proy', repo: 'perfil', web: 'https://dev.azure.com/acme/Proy/_git/perfil' } };
+    const espejo = buzonConMaquinas({ 'mac-1': '2026.11.03.40', 'mac-2': '2026.11.03.40' });
+    await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': opsBase() }), perfil: dir, espejo }), env: { ...PERFIL_ENV, SITE_PROFILE_WRITE_TOKEN: ESCRITURA }, opciones: { remotos, urlBase: { azure: ado.base } } }, async (ctx) => fn({ ...ctx, ado, r }));
+  } finally { await cerrarTodos(ado, r); }
+}
+
+// E2 E2E_Sitio_ProponerSubeLaCapa @story-8.203 @ac-12
+// 🔴 Falla con: un cambio de los nombres de las sesiones que frena por la versión aunque las dos máquinas activas la
+//    tienen, que no avisa antes de confirmar, o un pedido que no trae team-layer.json con la versión nueva.
+test('E2 E2E_Sitio_ProponerSubeLaCapa @story-8.203 @ac-12 — los nombres de las sesiones: el aviso de la versión y el pedido con los dos archivos', { skip: SIN_NAVEGADOR, timeout: 180000 }, async () => {
+  assert.ok(PLAYWRIGHT, `con la llave exigente prendida, Playwright tiene que estar: ${PINNED_PW.locate().why}`);
+  await conPerfilEscribible({ 'team-profile.json': PERFIL_TYCON, 'team-layer.json': capa(ORG.RESPONSE_SINCE), 'team-repos.json': TR_BASE }, async ({ h, entrar, ado, r }) => {
+    const lead = await entrar(LEAD);
+    await navegadorConSesion(h, lead, {}, async (page) => {
+      await page.goto(`${h.base}/configuracion#seccion-coordinacion`);
+      const sec = page.locator('#seccion-coordinacion');
+      await sec.locator('select[data-path="coordination.session_names"]').selectOption('rivers', { timeout: 20000 });
+      await sec.getByRole('button', { name: 'Revisar cambios' }).click();
+      const aviso = `El pull request también pide el arnés ${ORG.SESSION_NAMES_SINCE}, por coordination.session_names: las máquinas activas (2) ya lo tienen.`;
+      await sec.getByText(aviso).waitFor({ timeout: 20000 })
+        .catch(async (e) => { throw new Error(`${e.message}\nla sección dice: ${await textoDeSeccion(sec)}`); });
+      await page.screenshot({ path: path.join(capturas8203(), 'e2-aviso-de-la-version.png') });
+      await sec.getByRole('button', { name: 'Proponer el cambio' }).click();
+      await sec.getByRole('button', { name: 'Confirmar y proponer' }).click();
+      await sec.getByRole('link', { name: 'Ver el pull request' }).first().waitFor({ timeout: 30000 })
+        .catch(async (e) => { throw new Error(`${e.message}\nla sección dice: ${await textoDeSeccion(sec)}`); });
+      await page.screenshot({ path: path.join(capturas8203(), 'e2-pedido-abierto.png') });
+    });
+    assert.strictEqual(ado.st.pedidos.length, 1, 'un pedido');
+    const ref = ado.st.pedidos[0].sourceRefName;
+    assert.strictEqual(JSON.parse(r.archivoEn(ref, 'team-profile.json')).coordination.session_names, 'rivers');
+    assert.strictEqual(JSON.parse(r.archivoEn(ref, 'team-layer.json')).requires.harness, `>= ${ORG.SESSION_NAMES_SINCE}`, 'el mismo pedido sube la capa');
+  });
+});
+
+// E3 E2E_Sitio_DiferenciaYBotones @story-8.203 @ac-20 @ac-23
+// 🔴 Falla con: la diferencia de team-repos.json escrito en otra forma que muestra los renglones de forma, sin la marca
+//    del valor o sin la línea que los cuenta; o los botones de «Máquinas con oficina» pegados a 390 px.
+test('E3 E2E_Sitio_DiferenciaYBotones @story-8.203 @ac-20 @ac-23 — la diferencia corta con la marca y la línea de forma; los botones de las máquinas separados', { skip: SIN_NAVEGADOR, timeout: 180000 }, async () => {
+  assert.ok(PLAYWRIGHT, `con la llave exigente prendida, Playwright tiene que estar: ${PINNED_PW.locate().why}`);
+  const remoto = (repo) => `{ "platform": "github", "org": "acme", "repo": "${repo}" }`;
+  const viejo = `{\n  "version": 1,\n  "context_notice": { "tokens": 750000 },\n  "public":      ${remoto('harness')},\n  "profile":     ${remoto('profile')},\n  "operations":  ${remoto('ops')}\n}\n`;
+  const esperado = ORG.diferenciaDeJson(viejo, ORG.formatJson({ ...JSON.parse(viejo), context_notice: { tokens: 800000 } }));
+  assert.ok(esperado.forma > 0);
+  await conPerfilEscribible({ 'team-profile.json': PERFIL_TYCON, 'team-layer.json': capa(ORG.CONTEXT_NOTICE_SINCE), 'team-repos.json': viejo }, async ({ h, entrar }) => {
+    const lead = await entrar(LEAD);
+    await navegadorConSesion(h, lead, {}, async (page) => {
+      await page.goto(`${h.base}/configuracion#seccion-contexto`);
+      const sec = page.locator('#seccion-contexto');
+      await sec.locator('input[data-path="context_notice.tokens"]').fill('800000', { timeout: 20000 });
+      await sec.getByRole('button', { name: 'Revisar cambios' }).click();
+      await sec.getByRole('button', { name: 'Proponer el cambio' }).click({ timeout: 20000 });
+      await sec.getByText(`Además, el pull request acomoda el formato del archivo: renglones que cambian de forma, no de valor: ${esperado.forma}.`).waitFor({ timeout: 20000 })
+        .catch(async (e) => { throw new Error(`${e.message}\nla sección dice: ${await textoDeSeccion(sec)}`); });
+      // la pantalla se vuelve a dibujar mientras termina de cargar: se lee hasta que se asienta
+      let marcas = [];
+      for (let i = 0; i < 40 && JSON.stringify(marcas) !== '["75","80"]'; i += 1) { marcas = await sec.locator('.dif mark').allTextContents(); if (JSON.stringify(marcas) !== '["75","80"]') await page.waitForTimeout(250); }
+      assert.deepStrictEqual(marcas, ['75', '80'], 'lo cambiado, marcado dentro del renglón');
+      assert.strictEqual(await sec.locator('.dif-sale').count(), 1, 'un renglón quitado: sólo el del valor');
+      await page.screenshot({ path: path.join(capturas8203(), 'e3-diferencia.png') });
+    });
+  });
+  // los botones de «Máquinas con oficina», a lo ancho de un teléfono
+  const { crearLlaves } = require(path.join(ROOT, 'scripts', 'site', 'machine-keys.js'));
+  const llaves = crearLlaves({ dataDir: tmp('llaves-8203-') });
+  const publicKey = Buffer.from(crypto.generateKeyPairSync('ed25519').publicKey.export({ format: 'jwk' }).x, 'base64url').toString('base64');
+  const fingerprint = crypto.createHash('sha256').update(Buffer.from(publicKey, 'base64')).digest('hex');
+  llaves.pedir({ publicKey, fingerprint, nombre: 'pista', direccion: '10.0.0.1' });
+  const conf = opsBase({ people: { machines: { 'maq-a': { person: DEV, reported_sha256: crypto.createHash('sha256').update(DEV).digest('hex'), confirmed_by: LEAD, confirmed_on: '2026-10-01' } } } });
+  conf.site = { ...conf.site, mailbox: { provider: 'azure-blob', account: 'cuentax', container: 'runs' } };
+  const fuentes = fuentesCon({ ops: clon({ 'operations.json': conf }), config: conf, informados: H.informados({ 'maq-a': DEV }) });
+  fuentes.huellas = () => ({ medido: true, carpetas: { 'maq-a': { huellas: [fingerprint], llena: false } } });
+  await conPestana({ fuentes, opciones: { llaves } }, async ({ h, entrar, token, escribir }) => {
+    const lead = await entrar(LEAD);
+    assert.strictEqual(JSON.parse((await escribir('/api/config/oficinas', lead, await token(lead), { accion: 'approve', fingerprint })).texto).ok, true);
+    await navegadorConSesion(h, lead, { ancho: 390 }, async (page) => {
+      await page.goto(`${h.base}/configuracion#seccion-personas`);
+      await page.locator('#seccion-personas .tabla .acc').first().waitFor({ timeout: 20000 });
+      // la pantalla se vuelve a dibujar mientras termina de cargar: la celda se busca y se mide en el mismo paso
+      const medir = () => page.evaluate(() => {
+        const acc = document.querySelector('#seccion-personas .tabla .acc');
+        if (!acc) return [];
+        acc.scrollIntoView({ block: 'center' });
+        return [...acc.querySelectorAll('button')].map((b) => { const r = b.getBoundingClientRect(); return { izq: r.left, der: r.right, arriba: r.top, abajo: r.bottom }; });
+      });
+      let cajas = await medir();
+      for (let i = 0; i < 40 && cajas.length < 2; i += 1) { await page.waitForTimeout(250); cajas = await medir(); }
+      assert.ok(cajas.length >= 2, `dos o más acciones: ${cajas.length}`);
+      for (let i = 1; i < cajas.length; i += 1) {
+        const [a, b] = [cajas[i - 1], cajas[i]];
+        const mismaFila = Math.abs(a.arriba - b.arriba) < 2;
+        const separacion = mismaFila ? b.izq - a.der : b.arriba - a.abajo;
+        assert.ok(separacion >= 4, `botones ${i - 1} y ${i} separados (${separacion} px, ${mismaFila ? 'en la misma fila' : 'en otra fila'})`);
+      }
+      await page.screenshot({ path: path.join(capturas8203(), 'e3-maquinas-telefono.png') });
+    });
+  });
 });
 
 // con `site.auto_apply`, el encabezado y «¿Cómo funciona?» no prometen la aprobación de otra persona; sin ella, la dicen
@@ -5981,7 +6202,8 @@ test('T71 2.79-Cerrar_DosNombres @story-2.79 @ac-64 — «Dar por cerrada» para
   assert.strictEqual(TX.t('es', 'pantalla.repoCerrar'), 'Plegar');
   assert.notStrictEqual(TX.t('en', 'pantalla.cerrar'), TX.t('en', 'pantalla.repoCerrar'), 'distintos también en inglés');
   const src = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'org-config.js'), 'utf8');
-  assert.match(src, /text: T\('pantalla\.cerrar'\), onclick: function \(\) \{ revisarSeccion\(s, \{ accion: 'close'/, 'la diferencia aceptada usa «Dar por cerrada»');
+  // el botón dice que trabaja mientras revisa (botonQueTrabaja)
+  assert.match(src, /text: T\('pantalla\.cerrar'\) \}, function \(\) \{ return revisarSeccion\(s, \{ accion: 'close'/, 'la diferencia aceptada usa «Dar por cerrada»');
   assert.match(src, /r\.abierto \? T\('pantalla\.repoCerrar'\)/, 'el panel del repo, «Plegar»');
 });
 
@@ -6150,4 +6372,139 @@ test('DeepReviewDefault_EditableOnSite_NoOff @story-7.54 @ac-6 — la política 
   assert.strictEqual(r.panelDe('seccion-paseAdversarial').attrs.id, 'pestana-claude');
   const { TEXTOS } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
   assert.ok(TEXTOS['pantalla.paseAdversarialTitulo'] && TEXTOS['pantalla.paseAdversarialAyuda'], 'los textos de la sección');
+});
+
+const textosDe = (raiz) => { const out = []; const walk = (x) => { if (x.textContent) out.push(x.textContent); if (x.attrs && x.attrs.text) out.push(x.attrs.text); (x.hijos || []).forEach((h) => { if (typeof h === 'string') out.push(h); else walk(h); }); }; walk(raiz); return out; };
+
+test('Regresion_OficinasEnConfiguracion_AprobarYDarDeBaja @story-8.171 @ac-9 — quien mantiene decide con la API y sin pedido al repo', async () => {
+  // 🔴 rojo: la ruta no existe, un dev puede decidir, se aprueba sin la huella del buzón, o la baja no queda.
+  const { crearLlaves } = require(path.join(ROOT, 'scripts', 'site', 'machine-keys.js'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'llaves-'));
+  const llaves = crearLlaves({ dataDir: dir });
+  const clave = crypto.generateKeyPairSync('ed25519').publicKey.export({ format: 'jwk' }).x;
+  const publicKey = Buffer.from(clave, 'base64url').toString('base64');
+  const fingerprint = crypto.createHash('sha256').update(Buffer.from(publicKey, 'base64')).digest('hex');
+  assert.strictEqual(llaves.pedir({ publicKey, fingerprint, nombre: 'pista', direccion: '10.0.0.1' }).status, 202);
+  const machines = { 'maq-a': { person: DEV, reported_sha256: crypto.createHash('sha256').update(DEV).digest('hex'), confirmed_by: LEAD, confirmed_on: '2026-10-01' } };
+  const conf = opsBase({ people: { machines } });
+  conf.site = { ...conf.site, mailbox: { provider: 'azure-blob', account: 'cuentax', container: 'runs' } };
+  const fuentes = fuentesCon({ ops: clon({ 'operations.json': conf }), config: conf, informados: H.informados({ 'maq-a': DEV }) });
+  let huellas = { medido: true, carpetas: {} };
+  fuentes.huellas = () => huellas;
+  await conPestana({ fuentes, opciones: { llaves } }, async ({ h, entrar, token, escribir }) => {
+    const lead = await entrar(LEAD);
+    const tok = await token(lead);
+    const vista = async () => JSON.parse((await h.pedir('/api/config', { cookie: lead })).texto).secciones.find((s) => s.id === 'personas').extras.oficinas;
+    let of = await vista();
+    assert.strictEqual(of.pedidos[0].situacion, 'esperando_huella');
+    assert.strictEqual(of.pedidos[0].huella.length, 19, 'la huella en grupos de cuatro');
+    assert.strictEqual(of.sinDisco, true, 'sin SITE_DATA_DIR lo dice');
+    const accion = async (cuerpo) => JSON.parse((await escribir('/api/config/oficinas', lead, tok, cuerpo)).texto);
+    // sin la huella por el buzón no se aprueba
+    const antes = await accion({ accion: 'approve', fingerprint });
+    assert.strictEqual(antes.ok, false);
+    assert.match(antes.message, /la máquina todavía no dejó la huella con sus ejecuciones/);
+    huellas = { medido: true, carpetas: { 'maq-a': { huellas: [fingerprint], llena: false } } };
+    of = await vista();
+    assert.strictEqual(of.pedidos[0].situacion, 'listo');
+    assert.strictEqual(of.pedidos[0].maquina, 'maq-a');
+    const ok = await accion({ accion: 'approve', fingerprint });
+    assert.strictEqual(ok.ok, true, JSON.stringify(ok));
+    assert.deepStrictEqual(ok.oficinas.pedidos, []);
+    assert.strictEqual(ok.oficinas.maquinas[0].maquina, 'maq-a');
+    assert.strictEqual((await accion({ accion: 'disable', maquina: 'maq-a' })).oficinas.maquinas[0].deBaja, true);
+    assert.strictEqual((await accion({ accion: 'reactivate', maquina: 'maq-a' })).oficinas.maquinas[0].deBaja, false);
+    // la marca: sin marca lo dice, y con marca la borra
+    assert.match((await accion({ accion: 'clear_mark', maquina: 'maq-a' })).message, /no tiene la marca/);
+    for (let i = 0; i < 11; i += 1) llaves.anotarDesplazamiento('maq-a');
+    assert.strictEqual((await vista()).maquinas[0].copiada, true);
+    assert.strictEqual((await accion({ accion: 'clear_mark', maquina: 'maq-a' })).oficinas.maquinas[0].copiada, false);
+    // retirar la clave: la máquina deja de tener oficina, y dos veces lo dice
+    const retirada = await accion({ accion: 'revoke', maquina: 'maq-a' });
+    assert.strictEqual(retirada.ok, true, JSON.stringify(retirada));
+    assert.deepStrictEqual(retirada.oficinas.maquinas, []);
+    assert.match((await accion({ accion: 'revoke', maquina: 'maq-a' })).message, /no tiene una clave aprobada/);
+    // confirmar una huella en conflicto, y rechazar un pedido
+    const clavePedido = () => {
+      const pk = Buffer.from(crypto.generateKeyPairSync('ed25519').publicKey.export({ format: 'jwk' }).x, 'base64url').toString('base64');
+      const fp = crypto.createHash('sha256').update(Buffer.from(pk, 'base64')).digest('hex');
+      assert.strictEqual(llaves.pedir({ publicKey: pk, fingerprint: fp, nombre: 'otra', direccion: '10.0.0.2' }).status, 202);
+      return fp;
+    };
+    const f1 = clavePedido(); const f2 = clavePedido();
+    huellas = { medido: true, carpetas: { 'maq-a': { huellas: [f1, f2], llena: false } } };
+    assert.strictEqual((await vista()).pedidos.find((p) => p.fingerprint === f1).situacion, 'conflicto');
+    const vista1 = await accion({ accion: 'confirm', fingerprint: f1 });
+    assert.strictEqual(vista1.oficinas.pedidos.find((p) => p.fingerprint === f1).situacion, 'listo');
+    const sinF2 = await accion({ accion: 'reject', fingerprint: f2 });
+    assert.strictEqual(sinF2.ok, true);
+    assert.ok(!sinF2.oficinas.pedidos.some((p) => p.fingerprint === f2));
+    // una acción que no existe, y un dev
+    assert.strictEqual((await escribir('/api/config/oficinas', lead, tok, { accion: 'borrar_todo' })).status, 400);
+    const dev = await entrar(DEV);
+    assert.strictEqual((await h.pedir('/api/config/oficinas', { method: 'POST', cookie: dev, body: '{}', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1', 'x-site-token': tok } })).status, 403);
+  });
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('Regresion_PantallaDeOficinas_ConLosTextosDeLaMaqueta @story-8.171 @ac-9 — lo que aprobó el dueño', async () => {
+  const oficinas = {
+    conBuzon: true, sinDisco: false,
+    pedidos: [
+      { fingerprint: 'a'.repeat(64), huella: 'aaaa-aaaa-aaaa-aaaa', nombre: 'pista', situacion: 'listo', maquina: 'maquina-a', person: DEV },
+      { fingerprint: 'b'.repeat(64), huella: 'bbbb-bbbb-bbbb-bbbb', nombre: 'maquina-c', situacion: 'esperando_huella', maquina: null, person: null },
+      { fingerprint: 'c'.repeat(64), huella: 'cccc-cccc-cccc-cccc', nombre: 'x', situacion: 'conflicto', maquina: 'maquina-b', person: DEV },
+    ],
+    maquinas: [
+      { maquina: 'maquina-f', person: DEV, fingerprint: 'f'.repeat(64), ultimaConexion: 1, conectada: true, deBaja: false, copiada: false, masNueva: false },
+      { maquina: 'maquina-g', person: DEV, ultimaConexion: 1, conectada: false, deBaja: false, copiada: true, masNueva: false },
+      { maquina: 'maquina-h', person: DEV, ultimaConexion: 1, conectada: false, deBaja: true, copiada: false, masNueva: false },
+      { maquina: 'maquina-i', person: DEV, ultimaConexion: 1, conectada: true, deBaja: false, copiada: false, masNueva: true },
+    ],
+  };
+  const r = await pantallaConPestanas({ secciones: TODAS.map((id) => (id === 'personas' ? SEC(id, { extras: { oficinas } }) : SEC(id))) });
+  const caja = r.creados.filter((n) => n.attrs.id === 'seccion-personas').pop();
+  const textos = textosDe(caja).join(' | ');
+  for (const t of ['La oficina de cada máquina', 'Solicitudes de alta', 'Máquinas con oficina', 'Retirar esta clave', 'Aprobar', 'Rechazar', 'Es la que vio el dev', 'Dar de baja', 'Reactivar', 'Borrar la marca', 'Posible clave copiada', 'Conectada', 'De baja', 'Dice llamarse «maquina-c»', 'Esperando que la máquina deje la huella con sus ejecuciones', 'Conflicto: confirmá la huella con el dev', 'Nada: la máquina dejó la misma huella con sus ejecuciones']) assert.ok(textos.includes(t), `falta «${t}»`);
+  assert.ok(textos.includes('Más nueva que el sitio'));
+  // sin pedidos y sin buzón
+  const vacia = await pantallaConPestanas({ secciones: TODAS.map((id) => (id === 'personas' ? SEC(id, { extras: { oficinas: { conBuzon: false, sinDisco: true, pedidos: [], maquinas: [] } } }) : SEC(id))) });
+  const t2 = textosDe(vacia.creados.filter((n) => n.attrs.id === 'seccion-personas').pop()).join(' | ');
+  for (const t of ['No hay solicitudes de alta.', 'Este sitio no sabe dónde dejan sus ejecuciones las máquinas', 'Este sitio no tiene disco propio']) assert.ok(t2.includes(t), `falta «${t}»`);
+});
+
+test('T52 Sitio_DiceCuandoRelee_YLaSubidaDiceLaHuella @story-8.171 @ac-29 — «esperando la huella» dice cuándo vuelve a mirar el buzón', async () => {
+  // 🔴 rojo: el pedido dice «esperando» aunque la huella ya esté en el buzón y sólo falte la relectura, sin decir cuándo.
+  const proxima = Date.parse('2026-11-03T22:15:00.000Z');
+  const hhmm = (ms) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+  const oficinas = { conBuzon: true, sinDisco: false, proximaLectura: proxima, maquinas: [], pedidos: [{ fingerprint: 'b'.repeat(64), huella: 'bbbb-bbbb-bbbb-bbbb', nombre: 'maquina-c', situacion: 'esperando_huella', maquina: null, person: null }] };
+  const r = await pantallaConPestanas({ secciones: TODAS.map((id) => (id === 'personas' ? SEC(id, { extras: { oficinas } }) : SEC(id))) });
+  const textos = textosDe(r.creados.filter((n) => n.attrs.id === 'seccion-personas').pop()).join(' | ');
+  assert.ok(textos.includes(`la próxima lectura, a las ${hhmm(proxima)}`), textos);
+  // sin la hora (un sitio que todavía no programó la lectura), el texto de siempre, sin hora inventada
+  const sin = await pantallaConPestanas({ secciones: TODAS.map((id) => (id === 'personas' ? SEC(id, { extras: { oficinas: { ...oficinas, proximaLectura: null } } }) : SEC(id))) });
+  assert.ok(!textosDe(sin.creados.filter((n) => n.attrs.id === 'seccion-personas').pop()).join(' | ').includes('la próxima lectura'));
+  // el sitio la saca de su lectura programada del buzón
+  const { crearFuentes } = require(path.join(ROOT, 'scripts', 'site', 'sources.js'));
+  assert.strictEqual(typeof crearFuentes, 'function');
+  assert.match(fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'sources.js'), 'utf8'), /proximaLectura: \(\) =>/);
+  assert.match(fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'tabs', 'config.js'), 'utf8'), /proximaLectura: typeof fuentes\.proximaLectura === 'function'/);
+});
+
+test('T53 Botones_ConEspacio @story-8.171 @ac-30 — los botones de una fila de oficinas van separados', () => {
+  // 🔴 rojo: «Dar de baja» y «Retirar esta clave» salen pegados.
+  const css = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'static', 'site.css'), 'utf8');
+  // con su elemento: en Ejecuciones «tabla» es la caja que envuelve la tabla (site-guide.test.js, T13)
+  const regla = /(?:^|\n)table\.tabla td > \.acc\{([^}]*)\}/.exec(css);
+  assert.ok(regla, 'una regla para la fila de botones de una tabla');
+  const gap = /(?:^|;)gap:(\d+)px/.exec(regla[1]);
+  assert.ok(gap && Number(gap[1]) >= 8, `al menos 8 px entre botones: ${regla[1]}`);
+  assert.match(regla[1], /display:inline-flex/);
+  // en Configuración manda una regla más específica: es la que da el espacio que de verdad queda
+  const enConfig = /(?:^|\n)#config-app \.tabla \.acc\{([^}]*)\}/.exec(css);
+  assert.ok(enConfig, 'la regla de Configuración');
+  const gapConfig = /(?:^|;)gap:(\d+)px/.exec(enConfig[1]);
+  assert.ok(gapConfig && Number(gapConfig[1]) >= 8, `en Configuración, también al menos 8 px: ${enConfig[1]}`);
+  const pantalla = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'org-config.js'), 'utf8');
+  assert.ok((pantalla.match(/var acciones = el\('span', \{ class: 'acc' \}\);/g) || []).length >= 2, 'los pedidos y las máquinas usan esa fila');
 });

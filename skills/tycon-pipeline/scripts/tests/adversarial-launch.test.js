@@ -544,6 +544,9 @@ test('T16 Verifiers_WindowUnderLiteRunner — el guion real con 7 clases nunca p
   fs.writeFileSync(stub, `
 const fs = require('fs'); const path = require('path');
 const prompt = process.env.TYCON_WFLITE_PROMPT || '';
+// (8.215) un cazador devuelve la base pedida y, limpio, la carpeta de su prueba: las dos se las nombra el pedido
+{ const base = (prompt.match(/Devolvé base = "([^"]+)"/) || [])[1]; const carpeta = (prompt.match(/Creá la carpeta (\\S+)/) || [])[1] || '';
+  if (base) { const log = console.log; console.log = (s) => { try { const o = JSON.parse(s); if (Array.isArray(o.findings)) s = JSON.stringify({ ...o, base, probe_dir: o.findings.length ? '' : carpeta }); } catch (_) { /* no es JSON */ } log(s); }; } }
 const vivos = ${JSON.stringify(vivos)}; const picos = ${JSON.stringify(path.join(tmp, 'picos.txt'))};
 const dormir = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 if (/REFUTAR/i.test(prompt)) {
@@ -562,7 +565,7 @@ if (/REFUTAR/i.test(prompt)) {
 }
 `);
   const out = path.join(tmp, 'out.json');
-  const args = { repo: tmp, files: ['src/f1.js'], runDir: path.join(tmp, 'run') };
+  const args = { repo: tmp, files: ['src/f1.js'], runDir: path.join(tmp, 'run'), base: '0123456789abcdef0123456789abcdef01234567' };
   const env = { ...process.env, TYCON_WFLITE_AGENT_CMD: `${process.execPath} ${stub}`, TYCON_WFLITE_JOBS: '8' };
   delete env.NODE_TEST_CONTEXT;
   const r = spawnSync(process.execPath, [WFLITE, WORKFLOW, '--args', JSON.stringify(args), '--out', out], { encoding: 'utf8', env });

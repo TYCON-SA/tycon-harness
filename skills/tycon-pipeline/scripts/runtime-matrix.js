@@ -47,7 +47,8 @@ if (require.main === module) { try { require('./lib/node-floor.js').guard(); } c
  *
  * Staleness (por clase de artefacto — calibrado con la regla de tests del equipo):
  *   - e2e gate / smoke ledger MÁS VIEJOS que el último edit de código → NO cuentan
- *     (re-correrlos es barato y scoped).
+ *     (re-correrlos es barato y scoped). Una fecha nueva sobre un archivo igual al del commit de la evidencia no es un
+ *     edit: git la reescribe en cada cambio de rama. La regla: lib/evidence-vs-commit.js.
  *   - tests-result.json más viejo que el código → WARNING, sigue contando: regenerarlo
  *     es la full suite, que por regla del equipo corre SOLO en el merge-gate
  *     (test-execution-discipline: una suite completa puede congelar la máquina del dev).
@@ -70,10 +71,15 @@ const os = require('os');
 const crypto = require('crypto');
 const smokeSecrets = require(path.join(__dirname, 'lib', 'smoke-secrets.js'));
 const e2eEvidence = require(path.join(__dirname, 'lib', 'e2e-evidence.js'));
+const evidenceVsCommit = require(path.join(__dirname, 'lib', 'evidence-vs-commit.js'));
+const simulatedServer = require(path.join(__dirname, 'lib', 'simulated-server.js'));
 
 // Desde cuándo un AC de pantalla sin imagen bloquea: las stories que arrancaron antes de esta hora no se frenan a mitad
 // de su trabajo y reciben un aviso. Es la hora en que se publica la regla.
 const VISUAL_EVIDENCE_FROM = '2026-10-18T20:00:00Z';
+// Desde cuándo una prueba con el servidor simulado no cuenta como prueba en vivo; antes, sólo avisa. Es la hora en que
+// se publica la regla.
+const SIMULATED_SERVER_FROM = '2026-11-06T00:00:00Z';
 // Lo que vale como imagen en la carpeta del E2E (las capturas de Playwright y su video) y en la del humo.
 const VISUAL_E2E_FILE_RE = /\.(png|jpe?g|webp|gif|webm)$/i;
 const VISUAL_SMOKE_FILE_RE = /\.(png|webm)$/i;
@@ -98,6 +104,25 @@ function kindOf(s, fePaths) {
   return (fePaths || []).some((t) => str.includes(t)) || GENERIC_FE_RE.test(str) ? 'fe' : 'be';
 }
 
+// ---------------------------------------------------------------- la historia de una rama
+
+// Las historias del repo, para saber de qué historia es una rama. Un recorrido a medias es «no sé»: una rama de una historia
+// que no se vio se leería como de nadie, o como de la equivocada.
+function catalogoDeHistorias(repoRoot, real) {
+  const discovery = require(path.join(__dirname, 'lib', 'story-discovery.js'));
+  const d = discovery.discoverStories(repoRoot, { cache: false });
+  if (d.partial) return null;
+  return [...d.stories, ...(d.excluded || [])].filter((s) => s && s.path && s.id)
+    .map((s) => ({ numero: String(s.id), archivo: real(path.resolve(repoRoot, s.path)) }));
+}
+
+// Por qué una evidencia siguió contando aunque el archivo cambió: lo que el control afloja se dice.
+function avisoDeLoQueContó({ rel, via, fusion, commit, historia }) {
+  return via
+    ? `${rel}: lo trajo la fusión ${fusion} de esta historia, igual a como estaba su rama a la hora de la evidencia; se supone que la evidencia corrió sobre esa rama → sigue contando.`
+    : `${rel}: lo cambió el commit ${commit} de la historia ${historia}, sólo en una prueba → la evidencia sigue contando.`;
+}
+
 // ---------------------------------------------------------------- parsing helpers
 
 function readStory(storyPath) {
@@ -111,18 +136,7 @@ function readStory(storyPath) {
 // re-exporta desde acá para no romper a quien la importa de este archivo.
 const evidenceKeyLib = require(path.join(__dirname, 'lib', 'evidence-key.js'));
 const { storyIdFrom } = evidenceKeyLib;
-
-function frontmatterFileList(fm) {
-  // Entradas `- path` bajo files_to_create/files_to_modify (con o sin comentario #).
-  const files = [];
-  const re = /^\s*-\s*([^\s#][^#\n]*?)\s*(?:#.*)?$/gm;
-  const sections = fm.match(/files_to_(?:create|modify):\n((?:\s+-[^\n]*\n?)*)/g) || [];
-  for (const sec of sections) {
-    let m;
-    while ((m = re.exec(sec)) !== null) files.push(m[1].trim());
-  }
-  return files;
-}
+const { parseDeclaredFiles } = require(path.join(__dirname, 'lib', 'test-scope.js'));
 
 // Parsea el bloque `runtime_not_verifiable:` del frontmatter — la declaración por-AC de
 // "materialmente imposible de verificar corriendo la app" (con razón + test que lo cubre):
@@ -313,11 +327,96 @@ function readE2eGates(evidenceDirs, sid, gatesLogPath, storyPath) {
           else if (/^##\s/.test(line)) break;
         }
       }
-      gates.push({ path: full, ts: compactTsToMs(m[1]), tsRaw: m[1], verdict, specFilter, specFilters, skipped, mirrored, titulos });
+      // El ancla cuenta sólo si el espejo dice lo mismo: el gate viaja con el código y se edita.
+      const deGate = (content.match(/^- hermanos: (.+)$/m) || [])[1];
+      const anclaEspejo = mirrorLines.find((e) => e.type === 'e2e-gate-anchor' && e.ts === m[1] && e.story === sid);
+      const ancla = deGate && anclaEspejo && deGate === JSON.stringify(anclaEspejo.hermanos) ? anclaEspejo.hermanos : undefined;
+      // Dónde corrió Playwright, tal como lo recibió el gate (puede ser relativo): de ahí se leen los specs del filtro.
+      const frontendDir = ((content.match(/^- frontend_dir:[ \t]*(.+?)\s*$/m) || [])[1]) || null;
+      gates.push({ path: full, ts: compactTsToMs(m[1]), tsRaw: m[1], verdict, specFilter, specFilters, skipped, mirrored, titulos, ancla, frontendDir });
     }
   }
   gates.sort((a, b) => b.ts - a.ts);
   return gates;
+}
+
+// ---------------------------------------------------------------- servidor simulado
+
+const SPEC_FILE_RE = /\.(spec|test)\.(ts|tsx|js|jsx|mjs|cjs)$/;
+// Carpetas que no tienen specs propios (dependencias, compilados, reportes): recorrerlas gasta el tope de la búsqueda.
+const SPEC_SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', 'out', 'coverage', 'test-results', 'playwright-report']);
+const SPEC_MAX_ENTRIES = 20000;
+
+/**
+ * Los specs que corrió un filtro del portón: `<frontend_dir>/<filtro>` si es un archivo; si no, los specs bajo
+ * `frontend_dir` cuya ruta contiene el filtro, como hace Playwright (un filtro vacío: todos). Un `frontend_dir` relativo se
+ * prueba contra cada raíz. Un filtro que sale de `frontend_dir` no se lee. → { archivos: [ruta], motivo, problemas }:
+ * `motivo` si no hay ninguno; `problemas`, lo que no se pudo mirar aunque haya specs (una carpeta ilegible, el corte).
+ */
+function specsDelFiltro(frontendDir, filtro, raices) {
+  if (!frontendDir) return { archivos: [], motivo: 'el portón no dice su frontend_dir', problemas: [] };
+  const candidatos = path.isAbsolute(frontendDir) ? [frontendDir] : raices.filter(Boolean).map((r) => path.resolve(r, frontendDir));
+  const fe = candidatos.find(isDir);
+  if (!fe) return { archivos: [], motivo: `no encontré su frontend_dir, ${frontendDir}`, problemas: [] };
+  const directo = filtro ? path.resolve(fe, filtro) : null;
+  const relDirecto = directo ? path.relative(fe, directo) : '';
+  if (directo && (relDirecto.startsWith('..') || path.isAbsolute(relDirecto))) {
+    return { archivos: [], motivo: `el filtro sale de su frontend_dir, ${frontendDir}`, problemas: [] };
+  }
+  if (directo && isFile(directo)) return { archivos: [directo], motivo: null, problemas: [] };
+  const archivos = [];
+  const problemas = [];
+  const pendientes = [fe];
+  let leidos = 0;
+  while (pendientes.length && leidos < SPEC_MAX_ENTRIES) {
+    const d = pendientes.pop();
+    let entradas = [];
+    try { entradas = fs.readdirSync(d, { withFileTypes: true }); } catch (e) {
+      problemas.push(`la carpeta ${path.relative(fe, d) || '.'} (${e.code || e.message})`);
+      continue;
+    }
+    for (const e of entradas) {
+      leidos++;
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) { if (!SPEC_SKIP_DIRS.has(e.name)) pendientes.push(p); continue; }
+      if (e.isFile() && SPEC_FILE_RE.test(e.name) && path.relative(fe, p).split(path.sep).join('/').includes(filtro)) archivos.push(p);
+    }
+  }
+  if (pendientes.length) problemas.push(`lo que quedó después de las ${SPEC_MAX_ENTRIES} entradas (corté la búsqueda)`);
+  if (archivos.length) return { archivos, motivo: null, problemas };
+  return { archivos: [], motivo: `ningún spec bajo ${frontendDir} lo contiene${problemas.length ? `; no pude leer ${problemas.join(', ')}` : ''}`, problemas: [] };
+}
+
+// Lo que habla con la app por la red y no corre ningún guion: un humo hecho sólo de esto se puede dar por mirado.
+const COMANDO_DE_RED_RE = /^(curl|wget|http|https|xh|nc|grep|jq|cat|echo|test|true|sleep|cd)$/;
+
+/**
+ * ¿El comando corre sólo herramientas de red (y sus filtros)? Se mira la primera palabra de cada tramo separado por
+ * `&&`, `||`, `;` o `|`, sin las asignaciones de variable. Un humo que corre cualquier otra cosa (`npm run smoke`,
+ * `./smoke.sh`, `make smoke`) y no nombra un guion legible no se puede mirar.
+ */
+function soloRed(cmd) {
+  const tramos = String(cmd || '').split(/&&|\|\||;|\|/).map((t) => t.trim()).filter(Boolean);
+  return tramos.length > 0 && tramos.every((t) => {
+    const palabra = t.split(/\s+/).find((w) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(w)) || '';
+    return COMANDO_DE_RED_RE.test(palabra.split('/').pop());
+  });
+}
+
+/**
+ * Los guiones que nombra el comando de un humo: palabras con extensión de guion, que no son una URL ni la salida de
+ * `-o`/`--output`. Una ruta relativa se cuenta desde `base`. → [{ token, ruta }]
+ */
+function guionesDelComando(cmd, base) {
+  const palabras = (String(cmd || '').match(/"[^"]*"|'[^']*'|\S+/g) || []).map((w) => w.replace(/^["']|["']$/g, ''));
+  const out = [];
+  for (let i = 0; i < palabras.length; i++) {
+    const w = palabras[i];
+    if (/^(-o|--output)$/.test(palabras[i - 1] || '') || /^--output=/.test(w) || /:\/\//.test(w)) continue;
+    if (!simulatedServer.EXT_GUION.some((ext) => w.toLowerCase().endsWith(ext))) continue;
+    out.push({ token: w, ruta: path.isAbsolute(w) ? w : path.resolve(base, w) });
+  }
+  return out;
 }
 
 function readTestsResults(paths, fePaths) {
@@ -630,6 +729,9 @@ function readSmokeLedger(evidenceDirs, sid, gatesLogPath) {
         l.includes('"type":"smoke-run"') && l.includes(`"ts":"${e.ts}"`) &&
         l.includes(`"story":"${e.story}"`) && l.includes(acsStr) && l.includes('"exit":0'));
       const mirrored = confirmadas.length > 0;
+      // El ancla cuenta sólo si una línea confirmada del espejo trae la misma: el registro viaja con el código y se edita.
+      const delRegistro = e.target && Array.isArray(e.target.hermanos) ? JSON.stringify(e.target.hermanos) : null;
+      const ancla = delRegistro && confirmadas.some((l) => l.includes(`"hermanos":${delRegistro}`)) ? e.target.hermanos : undefined;
       // (DODRT-C8) `--mutates` declarado en smoke-run.sh: cuenta SOLO si una línea
       // confirmada del espejo trae el flag. Es la vía de mutación para productos sin superficie
       // HTTP ni navegador.
@@ -641,7 +743,8 @@ function readSmokeLedger(evidenceDirs, sid, gatesLogPath) {
       const salidaProblema = v2 && mirrored ? problemaDeSalida(e, dir, confirmadas) : null;
       // La imagen que el humo guardó con `--capture`, verificada contra el espejo como la salida.
       const imagen = mirrored ? imagenDelHumo(e, dir, confirmadas) : { ruta: null, problema: null };
-      entries.push({ ...e, path: f, tsMs: Date.parse(e.ts), mirrored, mutatesOk, evidenceKind: classifyCmd(e.cmd),
+      // `linea`: la línea entera, para encontrar en git el commit de ESTA corrida; un checkout puede dejarle el `\r`.
+      entries.push({ ...e, path: f, linea: line.replace(/\r$/, ''), tsMs: Date.parse(e.ts), mirrored, ancla, mutatesOk, evidenceKind: classifyCmd(e.cmd),
         v2, salidaProblema, visual: imagen.ruta, visualProblema: imagen.problema });
     }
   }
@@ -993,37 +1096,138 @@ function compute(opts) {
   const gatesLogPath = opts.gatesLogPath || path.join(stateDirOf(os.homedir()), 'gates.log');
 
   // Staleness: último edit de CÓDIGO de los archivos declarados por la story, por lado.
-  // Los paths del frontmatter vienen repo-relativos (ej. `mcp/src/...`) o ws-relativos
-  // (ej. `<producto>/src/...`) — se prueba contra ambos roots y gana el que EXISTE. Resolver sólo
-  // contra el workspace deja mtime=0 para los repo-relativos: el chequeo de frescura queda ciego
-  // y los gates viejos cuentan.
-  const declared = frontmatterFileList(fm).filter((f) => CODE_FILE_RE.test(f));
-  let maxCodeMtime = 0; let maxCodeFile = null;
+  // Los paths del frontmatter vienen repo-relativos (ej. `mcp/src/...`), ws-relativos (ej. `<producto>/src/...`) o
+  // relativos a un hermano declarado: se buscan en el repo de la historia, la carpeta de arriba, cada hermano y su
+  // worktree de la rama, y se juzga cada copia que existe. Un archivo que no se mira deja ciego el chequeo de frescura y
+  // la evidencia vieja cuenta. Con `allForms`: acá leer más archivos declarados vence más evidencia, no menos.
+  const declared = parseDeclaredFiles(content, { allForms: true }).filter((f) => CODE_FILE_RE.test(f));
+  const lugares = [...new Set([repoRoot, wsRoot, ...evCfg.roots, ...enRama].filter(Boolean))];
+  let maxCodeMtime = 0;
   const kindMtime = { fe: 0, be: 0 };
+  const codeFiles = [];
+  // Una ruta de código sin ninguna copia no se pudo leer: ninguna evidencia cuenta, porque no se sabe si cambió.
+  const noLeidos = [];
   for (const rel of declared) {
-    const candidates = [repoRoot, wsRoot].filter(Boolean).map((r) => path.join(r, rel));
-    const abs = candidates.find(isFile) || candidates[0] || rel;
-    const mt = mtimeMs(abs);
-    if (mt > maxCodeMtime) { maxCodeMtime = mt; maxCodeFile = rel; }
-    const kind = kindOf(rel, fePaths);
-    if (mt > kindMtime[kind]) kindMtime[kind] = mt;
+    const copias = new Map();
+    for (const lugar of lugares) {
+      const abs = path.resolve(lugar, rel);
+      if (!isFile(abs)) continue;
+      let real = abs;
+      try { real = fs.realpathSync(abs); } catch { /* se queda con la ruta tal cual */ }
+      if (!copias.has(real)) copias.set(real, { abs, lugar });
+    }
+    if (!copias.size) { noLeidos.push({ rel, lugares }); continue; }
+    for (const { abs, lugar } of copias.values()) {
+      const mt = mtimeMs(abs);
+      // Con más de una copia, el aviso dice de qué lugar es la que no cuenta.
+      codeFiles.push({ rel: copias.size > 1 ? `${rel} (en ${path.basename(lugar)})` : rel, abs, mt });
+      if (mt > maxCodeMtime) maxCodeMtime = mt;
+      const kind = kindOf(rel, fePaths);
+      if (mt > kindMtime[kind]) kindMtime[kind] = mt;
+    }
   }
+  const historiaEnDone = /^status:\s*["']?done\b/m.test(String(content).split(/^---\s*$/m)[1] || '');
+  for (const { rel, lugares: donde } of noLeidos) {
+    warnings.push(`No pude leer ${rel}: es código declarado y no está en ${donde.join(', ')} → ninguna evidencia cuenta. ` +
+      (historiaEnDone
+        ? 'La historia está en done: traé el hermano al día o volvé a correr la evidencia; no edites la lista para ponerla en verde.'
+        : 'Si se movió, corregí la ruta en la lista de la historia; si es para crear, crealo o sacalo de la lista; si vive en un hermano atrasado, traelo al día.'));
+  }
+  // ¿La evidencia sigue valiendo para todo el código declarado? El archivo más nuevo primero: si ése está antes de la
+  // evidencia, todos lo están y no se le pregunta a git. El primero que no cuenta decide, y es el que nombra el aviso.
+  codeFiles.sort((a, b) => b.mt - a.mt);
+  const historiaPropia = { numero: sid, archivo: companionLib.real(opts.keyStoryPath || storyPath), catalogo: () => catalogoDeHistorias(repoRoot, companionLib.real) };
+  const juez = evidenceVsCommit.crearJuez({ repoDelIndice: repoRoot, historia: repoRoot ? historiaPropia : null });
+  const vigencias = new Map();
+  const dejadasContar = new Set();
+  const vigenciaDe = (ev, evidencia) => {
+    if (!vigencias.has(ev)) {
+      if (noLeidos.length) {
+        vigencias.set(ev, { cuenta: false, motivo: 'no-leido', rel: noLeidos[0].rel, contadas: [] });
+        return vigencias.get(ev);
+      }
+      let v = { cuenta: true };
+      const contadas = [];
+      for (const f of codeFiles) {
+        const r = juez.vigencia({ archivo: f.abs, mtimeMs: f.mt, evidencia });
+        if (!r.cuenta) { v = { ...r, rel: f.rel }; break; }
+        if (r.via === 'fusion-propia' || r.regla === 6) contadas.push({ ...r, rel: f.rel });
+      }
+      vigencias.set(ev, { ...v, contadas: v.cuenta ? contadas : [] });
+    }
+    return vigencias.get(ev);
+  };
+  const vigenciaGate = (g) => vigenciaDe(g, { ruta: g.path, tsMs: g.ts, ancla: g.ancla });
+  const vigenciaHumo = (e) => vigenciaDe(e, { ruta: e.path, tsMs: e.tsMs, linea: e.linea, ancla: e.ancla });
+  const porQueVencio = (v) => `(${v.rel}: ${evidenceVsCommit.motivoEnPalabras(v)})`;
+  // Una evidencia que no cuenta por un archivo no leído no es «anterior al último edit»: no se sabe, y volver a correrla
+  // no lo arregla. El motivo es de la matriz, no del juez.
+  const noLeido = (v) => v.motivo === 'no-leido';
 
   // --- evidencia runtime 1: gates E2E (frescura BLOQUEANTE + espejo en gates.log OBLIGATORIO)
   const allGates = readE2eGates(evidenceDirs, evKey, gatesLogPath, storyPath);
   // Un PASS con pruebas apagadas, o que no dice cuántas, no da la evidencia por completa: el verde puede ser
   // «se corrió una de diez». Se nombra y no cuenta; con cero, como siempre.
   const passCompleto = (g) => g.skipped === 0;
-  for (const g of allGates.filter((x) => x.verdict === 'PASS' && x.ts >= maxCodeMtime && x.mirrored && !passCompleto(x))) {
+  for (const g of allGates.filter((x) => x.verdict === 'PASS' && vigenciaGate(x).cuenta && x.mirrored && !passCompleto(x))) {
     warnings.push(g.skipped === null
       ? `Gate E2E ${path.basename(g.path)}: PASS que no informa cuántas pruebas se apagaron → no otorga evidencia completa. Re-corré el gate del arnés (anota \`- skipped: N\`) o agregá la línea al gate del repo.`
       : `Gate E2E ${path.basename(g.path)}: PASS con ${g.skipped} prueba(s) apagada(s) → no otorga evidencia completa. Prendé esas pruebas y re-corré el gate, o sacá del filtro el spec que las tiene.`);
   }
-  const freshPassGates = allGates.filter((g) => g.verdict === 'PASS' && g.ts >= maxCodeMtime && g.mirrored && passCompleto(g));
-  for (const g of allGates.filter((x) => x.verdict === 'PASS' && x.ts < maxCodeMtime)) {
-    warnings.push(`Gate E2E ${path.basename(g.path)} es ANTERIOR al último edit de código (${maxCodeFile}) → NO cuenta. Re-corré el gate (scoped, barato).`);
+  const freshPassGates = allGates.filter((g) => g.verdict === 'PASS' && vigenciaGate(g).cuenta && g.mirrored && passCompleto(g));
+  // Se busca cuándo arrancó la story sólo si hace falta (un AC de pantalla sin imagen, una prueba con el servidor
+  // simulado): así no se leen los marcadores de la máquina para una story que no los necesita.
+  let arranqueCalculado = null;
+  const arranque = () => {
+    if (arranqueCalculado) return arranqueCalculado;
+    arranqueCalculado = arranqueDeLaStory({
+      startedAt: opts.startedAt, activeDir: opts.activeDir || path.join(stateDirOf(os.homedir()), 'active'),
+      storyPath: opts.keyStoryPath ? path.resolve(opts.keyStoryPath) : storyPath, repoRoot, sid, fm,
+    });
+    for (const m of arranqueCalculado.problemas) avisos.push(m);
+    return arranqueCalculado;
+  };
+  // Una prueba con el servidor simulado no prueba nada en vivo: un portón que corrió un spec simulado no aporta filas
+  // en vivo, ni títulos `@mutates`, ni capturas. Las stories que arrancaron antes de la regla sólo reciben un aviso.
+  const simFrom = Date.parse(opts.simulatedFrom || SIMULATED_SERVER_FROM);
+  const simuladoAntesDelCorte = () => { const ar = arranque(); return ar.ms !== null && Number.isFinite(simFrom) && ar.ms < simFrom; };
+  const corteSim = Number.isFinite(simFrom) ? new Date(simFrom).toISOString().slice(0, 10) : '?';
+  const relSim = (p) => { const r = repoRoot ? path.relative(repoRoot, p) : p; return r && !r.startsWith('..') && !path.isAbsolute(r) ? r : p; };
+  const listaSim = (hs) => hs.slice(0, 3).map((h) => `${relSim(h.archivo)}:${h.linea} (${h.via})`).join(', ') + (hs.length > 3 ? ` y ${hs.length - 3} más` : '');
+  for (const g of freshPassGates) {
+    const hallazgos = [];
+    // Sin filtro, el portón corrió todos los specs: se miran todos.
+    for (const filtro of (g.specFilters.length ? g.specFilters : [''])) {
+      const { archivos, motivo, problemas } = specsDelFiltro(g.frontendDir, filtro, [repoRoot, wsRoot]);
+      if (!archivos.length) {
+        warnings.push(`Gate E2E ${path.basename(g.path)}: no pude leer ${filtro || 'sus specs'} (${motivo}): no sé si simuló el servidor.`);
+        continue;
+      }
+      if (problemas.length) {
+        warnings.push(`Gate E2E ${path.basename(g.path)}: buscando ${filtro || 'sus specs'}, no pude leer ${problemas.join(', ')}: no sé si lo que faltó mirar simuló el servidor.`);
+      }
+      for (const a of archivos) {
+        const d = simulatedServer.deArchivo(a);
+        if (!d.leido) { warnings.push(`Gate E2E ${path.basename(g.path)}: no pude leer ${relSim(a)} (${d.motivo}): no sé si simuló el servidor.`); continue; }
+        hallazgos.push(...d.hallazgos);
+        for (const o of d.omitidos) warnings.push(`Gate E2E ${path.basename(g.path)}: ${relSim(a)} importa ${o.de} y no pude leerlo (${o.motivo}): no sé si simuló el servidor.`);
+      }
+    }
+    if (!hallazgos.length) continue;
+    if (simuladoAntesDelCorte()) {
+      avisos.push(`Gate E2E ${path.basename(g.path)} corrió con el servidor simulado: ${listaSim(hallazgos)}. Esta story arrancó antes del ${corteSim}, así que por ahora cuenta como prueba en vivo; desde el corte, no.`);
+      continue;
+    }
+    g.simulado = hallazgos;
   }
-  for (const g of allGates.filter((x) => x.verdict === 'PASS' && x.ts >= maxCodeMtime && !x.mirrored)) {
+  const noSimulado = (g) => !(g.simulado && g.simulado.length);
+  for (const g of allGates.filter((x) => x.verdict === 'PASS' && !vigenciaGate(x).cuenta)) {
+    const v = vigenciaGate(g);
+    warnings.push(noLeido(v)
+      ? `Gate E2E ${path.basename(g.path)} → NO cuenta: no pude leer ${v.rel}.`
+      : `Gate E2E ${path.basename(g.path)} es ANTERIOR al último edit de código ${porQueVencio(v)} → NO cuenta. Re-corré el gate (scoped, barato).`);
+  }
+  for (const g of allGates.filter((x) => x.verdict === 'PASS' && vigenciaGate(x).cuenta && !x.mirrored)) {
     warnings.push(`Gate E2E ${path.basename(g.path)} SIN espejo run-check en gates.log → NO cuenta (¿se escribió a mano en vez de correrse vía 'marker.js run-check dod -- bash <gate> ...'?).`);
   }
 
@@ -1032,7 +1236,29 @@ function compute(opts) {
   // La evidencia VIEJA de un número repetido (`<id>-*`): no cuenta para ninguna story —pertenecer es
   // explícito y esos archivos no dicen a cuál— y no se toca. Se NOMBRA, con su ruta.
   const orphans = evidenceKeyLib.legacyFiles(evidenceDirs, keyInfo);
-  const freshSmokes = ledger.filter((e) => e.mirrored && !e.salidaProblema && e.tsMs >= maxCodeMtime);
+  const freshSmokes = ledger.filter((e) => e.mirrored && !e.salidaProblema && vigenciaHumo(e).cuenta);
+  // Un humo cuyo guion simula el servidor cambia de clase: no cuenta como corrida en vivo, ni por la acción ni por la
+  // imagen, que piden `app-run`.
+  for (const e of freshSmokes.filter((x) => x.evidenceKind === 'app-run')) {
+    const hallazgos = [];
+    const guiones = guionesDelComando(e.cmd, repoRoot || path.dirname(storyPath));
+    if (!guiones.length && !soloRed(e.cmd)) {
+      warnings.push(`Smoke ${e.ts}: \`${smokeSecrets.truncate(smokeSecrets.redact(e.cmd).text, 90)}\` corre un guion que no nombra: no sé si simuló el servidor.`);
+    }
+    for (const gu of guiones) {
+      const d = simulatedServer.deArchivo(gu.ruta);
+      if (!d.leido) { warnings.push(`Smoke ${e.ts}: no pude leer ${gu.token}: no sé si simuló el servidor.`); continue; }
+      hallazgos.push(...d.hallazgos);
+      for (const o of d.omitidos) warnings.push(`Smoke ${e.ts}: ${gu.token} importa ${o.de} y no pude leerlo (${o.motivo}): no sé si simuló el servidor.`);
+    }
+    if (!hallazgos.length) continue;
+    if (simuladoAntesDelCorte()) {
+      avisos.push(`Smoke ${e.ts} (AC ${e.acs.join(',')}) corrió con el servidor simulado: ${listaSim(hallazgos)}. Esta story arrancó antes del ${corteSim}, así que por ahora cuenta como prueba en vivo; desde el corte, no.`);
+      continue;
+    }
+    e.evidenceKind = 'simulated';
+    e.simulado = hallazgos;
+  }
   for (const e of ledger.filter((x) => !x.mirrored)) {
     warnings.push(`Smoke ledger entry ${e.ts} SIN espejo en gates.log → no cuenta (¿se escribió a mano en vez de vía smoke-run.sh?).`);
   }
@@ -1043,8 +1269,11 @@ function compute(opts) {
         ? 'El humo no dejó su salida guardada (o se borró): re-correlo vía smoke-run.sh.'
         : 'Lo que quedó en el repo no es lo que selló el espejo al correr: re-correlo vía smoke-run.sh, no edites la evidencia.'));
   }
-  for (const e of ledger.filter((x) => x.mirrored && x.tsMs < maxCodeMtime)) {
-    warnings.push(`Smoke ${e.ts} anterior al último edit de código → no cuenta. Re-correlo vía smoke-run.sh.`);
+  for (const e of ledger.filter((x) => x.mirrored && !vigenciaHumo(x).cuenta)) {
+    const v = vigenciaHumo(e);
+    warnings.push(noLeido(v)
+      ? `Smoke ${e.ts} → no cuenta: no pude leer ${v.rel}.`
+      : `Smoke ${e.ts} anterior al último edit de código ${porQueVencio(v)} → no cuenta. Re-correlo vía smoke-run.sh.`);
   }
   // La imagen del humo que no es la que se selló al correr no cuenta: el humo sigue valiendo, sin imagen.
   for (const e of ledger.filter((x) => x.mirrored && x.visualProblema)) {
@@ -1054,7 +1283,8 @@ function compute(opts) {
   }
   // Un smoke que NO ejercita la app no es evidencia runtime — se dice fuerte y con el comando a la
   // vista, porque el modo de falla que esto ataca es precisamente que pasara inadvertido.
-  for (const e of freshSmokes.filter((x) => x.evidenceKind !== 'app-run')) {
+  // El humo simulado no va acá: su comando sí ejercita algo, y lo nombra la sección del servidor simulado.
+  for (const e of freshSmokes.filter((x) => x.evidenceKind !== 'app-run' && x.evidenceKind !== 'simulated')) {
     warnings.push(
       // El comando sale tapado: la matriz se escribe en `.advisors/dod-runtime/`, que viaja por git, y un registro
       // escrito sin el tapado de lib/smoke-secrets.js puede traer la contraseña tal cual.
@@ -1066,8 +1296,13 @@ function compute(opts) {
     warnings.push('🚨 TYCON_RUNTIME_MATRIX_LEGACY=1 — todo smoke cuenta como RUNTIME sin mirar el comando. Es el bug que este gate vino a arreglar: la matriz PUEDE estar mintiendo. Sacá la variable en cuanto puedas.');
   }
 
+  // Sólo de la evidencia que de verdad cuenta: un gate sin espejo o con pruebas apagadas no cuenta, y avisar por qué
+  // siguió contando uno de sus archivos confundiría.
+  for (const ev of [...freshPassGates, ...freshSmokes]) for (const c of vigencias.get(ev).contadas) dejadasContar.add(avisoDeLoQueContó(c));
+  for (const aviso of dejadasContar) warnings.push(aviso);
+
   // --- imagen de pantalla: de qué AC es cada captura o grabación que la matriz ya puede contar
-  const imagenesE2e = imagenesDelE2e(freshPassGates, evKey, sellosDeCapturas(gatesLogPath));
+  const imagenesE2e = imagenesDelE2e(freshPassGates.filter(noSimulado), evKey, sellosDeCapturas(gatesLogPath));
   for (const m of imagenesE2e.problemas) avisos.push(m);
   const storyEsUi = uiSignal.storyTouchesUi(content, repoRoot);
 
@@ -1105,8 +1340,14 @@ function compute(opts) {
     const nivel = r.nivel || '';
     if (RUNTIME_NIVEL_RE.test(nivel)) {
       const specToken = (r.name.match(/([\w.-]+\.spec\.[tj]s)/) || [])[1] || null;
-      const gate = freshPassGates.find((g) => g.specFilters.some((sf) =>
+      const deLaFila = freshPassGates.filter((g) => g.specFilters.some((sf) =>
         r.name.includes(sf) || r.raw.includes(sf) || (specToken && sf.includes(specToken))));
+      const gate = deLaFila.find(noSimulado);
+      // Sólo portones que corrieron con el servidor simulado: la fila es evidencia de código, con lo que simuló.
+      const simulados = gate ? [] : deLaFila.filter((g) => !noSimulado(g));
+      if (simulados.length) {
+        return { row: r, tier: 'code', ref: `${path.basename(simulados[0].path)}, servidor simulado`, simulado: simulados.flatMap((g) => g.simulado) };
+      }
       return { row: r, tier: gate ? 'runtime' : 'none', ref: gate ? path.basename(gate.path) : null };
     }
     const kind = kindOf(r.name, fePaths);
@@ -1116,6 +1357,8 @@ function compute(opts) {
 
   // --- veredicto por AC
   const perAc = {};
+  // Lo que se probó con el servidor simulado, por AC: { ac, archivo, linea, via, fuente }. No entra al `hash`.
+  const simulados = [];
   const exenciones = [];   // usos de @runtime-exempt(DODRT-C8) — se cuentan y se muestran
   for (const n of acs) {
     const runtime = [];
@@ -1127,10 +1370,12 @@ function compute(opts) {
       if (!re.row.acRefs.includes(n)) continue;
       if (re.tier === 'runtime') { runtime.push(`${re.row.tid} (${re.ref})`); fuentes.e2e.push(re.ref); }
       else if (re.tier === 'code') code.push(`${re.row.tid} (${re.ref})`);
+      for (const h of re.simulado || []) simulados.push({ ac: n, ...h, fuente: `${re.row.tid}, portón E2E` });
     }
     for (const e of freshSmokes) {
       if (!e.acs.includes(n)) continue;
       fuentes.smoke.push(e.ts);
+      for (const h of e.simulado || []) simulados.push({ ac: n, ...h, fuente: `humo ${e.ts}` });
       // Un smoke sólo cuenta como evidencia RUNTIME si su comando ejercita la app. Si fue
       // `node --test` o un gate de build, es evidencia de CÓDIGO — legítima, pero de otra clase:
       // el AC cae a NOT-VERIFIABLE/NOT-RUN y pasa por el camino explícito (declaración +
@@ -1149,7 +1394,7 @@ function compute(opts) {
     if (ex.marcada) exenciones.push({ ac: n, valida: ex.valida, motivo: ex.motivo });
     // La clasificación mira el mismo texto de siempre (los primeros 600), sin la marca.
     if (verdict === 'RUNTIME' && !ex.valida && acEsDeAccion(parseExencionC8(acTexts[n]).texto) && !LEGACY_NO_MUTATION_CHECK) {
-      const porTitulo = freshPassGates
+      const porTitulo = freshPassGates.filter(noSimulado)
         .flatMap((g) => (g.titulos || []).map((t) => ({ t, g })))
         .find(({ t }) => tituloEjerceAc(t, n));
       const porSmoke = freshSmokes.find((e) => e.acs.includes(n) && e.evidenceKind === 'app-run' && cmdMutates(e.cmd));
@@ -1329,18 +1574,6 @@ function compute(opts) {
   // imagen no se convierta en NOT-RUN. Sólo mira lo que quedó RUNTIME (o RUNTIME-PARCIAL): un AC declarado imposible de
   // verificar corriendo no pide imagen. Las stories que arrancaron antes del corte reciben un aviso y no bloquean.
   const visualFrom = Date.parse(opts.visualFrom || VISUAL_EVIDENCE_FROM);
-  // Se busca cuándo arrancó la story sólo si hace falta (un AC de pantalla sin imagen): así no se leen los marcadores
-  // de la máquina para una story que no los necesita.
-  let arranqueCalculado = null;
-  const arranque = () => {
-    if (arranqueCalculado) return arranqueCalculado;
-    arranqueCalculado = arranqueDeLaStory({
-      startedAt: opts.startedAt, activeDir: opts.activeDir || path.join(stateDirOf(os.homedir()), 'active'),
-      storyPath: opts.keyStoryPath ? path.resolve(opts.keyStoryPath) : storyPath, repoRoot, sid, fm,
-    });
-    for (const m of arranqueCalculado.problemas) avisos.push(m);
-    return arranqueCalculado;
-  };
   const sinImagen = [];
   for (const n of acs) {
     const a = perAc[n];
@@ -1376,17 +1609,20 @@ function compute(opts) {
       `Arreglo: volvé a firmar desde tu terminal — marker.js runtime-waiver ${storyParaFirmar} (la firma nueva no depende de ninguna otra línea).`);
   }
 
-  // Verde SOLO si no queda nada NOT-RUN ni NOT-VERIFIABLE sin waivear.
-  const green = pendientes.length === 0;
+  // Verde SOLO si no queda nada NOT-RUN ni NOT-VERIFIABLE sin waivear, y si la matriz pudo leer todo el código declarado:
+  // un archivo que no se leyó puede haber cambiado, aunque los criterios estén cubiertos por pruebas.
+  const green = pendientes.length === 0 && noLeidos.length === 0;
 
   return {
     sid, key: evKey, keyInfo: { topic: keyInfo.topic, repeated: keyInfo.repeated, siblings: keyInfo.siblings }, orphans,
     exempt: false, acs, perAc, pendientes, notRun, accionNoEjercida, notVerifiable: notVerifiablePend,
-    exencionesC8: exenciones, sinImagen, avisos,
+    exencionesC8: exenciones, sinImagen, avisos, simulados,
     hash, warnings, green, evidenceDirs, wsRoot, waivedAcs: [...waived], chainOk: chain.ok, waiverDiscarded,
     repoRoot,
     // la hora del último cambio de código declarado: la evidencia anterior no cuenta
     codeMtime: maxCodeMtime,
+    // el código declarado que no está en ningún lugar de búsqueda: deja la matriz en rojo
+    noLeidos,
     stats: {
       total: acs.length,
       runtime: acs.filter((n) => perAc[n].verdict === 'RUNTIME').length,
@@ -1448,6 +1684,18 @@ function renderMd(r) {
     L.push('Si de verdad es materialmente imposible verificarlo corriendo la app, declararlo en el');
     L.push('frontmatter `runtime_not_verifiable:` (con `reason:` y `covered_by:` un test que lo cubra) —');
     L.push('y ahí SÍ lo puede aprobar el usuario. Sin esa declaración, un waiver NO lo saltea.');
+  }
+  const simulados = r.simulados || [];
+  if (simulados.length) {
+    const rel = (p) => { const x = r.repoRoot ? path.relative(r.repoRoot, p) : p; return x && !x.startsWith('..') && !path.isAbsolute(x) ? x : p; };
+    L.push('');
+    L.push(`## 🧪 Probados con servidor simulado — no cuentan como prueba en vivo (${new Set(simulados.map((s) => s.ac)).size})`);
+    L.push('');
+    for (const s of simulados) L.push(`- AC#${s.ac}: \`${rel(s.archivo)}:${s.linea}\` (${s.via}; ${s.fuente})`);
+    L.push('');
+    L.push('Una prueba con el servidor simulado no cierra «Probar en vivo». Probalo contra el servidor real, o declaralo en');
+    L.push('`runtime_not_verifiable:` (con `reason:` y `covered_by:`) y que la persona lo firme con `marker.js runtime-waiver`.');
+    L.push('Si le ofreciste opciones a la persona y no eligió, la pregunta sigue abierta: no elijas por ella; decíselo y esperá.');
   }
   if (sinImagen.length) {
     L.push('');
@@ -1631,7 +1879,7 @@ function main() {
 // `acEsDeAccion` se exporta para poder testear la heurística de DODRT-C8 como función PURA
 // (mismo criterio que lib/atdd-order.js): sus falsos positivos se miden con texto de ACs
 // reales, no armando un workspace entero.
-module.exports = { isCodeFile, compute, renderMd, storyIdFrom, discoverRepoRoot, acEsDeAccion, parseExencionC8, avisoFirmasDescartadas, esDePantalla, VISUAL_EVIDENCE_FROM, readSmokeLedger, defaultGatesLog };
+module.exports = { isCodeFile, compute, renderMd, storyIdFrom, discoverRepoRoot, acEsDeAccion, parseExencionC8, avisoFirmasDescartadas, esDePantalla, VISUAL_EVIDENCE_FROM, SIMULATED_SERVER_FROM, readSmokeLedger, defaultGatesLog };
 
 if (require.main === module) {
   main();

@@ -10,7 +10,7 @@
           "id": "grita-repo-fuera-de-main",
           "type": "must-emit",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/clean-git-env.js tcg/scripts/lib/",
             "git -C tcg init -q -b codex/etapa-x && git -C tcg -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
             "mkdir -p $SANDBOX_HOME/.claude/agent-skills && git -C $SANDBOX_HOME/.claude/agent-skills init -q -b main && git -C $SANDBOX_HOME/.claude/agent-skills -c user.email=b@b -c user.name=b commit -q --allow-empty -m x"
           ],
@@ -28,7 +28,7 @@
           "id": "quiet-ambos-en-main",
           "type": "must-stay-quiet",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/clean-git-env.js tcg/scripts/lib/",
             "git -C tcg init -q -b main && git -C tcg -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
             "mkdir -p $SANDBOX_HOME/.claude/agent-skills && git -C $SANDBOX_HOME/.claude/agent-skills init -q -b main && git -C $SANDBOX_HOME/.claude/agent-skills -c user.email=b@b -c user.name=b commit -q --allow-empty -m x"
           ],
@@ -44,7 +44,7 @@
             "TYCON_BRANCH_GUARD": "0"
           },
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/clean-git-env.js tcg/scripts/lib/",
             "git -C tcg init -q -b codex/etapa-x && git -C tcg -c user.email=b@b -c user.name=b commit -q --allow-empty -m x"
           ],
           "stdin": {
@@ -60,7 +60,7 @@
             "git clone -q origen tcg",
             "printf 'v2\\n' > origen/guides/guide-update-proposals.md && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m v2 && git -C tcg fetch -q origin",
             "printf 'local\\n' > tcg/guides/guide-update-proposals.md",
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/"
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/clean-git-env.js tcg/scripts/lib/"
           ],
           "expect": {
             "stdout_re": [
@@ -79,7 +79,7 @@
           "setup": [
             "git init -q -b main origen && git -C origen -c user.email=b@b -c user.name=b commit -q --allow-empty -m base",
             "git clone -q origen tcg",
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/"
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/clean-git-env.js tcg/scripts/lib/"
           ]
         },
         {
@@ -92,7 +92,7 @@
             "printf 'v2\\n' > origen/guides/guide-update-proposals.md && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m v2",
             "printf 'local\\n' > tcg/guides/guide-update-proposals.md",
             "git -C tcg pull --ff-only --quiet --autostash origin main >/dev/null 2>&1 || true",
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/"
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/clean-git-env.js tcg/scripts/lib/"
           ],
           "expect": {
             "stdout_re": [
@@ -113,7 +113,7 @@
           "setup": [
             "git init -q -b main origen && git -C origen -c user.email=b@b -c user.name=b commit -q --allow-empty -m base",
             "git clone -q origen tcg",
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/clean-git-env.js tcg/scripts/lib/",
             "git init -q -b main asup && mkdir -p asup/skills/acme && printf 'v1\\n' > asup/skills/acme/SKILL.md && git -C asup add -A && git -C asup -c user.email=b@b -c user.name=b commit -q -m v1",
             "mkdir -p $SANDBOX_HOME/.claude && git clone -q asup $SANDBOX_HOME/.claude/agent-skills",
             "git -C asup rm -q skills/acme/SKILL.md && git -C asup -c user.email=b@b -c user.name=b commit -q -m retiro",

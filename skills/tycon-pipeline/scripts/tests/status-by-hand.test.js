@@ -701,6 +701,32 @@ test('BorrarEstado_PalabraSuelta_NoAbreLaRegla', () => {
   }
 });
 
+// BorrarRegistroDeAprobaciones_SuCartel_ElEstadoEnteroElDelEstado
+// El registro de las aprobaciones de la persona (`owner-approvals/`) vive adentro del estado. Borrarlo, vaciarlo o
+// moverlo frena con su cartel; borrar el estado entero se lo lleva junto con los marcadores, y ahí el cartel es el del
+// estado, que dice cómo se cierra una ejecución (`marker.js clear`).
+// 🔴 Falla con: el freno del registro mirado antes que el del estado, que le quita a `rm -rf <estado>` su cartel de siempre.
+test('BorrarRegistroDeAprobaciones_SuCartel_ElEstadoEnteroElDelEstado', () => {
+  const h = nuevaHomeDeEstado();
+  const E = h.estado;
+  fs.mkdirSync(path.join(E, 'owner-approvals', 'usadas'), { recursive: true });
+  fs.writeFileSync(path.join(E, 'owner-approvals', 'usadas', 'abc'), '{}');
+  const REGISTRO = /registro de las aprobaciones de la persona no se toca a mano/;
+  for (const c of [`rm -rf ${E}/owner-approvals`, `rm ${E}/owner-approvals/usadas/abc`, `mv ${E}/owner-approvals ${h.home}/guardado`,
+    `cd ${E} && rm -rf owner-approvals/usadas`, `rm -rf ${E}/active ${E}/owner-approvals`]) {
+    const r = consola(h, c);
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, REGISTRO, c);
+    assert.doesNotMatch(r.stderr, BORRADO, c);
+  }
+  for (const c of [`rm -rf ${E}`, 'rm -rf ~/.tycon/state', `mv ${E} ${h.home}/guardado`]) {
+    const r = consola(h, c);
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, BORRADO, c);
+    assert.match(r.stderr, /marker\.js clear/, c);
+  }
+});
+
 // TextoCitado_NoEsComando
 // Dos frenos falsos del mismo día: un `grep` de sólo lectura cuyo patrón citaba un `sed` que edita en el lugar frenó
 // «HISTORIA ESCRITA POR CONSOLA», y la descripción de un pedido que contaba en prosa cómo se borraba la carpeta del estado

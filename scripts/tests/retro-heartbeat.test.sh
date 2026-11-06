@@ -552,11 +552,12 @@ fi
   anotado main && grep -q "\"sha\":\"${TIP20:0:12}\"" "${LED20}" && [ "$(cat "${T20}/rc")" = "2" ] \
     && ok "T20 gh pr create hacia main: anotado con la punta de la rama del pedido (--head), no la de la rama actual" \
     || bad "T20 gh pr create a main" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null) · $(head -c 200 "${T20}/stderr")"
-  # el archivo del latido con ESA punta lo da por cubierto (en modo pedido va la punta de la rama, no el commit de merge)
-  node "${H20}/scripts/metrics/retro-heartbeat.js" --repo "${P20}" --merge "${TIP20}" > "${T20}/stdout" 2> "${T20}/stderr"
+  # la punta de la rama de un pedido no está en main: su latido sale 2 sin escribir y el pedido no queda cubierto. El
+  # pedido se paga cuando entra, con el commit que deja en main.
+  node "${H20}/scripts/metrics/retro-heartbeat.js" --repo "${P20}" --merge "${TIP20}" > "${T20}/stdout" 2> "${T20}/stderr"; RC20=$?
   REP20="$(node "${H20}/scripts/hooks/retro-pending.js" --report --days 36500 2>&1)"
-  echo "${REP20}" | grep '"conRetro": 1' >/dev/null && echo "${REP20}" | grep '"pendientes": 0' >/dev/null \
-    && ok "T20 el latido con la punta anotada da el pedido por cubierto" || bad "T20 cobertura" "${REP20}"
+  [ "${RC20}" = "2" ] && grep -q 'un latido es de lo que entró' "${T20}/stderr" && echo "${REP20}" | grep '"conRetro": 0' >/dev/null \
+    && ok "T20 el latido con la punta de la rama del pedido sale 2: no está en main" || bad "T20 cobertura" "rc=${RC20} · $(head -c 200 "${T20}/stderr") · ${REP20}"
   rm -f "${H20}/.dashboard"/metrics-*.json
 
   # la misma entrega no se anota dos veces

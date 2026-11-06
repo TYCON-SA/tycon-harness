@@ -3052,6 +3052,15 @@ function accionDelPase(marker, story, { sidNow, nextStep } = {}) {
     };
   }
   if (gate.run !== true) return {};
+  // con otra sesión en su pase, `next` tampoco pide lanzarlo: el mismo turno que frena al portón
+  try {
+    const turno = require(path.join(__dirname, '..', '..', '..', 'scripts', 'tools', 'coordination.js')).adversarialTurn({ sessionId: sidNow });
+    if (turno && turno.waiting_turn === true) {
+      return { pending_action: { kind: 'esperar-turno-pase', message: `${turno.turn} No lo lances todavía: seguí con el paso que sigue. La coordinadora te avisa cuando se libere el lugar, y \`next\` deja de decir esto.` } };
+    }
+  } catch (e) {
+    process.stderr.write(`next: no pude ver si hay otro pase adversarial en vuelo (${String(e.message).split('\n')[0]})\n`);
+  }
   const archivos = Array.isArray(gate.files) ? gate.files : [];
   const cuando = String(nextStep) === 'reviewers' ? 'AHORA, antes del primer revisor' : 'AHORA';
   return {
@@ -3103,7 +3112,9 @@ function computeNext() {
   const warnings = STEPS_TABLE.startWarningLines(marker);
 
   // Un arreglo después de Hallazgos (una edición de código posterior al último cierre de los revisores) pide otra vuelta.
+  // Si los revisores cerraron después de «Preparar el commit», lo preparado ya no es lo revisado: se prepara de nuevo.
   const reloop = STEPS_TABLE.reviewersRound(marker);
+  const ultimoViejo = STEPS_TABLE.prepareCommitStale(marker);
 
   const stepState = [];
   let nextStep = null;
@@ -3111,18 +3122,24 @@ function computeNext() {
     let done = STEPS_TABLE.isDone(marker, s.id);
     let skip = null;
     if (s.id === 'reviewers' && reloop) done = false;
+    if (s.id === 'prepare-commit' && ultimoViejo) done = false;
     if (s.id === 'live-check' && !done && story) {
       // el único salteo que deja constancia: sin ella «Preparar el commit» no cierra (ver NOTA_CIERRE_7C)
       if (storyIsExemptCheck(story)) skip = 'dod_runtime_exempt: true en frontmatter';
       else if (!storyRequiresRuntimeEvidenceCheck(story)) skip = 'story NO declara runtime tests (sin tests_done_*, sin E2E, sin tests/e2e/)';
     }
     const round = s.id === 'reviewers' && reloop ? reloop.round : undefined;
-    const entry = { step: s.id, number: s.number, name: STEPS_TABLE.stepName(s.id, round), file: path.join(STEPS_DIR, s.file), done, ...(skip ? { skip_mechanical: skip } : {}) };
+    const entry = { step: s.id, number: s.number, name: STEPS_TABLE.stepName(s.id, round), file: path.join(STEPS_DIR, s.file), done, ...(skip ? { skip_mechanical: skip } : {}),
+      ...(round ? { to_review: reloop.archivos } : {}), ...(s.id === 'prepare-commit' && ultimoViejo ? { again: 'los revisores cerraron después: lo preparado ya no es lo revisado' } : {}) };
     stepState.push(entry);
     if (!nextStep && !done) nextStep = { ...entry, ...(round ? { round } : {}) };
   }
   const exempt7c = !!nextStep && nextStep.step === 'live-check' && storyIsExemptCheck(story);
   const etiqueta = nextStep ? `«${nextStep.name}» (paso ${nextStep.number} de ${STEPS_TABLE.TOTAL})` : null;
+  // lo que falta revisar, por su nombre (hasta cinco), o por qué se prepara el commit otra vez
+  const faltaRevisar = nextStep && nextStep.to_review
+    ? ` Falta revisar lo cambiado después de los revisores: ${nextStep.to_review.slice(0, 5).join(', ')}${nextStep.to_review.length > 5 ? ` y ${nextStep.to_review.length - 5} más` : ''}.`
+    : nextStep && nextStep.again ? ` Otra vez: ${nextStep.again}.` : '';
 
   // Pre-condiciones del next conocidas por el script.
   const preconditions = [];
@@ -3135,9 +3152,11 @@ function computeNext() {
       // «sin-medir» (tests): el portón no sabe correr las pruebas del repo; se acepta diciéndolo, y el cierre
       // de la historia copia la línea (nunca un verde callado)
       const sinMedir = c === 'tests' && checks[c] === 'sin-medir';
+      // «sin-turno» (tests): el portón no corrió porque otra sesión tenía el turno; no se cumple, y se dice sin llamarlo rojo
+      const sinTurno = c === 'tests' && checks[c] === 'sin-turno';
       // «rojo-esperado» (expect-red): lo aceptan el cierre del turno y prepare-commit sólo con la deuda escrita; acá, igual
       const esperado = /^rojo-esperado/.test(String(checks[c])) && !!marker.cierre && marker.cierre.estado === 'deuda';
-      if (checks[c]) preconditions.push({ id: `check-${c}`, satisfied: checks[c] === 'green' || sinAcotar || sinMedir || esperado, detail: `marker.checks.${c}=${checks[c]} (provenance: ${(marker.checksProvenance || {})[c] || 'desconocida'})${sinAcotar ? ' — sin acotar: la cubre la CI del pedido, y el merge exige la CI completa en verde' : ''}${sinMedir ? ' — pruebas no medidas: el portón no sabe correr las pruebas de este repo; el cierre de la historia lo dice en una línea, y para medirlas se declara el comando en el sitio de la organización (Configuración → Tu tecnología → Cómo se corren las pruebas)' : ''}${esperado ? ` — rojo esperado por la deuda ${marker.cierre.deuda}` : ''}` });
+      if (checks[c]) preconditions.push({ id: `check-${c}`, satisfied: checks[c] === 'green' || sinAcotar || sinMedir || esperado, detail: `marker.checks.${c}=${checks[c]} (provenance: ${(marker.checksProvenance || {})[c] || 'desconocida'})${sinAcotar ? ' — sin acotar: la cubre la CI del pedido, y el merge exige la CI completa en verde' : ''}${sinMedir ? ' — pruebas no medidas: el portón no sabe correr las pruebas de este repo; el cierre de la historia lo dice en una línea, y para medirlas se declara el comando en el sitio de la organización (Configuración → Tu tecnología → Cómo se corren las pruebas)' : ''}${esperado ? ` — rojo esperado por la deuda ${marker.cierre.deuda}` : ''}${sinTurno ? ' — sin turno: el portón no corrió porque otra sesión tenía el turno de las ejecuciones grandes; no hay pruebas que arreglar, se corre el portón cuando la coordinadora dé el turno' : ''}` });
     }
   }
 
@@ -3209,7 +3228,7 @@ function computeNext() {
     note: exempt7c
       ? `${partes}Sigue ${etiqueta}. ${NOTA_7C_EXENTA}`
       : nextStep
-      ? `${partes}${pending && ['consultar-porton', 'lanzar-pase'].includes(pending.kind) ? `ANTES, pase adversarial: ${pending.message} ` : ''}Sigue ${etiqueta}. Leé SOLO ${path.basename(nextStep.file)} y ejecutalo. Los skips listados son mecánicos (verificables) — no infieras otros (regla E.i). Al completar: ${cierre(nextStep)}.${pending && pending.kind.endsWith('-pase-ajeno') ? ` ⚠️ ${pending.message} Regla: ${pending.rule} (${pending.why}).` : ''}${notaDelTamano(marker, nextStep) ? ` ${notaDelTamano(marker, nextStep)}` : ''}${warnings.length ? ` ${warnings.join(' · ')}.` : ''}`
+      ? `${partes}${pending && ['consultar-porton', 'lanzar-pase', 'esperar-turno-pase'].includes(pending.kind) ? `ANTES, pase adversarial: ${pending.message} ` : ''}Sigue ${etiqueta}.${faltaRevisar} Leé SOLO ${path.basename(nextStep.file)} y ejecutalo. Los skips listados son mecánicos (verificables) — no infieras otros (regla E.i). Al completar: ${cierre(nextStep)}.${pending && pending.kind.endsWith('-pase-ajeno') ? ` ⚠️ ${pending.message} Regla: ${pending.rule} (${pending.why}).` : ''}${notaDelTamano(marker, nextStep) ? ` ${notaDelTamano(marker, nextStep)}` : ''}${warnings.length ? ` ${warnings.join(' · ')}.` : ''}`
       : `No quedan pasos pendientes — cerrá con marker.js clear (o ${STEPS_TABLE.CLOSE_STEP.file} si vas a cerrar la story en ADO: «${STEPS_TABLE.CLOSE_STEP.name}»).`,
   };
 }
@@ -7525,7 +7544,8 @@ function main() {
   }
   if (cmd === 'deep-review-gate') {
     // Pase adversarial: ¿corre el pase adversarial reproduce-or-refute? {run, model, reason}. Gate = risk-class
-    // NORMAL + overrides. exit 0 siempre (informativo); el orquestador lee `run`.
+    // NORMAL + overrides. Exit 0: el orquestador lee `run`. Exit 3: corre, pero otra sesión tiene su pase en vuelo y va
+    // uno por vez (`waiting_turn`): no se lanza todavía.
     // Misma guarda que risk-class: el default de este gate ES risk-class, así que
     // un --files mal expandido produce un LOW silencioso y sella el pase adversarial como hecho
     // (`deepReviewDone`). Abortar es correcto AUNQUE el comando sea informativo: un veredicto
@@ -7583,8 +7603,8 @@ function main() {
         process.stderr.write(`deep-review-gate: no pude anotar el veredicto en la corrida (${e.message.split('\n')[0]}) — \`next\` va a pedir consultar el portón otra vez\n`);
       }
     }
-    // Con otra sesión en su pase adversarial, el turno lo da la coordinadora (guides/coordination.md). Sin coordinadora
-    // designada, o sin otro pase, el veredicto sale igual que siempre.
+    // Con otra sesión en su pase adversarial, va uno por vez (guides/coordination.md): sale 3 y dice quién tiene el lugar.
+    // Sin coordinadora designada, o sin otro pase, el veredicto sale igual que siempre.
     if (result && result.run === true) {
       try {
         const turno = require(path.join(__dirname, '..', '..', '..', 'scripts', 'tools', 'coordination.js'))
@@ -7595,6 +7615,10 @@ function main() {
       }
     }
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    if (result && result.waiting_turn === true) {
+      process.stderr.write(`deep-review-gate: ${result.turn}\n`);
+      process.exit(3);
+    }
     process.exit(0);
   }
   if (cmd === 'timing-report') {

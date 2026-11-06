@@ -132,6 +132,20 @@ function shapeOk(kind, n) {
 // ── validación ───────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Lo que le falta a la marca de un latido anulado (`retro-heartbeat.js --annul`): quién, cuándo (fecha ISO) y por qué.
+ * Un latido anulado se queda en su lugar (el buzón sólo crea) y deja de contar: la marca es la constancia de quién lo
+ * sacó de la cuenta y por qué.
+ */
+function problemasDeAnulado(a) {
+  if (!a || typeof a !== 'object' || Array.isArray(a)) return ['`anulado` tiene que ser un objeto con `quien`, `cuando` y `motivo`'];
+  const out = [];
+  if (typeof a.quien !== 'string' || !a.quien.trim()) out.push('`anulado.quien` falta o está vacío');
+  if (typeof a.cuando !== 'string' || !/^\d{4}-\d{2}-\d{2}T/.test(a.cuando) || Number.isNaN(Date.parse(a.cuando))) out.push('`anulado.cuando` tiene que ser una fecha ISO');
+  if (typeof a.motivo !== 'string' || !a.motivo.trim()) out.push('`anulado.motivo` falta o está vacío');
+  return out;
+}
+
+/**
  * Valida un documento de métricas contra el formato 2.0.
  * Devuelve { ok, version, errors[], notMeasured[] }.
  *
@@ -159,6 +173,7 @@ function validate(doc, { strict = true } = {}) {
   if (doc.merge_commit && String(doc.merge_commit).trim().length < 7) {
     errors.push('`merge_commit` tiene que ser un sha de al menos 7 caracteres');
   }
+  if (doc.anulado !== undefined) errors.push(...problemasDeAnulado(doc.anulado));
 
   const m = (doc && doc.metrics) || {};
   if (typeof m !== 'object' || Array.isArray(m)) {
@@ -277,6 +292,7 @@ function loadAll(dir) {
   }
 
   const records = [];
+  // un latido anulado no es una fusión: no entra en `total`, se cuenta en `anulados` (que sólo aparece si hay alguno)
   const counts = { total: files.length, v2ok: 0, v2bad: 0, legacy: 0, unreadable: 0 };
 
   for (const f of files) {
@@ -301,6 +317,10 @@ function loadAll(dir) {
 
     let status;
     if (v.legacy) { counts.legacy++; status = 'legacy'; }
+    else if (v.ok && doc.anulado) {
+      counts.anulados = (counts.anulados || 0) + 1; counts.total--; status = 'anulado';
+      for (const k of Object.keys(values)) values[k] = null;
+    }
     else if (v.ok) { counts.v2ok++; status = 'ok'; }
     else { counts.v2bad++; status = 'invalid'; }
 
@@ -327,7 +347,7 @@ function loadMany(dirs) {
   const records = [];
   const counts = { total: 0, v2ok: 0, v2bad: 0, legacy: 0, unreadable: 0 };
   const seen = new Set();
-  const key = { ok: 'v2ok', invalid: 'v2bad', legacy: 'legacy', unreadable: 'unreadable' };
+  const key = { ok: 'v2ok', invalid: 'v2bad', legacy: 'legacy', unreadable: 'unreadable', anulado: 'anulados' };
   const unreadableDirs = [];
   for (const d of dirs) {
     const all = loadAll(d);
@@ -336,8 +356,8 @@ function loadMany(dirs) {
       if (seen.has(r.file)) continue;
       seen.add(r.file);
       records.push(r);
-      counts.total++;
-      counts[key[r.status]]++;
+      if (r.status !== 'anulado') counts.total++;
+      counts[key[r.status]] = (counts[key[r.status]] || 0) + 1;
     }
   }
   return { records, counts, dir: dirs[0], dirs, ...(unreadableDirs.length ? { unreadableDirs } : {}) };
@@ -357,20 +377,36 @@ function loadPorMerge(dirs) {
   const util = (r) => r.status === 'ok' || r.status === 'legacy';
   const comoDoc = (r) => ({ merge_commit: r.merge_commit, project: r.project, ts: r.date,
     metrics: { advisor_rerun_loop_iterations: { value: r.values.advisor_rerun_loop_iterations } } });
-  const deMerges = merges.records.filter(util).map((r) => ({ r, doc: comoDoc(r) }));
-  const deRaiz = raiz.records.map((r) => ({ r, doc: comoDoc(r) }));
+  // Un latido anulado, esté en la carpeta o en merges/, saca de la cuenta a todas las copias de su merge (la anulación es
+  // la última palabra: la copia vieja sin anular sigue en el otro lado hasta la próxima subida y bajada), y cuenta una
+  // vez por merge en `anulados`.
+  const anulados = [];
+  for (const r of [...raiz.records, ...merges.records].filter((x) => x.status === 'anulado')) {
+    const doc = comoDoc(r);
+    if (!anulados.some((a) => mismoMerge(a.doc, doc))) anulados.push({ r, doc });
+  }
+  const anulado = (doc) => anulados.some((a) => mismoMerge(a.doc, doc));
+  const deMerges = merges.records.filter(util).map((r) => ({ r, doc: comoDoc(r) })).filter((x) => !anulado(x.doc));
+  const deRaiz = raiz.records.filter((r) => r.status !== 'anulado').map((r) => ({ r, doc: comoDoc(r) }))
+    .filter((x) => !util(x.r) || !anulado(x.doc));
   // primero los de merges/: con un empate gana lo bajado. `unoPorMerge` junta todos los grupos que toca cada uno, así un
   // registro de la carpeta que calza con dos de merges/ los vuelve uno y nunca cuenta dos veces
   const tocan = new Set(deRaiz.filter((x) => util(x.r) && deMerges.some((m) => mismoMerge(x.doc, m.doc))));
   const { elegidos } = unoPorMerge([...deMerges, ...tocan]);
   const nombres = new Set(raiz.records.map((r) => r.file));
   const records = [...deRaiz.filter((x) => !tocan.has(x)).map((x) => x.r), ...elegidos.map((x) => x.r),
-    ...merges.records.filter((r) => !util(r) && !nombres.has(r.file))];
-  const counts = { total: records.length, v2ok: 0, v2bad: 0, legacy: 0, unreadable: 0 };
-  const key = { ok: 'v2ok', invalid: 'v2bad', legacy: 'legacy', unreadable: 'unreadable' };
-  for (const r of records) counts[key[r.status]]++;
+    ...merges.records.filter((r) => !util(r) && r.status !== 'anulado' && !nombres.has(r.file)), ...anulados.map((a) => a.r)];
+  const counts = { total: 0, v2ok: 0, v2bad: 0, legacy: 0, unreadable: 0 };
+  const key = { ok: 'v2ok', invalid: 'v2bad', legacy: 'legacy', unreadable: 'unreadable', anulado: 'anulados' };
+  for (const r of records) { counts[key[r.status]] = (counts[key[r.status]] || 0) + 1; if (r.status !== 'anulado') counts.total++; }
   const unreadableDirs = [...(raiz.unreadableDirs || []), ...(merges.unreadableDirs || [])];
   return { records, counts, dir: dirs[0], dirs, ...(unreadableDirs.length ? { unreadableDirs } : {}) };
 }
 
-module.exports = { SCHEMA_VERSION, METRICS, IDENTITY, validate, loadAll, loadMany, loadPorMerge, toNumber, shapeOk, resolveDate };
+/** La línea del tablero con los latidos anulados de una carga (`counts.anulados`); null si no hay ninguno. */
+function lineaDeAnulados(counts) {
+  const n = (counts && counts.anulados) || 0;
+  return n ? `${n} latido${n === 1 ? '' : 's'} anulado${n === 1 ? '' : 's'}` : null;
+}
+
+module.exports = { SCHEMA_VERSION, METRICS, IDENTITY, validate, problemasDeAnulado, lineaDeAnulados, loadAll, loadMany, loadPorMerge, toNumber, shapeOk, resolveDate };

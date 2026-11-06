@@ -18,8 +18,9 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *    baja, no crea la carpeta, sale 0 y lo anota UNA vez por día. `az` corre sin entrada (stdin cerrado) y
  *    con tope de tiempo: no puede abrir un login ni esperar una respuesta.
  *
- * Qué se baja: sólo nombres con forma `<maquina>/<volcado, hilo o cambio>` o `<maquina>/registros/<registro>` (lo que la
- * subida escribe), y sus versiones: `<maquina>/v<versión>/<archivo>` y
+ * Qué se baja: sólo nombres con forma `<maquina>/<volcado, hilo o cambio>`, `<maquina>/registros/<registro>` o
+ * `<maquina>/office-keys/<huella>.json`, todas las huellas, sin contarlas como corridas (lo que la subida escribe), y sus
+ * versiones: `<maquina>/v<versión>/<archivo>` y
  * `<maquina>/registros/v<versión>/<registro>` (la subida no pisa: lo que vuelve a subir lleva versión). De cada
  * corrida se baja SÓLO la versión más nueva (el nombre sin versión es la más vieja; las otras se cuentan en
  * `versiones_viejas`), y de los registros de cada máquina el juego más nuevo que está COMPLETO —su cobertura, y cada
@@ -106,6 +107,8 @@ const { leerConfig, integracionBuzon, urlBase, huellaDeCorridas, FORMA_MAQUINA, 
 
 // el nombre del archivo de métricas de un merge, el que escribe retro-heartbeat.js
 const FORMA_MERGE = /^metrics-[A-Za-z0-9._-]+\.json$/;
+// la huella de la oficina de una máquina: el sha256 de su clave pública, en hexadecimal
+const FORMA_HUELLA = /^[0-9a-f]{64}\.json$/;
 
 const CASA_PIPELINE = path.join(stateDirOf(os.homedir()));
 const DONDE = 'scripts/metrics/download-runs.js';
@@ -180,6 +183,10 @@ function formaDelNombre(nombre) {
   }
   if (partes.length === 3 && partes[1] === 'merges' && FORMA_MAQUINA.test(partes[0]) && FORMA_MERGE.test(partes[2])) {
     return { maquina: partes[0], archivo: `merges/${partes[2]}`, version: null };
+  }
+  // la huella de la oficina de la máquina: un archivo por huella, sin versiones. No es una corrida
+  if (partes.length === 3 && partes[1] === 'office-keys' && FORMA_MAQUINA.test(partes[0]) && FORMA_HUELLA.test(partes[2])) {
+    return { maquina: partes[0], archivo: `office-keys/${partes[2]}`, version: null };
   }
   if (partes.length === 3 && FORMA_MAQUINA.test(partes[0]) && FORMA_VERSION.test(partes[1]) && FORMA_ARCHIVO.test(partes[2])) {
     return { maquina: partes[0], archivo: partes[2], version: partes[1] };
@@ -277,6 +284,7 @@ function tipoDelBlob(forma) {
   if (!forma) return 'ignorado';
   if (forma.archivo.startsWith('registros/')) return 'registros';
   if (forma.archivo.startsWith('instincts/')) return 'instintos';
+  if (forma.archivo.startsWith('office-keys/')) return 'huella';
   if (forma.archivo.endsWith('.hilo.jsonl.gz')) return 'hilo';
   if (forma.archivo.endsWith('.cambio.json.gz')) return 'cambio';
   return 'volcado';
@@ -319,7 +327,7 @@ async function informeDeReescrituras(opts = {}) {
     else if (b.modificado - b.creado > 1000) c.reescritos += 1;
   };
   const total = cuenta();
-  const porTipo = { registros: cuenta(), volcado: cuenta(), hilo: cuenta(), cambio: cuenta(), ignorado: cuenta() };
+  const porTipo = { registros: cuenta(), volcado: cuenta(), hilo: cuenta(), cambio: cuenta(), huella: cuenta(), instintos: cuenta(), ignorado: cuenta() };
   const porMaquina = new Map();
   for (const b of ls.blobs) {
     const forma = formaDelNombre(b.nombre);
@@ -589,9 +597,11 @@ function podarEspejo(dirBuzon, listado, log) {
   const CORRIDA = /^(.+)\.(json|hilo\.jsonl\.gz|cambio\.json\.gz|resumen\.json\.gz)$/;
   const listados = new Set();
   const volcados = new Set();
+  const huellasListadas = new Set();
   for (const b of listado) {
     const f = formaDelNombre(b.nombre);
-    if (!f || f.archivo.startsWith('registros/')) continue;
+    if (f && f.archivo.startsWith('office-keys/')) huellasListadas.add(`${f.maquina}/${f.archivo}`);
+    if (!f || f.archivo.startsWith('registros/') || f.archivo.startsWith('office-keys/')) continue;
     listados.add(`${f.maquina}/${f.archivo}`);
     const m = CORRIDA.exec(f.archivo);
     if (m && m[2] === 'json') volcados.add(`${f.maquina}/${m[1]}`);
@@ -611,6 +621,16 @@ function podarEspejo(dirBuzon, listado, log) {
       if (queda) continue;
       try { fs.rmSync(path.join(dirBuzon, maquina, f), { force: true }); n += 1; }
       catch (e) { log(`no se pudo podar ${maquina}/${f} (${e.code || e.message})`); }
+    }
+    // una huella borrada del buzón sale del espejo: es lo que destraba un conflicto causado por una huella ajena
+    // (con un listado vacío no: un buzón vacío de golpe es más probable que sea un error que una limpieza total)
+    let huellas = [];
+    try { if (listado.length) huellas = fs.readdirSync(path.join(dirBuzon, maquina, 'office-keys')); }
+    catch (e) { if (e.code !== 'ENOENT') log(`no se pudo podar las huellas de ${maquina} (${e.code || e.message})`); }
+    for (const f of huellas) {
+      if (huellasListadas.has(`${maquina}/office-keys/${f}`)) continue;
+      try { fs.rmSync(path.join(dirBuzon, maquina, 'office-keys', f), { force: true }); n += 1; }
+      catch (e) { log(`no se pudo podar ${maquina}/office-keys/${f} (${e.code || e.message})`); }
     }
   }
   if (n) log(`el espejo borró ${n} archivo(s) de ejecuciones que ya no están en el buzón`);

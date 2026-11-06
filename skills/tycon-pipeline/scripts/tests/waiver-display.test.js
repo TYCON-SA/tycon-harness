@@ -19,7 +19,7 @@ const PIPELINE = path.join(SCRIPTS, 'pipeline.js');
 const { conVentana } = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'tests', 'lib', 'window-passed.js'));
 const TEXTO = 'el aviso queda registrado en el servicio externo del cliente';
 const RAZON = 'el servicio externo no tiene ambiente de prueba';
-const VENTANA = /aprobalo en la ventana de permiso que sale a continuación; si no, elegí «No»\. Una respuesta en el chat no lo firma\./;
+const VENTANA = /aprobalo en la ventana de permiso que sale a continuación o, donde no sale, en el cuadro de opciones; si no, elegí «No»\. Lo firma esa aprobación, no otra respuesta en el chat\./;
 // stable-data: las horas de la conversación van después de la muestra, que se anota con el reloj real
 const T = (seg) => new Date(Date.now() + 60000 + seg * 1000).toISOString();
 const GIT_ENV = { ...process.env, GIT_AUTHOR_DATE: '2026-10-20T12:00:00Z', GIT_COMMITTER_DATE: '2026-10-20T12:00:00Z' };
@@ -203,4 +203,13 @@ test('WaiverShown_AvisoCorto: un renglón por criterio, más el encabezado y dó
   for (const t of ['historia 9.94', 'servicio externo del cliente', 'no tiene ambiente de prueba', 'T1', 'ventana de permiso', 'cuenta como probado']) {
     assert.ok(msg.includes(t), `falta «${t}»:\n${msg}`);
   }
+});
+
+test('CriteriosDe_ConLaMatrizYaCalculada_NoLaVuelveACalcular', () => {
+  // el freno ya calculó la matriz: con ella en la mano, la lista sale sin leer la historia (la ruta ni existe)
+  const wd = require(path.join(SCRIPTS, 'lib', 'waiver-display.js'));
+  const matrix = { notVerifiable: [1], perAc: { 1: { text: 'a', declReason: 'r', coveredBy: 'T1' }, 2: { text: 'b' } } };
+  const c = wd.criteriosDe(path.join(os.tmpdir(), 'no-existe', 'story-9.99.md'), [1, 2], matrix);
+  assert.equal(c.matrix, matrix);
+  assert.deepEqual(c.lista.map((x) => x.ac), [1]);
 });

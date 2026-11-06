@@ -2372,6 +2372,33 @@ function cmdUpdate(ctx, state, H, { log, asked = null }) {
   return { code: u.code, lines: u.lines };
 }
 
+/**
+ * `team-refresh`, YA con el candado tomado: la capa del equipo sola (`refreshTeam`, la misma de `update`), sin mirar la
+ * versión pública ni correr el aplicador. Con el perfil cambiado relee la política, como el arranque; el aplicador lo corre
+ * el arranque de la próxima sesión. Un fallo queda en `state.team.last_error` y sale 0: la próxima vuelta lo reintenta.
+ * Devuelve `{ code, status, lines, profileChanged }`.
+ */
+function cmdTeamRefresh(ctx, state, H, { log }) {
+  const own = TH.ownPathsOf(ctx);
+  const policy = H.policyOf(ctx, own.harness);
+  // lo que no mira también queda en el registro de arranque: una política rota o un cambio a medias se repiten cada 30 min
+  const skip = (line) => { log(`none: ${line}`); return { code: 0, status: 'none', lines: [line] }; };
+  if (policy.errors.length) return skip(`la política de actualización está mal escrita (${policy.errors[0]}): la capa no se mira`);
+  if (!policy.enabled) return skip('TYCON_UPDATE=0: la capa del equipo no se mira');
+  // un cambio de versión a medias lo repara el arranque; mientras tanto la capa no se toca
+  if (exists(own.journal) || exists(own.linkJournal)) return skip('hay un cambio de versión a medias: la capa la mira el próximo arranque');
+  const t = refreshTeam(ctx, state, { log, publicRepo: repo(S.releaseSource(state)) });
+  if (t.profileChanged) {
+    const p2 = H.policyOf(ctx, own.harness);
+    if (!p2.errors.length) { state.policy = { channel: p2.channel, apply: p2.apply, enabled: p2.enabled }; H.applyPolicy(ctx, state, p2); }
+  }
+  if (t.notice && !(state.notice || '').includes(t.notice)) R.setNotice(state, state.notice ? `${state.notice} · ${t.notice}` : t.notice);
+  S.write(ctx.home, state);
+  const lines = t.lines.length ? t.lines : [t.status === 'none' ? 'esta instalación no tiene capa del equipo' : 'la capa del equipo ya estaba al día'];
+  log(`${t.status}: ${lines.join(' · ')}`);
+  return { code: 0, status: t.status, lines, profileChanged: Boolean(t.profileChanged) };
+}
+
 /** Las líneas del sitio de prueba local, con el actualizador de la versión que quedó en el disco (en un proceso aparte). */
 function sitioDePruebaLineas(tree, dryRun, home) {
   // sólo en la máquina de verdad: un laboratorio (otra HOME) nunca toca los contenedores de quien corre las pruebas
@@ -2546,7 +2573,7 @@ function versionJson(state, { channel = null } = {}) {
 }
 
 module.exports = {
-  startup, cmdUpdate, doctorItems, markHealth, healthDueAtStartup, startupHealth, versionLine, versionJson, FETCH_WINDOW_MS,
+  startup, cmdUpdate, cmdTeamRefresh, doctorItems, markHealth, healthDueAtStartup, startupHealth, versionLine, versionJson, FETCH_WINDOW_MS,
   MANIFEST_NAME, MAIN_REF, SYNC_REF, API_DEFAULT,
   githubRepoOf, repoOf, apiBase, client, explainFailure, tokenExpired, EXPIRED_TOKEN_TEXT, refCommit, versionAt, resolveChannel, check, locateVersion,
   resolvePublic, numberAt, tagNumberOf, tagsByApi, tagsFor, tagCommit, pendingTag, PENDING_TAG_SAY_MS, trustedCache, fromCache, adoptTag, treeNumberOk,

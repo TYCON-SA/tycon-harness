@@ -55,7 +55,7 @@ exit "$(cat "$FF_STATE/${n}" 2>/dev/null || echo 0)"
 `;
 
 /** El laboratorio: repo con suites.json y dos suites, HOME de prueba, marcador falso y carpeta de estado. */
-function lab({ a = 0, b = 0, marcador = true, size = null, suiteB = suite('b') } = {}) {
+function lab({ a = 0, b = 0, marcador = true, size = null, suiteB = suite('b'), suiteA = suite('a'), acota = false } = {}) {
   const home = tmp('ff-home-');
   const state = tmp('ff-state-');
   const skills = tmp('ff-skills-');
@@ -64,10 +64,17 @@ function lab({ a = 0, b = 0, marcador = true, size = null, suiteB = suite('b') }
   const tests = path.join(repo, 'scripts', 'tests');
   fs.mkdirSync(tests, { recursive: true });
   fs.writeFileSync(path.join(tests, 'suites.json'), JSON.stringify({ diarias: [{ raiz: 'arnes', ruta: A }, { raiz: 'arnes', ruta: B }], semanales: [] }, null, 2));
-  fs.writeFileSync(path.join(tests, 'a.test.sh'), suite('a'));
+  fs.writeFileSync(path.join(tests, 'a.test.sh'), suiteA);
   fs.writeFileSync(path.join(tests, 'b.test.sh'), suiteB);
   fs.mkdirSync(path.join(repo, 'docs'), { recursive: true });
   fs.writeFileSync(path.join(repo, 'docs', 'x.md'), 'x\n');
+  fs.writeFileSync(path.join(repo, 'docs', 'y.md'), 'y\n');
+  // el repo acota el portón, como los del arnés: la completa la corre la CI del pedido
+  if (acota) {
+    fs.writeFileSync(path.join(repo, '.test-gate.yaml'), 'test_gate:\n  scope: touched\n  full_suite_by: "la CI de prueba"\n');
+    // como en los repos de verdad: lo que deja la puerta no es parte de la carpeta que se mide
+    fs.writeFileSync(path.join(repo, '.gitignore'), '.advisors/\n');
+  }
   git(repo, 'add', '-A'); git(repo, 'commit', '-q', '-m', 'base');
   // la base de la corrida (la del marcador): sin ella la puerta no sabe qué se tocó y la corrida liviana corre todo
   const l = { home, state, skills, repo, base: git(repo, 'rev-parse', 'HEAD').stdout.trim() };
@@ -122,6 +129,222 @@ function conRojo() {
   assert.deepEqual(lista(l), [A, B], r.out);
   limpiarCorridas(l);
   return l;
+}
+
+// ── Repetir solas cierra ───────────────────────────────────────────────────────────────────────────────────────────
+// En un repo que acota el portón: una completa roja guarda lo que midió; con las rojas repetidas en verde sobre la misma
+// carpeta, la completa cierra sin correr nada; con la carpeta cambiada, corren sólo las suites que leen lo cambiado.
+// 🔴 Falla con: cerrar sobre una carpeta que no midió nadie (un arreglo deshecho), con la base o la lista de suites
+//    cambiadas, con lo guardado tocado a mano, o con el atajo en un repo cuya completa no corre nadie después.
+const leeX = (n) => suite(n, '# lee docs/x.md');
+const guardado = (l) => (marcador(l).testsRedFull || []).find((x) => x.repo === l.repo) || null;
+
+/** El repo que acota, con las dos suites rojas en una completa sobre docs/x.md cambiado (las dos lo leen). */
+function conRojoAcotado({ suiteB = leeX('b') } = {}) {
+  const l = lab({ a: 1, b: 1, acota: true, suiteA: leeX('a'), suiteB });
+  fs.appendFileSync(path.join(l.repo, 'docs', 'x.md'), 'cambio de la historia\n');
+  const r = puerta(l);
+  assert.notEqual(r.status, 0, r.out);
+  assert.deepEqual(corridas(l).sort(), ['a', 'b'], `la completa no corrió las dos:\n${r.out}`);
+  limpiarCorridas(l);
+  return l;
+}
+function repetirVerdes(l) {
+  estado(l, { a: 0, b: 0 });
+  for (const s of [A, B]) assert.equal(puerta(l, ['--suite', s]).status, 0);
+  limpiarCorridas(l);
+}
+
+test('T25 Porton_CompletaRoja_GuardaLoMedido — la completa roja guarda su resumen, su foto y su base; la repetición verde, su foto', () => {
+  const l = conRojoAcotado();
+  const g = guardado(l);
+  assert.ok(g && g.repo && g.hash && g.dir, `no guardó nada: ${JSON.stringify(marcador(l))}`);
+  for (const f of ['resumen.json', 'medido.json']) assert.ok(fs.existsSync(path.join(g.dir, f)), `falta ${f}`);
+  assert.ok(!g.dir.includes(`${path.sep}.advisors${path.sep}`), 'lo guardado no vive en .advisors/');
+  repetirVerdes(l);
+  const rep = JSON.parse(fs.readFileSync(path.join(guardado(l).dir, 'repetidas.json'), 'utf8'));
+  assert.deepEqual(Object.keys(rep).sort(), [A, B]);
+  assert.ok(Object.values(rep).every((x) => /^[0-9a-f]{40}$/.test(x.tree)), 'cada repetición con la foto de su carpeta');
+  // en un repo que no acota no se guarda: la completa no la corre nadie después
+  const n = lab({ a: 1, b: 1 });
+  puerta(n);
+  assert.equal(guardado(n), null);
+  // con la carpeta cambiada mientras corría la completa no se guarda: lo medido no es de ninguna carpeta
+  const mueve = suite('a', '# lee docs/x.md\necho otra >> "$FF_TOUCH"');
+  const c = lab({ a: 1, b: 1, acota: true, suiteA: mueve, suiteB: leeX('b') });
+  fs.appendFileSync(path.join(c.repo, 'docs', 'x.md'), 'cambio de la historia\n');
+  const rc = puerta(c, [], { FF_TOUCH: path.join(c.repo, 'docs', 'y.md') });
+  assert.notEqual(rc.status, 0, rc.out);
+  assert.equal(guardado(c), null, `guardó una completa cuya carpeta cambió mientras corría:\n${rc.out}`);
+});
+
+test('T26 Porton_RepetidasSolas_CarpetaIgual_CierraSinCompleta — no corre nada, deja el verde por run-check y lo dice', () => {
+  const l = conRojoAcotado();
+  repetirVerdes(l);
+  const r = puerta(l);
+  assert.equal(r.status, 0, r.out);
+  assert.deepEqual(corridas(l), [], `corrió suites:\n${r.out}`);
+  assert.match(r.out, /cierra con la completa de las \d\d:\d\d y 2 suites repetidas solas: la carpeta no cambió/);
+  const art = JSON.parse(fs.readFileSync(artefacto(l), 'utf8'));
+  assert.equal(art.suite_exit, 0, JSON.stringify(art).slice(0, 400));
+  assert.equal(art.suite_green, true);
+  assert.equal(art.totals.suites, 2, 'el resumen juntado trae las dos suites');
+  assert.equal(art.totals.passed, 2);
+  assert.match(String(art.coverage.joined || ''), /completa roja .* 2 suites repetidas solas/, 'el informe dice que la cobertura es juntada');
+  assert.match(r.out, /cobertura juntada:/);
+  assert.equal(marcador(l).checks.tests, 'green');
+  assert.equal(guardado(l), null, 'lo guardado se borró');
+});
+
+test('T27 Porton_RepetidasSolas_CarpetaCambio_SoloLasQueLoLeen — lo cambiado corre; base, lista o constancia distintas corren todo', () => {
+  // docs/y.md lo lee sólo b: el arreglo cambia y.md antes de repetir
+  const l = conRojoAcotado({ suiteB: suite('b', '# lee docs/x.md y docs/y.md') });
+  fs.appendFileSync(path.join(l.repo, 'docs', 'y.md'), 'el arreglo\n');
+  repetirVerdes(l);
+  const r = puerta(l);
+  assert.equal(r.status, 0, r.out);
+  assert.deepEqual(corridas(l), ['b'], `no corrió sólo la que lee lo cambiado:\n${r.out}`);
+  assert.equal(JSON.parse(fs.readFileSync(artefacto(l), 'utf8')).totals.suites, 2, 'el resumen juntado trae las dos suites');
+  // la base movida (main avanzó): completa
+  const bm = conRojoAcotado();
+  repetirVerdes(bm);
+  git(bm.repo, 'commit', '-q', '--allow-empty', '-m', 'main avanzó');
+  const mk = marcador(bm);
+  mk.baseSha = git(bm.repo, 'rev-parse', 'HEAD').stdout.trim();
+  fs.writeFileSync(markerFile(bm), JSON.stringify(mk));
+  const u = puerta(bm);
+  assert.deepEqual(corridas(bm).sort(), ['a', 'b'], u.out);
+  assert.match(u.out, /la base cambió desde la completa roja/);
+  // un cambio después de repetir (un arreglo deshecho, o uno más): la completa como siempre
+  const d = conRojoAcotado();
+  repetirVerdes(d);
+  fs.appendFileSync(path.join(d.repo, 'docs', 'x.md'), 'otra vuelta\n');
+  const v = puerta(d);
+  assert.equal(v.status, 0, v.out);
+  assert.deepEqual(corridas(d).sort(), ['a', 'b'], v.out);
+  assert.match(v.out, /la carpeta cambió después de repetir/);
+  // la lista de suites cambiada: completa
+  const s = conRojoAcotado();
+  repetirVerdes(s);
+  const sj = path.join(s.repo, 'scripts', 'tests', 'suites.json');
+  fs.writeFileSync(sj, fs.readFileSync(sj, 'utf8').replace('"diarias"', '"diarias" '));
+  const w = puerta(s);
+  assert.equal(w.status, 0, w.out);
+  assert.deepEqual(corridas(s).sort(), ['a', 'b']);
+  assert.match(w.out, /cambió la lista de suites/);
+  // lo guardado tocado a mano: completa
+  const m = conRojoAcotado();
+  repetirVerdes(m);
+  const rf = path.join(guardado(m).dir, 'resumen.json');
+  fs.appendFileSync(rf, ' ');
+  const x = puerta(m);
+  assert.deepEqual(corridas(m).sort(), ['a', 'b'], x.out);
+  assert.match(x.out, /lo guardado no coincide con su constancia/);
+});
+
+test('T27 Porton_RepetidasSolas_LoQueLaCorridaNuevaDiceCuenta — una ausente, una suite que vuelve a correr, la cobertura vieja', () => {
+  const ff = require('../lib/failed-first.js');
+  const d = tmp('ff-guardado-');
+  const resumen = path.join(d, 'r.json');
+  const medido = path.join(d, 'm.json');
+  const lcov = path.join(d, 'l.info');
+  fs.writeFileSync(resumen, JSON.stringify({ suites: [{ ruta: '/r/scripts/tests/a.test.sh', exit: 1 }, { ruta: '/r/scripts/tests/c.test.sh', exit: 0 }],
+    fallas: [{ ruta: '/r/scripts/tests/a.test.sh', entrada: { raiz: 'arnes', ruta: A } }], ausentes: [],
+    deferred_suites: [{ suite: '/r/scripts/tests/g.test.sh', reason: 'corre de noche y en el control del PR; esta story no toca G/**' }] }));
+  fs.writeFileSync(medido, JSON.stringify({ tree: 'a'.repeat(40) }));
+  fs.writeFileSync(lcov, 'SF:lib/cambiado.js\nDA:1,1\nend_of_record\nSF:lib/quieto.js\nDA:1,1\nend_of_record\n');
+  const dir = path.join(d, 'g');
+  ff.saveRed({ dir, summaryFile: resumen, lcovFile: lcov, measuredFile: medido, base: null, recorte: '' });
+  ff.addRepeat(dir, A, { tree: 'b'.repeat(40), entry: { ruta: '/r/scripts/tests/a.test.sh', exit: 0 } });
+  // una suite que se fue entre la completa y el cierre: la corrida nueva la da ausente, y es rojo como en una completa
+  const out = ff.merge({ dir, newSummary: { suites: [], fallas: [], ausentes: ['/r/scripts/tests/c.test.sh'] } });
+  assert.deepEqual(out.ausentes, ['/r/scripts/tests/c.test.sh']);
+  assert.ok(!out.suites.some((s) => s.ruta === '/r/scripts/tests/c.test.sh'), 'la ausente no queda verde por la completa vieja');
+  assert.equal(ff.mergedRed(out), true);
+  assert.equal(ff.mergedRed(ff.merge({ dir, newSummary: { suites: [], fallas: [], no_medido: 'corrida interrumpida' } })), true);
+  // la cobertura de un archivo cambiado después de la completa no se junta: se midió sobre el código viejo
+  const cov = path.join(d, 'cov');
+  ff.merge({ dir, covDir: cov, changed: ['lib/cambiado.js'] });
+  const junto = fs.readFileSync(path.join(cov, 'lcov.info'), 'utf8');
+  assert.doesNotMatch(junto, /SF:lib\/cambiado\.js/);
+  assert.match(junto, /SF:lib\/quieto\.js/);
+  // lo cambiado vuelve a hacer correr una suite que la completa difirió por sus carpetas: la completa como siempre
+  const repo = tmp('ff-repo-gate-');
+  fs.mkdirSync(path.join(repo, 'scripts', 'tests'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'scripts', 'tests', 'suites.json'), JSON.stringify({ diarias: [{ raiz: 'arnes', ruta: 'tests/g.test.sh', gate_only_when_touching: ['G/**'] }] }));
+  const res = JSON.parse(fs.readFileSync(path.join(dir, 'resumen.json'), 'utf8'));
+  assert.deepEqual(ff.reEligible(repo, res, ['G/x.js']), ['g.test.sh']);
+  assert.deepEqual(ff.reEligible(repo, res, ['lib/otro.js']), []);
+  // ídem con una suite del grupo del instalador: el criterio es el del repo medido
+  fs.mkdirSync(path.join(repo, 'scripts', 'ci'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'scripts', 'ci', 'heavy-suites.json'), '{}\n');
+  fs.writeFileSync(path.join(repo, 'scripts', 'ci', 'suites-for-change.js'),
+    "module.exports = { groupCriterion: () => ({ skips: (name, files) => !files.some((f) => f.startsWith('installer/')) }) };\n");
+  const inst = { deferred_suites: [{ suite: '/r/scripts/tests/i.test.sh', reason: 'corre de noche y en el control del PR; esta story no toca el instalador (el grupo installer de scripts/ci/heavy-suites.json)' }] };
+  assert.deepEqual(ff.reEligible(repo, inst, ['installer/x.sh']), ['i.test.sh']);
+  assert.deepEqual(ff.reEligible(repo, inst, ['lib/otro.js']), []);
+  // decide: otro recorte, o una roja sin su repetición verde, corren la completa
+  const hash = ff.redHash(dir);
+  assert.match(ff.decide({ dir, hash, repo, tree: 'b'.repeat(40), base: null, recorte: '--light' }).reason, /no tiene el mismo recorte/);
+  const sola = path.join(d, 'sin-repetir');
+  ff.saveRed({ dir: sola, summaryFile: resumen, lcovFile: null, measuredFile: medido, base: null, recorte: '' });
+  assert.match(ff.decide({ dir: sola, hash: ff.redHash(sola), repo, tree: 'a'.repeat(40), base: null, recorte: '' }).reason, /falta repetir sola: tests\/a\.test\.sh/);
+});
+
+test('T27 Porton_LoGuardadoFueraDeSuCarpeta_NoSeBorra — drop-red sólo borra dentro de red-full/', () => {
+  const l = lab({ acota: true });
+  const ajena = tmp('ff-ajena-');
+  fs.writeFileSync(path.join(ajena, 'no-borrar.txt'), 'x');
+  const mk = marcador(l);
+  mk.testsRedFull = [{ repo: l.repo, dir: ajena, hash: 'x', at: new Date().toISOString() }];
+  fs.writeFileSync(markerFile(l), JSON.stringify(mk));
+  const r = marker(l, ['tests-failed', 'drop-red', '--repo', l.repo], { TYCON_TEST_GATE: '1' });
+  assert.equal(r.status, 0, r.out);
+  assert.ok(fs.existsSync(path.join(ajena, 'no-borrar.txt')), 'borró una carpeta fuera de red-full/');
+  assert.match(r.out, /apunta fuera de/);
+  assert.equal(guardado(l), null, 'igual lo saca del marcador');
+});
+
+test('T27 Porton_SinCorrida_LoGuardadoEsNull — red-full sin corrida abierta da null, que el portón lee como JSON', () => {
+  const l = lab({ marcador: false, acota: true });
+  const r = marker(l, ['tests-failed', 'red-full', '--repo', l.repo]);
+  assert.equal(r.status, 0, r.out);
+  assert.equal(r.out.trim(), 'null');
+});
+
+test('T28 Guia_RepetirSolasCierra — el paso 6 y el portón dicen los tres casos, cada uno', () => {
+  for (const archivo of [STEP_06, TEST_GATE]) {
+    const texto = fs.readFileSync(archivo, 'utf8');
+    for (const re of [/la carpeta no cambió/, /sólo las suites que leen lo cambiado/, /corre la completa como siempre/]) assert.match(texto, re, `${path.basename(archivo)}: ${re}`);
+  }
+});
+
+// T31 Porton_CortadoCortaSuCorredor: cortar el portón corta el corredor y sus suites.
+// 🔴 Falla con: el corredor en primer plano sin trampas (bash espera al hijo y la señal no llega), o un corredor que
+//    sigue vivo, con el turno de lo pesado, cuando a su portón lo mataron con kill -9.
+const vivo = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
+async function hasta(cond, ms) {
+  const fin = Date.now() + ms;
+  while (Date.now() < fin) { if (cond()) return true; await new Promise((r) => setTimeout(r, 200)); }
+  return cond();
+}
+for (const senal of ['SIGTERM', 'SIGINT', 'SIGHUP', 'SIGKILL']) {
+  test(`T31 Porton_CortadoCortaSuCorredor — con ${senal}, a los 10 s no queda vivo ni el corredor ni la suite`, async () => {
+    const lenta = suite('b', 'echo $$ > "$FF_STATE/b.pid"; sleep 60');
+    const l = lab({ suiteB: lenta });
+    const { spawn } = require('child_process');
+    const p = spawn('bash', [TEST_GATE, l.repo], { cwd: l.repo, env: entorno(l), stdio: 'ignore', detached: true });
+    const pidFile = path.join(l.state, 'b.pid');
+    assert.ok(await hasta(() => fs.existsSync(pidFile) && fs.readFileSync(pidFile, 'utf8').trim(), 60000), 'la suite lenta arrancó');
+    const suitePid = Number(fs.readFileSync(pidFile, 'utf8').trim());
+    const corredor = spawnSync('pgrep', ['-f', `run-suites-json.js ${l.repo}`], { encoding: 'utf8' }).stdout.split('\n').filter(Boolean).map(Number);
+    assert.ok(corredor.length > 0, 'el corredor está vivo');
+    process.kill(p.pid, senal);
+    const muertos = await hasta(() => !vivo(suitePid) && corredor.every((c) => !vivo(c)), 10000);
+    try { process.kill(-p.pid, 'SIGKILL'); } catch (_) { /* ya no está */ }
+    for (const c of [suitePid, ...corredor]) { try { process.kill(c, 'SIGKILL'); } catch (_) { /* ya no está */ } }
+    assert.ok(muertos, `quedó vivo: suite ${vivo(suitePid)}, corredor ${corredor.filter(vivo)}`);
+  });
 }
 
 test('T1 FailedFirst_RedRun_SavesRoutes @story-8.125 @ac-1 — una corrida completa roja guarda las rutas de las suites que fallaron', () => {

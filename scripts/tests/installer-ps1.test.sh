@@ -1172,7 +1172,7 @@ else no "(u) -Check lanzado por un harness.js de antes (rc $RC): $(grep -c '+ Pr
 # su comando tal cual; una copia que sobre se saca; lo ajeno de ese bloque queda donde estaba.
 SHELL_ROWS=(
   "PreToolUse|Bash|PowerShell|Monitor|safety-guard-pre.sh" "PreToolUse|Bash|PowerShell|test-scope-guard-pre.sh" "PreToolUse|Bash|PowerShell|engram-pre-commit.sh"
-  "PreToolUse|Bash|PowerShell|push-phantom-ref-notice.js" "PreToolUse|Bash|PowerShell|pr-auto-complete-guard.js" "PreToolUse|Bash|PowerShell|public-push-guard.js"
+  "PreToolUse|Bash|PowerShell|push-phantom-ref-notice.js" "PreToolUse|Bash|PowerShell|pr-auto-complete-guard.js" "PreToolUse|Bash|PowerShell|session-cap-guard.js" "PreToolUse|Bash|PowerShell|public-push-guard.js"
   "PreToolUse|Bash|PowerShell|tycon-pipeline/scripts/on-pre-commit.js" "PreToolUse|Bash|PowerShell|tycon-pipeline/scripts/on-bash-write-gate.js"
   "PostToolUse|Bash|PowerShell|retro-pending.js" "PostToolUse|Bash|PowerShell|unpushed-work-notice.js" "PostToolUse|Bash|PowerShell|failed-query-notice.js"
 )
@@ -1214,7 +1214,7 @@ JS
 HW="$(new_home widen)"; SW="$HW/.claude/settings.json"
 installer "$HW" "${HELD[@]}" "${TEAM[@]}" > "$T/n0.out" 2>&1
 node "$T/widen.js" old "$SW" "$SW"; cp "$SW" "$T/n.old.json"
-if [ "$(node "$T/widen.js" state "$SW")" != "12 2/2" ]; then no "(v) no pude armar la settings.json de antes: «$(node "$T/widen.js" state "$SW")» (esperaba «12 2/2»)"; fi
+if [ "$(node "$T/widen.js" state "$SW")" != "13 2/2" ]; then no "(v) no pude armar la settings.json de antes: «$(node "$T/widen.js" state "$SW")» (esperaba «13 2/2»)"; fi
 installer "$HW" "${HELD[@]}" "${TEAM[@]}" > "$T/n1.out" 2>&1; RC=$?
 BAD="$(wrong_counts "$SW" 1 "${SHELL_ROWS[@]}")"
 RB="$(hook_n "$SW" PostToolUse 'Bash|PowerShell' rebuild-before-verify.js)$(hook_n "$SW" PostToolUse 'Edit|Write' rebuild-before-verify.js)$(hook_n "$SW" PostToolUse '*' rebuild-before-verify.js)"
@@ -1223,8 +1223,8 @@ if [ "$RC" -eq 0 ] && [ -z "$BAD" ] && [ "$RB" = 112 ] && [ "$(node "$T/widen.js
 else no "(v) una settings.json de antes (rc $RC):${BAD:- —} · rebuild «${RB}» (esperaba 112) · estado «$(node "$T/widen.js" state "$SW")» (esperaba «0 2/2») · $(brief "$T/n1.out" 200)"; fi
 N="$(grep -c 'matcher ampliado' "$T/n1.out")"
 OLD_SG="$(node -e 'const s=require(process.argv[1]);for(const e of s.hooks.PreToolUse)for(const h of e.hooks)if(/safety-guard-pre\.sh"$/.test(h.command))console.log(h.command)' "$T/n.old.json")"
-if [ "$N" = 12 ] && same_cmd "$SW" PreToolUse "$BRAKE_M" safety-guard-pre.sh "$OLD_SG"; then ok "(v) el reporte dice cada matcher ampliado (12) y el guion conserva su comando tal cual"
-else no "(v) el reporte nombra $N matcher(s) ampliado(s) (esperaba 12); safety-guard quedó «$(hook_cmd "$SW" PreToolUse "$BRAKE_M" safety-guard-pre.sh)» (antes «${OLD_SG}»)"; fi
+if [ "$N" = 13 ] && same_cmd "$SW" PreToolUse "$BRAKE_M" safety-guard-pre.sh "$OLD_SG"; then ok "(v) el reporte dice cada matcher ampliado (13) y el guion conserva su comando tal cual"
+else no "(v) el reporte nombra $N matcher(s) ampliado(s) (esperaba 13); safety-guard quedó «$(hook_cmd "$SW" PreToolUse "$BRAKE_M" safety-guard-pre.sh)» (antes «${OLD_SG}»)"; fi
 cp "$SW" "$T/n.after.json"
 installer "$HW" "${HELD[@]}" "${TEAM[@]}" > "$T/n2.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && cmp -s "$SW" "$T/n.after.json"; then ok "(v) una segunda ejecución deja settings.json byte a byte igual"

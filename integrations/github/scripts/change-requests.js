@@ -1,6 +1,7 @@
 'use strict';
 // change-requests.js — los pedidos de cambio de un repo de GitHub (pull requests): abrir uno que entra solo
-// (`change-request.open`) y los abiertos (`change-request.list`).
+// (`change-request.open`), los abiertos (`change-request.list`) y uno por su número, esté abierto o no
+// (`change-request.read`).
 //
 // Abrir:
 //   1. el freno de publicación lee el pedido como si fuera `gh pr create --repo … --title '<título>' --body-file <archivo>`:
@@ -266,6 +267,38 @@ function listaConCola(ctx, repo) {
   return no('no_medido', `tope de ${MAX_PAGINAS} páginas: la lista no se leyó entera`);
 }
 
+/**
+ * Un pedido por su número, abierto o cerrado: `{ number, state: open|merged|closed, draft, autoComplete, inQueue, mergedAt,
+ * mergeCommit, title }`. Uno que no existe es no_encontrado, nunca «entró».
+ */
+function leerPedido(args, ctx) {
+  const repo = repoDe(ctx);
+  if (!repo) return no('rechazado', 'el repo no trae dueño/nombre de GitHub (team-repos.json)');
+  const n = Number(args && args.number);
+  if (!Number.isInteger(n) || n <= 0) return no('rechazado', `el número del pedido no se puede leer: ${JSON.stringify(args && args.number)}`);
+  const g = gh(ctx, 'GET', `repos/${repo}/pulls/${n}`);
+  if (g.problem) return g.problem;
+  const p = g.value;
+  if (!p || typeof p !== 'object' || Number(p.number) !== n) return no('no_medido', `GitHub contestó el pedido #${n} sin forma`);
+  const abierto = p.state === 'open';
+  const cola = abierto ? enCola(ctx, [p]) : new Map();
+  return {
+    ok: true,
+    value: {
+      number: n,
+      state: abierto ? 'open' : p.merged_at ? 'merged' : 'closed',
+      draft: p.draft === true,
+      autoComplete: Boolean(p.auto_merge),
+      // null: GitHub no lo dijo (quien lee no lo toma por «fuera de la cola»)
+      inQueue: abierto ? (cola.has(String(p.node_id)) ? cola.get(String(p.node_id)) : null) : false,
+      mergedAt: p.merged_at ? String(p.merged_at) : null,
+      // GitHub da `merge_commit_sha` también con el pedido abierto (el commit de prueba): sólo vale el de uno que entró
+      mergeCommit: p.merged_at && /^[0-9a-f]{40}$/i.test(String(p.merge_commit_sha || '')) ? String(p.merge_commit_sha).toLowerCase() : null,
+      title: String(p.title || ''),
+    },
+  };
+}
+
 function listarPedidos(args, ctx) {
   const repo = repoDe(ctx);
   if (!repo) return no('rechazado', 'el repo no trae dueño/nombre de GitHub (team-repos.json)');
@@ -327,6 +360,6 @@ function asignados(args, ctx) {
   return { ok: true, value };
 }
 
-module.exports = { 'change-request.open': abrirPedido, 'change-request.list': listarPedidos, 'assigned.list': asignados };
+module.exports = { 'change-request.open': abrirPedido, 'change-request.list': listarPedidos, 'change-request.read': leerPedido, 'assigned.list': asignados };
 // los ayudantes que reusa la lectura de la CI y de la cola (y la limpieza, para las pruebas), fuera del mapa de operaciones
 for (const [k, v] of Object.entries({ todas, controles, repoDe, MALOS, sinSalteos })) Object.defineProperty(module.exports, k, { value: v, enumerable: false });

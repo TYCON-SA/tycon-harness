@@ -52,6 +52,10 @@ const MODEL = (A && A.model) || 'sonnet'
 // ser el mismo entre reanudaciones del Workflow o se pierde su caché.
 const RUN_DIR = String((A && A.runDir) || `${REPO}/.advisors/pipeline-runs/adversarial-sin-corrida`).replace(/\/+$/, '')
 const PROBES_DIR = `${RUN_DIR}/step-05b-probes`
+// La base contra la que se mira el cambio: el `merge-base` de HEAD con `origin/main` que calcula el paso. Sin ella cada
+// cazador elige contra qué comparar, y un `main` local atrasado le muestra un cambio que no es el de la historia.
+const BASE = String((A && A.base) || '').trim()
+const BASE_VALIDA = /^[0-9a-f]{7,40}$/i.test(BASE)
 
 // Agrupar los hallazgos por causa antes de verificarlos. Se apaga con la variable
 // TYCON_5B_GROUP=0 —como los demás recortes del arnés— o con `agrupar: false` en los args (que es
@@ -67,10 +71,12 @@ const AGRUPAR = (A && A.agrupar === false)
 // tests/adversarial-unmeasured.test.js compara las dos: si una cambia, se cambia la otra.
 const SALIDA_APROBADA = 'la salida aprobada: un pase propio con agentes de Claude — cazadores con Sonnet, un verificador aparte por hallazgo que corre el código, juicio con Opus, nunca Fable (workflow-lite.js --agents-dir, step-08-adversarial-pass.md §«Sin Codex ni Workflow»)'
 
-// El aviso de un pase que no revisó todo. Nunca «limpio»: no medido, con qué faltó y cómo seguir.
-function avisoNoMedido(sinMedir, sinVeredicto) {
+// El aviso de un pase que no revisó todo. Nunca «limpio»: no medido, con qué faltó y cómo seguir. Con `motivos` (lente →
+// motivo, el modo código) nombra el de cada lente; sin ellos (el modo plan), el cazador que no contestó.
+function avisoNoMedido(sinMedir, sinVeredicto, motivos) {
   const partes = []
-  if (sinMedir.length) partes.push(`${sinMedir.length} lente(s) SIN MEDIR (${sinMedir.join(', ')}): su cazador no contestó`)
+  if (sinMedir.length && motivos) partes.push(`${sinMedir.length} lente(s) SIN MEDIR (${sinMedir.map((l) => `${l}: ${motivos[l] || 'su cazador no contestó'}`).join('; ')})`)
+  else if (sinMedir.length) partes.push(`${sinMedir.length} lente(s) SIN MEDIR (${sinMedir.join(', ')}): su cazador no contestó`)
   if (sinVeredicto) partes.push(`${sinVeredicto} hallazgo(s) SIN VEREDICTO: su verificador no contestó (el texto está en detalle)`)
   return `adversarial-verify: 🔴 pase NO MEDIDO — ${partes.join('; ')}. No es verde ni «sin hallazgos»: relanzá el pase, o ${SALIDA_APROBADA}.`
 }
@@ -192,6 +198,49 @@ const FINDINGS_SCHEMA = {
     },
   },
   required: ['lens', 'findings'],
+}
+
+// El cazador de código devuelve además la base contra la que miró y la carpeta donde guardó su prueba ('' sólo con
+// hallazgos). Las dos claves son requeridas: sin ellas, el corredor lo da por muerto. El modo plan sigue con
+// FINDINGS_SCHEMA: sus cazadores leen y no corren nada.
+const HUNT_SCHEMA = {
+  ...FINDINGS_SCHEMA,
+  properties: { ...FINDINGS_SCHEMA.properties, base: { type: 'string' }, probe_dir: { type: 'string' } },
+  required: ['lens', 'base', 'probe_dir', 'findings'],
+}
+
+// ¿La base que dijo el cazador es la pedida? Una es prefijo de la otra y la más corta tiene 7 o más caracteres.
+function coincideBase(dicha, pedida) {
+  const a = String(dicha || '').trim().toLowerCase()
+  const b = String(pedida || '').trim().toLowerCase()
+  const corta = a.length <= b.length ? a : b
+  const larga = a.length <= b.length ? b : a
+  return corta.length >= 7 && larga.startsWith(corta)
+}
+
+// La carpeta donde el cazador de una lente guarda su prueba.
+const carpetaDeCaza = (key) => `${PROBES_DIR}/caza-${key}`
+
+// Lo que sólo recibe un cazador de código: contra qué se compara y dónde guarda lo que corrió. Ni los verificadores ni
+// el modo «un hallazgo» lo reciben: ellos reproducen un hallazgo, no recorren el cambio.
+function pedidoCazador(key) {
+  const dir = carpetaDeCaza(key)
+  return `
+
+CONTRA QUÉ SE COMPARA (no-negociable): el cambio de la historia es TODO lo distinto de la base ${BASE}, también lo que
+todavía no está commiteado (en este paso el trabajo suele estar sin commitear):
+  git -C ${REPO} diff ${BASE}              (lo commiteado y lo modificado del árbol de trabajo, contra la base)
+  git -C ${REPO} status --porcelain        (los archivos nuevos sin seguir, que el diff no muestra)
+Nunca compares contra \`main\`, \`master\` ni otra rama local: pueden estar atrasadas y mostrarte un cambio que no es el
+de la historia. Devolvé base = "${BASE}".
+
+LA PRUEBA QUE CORRISTE SE GUARDA, AUNQUE NO ENCUENTRES NADA (obligatorio — sin ella tu lente no cuenta como revisada):
+1. Creá la carpeta ${dir}
+2. Copiá ahí cada archivo que escribiste para probar (el guion, los datos de entrada), con ".txt" agregado al nombre
+   (probe.js → probe.js.txt), para que ningún compilador ni corredor de pruebas lo levante.
+3. Escribí ${dir}/COMO-SE-CORRIO.txt con cada comando que corriste, desde qué carpeta, y lo que mostró (unas líneas).
+4. Tapá credenciales en lo que guardás: cadenas de conexión, contraseñas, tokens, claves → <REDACTED>.
+5. Devolvé probe_dir = "${dir}". Si encontraste hallazgos, probe_dir puede ser "": los reproduce un verificador.`
 }
 
 const VERDICT_SCHEMA = {
@@ -541,6 +590,11 @@ if (FILES.length === 0) {
   return { confirmed: [], all_lenses: [], lentes: [], lentes_sin_medir: [], detalle: [], medido: false,
     aviso: 'adversarial-verify: 🔴 pase NO MEDIDO — sin archivos de código en args.files, no se revisó nada.' }
 }
+if (!BASE_VALIDA) {
+  const aviso = 'adversarial-verify: 🔴 pase NO MEDIDO — falta args.base, o no es un hash (git merge-base HEAD origin/main después de git fetch origin main): sin base, cada cazador elige contra qué comparar.'
+  log(aviso)
+  return { confirmed: [], all_lenses: [], lentes: [], lentes_sin_medir: [], detalle: [], medido: false, aviso }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // Fase 1 — los 6 cazadores, en paralelo.
@@ -552,10 +606,10 @@ if (FILES.length === 0) {
 // gana: ~40 % de los verificadores.
 const hunts = await parallel(
   LENSES.map((lens) => () =>
-    agent(`${COMMON}\n\n${lens.prompt}`, {
+    agent(`${COMMON}\n\n${lens.prompt}${pedidoCazador(lens.key)}`, {
       label: `hunt:${lens.key}`,
       phase: 'Hunt',
-      schema: FINDINGS_SCHEMA,
+      schema: HUNT_SCHEMA,
       agentType: 'general-purpose',
       model: MODEL,
     }).then((h) => ({ lens: lens.key, hunt: h }))
@@ -566,12 +620,28 @@ const hunts = await parallel(
 // muere o no contesta lo pedido —en la herramienta Workflow y en workflow-lite.js por igual—, y eso
 // se leería como «cero hallazgos»: un pase con todos los cazadores muertos saldría «6 lentes limpias» sin haber revisado nada. Una lente vale
 // `medida` sólo con una respuesta que trae su lista de hallazgos (vacía o no); si no, `sin-medir`.
+// 🔴 Y UN CAZADOR VIVO QUE NO MIDIÓ TAMPOCO. Contestar `findings: []` no prueba que se haya mirado el cambio: la lente
+// vale además sólo si comparó contra la base pedida y, sin hallazgos, nombró la carpeta de su prueba. Que esa prueba
+// exista lo mira en disco quien anota el resultado (lib/adversarial-verdict.js): la caja no lee archivos.
+function juzgarLente(key, r) {
+  const h = r && r.hunt
+  if (!h || !Array.isArray(h.findings) || typeof h.probe_dir !== 'string') return { motivo: 'su cazador no contestó' }
+  if (!coincideBase(h.base, BASE)) return { motivo: `comparó contra ${h.base || '(nada)'}, no contra ${BASE}` }
+  if (!h.findings.length && String(h.probe_dir).replace(/\/+$/, '') !== carpetaDeCaza(key)) return { motivo: 'no guardó la prueba que corrió' }
+  return { ok: true }
+}
 const lentes = LENSES.map((lens, i) => {
   const r = hunts[i]
-  const ok = !!(r && r.hunt && Array.isArray(r.hunt.findings))
-  return { lens: lens.key, estado: ok ? 'medida' : 'sin-medir', count: ok ? r.hunt.findings.length : 0 }
+  const j = juzgarLente(lens.key, r)
+  const h = r && r.hunt
+  const base = h && typeof h.base === 'string' ? h.base : null
+  const probeDir = h && typeof h.probe_dir === 'string' ? h.probe_dir : null
+  return j.ok
+    ? { lens: lens.key, estado: 'medida', count: h.findings.length, base, probe_dir: probeDir }
+    : { lens: lens.key, estado: 'sin-medir', count: 0, base, probe_dir: probeDir, motivo: j.motivo }
 })
 const lentesSinMedir = lentes.filter((l) => l.estado === 'sin-medir').map((l) => l.lens)
+const motivosDeLentes = Object.fromEntries(lentes.filter((l) => l.motivo).map((l) => [l.lens, l.motivo]))
 
 // Los hallazgos de todas las lentes, en una sola lista. `idxEnLente` conserva la numeración por
 // lente: es la que nombra la carpeta de la prueba (`<lente>-<n>`), contrato del paso «Pase adversarial».
@@ -587,7 +657,7 @@ const textoDe = (f) => ({ lens: f.lens, idxEnLente: f.idxEnLente, severity: f.se
 
 if (todos.length === 0) {
   if (lentesSinMedir.length) {
-    const aviso = avisoNoMedido(lentesSinMedir, 0)
+    const aviso = avisoNoMedido(lentesSinMedir, 0, motivosDeLentes)
     log(aviso)
     return { confirmed: [], probes_dir: PROBES_DIR, all_lenses: [], lentes, lentes_sin_medir: lentesSinMedir, detalle: [], medido: false, aviso,
       hallazgos: 0, clases: 0, agentes_ahorrados: 0, sin_veredicto: 0, hallazgos_sin_veredicto: 0, a_verificar_aparte: 0 }
@@ -743,7 +813,7 @@ grupos.clases.forEach((c, k) => {
 })
 const hallazgosSinVeredicto = detalle.filter((d) => d.estado === 'sin-veredicto').length
 const medido = lentesSinMedir.length === 0 && hallazgosSinVeredicto === 0
-const aviso = medido ? null : avisoNoMedido(lentesSinMedir, hallazgosSinVeredicto)
+const aviso = medido ? null : avisoNoMedido(lentesSinMedir, hallazgosSinVeredicto, motivosDeLentes)
 if (aviso) log(aviso)
 
 const porLente = new Map()

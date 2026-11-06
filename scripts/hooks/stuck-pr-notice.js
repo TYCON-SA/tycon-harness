@@ -31,11 +31,20 @@
 // Muestra 5 pedidos como máximo, los más viejos primero, y el resto como «(+N más)». El texto que viene de la plataforma
 // (la rama) se sanea: sin `##` (lo leería un pipeline como una orden) y en una sola línea.
 //
+// LISTO Y SIN ENTRAR, en GitHub: un pedido limpio, no borrador, sin auto-merge, fuera de la cola y sin caída registrada,
+// igual más de 10 minutos, sale con el comando para encolarlo: nadie lo va a mergear. Lo mismo le llega a la coordinadora en
+// cada turno (`coordinatorLines`, desde scripts/tools/coordination.js), de la foto y sin salir a la red.
+//
+// LOS PEDIDOS DE LA PERSONA, para /office: la lectura de fondo deja en `own-prs.json` los pedidos abiertos cuyo autor es la
+// persona, de todos sus repos, con una consulta por lugar: una búsqueda en GitHub y una por cada organización de Azure de los
+// repos declarados. Quién es sale de las herramientas de la máquina; lo que no se puede saber o leer se dice en `fallos`.
+//
 // Nunca rompe el arranque: sale 0 siempre.
-// Variables: TYCON_STUCK_PR_HOURS (1). Off: TYCON_STUCK_PR_NOTICE=0.
+// Variables: TYCON_STUCK_PR_HOURS (1), TYCON_GREEN_IDLE_MIN (10). Off: TYCON_STUCK_PR_NOTICE=0.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..', '..');
 const TOPE_MS = 5000;
@@ -50,7 +59,8 @@ const readVar = (() => {
   } catch { return (n) => process.env[n]; }
 })();
 
-const limpio = (t, n) => String(t || '').replace(/#{2,}/g, '#').replace(/\s+/g, ' ').trim().slice(0, n);
+// Lo que llega de la plataforma va al contexto de un agente: en una línea, sin invisibles ni `<>` que armen o cierren un bloque.
+const limpio = (t, n) => String(t || '').replace(/#{2,}/g, '#').replace(/\s+/g, ' ').replace(/[\p{Cc}\p{Cf}<>]/gu, '').trim().slice(0, n);
 
 function cwdDelEvento() {
   try {
@@ -128,15 +138,57 @@ async function lecturas(repos, tree, dir, ahora) {
 }
 
 /** Lanza la lectura de fondo, salvo que ya haya una corriendo. Devuelve si quedó una corriendo. */
-function lanzarRefresco(tree, dir) {
+function lanzarRefresco(tree, dir, home) {
   const candado = leerJson(candadoDe(dir));
   if (candado && Date.now() - Date.parse(candado.at) < refrescoMs() + 30000) return true;
   try {
     escribirJson(candadoDe(dir), { at: new Date().toISOString() });
     const { spawn } = require('child_process');
-    spawn(process.execPath, [__filename, '--refresh', tree], { detached: true, stdio: 'ignore', env: process.env, windowsHide: true }).unref();
+    // con la casa de quien lo pide: la lectura de fondo deja la foto en su carpeta del estado
+    const env = home ? { ...process.env, HOME: home, USERPROFILE: home } : process.env;
+    spawn(process.execPath, [__filename, '--refresh', tree], { detached: true, stdio: 'ignore', env, windowsHide: true }).unref();
     return true;
   } catch { return false; }
+}
+
+const propiosDe = (dir) => path.join(dir, 'own-prs.json');
+const PROPIOS_TOPE = 1000;
+const QUERY_PROPIOS = 'query { viewer { login } search(query: "is:pr is:open author:@me archived:false", type: ISSUE, first: 100) { nodes { ... on PullRequest { number title isDraft headRefName isInMergeQueue mergeable autoMergeRequest { enabledAt } author { login } repository { nameWithOwner } } } } }';
+
+function salidaDe(cmd, args) {
+  const r = spawnSync(cmd, args, { encoding: 'utf8', timeout: 30000, windowsHide: true, shell: process.platform === 'win32', maxBuffer: 1 << 26 });
+  return r.status === 0 ? String(r.stdout || '').trim() : '';
+}
+const jsonDe = (texto) => { try { return JSON.parse(texto); } catch { return null; } };
+
+/** Los pedidos de la persona, de todos sus repos: `{ at, lecturas: { <repo>: { ok, value } }, fallos }`. */
+function leerPropios({ repos = [], ahora = Date.now(), env = process.env } = {}) {
+  const lecturas = {};
+  const fallos = [];
+  const anotar = (repo, p) => { (lecturas[repo] = lecturas[repo] || { ok: true, value: [] }).value.push(p); };
+  if (repos.some((r) => r.platform === 'github')) {
+    const d = jsonDe(salidaDe(env.TYCON_GH_CMD || 'gh', ['api', 'graphql', '-f', `query=${QUERY_PROPIOS}`]));
+    if (!d || !d.data || !d.data.viewer) fallos.push('GitHub');
+    else {
+      for (const p of d.data.search.nodes) {
+        if (p && p.repository) anotar(p.repository.nameWithOwner, { number: p.number, title: p.title, draft: p.isDraft === true, autoComplete: Boolean(p.autoMergeRequest), inQueue: p.isInMergeQueue === true, mergeState: p.mergeable === 'CONFLICTING' ? 'conflict' : '', sourceBranch: p.headRefName, author: p.author ? p.author.login : '' });
+      }
+    }
+  }
+  const organizaciones = [...new Set(repos.filter((r) => r.platform === 'azure').map((r) => r.org))];
+  const az = env.TYCON_ADO_CMD || 'az';
+  const yo = organizaciones.length ? salidaDe(az, ['account', 'show', '--query', 'user.name', '-o', 'tsv']).toLowerCase() : '';
+  for (const org of organizaciones) {
+    const d = yo ? jsonDe(salidaDe(az, ['devops', 'invoke', '--org', `https://dev.azure.com/${org}`, '--area', 'git', '--resource', 'pullRequests', '--query-parameters', 'searchCriteria.status=active', `$top=${PROPIOS_TOPE}`, '--api-version', '7.1', '-o', 'json'])) : null;
+    if (!d || !Array.isArray(d.value)) { fallos.push(org); continue; }
+    if (d.value.length >= PROPIOS_TOPE) fallos.push(`${org} (puede faltar alguno: hay más de ${PROPIOS_TOPE} abiertos)`);
+    for (const p of d.value) {
+      const autor = p.createdBy && String(p.createdBy.uniqueName || '').toLowerCase();
+      const r = p.repository;
+      if (autor === yo && r && r.project) anotar(`${org}/${r.project.name}/${r.name}`, { number: p.pullRequestId, title: p.title, draft: p.isDraft === true, autoComplete: Boolean(p.autoCompleteSetBy), mergeState: p.mergeStatus === 'conflicts' ? 'conflict' : '', sourceBranch: String(p.sourceRefName || '').replace(/^refs\/heads\//, ''), author: autor });
+    }
+  }
+  return { at: new Date(ahora).toISOString(), lecturas, fallos };
 }
 
 /** La lectura de fondo: sin el apuro del arranque, deja la foto entera para el próximo. */
@@ -148,6 +200,7 @@ async function refrescar(tree) {
     const ahora = Date.now();
     const leidas = await leer(declarados.repos, tree, refrescoMs());
     escribirJson(fotoDe(dir), { at: new Date(ahora).toISOString(), repos: declarados.repos.map(claveDe), lecturas: leidas });
+    escribirJson(propiosDe(dir), leerPropios({ repos: declarados.repos, ahora }));
   } finally {
     try { fs.rmSync(candadoDe(dir), { force: true }); } catch { /* vence solo */ }
   }
@@ -158,6 +211,83 @@ const haceDe = (ms) => (ms < HORA_MS ? `${Math.max(0, Math.floor(ms / 60000))} m
 const CAUSAS = { ci: 'la CI combinada salió en rojo', conflict: 'choca con main' };
 
 const estadoDe = (p) => `${p.mergeState}${p.draft ? '+borrador' : ''}`;
+
+// LISTO Y SIN ENTRAR, en GitHub: abierto, no borrador, limpio (sin choque ni controles obligatorios pendientes), sin
+// auto-merge, fuera de la cola y sin caída registrada. Nadie lo va a mergear: queda abierto mientras todos creen que ya
+// entró. Se avisa con el comando para encolarlo pasados TYCON_GREEN_IDLE_MIN minutos (10) con la misma punta. En Azure no:
+// sin leer sus controles, «limpio» sólo dice que no choca. Los de un bot tampoco: los decide una persona.
+const VERDE = 'verde-sin-auto';
+const esBot = (a) => /\[bot\]$|^app\/|^(dependabot|renovate)\b/i.test(String(a || ''));
+const verdeMin = () => { const v = Number(readVar('TYCON_GREEN_IDLE_MIN')); return Number.isFinite(v) && v > 0 ? v : 10; };
+const comandoParaEncolar = (repo, n) => `gh pr merge ${Number(n)} -R ${repo.org}/${repo.repo} --merge`;
+
+/**
+ * Los pedidos listos que nadie encoló, de las lecturas de cada repo: `{ trabados, estado }`. `estado` trae el reloj de
+ * cada uno (`<repo>#<n>`), leído de `previo`: con otra punta o recién visto, vuelve a cero. Una lectura fallida conserva
+ * los relojes de ese repo, y «todavía no calculado» el de ese pedido: no son un cambio de estado.
+ */
+function verdesSinEntrar(repos, leidas, previo, ahora, minutos = verdeMin()) {
+  const trabados = [];
+  const estado = {};
+  for (const repo of repos) {
+    if (repo.platform !== 'github') continue;
+    const base = claveDe(repo);
+    const r = leidas[base];
+    if (!r || !r.ok || !Array.isArray(r.value)) {
+      for (const k of Object.keys(previo)) if (k.startsWith(`${base}#`) && previo[k] && previo[k].estado === VERDE) estado[k] = previo[k];
+      continue;
+    }
+    for (const p of r.value) {
+      if (p.draft || p.autoComplete || p.inQueue === true || p.lastQueueDrop || esBot(p.author)) continue;
+      const k = `${base}#${p.number}`;
+      const antes = previo[k];
+      const mismo = antes && antes.estado === VERDE && antes.punta === p.sourceCommit && Number.isFinite(Date.parse(antes.vistoDesde));
+      if (p.mergeStateComputing === true || p.mergeState === 'unknown') { if (mismo) estado[k] = antes; continue; }
+      if (p.mergeState !== 'clean') continue;
+      const desde = mismo ? antes.vistoDesde : new Date(ahora).toISOString();
+      estado[k] = { estado: VERDE, punta: p.sourceCommit, vistoDesde: desde };
+      const ms = ahora - Date.parse(desde);
+      if (ms < minutos * 60000) continue;
+      const creado = Date.parse(p.createdAt);
+      trabados.push({ ms, creado: Number.isFinite(creado) ? creado : Infinity, number: p.number,
+        linea: `⚠️ pedido ${p.number} (${limpio(repo.repo, 60)}) listo y sin auto-merge hace ${haceDe(ms)}, fuera de la cola: nadie lo va a mergear — encolalo con ${comandoParaEncolar(repo, p.number)} · ${limpio(p.sourceBranch, 120)}` });
+    }
+  }
+  return { trabados, estado };
+}
+
+/**
+ * Para el aviso de cada turno de la coordinadora (scripts/tools/coordination.js): los verdes sin entrar, de la foto que
+ * dejó la última lectura. No sale a la red: con la foto vencida o sin foto, lanza la lectura de fondo y usa la que hay
+ * (o ninguna), y sin una lectura de la última hora lo dice en `problem`. Su reloj vive aparte (`green-prs.json`), para no mover el del arranque. `{ lines, problem }`.
+ */
+function coordinatorLines({ home = os.homedir(), tree = path.resolve(process.env.TYCON_TREE || ROOT), now = Date.now() } = {}) {
+  if (readVar('TYCON_STUCK_PR_NOTICE') === '0') return { lines: [], problem: null };
+  const declarados = reposDelArnes(tree);
+  if (declarados.problema) return { lines: [], problem: declarados.problema };
+  if (!declarados.repos.length) return { lines: [], problem: null };
+  const dir = stateDirOf(home);
+  const foto = leerJson(fotoDe(dir));
+  const deEstos = Boolean(foto && foto.lecturas && JSON.stringify(foto.repos) === JSON.stringify(declarados.repos.map(claveDe)));
+  const edad = deEstos ? now - Date.parse(foto.at) : Infinity;
+  const lanzada = edad >= 0 && edad < FOTO_MS ? true : lanzarRefresco(tree, dir, home);
+  // Una foto de más de una hora no dice si el pedido sigue ahí: no avisa de ninguno, y lo dice, porque callar se leería como
+  // «no hay pedidos listos sin encolar».
+  if (!deEstos || !(edad < HORA_MS)) {
+    return { lines: [], problem: `los pedidos listos sin encolar: sin lectura de la última hora${lanzada ? ', sigue midiendo de fondo' : ' y no pude lanzar la lectura de fondo'}` };
+  }
+  // lo mismo con un repo que la última lectura no pudo leer
+  const sinLeer = declarados.repos.filter((r) => r.platform === 'github' && !(foto.lecturas[claveDe(r)] && foto.lecturas[claveDe(r)].ok)).map((r) => limpio(r.repo, 60));
+  const relojArchivo = path.join(dir, 'green-prs.json');
+  const previo = leerJson(relojArchivo) || {};
+  const { trabados, estado } = verdesSinEntrar(declarados.repos, foto.lecturas, previo, now);
+  let problem = sinLeer.length ? `los pedidos listos sin encolar: la última lectura no pudo leer ${sinLeer.join(', ')}` : null;
+  try { escribirJson(relojArchivo, estado); } catch (e) { problem = `no pude guardar desde cuándo está verde cada pedido (${e.code || e.message})`; }
+  trabados.sort((a, b) => b.ms - a.ms || a.creado - b.creado || a.number - b.number);
+  const lines = trabados.slice(0, MAX_LINEAS).map((t) => t.linea);
+  if (trabados.length > MAX_LINEAS) lines.push(`   (+${trabados.length - MAX_LINEAS} más)`);
+  return { lines, problem };
+}
 
 async function main() {
   if (readVar('TYCON_STUCK_PR_NOTICE') === '0') return;
@@ -232,6 +362,10 @@ async function main() {
         : `⚠️ pedido ${p.number} (${limpio(repo.repo, 60)}) con auto-completar no entró hace ${hace} (${limpio(mergeState, 20)}${p.inQueue === false ? ', sin lugar en la cola' : ''}) · ${rama}` });
     }
   }
+  // los listos que nadie encoló, con su propio reloj en el mismo estado
+  const verdes = verdesSinEntrar(declarados.repos, leidas, previo, ahora);
+  Object.assign(estado, verdes.estado);
+  trabados.push(...verdes.trabados);
   let sinGuardar = false;
   try { escribirJson(estadoArchivo, estado); } catch { sinGuardar = true; }
 
@@ -248,7 +382,8 @@ async function main() {
 
 // Si algo falla después de saber que el repo aplica, se dice; antes, se calla. El arranque nunca se rompe.
 let aplica = false;
-if (process.argv[2] === '--refresh') {
+module.exports = { verdesSinEntrar, coordinatorLines, comandoParaEncolar, leerPropios };
+if (require.main !== module) { /* lo usa la coordinadora: no corre el arranque */ } else if (process.argv[2] === '--refresh') {
   refrescar(path.resolve(process.argv[3] || ROOT)).catch(() => { /* la próxima lo intenta otra vez */ }).finally(() => process.exit(0));
 } else main().catch((e) => {
   if (aplica) { try { console.log(`pedidos trabados: no medido (${limpio((e && e.message) || e, 160)})`); } catch { /* nada más que hacer */ } }

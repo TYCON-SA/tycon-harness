@@ -26,14 +26,16 @@ const GUIA = path.join(RAIZ, 'guides', 'firmas-del-arnes.md');
 // todas las firmas que piden los frenos hoy, escritas a mano para que una que se pierda del catálogo se note: cada escape
 // es su propia entrada
 const DE_LA_STORY = ['plan-approval', 'extra-round', 'refresh-after-main', 'control-change', 'critical-waiver',
-  'runtime-waiver', 'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'adhoc-lane',
+  'runtime-waiver', 'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'adhoc-lane', 'adhoc-lane:sobre-cupo',
   'escape:TYCON_SAFETY_OFF', 'escape:TYCON_PROD_LINT', 'escape:TYCON_NEW_NAMES', 'escape:TYCON_TEST_GATE',
   'escape:DOD_BYPASS', 'escape:TYCON_NO_DEEP_REVIEW', 'escape:TYCON_STATUS_GATE',
   'escape:story-skill-bypass', 'escape:set-autonomous', 'escape:cerrar-la-ejecucion', 'escape:cerrar-como-deuda',
   'escape:force-manual', 'escape:trust-ran', 'escape:ALLOW_DOD_EVIDENCE_WRITE', 'escape:dod_runtime_exempt',
-  'escape:no-deep-review', 'escape:cambiar-el-estado', 'save'];
+  'escape:no-deep-review', 'escape:cambiar-el-estado', 'save', 'designation-confirm',
+  // nombrar y retirar a la coordinadora con un click
+  'designation-set', 'designation-withdraw'];
 
-const OTRA_SESION = { yes: 'sí', no: 'no, por la terminal', pending: 'todavía sin comando' };
+const OTRA_SESION = { yes: 'sí', no: 'no, en la pestaña de esa sesión', pending: 'todavía sin comando' };
 
 /** Las filas de la tabla que sigue al título `titulo`, como listas de celdas (sin la cabecera ni el separador). */
 function tabla(texto, titulo) {
@@ -63,7 +65,8 @@ test('8.139 T1 SignaturesGuide_UnaFilaPorFirma', () => {
   const filas = tabla(texto, '## Las firmas');
   assert.deepStrictEqual(filas.map((f) => f[0]), ids.map((id) => `\`${id}\``), 'una fila por firma, en el orden del catálogo');
   for (const [i, s] of cat.SIGNATURES.entries()) {
-    assert.deepStrictEqual(filas[i], [`\`${s.id}\``, s.approves, `\`${s.command}\``, OTRA_SESION[s.otherSession], s.terminal === null ? '—' : `\`${s.terminal}\``], s.id);
+    const otra = cat.ONLY_IN_TERMINAL.includes(s.id) ? 'no, sólo en tu terminal' : OTRA_SESION[s.otherSession];
+    assert.deepStrictEqual(filas[i], [`\`${s.id}\``, s.approves, `\`${s.command}\``, otra, s.terminal === null ? '—' : `\`${s.terminal}\``], s.id);
   }
   const grupos = tabla(texto, '## Los grupos de la 8.116');
   assert.deepStrictEqual(grupos.map((f) => f[0]), Object.keys(cat.GROUPS).map((g) => `\`${g}\``));
@@ -85,6 +88,21 @@ test('8.139 T2 SignaturesGuide_DiceLoDelegadoNoEstaProtegido', () => {
     'sólo va lo de bajo riesgo']) {
     assert.ok(seccion.includes(frase), `la sección no dice «${frase}»`);
   }
+});
+
+test('T31 Firmas_SobreCupo_ApareceComoPedidaEnLaGuia @story-8.181 @ac-15', () => {
+  const cat = require(CATALOGO);
+  const texto = fs.readFileSync(GUIA, 'utf8');
+  const fila = tabla(texto, '## Las firmas').find((f) => f[0] === '`adhoc-lane:sobre-cupo`');
+  assert.ok(fila, 'está entre las firmas que se piden');
+  assert.strictEqual(fila[3], OTRA_SESION.no, 'no se corre desde la pestaña de otra sesión');
+  const nivel = texto.split('\n').find((l) => l.startsWith('| `adhoc-lane:sobre-cupo` | 2'));
+  assert.ok(nivel && !nivel.includes('todavía no se pide'), nivel);
+  assert.match(nivel, /`adhoc-lane:sobre-cupo` \|$/);
+  const s = cat.SIGNATURES.find((x) => x.id === 'adhoc-lane:sobre-cupo');
+  assert.strictEqual(s.soloClick, true);
+  assert.match(s.terminal, /--terminal/);
+  assert.match(texto, /cuentan sólo los archivos de implementación, sin pruebas ni guías/);
 });
 
 const TRES = ['escape:force-manual', 'escape:trust-ran', 'runtime-waiver'];
@@ -139,7 +157,7 @@ test('8.141 T7 Signatures_AdhocLane_FueraDeLosGrupos', () => {
   assert.strictEqual(s.approves, 'abrir el arreglo rápido de una sesión, sin historia');
   assert.strictEqual(s.approvesEn, "open a session's quick fix, with no story");
   assert.strictEqual(s.command, "marker.js adhoc set '<json>'");
-  assert.strictEqual(s.terminal, "marker.js adhoc set '<json>' --terminal --for-session <id>");
+  assert.strictEqual(s.terminal, 'marker.js adhoc set --reason "<motivo>" [--max-files N] --terminal --for-session <id>');
   for (const g of cat.groupNames()) assert.ok(!cat.expand(g).includes('adhoc-lane'), `el grupo ${g} no la trae`);
   assert.deepStrictEqual(cat.expand('adhoc-lane'), ['adhoc-lane'], 'por su nombre sí');
 });
@@ -209,6 +227,7 @@ const TABLA_DE_NIVELES = [
   ['escape:force-manual', 2, ['dev', 'mant']], ['escape:trust-ran', 2, ['dev', 'mant']],
   ['escape:TYCON_TEST_GATE', 2, ['dev', 'mant']], ['escape:TYCON_STATUS_GATE', 2, ['dev', 'mant']],
   ['escape:story-skill-bypass', 2, ['dev', 'mant']], ['escape:set-autonomous', 2, ['dev', 'mant']],
+  ['designation-confirm', 2, ['dev', 'mant']], ['designation-set', 2, ['dev', 'mant']], ['designation-withdraw', 2, ['dev', 'mant']],
   ['control-change', 3, ['mant']], ['escape:TYCON_SAFETY_OFF', 3, ['dev', 'mant']], ['escape:TYCON_PROD_LINT', 3, ['dev', 'mant']],
   ['escape:TYCON_NEW_NAMES', 3, ['mant']], ['emergency', 3, ['dev', 'mant']],
 ];
@@ -233,7 +252,7 @@ test('niveles T1 Catalogo_TablaDeNiveles', () => {
   const cat = require(CATALOGO);
   assert.deepStrictEqual(cat.LEVELS.map((l) => [l.id, l.level, [...l.profiles]]), TABLA_DE_NIVELES);
   const cuenta = [1, 2, 3].map((n) => cat.LEVELS.filter((l) => l.level === n).length);
-  assert.deepStrictEqual(cuenta, [7, 15, 5], '7 de rutina, 15 de excepción, 5 irreversibles');
+  assert.deepStrictEqual(cuenta, [7, 18, 5], '7 de rutina, 18 de excepción, 5 irreversibles');
   for (const l of cat.LEVELS) assert.ok(typeof l.approves === 'string' && l.approves.trim(), `${l.id}: falta qué aprueba`);
 });
 
@@ -248,10 +267,10 @@ test('niveles T2 Catalogo_CadaFirmaApuntaASuNivel', () => {
     assert.strictEqual(s.level, Math.max(...cubre.map((id) => nivel[id].n)), `${s.id}: su nivel es el mayor de lo que cubre`);
     assert.deepStrictEqual([...s.profiles], ['dev', 'mant'].filter((p) => cubre.some((id) => nivel[id].p.includes(p))), `${s.id}: perfiles`);
   }
-  // cada id de la tabla lo pide alguna firma de hoy, salvo pasarse del cupo diario, que todavía no existe, y la
-  // emergencia, que se da con `harness.js sign` y no con una firma de hoy
+  // cada id de la tabla lo pide alguna firma de hoy, salvo la emergencia, que se da con `harness.js sign` y no con una
+  // firma de hoy
   const pedidos = new Set(cat.SIGNATURES.flatMap((s) => s.covers));
-  assert.deepStrictEqual(TABLA_DE_NIVELES.map(([id]) => id).filter((id) => !pedidos.has(id)), ['adhoc-lane:sobre-cupo', 'emergency']);
+  assert.deepStrictEqual(TABLA_DE_NIVELES.map(([id]) => id).filter((id) => !pedidos.has(id)), ['emergency']);
 });
 
 // niveles T3 Catalogo_NivelPorDelegacion
@@ -292,4 +311,21 @@ test('niveles T5 Catalogo_ElPerfilSoloSube', () => {
   assert.strictEqual(cat.delegatedLevel('save', { 'save': 2 }), 2);
   assert.strictEqual(cat.delegatedLevel('escape:no-deep-review', { 'adversarial-skip': 3 }), 3, 'el escape sube con la firma que cubre');
   assert.strictEqual(cat.delegatedLevel('extra-round', null), 1, 'sin perfil, la tabla');
+});
+
+// 🔴 Falla con: la guía sin las firmas de nombrar y retirar a la coordinadora, o con ellas por otra pestaña.
+test('SignaturesGuide_ListsDesignationSetAndWithdraw (T29) @story-8.207 @ac-24', () => {
+  const cat = require(CATALOGO);
+  const texto = fs.readFileSync(GUIA, 'utf8');
+  for (const id of ['designation-set', 'designation-withdraw']) {
+    const s = cat.SIGNATURES.find((x) => x.id === id);
+    assert.ok(s, id);
+    assert.deepStrictEqual([s.otherSession, s.soloClick, s.kind], ['no', true, 'guion'], id);
+    const fila = texto.split('\n').find((l) => l.startsWith(`| \`${id}\``) && l.includes(s.approves));
+    assert.ok(fila, `${id}: su fila en la tabla de firmas`);
+    assert.ok(fila.includes(OTRA_SESION.no), `${id}: «${OTRA_SESION.no}»`);
+  }
+  // la de confirmar, como hoy: la pestaña de la sesión, sin ser de sólo click
+  const conf = cat.SIGNATURES.find((x) => x.id === 'designation-confirm');
+  assert.deepStrictEqual([conf.otherSession, !!conf.soloClick], ['no', false]);
 });

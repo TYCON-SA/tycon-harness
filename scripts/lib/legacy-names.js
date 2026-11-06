@@ -861,8 +861,9 @@ function mirar(fn, p) {
  */
 function gitAt(root, args) {
   const { spawnSync } = require('child_process');
-  const env = { LC_ALL: 'C' };
-  for (const [k, v] of Object.entries(process.env)) if (!k.startsWith('GIT_') && k !== 'LC_ALL' && k !== 'LANGUAGE') env[k] = v;
+  const base = {};
+  for (const [k, v] of Object.entries(process.env)) if (!k.startsWith('GIT_')) base[k] = v;
+  const env = require('./clean-git-env.js').idiomaFijo(base);
   const r = spawnSync('git', ['-C', root, ...args], { env, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
   const stderr = String(r.stderr || '').trim();
   const notARepo = (!!r.error && r.error.code === 'ENOENT') || (r.status === 128 && /not a git repository/i.test(stderr));

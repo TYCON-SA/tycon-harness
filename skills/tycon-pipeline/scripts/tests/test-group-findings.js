@@ -30,13 +30,22 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const SCRIPTS = path.join(__dirname, '..');
+// La base que el paso le pasa al pase.
+const BASE = '0123456789abcdef0123456789abcdef01234567';
 
-// El 5b se anota con `--result <archivo>`: el JSON del pase, medido, con sus N confirmados.
+// El 5b se anota con `--result <archivo>`: el JSON del pase, medido, con sus N confirmados y la prueba de cada lente
+// limpia guardada al lado.
 function resultadoMedido(dir, n) {
   const archivo = path.join(dir, `resultado-${n}-${process.hrtime.bigint()}.json`);
+  const prueba = (l) => {
+    const d = path.join(dir, 'step-05b-probes', `caza-${l}`);
+    fs.mkdirSync(d, { recursive: true });
+    fs.writeFileSync(path.join(d, 'COMO-SE-CORRIO.txt'), 'node probe.js\n→ ok\n');
+    return d;
+  };
   fs.writeFileSync(archivo, JSON.stringify({
     confirmed: Array.from({ length: n }, (_v, k) => ({ lens: 'l', summary: `h${k}` })),
-    lentes: ['a', 'b', 'c', 'd', 'e', 'f'].map((l) => ({ lens: l, estado: 'medida', count: 0 })), lentes_sin_medir: [], detalle: [], medido: true,
+    lentes: ['a', 'b', 'c', 'd', 'e', 'f'].map((l) => ({ lens: l, estado: 'medida', count: 0, probe_dir: prueba(l) })), lentes_sin_medir: [], detalle: [], medido: true,
   }));
   return archivo;
 }
@@ -134,6 +143,9 @@ function mkStub(tmp) {
   fs.writeFileSync(stub, `
 const fs = require('fs'); const path = require('path');
 const prompt = process.env.TYCON_WFLITE_PROMPT || '';
+// (8.215) un cazador devuelve la base pedida y, limpio, la carpeta de su prueba: las dos se las nombra el pedido
+{ const base = (prompt.match(/Devolvé base = "([^"]+)"/) || [])[1]; const carpeta = (prompt.match(/Creá la carpeta (\\S+)/) || [])[1] || '';
+  if (base) { const log = console.log; console.log = (s) => { try { const o = JSON.parse(s); if (Array.isArray(o.findings)) s = JSON.stringify({ ...o, base, probe_dir: o.findings.length ? '' : carpeta }); } catch (_) { /* no es JSON */ } log(s); }; } }
 const dir = ${JSON.stringify(tmp)};
 fs.writeFileSync(path.join(dir, 'prompt-' + process.pid + '-' + Math.random().toString(36).slice(2) + '.txt'), prompt);
 const F = (line, sum) => ({ severity: 'bug', file: 'src/a.js', line, summary: sum, repro: 'repro ' + line, confidence: 'high' });
@@ -160,7 +172,7 @@ function correr(extra) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'agrupar-'));
   const stub = mkStub(tmp);
   const out = path.join(tmp, 'out.json');
-  const args = { repo: tmp, files: ['src/a.js'], runDir: path.join(tmp, 'run'), ...(extra || {}) };
+  const args = { repo: tmp, files: ['src/a.js'], runDir: path.join(tmp, 'run'), base: BASE, ...(extra || {}) };
   delete args.__env;
   const r = spawnSync(process.execPath, [WFLITE, WORKFLOW, '--args', JSON.stringify(args), '--out', out], {
     encoding: 'utf8',
@@ -281,13 +293,16 @@ test('verificador muerto — la clase queda SIN VEREDICTO y el pase lo dice, no 
   const stub = path.join(tmp, 'stub.js');
   fs.writeFileSync(stub, `
 const prompt = process.env.TYCON_WFLITE_PROMPT || '';
+// (8.215) un cazador devuelve la base pedida y, limpio, la carpeta de su prueba: las dos se las nombra el pedido
+{ const base = (prompt.match(/Devolvé base = "([^"]+)"/) || [])[1]; const carpeta = (prompt.match(/Creá la carpeta (\\S+)/) || [])[1] || '';
+  if (base) { const log = console.log; console.log = (s) => { try { const o = JSON.parse(s); if (Array.isArray(o.findings)) s = JSON.stringify({ ...o, base, probe_dir: o.findings.length ? '' : carpeta }); } catch (_) { /* no es JSON */ } log(s); }; } }
 const F = (line, sum) => ({ severity: 'bug', file: 'src/a.js', line, summary: sum, repro: 'r' + line, confidence: 'high' });
 if (/REFUTAR/i.test(prompt)) { console.log('esto no es JSON'); process.exit(0); }
 if (/LENTE: completitud/.test(prompt)) { console.log(JSON.stringify({ lens: 'traversal-completeness', findings: [F(10, 'el cuerpo del heredoc se parsea como comandos')] })); }
 else { console.log(JSON.stringify({ lens: 'otra', findings: [] })); }
 `);
   const out = path.join(tmp, 'out.json');
-  const args = { repo: tmp, files: ['src/a.js'], runDir: path.join(tmp, 'run') };
+  const args = { repo: tmp, files: ['src/a.js'], runDir: path.join(tmp, 'run'), base: BASE };
   const r = spawnSync(process.execPath, [WFLITE, WORKFLOW, '--args', JSON.stringify(args), '--out', out], {
     encoding: 'utf8',
     env: { ...process.env, TYCON_WFLITE_AGENT_CMD: `${process.execPath} ${stub}` },
@@ -402,6 +417,9 @@ test('vuelta 3 — si el verificador dice que uno NO es el mismo defecto, ese ha
   const stub = path.join(tmp, 'stub.js');
   fs.writeFileSync(stub, `
 const prompt = process.env.TYCON_WFLITE_PROMPT || '';
+// (8.215) un cazador devuelve la base pedida y, limpio, la carpeta de su prueba: las dos se las nombra el pedido
+{ const base = (prompt.match(/Devolvé base = "([^"]+)"/) || [])[1]; const carpeta = (prompt.match(/Creá la carpeta (\\S+)/) || [])[1] || '';
+  if (base) { const log = console.log; console.log = (s) => { try { const o = JSON.parse(s); if (Array.isArray(o.findings)) s = JSON.stringify({ ...o, base, probe_dir: o.findings.length ? '' : carpeta }); } catch (_) { /* no es JSON */ } log(s); }; } }
 const F = (line, sum) => ({ severity: 'bug', file: 'src/a.js', line, summary: sum, repro: 'r', confidence: 'high' });
 const S = 'el cuerpo del heredoc se parsea como comandos';
 if (/REFUTAR/i.test(prompt)) {
@@ -410,7 +428,7 @@ if (/REFUTAR/i.test(prompt)) {
 else { console.log(JSON.stringify({ lens: 'otra', findings: [] })); }
 `);
   const out = path.join(tmp, 'out.json');
-  const r = spawnSync(process.execPath, [WFLITE, WORKFLOW, '--args', JSON.stringify({ repo: tmp, files: ['src/a.js'], runDir: path.join(tmp, 'run') }), '--out', out], {
+  const r = spawnSync(process.execPath, [WFLITE, WORKFLOW, '--args', JSON.stringify({ repo: tmp, files: ['src/a.js'], runDir: path.join(tmp, 'run'), base: BASE }), '--out', out], {
     encoding: 'utf8', env: { ...process.env, TYCON_WFLITE_AGENT_CMD: `${process.execPath} ${stub}` },
   });
   const salida = fs.existsSync(out) ? JSON.parse(fs.readFileSync(out, 'utf8')) : null;
@@ -432,6 +450,9 @@ test('vuelta 3b — si la respuesta del verificador no es un SÍ limpio, no se h
     const stub = path.join(tmp, 'stub.js');
     fs.writeFileSync(stub, `
 const prompt = process.env.TYCON_WFLITE_PROMPT || '';
+// (8.215) un cazador devuelve la base pedida y, limpio, la carpeta de su prueba: las dos se las nombra el pedido
+{ const base = (prompt.match(/Devolvé base = "([^"]+)"/) || [])[1]; const carpeta = (prompt.match(/Creá la carpeta (\\S+)/) || [])[1] || '';
+  if (base) { const log = console.log; console.log = (s) => { try { const o = JSON.parse(s); if (Array.isArray(o.findings)) s = JSON.stringify({ ...o, base, probe_dir: o.findings.length ? '' : carpeta }); } catch (_) { /* no es JSON */ } log(s); }; } }
 const F = (line, sum) => ({ severity: 'bug', file: 'src/a.js', line, summary: sum, repro: 'r', confidence: 'high' });
 const S = 'el cuerpo del heredoc se parsea como comandos';
 if (/REFUTAR/i.test(prompt)) {
@@ -440,7 +461,7 @@ if (/REFUTAR/i.test(prompt)) {
 else { console.log(JSON.stringify({ lens: 'otra', findings: [] })); }
 `);
     const out = path.join(tmp, 'out.json');
-    spawnSync(process.execPath, [WFLITE, WORKFLOW, '--args', JSON.stringify({ repo: tmp, files: ['src/a.js'], runDir: path.join(tmp, 'run') }), '--out', out], {
+    spawnSync(process.execPath, [WFLITE, WORKFLOW, '--args', JSON.stringify({ repo: tmp, files: ['src/a.js'], runDir: path.join(tmp, 'run'), base: BASE }), '--out', out], {
       encoding: 'utf8', env: { ...process.env, TYCON_WFLITE_AGENT_CMD: `${process.execPath} ${stub}` },
     });
     const salida = fs.existsSync(out) ? JSON.parse(fs.readFileSync(out, 'utf8')) : null;

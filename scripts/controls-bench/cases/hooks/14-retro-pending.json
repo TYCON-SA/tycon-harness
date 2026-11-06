@@ -1098,6 +1098,31 @@
           "_por_que": "4 de los 28 avisos medidos en 60 días tienen esta forma exacta."
         },
         {
+          "id": "quiet-un-git-log-de-solo-lectura-en-main-no-deja-reclamo",
+          "type": "must-stay-quiet",
+          "__doc": "Un `git log`/`git reflog` de sólo lectura, con la sesión parada en main y con «push» y «main» en el comando (una ruta y una referencia), no publica nada: no deja entrada ni avisa. Caso de una entrada del 19/10 que se atribuyó a un `git log` (2026-11-03); con el código de hoy no se reproduce, y este caso fija que siga así.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git log --oneline origin/main..HEAD -- scripts/push.sh && git reflog show main | head -5"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_not_re": [
+              "retro-pending"
+            ],
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl"
+            ]
+          }
+        },
+        {
           "id": "registra-un-push-envuelto-en-time-sin-decir-que-no-pudo-resolverlo",
           "type": "must-block",
           "__doc": "ROJO PREVIO (pase adversarial 2026-09-15, hallazgo #2): el análisis por sentencia exige que la sentencia EMPIECE con `git`, así que `time git push origin main` —sin `cd` y sin `-C`, o sea sin nada que contradiga al cwd de la sesión— caía en \"no pude resolver\" y NO anotaba. Regresión de ruido Y de datos contra la versión anterior, que lo anotaba bien.",
@@ -1843,10 +1868,49 @@
               }
             ]
           }
+        },
+        {
+          "id": "registra-pr-create-a-main-con-numero-queda-esperando",
+          "type": "must-block",
+          "__doc": "Story 8.205: un pedido abierto no es una fusión. Con el número en la salida de az (pullRequestId) la entrada queda esperando que entre y el aviso no pide el latido. ROJO PREVIO: se anotaba la punta de la rama y se pedía su latido.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "git checkout -q -b dev"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --org https://x --project P --repository R --source-branch dev --target-branch main"
+            },
+            "tool_response": {
+              "stdout": "{\n  \"pullRequestId\": 101,\n  \"status\": \"active\"\n}",
+              "stderr": "",
+              "interrupted": false
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "pedido 101 a main anotado",
+              "esperando que entre"
+            ],
+            "stderr_not_re": [
+              "--merge"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"pr\":101,\"plataforma\":\"azure\",\"estado\":\"esperando\""
+              }
+            ]
+          }
         }
       ],
       "env": {
-        "TYCON_RETRO_LAB_DIRS": ""
+        "TYCON_RETRO_LAB_DIRS": "",
+        "TYCON_RETRO_ASK_REMOTE": "0"
       },
       "__env": "Las suites del banco arman sus repos en el temporal del sistema: acá se declara que no hay carpetas de laboratorio (TYCON_RETRO_LAB_DIRS vacía), para que los casos de siempre se midan como repos de verdad. Los casos de laboratorio (2026-10-14) declaran la suya, adentro del caso."
     },
@@ -2194,12 +2258,74 @@
             "TYCON_RETRO_LAB_DIRS": "${FIXTURE}/temporal",
             "TYCON_REPOS_ROOT": "${FIXTURE}/repos"
           }
+        },
+        {
+          "id": "deja-parar-con-un-pedido-que-espera-entrar",
+          "type": "must-stay-quiet",
+          "__doc": "Story 8.205 (AC 2): un pedido abierto no frena el cierre. ROJO PREVIO: el cierre frenaba por la punta de la rama del pedido.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'bench-s1',repoPath:process.cwd(),sha:'abc123def456',branch:'main',pr:101,plataforma:'azure',estado:'esperando',cmd:'az repos pr create --source-branch dev --target-branch main'})+'\\n')\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "stop_hook_active": false
+          },
+          "expect": {
+            "exit": 0,
+            "stdout_not_re": [
+              "\"decision\"\\s*:\\s*\"block\""
+            ]
+          }
+        },
+        {
+          "id": "bloquea-por-el-commit-de-main-de-un-pedido-que-entro",
+          "type": "must-block",
+          "__doc": "Story 8.205 (AC 3): cuando el pedido entró, se reclama el commit que dejó en main, no la punta de su rama.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'bench-s1',repoPath:process.cwd(),sha:'abc123def456',branch:'main',pr:101,plataforma:'azure',estado:'esperando',cmd:'az repos pr create --source-branch dev --target-branch main'})+'\\n');fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T01:00:00.000Z',tipo:'pedido',entrada:{repo:process.cwd(),sha:'abc123def456'},pr:101,estado:'entro',merge:'9999eee11111'})+'\\n')\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "stop_hook_active": false
+          },
+          "expect": {
+            "stdout_re": [
+              "\"decision\"\\s*:\\s*\"block\"",
+              "--merge 9999eee11111"
+            ],
+            "stdout_not_re": [
+              "--merge abc123def456"
+            ]
+          }
+        },
+        {
+          "id": "deja-parar-con-un-pedido-abandonado",
+          "type": "must-stay-quiet",
+          "__doc": "Story 8.205 (AC 5): un pedido abandonado cierra su entrada y no se reclama nunca más.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'bench-s1',repoPath:process.cwd(),sha:'abc123def456',branch:'main',pr:101,plataforma:'azure',estado:'esperando',cmd:'az repos pr create --source-branch dev --target-branch main'})+'\\n');fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T01:00:00.000Z',tipo:'pedido',entrada:{repo:process.cwd(),sha:'abc123def456'},pr:101,estado:'abandonado',motivo:'el pedido 101 se abandonó: no hay fusión que reclamar'})+'\\n')\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "stop_hook_active": false
+          },
+          "expect": {
+            "exit": 0,
+            "stdout_not_re": [
+              "\"decision\"\\s*:\\s*\"block\""
+            ]
+          }
         }
       ],
       "env": {
-        "TYCON_RETRO_LAB_DIRS": ""
+        "TYCON_RETRO_LAB_DIRS": "",
+        "TYCON_RETRO_ASK_REMOTE": "0",
+        "TYCON_RETRO_ASK_PR": "0"
       },
-      "__env": "Las suites del banco arman sus repos en el temporal del sistema: acá se declara que no hay carpetas de laboratorio (TYCON_RETRO_LAB_DIRS vacía), para que los casos de siempre se midan como repos de verdad. Los casos de laboratorio (2026-10-14) declaran la suya, adentro del caso."
+      "__env": "Las suites del banco arman sus repos en el temporal del sistema: acá se declara que no hay carpetas de laboratorio (TYCON_RETRO_LAB_DIRS vacía), para que los casos de siempre se midan como repos de verdad. Los casos de laboratorio (2026-10-14) declaran la suya, adentro del caso. Story 8.205: la consulta a la plataforma por un pedido (az repos pr show / gh pr view) se apaga en el banco con TYCON_RETRO_ASK_PR=0; sus casos la reemplazan sembrando lo que se supo del pedido en el registro."
     },
     {
       "hook": "retro-pending.js (aviso)",
@@ -2347,9 +2473,11 @@
         }
       ],
       "env": {
-        "TYCON_RETRO_LAB_DIRS": ""
+        "TYCON_RETRO_LAB_DIRS": "",
+        "TYCON_RETRO_ASK_REMOTE": "0",
+        "TYCON_RETRO_ASK_PR": "0"
       },
-      "__env": "Las suites del banco arman sus repos en el temporal del sistema: acá se declara que no hay carpetas de laboratorio (TYCON_RETRO_LAB_DIRS vacía), para que los casos de siempre se midan como repos de verdad. Los casos de laboratorio (2026-10-14) declaran la suya, adentro del caso."
+      "__env": "Las suites del banco arman sus repos en el temporal del sistema: acá se declara que no hay carpetas de laboratorio (TYCON_RETRO_LAB_DIRS vacía), para que los casos de siempre se midan como repos de verdad. Los casos de laboratorio (2026-10-14) declaran la suya, adentro del caso. Story 8.205: la consulta a la plataforma por un pedido (az repos pr show / gh pr view) se apaga en el banco con TYCON_RETRO_ASK_PR=0; sus casos la reemplazan sembrando lo que se supo del pedido en el registro."
     }
   ]
 }

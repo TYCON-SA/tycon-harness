@@ -1,0 +1,9 @@
+{
+  "__doc": "Lo que hoy falla en el laboratorio de producto (lib/product-lab.js) y tiene dueño. Lo lee product-lab.test.js: la suite da rojo si un caso falla por otro motivo que `match`, si falla sin estar acá, si un caso de esta lista ya anda (se saca en ese mismo pedido) o si un hueco no tiene caso. Se escribe desde una corrida (node scripts/tests/lib/product-lab.js --json), nunca desde el análisis. Lo no medido nunca cuenta como conocido.",
+  "gaps": [
+    { "id": "comentario-sin-sangria", "match": "^esperaba rojo, dio verde", "pending": "8.194: un comentario sin sangría no corta la lista de archivos" },
+    { "id": "lista-partida", "match": "^esperaba rojo, dio verde", "pending": "8.194: la matriz lee una lista partida en varias líneas" },
+    { "id": "hermano-atrasado-guia", "match": "^la guía no dice que la copia del hermano", "pending": "DEF-matriz-lee-el-hermano-sin-mirar-su-estado" },
+    { "id": "carpeta-borrada", "match": "^el aviso nombra una carpeta que ya no existe", "pending": "DEF-retro-reclama-la-punta-real-una-sola-vez" }
+  ]
+}

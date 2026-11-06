@@ -207,9 +207,9 @@ const VOCABULARIO = Object.freeze({
   // Quién puede reenviar el ok de un dev: el nombre de la sesión (la coordinadora de una organización) cuyos
   // mensajes valen como reenvío textual del ok del dev para eximir un crítico o firmar un criterio que no se puede probar
   // en vivo. Sin valor, nadie. Vale SÓLO desde el perfil del equipo (PROFILE_ONLY).
-  // `delegated_signing`, `delegated_machines`, `owner_only` y `levels` (firmas por delegación, sólo del dueño y el nivel
-  // que sube el equipo): el freno no las usa, pero las acepta para no leer como ROTO un perfil que las trae.
-  approvals: Object.freeze({ relay_session: 'texto', delegated_signing: 'aceptada', delegated_machines: 'aceptada', owner_only: 'aceptada', levels: 'aceptada' }),
+  // `delegated_signing`, `delegated_machines`, `owner_only`, `levels` (firmas por delegación, sólo del dueño y el nivel
+  // que sube el equipo) y `signature_list`: el freno no las usa, pero las acepta para no leer como ROTO un perfil que las trae.
+  approvals: Object.freeze({ relay_session: 'texto', delegated_signing: 'aceptada', delegated_machines: 'aceptada', owner_only: 'aceptada', levels: 'aceptada', signature_list: 'aceptada' }),
   // Si, además del arnés, una persona tiene que marcar cada criterio de la guía del tester como probado a mano antes de
   // cerrar la historia: `off` (o sin valor) = no; `required` = el cierre frena sin esa marca. Cerrada, para sumar un
   // valor sin romper archivos. Vale SÓLO desde el perfil del equipo (PROFILE_ONLY): el agente podría apagarse el freno.
@@ -219,9 +219,11 @@ const VOCABULARIO = Object.freeze({
   guard: Object.freeze({ update: 'aceptada' }),
   models: Object.freeze({ provider: 'aceptada' }),
   // la receta de la coordinadora (el tope de sesiones y la carpeta de firmas): el freno no las usa, pero las acepta
-  coordination: Object.freeze({ max_working: 'aceptada', owner_folder: 'aceptada' }),
+  coordination: Object.freeze({ max_working: 'aceptada', owner_folder: 'aceptada', session_names: 'aceptada' }),
   // la dirección del sitio de la organización (la abre el comando de barra org-site): el freno no la usa, pero la acepta
   site: Object.freeze({ url: 'aceptada' }),
+  // el umbral de la sesión callada de la oficina de /office: el freno no lo usa, pero lo acepta
+  office: Object.freeze({ quiet_minutes: 'aceptada' }),
   // los interruptores que la organización enciende desde el sitio: el freno no los usa, pero los acepta
   switches: Object.freeze({
     test_scope_guard: 'aceptada', session_guard: 'aceptada', pr_one_per_repo: 'aceptada',

@@ -43,8 +43,10 @@ Diez palabras, cada una con un solo sentido en estas páginas:
 
 - **Sin cuenta de GitHub**: este repo es público, y el arnés se baja de acá sin credencial.
 - **Tu agente de código**: Claude Code o Codex, instalado y con tu sesión iniciada.
-- **En Windows, nativo**: Node 24 (alcanza con Node 22 o posterior), PowerShell 7 y `tar` (viene con Windows 10 y posteriores). Git y Python
-  no hacen falta. Por WSL, lo mismo que en Mac y Linux, dentro de WSL.
+- **En Windows, nativo**: Node 24 (alcanza con Node 22 o posterior), PowerShell 7, `tar` (viene con Windows 10 y posteriores) y Git para
+  Windows. Git hace falta para que corran los controles que son guiones de bash, entre ellos el freno de seguridad, y para
+  firmar con un click. Sin él no se midió qué pasa con esos controles: por eso se pide. El arnés se baja igual, como
+  archivos. Python no hace falta. Por WSL, lo mismo que en Mac y Linux, dentro de WSL.
 - **En Mac y Linux**: Bash, Python 3, `tar`, `curl` y Node 24 (alcanza con Node 22 o posterior; probado en 22 y 24). Git no hace falta.
 - **Node 20**: 20 se tolera sólo para actualizar una instalación existente; no se prueba.
 - **Los revisores para tu tecnología** que trae tu equipo pueden pedir más (los de .NET, el SDK de .NET de tu plugin):
@@ -80,6 +82,7 @@ te falte, desde cualquier terminal:
 ```powershell
 winget install OpenJS.NodeJS.LTS
 winget install Microsoft.PowerShell
+winget install Git.Git
 ```
 
 Cerrá la terminal y abrí **PowerShell 7** (en el menú Inicio se llama así): todos los comandos de esta página se corren
@@ -342,7 +345,7 @@ volvé a instalar con `--team <dirección>`.
 Hay dos, `minimal` y `full`, y no hay una por defecto: `install` te pregunta si no elegís; sin terminal, pasá `--profile`.
 
 - **`minimal`**: las guías, las skills, los revisores, el recorrido de las historias y el aviso de versión nueva. No
-  cambia cómo contesta el asistente. Registra nueve hooks (seis que sólo anotan, el que dice los avisos de los paquetes, el freno de comandos destructivos y el de editar código sin
+  cambia cómo contesta el asistente. Registra 12 hooks (ocho que sólo anotan, el que dice los avisos de los paquetes, el que tapa los secretos de la máquina, el freno de comandos destructivos y el de editar código sin
   historia ni ajuste puntual),
   más los de cada conexión opcional que prendas, y trae los enlaces, los comandos y las skills de terceros.
 - **`full`**: todo lo de `minimal`, y además los otros frenos (el mismo portón para el código que se escribe por la
@@ -437,7 +440,7 @@ tres bloques de reglas en `~/.claude/CLAUDE.md`, entre sus propios marcadores, y
 - `background-execution`: los pasos de más de dos minutos corren en segundo plano y se anuncian antes. Otro hook mide
   lo que dejó bloqueada la conversación (`TYCON_BLOCKING_METER=0`).
 - `tool-names`: la tabla con el nombre exacto de cada herramienta que nombran esas reglas.
-- La línea de import carga en cada sesión el `INDEX.md` del arnés: unos 15 KB, en castellano, con el índice de las
+- La línea de import carga en cada sesión el `INDEX.md` del arnés: unos 17 KB, en castellano, con el índice de las
   guías y las reglas siempre activas.
 - Los enlaces de `~/.claude/skills` y `~/.claude/agents` dejan disponibles en todas tus sesiones las skills y los
   revisores del arnés: el nombre y la descripción de cada uno se cargan en cada sesión.

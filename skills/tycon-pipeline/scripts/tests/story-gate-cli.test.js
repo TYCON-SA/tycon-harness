@@ -262,8 +262,8 @@ test('marker.js adhoc set/get/clear', () => {
   assert.equal(JSON.parse(r.stdout).maxFiles, 8);
   r = markerCli(home, sid, ['adhoc', 'get']);
   assert.equal(r.status, 0); assert.match(r.stdout, /hotfix botón/);
-  r = markerCli(home, sid, ['adhoc', 'set', '{"reason":"sigue siendo chico","maxFiles":12}']);
-  assert.equal(JSON.parse(r.stdout).maxFiles, 12);
+  r = markerCli(home, sid, ['adhoc', 'set', '{"reason":"sigue siendo chico","maxFiles":6}']);
+  assert.equal(JSON.parse(r.stdout).maxFiles, 6);
   assert.deepStrictEqual(adhocLog(home).map((e) => e.kind), ['ADHOC_SET', 'ADHOC_UPDATE']);
   r = markerCli(home, sid, ['adhoc', 'clear']);
   assert.equal(r.status, 0);
@@ -320,7 +320,74 @@ test('8.141 T9b AdhocSet_LoQueSeFirmaSeVeEntero', () => {
     assert.equal(r.status, 2, `${JSON.stringify(payload)}: ${r.stderr}`);
     assert.equal(declaracion(home, sid), null);
   }
-  assert.equal(markerCli(home, sid, ['adhoc', 'set', JSON.stringify({ reason: 'x'.repeat(200), maxFiles: 50 })]).status, 0);
+  assert.equal(markerCli(home, sid, ['adhoc', 'set', JSON.stringify({ reason: 'x'.repeat(200), maxFiles: 8 })]).status, 0);
+  const techo = markerEnTerminal(home, ['adhoc', 'set', JSON.stringify({ reason: 'x'.repeat(200), maxFiles: 50 }), '--terminal', '--for-session', sid], 'firmo');
+  if (techo) assert.equal(techo.status, 0, `${techo.stdout}${techo.stderr}`);
+});
+
+// La forma sin JSON, para la consola de la persona en Windows. 🔴 Falla con: un pedido por banderas que se firma fuera de
+// la terminal, un motivo que se hace pasar por una bandera, o un pedido que no queda igual que el de JSON.
+test('AdhocSet_PorBanderas_SoloEnLaTerminal_YQuedaIgualQueConJson', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const sid = 'sess-banderas';
+  for (const [args, dice] of [
+    [['--reason', 'arreglo del sp de deudas'], /sólo con --terminal/],
+    [['--max-files', '3', '--terminal'], /falta --reason/],
+    [['--reason', '--terminal', '--terminal'], /no puede empezar con «-»/],
+    [['--reason', '--for-session', 'otra', '--terminal'], /no puede empezar con «-»/],
+    [['--reason', '-x motivo largo', '--terminal'], /no puede empezar con «-»/],
+    [['--reason'], /--reason necesita un valor/],
+    [['--reason', 'arreglo del sp de deudas', '--reason', 'otro motivo cualquiera', '--terminal'], /una sola vez/],
+    [['--reason', 'arreglo del sp de deudas', '--max-files', 'tres', '--terminal'], /número entero/],
+    [['--reason', 'arreglo del sp de deudas', '--max-files', '-3', '--terminal'], /no puede empezar con «-»/],
+    [['--reason', 'arreglo del sp de deudas', '--quote', 'dijo que sí', '--terminal'], /no conozco «--quote»/],
+    [['--reason', 'arreglo del sp de deudas', '--mockup', 'm.html', '--terminal'], /no conozco «--mockup»/],
+    [['--reason', 'x', '--terminal'], /≥8 caracteres/],
+    [['--reason', 'x'.repeat(201), '--terminal'], /hasta 200 caracteres/],
+    [['--reason', 'arreglo del sp de deudas', '--max-files', '51', '--terminal'], /entero de 1 a 50/],
+  ]) {
+    const r = markerSinVentana(home, sid, ['adhoc', 'set', ...args]);
+    assert.equal(r.status, 2, `${args.join(' ')}: ${r.stderr}`);
+    assert.match(r.stderr, dice, args.join(' '));
+    assert.equal(declaracion(home, sid), null, `${args.join(' ')}: no escribe`);
+  }
+  assert.equal(adhocLog(home).length, 0);
+  const banderas = markerEnTerminal(home, ['adhoc', 'set', '--reason', 'arreglo del sp de deudas', '--max-files', '3', '--terminal', '--for-session', 'sess-b'], 'firmo');
+  if (!banderas) { console.log('⏭ la firma por banderas en la terminal: NO MEDIDO — sin Python (o en Windows) para abrir una terminal'); return; }
+  assert.equal(banderas.status, 0, `${banderas.stdout}${banderas.stderr}`);
+  assert.match(banderas.stdout, /«arreglo del sp de deudas» · hasta 3 archivos/, 'la terminal muestra el motivo y el cupo que se firman');
+  const json = markerEnTerminal(home, ['adhoc', 'set', '{"reason":"arreglo del sp de deudas","maxFiles":3}', '--terminal', '--for-session', 'sess-j'], 'firmo');
+  assert.equal(json.status, 0, `${json.stdout}${json.stderr}`);
+  // lo único que cambia entre las dos es la sesión y la hora
+  const loPedido = (d) => { const { declaredAt, lastTouch, firmadaEn, by, ...resto } = d; return resto; };
+  assert.deepStrictEqual(loPedido(declaracion(home, 'sess-b')), loPedido(declaracion(home, 'sess-j')));
+  assert.equal(declaracion(home, 'sess-b').via, 'terminal');
+  const no = markerEnTerminal(home, ['adhoc', 'set', '--reason', 'otro arreglo chico', '--terminal', '--for-session', 'sess-no'], 'no');
+  assert.equal(no.status, 1, `${no.stdout}${no.stderr}`);
+  assert.equal(declaracion(home, 'sess-no'), null);
+  assert.match(`${no.stdout}${no.stderr}`, /adhoc set --reason "otro arreglo chico" --terminal --for-session sess-no/, 'dice el comando en la misma forma');
+});
+
+// En Windows la consola de la persona no se lleva bien con el JSON: el aviso da la forma sin él, salvo que no se pueda.
+test('AdhocSet_EnWindows_ElAvisoDaLaFormaSinJson', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const win = { TYCON_WAIVER_PLATFORM: 'win32' };
+  let r = markerSinVentana(home, 'sess-w', ['adhoc', 'set', '{"reason":"arreglo del sp de deudas","maxFiles":3}'], win);
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /adhoc set --reason "arreglo del sp de deudas" --max-files 3 --terminal --for-session sess-w/);
+  r = markerSinVentana(home, 'sess-w', ['adhoc', 'set', '{"reason":"arreglo con \\"comillas\\" adentro"}'], win);
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /adhoc set '\{"reason":"arreglo con \\"comillas\\" adentro"\}' --terminal/, 'un motivo con comillas no se puede citar en esa forma');
+  // 🔴 Falla con: un comando sugerido que su propia forma rechaza al pegarlo, o que la consola rompe
+  r = markerSinVentana(home, 'sess-w', ['adhoc', 'set', '{"reason":"-fix del boton rojo"}'], win);
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /adhoc set '\{"reason":"-fix del boton rojo"\}' --terminal/, 'un motivo con «-» adelante, la forma con banderas lo rechaza');
+  const { motivoSeCita, pedidoPorBanderas } = require('../lib/adhoc-screen.js');
+  for (const motivo of ['arreglo del sp de deudas', 'con ñ, acentos y a/b']) {
+    assert.equal(motivoSeCita(motivo), true, motivo);
+    assert.ok(pedidoPorBanderas(['--reason', motivo, '--terminal']).payload, `${motivo}: lo que se sugiere, la forma lo acepta`);
+  }
+  for (const motivo of ['-fix del boton', 'con "comillas"', 'con `x`', 'vale $HOME', 'al 50%', 'ruta C:\\tmp\\', 'dos\nrenglones', 'cierra“; otro comando; “aca', 'cierra‘ y sigue’', 'hola!']) assert.equal(motivoSeCita(motivo), false, motivo);
 });
 
 // 8.141 T10 AdhocSet_ElChatNoAutoriza @story-8.141 @ac-5 @ac-8
@@ -354,7 +421,7 @@ test('8.141 T11 AdhocSet_ForSession_Delegada_SinAviso_NoDeclara', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
   const coord = 'sess-coord';
   const destino = 'sess-dest';
-  const args = ['adhoc', 'set', '{"reason":"arreglo del sp de deudas","maxFiles":20}', '--for-session', destino];
+  const args = ['adhoc', 'set', '{"reason":"arreglo del sp de deudas","maxFiles":7}', '--for-session', destino];
   const env = conVentana({ ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: coord }, { delegadaPor: coord });
   const r = spawnSync('node', [path.join(SCRIPTS, 'marker.js'), ...args], { encoding: 'utf8', env });
   assert.equal(r.status, 1, `${r.stdout}${r.stderr}`);
@@ -362,6 +429,178 @@ test('8.141 T11 AdhocSet_ForSession_Delegada_SinAviso_NoDeclara', () => {
   assert.equal(declaracion(home, destino), null, 'la destino sin declaración');
   assert.equal(declaracion(home, coord), null, 'la designada sin declaración');
   assert.deepStrictEqual(adhocLog(home).map((e) => e.kind), [], 'ningún renglón');
+});
+
+const firmasDe = (home) => { try { return fs.readFileSync(path.join(estadoDe(home), 'signatures.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch (_) { return []; } };
+const PEDIDO_9 = '{"reason":"arreglo del sp de deudas","maxFiles":9}';
+
+test('T14 AdhocSet_SobreCupoAprobado_QuedaAnotadoQueLoEligioElDev @story-8.181 @ac-6', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  // la ventana no alcanza: lo elige la persona con su click o su terminal
+  const conVentanaNoVale = markerCli(home, 'sess-a', ['adhoc', 'set', PEDIDO_9]);
+  assert.equal(conVentanaNoVale.status, 1, conVentanaNoVale.stderr);
+  assert.match(conVentanaNoVale.stderr, /sólo el click de la persona o su terminal/);
+  assert.equal(declaracion(home, 'sess-a'), null);
+  const r = markerEnTerminal(home, ['adhoc', 'set', PEDIDO_9, '--terminal', '--for-session', 'sess-a'], 'firmo');
+  if (!r) { console.log('⏭ la firma en la terminal: NO MEDIDO — sin Python (o en Windows) para abrir una terminal'); return; }
+  assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+  const d = declaracion(home, 'sess-a');
+  assert.deepStrictEqual([d.sobreCupo, d.cupoPedido, d.eligio, d.via, d.maxFiles], [true, 9, 'persona', 'terminal', 9]);
+  const renglon = adhocLog(home).find((e) => e.kind === 'ADHOC_SET');
+  assert.deepStrictEqual([renglon.sobreCupo, renglon.cupoPedido, renglon.eligio, renglon.via], [true, 9, 'persona', 'terminal']);
+  const firma = firmasDe(home).find((f) => f.signature === 'adhoc-lane:sobre-cupo');
+  assert.ok(firma, 'el registro común de firmas la anota');
+  assert.strictEqual(firma.level, 2);
+  // la firma abre el portón: sin este renglón, el click pasaría y el carril no abriría
+  assert.ok(io.adhocFirmado(estadoDe(home), 'sess-a', d), 'el portón la reconoce');
+  // pedir sin número conserva el cupo y la marca, con la firma común
+  const sigue = markerCli(home, 'sess-a', ['adhoc', 'set', '{"reason":"arreglo del sp de deudas, sigue"}']);
+  assert.equal(sigue.status, 0, sigue.stderr);
+  assert.deepStrictEqual((({ sobreCupo, cupoPedido, eligio, maxFiles }) => [sobreCupo, cupoPedido, eligio, maxFiles])(JSON.parse(sigue.stdout)), [true, 9, 'persona', 9]);
+});
+
+test('T15 AdhocClear_SobreCupo_AnotaLosArchivosTocados @story-8.181 @ac-6', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-')));
+  execFileSync('git', ['-C', repo, 'init', '-q']);
+  fs.mkdirSync(path.join(repo, 'src'));
+  const a = path.join(repo, 'src', 'a.js');
+  fs.writeFileSync(a, 'x\n');
+  fs.mkdirSync(path.dirname(io.adhocPath(estadoDe(home), 'sess-a')), { recursive: true });
+  fs.writeFileSync(io.adhocPath(estadoDe(home), 'sess-a'), JSON.stringify({ reason: 'arreglo grande', maxFiles: 9, sobreCupo: true, cupoPedido: 9, eligio: 'persona', files: [a, '/tmp/sonda.js'], bases: {} }));
+  assert.equal(markerSinVentana(home, 'sess-a', ['adhoc', 'clear']).status, 0);
+  const c = adhocLog(home).find((e) => e.kind === 'ADHOC_CLEAR');
+  assert.deepStrictEqual([c.sobreCupo, c.cupoPedido, c.eligio, c.contados, c.archivos], [true, 9, 'persona', 1, [a]]);
+});
+
+// 🔴 Falla con: la cuenta leída con `readAdhoc`, que da nada pasadas las 6 horas: se pierde el dato del sobre cupo.
+test('AdhocClear_SobreCupoVencido_AnotaLaCuentaIgual @story-8.181 @ac-6', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-')));
+  execFileSync('git', ['-C', repo, 'init', '-q']);
+  fs.mkdirSync(path.join(repo, 'src'));
+  const a = path.join(repo, 'src', 'a.js');
+  fs.writeFileSync(a, 'x\n');
+  const viejo = new Date(Date.now() - 7 * 3600000).toISOString();
+  fs.mkdirSync(path.dirname(io.adhocPath(estadoDe(home), 'sess-a')), { recursive: true });
+  fs.writeFileSync(io.adhocPath(estadoDe(home), 'sess-a'), JSON.stringify({ reason: 'arreglo grande', maxFiles: 9, sobreCupo: true, cupoPedido: 9, eligio: 'persona', files: [a], declaredAt: viejo, lastTouch: viejo }));
+  assert.equal(markerSinVentana(home, 'sess-a', ['adhoc', 'clear']).status, 0);
+  const c = adhocLog(home).find((e) => e.kind === 'ADHOC_CLEAR');
+  assert.deepStrictEqual([c.sobreCupo, c.cupoPedido, c.eligio, c.contados, c.archivos], [true, 9, 'persona', 1, [a]]);
+});
+
+// 🔴 Falla con: la ruta absoluta mirada entera: un repo debajo de una carpeta `tests` cuenta cero archivos y nunca frena.
+test('ArchivosQueSuman_RepoDebajoDeTests_Cuentan @story-8.181 @ac-10', () => {
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'porton-')));
+  const repo = path.join(base, 'tests', 'r');
+  fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
+  execFileSync('git', ['-C', repo, 'init', '-q']);
+  const a = path.join(repo, 'src', 'a.js');
+  fs.writeFileSync(a, 'x\n');
+  assert.deepStrictEqual(io.archivosQueSuman([a]), [a]);
+});
+
+// 🔴 Falla con: una declaración ilegible o medida con menos que queda en el registro como un cierre normal.
+test('AdhocClear_RegistroDiceLoQueNoSeMidio @story-8.181 @ac-6', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-')));
+  execFileSync('git', ['-C', repo, 'init', '-q']);
+  fs.mkdirSync(path.join(repo, 'src'));
+  const a = path.join(repo, 'src', 'a.js');
+  fs.writeFileSync(a, 'x\n');
+  const p = io.adhocPath(estadoDe(home), 'sess-a');
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  fs.writeFileSync(p, JSON.stringify({ reason: 'arreglo grande', maxFiles: 9, sobreCupo: true, cupoPedido: 9, eligio: 'persona', files: [a], declaredAt: new Date().toISOString(), lastTouch: new Date().toISOString() }));
+  assert.equal(markerSinVentana(home, 'sess-a', ['adhoc', 'clear']).status, 0);
+  assert.match(adhocLog(home).find((e) => e.kind === 'ADHOC_CLEAR').medidoConMenos[0], /no tiene su base/, 'sin origin/main se midió con menos');
+  fs.writeFileSync(p, 'esto no es un json');
+  assert.equal(markerSinVentana(home, 'sess-a', ['adhoc', 'clear']).status, 0);
+  assert.match(adhocLog(home).filter((e) => e.kind === 'ADHOC_CLEAR').pop().sinMedir, /declaración ilegible/);
+});
+
+test('T20 OnEdit_RepoDelArnes_CuentaElArchivo @story-8.181 @ac-9', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clon-')));
+  const repo = path.join(base, 'tycon-harness');
+  fs.mkdirSync(path.join(repo, 'scripts'), { recursive: true });
+  execFileSync('git', ['-C', repo, 'init', '-q']);
+  const ahora = new Date().toISOString();
+  fs.mkdirSync(path.dirname(io.adhocPath(estadoDe(home), 'sess-a')), { recursive: true });
+  fs.writeFileSync(io.adhocPath(estadoDe(home), 'sess-a'), JSON.stringify({ reason: 'arreglo en el arnés', maxFiles: 8, files: [], declaredAt: ahora, lastTouch: ahora, firmadaEn: ahora }));
+  fs.appendFileSync(path.join(estadoDe(home), 'gates.log'), `${JSON.stringify({ name: 'adhoc-lane-signed', status: 'ok', destino: 'sess-a', ts: ahora })}\n`);
+  const archivo = path.join(repo, 'scripts', 'x.js');
+  fs.writeFileSync(archivo, 'x\n');
+  const r = spawnSync('node', [path.join(SCRIPTS, 'on-edit.js')], { encoding: 'utf8', input: JSON.stringify({ session_id: 'sess-a', tool_name: 'Edit', tool_input: { file_path: archivo } }),
+    env: { ...process.env, HOME: home, USERPROFILE: home } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepStrictEqual(declaracion(home, 'sess-a').files, [archivo]);
+});
+
+test('T21 Cuenta_TemporalesYRutasInexistentes_NoCuentan @story-8.181 @ac-10', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-')));
+  execFileSync('git', ['-C', repo, 'init', '-q']);
+  fs.mkdirSync(path.join(repo, '.tycon'));
+  fs.mkdirSync(path.join(repo, 'src'));
+  const real = path.join(repo, 'src', 'a.js');
+  fs.writeFileSync(real, 'x\n');
+  const prueba = path.join(repo, 'src', 'a.test.js');
+  fs.writeFileSync(prueba, 'x\n');
+  const sonda = path.join(os.tmpdir(), `sonda-${process.pid}.js`);
+  fs.writeFileSync(sonda, 'x\n');
+  const ahora = new Date().toISOString();
+  const st = estadoDe(home);
+  fs.mkdirSync(path.dirname(io.adhocPath(st, 'sess-a')), { recursive: true });
+  fs.writeFileSync(io.adhocPath(st, 'sess-a'), JSON.stringify({ reason: 'arreglo con sondas', maxFiles: 2, files: [sonda, '$L/p.js', path.join(repo, '$L', 'p.js'), prueba, real], declaredAt: ahora, lastTouch: ahora, firmadaEn: ahora }));
+  fs.appendFileSync(path.join(st, 'gates.log'), `${JSON.stringify({ name: 'adhoc-lane-signed', status: 'ok', destino: 'sess-a', ts: ahora })}\n`);
+  try {
+    // la lista cruda ya pasó el cupo de 2; de implementación, en un repo y que exista, hay uno solo
+    const uno = io.evaluate({ filePath: path.join(repo, 'src', 'b.js'), sessionId: 'sess-a', cwd: repo, stateDir: st, installedRoots: [] });
+    assert.strictEqual(uno.verdict.action, 'pass', uno.message);
+    const { cuentaDelCarril } = require(path.join(SCRIPTS, 'lib', 'adhoc-base.js'));
+    assert.deepStrictEqual(cuentaDelCarril(JSON.parse(fs.readFileSync(io.adhocPath(st, 'sess-a'), 'utf8'))).archivos, [real]);
+    // con el cupo lleno de verdad, frena
+    io.recordAdhocFile(st, 'sess-a', path.join(repo, 'src', 'b.js'));
+    fs.writeFileSync(path.join(repo, 'src', 'b.js'), 'x\n');
+    const dos = io.evaluate({ filePath: path.join(repo, 'src', 'c.js'), sessionId: 'sess-a', cwd: repo, stateDir: st, installedRoots: [] });
+    assert.strictEqual(dos.verdict.kind, 'adhoc-cap', dos.message);
+  } finally { fs.rmSync(sonda, { force: true }); }
+});
+
+test('T30 AdhocSet_CarrilViejoConMasDeOcho_SigueConSuNumero @story-8.181 @ac-14', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-')));
+  execFileSync('git', ['-C', repo, 'init', '-q']);
+  fs.mkdirSync(path.join(repo, '.tycon'));
+  fs.mkdirSync(path.join(repo, 'src'));
+  const archivos = Array.from({ length: 17 }, (_, i) => path.join(repo, 'src', `f${i}.js`));
+  for (const f of archivos) fs.writeFileSync(f, 'x\n');
+  const ahora = new Date().toISOString();
+  const st = estadoDe(home);
+  fs.mkdirSync(path.dirname(io.adhocPath(st, 'sess-a')), { recursive: true });
+  fs.writeFileSync(io.adhocPath(st, 'sess-a'), JSON.stringify({ reason: 'arreglo de antes del cambio', maxFiles: 18, files: archivos, declaredAt: ahora, lastTouch: ahora, firmadaEn: ahora, via: 'ventana', by: 'sess-a' }));
+  fs.appendFileSync(path.join(st, 'gates.log'), `${JSON.stringify({ name: 'adhoc-lane-signed', status: 'ok', destino: 'sess-a', ts: ahora })}\n`);
+  const nuevo = path.join(repo, 'src', 'nuevo.js');
+  assert.strictEqual(io.evaluate({ filePath: nuevo, sessionId: 'sess-a', cwd: repo, stateDir: st, installedRoots: [] }).verdict.action, 'pass');
+  // pedir sin número no pide la firma nueva, ni sube la marca
+  const r = markerCli(home, 'sess-a', ['adhoc', 'set', '{"reason":"arreglo de antes, sigue igual"}']);
+  assert.equal(r.status, 0, r.stderr);
+  const d = JSON.parse(r.stdout);
+  assert.strictEqual(d.maxFiles, 18);
+  assert.strictEqual(d.sobreCupo, undefined);
+  // pedir uno mayor, sí
+  const mayor = markerCli(home, 'sess-a', ['adhoc', 'set', '{"reason":"arreglo de antes, más grande","maxFiles":19}']);
+  assert.equal(mayor.status, 1, mayor.stderr);
+});
+
+test('T45 AdhocSet_SobreCupo_PorTerminal_QuedaAnotado @story-8.181 @ac-4 @ac-6', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const r = markerEnTerminal(home, ['adhoc', 'set', '--reason', 'arreglo del sp de deudas', '--max-files', '12', '--terminal', '--for-session', 'sess-b'], 'firmo');
+  if (!r) { console.log('⏭ la firma en la terminal: NO MEDIDO — sin Python (o en Windows) para abrir una terminal'); return; }
+  assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+  const d = declaracion(home, 'sess-b');
+  assert.deepStrictEqual([d.via, d.eligio, d.sobreCupo, d.cupoPedido], ['terminal', 'persona', true, 12]);
+  assert.strictEqual(firmasDe(home).find((f) => f.signature === 'adhoc-lane:sobre-cupo').via, 'terminal');
 });
 
 // 8.141 T14 AdhocSet_PortonApagado_SigueFirmando @story-8.141 @ac-12
@@ -563,6 +802,22 @@ test('harness: sin la lib del arnés (máquina atrasada) decide la carpeta, como
   const suelto = repoGit(path.join(base, 'otro', 'x'));
   assert.equal(porton('/no/existe', path.join(enCarpeta, 'src', 'a.js')).action, 'pass');
   assert.equal(porton('/no/existe', path.join(suelto, 'src', 'a.js')).kind, 'no-lane');
+});
+
+// 🔴 Falla con: el tope reevaluado con `isHarness: false`, que deja pasar a un clon del arnés sin `.tycon/`.
+test('Evaluate_ClonDelArnesSinTycon_FrenaAlPasarElTope @story-8.181 @ac-7', () => {
+  const tcg = tcgDeMentira();
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'porton-'));
+  const clon = repoGit(path.join(fs.realpathSync(base), 'ES-ARNES'));
+  fs.rmSync(path.join(clon, '.tycon'), { recursive: true });
+  const hecho = path.join(clon, 'src', 'hecho.js');
+  fs.writeFileSync(hecho, 'x\n');
+  const v = enHijo(tcg, `const fs=require('fs'),path=require('path');const io=require(${JSON.stringify(IO)});const [f,hecho,st]=process.argv.slice(1);
+    const ahora=new Date().toISOString();const p=io.adhocPath(st,'s-h');fs.mkdirSync(path.dirname(p),{recursive:true});
+    fs.writeFileSync(p,JSON.stringify({reason:'arreglo en el arnés',maxFiles:1,files:[hecho],declaredAt:ahora,lastTouch:ahora,firmadaEn:ahora}));
+    fs.appendFileSync(path.join(st,'gates.log'),JSON.stringify({name:'adhoc-lane-signed',status:'ok',destino:'s-h',ts:ahora})+'\\n');
+    process.stdout.write(JSON.stringify(io.evaluate({filePath:f,sessionId:'s-h',via:'Edit',stateDir:st}).verdict))`, [path.join(clon, 'src', 'nuevo.js'), hecho]);
+  assert.deepStrictEqual([v.action, v.kind], ['block', 'adhoc-cap'], JSON.stringify(v));
 });
 
 test('harness: con el criterio REAL del arnés — clon por su remoto, producto bajo carpeta con nombre del arnés', (t) => {

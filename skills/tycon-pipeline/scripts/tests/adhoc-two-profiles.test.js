@@ -32,6 +32,11 @@ function dosFormas(armar) {
   assert.match(arnes, DE_MANTENIMIENTO, arnes);
 }
 
+test('T19 StoryGate_ProductoAlPasarElTope_HablaDeVos @story-8.181 @ac-8', () => {
+  dosFormas((harness) => gate.blockMessage({ action: 'block', kind: 'adhoc-cap', reason: 'x', tocados: 8, cupo: 8 }, { filePath: '/r/src/x.ts', repoRoot: '/r', harness }));
+  dosFormas((harness) => gate.textoDelTope({ harness, tocados: 9, cupo: 8, archivos: ['/r/a.ts'] }));
+});
+
 test('T48 MensajesB1_DosPerfiles — @story-8.174 @ac-45', () => {
   dosFormas((harness) => gate.blockMessage(
     { action: 'block', kind: 'adhoc-high-risk', reason: 'x', regla: 'rutas-sensibles', archivo: 'src/auth/x.ts' },
