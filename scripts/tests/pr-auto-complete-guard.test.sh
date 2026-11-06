@@ -422,6 +422,8 @@ for caso in \
   "frena|$AZM --delete-source-branch true -s \"\"" \
   "frena|$AZM --delete-source-branch true --source-branch=" \
   "frena|$AZM --delete-source-branch true -s '  '" \
+  "frena|$AZM --delete-source-branch true -s ''" \
+  "frena|$AZM --delete-source-branch true -s ' '" \
   "frena|'az' repos pr create -t main --title x --auto-complete true --squash false -s dev --delete-source-branch true" \
   "frena|\"az\" repos pr create -t main --title x --auto-complete true --squash false -s dev --delete-source-branch true" \
   "frena|az 'repos' pr create -t main --title x --auto-complete true --squash false -s dev --delete-source-branch true" \
@@ -430,6 +432,13 @@ for caso in \
   "frena|az re\"pos\" pr create -t main --title x --auto-complete true --squash false -s dev --delete-source-branch true" \
   "frena|az repos pr \"update\" --id 5 --delete-source-branch true" \
   "pasa|echo 'az repos pr create -t main -s dev --delete-source-branch true'" \
+  "frena|az re\\pos pr create -t main --title x --auto-complete true --squash false -s dev --delete-source-branch true" \
+  "frena|az repos pr cr\\eate -t main --title x --auto-complete true --squash false -s dev --delete-source-branch true" \
+  "frena|$AZM -s dev --delete-source-branch false {--delete-source-branch,true,--title,\"x\\\"y\"}" \
+  "frena|$AZM -s dev --delete-source-branch false --description x \\> \"\$F\" true" \
+  "frena|$AZM -s story/x --delete-source-branch true -d \"\$(cat cuerpo.md)\" \"\$F\"" \
+  "frena|$AZM -s story/x --delete-source-branch true --description \"\$(echo -sdev)\"" \
+  "frena|$AZM -s story/x --delete-source-branch true -d \"\$(cat cuerpo.md)\"" \
   "pasa|$AZM -s story/x --delete-source-branch true 2> \"\$LOG\"" \
   "pasa|$AZM -s story/x --delete-source-branch true > \"\$OUT\"" \
   "pasa|$AZM -s story/x --delete-source-branch true >> \"\$OUT\" 2>&1" \

@@ -54,7 +54,7 @@ function sinBordes(linea) {
 }
 
 // `{…,…}` o `{…..…}` sin comillas, con partes citadas o escapadas adentro (`{"a b",dev}`, `{x,\ dev}`).
-const LLAVES = /^\{(?:\\.|[^{}\s"'\\]|"[^"]*"|'[^']*')*(?:,|\.\.)(?:\\.|[^{}\s"'\\]|"[^"]*"|'[^']*')*\}/;
+const LLAVES = /^\{(?:\\.|[^{}\s"'\\]|"(?:\\.|[^"\\])*"|'[^']*')*(?:,|\.\.)(?:\\.|[^{}\s"'\\]|"(?:\\.|[^"\\])*"|'[^']*')*\}/;
 
 function fichas(cmd, opts = {}) {
   // `powershell`: el comando lo escribió la herramienta de PowerShell. Ahí la barra invertida NO escapa nada (es parte
@@ -69,11 +69,12 @@ function fichas(cmd, opts = {}) {
   let empezoLibre = false;  // …y empezó fuera de comillas
   let expande = false;      // …y trae una expansión de la terminal
   let partida = false;      // …fuera de comillas
+  let escapada = false;     // …y lleva un carácter escapado con barra (`\>` es texto, no una redirección)
   let q = null;
 
   const cerrar = () => {
-    if (abierta) out.push({ texto, esBandera: empezoLibre, expande, partida });
-    texto = ''; abierta = false; empezoLibre = false; expande = false; partida = false;
+    if (abierta) out.push({ texto, esBandera: empezoLibre, expande, partida, escapada });
+    texto = ''; abierta = false; empezoLibre = false; expande = false; partida = false; escapada = false;
   };
   // `$5`, `$@`, `$?` también se reemplazan (un parámetro de la terminal); un `$` suelto o al final, no
   // (`$[…]` es una cuenta en bash y zsh; `$=VAR`, `$~VAR`, `$^VAR`, `$+VAR` son de zsh, la terminal de una Mac)
@@ -146,7 +147,7 @@ function fichas(cmd, opts = {}) {
     // Un comentario se descarta hasta el fin de línea. Sin esto, un `# don't …` deja una comilla
     // abierta que se traga el `az repos pr create` de la línea siguiente.
     if (c === '#' && !abierta) { while (i < s.length && s[i] !== '\n') i++; out.push({ op: '\n' }); continue; }
-    if (c === '\\' && n !== undefined && !ps) { if (!abierta) { abierta = true; empezoLibre = true; } texto += n; i++; continue; }
+    if (c === '\\' && n !== undefined && !ps) { if (!abierta) { abierta = true; empezoLibre = true; } escapada = true; texto += n; i++; continue; }
 
     if (!abierta) { abierta = true; empezoLibre = true; }
     // fuera de comillas también `$'…'` y `$"…"`: el citado ANSI-C arma el texto (`$'\x62'` es una letra)
@@ -349,10 +350,10 @@ function tieneEscape(seg, nombre = 'TYCON_PR_BY_HAND') {
  * un `az repos pr \<salto> create` esquivaría el filtro y con él al hook entero. Y NO nombra al binario a
  * propósito: pedir `az` pegado a `repos` lo esquivaría
  * con `az -o json repos pr create`, que az acepta. Es un superconjunto barato — quien decide de
- * verdad es `verboDePr` sobre las fichas. Mira sin comillas: `az re"pos" 'pr' create` es el mismo comando.
+ * verdad es `verboDePr` sobre las fichas. Mira sin comillas ni barras: `az re"pos" 'pr' cr\eate` es el mismo comando.
  */
 const pareceAzPr = (cmd) => /\brepos\s+pr\s+(?:create|update)\b/i
-  .test(String(cmd || '').replace(/\\\r?\n/g, ' ').replace(/["']/g, ''));
+  .test(String(cmd || '').replace(/\\\r?\n/g, ' ').replace(/["'\\]/g, ''));
 
 const ROMPE_SQUASH = 'los commits desaparecen de main y las notas de versión colapsan a una línea';
 const A_MAIN = /^(?:refs\/heads\/)?(?:main|master)$/i;
@@ -434,11 +435,11 @@ function fantasmas(seg) {
     if (!f.expande || f.partida || !/^(?:[$`]|-[$`]|--[^=]*[$`])/.test(f.texto)) return;
     const prev = pedido[i - 1];
     // El destino de una redirección (`2> "$LOG"`, `>> "$OUT"`) es un archivo, no una bandera para az
-    if (prev && prev.esBandera && /^\d*(?:>>?|<|&>>?|>\|)$/.test(prev.texto)) return;
+    if (prev && prev.esBandera && !prev.escapada && /^\d*(?:>>?|<|&>>?|>\|)$/.test(prev.texto)) return;
     if (prev && !prev.expande && VALOR_UNICO.has(prev.texto)) return;
-    // La forma del skill de merge, `--description "$(cat cuerpo.md)"` (AC 1): az la lee como bandera sólo si el cuerpo
-    // empieza con un guion, y el cuerpo lo escribe el skill. Una variable suelta ahí (`--description "$F"`) sigue frenando.
-    if (prev && !prev.expande && (prev.texto === '--description' || prev.texto === '-d') && f.texto.startsWith('$(')) return;
+    // La forma del skill de merge, `--description "$(cat cuerpo.md)"` (AC 1), y sólo ésa: az la lee como bandera sólo si
+    // el cuerpo empieza con un guion, y el cuerpo lo escribe el skill. `-d`, otro comando o una variable siguen frenando.
+    if (prev && !prev.expande && prev.texto === '--description' && /^\$\(cat\s/.test(f.texto)) return;
     out.push(`no puedo leer \`${f.texto}\`: una expansión donde va una bandera puede ser cualquier bandera, y lo que no pude leer no está aprobado. Escribí la bandera`);
   });
   return out;
