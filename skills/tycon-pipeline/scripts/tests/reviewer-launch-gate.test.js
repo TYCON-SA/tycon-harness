@@ -167,18 +167,25 @@ test('T1 Revisor_PortonCorreSinPase_Niega @story-7.55 @ac-1', () => {
     const conPaquete = paquete(m);
     assertNiega(freno(m, evento(m, 'rev-ensayo'), conPaquete), 'revisor de un paquete activo');
 
-    // la designación de la coordinadora ilegible: la consulta del turno no se pudo hacer, y `next` pide lanzar igual
-    const log = path.join(m.estado, 'gates.log');
-    fs.writeFileSync(log, '');
-    if (!POSIX.skip) {
-      fs.chmodSync(log, 0o000);
-      try {
-        const sinTurno = freno(m, evento(m));
-        assertNiega(sinTurno, 'sin poder consultar el turno');
-        assert.ok(sinTurno.stderr.includes(comando), sinTurno.stderr);
-      } finally { fs.chmodSync(log, 0o600); }
-    }
   } finally { limpiar(m); }
+
+  // la consulta del turno que no se puede hacer: con el turno ocupado deja pasar; con la designación de la coordinadora
+  // ilegible, la misma máquina niega como `next`, que pide lanzar el pase
+  if (POSIX.skip) return;
+  const t = maquina();
+  try {
+    marcador(t, { adversarialGate: CORRE });
+    turnoOcupado(t);
+    assert.strictEqual(decision(t, evento(t)).reason, 'turn-busy', 'el control: con la consulta andando, el turno ocupado deja pasar');
+    const log = path.join(t.estado, 'gates.log');
+    fs.chmodSync(log, 0o000);
+    try {
+      const sinTurno = freno(t, evento(t));
+      assertNiega(sinTurno, 'sin poder consultar el turno');
+      assert.ok(sinTurno.stderr.includes(`node ${MARKER} mark-adversarial-launched <runId> 4`), sinTurno.stderr);
+      assert.strictEqual(decision(t, evento(t)).kind, 'lanzar-pase');
+    } finally { fs.chmodSync(log, 0o600); }
+  } finally { limpiar(t); }
 });
 
 test('T2 Revisor_SinVeredicto_PideElPorton @story-7.55 @ac-2', () => {
@@ -226,6 +233,17 @@ test('T4 PaseEnVuelo_Deja @story-7.55 @ac-4', () => {
     assertDeja(m, evento(m), 'pass-in-flight', undefined, 'pase propio en vuelo');
     assert.deepStrictEqual(ilegibles(m), []);
   } finally { limpiar(m); }
+
+  // un id de sesión que cambia al normalizarse: el archivo del marcador lleva la forma normalizada y el pase guarda el
+  // id crudo; el pase sigue siendo propio
+  const raro = 'sesion/con:raros';
+  const n = maquina();
+  try {
+    const sid = require(path.join(SCRIPTS, 'lib', 'session-id.js')).sessionIdFileKey(raro);
+    assert.notStrictEqual(sid, raro, 'el control: el id cambia al normalizarse');
+    marcador(n, { adversarialGate: CORRE, adversarial: { ...LANZADO(), sessionId: raro }, sessionId: raro }, sid);
+    assertDeja(n, evento(n, REVISOR, { session_id: raro }), 'pass-in-flight', undefined, 'pase propio con id raro');
+  } finally { limpiar(n); }
 });
 
 test('T5 PaseAtendido_Deja @story-7.55 @ac-5', () => {
@@ -288,12 +306,13 @@ test('T7 NoRevisorOAntes_Deja @story-7.55 @ac-7', () => {
   } finally { limpiar(t); }
 
   // un pase de otra sesión sin resultado: reciente y vivo, y vencido
-  for (const [nombre, edad, hilo] of [['pase ajeno reciente y vivo', 5, 1], ['pase ajeno vencido', 120, 90]]) {
+  for (const [nombre, edad, hilo, kind] of [['pase ajeno reciente y vivo', 5, 1, 'esperar-pase-ajeno'], ['pase ajeno vencido', 120, 90, 'relanzar-pase-ajeno']]) {
     const a = maquina();
     try {
       marcador(a, { adversarialGate: CORRE, adversarial: { launchedAtStep: 4, runId: 'r9', sessionId: OTRA, launchedAt: hace(edad) } });
       conversacion(a, OTRA, hilo);
       assertDeja(a, evento(a), 'foreign-pass', undefined, nombre);
+      assert.strictEqual(decision(a, evento(a)).kind, kind, `${nombre}: la forma del pase ajeno`);
     } finally { limpiar(a); }
   }
 });
@@ -323,6 +342,14 @@ test('T8 Ilegible_DejaYAnota @story-7.55 @ac-8', () => {
       assert.deepStrictEqual(frenados(m), [], `${motivo}: no es una negativa`);
     } finally { limpiar(m); }
   }
+
+  // la entrada del hook que no es JSON: deja pasar y lo anota
+  const m = maquina();
+  try {
+    const r = spawnSync(process.execPath, [GATE], { input: '{ no es json', encoding: 'utf8', env: entorno(m.home), cwd: m.repo });
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.deepStrictEqual(ilegibles(m).map((g) => g.motivo), ['entrada-ilegible']);
+  } finally { limpiar(m); }
 });
 
 // ── No-regresión ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -404,7 +431,7 @@ test('T10 Negado_NoCuentaComoCorrido @story-7.55 @ac-10', () => {
     marcador(s, { adversarialGate: CORRE });
     const r = registrar(s, evento(s, REVISOR));
     assert.deepStrictEqual(lanzamientos(s).map((l) => l.advisor), [REVISOR], 'sin el freno instalado, se anota');
-    assert.match(r.stdout, /reviewer-launch-gate|freno/, `avisa que el freno no está instalado: ${r.stdout}`);
+    assert.match(r.stdout, /reviewer-launch-gate\.js\) no está registrado/, `avisa que el freno no está instalado: ${r.stdout}`);
   } finally { limpiar(s); }
 
   // la consulta a `decide` que tira: se anota como hoy

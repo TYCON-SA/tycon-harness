@@ -343,7 +343,15 @@ function main() {
         notaFreno = 'el freno de lanzamiento de revisores (reviewer-launch-gate.js) no está registrado en la configuración de Claude Code: '
           + `este revisor salió sin el pase adversarial en vuelo (${d.kind}). El perfil minimal no lo trae; en full, lo instala install-tycon-hooks.`;
       }
-    } catch { /* la consulta rota no cambia nada: se anota como siempre */ }
+    } catch (err) {
+      // la consulta rota no cambia nada: se anota como siempre, y queda dicho que no se pudo consultar
+      try {
+        fs.appendFileSync(path.join(stateDirOf(os.homedir()), 'gates.log'), `${JSON.stringify({
+          ts: new Date().toISOString(), sessionId: event.session_id || null, name: 'reviewer-launch-gate-unreadable',
+          motivo: 'error', via: 'on-advisor-run', detail: String((err && err.message) || err).split('\n')[0].slice(0, 200),
+        })}\n`, 'utf8');
+      } catch { /* sin registro, se anota igual */ }
+    }
   }
 
   const { cwd, logPath } = recordLaunch({ sessionId: event.session_id, cwd: event.cwd, advisor, model, transcriptPath: event.transcript_path, prompt: ti.prompt });

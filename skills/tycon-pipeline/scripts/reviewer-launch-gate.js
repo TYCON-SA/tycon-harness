@@ -30,8 +30,9 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { stateDir } = require('./lib/state-dir.js');
-const { sessionIdFileKey } = require('./lib/session-id.js');
+// Las bibliotecas del arnés se cargan adentro de cada `try`: una que no carga deja pasar con constancia, no mata el hook.
+const stateDir = (home) => require('./lib/state-dir.js').stateDir(home);
+const sessionIdFileKey = (sid) => require('./lib/session-id.js').sessionIdFileKey(sid);
 
 const LAUNCH_TOOLS = new Set(['Task', 'Agent']);
 // Los subagentes de exploración libre: no son revisión (el mismo conjunto que `on-advisor-run.js`).
@@ -45,6 +46,7 @@ const UNREADABLE = {
   noStoryPath: 'sin-ruta-de-story',
   story: 'story-ilegible',
   noSession: 'sin-sesion',
+  input: 'entrada-ilegible',
   error: 'error',
 };
 const NO_RELAUNCH = 'Si ya lo lanzaste en este turno, no lo relances: marcalo con ese comando y volvé a lanzar los revisores.';
@@ -100,14 +102,16 @@ function decide(event) {
 
     const story = marker.storyPath ? readStory(marker.storyPath) : '';
     const { accionDelPase } = require('./pipeline.js');
+    // La sesión se compara tal cual, como en `next`: el marcador guarda el id crudo; la forma normalizada sólo nombra
+    // su archivo.
     const r = accionDelPase(marker, story, { sidNow: e.session_id, nextStep: 'reviewers' });
     const pending = r.pending_action || null;
     if (pending && DENIED_KINDS.has(pending.kind)) {
       const message = pending.kind === 'consultar-porton' ? pending.message : `${pending.message}. ${NO_RELAUNCH}`;
       return { deny: true, reason: pending.kind, kind: pending.kind, message };
     }
-    if (pending && pending.kind === 'esperar-turno-pase') return allow('turn-busy');
-    if (pending && FOREIGN_KINDS.has(pending.kind)) return allow('foreign-pass');
+    if (pending && pending.kind === 'esperar-turno-pase') return allow('turn-busy', { kind: pending.kind });
+    if (pending && FOREIGN_KINDS.has(pending.kind)) return allow('foreign-pass', { kind: pending.kind });
     if (pending) return allow('other-pending', { kind: pending.kind });
 
     const { veredictoPaseAdversarial, paseAtendido } = require('./lib/adversarial-verdict.js');
@@ -131,7 +135,10 @@ function logGate(entry) {
 
 function main() {
   let event = null;
-  try { event = JSON.parse(fs.readFileSync(0, 'utf8') || 'null'); } catch { return; }
+  try { event = JSON.parse(fs.readFileSync(0, 'utf8') || 'null'); } catch (err) {
+    logGate({ name: 'reviewer-launch-gate-unreadable', motivo: UNREADABLE.input, detail: String((err && err.message) || err).slice(0, 200) });
+    return;
+  }
   const d = decide(event);
   const e = event || {};
   const agent = e.tool_input && e.tool_input.subagent_type;
@@ -151,6 +158,9 @@ function main() {
 module.exports = { decide };
 
 if (require.main === module) {
-  try { main(); } catch { /* un freno roto deja pasar */ }
+  // un freno roto deja pasar, y lo dice
+  try { main(); } catch (err) {
+    logGate({ name: 'reviewer-launch-gate-unreadable', motivo: UNREADABLE.error, detail: String((err && err.message) || err).split('\n')[0].slice(0, 200) });
+  }
   process.exit(0);
 }
