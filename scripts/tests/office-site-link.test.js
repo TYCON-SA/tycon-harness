@@ -290,15 +290,19 @@ function richFoto() {
       { kind: 'run', text: 'Otro trabajo', unknown: true },
     ],
   };
-  const board = buildBoard({ meta: { actualizado: '2026-06-01T10:00', resumen: 'Resumen', teToca: ['Algo'] }, pendientes: [{ titulo: 'Pendiente', estado: 'espera', grupo: 'Hoy', quien: 'Omega', nota: 'Nota', termina: 'hoy', orden: 1 }, { titulo: 'Hecho', estado: 'hecho', quien: 'Beta', realIso: '2026-06-01T09:00' }] });
+  const board = buildBoard({ meta: { actualizado: '2026-06-01T10:00', resumen: 'Resumen', teToca: ['Algo'] }, pendientes: [{ titulo: 'Pendiente', estado: 'espera', grupo: 'Hoy', quien: 'Omega', nota: 'Nota', termina: 'hoy', orden: 1, id: 'T-1' }, { titulo: 'Hecho', estado: 'hecho', quien: 'Beta', realIso: '2026-06-01T09:00', id: 'T-2' }, { titulo: 'La recalculada', estado: 'curso', historia: '7.6', id: 'T-3' }] });
+  // una firma pedida por una sesión: su persona levanta la mano y la tarjeta dice a quién espera (8.198)
   const { data } = buildOffice({
-    wip, signatures: [{ title: 'Firma del plan', at: nowMs }], nowMs, board, openPrsNote: 'Los pedidos no se pudieron leer.',
+    wip, signatures: [{ title: 'Firma del plan', at: nowMs }, { id: 'f9', tipo: 'firma', destino: 's1', title: 'el carril de Alfa', at: nowMs }], nowMs, board, openPrsNote: 'Los pedidos no se pudieron leer.',
     sessionFiles: [{ session: 's3', tool: 'claude', pid: null, updatedAt: new Date(nowMs - 1800000).toISOString() }],
     transcripts: new Map(['s3', 's8'].map((sid) => [sid, { encargo: 'Lo que le pidieron', haciendoAhora: 'Lo que hace ahora', ultimaAccion: 'Lo último que hizo', lastWriteMs: nowMs - 60000 }])),
   });
   // lo que collect() le agrega a la foto de buildOffice
   data.tablas = buildTables({ kanban: data.kanban, nowMs });
-  data.tablero = { actualizado: board.actualizado, resumen: board.resumen, teToca: board.teToca };
+  data.tablero = { actualizado: board.actualizado, teToca: board.teToca };
+  // con la oficina abierta, el modelo y el esfuerzo de cada sesión, de su última respuesta
+  Object.assign(data.agents[0], { modelo: 'Opus 5.5', esfuerzo: 'High' });
+  Object.assign(data.agents[1], { modelo: 'Sonnet 5.5', esfuerzo: 'sin dato' });
   data.kanban.columnas[0].tarjetas[0] = { ...data.kanban.columnas[0].tarjetas[0], otro: true };
   data.kanban.escrito = 'Tablero escrito a las 11:59';
   data.meta.pedidosLeidos = '11:59';
@@ -434,7 +438,9 @@ test('T1 Foto_LaMismaQueLaOficinaLocal: viaja sólo lo que lee la página; la li
   assert.ok(readBy('DATA')('sobres') && 'sobres' in FIELDS, 'los sobres están en la lista');
   assert.deepStrictEqual(pick({ sobres: [{ id: 'm1', de: 'Alfa', a: 'Beta', at: 5, texto: 'un mensaje' }] }, '/home/nadie').sobres, [{ id: 'm1', de: 'Alfa', a: 'Beta', at: 5 }]);
   assert.strictEqual(typeof sentOf('Alfa').comoTrabaja, 'string');
-  assert.deepStrictEqual(sent.tablero, { resumen: 'Resumen' });
+  // meta.resumen se ignora: la línea de arriba del kanban se arma sola y viaja en `kanban.linea` (8.198, AC 28)
+  assert.deepStrictEqual(sent.tablero, {});
+  assert.strictEqual(sent.kanban.linea, foto.kanban.linea);
   assert.strictEqual(sent.unreadable[0], 'algo que no se leyó');
   // un valor que no tiene la forma de su campo tampoco viaja
   assert.strictEqual(pick({ agents: [{ nombre: 'x', estado: 'rm -rf', avance: 'mucho', estimadaIso: 'mañana', fin: 'una hora' }] }, '/home/nadie').agents[0].estado, undefined);
@@ -1281,7 +1287,8 @@ test('Regresion_FotoReal_TodoLoQueTraeViajaOSeLoDeja: una sección nueva de la f
   // `items` es la única que se queda, a propósito: la página no lee sus campos (T1)
   assert.deepStrictEqual(Object.keys(foto).filter((k) => !(k in FIELDS)), ['items'], 'cada sección de la foto real está en la lista');
   const sent = pick(foto, m.home);
-  assert.strictEqual(sent.tablero.resumen, 'Resumen real');
+  assert.ok(!('resumen' in sent.tablero), 'meta.resumen se ignora (8.198, AC 28)');
+  assert.match(sent.kanban.linea, /Tu firma: \d+ · Trabado: \d+/);
   assert.ok(sent.kanban.columnas.find((c) => c.id === 'sinEmpezar').tarjetas.some((c) => c.titulo === 'Pendiente real'));
   assert.strictEqual(sent.tablas.hoy.titulo, 'Hoy');
   assert.strictEqual(sent.tablas.pendientes.titulo, 'Pendientes');
@@ -1930,14 +1937,15 @@ test('T54 Tarjeta_IgualEnLaLocalYEnElSitio: cada renglón de la ficha y del deta
   const sent = pick(JSON.parse(JSON.stringify(foto)), '/home/nadie');
   // la ficha de cada sesión, armada por la función de la página con la foto local y con la que llega al sitio
   const ctx = vm.createContext({ DATA: null });
-  vm.runInContext(`${pageDecls(['DAYS', 'parse', 'fmt', 'AST', 'finTxt', 'SOLO_COORDINA', 'ficha'])}\nthis.ficha = ficha;`, ctx);
-  const rows = (data, a) => { ctx.DATA = data; return JSON.parse(JSON.stringify(ctx.ficha(a))); };
+  vm.runInContext(`${pageDecls(['DAYS', 'parse', 'fmt', 'AST', 'finTxt', 'SOLO_COORDINA', 'historiaDe', 'ficha'])}\nthis.ficha = ficha;`, ctx);
+  const rows = (data, a, abiertos = false) => { ctx.DATA = data; return JSON.parse(JSON.stringify(ctx.ficha(a, abiertos))); };
   assert.ok(foto.agents.length >= 8, 'la foto de la prueba trae varias sesiones');
   assert.strictEqual(sent.agents.length, foto.agents.length, 'llegan todas las sesiones');
   let compared = 0;
-  for (const [i, a] of foto.agents.entries()) {
-    const local = rows(foto, a);
-    const site = rows(sent, sent.agents[i]);
+  // cerrada es la tarjeta; abierta, el panel y la ventana, que suman el renglón «Historia»
+  for (const [i, a] of foto.agents.entries()) for (const abiertos of [false, true]) {
+    const local = rows(foto, a, abiertos);
+    const site = rows(sent, sent.agents[i], abiertos);
     assert.ok(local.length > 0, `${a.nombre}: la ficha local tiene renglones`);
     assert.deepStrictEqual(site.map((r) => r.k), local.map((r) => r.k), `${a.nombre}: los renglones de la ficha del sitio no son los de la local`);
     for (const [j, r] of local.entries()) {
@@ -1947,9 +1955,11 @@ test('T54 Tarjeta_IgualEnLaLocalYEnElSitio: cada renglón de la ficha y del deta
     }
   }
   assert.ok(compared > 30, `se compararon ${compared} renglones`);
+  assert.ok(foto.agents.some((a) => a.tarea === 'T-3'), 'la foto de la prueba trae una sesión con su número de tarea');
+  assert.ok(foto.agents.some((a) => rows(foto, a, true).some((r) => r.k === 'Historia')), 'y una ficha abierta con su renglón «Historia»');
   for (const [k, why] of Object.entries(CARD_DIFFERS)) assert.ok(why.length > 20 && compared, `«${k}» no dice por qué cambia`);
   // el nombre, el estado y cómo trabaja, que van en la tarjeta misma
-  for (const [i, a] of foto.agents.entries()) for (const k of ['nombre', 'estado', 'comoTrabaja', 'titulo']) assert.deepStrictEqual(sent.agents[i][k], a[k], `${a.nombre}: «${k}» cambia`);
+  for (const [i, a] of foto.agents.entries()) for (const k of ['nombre', 'estado', 'comoTrabaja', 'titulo', 'historiaTitulo', 'tarea']) assert.deepStrictEqual(sent.agents[i][k], a[k], `${a.nombre}: «${k}» cambia`);
   // el detalle de una tarjeta del tablero: cada campo que lee la página llega igual
   const fn = (name) => { const at = src.indexOf(`function ${name}(`); const end = src.indexOf('\nfunction ', at + 1); return src.slice(at, end < 0 ? undefined : end); };
   const readsOfCard = [...new Set([...fn('abrirTarjeta').matchAll(/\bi\.([A-Za-z_]\w*)/g)].map((m) => m[1]))];
@@ -2074,7 +2084,7 @@ test('T48 Charla_ViajaAparte_SaneadaConTope: la conversación sale en su mensaje
   link.update({ ...FOTO('Otra cosa'), agents: [...FOTO('Otra cosa').agents, { nombre: 'Gama', estado: 'trabajando' }] });
   await sleep(300);
   assert.strictEqual(site.charlas.length, 8, 'una foto que ya la nombraba no la vuelve a mandar');
-  // forSite decide qué sale: hoy, todo lo que trae la conversación de la oficina local
+  // forSite decide qué sale: una conversación sin mensajes escritos desde la oficina sale igual
   const { forSite } = require(SERVER);
   assert.deepStrictEqual(forSite(conv(2)), conv(2));
   link.stop();
@@ -2155,4 +2165,23 @@ test('Regresion_SuitesDeLaOficina_SeAislanDelSitio: con site.url en el perfil, l
   for (const file of ['office.test.js', 'office-live.smoke.js']) {
     assert.match(fs.readFileSync(path.join(ROOT, 'scripts', 'tests', file), 'utf8'), /TYCON_OFFICE_LINK: '0'/, file);
   }
+});
+
+test('T21 Sitio_NoRecibeTextoNiOfreceMandar @story-8.183 @ac-21: ni quién puede recibir ni los mensajes viajan; un «mensaje» del sitio cierra con 1008 y no llega al buzón', async () => {
+  const { pick, FIELDS } = fields();
+  const sent = pick({ agents: [{ nombre: 'Alfa', estado: 'libre', recibe: 'si' }], mensajes: [{ id: 'x', texto: 'secreto' }], oficina: { recibe: 'si' } }, '/home/nadie');
+  assert.deepStrictEqual(Object.keys(sent.agents[0]).filter((k) => /recib|mensaj|oficina/i.test(k)), []);
+  assert.ok(!('mensajes' in sent) && !('oficina' in sent));
+  assert.ok(!/recibe|mensajes|oficina/.test(JSON.stringify(Object.keys(FIELDS))), 'la lista cerrada no los nombra');
+  const m = toy();
+  const site = await toySite();
+  const { link } = linkOf(m, site);
+  link.update(FOTO());
+  link.start();
+  assert.ok(await until(() => site.fotos.length === 1));
+  site.broadcast(JSON.stringify({ type: 'mensaje', s: 'Alfa', texto: 'desde el sitio' }));
+  assert.ok(await until(() => site.closes.length === 1), 'cierra');
+  assert.strictEqual(site.closes[0], 1008);
+  assert.ok(!fs.existsSync(path.join(m.sdir, 'office', 'inbox')), 'el sitio no deja nada en el buzón');
+  link.stop();
 });

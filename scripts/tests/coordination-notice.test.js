@@ -113,9 +113,8 @@ test('T13 DeepReviewGate_OtherPassInFlight @story-8.122 @ac-13: un pase de otra 
 
 // ── Quiet without a coordinator (AC 20) and own errors (AC 21) ───────────────────────────────────────────────────
 
-test('T20 NoRole_NothingSaid @story-8.122 @ac-20: sin rol, sin designación o en otra sesión, ni el tope ni el pase dicen nada', () => {
+test('T20 NoRole_NothingSaid @story-8.122 @ac-20 @story-8.199 @ac-6: sin designación o en otra sesión, ni el tope ni el pase dicen nada (sin rol en el perfil, la designada ordena igual)', () => {
   for (const [label, t, sid] of [
-    ['sin rol', toy({ role: null }), COORD],
     ['sin designación', toy({ designated: null }), COORD],
     ['otra sesión', toy(), 'otra-sesion'],
   ]) {
@@ -155,7 +154,7 @@ test('Guide_Designated_Compact_ReadsTheRules: la designada, al compactar y al li
   for (const source of ['startup', 'resume', undefined]) assert.strictEqual(C.guideNotice({ ...t.opts, source }), null, `${source}: calla`);
 });
 
-test('Guide_NotDesignated_Silent: otra sesión, sin designación o sin rol, compactar y limpiar no dicen nada', () => {
+test('Guide_NotDesignated_Silent @story-8.199 @ac-6: otra sesión o sin designación, compactar y limpiar no dicen nada', () => {
   const t = toy();
   saved(t, COORD, 'Coordinadora');
   const transcript = saved(t, 'otra', 'Vecina');
@@ -163,7 +162,7 @@ test('Guide_NotDesignated_Silent: otra sesión, sin designación o sin rol, comp
   assert.strictEqual(C.guideNotice({ ...t.opts, sessionId: 'otra', source: 'clear', title: 'Vecina', transcript }), null, 'limpiar con otro título');
   assert.strictEqual(C.guideNotice({ ...t.opts, sessionId: 'otra', source: 'clear', transcript }), null, 'sin título no hay con qué reconocerla');
   assert.strictEqual(C.guideNotice({ ...t.opts, sessionId: 'otra', source: 'clear', title: 'Coordinadora' }), null, 'sin conversación tampoco');
-  for (const [label, o] of [['sin designación', toy({ designated: null })], ['sin rol', toy({ role: null })]]) {
+  for (const [label, o] of [['sin designación', toy({ designated: null })]]) {
     const f = saved(o, COORD, 'Coordinadora');
     assert.strictEqual(C.guideNotice({ ...o.opts, sessionId: 'nueva', source: 'clear', title: 'Coordinadora', transcript: f }), null, label);
     assert.strictEqual(C.guideNotice({ ...o.opts, sessionId: COORD, source: 'compact' }), null, `${label}, al compactar`);
@@ -176,9 +175,11 @@ test('Guide_ClearLosesDesignation_SaysHowToGetItBack: tras limpiar, con otro id 
   const transcript = saved(t, 'nueva', 'Coordinadora');
   const n = C.guideNotice({ ...t.opts, sessionId: 'nueva', source: 'clear', title: 'Coordinadora', transcript });
   assert.match(n, /era la coordinadora/);
-  assert.match(n, /«Esta sesión es la coordinadora»/);
-  assert.match(n, /nunca vos/, 'la frase la escribe la persona');
-  assert.match(n, /designate-relay/);
+  // se recupera con el click de la persona, no con una frase
+  assert.match(n, /te lo pida con sus palabras/);
+  assert.match(n, /nunca tuyo/, 'el pedido es de la persona');
+  assert.match(n, /designate-relay: el freno te da un cuadro/);
+  assert.doesNotMatch(n, /--quote/);
   assert.strictEqual(require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'critical-waivers.js')).designacionVigente({ home: t.home }).sesion, COORD, 'la designación no se movió');
   // the title that counts is the last one: she was renamed after starting
   saved(t, COORD, 'Vieja', 'Coordinadora');
@@ -234,10 +235,12 @@ test('Guide_Designate_SaysToReadTheRules: al designarse, el comando real manda a
   const r = spawnSync(process.execPath, [marker, 'designate-relay', '--approved-by', 'Dev de Prueba', '--quote', 'Esta sesión es la coordinadora'], { cwd: t.root, encoding: 'utf8', env });
   assert.strictEqual(r.status, 0, r.stderr);
   assert.ok(r.stderr.includes(guide), `manda a leer la guía: ${r.stderr}`);
-  // a failed designation sends nobody to read anything
+  // without a phrase it asks for the owner's click; with no click it designates nothing and sends nobody
+  // to read anything, but says the fallbacks
   const no = spawnSync(process.execPath, [marker, 'designate-relay', '--approved-by', 'Dev de Prueba'], { cwd: t.root, encoding: 'utf8', env });
   assert.notStrictEqual(no.status, 0);
   assert.ok(!no.stderr.includes(guide));
+  assert.match(no.stderr, /no pude comprobar el click/);
 });
 
 test('T20b Hook_WithoutCoordinator_Silent @story-8.122 @ac-20: el gancho real, sin coordinadora, no imprime nada y sale 0', () => {
@@ -672,6 +675,14 @@ const DS = require(path.join(ROOT, 'scripts', 'lib', 'delegated-signing.js'));
 const MARKER = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
 const INTERACTIVA = { kind: 'interactive' };
 
+// The confirmed coordinator needs approvals.relay_session in the profile of the harness tree; the list
+// asks for it with the account home only, so these cases read it from a harness folder of their own that has the key.
+const OA = require(path.join(ROOT, 'scripts', 'lib', 'owner-approvals.js'));
+const CON_CLAVE = fs.mkdtempSync(path.join(os.tmpdir(), 'coord-notice-clave-'));
+fs.writeFileSync(path.join(CON_CLAVE, 'team-profile.json'), JSON.stringify({ approvals: { relay_session: 'coordinadora' } }));
+const confirmadaSinClave = OA.coordinadoraConfirmada;
+OA.coordinadoraConfirmada = (casa, o = {}) => confirmadaSinClave(casa, { arnes: CON_CLAVE, ...o });
+
 /** Una máquina con la llave encendida. `coord`: con la coordinadora confirmada y viva; si no, sin designar. */
 function conLista({ coord = true } = {}) {
   const t = toy({ designated: null });
@@ -803,4 +814,45 @@ test('Aviso_SinCoordinadora (T10) — @story-8.153 @ac-10', () => {
   fs.rmSync(path.join(h.home, '.claude', 'sessions', `${COORD}.json`));
   assert.match(oido(h, 'ses-a', 'volví'), PIDE);
   assert.strictEqual(oido(h, COORD, 'hola'), null);
+});
+
+// 🔴 Falla con: un texto que enseña la frase como el camino para nombrar a la coordinadora.
+test('Coordination_HowToDesignate_TeachesClick (T28) @story-8.207 @ac-23', () => {
+  const t = toy({ designated: null });
+  const sin = C.coordinate({ ...t.opts, env: { CLAUDE_CODE_SESSION_ID: 'otra-1' } });
+  assert.strictEqual(sin.code, 1);
+  assert.match(sin.text, /designate-relay\n/, 'sin frase');
+  assert.match(sin.text, /click/);
+  assert.match(sin.text, /withdraw-relay/);
+  assert.match(sin.text, /respaldos \(su terminal, o su frase con --quote\)/, 'la frase sólo como respaldo');
+  const u = toy();
+  saved(u, COORD, 'Coordinadora');
+  const transcript = saved(u, 'nueva', 'Coordinadora');
+  const tras = C.guideNotice({ ...u.opts, sessionId: 'nueva', source: 'clear', title: 'Coordinadora', transcript });
+  assert.match(tras, /designate-relay: el freno te da un cuadro/);
+  assert.doesNotMatch(tras, /--quote/);
+});
+
+// ── El portón lento ─────────────────────────────────────────────────────────────────────────────────────────────
+
+test('T29 Porton_LentoLoDiceYAvisa — la coordinadora ve el portón lento vivo, con su hora de fin; el de un proceso muerto no', () => {
+  // 🔴 mutación: no leer los avisos, mostrar el de un proceso que ya no está, o el de un número de proceso reusado.
+  const t = toy();
+  busy(t, 's-lenta', 'Borre', 10);
+  const dir = path.join(t.state, 'slow-gates');
+  fs.mkdirSync(dir, { recursive: true });
+  const ST = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'suite-times.js'));
+  const vivo = { sid: 's-lenta', repo: 'arbol', suites: 382, workers: 2, carga: 22.7, eta: '23:40', pid: process.pid, procStart: ST.processStart(process.pid) };
+  fs.writeFileSync(path.join(dir, `${process.pid}.json`), JSON.stringify(vivo));
+  const muerto = 2147483646;
+  fs.writeFileSync(path.join(dir, `${muerto}.json`), JSON.stringify({ ...vivo, sid: 's-x', pid: muerto }));
+  const n = C.capNotice(t.opts) || '';
+  assert.match(n, /Coordinación: portón lento de Borre: 2 a la vez para 382 suites \(carga 22\.7\), termina cerca de las 23:40/, n);
+  assert.strictEqual((n.match(/portón lento/g) || []).length, 1, 'el del proceso muerto no se muestra');
+  assert.ok(!fs.existsSync(path.join(dir, `${muerto}.json`)), 'y se borra');
+  // un número de proceso reusado: la hora de arranque no coincide
+  if (process.platform !== 'win32') {
+    fs.writeFileSync(path.join(dir, `${process.pid}.json`), JSON.stringify({ ...vivo, procStart: 'Mon Jan  1 00:00:00 2001' }));
+    assert.doesNotMatch(C.capNotice(t.opts) || '', /portón lento/);
+  }
 });

@@ -435,7 +435,8 @@ PY
       scripts/hooks/dev-behind-main-notice.js scripts/hooks/stuck-pr-notice.js scripts/hooks/coordination-notice.js=2
       scripts/hooks/why-blocked-notice.js scripts/hooks/session-state.js=8 scripts/hooks/owner-approval-record.js=2
       scripts/hooks/context-size-notice.js=2 scripts/hooks/session-cap-guard.js scripts/hooks/office-link-start.js=2
-      scripts/hooks/cover-secrets.js)
+      scripts/hooks/cover-secrets.js
+      scripts/hooks/office-message-rule.js scripts/hooks/office-inbox-watch.js=2)
     t40_apart() { # t40_apart <settings> <salida> → aparta los declarados del settings (lo reescribe); en <salida>, los que no están UNA vez
       rm -f "$2"
       python3 - "$1" "$2" "${T40_ADDED[@]}" <<'PY'
@@ -593,9 +594,7 @@ fi
 # ══ La parte del programa (T35 a T37): harness.js de verdad, con el aplicador real ═════════════════════════════════════
 # shellcheck source=lib/harness-lab.sh
 source "$RAIZ/scripts/tests/lib/harness-lab.sh"   # sólo por harness_lab_pty (la terminal de juguete)
-home_hash() { ( cd "$1" && find . -print | LC_ALL=C sort | while IFS= read -r f; do
-    if [ -L "$f" ]; then printf '%s -> %s\n' "$f" "$(readlink "$f")"; elif [ -f "$f" ]; then printf '%s ' "$f"; shasum -a 256 < "$f"; else printf '%s/\n' "$f"; fi
-  done ) | shasum -a 256 | cut -d' ' -f1; }
+home_hash() { tree_list "$1" | shasum -a 256 | cut -d' ' -f1; }
 # ══ HASH · HomeHash_SeesAStrayFile: la foto ve lo que aparece en la carpeta de inicio ═════════════════════════════════
 # (python ya no escribe su caché durante la prueba; la foto no se achica para eso y tiene que seguir viendo lo demás)
 if corre HASH; then

@@ -154,16 +154,23 @@ function renglonesDeFaltantes(r) {
 /**
  * La sesión que la organización deja reenviar el ok de un dev: `approvals.relay_session` del perfil del equipo (sólo
  * de ahí: el lector ignora la variable y el archivo de la máquina). `{ valor, aviso? }`; sin clave, `valor: null`.
- * Con la configuración rota o un lector que no la conoce, nadie reenvía y se dice por qué.
+ * Con el perfil roto o un lector que no la conoce, nadie reenvía y se dice por qué. Lo que esté roto en otra parte (el
+ * archivo de la máquina, otra clave) no la tapa: es la misma lectura para ordenar y para firmar.
  */
 function sesionQueReenvia({ env = process.env, home, arnes } = {}) {
   // el lector de ESTE árbol, nunca uno señalado por una variable (TYCON_GUIDES_DIR la puede poner el agente)
   const lector = [path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'tycon-config.js')].find((f) => fs.existsSync(f));
   if (!lector) return { valor: null, aviso: 'no encontré el lector de configuración del arnés: nadie reenvía' };
   try {
-    const r = require(lector).cargar({ env, home, ...(arnes ? { arnes } : {}) });
-    if (r.errores && r.errores.length) {
-      const e = r.errores[0];
+    const cfg = require(lector);
+    const r = cfg.cargar({ env, home, ...(arnes ? { arnes } : {}) });
+    const perfiles = [cfg.NOMBRE_PERFIL, cfg.NOMBRE_PERFIL_VIEJO];
+    // la clave misma, la sección que la contiene, o el archivo del perfil entero
+    const delPerfil = (e) => e.clave === 'approvals' || String(e.clave || '').startsWith('approvals.relay_session')
+      || (e.clave == null && perfiles.includes(path.basename(String(e.archivo || ''))));
+    const roto = (r.errores || []).find(delPerfil);
+    if (roto) {
+      const e = roto;
       return { valor: null, aviso: `la configuración no se pudo leer (${e.archivo || '?'}${e.clave ? ` · ${e.clave}` : ''}: ${e.motivo}): nadie reenvía` };
     }
     const v = r.valores && r.valores.approvals ? r.valores.approvals.relay_session : undefined;
@@ -174,6 +181,22 @@ function sesionQueReenvia({ env = process.env, home, arnes } = {}) {
   }
 }
 
+// El rol de coordinar cuando el perfil no nombra uno: sin perfil la coordinadora ordena la máquina (el tope, los turnos,
+// los avisos, /coordinate) y no firma nada por el dueño. Es fijo: no se lee de una variable ni del archivo de la máquina.
+const ROL_DE_FABRICA = 'coordinadora';
+// La frase sin perfil puede nombrar el rol en castellano o en inglés.
+const ROLES_DE_FABRICA = Object.freeze([ROL_DE_FABRICA, 'coordinator']);
+
+/**
+ * El rol de la sesión que ordena: el de `approvals.relay_session` del perfil o, sin él, «coordinadora». `{ rol, firma,
+ * aviso }`: `firma` dice si la organización la deja firmar por el dueño (sólo con el rol del perfil); `aviso`, por qué no
+ * se pudo leer el perfil, si fue eso.
+ */
+function rolDeCoordinar(o = {}) {
+  const r = sesionQueReenvia(o);
+  return { rol: r.valor || ROL_DE_FABRICA, firma: Boolean(r.valor), aviso: r.aviso || null };
+}
+
 // ── Cuál sesión reenvía, en cada máquina ──
 // El perfil dice SI la organización usa una sesión que reenvía el ok de un dev (`approvals.relay_session`: el nombre del
 // rol, por ejemplo «coordinadora»). CUÁL es se designa en la máquina: la sesión corre `marker.js designate-relay` con
@@ -182,6 +205,8 @@ function sesionQueReenvia({ env = process.env, home, arnes } = {}) {
 // reconoce por su número, que no cambia al reiniciar el proceso (sí con /clear o con un chat nuevo); el nombre visible
 // no cuenta, porque lo pone el sistema y otra sesión puede llevar el mismo.
 const DESIGNACION = 'relay-designation';
+// el renglón con que la coordinadora deja de serlo (marker.js withdraw-relay): el registro queda completo
+const RETIRADA = 'retirada';
 // Las dos se aplican a la frase PLANA (ver `plana`): sin acentos y en minúsculas. «Esta sesión», «esta pestaña», «sos», y
 // en inglés «this session». Las formas que no nombran la sesión («esta es la…», «eres», «te designo»…) piden el rol
 // pegado: ver `formasConElRol`.
@@ -249,26 +274,30 @@ function juezDesignacion(rol) {
 }
 
 /**
- * Designar la sesión que corre el comando como la que reenvía, con una frase que nombra el rol. La frase no se busca en
- * la conversación: la designación vale cuando el dueño la confirma en su terminal.
- * `{ ok: true, entrada: { sesion, rol, quien, cita, cita_cuando } }` o `{ ok: false, motivo }`.
+ * Designar la sesión que corre el comando como la coordinadora de esta máquina, con una frase que nombra el rol (el del
+ * perfil o, sin él, «coordinadora» o «coordinator»). La frase no se busca en la conversación. Con el rol del perfil, la
+ * designación firma por el dueño cuando él la confirma; sin él, sólo ordena.
+ * `{ ok: true, entrada: { sesion, rol, quien, cita, cita_cuando }, firma, aviso }` o `{ ok: false, motivo }`.
  */
 function designar({ approvedBy, quote, env = process.env, home, arnes } = {}) {
   const persona = noEsPersona(approvedBy);
   if (persona) return { ok: false, motivo: persona };
   const cita = String(quote || '').trim();
   if (!cita) return { ok: false, motivo: 'falta la frase del dev (--quote "<sus palabras, textuales>")' };
-  const declarada = sesionQueReenvia({ env, home, arnes });
-  if (!declarada.valor) return { ok: false, motivo: `la organización no usa una sesión que reenvía el ok de un dev (approvals.relay_session del perfil del equipo)${declarada.aviso ? `: ${declarada.aviso}` : ''}` };
+  const declarada = rolDeCoordinar({ env, home, arnes });
   const sesion = String(env.CLAUDE_CODE_SESSION_ID || '');
   if (!/^[\w-]+$/.test(sesion)) return { ok: false, sinConversacion: true, motivo: 'la sesión no dice su identificador' };
-  const juez = juezDesignacion(declarada.valor);
-  const mala = juez(cita);
-  if (mala) return { ok: false, motivo: mala };
-  return { ok: true, entrada: { sesion, rol: declarada.valor, quien: String(approvedBy).trim(), cita, cita_cuando: null } };
+  // sin rol del perfil, vale la frase que nombra cualquiera de los de fábrica; el motivo es el del que la frase nombra
+  const motivos = (declarada.firma ? [declarada.rol] : ROLES_DE_FABRICA).map((rol) => juezDesignacion(rol)(cita));
+  if (!motivos.includes(null)) return { ok: false, motivo: motivos.find((m) => !/no nombra el rol/.test(m)) || motivos[0] };
+  return { ok: true, firma: declarada.firma, aviso: declarada.aviso, entrada: { sesion, rol: declarada.rol, quien: String(approvedBy).trim(), cita, cita_cuando: null } };
 }
 
-/** La última designación anotada en el gates.log de esta máquina: `{ sesion, rol, quien, cita, ts }`, null o `{ error }`. */
+/**
+ * La última designación anotada en el gates.log de esta máquina: `{ sesion, rol, quien, cita, via, ts }`, null o
+ * `{ error }`. Una designación por frase trae `cita`; una por click (marker.js designate-relay sin frase), `via` y
+ * `cita: null`. Si el último renglón de la designación es una retirada (`status: 'retirada'`), no hay coordinadora.
+ */
 function designacionVigente({ home, dir } = {}) {
   let raw;
   // `dir`: la carpeta del estado ya resuelta, para quien no la lee del ambiente (scripts/lib/delegated-signing.js)
@@ -276,12 +305,16 @@ function designacionVigente({ home, dir } = {}) {
     return e.code === 'ENOENT' ? null : { error: `no pude leer el registro del arnés (${e.code || e.message})` };
   }
   const lineas = raw.split('\n');
+  // una retirada anula sólo la designación de su propia sesión: la de otra sesión nombrada antes sigue vigente
+  const retiradas = new Set();
   for (let i = lineas.length - 1; i >= 0; i--) {
     if (!lineas[i].includes(DESIGNACION)) continue;
     let g;
     try { g = JSON.parse(lineas[i]); } catch (_e) { continue; }
-    if (g && g.name === DESIGNACION && g.status === 'ok' && /^[\w-]+$/.test(String(g.sesion || '')) && g.cita) {
-      return { sesion: g.sesion, rol: g.rol || null, quien: g.quien || null, cita: g.cita, ts: g.ts || null };
+    if (g && g.name === DESIGNACION && g.status === RETIRADA) { retiradas.add(String(g.sesion || '')); continue; }
+    if (g && g.name === DESIGNACION && g.status === 'ok' && /^[\w-]+$/.test(String(g.sesion || '')) && (g.cita || g.via)) {
+      if (retiradas.has(g.sesion)) return null;
+      return { sesion: g.sesion, rol: g.rol || null, quien: g.quien || null, cita: g.cita || null, via: g.via || null, ts: g.ts || null };
     }
   }
   return null;
@@ -298,4 +331,4 @@ function noEsPersona(quien) {
   return null;
 }
 
-module.exports = { DESIGNACION, RE_NIEGA, juezDesignacion, designar, designacionVigente, huella, fueraDelRegistro, constanciaInvalida, renglonesDeFaltantes, sh, reglaDe, revisar, noEsPersona, sesionQueReenvia, FILE, clave, esCriticoEximido, anotar, leer, faltantes, verificarExenciones, caminos };
+module.exports = { DESIGNACION, RETIRADA, RE_NIEGA, juezDesignacion, designar, designacionVigente, huella, fueraDelRegistro, constanciaInvalida, renglonesDeFaltantes, sh, reglaDe, revisar, noEsPersona, sesionQueReenvia, rolDeCoordinar, ROL_DE_FABRICA, FILE, clave, esCriticoEximido, anotar, leer, faltantes, verificarExenciones, caminos };

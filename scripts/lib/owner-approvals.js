@@ -51,8 +51,9 @@ const APRUEBA = 'Sí, aprobar';
 const NIEGA = 'No';
 // lo que llega como prompt sin que lo haya escrito la persona: mensajes de otra sesión, de un canal, avisos de tareas
 const ENVUELTO = /<(?:cross-session-message|channel|task-notification|teammate-message|system-reminder|local-command|command-name)\b/i;
-// los ganchos del arnés que pueden escuchar el cuadro: el aviso de espera y el que anota el click
-const PERMITIDOS = ['wait-notice.js', 'owner-approval-record.js', 'session-state.js'];
+// los ganchos del arnés que pueden escuchar el cuadro: el aviso de espera, el que anota el click, el estado de la sesión y
+// el freno que no deja preguntar a una sesión abierta por la coordinadora
+const PERMITIDOS = ['wait-notice.js', 'owner-approval-record.js', 'session-state.js', 'background-question-guard.js'];
 // Cómo anota la herramienta un mensaje tipeado, medido en transcripciones reales: en la consola `cli · typed`, en la extensión
 // del editor `claude-vscode · sdk`. Otra sesión llega con `system`, y un programa (`claude -p`) con `sdk-cli`.
 const TIPEADO = { cli: ['typed'], 'claude-vscode': ['sdk'] };
@@ -117,14 +118,42 @@ function sesionesNombradas(texto) {
   return [...String(texto).matchAll(/(?:^|[^\p{L}\p{N}_-])sesi[oó]n[\s:=«"'`([]+(?:(?:de|del|la|el)\s+)*([\p{L}\p{N}_-]+)/giu)].map((m) => m[1].toLowerCase()).filter((s) => !NO_ES_ID.has(s));
 }
 
+// los topes de la pregunta: un corte siempre se ve («…», «y N más»)
+const LINEAS_QUE_HACE = 3;
+const LARGO_DE_LINEA = 200;
+const ARCHIVOS_A_LA_VISTA = 10;
+const sinPunto = (s) => String(s).replace(/[.\s]+$/, '');
+const masDe = (lista, tope, sep) => (lista.length > tope ? `${lista.slice(0, tope).join(sep)}${sep === ', ' ? ' ' : sep}y ${lista.length - tope} más` : lista.join(sep));
+
 /**
- * El cuadro de una firma: lo arma el guion, y el agente lo muestra tal cual. `sello`: lo que ata la aprobación a esa firma,
- * esa sesión y ese comando (`huella`); `pregunta`: el texto entero, con qué se aprueba y qué pasa si sale mal. Con
- * `soloClick`, sólo lo aprueba un click en la sesión que trabaja, y el cuadro se muestra con sus `descripciones`.
+ * El cuadro de una firma: lo arma el guion, y el agente lo muestra tal cual. La pregunta dice, en este orden, lo que se
+ * aprueba (`que`, con su verbo: no lleva «¿Aprobás» delante), la historia con su título (`historia`: { id, titulo }), qué
+ * hace (`queHace`, hasta 3 líneas), qué archivos toca, dónde está lo completo, qué pasa si sale mal, y al final la cita de
+ * la sesión, que no reemplaza nada de lo anterior. `criterios`: los números de los criterios que se eximen o se marcan;
+ * van todos, antes de «Qué hace» y sin recorte, porque el detalle sí se recorta y un número que no se ve no se aprobó.
+ * `nota`: por qué no se pudo leer la fuente; va al final de «Qué hace», también fuera del recorte. `sello`: lo que ata
+ * la aprobación a esa firma, esa sesión y lo que se mostró (`huella`); `texto`: la pregunta sin el sello, la que muestra la ventana de permiso. Con `soloClick`, sólo lo
+ * aprueba un click en la sesión que trabaja, y el cuadro se muestra con sus `descripciones`.
  */
-function cuadroDe({ firma, destino, que, detalle, siSaleMal, huella, soloClick = false, descripciones = null }) {
+function cuadroDe({ firma, destino, que, historia = null, criterios = [], queHace = [], nota = null, archivos = [], completo = null, siSaleMal, cita = null, huella, soloClick = false, descripciones = null }) {
   const sello = `firma ${firma} · sesión ${destino} · código ${huella}`;
-  return { sello, pregunta: `¿Aprobás ${una(que, 200)}? Detalle: ${una(detalle, 900)}. Si sale mal: ${una(siSaleMal, 200)}. (${sello})`, opciones: [APRUEBA, NIEGA], ...(soloClick ? { soloClick: true, descripciones } : {}) };
+  const lo = una(que, 200);
+  const partes = [`¿${lo.charAt(0).toUpperCase()}${lo.slice(1)}?`];
+  // la sesión sobre la que se firma, siempre: la coordinadora puede pedir la firma para otra
+  const ses = una(destino, 80);
+  if (historia && historia.id) partes.push(historia.titulo ? `Historia ${una(historia.id, 40)}, «${una(historia.titulo, 160)}», sesión ${ses}.` : `Historia ${una(historia.id, 40)} (sin título en su archivo), sesión ${ses}.`);
+  else if (destino) partes.push(`Sesión ${ses}.`);
+  const nums = [...new Set((criterios || []).map(Number).filter((n) => Number.isInteger(n) && n > 0))].sort((a, b) => a - b);
+  if (nums.length) partes.push(`Criterios: AC ${nums.length > 1 ? `${nums.slice(0, -1).join(', ')} y ${nums[nums.length - 1]}` : nums[0]}.`);
+  const lineas = (queHace || []).map((l) => sinPunto(una(l, LARGO_DE_LINEA))).filter(Boolean);
+  if (lineas.length) partes.push(`Qué hace: ${masDe(lineas, LINEAS_QUE_HACE, ' · ')}${nota ? ` ${sinPunto(una(nota, LARGO_DE_LINEA))}` : ''}.`);
+  const rutas = (archivos || []).map((a) => una(a, 200)).filter(Boolean);
+  if (rutas.length) partes.push(`Archivos: ${masDe(rutas, ARCHIVOS_A_LA_VISTA, ', ')}.`);
+  if (completo) partes.push(`Completo en: ${una(completo, 400)}.`);
+  partes.push(`Si sale mal: ${sinPunto(una(siSaleMal, 200))}.`);
+  if (cita) partes.push(`Cita de la sesión: «${una(cita, 200)}».`);
+  const texto = partes.join(' ');
+  return { sello, texto, pregunta: `${texto} (${sello})`, opciones: [APRUEBA, NIEGA], ...(soloClick ? { soloClick: true, descripciones } : {}) };
 }
 
 /**
@@ -334,10 +363,10 @@ function capas({ casa = os.homedir(), cwd, plataforma = process.platform, admini
 }
 
 /** Las carpetas que hay adentro de una raíz, siguiendo los enlaces (una skill instalada suele ser un enlace). */
-function subcarpetas(d, nombres = null) {
+function subcarpetas(d) {
   let es;
   try { es = fs.readdirSync(d); } catch (e) { return e.code === 'ENOENT' ? [] : [{ ilegible: d }]; }
-  return es.filter((n) => !nombres || nombres.includes(n)).map((n) => path.join(d, n)).filter((p) => { try { return fs.statSync(p).isDirectory(); } catch (_) { return false; } });
+  return es.map((n) => path.join(d, n)).filter((p) => { try { return fs.statSync(p).isDirectory(); } catch (_) { return false; } });
 }
 
 /**
@@ -563,21 +592,22 @@ function procesoQueLaAnoto({ a, arbol, casa }) {
 
 /**
  * La sesión coordinadora designada y confirmada por el dueño (la misma que lee la delegación, delegated-signing.js), o
- * null. Sin confirmar, un «aprobado» escrito en su pestaña no vale para otras sesiones.
+ * null. Sin confirmar, un «aprobado» escrito en su pestaña no vale para otras sesiones; sin `approvals.relay_session` en
+ * el perfil del equipo, tampoco: la coordinadora ordena y no firma. `env` y `arnes`, para las pruebas.
  */
-function coordinadoraConfirmada(casa) {
+function coordinadoraConfirmada(casa, { env, arnes } = {}) {
   try {
     const ds = require('./delegated-signing.js');
+    if (!ds.firmaPorElDueno({ env, home: casa, arnes }).ok) return null;
     const p = ds.accountPaths(casa);
     const d = require(path.join(LIB, 'critical-waivers.js')).designacionVigente({ dir: p.state });
     if (!d || d.error || !SESION.test(String(d.sesion || ''))) return null;
-    const want = ds.confirmationRecord(d, null);
     const raw = fs.readFileSync(path.join(p.state, 'gates.log'), 'utf8');
     for (const l of raw.split('\n')) {
-      if (!l.includes(want.name)) continue;
+      if (!l.includes('relay-designation-confirmed')) continue;
       let g;
       try { g = JSON.parse(l); } catch (_) { continue; }
-      if (g && g.name === want.name && g.status === 'ok' && g.sesion === want.sesion && g.designacion_ts === want.designacion_ts && g.cita_sha === want.cita_sha) return d.sesion;
+      if (ds.confirmaLaDesignacion(g, d)) return d.sesion;
     }
     return null;
   } catch (_) { return null; }
@@ -610,6 +640,11 @@ function buscar({ casa, sesion, destino = sesion, cuadro, coordinadora = null, a
     return !herramienta || r.sesion !== sesion || (r.herramienta && r.herramienta.pid === herramienta.pid && r.herramienta.inicio === herramienta.inicio);
   }).sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts));
   if (!candidatas.length) return { ok: false, motivo: soloClick ? 'no hay un click en el cuadro de esta pestaña de los últimos 30 minutos sin usar' : 'no hay un click en el cuadro ni un «aprobado» tuyo de los últimos 30 minutos sin usar' };
+  // un «Sí» a esta misma firma y sesión con otro código: la fuente (el plan, el diff, el hallazgo) cambió después del cuadro
+  const mismaFirma = cuadro.sello.slice(0, cuadro.sello.lastIndexOf('código '));
+  const cambio = candidatas.some((a) => a.tipo === 'click' && a.respuesta === APRUEBA && typeof a.pregunta === 'string'
+    && a.pregunta.includes(`(${mismaFirma}código `) && !a.pregunta.includes(`(${cuadro.sello})`));
+  if (cambio && !candidatas.some((a) => a.pregunta === cuadro.pregunta)) return { ok: false, motivo: 'lo que se mostró cambió: pedí el cuadro de nuevo' };
   const check = validar || ((a, ctx) => validarEnClaude(a, ctx));
   let leido = arbol;
   let motivo = null;

@@ -251,6 +251,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.197: el detector de consultas y temporizadores vivos en las pruebas de formularios (scripts/ci/test-setup/). Corre jest de verdad sobre formularios de juguete; jest se instala una vez en una carpeta de caché, y sin red cada prueba sale NO MEDIDO. Las de la plantilla leen el paquete bizuit por TYCON_PACKS_DIR.",
+      "raiz": "arnes",
+      "ruta": "tests/live-handles.test.js",
+      "requiere": ["red"]
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/rollback-guard.test.sh",
       "requiere": []
@@ -1115,6 +1121,12 @@
       "requiere": []
     },
     {
+      "__nota": "lo que las dos guías dicen de las suites del arnés: cuántas corren a la vez y por qué, cómo se listan las lentas y desde dónde acota un portón corrido a mano.",
+      "raiz": "arnes",
+      "ruta": "tests/slow-suites-goal.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "cuántas suites corren a la vez: núcleos menos dos o menos la carga, la espera cuando la carga pasa el doble, y la variable y la CI como antes, en el portón y en las portables.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/suite-workers.test.js",
@@ -1450,6 +1462,11 @@
     },
     {
       "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/finished-open.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/controls-off.test.js",
       "requiere": []
     },
@@ -1490,6 +1507,11 @@
       "requiere": []
     },
     {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/board-write-gate.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.174: el camino rápido de riesgo alto — una sola regla de riesgo (risk-paths.js), la base del carril, el delegado que no la escribe, la marca, y los revisores y el pase antes de guardar.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/adhoc-high-risk.test.js",
@@ -1526,6 +1548,11 @@
     {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/test-mutation-check.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-mutation-runners.js",
       "requiere": []
     },
     {
@@ -1783,6 +1810,21 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/office-task-numbers.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/office-messages.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/office-inbox-watch.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/office-topics.test.js",
       "requiere": []
     },
@@ -1861,7 +1903,18 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/background-question-guard.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/coordination-notice.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "sin perfil del equipo la coordinadora ordena y no firma. También la corre el ensayo de firmas de Windows (scripts/tests/windows/waiver-probe.js).",
+      "raiz": "arnes",
+      "ruta": "tests/coordination-without-profile.test.js",
       "requiere": []
     },
     {
@@ -2244,6 +2297,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.195: el aviso de arranque de lo terminado sin cerrar lista lo de toda la máquina con el comando de cada sesión, y calla sin nada.",
+      "raiz": "arnes",
+      "ruta": "tests/finished-open-notice.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 7.53: los avisos que trae una extensión en su notices.json; el lector rechaza rutas fuera de la carpeta y formas mal escritas, y el gancho de arranque los dice sólo donde aplican, una vez por sesión.",
       "raiz": "arnes",
       "ruta": "tests/extension-notices.test.js",
@@ -2504,6 +2563,18 @@
       "requiere": []
     },
     {
+      "__nota": "el arnés entiende a git en cualquier idioma: la función única que fija el idioma de git (clean-git-env.js), el caso de punta a punta con un git sustituto que contesta en castellano, y la lista que avisa si un script compara una frase de error de git sin fijarlo.",
+      "raiz": "arnes",
+      "ruta": "tests/git-language.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.214: scripts/tools/catch-up-main.js pone al día con main una rama que choca sólo en specs/epics.md, specs/sprint-status.yaml y .tycon/runtime-waivers.jsonl. Laboratorios con un remoto propio: junta los dos lados y commitea el merge; un renglón por historia, el de la rama; una clave repetida que ya venía de main no se toca; las firmas, todas y en orden, con la cadena válida; otro choque, o un lado que borró, sale 1 sin tocar nada; empuja sin forzar y con el remoto adelantado sale 3; al día sale 0 y sucia sale 2; con git en castellano da lo mismo; un control que rechaza el commit sale 4 y deshace el merge; sin remoto o sin historia común sale 5.",
+      "raiz": "arnes",
+      "ruta": "tests/catch-up-main.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "al commitear en el público, el inventario de los controles se compara con el pre-commit propio del repo privado (de su origin/main): avisa el mismo día lo que antes salía rojo de noche, y en el privado no aplica.",
       "raiz": "arnes",
       "ruta": "tests/private-inventory.test.js",
@@ -2531,6 +2602,18 @@
       "__nota": "`confirm-designation` de scripts/lib/delegated-signing.js: el guion de verdad con la firma reemplazada. Sólo una persona confirma (ventana, click o «aprobado», no la delegación ni lo «hecho y avisado»), desde la pestaña de la sesión designada, y el renglón queda atado a esa designación. Sin red, segundos.",
       "raiz": "arnes",
       "ruta": "tests/delegated-signing-confirm.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "nombrar y retirar a la coordinadora con un click del dueño (marker.js designate-relay sin frase y withdraw-relay): el guion de verdad con la firma reemplazada y el freno en proceso; sin click no se anota nada, un click vencido, usado o de otra pregunta no vale, nadie la nombra por otra sesión, y sin click comprobable dice por qué y los respaldos. Sin red, segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/designate-by-click.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la pregunta de cada firma dice qué se aprueba (owner-approvals.js cuadroDe, owner-window.js cuadroPara y signature-sources.js): el verbo una vez, la historia con su título, qué hace en hasta 3 líneas, archivos, ruta, su «si sale mal» y la cita al final; el click atado a lo que se mostró. Sin red, segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/signature-question.test.js",
       "requiere": []
     },
     {
@@ -3694,6 +3777,12 @@
       "__nota": "Freno de evidencia del commit (2026-10-14): un AC cuenta si aparece en la UNIÓN de las tres fuentes que escribe la máquina —registro de pruebas de humo (salida 0 y copia en gates.log), gates E2E PASS (filas E2E de la tabla ### Tests) y firmas del dev vigentes para la declaración—, leída de la matriz por AC. Corre el hook de verdad sobre un repo y una HOME temporales: los tres orígenes repartidos pasan sin -cierre.md; un AC en ninguna fuente frena y el mensaje nombra las tres; un smoke con salida distinta de 0 no cuenta aunque su texto nombre el AC; una firma vencida no cuenta; un -cierre.md que nombra todo sigue contando.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/closing-evidence-union.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.214: el freno de cierre no le cobra a un commit de merge lo que trae de main. Corre el hook de verdad sobre un repo con un merge en curso: la historia que main pasó a review y el índice tiene igual que MERGE_HEAD no se juzga; la historia propia de la rama sin evidencia sigue frenando, en el merge y en un commit común; la resuelta a mano (distinta de los dos lados) se juzga.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/closing-evidence-merge.test.js",
       "requiere": []
     },
     {

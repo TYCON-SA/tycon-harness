@@ -65,6 +65,8 @@ en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.
 | `escape:story-skill-bypass` | 2 · excepción | dev y mantenimiento | escribir una historia sin la skill de historias | `escape:story-skill-bypass` |
 | `escape:set-autonomous` | 2 · excepción | dev y mantenimiento | cambiar el modo autónomo de una ejecución | `escape:set-autonomous` |
 | `designation-confirm` | 2 · excepción | dev y mantenimiento | confirmar qué sesión es la coordinadora de esta máquina | `designation-confirm` |
+| `designation-set` | 2 · excepción | dev y mantenimiento | nombrar a una sesión coordinadora de esta máquina, con un click en su pestaña | `designation-set` |
+| `designation-withdraw` | 2 · excepción | dev y mantenimiento | retirar a la coordinadora de esta máquina, con un click en su pestaña | `designation-withdraw` |
 | `control-change` | 3 · irreversible | sólo mantenimiento | cualquier cambio de control | `control-change` |
 | `escape:TYCON_SAFETY_OFF` | 3 · irreversible | dev y mantenimiento | apagar el freno de seguridad para un comando | `escape:TYCON_SAFETY_OFF` |
 | `escape:TYCON_PROD_LINT` | 3 · irreversible | dev y mantenimiento | apagar el control de consultas a producción | `escape:TYCON_PROD_LINT` |
@@ -159,8 +161,13 @@ Lo que tiene que cumplir esa aprobación:
 
 - **Sirve para una sola firma y vence a los 30 minutos.** Un comando que pide dos firmas no la usa.
 - **La pregunta la arma el freno.** Se la da al agente al negar el comando, con el sello «firma <id> · sesión <id> · código
-  <huella del comando>», y el agente la muestra sin cambiarle una letra. Tu click vale sólo con esa pregunta entera. Tu
+  <huella>», y el agente la muestra sin cambiarle una letra. Tu click vale sólo con esa pregunta entera. Tu
   «aprobado» vale si lo último que te dijo el agente trae ese sello y no nombra otra sesión.
+- **La pregunta dice qué aprobás.** En este orden: lo que se aprueba («¿Eximir un hallazgo crítico de los revisores?»), la historia con
+  su título y la sesión, qué hace en hasta 3 líneas, qué archivos toca, dónde está lo completo (el plan, el diff de los
+  controles, la historia, el informe de hallazgos), qué pasa si sale mal con esa firma y, al final, la cita de la sesión.
+  Lo que hace sale de lo que firmarías si lo abrieras, no de lo que escribió la sesión. La huella del sello incluye eso
+  que se mostró: si el plan o el diff cambian después del cuadro, tu click ya no vale y el agente pide el cuadro de nuevo.
 - **La das en la sesión que firma, o en la coordinadora con la designación confirmada.** Dada en la coordinadora, su proceso
   tiene que seguir vivo. La aprobación es tuya, no una delegación.
 - **El mensaje es un «aprobado» claro.** «Aprobado», «apruebo» o «sí, aprobado», sin preguntas, negaciones ni condiciones.
@@ -258,7 +265,7 @@ vuelve a pedir la firma del dueño.
 | Firma | Qué aprueba | Comando que la pide | ¿Desde otra sesión? | Firmarla en la terminal |
 | --- | --- | --- | --- | --- |
 | `plan-approval` | aprobar el plan de una story | `marker.js complete-step approve-plan --approved` | sí | `marker.js complete-step approve-plan --terminal` |
-| `extra-round` | una vuelta más de revisores | `pipeline.js smart-reloop --extra-round` | sí | `pipeline.js smart-reloop --extra-round --terminal` |
+| `extra-round` | pedir una vuelta más de revisores | `pipeline.js smart-reloop --extra-round` | sí | `pipeline.js smart-reloop --extra-round --terminal` |
 | `refresh-after-main` | refirmar los controles tras traer main, sin cambio propio | `run-base-controls.sh approve` | sí | `run-base-controls.sh approve --terminal` |
 | `control-change` | aprobar un cambio de los controles del repo | `run-base-controls.sh approve` | sí | `run-base-controls.sh approve --terminal` |
 | `critical-waiver` | eximir un hallazgo crítico de los revisores | `marker.js waive-critical` | sí | `marker.js waive-critical --terminal` |
@@ -269,9 +276,11 @@ vuelve a pedir la firma del dueño.
 | `adversarial-skip` | saltear el pase adversarial con constancia | `marker.js sign-adversarial-skip --story <S> --reason <R>` | no, en la pestaña de esa sesión | `marker.js sign-adversarial-skip --story <S> --reason <R> --terminal` |
 | `pending-approval` | abrir un pendiente nuevo en la lista de pendientes | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta>` | sí | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --terminal` |
 | `adhoc-lane` | abrir el arreglo rápido de una sesión, sin historia | `marker.js adhoc set '<json>'` | sí | `marker.js adhoc set --reason "<motivo>" [--max-files N] --terminal --for-session <id>` |
-| `adhoc-lane:sobre-cupo` | un arreglo rápido que pasa el tope de archivos del camino corto, aunque se recomienda una historia | `marker.js adhoc set '<json con maxFiles mayor que 8>'` | no, en la pestaña de esa sesión | `marker.js adhoc set --reason "<motivo>" --max-files <N> --terminal --for-session <id>` |
+| `adhoc-lane:sobre-cupo` | abrir un arreglo rápido que pasa el tope de archivos del camino corto, aunque se recomienda una historia | `marker.js adhoc set '<json con maxFiles mayor que 8>'` | no, en la pestaña de esa sesión | `marker.js adhoc set --reason "<motivo>" --max-files <N> --terminal --for-session <id>` |
 | `save` | guardar la story: commit, push y los pull requests | `marker.js approve-save [--for-session <D>]` | sí | `marker.js approve-save --terminal --for-session <D>` |
 | `designation-confirm` | confirmar qué sesión es la coordinadora de esta máquina | `delegated-signing.js confirm-designation` | no, en la pestaña de esa sesión | `delegated-signing.js confirm-designation --terminal` |
+| `designation-set` | nombrar a esta sesión coordinadora de la máquina | `marker.js designate-relay` | no, en la pestaña de esa sesión | `marker.js designate-relay --terminal` |
+| `designation-withdraw` | retirar a esta sesión de coordinadora de la máquina | `marker.js withdraw-relay` | no, en la pestaña de esa sesión | `marker.js withdraw-relay --terminal` |
 | `escape:TYCON_SAFETY_OFF` | apagar el freno de seguridad para un comando | `TYCON_SAFETY_OFF=1 <comando>` | no, sólo en tu terminal | `TYCON_SAFETY_OFF=1 <comando>` |
 | `escape:TYCON_PROD_LINT` | apagar el control de consultas a producción para un comando | `TYCON_PROD_LINT=0 <comando>` | no, sólo en tu terminal | `TYCON_PROD_LINT=0 <comando>` |
 | `escape:TYCON_NEW_NAMES` | apagar el control de nombres nuevos en lo que se publica | `TYCON_NEW_NAMES=0 <comando>` | no, en la pestaña de esa sesión | `TYCON_NEW_NAMES=0 <comando>` |
@@ -352,6 +361,12 @@ controles tras traer `main`.
 
 Tocar un freno es sólo del dueño: aprobar un cambio de los controles, los escapes que apagan un freno (salvo los dos de
 abajo), eximir pruebas o un crítico, aceptar un criterio imposible de probar y saltear el pase adversarial.
+
+**Un mensaje de la oficina nunca vale como firma ni como permiso para firmar por delegación.** Lo que el dueño le escribe a
+una sesión desde `/office` le llega como el aviso de un gancho, que la herramienta anota como aviso del sistema y no como la
+persona: el registro de aprobaciones sólo acepta lo tipeado en la pestaña y el click en el cuadro, y un cuadro abierto sigue
+esperando. Un agente de la misma cuenta puede leer el token de la oficina e imitar el mensaje; por eso no firma, ni siquiera
+con «aprobado». La sesión lo comprueba con `office-message.js verify <id>` y lo trata sólo como una indicación.
 
 ## Aprobar en nombre del dueño
 

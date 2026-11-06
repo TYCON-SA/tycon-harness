@@ -1672,12 +1672,19 @@ function gatesLines(fakeHome) {
   const f = path.join(fakeHome, '.claude', '.tycon-pipeline', 'gates.log');
   return fs.existsSync(f) ? fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
 }
-// El 5b se anota con `--result <archivo>`: el JSON del pase, medido, con sus N confirmados.
+// El 5b se anota con `--result <archivo>`: el JSON del pase, medido, con sus N confirmados y la prueba de cada lente
+// limpia guardada al lado.
 function resultadoMedido(dir, n) {
   const archivo = path.join(dir, `resultado-${n}-${process.hrtime.bigint()}.json`);
+  const prueba = (l) => {
+    const d = path.join(dir, 'step-05b-probes', `caza-${l}`);
+    fs.mkdirSync(d, { recursive: true });
+    fs.writeFileSync(path.join(d, 'COMO-SE-CORRIO.txt'), 'node probe.js\n→ ok\n');
+    return d;
+  };
   fs.writeFileSync(archivo, JSON.stringify({
     confirmed: Array.from({ length: n }, (_v, k) => ({ lens: 'l', summary: `h${k}` })),
-    lentes: ['a', 'b', 'c', 'd', 'e', 'f'].map((l) => ({ lens: l, estado: 'medida', count: 0 })), lentes_sin_medir: [], detalle: [], medido: true,
+    lentes: ['a', 'b', 'c', 'd', 'e', 'f'].map((l) => ({ lens: l, estado: 'medida', count: 0, probe_dir: prueba(l) })), lentes_sin_medir: [], detalle: [], medido: true,
   }));
   return archivo;
 }

@@ -131,11 +131,18 @@ test('HT4 SuiteTurn_FromAWorkingClone_ReadsTheInstalledProfile — el perfil est
   assert.strictEqual(JSON.parse(fs.readFileSync(HT.turnFile(m.home), 'utf8')).pid, other, 'el turno ajeno sigue');
   // el árbol que arma el nocturno trae su propio perfil: desde ahí siempre hay rol, y este caso no se puede medir
   if (['team-profile.json', 'perfil-equipo.json'].some((f) => fs.existsSync(path.join(ROOT, f)))) return;
-  // sin el perfil instalado no hay rol: no se pide nada, y corre
+  // sin el perfil instalado la designada ordena igual, con el rol de fábrica: el turno se pide
   const sin = toy();
   fs.mkdirSync(path.dirname(HT.turnFile(sin.home)), { recursive: true });
   fs.writeFileSync(HT.turnFile(sin.home), JSON.stringify({ pid: other, session: 'Uma', what: 'x', at: Date.now() }));
-  assert.strictEqual(spawnSync(process.execPath, [cli, 'take', '--what', 'x', '--process', String(process.pid)], { env: machineEnv(sin), encoding: 'utf8' }).status, 0);
+  const pide = spawnSync(process.execPath, [cli, 'take', '--what', 'x', '--process', String(process.pid)], { env: machineEnv(sin), encoding: 'utf8' });
+  assert.strictEqual(pide.status, HT.BUSY_EXIT, pide.stderr);
+  assert.match(pide.stderr, /pedile turno a la coordinadora/);
+  // sin designada no hay a quién pedirle turno: corre
+  const nadie = toy({ designated: false });
+  fs.mkdirSync(path.dirname(HT.turnFile(nadie.home)), { recursive: true });
+  fs.writeFileSync(HT.turnFile(nadie.home), JSON.stringify({ pid: other, session: 'Uma', what: 'x', at: Date.now() }));
+  assert.strictEqual(spawnSync(process.execPath, [cli, 'take', '--what', 'x', '--process', String(process.pid)], { env: machineEnv(nadie), encoding: 'utf8' }).status, 0);
 });
 
 test('HT5 Turno_GrandeSinAcotar_NoArrancaConElTurnoAjeno — sin acotar y grande no corre con el turno ajeno; una sola suite, sí', POSIX, (t) => {

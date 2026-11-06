@@ -699,9 +699,9 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   vivo. La pregunta es «¿Quién pasa la autorización para saltarse un control grave?»: «Cada programador (de fábrica)»
   quiere decir que el ok lo escribe el dev en el chat de su sesión; con «Una sesión coordinadora» aparece «¿Cómo la
   llaman?» (se guarda en `approvals.relay_session`, de fábrica «coordinadora»). Vale sólo desde acá, nunca desde una
-  máquina. Cuál sesión es la coordinadora se designa en cada máquina: el dev escribe en el chat de esa sesión «Esta
-  sesión es la <nombre>», con el nombre de arriba, y la sesión lo anota con
-  `marker.js designate-relay --approved-by "<el dev>" --quote "<su frase>"`. Se la reconoce por su conversación, no por
+  máquina. Cuál sesión es la coordinadora se designa en cada máquina: el dev se lo pide a esa sesión con sus palabras,
+  la sesión corre `marker.js designate-relay` y el dev hace click en el cuadro que dice qué sesión es y en qué carpeta
+  (sin click, la frase de antes queda de respaldo). Se retira con `marker.js withdraw-relay`. Se la reconoce por su conversación, no por
   su nombre: sigue valiendo si la sesión se reinicia, y hay que volver a designarla si se abre un chat nuevo o se hace
   `/clear`. Una sesión que se llama igual no puede reenviar.
   Debajo está **quién firma cada cosa**: una fila por cada firma del catálogo (`guides/firmas-del-arnes.md`), con tres
@@ -754,9 +754,10 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   - **B · en qué máquinas**: «En qué máquinas vale lo delegado», cada una por su huella.
   - **C · quién firma cada cosa y su nivel**: «Quién firma cada cosa» (la lista la trae el arnés, igual para todos;
     el equipo no agrega ni saca filas) y «El nivel de cada firma» (se sube, nunca se baja; sólo la rutina se delega).
-  - **En cada máquina**, la designación: «Esta sesión es la <nombre>» en el chat de la sesión elegida. Para que firme
-    lo delegado, además, esa sesión corre `node scripts/lib/delegated-signing.js confirm-designation` y el dueño lo aprueba
-    con un click en el cuadro de opciones, o lo corre en su terminal (ver `guides/firmas-del-arnes.md`, «Aprobar en nombre del dueño»). Se la reconoce por su
+  - **En cada máquina**, la designación: el dueño se lo pide a la sesión elegida, la sesión corre
+    `marker.js designate-relay` y el dueño hace click en su cuadro; ese click la nombra y la confirma para firmar lo
+    delegado. Con la frase de respaldo, además corre `node scripts/lib/delegated-signing.js confirm-designation` y el
+    dueño lo aprueba con un click, o en su terminal (ver `guides/firmas-del-arnes.md`, «Aprobar en nombre del dueño»). Se la reconoce por su
     conversación, sigue valiendo si se reinicia, y hay que repetirla tras un chat nuevo o un `/clear`. Si nadie la
     designó, nadie confirmó la designación, o la sesión está cerrada, no hay coordinadora: todo le llega al dev.
 - **Prueba a mano de cada punto**: si, además de lo que prueba el arnés, una persona tiene que marcar cada criterio de

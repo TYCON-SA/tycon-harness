@@ -300,11 +300,13 @@ test('T24 End_ClaudeDeletes_DeadOrUnknownGoesInactive @story-2.81 @ac-23 — Ses
   const out = execFileSync(process.execPath, [OFFICE, '--json'], { input: '', env: cleanEnv(w.home), encoding: 'utf8' });
   const data = JSON.parse(out);
   const inactive = data.agents.filter((a) => a.estado === 'inactiva');
-  assert.strictEqual(inactive.length, 3, JSON.stringify(data.agents));
+  assert.strictEqual(inactive.length, 2, JSON.stringify(data.agents));
   for (const a of inactive) assert.match(a.haciendo, /sin novedades desde las \d\d:\d\d/);
-  assert.ok(data.agents.some((a) => a.nombre === 'Muerta' && a.estado === 'inactiva'));
+  // la de Claude con su proceso muerto no está en la sala: va a «Cerradas»
+  assert.ok(!data.agents.some((a) => a.nombre === 'Muerta'));
+  assert.ok(data.cerradas.some((c) => c.nombre === 'Muerta'));
   for (const sid of ['s-cl-muerta', 's-cx-muerta', 's-cx-3h', 's-cx-25h']) assert.ok(stateOf(w, sid), `${sid} sigue en disco`);
-  assert.strictEqual(data.agents.length, 3, 'la de hace 25 h no se dibuja');
+  assert.strictEqual(data.agents.length, 2, 'la de hace 25 h no se dibuja');
   assert.strictEqual(L.isStale(stateOf(w, 's-cx-3h')), true);
   assert.strictEqual(L.isStale({ ...stateOf(w, 's-cx-3h'), updatedAt: ago(HOUR) }), false, 'sin pid, menos de 2 h: viva');
 });
@@ -741,4 +743,29 @@ test('T82 BrokenMarker_NotWrittenAsNoPipeline @story-2.81 @ac-26 — un marcador
   assert.strictEqual(lib().refresh(w.sdir, 's-rot', { home: w.home }), 'error');
   assert.strictEqual(stateOf(w, 's-rot').step, before.step, 'el paso queda');
   assert.match(fs.readFileSync(lib().errorsLogOf(w.sdir), 'utf8'), /s-rot[^\n]*JSON roto/);
+});
+
+test('T22 Oficina_TerminadaSinCerrar_LaTarjetaLoDice @story-8.195 @ac-22 — fromDisk: la terminada sin cerrar dice que falta cerrarla, también pasadas las 24 h', () => {
+  const w = world();
+  const ahora = Date.parse('2026-10-18T14:00:00.000Z');
+  for (const [sid, horas] of [['s-ter', 1], ['s-ter30', 30]]) {
+    const cerro = new Date(ahora - horas * HOUR).toISOString();
+    pipelineMarker(w, sid, { done: STEPS.STEPS.filter((s) => !s.flag).map((s) => s.id), extra: { lastTouch: cerro, stepTimings: { 'prepare-commit': { completedAt: cerro } } } });
+    const f = lib().fromDisk(w.sdir, sid, { home: w.home, now: ahora });
+    assert.strictEqual(f.sentence, 'Terminó la story 9.9: falta cerrarla.', sid);
+    assert.strictEqual(f.step, null);
+  }
+  // con código cambiado después de los revisores, la misma oración que la fila de /wip y la tarjeta
+  const cerro = new Date(ahora - HOUR).toISOString();
+  pipelineMarker(w, 's-rev', { done: STEPS.STEPS.filter((s) => !s.flag).map((s) => s.id), extra: {
+    lastTouch: cerro, stepTimings: { reviewers: { completedAt: new Date(ahora - 3 * HOUR).toISOString() }, findings: { completedAt: new Date(ahora - 3 * HOUR).toISOString() }, 'prepare-commit': { completedAt: cerro } },
+    fileEvents: [{ path: path.join(w.home, 'sin-repo', 'a.js'), ts: new Date(ahora - 2 * HOUR).toISOString(), code: true }],
+  } });
+  assert.strictEqual(lib().fromDisk(w.sdir, 's-rev', { home: w.home, now: ahora }).sentence, 'Terminó la story 9.9: falta revisar lo cambiado después de los revisores.');
+  // con un carril abierto en la misma sesión, lo que hace ahora va primero: su motivo y su hora
+  const until = new Date(ahora + HOUR).toISOString();
+  fs.writeFileSync(path.join(w.sdir, 'adhoc', 's-ter.json'), JSON.stringify({ reason: 'Arreglo el aviso del pedido', until }));
+  const f = lib().fromDisk(w.sdir, 's-ter', { home: w.home, now: ahora });
+  assert.strictEqual(f.sentence, 'Arreglo el aviso del pedido');
+  assert.strictEqual(f.endAt, until);
 });

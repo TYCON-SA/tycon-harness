@@ -866,6 +866,71 @@ test('T25 RedactBeforeCut — una credencial partida por el corte de 200 caracte
   assert.doesNotMatch(t, /ghp_A/, 'ni el pedazo del token');
 });
 
+// ── La cabecera Authorization ──────────────────────────────────────────────────────────────────────────
+// Todos los valores son inventados y sin forma de proveedor.
+
+test('T1 Redact_AuthorizationBearer_TapaElValor @story-8.210 @ac-1', () => {
+  const { redact } = require(HOOK);
+  const casos = [
+    ['curl -H "Authorization: Bearer inventado123.ABCdef-456" https://acme.example/x', 'curl -H "Authorization: Bearer <tapado>" https://acme.example/x'],
+    ["curl -H 'Authorization: Bearer inventado123.ABCdef-456' https://acme.example/x", "curl -H 'Authorization: Bearer <tapado>' https://acme.example/x"],
+    ['curl -H Authorization: Bearer inventado123.ABCdef-456 https://acme.example/x', 'curl -H Authorization: Bearer <tapado> https://acme.example/x'],
+    ['Authorization: Bearer abc123', 'Authorization: Bearer <tapado>'],
+    ['curl -H "Authorization: Bearer \\ inventado123" https://acme.example/x', 'curl -H "Authorization: Bearer \\ <tapado>" https://acme.example/x'],
+    ['authorization:bearer inventado123', 'authorization:bearer <tapado>'],
+    ['{"Authorization": "Bearer abcdefghij"}', '{"Authorization": "Bearer <tapado>"}'],
+    ['curl -H "Authorization: \\"Bearer abcdefghij\\""', 'curl -H "Authorization: \\"Bearer <tapado>\\""'],
+    ['Authorization: Bearer abc%40def@x resto', 'Authorization: Bearer <tapado> resto'],
+  ];
+  for (const [entrada, esperado] of casos) {
+    const r = redact(entrada);
+    assert.strictEqual(r, esperado, entrada);
+    assert.doesNotMatch(r, /inventado123|abc123|abcdefghij|abc%40|def@x/);
+  }
+});
+
+test('T1b Redact_MilesDeEspacios_NoSeHaceLento @story-8.210 @ac-1', () => {
+  const { redact } = require(HOOK);
+  for (const s of [`Authorization:${' '.repeat(50000)}x`, `Bearer${' '.repeat(50000)}x`]) {
+    const t0 = Date.now();
+    redact(s);
+    assert.ok(Date.now() - t0 < 1000, `tardó ${Date.now() - t0} ms`);
+  }
+});
+
+test('T2 Redact_AuthorizationBasic_TapaElValor @story-8.210 @ac-2', () => {
+  const { redact } = require(HOOK);
+  for (const valor of ['dXNlcjpwYXNz', 'aW52ZW50YWRvOjEyMw==', 'abc']) {
+    assert.strictEqual(redact(`curl -H "Authorization: Basic ${valor}" https://acme.example/x`), 'curl -H "Authorization: Basic <tapado>" https://acme.example/x', valor);
+  }
+  assert.strictEqual(redact('curl -H "Authorization: Basic \\ dXNlcjpwYXNz" x'), 'curl -H "Authorization: Basic \\ <tapado>" x');
+});
+
+test('T3 Redact_BearerYBasicSueltos @story-8.210 @ac-3', () => {
+  const { redact } = require(HOOK);
+  assert.strictEqual(redact('bearer inventado456xyz'), 'bearer <tapado>');
+  assert.strictEqual(redact('BEARER inventado456xyz'), 'BEARER <tapado>');
+  assert.strictEqual(redact('el aviso trae Basic dXNlcjpwYXNz suelto'), 'el aviso trae Basic <tapado> suelto');
+  assert.strictEqual(redact('Basic abcdefghij'), 'Basic abcdefghij', 'sólo minúsculas, sin la cabecera');
+  assert.strictEqual(redact('Bearer abcdefghij'), 'Bearer abcdefghij', 'sólo minúsculas, sin la cabecera');
+});
+
+test('T4 Redact_ProsaYVariables_NoSeTocan @story-8.210 @ac-4', () => {
+  const { redact } = require(HOOK);
+  for (const frase of ['Bearer token', 'Bearer authentication', 'Basic configuration', 'curl -H "Authorization: Bearer $TOKEN" x', 'curl -H "Authorization: Bearer ${TOKEN}" x', 'curl -H "Authorization: Basic $AUTH" x']) {
+    assert.strictEqual(redact(frase), frase);
+  }
+});
+
+test('T5 OneLine_AuthorizationEnElCorte_NoSeEscapa @story-8.210 @ac-5', () => {
+  const { oneLine } = require(HOOK);
+  // sólo minúsculas: lo tapa la forma de la cabecera, no la suelta
+  const linea = oneLine(`${'x'.repeat(169)} Authorization: Bearer inventadoabcdefgh`);
+  assert.ok(linea.length <= 200, linea.length);
+  assert.match(linea, /Authorization: Bearer <tapado>$/);
+  assert.doesNotMatch(linea, /invent/, 'ni el pedazo del valor');
+});
+
 // ── T19 ────────────────────────────────────────────────────────────────────────────────────────────────
 test('T19 Codex_OnlyStop — del lado Codex, sólo el cierre de turno', () => {
   const raw = JSON.parse(fs.readFileSync(CODEX_HOOKS, 'utf8'));

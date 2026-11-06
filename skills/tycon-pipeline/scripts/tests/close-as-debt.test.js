@@ -478,6 +478,46 @@ test('T13 BorradoPorConsola_Y_AppendFile_LlevanLaMarca @story-8.195 @ac-13 — e
   assert.strictEqual('otraVuelta' in E.leer(sid), false, 'el borrado por consola: el campo viejo se borra');
 });
 
+test('T34 BorradoPorConsola_ReglaQueFalla_DejaElRastro @story-8.195 @ac-33 — el borrado por consola con la vuelta que falla marca code, borra el campo y deja su línea', () => {
+  const E = entorno();
+  const sid = 's-8195-t34';
+  listaParaElUltimo(E, sid);
+  E.escribir(sid, { ...E.leer(sid), otraVuelta: { round: 2, archivos: ['src/viejo.js'], desde: '2026-01-01T10:59:00.000Z' } });
+  const pasos = require(path.join(SCRIPTS, 'lib', 'steps.js'));
+  const reglas = require(path.join(SCRIPTS, 'lib', 'reloop-code.js'));
+  const [vuelta, regla, home] = [pasos.otraVueltaDe, reglas.pideOtraVuelta, process.env.HOME];
+  pasos.otraVueltaDe = () => { throw new Error('vuelta rota t34'); };
+  reglas.pideOtraVuelta = () => { throw new Error('regla rota t34'); };
+  // el freno escribe su registro en la carpeta de estado de la persona: la de la casa de prueba
+  process.env.HOME = E.home;
+  const borrado = path.join(E.repo, 'src', 'g.test.js');
+  try {
+    require(path.join(SCRIPTS, 'on-bash-write-gate.js')).anotarBorradosDeLaStory({ stateDir: E.dir(), sessionId: sid, marker: E.leer(sid), rutas: [borrado], via: 'git rm' });
+  } finally { [pasos.otraVueltaDe, reglas.pideOtraVuelta, process.env.HOME] = [vuelta, regla, home]; }
+  const m = E.leer(sid);
+  assert.strictEqual(m.fileEvents.find((e) => e.path === borrado).code, true, 'la regla que falla marca code: ante la duda, se revisa');
+  assert.strictEqual('otraVuelta' in m, false, 'el campo viejo se borra');
+  assert.match(fs.readFileSync(path.join(E.dir(), 'hook-errors.log'), 'utf8'), /on-bash-write-gate[^\n]*: Error: vuelta rota t34/);
+});
+
+test('T35 CompleteStep_OtraVueltaQueFalla_CierraIgual @story-8.195 @ac-34 — si el cálculo de otraVuelta falla, el paso cierra, el campo no queda y hay rastro', () => {
+  const E = entorno();
+  const sid = 's-8195-t35';
+  listaParaElUltimo(E, sid);
+  E.escribir(sid, { ...E.leer(sid), otraVuelta: { round: 2, archivos: ['src/viejo.js'], desde: '2026-01-01T10:59:00.000Z' } });
+  const rompe = path.join(E.repo, '..', 'rompe-vuelta-t35.js');
+  fs.writeFileSync(rompe, `require(${JSON.stringify(path.join(SCRIPTS, 'lib', 'steps.js'))}).otraVueltaDe = () => { throw new Error('vuelta rota t35'); };\n`);
+  const r = spawnSync(process.execPath, ['--require', rompe, path.join(SCRIPTS, 'marker.js'), 'complete-step', 'plan', '--out-of-order'], {
+    encoding: 'utf8', input: '', cwd: E.repo,
+    env: { ...process.env, HOME: E.home, USERPROFILE: E.home, CLAUDE_CODE_SESSION_ID: sid, TYCON_HOME: '', TYCON_LANE_LLM: '0', TYCON_TIME_TRACKING: 'none' },
+  });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const m = E.leer(sid);
+  assert.ok(m.stepsCompleted.includes('plan'), 'el paso cerró');
+  assert.strictEqual('otraVuelta' in m, false, 'el campo viejo no queda: el cartel vuelve a su regla de antes');
+  assert.match(fs.readFileSync(path.join(E.dir(), 'hook-errors.log'), 'utf8'), /marker otraVuelta: Error: vuelta rota t35/);
+});
+
 test('T15 UltimoPaso_MarcadorIlegible_NiegaComoHoy @story-8.195 @ac-15 — con el marcador roto, el último paso niega con el motivo de hoy', () => {
   const E = entorno();
   const sid = 's-8195-t15';
@@ -528,4 +568,63 @@ test('T30 OtraVuelta_SeEscribeEnElMarcador @story-8.195 @ac-30 — cada cambio d
   const otra = E.correr('marker.js', ['set', JSON.stringify({ storyId: '9.10', storyPath: E.story, repoPath: E.repo }), '--replace'], sid);
   assert.strictEqual(otra.status, 0, otra.stderr);
   assert.strictEqual(E.leer(sid).otraVuelta, undefined, 'la otra story no hereda la vuelta');
+});
+
+// ───────────── Una corrida sin turno no cuenta como prueba roja ─────────────
+
+const SIN_TURNO = { tests: 'sin-turno', build: 'green' };
+const PROV = { tests: 'test-gate', build: 'run-check' };
+const DEUDA = { estado: 'deuda', motivo: 'x', deuda: 'DEF-9.9-angular', via: 'persona', at: '2026-10-22T20:00:00Z' };
+const frenaSinLlamarloRojo = (r, quien) => {
+  assert.strictEqual(r.status, 1, `${quien}: ${r.stderr}`);
+  assert.match(r.stderr, /turno/, quien);
+  assert.doesNotMatch(r.stderr, /en rojo|Arreglalas/, quien);
+};
+
+test('T10 8.215-SinTurno_CompleteStep_FrenaSinLlamarloRojo @story-8.215 @ac-10', () => {
+  const E = entorno({ todo: '- [ ] [DEF-9.9-angular] subir angular\n' });
+  E.arrancar('s-st10');
+  const base = { ...E.leer('s-st10'), checks: SIN_TURNO, checksProvenance: PROV };
+  E.escribir('s-st10', base);
+  frenaSinLlamarloRojo(E.correr('marker.js', ['complete-step', 'run-tests', '--out-of-order'], 's-st10'), 'run-tests');
+  E.escribir('s-st10', base);
+  frenaSinLlamarloRojo(E.correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order'], 's-st10'), 'prepare-commit');
+  // `next`: la precondición de las pruebas queda sin cumplir y lo nombra
+  const listo = ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers', 'findings', 'live-check'];
+  E.escribir('s-st10', { ...base, stepScheme: 2, stepsCompleted: listo, stepsPending: ['prepare-commit'], dodRuntimeChecked: true, deepReviewDone: true });
+  const n = JSON.parse(E.correr('pipeline.js', ['next'], 's-st10').stdout);
+  const p = (n.preconditions || []).find((x) => x.id === 'check-tests');
+  assert.ok(p, JSON.stringify(n).slice(0, 400));
+  assert.strictEqual(p.satisfied, false);
+  assert.match(p.detail, /turno/);
+});
+
+test('T19 8.215-Stop_SinTurno_DejaParar @story-8.215 @ac-14', () => {
+  const E = entorno();
+  E.arrancar('s-st19');
+  const stop = () => spawnSync(process.execPath, [path.join(SCRIPTS, 'on-stop-dod-gate.js')], {
+    encoding: 'utf8', input: JSON.stringify({ session_id: 's-st19' }), env: { ...process.env, HOME: E.home, USERPROFILE: E.home, TYCON_HOME: '' },
+  });
+  E.escribir('s-st19', { ...E.leer('s-st19'), autonomous: true, iter: 0, checks: SIN_TURNO, checksProvenance: PROV });
+  const r = stop();
+  assert.doesNotMatch(r.stdout, /"decision":"block"/, `con sin-turno deja parar: ${r.stdout}`);
+  assert.match(`${r.stdout}${r.stderr}`, /turno/, 'lo dice en una línea');
+  const m = E.leer('s-st19');
+  assert.strictEqual(m.iter || 0, 0, 'no suma una vuelta');
+  assert.notStrictEqual(m.needs_human, true, 'no escala a una persona');
+  // un rojo de verdad sigue frenando
+  E.escribir('s-st19', { ...m, checks: { tests: 'red:exit=1', build: 'green' } });
+  assert.match(stop().stdout, /"decision":"block"/);
+});
+
+test('T22 8.215-PrepareCommit_SinTurnoDespuesDeRunTests_Frena @story-8.215 @ac-10', () => {
+  const E = entorno({ todo: '- [ ] [DEF-9.9-angular] subir angular\n' });
+  E.arrancar('s-st22');
+  // «Correr las pruebas» ya cerrado, y después el portón salió sin turno
+  const hecho = ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests'];
+  const base = { ...E.leer('s-st22'), stepScheme: 2, stepsCompleted: hecho, checks: SIN_TURNO, checksProvenance: PROV };
+  for (const [quien, m] of [['sin deuda', base], ['en deuda', { ...base, cierre: DEUDA }]]) {
+    E.escribir('s-st22', m);
+    frenaSinLlamarloRojo(E.correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order'], 's-st22'), quien);
+  }
 });

@@ -87,9 +87,11 @@ function computeGate(marker) {
     // «sin-acotar» (tests): no se corrió nada a propósito y la cubre la CI del pedido; no es un rojo que el agente arregle.
     // «sin-medir» (tests): el portón no sabe correr las pruebas del repo; tampoco lo arregla el agente: lo dicen el
     // cierre de «Correr las pruebas» y el cierre de la historia.
+    // «sin-turno» (tests): el portón no corrió porque otra sesión tenía el turno de las ejecuciones grandes; el agente no
+    // lo arregla, espera el turno. Lo frenan los cierres de los pasos, no el del turno.
     // «rojo-esperado» (expect-red): un rojo que la historia en deuda deja a propósito; sin la deuda escrita es un rojo.
     const esperado = /^rojo-esperado/.test(String(status)) && !!marker.cierre && marker.cierre.estado === 'deuda';
-    if (status !== 'green' && !esperado && !(name === 'tests' && (status === 'sin-acotar' || status === 'sin-medir'))) failures.push(`${name} → ${status}`);
+    if (status !== 'green' && !esperado && !(name === 'tests' && ['sin-acotar', 'sin-medir', 'sin-turno'].includes(status))) failures.push(`${name} → ${status}`);
   }
   // Sin checks registrados o todos verdes → green → deja parar (preserva pausas HITL).
   return { green: failures.length === 0, failures };
@@ -208,6 +210,17 @@ function main() {
     try { require('./lib/story-gate-io.js').appendLog(STATE_DIR, 'gates.log', sessionId, { repoPath: null, name: 'pending-steps-line', status: 'unknown', kind: 'unknown-error', reason: String(e && e.message) }); } catch { /* el registro tampoco traba */ }
   }
 
+  // Lo terminado sin cerrar de esta sesión (lib/finished-open.js): su ejecución con todos los pasos hechos, o su camino
+  // corto con el pedido abierto o la rama ya en main. Un aviso a la persona en cada turno, en toda sesión, autónoma o no;
+  // nunca frena ni cierra nada. No se junta con la línea de pasos pendientes: ésa sale sólo con pasos pendientes.
+  try {
+    const lines = require('./lib/finished-open.js').stopLines({ sid: sessionId, stateDir: STATE_DIR });
+    if (lines.length) toPerson = toPerson ? `${toPerson}\n${lines.join('\n')}` : lines.join('\n');
+  } catch (e) {
+    // el aviso no traba el cierre, pero su falta queda anotada (no es «nada terminado sin cerrar»)
+    try { require('./lib/story-gate-io.js').appendLog(STATE_DIR, 'gates.log', sessionId, { repoPath: null, name: 'finished-open', status: 'unknown', kind: 'unknown-error', reason: String(e && e.message) }); } catch { /* el registro tampoco traba */ }
+  }
+
   // Scoping: solo el modo autónomo es atrapado por el portón.
   if (!marker || marker.autonomous !== true) return allowStop();
 
@@ -238,6 +251,9 @@ function main() {
     // Un verde cierra el lazo: el próximo rojo es un primer rojo, aunque repita uno de antes.
     if (last.length || marker.noProgressStreak || 'lastTestsFailed' in marker) {
       marker.lastFailures = []; marker.noProgressStreak = 0; delete marker.lastTestsFailed; writeMarker(sessionId, marker);
+    }
+    if ((marker.checks || {}).tests === 'sin-turno') {
+      toPerson = [toPerson, 'Las pruebas esperan el turno de la coordinadora: el portón no corrió y falta medirlas.'].filter(Boolean).join('\n');
     }
     return allowStop();
   }

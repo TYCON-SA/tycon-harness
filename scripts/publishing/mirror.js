@@ -292,7 +292,9 @@ function cleanup() {
 // ── El público: leerlo ──────────────────────────────────────────────────────────────────────────────────────────
 /** git hablando con el público: aislado como el del exportador, sin ayudante de credenciales, con la cabecera por el ambiente. */
 // Tampoco sigue redirecciones: la cabecera con el token va al servidor que se validó, y a ningún otro al que ése mande.
-const remoteGit = (ctx, dir, args) => git(dir, ['-c', 'credential.helper=', '-c', 'http.followRedirects=false', ...args], { env: ctx.auth });
+// En inglés: `unreadable` reconoce la credencial y el repo que no está por el texto del error, que git traduce.
+const remoteGit = (ctx, dir, args) => git(dir, ['-c', 'credential.helper=', '-c', 'http.followRedirects=false', ...args],
+  { env: { ...ctx.auth, ...require('../lib/clean-git-env.js').IDIOMA_DE_GIT } });
 
 /** Un texto de git sin el nombre ni la URL del repo: la salida no los trae. */
 function withoutRepo(ctx, text) {

@@ -65,6 +65,7 @@
  *                                                  y lleva más de 24 h sin tocarse
  *   marker.js doing "<qué hago>" | doing clear  → anota (o borra) qué hace esta sesión sin story, para /wip; NO es un
  *                                                  permiso. `doing clear-orphan <sid>`: la de otra sesión que no vive.
+ *                                                  Con una story abierta sólo anota `doing --waiting-for "<qué espera>"`.
  *   marker.js adopt-session <sessionId>         → ADOPTA el marker completo de otra
  *                                                  sesión (resume cross-session sin pérdida:
  *                                                  filesTouched/iterations/checks/dodRuntimeChecked
@@ -224,6 +225,11 @@ function paraOtraSesion(argv) {
     return;
   }
   if (!PEDIDA || PEDIDA === PROPIA) return;
+  // nombrar o retirar a la coordinadora: desde su propia pestaña, o la terminal del dueño que nombra esa sesión
+  if ((argv[2] === 'designate-relay' || argv[2] === 'withdraw-relay') && !(PROPIA === '_nosession' && process.argv.includes('--terminal'))) {
+    console.error(`🔒 marker.js ${argv[2]}: se corre desde la sesión que se nombra, no para otra (--for-session ${PEDIDA}). No se escribió nada.`);
+    process.exit(1);
+  }
   const no = (m) => { console.error(`🔒 marker.js: --for-session ${PEDIDA}: ${m}. No se escribió nada.`); process.exit(2); };
   // en la terminal del dueño --for-session dice su sesión; sin variable de sesión y sin terminal no hay quién la pida
   if (PROPIA === '_nosession') {
@@ -1188,6 +1194,20 @@ function firmadoEnLaTerminal(firma, resumen) {
   return trabajarSobreElDestino(ow, { via: 'terminal', sesion, destino: SID || null });
 }
 
+/**
+ * Las pruebas sin turno (`checks.tests === 'sin-turno'`): el portón no corrió porque otra sesión tenía el turno de las
+ * ejecuciones grandes. Frena el paso diciendo eso, sin llamarlo rojo: no hay prueba que arreglar, hay que esperar el
+ * turno. La deuda no lo cubre: no es un rojo que se deja a propósito, es una medición que falta.
+ */
+function frenarSinTurno(marker, n) {
+  if (!marker.checks || marker.checks.tests !== 'sin-turno') return;
+  appendLog('gates.log', { name: 'tests-no-turn', status: 'blocked', story: marker.storyId || null, step: n });
+  console.error(`marker.js complete-step ${n} BLOQUEADO — las pruebas no corrieron: el portón no tuvo el turno de las ejecuciones grandes.`);
+  console.error('  No hay pruebas que fallaran: falta medirlas. Cuando la coordinadora te dé el turno, corré el portón:');
+  console.error('    bash <skills>/tycon-pipeline/scripts/test-gate.sh <repo> <ruta de la story>');
+  process.exit(1);
+}
+
 function cmdCompleteStep(nRaw, flags) {
   const marker = readMarker();
   if (!marker) {
@@ -1236,6 +1256,8 @@ function cmdCompleteStep(nRaw, flags) {
       appendLog('gates.log', { name: 'expected-red', status: 'accepted', story: marker.storyId, check: k, deuda: marker.cierre.deuda });
       console.error(`⚠️  ${k}: ${v} — aceptado por la deuda ${marker.cierre.deuda} (${((marker.expectedRed || {})[k] || {}).tests || []})`);
     }
+    // Las pruebas sin turno tampoco llegan al commit, ni con la deuda: no es un rojo que se deja, es una medición que falta.
+    frenarSinTurno(marker, n);
     // Un control en rojo común tampoco llega al commit sin la deuda: o se arregla, o se cierra como deuda con la frase.
     const rojos = Object.entries(marker.checks || {}).filter(([, v]) => /^red\b/.test(String(v)));
     if (rojos.length && !enDeuda) {
@@ -1561,6 +1583,9 @@ function cmdCompleteStep(nRaw, flags) {
       console.error('  No le dictes cómo: si pregunta cómo seguir, señalale la guía del freno (guides/safety-guard.md, regla ESC-C3).');
       process.exit(1);
     }
+
+    // ── «Sin turno»: frena, sin llamarlo rojo ─────────────────────────────────────────────────
+    frenarSinTurno(marker, n);
 
     // ── «Sin acotar»: se acepta anunciándolo ──────────────────────────────────────────────────
     // La corrida del repo hermano no se pudo acotar a lo tocado y no corrió nada (salida 7 de test-gate.sh). Correr la
@@ -2057,11 +2082,22 @@ function cmdCompleteStep(nRaw, flags) {
 /**
  * Escribe en el marcador `otraVuelta` (lib/steps.js `otraVueltaDe`): el cartel lo lee y no decide la vuelta por su
  * cuenta. Lo llaman cada cierre de paso y cada cambio que se anota; un marcador por número no lo lleva.
+ *
+ * Si el cálculo falla, el cierre sigue: el campo viejo se borra (el cartel vuelve a su regla de antes, y `next` y el
+ * último paso deciden igual) y queda el rastro en hook-errors.log, como en on-edit.js.
  */
 function anotarOtraVuelta(marker) {
-  const v = STEPS_LIB.otraVueltaDe(marker);
-  if (v === undefined) delete marker.otraVuelta;
-  else marker.otraVuelta = v;
+  try {
+    const v = STEPS_LIB.otraVueltaDe(marker);
+    if (v === undefined) delete marker.otraVuelta;
+    else marker.otraVuelta = v;
+  } catch (e) {
+    delete marker.otraVuelta;
+    try {
+      fs.mkdirSync(STATE_DIR, { recursive: true });
+      fs.appendFileSync(path.join(STATE_DIR, 'hook-errors.log'), `[${new Date().toISOString()}] marker otraVuelta: ${(e && e.stack) || e}\n\n`, 'utf8');
+    } catch { /* el registro no corta el cierre */ }
+  }
 }
 
 /**
@@ -2424,10 +2460,14 @@ function cmdMarkTestsNotScoped(motivo) {
  *   · `record --summary <resumen> --repo <repo>`: reemplaza las de ese repo con las fallas del resumen de
  *     run-suites-json.js (sin resumen legible, ninguna) y borra `checks['tests-suite']`, para que no quede en pie el rojo
  *     de una suite sola anterior;
- *   · `clear --path <ruta> --repo <repo>`: saca esa ruta (la suite sola salió verde);
+ *   · `clear --path <ruta> --repo <repo> [--summary <resumen> --tree <árbol> [--coverage-file <lcov>]]`: saca esa ruta (la suite
+ *     sola salió verde); con el resumen de la suite sola y la foto de su carpeta, la suma a lo guardado de la completa
+ *     roja, con su cobertura;
  *   · `pending --suites <suites.json> --gate <test-gate.sh> --repo <repo> [--story <story>]`: saca las rutas que ya no
- *     están en suites.json (y lo dice); si queda alguna, nombra cada una con su comando y sale 76.
- * `record` y `clear` escriben lo que mide la puerta: sólo los llama test-gate.sh (TYCON_TEST_GATE=1).
+ *     están en suites.json (y lo dice); si queda alguna, nombra cada una con su comando y sale 76;
+ *   · `save-red`, `red-full` y `drop-red`: lo guardado de la última completa roja del repo (`testsRedFull`, con su
+ *     carpeta en `red-full/` y su hash), para que repetir solas las rojas cierre sin otra completa (lib/failed-first.js).
+ * `record`, `clear`, `save-red` y `drop-red` escriben lo que mide la puerta: sólo los llama test-gate.sh (TYCON_TEST_GATE=1).
  * Sin corrida abierta: sale 0, no escribe nada y lo dice.
  */
 const TESTS_FAILED_PENDING = 76;
@@ -2435,21 +2475,24 @@ const TESTS_FAILED_PENDING = 76;
 function cmdTestsFailed(argv) {
   const accion = argv[0];
   const opt = (k) => { const i = argv.indexOf(k); return i >= 0 && argv[i + 1] ? argv[i + 1] : null; };
-  const uso = 'marker.js tests-failed: uso — tests-failed record --summary <f> --repo <r> | clear --path <ruta> --repo <r> | pending --suites <json> --gate <test-gate.sh> --repo <r> [--story <s>]';
-  if (!['record', 'clear', 'pending'].includes(accion) || !opt('--repo')
+  const uso = 'marker.js tests-failed: uso — tests-failed record --summary <f> --repo <r> | clear --path <ruta> --repo <r> [--summary <f> --tree <árbol> [--coverage-file <f>]] | pending --suites <json> --gate <test-gate.sh> --repo <r> [--story <s>] | save-red --summary <f> --measured <f> [--coverage-file <f>] [--base <sha>] [--trim <t>] --repo <r> | red-full --repo <r> | drop-red --repo <r>';
+  if (!['record', 'clear', 'pending', 'save-red', 'red-full', 'drop-red'].includes(accion) || !opt('--repo')
     || (accion === 'record' && !opt('--summary')) || (accion === 'clear' && !opt('--path'))
-    || (accion === 'pending' && (!opt('--suites') || !opt('--gate')))) {
+    || (accion === 'pending' && (!opt('--suites') || !opt('--gate')))
+    || (accion === 'save-red' && (!opt('--summary') || !opt('--measured')))) {
     console.error(uso);
     process.exit(2);
   }
-  if (accion !== 'pending' && process.env.TYCON_TEST_GATE !== '1') {
+  if (!['pending', 'red-full'].includes(accion) && process.env.TYCON_TEST_GATE !== '1') {
     console.error(`marker.js tests-failed ${accion}: sólo lo usa test-gate.sh (TYCON_TEST_GATE=1)`);
     process.exit(2);
   }
   const ff = require('./lib/failed-first.js');
   const marker = readMarker();
   if (!marker) {
-    process.stdout.write(`marker.js tests-failed ${accion}: sin corrida abierta en esta sesión, no anoto nada\n`);
+    // red-full lo lee test-gate.sh como JSON: sin corrida, no hay nada guardado
+    if (accion === 'red-full') process.stdout.write('null\n');
+    else process.stdout.write(`marker.js tests-failed ${accion}: sin corrida abierta en esta sesión, no anoto nada\n`);
     return;
   }
   const real = (x) => { try { return fs.realpathSync(x); } catch { return path.resolve(x); } };
@@ -2470,10 +2513,57 @@ function cmdTestsFailed(argv) {
     if (nuevas.length) process.stderr.write(`[test-gate] suites que fallaron, anotadas para repetir primero: ${nuevas.map((x) => x.ruta).join(', ')}\n`);
     return;
   }
+  // Lo guardado de la última completa roja de este repo («repetir solas cierra»): vive en la carpeta de
+  // estado, `red-full/<sesión>-<repo>`, y el marcador anota su hash. Ver lib/failed-first.js.
+  const rojas = Array.isArray(marker.testsRedFull) ? marker.testsRedFull : (marker.testsRedFull ? [marker.testsRedFull] : []);
+  const roja = rojas.find((x) => x && x.repo === repo) || null;
+  const otrasRojas = rojas.filter((x) => x && x.repo !== repo);
+  const guardarRojas = (lista2) => { marker.testsRedFull = lista2.length ? lista2 : undefined; if (!lista2.length) delete marker.testsRedFull; };
+  if (accion === 'red-full') {
+    process.stdout.write(`${JSON.stringify(roja)}\n`);
+    return;
+  }
+  if (accion === 'drop-red') {
+    if (!roja) return;
+    // sólo se borra lo que está en su carpeta: un `dir` de otro lado no se toca, se dice
+    const casa = path.join(STATE_DIR, 'red-full') + path.sep;
+    if (typeof roja.dir === 'string' && path.resolve(roja.dir).startsWith(casa)) {
+      try { fs.rmSync(roja.dir, { recursive: true, force: true }); } catch (e) {
+        process.stderr.write(`[test-gate] ⚠️  no pude borrar lo guardado de la completa roja (${e.message}): queda la carpeta, el marcador ya no la nombra\n`);
+      }
+    } else process.stderr.write(`[test-gate] ⚠️  lo guardado de la completa roja apunta fuera de ${casa}: no borro nada, sólo lo saco del marcador\n`);
+    guardarRojas(otrasRojas);
+    marker.lastTouch = nowIso();
+    writeMarker(marker);
+    return;
+  }
+  if (accion === 'save-red') {
+    const dir = path.join(STATE_DIR, 'red-full', `${marker.sessionId || 'sesion'}-${require('crypto').createHash('sha1').update(repo).digest('hex').slice(0, 12)}`);
+    let hash;
+    try {
+      hash = ff.saveRed({ dir, summaryFile: opt('--summary'), lcovFile: opt('--coverage-file'), measuredFile: opt('--measured'), base: opt('--base'), recorte: opt('--trim') || '' });
+    } catch (e) {
+      process.stderr.write(`[test-gate] ⚠️  no pude guardar la completa roja (${e.message}): repetir solas no va a cerrar «Correr las pruebas»\n`);
+      return;
+    }
+    guardarRojas([...otrasRojas, { repo, dir, hash, at: nowIso() }]);
+    marker.lastTouch = nowIso();
+    writeMarker(marker);
+    process.stderr.write('[test-gate] guardé lo que midió esta completa roja: con las rojas repetidas solas en verde, la próxima completa cierra sin correr todo\n');
+    return;
+  }
   if (accion === 'clear') {
     const ruta = opt('--path');
     if (!lista.some((x) => x.ruta === ruta)) return;
     const quedan = lista.filter((x) => x.ruta !== ruta);
+    // con lo guardado de la completa roja, la repetición verde se suma con la foto de la carpeta en que corrió
+    if (roja && opt('--summary') && opt('--tree')) {
+      try {
+        const sola = JSON.parse(fs.readFileSync(opt('--summary'), 'utf8'));
+        const entry = (sola.suites || [])[0] || null;
+        if (entry && entry.exit === 0) roja.hash = ff.addRepeat(roja.dir, ruta, { tree: opt('--tree'), entry, lcovFile: opt('--coverage-file') });
+      } catch (e) { process.stderr.write(`[test-gate] ⚠️  no pude sumar la repetición a lo guardado (${e.message}): la completa va a correr entera\n`); }
+    }
     marker.testsFailed = [...ajenas, ...quedan];
     marker.lastTouch = nowIso();
     writeMarker(marker);
@@ -2750,7 +2840,10 @@ function cmdRunCheck(argv) {
     if (terminado) return;
     terminado = true;
     try {
-      registrarRunCheck(name, cmdArgv, marker, exitCode, Date.now() - t0, Buffer.concat(trozos).toString('utf8'));
+      // el 77 del turno se anota aparte: `registrarRunCheck` sólo sabe de verde y rojo, y está congelada
+      if (esSinTurno(name, cmdArgv, exitCode)) registrarSinTurno(name, cmdArgv, marker, exitCode, Date.now() - t0);
+      else if (marcaQueNoPisaSinTurno(name, exitCode)) process.exitCode = exitCode;
+      else registrarRunCheck(name, cmdArgv, marker, exitCode, Date.now() - t0, Buffer.concat(trozos).toString('utf8'));
     } finally {
       soltar();
     }
@@ -2789,6 +2882,62 @@ function cmdRunCheck(argv) {
     }
     terminar(c);
   });
+}
+
+/**
+ * ¿Este comando es el corredor de suites? Es el único que pide el turno de las ejecuciones grandes, así que sólo su 77
+ * es «sin turno». Se reconoce por un argumento cuyo nombre de archivo es exactamente `run-suites-json.js`, o por una
+ * palabra con ese nombre dentro del texto que sigue a `-c` (el portón lo lanza también con `bash -c`).
+ */
+function esCorredorDeSuites(cmdArgv) {
+  const es = (s) => path.basename(String(s || '').replace(/^['"]|['"]$/g, '')) === 'run-suites-json.js';
+  return cmdArgv.some((a, i) => es(a) || (i > 0 && cmdArgv[i - 1] === '-c' && String(a).split(/[\s;&|()]+/).some(es)));
+}
+
+/** ¿Es el 77 del turno? El del corredor de suites, en el check `tests`, lanzado por el portón. */
+function esSinTurno(name, cmdArgv, exitCode) {
+  return exitCode === 77 && name === 'tests' && process.env.TYCON_TEST_GATE === '1' && esCorredorDeSuites(cmdArgv);
+}
+
+/**
+ * ¿Es una marca en rojo del portón (`marcar_tests_en_rojo` de test-gate.sh: un hermano o una parte que salió 75, un
+ * corte, el total en rojo) sobre un check que ya quedó `sin-turno`? Ese 75 puede venir del turno, y el rojo lo
+ * volvería una prueba que arreglar. Los dos dicen «no se midió»: queda `sin-turno`, que además dice qué hacer, y se
+ * anota en gates.log que la marca no lo pisó.
+ */
+function marcaQueNoPisaSinTurno(name, exitCode) {
+  if (name !== 'tests' || exitCode === 0 || process.env.TYCON_TEST_GATE_MARK !== '1') return false;
+  const m = readMarker();
+  if (!m || !m.checks || m.checks.tests !== 'sin-turno') return false;
+  appendLog('gates.log', { check: name, status: 'sin-turno', provenance: 'test-gate', exit: exitCode, storyId: m.storyId || null,
+    motivo: 'la marca en rojo del portón no pisa el sin-turno: no se midió' });
+  process.stdout.write(`check ${name}: sin-turno (la marca en rojo del portón no lo pisa)\n`);
+  return true;
+}
+
+/**
+ * Anota el 77 del turno: el portón no corrió nada porque otra sesión tiene el turno de las ejecuciones grandes. No es
+ * verde (el verde de antes no queda en pie: el código pudo cambiar) ni rojo (no hay prueba que arreglar): `sin-turno`,
+ * que los cierres de los pasos frenan pidiendo el turno. Relee el marcador antes de escribir, como `registrarRunCheck`.
+ */
+function registrarSinTurno(name, cmdArgv, marker, exitCode, durationMs) {
+  if (marker) {
+    const fresh = readMarker();
+    if (fresh) {
+      fresh.checks = fresh.checks || {};
+      fresh.checks[name] = 'sin-turno';
+      fresh.checksProvenance = fresh.checksProvenance || {};
+      fresh.checksProvenance[name] = 'test-gate';
+      fresh.checksAt = fresh.checksAt || {};
+      fresh.checksAt[name] = nowIso();
+      fresh.lastTouch = nowIso();
+      writeMarker(fresh);
+    }
+  }
+  appendLog('gates.log', { check: name, status: 'sin-turno', provenance: 'test-gate', cmd: cmdArgv.join(' '), exit: exitCode,
+    durationMs, storyId: marker ? marker.storyId : null });
+  process.stdout.write(`check ${name}: sin-turno (test-gate, ${durationMs}ms)\n`);
+  process.exitCode = exitCode;
 }
 
 function registrarRunCheck(name, cmdArgv, marker, exitCode, durationMs, salida) {
@@ -3449,7 +3598,10 @@ function anotarPaseDelCarril({ confirmados, marker, flag }) {
   const ruta = flag('--result');
   if (!ruta) salir('el pase se anota con --result <archivo>: el JSON que devolvió. El número sale de ahí, no del que anota.');
   let medicion;
-  try { medicion = require('./lib/adversarial-verdict.js').medicionDelResultado(JSON.parse(fs.readFileSync(path.resolve(ruta), 'utf8'))); } catch (e) {
+  try {
+    medicion = require('./lib/adversarial-verdict.js').medicionDelResultado(JSON.parse(fs.readFileSync(path.resolve(ruta), 'utf8')),
+      { resultado: path.resolve(ruta), repo: process.cwd() });
+  } catch (e) {
     salir(`--result ${ruta}: no lo pude leer (${String(e.message).split('\n')[0]}) — no se anotó nada.`);
   }
   if (medicion.confirmados !== confirmados) salir(`<N> = ${confirmados} pero el resultado trae ${medicion.confirmados} confirmado(s) — no se anotó nada.`);
@@ -3512,11 +3664,12 @@ function cmdMarkAdversarialResult(countRaw) {
       console.error(`marker.js mark-adversarial-result: --result ${abs}: no lo pude leer como JSON (${e.message.split('\n')[0]}) — no se anotó nada.`);
       process.exit(2);
     }
-    try { medicion = medicionDelResultado(obj); } catch (e) {
+    const lanz = corrida && corrida.adversarial && typeof corrida.adversarial === 'object' ? Date.parse(corrida.adversarial.launchedAt) : NaN;
+    // la prueba de cada lente limpia se mira en disco: junto al resultado, de este pase (desde su lanzamiento)
+    try { medicion = medicionDelResultado(obj, { resultado: abs, repo: (corrida && corrida.repoPath) || process.cwd(), desde: lanz }); } catch (e) {
       console.error(`marker.js mark-adversarial-result: --result ${abs}: ${e.message} — no se anotó nada.`);
       process.exit(2);
     }
-    const lanz = corrida && corrida.adversarial && typeof corrida.adversarial === 'object' ? Date.parse(corrida.adversarial.launchedAt) : NaN;
     if (!Number.isFinite(lanz)) {
       console.error(`⚠️  marker.js mark-adversarial-result: no hay lanzamiento del pase con fecha en esta corrida: no pude comprobar que ${abs} sea de este pase y no de otro.`);
     } else if (fs.statSync(abs).mtimeMs < lanz) {
@@ -4464,22 +4617,9 @@ function cmdSalidaPerdida(modo, sesion) {
 // ¿Está viva la sesión? Lo dicen los archivos de sesión de Claude Code (la carpeta de sesiones, <pid>.json, con su
 // sessionId): viva si alguno la nombra y su proceso existe. Un archivo que no se puede leer podría ser el de esa
 // sesión, así que no se la puede dar por muerta: se devuelve cuál.
+// Sin registro de la sesión cuenta como muerta, como siempre (lib/session-liveness.js dice por qué puede no estar).
 function sessionLiveness(sid) {
-  const dir = path.join(claudeDirOf(os.homedir()), 'sessions');
-  let names = [];
-  try { names = fs.readdirSync(dir).filter((n) => n.endsWith('.json')); } catch (e) {
-    if (e.code === 'ENOENT') return { alive: false };
-    return { unknown: `${dir}: ${e.message}` };
-  }
-  for (const n of names) {
-    let s;
-    try { s = JSON.parse(fs.readFileSync(path.join(dir, n), 'utf8')); } catch (e) { return { unknown: `${path.join(dir, n)}: ${e.message}` }; }
-    if (!s || s.sessionId !== sid) continue;
-    const pid = Number(s.pid);
-    if (!Number.isInteger(pid) || pid <= 0) return { unknown: `${path.join(dir, n)}: pid ilegible` };
-    try { process.kill(pid, 0); return { alive: true, pid }; } catch (e) { if (e.code === 'EPERM') return { alive: true, pid }; }
-  }
-  return { alive: false };
+  return require('./lib/session-liveness.js').liveness(sid, { home: os.homedir() });
 }
 
 // `adhoc clear-orphan <sid>`: borra el ad-hoc que dejó una sesión que ya no está. Se borra sólo si la sesión no está viva
@@ -4487,6 +4627,7 @@ function sessionLiveness(sid) {
 // `doing "<qué hago>"`: lo que hace una sesión sin story (un video, una medición), para que /wip lo diga. No es un
 // permiso: no toca el portón de carril ni el ad-hoc. Otro `doing` la reemplaza; `doing clear` la borra;
 // `doing clear-orphan <sid>` borra la nota de otra sesión que ya no vive. Archivo: doing/<sid>.json { text, at }; doing.log.
+// Con una ejecución abierta en la sesión sólo anota la espera de un turno sin texto; lo demás sale 3 sin escribir nada.
 // `--until HH:MM`: a qué hora dice que termina. Volver a anotar el mismo trabajo (el mismo texto, o sin texto) conserva en
 // `promisedAt` la primera hora que prometió, contra la que la oficina compara. La primera corrección, en los 10 minutos de
 // la primera hora anotada, es un error de tipeo y la reemplaza; una sola, para que corregir seguido no renueve la ventana.
@@ -4547,12 +4688,21 @@ function cmdDoing(sub, arg) {
     process.stdout.write('doing: borrada\n');
     return;
   }
+  // con una ejecución abierta, su paso ya dice qué hace y a qué hora termina: una nota encima la muestra en pausa. Pasa
+  // sólo la espera de un turno sin texto, que es de la historia (la respetan las podas y el aviso al dueño)
+  // un marcador ilegible no es «sin historia»: frena en vez de anotar como si no hubiera
+  frenarSiIlegible(markerFilePath(SID), SID, 'doing');
+  const run = readMarker();
+  if (run && sub !== '--waiting-for') {
+    console.error(`marker.js doing: no se anotó nada — esta sesión tiene abierta la historia ${run.storyId}, y su paso ya dice qué hace y a qué hora termina; si deja la historia por otro trabajo, eso es otra sesión (si espera un turno: marker.js doing --waiting-for "<qué espera>")`);
+    process.exit(3);
+  }
   let prev = null;
   try { prev = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_e) { /* sin nota, o rota: no hay nada que conservar */ }
   const onlyHour = sub === '--until' || sub === '--waiting-for';
-  if (onlyHour && !(prev && prev.text)) { console.error('marker.js doing: sin una nota anotada, la hora va con su texto — uso: marker.js doing "<qué hago>" --until HH:MM'); process.exit(2); }
-  const text = onlyHour ? prev.text : String(sub || '').replace(/\s+/g, ' ').trim();
-  if (text.length < 8 || text.length > 200) {
+  if (onlyHour && !run && !(prev && prev.text)) { console.error('marker.js doing: sin una nota anotada, la hora va con su texto — uso: marker.js doing "<qué hago>" --until HH:MM'); process.exit(2); }
+  const text = run ? '' : onlyHour ? prev.text : String(sub || '').replace(/\s+/g, ' ').trim();
+  if (!run && (text.length < 8 || text.length > 200)) {
     console.error('marker.js doing: el texto va de 8 a 200 caracteres — uso: marker.js doing "<qué hago>" [--until HH:MM | --waiting-for "<qué espera>"] | doing clear');
     process.exit(2);
   }
@@ -4571,7 +4721,7 @@ function cmdDoing(sub, arg) {
   }
   const now = new Date().toISOString();
   // el mismo trabajo, anotado hace menos de un día: la primera hora prometida y el arranque de la misma espera se conservan
-  const same = prev && prev.text === text && Date.now() - Date.parse(prev.at) < 24 * 3600 * 1000;
+  const same = prev && (prev.text || '') === text && Date.now() - Date.parse(prev.at) < 24 * 3600 * 1000;
   const firstHourAt = (same && prev.firstHourAt) || (endAt && !(same && prev.endAt) ? new Date(Date.now()).toISOString() : null);
   // se compara la hora del reloj: la misma hora tipeada puede caer en otro día si pasó el corte de untilIso, y eso la repite, no la corrige
   const clock = (iso) => new Date(iso).toTimeString().slice(0, 5);
@@ -4579,11 +4729,11 @@ function cmdDoing(sub, arg) {
   const promisedAt = same && !corrects ? prev.promisedAt || prev.endAt || null : null;
   const waitingSince = !waitingFor ? null : (same && prev.waitingFor === waitingFor && prev.waitingSince) || now;
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(file, JSON.stringify({ text, at: now, ...(endAt ? { endAt } : {}), ...(promisedAt ? { promisedAt } : {}), ...(firstHourAt ? { firstHourAt } : {}), ...(corrects || (same && prev.hourCorrected) ? { hourCorrected: true } : {}), ...(waitingFor ? { waitingFor, waitingSince } : {}) }));
+  fs.writeFileSync(file, JSON.stringify({ ...(text ? { text } : {}), at: now, ...(endAt ? { endAt } : {}), ...(promisedAt ? { promisedAt } : {}), ...(firstHourAt ? { firstHourAt } : {}), ...(corrects || (same && prev.hourCorrected) ? { hourCorrected: true } : {}), ...(waitingFor ? { waitingFor, waitingSince } : {}) }));
   avisarOficina();
-  appendLog('doing.log', { kind: 'DOING_SET', text, ...(endAt ? { endAt } : {}), ...(waitingFor ? { waitingFor } : {}) });
+  appendLog('doing.log', { kind: 'DOING_SET', ...(text ? { text } : {}), ...(endAt ? { endAt } : {}), ...(waitingFor ? { waitingFor } : {}) });
   if (endAt) warnPastUntil('doing', endAt);
-  process.stdout.write(`doing: ${text}${endAt ? ` (termina ${process.argv[u + 1]})` : waitingFor ? ` (espera ${waitingFor})` : ''}\n`);
+  process.stdout.write(`doing: ${text || `la historia ${run.storyId}`}${endAt ? ` (termina ${process.argv[u + 1]})` : waitingFor ? ` (espera ${waitingFor})` : ''}\n`);
 }
 
 function cmdAdhocClearOrphan(sid) {
@@ -5214,14 +5364,38 @@ function cmdSaveCheck(argv) {
   process.exit(0);
 }
 
-// `designate-relay --approved-by "<el dev>" --quote "<su frase>"` designa ESTA sesión, en esta máquina, como la que
-// firma en nombre del dueño (el rol de `approvals.relay_session`). La frase nombra el rol («Esta sesión es la
-// coordinadora»). Queda un renglón en el gates.log; una designación nueva reemplaza a la anterior. La designación vale
-// cuando el dueño la confirma, con un click en la pestaña de la sesión o en su terminal (scripts/lib/delegated-signing.js
-// `confirm-designation`).
+const delegatedSigning = () => require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'delegated-signing.js'));
+
+// Los dos respaldos cuando el click no se pudo comprobar (o no se puede pedir): la terminal del dueño, o la frase.
+function respaldosDeDesignar(sesion) {
+  const ds = path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'delegated-signing.js');
+  return [`   Respaldos: en la terminal de la persona, node ${__filename} designate-relay --terminal${sesion && sesion !== '_nosession' ? ` --for-session ${sesion}` : ''};`,
+    `   o con su frase: node ${__filename} designate-relay --approved-by '<el dev>' --quote '<su frase>' y después node ${ds} confirm-designation --terminal`];
+}
+
+// La firma de nombrar o retirar: sólo el click del dueño en la pestaña de esa sesión, o su terminal (signatures.js
+// `soloClick`). `{ via }`, o sale con el motivo.
+function firmaDeLaDesignacion(firma, resumen, antes, alNegar) {
+  const r = ownerWindow().exigir({ firma, argv: process.argv.slice(1), resumen, propia: PROPIA, antes });
+  if (r.codigo !== 0) { alNegar(r.motivo); process.exit(r.codigo === 2 ? 2 : 1); }
+  if (r.via !== 'click' && r.via !== 'terminal') {
+    alNegar(`la firma volvió por ${r.via}, y esto lo firma la persona con su click o en su terminal`);
+    process.exit(1);
+  }
+  return r;
+}
+
+// `designate-relay` designa ESTA sesión, en esta máquina, como la coordinadora: la que ordena las sesiones. Sin frase,
+// con el click del dueño en el cuadro que dice qué sesión es y en qué carpeta (firma `designation-set`): el arnés no lee
+// ninguna frase, y anota la designación y su confirmación en un paso. Con `--approved-by "<el dev>" --quote "<su frase>"`,
+// el respaldo: la frase nombra el rol (el de `approvals.relay_session` o, sin perfil, «coordinadora») y, con el rol del
+// perfil, la sesión firma en nombre del dueño cuando él la confirma (scripts/lib/delegated-signing.js
+// `confirm-designation`); sin él, las firmas siguen yendo a la ventana del dueño. Una designación nueva reemplaza a la
+// anterior.
 function cmdDesignateRelay(argv) {
   const cw = require('./lib/critical-waivers.js');
   const { val } = opcionesDe(argv);
+  if (!argv.some((a) => a === '--quote' || a.startsWith('--quote='))) return designarPorClick(cw);
   const r = cw.designar({ approvedBy: val('--approved-by'), quote: val('--quote') });
   if (!r.ok) {
     console.error(`🚫 marker.js designate-relay: no se designó nada — ${r.motivo}.`);
@@ -5235,8 +5409,70 @@ function cmdDesignateRelay(argv) {
     console.error(`🚫 marker.js designate-relay: no pude dejar la designación en el registro del arnés${quedo && quedo.error ? ` (${quedo.error})` : ''}.`);
     process.exit(2);
   }
-  console.error(`✅ Esta sesión (${e.sesion}) es la «${e.rol}» de esta máquina, designada por ${e.quien}. Vale cuando una persona la confirma: corré node scripts/lib/delegated-signing.js confirm-designation en esta pestaña y aprobala con un click, o confirmala en su terminal`);
+  if (r.firma) console.error(`✅ Esta sesión (${e.sesion}) es la «${e.rol}» de esta máquina, designada por ${e.quien}. Vale cuando una persona la confirma: corré node scripts/lib/delegated-signing.js confirm-designation en esta pestaña y aprobala con un click, o confirmala en su terminal`);
+  else console.error(`✅ Esta sesión (${e.sesion}) es la «${e.rol}» de esta máquina, designada por ${e.quien}: ordena esta máquina, y las firmas siguen yendo a la ventana de la persona${r.aviso ? ` (${r.aviso.replace(/: nadie reenvía$/, '')})` : ' (el perfil del equipo no tiene approvals.relay_session)'}.`);
   console.error(`   Antes de seguir, leé tus reglas completas: ${path.join(__dirname, '..', '..', '..', 'guides', 'coordination.md')}`);
+  process.exit(0);
+}
+
+function designarPorClick(cw) {
+  const sesion = SID;
+  const noSeNombro = (motivo) => {
+    console.error(`🚫 marker.js designate-relay: no se nombró a la coordinadora — no pude comprobar el click: ${motivo}.`);
+    for (const l of respaldosDeDesignar(sesion)) console.error(l);
+  };
+  const antes = () => {
+    if (!/^[\w-]+$/.test(String(sesion || '')) || sesion === '_nosession') return { codigo: 1, motivo: 'la sesión no dice su identificador' };
+    const declarada = cw.sesionQueReenvia();
+    if (!declarada.valor) return { codigo: 1, motivo: `la organización no usa una sesión que reenvía el ok de un dev (approvals.relay_session del perfil del equipo)${declarada.aviso ? `: ${declarada.aviso}` : ''}` };
+    return null;
+  };
+  // antes de pedir la firma: sin id de sesión o sin rol en el perfil, el click no tendría qué nombrar
+  const previo = antes();
+  if (previo) { noSeNombro(previo.motivo); process.exit(previo.codigo); }
+  const rol = cw.sesionQueReenvia().valor;
+  const r = firmaDeLaDesignacion('designation-set', `la sesión ${sesion} pasa a ser la «${rol}» de esta máquina`, antes, noSeNombro);
+  appendLog('gates.log', { name: cw.DESIGNACION, status: 'ok', ts: nowIso(), sesion, rol, quien: 'la persona', via: r.via });
+  const quedo = cw.designacionVigente();
+  if (!quedo || quedo.error || quedo.sesion !== sesion) {
+    console.error(`🚫 marker.js designate-relay: no pude dejar la designación en el registro del arnés${quedo && quedo.error ? ` (${quedo.error})` : ''}.`);
+    process.exit(2);
+  }
+  // el mismo click la confirma: el renglón se ata a esta designación por su hora, sin frase
+  appendLog('gates.log', delegatedSigning().confirmationRecord(quedo, nowIso(), { via: r.via }));
+  console.error(`✅ Esta sesión (${sesion}) es la «${rol}» de esta máquina, nombrada por la persona con ${r.via === 'click' ? 'su click' : 'su terminal'}.`);
+  console.error(`   Antes de seguir, leé tus reglas completas: ${path.join(__dirname, '..', '..', '..', 'guides', 'coordination.md')}`);
+  process.exit(0);
+}
+
+// `withdraw-relay` retira a la coordinadora: lo corre ella misma, y el dueño lo firma con su click en el cuadro de
+// esa sesión (`designation-withdraw`) o en su terminal. Queda un renglón `retirada`: el registro no se borra.
+function cmdWithdrawRelay() {
+  const cw = require('./lib/critical-waivers.js');
+  const sesion = SID;
+  const d = cw.designacionVigente();
+  const noSeRetiro = (motivo) => console.error(`🚫 marker.js withdraw-relay: no se retiró a la coordinadora — ${motivo}.`);
+  // se lee de nuevo en cada llamada: mientras la firma espera, otra sesión puede quedar nombrada
+  const antes = () => {
+    const ahora = cw.designacionVigente();
+    if (!ahora) return { codigo: 1, motivo: 'no hay coordinadora en esta máquina' };
+    if (ahora.error) return { codigo: 2, motivo: ahora.error };
+    if (ahora.sesion !== sesion) return { codigo: 1, motivo: `esta sesión no es la coordinadora (la vigente es ${ahora.sesion})` };
+    if (d && !d.error && ahora.ts !== d.ts) return { codigo: 1, motivo: 'la designación cambió mientras se esperaba la firma: corré el comando de nuevo' };
+    return null;
+  };
+  const previo = antes();
+  if (previo) { noSeRetiro(previo.motivo); process.exit(previo.codigo); }
+  const r = firmaDeLaDesignacion('designation-withdraw', `la sesión ${sesion} deja de ser la «${d.rol}» de esta máquina`, antes, noSeRetiro);
+  const despues = antes();
+  if (despues) { noSeRetiro(despues.motivo); process.exit(despues.codigo); }
+  appendLog('gates.log', { name: cw.DESIGNACION, status: cw.RETIRADA, ts: nowIso(), sesion, rol: d.rol, quien: 'la persona', via: r.via });
+  const quedo = cw.designacionVigente();
+  if (quedo && !quedo.error && quedo.sesion === sesion) {
+    console.error('🚫 marker.js withdraw-relay: no pude dejar la retirada en el registro del arnés.');
+    process.exit(2);
+  }
+  console.error(`✅ Esta sesión (${sesion}) dejó de ser la «${d.rol}» de esta máquina: las firmas vuelven a la persona hasta que nombre otra.`);
   process.exit(0);
 }
 
@@ -5990,6 +6226,9 @@ switch (cmd) {
     break;
   case 'designate-relay':
     cmdDesignateRelay(process.argv.slice(3));
+    break;
+  case 'withdraw-relay':
+    cmdWithdrawRelay();
     break;
   case 'mark-tested':
     cmdMarkTested(process.argv.slice(3));

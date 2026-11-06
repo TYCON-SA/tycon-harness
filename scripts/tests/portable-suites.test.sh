@@ -226,14 +226,14 @@ let verdes = 0, vivos = 0;
 const inicio = Date.now();
 const tiempos = [];
 function seg(ms) { return `${Math.round(ms / 1000)}s`; }
-// La espera por la carga (sólo cuando decide la máquina): con la carga sobre el doble de los núcleos y otra corriendo,
-// no lanza la siguiente; vuelve a mirar cada 5 s, y la lanza cuando baja o cuando ya no queda ninguna corriendo.
+// La espera por la carga (sólo cuando decide la máquina): con la carga sobre el doble de los núcleos y el piso de la regla
+// corriendo, no lanza la siguiente; vuelve a mirar cada 5 s, y la lanza cuando baja o cuando corren menos que el piso.
 const esperas = { veces: 0, ms: 0 };
 let esperaDesde = null;
 let timerEspera = null;
 function siguiente() {
   while (vivos < POOL && cola.length) {
-    if (DECISION.wait && vivos > 0 && ST.overloaded(MAQUINA.nucleos, ST.loadNow(process.env))) {
+    if (DECISION.wait && vivos >= (DECISION.floor || 1) && ST.overloaded(MAQUINA.nucleos, ST.loadNow(process.env))) {
       if (esperaDesde === null) { esperaDesde = Date.now(); esperas.veces++; }
       if (!timerEspera) timerEspera = setTimeout(() => { timerEspera = null; siguiente(); }, 5000);
       return;

@@ -37,10 +37,14 @@ const computeDelicate = (o) => require(PIPELINE).computeDelicate(o);
 const COORD = 'ses-coord';
 const DESTINO = 'ses-a';
 const HUELLA = 'a1b2c3d4e5f60718';
-const PERFIL = { delegated_signing: ['plan-approval'], owner_only: [], delegated_machines: [{ id: HUELLA, label: 'Mac de prueba' }] };
+// la coordinadora firma por el dueño sólo con approvals.relay_session en el perfil
+const PERFIL = { relay_session: 'coordinadora', delegated_signing: ['plan-approval'], owner_only: [], delegated_machines: [{ id: HUELLA, label: 'Mac de prueba' }] };
 const delegacionReal = (perfil = PERFIL) => (o) => DS.delegaSinVentana({ ...o, perfil: () => perfil, huella: () => ({ huella: HUELLA }) });
 const AHORA = Date.now();
-const PLAN = '# Plan\n\n1. Tocar README.md.\n2. Agregar la prueba.\n';
+// con lo que muestra la pregunta de su firma (signature-sources.js): sin eso, aprobarlo se frena antes de la ventana
+// Los pasos son más que el resumen: la pregunta trae «Qué hace» y «Archivos», y eso solo no es el plan a la vista
+const PLAN = '# Plan\n\n## Qué hace\n\nCambia el título del README y suma su prueba.\n\n## Archivos\n\n- README.md\n\n## Pasos\n\n'
+  + '1. Tocar el README.md del repositorio de juguete.\n2. Agregar la prueba del título nuevo del README.\n';
 const sha = (t) => crypto.createHash('sha256').update(t).digest('hex');
 const comillas = (a) => (/[\s"]/.test(a) ? `"${a}"` : a);
 
@@ -307,7 +311,7 @@ test('ModoPlan_SoloStoryPlanYRepo (T3) @story-1.29 @ac-4', async (t) => {
   assert.ok(pedidos.length >= 5, 'cuatro cazadores y un verificador');
   for (const p of pedidos) {
     assert.ok(p.includes('AC 1. el README dice x.'), 'trae la story');
-    assert.ok(p.includes('2. Agregar la prueba.'), 'trae el plan');
+    assert.ok(p.includes('2. Agregar la prueba del título nuevo del README.'), 'trae el plan');
     assert.ok(p.includes('/tmp/repo-de-la-prueba'), 'trae el repo');
     assert.doesNotMatch(p, /SECRETO-/, 'nada más de lo que llega en los args');
   }
@@ -653,7 +657,7 @@ function aprobadoDelDueno(lab, dijo) {
 const preguntaDe = (lab, cmd, firma = 'plan-approval') => ow.cuadroPara({ firma, comando: cmd, palabras: ow.canonica(cmd), destino: DESTINO, cwd: lab.repo, casa: lab.home, sesion: COORD }).pregunta;
 
 test('Delicado_ConAprobadoDelDueno_PasaYQuedaASuNombre', (t) => {
-  const plan = '# Plan\n\n1. Tocar el README.md del repositorio de juguete.\n';
+  const plan = PLAN;
   const lab = laboratorio(t, { sensible: 'seguridad', plan });
   // con el plan a la vista: con riesgo bajo, un ok a una pregunta que no lo trae no aprueba, tampoco desde esta pestaña
   aprobadoDelDueno(lab, `${preguntaDe(lab, lab.comando(APROBAR))}\n\n${plan}`);
@@ -670,7 +674,7 @@ test('Delicado_ConAprobadoDelDueno_PasaYQuedaASuNombre', (t) => {
 });
 
 test('Aprobado_UnNombreEscritoEnElComando_NoReemplazaALaPersona', (t) => {
-  const plan = '# Plan\n\n1. Tocar el README.md del repositorio de juguete.\n';
+  const plan = PLAN;
   const lab = laboratorio(t, { sensible: 'seguridad', plan });
   const args = [...APROBAR, '--approved-by', 'Otra-Persona'];
   aprobadoDelDueno(lab, `${preguntaDe(lab, lab.comando(args))}\n\n${plan}`);

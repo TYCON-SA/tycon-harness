@@ -933,6 +933,32 @@ test('Freno_RegistroDeAprobaciones_SoloEnElEstado', () => {
   }
 });
 
+test('T9 EscrituraDeLaunched_SeNiega @story-8.211 @ac-11', () => {
+  // por Edit o Write, en las dos carpetas del estado de la cuenta; uno con ese nombre en un producto no es el registro
+  for (const f of ['/home/u/.tycon/state/coordination/launched.json', '/home/u/.claude/.tycon-pipeline/coordination/launched.json']) {
+    assert.ok(gate.isLaunchedSessionsRecord(f), f);
+    // adentro del estado del pipeline lo frena primero ese freno; en la otra carpeta del estado, el suyo
+    const r = gate.computeStoryGate({ ...BASE, stateDir: '/otra/casa/.tycon-pipeline', filePath: f });
+    assert.equal(r.action, 'block', f);
+    assert.equal(r.kind, 'launched-sessions', f);
+    assert.match(gate.blockMessage(r, { filePath: f }), /sesiones que abrió la coordinadora/);
+    assert.equal(gate.computeStoryGate({ ...BASE, filePath: f }).action, 'block', f);
+  }
+  assert.notEqual(gate.computeStoryGate({ ...BASE, filePath: `${REPO}/coordination/launched.json` }).kind, 'launched-sessions');
+  // por la consola: borrar, mover, vaciar o escribir encima
+  const raiz = fs.mkdtempSync(path.join(os.tmpdir(), 'launched-'));
+  const stateDir = path.join(raiz, '.tycon', 'state');
+  fs.mkdirSync(path.join(stateDir, 'coordination'), { recursive: true });
+  const f = path.join(stateDir, 'coordination', 'launched.json');
+  fs.writeFileSync(f, '[]');
+  try {
+    for (const command of [`rm ${f}`, `mv ${f} ${raiz}/guardado.json`, `> ${f}`, `node -e "require('fs').unlinkSync('${f}')"`, `rm -rf ${stateDir}/coordination`]) {
+      const r = bash.handle({ tool_name: 'Bash', session_id: 's1', cwd: raiz, tool_input: { command } }, { stateDir, installedRoots: [] });
+      assert.ok(r && r.block, `${command}: ${JSON.stringify(r)}`);
+    }
+  } finally { fs.rmSync(raiz, { recursive: true, force: true }); }
+});
+
 test('T33 Freno_PowerShell_FormasNuevas', () => {
   const { stateDir, repo } = corridaAbierta();
   const ev = (command) => ({ tool_name: 'PowerShell', session_id: 's1', cwd: repo, tool_input: { command } });
@@ -950,5 +976,51 @@ test('T33 Freno_PowerShell_FormasNuevas', () => {
     }
     // un parámetro con valor no es una ruta: sólo el archivo se anota
     assert.deepEqual(bash.destinosBorrados('Remove-Item -ErrorAction SilentlyContinue -Filter *.log out').map((d) => d.raw), ['out']);
+  });
+});
+
+test('T37 StoryGate_BuzonYRegistro_NoSeEscriben @story-8.183 @ac-20: Edit, Write y la consola no tocan el buzón ni el registro de la oficina', () => {
+  for (const f of ['/home/u/.tycon/state/office/inbox/s1/a.json', '/home/u/.tycon/state/office/tomados/s1/a.json', '/home/u/.tycon/state/office/usados/abc',
+    '/home/u/.tycon/state/office/messages.jsonl', '/home/u/.tycon/state/office/messages.jsonl.1', '/home/u/.tycon/state/office/vigilantes/s1.json',
+    '/home/u/.Tycon/State/Office/Inbox/s1/a.json']) {
+    const r = gate.computeStoryGate({ ...BASE, filePath: f });
+    assert.equal(r.action, 'block', f);
+    assert.equal(r.kind, 'office-mailbox', f);
+    assert.match(gate.blockMessage(r, { filePath: f }), /el buzón de la oficina no se toca a mano/);
+  }
+  // en el estado viejo (`.tycon-pipeline`) frena igual: ahí lo para primero el freno del estado entero
+  assert.equal(gate.computeStoryGate({ ...BASE, filePath: '/home/u/.claude/.tycon-pipeline/office/inbox/s1/a.json' }).action, 'block');
+  assert.ok(gate.isOfficeMailboxRecord('/home/u/.claude/.tycon-pipeline/office/inbox'));
+  // el candado del proceso de la oficina no es el buzón, y una carpeta de un producto con ese nombre tampoco
+  for (const f of ['/home/u/.tycon/state/office/server.json', `${REPO}/office/inbox/a.json`, `${REPO}/.tycon/state-x/office/messages.jsonl`]) {
+    assert.notEqual(gate.computeStoryGate({ ...BASE, filePath: f }).kind, 'office-mailbox', f);
+  }
+  const { stateDir, repo } = corridaAbierta();
+  const E = stateDir;
+  fs.mkdirSync(path.join(E, 'office', 'usados'), { recursive: true });
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  conEnv(SIN_REGISTRO, () => {
+    for (const cmd of [`rm ${E}/office/inbox/s1/a.json`, `rm -rf ${E}/office/usados`, `mv ${E}/office/tomados/s1/a.json /tmp/a.json`,
+      `rm -rf ${E}/office`, `cd ${E} && rm -rf office/usados`, `echo '{}' > ${E}/office/messages.jsonl`, `cp /tmp/x.json ${E}/office/inbox/s1/b.json`]) {
+      const r = bash.handle(ev(cmd), { stateDir, installedRoots: [] });
+      assert.ok(r && r.block, cmd);
+    }
+    // la comprobación que corre la sesión no escribe a mano: la deja pasar
+    assert.equal(bash.handle(ev('node /arnes/scripts/tools/office-message.js verify 3f9c2a7d0b1e4c5a8d6e7f9012345678'), { stateDir, installedRoots: [] }), null);
+  });
+});
+
+test('T51 StoryGate_EnlaceAlBuzon_Frena @story-8.183 @ac-20: un enlace (blando o duro) al buzón, al registro o a un candado de vigilante no pasa', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const E = stateDir;
+  fs.mkdirSync(path.join(E, 'office', 'inbox', 's1'), { recursive: true });
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  conEnv(SIN_REGISTRO, () => {
+    for (const cmd of [`ln -sf /tmp/x ${E}/office/messages.jsonl`, `ln /tmp/x ${E}/office/messages.jsonl`,
+      `ln -s /tmp/f.json ${E}/office/inbox/s1/3f9c2a7d0b1e4c5a8d6e7f9012345678.json`, `ln -sf /tmp/x ${E}/office/vigilantes/s1.json`,
+      `echo '{}' > ${E}/office/vigilantes/s1.json`]) {
+      const r = bash.handle(ev(cmd), { stateDir, installedRoots: [] });
+      assert.ok(r && r.block, cmd);
+    }
   });
 });

@@ -254,7 +254,8 @@ const DESTINO = 'ses-a';
 // stable-data: el registro del pedido se escribe con esta hora y el guion lo verifica un minuto después
 const AHORA = Date.now();
 const HUELLA = 'a1b2c3d4e5f60718';
-const PERFIL = { delegated_signing: ['plan-approval'], owner_only: [], delegated_machines: [{ id: HUELLA, label: 'Mac de prueba' }] };
+// la coordinadora firma por el dueño sólo con approvals.relay_session en el perfil
+const PERFIL = { relay_session: 'coordinadora', delegated_signing: ['plan-approval'], owner_only: [], delegated_machines: [{ id: HUELLA, label: 'Mac de prueba' }] };
 
 const comillas = (a) => (/[\s"]/.test(a) ? `"${a}"` : a);
 

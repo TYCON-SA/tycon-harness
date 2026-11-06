@@ -59,8 +59,24 @@ const LINE_MAX = 200;
 // Copia de ESPERAN_AL_DEV de scripts/hooks/blocking-meter.js, que no se puede importar (no exporta y corre al
 // cargarse): T16 compara las dos listas.
 const WAIT_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode', 'mcp__spokenly__ask_user_dictation']);
-// Las formas de una credencial, copiadas de FORMAS_EN_COMENTARIO de scripts/lib/tycon-config.js (no se exportan).
+// La cabecera `Authorization: Bearer|Basic <valor>`: se tapa el valor y quedan la cabecera y la palabra. Con la cabecera
+// (también en JSON o con la comilla escapada), el valor hasta el primer espacio, comilla o barra invertida, salvo que
+// empiece con `$`: una variable no se tapa. Sueltas, sólo un valor de 8 o más caracteres de token con un dígito, un
+// símbolo entre caracteres o una mayúscula después del primero, para no tapar prosa («Bearer authentication»). La palabra
+// suelta se escribe letra por letra y no con /i, que haría pasar por mayúscula a cualquier letra. La barra junto a
+// espacios es la continuación de línea de un comando juntado en una línea. Los espacios entre las partes tienen tope: sin
+// él, una mirada hacia atrás sobre miles de espacios tarda segundos.
+const TOKEN_CHARS = 'A-Za-z0-9._~+\\/-';
+const AUTH_GAP = '\\s{1,8}(?:\\\\\\s{1,8})?';
+const AUTH_HEADER = new RegExp(`(?<=\\bAuthorization\\\\?["']?\\s{0,8}:\\s{0,8}\\\\?["']?\\s{0,8}(?:Bearer|Basic)${AUTH_GAP})(?!\\$)[^\\s"'\`\\\\]+`, 'gi');
+const AUTH_LOOSE = new RegExp(`(?<=(?<![A-Za-z0-9])(?:[Bb][Ee][Aa][Rr][Ee][Rr]|[Bb][Aa][Ss][Ii][Cc])${AUTH_GAP})`
+  + `(?=[${TOKEN_CHARS}]{8})(?=[${TOKEN_CHARS}]*?(?:[0-9]|[._~+\\/=-](?=[${TOKEN_CHARS}=])|(?<=[${TOKEN_CHARS}])[A-Z]))`
+  + `[${TOKEN_CHARS}]+=*`, 'g');
+// Las formas de una credencial: la cabecera, propia del aviso, y las de FORMAS_EN_COMENTARIO de scripts/lib/tycon-config.js
+// (no se exportan). La cabecera va primero: tapa el valor y deja la palabra, también delante de un JWT.
 const SECRET_SHAPES = [
+  AUTH_HEADER,
+  AUTH_LOOSE,
   /\d{6,}:[A-Za-z0-9_-]{30,}/g,
   /eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}/g,
   /(?:AKIA|ASIA)[0-9A-Z]{16}/g,
