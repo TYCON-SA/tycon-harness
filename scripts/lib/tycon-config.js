@@ -1666,7 +1666,8 @@ const GUARD_FIRST = Object.freeze(['coordination.session_names']);
 // equipo no cuenta: el freno instalado no lo lee.
 const GUARD_FIRST_VALUES = Object.freeze({ 'response.language': Object.freeze(['auto']) });
 /** ¿El lector del freno instalado acepta `valor` en `seccion.clave`? `true` (o no hay freno) · `false` · el motivo si no
- *  se pudo leer. Lee la lista de la opción tal como está escrita en el vocabulario de esa copia. */
+ *  se pudo leer o no se reconoce cómo declara la clave. Lee la lista de la opción tal como está escrita en el
+ *  vocabulario de esa copia. */
 function guardAccepts(guardLib, seccion, clave, valor) {
   const sabe = guardKnows(guardLib, seccion, clave);
   if (sabe !== true) return sabe;
@@ -1677,7 +1678,9 @@ function guardAccepts(guardLib, seccion, clave, valor) {
   }
   const cuerpo = new RegExp(`\\b${seccion}\\s*:\\s*(?:Object\\.freeze\\s*\\(\\s*)?\\{([^}]*)\\}`).exec(texto);
   const opcion = cuerpo && new RegExp(`(?:^|[\\s,{])${clave}\\s*:\\s*'opcion:([^']*)'`).exec(cuerpo[1]);
-  return !!opcion && opcion[1].split('|').includes(valor);
+  // no reconocer la forma no es «no acepta»: se dice tal cual, y igual no se escribe
+  if (!opcion) return `no reconozco cómo declara «${enArchivo(seccion)}.${clave}»`;
+  return opcion[1].split('|').includes(valor);
 }
 /** ¿El lector del freno instalado conoce la sección (y, con `clave`, la clave dentro de ella)? `true` (o no hay freno) ·
  *  `false` · el motivo si no se pudo leer (no poder leerlo no es «lo conoce»: se avisa igual, con el motivo). */

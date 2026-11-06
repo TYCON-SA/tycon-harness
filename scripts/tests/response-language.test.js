@@ -125,7 +125,9 @@ test('T4 Auto_EscribeLaReglaDeIdioma @story-8.149 @ac-3 — con auto, el bloque 
       assert.strictEqual(piece && piece.action, expected, `instalador de Windows, CLAUDE.md escrito con ${written}: ${JSON.stringify(piece)}`);
     }
   } else {
-    t.diagnostic('no medido: sin pwsh en esta máquina, el plan del instalador de Windows no se corrió');
+    // en la CI pwsh tiene que estar: sin él, la parte de Windows de T4 no se mide y eso no es un verde
+    assert.ok(!process.env.CI, 'la CI corre sin pwsh: el sincronizador y el plan del instalador de Windows no se midieron');
+    t.diagnostic('NO MEDIDO: sin pwsh en esta máquina, el sincronizador y el plan del instalador de Windows no se corrieron (no es un verde)');
   }
   // y el control del techo del pre-commit las mide a las tres nuevas (no sólo las de dos letras)
   const check = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'ci', 'check-claude-md-blocks.js')], { cwd: ROOT, encoding: 'utf8' });
@@ -203,6 +205,13 @@ test('T9 ConfigSet_AutoConFrenoViejo_NoLoEscribe @story-8.149 @ac-11 — con un 
   r = set(h1, 'es', 'viejo.js');
   assert.strictEqual(r.status, 0, r.stderr);
   assert.strictEqual(leido(h1), 'es');
+  // un freno que declara la clave de una forma que no se reconoce no se lee como «no acepta»: se dice que no se reconoce
+  fs.writeFileSync(path.join(dir, 'raro.js'), nuevo.replace("language: 'opcion:es|en|auto'", 'language: OPCIONES_DE_IDIOMA'));
+  const h3 = casa();
+  r = set(h3, 'auto', 'raro.js');
+  assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /no reconozco cómo declara «response\.language».*install-guard\.sh/s);
+  assert.doesNotMatch(r.stderr, /no acepta/);
   // con el freno de ahora, auto se escribe
   const h2 = casa();
   r = set(h2, 'auto', 'nuevo.js');
