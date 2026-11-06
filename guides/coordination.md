@@ -32,6 +32,14 @@ conversación. La sesión recibe cómo recuperarla, pero no la recupera sola: el
 un click nuevo. `/coordinate` en esa sesión muestra el estado de la máquina. El programa que usa la coordinadora es
 `<arnés>/scripts/tools/coordination.js`.
 
+## La regla madre: la coordinadora mejora su propio proceso
+
+**La coordinadora revisa su propio proceso sin que se lo pidan.** Cuando un paso se repite, hace fila o rinde poco
+(vueltas de revisión, firmas repetidas, pases repetidos, esperas, aprobaciones de trámite), lo mide: cuántas veces,
+cuánto tiempo, cuántos tokens y qué encontró. Lo lleva a la tanda de la hora con el recorte propuesto y los datos. Si el
+recorte está en su mano, lo aplica y avisa; si no, lo propone con su recomendación. Toda tanda trae la sección «qué
+costó de más y qué cambio», aunque diga que nada.
+
 ## Qué va al dueño
 
 Al dueño van cuatro cosas, siempre las mismas:
@@ -270,6 +278,26 @@ algo que decir, una línea dice cuántas esperan y cuál es la más vieja, con s
 cambie. Un pendiente cuyo archivo ya no está no cuenta: el dueño lo firmó y lo borró. Sin carpeta de firmas, no hay
 pendientes y el aviso no sale.
 
+### Reglas de firma para toda coordinadora
+
+El dueño firma desde el celular, con un click en el cuadro de la coordinadora. Para que eso alcance:
+
+- **Ningún guion ni comando para la terminal del dueño**, salvo lo irreversible: apagar el freno, producción y una
+  emergencia. Una sesión que necesita una firma corre el comando en su pestaña, tal cual y solo, para que el freno lo
+  niegue y lo anote, y le avisa a la coordinadora «firma pendiente».
+- **Cada firma es un renglón de la lista de firmas**, y se pasa como cuadro con `owner-next`, de a uno.
+- **Antes de cada cuadro, dos líneas**: qué cambia si firma y la recomendación de la coordinadora.
+- **Firmas y decisiones van juntas, en una tanda por hora, y la tanda nunca frena el trabajo.** Lo que deja parada a
+  una sesión va al dueño al instante. Lo demás va a la tanda, y la sesión sigue con un supuesto marcado mientras tanto.
+  Una mejora que está en mano de la coordinadora se aplica enseguida: no espera a la tanda. Una sesión que espera al
+  dueño y no tiene otro trabajo cuenta como parada: primero la coordinadora le da trabajo de la fila, si hay algo que
+  pueda tomar; si no hay, la pregunta va al dueño al instante.
+- **El `owner-wait` de fondo no le quita el click al dueño**: el freno lo deja pasar, si corre exactamente como lo pide su
+  aviso. Cualquier otra consola de fondo viva sí lo frena: se cierra antes de pedir el cuadro.
+- **Un pedido sin código lo aprueba la coordinadora**: si trae sólo historias, registros, evidencia, memoria o
+  documentación, la coordinadora da en nombre del dueño las dos aprobaciones del merge (el mensaje y la subida) y le
+  muestra la lista en la tanda de la hora. Con un solo archivo de código, las dos siguen siendo del dueño.
+
 ### La lista de firmas: anotadas y, al volver, de a una
 
 Con `approvals.signature_list` en `on`, lo que espera a la persona queda anotado en un solo registro, y `/office` lo cuenta en
@@ -394,8 +422,9 @@ pantalla anotada en un worktree anidado que ya se borró sigue pidiendo maqueta 
 
 ## Una sesión trabada, al instante
 
-**Al designarse, y cada vez que termina, la coordinadora lanza `node scripts/tools/coordination.js owner-wait` de
-fondo.** Mira cada 2 segundos y termina con una línea por novedad, y terminar la despierta:
+**Al designarse, y cada vez que termina, la coordinadora lanza `node "<arnés>/scripts/tools/coordination.js" owner-wait`
+de fondo,** con la ruta completa que da su aviso: es la única consola de fondo con la que el dueño sigue firmando con un
+click. Mira cada 2 segundos y termina con una línea por novedad, y terminar la despierta:
 
 - «<sesión> espera un permiso desde las HH:MM: <herramienta> <qué pide>. Para entrar: claude attach <sesión>»: se lo
   pasa al dueño con la sesión, qué pide y su recomendación. El permiso lo contesta una persona, en la pestaña de la

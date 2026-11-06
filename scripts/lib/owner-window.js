@@ -222,6 +222,26 @@ function desenvolver(linea, casa) {
   return partes.join("'");
 }
 
+// El owner-wait de esta misma copia del arnés: el que corre el freno, no otra copia con el mismo nombre
+const COORDINACION = path.join(__dirname, '..', 'tools', 'coordination.js');
+const real = (ruta) => { try { return fs.realpathSync(ruta); } catch (_) { return null; } };
+
+/**
+ * ¿El comando de una consola de fondo es exactamente el despertador de la coordinadora? `node <coordination.js> owner-wait`,
+ * con el coordination.js de este arnés, sin nada más en la línea: ni otra palabra, ni otro comando, ni redirecciones, ni
+ * nada armado. Es la única consola de fondo que no le quita el click al dueño: la coordinadora la tiene viva siempre.
+ */
+function esOwnerWait(comando) {
+  let t;
+  try { t = markerCommand().tramos(String(comando), 'bash'); } catch (_) { return false; }
+  if (t.abierta || t.subs.length || t.tramos.length !== 1 || t.tramos[0].heredocs.length) return false;
+  const w = t.tramos[0].palabras;
+  if (w.length !== 3 || w.some((x) => !x.literal || /^\d*[<>&|]/.test(x.texto) || /[\r\n]/.test(x.texto))) return false;
+  if (!NODES.has(base(w[0].texto)) || w[2].texto !== 'owner-wait' || !path.isAbsolute(w[1].texto)) return false;
+  const propio = real(COORDINACION);
+  return propio !== null && real(w[1].texto) === propio;
+}
+
 /**
  * Las palabras de una línea de comando de Windows, con sus reglas: las barras valen como escape sólo antes de una comilla.
  * null si la línea queda con una comilla abierta, o si trae `""` dentro de unas comillas, que cada programa lee a su modo.
@@ -947,7 +967,9 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   if (arriba.slice(i + 1).some(otra)) return negar('la herramienta la lanzó otra herramienta o su consola', pendientes);
   const deFondo = arriba.slice(i + 1).some(esHerramienta);
   if (sinPantalla(tool)) return negar('la sesión no tiene pantalla (-p o --print): no hay ventana', pendientes);
-  if (arbol.some((p) => p.ppid === tool.pid && (enWindows ? esConsolaVivaDeWindows(p) : esConsola(p)))) return negar('cerrá los procesos de fondo o firmá desde tu terminal: hay una consola de fondo viva', pendientes);
+  // una consola de fondo frena, salvo el owner-wait de la coordinadora (sólo en Mac y Linux: en Windows no se midió)
+  const viva = (p) => (enWindows ? esConsolaVivaDeWindows(p) : esConsola(p) && !esOwnerWait(desenvolver(p.comando, casa)));
+  if (arbol.some((p) => p.ppid === tool.pid && viva(p))) return negar('cerrá los procesos de fondo o firmá desde tu terminal: hay una consola de fondo viva', pendientes);
   const destino = destinoDe(can && can.palabras, sesion, guion);
   if (!SESION.test(destino)) return negar(sesionNombrada(guion, can && can.palabras) !== null ? 'la sesión que nombra el comando no se puede leer' : 'la sesión de --for-session no se puede leer', pendientes);
   const pedida = forSessionDe(can && can.palabras);
