@@ -1725,7 +1725,8 @@ withWaiverLog(() => {
     writeGate(f.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9.spec.ts', f.gatesLog, true, null, 0, fe);
     const r1 = calc(f);
     check('T2 RuntimeMatrix_SimuladoDeclarado_EsperaFirma @story-8.220 @ac-2',
-      r1.perAc[1].verdict === 'NOT-VERIFIABLE' && simDe(r1, 1).length === 1, JSON.stringify({ v: r1.perAc[1].verdict, s: r1.simulados }));
+      r1.perAc[1].verdict === 'NOT-VERIFIABLE' && simDe(r1, 1).length === 1 && /AC#1: `[^`]*story-9-9\.spec\.ts:3`/.test(rm.renderMd(r1)),
+      JSON.stringify({ v: r1.perAc[1].verdict, s: r1.simulados }));
     waiverLib.appendWaiver({ story: '9.9', acs: [1], matrixHash: r1.hash, approvedBy: 'DevA', nowIso: new Date().toISOString(),
       declHashByAc: { 1: waiverLib.declHashFor('sólo se probó con el servidor simulado', 'E1') } });
     const r2 = calc(f);
@@ -1766,6 +1767,7 @@ withWaiverLog(() => {
     const s = simDe(r, 1);
     check('T4 RuntimeMatrix_HumoConGuionQueSimula_NoCuentaEnVivo @story-8.220 @ac-4',
       r.perAc[1].verdict !== 'RUNTIME' && s.length === 1 && /probe\.mjs$/.test(s[0].archivo) && s[0].linea === 1 &&
+      /AC#1: `probe\.mjs:1`/.test(rm.renderMd(r)) &&
       !r.warnings.some((w) => /NO ejercita la app/.test(w)), JSON.stringify({ v: r.perAc[1].verdict, s, w: r.warnings }));
 
     const g = makeWorkspace();
@@ -1803,13 +1805,32 @@ withWaiverLog(() => {
       JSON.stringify(rP.perAc[3]));
   }
 
-  // T5 — el guion del humo ya no está: cuenta como hoy, con aviso.
+  // T5 — el guion del humo ya no está: cuenta como hoy, con aviso. Lo mismo un humo que corre un guion sin nombrar
+  // ninguno que se pueda leer (`npm run smoke`), y un ayudante importado que no se puede leer.
   {
     const f = makeWorkspace();
     writeMirroredSmoke(f.dodDir, f.gatesLog, '9.9', [1], 'node probe.mjs');
     const r = calc(f);
     check('T5 RuntimeMatrix_HumoConGuionIlegible_ComoHoyConAviso @story-8.220 @ac-5',
       r.perAc[1].verdict === 'RUNTIME' && r.warnings.some((w) => /no pude leer probe\.mjs/.test(w)), JSON.stringify({ v: r.perAc[1].verdict, w: r.warnings }));
+
+    const g = makeWorkspace();
+    const sinGuion = ['npm run smoke', 'cd web && npm run smoke', './smoke.sh', 'make smoke'];
+    for (const cmd of sinGuion) writeMirroredSmoke(g.dodDir, g.gatesLog, '9.9', [1], cmd);
+    writeMirroredSmoke(g.dodDir, g.gatesLog, '9.9', [3], 'curl -s http://app/x');
+    writeMirroredSmoke(g.dodDir, g.gatesLog, '9.9', [3], 'wget -qO- http://app/x | grep ok');
+    const rG = calc(g);
+    const avisosSinGuion = rG.warnings.filter((w) => /no sé si simuló/.test(w));
+    check('T5 un humo que corre un guion sin nombrarlo avisa; un curl o un wget no @story-8.220 @ac-5',
+      rG.perAc[1].verdict === 'RUNTIME' && avisosSinGuion.length === sinGuion.length &&
+      sinGuion.every((c) => avisosSinGuion.some((w) => w.includes(c))), JSON.stringify(rG.warnings));
+
+    const h = makeWorkspace();
+    fs.writeFileSync(path.join(h.repo, 'probe.mjs'), "import { arma } from './falta.mjs';\nawait fetch('http://app/x');\n");
+    writeMirroredSmoke(h.dodDir, h.gatesLog, '9.9', [1], 'node probe.mjs');
+    const rH = calc(h);
+    check('T5 un ayudante importado que no está se avisa @story-8.220 @ac-5',
+      rH.perAc[1].verdict === 'RUNTIME' && rH.warnings.some((w) => /falta\.mjs/.test(w) && /no sé si simuló/.test(w)), JSON.stringify(rH.warnings));
   }
 
   // T6 — una historia que arrancó antes de la regla: el simulado sigue contando y se avisa (portón y humo).
@@ -1876,6 +1897,27 @@ withWaiverLog(() => {
     check('T8 un portón sin filtro mira todos los specs, sin carpetas de compilación @story-8.220 @ac-1',
       conSimulado.mutacion === null && /@mutates/.test(soloEnDist.mutacion || ''),
       JSON.stringify({ conSimulado: conSimulado.mutacion, soloEnDist: soloEnDist.mutacion }));
+    // Un filtro que sale de la carpeta del frontend no se lee.
+    const e = makeWorkspace();
+    cambiarHistoria(e, '`story-9-9.spec.ts::flujo`', '`../afuera.spec.ts::flujo`');
+    const feE = frente(e, { 'tests/real.spec.ts': SPEC_REAL });
+    fs.writeFileSync(path.join(e.repo, 'afuera.spec.ts'), SPEC_SIMULADO);
+    writeGate(e.dodDir, '9.9', recentCompact(), 'PASS', '../afuera.spec.ts', e.gatesLog, true, null, 0, feE);
+    const rE = calc(e);
+    check('T8 un filtro que sale del frontend_dir no se lee @story-8.220 @ac-5',
+      rE.perAc[1].verdict === 'RUNTIME' && !(rE.simulados || []).length && rE.warnings.some((w) => /afuera\.spec\.ts/.test(w) && /no sé si simuló/.test(w)),
+      JSON.stringify({ v: rE.perAc[1].verdict, s: rE.simulados, w: rE.warnings }));
+    // Una carpeta que no se puede leer, con otro spec que sí: se avisa que faltó mirar.
+    if (process.getuid && process.getuid() !== 0) {
+      const u = makeWorkspace();
+      const feU = frente(u, { 'tests/story-9-9.spec.ts': SPEC_REAL, 'cerrada/story-9-9.spec.ts': SPEC_SIMULADO });
+      fs.chmodSync(path.join(feU, 'cerrada'), 0o000);
+      writeGate(u.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9', u.gatesLog, true, null, 0, feU);
+      const rU = calc(u);
+      fs.chmodSync(path.join(feU, 'cerrada'), 0o755);
+      check('T8 una carpeta ilegible bajo el frontend_dir se avisa @story-8.220 @ac-5',
+        rU.warnings.some((w) => /no pude leer/.test(w) && /cerrada/.test(w)), JSON.stringify(rU.warnings));
+    }
     check('T8 RuntimeMatrix_PortonSinSpecLegible_ComoHoyConAviso @story-8.220 @ac-5',
       rA.perAc[1].verdict === 'RUNTIME' && rA.warnings.some((w) => /no pude leer no-existe/.test(w)) &&
       rB.perAc[1].verdict === 'RUNTIME' && rB.warnings.some((w) => /no pude leer/.test(w) && /frontend_dir/.test(w)) &&

@@ -203,24 +203,27 @@ function resolverRelativo(desde, de) {
 
 /**
  * Aplica `simulaServidor` a un archivo y a los que importa por ruta relativa (un nivel, como el control de realismo
- * con sus ayudantes). → { leido: true, hallazgos: [{ archivo, linea, via }] } o { leido: false, motivo }.
- * Un ayudante importado que no se puede leer no frena: el spec se leyó.
+ * con sus ayudantes). → { leido: true, hallazgos: [{ archivo, linea, via }], omitidos: [{ de, motivo }] } o
+ * { leido: false, motivo }. Un ayudante importado que no se encuentra o no se puede leer no frena (el spec se leyó),
+ * pero queda en `omitidos`: quien llama avisa que no sabe si simuló.
  */
 function deArchivo(ruta) {
   let texto;
   try { texto = fs.readFileSync(ruta, 'utf8'); } catch (e) { return { leido: false, motivo: e.code || e.message }; }
   const hallazgos = simulaServidor(texto).map((h) => ({ archivo: ruta, ...h }));
+  const omitidos = [];
   const vistos = new Set([path.resolve(ruta)]);
   for (const imp of importaciones(texto, tapar(texto))) {
     if (!/^\.\.?\//.test(imp.de)) continue;
     const destino = resolverRelativo(ruta, imp.de);
-    if (!destino || vistos.has(destino)) continue;
+    if (!destino) { omitidos.push({ de: imp.de, motivo: 'no está' }); continue; }
+    if (vistos.has(destino)) continue;
     vistos.add(destino);
     let t2;
-    try { t2 = fs.readFileSync(destino, 'utf8'); } catch { continue; }
+    try { t2 = fs.readFileSync(destino, 'utf8'); } catch (e) { omitidos.push({ de: imp.de, motivo: e.code || e.message }); continue; }
     for (const h of simulaServidor(t2)) hallazgos.push({ archivo: destino, ...h });
   }
-  return { leido: true, hallazgos };
+  return { leido: true, hallazgos, omitidos };
 }
 
 module.exports = { SEGMENTOS, PREFIJOS, EXTENSIONES, INCLUSION, EXT_GUION, esDeNegocio, simulaServidor, deArchivo, tapar };

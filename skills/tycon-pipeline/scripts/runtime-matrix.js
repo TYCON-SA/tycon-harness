@@ -350,22 +350,31 @@ const SPEC_MAX_ENTRIES = 20000;
 /**
  * Los specs que corrió un filtro del portón: `<frontend_dir>/<filtro>` si es un archivo; si no, los specs bajo
  * `frontend_dir` cuya ruta contiene el filtro, como hace Playwright (un filtro vacío: todos). Un `frontend_dir` relativo se
- * prueba contra cada raíz. → { archivos: [ruta], motivo } (motivo, si no hay ninguno).
+ * prueba contra cada raíz. Un filtro que sale de `frontend_dir` no se lee. → { archivos: [ruta], motivo, problemas }:
+ * `motivo` si no hay ninguno; `problemas`, lo que no se pudo mirar aunque haya specs (una carpeta ilegible, el corte).
  */
 function specsDelFiltro(frontendDir, filtro, raices) {
-  if (!frontendDir) return { archivos: [], motivo: 'el portón no dice su frontend_dir' };
+  if (!frontendDir) return { archivos: [], motivo: 'el portón no dice su frontend_dir', problemas: [] };
   const candidatos = path.isAbsolute(frontendDir) ? [frontendDir] : raices.filter(Boolean).map((r) => path.resolve(r, frontendDir));
   const fe = candidatos.find(isDir);
-  if (!fe) return { archivos: [], motivo: `no encontré su frontend_dir, ${frontendDir}` };
-  const directo = filtro ? path.join(fe, filtro) : null;
-  if (directo && isFile(directo)) return { archivos: [directo], motivo: null };
+  if (!fe) return { archivos: [], motivo: `no encontré su frontend_dir, ${frontendDir}`, problemas: [] };
+  const directo = filtro ? path.resolve(fe, filtro) : null;
+  const relDirecto = directo ? path.relative(fe, directo) : '';
+  if (directo && (relDirecto.startsWith('..') || path.isAbsolute(relDirecto))) {
+    return { archivos: [], motivo: `el filtro sale de su frontend_dir, ${frontendDir}`, problemas: [] };
+  }
+  if (directo && isFile(directo)) return { archivos: [directo], motivo: null, problemas: [] };
   const archivos = [];
+  const problemas = [];
   const pendientes = [fe];
   let leidos = 0;
   while (pendientes.length && leidos < SPEC_MAX_ENTRIES) {
     const d = pendientes.pop();
     let entradas = [];
-    try { entradas = fs.readdirSync(d, { withFileTypes: true }); } catch { continue; }
+    try { entradas = fs.readdirSync(d, { withFileTypes: true }); } catch (e) {
+      problemas.push(`la carpeta ${path.relative(fe, d) || '.'} (${e.code || e.message})`);
+      continue;
+    }
     for (const e of entradas) {
       leidos++;
       const p = path.join(d, e.name);
@@ -373,9 +382,25 @@ function specsDelFiltro(frontendDir, filtro, raices) {
       if (e.isFile() && SPEC_FILE_RE.test(e.name) && path.relative(fe, p).split(path.sep).join('/').includes(filtro)) archivos.push(p);
     }
   }
-  if (archivos.length) return { archivos, motivo: null };
-  const corte = pendientes.length ? `, y corté la búsqueda a las ${SPEC_MAX_ENTRIES} entradas` : '';
-  return { archivos: [], motivo: `ningún spec bajo ${frontendDir} lo contiene${corte}` };
+  if (pendientes.length) problemas.push(`lo que quedó después de las ${SPEC_MAX_ENTRIES} entradas (corté la búsqueda)`);
+  if (archivos.length) return { archivos, motivo: null, problemas };
+  return { archivos: [], motivo: `ningún spec bajo ${frontendDir} lo contiene${problemas.length ? `; no pude leer ${problemas.join(', ')}` : ''}`, problemas: [] };
+}
+
+// Lo que habla con la app por la red y no corre ningún guion: un humo hecho sólo de esto se puede dar por mirado.
+const COMANDO_DE_RED_RE = /^(curl|wget|http|https|xh|nc|grep|jq|cat|echo|test|true|sleep|cd)$/;
+
+/**
+ * ¿El comando corre sólo herramientas de red (y sus filtros)? Se mira la primera palabra de cada tramo separado por
+ * `&&`, `||`, `;` o `|`, sin las asignaciones de variable. Un humo que corre cualquier otra cosa (`npm run smoke`,
+ * `./smoke.sh`, `make smoke`) y no nombra un guion legible no se puede mirar.
+ */
+function soloRed(cmd) {
+  const tramos = String(cmd || '').split(/&&|\|\||;|\|/).map((t) => t.trim()).filter(Boolean);
+  return tramos.length > 0 && tramos.every((t) => {
+    const palabra = t.split(/\s+/).find((w) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(w)) || '';
+    return COMANDO_DE_RED_RE.test(palabra.split('/').pop());
+  });
 }
 
 /**
@@ -1173,15 +1198,19 @@ function compute(opts) {
     const hallazgos = [];
     // Sin filtro, el portón corrió todos los specs: se miran todos.
     for (const filtro of (g.specFilters.length ? g.specFilters : [''])) {
-      const { archivos, motivo } = specsDelFiltro(g.frontendDir, filtro, [repoRoot, wsRoot]);
+      const { archivos, motivo, problemas } = specsDelFiltro(g.frontendDir, filtro, [repoRoot, wsRoot]);
       if (!archivos.length) {
         warnings.push(`Gate E2E ${path.basename(g.path)}: no pude leer ${filtro || 'sus specs'} (${motivo}): no sé si simuló el servidor.`);
         continue;
       }
+      if (problemas.length) {
+        warnings.push(`Gate E2E ${path.basename(g.path)}: buscando ${filtro || 'sus specs'}, no pude leer ${problemas.join(', ')}: no sé si lo que faltó mirar simuló el servidor.`);
+      }
       for (const a of archivos) {
         const d = simulatedServer.deArchivo(a);
-        if (d.leido) hallazgos.push(...d.hallazgos);
-        else warnings.push(`Gate E2E ${path.basename(g.path)}: no pude leer ${relSim(a)} (${d.motivo}): no sé si simuló el servidor.`);
+        if (!d.leido) { warnings.push(`Gate E2E ${path.basename(g.path)}: no pude leer ${relSim(a)} (${d.motivo}): no sé si simuló el servidor.`); continue; }
+        hallazgos.push(...d.hallazgos);
+        for (const o of d.omitidos) warnings.push(`Gate E2E ${path.basename(g.path)}: ${relSim(a)} importa ${o.de} y no pude leerlo (${o.motivo}): no sé si simuló el servidor.`);
       }
     }
     if (!hallazgos.length) continue;
@@ -1212,10 +1241,15 @@ function compute(opts) {
   // imagen, que piden `app-run`.
   for (const e of freshSmokes.filter((x) => x.evidenceKind === 'app-run')) {
     const hallazgos = [];
-    for (const gu of guionesDelComando(e.cmd, repoRoot || path.dirname(storyPath))) {
+    const guiones = guionesDelComando(e.cmd, repoRoot || path.dirname(storyPath));
+    if (!guiones.length && !soloRed(e.cmd)) {
+      warnings.push(`Smoke ${e.ts}: \`${smokeSecrets.truncate(smokeSecrets.redact(e.cmd).text, 90)}\` corre un guion que no nombra: no sé si simuló el servidor.`);
+    }
+    for (const gu of guiones) {
       const d = simulatedServer.deArchivo(gu.ruta);
-      if (d.leido) hallazgos.push(...d.hallazgos);
-      else warnings.push(`Smoke ${e.ts}: no pude leer ${gu.token}: no sé si simuló el servidor.`);
+      if (!d.leido) { warnings.push(`Smoke ${e.ts}: no pude leer ${gu.token}: no sé si simuló el servidor.`); continue; }
+      hallazgos.push(...d.hallazgos);
+      for (const o of d.omitidos) warnings.push(`Smoke ${e.ts}: ${gu.token} importa ${o.de} y no pude leerlo (${o.motivo}): no sé si simuló el servidor.`);
     }
     if (!hallazgos.length) continue;
     if (simuladoAntesDelCorte()) {
