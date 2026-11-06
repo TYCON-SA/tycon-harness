@@ -66,14 +66,15 @@ test('PS1_SyncMeasured @story-2.31 @ac-19 — el sincronizador de Windows corre 
 
 const TYCON = { integrations: { clockify: true, engram: true, mailbox: true, codex: 'detect', nightly: true }, install: { profile: 'full' } };
 
-test('T3 Sync_NoResponse_WritesNeutralShortBlock @story-2.31 @ac-3 —sin `response`, el bloque neutro en castellano, sin el estilo de TYCON', () => {
-  const neutral = fill(bodyOf(path.join(BLOCKS, 'response-style', 'neutral.es.md')), 2000);
+test('T3 Sync_NoResponse_WritesNeutralShortBlock @story-2.31 @ac-3 @story-8.149 @ac-2 —sin `response`, el bloque neutro en castellano con la regla de idioma, sin el estilo de TYCON', () => {
+  // sin idioma declarado vale `auto`: el neutro en castellano más la regla de idioma
+  const neutral = fill(bodyOf(path.join(BLOCKS, 'response-style', 'neutral.auto.md')), 2000);
   assert.doesNotMatch(neutral, /EJECUTIVO|ejecutivo/, 'el neutro no trae el estilo de TYCON');
   for (const [name, run] of SYNCS) {
     const l = lab({ profile: { install: { profile: 'full' } } });
     const r = run(l);
     assert.strictEqual(r.status, 0, `${name}: ${r.stdout}${r.stderr}`);
-    assert.strictEqual(between(read(l.claude), 'response-style'), neutral, `${name}: el bloque es neutral.es`);
+    assert.strictEqual(between(read(l.claude), 'response-style'), neutral, `${name}: el bloque es neutral.auto`);
     assert.ok(Buffer.byteLength(neutral) < 2500, 'el neutro es corto');
   }
 });
@@ -227,12 +228,12 @@ test('T10 BlockTitles_NoDatesNoHistory_GuardBlocks @story-2.31 @ac-9 —ningún 
   }
 });
 
-test('T14 Budget_EveryStyleVariantFitsCeiling @story-2.31 @ac-20 —las seis variantes caben en el techo de response-style', () => {
+test('T14 Budget_EveryStyleVariantFitsCeiling @story-2.31 @ac-20 @story-8.149 @ac-3 —las nueve variantes (es, en y auto) caben en el techo de response-style', () => {
   const budget = JSON.parse(read(path.join(BLOCKS, 'budget.json')));
   const ceiling = budget.blocks['response-style'];
   assert.ok(Number.isInteger(ceiling) && ceiling > 0);
   for (const s of STYLES) {
-    for (const lang of LANGS) {
+    for (const lang of [...LANGS, 'auto']) {
       const f = path.join(BLOCKS, 'response-style', `${s}.${lang}.md`);
       assert.ok(fs.existsSync(f), `falta ${s}.${lang}`);
       // lo que viaja: con el tope más largo que acepta el lector
@@ -350,7 +351,8 @@ test('A6 Sync_UnreadableVariantsFolder_KeepsBlockAndSays @story-2.31 @ac-6 (vuel
 });
 
 test('A7 VariantsBlock_ConditionsFirst_OffRemoves_UnknownKeeps @story-2.31 @ac-3 @ac-6 (vuelta 5) — el bloque con variantes mira su perfil antes de elegir texto, en las tres', () => {
-  const t = arbol({ 'estilo.md': '<!-- requires-profile: full -->\n<!-- variants: response -->\n', 'estilo/neutral.es.md': '<!-- requires-profile: full -->\n# E\ntexto {{max_chars}}\n' });
+  // sin idioma declarado vale `auto`: la variante que se elige es neutral.auto
+  const t = arbol({ 'estilo.md': '<!-- requires-profile: full -->\n<!-- variants: response -->\n', 'estilo/neutral.auto.md': '<!-- requires-profile: full -->\n# E\ntexto {{max_chars}}\n' });
   for (const [name, run, target] of enArbol(t)) {
     // perfil full: se escribe la variante
     const l = lab({ profile: { install: { profile: 'full' } } });
