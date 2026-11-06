@@ -28,10 +28,11 @@
 #     (public-ci.sh, TYCON_PUBLIC_CI_PART); la lista tiene que traer `checks`, `controls-bench` y TODAS las
 #     `suites-<i>-of-<n>`, de 1 a n: una que falta deja pasos sin correr y el veredicto igual verde. Una base que todavía
 #     no conoce la parte `controls-bench` corre el banco dentro de `checks`: esa parte sale verde y lo dice;
-#   · en un pull request corren SÓLO `checks` y `controls-bench`: cada `suites-<i>-of-<n>` y `installer-floor` terminan al
-#     instante, verdes, con una línea que lo dice. La corrida entera va en la cola (merge_group) y en un push a main que
-#     no hizo la cola: un pedido no la paga dos veces (unos 20 minutos cada una). Lo que entra por la cola la pasó antes;
-#     lo que un administrador mergea salteándola la corre después, en main, sin que nada la corte (ver `concurrency`);
+#   · en un pull request corren todas las partes y el ensayo de Windows: el error de un pedido se ve en su pedido, y no
+#     recién en la cola. La cola las corre otra vez sobre el pedido combinado con los que entraron antes, que no es el
+#     commit que probó el pedido. Sólo `installer-floor` termina al instante en un pedido, verde, con una línea que lo
+#     dice: corre en la cola y en un push a main que no hizo la cola. Lo que un administrador mergea salteándola la corre
+#     después, en main, sin que nada la corte (ver `concurrency`);
 #   · el ensayo de Windows (`windows`): un trabajo windows-latest por escenario, los cuatro de
 #     scripts/ci/windows-rehearsal.js. Los escenarios y el job los exige la regla `windows` del control;
 #   · el último job se llama `public-ci` y es el ÚNICO chequeo que las reglas de la rama exigen. Tiene nombre estable a
@@ -86,12 +87,6 @@ jobs:
           BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}
           BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
-          # en un pedido corren sólo `checks` y los dos bancos: las suites las corre la cola, y nada entra a main sin pasarlas.
-          # El banco de la base corre en el pedido porque es ahí donde el dueño firma un aflojamiento
-          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "${TYCON_PUBLIC_CI_PART}" != "checks" ] && [ "${TYCON_PUBLIC_CI_PART}" != "controls-bench" ] && [ "${TYCON_PUBLIC_CI_PART}" != "controls-bench-base" ]; then
-            echo "en un pedido corren sólo las partes checks, controls-bench y controls-bench-base: ${TYCON_PUBLIC_CI_PART} corre en la cola de merge"
-            exit 0
-          fi
           # en un pedido BASE_REF es «main»; en la cola es «refs/heads/main»: se le saca el prefijo
           if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] || [ "${GITHUB_EVENT_NAME}" = "merge_group" ]; then
             # los controles y su regla salen de la base: en la cola, la base del grupo; en un pedido, la punta de la rama
@@ -171,8 +166,8 @@ jobs:
   # la actualización; `waiver`, las firmas del dueño por terminal; `old-node`, un Node más viejo que el piso; `npx`, el
   # instalador por npx. Sin setup-node a propósito: se ensaya con el Node que trae la máquina, como un dev. Rojo es no
   # haber podido ensayar, o que ningún paso midiera; lo que el ensayo encuentra va en el resumen de la corrida y no pone
-  # rojo el trabajo. En un pedido sale en verde sin ensayar (unos 12 minutos el más largo): corre en la cola de merge y
-  # en el push a main. El tope es el de Azure: si un paso se cuelga, cada uno corta en el suyo y el reporte llega a salir.
+  # rojo el trabajo. Corre en el pedido, en la cola de merge y en el push a main (unos 12 minutos el más largo). El tope
+  # es el de Azure: si un paso se cuelga, cada uno corta en el suyo y el reporte llega a salir.
   # Obligatorio: el chequeo `public-ci` lo espera como a los demás.
   windows:
     name: Windows · ${{ matrix.scenario }}
@@ -193,8 +188,6 @@ jobs:
           SCENARIO: ${{ matrix.scenario }}
           WORK: ${{ runner.workspace }}\tycon-rehearsal
         run: |
-          # en un pedido sale en verde sin ensayar: corre en la cola y en el push a main
-          if ($env:GITHUB_EVENT_NAME -eq 'pull_request') { Write-Output 'en un pedido el ensayo de Windows no corre: corre en la cola de merge'; exit 0 }
           node scripts/ci/windows-rehearsal.js --scenario "$env:SCENARIO" --work "$env:WORK"
           exit $LASTEXITCODE
 
