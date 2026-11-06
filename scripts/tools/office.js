@@ -553,6 +553,8 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     // sale de su marca: una nota no cambia cómo trabaja una sesión, y un arreglo rápido más nuevo sí
     if (x.kind === 'note' && (replaced || x.finishedStoryId)) a.comoTrabaja = waysOfWorking('pipeline', x0.storyId || x.finishedStoryId);
     else a.comoTrabaja = waysOfWorking(x.kind, replaced ? null : x0.storyId);
+    // el título de la historia va aparte del trabajo: el panel y la ventana dicen «número — título» aunque corra una tanda
+    if (/^Historia \S/.test(a.comoTrabaja) && unnumbered(x0.title)) a.historiaTitulo = unnumbered(x0.title);
     // sin pipeline, lo que dice su propia conversación
     const said = transcripts && NO_RUN_KINDS.has(x.kind) && d.sid != null ? transcripts.get(String(d.sid)) : null;
     if (said) saySession(a, said, x.lastAt, Boolean(titulo) && (x.kind === 'note' || x.kind === 'loose'));
@@ -864,6 +866,8 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
   const addStory = (id, card) => { const k = String(id); byStory.set(k, [...(byStory.get(k) || []), card]); };
   // el número de una fila que una sesión dice en lo que hace: esa sesión hace esa fila
   const byTask = new Map();
+  // la sesión de cada tarjeta: el número de su fila del tablero vuelve a su ficha, para nombrarla desde la tarjeta
+  const agentOfCard = new Map();
   for (const a of agents) {
     const card = { titulo: a.titulo || a.haciendo, quien: a.nombre, hora: cardHour(a.fin), ...(a.fin && a.fin.cls ? { cls: a.fin.cls } : {}), ...(a.espera ? { espera: a.espera } : {}), ...(a.marca ? { marca: a.marca } : {}), ...(a.parada ? { motivo: a.parada } : {}), ...(a.mano ? { mano: a.mano } : {}) };
     let id = null;
@@ -881,6 +885,7 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
     const tasks = tasksIn(a.titulo, a.haciendo);
     withWork(card, { historia: story, tarea: tasks[0], finMs: Number.isFinite(hourAt) ? hourAt : undefined, sinTitulo: !a.titulo, proyecto: a.otroProyecto ? 'otro' : a.proyecto, tituloTrabajo: a.tituloTrabajo, esNota: a.esNota || !a.titulo });
     col(id).tarjetas.push(card);
+    agentOfCard.set(card, a);
     // la tarjeta se une sólo a su primer número, el mismo que usa su hecho: si nombra otros, esas filas van en su propia
     // tarjeta, porque una tarjeta lleva un solo número
     if (tasks[0]) byTask.set(tasks[0], [...(byTask.get(tasks[0]) || []), card]);
@@ -914,6 +919,7 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
       for (const c of joined) {
         if (f.numero) {
           c.numero = f.numero;
+          if (agentOfCard.has(c)) agentOfCard.get(c).tarea = f.numero;
           if (!c.clave.startsWith('historia:')) c.clave = topics.workKey({ tarea: f.numero });
         }
         if (f.tema) c.tema = f.tema;
