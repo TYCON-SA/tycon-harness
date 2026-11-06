@@ -926,3 +926,117 @@ test('T7.35 Sibling_NotAGitRepo_OneExactWarning @story-7.35 @ac-10 — un herman
   assert.match(lineas[0], /no es un repo git, uso la carpeta tal cual/);
   assert.doesNotMatch(avisos, /fatal:/, 'sin el error crudo de git');
 });
+
+// ── El hermano que no está al lado se busca en la raíz de repos ──────────────────────────────
+// Desde una carpeta de `worktrees/`, `../tycon-harness` no existe aunque el hermano esté clonado en la raíz de repos.
+
+const EVIDENCE_LIB = path.join(SCRIPTS, 'lib', 'evidence-config.js');
+
+/** Un repo de historias en `<lab>/worktrees/hm-x` que declara `declarados`, y la raíz de repos `<lab>/repos`. */
+function labRaiz(declarados) {
+  const lab = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hermano-raiz-')));
+  const yaml = `evidence:\n  companion_repos:\n${declarados.map((d) => `    - ${d}\n`).join('')}`;
+  const hm = repoGit(path.join(lab, 'worktrees', 'hm-x'), { 'specs/s.md': STORY(), '.tycon/advisors.yaml': yaml });
+  const repos = path.join(lab, 'repos');
+  fs.mkdirSync(repos, { recursive: true });
+  return { lab, hm, repos };
+}
+
+/** Corre `fn` con `TYCON_REPOS_ROOT` apuntando a `raiz`, y deja el entorno como estaba. */
+function conRaiz(raiz, fn) {
+  const antes = process.env.TYCON_REPOS_ROOT;
+  process.env.TYCON_REPOS_ROOT = raiz;
+  try { return fn(); } finally { if (antes === undefined) delete process.env.TYCON_REPOS_ROOT; else process.env.TYCON_REPOS_ROOT = antes; }
+}
+
+test('T1 8.229-Companion_RelativeMissing_FoundInReposRoot @story-8.229 @ac-1 — la ruta relativa o el nombre que no está al lado sale de la raíz de repos', () => {
+  const { parseEvidenceConfig } = require(EVIDENCE_LIB);
+  for (const declarado of ['../tycon-harness', 'tycon-harness']) {
+    const { hm, repos } = labRaiz([declarado]);
+    const arnes = repoGit(path.join(repos, 'tycon-harness'), { 'README.md': 'x\n' });
+    const cfg = conRaiz(repos, () => parseEvidenceConfig(hm));
+    assert.deepEqual(cfg.roots, [arnes], declarado);
+    assert.deepEqual(cfg.missing, [], declarado);
+  }
+});
+
+test('T2 8.229-Companion_FoundInReposRoot_SaysSo @story-8.229 @ac-2 — el camino tomado se dice en modo normal, en modo freno y por companionRoots', () => {
+  const { parseEvidenceConfig } = require(EVIDENCE_LIB);
+  const { companionRoots } = require(COMPANION_LIB);
+  const { hm, repos } = labRaiz(['../tycon-harness']);
+  const arnes = repoGit(path.join(repos, 'tycon-harness'), { 'README.md': 'x\n' });
+  const linea = (ws) => ws.filter((w) => w.includes('`../tycon-harness` no está al lado de') && w.includes(`lo leí de la raíz de repos (${arnes})`));
+  conRaiz(repos, () => {
+    assert.equal(linea(parseEvidenceConfig(hm).warnings).length, 1, 'modo normal');
+    assert.equal(linea(parseEvidenceConfig(hm).warnings).length, 1, 'una segunda llamada lo vuelve a decir');
+    const freno = parseEvidenceConfig(hm, { freno: true });
+    assert.deepEqual(freno.roots, [arnes], 'modo freno, desde lo commiteado');
+    assert.equal(linea(freno.warnings).length, 1, 'modo freno');
+    const avisos = [];
+    const roots = companionRoots(hm, path.join(hm, 'specs', 's.md'), { onWarning: (w) => avisos.push(w) });
+    assert.deepEqual(roots, [arnes]);
+    assert.equal(linea(avisos).length, 1, 'companionRoots por onWarning');
+  });
+});
+
+test('T3 8.229-Companion_RelativeExists_NoFallback @story-8.229 @ac-3 — la ruta que existe al lado se usa como siempre, sin aviso', () => {
+  const { parseEvidenceConfig } = require(EVIDENCE_LIB);
+  const { lab, hm, repos } = labRaiz(['../tycon-harness']);
+  const alLado = repoGit(path.join(lab, 'worktrees', 'tycon-harness'), { 'README.md': 'al lado\n' });
+  repoGit(path.join(repos, 'tycon-harness'), { 'README.md': 'otro\n' });
+  const cfg = conRaiz(repos, () => parseEvidenceConfig(hm));
+  assert.deepEqual(cfg.roots, [alLado]);
+  assert.deepEqual(cfg.warnings, []);
+});
+
+test('T4 8.229-Companion_NotInReposRoot_StaysMissing @story-8.229 @ac-4 — sin el repo, sin .git o repetido queda faltante; a dos niveles y único, lo encuentra', () => {
+  const { parseEvidenceConfig } = require(EVIDENCE_LIB);
+  // (a) no está en la raíz
+  let l = labRaiz(['../tycon-harness']);
+  let cfg = conRaiz(l.repos, () => parseEvidenceConfig(l.hm));
+  assert.deepEqual(cfg.missing, ['../tycon-harness']);
+  assert.ok(cfg.warnings.some((w) => w.includes(`tampoco está en la raíz de repos (${l.repos})`)), cfg.warnings.join('\n'));
+  // (b) una carpeta con ese nombre que no es un repo principal
+  l = labRaiz(['../tycon-harness']);
+  fs.mkdirSync(path.join(l.repos, 'tycon-harness'));
+  cfg = conRaiz(l.repos, () => parseEvidenceConfig(l.hm));
+  assert.deepEqual(cfg.missing, ['../tycon-harness']);
+  assert.deepEqual(cfg.roots, []);
+  // (c) dos candidatos: no elige y los nombra
+  l = labRaiz(['../tycon-harness']);
+  const a = repoGit(path.join(l.repos, 'a', 'tycon-harness'), { 'README.md': 'a\n' });
+  const b = repoGit(path.join(l.repos, 'b', 'tycon-harness'), { 'README.md': 'b\n' });
+  cfg = conRaiz(l.repos, () => parseEvidenceConfig(l.hm));
+  assert.deepEqual(cfg.missing, ['../tycon-harness']);
+  assert.ok(cfg.warnings.some((w) => w.includes(a) && w.includes(b) && w.includes('no elijo')), cfg.warnings.join('\n'));
+  // (d) a dos niveles y único
+  l = labRaiz(['../tycon-harness']);
+  const g = repoGit(path.join(l.repos, 'grupo', 'tycon-harness'), { 'README.md': 'g\n' });
+  cfg = conRaiz(l.repos, () => parseEvidenceConfig(l.hm));
+  assert.deepEqual(cfg.roots, [g]);
+  assert.deepEqual(cfg.missing, []);
+});
+
+test('T5 8.229-Companion_ReposRootUnknown_StaysMissingAndSays @story-8.229 @ac-5 — sin raíz de repos, o con un lector que tira, queda faltante y se dice', () => {
+  const { parseEvidenceConfig } = require(EVIDENCE_LIB);
+  const { hm } = labRaiz(['../tycon-harness']);
+  const sinRaiz = parseEvidenceConfig(hm, { resolveReposRoot: () => ({ root: null, roots: [], fuente: 'sin-raiz', motivo: 'sin rutas.repos' }) });
+  assert.deepEqual(sinRaiz.missing, ['../tycon-harness']);
+  assert.ok(sinRaiz.warnings.some((w) => w.includes('no pude mirar la raíz de repos (sin rutas.repos)')), sinRaiz.warnings.join('\n'));
+  const tira = parseEvidenceConfig(hm, { resolveReposRoot: () => { throw new Error('tycon.json roto'); } });
+  assert.deepEqual(tira.missing, ['../tycon-harness']);
+  assert.ok(tira.warnings.some((w) => w.includes('no pude mirar la raíz de repos (tycon.json roto)')), tira.warnings.join('\n'));
+});
+
+test('T6 8.229-Companion_AbsoluteOrHome_NoFallback @story-8.229 @ac-6 — una absoluta o con ~/ que no existe no se busca en la raíz', () => {
+  const { parseEvidenceConfig } = require(EVIDENCE_LIB);
+  const ausente = `no-existe-${process.pid}-${Date.now()}`;
+  const abs = path.join(os.tmpdir(), ausente, 'tycon-harness');
+  const casaRel = `~/${ausente}/tycon-harness`;
+  const { hm, repos } = labRaiz([abs, casaRel]);
+  repoGit(path.join(repos, 'tycon-harness'), { 'README.md': 'x\n' });
+  const cfg = conRaiz(repos, () => parseEvidenceConfig(hm));
+  assert.deepEqual(cfg.roots, []);
+  assert.deepEqual(cfg.missing, [abs, casaRel]);
+  assert.deepEqual(cfg.warnings, []);
+});
