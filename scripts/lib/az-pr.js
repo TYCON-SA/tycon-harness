@@ -53,6 +53,9 @@ function sinBordes(linea) {
   return linea.slice(a, b);
 }
 
+// `{…,…}` o `{…..…}` sin comillas, con partes citadas adentro (lo citado puede llevar espacios y llaves).
+const LLAVES = /^\{(?:[^{}\s"']|"[^"]*"|'[^']*')*(?:,|\.\.)(?:[^{}\s"']|"[^"]*"|'[^']*')*\}/;
+
 function fichas(cmd, opts = {}) {
   // `powershell`: el comando lo escribió la herramienta de PowerShell. Ahí la barra invertida NO escapa nada (es parte
   // de las rutas: `C:\tools\gh.exe`) y el renglón se continúa con una comilla invertida, no con una barra.
@@ -149,8 +152,8 @@ function fichas(cmd, opts = {}) {
     // fuera de comillas también `$'…'` y `$"…"`: el citado ANSI-C arma el texto (`$'\x62'` es una letra)
     if (abreExpansion(c, n)) { expande = true; partida = true; } else if (c === '$' && (n === "'" || n === '"')) expande = true;
     // `{a,b}` y `{a..c}` sin comillas: la terminal los abre en varias palabras (`-s{x,dev}` es `-sx -sdev`), también
-    // con comillas adentro de las llaves (`-s{x,"dev"}`)
-    else if (c === '{' && /^\{[^{}\s]*(?:,|\.\.)[^{}\s]*\}/.test(s.slice(i))) { expande = true; partida = true; }
+    // con comillas adentro de las llaves, aunque lo citado lleve espacios (`-s{x,"dev"}`, `-s{"a b",dev}`)
+    else if (c === '{' && LLAVES.test(s.slice(i))) { expande = true; partida = true; }
     texto += c;
   }
   cerrar();
@@ -206,9 +209,11 @@ function flagDe(seg, nombre, corta = null) {
  *
  * Mira sólo lo que va después del `az` del pedido (`delPedido`): el `-s` de `timeout -s KILL` no es el origen. Y lee
  * también una bandera escrita entre comillas (`'--delete-source-branch' true`): la terminal saca las comillas y az la
- * lee como bandera. Lo que no es una bandera para az es una ficha con un espacio adentro (`--title "usá -s dev"`).
+ * lee como bandera. Con un espacio adentro, argparse decide por la forma: la corta sigue siendo bandera con el resto
+ * como valor (`'-s dev'` es el origen ` dev`), igual que la larga con `=` (`'--source-branch= main'`); la larga sin
+ * `=` (`'--title usá'`) es texto.
  */
-const esOpcion = (t) => /^-/.test(t) && !/\s/.test(t);
+const esOpcion = (t) => /^-[^-\s]/.test(t) || /^--[^=\s]*(?:=|$)/.test(t);
 function valorDe(seg, nombre, corta = null) {
   const largo = `--${nombre}`;
   const esPrefijo = (n) => n.length > 2 && largo.startsWith(n);
@@ -399,7 +404,31 @@ function faltaDeBorrarRamaUpdate(borrar, publica) {
  * Una ficha del pedido con una expansión fuera de comillas: la terminal la parte en palabras y puede meter una bandera.
  * Lo de antes del `az` no cuenta: el lado derecho de `VAR=$X az …` no se parte.
  */
-const partidas = (seg) => delPedido(seg).filter((f) => f.partida).map((f) => `\`${f.texto}\` lo arma la terminal fuera de comillas: puede meter una bandera que no veo, y lo que no pude leer no está aprobado. Ponelo entre comillas o escribí el valor`);
+const partidas = (seg) => delPedido(seg).filter((f) => f.partida).map((f) => `\`${f.texto}\` lo arma la terminal fuera de comillas: puede meter una bandera que no veo, y lo que no pude leer no está aprobado. Ponelo entre comillas o escribí el valor`)
+  .concat(fantasmas(seg));
+
+// Las banderas de az que leen un valor sólo si el que sigue no parece otra bandera (`--draft "$F" true`): detrás de
+// ellas una expansión puede ser la bandera siguiente.
+const OPCIONALES = ['auto-complete', 'squash', 'delete-source-branch', 'draft', 'bypass-policy', 'transition-work-items'];
+const esOpcional = (t) => t.startsWith('--') && t.length > 2 && OPCIONALES.some((n) => `--${n}`.startsWith(t));
+
+/**
+ * Una expansión, aunque esté entre comillas, puesta donde az espera una bandera: `"$F" dev` o `"--delete-source-$X" true`
+ * puede ser cualquier bandera, y lo que no se lee no está aprobado. Sólo se salva el valor de una bandera que lo exige
+ * (`--title "$T"`): si la terminal lo convierte en bandera, az falla en vez de correr.
+ */
+function fantasmas(seg) {
+  const pedido = delPedido(seg);
+  const out = [];
+  pedido.forEach((f, i) => {
+    // Sólo si la expansión puede cambiar el NOMBRE: `--title=x"$T"` o `-s"$X"` tienen la bandera escrita.
+    if (!f.expande || f.partida || !/^(?:[$`]|-[$`]|--[^=]*[$`])/.test(f.texto)) return;
+    const prev = pedido[i - 1];
+    if (prev && esOpcion(prev.texto) && !prev.texto.includes('=') && !esOpcional(prev.texto)) return;
+    out.push(`no puedo leer \`${f.texto}\`: una expansión donde va una bandera puede ser cualquier bandera, y lo que no pude leer no está aprobado. Escribí la bandera`);
+  });
+  return out;
+}
 
 /**
  * La regla del freno de pedidos sobre UN segmento, sin mirar el escape: `{ verbo, juzgado, borrador, faltas }`.

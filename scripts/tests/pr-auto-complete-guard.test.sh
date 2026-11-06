@@ -403,7 +403,18 @@ for caso in \
   "pasa|$AZM -s story/x --delete-source-branch true --description 'arreglo {a,b} y \$HOME'" \
   "frena|$AZM -s{story/x,\"dev\"} --delete-source-branch true" \
   "frena|$AZM -s ' dev' --delete-source-branch true" \
-  "frena|$AZM -s 'main ' --delete-source-branch true"; do
+  "frena|$AZM -s 'main ' --delete-source-branch true" \
+  "frena|$AZM -s DEV --delete-source-branch true" \
+  "frena|$AZM --delete-source-branch true -s story/x -s{\"a b\",dev}" \
+  "frena|$AZM --delete-source-branch true -s story/x '-s dev'" \
+  "frena|$AZM --delete-source-branch true -s story/x '--source-branch= main'" \
+  "frena|$AZM --delete-source-branch true -s story/x \"\$F\" dev" \
+  "frena|$AZM --delete-source-branch true -s story/x --draft \"\$F\" dev" \
+  "frena|az repos pr update --id 5 \"\$F\" true" \
+  "frena|$AZM -s story/x --delete-source-branch true \"-\$X\" dev" \
+  "frena|az repos pr update --id 5 \"--delete-source-\$X\" true" \
+  "pasa|$AZM -s story/x --delete-source-branch true --title \"\$T\"" \
+  "pasa|$AZM -s story/x --delete-source-branch true --title 'usá -s dev'"; do
   esperado="${caso%%|*}"; cmd="${caso#*|}"
   rc=$(corre "$cmd")
   falta=$(node -e 'const az=require(process.argv[1]); const s=az.segmentos(process.argv[2])[0]; process.stdout.write(String(az.faltasDe(s).faltas.length > 0))' "$AQUI/scripts/lib/az-pr.js" "$cmd" 2>/dev/null)
