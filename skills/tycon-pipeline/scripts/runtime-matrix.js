@@ -1134,6 +1134,8 @@ function compute(opts) {
   const rama = repoRoot ? companionLib.ramaDe(repoRoot) : null;
   const enRama = rama ? evCfg.roots.map((r) => companionLib.enLaMismaRama(companionLib.real(r), rama, /\d/.test(sid) ? sid : null)) : [];
   const evidenceRoots = repoRoot ? [...new Set([repoRoot, ...evCfg.roots, ...enRama])] : [];
+  // Cómo se resolvió cada hermano que no está al lado del repo (la raíz de repos), o por qué no: nunca en silencio.
+  warnings.push(...evCfg.warnings);
   for (const miss of evCfg.missing) {
     warnings.push(`companion_repo declarado en .tycon/advisors.yaml pero INEXISTENTE: ${miss} — no aporta evidencia (¿typo o repo sin clonar?).`);
   }
