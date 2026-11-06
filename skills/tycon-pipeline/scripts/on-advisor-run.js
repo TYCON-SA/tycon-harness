@@ -48,6 +48,67 @@ const { attribution } = require('./lib/repo-attrib.js');
 // Subagents de exploración libre: no tienen contexto curado ni superficie declarada.
 const ADHOC = new Set(['general-purpose', 'Explore', 'Plan', 'claude']);
 
+// Sin corrida abierta ni ronda de revisores en el registro, la fase es la última hora.
+const NO_RUN_WINDOW_MS = 60 * 60 * 1000;
+// Una ruta dentro del pedido de un agente: absoluta, con `/` o con `\` (Windows).
+const RE_PATH = /(?:[A-Za-z]:)?[\\/][^\s'"`«»()<>]+/g;
+
+/**
+ * La lectura curada de un agente de tipo libre, o null. Un agente cuyo pedido nombra un archivo que existe y que es su
+ * lectura no sale a explorar: un `.prompt.txt` del pase (los pedidos de workflow-lite.js --agents-dir) o el archivo de
+ * contexto de los revisores que anotó la ronda (`context_file` y `context_file_overrides` de sus step5-start).
+ */
+function curatedReading(prompt, lines) {
+  const texto = String(prompt || '');
+  if (!texto) return null;
+  const contextFiles = new Set();
+  for (const l of lines) {
+    if (!l.includes('"step5-start"')) continue;
+    try {
+      const d = JSON.parse(l);
+      if (typeof d.context_file === 'string') contextFiles.add(d.context_file);
+      for (const v of Object.values(d.context_file_overrides || {})) if (typeof v === 'string') contextFiles.add(v);
+    } catch { /* línea corrupta: ignorar */ }
+  }
+  for (const m of texto.matchAll(RE_PATH)) {
+    const file = m[0].replace(/[.,;:]+$/, '');
+    // una ruta de red (`\\host\…`, `//host/…`) no se mira: en Windows abriría una conexión al equipo que nombre el pedido
+    if (/^[\\/]{2}/.test(file)) continue;
+    if (!/\.prompt\.txt$/.test(file) && !contextFiles.has(file)) continue;
+    try { if (fs.statSync(file).isFile()) return file; } catch { /* no existe: no cuenta */ }
+  }
+  return null;
+}
+
+/**
+ * Dónde empieza la fase en el registro de la sesión: `{ idx, since, lastHour, markerUnreadable }`. Cuenta lo que está
+ * después del último corte del registro (la ronda de revisores, `step5-start`, o una corrida nueva, `run-start`) y, si
+ * la sesión tiene corrida, desde el comienzo de su paso abierto: lo más nuevo de los dos. Sin ninguno, la última hora:
+ * `lastHour` dice que no hay corrida; `markerUnreadable`, que el marcador está pero no se pudo leer (también cuenta la
+ * última hora, sin afirmar que no hay corrida).
+ */
+function phaseStart(lines, sessionId, now = Date.now()) {
+  let idx = 0;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (lines[i].includes('"step5-start"') || lines[i].includes('"run-start"')) { idx = i + 1; break; }
+  }
+  let since = null;
+  let markerUnreadable = false;
+  try {
+    const m = JSON.parse(fs.readFileSync(path.join(stateDirOf(os.homedir()), 'active', `${sessionId}.json`), 'utf8'));
+    for (const t of Object.values((m && m.stepTimings) || {})) {
+      if (!t || !t.startedAt || t.completedAt) continue;
+      const x = Date.parse(t.startedAt);
+      if (Number.isNaN(x)) { markerUnreadable = true; continue; }
+      if (since === null || x > since) since = x;
+    }
+  } catch (e) {
+    if (!e || e.code !== 'ENOENT') markerUnreadable = true;
+  }
+  if (since !== null || idx > 0) return { idx, since, lastHour: false, markerUnreadable };
+  return { idx: 0, since: now - NO_RUN_WINDOW_MS, lastHour: !markerUnreadable, markerUnreadable };
+}
+
 /**
  * Escribe el registro de autoría (`review-roster.json`) en el run dir de la story.
  *
@@ -354,7 +415,18 @@ function main() {
     }
   }
 
-  const { cwd, logPath } = recordLaunch({ sessionId: event.session_id, cwd: event.cwd, advisor, model, transcriptPath: event.transcript_path, prompt: ti.prompt });
+  // el registro de antes de este lanzamiento: dice si el pedido trae su lectura curada (y entonces no explora)
+  const fileKey = sessionIdFileKey(event.session_id);
+  let prevLines = [];
+  let logUnreadable = false;
+  try { prevLines = fs.readFileSync(path.join(stateDirOf(os.homedir()), 'advisor-runs', `${fileKey}.jsonl`), 'utf8').split('\n'); } catch (e) {
+    // sin log todavía es lo normal; otro error queda anotado: sin el registro, el archivo de contexto de la ronda no se reconoce
+    if (!e || e.code !== 'ENOENT') logUnreadable = true;
+  }
+  const curated = ADHOC.has(advisor) ? curatedReading(ti.prompt, prevLines) : null;
+  const extra = curated ? { curated: true } : (logUnreadable && ADHOC.has(advisor) ? { curated_check: 'log-unreadable' } : undefined);
+
+  const { cwd, logPath } = recordLaunch({ sessionId: event.session_id, cwd: event.cwd, advisor, model, transcriptPath: event.transcript_path, prompt: ti.prompt, extra });
   if (process.env.TYCON_SPAWN_GOVERNANCE === '0') {
     if (notaFreno) {
       try { process.stdout.write(JSON.stringify({ systemMessage: `[tycon-pipeline] lanzamiento \`${advisor}\`: ${notaFreno}` })); } catch { /* nunca romper el spawn */ }
@@ -384,7 +456,7 @@ function main() {
     } catch { org = null; }
   }
 
-  if (!ADHOC.has(advisor)) {
+  if (!ADHOC.has(advisor) || curated) {
     const notas = [notaFreno, notaTecho].filter(Boolean);
     if (notas.length) {
       try { process.stdout.write(JSON.stringify({ systemMessage: `[tycon-pipeline] lanzamiento \`${advisor}\`: ${notas.join(' · ')}` })); } catch { /* nunca romper el spawn */ }
@@ -400,20 +472,31 @@ function main() {
   try { hasCodegraph = fs.existsSync(path.join(cwd, '.codegraph')); } catch {}
 
   // ── Aviso (b) — cuántos ad-hoc van en esta fase ───────────────────────────
-  // "Fase" = desde el último step5-start (o desde el arranque de la sesión si no hubo).
-  // Es el corte de la medición de arriba: los pasos previos a la revisión vs la revisión.
+  // La fase la dice phaseStart: el paso abierto de la corrida o la ronda de revisores, lo más nuevo; sin ninguno,
+  // la última hora. Los lanzamientos con su lectura curada no cuentan: no exploran. Una línea sin fecha cuenta si está
+  // después del corte del registro (su lugar ya la ubica en la fase); sin corte no se puede ubicar, y el aviso la nombra.
   let adhocEnFase = 0;
+  let lastHour = false;
+  let markerUnreadable = false;
+  let undated = 0;
   try {
     const lines = fs.readFileSync(logPath, 'utf8').split('\n');
-    let desde = 0;
-    for (let i = lines.length - 1; i >= 0; i--) {
-      if (lines[i].includes('"step5-start"')) { desde = i + 1; break; }
-    }
-    for (let i = desde; i < lines.length; i++) {
+    const phase = phaseStart(lines, fileKey);
+    lastHour = phase.lastHour;
+    markerUnreadable = phase.markerUnreadable;
+    for (let i = phase.idx; i < lines.length; i++) {
       if (!lines[i].trim()) continue;
       try {
         const d = JSON.parse(lines[i]);
-        if (d.advisor && ADHOC.has(d.advisor)) adhocEnFase++;
+        if (!d.advisor || !ADHOC.has(d.advisor) || d.curated) continue;
+        const t = Date.parse(d.ts);
+        if (Number.isNaN(t)) {
+          if (phase.idx > 0) adhocEnFase++;
+          else undated++;
+          continue;
+        }
+        if (phase.since !== null && t < phase.since) continue;
+        adhocEnFase++;
       } catch { /* línea corrupta: ignorar */ }
     }
   } catch { /* sin log todavía */ }
@@ -428,9 +511,13 @@ function main() {
     );
   }
   if (pasoUmbral) {
+    const donde = lastHour ? 'en la última hora (sin corrida abierta)'
+      : markerUnreadable ? 'en esta fase (no pude leer el marcador de la corrida: cuento desde el último corte o la última hora)'
+        : 'en esta fase';
     notes.push(
-      `van ${adhocEnFase} agentes de exploración libre en esta fase (umbral ${umbral}) — ` +
-      'cada uno cuesta ~60-100K tokens antes de leer nada',
+      `van ${adhocEnFase} agentes de exploración libre ${donde} (umbral ${umbral})` +
+      (undated ? `; ${undated} sin fecha en el registro, no contados` : '') +
+      ' — cada uno cuesta ~60-100K tokens antes de leer nada',
     );
   }
   if (!model && (hasCodegraph || pasoUmbral)) {
@@ -453,7 +540,7 @@ function main() {
   } catch { /* nunca romper el spawn */ }
 }
 
-module.exports = { recordLaunch };
+module.exports = { recordLaunch, curatedReading, phaseStart };
 
 if (require.main === module) {
   try { main(); } catch { /* fail-safe */ }

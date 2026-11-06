@@ -155,19 +155,33 @@ const propiosDe = (dir) => path.join(dir, 'own-prs.json');
 const PROPIOS_TOPE = 1000;
 const QUERY_PROPIOS = 'query { viewer { login } search(query: "is:pr is:open author:@me archived:false", type: ISSUE, first: 100) { nodes { ... on PullRequest { number title isDraft headRefName isInMergeQueue mergeable autoMergeRequest { enabledAt } author { login } repository { nameWithOwner } } } } }';
 
-function salidaDe(cmd, args) {
-  const r = spawnSync(cmd, args, { encoding: 'utf8', timeout: 30000, windowsHide: true, shell: process.platform === 'win32', maxBuffer: 1 << 26 });
+// En Windows `gh` es gh.exe y se lanza directo: por la consola, gh abre su propia ventana aunque la consola vaya oculta.
+// `az` es az.cmd, que sólo corre por la consola: cada argumento entre comillas, y sólo con caracteres que la consola no
+// interpreta adentro de ellas (una barra invertida al final escaparía la comilla de cierre). Lo mismo un doble que es un
+// `.cmd` o un `.bat`; un doble `.js` corre con Node.
+const seguroEnConsola = (args) => args.every((a) => /^[\p{L}\p{N}_ .:/=$@~\\-]+$/u.test(a) && !a.endsWith('\\'));
+function llamadaDe(cmd, args, plataforma = process.platform) {
+  if (/\.[cm]?js$/i.test(cmd)) return { file: process.execPath, args: [cmd, ...args], shell: false };
+  if (plataforma !== 'win32' || !(cmd === 'az' || /\.(cmd|bat)$/i.test(cmd))) return { file: cmd, args, shell: false };
+  if (!seguroEnConsola(args)) return { problem: `${path.basename(cmd)}: argumentos con caracteres no seguros para la consola` };
+  return { file: cmd.includes(' ') ? `"${cmd}"` : cmd, args: args.map((a) => `"${a}"`), shell: true };
+}
+
+function salidaDe(cmd, args, { plataforma = process.platform, run = spawnSync } = {}) {
+  const llamada = llamadaDe(cmd, args, plataforma);
+  if (llamada.problem) return '';
+  const r = run(llamada.file, llamada.args, { encoding: 'utf8', timeout: 30000, windowsHide: true, shell: llamada.shell, maxBuffer: 1 << 26 });
   return r.status === 0 ? String(r.stdout || '').trim() : '';
 }
 const jsonDe = (texto) => { try { return JSON.parse(texto); } catch { return null; } };
 
 /** Los pedidos de la persona, de todos sus repos: `{ at, lecturas: { <repo>: { ok, value } }, fallos }`. */
-function leerPropios({ repos = [], ahora = Date.now(), env = process.env } = {}) {
+function leerPropios({ repos = [], ahora = Date.now(), env = process.env, plataforma = process.platform, run = spawnSync } = {}) {
   const lecturas = {};
   const fallos = [];
   const anotar = (repo, p) => { (lecturas[repo] = lecturas[repo] || { ok: true, value: [] }).value.push(p); };
   if (repos.some((r) => r.platform === 'github')) {
-    const d = jsonDe(salidaDe(env.TYCON_GH_CMD || 'gh', ['api', 'graphql', '-f', `query=${QUERY_PROPIOS}`]));
+    const d = jsonDe(salidaDe(env.TYCON_GH_CMD || 'gh', ['api', 'graphql', '-f', `query=${QUERY_PROPIOS}`], { plataforma, run }));
     if (!d || !d.data || !d.data.viewer) fallos.push('GitHub');
     else {
       for (const p of d.data.search.nodes) {
@@ -177,9 +191,9 @@ function leerPropios({ repos = [], ahora = Date.now(), env = process.env } = {})
   }
   const organizaciones = [...new Set(repos.filter((r) => r.platform === 'azure').map((r) => r.org))];
   const az = env.TYCON_ADO_CMD || 'az';
-  const yo = organizaciones.length ? salidaDe(az, ['account', 'show', '--query', 'user.name', '-o', 'tsv']).toLowerCase() : '';
+  const yo = organizaciones.length ? salidaDe(az, ['account', 'show', '--query', 'user.name', '-o', 'tsv'], { plataforma, run }).toLowerCase() : '';
   for (const org of organizaciones) {
-    const d = yo ? jsonDe(salidaDe(az, ['devops', 'invoke', '--org', `https://dev.azure.com/${org}`, '--area', 'git', '--resource', 'pullRequests', '--query-parameters', 'searchCriteria.status=active', `$top=${PROPIOS_TOPE}`, '--api-version', '7.1', '-o', 'json'])) : null;
+    const d = yo ? jsonDe(salidaDe(az, ['devops', 'invoke', '--org', `https://dev.azure.com/${org}`, '--area', 'git', '--resource', 'pullRequests', '--query-parameters', 'searchCriteria.status=active', `$top=${PROPIOS_TOPE}`, '--api-version', '7.1', '-o', 'json'], { plataforma, run })) : null;
     if (!d || !Array.isArray(d.value)) { fallos.push(org); continue; }
     if (d.value.length >= PROPIOS_TOPE) fallos.push(`${org} (puede faltar alguno: hay más de ${PROPIOS_TOPE} abiertos)`);
     for (const p of d.value) {
@@ -382,7 +396,7 @@ async function main() {
 
 // Si algo falla después de saber que el repo aplica, se dice; antes, se calla. El arranque nunca se rompe.
 let aplica = false;
-module.exports = { verdesSinEntrar, coordinatorLines, comandoParaEncolar, leerPropios };
+module.exports = { verdesSinEntrar, coordinatorLines, comandoParaEncolar, leerPropios, llamadaDe, salidaDe };
 if (require.main !== module) { /* lo usa la coordinadora: no corre el arranque */ } else if (process.argv[2] === '--refresh') {
   refrescar(path.resolve(process.argv[3] || ROOT)).catch(() => { /* la próxima lo intenta otra vez */ }).finally(() => process.exit(0));
 } else main().catch((e) => {

@@ -192,7 +192,7 @@ test('T20 SessionFile_AdhocSetAndClear @story-2.81 @ac-20 — el trabajo suelto 
   const w = world();
   lib().update(w.sdir, 's-ad', {}, { create: true, tool: 'claude' });
   const reason = '2.44 · Arreglo el aviso del pedido !812';
-  let r = marker(w, 's-ad', ['adhoc', 'set', JSON.stringify({ reason })], conVentana({}));
+  let r = marker(w, 's-ad', ['adhoc', 'set', JSON.stringify({ reason, datos: 'sin-cambio' })], conVentana({}));
   assert.strictEqual(r.status, 0, r.stderr + r.stdout);
   const { plain } = require(OFFICE);
   const st = stateOf(w, 's-ad');

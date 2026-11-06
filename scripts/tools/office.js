@@ -1409,7 +1409,7 @@ function page(data, { live = null } = {}) {
 // Una clave de la configuración, con el mismo lector que el comando /org-site: sale 0 con el valor, 3 si no está y 2 si
 // la configuración no se pudo leer.
 function readConfigKey(key) {
-  const r = require('child_process').spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'lib', 'tycon-config.js'), 'get', key], { input: '', encoding: 'utf8', timeout: 5000 });
+  const r = require('child_process').spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'lib', 'tycon-config.js'), 'get', key], { input: '', encoding: 'utf8', timeout: 5000, windowsHide: true });
   return { code: r.status == null ? 2 : r.status, out: r.status === 0 ? r.stdout : (r.stderr || r.stdout || (r.error && r.error.message) || '') };
 }
 // La dirección del sitio de la organización.
@@ -2121,7 +2121,7 @@ async function collect(opts = {}) {
 // argumento, así un `&`, un `|` o un `^` de la ruta no corren otra orden.
 function openFile(target, { platform = process.platform, spawn: run = spawn } = {}) {
   const [cmd, args] = platform === 'darwin' ? ['open', [target]] : platform === 'win32' ? ['rundll32', ['url.dll,FileProtocolHandler', target]] : ['xdg-open', [target]];
-  const child = run(cmd, args, { stdio: 'ignore', detached: true });
+  const child = run(cmd, args, { stdio: 'ignore', detached: true, windowsHide: true });
   child.on('error', () => process.stderr.write(`office.js: no pude abrirla; abrila a mano: ${target}\n`));
   child.unref();
 }
@@ -2170,7 +2170,7 @@ async function openLive(home = os.homedir()) {
     if (await answers(current)) return { url: urlOf(current), reused: true };
     const log = path.join(dir, 'server.log');
     const out = fs.openSync(log, 'a', 0o600);
-    const child = spawn(process.execPath, [path.join(__dirname, 'office', 'server.js')], { detached: true, stdio: ['ignore', 'ignore', out] });
+    const child = spawn(process.execPath, [path.join(__dirname, 'office', 'server.js')], { detached: true, stdio: ['ignore', 'ignore', out], windowsHide: true });
     fs.closeSync(out);
     let exited = null;
     child.on('exit', (code) => { exited = code; });

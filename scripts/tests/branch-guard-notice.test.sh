@@ -249,7 +249,7 @@ estado "$H" "{\"schema\":1,\"mode\":\"managed\",\"tree\":\"/\",\"notice\":null,$
 g -C "$H.up" checkout -q mirror/sync; printf 'sync reescrita\n' > "$H.up/skills/own/SKILL.md"; g -C "$H.up" commit -q --amend -am S2; g -C "$H.up" checkout -q main
 g -C "$H/.claude/agent-skills" fetch -q origin '+refs/heads/*:refs/remotes/origin/*'
 out="$(TYCON_UPDATE_APPLY=auto notice "$H")"; rc=$?
-if [ "$rc" -eq 0 ] && grep -q 'ARNÉS ATRASADO' <<<"$out" && grep -q 'origin/mirror/sync' <<<"$out" && grep -q 'harness.js update' <<<"$out" && ! grep -q 'merge --ff-only origin/main' <<<"$out"; then
+if [ "$rc" -eq 0 ] && grep -q 'ARNÉS ATRASADO' <<<"$out" && grep -q 'origin/mirror/sync' <<<"$out" && grep -q 'harness.js" update' <<<"$out" && ! grep -q 'merge --ff-only origin/main' <<<"$out"; then
   ok "A4 la rama del canal se movió en el remoto: «atrasado» contra origin/mirror/sync, y el consejo es harness.js update"
 else bad "A4 atraso contra la ref del estado (rc=$rc): $out"; fi
 
@@ -331,7 +331,7 @@ else bad "REG-A3 en main con tycon/installed ya creada (rc=$rc, consejo rc=$rcb,
 printf 'v3\n' > "$H.up/skills/tycon-pipeline/SKILL.md"; g -C "$H.up" commit -q -am 'C: otra version'; g -C "$CL" fetch -q origin
 out="$(TYCON_UPDATE_APPLY=auto notice_at "$H")"; rc=$?
 if [ "$rc" -eq 0 ] && grep -q 'ARNÉS ATRASADO' <<<"$out" && [ "$(offenders "$out")" = 1 ] && grep -q '1 commit' <<<"$out" \
-   && grep -q 'harness.js update' <<<"$out" && ! grep -q 'FUERA de\|merge --ff-only\|checkout main' <<<"$out"; then
+   && grep -q 'harness.js" update' <<<"$out" && ! grep -q 'FUERA de\|merge --ff-only\|checkout main' <<<"$out"; then
   ok "REG-A4 repo único atrasado: un solo renglón, sin «FUERA de», y el consejo es harness.js update"
 else bad "REG-A4 repo único atrasado (rc=$rc): $out"; fi
 # …y la ref es la del estado: siguiendo `mirror/sync` (parado en su punta), que origin/main haya seguido no es atraso
@@ -350,14 +350,14 @@ out="$(TYCON_UPDATE_APPLY=auto notice_at "$H")"; rc=$?
 # 🔴 sin esto salen dos renglones, y para «agent-skills» (el mismo clon) el consejo `git stash` + `merge --ff-only origin/main`
 printf 'v2\n' > "$H.up/skills/tycon-pipeline/SKILL.md"; g -C "$H.up" commit -q -am 'B: version nueva'; g -C "$CL" fetch -q origin
 out="$(TYCON_UPDATE_APPLY=auto notice_at "$H")"
-if grep -q 'ARNÉS ATRASADO' <<<"$out" && [ "$(offenders "$out")" = 1 ] && grep -q 'harness.js update' <<<"$out" \
+if grep -q 'ARNÉS ATRASADO' <<<"$out" && [ "$(offenders "$out")" = 1 ] && grep -q 'harness.js" update' <<<"$out" \
    && ! grep -q 'merge --ff-only\|git -C .* stash\|FUERA de' <<<"$out"; then
   ok "REG-A5 recién instalado y atrasado: un renglón, y el consejo es harness.js update (nunca un merge con origin/main)"
 else bad "REG-A5 recién instalado y atrasado (renglones $(offenders "$out")): $out"; fi
 g -C "$CL" checkout -q -b mine
 out="$(TYCON_UPDATE_APPLY=auto notice_at "$H")"
 if [ "$(offenders "$out")" = 1 ] && grep -q 'está en "mine"' <<<"$out" && ! grep -q 'checkout main\|checkout tycon/installed' <<<"$out" \
-   && ! grep -qi 'volver a main' <<<"$out" && grep -q 'harness.js update' <<<"$out"; then
+   && ! grep -qi 'volver a main' <<<"$out" && grep -q 'harness.js" update' <<<"$out"; then
   ok "REG-A5 recién instalado y en otra rama: avisa una vez; el consejo no es checkout main ni un checkout de una rama que no existe"
 else bad "REG-A5 recién instalado en otra rama (renglones $(offenders "$out")): $out"; fi
 # una fuente `harness` sin `dir` en el estado: su carpeta es el `tree` del estado
@@ -408,7 +408,7 @@ out="$(TYCON_UPDATE_APPLY=auto notice "$H")"
 # only_unread <salida> <texto que tiene que nombrar>: una sola línea, «no pude leer», sin veredicto ni cambio de rama
 only_unread() {
   [ "$(grep -c . <<<"$1")" = 1 ] && grep -q 'no pude leer' <<<"$1" && grep -qF -- "$2" <<<"$1" \
-    && ! grep -q 'FUERA de\|Volver:\|checkout\|ARNÉS ATRASADO\|merge --ff-only\|harness.js update' <<<"$1"
+    && ! grep -q 'FUERA de\|Volver:\|checkout\|ARNÉS ATRASADO\|merge --ff-only\|harness.js" update' <<<"$1"
 }
 # la rama tycon/installed con basura adentro, y el clon del público parado en main
 # 🔴 sin esto, el `rev-parse --verify` fallido se lee como «todavía no existe» → main vale como rama de casa y el

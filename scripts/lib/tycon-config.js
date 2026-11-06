@@ -210,8 +210,9 @@ const VOCABULARIO = Object.freeze({
   // Cómo contesta el asistente: el idioma y el estilo del bloque de respuesta del CLAUDE.md (y del AGENTS.md),
   // y el tope de prosa que mide el medidor de estilo. Cerrados: cada estilo es un texto revisado en
   // claude-md-blocks/response-style/<estilo>.<idioma>.md, y un valor fuera de la lista es configuración ROTA (el
-  // sincronizador deja el bloque que había). Sin valor: `neutral` en `es`, y el tope del estilo (TOPE_POR_ESTILO).
-  response: Object.freeze({ language: 'opcion:es|en', style: 'opcion:executive|detailed|neutral', max_chars: 'entero:300-4000' }),
+  // sincronizador deja el bloque que había). `auto` contesta en el idioma en que escribe la persona: su texto,
+  // <estilo>.auto.md, es el de `es` más esa regla. Sin valor: `neutral` en `auto`, y el tope del estilo (TOPE_POR_ESTILO).
+  response: Object.freeze({ language: 'opcion:es|en|auto', style: 'opcion:executive|detailed|neutral', max_chars: 'entero:300-4000' }),
   // Quién puede reenviar el ok de un dev: el nombre de la sesión (la coordinadora de una organización) cuyos
   // mensajes valen como reenvío textual del ok del dev para eximir un crítico o firmar un criterio que no se puede probar
   // en vivo. Sin valor, nadie. Vale SÓLO desde el perfil del equipo (PROFILE_ONLY).
@@ -302,7 +303,7 @@ const TOPE_POR_ESTILO = Object.freeze({ executive: 1300, detailed: 3000, neutral
 const DEFAULTS = Object.freeze({
   'update.channel': 'stable', 'update.apply': 'ask', 'update.skills_source': 'separate', 'packs.default': 'none',
   'update.source': 'public', 'rutas.tree': '~/.claude/.tycon-pipeline/harness/tree',
-  'response.language': 'es', 'response.style': 'neutral', 'guard.update': 'password',
+  'response.language': 'auto', 'response.style': 'neutral', 'guard.update': 'password',
 });
 // Las claves en las que el PERFIL DEL EQUIPO le gana al archivo de la máquina (story 8.29, decisión del dueño del
 // 2026-10-11). Para todo lo demás el orden es el de siempre: variable › máquina › perfil. Para éstas: variable › perfil ›
@@ -1660,6 +1661,30 @@ const GUARD_INSTALL = 'sudo bash ~/.tycon/harness/scripts/production/install-gua
 // aviso de «configuración ROTA» en cada sesión por haber elegido nombres es un costo que no vale. Se escribe después de
 // poner al día el freno.
 const GUARD_FIRST = Object.freeze(['coordination.session_names']);
+// Lo mismo, por valor: una opción nueva de una clave que el freno instalado ya conoce. Con un freno anterior, `auto` en
+// el archivo de la máquina es una opción fuera de su lista y la configuración entera queda ROTA para él. El perfil del
+// equipo no cuenta: el freno instalado no lo lee.
+const GUARD_FIRST_VALUES = Object.freeze({ 'response.language': Object.freeze(['auto']) });
+// La sección y la clave se buscan en el texto del freno tal como se escriben: un carácter especial de una expresión
+// regular no tiene que cambiar qué encaja.
+const textoLiteral = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** ¿El lector del freno instalado acepta `valor` en `seccion.clave`? `true` (o no hay freno) · `false` · el motivo si no
+ *  se pudo leer o no se reconoce cómo declara la clave. Lee la lista de la opción tal como está escrita en el
+ *  vocabulario de esa copia. */
+function guardAccepts(guardLib, seccion, clave, valor) {
+  const sabe = guardKnows(guardLib, seccion, clave);
+  if (sabe !== true) return sabe;
+  let texto;
+  try { texto = fs.readFileSync(guardLib, 'utf8'); } catch (e) {
+    if (e && e.code === 'ENOENT') return true;
+    return `no pude leerlo (${(e && e.code) || e.message})`;
+  }
+  const cuerpo = new RegExp(`\\b${textoLiteral(seccion)}\\s*:\\s*(?:Object\\.freeze\\s*\\(\\s*)?\\{([^}]*)\\}`).exec(texto);
+  const opcion = cuerpo && new RegExp(`(?:^|[\\s,{])${textoLiteral(clave)}\\s*:\\s*'opcion:([^']*)'`).exec(cuerpo[1]);
+  // no reconocer la forma no es «no acepta»: se dice tal cual, y igual no se escribe
+  if (!opcion) return `no reconozco cómo declara «${enArchivo(seccion)}.${clave}»`;
+  return opcion[1].split('|').includes(valor);
+}
 /** ¿El lector del freno instalado conoce la sección (y, con `clave`, la clave dentro de ella)? `true` (o no hay freno) ·
  *  `false` · el motivo si no se pudo leer (no poder leerlo no es «lo conoce»: se avisa igual, con el motivo). */
 function guardKnows(guardLib, seccion, clave) {
@@ -1670,11 +1695,11 @@ function guardKnows(guardLib, seccion, clave) {
   }
   // la sección como clave de un objeto, congelado o no (`update: Object.freeze({` o `update: {`): `channel.js` miraba sólo
   // «update:», y desde la tanda D escribe por acá (AC 34: el mismo resultado que antes)
-  const cuerpo = new RegExp(`\\b${seccion}\\s*:\\s*(?:Object\\.freeze\\s*\\(\\s*)?\\{([^}]*)\\}`).exec(texto);
+  const cuerpo = new RegExp(`\\b${textoLiteral(seccion)}\\s*:\\s*(?:Object\\.freeze\\s*\\(\\s*)?\\{([^}]*)\\}`).exec(texto);
   if (!cuerpo) return false;
   // la clave adentro (story 8.13.1): un freno que ya conoce `update` pero no `update.source` rechaza la clave nueva igual
   // que una sección nueva — mirar sólo la sección dejaba escribir `source` o `tree` sin aviso
-  return !clave || new RegExp(`(?:^|[\\s,{])${clave}\\s*:`).test(cuerpo[1]);
+  return !clave || new RegExp(`(?:^|[\\s,{])${textoLiteral(clave)}\\s*:`).test(cuerpo[1]);
 }
 function escribirAtomico(file, texto) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -1742,6 +1767,10 @@ function setKey(home = os.homedir(), clave, valorNuevo, { env = process.env, gua
   if (GUARD_FIRST.includes(`${seccion}.${k}`)) {
     const sabe = guardKnows(guardLib, seccion, k);
     if (sabe !== true) return { ok: false, file, reason: `no lo escribí: el freno de producción instalado (${guardLib}) ${sabe === false ? `es anterior a la clave «${enArchivo(seccion)}.${k}»` : sabe}, y con ella en ${file} diría «configuración ROTA» en cada sesión. Primero ponelo al día (pide tu contraseña): ${GUARD_INSTALL} — y después volvé a correr este comando` };
+  }
+  if ((GUARD_FIRST_VALUES[`${seccion}.${k}`] || []).includes(valorEscrito)) {
+    const acepta = guardAccepts(guardLib, seccion, k, valorEscrito);
+    if (acepta !== true) return { ok: false, file, reason: `no lo escribí: el freno de producción instalado (${guardLib}) ${acepta === false ? `no acepta «${enArchivo(seccion)}.${k}: ${valorEscrito}»` : acepta}, y con él en ${file} diría «configuración ROTA» en cada sesión. Primero ponelo al día (pide tu contraseña): ${GUARD_INSTALL} — y después volvé a correr este comando` };
   }
   const lm = leerJson(file);
   if (lm.estado === 'roto') return { ok: false, file, reason: `${file}: ${lm.motivo} — no se escribe sobre un archivo roto; arreglalo primero (node scripts/lib/tycon-config.js validate)` };
@@ -1871,7 +1900,7 @@ module.exports = {
   VOCABULARIO, DEFAULTS, PROFILE_WINS, PROFILE_ONLY, INTEGRACIONES, LAS_OCHO, TOOLS, toolKeys, coordinacion, temasDeSesion, sessionNames, COMO_SE_PRENDE, VARIABLES, INTERRUPTORES_POR_HOOK, RAIZ_ARNES, NOMBRE_PERFIL, NOMBRE_PERFIL_VIEJO, perfilDelArbol, avisoNombrePerfil, NOMBRE_ENLACE, PLACE_NAME, LEGACY_PLACE_NAME, DONDE_CLAVES, ConfigError,
   rutaMaquina, nombreArchivoMaquina, comoSePrende, rutaPerfil, leerPerfil, rutaLlaveBuzon, cargar, leer, leerParaHook, avisoParaHook, valor, explicar, estadoEnlace, formaPersonal,
   normalizarOrg, nombreDeOrganizacion, resolverRutaDeArchivo, personalEnComentario,
-  esIntegracion, estadoIntegracion, integraciones, timeTracking, plataforma, validarTipo, delegaFirma, AREAS_PLATAFORMA, respuesta, modelProvider, TOPE_POR_ESTILO, integracionParaComando, integracionParaHook, sinAnotar, setKey, cli,
+  esIntegracion, estadoIntegracion, integraciones, timeTracking, plataforma, validarTipo, delegaFirma, AREAS_PLATAFORMA, respuesta, modelProvider, TOPE_POR_ESTILO, integracionParaComando, integracionParaHook, sinAnotar, setKey, guardKnows, guardAccepts, cli,
   SWITCHES, switchState, switchOn, brakeOptIns,
 };
 

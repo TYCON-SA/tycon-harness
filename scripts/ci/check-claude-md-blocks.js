@@ -52,7 +52,8 @@ const BUDGET = `${DIR}/budget.json`;
 // El tope de prosa más largo que acepta el lector (`response.max_chars`, scripts/lib/tycon-config.js): una variante de
 // estilo se mide con él puesto en `{{max_chars}}`.
 const TOPE_MAXIMO = 4000;
-const VARIANTE_DE_ESTILO = /^[a-z]+\.[a-z]{2}\.md$/;
+// `<estilo>.<idioma>.md`: un idioma de dos letras, o `auto` (contesta en el idioma de la persona)
+const VARIANTE_DE_ESTILO = /^[a-z]+\.(?:[a-z]{2}|auto)\.md$/;
 
 // ── Los títulos sin fecha ni historia ────────────────────────────────────────
 // El título de un bloque es la línea que sigue a un `# ====` de su cabecera. Viaja a cada sesión de cada organización:

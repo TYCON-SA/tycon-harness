@@ -104,14 +104,14 @@ test('T1 · Reloop_TerceraSinNota_Frena', () => {
     assert.match(r.stderr, /TEST-C1/, 'dice qué hallazgo volvió');
     assert.match(r.stderr, /src\/a\.js/);
     assert.doesNotMatch(r.stderr, /SEC-C2/, 'un hallazgo de una sola vuelta no volvió');
-    assert.match(r.stderr, /marker\.js rethink --iter 3/, 'dice el comando de la nota');
+    assert.match(r.stderr, /marker\.js" rethink --iter 3/, 'dice el comando de la nota');
   }
   // sin findings.json no se puede saber qué volvió, y lo dice en vez de inventar
   const { repo: sinInforme } = mkRepo();
   const s = reloop(sinInforme, 3);
   assert.notEqual(s.status, 0);
   assert.match(s.stderr, /No puedo saber/);
-  assert.match(s.stderr, /marker\.js rethink --iter 3/);
+  assert.match(s.stderr, /marker\.js" rethink --iter 3/);
 });
 
 // ── T2 ───────────────────────────────────────────────────────────────────────────────────────────
@@ -174,7 +174,7 @@ test('T4 · Reloop_ConNota_Sigue_YLaCuarta_PideOtra', () => {
   assert.ok(Array.isArray(JSON.parse(forzada.stdout).rerun), 'forzada, con la nota, también devuelve el set');
   const cuatro = reloop(repo, 4);
   assert.notEqual(cuatro.status, 0, 'la cuarta pide su propia nota');
-  assert.match(cuatro.stderr, /marker\.js rethink --iter 4/);
+  assert.match(cuatro.stderr, /marker\.js" rethink --iter 4/);
   assert.equal(nota(repo, 4, ['--keep', IGUAL]).status, 0);
   assert.equal(reloop(repo, 4).status, 0);
 });
@@ -241,7 +241,7 @@ test('T7 · Advisors_TerceraSinNota_Frena', () => {
   const sin = adv(3);
   assert.notEqual(sin.status, 0, `tendría que frenar: ${sin.stdout.slice(0, 200)}`);
   assert.doesNotMatch(sin.stdout, /"all"/, 'no devuelve el set');
-  assert.match(sin.stderr, /marker\.js rethink --iter 3/);
+  assert.match(sin.stderr, /marker\.js" rethink --iter 3/);
   assert.equal(adv(2).status, 0, 'la segunda vuelta sigue como hoy');
   assert.equal(nota(repo, 3).status, 0);
   assert.equal(adv(3).status, 0, 'con la nota sigue');
@@ -394,7 +394,7 @@ test('T14 · Freno_UsaLaVueltaEfectiva_NoLaDeclarada', () => {
     const r = corre(cmd, extra);
     assert.notEqual(r.status, 0, `${cmd} ${extra.join(' ')} tendría que frenar: ${r.stdout.slice(0, 160)}`);
     assert.doesNotMatch(r.stdout, /"rerun"|"all"/, 'no devuelve el set');
-    assert.match(r.stderr, /marker\.js rethink --iter 3/, 'pide la nota de la vuelta efectiva');
+    assert.match(r.stderr, /marker\.js" rethink --iter 3/, 'pide la nota de la vuelta efectiva');
     if (extra.length) assert.match(r.stderr, new RegExp(`Pediste la vuelta ${extra[1]}, pero el marcador`), 'dice las dos vueltas');
   }
   assert.equal(nota(repo, 3).status, 0);
@@ -495,7 +495,7 @@ test('T18 · SinMarcador_Iter1EnLaTerceraVuelta_FrenaPorServed', () => {
     const r = corre(cmd, extra);
     assert.notEqual(r.status, 0, `${cmd} ${extra.join(' ')} en la tercera vuelta tendría que frenar: ${r.stdout.slice(0, 160)}`);
     assert.doesNotMatch(r.stdout, /"rerun"|"all"/);
-    assert.match(r.stderr, /marker\.js rethink --iter 3/, 'pide la nota de la vuelta 3');
+    assert.match(r.stderr, /marker\.js" rethink --iter 3/, 'pide la nota de la vuelta 3');
     assert.match(r.stderr, /ya se sirvió la vuelta 2/, 'dice por qué cuenta la tercera');
   }
   // con la nota de la vuelta 3 sale la 3, y cualquier pedido siguiente (aunque repita la 3) es la 4 y pide su nota
@@ -503,7 +503,7 @@ test('T18 · SinMarcador_Iter1EnLaTerceraVuelta_FrenaPorServed', () => {
   assert.equal(corre('smart-reloop', ['--iter', '1']).status, 0, 'con la nota de la 3 sale la 3');
   const cuarta = corre('smart-reloop', ['--iter', '3']);
   assert.notEqual(cuarta.status, 0, 'pedir la 3 ya servida es la 4: pide su nota');
-  assert.match(cuarta.stderr, /marker\.js rethink --iter 4/);
+  assert.match(cuarta.stderr, /marker\.js" rethink --iter 4/);
   // un registro de vueltas servidas ilegible frena: no se sabe cuántas van
   fs.writeFileSync(path.join(run, 'rethink', 'served.json'), '{roto');
   const r = corre('smart-reloop', ['--iter', '1']);
@@ -525,7 +525,7 @@ test('T19 · Marcador_IterGuardado_CuentaLaVuelta', () => {
     { encoding: 'utf8', env: env(h) });
   assert.notEqual(r.status, 0, r.stdout.slice(0, 160));
   assert.doesNotMatch(r.stdout, /"rerun"/);
-  assert.match(r.stderr, /marker\.js rethink --iter 3/);
+  assert.match(r.stderr, /marker\.js" rethink --iter 3/);
 });
 
 // ── T20 ──────────────────────────────────────────────────────────────────────────────────────────
@@ -586,7 +586,7 @@ test('T21 · 🔴 sale rojo si sin --story el freno ignora la story del marcador
   const r = sinStory('smart-reloop', ['--iter', '1']);
   assert.notEqual(r.status, 0, r.stdout.slice(0, 160));
   assert.doesNotMatch(r.stdout, /"rerun"/);
-  assert.match(r.stderr, /marker\.js rethink --iter 3/);
+  assert.match(r.stderr, /marker\.js" rethink --iter 3/);
   // marcador sin story y sin --story: no hay corrida; con --iter 3 frena
   fs.writeFileSync(path.join(activo, `${SID}.json`), JSON.stringify({ sessionId: SID, repoPath: repo }));
   assert.equal(sinStory('smart-reloop', ['--iter', '1']).status, 0);
@@ -610,7 +610,7 @@ test('T22 · 🔴 sale rojo si pedir otra vez una vuelta ya servida devuelve el 
   const r = corre('smart-reloop', ['--iter', '2']);
   assert.notEqual(r.status, 0, r.stdout.slice(0, 160));
   assert.doesNotMatch(r.stdout, /"rerun"|"all"/);
-  assert.match(r.stderr, /marker\.js rethink --iter 3/);
+  assert.match(r.stderr, /marker\.js" rethink --iter 3/);
   assert.match(r.stderr, /ya se sirvió la vuelta 2/);
 });
 

@@ -558,3 +558,99 @@ test('OwnPrs_OneQueryPerPlace — los pedidos de la persona, de todos sus repos;
   const muchos = fake('az3', { value: Array.from({ length: 1000 }, (_, i) => azPr(i, mail('ana'), 'M', 'B')) });
   assert.match(SPN().leerPropios({ repos: repos.slice(1), env: { ...process.env, TYCON_ADO_CMD: muchos } }).fallos[0], /puede faltar alguno/);
 });
+
+// 🔴 Falla con: en Windows gh se lanza por la consola (shell), y gh abre su propia ventana negra al leer los pedidos.
+test('OwnPrs_WindowsGhWithoutShell — en Windows gh va directo y oculto; az, por la consola con cada argumento entre comillas', () => {
+  const { llamadaDe } = SPN();
+  const gh = llamadaDe('gh', ['api', 'graphql', '-f', 'query=query { viewer { login } }'], 'win32');
+  assert.deepStrictEqual(gh, { file: 'gh', args: ['api', 'graphql', '-f', 'query=query { viewer { login } }'], shell: false }, 'gh es gh.exe: sin consola en el medio');
+  assert.deepStrictEqual(llamadaDe('az', ['account', 'show', '--query', 'user.name'], 'win32'),
+    { file: 'az', args: ['"account"', '"show"', '"--query"', '"user.name"'], shell: true }, 'az es az.cmd: sólo corre por la consola');
+  assert.deepStrictEqual(llamadaDe('az', ['account', 'show'], 'darwin'), { file: 'az', args: ['account', 'show'], shell: false });
+  assert.equal(llamadaDe('az', ['a"b'], 'win32').problem, 'az: argumentos con caracteres no seguros para la consola');
+  // lo que llega a spawnSync: oculto siempre
+  const vistas = [];
+  const run = (file, args, opts) => { vistas.push({ file, args, opts }); return { status: 0, stdout: '{}' }; };
+  SPN().salidaDe('gh', ['api'], { plataforma: 'win32', run });
+  assert.equal(vistas[0].opts.shell, false);
+  assert.equal(vistas[0].opts.windowsHide, true);
+  assert.equal(SPN().salidaDe('az', ['a"b'], { plataforma: 'win32', run }), '', 'un argumento que la consola leería distinto no se lanza');
+  assert.equal(llamadaDe('az', ['C:\\dir\\'], 'win32').problem, 'az: argumentos con caracteres no seguros para la consola', 'una barra al final escaparía la comilla');
+  assert.equal(vistas.length, 1);
+  // un doble con ruta: un .cmd va por la consola (con la ruta entre comillas si tiene espacios); un .js, con Node
+  assert.deepStrictEqual(llamadaDe('C:\\Program Files\\az.cmd', ['account'], 'win32'), { file: '"C:\\Program Files\\az.cmd"', args: ['"account"'], shell: true });
+  assert.deepStrictEqual(llamadaDe('D:\\t\\fake-az.js', ['account'], 'win32'), { file: process.execPath, args: ['D:\\t\\fake-az.js', 'account'], shell: false });
+  // las consultas de verdad: en Windows gh sale sin consola y cada argumento de az pasa por la consola, entre comillas
+  const llamadas = [];
+  const responde = (file, args, opts) => {
+    llamadas.push({ file, args, opts });
+    if (file === 'gh') return { status: 0, stdout: JSON.stringify({ data: { viewer: { login: 'yo' }, search: { nodes: [] } } }) };
+    return { status: 0, stdout: args.includes('"account"') ? mail('yo') : JSON.stringify({ value: [] }) };
+  };
+  const repos = [{ platform: 'github', org: 'org', repo: 'uno' }, { platform: 'azure', org: 'biz', project: 'P', repo: 'r' }];
+  const leido = SPN().leerPropios({ repos, env: { PATH: process.env.PATH }, plataforma: 'win32', run: responde });
+  assert.deepStrictEqual(leido.fallos, [], 'las consultas de verdad pasan el filtro de la consola: nada quedó sin leer');
+  assert.deepStrictEqual(llamadas.map((l) => [l.file, l.opts.shell, l.opts.windowsHide]), [['gh', false, true], ['az', true, true], ['az', true, true]]);
+  assert.ok(llamadas.slice(1).every((l) => l.args.every((a) => /^".*"$/.test(a))), 'cada argumento de az, entre comillas');
+});
+
+/** ¿La llamada pide windowsHide: true en su objeto de opciones (el último argumento, al primer nivel de llaves)? */
+function ocultaLaVentana(call) {
+  const inner = call.slice(call.indexOf('(') + 1, call.lastIndexOf(')'));
+  let depth = 0, start = 0, quote = null;
+  for (let i = 0; i < inner.length; i++) {
+    const ch = inner[i];
+    if (quote) { if (ch === '\\') i++; else if (ch === quote) quote = null; continue; }
+    if (ch === "'" || ch === '"' || ch === '`') { quote = ch; continue; }
+    if ('([{'.includes(ch)) depth++;
+    else if (')]}'.includes(ch)) depth--;
+    else if (ch === ',' && depth === 0) start = i + 1;
+  }
+  const last = inner.slice(start).trim();
+  if (!last.startsWith('{')) return false;
+  depth = 0; quote = null;
+  for (let i = 0; i < last.length; i++) {
+    const ch = last[i];
+    if (quote) { if (ch === '\\') i++; else if (ch === quote) quote = null; continue; }
+    if (ch === "'" || ch === '"' || ch === '`') { quote = ch; continue; }
+    if ('([{'.includes(ch)) depth++;
+    else if (')]}'.includes(ch)) depth--;
+    else if (depth === 1 && /^windowsHide\s*:\s*true/.test(last.slice(i))) return true;
+  }
+  return false;
+}
+
+// 🔴 Falla con: algo que la oficina o el aviso de arranque lanzan cada pocos minutos no oculta su ventana, y en Windows
+// se abre una consola negra (gh, el servidor de la oficina, la lectura de cada repo de GitHub).
+test('Windows_EverythingTheOfficeLaunchesHidesItsWindow — lo que lanzan el aviso, la oficina y la lectura de GitHub, oculto', () => {
+  const archivos = [
+    HOOK,
+    path.join(ROOT, 'scripts', 'tools', 'office.js'),
+    path.join(ROOT, 'scripts', 'tools', 'office', 'server.js'),
+    ...fs.readdirSync(path.join(ROOT, 'integrations', 'github', 'scripts')).filter((f) => f.endsWith('.js')).map((f) => path.join(ROOT, 'integrations', 'github', 'scripts', f)),
+  ];
+  const sinOcultar = [];
+  let llamadas = 0;
+  for (const f of archivos) {
+    const text = fs.readFileSync(f, 'utf8');
+    const re = /(?<!\w)(?:spawnSync|spawn|execFileSync|execFile|execSync)\(|(?<![\w.])run\(/g;   // `require('child_process').spawnSync(` también
+    let m;
+    while ((m = re.exec(text))) {
+      let depth = 0, i = m.index + m[0].length - 1;
+      for (; i < text.length; i++) { if (text[i] === '(') depth++; else if (text[i] === ')') { depth--; if (!depth) break; } }
+      const call = text.slice(m.index, i + 1);
+      const line = text.slice(0, m.index).split('\n').length;
+      const lineText = text.split('\n')[line - 1];
+      if (/^\s*(\/\/|\*)/.test(lineText)) continue;
+      // `run(` cuenta sólo cuando lanza un proceso con sus opciones (tres argumentos), no como nombre de otra función
+      if (m[0] === 'run(' && (/function\s+$/.test(text.slice(0, m.index)) || !/^run\([^,]+,[^,]+,/.test(call))) continue;
+      llamadas++;
+      if (!ocultaLaVentana(call)) sinOcultar.push(`${path.relative(ROOT, f)}:${line}`);
+    }
+  }
+  assert.ok(llamadas >= 5, `la red no encontró lanzamientos que mirar (${llamadas}): no midió nada`);
+  assert.deepStrictEqual(sinOcultar, [], 'lanzamientos sin windowsHide: true en sus opciones (en Windows abren una consola)');
+  assert.equal(ocultaLaVentana("spawnSync('gh', ['x'], { windowsHide: true, env })"), true);
+  assert.equal(ocultaLaVentana("spawnSync('gh', ['x'], { env: Object.assign({}, env, { windowsHide: true }) })"), false);
+  assert.equal(ocultaLaVentana("spawnSync('gh', ['x'])"), false);
+});

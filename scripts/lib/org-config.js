@@ -104,6 +104,8 @@ const SECCIONES = Object.freeze([
   Object.freeze({ id: 'espera', titulo: 'Aviso de espera', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['wait_notice'], idCorto: 'repos', necesita: ['wait_notice'] }),
   // el umbral del aviso de contexto: cuántos tokens lleva una sesión antes de recomendar /clear o una sesión nueva
   Object.freeze({ id: 'contexto', titulo: 'Aviso de contexto', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['context_notice'], idCorto: 'repos', necesita: ['context_notice'] }),
+  // la revisión de la semana: si corre y sus dos topes (dólares por ejecución y caracteres de material)
+  Object.freeze({ id: 'revisionSemanal', titulo: 'Revisión de la semana', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['weekly_review'], idCorto: 'repos', necesita: ['weekly_review'] }),
   // la política del pase adversarial de la organización: always o auto, sin off (saltearlo lo firma el dueño)
   Object.freeze({ id: 'paseAdversarial', titulo: 'Pase adversarial', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['deep_review'], idCorto: 'repos', necesita: ['deep_review'] }),
   // el umbral de cobertura de las líneas nuevas: el control de pruebas avisa por debajo de este porcentaje
@@ -215,7 +217,9 @@ const ESTIMATES_SINCE = '2026.10.23.40';
 // Provisorias hasta la etiqueta del merge que las trae al lector: están puestas para frenar de más, no de menos
 const CONTEXT_NOTICE_SINCE = '2026.11.01.30';
 const DEEP_REVIEW_SINCE = '2026.11.01.30';
-const CLAVES_CON_VERSION = Object.freeze([['merge_suites', MERGE_SUITES_SINCE], ['models', MODELS_SINCE], ['wait_notice', WAIT_NOTICE_SINCE], ['coverage', COVERAGE_SINCE], ['review', REVIEW_SINCE], ['stack', STACK_SINCE], ['estimates', ESTIMATES_SINCE], ['context_notice', CONTEXT_NOTICE_SINCE], ['deep_review', DEEP_REVIEW_SINCE]]);
+// `weekly_review`: la etiqueta del merge que la trajo al lector
+const WEEKLY_REVIEW_SINCE = '2026.10.19.20';
+const CLAVES_CON_VERSION = Object.freeze([['merge_suites', MERGE_SUITES_SINCE], ['models', MODELS_SINCE], ['wait_notice', WAIT_NOTICE_SINCE], ['coverage', COVERAGE_SINCE], ['review', REVIEW_SINCE], ['stack', STACK_SINCE], ['estimates', ESTIMATES_SINCE], ['context_notice', CONTEXT_NOTICE_SINCE], ['deep_review', DEEP_REVIEW_SINCE], ['weekly_review', WEEKLY_REVIEW_SINCE]]);
 /** La versión que tiene que pedir el perfil para este `team-repos.json` (sin archivo, la de siempre), y las claves por las que la pide. */
 function versionQuePide(doc) {
   let version = TEAM_REPOS_SINCE; const claves = [];
@@ -1668,6 +1672,7 @@ ${trabajandoJs}
     cobertura: { t: T('pantalla.coberturaDeLasPruebas'), d: T('pantalla.llegaATodasLasMaquinas5'), corto: T('pantalla.coberturaDeLasPruebas') },
     revision: { t: T('pantalla.vueltasDeRevisores'), d: T('pantalla.vueltasDeRevisoresAyuda'), corto: T('pantalla.vueltasDeRevisores') },
     contexto: { t: T('pantalla.avisoDeContexto'), d: T('pantalla.avisoDeContextoAyuda'), corto: T('pantalla.avisoDeContexto') },
+    revisionSemanal: { t: T('pantalla.revisionSemanal'), d: T('pantalla.revisionSemanalAyuda'), corto: T('pantalla.revisionSemanal') },
     paseAdversarial: { t: T('pantalla.paseAdversarialTitulo'), d: T('pantalla.paseAdversarialAyuda'), corto: T('pantalla.paseAdversarialTitulo') },
     estimaciones: { t: T('pantalla.estimaciones'), d: T('pantalla.estimacionesAyuda'), corto: T('pantalla.estimaciones') },
     tecnologia: { t: T('pantalla.tecTuTecnologia'), d: T('pantalla.tecLlegaATodasLasMaquinas'), corto: T('pantalla.tecTuTecnologia') },
@@ -1691,7 +1696,7 @@ ${trabajandoJs}
     aldia: { t: T('pantalla.comoSeActualizaElSitio'), d: T('pantalla.siElSitioSePone'), corto: T('pantalla.actualizacionDelSitio') },
   };
   // las pestañas: [id, nombre, secciones, tablas para mirar]. Se ve una por vez; el resumen de arriba, en todas
-  var PESTANAS = [['personas', T('pantalla.personas'), ['organizacion', 'sitio', 'aplicar', 'aldia', 'direccionSitio', 'personas', 'responsables'], []], ['repos', T('pantalla.reposYProductos'), ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', T('pantalla.avisosYLaNoche'), ['canal', 'espera', 'umbrales', 'fichas', 'pedidos', 'contexto'], []], ['claude', T('pantalla.comoTrabajaClaude'), ['respuesta', 'modelos', 'suites', 'cobertura', 'revision', 'tecnologia', 'aprobaciones', 'pruebaAMano', 'interruptores', 'coordinacion', 'oficina', 'integraciones', 'hilos', 'estimaciones', 'paseAdversarial'], []], ['instalacion', T('pantalla.instalacionYActualizacion'), ['actualizacion', 'instalacion', 'paquetes', 'frenoProduccion'], ['contenido', 'versiones']]];
+  var PESTANAS = [['personas', T('pantalla.personas'), ['organizacion', 'sitio', 'aplicar', 'aldia', 'direccionSitio', 'personas', 'responsables'], []], ['repos', T('pantalla.reposYProductos'), ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', T('pantalla.avisosYLaNoche'), ['canal', 'espera', 'umbrales', 'fichas', 'pedidos', 'contexto'], []], ['claude', T('pantalla.comoTrabajaClaude'), ['respuesta', 'modelos', 'suites', 'cobertura', 'revisionSemanal', 'revision', 'tecnologia', 'aprobaciones', 'pruebaAMano', 'interruptores', 'coordinacion', 'oficina', 'integraciones', 'hilos', 'estimaciones', 'paseAdversarial'], []], ['instalacion', T('pantalla.instalacionYActualizacion'), ['actualizacion', 'instalacion', 'paquetes', 'frenoProduccion'], ['contenido', 'versiones']]];
   /** La pestaña de un ancla (#pestana-x, #seccion-x o una tabla para mirar); null si no es de ninguna. */
   function pestanaDe(ancla) {
     var id = String(ancla || '').replace(/^#/, '');
@@ -1729,7 +1734,7 @@ ${trabajandoJs}
     work_items: T('pantalla.pedidosDeTrabajo'), type: T('pantalla.pedidosTipo'), fixed_fields: T('pantalla.pedidosCamposFijos'), by_severity: T('pantalla.pedidosPorGravedad'),
     notify: T('pantalla.avisoDiario2'), channel: T('pantalla.palabraCanal'), thresholds: T('pantalla.palabraUmbrales'), direction: T('pantalla.mejorSiEs'), ok_min: T('pantalla.verdeDesde'), ok_max: T('pantalla.verdeHasta'), bad_max: T('pantalla.rojoHasta'), bad_min: T('pantalla.rojoDesde'),
     merge_suites: T('pantalla.pruebasAlMergear2'), rule: T('pantalla.regla'), full_tests_pipeline: T('pantalla.pipelineDeLasPruebasCompletas'), models: T('pantalla.palabraModelos'), mandatory_ceiling: T('pantalla.techoObligatorio'), ceiling: T('pantalla.techo'), reviewer: T('pantalla.revisor'), reviewers_reloop: T('pantalla.revisoresDeLaSegundaVuelta'), adversarial: T('pantalla.paseAdversarial'), helpers: T('pantalla.ayudantes'), session: T('pantalla.sesion'), model: T('pantalla.modelo'), heavy: T('pantalla.pesado'), fable_question: T('pantalla.preguntaAntesDeUsarFable'), low: T('pantalla.liviano'), normal: T('pantalla.normal'), codex_reviewers: T('pantalla.losRevisoresEnCodex'),
-    wait_notice: T('pantalla.avisoDeEspera2'), minutes: T('pantalla.minutos'), owner_minutes: T('pantalla.minutosAlDueno'), peer_owner_minutes: T('pantalla.minutosAlDuenoOtraSesion'), coverage: T('pantalla.coberturaDeLasPruebas2'), min_touched_lines_pct: T('pantalla.porcentajeMinimoDeLasLineas'), review: T('pantalla.vueltasDeRevisores2'), max_rounds: T('pantalla.topeDeVueltas'), context_notice: T('pantalla.avisoDeContexto2'), tokens: T('pantalla.tokens'), deep_review: T('pantalla.paseAdversarial'), estimates: T('pantalla.estimaciones2'), unit: T('pantalla.unidadDeLasEstimaciones2'), hours_per_day: T('pantalla.horasPorDia2'), hours_per_point: T('pantalla.horasPorPunto2'), blocking_prefixes: T('pantalla.prefijosDeSeguridadODatos'), public: T('pantalla.repoPublico'), profile: T('pantalla.repoDelEquipo'), operations: T('pantalla.repoDeOperaciones'), org: T('pantalla.organizacion'), project: T('pantalla.proyecto'), repo: T('pantalla.repo'), repos: T('pantalla.palabraRepos'), platform: T('pantalla.plataforma'),
+    wait_notice: T('pantalla.avisoDeEspera2'), minutes: T('pantalla.minutos'), owner_minutes: T('pantalla.minutosAlDueno'), peer_owner_minutes: T('pantalla.minutosAlDuenoOtraSesion'), coverage: T('pantalla.coberturaDeLasPruebas2'), min_touched_lines_pct: T('pantalla.porcentajeMinimoDeLasLineas'), review: T('pantalla.vueltasDeRevisores2'), max_rounds: T('pantalla.topeDeVueltas'), context_notice: T('pantalla.avisoDeContexto2'), tokens: T('pantalla.tokens'), deep_review: T('pantalla.paseAdversarial'), weekly_review: T('pantalla.revisionSemanal'), budget_usd: T('pantalla.revisionSemanalTope'), 'weekly_review.max_chars': T('pantalla.revisionSemanalMaterial'), estimates: T('pantalla.estimaciones2'), unit: T('pantalla.unidadDeLasEstimaciones2'), hours_per_day: T('pantalla.horasPorDia2'), hours_per_point: T('pantalla.horasPorPunto2'), blocking_prefixes: T('pantalla.prefijosDeSeguridadODatos'), public: T('pantalla.repoPublico'), profile: T('pantalla.repoDelEquipo'), operations: T('pantalla.repoDeOperaciones'), org: T('pantalla.organizacion'), project: T('pantalla.proyecto'), repo: T('pantalla.repo'), repos: T('pantalla.palabraRepos'), platform: T('pantalla.plataforma'),
     // las hojas de «Cómo contesta Claude» y «Cómo se actualizan»: con el nombre de su campo, también en un valor que se pisó
     style: T('pantalla.estilo'), language: T('pantalla.idioma'), max_chars: T('pantalla.largoMaximoDeProsaEn').split(' (')[0], apply: T('pantalla.comoSeAplica'),
     stack: T('pantalla.tecTuTecnologia2'), code_extensions: T('pantalla.tecTerminaciones'), test_runners: T('pantalla.tecHerramientasDePrueba'), rules: T('pantalla.tecReglas'), test_names: T('pantalla.tecEstiloDeNombres2'), screen_test: T('pantalla.tecPantallasConPrueba'), ui_language: T('pantalla.tecIdiomaDeLaApp2'), name: T('pantalla.tecNombre2'), detect: T('pantalla.tecArchivoQueLaDetecta2'), command: T('pantalla.tecComando2'), results: T('pantalla.tecReporte'), format: T('pantalla.tecFormato'), path: T('pantalla.tecRuta'),
@@ -1738,7 +1743,9 @@ ${trabajandoJs}
   /** La ruta de un problema con los nombres de la pantalla: «personas › máquinas › «mac-1»»; un número es la fila. */
   function rutaLlana(ruta) {
     if (!ruta) return '';
-    return String(ruta).split('.').map(function (p) { return /^\d+$/.test(p) ? T('pantalla.fila') + (Number(p) + 1) : PALABRAS[p] || '«' + p + '»'; }).join(' › ');
+    // una hoja que se llama igual en dos claves se nombra con su ruta de dos partes (weekly_review.max_chars)
+    var partes = String(ruta).split('.');
+    return partes.map(function (p, i) { return /^\d+$/.test(p) ? T('pantalla.fila') + (Number(p) + 1) : (i && PALABRAS[partes[i - 1] + '.' + p]) || PALABRAS[p] || '«' + p + '»'; }).join(' › ');
   }
   // [patrón, frase]: los mensajes que nombran claves del archivo, dichos con las palabras de la pantalla
   var FRASES = [
@@ -2440,8 +2447,8 @@ ${trabajandoJs}
   function editorRespuesta(s, d, pr) {
     var r = d.response || {}; var ex = s.extras || {}; var vg = ex.vigente || {}; var og = ex.origen || {};
     var box = el('div', { class: 'pila' });
-    box.appendChild(el('p', { class: 'muted', text: T('pantalla.hoy') + (hayTexto('estiloCorto_' + vg.style) ? TX['estiloCorto_' + vg.style] : vg.style) + ' · ' + ({ es: T('pantalla.castellano'), en: T('pantalla.ingles') }[vg.language] || vg.language) + ' · ' + vg.max_chars + T('pantalla.caracteres') + (og.style === 'perfil' ? T('pantalla.delPerfil') : T('pantalla.porDefecto')) + ')' }));
-    box.appendChild(selector(T('pantalla.idioma'), r.language, [['', T('pantalla.sinDeclararCastellano')], ['es', T('pantalla.castellano')], ['en', T('pantalla.ingles')]], function (v) { hoja(d, 'response', 'language', v); }, 'response.language', pr));
+    box.appendChild(el('p', { class: 'muted', text: T('pantalla.hoy') + (hayTexto('estiloCorto_' + vg.style) ? TX['estiloCorto_' + vg.style] : vg.style) + ' · ' + ({ es: T('pantalla.castellano'), en: T('pantalla.ingles'), auto: T('pantalla.idiomaDeLaPersona') }[vg.language] || vg.language) + ' · ' + vg.max_chars + T('pantalla.caracteres') + (og.style === 'perfil' ? T('pantalla.delPerfil') : T('pantalla.porDefecto')) + ')' }));
+    box.appendChild(selector(T('pantalla.idioma'), r.language, [['', T('pantalla.sinDeclararIdiomaDeLaPersona')], ['auto', T('pantalla.idiomaDeLaPersona')], ['es', T('pantalla.castellano')], ['en', T('pantalla.ingles')]], function (v) { hoja(d, 'response', 'language', v); }, 'response.language', pr));
     box.appendChild(selector(T('pantalla.estilo'), r.style, [['', T('pantalla.sinDeclararNeutro')]].concat(ESTILOS), function (v) { hoja(d, 'response', 'style', v); }, 'response.style', pr));
     box.appendChild(campo(T('pantalla.largoMaximoDeProsaEn'), r.max_chars, function (v) { hoja(d, 'response', 'max_chars', v === '' ? '' : numOTexto(v)); }, 'response.max_chars', pr, { inputmode: 'numeric' }));
     return box;
@@ -3784,6 +3791,22 @@ ${trabajandoJs}
       d.context_notice.tokens = numOTexto(v);
     }, 'context_notice.tokens', pr, { inputmode: 'numeric', placeholder: T('pantalla.avisoDeContextoDeFabrica') }));
   }
+  // la revisión de la semana: prendida o no (vacío, de fábrica: prendida) y sus dos topes. Los rangos los dice el lector
+  // al revisar; un campo vacío saca su subclave y sin subclaves sale la clave
+  function editorRevisionSemanal(s, d, pr) {
+    var w = esObjeto(d.weekly_review) ? d.weekly_review : {};
+    function poner(k, v) {
+      if (v === '') { if (esObjeto(d.weekly_review)) { delete d.weekly_review[k]; if (!Object.keys(d.weekly_review).length) delete d.weekly_review; } return; }
+      if (!esObjeto(d.weekly_review)) d.weekly_review = {};
+      d.weekly_review[k] = k === 'enabled' ? v === 'true' : numOTexto(v);
+    }
+    var en = w.enabled === false ? 'false' : w.enabled === true ? 'true' : '';
+    var ops = [['', T('pantalla.revisionSemanalDeFabrica')], ['true', T('pantalla.revisionSemanalPrendida')], ['false', T('pantalla.revisionSemanalApagada')]];
+    return el('div', { class: 'pila' },
+      selector(T('pantalla.revisionSemanalCampo'), en, ops, function (v) { poner('enabled', v); }, 'weekly_review.enabled', pr),
+      campo(T('pantalla.revisionSemanalTope'), w.budget_usd, function (v) { poner('budget_usd', v); }, 'weekly_review.budget_usd', pr, { inputmode: 'decimal', placeholder: T('pantalla.revisionSemanalTopeDeFabrica') }),
+      campo(T('pantalla.revisionSemanalMaterial'), w.max_chars, function (v) { poner('max_chars', v); }, 'weekly_review.max_chars', pr, { inputmode: 'numeric', placeholder: T('pantalla.revisionSemanalMaterialDeFabrica') }));
+  }
   // el pase adversarial: la política de la organización, que sólo puede subir (vacío = de fábrica, auto); no hay «off»
   function editorPaseAdversarial(s, d, pr) {
     var p = esObjeto(d.deep_review) ? d.deep_review : {};
@@ -3984,7 +4007,7 @@ ${trabajandoJs}
       el('p', { class: 'sub-d', text: T('pantalla.tecIdiomaVacio') })));
     return box;
   }
-  var EDITORES = { pedidos: editorPedidos, tecnologia: editorTecnologia, fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, contexto: editorContexto, paseAdversarial: editorPaseAdversarial, cobertura: editorCobertura, revision: editorRevision, estimaciones: editorEstimaciones, respuesta: editorRespuesta, integraciones: editorIntegraciones, aprobaciones: editorAprobaciones, direccionSitio: editorDireccionSitio, pruebaAMano: editorPruebaAMano, interruptores: editorInterruptores, coordinacion: editorCoordinacion, oficina: editorOficina, frenoProduccion: editorFrenoProduccion, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: editorCanal, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
+  var EDITORES = { pedidos: editorPedidos, tecnologia: editorTecnologia, fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, contexto: editorContexto, revisionSemanal: editorRevisionSemanal, paseAdversarial: editorPaseAdversarial, cobertura: editorCobertura, revision: editorRevision, estimaciones: editorEstimaciones, respuesta: editorRespuesta, integraciones: editorIntegraciones, aprobaciones: editorAprobaciones, direccionSitio: editorDireccionSitio, pruebaAMano: editorPruebaAMano, interruptores: editorInterruptores, coordinacion: editorCoordinacion, oficina: editorOficina, frenoProduccion: editorFrenoProduccion, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: editorCanal, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
 
   // los editores de suites y modelos arman objetos vacíos para tener dónde escribir: no se mandan. Una clave vacía en el
   // archivo pediría al perfil una versión más nueva sin cambiar nada
@@ -4537,7 +4560,7 @@ ${trabajandoJs}
 
 module.exports = {
   extrasDeAprobaciones, nombreDeMaquina,
-  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, ESTIMATES_SINCE, CONTEXT_NOTICE_SINCE, DEEP_REVIEW_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, COORDINATION_SINCE, SWITCHES_SINCE, SITE_SINCE, SESSION_NAMES_SINCE, OFFICE_SINCE, SIGNATURE_LIST_SINCE, WAIT_NOTICE_ENABLED_SINCE, WAIT_NOTICE_OWNER_SINCE, WAIT_NOTICE_PEER_SINCE, DELEGATED_LIST_SINCE, OWNER_ONLY_SINCE, LEVELS_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, capaQueSube, clavesQuePidenVersion, pedidasDelPerfil, direccionDelSitio, leerPerfil, estadoDelPerfil, origenDe, nombresDeLaLista, diferenciaDeJson, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
+  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, ESTIMATES_SINCE, CONTEXT_NOTICE_SINCE, DEEP_REVIEW_SINCE, WEEKLY_REVIEW_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, COORDINATION_SINCE, SWITCHES_SINCE, SITE_SINCE, SESSION_NAMES_SINCE, OFFICE_SINCE, SIGNATURE_LIST_SINCE, WAIT_NOTICE_ENABLED_SINCE, WAIT_NOTICE_OWNER_SINCE, WAIT_NOTICE_PEER_SINCE, DELEGATED_LIST_SINCE, OWNER_ONLY_SINCE, LEVELS_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, capaQueSube, clavesQuePidenVersion, pedidasDelPerfil, direccionDelSitio, leerPerfil, estadoDelPerfil, origenDe, nombresDeLaLista, diferenciaDeJson, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
   problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy, estimacionesDeHoy, modelosEnNiveles, equivalenciasDe, proveedoresDe,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia, reaplicar, versionDeTexto,
   SIN_NOTICIAS_DIAS, CLAVES_DEL_REPO, lectorDeClave, reemplazarBloque, revisarClaveDelRepo, idDeRepo, urlDeRepo,

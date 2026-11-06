@@ -44,10 +44,10 @@ function repoConStory() {
 }
 
 // La firma del plan la da el dueño en la ventana de permiso; acá se da por pasada (window-passed.js).
-function markerCli(home, sid, cwd, args) {
+function markerCli(home, sid, cwd, args, ventana = {}) {
   return spawnSync('node', [path.join(SCRIPTS, 'marker.js'), ...args], {
     cwd, encoding: 'utf8',
-    env: conVentana({ ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, TYCON_LANE_LLM: '0' }),
+    env: conVentana({ ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, TYCON_LANE_LLM: '0' }, ventana),
   });
 }
 
@@ -248,6 +248,51 @@ test('PlanVisible_OkSinPlan_NoAprueba @story-8.65 @ac-3', () => {
   const sin = conPlanEscrito('s-ok-sin');
   const s = markerCli(sin.home, 's-ok-sin', sin.repo, ['complete-step', '3', '--approved', 'sí, dale, aprobado el plan']);
   assert.equal(s.status, 0, s.stderr);
+});
+
+// El plan de juguete con «Qué hace» y «Archivos»: lo que el cuadro de la firma muestra, con la ruta del plan completo.
+const QUE_HACE = '## Qué hace\n\nCambia el título del proyecto en el README.\n';
+const ARCHIVOS = '## Archivos\n\n- README.md\n- tests/readme.test.js\n';
+function aprobarConPlan(sid, secciones, via) {
+  const { repo, story } = repoConStory();
+  const home = tmp('plan-vis-home-');
+  hasta3(home, sid, repo, story);
+  const runDir = require(path.join(SCRIPTS, 'pipeline.js')).resolveRunDir(repo, '9.92', true, story);
+  fs.writeFileSync(path.join(runDir, PLAN), `${PLAN_JUGUETE}\n${secciones}`);
+  conversacion(home, sid, ['Te paso la firma del plan: el cuadro trae qué hace, los archivos y dónde está entero.']);
+  const r = markerCli(home, sid, repo, ['complete-step', '3', '--approved', 'aprobado'], via ? { via } : {});
+  return { r, cerrado: paso3Cerrado(home, sid, repo) };
+}
+
+test('PlanVisible_ElCuadroConQueHaceYArchivos_Cuenta — el click vale con el cuadro, sin pegar el plan en la conversación', () => {
+  // 🔴 rojo: con un plan que trae «Qué hace» y «Archivos», el click en el cuadro se niega porque la conversación no tiene
+  // el plan entero
+  const { r, cerrado } = aprobarConPlan('s-cuadro', `${QUE_HACE}\n${ARCHIVOS}`, 'click');
+  assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(cerrado, true);
+});
+
+test('PlanVisible_SinElClickEnElCuadro_NoCuenta — un «aprobado» escrito o la ventana no muestran las secciones', () => {
+  for (const via of ['mensaje', null]) {
+    const { r, cerrado } = aprobarConPlan(`s-${via || 'ventana'}`, `${QUE_HACE}\n${ARCHIVOS}`, via);
+    assert.notEqual(r.status, 0, `${via || 'ventana'}: ${r.stdout}\n${r.stderr}`);
+    assert.match(r.stderr, /aprobó sin ver el plan/, via || 'ventana');
+    assert.equal(cerrado, false, via || 'ventana');
+  }
+});
+
+test('PlanVisible_ElCuadroSinLasDosSecciones_NoCuenta — sin «Qué hace» de hasta 3 renglones y «Archivos», el plan entero', () => {
+  const casos = {
+    'solo-que-hace': QUE_HACE,
+    'solo-archivos': ARCHIVOS,
+    'que-hace-largo': `## Qué hace\n\nUno.\nDos.\nTres.\nCuatro.\n\n${ARCHIVOS}`,
+  };
+  for (const [nombre, secciones] of Object.entries(casos)) {
+    const { r, cerrado } = aprobarConPlan(`s-${nombre}`, secciones, 'click');
+    assert.notEqual(r.status, 0, `${nombre}: ${r.stdout}\n${r.stderr}`);
+    assert.match(r.stderr, /aprobó sin ver el plan/, nombre);
+    assert.equal(cerrado, false, nombre);
+  }
 });
 
 test('PlanVisible_InstruccionesLaPreguntaTraeElPlan @story-8.65 @ac-4', () => {
