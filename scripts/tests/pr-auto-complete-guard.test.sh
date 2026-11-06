@@ -413,6 +413,28 @@ for caso in \
   "frena|az repos pr update --id 5 \"\$F\" true" \
   "frena|$AZM -s story/x --delete-source-branch true \"-\$X\" dev" \
   "frena|az repos pr update --id 5 \"--delete-source-\$X\" true" \
+  "frena|$AZM -s story/x --delete-source-branch true --open \"\$F\"" \
+  "frena|$AZM -s story/x --delete-source-branch true --verbose \"\$F\"" \
+  "frena|$AZM -s story/x --delete-source-branch true -tmain \"\$F\"" \
+  "frena|$AZM -s story/x --delete-source-branch true --description \"\$F\" true" \
+  "frena|$AZM -s story/x --delete-source-branch true --tit \"\$F\"" \
+  "frena|$AZM --delete-source-branch true -s{x,\\ dev}" \
+  "frena|$AZM --delete-source-branch true -s \"\"" \
+  "frena|$AZM --delete-source-branch true --source-branch=" \
+  "frena|$AZM --delete-source-branch true -s '  '" \
+  "frena|'az' repos pr create -t main --title x --auto-complete true --squash false -s dev --delete-source-branch true" \
+  "frena|\"az\" repos pr create -t main --title x --auto-complete true --squash false -s dev --delete-source-branch true" \
+  "frena|az 'repos' pr create -t main --title x --auto-complete true --squash false -s dev --delete-source-branch true" \
+  "frena|az repos \"pr\" create -t main --title x --auto-complete true --squash false -s dev --delete-source-branch true" \
+  "frena|az repos pr 'create' -t main --title x --auto-complete true --squash false -s dev --delete-source-branch true" \
+  "frena|az re\"pos\" pr create -t main --title x --auto-complete true --squash false -s dev --delete-source-branch true" \
+  "frena|az repos pr \"update\" --id 5 --delete-source-branch true" \
+  "pasa|echo 'az repos pr create -t main -s dev --delete-source-branch true'" \
+  "pasa|$AZM -s story/x --delete-source-branch true 2> \"\$LOG\"" \
+  "pasa|$AZM -s story/x --delete-source-branch true > \"\$OUT\"" \
+  "pasa|$AZM -s story/x --delete-source-branch true >> \"\$OUT\" 2>&1" \
+  "pasa|$AZM -s story/x --delete-source-branch true --merge-commit-message \"\$M\"" \
+  "pasa|$AZM -s story/x --delete-source-branch true -o \"\$O\"" \
   "pasa|$AZM -s story/x --delete-source-branch true --title \"\$T\"" \
   "pasa|$AZM -s story/x --delete-source-branch true --title 'usá -s dev'"; do
   esperado="${caso%%|*}"; cmd="${caso#*|}"

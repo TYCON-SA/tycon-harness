@@ -53,8 +53,8 @@ function sinBordes(linea) {
   return linea.slice(a, b);
 }
 
-// `{…,…}` o `{…..…}` sin comillas, con partes citadas adentro (lo citado puede llevar espacios y llaves).
-const LLAVES = /^\{(?:[^{}\s"']|"[^"]*"|'[^']*')*(?:,|\.\.)(?:[^{}\s"']|"[^"]*"|'[^']*')*\}/;
+// `{…,…}` o `{…..…}` sin comillas, con partes citadas o escapadas adentro (`{"a b",dev}`, `{x,\ dev}`).
+const LLAVES = /^\{(?:\\.|[^{}\s"'\\]|"[^"]*"|'[^']*')*(?:,|\.\.)(?:\\.|[^{}\s"'\\]|"[^"]*"|'[^']*')*\}/;
 
 function fichas(cmd, opts = {}) {
   // `powershell`: el comando lo escribió la herramienta de PowerShell. Ahí la barra invertida NO escapa nada (es parte
@@ -240,10 +240,14 @@ function valorDe(seg, nombre, corta = null) {
   return val;
 }
 
+// Una palabra del comando: la que empezó fuera de comillas, o la citada sin espacios adentro (`'az' repos "pr" create`
+// es el mismo comando para la terminal). Un texto citado con espacios adentro, como el de un `echo`, no lo es.
+const esPalabra = (f) => f.esBandera || !/\s/.test(f.texto);
+
 /** Las fichas que van después del `az` del pedido (`az [globales] repos pr <verbo> …`), o el segmento entero si no lo hay. */
 function delPedido(seg) {
   for (let i = 0; i < seg.length; i++) {
-    if (seg[i].esBandera && /(^|\/|\\)az(\.cmd|\.exe)?$/i.test(seg[i].texto) && verboDePr(seg.slice(i))) return seg.slice(i + 1);
+    if (esPalabra(seg[i]) && /(^|\/|\\)az(\.cmd|\.exe)?$/i.test(seg[i].texto) && verboDePr(seg.slice(i))) return seg.slice(i + 1);
   }
   return seg;
 }
@@ -254,11 +258,12 @@ const esFalso = (v) => v !== null && v !== undefined && FALSO.has(String(v).toLo
 /**
  * `az [opciones globales] repos pr <verbo>` leído de las fichas sueltas: un `echo "az repos pr
  * create"` no cuenta, y `az -o json repos pr create` sí — az acepta sus opciones globales antes
- * del grupo, y exigir las cuatro palabras pegadas dejaría pasar esa forma.
+ * del grupo, y exigir las cuatro palabras pegadas dejaría pasar esa forma. Una palabra citada sin espacios
+ * (`esPalabra`) cuenta como suelta: para la terminal es la misma.
  * El binario puede venir con ruta, con `.cmd`/`.exe` y en cualquier caja (macOS no distingue).
  */
 function verboDePr(seg) {
-  const libres = seg.filter((f) => f.esBandera).map((f) => f.texto);
+  const libres = seg.filter(esPalabra).map((f) => f.texto);
   for (let i = 0; i < libres.length; i++) {
     if (!/(^|\/|\\)az(\.cmd|\.exe)?$/i.test(libres[i])) continue;
     let j = i + 1;
@@ -344,10 +349,10 @@ function tieneEscape(seg, nombre = 'TYCON_PR_BY_HAND') {
  * un `az repos pr \<salto> create` esquivaría el filtro y con él al hook entero. Y NO nombra al binario a
  * propósito: pedir `az` pegado a `repos` lo esquivaría
  * con `az -o json repos pr create`, que az acepta. Es un superconjunto barato — quien decide de
- * verdad es `verboDePr` sobre las fichas.
+ * verdad es `verboDePr` sobre las fichas. Mira sin comillas: `az re"pos" 'pr' create` es el mismo comando.
  */
 const pareceAzPr = (cmd) => /\brepos\s+pr\s+(?:create|update)\b/i
-  .test(String(cmd || '').replace(/\\\r?\n/g, ' '));
+  .test(String(cmd || '').replace(/\\\r?\n/g, ' ').replace(/["']/g, ''));
 
 const ROMPE_SQUASH = 'los commits desaparecen de main y las notas de versión colapsan a una línea';
 const A_MAIN = /^(?:refs\/heads\/)?(?:main|master)$/i;
@@ -381,6 +386,8 @@ function faltaDeBorrarRama(borrar, origen) {
       : 'con `--delete-source-branch false` y sin `--source-branch`: no puedo ver si la rama es de larga vida. Escribí la rama';
   }
   if (!origen.literal) return ilegible('--source-branch', origen);
+  // Un origen vacío o de sólo espacios no nombra ninguna rama: si az lo toma como «sin rama», usa la actual
+  if (!origen.texto.trim()) return `no puedo leer \`--source-branch\`: viene vacío, y az puede tomar la rama actual, que puede ser dev. Escribí la rama`;
   const larga = esDeLargaVida(origen.texto);
   if (cierto && larga) return `con \`--delete-source-branch true\` desde \`${origen.texto}\`: la plataforma borraría \`${origen.texto}\` al completar, sin vuelta atrás. Desde una rama de larga vida va \`false\``;
   if (!cierto && !larga) return `con \`--delete-source-branch false\` desde \`${origen.texto}\`: la rama queda viva después del merge. Va ${regla}`;
@@ -407,15 +414,17 @@ function faltaDeBorrarRamaUpdate(borrar, publica) {
 const partidas = (seg) => delPedido(seg).filter((f) => f.partida).map((f) => `\`${f.texto}\` lo arma la terminal fuera de comillas: puede meter una bandera que no veo, y lo que no pude leer no está aprobado. Ponelo entre comillas o escribí el valor`)
   .concat(fantasmas(seg));
 
-// Las banderas de az que leen un valor sólo si el que sigue no parece otra bandera (`--draft "$F" true`): detrás de
-// ellas una expansión puede ser la bandera siguiente.
-const OPCIONALES = ['auto-complete', 'squash', 'delete-source-branch', 'draft', 'bypass-policy', 'transition-work-items'];
-const esOpcional = (t) => t.startsWith('--') && t.length > 2 && OPCIONALES.some((n) => `--${n}`.startsWith(t));
+// Las banderas de un pedido que exigen exactamente un valor: si la terminal convierte ese valor en otra bandera,
+// az falla en vez de correr. Es la única excepción y es una lista cerrada; abreviadas, con `=` o con el valor pegado no
+// cuentan. Detrás de cualquier otra (sin valor como `--open`, opcional como `--draft`, de varios como `--description`)
+// una expansión puede ser la bandera siguiente.
+const VALOR_UNICO = new Set(['--title', '--source-branch', '--target-branch', '--repository', '--project', '--organization',
+  '--org', '--id', '--merge-commit-message', '--output', '--query', '--subscription', '-s', '-t', '-r', '-p', '-o']);
 
 /**
  * Una expansión, aunque esté entre comillas, puesta donde az espera una bandera: `"$F" dev` o `"--delete-source-$X" true`
- * puede ser cualquier bandera, y lo que no se lee no está aprobado. Sólo se salva el valor de una bandera que lo exige
- * (`--title "$T"`): si la terminal lo convierte en bandera, az falla en vez de correr.
+ * puede ser cualquier bandera, y lo que no se lee no está aprobado. Sólo se salva el valor de una bandera de
+ * `VALOR_UNICO` escrita entera (`--title "$T"`).
  */
 function fantasmas(seg) {
   const pedido = delPedido(seg);
@@ -424,7 +433,12 @@ function fantasmas(seg) {
     // Sólo si la expansión puede cambiar el NOMBRE: `--title=x"$T"` o `-s"$X"` tienen la bandera escrita.
     if (!f.expande || f.partida || !/^(?:[$`]|-[$`]|--[^=]*[$`])/.test(f.texto)) return;
     const prev = pedido[i - 1];
-    if (prev && esOpcion(prev.texto) && !prev.texto.includes('=') && !esOpcional(prev.texto)) return;
+    // El destino de una redirección (`2> "$LOG"`, `>> "$OUT"`) es un archivo, no una bandera para az
+    if (prev && prev.esBandera && /^\d*(?:>>?|<|&>>?|>\|)$/.test(prev.texto)) return;
+    if (prev && !prev.expande && VALOR_UNICO.has(prev.texto)) return;
+    // La forma del skill de merge, `--description "$(cat cuerpo.md)"` (AC 1): az la lee como bandera sólo si el cuerpo
+    // empieza con un guion, y el cuerpo lo escribe el skill. Una variable suelta ahí (`--description "$F"`) sigue frenando.
+    if (prev && !prev.expande && (prev.texto === '--description' || prev.texto === '-d') && f.texto.startsWith('$(')) return;
     out.push(`no puedo leer \`${f.texto}\`: una expansión donde va una bandera puede ser cualquier bandera, y lo que no pude leer no está aprobado. Escribí la bandera`);
   });
   return out;
