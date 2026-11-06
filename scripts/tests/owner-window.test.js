@@ -3819,3 +3819,23 @@ test('T27 OwnerWindow_DatosQueSeNegaria_NoDaElCuadro @story-8.196 @ac-13', (t) =
   const sigue = pedir(conFrenoDeDatos(casaNueva(t)), pideDatos(), { comprobar: () => ({ ok: true }) });
   assert.ok(sigue.cuadro && sigue.cuadro.clickDelDueno, sigue.texto);
 });
+
+test('Freno_SoloClickDeFondo_NoDejaRenglon — @fix-T-207', (t) => {
+  // de fondo nadie mira la pestaña donde vale ese click, y la coordinadora no lo puede dar: el renglón contaría sin cierre
+  let casa = casaDeLista(t);
+  const r = pedirConLista(casa, pedidoDe(9));
+  assert.strictEqual(r.decision, 'deny');
+  assert.deepStrictEqual(r.firmas, [SOBRE_CUPO]);
+  assert.strictEqual(renglones(casa).length, 0, r.texto);
+  assert.doesNotMatch(r.texto, AVISAN);
+  assert.match(r.texto, /terminal/, 'queda la forma por terminal');
+  // en una pestaña que trabaja a la vista, el renglón sigue: la sesión lo ve en su propia pestaña
+  casa = casaDeLista(t);
+  pedirConLista(casa, pedidoDe(9), { arbol: arbolDelFreno(), evento: { permission_mode: 'bypassPermissions' } });
+  assert.strictEqual(renglones(casa).length, 1);
+  assert.strictEqual(renglones(casa)[0].firma, SOBRE_CUPO);
+  // lo de fondo que la coordinadora sí puede pasar, igual que siempre
+  casa = casaDeLista(t);
+  pedirConLista(casa, pedidoDe(8));
+  assert.strictEqual(renglones(casa).length, 1);
+});
