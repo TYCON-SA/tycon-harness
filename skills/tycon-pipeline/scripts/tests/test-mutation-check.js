@@ -29,7 +29,7 @@ const FIXTURES = path.join(__dirname, 'fixtures', 'mutation');
 
 const mutants = require(path.join(SCRIPTS, 'lib', 'mutation-mutants.js'));
 const checker = require(path.join(SCRIPTS, 'mutation-check.js'));
-const { runMutationGate } = require(path.join(SCRIPTS, 'lib', 'mutation-gate.js'));
+const { runMutationGate, destinosDeLaStory } = require(path.join(SCRIPTS, 'lib', 'mutation-gate.js'));
 
 // ── Helpers de fixture: mini-repo git en tmpdir ──────────────────────────────
 // Las fuentes estáticas viven en fixtures/mutation/; el repo git se arma en un
@@ -610,6 +610,112 @@ test('gate: exit 2 (estructural, ej. story sin tests) → AVISA, no bloquea, y q
   const g = h.entries['gates.log'];
   assert.equal(g.length, 1);
   assert.equal(g[0].status, 'structural');
+});
+
+// Dos repos de juguete: `Specs` con la story y `Code`, su hermano declarado, con el código y la prueba que declara
+function storyEnOtroRepo({ codigoAca = false } = {}) {
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-mut-hermano-')));
+  const repo = (dir, archivos) => {
+    for (const [rel, texto] of Object.entries(archivos)) {
+      fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+      fs.writeFileSync(path.join(dir, rel), texto);
+    }
+    const g = (...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' });
+    g('init', '-q', '-b', 'main'); g('add', '-A'); g('-c', 'user.email=l@l', '-c', 'user.name=l', 'commit', '-q', '-m', 'base');
+    return dir;
+  };
+  const crear = ['src/calc.js', 'tests/calc.test.js', ...(codigoAca ? ['lib/propio.js'] : [])];
+  const story = ['---', 'story: "9.1"', 'files_to_create:', ...crear.map((f) => `  - ${f}`), '---', '', '# Story 9.1', ''].join('\n');
+  const specs = repo(path.join(raiz, 'Specs'), { 'specs/s.md': story, '.tycon/advisors.yaml': 'evidence:\n  companion_repos:\n    - ../Code\n',
+    ...(codigoAca ? { 'lib/propio.js': 'module.exports = 1;\n' } : {}) });
+  const code = repo(path.join(raiz, 'Code'), { 'src/calc.js': 'module.exports = (a) => a === 1;\n', 'tests/calc.test.js': 'require("../src/calc.js");\n' });
+  return { specs, code, story: path.join(specs, 'specs', 's.md') };
+}
+
+test('gate: la story en un repo y el código en su hermano → mide en el hermano, no en el de la story', async () => {
+  const lab = storyEnOtroRepo();
+  assert.deepEqual(destinosDeLaStory(lab.specs, lab.story, () => {}).map((d) => fs.realpathSync(d)), [lab.code]);
+  const h = gateHarness();
+  const repos = [];
+  const r = runMutationGate({
+    marker: { storyId: '9.1', repoPath: lab.specs, storyPath: lab.story }, opts: [], env: {},
+    appendLog: h.appendLog, log: h.log,
+    invokeCheck: ({ repo }) => { repos.push(fs.realpathSync(repo)); return { code: 0, result: { total: 3, killed: 3, survived: [], skipped: [], verdict: 'OK' } }; },
+  });
+  assert.equal(r.block, false);
+  assert.deepEqual(repos, [lab.code], 'el chequeo corre en el repo del código');
+  const g = h.entries['gates.log'];
+  assert.equal(g.length, 1);
+  assert.equal(fs.realpathSync(g[0].repo), lab.code, 'el veredicto dice en qué repo se midió');
+  // la story que además declara código propio se mide en los dos; frena si frena cualquiera
+  const lab2 = storyEnOtroRepo({ codigoAca: true });
+  assert.deepEqual(destinosDeLaStory(lab2.specs, lab2.story, () => {}).map((d) => fs.realpathSync(d)), [lab2.specs, lab2.code]);
+  const h2 = gateHarness();
+  const r2 = runMutationGate({
+    marker: { storyId: '9.1', repoPath: lab2.specs, storyPath: lab2.story }, opts: [], env: {},
+    appendLog: h2.appendLog, log: h2.log,
+    invokeCheck: ({ repo }) => (fs.realpathSync(repo) === lab2.code
+      ? { code: 1, result: { total: 2, killed: 0, survived: SOBREVIVIENTES, skipped: [], verdict: 'TESTS_NO_EJERCEN_EL_CODIGO' } }
+      : { code: 0, result: { total: 1, killed: 1, survived: [], skipped: [], verdict: 'OK' } }),
+  });
+  assert.equal(r2.block, true, 'cero muertos en el hermano frena aunque el de la story pase');
+  assert.deepEqual(h2.entries['gates.log'].map((e) => e.status), ['pass', 'blocked']);
+});
+
+test('gate: sin hermanos, con un hermano que no existe o sin poder leerlos → mide el de la story y lo dice', async () => {
+  const lab = storyEnOtroRepo();
+  const avisos = [];
+  // sin hermanos declarados: el de la story
+  fs.rmSync(path.join(lab.specs, '.tycon'), { recursive: true });
+  assert.deepEqual(destinosDeLaStory(lab.specs, lab.story, (t) => avisos.push(t)), [lab.specs]);
+  assert.deepEqual(avisos, []);
+  // un hermano declarado que no está en disco: se dice
+  fs.mkdirSync(path.join(lab.specs, '.tycon'));
+  fs.writeFileSync(path.join(lab.specs, '.tycon', 'advisors.yaml'), 'evidence:\n  companion_repos:\n    - ../NoExiste\n');
+  assert.deepEqual(destinosDeLaStory(lab.specs, lab.story, (t) => avisos.push(t)), [lab.specs]);
+  assert.match(avisos.join('\n'), /NO MEDIDO en .*NoExiste/);
+  // la story ilegible con hermanos declarados: avisa y mide el de la story
+  avisos.length = 0;
+  fs.writeFileSync(path.join(lab.specs, '.tycon', 'advisors.yaml'), 'evidence:\n  companion_repos:\n    - ../Code\n');
+  assert.deepEqual(destinosDeLaStory(lab.specs, path.join(lab.specs, 'specs', 'no-existe.md'), (t) => avisos.push(t)), [lab.specs]);
+  assert.match(avisos.join('\n'), /no pude leer los repos hermanos/);
+});
+
+test('gate: el hermano se mide en el worktree donde la sesión escribió, no en el checkout en main', async () => {
+  const lab = storyEnOtroRepo();
+  // el puesto: un worktree del hermano en una rama que no nombra la story, con el código nuevo de la story
+  const puesto = path.join(path.dirname(lab.code), 'Code--puesto');
+  spawnSync('git', ['-C', lab.code, 'worktree', 'add', '-q', '-b', 'wt/otra', puesto], { encoding: 'utf8' });
+  fs.writeFileSync(path.join(puesto, 'src', 'nuevo.js'), 'module.exports = 2;\n');
+  const tocados = [path.join(puesto, 'src', 'nuevo.js'), path.join(lab.specs, 'specs', 's.md'), '/tmp/una-prueba-suelta.js'];
+  assert.deepEqual(destinosDeLaStory(lab.specs, lab.story, () => {}, tocados), [fs.realpathSync(puesto)]);
+  // sin archivos tocados, el que elige companion-repos
+  assert.deepEqual(destinosDeLaStory(lab.specs, lab.story, () => {}, []).map((d) => fs.realpathSync(d)), [lab.code]);
+  // un archivo declarado que no existe en ningún lado no vuelve «de acá» al repo de la story
+  fs.writeFileSync(lab.story, fs.readFileSync(lab.story, 'utf8').replace('files_to_create:\n', 'files_to_create:\n  - lib/todavia-no.js\n'));
+  assert.deepEqual(destinosDeLaStory(lab.specs, lab.story, () => {}, tocados), [fs.realpathSync(puesto)]);
+});
+
+test('gate: con varios repos, un «no medido» en uno no queda tapado por el que pasó', async () => {
+  const h = gateHarness();
+  const r = runMutationGate({
+    marker: MARKER_FAKE, opts: [], env: {}, appendLog: h.appendLog, log: h.log,
+    destinosDe: () => ['/tmp/uno', '/tmp/dos'],
+    invokeCheck: ({ repo }) => (repo === '/tmp/uno'
+      ? { code: 0, result: { total: 1, killed: 1, survived: [], skipped: [], verdict: 'OK' } }
+      : { code: 2, result: { motivo: 'la story declara tests que NO existen en disco' } }),
+  });
+  assert.deepEqual([r.block, r.reason], [false, 'estructural']);
+  assert.deepEqual(h.entries['gates.log'].map((e) => [e.repo, e.status]), [['/tmp/uno', 'pass'], ['/tmp/dos', 'structural']]);
+});
+
+test('gate: lo que no se pudo medir lo dice como «NO MEDIDO», con el repo', async () => {
+  const h = gateHarness();
+  runMutationGate({
+    marker: MARKER_FAKE, opts: [], env: {}, appendLog: h.appendLog, log: h.log,
+    invokeCheck: () => ({ code: 2, result: { motivo: 'la story declara tests que NO existen en disco' } }),
+  });
+  assert.match(h.lines.join('\n'), /NO MEDIDO en \/tmp\/fake-repo/);
 });
 
 test('gate: TYCON_MUTATION_CHECK=off → ni se invoca, y el apagado queda en bypass.log', async () => {
