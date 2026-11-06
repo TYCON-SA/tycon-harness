@@ -200,7 +200,7 @@ function lanzadoPorLaHerramienta({ arbol, pid = process.pid, casa, plataforma = 
   const tool = p;
   for (let q = m.get(tool.ppid); q && !vistos.has(q.pid); q = m.get(q.ppid)) {
     vistos.add(q.pid);
-    if (consola(q) || (w.esHerramienta(q) && !w.esAnfitrionDeFondoDe(tool, q))) return { ok: false, motivo: 'la herramienta la lanzó otra herramienta o la consola de un agente' };
+    if (consola(q) || (w.esHerramienta(q) && !w.esAnfitrionDeFondoDe(tool, q, m.get(tool.ppid)))) return { ok: false, motivo: 'la herramienta la lanzó otra herramienta o la consola de un agente' };
   }
   return { ok: true, herramienta: { pid: tool.pid, inicio: tool.inicio } };
 }
