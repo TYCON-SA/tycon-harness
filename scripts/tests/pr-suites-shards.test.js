@@ -560,6 +560,40 @@ test('PrShards_AllShardsFinish_TheVerdictTellsFirmFromIntermittent', { skip: NO_
   assert.strictEqual(v.verdict.code, 0, `en modo aviso, un rojo nuevo de suite no frena\n${v.verdict.out}`);
 });
 
+test('T5 PrShards_EachJobRecordsSuiteTimes_WithoutTheCommandSaysSo — cada trabajo deja suite-times.jsonl con sus suites (story 8.208)', { skip: NO_BASH }, () => {
+  // 🔴 mutación: no anotar los segundos de cada suite en el trabajo, anotarlos con otro origen, o romper el trabajo cuando
+  //    el árbol no trae el comando (un público de antes).
+  // 🔴 también: anotar el nombre suelto y no la ruta de suites.json, sumar la segunda pasada de una roja, o dejar en 0 la
+  //    que no está en el clon (no corrió: no va).
+  const dir = toy([['lab-green-a.test.sh', GREEN_SH], ['lab-red.test.sh', RED_SH]]);
+  const plan = runPlan(dir, 1);
+  assert.strictEqual(plan.code, 0, plan.out);
+  const sin = runShard(dir, 1, plan.of);
+  assert.match(sin.out, /el árbol no trae scripts\/tools\/suite-times\.js: no anoto los tiempos/, sin.out);
+  assert.ok(fs.existsSync(path.join(sin.artifact, 'finished')), sin.out);
+
+  const SLOW_RED = 'sleep 1\necho "MAL — lenta y roja"\nexit 1\n';
+  const con = toy([['lab-green-a.test.sh', GREEN_SH], ['lab-red.test.sh', SLOW_RED], ['lab-absent.test.sh', null]]);
+  fs.mkdirSync(path.join(con, 'repo', 'scripts', 'tools'), { recursive: true });
+  fs.symlinkSync(path.join(ROOT, 'scripts', 'tools', 'suite-times.js'), path.join(con, 'repo', 'scripts', 'tools', 'suite-times.js'));
+  const p2 = runPlan(con, 1);
+  assert.strictEqual(p2.code, 0, p2.out);
+  const r = runShard(con, 1, p2.of);
+  const f = path.join(r.artifact, 'suite-times.jsonl');
+  assert.ok(fs.existsSync(f), r.out);
+  const [e] = fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  assert.strictEqual(e.origen, 'ci-azure');
+  assert.deepStrictEqual(e.suites.map((x) => [x.s, x.exit]).sort(), [['tests/lab-green-a.test.sh', 0], ['tests/lab-red.test.sh', 1]]);
+  const red = e.suites.find((x) => x.s === 'tests/lab-red.test.sh');
+  assert.ok(red.ms >= 900 && red.ms < 1900, `la roja se reintenta: se anota sólo la primera pasada (${red.ms} ms)`);
+  assert.strictEqual(typeof e.carga, 'number');
+  // 🔴 mutación: medir la carga al terminar el trabajo (es la del propio trabajo, no la ajena): la carga que va a
+  //    `record` se toma antes de lanzar la primera suite.
+  const at = (re) => template.search(re);
+  assert.ok(at(/CARGA0="\$\(node -e/) >= 0 && at(/CARGA0="\$\(node -e/) < at(/xargs -P "\$JOBS"/), 'la carga se mide antes de la primera suite');
+  assert.match(template, /record [^\n]*\\\n[^\n]*--carga "\$CARGA0"/, 'y es la que recibe record');
+});
+
 // Cada suite se anota como viva, espera un segundo, cuenta cuántas hay vivas en ese momento y se borra.
 const LIVE_SH = 'N=$(basename "$0"); L="@DIR@/live"; mkdir -p "$L"; touch "$L/$N"; sleep 1; ls "$L" | wc -l | tr -d " " > "@DIR@/seen.$N"; rm -f "$L/$N"\nexit 0\n';
 const LIVE = ['lab-p1.test.sh', 'lab-p2.test.sh', 'lab-p3.test.sh', 'lab-p4.test.sh', 'lab-solo.test.sh'];
@@ -1155,7 +1189,7 @@ const GUARD_STEP = 'El freno de publicación sobre el pedido';
 const GUARD_TERM = 'Zorblax';   // inventado
 const GUARD_LIST = `${JSON.stringify({ terminos: [{ patron: GUARD_TERM, categoria: 'cliente' }], permitidos: [] }, null, 2)}\n`;
 const GUARD_PIECES = ['scripts/hooks/public-push-guard.js', 'scripts/lib/az-pr.js', 'scripts/lib/gh-pr.js', 'scripts/lib/harness-repo.js', 'scripts/lib/legacy-names.js',
-  'scripts/lib/guard-record.js', 'scripts/publishing/detector.js', 'scripts/publishing/internal-history.js', 'scripts/setup/harness/tycon-home.js'];
+  'scripts/lib/guard-record.js', 'scripts/publishing/detector.js', 'scripts/publishing/internal-history.js', 'scripts/setup/harness/tycon-home.js', 'scripts/lib/clean-git-env.js'];
 const GUARD_WHO = { name: 'Mantenedor De Prueba', email: '4242+mantenedor@users.noreply.github.com' };
 const TEXTS_STANDIN = [
   '#!/usr/bin/env node',

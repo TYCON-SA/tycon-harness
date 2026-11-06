@@ -19,6 +19,7 @@
 #  T12 — un bloqueo por falla propia del freno también queda escrito
 #  T13 — la constancia no depende del nombre con que el freno encuentra su biblioteca (el actual o el anterior al renombre),
 #        y que no encuentre ninguna no queda callado (en la copia pública sólo está el actual)
+#  T15 — un escape aprobado con un click o un «aprobado» queda con esa vía; una vía fuera de la lista no se anota
 #
 # 🔴 HOME falso siempre: la constancia vive bajo el home, en la carpeta de estado del arnés.
 # Correr: bash scripts/tests/guard-record.test.sh
@@ -462,6 +463,33 @@ if [ "$m_estado" = "escritura-protegida" ] && [ "$m_variable" = "servidor-no-lit
   ok "T14b producción: la escritura protegida y el servidor que no es literal se anotan con su motivo"
 else
   no "T14b escritura=[$m_estado] servidor=[$m_variable] reg=[$(cat "$(REG)" 2>/dev/null)]"
+fi
+
+# ── T15 — la vía de la persona sin terminal: el click y el «aprobado» quedan como lo que fueron ──────────
+via_de(){ # $1 vía → la vía que quedó en la última línea, o «sin-via»
+  mundo
+  printf '%s' 'comando' | HOME="$CASA" node "$LIB" --guard safety-guard --rule GIT-C1 --verdict escape --via "$1" --cmd-stdin 2>/dev/null
+  HOME="$CASA" node -e '
+    const fs=require("fs"), path=require("path");
+    const ls=fs.readFileSync(path.join(process.env.HOME,".claude",".tycon-pipeline","frenos.jsonl"),"utf8").trim().split("\n");
+    process.stdout.write(JSON.parse(ls[ls.length-1]).via||"sin-via");
+  '
+}
+for v in click mensaje; do
+  if [ "$(via_de "$v")" = "$v" ]; then ok "T15 un escape aprobado por $v queda con esa vía"; else no "T15 $v: reg=[$(cat "$(REG)" 2>/dev/null)]"; fi
+done
+if [ "$(via_de inventada)" = "sin-via" ] && [ "$(lineas)" = "1" ]; then
+  ok "T15 una vía fuera de la lista no se anota, y la línea se escribe igual"
+else
+  no "T15 vía inventada: reg=[$(cat "$(REG)" 2>/dev/null)]"
+fi
+# la vía es de un escape: en un bloqueo no dice nada, aunque venga
+mundo
+printf '%s' 'comando' | HOME="$CASA" node "$LIB" --guard safety-guard --rule GIT-C1 --verdict bloqueo --via click --cmd-stdin 2>/dev/null
+if ! grep '"via"' "$(REG)" >/dev/null 2>&1 && [ "$(lineas)" = "1" ]; then
+  ok "T15 un bloqueo no lleva vía aunque se la pasen"
+else
+  no "T15 bloqueo con vía: reg=[$(cat "$(REG)" 2>/dev/null)]"
 fi
 
 echo "─────────────────────────────"

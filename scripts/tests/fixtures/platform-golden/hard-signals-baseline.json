@@ -1,6 +1,6 @@
 {
   "archivos": 90,
-  "lineas": 312,
+  "lineas": 313,
   "porArchivo": {
     ".github/control-changes/081bc179e3cc1672ceb50f0d7d0a386002838f3fd8d8c04f6bf2a5bd1e378963.json": 1,
     ".github/control-changes/0a8d93523ebe27ac7ab2292034f2da51edffc6b0af09af1d9d60752d3b950454.json": 1,
@@ -31,7 +31,7 @@
     "guides/piezas-del-arnes.md": 1,
     "guides/produccion-con-permiso.md": 1,
     "guides/workflow-orchestration.md": 1,
-    "pipelines/operations/README.md": 2,
+    "pipelines/operations/README.md": 3,
     "pipelines/operations/dependency-audit.yml": 4,
     "pipelines/operations/examples/repos.json": 1,
     "pipelines/operations/examples/sources.json": 1,

@@ -188,12 +188,15 @@ test('T23 Candado_DejaLibreLaPaginaDeSalida @story-2.46 @ac-18', async () => {
   const H = require('./lib/site-harness.js');
   const { arrancarEmisor } = require('./lib/fake-oidc.js');
   const emisor = await arrancarEmisor();
-  const h = await H.arrancarSitio({ env: H.envBase({ SITE_OIDC_ISSUER: emisor.issuer }), fuentes: H.fuentesFijas({}) });
+  const dirLlaves = fs.mkdtempSync(path.join(os.tmpdir(), 'llaves-'));
+  const llaves = require('../site/machine-keys.js').crearLlaves({ dataDir: dirLlaves });
+  const h = await H.arrancarSitio({ env: H.envBase({ SITE_OIDC_ISSUER: emisor.issuer }), fuentes: H.fuentesFijas({}), llaves });
   try {
     for (const r of rutas) {
       const res = await h.pedir(r);
       assert.ok(!res.headers.location, `${r} no redirige (${res.status} → ${res.headers.location})`);
-      if (r === '/idioma') assert.strictEqual(res.status, 405, '/idioma acepta sólo POST sin sesión');
+      if (r === '/idioma' || r === '/live/enroll') assert.strictEqual(res.status, 405, `${r} acepta sólo POST sin sesión`);
+      else if (r === '/live/machine') assert.strictEqual(res.status, 426, '/live/machine pide la conexión de la máquina');
       else assert.strictEqual(res.status, 200, `${r} contesta sin sesión`);
     }
   } finally { await h.cerrar(); await emisor.cerrar(); }
@@ -202,7 +205,7 @@ test('T23 Candado_DejaLibreLaPaginaDeSalida @story-2.46 @ac-18', async () => {
 test('PruebaSinSesion_SalidaDetrasDelCandado_AvisaSinFallar @story-2.48 @ac-7 @story-2.51 @ac-8', async () => {
   const http = require('http');
   const CHECK = require(path.join(ROOT, 'scripts', 'site', 'check-deploy.js'));
-  assert.ok(Array.isArray(CHECK.AVISOS) && CHECK.AVISOS.length === 1, 'el aviso es un vocabulario cerrado exportado');
+  assert.ok(Array.isArray(CHECK.AVISOS) && CHECK.AVISOS.length === 2, 'el aviso es un vocabulario cerrado exportado');
   const AVISO = CHECK.AVISOS[0];
   // tras «Salir» el sitio no vuelve a entrar solo: el aviso dice lo que sí pasa, y las guías también
   assert.doesNotMatch(AVISO, /se vuelve a entrar/, 'el aviso no dice que se vuelve a entrar');

@@ -229,7 +229,7 @@ test('8.76-DepGate_PackageJsonConBom_SeLee @story-8.76 @ac-6 @ac-7 — un packag
   assert.strictEqual(r.repos_no_medidos, undefined, JSON.stringify(r));
 });
 
-test('8.76-CoverageBase_SinCommits_ArbolVacio @story-8.76 @ac-8 — sin commits la base es el árbol vacío; con commit, HEAD', () => {
+test('8.76-CoverageBase_SinCommits_ArbolVacio @story-8.76 @ac-8 — sin commits la base es el árbol vacío; con commit, la bifurcación con main (HEAD mismo)', () => {
   const { resolver } = require('../lib/coverage-base.js');
   const home = laboratorio();
   const vacio = tmp('cov-vacio');
@@ -241,7 +241,8 @@ test('8.76-CoverageBase_SinCommits_ArbolVacio @story-8.76 @ac-8 — sin commits 
 
   const lleno = repoConCommit(home, 'main');
   const r2 = resolver({ repo: lleno, env: {} });
-  assert.strictEqual(r2.source, 'HEAD');
+  // sin marcador, la bifurcación con main: el repo está en main, así que es su HEAD
+  assert.strictEqual(r2.source, 'bifurcacion', JSON.stringify(r2));
   assert.strictEqual(r2.ref, git(home, lleno, 'rev-parse', 'HEAD'));
 });
 

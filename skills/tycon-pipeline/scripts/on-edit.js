@@ -140,12 +140,23 @@ function handle(event) {
     // fixes sobre archivos existentes, y el orquestador cae al set COMPLETO de advisors en cada re-loop.
     if (!Array.isArray(marker.fileEvents)) marker.fileEvents = []; // marker corrupto → normalizar (no romper el "exit 0 siempre")
     // `code`: si la edición pide otra vuelta de revisores (lib/reloop-code.js). Lo leen `next` y el cartel para decidir
-    // lo mismo (el cartel corre sin el clasificador del arnés)
+    // lo mismo (el cartel corre sin el clasificador del arnés). Si la regla falla, pide: ante la duda, se revisa
     let code;
-    try { code = require('./lib/reloop-code.js').pideOtraVuelta(filePath, { storyPath: marker.storyPath }); } catch (_) { code = undefined; }
-    marker.fileEvents.push({ path: filePath, ts: new Date().toISOString(), ...(typeof code === 'boolean' ? { code } : {}) });
+    try { code = require('./lib/reloop-code.js').pideOtraVuelta(filePath, { storyPath: marker.storyPath }); } catch (_) { code = true; }
+    marker.fileEvents.push({ path: filePath, ts: new Date().toISOString(), code });
     if (marker.fileEvents.length > 500) {
       marker.fileEvents = marker.fileEvents.slice(-500);
+    }
+    // `otraVuelta`: la decisión de `next` sobre la otra vuelta, escrita para el cartel (lib/steps.js `otraVueltaDe`)
+    try {
+      const v = require('./lib/steps.js').otraVueltaDe(marker);
+      if (v === undefined) delete marker.otraVuelta;
+      else marker.otraVuelta = v;
+    } catch (e) {
+      // sin el campo, el cartel usa su regla de antes; `next` y el último paso deciden igual. El campo viejo se borra (el
+      // cartel leería una decisión vieja) y queda el rastro
+      delete marker.otraVuelta;
+      try { fs.appendFileSync(path.join(STATE_DIR, 'hook-errors.log'), `[${new Date().toISOString()}] on-edit otraVuelta: ${(e && e.stack) || e}\n\n`, 'utf8'); } catch { /* noop */ }
     }
     marker.lastTouch = new Date().toISOString();
     try {
@@ -163,7 +174,7 @@ function handle(event) {
     const { isImplPath } = require('./lib/atdd-order.js');
     const sg = require('./lib/story-gate.js');
     const io = require('./lib/story-gate-io.js');
-    if (isImplPath(filePath) && sg.isCodeFile(filePath) && !io.isHarnessRepo(filePath)) {
+    if (isImplPath(filePath) && sg.isCodeFile(filePath)) {
       io.recordAdhocFile(STATE_DIR, sessionId, filePath);
     }
   } catch { /* best-effort */ }

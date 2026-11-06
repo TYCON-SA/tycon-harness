@@ -282,8 +282,10 @@ function mejora(por) {
   // nocturno baja del buzón a merges/, con un registro por merge (el mismo merge en las dos cuenta una vez).
   try {
     const dm = require(path.join(RAIZ, 'scripts', 'lib', 'dashboard-metrics.js'));
-    const { records, counts, unreadableDirs } = dm.loadPorMerge([AMB.dashboard]);
+    const { records: todos, counts, unreadableDirs } = dm.loadPorMerge([AMB.dashboard]);
     noSeLeyo(unreadableDirs);
+    // un latido anulado no es una fusión: no entra en ningún denominador
+    const records = todos.filter((x) => x.status !== 'anulado');
     m._capturer_cobertura = counts;
     m._capturer_fechas = records.filter((x) => x.date).length;
     m.revisores = {};
@@ -1340,9 +1342,12 @@ function extra(por, ctx, cfg) {
   // un registro por merge.
   try {
     const dm = require(path.join(RAIZ, 'scripts', 'lib', 'dashboard-metrics.js'));
-    const { records, counts, unreadableDirs } = dm.loadPorMerge([AMB.dashboard]);
+    const { records: todos, counts, unreadableDirs } = dm.loadPorMerge([AMB.dashboard]);
     noSeLeyo(unreadableDirs);
-    m.contrato_v2 = counts.total ? { ...ratio(counts.v2ok, counts.total), den_etiqueta: 'registros' } : noMedida('no hay registros del capturador');
+    const records = todos.filter((x) => x.status !== 'anulado');
+    // los latidos anulados no son fusiones: no entran en la cuenta y se nombran aparte, para ver si alguien anula de más
+    const anulados = dm.lineaDeAnulados(counts);
+    m.contrato_v2 = counts.total ? { ...ratio(counts.v2ok, counts.total), den_etiqueta: 'registros', ...(anulados ? { detalle: `${anulados}: no cuentan` } : {}) } : noMedida(anulados ? `no hay registros del capturador (${anulados})` : 'no hay registros del capturador');
     const fuentes = {};
     for (const r of records) inc(fuentes, r.date_source || 'ninguna');
     const declaradas = records.filter((r) => r.date_source && r.date_source !== 'filename').length;

@@ -10,11 +10,11 @@
  * (`baseSha`). Orden:
  *   1. `TYCON_COVERAGE_BASE` (el que llama manda)
  *   2. `baseSha` del marcador, si el marcador es del MISMO repo git y el commit es ancestro de HEAD
- *   3. en una corrida cruzada (`TYCON_TEST_GATE_CROSS_REPO=1`: la del repo hermano, o un repo con la story de otro) con
- *      el marcador de otro repo, o sin marcador: la bifurcación con su rama principal (`merge-base HEAD origin/HEAD` ›
- *      `origin/main` › `main`). El marcador es del repo de la story; en el repo de código, lo que la story cambió es lo
- *      posterior a la bifurcación, más lo sin commitear.
- *   4. `HEAD` (sólo lo no commiteado)
+ *   3. sin marcador de este repo (el portón corrido a mano, o una corrida cruzada con el marcador de otro repo): la
+ *      bifurcación con su rama principal (`merge-base HEAD origin/HEAD` › `origin/main` › `main`). Lo que la rama cambió
+ *      es lo posterior a la bifurcación, más lo sin commitear. En un repo que trabaja en `dev` trae también lo de otros:
+ *      elige de más, nunca de menos.
+ *   4. `HEAD` (sólo lo no commiteado), si no hay rama principal
  * Una base que no sirve NO se usa en silencio: queda en `descartadas` con su motivo, y se cae a la
  * siguiente. Fuera de git no hay base (`ref: null`) y el parser lo dice.
  *
@@ -91,8 +91,10 @@ function resolver({ repo, env = process.env, marker = null, markerError = null }
     }
   }
 
+  // Sin marcador de este repo (el portón corrido a mano, o la corrida cruzada) lo de la rama es lo posterior a la
+  // bifurcación con main. HEAD solo no ve lo commiteado y el portón terminaría corriendo todas las suites.
   const delOtro = !marker || !marker.baseSha || descartadas.some((d) => d.source === 'marcador' && /otro repo/.test(d.motivo));
-  if (env && env.TYCON_TEST_GATE_CROSS_REPO === '1' && delOtro) {
+  if (delOtro) {
     const b = bifurcacion(top);
     if (b.sha) return { ref: b.sha, source: 'bifurcacion', rama: b.rama, descartadas };
     descartadas.push({ source: 'bifurcacion', motivo: b.motivo });

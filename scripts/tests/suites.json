@@ -7,6 +7,16 @@
       "requiere": []
     },
     {
+      "raiz": "arnes",
+      "ruta": "tests/product-lab.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/compare-matrix.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la pieza que sirve un repo git por HTTP en las pruebas: un git sin http-backend no cuenta como «hay backend», y si el del PATH no lo trae se usa otro de la máquina (en Windows, Git para Windows completo).",
       "raiz": "arnes",
       "ruta": "tests/git-http-server.test.js",
@@ -239,6 +249,12 @@
       "raiz": "arnes",
       "ruta": "tests/typecheck-forms.test.js",
       "requiere": []
+    },
+    {
+      "__nota": "story 8.197: el detector de consultas y temporizadores vivos en las pruebas de formularios (scripts/ci/test-setup/). Corre jest de verdad sobre formularios de juguete; jest se instala una vez en una carpeta de caché, y sin red cada prueba sale NO MEDIDO. Las de la plantilla leen el paquete bizuit por TYCON_PACKS_DIR.",
+      "raiz": "arnes",
+      "ruta": "tests/live-handles.test.js",
+      "requiere": ["red"]
     },
     {
       "raiz": "arnes",
@@ -907,6 +923,18 @@
       "requiere": []
     },
     {
+      "__nota": "Un texto con forma de comodín que no se puede convertir no abre el freno: es texto. Tampoco lo abre una carpeta que no se puede leer, ni lo cuelga una tira de estrellas, y el registro dice «FAILED OPEN» sólo si dejó pasar el comando sin mirarlo.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-write-bracket.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Nombrar un guion no es correrlo: la lista de archivos de un comando de sólo lectura de pipeline.js, o lo que lee un programa que sólo lee, no cuenta; el guion que corre sigue frenando, con cualquier envoltura, encadenado o en una variable.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-write-named-script.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/bash-write-gate-failures-logged.test.js",
       "requiere": []
@@ -1031,6 +1059,24 @@
       "requiere": []
     },
     {
+      "__nota": "la matriz juzga la evidencia contra el commit: un cambio de rama no la vence si el archivo no cambió. Laboratorios con repos de git de verdad.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/evidence-vs-commit.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la fusión de la propia historia no vence su evidencia, un cambio de otra historia en una prueba tampoco, y el código que la evidencia no probó sigue sin contar. Lab con repos de git de verdad; corre también la suite de la regla (8.192)",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/evidence-vs-merge.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la matriz busca cada archivo declarado también en el hermano y en su copia de la rama, y da rojo si no puede leer uno de código. Lab con repos de git de verdad (8.200)",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/matrix-sibling-files.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "un criterio de pantalla sólo cuenta como probado con una captura o una grabación del navegador real atada a ese criterio (la matriz, el portón E2E y smoke-run.sh --capture).",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/visual-evidence.test.js",
@@ -1052,9 +1098,38 @@
       "requiere": []
     },
     {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-after-main.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 7.15: qué archivos toca la story y, sobre todo, si se pudo mirar — el test-gate difiere exportador-real sólo cuando lo sabe.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/touched-files.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "un portón corrido a mano, sin marcador, acota desde la bifurcación con main y dice qué eligió (no corre todas por no ver lo commiteado).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/gate-base-fork.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el registro de cuánto tarda cada suite (portón, portables, Azure y el renglón marcado de GitHub) y el comando que lista las lentas con su tendencia.",
+      "raiz": "arnes",
+      "ruta": "tests/suite-times.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "lo que las dos guías dicen de las suites del arnés: cuántas corren a la vez y por qué, cómo se listan las lentas y desde dónde acota un portón corrido a mano.",
+      "raiz": "arnes",
+      "ruta": "tests/slow-suites-goal.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "cuántas suites corren a la vez: núcleos menos dos o menos la carga, la espera cuando la carga pasa el doble, y la variable y la CI como antes, en el portón y en las portables.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/suite-workers.test.js",
       "requiere": []
     },
     {
@@ -1387,6 +1462,11 @@
     },
     {
       "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/finished-open.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/controls-off.test.js",
       "requiere": []
     },
@@ -1427,9 +1507,20 @@
       "requiere": []
     },
     {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/board-write-gate.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.174: el camino rápido de riesgo alto — una sola regla de riesgo (risk-paths.js), la base del carril, el delegado que no la escribe, la marca, y los revisores y el pase antes de guardar.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/adhoc-high-risk.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el camino rápido que toca una pantalla: maqueta aprobada y captura posterior al último cambio, o no guarda.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adhoc-screen.test.js",
       "requiere": []
     },
     {
@@ -1457,6 +1548,11 @@
     {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/test-mutation-check.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-mutation-runners.js",
       "requiere": []
     },
     {
@@ -1714,7 +1810,90 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/office-task-numbers.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/office-messages.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/office-inbox-watch.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/office-topics.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/hour-notice.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/cover-secrets.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/cover-secrets-real.test.js",
+      "requiere": ["modelo"]
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/office-server.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/session-state.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/permission-notice.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/turn-wait-and-retired.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/pruned-run-restore.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/session-transcript.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/office-site-link.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.171: el sitio recibe las oficinas de las máquinas y las reparte a quien las puede ver",
+      "raiz": "arnes",
+      "ruta": "tests/site-live-hub.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.171: la pestaña «Oficinas» del sitio y /office, que la abre",
+      "raiz": "arnes",
+      "ruta": "tests/site-offices.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.171, tanda D: lo que las guías y /office dicen de las oficinas en el sitio",
+      "raiz": "arnes",
+      "ruta": "tests/office-site-guides.test.js",
       "requiere": []
     },
     {
@@ -1724,7 +1903,28 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/background-question-guard.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/coordination-notice.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "sin perfil del equipo la coordinadora ordena y no firma. También la corre el ensayo de firmas de Windows (scripts/tests/windows/waiver-probe.js).",
+      "raiz": "arnes",
+      "ruta": "tests/coordination-without-profile.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/session-cap-guard.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/session-names.test.js",
       "requiere": []
     },
     {
@@ -2079,6 +2279,12 @@
       "requiere": []
     },
     {
+      "__nota": "qué versión de Claude se mira según cómo entró la persona: terminal, VS Code y Codex, el aviso al arrancar de verdad y que lo que no se lee sea «no sé».",
+      "raiz": "arnes",
+      "ruta": "tests/claude-versions.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 1.11: el aviso de arranque de dev atrasada habla sólo con atraso real o trabajo trabado, dice «no sé» con datos viejos, no sale a la red, no rompe el arranque y ofrece una vez por estado.",
       "raiz": "arnes",
       "ruta": "tests/dev-behind-main-notice.test.sh",
@@ -2088,6 +2294,12 @@
       "__nota": "El aviso de arranque de los pedidos trabados: en choque o sin entrar más de una hora con auto-completar, el reloj que vuelve a cero, «no medido» y nunca vacío, el tope de 5 s, la foto de 10 minutos y a lo sumo 5 líneas saneadas.",
       "raiz": "arnes",
       "ruta": "tests/stuck-pr-notice.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.195: el aviso de arranque de lo terminado sin cerrar lista lo de toda la máquina con el comando de cada sesión, y calla sin nada.",
+      "raiz": "arnes",
+      "ruta": "tests/finished-open-notice.test.js",
       "requiere": []
     },
     {
@@ -2351,6 +2563,18 @@
       "requiere": []
     },
     {
+      "__nota": "el arnés entiende a git en cualquier idioma: la función única que fija el idioma de git (clean-git-env.js), el caso de punta a punta con un git sustituto que contesta en castellano, y la lista que avisa si un script compara una frase de error de git sin fijarlo.",
+      "raiz": "arnes",
+      "ruta": "tests/git-language.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.214: scripts/tools/catch-up-main.js pone al día con main una rama que choca sólo en specs/epics.md, specs/sprint-status.yaml y .tycon/runtime-waivers.jsonl. Laboratorios con un remoto propio: junta los dos lados y commitea el merge; un renglón por historia, el de la rama; una clave repetida que ya venía de main no se toca; las firmas, todas y en orden, con la cadena válida; otro choque, o un lado que borró, sale 1 sin tocar nada; empuja sin forzar y con el remoto adelantado sale 3; al día sale 0 y sucia sale 2; con git en castellano da lo mismo; un control que rechaza el commit sale 4 y deshace el merge; sin remoto o sin historia común sale 5.",
+      "raiz": "arnes",
+      "ruta": "tests/catch-up-main.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "al commitear en el público, el inventario de los controles se compara con el pre-commit propio del repo privado (de su origin/main): avisa el mismo día lo que antes salía rojo de noche, y en el privado no aplica.",
       "raiz": "arnes",
       "ruta": "tests/private-inventory.test.js",
@@ -2360,6 +2584,36 @@
       "__nota": "las firmas del dueño se dan en la ventana de permiso: el freno pide la ventana y deja el registro del pedido, y el guion de la firma comprueba en el árbol de procesos que lo lanzó la herramienta con ese comando (árbol, casa y hora inyectados).",
       "raiz": "arnes",
       "ruta": "tests/owner-window.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la aprobación explícita de la persona sin terminal (scripts/lib/owner-approvals.js y el gancho owner-approval-record.js): un click en el cuadro de opciones o un «aprobado» escrito; se niega sin aprobación, con una vieja, de otra sesión que no es la coordinadora, ya usada, mandada por otra sesión o contestada por un gancho. Sin red, milisegundos.",
+      "raiz": "arnes",
+      "ruta": "tests/owner-approvals.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la lista de lo que espera a la persona (scripts/lib/signature-list.js): el registro, lo que lo cierra, la pasada de a una y la llave.",
+      "raiz": "arnes",
+      "ruta": "tests/signature-list.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "`confirm-designation` de scripts/lib/delegated-signing.js: el guion de verdad con la firma reemplazada. Sólo una persona confirma (ventana, click o «aprobado», no la delegación ni lo «hecho y avisado»), desde la pestaña de la sesión designada, y el renglón queda atado a esa designación. Sin red, segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/delegated-signing-confirm.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "nombrar y retirar a la coordinadora con un click del dueño (marker.js designate-relay sin frase y withdraw-relay): el guion de verdad con la firma reemplazada y el freno en proceso; sin click no se anota nada, un click vencido, usado o de otra pregunta no vale, nadie la nombra por otra sesión, y sin click comprobable dice por qué y los respaldos. Sin red, segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/designate-by-click.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la pregunta de cada firma dice qué se aprueba (owner-approvals.js cuadroDe, owner-window.js cuadroPara y signature-sources.js): el verbo una vez, la historia con su título, qué hace en hasta 3 líneas, archivos, ruta, su «si sale mal» y la cita al final; el click atado a lo que se mostró. Sin red, segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/signature-question.test.js",
       "requiere": []
     },
     {
@@ -2450,6 +2704,12 @@
       "__nota": "El control de los nombres de las herramientas de horas fuera de su integración (scripts/ci/tool-names.js): cuenta sólo lo del núcleo (no las zonas permitidas ni las rutas a una integración), frena sobre el techo con archivo y línea, las excepciones con motivo y sin comodines, y el árbol real dentro de su techo.",
       "raiz": "arnes",
       "ruta": "tests/tool-names.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "El control de las palabras de las guías en castellano (scripts/ci/vocabulary.js): una palabra que no se escribe se señala con archivo, línea y la que va en su lugar, sin frenar; el código, los enlaces, los nombres de la máquina y las excepciones declaradas no cuentan; el techo avisa; el glosario dice lo mismo que las reglas; y el árbol real informa sin frenar.",
+      "raiz": "arnes",
+      "ruta": "tests/vocabulary.test.js",
       "requiere": []
     },
     {
@@ -2761,6 +3021,18 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.203: los botones del sitio dicen que trabajan — el ayudante común trabajando() (apagado, aria-busy y lo que hace desde el toque; «sigue trabajando» a los 10 s; el motivo al lado si falla y el botón como estaba), cada botón medido de Configuración, «Cómo trabaja» y Hallazgos que lo usa, y la regla que lee el código del sitio y de la oficina: cada llamada al servidor va por el ayudante o está en la lista con su motivo. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/site-busy-buttons.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.203: los defectos del sitio — la dirección del sitio en un solo campo (el del perfil) y los procesos de la noche que la leen de ahí con operations.json de respaldo; «Propuesto en el pedido N» hasta que main lo trae, y el pedido cerrado sin entrar; la capa que sube sola en el mismo pedido si todas las máquinas activas tienen la versión, y cuándo frena; la lista propia de nombres; la diferencia por valor con la línea de la forma; los botones de las máquinas separados; los textos y la guía. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/site-config-defects.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 2.46: «Proponer» usable en la pestaña Configuración, la parte del servidor — la diferencia por renglones (sólo lo que cambia con tres de contexto, y un archivo enorme no cuelga), el resumen en castellano o inglés de lo que se cambia, la marca de cada propuesta (dos envíos con la misma marca crean un solo pedido y reciben la misma respuesta), la marca en el cuerpo del pedido, buscar el pedido de una marca en Azure DevOps y GitHub (abierto o completado en las últimas 24 horas, nunca uno abandonado) y la ruta de consulta, sólo para quien mantiene, que devuelve sólo el estado y el enlace. Levanta el servidor del sitio con una sesión inyectada, repos git locales por HTTP y una API falsa de Azure DevOps y de GitHub en el proceso; sin red.",
       "raiz": "arnes",
       "ruta": "tests/site-propose.test.js",
@@ -2999,6 +3271,12 @@
       "__nota": "story 8.23 (tanda C, AC 22): scripts/setup/agents-md-blocks.js — las reglas del arnés en ~/.codex/AGENTS.md desde los bloques, entre sus marcas: la variante de Codex, lo de la persona fuera de las marcas byte a byte, sin leer el CLAUDE.md, sin @import, las integraciones y el perfil, «no se pudo saber» no es «apagada», idempotente y --check sin escribir. Todo en el temporal.",
       "raiz": "arnes",
       "ruta": "tests/agents-md-blocks.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "las sondas de Cursor (scripts/tools/cursor-probes.js): con un Cursor de mentira, la forma de la evidencia, el cuelgue y el error, y que de ~/.cursor/projects sólo se borre lo de la carpeta temporal. Todo en el temporal: nunca toca el Cursor real.",
+      "raiz": "arnes",
+      "ruta": "tests/cursor-probes.test.js",
       "requiere": []
     },
     {
@@ -3427,6 +3705,12 @@
       "requiere": []
     },
     {
+      "__nota": "los frenos de Codex en Windows: el lanzador que falla cerrado, la forma escrita en hooks.json, la medición viva de la auditoría y el enchufe sin Git",
+      "raiz": "arnes",
+      "ruta": "tests/run-sh-hook.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "arreglo del 2026-10-14 (sin story): la búsqueda en el PATH de harness.js (findInPath, la de los requisitos de install y doctor) y de tools.js (findIn, la que detecta Claude Code y Codex), con el sistema y el sistema de archivos inyectados — en Windows el alias de ejecución de la Microsoft Store (statSync tira EACCES, lstatSync existe) cuenta como encontrado; una carpeta con el nombre del programa no; gana el primero del PATH; en Mac y Linux la regla no cambia. Más un caso con el sistema de archivos de verdad. No lanza procesos.",
       "raiz": "arnes",
       "ruta": "tests/path-lookup.test.js",
@@ -3493,6 +3777,12 @@
       "__nota": "Freno de evidencia del commit (2026-10-14): un AC cuenta si aparece en la UNIÓN de las tres fuentes que escribe la máquina —registro de pruebas de humo (salida 0 y copia en gates.log), gates E2E PASS (filas E2E de la tabla ### Tests) y firmas del dev vigentes para la declaración—, leída de la matriz por AC. Corre el hook de verdad sobre un repo y una HOME temporales: los tres orígenes repartidos pasan sin -cierre.md; un AC en ninguna fuente frena y el mensaje nombra las tres; un smoke con salida distinta de 0 no cuenta aunque su texto nombre el AC; una firma vencida no cuenta; un -cierre.md que nombra todo sigue contando.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/closing-evidence-union.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.214: el freno de cierre no le cobra a un commit de merge lo que trae de main. Corre el hook de verdad sobre un repo con un merge en curso: la historia que main pasó a review y el índice tiene igual que MERGE_HEAD no se juzga; la historia propia de la rama sin evidencia sigue frenando, en el merge y en un commit común; la resuelta a mano (distinta de los dos lados) se juzga.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/closing-evidence-merge.test.js",
       "requiere": []
     },
     {
@@ -3604,6 +3894,12 @@
       "requiere": []
     },
     {
+      "__nota": "arreglo rápido 2026-11-01 (reglas de la coordinadora): el turno de la suite completa (scripts/tools/heavy-turn.js). Con coordinadora, una suite completa por vez: la segunda no arranca y dice quién tiene el lugar; sin coordinadora no cambia nada; un turno de un proceso muerto o de más de tres horas se libera solo y el ajeno no se suelta. El corredor de suites.json lo pide sólo sin acotar, y las portables sólo enteras. Con HOME de juguete y un arnés instalado de juguete, porque el clon no trae el perfil; también toma el turno con varios procesos a la vez y corre las portables de verdad hasta su negativa.",
+      "raiz": "arnes",
+      "ruta": "tests/heavy-turn.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.17, tandas W3 y W4 (T33-T37 y los casos del pase adversarial): el aplicador de la lista única de hooks (scripts/setup/apply-hooks.js) — qué decide con cada integración, perfil y opt-in, que deja el mismo settings.json que el instalador de antes, las dos reglas de identidad (Mac/Linux por archivo, Windows por la ruta del repo), la marca de codificación, los permisos, los matchers repetidos, la sección de rutas que no se pueden registrar y la desinstalación de un bash entre comillas y de los enlaces duros anotados. Con HOME y settings.json de prueba; no usa bash ni pwsh.",
       "raiz": "arnes",
       "ruta": "tests/apply-hooks.test.js",
@@ -3697,6 +3993,11 @@
       "__nota": "story 8.26, tanda F1 (T22, T56): el freno antes de publicar, en un empuje (scripts/hooks/public-push-guard.js). El freno corre COPIADO a un arnés de laboratorio —así la prueba decide si esa «máquina» tiene el perfil del equipo y dónde está la lista— contra repos de juguete con git; un repo desnudo local hace de público. Cada rojo (un término en el contenido, la ruta, el mensaje, la rama o una marca; un token; un correo que no es noreply; una ruta vedada; un objeto ilegible; el tope de tiempo) tiene su verde. La lista es inventada.",
       "raiz": "arnes",
       "ruta": "tests/public-push-guard.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/public-push-guard-commit.test.js",
       "requiere": []
     },
     {
@@ -3796,9 +4097,33 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.155, tanda A: la llave del modelo de la noche en el grupo de variables harness-nightly-model — los dos nocturnos con modelo lo enlazan y cada paso del modelo recibe las dos llaves; el paso que dice «llegó/no llegó» corrido de verdad, sin el valor ni su largo; una llave literal `$(NOMBRE)` cuenta como ausente; y los pasos del README en orden (crear, autorizar, probar sin efectos, mergear, la variable vieja al final). Las copias del repo de operaciones, con --operations <clon>; sin él, «no medido». Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/nightly-key.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el barrido de las retrospectivas (scripts/metrics/retro-sweep.js): repos de juguete con git de verdad y el latido real; lo cubierto, lo que no pide retro, «no pude mirar», el reintento de lo que faltó, el clon por url y la regla de scripts/lib/retro-coverage.js. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/retro-sweep.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "qué anota el reclamo de la retrospectiva al abrir un pedido (scripts/hooks/retro-pending.js): la punta del remoto antes que la local y la carpeta principal, y a qué carpeta manda el comando que lo paga. Repos de juguete con git de verdad. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/retro-pending-punta.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "las entradas del reclamo de la retrospectiva que anotaron el commit equivocado (scripts/hooks/retro-pending.js): la punta que contesta el remoto al abrir el pedido, la rama de origen, la corrección con quién y por qué (--correct), el aviso de «ya estaba en main» y la carpeta principal por nombre. Repos de juguete con git de verdad y un remoto en una carpeta. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/retro-pending-correct.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "un latido de retrospectiva es sólo de un commit que entró a main, y uno falso se anula sin borrarlo: el pedido abierto que espera, entra o se abandona (scripts/hooks/retro-pending.js), la línea de main y --annul (scripts/metrics/retro-heartbeat.js) y lo que no cuenta (retro-coverage.js, weekly-review.js, dashboard-metrics.js, sdlc-stage-metrics.js). Repos de juguete con git de verdad, az y gh de mentira en el PATH y un buzón de mentira en el mismo proceso. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/retro-heartbeat-main.test.js",
       "requiere": []
     },
     {

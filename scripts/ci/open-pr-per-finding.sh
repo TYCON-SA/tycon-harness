@@ -827,7 +827,10 @@ if [ -z "$SOLO_REGISTRAR$SIN_GUARDAR" ]; then
   if [ ! -f "$CICLO" ]; then
     aviso "no está cycle.js junto al guion: no se pudo preguntar si el sitio decide — se abren pedidos como sin sitio"
   else
-    SITIO_MOTIVO=$(node "$CICLO" site-decides --operations operations.json 2>&1); SITIO_RC=$?
+    # la dirección del sitio vale la del perfil del equipo (TEAM_PROFILE, la que ya trae el pipeline); sin él, la de
+    # operations.json, como antes (Casos: scripts/tests/site-config-defects.test.js)
+    PERFIL_SITIO=(); [ -n "${TEAM_PROFILE:-}" ] && [ -f "$TEAM_PROFILE" ] && PERFIL_SITIO=(--profile "$TEAM_PROFILE")
+    SITIO_MOTIVO=$(node "$CICLO" site-decides --operations operations.json ${PERFIL_SITIO[@]+"${PERFIL_SITIO[@]}"} 2>&1); SITIO_RC=$?
     case "$SITIO_RC" in
       0) SITIO_DECIDE=1; echo "$SITIO_MOTIVO" ;;
       1) ;;

@@ -1,0 +1,263 @@
+#!/usr/bin/env node
+'use strict';
+// stable-data: la hora de ahora es a propósito: la matriz descarta la evidencia más vieja que el código, y una hora fija
+// se pudriría. Las fechas de commit que se comparan las fija cada laboratorio.
+/**
+ * matrix-sibling-files.test.js — la matriz busca cada archivo declarado también en el repo hermano y en su copia de la rama
+ * de la historia, juzga cada copia que encuentra, y da rojo cuando un archivo de código declarado no está en ningún lado.
+ *
+ * Los laboratorios son repos de git de verdad, en una carpeta temporal: uno con las historias y la evidencia, y el hermano.
+ *
+ * Correr: node --test skills/tycon-pipeline/scripts/tests/matrix-sibling-files.test.js
+ */
+const { test, after } = require('node:test');
+const assert = require('node:assert');
+const { execFileSync } = require('child_process');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+const SCRIPTS = path.join(__dirname, '..');
+const rm = require(path.join(SCRIPTS, 'runtime-matrix.js'));
+const ledgerLine = require(path.join(__dirname, 'lib', 'smoke-ledger-line.js'));
+const GUIA = path.join(SCRIPTS, '..', '..', '..', 'guides', 'accov-governance-protocol.md');
+
+const temporales = [];
+after(() => { for (const d of temporales) fs.rmSync(d, { recursive: true, force: true }); });
+
+const RAMA = 'feature/5-28-carga';
+
+function entornoGit(fecha) {
+  const env = { ...process.env };
+  for (const k of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE']) delete env[k];
+  return fecha ? { ...env, GIT_COMMITTER_DATE: `${fecha} +0000`, GIT_AUTHOR_DATE: `${fecha} +0000` } : env;
+}
+function git(repo, args, fecha) {
+  return execFileSync('git', ['-c', 'user.name=Lab', '-c', 'user.email=lab@example.invalid', '-c', 'commit.gpgsign=false', ...args],
+    { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: entornoGit(fecha) }).trim();
+}
+function carpeta() {
+  const d = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'msf-')));
+  temporales.push(d);
+  return d;
+}
+function repoNuevo(dentro, nombre) {
+  const repo = path.join(dentro, nombre);
+  fs.mkdirSync(repo, { recursive: true });
+  git(repo, ['init', '-q', '-b', 'main']);
+  return repo;
+}
+function escribir(repo, rel, texto) {
+  const abs = path.join(repo, rel);
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+  fs.writeFileSync(abs, texto);
+  return abs;
+}
+function commit(repo, mensaje, fecha) {
+  git(repo, ['add', '-A']);
+  git(repo, ['commit', '-q', '-m', mensaje], fecha);
+}
+function compacto(ms) {
+  return new Date(ms).toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+}
+
+/**
+ * El repo de historias (con su evidencia) y, si se pide, el hermano `Back`. Las horas, una hora antes de ahora: la fecha
+ * de los archivos en disco es la de ahora, así que el juez siempre le pregunta a git.
+ */
+function lab({ declarados, hermanos = ['../Back'], fePaths = [], estado = 'in-progress', propios = {}, delHermano = { 'src/Feature.cs': '// v1\n' } } = {}) {
+  const ws = carpeta();
+  const esp = repoNuevo(ws, 'Historias');
+  const ahora = Math.floor(Date.now() / 1000) - 3600;
+  let back = null;
+  if (hermanos.includes('../Back')) {
+    back = repoNuevo(ws, 'Back');
+    for (const [rel, texto] of Object.entries(delHermano)) escribir(back, rel, texto);
+    commit(back, 'base', ahora - 1000);
+  }
+  const yaml = ['evidence:'];
+  if (hermanos.length) yaml.push('  companion_repos:', ...hermanos.map((h) => `    - ${h}`));
+  if (fePaths.length) yaml.push('  fe_paths:', ...fePaths.map((p) => `    - ${p}`));
+  if (yaml.length > 1) escribir(esp, '.tycon/advisors.yaml', yaml.join('\n') + '\n');
+  for (const [rel, texto] of Object.entries(propios)) escribir(esp, rel, texto);
+  const cuerpo = ['---', 'story: 5.28', `status: ${estado}`, 'files_to_modify:', ...declarados.map((d) => `  - ${d}`), '---', '',
+    '## Acceptance Criteria', '', '1. **Given** algo, **When** pasa, **Then** resultado.', '', '### Tests', '',
+    '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|', '| E1 | `curl la pantalla` | 1 | e2e | x | y |', ''].join('\n');
+  const storyPath = escribir(esp, 'specs/stories/5-28-carga.md', cuerpo);
+  commit(esp, 'historias', ahora - 900);
+  const dod = path.join(esp, '.advisors', 'dod-runtime');
+  fs.mkdirSync(dod, { recursive: true });
+  const gatesLog = path.join(ws, 'gates.log');
+  const humo = (ts = ahora - 50) => {
+    ledgerLine.append({ dodDir: dod, gatesLog, story: '5.28', acs: [1], ts: new Date(ts * 1000).toISOString().replace(/\.\d+Z$/, 'Z'), cmd: 'curl -s http://localhost:5000/pantalla', mirror: true });
+    commit(esp, 'evidencia', ts + 5);
+  };
+  const gate = (ts = ahora - 40) => {
+    const filtro = 'story-5-28.spec.ts';
+    escribir(esp, `.advisors/dod-runtime/5.28-e2e-gate-${compacto(ts * 1000)}.md`, ['# gate', `**Spec filter**: ${filtro}`, '```', 'verdict=PASS', 'total=1', 'passed=1', '```', '- skipped: 0', ''].join('\n'));
+    fs.appendFileSync(gatesLog, JSON.stringify({ ts: new Date().toISOString(), check: 'dod', status: 'green', provenance: 'run-check', cmd: `bash e2e-gate.sh /fe 5.28 /dir ${filtro}`, exit: 0 }) + '\n');
+    commit(esp, 'evidencia del gate', ts + 5);
+  };
+  const calcular = (extra = {}) => rm.compute({ storyPath, gatesLogPath: gatesLog, testsResults: [], ...extra });
+  return { ws, esp, back, ahora, storyPath, humo, gate, calcular };
+}
+const avisos = (r) => r.warnings.join('\n');
+
+// ---------------------------------------------------------------- dónde busca
+
+test('T1 Hermano_RutaRelativa_CambiadaDespues_NoCuenta @story-8.200 @ac-1', () => {
+  const f = lab({ declarados: ['src/Feature.cs'] });
+  f.humo();
+  escribir(f.back, 'src/Feature.cs', '// v2\n');
+  commit(f.back, 'cambio de otra historia', f.ahora + 100);
+  const r = f.calcular();
+  assert.equal(r.perAc[1].verdict, 'NOT-RUN', avisos(r));
+  assert.match(avisos(r), /src\/Feature\.cs/);
+  assert.equal(r.green, false);
+});
+
+test('T2 Hermano_RutaRelativa_SinCambios_Cuenta @story-8.200 @ac-2', () => {
+  const f = lab({ declarados: ['src/Feature.cs'] });
+  f.humo();
+  const r = f.calcular();
+  assert.equal(r.perAc[1].verdict, 'RUNTIME', avisos(r));
+  assert.equal(r.green, true, avisos(r));
+});
+
+test('T3 Hermano_WorktreeDeLaRama_SeMira @story-8.200 @ac-3', () => {
+  const f = lab({ declarados: ['src/Feature.cs'] });
+  git(f.esp, ['checkout', '-q', '-b', RAMA]);
+  const copia = path.join(f.ws, 'Back-wt');
+  git(f.back, ['worktree', 'add', '-q', '-b', RAMA, copia]);
+  f.humo();
+  // El cambio sólo en la copia de la rama: el checkout del hermano sigue igual
+  escribir(copia, 'src/Feature.cs', '// v2 en la rama\n');
+  commit(copia, 'cambio en la rama', f.ahora + 100);
+  const r = f.calcular();
+  assert.equal(r.perAc[1].verdict, 'NOT-RUN', avisos(r));
+  assert.match(avisos(r), /src\/Feature\.cs/);
+});
+
+test('T4 RutaDelRepoYDesdeArriba_ComoHoy @story-8.200 @ac-4', () => {
+  // Escrita desde la carpeta de arriba
+  const arriba = lab({ declarados: ['Back/src/Feature.cs'] });
+  arriba.humo();
+  escribir(arriba.back, 'src/Feature.cs', '// v2\n');
+  commit(arriba.back, 'cambio', arriba.ahora + 100);
+  const r1 = arriba.calcular();
+  assert.equal(r1.perAc[1].verdict, 'NOT-RUN', avisos(r1));
+  assert.match(avisos(r1), /Back\/src\/Feature\.cs/);
+  assert.doesNotMatch(avisos(r1), /no pude leer/);
+  // Relativa al repo de la historia
+  const propio = lab({ declarados: ['src/Local.cs'], hermanos: [], propios: { 'src/Local.cs': '// v1\n' } });
+  propio.humo();
+  escribir(propio.esp, 'src/Local.cs', '// v2\n');
+  commit(propio.esp, 'cambio', propio.ahora + 100);
+  const r2 = propio.calcular();
+  assert.equal(r2.perAc[1].verdict, 'NOT-RUN', avisos(r2));
+  assert.match(avisos(r2), /src\/Local\.cs/);
+  assert.doesNotMatch(avisos(r2), /no pude leer/);
+});
+
+test('T5 MismaRutaEnDosLugares_JuzgaTodas @story-8.200 @ac-5', () => {
+  // La copia del repo de la historia no cambia; la del hermano sí
+  const f = lab({ declarados: ['src/Feature.cs'], propios: { 'src/Feature.cs': '// propio\n' } });
+  f.humo();
+  escribir(f.back, 'src/Feature.cs', '// v2\n');
+  commit(f.back, 'cambio', f.ahora + 100);
+  const r = f.calcular();
+  assert.equal(r.perAc[1].verdict, 'NOT-RUN', avisos(r));
+  const aviso = r.warnings.find((w) => /Smoke .* no cuenta/.test(w)) || '';
+  assert.match(aviso, /src\/Feature\.cs \(en Back\)/, avisos(r));
+});
+
+// ---------------------------------------------------------------- lo que no se puede leer
+
+test('T6 RutaQueNoEsta_Rojo @story-8.200 @ac-6', () => {
+  const f = lab({ declarados: ['src/NoEsta.cs'], hermanos: [] });
+  f.humo();
+  const r = f.calcular();
+  assert.equal(r.green, false, avisos(r));
+  assert.equal(r.perAc[1].verdict, 'NOT-RUN', avisos(r));
+  const aviso = r.warnings.find((w) => /^No pude leer src\/NoEsta\.cs/.test(w));
+  assert.ok(aviso, avisos(r));
+  assert.ok(aviso.includes(f.esp), `nombra dónde la buscó: ${aviso}`);
+  assert.match(aviso, /corregí la ruta en la lista/);
+  assert.match(aviso, /si es para crear, crealo o sacalo de la lista/);
+  assert.match(aviso, /traelo al día/);
+  assert.deepEqual(r.noLeidos.map((n) => n.rel), ['src/NoEsta.cs']);
+
+  // En done, la salida no es editar la lista
+  const hecha = lab({ declarados: ['src/NoEsta.cs'], hermanos: [], estado: 'done' });
+  hecha.humo();
+  const r2 = hecha.calcular();
+  assert.equal(r2.green, false);
+  const enDone = r2.warnings.find((w) => /^No pude leer src\/NoEsta\.cs/.test(w)) || '';
+  assert.match(enDone, /volvé a correr la evidencia/, enDone);
+  assert.doesNotMatch(enDone, /corregí la ruta/);
+});
+
+test('T7 HermanoInexistente_RutaSoloAhi_Rojo @story-8.200 @ac-7', () => {
+  const f = lab({ declarados: ['src/NoEsta.cs'], hermanos: ['../NoExiste'] });
+  f.humo();
+  const r = f.calcular();
+  assert.equal(r.green, false, avisos(r));
+  assert.match(avisos(r), /INEXISTENTE/);
+  assert.match(avisos(r), /^No pude leer src\/NoEsta\.cs/m);
+});
+
+test('T8 ArchivoQueNoEsCodigo_NoEsta_ComoHoy @story-8.200 @ac-8', () => {
+  const f = lab({ declarados: ['docs/nota.md'], hermanos: [] });
+  f.humo();
+  const r = f.calcular();
+  assert.equal(r.perAc[1].verdict, 'RUNTIME', avisos(r));
+  assert.equal(r.green, true, avisos(r));
+  assert.doesNotMatch(avisos(r), /no pude leer/i);
+});
+
+test('T9 SinHermanos_TodoPresente_ComoHoy @story-8.200 @ac-9', () => {
+  const f = lab({ declarados: ['src/Local.cs'], hermanos: [], propios: { 'src/Local.cs': '// v1\n' } });
+  f.humo();
+  const r = f.calcular();
+  assert.equal(r.perAc[1].verdict, 'RUNTIME', avisos(r));
+  assert.equal(r.green, true, avisos(r));
+  assert.doesNotMatch(avisos(r), /no pude leer/i);
+});
+
+test('T10 RutaNoLeida_AvisosDeGateYHumo_DicenNoPudeLeer @story-8.200 @ac-10', () => {
+  const f = lab({ declarados: ['src/NoEsta.cs'], hermanos: [] });
+  f.humo();
+  f.gate();
+  const r = f.calcular();
+  const delGate = r.warnings.find((w) => /^Gate E2E /.test(w)) || '';
+  const delHumo = r.warnings.find((w) => /^Smoke /.test(w)) || '';
+  assert.match(delGate, /no pude leer src\/NoEsta\.cs/, avisos(r));
+  assert.match(delHumo, /no pude leer src\/NoEsta\.cs/, avisos(r));
+  assert.doesNotMatch(avisos(r), /no se pudo comparar contra git/);
+  assert.doesNotMatch(delGate, /ANTERIOR al último edit/);
+  assert.doesNotMatch(delHumo, /anterior al último edit/);
+});
+
+test('T11 FechaPorLado_CopiaDelHermanoSuma_NoLeidaNo @story-8.200 @ac-11', () => {
+  const f = lab({
+    declarados: ['pantallas/Inicio.ts', 'src/NoEsta.cs'],
+    fePaths: ['pantallas'],
+    delHermano: { 'pantallas/Inicio.ts': 'export const v = 1;\n' },
+  });
+  f.humo();
+  const suite = escribir(f.ws, 'pantallas-suite/tests-result.json',
+    JSON.stringify({ ts: new Date(f.ahora * 1000).toISOString(), story_id: '5.28', suite_green: true }));
+  const r = f.calcular({ testsResults: [suite] });
+  const copia = fs.statSync(path.join(f.back, 'pantallas/Inicio.ts')).mtimeMs;
+  assert.equal(r.codeMtime, copia, 'la copia del hermano suma con su fecha, y la no leída no');
+  assert.match(avisos(r), /tests-result \(fe\) es anterior al último edit de código fe/);
+});
+
+// ---------------------------------------------------------------- la guía
+
+test('E3 Guia_Seccion7_DiceDondeBuscaYElRojo @story-8.200 @ac-14', () => {
+  const texto = fs.readFileSync(GUIA, 'utf8');
+  const s7 = texto.slice(texto.indexOf('## 7. Qué vence una evidencia'), texto.indexOf('\n## 8.'));
+  assert.match(s7, /en el repo de la historia, en la carpeta de arriba, en cada hermano declarado y en su copia de la rama de la historia/);
+  assert.match(s7, /Un archivo de código declarado que la matriz no puede leer la deja en rojo/);
+});

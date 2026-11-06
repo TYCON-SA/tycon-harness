@@ -23,6 +23,12 @@
  *        el servicio confirmó con 201. Un corte a mitad nunca queda como «subido».
  *    Retención sin vencimiento: el buzón guarda la conversación entera.
  *
+ * 🔴 NINGUNA DIRECCIÓN VIAJA CON SU CREDENCIAL. Todo lo que sube pasa antes por `sinCredencialesEnDirecciones`, que
+ *    tapa lo que va entre `://` y `@` (`usuario:clave@`, `clave@`) y deja el resto del archivo byte por byte: el hilo trae
+ *    los comandos y las salidas tal como se vieron. El archivo local no se toca, y el registro de subidas anota su
+ *    tamaño y su sha256. El que no se puede abrir para limpiarlo no sube, y se dice. La misma limpieza tapa los valores
+ *    reales de los secretos de la máquina; si no pudo leer ningún origen, sube y dice que no los comprobó.
+ *
  * 🔴 «NO SUBIDO» NUNCA SE LEE COMO «SUBIDO». Los códigos del servicio se separan (medidos en un contenedor de
  *    laboratorio): «ya existe» (409 BlobAlreadyExists, 403 UnauthorizedBlobOverwrite) se reintenta UNA
  *    vez con una versión nueva —la llave no lee, así que no puede saber si lo que está es igual—; la política que no
@@ -920,9 +926,64 @@ function headCommit(dir) {
   throw Object.assign(new Error('rama sin commit'), { code: 'REF_SIN_COMMIT' });
 }
 
+// Lo que va entre `://` y `@`, con cualquier esquema y de cualquier largo. Las barras pueden venir escapadas, una o más veces:
+// es un JSON adentro de otro. `?` y `#` cuentan como parte de la credencial: tapar de más cuesta menos que dejar media clave.
+// `<` queda afuera: lo ya tapado no se vuelve a tapar.
+const CREDENCIAL_EN_DIRECCION = /(:(?:\\*\/){2})([^\s/\\'"<>]+)@/g;
+const OCULTO = '<oculto>';
+
+/**
+ * El contenido listo para subir, sin credenciales en sus direcciones: usa latin1 para no cambiar un byte de lo demás, y
+ * sin nada que tapar devuelve el mismo Buffer. `git@` no es una credencial: es el usuario fijo de las direcciones ssh.
+ * Con `.gz` abre y vuelve a comprimir; si no se puede abrir, tira. Tapa también los valores reales de la máquina que recibe
+ * en `secretos`, comparando exacto (known-secrets.js).
+ */
+function limpioParaSubir(cuerpo, archivo, secretos) {
+  const comprimido = /\.gz$/.test(archivo);
+  const texto = (comprimido ? zlib.gunzipSync(cuerpo) : cuerpo).toString('latin1');
+  // primero los valores: limpiar antes una dirección con credencial la cambiaría, y su valor ya no coincidiría exacto
+  const sinValores = secretos.length ? require('../lib/known-secrets.js').coverInLatin1(texto, secretos) : texto;
+  const limpio = sinValores.replace(CREDENCIAL_EN_DIRECCION, (todo, inicio, credencial) => (credencial === 'git' ? todo : `${inicio}${OCULTO}@`));
+  if (limpio === texto) return cuerpo;
+  const salida = Buffer.from(limpio, 'latin1');
+  return comprimido ? zlib.gzipSync(salida) : salida;
+}
+
+function sinCredencialesEnDirecciones(cuerpo, archivo) { return limpioParaSubir(cuerpo, archivo, []); }
+
+/**
+ * Los valores reales de esta máquina para tapar lo que sube. Los lee de nuevo en cada pasada. `comprobable: false` es que
+ * ningún origen se pudo leer: la subida sigue con la limpieza de direcciones, y lo dice. Una tarea programada corre con
+ * el entorno pobre: los valores salen entonces de los archivos. La biblioteca se carga acá: una copia suelta de este guion
+ * sin ella sube igual, y dice que no comprobó.
+ */
+function valoresDeLaMaquina() {
+  try {
+    const { secrets, readable, problems } = require('../lib/known-secrets.js').readKnownSecrets({ home: os.homedir(), env: process.env });
+    return { secretos: secrets, comprobable: readable > 0, problemas: problems };
+  } catch (_) { return { secretos: [], comprobable: false, problemas: [] }; }
+}
+
 /** Los archivos a subir del registro de corridas, en orden: el volcado, su cambio y su hilo quedan juntos. */
 function archivosDelRegistro(dir) {
   return fs.readdirSync(dir).filter((f) => FORMA_ARCHIVO.test(f)).sort();
+}
+
+/**
+ * La huella de la clave de la oficina de esta máquina y el archivo que la lleva al buzón (`{ fingerprint, publicKey }`), o
+ * null si la máquina todavía no tiene clave. Un archivo que está y no sirve devuelve `{ problema }`: la aprobación de la
+ * máquina depende de esta huella, y callar lo dejaría esperando sin que nadie sepa por qué. El buzón es el otro canal por
+ * el que el sitio de la organización confirma de qué máquina es un pedido de alta. De la clave privada, que vive en el
+ * mismo archivo, sólo se mira que esté; el motivo nunca copia el contenido.
+ */
+function huellaDeLaOficina() {
+  let k;
+  try { k = JSON.parse(fs.readFileSync(path.join(stateDirOf(os.homedir()), 'office', 'site-key.json'), 'utf8')); }
+  catch (e) { return e.code === 'ENOENT' ? null : { problema: e.code || 'no es JSON' }; }
+  if (!k || typeof k.publicKey !== 'string' || typeof k.privateKey !== 'string') return { problema: 'le faltan campos' };
+  const fingerprint = crypto.createHash('sha256').update(Buffer.from(k.publicKey, 'base64')).digest('hex');
+  if (k.fingerprint !== fingerprint) return { problema: 'la huella no coincide' };
+  return { fingerprint, cuerpo: Buffer.from(JSON.stringify({ fingerprint, publicKey: k.publicKey })) };
 }
 
 /**
@@ -1207,12 +1268,15 @@ async function subir(opts = {}) {
       }
     } catch (e) { noLeidos.push(`archivos de los merges (${e.code || 'error'})`); }
   } else res.merges = null;
+  const leida = huellaDeLaOficina();
+  const oficina = leida && !leida.problema ? leida : null;
+  if (leida && leida.problema) noLeidos.push(`la clave de la oficina (${leida.problema}): la próxima sesión la reemplaza y vuelve a pedir el alta`);
   try { for (const f of archivosDelRegistro(origen)) entradas.push({ dir: origen, f, juego: null, clave: `${maquina}/${f}`, blob: `${maquina}/${f}` }); }
   catch (e) {
     // Una máquina que nunca corrió el pipeline no tiene la carpeta: es «nada que subir» de corridas, no un fallo en cada arranque.
     if (e.code !== 'ENOENT') return fin(1, 'sin_registro', `no se pudo leer el registro de ejecuciones ${origen} (${e.code || e.message})`);
     // 🔴 «Nada que subir» sólo si tampoco hubo un error con los registros: si no, eso sale 1 al final (parcial).
-    if (!entradas.length && !noLeidos.length) { log(`esta máquina todavía no tiene ejecuciones del pipeline (${origen}): nada que subir`); return fin(0, 'sin_corridas'); }
+    if (!entradas.length && !noLeidos.length && !oficina) { log(`esta máquina todavía no tiene ejecuciones del pipeline (${origen}): nada que subir`); return fin(0, 'sin_corridas'); }
   }
 
   const destino = `${cfg.cuenta}/${cfg.contenedor}`;
@@ -1265,7 +1329,10 @@ async function subir(opts = {}) {
     }
     pendientes.push({ f, dir, clave, blob, aVersion, merge, version: null, previa: null, juego: suJuego || null, mtimeMs: st.mtimeMs, size: cuerpo.length, sha256 });
   }
-  res.a_subir = pendientes.length;
+  // la huella de la oficina va en su propio archivo, uno por huella: no pasa por la cola de los volcados ni tiene versiones
+  const blobOficina = oficina ? `${maquina}/office-keys/${oficina.fingerprint}.json` : null;
+  const huellaPendiente = Boolean(oficina) && !registro.archivos[blobOficina];
+  res.a_subir = pendientes.length + (huellaPendiente ? 1 : 0);
   if (res.merges) res.merges.nuevos = pendientes.filter((p) => p.merge).length;
 
   if (opts.dryRun) {
@@ -1305,6 +1372,27 @@ async function subir(opts = {}) {
   //    lo dispararía también por el hilo de una corrida (`*.hilo.jsonl.gz`).
   const esFallaDeRegistro = (x) => x.startsWith('registros de frenos y escapes') || REGISTROS.some((r) => x.startsWith(`${r}.gz `));
   let registroFallido = noLeidos.some(esFallaDeRegistro) || juegosFallidos.size > 0;
+  const valores = valoresDeLaMaquina();
+  if (!valores.comprobable) {
+    res.valores_sin_comprobar = true;
+    log('los valores no se pudieron comprobar: ningún origen de la máquina se pudo leer. Lo que sube lleva sólo la limpieza de direcciones');
+  } else if (valores.problemas.length) {
+    res.valores_problemas = valores.problemas;
+    log(`algún origen de los valores no se pudo leer, y lo suyo no se tapa: ${valores.problemas.join(' · ')}`);
+  }
+  if (huellaPendiente) {
+    const md5 = crypto.createHash('md5').update(oficina.cuerpo).digest('base64');
+    const r = await ponerBlob(urlDe(blobOficina), oficina.cuerpo, md5, 30000);
+    const tipo = r.error ? null : respuestaDelBuzon(r);
+    if (r.error) return fin(1, 'sin_red', `sin red o sin respuesta del buzón (${r.error.code || r.error.message}) al subir la huella de la oficina: sube en el próximo arranque`);
+    // la llave no lee: un «ya existe» dice que esa huella ya está, y no hay nada más que hacer con ella
+    if (tipo === 'creado' || tipo === 'ya_existe') {
+      registro.archivos[blobOficina] = { size: oficina.cuerpo.length, sha256: crypto.createHash('sha256').update(oficina.cuerpo).digest('hex'), subido: new Date().toISOString(), blob: blobOficina, version: null };
+      try { guardar(); }
+      catch (e) { return fin(1, 'registro_ilegible', `la huella de la oficina subió pero el registro de subidas ${rutaRegistro} no se pudo escribir (${e.code || e.message}): la pasada siguiente la vuelve a intentar`); }
+      if (tipo === 'creado') { res.subidos += 1; res.bytes += oficina.cuerpo.length; res.subido = true; }
+    } else noSubidos.push(`la huella de la oficina (${r.status}${r.codigo ? ` ${r.codigo}` : ''})`);
+  }
   for (let i = 0; i < pendientes.length; i++) {
     if (Date.now() - inicio > tope) { res.sin_tiempo = pendientes.length - i; break; }
     const p = pendientes[i];
@@ -1316,11 +1404,20 @@ async function subir(opts = {}) {
     // 🔴 El stat se toma ANTES de leer: si el archivo se reescribe durante el PUT, el mtime anotado es el viejo
     //    y la pasada siguiente lo re-hashea y lo re-sube. Con el de después, un cambio del mismo tamaño quedaría
     //    como «subido» para siempre.
-    let cuerpo, stAntes;
+    let local, stAntes;
     if (p.merge) mergesIntentados.add(p.clave);
-    try { stAntes = fs.statSync(path.join(p.dir, p.f)); cuerpo = fs.readFileSync(path.join(p.dir, p.f)); } catch (e) { noLeidos.push(`${p.f} (${e.code || e.message})`); if (esRegistro(p)) registroFallido = true; continue; }
+    try { stAntes = fs.statSync(path.join(p.dir, p.f)); local = fs.readFileSync(path.join(p.dir, p.f)); } catch (e) { noLeidos.push(`${p.f} (${e.code || e.message})`); if (esRegistro(p)) registroFallido = true; continue; }
     // El archivo cambió entre el recorrido y la subida (el barrido de rescate lo reescribe): va lo de ahora.
-    const sha256 = crypto.createHash('sha256').update(cuerpo).digest('hex');
+    const sha256 = crypto.createHash('sha256').update(local).digest('hex');
+    let cuerpo;
+    try { cuerpo = limpioParaSubir(local, p.f, valores.secretos); }
+    catch (e) {
+      const motivo = `no se pudo abrir para limpiar sus direcciones: ${e.code || e.message}`;
+      // un juego no queda a medias: se re-prepara en la pasada siguiente, como cuando un registro rebota
+      if (p.juego) fallarJuego(p.juego, `${p.f}: ${motivo}`); else noLeidos.push(`${p.f} (${motivo})`);
+      if (p.juego || esRegistro(p)) registroFallido = true;
+      continue;
+    }
     const md5 = crypto.createHash('md5').update(cuerpo).digest('base64');
     const tiempo = Math.max(30000, Math.min(120000, cuerpo.length / 50));
     let blob = p.blob;
@@ -1356,7 +1453,7 @@ async function subir(opts = {}) {
     if (tipo !== 'creado') { noSubidos.push(`${p.f} (${codigo})`); if (esRegistro(p)) registroFallido = true; continue; }
     if (reintentado) res.ya_existian += 1;
     // 🔴 recién con el 201 se anota — y se persiste ya, archivo por archivo (con el blob y la versión)
-    registro.archivos[p.clave] = { size: cuerpo.length, mtimeMs: Math.min(stAntes.mtimeMs, p.mtimeMs), sha256, subido: new Date().toISOString(), blob, version: version || p.juego || null };
+    registro.archivos[p.clave] = { size: local.length, mtimeMs: Math.min(stAntes.mtimeMs, p.mtimeMs), sha256, subido: new Date().toISOString(), blob, version: version || p.juego || null, ...(cuerpo !== local ? { limpiado: true } : {}) };
     try { guardar(); }
     catch (e) { return fin(1, 'registro_ilegible', `${p.f} subió pero el registro de subidas ${rutaRegistro} no se pudo escribir (${e.code || e.message}): la pasada siguiente lo volvería a subir`); }
     res.subidos += 1;
@@ -1374,7 +1471,11 @@ async function subir(opts = {}) {
     return fin(1, 'parcial', `${partes.join(' · ')}${res.subidos ? ` — ${res.subidos} sí subieron` : ''}`);
   }
   if (!res.subidos) {
-    log(`nada nuevo que subir desde ${maquina}${res.sin_tiempo ? ` (${res.sin_tiempo} quedaron sin tiempo)` : ''}`);
+    // la huella de la oficina que ya había subido se dice: «nada nuevo» solo parecía que nunca había subido
+    const yaSubida = blobOficina && registro.archivos[blobOficina] ? String(registro.archivos[blobOficina].subido || '').slice(0, 10) : '';
+    if (yaSubida) res.huella_oficina = `ya_subida:${yaSubida}`;
+    const notas = [...(res.sin_tiempo ? [`${res.sin_tiempo} quedaron sin tiempo`] : []), ...(yaSubida ? [`la huella de la oficina ya había subido el ${yaSubida}`] : [])];
+    log(`nada nuevo que subir desde ${maquina}${notas.length ? ` (${notas.join('; ')})` : ''}`);
     return fin(0, res.sin_tiempo ? 'sin_tiempo' : 'nada_nuevo');
   }
   log(`subido: ${res.subidos} archivo(s), ${res.bytes} bytes, a ${maquina}/ en ${destino}${res.sin_tiempo ? ` · ${res.sin_tiempo} quedaron sin tiempo para el próximo arranque` : ''}`);
@@ -1422,10 +1523,20 @@ async function chequearSoloCrear(opts = {}) {
     if (local) candidatos.push({ clave, e, f, local });
   }
   candidatos.sort((a, b) => a.e.size - b.e.size || (a.clave < b.clave ? -1 : 1));
+  const { secretos } = valoresDeLaMaquina();
+  let sinUsar = 0;
   for (const c of candidatos) {
-    let cuerpo;
-    try { cuerpo = fs.readFileSync(c.local); } catch (_) { continue; }
-    if (crypto.createHash('sha256').update(cuerpo).digest('hex') !== c.e.sha256) continue;
+    let local;
+    try { local = fs.readFileSync(c.local); } catch (_) { continue; }
+    if (crypto.createHash('sha256').update(local).digest('hex') !== c.e.sha256) continue;
+    // el chequeo pisa si la política lo deja: sólo sirve un archivo sin nada que tapar, igual byte por byte a lo confirmado.
+    // Con una credencial no se sabe qué hay en el blob: el crudo la subiría, y el limpio reescribiría lo ya subido.
+    // Lo que subió limpio no sirve aunque hoy no haya nada que tapar: el valor pudo cambiar, y el crudo pisaría lo tapado.
+    if (c.e.limpiado) { sinUsar += 1; continue; }
+    let limpio;
+    try { limpio = limpioParaSubir(local, c.f, secretos); } catch (_) { sinUsar += 1; continue; }
+    if (limpio !== local) { sinUsar += 1; continue; }
+    const cuerpo = local;
     const blob = typeof c.e.blob === 'string' && c.e.blob.startsWith(`${maquina}/`) ? c.e.blob : c.clave;
     const md5 = crypto.createHash('md5').update(cuerpo).digest('base64');
     const url = `${urlBase(cfg)}/${encodeURIComponent(cfg.contenedor)}/${blob.split('/').map(encodeURIComponent).join('/')}?${cfg.sas}`;
@@ -1439,10 +1550,11 @@ async function chequearSoloCrear(opts = {}) {
     if (r.status === 201) return fin(1, 'dejo_escribir', `la política dejó escribir, o el blob ya no estaba (201, política ${cfg.politica || '?'}): lo verifica con az storage blob show alguien con el rol de lectura. Se mandaron los mismos bytes confirmados: el blob quedó igual`);
     return fin(1, 'otro', `el buzón contestó ${codigo} al volver a subir los mismos bytes (política ${cfg.politica || '?'}): no prueba ni «sólo crear» ni lo contrario`);
   }
+  if (sinUsar) return fin(1, 'no_medido', `no medido: ${sinUsar} archivo(s) con el sha256 confirmado llevan una credencial o un valor real, o no se pudieron abrir para limpiar sus direcciones, y ningún otro sirve (${candidatos.length} anotado(s)): no se manda nada`);
   return fin(1, 'no_medido', `no medido: ningún blob confirmado de esta máquina tiene todavía su archivo local con el mismo sha256 (${candidatos.length} anotado(s)): no se manda nada distinto de lo confirmado`);
 }
 
-module.exports = { placeFactsForMailbox, holdForMailbox, FORMA_DESHECHA, FORMA_MOMENTO, subir, prepararSinCerrar, chequearSoloCrear, motivoDeLaboratorio, MARCAS_DE_CI, respuestaDelBuzon, versionDe, msDeVersion, FORMA_VERSION, nombreDeMaquina, nombreBaseDeMaquina, carpetaDeMaquina, leerCodigoDeMaquina, rutaCodigoDeMaquina, correoDeGitGlobal, huellaDeCorridas, FORMA_CODIGO, normalizarNombreDeMaquina, leerConfig, integracionBuzon, negativaDeLaLlave, rutaConfig, urlBase, FORMA_MAQUINA, FORMA_ARCHIVO, FORMA_REGISTRO, formaRegistro, FORMA_INSTINTO, REGISTROS, prepararRegistros, usosParaElBuzon, X_MS_VERSION };
+module.exports = { sinCredencialesEnDirecciones, placeFactsForMailbox, holdForMailbox, FORMA_DESHECHA, FORMA_MOMENTO, subir, prepararSinCerrar, chequearSoloCrear, motivoDeLaboratorio, MARCAS_DE_CI, respuestaDelBuzon, versionDe, msDeVersion, FORMA_VERSION, nombreDeMaquina, nombreBaseDeMaquina, carpetaDeMaquina, leerCodigoDeMaquina, rutaCodigoDeMaquina, correoDeGitGlobal, huellaDeCorridas, FORMA_CODIGO, normalizarNombreDeMaquina, leerConfig, integracionBuzon, negativaDeLaLlave, rutaConfig, urlBase, FORMA_MAQUINA, FORMA_ARCHIVO, FORMA_REGISTRO, formaRegistro, FORMA_INSTINTO, REGISTROS, prepararRegistros, usosParaElBuzon, X_MS_VERSION };
 
 /**
  * `--log <archivo>`: la salida (la estándar y la de error) se AGREGA a ese archivo, que pasado ~512 KB se mueve a `.1`.

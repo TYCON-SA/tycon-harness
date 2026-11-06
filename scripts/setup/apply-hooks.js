@@ -57,8 +57,9 @@ const PDmod = () => pluginDirs || (pluginDirs = require('./harness/plugin-dirs.j
 const SETUP_DIR = __dirname;
 const SCRIPTS_DIR = path.dirname(SETUP_DIR);
 
-// `Notification` y `SessionEnd` sirven al aviso de espera: el pedido de permiso y la sesión que se cierra
-const EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SessionStart', 'Notification', 'SessionEnd'];
+// `Notification` y `SessionEnd` sirven al aviso de espera: el pedido de permiso y la sesión que se cierra.
+// `PermissionRequest` anota en el momento qué permiso se pide; su matcher nunca alcanza al cuadro de firmas
+const EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SessionStart', 'Notification', 'SessionEnd', 'PermissionRequest'];
 // `time:<integración>`: un hook de una integración de horas, que va sólo si es la elegida (los suma loadList de su
 // manifiesto en integrations/)
 const WHEN_RE = /^(always|integration:[a-z]+|time:[a-z0-9-]+|optin:TYCON_[A-Z_]+)$/;
@@ -94,6 +95,19 @@ const NEEDS = new Set(['telegram-plugin']);
 const STEP_RE = /^(all|[a-z][a-z0-9-]*)$/;
 const EFFECTS = ['blocks', 'warns', 'records'];
 const ASYNC_ALLOWED = true;
+// el plazo más largo que acepta la lista para un gancho: un día
+const MAX_TIMEOUT_S = 86400;
+
+/**
+ * El modo de fondo que despierta a la sesión (`asyncRewake`) y el plazo (`timeout`) de la lista, sobre el gancho escrito.
+ * true si cambió algo.
+ */
+function withRewake(hookObj, h) {
+  let changed = false;
+  if (h.asyncRewake && hookObj.asyncRewake !== true) { hookObj.asyncRewake = true; changed = true; }
+  if (h.timeout !== undefined && hookObj.timeout !== h.timeout) { hookObj.timeout = h.timeout; changed = true; }
+  return changed;
+}
 
 class ApplyError extends Error {}
 
@@ -141,6 +155,9 @@ function validateList(list) {
     if (h.needs !== undefined && !NEEDS.has(h.needs)) out.push(`${who}: needs «${h.needs}» fuera del vocabulario (${[...NEEDS].join(', ')})`);
     if (h.override !== undefined && !(typeof h.override === 'string' && /^TYCON_[A-Z_]+$/.test(h.override) && String(h.when).startsWith('integration:'))) out.push(`${who}: override es una variable TYCON_ y sólo va en un hook de integración`);
     if (h.async !== undefined && (h.async !== true || !ASYNC_ALLOWED)) out.push(`${who}: async sólo puede ser true`);
+    // el gancho de fondo que despierta a la sesión al terminar con 2 (el vigilante de la oficina) y su plazo en segundos
+    if (h.asyncRewake !== undefined && h.asyncRewake !== true) out.push(`${who}: asyncRewake sólo puede ser true`);
+    if (h.timeout !== undefined && !(Number.isInteger(h.timeout) && h.timeout > 0 && h.timeout <= MAX_TIMEOUT_S)) out.push(`${who}: timeout es un entero de segundos entre 1 y ${MAX_TIMEOUT_S}`);
     if (!h.platforms || typeof h.platforms !== 'object' || typeof h.platforms.windows !== 'boolean') out.push(`${who}: falta platforms.windows (true o false)`);
     // en qué pasos del pipeline actúa y qué hace: no cambian lo que se registra; los muestra «Cómo trabaja» del sitio
     // (que cada id sea un paso de verdad lo cruza la prueba del sitio contra la tabla de pasos). Sin ellos la lista se
@@ -538,7 +555,7 @@ function applyToSettings(settings, o) {
   const repoOf = (spec) => (spec.startsWith('@tcg:') ? path.dirname(path.dirname(o.hooksDir)) : (intSpec(spec) ? path.dirname(intDir) : path.dirname(o.skills)));
   if (!settings.hooks || typeof settings.hooks !== 'object' || Array.isArray(settings.hooks)) settings.hooks = settings.hooks && typeof settings.hooks === 'object' && !Array.isArray(settings.hooks) ? settings.hooks : {};
   const hooks = settings.hooks;
-  const r = { added: [], existed: [], removed: [], missing: [], notInstalled: [], deferred: [], normalized: [], reformed: [], present: [], topAdded: [], envAdded: [] };
+  const r = { added: [], existed: [], removed: [], missing: [], notInstalled: [], deferred: [], normalized: [], reformed: [], retimed: [], present: [], topAdded: [], envAdded: [] };
   // con qué se escribe un hook `.js`: lo decide harness-node.js#interpreter mirando el disco; quien no
   // lo pasa (una prueba, un llamador viejo) queda con `node`
   const jsPrefix = (o.interp && o.interp.prefix) || 'node';
@@ -641,18 +658,22 @@ function applyToSettings(settings, o) {
   // un `.js` es el mismo hook en las dos formas del intérprete: se reconoce y se reescribe en su lugar
   // una ruta muerta que termina en la misma ruta del repo (una carpeta de versión que ya se borró) es el mismo hook: se
   // re-arraiga en vez de quedar al lado, dando error en cada evento
-  const deadSame = (cmd, h) => { const sc = scriptOf(cmd); return Boolean(sc) && fwd(sc).endsWith(`/${repoPathOf(h.spec)}`) && !fs.existsSync(sc); };
+  // …y también una carpeta de versión que sigue en el disco: seguir ahí es correr los ganchos de antes de actualizar
+  const versionesDe = fwd(path.join(path.dirname(path.dirname(path.dirname(o.hooksDir))), 'versions'));
+  const deUnaVersion = (sc, h) => { const f = fwd(sc); return f !== fwd(resolve(h.spec)) && f.toLowerCase().startsWith(`${versionesDe.toLowerCase()}/`) && f.split('/').slice(versionesDe.split('/').length + 1).join('/') === repoPathOf(h.spec); };
+  const deadSame = (cmd, h) => { const sc = scriptOf(cmd); return Boolean(sc) && fwd(sc).endsWith(`/${repoPathOf(h.spec)}`) && (!fs.existsSync(sc) || deUnaVersion(sc, h)); };
   const sameHook = (cmd, h, abs, runner) => (windows ? invokesRepoPath(cmd, repoPathOf(h.spec)) : (namesFile(cmd, abs) || deadSame(cmd, h)) && (runner === 'node' ? JS_RUNNER.test(cmd) : cmd.includes(`${runner} "`)));
   // el comando con el intérprete que corresponde, si el de hoy es otro: sólo se cambia el intérprete (el guion queda escrito
   // como estaba); null si ya está bien o no es un `.js`
   const reform = (cmd, runner, h, absCmd) => {
-    if (runner !== 'node') return null;
+    // un `.sh` no cambia de intérprete: sólo sale de la carpeta de una versión
+    if (runner !== 'node') { const sc = scriptOf(cmd); return sc && deUnaVersion(sc, h) ? String(cmd).split(sc).join(absCmd) : null; }
     const now = leadingInterpreter(cmd);
     // sólo un intérprete que es un Node (`node`, o una ruta que termina en node/node.exe): otro comando no se toca
     if (!now || !/(?:^|[/"])node(?:\.exe)?"?$/i.test(now)) return null;
-    // el guion queda como estaba escrito si existe; una ruta que ya no está (una versión borrada) vuelve a la estable
+    // el guion queda como estaba escrito si existe; la ruta de una versión, borrada o no, vuelve a la estable
     const old = scriptOf(cmd);
-    const script = old && fs.existsSync(old) ? old : absCmd;
+    const script = old && fs.existsSync(old) && !deadSame(cmd, h) ? old : absCmd;
     const next = `${jsHead(h)} "${script}"`;
     return next === String(cmd).trim() ? null : next;
   };
@@ -724,7 +745,7 @@ function applyToSettings(settings, o) {
       // el mismo hook en la otra forma del intérprete: se reescribe ESE comando, en su lugar (misma posición, matcher y
       // `async`), y se informa como cambio de forma
       const next = reform(cmdOf(found), runner, h, absCmd);
-      if (next) { r.reformed.push({ event: h.event, relpath: h.spec, from: leadingInterpreter(cmdOf(found)), to: jsHead(h) }); found.command = next; }
+      if (next) { r.reformed.push({ event: h.event, relpath: h.spec, from: leadingInterpreter(cmdOf(found)), to: runner === 'node' ? jsHead(h) : runner }); found.command = next; }
       // el mismo hook escrito otra vez en el grupo (la ruta de una versión borrada al lado de la viva, lo que dejaba el
       // aplicador anterior): queda uno solo, el ya reescrito, sin importar en qué orden estaban
       for (const entry of bucket) {
@@ -734,6 +755,8 @@ function applyToSettings(settings, o) {
           || (cmdOf(hk) !== found.command && !deadSame(cmdOf(hk), h) && scriptOf(cmdOf(hk)) !== kept));
         if (keep.length !== entry.hooks.length) { r.removed.push({ event: h.event, relpath: h.spec, why: 'repetido con una ruta que ya no existe: queda el de la ruta estable' }); entry.hooks = keep; }
       }
+      // el modo de fondo y el plazo los manda la lista: uno ya registrado con otro valor se pone al día en su lugar
+      if (withRewake(found, h)) r.retimed.push({ event: h.event, relpath: h.spec });
       r.existed.push({ event: h.event, relpath: h.spec });
       r.present.push(id);
       warnRegistered();
@@ -753,9 +776,10 @@ function applyToSettings(settings, o) {
     if (carried) {
       hookObj = carried.hook; label = `${h.label} — matcher ampliado de «${carried.matcher}» a «${h.matcher}»`;
       const next = reform(cmdOf(hookObj), runner, h, absCmd);
-      if (next) { r.reformed.push({ event: h.event, relpath: h.spec, from: leadingInterpreter(cmdOf(hookObj)), to: jsHead(h) }); hookObj.command = next; }
+      if (next) { r.reformed.push({ event: h.event, relpath: h.spec, from: leadingInterpreter(cmdOf(hookObj)), to: runner === 'node' ? jsHead(h) : runner }); hookObj.command = next; }
     }
     else { hookObj = { type: 'command', command }; if (h.async) hookObj.async = true; }
+    withRewake(hookObj, h);
     let appended = false;
     for (const entry of bucket) {
       if (entry && typeof entry === 'object' && normMatcher(entry.matcher) === target) {
@@ -830,9 +854,11 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
   const windows = platform === 'windows';
   const home = os.homedir();
   const settingsPath = path.resolve(a.settings || env.TYCON_SETTINGS_PATH || path.join(home, '.claude', 'settings.json'));
-  const hooksDir = path.resolve(a.hooksDir || path.join(SCRIPTS_DIR, 'hooks'));
+  // se lanza también con la carpeta numerada de la versión: lo que se escribe nombra el enlace, que actualizar mueve
+  const { throughLink } = require('./harness/tools.js');
+  const hooksDir = throughLink(path.resolve(a.hooksDir || path.join(SCRIPTS_DIR, 'hooks')), home, env);
   if (!a.skills) throw new ApplyError('apply-hooks: falta --skills (la carpeta skills/ del arnés)');
-  const skills = path.resolve(a.skills);
+  const skills = throughLink(path.resolve(a.skills), home, env);
   // las integraciones del mismo árbol que los hooks del núcleo
   const integrationsDir = path.join(path.dirname(path.dirname(hooksDir)), 'integrations');
   const list = loadList(a.list || path.join(SETUP_DIR, 'hooks-list.json'), { integrationsDir });
@@ -861,7 +887,7 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
   const decision = decide(list, { env: envWithOrgSwitches(env, switches), integ, profile, minimalIds, platform, has });
   // el intérprete de los hooks `.js`: mirando el disco, también si este instalador corre suelto
   const interp = require('./harness/harness-node.js').interpreter({ env, platform: windows ? 'win32' : (process.platform === 'win32' ? 'linux' : process.platform) });
-  const r = applyToSettings(settings, { list, decision, platform, hooksDir, skills, integrationsDir, check: a.check, env, settingsPath, interp });
+  const r = applyToSettings(settings, { list, decision, platform, hooksDir, skills, integrationsDir, check: a.check, env, settingsPath, interp, floor: throughLink(NODE_FLOOR, home, env) });
   // sin el Node del arnés, se dice en rojo y con el arreglo: nunca «en el próximo arranque»
   if (!interp.own && interp.switch !== 'off') {
     let repair = windows ? 'pwsh -File "<arnés>/scripts/install-tycon-hooks.ps1"' : 'bash "<arnés>/scripts/install-tycon-hooks.sh"';
@@ -940,7 +966,7 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
     if (!planOk) throw new ApplyError(`no pude anotar los hooks en el plan (${env.TYCON_PLAN_PIECES}): el plan quedaría incompleto y no se escribe`);
   }
 
-  const changed = added.length > 0 || removed.length > 0 || r.normalized.length > 0 || r.reformed.length > 0;
+  const changed = added.length > 0 || removed.length > 0 || r.normalized.length > 0 || r.reformed.length > 0 || r.retimed.length > 0;
   let backup = null;
   if (!a.check && changed) {
     if (existed && !env.TYCON_HARNESS_SNAPSHOT_DIR) {

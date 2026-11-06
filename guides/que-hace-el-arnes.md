@@ -157,7 +157,7 @@ Cada artefacto **se commitea al repo**, al lado del código: versionado, con his
 cada punto de revisión se puede lanzar una pasada adversarial que verifica la concordancia entre los
 tres niveles — que un cambio en una story no rompa la arquitectura ni el PRD, y al revés.
 
-No todo pasa por la ceremonia completa: para un cambio chico está el **camino rápido** (abajo). El papel lo decide
+No todo pasa por la ceremonia completa: para algo chico está el **camino rápido** (abajo). El papel lo decide
 el tamaño; quién aprueba, el riesgo.
 
 ### La medida justa: cuánto papel lleva cada cambio
@@ -169,8 +169,8 @@ Lo que leíste arriba es SDD: la spec antes que el código. Nuestra opinión, de
 **exactamente cuando el resultado no se puede juzgar mirándolo**: cuando necesitás una lista de criterios para
 saber si quedó completo, cuando el trabajo cruza varias sesiones o espera algo de afuera, cuando trae una decisión
 que no es del programador —alcance, seguridad, una dependencia nueva, plata, clientes— o cuando toca algo que, si
-sale mal, no se deshace. Y que **es demasiado pesado para lo chico**: un cambio que se dice en una frase y se
-verifica mirando el resultado y sus pruebas no necesita criterios, ni documento de producto, ni arquitectura; pedirle
+sale mal, no se deshace. Y que **es demasiado pesado para lo chico**: un cambio que pedís en una frase y, al
+terminar, sabés si quedó bien sin revisar una lista no necesita criterios, ni documento de producto, ni arquitectura; pedirle
 eso es papeleo.
 
 Por eso lo hacemos en **dos etapas**. **Primero, una vez, al arrancar un producto, se especifica entero con BMAD**:
@@ -179,7 +179,7 @@ historia por historia, con la medida justa**: cada historia es su propia especif
 se escribe en la historia, y el documento de producto y la arquitectura no se vuelven a tocar salvo que una historia
 los cambie de verdad. Son **dos preguntas**, independientes, que se contestan **antes de tocar código**:
 
-**1. ¿Historia o camino rápido? Lo decide el tamaño.** La pregunta es si es un cambio chico: lo pedís en una frase y,
+**1. ¿Historia o camino rápido? Lo decide el tamaño.** La pregunta es si es algo chico, un arreglo o una función nueva: lo pedís en una frase y,
 al terminar, ves que quedó con sólo mirar el resultado y sus pruebas, sin una lista de criterios.
 
 - **Sí: camino rápido.** El papel es el motivo en una línea y la lista de archivos. Un motivo con varios temas no es
@@ -206,15 +206,20 @@ al terminar, ves que quedó con sólo mirar el resultado y sus pruebas, sin una 
 Sin sesión coordinadora, porque trabajás solo o tu equipo no la usa, lo de la sesión coordinadora lo aprobás vos. El plan
 nunca se aprueba solo.
 
-**3. Guardar.** Siempre es un sí en la ventana de permiso, en los dos caminos. Antes de cada commit, push y pull
-request el agente pregunta «¿guardo?», y con un sí guarda. No hay firma ni comando.
+**3. Guardar.** Es un click en el cuadro de opciones o un «Aprobado» escrito, en los dos caminos. Antes de cada commit,
+push y pull request el agente pregunta «¿guardo?». Si tu pestaña pide permisos, el sí va en la ventana de permiso. No
+hay firma ni comando.
 
 **4. La revisión.** En una historia corren los revisores que elige un script según lo que toca el cambio, y el pase
 adversarial. El pase también corre en las partes chicas de una historia grande. No corre en una historia chica de
 riesgo bajo, de hasta 6 archivos, ni en un cambio que es sólo documentación o pruebas. En un camino rápido también
-hay pruebas: se escribe la prueba antes del código y se corren antes de guardar, porque el cambio se verifica
-mirando el resultado y sus pruebas. No hay revisores ni pase, salvo con riesgo alto. Las pruebas van antes del código: en una historia, el arnés frena el primer
+hay pruebas: se escribe la prueba antes del código y se corren antes de guardar, porque para saber si quedó bien
+alcanza con mirar el resultado y sus pruebas. No hay revisores ni pase, salvo con riesgo alto. Las pruebas van antes del código: en una historia, el arnés frena el primer
 archivo de código si antes no se tocó una prueba; en un camino rápido, avisa al guardar si fue al revés.
+
+**5. Si el cambio tiene pantalla.** En los dos caminos se aprueba una maqueta antes de construir: un archivo con los
+textos reales de la pantalla y dónde va cada cosa. En una historia la aprueba quien aprueba el plan; en un camino rápido se
+anota al abrir el carril. En los dos, lo construido se valida contra la maqueta.
 
 Los frenos, los controles y las firmas de control del arnés son de quien lo mantiene.
 
@@ -334,7 +339,7 @@ que sigue:
 - **Historia** — esto es trabajo de una story con spec. Se abre el **marcador** (un archivo
   de estado que dice *"hay una story en curso, es ésta"*), arranca el timer, y de ahí en más los
   frenos de edición saben contra qué verificar.
-- **Camino rápido** — un cambio chico: se abre el **carril**, con el motivo en una línea y la lista de
+- **Camino rápido** — algo chico: se abre el **carril**, con el motivo en una línea y la lista de
   archivos. Menos ceremonia, pero deja rastro.
 
 Sin uno de los dos, no se toca código. Ése es el portón del Momento 4.
@@ -388,7 +393,7 @@ la cosa anda —un llamado real contra el backend, una matriz por cada criterio 
 verifica **contra qué backend corrió** y si ese commit está en el servidor.
 
 **Y hay un cuarto modo, opt-in**: `--autonomous`. No cambia quién aprueba (el plan, según el riesgo; guardar,
-siempre tu sí en la ventana de permiso; producción, de una persona): agrega un portón que **no deja que el turno termine** mientras el "listo" esté en rojo,
+siempre tu sí; producción, de una persona): agrega un portón que **no deja que el turno termine** mientras el "listo" esté en rojo,
 obligando a iterar probar→arreglar→volver a probar. Con tres frenos para que no sea un loop infinito: tope de
 iteraciones, detección de no-progreso (los mismos fallos N veces → escala a humano) y un botón de
 pánico. Sólo actúa si lo pediste explícitamente.
@@ -741,7 +746,7 @@ frase.
 | **SDD** | *spec-driven development*: la spec antes que el código, y el código la sirve |
 | **BMAD** | el framework de agentes que produce y mantiene las specs |
 | **sesión coordinadora** | una sesión de agente, no una persona, que tu equipo puede usar para aprobar lo de rutina: con riesgo normal abre el camino rápido (hasta 5 archivos, y te avisa) y aprueba el plan si la revisión automática dio «aprobado»; sin ella, lo aprobás vos. Lo delicado lo aprobás siempre vos |
-| **camino rápido** | un cambio chico sin historia: el motivo en una línea y la lista de archivos |
+| **camino rápido** | algo chico, sin historia: el motivo en una línea y la lista de archivos |
 | **ADO** | Azure DevOps, donde viven los work items |
 | **banco de pruebas** | los casos que disparan los controles reales para verificar que bloquean lo que dicen |
 | **smoke** | prueba mínima contra el sistema corriendo de verdad, no contra el build |

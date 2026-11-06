@@ -85,6 +85,7 @@
   "scripts/controls-bench/periodic-exam.js",
   "scripts/controls-bench/report-name.js",
   "scripts/hooks/branch-guard-notice.js",
+  "scripts/hooks/cover-secrets.js",
   "scripts/hooks/failed-query-notice.js",
   "scripts/hooks/engram-pre-commit.sh",
   "scripts/hooks/git-post-commit-global.sh",

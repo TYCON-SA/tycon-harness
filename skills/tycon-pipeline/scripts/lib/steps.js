@@ -253,23 +253,90 @@ function startWarningLines(marker) {
   return out;
 }
 
+/** El último cierre de los revisores, en milisegundos: `completedAt` guarda el de la primera vuelta. */
+function reviewersClose(marker) {
+  const t = ((marker && marker.stepTimings) || {}).reviewers || {};
+  const cierre = Date.parse(t.lastCompletedAt || t.completedAt || '');
+  return Number.isFinite(cierre) ? cierre : null;
+}
+
+/**
+ * Los nombres de unos archivos: la ruta desde la raíz de su repo (o desde el de la historia; si no, entera). Si dos
+ * archivos de repos distintos dan el mismo nombre (`src/index.ts` en el repo de la historia y en un hermano), los dos
+ * llevan delante la carpeta de su repo: si no, se contarían como uno.
+ */
+function nombresDeArchivos(absolutos, marker) {
+  const { raizDelRepo } = require('./reloop-code.js');
+  const partes = absolutos.map((abs) => {
+    const base = raizDelRepo(abs) || (marker && marker.repoPath ? path.resolve(marker.repoPath) : null);
+    const rel = base ? path.relative(base, abs) : '';
+    return rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? { base, rel: rel.split(path.sep).join('/') } : { base: null, rel: abs };
+  });
+  const veces = new Map();
+  for (const p of partes) veces.set(p.rel, (veces.get(p.rel) || 0) + 1);
+  return partes.map((p) => (p.base && veces.get(p.rel) > 1 ? `${path.basename(p.base)}/${p.rel}` : p.rel));
+}
+
 /**
  * ¿Hay que volver a los revisores? Con Hallazgos cerrado, una edición de código posterior al último cierre de los
- * revisores es un arreglo: toca otra vuelta. → `{ round }` o `null`. Qué edición cuenta lo decide lib/reloop-code.js.
+ * revisores es un arreglo: toca otra vuelta. → `{ round, archivos, desde }` o `null`: los archivos de código sin
+ * repetir, como se nombran, y la hora del primero. Qué edición cuenta lo decide lib/reloop-code.js.
+ *
+ * Lo ya anotado en `otraVuelta` del marcador después del mismo cierre de los revisores se conserva: `fileEvents` se
+ * recorta a 500 y un cambio viejo no se pierde por eso.
+ *
+ * `aunConHallazgos`: decide también con Hallazgos abierto. Lo usa el freno de «Preparar el commit»: un arreglo hecho
+ * después de los revisores pide la vuelta aunque Hallazgos no se haya cerrado; `next` espera a que cierre.
  */
-function reviewersRound(marker) {
-  if (!marker || schemeOf(marker) !== 2 || !isDone(marker, 'findings')) return null;
+function reviewersRound(marker, { aunConHallazgos = false } = {}) {
+  if (!marker || schemeOf(marker) !== 2) return null;
+  if (!aunConHallazgos && !isDone(marker, 'findings')) return null;
+  if (aunConHallazgos && !isDone(marker, 'reviewers')) return null;
   const t = (marker.stepTimings || {}).reviewers || {};
-  // el ÚLTIMO cierre de los revisores: `completedAt` guarda el de la primera vuelta (la que miden los tiempos)
-  const cierre = Date.parse(t.lastCompletedAt || t.completedAt || '');
-  if (!Number.isFinite(cierre)) return null;
+  const cierre = reviewersClose(marker);
+  if (cierre === null) return null;
   const { pideOtraVuelta } = require('./reloop-code.js');
-  const arreglo = (Array.isArray(marker.fileEvents) ? marker.fileEvents : [])
+  const previo = marker.otraVuelta && typeof marker.otraVuelta === 'object' && Date.parse(marker.otraVuelta.desde || '') > cierre ? marker.otraVuelta : null;
+  let desde = previo ? Date.parse(previo.desde) : null;
+  // si la regla falla, el archivo pide otra vuelta: ante la duda, se revisa (lo mismo que anota on-edit)
+  const pide = (p) => { try { return pideOtraVuelta(p, { storyPath: marker.storyPath }); } catch (_) { return true; } };
+  // sin repetir por la ruta entera: por el nombre, dos archivos de repos distintos se juntarían
+  const absolutos = [];
+  for (const e of Array.isArray(marker.fileEvents) ? marker.fileEvents : []) {
+    const ts = Date.parse((e && e.ts) || '');
     // la marca `code` en falso (la pone on-edit) gana: el cartel decide con ella y tiene que decidir igual; en verdadero
-    // no alcanza, porque un marcador de antes la ponía también en lo que el arnés escribe en .advisors
-    .some((e) => e && Date.parse(e.ts || '') > cierre && e.code !== false && pideOtraVuelta(e.path, { storyPath: marker.storyPath }));
-  if (!arreglo) return null;
-  return { round: (Number(t.rounds) || 1) + 1 };
+    // no alcanza, porque un marcador de antes la ponía también en lo que el arnés escribe en .advisors o en una prueba
+    if (!(ts > cierre) || e.code === false || !pide(e.path)) continue;
+    const abs = path.resolve(String(e.path));
+    if (!absolutos.includes(abs)) absolutos.push(abs);
+    if (desde === null || ts < desde) desde = ts;
+  }
+  const archivos = previo && Array.isArray(previo.archivos) ? previo.archivos.filter((a) => typeof a === 'string') : [];
+  for (const nombre of nombresDeArchivos(absolutos, marker)) if (!archivos.includes(nombre)) archivos.push(nombre);
+  if (!archivos.length) return null;
+  return { round: (Number(t.rounds) || 1) + 1, archivos, desde: new Date(desde).toISOString() };
+}
+
+/**
+ * Lo que se guarda en el marcador como `otraVuelta` (el cartel lo lee y no decide la vuelta por su cuenta): el
+ * resultado de `reviewersRound`, o `undefined` (el campo no va) en un marcador por número o antes de cerrar Hallazgos,
+ * cuando todavía no puede haber otra vuelta.
+ */
+function otraVueltaDe(marker) {
+  if (!marker || schemeOf(marker) !== 2 || !isDone(marker, 'findings')) return undefined;
+  return reviewersRound(marker);
+}
+
+/**
+ * ¿Hay que volver a «Preparar el commit»? Sí, si estaba hecho y los revisores cerraron después: lo que preparó ya no es
+ * lo revisado. Compara dos horas del marcador; el cartel tiene una copia de esta regla (mods/harness-mods/hooks/run.mjs)
+ * y la prueba de igualdad de harness-mods.test.js frena si se separan.
+ */
+function prepareCommitStale(marker) {
+  if (!marker || schemeOf(marker) !== 2 || !isDone(marker, 'prepare-commit')) return false;
+  const cierre = reviewersClose(marker);
+  const ultimo = Date.parse((((marker.stepTimings || {})['prepare-commit']) || {}).completedAt || '');
+  return cierre !== null && Number.isFinite(ultimo) && cierre > ultimo;
 }
 
 /** ¿Está abierto Hallazgos? (los revisores cerrados y Hallazgos sin cerrar, en un marcador nuevo) */
@@ -368,7 +435,7 @@ function retireCheck({ mirror, since, today, stateFile }) {
 module.exports = {
   SCHEME, STEPS, CLOSE_STEP, TOTAL, OLD_IDS, ORDER_REQUIRES, START_PARTS, OLD_NUMBERS_UNTIL, SCHEME_TWO_SINCE,
   STEP_CLOSE_CHECKS, closeControlsByStep, byId, byNumber, fromOld, newFromOld, schemeOf, stepName, stepNames, isDone, isPending, pendingSteps,
-  resolveStepArg, startPartsPending, startWarningLines, partOfFlag, setExternalFlag, reviewersRound, findingsOpen, noteFindingsWait, noteFindingsAnswer, retireCheck,
+  resolveStepArg, startPartsPending, startWarningLines, partOfFlag, setExternalFlag, reviewersRound, otraVueltaDe, prepareCommitStale, findingsOpen, noteFindingsWait, noteFindingsAnswer, retireCheck,
 };
 
 if (require.main === module) {

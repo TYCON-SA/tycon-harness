@@ -554,6 +554,9 @@ test('QueueValidation_PipelineIdFromConfig @story-8.85 @ac-19', async () => {
     const solo = path.join(tmp('qv-solo-'), 'scripts', 'ci');
     fs.mkdirSync(solo, { recursive: true });
     fs.copyFileSync(path.join(CI, 'queue-validation.js'), path.join(solo, 'queue-validation.js'));
+    // la biblioteca del idioma de git sí va al lado: con --pipeline el guion llega a preguntarle a git su origin
+    fs.mkdirSync(path.join(solo, '..', 'lib'), { recursive: true });
+    fs.copyFileSync(path.join(CI, '..', 'lib', 'clean-git-env.js'), path.join(solo, '..', 'lib', 'clean-git-env.js'));
     const sinLector = await encolar(mundo(conSuites(184)), az.url, [], path.join(solo, 'queue-validation.js'));
     assert.strictEqual(sinLector.code, 2, sinLector.out);
     assert.match(sinLector.out, /no pude cargar el lector de team-repos\.json/, sinLector.out);

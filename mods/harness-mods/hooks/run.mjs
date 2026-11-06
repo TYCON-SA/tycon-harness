@@ -42,16 +42,17 @@ export function totalText(minutesTotal, startedMs, now) {
  * `work-in-progress.js --marker` (`{ prs, failed }`); sin ella todavía no se preguntó.
  */
 export function idleStep(entering) {
-  if (!isObj(entering) || !Array.isArray(entering.prs)) return 'sin paso abierto';
+  if (!isObj(entering) || !Array.isArray(entering.prs)) return 'terminada, falta cerrar';
   if (entering.prs.length) return `esperando que entren los pedidos (${entering.prs.map((p) => p.ref).join(', ')})`;
   return entering.failed ? 'sin paso abierto (no pude consultar los pedidos)' : 'lista para cerrar';
 }
 const stepText = (run) => (run.current ? run.current.name : idleStep(run.entering));
 /**
  * El avance, en el cartel y en /pipeline: el paso EN CURSO con su número de la tabla («paso 10 de 11»); sin paso abierto,
- * los hechos («9 de 11 hechos»). «9/11» se leía como «estoy en el 9» con el 10 en curso.
+ * o con otra vuelta de revisores pendiente, los hechos («9 de 11 hechos»). «9/11» se leía como «estoy en el 9» con el
+ * 10 en curso, y «paso 7» con todo lo demás hecho, como si la ejecución hubiera vuelto atrás.
  */
-export const progressText = (run) => (run.current && run.current.number ? `paso ${run.current.number} de ${run.total}` : `${run.done} de ${run.total} hechos`);
+export const progressText = (run) => (run.current && run.current.number && !run.reloop ? `paso ${run.current.number} de ${run.total}` : `${run.done} de ${run.total} hechos`);
 const isObj = (x) => !!x && typeof x === 'object' && !Array.isArray(x);
 
 /** 2 (pasos por nombre), 1 (el marker viejo, por número) o `null` (ninguno de los dos). */
@@ -147,20 +148,36 @@ export function readRun(text, now) {
     });
   };
 
-  // otra vuelta de revisores: con Hallazgos cerrado, una edición de código o prueba posterior al ÚLTIMO cierre de los
-  // revisores, como `pipeline.js next`. Decide la marca `code` que on-edit pone en cada edición; un evento sin la marca
-  // (de una versión anterior) cuenta si no es un .md. Lo que el arnés escribe en .advisors no cuenta nunca: un marcador
-  // de antes lo marcaba como código
+  // otra vuelta de revisores: la decide `pipeline.js next` (lib/steps.js) y la deja escrita en `otraVuelta` en cada
+  // cambio; el cartel la lee. Un marcador de antes, sin el campo, usa la regla de antes hasta el próximo cambio: con
+  // Hallazgos cerrado, una edición posterior al ÚLTIMO cierre de los revisores con la marca `code` que puso on-edit; sin
+  // la marca, cuenta si no es un .md. Lo que el arnés escribe en .advisors no cuenta nunca: un marcador de antes lo
+  // marcaba como código
   const tRev = timings.reviewers || {};
   const revEnd = ms(tRev.lastCompletedAt) !== null ? ms(tRev.lastCompletedAt) : endOf('reviewers');
   const esCodigo = (e) => !/(^|[\\/])\.advisors[\\/]/.test(String(e.path || ''))
     && (typeof e.code === 'boolean' ? e.code : !/\.md$/i.test(String(e.path || '')));
-  const reloop = scheme === 2 && completed.has('findings') && revEnd !== null
-    && (Array.isArray(m.fileEvents) ? m.fileEvents : []).some((e) => e && ms(e.ts) !== null && ms(e.ts) > revEnd && esCodigo(e));
-  const round = reloop ? (Number((timings.reviewers || {}).rounds) || 1) + 1 : null;
+  let reloop = null;
+  if (scheme === 2 && Object.prototype.hasOwnProperty.call(m, 'otraVuelta')) {
+    const v = m.otraVuelta;
+    if (isObj(v) && Array.isArray(v.archivos) && v.archivos.length) {
+      reloop = { round: Number(v.round) || (Number(tRev.rounds) || 1) + 1, files: v.archivos.length, since: ms(v.desde) };
+    }
+  } else if (scheme === 2 && completed.has('findings') && revEnd !== null) {
+    const cambios = (Array.isArray(m.fileEvents) ? m.fileEvents : []).filter((e) => e && ms(e.ts) !== null && ms(e.ts) > revEnd && esCodigo(e));
+    if (cambios.length) {
+      reloop = { round: (Number(tRev.rounds) || 1) + 1, files: new Set(cambios.map((e) => String(e.path))).size, since: Math.min(...cambios.map((e) => ms(e.ts))) };
+    }
+  }
+  const round = reloop ? reloop.round : null;
+  // «Preparar el commit» otra vez: los revisores cerraron después de su cierre. Es la copia de `prepareCommitStale` de
+  // lib/steps.js (el cartel corre sin el arnés); la prueba de igualdad de harness-mods.test.js frena si se separan
+  const prepEnd = endOf('prepare-commit');
+  const prepareAgain = scheme === 2 && completed.has('prepare-commit') && revEnd !== null && prepEnd !== null && revEnd > prepEnd;
 
   const finished = (id) => {
     if (id === 'reviewers' && reloop) return false;
+    if (id === 'prepare-commit' && prepareAgain) return false;
     if (endOf(id) !== null || completed.has(id)) return true;
     const flag = flagOf(id);
     if (flag && m[flag] === true) return true;
@@ -172,7 +189,11 @@ export function readRun(text, now) {
   const open = STEPS.filter((s) => startOf(s.id) !== null && !finished(s.id));
   open.sort((a, b) => startOf(b.id) - startOf(a.id));
   const current = reloop ? STEPS.find((s) => s.id === 'reviewers') : (open[0] || STEPS.find((s) => !finished(s.id)) || null);
-  const nameOf = (s) => (s.id === 'reviewers' && round ? `${s.name}, vuelta ${round}` : s.name);
+  // con otra vuelta, el cartel dice qué falta, no el paso: «Revisores, vuelta 2 · paso 7 de 11» con todo lo demás hecho
+  // se leía como una ejecución que volvió atrás
+  const nameOf = (s) => (s.id === 'reviewers' && reloop
+    ? `falta revisar lo cambiado después de los revisores (vuelta ${round}, ${reloop.files} ${reloop.files === 1 ? 'archivo' : 'archivos'})`
+    : s.name);
 
   // fin de un paso sin `completedAt`: el arranque del siguiente que arrancó después
   const starts = STEPS.map((s) => startOf(s.id)).filter((t) => t !== null).sort((a, b) => a - b);
@@ -197,7 +218,9 @@ export function readRun(text, now) {
     .filter((w) => w && START_PART_FAILED[w.part]).map((w) => `Arranque: hecho, con aviso: ${START_PART_FAILED[w.part]}`);
   const rows = STEPS.map((s) => {
     const done = finished(s.id);
-    const state = done ? (s.id === 'start' && warnings.length ? 'hecho, con aviso' : 'hecho') : current && current.id === s.id ? 'corriendo' : startOf(s.id) !== null ? 'empezado, sin terminar' : 'pendiente';
+    const state = done ? (s.id === 'start' && warnings.length ? 'hecho, con aviso' : 'hecho')
+      : s.id === 'reviewers' && reloop ? 'falta otra vuelta'
+        : current && current.id === s.id ? 'corriendo' : startOf(s.id) !== null ? 'empezado, sin terminar' : 'pendiente';
     return { id: s.id, number: s.number, name: s.id === 'reviewers' && round ? `${s.name} (vuelta ${round})` : s.name, state, minutes: minutes(startOf(s.id), stopOf(s.id)) };
   });
 
@@ -213,7 +236,14 @@ export function readRun(text, now) {
     current: current ? { id: current.id, name: nameOf(current), number: current.number } : null,
     done: STEPS.filter((s) => finished(s.id)).length,
     total: TOTAL,
-    minutesStep: current ? minutes(startOf(current.id) !== null ? startOf(current.id) : previousClose(current.id), now) : null,
+    // con otra vuelta, desde el primer cambio sin revisar; con «Preparar el commit» pedido otra vez, desde el último
+    // cierre de los revisores: el arranque de los dos pasos puede ser de ayer
+    minutesStep: current
+      ? minutes(reloop && current.id === 'reviewers' && reloop.since !== null ? reloop.since
+        : prepareAgain && current.id === 'prepare-commit' ? revEnd
+          : startOf(current.id) !== null ? startOf(current.id) : previousClose(current.id), now)
+      : null,
+    reloop,
     minutesTotal: minutes(ms(m.startedAt), now),
     totalText: totalText(minutes(ms(m.startedAt), now), ms(m.startedAt), now),
     waiting: m.waitingForHuman === true || Boolean(asks),

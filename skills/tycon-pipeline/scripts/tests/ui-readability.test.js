@@ -444,11 +444,12 @@ test('Capa_AbiertaSinUnTextoAdentro_Frena @capa-de-la-maqueta', () => {
 test('Capa_SalidaDelHumoCambiadaDespues_NoCuenta @capa-de-la-maqueta', () => {
   const m = mundoConCapa();
   humoDeCapa(m, { screen: 'Probar', trigger: 'Probar', dialog: false, texts: [] });
-  // alguien reescribe la salida del humo para que diga que se abrió encima
+  // alguien reescribe la salida del humo para que diga que se abrió encima. Un texto que ningún humo de este archivo
+  // escribe: las pruebas comparten la HOME, y una salida igual a la de otro humo del mismo segundo calza en su registro
   const outs = path.join(m.dod, '1.1-smoke-outputs');
   for (const f of fs.readdirSync(outs)) {
     const p = path.join(outs, f);
-    fs.writeFileSync(p, fs.readFileSync(p, 'utf8').replace('"dialog":false,"texts":[]', '"dialog":true,"texts":["Probar la plantilla","Generar"]'));
+    fs.writeFileSync(p, fs.readFileSync(p, 'utf8').replace('"dialog":false,"texts":[]', '"dialog":true,"texts":["Probar la plantilla","Generar","Reescrita a mano"]'));
   }
   const r = checkCon(m.s);
   assert.strictEqual(r.rc, 2, r.out);

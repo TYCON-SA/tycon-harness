@@ -298,3 +298,333 @@ test('T23e CompleteStepConForceManual_DiceDondeVa — el flag de declarar a mano
   assert.doesNotMatch(r.stderr, /autorizo/, 'no le dicta la frase al agente');
   assert.deepStrictEqual(E.leer('s-t23e').stepsPending, antes.stepsPending, 'no cerró el paso');
 });
+
+// ── El último paso revisa lo cambiado (8.195) ──────────────────────────────────────────────────────────────────
+
+const HASTA_EL_ULTIMO = ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers', 'adversarial-pass', 'findings', 'live-check'];
+const REVISORES = '2026-01-01T10:00:00.000Z';
+const DESPUES = (min) => `2026-01-01T10:${String(min).padStart(2, '0')}:00.000Z`;
+
+/** Una ejecución lista para «Preparar el commit», con los revisores cerrados a las 10:00 y los cambios que se le pasan. */
+function listaParaElUltimo(E, sid, { cambios = [], timings = {}, extra = {} } = {}) {
+  E.arrancar(sid, { autorizada: false });
+  E.escribir(sid, {
+    ...E.leer(sid), stepScheme: 2, stepsCompleted: HASTA_EL_ULTIMO, stepsPending: ['prepare-commit'],
+    checks: { tests: 'green', advisors: 'green' }, dodRuntimeChecked: true, deepReviewDone: true,
+    stepTimings: { reviewers: { completedAt: REVISORES, rounds: 1 }, findings: { completedAt: DESPUES(1) }, ...timings },
+    fileEvents: cambios.map((c, i) => ({ path: path.join(E.repo, c), ts: DESPUES(5 + i), code: true })),
+    // los otros frenos del último paso, atendidos: el pase salteado por el portón y los hallazgos escritos
+    adversarialSkip: { motivo: 'riesgo bajo', at: DESPUES(1) },
+    ...extra,
+  });
+  const w = spawnSync(process.execPath, [path.join(SCRIPTS, 'pipeline.js'), 'write-findings', '--story', E.story, '--findings', '-'], {
+    encoding: 'utf8', input: '[]', cwd: E.repo,
+    env: { ...process.env, HOME: E.home, USERPROFILE: E.home, CLAUDE_CODE_SESSION_ID: sid, TYCON_HOME: '' },
+  });
+  assert.strictEqual(w.status, 0, w.stderr);
+}
+const PANTALLAS = ['HistorialConsulta.tsx', 'MisConsultas.tsx', 'GestionConsultasScreen.tsx', 'RevisionScreen.tsx']
+  .map((f) => `acme-Consultas/src/components/consultas/${f}`);
+
+test('T1 UltimoPaso_CodigoDespuesDeRevisores_Niega @story-8.195 @ac-1 — con código cambiado después de los revisores, el último paso no cierra', () => {
+  const E = entorno();
+  listaParaElUltimo(E, 's-8195-t1', { cambios: ['src/a.js'] });
+  const r = E.correr('marker.js', ['complete-step', 'prepare-commit'], 's-8195-t1');
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.match(r.stderr, /cambió código después de los revisores: src\/a\.js\./);
+  assert.match(r.stderr, /Corré los revisores sobre lo cambiado \(`pipeline\.js next` dice cómo\) y volvé a cerrar/);
+  assert.deepStrictEqual(E.leer('s-8195-t1').stepsPending, ['prepare-commit'], 'el paso sigue pendiente');
+});
+
+test('T2 UltimoPaso_CasoReal_NombraLasCuatroPantallas @story-8.195 @ac-2 — el caso real nombra las cuatro; con más de cinco, «y N más»', () => {
+  const E = entorno();
+  listaParaElUltimo(E, 's-8195-t2', { cambios: PANTALLAS });
+  const r = E.correr('marker.js', ['complete-step', 'prepare-commit'], 's-8195-t2');
+  assert.strictEqual(r.status, 2, r.stderr);
+  for (const p of PANTALLAS) assert.ok(r.stderr.includes(p), `nombra ${p}: ${r.stderr}`);
+  const siete = entorno();
+  listaParaElUltimo(siete, 's-8195-t2b', { cambios: ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((x) => `src/${x}.js`) });
+  const r7 = siete.correr('marker.js', ['complete-step', 'prepare-commit'], 's-8195-t2b');
+  assert.strictEqual(r7.status, 2, r7.stderr);
+  assert.match(r7.stderr, /src\/e\.js y 2 más\./);
+  assert.doesNotMatch(r7.stderr, /src\/f\.js/);
+});
+
+test('T1b UltimoPaso_ConHallazgosAbierto_Niega @story-8.195 @ac-1 — con «Hallazgos» sin cerrar, el código cambiado después de los revisores también frena', () => {
+  // lo cazó el pase adversarial: sin «Hallazgos» cerrado, la regla de `next` no pide otra vuelta, y el último paso cerraba
+  const E = entorno();
+  const sid = 's-8195-t1b';
+  listaParaElUltimo(E, sid, { cambios: ['src/a.js'] });
+  E.escribir(sid, { ...E.leer(sid), stepsCompleted: HASTA_EL_ULTIMO.filter((s) => s !== 'findings'), stepsPending: ['findings', 'prepare-commit'] });
+  const r = E.correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order'], sid);
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.match(r.stderr, /cambió código después de los revisores: src\/a\.js\./);
+});
+
+test('T5b UltimoPaso_SoloPruebasOTextos_NoFrenaPorCodigo @story-8.195 @ac-5 @ac-6 — con sólo pruebas o textos cambiados, el último paso decide como sin cambios', () => {
+  const C = entorno();
+  listaParaElUltimo(C, 's-8195-t5c');
+  const control = C.correr('marker.js', ['complete-step', 'prepare-commit'], 's-8195-t5c');
+  const frenos = (s) => s.split('\n').filter((l) => /BLOQUEADO/.test(l)).map((l) => l.replace(/\/\S+/g, '<ruta>'));
+  for (const [nombre, cambios] of [['pruebas', ['src/a.test.js', 'tests/b.js']], ['textos', ['docs/guia.md', 'config.json']]]) {
+    const E = entorno();
+    const sid = `s-8195-t5b-${nombre}`;
+    // con la marca en verdadero (como la dejaba un arnés de antes): decide la regla, no la marca
+    listaParaElUltimo(E, sid, { cambios });
+    const r = E.correr('marker.js', ['complete-step', 'prepare-commit'], sid);
+    assert.doesNotMatch(r.stderr, /cambió código después de los revisores/, `${nombre}: ${r.stderr}`);
+    assert.strictEqual(r.status, control.status, nombre);
+    assert.deepStrictEqual(frenos(r.stderr), frenos(control.stderr), nombre);
+  }
+});
+
+test('T3 UltimoPaso_RevisoresDeNuevo_Cierra @story-8.195 @ac-3 — con los revisores cerrados otra vez después del cambio, cierra como hoy', () => {
+  // «como hoy»: lo mismo que una ejecución igual sin el cambio (los demás frenos del último paso siguen, igual)
+  const E = entorno();
+  listaParaElUltimo(E, 's-8195-t3', { cambios: ['src/a.js'], timings: { reviewers: { completedAt: REVISORES, lastCompletedAt: DESPUES(30), rounds: 2 } } });
+  const r = E.correr('marker.js', ['complete-step', 'prepare-commit'], 's-8195-t3');
+  assert.doesNotMatch(r.stderr, /cambió código después de los revisores/, r.stderr);
+  const C = entorno();
+  listaParaElUltimo(C, 's-8195-t3c');
+  const control = C.correr('marker.js', ['complete-step', 'prepare-commit'], 's-8195-t3c');
+  assert.strictEqual(r.status, control.status, `${r.stderr}\n---\n${control.stderr}`);
+  const frenos = (s) => s.split('\n').filter((l) => /BLOQUEADO/.test(l)).map((l) => l.replace(/\/\S+/g, '<ruta>'));
+  assert.deepStrictEqual(frenos(r.stderr), frenos(control.stderr));
+});
+
+test('T4 Next_CambioDespuesDelUltimoPaso_PideRevisoresYElUltimoPaso @story-8.195 @ac-4 — el caso de Gustavo: revisores, el último paso otra vez, y recién ahí cerrar', () => {
+  const E = entorno();
+  const sid = 's-8195-t4';
+  listaParaElUltimo(E, sid, { cambios: ['src/a.js'], timings: { 'prepare-commit': { completedAt: DESPUES(3) } } });
+  E.escribir(sid, { ...E.leer(sid), stepsCompleted: [...HASTA_EL_ULTIMO, 'prepare-commit'], stepsPending: [] });
+  const next = () => JSON.parse(E.correr('pipeline.js', ['next'], sid).stdout);
+  let n = next();
+  assert.strictEqual(n.next_step, 'reviewers', JSON.stringify(n).slice(0, 300));
+  assert.match(n.note, /src\/a\.js/, 'nombra lo que falta revisar');
+  // los revisores vuelven a cerrar después del último paso: el último paso se pide otra vez
+  const m = E.leer(sid);
+  E.escribir(sid, { ...m, stepTimings: { ...m.stepTimings, reviewers: { ...m.stepTimings.reviewers, lastCompletedAt: DESPUES(30), rounds: 2 } } });
+  n = next();
+  assert.strictEqual(n.next_step, 'prepare-commit', JSON.stringify(n).slice(0, 300));
+  assert.match(n.note, /lo preparado ya no es lo revisado/);
+  // cerrarlo otra vez pasa por el mismo camino que la primera vez (los mismos frenos y, al pasarlos, la foto del código)
+  const r = E.correr('marker.js', ['complete-step', 'prepare-commit'], sid);
+  assert.doesNotMatch(r.stderr, /cambió código después de los revisores/, r.stderr);
+  const C = entorno();
+  listaParaElUltimo(C, 's-8195-t4c');
+  const control = C.correr('marker.js', ['complete-step', 'prepare-commit'], 's-8195-t4c');
+  assert.strictEqual(r.status, control.status, `${r.stderr}\n---\n${control.stderr}`);
+  // cerrado otra vez, después de los revisores: recién ahí se cierra la ejecución
+  const cerrado = E.leer(sid);
+  E.escribir(sid, { ...cerrado, stepTimings: { ...cerrado.stepTimings, 'prepare-commit': { completedAt: DESPUES(40) } } });
+  n = next();
+  assert.strictEqual(n.next_step, null, JSON.stringify(n).slice(0, 300));
+  assert.match(n.note, /cerrá con marker\.js clear/);
+});
+
+test('T13 BorradoPorConsola_Y_AppendFile_LlevanLaMarca @story-8.195 @ac-13 — el borrado por consola, append-file y la regla que falla dejan su marca', () => {
+  const E = entorno();
+  const sid = 's-8195-t13';
+  listaParaElUltimo(E, sid);
+  const prueba = path.join(E.repo, 'src', 'a.test.js');
+  const codigo = path.join(E.repo, 'src', 'b.js');
+  // append-file
+  for (const f of [prueba, codigo]) assert.strictEqual(E.correr('marker.js', ['append-file', f], sid).status, 0);
+  let ev = E.leer(sid).fileEvents;
+  assert.strictEqual(ev.find((e) => e.path === prueba).code, false);
+  assert.strictEqual(ev.find((e) => e.path === codigo).code, true);
+  // el borrado por consola (`git rm`), como lo anota el freno
+  const bash = require(path.join(SCRIPTS, 'on-bash-write-gate.js'));
+  const borradaPrueba = path.join(E.repo, 'src', 'c.test.js');
+  const borradoCodigo = path.join(E.repo, 'src', 'c.js');
+  bash.anotarBorradosDeLaStory({ stateDir: E.dir(), sessionId: sid, marker: E.leer(sid), rutas: [borradaPrueba, borradoCodigo], via: 'git rm' });
+  ev = E.leer(sid).fileEvents;
+  assert.strictEqual(ev.find((e) => e.path === borradaPrueba).code, false);
+  assert.strictEqual(ev.find((e) => e.path === borradoCodigo).code, true);
+  // una edición por el editor con la regla que lanza: marca code (ante la duda, se revisa)
+  const preload = path.join(E.repo, '..', 'lanza.js');
+  fs.writeFileSync(preload, `require(${JSON.stringify(path.join(SCRIPTS, 'lib', 'reloop-code.js'))}).pideOtraVuelta = () => { throw new Error('regla rota'); };\n`);
+  const raro = path.join(E.repo, 'src', 'd.js');
+  const r = spawnSync(process.execPath, ['--require', preload, path.join(SCRIPTS, 'on-edit.js')], {
+    encoding: 'utf8', input: JSON.stringify({ session_id: sid, tool_name: 'Edit', tool_input: { file_path: raro } }),
+    env: { ...process.env, HOME: E.home, USERPROFILE: E.home, CLAUDE_CODE_SESSION_ID: sid, TYCON_HOME: '' },
+  });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(E.leer(sid).fileEvents.find((e) => e.path === raro).code, true);
+  // el cartel y next deciden lo mismo con estos eventos: lo escrito en otraVuelta es reviewersRound
+  const T = require(path.join(SCRIPTS, 'lib', 'steps.js'));
+  const m = E.leer(sid);
+  assert.deepStrictEqual(m.otraVuelta, T.reviewersRound(m));
+  assert.deepStrictEqual(m.otraVuelta.archivos, ['src/b.js', 'src/c.js', 'src/d.js']);
+  // si el cálculo de la vuelta falla, el campo viejo no queda: el cartel vuelve a su regla de antes (y queda el rastro)
+  const vieja = { round: 2, archivos: ['src/viejo.js'], desde: '2026-01-01T10:59:00.000Z' };
+  const rompeVuelta = path.join(E.repo, '..', 'rompe-vuelta.js');
+  fs.writeFileSync(rompeVuelta, `require(${JSON.stringify(path.join(SCRIPTS, 'lib', 'steps.js'))}).otraVueltaDe = () => { throw new Error('vuelta rota'); };\n`);
+  E.escribir(sid, { ...E.leer(sid), otraVuelta: vieja });
+  const r2 = spawnSync(process.execPath, ['--require', rompeVuelta, path.join(SCRIPTS, 'on-edit.js')], {
+    encoding: 'utf8', input: JSON.stringify({ session_id: sid, tool_name: 'Edit', tool_input: { file_path: path.join(E.repo, 'src', 'e.js') } }),
+    env: { ...process.env, HOME: E.home, USERPROFILE: E.home, CLAUDE_CODE_SESSION_ID: sid, TYCON_HOME: '' },
+  });
+  assert.strictEqual(r2.status, 0, r2.stderr);
+  assert.strictEqual('otraVuelta' in E.leer(sid), false, 'on-edit: el campo viejo se borra');
+  assert.match(fs.readFileSync(path.join(E.dir(), 'hook-errors.log'), 'utf8'), /on-edit otraVuelta: Error: vuelta rota/);
+  E.escribir(sid, { ...E.leer(sid), otraVuelta: vieja });
+  const pasos = require(path.join(SCRIPTS, 'lib', 'steps.js'));
+  const original = pasos.otraVueltaDe;
+  pasos.otraVueltaDe = () => { throw new Error('vuelta rota'); };
+  try {
+    require(path.join(SCRIPTS, 'on-bash-write-gate.js')).anotarBorradosDeLaStory({ stateDir: E.dir(), sessionId: sid, marker: E.leer(sid), rutas: [path.join(E.repo, 'src', 'f.js')], via: 'git rm' });
+  } finally { pasos.otraVueltaDe = original; }
+  assert.strictEqual('otraVuelta' in E.leer(sid), false, 'el borrado por consola: el campo viejo se borra');
+});
+
+test('T34 BorradoPorConsola_ReglaQueFalla_DejaElRastro @story-8.195 @ac-33 — el borrado por consola con la vuelta que falla marca code, borra el campo y deja su línea', () => {
+  const E = entorno();
+  const sid = 's-8195-t34';
+  listaParaElUltimo(E, sid);
+  E.escribir(sid, { ...E.leer(sid), otraVuelta: { round: 2, archivos: ['src/viejo.js'], desde: '2026-01-01T10:59:00.000Z' } });
+  const pasos = require(path.join(SCRIPTS, 'lib', 'steps.js'));
+  const reglas = require(path.join(SCRIPTS, 'lib', 'reloop-code.js'));
+  const [vuelta, regla, home] = [pasos.otraVueltaDe, reglas.pideOtraVuelta, process.env.HOME];
+  pasos.otraVueltaDe = () => { throw new Error('vuelta rota t34'); };
+  reglas.pideOtraVuelta = () => { throw new Error('regla rota t34'); };
+  // el freno escribe su registro en la carpeta de estado de la persona: la de la casa de prueba
+  process.env.HOME = E.home;
+  const borrado = path.join(E.repo, 'src', 'g.test.js');
+  try {
+    require(path.join(SCRIPTS, 'on-bash-write-gate.js')).anotarBorradosDeLaStory({ stateDir: E.dir(), sessionId: sid, marker: E.leer(sid), rutas: [borrado], via: 'git rm' });
+  } finally { [pasos.otraVueltaDe, reglas.pideOtraVuelta, process.env.HOME] = [vuelta, regla, home]; }
+  const m = E.leer(sid);
+  assert.strictEqual(m.fileEvents.find((e) => e.path === borrado).code, true, 'la regla que falla marca code: ante la duda, se revisa');
+  assert.strictEqual('otraVuelta' in m, false, 'el campo viejo se borra');
+  assert.match(fs.readFileSync(path.join(E.dir(), 'hook-errors.log'), 'utf8'), /on-bash-write-gate[^\n]*: Error: vuelta rota t34/);
+});
+
+test('T35 CompleteStep_OtraVueltaQueFalla_CierraIgual @story-8.195 @ac-34 — si el cálculo de otraVuelta falla, el paso cierra, el campo no queda y hay rastro', () => {
+  const E = entorno();
+  const sid = 's-8195-t35';
+  listaParaElUltimo(E, sid);
+  E.escribir(sid, { ...E.leer(sid), otraVuelta: { round: 2, archivos: ['src/viejo.js'], desde: '2026-01-01T10:59:00.000Z' } });
+  const rompe = path.join(E.repo, '..', 'rompe-vuelta-t35.js');
+  fs.writeFileSync(rompe, `require(${JSON.stringify(path.join(SCRIPTS, 'lib', 'steps.js'))}).otraVueltaDe = () => { throw new Error('vuelta rota t35'); };\n`);
+  const r = spawnSync(process.execPath, ['--require', rompe, path.join(SCRIPTS, 'marker.js'), 'complete-step', 'plan', '--out-of-order'], {
+    encoding: 'utf8', input: '', cwd: E.repo,
+    env: { ...process.env, HOME: E.home, USERPROFILE: E.home, CLAUDE_CODE_SESSION_ID: sid, TYCON_HOME: '', TYCON_LANE_LLM: '0', TYCON_TIME_TRACKING: 'none' },
+  });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const m = E.leer(sid);
+  assert.ok(m.stepsCompleted.includes('plan'), 'el paso cerró');
+  assert.strictEqual('otraVuelta' in m, false, 'el campo viejo no queda: el cartel vuelve a su regla de antes');
+  assert.match(fs.readFileSync(path.join(E.dir(), 'hook-errors.log'), 'utf8'), /marker otraVuelta: Error: vuelta rota t35/);
+});
+
+test('T15 UltimoPaso_MarcadorIlegible_NiegaComoHoy @story-8.195 @ac-15 — con el marcador roto, el último paso niega con el motivo de hoy', () => {
+  const E = entorno();
+  const sid = 's-8195-t15';
+  listaParaElUltimo(E, sid, { cambios: ['src/a.js'] });
+  fs.writeFileSync(E.activo(sid), '{ roto');
+  const r = E.correr('marker.js', ['complete-step', 'prepare-commit'], sid);
+  assert.strictEqual(r.status, 1, r.stderr);
+  assert.match(r.stderr, /no hay marker activo para esta sesión/, 'el motivo de hoy');
+  assert.doesNotMatch(r.stderr, /no hay nada que revisar/);
+  assert.doesNotMatch(r.stderr, /cambió código después de los revisores/, 'no decide sin leer el marcador');
+});
+
+test('T30 OtraVuelta_SeEscribeEnElMarcador @story-8.195 @ac-30 — cada cambio deja otraVuelta igual a reviewersRound; recortado conserva lo suyo; otra story lo borra', () => {
+  const E = entorno();
+  const sid = 's-8195-t30';
+  const T = require(path.join(SCRIPTS, 'lib', 'steps.js'));
+  listaParaElUltimo(E, sid);
+  const igual = (que) => { const m = E.leer(sid); assert.deepStrictEqual(m.otraVuelta, T.reviewersRound(m), que); return m.otraVuelta; };
+  // una edición por el editor
+  const a = path.join(E.repo, 'src', 'a.js');
+  const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'on-edit.js')], {
+    encoding: 'utf8', input: JSON.stringify({ session_id: sid, tool_name: 'Edit', tool_input: { file_path: a } }),
+    env: { ...process.env, HOME: E.home, USERPROFILE: E.home, CLAUDE_CODE_SESSION_ID: sid, TYCON_HOME: '' },
+  });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.deepStrictEqual(igual('la edición').archivos, ['src/a.js']);
+  // un borrado por consola y append-file
+  require(path.join(SCRIPTS, 'on-bash-write-gate.js')).anotarBorradosDeLaStory({ stateDir: E.dir(), sessionId: sid, marker: E.leer(sid), rutas: [path.join(E.repo, 'src', 'z.js')], via: 'git rm' });
+  igual('el borrado');
+  assert.strictEqual(E.correr('marker.js', ['append-file', path.join(E.repo, 'src', 'y.js')], sid).status, 0);
+  const desde = igual('append-file').desde;
+  // los eventos recortados: el campo conserva sus archivos y su desde
+  const m = E.leer(sid);
+  E.escribir(sid, { ...m, fileEvents: m.fileEvents.slice(-1) });
+  assert.strictEqual(E.correr('marker.js', ['append-file', path.join(E.repo, 'docs', 'nota.md')], sid).status, 0);
+  const recortado = E.leer(sid).otraVuelta;
+  assert.deepStrictEqual(recortado.archivos, ['src/a.js', 'src/z.js', 'src/y.js']);
+  assert.strictEqual(recortado.desde, desde);
+  // un complete-step: con los revisores cerrados otra vez, el cierre recalcula el campo y queda en null
+  const conVuelta = E.leer(sid);
+  const despues = new Date(Math.max(...conVuelta.fileEvents.map((e) => Date.parse(e.ts))) + 1000).toISOString();
+  E.escribir(sid, { ...conVuelta, stepTimings: { ...conVuelta.stepTimings, reviewers: { completedAt: REVISORES, lastCompletedAt: despues, rounds: 2 } } });
+  const cierre = E.correr('marker.js', ['complete-step', 'plan', '--out-of-order'], sid);
+  assert.strictEqual(cierre.status, 0, cierre.stderr);
+  assert.strictEqual(E.leer(sid).otraVuelta, null, 'cerraron los revisores: no queda otra vuelta');
+  // otra story: el reinicio borra el campo
+  E.escribir(sid, { ...E.leer(sid), otraVuelta: { round: 2, archivos: ['src/a.js'], desde } });
+  const otra = E.correr('marker.js', ['set', JSON.stringify({ storyId: '9.10', storyPath: E.story, repoPath: E.repo }), '--replace'], sid);
+  assert.strictEqual(otra.status, 0, otra.stderr);
+  assert.strictEqual(E.leer(sid).otraVuelta, undefined, 'la otra story no hereda la vuelta');
+});
+
+// ───────────── Una corrida sin turno no cuenta como prueba roja ─────────────
+
+const SIN_TURNO = { tests: 'sin-turno', build: 'green' };
+const PROV = { tests: 'test-gate', build: 'run-check' };
+const DEUDA = { estado: 'deuda', motivo: 'x', deuda: 'DEF-9.9-angular', via: 'persona', at: '2026-10-22T20:00:00Z' };
+const frenaSinLlamarloRojo = (r, quien) => {
+  assert.strictEqual(r.status, 1, `${quien}: ${r.stderr}`);
+  assert.match(r.stderr, /turno/, quien);
+  assert.doesNotMatch(r.stderr, /en rojo|Arreglalas/, quien);
+};
+
+test('T10 8.215-SinTurno_CompleteStep_FrenaSinLlamarloRojo @story-8.215 @ac-10', () => {
+  const E = entorno({ todo: '- [ ] [DEF-9.9-angular] subir angular\n' });
+  E.arrancar('s-st10');
+  const base = { ...E.leer('s-st10'), checks: SIN_TURNO, checksProvenance: PROV };
+  E.escribir('s-st10', base);
+  frenaSinLlamarloRojo(E.correr('marker.js', ['complete-step', 'run-tests', '--out-of-order'], 's-st10'), 'run-tests');
+  E.escribir('s-st10', base);
+  frenaSinLlamarloRojo(E.correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order'], 's-st10'), 'prepare-commit');
+  // `next`: la precondición de las pruebas queda sin cumplir y lo nombra
+  const listo = ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers', 'findings', 'live-check'];
+  E.escribir('s-st10', { ...base, stepScheme: 2, stepsCompleted: listo, stepsPending: ['prepare-commit'], dodRuntimeChecked: true, deepReviewDone: true });
+  const n = JSON.parse(E.correr('pipeline.js', ['next'], 's-st10').stdout);
+  const p = (n.preconditions || []).find((x) => x.id === 'check-tests');
+  assert.ok(p, JSON.stringify(n).slice(0, 400));
+  assert.strictEqual(p.satisfied, false);
+  assert.match(p.detail, /turno/);
+});
+
+test('T19 8.215-Stop_SinTurno_DejaParar @story-8.215 @ac-14', () => {
+  const E = entorno();
+  E.arrancar('s-st19');
+  const stop = () => spawnSync(process.execPath, [path.join(SCRIPTS, 'on-stop-dod-gate.js')], {
+    encoding: 'utf8', input: JSON.stringify({ session_id: 's-st19' }), env: { ...process.env, HOME: E.home, USERPROFILE: E.home, TYCON_HOME: '' },
+  });
+  E.escribir('s-st19', { ...E.leer('s-st19'), autonomous: true, iter: 0, checks: SIN_TURNO, checksProvenance: PROV });
+  const r = stop();
+  assert.doesNotMatch(r.stdout, /"decision":"block"/, `con sin-turno deja parar: ${r.stdout}`);
+  assert.match(`${r.stdout}${r.stderr}`, /turno/, 'lo dice en una línea');
+  const m = E.leer('s-st19');
+  assert.strictEqual(m.iter || 0, 0, 'no suma una vuelta');
+  assert.notStrictEqual(m.needs_human, true, 'no escala a una persona');
+  // un rojo de verdad sigue frenando
+  E.escribir('s-st19', { ...m, checks: { tests: 'red:exit=1', build: 'green' } });
+  assert.match(stop().stdout, /"decision":"block"/);
+});
+
+test('T22 8.215-PrepareCommit_SinTurnoDespuesDeRunTests_Frena @story-8.215 @ac-10', () => {
+  const E = entorno({ todo: '- [ ] [DEF-9.9-angular] subir angular\n' });
+  E.arrancar('s-st22');
+  // «Correr las pruebas» ya cerrado, y después el portón salió sin turno
+  const hecho = ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests'];
+  const base = { ...E.leer('s-st22'), stepScheme: 2, stepsCompleted: hecho, checks: SIN_TURNO, checksProvenance: PROV };
+  for (const [quien, m] of [['sin deuda', base], ['en deuda', { ...base, cierre: DEUDA }]]) {
+    E.escribir('s-st22', m);
+    frenaSinLlamarloRojo(E.correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order'], 's-st22'), quien);
+  }
+});

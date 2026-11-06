@@ -145,7 +145,13 @@ function markerHasta3(home, sid, repo, story, storyId = '9.91') {
   const set = markerCli(home, sid, repo, ['set', JSON.stringify({ storyId, storyPath: story, repoPath: repo })]);
   assert.equal(set.status, 0, set.stderr);
   for (const n of ['0', '1', '2']) markerCli(home, sid, repo, ['complete-step', n]);
+  // el plan escrito, con lo que muestra la pregunta de su firma: sin eso, aprobarlo se frena antes de la ventana
+  // (sin carpeta posible, como en el repo donde `.advisors` es un archivo, no hay plan que escribir)
+  let dir = null;
+  try { dir = require(path.join(SCRIPTS, 'pipeline.js')).resolveRunDir(repo, storyId, true, story); } catch (_) { dir = null; }
+  if (dir && !fs.existsSync(path.join(dir, 'step-02-bmad-plan.md'))) fs.writeFileSync(path.join(dir, 'step-02-bmad-plan.md'), PLAN_ESCRITO);
 }
+const PLAN_ESCRITO = '# Plan\n\n## Qué hace\n\nEl README con el título nuevo del proyecto.\n\n## Archivos\n\n- README.md\n';
 
 test('T4 Marker_AprobacionesQueYaExisten_SeAnotan @story-2.43 @ac-3', () => {
   const { repo, story } = repoConStory();
@@ -163,7 +169,7 @@ test('T4 Marker_AprobacionesQueYaExisten_SeAnotan @story-2.43 @ac-3', () => {
 
   markerHasta3(home, 's-auto', repo, story);
   // el plan aprobado solo se muestra igual: escrito, y en la respuesta del agente (plan-visible.test.js)
-  const planAuto = '1. El README con el título nuevo del proyecto.\n';
+  const planAuto = PLAN_ESCRITO;
   fs.writeFileSync(path.join(require(path.join(SCRIPTS, 'pipeline.js')).resolveRunDir(repo, '9.91', true, story), 'step-02-bmad-plan.md'), planAuto);
   fs.mkdirSync(path.join(home, '.claude', 'projects', '-repo'), { recursive: true });
   fs.writeFileSync(path.join(home, '.claude', 'projects', '-repo', 's-auto.jsonl'),

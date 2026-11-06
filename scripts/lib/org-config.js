@@ -70,7 +70,9 @@ const SECCIONES = Object.freeze([
   // los frenos y medidores de todas las máquinas (switches): un freno sólo se enciende desde acá (apagarlo es de cada
   // máquina, con su variable); un medidor se enciende o se apaga. La variable puesta en una máquina gana
   Object.freeze({ id: 'interruptores', titulo: 'Frenos y medidores', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['switches'], idCorto: 'profile', necesita: ['switches'] }),
-  Object.freeze({ id: 'coordinacion', titulo: 'Cuántas sesiones trabajan a la vez', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['coordination'], rutas: Object.freeze(['coordination.max_working']), idCorto: 'profile', necesita: ['coordination'] }),
+  Object.freeze({ id: 'coordinacion', titulo: 'Las sesiones de cada máquina', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['coordination'], rutas: Object.freeze(['coordination.max_working', 'coordination.session_names']), idCorto: 'profile', necesita: ['coordination'] }),
+  // cuándo la oficina de /office dice que una sesión que trabaja está callada
+  Object.freeze({ id: 'oficina', titulo: 'La oficina de /office', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['office'], rutas: Object.freeze(['office.quiet_minutes']), idCorto: 'profile', necesita: ['office'] }),
   // cómo se pone al día el freno de producción de cada máquina (guard.update): con la contraseña de su persona
   // o solo, con la versión publicada; vale sólo desde el perfil, y cada máquina instala el permiso con su contraseña
   Object.freeze({ id: 'frenoProduccion', titulo: 'Cómo se actualiza el freno de producción', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['guard'], rutas: Object.freeze(['guard.update']), idCorto: 'profile', necesita: ['guard'] }),
@@ -382,6 +384,23 @@ const LEVELS_SINCE = '2026.10.30.30';
  */
 const SITE_SINCE = '2026.10.31.99';
 /**
+ * 🔴 La primera versión del arnés cuyo lector conoce `coordination.session_names` (con qué nombres abre la coordinadora
+ * las sesiones nuevas): la etiqueta del merge que la trae, como LEVELS_SINCE.
+ */
+const SESSION_NAMES_SINCE = '2026.11.02.3';
+/**
+ * 🔴 La primera versión del arnés cuyo lector conoce `office` en el perfil del equipo (`office.quiet_minutes`, cuándo
+ * la oficina de /office dice que una sesión está callada): la etiqueta del merge que la trae. Una máquina anterior ve
+ * una clave desconocida y rechaza el perfil entero.
+ */
+const OFFICE_SINCE = '2026.11.02.10';
+/**
+ * 🔴 La primera versión del arnés cuyo lector conoce `approvals.signature_list` (la lista de lo que espera a la persona):
+ * la etiqueta del merge que la trae, como LEVELS_SINCE. Un lector anterior la leería como una clave desconocida, y una
+ * clave rota de `approvals` deja sin ninguna firma delegada.
+ */
+const SIGNATURE_LIST_SINCE = '2026.11.02.38';
+/**
  * 🔴 La primera versión del arnés cuyo lector conoce `integrations.timeTracking` (la etiqueta del merge que trajo ese
  * lector). El selector de la herramienta de horas saca la llave vieja `integrations.clockify` del perfil: una máquina
  * anterior no entiende la clave nueva y se quedaría sin Clockify en silencio. Por eso el pedido que la cambia sube
@@ -438,18 +457,13 @@ function timeTrackingLayer({ layerText, actual, doc }) {
   return { archivo: 'team-layer.json', contenido: formatJson(nueva) };
 }
 /**
- * `null` si un `team-profile.json` así lo leen todas las máquinas que pide el perfil; si no, el motivo en llano. Junta
- * las dos reglas del perfil: una LISTA de paquetes pide la versión del sitio (`packsListGateProblem`) y `response` pide
- * `RESPONSE_SINCE`. Las otras claves las lee cualquier versión que admite la capa.
+ * Las claves del perfil que el pedido cambia y que sólo lee una versión del arnés en adelante: `[[clave, versión,
+ * mensaje]]`. Con `actual` (el archivo de hoy), sólo lo que el pedido CAMBIA; sin él, todo lo que trae el archivo.
  */
-function teamProfileGateProblem({ layerText, versionImagen, doc, actual }) {
-  // con el archivo actual, sólo frena lo que el pedido CAMBIA: una lista de paquetes o un `response` que ya están en el
-  // perfil no traban la edición de otra sección; sin él, todo lo que trae el archivo
+function pedidasDelPerfil({ doc, actual }) {
   const cambia = (k) => !isObject(actual) || canonico(actual[k]) !== canonico(isObject(doc) ? doc[k] : undefined);
-  const paquetes = cambia('packs') ? packsListGateProblem({ layerText, versionImagen, valor: isObject(doc) && isObject(doc.packs) ? doc.packs.default : undefined }) : null;
-  if (paquetes) return paquetes;
   // las claves del perfil que una versión anterior no sabe leer, con la versión que las lee y su mensaje
-  const pedidas = [['response', RESPONSE_SINCE, 'org.capaSinResponse'], ['approvals', APPROVALS_SINCE, 'org.capaSinApprovals'], ['qa', QA_SINCE, 'org.capaSinQa'], ['guard', GUARD_SINCE, 'org.capaSinGuard'], ['coordination', COORDINATION_SINCE, 'org.capaSinCoordination'], ['switches', SWITCHES_SINCE, 'org.capaSinSwitches'], ['site', SITE_SINCE, 'org.capaSinSite']]
+  const pedidas = [['response', RESPONSE_SINCE, 'org.capaSinResponse'], ['approvals', APPROVALS_SINCE, 'org.capaSinApprovals'], ['qa', QA_SINCE, 'org.capaSinQa'], ['guard', GUARD_SINCE, 'org.capaSinGuard'], ['coordination', COORDINATION_SINCE, 'org.capaSinCoordination'], ['switches', SWITCHES_SINCE, 'org.capaSinSwitches'], ['site', SITE_SINCE, 'org.capaSinSite'], ['office', OFFICE_SINCE, 'org.capaSinOffice']]
     .filter(([k]) => isObject(doc) && doc[k] !== undefined && cambia(k));
   // una clave nueva dentro de una sección que ya se leía: la pide sólo si el pedido la trae
   const firma = isObject(doc) && isObject(doc.approvals) ? doc.approvals.delegated_signing : undefined;
@@ -470,12 +484,127 @@ function teamProfileGateProblem({ layerText, versionImagen, doc, actual }) {
   const niveles = isObject(doc) && isObject(doc.approvals) ? doc.approvals.levels : undefined;
   const nivelesAntes = isObject(actual) && isObject(actual.approvals) ? actual.approvals.levels : undefined;
   if (niveles !== undefined && (!isObject(actual) || canonico(niveles) !== canonico(nivelesAntes))) pedidas.push(['approvals.levels', LEVELS_SINCE, 'org.capaSinNiveles']);
+  const lista = isObject(doc) && isObject(doc.approvals) ? doc.approvals.signature_list : undefined;
+  const listaAntes = isObject(actual) && isObject(actual.approvals) ? actual.approvals.signature_list : undefined;
+  if (lista !== undefined && (!isObject(actual) || canonico(lista) !== canonico(listaAntes))) pedidas.push(['approvals.signature_list', SIGNATURE_LIST_SINCE, 'org.capaSinListaDeEspera']);
+  const nombres = isObject(doc) && isObject(doc.coordination) ? doc.coordination.session_names : undefined;
+  const nombresAntes = isObject(actual) && isObject(actual.coordination) ? actual.coordination.session_names : undefined;
+  if (nombres !== undefined && (!isObject(actual) || canonico(nombres) !== canonico(nombresAntes))) pedidas.push(['coordination.session_names', SESSION_NAMES_SINCE, 'org.capaSinNombresDeSesion']);
   const maquinas = isObject(doc) && isObject(doc.approvals) ? doc.approvals.delegated_machines : undefined;
   const maquinasAntes = isObject(actual) && isObject(actual.approvals) ? actual.approvals.delegated_machines : undefined;
   if (maquinas !== undefined && (!isObject(actual) || canonico(maquinas) !== canonico(maquinasAntes))) pedidas.push(['approvals.delegated_machines', DELEGATED_LIST_SINCE, 'org.capaSinListaDeFirmas']);
+  return pedidas;
+}
+/**
+ * Todas las claves que el pedido cambia y que piden una versión del arnés: las del perfil (`pedidasDelPerfil`) y las de
+ * Integraciones (`integrations.timeTracking`, `notify`, `platform`). `[[clave, versión]]`.
+ */
+function clavesQuePidenVersion({ actual, doc }) {
+  const deIntegraciones = [['integrations.timeTracking', cambiaHoras, TIME_TRACKING_SINCE], ['integrations.notify', cambiaAvisos, NOTIFY_SINCE], ['integrations.platform', cambiaPlataforma, PLATFORM_SINCE]]
+    .filter(([, cambia]) => cambia({ actual, doc })).map(([clave, , v]) => [clave, v]);
+  return [...pedidasDelPerfil({ doc, actual }).map(([clave, v]) => [clave, v]), ...deIntegraciones];
+}
+/**
+ * El team-layer.json que acompaña a un pedido del perfil que cambia una clave que pide una versión del arnés (decisión 5).
+ * V es la mayor de las versiones que piden las claves que cambian. Sube `requires.harness` a `>= V` en el mismo pedido
+ * sólo si todas las máquinas activas (con noticias en los últimos SIN_NOTICIAS_DIAS días, por el día de su registro)
+ * tienen V o una más nueva: se compara la versión de cada máquina con V, no su estado contra la imagen del sitio.
+ *   · null — el pedido no cambia ninguna de esas claves, la capa ya pide V o más, o el perfil no tiene capa
+ *     (`layerText` null: sin su declaración ninguna máquina aplica el perfil).
+ *   · `{ archivo, contenido, version, clave, aviso }` — la capa nueva, con lo demás igual, y lo que la pantalla dice antes
+ *     de confirmar.
+ *   · `{ problema }` — la capa no se lee o no dice «>= versión» (no se pisa a ciegas); una máquina activa está debajo
+ *     de V o no se pudo leer su versión (se nombra con su persona y su versión); o no se sabe qué versión tienen las
+ *     máquinas: sin la versión de la imagen, sin poder leer el buzón (`maquinas` null, con `maquinasMotivo`), sin
+ *     máquinas, o ninguna activa.
+ * `maquinas`: las filas de `versionesDeMaquinas`.
+ */
+function capaQueSube({ layerText, actual, doc, maquinas, maquinasMotivo = null, versionImagen, ahora = Date.now() }) {
+  const pide = clavesQuePidenVersion({ actual, doc });
+  if (!pide.length || layerText === null || layerText === undefined) return null;
+  let decl;
+  // con la marca de orden de bytes, como la lee la máquina (team.js validateDeclaration)
+  try { decl = JSON.parse(String(layerText).replace(/^﻿/, '')); } catch (e) {
+    return { problema: M('org.capaIlegible', { error: (e && e.message) || e }) };
+  }
+  if (!isObject(decl)) return { problema: M('org.capaIlegible', { error: 'team-layer.json no es un objeto' }) };
+  const req = String((isObject(decl.requires) ? decl.requires : {}).harness || '').trim();
+  // la forma que lee la máquina (team.js REQUIRES_RE): otra cosa es una capa ilegible, y una capa ilegible no se pisa
+  const m = /^>=\s*(\d{4}\.\d{2}\.\d{2}\.\d+)$/.exec(req);
+  if (req && !m) return { problema: M('org.capaIlegible', { error: `requires.harness dice «${req}», no «>= versión»` }) };
+  const [clave, version] = pide.reduce((max, x) => (max === null || versionAtLeast(x[1], max[1]) ? x : max), null);
+  if (m && versionAtLeast(m[1], version)) return null;
+  const sinSaber = (motivo) => M('org.capaSinSaberVersiones', { motivo });
+  if (!versionImagen) return { problema: sinSaber(M('org.imagenSinVersion')) };
+  if (!Array.isArray(maquinas)) return { problema: sinSaber(maquinasMotivo || M('org.sinMaquinasEnElBuzon')) };
+  if (!maquinas.length) return { problema: sinSaber(M('org.sinMaquinasEnElBuzon')) };
+  const limite = ahora - SIN_NOTICIAS_DIAS * 86400000;
+  const activa = (f) => typeof f.dia === 'string' && Date.parse(`${f.dia}T00:00:00Z`) >= limite;
+  const activas = maquinas.filter(activa);
+  const afuera = maquinas.filter((f) => !activa(f));
+  const quedanAfuera = afuera.length ? ` ${M('pantalla.capaQuedanAfuera', { n: afuera.length, lista: afuera.map((f) => f.maquina).join(', ') })}` : '';
+  if (!activas.length) return { problema: `${sinSaber(M('org.sinMaquinasActivas'))}${quedanAfuera}` };
+  const atrasadas = activas.filter((f) => !versionParts(f.version) || !versionAtLeast(f.version, version));
+  if (atrasadas.length) {
+    const lista = atrasadas.map((f) => `${f.maquina} (${f.persona || '?'}, ${versionParts(f.version) ? f.version : M('org.versionIlegible')})`).join(', ');
+    return { problema: `${M('org.capaMaquinasAtrasadas', { version, clave, lista })}${quedanAfuera}` };
+  }
+  const nueva = { ...decl, requires: { ...(isObject(decl.requires) ? decl.requires : {}), harness: `>= ${version}` } };
+  return { archivo: 'team-layer.json', contenido: formatJson(nueva), version, clave, aviso: `${M('pantalla.capaSube', { version, clave, n: activas.length })}${quedanAfuera}` };
+}
+/**
+ * La dirección del sitio que vale: la del perfil (`team-profile.json`, `site.url`) y, si el perfil no la tiene o no
+ * llegó, la de operations.json, que queda de respaldo (decisión 3). `{ url, de: 'perfil' | 'operaciones' | null,
+ * distintas }`: `distintas` dice que las dos están y no son la misma.
+ */
+function direccionDelSitio({ perfil, operaciones }) {
+  const de = (d) => (isObject(d) && isObject(d.site) && typeof d.site.url === 'string' && d.site.url.trim() ? d.site.url.trim() : null);
+  const p = de(perfil);
+  const o = de(operaciones);
+  if (p) return { url: p, de: 'perfil', distintas: Boolean(o) && o !== p };
+  if (o) return { url: o, de: 'operaciones', distintas: false };
+  return { url: null, de: null, distintas: false };
+}
+/**
+ * Un team-profile.json leído como lo lee la máquina (también con la marca de orden de bytes): el documento, o null si
+ * no está o no se puede leer. Lo usan los procesos de la noche y team-config para la dirección del sitio.
+ */
+function leerPerfil(ruta) {
+  return estadoDelPerfil(ruta).doc;
+}
+/** Lo mismo, diciendo por qué no hay documento: `{ doc, ilegible }` (`ilegible`: el archivo está y no se pudo leer). */
+function estadoDelPerfil(ruta) {
+  let texto;
+  try { texto = fs.readFileSync(ruta, 'utf8'); } catch (e) { return { doc: null, ilegible: !(e && e.code === 'ENOENT') }; }
+  try { return { doc: JSON.parse(texto.replace(/^﻿/, '')), ilegible: false }; } catch { return { doc: null, ilegible: true }; }
+}
+/**
+ * El origen de una dirección (esquema, máquina y puerto), sin usuario, clave, camino ni parámetros: lo que se puede
+ * mostrar en un aviso que va a los canales. Una dirección que no se puede leer se dice como tal, sin copiarla.
+ */
+function origenDe(url) {
+  try { const u = new URL(String(url)); return `${u.protocol}//${u.host}`; } catch { return '(una dirección que no se puede leer)'; }
+}
+/** Los nombres de la lista propia, de un nombre por renglón: cada renglón recortado (también el `\r`), sin los vacíos. */
+function nombresDeLaLista(texto) {
+  return String(texto == null ? '' : texto).split(/\r\n|\r|\n/).map((n) => n.trim()).filter(Boolean);
+}
+/**
+ * `null` si un `team-profile.json` así lo leen todas las máquinas que pide el perfil; si no, el motivo en llano. Junta
+ * las dos reglas del perfil: una LISTA de paquetes pide la versión del sitio (`packsListGateProblem`) y `response` pide
+ * `RESPONSE_SINCE`. Las otras claves las lee cualquier versión que admite la capa.
+ */
+function teamProfileGateProblem({ layerText, versionImagen, doc, actual }) {
+  // con el archivo actual, sólo frena lo que el pedido CAMBIA: una lista de paquetes o un `response` que ya están en el
+  // perfil no traban la edición de otra sección; sin él, todo lo que trae el archivo (pedidasDelPerfil)
+  const cambia = (k) => !isObject(actual) || canonico(actual[k]) !== canonico(isObject(doc) ? doc[k] : undefined);
+  const paquetes = cambia('packs') ? packsListGateProblem({ layerText, versionImagen, valor: isObject(doc) && isObject(doc.packs) ? doc.packs.default : undefined }) : null;
+  if (paquetes) return paquetes;
+  const pedidas = pedidasDelPerfil({ doc, actual });
   if (!pedidas.length) return null;
   let decl;
-  try { decl = JSON.parse(String(layerText)); } catch (e) {
+  // con la marca de orden de bytes, como la lee la máquina
+  try { decl = JSON.parse(String(layerText).replace(/^﻿/, '')); } catch (e) {
     return M('org.capaIlegible', { error: (e && e.message) || e });
   }
   const req = String(((decl || {}).requires || {}).harness || '');
@@ -724,7 +853,8 @@ function clavesAjenas(seccion, borrador) {
 }
 
 /** El texto de un archivo como objeto, o null. */
-const docDe = (text) => { if (text === null || text === undefined) return null; try { const v = JSON.parse(String(text)); return isObject(v) ? v : null; } catch { return null; } };
+// con la marca de orden de bytes, como la lee la máquina (team.js): el pedido la saca, y la diferencia la cuenta como forma
+const docDe = (text) => { if (text === null || text === undefined) return null; try { const v = JSON.parse(String(text).replace(/^﻿/, '')); return isObject(v) ? v : null; } catch { return null; } };
 
 /**
  * Revisar un cambio: `{ ok, problems: [{ path, message, sinCampo? }], texto, aviso?, avisos? }`.
@@ -1207,6 +1337,54 @@ function diferencia(antes, despues, contexto) {
   return out;
 }
 
+/**
+ * La diferencia de un archivo JSON por valor, no por forma (decisión 7): `{ tramos, forma }`. Las dos versiones pasan
+ * por el formato del sitio (`formatJson`) antes de comparar, así que `tramos` (como los de `diferencia`) trae sólo los
+ * renglones cuyo valor cambia; en cada par de renglones que sale y entra, `marca: [desde, hasta]` es lo que cambió
+ * dentro del renglón. `forma` son los renglones del archivo de hoy que cambian sólo de forma al escribirlo en ese
+ * formato (finales de Windows y la marca de orden de bytes incluidos): el pedido igual lo reescribe así. Un archivo de
+ * hoy que no es JSON se compara renglón a renglón, como siempre, con `forma` 0.
+ */
+function diferenciaDeJson(antes, despues, contexto) {
+  let doc;
+  try { doc = JSON.parse(String(antes == null ? '' : antes).replace(/^﻿/, '')); } catch { return { tramos: diferencia(antes, despues, contexto), forma: 0 }; }
+  const enFormato = formatJson(doc);
+  const forma = enFormato === antes ? 0 : diferencia(antes, enFormato, 0).flatMap((t) => t.renglones || []).filter((r) => r.tipo === 'sale').length;
+  const tramos = diferencia(enFormato, despues, contexto);
+  // cada bloque de renglones que salen se empareja con el de los que entran a continuación, renglón por renglón
+  for (const t of tramos) {
+    const rs = t.renglones || [];
+    for (let i = 0; i < rs.length;) {
+      if (rs[i].tipo !== 'sale') { i += 1; continue; }
+      let j = i;
+      while (j < rs.length && rs[j].tipo === 'sale') j += 1;
+      let k = j;
+      while (k < rs.length && rs[k].tipo === 'entra') k += 1;
+      for (let p = 0; p < Math.min(j - i, k - j); p += 1) marcar(rs[i + p], rs[j + p]);
+      i = k;
+    }
+  }
+  return { tramos, forma };
+}
+/** Marca lo que cambió dentro de dos renglones parecidos: lo que no comparten entre el principio y el final. */
+function marcar(sale, entra) {
+  const a = sale.linea;
+  const b = entra.linea;
+  let ini = 0;
+  while (ini < a.length && ini < b.length && a[ini] === b[ini]) ini += 1;
+  let finA = a.length;
+  let finB = b.length;
+  while (finA > ini && finB > ini && a[finA - 1] === b[finB - 1]) { finA -= 1; finB -= 1; }
+  // la marca no parte un carácter de dos unidades (un emoji): empieza antes de su mitad alta y termina después de la baja
+  const alta = (c) => c >= 0xD800 && c <= 0xDBFF;
+  const baja = (c) => c >= 0xDC00 && c <= 0xDFFF;
+  if (ini > 0 && alta(a.charCodeAt(ini - 1))) ini -= 1;
+  if (finA < a.length && baja(a.charCodeAt(finA))) finA += 1;
+  if (finB < b.length && baja(b.charCodeAt(finB))) finB += 1;
+  sale.marca = [ini, finA];
+  entra.marca = [ini, finB];
+}
+
 // ── las claves del advisors.yaml de cada repo de producto ────────────────────────────────────────────────────────
 /**
  * Lo que la sección por repo deja editar del `advisors.yaml` de un repo de producto (scripts/lib/repo-config-readers.js). Cada clave se describe acá
@@ -1342,6 +1520,10 @@ function pantalla(idioma = 'es') {
   // loadReader), para no repetirlos acá. Un lector sin ellos deja la sección sin selectores
   const lectorPerfil = require('./pack-pieces.js').configReader();
   const interruptores = JSON.stringify(Object.entries((lectorPerfil && lectorPerfil.SWITCHES) || {}).map(([k, sw]) => [k, sw.variable, sw.factory, sw.brake]));
+  // los temas de fábrica de los nombres de sesión, del mismo lector; uno sin ellos deja sólo «como hoy»
+  const temas = JSON.stringify((lectorPerfil && typeof lectorPerfil.temasDeSesion === 'function' && lectorPerfil.temasDeSesion()) || {}).replace(/</g, '\\u003c');
+  // el ayudante común de los botones que le piden algo al servidor (scripts/site/busy.js)
+  const trabajandoJs = require('../site/busy.js').TRABAJANDO;
   return String.raw`'use strict';
 // config.js — la pestaña Configuración del sitio de la organización (story 2.29). Lo sirve scripts/lib/org-config.js.
 // Sólo usa setAttribute, appendChild, addEventListener, textContent y replaceChildren: las pruebas lo corren sobre un
@@ -1359,6 +1541,10 @@ function pantalla(idioma = 'es') {
   var TOKEN = meta ? meta.getAttribute('content') : '';
   var app = document.getElementById('config-app');
   if (!app) return;
+${trabajandoJs}
+  // la pantalla se vuelve a dibujar entera: cada botón que trabaja lleva su clave en «data-trabaja» y toma su estado al dibujarse
+  TRABAJO.sigue = T('pantalla.sigueTrabajando');
+  TRABAJO.alCambiar = function () { render(); };
   var SOLO_LECTURA = false;
   var CONTROLES = { input: true, select: true, textarea: true, button: true };
   function el(tag, attrs) {
@@ -1368,7 +1554,20 @@ function pantalla(idioma = 'es') {
     // dentro del editor de una sección de sólo lectura, nada se puede tocar: campos, selectores y botones nacen apagados
     if (SOLO_LECTURA && CONTROLES[tag]) e.setAttribute('disabled', 'disabled');
     for (var i = 2; i < arguments.length; i++) if (arguments[i]) e.appendChild(arguments[i]);
+    if (tag === 'button' && attrs['data-trabaja']) {
+      pintarTrabajo(e, attrs['data-trabaja']);
+      // lo que falló y la acción no dice en su lugar, al lado del botón
+      var falla = fallaDeTrabajo(attrs['data-trabaja']);
+      if (falla) { var junto = document.createElement('span'); junto.setAttribute('class', 'con-motivo'); junto.appendChild(e); junto.appendChild(el('span', { class: 'trabajando-motivo', role: 'status', 'data-motivo': 'trabajando', text: falla })); return junto; }
+    }
     return e;
+  }
+  /** Un botón que le pide algo al servidor: trabaja con «clave» y dice «trabajandoTexto» mientras tanto. */
+  function botonQueTrabaja(clave, trabajandoTexto, attrs, accion, opciones) {
+    var a = {}; Object.keys(attrs).forEach(function (k) { a[k] = attrs[k]; });
+    a.type = 'button'; a['data-trabaja'] = clave;
+    a.onclick = function () { trabajando(clave, trabajandoTexto, accion, opciones); };
+    return el('button', a);
   }
   function api(ruta, cuerpo) {
     var o = { method: cuerpo ? 'POST' : 'GET', headers: {}, credentials: 'same-origin' };
@@ -1395,7 +1594,9 @@ function pantalla(idioma = 'es') {
   // compara contra él aunque la pantalla se vuelva a dibujar con el borrador
   // «fila»: la máquina de «Por confirmar» cuyo «Confirmar» está en curso ({ maquina, persona }); mientras tanto, la nota
   // y la propuesta de la sección Personas se dibujan en su renglón y no al pie
-  var S = { pestana: null, secciones: [], borradores: {}, originales: {}, problemas: {}, avisos: {}, notas: {}, textos: {}, extras: null, diferencias: {}, resumenes: {}, marcas: {}, proponiendo: {}, terminadas: {}, bases: {}, conflictos: {}, recuperar: {}, abiertos: {}, fila: null };
+  // soltar: cómo avisarle al botón de «Confirmar y proponer» de cada sección que la propuesta terminó. pendientes: el
+  // pedido abierto de cada sección que todavía no entró a main ({ numero, enlace, marca, borrador, base })
+  var S = { pestana: null, secciones: [], borradores: {}, originales: {}, problemas: {}, avisos: {}, notas: {}, textos: {}, extras: null, diferencias: {}, resumenes: {}, marcas: {}, proponiendo: {}, terminadas: {}, bases: {}, conflictos: {}, recuperar: {}, abiertos: {}, fila: null, soltar: {}, pendientes: {}, formas: {} };
   function olvidarAbiertos(id) { Object.keys(S.abiertos).forEach(function (k) { if (k.indexOf(id + '\u0000') === 0) delete S.abiertos[k]; }); }
   // cuánto espera la página antes de cada consulta por el pedido de una propuesta cortada; la prueba pasa los suyos
   var ESPERAS = typeof esperasConsulta !== 'undefined' && esperasConsulta ? esperasConsulta : [2000, 5000, 10000];
@@ -1481,6 +1682,7 @@ function pantalla(idioma = 'es') {
     pruebaAMano: { t: T('pantalla.pruebaAManoTitulo'), d: T('pantalla.pruebaAManoDescripcion'), corto: T('pantalla.pruebaAManoTitulo') },
     interruptores: { t: T('pantalla.interruptoresTitulo'), d: T('pantalla.interruptoresDescripcion'), corto: T('pantalla.interruptoresTitulo') },
     coordinacion: { t: T('pantalla.coordinacionTitulo'), d: T('pantalla.coordinacionDescripcion'), corto: T('pantalla.coordinacionTitulo') },
+    oficina: { t: T('pantalla.oficinaTitulo'), d: T('pantalla.oficinaDescripcion'), corto: T('pantalla.oficinaTitulo') },
     frenoProduccion: { t: T('pantalla.frenoProduccionTitulo'), d: T('pantalla.frenoProduccionDescripcion'), corto: T('pantalla.frenoProduccionTitulo') },
     integraciones: { t: T('pantalla.integraciones'), d: T('pantalla.queServiciosUsaCadaMaquina'), corto: T('pantalla.integraciones') },
     ado: { t: 'Azure DevOps', d: T('pantalla.laOrganizacionDeLaPlataforma', { plataforma: 'Azure DevOps' }), corto: 'Azure DevOps' },
@@ -1494,7 +1696,7 @@ function pantalla(idioma = 'es') {
     aldia: { t: T('pantalla.comoSeActualizaElSitio'), d: T('pantalla.siElSitioSePone'), corto: T('pantalla.actualizacionDelSitio') },
   };
   // las pestañas: [id, nombre, secciones, tablas para mirar]. Se ve una por vez; el resumen de arriba, en todas
-  var PESTANAS = [['personas', T('pantalla.personas'), ['organizacion', 'sitio', 'aplicar', 'aldia', 'direccionSitio', 'personas', 'responsables'], []], ['repos', T('pantalla.reposYProductos'), ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', T('pantalla.avisosYLaNoche'), ['canal', 'espera', 'umbrales', 'fichas', 'pedidos', 'contexto'], []], ['claude', T('pantalla.comoTrabajaClaude'), ['respuesta', 'modelos', 'suites', 'cobertura', 'revisionSemanal', 'revision', 'tecnologia', 'aprobaciones', 'pruebaAMano', 'interruptores', 'coordinacion', 'integraciones', 'hilos', 'estimaciones', 'paseAdversarial'], []], ['instalacion', T('pantalla.instalacionYActualizacion'), ['actualizacion', 'instalacion', 'paquetes', 'frenoProduccion'], ['contenido', 'versiones']]];
+  var PESTANAS = [['personas', T('pantalla.personas'), ['organizacion', 'sitio', 'aplicar', 'aldia', 'direccionSitio', 'personas', 'responsables'], []], ['repos', T('pantalla.reposYProductos'), ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', T('pantalla.avisosYLaNoche'), ['canal', 'espera', 'umbrales', 'fichas', 'pedidos', 'contexto'], []], ['claude', T('pantalla.comoTrabajaClaude'), ['respuesta', 'modelos', 'suites', 'cobertura', 'revisionSemanal', 'revision', 'tecnologia', 'aprobaciones', 'pruebaAMano', 'interruptores', 'coordinacion', 'oficina', 'integraciones', 'hilos', 'estimaciones', 'paseAdversarial'], []], ['instalacion', T('pantalla.instalacionYActualizacion'), ['actualizacion', 'instalacion', 'paquetes', 'frenoProduccion'], ['contenido', 'versiones']]];
   /** La pestaña de un ancla (#pestana-x, #seccion-x o una tabla para mirar); null si no es de ninguna. */
   function pestanaDe(ancla) {
     var id = String(ancla || '').replace(/^#/, '');
@@ -1516,6 +1718,8 @@ function pantalla(idioma = 'es') {
     if (s.soloLectura) return ['nm', T('pantalla.soloParaMirar')];
     var n = (S.problemas[s.id] || []).length;
     if (n) return ['warn', n + T('pantalla.paraCorregir')];
+    // «al día» es lo que tiene main: lo propuesto en un pedido abierto todavía no lo está (decisión 4)
+    if (S.pendientes[s.id]) return ['warn', T('pantalla.propuestoSinEntrar', { n: S.pendientes[s.id].numero })];
     if (S.textos[s.id]) return ['ok', T('pantalla.revisada')];
     if (s.estado === 'nuevo') return ['nm', T('pantalla.seCreaAlProponer')];
     if (s.id === 'personas' && s.extras && (s.extras.porConfirmar || []).length) return ['warn', s.extras.porConfirmar.length + T('pantalla.porConfirmar')];
@@ -1667,7 +1871,7 @@ function pantalla(idioma = 'es') {
     caja.appendChild(el('p', { class: 'sub-d', text: T('pantalla.invitarAyuda') }));
     var correo = el('input', { type: 'email', value: INVITAR.correo, placeholder: T('pantalla.correo'), 'aria-label': T('pantalla.correoAInvitar'), oninput: function (ev) { INVITAR.correo = ev.target.value; } });
     var productos = el('input', { class: 'productos', value: INVITAR.productos, placeholder: T('pantalla.productosSeparados'), 'aria-label': T('pantalla.productosDeLaPersona'), oninput: function (ev) { INVITAR.productos = ev.target.value; } });
-    var boton = el('button', { type: 'button', text: INVITAR.enviando ? T('pantalla.invitando') : T('pantalla.invitar'), disabled: INVITAR.enviando ? 'disabled' : undefined, onclick: function () { invitar(textoDelCampo(correo), textoDelCampo(productos)); } });
+    var boton = botonQueTrabaja('invitar', T('pantalla.invitando'), { text: T('pantalla.invitar') }, function () { return invitar(textoDelCampo(correo), textoDelCampo(productos)); }, { muestraSuError: true });
     caja.appendChild(el('div', { class: 'bar' }, correo, productos, boton));
     var n = INVITAR.nota;
     if (n) {
@@ -1680,7 +1884,7 @@ function pantalla(idioma = 'es') {
     return caja;
   }
   function invitar(correo, productos) {
-    if (INVITAR.enviando) return;
+    if (INVITAR.enviando) return Promise.resolve(null);
     INVITAR.correo = correo; INVITAR.productos = productos; INVITAR.enviando = true; INVITAR.nota = null; render();
     var lista = String(productos || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean);
     return api('/invitar', { correo: correo, productos: lista, marca: nuevaMarca() }).then(function (r) {
@@ -1691,7 +1895,7 @@ function pantalla(idioma = 'es') {
     });
   }
   function revocar(correo) {
-    if (REVOCADOS[correo] && REVOCADOS[correo].enviando) return;
+    if (REVOCADOS[correo] && REVOCADOS[correo].enviando) return Promise.resolve(null);
     REVOCADOS[correo] = { enviando: true }; render();
     return api('/revocar', { correo: correo, marca: nuevaMarca() }).then(function (r) {
       REVOCADOS[correo] = { ok: !!r.ok, text: r.ok ? r.message : (mensajeLlano(r.message) || T('pantalla.hayQueCorregirLoMarcado')), enlace: r.enlace || null, portal: r.portal || null };
@@ -1704,8 +1908,8 @@ function pantalla(idioma = 'es') {
     if (!e) return null;
     var caja = el('span', { class: 'invitado', 'data-estado': e.estado }, el('span', { class: 'dato', text: e.texto }));
     var rv = REVOCADOS[String(correo).trim().toLowerCase()];
-    if (!rv) caja.appendChild(el('button', { class: 'sec', type: 'button', text: T('pantalla.revocar'), title: T('pantalla.revocar') + ' ' + correo, onclick: function () { revocar(String(correo).trim().toLowerCase()); } }));
-    else if (rv.enviando) caja.appendChild(el('span', { class: 'dato', text: T('pantalla.proponiendo') }));
+    var clave = String(correo).trim().toLowerCase();
+    if (!rv || rv.enviando) caja.appendChild(botonQueTrabaja('revocar:' + clave, T('pantalla.proponiendoBoton'), { class: 'sec', text: T('pantalla.revocar'), title: T('pantalla.revocar') + ' ' + correo }, function () { return revocar(clave); }, { muestraSuError: true }));
     else {
       var nota = el('span', { class: 'msg ' + (rv.ok ? 'ok' : 'bad'), role: 'status' }, el('b', { text: rv.text }));
       if (rv.enlace) nota.appendChild(el('a', { href: rv.enlace, text: T('pantalla.verElPedidoDeCambio') }));
@@ -1799,11 +2003,17 @@ function pantalla(idioma = 'es') {
       lista.appendChild(mant);
     }
     var refresco = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.cadaCuantoSeActualizaEl') }), el('p', { class: 'sub-d', text: T('pantalla.queReleeElSitio') }), campo(T('pantalla.minutosEntre5Y120'), site.refresh_minutes, function (v) { site.refresh_minutes = v === '' ? undefined : numOTexto(v); }, 'site.refresh_minutes', pr, { inputmode: 'numeric' }), el('p', { class: 'sub-d', text: T('pantalla.siNoLoDeclarasQuinceMinutos') }));
+    // sin valor escrito vale el de fábrica: elegirlo saca la clave, no la escribe
+    lista.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.quienVeLasOficinas') }),
+      selector(T('pantalla.quienVeLasOficinas'), (site.offices && site.offices.visibility) || 'maintainers', [['maintainers', T('pantalla.oficinasMantiene')], ['everyone', T('pantalla.oficinasTodos')]], function (v) {
+        if (v === 'maintainers') delete site.offices; else site.offices = { visibility: v };
+      }, 'site.offices.visibility', pr)));
     // lo que no hace falta tocar: plegado, con su motivo en el título
     var avanzado = el('details', { class: 'mas-info avanzado' }, el('summary', { text: T('pantalla.avanzadoNoHaceFalta') }));
     lista.appendChild(avanzado);
     avanzado.appendChild(refresco);
-    if (s.campos && s.campos.url) avanzado.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.laDireccionDelSitio') }), campo('', site.url, function (v) { site.url = v || undefined; }, 'site.url', pr)));
+    // la dirección del sitio se edita en un solo lugar, «La dirección del sitio en cada máquina» (el perfil): la de
+    // operations.json queda de respaldo para la noche y no se ofrece acá (decisión 3)
     var mb = site.mailbox || {};
     var buzon = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.dondeDejanSusCorridasLas') }), el('p', { class: 'sub-d', text: T('pantalla.lasContrasenasNoVanAca') }));
     var f = el('div', { class: 'fila' });
@@ -1868,6 +2078,8 @@ function pantalla(idioma = 'es') {
       return (e.stages || []).map(function (id) { return nombres[id] || id; }).join(', ') + (pipe ? T('pantalla.pipeline2') + pipe + ')' : '');
     }).join(' · ') || '—';
   }
+  // «Agregar un producto» de Despliegues: lo escrito y la última respuesta de «Ver sus pasos» (pasos)
+  var DESPLIEGUE = { producto: '', pipeline: '', nombre: '', pasos: null };
   function editorDespliegues(s, d, pr) {
     var box = el('div', { class: 'pila' });
     var prods = d.deployments && d.deployments.products && typeof d.deployments.products === 'object' ? d.deployments.products : {};
@@ -1879,9 +2091,10 @@ function pantalla(idioma = 'es') {
         el('div', {}, el('div', { class: 'lab', text: T('pantalla.prueba2') }), el('div', { text: textoDeEntradas(p.staging) })),
         el('div', {}, el('div', { class: 'lab', text: T('pantalla.produccion2') }), el('div', { text: textoDeEntradas(p.production) }))));
     });
-    var producto = el('input', { placeholder: T('pantalla.nombreDelProducto'), 'aria-label': T('pantalla.producto') });
-    var sel = el('input', { placeholder: T('pantalla.numeroDelPipelineODueno'), 'aria-label': T('pantalla.pipeline3') });
-    var nombrePipeline = el('input', { placeholder: T('pantalla.proyectoNombreDelPipeline', { plataforma: 'Azure' }), 'aria-label': T('pantalla.nombreDelPipeline') });
+    // lo escrito y lo que contestó «Ver sus pasos» viven en DESPLIEGUE: la pantalla se vuelve a dibujar mientras pregunta
+    var producto = el('input', { value: DESPLIEGUE.producto || undefined, placeholder: T('pantalla.nombreDelProducto'), 'aria-label': T('pantalla.producto'), oninput: function (e) { DESPLIEGUE.producto = e.target.value; } });
+    var sel = el('input', { value: DESPLIEGUE.pipeline || undefined, placeholder: T('pantalla.numeroDelPipelineODueno'), 'aria-label': T('pantalla.pipeline3'), oninput: function (e) { DESPLIEGUE.pipeline = e.target.value; } });
+    var nombrePipeline = el('input', { value: DESPLIEGUE.nombre || undefined, placeholder: T('pantalla.proyectoNombreDelPipeline', { plataforma: 'Azure' }), 'aria-label': T('pantalla.nombreDelPipeline'), oninput: function (e) { DESPLIEGUE.nombre = e.target.value; } });
     var nota = el('div', {});
     // el producto puede vivir en otro proyecto que el de operaciones: el campo arranca en el de operaciones y, al
     // cambiarlo, la lista trae los pipelines de ese proyecto. Con la lista, el pipeline se elige por su nombre y completa
@@ -1896,20 +2109,24 @@ function pantalla(idioma = 'es') {
     var eleccion = lista ? selector(T('pantalla.pipeline3'), '', [['', T('pantalla.elegiElPipeline')]].concat(lista.map(function (x) { return [String(x.id), x.nombre]; })), function (v) {
       var x = lista.filter(function (y) { return String(y.id) === v; })[0];
       sel.value = x ? proyecto + '/' + x.id : ''; nombrePipeline.value = x ? proyecto + '/' + x.nombre : '';
+      DESPLIEGUE.pipeline = sel.value; DESPLIEGUE.nombre = nombrePipeline.value;
     }, 'deployments.pipeline', pr) : null;
+    var verPasos = botonQueTrabaja('pasos:' + s.id, T('pantalla.abriendo'), { class: 'sec', text: T('pantalla.verSusPasos') }, function () {
+      DESPLIEGUE.producto = valorDe(producto); DESPLIEGUE.pipeline = valorDe(sel); DESPLIEGUE.nombre = valorDe(nombrePipeline);
+      return api('/stages', { pipeline: DESPLIEGUE.pipeline }).then(function (r) { DESPLIEGUE.pasos = r; return r; });
+    }, { muestraSuError: true });
+    var vistos = DESPLIEGUE.pasos;
+    if (vistos && !vistos.ok) nota.appendChild(el('div', { class: 'err', text: vistos.message }));
+    else if (vistos) {
+      var ul = el('ul', { class: 'renglones' });
+      (vistos.propuestos || []).forEach(function (st) { ul.appendChild(el('li', {}, el('span', { class: 'quien', text: st.nombre || st.identificador }), el('span', { class: 'dato', text: st.nombre ? st.identificador : '' }), el('span', { class: 'acc' }, el('button', { class: 'sec', type: 'button', text: T('pantalla.esLaPrueba'), onclick: function () { confirmarStage(d, valorDe(producto), valorDe(sel), valorDe(nombrePipeline), 'staging', st.identificador); } }), el('button', { class: 'sec', type: 'button', text: T('pantalla.esProduccion'), onclick: function () { confirmarStage(d, valorDe(producto), valorDe(sel), valorDe(nombrePipeline), 'production', st.identificador); } })))); });
+      nota.appendChild(el('p', { class: 'muted', text: T('pantalla.nadaSeGuardaHastaQue') }));
+      nota.appendChild(ul);
+    }
     var agregar = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.agregarUnProducto') }), el('p', { class: 'sub-d', text: T('pantalla.elegisElPipelineYEl') }),
       campoProyecto,
       eleccion,
-      el('div', { class: 'fila' }, producto, lista ? el('details', { class: 'mas-info' }, el('summary', { text: T('pantalla.escribirloAMano') }), sel, nombrePipeline) : sel, lista ? null : nombrePipeline, el('button', { class: 'sec', type: 'button', text: T('pantalla.verSusPasos'), onclick: function () {
-        api('/stages', { pipeline: sel.value }).then(function (r) {
-          nota.replaceChildren();
-          if (!r.ok) { nota.appendChild(el('div', { class: 'err', text: r.message })); return; }
-          var ul = el('ul', { class: 'renglones' });
-          (r.propuestos || []).forEach(function (st) { ul.appendChild(el('li', {}, el('span', { class: 'quien', text: st.nombre || st.identificador }), el('span', { class: 'dato', text: st.nombre ? st.identificador : '' }), el('span', { class: 'acc' }, el('button', { class: 'sec', type: 'button', text: T('pantalla.esLaPrueba'), onclick: function () { confirmarStage(d, producto.value, sel.value, nombrePipeline.value, 'staging', st.identificador); } }), el('button', { class: 'sec', type: 'button', text: T('pantalla.esProduccion'), onclick: function () { confirmarStage(d, producto.value, sel.value, nombrePipeline.value, 'production', st.identificador); } })))); });
-          nota.appendChild(el('p', { class: 'muted', text: T('pantalla.nadaSeGuardaHastaQue') }));
-          nota.appendChild(ul);
-        });
-      } })), nota);
+      el('div', { class: 'fila' }, producto, lista ? el('details', { class: 'mas-info' }, el('summary', { text: T('pantalla.escribirloAMano') }), sel, nombrePipeline) : sel, lista ? null : nombrePipeline, verPasos), nota);
     box.appendChild(agregar);
     box.appendChild(el('details', { class: 'mas-info' }, el('summary', { text: T('pantalla.editarComoTexto') }), editorGenerico(s, d, pr, 'deployments', T('pantalla.desplieguesComoTexto'))));
     return box;
@@ -1951,7 +2168,73 @@ function pantalla(idioma = 'es') {
     }
     if (!n.ok) (S.problemas[s.id] || []).forEach(function (x) { caja.appendChild(el('div', { class: 'err', text: (x.donde ? x.donde + ': ' : '') + x.message })); });
     if (proponiendo) caja.appendChild(el('div', { class: 'msg ok' }, el('b', { text: T('pantalla.proponiendo') })));
-    if (n.confirmar) caja.appendChild(el('div', { class: 'bar' }, el('button', { type: 'button', text: T('pantalla.confirmarYProponer'), disabled: proponiendo ? 'disabled' : undefined, onclick: function () { confirmarPropuesta(s); } }), el('button', { class: 'sec', type: 'button', text: T('pantalla.cancelar'), disabled: proponiendo ? 'disabled' : undefined, onclick: function () { S.notas[s.id] = null; S.fila = null; render(); } })));
+    if (n.confirmar) caja.appendChild(el('div', { class: 'bar' }, botonQueTrabaja('proponer:' + s.id, T('pantalla.proponiendoBoton'), { text: T('pantalla.confirmarYProponer'), disabled: proponiendo ? 'disabled' : undefined }, function () { return confirmarPropuesta(s); }, { muestraSuError: true }), el('button', { class: 'sec', type: 'button', text: T('pantalla.cancelar'), disabled: proponiendo ? 'disabled' : undefined, onclick: function () { S.notas[s.id] = null; S.fila = null; render(); } })));
+    return caja;
+  }
+  // La oficina de cada máquina: se aprueba, se rechaza y se da de baja en el disco del sitio, sin abrir un pedido
+  var OFICINAS = { enviando: null, nota: null };
+  function accionDeOficina(s, cuerpo) {
+    if (OFICINAS.enviando) return Promise.resolve(null);
+    OFICINAS.enviando = cuerpo.fingerprint || cuerpo.maquina; OFICINAS.nota = null; render();
+    return api('/oficinas', cuerpo).then(function (r) {
+      OFICINAS.enviando = null;
+      if (r.oficinas && s.extras) s.extras.oficinas = r.oficinas;
+      if (!r.ok) OFICINAS.nota = mensajeLlano(r.message) || T('pantalla.hayQueCorregirLoMarcado');
+      render();
+    });
+  }
+  function tablaDeOficinas(columnas, filas) {
+    var cuerpo = el('tbody', {});
+    filas.forEach(function (f) {
+      var tr = el('tr', {});
+      f.forEach(function (c) { tr.appendChild(typeof c === 'string' ? el('td', { text: c }) : el('td', {}, c)); });
+      cuerpo.appendChild(tr);
+    });
+    var cabecera = el('tr', {});
+    columnas.forEach(function (c) { cabecera.appendChild(el('th', { text: c })); });
+    return el('table', { class: 'tabla' }, el('thead', {}, cabecera), cuerpo);
+  }
+  function bloqueOficinas(s, of) {
+    var caja = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.oficinaDeCadaMaquina') }), el('p', { class: 'sub-d', text: T('pantalla.oficinaDeCadaMaquinaAyuda') }));
+    // una acción por vez: mientras una trabaja, las demás quedan apagadas y sólo la tocada dice «Guardando…»
+    var boton = function (texto, cuerpo) { return botonQueTrabaja('oficina:' + cuerpo.accion + ':' + (cuerpo.fingerprint || cuerpo.maquina), T('pantalla.guardando'), { text: texto, disabled: OFICINAS.enviando ? 'disabled' : undefined }, function () { return accionDeOficina(s, cuerpo); }, { muestraSuError: true }); };
+    if (!of.conBuzon) caja.appendChild(aviso('warn', T('pantalla.oficinaSinBuzon'), ''));
+    if (of.sinDisco) caja.appendChild(aviso('warn', T('pantalla.oficinaSinDisco'), ''));
+    if (of.noGuarda) caja.appendChild(aviso('warn', T('pantalla.oficinaNoGuarda'), ''));
+    if (OFICINAS.nota) caja.appendChild(el('div', { class: 'err', text: OFICINAS.nota }));
+    caja.appendChild(el('p', { class: 'sub-t', text: T('pantalla.oficinaPedidos') }));
+    if (!of.pedidos.length) caja.appendChild(el('p', { class: 'muted', text: T('pantalla.oficinaSinPedidos') }));
+    else {
+      var QUE_FALTA = { listo: 'pantalla.oficinaListo', esperando_huella: 'pantalla.oficinaEsperando', conflicto: 'pantalla.oficinaConflicto', dos_maquinas: 'pantalla.oficinaDosMaquinas', carpeta_llena: 'pantalla.oficinaLlena', sin_buzon: 'pantalla.oficinaSinBuzonFila', sin_leer: 'pantalla.oficinaSinLeer' };
+      caja.appendChild(tablaDeOficinas([T('pantalla.oficinaMaquina'), T('pantalla.oficinaDeQuien'), T('pantalla.oficinaHuella'), T('pantalla.oficinaQueFalta'), T('pantalla.oficinaQueHacer')], of.pedidos.map(function (p) {
+        var acciones = el('span', { class: 'acc' });
+        if (p.situacion === 'listo') acciones.appendChild(boton(T('pantalla.oficinaAprobar'), { accion: 'approve', fingerprint: p.fingerprint }));
+        if (p.situacion === 'conflicto') acciones.appendChild(boton(T('pantalla.oficinaLaVioElDev'), { accion: 'confirm', fingerprint: p.fingerprint }));
+        acciones.appendChild(boton(T('pantalla.oficinaRechazar'), { accion: 'reject', fingerprint: p.fingerprint }));
+        var maquina = p.situacion === 'dos_maquinas' ? (p.maquinas || []).join(T('pantalla.oficinaYotra')) : (p.maquina || T('pantalla.oficinaDiceLlamarse') + '«' + p.nombre + '»');
+        var dueno = p.situacion === 'dos_maquinas' ? T('pantalla.oficinaDosSubieron') : (p.person || T('pantalla.oficinaNoSeSabe'));
+        // la huella puede estar ya en el buzón y faltar sólo la relectura: se dice a qué hora vuelve a mirar
+        var falta = T(QUE_FALTA[p.situacion] || 'pantalla.oficinaEsperando');
+        if (p.situacion === 'esperando_huella' && typeof of.proximaLectura === 'number') {
+          var d = new Date(of.proximaLectura);
+          falta += ' · ' + T('pantalla.oficinaProximaLectura', { hora: String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') });
+        }
+        return [maquina, dueno, p.huella, falta, acciones];
+      })));
+    }
+    if (of.maquinas.length) {
+      caja.appendChild(el('p', { class: 'sub-t', text: T('pantalla.oficinaConOficina') }));
+      caja.appendChild(tablaDeOficinas([T('pantalla.oficinaMaquina'), T('pantalla.oficinaDeQuien'), T('pantalla.oficinaUltimaConexion'), T('pantalla.oficinaComoEsta'), T('pantalla.oficinaQueHacer')], of.maquinas.map(function (m) {
+        var acciones = el('span', { class: 'acc' });
+        if (m.deBaja) acciones.appendChild(boton(T('pantalla.oficinaReactivar'), { accion: 'reactivate', maquina: m.maquina }));
+        else acciones.appendChild(boton(T('pantalla.oficinaBaja'), { accion: 'disable', maquina: m.maquina }));
+        if (m.fingerprint) acciones.appendChild(boton(T('pantalla.oficinaRetirarClave'), { accion: 'revoke', maquina: m.maquina }));
+        if (m.copiada) acciones.appendChild(boton(T('pantalla.oficinaBorrarMarca'), { accion: 'clear_mark', maquina: m.maquina }));
+        var como = m.deBaja ? T('pantalla.oficinaDeBaja') : m.copiada ? T('pantalla.oficinaCopiada') : m.masNueva ? T('pantalla.oficinaMasNueva') : T('pantalla.oficinaAprobada');
+        var cuando = m.conectada ? T('pantalla.oficinaConectada') : (m.ultimaConexion ? new Date(m.ultimaConexion).toLocaleString() : T('pantalla.oficinaNunca'));
+        return [m.maquina, m.person || T('pantalla.oficinaNoSeSabe'), cuando, como, acciones];
+      })));
+    }
     return caja;
   }
   function editorPersonas(s, d, pr) {
@@ -1967,7 +2250,7 @@ function pantalla(idioma = 'es') {
       var mia = enCurso && enCurso.maquina === m.maquina;
       var persona = el('input', { value: mia ? enCurso.persona : (m.correo || ''), placeholder: T('pantalla.correoDeLaPersona'), 'aria-label': T('pantalla.correoDeLaPersona2') });
       var li = el('li', {}, el('span', { class: 'quien', text: m.maquina }), el('span', { class: 'dato', text: (m.correo ? T('pantalla.diceSerDe') + m.correo : T('pantalla.noDiceDeQuienEs')) + T('pantalla.ultimaNoticia') + (m.dia || T('pantalla.sinFecha')) + ' · ' + (m.corridas == null ? T('pantalla.corridasSinContar') : m.corridas + (m.corridas === 1 ? T('pantalla.unaCorrida') : T('pantalla.corridas'))) }),
-        el('span', { class: 'acc' }, persona, el('button', { type: 'button', text: T('pantalla.confirmar'), onclick: function () { confirmarMaquina(s, d, m.maquina, valorDe(persona)); } })));
+        el('span', { class: 'acc' }, persona, botonQueTrabaja('confirmar:' + m.maquina, T('pantalla.revisando'), { text: T('pantalla.confirmar') }, function () { return confirmarMaquina(s, d, m.maquina, valorDe(persona)); }, { muestraSuError: true })));
       if (mia) li.appendChild(resultadoDeLaFila(s));
       pc.appendChild(li);
     });
@@ -1982,6 +2265,7 @@ function pantalla(idioma = 'es') {
       box.appendChild(el('div', {}, el('p', { class: 'sub-t', text: T('pantalla.sinActividad') + ex.sinActividad.length + ')' }),
         el('p', { class: 'muted', text: T('pantalla.carpetasDelBuzonQueNunca') }), sa));
     }
+    if (ex.oficinas) box.appendChild(bloqueOficinas(s, ex.oficinas));
     var machines = d.people.machines || {};
     var conf = el('ul', { class: 'renglones' });
     Object.keys(machines).forEach(function (m) {
@@ -2096,8 +2380,8 @@ function pantalla(idioma = 'es') {
       var motivos = lista(xs, function (x) { return x.motivo || T('pantalla.sinMotivo'); }, T('pantalla.sinMotivo'));
       var fecha = el('input', { placeholder: 'AAAA-MM-DD', 'aria-label': T('pantalla.volverAMirarEl') }); var motivo = el('input', { placeholder: T('pantalla.porQueSigueValiendo'), 'aria-label': T('pantalla.porQue') });
       dcl.appendChild(el('li', {}, el('span', { class: 'quien', text: queDe(rasgo) }), el('span', { class: 'dato' }, el('span', { text: T('pantalla.en') + grupos.join(' y ') + T('pantalla.volverAMirarEl2') + fechas }), el('details', { class: 'mas-info' }, el('summary', { text: T('pantalla.porQue') }), el('span', { text: motivos }))), el('span', { class: 'acc' }, fecha, motivo,
-        el('button', { class: 'sec', type: 'button', text: T('pantalla.renovar'), onclick: function () { revisarSeccion(s, { accion: 'renew', grupos: grupos, grupo: grupos[0], rasgo: rasgo, revision: fecha.value, motivo: motivo.value }); } }),
-        el('button', { class: 'sec', type: 'button', text: T('pantalla.cerrar'), onclick: function () { revisarSeccion(s, { accion: 'close', grupos: grupos, grupo: grupos[0], rasgo: rasgo }); } }))));
+        botonQueTrabaja('renovar:' + rasgo, T('pantalla.revisando'), { class: 'sec', text: T('pantalla.renovar') }, function () { return revisarSeccion(s, { accion: 'renew', grupos: grupos, grupo: grupos[0], rasgo: rasgo, revision: fecha.value, motivo: motivo.value }); }, { muestraSuError: true }),
+        botonQueTrabaja('cerrar:' + rasgo, T('pantalla.revisando'), { class: 'sec', text: T('pantalla.cerrar') }, function () { return revisarSeccion(s, { accion: 'close', grupos: grupos, grupo: grupos[0], rasgo: rasgo }); }, { muestraSuError: true }))));
     });
     box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.lasDiferenciasAceptadas') }), orden.length ? dcl : el('p', { class: 'muted', text: T('pantalla.ninguna') })));
     if (v.definicion) {
@@ -2564,6 +2848,10 @@ function pantalla(idioma = 'es') {
   }
   function editorDireccionSitio(s, d, pr) {
     var box = el('div', { class: 'pila' }, campo(T('pantalla.laDireccionDelSitio'), (d.site || {}).url, function (v) { hoja(d, 'site', 'url', v); }, 'site.url', pr));
+    // la dirección que operations.json todavía declara y el perfil no: se dice, con el valor para copiarlo
+    var ops = esObjeto(S.originales.sitio) && esObjeto(S.originales.sitio.site) ? S.originales.sitio.site.url : null;
+    var propia = esObjeto(S.originales[s.id]) && esObjeto(S.originales[s.id].site) ? S.originales[s.id].site.url : null;
+    if (typeof ops === 'string' && ops.trim() && !(typeof propia === 'string' && propia.trim())) box.appendChild(aviso('warn', T('pantalla.direccionSoloEnOperaciones', { url: ops.trim() }), ''));
     box.appendChild(el('p', { class: 'muted', text: T('pantalla.direccionSitioAyuda') }));
     return box;
   }
@@ -2577,6 +2865,7 @@ function pantalla(idioma = 'es') {
   // —apagarlo no se ofrece: es de cada máquina, con su variable—; un medidor, además, se apaga. Debajo, qué hace cada uno
   // [clave, variable, fábrica, es freno], del lector
   var INTERRUPTORES = ${interruptores};
+  var TEMAS = ${temas};
   var FRENOS = INTERRUPTORES.filter(function (x) { return x[3]; });
   var MEDIDORES = INTERRUPTORES.filter(function (x) { return !x[3]; });
   function editorInterruptores(s, d, pr) {
@@ -2604,7 +2893,47 @@ function pantalla(idioma = 'es') {
   }
   function editorCoordinacion(s, d, pr) {
     var box = el('div', { class: 'pila' }, campo(T('pantalla.coordinacionTope'), (d.coordination || {}).max_working, function (v) { hoja(d, 'coordination', 'max_working', v === '' ? '' : numOTexto(v)); }, 'coordination.max_working', pr, { inputmode: 'numeric' }));
+    // los nombres de las sesiones nuevas: como hoy, un tema de fábrica o una lista propia escrita acá (un nombre por
+    // renglón), que valida el mismo lector de la máquina al revisar. La lista de cada dev en su máquina sigue ganando
+    var v = (d.coordination || {}).session_names;
+    if (typeof v === 'string') v = v.trim().toLowerCase();
+    var propia = Array.isArray(v);
+    // la lista del perfil (lo de main) vuelve si se elige otra cosa y después «Lista propia» otra vez
+    var orig = esObjeto(S.originales[s.id]) && esObjeto(S.originales[s.id].coordination) ? S.originales[s.id].coordination.session_names : undefined;
+    var original = Array.isArray(orig) ? orig.slice() : [];
+    var ops = [['', T('pantalla.nombresComoHoy')]].concat(Object.keys(TEMAS).map(function (id) { return [id, T('pantalla.nombresTema.' + id)]; }));
+    if (!propia && v !== undefined && v !== '' && !TEMAS[v]) ops.push([String(v), String(v)]);
+    ops.push(['__propia', T('pantalla.nombresListaPropiaOpcion')]);
+    var muestra = el('p', { class: 'muted' });
+    function ejemplo(x) {
+      var nombres = x === '__propia' ? (d.coordination || {}).session_names : TEMAS[x];
+      if (!Array.isArray(nombres) || !nombres.length) { muestra.textContent = T('pantalla.nombresEjemploComoHoy'); return; }
+      var primeros = nombres.slice(0, 5).join(', ') + (nombres.length > 5 ? ', …' : '');
+      muestra.textContent = T('pantalla.nombresEjemplo', { primeros: primeros, n: nombres.length, siguen: nombres.slice(0, 2).map(function (n) { return n + '-2'; }).join(', ') });
+    }
+    var sub = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.nombresTitulo') }), el('p', { class: 'sub-d', text: T('pantalla.nombresAyuda') }),
+      selector(T('pantalla.nombresDeDonde'), propia ? '__propia' : (v === undefined ? '' : v), ops, function (x) {
+        hoja(d, 'coordination', 'session_names', x === '__propia' ? original.slice() : x);
+        // el campo de la lista aparece o se va
+        if ((x === '__propia') !== propia) render(); else ejemplo(x);
+      }, 'coordination.session_names', pr));
+    if (propia) {
+      // un nombre por renglón: cada renglón recortado (también el fin de renglón de Windows), sin los vacíos
+      sub.appendChild(el('div', { class: 'campo' }, el('label', { text: T('pantalla.nombresUnoPorRenglon') }),
+        el('textarea', { rows: '6', 'data-path': 'coordination.session_names.lista', 'aria-label': T('pantalla.nombresUnoPorRenglon'), text: v.join('\n'), oninput: function (e) {
+          hoja(d, 'coordination', 'session_names', String(e.target.value || '').split(/\r\n|\r|\n/).map(function (n) { return n.trim(); }).filter(function (n) { return n; }));
+          ejemplo('__propia');
+        } })));
+    }
+    sub.appendChild(muestra);
+    ejemplo(propia ? '__propia' : v);
+    box.appendChild(sub);
     box.appendChild(el('p', { class: 'muted', text: T('pantalla.coordinacionAyuda') }));
+    return box;
+  }
+  function editorOficina(s, d, pr) {
+    var box = el('div', { class: 'pila' }, campo(T('pantalla.oficinaCallada'), (d.office || {}).quiet_minutes, function (v) { hoja(d, 'office', 'quiet_minutes', v === '' ? '' : numOTexto(v)); }, 'office.quiet_minutes', pr, { inputmode: 'numeric' }));
+    box.appendChild(el('p', { class: 'muted', text: T('pantalla.oficinaAyuda') }));
     return box;
   }
   function editorAdo(s, d, pr) {
@@ -3676,7 +4005,7 @@ function pantalla(idioma = 'es') {
       el('p', { class: 'sub-d', text: T('pantalla.tecIdiomaVacio') })));
     return box;
   }
-  var EDITORES = { pedidos: editorPedidos, tecnologia: editorTecnologia, fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, contexto: editorContexto, revisionSemanal: editorRevisionSemanal, paseAdversarial: editorPaseAdversarial, cobertura: editorCobertura, revision: editorRevision, estimaciones: editorEstimaciones, respuesta: editorRespuesta, integraciones: editorIntegraciones, aprobaciones: editorAprobaciones, direccionSitio: editorDireccionSitio, pruebaAMano: editorPruebaAMano, interruptores: editorInterruptores, coordinacion: editorCoordinacion, frenoProduccion: editorFrenoProduccion, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: editorCanal, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
+  var EDITORES = { pedidos: editorPedidos, tecnologia: editorTecnologia, fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, contexto: editorContexto, revisionSemanal: editorRevisionSemanal, paseAdversarial: editorPaseAdversarial, cobertura: editorCobertura, revision: editorRevision, estimaciones: editorEstimaciones, respuesta: editorRespuesta, integraciones: editorIntegraciones, aprobaciones: editorAprobaciones, direccionSitio: editorDireccionSitio, pruebaAMano: editorPruebaAMano, interruptores: editorInterruptores, coordinacion: editorCoordinacion, oficina: editorOficina, frenoProduccion: editorFrenoProduccion, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: editorCanal, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
 
   // los editores de suites y modelos arman objetos vacíos para tener dónde escribir: no se mandan. Una clave vacía en el
   // archivo pediría al perfil una versión más nueva sin cambiar nada
@@ -3703,7 +4032,7 @@ function pantalla(idioma = 'es') {
       // el texto revisado se armó sobre otra versión (lo que se arma siempre sobre la de hoy): «Proponer» manda ésa
       if (r.ok && r.version && r.version.oid !== baseDe(s).oid) S.bases[s.id] = { texto: r.version.texto === undefined ? null : r.version.texto, oid: r.version.oid === undefined ? null : r.version.oid };
       S.textos[s.id] = r.ok ? r.texto : null;
-      S.diferencias[s.id] = r.ok ? (r.diferencia || []) : []; S.resumenes[s.id] = r.ok ? (r.resumen || []) : [];
+      S.diferencias[s.id] = r.ok ? (r.diferencia || []) : []; S.resumenes[s.id] = r.ok ? (r.resumen || []) : []; S.formas[s.id] = r.ok ? (r.forma || 0) : 0;
       S.notas[s.id] = r.ok ? { ok: true, text: T('pantalla.revisadoEstaBienEscrito') + (r.aviso ? ' ' + r.aviso : '') + (r.advertencia ? ' ' + r.advertencia : '') } : { ok: false, text: mensajeLlano(r.message) || T('pantalla.hayQueCorregirLoMarcado') };
       render();
       return r;
@@ -3734,12 +4063,19 @@ function pantalla(idioma = 'es') {
     var caja = el('div', { class: 'propuesta' });
     var res = S.resumenes[s.id] || [];
     if (res.length) { var ul = el('ul', { class: 'resumen' }); res.forEach(function (f) { ul.appendChild(el('li', { text: f })); }); caja.appendChild(ul); }
+    // el pedido reescribe el archivo en el formato del sitio: los renglones que cambian s\u00f3lo de forma se cuentan, no se muestran
+    if (S.formas[s.id]) caja.appendChild(el('p', { class: 'muted dif-forma', text: T('pantalla.formatoDelArchivo', { n: S.formas[s.id] }) }));
     var dif = el('div', { class: 'dif', role: 'group' });
     (S.diferencias[s.id] || []).forEach(function (tr) {
       if (tr.iguales !== undefined) { dif.appendChild(el('div', { class: 'dif-salto', text: T('pantalla.nRenglonesIguales', { n: tr.iguales }) })); return; }
       (tr.renglones || []).forEach(function (r) {
         var tipo = r.tipo === 'sale' ? 'sale' : r.tipo === 'entra' ? 'entra' : 'igual';
-        dif.appendChild(el('div', { class: 'dif-r dif-' + tipo }, el('span', { class: 'dif-signo', text: tipo === 'sale' ? '\u2212' : tipo === 'entra' ? '+' : ' ' }), el('span', { class: 'dif-texto', text: r.linea })));
+        var texto = el('span', { class: 'dif-texto' });
+        // lo que cambi\u00f3 dentro del rengl\u00f3n, marcado
+        var m = r.marca && r.marca.length === 2 && r.marca[1] > r.marca[0] ? r.marca : null;
+        if (m) { texto.appendChild(el('span', { text: r.linea.slice(0, m[0]) })); texto.appendChild(el('mark', { text: r.linea.slice(m[0], m[1]) })); texto.appendChild(el('span', { text: r.linea.slice(m[1]) })); }
+        else texto.textContent = r.linea;
+        dif.appendChild(el('div', { class: 'dif-r dif-' + tipo }, el('span', { class: 'dif-signo', text: tipo === 'sale' ? '\u2212' : tipo === 'entra' ? '+' : ' ' }), texto));
       });
     });
     caja.appendChild(dif);
@@ -3752,8 +4088,11 @@ function pantalla(idioma = 'es') {
   function empezarAProponer(s) { S.marcas[s.id] = nuevaMarca(); S.notas[s.id] = { confirmar: true }; render(); }
   /** Termina la propuesta de una marca: la primera respuesta buena la cierra y ninguna posterior la pisa. */
   function terminarPropuesta(s, marca, nota, bien) {
+    soltarPropuesta(s);
     if (S.terminadas[marca]) { delete S.proponiendo[s.id]; render(); return; }
     delete S.proponiendo[s.id];
+    // con el pedido abierto, lo propuesto todavía no está en main: la sección lo dice hasta que entra (decisión 4)
+    if (bien && nota.codigo !== 'aplicado' && nota.codigo !== 'demo' && nota.enlace) S.pendientes[s.id] = { numero: numeroDePedido(nota.enlace), enlace: nota.enlace, borrador: copia(S.borradores[s.id]), base: S.bases[s.id] ? copia(S.bases[s.id]) : null };
     if (bien) { S.terminadas[marca] = true; S.originales[s.id] = copia(S.borradores[s.id]); delete S.conflictos[s.id]; olvidar(s.id); olvidarAbiertos(s.id); }
     S.notas[s.id] = nota; render();
     if (!bien) return;
@@ -3761,6 +4100,21 @@ function pantalla(idioma = 'es') {
     if (nota.codigo === 'aplicado') { cargar(true).catch(alFallarLaRelectura(s)); return; }
     cargar().catch(alFallarLaRelectura(s));
     seguir(s, marca, 0);
+  }
+  /** El número del pedido, del final de su enlace («…/pullrequest/123», «…/pull/123»); el enlace entero si no lo trae. */
+  function numeroDePedido(enlace) { var m = /(\d+)\/?(?:[?#].*)?$/.exec(String(enlace || '')); return m ? m[1] : String(enlace || ''); }
+  /**
+   * El pedido se cerró sin entrar: lo dice, el campo vuelve a lo que tiene main (lo propuesto se igualó con lo original
+   * al proponer, así que la relectura lo trae fresco) y lo escrito queda para recuperarlo y volver a proponerlo.
+   */
+  function cerradoSinEntrar(s) {
+    var p = S.pendientes[s.id];
+    delete S.pendientes[s.id];
+    var base = p.base || { texto: null, oid: null };
+    // sin «original»: al recuperarlo, lo original es lo que trajo la relectura, y lo escrito queda como cambio sin proponer
+    S.recuperar[s.id] = { oid: base.oid, base: base.texto, borrador: p.borrador };
+    S.notas[s.id] = { ok: false, text: T('pantalla.pedidoCerradoSinEntrar', { n: p.numero }), enlace: p.enlace };
+    render();
   }
   /** Lo inesperado al dibujar lo releído se dice en la sección que propuso, sin tapar el enlace de su pedido. */
   function alFallarLaRelectura(s) {
@@ -3776,7 +4130,13 @@ function pantalla(idioma = 'es') {
     despues(SEGUIR.cada, function () {
       cuandoSeVea(function () {
         api('/propuesta?seccion=' + encodeURIComponent(s.id) + '&marca=' + marca).then(function (r) {
-          if (r && r.ok && (r.estado === 'aplicado' || r.estado === 'no_hay')) return cargar(true).catch(alFallarLaRelectura(s));
+          // entró: lo dice main, aunque el revisor lo haya ajustado antes de aceptarlo
+          if (r && r.ok && r.estado === 'aplicado') { delete S.pendientes[s.id]; return cargar(true).catch(alFallarLaRelectura(s)); }
+          // un pedido que estuvo abierto y ya no aparece: si main trae lo propuesto, entró (la relectura borra el
+          // pendiente); si no, se cerró sin entrar. La plataforma no cuenta los cerrados ni los viejos
+          if (r && r.ok && r.estado === 'no_hay') {
+            return cargar(true).then(function () { if (S.pendientes[s.id]) cerradoSinEntrar(s); }).catch(alFallarLaRelectura(s));
+          }
           seguir(s, marca, vuelta + 1);
         });
       });
@@ -3784,11 +4144,12 @@ function pantalla(idioma = 'es') {
   }
   /** El archivo cambió en main desde la base: la propuesta vuelve puesta encima de la versión nueva, o con lo que se pisa. */
   function otraVersion(s, r) {
+    soltarPropuesta(s);
     delete S.proponiendo[s.id];
     if (r.seccion) ponerBase(s, r.seccion);
     if (r.borrador) S.borradores[s.id] = copia(r.borrador);
     if (r.codigo === 'reaplicado') {
-      S.textos[s.id] = r.texto; S.diferencias[s.id] = r.diferencia || []; S.resumenes[s.id] = r.resumen || [];
+      S.textos[s.id] = r.texto; S.diferencias[s.id] = r.diferencia || []; S.resumenes[s.id] = r.resumen || []; S.formas[s.id] = r.forma || 0;
       delete S.conflictos[s.id];
       // es otra propuesta: la de antes quedó contestada con esta respuesta
       S.marcas[s.id] = nuevaMarca();
@@ -3841,10 +4202,12 @@ function pantalla(idioma = 'es') {
       return buscarElPedido(s, marca, i + 1);
     });
   }
+  /** Propone lo revisado; la promesa termina cuando la propuesta termina, para que el botón deje de decir que trabaja. */
   function confirmarPropuesta(s) {
-    if (S.proponiendo[s.id]) return;
+    if (S.proponiendo[s.id]) return Promise.resolve(null);
     var marca = S.marcas[s.id] || (S.marcas[s.id] = nuevaMarca());
     var b = baseDe(s);
+    var fin = new Promise(function (ok) { S.soltar[s.id] = ok; });
     S.proponiendo[s.id] = marca; render();
     // una respuesta que tarda (el sitio esperando algo largo) no deja la sección en «proponiendo…»: pasado el tope se
     // pregunta por la marca, y si el pedido ya se abrió o ya entró, la propuesta se cierra con eso
@@ -3874,7 +4237,10 @@ function pantalla(idioma = 'es') {
       // lo inesperado también cierra la propuesta: sin esto la sección quedaría en «proponiendo…» con todo apagado
       terminarPropuesta(s, marca, { ok: false, text: T('pantalla.noPudeHablarConEl') + (e && e.message ? e.message : T('pantalla.sinRespuesta')) + T('pantalla.siEstabasProponiendoRecargaY'), enlace: null }, false);
     });
+    return fin;
   }
+  /** La propuesta de la sección terminó (bien, mal o con otra versión): el botón de «Confirmar y proponer» vuelve. */
+  function soltarPropuesta(s) { var ok = S.soltar[s.id]; delete S.soltar[s.id]; if (ok) ok(); }
   /** Dibuja la sección; mientras propone, todo lo que tiene nace apagado (un solo envío). */
   function seccion(s) {
     var antes = SOLO_LECTURA;
@@ -3926,7 +4292,7 @@ function pantalla(idioma = 'es') {
       sec.appendChild(nota);
     }
     if (!s.soloLectura && !bloqueada(s) && s.id !== 'paridad') {
-      var bar = el('div', { class: 'bar' }, el('button', { class: 'sec', type: 'button', text: T('pantalla.revisarCambios'), onclick: function () { if (s.id === 'personas') S.fila = null; revisarSeccion(s); } }));
+      var bar = el('div', { class: 'bar' }, botonQueTrabaja('revisar:' + s.id, T('pantalla.revisando'), { class: 'sec', text: T('pantalla.revisarCambios') }, function () { if (s.id === 'personas') S.fila = null; return revisarSeccion(s); }, { muestraSuError: true }));
       bar.appendChild(el('button', { class: 'sec', type: 'button', text: T('pantalla.descargar'), disabled: S.textos[s.id] ? undefined : 'disabled', title: S.textos[s.id] ? undefined : T('pantalla.descargarSePrende'), onclick: function () { descargar(s); } }));
       if (habilitado) bar.appendChild(el('button', { type: 'button', text: T('pantalla.proponerElCambio'), disabled: S.textos[s.id] ? undefined : 'disabled', onclick: function () { empezarAProponer(s); } }));
       if (sinPolitica(prop)) sec.appendChild(aviso('warn', motivoProponer(prop.motivo)));
@@ -3939,7 +4305,7 @@ function pantalla(idioma = 'es') {
       if (n.text && !proponiendo) sec.appendChild(el('div', { class: 'msg ' + (n.ok ? 'ok' : 'bad') }, el('b', { text: n.text })));
       sec.appendChild(vistaDeLaDiferencia(s));
       if (proponiendo) sec.appendChild(el('div', { class: 'msg ok' }, el('b', { text: T('pantalla.proponiendo') })));
-      sec.appendChild(el('div', { class: 'bar' }, el('button', { type: 'button', text: T('pantalla.confirmarYProponer'), onclick: function () { confirmarPropuesta(s); } }), el('button', { class: 'sec', type: 'button', text: T('pantalla.cancelar'), onclick: function () { S.notas[s.id] = null; render(); } }), el('span', { class: 'por-que', text: T('pantalla.miraLaDiferenciaAntesDe') })));
+      sec.appendChild(el('div', { class: 'bar' }, botonQueTrabaja('proponer:' + s.id, T('pantalla.proponiendoBoton'), { text: T('pantalla.confirmarYProponer') }, function () { return confirmarPropuesta(s); }, { muestraSuError: true }), el('button', { class: 'sec', type: 'button', text: T('pantalla.cancelar'), onclick: function () { S.notas[s.id] = null; render(); } }), el('span', { class: 'por-que', text: T('pantalla.miraLaDiferenciaAntesDe') })));
     }
     return sec;
   }
@@ -4041,10 +4407,10 @@ function pantalla(idioma = 'es') {
     if (rev && !rev.ok && (rev.problemas || []).length) caja.appendChild(aviso('bad', T('pantalla.repoNoPasa'), rev.problemas.join(' · ')));
     else if (rev && !rev.ok) caja.appendChild(aviso('bad', T('pantalla.repoNoPasa'), T('pantalla.repoMiraLasFilas')));
     var prop = r.datos.proponer || {};
-    var bar = el('div', { class: 'bar' }, el('button', { class: 'sec', type: 'button', text: T('pantalla.revisarCambios'), onclick: function () { revisarRepo(id, c); } }));
+    var bar = el('div', { class: 'bar' }, botonQueTrabaja('repo-revisar:' + claveR(id, c.clave), T('pantalla.revisando'), { class: 'sec', text: T('pantalla.revisarCambios') }, function () { return revisarRepo(id, c); }, { muestraSuError: true }));
     if (rev && rev.ok) {
       caja.appendChild(vistaDeLaDiferencia({ id: claveR(id, c.clave), texto: r.datos.texto, oid: r.datos.oid }));
-      if (prop.habilitado) bar.appendChild(el('button', { type: 'button', text: T('pantalla.proponerElCambio'), disabled: r.proponiendo ? 'disabled' : undefined, onclick: function () { proponerRepo(id, c); } }));
+      if (prop.habilitado) bar.appendChild(botonQueTrabaja('repo-proponer:' + claveR(id, c.clave), T('pantalla.proponiendoBoton'), { text: T('pantalla.proponerElCambio'), disabled: r.proponiendo ? 'disabled' : undefined }, function () { return proponerRepo(id, c); }, { muestraSuError: true }));
       else caja.appendChild(el('textarea', { class: 'repo-texto', readonly: 'readonly', rows: '8', 'aria-label': T('pantalla.repoElArchivo'), text: rev.texto || '' }));
     }
     if (sinPolitica(prop)) caja.appendChild(aviso('warn', motivoProponer(prop.motivo)));
@@ -4151,6 +4517,8 @@ function pantalla(idioma = 'es') {
         // lo cargado sin proponer se queda con su base: al revisar, el servidor lo pone encima de la versión de hoy
         var n = S.notas[s.id];
         var conservar = !primera && S.bases[s.id] && (cambiada(s.id) || S.proponiendo[s.id] || (S.conflictos[s.id] || []).length || (n && n.confirmar));
+        // lo propuesto en un pedido abierto ya entró cuando main trae eso mismo
+        if (S.pendientes[s.id] && mismo(S.pendientes[s.id].borrador, fresco)) delete S.pendientes[s.id];
         if (!conservar) { S.borradores[s.id] = fresco; S.originales[s.id] = copia(fresco); S.bases[s.id] = { texto: s.texto === undefined ? null : s.texto, oid: s.oid === undefined ? null : s.oid }; S.textos[s.id] = null; }
         S.problemas[s.id] = llanos(s.problems); S.avisos[s.id] = llanos(s.avisos);
         // al abrir la página: lo que quedó cargado antes de recargar se ofrece, si es distinto de lo de hoy
@@ -4190,7 +4558,7 @@ function pantalla(idioma = 'es') {
 
 module.exports = {
   extrasDeAprobaciones, nombreDeMaquina,
-  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, ESTIMATES_SINCE, CONTEXT_NOTICE_SINCE, DEEP_REVIEW_SINCE, WEEKLY_REVIEW_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, COORDINATION_SINCE, SWITCHES_SINCE, SITE_SINCE, WAIT_NOTICE_ENABLED_SINCE, WAIT_NOTICE_OWNER_SINCE, WAIT_NOTICE_PEER_SINCE, DELEGATED_LIST_SINCE, OWNER_ONLY_SINCE, LEVELS_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
+  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, ESTIMATES_SINCE, CONTEXT_NOTICE_SINCE, DEEP_REVIEW_SINCE, WEEKLY_REVIEW_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, COORDINATION_SINCE, SWITCHES_SINCE, SITE_SINCE, SESSION_NAMES_SINCE, OFFICE_SINCE, SIGNATURE_LIST_SINCE, WAIT_NOTICE_ENABLED_SINCE, WAIT_NOTICE_OWNER_SINCE, WAIT_NOTICE_PEER_SINCE, DELEGATED_LIST_SINCE, OWNER_ONLY_SINCE, LEVELS_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, capaQueSube, clavesQuePidenVersion, pedidasDelPerfil, direccionDelSitio, leerPerfil, estadoDelPerfil, origenDe, nombresDeLaLista, diferenciaDeJson, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
   problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy, estimacionesDeHoy, modelosEnNiveles, equivalenciasDe, proveedoresDe,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia, reaplicar, versionDeTexto,
   SIN_NOTICIAS_DIAS, CLAVES_DEL_REPO, lectorDeClave, reemplazarBloque, revisarClaveDelRepo, idDeRepo, urlDeRepo,

@@ -39,6 +39,9 @@ El workflow se lanza **al cierre de «Implementar»** (ver `step-06-run-tests.md
 - **`marker.adversarial` NO existe** (kill-switch `TYCON_5B_EARLY=0`, o pipeline pre-fase-B) →
   comportamiento clásico: evaluar el gate y lanzar ACÁ (§Cuándo corre + §Acción), registrando
   igual `mark-adversarial-launched <runId> 5b`.
+- **El gate sale 3 (`waiting_turn: true`)**, en cualquiera de los casos de arriba que lanza o relanza → otra sesión tiene
+  su pase en vuelo y va uno por vez: no lances. Anunciá en 1 línea quién tiene el lugar (`turn`) y **cerrá el turno**. La
+  coordinadora te avisa cuando se libere, y ahí se retoma con `pipeline.js next`.
 - Nota: si «Implementar» ya anotó el salteo con `mark-adversarial-skipped` (gate `run:false`), este
   step no se alcanza (`next` lo da por atendido) — es el no-op esperado, no un caso de esta lista.
 
@@ -149,6 +152,7 @@ Workflow({
     decisions: "<las decisiones aprobadas, textual — ej: 'D3: escanea solo $attrs bizuit:*; R2: sidecar fail-loud; ...'>",
     model:     "<el `model` que devolvió deep-review-gate: sonnet|opus — o 'fable' SOLO con --deep-review-fable>",
     runDir:    "<abs RUN_DIR — .advisors/pipeline-runs/<clave>-<sello>/ de ESTA corrida>",
+    base:      "<el hash de: git -C <repo> fetch origin main && git -C <repo> merge-base HEAD origin/main — si el fetch falla, no se lanza: se dice>",
     agrupar:   <false SÓLO si TYCON_5B_GROUP vale 0 — leela con la biblioteca del arnés, que acepta también su nombre viejo:
                `. "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/scripts/lib/legacy-names.sh"; legacy_env TYCON_5B_GROUP; echo "${TYCON_5B_GROUP:-}"`; si no, omitirlo>
   }
@@ -162,6 +166,16 @@ verificador borra la prueba al terminar, del hallazgo queda el relato y nunca el
 prueba que ya estaba lista para ser la de regresión. La carpeta de la corrida
 está fuera de git por el `.gitignore` canónico (PIPE-C2): las pruebas traen código de cliente y no
 viajan. Sin `runDir` (lanzado a mano) se guardan bajo `pipeline-runs/adversarial-sin-corrida/`.
+
+Cada **cazador** también guarda lo que corrió, aunque no encuentre nada: `<RUN_DIR>/step-05b-probes/caza-<lente>/`, con
+su `COMO-SE-CORRIO.txt`. Por eso el resultado se escribe siempre en la carpeta de su corrida, al lado de
+`step-05b-probes` (`<RUN_DIR>/step-05b-adversarial.json`; en el carril ad-hoc sin `runDir`,
+`<repo>/.advisors/pipeline-runs/adversarial-sin-corrida/step-05b-adversarial.json`): ahí se busca la prueba de cada
+lente al anotarlo.
+
+`base` es contra qué miran los cazadores el cambio: el `merge-base` de `HEAD` con `origin/main` recién traído, nunca el
+`main` local, que puede estar atrasado. Los cazadores ven también lo que no está commiteado (`git diff <base>` y
+`git status --porcelain`).
 
 El workflow corre 6 lentes de correctitud (traversal/completitud · determinismo · falso-negativo · falso-positivo/
 edge · correctitud-algorítmica · integración/contratos); cada hunter lee el código real + corre probes, y cada
@@ -177,13 +191,23 @@ qué). Al terminar, anotar el resultado con `mark-adversarial-result` (§Decisio
 su tope, un pase que no revisó nada salió «6 lentes limpias». Ahora:
 
 - Una lente cuyo cazador no contestó queda **`sin-medir`** (en `lentes` y en `lentes_sin_medir`).
+- Un cazador que contesta tampoco alcanza: la lente queda **`sin-medir`**, con su `motivo`, si comparó contra otra
+  base que la pedida (`args.base`), o si no encontró nada y no guardó la prueba que corrió en
+  `<RUN_DIR>/step-05b-probes/caza-<lente>/`. Sin `args.base`, o con una que no es un hash, el pase no lanza ningún
+  cazador y sale no medido. Medido en la 8.213: seis lentes «limpias» en 20 s, sin pruebas, tres contra un `main` local
+  atrasado.
+- Al anotar (`mark-adversarial-result --result`, también en el carril con `--adhoc` y con `--type revision`), cada
+  lente limpia tiene que tener su `COMO-SE-CORRIO.txt` no vacío en la carpeta de su lente, al lado del archivo de
+  resultado, y no anterior al lanzamiento del pase (sin lanzamiento conocido, no más de 12 h anterior al resultado). Una
+  lente con hallazgos tiene que traerlos en `detalle`. Si no, cuenta sin medir. Se comprueba que la prueba exista y sea
+  de este pase, no que diga la verdad.
 - Un hallazgo cuyo verificador no contestó queda **`sin-veredicto`** en `detalle`, con su texto entero. Nunca es
   refutado ni limpio.
 - Con alguno de los dos, el pase sale **`medido: false`** y su `aviso` lo dice. **No medido no es verde**:
   `mark-adversarial-result` lo anota `no-medido` y no cierra el pase, `complete-step prepare-commit` frena (`pase-no-medido`, y
   `DOD_BYPASS` no lo abre), `deep-review-gate` dice que corre (el salteo se niega) y `next` pide relanzarlo.
-- Para destrabar: relanzar (`mark-adversarial-launched <runId nuevo> 5b --relaunch`) y anotar el resultado nuevo con
-  `--result`. Abandonarlo lo firma el dueño (`marker.js sign-adversarial-skip`; queda en `bypass.log`).
+- Para destrabar: borrar las carpetas `<RUN_DIR>/step-05b-probes/caza-*` (las pruebas del pase anterior no cuentan),
+  relanzar (`mark-adversarial-launched <runId nuevo> 5b --relaunch`) y anotar el resultado nuevo con `--result`. Abandonarlo lo firma el dueño (`marker.js sign-adversarial-skip`; queda en `bypass.log`).
 - Bajo Codex, `corredor.muertos` dice la causa de cada agente y la hora. Con el tope de uso no se reintenta y los
   agentes que faltan no se lanzan.
 
