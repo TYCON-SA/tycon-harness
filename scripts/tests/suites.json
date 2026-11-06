@@ -577,6 +577,12 @@
       "requiere": []
     },
     {
+      "__nota": "el freno de lanzamiento de revisores: niega con el criterio de next, deja pasar con su motivo, y on-advisor-run.js no anota el negado salvo sin el freno registrado. Todo en un HOME temporal.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/reviewer-launch-gate.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/approvals.test.js",
       "requiere": []
