@@ -577,6 +577,12 @@
       "requiere": []
     },
     {
+      "__nota": "el freno de lanzamiento de revisores: niega con el criterio de next, deja pasar con su motivo, y on-advisor-run.js no anota el negado salvo sin el freno registrado. Todo en un HOME temporal.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/reviewer-launch-gate.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/approvals.test.js",
       "requiere": []
@@ -2589,6 +2595,18 @@
       "__nota": "story 8.214: scripts/tools/catch-up-main.js pone al día con main una rama que choca sólo en specs/epics.md, specs/sprint-status.yaml y .tycon/runtime-waivers.jsonl. Laboratorios con un remoto propio: junta los dos lados y commitea el merge; un renglón por historia, el de la rama; una clave repetida que ya venía de main no se toca; las firmas, todas y en orden, con la cadena válida; otro choque, o un lado que borró, sale 1 sin tocar nada; empuja sin forzar y con el remoto adelantado sale 3; al día sale 0 y sucia sale 2; con git en castellano da lo mismo; un control que rechaza el commit sale 4 y deshace el merge; sin remoto o sin historia común sale 5.",
       "raiz": "arnes",
       "ruta": "tests/catch-up-main.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "scripts/tools/story-index.js arma specs/epics.md y specs/sprint-status.yaml desde el frontmatter de cada historia, sobre el repo de juguete de fixtures/story-index/ (esperados byte por byte): orden por épica y número, la prosa desde epics-intro.md, --check, lo que no se puede leer o un escaneo incompleto no escribe, los lectores siguen andando, el freno del pre-commit en una rama (--guard), la regeneración en main con sus reintentos, la migración de un índice a mano y la clave story_index de team-repos.json.",
+      "raiz": "arnes",
+      "ruta": "tests/story-index.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "con story_index: generated, la skill que crea historias y el paso de acción de la revisión de desfase no leen ni escriben los índices (eligen y escriben desde el frontmatter); marker.js update-story-status sigue sin tocarlos.",
+      "raiz": "arnes",
+      "ruta": "tests/tycon-create-story-index.test.js",
       "requiere": []
     },
     {

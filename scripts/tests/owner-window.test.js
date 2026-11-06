@@ -3498,6 +3498,45 @@ test('Freno_LoQueNoEntra (T2) — @story-8.153 @ac-2', (t) => {
   assert.strictEqual(renglones(casa).length, 1);
 });
 
+// una sesión de fondo retomada (`claude --resume` debajo de `claude.exe --bg-pty-host`), como la leyó `ps` en la Mac
+const EXE = '/u/claude.exe';
+const pr = (pid, ppid, comando, ejecutable) => ({ pid, ppid, inicio: INICIO, comando, ...(ejecutable ? { ejecutable } : {}) });
+const RETOMADA = [...BASE, pr(50, 1, `${EXE} daemon run`, EXE), pr(60, 50, `${EXE} --bg-pty-host /tmp/a.sock 120 30 -- ${EXE} --resume /h/a`, EXE),
+  pr(100, 60, `${EXE} --resume /h/a.jsonl -n Enzo`, EXE)];
+const FRENO = (pid, padre = 100) => [pr(pid, padre, '/bin/bash /h/scripts/hooks/safety-guard-pre.sh'), pr(pid + 1, pid, 'node /h/scripts/lib/owner-window.js gate')];
+
+test('Freno_SesionDeFondoRetomada_LaVueltaExtraVaALaListaYValeConElClick', (t) => {
+  const extra = `node ${PIPELINE} smart-reloop --iter 3 --extra-round`;
+  const pide = (casa, arbol, pid = 201, o = {}) => ow.decidir({ evento: evento(extra), arbol, pid, casa, ahora: AHORA, delegacion: SIN_DELEGACION, clasificar: () => null, comprobar: () => null, aprobador: DEL_ARNES, aprobaciones: o.aprobaciones || aprobacionesDePrueba(), lista: SIN_PERFIL(casa) });
+  // sin click: no va a la terminal por «otra herramienta»; queda en la lista del dueño
+  let casa = casaDeLista(t);
+  const sin = pide(casa, [...RETOMADA, ...FRENO(200)]);
+  assert.strictEqual(sin.decision, 'deny');
+  assert.match(sin.texto, /corre de fondo/);
+  assert.match(sin.texto, AVISAN);
+  assert.strictEqual(renglones(casa)[0].firma, 'extra-round');
+  // con el click de la persona, pasa
+  casa = casaDeLista(t);
+  anotarAprobacion(casa, 'ses-a', { tipo: 'click', tool_use_id: 'toolu_9' });
+  const con = pide(casa, [...RETOMADA, ...FRENO(200)]);
+  assert.deepStrictEqual([con.decision, con.via], ['allow', 'click'], con.texto);
+  // sigue siendo «otra herramienta»: un claude abierto por su consola, una terminal virtual falsa colgando de esa
+  // consola, y una herramienta común con `claude --bg-pty-host` en un argumento
+  const consola = pr(300, 100, envolver(casa, 'claude'));
+  for (const arbol of [[...RETOMADA, consola, pr(310, 300, `${EXE} --permission-mode default`, EXE), ...FRENO(320, 310)],
+    [...RETOMADA, consola, pr(305, 300, `${EXE} --bg-pty-host /tmp/f.sock -- ${EXE}`, EXE), pr(310, 305, EXE, EXE), ...FRENO(320, 310)],
+    [...BASE, pr(60, 1, '/A/claude --resume /h/p --add-dir /tmp/claude --bg-pty-host /tmp/x'), pr(100, 60, `${EXE} --resume /h/a`, EXE), ...FRENO(200)]]) {
+    const pid = arbol[arbol.length - 1].pid;
+    assert.match(pide(casa, arbol, pid).texto, /la lanzó otra herramienta/, JSON.stringify(arbol.slice(-3)));
+  }
+  // la ruta de Windows entre comillas, con espacios
+  const W = 'C:\\Program Files\\Claude\\claude.exe';
+  assert.ok(ow.esAnfitrionDeFondoDe(pr(1, 2, `"${W}" --resume a`, W), pr(3, 4, `"${W}" daemon run`, W), pr(2, 3, `"${W}" --bg-pty-host C:\\t.sock`, W)));
+  // el gancho que anota el click también la reconoce: el click no se pierde
+  const g = oaReal.lanzadoPorLaHerramienta({ arbol: [...RETOMADA, ...FRENO(400)], pid: 401, casa, plataforma: 'darwin' });
+  assert.deepStrictEqual([g.ok, g.herramienta && g.herramienta.pid], [true, 100], g.motivo);
+});
+
 test('Freno_RegistroRoto_DecideIgual (T3) — @story-8.153 @ac-3', (t) => {
   const conLlaveApagada = pedirConLista(casaDeLista(t, { llave: 'off' }), MANUAL_T);
   // archivo roto: misma decisión y el texto de hoy, y el archivo no se pisa
@@ -3779,4 +3818,24 @@ test('T27 OwnerWindow_DatosQueSeNegaria_NoDaElCuadro @story-8.196 @ac-13', (t) =
   // si el guion no se niega, el cuadro sale como siempre
   const sigue = pedir(conFrenoDeDatos(casaNueva(t)), pideDatos(), { comprobar: () => ({ ok: true }) });
   assert.ok(sigue.cuadro && sigue.cuadro.clickDelDueno, sigue.texto);
+});
+
+test('Freno_SoloClickDeFondo_NoDejaRenglon — @fix-T-207', (t) => {
+  // de fondo nadie mira la pestaña donde vale ese click, y la coordinadora no lo puede dar: el renglón contaría sin cierre
+  let casa = casaDeLista(t);
+  const r = pedirConLista(casa, pedidoDe(9));
+  assert.strictEqual(r.decision, 'deny');
+  assert.deepStrictEqual(r.firmas, [SOBRE_CUPO]);
+  assert.strictEqual(renglones(casa).length, 0, r.texto);
+  assert.doesNotMatch(r.texto, AVISAN);
+  assert.match(r.texto, /terminal/, 'queda la forma por terminal');
+  // en una pestaña que trabaja a la vista, el renglón sigue: la sesión lo ve en su propia pestaña
+  casa = casaDeLista(t);
+  pedirConLista(casa, pedidoDe(9), { arbol: arbolDelFreno(), evento: { permission_mode: 'bypassPermissions' } });
+  assert.strictEqual(renglones(casa).length, 1);
+  assert.strictEqual(renglones(casa)[0].firma, SOBRE_CUPO);
+  // lo de fondo que la coordinadora sí puede pasar, igual que siempre
+  casa = casaDeLista(t);
+  pedirConLista(casa, pedidoDe(8));
+  assert.strictEqual(renglones(casa).length, 1);
 });

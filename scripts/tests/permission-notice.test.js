@@ -442,6 +442,30 @@ test('T23 Open_Windows_CmdIlegibleONinguno_ElMensajeJusto @story-8.202 @ac-18 @a
   assert.match(plantado.error, /Claude Code no está instalado/);
 });
 
+test('Open_Windows_ClaudeFueraDelPath_LoBuscaDondeLoDejaNpmYElInstalador @fix-windows-2', () => {
+  // la extensión de VS Code lanza la sesión sin la carpeta de npm en el PATH: el claude.cmd está, pero no en el PATH
+  const fuera = (files, extra = {}) => { const w = win(files, { path: 'C:\\Windows' }); return { ...w, env: { ...w.env, APPDATA: 'C:\\Users\\a\\AppData\\Roaming', USERPROFILE: 'C:\\Users\\a', ...extra } }; };
+  const npm = 'C:\\Users\\a\\AppData\\Roaming\\npm';
+  assert.deepStrictEqual(C.claudeLauncher(fuera({ [`${npm}\\claude.cmd`]: NPM_CMD_NODE })),
+    { bin: 'C:\\node\\node.exe', prefix: [`${npm}\\node_modules\\@anthropic-ai\\claude-code\\cli.js`] });
+  // el del instalador nativo
+  assert.deepStrictEqual(C.claudeLauncher(fuera({ 'C:\\Users\\a\\.local\\bin\\claude.exe': '' })), { bin: 'C:\\Users\\a\\.local\\bin\\claude.exe', prefix: [] });
+  // el del PATH gana
+  const enPath = { ...fuera({ [`${npm}\\claude.cmd`]: NPM_CMD_NODE, 'C:\\Windows\\claude.exe': '' }) };
+  assert.deepStrictEqual(C.claudeLauncher(enPath), { bin: 'C:\\Windows\\claude.exe', prefix: [] });
+  // sin nada en ninguno: dice dónde buscó
+  const nada = C.claudeLauncher(fuera({}));
+  assert.match(nada.error, /no encontré claude en el PATH, en C:\\Users\\a\\AppData\\Roaming\\npm ni en C:\\Users\\a\\\.local\\bin/);
+  // un «;» en la variable no parte la carpeta: lo de después sería relativo, la carpeta de la sesión (pase adversarial)
+  for (const raro of ['C:\\a;rel', 'C:\\a;b']) {
+    const r = C.claudeLauncher(fuera({ 'rel\\npm\\claude.exe': '', 'b\\npm\\claude.com': '', 'b\\.local\\bin\\claude.exe': '' }, { APPDATA: raro, USERPROFILE: raro }));
+    assert.match(r.error || '', /Claude Code no está instalado/, `${raro}: ${JSON.stringify(r)}`);
+  }
+  // una variable relativa no se usa: sería la carpeta de la sesión
+  const relativa = C.claudeLauncher({ ...fuera({ 'npm\\claude.cmd': NPM_CMD_NODE }, { APPDATA: '.', USERPROFILE: '' }), cwd: 'C:\\sesion' });
+  assert.match(relativa.error, /Claude Code no está instalado/);
+});
+
 // ── La guía (AC 20) ────────────────────────────────────────────────────────────────────────────────────────────────
 
 test('T24 Guia_DiceOwnerWaitMirarLaOficinaYElModoAutomatico @story-8.202 @ac-20', () => {

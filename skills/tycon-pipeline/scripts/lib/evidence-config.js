@@ -22,9 +22,45 @@ const os = require('os');
 
 function isDir(d) { try { return fs.statSync(d).isDirectory(); } catch { return false; } }
 
+/**
+ * Un hermano declarado por ruta relativa o por nombre que no está al lado del repo, buscado por su nombre en las raíces
+ * de repos de la máquina (`scripts/lib/repos-root.js`): `<raíz>/<nombre>` y `<raíz>/*\/<nombre>`, sin carpetas ocultas
+ * ni `node_modules`. Desde una carpeta de `worktrees/`, `../<hermano>` no existe aunque el hermano esté clonado.
+ * Sólo cuenta un repo principal (`.git` carpeta); con dos o más no se elige. Da `{ ruta, aviso }` o `{ aviso }`: nunca
+ * tira, y el camino tomado siempre se dice. `opts.resolveReposRoot` reemplaza al de `repos-root.js` (pruebas).
+ */
+function hermanoEnRaices(entry, repoRoot, opts) {
+  const nombre = path.basename(entry);
+  const pre = `el hermano \`${entry}\` no está al lado de ${repoRoot}`;
+  if (!nombre || nombre === '.' || nombre === '..') return { aviso: `${pre}: no tiene un nombre que buscar en la raíz de repos` };
+  let r;
+  try {
+    const resolver = (opts && opts.resolveReposRoot)
+      || require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'repos-root.js')).resolveReposRoot;
+    r = resolver(undefined, {});
+  } catch (e) {
+    return { aviso: `${pre}, y no pude mirar la raíz de repos (${String((e && e.message) || e).split('\n')[0]})` };
+  }
+  const raices = (r && r.roots) || [];
+  if (!raices.length) return { aviso: `${pre}, y no pude mirar la raíz de repos (${(r && r.motivo) || 'no hay raíz'})` };
+  const hijos = (d) => { try { return fs.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules').map((e) => path.join(d, e.name)); } catch { return []; } };
+  const principal = (d) => { try { return fs.statSync(path.join(d, '.git')).isDirectory(); } catch { return false; } };
+  const real = (p) => { try { return fs.realpathSync(p); } catch { return p; } };
+  const candidatos = [];
+  for (const raiz of raices) {
+    for (const d of [raiz, ...hijos(raiz)]) {
+      const c = path.join(d, nombre);
+      if (principal(c) && !candidatos.includes(real(c))) candidatos.push(real(c));
+    }
+  }
+  if (candidatos.length === 1) return { ruta: candidatos[0], aviso: `${pre}: lo leí de la raíz de repos (${candidatos[0]})` };
+  if (candidatos.length > 1) return { aviso: `${pre}, y en la raíz de repos hay más de uno con ese nombre (${candidatos.join(', ')}): no elijo` };
+  return { aviso: `${pre}, y tampoco está en la raíz de repos (${raices.join(', ')})` };
+}
+
 /** El bloque `evidence:` de un TEXTO de config. Separado del lector para que el modo-freno pueda
  *  parsear la versión commiteada y la de la carpeta con el MISMO parser. */
-function parseEvidenceText(txt, repoRoot) {
+function parseEvidenceText(txt, repoRoot, opts) {
   // blockPresent: el bloque `evidence:` EXISTE en el yaml — con eso el consumidor puede
   // distinguir "no hay config" de "hay config y el parser no le sacó nada" (un formato YAML
   // válido que este parser mínimo no entienda no puede degradar la config en silencio:
@@ -44,8 +80,14 @@ function parseEvidenceText(txt, repoRoot) {
     const resolved = path.isAbsolute(conHome) ? conHome
       : conHome.startsWith('.') ? path.resolve(repoRoot, conHome)
         : path.join(path.dirname(repoRoot), conHome);
-    if (isDir(resolved)) out.roots.push(resolved);
-    else out.missing.push(entry);
+    if (isDir(resolved)) { out.roots.push(resolved); return; }
+    // Una absoluta o con `~/` es ésa y no otra: no se busca en la raíz de repos.
+    if (!path.isAbsolute(conHome) && conHome === entry) {
+      const h = hermanoEnRaices(entry, repoRoot, opts);
+      out.warnings.push(h.aviso);
+      if (h.ruta) { out.roots.push(h.ruta); return; }
+    }
+    out.missing.push(entry);
   };
   let inEvidence = false; let evIndent = 0; let curList = null; let listIndent = 0;
   for (const line of txt.split(/\r?\n/)) {
@@ -86,7 +128,7 @@ function parseEvidenceConfig(repoRoot, opts) {
     }
     return null;
   };
-  if (!opts || !opts.freno) return parseEvidenceText(leerCarpeta(), repoRoot);
+  if (!opts || !opts.freno) return parseEvidenceText(leerCarpeta(), repoRoot, opts);
 
   // ── Modo FRENO ──────────────────────────
   // Las dos llaves de este bloque tienen DIRECCIONES OPUESTAS, así que se tratan distinto:
@@ -103,14 +145,15 @@ function parseEvidenceConfig(repoRoot, opts) {
   //     un nombre vale al toque, sacarlo espera al commit.
   let ambas = null;
   try { ambas = require('./config-source.js').leerAmbas(repoRoot); } catch (_e) { ambas = null; }
-  if (!ambas || !ambas.hayHistoria) return parseEvidenceText(leerCarpeta(), repoRoot);
+  if (!ambas || !ambas.hayHistoria) return parseEvidenceText(leerCarpeta(), repoRoot, opts);
 
-  const head = parseEvidenceText(ambas.commiteado, repoRoot);
-  const work = parseEvidenceText(ambas.carpeta, repoRoot);
+  const head = parseEvidenceText(ambas.commiteado, repoRoot, opts);
+  const work = parseEvidenceText(ambas.carpeta, repoRoot, opts);
   const soloEnCarpeta = [...work.roots, ...work.missing].filter(
     (r) => !head.roots.includes(r) && !head.missing.includes(r),
   );
-  const warnings = [];
+  // Los hermanos salen de lo commiteado, así que también sus avisos (cómo se encontró cada uno, o por qué no).
+  const warnings = [...head.warnings];
   if (soloEnCarpeta.length) {
     warnings.push(
       `⚠ .tycon/advisors.yaml → evidence.companion_repos declara ${soloEnCarpeta.map((r) => `\`${r}\``).join(', ')} ` +

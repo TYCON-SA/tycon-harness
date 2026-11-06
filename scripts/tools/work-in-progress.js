@@ -1447,7 +1447,7 @@ function buildWip(opts = {}) {
       const declaredAt = [a.untilAt, a.declaredAt].map((v) => Date.parse(v)).find(Number.isFinite);
       looseRows.set(sid, rows.length);
       addRow({ work, state: parts.join(' · '), end: hourVerdict({ endAt: until, hourAt: declaredAt, nowMs }) || declaredEnd(a.until, until), session: label, folder: folderOf(sid) }, sid,
-        { ...touchedField(sdir, sid, home, nowMs, unreadable), kind: 'loose', text: String(a.reason || ''), endAt: declared ? until : null, hourAt: declaredAt === undefined ? null : declaredAt, promiseAt: declaredAt === undefined ? null : declaredAt,
+        { ...touchedField(sdir, sid, home, nowMs, unreadable), kind: 'loose', text: String(a.reason || ''), laneAt: Number.isFinite(Date.parse(a.declaredAt)) ? Date.parse(a.declaredAt) : null, endAt: declared ? until : null, hourAt: declaredAt === undefined ? null : declaredAt, promiseAt: declaredAt === undefined ? null : declaredAt,
           ...(openPr ? { finishedOpen: true, openPr } : {}) });
     }
     else {
@@ -1489,7 +1489,11 @@ function buildWip(opts = {}) {
     // con un arreglo rápido abierto, la nota no abre otra fila: le da su hora, o dice qué espera
     if (looseRow !== undefined) {
       const hour = hourOfNote(d);
-      Object.assign(extra[looseRow], hour);
+      // su texto no cambia el título del camino corto, pero el número de tarea que nombra une su fila a la sesión: sólo
+      // el de una nota de este camino corto, no el de una vieja que quedó sin borrar
+      const laneAt = extra[looseRow].laneAt;
+      const ofLane = Number.isFinite(at) && (!Number.isFinite(laneAt) || at >= laneAt);
+      Object.assign(extra[looseRow], hour, d.text && ofLane ? { noteText: String(d.text) } : {});
       if (hour.waitingFor) rows[looseRow].end = waitingEnd(d);
       else if (Number.isFinite(hour.endAt)) rows[looseRow].end = hourVerdict({ endAt: hour.endAt, hourAt: at, nowMs }) || declaredEnd(d.endAt, hour.endAt);
       continue;

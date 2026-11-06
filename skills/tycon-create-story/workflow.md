@@ -57,6 +57,26 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
 - `project_context` = `**/project-context.md` (load if exists)
 - `default_output_file` = `{implementation_artifacts}/{{story_key}}.md`
 
+<!-- story-index:generated -->
+### Generated story index (`story_index: generated`)
+
+Before step 1, ask the harness how this repo writes its story index:
+`node ~/.tycon/harness/scripts/tools/story-index.js --repo <stories repo> --mode`. If it prints `generated`, the
+organization declared `story_index: generated` for this repo in `team-repos.json`: `specs/epics.md` and
+`specs/sprint-status.yaml` are built from each story's frontmatter by `scripts/tools/story-index.js`, and main rebuilds
+them after every merge. In that mode, for the whole workflow:
+
+- Do not read nor write `{sprint_status}` or `{epics_file}` to pick or track a story. To find the next story, read the
+  frontmatter of the stories in the specs folder: the first one with `status: backlog`, in numeric order (`8.9` before
+  `8.10`). The number of a new story still comes from `story-number.js`.
+- Every "Update {{sprint_status}}" action is skipped: the state lives only in the frontmatter, and
+  `marker.js update-story-status` writes it. Epic status checks are skipped too: a generated index has no epic status.
+- Do not regenerate the index on the branch either: the pre-commit stops an index that differs from the generated one,
+  and two branches that regenerate it would collide again.
+
+If it prints `manual` (or the key is missing), follow the workflow as written.
+<!-- /story-index:generated -->
+
 ### Input Files
 
 | Input | Description | Path Pattern(s) | Load Strategy |

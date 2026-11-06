@@ -66,6 +66,8 @@ function esArchivo(p) { try { return fs.statSync(p).isFile(); } catch { return f
  * `opts.onMissing(nombre, repoQueLoDeclara)`: un hermano declarado que no está en disco. Sin el aviso, «lo declaré y no
  * existe» se leería igual que «no hay hermanos». Un error al leer la config
  * NO se traga: sube a quien llama.
+ * `opts.onWarning(aviso, repoQueLoDeclara)`: cómo se resolvió un hermano que no está al lado (lo encontró en la raíz de
+ * repos, o por qué no).
  */
 function companionRoots(repo, storyPath, opts) {
   if (!repo) return [];
@@ -79,6 +81,7 @@ function companionRoots(repo, storyPath, opts) {
   for (const f of fuentes) {
     const cfg = parseEvidenceConfig(f);
     if (opts && typeof opts.onMissing === 'function') for (const m of cfg.missing) opts.onMissing(m, f);
+    if (opts && typeof opts.onWarning === 'function') for (const w of cfg.warnings) opts.onWarning(w, f);
     for (const r of cfg.roots) {
       const k = enLaMismaRama(real(r), rama, numero);
       if (vistos.has(k)) continue;

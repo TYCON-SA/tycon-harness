@@ -25,6 +25,11 @@ if (require.main === module) { try { require('./node-floor.js').guard(); } catch
 //   `full_tests_pipeline` es «el pipeline de pruebas completas» del repo: en Azure, por nombre o por id; en GitHub, el
 //   nombre del control obligatorio. Lo usa el skill de merge (scripts/tools/merge-pr.js); sin la clave, el skill lee
 //   `merge.mode` del repo. La clave es opcional: no sube la versión del archivo.
+//     "story_index": {                  opcional — cómo se escriben los índices de historias de cada repo
+//       "repos": [ { "repo": <repo>, "mode": «generated» | «manual» } ] }
+//                                       «generated»: specs/epics.md y specs/sprint-status.yaml los arma
+//                                       scripts/tools/story-index.js desde el frontmatter, y nadie los edita a mano. Un
+//                                       repo sin entrada, o con otro valor, es «manual» (como siempre).
 //     "models": {                       opcional — el modelo de cada trabajo del pipeline
 //       "mandatory_ceiling"?: <bool>, "ceiling"?: <modelo>,   techo obligatorio (paga la organización): van juntos
 //       "reviewers"?: <modelo>, "reviewer"?: { "<revisor>": <modelo> }, "reviewers_reloop"?: <modelo>,
@@ -76,7 +81,7 @@ const CONNECTORS = Object.freeze({ azure: 'azure-devops', github: 'github' });
 function connectorOf(platform) { return Object.prototype.hasOwnProperty.call(CONNECTORS, platform) ? CONNECTORS[platform] : null; }
 const REPO_KEYS = { azure: ['org', 'project', 'repo'], github: ['org', 'repo'] };
 const REQUIRED = ['public', 'profile', 'operations'];
-const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites', 'models', 'wait_notice', 'coverage', 'review', 'stack', 'weekly_review', 'estimates', 'context_notice', 'deep_review'];
+const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites', 'story_index', 'models', 'wait_notice', 'coverage', 'review', 'stack', 'weekly_review', 'estimates', 'context_notice', 'deep_review'];
 // El umbral del aviso de contexto: tokens enteros de 100.000 a 900.000. Lo lee scripts/hooks/context-size-notice.js,
 // después de TYCON_CONTEXT_NOTICE_TOKENS de la máquina y antes de los 300.000 de fábrica.
 const CONTEXT_NOTICE_KEYS = ['tokens'];
@@ -324,6 +329,45 @@ function mergeSuitesFor(data, identity) {
   if (entry && entry.rule !== undefined) return { declared: true, rule: entry.rule, ruleFrom: 'repo', pipeline };
   if (ms.default !== undefined) return { declared: true, rule: ms.default, ruleFrom: 'organization', pipeline };
   return { declared: true, rule: 'automatico', ruleFrom: 'default', pipeline };
+}
+
+const STORY_INDEX_MODES = ['generated', 'manual'];
+
+/** Los problemas de `story_index`; `[]` si está bien. */
+function storyIndexProblems(value) {
+  if (!isObject(value)) return [{ path: 'story_index', message: 'tiene que ser un objeto con repos' }];
+  const out = [];
+  for (const k of Object.keys(value)) {
+    if (!fieldComment(k, value[k]) && k !== 'repos') out.push({ path: `story_index.${k}`, message: 'clave desconocida' });
+  }
+  if (value.repos === undefined) return out;
+  if (!Array.isArray(value.repos)) return [...out, { path: 'story_index.repos', message: 'tiene que ser una lista de entradas { repo, mode }' }];
+  const seen = new Set();
+  value.repos.forEach((e, i) => {
+    const at = `story_index.repos.${i}`;
+    if (!isObject(e)) { out.push({ path: at, message: 'tiene que ser un objeto { repo, mode }' }); return; }
+    for (const k of Object.keys(e)) if (!fieldComment(k, e[k]) && k !== 'repo' && k !== 'mode') out.push({ path: `${at}.${k}`, message: 'clave desconocida' });
+    if (!STORY_INDEX_MODES.includes(e.mode)) out.push({ path: `${at}.mode`, message: `tiene que ser ${STORY_INDEX_MODES.map((m) => `«${m}»`).join(' o ')} (es ${JSON.stringify(e.mode)})` });
+    const repoErrs = e.repo === undefined ? [{ path: `${at}.repo`, message: 'falta' }] : repoProblems(e.repo, `${at}.repo`);
+    out.push(...repoErrs);
+    if (!repoErrs.length) {
+      const key = identityKey(e.repo);
+      if (seen.has(key)) out.push({ path: `${at}.repo`, message: 'este repo ya tiene una entrada en story_index.repos' });
+      seen.add(key);
+    }
+  });
+  return out;
+}
+
+/**
+ * Cómo se escriben los índices de historias de un repo: `{ mode, declared }`. `mode` es «generated» sólo si su entrada lo
+ * dice con un valor válido; cualquier otra cosa (sin clave, sin entrada, otro valor) es «manual».
+ */
+function storyIndexFor(data, identity) {
+  const si = isObject(data) && isObject(data.story_index) ? data.story_index : null;
+  const want = identityKey(identity);
+  const entry = si && Array.isArray(si.repos) ? si.repos.find((e) => isObject(e) && want !== null && identityKey(e.repo) === want) : null;
+  return { mode: entry && entry.mode === 'generated' ? 'generated' : 'manual', declared: !!entry };
 }
 
 const modelProblem = (v, at) => (modelRank(v) >= 0 ? [] : [{ path: at, message: `tiene que ser ${MODEL_LEVELS.map((m) => `«${m}»`).join(', ')} (es ${JSON.stringify(v)})` }]);
@@ -730,9 +774,12 @@ function parse(text) {
   // y con `context_notice` y `deep_review`: un valor malo cae al de fábrica, no deja sin el archivo
   const sectionContext = isObject(doc) && doc.context_notice !== undefined ? contextNoticeProblems(doc.context_notice) : [];
   const sectionDeep = isObject(doc) && doc.deep_review !== undefined ? deepReviewProblems(doc.deep_review) : [];
+  // y con `story_index`: un modo mal escrito deja los índices a mano, como siempre, y lo dice
+  const sectionStoryIndex = isObject(doc) && doc.story_index !== undefined ? storyIndexProblems(doc.story_index) : [];
   let data = problems.length ? null : doc;
-  if (data && (sectionModels.length || sectionWait.length || sectionCoverage.length || sectionReview.length || sectionStack.length || sectionWeekly.length || sectionEstimates.length || sectionContext.length || sectionDeep.length)) {
+  if (data && (sectionModels.length || sectionWait.length || sectionCoverage.length || sectionReview.length || sectionStack.length || sectionWeekly.length || sectionEstimates.length || sectionContext.length || sectionDeep.length || sectionStoryIndex.length)) {
     data = { ...doc };
+    if (sectionStoryIndex.length) delete data.story_index;
     if (sectionContext.length) delete data.context_notice;
     if (sectionDeep.length) delete data.deep_review;
     if (sectionModels.length) delete data.models;
@@ -756,6 +803,7 @@ function parse(text) {
     ...(sectionEstimates.length ? { estimates: sectionEstimates } : {}),
     ...(sectionContext.length ? { context_notice: sectionContext } : {}),
     ...(sectionDeep.length ? { deep_review: sectionDeep } : {}),
+    ...(sectionStoryIndex.length ? { story_index: sectionStoryIndex } : {}),
   };
   return { ok: problems.length === 0, data, problems, ...(Object.keys(sections).length ? { sectionProblems: sections } : {}) };
 }
@@ -803,7 +851,7 @@ function privateRepoRef(data) {
   return `${m.project}/_git/${m.repo}`;
 }
 
-module.exports = { VERSION, PLATFORMS, CONNECTORS, connectorOf, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, MODEL_LEVELS, PROVIDERS, NIGHTLY_PROVIDERS, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, modelsProblems, reviewProblems, contextNoticeProblems, deepReviewProblems, DEEP_REVIEW_VALUES, modelsAboveCeiling, modelsOutsideAllowed, nightlyLevel, suitesWithoutPipeline, suitesWithRule, stackProblems, weeklyReviewProblems, estimatesProblems, ESTIMATES_UNITS, ESTIMATES_HOURS_PER_DAY, WAIT_NOTICE_PEER_MAX, parse, load, url, privateRepoRef, repoProblems, identityKey, harnessCopies, mergeSuitesFor };
+module.exports = { VERSION, PLATFORMS, CONNECTORS, connectorOf, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, MODEL_LEVELS, PROVIDERS, NIGHTLY_PROVIDERS, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, STORY_INDEX_MODES, storyIndexProblems, storyIndexFor, modelsProblems, reviewProblems, contextNoticeProblems, deepReviewProblems, DEEP_REVIEW_VALUES, modelsAboveCeiling, modelsOutsideAllowed, nightlyLevel, suitesWithoutPipeline, suitesWithRule, stackProblems, weeklyReviewProblems, estimatesProblems, ESTIMATES_UNITS, ESTIMATES_HOURS_PER_DAY, WAIT_NOTICE_PEER_MAX, parse, load, url, privateRepoRef, repoProblems, identityKey, harnessCopies, mergeSuitesFor };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

@@ -685,8 +685,11 @@ DUPLICATES=("PostToolUse|Write|tycon-ado-story-wi/scripts/on-story-create.js" "P
 EXCLUDED_ON_WINDOWS=("SessionStart||harness-bootstrap-heal.sh" "PreToolUse|Bash|PowerShell|pr-one-per-repo-guard.js" "SessionStart||telegram-zombie-sweep.sh" "PostToolUse|Bash|PowerShell|missing-path-notice.js")
 OFF_BY_DEFAULT=("PreToolUse|Bash|PowerShell|session-collision-guard.js" "SessionStart||session-collision-guard.js")
 # lanzado por un harness.js actual: el candado tomado Y el aviso de que la salud que lo va a juzgar
-# sabe revisar un .sh con el bash de Git (sin el aviso, el .ps1 deja los .sh para la corrida siguiente: sección u)
-HELD=(TYCON_HARNESS_LOCK_HELD=1 TYCON_HARNESS_GIT_BASH_HEALTH=1)
+# sabe revisar un .sh con el bash de Git (sin el aviso, el .ps1 deja los .sh para la corrida siguiente: sección u), y los
+# eventos de hook que esa salud entiende (sin ellos, los de eventos nuevos no van al informe: sección u)
+REPORT_EVENTS="$(node -e "process.stdout.write(require(process.argv[1]).applierReportEnv().TYCON_REPORT_HOOK_EVENTS)" "$CLONE/scripts/setup/harness.js")" \
+  || { echo "❌ installer-ps1: no pude leer los eventos del reporte de harness.js"; exit 1; }
+HELD=(TYCON_HARNESS_LOCK_HELD=1 TYCON_HARNESS_GIT_BASH_HEALTH=1 TYCON_REPORT_HOOK_EVENTS="$REPORT_EVENTS")
 # lo de fábrica de una máquina del equipo: las tres integraciones que su perfil prende, y el buzón, que prende la llave
 # que trae el arnés del equipo; acá por variable (ni el perfil ni la llave viajan al clon de laboratorio)
 TEAM=(TYCON_CLOCKIFY=1 TYCON_ENGRAM=1 TYCON_NIGHTLY=1 TYCON_MAILBOX=1)
@@ -1010,23 +1013,23 @@ make_readable
 unsafe_cmds() { node -e 'const s=require(process.argv[1]);let n=0,all=0;for(const b of Object.values(s.hooks||{}))for(const e of b)for(const h of e.hooks||[]){all++;const c=String(h.command||"");if(/[$`]/.test(c)||(c.match(/"/g)||[]).length!==2)n++;}console.log(n+" de "+all)' "$1" 2>&1; }   # <settings>: «<comandos con $, acento grave o comillas de más> de <todos>»
 unsafe_notice() { grep 'NO quedó registrado' "$1" | grep 'su ruta trae' | grep -c "$2"; }   # <salida> <texto>: las líneas de ruta insegura que traen ese texto
 DOLLAR_DIR="$T/lab\$usr"; mkdir -p "$DOLLAR_DIR"
-# (1) la carpeta de usuario trae `$`: los ocho guiones de las skills (su ruta pasa por ~/.claude) no se registran; los del clon,
+# (1) la carpeta de usuario trae `$`: los guiones de las skills (su ruta pasa por ~/.claude) no se registran; los del clon,
 # sí (también los de las integraciones, que viven en el clon)
 HP="$(mktemp -d "$DOLLAR_DIR/home.XXXXXX")"; SP="$HP/.claude/settings.json"
 installer "$HP" "${HELD[@]}" "${TEAM[@]}" > "$T/p.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && [ "$(unsafe_cmds "$SP")" = "0 de $CLONE_HOOKS" ] && [ "$(hook_n "$SP" PreToolUse '*' tycon-pipeline/scripts/on-bash-write-gate.js)$(hook_n "$SP" UserPromptSubmit '*' clocki/scripts/on-prompt.js)" = 00 ]; then
   ok "(t) con \$ en la carpeta de usuario: los guiones cuya ruta lo trae NO se registran (ningún comando con \$ en settings.json; quedan los $CLONE_HOOKS del clon)"
 else no "(t) con \$ en la carpeta de usuario (rc $RC): comandos inseguros «$(unsafe_cmds "$SP")» (esperaba «0 de ${CLONE_HOOKS}»), on-bash-write-gate $(hook_n "$SP" PreToolUse '*' tycon-pipeline/scripts/on-bash-write-gate.js) · $(brief "$T/p.out" 200)"; fi
-if [ "$(unsafe_notice "$T/p.out" '«\$»')" = 8 ] && [ "$(unsafe_notice "$T/p.out" 'tycon-pipeline/scripts/on-bash-write-gate\.js (PreToolUse)')" = 1 ] && [ "$(unsafe_notice "$T/p.out" 'clockify/scripts/on-prompt\.js')" = 0 ]; then
+if [ "$(unsafe_notice "$T/p.out" '«\$»')" = "$SKILL_HOOKS" ] && [ "$(unsafe_notice "$T/p.out" 'tycon-pipeline/scripts/on-bash-write-gate\.js (PreToolUse)')" = 1 ] && [ "$(unsafe_notice "$T/p.out" 'clockify/scripts/on-prompt\.js')" = 0 ]; then
   ok "(t) …y una línea por cada uno lo dice: el guion y el carácter (\$)"
-else no "(t) con \$ en la carpeta de usuario: $(unsafe_notice "$T/p.out" '«\$»') línea(s) que nombran el carácter (esperaba 8) · $(grep 'su ruta trae' "$T/p.out" | head -1 | cut -c1-240)"; fi
+else no "(t) con \$ en la carpeta de usuario: $(unsafe_notice "$T/p.out" '«\$»') línea(s) que nombran el carácter (esperaba $SKILL_HOOKS) · $(grep 'su ruta trae' "$T/p.out" | head -1 | cut -c1-240)"; fi
 if [ "$(hook_n "$SP" PreToolUse "$BRAKE_M" safety-guard-pre.sh)$(hook_n "$SP" Stop '*' large-read-meter.js)" = 11 ] && ! grep 'su ruta trae' "$T/p.out" | grep 'safety-guard-pre\.sh' >/dev/null; then
   ok "(t) el espejo, en la misma ejecución: los guiones del clon (su ruta no trae \$) se registran sin aviso, .sh y .js"
 else no "(t) el espejo en la misma corrida: safety-guard $(hook_n "$SP" PreToolUse "$BRAKE_M" safety-guard-pre.sh), large-read-meter $(hook_n "$SP" Stop '*' large-read-meter.js)"; fi
 cp "$SP" "$T/p.settings.json"
 installer "$HP" "${HELD[@]}" "${TEAM[@]}" > "$T/p2.out" 2>&1; RC=$?
 installer "$HP" "${HELD[@]}" "${TEAM[@]}" -- -Check > "$T/p3.out" 2>&1; RC3=$?
-if [ "$RC" -eq 0 ] && [ "$RC3" -eq 0 ] && cmp -s "$SP" "$T/p.settings.json" && [ "$(unsafe_notice "$T/p2.out" '«\$»')" = 8 ] && [ "$(unsafe_notice "$T/p3.out" '«\$»')" = 8 ] && ! grep -q 'hooks faltan' "$T/p3.out"; then
+if [ "$RC" -eq 0 ] && [ "$RC3" -eq 0 ] && cmp -s "$SP" "$T/p.settings.json" && [ "$(unsafe_notice "$T/p2.out" '«\$»')" = "$SKILL_HOOKS" ] && [ "$(unsafe_notice "$T/p3.out" '«\$»')" = "$SKILL_HOOKS" ] && ! grep -q 'hooks faltan' "$T/p3.out"; then
   ok "(t) la segunda ejecución no cambia settings.json y lo vuelve a decir; -Check lo dice y no los cuenta entre los que faltan"
 else no "(t) la segunda ejecución o -Check con \$ en la carpeta de usuario (rc $RC y $RC3): $(unsafe_notice "$T/p2.out" '«\$»') y $(unsafe_notice "$T/p3.out" '«\$»') línea(s) · $(grep -c 'hooks faltan' "$T/p3.out") aviso(s) de faltantes"; fi
 # (2) el clon trae `$` en su ruta: los guiones del clon —los tres .sh entre ellos— no se registran; los de las skills, sí
@@ -1117,14 +1120,23 @@ sh_state() { local s="$1" r out=""; for r in "${SH_HOOKS[@]}"; do out="$out$(hoo
 # (el reporte nombra un hook por evento y guion: las dos filas PostToolUse de rebuild-before-verify.js son UN id, así que
 # los registrados son un id menos; sin los .sh, otros tres menos — los dos números, de la lista declarada)
 REPORT_IDS=$((TEAM_HOOKS - 1)); NO_SH_IDS=$((REPORT_IDS - ${#SH_HOOKS[@]}))
+# un harness.js de antes tampoco declara los eventos nuevos: sus hooks no van al informe (los ids, de la lista declarada)
+NEW_EVENT_IDS="$(node -e '
+const [lista, apply] = process.argv.slice(1);
+const viejos = require(apply).OLD_JUDGE_EVENTS;
+const ids = new Set(require(lista).hooks.filter((h) => !(h.platforms && h.platforms.windows === false) && h.when === "always" && !viejos.includes(h.event)).map((h) => `${h.event}:${h.spec}`));
+process.stdout.write(String(ids.size));
+' "$CLONE/scripts/setup/hooks-list.json" "$CLONE/scripts/setup/apply-hooks.js")"
+case "$NEW_EVENT_IDS" in ''|*[!0-9]*) echo "❌ installer-ps1: no pude contar los hooks de eventos nuevos: «${NEW_EVENT_IDS}»"; exit 1 ;; esac
+OLD_JUDGE_IDS=$((NO_SH_IDS - NEW_EVENT_IDS))
 report_sh() { node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.filter((p)=>p.kind==="hook"&&/\.sh$/.test(p.id)).length+" de "+r.filter((p)=>p.kind==="hook").length)}catch(e){console.log("ilegible: "+e.message)}' "$1"; }   # <reporte> → «<hooks .sh> de <hooks>»
 deferred_notice() { grep 'se registran en la ejecución siguiente' "$1" | grep -c 'harness.js de una versión anterior'; }   # <salida>
 HM="$(new_home old-harness)"; SM="$HM/.claude/settings.json"
 installer "$HM" "$OLD_HARNESS" "${TEAM[@]}" -- -ReportJson "$T/m1.report.json" > "$T/m1.out" 2>&1; RC=$?
-if [ "$RC" -eq 0 ] && [ "$(sh_state "$SM")" = 000 ] && [ "$(report_sh "$T/m1.report.json")" = "0 de $NO_SH_IDS" ] && [ "$(deferred_notice "$T/m1.out")" = 1 ] \
+if [ "$RC" -eq 0 ] && [ "$(sh_state "$SM")" = 000 ] && [ "$(report_sh "$T/m1.report.json")" = "0 de $OLD_JUDGE_IDS" ] && [ "$(deferred_notice "$T/m1.out")" = 1 ] \
    && grep 'se registran en la ejecución siguiente' "$T/m1.out" | grep 'safety-guard-pre\.sh' >/dev/null; then
-  ok "(u) lanzado por un harness.js de antes (sin TYCON_HARNESS_GIT_BASH_HEALTH): ningún .sh en settings.json ni en el reporte (sus $NO_SH_IDS ids de hook son .js), y UNA línea dice que se registran en la ejecución siguiente"
-else no "(u) lanzado por un harness.js de antes (rc $RC): .sh registrados «$(sh_state "$SM")» (esperaba 000), reporte «$(report_sh "$T/m1.report.json")» (esperaba «0 de ${NO_SH_IDS}»), $(deferred_notice "$T/m1.out") línea(s) · $(brief "$T/m1.out" 200)"; fi
+  ok "(u) lanzado por un harness.js de antes (sin TYCON_HARNESS_GIT_BASH_HEALTH): ningún .sh en settings.json ni en el reporte (sus $OLD_JUDGE_IDS ids de hook son .js de eventos que conoce), y UNA línea dice que se registran en la ejecución siguiente"
+else no "(u) lanzado por un harness.js de antes (rc $RC): .sh registrados «$(sh_state "$SM")» (esperaba 000), reporte «$(report_sh "$T/m1.report.json")» (esperaba «0 de ${OLD_JUDGE_IDS}»), $(deferred_notice "$T/m1.out") línea(s) · $(brief "$T/m1.out" 200)"; fi
 if [ "$(hook_n "$SM" Stop '*' large-read-meter.js)$(hook_n "$SM" PreToolUse 'Bash|PowerShell' push-phantom-ref-notice.js)$(hook_n "$SM" UserPromptSubmit '*' rebuild-before-verify.js)" = 111 ]; then ok "(u) …en esa misma ejecución los .js se registran como siempre"
 else no "(u) lanzado por un harness.js de antes, los .js no quedaron: large-read-meter $(hook_n "$SM" Stop '*' large-read-meter.js), push-phantom $(hook_n "$SM" PreToolUse 'Bash|PowerShell' push-phantom-ref-notice.js)"; fi
 # la corrida siguiente, ya con un harness.js actual: quedan los tres, una vez cada uno, en el reporte y sin la línea
@@ -1135,7 +1147,7 @@ else no "(u) la corrida siguiente con la variable (rc $RC): .sh «$(sh_state "$S
 # otra vez un harness.js anterior, con los .sh ya registrados: no los saca (settings.json byte a byte igual) y no los reporta
 cp "$SM" "$T/m.settings.json"
 installer "$HM" "$OLD_HARNESS" "${TEAM[@]}" -- -ReportJson "$T/m3.report.json" > "$T/m3.out" 2>&1; RC=$?
-if [ "$RC" -eq 0 ] && cmp -s "$SM" "$T/m.settings.json" && [ "$(report_sh "$T/m3.report.json")" = "0 de $NO_SH_IDS" ] && [ "$(deferred_notice "$T/m3.out")" = 0 ]; then
+if [ "$RC" -eq 0 ] && cmp -s "$SM" "$T/m.settings.json" && [ "$(report_sh "$T/m3.report.json")" = "0 de $OLD_JUDGE_IDS" ] && [ "$(deferred_notice "$T/m3.out")" = 0 ]; then
   ok "(u) un harness.js de antes sobre una máquina con los .sh ya registrados: no los saca (settings.json byte a byte igual), no los reporta y no dice que faltan"
 else no "(u) un harness.js de antes con los .sh ya registrados (rc $RC): settings.json $(cmp -s "$SM" "$T/m.settings.json" && echo igual || echo CAMBIÓ), reporte «$(report_sh "$T/m3.report.json")», $(deferred_notice "$T/m3.out") línea(s)"; fi
 # suelto (a mano, sin harness.js): registra todo, sin la línea

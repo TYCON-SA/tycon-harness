@@ -200,7 +200,7 @@ function lanzadoPorLaHerramienta({ arbol, pid = process.pid, casa, plataforma = 
   const tool = p;
   for (let q = m.get(tool.ppid); q && !vistos.has(q.pid); q = m.get(q.ppid)) {
     vistos.add(q.pid);
-    if (consola(q) || (w.esHerramienta(q) && !w.esAnfitrionDeFondoDe(tool, q))) return { ok: false, motivo: 'la herramienta la lanzó otra herramienta o la consola de un agente' };
+    if (consola(q) || (w.esHerramienta(q) && !w.esAnfitrionDeFondoDe(tool, q, m.get(tool.ppid)))) return { ok: false, motivo: 'la herramienta la lanzó otra herramienta o la consola de un agente' };
   }
   return { ok: true, herramienta: { pid: tool.pid, inicio: tool.inicio } };
 }
@@ -308,7 +308,13 @@ function mensajeEnLaTranscripcion(ruta, a, { sello, destino, pregunta } = {}) {
     if (rs[k] && rs[k].type === 'user' && rs[k].origin && rs[k].origin.kind === 'human' && textoDe(rs[k]) !== null) break;
     if (rs[k] && rs[k].type === 'assistant' && textoDe(rs[k])) antes = textoDe(rs[k]);
   }
-  if (!traeElSello(antes, { sello, destino, pregunta })) return { ok: false, motivo: `lo último que dijo el agente antes del «aprobado» no trae «${sello}», o nombra otra sesión` };
+  if (!traeElSello(antes, { sello, destino, pregunta })) {
+    // con el sello y sin la pregunta entera, la persona no vio qué aprueba: se dice eso, no que falta el sello
+    if (pregunta && sello && String(antes || '').includes(sello) && !String(antes).includes(pregunta)) {
+      return { ok: false, motivo: 'lo último que dijo el agente antes del «aprobado» no trae la pregunta entera, sólo su sello: mostrale la pregunta tal cual la armó el freno' };
+    }
+    return { ok: false, motivo: `lo último que dijo el agente antes del «aprobado» no trae «${sello}», o nombra otra sesión` };
+  }
   return { ok: true };
 }
 
@@ -522,6 +528,37 @@ function esPermitido(comando, raiz = ROOT) {
 }
 
 /**
+ * ¿Es un gancho del arnés instalado cuyo archivo ya no está? Lo deja una versión que volvió atrás: `node <ruta>`, sola en
+ * la línea, con la ruta en la carpeta de ganchos del arnés de `casa` o de esta copia, y sin el archivo. No corre nada, así
+ * que no anula el click. Con el archivo presente, o en otra carpeta, sigue siendo ajeno.
+ */
+function ganchoDelArnesSinArchivo(comando, casa) {
+  const c = String(comando || '').trim();
+  if (!c || /[;&|`\n<>]|\$\(/.test(c)) return false;
+  // lo que el shell expande no es la ruta escrita: una variable o un comodín pueden llevar a otro programa. La tilde, sólo
+  // al principio de una palabra (una ruta corta de Windows la trae en el medio: PROGRA~1)
+  if (/[$*?[\]{}]/.test(c) || /(?:^|[\s"])~/.test(c)) return false;
+  // la barra invertida es separador sólo en Windows: en otro sistema el shell la come y corre otra ruta
+  if (process.platform !== 'win32' && c.includes('\\')) return false;
+  const m = /^(?:"([^"]+)"|(\S+))\s+(?:"([^"]+)"|(\S+))$/.exec(c);
+  if (!m) return false;
+  const igual = (a, b) => (process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b);
+  // el intérprete: `node` del PATH, el Node del arnés de `casa` o el que corre esto; un `node` en otra carpeta puede ser
+  // cualquier programa, y ése sí contestaría el cuadro
+  const bin = (m[1] || m[2]).replace(/\\/g, '/');
+  const nodoDelArnes = path.join(casa || os.homedir(), '.tycon', 'node').replace(/\\/g, '/');
+  const esNode = /^node(?:\.exe)?$/i.test(bin) || igual(bin, process.execPath.replace(/\\/g, '/'))
+    || (/\/node(?:\.exe)?$/i.test(bin) && !bin.split('/').includes('..') && igual(bin.slice(0, nodoDelArnes.length + 1), `${nodoDelArnes}/`));
+  if (!esNode) return false;
+  const ruta = (m[3] || m[4]).replace(/\\/g, '/');
+  if (!path.isAbsolute(ruta) && !/^[A-Za-z]:\//.test(ruta)) return false;
+  const carpetas = [path.join(casa || os.homedir(), '.tycon', 'harness', 'scripts', 'hooks'), path.join(ROOT, 'scripts', 'hooks')].map((d) => d.replace(/\\/g, '/'));
+  const dir = ruta.slice(0, ruta.lastIndexOf('/'));
+  if (!/^[A-Za-z0-9._-]+\.js$/.test(ruta.slice(ruta.lastIndexOf('/') + 1)) || !carpetas.some((d) => igual(d, dir))) return false;
+  try { fs.statSync(ruta); return false; } catch (e) { return e.code === 'ENOENT'; }
+}
+
+/**
  * Los ganchos ajenos que escuchan el cuadro: `{ ajenos: [{ archivo, evento, comando }], ilegibles: [archivo] }`. Mira
  * PreToolUse y PermissionRequest en las capas de configuración, en lo que suman las banderas del proceso (`linea`, la de
  * la herramienta), en los plugins instalados y en el encabezado de skills y agentes.
@@ -538,7 +575,7 @@ function escuchasDelCuadro({ casa = os.homedir(), cwd, plataforma, administrada,
         if (!g || !alcanzaAlCuadro(g.matcher)) continue;
         for (const h of Array.isArray(g.hooks) ? g.hooks : []) {
           const comando = h && (h.command || h.url || h.prompt || h.type);
-          if (!esPermitido(h && h.command)) ajenos.push({ archivo: a, evento, comando: una(comando, 160) });
+          if (!esPermitido(h && h.command) && !ganchoDelArnesSinArchivo(h && h.command, casa)) ajenos.push({ archivo: a, evento, comando: una(comando, 160) });
         }
       }
     }

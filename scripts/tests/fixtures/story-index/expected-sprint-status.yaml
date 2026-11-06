@@ -1,0 +1,13 @@
+# Generado por scripts/tools/story-index.js desde el frontmatter de cada historia: no se edita a mano.
+# El estado de una historia se cambia en su frontmatter (marker.js update-story-status), y este archivo se regenera.
+# El orden es por épica y por número. El título y la introducción de cada épica viven en specs/epics-intro.md.
+story_location: specs
+development_status:
+  # Épica 1 — Uno
+  1-2-alfa: done
+  1-9-gamma: backlog
+  1-10-beta: draft
+  1-11-reservada: backlog
+  # Épica 2
+  2-17-delta: ready-for-dev
+  2-17-1-epsilon: in-progress

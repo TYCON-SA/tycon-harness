@@ -852,7 +852,8 @@ test('T23 8.215-Anotar_PruebaDeUnPaseAnterior_NoMedido @story-8.215 @ac-6', () =
   // con lanzamiento: la prueba fechada antes del lanzamiento
   const home = tmp('adv8215-t23-'); const SID = 't23';
   // stable-data: se compara contra la fecha real de los archivos que la prueba escribe
-  const ahora = new Date();
+  // el lanzamiento, 2 s antes: Linux fecha los archivos con un reloj de varios ms y el resultado quedaba «anterior»
+  const ahora = new Date(Date.now() - 2000);
   writeFakeMarker(home, SID, { adversarial: { launchedAtStep: 4, runId: 'wf', sessionId: SID, launchedAt: ahora.toISOString() } });
   const p = resultadoLimpio(home, (c) => {
     const viejo = new Date(ahora.getTime() - 60 * 60 * 1000);

@@ -1370,7 +1370,7 @@ test('T93 Kanban_FiveColumns_FromRealStateAndBoard @story-2.81 @ac-50: cinco col
     board: buildBoard(KANBAN_BOARD),
     nowMs: NOW,
   });
-  assert.deepStrictEqual(data.kanban.columnas.map((c) => c.nombre), ['Sin sesión', 'En curso', 'Tu firma', 'Esperan entrar', 'Terminados']);
+  assert.deepStrictEqual(data.kanban.columnas.map((c) => c.nombre), ['Sin sesión', 'En curso', 'Tu firma', 'Esperan entrar', 'Terminados hoy']);
   assert.deepStrictEqual(titles(data, 'firma').sort(), ['Firma: la primera firma', 'Firma: la segunda firma', 'Tres'].sort());
   assert.deepStrictEqual(titles(data, 'curso').sort(), ['Dos', 'Una'].sort());
   assert.deepStrictEqual(titles(data, 'entrando'), ['Cuatro']);
@@ -2197,10 +2197,14 @@ test('T205 Kanban_LiveOnly_OnceEach: en curso sólo lo que tiene una sesión viv
   assert.ok(!JSON.stringify(data.kanban).includes('aaaa1111'));
 });
 
-test('T206 Coordinator_NotAPending: la coordinadora no es una tarjeta de «En curso», salvo que anote un trabajo', () => {
-  const photo = (extra) => buildOffice({ wip: wip([{ session: 'Coord', sid: 'co', status: 'busy', extra }]), coordinatorSid: 'co', nowMs: NOW }).data;
+test('T206 Coordinator_NotAPending: la coordinadora no es una tarjeta de «En curso», salvo que su trabajo sea una fila del tablero', () => {
+  const board = buildBoard({ pendientes: [{ titulo: 'Ordenar los pedidos', estado: 'curso', id: 'T-9' }] });
+  const photo = (extra) => buildOffice({ wip: wip([{ session: 'Coord', sid: 'co', status: 'busy', extra }]), coordinatorSid: 'co', board, nowMs: NOW }).data;
   assert.deepStrictEqual(titles(photo({ kind: 'activity' }), 'curso'), []);
-  assert.deepStrictEqual(titles(photo({ kind: 'note', text: 'ordeno los pedidos del día' }), 'curso'), ['ordeno los pedidos del día']);
+  // coordinar no es una tarea: «En curso» decía 6 y eran 5
+  assert.deepStrictEqual(titles(photo({ kind: 'note', text: 'ordeno los pedidos del día' }), 'curso'), []);
+  assert.deepStrictEqual(titles(photo({ kind: 'note', text: 'T-8: un número sin fila' }), 'curso'), [], 'el número tiene que ser de una fila');
+  assert.deepStrictEqual(titles(photo({ kind: 'note', text: 'T-9: ordeno los pedidos del día' }), 'curso'), ['T-9: ordeno los pedidos del día']);
 });
 
 test('T207 Note_Hour_FirstPromise_Waiting: la sesión anota su hora, se compara con la primera, y quien espera dice qué espera', async () => {
@@ -2989,7 +2993,7 @@ test('T275 YourTurn_OnlySignaturesAndTheList: «Te toca» suma la lista del tabl
   assert.doesNotMatch(html, /"Te toca: "\+t\.teToca/, 'no se dice dos veces');
 });
 
-test('T278 Kanban_Finished_OnlyToday: «Terminados» es lo de hoy con su hora, lo último primero; lo demás va a la tabla «Hechos»', () => {
+test('T278 Kanban_Finished_OnlyToday: «Terminados hoy» es lo de hoy con su hora, lo último primero; lo demás va a la tabla «Hechos»', () => {
   const d = new Date(NOW);
   const pad = (n) => String(n).padStart(2, '0');
   const iso = (x, hh) => `${x.getFullYear()}-${pad(x.getMonth() + 1)}-${pad(x.getDate())}T${hh}`;
@@ -3003,7 +3007,7 @@ test('T278 Kanban_Finished_OnlyToday: «Terminados» es lo de hoy con su hora, l
   ] });
   const prAnswers = new Map([['r#5', { pr: { state: 'merged', mergedAt: new Date(NOW - 60000).toISOString() } }]]);
   const { data } = buildOffice({ wip: wip([]), board, prAnswers, nowMs: NOW });
-  assert.deepStrictEqual(data.kanban.columnas.map((c) => c.nombre), ['Sin sesión', 'En curso', 'Tu firma', 'Esperan entrar', 'Terminados']);
+  assert.deepStrictEqual(data.kanban.columnas.map((c) => c.nombre), ['Sin sesión', 'En curso', 'Tu firma', 'Esperan entrar', 'Terminados hoy']);
   assert.deepStrictEqual(titles(data, 'hechos'), ['Con pedido', 'De hace un rato', 'De esta mañana'], 'la hora del pedido manda sobre la anotada');
   assert.deepStrictEqual(data.kanban.anteriores.map((c) => c.titulo), ['De ayer', 'Sin hora']);
   for (const c of [...col(data, 'hechos').tarjetas, ...data.kanban.anteriores]) assert.ok(!('terminadoMs' in c), 'el dato interno no sale');
@@ -3092,12 +3096,14 @@ test('T287 InProgress_ByEndHour: lo que termina antes va arriba; lo que espera o
   const end = (min) => ({ kind: 'loose', text: 'algo', endAt: NOW + min * 60000, hourAt: NOW - 60000, promiseAt: NOW - 60000 });
   const { data } = buildOffice({
     wip: wip([
-      { session: 'Coord', sid: 'c', extra: { kind: 'note', text: 'el tablero' } },
+      // la coordinadora entra a «En curso» sólo con un trabajo que es una fila del tablero
+      { session: 'Coord', sid: 'c', extra: { kind: 'note', text: 'T-1: el tablero' } },
       { session: 'Sinhora', extra: { kind: 'loose', text: 'sin hora' } },
       { session: 'Espera', extra: { kind: 'note', text: 'espera', waitingFor: 'un aviso', waitingSince: NOW - 60000, endAt: NOW + 60000 } },
       { session: 'Tarde', extra: end(90) },
       { session: 'Pronto', extra: end(10) },
     ]),
+    board: buildBoard({ pendientes: [{ titulo: 'Ordenar el tablero', estado: 'curso', id: 'T-1' }] }),
     coordinatorSid: 'c',
     coordinatorName: 'Coord',
     nowMs: NOW,
@@ -3684,6 +3690,15 @@ test('T25 Conversacion_ConVosEnTodaSesion @story-8.183 @ac-4 @ac-5: una sesión 
   const coord = conversationOf(env, 'Coordinadora');
   assert.deepStrictEqual(coord.conSesiones.map((s) => s.sesion), ['Alfa']);
   assert.deepStrictEqual(coord.conVos.map((m) => m.quien), ['vos', 'coordinadora']);
+  // la designada sin nombre (una sesión de VS Code nombrada por click) sigue siendo la coordinadora: ninguna ventana dice que no hay
+  env.coordinator = { sid: 'c', name: null };
+  const sinNombre = conversationOf(env, 'Coordinadora');
+  assert.ok(!sinNombre.sinCoordinadora, 'su propia ventana no dice «no tiene coordinadora designada»');
+  assert.deepStrictEqual(sinNombre.conSesiones.map((s) => s.sesion), ['Alfa']);
+  const alfaSinNombre = conversationOf(env, 'Alfa');
+  assert.ok(!alfaSinNombre.sinCoordinadora, 'la de otra sesión tampoco');
+  assert.deepStrictEqual(alfaSinNombre.conCoordinadora.map((m) => m.texto), ['Seguí.'], 'se la reconoce por su cargo, como la nombran las sesiones');
+  assert.ok(!JSON.stringify(sinNombre).includes('"c"'), 'su identificador no se muestra');
   // la página marca lo de la oficina y muestra Con vos en toda sesión
   const code = PAGE_CODE();
   assert.match(code, /desde la oficina/);
@@ -3834,4 +3849,49 @@ test('T314 Card_TaskNumber: la sesión lleva el número de su fila del tablero, 
   const card = data.kanban.columnas.flatMap((c) => c.tarjetas).find((c) => c.quien === 'Ana');
   assert.strictEqual(card.numero, byName(data, 'Ana').tarea, 'el mismo número que su tarjeta del kanban');
   assert.strictEqual(byName(data, 'Beto').tarea, undefined);
+});
+
+test('T315 Card_TaskNumber_FromNote: «T-126/T-127» en una nota no es una ruta, y el número de la nota de un camino corto une su fila', () => {
+  const board = buildBoard({ pendientes: [{ titulo: 'Oficina: defectos', estado: 'curso', id: 'T-126' }, { titulo: 'Un arreglo', estado: 'curso', id: 'T-72' }] });
+  const { data } = buildOffice({ wip: wip([
+    { session: 'Ana', work: 'nota', extra: { kind: 'note', text: 'T-126/T-127: armando tandas' } },
+    { session: 'Beto', work: 'arreglo', extra: { kind: 'loose', text: 'el motivo del carril, sin número', noteText: 'T-72: sigo con el arreglo' } },
+  ]), board, nowMs: NOW });
+  assert.strictEqual(byName(data, 'Ana').titulo, 'T-126/T-127: armando tandas', 'los números quedan en el título');
+  const all = data.kanban.columnas.flatMap((c) => c.tarjetas);
+  assert.strictEqual(all.find((c) => c.quien === 'Ana').numero, 'T-126');
+  assert.strictEqual(all.find((c) => c.quien === 'Beto').numero, 'T-72', 'la nota del camino corto une su fila');
+  assert.deepStrictEqual(titles(data, 'sinEmpezar'), [], 'ninguna fila sale repetida en «Sin sesión»');
+});
+
+test('T316 OpenPr_JoinsItsRow: un pedido que nombra su fila o es su recordado no sale suelto; la fila sin sesión pasa a «Esperan entrar» con él', () => {
+  const board = buildBoard({ pendientes: [
+    { titulo: 'Arreglo con pedido', estado: 'espera', id: 'T-40' },
+    { titulo: 'Recordado', estado: 'espera', id: 'T-41' },
+    { titulo: 'Espera tu firma', estado: 'firma', id: 'T-42' },
+  ] });
+  board.filas.find((f) => f.numero === 'T-41').recordado = { repo: 'pub', numero: 902 };
+  const { data } = buildOffice({ wip: wip([]), board, nowMs: NOW, openPrs: [
+    { repoName: 'pub', repo: 'org/pub', number: 901, mark: '#', branch: 'fix/t-40-arreglo', title: 'fix: el arreglo', inQueue: true, waiting: true },
+    { repoName: 'pub', repo: 'org/pub', number: 902, mark: '#', branch: 'fix/otro', title: 'el recordado', inQueue: false, waiting: true, conflict: true },
+    { repoName: 'pub', repo: 'org/pub', number: 903, mark: '#', branch: 'fix/suelto', title: 'nada que ver', inQueue: false, waiting: true },
+    { repoName: 'pub', repo: 'org/pub', number: 904, mark: '#', branch: 'fix/t-40-otro', title: 'otro pedido de la T-40', inQueue: true, waiting: true },
+    { repoName: 'pub', repo: 'org/pub', number: 905, mark: '#', branch: 'fix/t-42', title: 'el de la firma', inQueue: true, waiting: true },
+    { repoName: 'priv', repo: 'org/priv', number: 901, mark: '!', branch: 'fix/t-40-privado', title: 'el mismo número en otro repo', inQueue: true, waiting: true },
+  ] });
+  assert.deepStrictEqual(titles(data, 'entrando').sort(), ['Arreglo con pedido', 'Recordado', 'el de la firma', 'el mismo número en otro repo', 'nada que ver', 'otro pedido de la T-40']);
+  const row = col(data, 'entrando').tarjetas.find((c) => c.numero === 'T-40');
+  assert.strictEqual(row.hora, 'en la cola');
+  assert.strictEqual(row.pedido.numero, 901);
+  const remembered = col(data, 'entrando').tarjetas.find((c) => c.numero === 'T-41');
+  assert.strictEqual(remembered.motivo, 'choca con main', 'lleva lo que dice su pedido');
+  assert.deepStrictEqual(titles(data, 'sinEmpezar'), [], 'ninguna fila queda además en «Sin sesión»');
+  assert.deepStrictEqual(titles(data, 'firma'), ['Espera tu firma'], 'la fila de otra columna no se mueve, y su pedido sale suelto');
+});
+
+test('T317 Finished_TodayAndBefore: la columna dice «Terminados hoy» y la página abre «N anteriores» desde la tabla «Hechos»', () => {
+  const code = PAGE_CODE();
+  assert.match(code, /c\.id==="hechos"&&DATA\.tablas&&DATA\.tablas\.hechos/, 'lo anterior sale de la tabla que también viaja al sitio');
+  assert.match(code, /" anterior":" anteriores"/);
+  assert.match(code, /aria-expanded/);
 });

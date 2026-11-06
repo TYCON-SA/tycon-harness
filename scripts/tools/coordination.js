@@ -784,9 +784,22 @@ function claudeLauncher(ctx = {}, what = 'no abrí la sesión') {
   if (platform !== 'win32') return { bin: 'claude', prefix: [] };
   const win = path.win32;
   const exists = ctx.exists || ((f) => { try { return fs.statSync(f).isFile(); } catch { return false; } });
-  const w = require(path.join(SKILL_LIB, 'portable-tools.js')).windowsLookup('claude', { env: ctx.env || process.env, exists });
+  const env = ctx.env || process.env;
+  const { windowsLookup } = require(path.join(SKILL_LIB, 'portable-tools.js'));
+  // en Windows el nombre de una variable no distingue mayúsculas
+  const envGet = (name) => { const k = Object.keys(env).find((x) => x.toLowerCase() === name.toLowerCase() && env[x]); return k === undefined ? undefined : env[k]; };
+  let w = windowsLookup('claude', { env, exists });
+  // la extensión de VS Code lanza la sesión sin la carpeta de npm en el PATH: después del PATH, donde dejan claude npm
+  // y el instalador nativo. Sólo carpetas absolutas y sin «;»: la búsqueda parte por «;», y lo de después sería una ruta
+  // relativa, la carpeta de la sesión
+  const extra = [[envGet('APPDATA'), 'npm'], [envGet('USERPROFILE'), '.local', 'bin']]
+    .filter(([base]) => base && /^[A-Za-z]:\\[^;]*$/.test(String(base))).map((p) => win.join(...p));
+  for (const dir of extra) {
+    if (w && (w.exe || w.script)) break;
+    w = windowsLookup('claude', { env: { PATH: dir, PATHEXT: envGet('PATHEXT') || '' }, exists });
+  }
   if (w && w.exe) return { bin: w.exe, prefix: [] };
-  if (!w || !w.script) return { error: `Claude Code no está instalado en esta máquina (no encontré claude): ${what}.` };
+  if (!w || !w.script) return { error: `Claude Code no está instalado en esta máquina (no encontré claude en el PATH${extra.length ? `, en ${extra.join(' ni en ')}` : ''}): ${what}.` };
   const unreadable = { error: `encontré ${w.script} pero no pude leer a qué programa apunta: ${what}.` };
   let text;
   try { text = String((ctx.read || ((f) => fs.readFileSync(f, 'utf8')))(w.script)); } catch { return unreadable; }
@@ -1354,6 +1367,23 @@ function gitIn(dir, args) {
   return { code: r.error ? null : r.status, out: String(r.stdout || '').trim(), err: String((r.error && r.error.message) || r.stderr || '').trim().split('\n')[0] };
 }
 
+// ¿La sesión soltó el puesto antes de que llegara la otra? Lo dice el registro de la carpeta entre su arranque y el de la
+// otra: su último movimiento fue a un commit suelto o a una rama remota (lo que hace `work-slots.js release`). Devuelve
+// también las ramas a las que se movió, que siguen siendo suyas; null si el registro no lo puede decir.
+function soltoElPuesto(dir, startedAt, heirStartedAt) {
+  const log = gitIn(dir, ['reflog', 'show', '--date=unix', '--format=%gd %gs', 'HEAD']);
+  if (log.code !== 0 || !log.out) return null;
+  const movs = [];
+  for (const l of log.out.split('\n')) {
+    const m = /^HEAD@\{(\d+)\} checkout: moving from (\S+) to (\S+)/.exec(l);
+    if (m && Number(m[1]) * 1000 >= startedAt && Number(m[1]) * 1000 < heirStartedAt) movs.push(m[3]);
+  }
+  if (!movs.length) return null;
+  const suelto = (to) => /^[0-9a-f]{7,40}$/.test(to) || gitIn(dir, ['show-ref', '--verify', '--quiet', `refs/remotes/${to}`]).code === 0;
+  // el registro va del más nuevo al más viejo
+  return { solto: suelto(movs[0]), propias: new Set(movs.filter((to) => !suelto(to))) };
+}
+
 // Lo que le falta a la carpeta de una sesión para cerrarla: `{ missing, unknown }`. Lo que no se pudo mirar va a `unknown`:
 // «no sé» nunca es «está limpia». Un puesto fijo se suelta, no se borra (work-slots.js).
 function folderGaps(dir, opts) {
@@ -1369,15 +1399,22 @@ function folderGaps(dir, opts) {
   const top = gitIn(dir, ['rev-parse', '--show-toplevel']);
   // fuera de un repo no hay nada de git que mirar
   if (top.code !== 0) return /not a git repository/i.test(top.err) ? { missing, unknown } : { missing, unknown: [`no pude mirar el repo de ${dir} (${top.err})`] };
-  // con todos los archivos sin seguir, aunque la configuración del repo los esconda
-  const status = git(['status', '--porcelain', '--untracked-files=all'], 'los cambios');
-  if (status.code === 0 && status.out) missing.push(`${status.out.split('\n').length} archivo(s) sin commitear en ${dir}`);
   const branch = git(['symbolic-ref', '-q', '--short', 'HEAD'], 'la rama', true);
   const onBranch = branch.code === 0;
   const slots = workSlots.list({ home: opts.home, env: opts.env, arnes: opts.arnes, repo: dir });
   if (!slots.ok) unknown.push(`no pude mirar si ${dir} es un puesto fijo (${slots.message})`);
   const slot = slots.ok ? slots.slots.find((s) => fs.realpathSync(top.out) === s.path) : null;
-  if (slot && onBranch) missing.push(`el puesto ${slot.path} sigue tomado por la rama ${branch.out}: soltalo con work-slots.js release`);
+  // un puesto que la sesión soltó y ahora ocupa otra sesión viva, que arrancó después, ya no es suyo: lo de ahora (los
+  // cambios, la rama, el puesto tomado) es de la otra, y lo suyo son las ramas que dejó ahí antes de que la otra llegara.
+  // Sin el registro que diga que lo soltó, o con la rama de ahora entre las suyas, se mira todo como siempre.
+  const solto = slot && opts.heir && Number.isFinite(opts.startedAt) ? soltoElPuesto(dir, opts.startedAt, opts.heir.startedAt) : null;
+  const heredado = Boolean(solto && solto.solto && !(onBranch && solto.propias.has(branch.out)));
+  if (!heredado) {
+    // con todos los archivos sin seguir, aunque la configuración del repo los esconda
+    const status = git(['status', '--porcelain', '--untracked-files=all'], 'los cambios');
+    if (status.code === 0 && status.out) missing.push(`${status.out.split('\n').length} archivo(s) sin commitear en ${dir}`);
+    if (slot && onBranch) missing.push(`el puesto ${slot.path} sigue tomado por la rama ${branch.out}: soltalo con work-slots.js release`);
+  }
   const fetched = gitIn(dir, ['fetch', '--quiet', '--no-tags', 'origin', 'main']);
   if (fetched.code !== 0) {
     unknown.push(`no pude traer main de origin en ${dir} (${fetched.err || `salió con código ${fetched.code}`}): no sé si lo empujó ni si entró`);
@@ -1385,12 +1422,14 @@ function folderGaps(dir, opts) {
   }
   const main = git(['rev-parse', 'FETCH_HEAD^{commit}'], 'main');
   if (main.code !== 0) return { missing, unknown };
-  const unpushed = git(['rev-list', '--count', 'HEAD', '--not', '--remotes', main.out], 'lo empujado');
-  if (unpushed.code === 0 && Number(unpushed.out) > 0) missing.push(`${unpushed.out} commit(s) sin empujar en ${dir}`);
-  // la rama de un worktree o de la carpeta, o un commit suelto: que haya entrado a main. También una `main` local: empujada
-  // a otra rama, tampoco entró
-  const merged = git(['merge-base', '--is-ancestor', 'HEAD', main.out], 'si la rama entró a main', true);
-  if (merged.code === 1) missing.push(`${onBranch ? `la rama ${branch.out}` : 'el commit suelto'} de ${dir} no entró a main`);
+  if (!heredado) {
+    const unpushed = git(['rev-list', '--count', 'HEAD', '--not', '--remotes', main.out], 'lo empujado');
+    if (unpushed.code === 0 && Number(unpushed.out) > 0) missing.push(`${unpushed.out} commit(s) sin empujar en ${dir}`);
+    // la rama de un worktree o de la carpeta, o un commit suelto: que haya entrado a main. También una `main` local:
+    // empujada a otra rama, tampoco entró
+    const merged = git(['merge-base', '--is-ancestor', 'HEAD', main.out], 'si la rama entró a main', true);
+    if (merged.code === 1) missing.push(`${onBranch ? `la rama ${branch.out}` : 'el commit suelto'} de ${dir} no entró a main`);
+  }
   // las ramas de las que la sesión se fue en esta carpeta: su registro dice cuáles, desde que arrancó
   if (!Number.isFinite(opts.startedAt)) {
     unknown.push(`no sé desde cuándo trabaja en ${dir}: no puedo mirar las ramas que dejó`);
@@ -1412,10 +1451,11 @@ function folderGaps(dir, opts) {
   const left = new Set();
   for (const l of lines) {
     const m = /^HEAD@\{(\d+)\} checkout: moving from (\S+) to /.exec(l);
-    if (m && Number(m[1]) * 1000 >= opts.startedAt) left.add(m[2]);
+    // en un puesto heredado, sólo hasta que llegó la otra sesión: lo de después es suyo
+    if (m && Number(m[1]) * 1000 >= opts.startedAt && !(heredado && Number(m[1]) * 1000 >= opts.heir.startedAt)) left.add(m[2]);
   }
   for (const b of left) {
-    if (b === branch.out) continue;
+    if (b === branch.out && !heredado) continue;
     // el código 1 es «ya no existe»; otro es que no se pudo mirar
     const ref = git(['show-ref', '--verify', '--quiet', `refs/heads/${b}`], `si la rama ${b} sigue`, true);
     if (ref.code !== 0) {
@@ -1488,7 +1528,13 @@ function close(opts = {}) {
   const unknown = [];
   // sólo una quieta: `shell` es un comando corriendo, y un estado que no se conoce tampoco es estar quieta
   if (s.alive && s.status !== 'idle') missing.push(`está trabajando (${oneLine(s.status) || 'sin estado'})`);
-  const folder = s.cwd ? folderGaps(s.cwd, { home, env, arnes: opts.arnes, startedAt: s.startedAt }) : { missing: [], unknown: ['no anotó su carpeta: no puedo mirarla'] };
+  // la sesión viva que arrancó después en su misma carpeta: si la carpeta es un puesto fijo, lo heredó
+  const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+  const heir = s.cwd && Number.isFinite(s.startedAt)
+    ? [...sessions.entries()].filter(([o, x]) => o !== sid && x.alive && x.cwd && Number.isFinite(x.startedAt) && x.startedAt > s.startedAt && real(x.cwd) === real(s.cwd))
+      .map(([, x]) => x).sort((a, b) => a.startedAt - b.startedAt)[0] || null
+    : null;
+  const folder = s.cwd ? folderGaps(s.cwd, { home, env, arnes: opts.arnes, startedAt: s.startedAt, heir }) : { missing: [], unknown: ['no anotó su carpeta: no puedo mirarla'] };
   const run = runGaps(sid, home);
   missing.push(...folder.missing, ...run.missing);
   unknown.push(...folder.unknown, ...run.unknown);

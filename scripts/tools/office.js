@@ -130,11 +130,13 @@ const FILE_EXT = /\.(?:c?js|mjs|tsx?|jsx|json|md|ya?ml|sh|ps1|cs|csproj|sql|html
 // conector en el medio («paso-a-paso», «end-to-end»). Un archivo oculto empieza en minúscula; «.NET» no lo es.
 const LIBRARY = /^(?:three|node|vue|next|nuxt|d3|chart|express|react|angular|ember|backbone)\.js$/i;
 const JOINED = /^\p{L}+(?:-(?:a|al|de|del|en|y|o|to|by|and|or)-\p{L}+)+$/iu;
+// varios números de tarea juntos («T-126/T-127») son las filas que nombra, no una ruta
+const TASK_LIST = /^T-[1-9]\d*(?:\/T-[1-9]\d*)+$/i;
 const technical = (w) =>
   SECRET(w)
   || w.includes('\\')
   // «/office» es un comando, no una ruta
-  || (w.includes('/') && !/^\/[a-z][a-z-]*$/.test(w) && !/^\d{1,2}\/\d{1,2}(?:\/\d{2,4})?$/.test(w) && (/\/.*\//.test(w) || /^[.~/]/.test(w) || /[._-]/.test(w)))
+  || (w.includes('/') && !/^\/[a-z][a-z-]*$/.test(w) && !TASK_LIST.test(w) && !/^\d{1,2}\/\d{1,2}(?:\/\d{2,4})?$/.test(w) && (/\/.*\//.test(w) || /^[.~/]/.test(w) || /[._-]/.test(w)))
   || /^\.[a-z][\w.-]*$/.test(w)
   || (FILE_EXT.test(w) && /^[\w.-]+$/.test(w) && !/^[A-Z][a-z]+\.js$/.test(w) && !LIBRARY.test(w))
   || (/^[a-z0-9_]+(?:-[a-z0-9_]+)+$/.test(w) && !/^\d+(?:-\d+)+$/.test(w) && !JOINED.test(w) && (/\d|_/.test(w) || /-.*-/.test(w)));
@@ -565,7 +567,9 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     if (isTest) a.comoTrabaja = 'Sesión de prueba';
     else if (d.sid != null && otherProjects.has(String(d.sid))) { a.comoTrabaja = 'Otro proyecto'; a.otroProyecto = true; }
     // una nota dice cómo va, no qué se está haciendo: si siguió a una ejecución, el trabajo es el de esa ejecución
-    Object.defineProperties(a, { proyecto: { value: proyecto }, esNota: { value: x.kind === 'note' }, tituloTrabajo: { value: x.kind === 'note' && replaced ? runTitle : null }, historiaTrabajo: { value: x.kind === 'note' && replaced && x0.storyId ? String(x0.storyId) : null } });
+    Object.defineProperties(a, { proyecto: { value: proyecto }, esNota: { value: x.kind === 'note' }, tituloTrabajo: { value: x.kind === 'note' && replaced ? runTitle : null }, historiaTrabajo: { value: x.kind === 'note' && replaced && x0.storyId ? String(x0.storyId) : null },
+      // los números de tarea que la sesión escribió, antes de pasar su texto en limpio: la nota de un camino corto no es su título
+      tareasDichas: { value: x.kind === 'loose' || x.kind === 'note' ? tasksIn(x.text, x.noteText) : [] } });
     if (f && (QUIET_STATES.has(a.estado) || a.estado === 'parada')) novelty(a, f, x.activityAt, lastWrite);
     sidOf.set(a, d.sid);
     if (x.current) stepOf.set(a, x.current);
@@ -761,7 +765,7 @@ function boardFacts({ agents, storyOfAgent, sidOf, board, prAnswers, halfwayCard
   for (const a of agents) {
     if (!a.tipo || a.estado === 'coordina' || a.estado === 'inactiva' || a.estado === 'libre') continue;
     const historia = storyOfAgent.get(a) || a.historiaTrabajo || null;
-    const tarea = tasksIn(a.titulo, a.haciendo)[0] || null;
+    const tarea = tasksIn(a.titulo, a.haciendo, ...(a.tareasDichas || []))[0] || null;
     if (!historia && !tarea) continue;
     const sid = String(sidOf.get(a) || a.nombre);
     const waits = a.mano === 'dueno';
@@ -895,6 +899,7 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
   const byTask = new Map();
   // la sesión de cada tarjeta: el número de su fila del tablero vuelve a su ficha, para nombrarla desde la tarjeta
   const agentOfCard = new Map();
+  const rowNumbers = new Set(((board && board.filas) || []).map((f) => f.numero).filter(Boolean));
   for (const a of agents) {
     const card = { titulo: a.titulo || a.haciendo, quien: a.nombre, hora: cardHour(a.fin), ...(a.fin && a.fin.cls ? { cls: a.fin.cls } : {}), ...(a.espera ? { espera: a.espera } : {}), ...(a.marca ? { marca: a.marca } : {}), ...(a.parada ? { motivo: a.parada } : {}), ...(a.mano ? { mano: a.mano } : {}) };
     let id = null;
@@ -902,14 +907,14 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
     // la marcada con la sesión viva va a «En curso», salvo que espere firma
     else if (a.tipo && a.estado === 'espera' && !a.marca) id = 'entrando';
     else if (a.tipo && a.estado !== 'inactiva' && a.estado !== 'libre') id = 'curso';
-    // la coordinadora no es un pendiente, salvo que haya anotado un trabajo
-    if (!id || (a.estado === 'coordina' && !a.titulo)) continue;
+    // la coordinadora no es un pendiente, salvo que su trabajo anotado sea una fila del tablero: coordinar no es una tarea
+    if (!id || (a.estado === 'coordina' && (!a.titulo || !tasksIn(a.titulo, a.haciendo, ...(a.tareasDichas || [])).some((n) => rowNumbers.has(n))))) continue;
     if (a.tipo === 'stalled') card.marca = 'riesgo';
     if (a.otroProyecto) { card.quien = `${a.nombre} · Otro proyecto`; card.otro = true; }
     const hourAt = a.estado === 'esperando' ? NaN : Date.parse(a.pronosticoIso || a.estimadaIso);
     inProgress.set(card, a.estado === 'coordina' ? { tier: 2 } : Number.isFinite(hourAt) ? { tier: 0, at: hourAt } : { tier: 1 });
     const story = storyOfAgent.get(a) || a.historiaTrabajo;
-    const tasks = tasksIn(a.titulo, a.haciendo);
+    const tasks = tasksIn(a.titulo, a.haciendo, ...(a.tareasDichas || []));
     withWork(card, { historia: story, tarea: tasks[0], finMs: Number.isFinite(hourAt) ? hourAt : undefined, sinTitulo: !a.titulo, proyecto: a.otroProyecto ? 'otro' : a.proyecto, tituloTrabajo: a.tituloTrabajo, esNota: a.esNota || !a.titulo });
     col(id).tarjetas.push(card);
     agentOfCard.set(card, a);
@@ -999,9 +1004,34 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
     if (best.id !== 'hechos' && h.card.marca) best.card.marca = h.card.marca;
   }
   // los pedidos reales que esperan entrar: los que ya tienen fila del tablero no se repiten
-  const onBoard = new Set(((board && board.filas) || []).filter((f) => f.pedido).map((f) => `${f.pedido.repo}#${f.pedido.numero}`.toLowerCase()));
+  const filas = (board && board.filas) || [];
+  const prKey = (repo, numero) => `${repo}#${numero}`.toLowerCase();
+  const onBoard = new Set(filas.filter((f) => f.pedido).map((f) => prKey(f.pedido.repo, f.pedido.numero)));
+  // el recordado de una fila, o el que nombra su número en el título o la rama, va con su fila si esa fila espera entrar:
+  // la que no tiene sesión pasa a «Esperan entrar» con él. Si la fila está en otra columna, o ya lleva otro pedido, el
+  // pedido sale suelto: esconderlo callaría que espera la cola o que choca con main
+  const open = boardCards.filter((b) => b.id !== 'hechos');
+  const rowOfPr = (p) => open.find((b) => b.f.recordado && prKey(b.f.recordado.repo, b.f.recordado.numero) === prKey(p.repoName, p.number))
+    || tasksIn(p.title, p.branch).map((n) => open.find((b) => b.f.numero === n)).find(Boolean);
+  // el pedido que ya se unió a cada fila, con su repo: el mismo número en otro repo es otro pedido
+  const joinedPr = new Map();
   for (const p of openPrs) {
-    if (!p.waiting || p.ajeno || onBoard.has(`${p.repoName}#${p.number}`.toLowerCase())) continue;
+    if (!p.waiting || p.ajeno || onBoard.has(prKey(p.repoName, p.number))) continue;
+    const b = rowOfPr(p);
+    const own = b && (!b.card.pedido || joinedPr.get(b.card) === prKey(p.repoName, p.number));
+    if (own && (b.id === 'sinEmpezar' || b.id === 'entrando')) {
+      if (b.id === 'sinEmpezar') {
+        col('sinEmpezar').tarjetas = col('sinEmpezar').tarjetas.filter((c) => c !== b.card);
+        col('entrando').tarjetas.push(b.card);
+        b.id = 'entrando';
+      }
+      Object.assign(b.card, { hora: p.inQueue ? 'en la cola' : 'con auto-completar', pedido: cardPr(p.repo, p.number) });
+      joinedPr.set(b.card, prKey(p.repoName, p.number));
+      delete b.card.cls;
+      if (p.conflict) b.card.motivo = 'choca con main';
+      else delete b.card.motivo;
+      continue;
+    }
     col('entrando').tarjetas.push(withWork({ titulo: p.title, quien: `pedido ${p.mark}${p.number}`, hora: p.inQueue ? 'en la cola' : 'con auto-completar', pedido: cardPr(p.repo, p.number), ...(p.conflict ? { motivo: 'choca con main' } : {}) }, { pedido: { repo: p.repoName, numero: p.number }, proyecto: projectOfRepo(p.repoName) }));
   }
   if (openPrsNote) col('entrando').nota = openPrsNote;
@@ -1096,7 +1126,7 @@ function boardEditedNotice(sdir) {
 
 // Las dos tablas: sus títulos, sus columnas y qué columnas del kanban cuenta cada una.
 const TABLES = {
-  hoy: { titulo: 'Hoy', columnas: ['Tema', 'Qué tendremos', 'Cómo va'], ids: [['curso', 'En curso'], ['firma', 'Tu firma'], ['entrando', 'Esperan entrar'], ['hechos', 'Terminados']] },
+  hoy: { titulo: 'Hoy', columnas: ['Tema', 'Qué tendremos', 'Cómo va'], ids: [['curso', 'En curso'], ['firma', 'Tu firma'], ['entrando', 'Esperan entrar'], ['hechos', 'Terminados hoy']] },
   pendientes: { titulo: 'Pendientes', columnas: ['Tema', 'Qué queda', 'Cuándo'], ids: [['sinEmpezar', 'Sin sesión']] },
 };
 const HALFWAY_WORD = 'A medio camino';
@@ -1317,7 +1347,7 @@ function settleRowPrs(board, answers, memory) {
 // (actualizado, resumen, teToca). Sus `agentes` no se usan: los escritorios salen de /wip.
 const BOARD_GROUPS = ['Hoy', 'Esta semana', 'La semana que viene', 'Más adelante'];
 // Las columnas del panel de pendientes, y adónde va cada estado del tablero; uno desconocido, a lo que no arrancó.
-const KANBAN_COLUMNS = [['sinEmpezar', 'Sin sesión'], ['curso', 'En curso'], ['firma', 'Tu firma'], ['entrando', 'Esperan entrar'], ['hechos', 'Terminados']];
+const KANBAN_COLUMNS = [['sinEmpezar', 'Sin sesión'], ['curso', 'En curso'], ['firma', 'Tu firma'], ['entrando', 'Esperan entrar'], ['hechos', 'Terminados hoy']];
 const BOARD_COLUMN = { firma: 'firma', curso: 'curso', riesgo: 'curso', entrando: 'entrando', espera: 'sinEmpezar', 'sin-empezar': 'sinEmpezar', hecho: 'hechos' };
 const BOARD_TEXT_MAX = 300;
 const text = (v) => (typeof v === 'string' ? v.trim().slice(0, BOARD_TEXT_MAX) : '');
@@ -1924,7 +1954,9 @@ function conversationOf(env, name, { lastActivityOf = (n) => closedSessionLastAt
   const e = env.files.get(name);
   if (!e) return null;
   const c = env.coordinator;
-  const said = readConversation(e.file, { coordinator: c && c.name, isCoordinator: Boolean(c) && e.sid === c.sid, background: e.background });
+  // la designada puede no tener nombre (una sesión de VS Code nombrada por click): sigue siendo la coordinadora, y su
+  // ventana no dice que no hay. Se la llama por su cargo, como la nombran las sesiones; nunca por su identificador
+  const said = readConversation(e.file, { coordinator: c && (c.name || 'Coordinadora'), isCoordinator: Boolean(c) && e.sid === c.sid, background: e.background });
   return said && said.conSesiones ? markClosedSessions(said, env, { lastActivityOf }) : said;
 }
 

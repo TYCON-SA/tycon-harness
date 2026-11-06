@@ -168,15 +168,23 @@ function firmasDelRegistroComun(casa, problemas) {
   return fuera;
 }
 
-// el criterio de lo que ya no espera a nadie. El registro común se lee una vez, y sólo si hace falta
-function criterioDeCierre(casa, ahora, s, problemas) {
+// lo que una sesión pide de a uno: un carril, sea dentro del tope o pasándolo. Un pedido nuevo de la misma sesión
+// reemplaza al viejo. Las demás firmas pueden esperar varias a la vez (dos criterios probados a mano, por ejemplo)
+const UNA_POR_SESION = new Set(['adhoc-lane', 'adhoc-lane:sobre-cupo']);
+
+// el criterio de lo que ya no espera a nadie. El registro común se lee una vez, y sólo si hace falta. Lo que se pide de a
+// uno queda reemplazado cuando su sesión pidió o recibió después otro igual: el viejo ya no se va a repetir
+function criterioDeCierre(casa, ahora, s, problemas, lista = []) {
   let dadas = null;
+  const reemplaza = (id, f) => UNA_POR_SESION.has(id) && UNA_POR_SESION.has(f.firma);
   return (f) => {
     if (tipoDe(f) !== 'firma') return false;
     if (ahora - f.at > VENCE_MS) return true;
     if (vive(s, f.destino) === false) return true;
+    if (lista.some((x) => tipoDe(x) === 'firma' && x.destino === f.destino && x.at > f.at && reemplaza(x.firma, f))) return true;
     if (!dadas) dadas = firmasDelRegistroComun(casa, problemas);
-    return dadas.some((r) => r.signature === f.firma && (r.target === f.destino || sinDestinoEsDe(r, f)) && Date.parse(r.ts) > f.at);
+    return dadas.some((r) => Date.parse(r.ts) > f.at && ((r.signature === f.firma && (r.target === f.destino || sinDestinoEsDe(r, f)))
+      || (r.target === f.destino && reemplaza(r.signature, f))));
   };
 }
 
@@ -224,7 +232,7 @@ function abiertos(casa, { arnes, env, ahora = Date.now(), s } = {}) {
   if (l.problema) problemas.push(`no pude leer la llave de la lista de firmas (${l.problema}): cuenta como apagada`);
   if (!l.encendida) return { filas: filas.filter((f) => tipoDe(f) === 'terminal'), problemas };
   if (!filas.some((f) => tipoDe(f) === 'firma')) return { filas, problemas };
-  const cerrada = criterioDeCierre(casa, ahora, s || sesiones(casa), problemas);
+  const cerrada = criterioDeCierre(casa, ahora, s || sesiones(casa), problemas, filas);
   return { filas: filas.filter((f) => !cerrada(f)), problemas };
 }
 
@@ -236,7 +244,7 @@ function anotarFirma({ casa, firma, titulo, sesion, destino, comando, palabras, 
   const key = claveDe(firma, destino, palabras);
   return conCandado(casa, () => {
     const lista = leer(casa);
-    const cerrada = criterioDeCierre(casa, ahora, s || sesiones(casa));
+    const cerrada = criterioDeCierre(casa, ahora, s || sesiones(casa), undefined, entender(lista).filas);
     const abierto = lista.find((f) => f && f.key === key && !cerrada(f));
     if (abierto) return { ok: true, id: abierto.id, nuevo: false };
     const id = `firma-${crypto.randomBytes(4).toString('hex')}`;
@@ -348,7 +356,7 @@ function procesoDe(casa, sid, arbol) {
 function limpiar(casa, { ahora = Date.now(), s = sesiones(casa) } = {}) {
   return conCandado(casa, () => {
     const lista = leer(casa);
-    const cerrada = criterioDeCierre(casa, ahora, s);
+    const cerrada = criterioDeCierre(casa, ahora, s, undefined, entender(lista).filas);
     const quedan = lista.filter((f) => porQueNoSeEntiende(f) || !cerrada(f));
     if (quedan.length !== lista.length) escribir(casa, quedan);
     return lista.length - quedan.length;
