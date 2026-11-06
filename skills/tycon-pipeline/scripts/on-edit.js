@@ -95,6 +95,45 @@ function writeMarker(sessionId, marker) {
 
 
 /**
+ * ¿Es una sonda del pase adversarial? La escribe un subagente (el evento trae `agent_id`) en su laboratorio, fuera de
+ * los repos que el carril ya mide, o en la carpeta donde queda la prueba de un hallazgo
+ * (`<raíz del repo>/.advisors/pipeline-runs/<corrida>/step-05b-probes/`). No es
+ * trabajo del carril: anotarla sumaba repos y archivos que cambiaban la huella de las constancias de revisores y pase.
+ * Lo demás que escribe un subagente se anota como siempre, y también cuando el carril todavía no mide ningún repo o
+ * no se puede saber: ante la duda, se anota.
+ */
+function esSondaDeSubagente(event, filePath, sessionId) {
+  if (!event || !event.agent_id) return false;
+  try {
+    const base = require('./lib/adhoc-base.js');
+    const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+    // la ruta real, sin `..` ni enlaces: lo que se mide es dónde quedó el archivo, no cómo se lo nombró
+    const archivo = real(filePath);
+    // git que no contesta no prueba que el archivo esté fuera: se anota
+    const donde = base.ubicar(archivo);
+    if (donde.raiz) {
+      const partes = path.relative(real(donde.raiz), archivo).split(path.sep);
+      if (partes.length > 4 && partes[0] === '.advisors' && partes[1] === 'pipeline-runs' && partes[3] === 'step-05b-probes') return true;
+    }
+    const adhoc = require('./lib/story-gate-io.js').readAdhoc(STATE_DIR, sessionId);
+    if (!adhoc) return false;
+    // una ruta del carril cuyo repo git no ubicó deja la lista incompleta: no prueba que el archivo esté fuera
+    const repos = new Set(Object.keys(adhoc.bases || {}).map(real));
+    for (const f of [...(adhoc.rutas || []), ...(adhoc.files || [])]) {
+      const u = base.ubicar(f);
+      if (u.falla) return false;
+      if (u.raiz) repos.add(real(u.raiz));
+    }
+    if (!repos.size) return false;
+    if (donde.fuera) return true;
+    if (!donde.raiz) return false;
+    return !repos.has(real(donde.raiz));
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Handler dispatchable. Recibe el evento RAW y devuelve:
  *   null               → nada (exit 0)
  *   { reminder: text } → advisory (el caller envuelve en <system-reminder>)
@@ -168,6 +207,8 @@ function handle(event) {
     return null;
   }
 
+  // La sonda de un agente del pase no es del carril: no se anota ni suma al cupo
+  if (esSondaDeSubagente(event, filePath, sessionId)) return null;
   // Sin marker pero con carril AD-HOC declarado: registrar el archivo de implementación bajo el ad-hoc.
   // El cupo del portón de carril se cuenta acá, en PostToolUse, sobre ediciones que EFECTIVAMENTE
   // ocurrieron. No en el PreToolUse, donde un Edit fallido o denegado por otro handler también contaría.
