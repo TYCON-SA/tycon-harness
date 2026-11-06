@@ -1653,7 +1653,7 @@ const TEXTOS = {
   'pantalla.oficinaQueFalta': { es: 'Qué falta', en: 'What is missing' },
   'pantalla.oficinaQueHacer': { es: 'Qué podés hacer', en: 'What you can do' },
   'pantalla.oficinaListo': { es: 'Nada: la máquina dejó la misma huella con sus ejecuciones', en: 'Nothing: the machine left the same fingerprint with its runs' },
-  'pantalla.oficinaEsperando': { es: 'Esperando que la máquina deje la huella con sus ejecuciones', en: 'Waiting for the machine to leave its fingerprint with its runs' },
+  'pantalla.oficinaEsperando': { es: 'El sitio todavía no leyó la huella de esta máquina: la lee en su próxima pasada', en: 'The site has not read this machine\'s fingerprint yet: it reads it on its next pass' },
   'pantalla.oficinaProximaLectura': { es: 'la próxima lectura, a las {hora}', en: 'next read at {hora}' },
   'pantalla.oficinaConflicto': { es: 'Conflicto: confirmá la huella con el dev', en: 'Conflict: confirm the fingerprint with the dev' },
   'pantalla.oficinaDosMaquinas': { es: 'No se puede aprobar: averiguá cuál es', en: 'It cannot be approved: find out which one it is' },
