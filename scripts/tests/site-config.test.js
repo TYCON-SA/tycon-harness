@@ -3518,7 +3518,7 @@ test('8.63 Seccion_ReenvioDelOk @story-8.63 @ac-12 — la sección valida con el
   for (const idioma of ['es', 'en']) {
     const js = ORG.pantalla(idioma);
     assert.match(js, /aprobaciones: editorAprobaciones/);
-    assert.match(js, /'respuesta', 'modelos', 'suites', 'cobertura', 'revision', 'tecnologia', 'aprobaciones'/);
+    assert.match(js, /'respuesta', 'modelos', 'suites', 'cobertura', 'revisionSemanal', 'revision', 'tecnologia', 'aprobaciones'/);
     // sí o no: el «sí» escribe el rol que ya tenga o «coordinadora» (su nombre se cambia aparte; la prueba de abajo);
     // la sesión se designa en la máquina, así que la pantalla nunca pide el nombre de una sesión
     assert.match(js, /selector\(T\('pantalla\.quienReenviaElOk'\), rol \? 'si' : ''/);
@@ -6116,4 +6116,90 @@ test('DeepReviewDefault_EditableOnSite_NoOff @story-7.54 @ac-6 — la política 
   assert.strictEqual(r.panelDe('seccion-paseAdversarial').attrs.id, 'pestana-claude');
   const { TEXTOS } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
   assert.ok(TEXTOS['pantalla.paseAdversarialTitulo'] && TEXTOS['pantalla.paseAdversarialAyuda'], 'los textos de la sección');
+});
+
+// ── la revisión de la semana se configura desde el sitio ─────────────────────────────────────────────────────────────
+const SEC_WR = (extra = {}) => SEC('revisionSemanal', Object.assign({ repo: 'perfil', borrador: {} }, extra));
+const WR_PATHS = ['weekly_review.enabled', 'weekly_review.budget_usd', 'weekly_review.max_chars'];
+
+test('RevisionSemanal_SeccionConSusTresCampos @story-2.58 @ac-1 — la sección muestra sus tres campos, con los valores del archivo o vacíos', async () => {
+  // 🔴 rojo: la sección no existe, le falta un campo, o no muestra lo que dice el archivo.
+  const s = ORG.seccionPorId('revisionSemanal');
+  assert.ok(s, 'hay una sección de la revisión de la semana');
+  assert.deepStrictEqual([s.titulo, s.archivo, s.repo, s.lector, s.claves, s.idCorto], ['Revisión de la semana', 'team-repos.json', 'perfil', 'team-repos.js', ['weekly_review'], 'repos']);
+  // sin la clave: los tres campos, vacíos
+  const vacia = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC_WR()] });
+  const camposVacios = nodosDe(vacia, 'revisionSemanal', (x) => WR_PATHS.includes(x.attrs['data-path']));
+  assert.deepStrictEqual(camposVacios.map((x) => x.attrs['data-path']).sort(), [...WR_PATHS].sort(), 'los tres campos');
+  for (const c of camposVacios.filter((x) => x.tag === 'input')) assert.strictEqual(c.attrs.value, '', `${c.attrs['data-path']} vacío`);
+  assert.strictEqual(camposVacios.find((x) => x.attrs['data-path'] === 'weekly_review.enabled').value, '', 'sin la clave: «de fábrica»');
+  // con la clave: los valores del archivo
+  const llena = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('cobertura'), SEC_WR({ borrador: { weekly_review: { enabled: false, budget_usd: 2.5, max_chars: 300000 } } })] });
+  const valor = (p) => nodosDe(llena, 'revisionSemanal', (x) => x.attrs['data-path'] === p).pop();
+  assert.strictEqual(valor('weekly_review.budget_usd').attrs.value, '2.5');
+  assert.strictEqual(valor('weekly_review.max_chars').attrs.value, '300000');
+  assert.strictEqual(valor('weekly_review.enabled').value, 'false', 'el selector muestra «apagada»');
+  // en «Cómo trabaja el agente», justo después de «Cobertura de las pruebas»
+  const panel = llena.panelDe('seccion-revisionSemanal');
+  assert.strictEqual((panel || { attrs: {} }).attrs.id, 'pestana-claude');
+  const orden = []; const walk = (x) => { if (/^seccion-/.test(x.attrs.id || '')) orden.push(x.attrs.id); (x.hijos || []).forEach(walk); }; walk(panel);
+  assert.strictEqual(orden[orden.indexOf('seccion-cobertura') + 1], 'seccion-revisionSemanal');
+});
+
+test('RevisionSemanal_ValorFueraDeRango_NoSePropone @story-2.58 @ac-2 — un valor que el lector rechaza se marca en su campo y no se propone', async () => {
+  // 🔴 rojo: el valor pasa, o el campo no muestra el mensaje del lector.
+  const rev = (wr) => ORG.revisar({ seccion: 'revisionSemanal', texto: ORG.formatJson(TR_BASE), borrador: { weekly_review: wr }, lectores: { 'team-repos.js': TR } });
+  const bien = rev({ enabled: true, budget_usd: 3, max_chars: 200000 });
+  assert.strictEqual(bien.ok, true, JSON.stringify(bien.problems));
+  assert.deepStrictEqual(JSON.parse(bien.texto), { ...TR_BASE, weekly_review: { enabled: true, budget_usd: 3, max_chars: 200000 } }, 'el resto del archivo igual');
+  const malo = rev({ budget_usd: 0, max_chars: 10 });
+  assert.strictEqual(malo.ok, false);
+  assert.ok(!malo.texto, 'no arma el pedido');
+  assert.deepStrictEqual(malo.problems.map((p) => p.path).sort(), ['weekly_review.budget_usd', 'weekly_review.max_chars']);
+  const delLector = TR.weeklyReviewProblems({ budget_usd: 0, max_chars: 10 });
+  assert.deepStrictEqual(malo.problems.map((p) => p.message).sort(), delLector.map((p) => p.message).sort(), 'el mensaje es el del lector');
+  // en la pantalla, cada campo con su mensaje
+  const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC_WR({ borrador: { weekly_review: { budget_usd: 0, max_chars: 10 } }, problems: malo.problems })] });
+  for (const p of ['weekly_review.budget_usd', 'weekly_review.max_chars']) {
+    const input = nodosDe(r, 'revisionSemanal', (x) => x.tag === 'input' && x.attrs['data-path'] === p).pop();
+    assert.strictEqual(input.attrs.class, 'bad', `${p} marcado`);
+    const msg = malo.problems.find((x) => x.path === p).message;
+    assert.ok(nodosDe(r, 'revisionSemanal', (x) => x.attrs.class === 'err' && x.textContent === msg).length, `${p} con el mensaje del lector`);
+  }
+});
+
+test('RevisionSemanal_VacioEsPorDefecto @story-2.58 @ac-3 — vaciar un campo saca su subclave; vaciar los tres saca weekly_review', async () => {
+  // 🔴 rojo: un campo vacío queda escrito, o queda `weekly_review: {}` en el archivo.
+  const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC_WR({ borrador: { weekly_review: { enabled: false, budget_usd: 2, max_chars: 300000 } } })] });
+  const nodo = (pred) => nodosDe(r, 'revisionSemanal', pred).pop();
+  const escribir = (p, v) => nodo((x) => x.tag === 'input' && x.attrs['data-path'] === p).on.input({ target: { value: v } });
+  const elegir = (v) => nodo((x) => x.tag === 'select' && x.attrs['data-path'] === 'weekly_review.enabled').on.change({ target: { value: v } });
+  const revisar = async () => {
+    nodo((x) => x.tag === 'button' && x.textContent === 'Revisar cambios').on.click();
+    for (let i = 0; i < 10; i++) await new Promise((x) => setImmediate(x));
+    return r.llamadas.filter((l) => /revisar/.test(l.ruta)).pop().cuerpo.borrador;
+  };
+  escribir('weekly_review.budget_usd', '');
+  assert.deepStrictEqual((await revisar()).weekly_review, { enabled: false, max_chars: 300000 }, 'sale sólo budget_usd');
+  escribir('weekly_review.max_chars', '');
+  elegir('');
+  assert.strictEqual((await revisar()).weekly_review, undefined, 'sin subclaves, sin weekly_review');
+});
+
+test('RevisionSemanal_PideSuVersion @story-2.58 @ac-4 — con weekly_review en el archivo, el perfil pide la versión de la 1.27', () => {
+  // 🔴 rojo: la clave no pide versión, o pide una inventada.
+  assert.strictEqual(ORG.WEEKLY_REVIEW_SINCE, '2026.10.19.20', 'la etiqueta del merge de la 1.27 en el público');
+  assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, weekly_review: { enabled: false } }).version, ORG.WEEKLY_REVIEW_SINCE);
+});
+
+test('RevisionSemanal_TextosYGuia @story-2.58 @ac-5 @ac-6 — los textos en castellano y en inglés, y las dos guías nombran la sección', () => {
+  // 🔴 rojo: falta un texto o un idioma, o una guía no nombra la sección.
+  const { TEXTOS } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const claves = Object.keys(TEXTOS).filter((k) => /^pantalla\.revisionSemanal/.test(k));
+  assert.ok(claves.length >= 6, `título, ayuda, tres campos y sus valores de fábrica (hay ${claves.length})`);
+  for (const k of [...claves, 'pantalla.para.revisionSemanal']) {
+    assert.ok(TEXTOS[k] && TEXTOS[k].es && TEXTOS[k].en, `${k} en los dos idiomas`);
+  }
+  assert.match(fs.readFileSync(path.join(ROOT, 'guides', 'organization-site.md'), 'utf8'), /\*\*Revisión de la semana\*\*/);
+  assert.match(fs.readFileSync(path.join(ROOT, 'guides', 'organization-site.en.md'), 'utf8'), /\*\*Weekly review\*\*/);
 });
