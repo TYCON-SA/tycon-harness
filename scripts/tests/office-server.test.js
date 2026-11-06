@@ -255,7 +255,15 @@ test('T8 Server_Idle_ReadsNothing: sin cambios no se lee nada ni se corre nada',
   const lock = readLock(m);
   const p = page(lock);
   await p.next();
-  const before = await counters(lock);
+  // en macOS el aviso de un archivo escrito antes de vigilar (el de la sesión, de toy()) puede llegar tarde: se mide
+  // desde que los contadores quedan quietos un segundo
+  let before = await counters(lock);
+  for (let still = 0, i = 0; still < 5 && i < 25; i += 1) {
+    await sleep(200);
+    const now = await counters(lock);
+    still = now.reads === before.reads && now.queries === before.queries ? still + 1 : 0;
+    before = now;
+  }
   await sleep(2500);
   const after = await counters(lock);
   assert.deepStrictEqual([after.reads, after.queries], [before.reads, before.queries]);
@@ -465,6 +473,57 @@ test('T12 Shutdown_EightHourCap_AndSignals: el tope y las señales lo cierran; u
   process.kill(l3.pid, 'SIGTERM');
   assert.ok(await exited(l3.pid, 4000));
   assert.strictEqual(readLock(o).pid, process.pid);
+});
+
+test('T12b Shutdown_PageArrivingMidShutdown_Gets1001: una página que termina de conectarse durante el apagado recibe el cierre', async () => {
+  const m = toy();
+  openSync(m);
+  const lock = readLock(m);
+  const net = require('net');
+  const sock = net.connect(lock.port, '127.0.0.1');
+  const got = [];
+  sock.on('data', (d) => got.push(d));
+  sock.on('error', () => { /* lo dice lo que llegó */ });
+  const ended = new Promise((resolve) => sock.on('close', resolve));
+  await new Promise((resolve) => sock.on('connect', resolve));
+  sock.write(`GET /live?t=${lock.token} HTTP/1.1\r\nHost: 127.0.0.1:${lock.port}\r\nOrigin: http://127.0.0.1:${lock.port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n`);
+  await sleep(200);
+  process.kill(lock.pid, 'SIGTERM');
+  await sleep(30);
+  sock.write('\r\n');
+  await Promise.race([ended, sleep(4000)]);
+  sock.destroy();
+  const buf = Buffer.concat(got);
+  // rechazada sin aceptarla también está bien; aceptada, el cierre llega con su código (0x88, largo, 1001), no con el
+  // socket cortado
+  if (!/^HTTP\/1\.1 101/.test(buf.toString('latin1'))) return;
+  const closes = [...buf.keys()].some((i) => buf[i] === 0x88 && buf[i + 2] === 0x03 && buf[i + 3] === 0xe9);
+  assert.ok(closes, 'la conexión aceptada durante el apagado se cierra con 1001');
+});
+
+test('T12c Shutdown_PhotoThreadBusy_ClosesAndExits: con una foto a medio armar, el apagado cierra la página y el proceso sale', async () => {
+  const m = toy();
+  const flag = path.join(m.home, 'foto-lenta');
+  const preload = path.join(m.home, 'foto-lenta.js');
+  // la foto que tarda bajo carga: el hilo queda en un proceso hijo síncrono, como cuando lee la configuración
+  fs.writeFileSync(preload, `const wt = require('worker_threads');
+if (!wt.isMainThread && wt.workerData && wt.workerData.officePhoto) wt.parentPort.on('message', () => {
+  if (!require('fs').existsSync(${JSON.stringify(flag)})) return;
+  require('fs').writeFileSync(${JSON.stringify(`${flag}.on`)}, '');
+  require('child_process').spawnSync(process.execPath, ['-e', 'setTimeout(() => {}, 5000)']);
+});\n`);
+  openSync(m, { NODE_OPTIONS: `${process.env.NODE_OPTIONS || ''} --require ${JSON.stringify(preload)}`.trim() });
+  const lock = readLock(m);
+  const p = page(lock);
+  await p.next();
+  fs.writeFileSync(flag, '');
+  marker(m, 's1', '7.1', 'La oficina viva');
+  for (let i = 0; i < 60 && !fs.existsSync(`${flag}.on`); i += 1) await sleep(50);
+  assert.ok(fs.existsSync(`${flag}.on`), 'la foto lenta arrancó');
+  process.kill(lock.pid, 'SIGTERM');
+  assert.strictEqual(typeof await Promise.race([p.closed, sleep(2000).then(() => 'no')]), 'number', 'la página ve el cierre sin esperar a la foto');
+  assert.ok(await exited(lock.pid, 2000), 'sale sin esperar a la foto');
+  assert.strictEqual(readLock(m), null);
 });
 
 test('T13 Security_BadHostOrToken_403: Host, token u Origin ajenos dan 403 sin datos', async () => {

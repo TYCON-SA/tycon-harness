@@ -573,6 +573,8 @@ async function serve() {
       return;
     }
     wss.handleUpgrade(req, socket, head, (ws) => {
+      // una conexión que termina de llegar durante el apagado se cierra igual que las demás
+      if (done) { ws.close(1001, 'la oficina se cerró'); return; }
       clients.add(ws);
       reviewLife();
       if (!prTimer) prTick();
@@ -624,7 +626,9 @@ async function serve() {
       if (lock && lock.pid === process.pid) fs.unlinkSync(lockFile);
     } catch { /* sin candado o de otro: no se toca */ }
     server.close();
-    setTimeout(() => process.exit(0), 150).unref();
+    // process.exit espera al hilo de la foto, y un hilo trabado en un proceso hijo lo deja vivo: con una foto en curso,
+    // el proceso se termina sin esperarlo (lo que había que soltar ya se soltó)
+    setTimeout(() => { if (running) process.kill(process.pid, 'SIGKILL'); else process.exit(0); }, 150).unref();
   }
   // otro proceso escribió su candado encima: sigue uno solo, y es el otro
   function lockLost() {
