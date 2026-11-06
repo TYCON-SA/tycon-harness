@@ -829,10 +829,14 @@ test('T8 BootstrapLock_SameRuleAsLockJs @story-8.223 @ac-1 @ac-2 @ac-3 @ac-4 @ac
     const input = { owner, mtimeMs, now, bootMs, hostname: here };
     assert.strictEqual(boot.orphanReason(input), lock.orphanReason(input), `difieren en «${name}»`);
   }
-  // y el lanzador la usa de verdad: un dueño vivo de 11 min, de esta máquina, no se pisa por la edad
+  // y el lanzador la usa de verdad: un dueño vivo de 11 min, de esta máquina, no se pisa por la edad. El lanzador lee el
+  // arranque de os.uptime(): en una máquina encendida hace menos de 16 min (la CI) ese candado sería de antes del
+  // arranque y se pisaría bien; acá se fija una máquina encendida hace un día
   const p = mod('state').paths(home);
   lockWith(p, { pid: process.pid, ageMs: 11 * MIN });
-  const r = boot.acquireLock();
+  const uptime = os.uptime;
+  let r;
+  try { os.uptime = () => 24 * 3600; r = boot.acquireLock(); } finally { os.uptime = uptime; }
   assert.strictEqual(r.ok, false, `el lanzador pisó a un dueño vivo de 11 min: ${JSON.stringify(r)}`);
   // un dueño muerto sí se pisa, y el registro dice por qué
   lockWith(p, { pid: 2147483646, ageMs: 1 * MIN });
