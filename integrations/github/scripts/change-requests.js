@@ -218,9 +218,11 @@ function enCola(ctx, prs) {
 // sacó de la cola o le apagó el auto-merge.
 const CONSULTA_ABIERTOS = 'query($owner:String!,$name:String!,$after:String){repository(owner:$owner,name:$name){'
   + 'pullRequests(states:OPEN,first:100,after:$after){pageInfo{hasNextPage endCursor} nodes{number isDraft mergeable '
+  + 'id reviewDecision commits(last:1){nodes{commit{committedDate statusCheckRollup{state}}}} '
   + 'mergeStateStatus headRefName headRefOid createdAt title author{login} autoMergeRequest{enabledAt} mergeQueueEntry{state} '
   + 'timelineItems(last:1,itemTypes:[REMOVED_FROM_MERGE_QUEUE_EVENT,AUTO_MERGE_DISABLED_EVENT]){nodes{__typename '
-  + '... on RemovedFromMergeQueueEvent{reason createdAt} ... on AutoMergeDisabledEvent{reason reasonCode createdAt}}}}}}}';
+  + '... on RemovedFromMergeQueueEvent{reason createdAt beforeCommit{oid}} ... on AutoMergeDisabledEvent{reason reasonCode createdAt}}} '
+  + 'empujes:timelineItems(last:1,itemTypes:[HEAD_REF_FORCE_PUSHED_EVENT]){nodes{... on HeadRefForcePushedEvent{createdAt}}}}}}}';
 
 /** La causa de una caída: `ci` (controles en rojo), `conflict` (choca con su destino) u `other`. */
 function causaDeCaida(motivo) {
@@ -232,6 +234,8 @@ function causaDeCaida(motivo) {
 function deGraphql(p) {
   const ev = p.timelineItems && Array.isArray(p.timelineItems.nodes) ? p.timelineItems.nodes[0] : null;
   const motivo = ev ? String(ev.reasonCode || ev.reason || '') : '';
+  const punta = p.commits && Array.isArray(p.commits.nodes) && p.commits.nodes[0] ? p.commits.nodes[0].commit : null;
+  const empuje = p.empujes && Array.isArray(p.empujes.nodes) ? p.empujes.nodes[0] : null;
   return {
     number: Number(p.number),
     draft: p.isDraft === true,
@@ -246,7 +250,19 @@ function deGraphql(p) {
     title: String(p.title || ''),
     author: p.author && p.author.login ? String(p.author.login).toLowerCase() : null,
     ciRunning: null,
-    lastQueueDrop: ev ? { cause: causaDeCaida(motivo), reason: motivo, at: String(ev.createdAt || '') } : null,
+    // `commit`: la punta que tenía cuando la cola lo sacó (sólo la caída de la cola lo trae)
+    lastQueueDrop: ev ? { cause: causaDeCaida(motivo), reason: motivo, at: String(ev.createdAt || ''),
+      ...(ev.beforeCommit && ev.beforeCommit.oid ? { commit: String(ev.beforeCommit.oid) } : {}) } : null,
+    // para re-encolar el que quedó afuera después de un empuje: su identificador, la aprobación, el estado tal cual
+    // (`unstable` ya cuenta como limpio arriba), las comprobaciones de la punta, cuándo se hizo la punta y desde cuándo
+    // tiene el auto-merge
+    nodeId: String(p.id || ''),
+    reviewDecision: p.reviewDecision || null,
+    mergeStatus: String(p.mergeStateStatus || '').toUpperCase(),
+    ciState: punta && punta.statusCheckRollup ? String(punta.statusCheckRollup.state || '') : null,
+    headCommittedAt: punta ? String(punta.committedDate || '') : '',
+    headPushedAt: empuje ? String(empuje.createdAt || '') : '',
+    autoMergeSince: p.autoMergeRequest ? String(p.autoMergeRequest.enabledAt || '') : null,
   };
 }
 
