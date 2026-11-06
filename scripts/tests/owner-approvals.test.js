@@ -136,6 +136,18 @@ test('Transcripcion_DosAprobadoSeguidos_CadaUnoConSuPregunta', (t) => {
   assert.ok(!oa.validarEnClaude(primero, con(guardar)).ok, 'el primero no guarda');
 });
 
+test('Transcripcion_AprobadoConSoloElSello_DiceQueFaltaLaPregunta', (t) => {
+  // el sello está, pero la persona no vio la pregunta entera: el motivo nombra lo que falta, no el sello
+  const casa = casaNueva(t);
+  transcripcion(casa, 'ses-a', [agente(`Te pido una firma: ${CUADRO.sello}. ¿La aprobás?`), tipeado('Aprobado')]);
+  const r = oa.validarEnClaude(mensaje(), CTX(casa));
+  assert.ok(!r.ok);
+  assert.match(r.motivo, /no trae la pregunta entera, sólo su sello/);
+  // sin el sello, el motivo de siempre
+  transcripcion(casa, 'ses-a', [agente('¿Apruebo el formato del resumen?'), tipeado('Aprobado')]);
+  assert.match(oa.validarEnClaude(mensaje(), CTX(casa)).motivo, /no trae «/);
+});
+
 test('Transcripcion_DosAprobadoAUnaSolaPregunta_ElSegundoNoVale', (t) => {
   const casa = casaNueva(t);
   transcripcion(casa, 'ses-a', [agente(PIDE, hace(3)), tipeado('Aprobado', hace(2)), tipeado('Aprobado', hace(1))]);
@@ -325,7 +337,7 @@ test('Transcripcion_DeLaExtension_LoQueNoEsDeLaPersona_NoVale', (t) => {
 test('Sello_EnOtraPregunta_ElAprobadoNoVale', (t) => {
   const casa = casaNueva(t);
   transcripcion(casa, 'ses-a', [agente(`¿Aprobás el formato del resumen? (${CUADRO.sello})`), tipeado('Aprobado')]);
-  assert.match(oa.validarEnClaude(mensaje(), CTX(casa)).motivo, /no trae/);
+  assert.match(oa.validarEnClaude(mensaje(), CTX(casa)).motivo, /no trae la pregunta entera/);
 });
 
 test('Click_SinConstanciaDeQuienContesto_NoVale', (t) => {
@@ -564,6 +576,18 @@ test('Escuchas_GanchoDelArnesSinArchivo_NoAnulaElClick_YUnoAjenoSi', (t) => {
   assert.strictEqual(conGancho(`"${nodo}" "${path.join(casa, 'otra', 'scripts', 'hooks', 'guardian-de-otra-version.js')}"`), true, 'ajeno sin archivo: anula');
   assert.strictEqual(conGancho(`"${nodo}" "${nuevo}"; python3 contesta.py`), true, 'con algo más en la línea: anula');
   assert.strictEqual(conGancho(`python3 "${nuevo}"`), true, 'otro intérprete: anula');
+  // lo que el shell expande no es la ruta escrita: una variable o un comodín pueden llevar a otro programa
+  const carpetaNode = path.join(casa, '.tycon', 'node');
+  assert.strictEqual(conGancho(`"${carpetaNode}/$X/node" "${nuevo}"`), true, 'una variable en el intérprete: anula');
+  assert.strictEqual(conGancho(`"${carpetaNode}/\${X}/node" "${nuevo}"`), true, 'una variable con llaves: anula');
+  assert.strictEqual(conGancho(`${carpetaNode}/*/bin/node ${nuevo}`), true, 'un comodín en el intérprete: anula');
+  assert.strictEqual(conGancho(`${carpetaNode}/{a,b}/node ${nuevo}`), true, 'llaves en el intérprete: anula');
+  assert.strictEqual(conGancho(`node ${hooksDir}/guardian-de-otra-versi?n.js`), true, 'un comodín en la ruta: anula');
+  assert.strictEqual(conGancho(`node "${hooksDir}/$G.js"`), true, 'una variable en la ruta: anula');
+  assert.strictEqual(conGancho(`node ${hooksDir}/[g]uardian.js`), true, 'corchetes en la ruta: anula');
+  // una ruta corta de Windows trae «~» en el medio (PROGRA~1): sólo al principio de una palabra la expande el shell
+  assert.strictEqual(conGancho(`~/.tycon/node/current/bin/node "${nuevo}"`), true, 'una tilde al principio: anula');
+  assert.strictEqual(conGancho(`"${path.join(carpetaNode, 'NODE~1', 'bin', 'node')}" "${nuevo}"`), false, 'una tilde en el medio, como PROGRA~1: no anula');
 });
 
 test('Escuchas_GanchoAjenoSobreElCuadro_ElClickNoVale', (t) => {

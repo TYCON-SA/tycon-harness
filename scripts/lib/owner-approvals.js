@@ -308,7 +308,13 @@ function mensajeEnLaTranscripcion(ruta, a, { sello, destino, pregunta } = {}) {
     if (rs[k] && rs[k].type === 'user' && rs[k].origin && rs[k].origin.kind === 'human' && textoDe(rs[k]) !== null) break;
     if (rs[k] && rs[k].type === 'assistant' && textoDe(rs[k])) antes = textoDe(rs[k]);
   }
-  if (!traeElSello(antes, { sello, destino, pregunta })) return { ok: false, motivo: `lo último que dijo el agente antes del «aprobado» no trae «${sello}», o nombra otra sesión` };
+  if (!traeElSello(antes, { sello, destino, pregunta })) {
+    // con el sello y sin la pregunta entera, la persona no vio qué aprueba: se dice eso, no que falta el sello
+    if (pregunta && sello && String(antes || '').includes(sello) && !String(antes).includes(pregunta)) {
+      return { ok: false, motivo: 'lo último que dijo el agente antes del «aprobado» no trae la pregunta entera, sólo su sello: mostrale la pregunta tal cual la armó el freno' };
+    }
+    return { ok: false, motivo: `lo último que dijo el agente antes del «aprobado» no trae «${sello}», o nombra otra sesión` };
+  }
   return { ok: true };
 }
 
@@ -529,6 +535,9 @@ function esPermitido(comando, raiz = ROOT) {
 function ganchoDelArnesSinArchivo(comando, casa) {
   const c = String(comando || '').trim();
   if (!c || /[;&|`\n<>]|\$\(/.test(c)) return false;
+  // lo que el shell expande no es la ruta escrita: una variable o un comodín pueden llevar a otro programa. La tilde, sólo
+  // al principio de una palabra (una ruta corta de Windows la trae en el medio: PROGRA~1)
+  if (/[$*?[\]{}]/.test(c) || /(?:^|[\s"])~/.test(c)) return false;
   // la barra invertida es separador sólo en Windows: en otro sistema el shell la come y corre otra ruta
   if (process.platform !== 'win32' && c.includes('\\')) return false;
   const m = /^(?:"([^"]+)"|(\S+))\s+(?:"([^"]+)"|(\S+))$/.exec(c);

@@ -270,6 +270,14 @@ test('NewEvent_NeverReachesAJudgeThatDoesNotDeclareIt', () => {
   assert.deepStrictEqual(A.OLD_JUDGE_EVENTS, ['PreToolUse', 'PostToolUse', 'SessionStart', 'SessionEnd', 'Stop', 'SubagentStop', 'UserPromptSubmit', 'Notification', 'PreCompact']);
 });
 
+test('Applier_EventOutOfReport_TheNoticeNamesTheEvent @fix-windows-2', (t) => {
+  // el aviso decía sólo «un prefijo»: un hook que se queda afuera por su evento tiene que decirlo
+  const { ids, stdout } = applyIds(lab(t, [H('PermissionRequest', '@tcg:p.js')]));
+  assert.ok(!ids.some((id) => id.startsWith('PermissionRequest:')));
+  assert.match(stdout, /con un prefijo o un evento que quien me lanzó no declara entender/);
+  assert.match(stdout, /PermissionRequest:@tcg:p\.js/);
+});
+
 test('Harness_PassesHealthEvents_ToApplier', () => {
   const HJ = require(path.join(ROOT, 'scripts', 'setup', 'harness.js'));
   const M = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'managed.js'));
