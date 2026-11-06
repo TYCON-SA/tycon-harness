@@ -214,3 +214,25 @@ test('T6 RunCloseGate_OtraSesionOtraEjecucionOtraVia_Frena @story-8.140 @ac-4 �
   const v = lector(corral({ ...ROJO, startedAt: 'no-es-una-fecha' }, [deuda(5)]), `${MK} clear`);
   assert.deepStrictEqual([v.frena.map((f) => f[0]), v.cubre.length], [['cerrar la ejecución'], 0]);
 });
+
+// ───────────── Una corrida sin turno no cuenta como prueba roja ─────────────
+
+// con todos los pasos hechos: lo único que podría dejarla abierta son las pruebas
+const TODO_HECHO = { checks: { tests: 'green', advisors: 'green' }, stepsPending: [],
+  stepsCompleted: ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers', 'findings', 'live-check', 'prepare-commit'] };
+const SIN_TURNO = { ...TODO_HECHO, checks: { tests: 'sin-turno', advisors: 'green' } };
+
+test('T11 8.215-RunClose_SinTurno_AbiertaNoRoja @story-8.215 @ac-11', () => {
+  const rc = require(RUN_CLOSE);
+  assert.strictEqual(rc.abierta(rc.estado(TODO_HECHO)), false, 'el caso de control: con las pruebas en verde, cerrada');
+  const e = rc.estado(SIN_TURNO);
+  assert.deepStrictEqual(e.rojos, [], 'no la cuenta entre los rojos');
+  assert.strictEqual(rc.abierta(e), true, 'queda abierta: las pruebas no se midieron');
+  assert.match(rc.motivoDe(e), /sin turno/);
+});
+
+test('T25 8.215-CerrarLaEjecucion_SinTurno_PideFrase @story-8.215 @ac-11', () => {
+  assert.deepStrictEqual(lector(corral(TODO_HECHO, []), `${MK} clear`).frena, [], 'el caso de control: con las pruebas en verde, no frena');
+  const v = lector(corral(SIN_TURNO, []), `${MK} clear`);
+  assert.deepStrictEqual(v.frena.map((f) => f[0]), ['cerrar la ejecución'], 'cerrar con las pruebas sin medir pide la frase, como con un rojo');
+});

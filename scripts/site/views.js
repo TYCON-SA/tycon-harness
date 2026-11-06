@@ -444,13 +444,32 @@ function listasDeDecision(m, { enlaceOperaciones = null, remotoOperaciones = nul
     }
     if (!medidas) { out.push(seccion(titulo, `<p class="q-note">${esc(conFecha(m.decisiones, idioma))}</p>`, null, `decidir-${clave}`)); continue; }
     const suyas = todas.filter((d) => d.fuente === def.fuente && d.rubro === def.rubro);
+    // la gravedad y las noches que lleva, para que se entienda el orden de la lista
+    const gravedadYNoches = (d) => {
+      const gravedad = DEC.gravedadNormal(d.severidad);
+      const noches = Number.isInteger(d.noches) ? (d.noches === 1 ? T('decidir.unaNoche') : T('decidir.noches', { n: d.noches })) : null;
+      return [gravedad ? T(`decidir.gravedad.${gravedad}`) : null, noches].filter(Boolean);
+    };
+    // una aceptada arranca por lo que importa —el paquete, su gravedad y sus noches— y sigue con su seguimiento; el id
+    // de la ficha va al final, en gris, para buscarla en el repo de operaciones
+    const filaAceptada = (d) => {
+      const queEs = [d.titulo || d.id, ...gravedadYNoches(d)].map(esc).join(' · ');
+      const seguimiento = d.enlace && enlace(d.enlace) ? `<a href="${esc(d.enlace)}">${esc(T('decidir.pedido', { n: d.pr }))}</a>`
+        : d.sinLugar === 'en_su_tarea' ? `<a href="/mantenimiento">${esc(T('decidir.corto.en_su_tarea'))}</a>`
+          : esc(DEC.fraseSinLugar(d.sinLugar, idioma, { n: d.pr }));
+      return `<li><span>${queEs} — ${seguimiento}</span>${d.titulo ? `<span class="muted">${esc(d.id)}</span>` : ''}</li>`;
+    };
     const fila = (d) => {
-      const nombre = [esc(d.id), d.titulo ? esc(d.titulo) : null].filter(Boolean).join(' · ');
+      const nombre = [esc(d.id), d.titulo ? esc(d.titulo) : null, ...gravedadYNoches(d).map(esc)].filter(Boolean).join(' · ');
       return d.enlace && enlace(d.enlace)
         ? renglonDeLista(`<a href="${esc(d.enlace)}">${esc(T('decidir.pedido', { n: d.pr }))}</a>`, nombre)
         : d.sinLugar === 'en_su_tarea' ? renglonDeLista(`<a href="/mantenimiento">${esc(DEC.fraseSinLugar(d.sinLugar, idioma))}</a>`, nombre)
-          : renglonDeLista(null, `${nombre} · ${esc(DEC.fraseSinLugar(d.sinLugar, idioma))}`);
+          : renglonDeLista(null, `${nombre} · ${esc(DEC.fraseSinLugar(d.sinLugar, idioma, { n: d.pr }))}`);
     };
+    if (def.rubro === 'aceptadas_sin_resolver') {
+      out.push(seccion(titulo, suyas.length ? `<ul class="lista">${suyas.map(filaAceptada).join('')}</ul>` : `<p class="q-note">${esc(T('vista.ninguna'))}</p>`, T('vista.deLaNocheDel', { fecha: m.decisiones.fecha }), `decidir-${clave}`));
+      continue;
+    }
     out.push(seccion(titulo, ul(suyas.map(fila)), T('vista.deLaNocheDel', { fecha: m.decisiones.fecha }), `decidir-${clave}`));
   }
   return out.join('');

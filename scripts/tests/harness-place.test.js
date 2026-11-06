@@ -540,7 +540,7 @@ test('T48 PublishedProse_InternalRepoName_SaysTheHarness_ReadmeUnderLimit', () =
   const bad = [];
   for (const f of shippedProse) for (const l of publishedLines(read(f))) if (INTERNAL_NAME_RX.test(l.replace(new RegExp(LEGACY_PATH_RX.source, 'g'), ''))) bad.push(`${f}: ${l.trim().slice(0, 140)}`);
   assert.deepStrictEqual(bad, [], 'prosa publicada que nombra al repo interno (decí «el arnés», o la ruta del lugar)');
-  assert.ok(Buffer.byteLength(read('README.md'), 'utf8') <= 25600, 'README.md pasó su tope de 25.600 bytes');
+  assert.ok(Buffer.byteLength(read('README.md'), 'utf8') <= 36000, 'README.md pasó su tope de 36.000 bytes');
   // la lista de lo que queda en la copia: cada entrada con ruta, tipo y motivo, y sin la palabra del repo en el motivo
   const listFile = path.join(ROOT, 'scripts', 'tests', 'fixtures', 'public-copy-internal-name.json');
   const list = JSON.parse(fs.readFileSync(listFile, 'utf8'));

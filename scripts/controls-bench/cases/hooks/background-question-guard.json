@@ -1,0 +1,61 @@
+{
+  "__doc": "Freno de preguntas de las sesiones que abrió la coordinadora (story 8.211, 2026-11-04): con la coordinadora confirmada y viva, una sesión de fondo abierta por coordination.js open no le muestra el cuadro de opciones ni el dictado a la persona. Lo que el banco fija: lo que NO frena (sin coordinadora, otra herramienta, la salida del modo plan, apagado, entrada rota), porque frenar de más traba a las sesiones que abre la persona. El caso que niega necesita una coordinadora con un proceso vivo, que el banco no arma igual en las tres plataformas; vive en scripts/tests/background-question-guard.test.js (T1 a T3, también como proceso).",
+  "hooks": [
+    {
+      "hook": "background-question-guard.js (las preguntas de una sesión que abrió la coordinadora)",
+      "script": "${TCG}/scripts/hooks/background-question-guard.js",
+      "event": "PreToolUse",
+      "matcher": "AskUserQuestion|mcp__spokenly__ask_user_dictation",
+      "cases": [
+        {
+          "id": "sin-coordinadora-deja-preguntar",
+          "type": "must-not-block",
+          "__doc": "Sin coordinadora designada, una pregunta pasa sin salida. ROJO PREVIO: negar o imprimir sin coordinadora.",
+          "stdin": {
+            "hook_event_name": "PreToolUse",
+            "session_id": "bench-bq1",
+            "tool_name": "AskUserQuestion",
+            "tool_input": { "questions": [{ "question": "¿Seguimos?", "header": "Seguir", "multiSelect": false, "options": [{ "label": "Sí", "description": "a" }, { "label": "No", "description": "b" }] }] }
+          },
+          "expect": { "exit": 0, "stdout_not_re": ["permissionDecision"] }
+        },
+        {
+          "id": "dictado-sin-coordinadora-deja-preguntar",
+          "type": "must-not-block",
+          "__doc": "El dictado, igual: sin coordinadora, pasa. ROJO PREVIO: negar el dictado sin coordinadora.",
+          "stdin": {
+            "hook_event_name": "PreToolUse",
+            "session_id": "bench-bq2",
+            "tool_name": "mcp__spokenly__ask_user_dictation",
+            "tool_input": { "question": "¿Seguimos?" }
+          },
+          "expect": { "exit": 0, "stdout_not_re": ["permissionDecision"] }
+        },
+        {
+          "id": "salida-del-modo-plan-no-se-toca",
+          "type": "must-stay-quiet",
+          "__doc": "ExitPlanMode es la salida del modo plan, no una pregunta: nunca se niega. ROJO PREVIO: negarla, que deja a la sesión encerrada en ese modo.",
+          "stdin": {
+            "hook_event_name": "PreToolUse",
+            "session_id": "bench-bq3",
+            "tool_name": "ExitPlanMode",
+            "tool_input": { "plan": "# plan" }
+          },
+          "expect": { "exit": 0 }
+        },
+        {
+          "id": "otra-herramienta-no-se-toca",
+          "type": "must-stay-quiet",
+          "__doc": "Fuera de las dos herramientas de preguntas, el gancho no hace nada. ROJO PREVIO: imprimir algo para un Bash.",
+          "stdin": {
+            "hook_event_name": "PreToolUse",
+            "session_id": "bench-bq4",
+            "tool_name": "Bash",
+            "tool_input": { "command": "ls" }
+          },
+          "expect": { "exit": 0 }
+        }
+      ]
+    }
+  ]
+}

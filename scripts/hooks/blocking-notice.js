@@ -5,6 +5,8 @@
  * Par del medidor de bloqueo (hook Stop). El medidor no puede des-bloquear la espera que ya pasó;
  * lo que sí puede es dejar el número anotado. Este hook lo cobra al inicio del turno siguiente.
  * Consume el pending (lo borra al emitirlo) → un aviso por infracción, nunca repetido.
+ * Dice también, cuando hace falta, que la sesión anote a qué hora termina (scripts/lib/hour-notice.js): es el otro lado de
+ * la misma regla, que todo paso largo diga cuánto va a tardar.
  * Fail-open total. Opt-out: TYCON_BLOCKING_METER=0, o `switches.blocking_meter: "off"` en el perfil (la variable gana).
  */
 
@@ -37,10 +39,18 @@ function orgSwitchOn(name) {
   } catch { return true; }
 }
 
-function main() {
-  if (process.env.TYCON_BLOCKING_METER === '0') return;
-  if (!orgSwitchOn('blocking_meter')) return;
+// El recordatorio de la hora de fin. Si falla, no dice nada.
+function hourReminder(sessionId) {
+  try {
+    const root = path.join(__dirname, '..', '..');
+    const pipeline = path.join(root, 'skills', 'tycon-pipeline', 'scripts');
+    const { stateDir } = require(path.join(pipeline, 'lib', 'state-dir.js'));
+    const notice = require(path.join(__dirname, '..', 'lib', 'hour-notice.js')).hourNotice({ stateDir: stateDir(os.homedir()), sessionId, markerJs: path.join(pipeline, 'marker.js') });
+    if (notice) process.stdout.write(`<system-reminder>\n${notice}\n</system-reminder>\n`);
+  } catch { /* fail-open */ }
+}
 
+function main() {
   let event = {};
   try {
     const stdin = fs.readFileSync(0, 'utf8');
@@ -48,6 +58,11 @@ function main() {
   } catch { return; }
 
   const sessionId = event.session_id || event.sessionId || '_nosession';
+  hourReminder(sessionId);
+
+  if (process.env.TYCON_BLOCKING_METER === '0') return;
+  if (!orgSwitchOn('blocking_meter')) return;
+
   const file = path.join(PENDING_DIR, `${sessionId}.json`);
   if (!fs.existsSync(file)) return;
 

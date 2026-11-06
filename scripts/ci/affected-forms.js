@@ -169,6 +169,8 @@ const NO_AFECTAN = [
   // qué está amparado. No entran en ningún paquete. Con su nombre nuevo y con el de antes (legacy-files.js).
   ...['pending-tests.json', 'pending-vulnerabilities.json', 'pending-form-vulnerabilities.json'].flatMap((nu) => [nu, PAIRS[nu]])
     .map((n) => new RegExp(`^${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')),
+  // Las excepciones del detector de consultas vivas (test-setup/): las lee el paso de pruebas. Nació con este nombre.
+  /^pending-live-handles\.json$/i,
   // Configuración del arnés para el repo (advisors, e2e, evidencia). La leen los controles.
   /^\.tycon\//,
   // 🔴 LA EVIDENCIA DE LAS CORRIDAS. `.advisors/` guarda lo que dejan el pipeline y

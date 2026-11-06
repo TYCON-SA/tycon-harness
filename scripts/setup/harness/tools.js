@@ -299,12 +299,36 @@ function codexPieces({ tree, home = os.homedir(), env = process.env } = {}) {
 }
 
 /**
+ * `dir` por el nombre estable del arnés, si cae adentro de la versión a la que apunta su enlace: una ruta escrita con la
+ * carpeta numerada ata la máquina a esa versión, y actualizar sólo mueve el enlace. Sin enlace, o afuera de él, `dir` tal cual.
+ */
+function throughLink(dir, home, env) {
+  try {
+    const H = require('./tycon-home.js');
+    const link = H.ownPathsOf({ home, env }).harness;
+    if (!H.isLink(link)) return dir;
+    const rel = path.relative(fs.realpathSync(link), fs.realpathSync(dir));
+    return rel.startsWith('..') || path.isAbsolute(rel) ? dir : path.join(link, rel);
+  } catch (_) { return dir; }
+}
+
+/**
  * Enchufa (o re-enchufa) a Codex desde `tree`. `force`: despliega aunque la huella diga «al día» (una instalación).
  * @returns {{ok:boolean, out:string, pieces:object[], warnings:string[], reason:string|null}}
  */
-function plugCodex({ tree, home = os.homedir(), env = process.env, log = null, snapshotDir = null, force = false } = {}) {
+function plugCodex({ tree, home = os.homedir(), env = process.env, log = null, snapshotDir = null, force = false, platform = process.platform, buscarGitBash } = {}) {
   const { spawnSync } = require('child_process');
   const say = (l) => { try { if (log) log(`codex: ${l}`); } catch (_) { /* el registro no frena */ } };
+  // en Windows sin Git Bash, los frenos de Codex no pueden correr: no se enchufa algo que después frena todo sin explicar
+  if (platform === 'win32') {
+    let bash = null;
+    try { bash = (buscarGitBash || require(path.join(tree, 'scripts', 'lib', 'git-bash.js')).findGitBash)({ env, platform }); } catch (e) { bash = { reason: e.message }; }
+    if (!bash || !bash.path) {
+      const reason = `en Windows, los frenos de Codex necesitan Git para Windows, y no lo encontré (${(bash && bash.reason) || 'sin motivo'}). Instalalo con winget install Git.Git y repetí`;
+      say(reason);
+      return { ok: false, out: '', pieces: [], warnings: [], reason };
+    }
+  }
   const deploy = path.join(tree, 'build', 'deploy-codex-all.js');
   const blocks = path.join(tree, 'scripts', 'setup', 'agents-md-blocks.js');
   if (!fs.existsSync(deploy)) {
@@ -379,7 +403,7 @@ function recorded(state) {
   return Boolean(state && Array.isArray(state.tools) && state.tools.some((x) => TOOLS.includes(x)));
 }
 
-module.exports = {
+module.exports = { throughLink,
   TOOLS, LABELS, DETECT,
   codexHome, runnableAt, findIn, ownConfig, detect, parseOption, choose, reason, planLine, names, agentLines, noneFound, codexDeployed, plugged, recorded, same,
   agentsMdPath, codexPieces, plugCodex, unplugged, unpluggedNotice, NOTICE_HEAD, NOTICE_TAIL, NOTICE_RE,

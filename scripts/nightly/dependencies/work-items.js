@@ -1223,7 +1223,9 @@ function nombreDeAsignado(asg) {
  * tarea no espera ninguna decisión: pasa a promoted/ con `veredicto: util`. Sin el sitio, se anota y no se mueve.
  */
 function anotarSeguimiento(ctx, res, rutaOperations) {
-  const conSitio = sitioDecide(rutaOperations).codigo === 0;
+  // la dirección del sitio vale la del perfil del equipo (TEAM_PROFILE, la que ya trae el pipeline), con operations.json
+  // de respaldo: lo mismo que pregunta open-pr-per-finding.sh
+  const conSitio = sitioDecide(rutaOperations, { perfil: process.env.TEAM_PROFILE || null }).codigo === 0;
   const postergadas = new Set(res.postergados.map((x) => x.ficha));
   const volcados = (ctx.volcado && ctx.volcado.pedidos) || {};
   for (const f of ctx.fichas.filter((x) => x.estado !== 'archived')) {

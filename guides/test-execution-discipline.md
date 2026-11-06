@@ -47,6 +47,19 @@ Se agrava cuando, **al mismo tiempo**, el agente tiene **8–11 subagentes (advi
    `ruta` de su entrada en `suites.json`). Mientras quede alguna sin salir verde sola, la corrida completa sale 76 sin
    lanzar nada y da el comando de cada una.
 
+   *Traer main no repite lo que ya se midió*: con el portón acotado porque una CI corre la completa, si lo que midió la
+   última corrida, mezclado con main, da exactamente lo que hay en la carpeta, corren sólo las suites que fallaron y las
+   que nombran archivos que trajo main. Se compara la carpeta, no los commits. Cualquier otro cambio corre lo de siempre
+   (`lib/after-main.js`). No ve un archivo ignorado que lea una suite, ni el destino de un enlace fuera del repo: eso queda
+   para la CI del pedido. En el árbol armado del privado vale lo mismo, comparando cada repo: el privado y el público. Si
+   además cambió el perfil del equipo, o el público salió de otro lado, corre lo de siempre.
+
+   *Sin base avisa antes de arrancar*: en un repo que acota el portón, si no se sabe qué se tocó corren todas las suites.
+   Lo dice antes de la primera, con la cantidad y cómo acotarla: `TYCON_COVERAGE_BASE="$(git merge-base origin/main HEAD)"`.
+
+   *Una ejecución grande espera su turno*: en una máquina con coordinadora, desde 100 suites por correr, acotada o no, va una
+   por vez. Si otra tiene el turno, el portón sale 75 sin correr nada y dice quién lo tiene.
+
 3. **Nunca full-suite + fan-out de subagentes simultáneo.** Si hay advisors/subagentes corriendo,
    **esperar** a que terminen antes de lanzar la suite completa (y viceversa). Secuenciar, no superponer.
 
@@ -95,6 +108,28 @@ paralelo. Lo que no puede leer (comillas sin cerrar, el texto de un shell armado
 
 El escape `TYCON_FULL_SUITE=1` vale cuando acompaña al comando de pruebas: como prefijo, con `env`, exportado o con
 `$env:` antes en el mismo comando. Nombrarlo en un texto (un `echo`, un mensaje de commit) no lo usa.
+
+## Las suites del arnés: cuántas a la vez, cuáles corren y cuáles son las lentas
+
+- **Cuántas a la vez.** El portón (`test-gate.sh`) y las portables corren `min(núcleos menos dos, núcleos menos la
+  carga de 1 min)` suites a la vez, nunca menos de cuatro (o de núcleos menos dos en una máquina chica). La carga se mide
+  antes de lanzar la primera: es la de los demás. Dos núcleos quedan para la persona, que sigue usando la máquina; con la
+  máquina libre se usa el resto, y con la máquina cargada las cuatro del piso siguen corriendo: de a una, un portón de
+  380 suites no terminaba. Antes de lanzar cada suite que pasa del piso se vuelve a mirar: con la carga sobre el doble de
+  los núcleos, espera a que termine otra. Un portón de 100 suites o más que arranca con menos de tres a la vez lo dice en
+  su primera línea, con la hora estimada de fin, y le avisa a la coordinadora mientras corre. `TYCON_SUITES_MAX_WORKERS` (portón) y `TYCON_PORTABLE_PARALLEL` (portables) mandan sobre la
+  regla; en la CI corre la mitad de los núcleos en el portón y 4 en las portables. La línea de arranque dice el número y
+  de dónde salió: «8 a la vez (10 núcleos, carga 1.2 al arrancar)».
+- **Cuáles corren.** Un portón corrido a mano, sin la ejecución del pipeline de este repo, acota desde la
+  bifurcación con main (`origin/HEAD`, `origin/main` o `main`): corren las suites que leen lo que la rama cambió,
+  también lo ya commiteado. Sin rama principal no acota y lo dice. La línea «acotado a lo tocado: N archivos desde <sha> (<fuente>):
+  corren M de T» dice cuántas y por qué.
+- **Cuáles son las lentas.** Cada ejecución deja los segundos de cada suite en el registro de la máquina
+  (`suite-times.jsonl`, en la carpeta de estado). `node scripts/tools/suite-times.js slow` lista las 20 más lentas por
+  la mediana de sus últimas mediciones, con su tendencia; `--max-load <c>` deja sólo las ejecuciones con la máquina
+  tranquila, y `runs` lista las ejecuciones. Antes de partir una suite o mandarla a la noche, conviene mirar dónde se va su
+  tiempo: casi siempre es trabajo repetido de la propia prueba (un proceso por archivo para sacar una huella, la misma
+  consulta a git por cada módulo que se importa), y bajarlo no cambia lo que prueba.
 
 ## El fix técnico durable (por proyecto)
 
@@ -164,6 +199,23 @@ xUnit parallelization). El riesgo es menor, pero para suites grandes:
   apuntar al `.csproj` específico: `dotnet test tests/<Proj>.Tests/<Proj>.Tests.csproj --filter ...`.
 - Para limitar paralelismo de xUnit: `xunit.runner.json` con `"maxParallelThreads": 2` o
   `"parallelizeAssembly": false`.
+
+## El chequeo de mutantes: pruebas acotadas, nunca la suite
+
+Al cerrar «Correr las pruebas», el chequeo de mutantes rompe el código nuevo a propósito y corre **sólo las pruebas que
+la historia declara**, una vez por mutante, sobre una copia del repo. Nunca la suite entera: si no puede acotar, sale
+«estructural» y no corre nada.
+
+- **Qué recetas mutan:** Jest y Vitest (con el binario del paquete, `node_modules/.bin/…`), .NET (`dotnet test` con el
+  `.csproj` de pruebas más cercano y un filtro por clase), pytest y `node --test`. Muta JavaScript/TypeScript, C# y
+  Python. La receta se elige por la estructura del paquete, nunca leyendo una prueba.
+- **Una receta de la organización** (`stack.test_runners`) muta si declara `scoped`: el comando que corre sólo algunas
+  pruebas, con `{files}` (los archivos) o `{classes}` (las clases de .NET). Sin `scoped`, el chequeo sale
+  «estructural» y lo dice.
+- **Los topes:** .NET, 8 min en total y 3 min por ejecución (recompila en cada mutante); las demás, 3 min en total y
+  2 min por ejecución. Ninguna ejecución pasa lo que queda del total; el portón lo mata a los 12 min como red. Antes de la
+  base imprime cuántos mutantes hay y cuánto puede tardar.
+- **La copia** no enlaza `bin/` ni `obj/`: .NET compila en la copia, nunca en el repo del dev.
 
 ## Suites que simulan la máquina del dev: la carpeta personal de prueba
 

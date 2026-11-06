@@ -221,7 +221,7 @@ con Ollama es local (0 red, ~6 GB de RAM mientras infiere). El local NO se justi
 | `TYCON_INSTINCT_OBSERVER` | — | Ya no lanza nada: el observador no corre por máquina (las propuestas las arma la noche de la organización) |
 | `TYCON_INSTINCT_OBS_DIR` | `~/.claude/tycon-observations` | Path local del JSONL |
 | `TYCON_INSTINCT_NOTIFY` | unset | `=1` activa Telegram notify post-corrida |
-| `TYCON_INSTINCT_TELEGRAM_BOT_TOKEN` | unset | Bot token (sino skip notify) |
+| `TYCON_INSTINCT_TELEGRAM_BOT_TOKEN` | unset | Bot token (sino skip notify). Como vive en una variable, cualquier proceso de la máquina lo ve: `env` lo imprimiría. `cover-secrets.js` lo tapa en lo que ve el asistente, pero sigue ahí (`guides/safety-guard.md`) |
 | `TYCON_INSTINCT_TELEGRAM_CHAT_ID` | unset | chat_id destino; sin él usa `TYCON_TELEGRAM_CHAT_ID`, `~/.claude/tycon.json` → `telegram.chat_id` o el plugin, y sin ninguno no avisa |
 | `TYCON_OBSERVER_EXECUTOR` | `auto` | `auto`\|`claude`\|`codex`\|`ollama` — qué herramienta usa el observer |
 | `TYCON_OBSERVER_MODEL` | `claude-haiku-4-5` | Model override del ejecutor `claude` |

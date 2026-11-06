@@ -129,7 +129,7 @@ function bloque({ storyId, rule, file, reason, summary, arnes }) {
   return [
     `Te piden eximir un crítico de la historia ${storyId} (te lo muestra el arnés): regla ${r}${llano ? ` (${llano})` : ''}${file ? `, archivo ${file}` : ''}.`,
     `${summary ? `Qué dijo el revisor: ${summary}. ` : ''}Por qué lo quieren eximir: ${reason}. Un crítico eximido va al commit sin arreglar.`,
-    'Si estás de acuerdo, aprobalo en la ventana de permiso que sale a continuación; si no, elegí «No». Una respuesta en el chat no lo exime.',
+    'Si estás de acuerdo, aprobalo en la ventana de permiso que sale a continuación o, donde no sale, en el cuadro de opciones; si no, elegí «No». Lo exime esa aprobación, no otra respuesta en el chat.',
   ].join('\n');
 }
 
@@ -271,7 +271,7 @@ function mostrarJuntos({ pedidos, sessionId, stateDir, home = os.homedir(), arne
   if (!listos.length) return null;
   const partes = listos.map((x) => x.r.systemMessage);
   if (otros.aviso) partes[partes.length - 1] += ` (Aviso del arnés: ${otros.aviso}.)`;
-  if (listos.length > 1) partes.push(`Son ${listos.length} críticos: se aprueban en la ventana de permiso, no en el chat.`);
+  if (listos.length > 1) partes.push(`Son ${listos.length} críticos: se aprueban de a uno, en la ventana de permiso o en el cuadro de opciones.`);
   return { systemMessage: partes.join('\n'), anotar: () => { for (const x of listos) x.r.anotar(); } };
 }
 

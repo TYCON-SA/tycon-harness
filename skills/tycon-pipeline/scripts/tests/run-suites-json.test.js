@@ -434,11 +434,13 @@ test('T16 RunSuites_NothingLeftToRun_NotMeasured — si no queda nada para corre
 
 test('T17 RunSuites_BadWorkersEnv_FallsBack — valor inválido avisa y usa el defecto; 1 es la serie de siempre', () => {
   // 🔴 mutación: `parseInt('mucho')` → NaN → 0 procesos y el runner no corre nada (o cuelga).
-  const def = Math.max(1, Math.floor((os.availableParallelism ? os.availableParallelism() : os.cpus().length) / 2));
+  // el defecto es el de la máquina (suite-workers.test.js): con 10 núcleos y carga 1, fuera de la CI, 8
+  const def = 8;
+  const maquina = { TYCON_FAKE_MACHINE: '10/1', CI: '', TF_BUILD: '', GITHUB_ACTIONS: '' };
   for (const bad of ['0', '-2', 'mucho']) {
     const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/a.test.sh' }] });
     f.escribir('arnes', 'tests/a.test.sh', 'exit 0');
-    const r = runWith(f, { env: { TYCON_SUITES_MAX_WORKERS: bad } });
+    const r = runWith(f, { env: { TYCON_SUITES_MAX_WORKERS: bad, ...maquina } });
     assert.equal(r.status, 0);
     assert.equal(r.resumen.workers, def, `con «${bad}» usa el defecto`);
     assert.match(r.stderr, /TYCON_SUITES_MAX_WORKERS/, `con «${bad}» avisa`);
@@ -1338,4 +1340,45 @@ test('T20d RunSuites_PortableSuite_LockedTmpRemoved — una carpeta sin permisos
   assert.strictEqual(r.resumen.verdes, 1);
   const { tmp } = JSON.parse(fs.readFileSync(path.join(f.root, 'tmp.json'), 'utf8'));
   assert.ok(!fs.existsSync(tmp), 'la carpeta temporal se borra');
+});
+
+// El portón que acota, sin saber qué se tocó, corre todo: quien lo lanzó tiene que poder cortarlo antes de la primera suite.
+function repoQueAcota() {
+  const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/a.test.js' }, { raiz: 'arnes', ruta: 'tests/b.test.js' }] });
+  f.escribir('arnes', 'tests/a.test.js', '// lib/x.js\nprocess.exit(0)');
+  f.escribir('arnes', 'tests/b.test.js', 'process.exit(0)');
+  return f;
+}
+
+test('SinBase_RepoQueAcota_AvisaAntesDeLaPrimeraSuite — dice cuántas corren y cómo acotarla, antes de arrancar', () => {
+  // 🔴 mutación: avisar al final, o sin la cantidad, deja correr una hora sin que nadie pueda decidir cortarla.
+  const f = repoQueAcota();
+  const r = spawnSync('node', [RUNNER, f.repo, path.join(f.root, 'o.json'), '--skills', f.skills, '--scoped-by-repo', 'la CI'], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  const aviso = r.stdout.indexOf('sin base:');
+  assert.ok(aviso >= 0, r.stdout);
+  assert.ok(aviso < r.stdout.search(/^ok {7}/m), `el aviso va antes de la primera suite\n${r.stdout}`);
+  assert.match(r.stdout, /corren todas las suites \(2\)/);
+  assert.match(r.stdout, /TYCON_COVERAGE_BASE="\$\(git merge-base origin\/main HEAD\)"/);
+});
+
+test('ConBase_NoAvisa — sabiendo qué se tocó, y en un repo que no acota, no hay aviso', () => {
+  // 🔴 mutación: avisar siempre gasta el aviso: se deja de leer.
+  const f = repoQueAcota();
+  const touched = path.join(f.root, 't.json');
+  fs.writeFileSync(touched, JSON.stringify({ known: true, files: ['lib/x.js'], sources: {} }));
+  const conBase = spawnSync('node', [RUNNER, f.repo, path.join(f.root, 'o.json'), '--skills', f.skills, '--touched', touched, '--scoped-by-repo', 'la CI'], { encoding: 'utf8' });
+  assert.equal(conBase.status, 0, conBase.stderr);
+  assert.doesNotMatch(conBase.stdout, /sin base:/);
+  const sinClave = correr(f.repo, f.skills, path.join(f.root, 'o2.json'));
+  assert.equal(sinClave.status, 0, sinClave.stderr);
+  assert.doesNotMatch(sinClave.stdout, /sin base:/);
+  // quien pidió todas, o una sola, ya sabe lo que corre
+  const args = [RUNNER, f.repo, path.join(f.root, 'o3.json'), '--skills', f.skills, '--scoped-by-repo', 'la CI'];
+  const todas = spawnSync('node', args, { encoding: 'utf8', env: { ...process.env, TYCON_GATE_ALL_SUITES: '1' } });
+  assert.equal(todas.status, 0, todas.stderr);
+  assert.doesNotMatch(todas.stdout, /sin base:/);
+  const una = spawnSync('node', [...args, '--suite', 'tests/a.test.js'], { encoding: 'utf8' });
+  assert.equal(una.status, 0, una.stderr);
+  assert.doesNotMatch(una.stdout, /sin base:/);
 });

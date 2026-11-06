@@ -265,6 +265,57 @@ run "${R}" "${T}/t8c.out"
 is "T8 la constancia está anclada al cambio: otro cambio de la regla vuelve a rojo" "1" "${RC}"
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# T14 Vocabulario_CambiarTechoEntraSinFirma @story-8.154 @ac-14 · el control de las palabras de las guías, desde la base:
+# informa y no frena, así que subir un techo con una palabra nueva o bajarlo con la que se va entra sin constancia
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+make_vocab_base() {
+  local r="$1"
+  mkdir -p "${r}/.githooks" "${r}/scripts/ci" "${r}/.github/workflows" "${r}/guides"
+  cat > "${r}/.githooks/pre-commit-checks" <<'SH'
+#!/usr/bin/env bash
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+node "$REPO_ROOT/scripts/ci/vocabulary.js" --repo "$REPO_ROOT" || exit 1
+SH
+  cp "${ROOT}/scripts/ci/vocabulary.js" "${r}/scripts/ci/vocabulary.js"
+  printf '%s\n' '{ "terms": [ { "use": "revisor", "avoid": ["advisor", "advisors"] } ], "exceptions": [], "ceiling": { "guides/x.md": 1 } }' > "${r}/scripts/ci/vocabulary.json"
+  cat > "${r}/scripts/ci/controls-from-base.json" <<'JSON'
+{
+  "hook": ".githooks/pre-commit-checks",
+  "passes": [
+    { "name": "pre-commit", "mode": "index", "cmd": ["bash", ".githooks/pre-commit-checks"] }
+  ],
+  "controls": [
+    { "name": "vocabulary", "script": "scripts/ci/vocabulary.js", "rules": ["scripts/ci/vocabulary.json"] },
+    { "name": "base-controls", "script": "scripts/ci/run-base-controls.sh", "rules": ["scripts/ci/controls-from-base.json"] }
+  ],
+  "content": [],
+  "workflows": [
+    { "path": ".github/workflows/ci.yml", "must_contain": ["run-base-controls"] }
+  ],
+  "approvals": ".tycon/control-changes.jsonl"
+}
+JSON
+  cp "${SCRIPT}" "${r}/scripts/ci/run-base-controls.sh"
+  printf '%s\n' 'name: ci' 'jobs: { ci: { steps: [ { run: "bash run-base-controls" } ] } }' > "${r}/.github/workflows/ci.yml"
+  printf '%s\n' '# Guía' '' 'El revisor, antes advisor.' > "${r}/guides/x.md"
+  ( cd "${r}" && lab_git init -q . && lab_git add -A && lab_git commit -qm base ) > /dev/null 2>&1
+}
+R="${T}/t14v-sube"; make_vocab_base "${R}"; pr "${R}"
+printf '%s\n' 'Y otro advisor más.' >> "${R}/guides/x.md"
+printf '%s\n' '{ "terms": [ { "use": "revisor", "avoid": ["advisor", "advisors"] } ], "exceptions": [], "ceiling": { "guides/x.md": 2 } }' > "${R}/scripts/ci/vocabulary.json"
+commit "${R}"
+run "${R}" "${T}/t14v-sube.out"
+is "T14 subir el techo junto con una palabra nueva: verde, sin constancia" "0" "${RC}"
+has "T14 lo dice al subir" "${T}/t14v-sube.out" "la base y el pedido pasan: entra sin constancia"
+R="${T}/t14v-baja"; make_vocab_base "${R}"; pr "${R}"
+printf '%s\n' '# Guía' '' 'El revisor.' > "${R}/guides/x.md"
+printf '%s\n' '{ "terms": [ { "use": "revisor", "avoid": ["advisor", "advisors"] } ], "exceptions": [], "ceiling": { "guides/x.md": 0 } }' > "${R}/scripts/ci/vocabulary.json"
+commit "${R}"
+run "${R}" "${T}/t14v-baja.out"
+is "T14 bajar el techo junto con la palabra que se va: verde, sin constancia" "0" "${RC}"
+has "T14 lo dice" "${T}/t14v-baja.out" "la base y el pedido pasan: entra sin constancia"
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 # T9 · la base no se lee
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 R="${T}/t9"; make_base "${R}"; pr "${R}"; printf 'limpio\n' > "${R}/docs/otro.txt"; commit "${R}"
@@ -1165,6 +1216,22 @@ printf '\n// el banco de la base, aflojado\n' >> "${R}/scripts/ci/bench-against-
 bash "${SCRIPT}" run --root "${R}" --base main --range main...banco > "${T}/t9b.out" 2>&1; RC=$?
 is "T9 cambiar el guion del banco de la base sin constancia: rojo" "1" "${RC}"
 has "T9 …pide la firma del dueño" "${T}/t9b.out" "afloja un control sin la constancia del dueño: scripts/ci/bench-against-base.js"
+
+# T58 · los resultados que guarda el examen nocturno están en la lista «content» del inventario real: el público no los
+#       trae, y sin clasificar frena al repo que los lleva. Rojo: periodic-exam.js guarda uno que la lista no nombra.
+R="${T}/t58"; make_base "${R}"
+inv "${R}" "j.content=$(node -e 'console.log(JSON.stringify(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).content))' "${ROOT}/scripts/ci/controls-from-base.json")"
+GUARDA="$(grep -oE 'scripts/controls-bench/ultimo-[a-z-]+\.json' "${ROOT}/scripts/controls-bench/periodic-exam.js" | sort -u)"
+case "${GUARDA}" in *ultimo-guias.json*) ok "T58 el examen guarda el resultado de las guías" ;; *) no "T58 periodic-exam.js ya no nombra ultimo-guias.json" ;; esac
+mkdir -p "${R}/scripts/controls-bench"
+for F in ${GUARDA}; do
+  printf '{}\n' > "${R}/${F}"
+  printf '%s\n' "# lo guarda el examen: \"${F}\"" >> "${R}/scripts/ci/toy-check.sh"
+done
+commit "${R}" "lleva los resultados del examen"
+bash "${SCRIPT}" check-inventory --root "${R}" > "${T}/t58.out" 2>&1; RC=$?
+is "T58 un árbol con los resultados del examen: verde" "0" "${RC}"
+lacks "T58 …sin «sin clasificar»" "${T}/t58.out" "sin clasificar"
 
 echo
 if [ "${FAILS}" -eq 0 ]; then echo "✅ base-controls: ${TOTAL} verificaciones verdes"; exit 0; fi

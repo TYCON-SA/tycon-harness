@@ -388,6 +388,69 @@ test('T22 TestGate_CompanionBusy_MarksRed @story-8.124 @ac-3c — un repo herman
   assert.match(String(JSON.parse(fs.readFileSync(mk, 'utf8')).checks.tests), /^red/, `el check quedó ${JSON.parse(fs.readFileSync(mk, 'utf8')).checks.tests}`);
 });
 
+// ───────────── Una corrida sin turno no cuenta como prueba roja ─────────────
+
+/** Un corredor de laboratorio con el nombre dado que sale 77, como el de suites sin el turno. */
+function sale77(nombre) {
+  const d = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'rcl-77-')));
+  const f = path.join(d, nombre);
+  fs.writeFileSync(f, 'process.exit(77);\n');
+  return f;
+}
+const leerMk = (mk) => JSON.parse(fs.readFileSync(mk, 'utf8'));
+const lineasGates = (home) => fs.readFileSync(path.join(home, '.claude', '.tycon-pipeline', 'gates.log'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+const DEL_PORTON = { TYCON_TEST_GATE: '1' };
+
+test('T8 8.215-Porton77_SinTurno @story-8.215 @ac-8', () => {
+  const home = casa(); const d = repo();
+  const mk = markerFalso(home, 'rc8', d);
+  const m = leerMk(mk); m.checks = { tests: 'green' }; m.checksProvenance = { tests: 'test-gate' }; fs.writeFileSync(mk, JSON.stringify(m));
+  correr(home, d, 'tests', ['node', sale77('run-suites-json.js')], { sid: 'rc8', extra: DEL_PORTON });
+  const despues = leerMk(mk);
+  assert.strictEqual(despues.checks.tests, 'sin-turno', 'el verde de antes no queda en pie y no es un rojo');
+  assert.strictEqual(despues.checksProvenance.tests, 'test-gate');
+  const l = lineasGates(home).filter((x) => x.check === 'tests').at(-1);
+  assert.strictEqual(l.status, 'sin-turno');
+  assert.strictEqual(l.exit, 77);
+});
+
+test('T9 8.215-Otro77_SigueRojo @story-8.215 @ac-9', () => {
+  const casos = [
+    ['sin la marca del portón', ['node', sale77('run-suites-json.js')], {}, /^red:exit=77$/],
+    ['un nombre que lo contiene', ['node', sale77('my-run-suites-json.js')], DEL_PORTON, /^red:exit=77$/],
+    ['un nombre que lo empieza', ['node', sale77('run-suites-json.js.bak')], DEL_PORTON, /^red:exit=77$/],
+    ['dentro de bash -c', ['bash', '-c', 'true /x/lib/run-suites-json.js --run-check tests; exit 77'], DEL_PORTON, /^sin-turno$/],
+  ];
+  for (const [nombre, cmd, extra, esperado] of casos) {
+    const home = casa(); const d = repo();
+    const mk = markerFalso(home, 'rc9', d);
+    correr(home, d, 'tests', cmd, { sid: 'rc9', extra });
+    assert.match(String(leerMk(mk).checks.tests), esperado, nombre);
+  }
+});
+
+// Hallazgo del pase adversarial de la 8.215: el 75 de un repo hermano (o de una parte) puede venir del turno (su
+// corredor salió 77 y su run-check anotó `sin-turno` en el marcador de la sesión). El portón de afuera lo pisaba con un
+// rojo («otra corrida en marcha»), y el cierre pedía arreglar pruebas en vez del turno.
+// Toda marca en rojo del portón (`marcar_tests_en_rojo`: hermano o parte que salió 75, corte, total en rojo) pasa por
+// `run-check tests` con su marca. Con el check ya en `sin-turno`, la marca no lo pisa: los dos dicen «no se midió», y
+// `sin-turno` además dice qué hacer. Sin `sin-turno`, la marca sigue dejando el rojo de siempre.
+test('T26 8.215-MarcaDelPorton_NoPisaSinTurno @story-8.215 @ac-8', () => {
+  const marca = (home, d) => correr(home, d, 'tests', ['node', '-e', 'process.exit(1)'],
+    { sid: 'rc26', extra: { ...DEL_PORTON, TYCON_TEST_GATE_MARK: '1' } });
+  const home = casa(); const d = repo();
+  const mk = markerFalso(home, 'rc26', d);
+  const m = leerMk(mk); m.checks = { tests: 'sin-turno' }; m.checksProvenance = { tests: 'test-gate' }; fs.writeFileSync(mk, JSON.stringify(m));
+  marca(home, d);
+  assert.strictEqual(leerMk(mk).checks.tests, 'sin-turno', 'la marca del portón no pisa el sin-turno del hermano');
+  // con un verde (este repo midió y el hermano no), la marca deja el rojo de siempre
+  const home2 = casa(); const d2 = repo();
+  const mk2 = markerFalso(home2, 'rc26', d2);
+  const m2 = leerMk(mk2); m2.checks = { tests: 'green' }; fs.writeFileSync(mk2, JSON.stringify(m2));
+  marca(home2, d2);
+  assert.match(String(leerMk(mk2).checks.tests), /^red:exit=1$/);
+});
+
 test('T14 Guide_NamesTheLock @story-8.124 @ac-13 — la guía de pruebas trae la línea del candado y el código 75', () => {
   const g = fs.readFileSync(GUIDE, 'utf8');
   assert.ok(g.split('\n').some((l) => /candado/.test(l) && /\b75\b/.test(l) && /run-check/.test(l)), 'falta la línea del candado de run-check con el 75');

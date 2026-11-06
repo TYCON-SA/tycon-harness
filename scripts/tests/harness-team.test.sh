@@ -35,6 +35,10 @@
 #        team-profile.json (y no el de antes) y explain lo lee con origen «perfil»; con el nombre de antes, el plan avisa
 #        cómo renombrarlo; con los dos, el refresco deja sólo el nuevo y explain lee el nuevo.
 #
+#   T43 · `team-refresh`: con el arnés al día y la capa vieja, trae la capa nueva sin versión ni
+#        aplicador; sin commit nuevo, same; sin acceso, failed sin tocar nada; con la política fijada por el perfil,
+#        TYCON_UPDATE=0 no la apaga (como en update); candado tomado, 3.
+#
 #   T33 · la capa con el mapa de renombres real sobre una versión que no lo trae: install sale 0 y la
 #        máquina traduce una variable vieja, un subcomando viejo y un archivo de estado viejo igual que el árbol interno; el
 #        commit que saca el mapa (su retiro) lo borra en el refresco y deja de traducirlos.
@@ -43,11 +47,13 @@
 # checkout real. 🔴 Sin pipes sobre el comando medido. El perfil del laboratorio (TYCON_PROFILE) se VACÍA: la variable le
 # ganaría al árbol y el perfil que se mide es el de la capa.
 #
-# Uso: bash scripts/tests/harness-team.test.sh [--only T3|T6|T7|T8|T9|T9N|T9P|T9F|T10|T11|T12|T33|TPN]
+# Uso: bash scripts/tests/harness-team.test.sh [--only T3|T6|T7|T8|T9|T9N|T9P|T9F|T10|T11|T12|T33|T43|TPN]
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$RAIZ/scripts/tests/lib/harness-lab.sh"
 export TYCON_UPDATE_APPLY=auto
+# el arranque corre en el lugar: desprendido, si tarda más de 20 s sigue de fondo con el candado y el comando siguiente sale 3
+export TYCON_STARTUP_DETACH=0
 # La llave del buzón se busca en el árbol instalado, que es lo que se mide acá (T7: la que apila la capa del equipo). Quien
 # corre esta suite puede traer TYCON_MAILBOX_JSON apuntando a otro lado: las portables la ponen en un archivo que no
 # existe, a propósito, y con ella heredada T7 daría «buzón: prendida (perfil; llave AUSENTE)» en una máquina vacía, adentro
@@ -751,7 +757,7 @@ PY
   K0="$(canal_cambio)"; ventana now; harness_release startup >/dev/null 2>&1
   [ "$(canal_cambio)" = "$K0" ] && ok "(r) …y el arranque siguiente no dice «el canal cambió»" || mal "(r) el arranque siguiente dijo que el canal cambió"
   harness_lab_release_control '{ "auth": "none" }'
-  unset LAB_APPLIER_INTEG TYCON_STARTUP_DETACH
+  unset LAB_APPLIER_INTEG
   export TYCON_UPDATE_APPLY=auto
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 fi
@@ -1032,6 +1038,55 @@ if corre TPN; then
   case "$(explain_key "$(NEW)" ado org)" in *acme*" perfil") ok "(c) vale el nuevo (ado.org del nuevo)" ;; *) mal "(c) explain ado.org: $(explain_key "$(NEW)" ado org)" ;; esac
   OUT="$(harness_release install --version latest --team "$LAB_TEAM" --dry-run 2>&1)"
   case "$OUT" in *"aviso: el perfil del equipo está con los dos nombres: vale team-profile.json"*) ok "(c) el plan avisa que están los dos y que vale el nuevo" ;; *) mal "(c) el plan no avisa de los dos: $OUT" ;; esac
+  kill "$LAB_RELEASE_PROCESS" 2>/dev/null
+fi
+
+# ───────────────────────────────────────────── T43 ────────────────────────────────────────────────────────────────────
+if corre T43; then
+  echo "T43 · CapaDelEquipo_ArnesAlDiaCapaVieja_LlegaSinUpdate: team-refresh trae la capa nueva con el arnés al día, sin versión ni aplicador"
+  lab_team "$BASE/lab43"
+  export LAB_APPLIER_INTEG=1 TYCON_STARTUP_DETACH=0
+  publica_perfil "$PERFIL_SIN_NIGHTLY" "la capa de la mañana, sin la dirección del sitio"
+  instala_team
+  [ "$INSTALL_RC" = 0 ] && ok "instalada con la capa vieja" || mal "install: rc $INSTALL_RC: $INSTALL_OUT"
+  C0="$(team_head)"
+  # el caso medido: el arnés al día (la ventana recién mirada, así el arranque no pide nada) y un commit nuevo del perfil
+  CON_SITIO="${PERFIL_SIN_NIGHTLY%\}}, \"site\": { \"url\": \"https://sitio.acme.example\" } }"
+  publica_perfil "$CON_SITIO" "la dirección del sitio"
+  C1="$(team_head)"
+  ventana now
+  harness_release startup >/dev/null 2>&1
+  [ "$(estado "d['team']['commit']")" = "$C0" ] && ok "(a) dentro de la ventana el arranque no la trae: la capa sigue vieja ($(sha7 "$C0"))" || mal "(a) el arranque ya trajo la capa: $(estado "d.get('team')")"
+  A0="$(aplicador_corridas)"
+  V0="$(estado "d['version']['number']")"
+  OUT="$(harness_release team-refresh --json 2>&1)"; RC=$?
+  [ "$RC" = 0 ] && ok "(b) team-refresh sale 0" || mal "(b) team-refresh rc $RC: $OUT"
+  [ "$(estado "d['team']['commit']")" = "$C1" ] && cmp -s "$(NEW)/perfil-equipo.json" "$LAB_AUTHOR_TEAM/perfil-equipo.json" && ok "(b) la capa nueva ($(sha7 "$C1")) en harness/ y en el estado, sin update" || mal "(b) la capa no llegó: $(estado "d.get('team')")"
+  [ "$(estado "d['version']['number']")" = "$V0" ] && ok "(b) la versión del arnés no cambió" || mal "(b) cambió la versión: $(estado "d['version']['number']")"
+  [ "$(aplicador_corridas)" = "$A0" ] && ok "(b) no corrió el aplicador" || mal "(b) corrió el aplicador $(( $(aplicador_corridas) - A0 )) vez/veces"
+  case "$(printf '%s' "$OUT" | tail -n 1 | jtxt "d['status'] + ' ' + str(d['profileChanged'])")" in "refreshed True") ok "(b) --json dice refreshed y que el perfil cambió" ;; *) mal "(b) --json: $OUT" ;; esac
+  grep -q "team-refresh: " "$(STARTUP_LOG)" && ok "(b) lo anota en el registro de arranque" || mal "(b) el registro no lo anota: $(tail -n 3 "$(STARTUP_LOG)" 2>/dev/null)"
+  # (c) otra vez sin commit nuevo: «same», nada cambia
+  OUT="$(harness_release team-refresh --json 2>&1)"; RC=$?
+  [ "$RC" = 0 ] && [ "$(printf '%s' "$OUT" | tail -n 1 | jtxt "d['status']")" = same ] && ok "(c) sin commit nuevo: same" || mal "(c) rc $RC: $OUT"
+  # (d) sin acceso al repo del equipo: lo anota, sale 0 y no cambia nada
+  publica_perfil "$PERFIL_CON_NIGHTLY" "otro commit, con el repo sin acceso"
+  harness_lab_release_control "{ \"auth\": \"none\", \"auth_by_repo\": { \"$LAB_TEAM\": \"token:otro-permiso-43\" } }"
+  OUT="$(harness_release team-refresh --json 2>&1)"; RC=$?
+  [ "$RC" = 0 ] && [ "$(estado "d['team']['commit']")" = "$C1" ] && [ "$(printf '%s' "$OUT" | tail -n 1 | jtxt "d['status']")" = failed ] && ok "(d) sin acceso: failed, sale 0 y la capa sigue en $(sha7 "$C1")" || mal "(d) rc $RC: $OUT"
+  [ -n "$(estado "(d['team'].get('last_error') or {}).get('reason','')")" ] && ok "(d) state.team.last_error guarda el motivo" || mal "(d) sin last_error"
+  harness_lab_release_control '{ "auth": "none" }'
+  # (e) con la política del perfil del equipo fijada, TYCON_UPDATE=0 no la apaga (decisión del 28/10: la actualización del
+  # perfil es obligatoria), igual que en `update`: la capa llega
+  OUT="$(TYCON_UPDATE=0 harness_release team-refresh --json 2>&1)"; RC=$?
+  [ "$RC" = 0 ] && [ "$(estado "d['team']['commit']")" = "$(team_head)" ] && ok "(e) con la política fijada por el perfil, TYCON_UPDATE=0 no la apaga: la capa llega, como con update" || mal "(e) rc $RC: $OUT"
+  # (f) con el candado del arnés tomado: sale 3 («ocupado») sin cambiar nada (ni el estado ni la capa en el disco)
+  ANTES="$(shasum "$(ESTADO)" | cut -d' ' -f1)"; CAPA_ANTES="$(cat "$(NEW)/.tycon-team.json" 2>/dev/null)"
+  OUT="$(node -e '
+    const L = require(process.argv[1]); const cp = require("child_process");
+    L.withLock(process.argv[2], () => { const r = cp.spawnSync(process.execPath, [process.argv[3], "team-refresh", "--json"], { encoding: "utf8" }); process.stdout.write(`${r.status}\n${r.stdout}`); return { code: 0, lines: [] }; }, { env: process.env, onBusy: () => ({ code: 9, lines: [] }) });
+  ' "$(NEW)/scripts/setup/harness/lock.js" "$LAB_HOME" "$(NEW)/scripts/setup/harness.js" 2>&1)"
+  [ "$(printf '%s' "$OUT" | head -n 1)" = 3 ] && [ "$(shasum "$(ESTADO)" | cut -d' ' -f1)" = "$ANTES" ] && [ "$(cat "$(NEW)/.tycon-team.json" 2>/dev/null)" = "$CAPA_ANTES" ] && ok "(f) con el candado tomado: sale 3 sin tocar nada" || mal "(f) con el candado tomado: $OUT"
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 fi
 

@@ -82,11 +82,12 @@ const LICENSE_LINES = 202;
 const CONTACT = 'info@tycon.com.ar';
 const MIT_PERMISSION = 'Permission is hereby granted, free of charge, to any person obtaining a copy';
 
-// T13: las secciones de las dos portadas, en orden (inglés, castellano). La portada abre con el ciclo y su frase (sin
-// título: va antes del primer `##`) y sigue con el camino del dev solo —instalar y su primera historia—, lo que hace
+// T13: las secciones de las dos portadas, en orden (inglés, castellano). La portada abre con el speech del arnés (sin
+// título: va antes del primer `##`), sigue con cómo funciona y después con el camino del dev solo —instalar y su primera historia—, lo que hace
 // falta, la instalación guiada, el camino del equipo y lo demás. Debajo, la referencia, con las palabras del arnés
 // primero y lo que cambia la instalación completa junto a la elección de la instalación.
 const SECTIONS = [
+  ['How it works', 'Cómo funciona'],
   ['Start on your own', 'Empezá solo'],
   ['Your first story', 'Tu primera historia'],
   ['What you need', 'Qué necesitás'],
@@ -144,7 +145,7 @@ const CLONE_LINE = {
   bash: `git clone https://github.com/${ORG_REPO} ${CLONE_DIR} && node ${CLONE_DIR}/scripts/setup/harness.js install`,
   powershell: `git clone https://github.com/${ORG_REPO} ${CLONE_DIR}; node ${CLONE_DIR}/scripts/setup/harness.js install`,
 };
-const EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'Notification', 'SessionEnd'];
+const EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'Notification', 'SessionEnd', 'PermissionRequest'];
 
 // ── utilidades ──────────────────────────────────────────────────────────────────────────────────────────────────
 const exists = (abs) => fs.existsSync(abs);
@@ -1610,25 +1611,23 @@ test('T80 TeamOnboardingText_InTeamLayer_GettingStartedWithoutRepoPermission —
   });
 });
 
-// ── La primera pantalla de la portada: el ciclo, su frase y el primer paso ──────────────────────────────────────────
-// Antes del primer `##` va la frase del ciclo, literal, con una línea por cada una de sus cuatro palabras; la portada
-// habla de «agentes de código» y nombra una vez cada herramienta con la que funciona; el título no nombra ninguna; BIZUIT
-// no aparece arriba. En «Empezá solo», qué lenguajes sirven hoy va antes de la línea npx: quien programa en otro lo sabe
+// ── La primera pantalla de la portada: el speech y el primer paso ──────────────────────────────────────────────────
+// Antes del primer `##` va el speech del arnés, entero: se controla que abra y cierre con sus frases, literales; habla
+// de «agentes de IA» y nombra una vez cada herramienta con la que funciona; el título no nombra ninguna; BIZUIT no
+// aparece arriba. En «Empezá solo», qué lenguajes sirven hoy va antes de la línea npx: quien programa en otro lo sabe
 // antes de instalar.
-const COVER_PHRASE = {
-  en: 'A development cycle for coding agents: complete, consistent, controlled and adaptable.',
-  es: 'Un ciclo de desarrollo para agentes de código: completo, consistente, controlado y adaptable.',
+const COVER_OPENING = {
+  en: 'Today an AI agent writes in minutes the code that used to take hours, and it solves tasks without anyone telling it each step.',
+  es: 'Hoy un agente de IA escribe en minutos el código que antes llevaba horas, y resuelve las tareas sin que nadie le indique cada paso.',
 };
-const COVER_WORDS = { en: ['Complete', 'Consistent', 'Controlled', 'Adaptable'], es: ['Completo', 'Consistente', 'Controlado', 'Adaptable'] };
-const COVER_AGENT = { en: 'coding agent', es: 'agente de código' };
+const COVER_PHRASE = {
+  en: 'The agents bring the speed. TYCON Harness brings the method, the quality and the control. Together, they do software engineering with AI.',
+  es: 'Los agentes aportan la velocidad. TYCON Harness aporta el método, la calidad y el control. Juntos, hacen ingeniería de software con IA.',
+};
+const COVER_AGENT = { en: 'AI agent', es: 'agente de IA' };
 const STACKS_LINE = { en: 'It works today for .NET, JavaScript, TypeScript, Python, Go and Java', es: 'Sirve hoy para .NET, JavaScript, TypeScript, Python, Go y Java' };
 // lo que vale en otros lenguajes, dicho junto a la línea de arriba
 const OTHER_STACKS = { en: 'that step does not recognize your tests yet', es: 'ese paso todavía no reconoce tus pruebas' };
-// los seis pasos del ciclo, en orden, cada uno en negrita con su número
-const CYCLE_STEPS = {
-  en: ['Request and story', 'Approved plan', 'Tests and code', 'Review', 'Delivery', 'Operation and measurement'],
-  es: ['Pedido e historia', 'Plan aprobado', 'Pruebas y código', 'Revisión', 'Entrega', 'Operación y medición'],
-};
 // el primer paso del dev solo: el único sí después del plan, cómo se saca, y qué pasa sin `_bmad/` y en `main`
 const FIRST_STEP_SAYS = {
   start: ['¿Instalo? [s/N]', 'harness.js uninstall --yes'],
@@ -1641,13 +1640,11 @@ function coverTopProblems(text, lang) {
   const top = coverTop(text);
   const title = (top.match(/^# .*$/m) || [''])[0];
   if (/Claude|Codex/.test(title)) out.push(`el título nombra una herramienta: «${title}»`);
-  if (!top.includes(`**${COVER_PHRASE[lang]}**`)) out.push('falta la frase del ciclo, literal y en negrita');
-  for (const w of COVER_WORDS[lang]) if (!new RegExp(`^- \\*\\*${w}:\\*\\* \\S`, 'm').test(top)) out.push(`falta la línea de «${w}»`);
+  if (!top.includes(COVER_OPENING[lang])) out.push('falta la apertura del speech, literal');
+  if (!top.includes(COVER_PHRASE[lang])) out.push('falta el cierre del speech, literal');
   if (!top.includes(COVER_AGENT[lang])) out.push(`no dice «${COVER_AGENT[lang]}»`);
   for (const tool of ['Claude Code', 'Codex']) if (countOf(top, tool) !== 1) out.push(`nombra ${tool} ${countOf(top, tool)} veces arriba (una)`);
   if (/BIZUIT|Bizuit/.test(top)) out.push('nombra BIZUIT arriba');
-  const steps = [...top.matchAll(/^\d+\. \*\*([^*:]+):\*\*/gm)].map((m) => m[1]);
-  if (JSON.stringify(steps) !== JSON.stringify(CYCLE_STEPS[lang])) out.push(`los pasos del ciclo o su orden: ${steps.join(', ') || 'ninguno'}`);
   const startSection = section(text, titleOf(at('Start on your own'), lang));
   if (startSection === null) out.push(`falta la sección «${titleOf(at('Start on your own'), lang)}»`);
   const storySection = section(text, titleOf(at('Your first story'), lang));
@@ -1673,12 +1670,12 @@ test('Papeles_Portada_CicloYPrimerPaso', async (t) => {
         assert.notStrictEqual(toy, real, `${what}: la portada de juguete es igual a la real`);
         assert.ok(coverTopProblems(toy, lang).some((m) => m.includes(needle)), `${what} tenía que fallar con «${needle}»`);
       };
-      fails(real.replace(COVER_PHRASE[lang], COVER_PHRASE[lang].replace('adapt', 'ad')), 'la frase del ciclo', 'sin la frase');
-      fails(real.replace(`- **${COVER_WORDS[lang][2]}:**`, '- **x:**'), COVER_WORDS[lang][2], 'sin una palabra');
+      fails(real.replace(COVER_OPENING[lang], 'x'), 'la apertura del speech', 'sin la apertura');
+      fails(real.replace(COVER_PHRASE[lang], COVER_PHRASE[lang].replace('control', 'x')), 'el cierre del speech', 'sin el cierre');
       fails(real.replace(/^# (.*)$/m, '# $1 para Claude Code'), 'el título', 'el título con la herramienta');
-      fails(real.replace(`**${COVER_PHRASE[lang]}**`, `**${COVER_PHRASE[lang]}** BIZUIT`), 'BIZUIT', 'BIZUIT arriba');
-      fails(real.replace(`**${COVER_PHRASE[lang]}**`, `**${COVER_PHRASE[lang]}** Codex`), 'Codex', 'una herramienta dos veces');
-      fails(real.replace(`**${COVER_PHRASE[lang]}**`, `**${COVER_PHRASE[lang]}** Claude Code`), 'nombra Claude Code', 'Claude Code dos veces');
+      fails(real.replace(COVER_PHRASE[lang], `${COVER_PHRASE[lang]} BIZUIT`), 'BIZUIT', 'BIZUIT arriba');
+      fails(real.replace(COVER_PHRASE[lang], `${COVER_PHRASE[lang]} Codex`), 'Codex', 'una herramienta dos veces');
+      fails(real.replace(COVER_PHRASE[lang], `${COVER_PHRASE[lang]} Claude Code`), 'nombra Claude Code', 'Claude Code dos veces');
       const top = coverTop(real);
       fails(real.replace(top, () => top.split(COVER_AGENT[lang]).join('x')), COVER_AGENT[lang], 'sin «agente de código»');
       const noStart = real.replace(`## ${titleOf(at('Start on your own'), lang)}`, '## x');
@@ -1688,7 +1685,6 @@ test('Papeles_Portada_CicloYPrimerPaso', async (t) => {
       fails(real.replace(start, () => moved), 'después de la línea npx', 'los lenguajes después de npx');
       fails(real.replace(start, () => start.split('npx @tyconsa/harness@latest').join('npm')), 'no trae la línea npx', 'sin la línea npx');
       fails(real.replace(start, () => start.replace(loose(OTHER_STACKS[lang]), 'x')), 'otros lenguajes', 'sin lo que pasa en otros lenguajes');
-      fails(real.replace(`**${CYCLE_STEPS[lang][3]}:**`, '**x:**'), 'los pasos del ciclo', 'sin un paso del ciclo');
       for (const k of FIRST_STEP_SAYS.start) fails(real.replace(start, () => start.split(k).join('x')), k, `«Empezá solo» sin ${k}`);
       const story = section(real, titleOf(at('Your first story'), lang));
       for (const k of FIRST_STEP_SAYS.story) fails(real.replace(story, () => story.split(k).join('x')), k, `«Tu primera historia» sin ${k}`);

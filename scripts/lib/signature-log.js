@@ -26,7 +26,9 @@ const FILE = 'signatures.jsonl';
 // `review`: la coordinadora por delegación, respaldada por el veredicto aprobado de la revisión automática que ella lanzó
 // (la aprobación de un plan de rutina): nivel 1, delegada
 // `notified`: lo de rutina que se hizo sin firma en una pestaña sin permisos, con aviso a la persona (owner-window.js)
-const VIAS = Object.freeze(['window', 'terminal', 'delegation', 'command', 'review', 'notified']);
+// `click` y `message`: la aprobación explícita de la persona sin terminal, un click en el cuadro de opciones o su
+// «aprobado» escrito, anotada por un gancho (owner-approvals.js)
+const VIAS = Object.freeze(['window', 'terminal', 'delegation', 'command', 'review', 'notified', 'click', 'message']);
 const DELEGADAS = Object.freeze(['delegation', 'review']);
 const MOTIVO_MAX = 500;
 

@@ -288,84 +288,44 @@ az repos pr update $ORG --id 5024 --draft false --auto-complete true --delete-so
 az repos pr update $ORG --id 5187 --draft false --description "algo"
 EOF
 
-# ---------------------------------------------------------------- LAS PORTABLES ANTES DE ENCOLAR
-# Un repo del arnés de juguete: el criterio del instalador es el de verdad (heavy-suites.json y suites-for-change.js),
-# la rama trae un cambio sobre origin/main y el freno juzga el checkout del `cwd` del evento.
+# ---------------------------------------------------------------- ENCOLAR NO PIDE CORRER SUITES EN LA MÁQUINA
+# Lo afectado lo corre el portón antes de guardar (.test-gate.yaml) y lo entero la cola: encolar no agrega otra pasada.
+# Un repo del arnés de juguete con el criterio de verdad del instalador y una rama que lo toca, sin ninguna constancia.
 correEn(){ # <cwd> <comando>
   node -e 'process.stdout.write(JSON.stringify({cwd:process.argv[1],tool_input:{command:process.argv[2]}}))' "$1" "$2" \
     | node "$HOOK" >"$TMP/out.txt" 2>"$TMP/err.txt"
   echo $?
 }
-STAMP="$AQUI/scripts/lib/portable-stamp.js"
 JUG="$TMP/arnes-de-juguete"
-mkdir -p "$JUG/scripts/ci" "$JUG/scripts/setup" "$JUG/docs"
+mkdir -p "$JUG/scripts/ci" "$JUG/scripts/setup"
 cp "$AQUI/scripts/ci/heavy-suites.json" "$AQUI/scripts/ci/suites-for-change.js" "$JUG/scripts/ci/"
-echo base > "$JUG/scripts/setup/instalar.js"; echo base > "$JUG/docs/nota.md"
+echo base > "$JUG/scripts/setup/instalar.js"
 g(){ GIT_AUTHOR_DATE="2026-01-01T00:00:00Z" GIT_COMMITTER_DATE="2026-01-01T00:00:00Z" git -C "$JUG" -c maintenance.auto=false -c user.name=prueba -c user.email=prueba@example.invalid "$@" >/dev/null 2>&1; }
 g init -q -b main; g add -A; g commit -qm base; g update-ref refs/remotes/origin/main HEAD; g checkout -qb fix/instalador
 echo cambio > "$JUG/scripts/setup/instalar.js"; g commit -qam "toca el instalador"
 GH_AUTO='gh pr merge 77 --merge --auto'
-AZ_AC="$BIEN"
+AZ_PUBLICA="az repos pr update $ORG --id 6081 --draft false --auto-complete true --squash false -o json"
 
-# P1 — toca el instalador y no hay constancia: frena, y dice cómo correrlas
+# E1 — encolar un cambio del instalador pasa, y el freno no menciona pruebas ni deja constancia de otro freno
 limpia; rc=$(correEn "$JUG" "$GH_AUTO")
-[ "$rc" -eq 2 ] && grep -q "portable-suites.test.sh" "$TMP/err.txt" && grep -q "TYCON_PORTABLE_BY_HAND=1" "$TMP/err.txt" \
-  && ok "P1 encolar con gh un cambio del instalador sin portables frena y dice cómo correrlas" || no "P1 no frenó el gh sin portables ($rc): $(head -c 200 "$TMP/err.txt")"
-grep -q '"freno":"pr-sin-portables".*"veredicto":"bloqueo"' "$ST/frenos.jsonl" 2>/dev/null \
-  && ok "P1 …y anota el bloqueo en la constancia de los frenos" || no "P1 no anotó el bloqueo"
-limpia; rc=$(correEn "$JUG" "$AZ_AC")
-[ "$rc" -eq 2 ] && grep -q "toca el instalador" "$TMP/err.txt" \
-  && ok "P1 el create bien armado de Azure también frena sin portables" || no "P1 el create de Azure pasó sin portables ($rc)"
+[ "$rc" -eq 0 ] && ! grep -qi "portable" "$TMP/err.txt" && ok "E1 encolar con gh un cambio del instalador no pide correr nada" || no "E1 frenó o pidió algo al encolar ($rc): $(head -c 200 "$TMP/err.txt")"
+grep -q "pr-sin-portables" "$ST/frenos.jsonl" 2>/dev/null && no "E1 anotó un freno retirado" || ok "E1 …y no anota un freno retirado"
 
-# P2 — con la constancia del árbol de HEAD, pasa
-node "$STAMP" record "$JUG" >/dev/null 2>&1
-limpia; rc=$(correEn "$JUG" "$GH_AUTO")
-[ "$rc" -eq 0 ] && ok "P2 con las portables en verde para ese árbol, encola" || no "P2 frenó con la constancia puesta ($rc): $(head -c 200 "$TMP/err.txt")"
+# E2 — un pedido de Azure publicado desde una carpeta del arnés pasa: esa carpeta no dice nada del repo del pedido
+limpia; rc=$(correEn "$JUG" "$AZ_PUBLICA")
+[ "$rc" -eq 0 ] && ok "E2 un pedido de Azure desde un worktree del arnés no frena" || no "E2 frenó un pedido de Azure bien armado ($rc): $(head -c 200 "$TMP/err.txt")"
+limpia; rc=$(correEn "$JUG" "cd /tmp/otro-repo && $AZ_PUBLICA")
+[ "$rc" -eq 0 ] && ok "E2 …tampoco con un cd a otro repo en el mismo comando" || no "E2 frenó con el cd a otro repo ($rc): $(head -c 200 "$TMP/err.txt")"
 
-# P3 — la constancia es del árbol: otro commit que cambia el contenido la pide de nuevo
-echo otro > "$JUG/scripts/setup/instalar.js"; g commit -qam "otro cambio"
-limpia; rc=$(correEn "$JUG" "$GH_AUTO")
-[ "$rc" -eq 2 ] && ok "P3 un árbol nuevo pide su propia constancia" || no "P3 dejó pasar un árbol sin constancia ($rc)"
-
-# P4 — con cambios sin commitear, record no anota: lo medido no es lo que va en el commit
-echo sucio > "$JUG/scripts/setup/instalar.js"
-node "$STAMP" record "$JUG" > "$TMP/rec.txt" 2>&1
-g checkout -q -- scripts/setup/instalar.js
-limpia; rc=$(correEn "$JUG" "$GH_AUTO")
-[ "$rc" -eq 2 ] && grep -q "sin commitear" "$TMP/rec.txt" && ok "P4 con cambios sin commitear no queda constancia" || no "P4 anotó con el árbol sucio ($rc): $(cat "$TMP/rec.txt")"
-# …y un árbol distinto del del principio, tampoco
-node "$STAMP" record "$JUG" 0000000000000000000000000000000000000000 > "$TMP/rec.txt" 2>&1
-limpia; rc=$(correEn "$JUG" "$GH_AUTO")
-[ "$rc" -eq 2 ] && grep -q "cambió mientras corrían" "$TMP/rec.txt" && ok "P4 si el árbol cambió mientras corrían, no queda constancia" || no "P4 anotó con el árbol cambiado ($rc)"
-
-# P5 — el prefijo deja encolar una vez, con constancia
+# E3 — el prefijo viejo no rompe nada ni deja constancia de un salteo
 limpia; rc=$(correEn "$JUG" "TYCON_PORTABLE_BY_HAND=1 $GH_AUTO")
-[ "$rc" -eq 0 ] && grep -q "PORTABLE_A_MANO" "$ST/bypass.log" 2>/dev/null && grep -q '"freno":"pr-sin-portables".*"veredicto":"escape"' "$ST/frenos.jsonl" 2>/dev/null \
-  && ok "P5 TYCON_PORTABLE_BY_HAND=1 encola y deja constancia" || no "P5 el prefijo no funcionó o no dejó constancia ($rc)"
-# …y el otro prefijo no lo saltea: son dos frenos
-limpia; rc=$(correEn "$JUG" "TYCON_PR_BY_HAND=1 $GH_AUTO")
-[ "$rc" -eq 2 ] && ok "P5 TYCON_PR_BY_HAND=1 no saltea las portables" || no "P5 el prefijo del otro freno salteó las portables ($rc)"
+[ "$rc" -eq 0 ] && ! grep -q "PORTABLE_A_MANO" "$ST/bypass.log" 2>/dev/null && ok "E3 un comando con el prefijo viejo pasa y no anota salteo" || no "E3 el prefijo viejo frenó o anotó un salteo ($rc)"
 
-limpia; rc=$(correEn "$JUG" "TYCON_PR_BY_HAND=1 gh pr merge 77 --squash --auto")
-[ "$rc" -eq 2 ] && grep -q "toca el instalador" "$TMP/err.txt" && ok "P5 un merge mal armado con el prefijo del otro freno igual pide las portables" || no "P5 el prefijo del otro freno salteó las portables en un mal armado ($rc)"
-
-# P6 — un cambio que no toca el instalador no pide constancia
-g checkout -q main; g checkout -qb docs/nota; echo cambio > "$JUG/docs/nota.md"; g commit -qam "sólo una nota"
-limpia; rc=$(correEn "$JUG" "$GH_AUTO")
-[ "$rc" -eq 0 ] && ok "P6 un cambio que no toca el instalador encola sin portables" || no "P6 frenó un cambio que no toca el instalador ($rc): $(head -c 200 "$TMP/err.txt")"
-
-# P7 — no poder saber frena (sin origin/main no se sabe qué trae la rama)
-g update-ref -d refs/remotes/origin/main
-limpia; rc=$(correEn "$JUG" "$GH_AUTO")
-[ "$rc" -eq 2 ] && grep -q "no pude saber" "$TMP/err.txt" && ok "P7 sin poder listar el cambio frena y lo dice" || no "P7 no frenó sin poder mirar ($rc)"
-
-# P8 — fuera de un repo del arnés, o sin cwd en el evento, no aplica; tampoco a lo que no encola
-limpia; rc=$(correEn "$TMP" "$GH_AUTO")
-[ "$rc" -eq 0 ] && ok "P8 fuera de un repo del arnés no aplica" || no "P8 frenó fuera del arnés ($rc)"
-limpia; rc=$(corre "$GH_AUTO")
-[ "$rc" -eq 0 ] && ok "P8 sin cwd en el evento no aplica" || no "P8 frenó sin cwd ($rc)"
-limpia; rc=$(correEn "$JUG" "gh pr view 77 && echo gh pr merge 77 --auto")
-[ "$rc" -eq 0 ] && ok "P8 ver un pedido, o escribir el comando con echo, no encola" || no "P8 frenó algo que no encola ($rc)"
+# E4 — lo que este freno sí mira sigue igual, parado en la misma carpeta
+limpia; rc=$(correEn "$JUG" "gh pr merge 77 --squash --auto")
+[ "$rc" -eq 2 ] && grep -q "aplasta los commits" "$TMP/err.txt" && ok "E4 un gh pr merge que aplasta sigue frenando" || no "E4 dejó pasar un merge que aplasta ($rc)"
+limpia; rc=$(correEn "$JUG" "az repos pr update $ORG --id 6081 --draft false -o json")
+[ "$rc" -eq 2 ] && grep -q "publica un borrador" "$TMP/err.txt" && ok "E4 publicar un borrador sin sus banderas sigue frenando" || no "E4 dejó pasar un borrador sin banderas ($rc)"
 
 # ---------------------------------------------------------------- 8.164-SinBorrarRama_Frena @story-8.164 @ac-1 (T1)
 # 🔴 Sin `--delete-source-branch` explícito, la rama sobrevive al pedido: el 1/11 había 1.019 ramas ya entradas. `false`

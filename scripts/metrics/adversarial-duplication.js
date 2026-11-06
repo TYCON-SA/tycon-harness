@@ -163,10 +163,12 @@ function adversarialesDeFindings(arr) {
 function findingsDesdeGit(repo, runDir, diag) {
   const rel = path.relative(repo, path.join(runDir, 'findings.json'));
   try {
+    // git en inglés: «no es un repo» se reconoce por el texto del error, que git traduce
+    const env = require('../lib/clean-git-env.js').idiomaFijo();
     const sha = execFileSync('git', ['log', '--all', '--diff-filter=A', '--format=%H', '-1', '--', rel],
-      { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+      { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env }).trim();
     if (!sha) return null;
-    const txt = execFileSync('git', ['show', `${sha}:${rel}`], { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    const txt = execFileSync('git', ['show', `${sha}:${rel}`], { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env });
     return JSON.parse(txt);
   } catch (e) {
     // Una carpeta que NO es un repo git es un caso legítimo (un worktree borrado, un directorio

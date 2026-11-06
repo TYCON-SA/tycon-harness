@@ -378,13 +378,14 @@ test('T16 (7.23) Board_ReadsBothSchemes @story-7.23 @ac-16 — el marker nuevo y
   });
   const run = readRun(vuelta, NOW);
   const line = boardLine(run, 41);
-  assert.match(line, /^Story 7\.23 · Los pasos del pipeline, claros… · Revisores, vuelta 2 · paso 7 de 11 · /, line);
+  // la otra vuelta dice qué falta (8.195): un marcador de antes, sin `otraVuelta`, con la regla de antes
+  assert.match(line, /^Story 7\.23 · Los pasos del pipeline, claros… · falta revisar lo cambiado después de los revisores \(vuelta 2, 1 archivo\) · 8 de 11 hechos · /, line);
   assert.match(line, /Arranque: hecho, con aviso: no se pudo abrir el registro de horas/);
   const t = pipelineTable(run);
-  assert.match(t.split('\n')[0], /^Story 7\.23 «Los pasos del pipeline, claros: nombres» — Revisores, vuelta 2 · paso 7 de 11/);
+  assert.match(t.split('\n')[0], /^Story 7\.23 «Los pasos del pipeline, claros: nombres» — falta revisar lo cambiado después de los revisores \(vuelta 2, 1 archivo\) · 8 de 11 hechos/);
   assert.strictEqual(t.split('\n')[1], 'Arranque: hecho, con aviso: no se pudo abrir el registro de horas');
   assert.ok(t.includes('| 1. Arranque | hecho, con aviso |'), t);
-  assert.ok(t.includes('| 7. Revisores (vuelta 2) | corriendo |'), t);
+  assert.ok(t.includes('| 7. Revisores (vuelta 2) | falta otra vuelta |'), t);
   assert.ok(t.includes('| 11. Preparar el commit | pendiente | — |'), t);
   assert.ok(!t.includes(OLD_RUN_TEXT), 'el marker nuevo no lleva la nota del viejo');
   // Hallazgos: espera sólo cuando de verdad preguntó (waitStartedAt), aun sin modo autónomo
@@ -498,15 +499,15 @@ test('T41 Board_NoOpenStep_SaysWhatItWaitsFor — sin paso abierto dice si esper
   });
   const run = readRun(cerrada, NOW);
   assert.strictEqual(run.current, null);
-  // todavía sin preguntar: lo de antes
-  assert.match(boardLine(run, 10), / · sin paso abierto · /);
+  // todavía sin preguntar: terminada, falta cerrar (8.195)
+  assert.match(boardLine(run, 10), / · terminada, falta cerrar · /);
   const con = { ...run, entering: { prs: [{ repo: 'tycon-harness', ref: '#536' }, { repo: 'harness-maintainers', ref: '!5434' }], failed: false } };
   assert.match(boardLine(con, 10), / · esperando que entren los pedidos \(#536, !5434\) · /);
   assert.match(pipelineTable(con), /— esperando que entren los pedidos \(#536, !5434\) ·/);
   assert.match(boardLine({ ...run, entering: { prs: [], failed: false } }, 10), / · lista para cerrar · /);
   // una consulta que no contestó no es «lista para cerrar»
   assert.strictEqual(idleStep({ prs: [], failed: true }), 'sin paso abierto (no pude consultar los pedidos)');
-  assert.strictEqual(idleStep(null), 'sin paso abierto');
+  assert.strictEqual(idleStep(null), 'terminada, falta cerrar');
 });
 
 test('T42 Board_TotalInHours — el total en horas desde la hora, y desde un día entero, desde cuándo corre', async () => {
@@ -541,4 +542,107 @@ test('T43 Board_FindingsAnswered_StopsWaiting — «te espera» de Hallazgos se 
   assert.strictEqual(contesto.run.waiting, false, 'la persona ya contestó');
   assert.strictEqual(contesto.remember, null);
   assert.doesNotMatch(boardLine(contesto.run, 10), /te espera/);
+});
+
+// ── La otra vuelta y lo terminado (8.195) ────────────────────────────────────────────────────────────────────────
+
+const NOMBRES_8195 = ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers', 'adversarial-pass', 'findings', 'live-check', 'prepare-commit'];
+// todos los pasos hechos, los revisores cerrados a los 20 minutos y el último paso a los 25
+function terminada(extra = {}) {
+  return {
+    storyId: '8.195', stepScheme: 2, startedAt: at(0), autonomous: true,
+    stepsCompleted: NOMBRES_8195, stepsPending: [],
+    stepTimings: { reviewers: { startedAt: at(10), completedAt: at(20), rounds: 1 }, findings: { completedAt: at(22) }, 'prepare-commit': { completedAt: at(25) } },
+    ...extra,
+  };
+}
+
+test('T9 Cartel_OtraVuelta_DiceQueFalta @story-8.195 @ac-9 — con otra vuelta: qué falta, cuántos archivos, y los minutos desde el primer cambio', async () => {
+  const { readRun, boardLine, pipelineTable } = await mod('run.mjs');
+  const m = terminada({ otraVuelta: { round: 2, archivos: ['src/HistorialConsulta.tsx', 'src/MisConsultas.tsx'], desde: at(30) } });
+  const run = readRun(JSON.stringify(m), NOW);
+  const line = boardLine(run, 10);
+  assert.match(line, /^Story 8\.195 · falta revisar lo cambiado después de los revisores \(vuelta 2, 2 archivos\) · /, line);
+  assert.doesNotMatch(line, /paso 7 de 11/);
+  assert.doesNotMatch(line, /Revisores, vuelta/);
+  assert.match(line, / · 10 min en este paso · /, 'desde el primer cambio (30), no desde el arranque de los revisores (10)');
+  assert.ok(pipelineTable(run).includes('| 7. Revisores (vuelta 2) | falta otra vuelta |'), pipelineTable(run));
+});
+
+test('T9b Cartel_UltimoPasoOtraVez_CuentaDesdeLosRevisores @story-8.195 @ac-4 @ac-9 — «Preparar el commit» pedido otra vez cuenta desde el último cierre de los revisores, no desde su arranque de ayer', async () => {
+  // lo cazó el pase adversarial: el renglón decía «1205 min en este paso», contados desde el arranque del día anterior
+  const { readRun, boardLine } = await mod('run.mjs');
+  const m = terminada({
+    otraVuelta: null,
+    stepTimings: {
+      reviewers: { startedAt: at(-1500), completedAt: at(-1490), lastCompletedAt: at(35), rounds: 2 },
+      findings: { completedAt: at(-1480) },
+      'prepare-commit': { startedAt: at(-1470), completedAt: at(-1460) },
+    },
+  });
+  const run = readRun(JSON.stringify(m), NOW);
+  assert.strictEqual(run.current.id, 'prepare-commit');
+  assert.match(boardLine(run, 10), / · 5 min en este paso · /, boardLine(run, 10));
+});
+
+test('T10 Cartel_TodoHecho_TerminadaFaltaCerrar @story-8.195 @ac-10 — con todo hecho y sin otra vuelta, «terminada, falta cerrar»', async () => {
+  const { readRun, boardLine } = await mod('run.mjs');
+  const line = boardLine(readRun(JSON.stringify(terminada({ otraVuelta: null })), NOW), 10);
+  assert.match(line, /^Story 8\.195 · terminada, falta cerrar · 11 de 11 hechos · /, line);
+  assert.doesNotMatch(line, /sin paso abierto/);
+});
+
+test('T11 CartelYNext_MismoMarcador_DecidenIgual @story-8.195 @ac-11 — el cartel y la tabla del pipeline deciden lo mismo sobre la otra vuelta y el último paso', async () => {
+  const { readRun } = await mod('run.mjs');
+  const T = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'steps.js'));
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-mods-t11-'));
+  fs.mkdirSync(path.join(repo, '.git'));
+  const p = (rel) => path.join(repo, rel);
+  const casos = {
+    codigo: terminada({ repoPath: repo, fileEvents: [{ path: p('src/a.ts'), ts: at(30), code: true }] }),
+    prueba: terminada({ repoPath: repo, fileEvents: [{ path: p('src/a.test.ts'), ts: at(30), code: false }] }),
+    texto: terminada({ repoPath: repo, fileEvents: [{ path: p('docs/a.md'), ts: at(30), code: false }] }),
+    // los revisores volvieron a cerrar después del último paso: el último paso se pide de nuevo
+    ultimoPasoViejo: terminada({ repoPath: repo, stepTimings: { reviewers: { startedAt: at(10), completedAt: at(20), lastCompletedAt: at(32), rounds: 2 }, findings: { completedAt: at(22) }, 'prepare-commit': { completedAt: at(25) } }, fileEvents: [{ path: p('src/a.ts'), ts: at(30), code: true }] }),
+    nada: terminada({ repoPath: repo }),
+  };
+  try {
+    for (const [nombre, m0] of Object.entries(casos)) {
+      const m = { ...m0, otraVuelta: T.otraVueltaDe(m0) };
+      const run = readRun(JSON.stringify(m), NOW);
+      const vuelta = T.reviewersRound(m);
+      assert.strictEqual(Boolean(run.reloop), Boolean(vuelta), `${nombre}: la otra vuelta`);
+      if (vuelta) assert.strictEqual(run.reloop.files, vuelta.archivos.length, `${nombre}: los archivos`);
+      const filaUltimo = run.rows.find((r) => r.id === 'prepare-commit');
+      assert.strictEqual(filaUltimo.state !== 'hecho', T.prepareCommitStale(m), `${nombre}: el último paso`);
+    }
+    assert.strictEqual(readRun(JSON.stringify({ ...casos.ultimoPasoViejo, otraVuelta: null }), NOW).current.id, 'prepare-commit');
+  } finally { fs.rmSync(repo, { recursive: true, force: true }); }
+});
+
+test('T14 MarcadorViejo_PorNumero_SinCambios @story-8.195 @ac-14 — el marcador por número no tiene otra vuelta, aunque traiga el campo', async () => {
+  const { readRun, boardLine } = await mod('run.mjs');
+  const T = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'steps.js'));
+  const hoy = boardLine(readRun(markerEnPaso4(), NOW), 10);
+  const conCampo = markerEnPaso4({ otraVuelta: { round: 2, archivos: ['a.ts'], desde: at(30) }, fileEvents: [{ path: '/r/a.ts', ts: at(30), code: true }] });
+  assert.strictEqual(boardLine(readRun(conCampo, NOW), 10), hoy);
+  assert.strictEqual(T.reviewersRound(JSON.parse(conCampo)), null);
+  assert.strictEqual(T.otraVueltaDe(JSON.parse(conCampo)), undefined, 'en un marcador viejo no se escribe el campo');
+});
+
+test('T31 MarcadorDeAntes_ConPruebaMarcadaCodigo @story-8.195 @ac-31 — sin el campo, el cartel usa su regla de antes; con el campo, decide como next', async () => {
+  const { readRun } = await mod('run.mjs');
+  const T = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'steps.js'));
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-mods-t31-'));
+  try {
+    fs.mkdirSync(path.join(repo, '.git'));
+    // una prueba marcada como código por un arnés de antes
+    const m = terminada({ repoPath: repo, fileEvents: [{ path: path.join(repo, 'src', 'a.test.ts'), ts: at(30), code: true }] });
+    assert.ok(readRun(JSON.stringify(m), NOW).reloop, 'sin el campo: la regla de antes, la marca manda');
+    assert.strictEqual(T.reviewersRound(m), null, 'next: la regla nueva, es una prueba');
+    // la próxima edición escribe el campo, y el cartel decide como next
+    const despues = { ...m, otraVuelta: T.otraVueltaDe(m) };
+    assert.strictEqual(despues.otraVuelta, null);
+    assert.strictEqual(readRun(JSON.stringify(despues), NOW).reloop, null);
+  } finally { fs.rmSync(repo, { recursive: true, force: true }); }
 });

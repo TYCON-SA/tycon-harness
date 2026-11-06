@@ -78,6 +78,7 @@ const { spawnSync } = require('child_process');
 const { proyectoDe, leerFicha, soloRepo } = require('./nightly-dependencies.js');
 const NOTIFY = require('../../lib/notify.js');
 const OPS = require('../../lib/operations-config.js');
+const ORG = require('../../lib/org-config.js');
 
 const RAIZ = path.resolve(__dirname, '..', '..', '..');
 // repos.json y summary.json viven al lado de este guion
@@ -782,11 +783,29 @@ const limpiar = (t) => NOTIFY.limpiar(t);
  * otro texto se toma como que no se pudo probar (puede traer la dirección). Un aviso del vocabulario de `AVISOS` en una
  * prueba que pasó se suma al final de la línea; uno que no es de la lista se ignora.
  */
-function lineaDe({ operations, prueba, hoy }) {
+function lineaDe({ operations, perfil = null, prueba, hoy }) {
+  const d = direccionDeLaNoche(operations, perfil);
+  // el resumen va a los canales: de cada dirección, sólo su origen (sin usuario, clave ni parámetros)
+  const r = lineaCon({ ...d, url: d.url ? ORG.origenDe(d.url) : d.url, prueba, hoy });
+  // un perfil que está y no se pudo leer no es «sin perfil»: se dice, y sigue la de operations.json
+  if (d.perfilIlegible) return { ...r, aviso: 'sitio: el perfil del equipo no se pudo leer: uso la dirección de operations.json' };
+  // las dos direcciones distintas: vale la del perfil, y el resumen lo dice en un renglón
+  return d.distintas ? { ...r, aviso: `sitio: la dirección del perfil (${ORG.origenDe(d.url)}) no es la de operations.json (${ORG.origenDe(d.deOperaciones)}): uso la del perfil` } : r;
+}
+/**
+ * La dirección del sitio para la noche: la del perfil (`--profile`, o el que se baja) y, si el
+ * perfil no la tiene o no llegó, la de operations.json, como antes. `{ url, distintas, deOperaciones, opsOk }`.
+ */
+function direccionDeLaNoche(operations, perfil) {
   const ops = OPS.load(operations);
+  const p = perfil ? ORG.estadoDelPerfil(perfil) : { doc: null, ilegible: false };
+  const d = ORG.direccionDelSitio({ perfil: p.doc, operaciones: ops.ok ? ops.data : null });
+  const deOperaciones = ops.ok && ops.data.site && typeof ops.data.site.url === 'string' ? ops.data.site.url : null;
+  return { url: d.url, distintas: d.distintas, deOperaciones, opsOk: ops.ok, perfilIlegible: p.ilegible };
+}
+function lineaCon({ url, opsOk, prueba, hoy }) {
   const noPudo = { linea: 'sitio: no se pudo probar desde el nocturno', resultado: 'no_pudo', motivo: null, hora: null };
-  if (!ops.ok) return noPudo;
-  const url = ops.data.site && typeof ops.data.site.url === 'string' ? ops.data.site.url : null;
+  if (!url && !opsOk) return noPudo;
   if (!url) return { linea: 'sitio: sin configurar', resultado: null, motivo: null, hora: null };
   const r = prueba;
   const hora = r && typeof r.hora === 'string' && Number.isFinite(Date.parse(r.hora)) ? new Date(r.hora).toISOString() : null;
@@ -831,10 +850,10 @@ function lineaVersion({ actualizacion, hoy }) {
 }
 
 /** La línea del sitio de dependencias: con el resultado de check-deploy.js de esta mañana (`--site-check`). */
-function lineaSitio(a) {
+function lineaSitio(a, perfil = null) {
   let prueba = null;
   if (a.siteCheck) { try { prueba = JSON.parse(fs.readFileSync(a.siteCheck, 'utf8')); } catch { prueba = null; } }
-  return lineaDe({ operations: a.operations, prueba, hoy: a.hoy });
+  return lineaDe({ operations: a.operations, perfil, prueba, hoy: a.hoy });
 }
 
 function escribirConstancia(archivo, resumen) {
@@ -1138,7 +1157,7 @@ function fichasDeLaConstancia(r) {
     && fichas.length + volvio.length + cerrado.length + propuesta.length === f.length && enOrden ? f : null;
 }
 
-function lineaEjecuciones(dir, hoy) {
+function lineaEjecuciones(dir, hoy, perfil = null) {
   const raiz = path.join(dir, 'inbox', 'runs-review');
   let l;
   try { l = JSON.parse(fs.readFileSync(path.join(raiz, 'last-run.json'), 'utf8')); } catch (e) { return [e && e.code === 'ENOENT' ? EJ_NO_CORRIO : EJ_ILEGIBLE]; }
@@ -1182,7 +1201,7 @@ function lineaEjecuciones(dir, hoy) {
     }
   }
   let urlSitio = null;
-  try { const o = OPS.load(path.join(dir, 'operations.json')); if (o.ok && o.data.site && typeof o.data.site.url === 'string') urlSitio = o.data.site.url; } catch { urlSitio = null; }
+  try { urlSitio = direccionDeLaNoche(path.join(dir, 'operations.json'), perfil).url; } catch { urlSitio = null; }
   // el enlace de cada causa nueva sin ficha por causa: la primera ficha vieja de hoy en pending/ (por nombre) que la trae
   const fichasDeHoy = [];
   try {
@@ -1358,16 +1377,15 @@ function entregar(a) {
   let finalOtros = null;   // el texto de los canales que no editan, cuando Telegram edita el de la mañana
   let editarId = null;
   let notaArmado = null;
-  let sitio = a.fuente === 'dependencias' ? lineaSitio(a) : null;
+  let sitio = a.fuente === 'dependencias' ? lineaSitio(a, traido.archivo) : null;
   // la línea de los aprendizajes: la arma la mañana con --instincts; la edición de las 08:00 la rearma de la constancia
   let aprendizajes = null;
   if (a.instincts !== null) {
-    const ops = OPS.load(a.operations);
-    const url = ops.ok && ops.data.site && typeof ops.data.site.url === 'string' ? ops.data.site.url : null;
+    const { url } = direccionDeLaNoche(a.operations, traido.archivo);
     aprendizajes = lineaAprendizajes(a.instincts, a.hoy, { url, sitioPaso: !!(sitio && sitio.resultado === 'paso') });
   }
   // la línea de las ejecuciones: la arma la mañana con --runs-review; la edición de las 08:00 la rearma de la constancia
-  let ejecuciones = a.runsReview !== null ? lineaEjecuciones(a.runsReview, a.hoy) : null;
+  let ejecuciones = a.runsReview !== null ? lineaEjecuciones(a.runsReview, a.hoy, traido.archivo) : null;
   // y debajo, los renglones de fichas del clon, que también se guardan y se rearman
   let fichasClon = a.runsReview !== null ? lineasFichasDelClon(a.runsReview, a.hoy) : null;
   // sin la revisión de las ejecuciones, la línea de la propuesta del modelo va sola: el paso también propone para las
@@ -1384,7 +1402,7 @@ function entregar(a) {
     // la línea del sitio es la que dejó dependencias esa mañana, tal cual y con su hora: el vigilante no prueba de nuevo
     // la línea del sitio se REARMA con lo que probó dependencias esa mañana (resultado, motivo, hora) y site.url: el
     // vigilante no prueba de nuevo, y tampoco copia el texto guardado (un snapshot cambiado no llega al aviso)
-    sitio = lineaDe({ operations: a.operations, prueba: r && r.sitio && typeof r.sitio === 'object' ? r.sitio : null, hoy: a.hoy });
+    sitio = lineaDe({ operations: a.operations, perfil: traido.archivo, prueba: r && r.sitio && typeof r.sitio === 'object' ? r.sitio : null, hoy: a.hoy });
     if (yaLlego && mid && d.seccion && canal === 'telegram') {
       editarId = mid;
       final = `${d.seccion}\n\n${res.texto}`;
@@ -1438,6 +1456,8 @@ function entregar(a) {
   }
   // la noche no pudo leer el perfil: salió por el canal viejo, y quien lo lee tiene que saberlo
   if (noche.aviso) cola = `${cola}\n⚠️ ${noche.aviso}`;
+  // las dos direcciones distintas, en el renglón de arriba: la línea del sitio sigue siendo la última
+  if (sitio.aviso) cola = `${cola}\n${sitio.aviso}`;
   cola = `${cola}\n${sitio.linea}`;
   // el cuerpo se achica en lo que ocupa la línea de las ejecuciones (con los renglones de fichas): el mensaje entero no
   // crece por ella
@@ -1543,8 +1563,10 @@ function perfilDeLaNoche(a) {
     const RS = require('../../metrics/retro-sweep.js');
     const o = RS.obtain({ nombre: r.data.profile.repo, fuente: TR.url(r.data.profile) }, a.cloneDir);
     if (!o.dir) return { archivo: null, problema: RS.clean(o.motivo) };
+    // git en inglés: «no está» se reconoce por el texto del error, que git traduce
+    const env = require('../../lib/clean-git-env.js').idiomaFijo();
     for (const nombre of ['team-profile.json', 'perfil-equipo.json']) {
-      const g = spawnSync('git', ['-C', o.dir, 'show', `${o.ref}:${nombre}`], { encoding: 'utf8', windowsHide: true, timeout: 60000 });
+      const g = spawnSync('git', ['-C', o.dir, 'show', `${o.ref}:${nombre}`], { encoding: 'utf8', windowsHide: true, timeout: 60000, env });
       if (g.status !== 0) {
         // que el archivo no esté en main es probar el otro nombre; cualquier otra falla de git se dice como tal
         if (/does not exist|exists on disk, but not in/i.test(String(g.stderr || ''))) continue;
@@ -1632,7 +1654,32 @@ function falloInesperado(a, e) {
   return 1;
 }
 
+/**
+ * Lo que los pipelines de la noche le preguntan al resumen antes de armarlo, para usar la misma regla:
+ *   · `site-url --operations <f> [--profile <f>]`: la dirección del sitio que se prueba sin sesión (la del perfil y,
+ *     sin ella, la de operations.json). Vacía = sin configurar; sale 3 si no hay perfil con dirección y
+ *     operations.json no se pudo leer (no se sabe).
+ *   · `profile --team-repos <f> --clone-dir <d>`: baja el perfil (perfilDeLaNoche) e imprime la ruta; vacía si no
+ *     pudo, con el motivo en stderr. Nunca falla: sin perfil la noche sigue con operations.json.
+ */
+function preguntaDeLaNoche(argv) {
+  const op = (k) => { const i = argv.indexOf(k); return i > 0 && argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[i + 1] : null; };
+  if (argv[0] === 'site-url') {
+    if (!op('--operations')) { console.error('uso: daily-summary.js site-url --operations <operations.json> [--profile <team-profile.json>]'); return 2; }
+    const d = direccionDeLaNoche(op('--operations'), op('--profile'));
+    if (d.perfilIlegible) console.error('el perfil del equipo no se pudo leer: uso la dirección de operations.json');
+    if (d.url) { process.stdout.write(`${d.url}\n`); return 0; }
+    return d.opsOk ? 0 : 3;
+  }
+  if (!op('--team-repos') || !op('--clone-dir')) { console.error('uso: daily-summary.js profile --team-repos <team-repos.json> --clone-dir <carpeta>'); return 2; }
+  const p = perfilDeLaNoche({ teamRepos: op('--team-repos'), cloneDir: op('--clone-dir') });
+  if (p.archivo) process.stdout.write(`${p.archivo}\n`);
+  else if (p.problema) console.error(`sin el perfil: ${p.problema}`);
+  return 0;
+}
+
 function main(argv) {
+  if (argv[0] === 'site-url' || argv[0] === 'profile') return preguntaDeLaNoche(argv);
   const a = parseArgs(argv);
   if (a.ayuda) { uso(); return 0; }
   if (a.error || !['build', 'deliver'].includes(a.cmd) || !hasOwn(FUENTE_DE_LA_OPCION, a.fuente) || !esFecha(a.hoy)) {
@@ -1678,4 +1725,4 @@ if (require.main === module) {
   process.exit(codigo);
 }
 module.exports = { armar, texto, identidad, entregado, comparar, rubrosDependencias, rubrosVigilante, parseArgs, TOPE, TOPE_MENSAJE, NOMBRES_CAUSA,
-  lineaEjecuciones, lineaFichas, lineasFichasDelClon, lineasCerrados, fichasDeLaConstancia };
+  lineaDe, lineaEjecuciones, lineaFichas, lineasFichasDelClon, lineasCerrados, fichasDeLaConstancia };

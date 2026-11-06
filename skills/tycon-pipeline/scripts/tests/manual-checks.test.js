@@ -128,7 +128,7 @@ test('ManualChecks_PuertaBashLaMuestra @story-7.46 @ac-9', () => {
   const msg = mostrar(lab, '2');
   assert.match(msg, /Vas a marcar como probado a mano, en la historia 9\.94:/);
   assert.match(msg, /Criterio 2 — Un pedido ya despachado no muestra el botón «Cancelar»\./);
-  assert.match(msg, /aprobalo en la ventana de permiso que sale a continuación; si no, elegí «No»\. Una respuesta en el chat no lo marca\./);
+  assert.match(msg, /aprobalo en la ventana de permiso que sale a continuación o, donde no sale, en el cuadro de opciones; si no, elegí «No»\. Lo marca esa aprobación, no otra respuesta en el chat\./);
   assert.doesNotMatch(msg, /contestá|«probé /, 'no enseña a contestar en el chat');
   const g = gates(lab).filter((x) => x.name === 'manual-check-shown');
   assert.equal(g.length, 1);
