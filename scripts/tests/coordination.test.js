@@ -18,6 +18,8 @@ const NOW = Date.parse('2026-10-25T14:00:00.000Z');
 // A project folder outside the temporary one: a derived name there is a real session, not an internal agent.
 const PROJECT = path.join(path.sep, 'srv', 'repos', 'proyecto');
 const mins = (n) => NOW - n * 60000;
+// espera sin ceder el turno: el registro de git va por segundos, y un caso necesita dos momentos distintos
+const esperar = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
 // A toy machine: HOME with its Claude folder, the pipeline state and a profile outside HOME.
 function toy({ profile = {}, machine = null } = {}) {
@@ -1077,6 +1079,82 @@ test('Close_Slot: un puesto fijo tomado no cierra aunque la rama haya entrado; s
   git(slot, 'checkout', '-q', '--detach');
   assert.strictEqual(closeIt(t, 'puesto').closed, true);
   assert.ok(fs.existsSync(slot), 'el puesto no se borra');
+});
+
+// 🔴 Falla con: la sesión soltó su puesto, otra lo tomó con su rama, y el cierre le cuenta a la primera el trabajo de la otra.
+test('Close_SlotTakenByAnother: el puesto que tomó otra sesión no es suyo; su rama wt/<nombre>, sí', () => {
+  const t = closeLab();
+  const slot = path.join(t.root, 'repo--slot-1');
+  git(t.repo, 'worktree', 'add', '-q', '--detach', slot, 'origin/main');
+  // la primera trabajó en el puesto con su rama, empujada, y lo soltó
+  git(slot, 'checkout', '-q', '-b', 'wt/primera');
+  commitIn(slot);
+  git(slot, 'push', '-q', 'origin', 'wt/primera');
+  git(slot, 'checkout', '-q', '--detach', 'origin/main');
+  bg(t, 'primera', slot);
+  // la otra lo tomó, viva y después (el registro de git va por segundos: un segundo entre una y otra): una rama que dejó
+  // al llegar, su rama, un commit sin empujar y un cambio sin commitear
+  esperar(1100);
+  bg(t, 'otra', slot, { startedAt: Date.now() });
+  esperar(1100);
+  git(slot, 'checkout', '-q', '-b', 'otra-de-paso');
+  commitIn(slot, 'c.txt');
+  git(slot, 'checkout', '-q', '-b', 'wt/otra');
+  commitIn(slot);
+  fs.writeFileSync(path.join(slot, 'a-medio-hacer.txt'), 'x\n');
+  const r = closeIt(t, 'primera');
+  assert.doesNotMatch(r.message, /sin commitear|sin empujar|wt\/otra|otra-de-paso/, `lo de la otra no es suyo: ${r.message}`);
+  assert.match(r.message, /la rama local wt\/primera .*no entró a main/, 'su propia rama sí se mira');
+  assert.deepStrictEqual(closed(t), []);
+  // con su rama en main, cierra, y el puesto de la otra queda como estaba
+  git(t.repo, 'fetch', '-q', 'origin', 'wt/primera');
+  git(t.repo, 'merge', '-q', '--ff-only', 'FETCH_HEAD');
+  git(t.repo, 'push', '-q', 'origin', 'main');
+  assert.strictEqual(closeIt(t, 'primera').closed, true);
+  assert.ok(fs.existsSync(path.join(slot, 'a-medio-hacer.txt')), 'el trabajo de la otra no se toca');
+});
+
+// 🔴 Falla con: una sesión abierta con su propia rama (`open --branch`) se da por limpia, sucia en su puesto o con la
+// rama que dejó sin entrar.
+test('Close_SlotOwnBranchWithAnyName: su rama, se llame como se llame, es suya hasta que otra sesión viva toma el puesto', () => {
+  const t = closeLab();
+  const slot = path.join(t.root, 'repo--slot-1');
+  git(t.repo, 'worktree', 'add', '-q', '--detach', slot, 'origin/main');
+  // sigue en su puesto, con una rama wt/ de otro nombre, sucia: no cierra
+  git(slot, 'checkout', '-q', '-b', 'wt/feature-1');
+  commitIn(slot);
+  fs.writeFileSync(path.join(slot, 'a-medio-hacer.txt'), 'x\n');
+  bg(t, 'propia', slot);
+  const r = closeIt(t, 'propia');
+  assert.match(r.message, /sin commitear/, r.message);
+  assert.match(r.message, /sin empujar/, r.message);
+  assert.match(r.message, /sigue tomado por la rama wt\/feature-1/, r.message);
+  assert.deepStrictEqual(closed(t), []);
+  // la deja empujada sin entrar, suelta el puesto y otra lo toma: su rama sigue siendo suya
+  fs.rmSync(path.join(slot, 'a-medio-hacer.txt'));
+  git(slot, 'push', '-q', 'origin', 'wt/feature-1');
+  git(slot, 'checkout', '-q', '--detach', 'origin/main');
+  bg(t, 'siguiente', slot, { startedAt: Date.now() + 1000 });
+  git(slot, 'checkout', '-q', '-b', 'wt/siguiente');
+  assert.match(closeIt(t, 'propia').message, /la rama local wt\/feature-1 .*no entró a main/);
+  assert.deepStrictEqual(closed(t), []);
+});
+
+// 🔴 Falla con: otra sesión abierta en el mismo puesto mientras la primera todavía lo tiene hace que la primera salga limpia.
+test('Close_SlotSharedWithoutRelease: sin soltar el puesto, otra sesión ahí no se lleva lo de la primera', () => {
+  const t = closeLab();
+  const slot = path.join(t.root, 'repo--slot-1');
+  git(t.repo, 'worktree', 'add', '-q', '--detach', slot, 'origin/main');
+  git(slot, 'checkout', '-q', '-b', 'wt/primera');
+  commitIn(slot);
+  fs.writeFileSync(path.join(slot, 'a-medio-hacer.txt'), 'x\n');
+  bg(t, 'primera', slot);
+  bg(t, 'intrusa', slot, { startedAt: Date.now() + 1000 });
+  const r = closeIt(t, 'primera');
+  assert.match(r.message, /sin commitear/, r.message);
+  assert.match(r.message, /sin empujar/, r.message);
+  assert.match(r.message, /sigue tomado por la rama wt\/primera/, r.message);
+  assert.deepStrictEqual(closed(t), []);
 });
 
 test('Close_OpenRun: con su corrida o su arreglo rápido abiertos no cierra', () => {

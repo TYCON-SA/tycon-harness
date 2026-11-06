@@ -545,6 +545,52 @@ test('T17 SinConexion_TresMinutos_Y24Horas — @story-8.171 @ac-13', async () =>
   } finally { await h.cerrar(); }
 });
 
+test('FotoVieja_LaMaquinaDiceQueTieneUnaSinMandar_SeMarcaFuerte', async () => {
+  // una máquina viva cuya foto no sale: la que no entraba en 64 KB dejaba al sitio con la de horas antes, sin que nadie lo
+  // notara. Una oficina quieta tampoco manda fotos (una igual no sale), así que el tiempo no alcanza: lo dice el latido
+  const reloj = { t: Date.now() };
+  const h = await montar({ reloj });
+  try {
+    const { ma, mb } = await dosMaquinasConectadas(h);
+    await hasta(() => h.centro.oficina('maquina-a') && h.centro.oficina('maquina-a').foto, 2000, 'la foto');
+    const nav = await navegador(h, A);
+    await hasta(() => oficinas(nav).has('maquina-a'), 3000, 'su oficina');
+    assert.strictEqual(oficinas(nav).get('maquina-a').fotoDesde, null, 'una foto recién llegada no es vieja');
+    const llego = h.centro.oficina('maquina-a').fotoEn;
+    assert.ok(Number.isFinite(llego), 'el sitio anota cuándo llegó la foto');
+    let pongs = 0;
+    const latido = async (extra = {}) => {
+      reloj.t += 2 * MIN;
+      ma.ws.send(JSON.stringify({ type: 'ping', ...extra }));
+      await hasta(() => ma.msgs.filter((x) => x.type === 'pong').length > pongs, 2000, 'el pong');
+      pongs = ma.msgs.filter((x) => x.type === 'pong').length;
+      h.centro.revisar();
+    };
+    // una oficina quieta: latidos sin foto nueva durante más de 5 min no la marcan
+    for (let i = 0; i < 3; i++) await latido();
+    await pausa(600);
+    assert.strictEqual(oficinas(nav).get('maquina-a').fotoDesde, null, 'una oficina quieta no es una foto vieja');
+    // la máquina dice que tiene una sin mandar: la oficina dice de cuándo es la que se ve
+    await latido({ retenida: reloj.t });
+    await hasta(() => oficinas(nav).get('maquina-a').fotoDesde === llego, 3000, 'la marca de foto vieja');
+    assert.strictEqual(h.centro.oficina('maquina-a').sinConexionDesde, null, 'la máquina sigue viva');
+    // una foto nueva la saca
+    ma.ws.send(JSON.stringify({ type: 'foto', data: FOTO('Nueva de A') }));
+    await hasta(() => oficinas(nav).get('maquina-a').foto.agents[0].nombre === 'Nueva de A', 3000, 'la foto nueva');
+    assert.strictEqual(oficinas(nav).get('maquina-a').fotoDesde, null, 'con foto nueva, la marca se va');
+    // y un latido sin el dato también (la máquina volvió a la foto que el sitio ya tiene)
+    await latido({ retenida: reloj.t });
+    await hasta(() => oficinas(nav).get('maquina-a').fotoDesde !== null, 3000, 'otra vez marcada');
+    await latido();
+    await hasta(() => oficinas(nav).get('maquina-a').fotoDesde === null, 3000, 'un latido sin el dato la saca');
+    // la oficina del sitio lo dice, y dice lo que una foto achicada dejó afuera
+    const pagina = fs.readFileSync(path.join(__dirname, '..', 'tools', 'office', 'page.js'), 'utf8');
+    assert.match(pagina, /else if\(o\.fotoDesde\)f\.stats\.append\(el\("span","stat firma","foto de las "\+hhmmDe\(o\.fotoDesde\)/);
+    assert.match(pagina, /o\.foto\.meta\.recorte\)f\.stats\.append/);
+    nav.ws.close(); ma.ws.close(); mb.ws.close();
+  } finally { await h.cerrar(); }
+});
+
 test('T18 Topes_CierranSoloEsaConexion — @story-8.171 @ac-14', async () => {
   assert.deepStrictEqual({ m: TOPES.maquinas, n: TOPES.navegadoresPorCuenta, a: TOPES.bytesAutenticada, s: TOPES.bytesSinAutenticar, p: TOPES.mensajesPorSegundo }, { m: 50, n: 5, a: 64 * 1024, s: 2 * 1024, p: 10 });
   assert.deepStrictEqual({ n: TOPES.navegadoresTotal, c: TOPES.sinAutenticarTotal }, { n: 200, c: 1000 });

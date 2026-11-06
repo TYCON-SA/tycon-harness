@@ -264,7 +264,10 @@ function run(ctx, state, { log = null } = {}) {
       const left = Object.assign({}, state, { managed: errors.map((k) => k.piece), notice: `uninstall: ${errors.length} pieza(s) no se pudieron quitar — harness.js uninstall --yes las reintenta` });
       writeState(home, left);
     }
-  } catch (e) { errors.push({ why: `no pude ${errors.length ? 'reescribir' : 'borrar'} el estado ${p.stateFile} (${e.code || e.message})` }); }
+  } catch (e) {
+    if (e && e.code === 'TYCON_LOCK_LOST') throw e;   // otro tiene el candado: no es una pieza que quedó
+    errors.push({ why: `no pude ${errors.length ? 'reescribir' : 'borrar'} el estado ${p.stateFile} (${e.code || e.message})` });
+  }
   say(`quitadas ${r.removed.length}, quedan ${r.kept.length}, a revisar ${r.review.length}, errores ${errors.length}`);
 
   const L = [];

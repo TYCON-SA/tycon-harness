@@ -3705,7 +3705,18 @@ function handleCarrilEHistoria(event, opts = {}) {
 
     // Cupo ad-hoc: Bash no tiene PostToolUse nuestro, así que el registro va acá (best-effort: el
     // comando puede fallar después, pero sin esto un hotfix hecho con heredocs nunca suma al cupo).
+    // La sonda de un agente del pase no es del carril, por la consola igual que con la herramienta de edición. No se
+    // exime lo que el freno no puede ver hasta el final: un destino con una variable sin resolver, un comando que crea
+    // enlaces (el destino puede pasar por uno que todavía no existe) o una ruta con `..` (después de un enlace cae en
+    // otra carpeta que la que queda al normalizarla). Ante cualquier falla del criterio, se anota.
+    const textoDestinos = String(cmdDestinos);
+    const noSeVe = /(^|[\s;&|(])ln\s[^;&|]*-[a-zA-Z]*s/.test(textoDestinos) || /(^|[\s/'"=])\.\.([\\/]|$)/.test(textoDestinos);
     for (const abs of passedCode.filter((f) => isCodeFile(f))) {   // un destino sin resolver no suma al cupo: no se sabe cuál es
+      let sonda = false;
+      if (!noSeVe && !sinResolverDe.has(abs)) {
+        try { sonda = require('./on-edit.js').esSondaDeSubagente(event, abs, sessionId, stateDir); } catch (e) { logHookError(e); }
+      }
+      if (sonda) continue;
       try { io.recordAdhocFile(stateDir, sessionId, abs); } catch (e) { logHookError(e); }
     }
   }

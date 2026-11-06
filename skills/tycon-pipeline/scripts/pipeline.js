@@ -4664,7 +4664,7 @@ function deepReviewGateDeLaCorrida({ args, corrida, casa, userInfo, mostrar = fa
   const ej = ejecucionDeLaCorrida(args, corrida);
   const constancia = ej ? sk.vigente({ ...ej, casa, userInfo })
     : { ok: false, motivo: 'no hay una ejecución abierta de esta story', ninguna: true };
-  const result = computeDeepReviewGate({ ...args, adversarialSkipRecord: constancia });
+  const result = computeDeepReviewGate({ ...args, adversarialSkipRecord: constancia, marcador: corrida || null });
   let texto = '';
   // Sin corrida no hay ejecución que firmar: la constancia nombra carpeta y comienzo, y no se ofrecen comandos.
   if (result.skip_request && mostrar && !ej) {
@@ -4800,10 +4800,11 @@ function criterioDelPase(args) {
         + '`--deep-review` (saltearlo lo firma una persona: `marker.js sign-adversarial-skip`).',
     };
   }
-  const densidad = densidadDelDiff(args.repo, args.files, { allowMissing: Boolean(args.allowMissingFiles) });
+  const densidad = densidadDelDiff(args.repo, args.files, { allowMissing: Boolean(args.allowMissingFiles), marcador: args.marcador || null });
   const noMedidos = {
     ...(densidad.noMedidos.length ? { archivos_no_medidos: densidad.noMedidos } : {}),
     ...(densidad.ausentes.length ? { archivos_ausentes_permitidos: densidad.ausentes } : {}),
+    ...(densidad.avisosBase.length ? { base_descartada: densidad.avisosBase } : {}),
   };
   if (densidad.lineas >= densidad.umbral) {
     return {
@@ -4841,7 +4842,7 @@ function criterioDelPase(args) {
   }
   return {
     run: false, risk: 'LOW', model: null,
-    lineas_agregadas: densidad.lineas, umbral_lineas: densidad.umbral,
+    lineas_agregadas: densidad.lineas, umbral_lineas: densidad.umbral, ...noMedidos,
     ...(sinDeclarar ? {
       shared_surface_declared: false,
       shared_surface_note:
@@ -4856,7 +4857,7 @@ function criterioDelPase(args) {
 /**
  * Líneas AGREGADAS en los archivos de código del diff. Cada archivo se mide en SU
  * repo git, el de su propia carpeta (`companionLib.ownerOf`, la misma pieza que usa el pipeline para leer el diff de
- * un repo hermano): tracked → `git diff --numstat HEAD` (0 si no cambió); sin
+ * un repo hermano): tracked → `git diff --numstat <base>` contra la base de la corrida (0 si no cambió); sin
  * trackear en su repo → el archivo entero (es nuevo). Sólo extensiones de código: un HTML generado o
  * un JSON de datos no es lógica que un hunter tenga que ejecutar.
  *
@@ -4866,10 +4867,24 @@ function criterioDelPase(args) {
  *    «denso». Lo que no se puede medir (fuera de todo repo git, git que no contesta, un numstat que no es
  *    un número) NO se cuenta como archivo entero ni como 0: vuelve en `noMedidos`, y el portón lo dice.
  */
-function densidadDelDiff(repo, files, { allowMissing = false } = {}) {
+function densidadDelDiff(repo, files, { allowMissing = false, marcador = null } = {}) {
   const env = Number(process.env.TYCON_DEEP_REVIEW_DENSE_LINES);
   const umbral = Number.isFinite(env) && env > 0 ? env : 300;
   const { spawnSync: sp } = require('child_process');
+  // Lo commiteado durante la corrida también es del diff: cada repo se mide contra la base de la corrida (`baseSha` del
+  // marcador, si es de ese repo) o contra su bifurcación con la rama principal; HEAD sólo si no hay ninguna.
+  // Una base descartada (un marcador que no sirve) se dice en `avisosBase`; el marcador de otro repo no, porque es lo
+  // normal en un repo hermano.
+  const bases = new Map();
+  const avisosBase = [];
+  const baseDe = (raiz) => {
+    if (!bases.has(raiz)) {
+      const b = require('./lib/coverage-base.js').resolver({ repo: raiz, env: process.env, marker: marcador });
+      for (const d of b.descartadas) if (!/otro repo/.test(d.motivo)) avisosBase.push(`${raiz}: ${d.source}: ${d.motivo}`);
+      bases.set(raiz, b.ref || 'HEAD');
+    }
+    return bases.get(raiz);
+  };
   let lineas = 0;
   const noMedidos = [];
   const ausentes = [];   // con --allow-missing-files: ausentes y sin trackear, contados 0 a sabiendas
@@ -4899,10 +4914,10 @@ function densidadDelDiff(repo, files, { allowMissing = false } = {}) {
     if (ls.status !== 0 && ls.status !== 1) { noMedidos.push({ file: f, motivo: `git no pudo decir si está trackeado en ${o.root} (salida ${ls.status === null ? `señal ${ls.signal}` : ls.status})` }); continue; }
     const tracked = ls.status === 0;
     if (tracked) {
-      const r = sp('git', ['-C', o.root, 'diff', '--numstat', 'HEAD', '--', o.rel], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+      const r = sp('git', ['-C', o.root, 'diff', '--numstat', baseDe(o.root), '--', o.rel], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
       const salida = String(r.stdout || '').trim();
       if (r.status !== 0) { noMedidos.push({ file: f, motivo: `git diff falló en ${o.root}` }); continue; }
-      if (!salida) continue;   // tracked y sin cambios respecto de HEAD: 0 agregadas, medido
+      if (!salida) continue;   // tracked y sin cambios respecto de la base: 0 agregadas, medido
       const a = Number(salida.split(/\s+/)[0]);
       if (Number.isFinite(a)) lineas += a;
       else noMedidos.push({ file: f, motivo: `git diff --numstat no dio un número («${salida.split(/\s+/)[0]}»: ¿binario?)` });
@@ -4920,7 +4935,7 @@ function densidadDelDiff(repo, files, { allowMissing = false } = {}) {
       lineas += texto.split('\n').length;
     }
   }
-  return { lineas, umbral, noMedidos, ausentes };
+  return { lineas, umbral, noMedidos, ausentes, avisosBase };
 }
 
 // ── pipeline.js timing-report — instrumentación ─
@@ -6754,7 +6769,19 @@ function cmdRevisoresDelCarril(cmd, args) {
     });
     const runSize = { size: tam.size, reason: `archivos del camino rápido: ${tam.reason}`, firmado: true };
     const conModelos = conModelosDeLaCorrida({ ...args, repo: r, files: deEse, story: null, runSize });
-    const res = computeDeepReviewGate({ ...conModelos, repo: r, files: deEse, story: null, runSize });
+    // lo del carril se mide desde su punto de salida en ese repo, aunque ya esté commiteado
+    // Una base propia con aviso es HEAD (la rama no se midió): no sirve, y se mide contra la bifurcación de
+    // coverage-base. Lo que no se pudo leer se dice.
+    let salida = null;
+    try {
+      const bp = base.basePropia(r, a);
+      if (bp.aviso) process.stderr.write(`⚠️  deep-review-gate: ${bp.aviso}; mido contra la bifurcación con la rama principal\n`);
+      else salida = bp.sha;
+    } catch (e) {
+      process.stderr.write(`⚠️  deep-review-gate: no pude leer la base del carril en ${r} (${e.message}); mido contra la bifurcación con la rama principal\n`);
+    }
+    const marcador = salida ? { baseSha: salida, repoPath: r } : null;
+    const res = computeDeepReviewGate({ ...conModelos, repo: r, files: deEse, story: null, runSize, marcador });
     if (!res || res.run === null) salir(`${r}: ${(res && res.reason) || 'no pude decidir el pase'}`);
     decisiones.push({ repo: r, res });
   }

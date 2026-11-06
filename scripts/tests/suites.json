@@ -2598,6 +2598,18 @@
       "requiere": []
     },
     {
+      "__nota": "scripts/tools/story-index.js arma specs/epics.md y specs/sprint-status.yaml desde el frontmatter de cada historia, sobre el repo de juguete de fixtures/story-index/ (esperados byte por byte): orden por épica y número, la prosa desde epics-intro.md, --check, lo que no se puede leer o un escaneo incompleto no escribe, los lectores siguen andando, el freno del pre-commit en una rama (--guard), la regeneración en main con sus reintentos, la migración de un índice a mano y la clave story_index de team-repos.json.",
+      "raiz": "arnes",
+      "ruta": "tests/story-index.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "con story_index: generated, la skill que crea historias y el paso de acción de la revisión de desfase no leen ni escriben los índices (eligen y escriben desde el frontmatter); marker.js update-story-status sigue sin tocarlos.",
+      "raiz": "arnes",
+      "ruta": "tests/tycon-create-story-index.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "al commitear en el público, el inventario de los controles se compara con el pre-commit propio del repo privado (de su origin/main): avisa el mismo día lo que antes salía rojo de noche, y en el privado no aplica.",
       "raiz": "arnes",
       "ruta": "tests/private-inventory.test.js",

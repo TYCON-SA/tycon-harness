@@ -119,6 +119,19 @@ test('T1 Lab_Arma_TresReposConRemotoYRamas @story-8.193 @ac-1', () => {
   });
 });
 
+test('Lab_Remotos_SinMantenimientoDeFondo', () => {
+  // el lado que recibe un empuje no ve los `-c` del laboratorio: el remoto lo apaga en su propio archivo, que se lee
+  // directo (con `-c` de por medio daría `false` aunque faltara)
+  lab.conBase({ tmp: carpeta() }, (base) => {
+    for (const repo of Object.values(base.repos)) {
+      const archivo = path.join(base.git(repo, ['remote', 'get-url', 'origin']), 'config');
+      for (const clave of ['receive.autogc', 'maintenance.auto']) {
+        assert.strictEqual(base.git(repo, ['config', '--file', archivo, '--get', clave]), 'false', `${clave} en ${path.basename(path.dirname(archivo))}`);
+      }
+    }
+  });
+});
+
 test('T2 Lab_Fusion_TieneDosPadres @story-8.193 @ac-1', () => {
   lab.conBase({ tmp: carpeta() }, (base) => {
     const backend = base.repos['Lab-Backend'];

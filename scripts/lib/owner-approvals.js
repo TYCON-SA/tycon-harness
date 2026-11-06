@@ -200,7 +200,7 @@ function lanzadoPorLaHerramienta({ arbol, pid = process.pid, casa, plataforma = 
   const tool = p;
   for (let q = m.get(tool.ppid); q && !vistos.has(q.pid); q = m.get(q.ppid)) {
     vistos.add(q.pid);
-    if (consola(q) || (w.esHerramienta(q) && !w.esAnfitrionDeFondoDe(tool, q))) return { ok: false, motivo: 'la herramienta la lanzó otra herramienta o la consola de un agente' };
+    if (consola(q) || (w.esHerramienta(q) && !w.esAnfitrionDeFondoDe(tool, q, m.get(tool.ppid)))) return { ok: false, motivo: 'la herramienta la lanzó otra herramienta o la consola de un agente' };
   }
   return { ok: true, herramienta: { pid: tool.pid, inicio: tool.inicio } };
 }
@@ -522,6 +522,34 @@ function esPermitido(comando, raiz = ROOT) {
 }
 
 /**
+ * ¿Es un gancho del arnés instalado cuyo archivo ya no está? Lo deja una versión que volvió atrás: `node <ruta>`, sola en
+ * la línea, con la ruta en la carpeta de ganchos del arnés de `casa` o de esta copia, y sin el archivo. No corre nada, así
+ * que no anula el click. Con el archivo presente, o en otra carpeta, sigue siendo ajeno.
+ */
+function ganchoDelArnesSinArchivo(comando, casa) {
+  const c = String(comando || '').trim();
+  if (!c || /[;&|`\n<>]|\$\(/.test(c)) return false;
+  // la barra invertida es separador sólo en Windows: en otro sistema el shell la come y corre otra ruta
+  if (process.platform !== 'win32' && c.includes('\\')) return false;
+  const m = /^(?:"([^"]+)"|(\S+))\s+(?:"([^"]+)"|(\S+))$/.exec(c);
+  if (!m) return false;
+  const igual = (a, b) => (process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b);
+  // el intérprete: `node` del PATH, el Node del arnés de `casa` o el que corre esto; un `node` en otra carpeta puede ser
+  // cualquier programa, y ése sí contestaría el cuadro
+  const bin = (m[1] || m[2]).replace(/\\/g, '/');
+  const nodoDelArnes = path.join(casa || os.homedir(), '.tycon', 'node').replace(/\\/g, '/');
+  const esNode = /^node(?:\.exe)?$/i.test(bin) || igual(bin, process.execPath.replace(/\\/g, '/'))
+    || (/\/node(?:\.exe)?$/i.test(bin) && !bin.split('/').includes('..') && igual(bin.slice(0, nodoDelArnes.length + 1), `${nodoDelArnes}/`));
+  if (!esNode) return false;
+  const ruta = (m[3] || m[4]).replace(/\\/g, '/');
+  if (!path.isAbsolute(ruta) && !/^[A-Za-z]:\//.test(ruta)) return false;
+  const carpetas = [path.join(casa || os.homedir(), '.tycon', 'harness', 'scripts', 'hooks'), path.join(ROOT, 'scripts', 'hooks')].map((d) => d.replace(/\\/g, '/'));
+  const dir = ruta.slice(0, ruta.lastIndexOf('/'));
+  if (!/^[A-Za-z0-9._-]+\.js$/.test(ruta.slice(ruta.lastIndexOf('/') + 1)) || !carpetas.some((d) => igual(d, dir))) return false;
+  try { fs.statSync(ruta); return false; } catch (e) { return e.code === 'ENOENT'; }
+}
+
+/**
  * Los ganchos ajenos que escuchan el cuadro: `{ ajenos: [{ archivo, evento, comando }], ilegibles: [archivo] }`. Mira
  * PreToolUse y PermissionRequest en las capas de configuración, en lo que suman las banderas del proceso (`linea`, la de
  * la herramienta), en los plugins instalados y en el encabezado de skills y agentes.
@@ -538,7 +566,7 @@ function escuchasDelCuadro({ casa = os.homedir(), cwd, plataforma, administrada,
         if (!g || !alcanzaAlCuadro(g.matcher)) continue;
         for (const h of Array.isArray(g.hooks) ? g.hooks : []) {
           const comando = h && (h.command || h.url || h.prompt || h.type);
-          if (!esPermitido(h && h.command)) ajenos.push({ archivo: a, evento, comando: una(comando, 160) });
+          if (!esPermitido(h && h.command) && !ganchoDelArnesSinArchivo(h && h.command, casa)) ajenos.push({ archivo: a, evento, comando: una(comando, 160) });
         }
       }
     }

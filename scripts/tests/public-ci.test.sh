@@ -835,13 +835,11 @@ else
   # T10 (8.152) · la parte del banco de la base: en la matriz, en cada pedido y con su guarda para una base que no la conoce
   altered "sin la parte del banco de la base" "parts" 'return t.replace("controls-bench, controls-bench-base, ", "controls-bench, ");'
   altered "con el banco de la base antes del banco" "parts" 'return t.replace("controls-bench, controls-bench-base, ", "controls-bench-base, controls-bench, ");'
-  altered "en un pedido se saltea el banco de la base" "=shape" 'return t.replace(" && [ \"${TYCON_PUBLIC_CI_PART}\" != \"controls-bench-base\" ]", "");'
   altered "el banco de la base sale verde aunque la base lo conozca" "=shape" 'return t.replace(" && ! grep -q -- \x27controls-bench-base)\x27 \"${RUNNER_TEMP}/public-ci-base.sh\"", "");'
-  # en un pedido corre sólo `checks` y la corrida entera va en la cola: cada una de estas falla si un ci.yml vuelve a
-  # pagar las suites en el pedido, o si deja el pedido sin `checks`
-  altered "en un pedido corren también las suites" "=shape" 'return t.replace(/^ *if \[ "\$\{GITHUB_EVENT_NAME\}" = "pull_request" \] && \[ "\$\{TYCON_PUBLIC_CI_PART\}" != "checks" \].*; then\n.*\n *exit 0\n *fi\n/m, "");'
-  altered "en un pedido se saltea también checks" "=shape" 'return t.replace(" && [ \"${TYCON_PUBLIC_CI_PART}\" != \"checks\" ]", "");'
-  altered "en un pedido se saltea también el banco" "=shape" 'return t.replace(" && [ \"${TYCON_PUBLIC_CI_PART}\" != \"controls-bench\" ]", "");'
+  # en un pedido corren todas las partes y el ensayo de Windows, como en la cola: cada una de estas falla si un ci.yml
+  # vuelve a dejar para la cola las suites o el ensayo, y el error de un pedido se ve recién ahí
+  altered "en un pedido vuelven a saltearse las suites" "=shape" 'return t.replace(/^( *)# en un pedido BASE_REF/m, (m, s) => `${s}if [ "\${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "\${TYCON_PUBLIC_CI_PART}" != "checks" ]; then\n${s}  exit 0\n${s}fi\n${m}`);'
+  altered "en un pedido vuelve a saltearse el ensayo de Windows" "=shape" 'return t.replace(/^( *)node scripts\/ci\/windows-rehearsal\.js /m, (m, s) => `${s}if ($env:GITHUB_EVENT_NAME -eq \x27pull_request\x27) { exit 0 }\n${m}`);'
   # una base que no conoce la parte del banco lo corre dentro de checks: la salida verde de esa parte vale sólo para ella
   altered "el banco sale verde aunque la base lo conozca" "=shape" 'return t.replace(" && ! grep -q -- \x27|controls-bench)\x27 \"${RUNNER_TEMP}/public-ci-base.sh\"", "");'
   altered "en main un push corta la corrida del anterior" "=shape" 'return t.replace("cancel-in-progress: ${{ github.ref != \x27refs/heads/main\x27 }}", "cancel-in-progress: true");'
@@ -935,12 +933,11 @@ else
   RC="$(cat "${T}/wf-no-base-ci.rc")"
   if [ "${RC}" != 0 ] && [ ! -s "${T}/wf-no-base-ci/marks/ran" ]; then ok "T1 base con el guion y sin public-ci.sh: rojo (exit ${RC}) sin correr el del pedido"
   else no "T1 base sin public-ci.sh: esperaba rojo sin correr nada y dio exit ${RC}: $(tr '\n' ' ' < "${T}/wf-no-base-ci/marks/ran")"; fi
-  # en un pedido una parte de las suites sale verde sin correr nada y lo dice; en la cola la misma parte corre la base
+  # una parte de las suites corre el public-ci.sh de la base en un pedido y en la cola, igual
   wf_case pr-suites 1 pull_request 1 suites-2-of-5
-  RC="$(cat "${T}/wf-pr-suites.rc")"
-  if [ "${RC}" = 0 ] && [ ! -s "${T}/wf-pr-suites/marks/ran" ] && grep -qF "corre en la cola de merge" "${T}/wf-pr-suites.out"; then
-    ok "T1 en un pedido la parte suites-2-of-5 sale 0 sin correr nada y dice que corre en la cola"
-  else no "T1 en un pedido la parte suites-2-of-5 esperaba 0 sin correr nada, y dio exit ${RC}: $(tr '\n' ' ' < "${T}/wf-pr-suites/marks/ran")"; fi
+  if [ "$(cat "${T}/wf-pr-suites.rc")" = 0 ] && grep -q '^base .*--base ' "${T}/wf-pr-suites/marks/ran"; then
+    ok "T1 en un pedido la parte suites-2-of-5 corre el public-ci.sh de la base"
+  else no "T1 en un pedido la parte suites-2-of-5 no corrió la base: $(tr '\n' ' ' < "${T}/wf-pr-suites/marks/ran")"; fi
   wf_case queue-suites 1 merge_group 1 suites-2-of-5
   if [ "$(cat "${T}/wf-queue-suites.rc")" = 0 ] && grep -q '^base .*--base ' "${T}/wf-queue-suites/marks/ran"; then
     ok "T1 en la cola la parte suites-2-of-5 corre el public-ci.sh de la base"

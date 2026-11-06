@@ -2013,13 +2013,21 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
     R.setNotice(state, `la actualización ${before} → ${t.version} no quedó sana (${failures[0]}): ${text}; esa versión no se reintenta sola (cuando cambie la punta, o con ${H.releaseApplyHint}) — detalle en ${S.paths(ctx.home).log}`);
     if (log) log(`update: ${reason}: ${failures.join(' · ')} · ${back.ok ? 'vuelta hecha' : back.reason}`);
     H.finishSnapshot(ctx, snap, log);
-    if (back.ok) H.runApplier(ctx, own.harness, { log, snapshotDir: snap && snap.dir });   // los enchufes de la versión que quedó
+    if (back.ok) {
+      // los enchufes de la versión que quedó; lo que agregó la que falló (un gancho que ya no tiene su archivo) se va
+      const again = H.runApplier(ctx, own.harness, { log, snapshotDir: snap && snap.dir });
+      // el informe deja afuera los hooks que el juez no entiende: se quita sólo lo que el aplicador declaró informar
+      const declared = typeof H.applierReportEnv === 'function' ? H.applierReportEnv(log) : null;
+      const q = again && again.ok ? require('./rollback.js').dropUnreported(state, again, { home: ctx.home, env: ctx.env, tree: own.harness, log, version: previousSrc.version, declared }) : null;
+      if (log && !q) log(`update: el aplicador de ${previousSrc.version} no salió bien en la vuelta: no quité lo que agregó ${t.version}`);
+      if (log && q && !q.ok) log(`update: la vuelta no pudo quitar lo que agregó ${t.version}: ${q.lines.join(' · ')}`);
+    }
     return { status: 'failed', code: 1, lines: [`harness.js update: la versión ${t.version} no quedó sana (${failures.join(' · ')}) — ${text}`] };
   };
   if (!a.ok) return fail([a.reason], 'applier');
   H.recordPieces(ctx, state, a.report, a.shared);
   state.failed = { commit: t.version, sources: { harness: t.commit }, at: nowIso(), log: S.paths(ctx.home).log, reason: 'interrupted', pending: 'health' };
-  try { S.write(ctx.home, state); } catch (e) { if (log) log(`update: no pude grabar el estado antes de la salud (${e.message})`); }
+  try { S.write(ctx.home, state); } catch (e) { if (e && e.code === 'TYCON_LOCK_LOST') throw e; if (log) log(`update: no pude grabar el estado antes de la salud (${e.message})`); }
   const h = H.runHealth(ctx, state, { report: a.report, applierOut: a.out, log });
   if (!h.ok) return fail(h.failures.length ? h.failures : ['la salud no pasó'], 'health');
   state.failed = null;
