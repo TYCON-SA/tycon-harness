@@ -63,7 +63,7 @@ const HANDS = ['dueno', 'coordinadora'];
 
 const FIELDS = {
   agents: list(record({
-    nombre: text, estado: oneOf(AGENT_STATES), comoTrabaja: text, titulo: text, historia: text, encargo: text, haciendo: text, haciendoAhora: text, agentesAhora: text, ultimaAccion: action,
+    nombre: text, estado: oneOf(AGENT_STATES), comoTrabaja: text, titulo: text, historia: text, historiaTitulo: text, tarea: text, encargo: text, haciendo: text, haciendoAhora: text, agentesAhora: text, ultimaAccion: action,
     espera: text, parada: text, callada: text, mientras: text, mientrasEstado: oneOf(AGENT_STATES), enPausa: text,
     fin: END, horaPorque: text, estimadaIso: hour, avance: number, carpeta: folder, pasos: list(record({ name: text, done: flag })), novedadMs: number, sinPid: flag,
     // a quién espera la mano levantada, y con qué modelo y qué esfuerzo corre la sesión

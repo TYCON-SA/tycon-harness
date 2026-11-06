@@ -50,22 +50,42 @@ const LENTES = [...fs.readFileSync(GUION, 'utf8').matchAll(/key: '([a-z-]+)',\s*
 
 const tmp = (p) => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), p)));
 
+// La base que el paso le pasa al pase (un hash de 40), y la carpeta donde cada cazador guarda su prueba.
+const BASE = '0123456789abcdef0123456789abcdef01234567';
+const carpetaDeLaLente = (runDir, key) => path.join(runDir, 'step-05b-probes', `caza-${key}`);
+/** Guarda la prueba de una lente limpia como la guardaría su cazador. */
+function guardarPruebaDeLente(runDir, key, texto = 'node probe.js\n→ salió lo esperado\n') {
+  const d = carpetaDeLaLente(runDir, key);
+  fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(path.join(d, 'COMO-SE-CORRIO.txt'), texto);
+  return d;
+}
+
 /**
  * El doble de Codex. Lee el pedido de TYCON_WFLITE_PROMPT y la configuración de STUB_CONFIG:
- *   { hunt: { default, <lente>: 'dead' | 'tope' | [hallazgos] }, verify: 'dead' | 'tope' | {veredicto} | {<file>: …} }
+ *   { hunt: { default, <lente>: 'dead' | 'tope' | [hallazgos] | {findings, base, probe} }, verify: 'dead' | 'tope' | {veredicto} | {<file>: …} }
+ * Un cazador contesta con la base pedida y, sin hallazgos, guarda su prueba en su carpeta y la nombra. Con un objeto se
+ * cambia: `base` (otra base, o null para no mandarla), `probe` ('vacia' → probe_dir "", 'ausente' → sin la clave,
+ * 'ajena' → la carpeta de otra lente). Guarda cada pedido en STUB_PROMPTS si está.
  * Anota cada lanzamiento en STUB_LOG. 'dead' sale 1 sin escribir; 'tope' además escribe el error de tope de Codex.
  */
 function doble(dir, cfg) {
   const cfgPath = path.join(dir, 'cfg.json');
-  fs.writeFileSync(cfgPath, JSON.stringify({ ...cfg, lentes: LENTES }));
+  fs.writeFileSync(cfgPath, JSON.stringify({ ...cfg, lentes: LENTES, base: BASE, runDir: dir }));
   const stub = path.join(dir, 'stub.js');
+  const prompts = path.join(dir, 'pedidos');
   fs.writeFileSync(stub, `
 const fs = require('fs');
+const path = require('path');
 const cfg = JSON.parse(fs.readFileSync(process.env.STUB_CONFIG, 'utf8'));
 const p = process.env.TYCON_WFLITE_PROMPT || '';
 const esVerif = /REFUTARLO/.test(p);
 const lente = cfg.lentes.find((l) => p.includes(l.marca));
 fs.appendFileSync(process.env.STUB_LOG, (esVerif ? 'verify' : 'hunt:' + (lente && lente.key)) + '\\n');
+if (process.env.STUB_PROMPTS) {
+  fs.mkdirSync(process.env.STUB_PROMPTS, { recursive: true });
+  fs.writeFileSync(path.join(process.env.STUB_PROMPTS, (esVerif ? 'verify-' + process.pid + '-' + Math.random() : 'hunt-' + (lente && lente.key)) + '.txt'), p);
+}
 const tope = () => { process.stderr.write("ERROR: You've hit your usage limit. Try again at 3:15 AM.\\n"); process.exit(1); };
 const muerto = () => { process.stderr.write('boom: se cayó el agente\\n'); process.exit(1); };
 let r;
@@ -77,12 +97,23 @@ if (esVerif) {
 }
 if (r === 'tope') tope();
 if (r === 'dead' || r === undefined) muerto();
-if (esVerif) console.log(JSON.stringify(Object.assign({ reasoning: 'corrí la prueba', adjusted_severity: 'bug', probe_dir: '', todos_el_mismo_defecto: true }, r)));
-else console.log(JSON.stringify({ lens: lente.key, findings: r }));
+if (esVerif) { console.log(JSON.stringify(Object.assign({ reasoning: 'corrí la prueba', adjusted_severity: 'bug', probe_dir: '', todos_el_mismo_defecto: true }, r))); process.exit(0); }
+const o = Array.isArray(r) ? { findings: r } : r;
+const findings = o.findings || [];
+const resp = { lens: lente.key, base: o.base === undefined ? cfg.base : o.base, findings };
+if (resp.base === null) delete resp.base;
+const suya = path.join(cfg.runDir, 'step-05b-probes', 'caza-' + lente.key);
+if (o.probe === 'vacia') resp.probe_dir = '';
+else if (o.probe === 'ajena') resp.probe_dir = path.join(cfg.runDir, 'step-05b-probes', 'caza-otra');
+else if (o.probe !== 'ausente') {
+  if (findings.length) resp.probe_dir = '';
+  else { fs.mkdirSync(suya, { recursive: true }); fs.writeFileSync(path.join(suya, 'COMO-SE-CORRIO.txt'), 'node probe.js\\n→ ok\\n'); resp.probe_dir = suya; }
+}
+console.log(JSON.stringify(resp));
 `);
   const log = path.join(dir, 'log.txt');
   fs.writeFileSync(log, '');
-  return { env: { TYCON_WFLITE_AGENT_CMD: `${process.execPath} ${stub}`, STUB_CONFIG: cfgPath, STUB_LOG: log }, log };
+  return { env: { TYCON_WFLITE_AGENT_CMD: `${process.execPath} ${stub}`, STUB_CONFIG: cfgPath, STUB_LOG: log, STUB_PROMPTS: prompts }, log, prompts };
 }
 
 function hallazgo(file, summary) {
@@ -90,11 +121,12 @@ function hallazgo(file, summary) {
 }
 
 /** Corre el guion con workflow-lite.js. Devuelve { status, stderr, result, out }. */
-function correrPase(dir, envExtra, extraArgs = []) {
+function correrPase(dir, envExtra, extraArgs = [], argsExtra = {}) {
   const home = path.join(dir, 'home');
   fs.mkdirSync(home, { recursive: true });
   const out = path.join(dir, 'step-05b-adversarial.json');
-  const args = { repo: dir, files: ['scripts/x.js'], runDir: dir, model: 'sonnet' };
+  const args = { repo: dir, files: ['scripts/x.js'], runDir: dir, model: 'sonnet', base: BASE, ...argsExtra };
+  for (const k of Object.keys(args)) if (args[k] === undefined) delete args[k];
   const r = spawnSync(process.execPath, [WFLITE, GUION, '--args', JSON.stringify(args), '--out', out, ...extraArgs],
     { encoding: 'utf8', env: entorno(home, { TYCON_WFLITE_JOBS: '6', ...envExtra }), cwd: dir, timeout: 60000 });
   let result = null;
@@ -189,10 +221,11 @@ test('T6 8.56-RutaWorkflow_MismoGuion @story-8.56 @ac-5', async () => {
     if (/REFUTARLO/.test(prompt)) return null;
     const lente = LENTES.find((l) => prompt.includes(l.marca));
     if (lente.key === LENTES[0].key) return null;
-    return { lens: lente.key, findings: lente.key === LENTES[3].key ? [h] : [] };
+    const conH = lente.key === LENTES[3].key;
+    return { lens: lente.key, base: BASE, probe_dir: conH ? '' : `/tmp/r/run/step-05b-probes/caza-${lente.key}`, findings: conH ? [h] : [] };
   };
   const parallel = (thunks) => Promise.all(thunks.map((t) => t().catch(() => null)));
-  const r = await fn({ repo: '/tmp/r', files: ['scripts/x.js'], runDir: '/tmp/r/run' }, (m) => logs.push(m), agent, parallel, null);
+  const r = await fn({ repo: '/tmp/r', files: ['scripts/x.js'], runDir: '/tmp/r/run', base: BASE }, (m) => logs.push(m), agent, parallel, null);
   assert.deepEqual(r.lentes_sin_medir, [LENTES[0].key]);
   assert.equal(r.medido, false);
   assert.equal(r.detalle.length, 1);
@@ -288,11 +321,16 @@ function resultado(dir, cuerpo, nombre = 'step-05b-adversarial.json') {
   fs.writeFileSync(p, JSON.stringify(cuerpo));
   return p;
 }
-const MEDIDO = (confirmed = []) => ({
-  confirmed, lentes: LENTES.map((l) => ({ lens: l.key, estado: 'medida', count: 0 })), lentes_sin_medir: [], detalle: [], medido: true,
+// Un pase medido y limpio, con la prueba de cada lente guardada junto al resultado (en `dir`, donde se escribe).
+const MEDIDO = (dir, confirmed = []) => ({
+  confirmed, lentes: LENTES.map((l) => ({ lens: l.key, estado: 'medida', count: 0, base: BASE, probe_dir: guardarPruebaDeLente(dir, l.key) })),
+  lentes_sin_medir: [], detalle: [], medido: true,
 });
-const SIN_MEDIR = () => ({
-  confirmed: [], lentes: LENTES.map((l, i) => ({ lens: l.key, estado: i === 0 ? 'sin-medir' : 'medida', count: 0 })),
+// La primera lente sin medir; las otras, medidas con su prueba guardada en `dir` (sin `dir`, sin prueba: sólo para los
+// casos que miran que el pase quedó sin medir, no cuáles lentes).
+const SIN_MEDIR = (dir) => ({
+  confirmed: [], lentes: LENTES.map((l, i) => (i === 0 ? { lens: l.key, estado: 'sin-medir', count: 0 }
+    : { lens: l.key, estado: 'medida', count: 0, base: BASE, ...(dir ? { probe_dir: guardarPruebaDeLente(dir, l.key) } : {}) })),
   lentes_sin_medir: [LENTES[0].key], detalle: [], medido: false,
 });
 const enPaso8 = (home, sid, repo, extra) => writeFakeMarker(home, sid, {
@@ -307,12 +345,12 @@ test('T10 8.56-Anotar_ExigeResultado @story-8.56 @ac-8', () => {
   const sin = correr(home, SID, ['mark-adversarial-result', '0', '--type', '5b']);
   assert.equal(sin.status, 2);
   assert.match(sin.stderr, /--result/);
-  const dist = correr(home, SID, ['mark-adversarial-result', '1', '--type', '5b', '--result', resultado(home, MEDIDO()), '--tests', '0', '--deferred', '1', '--reason', 'x']);
+  const dist = correr(home, SID, ['mark-adversarial-result', '1', '--type', '5b', '--result', resultado(home, MEDIDO(home)), '--tests', '0', '--deferred', '1', '--reason', 'x']);
   assert.equal(dist.status, 2);
   assert.match(dist.stderr, /confirmad/);
   const roto = path.join(home, 'roto.json'); fs.writeFileSync(roto, '{ no es json');
   assert.equal(correr(home, SID, ['mark-adversarial-result', '0', '--type', '5b', '--result', roto]).status, 2);
-  const viejo = resultado(home, MEDIDO(), 'viejo.json');
+  const viejo = resultado(home, MEDIDO(home), 'viejo.json');
   const t = new Date('2026-09-17T00:00:00Z'); fs.utimesSync(viejo, t, t);
   const v = correr(home, SID, ['mark-adversarial-result', '0', '--type', '5b', '--result', viejo]);
   assert.equal(v.status, 2);
@@ -323,15 +361,16 @@ test('T10 8.56-Anotar_ExigeResultado @story-8.56 @ac-8', () => {
 });
 
 test('T11 8.56-Anotar_NoMedido @story-8.56 @ac-9', () => {
+  // cada cuerpo se arma con la carpeta donde se escribe: ahí van las pruebas de las lentes medidas
   const casos = [
-    ['lente', SIN_MEDIR(), /lente/],
-    ['veredicto', { ...MEDIDO(), detalle: [{ ...hallazgo('scripts/x.js', 'algo'), lens: LENTES[1].key, estado: 'sin-veredicto', verificador: null }], medido: false }, /veredicto/],
-    ['viejo', { confirmed: [], all_lenses: [] }, /formato|lentes/],
+    ['lente', (h) => SIN_MEDIR(h), /lente/],
+    ['veredicto', (h) => ({ ...MEDIDO(h), detalle: [{ ...hallazgo('scripts/x.js', 'algo'), lens: LENTES[1].key, estado: 'sin-veredicto', verificador: null }], medido: false }), /veredicto/],
+    ['viejo', () => ({ confirmed: [], all_lenses: [] }), /formato|lentes/],
   ];
-  for (const [nombre, cuerpo, motivo] of casos) {
+  for (const [nombre, armar, motivo] of casos) {
     const home = tmp(`adv856-t11-${nombre}-`); const SID = `t11${nombre}`;
     writeFakeMarker(home, SID);
-    const p = resultado(home, cuerpo);
+    const p = resultado(home, armar(home));
     const r = correr(home, SID, ['mark-adversarial-result', '0', '--type', '5b', '--result', p]);
     assert.equal(r.status, 0, `${nombre}: ${r.stderr}`);
     const l = lineas(home, 'gates.log').filter((x) => x.name === 'adversarial-pass');
@@ -347,7 +386,7 @@ test('T11 8.56-Anotar_NoMedido @story-8.56 @ac-9', () => {
   }
   // Un pase medido sigue como hoy.
   const home = tmp('adv856-t11-ok-'); writeFakeMarker(home, 'ok');
-  correr(home, 'ok', ['mark-adversarial-result', '0', '--type', '5b', '--result', resultado(home, MEDIDO())]);
+  correr(home, 'ok', ['mark-adversarial-result', '0', '--type', '5b', '--result', resultado(home, MEDIDO(home))]);
   assert.equal(lineas(home, 'gates.log').find((x) => x.name === 'adversarial-pass').veredicto, 'listo');
   assert.equal(leerMarker(home, 'ok').deepReviewDone, true);
 });
@@ -381,7 +420,7 @@ test('T12 8.56-Paso8_NoMedido_Frena @story-8.56 @ac-10 @ac-11', () => {
   // Relanzado y medido: destraba.
   const re = correr(home, SID, ['mark-adversarial-launched', 'wf_B', '5b', '--relaunch']);
   assert.equal(re.status, 0, re.stderr);
-  assert.equal(correr(home, SID, ['mark-adversarial-result', '0', '--type', '5b', '--result', resultado(home, MEDIDO(), 'otro.json')]).status, 0);
+  assert.equal(correr(home, SID, ['mark-adversarial-result', '0', '--type', '5b', '--result', resultado(home, MEDIDO(home), 'otro.json')]).status, 0);
   correr(home, SID, ['complete-step', '8']);
   assert.equal(lineaDelFreno(home).at(-1).status, 'ok');
 });
@@ -434,7 +473,8 @@ test('T15 8.56-SalidaAprobada_PuntaAPunta @story-8.56 @ac-14', () => {
     assert.ok(fs.existsSync(p.prompt_file) && fs.existsSync(p.schema_file), 'cada pedido trae su texto y su esquema');
     assert.equal(p.model, 'sonnet');
     const lente = LENTES.find((l) => fs.readFileSync(p.prompt_file, 'utf8').includes(l.marca));
-    fs.writeFileSync(p.answer_file, JSON.stringify({ lens: lente.key, findings: lente.key === LENTES[5].key ? [h] : [] }));
+    const conH = lente.key === LENTES[5].key;
+    fs.writeFileSync(p.answer_file, JSON.stringify({ lens: lente.key, base: BASE, probe_dir: conH ? '' : guardarPruebaDeLente(dir, lente.key), findings: conH ? [h] : [] }));
   }
   const v2 = vuelta();
   assert.equal(v2.status, 3);
@@ -492,7 +532,7 @@ test('T18 8.56-NoMedidoDespuesDeMedido_Reabre5b @story-8.56 @ac-9 @ac-11', () =>
   // Clase 4: un medido y después un no medido dejaba el 5b dado por hecho.
   const home = tmp('adv856-t18-'); const SID = 't18';
   writeFakeMarker(home, SID);
-  correr(home, SID, ['mark-adversarial-result', '0', '--type', '5b', '--result', resultado(home, MEDIDO(), 'a.json')]);
+  correr(home, SID, ['mark-adversarial-result', '0', '--type', '5b', '--result', resultado(home, MEDIDO(home), 'a.json')]);
   assert.equal(leerMarker(home, SID).deepReviewDone, true);
   correr(home, SID, ['mark-adversarial-result', '0', '--type', '5b', '--result', resultado(home, SIN_MEDIR(), 'b.json')]);
   assert.equal(leerMarker(home, SID).deepReviewDone, false, 'el último resultado manda: el 5b vuelve a estar pendiente');
@@ -575,4 +615,296 @@ test('T8 AvisosDelMarcador_NoRecetanElApagado @story-8.104 @ac-2', () => {
     assert.doesNotMatch(l, /TYCON_NO_DEEP_REVIEW/, `sin la receta ni la frase: ${l.trim()}`);
     assert.match(l, /lo firma una persona/, `con la firma del dueño: ${l.trim()}`);
   }
+});
+
+// ───────────── Un pase que no midió nada no da limpio: la base pedida y la prueba guardada ─────────────
+
+const lentesPorNombre = (r) => Object.fromEntries(r.result.lentes.map((l) => [l.lens, l]));
+const hunts = (log) => fs.readFileSync(log, 'utf8').split('\n').filter((l) => l.startsWith('hunt:'));
+
+/** El guion en la forma de la herramienta Workflow, con un agent() propio. */
+async function correrGuion(args, agent) {
+  const source = fs.readFileSync(GUION, 'utf8').replace(/^export const meta =/m, 'const meta =');
+  const fn = new (Object.getPrototypeOf(async function () {}).constructor)('args', 'log', 'agent', 'parallel', 'pipeline', source);
+  const parallel = (thunks) => Promise.all(thunks.map((t) => t().catch(() => null)));
+  return fn(args, () => {}, agent, parallel, null);
+}
+
+test('T1 8.215-SinBase_NoMedido_SinCazadores @story-8.215 @ac-1', () => {
+  for (const base of [undefined, '', 'origin/main']) {
+    const dir = tmp('adv8215-t1-');
+    const { env, log } = doble(dir, { hunt: { default: [] } });
+    const r = correrPase(dir, env, [], { base });
+    assert.ok(r.result, `${base}: ${r.stderr}`);
+    assert.equal(r.result.medido, false, String(base));
+    assert.match(r.result.aviso, /base/, String(base));
+    assert.deepEqual(hunts(log), [], `${base}: sin base no se lanza ningún cazador`);
+  }
+});
+
+test('T2 8.215-Pedido_NombraBaseYCarpeta @story-8.215 @ac-2', () => {
+  const dir = tmp('adv8215-t2-');
+  const { env, prompts } = doble(dir, { hunt: { default: [] } });
+  const r = correrPase(dir, env);
+  assert.equal(r.result.medido, true, r.stderr);
+  for (const l of LENTES) {
+    const p = fs.readFileSync(path.join(prompts, `hunt-${l.key}.txt`), 'utf8');
+    assert.ok(p.includes(BASE), `${l.key}: nombra la base`);
+    assert.ok(p.includes(`diff ${BASE}`), `${l.key}: el diff contra la base, con lo sin commitear`);
+    assert.ok(!p.includes(`${BASE}...HEAD`), `${l.key}: nunca ...HEAD, que deja afuera lo sin commitear`);
+    assert.match(p, /status --porcelain/, l.key);
+    assert.match(p, /\bmain\b/, l.key);
+    assert.ok(p.includes(carpetaDeLaLente(dir, l.key)), `${l.key}: nombra su carpeta`);
+    assert.match(p, /\.txt/, l.key);
+    assert.match(p, /<REDACTED>|credenciales/i, l.key);
+  }
+});
+
+test('T3 8.215-OtraBase_SinMedir @story-8.215 @ac-3', () => {
+  const [a, b, c, d, e] = LENTES.map((l) => l.key);
+  const dir = tmp('adv8215-t3-');
+  const { env } = doble(dir, { hunt: { default: [],
+    [a]: { findings: [], base: 'fedcba9876543210fedcba9876543210fedcba98' },
+    [b]: { findings: [hallazgo('scripts/x.js', 'algo')], base: 'fedcba9876543210fedcba9876543210fedcba98' },
+    [c]: { findings: [], base: BASE.slice(0, 6) },
+    [d]: { findings: [], base: '' },
+    [e]: { findings: [], base: BASE.slice(0, 7).toUpperCase() } }, verify: { verdict: 'REFUTED' } });
+  const r = correrPase(dir, env);
+  const ls = lentesPorNombre(r);
+  for (const k of [a, b, c, d]) {
+    assert.equal(ls[k].estado, 'sin-medir', k);
+    assert.match(ls[k].motivo, /comparó contra/, k);
+  }
+  assert.equal(ls[e].estado, 'medida', 'un prefijo de 7 en mayúsculas coincide');
+  assert.equal(r.result.medido, false);
+  // una base pedida abreviada y un cazador que devuelve el hash completo
+  const dir2 = tmp('adv8215-t3b-');
+  const { env: env2 } = doble(dir2, { hunt: { default: [] } });
+  const r2 = correrPase(dir2, env2, [], { base: BASE.slice(0, 7) });
+  assert.equal(r2.result.medido, true, r2.stderr);
+});
+
+test('T4 8.215-LimpiaSinPrueba_SinMedir @story-8.215 @ac-4', () => {
+  const [a, b, c] = LENTES.map((l) => l.key);
+  const dir = tmp('adv8215-t4-');
+  const { env } = doble(dir, { hunt: { default: [], [a]: { probe: 'vacia' }, [b]: { probe: 'ajena' }, [c]: { probe: 'ausente' } } });
+  const r = correrPase(dir, env);
+  const ls = lentesPorNombre(r);
+  assert.equal(ls[a].estado, 'sin-medir');
+  assert.match(ls[a].motivo, /no guardó la prueba/);
+  assert.equal(ls[b].estado, 'sin-medir');
+  assert.match(ls[b].motivo, /no guardó la prueba/);
+  assert.equal(ls[c].estado, 'sin-medir');
+  assert.match(ls[c].motivo, /no contestó/);
+  assert.equal(r.result.medido, false);
+});
+
+test('T5 8.215-ConHallazgos_MedidaComoHoy @story-8.215 @ac-5', () => {
+  const dir = tmp('adv8215-t5-');
+  const { env } = doble(dir, { hunt: { default: [], [LENTES[2].key]: [hallazgo('scripts/x.js', 'pierde el último')] }, verify: { verdict: 'REFUTED' } });
+  const r = correrPase(dir, env);
+  assert.equal(r.result.medido, true, r.stderr);
+  for (const l of r.result.lentes) {
+    assert.equal(l.estado, 'medida', l.lens);
+    assert.equal(l.base, BASE, l.lens);
+    assert.equal(typeof l.probe_dir, 'string', l.lens);
+  }
+  assert.equal(lentesPorNombre(r)[LENTES[2].key].probe_dir, '');
+});
+
+/** Un resultado medido y limpio escrito en `dir`; `cambiar(lentes)` lo toca antes de escribirlo. */
+function resultadoLimpio(dir, cambiar) {
+  const cuerpo = MEDIDO(dir);
+  if (cambiar) cambiar(cuerpo);
+  return resultado(dir, cuerpo);
+}
+const anotar = (home, sid, ruta, extra = []) => correr(home, sid, ['mark-adversarial-result', '0', '--type', '5b', '--result', ruta, ...extra]);
+const ultimoPase = (home) => lineas(home, 'gates.log').filter((x) => x.name === 'adversarial-pass').at(-1);
+
+test('T6 8.215-Anotar_LimpiaSinPruebaEnDisco_NoMedido @story-8.215 @ac-6', () => {
+  for (const caso of ['sin-carpeta', 'vacio']) {
+    const home = tmp(`adv8215-t6-${caso}-`); const SID = `t6${caso}`;
+    writeFakeMarker(home, SID);
+    const p = resultadoLimpio(home, () => {
+      const d = carpetaDeLaLente(home, LENTES[0].key);
+      if (caso === 'sin-carpeta') fs.rmSync(d, { recursive: true, force: true });
+      else fs.writeFileSync(path.join(d, 'COMO-SE-CORRIO.txt'), '');
+    });
+    assert.equal(anotar(home, SID, p).status, 0);
+    const l = ultimoPase(home);
+    assert.equal(l.veredicto, 'no-medido', caso);
+    assert.match(l.motivo_no_medido, /sin prueba guardada en disco/, caso);
+    assert.notEqual(leerMarker(home, SID).deepReviewDone, true, caso);
+  }
+});
+
+test('T7 8.215-Anotar_ConPruebas_Cierra @story-8.215 @ac-6 @ac-7', async () => {
+  const home = tmp('adv8215-t7-'); const SID = 't7';
+  writeFakeMarker(home, SID, { adversarial: { launchedAtStep: 4, runId: 'wf', sessionId: SID, launchedAt: LANZADO } });
+  assert.equal(anotar(home, SID, resultadoLimpio(home)).status, 0);
+  assert.equal(ultimoPase(home).veredicto, 'listo');
+  assert.equal(leerMarker(home, SID).deepReviewDone, true);
+});
+
+test('T12 8.215-Tablero_SinTurnoNoEsBloqueo @story-8.215 @ac-12', () => {
+  const reducer = require(path.join(SKILL, '..', '..', 'scripts', 'nightly', 'dashboard', 'reducer.js'));
+  const digest = require(path.join(SKILL, '..', '..', 'scripts', 'metrics', 'tokens-digest.js'));
+  assert.equal(typeof reducer.esBloqueo, 'function', 'reducer.js exporta esBloqueo');
+  assert.equal(typeof digest.esRojo, 'function', 'tokens-digest.js exporta esRojo');
+  assert.equal(reducer.esBloqueo('sin-turno'), false);
+  assert.equal(digest.esRojo('sin-turno'), false);
+  assert.equal(reducer.esBloqueo('red:exit=77'), true, 'un rojo sigue siendo bloqueo');
+});
+
+test('T13 8.215-ModoPlan_SinCambios @story-8.215 @ac-7', async () => {
+  const { SALIDA_APROBADA } = require(VERDICT_LIB);
+  const pedidos = [];
+  const muerta = 'ac-sin-cubrir';
+  const r = await correrGuion({ modo: 'plan', pedido: '0123456789abcdef', storyTexto: 'historia', planTexto: 'plan', repo: '/tmp/r' },
+    async (prompt) => {
+      pedidos.push(prompt);
+      if (prompt.includes(`LENTE DEL PLAN: ${muerta}`)) return null;
+      return { lens: 'x', findings: [] };
+    });
+  assert.equal(pedidos.length, 4, 'las cuatro lentes del plan');
+  for (const p of pedidos) {
+    assert.doesNotMatch(p, /caza-|status --porcelain|CONTRA QUÉ SE COMPARA/, 'el plan no pide base ni prueba guardada');
+  }
+  assert.equal(r.aviso, `adversarial-verify: 🔴 pase NO MEDIDO — 1 lente(s) SIN MEDIR (${muerta}): su cazador no contestó. No es verde ni «sin hallazgos»: relanzá el pase, o ${SALIDA_APROBADA}.`);
+});
+
+test('T14 8.215-Aviso_NombraMotivos @story-8.215 @ac-5', () => {
+  const [a, b] = LENTES.map((l) => l.key);
+  const dir = tmp('adv8215-t14-');
+  const { env } = doble(dir, { hunt: { default: [], [a]: { findings: [], base: 'fedcba9876543210fedcba9876543210fedcba98' }, [b]: { probe: 'vacia' } } });
+  const r = correrPase(dir, env);
+  assert.match(r.result.aviso, new RegExp(`${a}[^;]*comparó contra`));
+  assert.match(r.result.aviso, new RegExp(`${b}[^;]*no guardó la prueba`));
+});
+
+test('T15 8.215-Anotar_ProbeDirRelativo_SeResuelveContraElRepo @story-8.215 @ac-6', () => {
+  const home = tmp('adv8215-t15-'); const SID = 't15r';
+  const repo = tmp('adv8215-t15-repo-');
+  const runDir = path.join(repo, '.advisors', 'pipeline-runs', 'A-1');
+  fs.mkdirSync(runDir, { recursive: true });
+  writeFakeMarker(home, SID, { repoPath: repo });
+  const p = resultadoLimpio(runDir, (c) => {
+    for (const l of c.lentes) l.probe_dir = path.relative(repo, l.probe_dir);
+  });
+  assert.equal(anotar(home, SID, p).status, 0);
+  assert.equal(ultimoPase(home).veredicto, 'listo', ultimoPase(home).motivo_no_medido);
+});
+
+test('T17 8.215-Anotar_PruebaEnCarpetaAjena_NoMedido @story-8.215 @ac-6', () => {
+  for (const caso of ['otra-lente', 'otra-corrida', 'afuera']) {
+    const home = tmp(`adv8215-t17-${caso}-`); const SID = `t17${caso}`;
+    writeFakeMarker(home, SID);
+    const runDir = path.join(home, 'run');
+    fs.mkdirSync(runDir);
+    const p = resultadoLimpio(runDir, (c) => {
+      const l0 = c.lentes[0];
+      if (caso === 'otra-lente') l0.probe_dir = c.lentes[1].probe_dir;
+      if (caso === 'otra-corrida') l0.probe_dir = guardarPruebaDeLente(path.join(home, 'otra-run'), l0.lens);
+      if (caso === 'afuera') { const d = tmp('adv8215-afuera-'); fs.writeFileSync(path.join(d, 'COMO-SE-CORRIO.txt'), 'x\n'); l0.probe_dir = d; }
+    });
+    assert.equal(anotar(home, SID, p).status, 0);
+    const l = ultimoPase(home);
+    assert.equal(l.veredicto, 'no-medido', caso);
+    assert.match(l.motivo_no_medido, /no está en la carpeta de la lente/, caso);
+  }
+});
+
+test('T18 8.215-Anotar_ConteoQueNoCoincide_NoMedido @story-8.215 @ac-13', () => {
+  const casos = [
+    ['no-coincide', (l) => { l.count = 1; l.probe_dir = ''; }, /el conteo no coincide con el detalle/],
+    ['sin-count', (l) => { delete l.count; }, /conteo ilegible/],
+    ['texto', (l) => { l.count = '0'; }, /conteo ilegible/],
+  ];
+  for (const [nombre, cambiar, motivo] of casos) {
+    const home = tmp(`adv8215-t18-${nombre}-`); const SID = `t18${nombre}`;
+    writeFakeMarker(home, SID);
+    const p = resultadoLimpio(home, (c) => {
+      fs.rmSync(c.lentes[0].probe_dir, { recursive: true, force: true });
+      cambiar(c.lentes[0]);
+    });
+    assert.equal(anotar(home, SID, p).status, 0);
+    const l = ultimoPase(home);
+    assert.equal(l.veredicto, 'no-medido', nombre);
+    assert.match(l.motivo_no_medido, motivo, nombre);
+  }
+});
+
+test('T21 8.215-PedidoVerificador_SinBloquesDelCazador @story-8.215 @ac-2', async () => {
+  const dir = tmp('adv8215-t21-');
+  const { env, prompts } = doble(dir, { hunt: { default: [], [LENTES[0].key]: [hallazgo('scripts/x.js', 'algo')] }, verify: { verdict: 'REFUTED' } });
+  correrPase(dir, env);
+  const verif = fs.readdirSync(prompts).filter((f) => f.startsWith('verify-'));
+  assert.ok(verif.length >= 1, 'hubo un verificador');
+  for (const f of verif) {
+    const p = fs.readFileSync(path.join(prompts, f), 'utf8');
+    assert.doesNotMatch(p, /caza-|status --porcelain|CONTRA QUÉ SE COMPARA/, 'el verificador no recibe los bloques del cazador');
+  }
+  const uno = await correrGuion({ modo: 'single-finding', soloPedido: true, base: BASE, hallazgo: { file: 'x.js', summary: 's' } }, async () => null);
+  assert.doesNotMatch(uno.prompt, /caza-|status --porcelain|CONTRA QUÉ SE COMPARA/, 'el modo un hallazgo tampoco');
+});
+
+test('T23 8.215-Anotar_PruebaDeUnPaseAnterior_NoMedido @story-8.215 @ac-6', () => {
+  // con lanzamiento: la prueba fechada antes del lanzamiento
+  const home = tmp('adv8215-t23-'); const SID = 't23';
+  // stable-data: se compara contra la fecha real de los archivos que la prueba escribe
+  const ahora = new Date();
+  writeFakeMarker(home, SID, { adversarial: { launchedAtStep: 4, runId: 'wf', sessionId: SID, launchedAt: ahora.toISOString() } });
+  const p = resultadoLimpio(home, (c) => {
+    const viejo = new Date(ahora.getTime() - 60 * 60 * 1000);
+    fs.utimesSync(path.join(c.lentes[0].probe_dir, 'COMO-SE-CORRIO.txt'), viejo, viejo);
+  });
+  assert.equal(anotar(home, SID, p).status, 0);
+  assert.match(ultimoPase(home).motivo_no_medido, /la prueba es de un pase anterior/);
+  // sin lanzamiento (como el carril o una revisión): más de 12 h antes que el resultado
+  const { medicionDelResultado } = require(VERDICT_LIB);
+  const dir = tmp('adv8215-t23b-');
+  const r = resultadoLimpio(dir, (c) => {
+    const viejo = new Date(Date.now() - 13 * 60 * 60 * 1000);
+    fs.utimesSync(path.join(c.lentes[0].probe_dir, 'COMO-SE-CORRIO.txt'), viejo, viejo);
+  });
+  const m = medicionDelResultado(JSON.parse(fs.readFileSync(r, 'utf8')), { repo: dir, resultado: r });
+  assert.equal(m.medido, false);
+  assert.match(m.motivo, /la prueba es de un pase anterior/);
+});
+
+// Un cazador guarda su prueba con Bash, con la corrida abierta y parado en el repo de la historia: el gancho de escrituras
+// no lo frena por el nombre de la carpeta (`step-05b-probes/caza-*`). En el pase de la 8.215 se frenaron seis
+// laboratorios en /tmp que creaban un enlace simbólico (`ln -s`, el gancho no ve qué trae): eso sigue frenando.
+test('T27 8.215-CazadorGuardaSuPrueba_ElGanchoNoLoFrena @story-8.215 @ac-2', () => {
+  const home = tmp('adv8215-t27-'); const SID = 't27'; const { repo } = mkRepo();
+  writeFakeMarker(home, SID, { repoPath: repo, storyPath: path.join(repo, 'specs', 'a.md'), stepsCompleted: [0, 1, 2, 3, 4], stepsPending: [5] });
+  const caza = path.join(repo, '.advisors', 'pipeline-runs', 'A-1', 'step-05b-probes', 'caza-determinism-ordering');
+  const gancho = (cmd) => spawnSync(process.execPath, [path.join(SCRIPTS, 'on-bash-write-gate.js')], {
+    input: JSON.stringify({ session_id: SID, tool_name: 'Bash', tool_input: { command: cmd }, cwd: repo, hook_event_name: 'PreToolUse' }),
+    encoding: 'utf8', env: entorno(home, { CLAUDE_CODE_SESSION_ID: SID }),
+  });
+  for (const cmd of [
+    `mkdir -p ${caza} && printf 'node probe.js\\n' > ${caza}/COMO-SE-CORRIO.txt`,
+    `cat > ${caza}/COMO-SE-CORRIO.txt <<'EOF'\nnode probe.js\nEOF`,
+    `cp /tmp/probe.js ${caza}/probe.js.txt`,
+    `D=${caza}; mkdir -p $D; printf 'x' > $D/COMO-SE-CORRIO.txt`,
+  ]) {
+    const r = gancho(cmd);
+    assert.equal(r.status, 0, `${cmd}\n${r.stdout}${r.stderr}`);
+  }
+  // un enlace simbólico a una carpeta que no se ve sigue frenando (el gancho no sabe qué trae)
+  assert.equal(gancho('L=$(mktemp -d /tmp/probe.XXXXXX); mkdir -p $L/run/step-05b-probes/caza-a; ln -s run $L/runlink').status, 2);
+});
+
+test('T24 8.215-Revision_ConResultado_MiraLasPruebas @story-8.215 @ac-6', () => {
+  const home = tmp('adv8215-t24-'); const SID = 't24';
+  writeFakeMarker(home, SID);
+  const sin = resultadoLimpio(home, (c) => fs.rmSync(c.lentes[0].probe_dir, { recursive: true, force: true }));
+  correr(home, SID, ['mark-adversarial-result', '0', '--type', 'revision', '--result', sin]);
+  const l1 = lineas(home, 'gates.log').filter((x) => x.name === 'adversarial-pass').at(-1);
+  assert.equal(l1.veredicto, 'no-medido', JSON.stringify(l1));
+  const home2 = tmp('adv8215-t24b-'); writeFakeMarker(home2, 't24b');
+  const r = correr(home2, 't24b', ['mark-adversarial-result', '0', '--type', 'revision', '--result', resultadoLimpio(home2)]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.notEqual(lineas(home2, 'gates.log').filter((x) => x.name === 'adversarial-pass').at(-1).veredicto, 'no-medido');
 });

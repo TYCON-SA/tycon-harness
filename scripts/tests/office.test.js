@@ -492,6 +492,8 @@ test('T42 Card_CurrentBatch_FullTitle: la tarjeta dice la tanda en curso, con el
   assert.strictEqual(byName(data, 'Cata').titulo, long, 'entero, sin cortar');
   for (const a of data.agents) assert.ok(!String(a.titulo || '').endsWith('…'), a.nombre);
   assert.match(page(data), /De la historia/);
+  // el título de la historia viaja aparte del trabajo, con o sin tanda en curso
+  for (const [n, t] of [['Alfa', long], ['Beto', 'Una historia con tandas sin ninguna en curso'], ['Cata', long]]) assert.strictEqual(byName(data, n).historiaTitulo, t, n);
 });
 
 // Los bordes de la hora prometida, del filtro de nombres y del bloque de tandas.
@@ -2260,14 +2262,14 @@ test('T211 Tables_PageDrawsText: la página dibuja las tablas arriba del tablero
 test('T212 Card_And_Panel_OneFicha: la tarjeta y el panel pintan la misma ficha, sin perder ningún dato', () => {
   const { data } = buildOffice({ wip: wip([]), nowMs: NOW });
   const html = page(data);
-  assert.strictEqual((html.match(/function ficha\(a\)/g) || []).length, 1, 'un solo lugar');
-  const crew = html.slice(html.indexOf('function renderCrew()'), html.indexOf('function ficha(a)'));
+  assert.strictEqual((html.match(/function ficha\(a,abiertos\)/g) || []).length, 1, 'un solo lugar');
+  const crew = html.slice(html.indexOf('function renderCrew()'), html.indexOf('function ficha(a,abiertos)'));
   assert.match(crew, /pintarFicha\(a,k,false\)/);
   const abrir = html.slice(html.indexOf('function abrir(nombre'), html.indexOf('const ray=new THREE.Raycaster()'));
   assert.match(abrir, /T\.pintarFicha\(a,panel,true\)/);
   assert.doesNotMatch(abrir, /row\("Trabajo"/);
-  const ficha = html.slice(html.indexOf('function ficha(a)'), html.indexOf('// sin 3D, la tabla queda abierta'));
-  for (const k of ['Trabajo', 'De la historia', 'Encargo', 'Haciendo ahora', 'Haciendo', 'Última acción', 'Espera', 'Parada', 'Mientras tanto', 'En pausa', 'Termina', 'Por qué', 'Prometido', 'Avance', 'Carpeta', 'Pasos de la ejecución']) assert.ok(ficha.includes(`"${k}"`), k);
+  const ficha = html.slice(html.indexOf('function ficha(a,abiertos)'), html.indexOf('// sin 3D, la tabla queda abierta'));
+  for (const k of ['Trabajo', 'De la historia', 'Historia', 'Encargo', 'Haciendo ahora', 'Haciendo', 'Última acción', 'Espera', 'Parada', 'Mientras tanto', 'En pausa', 'Termina', 'Por qué', 'Prometido', 'Avance', 'Carpeta', 'Pasos de la ejecución']) assert.ok(ficha.includes(`"${k}"`), k);
   assert.doesNotMatch(html, /Pasos de la corrida/);
 });
 
@@ -2712,7 +2714,7 @@ test('T250 WaysOfWorking_Icon: cada caso tiene su forma, y al ícono no entra el
   assert.strictEqual(shape('<img src=x onerror=alert(1)>'), shape('Otra cosa'), 'lo desconocido es otra cosa, y su texto no entra');
   assert.doesNotMatch(forms.join(''), /fill="(?!none)|stroke="#/, 'el ícono no depende de un color: usa el del texto');
   assert.match(html, /T\.iconoComo\(a\.comoTrabaja\)/, 'la etiqueta del dibujo lo lleva');
-  assert.match(html, /chips\.appendChild\(etiquetaComo\(a\.comoTrabaja\)\)/, 'la tarjeta lo lleva como etiqueta, junto al estado');
+  assert.match(html, /chips\.appendChild\(etiquetaComo\(a\.comoTrabaja,a\.tarea\)\)/, 'la tarjeta lo lleva como etiqueta, junto al estado');
   assert.match(html, /T\.etiquetaComo\(a\.comoTrabaja\)/, 'el detalle también');
   assert.doesNotMatch(html, /add\("Cómo trabaja"/, 'ya no es un renglón');
 });
@@ -3392,7 +3394,7 @@ test('T298 Agents_SaidOnTheCard: cuántos y qué hacen; «Unos» sólo con agent
   assert.strictEqual(said({ codex: 0, claude: 3 }, { kind: 'loose' }), 'Unos 3 agentes trabajando');
   assert.strictEqual(said(null, adversarial), undefined, 'sin agentes el renglón no aparece');
   const html = page({ agents: [], items: [], kanban: null, meta: null });
-  assert.match(html.slice(html.indexOf('function ficha(a)')), /if\(a\.agentesAhora\)r\.push\(\{k:"",v:a\.agentesAhora\}\)/, 'la tarjeta y el panel lo dicen');
+  assert.match(html.slice(html.indexOf('function ficha(a,abiertos)')), /if\(a\.agentesAhora\)r\.push\(\{k:"",v:a\.agentesAhora\}\)/, 'la tarjeta y el panel lo dicen');
 });
 
 test('T299 Agents_NotFree: una sesión quieta con agentes corriendo trabaja y sale de «Libres»; sin agentes sigue libre', () => {
@@ -3738,4 +3740,71 @@ test('T3 OwnerWaits_ComoProcesoSinEscribir @story-8.219 @ac-3: --owner-waits da 
   assert.ok(Array.isArray(out.problemas), JSON.stringify(out));
   assert.deepStrictEqual(out.esperas.map((e) => [e.sid, e.quien, e.espera, e.cerrada]), [['s1', 'sesion-a', 'que apruebes el plan', false]]);
   assert.deepStrictEqual(filesOf(home), antes, 'ningún archivo cambió ni apareció');
+});
+
+test('T312 Story_NumberAndTitle: el panel dice en un renglón fijo «Historia: número — título»; la tarjeta, sólo la historia', () => {
+  const { data } = buildOffice({ wip: wip([]), nowMs: NOW });
+  const html = page(data);
+  const fn = (name) => html.slice(html.indexOf(`function ${name}(`), html.indexOf('\n', html.indexOf(`function ${name}(`)));
+  const historiaDe = new Function(`${fn('historiaDe')}; return historiaDe;`)();
+  assert.strictEqual(historiaDe({ comoTrabaja: 'Historia 8.215', historiaTitulo: 'El pase', titulo: 'Una tanda' }), '8.215 — El pase');
+  assert.strictEqual(historiaDe({ comoTrabaja: 'Historia 8.215', historia: 'De una foto vieja' }), '8.215 — De una foto vieja', 'una máquina con el arnés viejo');
+  assert.strictEqual(historiaDe({ comoTrabaja: 'Historia 8.215' }), '8.215', 'sin título, el número solo');
+  for (const como of ['Historia', 'Camino corto', 'Otra cosa', undefined]) assert.strictEqual(historiaDe({ comoTrabaja: como, historia: 'x' }), '', String(como));
+  // la etiqueta de la tarjeta no lleva el título: recortado no se lee
+  const etiqueta = new Function('el', 'iconoComo', `${fn('etiquetaComo')}; return etiquetaComo;`)((t, c, x) => ({ t: x, kids: [], appendChild(k) { this.kids.push(k); } }), () => ({}));
+  assert.strictEqual(etiqueta('Historia 8.218', 'T-12').kids[1].t, 'Historia 8.218 · T-12');
+  assert.strictEqual(etiqueta('Historia 8.218', undefined).kids[1].t, 'Historia 8.218', 'sin número, sólo la historia');
+  assert.match(html, /\.como-chip>\.txt\{[^}]*text-overflow:ellipsis/);
+  // el renglón fijo va sólo abierto (el panel y la ventana), junto al trabajo
+  const ficha = html.slice(html.indexOf('function ficha(a,abiertos)'), html.indexOf('add("Encargo"'));
+  assert.match(ficha, /add\("Trabajo",a\.titulo\);if\(!hist\)add\("De la historia",a\.historia\);else if\(abiertos\)add\("Historia",hist\)/);
+  assert.match(html, /ficha\(a,abiertos\)\.forEach/);
+});
+
+test('T313 Card_OpensWindow: tocar la tarjeta de una persona abre su ventana, igual en la oficina local y en el sitio', () => {
+  const { data } = buildOffice({ wip: wip([]), nowMs: NOW });
+  const html = page(data);
+  const fnAt = (name) => { const at = html.indexOf(`function ${name}(`); return html.slice(at, html.indexOf('\nfunction ', at + 1)); };
+  assert.match(fnAt('renderCrew'), /pintarTarjetas\(crew,agents,abrirSesion\)/, 'la local');
+  const oficina = fnAt('pintarOficina');
+  assert.match(oficina, /pintarTarjetas\(f\.crew,lista,\(a,k\)=>\{.*?DATA=o\.foto\|\|\{\};try\{abrirSesion\(a,k\)\}finally/, 'el sitio, con la foto de esa oficina');
+  assert.doesNotMatch(oficina, /T\.abrir\(/, 'el sitio ya no abre el panel de la sala');
+  const abrir = fnAt('abrirSesion');
+  assert.match(abrir, /fichaEnVentana\(a,box\)/, 'el mismo contenido que la ventana del tablero');
+  assert.match(fnAt('abrirTarjeta'), /if\(a\)fichaEnVentana\(a,box\)/);
+  assert.match(fnAt('fichaEnVentana'), /pintarFicha\(a,box,true\)/);
+  // el toque de verdad: el click y Enter abren con la sesión y su tarjeta; un botón de adentro no abre
+  const node = () => { const n = { kids: [], style: { setProperty() {} }, classList: { add() {} }, attrs: {}, appendChild(k) { this.kids.push(k); return k; }, append(...k) { this.kids.push(...k); }, setAttribute(k, v) { this.attrs[k] = v; }, replaceChildren(...k) { this.kids = k; } }; return n; };
+  const pintar = new Function('el', 'AST', 'SHIRT', 'etiquetaComo', 'pintarFicha', 'document', `${fnAt('pintarTarjetas')}\n; return pintarTarjetas;`)(
+    () => node(), {}, ['#000'], () => node(), () => {}, { createTextNode: (t) => ({ t }) });
+  const c = node(), abiertas = [], ana = { nombre: 'Ana', estado: 'trabajando' };
+  pintar(c, [ana], (a, k) => abiertas.push([a, k]));
+  const k = c.kids[0];
+  k.onclick({ target: { closest: () => null } });
+  k.onkeydown({ target: k, key: 'Enter', preventDefault() {} });
+  k.onclick({ target: { closest: () => ({}) } });
+  assert.deepStrictEqual(abiertas, [[ana, k], [ana, k]], 'el click y Enter abren; el botón de adentro no');
+  assert.strictEqual(k.attrs.role, 'button');
+  // y la ventana se abre con su nombre y la misma ficha que la del tablero
+  const box = node(), v = { hidden: true, firstElementChild: box }, fichas = [];
+  const abrirSesion = new Function('ventana', 'el', 'botonCerrar', 'cerrarCharla', 'fichaEnVentana', 'document', 'charlaDe', 'ultimoPedido', 'charlaVuelve', `${abrir}\n; return abrirSesion;`)(
+    () => v, (tag, cls, t) => ({ tag, t }), () => ({ focus() {} }), null, (a, b) => fichas.push([a, b]), { documentElement: { classList: { add() {} } } }, null, 0, null);
+  box.classList = { add() {} };
+  abrirSesion(ana, k);
+  assert.strictEqual(v.hidden, false, 'la ventana se abre');
+  assert.deepStrictEqual(box.kids[0], { tag: 'h3', t: 'Ana' });
+  assert.deepStrictEqual(fichas, [[ana, box]]);
+});
+
+test('T314 Card_TaskNumber: la sesión lleva el número de su fila del tablero, el mismo de su tarjeta del kanban; sin fila, ninguno', () => {
+  const numbered = (rows) => buildBoard({ pendientes: rows.map((r, i) => ({ estado: 'curso', grupo: 'Hoy', orden: i, id: `T-${i + 1}`, ...r })) });
+  const { data } = buildOffice({ wip: wip([
+    { session: 'Ana', work: '8.1 · Una', extra: { kind: 'pipeline', title: 'Una', storyId: '8.1', current: 'implement', endAt: NOW + 3600000 } },
+    { session: 'Beto', work: '8.2 · Otra', extra: { kind: 'pipeline', title: 'Otra', storyId: '8.2', current: 'implement', endAt: NOW + 3600000 } },
+  ]), board: numbered([{ titulo: 'Otra cosa' }, { titulo: 'La historia', historia: '8.1' }]), nowMs: NOW });
+  assert.strictEqual(byName(data, 'Ana').tarea, 'T-2');
+  const card = data.kanban.columnas.flatMap((c) => c.tarjetas).find((c) => c.quien === 'Ana');
+  assert.strictEqual(card.numero, byName(data, 'Ana').tarea, 'el mismo número que su tarjeta del kanban');
+  assert.strictEqual(byName(data, 'Beto').tarea, undefined);
 });

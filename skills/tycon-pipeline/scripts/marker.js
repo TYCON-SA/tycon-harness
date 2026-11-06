@@ -1194,6 +1194,20 @@ function firmadoEnLaTerminal(firma, resumen) {
   return trabajarSobreElDestino(ow, { via: 'terminal', sesion, destino: SID || null });
 }
 
+/**
+ * Las pruebas sin turno (`checks.tests === 'sin-turno'`): el portón no corrió porque otra sesión tenía el turno de las
+ * ejecuciones grandes. Frena el paso diciendo eso, sin llamarlo rojo: no hay prueba que arreglar, hay que esperar el
+ * turno. La deuda no lo cubre: no es un rojo que se deja a propósito, es una medición que falta.
+ */
+function frenarSinTurno(marker, n) {
+  if (!marker.checks || marker.checks.tests !== 'sin-turno') return;
+  appendLog('gates.log', { name: 'tests-no-turn', status: 'blocked', story: marker.storyId || null, step: n });
+  console.error(`marker.js complete-step ${n} BLOQUEADO — las pruebas no corrieron: el portón no tuvo el turno de las ejecuciones grandes.`);
+  console.error('  No hay pruebas que fallaran: falta medirlas. Cuando la coordinadora te dé el turno, corré el portón:');
+  console.error('    bash <skills>/tycon-pipeline/scripts/test-gate.sh <repo> <ruta de la story>');
+  process.exit(1);
+}
+
 function cmdCompleteStep(nRaw, flags) {
   const marker = readMarker();
   if (!marker) {
@@ -1242,6 +1256,8 @@ function cmdCompleteStep(nRaw, flags) {
       appendLog('gates.log', { name: 'expected-red', status: 'accepted', story: marker.storyId, check: k, deuda: marker.cierre.deuda });
       console.error(`⚠️  ${k}: ${v} — aceptado por la deuda ${marker.cierre.deuda} (${((marker.expectedRed || {})[k] || {}).tests || []})`);
     }
+    // Las pruebas sin turno tampoco llegan al commit, ni con la deuda: no es un rojo que se deja, es una medición que falta.
+    frenarSinTurno(marker, n);
     // Un control en rojo común tampoco llega al commit sin la deuda: o se arregla, o se cierra como deuda con la frase.
     const rojos = Object.entries(marker.checks || {}).filter(([, v]) => /^red\b/.test(String(v)));
     if (rojos.length && !enDeuda) {
@@ -1567,6 +1583,9 @@ function cmdCompleteStep(nRaw, flags) {
       console.error('  No le dictes cómo: si pregunta cómo seguir, señalale la guía del freno (guides/safety-guard.md, regla ESC-C3).');
       process.exit(1);
     }
+
+    // ── «Sin turno»: frena, sin llamarlo rojo ─────────────────────────────────────────────────
+    frenarSinTurno(marker, n);
 
     // ── «Sin acotar»: se acepta anunciándolo ──────────────────────────────────────────────────
     // La corrida del repo hermano no se pudo acotar a lo tocado y no corrió nada (salida 7 de test-gate.sh). Correr la
@@ -2821,7 +2840,10 @@ function cmdRunCheck(argv) {
     if (terminado) return;
     terminado = true;
     try {
-      registrarRunCheck(name, cmdArgv, marker, exitCode, Date.now() - t0, Buffer.concat(trozos).toString('utf8'));
+      // el 77 del turno se anota aparte: `registrarRunCheck` sólo sabe de verde y rojo, y está congelada
+      if (esSinTurno(name, cmdArgv, exitCode)) registrarSinTurno(name, cmdArgv, marker, exitCode, Date.now() - t0);
+      else if (marcaQueNoPisaSinTurno(name, exitCode)) process.exitCode = exitCode;
+      else registrarRunCheck(name, cmdArgv, marker, exitCode, Date.now() - t0, Buffer.concat(trozos).toString('utf8'));
     } finally {
       soltar();
     }
@@ -2860,6 +2882,62 @@ function cmdRunCheck(argv) {
     }
     terminar(c);
   });
+}
+
+/**
+ * ¿Este comando es el corredor de suites? Es el único que pide el turno de las ejecuciones grandes, así que sólo su 77
+ * es «sin turno». Se reconoce por un argumento cuyo nombre de archivo es exactamente `run-suites-json.js`, o por una
+ * palabra con ese nombre dentro del texto que sigue a `-c` (el portón lo lanza también con `bash -c`).
+ */
+function esCorredorDeSuites(cmdArgv) {
+  const es = (s) => path.basename(String(s || '').replace(/^['"]|['"]$/g, '')) === 'run-suites-json.js';
+  return cmdArgv.some((a, i) => es(a) || (i > 0 && cmdArgv[i - 1] === '-c' && String(a).split(/[\s;&|()]+/).some(es)));
+}
+
+/** ¿Es el 77 del turno? El del corredor de suites, en el check `tests`, lanzado por el portón. */
+function esSinTurno(name, cmdArgv, exitCode) {
+  return exitCode === 77 && name === 'tests' && process.env.TYCON_TEST_GATE === '1' && esCorredorDeSuites(cmdArgv);
+}
+
+/**
+ * ¿Es una marca en rojo del portón (`marcar_tests_en_rojo` de test-gate.sh: un hermano o una parte que salió 75, un
+ * corte, el total en rojo) sobre un check que ya quedó `sin-turno`? Ese 75 puede venir del turno, y el rojo lo
+ * volvería una prueba que arreglar. Los dos dicen «no se midió»: queda `sin-turno`, que además dice qué hacer, y se
+ * anota en gates.log que la marca no lo pisó.
+ */
+function marcaQueNoPisaSinTurno(name, exitCode) {
+  if (name !== 'tests' || exitCode === 0 || process.env.TYCON_TEST_GATE_MARK !== '1') return false;
+  const m = readMarker();
+  if (!m || !m.checks || m.checks.tests !== 'sin-turno') return false;
+  appendLog('gates.log', { check: name, status: 'sin-turno', provenance: 'test-gate', exit: exitCode, storyId: m.storyId || null,
+    motivo: 'la marca en rojo del portón no pisa el sin-turno: no se midió' });
+  process.stdout.write(`check ${name}: sin-turno (la marca en rojo del portón no lo pisa)\n`);
+  return true;
+}
+
+/**
+ * Anota el 77 del turno: el portón no corrió nada porque otra sesión tiene el turno de las ejecuciones grandes. No es
+ * verde (el verde de antes no queda en pie: el código pudo cambiar) ni rojo (no hay prueba que arreglar): `sin-turno`,
+ * que los cierres de los pasos frenan pidiendo el turno. Relee el marcador antes de escribir, como `registrarRunCheck`.
+ */
+function registrarSinTurno(name, cmdArgv, marker, exitCode, durationMs) {
+  if (marker) {
+    const fresh = readMarker();
+    if (fresh) {
+      fresh.checks = fresh.checks || {};
+      fresh.checks[name] = 'sin-turno';
+      fresh.checksProvenance = fresh.checksProvenance || {};
+      fresh.checksProvenance[name] = 'test-gate';
+      fresh.checksAt = fresh.checksAt || {};
+      fresh.checksAt[name] = nowIso();
+      fresh.lastTouch = nowIso();
+      writeMarker(fresh);
+    }
+  }
+  appendLog('gates.log', { check: name, status: 'sin-turno', provenance: 'test-gate', cmd: cmdArgv.join(' '), exit: exitCode,
+    durationMs, storyId: marker ? marker.storyId : null });
+  process.stdout.write(`check ${name}: sin-turno (test-gate, ${durationMs}ms)\n`);
+  process.exitCode = exitCode;
 }
 
 function registrarRunCheck(name, cmdArgv, marker, exitCode, durationMs, salida) {
@@ -3520,7 +3598,10 @@ function anotarPaseDelCarril({ confirmados, marker, flag }) {
   const ruta = flag('--result');
   if (!ruta) salir('el pase se anota con --result <archivo>: el JSON que devolvió. El número sale de ahí, no del que anota.');
   let medicion;
-  try { medicion = require('./lib/adversarial-verdict.js').medicionDelResultado(JSON.parse(fs.readFileSync(path.resolve(ruta), 'utf8'))); } catch (e) {
+  try {
+    medicion = require('./lib/adversarial-verdict.js').medicionDelResultado(JSON.parse(fs.readFileSync(path.resolve(ruta), 'utf8')),
+      { resultado: path.resolve(ruta), repo: process.cwd() });
+  } catch (e) {
     salir(`--result ${ruta}: no lo pude leer (${String(e.message).split('\n')[0]}) — no se anotó nada.`);
   }
   if (medicion.confirmados !== confirmados) salir(`<N> = ${confirmados} pero el resultado trae ${medicion.confirmados} confirmado(s) — no se anotó nada.`);
@@ -3583,11 +3664,12 @@ function cmdMarkAdversarialResult(countRaw) {
       console.error(`marker.js mark-adversarial-result: --result ${abs}: no lo pude leer como JSON (${e.message.split('\n')[0]}) — no se anotó nada.`);
       process.exit(2);
     }
-    try { medicion = medicionDelResultado(obj); } catch (e) {
+    const lanz = corrida && corrida.adversarial && typeof corrida.adversarial === 'object' ? Date.parse(corrida.adversarial.launchedAt) : NaN;
+    // la prueba de cada lente limpia se mira en disco: junto al resultado, de este pase (desde su lanzamiento)
+    try { medicion = medicionDelResultado(obj, { resultado: abs, repo: (corrida && corrida.repoPath) || process.cwd(), desde: lanz }); } catch (e) {
       console.error(`marker.js mark-adversarial-result: --result ${abs}: ${e.message} — no se anotó nada.`);
       process.exit(2);
     }
-    const lanz = corrida && corrida.adversarial && typeof corrida.adversarial === 'object' ? Date.parse(corrida.adversarial.launchedAt) : NaN;
     if (!Number.isFinite(lanz)) {
       console.error(`⚠️  marker.js mark-adversarial-result: no hay lanzamiento del pase con fecha en esta corrida: no pude comprobar que ${abs} sea de este pase y no de otro.`);
     } else if (fs.statSync(abs).mtimeMs < lanz) {

@@ -3,10 +3,10 @@
 /**
  * run-close — cómo termina una ejecución del pipeline (`cierre`) y si cerrarla ahora la deja a medias.
  *
- * Una ejecución está «abierta» si tiene un control registrado en rojo (`marker.checks` que empieza con `red`), pasos sin
- * correr (alguno de los que `prepare-commit` exige, directa o indirectamente, en `ORDER_REQUIRES`) o el pase adversarial
- * lanzado sin cerrar (`veredictoPaseAdversarial` no da `paso`). Los controles que el pipeline acepta diciéndolo
- * (`sin-medir`, `sin-acotar`) no la abren: se nombran en el motivo.
+ * Una ejecución está «abierta» si tiene un control registrado en rojo (`marker.checks` que empieza con `red`), pruebas
+ * que no corrieron por falta de turno (`sin-turno`), pasos sin correr (alguno de los que `prepare-commit` exige, directa o
+ * indirectamente, en `ORDER_REQUIRES`) o el pase adversarial lanzado sin cerrar (`veredictoPaseAdversarial` no da
+ * `paso`). Los controles que el pipeline acepta diciéndolo (`sin-medir`, `sin-acotar`) no la abren: se nombran en el motivo.
  *
  * `cierre` es la marca única de cómo terminó: `completa` (no estaba abierta), `abortada` (se cerró abierta), `deuda` (la
  * escribe `marker.js close-as-debt`; la ejecución sigue hasta el commit, y el `clear` del final la conserva) y
@@ -41,26 +41,29 @@ function requeridos(paso = 'prepare-commit', vistos = new Set()) {
   return [...vistos];
 }
 
-/** `{ rojos, sinMedir, sinCorrer, paseSinCerrar }` del marcador. */
+/** `{ rojos, sinMedir, sinTurno, sinCorrer, paseSinCerrar }` del marcador. */
 function estado(marker) {
   const m = marker || {};
   const checks = m.checks && typeof m.checks === 'object' ? m.checks : {};
   const rojos = Object.keys(checks).filter((k) => /^red/.test(String(checks[k])));
   const sinMedir = Object.keys(checks).filter((k) => ACEPTADOS.includes(String(checks[k])));
+  // las pruebas que no corrieron por falta de turno: no es un rojo, pero tampoco se aceptan; se pueden medir después
+  const sinTurno = Object.keys(checks).filter((k) => String(checks[k]) === 'sin-turno');
   const pendientes = (Array.isArray(m.stepsPending) ? m.stepsPending : []).map(String);
   const sinCorrer = requeridos().filter((p) => pendientes.includes(p) || isPending(m, p));
   const paseSinCerrar = !!m.adversarial && veredictoPaseAdversarial(m).veredicto !== 'paso';
-  return { rojos, sinMedir, sinCorrer, paseSinCerrar };
+  return { rojos, sinMedir, sinTurno, sinCorrer, paseSinCerrar };
 }
 
 function abierta(e) {
-  return e.rojos.length > 0 || e.sinCorrer.length > 0 || e.paseSinCerrar;
+  return e.rojos.length > 0 || (e.sinTurno || []).length > 0 || e.sinCorrer.length > 0 || e.paseSinCerrar;
 }
 
 /** El motivo, en llano: qué estaba en rojo, sin correr o sin cerrar. */
 function motivoDe(e) {
   const partes = [];
   if (e.rojos.length) partes.push(`en rojo: ${e.rojos.join(', ')}`);
+  if ((e.sinTurno || []).length) partes.push(`pruebas sin turno: no se midieron (${e.sinTurno.join(', ')})`);
   if (e.sinCorrer.length) partes.push(`sin correr: ${e.sinCorrer.join(', ')}`);
   if (e.paseSinCerrar) partes.push('el pase adversarial sin cerrar');
   if (e.sinMedir.length) partes.push(`aceptado sin medir: ${e.sinMedir.join(', ')}`);

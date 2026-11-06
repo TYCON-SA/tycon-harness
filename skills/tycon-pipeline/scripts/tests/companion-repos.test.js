@@ -350,8 +350,15 @@ function corridaConPase(home, sid, lab) {
 function propia(home, sid, ruta, cwd) {
   // El 5b se anota con `--result <archivo>`: el JSON del pase, medido, con su confirmado.
   const resultado = path.join(home, `resultado-${process.hrtime.bigint()}.json`);
+  // la prueba de cada lente limpia, al lado del resultado
+  const prueba = (l) => {
+    const d = path.join(home, 'step-05b-probes', `caza-${l}`);
+    fs.mkdirSync(d, { recursive: true });
+    fs.writeFileSync(path.join(d, 'COMO-SE-CORRIO.txt'), 'node probe.js\n→ ok\n');
+    return d;
+  };
   fs.writeFileSync(resultado, JSON.stringify({ confirmed: [{ lens: 'l', summary: 'h' }],
-    lentes: ['a', 'b', 'c', 'd', 'e', 'f'].map((l) => ({ lens: l, estado: 'medida', count: 0 })), lentes_sin_medir: [], detalle: [], medido: true }));
+    lentes: ['a', 'b', 'c', 'd', 'e', 'f'].map((l) => ({ lens: l, estado: 'medida', count: 0, probe_dir: prueba(l) })), lentes_sin_medir: [], detalle: [], medido: true }));
   return spawnSync(process.execPath, [MARKER, 'mark-adversarial-result', '1', '--type', '5b', '--result', resultado, '--tests', '0', '--own', '1', '--in', ruta],
     { encoding: 'utf8', env: entorno(home, sid), cwd });
 }

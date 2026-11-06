@@ -251,6 +251,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.197: el detector de consultas y temporizadores vivos en las pruebas de formularios (scripts/ci/test-setup/). Corre jest de verdad sobre formularios de juguete; jest se instala una vez en una carpeta de caché, y sin red cada prueba sale NO MEDIDO. Las de la plantilla leen el paquete bizuit por TYCON_PACKS_DIR.",
+      "raiz": "arnes",
+      "ruta": "tests/live-handles.test.js",
+      "requiere": ["red"]
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/rollback-guard.test.sh",
       "requiere": []
