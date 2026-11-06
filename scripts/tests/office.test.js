@@ -3689,7 +3689,10 @@ test('T25 Conversacion_ConVosEnTodaSesion @story-8.183 @ac-4 @ac-5: una sesión 
   const sinNombre = conversationOf(env, 'Coordinadora');
   assert.ok(!sinNombre.sinCoordinadora, 'su propia ventana no dice «no tiene coordinadora designada»');
   assert.deepStrictEqual(sinNombre.conSesiones.map((s) => s.sesion), ['Alfa']);
-  assert.ok(!conversationOf(env, 'Alfa').sinCoordinadora, 'la de otra sesión tampoco');
+  const alfaSinNombre = conversationOf(env, 'Alfa');
+  assert.ok(!alfaSinNombre.sinCoordinadora, 'la de otra sesión tampoco');
+  assert.deepStrictEqual(alfaSinNombre.conCoordinadora.map((m) => m.texto), ['Seguí.'], 'se la reconoce por su cargo, como la nombran las sesiones');
+  assert.ok(!JSON.stringify(sinNombre).includes('"c"'), 'su identificador no se muestra');
   // la página marca lo de la oficina y muestra Con vos en toda sesión
   const code = PAGE_CODE();
   assert.match(code, /desde la oficina/);
