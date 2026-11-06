@@ -44,6 +44,9 @@ const path = require('path');
 // archivo viaja suelto (al banco, a laboratorios de pruebas); ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
+// El comando con la carpeta de la persona lo arma skills/tycon-pipeline/scripts/lib/home-command.js; suelto, este
+// archivo escribe el mismo texto.
+const homeCommand = (() => { const lib = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'home-command.js'); return require('fs').existsSync(lib) ? require(lib).homeCommand : (r) => `node "$HOME/${r}"`; })();
 if (process.env.TYCON_ENGRAM_DRIFT === '0' || process.env.TYCON_EVAL_SANDBOX === '1') process.exit(0);
 
 // engram: con la integración apagada (sin perfil del equipo ni llave) no hay memoria que revisar —
@@ -190,7 +193,7 @@ try {
         'Memoria partida que se puede unificar sin ambigüedad — hay que correrlo A MANO:\n' +
         conAuto.flatMap((r) => r.auto.map((a) =>
           `       · en ${r.repo}: '${a.nombre}' (${a.obs} obs) → '${r.pin}'`)).join('\n') + '\n' +
-        '     Revisá y aplicá:  node ~/.claude/tycon-harness/scripts/lib/engram-autoheal.js\n' +
+        `     Revisá y aplicá:  ${homeCommand('.claude/tycon-harness/scripts/lib/engram-autoheal.js')}\n` +
         '     (sin --apply muestra el plan · con --apply lo ejecuta)\n' +
         '     🔴 El apply automático está APAGADO a propósito: su verificación posterior no\n' +
         '     detectaba un borrado ni un destino equivocado, y el motor tiene una carrera.\n' +
@@ -261,7 +264,7 @@ try {
 
   console.log('🧠 memoria de engram — revisión diaria:');
   problemas.forEach((p, i) => console.log(`  ${i + 1}. ${p}`));
-  console.log('  Detalle y score: node ~/.claude/tycon-harness/scripts/lib/harness-audit.js --verbose');
+  console.log(`  Detalle y score: ${homeCommand('.claude/tycon-harness/scripts/lib/harness-audit.js')} --verbose`);
   console.log('  Silenciar: TYCON_ENGRAM_DRIFT=0');
 } catch (e) {
   // Fail-open absoluto — ver cabecera. Con UNA excepción que se dice: la configuración del

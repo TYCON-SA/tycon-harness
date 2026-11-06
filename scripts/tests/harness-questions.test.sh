@@ -136,7 +136,7 @@ if corre T44; then
   ENG="$(printf '%s\n' "$BLOCK" | grep '^  - engram:')"
   case "$ENG" in *Homebrew*TYCON_ENGRAM_AUTO_UPGRADE=0*TYCON_SQLITE_AUTO_INSTALL=0*) ok "T44 el renglón de engram dice que puede reinstalarlo con Homebrew y sus dos interruptores" ;; *) mal "T44 el renglón de engram: ${ENG}" ;; esac
   grep -q 'packs: \[bizuit\]' "$T/t44-none.out" && ok "T44 la pregunta del paquete dice la alternativa por repo (packs: [bizuit])" || mal "T44 la pregunta del paquete no dice la alternativa por repo"
-  grep -q 'tycon-config.js set ado.org' "$T/t44-none.out" && grep -q 'telegram' "$T/t44-none.out" && ok "T44 el cierre dice cómo se prenden ado y telegram" || mal "T44 el cierre no nombra ado y telegram: $(tail -n 12 "$T/t44-none.out" | tr '\n' ' ')"
+  grep -q 'tycon-config.js" set ado.org' "$T/t44-none.out" && grep -q 'telegram' "$T/t44-none.out" && ok "T44 el cierre dice cómo se prenden ado y telegram" || mal "T44 el cierre no nombra ado y telegram: $(tail -n 12 "$T/t44-none.out" | tr '\n' ' ')"
 
   qlab t44b || true
   # contestar «codex» ENCHUFA a Codex en esa misma corrida: el árbol de juguete necesita las piezas

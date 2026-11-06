@@ -88,6 +88,9 @@ const { spawnSync } = require('child_process');
 const TREE = path.resolve(__dirname, '..', '..');   // el clon donde vive este archivo
 // el lugar del arnés y el nombre viejo: una sola definición, en harness/place.js (viaja con la copia fija)
 const PLACE = require('./harness/place.js');
+// el comando con la carpeta de la persona lo arma skills/tycon-pipeline/scripts/lib/home-command.js; desde la copia fija
+// (rollback, uninstall), que no trae las skills, este archivo escribe el mismo texto
+const homeCommand = (() => { const lib = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'home-command.js'); return fs.existsSync(lib) ? require(lib).homeCommand : (r) => `node "$HOME/${r}"`; })();
 const LINK_NAME = PLACE.PLACE_NAME;
 // Cada cuánto sale `startup` a la red, según la política: en `auto` una sesión que arranca < 10 min
 // después de otra no vuelve a salir; en `ask` como mucho una vez cada 6 horas (lo que encontró queda en `notice`). Un
@@ -1228,7 +1231,7 @@ function writeAnswers(ctx, tree, writes) {
 function askLaterNote(asked) {
   if (!asked || !asked.guided || !asked.config) return [];
   const v = asked.config.valores || {};
-  const cmd = `node ~/.claude/${PLACE.PLACE_NAME}/scripts/lib/tycon-config.js set`;
+  const cmd = `${homeCommand(`.claude/${PLACE.PLACE_NAME}/scripts/lib/tycon-config.js`)} set`;
   const off = [];
   if (!(v.ado && v.ado.org)) off.push(`Azure DevOps: ${cmd} ado.org <url>`);
   if (!(v.telegram && v.telegram.chat_id)) off.push(`Telegram: ${cmd} telegram.chat_id <chat>`);
@@ -1380,7 +1383,7 @@ function dropForProfile(ctx, state, tree, applied, log, profileValue) {
  */
 function profileSwitch(ctx, state, tree, log) {
   const profile = profileOf(ctx, tree);
-  if (!profile.ok) return { profile, switching: false, snap: null, notice: `el perfil de instalación no se pudo leer (${profile.reason}): lo del perfil queda como está — node ~/.claude/${PLACE.PLACE_NAME}/scripts/lib/tycon-config.js validate` };
+  if (!profile.ok) return { profile, switching: false, snap: null, notice: `el perfil de instalación no se pudo leer (${profile.reason}): lo del perfil queda como está — ${homeCommand(`.claude/${PLACE.PLACE_NAME}/scripts/lib/tycon-config.js`)} validate` };
   const was = mod('profile').installedValue(state);
   if (was === profile.value) return { profile, switching: false, snap: null, notice: null };
   const snap = takeSnapshot(ctx, tree, { reason: 'profile', from: state.version && state.version.number, log, force: true, state });
@@ -1535,7 +1538,7 @@ function rebuildLocalEngramIndex(cwd) {
   }
 }
 
-const applyHint = `node ~/.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js update --yes`;
+const applyHint = `${homeCommand(`.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js`)} update --yes`;
 // una versión bajada se actualiza con la línea de npx; un clon, no (npx sólo le dice que use harness.js)
 const releaseApplyHint = `npx @tyconsa/harness@latest`;
 const applyHintFor = (state) => (mod('state').isRelease(state) ? releaseApplyHint : applyHint);
@@ -1988,7 +1991,7 @@ function cmdInstall(ctx) {
   // las preguntas, y las opciones que las contestan, ANTES del plan: lo contestado
   // viaja como si hubiera venido por opción (el plan lo muestra) y se escribe recién después de la conformidad
   let asked = { writes: [], over: {}, head: [], guided: false, eof: false };
-  if (fromExisting && (ctx.opts.integrations !== undefined || ctx.opts.packs !== undefined)) return { code: 2, lines: [`harness.js install: --integrations y --packs no van con --from-existing (esa ejecución no aplica nada): se contestan con install, o con node ~/.claude/${PLACE.PLACE_NAME}/scripts/lib/tycon-config.js set`] };
+  if (fromExisting && (ctx.opts.integrations !== undefined || ctx.opts.packs !== undefined)) return { code: 2, lines: [`harness.js install: --integrations y --packs no van con --from-existing (esa ejecución no aplica nada): se contestan con install, o con ${homeCommand(`.claude/${PLACE.PLACE_NAME}/scripts/lib/tycon-config.js`)} set`] };
   if (!fromExisting) {
     asked = installQuestions(ctx, tree, read.status === 'ok' ? read.state : null);
     if (asked.code !== undefined) return { code: asked.code, lines: asked.lines };
@@ -3252,7 +3255,7 @@ function cmdStartup(ctx) {
     if (!notice && state.hold) notice = holdText(state);
     // una falla de `install` no es una actualización que volvió atrás: no se movió nada, y lo que la
     // retoma es `install` otra vez
-    if (!notice && state.failed && state.failed.stage === 'install') notice = `la instalación quedó a medias (${state.failed.reason === 'applier' ? 'el aplicador falló' : 'la comprobación de salud no pasó'}, ${state.failed.at || '—'}): node ~/.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js install otra vez la retoma — harness.js doctor lo detalla`;
+    if (!notice && state.failed && state.failed.stage === 'install') notice = `la instalación quedó a medias (${state.failed.reason === 'applier' ? 'el aplicador falló' : 'la comprobación de salud no pasó'}, ${state.failed.at || '—'}): ${homeCommand(`.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js`)} install otra vez la retoma — harness.js doctor lo detalla`;
     if (!notice && state.failed) notice = `la versión ${state.failed.commit} no quedó sana (${state.failed.reason || 'salud'}, ${state.failed.at || '—'}) y ${state.failed.fixed_copy ? rollbackOutcome({ ok: true }, state.version && state.version.number, state.failed.fixed_copy) : `volvió sola a ${state.version && state.version.number}`}; ${state.failed.reason === 'interrupted' ? 'se reintenta en el próximo arranque' : `no se reintenta sola hasta que cambie la punta (o ${applyHint})`} — harness.js doctor lo detalla`;
     if (!notice && keepFromLastLook && !fetched && policy.enabled && state.mode !== 'developer') notice = state.notice;
     // una herramienta instalada y sin enchufar: se dice en cada arranque, sin pisar otro
@@ -4067,7 +4070,7 @@ function cmdDoctor(ctx) {
     // bajo la comprobación de salud (TYCON_HARNESS_HEALTH=1) un intento registrado es historia, no la salud de este árbol
     const level = env.TYCON_HARNESS_HEALTH === '1' ? 'warn' : 'fail';
     if (f.pending === 'health') add(level, `la comprobación de salud de ${f.commit || '—'} quedó pendiente (la sesión se cortó en el medio, ${f.at || '—'}): el próximo arranque la corre; ya: harness.js startup --force`);
-    else if (f.stage === 'install') add(level, `la instalación quedó a medias: ${f.reason === 'applier' ? 'el aplicador falló' : 'la comprobación de salud no pasó'} (${f.at || '—'}; detalle en ${f.log || S.paths(ctx.home).log}) — node ~/.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js install otra vez la retoma, o harness.js uninstall la saca`);
+    else if (f.stage === 'install') add(level, `la instalación quedó a medias: ${f.reason === 'applier' ? 'el aplicador falló' : 'la comprobación de salud no pasó'} (${f.at || '—'}; detalle en ${f.log || S.paths(ctx.home).log}) — ${homeCommand(`.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js`)} install otra vez la retoma, o harness.js uninstall la saca`);
     else add(level, `última actualización fallida: ${f.commit || '—'} (${f.reason || 'salud'}, ${f.at || '—'}; detalle en ${f.log || S.paths(ctx.home).log}) — ${f.reason === 'interrupted' ? 'se reintenta sola en el próximo arranque' : 'no se reintenta sola hasta que cambie la punta'}; reintentar ya: ${applyHint}`);
   }
   const vsn = R.derive(state, { env });
@@ -4085,7 +4088,7 @@ function cmdDoctor(ctx) {
 function doctorConfigItems(ctx, tree, state, prof, add, extra) {
   if (prof.ok) {
     extra.profile = { value: prof.value, origin: prof.origin, chosen: Boolean(prof.chosen) };
-    if (!prof.chosen) add('warn', `perfil sin elegir: esta instalación se comporta como full — elegí con node ~/.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js install --profile minimal|full`);
+    if (!prof.chosen) add('warn', `perfil sin elegir: esta instalación se comporta como full — elegí con ${homeCommand(`.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js`)} install --profile minimal|full`);
   }
   try {
     const C = require(path.join(tree, 'scripts', 'lib', 'tycon-config.js'));

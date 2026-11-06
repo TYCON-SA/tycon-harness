@@ -41,7 +41,7 @@ function conEnv(vars, fn) {
   }
 }
 
-const BOARD_TEXT = /El tablero se escribe sólo con board\.js[\s\S]*board\.js set T-41[\s\S]*add[\s\S]*close T-41[\s\S]*save --from/;
+const BOARD_TEXT = /El tablero se escribe sólo con board\.js[\s\S]*board\.js" set T-41[\s\S]*add[\s\S]*close T-41[\s\S]*save --from/;
 
 test('T38 WriteGate_EditYWriteSobreTablero_Frena — @story-8.198 @ac-38', () => {
   const c = corral();

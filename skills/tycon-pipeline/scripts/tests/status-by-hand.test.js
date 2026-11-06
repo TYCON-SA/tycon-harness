@@ -235,7 +235,7 @@ test('T7 CasoKimi_BorrarEstado_Frena @story-8.109 @ac-5 — rm, comodín, mv, la
     const r = consola(h, c, herramienta);
     assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
     assert.match(r.stderr, BORRADO, c);
-    assert.match(r.stderr, /marker\.js clear/, `${c}: el cartel dice qué comando usar`);
+    assert.match(r.stderr, /marker\.js" clear/, `${c}: el cartel dice qué comando usar`);
   }
 });
 
@@ -723,7 +723,7 @@ test('BorrarRegistroDeAprobaciones_SuCartel_ElEstadoEnteroElDelEstado', () => {
     const r = consola(h, c);
     assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
     assert.match(r.stderr, BORRADO, c);
-    assert.match(r.stderr, /marker\.js clear/, c);
+    assert.match(r.stderr, /marker\.js" clear/, c);
   }
 });
 

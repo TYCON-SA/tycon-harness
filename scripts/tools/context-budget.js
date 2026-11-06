@@ -25,6 +25,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { homeCommand } = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'home-command.js'));
 
 // Los nombres viejos de las opciones se traducen ANTES de leer argv, y sólo por línea de comandos:
 // harness-audit.js carga este archivo como biblioteca, con su propio argv.
@@ -741,7 +742,7 @@ function cerrarReporte(lines, { skills, agents }) {
   lines.push('  • Esto mide LO QUE SE CARGA SIEMPRE (descripciones, schemas). El body de');
   lines.push('    las skills solo se carga si el agente las invoca activamente.');
   lines.push('  • Engram observations cargadas en SessionStart no están incluidas (rotan).');
-  lines.push('  • Re-correr post-cambio: node ~/.claude/tycon-harness/scripts/tools/context-budget.js');
+  lines.push(`  • Re-correr post-cambio: ${homeCommand('.claude/tycon-harness/scripts/tools/context-budget.js')}`);
   lines.push('');
 
   return lines.join('\n');

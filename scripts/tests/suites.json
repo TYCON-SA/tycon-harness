@@ -2557,6 +2557,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.218: los comandos que imprime el arnés dicen node \"$HOME/<resto>\" y andan en PowerShell — las 45 líneas de la lista fija con su ruta y sus argumentos, el barrido que frena un «node ~/» nuevo, el comando por bash con una carpeta con espacio y por pwsh (sin pwsh: NO MEDIDO en una máquina, rojo en la CI), y los frenos de firma con la forma nueva. ~3 s.",
+      "raiz": "arnes",
+      "ruta": "tests/home-command.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "un pendiente nuevo en la lista de pendientes no entra sin su aprobación firmada: la biblioteca, el control del árbol y del commit, el comando de la firma antes de pedirla, la firma en el catálogo y el freno de escritura del registro.",
       "raiz": "arnes",
       "ruta": "tests/pending-approvals.test.js",

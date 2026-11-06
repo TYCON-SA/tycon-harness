@@ -37,6 +37,7 @@ const os = require('os');
 const path = require('path');
 
 const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // la carpeta del estado, de una sola pieza
+const { homeCommand } = require('./lib/home-command.js');
 // Multi-sesión sin race: marker per-session en active/<sessionId>.json.
 // on-edit.js de dos sesiones concurrentes escribe archivos distintos → sin race.
 const STATE_DIR = path.join(stateDirOf(os.homedir()));
@@ -206,7 +207,7 @@ function handle(event) {
         `   • Escribir los tests ANTES del código (pruebas primero, en «Implementar y correr las pruebas»). El gate del commit avisa igual,\n` +
         `     pero recién cuando ya está escrito al revés.\n` +
         `   • Generar la guía de prueba manual derivada de los ACs:\n` +
-        `     node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/qa-guide.js --story <story.md>\n` +
+        `     ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/qa-guide.js')} --story <story.md>\n` +
         `     (NO la escribas a mano — sale de los ACs, no de la memoria.)\n` +
         `   • La matriz de DoD por AC (qué se verificó corriendo y qué no).\n\n` +
         `Acción recomendada — arrancar el pipeline de verdad (setea el marker y recorre los steps en orden):\n` +
