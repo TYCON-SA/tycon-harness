@@ -38,6 +38,7 @@ const { spawnSync } = require('child_process');
 
 const TREE = path.resolve(__dirname, '..', '..');
 const discovery = require(path.join(TREE, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'story-discovery.js'));
+const { idiomaFijo } = require(path.join(TREE, 'scripts', 'lib', 'clean-git-env.js'));
 
 const SPECS = 'specs';
 const EPICS = `${SPECS}/epics.md`;
@@ -219,7 +220,7 @@ function git(repo, args) {
 }
 // la salida tal cual: un archivo comparado byte por byte no puede perder sus renglones en blanco
 function gitRaw(repo, args) {
-  const r = spawnSync('git', args, { cwd: repo, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, LC_ALL: 'C' } });
+  const r = spawnSync('git', args, { cwd: repo, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: idiomaFijo() });
   return { ok: r.status === 0, out: String(r.stdout || ''), err: String(r.stderr || '').trim() };
 }
 
