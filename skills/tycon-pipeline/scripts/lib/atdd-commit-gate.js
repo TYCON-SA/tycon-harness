@@ -36,6 +36,7 @@
 const fs = require('fs');
 const path = require('path');
 const { isInsideRepo } = require('./path-forms.js');
+const { homeCommand } = require('./home-command.js');
 
 /** Carpeta de eventos por sesión, bajo el state dir del pipeline. */
 function eventsDir(stateDir) {
@@ -277,7 +278,7 @@ function qaGuideMessage(status, { storyPath, guidePath }) {
     `  story: ${storyPath}\n` +
     `  guía:  ${guidePath}\n` +
     `Generarla (no la escribas a mano — se deriva de los ACs):\n` +
-    `  node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/qa-guide.js --story ${storyPath}`
+    `  ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/qa-guide.js')} --story ${storyPath}`
   );
 }
 

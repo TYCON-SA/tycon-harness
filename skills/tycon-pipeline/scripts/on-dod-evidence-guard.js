@@ -22,6 +22,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { homeCommand } = require('./lib/home-command.js');
 
 const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // La carpeta del estado, de una sola pieza
 const STATE_DIR = path.join(stateDirOf(os.homedir()));
@@ -93,7 +94,7 @@ function handle(event, { casa } = {}) {
       'el commit. Los escriben los SCRIPTS que corren los tests de verdad:',
       '',
       '  - Suite Playwright:  gate E2E del proyecto (.tycon/advisors.yaml → e2e.gate); resolver: pipeline.js e2e-config --repo <repo> --changed <archivos-de-la-story...> → correr `bash <gate> <app> <storyId> <evidence-dir>` UNA VEZ POR APP (<evidence-dir> = `pipeline.js evidence-dir --story <spec> --repo <repo> --plain`: el repo de la STORY) de frontend_dirs_selected (en un monorepo puede ser más de una)',
-      '  - Smoke backend:     node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/step-7c-macro.js --story <id> --scenario <s.json> --evidence-dir <dir>',
+      `  - Smoke backend:     ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/step-7c-macro.js')} --story <id> --scenario <s.json> --evidence-dir <dir>`,
       '',
       'Escribirla a mano (caso excepcional, p.ej. evidencia vacua de E2E diferidos a un pipeline pending)',
       'lo decide la persona, no el agente: la firma en la ventana de permiso, para este archivo, con',

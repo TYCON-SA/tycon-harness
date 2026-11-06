@@ -1106,29 +1106,40 @@ function frenoDePantalla(a, sid, home, repos) {
     for (const reason of r.registro || []) io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'ok', reason });
     return { mostrar: r.mostrar };
   }
+  if (r.textosQueFaltan) io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `faltan ${r.textosQueFaltan.total} textos de la maqueta` });
+  return { texto: textoDeLaMaqueta(r) };
+}
+
+/**
+ * El texto del freno de pantalla cuando falta algo de la maqueta: los textos que no aparecen (`textosQueFaltan`) o la
+ * maqueta, su ok y la captura. Aprobar la maqueta es una firma: se imprime con la ruta absoluta (signatureCommand).
+ */
+function textoDeLaMaqueta(r) {
+  const gate = require('./story-gate.js');
+  const { homePath, signatureCommand } = require('./home-command.js');
   const marker = gate.MARKER_JS;
+  const aprobar = `${signatureCommand(gate.MARKER_REL)} adhoc set '{"reason":"<el motivo>","mockup":"<ruta>","mockupApproved":"<quién la aprobó y por qué vía>"}'`;
   if (r.textosQueFaltan) {
-    io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `faltan ${r.textosQueFaltan.total} textos de la maqueta` });
-    return { texto: [
+    return [
       `🔒 GUARDAR: este camino corto toca una pantalla (${r.pantallas[0]}) y le faltan ${r.textosQueFaltan.total} texto(s) de su maqueta aprobada:`,
       ...r.faltan.map((f) => `  · ${f}`),
       '  Se completa de una de estas tres formas:',
       '   1. Corregí la pantalla, para que diga ese texto.',
-      `   2. Volvé a aprobar la maqueta, si lo que cambió es ella: node ${marker} adhoc set '{"reason":"<el motivo>","mockup":"<ruta>","mockupApproved":"<quién la aprobó y por qué vía>"}'`,
+      `   2. Volvé a aprobar la maqueta, si lo que cambió es ella: ${aprobar}`,
       `   3. Declará la diferencia en ${r.textosQueFaltan.diferencias}, con un renglón \`- «<texto>» — differs: <por qué>\`. Si no se puede comparar: \`mockup-compare: no — <motivo>\`.`,
       '  Se comparan los textos, no el dibujo: un texto que ya existe en otra pantalla del repo pasa.',
-    ].join('\n') };
+    ].join('\n');
   }
-  const mockup = marker.replace(/marker\.js$/, 'mockup.js');
-  return { texto: [
+  const mockup = homePath(gate.MARKER_REL.replace(/marker\.js$/, 'mockup.js'));
+  return [
     `🔒 GUARDAR: este camino rápido toca una pantalla (${r.pantallas[0]}) y le falta:`,
     ...r.faltan.map((f) => `  · ${f}`),
     '  Cómo se completa, en este orden:',
     `   1. La maqueta: node ${mockup} render --data <modelo.json> --out <ruta> (la forma del modelo: node ${mockup} schema).`,
-    `   2. Mostrásela a la persona y, con su ok: node ${marker} adhoc set '{"reason":"<el motivo>","mockup":"<ruta>","mockupApproved":"<quién la aprobó y por qué vía>"}'`,
+    `   2. Mostrásela a la persona y, con su ok: ${aprobar}`,
     `   3. Con la pantalla ya construida, la captura: node ${marker} adhoc capture <ruta de la imagen>`,
     '  Un cambio de código después de la captura la vence.',
-  ].join('\n') };
+  ].join('\n');
 }
 
 // ── el camino rápido de riesgo alto ─────────────────────────────────────────────────────────────────────────────────
@@ -1140,7 +1151,7 @@ function frenoDePantalla(a, sid, home, repos) {
 function textoFaltanRevisoresYPase({ harness, regla, archivo }) {
   const gate = require('./story-gate.js');
   const marker = gate.MARKER_JS;
-  const pipeline = marker.replace(/marker\.js$/, 'pipeline.js');
+  const pipeline = require('./home-command.js').homePath(gate.MARKER_REL.replace(/marker\.js$/, 'pipeline.js'));
   const que = `${archivo} (regla: ${regla})`;
   return (harness ? [
     `🔒 GUARDAR: faltan los revisores y el pase. Este camino rápido toca una ruta de riesgo alto: ${que}.`,
@@ -1242,4 +1253,4 @@ function frenoDelRiesgo(a, sid, home, reposDelComando = []) {
   return { texto: textoFaltanRevisoresYPase({ harness, regla: marca.regla, archivo: marca.archivo }) };
 }
 
-module.exports = { tramosDelShell, palabrasDelShell, commitsDelShell, comandosQueGuardan, leerComando, decidir, textoFaltanRevisoresYPase, frenoDelRiesgo };
+module.exports = { tramosDelShell, palabrasDelShell, commitsDelShell, comandosQueGuardan, leerComando, decidir, textoFaltanRevisoresYPase, textoDeLaMaqueta, frenoDelRiesgo };

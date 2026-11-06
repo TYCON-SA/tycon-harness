@@ -973,7 +973,7 @@ function compute(opts) {
     // Si la causa es el PARSER (que no ve ACs de la sección), el aviso tiene que apuntar al parser.
     // Un aviso que apunta al lugar equivocado es peor que no tenerlo: consume la atención y la manda
     // al lado contrario.
-    if (onlyTable.length) warnings.push(`ACs que aporta SOLO la tabla de Tests, no la sección AC: ${onlyTable.join(', ')}. La cobertura de acá abajo los incluye igual (la tabla también vota). Antes de tocar la story, descartar que sea el parser: \`node -e "console.log(require('~/.claude/agent-skills/skills/tycon-pipeline/scripts/lib/story-checks.js').parseAcsFromSpec(require('fs').readFileSync('<story>','utf8')))"\` — si eso cuenta menos ACs de los que la sección declara a simple vista, el bug es del parser, no del formato.`);
+    if (onlyTable.length) warnings.push(`ACs que aporta SOLO la tabla de Tests, no la sección AC: ${onlyTable.join(', ')}. La cobertura de acá abajo los incluye igual (la tabla también vota). Antes de tocar la story, descartar que sea el parser: \`node -e "console.log(require(require('os').homedir()+'/.claude/agent-skills/skills/tycon-pipeline/scripts/lib/story-checks.js').parseAcsFromSpec(require('fs').readFileSync('<story>','utf8')))"\` — si eso cuenta menos ACs de los que la sección declara a simple vista, el bug es del parser, no del formato.`);
   }
 
   const wsRoot = opts.workspaceRoot || discoverWorkspaceRoot(storyPath);

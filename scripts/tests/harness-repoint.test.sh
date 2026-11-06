@@ -193,7 +193,7 @@ remedio() { printf '%s\n' "$1" | sed -n "s/.* — \\($2[^;]*\\); después: .*/\\
 # corre_remedio '<comando>' — el remedio tal cual; cada `harness.js install` que trae, con `--yes` escrito acá (también en
 # un remedio de varios comandos encadenados): la prueba no tiene terminal, y install sin
 # terminal muestra el plan y no escribe
-corre_remedio() { bash -c "${1//harness.js install/harness.js install --yes}"; }
+corre_remedio() { bash -c "${1//harness.js\" install/harness.js\" install --yes}"; }
 suelta_la_mirada() { estado_set 'd.last_fetch=null; d.last_fetch_failed=null'; }   # el arranque siguiente vuelve a mirar la red
 # blind_git '<patrones>' <comando…>  — el comando con un git de laboratorio delante del PATH que FALLA (sale 128, y lo dice
 # por stderr) en las llamadas cuyos argumentos —« <args> », como los recibe git— calzan con alguno de los patrones (de sh,
@@ -428,7 +428,7 @@ if corre T33; then
   no_paso "otra rama" "rama lab/work"
   SALIDA="$(con_llave harness startup 2>&1)"; RC=$?
   AVISO="$(estado 'd.notice')"
-  [ "$RC" = 0 ] && case "$AVISO" in *"$FRASE"*"rama lab/work"*"harness.js update"*) true ;; *) false ;; esac \
+  [ "$RC" = 0 ] && case "$AVISO" in *"$FRASE"*"rama lab/work"*"harness.js\" update"*) true ;; *) false ;; esac \
     && ok "T33 otra rama: startup sale 0 y deja el aviso con la causa y el comando" || mal "T33 otra rama: startup rc $RC, aviso: $AVISO"
   [ "$(head_de "$LAB_TREE")" = "$LAB_COMMIT_UNION" ] && ok "T33 otra rama: el arranque tampoco movió el clon del arnés" || mal "T33 otra rama: el arnés avanzó a $(head_de "$LAB_TREE")"
   JSON="$(con_llave harness doctor --json 2>/dev/null)"; RC=$?
@@ -666,7 +666,7 @@ if corre SAME; then
   igual "$BASE/same/antes" "$BASE/same/despues" && [ -f "$LAB_TREE/scripts/setup/harness.js" ] && [ -f "$LAB_TREE/scripts/install-tycon-hooks.sh" ] && [ -z "$(tr_ config --get core.sparseCheckout)" ] \
     && ok "SAME la ida: con agent-skills enlazado al clon del arnés, el arranque con la llave NO toca ese clon (scripts/ sigue ahí, sin vista reducida)" || mal "SAME la ida tocó el clon del arnés (rc $RC): $(diff "$BASE/same/antes" "$BASE/same/despues" | head -8) · scripts/: $([ -e "$LAB_TREE/scripts" ] && echo está || echo NO): $SALIDA"
   AVISO="$(estado 'd.notice')"
-  case "$AVISO" in *"clon del arnés"*"harness.js install"*) ok "SAME la ida: el aviso nombra la causa (ya no es un clon aparte: es el clon del arnés) y el comando (harness.js install)" ;; *) mal "SAME la ida: el aviso no nombra la causa o el comando: $AVISO" ;; esac
+  case "$AVISO" in *"clon del arnés"*"harness.js\" install"*) ok "SAME la ida: el aviso nombra la causa (ya no es un clon aparte: es el clon del arnés) y el comando (harness.js install)" ;; *) mal "SAME la ida: el aviso no nombra la causa o el comando: $AVISO" ;; esac
   SALIDA="$(con_llave harness update 2>&1)"; RC=$?
   foto_arbol "$BASE/same/despues2"
   [ "$RC" = 2 ] && igual "$BASE/same/antes" "$BASE/same/despues2" && case "$SALIDA" in *"clon del arnés"*) true ;; *) false ;; esac \
@@ -692,7 +692,7 @@ if corre SAME; then
   foto_arbol "$BASE/same2/despues"
   igual "$BASE/same2/antes" "$BASE/same2/despues" && [ "$(head_de "$LAB_TREE")" = "$LAB_COMMIT_UNION" ] && [ "$(origen_de "$LAB_TREE")" = "$LAB_REMOTE_UNIFIED" ] && [ -f "$LAB_TREE/scripts/setup/harness.js" ] \
     && ok "SAME la vuelta: con la llave en separate, el clon del arnés no vuelve al commit viejo de agent-skills ni cambia de origin" || mal "SAME la vuelta tocó el clon del arnés (rc $RC): head $(head_de "$LAB_TREE") origin $(origen_de "$LAB_TREE") · $(diff "$BASE/same2/antes" "$BASE/same2/despues" | head -6): $SALIDA"
-  case "$(estado 'd.notice')" in *"clon del arnés"*"harness.js install"*) ok "SAME la vuelta: el aviso nombra la causa y el comando" ;; *) mal "SAME la vuelta: aviso $(estado 'd.notice')" ;; esac
+  case "$(estado 'd.notice')" in *"clon del arnés"*"harness.js\" install"*) ok "SAME la vuelta: el aviso nombra la causa y el comando" ;; *) mal "SAME la vuelta: aviso $(estado 'd.notice')" ;; esac
   # (3) una mudanza «en curso» tampoco se deshace sobre el clon del arnés
   maquina "$BASE/same3" || mal "SAME no pude armar la tercera máquina"
   con_llave harness startup >/dev/null 2>&1
@@ -982,7 +982,7 @@ if corre NFF; then
   con_llave harness startup >/dev/null 2>&1
   AVISO="$(estado 'd.notice')"
   case "$AVISO" in *"línea recta"*) true ;; *) mal "NFF precondición: el arranque no frenó por «línea recta»: $AVISO" ;; esac
-  case "$AVISO" in *"línea recta"*"harness.js update"*"a mano"*"reintenta"*) ok "NFF el aviso dice que update a mano trae el arnés y reintenta la mudanza" ;; *) mal "NFF el aviso no lo dice: $AVISO" ;; esac
+  case "$AVISO" in *"línea recta"*"harness.js\" update"*"a mano"*"reintenta"*) ok "NFF el aviso dice que update a mano trae el arnés y reintenta la mudanza" ;; *) mal "NFF el aviso no lo dice: $AVISO" ;; esac
   # sin arreglar, con una versión nueva del arnés que NO trae ese commit: update a mano no mueve ninguna fuente
   harness_lab_publish tree "una versión nueva que no arregla nada" skills/tycon-pipeline/V5.md "v5"
   foto "$BASE/nff/antes"
