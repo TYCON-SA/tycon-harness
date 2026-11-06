@@ -356,6 +356,7 @@ async function unsavedFolders({ home = os.homedir(), now = Date.now(), env = pro
   const lines = items.sort((a, b) => b.cuando - a.cuando).slice(0, MAX_LINEAS).map((i) => i.texto);
   if (items.length > MAX_LINEAS) lines.push(`y ${items.length - MAX_LINEAS} más`);
   if (sinMirar) lines.push(`${sinMirar} sin mirar: ${SIN_TIEMPO}`);
+  if (lines.length && vivas.ilegibles) lines.push(`${vivas.ilegibles} registro(s) de sesión que no pude leer: alguna de estas carpetas puede tener una sesión viva`);
   if (sinRaiz) lines.push(`no pude saber dónde está la raíz de repos (${sinRaiz}): sólo miré los del arnés`);
   return lines;
 }

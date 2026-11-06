@@ -42,21 +42,25 @@ function liveness(sid, { home = os.homedir(), isAlive = procesoVivo } = {}) {
   return muerta || { alive: false, sinRegistro: true };
 }
 
-/** Las carpetas donde trabaja una sesión viva: { cwds } o { unknown: '<motivo>' } si la carpeta de registros no se lee. */
+/**
+ * Las carpetas donde trabaja una sesión viva: { cwds, ilegibles } o { unknown: '<motivo>' } si la carpeta de registros no
+ * se lee. `ilegibles`: los registros que no se pudieron leer (uno a medio escribir puede ser de una sesión viva).
+ */
 function liveCwds({ home = os.homedir(), isAlive = procesoVivo } = {}) {
   const dir = path.join(claudeDir(home), 'sessions');
   let names = [];
   try { names = fs.readdirSync(dir).filter((n) => n.endsWith('.json')); } catch (e) {
-    return e.code === 'ENOENT' ? { cwds: [] } : { unknown: `${dir}: ${e.message}` };
+    return e.code === 'ENOENT' ? { cwds: [], ilegibles: 0 } : { unknown: `${dir}: ${e.message}` };
   }
   const cwds = [];
+  let ilegibles = 0;
   for (const n of names) {
     let s;
-    try { s = JSON.parse(fs.readFileSync(path.join(dir, n), 'utf8')); } catch { continue; }
+    try { s = JSON.parse(fs.readFileSync(path.join(dir, n), 'utf8')); } catch { ilegibles += 1; continue; }
     const pid = Number(s && s.pid);
     if (s && typeof s.cwd === 'string' && Number.isInteger(pid) && pid > 0 && isAlive(pid)) cwds.push(s.cwd);
   }
-  return { cwds };
+  return { cwds, ilegibles };
 }
 
 module.exports = { liveness, liveCwds };
