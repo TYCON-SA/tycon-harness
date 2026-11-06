@@ -757,10 +757,12 @@ function negarCon(motivo, ids, sesion) {
 /**
  * La lista de firmas (signature-list.js): lo que el freno niega con su cuadro a la propia sesión destino queda anotado, y
  * devuelve si la negativa dice «cuando te avisen, repetí». No dejan renglón lo que pide otra sesión, `designation-confirm`,
- * un escape ni lo irreversible. Nada de esto cambia lo que se decide: si falla, la negativa de siempre.
+ * un escape, lo irreversible ni, de fondo, lo que sólo aprueba un click en la propia pestaña: nadie la mira y la
+ * coordinadora no lo puede pasar. Nada de esto cambia lo que se decide: si falla, la negativa de siempre.
  */
 function anotarNegativa({ casa, sesion, destino, guion, pendientes, comando, palabras, cuadro, cwd, ahora, deFondo, lista = {} }) {
   if (!guion || !palabras || destino !== sesion || pendientes.length !== 1 || pendientes[0] === DESIGNACION || vaATerminal(pendientes) || !cuadro || cuadro.error) return false;
+  if (deFondo && (firmaDe(pendientes[0]) || {}).soloClick) return false;
   try {
     return require('./signature-list.js').alNegar({ casa, firma: pendientes[0], titulo: firmaDe(pendientes[0]).approves, sesion, destino, comando, palabras, cwd, ahora, deFondo, ...lista });
   } catch (_) { return false; }
