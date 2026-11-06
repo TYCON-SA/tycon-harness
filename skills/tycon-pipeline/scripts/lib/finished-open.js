@@ -309,10 +309,11 @@ async function unsavedFolders({ home = os.homedir(), now = Date.now(), env = pro
   };
   const dentro = (hijo, padre) => hijo === padre || hijo.startsWith(padre.endsWith(path.sep) ? padre : padre + path.sep);
   const ocupadas = vivas.cwds.map(real);
+  let sinRaiz = null;
   if (!repos) {
     repos = [RAIZ, path.join(require('./state-dir.js').claudeDir(home), 'agent-skills')];
     let roots = [];
-    try { roots = require(path.join(RAIZ, 'scripts', 'lib', 'repos-root.js')).resolveReposRoot(undefined, { env, home }).roots || []; } catch { /* sin raíz: sólo los del arnés */ }
+    try { roots = require(path.join(RAIZ, 'scripts', 'lib', 'repos-root.js')).resolveReposRoot(undefined, { env, home }).roots || []; } catch (e) { sinRaiz = causa(String(e.message || e).split('\n')[0]); }
     const hijos = (d) => { try { return fs.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules').map((e) => path.join(d, e.name)); } catch { return []; } };
     for (const r of roots) for (const a of hijos(r)) { repos.push(a); for (const b of hijos(a)) repos.push(b); }
   }
@@ -322,7 +323,7 @@ async function unsavedFolders({ home = os.homedir(), now = Date.now(), env = pro
   const carpetas = new Map();
   for (const [i, l] of (await enTanda(principales, (r) => gitRaw(r, ['worktree', 'list', '--porcelain']))).entries()) {
     if (l.tarde) { sinMirar += 1; continue; }
-    if (!l.out) continue;
+    if (l.error) { items.push({ cuando: -1, texto: `${legible(principales[i])}: no pude listar sus carpetas de trabajo` }); continue; }
     for (const b of l.out.split(/\n\n+/).map((x) => x.split('\n')).slice(1)) {   // el primero es el checkout principal
       const dir = (b.find((x) => x.startsWith('worktree ')) || '').slice(9);
       if (!dir || b.some((x) => x.startsWith('prunable')) || !fs.existsSync(dir)) continue;
@@ -355,6 +356,7 @@ async function unsavedFolders({ home = os.homedir(), now = Date.now(), env = pro
   const lines = items.sort((a, b) => b.cuando - a.cuando).slice(0, MAX_LINEAS).map((i) => i.texto);
   if (items.length > MAX_LINEAS) lines.push(`y ${items.length - MAX_LINEAS} más`);
   if (sinMirar) lines.push(`${sinMirar} sin mirar: ${SIN_TIEMPO}`);
+  if (sinRaiz) lines.push(`no pude saber dónde está la raíz de repos (${sinRaiz}): sólo miré los del arnés`);
   return lines;
 }
 
