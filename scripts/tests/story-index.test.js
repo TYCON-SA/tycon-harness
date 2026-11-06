@@ -472,3 +472,19 @@ test('StoryIndex_MigrationEdgeCases (T18) @story-8.226 @ac-11', () => {
   assert.match(txt, new RegExp(`1-91-a/\\.\\./\\.\\./\\.\\./${fuera}.*no va en un nombre de archivo`), 'un slug con / o .. va al informe');
   assert.ok(!fs.existsSync(path.join(dir, '..', `${fuera}.md`)) && !fs.existsSync(path.join(dir, `${fuera}.md`)), 'y no escribe fuera de specs/');
 });
+
+test('StoryIndex_TableCellEscapesBackslashBeforePipe @story-8.226', () => {
+  const SI = require(TOOL);
+  const out = SI.render([{ epic: '1', story: '1.1', title: 'a\\|b', status: 'draft', rel: 'specs/story-1.1-a.md', slug: 'a' }], new Map());
+  // el texto `a\|b` queda `a\\\|b`: la barra escapada y la `|` escapada, una celda sola
+  assert.ok(out[SI.EPICS].includes('| a\\\\\\|b |'), out[SI.EPICS]);
+});
+
+test('StoryIndex_OldEntriesParsesLongDashRunsInLinearTime @story-8.226', () => {
+  const SI = require(TOOL);
+  const malo = `0-${'!-'.repeat(50000)}`;
+  const t0 = process.hrtime.bigint();
+  assert.deepEqual(SI.oldEntries(malo), []);
+  assert.ok(Number(process.hrtime.bigint() - t0) / 1e6 < 2000, 'tardó demasiado: el patrón retrocede');
+  assert.deepEqual(SI.oldEntries('  8-17-1-foo: done  # nota').map((e) => e.ids.map((i) => i.id)), [['8.17', '8.17.1']]);
+});

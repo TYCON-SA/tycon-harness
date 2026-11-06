@@ -156,7 +156,8 @@ function collect(repo) {
 }
 
 const yamlValue = (v) => (/^[\w.-]+$/.test(v) ? v : JSON.stringify(v));
-const cell = (v) => String(v).replace(/\r?\n/g, ' ').replace(/\|/g, '\\|');
+// la barra invertida se escapa antes que la `|`: si no, `\|` en el texto cerraría la celda
+const cell = (v) => String(v).replace(/\r?\n/g, ' ').replace(/\\/g, '\\\\').replace(/\|/g, '\\|');
 
 /** Los dos textos, de historias ya ordenadas. */
 function render(stories, intro) {
@@ -347,7 +348,8 @@ function regenerateOnMain(repo, { remote = 'origin', beforePush = null } = {}) {
 function oldEntries(text) {
   const out = [];
   for (const line of String(text).split(/\r?\n/)) {
-    const m = /^\s*(\d+(?:-[^\s:#]+)+)\s*:\s*([^\s#]+)\s*(?:#\s*(.*))?$/.exec(line);
+    // `\d+-[^\s:#]+` y no `\d+(?:-[^\s:#]+)+`: el guion entra en los dos lados y anidarlos retrocede sin fin
+    const m = /^\s*(\d+-[^\s:#]+)\s*:\s*([^\s#]+)\s*(?:#\s*(.*))?$/.exec(line);
     if (!m) continue;
     const parts = m[1].split('-');
     let run = 0;
