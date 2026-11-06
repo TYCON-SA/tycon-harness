@@ -68,6 +68,8 @@ const MAX_EVENT_BYTES = 256;
 const EVENT_TYPES = ['changed', 'session', 'config'];
 const SESSION_CHECK_MS = 30 * 1000;
 const EVENT_SETTLE_MS = 1000;
+// lo que el apagado le espera a una foto en curso antes de terminar el proceso sin ella
+const EXIT_PHOTO_WAIT_MS = 1000;
 const BACK_CHANNEL = 'la página mandó un mensaje: el canal de vuelta está cerrado';
 
 const numEnv = (name, dflt) => { const n = Number(process.env[name]); return Number.isFinite(n) && n > 0 ? n : dflt; };
@@ -573,6 +575,8 @@ async function serve() {
       return;
     }
     wss.handleUpgrade(req, socket, head, (ws) => {
+      // una conexión que termina de llegar durante el apagado se cierra igual que las demás
+      if (done) { ws.close(1001, 'la oficina se cerró'); return; }
       clients.add(ws);
       reviewLife();
       if (!prTimer) prTick();
@@ -624,7 +628,15 @@ async function serve() {
       if (lock && lock.pid === process.pid) fs.unlinkSync(lockFile);
     } catch { /* sin candado o de otro: no se toca */ }
     server.close();
-    setTimeout(() => process.exit(0), 150).unref();
+    // process.exit espera al hilo de la foto, y un hilo trabado en un proceso hijo lo deja vivo. La foto en curso tiene
+    // un rato para terminar (puede estar guardando el tablero); si no termina, el proceso se termina sin esperarla
+    const leaveBy = Date.now() + 150 + EXIT_PHOTO_WAIT_MS;
+    const leave = () => {
+      if (!running) process.exit(0);
+      else if (Date.now() >= leaveBy) process.kill(process.pid, 'SIGKILL');
+      else setTimeout(leave, 50).unref();
+    };
+    setTimeout(leave, 150).unref();
   }
   // otro proceso escribió su candado encima: sigue uno solo, y es el otro
   function lockLost() {
