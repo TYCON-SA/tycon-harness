@@ -1258,12 +1258,13 @@ function planHead(existing, tree, notes = [], profileLine = null) {
  * La copia ANTES de un cambio: `{ dir, created }` o `null`. Si no se pudo, se anota y el cambio sigue SIN la variable,
  * así el aplicador hace sus `.bak` de siempre: nunca un cambio sin ninguna copia.
  */
-function takeSnapshot(ctx, tree, { reason, from = null, to = null, log = null, force = false, state = null, protect = [] }) {
+function takeSnapshot(ctx, tree, { reason, from = null, to = null, log = null, force = false, state = null, protect = [], rollbackTo = null }) {
   try {
     // Los commits de cada fuente van al manifiesto (a dónde rollback lleva los árboles), y `force` (al mover
-    // árboles, en rollback y en uninstall) crea una copia nueva aunque el conjunto sea el mismo (decisiones 1 y 2)
+    // árboles, en rollback y en uninstall) crea una copia nueva aunque el conjunto sea el mismo (decisiones 1 y 2).
+    // `rollbackTo`: la copia a la que vuelve una `before-rollback` (el aviso de una vuelta atrás cortada la termina)
     const sources = state ? currentSources(ctx, state) : null;
-    const snap = mod('snapshot').take({ home: ctx.home, env: ctx.env, tree, reason, from, to, force, sources, protect });   // ya aplica la retención
+    const snap = mod('snapshot').take({ home: ctx.home, env: ctx.env, tree, reason, from, to, force, sources, protect, rollbackTo });   // ya aplica la retención
     return snap && snap.dir ? snap : null;
   } catch (e) {
     if (log) log(`copia de seguridad (${reason}): no se pudo (${e.message}) — el aplicador hace sus .bak de siempre`);
@@ -1281,13 +1282,36 @@ function currentSources(ctx, state) {
   return Object.keys(out).length ? out : null;
 }
 /**
- * Después del cambio: el `sha256_after` de cada archivo de la copia. Sólo en una copia recién creada: una reutilizada
- * (mismo conjunto que la anterior) ya tiene el «después» de SU cambio, que la vuelta atrás compara (y por eso, al mover
- * árboles, la copia es siempre nueva). Nunca tira.
+ * Después del cambio: cierra la copia (`open: false`). En una recién creada anota además el `sha256_after` de cada
+ * archivo; una reutilizada (mismo conjunto que la anterior) ya tiene el «después» de SU cambio, que la vuelta atrás
+ * compara, y sólo se cierra (por eso, al mover árboles, la copia es siempre nueva). `outcome: 'failed'` (la operación
+ * falló con el proceso vivo): `closed_by: "failed"`, y no cierra las abiertas más viejas. Nunca tira.
  */
-function finishSnapshot(ctx, snap, log = null) {
-  if (!snap || !snap.created) return;
-  try { mod('snapshot').finish(snap.dir, { home: ctx.home, env: ctx.env }); } catch (e) { if (log) log(`copia de seguridad: no pude anotar el después (${e.message})`); }
+function finishSnapshot(ctx, snap, log = null, { outcome = null, closedBy = null } = {}) {
+  if (!snap || !snap.dir) return;
+  const SN = mod('snapshot');
+  const failed = outcome === 'failed';
+  const by = failed ? 'failed' : closedBy;
+  try {
+    if (snap.created) SN.finish(snap.dir, { home: ctx.home, env: ctx.env, closedBy: by, older: !failed });
+    else SN.close(snap.dir, { closedBy: by || 'reused', home: ctx.home, older: !failed });
+  } catch (e) { if (log) log(`copia de seguridad: no pude cerrarla (${e.message})`); }
+}
+
+/**
+ * Una vuelta atrás que terminó bien cierra la copia a la que volvió (si estaba abierta) y las `before-rollback` abiertas
+ * más viejas que la suya: son de una vuelta atrás que se cortó y que ésta terminó. Nunca tira.
+ */
+function closeAfterRollback(ctx, target, before, log = null) {
+  const SN = mod('snapshot');
+  try {
+    const all = SN.list(ctx.home);
+    if (target && target.dir && SN.isOpen((all.find((c) => c.dir === target.dir) || {}).manifest)) SN.close(target.dir, { closedBy: 'rollback' });
+    const mine = before && before.dir ? all.findIndex((c) => c.dir === before.dir) : -1;
+    for (const c of mine < 0 ? all : all.slice(mine + 1)) {
+      if (c.manifest.reason === 'before-rollback' && SN.isOpen(c.manifest)) SN.close(c.dir, { closedBy: 'rollback' });
+    }
+  } catch (e) { if (log) log(`copia de seguridad: no pude cerrar las de la vuelta atrás (${e.message})`); }
 }
 
 /** Los archivos de la copia fija que registra el estado (los de su `bootstrap.sha256`), o los tres de arranque. */
@@ -2088,7 +2112,7 @@ function cmdInstall(ctx) {
       // sin el interno, el motivo es de install, no «la actualización pública espera» de update
       const pick = pickLayerCommit(ctx, src, { publicDir: tree, publicCommit: 'HEAD', waiting: null });
       if (pick.status !== 'ok') {
-        finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`));
+        finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`), { outcome: 'failed' });
         const again = layerWanted.implicit ? 'harness.js install' : `harness.js install --harness-clone ${layerWanted.reference}`;
         return { code: 1, lines: [`harness.js install: la capa privada no se pudo preparar — ${pick.reason}. No instalé nada: la máquina sigue como estaba; cuando ${pick.status === 'unknown' ? 'haya acceso al repo interno' : 'haya un commit de la capa compatible'}, ${again}`] };
       }
@@ -2158,7 +2182,7 @@ function cmdInstall(ctx) {
       state.sources = state.sources.filter((s) => SS.kindOf(s) !== 'layer').concat([layerPrep.src]);
       const st = stackLayer(ctx, state, layerPrep.src, layerPrep.pick.result);
       if (!st.ok) {
-        finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`));
+        finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`), { outcome: 'failed' });
         return { code: 1, lines: [`harness.js install: ${st.reason}. No corrí el aplicador`] };
       }
       recordLayer(ctx, state, layerPrep.src, layerPrep.pick, st.manifest);
@@ -2195,7 +2219,7 @@ function cmdInstall(ctx) {
       let sk;
       try { sk = require(path.join(tree, 'scripts', 'lib', 'tycon-config.js')).setKey(ctx.home, PR.KEY, ctx.opts.profile, { env: ctx.env }); } catch (e) { sk = { ok: false, reason: e.message }; }
       if (!sk || !sk.ok) {
-        finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`));
+        finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`), { outcome: 'failed' });
         return { code: 2, lines: [`harness.js install: no pude escribir el perfil en ${machineConfigName(ctx.home)}: ${sk ? sk.reason : 'sin escritor'}. No corrí el aplicador`] };
       }
       if (sk.warning) notes.push(sk.warning);
@@ -2208,7 +2232,7 @@ function cmdInstall(ctx) {
     if (asked.writes.length) {
       const wa = writeAnswers(ctx, tree, asked.writes);
       if (!wa.ok) {
-        finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`));
+        finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`), { outcome: 'failed' });
         return { code: 2, lines: [`harness.js install: no pude escribir tus respuestas en ${machineConfigName(ctx.home)}: ${wa.reason}. No corrí el aplicador`] };
       }
       notes.push(...wa.warnings);
@@ -2228,7 +2252,7 @@ function cmdInstall(ctx) {
         // `doctor` corrido después, en otra sesión, tiene que verlo (lo saca la corrida de `install` que termine bien)
         state.failed = { commit: state.version.number, sources: currentSources(ctx, state), at: nowIso(), log: S.paths(ctx.home).log, reason: 'applier', stage: 'install' };
         S.write(ctx.home, state);
-        finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`));
+        finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`), { outcome: 'failed' });
         // quedó a medias: qué falló, el registro, la copia y las dos salidas; y las notas
         // (la causa puede ser una de ellas, «no pude mirar la fuente…»)
         return { code: 1, lines: [...R.installFailure({ what: a.reason, log: S.paths(ctx.home).log, backup: snap && snap.dir, warnings: a.warnings }), ...notes] };
@@ -2255,7 +2279,7 @@ function cmdInstall(ctx) {
         state.failed = { commit: state.version.number, sources: currentSources(ctx, state), at: nowIso(), log: S.paths(ctx.home).log, reason: 'health', stage: 'install' };
         state.last_health = null;   // a medias: `install` otra vez la retoma en vez de decir «sin cambios»
         S.write(ctx.home, state);
-        finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`));
+        finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`), { outcome: 'failed' });
         // las notas van igual: la causa de la salud que no pasó puede ser justo una de ellas («no pude mirar la fuente…»)
         return { code: 1, lines: [...R.installFailure({ what: `la comprobación de salud no pasó: ${h.failures.join(' · ')}`, log: S.paths(ctx.home).log, backup: snap && snap.dir, warnings: a.warnings }), ...notes] };
       }
@@ -2396,7 +2420,7 @@ function rollbackOutcome(restored, number, copyError) {
  */
 function failUpdate(ctx, state, { snap, rec, before, after, tips, failures, reason, log }) {
   const S = mod('state'), R = mod('report'), SN = mod('snapshot');
-  if (snap) { try { SN.finish(snap.dir, { home: ctx.home, env: ctx.env }); } catch (e) { if (log) log(`update: no pude anotar el después de la copia (${e.message})`); } }
+  if (snap) { try { SN.finish(snap.dir, { home: ctx.home, env: ctx.env, closedBy: 'failed', older: false }); } catch (e) { if (log) log(`update: no pude anotar el después de la copia (${e.message})`); } }
   let restored = { ok: false, lines: ['sin copia de la actualización: no hubo vuelta atrás automática'] };
   const copy = snap ? SN.list(ctx.home).find((c) => c.dir === snap.dir) : null;
   const RB = rec && rec.rollback;
@@ -2944,7 +2968,7 @@ function doUpdate(ctx, state, { mode = 'apply', log = null, snapshot = null, per
       kept.push(...restackBack());
       if (/index\.lock/i.test(a.reason || '')) return { status: 'busy', code: 3, lines: [`harness.js update: otra sesión está usando el clon de ${src.name} (index.lock) — no se movió nada`, ...kept] };
       if (interrupted) {
-        finishSnapshot(ctx, ownSnap, log);
+        finishSnapshot(ctx, ownSnap, log, { outcome: 'failed' });
         state.failed = { commit: fresh.map((x) => `${x.src.name}@${sha7(x.c.to)}`).join(' '), sources: tips, at: nowIso(), log: S.paths(ctx.home).log, reason: 'interrupted' };
         R.setNotice(state, `la actualización quedó a medias (${a.reason}): las fuentes volvieron a ${before}; se reintenta en la próxima sesión`);
         if (log) log(`update: interrupted: ${a.reason}`);
@@ -2969,7 +2993,7 @@ function doUpdate(ctx, state, { mode = 'apply', log = null, snapshot = null, per
       }
       // la capa vuelve a donde estaba (un apilado que se cortó a mitad pudo dejar parte escrita)
       kept.push(...layers.map((src) => restackLayerAt(ctx, state, src, src.commit)).filter((r) => !r.ok).map((r) => `la capa no se pudo volver a apilar en ${sha7(r.to)}: ${r.reason}`));
-      finishSnapshot(ctx, ownSnap, log);
+      finishSnapshot(ctx, ownSnap, log, { outcome: 'failed' });
       return { status: 'blocked', code: 2, lines: [`harness.js update: ${st.reason} — no se mueve ninguna fuente${moved.length ? ` (${moved.map((m) => m.src.name).join(', ')} volvió a su versión)` : ''}`, ...kept.filter(Boolean)] };
     }
     recordLayer(ctx, state, x.src, x.p, st.manifest);
@@ -3104,6 +3128,12 @@ function cmdStartup(ctx) {
     // perfil. Si cambió, este arranque mira (las ventanas quedaron sueltas) y lo que dejó la mirada del canal anterior
     // no se arrastra
     else if (applyPolicy(ctx, state, policy).channelChanged) { keepFromLastLook = false; log(`startup: el canal vigente cambió a ${policy.channel}: se vuelve a mirar`); }
+
+    // un cambio que se cortó a la mitad dejó su copia abierta: se mira ANTES de tomar la de este arranque (que la puede
+    // reusar y cerrar). Con el candado en la mano nadie más está escribiendo: abierta es cortada, no en curso
+    let cutNotice = null;
+    try { cutNotice = mod('snapshot').openCopyNotice(mod('snapshot').list(ctx.home), { cmd: `node ~/.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js` }); } catch (e) { log(`startup: no pude mirar las copias abiertas (${e.message})`); }
+    if (cutNotice) log(`startup: ${cutNotice}`);
 
     // la copia ANTES de tocar nada: cubre la migración, la actualización y el aplicador de este arranque; si el
     // conjunto es el mismo de la copia anterior —lo normal entre dos sesiones— no se crea otra
@@ -3263,6 +3293,10 @@ function cmdStartup(ctx) {
     // aviso la pide. Sólo con el aplicador sano (el pre-push tiene que estar en su lugar)
     if (a.ok) notice = hooksPathUnattended(ctx, state, tree, policy, { mode: 'startup', log: (l) => log(`startup: ${l}`), notice }).notice;
     else notice = mod('git-hooks-path').stripNotices(notice);
+    // el aviso de la copia abierta es de ESTE arranque: el de uno anterior (arrastrado con el aviso viejo) no sigue,
+    // y una vez cerrada la copia no vuelve
+    notice = mod('snapshot').stripCutNotice(notice);
+    if (cutNotice) notice = notice ? `${notice} · ${cutNotice}` : cutNotice;
     if (notice) R.setNotice(state, notice); else R.clearNotice(state);
     S.write(ctx.home, state);
     // este arranque tuvo el candado y llegó al final: lo anotado por «candado ocupado» ya no vale (lo de la red
@@ -4618,7 +4652,8 @@ function cmdRollback(ctx) {
     const undone = versionLabel(ctx, state);
     // la copia de ANTES de volver, siempre nueva: con ella un rollback se deshace con otro. Su retención no
     // puede borrar la copia destino
-    const before = takeSnapshot(ctx, state.tree, { reason: 'before-rollback', from: state.version && state.version.number, to: pick.copy.manifest.from || null, log, force: true, state, protect: [pick.copy.dir] });
+    // nace abierta y anota a dónde vuelve: si esta vuelta atrás se corta, el arranque siguiente da el comando que la termina
+    const before = takeSnapshot(ctx, state.tree, { reason: 'before-rollback', from: state.version && state.version.number, to: pick.copy.manifest.from || null, log, force: true, state, protect: [pick.copy.dir], rollbackTo: pick.copy.name });
     // con capa: el público vuelve con su reset y la capa se re-apila desde el commit anterior
     const res = RB.restore(Object.assign({}, ctx, { tree: state.tree }), state, pick.copy, Object.assign({
       why: 'rollback', runApplier, log, filesOnly: pick.filesOnly, snapshotDir: before && before.dir, isOwnPiece: (p) => isOwnPiece(ctx, p),
@@ -4655,7 +4690,12 @@ function cmdRollback(ctx) {
       lines.push(pick.filesOnly ? 'los árboles no se movieron (la copia no sabe a qué commits)' : `los árboles quedaron en ${state.version.number}`);
     }
     S.write(ctx.home, state);
-    finishSnapshot(ctx, before, log);
+    if (res.ok) {
+      // terminó: la copia destino (abierta si era la de un corte) y las `before-rollback` de una vuelta atrás que se
+      // cortó antes quedan cerradas; el aviso del arranque ya no las nombra
+      closeAfterRollback(ctx, pick.copy, before, log);
+      finishSnapshot(ctx, before, log, { closedBy: 'rollback' });
+    } else finishSnapshot(ctx, before, log, { outcome: 'failed' });
     log(`${undone} → ${state.version.number} · ${(res.lines || []).join(' · ')}`);
     return { code: res.ok ? 0 : 1, lines: [...lines, ...(res.lines || [])] };
   }, { env: ctx.env, onBusy: busy });

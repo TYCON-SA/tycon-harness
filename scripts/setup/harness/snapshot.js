@@ -22,6 +22,13 @@
 // arranque y casi nunca cambia nada). Quedan las 5 más nuevas MÁS la `reason: install` más vieja, que no rota nunca: es
 // «cómo estaba la máquina antes del arnés». Las demás `install` cuentan dentro de las 5.
 //
+// Abierta y cerrada: toda copia nace con `open: true` (también la reusada, que se reabre sin tocar su `sha256_after`), y
+// la cierra su operación al terminar, bien o con error (`open: false` y `closed_by`). Una copia abierta en un arranque
+// es un cambio que se cortó a la mitad: el arranque la nombra con `openCopyNotice` y da el comando para volver. La poda
+// no borra una abierta. Un `finish` cierra también las abiertas más viejas (su operación siguiente terminó bien),
+// salvo las `before-rollback`: ésas las cierra sólo la vuelta atrás que termina, porque guardan en `rollback_to` a qué
+// copia volvía. Una copia sin el campo (anterior a esto) cuenta cerrada.
+//
 // Nunca toca los `.bak` que el dev ya tiene al lado de sus archivos (los dejaron corridas sueltas del aplicador): ni los
 // lee, ni los mueve, ni los borra. `countBak` sólo los cuenta, para que `doctor` diga que existen y que no los gestiona.
 //
@@ -183,6 +190,8 @@ function prune(home = os.homedir(), { protect = null } = {}) {
   const all = list(home);
   const keep = new Set(all.slice(0, KEEP).map((b) => b.dir));
   for (const p of Array.isArray(protect) ? protect : [protect]) if (p) keep.add(p);
+  // una abierta es la única constancia de un cambio que se cortó: no se poda hasta que se cierre
+  for (const b of all) if (isOpen(b.manifest)) keep.add(b.dir);
   const installs = all.filter((b) => b.manifest.reason === 'install');
   if (installs.length) keep.add(installs[installs.length - 1].dir);
   // la copia de ANTES de la versión instalada (la más nueva cuyos `sources` difieren de los de la copia más nueva) es a
@@ -224,7 +233,7 @@ function checkSources(sources) {
  * @returns {{ dir: string, created: boolean, pruned: string[] }}
  */
 // `protect`: carpetas de copia que la retención de ESTA toma no puede borrar (el destino de un rollback)
-function take({ home = os.homedir(), env = process.env, tree, reason, from = null, to = null, force = false, sources = null, protect = [], now = new Date() } = {}) {
+function take({ home = os.homedir(), env = process.env, tree, reason, from = null, to = null, force = false, sources = null, protect = [], rollbackTo = null, now = new Date() } = {}) {
   if (typeof reason !== 'string' || !reason) throw new TypeError('snapshot.take: falta `reason` (install, update, apply, startup, before-rollback, uninstall…)');
   const commits = checkSources(sources);
   const entries = files({ home, env, tree }).map((p) => {
@@ -234,7 +243,11 @@ function take({ home = os.homedir(), env = process.env, tree, reason, from = nul
   const hash = sha256(JSON.stringify(entries.map((e) => [e.path, e.sha256])));
   const existing = list(home);
   const latest = existing[0];
-  if (!force && latest && latest.manifest.hash === hash) return { dir: latest.dir, created: false, pruned: [] };
+  if (!force && latest && latest.manifest.hash === hash) {
+    // reusada: se reabre (un corte de esta operación también tiene que quedar a la vista), sin tocar su «después»
+    reopen(latest.dir, now);
+    return { dir: latest.dir, created: false, pruned: [] };
+  }
   // la secuencia: la mayor que haya + 1 (no el reloj; ver `newestFirst`)
   const seq = existing.reduce((max, b) => Math.max(max, seqOf(b.manifest) || 0), 0) + 1;
 
@@ -271,7 +284,8 @@ function take({ home = os.homedir(), env = process.env, tree, reason, from = nul
       return { path: e.path, existed: e.existed, sha256: e.sha256, sha256_after: null, copy };
     });
     const manifest = {
-      schema: SCHEMA, seq, from, to, reason, at: new Date(now).toISOString(), hash, sources: commits, files: manifestFiles,
+      schema: SCHEMA, seq, from, to, reason, at: new Date(now).toISOString(), hash, sources: commits,
+      open: true, opened_at: new Date(now).toISOString(), ...(rollbackTo ? { rollback_to: String(rollbackTo) } : {}), files: manifestFiles,
     };
     fs.writeFileSync(path.join(tmp, MANIFEST), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
     fs.renameSync(tmp, dir);
@@ -321,16 +335,92 @@ function safeFiles(copy, { home = os.homedir(), env = process.env, tree } = {}) 
   return out;
 }
 
-/** Escribe `sha256_after` de cada archivo del manifiesto (null si después del cambio no está). Devuelve el manifiesto. */
-function finish(dir, { home = os.homedir(), env = process.env } = {}) { // eslint-disable-line no-unused-vars
+/** ¿La copia está abierta? Sólo con `open: true`: una sin el campo es anterior a la marca y cuenta cerrada. */
+const isOpen = (manifest) => Boolean(manifest && typeof manifest === 'object' && manifest.open === true);
+
+/** Reescribe el manifiesto de `dir` con `patch`; null si no se pudo leer. */
+function patchManifest(dir, patch) {
+  const file = path.join(dir, MANIFEST);
+  let manifest;
+  try { manifest = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) { return null; }
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) return null;
+  Object.assign(manifest, patch);
+  writeAtomic(file, `${JSON.stringify(manifest, null, 2)}\n`);
+  return manifest;
+}
+function reopen(dir, now = new Date()) {
+  return patchManifest(dir, { open: true, opened_at: new Date(now).toISOString(), closed_by: null });
+}
+
+/**
+ * Cierra la copia sin tocar nada más (`open: false` y `closed_by`): la reusada, que ya tiene el «después» de su
+ * operación, y la de una operación que falló (`closedBy: 'failed'`). Devuelve el manifiesto, o null si no está.
+ */
+function close(dir, { closedBy = null, home = null, older = false } = {}) {
+  const m = patchManifest(dir, { open: false, closed_by: closedBy || 'closed' });
+  if (m && older && home) closeOlder(home, dir);
+  return m;
+}
+
+/**
+ * El cambio terminó: escribe `sha256_after` de cada archivo (null si después no está), cierra la copia (`closed_by`:
+ * `closedBy` o su `reason`) y cierra las abiertas más viejas, salvo las `before-rollback`. Con `older: false` (una
+ * operación que falló) no cierra las viejas: un fallo no arregla lo que dejó un corte anterior. Devuelve el manifiesto.
+ */
+function finish(dir, { home = os.homedir(), env = process.env, closedBy = null, older = true } = {}) { // eslint-disable-line no-unused-vars
   const file = path.join(dir, MANIFEST);
   const manifest = JSON.parse(fs.readFileSync(file, 'utf8'));
   for (const f of manifest.files || []) {
     const buf = readOrNull(f.path);
     f.sha256_after = buf === null ? null : sha256(buf);
   }
+  manifest.open = false;
+  manifest.closed_by = closedBy || manifest.reason || 'finish';
   writeAtomic(file, `${JSON.stringify(manifest, null, 2)}\n`);
+  if (older) closeOlder(home, dir);
   return manifest;
+}
+
+/** Las abiertas más viejas que `dir` (no `before-rollback`) se cierran con el nombre de `dir`: su sucesora terminó. */
+function closeOlder(home, dir) {
+  const all = list(home);
+  const at = all.findIndex((b) => path.resolve(b.dir) === path.resolve(dir));
+  if (at < 0) return;
+  for (const b of all.slice(at + 1)) {
+    if (!isOpen(b.manifest) || b.manifest.reason === 'before-rollback') continue;
+    try { close(b.dir, { closedBy: path.basename(dir) }); } catch (_) { /* la que no se pudo cerrar sigue avisando */ }
+  }
+}
+
+/** Lo que encabeza el aviso de una copia abierta en `state.notice`: con eso se lo saca cuando ya no vale. */
+const CUT_NOTICE_PREFIX = 'a medias: ';
+
+/**
+ * El aviso de un cambio que se cortó: la copia abierta más nueva de `copies` (`list()`), o null si no hay. `cmd` es
+ * cómo se nombra a harness.js en el texto. Una `before-rollback` abierta es una vuelta atrás cortada: el comando la
+ * termina con el `--to` que anotó (`rollback_to`), nunca vuelve a ella misma. Una copia sin `sha256_after` vuelve por
+ * piezas (`rollback.js` no restaura archivos enteros sin el «después»), y el aviso lo dice.
+ */
+function openCopyNotice(copies, { cmd = 'harness.js' } = {}) {
+  const open = (Array.isArray(copies) ? copies : []).filter((c) => c && isOpen(c.manifest));
+  if (!open.length) return null;
+  const c = open[0];
+  const m = c.manifest;
+  const more = open.length > 1 ? `; hay ${open.length - 1} copia(s) abierta(s) más (${cmd} rollback --list)` : '';
+  if (m.reason === 'before-rollback') {
+    const how = m.rollback_to ? `${cmd} rollback --to ${m.rollback_to} la termina` : `${cmd} rollback --list muestra a dónde volver`;
+    return `${CUT_NOTICE_PREFIX}una vuelta atrás se cortó (copia ${c.name}, ${m.at || '—'}): ${how}${more}`;
+  }
+  const noAfter = !(m.files || []).some((f) => f && typeof f.sha256_after === 'string');
+  const pieces = noAfter ? ' por piezas (la copia no sabe cómo quedaron los archivos después)' : '';
+  return `${CUT_NOTICE_PREFIX}un cambio del arnés se cortó (copia ${c.name}, ${m.reason || 'sin motivo'}, ${m.at || '—'}): ${cmd} rollback --to ${c.name} vuelve a como estaba${pieces}${more}`;
+}
+
+/** `notice` sin el tramo del aviso de copia abierta (los tramos van separados por « · »); null si no queda nada. */
+function stripCutNotice(notice) {
+  if (typeof notice !== 'string' || !notice) return notice || null;
+  const rest = notice.split(' · ').filter((s) => !s.startsWith(CUT_NOTICE_PREFIX));
+  return rest.length ? rest.join(' · ') : null;
 }
 
 /** Cuántos `.bak*` del dev hay al lado de los archivos de la lista (`settings.json.bak.<ts>`, `pre-commit.bak-<ts>`…). */
@@ -346,4 +436,7 @@ function countBak({ home = os.homedir(), env = process.env, tree } = {}) {
   return found.size;
 }
 
-module.exports = { SCHEMA, KEEP, backupsRoot, files, take, finish, list, prune, countBak, safeFiles };
+module.exports = {
+  SCHEMA, KEEP, CUT_NOTICE_PREFIX, backupsRoot, files, take, finish, close, isOpen, openCopyNotice, stripCutNotice, list, prune,
+  countBak, safeFiles,
+};

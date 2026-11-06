@@ -6,7 +6,9 @@
 // que se tomó antes de mover los árboles—; las copias de `startup`/`apply` posteriores, de la misma versión, no cuentan. Así
 // un segundo `rollback` vuelve a la copia `before-rollback` del primero: un rollback se deshace con otro. Basta con que
 // difiera UNA fuente: un hook nuevo de agent-skills no cambia el número de versión (sale del arnés) y también se deshace.
-// Si ninguna copia tiene `sources` (sin ese dato), la más nueva y sólo archivos, y se dice.
+// Si ninguna copia tiene `sources` (sin ese dato), la más nueva y sólo archivos, y se dice. Sin `--to` no elige nunca una
+// copia abierta (`open: true`: la de un cambio que se cortó, o la que la operación en curso acaba de tomar); con `--to`
+// acepta cualquiera, abierta o no: es el comando que da el aviso de un corte.
 //
 // La restauración (`restore`), en este orden:
 //   (1) cada archivo de la copia cuyo hash actual es su `sha256_after` (nadie lo tocó desde el cambio) vuelve ENTERO a como
@@ -86,6 +88,9 @@ function pickTarget(copies, { to = null, currentSources = {} } = {}) {
     if (!hasSources(hit)) return { copy: hit, filesOnly: true, reason: `la copia ${hit.name} no tiene sources (es anterior a la tanda C): sólo restauro archivos, los árboles no se mueven` };
     return { copy: hit, filesOnly: false, reason: `la copia ${hit.name} (seq ${seqOf(hit) || '—'}, ${hit.manifest.reason || 'sin motivo'})` };
   }
+  return pickClosed(list.filter((c) => c.manifest.open !== true), currentSources);
+}
+function pickClosed(list, currentSources) {
   if (!list.length) return { copy: null, filesOnly: false, reason: 'no hay copias de seguridad: no hay a qué volver' };
   if (!list.some(hasSources)) {
     const c = list[0];

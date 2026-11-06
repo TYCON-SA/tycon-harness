@@ -654,16 +654,17 @@ test('T13 HarnessLock_DefaultPath_Unchanged @story-8.124 @ac-12 — sin opciones
   assert.deepStrictEqual(fs.readdirSync(p.lockDir), ['pid'], 'el candado de siempre no lleva más que su pid');
   assert.strictEqual(fs.readFileSync(path.join(p.lockDir, 'pid'), 'utf8'), `${process.pid}\n${os.hostname()}\n`);
   lock.release(home);
-  // dueño VIVO con más de 10 minutos: el candado de siempre se libera por edad (el de run-check no: Casos: skills/tycon-pipeline/scripts/tests/marker-run-check.test.js)
+  // dueño VIVO de esta máquina con más de 10 minutos: la edad ya no lo libera (8.160, AC 1; lo liberan el arranque de
+  // la máquina y el tope de 2 h, abajo). Antes de la 8.160 este caso se pisaba: era el robo a una actualización larga
   fs.mkdirSync(p.lockDir, { recursive: true });
   fs.writeFileSync(path.join(p.lockDir, 'pid'), `${process.ppid}\n${os.hostname()}\n`);
   const old = new Date(Date.now() - 11 * 60 * 1000);
   fs.utimesSync(path.join(p.lockDir, 'pid'), old, old);
   fs.utimesSync(p.lockDir, old, old);
-  const b = lock.acquire(home, { env });
-  assert.strictEqual(b.ok, true, `no lo liberó por edad: ${JSON.stringify(b)}`);
+  const b = lock.acquire(home, { env, bootTimeMs: Date.now() - 24 * 3600 * 1000 });
+  assert.strictEqual(b.ok, false, `pisó a un dueño vivo por la edad: ${JSON.stringify(b)}`);
   // un dueño ilegible y fresco: ocupado; la edad de siempre (10 min) manda, no el minuto del de run-check
-  lock.release(home);
+  fs.rmSync(p.lockDir, { recursive: true, force: true });
   fs.mkdirSync(p.lockDir, { recursive: true });
   fs.writeFileSync(path.join(p.lockDir, 'pid'), '');
   const twoMin = new Date(Date.now() - 2 * 60 * 1000);
@@ -673,6 +674,109 @@ test('T13 HarnessLock_DefaultPath_Unchanged @story-8.124 @ac-12 — sin opciones
   // TYCON_HARNESS_LOCK_HELD sigue valiendo para el candado de siempre
   fs.rmSync(p.lockDir, { recursive: true, force: true });
   assert.strictEqual(lock.acquire(home, { env: labEnv(home, { TYCON_HARNESS_LOCK_HELD: '1' }) }).held, true);
+});
+
+// ─── 8.160 · el candado con su dueño vivo, el arranque de la máquina y el tope de 2 h ─────────────────────────────
+
+const MIN = 60 * 1000;
+const HOUR = 60 * MIN;
+/** Arma el candado de siempre con un dueño (`pid` vacío = ilegible) y una edad. */
+function lockWith(p, { pid, host = os.hostname(), ageMs }) {
+  fs.rmSync(p.lockDir, { recursive: true, force: true });
+  fs.mkdirSync(p.lockDir, { recursive: true });
+  fs.writeFileSync(path.join(p.lockDir, 'pid'), pid === '' ? '' : `${pid}\n${host}\n`);
+  const t = new Date(Date.now() - ageMs);
+  fs.utimesSync(path.join(p.lockDir, 'pid'), t, t);
+  fs.utimesSync(p.lockDir, t, t);
+}
+const logOf = (home) => { try { return fs.readFileSync(mod('state').paths(home).log, 'utf8'); } catch (_) { return ''; } };
+const LONG_AGO_BOOT = () => Date.now() - 24 * HOUR;   // la máquina arrancó hace un día: no pesa en el caso
+
+test('T1 Lock_LiveOwnerOlderThanStale_NotTakenOver @story-8.160 @ac-1 — un dueño vivo de esta máquina con 11 min no se pisa', () => {
+  const lock = mod('lock');
+  const home = casa('t1-8160');
+  const p = mod('state').paths(home);
+  lockWith(p, { pid: process.pid, ageMs: 11 * MIN });
+  const r = lock.acquire(home, { env: labEnv(home), bootTimeMs: LONG_AGO_BOOT() });
+  assert.strictEqual(r.ok, false, `pisó a un dueño vivo de 11 min: ${JSON.stringify(r)}`);
+  assert.match(r.reason, /otra sesión está actualizando/);
+  assert.strictEqual(r.pid, process.pid);
+  fs.rmSync(p.lockDir, { recursive: true, force: true });
+});
+
+test('T2 Lock_DeadOwner_TakenOverAtOnce @story-8.160 @ac-2 — el de un pid muerto se pisa en el acto y lo anota', () => {
+  const lock = mod('lock');
+  const home = casa('t2-8160');
+  const p = mod('state').paths(home);
+  lockWith(p, { pid: 999999, ageMs: 5 * 1000 });
+  const r = lock.acquire(home, { env: labEnv(home), bootTimeMs: LONG_AGO_BOOT() });
+  assert.strictEqual(r.ok, true, JSON.stringify(r));
+  assert.deepStrictEqual(r.reclaimed, { pid: 999999 });
+  assert.match(logOf(home), /era del pid 999999, que ya no existe/);
+  lock.release(home);
+});
+
+test('T3 Lock_OlderThanBoot_ReusedPid_TakenOver @story-8.160 @ac-3 — tomado antes del arranque de la máquina: se pisa aunque el pid viva', () => {
+  const lock = mod('lock');
+  const home = casa('t3-8160');
+  const p = mod('state').paths(home);
+  lockWith(p, { pid: process.pid, ageMs: 30 * MIN });
+  const r = lock.acquire(home, { env: labEnv(home), bootTimeMs: Date.now() - 10 * MIN });
+  assert.strictEqual(r.ok, true, `no pisó el candado de antes del arranque: ${JSON.stringify(r)}`);
+  assert.match(logOf(home), new RegExp(`pid ${process.pid}.*antes del último arranque de la máquina.*lo pisé`));
+  lock.release(home);
+});
+
+test('T14 Lock_JustAfterBoot_WithinMargin_NotTakenOver @story-8.160 @ac-3 — 2 min antes del arranque, dentro del margen: no se pisa', () => {
+  const lock = mod('lock');
+  const home = casa('t14-8160');
+  const p = mod('state').paths(home);
+  lockWith(p, { pid: process.pid, ageMs: 12 * MIN });
+  const r = lock.acquire(home, { env: labEnv(home), bootTimeMs: Date.now() - 10 * MIN });
+  assert.strictEqual(r.ok, false, `pisó un candado dentro del margen del arranque: ${JSON.stringify(r)}`);
+  assert.doesNotMatch(logOf(home), /lo pisé/);
+  fs.rmSync(p.lockDir, { recursive: true, force: true });
+});
+
+test('T4 Lock_LiveOwnerPastHardCap_TakenOverAndLogged @story-8.160 @ac-4 — pid vivo con 3 h: se pisa por el tope de 2 h', () => {
+  const lock = mod('lock');
+  assert.strictEqual(lock.HARD_STALE_MS, 2 * HOUR);
+  const home = casa('t4-8160');
+  const p = mod('state').paths(home);
+  lockWith(p, { pid: process.pid, ageMs: 3 * HOUR });
+  const r = lock.acquire(home, { env: labEnv(home), bootTimeMs: LONG_AGO_BOOT() });
+  assert.strictEqual(r.ok, true, `no lo pisó pasado el tope: ${JSON.stringify(r)}`);
+  assert.match(logOf(home), new RegExp(`el pid ${process.pid} parece vivo pero pasó el tope de 2 h: lo pisé`));
+  lock.release(home);
+});
+
+test('T9 Lock_UnreadableOwner_BusyThenOrphan @story-8.160 @ac-9 — dueño ilegible: ocupado a los 9 min; a los 11, pisado y anotado', () => {
+  const lock = mod('lock');
+  const home = casa('t9-8160');
+  const p = mod('state').paths(home);
+  lockWith(p, { pid: '', ageMs: 9 * MIN });
+  assert.strictEqual(lock.acquire(home, { env: labEnv(home), bootTimeMs: LONG_AGO_BOOT() }).ok, false, 'el ilegible de 9 min se liberó');
+  assert.doesNotMatch(logOf(home), /lo pisé/);
+  lockWith(p, { pid: '', ageMs: 11 * MIN });
+  const r = lock.acquire(home, { env: labEnv(home), bootTimeMs: LONG_AGO_BOOT() });
+  assert.strictEqual(r.ok, true, JSON.stringify(r));
+  assert.match(logOf(home), /más de 10 min.*no se puede leer.*lo pisé/);
+  lock.release(home);
+});
+
+test('T11 RunCheckLock_Unchanged @story-8.160 @ac-11 — con staleMs null, pid vivo: ni las 3 h ni el arranque de la máquina lo liberan', () => {
+  const lock = mod('lock');
+  const home = casa('t11-8160');
+  const dir = path.join(home, 'run-check-lab', 'tests.lock');
+  fs.mkdirSync(path.dirname(dir), { recursive: true });
+  const a = lock.acquire(home, { env: labEnv(home), lockDir: dir, staleMs: null, extra: { childPid: process.pid } });
+  assert.strictEqual(a.ok, true, JSON.stringify(a));
+  const age = (ms) => { const t = new Date(Date.now() - ms); fs.utimesSync(path.join(dir, 'pid'), t, t); fs.utimesSync(dir, t, t); };
+  age(3 * HOUR);
+  assert.strictEqual(lock.acquire(home, { env: labEnv(home), lockDir: dir, staleMs: null, bootTimeMs: LONG_AGO_BOOT() }).ok, false, 'el tope de 2 h alcanzó al candado de run-check');
+  age(30 * MIN);
+  assert.strictEqual(lock.acquire(home, { env: labEnv(home), lockDir: dir, staleMs: null, bootTimeMs: Date.now() - 10 * MIN }).ok, false, 'el arranque de la máquina alcanzó al candado de run-check');
+  lock.release(home, { lockDir: dir });
 });
 
 test('T2 · withLock corre fn y suelta; tomado → onBusy; si fn tira igual suelta; con LOCK_HELD no suelta el del padre', () => {

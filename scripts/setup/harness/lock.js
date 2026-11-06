@@ -2,9 +2,19 @@
 // lock.js — el candado propio del mecanismo: ~/.claude/.tycon-pipeline/harness/harness.lock.
 //
 // Calco del método probado del aplicador (`install-tycon-hooks.sh`, bloque «Lock anti-concurrencia»): `mkdir` atómico,
-// el pid adentro para diagnóstico, y un candado HUÉRFANO (más de 10 minutos: crash o SIGKILL sin limpieza) se pisa con
-// un mutex de takeover —mkdir, sección crítica de microsegundos, vida 1 minuto— re-verificando la vejez ADENTRO del
-// mutex: `rmdir + mkdir` a secas deja pasar a dos, y un `mv` atómico abre una ventana por la que entra un tercero.
+// el pid adentro para diagnóstico, y un candado HUÉRFANO se pisa con un mutex de takeover —mkdir, sección crítica de
+// microsegundos, vida 1 minuto— re-verificando ADENTRO del mutex: `rmdir + mkdir` a secas deja pasar a dos, y un `mv`
+// atómico abre una ventana por la que entra un tercero.
+//
+// Cuándo es huérfano el candado de siempre:
+//   · su dueño murió en esta máquina: en el acto;
+//   · su dueño vive en esta máquina: la edad de 10 minutos NO cuenta (una actualización legítima puede tardar más). Lo
+//     liberan dos cosas: que se haya tomado antes del último arranque de la máquina (con un margen de 5 minutos por la
+//     precisión de `os.uptime()` y un ajuste del reloj), porque después de un reinicio ese pid es de otro proceso; o el
+//     tope de 2 horas, la salida para un pid reusado sin reinicio (o un `EPERM` de un proceso ajeno);
+//   · su dueño es de otra máquina o no se puede leer: la edad de 10 minutos, como siempre.
+// Toda toma que no es por dueño muerto también queda en el registro. `lock.js` no vuelve a tocar el candado después
+// del `mkdir`: su `mtime` es la hora en que se tomó.
 //
 // Quién lo usa: toda operación que escribe (`startup`, `update`, `apply`, `link`, `install`, y en la C `rollback` y
 // `uninstall`). La segunda sesión que llega mientras la primera trabaja se va: `startup` en silencio con 0, los demás
@@ -24,7 +34,9 @@ const os = require('os');
 const path = require('path');
 const { paths } = require('./state.js');
 
-const STALE_MS = 10 * 60 * 1000;       // huérfano: nadie trabaja 10 minutos seguidos con el candado tomado
+const STALE_MS = 10 * 60 * 1000;       // huérfano por edad: dueño de otra máquina o ilegible, 10 minutos
+const HARD_STALE_MS = 2 * 60 * 60 * 1000;   // el tope para un dueño que parece vivo: un pid reusado sin reinicio
+const BOOT_MARGIN_MS = 5 * 60 * 1000;  // el margen sobre la hora de arranque de la máquina
 const UNREADABLE_MS = 60 * 1000;       // sin edad: un dueño ilegible se da por ocupado un minuto (lo está escribiendo)
 const TAKEOVER_STALE_MS = 60 * 1000;   // el mutex de takeover vive un minuto como mucho
 const HELD_VAR = 'TYCON_HARNESS_LOCK_HELD';
@@ -96,7 +108,9 @@ function take(lockDir, ownerPid = process.pid, extra = null) {
 function acquire(home = os.homedir(), {
   env = process.env, now = Date.now(), ownerPid = process.pid,
   lockDir: ownDir = null, extra = null, staleMs = STALE_MS, unreadableMs = UNREADABLE_MS,
+  bootTimeMs = null, hardStaleMs = HARD_STALE_MS,
 } = {}) {
+  const bootMs = Number.isFinite(bootTimeMs) ? bootTimeMs : now - os.uptime() * 1000;
   if (!ownDir && String(env[HELD_VAR] || '') === '1') return { ok: true, held: true, pid: null, reason: null };
   const lockDir = ownDir || paths(home).lockDir;
   fs.mkdirSync(ownDir ? path.dirname(ownDir) : paths(home).harnessDir, { recursive: true });
@@ -112,9 +126,24 @@ function acquire(home = os.homedir(), {
   };
   const owner = readOwner(lockDir);
   const dead = ownerIsDead(owner);
-  // sin edad (staleMs null): un dueño legible y vivo nunca es huérfano; uno ilegible, pasado `unreadableMs`
-  const byAge = () => staleMs !== null ? isStale(lockDir, staleMs, now) : readOwner(lockDir) === null && isStale(lockDir, unreadableMs, now);
-  const orphan = () => dead ? ownerIsDead(readOwner(lockDir)) && readPid(lockDir) === owner.pid : byAge();
+  // Por qué se pisa un candado cuyo dueño no murió: null (no se pisa), 'boot', 'hard-cap' o 'age'.
+  // Sin edad (staleMs null): un dueño legible y vivo nunca es huérfano; uno ilegible, pasado `unreadableMs`.
+  const whyOrphan = () => {
+    if (staleMs === null) return readOwner(lockDir) === null && isStale(lockDir, unreadableMs, now) ? 'age' : null;
+    const o = readOwner(lockDir);
+    const here = o && (!o.host || o.host === os.hostname());
+    if (!here) return isStale(lockDir, staleMs, now) ? 'age' : null;
+    const m = mtimeMs(lockDir);
+    if (m === null) return null;
+    if (m < bootMs - BOOT_MARGIN_MS) return 'boot';
+    return now - m > hardStaleMs ? 'hard-cap' : null;
+  };
+  let why = null;
+  const orphan = () => {
+    if (dead) return ownerIsDead(readOwner(lockDir)) && readPid(lockDir) === owner.pid;
+    why = whyOrphan();
+    return why !== null;
+  };
   if (!orphan()) return busy();
   const takeover = `${lockDir}.takeover`;
   if (!mkdirExclusive(takeover)) {
@@ -133,16 +162,20 @@ function acquire(home = os.homedir(), {
     try { fs.rmdirSync(takeover); } catch (_) { /* ya no está */ }
   }
   if (!taken) return busy();
-  if (!dead) return { ok: true, held: false, pid: ownerPid, reason: null, lockDir };
   // el registro del mecanismo es del candado de siempre; el llamador de otro candado lo dice él
-  if (ownDir) return { ok: true, held: false, pid: ownerPid, reason: null, lockDir, reclaimed: { pid: owner.pid } };
+  if (ownDir) return dead ? { ok: true, held: false, pid: ownerPid, reason: null, lockDir, reclaimed: { pid: owner.pid } } : { ok: true, held: false, pid: ownerPid, reason: null, lockDir };
   // lo dice el registro, para TODO comando que toma el candado (startup, update, install, rollback, …):
   // un candado pisado es un arranque o una actualización que se cortó
+  const who = owner ? `pid ${owner.pid}` : 'dueño ilegible';
+  const what = dead ? `era del pid ${owner.pid}, que ya no existe (algo se cortó sin soltarlo)`
+    : why === 'boot' ? `era del pid ${owner.pid}, tomado antes del último arranque de la máquina (ese número ya es de otro proceso)`
+      : why === 'hard-cap' ? `el pid ${owner.pid} parece vivo pero pasó el tope de 2 h`
+        : `tenía más de 10 min y su dueño no se puede consultar (${owner ? `${who} de ${owner.host}` : 'no se puede leer'})`;
   try {
     const { log } = paths(home);
-    fs.appendFileSync(log, `${new Date().toISOString()} candado: era del pid ${owner.pid}, que ya no existe (algo se cortó sin soltarlo): lo pisé (pid ${process.pid}, ${process.argv.slice(2, 3).join('') || 'harness.js'})\n`);
+    fs.appendFileSync(log, `${new Date().toISOString()} candado: ${what}: lo pisé (pid ${process.pid}, ${process.argv.slice(2, 3).join('') || 'harness.js'})\n`);
   } catch (_) { /* el registro nunca frena el candado */ }
-  return { ok: true, held: false, pid: ownerPid, reason: null, lockDir, reclaimed: { pid: owner.pid } };
+  return dead ? { ok: true, held: false, pid: ownerPid, reason: null, lockDir, reclaimed: { pid: owner.pid } } : { ok: true, held: false, pid: ownerPid, reason: null, lockDir, takenOver: why };
 }
 
 /** Suelta el candado (sea de quien sea: el llamador sabe que lo tomó él). `lockDir`: el de otro candado, no el de siempre. */
@@ -166,4 +199,4 @@ function withLock(home, fn, { env = process.env, onBusy = null, now } = {}) {
   }
 }
 
-module.exports = { STALE_MS, TAKEOVER_STALE_MS, UNREADABLE_MS, HELD_VAR, acquire, release, withLock, readOwner, ownerIsDead, writeExtra };
+module.exports = { STALE_MS, HARD_STALE_MS, BOOT_MARGIN_MS, TAKEOVER_STALE_MS, UNREADABLE_MS, HELD_VAR, acquire, release, withLock, readOwner, ownerIsDead, writeExtra };
