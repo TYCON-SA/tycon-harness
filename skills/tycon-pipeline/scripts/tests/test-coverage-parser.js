@@ -544,8 +544,9 @@ if (process.getuid && process.getuid() !== 0) {
     const r2 = cb.resolver({ repo: sub, env: {}, marker: { repoPath: repo, baseSha: c1 } });
     check('T9 el baseSha del marcador (mismo repo, ancestro) va segundo', r2.source === 'marcador' && r2.ref === c1, JSON.stringify(r2));
     const r3 = cb.resolver({ repo, env: {}, marker: { repoPath: repo, baseSha: ajeno } });
-    check('T9 un baseSha que no es ancestro se descarta con motivo y cae a HEAD',
-      r3.source === 'HEAD' && r3.ref === head && r3.descartadas.some((d) => d.source === 'marcador' && /ancestro/.test(d.motivo)),
+    // cae a la bifurcación con main, no a HEAD: con el repo en main es HEAD mismo
+    check('T9 un baseSha que no es ancestro se descarta con motivo y cae a la bifurcación',
+      r3.source === 'bifurcacion' && r3.ref === head && r3.descartadas.some((d) => d.source === 'marcador' && /ancestro/.test(d.motivo)),
       JSON.stringify(r3));
     const r4 = cb.resolver({ repo, env: {}, marker: { repoPath: path.join(tmp, 'otro-repo'), baseSha: c1 } });
     // sin marcador de este repo la base es la bifurcación con main: acá, con el repo en main, es HEAD mismo
