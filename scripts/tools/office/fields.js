@@ -81,7 +81,7 @@ const FIELDS = {
     medioCaminoLeido: text,
   }),
   tablas: record({ hoy: TABLE, pendientes: TABLE, hechos: TABLE }),
-  meta: record({ actualizado: text, pedidosLeidos: text, teToca: list(text), trabado: list(record({ titulo: text, filas: list(text) })), extra: number, puestos: list(list(number)), sitio: text, quietMin: number }),
+  meta: record({ actualizado: text, pedidosLeidos: text, teToca: list(text), trabado: list(record({ titulo: text, filas: list(text) })), extra: number, puestos: list(list(number)), sitio: text, quietMin: number, recorte: text }),
   rows: list(record({ work: text, state: text, end: text, session: text, folder })),
   free: list(text),
   unreadable: list(text),
@@ -203,6 +203,49 @@ function pick(foto, home) {
   return pickFields(FIELDS, foto && typeof foto === 'object' ? foto : {}, home, sanear);
 }
 
+/**
+ * La foto ya armada (`pick`), achicada hasta que entre en `max` bytes como mensaje. El tablero crece más que el tope del
+ * sitio, y una foto que no entra no sale: el sitio se quedaba con una de horas antes. Se recorta, en este orden y hasta que
+ * entre: las notas de las tarjetas; después, desde la cola, las tarjetas y filas de hechos, las sin empezar, las filas de
+ * pendientes y las de hoy. Lo de las sesiones y lo que está en curso no se toca. Lo recortado se dice en `meta.recorte`.
+ * Devuelve `{ data, cut }` (la misma foto, sin copiar, si ya entra) o null si ni así entra. No cambia la foto que recibe.
+ */
+const RESERVED_FOR_CUT_LINE = 2 * TEXT_MAX;
+function fitPhoto(data, max = MAX_MESSAGE_BYTES) {
+  const size = (d) => Buffer.byteLength(JSON.stringify({ type: 'foto', data: d }));
+  if (size(data) <= max) return { data, cut: [] };
+  const d = JSON.parse(JSON.stringify(data));
+  const fits = () => size(d) + RESERVED_FOR_CUT_LINE <= max;
+  const columns = d.kanban && Array.isArray(d.kanban.columnas) ? d.kanban.columnas : [];
+  const column = (id) => columns.find((c) => c && c.id === id && Array.isArray(c.tarjetas)) || null;
+  const table = (k) => (d.tablas && d.tablas[k] && Array.isArray(d.tablas[k].filas) ? d.tablas[k] : null);
+  const cut = [];
+  let notes = 0;
+  for (const c of columns) for (const t of (c && Array.isArray(c.tarjetas) ? c.tarjetas : [])) if (t && t.nota) { delete t.nota; notes += 1; }
+  if (notes) cut.push(`las notas de ${notes} tarjetas`);
+  const lists = [['hechos', () => column('hechos'), 'tarjetas'], ['filas de hechos', () => table('hechos'), 'filas'],
+    ['sin empezar', () => column('sinEmpezar'), 'tarjetas'], ['filas de pendientes', () => table('pendientes'), 'filas'], ['filas de hoy', () => table('hoy'), 'filas']];
+  for (const [name, of, key] of lists) {
+    if (fits()) break;
+    const o = of();
+    if (!o) continue;
+    const all = o[key];
+    // la mayor cantidad que entra, desde el principio de la lista
+    let lo = 0;
+    let hi = all.length;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      o[key] = all.slice(0, mid);
+      if (fits()) lo = mid; else hi = mid - 1;
+    }
+    o[key] = all.slice(0, lo);
+    if (lo < all.length) cut.push(`${all.length - lo} de ${all.length} ${name}`);
+  }
+  if (!fits()) return null;
+  d.meta = Object.assign({}, d.meta, { recorte: `foto achicada para el sitio: no viajaron ${cut.join(', ')}`.slice(0, TEXT_MAX) });
+  return size(d) <= max ? { data: d, cut } : null;
+}
+
 /** La conversación que sale de la máquina: con la forma de `CHARLA`, cada texto saneado y hasta CHARLA_TEXT_MAX. */
 function pickCharla(datos, home) {
   const { sanear } = require(path.join(__dirname, '..', '..', 'metrics', 'tokens-digest.js'));
@@ -246,4 +289,4 @@ const fingerprintOf = (publicKey) => crypto.createHash('sha256').update(Buffer.f
 /** La huella como la ven las personas: sus primeros 16 caracteres en grupos de cuatro, igual en la máquina y en el sitio. */
 const displayFingerprint = (fingerprint) => String(fingerprint).slice(0, 16).match(/.{1,4}/g).join('-');
 
-module.exports = { FIELDS, LOCAL_ONLY, CHARLA, TEXT_MAX, CHARLA_TEXT_MAX, CHARLA_EVERY_MS, CHARLA_GAP_MS, MAX_MESSAGE_BYTES, AGENT_STATES, validHour, pick, pickCharla, sessionName, MESSAGES, CAPABILITIES, CLOSE, SITE_HEADER, SIGNATURE_PREFIX, NONCE_BYTES, siteAddress, signedText, validNonce, machineUrl, fingerprintOf, displayFingerprint };
+module.exports = { FIELDS, LOCAL_ONLY, CHARLA, TEXT_MAX, CHARLA_TEXT_MAX, CHARLA_EVERY_MS, CHARLA_GAP_MS, MAX_MESSAGE_BYTES, AGENT_STATES, validHour, pick, fitPhoto, pickCharla, sessionName, MESSAGES, CAPABILITIES, CLOSE, SITE_HEADER, SIGNATURE_PREFIX, NONCE_BYTES, siteAddress, signedText, validNonce, machineUrl, fingerprintOf, displayFingerprint };

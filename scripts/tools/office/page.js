@@ -842,6 +842,9 @@ function arrancarOficinas(){
     f.stats.replaceChildren(chip(r.sesiones,r.sesiones===1?"sesión":"sesiones"),chip(r.trabajando,"trabajando"),chip(r.firma,"esperan tu firma","firma"),chip(r.esperanOLibres,"esperan o libres"));
     if(r.coordina){const s=el("span","stat");s.append("coordina ",el("b",null,r.coordina));f.stats.append(s)}
     if(o.sinConexionDesde)f.stats.append(el("span","stat apagada","sin conexión desde "+hhmmDe(o.sinConexionDesde)));
+    // conectada pero sin foto nueva: lo que se ve es de esa hora, no de ahora
+    else if(o.fotoDesde)f.stats.append(el("span","stat firma","foto de las "+hhmmDe(o.fotoDesde)+": no llegan fotos nuevas"));
+    if(o.foto&&o.foto.meta&&o.foto.meta.recorte)f.stats.append(el("span","stat",o.foto.meta.recorte));
     (o.marcas||[]).forEach(m=>f.stats.append(el("span","stat firma",m==="clave_copiada"?"posible clave copiada":m==="mas_nueva"?"más nueva que el sitio":m)));
     f.cover.setAttribute("aria-label","Agrandar la oficina de "+quien);f.stage.setAttribute("aria-label","La oficina de "+quien);f.titulo.textContent="Las sesiones de "+quien;
     // la ficha lee de DATA lo que no es de la persona (sus tokens): mientras se pintan, DATA es la foto de esta oficina
