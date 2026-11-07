@@ -144,6 +144,11 @@ copia de trabajo del equipo):
    de un \`git -C "<variable>"\`, comprobá que la variable tenga valor y que la carpeta exista.
 4. El repo bajo revisión es de SÓLO LECTURA para git: ni commit, ni checkout, ni add, ni stash, ni reset ahí. Si
    necesitás un repo con historia, cloná o copiá lo que te haga falta a tu laboratorio.
+5. NUNCA BORRES CON rm desde la terminal: ni \`rm -rf\`, ni comodines (\`tmpd/*\`), ni rutas relativas después de un
+   \`cd\`, ni una variable o un \`$(…)\`. Claude Code frena todo borrado que no puede resolver antes de correrlo y espera
+   el click de una persona, aun sin permisos: nadie mira, y tu guion queda parado. Si necesitás una carpeta vacía,
+   armá OTRA con \`mktemp -d /tmp/probe.XXXXXX\`; lo que dejás en /tmp no se limpia. Usá rutas absolutas en vez de
+   \`cd <carpeta> && …\`.
 
 HERRAMIENTAS DE CÓDIGO (usá la mejor disponible, en este orden): (1) si el harness expone tools
 mcp__codegraph*__* o mcp__codebase_memory__* (buscalas con ToolSearch), usalas para lookup de símbolos,
@@ -363,7 +368,8 @@ SI CONFIRMÁS, GUARDÁ LA PRUEBA ANTES DE BORRARLA (obligatorio — es lo único
 3. Escribí ${dir}/COMO-SE-CORRIO.txt con: el comando EXACTO que corriste, desde qué carpeta, y la parte de
    la salida que muestra el comportamiento incorrecto (lo esperado contra lo observado; unas líneas, no el log entero).
 4. Tapá credenciales en lo que guardás: cadenas de conexión, contraseñas, tokens, claves → <REDACTED>.
-5. Recién después borrá la prueba del repo (y verificá que no quedó nada en git status), como siempre.
+5. Recién después borrá la prueba del repo: cada archivo por su ruta absoluta, sin comodines ni -r (y verificá que no
+   quedó nada en git status), como siempre.
 6. Devolvé probe_dir = ${dir}. Si REFUTED, no guardes nada y devolvé probe_dir = "". Si no pudiste
    guardar, devolvé probe_dir = "" y decí por qué en reasoning — no inventes una ruta.`
 }

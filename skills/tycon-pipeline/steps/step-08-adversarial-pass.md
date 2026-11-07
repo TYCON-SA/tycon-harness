@@ -366,6 +366,12 @@ tests del repo bajo revisión**. Dos daños medidos:
    laboratorio con `mktemp -d /tmp/…` (base fija), `set -euo pipefail` y cortar si no se armó, comprobar la
    carpeta antes de cada `git -C`, y el repo bajo revisión de sólo lectura para git. Red:
    `tests/adversarial-probes.test.js`.
+5. **Una sonda no borra con `rm`.** Claude Code frena todo borrado cuyo destino no puede resolver antes de correrlo
+   (un comodín, una ruta relativa después de un `cd`, una variable, un `$(…)`) y espera el click de una persona, aun
+   sin permisos y sin que ninguna regla lo pueda autorizar: sin nadie mirando, el agente queda parado. Por eso el
+   texto común también dice: una carpeta vacía se arma nueva con `mktemp`, lo de `/tmp` no se limpia, rutas absolutas
+   en vez de `cd … &&`, y la prueba que el verificador dejó en el repo se borra archivo por archivo, por su ruta
+   absoluta. Red: `tests/adversarial-probes.test.js`.
 
 ### Por qué la convención sola no alcanzaba, y qué la respalda
 
