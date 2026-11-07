@@ -748,7 +748,7 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
 | Un rojo no se deja | nadie | Los controles frenan lo propio; un rojo ajeno lo ve quien lo encuentra. |
 | No aflojar una revisión, no hacer papeleo | nadie | Es criterio: ningún dato separa una revisión de un papeleo. |
 | Comprobar un mensaje para el equipo | nadie | El mensaje sale por fuera de la máquina. |
-| La coordinadora no cambia código ni guías ella misma | nadie | Nada distingue hoy a la coordinadora de una sesión que escribe; el freno es una historia aparte. |
+| La coordinadora no cambia código ni guías ella misma | freno | La sesión designada no escribe, edita ni borra archivos de un repo ni de la copia instalada del arnés, por Edit, Write o la consola: el freno le dice que lo encargue a una sesión. Su memoria y lo de fuera de los repos pasan. Límite, por elección: lo que escribe por dentro un guion guardado en un archivo no se mira, porque los guiones del arnés que corre la coordinadora escriben su estado. |
 | Un plan para el dueño pasa antes por un revisor aparte | nadie | Es criterio: ningún dato separa un plan de un mensaje cualquiera. |
 | Afirmar sólo lo comprobado, y medir el uso antes de sacar algo | nadie | Es criterio de la coordinadora. |
 | Medir un cambio de velocidad en un día con carga | nadie | Qué cambio promete velocidad lo dice el mensaje, no un dato. |
