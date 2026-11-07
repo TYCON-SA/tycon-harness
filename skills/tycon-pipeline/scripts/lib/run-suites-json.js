@@ -106,9 +106,11 @@ const TURN_FROM_SUITES = 100;
 // Las variables con que test-gate.sh describe ESTA corrida (la clave de la copia sellada, las marcas del hermano y de la
 // corrida cruzada): una suite que corre su propio portón de juguete las tomaría como suyas. TYCON_TEST_GATE es la marca
 // con que run-check anota la procedencia del check `tests`: heredada, la suite del freno de cierre cambiaría de conducta
-// (roja dentro del portón, verde sola; casos: tests/run-suites-json.test.js T15b).
+// (roja dentro del portón, verde sola; casos: tests/run-suites-json.test.js T15b). TYCON_GATE_ALL_SUITES es una orden a
+// este corredor (correr todo): heredada, una suite que corre su propio portón de juguete dejaría de acotar y daría rojo.
 const DEL_PORTON = ['TYCON_EVIDENCE_KEY', 'TYCON_EVIDENCE_KEY_FAILED', 'TYCON_TEST_GATE_COMPANION', 'TYCON_TEST_GATE_STORY_REPO',
-  'TYCON_TEST_GATE_CROSS_REPO', 'TYCON_TEST_GATE', 'TYCON_TEST_GATE_TREE_TOUCHED', 'TYCON_SUITE_HOMES_ROOT', 'TYCON_GATE_PROCESS'];
+  'TYCON_TEST_GATE_CROSS_REPO', 'TYCON_TEST_GATE', 'TYCON_TEST_GATE_TREE_TOUCHED', 'TYCON_SUITE_HOMES_ROOT', 'TYCON_GATE_PROCESS',
+  'TYCON_GATE_ALL_SUITES'];
 
 function launch(p, covDir, env0) {
   const ej = p.ruta.endsWith('.js') ? process.execPath : 'bash';

@@ -18,6 +18,13 @@ const SERVER = path.join(ROOT, 'scripts', 'tools', 'office', 'server.js');
 const VENDOR_WS = path.join(ROOT, 'scripts', 'tools', 'office', 'vendor', 'ws');
 const { stateDir, claudeDir } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
 const WIN = process.platform === 'win32';
+// Cuánto se espera algo del servidor (una foto, un cambio que llega): con la máquina cargada, 2 s no alcanzan y la
+// prueba caía sin que nada estuviera roto. TYCON_OFFICE_TEST_WAIT_MS lo cambia; un valor que no sirve, el de por defecto.
+function plazoDeEspera(env = process.env) {
+  const n = Number(env.TYCON_OFFICE_TEST_WAIT_MS);
+  return env.TYCON_OFFICE_TEST_WAIT_MS && Number.isFinite(n) && n > 0 ? n : 8000;
+}
+const PLAZO = plazoDeEspera();
 
 const started = new Set();
 test.after(() => { for (const pid of started) { try { process.kill(pid, 'SIGKILL'); } catch { /* ya salió */ } } });
@@ -189,8 +196,8 @@ test('T6 Events_FileChange_PushesWithinTwoSeconds: un marcador nuevo llega en me
   await p.next();
   const t0 = Date.now();
   marker(m, 's1', '7.1', 'La oficina viva');
-  const foto = await p.next(2000);
-  assert.ok(Date.now() - t0 < 2000);
+  const foto = await p.next(PLAZO);
+  assert.ok(Date.now() - t0 < PLAZO);
   assert.strictEqual(foto.data.rows.length, 1);
   p.close();
 });
@@ -203,7 +210,7 @@ test('T96 Live_StatusChange_PushesPhoto @story-2.81 @ac-51: una sesión que se p
   const p = page(lock);
   const inicial = await p.next();
   assert.strictEqual(inicial.data.agents.find((a) => a.nombre === 'Alfa').estado, 'trabajando');
-  const until = (pred, ms = 2000) => new Promise((resolve, reject) => {
+  const until = (pred, ms = PLAZO) => new Promise((resolve, reject) => {
     const t0 = Date.now();
     const look = () => {
       const f = p.fotos.find(pred);
@@ -240,7 +247,7 @@ test('T7 Events_BurstOfChanges_OneSnapshot: cinco cambios juntos dan una foto; u
   fs.mkdirSync(coordination, { recursive: true });
   const board = path.join(coordination, 'tablero.json');
   for (let i = 0; i < 5; i += 1) fs.writeFileSync(board, JSON.stringify({ pendientes: [{ titulo: `fila ${i}`, estado: 'espera' }] }));
-  await p.next(2000);
+  await p.next(PLAZO);
   await sleep(800);
   assert.strictEqual(p.fotos.length, 2, 'una sola foto por la ráfaga');
   fs.writeFileSync(board, fs.readFileSync(board));
@@ -510,7 +517,7 @@ test('T12c Shutdown_PhotoThreadBusy_ClosesAndExits: con una foto a medio armar, 
 if (!wt.isMainThread && wt.workerData && wt.workerData.officePhoto) wt.parentPort.on('message', () => {
   if (!require('fs').existsSync(${JSON.stringify(flag)})) return;
   require('fs').writeFileSync(${JSON.stringify(`${flag}.on`)}, '');
-  require('child_process').spawnSync(process.execPath, ['-e', 'setTimeout(() => {}, 5000)']);
+  require('child_process').spawnSync(process.execPath, ['-e', 'setTimeout(() => {}, ${PLAZO * 3})']);
 });\n`);
   openSync(m, { NODE_OPTIONS: `${process.env.NODE_OPTIONS || ''} --require ${JSON.stringify(preload)}`.trim() });
   const lock = readLock(m);
@@ -521,8 +528,9 @@ if (!wt.isMainThread && wt.workerData && wt.workerData.officePhoto) wt.parentPor
   for (let i = 0; i < 60 && !fs.existsSync(`${flag}.on`); i += 1) await sleep(50);
   assert.ok(fs.existsSync(`${flag}.on`), 'la foto lenta arrancó');
   process.kill(lock.pid, 'SIGTERM');
-  assert.strictEqual(typeof await Promise.race([p.closed, sleep(2000).then(() => 'no')]), 'number', 'la página ve el cierre sin esperar a la foto');
-  assert.ok(await exited(lock.pid, 2000), 'sale sin esperar a la foto');
+  // la foto lenta dura el triple del plazo: cerrar dentro del plazo es no haberla esperado
+  assert.strictEqual(typeof await Promise.race([p.closed, sleep(PLAZO).then(() => 'no')]), 'number', 'la página ve el cierre sin esperar a la foto');
+  assert.ok(await exited(lock.pid, PLAZO), 'sale sin esperar a la foto');
   assert.strictEqual(readLock(m), null);
 });
 
@@ -1302,4 +1310,23 @@ test('T101 Wheel_MovesThePage: la rueda sola no llega a la cámara y no se frena
   assert.match(html, /<div class="zoom" id="zoom" hidden>/, 'sin 3D no hay botones');
   assert.match(html, /@media \(hover:none\)\{\.zoom\{display:none\}\}/, 'en un teléfono, tampoco');
   assert.match(html, /gesturechange/);
+});
+
+test('OfficeServer_PlazoPorVariable @story-8.230 @ac-13: el plazo para esperar al servidor sale de una variable, más amplio que 2 s, y sin respuesta la espera igual falla', async () => {
+  // 🔴 mutación: el plazo fijo en 2000 → el caso (a) falla; ignorar la variable → falla el (b).
+  assert.strictEqual(plazoDeEspera({}), 8000, '(a) sin la variable, 8 s');
+  assert.ok(plazoDeEspera({}) > 2000, '(a) más amplio que los 2 s de antes');
+  assert.strictEqual(plazoDeEspera({ TYCON_OFFICE_TEST_WAIT_MS: '300' }), 300, '(b) la variable lo cambia');
+  for (const malo of ['', 'x', '0', '-5']) assert.strictEqual(plazoDeEspera({ TYCON_OFFICE_TEST_WAIT_MS: malo }), 8000, `(b) «${malo}» vuelve al de por defecto`);
+  // (c) un servidor que acepta la página y no manda nunca una foto: la espera falla con el plazo chico, no cuelga
+  const WebSocket = require(VENDOR_WS);
+  const mudo = new WebSocket.Server({ host: '127.0.0.1', port: 0 });
+  await new Promise((r) => mudo.on('listening', r));
+  const p = page({ port: mudo.address().port, token: 'x' });
+  await p.opened;
+  const t0 = Date.now();
+  await assert.rejects(p.next(plazoDeEspera({ TYCON_OFFICE_TEST_WAIT_MS: '300' })), /no llegó una foto en 300 ms/);
+  assert.ok(Date.now() - t0 < 2000, '(c) falla con su plazo, sin colgarse');
+  p.close();
+  await new Promise((r) => mudo.close(r));
 });

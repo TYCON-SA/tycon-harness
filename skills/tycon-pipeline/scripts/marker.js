@@ -1602,6 +1602,17 @@ function cmdCompleteStep(nRaw, flags) {
     // ── «Sin turno»: frena, sin llamarlo rojo ─────────────────────────────────────────────────
     frenarSinTurno(marker, n);
 
+    // ── Registro vacío: el portón nunca anotó nada en esta corrida ───────────────────────────
+    // Sin `checks.tests` no hay verde, ni rojo, ni «sin medir»: nadie corrió el portón, y cerrar el paso así lo daba
+    // por hecho. Sólo con el marcador nuevo: el 4 viejo cerraba implementar y probar juntos.
+    if (nuevo && ids.includes('run-tests') && (testsCheck === undefined || testsCheck === null || testsCheck === '')) {
+      appendLog('gates.log', { name: 'tests-missing', status: 'blocked', story: marker.storyId || null, step: n });
+      console.error(`marker.js complete-step ${n} BLOQUEADO — falta el verde del portón de pruebas: en esta corrida no corrió nunca.`);
+      console.error('  Corré el portón, que corre las suites y anota el resultado:');
+      console.error('    bash <skills>/tycon-pipeline/scripts/test-gate.sh <repo> <ruta de la story>');
+      process.exit(1);
+    }
+
     // ── «Sin acotar»: se acepta anunciándolo ──────────────────────────────────────────────────
     // La corrida del repo hermano no se pudo acotar a lo tocado y no corrió nada (salida 7 de test-gate.sh). Correr la
     // suite completa del hermano en la máquina del dev no es la salida: la cubre la CI del pedido, y queda escrito.

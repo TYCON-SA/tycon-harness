@@ -166,6 +166,35 @@ test('T8 CompleteStep_NumberRejectedOnNewMarker @story-7.23 @ac-6 — con el mar
   assert.match(mal.stderr, /reviewers/, 'dice los nombres que sí existen');
 });
 
+test('RunTests_RegistroVacio_NoCierra @story-8.230 @ac-11 — «Correr las pruebas» no cierra si el portón nunca anotó nada; lo que hoy cierra sigue cerrando', () => {
+  // 🔴 mutación: sacar el freno del registro vacío → el primer caso sale 0 sin que el portón haya corrido.
+  const E = entorno();
+  const base = arrancar(E, 's-rt');
+  const cerrar = (checks, prov) => {
+    E.escribir('s-rt', nuevo(base, 'implement', { checks, checksProvenance: prov }));
+    return E.correr('marker.js', ['complete-step', 'run-tests'], 's-rt');
+  };
+  const vacio = cerrar({}, {});
+  assert.notStrictEqual(vacio.status, 0, 'sin checks.tests no cierra');
+  assert.match(vacio.stderr, /falta el verde del portón de pruebas/);
+  assert.match(vacio.stderr, /test-gate\.sh/, 'y dice con qué se mide');
+  assert.ok(!E.leer('s-rt').stepsCompleted.includes('run-tests'), 'el paso sigue pendiente');
+  for (const [checks, prov, caso] of [
+    [{ tests: 'green' }, { tests: 'test-gate' }, 'verde del portón'],
+    [{ tests: 'green' }, { tests: 'manual-forced' }, 'verde forzado por la persona'],
+    [{ tests: 'sin-acotar' }, { tests: 'test-gate' }, 'sin acotar'],
+    [{ tests: 'sin-medir' }, { tests: 'test-gate' }, 'sin medir'],
+  ]) {
+    const r = cerrar(checks, prov);
+    assert.strictEqual(r.status, 0, `${caso} cierra: ${r.stderr}`);
+    assert.ok(E.leer('s-rt').stepsCompleted.includes('run-tests'), `${caso}: el paso queda cerrado`);
+  }
+  const turno = cerrar({ tests: 'sin-turno' }, { tests: 'test-gate' });
+  assert.notStrictEqual(turno.status, 0, 'sin turno sigue frenando');
+  assert.match(turno.stderr, /no tuvo el turno/, 'con su mensaje de siempre');
+  assert.doesNotMatch(turno.stderr, /falta el verde del portón de pruebas/, 'no con el del registro vacío');
+});
+
 test('T9 CompleteStep_OldMarkerUntilRetireDate @story-7.23 @ac-7 — el marcador viejo sigue con sus números hasta la fecha', () => {
   const E = entorno();
   const base = arrancar(E, 's-t9');
