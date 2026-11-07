@@ -146,7 +146,7 @@ const MEASURES = {
   'Un rojo no se deja': 'nadie',
   'No aflojar una revisión, no hacer papeleo': 'nadie',
   'Comprobar un mensaje para el equipo': 'nadie',
-  'La coordinadora no cambia código ni guías ella misma': 'nadie',
+  'La coordinadora no cambia código ni guías ella misma': 'freno',
   'Un plan para el dueño pasa antes por un revisor aparte': 'nadie',
   'Afirmar sólo lo comprobado, y medir el uso antes de sacar algo': 'nadie',
   'Medir un cambio de velocidad en un día con carga': 'nadie',
@@ -1725,4 +1725,15 @@ test('T11 AdversarialTurn_NoMedidoPass_DoesNotBlockAnother @story-8.228 @ac-3: u
   assert.strictEqual(C.adversarialTurn({ ...t.opts, sessionId: 'propia-1' }), null);
   passMarker(t, 'otra-2', '9.2', 1, noMedido);
   assert.strictEqual(C.adversarialTurn({ ...t.opts, sessionId: 'propia-1' }).waiting_turn, true);
+});
+
+test('8.212 T11 Guia_LaReglaDiceFreno @story-8.212 @ac-10: la regla de no cambiar archivos la mide un freno, con su límite, en las dos guías', () => {
+  const fila = (f, regla) => fs.readFileSync(f, 'utf8').split('\n').find((l) => l.startsWith(`| ${regla} |`)) || '';
+  const es = fila(GUIDE, 'La coordinadora no cambia código ni guías ella misma');
+  const en = fila(GUIDE_EN, 'The coordinator does not change code or guides itself');
+  assert.match(es, /\| freno \|/, es);
+  assert.match(en, /\| freno \|/, en);
+  // the limit: what a script saved in a file writes from inside is left out on purpose
+  assert.match(es, /guion guardado en un archivo/i, es);
+  assert.match(en, /script saved in a file/i, en);
 });

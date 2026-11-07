@@ -186,6 +186,10 @@ const CHAINS = {
     // Sacar un control del arnés de la configuración de la herramienta (disableAllHooks, un interruptor en env, un hook
     // del arnés) frena antes, en cualquier paso. Ver lib/controls-off.js; la terminal la mira safety-guard-pre.sh.
     { name: 'on-controls-off', path: path.join(PIPELINE_SCRIPTS, 'on-controls-off.js'), steps: ['all'], effect: 'blocks' },
+    // La coordinadora no cambia archivos de los repos ni de la copia instalada del arnés: se lo encarga a una sesión.
+    // Antes del portón de carril, así ve su mensaje. Ver scripts/lib/coordination-writes.js; la consola la mira
+    // on-bash-write-gate.js.
+    { name: 'on-coordination-write', path: path.join(PIPELINE_SCRIPTS, 'on-coordination-write.js'), steps: ['all'], effect: 'blocks' },
     // Portón de CARRIL: deniega código sin pipeline/ad-hoc, código antes del plan aprobado,
     // y escrituras directas al estado del pipeline. Va PRIMERO: es el más amplio. Ver lib/story-gate.js.
     // `steps` (los pasos del pipeline donde actúa, o 'all') y `effect` (blocks · warns · records) no los usa el
