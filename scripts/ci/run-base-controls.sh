@@ -532,8 +532,15 @@ function classifierHere() {
 }
 // un argumento de shell entre comillas simples, para pegar tal cual en una terminal
 const shq = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
-function signCommand(root, entries, out, base) {
-  return `bash ${SELF} approve --root ${root === '<repo>' ? root : shq(root)}${base ? ` --base ${shq(base)}` : ''} --out ${shq(out)} --entries ${shq(JSON.stringify(entries))}`;
+// este guion con su ruta completa, para el comando que se le da a una persona: corre desde cualquier carpeta. En Git Bash
+// de Windows la carpeta llega como /c/… o C:/…, o con barras \: sale con /, sin resolverla contra la unidad de trabajo
+function selfPath() {
+  const dir = process.env.BASE_CONTROLS_SELF_DIR;
+  return dir ? `${dir.replace(/\\/g, '/').replace(/\/+$/, '')}/run-base-controls.sh` : null;
+}
+// con `guion` el comando nombra ese guion entre comillas; sin él, la ruta del repo (el rojo de la CI, que lee otra máquina)
+function signCommand(root, entries, out, base, { guion = null } = {}) {
+  return `bash ${guion ? shq(guion) : SELF} approve --root ${root === '<repo>' ? root : shq(root)}${base ? ` --base ${shq(base)}` : ''} --out ${shq(out)} --entries ${shq(JSON.stringify(entries))}`;
 }
 
 // ── el commit armado ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -855,7 +862,7 @@ function cmdPending() {
   let deMain = null;
   try { deMain = refreshedFrom(a, work, deDueno.map(({ x }) => x), baseApprovalHashes(a.root, a.base)); } finally { fs.rmSync(work, { recursive: true, force: true }); }
   if (deMain) { console.log(`base-controls: no hace falta firmar: es lo que el dueño firmó (${deMain.slice(0, 12)}) más lo que trajo main, con fusión limpia`); return; }
-  const firma = signCommand(a.root, a.entries, a.approvalsOut, a.baseArg);
+  const firma = signCommand(a.root, a.entries, a.approvalsOut, a.baseArg, { guion: selfPath() });
   console.log(`la firma, desde la sesión (el dueño la aprueba en la ventana de permiso, o, donde la ventana no llega, con su click en el cuadro de opciones o su «aprobado»): ${firma}`);
   console.log(`o, si prefiere, en su terminal: ${firma} --terminal`);
 }
@@ -992,7 +999,7 @@ function cmdClassify() {
 // La refirma tras traer main la puede dar la sesión designada (el freno la deja pasar sin ventana, con `via: delegacion`
 // en su registro): el guion la vuelve a clasificar y escribe la línea de la refirma sólo si da lo mismo que el registro
 function approveByWindow(root, out, entries, c) {
-  const terminal = `${signCommand(root, entries, out, opt('--base'))} --terminal`;
+  const terminal = `${signCommand(root, entries, out, opt('--base'), { guion: selfPath() })} --terminal`;
   let ow = null;
   let porQue = '';
   try { ow = require(path.join(process.env.BASE_CONTROLS_SELF_DIR || '', '..', 'lib', 'owner-window.js')); } catch (e) { ow = null; porQue = ` (${String((e && e.message) || e).split('\n')[0]})`; }
@@ -1003,7 +1010,7 @@ function approveByWindow(root, out, entries, c) {
   const firma = c && c.clase === REFRESH ? REFRESH : 'control-change';
   // la constancia que ya está en la carpeta se mira antes de la firma: después, el «Sí» del dueño no escribiría nada
   const antes = () => { const y = yaEnLaCarpeta(root, out, entries); return y ? { codigo: 1, motivo: y } : null; };
-  const r = ow.exigir({ firma, argv, resumen: entries.map((e) => e.path).join(', '), propia: sesion, antes });
+  const r = ow.exigir({ firma, argv, resumen: entries.map((e) => e.path).join(', '), propia: sesion, antes, terminal });
   if (r.codigo !== 0) { console.error(`run-base-controls approve: ${r.motivo}: no se firmó nada.`); process.exit(1); }
   if (r.via !== 'delegacion') {
     let by = 'dueño';
