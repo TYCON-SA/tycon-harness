@@ -159,23 +159,26 @@ const aplica = (s, rel) => {
 };
 const corto = (t) => { const x = String(t).trim(); return x.length > TEXTO_MAX ? `${x.slice(0, TEXTO_MAX)}…` : x; };
 
-/** Las señales en las líneas que agrega o borra lo propio del carril, cada repo contra su base. */
-function buscar(adhoc, senales, { repos = [], sinSeguir = false, git = gitPorDefecto } = {}) {
+/**
+ * Las señales en las líneas que agrega o borra lo propio del carril, cada repo contra su base. `medida`: la de esta vuelta
+ * del freno (sin ella, mide); de ella salen los archivos y la base de cada repo.
+ */
+function buscar(adhoc, senales, { repos = [], sinSeguir = false, git = gitPorDefecto, medida } = {}) {
   const base = require('./adhoc-base.js');
   const { isCodeFile } = require('./story-gate.js');
-  const propios = base.propiosDelCarril(adhoc, { repos, sinSeguir, suma: () => true });
+  const m = medida || base.medirLoPropio(adhoc, { repos });
+  const porRepo = base.rutasDe(m, adhoc, { como: 'propio', repos: [...new Set([...base.reposDelCarril(adhoc), ...repos])], sinSeguir });
   const hallazgos = [];
-  const avisos = [...propios.avisos];
-  const fallas = [...propios.fallas];
-  for (const repo of Object.keys(propios.porRepo)) {
-    const rels = propios.porRepo[repo];
+  const avisos = [...m.avisos.filter((x) => !m.fallas.includes(x))];
+  const fallas = [...m.fallas];
+  for (const repo of Object.keys(porRepo)) {
+    const rels = porRepo[repo];
     if (!rels.length) continue;
     try {
       const lista = typeof senales === 'function' ? senales(repo) : senales;
       const deLinea = lista.filter((s) => s.pattern).map((s) => ({ ...s, re: new RegExp(s.pattern) }));
       const deRuta = lista.filter((s) => s.path).map((s) => ({ ...s, re: new RegExp(s.path, 'i') }));
-      const { sha, aviso } = base.basePropia(repo, adhoc);
-      if (aviso) avisos.push(aviso);
+      const { sha } = m.porRepo[repo].base;
       const sinSeguirDeGit = new Set(git(repo, ['ls-files', '-z', '--others', '--exclude-standard', '--', ...rels]).split('\0').filter(Boolean));
       const seguidos = rels.filter((r) => !sinSeguirDeGit.has(r));
       const lineas = [];

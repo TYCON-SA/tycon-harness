@@ -1515,6 +1515,35 @@ test('T28 Cuadro_Descartar_ClasificaContraLaBase @story-8.196 @ac-13', () => {
   assert.strictEqual(new Set(sinBase.stdout.split('\n')).size, sinBase.stdout.split('\n').length, 'cada aviso una vez');
 });
 
+// 🔴 Falla con: «descartar» leyendo otra medida que el resto del carril, o mandando a borrar lo sin seguir de otra sesión.
+test('T52 Descartar_ListaLaDeHoy_SinLoAjeno @story-8.190 @ac-35', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-')));
+  const origen = `${repo}-origen.git`;
+  const git = (...a) => execFileSync('git', ['-C', repo, ...a], { encoding: 'utf8' }).trim();
+  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origen]);
+  git('init', '-q', '-b', 'main'); git('config', 'user.email', 't@t'); git('config', 'user.name', 't');
+  fs.mkdirSync(path.join(repo, 'src'));
+  fs.writeFileSync(path.join(repo, 'src', 'a.ts'), 'a\n');
+  git('add', '.'); git('commit', '-qm', 'base');
+  git('remote', 'add', 'origin', origen); git('push', '-q', 'origin', 'main');
+  git('checkout', '-q', '-b', 'arreglo');
+  const base = { sha: git('rev-parse', 'origin/main'), traida: true, origen };
+  fs.writeFileSync(path.join(repo, 'src', 'hecho.ts'), 'h\n');
+  git('add', '.'); git('commit', '-qm', 'el carril');
+  fs.writeFileSync(path.join(repo, 'src', 'a.ts'), 'executeQuery("x");\n');
+  fs.writeFileSync(path.join(repo, 'src', 'ajeno.ts'), 'de otra sesión\n');
+  // sin seguir y anotado: es del carril, y se manda a borrar
+  fs.writeFileSync(path.join(repo, 'src', 'nuevo.ts'), 'del carril\n');
+  carrilFrenado(home, 'ses-c52', { files: [path.join(repo, 'src', 'a.ts'), path.join(repo, 'src', 'nuevo.ts')], bases: { [repo]: base } });
+  const r = markerSinVentana(home, 'ses-c52', ALLOW('descartar'));
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /src\/a\.ts/);
+  assert.match(r.stdout, /src\/hecho\.ts/);
+  assert.match(r.stdout.split('\n').find((l) => /para borrar/.test(l)) || '', /nuevo\.ts/);
+  assert.doesNotMatch(r.stdout, /ajeno\.ts/);
+});
+
 // 🔴 Falla con: el texto libre de la sesión pegado sin escapar en el comando que corre el dueño en su terminal.
 test('T29 Cuadro_ComandoParaElDueno_SinInyeccion @story-8.196 @ac-13', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));

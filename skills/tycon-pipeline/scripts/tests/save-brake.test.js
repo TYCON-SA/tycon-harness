@@ -639,7 +639,7 @@ test('T26 SaveBrake_TraerMain_NoSumaLoDeOtros @story-8.181 @ac-12', (t) => {
   sh(d, 'checkout', '-q', RAMA);
   sh(d, 'merge', '-q', '--no-edit', 'origin/main');
   const antes = sh(d, 'rev-parse', `${RAMA}~1`);
-  carril(h, { maxFiles: 3, files: [path.join(d, 'src', 'propio0.js')], bases: { [d]: { sha: antes, traida: true } } });
+  carril(h, { maxFiles: 3, files: [path.join(d, 'src', 'propio0.js')], bases: { [d]: { sha: antes, traida: true, origen: sh(d, 'remote', 'get-url', 'origin') } } });
   const { cuentaDelCarril } = require(path.join(SCRIPTS, 'lib', 'adhoc-base.js'));
   assert.deepStrictEqual(cuentaDelCarril(JSON.parse(fs.readFileSync(path.join(estado(h), 'adhoc', `${SID}.json`), 'utf8'))).archivos.map((f) => path.basename(f)).sort(), ['propio0.js', 'propio1.js']);
   assert.ok(!(guardar(d, h) || {}).texto, 'lo traído de main no suma');
@@ -848,8 +848,9 @@ test('SaveBrake_ComandoQueNoSeLee_SeMideDondeCorre @story-8.181 @ac-11', (t) => 
   for (const command of [`pushd ${fuera} && popd && git push origin x`, `false && cd ${fuera}; git commit -m x`, `cd ${fuera} && gh pr create --repo o/r --head x --title t`]) {
     assert.match((brake().decidir({ command, cwd: d, sid: SID, home: h }) || {}).texto || '', elTope, command);
   }
-  // el costo, escrito en la guía: un guardado de verdad en otra carpeta también cobra el tope de la rama de la sesión
-  assert.match((brake().decidir({ command: `cd ${fuera} && git init -q && git add -A && git commit -m x`, cwd: d, sid: SID, home: h }) || {}).texto || '', elTope);
+  // un guardado de verdad en otra carpeta, con un `cd` que el lector asegura, ya no cobra la rama de la sesión (8.190)
+  const r = brake().decidir({ command: `cd ${fuera} && git init -q && git add -A && git commit -m x`, cwd: d, sid: SID, home: h });
+  assert.ok(r && r.pregunta && !r.texto, JSON.stringify(r));
 });
 
 // 🔴 Falla con: `git diff HEAD` en un repo sin su primer commit, leído como «no pude medir»: el commit que lo arregla queda frenado.
@@ -858,7 +859,7 @@ test('SaveBrake_RepoSinCommits_GuardaElPrimero @story-8.181 @ac-13', (t) => {
   sh(d, 'init', '-q', '-b', 'main');
   escribir(d, 'src/app.js', 'x\n');
   const h = home(t);
-  carril(h, { maxFiles: 8, bases: { [fs.realpathSync(d)]: { sha: null, traida: false, motivo: 'sin origin' } } });
+  carril(h, { maxFiles: 8, bases: { [fs.realpathSync(d)]: { sha: null, traida: false, motivo: 'sin origin', origen: null } } });
   const r = brake().decidir({ command: 'git add -A && git commit -m init', cwd: d, sid: SID, home: h });
   assert.ok(r && r.pregunta && !r.texto, JSON.stringify(r));
 });
@@ -885,7 +886,7 @@ test('SaveBrake_OrigenLocalAtrasado_ElTopeTraeMainAntesDeFrenar @story-8.181 @ac
   sh(d, 'checkout', '-q', RAMA);
   sh(d, 'merge', '-q', '--no-edit', 'main');
   sh(d, 'update-ref', 'refs/remotes/origin/main', atras);
-  carril(h, { maxFiles: 8, bases: { [d]: { sha: atras, traida: true } } });
+  carril(h, { maxFiles: 8, bases: { [d]: { sha: atras, traida: true, origen: sh(d, 'remote', 'get-url', 'origin') } } });
   assert.doesNotMatch((guardar(d, h) || {}).texto || '', elTope);
 });
 
@@ -955,7 +956,11 @@ test('SaveBrake_VariableSinExpandir_NoTraeSuRepo_LaCarpetaBorradaSi @story-8.181
   commitDeArchivos(d, 'a', 1);
   carril(h, { maxFiles: 8, files: [path.join(d, 'src', 'a0.js'), path.join(otro, '$L', 'p.js')] });
   assert.ok(!(guardar(d, h) || {}).texto);
-  // una carpeta que se borró sigue diciendo de qué repo es: su guardado se mide
+  // una carpeta que se borró sigue diciendo de qué repo es, si el repo la conoció: su guardado se mide
+  escribir(otro, 'borrada/g.js', 'x\n');
+  sh(otro, 'add', '-A');
+  sh(otro, 'commit', '-q', '-m', 'g');
+  fs.rmSync(path.join(otro, 'borrada'), { recursive: true });
   carril(h, { maxFiles: 8, files: [path.join(d, 'src', 'a0.js'), path.join(otro, 'borrada', 'g.js')] });
   assert.match((guardar(otro, h) || {}).texto || '', elTope);
 });
