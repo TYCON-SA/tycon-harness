@@ -18,6 +18,9 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const RUNNER = path.join(__dirname, '..', 'lib', 'run-suites-json.js');
+// «Correr todas» heredada de quien lanza esta suite haría correr todo a cada corredor de juguete y rompería los casos
+// del recorte; los que la prueban la ponen ellos en su propio entorno.
+delete process.env.TYCON_GATE_ALL_SUITES;
 
 function armar(suites, { conSkills = true } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'suites-json-'));
@@ -1285,6 +1288,21 @@ test('T20e RunSuites_PortableSuite_HomesRootDeclared — la HOME vacía va bajo 
   const r2 = runWith(f);
   assert.strictEqual(r2.status, 0, r2.stdout + r2.stderr);
   assert.ok(fs.readFileSync(path.join(f.root, 'casa.txt'), 'utf8').startsWith(path.join(path.resolve(f.repo), '.advisors', 'suite-homes-')), 'sin raíz declarada, bajo .advisors del repo');
+});
+
+// «Correr todas» es una orden al corredor, no a cada suite: una suite que corre su propio portón de juguete la tomaría
+// como suya y dejaría de acotar (las rojas falsas de las completas pedidas con la variable).
+// 🔴 mutación: sacarla de DEL_PORTON → la suite la ve y el ambiente no la nombra entre las quitadas.
+test('Corredor_QuitaTodasLasSuitesALasHijas @story-8.230 @ac-17 — con TYCON_GATE_ALL_SUITES=1 el corredor corre todo, pero la suite no la recibe', () => {
+  const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/hija.test.js', requiere: [] }] });
+  const marca = path.join(f.root, 'hija.txt');
+  f.escribir('arnes', 'tests/hija.test.js', `require('fs').writeFileSync(${JSON.stringify(marca)}, String(process.env.TYCON_GATE_ALL_SUITES));`);
+  const out = path.join(f.root, 'out.json');
+  const r = spawnSync('node', [RUNNER, f.repo, out, '--skills', f.skills], { encoding: 'utf8', env: { ...process.env, TYCON_GATE_ALL_SUITES: '1' } });
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  assert.strictEqual(fs.readFileSync(marca, 'utf8'), 'undefined', 'la suite no la hereda');
+  const amb = JSON.parse(fs.readFileSync(out, 'utf8')).ambiente || {};
+  assert.ok((amb.removed || []).includes('TYCON_GATE_ALL_SUITES'), `el ambiente la nombra entre las quitadas: ${JSON.stringify(amb)}`);
 });
 
 // La carpeta temporal de una portable queda fuera de todo repo, como en la CI: hay suites que arman ahí un repo de

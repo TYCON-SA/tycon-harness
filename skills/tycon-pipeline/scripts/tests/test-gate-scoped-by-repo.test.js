@@ -46,7 +46,10 @@ function lab({ clave }) {
   const state = tmp('acot-state-');
   const skills = tmp('acot-skills-');
   const repo = tmp('acot-repo-');
-  git(repo, 'init', '-q'); git(repo, 'config', 'user.email', 'prueba@ejemplo.invalid'); git(repo, 'config', 'user.name', 'prueba');
+  // La rama se nombra, para no depender de cómo la nombra el git de la máquina (el de Apple nace en `main`). `master`:
+  // el corredor la reconoce como principal (la T3 lo necesita) y no es `main`, que el portón usa de respaldo para saber
+  // qué se tocó (con ella, la T4 sabría qué se tocó).
+  git(repo, 'init', '-q', '-b', 'master'); git(repo, 'config', 'user.email', 'prueba@ejemplo.invalid'); git(repo, 'config', 'user.name', 'prueba');
   const tests = path.join(repo, 'scripts', 'tests');
   fs.mkdirSync(tests, { recursive: true });
   fs.writeFileSync(path.join(tests, 'suites.json'), JSON.stringify({ diarias: [{ raiz: 'arnes', ruta: 'tests/a.test.sh' }, { raiz: 'arnes', ruta: 'tests/b.test.sh' }], semanales: [] }, null, 2));
@@ -117,8 +120,7 @@ test('T3 PortonAcotado_NadieLee_Verde — con la clave y un cambio que ninguna s
   assert.equal(artefacto(l).suite_green, true);
 });
 
-test('T4 PortonAcotado_SinSaberQueSeToco_CorreTodo_YUnaRojaFrena — con la clave y la base del marcador ilegible corre todas, y una roja sale roja', () => {
-  // 🔴 mutación: acotar sin saber qué se tocó sale «sin acotar» sin correr nada, y el cierre lo acepta con la suite b roja.
+function sinSaberQueSeToco() {
   const l = lab({ clave: true });
   const mf = path.join(l.home, '.claude', '.tycon-pipeline', 'active', `${SID}.json`);
   const m = JSON.parse(fs.readFileSync(mf, 'utf8'));
@@ -136,6 +138,22 @@ test('T4 PortonAcotado_SinSaberQueSeToco_CorreTodo_YUnaRojaFrena — con la clav
   assert.equal(art.suite_green, false, JSON.stringify(art));
   assert.equal(art.unscoped, undefined);
   assert.equal(art.scoped_by_repo, undefined);
+}
+
+test('T4 PortonAcotado_SinSaberQueSeToco_CorreTodo_YUnaRojaFrena — con la clave y la base del marcador ilegible corre todas, y una roja sale roja', () => {
+  // 🔴 mutación: acotar sin saber qué se tocó sale «sin acotar» sin correr nada, y el cierre lo acepta con la suite b roja.
+  sinSaberQueSeToco();
+});
+
+test('T18 PortonAcotado_T4_NoDependeDeLaRamaDeFabrica @story-8.230 @ac-18 — con un git que nace en main, la T4 da lo mismo', (t) => {
+  // 🔴 mutación: el repo de juguete nace con `git init` a secas → con init.defaultBranch=main la rama de trabajo es la
+  // principal, no hay nada tocado contra ella, y la puerta sale «sin acotar» sin correr las suites.
+  const cfg = path.join(tmp('acot-gitcfg-'), 'gitconfig');
+  fs.writeFileSync(cfg, '[init]\n\tdefaultBranch = main\n');
+  const antes = process.env.GIT_CONFIG_GLOBAL;
+  process.env.GIT_CONFIG_GLOBAL = cfg;
+  t.after(() => { if (antes === undefined) delete process.env.GIT_CONFIG_GLOBAL; else process.env.GIT_CONFIG_GLOBAL = antes; });
+  sinSaberQueSeToco();
 });
 
 test('T5 PortonAcotado_TodasPedidas_ElCierreNoDiceAcotado — con TYCON_GATE_ALL_SUITES=1 corren todas y el cierre no dice que corrieron sólo las tocadas', () => {

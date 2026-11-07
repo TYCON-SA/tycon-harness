@@ -36,7 +36,8 @@ const TEST_GATE = path.join(SCRIPTS, 'test-gate.sh');
 // Variables del entorno de quien corre la suite que cambian un veredicto o el lugar del estado: fuera, siempre.
 const DEL_ENTORNO = ['NODE_TEST_CONTEXT', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID', 'TYCON_NO_DEEP_REVIEW', 'DOD_BYPASS',
   'TYCON_TEST_SCOPE', 'TYCON_TEST_GATE', 'TYCON_TEST_GATE_COMPANION', 'TYCON_EVIDENCE_DIR', 'TYCON_EVIDENCE_KEY',
-  'TYCON_EVIDENCE_KEY_FAILED', 'TYCON_COVERAGE_BASE', 'STOP_AUTONOMY', 'TYCON_SNAPSHOT_GUARD', 'TYCON_PACKS_DIR'];
+  'TYCON_EVIDENCE_KEY_FAILED', 'TYCON_COVERAGE_BASE', 'STOP_AUTONOMY', 'TYCON_SNAPSHOT_GUARD', 'TYCON_PACKS_DIR',
+  'TYCON_GATE_ALL_SUITES'];
 
 function entorno(home, sid, extra) {
   const env = { ...process.env };
