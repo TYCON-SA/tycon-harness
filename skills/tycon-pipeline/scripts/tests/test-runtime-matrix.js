@@ -2007,6 +2007,110 @@ withWaiverLog(() => {
   }
 }
 
+// Historia paraguas: la matriz mide sólo la tanda de la ejecución (`compute({ batch })`). El criterio 1 es de la
+// primera tanda, el 2 de la segunda y el 3 de ninguna, salvo que `pipelines` lo ponga en otra; cada uno con su fila.
+{
+  const paraguas = (pipelines) => {
+    const f = makeWorkspace();
+    fs.writeFileSync(f.storyPath, [
+      '---', 'story: 9.9', 'status: in-progress', 'files_to_modify:', '  - src/Feature.cs', 'pipelines:', ...pipelines, '---', '',
+      '## Acceptance Criteria', '',
+      '1. **Given** algo, **When** pasa, **Then** resultado.',
+      '2. **Given** otra cosa, **Then** otro resultado.',
+      '3. **Given** una tercera, **Then** su resultado.', '',
+      '### Tests', '',
+      '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|',
+      '| T1 | `FeatureTests.Caso1` | 1 | integration | x | y |',
+      '| T2 | `FeatureTests.Caso2` | 2 | integration | x | y |',
+      '| T3 | `FeatureTests.Caso3` | 3 | integration | x | y |', '',
+    ].join('\n'));
+    return f;
+  };
+  const AB = ['  - name: A-la-primera', '    status: pending', '    acs: [1]', '  - name: B-la-segunda', '    status: pending', '    acs: [2]'];
+
+  {
+    const f = paraguas(AB);
+    writeMirroredSmoke(f.dodDir, f.gatesLog, '9.9', [1, 3]);
+    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, batch: 'A-la-primera' });
+    check('T1 Matrix_Batch_OnlyItsAcs @story-8.239 @ac-1',
+      !r.structuralError && JSON.stringify(r.acs) === '[1,3]' && r.green === true && r.batch === 'A-la-primera',
+      JSON.stringify({ e: r.structuralError, acs: r.acs, green: r.green, notRun: r.notRun, batch: r.batch }));
+  }
+  {
+    const f = paraguas([...AB, '  - name: C-la-bloqueada', '    status: blocked', '    blocked_by: "espera a la A"', '    acs_pending: [3]']);
+    writeMirroredSmoke(f.dodDir, f.gatesLog, '9.9', [1]);
+    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, batch: 'A-la-primera' });
+    const md = r.structuralError ? '' : rm.renderMd(r);
+    check('T2 Matrix_Batch_OtherPendingOut_Said @story-8.239 @ac-2',
+      JSON.stringify(r.acs) === '[1]' && JSON.stringify(r.outOfBatchAcs) === '[2]'
+        && r.warnings.some((w) => w.includes('fuera de esta tanda: B-la-segunda (AC 2)'))
+        && r.warnings.some((w) => /tanda blocked/.test(w) && /C-la-bloqueada/.test(w))
+        && md.includes('A-la-primera') && md.includes('fuera de esta tanda: B-la-segunda (AC 2)'),
+      JSON.stringify({ e: r.structuralError, acs: r.acs, out: r.outOfBatchAcs, w: r.warnings }));
+  }
+  {
+    const f = paraguas(['  - name: A-la-primera', '    status: done', '    acs: [1]', '  - name: B-la-segunda', '    status: pending', '    acs: [2]']);
+    writeMirroredSmoke(f.dodDir, f.gatesLog, '9.9', [2, 3]);
+    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, batch: 'B-la-segunda' });
+    check('T3 Matrix_Batch_DoneOut @story-8.239 @ac-2',
+      JSON.stringify(r.acs) === '[2,3]' && r.green === true && r.warnings.some((w) => w.includes('fuera de esta tanda: A-la-primera (AC 1)')),
+      JSON.stringify({ e: r.structuralError, acs: r.acs, w: r.warnings }));
+  }
+  {
+    const f = paraguas(AB);
+    writeMirroredSmoke(f.dodDir, f.gatesLog, '9.9', [1, 3]);
+    const sin = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog });
+    const nulo = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, batch: null });
+    check('T4 Matrix_NoBatch_AsToday @story-8.239 @ac-3',
+      JSON.stringify(sin.acs) === '[1,2,3]' && sin.green === false && JSON.stringify(sin.notRun) === '[2]'
+        && sin.batch === null && sin.outOfBatchAcs.length === 0 && sin.hash === nulo.hash
+        && !sin.warnings.some((w) => /fuera de esta tanda/.test(w)),
+      JSON.stringify({ acs: sin.acs, notRun: sin.notRun, batch: sin.batch, out: sin.outOfBatchAcs }));
+  }
+  {
+    const f = paraguas([...AB, '  - name: C-sin-criterios', '    status: pending']);
+    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, batch: 'C-sin-criterios' });
+    check('T5 Matrix_Batch_WithoutAcs_AsToday @story-8.239 @ac-4',
+      JSON.stringify(r.acs) === '[1,2,3]' && r.outOfBatchAcs.length === 0
+        && r.warnings.some((w) => /C-sin-criterios/.test(w) && /no declara criterios/.test(w)),
+      JSON.stringify({ e: r.structuralError, acs: r.acs, w: r.warnings }));
+  }
+  {
+    const z = rm.compute({ storyPath: paraguas(AB).storyPath, batch: 'Z' });
+    const hecha = rm.compute({ storyPath: paraguas(['  - name: A-la-primera', '    status: done', '    acs: [1]']).storyPath, batch: 'A-la-primera' });
+    const repetida = rm.compute({ storyPath: paraguas([...AB, '  - name: A-la-primera', '    status: pending', '    acs: [3]']).storyPath, batch: 'B-la-segunda' });
+    const inexistente = rm.compute({ storyPath: paraguas(['  - name: A-la-primera', '    status: pending', '    acs: [1, 9]']).storyPath, batch: 'A-la-primera' });
+    check('T6 Matrix_Batch_Invalid_StructuralError @story-8.239 @ac-4',
+      /Z/.test(z.structuralError || '') && /A-la-primera/.test(z.structuralError || '') && /B-la-segunda/.test(z.structuralError || '')
+        && /done/.test(hecha.structuralError || '')
+        && /repetid/.test(repetida.structuralError || '')
+        && !inexistente.structuralError && inexistente.warnings.some((w) => /9/.test(w) && /no está entre los criterios/.test(w)),
+      JSON.stringify({ z: z.structuralError, hecha: hecha.structuralError, repetida: repetida.structuralError, inex: inexistente.structuralError || inexistente.warnings }));
+  }
+  {
+    const f = paraguas(['  - name: A-la-primera', '    status: pending', '    acs: [1]', '  - name: B-la-segunda', '    status: blocked', '    blocked_by: "espera"', '    acs_pending: [2]']);
+    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, batch: 'B-la-segunda' });
+    check('T7 Matrix_Batch_OwnBlockedMeasured @story-8.239 @ac-1',
+      JSON.stringify(r.acs) === '[2,3]' && !(r.blockedAcs || []).includes(2),
+      JSON.stringify({ e: r.structuralError, acs: r.acs, blocked: r.blockedAcs }));
+  }
+  {
+    const f = paraguas(AB);
+    const home = path.join(f.ws, 'home');
+    const gl = path.join(require(path.join(__dirname, '..', 'lib', 'state-dir.js')).stateDir(home), 'gates.log');
+    fs.mkdirSync(path.dirname(gl), { recursive: true });
+    writeMirroredSmoke(f.dodDir, gl, '9.9', [1, 3]);
+    const cli = (extra) => require('child_process').spawnSync(process.execPath,
+      [path.join(__dirname, '..', 'runtime-matrix.js'), '--story', f.storyPath, '--no-write', ...extra],
+      { encoding: 'utf8', env: { ...process.env, HOME: home, USERPROFILE: home } });
+    const con = cli(['--batch', 'A-la-primera']);
+    const sin = cli([]);
+    check('T8 MatrixCli_BatchFlag @story-8.239 @ac-7',
+      con.status === 0 && /tanda A-la-primera/.test(con.stdout.split('\n')[0]) && sin.status === 1 && !/tanda A-la-primera/.test(sin.stdout.split('\n')[0]),
+      JSON.stringify({ con: con.status, l: con.stdout.split('\n')[0], err: con.stderr.slice(0, 300), sin: sin.status }));
+  }
+}
+
 console.log('');
 if (failures > 0) {
   console.error(`✗ ${failures} caso(s) fallando`);

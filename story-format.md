@@ -176,6 +176,11 @@ pipelines:
 - Cuando todos los pipelines tienen `status: done`, el `status` global de la story DEBE ser `done`.
 - Dos tandas sin terminar que nombran el mismo archivo tienen que decir, cada una, qué entrega sola (`delivers`); si ninguna sirve sola, se juntan en una → **VAL-W19 WARNING** si alguna no lo dice.
 
+**La tanda de la ejecución.** La ejecución que entrega una tanda la anota con `marker.js set-batch <name>` (una vez, y la
+tanda no puede estar `done`). Desde ahí, «Preparar el commit» le pide la evidencia en vivo de los criterios de esa tanda
+(`acs` ∪ `acs_pending`) más los de ninguna tanda, no la de todas. Cerrar una tanda (`status: done`) pide la evidencia de
+la que se cierra. Pasar la historia a `review` o `done` pide la de todas.
+
 **Tracking cruzado por `tycon-deferral-tracker`**:
 
 Cualquier AC/task/test en `acs_pending` / `tasks_pending` / `tests_pending` debe estar documentado en **al menos uno** de:
