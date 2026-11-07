@@ -87,6 +87,23 @@ test('todo agente del pase recibe dónde pararse, dónde armar el laboratorio y 
   }
 });
 
+// Claude Code frena, aun sin permisos, todo `rm` cuyo destino no puede resolver (un comodín, una ruta relativa después
+// de un `cd`, una variable) y espera el click de una persona: sin nadie mirando, el agente del pase queda parado.
+test('todo agente del pase recibe que no borra con rm y que una carpeta vacía se arma nueva con mktemp', () => {
+  const { prompts, skeptics } = correr({ files: ['src/a.js'], runDir: '/repo/.advisors/pipeline-runs/9.9-20261107-1000' });
+  assert.ok(prompts.length >= 7, `las seis lentes y su verificador (${prompts.length} agentes)`);
+  for (const p of prompts) {
+    const quien = /Un hunter \(lente/.test(p) ? 'el verificador' : `la lente «${(p.match(/LENTE: ([^\n.]+)/) || [])[1] || '?'}»`;
+    assert.match(p, /NUNCA BORRES CON rm/, `${quien}: trae la regla`);
+    assert.match(p, /comodines/, `${quien}: nombra el comodín`);
+    assert.match(p, /rutas relativas después de un\s+`cd`/, `${quien}: nombra la ruta relativa después de un cd`);
+    assert.match(p, /armá OTRA con `mktemp -d \/tmp\/probe\.XXXXXX`/, `${quien}: la carpeta vacía se arma nueva`);
+    assert.match(p, /no se limpia/, `${quien}: lo de /tmp se deja`);
+  }
+  assert.match(skeptics[0], /cada archivo por su ruta absoluta, sin comodines ni -r/, 'la prueba del repo se borra archivo por archivo');
+  assert.doesNotMatch(skeptics[0], /borrá la prueba del repo \(/, 'ya no dice sólo «borrá la prueba» sin cómo');
+});
+
 test('el verificador recibe la orden de guardar la prueba en <runDir>/step-05b-probes/<lente>-<n>', () => {
   const runDir = '/repo/.advisors/pipeline-runs/9.9-20260917-1200';
   const { skeptics } = correr({ files: ['src/a.js'], runDir });
