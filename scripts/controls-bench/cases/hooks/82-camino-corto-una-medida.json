@@ -1,0 +1,55 @@
+{
+  "__doc": "T50 Banco_CaminoCortoUnaMedida @story-8.190 @ac-34. Una sola medida de lo propio en el camino corto: el tope, la pantalla, los datos y el riesgo leen la misma. Estos casos fijan el empuje: lo que git no sigue (de otra sesión, sin anotar) no suma cuando el comando sólo empuja, aunque lleve `| cat` detrás; y suma cuando el comando hace algo más que puede subirlo, como `git add -A` antes del empuje.",
+  "hooks": [
+    {
+      "hook": "on-pre-commit.js (una sola medida del camino corto)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-pre-commit.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "camino-corto-empuje-con-cat-no-cuenta-lo-sin-seguir",
+          "type": "must-not-block",
+          "_por_que": "nueve archivos sin seguir de otra sesión, cupo 8: el comando sólo empuja (con `| cat` detrás), así que lo sin seguir no suma y pregunta.",
+          "setup": [
+            "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && git update-ref refs/remotes/origin/main HEAD && git checkout -q -b arreglo",
+            "mkdir -p src && for i in 1 2 3 4 5 6 7 8 9; do echo x > src/ajeno$i.js; done",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"maxFiles\":8,\"files\":[],\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-medida1.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-medida1\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\""
+          ],
+          "stdin": {
+            "session_id": "bench-medida1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push | cat"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stdout_re": ["\"permissionDecision\":\"ask\""]
+          }
+        },
+        {
+          "id": "camino-corto-empuje-con-add-cuenta-lo-sin-seguir",
+          "type": "must-block",
+          "_por_que": "el mismo armado, con `git add -A` antes del empuje: lo sin seguir sube en el mismo comando, suma, y no guarda.",
+          "setup": [
+            "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && git update-ref refs/remotes/origin/main HEAD && git checkout -q -b arreglo",
+            "mkdir -p src && for i in 1 2 3 4 5 6 7 8 9; do echo x > src/ajeno$i.js; done",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"maxFiles\":8,\"files\":[],\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-medida2.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-medida2\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\""
+          ],
+          "stdin": {
+            "session_id": "bench-medida2",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git add -A && git push"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": ["PASÓ EL TOPE"]
+          }
+        }
+      ]
+    }
+  ]
+}

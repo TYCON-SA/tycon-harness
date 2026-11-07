@@ -5936,14 +5936,22 @@ function cmdAdhocAllowDataChange(io) {
     // la base lo que la base tiene; lo que no tiene es nuevo del carril, aunque ya esté guardado en la rama. Lo que no se
     // puede saber no se manda a borrar
     const base = require('./lib/adhoc-base.js');
-    const p = base.propiosDelCarril(a, { suma: () => true, sinSeguir: false });
+    const medida = base.medirLoPropio(a);
+    // lo propio, como lo cuenta el tope sin mirar si es implementación: lo sin seguir de otra sesión no entra
+    const porRepo = base.rutasDe(medida, a, { como: 'propio' });
     const lineas = ['Descartá lo del carril: vuelven a su base sólo estos archivos, y después se cierra el carril.'];
-    for (const m of p.avisos) lineas.push(`  ⚠ ${m}`);
-    for (const repo of Object.keys(p.porRepo)) {
-      const rels = p.porRepo[repo];
+    for (const m of medida.avisos) lineas.push(`  ⚠ ${m}`);
+    // un repo que no se pudo medir: lo anotado ahí queda como «no pude saber», nunca para borrar
+    for (const repo of medida.sinMedir) {
+      for (const f of [...(a.files || []), ...(a.rutas || [])]) {
+        const rel = path.relative(repo, String(f));
+        if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) lineas.push(`  ⚠ no pude saber si ${path.join(repo, rel)} está en la base: miralo a mano antes de restaurarlo o borrarlo.`);
+      }
+    }
+    for (const repo of Object.keys(porRepo)) {
+      const rels = porRepo[repo];
       if (!rels.length) continue;
-      const { sha, aviso } = base.basePropia(repo, a);
-      if (aviso) lineas.push(`  ⚠ ${aviso}`);
+      const { sha } = medida.porRepo[repo].base;
       const enLaBase = [];
       const nuevos = [];
       const sinSaber = [];
@@ -5957,7 +5965,6 @@ function cmdAdhocAllowDataChange(io) {
       if (nuevos.length) lineas.push(`  archivos nuevos del carril, para borrar: ${nuevos.map((r) => citar(path.join(repo, r))).join(' ')}`);
       for (const rel of sinSaber) lineas.push(`  ⚠ no pude saber si ${path.join(repo, rel)} está en la base: miralo a mano antes de restaurarlo o borrarlo.`);
     }
-    for (const m of p.fallas) lineas.push(`  ⚠ ${m}`);
     lineas.push(`  Después: node ${citar(__filename)} adhoc clear`);
     process.stdout.write([...new Set(lineas)].join('\n') + '\n');
     process.exit(0);

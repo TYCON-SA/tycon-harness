@@ -6797,8 +6797,10 @@ function cmdRevisoresDelCarril(cmd, args) {
   if (io.readMarker(dir, sid)) salir('hay una corrida abierta en esta sesión: manda la corrida. Corré el comando sin --adhoc.');
   const a = io.adhocFirmado(dir, sid, io.readAdhoc(dir, sid));
   if (!a) salir('esta sesión no tiene un camino rápido abierto con su firma (marker.js adhoc set).');
-  const { porRepo, avisos } = base.archivosDelCarril(a);
-  for (const av of avisos) process.stderr.write(`⚠️  ${av}\n`);
+  // lo que miran los revisores: la medida del carril, con las dos rutas de cada cambio, lo anotado y lo que git no sigue
+  const medida = base.medirLoPropio(a);
+  const porRepo = base.rutasDe(medida, a, { como: 'todo' });
+  for (const av of medida.avisos) process.stderr.write(`⚠️  ${av}\n`);
   const repos = Object.keys(porRepo);
   let repo = repos[0] || null;
   if (process.argv.includes('--repo')) {
@@ -6854,17 +6856,12 @@ function cmdRevisoresDelCarril(cmd, args) {
     });
     const runSize = { size: tam.size, reason: `archivos del camino rápido: ${tam.reason}`, firmado: true };
     const conModelos = conModelosDeLaCorrida({ ...args, repo: r, files: deEse, story: null, runSize });
-    // lo del carril se mide desde su punto de salida en ese repo, aunque ya esté commiteado
-    // Una base propia con aviso es HEAD (la rama no se midió): no sirve, y se mide contra la bifurcación de
-    // coverage-base. Lo que no se pudo leer se dice.
+    // lo del carril se mide desde la base de su medida en ese repo (la misma que leen los frenos), aunque ya esté
+    // commiteado. Sin base (lo anotado y el commit) no sirve, y se mide contra la bifurcación de coverage-base.
     let salida = null;
-    try {
-      const bp = base.basePropia(r, a);
-      if (bp.aviso) process.stderr.write(`⚠️  deep-review-gate: ${bp.aviso}; mido contra la bifurcación con la rama principal\n`);
-      else salida = bp.sha;
-    } catch (e) {
-      process.stderr.write(`⚠️  deep-review-gate: no pude leer la base del carril en ${r} (${e.message}); mido contra la bifurcación con la rama principal\n`);
-    }
+    const suBase = medida.porRepo[r] && medida.porRepo[r].base;
+    if (suBase && suBase.de !== 'sin-base' && suBase.sha) salida = suBase.sha;
+    else process.stderr.write(`⚠️  deep-review-gate: ${r} no tiene la base del carril medida; mido contra la bifurcación con la rama principal\n`);
     const marcador = salida ? { baseSha: salida, repoPath: r } : null;
     const res = computeDeepReviewGate({ ...conModelos, repo: r, files: deEse, story: null, runSize, marcador });
     if (!res || res.run === null) salir(`${r}: ${(res && res.reason) || 'no pude decidir el pase'}`);
