@@ -761,26 +761,55 @@ function listarArbol(repo, sha) {
   return entradas;
 }
 
-/** El contenido de muchos objetos en UNA llamada (`git cat-file --batch`), sin pasar por el árbol de trabajo. Un objeto de
+/** El contenido de muchos objetos con `git cat-file --batch`, sin pasar por el árbol de trabajo. Un objeto de
  *  git no cambia nunca (su nombre ES su contenido): lo ya leído se recuerda. El freno de nombres nuevos lee
- *  las mismas guías, manifiestos y catálogo en la foto de antes y en la de después; sin esto serían ~30 procesos por commit. */
+ *  las mismas guías, manifiestos y catálogo en la foto de antes y en la de después; sin esto serían ~30 procesos por commit.
+ *  Se lee por tandas de hasta `tope` bytes: la salida de un proceso no puede pasar el búfer de `git()`, y la historia
+ *  entera de un repo lo pasa (la verificación del espejo lee cada archivo de cada ref). El tamaño de cada objeto sale
+ *  antes de `--batch-check`, que contesta sólo la cabecera de cada objeto. Una cabecera sin tamaño o una salida que no
+ *  cierra justo donde termina el último objeto no se dan por leídas: un objeto a medias se revisaría como si fuera entero. */
 const OBJETOS_LEIDOS = new Map();
-function leerObjetos(repo, shas) {
+const TOPE_DE_TANDA = 256 * 1024 * 1024;
+const tamanoDe = (cab, esperado) => {
+  if (cab[1] === 'missing' || cab[0] !== esperado) throw new NoPudo(`git cat-file no devolvió el objeto ${esperado} (${cab.join(' ')})`);
+  const n = Number(cab[2]);
+  if (!Number.isSafeInteger(n) || n < 0) throw new NoPudo(`git cat-file no dio el tamaño del objeto ${esperado} (${cab.join(' ')})`);
+  return n;
+};
+/** Los pedidos en tandas de hasta `tope` bytes, en su orden. Un objeto que solo ya pasa el tope va solo en la suya. */
+function partirEnTandas(pedidos, tamanos, tope) {
+  const tandas = [];
+  let tanda = [];
+  let bytes = 0;
+  pedidos.forEach((pedido, k) => {
+    if (tanda.length && bytes + tamanos[k] > tope) { tandas.push(tanda); tanda = []; bytes = 0; }
+    tanda.push(pedido);
+    bytes += tamanos[k];
+  });
+  if (tanda.length) tandas.push(tanda);
+  return tandas;
+}
+function leerObjetos(repo, shas, { tope = TOPE_DE_TANDA } = {}) {
   const unicos = [...new Set(shas)];
   const mapa = new Map();
   if (!unicos.length) return mapa;
   const clave = (sha) => `${repo.dir}\0${sha}`;
   const faltan = unicos.filter((sha) => !OBJETOS_LEIDOS.has(clave(sha)));
   if (faltan.length) {
-    const out = salidaGit(repo.dir, ['cat-file', '--batch'], { input: `${faltan.join('\n')}\n`, binario: true });
-    let i = 0;
-    for (const esperado of faltan) {
-      const fin = out.indexOf(0x0a, i);
-      const cab = out.slice(i, fin).toString('utf8').split(' ');
-      if (cab[1] === 'missing' || cab[0] !== esperado) throw new NoPudo(`git cat-file no devolvió el objeto ${esperado} (${cab.join(' ')})`);
-      const n = Number(cab[2]);
-      OBJETOS_LEIDOS.set(clave(esperado), out.slice(fin + 1, fin + 1 + n));
-      i = fin + 1 + n + 1;
+    const cabeceras = String(salidaGit(repo.dir, ['cat-file', '--batch-check'], { input: `${faltan.join('\n')}\n` })).split('\n');
+    const tamanos = faltan.map((esperado, k) => tamanoDe((cabeceras[k] || '').split(' '), esperado));
+    for (const pedidos of partirEnTandas(faltan, tamanos, tope)) {
+      const out = salidaGit(repo.dir, ['cat-file', '--batch'], { input: `${pedidos.join('\n')}\n`, binario: true });
+      let i = 0;
+      for (const esperado of pedidos) {
+        const fin = out.indexOf(0x0a, i);
+        const cab = (fin < 0 ? out.slice(i) : out.slice(i, fin)).toString('utf8').split(' ');
+        const n = tamanoDe(cab, esperado);
+        if (fin < 0 || fin + 1 + n >= out.length || out[fin + 1 + n] !== 0x0a) throw new NoPudo(`git cat-file cortó el objeto ${esperado}`);
+        OBJETOS_LEIDOS.set(clave(esperado), out.slice(fin + 1, fin + 1 + n));
+        i = fin + 1 + n + 1;
+      }
+      if (i !== out.length) throw new NoPudo(`git cat-file devolvió ${out.length - i} bytes de más`);
     }
   }
   for (const sha of unicos) mapa.set(sha, OBJETOS_LEIDOS.get(clave(sha)));
@@ -2393,7 +2422,7 @@ module.exports = {
   cubreFija,
   enSalvo,
   // la clasificación y lo que la rodea, para el freno de nombres nuevos (new-names.js) y sus pruebas
-  FUENTES, PAQUETES_PRIVADOS, CODEX_TOML, NoPudo, git, salidaGit, leerObjetos, listarArbol, coincide,
+  FUENTES, PAQUETES_PRIVADOS, CODEX_TOML, NoPudo, git, salidaGit, leerObjetos, partirEnTandas, listarArbol, coincide,
   validarLista, validarTabla, cargarDenegados, prepararFuentes, primerNivel, filterPackage, transformar, whatShips,
   publicPackages, nombresPegados, reemplazar, parPuedeEstar, compilan, unseenProducts, productsOf, unseenValues, termHasPair, termsWithoutPair,
   // los nombres viejos del mapa de renombres (su prueba fuerza el mapa roto)
