@@ -8,7 +8,8 @@
  *
  *   · `partesDe({ firma, palabras, cwd, marcador, estado, destino })` → `{ queHace, archivos, completo, fuente, cita }` (el
  *     plan suma `revision`, la línea del resultado de su revisión automática), o null si
- *     la firma no tiene fuente propia (la pregunta dice lo que hace el comando). `fuente` es el texto exacto que se
+ *     la firma no tiene fuente propia (la pregunta dice lo que hace el comando), o `{ error }` si no hay nada que firmar
+ *     (un cambio de control con el diff vacío: no hay cuadro y el pedido se niega). `fuente` es el texto exacto que se
  *     mostró: entra a la huella del sello, así un click no vale si la fuente cambió después del cuadro.
  *   · `historiaDe(marcador)` → `{ id, titulo }` de la historia de la corrida, o null sin corrida.
  *   · `seccionesDelPlan(texto)` → `{ queHace, archivos }` o `{ error }`: el plan dice qué hace en hasta 3 líneas y qué
@@ -189,6 +190,11 @@ function deControles(palabras, cwd, estado) {
   if (num.status !== 0 || diff.status !== 0) {
     return { queHace: [`no pude leer el cambio de ${rutas.length} archivo(s) de control contra ${rango[0]} (${String(num.stderr || diff.stderr || '').trim().split('\n')[0] || 'git falló'})`],
       archivos: rutas, fuente: JSON.stringify(entradas || rutas) };
+  }
+  // sin diff no hay nada que firmar (la carpeta ya no tiene el cambio: la sesión soltó su puesto). Un borrado, un
+  // renombre o un cambio de modo traen diff aunque sumen 0 líneas
+  if (!diff.stdout.trim()) {
+    return { error: `el cambio de control está vacío entre ${rango[0].slice(0, 12)} y ${rango[1].slice(0, 12)}: no hay nada que firmar. Pedí la firma desde la carpeta donde está el cambio` };
   }
   let mas = 0;
   let menos = 0;

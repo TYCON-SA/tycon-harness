@@ -452,3 +452,53 @@ test('SignatureQuestion_LongFields_CutWithMark (T44)', () => {
   assert.ok(q.includes(`Qué hace: ${'x'.repeat(200)}….`), q);
   assert.ok(q.includes(`Archivos: ${archivos.slice(0, 10).join(', ')} y 4 más.`), q);
 });
+
+const pideControl = (c, base, ruta = 'scripts/ci/ctl.sh') => conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --base ${base} --entries '${JSON.stringify([{ path: ruta, blob: 'x' }])}'`);
+
+// 🔴 Falla con: armar el cuadro de un cambio de control con el diff vacío (la sesión soltó su puesto y la punta volvió a
+//    la base): el dueño firmaría «+0 −0 líneas» a ciegas.
+test('SignatureQuestion_ControlChange_EmptyDiff_NoBox (T45) @fix-T-227 @story-8.235 @ac-1', (t) => {
+  const { c, git } = repoDeControles(t, ['a=1\n']);
+  const sinCambio = pideControl(c, git('rev-parse', 'HEAD').stdout.trim());
+  assert.ok(!sinCambio.pregunta, 'sin cuadro');
+  assert.match(String(sinCambio.error), /^el cambio de control está vacío entre [0-9a-f]{12} y [0-9a-f]{12}: no hay nada que firmar\. Pedí la firma desde la carpeta donde está el cambio$/);
+  // y el freno niega sin darle a la sesión un cuadro para mostrar
+  const r = ow.negarSinVentana('sin ventana', ['control-change'], 'ses-a', sinCambio);
+  assert.strictEqual(r.decision, 'deny');
+  assert.ok(!r.cuadro, r.texto);
+  // con --file, un commit que no toca el control tampoco trae nada que firmar
+  fs.writeFileSync(path.join(c.repo, 'LEEME.md'), 'x\n');
+  git('add', 'LEEME.md'); git('commit', '-qm', 'otro');
+  const conArchivo = conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --file scripts/ci/ctl.sh --rev HEAD`);
+  assert.match(String(conArchivo.error), /está vacío/);
+});
+
+// 🔴 Falla con: tomar por vacío un cambio que suma 0 líneas pero trae diff (un cambio de modo, un renombre, el borrado
+//    de un archivo vacío): se siguen firmando como hoy.
+test('SignatureQuestion_ControlChange_ZeroLinesButDiff_StillAsks (T46) @fix-T-227 @story-8.235 @ac-2', (t) => {
+  const casos = [
+    ['modo', (c, git) => { fs.chmodSync(path.join(c.repo, 'scripts', 'ci', 'ctl.sh'), 0o755); git('add', 'scripts/ci/ctl.sh'); }, 'scripts/ci/ctl.sh'],
+    ['renombre', (c, git) => git('mv', 'scripts/ci/ctl.sh', 'scripts/ci/otro.sh'), 'scripts/ci/otro.sh'],
+    ['borrado de un vacío', (c, git) => git('rm', '-q', 'scripts/ci/vacio.sh'), 'scripts/ci/vacio.sh'],
+  ];
+  for (const [nombre, cambio, ruta] of casos) {
+    const { c, git } = repoDeControles(t, ['a=1\n']);
+    // el archivo vacío entra en un commit propio: repoDeControles usa el contenido como mensaje
+    if (nombre === 'borrado de un vacío') { fs.writeFileSync(path.join(c.repo, 'scripts', 'ci', 'vacio.sh'), ''); git('add', 'scripts'); git('commit', '-qm', 'vacío'); }
+    const base = git('rev-parse', 'HEAD').stdout.trim();
+    cambio(c, git);
+    git('commit', '-qm', nombre);
+    const q = pideControl(c, base, ruta);
+    assert.ok(!q.error, `${nombre}: ${q.error}`);
+    // el renombre se ve como el archivo nuevo (git sin detectar renombres): +1; los otros dos suman 0 líneas
+    assert.match(q.pregunta, nombre === 'renombre' ? /Qué hace: Cambia 1 archivo\(s\) de control: \+1 −0 líneas\./ : /Qué hace: Cambia 1 archivo\(s\) de control: \+0 −0 líneas\./, nombre);
+  }
+});
+
+// 🔴 Falla con: que la negativa del cambio vacío alcance a un cambio con líneas.
+test('SignatureQuestion_ControlChange_WithLines_AsToday (T47) @fix-T-227 @story-8.235 @ac-3', (t) => {
+  const { c, git } = repoDeControles(t, ['a=1\n', 'a=1\nb=2\n']);
+  const q = pideControl(c, git('rev-parse', 'HEAD~1').stdout.trim());
+  assert.ok(!q.error, q.error);
+  assert.match(q.pregunta, /Qué hace: Cambia 1 archivo\(s\) de control: \+1 −0 líneas\./);
+});
