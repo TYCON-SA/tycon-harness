@@ -649,6 +649,10 @@ function informe(argv) {
             suites: get(r, 'corridas', 0), passed: get(r, 'verdes', 0),
             failed: pyLen(fallas), missing: pyLen(get(r, 'ausentes', [])),
             failures: fallas.map((f) => path.basename(f.ruta)),
+            // La entrada de suites.json de cada falla, la que recibe `--suite`: la repetición verde busca por ella, no
+            // por el nombre corto, que dos suites de carpetas distintas pueden compartir (lib/failed-first.js).
+            failure_entries: fallas.filter((f) => f && f.entrada && typeof f.entrada.ruta === 'string')
+              .map((f) => ({ raiz: f.entrada.raiz || null, ruta: f.entrada.ruta })),
             missing_paths: get(r, 'ausentes', []),
             // Lo que NO corrió a propósito (con el motivo), y cómo corrió el resto.
             deferred: pyLen(get(r, 'deferred_suites', [])),
@@ -664,7 +668,11 @@ function informe(argv) {
             result.totals.inherited = pyLen(heredadas);
             result.totals.inherited_suites = heredadas.map((s) => path.basename(s.ruta));
             result.totals.inherited_snapshot_ts = get(r.inherited, 'snapshot_ts', null);
+            // las que salieron rojas también en la base, sin el cambio (lib/inherited-reds.js)
+            if (get(r.inherited, 'base', null)) result.totals.inherited_base = r.inherited.base;
           }
+          // lo que se midió en la base, con el veredicto y el motivo de cada suite
+          if (get(r, 'base_check', null)) result.totals.base_check = r.base_check;
           // Las no medidas ya cuentan como ausentes; acá va su motivo (sólo si hay alguna: el informe de siempre no cambia).
           const noMedidas = get(r, 'unmeasured_suites', []);
           if (pyLen(noMedidas)) Object.assign(result.totals, { unmeasured: pyLen(noMedidas), unmeasured_suites: noMedidas });

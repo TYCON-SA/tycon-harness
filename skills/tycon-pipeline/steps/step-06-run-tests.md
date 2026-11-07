@@ -90,7 +90,17 @@ Una suite roja que ya estaba roja en el nocturno de esa mañana avisa y no frena
 de cada pedido: el portón pasa su resumen por el juez de los pedidos con la foto nocturna que viaja en el árbol armado
 (`lib/inherited-reds.js`). Lo heredado sale de la lista de «repetir primero» y queda escrito en `inherited`; lo nuevo
 frena como siempre. Lo mismo al repetir una sola con `--suite`: si ya estaba roja en la foto, sale de la lista y deja
-en verde `tests-suite`. Sin foto (el repo público solo), o si el juez no puede decidir, se juzga como antes.
+en verde `tests-suite`. Sin foto (el repo público solo), o si la foto no sirve (vieja, tocada o ilegible), lo rojo se
+mide en la base, en el momento: cada roja corre sola sobre la bifurcación con `origin/main`, sin el cambio. Roja también
+ahí, es heredada (`measured_on: "base"`); verde ahí, el rojo es del cambio y frena; sin poder medirla (sin
+`origin/main`, la suite no está en la base, pasó el tope, el árbol armado del privado), sigue roja y dice «no medido» y
+por qué. Queda escrito en `base_check`. Topes: `TYCON_INHERITED_BASE_MAX` suites (3; 0 la apaga) y
+`TYCON_INHERITED_BASE_TIMEOUT_S` segundos por suite (600).
+
+Una repetición sola que sale verde también saca su falla de la constancia de la completa (`tests-result.json`, la que
+lee el revisor de pruebas, y su copia que viaja), si es de esa misma completa: cuando no queda ninguna otra causa de
+rojo, la constancia queda en verde con `suite_green_by: "repeticiones"`. Si la constancia es de otra corrida, de antes
+de este cambio o no está, no se toca y la salida dice por qué.
 
 El `4`, el `5` y el `6` dejan además el check `tests` del marcador en **rojo** con su código: un verde de una corrida
 anterior no queda en pie cuando esta corrida no pudo correr o no contó nada.

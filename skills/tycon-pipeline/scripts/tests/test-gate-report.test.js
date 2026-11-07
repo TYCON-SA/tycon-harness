@@ -239,8 +239,10 @@ test('T69 TestGate_NodeReport_EqualsThePythonReport_WorksWithoutPython3 — el i
     const caso = armarCaso(n);
     const { rc, stderr, got } = correrInforme(caso, [process.execPath, REPORT], { PATH: sinPython });
     assert.strictEqual(rc, 0, `${n}: el informe salió ${rc}\n${stderr}`);
-    // lo único que el bloque de Python no escribía es de dónde salió el umbral; el resto, igual
+    // lo único que el bloque de Python no escribía es de dónde salió el umbral y la entrada de suites.json de cada falla
+    // (la repetición verde busca por ella, lib/failed-first.js); el resto, igual
     for (const art of [got.tests_result, got.sellada]) {
+      if (art && art.totals && Array.isArray(art.totals.failure_entries)) delete art.totals.failure_entries;
       if (!art || !art.coverage) continue;
       assert.ok(['maquina', 'organizacion', 'por_defecto'].includes(art.coverage.threshold_source), `${n}: threshold_source ${art.coverage.threshold_source}`);
       delete art.coverage.threshold_source;
@@ -781,6 +783,36 @@ test('T6 8.55-Informe_Salida7_SinAcotar @story-8.55 @ac-6 — la salida 7 es «s
   const regla = fs.readFileSync(path.join(SCRIPTS, '..', '..', '..', 'agents', 'tycon-plugin-tests-coverage.md'), 'utf8')
     .split('\n').find((l) => l.startsWith('| **TEST-C1** |')) || '';
   assert.match(regla, /unscoped/, `la regla TEST-C1 no nombra «sin acotar»: ${regla}`);
+});
+
+test('Heredado_MedidoEnMainEnElMomento (constancia) @story-8.230 @ac-14 — la constancia copia la medición en la base, la entrada de cada falla y de dónde vino cada heredada', () => {
+  // 🔴 mutación: no pasar base_check ni inherited.base a la constancia → el revisor de pruebas no ve qué se midió.
+  const tmp = tmpReal('tgr-base-');
+  const repo = path.join(tmp, 'repo');
+  const results = path.join(tmp, 'results');
+  fs.mkdirSync(repo, { recursive: true });
+  execFileSync('git', ['init', '-q', repo], { stdio: 'ignore' });
+  escribir(repo, { 'scripts/tests/suites.json': { text: '{"diarias":[],"semanales":[]}\n' } });
+  git(repo, ['add', '-A']); git(repo, ['commit', '-qm', 'base']);
+  fs.mkdirSync(results, { recursive: true });
+  const baseCheck = { base: 'a'.repeat(40), at: '2026-11-07T12:00:00Z', suites: [{ ruta: 'tests/a.test.sh', raiz: 'arnes', verdict: 'heredada', motivo: 'roja también en la base, sin el cambio' },
+    { ruta: 'tests/b.test.sh', raiz: 'arnes', verdict: 'no-medido', motivo: 'no medido: pasó del tope de 3 suites' }] };
+  fs.writeFileSync(path.join(results, 'suites.json'), JSON.stringify({ corridas: 2, verdes: 0, ausentes: [], deferred_suites: [],
+    fallas: [{ ruta: path.join(repo, 'scripts', 'tests', 'b.test.sh'), exit: 1, entrada: { raiz: 'arnes', ruta: 'tests/b.test.sh' } }],
+    inherited: { snapshot_ts: null, snapshot_build: null, base: { sha: 'a'.repeat(40), at: '2026-11-07T12:00:00Z' },
+      suites: [{ ruta: path.join(repo, 'scripts', 'tests', 'a.test.sh'), entrada: { raiz: 'arnes', ruta: 'tests/a.test.sh' }, measured_on: 'base' }] },
+    base_check: baseCheck }));
+  const out = path.join(tmp, 'out.json');
+  const r = spawnSync(process.execPath, [REPORT, 'suites-json', repo, repo, results, out, '1', '8.230', '75', '2026-11-07T12:00:00Z',
+    '0', '', 'explicito', '', '{"git":true}', '', '{"ref":null,"source":null,"descartadas":[]}'],
+  { encoding: 'utf8', env: { ...process.env, HOME: tmp, USERPROFILE: tmp, TYCON_GUIDES_DIR: tmp, TYCON_EVIDENCE_DIR: path.join(tmp, 'ev') } });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const t = JSON.parse(fs.readFileSync(out, 'utf8')).totals;
+  assert.deepStrictEqual(t.base_check, baseCheck);
+  assert.deepStrictEqual(t.failure_entries, [{ raiz: 'arnes', ruta: 'tests/b.test.sh' }]);
+  assert.deepStrictEqual(t.inherited_suites, ['a.test.sh']);
+  assert.strictEqual(t.inherited_snapshot_ts, null);
+  assert.strictEqual(t.inherited_base.sha, 'a'.repeat(40));
 });
 
 test('T75 TestGate_AcotadaPorElRepo_NadieLee_EsVerde — acotada por el repo y sin suite que lea lo tocado es verde y dice quién corre la completa; sin esa constancia, cero corridas sigue sin ser verde', () => {

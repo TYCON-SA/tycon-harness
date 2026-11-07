@@ -86,8 +86,10 @@ function lab(t, { clave = true, papeleo = false } = {}) {
 function puerta(l, ...args) {
   const env = { ...process.env };
   for (const k of DEL_ENTORNO) delete env[k];
+  // TYCON_INHERITED_BASE_MAX=0: la roja de estas pruebas está en el main del repo de juguete a propósito, para ver qué
+  // corre después de traer main; medida en la base saldría heredada y el portón en verde (lib/inherited-reds.js).
   const r = spawnSync('bash', [TEST_GATE, l.repo, ...(l.historia ? [l.historia] : []), ...args], { cwd: l.repo, encoding: 'utf8', timeout: 120000,
-    env: { ...env, HOME: l.home, USERPROFILE: l.home, CLAUDE_CODE_SESSION_ID: SID, TG_STATE: l.state, TYCON_SKILLS_DIR: l.skills } });
+    env: { ...env, HOME: l.home, USERPROFILE: l.home, CLAUDE_CODE_SESSION_ID: SID, TG_STATE: l.state, TYCON_SKILLS_DIR: l.skills, TYCON_INHERITED_BASE_MAX: '0' } });
   return { status: r.status, out: `${r.stdout}\n${r.stderr}` };
 }
 const corridas = (l) => { try { return fs.readFileSync(path.join(l.state, 'corridas'), 'utf8').split('\n').filter(Boolean).sort(); } catch (_) { return []; } };
