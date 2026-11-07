@@ -119,7 +119,10 @@ test('OwnerWindow_FirmaReconocida_PideVentanaYAnota (T7)', (t) => {
     assert.strictEqual(r.decision, 'ask', `${cmd}: ${r.texto}`);
     assert.deepStrictEqual(r.firmas, [firma], cmd);
     const s = require('../lib/signatures.js').SIGNATURES.find((x) => x.id === firma);
-    assert.ok(r.texto.includes(`¿${s.approves.charAt(0).toUpperCase()}${s.approves.slice(1)}?`), `${cmd}: el texto dice qué aprueba`);
+    // el de la excepción en vivo dice la razón declarada, no el texto del catálogo
+    const que = firma === 'runtime-waiver' ? 'Aceptar sin prueba en vivo el AC 1, porque «el servicio externo no tiene ambiente de prueba»'
+      : `${s.approves.charAt(0).toUpperCase()}${s.approves.slice(1)}`;
+    assert.ok(r.texto.includes(`¿${que}?`), `${cmd}: el texto dice qué aprueba`);
     assert.match(r.texto, /9\.99/, `${cmd}: el texto dice la story`);
     assert.match(r.texto, /ses-a/, `${cmd}: el texto dice la sesión destino`);
     const v = vigentes(casa);
@@ -392,7 +395,7 @@ test('OwnerWindow_RuntimeWaiver_PasaPorLaVentana (T16)', (t) => {
     const r = pedir(casaNueva(t), cmd);
     assert.strictEqual(r.decision, 'ask', r.texto);
     assert.deepStrictEqual(r.firmas, ['runtime-waiver']);
-    assert.match(r.texto, /AC 1: Given un pedido Then el aviso queda en el servicio externo\./, cmd);
+    assert.match(r.texto, /AC 1: .*el criterio: Given un pedido Then el aviso queda en el servicio externo\./, cmd);
     assert.match(r.texto, /el servicio externo no tiene ambiente de prueba/);
     assert.match(r.texto, /T1/);
     assert.doesNotMatch(r.texto, /AC 2/);
@@ -400,7 +403,7 @@ test('OwnerWindow_RuntimeWaiver_PasaPorLaVentana (T16)', (t) => {
   // la historia con la ruta relativa al directorio del pedido
   const rel = pedir(casaNueva(t), `node ${MARKER} runtime-waiver specs/story-9.91-juguete.md --acs 1`, { evento: { cwd: repo } });
   assert.strictEqual(rel.decision, 'ask', rel.texto);
-  assert.match(rel.texto, /AC 1: Given un pedido/);
+  assert.match(rel.texto, /AC 1: .*el criterio: Given un pedido/);
   // sin criterios que mostrar, el dueño firmaría a ciegas: se niega con la terminal
   for (const cmd of [`node ${MARKER} runtime-waiver /r/specs/story-9.99.md`, `node ${MARKER} runtime-waiver ${story} --acs 2`]) {
     const r = pedir(casaNueva(t), cmd);
@@ -3742,7 +3745,7 @@ test('OwnerWindow_RuntimeWaiver_LaMatrizSeCalculaUnaVezPorConsulta', (t) => {
   for (const [extra, acs] of [[{}, ''], [{ permission_mode: 'bypassPermissions' }, ''], [{}, ' --acs 1'], [{ permission_mode: 'bypassPermissions' }, ' --acs 1']]) {
     veces = 0;
     const r = pedir(casaNueva(t), `node ${MARKER} runtime-waiver ${story}${acs}`, { evento: extra });
-    assert.match(r.texto, /AC 1: Given un pedido/, `${JSON.stringify(extra)}${acs}`);
+    assert.match(r.texto, /AC 1: .*el criterio: Given un pedido/, `${JSON.stringify(extra)}${acs}`);
     assert.strictEqual(veces, 1, `${JSON.stringify(extra)}${acs}: la matriz se calculó ${veces} veces`);
   }
   // la memoria es de una consulta: la misma historia, editada entre dos consultas con la misma casa, se vuelve a calcular
@@ -3754,7 +3757,7 @@ test('OwnerWindow_RuntimeWaiver_LaMatrizSeCalculaUnaVezPorConsulta', (t) => {
   fs.writeFileSync(otra.story, fs.readFileSync(otra.story, 'utf8').replace('el aviso queda en el servicio externo', 'el pago queda en el banco'));
   veces = 0;
   const r = pedir(casa, cmd);
-  assert.match(r.texto, /AC 1: Given un pedido Then el pago queda en el banco\./, r.texto);
+  assert.match(r.texto, /AC 1: .*el criterio: Given un pedido Then el pago queda en el banco\./, r.texto);
   assert.doesNotMatch(r.texto, /servicio externo\./);
   assert.strictEqual(veces, 1);
 });

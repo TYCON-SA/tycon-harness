@@ -26,6 +26,9 @@
  *      medio, con los acentos de su línea intactos y cada padre arrancado antes que su hijo.
  *  11. sin perfil del equipo, la coordinadora ordena y no firma: `coordination-without-profile.test.js` corre en Windows, y
  *      si sale rojo queda como hallazgo.
+ *  12. el comando de la firma de un cambio de control que imprime `run-base-controls.sh pending`, con el guion en una
+ *      carpeta con espacio y apóstrofo: lleva la ruta completa con barras `/` (`/c/…` o `C:/…`) y corre en Git Bash desde
+ *      otra carpeta (con `classify`, que no firma nada).
  * Si la ventana ni siquiera arranca el comando en este agente, el paso 2 lo dice como hallazgo (no se probó la espera).
  *
  * Fuera de Windows no mide nada (no medido). Uso: node scripts/tests/windows/waiver-probe.js --lab <laboratorio> --out <carpeta del reporte>
@@ -154,7 +157,61 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, rec 
   // 11 · sin perfil del equipo, la coordinadora ordena y no firma: su suite, corrida en Windows
   coordinadoraSinPerfil({ env, rec });
 
+  // 12 · el comando impreso de la firma de un cambio de control corre en Git Bash desde otra carpeta
+  comandoDeControles({ dir, env, rec });
+
   return { status: L.STATUS.measured, reason: null };
+}
+
+/**
+ * Un pedido que afloja la regla de un control de juguete (el inventario mínimo de base-controls.test.sh), el guion copiado
+ * a una carpeta con espacio y apóstrofo, y el comando que imprime `pending` corrido desde otra carpeta, como lo copia una
+ * sesión parada en otro puesto. Corre con `classify` en lugar de `approve`: mismo guion y mismos argumentos, sin firmar.
+ */
+function comandoDeControles({ dir, env, rec }) {
+  const bash = L.scanPath('bash', { env })[0];
+  if (!bash) { rec.finding('waiver:control-change-command-not-measured', 'waiver', 'no encuentro bash en este agente: el comando impreso no se pudo correr'); return; }
+  const base = path.join(dir, 'ruta del guion');
+  const repo = path.join(base, 'repo');
+  const copia = path.join(base, "arnés de O'Brien", 'scripts', 'ci', 'run-base-controls.sh');
+  const otro = path.join(base, 'otro puesto');
+  for (const d of [path.join(repo, '.githooks'), path.join(repo, 'scripts', 'ci'), path.join(repo, '.github', 'workflows'), path.join(repo, 'docs'), path.dirname(copia), otro]) fs.mkdirSync(d, { recursive: true });
+  const FECHA = '2026-01-01T10:00:00';
+  const git = (...a) => L.run('git', ['-C', repo, '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-c', 'user.email=s@s', '-c', 'user.name=s', '-c', 'init.defaultBranch=main', ...a],
+    { env: Object.assign({}, env, { GIT_AUTHOR_DATE: FECHA, GIT_COMMITTER_DATE: FECHA }), timeoutMs: 60000 });
+  fs.writeFileSync(path.join(repo, '.githooks', 'pre-commit-checks'), '#!/usr/bin/env bash\nbash "$(git rev-parse --show-toplevel)/scripts/ci/toy-check.sh" || exit 1\n');
+  fs.writeFileSync(path.join(repo, 'scripts', 'ci', 'toy-check.sh'), '#!/usr/bin/env bash\nexit 0\n# la regla: scripts/ci/toy-rules.json\n');
+  fs.writeFileSync(path.join(repo, 'scripts', 'ci', 'toy-rules.json'), '{ "mode": "block", "allow": ["docs/permitido.txt"] }\n');
+  fs.writeFileSync(path.join(repo, 'scripts', 'ci', 'controls-from-base.json'), JSON.stringify({
+    hook: '.githooks/pre-commit-checks',
+    passes: [{ name: 'pre-commit', mode: 'index', cmd: ['bash', '.githooks/pre-commit-checks'] }],
+    controls: [{ name: 'toy', script: 'scripts/ci/toy-check.sh', rules: ['scripts/ci/toy-rules.json'] },
+      { name: 'base-controls', script: 'scripts/ci/run-base-controls.sh', rules: ['scripts/ci/controls-from-base.json'] }],
+    content: [], workflows: [{ path: '.github/workflows/ci.yml', must_contain: ['run-base-controls'] }], approvals: '.tycon/control-changes.jsonl',
+  }, null, 2));
+  fs.copyFileSync(CONTROLES, path.join(repo, 'scripts', 'ci', 'run-base-controls.sh'));
+  fs.writeFileSync(path.join(repo, '.github', 'workflows', 'ci.yml'), 'name: ci\njobs: { ci: { steps: [ { run: "bash run-base-controls" } ] } }\n');
+  fs.writeFileSync(path.join(repo, 'docs', 'leeme.txt'), 'nada\n');
+  git('init', '-q'); git('add', '-A'); git('commit', '-qm', 'base'); git('checkout', '-q', '-b', 'pedido');
+  fs.writeFileSync(path.join(repo, 'scripts', 'ci', 'toy-rules.json'), '{ "mode": "block", "allow": ["docs/permitido.txt", "docs/malo.txt"] }\n');
+  git('commit', '-qam', 'afloja');
+  fs.copyFileSync(CONTROLES, copia);
+  const p = L.run(bash, [copia, 'pending', '--root', repo, '--base', 'main', '--range', 'main...pedido'], { env, cwd: path.dirname(path.dirname(path.dirname(copia))), timeoutMs: 180000 });
+  const salida = `${p.stdout || ''}${p.stderr || ''}`;
+  const linea = (salida.split(/\r?\n/).find((l) => l.startsWith('la firma, desde la sesión')) || '').replace(/^[^:]*\): /, '');
+  // la ruta tal cual, sin el escape del apóstrofo de las comillas simples ('\'')
+  const ruta = ((/^bash '((?:[^']|'\\'')*)' approve /.exec(linea) || [])[1] || '').replace(/'\\''/g, "'") || null;
+  const fact = { pending: p.exit, ruta };
+  if (!ruta) { rec.fact('control_change_command', fact); rec.finding('waiver:control-change-command-not-printed', 'waiver', `pending no imprimió el comando con la ruta entre comillas (salida ${p.exit}): ${salida.slice(0, 300)}`); return; }
+  if (ruta.includes('\\')) rec.finding('waiver:control-change-command-backslash', 'waiver', `la ruta del guion trae barras invertidas: ${ruta}`);
+  if (!/^(\/[a-z]\/|[A-Za-z]:\/)/.test(ruta)) rec.finding('waiver:control-change-command-unexpected-form', 'waiver', `la ruta del guion no empieza con /c/ ni con C:/: ${ruta}`);
+  // el comando va en un archivo: así le llega a bash con sus comillas tal cual, como lo pega una persona
+  const guion = path.join(otro, 'pegado.sh');
+  fs.writeFileSync(guion, `${linea.replace(' approve ', ' classify ')}\n`);
+  const r = L.run(bash, [guion], { env, cwd: otro, timeoutMs: 120000 });
+  Object.assign(fact, { classify: r.exit, says: String(r.stdout || r.stderr || '').split(/\r?\n/).filter(Boolean).slice(0, 2) });
+  rec.fact('control_change_command', fact);
+  if (r.exit !== 0 || !/"clase":/.test(String(r.stdout || ''))) rec.finding('waiver:control-change-command-failed', 'waiver', `el comando impreso, corrido desde otra carpeta, salió ${r.exit}: ${String(r.stderr || r.stdout || '').slice(0, 300)}`);
 }
 
 const SIN_PERFIL = path.join(__dirname, '..', 'coordination-without-profile.test.js');
@@ -404,4 +461,4 @@ function main(argv) {
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { NAME, measure, emergencia };
+module.exports = { NAME, measure, emergencia, comandoDeControles };

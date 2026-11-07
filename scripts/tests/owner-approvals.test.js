@@ -333,6 +333,36 @@ test('Transcripcion_DeLaExtension_LoQueNoEsDeLaPersona_NoVale', (t) => {
   }
 });
 
+// 🔴 Falla con: bajo claude -p el «aprobado» no vale y el motivo no dice dónde se aprueba.
+test('OwnerApprovals_ClaudeP_ReasonSaysWhereToApprove (T14) @story-8.237 @ac-14', (t) => {
+  const casa = casaNueva(t);
+  transcripcion(casa, 'ses-a', [agente(PIDE), { ...tipeado('Aprobado'), promptSource: 'sdk', entrypoint: 'sdk-cli' }]);
+  const r = oa.validarEnClaude(mensaje(), CTX(casa));
+  assert.strictEqual(r.ok, false);
+  assert.match(r.motivo, /no lo tipeó una persona/);
+  assert.match(r.motivo, /bajo claude -p un mensaje escrito no vale como aprobación: aprobá en una sesión con ventana \(la terminal o la extensión\) o con el cuadro de la coordinadora/);
+});
+
+// 🔴 Falla con: el motivo de claude -p puesto también a una entrada que no es claude -p.
+test('OwnerApprovals_UnknownEntry_KeepsTodaysReason (T15) @story-8.237 @ac-14', (t) => {
+  const casa = casaNueva(t);
+  transcripcion(casa, 'ses-a', [agente(PIDE), { ...tipeado('Aprobado'), promptSource: 'sdk', entrypoint: 'otra-cosa' }]);
+  const r = oa.validarEnClaude(mensaje(), CTX(casa));
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.motivo, 'el mensaje no lo tipeó una persona: llegó por otra-cosa · sdk');
+});
+
+// 🔴 Falla con: lo que hoy vale deja de valer, o una entrada nueva en la lista de lo que vale.
+test('OwnerApprovals_TypedEntries_StillValid (T16) @story-8.237 @ac-15', (t) => {
+  for (const r of [tipeado('Aprobado'), desdeElEditor('Aprobado')]) {
+    const casa = casaNueva(t);
+    transcripcion(casa, 'ses-a', [agente(PIDE), r]);
+    assert.deepStrictEqual(oa.validarEnClaude(mensaje(), CTX(casa)), { ok: true }, r.entrypoint);
+  }
+  const fuente = fs.readFileSync(path.join(__dirname, '..', 'lib', 'owner-approvals.js'), 'utf8');
+  assert.match(fuente, /^const TIPEADO = \{ cli: \['typed'\], 'claude-vscode': \['sdk'\] \};$/m);
+});
+
 // La pregunta entera, no sólo el sello: con el sello pegado a otra pregunta, la persona aprobaría una cosa y firmaría otra.
 test('Sello_EnOtraPregunta_ElAprobadoNoVale', (t) => {
   const casa = casaNueva(t);
