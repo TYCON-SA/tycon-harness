@@ -24,6 +24,7 @@ const RAIZ = path.join(SCRIPTS, '..', '..', '..');
 const PUERTA = path.join(SCRIPTS, 'on-bash-write-gate.js');
 const ENCABEZADO = path.join(SCRIPTS, 'on-frontmatter-write.js');
 const PRE_EDIT = path.join(SCRIPTS, 'hook-pre-edit.js');
+const { plantilla } = require(path.join(RAIZ, 'scripts', 'tests', 'lib', 'template-dir.js'));
 const SID = 's-8109';
 const TUID = 'toolu_8109';
 const HISTORIA = 'specs/story-9.9-algo.md';
@@ -36,15 +37,22 @@ const deLaPersona = (texto, min = 2) => ({ type: 'user', timestamp: hace(min), m
  * Una HOME con un repo, una historia en `status`, el marcador abierto de la sesión y la conversación (null = sin
  * registro, como Codex) con el pedido que se juzga al final.
  */
-function nuevaHome({ status = 'in-progress', conversacion = [deLaPersona('seguí')], herramienta = 'Bash', extra = '' } = {}) {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'status-by-hand-'));
+// Lo fijo de la HOME (el repo inicializado y los dos .md que no son la historia) se arma una vez por proceso
+// (scripts/tests/lib/template-dir.js); la historia, el marcador y la conversación se escriben en cada copia.
+const PLANTILLA_HOME = plantilla('status-by-hand-plantilla-', (home) => {
   const repo = path.join(home, 'repo');
   fs.mkdirSync(path.join(repo, 'specs'), { recursive: true });
   spawnSync('git', ['init', '-q', repo]);
-  const historia = path.join(repo, HISTORIA);
-  fs.writeFileSync(historia, `---\nepic: 9\nstory: "9.9"\ntitle: "Algo"\nstatus: ${status}\n${extra}qa_guide: off\n---\n\n# Story 9.9\n\nStatus: ${status}\n\n## Story\n\nTexto.\n`);
   fs.writeFileSync(path.join(repo, 'specs', 'otra.md'), '# otra\n');
   fs.writeFileSync(path.join(repo, 'notas.md'), '# notas\n');
+});
+
+function nuevaHome({ status = 'in-progress', conversacion = [deLaPersona('seguí')], herramienta = 'Bash', extra = '' } = {}) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'status-by-hand-'));
+  PLANTILLA_HOME.copiar(home);
+  const repo = path.join(home, 'repo');
+  const historia = path.join(repo, HISTORIA);
+  fs.writeFileSync(historia, `---\nepic: 9\nstory: "9.9"\ntitle: "Algo"\nstatus: ${status}\n${extra}qa_guide: off\n---\n\n# Story 9.9\n\nStatus: ${status}\n\n## Story\n\nTexto.\n`);
   const activos = path.join(home, '.claude', '.tycon-pipeline', 'active');
   fs.mkdirSync(activos, { recursive: true });
   const marcador = { storyId: '9.9', storyPath: historia, repoPath: repo, startedAt: hace(60),
@@ -62,6 +70,27 @@ function nuevaHome({ status = 'in-progress', conversacion = [deLaPersona('seguí
   }
   return { home, repo, historia, estado: path.join(home, '.claude', '.tycon-pipeline') };
 }
+
+test('T23 Plantilla_SuitesDelPipeline_UnRepoBasePorProceso — la HOME con su repo se arma una vez; la historia y el marcador, por caso y con las rutas de la copia @story-8.230 @ac-7', () => {
+  const homes = [nuevaHome(), nuevaHome({ status: 'review', extra: 'sprint: 3\n' }), nuevaHome({ conversacion: null })];
+  assert.strictEqual(PLANTILLA_HOME.armados, 1, 'la HOME base se armó más de una vez');
+  assert.strictEqual(new Set(homes.map((h) => h.home)).size, 3, 'dos llamadas recibieron la misma HOME');
+  for (const h of homes) {
+    const top = spawnSync('git', ['-C', h.repo, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).stdout.trim();
+    assert.strictEqual(fs.realpathSync(top), fs.realpathSync(h.repo), 'el repo no es el de su copia');
+    const m = JSON.parse(fs.readFileSync(path.join(h.estado, 'active', `${SID}.json`), 'utf8'));
+    assert.strictEqual(m.storyPath, h.historia, 'el marcador apunta a otra historia');
+    assert.strictEqual(m.repoPath, h.repo, 'el marcador apunta a otro repo');
+    assert.ok(m.storyPath.startsWith(h.home + path.sep), `el marcador no apunta a su copia: ${m.storyPath}`);
+  }
+  // lo de cada caso: el estado y el extra son de su copia
+  assert.match(fs.readFileSync(homes[0].historia, 'utf8'), /^status: in-progress$/m);
+  assert.match(fs.readFileSync(homes[1].historia, 'utf8'), /^status: review$/m);
+  assert.match(fs.readFileSync(homes[1].historia, 'utf8'), /^sprint: 3$/m);
+  assert.doesNotMatch(fs.readFileSync(homes[0].historia, 'utf8'), /^sprint: 3$/m);
+  assert.ok(fs.existsSync(path.join(homes[0].home, '.claude', 'projects', '-repo')));
+  assert.ok(!fs.existsSync(path.join(homes[2].home, '.claude', 'projects', '-repo')), 'la conversación de un caso apareció en otro');
+});
 
 function correr(gancho, h, evento, env = {}) {
   const e = { ...process.env, HOME: h.home, USERPROFILE: h.home };

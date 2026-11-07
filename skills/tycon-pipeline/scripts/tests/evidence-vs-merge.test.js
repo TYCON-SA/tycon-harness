@@ -23,6 +23,7 @@ const rm = require(path.join(SCRIPTS, 'runtime-matrix.js'));
 const ledgerLine = require(path.join(__dirname, 'lib', 'smoke-ledger-line.js'));
 const juezLib = require(path.join(SCRIPTS, 'lib', 'evidence-vs-commit.js'));
 const commitStory = () => require(path.join(SCRIPTS, 'lib', 'commit-story.js'));
+const { plantilla } = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'tests', 'lib', 'template-dir.js'));
 
 const temporales = [];
 after(() => { for (const d of temporales) fs.rmSync(d, { recursive: true, force: true }); });
@@ -77,13 +78,23 @@ function juntar(repo, nombre, fecha, asunto = 'feat: lo de la rama (#7)') {
   return git(repo, ['rev-parse', '--short', 'HEAD']);
 }
 
+// Los dos repos de `lab` y de `labMatriz` se arman una vez por proceso (scripts/tests/lib/template-dir.js); cada llamada
+// copia la carpeta y trabaja con las rutas de su copia.
+const PLANTILLA_LAB = plantilla('evm-plantilla-', (dentro) => {
+  const back = repoNuevo(dentro, 'Back');
+  repoNuevo(dentro, 'Historias');
+  escribir(back, 'src/Feature.cs', '// v1\n');
+  escribir(back, PRUEBA, '// p1\n');
+  commit(back, 'base', T0);
+});
+
 /** Un repo con el código y otro con la evidencia; la evidencia se guarda cuando el caso lo pide. */
 function lab(dentro = carpeta()) {
-  const back = repoNuevo(dentro, 'Back');
-  const esp = repoNuevo(dentro, 'Historias');
-  const archivo = escribir(back, 'src/Feature.cs', '// v1\n');
-  const prueba = escribir(back, PRUEBA, '// p1\n');
-  commit(back, 'base', T0);
+  PLANTILLA_LAB.copiar(dentro);
+  const back = path.join(dentro, 'Back');
+  const esp = path.join(dentro, 'Historias');
+  const archivo = path.join(back, 'src', 'Feature.cs');
+  const prueba = path.join(back, PRUEBA);
   const evidencia = (fecha = EVIDENCIA, tsDeLaCorrida = fecha) => {
     const ruta = escribir(esp, '.advisors/dod-runtime/5.28-e2e-gate-20270101T000000Z.md', 'verdict=PASS\n');
     commit(esp, 'evidencia', fecha);
@@ -91,6 +102,39 @@ function lab(dentro = carpeta()) {
   };
   return { back, esp, archivo, prueba, evidencia };
 }
+test('T59 Plantilla_SuitesDelPipeline_UnRepoBasePorProceso — los dos repos del laboratorio se arman una vez y cada llamada recibe su copia @story-8.230 @ac-7', () => {
+  const labs = [lab(), lab(), lab()];
+  assert.equal(PLANTILLA_LAB.armados, 1, 'los repos base se armaron más de una vez');
+  assert.equal(new Set(labs.map((l) => l.back)).size, 3, 'dos llamadas recibieron la misma carpeta');
+  for (const l of labs) {
+    for (const repo of [l.back, l.esp]) assert.equal(fs.realpathSync(git(repo, ['rev-parse', '--show-toplevel'])), fs.realpathSync(repo));
+    assert.equal(path.dirname(l.archivo), path.join(l.back, 'src'), 'el archivo no es el de su copia');
+  }
+  // un commit en una copia no aparece en otra, y el clon file:// sale de la copia
+  escribir(labs[0].back, 'src/Otro.cs', '// otro\n');
+  commit(labs[0].back, 'sólo en la primera', T0 + 10);
+  assert.doesNotMatch(git(labs[1].back, ['log', '--format=%s']), /sólo en la primera/);
+  const clon = path.join(path.dirname(labs[0].back), 'Clon');
+  git(path.dirname(labs[0].back), ['clone', '-q', `file://${labs[0].back}`, clon]);
+  assert.match(git(clon, ['log', '--format=%s']), /sólo en la primera/);
+  // la evidencia de un lab va a su propio repo de historias
+  labs[2].evidencia();
+  assert.equal(git(labs[1].esp, ['rev-list', '--all', '--count']), '0');
+});
+
+test('T60 Plantilla_LabMatriz_MismoAhora — dos labMatriz devuelven la misma hora de partida y el commit base la respeta @story-8.230 @ac-7', () => {
+  const [a, b] = [labMatriz(), labMatriz({ declarados: ['Back/src/Otro.cs'] })];
+  assert.equal(PLANTILLA_MATRIZ.armados, 1, 'el repo base de la matriz se armó más de una vez');
+  assert.equal(a.ahora, b.ahora);
+  assert.notEqual(a.ws, b.ws);
+  for (const m of [a, b]) {
+    assert.equal(git(m.back, ['log', '-1', '--format=%ct']), String(m.ahora - 1000));
+    assert.ok(m.storyPath.startsWith(m.esp + path.sep), 'la historia no está en su copia');
+  }
+  assert.match(fs.readFileSync(b.storyPath, 'utf8'), /Back\/src\/Otro\.cs/);
+  assert.doesNotMatch(fs.readFileSync(a.storyPath, 'utf8'), /Back\/src\/Otro\.cs/);
+});
+
 const historia = (extra = {}) => ({ numero: PROPIA, archivo: '/h/5-28-carga.md', catalogo: () => CATALOGO, ...extra });
 const juzgar = (archivo, ev, opts = {}) => juezLib.crearJuez({ historia: historia(), ...opts })
   .vigencia({ archivo, mtimeMs: Date.now(), evidencia: ev });
@@ -133,8 +177,8 @@ test('T2 Fusion_PropiaYDevAMain_Cuenta @story-8.192 @ac-2', () => {
 });
 
 /** Dos repos de verdad con la matriz real: historia y humo con espejo en uno, código en el otro. Horas cerca de ahora. */
-function labMatriz({ declarados = ['Back/src/Feature.cs'], tests = 'curl la pantalla' } = {}) {
-  const ws = carpeta();
+// La hora de partida se fija al armar la plantilla y todas las copias la comparten: el commit base lleva esa fecha.
+const PLANTILLA_MATRIZ = plantilla('evm-matriz-plantilla-', (ws) => {
   const back = repoNuevo(ws, 'Back');
   const esp = repoNuevo(ws, 'Historias');
   const ahora = Math.floor(Date.now() / 1000) - 3600;
@@ -142,6 +186,14 @@ function labMatriz({ declarados = ['Back/src/Feature.cs'], tests = 'curl la pant
   escribir(back, PRUEBA, '// p1\n');
   commit(back, 'base', ahora - 1000);
   escribir(esp, '.tycon/advisors.yaml', 'evidence:\n  companion_repos:\n    - ../Back\n');
+  return { ahora };
+});
+
+function labMatriz({ declarados = ['Back/src/Feature.cs'], tests = 'curl la pantalla' } = {}) {
+  const ws = carpeta();
+  const { ahora } = PLANTILLA_MATRIZ.copiar(ws);
+  const back = path.join(ws, 'Back');
+  const esp = path.join(ws, 'Historias');
   const cuerpo = (n, tit) => ['---', `story: ${n}`, 'status: in-progress', 'files_to_modify:', ...declarados.map((d) => `  - ${d}`), '---', '',
     '## Acceptance Criteria', '', `1. **Given** ${tit}, **When** pasa, **Then** resultado.`, '', '### Tests', '',
     '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|', `| E1 | \`${tests}\` | 1 | e2e | x | y |`, ''].join('\n');

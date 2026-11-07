@@ -30,6 +30,7 @@ const HOOK = path.join(SCRIPTS, 'on-advisor-run.js');
 const FOTO = path.join(__dirname, 'fixtures', 'models-snapshot.json');
 const MODELS_JS = path.join(SCRIPTS, 'lib', 'models.js');
 const SID = 'lab-modelos-729';
+const { plantilla } = require(path.join(RAIZ, 'scripts', 'tests', 'lib', 'template-dir.js'));
 
 const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), `modelos-${p}-`));
 const models = () => require(MODELS_JS);
@@ -49,9 +50,15 @@ const HISTORIAS = {
   heavy: () => historia('9.3', ARCHIVOS, 10),
 };
 
-/** Un repo git de laboratorio en una rama de trabajo, con los archivos y las tres historias. */
+/** Un repo git de laboratorio en una rama de trabajo, con los archivos y las tres historias: una copia de la plantilla. */
 function labRepo() {
   const d = tmp('repo');
+  PLANTILLA_REPO.copiar(d);
+  return d;
+}
+
+// El repo se arma una vez por proceso (scripts/tests/lib/template-dir.js) y cada llamada a labRepo copia la carpeta.
+const PLANTILLA_REPO = plantilla('modelos-plantilla-', (d) => {
   // fechas fijas (el sha sale siempre igual) y sin el mantenimiento automático de git (no compite con la prueba)
   const env = { ...process.env, GIT_AUTHOR_DATE: '2026-10-16T00:00:00Z', GIT_COMMITTER_DATE: '2026-10-16T00:00:00Z' };
   const git = (...a) => execFileSync('git', ['-C', d, ...a], { stdio: 'ignore', env });
@@ -68,8 +75,7 @@ function labRepo() {
   git('commit', '-qm', 'base');
   git('checkout', '-qb', 'feat/lab');
   fs.appendFileSync(path.join(d, 'src', 'm0.js'), 'module.exports.b = 2;\n');
-  return d;
-}
+});
 
 /** Un árbol del arnés de laboratorio: un clon (trae install-tycon-hooks.sh) con los lectores de `scripts/lib`. */
 function labTree(teamRepos) {
@@ -84,6 +90,19 @@ function labTree(teamRepos) {
   }
   return d;
 }
+
+test('T46 Plantilla_SuitesDelPipeline_UnRepoBasePorProceso — el repo de laboratorio se arma una vez y cada llamada recibe su copia @story-8.230 @ac-7', () => {
+  const repos = [labRepo(), labRepo(), labRepo()];
+  assert.strictEqual(PLANTILLA_REPO.armados, 1, 'el repo base se armó más de una vez');
+  assert.strictEqual(new Set(repos).size, 3, 'dos llamadas recibieron la misma carpeta');
+  const git = (d, ...a) => execFileSync('git', ['-C', d, ...a], { encoding: 'utf8' }).trim();
+  for (const d of repos) {
+    assert.strictEqual(fs.realpathSync(git(d, 'rev-parse', '--show-toplevel')), fs.realpathSync(d), 'el repo no es el de su copia');
+    assert.strictEqual(git(d, 'branch', '--show-current'), 'feat/lab');
+  }
+  fs.writeFileSync(path.join(repos[0], 'src', 'm1.js'), 'cambiado\n');
+  assert.strictEqual(fs.readFileSync(path.join(repos[1], 'src', 'm1.js'), 'utf8'), 'module.exports = 1;\n', 'una copia cambió a otra');
+});
 
 const equipo = (models, platform = 'github') => ({
   version: 1,
