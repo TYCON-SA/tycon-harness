@@ -230,6 +230,95 @@ function formasDeCredencial() {
   ];
 }
 const FORMAS_DE_CREDENCIAL = formasDeCredencial();
+// Un código de la terminal entero (título, color) o un carácter de control suelto, salvo salto de línea, retorno y tabulación.
+const CONTROL = /\u001b\][^\u0007\u001b\n]*(?:\u0007|\u001b\\)?|(?:\u001b\[|\u009b)[0-9;?]*[ -/]*[@-~]|[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/;
+// El título de la terminal, con su texto aparte. Sin cierre, termina en el renglón.
+const TITULO_DE_TERMINAL = /\u001b\](?:[0-9]*;)?([^\u0007\u001b\n]*)(?:\u0007|\u001b\\)?/g;
+// Una llave privada con su contenido. Sin su cierre, hasta el final.
+const LLAVE_PRIVADA = /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g;
+
+const NOMBRE_DE_LA_CLAVE = /^(?:[A-Za-z][A-Za-z_-]*\s*[=:]\s*|(?:Bearer|Basic)\s+)/i;
+// La palabra que anuncia una clave sin nombre de variable: con un control en el medio, sólo la ve la versión con espacios.
+const CLAVE_CON_PALABRA = /\b(?:Bearer|Basic)\s+[^\s'"]+/gi;
+const SECUENCIA = new RegExp(`(${TITULO_DE_TERMINAL.source})|(?:${CONTROL.source})`, 'g');
+const FORMAS_GLOBALES = FORMAS_DE_CREDENCIAL.map((f) => new RegExp(f.source, f.flags.includes('g') ? f.flags : `${f.flags}g`));
+// Las mismas formas, ancladas al principio de un texto: el principio cuenta como borde de palabra.
+const FORMAS_DESDE_EL_CORTE = FORMAS_DE_CREDENCIAL.map((f) => new RegExp(f.source, `${f.flags.replace('g', '')}y`));
+// Lo más largo que se mira desde un corte: ninguna clave de una línea es más larga.
+const VENTANA_DE_CLAVE = 1024;
+
+/**
+ * Saca los caracteres de control y los códigos de la terminal (del título queda su texto) sin dejar una clave a medias.
+ * Un control puede ser el borde que una forma necesita (`riesgo\u0007sk-…`) o partir una clave en dos: por eso las
+ * formas se buscan en dos versiones del texto, con cada corte cambiado por un espacio y con los cortes borrados, y lo
+ * que cualquiera de las dos reconozca se tapa en el texto sin cortes. Si lo reconocido termina justo en un corte, lo
+ * que sigue pegado es la cola de la clave y se tapa con ella.
+ */
+function sinControlesTapandoClaves(txt) {
+  let junto = '';
+  let separado = '';
+  const aJunto = [];
+  const cortes = new Set();
+  const texto = (t) => { for (const c of t) { for (let k = 0; k < c.length; k++) aJunto.push(junto.length + k); separado += c; junto += c; } };
+  const corte = () => { aJunto.push(junto.length); separado += ' '; cortes.add(junto.length); };
+  // El texto de un título pasa por el mismo recorte: puede traer sus propios controles.
+  const recorrer = (t) => {
+    let i = 0;
+    for (const m of t.matchAll(SECUENCIA)) {
+      texto(t.slice(i, m.index));
+      corte();
+      if (m[1] !== undefined) { recorrer(m[2]); corte(); }
+      i = m.index + m[0].length;
+    }
+    texto(t.slice(i));
+  };
+  recorrer(txt);
+  if (!cortes.size) return txt;
+  aJunto.push(junto.length);
+  const tramos = [];
+  const anotar = (m, mapa) => {
+    const nombre = NOMBRE_DE_LA_CLAVE.exec(m[0]);
+    const desde = m.index + (nombre ? nombre[0].length : 0);
+    const hasta = m.index + m[0].length;
+    tramos.push(mapa ? [mapa[desde], mapa[hasta]] : [desde, hasta]);
+  };
+  for (const forma of [LLAVE_PRIVADA, CLAVE_CON_PALABRA, ...FORMAS_GLOBALES]) {
+    for (const m of separado.matchAll(forma)) anotar(m, aJunto);
+    for (const m of junto.matchAll(forma)) anotar(m, null);
+  }
+  // Una clave que empieza justo en un corte y sigue partida por otro no la reconoce ninguna de las dos versiones: el
+  // corte le daba el borde y el otro la partía. Se busca también desde cada corte, con el corte como borde.
+  for (const c of cortes) {
+    const ventana = junto.slice(c, c + VENTANA_DE_CLAVE);
+    for (const forma of FORMAS_DESDE_EL_CORTE) {
+      forma.lastIndex = 0;
+      const m = forma.exec(ventana);
+      if (m) { m.index += c; anotar(m, null); }
+    }
+  }
+  const finDeCola = new Map();
+  const cola = /[\w+/=.~-]+/y;
+  const seguirCola = (desde) => {
+    if (!finDeCola.has(desde)) { cola.lastIndex = desde; finDeCola.set(desde, cola.exec(junto) ? cola.lastIndex : desde); }
+    return finDeCola.get(desde);
+  };
+  for (const t of tramos) {
+    while (cortes.has(t[1])) {
+      const fin = seguirCola(t[1]);
+      if (fin === t[1]) break;
+      t[1] = fin;
+    }
+  }
+  tramos.sort((a, b) => a[0] - b[0] || b[1] - a[1]);
+  let salida = '';
+  let pos = 0;
+  for (const [desde, hasta] of tramos) {
+    if (hasta <= pos) continue;
+    if (desde >= pos) salida += `${junto.slice(pos, desde)}<oculto>`;
+    pos = hasta;
+  }
+  return salida + junto.slice(pos);
+}
 
 /**
  * Saca del texto lo que identifica a una máquina o a una sesión. El mensaje rescatado es lo ÚNICO
@@ -242,11 +331,14 @@ function sanear(txt, home) {
   const casaConSuResto = new RegExp(`${casa.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:[\\\\/](?:[^\\s'"]|\\s(?=[\\w .()-]*[\\\\/]))*)?`, 'g');
   // de una forma con su nombre adelante (`Password=…`) queda el nombre: dice de qué se trata, y no es el secreto
   const tapar = (m) => { const nombre = /^[A-Za-z][A-Za-z_-]*\s*[=:]\s*/.exec(m); return `${nombre ? nombre[0] : ''}<oculto>`; };
-  return FORMAS_DE_CREDENCIAL.reduce((t, forma) => t.replace(forma, tapar), String(txt || '')
-    // Una llave privada, con su contenido: el encabezado solo dejaría el cuerpo a la vista. Sin su cierre, hasta el final.
+  const taparFormas = (t) => FORMAS_DE_CREDENCIAL.reduce((a, forma) => a.replace(forma, tapar), t);
+  // La llave privada se tapa entera primero: una forma que tapara sólo su encabezado dejaría el cuerpo a la vista.
+  const sinControl = sinControlesTapandoClaves(String(txt || '').replace(LLAVE_PRIVADA, '<oculto>'));
+  return taparFormas(sinControl
+    // La llave privada otra vez: una partida por un control recién ahora queda entera.
     // el usuario y la clave de una dirección: `postgres://usuario:clave@servidor`
     .replace(/(:\/\/)[^\s/:@]+:[^\s/@]+@/g, '$1<oculto>@')
-    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, '<oculto>'))
+    .replace(LLAVE_PRIVADA, '<oculto>'))
     // 🔴 EL ORDEN IMPORTA. Si el home se colapsara a `~` en el PRIMER paso, la regla que borra rutas
     // absolutas no reconocería lo que queda: `/Users/<dev>/Proyectos/Cliente/a.cs` se publicaría como
     // `~/Proyectos/Cliente/a.cs` — o sea, sobreviviría exactamente el tramo que nombra al cliente.
