@@ -13,8 +13,9 @@
  *     cuadro y el pedido se niega). `fuente` es el texto exacto que se
  *     mostró: entra a la huella del sello, así un click no vale si la fuente cambió después del cuadro.
  *   · `historiaDe(marcador)` → `{ id, titulo }` de la historia de la corrida, o null sin corrida.
- *   · `seccionesDelPlan(texto)` → `{ queHace, archivos }` o `{ error }`: el plan dice qué hace en hasta 3 líneas y qué
- *     archivos toca, o no se firma (lo comprueba `marker.js complete-step approve-plan` antes de la ventana).
+ *   · `seccionesDelPlan(texto)` → `{ queHace, archivos }` o `{ error, errores }`: el plan dice qué hace en hasta 3 líneas y
+ *     qué archivos toca, o no se firma (lo comprueba `marker.js complete-step approve-plan` antes de la ventana). `error`
+ *     junta todo lo que falta en un texto; `errores`, una falta por renglón.
  */
 const crypto = require('crypto');
 const fs = require('fs');
@@ -78,10 +79,13 @@ const renglones = (cuerpo) => (cuerpo || []).map((l) => l.replace(/^\s*(?:[-*]|\
 
 function seccionesDelPlan(texto) {
   const queHace = renglones(seccion(texto, 'Qué hace'));
-  if (!queHace.length) return { error: 'el plan no dice qué hace en hasta 3 líneas: falta la sección «## Qué hace». Agregala al plan con hasta 3 líneas llanas de qué cambia' };
-  if (queHace.length > LINEAS_DEL_PLAN) return { error: `el plan no dice qué hace en hasta 3 líneas: su sección «## Qué hace» tiene ${queHace.length}. Dejala en 3 líneas llanas` };
   const archivos = renglones(seccion(texto, 'Archivos')).flatMap((l) => l.split(/,\s+/)).map((a) => a.replace(/`/g, '').trim()).filter(Boolean);
-  if (!archivos.length) return { error: 'el plan no dice qué archivos toca: falta la sección «## Archivos». Agregala al plan con un archivo por renglón («- ruta»)' };
+  // todo lo que falta junto: de a una, la sesión se entera de la segunda en la vuelta siguiente
+  const errores = [];
+  if (!queHace.length) errores.push('el plan no dice qué hace en hasta 3 líneas: falta la sección «## Qué hace». Agregala al plan con hasta 3 líneas llanas de qué cambia');
+  else if (queHace.length > LINEAS_DEL_PLAN) errores.push(`el plan no dice qué hace en hasta 3 líneas: su sección «## Qué hace» tiene ${queHace.length}. Dejala en 3 líneas llanas`);
+  if (!archivos.length) errores.push('el plan no dice qué archivos toca: falta la sección «## Archivos». Agregala al plan con un archivo por renglón («- ruta»)');
+  if (errores.length) return { error: errores.join('; y '), errores };
   return { queHace, archivos };
 }
 
@@ -112,7 +116,8 @@ function delPlan(palabras, m, { estado, destino } = {}) {
   const revision = revisionDelPlan(m, estado, destino);
   const fuente = revision ? `${texto}\n${revision.linea}\n${revision.detalle.join('\n')}` : texto;
   const s = seccionesDelPlan(texto);
-  if (s.error) return { queHace: [s.error], completo: ruta, fuente, cita, revision };
+  // una falta por renglón: el cuadro corta cada renglón a 200, y las dos juntas no entran
+  if (s.error) return { queHace: s.errores, completo: ruta, fuente, cita, revision };
   return { queHace: s.queHace, archivos: s.archivos, completo: ruta, fuente, cita, revision };
 }
 

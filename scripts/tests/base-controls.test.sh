@@ -499,7 +499,7 @@ lab_git -C "${R}" checkout -q pedido
 run "${R}" "${T}/t16a.out"
 is "T16 un pedido limpio sigue verde aunque main trajo un cambio sin firmar" "0" "${RC}"
 has "T16 avisa con el commit y el archivo" "${T}/t16a.out" "main trajo .github/workflows/ci.yml en ${SIN} sin constancia del dueño"
-has "T16 dice cómo firmarla" "${T}/t16a.out" "run-base-controls.sh approve"
+has "T16 dice cómo firmarla" "${T}/t16a.out" "approve --root"
 # firmado en main: la constancia ancla esa versión del archivo
 lab_git -C "${R}" checkout -q main
 BLOB="$(lab_git -C "${R}" rev-parse HEAD:.github/workflows/ci.yml)"
@@ -1320,7 +1320,7 @@ pendiente "${R}" "${T}/ya-carpeta.out"; RC=$?
 is "PendingSaysAlreadySigned: con la constancia en la carpeta sale 0" "0" "${RC}"
 has "PendingSaysAlreadySigned: …dice que ya está firmado" "${T}/ya-carpeta.out" "${YA}"
 has "PendingSaysAlreadySigned: …con la ruta de la constancia" "${T}/ya-carpeta.out" "${CARPETA}${H1}.json"
-lacks "PendingSaysAlreadySigned: …sin el comando de firma" "${T}/ya-carpeta.out" "run-base-controls.sh approve"
+lacks "PendingSaysAlreadySigned: …sin el comando de firma" "${T}/ya-carpeta.out" "approve --root"
 R="${T}/ya-jsonl"; firmado_base "${R}"
 mkdir -p "${R}/.tycon"; firma "${E1}" > "${R}/.tycon/control-changes.jsonl"; commit "${R}" "la firma del dueño en el registro"
 pendiente "${R}" "${T}/ya-jsonl.out"
@@ -1329,29 +1329,29 @@ R="${T}/ya-delegada"; firmado_base "${R}"
 mkdir -p "${R}/${CARPETA}"; firma_delegada "${E1}" "" >"${R}/${CARPETA}${H1}.json"; commit "${R}" "una firma por delegación"
 pendiente "${R}" "${T}/ya-delegada.out"
 lacks "PendingSaysAlreadySigned: una por delegación no cuenta" "${T}/ya-delegada.out" "${YA}"
-has "PendingSaysAlreadySigned: …y pide la firma" "${T}/ya-delegada.out" "run-base-controls.sh approve"
+has "PendingSaysAlreadySigned: …y pide la firma" "${T}/ya-delegada.out" "approve --root"
 has "PendingSaysAlreadySigned: …y dice por qué no contó la que está" "${T}/ya-delegada.out" "es por delegación: no cuenta como la firma del dueño"
 R="${T}/ya-otro"; firmado_base "${R}"
 OTRO="$(node -e 'const e=JSON.parse(process.argv[1]);e[0].blob="0".repeat(40);console.log(JSON.stringify(e))' "${E1}")"
 mkdir -p "${R}/${CARPETA}"; firma "${OTRO}" > "${R}/${CARPETA}$(hash_de "${OTRO}").json"; commit "${R}" "la firma de otro cambio"
 pendiente "${R}" "${T}/ya-otro.out"
 lacks "PendingSaysAlreadySigned: la de otro hash no cuenta" "${T}/ya-otro.out" "${YA}"
-has "PendingSaysAlreadySigned: …y pide la firma" "${T}/ya-otro.out" "run-base-controls.sh approve"
+has "PendingSaysAlreadySigned: …y pide la firma" "${T}/ya-otro.out" "approve --root"
 R="${T}/ya-reglas"; firmado_base "${R}"
 mkdir -p "${R}/${CARPETA}"; node -e 'const l=JSON.parse(process.argv[1]);l.rules[0].blob="1".repeat(40);console.log(JSON.stringify(l))' "$(firma "${E1}")" > "${R}/${CARPETA}${H1}.json"; commit "${R}" "el hash de este cambio con otras reglas"
 pendiente "${R}" "${T}/ya-reglas.out"
 lacks "PendingSaysAlreadySigned: el hash correcto con otras reglas no cuenta" "${T}/ya-reglas.out" "${YA}"
-has "PendingSaysAlreadySigned: …y pide la firma" "${T}/ya-reglas.out" "run-base-controls.sh approve"
+has "PendingSaysAlreadySigned: …y pide la firma" "${T}/ya-reglas.out" "approve --root"
 R="${T}/ya-rota"; firmado_base "${R}"
 mkdir -p "${R}/${CARPETA}"; printf '{ no es json\n' > "${R}/${CARPETA}${H1}.json"; commit "${R}" "una constancia ilegible"
 pendiente "${R}" "${T}/ya-rota.out"
 lacks "PendingSaysAlreadySigned: la ilegible no cuenta" "${T}/ya-rota.out" "${YA}"
-has "PendingSaysAlreadySigned: …y pide la firma" "${T}/ya-rota.out" "run-base-controls.sh approve"
+has "PendingSaysAlreadySigned: …y pide la firma" "${T}/ya-rota.out" "approve --root"
 R="${T}/ya-disco"; firmado_base "${R}"
 mkdir -p "${R}/${CARPETA}"; firma "${E1}" > "${R}/${CARPETA}${H1}.json"
 pendiente "${R}" "${T}/ya-disco.out"
 lacks "PendingSaysAlreadySigned: la del disco sin commitear no cuenta" "${T}/ya-disco.out" "${YA}"
-has "PendingSaysAlreadySigned: …y pide la firma" "${T}/ya-disco.out" "run-base-controls.sh approve"
+has "PendingSaysAlreadySigned: …y pide la firma" "${T}/ya-disco.out" "approve --root"
 
 # BaseControls_CatchingUpMainWithoutSignedChangeNeedsNoSignature @story-8.226 @ac-12
 R="${T}/ya-main"; firmado_base "${R}"
@@ -1361,7 +1361,7 @@ lab_git -C "${R}" checkout -q pedido; lab_git -C "${R}" merge -q --no-edit main 
 pendiente "${R}" "${T}/ya-main.out"
 has "CatchingUpMainWithoutSignedChange: traer main no cambia el hash" "${T}/ya-main.out" "hash: ${H1}"
 has "CatchingUpMainWithoutSignedChange: …y pending no pide firmar" "${T}/ya-main.out" "${YA}"
-lacks "CatchingUpMainWithoutSignedChange: …ni imprime el comando" "${T}/ya-main.out" "run-base-controls.sh approve"
+lacks "CatchingUpMainWithoutSignedChange: …ni imprime el comando" "${T}/ya-main.out" "approve --root"
 bash "${SCRIPT}" run --root "${R}" --base main --range main...pedido > "${T}/ya-main.run" 2>&1; RC=$?
 is "CatchingUpMainWithoutSignedChange: la revisión da verde" "0" "${RC}"
 
@@ -1382,7 +1382,50 @@ mkdir -p "${R}/${CARPETA}"; firma "${E1}" > "${R}/${CARPETA}${H1}.json"; commit 
 regla "${R}" block '"docs/permitido.txt", "docs/malo.txt", "docs/peor.txt"' uno; commit "${R}" "afloja más"
 pendiente "${R}" "${T}/ya-otra-vez.out"
 lacks "BranchChangesSignedFileAgain: lo cambiado después no está firmado" "${T}/ya-otra-vez.out" "${YA}"
-has "BranchChangesSignedFileAgain: …y pide la firma" "${T}/ya-otra-vez.out" "run-base-controls.sh approve"
+has "BranchChangesSignedFileAgain: …y pide la firma" "${T}/ya-otra-vez.out" "approve --root"
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# La firma se pide con la ruta completa del guion: el comando corre desde cualquier carpeta
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+R="${T}/ruta"; make_base "${R}"; pr "${R}"
+printf '%s\n' '{ "mode": "block", "allow": ["docs/permitido.txt", "docs/malo.txt"] }' > "${R}/scripts/ci/toy-rules.json"
+printf 'PROHIBIDO\n' > "${R}/docs/malo.txt"; commit "${R}"
+# el guion, entre comillas simples como lo escribe el comando impreso
+SELF_Q="'${SCRIPT//\'/\'\\\'\'}'"
+
+# T1 BaseControls_Pending_PrintsAbsoluteScriptPath @story-8.237 @ac-1
+( cd "${T}" && bash "${SCRIPT}" pending --root "${R}" --base main --range main...pedido ) > "${T}/ruta-pending.out" 2>&1
+has "T1 Pending_PrintsAbsoluteScriptPath: el comando de la sesión lleva la ruta completa" "${T}/ruta-pending.out" "la firma, desde la sesión (el dueño la aprueba en la ventana de permiso, o, donde la ventana no llega, con su click en el cuadro de opciones o su «aprobado»): bash ${SELF_Q} approve --root"
+has "T1 …y el de la terminal también" "${T}/ruta-pending.out" "o, si prefiere, en su terminal: bash ${SELF_Q} approve --root"
+lacks "T1 …ninguno con la ruta relativa" "${T}/ruta-pending.out" "bash scripts/ci/run-base-controls.sh approve"
+
+# T2 BaseControls_PrintedCommand_RunsFromAnotherFolder @story-8.237 @ac-2: el guion en una carpeta con espacio y apóstrofo,
+# y el comando impreso corrido desde otra carpeta (con `classify`, que no firma nada)
+OBRIEN="${T}/arnés de O'Brien"; mkdir -p "${OBRIEN}/scripts/ci"; cp "${SCRIPT}" "${OBRIEN}/scripts/ci/run-base-controls.sh"
+( cd "${OBRIEN}" && bash scripts/ci/run-base-controls.sh pending --root "${R}" --base main --range main...pedido ) > "${T}/obrien-pending.out" 2>&1
+LINEA="$(sed -n 's/^la firma, desde la sesión ([^)]*): //p' "${T}/obrien-pending.out" | head -n 1)"
+case "${LINEA}" in
+  "bash '${T}/arnés de O'\\''Brien/scripts/ci/run-base-controls.sh' approve "*) ok "T2 PrintedCommand_RunsFromAnotherFolder: el comando nombra la copia, con el apóstrofo escapado" ;;
+  *) no "T2 PrintedCommand_RunsFromAnotherFolder: el comando no nombra la copia entre comillas: ${LINEA:0:200}" ;;
+esac
+OTRO="${T}/otro puesto"; mkdir -p "${OTRO}"
+( cd "${OTRO}" && eval "${LINEA/ approve / classify }" ) > "${T}/obrien-classify.out" 2>&1; RC=$?
+is "T2 …desde otra carpeta corre el mismo guion (exit)" "0" "${RC}"
+has "T2 …y contesta su JSON" "${T}/obrien-classify.out" '"clase":'
+lacks "T2 …nunca «no such file»" "${T}/obrien-classify.out" "No such file"
+
+# T3 BaseControls_ApproveWithoutApproval_TerminalCommandIsAbsolute @story-8.237 @ac-4
+ENTRIES="$(sed -n "s/^la firma, desde la sesión.* --entries '\(.*\)'\$/\1/p" "${T}/ruta-pending.out" | head -n 1)"
+( cd "${T}" && bash "${SCRIPT}" approve --root "${R}" --base main --out .tycon/control-changes.jsonl --entries "${ENTRIES}" < /dev/null ) > "${T}/ruta-approve.out" 2>&1; RC=$?
+is "T3 ApproveWithoutApproval_TerminalCommandIsAbsolute: sin el «Sí» no firma (exit)" "1" "${RC}"
+has "T3 …y el motivo trae el comando de la terminal entero" "${T}/ruta-approve.out" "bash ${SELF_Q} approve --root '${R}' --base 'main' --out '.tycon/control-changes.jsonl' --entries '${ENTRIES}' --terminal"
+lacks "T3 …no el texto fijo del catálogo" "${T}/ruta-approve.out" "O en tu terminal: run-base-controls.sh approve --terminal"
+
+# T4 BaseControls_CiRejection_KeepsRelativePath @story-8.237 @ac-5: el rojo de la CI no lleva la ruta de la máquina
+run "${R}" "${T}/ruta-run.out"
+is "T4 CiRejection_KeepsRelativePath: afloja sin constancia: rojo" "1" "${RC}"
+has "T4 …el comando sigue relativo, con --root <repo> sin comillas" "${T}/ruta-run.out" "bash scripts/ci/run-base-controls.sh approve --root <repo>"
+lacks "T4 …sin la ruta de esta máquina" "${T}/ruta-run.out" "bash ${SELF_Q} approve"
 
 echo
 if [ "${FAILS}" -eq 0 ]; then echo "✅ base-controls: ${TOTAL} verificaciones verdes"; exit 0; fi

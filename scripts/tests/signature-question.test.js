@@ -283,6 +283,128 @@ test('SignatureQuestion_WaiverCincoCriterios_NombraLosCincoAunqueResuma', (t) =>
   assert.doesNotMatch(conFirma('plan-approval')(c, APRUEBA_PLAN).pregunta, /Criterios:/);
 });
 
+// Criterios declarados no verificables en vivo, cada uno con su razón: `razones` es `{ <n>: <razón o null> }`
+const conRazones = (razones) => {
+  const ns = Object.keys(razones).map(Number);
+  return {
+    criterios: ns.map((n) => ({ n, texto: `**Given** el criterio ${n} **Then** pasa algo` })),
+    extraHistoria: ['runtime_not_verifiable:', ...ns.flatMap((n) => [`  - ac: ${n}`, ...(razones[n] === null ? [] : [`    reason: "${razones[n]}"`]), '    covered_by: T1'])],
+  };
+};
+// lo que se aprueba: la pregunta hasta el «?» que la cierra (las razones de estas pruebas no traen «? »)
+const tituloDe = (q) => q.slice(0, q.indexOf('? ') + 1);
+const OTRA_CORRIDA = 'se prueba en la corrida de su propia historia, no en la de esta tanda';
+// los criterios como los entrega la matriz: `{ <n>: <razón o null> }`
+const excepciones = (razones) => Object.keys(razones).map(Number).map((ac) => ({ ac, reason: razones[ac], coveredBy: 'T1', text: `el criterio ${ac}` }));
+// el título que arma el cuadro con lo que se aprueba (el mismo recorte a 200 y los signos)
+const tituloCon = (razones) => tituloDe(oa.cuadroDe({ firma: 'runtime-waiver', que: ow.queDeLaExcepcion(excepciones(razones)), queHace: ['x'], archivos: [] }).pregunta);
+
+// 🔴 Falla con: el título de siempre («¿Aceptar un criterio imposible de probar en vivo?») aunque la razón sea otra.
+test('OwnerWindow_WaiverOneReason_TitleSaysTheReason (T6) @story-8.237 @ac-6 @ac-8', () => {
+  assert.strictEqual(tituloCon({ 5: OTRA_CORRIDA }), `¿Aceptar sin prueba en vivo el AC 5, porque «${OTRA_CORRIDA}»?`);
+  assert.strictEqual(tituloCon({ 3: OTRA_CORRIDA, 1: OTRA_CORRIDA, 2: OTRA_CORRIDA }), `¿Aceptar sin prueba en vivo los AC 1, 2 y 3, porque «${OTRA_CORRIDA}»?`);
+  // una razón larga se recorta antes de que el cuadro la corte: el cierre queda
+  const larga = 'la prueba la corre la CI de Windows del pedido y no esta máquina '.repeat(5).trim();
+  const tl = tituloCon({ 7: larga });
+  assert.ok(tl.length <= 202, `${tl.length}: ${tl}`);
+  assert.ok(tl.endsWith('…»?'), tl);
+  assert.ok(tl.startsWith('¿Aceptar sin prueba en vivo el AC 7, porque «la prueba la corre la CI de Windows'), tl);
+  // muchos criterios: se cuentan en vez de nombrarse, y el título no pasa del largo
+  const muchos = Object.fromEntries(Array.from({ length: 30 }, (_, k) => [k + 100, OTRA_CORRIDA]));
+  assert.ok(tituloCon(muchos).startsWith('¿Aceptar sin prueba en vivo 30 criterios, porque «'), tituloCon(muchos));
+  assert.ok(tituloCon(muchos).length <= 202, tituloCon(muchos));
+  // sin razón declarada, o con la razón de relleno de la matriz
+  assert.strictEqual(tituloCon({ 4: null }), '¿Aceptar sin prueba en vivo el AC 4, sin razón declarada?');
+  assert.strictEqual(tituloCon({ 4: '(sin razón declarada)' }), '¿Aceptar sin prueba en vivo el AC 4, sin razón declarada?');
+  for (const r of [{ 5: OTRA_CORRIDA }, { 7: larga }, { 4: null }]) assert.doesNotMatch(tituloCon(r), /imposible/);
+});
+
+// 🔴 Falla con: la razón al final del renglón, cortada por el largo del renglón («(por qué n…»).
+test('OwnerWindow_WaiverManyReasons_EachLineStartsWithItsReason (T7) @story-8.237 @ac-7', () => {
+  const razon = (n) => `razón ${n}: ${'la prueba depende de un servicio que esta máquina no tiene y que se prueba en otra corrida'.slice(0, 140)}`;
+  const lista = excepciones({ 1: razon(1), 2: razon(2), 3: razon(3) });
+  assert.strictEqual(tituloCon({ 1: razon(1), 2: razon(2), 3: razon(3) }), '¿Aceptar sin prueba en vivo los AC 1, 2 y 3, cada uno por la razón que declaró?');
+  const cuadro = oa.cuadroDe({ firma: 'runtime-waiver', que: ow.queDeLaExcepcion(lista), queHace: lista.map(ow.renglonDeLaExcepcion), archivos: [] }).pregunta;
+  for (const n of [1, 2, 3]) {
+    assert.ok(razon(n).length <= 150, razon(n).length);
+    assert.ok(cuadro.includes(`AC ${n}: por qué no se prueba en vivo: ${razon(n)}; lo cubre:`), `AC ${n}: ${cuadro}`);
+  }
+});
+
+// 🔴 Falla con: un cuadro que cambia entre el pedido y el click (la huella no coincidiría y el click no valdría), o un
+// cuadro que no usa la razón declarada en la historia.
+test('OwnerWindow_WaiverBox_SameQuestionAndPrintTwice (T8) @story-8.237 @ac-6 @ac-9', (t) => {
+  const c = corrida(t, conRazones({ 2: OTRA_CORRIDA }));
+  const cmd = `node ${MARKER} runtime-waiver ${c.ruta}`;
+  const a = conFirma('runtime-waiver')(c, cmd);
+  const b = conFirma('runtime-waiver')(c, cmd);
+  assert.ok(!a.error, a.error);
+  assert.strictEqual(tituloDe(a.pregunta), `¿Aceptar sin prueba en vivo el AC 2, porque «${OTRA_CORRIDA}»?`);
+  assert.strictEqual(a.pregunta, b.pregunta);
+  assert.strictEqual(a.sello, b.sello);
+  // la aprobación dada sobre el cuadro del pedido vale contra el que se arma al validarla
+  assert.ok(oa.traeElSello(`Te pido esto: ${a.pregunta}`, { sello: b.sello, destino: 'ses-a', pregunta: b.pregunta }));
+});
+
+// 🔴 Falla con: la ruta del guion metida en la huella (la misma firma pedida desde otro puesto daría otro código), o un
+// guion en una carpeta con apóstrofo que el freno deja de reconocer.
+test('OwnerWindow_ControlChangeBox_SamePrintWithFullOrRelativePath (T9) @story-8.237 @ac-1 @ac-5', (t) => {
+  const c = corrida(t);
+  const entries = "'[{\"path\":\"scripts/ci/x.sh\",\"blob\":\"0000000000000000000000000000000000000000\"}]'";
+  const resto = `approve --root ${c.repo} --entries ${entries}`;
+  const formas = [`bash scripts/ci/run-base-controls.sh ${resto}`, `bash /un/puesto/scripts/ci/run-base-controls.sh ${resto}`,
+    `bash '/otro puesto/scripts/ci/run-base-controls.sh' ${resto}`, `bash 'C:\\Users\\Ana\\arnés\\scripts\\ci\\run-base-controls.sh' ${resto}`];
+  const codigos = formas.map((cmd) => { const q = conFirma('control-change')(c, cmd); assert.ok(!q.error, `${cmd}: ${q.error}`); return q.sello.split('código ')[1]; });
+  assert.deepStrictEqual(new Set(codigos).size, 1, codigos.join(' '));
+  const obrien = `bash '/tmp/arnés de O'\\''Brien/scripts/ci/run-base-controls.sh' ${resto}`;
+  assert.strictEqual((ow.canonicaDe(obrien) || {}).id, 'control-change', obrien);
+});
+
+const fuentes = require('../lib/signature-sources.js');
+const SIN_QUE_HACE = PLAN.replace(/## Qué hace[\s\S]*?(?=## Archivos)/, '');
+const SIN_LAS_DOS = SIN_QUE_HACE.replace(/## Archivos[\s\S]*?(?=## Pasos)/, '');
+const LARGO_SIN_ARCHIVOS = PLAN.replace('Las preguntas de firma dicen qué se aprueba.', 'dos\ntres\ncuatro\ncinco').replace(/## Archivos[\s\S]*?(?=## Pasos)/, '');
+
+// 🔴 Falla con: un plan sin las dos secciones que sólo nombra la primera (la sesión se entera de la otra en la vuelta siguiente).
+test('SignatureQuestion_PlanMissingTwoSections_NamesBoth (T10) @story-8.237 @ac-10', () => {
+  const s = fuentes.seccionesDelPlan(SIN_LAS_DOS);
+  assert.match(s.error, /«## Qué hace»/);
+  assert.match(s.error, /«## Archivos»/);
+  assert.strictEqual(s.errores.length, 2, JSON.stringify(s.errores));
+  assert.match(s.errores[0], /«## Qué hace»\. Agregala/);
+  assert.match(s.errores[1], /«## Archivos»\. Agregala .*«- ruta»/);
+});
+
+// 🔴 Falla con: el largo de «Qué hace» dicho solo, sin la sección que falta.
+test('SignatureQuestion_LongPlanWithoutFiles_SaysBoth (T11) @story-8.237 @ac-11', () => {
+  const s = fuentes.seccionesDelPlan(LARGO_SIN_ARCHIVOS);
+  assert.match(s.error, /tiene 5\. Dejala en 3/);
+  assert.match(s.error, /«## Archivos»/);
+  assert.strictEqual(s.errores.length, 2, JSON.stringify(s.errores));
+});
+
+// 🔴 Falla con: un plan completo que deja de dar su resumen y sus archivos.
+test('SignatureQuestion_CompletePlan_AsBefore (T12) @story-8.237 @ac-13', () => {
+  assert.deepStrictEqual(fuentes.seccionesDelPlan(PLAN), { queHace: ['Nombra a la coordinadora con un click.', 'Las preguntas de firma dicen qué se aprueba.'],
+    archivos: ['scripts/lib/owner-window.js', 'scripts/lib/signatures.js'] });
+  // una sola falta: el renglón de siempre
+  assert.deepStrictEqual(fuentes.seccionesDelPlan(SIN_QUE_HACE).errores, [fuentes.seccionesDelPlan(SIN_QUE_HACE).error]);
+});
+
+// 🔴 Falla con: las dos faltas en un solo renglón, que el cuadro corta a 200 y deja la segunda a medias.
+test('ApprovePlan_PlanWithoutTwoSections_BoxNamesBoth_DoesNotBlock (T13) @story-8.237 @ac-12', (t) => {
+  for (const texto of [SIN_LAS_DOS, LARGO_SIN_ARCHIVOS]) {
+    const c = corrida(t);
+    fs.writeFileSync(path.join(c.estado, 'active', 'ses-a.json'), JSON.stringify({ sessionId: 'ses-a', storyId: '9.99', storyPath: c.ruta, repoPath: c.repo,
+      startedAt: '2026-11-04T12:00:00Z', stepScheme: 2, stepsCompleted: ['validate-story', 'plan'], stepsPending: ['approve-plan', 'implement'] }));
+    escribirPlan(c, texto);
+    const q = cuadro(c, APRUEBA_PLAN, { firma: 'plan-approval' }).pregunta;
+    for (const e of fuentes.seccionesDelPlan(texto).errores) assert.ok(q.includes(e), `falta «${e}» entero en: ${q}`);
+    const r = ow.comprobarConElGuion({ palabras: ow.canonica(APRUEBA_PLAN), cwd: c.repo, sesion: 'ses-a', casa: c.casa });
+    assert.ok(!(r && r.niega && /## Qué hace|## Archivos/.test(r.niega)), JSON.stringify(r));
+  }
+});
+
 // 🔴 Falla con: la prueba a mano que no nombra todos sus criterios.
 test('SignatureQuestion_PruebaAMano_NombraTodos', (t) => {
   const c = corrida(t, { criterios: [1, 4, 5, 8].map((n) => ({ n, texto: largo(n) })) });

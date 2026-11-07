@@ -57,6 +57,7 @@ const PERMITIDOS = ['wait-notice.js', 'owner-approval-record.js', 'session-state
 // Cómo anota la herramienta un mensaje tipeado, medido en transcripciones reales: en la consola `cli · typed`, en la extensión
 // del editor `claude-vscode · sdk`. Otra sesión llega con `system`, y un programa (`claude -p`) con `sdk-cli`.
 const TIPEADO = { cli: ['typed'], 'claude-vscode': ['sdk'] };
+const CLAUDE_P = 'sdk-cli';
 const sha = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 const una = (s, n = 200) => { const t = String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); return t.length > n ? `${t.slice(0, n)}…` : t; };
 const ow = () => require('./owner-window.js');
@@ -321,7 +322,11 @@ function mensajeEnLaTranscripcion(ruta, a, { sello, destino, pregunta } = {}) {
   if (i < 0) return { ok: false, motivo: 'el mensaje no está en la transcripción de la sesión a esa hora' };
   const r = rs[i];
   if (r.isMeta === true || !r.origin || r.origin.kind !== 'human') return { ok: false, motivo: 'el mensaje no lo escribió una persona (lo mandó otra sesión o un programa)' };
-  if (!(TIPEADO[r.entrypoint] || []).includes(r.promptSource)) return { ok: false, motivo: `el mensaje no lo tipeó una persona: llegó por ${una(r.entrypoint, 40)} · ${una(r.promptSource, 40)}` };
+  if (!(TIPEADO[r.entrypoint] || []).includes(r.promptSource)) {
+    // bajo claude -p no hay quien apruebe escribiendo: el motivo dice dónde se aprueba
+    const donde = r.entrypoint === CLAUDE_P ? ': bajo claude -p un mensaje escrito no vale como aprobación: aprobá en una sesión con ventana (la terminal o la extensión) o con el cuadro de la coordinadora' : '';
+    return { ok: false, motivo: `el mensaje no lo tipeó una persona: llegó por ${una(r.entrypoint, 40)} · ${una(r.promptSource, 40)}${donde}` };
+  }
   // lo que el agente dijo después del mensaje anterior de la persona: una pregunta se contesta una sola vez
   let antes = null;
   for (let k = i - 1; k >= 0 && antes === null; k--) {
