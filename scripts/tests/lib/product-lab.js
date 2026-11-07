@@ -34,6 +34,7 @@ const path = require('path');
 
 const RAIZ = path.resolve(__dirname, '..', '..', '..');
 const ledgerLine = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'tests', 'lib', 'smoke-ledger-line.js'));
+const { plantilla } = require(path.join(__dirname, 'template-dir.js'));
 
 const TOPE_MS = 60000;
 const T0 = 1790000000;
@@ -331,9 +332,30 @@ function contexto(dir, herramientas, topeMs, harness) {
   return c;
 }
 
+/**
+ * La base: las herramientas y los tres repos, armados una vez por proceso en una carpeta propia (lib/template-dir.js), y
+ * una por `PATH`, que es de donde salen las herramientas. El arnés, el tope y la carpeta de cada llamada van en la copia.
+ */
+const BASE = plantilla('lab-producto-base-', (dir) => {
+  try {
+    const base = contexto(path.join(dir, 'base'), armarHerramientas(path.join(dir, 'herramientas')), TOPE_MS, RAIZ);
+    armarBase(base);
+    return { dir: base.dir, herramientas: base.herramientas, repos: base.repos };
+  } catch (e) {
+    // lo lanzado puede no ser un Error: el motivo sale igual, sin la carpeta de la plantilla
+    if (e instanceof Error) {
+      e.message = sanear(e.message, [[dir, '<lab>']]);
+      throw e;
+    }
+    throw new NoMedido(sanear(String(e), [[dir, '<lab>']]));
+  }
+});
+const laBase = () => BASE.obtener(process.env.PATH || '').valor;
+
 function copiaDeLaBase(base, dir, topeMs, harness) {
   fs.cpSync(base.dir, dir, { recursive: true, verbatimSymlinks: true });
   const c = contexto(dir, base.herramientas, topeMs, harness);
+  c.dirBase = path.dirname(base.dir);
   for (const nombre of Object.keys(base.repos)) {
     c.repos[nombre] = path.join(dir, 'repos', nombre);
     correrGit(c, c.repos[nombre], ['remote', 'set-url', 'origin', path.join(dir, 'remotos', `${nombre}.git`)]);
@@ -351,7 +373,7 @@ function sanear(texto, carpetas) {
 }
 /** Las carpetas que un texto de la corrida en `raiz` no puede nombrar. */
 const carpetasDe = (raiz, harness) => [[raiz, '<lab>'], [path.dirname(raiz), '<tmp>'], [harness, '<arnés>'], [RAIZ, '<arnés>']];
-const sinCarpeta = (c, texto) => sanear(texto, [[c.dir, '<lab>'], ...carpetasDe(path.dirname(c.dir), c.harness)]);
+const sinCarpeta = (c, texto) => sanear(texto, [[c.dir, '<lab>'], [c.dirBase, '<lab>'], ...carpetasDe(path.dirname(c.dir), c.harness)]);
 
 function lanzar(c, nombre, args, { cwd, input, extra } = {}) {
   const guion = rutasDeComandos(c.harness)[nombre];
@@ -821,9 +843,7 @@ function correrCasos({ harness = RAIZ, solo, casos = CASOS, tmp, topeMs = TOPE_M
   return conCarpeta(tmp, 'lab-producto-', (raiz) => {
     let base;
     try {
-      const dirHerramientas = path.join(raiz, 'herramientas');
-      base = contexto(path.join(raiz, 'base'), armarHerramientas(dirHerramientas), topeMs, harness);
-      armarBase(base);
+      base = laBase();
     } catch (e) {
       const motivo = `no pude armar el laboratorio: ${sanear(e.message, carpetasDe(raiz, harness))}`;
       return { resultados: lista.map((k) => ({ id: k.id, ac: k.ac, estado: 'no-medido', motivo, llamadas: [], detalle: {} })) };
@@ -833,7 +853,7 @@ function correrCasos({ harness = RAIZ, solo, casos = CASOS, tmp, topeMs = TOPE_M
       try {
         return correrCaso(caso, copiaDeLaBase(base, dir, topeMs, harness));
       } catch (e) {
-        return { id: caso.id, ac: caso.ac, estado: 'no-medido', motivo: sanear(e.message, carpetasDe(raiz, harness)), llamadas: [], detalle: {} };
+        return { id: caso.id, ac: caso.ac, estado: 'no-medido', motivo: sanear(e.message, [[path.dirname(base.dir), '<lab>'], ...carpetasDe(raiz, harness)]), llamadas: [], detalle: {} };
       } finally {
         fs.rmSync(dir, { recursive: true, force: true });
       }
@@ -842,11 +862,10 @@ function correrCasos({ harness = RAIZ, solo, casos = CASOS, tmp, topeMs = TOPE_M
   });
 }
 
-/** Arma la base en una carpeta temporal, se la pasa a `fn` y la borra. */
+/** Le pasa a `fn` una copia de la base, en una carpeta temporal que borra al volver. */
 function conBase({ tmp } = {}, fn) {
   return conCarpeta(tmp, 'lab-producto-', (raiz) => {
-    const c = contexto(path.join(raiz, 'base'), armarHerramientas(path.join(raiz, 'herramientas')), TOPE_MS, RAIZ);
-    armarBase(c);
+    const c = copiaDeLaBase(laBase(), path.join(raiz, 'base'), TOPE_MS, RAIZ);
     return fn({ repos: c.repos, git: (repo, args) => correrGit(c, repo, args), entorno: () => entornoDe(c), espejo: gatesLog(c.home) });
   });
 }
