@@ -1369,6 +1369,102 @@ test('Close_LauncherFails: si no se puede parar no se borra, y sin id de fondo n
   assert.match(closeIt(t, 'sin-id').message, /no anotó un id de fondo válido/);
 });
 
+// stable-data: the session starts a minute before now, so the files of "before" and "after" are dated against the
+// real clock (git and the file system date them that way); every date is set relative to that start
+const ARRANQUE = Date.now() - 60000;
+const escapar = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function fechar(dir, rel, ms) {
+  const abs = path.join(dir, rel);
+  fs.utimesSync(abs, ms / 1000, ms / 1000);
+}
+function archivo(dir, rel, ms) {
+  fs.writeFileSync(path.join(dir, rel), `${rel}\n`);
+  if (ms != null) fechar(dir, rel, ms);
+}
+
+test('T12 CoordinationClose_ArchivosDeAntes_LosSepara @story-8.235 @ac-12: los de antes van aparte; el borrado y el renombre son suyos', () => {
+  const t = closeLab();
+  // a tracked file with an old date, pushed, that the session renames: the rename keeps the date
+  archivo(t.repo, 'r.txt');
+  git(t.repo, 'add', '.');
+  git(t.repo, 'commit', '-qm', 'r');
+  git(t.repo, 'push', '-q', 'origin', 'main');
+  fechar(t.repo, 'r.txt', ARRANQUE - 3600000);
+  git(t.repo, 'mv', 'r.txt', 'r2.txt');
+  fs.unlinkSync(path.join(t.repo, 'a.txt'));
+  archivo(t.repo, 'viejo con espacio y acentó.txt', ARRANQUE - 3600000);
+  archivo(t.repo, 'nuevo.txt');
+  bg(t, 'mezcla', t.repo, { startedAt: ARRANQUE });
+  const r = closeIt(t, 'mezcla');
+  assert.strictEqual(r.ok, false, r.message);
+  assert.match(r.message, new RegExp(`falta: 3 archivo\\(s\\) sin commitear en ${escapar(t.repo)}; 1 archivo\\(s\\) sin commitear de antes de que arrancara \\(no parecen suyos\\): viejo con espacio y acentó\\.txt`));
+  assert.deepStrictEqual(closed(t), []);
+  // without its start, every file is its own
+  bg(t, 'sin-arranque', t.repo, { startedAt: null });
+  const s = closeIt(t, 'sin-arranque');
+  assert.match(s.message, /falta: 4 archivo\(s\) sin commitear en /);
+  assert.doesNotMatch(s.message, /de antes de que arrancara/);
+  // more than three of before: three paths and how many more
+  const u = closeLab();
+  for (const n of ['v1.txt', 'v2.txt', 'v3.txt', 'v4.txt']) archivo(u.repo, n, ARRANQUE - 3600000);
+  bg(u, 'viejos', u.repo, { startedAt: ARRANQUE });
+  const v = closeIt(u, 'viejos');
+  assert.match(v.message, /falta: 4 archivo\(s\) sin commitear de antes de que arrancara \(no parecen suyos\): v1\.txt, v2\.txt, v3\.txt y 1 más/);
+  assert.doesNotMatch(v.message, /falta: \d+ archivo\(s\) sin commitear en /);
+});
+
+test('T12b CoordinationClose_CarpetaOMovidoSinGit_SonSuyos @story-8.235 @ac-12: una carpeta y un archivo movido sin git conservan la fecha vieja y son suyos', () => {
+  const t = closeLab();
+  // a tracked file moved without git: deleted under its name and untracked under the new one, with its old date
+  archivo(t.repo, 'm.txt');
+  git(t.repo, 'add', '.');
+  git(t.repo, 'commit', '-qm', 'm');
+  git(t.repo, 'push', '-q', 'origin', 'main');
+  fechar(t.repo, 'm.txt', ARRANQUE - 3600000);
+  fs.renameSync(path.join(t.repo, 'm.txt'), path.join(t.repo, 'm2.txt'));
+  // a nested repo shows as one entry for the folder, dated by the folder: editing inside it does not change that date
+  const anidado = path.join(t.repo, 'anidado');
+  fs.mkdirSync(anidado);
+  spawnSync('git', ['init', '-q', anidado]);
+  archivo(anidado, 'viejo.txt', ARRANQUE - 3600000);
+  fs.utimesSync(anidado, (ARRANQUE - 3600000) / 1000, (ARRANQUE - 3600000) / 1000);
+  bg(t, 'suyos', t.repo, { startedAt: ARRANQUE });
+  const r = closeIt(t, 'suyos');
+  assert.strictEqual(r.ok, false, r.message);
+  assert.match(r.message, /falta: 3 archivo\(s\) sin commitear en /);
+  assert.doesNotMatch(r.message, /de antes de que arrancara|claude stop/);
+});
+
+test('T13 CoordinationClose_ArchivosDeAntes_DaStopConId @story-8.235 @ac-13: con id da claude stop <id>; sin id, claude agents; interactiva, nada', () => {
+  const t = closeLab();
+  archivo(t.repo, 'viejo.txt', ARRANQUE - 3600000);
+  bg(t, 'con-id', t.repo, { startedAt: ARRANQUE });
+  const r = closeIt(t, 'con-id');
+  assert.strictEqual(r.closed, false);
+  assert.match(r.message, /claude stop job-con-id\.?$/);
+  assert.doesNotMatch(r.message, /claude stop con-id\b/);
+  bg(t, 'sin-id', t.repo, { startedAt: ARRANQUE, jobId: '-x' });
+  const s = closeIt(t, 'sin-id');
+  assert.doesNotMatch(s.message, /claude stop/);
+  assert.match(s.message, /claude agents/);
+  bg(t, 'pestana', t.repo, { startedAt: ARRANQUE, kind: 'interactive' });
+  const p = closeIt(t, 'pestana');
+  assert.match(p.message, /de antes de que arrancara/);
+  assert.doesNotMatch(p.message, /claude stop|claude agents/);
+  assert.deepStrictEqual(closed(t), []);
+});
+
+test('T14 CoordinationClose_ArchivosPropios_ComoHoy @story-8.235 @ac-14: sólo archivos suyos, el texto de hoy y sin comando de parar', () => {
+  const t = closeLab();
+  archivo(t.repo, 'uno.txt');
+  archivo(t.repo, 'dos.txt');
+  bg(t, 'propia', t.repo, { startedAt: ARRANQUE });
+  const r = closeIt(t, 'propia');
+  assert.strictEqual(r.ok, false);
+  assert.match(r.message, new RegExp(`^No cierro «propia»: falta: 2 archivo\\(s\\) sin commitear en ${escapar(t.repo)}\\.$`));
+  assert.doesNotMatch(r.message, /claude stop|de antes/);
+});
+
 test('Close_FreesTheName: la sesión cerrada sale de las recién abiertas', () => {
   const t = closeLab();
   fs.mkdirSync(path.join(t.state, 'coordination'), { recursive: true });

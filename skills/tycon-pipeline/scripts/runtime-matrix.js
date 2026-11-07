@@ -1132,7 +1132,9 @@ function compute(opts) {
   // lo corre (lib/companion-repos.js). Sin esto, su evidencia saldría «de un repo NO declarado» y no contaría.
   const companionLib = require(path.join(__dirname, 'lib', 'companion-repos.js'));
   const rama = repoRoot ? companionLib.ramaDe(repoRoot) : null;
-  const enRama = rama ? evCfg.roots.map((r) => companionLib.enLaMismaRama(companionLib.real(r), rama, /\d/.test(sid) ? sid : null)) : [];
+  // sin rama (la cabeza suelta), el worktree se busca igual por el número de la historia
+  const numeroDeLaHistoria = /\d/.test(sid) ? sid : null;
+  const enRama = repoRoot && (rama || numeroDeLaHistoria) ? evCfg.roots.map((r) => companionLib.enLaMismaRama(companionLib.real(r), rama, numeroDeLaHistoria)) : [];
   const evidenceRoots = repoRoot ? [...new Set([repoRoot, ...evCfg.roots, ...enRama])] : [];
   // Cómo se resolvió cada hermano que no está al lado del repo (la raíz de repos), o por qué no: nunca en silencio.
   warnings.push(...evCfg.warnings);
@@ -1163,7 +1165,24 @@ function compute(opts) {
   // worktree de la rama, y se juzga cada copia que existe. Un archivo que no se mira deja ciego el chequeo de frescura y
   // la evidencia vieja cuenta. Con `allForms`: acá leer más archivos declarados vence más evidencia, no menos.
   const declared = parseDeclaredFiles(content, { allForms: true }).filter((f) => CODE_FILE_RE.test(f));
-  const lugares = [...new Set([repoRoot, wsRoot, ...evCfg.roots, ...enRama].filter(Boolean))];
+  // Un hermano con copia en la rama de la historia se juzga en esa copia, no en el declarado: el declarado suele ser el
+  // clon compartido, en main y sin el código de la historia, y cuando avanza vencería la evidencia sin que el código de
+  // la historia cambie. Las dos rutas, reales: con un enlace en el camino, compararlas crudas vería una copia que no hay.
+  const copiaDe = new Map();
+  evCfg.roots.forEach((r, i) => {
+    if (!enRama[i]) return;
+    const declarado = companionLib.real(r);
+    const copia = companionLib.real(enRama[i]);
+    if (copia !== declarado) copiaDe.set(declarado, copia);
+  });
+  // sin copia aparte, el declarado que está él mismo en la rama de la historia (o en una que nombra su número) es su copia
+  const enSuRama = (r) => {
+    const suya = companionLib.ramaDe(r);
+    return Boolean(suya && ((rama && suya === rama) || companionLib.ramaNombraLaStory(suya, numeroDeLaHistoria)));
+  };
+  const sinCopia = evCfg.roots.map((r) => companionLib.real(r)).filter((r) => !copiaDe.has(r) && !enSuRama(r));
+  const dentroDe = (p, raiz) => p === raiz || p.startsWith(raiz.endsWith(path.sep) ? raiz : raiz + path.sep);
+  const lugares = [...new Set([repoRoot, wsRoot, ...evCfg.roots.filter((r) => !copiaDe.has(companionLib.real(r))), ...enRama].filter(Boolean))];
   let maxCodeMtime = 0;
   const kindMtime = { fe: 0, be: 0 };
   const codeFiles = [];
@@ -1172,12 +1191,23 @@ function compute(opts) {
   const deTandaBloqueada = [];
   for (const rel of declared) {
     const copias = new Map();
-    for (const lugar of lugares) {
-      const abs = path.resolve(lugar, rel);
+    for (const desde of lugares) {
+      let lugar = desde;
+      let abs = path.resolve(lugar, rel);
+      // la ruta real con la forma del disco (mayúsculas incluidas, y también la de un archivo que no existe), la misma que
+      // usan las llaves de las copias: con otra, una ruta escrita con otra mayúscula no se reconocería como del hermano
+      let real = companionLib.real(abs);
+      // una ruta escrita desde la carpeta de arriba que cae en un hermano con copia: la misma ruta en la copia (salvo que ya
+      // esté en ella: un worktree puede vivir dentro de la carpeta de su repo). Antes de mirar si existe: un archivo que la
+      // historia crea sólo en su copia no está en el declarado
+      const reemplazado = [...copiaDe.keys()].find((d) => dentroDe(real, d) && !dentroDe(real, copiaDe.get(d)));
+      if (reemplazado) {
+        lugar = copiaDe.get(reemplazado);
+        abs = path.join(lugar, path.relative(reemplazado, real));
+        real = abs;
+      }
       if (!isFile(abs)) continue;
-      let real = abs;
-      try { real = fs.realpathSync(abs); } catch { /* se queda con la ruta tal cual */ }
-      if (!copias.has(real)) copias.set(real, { abs, lugar });
+      if (!copias.has(real)) copias.set(real, { abs, lugar, sinCopia: sinCopia.find((d) => dentroDe(real, d)) || null });
     }
     if (!copias.size) {
       const tandas = tandasBloqueadasDe(content, rel);
@@ -1185,10 +1215,10 @@ function compute(opts) {
       else noLeidos.push({ rel, lugares });
       continue;
     }
-    for (const { abs, lugar } of copias.values()) {
+    for (const { abs, lugar, sinCopia: declarado } of copias.values()) {
       const mt = mtimeMs(abs);
       // Con más de una copia, el aviso dice de qué lugar es la que no cuenta.
-      codeFiles.push({ rel: copias.size > 1 ? `${rel} (en ${path.basename(lugar)})` : rel, abs, mt });
+      codeFiles.push({ rel: copias.size > 1 ? `${rel} (en ${path.basename(lugar)})` : rel, abs, mt, sinCopia: declarado });
       if (mt > maxCodeMtime) maxCodeMtime = mt;
       const kind = kindOf(rel, fePaths);
       if (mt > kindMtime[kind]) kindMtime[kind] = mt;
@@ -1222,7 +1252,7 @@ function compute(opts) {
       const contadas = [];
       for (const f of codeFiles) {
         const r = juez.vigencia({ archivo: f.abs, mtimeMs: f.mt, evidencia });
-        if (!r.cuenta) { v = { ...r, rel: f.rel }; break; }
+        if (!r.cuenta) { v = { ...r, rel: f.rel, sinCopia: f.sinCopia }; break; }
         if (r.via === 'fusion-propia' || r.regla === 6) contadas.push({ ...r, rel: f.rel });
       }
       vigencias.set(ev, { ...v, contadas: v.cuenta ? contadas : [] });
@@ -1231,7 +1261,16 @@ function compute(opts) {
   };
   const vigenciaGate = (g) => vigenciaDe(g, { ruta: g.path, tsMs: g.ts, ancla: g.ancla });
   const vigenciaHumo = (e) => vigenciaDe(e, { ruta: e.path, tsMs: e.tsMs, linea: e.linea, ancla: e.ancla });
-  const porQueVencio = (v) => `(${v.rel}: ${evidenceVsCommit.motivoEnPalabras(v)})`;
+  // Un archivo de un hermano que no tiene copia en la rama de la historia se juzga en el declarado: el aviso dice contra
+  // qué se comparó y qué se buscó, porque puede ser el clon compartido, sin el código de la historia. «No tomé» y no «no
+  // hay»: también es el caso de dos copias que nombran la historia, o de git que no pudo listarlas (lo dicen los avisos
+  // de los hermanos).
+  const comoSeBusco = rama && numeroDeLaHistoria ? `en la rama ${rama} ni con el número ${numeroDeLaHistoria}`
+    : rama ? `en la rama ${rama}` : numeroDeLaHistoria ? `con el número ${numeroDeLaHistoria}` : null;
+  const contraQue = (v) => (!v.sinCopia ? ''
+    : comoSeBusco ? `; comparada contra ${companionLib.label(v.sinCopia)} tal como está declarado: no tomé ninguna copia suya ${comoSeBusco}`
+      : `; comparada contra ${companionLib.label(v.sinCopia)} tal como está declarado: no busqué su copia, la historia no tiene rama ni número`);
+  const porQueVencio = (v) => `(${v.rel}: ${evidenceVsCommit.motivoEnPalabras(v)}${contraQue(v)})`;
   // Una evidencia que no cuenta por un archivo no leído no es «anterior al último edit»: no se sabe, y volver a correrla
   // no lo arregla. El motivo es de la matriz, no del juez.
   const noLeido = (v) => v.motivo === 'no-leido';

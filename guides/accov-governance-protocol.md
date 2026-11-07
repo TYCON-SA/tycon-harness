@@ -457,6 +457,9 @@ miran: vencen la evidencia como el código, salvo lo que se dijo arriba de una p
 
 La matriz busca cada archivo declarado en el repo de la historia, en la carpeta de arriba, en cada hermano declarado y en su copia de la rama de la historia, en ese orden y sin repetir. Juzga cada copia que encuentra, con el commit de su
 propio repo, y la primera que no cuenta decide. Si la misma ruta está en más de un lugar, el aviso dice en cuál.
+Un hermano con copia en la rama de la historia (o, sin rama, con su número) se juzga sólo en esa copia: el hermano
+declarado suele ser el clon compartido, en `main` y sin el código de la historia, y cuando avanza vencería la evidencia sin
+que ese código cambie. Sin copia, se juzga el declarado, y el aviso dice contra qué se comparó y qué se buscó.
 
 Un archivo de código declarado que la matriz no puede leer la deja en rojo: ninguna evidencia cuenta, aunque los criterios
 estén cubiertos por pruebas, porque no se sabe si cambió. El aviso nombra la ruta y los lugares donde la buscó. Con la
