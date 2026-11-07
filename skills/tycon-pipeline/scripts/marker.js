@@ -2506,7 +2506,9 @@ function cmdMarkTestsNotScoped(motivo) {
  *     de una suite sola anterior;
  *   · `clear --path <ruta> --repo <repo> [--summary <resumen> --tree <árbol> [--coverage-file <lcov>]]`: saca esa ruta (la suite
  *     sola salió verde); con el resumen de la suite sola y la foto de su carpeta, la suma a lo guardado de la completa
- *     roja, con su cobertura;
+ *     roja, con su cobertura; con `--result <tests-result.json> [--story-id <id>] [--sealed <copia>] [--inherited]`,
+ *     saca su falla de la constancia de esa completa (lib/failed-first.js `rewriteResult`, con la `full_ts` de la lista);
+ *   · `record` acepta `--full-ts <ts>`: la hora de la completa, que cada suite de la lista guarda;
  *   · `pending --suites <suites.json> --gate <test-gate.sh> --repo <repo> [--story <story>]`: saca las rutas que ya no
  *     están en suites.json (y lo dice); si queda alguna, nombra cada una con su comando y sale 76;
  *   · `save-red`, `red-full` y `drop-red`: lo guardado de la última completa roja del repo (`testsRedFull`, con su
@@ -2519,7 +2521,7 @@ const TESTS_FAILED_PENDING = 76;
 function cmdTestsFailed(argv) {
   const accion = argv[0];
   const opt = (k) => { const i = argv.indexOf(k); return i >= 0 && argv[i + 1] ? argv[i + 1] : null; };
-  const uso = 'marker.js tests-failed: uso — tests-failed record --summary <f> --repo <r> | clear --path <ruta> --repo <r> [--summary <f> --tree <árbol> [--coverage-file <f>]] | pending --suites <json> --gate <test-gate.sh> --repo <r> [--story <s>] | save-red --summary <f> --measured <f> [--coverage-file <f>] [--base <sha>] [--trim <t>] --repo <r> | red-full --repo <r> | drop-red --repo <r>';
+  const uso = 'marker.js tests-failed: uso — tests-failed record --summary <f> --repo <r> [--full-ts <ts>] | clear --path <ruta> --repo <r> [--summary <f> --tree <árbol> [--coverage-file <f>]] [--result <f> [--story-id <id>] [--sealed <f>] [--inherited]] | pending --suites <json> --gate <test-gate.sh> --repo <r> [--story <s>] | save-red --summary <f> --measured <f> [--coverage-file <f>] [--base <sha>] [--trim <t>] --repo <r> | red-full --repo <r> | drop-red --repo <r>';
   if (!['record', 'clear', 'pending', 'save-red', 'red-full', 'drop-red'].includes(accion) || !opt('--repo')
     || (accion === 'record' && !opt('--summary')) || (accion === 'clear' && !opt('--path'))
     || (accion === 'pending' && (!opt('--suites') || !opt('--gate')))
@@ -2549,7 +2551,7 @@ function cmdTestsFailed(argv) {
     try { resumen = JSON.parse(fs.readFileSync(opt('--summary'), 'utf8')); } catch (e) {
       process.stderr.write(`[test-gate] ⚠️  no pude leer el resumen ${opt('--summary')} (${e.message}): la lista de las que fallaron en este repo queda vacía\n`);
     }
-    marker.testsFailed = [...ajenas, ...ff.fromSummary(resumen, repo)];
+    marker.testsFailed = [...ajenas, ...ff.fromSummary(resumen, repo, undefined, opt('--full-ts'))];
     for (const campo of ['checks', 'checksAt', 'checksProvenance']) if (marker[campo]) delete marker[campo]['tests-suite'];
     marker.lastTouch = nowIso();
     writeMarker(marker);
@@ -2598,8 +2600,20 @@ function cmdTestsFailed(argv) {
   }
   if (accion === 'clear') {
     const ruta = opt('--path');
-    if (!lista.some((x) => x.ruta === ruta)) return;
+    const propia = lista.find((x) => x.ruta === ruta);
+    if (!propia) {
+      if (opt('--result')) process.stderr.write(`[test-gate] constancia: ${ruta} no está en la lista de las que fallaron en la completa: no la toco\n`);
+      return;
+    }
     const quedan = lista.filter((x) => x.ruta !== ruta);
+    // la constancia de la completa (y su copia que viaja) deja de nombrar esta falla: el revisor de pruebas la lee
+    if (opt('--result')) {
+      try {
+        const hecho = ff.rewriteResult(opt('--result'), { raiz: propia.raiz || null, ruta }, {
+          fullTs: propia.full_ts || null, storyId: opt('--story-id'), inherited: argv.includes('--inherited'), sealed: opt('--sealed') });
+        process.stderr.write(`[test-gate] constancia: ${hecho.reason}\n`);
+      } catch (e) { process.stderr.write(`[test-gate] ⚠️  no pude reescribir la constancia (${e.message}): queda como la dejó la completa\n`); }
+    }
     // con lo guardado de la completa roja, la repetición verde se suma con la foto de la carpeta en que corrió
     if (roja && opt('--summary') && opt('--tree')) {
       try {

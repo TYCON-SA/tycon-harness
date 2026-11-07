@@ -28,8 +28,11 @@ function find(suitesJson, ruta) {
   return entries(suitesJson).find((s) => s.ruta === ruta) || null;
 }
 
-/** Las suites que fallaron según el resumen de run-suites-json.js, de la corrida en `repo`. Sin resumen legible, ninguna. */
-function fromSummary(resumen, repo, at = new Date().toISOString()) {
+/**
+ * Las suites que fallaron según el resumen de run-suites-json.js, de la corrida en `repo`. Sin resumen legible, ninguna.
+ * `fullTs` es la hora de esa completa, la misma `ts` de su constancia: la repetición reescribe la constancia sólo si es ésa.
+ */
+function fromSummary(resumen, repo, at = new Date().toISOString(), fullTs = null) {
   const fallas = (resumen && Array.isArray(resumen.fallas)) ? resumen.fallas : [];
   const vistas = new Set();
   const out = [];
@@ -37,7 +40,7 @@ function fromSummary(resumen, repo, at = new Date().toISOString()) {
     const e = f && f.entrada;
     if (!e || typeof e.ruta !== 'string' || vistas.has(e.ruta)) continue;
     vistas.add(e.ruta);
-    out.push({ ruta: e.ruta, raiz: e.raiz || null, repo, at });
+    out.push({ ruta: e.ruta, raiz: e.raiz || null, repo, at, ...(fullTs ? { full_ts: fullTs } : {}) });
   }
   return out;
 }
@@ -103,6 +106,99 @@ function addRepeat(dir, ruta, { tree, entry, lcovFile = null }) {
     fs.appendFileSync(path.join(dir, 'lcov-repetidas.info'), txt && !txt.endsWith('\n') ? `${txt}\n` : txt);
   }
   return redHash(dir);
+}
+
+/** Lo que todavía tiene la constancia en rojo además de las fallas; [] si nada. */
+function otrasCausasDeRojo(r) {
+  const t = r.totals || {};
+  const out = [];
+  if (t.failed > 0) out.push(`${t.failed} suite(s) roja(s)`);
+  if (t.missing > 0) out.push(`${t.missing} suite(s) ausente(s)`);
+  if (Array.isArray(t.unmeasured_suites) && t.unmeasured_suites.length) out.push(`${t.unmeasured_suites.length} suite(s) sin medir`);
+  if (r.totals_error) out.push(`el informe no pudo contar: ${r.totals_error}`);
+  if (r.halted) out.push('la corrida se frenó');
+  // `companions` lo escribe test-gate.sh: `green` por cada repo hermano, con su raíz
+  const rojos = (Array.isArray(r.companions) ? r.companions : []).filter((c) => !c || c.green !== true);
+  if (rojos.length) out.push(`repo hermano en rojo: ${rojos.map((c) => (c && c.root ? path.basename(c.root) : '?')).join(', ')}`);
+  return out;
+}
+
+/** Saca de una constancia (la de la puerta o su copia que viaja) la falla de esa entrada; devuelve si estaba. */
+function sacarFalla(r, entrada, { at, inherited }) {
+  const t = r.totals || (r.totals = {});
+  const entradas = Array.isArray(t.failure_entries) ? t.failure_entries : [];
+  const i = entradas.findIndex((e) => e && e.ruta === entrada.ruta && (e.raiz || null) === (entrada.raiz || null));
+  if (i < 0) return false;
+  entradas.splice(i, 1);
+  // el nombre corto sale una sola vez: si otra suite de otra carpeta lo comparte, la suya queda
+  const corto = path.basename(entrada.ruta);
+  const fallas = Array.isArray(t.failures) ? t.failures : [];
+  const j = fallas.indexOf(corto);
+  if (j >= 0) fallas.splice(j, 1);
+  // las que quedan son las de `failures`: una falla sin su entrada de suites.json también cuenta
+  t.failed = fallas.length;
+  if (inherited) {
+    t.inherited_suites = [...(Array.isArray(t.inherited_suites) ? t.inherited_suites : []), corto];
+    t.inherited = t.inherited_suites.length;
+  } else {
+    if (typeof t.passed === 'number') t.passed += 1;
+    r.repeated_green = [...(Array.isArray(r.repeated_green) ? r.repeated_green : []), { ruta: entrada.ruta, raiz: entrada.raiz || null, at }];
+  }
+  const pendiente = otrasCausasDeRojo(r);
+  if (pendiente.length) {
+    r.suite_green = false;
+    r.suite_green_pending = pendiente;
+  } else {
+    r.suite_green = true;
+    r.suite_green_by = 'repeticiones';
+    delete r.suite_green_pending;
+  }
+  // `all_green` (el total con los repos hermanos, que escribe test-gate.sh) lee lo mismo: el revisor de pruebas no
+  // toma verde una constancia con `all_green: false`
+  if (Object.prototype.hasOwnProperty.call(r, 'all_green')) r.all_green = r.suite_green;
+  return true;
+}
+
+/**
+ * La repetición de una suite sola (`test-gate.sh --suite`) saca su falla de la constancia de la completa
+ * (`.advisors/tests-result.json`, la que lee el revisor de pruebas) y de su copia que viaja (`sealed`, la que lee la
+ * matriz por criterio). Sólo si la constancia es de esa misma completa (`ts` igual a `fullTs`, la que anotó la lista) y
+ * de esa historia, y si trae la entrada de suites.json de cada falla: por el nombre corto se confundirían dos suites.
+ * `inherited`: la repetición salió roja y el juez de heredados la perdonó; va a `inherited_suites`, no a
+ * `repeated_green`. Devuelve `{ written, reason }`; sin escribir, `reason` dice por qué.
+ */
+function rewriteResult(outFile, entrada, { fullTs, storyId = null, at = new Date().toISOString(), inherited = false, sealed = null } = {}) {
+  let r;
+  try { r = JSON.parse(fs.readFileSync(outFile, 'utf8')); } catch (e) {
+    return { written: false, reason: e.code === 'ENOENT'
+      ? 'no hay constancia de la completa: la próxima completa la escribe'
+      : `la constancia no se deja leer (${e.message}): no la toco` };
+  }
+  if (!r || typeof r.ts !== 'string' || !r.ts) return { written: false, reason: 'la constancia no dice de qué hora es: no la toco' };
+  if (!fullTs || r.ts !== fullTs) return { written: false, reason: `la constancia es de otra corrida (${r.ts}; la lista es de ${fullTs || 'una completa sin hora'}): no la toco` };
+  if (storyId && r.story_id && r.story_id !== storyId) return { written: false, reason: `la constancia es de otra historia (${r.story_id}): no la toco` };
+  if (!r.totals || !Array.isArray(r.totals.failure_entries)) return { written: false, reason: 'la constancia es de antes (sin la entrada de cada falla): no la toco' };
+  if (!sacarFalla(r, entrada, { at, inherited })) return { written: false, reason: `${entrada.ruta} no está entre las fallas de la constancia: no la toco` };
+  const escribir = (f, obj) => { const tmpOut = `${f}.${process.pid}.tmp`; fs.writeFileSync(tmpOut, `${JSON.stringify(obj, null, 2)}\n`); fs.renameSync(tmpOut, f); };
+  escribir(outFile, r);
+  let copia = ' (sin copia que viaja: la corrida no nombra una historia)';
+  if (sealed && !fs.existsSync(sealed)) copia = ` (la copia que viaja no está en ${sealed}: no la toco)`;
+  else if (sealed) {
+    try {
+      const s = JSON.parse(fs.readFileSync(sealed, 'utf8'));
+      if (!s || s.ts !== fullTs) copia = ' (la copia que viaja es de otra corrida: no la toco)';
+      else if (!sacarFalla(s, entrada, { at, inherited })) copia = ' (la copia que viaja no trae esa falla: no la toco)';
+      else {
+        // la copia no guarda los repos hermanos: el veredicto es el de la constancia
+        s.suite_green = r.suite_green;
+        if (r.suite_green) { s.suite_green_by = r.suite_green_by; delete s.suite_green_pending; } else { delete s.suite_green_by; s.suite_green_pending = r.suite_green_pending; }
+        escribir(sealed, s);
+        copia = ' y de su copia que viaja';
+      }
+    } catch (e) { copia = ` (la copia que viaja no se dejó leer: ${e.message})`; }
+  }
+  const estado = r.suite_green ? 'queda en verde (por las repeticiones)' : `sigue en rojo: ${r.suite_green_pending.join(', ')}`;
+  return { written: true, reason: `${entrada.ruta} salió de la constancia${copia}; ${estado}` };
 }
 
 const leerJson = (p) => JSON.parse(fs.readFileSync(p, 'utf8'));
@@ -236,7 +332,7 @@ const mergedRed = (out) => out.fallas.length > 0 || (out.ausentes || []).length 
 
 const hhmm = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? '??:??' : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 
-module.exports = { entries, find, fromSummary, prune, redHash, saveRed, addRepeat, decide, merge, mergedRed, reEligible, dropRecords, changedFiles, hhmm, RED_FILES };
+module.exports = { entries, find, fromSummary, prune, redHash, saveRed, addRepeat, rewriteResult, decide, merge, mergedRed, reEligible, dropRecords, changedFiles, hhmm, RED_FILES };
 
 if (require.main === module) {
   const [cmd, suitesJson, ruta] = process.argv.slice(2);

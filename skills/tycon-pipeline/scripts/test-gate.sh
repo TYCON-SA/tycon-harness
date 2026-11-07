@@ -888,7 +888,8 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
   # una cuesta la suite entera cada vez. «Completa» es la de arriba sin `--suite`, con los recortes que la puerta pone
   # sola (lo tocado, la liviana, la cruzada); una parte o un repo hermano no anotan ni se niegan.
   # `--suite <ruta>` corre esa sola en el check `tests-suite`: en verde la saca de la lista, y nunca escribe el check
-  # `tests` ni tests-result.json (una suite sola no es la corrida completa).
+  # `tests` (una suite sola no es la corrida completa). De tests-result.json, la constancia de la completa que lee el
+  # revisor de pruebas, sólo saca su falla si es de esa misma completa: ver `tests-failed clear`.
   # Repetir solas cierra (story 8.208), sólo en un repo que acota el portón y fuera del árbol armado del privado: con la
   # lista vacía, la próxima completa no siempre corre todo. Si la carpeta no cambió desde la completa roja ni desde cada
   # repetición, cierra con lo guardado sin correr ninguna suite (la carpeta no cambió). Si cambió entre la completa y las
@@ -903,7 +904,7 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
     fi
     _TG_ONE_ARGS=()
     [[ -n "${TG_PRIVATE_TREE_DIR:-}" ]] && _TG_ONE_ARGS=(--skills "$(_tg_tree_field skills)")
-    echo "[test-gate] una sola suite: $SUITE_ONLY (mismo ambiente que la corrida completa; no escribe el check tests ni tests-result.json)"
+    echo "[test-gate] una sola suite: $SUITE_ONLY (mismo ambiente que la corrida completa; no escribe el check tests; en verde, saca su falla de la constancia de la completa)"
     _tg_rc=0
     # La foto de la carpeta en que corre la repetición (story 8.208): para cerrar sin otra completa, la carpeta de ahora
     # tiene que ser ésta. Sin foto, la repetición no se suma y la completa corre entera.
@@ -916,20 +917,28 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
     # fallaron y la salida entera de cada suite (la cola de run-check sola deja afuera el caso del medio).
     ( cd "$REPO" && node "$MARKER_JS" run-check tests-suite -- \
         node "$SCRIPT_DIR/lib/run-suites-json.js" "$REPO_RUN" "$RESULTS_DIR/suites.json" --suite "$SUITE_ONLY" ${_TG_ONE_ARGS[@]+"${_TG_ONE_ARGS[@]}"} --coverage "$RESULTS_DIR/coverage" --run-check tests-suite ) || _tg_rc=$?
-    # El mismo juez que en la completa: si ya estaba roja en el nocturno de esta mañana, avisa, no frena y sale de la
+    # El mismo juez que en la completa: si ya estaba roja antes del cambio (la foto o la base), avisa, no frena y sale de la
     # lista. Sin él, la completa se seguiría negando por un rojo que el pedido no frena.
+    _TG_ONE_INHERITED=""
     if [[ "$_tg_rc" == "1" && -f "$RESULTS_DIR/suites.json" ]]; then
       _tg_her=0
-      node "$SCRIPT_DIR/lib/inherited-reds.js" apply "$REPO_RUN" "$RESULTS_DIR/suites.json" || _tg_her=$?
+      node "$SCRIPT_DIR/lib/inherited-reds.js" apply "$REPO_RUN" "$RESULTS_DIR/suites.json" ${TG_PRIVATE_TREE_DIR:+--assembled} || _tg_her=$?
       if [[ "$_tg_her" == "0" ]]; then
-        echo "🟡 [test-gate] $SUITE_ONLY ya estaba roja en el nocturno de esta mañana: avisa y no frena, igual que en la validación del pedido" >&2
-        ( cd "$REPO" && TYCON_TEST_GATE_MARK=1 node "$MARKER_JS" run-check tests-suite -- node -e 'console.error(`test-gate: ${process.argv[1]} ya estaba roja en el nocturno: avisa, no frena`)' "$SUITE_ONLY" ) >&2 \
+        echo "🟡 [test-gate] $SUITE_ONLY ya estaba roja antes del cambio, en el nocturno de esta mañana o en la base: avisa y no frena, igual que en la validación del pedido" >&2
+        ( cd "$REPO" && TYCON_TEST_GATE_MARK=1 node "$MARKER_JS" run-check tests-suite -- node -e 'console.error(`test-gate: ${process.argv[1]} ya estaba roja antes del cambio: avisa, no frena`)' "$SUITE_ONLY" ) >&2 \
           || echo "[test-gate] ⚠️  no pude dejar en verde el check tests-suite: queda como lo dejó la corrida" >&2
         _tg_rc=0
+        _TG_ONE_INHERITED=1
       fi
     fi
     if [[ "$_tg_rc" == "0" ]]; then
-      ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" tests-failed clear --path "$SUITE_ONLY" --repo "$REPO_STORY" ${_TG_ONE_TREE:+--summary "$RESULTS_DIR/suites.json" --tree "$_TG_ONE_TREE" --coverage-file "$RESULTS_DIR/coverage/lcov.info"} ) \
+      # La copia que viaja de la constancia, donde la escribe el informe: la clave de la evidencia (o el id) en su carpeta.
+      _TG_SEALED=""
+      if [[ -n "$STORY_ARG" && -z "${TYCON_EVIDENCE_KEY_FAILED:-}" ]]; then
+        _TG_SEALED="${TYCON_EVIDENCE_DIR:-$REPO/.advisors/dod-runtime}/${TYCON_EVIDENCE_KEY:-$STORY_ID}-tests-result.json"
+      fi
+      ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" tests-failed clear --path "$SUITE_ONLY" --repo "$REPO_STORY" ${_TG_ONE_TREE:+--summary "$RESULTS_DIR/suites.json" --tree "$_TG_ONE_TREE" --coverage-file "$RESULTS_DIR/coverage/lcov.info"} \
+          --result "$OUT_FILE" --story-id "$STORY_ID" ${_TG_SEALED:+--sealed "$_TG_SEALED"} ${_TG_ONE_INHERITED:+--inherited} ) \
         || echo "[test-gate] ⚠️  $SUITE_ONLY salió verde pero no pude sacarla de la lista de las que fallaron: la corrida completa la va a seguir pidiendo" >&2
     fi
     borrar_arbol_privado; trap - EXIT; exit "$_tg_rc"
@@ -1155,22 +1164,23 @@ if [[ "$SUITE_EXIT" == "75" ]]; then
   echo "🟡 [test-gate] no corrí nada: otra corrida de las pruebas está en marcha en este repo (arriba, desde cuándo y de quién). Esperá su resultado; no quedó tests-result.json." >&2
   exit 75
 fi
-# Lo que ya estaba rojo en el nocturno de esa mañana avisa y no frena, con el juez de la validación de cada pedido y la
-# foto que viaja en el árbol (lib/inherited-reds.js): sale del resumen antes de la lista y del informe. Sin foto, como
-# siempre; si el juez no puede decidir, también.
+# Lo que ya estaba rojo antes del cambio avisa y no frena (lib/inherited-reds.js): lo que estaba rojo en el nocturno de
+# esa mañana, con el juez de la validación de cada pedido y la foto que viaja en el árbol; y lo que la foto no perdona,
+# medido solo sobre la base en el momento. Sale del resumen antes de la lista y del informe. Lo que no se pudo medir
+# sigue rojo y dice por qué.
 if [[ "$RUNNER" == "suites-json" && "$SUITE_EXIT" == "1" && -f "$RESULTS_DIR/suites.json" ]]; then
   _tg_her=0
-  node "$SCRIPT_DIR/lib/inherited-reds.js" apply "$REPO_RUN" "$RESULTS_DIR/suites.json" || _tg_her=$?
+  node "$SCRIPT_DIR/lib/inherited-reds.js" apply "$REPO_RUN" "$RESULTS_DIR/suites.json" ${TG_PRIVATE_TREE_DIR:+--assembled} || _tg_her=$?
   if [[ "$_tg_her" == "0" ]]; then
-    echo "🟡 [test-gate] todo lo rojo ya estaba rojo en el nocturno de esta mañana (arriba, cuáles): avisa y no frena, igual que en la validación del pedido" >&2
-    ( cd "$REPO" && TYCON_TEST_GATE_MARK=1 node "$MARKER_JS" run-check tests -- node -e 'console.error("test-gate: lo rojo ya estaba rojo en el nocturno: avisa, no frena")' ) >&2 \
+    echo "🟡 [test-gate] todo lo rojo ya estaba rojo antes del cambio, en el nocturno de esta mañana o en la base (arriba, cuáles): avisa y no frena, igual que en la validación del pedido" >&2
+    ( cd "$REPO" && TYCON_TEST_GATE_MARK=1 node "$MARKER_JS" run-check tests -- node -e 'console.error("test-gate: lo rojo ya estaba rojo antes del cambio: avisa, no frena")' ) >&2 \
       || echo "[test-gate] ⚠️  no pude dejar en verde el check tests: queda como lo dejó la corrida" >&2
     SUITE_EXIT=0
   fi
 fi
 # La corrida completa reemplaza la lista de las que fallaron: roja, con sus fallas; verde (o sin fallas con su entrada), vacía.
 if [[ "$TG_TOP_FULL" == "1" ]]; then
-  ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" tests-failed record --summary "$RESULTS_DIR/suites.json" --repo "$REPO_STORY" ) \
+  ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" tests-failed record --summary "$RESULTS_DIR/suites.json" --repo "$REPO_STORY" --full-ts "$TS" ) \
     || echo "[test-gate] ⚠️  no pude anotar las suites que fallaron: la próxima corrida completa no va a pedir repetirlas primero" >&2
 fi
 if [[ -n "${TG_MEASURED:-}" ]]; then

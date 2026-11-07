@@ -6,7 +6,8 @@
  * Una corrida completa de la puerta (la de arriba, sin `--suite`) que sale roja anota en el marcador las suites que
  * fallaron (`testsFailed`). Mientras quede alguna, la corrida completa no lanza nada: sale 76 y da el comando para
  * repetir cada una sola. `test-gate.sh <repo> --suite <ruta>` corre sólo esa suite, con el ambiente de la completa, y
- * en verde la saca de la lista; nunca escribe `checks.tests` ni `tests-result.json`.
+ * en verde la saca de la lista; nunca escribe `checks.tests`, y de `tests-result.json` sólo saca su falla si la
+ * constancia es de la misma completa (casos «RepetirVerdeConSuite_ReescribeLaConstancia»).
  *
  * Todo corre sobre un repo de prueba con su propio `scripts/tests/suites.json` (dos suites de bash que salen con el
  * código que diga un archivo de estado) y una HOME de prueba con un marcador falso por sesión.
@@ -652,4 +653,206 @@ test('T24 InheritedRed_SuiteAlone_Forgiven — repetida sola, la que ya estaba r
   const a = puerta(l, ['--suite', A]);
   assert.notEqual(a.status, 0, 'un rojo nuevo, repetido solo, sigue frenando');
   assert.deepEqual(lista(l), [A], a.out);
+});
+
+// ── Repetir verde reescribe la constancia ──────────────────────────────────────────────────────────────────────────
+// La repetición verde de una suite saca su falla de `.advisors/tests-result.json`, la que lee el revisor de pruebas: si
+// no, el revisor pide otra completa por una suite ya repetida en verde. Sólo con la constancia de la misma completa
+// (`full_ts` de la lista) y por la entrada de suites.json, nunca por el nombre corto.
+const ff = require('../lib/failed-first.js');
+const constancia = (l) => JSON.parse(fs.readFileSync(artefacto(l), 'utf8'));
+
+test('RepetirVerdeConSuite_ReescribeLaConstancia (a) @story-8.230 @ac-12 — de a una, cada repetición verde sale de la constancia; con la última, suite_green', () => {
+  // 🔴 mutación: no tocar la constancia → failures sigue con a y b, y el revisor pide otra completa.
+  const l = conRojo();
+  const antes = constancia(l);
+  assert.deepEqual(antes.totals.failure_entries, [{ raiz: 'arnes', ruta: A }, { raiz: 'arnes', ruta: B }], 'la completa no guardó la entrada de cada falla');
+  assert.ok(marcador(l).testsFailed.every((x) => x.full_ts === antes.ts), 'la lista no anotó la hora de su completa');
+  estado(l, { a: 0, b: 0 });
+  const r = puerta(l, ['--suite', A]);
+  assert.equal(r.status, 0, r.out);
+  const c1 = constancia(l);
+  assert.deepEqual(c1.totals.failures, ['b.test.sh'], r.out);
+  assert.deepEqual(c1.totals.failure_entries, [{ raiz: 'arnes', ruta: B }]);
+  assert.equal(c1.totals.failed, 1);
+  assert.equal(c1.totals.passed, antes.totals.passed + 1);
+  assert.equal(c1.repeated_green.length, 1);
+  assert.equal(c1.repeated_green[0].ruta, A);
+  assert.ok(c1.repeated_green[0].at, 'la repetición no trae su hora');
+  assert.equal(c1.suite_green, false);
+  assert.equal(c1.suite_exit, antes.suite_exit, 'suite_exit es el de la completa');
+  assert.match(r.out, /constancia/, r.out);
+  const r2 = puerta(l, ['--suite', B]);
+  assert.equal(r2.status, 0, r2.out);
+  const c2 = constancia(l);
+  assert.deepEqual(c2.totals.failures, []);
+  assert.equal(c2.totals.failed, 0);
+  assert.equal(c2.suite_green, true, r2.out);
+  assert.equal(c2.suite_green_by, 'repeticiones');
+  assert.deepEqual(c2.repeated_green.map((x) => x.ruta), [A, B]);
+});
+
+test('RepetirVerdeConSuite_ReescribeLaConstancia (portón con historia) @story-8.230 @ac-12 — por el portón, la copia que viaja también sale verde', () => {
+  // 🔴 mutación: no pasar --sealed desde test-gate.sh, o con otra ruta → la copia sigue roja y la matriz por criterio no
+  //    cuenta la repetición.
+  const l = lab({ a: 1, b: 0 });
+  const historia = path.join(l.repo, 'docs', 'historia-9.125.md');
+  fs.writeFileSync(historia, '---\nstory: "9.125"\ntitle: "prueba"\nstatus: in-progress\nfiles_to_modify:\n  - scripts/tests/a.test.sh\n---\n# prueba\n');
+  git(l.repo, 'add', '-A'); git(l.repo, 'commit', '-q', '-m', 'historia');
+  const r = puerta(l, [historia]);
+  assert.notEqual(r.status, 0, r.out);
+  const copias = () => { const d = path.join(l.repo, '.advisors', 'dod-runtime'); return fs.existsSync(d) ? fs.readdirSync(d).filter((x) => x.endsWith('-tests-result.json')).map((x) => path.join(d, x)) : []; };
+  assert.equal(copias().length, 1, `la completa no dejó su copia que viaja:\n${r.out}`);
+  assert.equal(JSON.parse(fs.readFileSync(copias()[0], 'utf8')).suite_green, false);
+  estado(l, { a: 0 });
+  const s = puerta(l, [historia, '--suite', A]);
+  assert.equal(s.status, 0, s.out);
+  assert.match(s.out, /y de su copia que viaja/, s.out);
+  const copia = JSON.parse(fs.readFileSync(copias()[0], 'utf8'));
+  assert.equal(copia.suite_green, true, s.out);
+  assert.equal(copia.totals.failed, 0);
+  assert.equal(constancia(l).suite_green, true);
+});
+
+test('RepetirVerdeConSuite_ReescribeLaConstancia (b) @story-8.230 @ac-12 — una constancia de otra corrida no se toca y lo dice', () => {
+  const l = conRojo();
+  const c = constancia(l);
+  c.ts = '2000-01-01T00:00:00Z';
+  fs.writeFileSync(artefacto(l), JSON.stringify(c, null, 2));
+  const antes = fs.readFileSync(artefacto(l), 'utf8');
+  estado(l, { a: 0 });
+  const r = puerta(l, ['--suite', A]);
+  assert.equal(r.status, 0, r.out);
+  assert.equal(fs.readFileSync(artefacto(l), 'utf8'), antes);
+  assert.match(r.out, /la constancia es de otra corrida/, r.out);
+  assert.deepEqual(lista(l), [B], 'igual sale de la lista');
+});
+
+test('RepetirVerdeConSuite_ReescribeLaConstancia (e) @story-8.230 @ac-12 — sin constancia (la borró una completa negada) no escribe nada y lo dice', () => {
+  const l = conRojo();
+  assert.equal(puerta(l).status, 76);
+  assert.ok(!fs.existsSync(artefacto(l)));
+  estado(l, { a: 0 });
+  const r = puerta(l, ['--suite', A]);
+  assert.equal(r.status, 0, r.out);
+  assert.ok(!fs.existsSync(artefacto(l)), 'la repetición inventó una constancia');
+  assert.match(r.out, /no hay constancia de la completa/, r.out);
+});
+
+test('RepetirVerdeConSuite_ReescribeLaConstancia (f) @story-8.230 @ac-12 — una repetición roja que el juez perdona pasa a heredadas, no a repeated_green', () => {
+  const l = conRojo();
+  // la foto se commitea en el repo: la constancia de la completa sigue siendo la misma
+  conFoto(l, ['b.test.sh']);
+  const r = puerta(l, ['--suite', B]);
+  assert.equal(r.status, 0, r.out);
+  const c = constancia(l);
+  assert.deepEqual(c.totals.failures, ['a.test.sh'], r.out);
+  assert.deepEqual(c.totals.inherited_suites, ['b.test.sh']);
+  assert.equal(c.repeated_green, undefined, 'la heredada entró como verde');
+});
+
+/** Una constancia de una completa roja, escrita a mano para las piezas puras. */
+function constanciaFalsa(dir, entradas, extra = {}) {
+  const f = path.join(dir, 'tests-result.json');
+  fs.writeFileSync(f, JSON.stringify({ ts: '2026-11-07T10:00:00Z', story_id: '9.1', suite_exit: 1, suite_green: false, halted: false,
+    totals: { suites: entradas.length + 1, passed: 1, failed: entradas.length, missing: 0, failures: entradas.map((e) => path.basename(e.ruta)),
+      failure_entries: entradas, missing_paths: [] }, ...extra }, null, 2));
+  return f;
+}
+const repetir = (f, ruta, extra = {}) => ff.rewriteResult(f, { raiz: 'arnes', ruta }, { fullTs: '2026-11-07T10:00:00Z', storyId: '9.1', at: '2026-11-07T11:00:00Z', ...extra });
+
+test('RepetirVerdeConSuite_ReescribeLaConstancia (c) @story-8.230 @ac-12 — una constancia sin failure_entries (de antes) no se toca', () => {
+  const dir = tmp('ff-const-');
+  const f = constanciaFalsa(dir, [{ raiz: 'arnes', ruta: A }]);
+  const c = JSON.parse(fs.readFileSync(f, 'utf8'));
+  delete c.totals.failure_entries;
+  fs.writeFileSync(f, JSON.stringify(c));
+  const antes = fs.readFileSync(f, 'utf8');
+  const r = repetir(f, A);
+  assert.equal(r.written, false);
+  assert.match(r.reason, /de antes/);
+  assert.equal(fs.readFileSync(f, 'utf8'), antes);
+});
+
+test('RepetirVerdeConSuite_ReescribeLaConstancia (d) @story-8.230 @ac-12 — dos rojas con el mismo nombre corto: sale sólo la de esa entrada', () => {
+  // 🔴 mutación: buscar por el nombre corto → salen las dos x.test.sh.
+  const dir = tmp('ff-const-');
+  const f = constanciaFalsa(dir, [{ raiz: 'arnes', ruta: 'tests/x.test.sh' }, { raiz: 'agent-skills', ruta: 'otra/x.test.sh' }]);
+  const r = ff.rewriteResult(f, { raiz: 'agent-skills', ruta: 'otra/x.test.sh' }, { fullTs: '2026-11-07T10:00:00Z', storyId: '9.1' });
+  assert.equal(r.written, true, r.reason);
+  const c = JSON.parse(fs.readFileSync(f, 'utf8'));
+  assert.deepEqual(c.totals.failure_entries, [{ raiz: 'arnes', ruta: 'tests/x.test.sh' }]);
+  assert.deepEqual(c.totals.failures, ['x.test.sh']);
+  assert.equal(c.totals.failed, 1);
+  assert.equal(c.suite_green, false);
+});
+
+test('RepetirVerdeConSuite_ReescribeLaConstancia (g) @story-8.230 @ac-12 — con una ausente en la completa, suite_green sigue false y dice qué falta', () => {
+  // 🔴 mutación: poner suite_green con failed en 0 → verde con una suite que no corrió.
+  const dir = tmp('ff-const-');
+  const f = constanciaFalsa(dir, [{ raiz: 'arnes', ruta: A }]);
+  const c = JSON.parse(fs.readFileSync(f, 'utf8'));
+  Object.assign(c.totals, { missing: 1, missing_paths: ['/x/scripts/tests/c.test.sh'] });
+  fs.writeFileSync(f, JSON.stringify(c));
+  assert.equal(repetir(f, A).written, true);
+  const d = JSON.parse(fs.readFileSync(f, 'utf8'));
+  assert.equal(d.totals.failed, 0);
+  assert.equal(d.suite_green, false);
+  assert.match(d.suite_green_pending.join(' '), /ausente/);
+});
+
+test('RepetirVerdeConSuite_ReescribeLaConstancia (hermanos) @story-8.230 @ac-12 — con un repo hermano en verde, all_green también queda en verde', () => {
+  // 🔴 mutación: recalcular sólo suite_green → all_green sigue false y el revisor de pruebas no la toma verde.
+  const f = constanciaFalsa(tmp('ff-const-'), [{ raiz: 'arnes', ruta: A }], { companions: [{ root: '/x/hermano', green: true, exit: 0 }], all_green: false });
+  assert.equal(repetir(f, A).written, true);
+  const c = JSON.parse(fs.readFileSync(f, 'utf8'));
+  assert.equal(c.suite_green, true);
+  assert.equal(c.all_green, true);
+  // sin hermanos, la constancia no gana un all_green que no tenía
+  const g = constanciaFalsa(tmp('ff-const-'), [{ raiz: 'arnes', ruta: A }]);
+  repetir(g, A);
+  assert.ok(!('all_green' in JSON.parse(fs.readFileSync(g, 'utf8'))));
+});
+
+test('RepetirVerdeConSuite_ReescribeLaConstancia (sin entrada) @story-8.230 @ac-12 — una falla sin su entrada de suites.json sigue contando', () => {
+  // 🔴 mutación: contar `failed` por failure_entries → 0 y verde con una falla todavía listada.
+  const f = constanciaFalsa(tmp('ff-const-'), [{ raiz: 'arnes', ruta: A }]);
+  const c = JSON.parse(fs.readFileSync(f, 'utf8'));
+  c.totals.failures.push('sin-entrada.test.sh');
+  c.totals.failed = 2;
+  fs.writeFileSync(f, JSON.stringify(c));
+  assert.equal(repetir(f, A).written, true);
+  const d = JSON.parse(fs.readFileSync(f, 'utf8'));
+  assert.equal(d.totals.failed, 1);
+  assert.equal(d.suite_green, false);
+});
+
+test('RepetirVerdeConSuite_ReescribeLaConstancia (copia que no se toca) @story-8.230 @ac-12 — sin copia, o de otra corrida, lo dice', () => {
+  const dir = tmp('ff-const-');
+  const f = constanciaFalsa(dir, [{ raiz: 'arnes', ruta: A }, { raiz: 'arnes', ruta: B }]);
+  assert.match(repetir(f, A).reason, /sin copia que viaja/);
+  const sellada = path.join(dir, 'copia.json');
+  fs.writeFileSync(sellada, JSON.stringify({ ts: 'otra', totals: {} }));
+  assert.match(repetir(f, B, { sealed: sellada }).reason, /la copia que viaja es de otra corrida/);
+});
+
+test('RepetirVerdeConSuite_ReescribeLaConstancia (copia) @story-8.230 @ac-12 — la copia que viaja cambia igual; otra historia o un hermano en rojo no la ponen verde', () => {
+  const dir = tmp('ff-const-');
+  const sellada = path.join(dir, 'dod-runtime', '9.1-tests-result.json');
+  fs.mkdirSync(path.dirname(sellada), { recursive: true });
+  const f = constanciaFalsa(dir, [{ raiz: 'arnes', ruta: A }]);
+  const base = JSON.parse(fs.readFileSync(f, 'utf8'));
+  fs.writeFileSync(sellada, JSON.stringify({ kind: 'tests-result-sellado', story_id: '9.1', ts: base.ts, suite_exit: 1, suite_green: false, totals: base.totals }));
+  assert.equal(repetir(f, A, { storyId: '9.2', sealed: sellada }).written, false, 'reescribió la constancia de otra historia');
+  assert.equal(repetir(f, A, { sealed: sellada }).written, true);
+  const s = JSON.parse(fs.readFileSync(sellada, 'utf8'));
+  assert.equal(s.suite_green, true);
+  assert.equal(s.totals.failed, 0);
+  assert.equal(s.kind, 'tests-result-sellado', 'la copia perdió su forma');
+  // con un repo hermano en rojo, el total no es verde
+  const g = constanciaFalsa(tmp('ff-const-'), [{ raiz: 'arnes', ruta: A }], { companions: [{ root: '/x/hermano', green: false, exit: 1 }] });
+  repetir(g, A);
+  const h = JSON.parse(fs.readFileSync(g, 'utf8'));
+  assert.equal(h.suite_green, false);
+  assert.match(h.suite_green_pending.join(' '), /hermano/);
 });
