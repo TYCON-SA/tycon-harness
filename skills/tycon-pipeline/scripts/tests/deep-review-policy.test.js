@@ -263,7 +263,7 @@ test('DeepReviewGate_PreguntarNoEsSaltear (T36) @story-8.221 @ac-27 — con «as
   assert.strictEqual(set.status, 0, set.stderr);
   const salteo = correr('marker.js', ['mark-adversarial-skipped', '--files', ...archivos]);
   assert.strictEqual(salteo.status, 3, salteo.stderr);
-  assert.match(salteo.stderr, /no saltea el pase, pide preguntarle al dueño/);
+  assert.match(salteo.stderr, /no saltea el pase, pide preguntarle a la persona/);
   assert.ok(!JSON.parse(fs.readFileSync(path.join(estado, 'active', `${sid}.json`), 'utf8')).deepReviewDone, 'no quedó sellado');
 });
 

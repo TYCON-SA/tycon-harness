@@ -1915,7 +1915,7 @@ function revisionDeLaOrganizacion() {
   try {
     const estado = stateDirOf(os.homedir());
     const leida = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-away.js')).get({ estado });
-    if (leida.problem) out.reviewConfigProblems.push({ path: 'owner-away', message: `${leida.problem}: el dueño cuenta como presente` });
+    if (leida.problem) out.reviewConfigProblems.push({ path: 'owner-away', message: `${leida.problem}: la persona cuenta como presente` });
     const sid = sessionIdFileKey();
     // la pregunta cuenta sólo si es sobre este mismo diff (como la del plan): una de una ejecución cerrada no vale
     const h = PR.huellaDe({ estado, sesion: sid, kind: 'code' });
@@ -1925,7 +1925,7 @@ function revisionDeLaOrganizacion() {
     out.ownerAway = require('./lib/review-policy.js').ownerAway({ mark: leida.mark, askedAt: pregunta ? Date.parse(pregunta.ts) : null,
       now: Date.now(), minutes: out.reviewConfig.plan_review.owner_away_minutes }).away;
   } catch (e) {
-    out.reviewConfigProblems.push({ path: 'owner-away', message: `no pude saber si el dueño está ausente (${causa(e)}): cuenta como presente` });
+    out.reviewConfigProblems.push({ path: 'owner-away', message: `no pude saber si la persona está ausente (${causa(e)}): cuenta como presente` });
   }
   return out;
 }
@@ -3103,8 +3103,8 @@ function accionDelPase(marker, story, { sidNow, nextStep } = {}) {
     if (gate.decision === 'ask' || gate.decision === 'wait') {
       return { pending_action: { kind: 'preguntar-revision-del-codigo',
         message: gate.decision === 'ask'
-          ? 'el portón pide preguntarle al dueño si revisar el código: anotá la pregunta (marker.js review-ask --kind code) y esperá la respuesta (marker.js review-answer); con «review» se lanza el pase, con «skip» se anota el salteo'
-          : 'el portón pide esperar al dueño para decidir la revisión del código: no se lanza ni se saltea hasta su respuesta (marker.js review-answer)' } };
+          ? 'el portón pide preguntarle a la persona si revisar el código: anotá la pregunta (marker.js review-ask --kind code) y esperá la respuesta (marker.js review-answer); con «review» se lanza el pase, con «skip» se anota el salteo'
+          : 'el portón pide esperar a la persona para decidir la revisión del código: no se lanza ni se saltea hasta su respuesta (marker.js review-answer)' } };
     }
     return {};
   }
@@ -4930,9 +4930,9 @@ function criterioDelPase(args) {
   if (contestoSkip) return { run: false, risk, model: null, ...comun, ...superficie, decision: 'skip', reason: `${porque} → contestaron «skip» (review-answer)` };
   if (m.decision === 'ask') {
     return { run: false, risk, model: null, ...comun, ...superficie, question: '¿Corro el pase adversarial sobre este cambio? (antes de preguntar: marker.js review-ask --kind code)',
-      reason: `${porque} (${lineas}): se le pregunta al dueño` };
+      reason: `${porque} (${lineas}): se le pregunta a la persona` };
   }
-  if (m.decision === 'wait') return { run: false, risk, model: null, ...comun, ...superficie, reason: `${porque} (${lineas}): espera al dueño` };
+  if (m.decision === 'wait') return { run: false, risk, model: null, ...comun, ...superficie, reason: `${porque} (${lineas}): espera a la persona` };
   return { run: false, risk, model: null, ...comun, ...superficie, reason: `${porque} → skip (${lineas}; override: --deep-review)` };
 }
 

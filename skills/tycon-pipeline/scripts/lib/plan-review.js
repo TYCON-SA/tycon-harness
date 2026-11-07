@@ -325,7 +325,9 @@ function huellaDe({ estado, sesion, kind }) {
     if (!plan.texto || !plan.texto.trim()) return no(`no hay plan escrito en la corrida de la sesión ${sesion}`);
     return { codigo: 0, huella: sha(plan.texto) };
   }
-  const git = (base) => require('child_process').spawnSync('git', ['-C', marker.repoPath || process.cwd(), 'diff', base], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  // el error se reconoce por el texto: git va con el idioma fijo
+  const env = require(path.join(RAIZ, 'scripts', 'lib', 'clean-git-env.js')).idiomaFijo();
+  const git = (base) => require('child_process').spawnSync('git', ['-C', marker.repoPath || process.cwd(), 'diff', base], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env });
   let r = git('HEAD');
   // un repo sin commits no tiene HEAD: el diff se mide contra el árbol vacío, para que la pregunta se pueda contestar
   if (r.status !== 0 && /unknown revision|ambiguous argument 'HEAD'/.test(r.stderr || '')) r = git('4b825dc642cb6eb9a060e54bf8d69288fbee4904');
@@ -472,7 +474,7 @@ function antesDeAprobar({ estado, firmante, destino, marker, config, delegacion,
   if (!plan.texto || sha(plan.texto) !== c.huellas.plan) return no(`el plan cambió después de la revisión: ${ESPERA}`);
   if (storyTexto === null || sha(storyTexto) !== c.huellas.story) return no(`la story cambió después de la revisión: ${ESPERA}`);
   if (c.delicate.value !== delicate.value) return no(`la story era delicada cuando se revisó y ya no lo es: ${ESPERA}`);
-  if (eligioSeguir({ estado, destino, huellaPlan: c.huellas.plan })) return no(`para este plan se eligió seguir sin revisión: lo firma el dueño`);
+  if (eligioSeguir({ estado, destino, huellaPlan: c.huellas.plan })) return no(`para este plan se eligió seguir sin revisión: lo firma una persona`);
   if (!APROBADOS.includes(c.veredicto)) return no(`${ESPERA} (la revisión dijo ${c.veredicto})`);
   return { codigo: 0, via: 'revision', constancia: c };
 }
@@ -504,8 +506,8 @@ function accionDelPlan({ estado, sesion, marker, config, home, ahora = Date.now(
   try {
     const leida = require(path.join(RAIZ, 'scripts', 'lib', 'owner-away.js')).get({ estado, home, ahora });
     marca = leida.mark;
-    if (leida.problem) avisos.push(`${leida.problem}: el dueño cuenta como presente`);
-  } catch (e) { avisos.push(`no pude leer la marca de ausente (${e.message}): el dueño cuenta como presente`); }
+    if (leida.problem) avisos.push(`${leida.problem}: la persona cuenta como presente`);
+  } catch (e) { avisos.push(`no pude leer la marca de ausente (${e.message}): la persona cuenta como presente`); }
   const pregunta = preguntasAbiertas({ estado }).find((p) => p.sesion === sesion && p.kind === 'plan' && p.huella === huellaPlan);
   const away = P.ownerAway({ mark: marca, askedAt: pregunta ? Date.parse(pregunta.ts) : null, now: ahora, minutes: cfg.plan_review.owner_away_minutes });
   const r = P.planReview({ delicate: delicate.value, coordinator: hayCoordinadora, ownerAway: away.away, config: cfg });
@@ -523,8 +525,8 @@ function accionDelPlan({ estado, sesion, marker, config, home, ahora = Date.now(
     // el mismo tope que las vueltas de revisores del código: el repo manda sobre la organización
     const tope = topeDeRechazos(cfg, marker.repoPath);
     const llega = cfg.plan_review.rejected_reaches_owner || n >= tope;
-    const motivo = cfg.plan_review.rejected_reaches_owner ? 'el perfil manda los rechazos al dueño (plan_review.rejected_reaches_owner: true)'
-      : n >= tope ? `rechazado ${n} ${n === 1 ? 'vez' : 'veces seguidas'}, el tope es ${tope} (review.max_rounds): decide el dueño, partir la historia o firmar una vuelta extra`
+    const motivo = cfg.plan_review.rejected_reaches_owner ? 'el perfil manda los rechazos a una persona (plan_review.rejected_reaches_owner: true)'
+      : n >= tope ? `rechazado ${n} ${n === 1 ? 'vez' : 'veces seguidas'}, el tope es ${tope} (review.max_rounds): decide una persona, partir la historia o firmar una vuelta extra`
         : `rechazado ${n} de ${tope} (review.max_rounds): corregí el plan y volvé a cerrarlo`;
     return { ...out, revisado: c.veredicto, rechazos: n, alDueno: { llega, motivo } };
   }

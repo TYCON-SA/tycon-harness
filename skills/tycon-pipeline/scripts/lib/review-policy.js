@@ -129,11 +129,11 @@ function planReview({ delicate, coordinator, ownerAway, config }) {
   const approves = aprobador(delicate, coordinator, c);
   const asker = coordinator ? 'coordinator' : 'session';
   const conPregunta = (porQue) => {
-    if (!ownerAway) return { decision: 'ask', approves, asker, reason: `${porQue}: se le pregunta al dueño` };
+    if (!ownerAway) return { decision: 'ask', approves, asker, reason: `${porQue}: se le pregunta a la persona` };
     const v = c.routine_owner_away;
     const decision = v === 'review' ? 'run' : v;
     // sin revisión, o esperándolo, el plan lo firma el dueño
-    return { decision, approves: decision === 'run' ? approves : 'owner', asker, reason: `${porQue}, con el dueño ausente: ${v} (plan_review.routine_owner_away)` };
+    return { decision, approves: decision === 'run' ? approves : 'owner', asker, reason: `${porQue}, con la persona ausente: ${v} (plan_review.routine_owner_away)` };
   };
   if (delicate) {
     if (c.delicate === 'always') return { decision: 'run', approves, asker, reason: 'historia delicada: se revisa siempre (plan_review.delicate: always)' };
@@ -154,13 +154,13 @@ function codeReview({ delicate, codeFiles, normalByOtherCriterion, dense, ownerA
     : `${codeFiles} archivos de código, hasta ${c.small_max_files}`;
   if (delicate) {
     if (c.delicate === 'always') return { decision: 'run', size, reason: `delicada (${por}): corre siempre (deep_review.delicate: always)` };
-    return { decision: ownerAway ? 'run' : 'ask', size, reason: `delicada (${por}) con deep_review.delicate: ask${ownerAway ? ', dueño ausente: corre' : ''}` };
+    return { decision: ownerAway ? 'run' : 'ask', size, reason: `delicada (${por}) con deep_review.delicate: ask${ownerAway ? ', persona ausente: corre' : ''}` };
   }
   if (grande) {
     if (c.large_routine === 'run') return { decision: 'run', size, reason: `grande (${por}): corre (deep_review.large_routine: run)` };
-    return { decision: ownerAway ? 'run' : 'ask', size, reason: `grande (${por}) con deep_review.large_routine: ask${ownerAway ? ', dueño ausente: corre' : ''}` };
+    return { decision: ownerAway ? 'run' : 'ask', size, reason: `grande (${por}) con deep_review.large_routine: ask${ownerAway ? ', persona ausente: corre' : ''}` };
   }
-  if (ownerAway) return { decision: c.small_routine_owner_away, size, reason: `chica (${por}), dueño ausente: ${c.small_routine_owner_away} (deep_review.small_routine_owner_away)` };
+  if (ownerAway) return { decision: c.small_routine_owner_away, size, reason: `chica (${por}), persona ausente: ${c.small_routine_owner_away} (deep_review.small_routine_owner_away)` };
   return { decision: c.small_routine_day, size, reason: `chica (${por}): ${c.small_routine_day} (deep_review.small_routine_day)` };
 }
 

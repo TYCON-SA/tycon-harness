@@ -21,7 +21,7 @@
         "shared_surface_declared": false,
         "shared_surface_note": "este repo NO declaró `deep_review_always_paths` en .tycon/advisors.yaml, así que el skip se decidió SÓLO por tamaño de diff: si el cambio toca código que corre en nombre de todos los plugins/clientes, este gate no lo puede saber. Declararlo es de una vez por repo.",
         "question": "¿Corro el pase adversarial sobre este cambio? (antes de preguntar: marker.js review-ask --kind code)",
-        "reason": "risk-class LOW → chica (1 archivos de código, hasta 6): ask (deep_review.small_routine_day) (2 líneas agregadas < 300): se le pregunta al dueño"
+        "reason": "risk-class LOW → chica (1 archivos de código, hasta 6): ask (deep_review.small_routine_day) (2 líneas agregadas < 300): se le pregunta a la persona"
       }
     },
     {
@@ -55,7 +55,7 @@
         "shared_surface_declared": false,
         "shared_surface_note": "este repo NO declaró `deep_review_always_paths` en .tycon/advisors.yaml, así que el skip se decidió SÓLO por tamaño de diff: si el cambio toca código que corre en nombre de todos los plugins/clientes, este gate no lo puede saber. Declararlo es de una vez por repo.",
         "question": "¿Corro el pase adversarial sobre este cambio? (antes de preguntar: marker.js review-ask --kind code)",
-        "reason": "deep_review: off no hace falta: el pase no corre por el criterio de siempre · risk-class LOW → chica (1 archivos de código, hasta 6): ask (deep_review.small_routine_day) (2 líneas agregadas < 300): se le pregunta al dueño"
+        "reason": "deep_review: off no hace falta: el pase no corre por el criterio de siempre · risk-class LOW → chica (1 archivos de código, hasta 6): ask (deep_review.small_routine_day) (2 líneas agregadas < 300): se le pregunta a la persona"
       }
     },
     {

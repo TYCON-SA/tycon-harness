@@ -3510,7 +3510,7 @@ function cmdMarkAdversarialSkipped(argsGate) {
   }
   // «preguntar» y «esperar» no son un salteo: el pase queda pendiente hasta que alguien conteste la pregunta
   if (gate.run === false && (gate.decision === 'ask' || gate.decision === 'wait')) {
-    console.error(`marker.js mark-adversarial-skipped: el portón no saltea el pase, ${gate.decision === 'ask' ? 'pide preguntarle al dueño' : 'pide esperar al dueño'} — ${gate.reason || '(sin reason)'}`);
+    console.error(`marker.js mark-adversarial-skipped: el portón no saltea el pase, ${gate.decision === 'ask' ? 'pide preguntarle a la persona' : 'pide esperar a la persona'} — ${gate.reason || '(sin reason)'}`);
     console.error('  Se anota la pregunta (marker.js review-ask --kind code) y se espera la respuesta (marker.js review-answer); con «review» se');
     console.error('  lanza, con «skip» se vuelve a correr este comando. No se anotó nada.');
     process.exit(3);
@@ -5145,7 +5145,7 @@ function cmdPlanReview(argv) {
     lineas.push(`Notas para implementar (no rechazan con el corte «${c.corte}»):`);
     for (const h of c.notas) lineas.push(renglon(h));
   }
-  if (c.informativa) lineas.push('Es informativa: el plan lo firma el dueño.');
+  if (c.informativa) lineas.push('Es informativa: el plan lo firma una persona.');
   else if (!pr.APROBADOS.includes(c.veredicto)) lineas.push('El plan espera a una persona: la coordinadora no lo puede aprobar con esta revisión.');
   if (c.reintentar) lineas.push(`El plan cambió mientras corría: se reintenta una vez sobre el plan cerrado (marker.js plan-review${conSesion}).`);
   if (ilegible) lineas.push('El resultado del pase no se pudo leer: este comando sale 3.');
@@ -5198,7 +5198,7 @@ function cmdOwnerAway(argv) {
   if (accion === 'set') {
     const r = oa.set({ estado: STATE_DIR, quien: `sesión ${PROPIA}`, frase: val('--phrase') });
     if (r.codigo) { console.error(`🔒 marker.js owner-away set: ${r.motivo}. No se escribió nada.`); process.exit(r.codigo); }
-    process.stdout.write(`marca de ausente puesta (${r.mark.setAt}): las revisiones siguen la celda de «dueño ausente» hasta que el dueño vuelva o pasen 24 h.\n`);
+    process.stdout.write(`marca de ausente puesta (${r.mark.setAt}): las revisiones siguen la celda de «persona ausente» hasta que la persona vuelva o pasen 24 h.\n`);
     process.exit(0);
   }
   if (accion === 'clear') {
@@ -5209,11 +5209,11 @@ function cmdOwnerAway(argv) {
   }
   if (accion === 'get') {
     const g = oa.get({ estado: STATE_DIR });
-    if (g.problem) console.error(`marker.js owner-away get: ${g.problem}; el dueño cuenta como presente.`);
+    if (g.problem) console.error(`marker.js owner-away get: ${g.problem}; la persona cuenta como presente.`);
     process.stdout.write(`${JSON.stringify(g.problem ? { mark: g.mark, problem: g.problem } : { mark: g.mark })}\n`);
     process.exit(0);
   }
-  console.error('uso: marker.js owner-away set --phrase "<lo que dijo el dueño>" | clear [--reason "<por qué>"] | get');
+  console.error('uso: marker.js owner-away set --phrase "<lo que dijo la persona>" | clear [--reason "<por qué>"] | get');
   process.exit(2);
 }
 
