@@ -474,6 +474,12 @@
       "requiere": []
     },
     {
+      "__nota": "el freno del commit avisa, sin frenar, cuando una historia cuyo id no entra en el patrón pasa a review o done; corre el hook de verdad sobre un repo de git temporal, con una HOME temporal.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/pre-commit-story-outside.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.48: la clave `stack` de team-repos.json, leída desde el árbol del arnés.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/stack-config.test.js",

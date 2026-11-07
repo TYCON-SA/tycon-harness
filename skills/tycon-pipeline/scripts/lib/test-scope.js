@@ -47,25 +47,49 @@ function frontmatterOf(content) {
   return m ? m[1] : '';
 }
 
-// `allForms`: también la lista en línea y la de ítems a la misma sangría que la clave. Sólo la pide el alcance de la
-// puerta de pruebas: los frenos leen la forma de siempre, porque leer más declarado ahí aflojaría lo que dejan pasar.
+// Una clave del frontmatter: un nombre seguido de `:` y de un espacio o el fin del renglón. Una ruta con `:` adentro
+// (`src/a:b.cs`) no lo es: tiene `/` o `.` antes del `:`.
+const KEY_LINE_RE = /^\s*[A-Za-z0-9_-]+\s*:(?:\s|$)/;
+
+// La lista en línea partida en varios renglones, desde el renglón de la clave: junta hasta el `]` o hasta la clave
+// siguiente, sin el comentario de cada renglón.
+function splitInlineList(lines, start, firstRest) {
+  const parts = [];
+  let rest = firstRest;
+  for (let i = start; ; ) {
+    const close = rest.indexOf(']');
+    if (close !== -1) { parts.push(rest.slice(0, close)); break; }
+    parts.push(rest.replace(/(^|\s)#.*$/, ''));
+    i += 1;
+    if (i >= lines.length || KEY_LINE_RE.test(lines[i])) break;
+    rest = lines[i];
+  }
+  return parts.join(',').split(',').map(cleanItem).filter(Boolean);
+}
+
+// `allForms`: también la lista en línea (en uno o en varios renglones), la de ítems a la misma sangría que la clave, y
+// los comentarios sin sangría entre los ítems. Sólo la piden la matriz y el alcance de la puerta de pruebas: los frenos
+// leen la forma de siempre, porque leer más declarado ahí aflojaría lo que dejan pasar.
 function listUnderKey(fm, key, { allForms = false } = {}) {
   const lines = fm.split(/\r?\n/);
   const out = [];
   let inKey = false;
   let keyIndent = 0;
-  for (const line of lines) {
+  for (let n = 0; n < lines.length; n++) {
+    const line = lines[n];
     const indent = line.length - line.trimStart().length;
     if (!inKey) {
       const km = line.match(new RegExp(`^(\\s*)${key}\\s*:\\s*${allForms ? '(?:#.*)?' : ''}$`));
       if (km) { inKey = true; keyIndent = km[1].length; continue; }
       if (!allForms) continue;
-      // la lista en línea: `clave: [a, "b", 'c']`
-      const enLinea = line.match(new RegExp(`^\\s*${key}\\s*:\\s*\\[([^\\]]*)\\]\\s*(?:#.*)?$`));
-      if (enLinea) return enLinea[1].split(',').map(cleanItem).filter(Boolean);
+      // la lista en línea: `clave: [a, "b", 'c']`, o abierta en este renglón y cerrada más abajo
+      const enLinea = line.match(new RegExp(`^\\s*${key}\\s*:\\s*\\[(.*)$`));
+      if (enLinea) return splitInlineList(lines, n, enLinea[1]);
       continue;
     }
     if (line.trim() === '') continue;
+    // un comentario no es el fin de la lista, aunque no tenga sangría
+    if (allForms && /^\s*#/.test(line)) continue;
     // YAML deja los ítems a la misma sangría que la clave; lo que corta es otra cosa a esa sangría
     if (indent < keyIndent || (indent === keyIndent && !(allForms && /^\s*-(?:\s|$)/.test(line)))) break;
     const im = line.match(/^\s*-\s*(.+?)\s*$/);

@@ -1636,6 +1636,9 @@ withWaiverLog(() => {
   leida('T6 Lista_EnLinea_LaLee @story-8.191 @ac-4', ['files_to_modify: ["src/Feature.cs"]']);
   leida('T7 Lista_ItemsALaMismaSangria_LosLee @story-8.191 @ac-5', ['files_to_modify:', '- src/Feature.cs']);
   leida('T8 Item_ComentarioAlFinal_RutaLimpia @story-8.191 @ac-6', ['files_to_modify:', '  - "src/Feature.cs"  # AC1']);
+  leida('T6 Matriz_ComentarioSinSangria_ArchivoEditado_NoCuenta @story-8.194 @ac-6',
+    ['files_to_modify:', '  - src/Otro.cs', '# público', '  - src/Feature.cs']);
+  leida('T7 Matriz_ListaPartida_ArchivoEditado_NoCuenta @story-8.194 @ac-7', ['files_to_modify: [', '  "src/Feature.cs"', ']']);
 
   const conAviso = labLista(['files_to_modify:', '  - "src/Feature.cs"'], { editadoDespues: true });
   const aviso = conAviso.r.warnings.find((w) => /es ANTERIOR al último edit de código/.test(w)) || '';

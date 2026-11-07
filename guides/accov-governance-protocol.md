@@ -451,7 +451,8 @@ Las demás condiciones no cambian: el espejo en `gates.log`, las pruebas apagada
 del humo. Una evidencia sin espejo no cuenta aunque el archivo no haya cambiado.
 
 Los archivos declarados son los de `files_to_create` y `files_to_modify`, escritos como estén: con comillas, con comentarios
-con sangría, en línea o a la misma sangría que la clave. Las pruebas y los guiones de humo que la historia declara también se
+con o sin sangría, en línea (también partida en varios renglones) o a la misma sangría que la clave. Una lista en línea sin
+su `]` se lee hasta la clave siguiente. Los frenos leen sólo la forma de siempre: leer más ahí aflojaría lo que dejan pasar. Las pruebas y los guiones de humo que la historia declara también se
 miran: vencen la evidencia como el código, salvo lo que se dijo arriba de una prueba cambiada por otra historia.
 
 La matriz busca cada archivo declarado en el repo de la historia, en la carpeta de arriba, en cada hermano declarado y en su copia de la rama de la historia, en ese orden y sin repetir. Juzga cada copia que encuentra, con el commit de su
@@ -462,4 +463,9 @@ estén cubiertos por pruebas, porque no se sabe si cambió. El aviso nombra la r
 historia abierta, la salida es corregir la ruta si el archivo se movió, crearlo o sacarlo de la lista si era para crear, o
 traer el hermano al día. En `done`, traer el hermano al día o volver a correr la evidencia: la lista no se edita para ponerla
 en verde. Un archivo que no es código no se mira, esté o no.
+
+Una historia cuyo id no entra en el patrón de historias del repo (el de fábrica es de números: `8.12`, `3-4`) no pasa por
+el freno del commit: ni la matriz ni la evidencia se miran. Cuando una así pasa a `review` o `done`, el freno avisa, nombra
+la historia y su id, y sale igual: el aviso no frena. Para que entre, el repo declara su forma en `stories.id_pattern` de
+`.tycon/advisors.yaml` y lo commitea.
 

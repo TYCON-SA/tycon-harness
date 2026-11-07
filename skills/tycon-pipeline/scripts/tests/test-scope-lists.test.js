@@ -147,3 +147,49 @@ test('TestScope_StoryDeOtroRepo_MezclaYCopiaDeTrabajo — lo sin prefijo de este
   declara('FrontEnd/shared/src/a.ts', 'nuevo/x.ts');
   assert.strictEqual(testScope.resolveScope(copia, story).files_considered, 2, JSON.stringify(testScope.resolveScope(copia, story)));
 });
+
+const conLista = (...renglones) => ['---', 'story: "4.31"', ...renglones, '---', ''].join('\n');
+
+test('T1 AllForms_ComentarioSinSangriaEntreItems_LeeLosDos @story-8.194 @ac-1', () => {
+  // 🔴 rojo si: un comentario sin sangría corta la lista → lo que sigue no se lee y su evidencia vieja sigue contando.
+  const story = conLista('files_to_modify:', '- a.cs', '# nota', '- b.cs');
+  assert.deepEqual(testScope.parseDeclaredFiles(story, { allForms: true }), ['a.cs', 'b.cs']);
+  const conSangria = conLista('files_to_modify:', '  - a.cs', '# nota', '  - b.cs');
+  assert.deepEqual(testScope.parseDeclaredFiles(conSangria, { allForms: true }), ['a.cs', 'b.cs']);
+});
+
+test('T2 AllForms_ComentarioSinSangriaAlFinal_LaOtraClaveCorta @story-8.194 @ac-2', () => {
+  // 🔴 rojo si: saltear el comentario hace que la clave siguiente, o sus ítems, entren a la lista.
+  const story = conLista('files_to_modify:', '  - a.cs', '# nota', 'title: x', '- z.cs');
+  assert.deepEqual(testScope.parseDeclaredFiles(story, { allForms: true }), ['a.cs']);
+});
+
+test('T3 AllForms_ListaPartida_LeeTodos @story-8.194 @ac-3', () => {
+  // 🔴 rojo si: la lista en línea partida en varios renglones da vacía.
+  const abajo = conLista('files_to_modify: [', '  a.cs,', '  "b.cs"', ']');
+  assert.deepEqual(testScope.parseDeclaredFiles(abajo, { allForms: true }), ['a.cs', 'b.cs']);
+  const pegada = conLista('files_to_modify: [a.cs,', "  'b.cs']", 'title: x');
+  assert.deepEqual(testScope.parseDeclaredFiles(pegada, { allForms: true }), ['a.cs', 'b.cs']);
+  const conNota = conLista('files_to_modify: [  # nota', '  a.cs,  # una', '  b.cs ]  # otra');
+  assert.deepEqual(testScope.parseDeclaredFiles(conNota, { allForms: true }), ['a.cs', 'b.cs']);
+});
+
+test('T4 AllForms_ListaPartidaSinCierre_NoSeTragaLaClave @story-8.194 @ac-4', () => {
+  // 🔴 rojo si: sin el `]`, la clave siguiente entra como ítem, o una ruta con `:` adentro se toma por una clave.
+  for (const clave of ['title: x', 'depends_on2:', 'tests_done-x: [1]', 'k_1:']) {
+    const story = conLista('files_to_create: [', '  a.cs,', '  src/a:b.cs,', clave, '  - z.cs');
+    assert.deepEqual(testScope.parseDeclaredFiles(story, { allForms: true }), ['a.cs', 'src/a:b.cs'], clave);
+  }
+  // sin `]` y sin clave después: la lista llega al fin del frontmatter, y se lee lo que hay
+  const alFinal = conLista('title: x', 'files_to_create: [', '  a.cs,', '  b.cs');
+  assert.deepEqual(testScope.parseDeclaredFiles(alFinal, { allForms: true }), ['a.cs', 'b.cs']);
+});
+
+test('T5 SinAllForms_LasDosFormas_IgualQueHoy @story-8.194 @ac-5', () => {
+  // 🔴 rojo si: las formas nuevas llegan a los frenos → lo declarado crece para ellos y aflojan lo que dejan pasar.
+  const comentario = conLista('files_to_modify:', '  - a.cs', '# nota', '  - b.cs');
+  assert.deepEqual(testScope.parseDeclaredFiles(comentario), ['a.cs']);
+  const partida = conLista('files_to_modify: [', '  a.cs,', '  b.cs', ']', 'files_to_delete: [', '  c.cs', ']');
+  assert.deepEqual(testScope.parseDeclaredFiles(partida), []);
+  assert.deepEqual(testScope.parseFilesToDelete(partida), []);
+});
