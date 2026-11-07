@@ -1,6 +1,6 @@
 {
   "archivos": 90,
-  "lineas": 313,
+  "lineas": 314,
   "porArchivo": {
     ".github/control-changes/081bc179e3cc1672ceb50f0d7d0a386002838f3fd8d8c04f6bf2a5bd1e378963.json": 1,
     ".github/control-changes/0a8d93523ebe27ac7ab2292034f2da51edffc6b0af09af1d9d60752d3b950454.json": 1,
@@ -22,7 +22,7 @@
     "getting-started/reference.md": 1,
     "guides/advisor-rules-catalog.md": 2,
     "guides/ci-gate.md": 7,
-    "guides/git-commit-conventions.md": 1,
+    "guides/git-commit-conventions.md": 2,
     "guides/maintaining/mecanismo-de-instalacion.md": 1,
     "guides/maintaining/piezas-en-detalle.md": 6,
     "guides/maintaining/publicacion-espejo.md": 3,

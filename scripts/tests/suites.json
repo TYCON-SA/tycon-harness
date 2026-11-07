@@ -4114,6 +4114,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.164 (T2, T3): los textos que le muestran al agente cómo abrir un pedido en Azure DevOps (los tres del freno de pedidos y el paso de cierre) traen --delete-source-branch al lado de --auto-complete true --squash false; la guía de commits trae la tarea humana de GitHub («Automatically delete head branches») con su ruta. Sólo lee archivos.",
+      "raiz": "arnes",
+      "ruta": "tests/machine-cleanup-guides.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 2.28 (T4, T7-T19, T22, T41): quién es quién (scripts/lib/people.js). Los correos que informan las máquinas del espejo (sin escribir ni tirar, con el JSON roto), los cuatro estados de una máquina y la carpeta vieja compartida, quién ve qué máquina (el mantenedor todo, la persona lo suyo, la corrida suelta sólo el mantenedor), la comparación sin mayúsculas, el plazo de 24 horas de la configuración rota y el freno, las máquinas por confirmar, dónde trabaja cada persona en productos de repos.json (sin adivinar), la vista de una persona sin nada de otra, y que el código no trae valores de ninguna organización. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/people.test.js",

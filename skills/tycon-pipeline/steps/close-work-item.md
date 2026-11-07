@@ -317,7 +317,8 @@ no se pregunta de nuevo. Sin ese ok, el pipeline no commitea ni empuja nada (reg
    Se copia sólo el archivo de la story. Si la comparación muestra algún renglón distinto de `status:` (o del `Status:`
    del cuerpo), se para y se le muestra la diferencia al dev: copiar el archivo entero pisaría lo que haya en main.
 3. **El camino a main es el del repo**: el que da `merge-pr.js plan` (el mismo de `/tycon-merge-to-main`). En modo `pr`
-   sobre Azure DevOps, un pedido con `--auto-complete true --squash false`; en GitHub, un pedido a la fila; en modo
+   sobre Azure DevOps, un pedido con `--auto-complete true --squash false --delete-source-branch true` (la rama temporal
+   se borra al entrar); en GitHub, un pedido a la fila; en modo
    `push`, el empuje directo de la rama a `main`. Después, se borra la carpeta temporal y su rama local.
 4. **Sin el ok del dev**, o si algo de lo anterior falla: no se dice «status: done» como si estuviera en main. El
    mensaje final lo deja como **acción pendiente**, con los comandos de arriba ya armados para esa story.
