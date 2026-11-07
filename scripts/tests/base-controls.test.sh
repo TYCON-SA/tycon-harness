@@ -265,6 +265,69 @@ run "${R}" "${T}/t8c.out"
 is "T8 la constancia está anclada al cambio: otro cambio de la regla vuelve a rojo" "1" "${RC}"
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# T4, T5, T6 y T10 (8.176) · el click de la persona, de punta a punta, con el comando que da `pending`
+#   T4  8.176-Click_EscribeConstancia_YLaCiLaAcepta @story-8.176 @ac-4 — `approve` corre con una ventana de prueba al lado
+#       (una copia de scripts/ donde lib/owner-window.js contesta el click): la constancia sale del dueño y sin vía, y `run`
+#       la acepta. El árbol de procesos de un click de verdad no se arma en una prueba: lo cubre T9, en vivo
+#   T5  8.176-SinConstancia_SigueEnRojo @story-8.176 @ac-5 — sin constancia, rojo, y el rojo nombra el click
+#   T6  8.176-CambioDespuesDelClick_Rojo @story-8.176 @ac-5 — el control cambia después de la constancia: rojo
+#   T10 8.176-Cuadro_RutaQueFalsea_SinCuadro @story-8.176 @ac-9 (la parte de la CI) — un --entries que deja afuera un
+#       archivo cambiado escribe una constancia que no cubre el pedido: rojo
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+V="${T}/ventana-de-prueba"; mkdir -p "${V}/scripts"; cp -R "${ROOT}/scripts/ci" "${ROOT}/scripts/lib" "${V}/scripts/"
+cat > "${V}/scripts/lib/owner-window.js" <<'JS'
+// la ventana de prueba: contesta el click de la persona y anota qué firma y qué comando le pidió el guion
+module.exports = { exigir: (o) => { require('fs').writeFileSync(process.env.TEST_WINDOW_SEEN, JSON.stringify({ firma: o.firma, argv: o.argv })); return { codigo: 0, via: 'click', registro: {} }; } };
+JS
+# aprobar_con_click <repo> <salida de pending>: corre el `approve` que dio pending, con la ventana de prueba; deja RC
+aprobar_con_click() {
+  local cmd args
+  cmd="$(sed -n 's/^la firma, desde la sesión ([^)]*): //p' "$2" | head -n 1)"
+  args="${cmd#* approve }"
+  [ -n "${cmd}" ] && [ "${args}" != "${cmd}" ] || { RC=sin-comando; return; }
+  eval "set -- ${args}"
+  TEST_WINDOW_SEEN="${T}/ventana-vista.json" bash "${V}/scripts/ci/run-base-controls.sh" approve "$@" > "${T}/click.out" 2>&1; RC=$?
+}
+R="${T}/t4c"; make_base "${R}"; pr "${R}"
+printf '%s\n' '{ "mode": "block", "allow": ["docs/permitido.txt", "docs/malo.txt"] }' > "${R}/scripts/ci/toy-rules.json"
+printf 'PROHIBIDO\n' > "${R}/docs/malo.txt"; commit "${R}"
+run "${R}" "${T}/t5.out"
+is "T5 sin constancia: rojo" "1" "${RC}"
+has "T5 …dice que afloja un control sin la constancia" "${T}/t5.out" "afloja un control sin la constancia del dueño"
+has "T5 …y nombra el click" "${T}/t5.out" "con el click del dueño en el cuadro de opciones"
+bash "${SCRIPT}" pending --root "${R}" --base main --range main...pedido > "${T}/t4-pending.out" 2>&1
+aprobar_con_click "${R}" "${T}/t4-pending.out"
+is "T4 approve con el click: firma (exit 0)" "0" "${RC}"
+if node -e 'const v=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(v.firma==="control-change"&&v.argv.includes("--entries")?0:1)' "${T}/ventana-vista.json" 2>/dev/null; then ok "T4 …la ventana vio control-change con el --entries de pending"; else no "T4 la ventana no vio el comando de pending: $(cat "${T}/ventana-vista.json" 2>/dev/null)"; fi
+LINE="$(tail -n 1 "${R}/.tycon/control-changes.jsonl" 2>/dev/null)"
+if node -e 'const l=JSON.parse(process.argv[1]);process.exit(l.by==="dueño"&&!("via" in l)?0:1)' "${LINE}" 2>/dev/null; then ok "T4 …la constancia es del dueño y no lleva vía"; else no "T4 la constancia no es la del dueño sin vía: ${LINE}"; fi
+commit "${R}" "constancia"
+run "${R}" "${T}/t4.out"
+is "T4 con la constancia del click: verde" "0" "${RC}"
+has "T4 …y nombra el archivo aprobado" "${T}/t4.out" "cambio de control aprobado: scripts/ci/toy-rules.json"
+printf '%s\n' '{ "mode": "warn", "allow": ["docs/permitido.txt", "docs/malo.txt"] }' > "${R}/scripts/ci/toy-rules.json"; commit "${R}" "otro cambio"
+run "${R}" "${T}/t6.out"
+is "T6 el control cambia después del click: rojo" "1" "${RC}"
+# T10: dos reglas cambiadas y una constancia que sólo nombra una
+R="${T}/t10c"; make_base "${R}"; pr "${R}"
+printf '%s\n' '{ "mode": "block", "allow": ["docs/permitido.txt", "docs/malo.txt"] }' > "${R}/scripts/ci/toy-rules.json"
+printf '%s\n' '{ "names": ["uno", "dos"] }' > "${R}/scripts/ci/toy-names.json"
+printf 'PROHIBIDO\n' > "${R}/docs/malo.txt"; commit "${R}"
+bash "${SCRIPT}" pending --root "${R}" --base main --range main...pedido > "${T}/t10-pending.out" 2>&1
+UNA="$(sed -n "s/^.* --entries '\(.*\)'\$/\1/p" "${T}/t10-pending.out" | head -n 1 | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const e=JSON.parse(s);process.stdout.write(e.length>1?JSON.stringify(e.filter(x=>x.path==="scripts/ci/toy-rules.json")):"")})' 2>/dev/null)"
+if [ -n "${UNA}" ]; then
+  TEST_WINDOW_SEEN="${T}/ventana-vista.json" bash "${V}/scripts/ci/run-base-controls.sh" approve --root "${R}" --base main --entries "${UNA}" > "${T}/t10-approve.out" 2>&1; RC=$?
+  # el rojo de abajo tiene que venir de una constancia que sí se escribió, no de un approve que falló
+  is "T10 approve con una sola regla firma (exit 0)" "0" "${RC}"
+  [ -s "${R}/.tycon/control-changes.jsonl" ] && ok "T10 …y escribe la constancia" || no "T10 approve no escribió la constancia: $(cat "${T}/t10-approve.out")"
+  commit "${R}" "constancia de una sola"
+  run "${R}" "${T}/t10.out"
+  is "T10 la constancia deja afuera un archivo cambiado: rojo" "1" "${RC}"
+else
+  no "T10 pending no dio las dos reglas cambiadas: $(tail -n 5 "${T}/t10-pending.out" | tr '\n' ' ')"
+fi
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 # T14 Vocabulario_CambiarTechoEntraSinFirma @story-8.154 @ac-14 · el control de las palabras de las guías, desde la base:
 # informa y no frena, así que subir un techo con una palabra nueva o bajarlo con la que se va entra sin constancia
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════

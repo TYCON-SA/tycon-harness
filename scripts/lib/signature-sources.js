@@ -9,7 +9,8 @@
  *   · `partesDe({ firma, palabras, cwd, marcador, estado, destino })` → `{ queHace, archivos, completo, fuente, cita }` (el
  *     plan suma `revision`, la línea del resultado de su revisión automática), o null si
  *     la firma no tiene fuente propia (la pregunta dice lo que hace el comando), o `{ error }` si no hay nada que firmar
- *     (un cambio de control con el diff vacío: no hay cuadro y el pedido se niega). `fuente` es el texto exacto que se
+ *     (un cambio de control con el diff vacío, o con rutas que la pregunta no mostraría tal como se firman: no hay
+ *     cuadro y el pedido se niega). `fuente` es el texto exacto que se
  *     mostró: entra a la huella del sello, así un click no vale si la fuente cambió después del cuadro.
  *   · `historiaDe(marcador)` → `{ id, titulo }` de la historia de la corrida, o null sin corrida.
  *   · `seccionesDelPlan(texto)` → `{ queHace, archivos }` o `{ error, errores }`: el plan dice qué hace en hasta 3 líneas y
@@ -120,8 +121,9 @@ function delPlan(palabras, m, { estado, destino } = {}) {
   return { queHace: s.queHace, archivos: s.archivos, completo: ruta, fuente, cita, revision };
 }
 
-// sin programas externos: el cuadro se arma antes de la firma, y el repo lo nombra el comando
-const git = (dir, args) => spawnSync('git', ['-c', 'core.fsmonitor=false', '-C', dir, ...args], { encoding: 'utf8', timeout: 20000, maxBuffer: 32 * 1024 * 1024 });
+// sin programas externos: el cuadro se arma antes de la firma, y el repo lo nombra el comando. Las rutas van literales: un
+// comodín o un «:(glob)» de la sesión no le hace mostrar a la pregunta archivos que el guion no firma
+const git = (dir, args) => spawnSync('git', ['-c', 'core.fsmonitor=false', '--literal-pathspecs', '-C', dir, ...args], { encoding: 'utf8', timeout: 20000, maxBuffer: 32 * 1024 * 1024 });
 
 /**
  * El commit de una revisión que escribió la sesión: `{ sha }`, o `{ motivo }` con por qué no. Lo que empieza con «-»
@@ -149,16 +151,72 @@ function objetoDe(raiz, objeto, noExiste) {
   return { motivo: `git no pudo leer ${raiz} (${por})`, gitFallo: true };
 }
 
+// los de control (C0 y C1), los de formato, que no se ven o dan vuelta el texto (ancho cero, dirección, guion blando), los
+// separadores de renglón y de párrafo, que lo parten como un salto, los que se ignoran al mostrar (rellenos, selectores de
+// variante) y el braille en blanco
+const CLASE_QUE_NO_SE_VE = '[\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}\\p{Default_Ignorable_Code_Point}\\u{2800}]';
+const NO_SE_VE = new RegExp(CLASE_QUE_NO_SE_VE, 'u');
+// la ruta, para nombrarla en un motivo: entre comillas de JSON y con lo que no se ve escrito como su código, así se lee
+const rutaALaVista = (r) => {
+  const t = JSON.stringify(String(r)).slice(1, -1).replace(new RegExp(CLASE_QUE_NO_SE_VE, 'gu'), (c) => `\\u{${c.codePointAt(0).toString(16)}}`);
+  return t.length > 120 ? `${t.slice(0, 120)}…` : t;
+};
+// las opciones que lee el guion (run-base-controls.sh `opt`), que sólo las lee separadas de su valor: pegadas con «=», la
+// pregunta mostraría lo que el guion no firma
+const OPCIONES_DEL_GUION = ['--root', '--base', '--entries', '--file', '--rev', '--out'];
+
+/**
+ * Por qué una ruta no se vería en la pregunta tal como se firma, o null: «, » arma otra ruta en la lista, un salto, un
+ * carácter de control, uno invisible o un separador de renglón cambian el texto, y los espacios de más, en las puntas o
+ * que no son el común se ven como uno solo (owner-approvals.js `cuadroDe` junta los espacios).
+ */
+function porQueNoSeVe(ruta) {
+  if (NO_SE_VE.test(ruta)) return 'trae un salto de línea, un carácter de control o uno que no se ve';
+  if (ruta.includes(', ')) return 'trae «, », que en la pregunta se lee como el fin de una ruta y el principio de otra';
+  if (ruta !== ruta.trim() || / {2}/.test(ruta) || /[^\S ]/.test(ruta)) return 'trae espacios en las puntas, seguidos o que no son el común, y la pregunta los muestra distintos';
+  return null;
+}
+
+/**
+ * Las rutas que firma el comando: `{ rutas, entradas }`, `{ error }` si no se pueden mostrar tal cual (entonces no hay
+ * cuadro que aprobar), o null sin `--entries` ni `--file` (el guion sale con su uso: no firma nada).
+ */
+function rutasDelComando(palabras) {
+  const pegada = (palabras || []).map(String).find((w) => OPCIONES_DEL_GUION.some((o) => w.startsWith(`${o}=`)));
+  if (pegada) {
+    const o = pegada.slice(0, pegada.indexOf('='));
+    return { error: `${o}=… no lo lee el guion, que lee «${o} <valor>»: la pregunta mostraría otra cosa que lo que se firma` };
+  }
+  const crudo = valor(palabras, '--entries');
+  const archivo = valor(palabras, '--file');
+  if (crudo == null) {
+    if (archivo == null) return null;
+    if (!archivo || archivo.startsWith('--')) return { error: '--file no dice qué archivo de control se firma' };
+    const no = porQueNoSeVe(archivo);
+    return no ? { error: `la ruta «${rutaALaVista(archivo)}» de --file ${no}` } : { rutas: [archivo], entradas: null };
+  }
+  let entradas;
+  try { entradas = JSON.parse(crudo); } catch (_) { return { error: '--entries no es JSON: no sé qué archivos de control se firman' }; }
+  if (!Array.isArray(entradas) || !entradas.length) return { error: '--entries no es una lista de archivos con su ruta: no sé qué se firma' };
+  const vistas = new Set();
+  for (let i = 0; i < entradas.length; i++) {
+    const e = entradas[i];
+    if (!e || typeof e.path !== 'string' || !e.path) return { error: `la entrada ${i + 1} de --entries no trae ruta: no sé qué archivo firma` };
+    const no = porQueNoSeVe(e.path);
+    if (no) return { error: `la ruta «${rutaALaVista(e.path)}» de --entries ${no}` };
+    if (vistas.has(e.path)) return { error: `la ruta «${rutaALaVista(e.path)}» está dos veces en --entries: la pregunta contaría un archivo de más` };
+    vistas.add(e.path);
+  }
+  return { rutas: entradas.map((e) => e.path), entradas };
+}
+
 /** El cambio de los controles: cuántas líneas, qué rutas y el diff completo en un archivo de la carpeta de estado. */
 function deControles(palabras, cwd, estado) {
   const raiz = path.resolve(cwd || process.cwd(), valor(palabras, '--root') || '.');
-  let rutas = [];
-  let entradas = null;
-  try { entradas = JSON.parse(valor(palabras, '--entries') || 'null'); } catch (_) { entradas = null; }
-  const archivo = valor(palabras, '--file');
-  if (Array.isArray(entradas)) rutas = entradas.map((e) => e && e.path).filter((p) => typeof p === 'string');
-  else if (archivo) rutas = [archivo];
-  if (!rutas.length) return null;
+  const pedidas = rutasDelComando(palabras);
+  if (!pedidas) return null;
+  if (pedidas.error) return { error: pedidas.error };
+  const { rutas, entradas } = pedidas;
   // lo que se muestra es lo que se firma: con --file, la versión de --rev (o la punta); con --entries, sus blobs, que
   // run-base-controls exige iguales a la punta, contra --base
   const conArchivo = !Array.isArray(entradas);
@@ -185,12 +243,13 @@ function deControles(palabras, cwd, estado) {
     const blobs = conArchivo ? rutas.map((r) => blobDe(raiz, firmada, r)) : null;
     const sinBlob = (blobs || []).find((b) => b.gitFallo);
     if (sinBlob) return noPude(sinBlob.motivo);
+    // lo completo son los archivos mismos, en el repo: sus rutas ya van en «Archivos», y juntas no entrarían enteras
     return { queHace: [`Firma ${rutas.length} archivo(s) de control en su versión ${conArchivo ? `de ${firmada.slice(0, 12)}` : 'de la punta'} (sin base para comparar)`], archivos: rutas,
-      completo: rutas.map((r) => path.join(raiz, r)).join(', '), fuente: JSON.stringify({ entradas: entradas || rutas, blobs }) };
+      completo: raiz, fuente: JSON.stringify({ entradas: entradas || rutas, blobs }) };
   }
   // diff-tree, entre dos commits ya resueltos: el comando de bajo nivel no corre los conversores ni el diff externo
   // que pueda configurar el repo
-  const num = git(raiz, ['diff-tree', '-r', '--numstat', ...rango, '--', ...rutas]);
+  const num = git(raiz, ['diff-tree', '-r', '-z', '--numstat', ...rango, '--', ...rutas]);
   const diff = git(raiz, ['diff-tree', '-r', '-p', ...rango, '--', ...rutas]);
   if (num.status !== 0 || diff.status !== 0) {
     return { queHace: [`no pude leer el cambio de ${rutas.length} archivo(s) de control contra ${rango[0]} (${String(num.stderr || diff.stderr || '').trim().split('\n')[0] || 'git falló'})`],
@@ -203,8 +262,11 @@ function deControles(palabras, cwd, estado) {
   }
   let mas = 0;
   let menos = 0;
-  for (const l of num.stdout.split('\n')) {
-    const [a, b] = l.split('\t');
+  const nombradas = new Set(rutas);
+  for (const l of num.stdout.split('\0').filter(Boolean)) {
+    const [a, b, ...ruta] = l.split('\t');
+    // una ruta que es una carpeta trae el cambio de los archivos de adentro: la pregunta mostraría lo que no se firma
+    if (!nombradas.has(ruta.join('\t'))) return { error: `el cambio trae ${rutaALaVista(ruta.join('\t'))}, que el pedido no nombra: alguna de sus rutas es una carpeta, no un archivo` };
     if (/^\d+$/.test(a)) mas += Number(a);
     if (/^\d+$/.test(b)) menos += Number(b);
   }

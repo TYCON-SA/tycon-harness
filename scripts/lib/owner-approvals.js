@@ -123,8 +123,22 @@ function sesionesNombradas(texto) {
 const LINEAS_QUE_HACE = 3;
 const LARGO_DE_LINEA = 200;
 const ARCHIVOS_A_LA_VISTA = 10;
+// una ruta no se corta: lo que se ve es lo que se aprueba. La que no entra va a «y N más», y lo completo, a su aviso
+const LARGO_DE_RUTA = 200;
+const LARGO_DE_COMPLETO = 400;
 const sinPunto = (s) => String(s).replace(/[.\s]+$/, '');
 const masDe = (lista, tope, sep) => (lista.length > tope ? `${lista.slice(0, tope).join(sep)}${sep === ', ' ? ' ' : sep}y ${lista.length - tope} más` : lista.join(sep));
+const enUnRenglon = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+
+/** Los archivos de la pregunta: hasta 10 rutas que entran enteras, y el resto contado en «y N más»; null sin archivos. */
+function archivosALaVista(archivos) {
+  const rutas = (archivos || []).map(enUnRenglon).filter(Boolean);
+  if (!rutas.length) return null;
+  const vista = rutas.filter((r) => r.length <= LARGO_DE_RUTA).slice(0, ARCHIVOS_A_LA_VISTA);
+  if (!vista.length) return `${rutas.length}, de más de ${LARGO_DE_RUTA} letras: ninguno entra entero en la pregunta`;
+  const resto = rutas.length - vista.length;
+  return resto ? `${vista.join(', ')} y ${resto} más` : vista.join(', ');
+}
 
 /**
  * El cuadro de una firma: lo arma el guion, y el agente lo muestra tal cual. La pregunta dice, en este orden, lo que se
@@ -149,9 +163,10 @@ function cuadroDe({ firma, destino, que, historia = null, criterios = [], queHac
   if (nums.length) partes.push(`Criterios: AC ${nums.length > 1 ? `${nums.slice(0, -1).join(', ')} y ${nums[nums.length - 1]}` : nums[0]}.`);
   const lineas = (queHace || []).map((l) => sinPunto(una(l, LARGO_DE_LINEA))).filter(Boolean);
   if (lineas.length) partes.push(`Qué hace: ${masDe(lineas, LINEAS_QUE_HACE, ' · ')}${nota ? ` ${sinPunto(una(nota, LARGO_DE_LINEA))}` : ''}.`);
-  const rutas = (archivos || []).map((a) => una(a, 200)).filter(Boolean);
-  if (rutas.length) partes.push(`Archivos: ${masDe(rutas, ARCHIVOS_A_LA_VISTA, ', ')}.`);
-  if (completo) partes.push(`Completo en: ${una(completo, 400)}.`);
+  const vistos = archivosALaVista(archivos);
+  if (vistos) partes.push(`Archivos: ${vistos}.`);
+  const todo = enUnRenglon(completo);
+  if (todo) partes.push(`Completo en: ${todo.length <= LARGO_DE_COMPLETO ? todo : `la ruta pasa de ${LARGO_DE_COMPLETO} letras y no entra entera en la pregunta`}.`);
   // el resultado de la revisión automática del plan, con sus notas o hallazgos debajo
   if (revision && revision.linea) {
     const debajo = (revision.detalle || []).map((l) => sinPunto(una(l.replace(/^-\s*/, ''), LARGO_DE_LINEA))).filter(Boolean);

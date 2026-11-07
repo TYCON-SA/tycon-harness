@@ -769,6 +769,7 @@ function aprobacionExplicita({ pendientes, sesion, destino, casa, ahora, cwd, ap
  */
 function negarSinVentana(motivo, ids, sesion, cuadro = null, deFondo = false, anotado = false, coordinadora = null) {
   if (vaATerminal(ids)) return negarCon(motivo, ids, sesion);
+  if (cuadro && cuadro.error && esDeControl(ids)) return negarSinCuadroDeControl(motivo, ids);
   const t = terminalDe(ids, sesion);
   const otraForma = `Si prefiere la terminal: ${t || 'el mismo comando con --terminal'}.`;
   // una sesión que abrió la coordinadora no le muestra el cuadro a la persona (scripts/hooks/background-question-guard.js):
@@ -800,6 +801,20 @@ function negarSinVentana(motivo, ids, sesion, cuadro = null, deFondo = false, an
   return { decision: 'deny', firmas: ids, cuadro, texto: `${motivo}. Esto lo aprueba la persona, sin terminal, con el cuadro de opciones: mostrale AskUserQuestion con una sola pregunta, sin cambiarle una letra: «${cuadro.pregunta}», y las opciones «${cuadro.opciones[0]}» y «${cuadro.opciones[1]}». `
     + `Con su click, repetí el mismo comando. ${deFondo ? 'Si esta sesión corre de fondo, pasale el texto y el comando a la coordinadora: lo muestra en su pestaña, y con el click repetís el comando acá. ' : ''}`
     + `No se lo pidas por el chat salvo que el cuadro no se pueda mostrar: en ese caso, tu último mensaje trae «${cuadro.sello}» y ella contesta «aprobado». ${otraForma}` };
+}
+
+// las firmas de los controles de la base: su cuadro sale de las rutas del comando (signature-sources.js `deControles`)
+const DE_CONTROL = new Set(['control-change', 'refresh-after-main']);
+const esDeControl = (ids) => ids.length === 1 && DE_CONTROL.has(ids[0]);
+const PENDIENTES_DE_CONTROL = path.join(__dirname, '..', 'ci', 'run-base-controls.sh');
+
+/**
+ * La negativa de un cambio de control sin cuadro (rutas que no se verían tal como se firman, o un --entries que no se
+ * lee): no hay pregunta que aprobar, ni en la terminal con ese mismo comando. La salida es pedir las rutas de nuevo.
+ */
+function negarSinCuadroDeControl(motivo, ids) {
+  return { decision: 'deny', firmas: ids, texto: `${motivo}. No hay cuadro que aprobar con este comando, tampoco en la terminal: corré `
+    + `bash ${PENDIENTES_DE_CONTROL} pending --root <repo> --base origin/main --range origin/main...HEAD, que arma las rutas del pedido, y pedí la firma con el comando que da.` };
 }
 
 function negarCon(motivo, ids, sesion) {
@@ -1121,6 +1136,10 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   // los criterios se calculan antes del chequeo del guion, que tiene su propio plazo: así lo que tarda cada uno entra en
   // los 20 s del freno. Lo que contesten se usa más abajo, en el mismo orden de siempre
   if (guion === 'runtime-waiver') criteriosDelPedido(can.palabras, evento.cwd, { casa, destino, sesion, memo: criterios });
+  // un cambio de control sin cuadro se niega antes del chequeo del guion, que contestaría con su propio texto («--entries
+  // no es JSON») sin decir cómo pedir las rutas de nuevo
+  const vistaDeControl = esDeControl(pendientes) ? cuadroPara({ firma: pendientes[0], comando, palabras: can && can.palabras, destino, cwd: evento.cwd, casa, sesion, memo: criterios }) : null;
+  if (vistaDeControl && vistaDeControl.error) return negarSinCuadroDeControl(vistaDeControl.error, pendientes);
   // el guion dice antes si se negaría: entonces no hay ventana ni registro (sin respuesta, la ventana se abre como siempre)
   if (guion && !delegada && CON_PRECHEQUEO.has(firmaGuion)) {
     let c = null;
@@ -1131,7 +1150,7 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   }
   // la ventana dice la misma pregunta que el cuadro de opciones y la lista de firmas (sin el sello); los criterios de
   // un runtime-waiver salen de la memoria de esta consulta
-  const vista = pendientes.length === 1 ? cuadroPara({ firma: pendientes[0], comando, palabras: can && can.palabras, destino, cwd: evento.cwd, casa, sesion, memo: criterios }) : null;
+  const vista = vistaDeControl || (pendientes.length === 1 ? cuadroPara({ firma: pendientes[0], comando, palabras: can && can.palabras, destino, cwd: evento.cwd, casa, sesion, memo: criterios }) : null);
   if (vista && vista.error) return negar(vista.error, pendientes);
   // la aprobación explícita se gasta recién acá, cuando el comando ya no se va a negar, y antes de escribir el pedido:
   // nunca queda un pedido vigente con una aprobación sin gastar. Si el pedido no se puede escribir, se devuelve
