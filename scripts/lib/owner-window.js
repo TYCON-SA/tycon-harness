@@ -707,6 +707,8 @@ function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion, memo
   try { m = casa === undefined || !destino ? null : marcadorEn(path.join(stateDir(casa), 'active', `${destino}.json`)); } catch (_) { m = null; }
   const fuentes = require('./signature-sources.js');
   let partes = fuentes.partesDe({ firma, palabras, cwd, marcador: m, estado: casa === undefined ? null : stateDir(casa), destino });
+  // una fuente que dice que no hay nada que firmar: sin cuadro, el pedido se niega
+  if (partes && partes.error) return { error: partes.error };
   if (firma === 'runtime-waiver') {
     const c = criteriosDelPedido(palabras, cwd, { casa, destino, sesion, memo });
     if (c.error) return { error: c.error };
