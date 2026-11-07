@@ -136,7 +136,7 @@ const masDe = (lista, tope, sep) => (lista.length > tope ? `${lista.slice(0, top
  * aprueba un click en la sesión que trabaja, y el cuadro se muestra con sus `descripciones`. Con `clickDelDueno`, lo aprueba
  * sólo un click, también en la pestaña de la coordinadora, y lo que hace cada opción va en la pregunta.
  */
-function cuadroDe({ firma, destino, que, historia = null, criterios = [], queHace = [], nota = null, archivos = [], completo = null, siSaleMal, cita = null, huella, soloClick = false, clickDelDueno = false, descripciones = null }) {
+function cuadroDe({ firma, destino, que, historia = null, criterios = [], queHace = [], nota = null, archivos = [], completo = null, revision = null, siSaleMal, cita = null, huella, soloClick = false, clickDelDueno = false, descripciones = null }) {
   const sello = `firma ${firma} · sesión ${destino} · código ${huella}`;
   const lo = una(que, 200);
   const partes = [`¿${lo.charAt(0).toUpperCase()}${lo.slice(1)}?`];
@@ -151,6 +151,11 @@ function cuadroDe({ firma, destino, que, historia = null, criterios = [], queHac
   const rutas = (archivos || []).map((a) => una(a, 200)).filter(Boolean);
   if (rutas.length) partes.push(`Archivos: ${masDe(rutas, ARCHIVOS_A_LA_VISTA, ', ')}.`);
   if (completo) partes.push(`Completo en: ${una(completo, 400)}.`);
+  // el resultado de la revisión automática del plan, con sus notas o hallazgos debajo
+  if (revision && revision.linea) {
+    const debajo = (revision.detalle || []).map((l) => sinPunto(una(l.replace(/^-\s*/, ''), LARGO_DE_LINEA))).filter(Boolean);
+    partes.push(`Revisión automática: ${sinPunto(una(revision.linea, 200))}${debajo.length ? `: ${masDe(debajo, LINEAS_QUE_HACE, ' · ')}` : ''}.`);
+  }
   partes.push(`Si sale mal: ${sinPunto(una(siSaleMal, 200))}.`);
   if (cita) partes.push(`Cita de la sesión: «${una(cita, 200)}».`);
   // el click del dueño: lo que hace cada opción va en la pregunta, que la coordinadora muestra tal cual desde su lista

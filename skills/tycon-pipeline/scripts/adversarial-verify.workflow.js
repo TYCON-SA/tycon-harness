@@ -67,6 +67,38 @@ const AGRUPAR = (A && A.agrupar === false)
   ? false
   : !(typeof process !== 'undefined' && process && process.env && process.env.TYCON_5B_GROUP === '0')
 
+// Cuántos verificadores: `per_lens`, uno por lente con todos sus hallazgos (cada uno con su respuesta y su id), o
+// `per_finding`, uno por hallazgo (o por clase, con el agrupamiento). Sin el arg, lo de siempre: uno por hallazgo. Quien
+// arma los args pasa el valor de la organización (team-repos.json → review_runner.verifiers).
+const VERIFIERS = (A && A.verifiers === 'per_lens') ? 'per_lens' : 'per_finding'
+
+// En el modo plan con un verificador por hallazgo, cuántos se verifican como mucho (los de mayor gravedad): los demás
+// quedan sin veredicto, y entonces el plan no cuenta como medido. Sin tope, un revisor que reporta cien hallazgos
+// lanzaría cien agentes.
+const TOPE_VERIFICAR_PLAN = 20
+
+// El corte de gravedad: desde qué gravedad un hallazgo confirmado rechaza el plan (team-repos.json →
+// review.blocking_severity). Sin el arg, lo de siempre: cualquier confirmado rechaza.
+const CORTE = (A && ['bug', 'robustness', 'all'].includes(A.blocking_severity)) ? A.blocking_severity : 'all'
+
+// ===== NUCLEO-BLOCKS: INICIO =====
+// 🔴 Copia LITERAL de `blocks` de lib/review-policy.js (la caja no tiene `require`). La prueba T57 de
+// tests/plan-review.test.js compara las dos: si una cambia, se cambia la otra.
+const SEVERITIES = Object.freeze(['bug', 'robustness', 'nit']);
+
+/**
+ * ¿Un hallazgo confirmado de esta gravedad frena (rechaza el plan, es CRITICAL en el código) con este corte?
+ * Una gravedad desconocida frena: ante la duda, no se aprueba. `not-a-bug` nunca frena.
+ */
+function blocks(severity, cut) {
+  if (severity === 'not-a-bug') return false;
+  const corte = cut === 'all' ? 'nit' : cut === 'robustness' ? 'robustness' : 'bug';
+  const i = SEVERITIES.indexOf(severity);
+  if (i < 0) return true;
+  return i <= SEVERITIES.indexOf(corte);
+}
+// ===== NUCLEO-BLOCKS: FIN =====
+
 // 🔴 Copia LITERAL de `SALIDA_APROBADA` de lib/adversarial-verdict.js (la caja no tiene `require`). La prueba T9 de
 // tests/adversarial-unmeasured.test.js compara las dos: si una cambia, se cambia la otra.
 const SALIDA_APROBADA = 'la salida aprobada: un pase propio con agentes de Claude — cazadores con Sonnet, un verificador aparte por hallazgo que corre el código, juicio con Opus, nunca Fable (workflow-lite.js --agents-dir, step-08-adversarial-pass.md §«Sin Codex ni Workflow»)'
@@ -260,6 +292,61 @@ const VERDICT_SCHEMA = {
     todos_el_mismo_defecto: { type: 'boolean' },
   },
   required: ['verdict', 'reasoning', 'adjusted_severity', 'probe_dir', 'todos_el_mismo_defecto'],
+}
+
+// La respuesta del verificador de una lente: una por hallazgo, cada una con el id que se le dio en el pedido.
+const LENS_VERDICT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    verdicts: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          id: { type: 'string' },
+          verdict: { type: 'string', enum: ['CONFIRMED', 'REFUTED'] },
+          reasoning: { type: 'string' },
+          adjusted_severity: { type: 'string', enum: ['bug', 'robustness', 'nit', 'not-a-bug'] },
+          probe_dir: { type: 'string' },
+        },
+        required: ['id', 'verdict', 'reasoning', 'adjusted_severity', 'probe_dir'],
+      },
+    },
+  },
+  required: ['verdicts'],
+}
+
+/**
+ * Un verificador por lente: agrupa los hallazgos por su lente, lanza `lanzar(lente, [{ id, h }])` por cada una (en una
+ * ventana de 3) y reparte las respuestas por id. Devuelve `{ veredictos, descartadas }`: `veredictos` va en el orden de
+ * `hallazgos` (null = sin respuesta, que queda «sin veredicto»); una respuesta repetida o con un id que no está se
+ * descarta y se anota. La primera respuesta de cada id es la que vale.
+ */
+async function verificarPorLente(hallazgos, lanzar, opts = {}) {
+  const porLente = new Map()
+  hallazgos.forEach((h, i) => {
+    if (!porLente.has(h.lens)) porLente.set(h.lens, [])
+    porLente.get(h.lens).push({ id: `${h.lens}-${h.idxEnLente}`, h, i })
+  })
+  const grupos = [...porLente.entries()]
+  const respuestas = await runWindow(grupos.map(([lens, items]) => () => lanzar(lens, items)), { size: 3, onError: opts.onError })
+  const veredictos = hallazgos.map(() => null)
+  const descartadas = []
+  respuestas.forEach((r, j) => {
+    const [lens, items] = grupos[j]
+    const porId = new Map(items.map((x) => [x.id, x.i]))
+    const vistos = new Set()
+    for (const v of (r && Array.isArray(r.verdicts)) ? r.verdicts : []) {
+      const id = v && typeof v.id === 'string' ? v.id : String(v && v.id)
+      if (!porId.has(id)) { descartadas.push({ lens, id, motivo: 'un id que no está entre los pedidos' }); continue }
+      if (vistos.has(id)) { descartadas.push({ lens, id, motivo: 'respuesta repetida' }); continue }
+      vistos.add(id)
+      veredictos[porId.get(id)] = { verdict: v.verdict, reasoning: v.reasoning, adjusted_severity: v.adjusted_severity, probe_dir: v.probe_dir || '', todos_el_mismo_defecto: true }
+    }
+  })
+  return { veredictos, descartadas }
 }
 
 // Qué hacer con la prueba cuando el verificador CONFIRMA. Función aparte para que el test la lea.
@@ -545,10 +632,23 @@ confidence}. Reportá sólo lo que tiene evidencia; si la lente está limpia, fi
     { key: 'riesgo-sin-defensa', prompt: 'Un riesgo de SEGURIDAD o de PRODUCCIÓN que el plan crea o toca sin su defensa ni su vuelta atrás: una firma o un freno que se afloja, un permiso que se abre, un dato que se borra, un despliegue sin forma de deshacerlo.' },
     { key: 'prueba-que-falta', prompt: 'Una PRUEBA QUE FALTA: un caso de la story (un modo de falla, un borde, una no-regresión) que el plan no prueba, o una prueba del plan que pasaría aunque el código estuviera mal.' },
   ]
-  const cazas = await parallel(LENTES_PLAN.map((l) => () =>
+  // las lentes pedidas (team-repos.json → plan_review.lenses), en el orden de la lista. Sin el arg, las cuatro; una
+  // lista con una lente desconocida no corre: corre la de fábrica, y se dice
+  const FABRICA_PLAN = ['suposicion-falsa']
+  const pedidas = (A && Array.isArray(A.lenses)) ? A.lenses : null
+  let lentesPedidas = LENTES_PLAN
+  if (pedidas) {
+    const malas = pedidas.filter((k) => !LENTES_PLAN.some((l) => l.key === k))
+    const usar = (!pedidas.length || malas.length || new Set(pedidas).size !== pedidas.length) ? FABRICA_PLAN : pedidas
+    if (usar === FABRICA_PLAN && pedidas.join() !== FABRICA_PLAN.join()) {
+      log(`adversarial-verify (modo plan): la lista de lentes [${pedidas.join(', ')}] no vale${malas.length ? ` (${malas.join(', ')} no es una lente)` : ''}: corro la de fábrica (${FABRICA_PLAN.join(', ')}).`)
+    }
+    lentesPedidas = LENTES_PLAN.filter((l) => usar.includes(l.key))
+  }
+  const cazas = await parallel(lentesPedidas.map((l) => () =>
     agent(`${BASE_PLAN}\n\nLENTE DEL PLAN: ${l.key}\n${l.prompt}`, { label: `plan-hunt:${l.key}`, phase: 'Hunt', schema: FINDINGS_SCHEMA, agentType: 'general-purpose', model: MODEL })
       .then((h) => ({ lens: l.key, hunt: h }))))
-  const lentesP = LENTES_PLAN.map((l, i) => {
+  const lentesP = lentesPedidas.map((l, i) => {
     const r = cazas[i]
     const ok = !!(r && r.hunt && Array.isArray(r.hunt.findings))
     return { lens: l.key, estado: ok ? 'medida' : 'sin-medir', count: ok ? r.hunt.findings.length : 0 }
@@ -557,15 +657,35 @@ confidence}. Reportá sólo lo que tiene evidencia; si la lente está limpia, fi
   const hallazgosP = []
   cazas.forEach((r, i) => {
     const fs = (r && r.hunt && Array.isArray(r.hunt.findings)) ? r.hunt.findings : []
-    fs.forEach((f, k) => hallazgosP.push({ ...f, lens: LENTES_PLAN[i].key, idxEnLente: k + 1 }))
+    fs.forEach((f, k) => hallazgosP.push({ ...f, lens: lentesPedidas[i].key, idxEnLente: k + 1 }))
   })
-  // un verificador por hallazgo, en la misma ventana de 3 que el pase sobre el código
-  const veredictosP = await runWindow(hallazgosP.map((h) => () =>
-    agent(`${BASE_PLAN}\n\nUn revisor (lente ${h.lens}) reportó este problema del plan. Tu trabajo es REFUTARLO: comprobá con` +
-      ' el texto de la story, el del plan y el repo (sólo lectura) si se da. Sólo CONFIRMED si lo comprobaste con evidencia' +
-      ` concreta; ante la duda, REFUTED. probe_dir = "" y todos_el_mismo_defecto = true.\n\nHALLAZGO:\nseverity=${h.severity}\n` +
-      `file=${h.file}${h.line ? ':' + h.line : ''}\nsummary=${h.summary}\nrepro=${h.repro}\nconfidence=${h.confidence}`,
-    { label: `plan-verify:${h.lens}`, phase: 'Verify', schema: VERDICT_SCHEMA, agentType: 'general-purpose', model: MODEL })), { size: 3 })
+  const textoHallazgo = (h) => `severity=${h.severity}\nfile=${h.file}${h.line ? ':' + h.line : ''}\nsummary=${h.summary}\nrepro=${h.repro}\nconfidence=${h.confidence}`
+  let veredictosP
+  let descartadasP = []
+  if (VERIFIERS === 'per_lens') {
+    // un verificador por lente, con todos sus hallazgos; cada uno se juzga aparte y vuelve con su id
+    const r = await verificarPorLente(hallazgosP, (lens, items) =>
+      agent(`${BASE_PLAN}\n\nVERIFICADOR DE LA LENTE ${lens}. Un revisor de esta lente reportó estos problemas del plan. Juzgá CADA` +
+        ' uno por separado y tratá de REFUTARLO: comprobá con el texto de la story, el del plan y el repo (sólo lectura) si se da.' +
+        ' Sólo CONFIRMED si lo comprobaste con evidencia concreta; ante la duda, REFUTED. Devolvé una respuesta por hallazgo, con' +
+        ` su id tal cual, y probe_dir = "".\n\nHALLAZGOS:\n` + items.map((x) => `ID=${x.id}\n${textoHallazgo(x.h)}`).join('\n\n'),
+      { label: `plan-verify:${lens}`, phase: 'Verify', schema: LENS_VERDICT_SCHEMA, agentType: 'general-purpose', model: MODEL }))
+    veredictosP = r.veredictos
+    descartadasP = r.descartadas
+  } else {
+    // un verificador por hallazgo, en la misma ventana de 3 que el pase sobre el código, hasta el tope: los de mayor gravedad
+    const rango = (s) => ({ bug: 0, robustness: 1, nit: 2 }[s] ?? 3)
+    const elegidos = new Set(hallazgosP.map((h, k) => k).sort((a, b) => rango(hallazgosP[a].severity) - rango(hallazgosP[b].severity) || a - b)
+      .slice(0, TOPE_VERIFICAR_PLAN))
+    if (elegidos.size < hallazgosP.length) {
+      log(`adversarial-verify: ${hallazgosP.length} hallazgos del plan; verifico ${elegidos.size} (tope ${TOPE_VERIFICAR_PLAN}), los demás quedan sin veredicto.`)
+    }
+    veredictosP = await runWindow(hallazgosP.map((h, k) => () => !elegidos.has(k) ? Promise.resolve(null) :
+      agent(`${BASE_PLAN}\n\nUn revisor (lente ${h.lens}) reportó este problema del plan. Tu trabajo es REFUTARLO: comprobá con` +
+        ' el texto de la story, el del plan y el repo (sólo lectura) si se da. Sólo CONFIRMED si lo comprobaste con evidencia' +
+        ` concreta; ante la duda, REFUTED. probe_dir = "" y todos_el_mismo_defecto = true.\n\nHALLAZGO:\n${textoHallazgo(h)}`,
+      { label: `plan-verify:${h.lens}`, phase: 'Verify', schema: VERDICT_SCHEMA, agentType: 'general-purpose', model: MODEL })), { size: 3 })
+  }
   const confirmadosP = []
   const detalleP = hallazgosP.map((h, k) => {
     const v = veredictosP[k]
@@ -577,12 +697,18 @@ confidence}. Reportá sólo lo que tiene evidencia; si la lente está limpia, fi
   })
   const sinVeredictoP = detalleP.filter((d) => d.estado === 'sin-veredicto').length
   const medidoP = sinMedirP.length === 0 && sinVeredictoP === 0
-  const veredicto = !medidoP ? 'sin-veredicto' : confirmadosP.length ? 'rechazado' : 'aprobado'
+  // rechaza sólo un confirmado en el corte de gravedad o por encima; lo demás confirmado queda como notas del plan
+  const frenan = confirmadosP.filter((c) => blocks(c.adjusted_severity || c.severity, CORTE))
+  const notas = confirmadosP.filter((c) => !blocks(c.adjusted_severity || c.severity, CORTE))
+  const veredicto = !medidoP ? 'sin-veredicto' : frenan.length ? 'rechazado' : notas.length ? 'aprobado-con-notas' : 'aprobado'
   const avisoP = medidoP ? null : avisoNoMedido(sinMedirP, sinVeredictoP)
   if (avisoP) log(avisoP)
-  log(`adversarial-verify (modo plan): ${veredicto} — ${confirmadosP.length} confirmado(s) de ${hallazgosP.length} hallazgo(s), ${LENTES_PLAN.length} lentes (model=${MODEL}).`)
-  return { modo: 'plan', veredicto, confirmed: confirmadosP, hallazgos: hallazgosP.length, hallazgos_sin_veredicto: sinVeredictoP,
-    a_verificar_aparte: 0, lentes: lentesP, lentes_sin_medir: sinMedirP, detalle: detalleP, medido: medidoP, aviso: avisoP, pedido: PEDIDO }
+  if (descartadasP.length) log(`adversarial-verify (modo plan): ${descartadasP.length} respuesta(s) descartada(s): ${descartadasP.map((d) => `${d.id} (${d.motivo})`).join(', ')}.`)
+  log(`adversarial-verify (modo plan): ${veredicto} — ${confirmadosP.length} confirmado(s) de ${hallazgosP.length} hallazgo(s), ${frenan.length} en el corte (${CORTE}), ${lentesPedidas.length} lente(s) (model=${MODEL}).`)
+  return { modo: 'plan', veredicto, confirmed: confirmadosP, notas, corte: CORTE, hallazgos: hallazgosP.length, hallazgos_sin_veredicto: sinVeredictoP,
+    a_verificar_aparte: 0, lentes: lentesP, lentes_sin_medir: sinMedirP, detalle: detalleP, medido: medidoP, aviso: avisoP, pedido: PEDIDO,
+    verificadores: VERIFIERS, respuestas_descartadas: descartadasP,
+    ...(VERIFIERS === 'per_finding' && hallazgosP.length > TOPE_VERIFICAR_PLAN ? { fuera_del_tope: hallazgosP.length - TOPE_VERIFICAR_PLAN, tope_verificar: TOPE_VERIFICAR_PLAN } : {}) }
 }
 
 if (FILES.length === 0) {
@@ -669,16 +795,19 @@ if (todos.length === 0) {
 
 // Fase 1b — agrupar por causa. Con el agrupamiento apagado, cada hallazgo es su propia clase y el
 // pase corre un verificador por hallazgo.
-const grupos = AGRUPAR
-  ? agrupar(todos)
-  : {
-      clases: todos.map((_f, i) => ({ id: i + 1, miembros: [i], representante: i, motivo: 'agrupamiento apagado (TYCON_5B_GROUP=0)' })),
-      dudas: [],
-      resumen: { hallazgos: todos.length, clases: todos.length, agentes_ahorrados: 0 },
-    }
+// Con un verificador por lente no se agrupa por causa: ya no ahorra agentes y verificaría sólo al representante.
+const POR_LENTE = VERIFIERS === 'per_lens'
+const cadaUno = (motivo) => ({
+  clases: todos.map((_f, i) => ({ id: i + 1, miembros: [i], representante: i, motivo })),
+  dudas: [],
+  resumen: { hallazgos: todos.length, clases: todos.length, agentes_ahorrados: 0 },
+})
+const grupos = POR_LENTE ? cadaUno('un verificador por lente')
+  : AGRUPAR ? agrupar(todos) : cadaUno('agrupamiento apagado (TYCON_5B_GROUP=0)')
 
 log(`adversarial-verify: ${todos.length} hallazgos → ${grupos.clases.length} clases` +
-  (AGRUPAR ? ` (se ahorran ${grupos.resumen.agentes_ahorrados} verificadores; ${grupos.dudas.length} pares quedaron separados por las dudas)` : ' (agrupamiento APAGADO)'))
+  (POR_LENTE ? ' (un verificador por lente)'
+    : AGRUPAR ? ` (se ahorran ${grupos.resumen.agentes_ahorrados} verificadores; ${grupos.dudas.length} pares quedaron separados por las dudas)` : ' (agrupamiento APAGADO)'))
 
 // ===== NUCLEO-VENTANA: INICIO =====
 // La ventana: como mucho `size` tareas vivas a la vez; apenas termina una, entra la siguiente. Cada carril está
@@ -712,7 +841,23 @@ async function runWindow(tareas, opts = {}) {
 // —cada verificador abre Bash en la máquina del dev—, pero apenas termina uno entra el siguiente;
 // con tandas fijas cada tanda espera a su más lento. La ventana se arma acá, sobre promesas
 // sueltas de `agent()`, y NO con el `parallel` del corredor: con él el tope pasaría a ser el suyo.
-const veredictos = await runWindow(
+let descartadas = []
+const veredictos = POR_LENTE ? await (async () => {
+  const r = await verificarPorLente(todos, (lens, items) => agent(
+    `${COMMON}\n\nVERIFICADOR DE LA LENTE ${lens}. Un hunter de esta lente reportó estos posibles bugs. Juzgá CADA uno por` +
+      ' separado y tratá de REFUTARLO adversarialmente: intentá REPRODUCIRLO con un probe real (bundleá/compilá + ejecutá).' +
+      ' Si NO podés reproducir el comportamiento incorrecto, o si es una de las decisiones de diseño aprobadas, o si el hunter' +
+      ' erró la semántica → REFUTED. Solo CONFIRMED si reprodujiste el bug con inputs concretos observados. Ante la duda: REFUTED.' +
+      ' Devolvé una respuesta por hallazgo, con su id tal cual, y en probe_dir la carpeta donde guardaste su prueba.\n\nHALLAZGOS:\n' +
+      items.map((x) => `ID=${x.id}\nseverity=${x.h.severity}\nfile=${x.h.file}${x.h.line ? ':' + x.h.line : ''}\nsummary=${x.h.summary}\n` +
+        `repro=${x.h.repro}\nconfidence=${x.h.confidence}\ncarpeta de su prueba: ${PROBES_DIR}/${x.h.lens}-${x.h.idxEnLente}`).join('\n\n') +
+      guardarPrueba(`${PROBES_DIR}/<lente>-<n>`),
+    { label: `verify:${lens}`, phase: 'Verify', schema: LENS_VERDICT_SCHEMA, agentType: 'general-purpose', model: MODEL },
+  ), { onError: (k, e) => log(`adversarial-verify: el verificador de la lente ${k + 1} tiró: ${(e && e.message) || e}`) })
+  descartadas = r.descartadas
+  if (descartadas.length) log(`adversarial-verify: ${descartadas.length} respuesta(s) descartada(s): ${descartadas.map((d) => `${d.id} (${d.motivo})`).join(', ')}.`)
+  return r.veredictos
+})() : await runWindow(
   grupos.clases.map((c) => () => {
     const rep = todos[c.representante]
     const otros = c.miembros.filter((m) => m !== c.representante).map((m) => todos[m])
@@ -852,4 +997,7 @@ return {
   detalle,
   medido,
   aviso,
+  // cuántos verificadores (uno por lente o uno por hallazgo) y las respuestas que no se usaron, con su motivo
+  verificadores: VERIFIERS,
+  respuestas_descartadas: descartadas,
 }

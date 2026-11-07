@@ -81,14 +81,21 @@ const CONNECTORS = Object.freeze({ azure: 'azure-devops', github: 'github' });
 function connectorOf(platform) { return Object.prototype.hasOwnProperty.call(CONNECTORS, platform) ? CONNECTORS[platform] : null; }
 const REPO_KEYS = { azure: ['org', 'project', 'repo'], github: ['org', 'repo'] };
 const REQUIRED = ['public', 'profile', 'operations'];
-const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites', 'story_index', 'models', 'wait_notice', 'coverage', 'review', 'stack', 'weekly_review', 'estimates', 'context_notice', 'deep_review'];
+const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites', 'story_index', 'models', 'wait_notice', 'coverage', 'review', 'stack', 'weekly_review', 'estimates', 'context_notice', 'deep_review', 'plan_review', 'review_runner'];
 // El umbral del aviso de contexto: tokens enteros de 100.000 a 900.000. Lo lee scripts/hooks/context-size-notice.js,
 // después de TYCON_CONTEXT_NOTICE_TOKENS de la máquina y antes de los 300.000 de fábrica.
 const CONTEXT_NOTICE_KEYS = ['tokens'];
 const CONTEXT_NOTICE_RANGE = [100000, 900000];
 // La política del pase adversarial de la organización: `always` o `auto` (de fábrica, `auto`). Sólo puede subir: no hay
 // `off`, porque saltear el pase lo firma el dueño (`marker.js sign-adversarial-skip`). La lee skills/tycon-pipeline/scripts/pipeline.js.
-const DEEP_REVIEW_KEYS = ['default'];
+// Las demás claves de `deep_review` son la matriz de la revisión del código, y `plan_review` la de la revisión del plan:
+// sus valores y rangos son los de skills/tycon-pipeline/scripts/lib/review-policy.js, que las lee clave por clave.
+const DEEP_REVIEW_KEYS = ['default', 'delicate', 'small_max_files', 'small_routine_day', 'small_routine_owner_away', 'large_routine'];
+// Con qué corre la revisión: el orden de los corredores (los de integrations/review-runner/integration.json), el comando
+// propio (obligatorio con `custom`) y cuántos verificadores (uno por clase o uno por hallazgo).
+const REVIEW_RUNNER_KEYS = ['order', 'custom_command', 'verifiers'];
+const REVIEW_RUNNERS = ['claude', 'codex', 'cursor', 'claude-ollama', 'custom'];
+const politica = () => require('../../skills/tycon-pipeline/scripts/lib/review-policy.js');
 const DEEP_REVIEW_VALUES = ['always', 'auto'];
 // La revisión de la semana: prendida o no, el tope en dólares de su única corrida del agente y el tope de material en
 // caracteres. Lo lee scripts/nightly/weekly-review/weekly-review.js; sin la clave, prendida, 5 y 600.000: con 600.000
@@ -114,11 +121,13 @@ const WAIT_NOTICE_PEER_MAX = 480;
 // El umbral de cobertura de las líneas tocadas: un entero de 1 a 100. Lo lee
 // skills/tycon-pipeline/scripts/lib/test-gate-report.js, después de TYCON_COVERAGE_MIN de la máquina y antes del 75.
 const COVERAGE_KEYS = ['min_touched_lines_pct'];
-// Las vueltas de revisores de una story: `max_rounds` = el tope, un entero de 1 a 6 (de fábrica 2);
+// Las vueltas de revisores de una story: `max_rounds` = el tope, un entero de 1 a 6 (de fábrica 3), el mismo para la
+// revisión del plan y la del código; `blocking_severity` = desde qué gravedad un hallazgo confirmado frena (bug,
+// robustness o all; de fábrica bug);
 // `blocking_prefixes` = prefijos de reglas que la organización suma a los de fábrica como «seguridad o datos»
 // (SEC, TENANT, AUTH, NEXTSEC, SIGNALR-C, MIGRATION, DRIZZLE no se configuran, sólo se suman). Cada prefijo: mayúsculas,
 // dígitos y guiones, y puede terminar en -C o -W.
-const REVIEW_KEYS = ['max_rounds', 'blocking_prefixes'];
+const REVIEW_KEYS = ['max_rounds', 'blocking_prefixes', 'blocking_severity'];
 const REVIEW_PREFIX_RE = /^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*$/;
 // La tecnología de la organización: `code_extensions` = terminaciones que también son código, además de las
 // del núcleo (skills/tycon-pipeline/scripts/lib/code-files.js, que la lee con lib/stack-config.js). Misma forma que
@@ -612,7 +621,71 @@ function deepReviewProblems(value) {
   } else if (d !== undefined && !DEEP_REVIEW_VALUES.includes(d)) {
     out.push({ path: 'deep_review.default', message: `tiene que ser always o auto (es ${JSON.stringify(d)})` });
   }
+  out.push(...matrizProblems('deep_review', value));
   return out;
+}
+
+/**
+ * Los problemas de las claves de una sección que valida review-policy.js (`normalize`), con su ruta. Sólo se carga si la
+ * sección trae alguna de esas claves; un árbol sin el skill lo dice como problema de la sección, sin tirar.
+ */
+function matrizProblems(seccion, value) {
+  const crudo = {};
+  for (const [k, v] of Object.entries(value)) if (!fieldComment(k, v) && !(seccion === 'deep_review' && k === 'default')) crudo[k] = v;
+  if (!Object.keys(crudo).length) return [];
+  let pol;
+  try { pol = politica(); } catch (e) { return [{ path: seccion, message: `no pude validar la sección: falta su lector (${(e && e.code) || e})` }]; }
+  return pol.normalize({ [seccion]: crudo }).problems.filter((p) => p.path.startsWith(`${seccion}.`));
+}
+
+/** Los problemas de `plan_review` (la revisión del plan); `[]` si está bien. */
+function planReviewProblems(value) {
+  if (!isObject(value)) return [{ path: 'plan_review', message: 'tiene que ser un objeto (la revisión del plan)' }];
+  let claves;
+  try { claves = Object.keys(politica().DEFAULTS.plan_review); } catch (e) { return [{ path: 'plan_review', message: `no pude validar la sección: falta su lector (${(e && e.code) || e})` }]; }
+  const out = [];
+  for (const k of Object.keys(value)) if (!fieldComment(k, value[k]) && !claves.includes(k)) out.push({ path: `plan_review.${k}`, message: 'clave desconocida' });
+  out.push(...matrizProblems('plan_review', value));
+  return out;
+}
+
+/** Los problemas de `review_runner` (con qué corre la revisión); `[]` si está bien. */
+function reviewRunnerProblems(value) {
+  if (!isObject(value)) return [{ path: 'review_runner', message: 'tiene que ser un objeto (con qué corre la revisión)' }];
+  const out = [];
+  for (const k of Object.keys(value)) if (!fieldComment(k, value[k]) && !REVIEW_RUNNER_KEYS.includes(k)) out.push({ path: `review_runner.${k}`, message: 'clave desconocida' });
+  const o = value.order;
+  let ordenBueno = Array.isArray(o) ? o : null;
+  if (o !== undefined) {
+    let motivo = null;
+    if (!Array.isArray(o) || !o.length) motivo = 'tiene que ser una lista no vacía de revisores';
+    else if (new Set(o).size !== o.length) motivo = 'tiene revisores repetidos';
+    else {
+      const malo = o.find((x) => !REVIEW_RUNNERS.includes(x));
+      if (malo !== undefined) motivo = `«${malo}» no es un revisor (vale ${REVIEW_RUNNERS.join(' · ')})`;
+    }
+    if (motivo) { out.push({ path: 'review_runner.order', message: `${motivo}: uso el de fábrica, ["claude"]` }); ordenBueno = null; }
+  }
+  const c = value.custom_command;
+  if (c !== undefined && !(typeof c === 'string' && c.trim())) out.push({ path: 'review_runner.custom_command', message: 'tiene que ser el comando del revisor propio, un texto no vacío' });
+  else if (ordenBueno && ordenBueno.includes('custom') && c === undefined) out.push({ path: 'review_runner.custom_command', message: 'con «custom» en la lista hace falta el comando del revisor propio' });
+  const vf = value.verifiers;
+  if (vf !== undefined && !['per_lens', 'per_finding'].includes(vf)) {
+    out.push({ path: 'review_runner.verifiers', message: `tiene que ser per_lens o per_finding (es ${JSON.stringify(vf)}): uso el de fábrica, per_lens` });
+  }
+  return out;
+}
+
+/**
+ * Una sección sin las claves que tienen problemas: cada clave mala cae sola a su valor de fábrica, y las demás siguen.
+ * Si el problema es de la sección entera, o no queda ninguna clave, null.
+ */
+function seccionSinProblemas(seccion, value, problemas) {
+  if (!isObject(value) || problemas.some((p) => p.path === seccion)) return null;
+  const malas = new Set(problemas.map((p) => p.path.split('.')[1]).filter(Boolean));
+  const out = {};
+  for (const [k, v] of Object.entries(value)) if (!malas.has(k)) out[k] = v;
+  return Object.keys(out).some((k) => !fieldComment(k, out[k])) ? out : null;
 }
 
 /** Los problemas de `weekly_review`; `[]` si está bien. Casos: scripts/tests/weekly-review.test.js T12. */
@@ -647,6 +720,9 @@ function coverageProblems(value) {
 /** Los problemas de `review`; `[]` si está bien. */
 function reviewProblems(value) {
   if (!isObject(value)) return [{ path: 'review', message: 'tiene que ser un objeto (las vueltas de revisores de una story)' }];
+  const sev = value.blocking_severity;
+  const sevProblema = sev !== undefined && !['bug', 'robustness', 'all'].includes(sev)
+    ? [{ path: 'review.blocking_severity', message: `tiene que ser bug, robustness o all (es ${JSON.stringify(sev)}): uso el de fábrica, bug` }] : [];
   const out = [];
   for (const k of Object.keys(value)) if (!fieldComment(k, value[k]) && !REVIEW_KEYS.includes(k)) out.push({ path: `review.${k}`, message: 'clave desconocida' });
   const n = value.max_rounds;
@@ -666,7 +742,7 @@ function reviewProblems(value) {
       });
     }
   }
-  return out;
+  return [...out, ...sevProblema];
 }
 
 /** Los problemas de `stack`, con la ruta de cada clave; `[]` si está bien. */
@@ -774,20 +850,27 @@ function parse(text) {
   // y con `context_notice` y `deep_review`: un valor malo cae al de fábrica, no deja sin el archivo
   const sectionContext = isObject(doc) && doc.context_notice !== undefined ? contextNoticeProblems(doc.context_notice) : [];
   const sectionDeep = isObject(doc) && doc.deep_review !== undefined ? deepReviewProblems(doc.deep_review) : [];
+  // y con `plan_review` y `review_runner`: cada clave mala cae sola
+  const sectionPlan = isObject(doc) && doc.plan_review !== undefined ? planReviewProblems(doc.plan_review) : [];
+  const sectionRunner = isObject(doc) && doc.review_runner !== undefined ? reviewRunnerProblems(doc.review_runner) : [];
   // y con `story_index`: un modo mal escrito deja los índices a mano, como siempre, y lo dice
   const sectionStoryIndex = isObject(doc) && doc.story_index !== undefined ? storyIndexProblems(doc.story_index) : [];
   let data = problems.length ? null : doc;
-  if (data && (sectionModels.length || sectionWait.length || sectionCoverage.length || sectionReview.length || sectionStack.length || sectionWeekly.length || sectionEstimates.length || sectionContext.length || sectionDeep.length || sectionStoryIndex.length)) {
+  if (data && (sectionModels.length || sectionWait.length || sectionCoverage.length || sectionReview.length || sectionStack.length || sectionWeekly.length || sectionEstimates.length || sectionContext.length || sectionDeep.length || sectionPlan.length || sectionRunner.length || sectionStoryIndex.length)) {
     data = { ...doc };
     if (sectionStoryIndex.length) delete data.story_index;
     if (sectionContext.length) delete data.context_notice;
-    if (sectionDeep.length) delete data.deep_review;
+    // las secciones de las revisiones pierden sólo la clave mala: una política bien escrita no cae por un corte mal escrito
+    for (const [k, probs] of [['deep_review', sectionDeep], ['review', sectionReview], ['plan_review', sectionPlan], ['review_runner', sectionRunner]]) {
+      if (!probs.length) continue;
+      const queda = seccionSinProblemas(k, doc[k], probs);
+      if (queda) data[k] = queda; else delete data[k];
+    }
     if (sectionModels.length) delete data.models;
     if (sectionWait.length) delete data.wait_notice;
     if (sectionWeekly.length) delete data.weekly_review;
     if (sectionEstimates.length) delete data.estimates;
     if (sectionCoverage.length) delete data.coverage;
-    if (sectionReview.length) delete data.review;
     if (sectionStack.length) {
       if (isObject(doc.stack)) data.stack = stackSinProblemas(doc.stack, sectionStack);
       else delete data.stack;
@@ -803,6 +886,8 @@ function parse(text) {
     ...(sectionEstimates.length ? { estimates: sectionEstimates } : {}),
     ...(sectionContext.length ? { context_notice: sectionContext } : {}),
     ...(sectionDeep.length ? { deep_review: sectionDeep } : {}),
+    ...(sectionPlan.length ? { plan_review: sectionPlan } : {}),
+    ...(sectionRunner.length ? { review_runner: sectionRunner } : {}),
     ...(sectionStoryIndex.length ? { story_index: sectionStoryIndex } : {}),
   };
   return { ok: problems.length === 0, data, problems, ...(Object.keys(sections).length ? { sectionProblems: sections } : {}) };

@@ -801,6 +801,42 @@ function ownerWait(opts = {}) {
   }
 }
 
+/**
+ * Las preguntas de revisar (el plan o el código) que siguen sin respuesta, para el turno de la coordinadora: la sesión,
+ * cuál revisión, los minutos y, pasados los minutos de «dueño ausente», qué dice su celda. La del plan se lanza o se
+ * saltea según esa celda; la del código no se lanza desde acá: se contesta en nombre del dueño ausente y el pase lo
+ * lanza la propia sesión.
+ */
+function reviewAskLines(opts, sid, now) {
+  const home = opts.home || require('os').homedir();
+  const PR = require(path.join(SKILL_LIB, 'plan-review.js'));
+  const abiertas = PR.preguntasAbiertas({ estado: stateDir(home) }).filter((p) => p.sesion !== sid);
+  if (!abiertas.length) return [];
+  const cfg = PR.configDeLaOrganizacion().values;
+  const minutos = cfg.plan_review.owner_away_minutes;
+  const nombres = signatureList.sesiones(home).mapa;
+  // con la marca de ausente puesta, el dueño cuenta como ausente enseguida, igual que en la propia sesión
+  let marca = null;
+  try { marca = require(path.join(__dirname, '..', 'lib', 'owner-away.js')).get({ estado: stateDir(home), ahora: now }).mark; } catch (_) { marca = null; }
+  return abiertas.map((p) => {
+    const quien = nombres.get(p.sesion) && nombres.get(p.sesion).name ? `${nombres.get(p.sesion).name} (${p.sesion})` : p.sesion;
+    const desde = Date.parse(p.ts);
+    // una hora ilegible no se cuenta como plazo vencido: no hay cómo saber si el dueño está ausente
+    if (!marca && !Number.isFinite(desde)) return `Coordinación: la pregunta de revisar el ${p.kind === 'plan' ? 'plan' : 'código'} de ${quien} sigue sin respuesta y su hora no se puede leer (${JSON.stringify(p.ts)}): no la cuento como dueño ausente; preguntale al dueño.`;
+    const lleva = Number.isFinite(desde) ? Math.max(0, Math.floor((now - desde) / 60000)) : null;
+    const base = `Coordinación: la pregunta de revisar el ${p.kind === 'plan' ? 'plan' : 'código'} de ${quien} sigue sin respuesta${lleva === null ? '' : ` hace ${lleva} min`}${marca ? ` (marca de ausente puesta desde ${marca.setAt})` : ''}`;
+    if (!marca && lleva < minutos) return `${base} (el dueño cuenta como ausente a los ${minutos}).`;
+    if (p.kind === 'plan') {
+      const celda = cfg.plan_review.routine_owner_away;
+      const que = celda === 'review' ? `lanzá la revisión (marker.js plan-review --for-session ${p.sesion})` : celda === 'skip' ? 'sigue sin revisión' : 'sigue esperando al dueño';
+      return `${base}: dueño ausente, plan_review.routine_owner_away: ${celda} — ${que}, y anotalo con marker.js review-answer --for-session ${p.sesion} --kind plan --choice ${celda} --reason "dueño ausente".`;
+    }
+    const celda = cfg.deep_review.small_routine_owner_away;
+    const choice = celda === 'run' ? 'review' : celda;
+    return `${base}: dueño ausente, deep_review.small_routine_owner_away: ${celda} — contestala con marker.js review-answer --for-session ${p.sesion} --kind code --choice ${choice} --reason "dueño ausente"; el pase lo lanza la propia sesión, con tu turno.`;
+  });
+}
+
 // Las líneas de owner-wait para el turno de la coordinadora confirmada: el comando si no corre, y lo que no anunció
 // (una trabada de 2 minutos o más, una cerrada por Claude Code).
 function ownerWaitLines(opts, sid, s) {
@@ -917,6 +953,7 @@ function capNotice(opts = {}) {
   lines.push(...waitLines(opts, sid, problems));
   lines.push(...slowGateLines(opts, s, problems));
   try { lines.push(...ownerWaitLines(opts, sid, s)); } catch (e) { problems.push(`lo de owner-wait (${e.code || e.message})`); }
+  try { lines.push(...reviewAskLines(opts, sid, opts.now == null ? Date.now() : Number(opts.now))); } catch (e) { problems.push(`las preguntas de revisar (${e.code || e.message})`); }
   if (problems.length) lines.push(`Coordinación: No pude leer ${oneLine(problems.join(' · ')).slice(0, 300)}.`);
   return lines.length ? lines.join('\n') : null;
 }

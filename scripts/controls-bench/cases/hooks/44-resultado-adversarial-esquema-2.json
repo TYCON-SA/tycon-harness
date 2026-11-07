@@ -99,7 +99,7 @@
         {
           "id": "pase-adversarial-salteo-low-lo-anota-el-porton-esquema-2",
           "type": "must-run",
-          "__nota": "Un diff de 1 archivo chico: el portón (pipeline.js deep-review-gate, como proceso) dice LOW → run:false, y el comando anota el salteo y cierra el 5b en una sola escritura.",
+          "__nota": "Un diff de 1 archivo chico: el portón (pipeline.js deep-review-gate, como proceso) dice LOW → run:false, y el comando anota el salteo y cierra el 5b en una sola escritura. De fábrica la chica de día pregunta: el salteo vale con la respuesta «skip» anotada para ese diff (marker.js review-answer).",
           "files": {
             "correr.sh": "#!/bin/sh\nexit 0\n",
             "specs/a.md": "---\nstory: \"A\"\nepic: 1\nstatus: in-progress\nfiles_to_modify:\n  - scripts/x.js\n---\n# Story A\n",
@@ -113,6 +113,7 @@
             "git init -q .",
             "mkdir -p ${SANDBOX_HOME}/.claude/.tycon-pipeline/active",
             "cp _marker.json ${SANDBOX_HOME}/.claude/.tycon-pipeline/active/adv-b3.json",
+            "node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js review-answer --kind code --choice skip --reason 'la persona eligió no revisarlo' > ra.out 2> ra.err",
             "node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js mark-adversarial-skipped --files scripts/x.js > sk.out 2> sk.err; echo \"rc=$?\" > rc.txt"
           ],
           "stdin": {

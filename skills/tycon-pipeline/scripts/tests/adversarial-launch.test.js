@@ -158,6 +158,9 @@ test('T1 Gate_AnnotatesVerdictInItsOwnField — el veredicto va a adversarialGat
 
   // «No corre» → el salteo se acepta (con el veredicto adentro de `adversarial` se negaba: «ya se lanzó»).
   fs.writeFileSync(path.join(repo.dir, '.tycon', 'advisors.yaml'), 'deep_review: off\n');
+  // de fábrica, un cambio chico de día pregunta: el salteo vale recién con la respuesta «skip» para este diff
+  const ra = mark(home, ['review-answer', '--kind', 'code', '--choice', 'skip', '--reason', 'el dueño eligió no revisarlo']);
+  assert.strictEqual(ra.status, 0, ra.stderr);
   const s = mark(home, ['mark-adversarial-skipped', '--files', 'scripts/x1.js']);
   assert.strictEqual(s.status, 0, `el salteo se negó: ${s.stderr}`);
   m = leerMarker(home);

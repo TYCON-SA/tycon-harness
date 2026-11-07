@@ -1,0 +1,19 @@
+{
+ "type": "result",
+ "subtype": "success",
+ "is_error": false,
+ "result": "{\"eco\":\"hola\",\"n\":2}",
+ "structured_output": {
+  "eco": "hola",
+  "n": 2
+ },
+ "total_cost_usd": 0.006506700000000001,
+ "usage": {
+  "input_tokens": 2,
+  "cache_creation_input_tokens": 31155,
+  "cache_read_input_tokens": 0,
+  "output_tokens": 74
+ },
+ "stop_reason": "tool_use",
+ "num_turns": 2
+}

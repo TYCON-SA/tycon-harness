@@ -554,7 +554,11 @@ process.exit(1);
   const log = path.join(dir, 'log.txt'); fs.writeFileSync(log, '');
   const r = correrPase(dir, { TYCON_WFLITE_AGENT_CMD: `${process.execPath} ${stub}`, STUB_LOG: log });
   assert.equal(r.result.corredor.tope, null, 'no es el tope: el renglón del error no lo dice');
-  assert.equal(fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).length, 12, 'seis cazadores, dos intentos cada uno');
+  // una falla común no es el tope, pero tres seguidas dejan al corredor caído: los cazadores que siguen no lo prueban
+  // (los que ya estaban lanzados en la ventana terminan sus intentos)
+  const lanzados = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).length;
+  assert.ok(lanzados >= 3 && lanzados < 12, `de 3 a 11 lanzamientos, no los 12 de seis cazadores por dos intentos: ${lanzados}`);
+  assert.match(Object.values(r.result.corredor.caidos)[0].causa, /veces seguidas/);
   const causa = r.result.corredor.muertos[0].causa;
   assert.ok(!causa.includes(clave), `la clave llega a la causa: ${causa}`);
   assert.doesNotMatch(causa, /abc\.def\.ghi/);

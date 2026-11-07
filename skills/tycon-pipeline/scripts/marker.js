@@ -215,11 +215,21 @@ const ownerWindow = () => require(path.join(__dirname, '..', '..', '..', 'script
 
 /** Con `--for-session` a otra sesión: el subcomando tiene que ser una firma que se corre así; si no, sale 2 sin escribir. */
 function paraOtraSesion(argv) {
-  // la revisión automática del plan no es una firma: entra por su camino (cmdPlanReview), sólo desde otra sesión, y no
-  // escribe el marcador destino (sólo su constancia, en la carpeta de la sesión que la lanza)
-  if (argv[2] === 'plan-review') {
-    if (!PEDIDA || PEDIDA === PROPIA || PROPIA === '_nosession') {
-      console.error('🔒 marker.js plan-review: la revisión automática la lanza la coordinadora, para otra sesión (--for-session <sesión destino>). No se escribió nada.');
+  // la revisión automática del plan y la respuesta a la pregunta de revisar no son firmas: entran por su camino
+  // (cmdPlanReview, cmdReviewAnswer) y no escriben el marcador destino (sólo su constancia o su renglón). Sin
+  // --for-session, la propia sesión prepara una revisión informativa, que nunca firma; para otra sesión, la designada
+  // (lo mira el camino de cada una)
+  if (argv[2] === 'plan-review' || argv[2] === 'review-answer' || argv[2] === 'review-ask' || argv[2] === 'owner-away') {
+    if (PROPIA === '_nosession') {
+      console.error(`🔒 marker.js ${argv[2]}: hace falta la sesión que lo pide (CLAUDE_CODE_SESSION_ID). No se escribió nada.`);
+      process.exit(2);
+    }
+    if (PEDIDA && PEDIDA !== PROPIA && (argv[2] === 'review-ask' || argv[2] === 'owner-away')) {
+      console.error(`🔒 marker.js ${argv[2]}: se corre desde la propia sesión, sin --for-session. No se escribió nada.`);
+      process.exit(2);
+    }
+    if (PEDIDA && !/^[\w-]+$/.test(PEDIDA)) {
+      console.error(`🔒 marker.js ${argv[2]}: la sesión ${PEDIDA} no se puede leer. No se escribió nada.`);
       process.exit(2);
     }
     SOLO_LECTURA = true;
@@ -1419,6 +1429,14 @@ function cmdCompleteStep(nRaw, flags) {
     if (!paraOtra) {
       const m = sinVerElPlan(!process.argv.includes('--terminal'));
       if (m) { console.error(`marker.js ${m}`); process.exit(1); }
+      // pedir la aprobación cierra el plan: qué toca con su revisión según la matriz (se dice; no frena la firma)
+      try {
+        const a = require('./lib/plan-review.js').accionDelPlan({ estado: STATE_DIR, sesion: SID, marker, home: os.homedir() });
+        if (a && a.decision && !a.revisado) console.error(`ℹ️  revisión del plan: ${a.decision}${a.comando ? ` — ${a.comando}` : ''} (${a.reason})`);
+      } catch (e) {
+        // sin la matriz, la aprobación sigue como siempre; se dice que no se supo qué toca con la revisión
+        console.error(`ℹ️  revisión del plan: no pude calcular qué toca (${String((e && e.message) || e).split('\n')[0]})`);
+      }
     }
     let revision = null;
     const antesDelPlan = (via, registro) => {
@@ -3490,6 +3508,13 @@ function cmdMarkAdversarialSkipped(argsGate) {
     console.error('  «No pude mirar» no es «se puede saltear»: arreglá la llamada (los --files del diff, partidos) y repetí. No se anotó nada.');
     process.exit(2);
   }
+  // «preguntar» y «esperar» no son un salteo: el pase queda pendiente hasta que alguien conteste la pregunta
+  if (gate.run === false && (gate.decision === 'ask' || gate.decision === 'wait')) {
+    console.error(`marker.js mark-adversarial-skipped: el portón no saltea el pase, ${gate.decision === 'ask' ? 'pide preguntarle a la persona' : 'pide esperar a la persona'} — ${gate.reason || '(sin reason)'}`);
+    console.error('  Se anota la pregunta (marker.js review-ask --kind code) y se espera la respuesta (marker.js review-answer); con «review» se');
+    console.error('  lanza, con «skip» se vuelve a correr este comando. No se anotó nada.');
+    process.exit(3);
+  }
   if (gate.run !== false) {
     console.error(`marker.js mark-adversarial-skipped: el portón dice que el pase CORRE — ${gate.reason || '(sin reason)'}`);
     if (Array.isArray(gate.sign_commands) && gate.sign_commands.length) {
@@ -3578,7 +3603,9 @@ function cmdMarkAdversarialGate(raw) {
   else if (prev && prev.early_origin) { origen = prev.early_origin; }
   const gate = {
     ...(prev || {}),
-    ...(traeVeredicto ? { run: d.run, files: Array.isArray(d.files) ? d.files.map(String) : [] } : {}),
+    ...(traeVeredicto ? { run: d.run, files: Array.isArray(d.files) ? d.files.map(String) : [],
+      // «preguntar» o «esperar» al dueño: `next` lo pide en vez de leer el run:false como salteo
+      decision: d.decision === 'ask' || d.decision === 'wait' ? d.decision : null } : {}),
     early_launch: early,
     at: nowIso(),
     sessionId: SID,
@@ -5076,22 +5103,26 @@ function opcionesDe(argv) {
   return { val, tiene: (n) => argv.includes(n) };
 }
 
-// `plan-review --for-session <D>`: la revisión automática del plan de otra sesión (lib/plan-review.js). La lanza la
-// sesión designada, con la delegación del perfil para la aprobación del plan; no es una firma y no escribe el marcador
-// destino. Sin `--result`, prepara y devuelve los args del pase en modo plan; con `--result <json del pase>` (o
-// `--no-tool "<motivo>"`), anota el veredicto en la constancia de la sesión que la lanzó.
+// `plan-review [--for-session <D>]`: la revisión automática del plan (lib/plan-review.js). Con `--for-session` la lanza
+// la sesión designada sobre el plan de otra; sin él, la propia sesión sobre el suyo, informativa (nunca firma). No es una
+// firma y no escribe el marcador destino. Sin `--result`, prepara y devuelve los args del pase en modo plan y el comando
+// que lo corre con el revisor de la organización; con `--result <json del pase>` (o `--no-tool "<motivo>"`), anota el
+// veredicto en la constancia de la sesión que la lanzó.
 function cmdPlanReview(argv) {
   const pr = require('./lib/plan-review.js');
   const { val } = opcionesDe(argv);
-  const destino = PEDIDA;
+  const destino = PEDIDA || PROPIA;
+  const informativa = destino === PROPIA;
+  const conSesion = informativa ? '' : ` --for-session ${destino}`;
   const resultado = val('--result');
   const sinHerramienta = val('--no-tool');
   if (resultado === null && sinHerramienta === null) {
-    const p = pr.preparar({ lanza: PROPIA, destino, estado: STATE_DIR, home: os.homedir() });
+    const p = pr.preparar({ lanza: PROPIA, destino, estado: STATE_DIR });
     if (p.codigo) { console.error(`🔒 marker.js plan-review: ${p.motivo}. No se escribió nada.`); process.exit(p.codigo); }
-    const lite = pr.comandoLite(p.argsFile, path.join(path.dirname(p.argsFile), `${destino}.resultado.json`));
-    process.stdout.write(`${JSON.stringify({ scriptPath: path.join(__dirname, 'adversarial-verify.workflow.js'), args: p.args, argsFile: p.argsFile, delicate: p.delicate, lite,
-      despues: `marker.js plan-review --for-session ${destino} --result <resultado.json> --model ${p.args.model}` }, null, 2)}\n`);
+    const comando = pr.comandoLite(p.argsFile, path.join(path.dirname(p.argsFile), `${destino}.resultado.json`));
+    process.stdout.write(`${JSON.stringify({ scriptPath: path.join(__dirname, 'adversarial-verify.workflow.js'), args: p.args, argsFile: p.argsFile, delicate: p.delicate,
+      informativa: p.informativa, comando, lite: comando, despues: `marker.js plan-review${conSesion} --result <resultado.json> --model ${p.args.model}` }, null, 2)}\n`);
+    if (p.informativa) console.error('ℹ️  revisión informativa (la lanza la propia sesión): informa, nunca firma el plan.');
     if (p.delicate && p.delicate.value) console.error(`⚠️  la story es delicada (${p.delicate.reason}): la revisión ataca y avisa, pero el plan lo aprueba el dev.`);
     process.exit(0);
   }
@@ -5107,12 +5138,83 @@ function cmdPlanReview(argv) {
   const c = pr.anotar({ lanza: PROPIA, destino, estado: STATE_DIR, resultado: res, sinHerramienta: sinHerramienta !== null ? (sinHerramienta || 'sin motivo') : null,
     modelo: val('--model') || 'opus', proveedor: val('--provider') || 'anthropic' });
   if (c.codigo) { console.error(`🔒 marker.js plan-review: ${c.motivo}`); process.exit(c.codigo); }
-  const lineas = [`revisión automática del plan de ${c.storyId} (sesión ${destino}): ${c.veredicto}${c.motivo ? ` — ${c.motivo}` : ''}`];
-  for (const h of c.hallazgos) lineas.push(`- [${h.lente || '?'}] ${h.resumen}${h.archivo && h.archivo !== 'plan' ? ` (${h.archivo}${h.linea ? `:${h.linea}` : ''})` : ''}`);
-  if (c.veredicto !== 'aprobado') lineas.push('El plan espera a una persona: la coordinadora no lo puede aprobar con esta revisión.');
+  const lineas = [`revisión automática del plan de ${c.storyId} (sesión ${destino}${c.informativa ? ', informativa' : ''}): ${c.veredicto}${c.motivo ? ` — ${c.motivo}` : ''}`];
+  const renglon = (h) => `- [${h.lente || '?'}${h.severidad ? `, ${h.severidad}` : ''}] ${h.resumen}${h.archivo && h.archivo !== 'plan' ? ` (${h.archivo}${h.linea ? `:${h.linea}` : ''})` : ''}`;
+  for (const h of c.hallazgos) lineas.push(renglon(h));
+  if (c.notas && c.notas.length) {
+    lineas.push(`Notas para implementar (no rechazan con el corte «${c.corte}»):`);
+    for (const h of c.notas) lineas.push(renglon(h));
+  }
+  if (c.informativa) lineas.push('Es informativa: el plan lo firma una persona.');
+  else if (!pr.APROBADOS.includes(c.veredicto)) lineas.push('El plan espera a una persona: la coordinadora no lo puede aprobar con esta revisión.');
+  if (c.reintentar) lineas.push(`El plan cambió mientras corría: se reintenta una vez sobre el plan cerrado (marker.js plan-review${conSesion}).`);
   if (ilegible) lineas.push('El resultado del pase no se pudo leer: este comando sale 3.');
   process.stdout.write(`${lineas.join('\n')}\n`);
   process.exit(ilegible ? 3 : 0);
+}
+
+// `review-ask --kind plan|code`: anota que se le pregunta al dueño si revisar el plan o el código de esta sesión, justo
+// antes de mostrar el cuadro de opciones. No es una firma: sólo un renglón `review-ask` en gates.log.
+function cmdReviewAsk(argv) {
+  const pr = require('./lib/plan-review.js');
+  const { val } = opcionesDe(argv);
+  const kind = val('--kind');
+  const h = pr.huellaDe({ estado: STATE_DIR, sesion: PROPIA, kind });
+  if (h.codigo) { console.error(`🔒 marker.js review-ask: ${h.motivo}. No se escribió nada.`); process.exit(h.codigo); }
+  const r = pr.anotarPregunta({ estado: STATE_DIR, sesion: PROPIA, kind, huella: h.huella });
+  if (r.codigo) { console.error(`🔒 marker.js review-ask: ${r.motivo}. No se escribió nada.`); process.exit(r.codigo); }
+  process.stdout.write(`pregunta anotada: revisar el ${kind === 'plan' ? 'plan' : 'código'} de la sesión ${PROPIA}. Con la respuesta: marker.js review-answer --kind ${kind} --choice review|skip|wait\n`);
+  process.exit(0);
+}
+
+// `review-answer --kind plan|code --choice review|skip|wait [--for-session <D>]`: anota la respuesta a la pregunta de
+// revisar. La corre quien la recibe: la propia sesión o, con `--for-session`, sólo la designada. No es una firma y no
+// escribe el marcador destino: sólo un renglón `review-answer` en gates.log.
+function cmdReviewAnswer(argv) {
+  const pr = require('./lib/plan-review.js');
+  const { val } = opcionesDe(argv);
+  const sesion = PEDIDA || PROPIA;
+  const ajena = sesion !== PROPIA;
+  if (ajena) {
+    let d = null;
+    try { d = pr.designadaDeVerdad(STATE_DIR); } catch (_) { d = null; }
+    if (d !== PROPIA) { console.error(`🔒 marker.js review-answer --for-session ${sesion}: la respuesta para otra sesión la anota la coordinadora designada, y ésta no lo es. No se escribió nada.`); process.exit(2); }
+  }
+  const kind = val('--kind');
+  const h = pr.huellaDe({ estado: STATE_DIR, sesion, kind });
+  if (h.codigo) { console.error(`🔒 marker.js review-answer: ${h.motivo}. No se escribió nada.`); process.exit(h.codigo); }
+  const r = pr.anotarRespuesta({ estado: STATE_DIR, sesion, kind, choice: val('--choice'), quien: ajena ? `coordinadora ${PROPIA}` : `sesión ${PROPIA}`, huella: h.huella, motivo: val('--reason') || null });
+  if (r.codigo) { console.error(`🔒 marker.js review-answer: ${r.motivo}. No se escribió nada.`); process.exit(r.codigo); }
+  process.stdout.write(`respuesta anotada para la sesión ${sesion}: ${val('--choice')} (${kind}).\n`);
+  process.exit(0);
+}
+
+// `owner-away set --phrase "<lo que dijo>" | clear [--reason "<por qué>"] | get`: la marca del dueño ausente
+// (scripts/lib/owner-away.js). La pone quien recibe el mensaje del dueño; no es una firma.
+function cmdOwnerAway(argv) {
+  const oa = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-away.js'));
+  const { val } = opcionesDe(argv);
+  const accion = argv[0];
+  if (accion === 'set') {
+    const r = oa.set({ estado: STATE_DIR, quien: `sesión ${PROPIA}`, frase: val('--phrase') });
+    if (r.codigo) { console.error(`🔒 marker.js owner-away set: ${r.motivo}. No se escribió nada.`); process.exit(r.codigo); }
+    process.stdout.write(`marca de ausente puesta (${r.mark.setAt}): las revisiones siguen la celda de «persona ausente» hasta que la persona vuelva o pasen 24 h.\n`);
+    process.exit(0);
+  }
+  if (accion === 'clear') {
+    const r = oa.clear({ estado: STATE_DIR, motivo: val('--reason') || `la sacó la sesión ${PROPIA}` });
+    if (r.problem) { console.error(`marker.js owner-away clear: la marca sigue puesta: ${r.problem}.`); process.exit(1); }
+    process.stdout.write(r.cleared ? 'marca de ausente sacada.\n' : 'no había marca de ausente.\n');
+    process.exit(0);
+  }
+  if (accion === 'get') {
+    const g = oa.get({ estado: STATE_DIR });
+    if (g.problem) console.error(`marker.js owner-away get: ${g.problem}; la persona cuenta como presente.`);
+    process.stdout.write(`${JSON.stringify(g.problem ? { mark: g.mark, problem: g.problem } : { mark: g.mark })}\n`);
+    process.exit(0);
+  }
+  console.error('uso: marker.js owner-away set --phrase "<lo que dijo la persona>" | clear [--reason "<por qué>"] | get');
+  process.exit(2);
 }
 
 function cmdWaiveCritical(argv) {
@@ -6358,6 +6460,15 @@ switch (cmd) {
     break;
   case 'plan-review':
     cmdPlanReview(process.argv.slice(3));
+    break;
+  case 'review-ask':
+    cmdReviewAsk(process.argv.slice(3));
+    break;
+  case 'review-answer':
+    cmdReviewAnswer(process.argv.slice(3));
+    break;
+  case 'owner-away':
+    cmdOwnerAway(process.argv.slice(3));
     break;
   case 'save-check':
     cmdSaveCheck(process.argv.slice(3));

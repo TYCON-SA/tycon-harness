@@ -106,10 +106,15 @@ firmar, y en la columna tu situación:
   `approvals.delegated_machines`, y sólo con la designación confirmada por el dueño (`designation-confirm`: con un click en
   la pestaña de la sesión designada, o en su terminal; ver «Aprobar en nombre del dueño»). Si la firma no está delegada, tu máquina no está en la lista o nadie confirmó la designación, la
   fila es igual que sin coordinadora. Lo que queda en 2 o más sale de esa lista.
-- \*\* **El plan, con coordinadora**: ella lanza la revisión automática (`marker.js plan-review --for-session <sesión>`,
-  el pase adversarial en modo plan) y aprueba sólo si dice «aprobado» sobre ese mismo plan. Sin veredicto o rechazado, el
-  plan espera a una persona. Ningún plan se aprueba solo, tampoco el de riesgo bajo, y la sesión que hizo el plan no
-  puede lanzar su propia revisión (`steps/step-04-approve-plan.md`).
+- \*\* **El plan, con coordinadora**: cuándo corre la revisión automática lo dice la matriz de la organización
+  (`plan_review`, `guides/revisiones-automaticas.md`): en una delicada corre siempre; en una de rutina se le pregunta al
+  dueño y, si el dueño está ausente, se revisa sin preguntar, se espera o se sigue sin revisión. Las tres salidas de
+  una revisión: **aprobado** (también «aprobado con notas»: sólo un defecto rechaza), **rechazado** y **sin veredicto**.
+  Ella lanza la revisión (`marker.js plan-review --for-session <sesión>`) y aprueba en nombre del dueño sólo con
+  «aprobado» sobre ese mismo plan, con `plan_review.coordinator_approves` en sí y `plan-approval` delegado. Rechazado o
+  sin veredicto, el plan espera a una persona. Ningún plan se aprueba solo. La sesión que hizo el plan también puede
+  lanzar la revisión de su plan (`marker.js plan-review`, sin `--for-session`): esa revisión sólo informa y nunca firma
+  (`steps/step-04-approve-plan.md`).
 - **Con tu aprobación escrita, la firma es tuya, también en lo delicado.** Donde la ventana no llega, o cuando la coordinadora
   firmaría por delegación, vale tu click en el cuadro de opciones o tu «aprobado» tipeado. Gana a la delegación: un plan
   delicado o un guardado que toca algo sensible pasan, y quedan a tu nombre. El camino por defecto es el cuadro: la

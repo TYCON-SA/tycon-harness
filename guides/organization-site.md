@@ -689,7 +689,8 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   cada causa que se repite (vacío, prendida), su tope en dólares por ejecución (vacío, 5) y su tope de material en
   caracteres (vacío, 600.000). Nunca aplica nada: las propuestas las decide una persona. Queda en `team-repos.json`, en
   el repo del perfil. Lo revisa quien mantiene.
-- **Vueltas de revisores**: cuántas vueltas de revisores tiene una historia antes de cortar (de 1 a 6; vacío, 2). Al
+- **Vueltas de revisores**: cuántas vueltas de revisores tiene una historia antes de cortar, y cuántos rechazos seguidos de su plan
+  antes de que decida el dueño (de 1 a 6; vacío, 3). Al
   tope, un crítico de seguridad o de datos lo decide una persona y lo demás queda como deuda visible. También se suman
   reglas a las que cuentan como seguridad o datos. Un repo puede ajustar el tope en su `.tycon/advisors.yaml`. Queda en
   `team-repos.json` → `review`, en el repo del perfil. Lo revisa quien mantiene.
@@ -817,6 +818,32 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   las historias. No hay opción para apagarlo: saltearlo lo firma el dueño en cada historia. Un repo que pide automático en
   su `.tycon/advisors.yaml` (`deep_review: auto`) gana sobre «siempre». Queda en `team-repos.json` → `deep_review`, en el
   repo del perfil. Lo revisa quien mantiene.
+- **Revisión del plan** y **Con qué corre la revisión**, y las opciones nuevas de **Pase adversarial** y de **Vueltas de
+  revisores**: las revisiones automáticas, del plan y del código. Cuándo corre cada una, quién la aprueba, con qué
+  revisor y cuándo el dueño cuenta como ausente; la guía entera es `guides/revisiones-automaticas.md`. Quedan en
+  `team-repos.json` → `plan_review`, `review_runner`, `deep_review` y `review`, en el repo del perfil; un valor malo cae
+  al de fábrica sólo en su clave. Lo revisa quien mantiene. Las opciones:
+
+| Opción | Qué hace | Clave | Valores | De fábrica | Cuándo cambiarla |
+|---|---|---|---|---|---|
+| O1 | Revisión del plan en historias delicadas | `plan_review.delicate` | `always` · `ask` | `always` | `ask` si preferís decidir cada vez, aun en lo delicado |
+| O2 | Revisión del plan en historias de rutina | `plan_review.routine` | `always` · `ask` · `never` | `ask` | `always` para no preguntar nunca; `never` si tu equipo no la quiere |
+| O3 | Revisión del plan de rutina con el dueño ausente | `plan_review.routine_owner_away` | `review` · `wait` · `skip` | `review` | `wait` si preferís que espere; `skip` para seguir sin revisión |
+| O4 | La coordinadora aprueba un plan de rutina revisado sin defectos | `plan_review.coordinator_approves` | `true` · `false` | `true` | `false` si querés firmar vos todos los planes |
+| O5 | Un plan rechazado le llega al dueño enseguida | `plan_review.rejected_reaches_owner` | `true` · `false` | `false` | `true` si querés ver cada rechazo, no sólo al llegar al tope |
+| O6 | Revisión del código en historias delicadas | `deep_review.delicate` | `always` · `ask` | `always` | `ask` si preferís decidir cada vez |
+| O7 | Hasta cuántos archivos de código un cambio es chico | `deep_review.small_max_files` | entero de 1 a 50 | `6` | más alto si tus historias tocan muchos archivos chicos |
+| O8 | Revisión del código, rutina y chica, con el dueño presente | `deep_review.small_routine_day` | `ask` · `run` · `skip` | `ask` | `run` para correrla siempre; `skip` para lo de antes |
+| O9 | Revisión del código, rutina y chica, con el dueño ausente | `deep_review.small_routine_owner_away` | `run` · `skip` · `wait` | `run` | `wait` si preferís que espere al dueño |
+| O10 | Revisión del código, rutina y grande | `deep_review.large_routine` | `run` · `ask` | `run` | `ask` si preferís decidir cada vez |
+| O11 | El revisor | `review_runner.order[0]` | `claude` · `codex` · `cursor` · `claude-ollama` · `custom` | `claude` | si tu equipo trabaja con otra herramienta |
+| O12 | El orden de respaldo de los revisores | `review_runner.order` | lista sin repetidos de esos valores | `["claude"]` | para tener un respaldo cuando uno llega a su tope de uso |
+| O13 | Minutos sin respuesta para contar al dueño como ausente | `plan_review.owner_away_minutes` | entero de 5 a 240 | `20` | más si el dueño suele contestar tarde |
+| O14 | El comando del revisor propio (sólo con `custom`) | `review_runner.custom_command` | texto | — | con un revisor que no es de los de fábrica |
+| O15 | El tope de vueltas, el mismo para el plan y el código | `review.max_rounds` | entero de 1 a 6 | `3` | menos para cortar antes; más si tus historias son largas |
+| O16 | Cuántos verificadores | `review_runner.verifiers` | `per_lens` · `per_finding` | `per_lens` | `per_finding` para medir uno por hallazgo |
+| O17 | Desde qué gravedad un hallazgo confirmado frena | `review.blocking_severity` | `bug` · `robustness` · `all` | `bug` | `robustness` o `all` para frenar también por lo demás |
+| O18 | Qué lentes corre la revisión del plan | `plan_review.lenses` | lista de `suposicion-falsa` · `ac-sin-cubrir` · `prueba-que-falta` · `riesgo-sin-defensa` | `["suposicion-falsa"]` | sumar lentes para una revisión más amplia, a cambio de más agentes |
 
 ![Cómo trabaja el agente](sitio-de-la-organizacion/capturas/configuracion-claude.png)
 
