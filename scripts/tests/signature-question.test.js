@@ -502,3 +502,222 @@ test('SignatureQuestion_ControlChange_WithLines_AsToday (T47) @fix-T-227 @story-
   assert.ok(!q.error, q.error);
   assert.match(q.pregunta, /Qué hace: Cambia 1 archivo\(s\) de control: \+1 −0 líneas\./);
 });
+
+// ── el cuadro de un cambio de control: lo que se ve es lo que se aprueba ─────────────────────────────────────────────
+
+/** Un repo con `rutas` como archivos de control: una base y un commit que los cambia a todos. */
+function repoConArchivos(t, rutas) {
+  const c = corrida(t);
+  const fecha = '2026-11-04T12:00:00Z';
+  const git = (...a) => spawnSync('git', ['-C', c.repo, '-c', 'user.email=t@example.com', '-c', 'user.name=t', '-c', 'maintenance.auto=false', ...a],
+    { encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_DATE: fecha, GIT_COMMITTER_DATE: fecha } });
+  const escribir = (texto) => { for (const r of rutas) { fs.mkdirSync(path.dirname(path.join(c.repo, r)), { recursive: true }); fs.writeFileSync(path.join(c.repo, r), texto); } };
+  git('init', '-q');
+  escribir('a=1\n'); git('add', '.'); git('commit', '-qm', 'base');
+  const base = git('rev-parse', 'HEAD').stdout.trim();
+  escribir('a=1\nb=2\n'); git('add', '.'); git('commit', '-qm', 'cambio');
+  const entradas = (lista = rutas) => JSON.stringify(lista.map((p) => ({ path: p, blob: git('rev-parse', `HEAD:${p}`).stdout.trim() })));
+  const comando = (lista, extra = '') => `bash ${CONTROLES} approve --root ${c.repo} --base ${base}${extra} --entries '${lista}'`;
+  return { c, git, base, entradas, comando };
+}
+const archivosDe = (q) => (q.match(/Archivos: ([^]*?)\. (?:Completo en|Si sale mal)/) || [])[1];
+
+// 🔴 Falla con: un cuadro que no nombra todas las rutas que se firman, o que no dice cuántas son.
+test('8.176-Cuadro_NombraTodasLasRutas (T1) @story-8.176 @ac-1', (t) => {
+  const rutas = ['scripts/ci/a.sh', 'scripts/ci/b.sh', 'scripts/lib/c.js'];
+  const { c, entradas, comando } = repoConArchivos(t, rutas);
+  const q = conFirma('control-change')(c, comando(entradas())).pregunta;
+  assert.match(q, /Qué hace: Cambia 3 archivo\(s\) de control: \+3 −0 líneas\./);
+  assert.strictEqual(archivosDe(q), rutas.join(', '), q);
+  const uno = conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --file scripts/ci/b.sh --rev HEAD`).pregunta;
+  assert.match(uno, /Qué hace: Cambia 1 archivo\(s\) de control: \+1 −0 líneas\./);
+  assert.strictEqual(archivosDe(uno), 'scripts/ci/b.sh', uno);
+});
+
+// 🔴 Falla con: una ruta cortada con «…» en el cuadro (el dueño aprobaría una ruta que no vio entera), o un «y N más» que
+//    no cuenta lo que no se mostró.
+test('8.176-Cuadro_MuchasRutas_NingunaCortada (T2) @story-8.176 @ac-2', (t) => {
+  const cortas = Array.from({ length: 12 }, (_, i) => `scripts/ci/c${String(i).padStart(2, '0')}.sh`);
+  const largas = [`scripts/ci/${'x'.repeat(120)}/${'y'.repeat(100)}.sh`, `scripts/lib/${'z'.repeat(110)}/${'w'.repeat(110)}.js`];
+  // las largas en el medio: la vista no las corta ni corta la lista ahí
+  const rutas = [...cortas.slice(0, 5), largas[0], ...cortas.slice(5), largas[1]];
+  const { c, entradas, comando } = repoConArchivos(t, rutas);
+  const q = conFirma('control-change')(c, comando(entradas())).pregunta;
+  const vistos = archivosDe(q);
+  assert.ok(vistos && !vistos.includes('…'), q);
+  assert.strictEqual(vistos, `${cortas.slice(0, 10).join(', ')} y 4 más`, q);
+  // sin --base, «Completo en» nombra dónde están los archivos sin cortar nada
+  const sinBase = conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --entries '${entradas()}'`).pregunta;
+  assert.ok(!sinBase.includes('…'), sinBase);
+  assert.ok(sinBase.includes(`Completo en: ${c.repo}.`), sinBase);
+  // la lista de archivos del plan usa el mismo cuadro
+  const plan = oa.cuadroDe({ firma: 'plan-approval', destino: 'ses-a', que: 'aprobar el plan', queHace: ['uno'], archivos: ['scripts/a.js', largas[0], 'scripts/b.js'], siSaleMal: 'se revierte', huella: 'ab12cd34' }).pregunta;
+  assert.ok(plan.includes('Archivos: scripts/a.js, scripts/b.js y 1 más.'), plan);
+  const ningunaEntera = oa.cuadroDe({ firma: 'plan-approval', destino: 'ses-a', que: 'aprobar el plan', queHace: ['uno'], archivos: largas, siSaleMal: 'se revierte', huella: 'ab12cd34' }).pregunta;
+  assert.ok(!ningunaEntera.includes('…'), ningunaEntera);
+  assert.match(ningunaEntera, /Archivos: 2, de más de 200 letras: ninguno entra entero en la pregunta\./);
+  // «Completo en» tampoco se corta: con más de 400 letras lo dice
+  const completoLargo = oa.cuadroDe({ firma: 'plan-approval', destino: 'ses-a', que: 'aprobar el plan', queHace: ['uno'], completo: `/r/${'c'.repeat(400)}`, siSaleMal: 'se revierte', huella: 'ab12cd34' }).pregunta;
+  assert.ok(!completoLargo.includes('…'), completoLargo);
+  assert.match(completoLargo, /Completo en: la ruta pasa de 400 letras y no entra entera en la pregunta\./);
+});
+
+// 🔴 Falla con: un cuadro que cambia según quién lo pide, desde dónde o cuándo: el click de la coordinadora no valdría
+//    para el comando que corre la sesión.
+test('8.176-Cuadro_MismoComandoMismaPregunta (T3) @story-8.176 @ac-3', (t) => {
+  const { c, entradas, comando } = repoConArchivos(t, ['scripts/ci/a.sh', 'scripts/ci/b.sh']);
+  const desde = (cmd, sesion, cwd) => ow.cuadroPara({ firma: 'control-change', comando: cmd, palabras: ow.canonica(cmd), destino: 'ses-a', sesion, cwd, casa: c.casa });
+  const propia = desde(comando(entradas()), 'ses-a', c.repo);
+  const ajena = desde(comando(entradas(), ' --for-session ses-a'), 'ses-coord', os.tmpdir());
+  const despues = desde(comando(entradas()), 'ses-a', c.repo);
+  assert.ok(propia.pregunta, propia.error);
+  assert.strictEqual(ajena.pregunta, propia.pregunta);
+  assert.strictEqual(ajena.sello, propia.sello);
+  assert.strictEqual(despues.pregunta, propia.pregunta);
+});
+
+// ── el click de la persona, de punta a punta ─────────────────────────────────────────────────────────────────────────
+
+const AHORA = Date.parse('2026-11-07T21:00:00Z');
+const INICIO = 'Sat Nov  7 18:00:00 2026';
+const HERRAMIENTA = { pid: 100, ppid: 1, inicio: INICIO, comando: '/Applications/x/native-binary/claude --output-format stream-json --verbose' };
+const ARRANQUE = [{ pid: 1, ppid: 0, inicio: 'Sat Nov  7 08:00:00 2026', comando: '/sbin/launchd' }];
+const arbolDelFreno = () => [...ARRANQUE, HERRAMIENTA,
+  { pid: 200, ppid: 100, inicio: INICIO, comando: '/bin/bash /h/scripts/hooks/safety-guard-pre.sh' },
+  { pid: 201, ppid: 200, inicio: INICIO, comando: 'node /h/scripts/lib/owner-window.js gate' }];
+// la consola con la envoltura medida de la herramienta (owner-window.test.js `envolver`), y el guion
+const arbolDelGuion = (casa, cmd) => [...ARRANQUE, HERRAMIENTA,
+  { pid: 300, ppid: 100, inicio: INICIO, comando: `/bin/zsh -c source ${casa}/.claude/shell-snapshots/snapshot-zsh-1793030721191-z5n7vi.sh 2>/dev/null || true`
+    + ' && setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/null || true'
+    + " && { \\builtin unalias -- 'unsetenv'; \\builtin unset -f -- 'unsetenv'; } >/dev/null 2>&1 || true"
+    + ` && eval '${cmd.replace(/'/g, `'"'"'`)}' < /dev/null && pwd -P >| /tmp/claude-b725-cwd` },
+  { pid: 301, ppid: 300, inicio: INICIO, comando: cmd }];
+const { APPROVERS } = require('../lib/approver.js');
+const DS = require('../lib/delegated-signing.js');
+const HUELLA = 'a1b2c3d4e5f60718';
+const PERFIL = { relay_session: 'coordinadora', delegated_signing: ['plan-approval', 'extra-round', 'refresh-after-main'], owner_only: ['control-change'], delegated_machines: [{ id: HUELLA, label: 'Mac de prueba' }] };
+const delegacionReal = (o) => DS.delegaSinVentana({ ...o, perfil: () => PERFIL, huella: () => ({ huella: HUELLA }) });
+// el click lo valida el gancho de la herramienta; acá, la aprobación anotada y su búsqueda de verdad
+const aprobaciones = { buscar: (o) => oa.buscar({ ...o, validar: () => ({ ok: true }) }), consumir: oa.consumir, devolver: oa.devolver, coordinadoraConfirmada: () => null };
+const pedirControl = (c, cmd, { sesion = 'ses-coord', modo, comprobar = () => null } = {}) => ow.decidir({
+  evento: { session_id: sesion, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd }, cwd: c.repo, ...(modo ? { permission_mode: modo } : {}) },
+  escapes: [], arbol: arbolDelFreno(), pid: 201, casa: c.casa, ahora: AHORA, delegacion: delegacionReal, clasificar: () => null,
+  ...(comprobar ? { comprobar } : {}), aprobador: () => APPROVERS.maintainers, aprobaciones });
+const anotarClick = (c, sesion) => oa.anotar(c.casa, { tipo: 'click', sesion, ts: new Date(AHORA - 60000).toISOString(), tool_use_id: 'toolu_1', herramienta: { pid: 100, inicio: INICIO } });
+
+// 🔴 Falla con: un cambio de control firmado por delegación, o sin el click de la persona; o un click que el registro
+//    anota como de otra vía.
+test('8.176-Coordinadora_SinClickNoFirma_ConClickEsDeLaPersona (T7) @story-8.176 @ac-6', (t) => {
+  const { c, entradas, comando } = repoConArchivos(t, ['scripts/ci/a.sh']);
+  const cmd = comando(entradas(), ' --for-session ses-a');
+  const argv = ow.canonica(cmd);
+  // en una pestaña común la firma va a la ventana de permiso, como siempre (en otra casa: deja su pedido vigente)
+  const comun = repoConArchivos(t, ['scripts/ci/a.sh']);
+  assert.strictEqual(pedirControl(comun.c, comun.comando(comun.entradas(), ' --for-session ses-a')).decision, 'ask');
+  // sin permisos o de fondo, que es donde se lee el click: sin él no firma, ni por la delegación (owner_only)
+  const sinClick = pedirControl(c, cmd, { modo: 'bypassPermissions' });
+  assert.strictEqual(sinClick.decision, 'deny', sinClick.texto);
+  assert.notStrictEqual(sinClick.via, 'delegacion');
+  assert.strictEqual(ow.exigir({ firma: 'control-change', argv, pid: 301, arbol: arbolDelGuion(c.casa, cmd), casa: c.casa, ahora: AHORA + 60000, propia: 'ses-coord' }).codigo, 1);
+  // con el click de la persona en esa pestaña: es suyo, y el registro lo dice
+  anotarClick(c, 'ses-coord');
+  const conClick = pedirControl(c, cmd, { modo: 'bypassPermissions' });
+  assert.deepStrictEqual([conClick.decision, conClick.via], ['allow', 'click'], conClick.texto);
+  const e = ow.exigir({ firma: 'control-change', argv, pid: 301, arbol: arbolDelGuion(c.casa, cmd), casa: c.casa, ahora: AHORA + 60000, propia: 'ses-coord' });
+  assert.strictEqual(e.codigo, 0, e.motivo);
+  assert.strictEqual(e.via, 'click');
+  const firmado = fs.readFileSync(path.join(c.estado, 'gates.log'), 'utf8').split('\n').filter(Boolean).map(JSON.parse).filter((x) => x.name === 'control-change-signed');
+  assert.deepStrictEqual(firmado.map((x) => x.via), ['click']);
+  // la constancia que escribe el guion con esa firma es del dueño, sin vía
+  assert.strictEqual(DS.signerOf(e), 'dueño');
+});
+
+// ── sin cuadro: una ruta que falsea lo que se ve ─────────────────────────────────────────────────────────────────────
+
+// 🔴 Falla con: un cuadro armado con rutas que se ven distintas de las que se firman («, y 0 más» parece el fin de la
+//    lista), o el «el comando: …» cortado cuando --entries no se lee; o una negativa que ofrece firmar igual.
+test('8.176-Cuadro_RutaQueFalsea_SinCuadro (T10) @story-8.176 @ac-9', (t) => {
+  const { c, base, entradas } = repoConArchivos(t, ['scripts/ci/a.sh']);
+  const buena = JSON.parse(entradas())[0];
+  const conRuta = (p) => JSON.stringify([{ path: p, blob: buena.blob }]);
+  const con = (n) => `scripts/ci/a${String.fromCodePoint(n)}b.sh`;
+  const casos = [
+    ['coma', conRuta('scripts/ci/a.sh, y 0 más'), /«, »/],
+    ['de dirección', conRuta(con(0x202e)), /uno que no se ve/],
+    ['de ancho cero', conRuta(con(0x200b)), /uno que no se ve/],
+    ['guion blando', conRuta(con(0x00ad)), /uno que no se ve/],
+    ['marca de orden', conRuta(con(0xfeff)), /uno que no se ve/],
+    ['relleno', conRuta(con(0x3164)), /uno que no se ve/],
+    ['braille en blanco', conRuta(con(0x2800)), /uno que no se ve/],
+    ['selector de variante', conRuta(con(0xfe0f)), /uno que no se ve/],
+    ['carpeta', JSON.stringify([{ path: 'scripts/ci', blob: buena.blob }]), /alguna de sus rutas es una carpeta/],
+    ['comodín', JSON.stringify([{ path: 'scripts/ci/*', blob: buena.blob }]), /está vacío/],
+    ['ruta mágica de git', JSON.stringify([{ path: ':(glob)scripts/**', blob: buena.blob }]), /está vacío/],
+    ['salto de línea', conRuta('scripts/ci/a.sh\nscripts/ci/otra.sh'), /salto de línea, un carácter de control o uno que no se ve/],
+    ['carácter de control', conRuta('scripts/ci/a\u001b[2K.sh'), /salto de línea, un carácter de control o uno que no se ve/],
+    ['separador de renglón', conRuta('scripts/ci/a .sh'), /salto de línea, un carácter de control o uno que no se ve/],
+    ['espacios seguidos', conRuta('scripts/ci/a  b.sh'), /espacios/],
+    ['espacio en la punta', conRuta(' scripts/ci/a.sh'), /espacios/],
+    ['espacio que no es el común', conRuta('scripts/ci/a b.sh'), /espacios/],
+    ['repetida', JSON.stringify([buena, buena]), /dos veces/],
+    ['sin ruta', JSON.stringify([buena, { blob: buena.blob }]), /no trae ruta/],
+    ['JSON roto', '[{"path":"scripts/ci/a.sh",', /no es JSON/],
+    ['no es una lista', JSON.stringify(buena), /no es una lista/],
+    ['lista vacía', '[]', /no es una lista/],
+  ];
+  for (const [nombre, lista, motivo] of casos) {
+    const cmd = `bash ${CONTROLES} approve --root ${c.repo} --base ${base} --entries '${lista.replace(/'/g, "'\\''")}'`;
+    const q = conFirma('control-change')(c, cmd);
+    assert.ok(!q.pregunta, `${nombre}: armó el cuadro: ${q.pregunta}`);
+    assert.match(String(q.error), motivo, nombre);
+    assert.doesNotMatch(String(q.error), /el comando:/, nombre);
+    // la negativa dice el motivo y la salida por pending, sin cuadro ni el --entries pedido; de fondo, con la
+    // coordinadora y sin ella
+    for (const [como, r] of [['en la pestaña', ow.negarSinVentana(`sin ventana; ${q.error}`, ['control-change'], 'ses-a', q)],
+      ['de fondo', ow.negarSinVentana(`de fondo; ${q.error}`, ['control-change'], 'ses-a', q, true)],
+      ['con la coordinadora', ow.negarSinVentana(`de fondo; ${q.error}`, ['control-change'], 'ses-a', q, true, false, { name: 'Coordinadora', sid: 'ses-coord' })]]) {
+      assert.strictEqual(r.decision, 'deny', `${nombre} ${como}`);
+      assert.ok(!r.cuadro, `${nombre} ${como}: dio el cuadro`);
+      assert.ok(r.texto.includes(q.error), `${nombre} ${como}: ${r.texto}`);
+      assert.match(r.texto, /run-base-controls\.sh pending --root /, `${nombre} ${como}: ${r.texto}`);
+      assert.ok(!r.texto.includes(lista), `${nombre} ${como}: ofrece el mismo --entries`);
+      assert.doesNotMatch(r.texto, /--terminal|AskUserQuestion|SendMessage/, `${nombre} ${como}: ${r.texto}`);
+    }
+  }
+  // con --file, y con las opciones del guion pegadas a su valor, que el guion no lee: la pregunta mostraría otra cosa
+  const otros = [
+    ['--file vacío', `bash ${CONTROLES} approve --root ${c.repo} --file '' --rev HEAD`, /--file no dice qué archivo/],
+    ['--file con coma', `bash ${CONTROLES} approve --root ${c.repo} --file 'scripts/ci/a.sh, y 0 más' --rev HEAD`, /«, »/],
+    ['--file que es otra opción', `bash ${CONTROLES} approve --root ${c.repo} --file --rev HEAD`, /--file no dice qué archivo/],
+    ['--file que no se ve', `bash ${CONTROLES} approve --root ${c.repo} --file '${con(0x200b)}' --rev HEAD`, /uno que no se ve/],
+    ['--file con espacios seguidos', `bash ${CONTROLES} approve --root ${c.repo} --file 'scripts/ci/a  b.sh' --rev HEAD`, /espacios/],
+    ['--file carpeta', `bash ${CONTROLES} approve --root ${c.repo} --file scripts/ci --rev HEAD`, /alguna de sus rutas es una carpeta/],
+    ['--entries pegada', `bash ${CONTROLES} approve --root ${c.repo} --file scripts/ci/a.sh --entries='${conRuta('scripts/ci/otra.sh')}'`, /--entries=… no lo lee el guion/],
+    ['--root pegada', `bash ${CONTROLES} approve --root=${c.repo} --base ${base} --entries '${entradas()}'`, /--root=… no lo lee el guion/],
+    ['--base pegada', `bash ${CONTROLES} approve --root ${c.repo} --base=${base} --entries '${entradas()}'`, /--base=… no lo lee el guion/],
+    ['--file pegada', `bash ${CONTROLES} approve --root ${c.repo} --file=scripts/ci/a.sh --rev HEAD`, /--file=… no lo lee el guion/],
+    ['--rev pegada', `bash ${CONTROLES} approve --root ${c.repo} --file scripts/ci/a.sh --rev=HEAD`, /--rev=… no lo lee el guion/],
+    ['--out pegada', `bash ${CONTROLES} approve --root ${c.repo} --base ${base} --out=.tycon/x.jsonl --entries '${entradas()}'`, /--out=… no lo lee el guion/],
+  ];
+  for (const [nombre, cmd, motivo] of otros) {
+    const q = conFirma('control-change')(c, cmd);
+    assert.ok(!q.pregunta, `${nombre}: armó el cuadro: ${q.pregunta}`);
+    assert.match(String(q.error), motivo, nombre);
+  }
+  // la refirma tras traer main comparte el cuadro, y su negativa también manda a pending
+  const refirma = conFirma('refresh-after-main')(c, `bash ${CONTROLES} approve --root ${c.repo} --base ${base} --entries '[]'`);
+  const r = ow.negarSinVentana(`de fondo; ${refirma.error}`, ['refresh-after-main'], 'ses-a', refirma, true);
+  assert.strictEqual(r.decision, 'deny', r.texto);
+  assert.ok(!r.cuadro, r.texto);
+  assert.match(r.texto, /no es una lista.*run-base-controls\.sh pending --root /, r.texto);
+  // en la ventana de permiso, el cuadro se mira antes que el chequeo del guion, que diría otra cosa («--entries no es
+  // JSON») sin la salida por pending
+  const roto = `bash ${CONTROLES} approve --root ${c.repo} --base ${base} --entries '[{"path":"scripts/ci/a.sh",'`;
+  const antes = pedirControl(c, roto, { sesion: 'ses-a', comprobar: () => assert.fail('el chequeo del guion corrió antes que el cuadro') });
+  assert.strictEqual(antes.decision, 'deny', antes.texto);
+  assert.match(antes.texto, /no es JSON.*run-base-controls\.sh pending --root /, antes.texto);
+  const deVerdad = pedirControl(c, roto, { sesion: 'ses-a', comprobar: null });
+  assert.strictEqual(deVerdad.decision, 'deny', deVerdad.texto);
+  assert.doesNotMatch(deVerdad.texto, /No abrí la ventana/, deVerdad.texto);
+  assert.match(deVerdad.texto, /run-base-controls\.sh pending --root /, deVerdad.texto);
+});
