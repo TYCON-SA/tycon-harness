@@ -339,3 +339,101 @@ test('T14 TandaQueDejaDeEstarBloqueada_SuArchivoVuelveAContar', () => {
   assert.equal(r.green, false, avisos(r));
   assert.deepEqual(r.noLeidos.map((n) => n.rel), ['src/barrido.js']);
 });
+
+// ---------------------------------------------------------------- la copia de la historia y el clon compartido
+
+/** El laboratorio con el hermano y su copia en la rama de la historia; el repo de historias, en esa rama o suelto. */
+function labConCopia({ declarados = ['src/Feature.cs'], suelto = false, copia = true } = {}) {
+  const f = lab({ declarados });
+  git(f.esp, ['checkout', '-q', '-b', RAMA]);
+  if (suelto) git(f.esp, ['checkout', '-q', '--detach']);
+  const wt = path.join(f.ws, 'Back-wt');
+  if (copia) git(f.back, ['worktree', 'add', '-q', '-b', RAMA, wt]);
+  f.humo();
+  return { ...f, wt };
+}
+// El clon compartido avanza en main y cambia el archivo, después de la evidencia.
+function avanzaElClon(f) {
+  escribir(f.back, 'src/Feature.cs', '// v2 en main, de otra historia\n');
+  commit(f.back, 'main avanza', f.ahora + 100);
+}
+
+test('T15 CopiaDeLaHistoria_ClonCompartidoAvanza_NoVence @story-8.235 @ac-15', () => {
+  // por la ruta del hermano, desde la carpeta de arriba y con el repo de historias sin rama (la copia se busca por número)
+  for (const caso of [{}, { declarados: ['Back/src/Feature.cs'] }, { suelto: true }]) {
+    const f = labConCopia(caso);
+    avanzaElClon(f);
+    const r = f.calcular();
+    assert.equal(r.perAc[1].verdict, 'RUNTIME', `${JSON.stringify(caso)}: ${avisos(r)}`);
+    assert.equal(r.green, true, avisos(r));
+  }
+});
+
+test('T16 CopiaDeLaHistoria_CambiaDespues_Vence @story-8.235 @ac-16', () => {
+  const f = labConCopia();
+  avanzaElClon(f);
+  escribir(f.wt, 'src/Feature.cs', '// v2 en la rama\n');
+  commit(f.wt, 'cambio en la rama', f.ahora + 100);
+  const r = f.calcular();
+  assert.equal(r.perAc[1].verdict, 'NOT-RUN', avisos(r));
+  assert.match(avisos(r), /src\/Feature\.cs/);
+  assert.doesNotMatch(avisos(r), /tal como está declarado/);
+});
+
+test('T17 HermanoSinCopiaDeLaHistoria_SeJuzgaYLoDice @story-8.235 @ac-17', () => {
+  const f = labConCopia({ copia: false });
+  avanzaElClon(f);
+  const r = f.calcular();
+  assert.equal(r.perAc[1].verdict, 'NOT-RUN', avisos(r));
+  assert.match(avisos(r), /comparada contra Back tal como está declarado: no tomé ninguna copia suya en la rama feature\/5-28-carga ni con el número 5\.28/);
+  // sin rama, dice que la buscó sólo por el número
+  const s = labConCopia({ copia: false, suelto: true });
+  avanzaElClon(s);
+  const rs = s.calcular();
+  assert.equal(rs.perAc[1].verdict, 'NOT-RUN', avisos(rs));
+  assert.match(avisos(rs), /comparada contra Back tal como está declarado: no tomé ninguna copia suya con el número 5\.28/);
+  // dos copias que nombran la historia: no se elige ninguna, y el aviso no dice que no hay
+  const d = labConCopia({ copia: false });
+  git(d.back, ['worktree', 'add', '-q', '-b', 'otra/5-28-a', path.join(d.ws, 'Back-a')]);
+  git(d.back, ['worktree', 'add', '-q', '-b', 'otra/5-28-b', path.join(d.ws, 'Back-b')]);
+  avanzaElClon(d);
+  const rd = d.calcular();
+  assert.equal(rd.perAc[1].verdict, 'NOT-RUN', avisos(rd));
+  assert.match(avisos(rd), /comparada contra Back tal como está declarado: no tomé ninguna copia suya en la rama feature\/5-28-carga ni con el número 5\.28/);
+});
+
+test('T17b HermanoEnLaRamaDeLaHistoria_SinAvisoDeCopia @story-8.235 @ac-17', () => {
+  // el declarado está él mismo en la rama de la historia: es su copia, y el aviso no dice que falta
+  const f = lab({ declarados: ['src/Feature.cs'] });
+  git(f.esp, ['checkout', '-q', '-b', RAMA]);
+  git(f.back, ['checkout', '-q', '-b', RAMA]);
+  f.humo();
+  escribir(f.back, 'src/Feature.cs', '// v2 en la rama\n');
+  commit(f.back, 'cambio en la rama', f.ahora + 100);
+  const r = f.calcular();
+  assert.equal(r.perAc[1].verdict, 'NOT-RUN', avisos(r));
+  assert.doesNotMatch(avisos(r), /tal como está declarado/);
+});
+
+test('T15b CopiaDeLaHistoria_RutaConOtraMayusculaOSoloEnLaCopia @story-8.235 @ac-15', () => {
+  // un archivo que la historia crea sólo en su copia, escrito desde la carpeta de arriba: se lee en la copia
+  const n = labConCopia({ declarados: ['Back/src/New.cs'] });
+  escribir(n.wt, 'src/New.cs', '// nuevo en la rama\n');
+  commit(n.wt, 'nuevo en la rama', n.ahora - 200);
+  const rn = n.calcular();
+  assert.deepEqual(rn.noLeidos, [], avisos(rn));
+  assert.equal(rn.perAc[1].verdict, 'RUNTIME', avisos(rn));
+  // la ruta escrita con otra mayúscula que la carpeta: donde el disco no las distingue, es la misma copia
+  const m = labConCopia({ declarados: ['back/src/Feature.cs'] });
+  const distingue = !fs.existsSync(path.join(m.ws, 'back'));
+  avanzaElClon(m);
+  const rm1 = m.calcular();
+  if (distingue) {
+    assert.deepEqual(rm1.noLeidos.map((x) => x.rel), ['back/src/Feature.cs'], avisos(rm1));
+  } else {
+    assert.equal(rm1.perAc[1].verdict, 'RUNTIME', avisos(rm1));
+    escribir(m.wt, 'src/Feature.cs', '// v2 en la rama\n');
+    commit(m.wt, 'cambio en la rama', m.ahora + 100);
+    assert.equal(m.calcular().perAc[1].verdict, 'NOT-RUN', 'la copia cambió: no cuenta');
+  }
+});

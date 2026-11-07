@@ -1450,10 +1450,16 @@ function openNow(opts) {
 
 // ── Cerrar una sesión ──
 
-function gitIn(dir, args) {
+// La salida tal cual: una ruta de `-z` no se recorta.
+function gitRaw(dir, args) {
   // la carpeta la dice el archivo de la sesión: su configuración no corre un programa por acá
   const r = spawnSync('git', ['-C', dir, '-c', 'core.fsmonitor=false', '-c', 'protocol.ext.allow=never', ...args], { encoding: 'utf8', timeout: GIT_TIMEOUT_MS, windowsHide: true, env: require('../lib/clean-git-env.js').idiomaFijo() });
-  return { code: r.error ? null : r.status, out: String(r.stdout || '').trim(), err: String((r.error && r.error.message) || r.stderr || '').trim().split('\n')[0] };
+  return { code: r.error ? null : r.status, out: String(r.stdout || ''), err: String((r.error && r.error.message) || r.stderr || '').trim().split('\n')[0] };
+}
+
+function gitIn(dir, args) {
+  const r = gitRaw(dir, args);
+  return { ...r, out: r.out.trim() };
 }
 
 // ¿La sesión soltó el puesto antes de que llegara la otra? Lo dice el registro de la carpeta entre su arranque y el de la
@@ -1473,11 +1479,63 @@ function soltoElPuesto(dir, startedAt, heirStartedAt) {
   return { solto: suelto(movs[0]), propias: new Set(movs.filter((to) => !suelto(to))) };
 }
 
-// Lo que le falta a la carpeta de una sesión para cerrarla: `{ missing, unknown }`. Lo que no se pudo mirar va a `unknown`:
-// «no sé» nunca es «está limpia». Un puesto fijo se suelta, no se borra (work-slots.js).
+// Los archivos sin commitear de la carpeta, separados en los suyos y los que ya estaban antes de que la sesión arrancara,
+// por su fecha. La fecha sólo cambia el texto, nunca el cierre: ante la duda (un archivo borrado, una fecha que no se
+// lee, una sesión sin hora de arranque) el archivo es suyo. Un renombre o una copia también: conservan la fecha del
+// archivo viejo. Lo mismo una carpeta (un submódulo, un repo adentro), que lleva la fecha de la carpeta y no la de lo que
+// cambió adentro, y un archivo sin seguir que es uno borrado movido sin git: tiene el contenido del borrado. Las rutas
+// salen de `-z`, sin recortar: un renglón empieza con espacio y una ruta puede tener espacios.
+function uncommittedFiles(top, salida, startedAt) {
+  const own = [];
+  const before = [];
+  const borrados = [];
+  const sinSeguir = new Set();
+  const campos = salida.split('\0');
+  for (let i = 0; i < campos.length; i += 1) {
+    const e = campos[i];
+    if (e.length < 4) continue;
+    const xy = e.slice(0, 2);
+    const ruta = e.slice(3);
+    // en un renombre o una copia, el campo siguiente es la ruta vieja
+    const movido = /[RC]/.test(xy);
+    if (movido) i += 1;
+    if (xy.includes('D')) borrados.push(ruta);
+    if (xy === '??') sinSeguir.add(ruta);
+    let mtime = null;
+    if (!movido && !ruta.endsWith('/') && Number.isFinite(startedAt)) {
+      try {
+        const st = fs.lstatSync(path.join(top, ruta));
+        mtime = st.isDirectory() ? null : st.mtimeMs;
+      } catch { mtime = null; }
+    }
+    (mtime !== null && mtime < startedAt ? before : own).push(ruta);
+  }
+  // un archivo sin seguir con el contenido de uno borrado se movió sin git: es suyo. Si git no contesta, también
+  const movidos = new Set();
+  const candidatos = before.filter((r) => sinSeguir.has(r));
+  if (borrados.length && candidatos.length) {
+    const delBorrado = new Set();
+    let sinRespuesta = false;
+    for (const b of borrados) {
+      const r = gitIn(top, ['rev-parse', '--verify', '-q', `HEAD:${b}`]);
+      if (r.code === 0) delBorrado.add(r.out);
+      else sinRespuesta = true;
+    }
+    for (const c of candidatos) {
+      const h = sinRespuesta ? null : gitIn(top, ['hash-object', '--', c]);
+      if (!h || h.code !== 0 || delBorrado.has(h.out)) movidos.add(c);
+    }
+  }
+  return { own: [...own, ...before.filter((r) => movidos.has(r))], before: before.filter((r) => !movidos.has(r)) };
+}
+
+// Lo que le falta a la carpeta de una sesión para cerrarla: `{ missing, unknown, before }`, con `before` cuántos archivos
+// sin commitear ya estaban antes de que arrancara. Lo que no se pudo mirar va a `unknown`: «no sé» nunca es «está limpia».
+// Un puesto fijo se suelta, no se borra (work-slots.js).
 function folderGaps(dir, opts) {
   const missing = [];
   const unknown = [];
+  let before = 0;
   // `answersOne`: los comandos cuyo código 1 es una respuesta («no está en una rama», «no entró»), no una falla
   const git = (args, what, answersOne = false) => {
     const r = gitIn(dir, args);
@@ -1500,17 +1558,26 @@ function folderGaps(dir, opts) {
   const heredado = Boolean(solto && solto.solto && !(onBranch && solto.propias.has(branch.out)));
   if (!heredado) {
     // con todos los archivos sin seguir, aunque la configuración del repo los esconda
-    const status = git(['status', '--porcelain', '--untracked-files=all'], 'los cambios');
-    if (status.code === 0 && status.out) missing.push(`${status.out.split('\n').length} archivo(s) sin commitear en ${dir}`);
+    const status = gitRaw(dir, ['status', '--porcelain', '-z', '--untracked-files=all']);
+    if (status.code !== 0) unknown.push(`no pude mirar los cambios en ${dir} (${status.err || `salió con código ${status.code}`})`);
+    else if (status.out) {
+      const files = uncommittedFiles(top.out, status.out, opts.startedAt);
+      before = files.before.length;
+      if (files.own.length) missing.push(`${files.own.length} archivo(s) sin commitear en ${dir}`);
+      if (before) {
+        const mas = before > 3 ? ` y ${before - 3} más` : '';
+        missing.push(`${before} archivo(s) sin commitear de antes de que arrancara (no parecen suyos): ${files.before.slice(0, 3).join(', ')}${mas}`);
+      }
+    }
     if (slot && onBranch) missing.push(`el puesto ${slot.path} sigue tomado por la rama ${branch.out}: soltalo con work-slots.js release`);
   }
   const fetched = gitIn(dir, ['fetch', '--quiet', '--no-tags', 'origin', 'main']);
   if (fetched.code !== 0) {
     unknown.push(`no pude traer main de origin en ${dir} (${fetched.err || `salió con código ${fetched.code}`}): no sé si lo empujó ni si entró`);
-    return { missing, unknown };
+    return { missing, unknown, before };
   }
   const main = git(['rev-parse', 'FETCH_HEAD^{commit}'], 'main');
-  if (main.code !== 0) return { missing, unknown };
+  if (main.code !== 0) return { missing, unknown, before };
   if (!heredado) {
     const unpushed = git(['rev-list', '--count', 'HEAD', '--not', '--remotes', main.out], 'lo empujado');
     if (unpushed.code === 0 && Number(unpushed.out) > 0) missing.push(`${unpushed.out} commit(s) sin empujar en ${dir}`);
@@ -1522,20 +1589,20 @@ function folderGaps(dir, opts) {
   // las ramas de las que la sesión se fue en esta carpeta: su registro dice cuáles, desde que arrancó
   if (!Number.isFinite(opts.startedAt)) {
     unknown.push(`no sé desde cuándo trabaja en ${dir}: no puedo mirar las ramas que dejó`);
-    return { missing, unknown };
+    return { missing, unknown, before };
   }
   // sin su archivo, git contesta con el registro de la rama, que no dice de qué ramas se fue: medido
   const logPath = git(['rev-parse', '--git-path', 'logs/HEAD'], 'el registro');
-  if (logPath.code !== 0) return { missing, unknown };
+  if (logPath.code !== 0) return { missing, unknown, before };
   let logSize = 0;
   try { logSize = fs.statSync(path.resolve(dir, logPath.out)).size; } catch (_) { logSize = 0; }
   const log = logSize ? git(['reflog', 'show', '--date=unix', '--format=%gd %gs', 'HEAD'], 'las ramas que dejó') : null;
-  if (log && log.code !== 0) return { missing, unknown };
+  if (log && log.code !== 0) return { missing, unknown, before };
   // un registro vacío (apagado por configuración) o con otra forma no dice que no dejó ramas
   const lines = log && log.out ? log.out.split('\n') : [];
   if (!lines.length || !lines.every((l) => /^HEAD@\{\d+\}( |$)/.test(l))) {
     unknown.push(`no pude leer el registro de ${dir}: no sé qué ramas dejó`);
-    return { missing, unknown };
+    return { missing, unknown, before };
   }
   const left = new Set();
   for (const l of lines) {
@@ -1558,7 +1625,7 @@ function folderGaps(dir, opts) {
     const entered = git(['merge-base', '--is-ancestor', `refs/heads/${b}`, main.out], `si la rama ${b} entró a main`, true);
     if (entered.code === 1) missing.push(`la rama local ${b} de ${dir} no entró a main`);
   }
-  return { missing, unknown };
+  return { missing, unknown, before };
 }
 
 // La ejecución de la sesión: `{ missing, unknown }`. Un marcador sin pasos pendientes es de una corrida terminada, y un
@@ -1629,7 +1696,15 @@ function close(opts = {}) {
   unknown.push(...folder.unknown, ...run.unknown);
   if (missing.length || unknown.length) {
     const parts = [missing.length ? `falta: ${missing.join('; ')}` : '', unknown.length ? `no sé: ${unknown.join('; ')}` : ''].filter(Boolean);
-    return no(`No cierro «${name}»: ${parts.join('. ')}.`);
+    // con archivos de antes, cómo pararla a mano si no son suyos: con su id de fondo, porque con el nombre no se la
+    // encuentra. Una pestaña interactiva la cierra la persona.
+    let parar = '';
+    if (folder.before && /^(bg|background)$/.test(String(s.kind))) {
+      parar = /^\w[\w-]*$/.test(String(s.jobId || ''))
+        ? ` Si esos archivos no son suyos, pararla a mano: claude stop ${s.jobId}`
+        : ' Si esos archivos no son suyos, para pararla a mano mirá su id con claude agents';
+    }
+    return no(`No cierro «${name}»: ${parts.join('. ')}.${parar}`);
   }
   if (!/^(bg|background)$/.test(String(s.kind))) return { ok: true, closed: false, message: `«${name}» quedó limpia. Es una pestaña interactiva: la cierra la persona.` };
   // el id va como argumento del lanzador: uno que empieza con guion se leería como una opción
