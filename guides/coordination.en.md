@@ -417,6 +417,10 @@ control signature, which is the owner's.
 The quick fix (a code change with no story) is the `adhoc-lane` signature: the tab that needs it runs
 `marker.js adhoc set '<json>'` and the owner approves it in the window, which shows the reason and the file quota.
 
+**Declaring it again keeps everything.** With another quota or another reason, the lane keeps its list, its high-risk mark
+and its records, which hold while what they measured does not change. A new task in the same session goes on a new branch
+from `main`: on the previous task's branch, its commits count toward the quota.
+
 - **On the same machine.** The designated session declares it for the tab it gave the work to, with
   `marker.js adhoc set '<json>' --for-session <session>`. It runs with no window only if the profile delegates
   `adhoc-lane` (it is in no group: it has to be named), the machine is on the list and the owner confirmed the

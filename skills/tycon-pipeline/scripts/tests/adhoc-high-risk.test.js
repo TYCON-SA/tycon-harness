@@ -24,6 +24,7 @@
  *   T26 si git no ubica una ruta ya anotada, lo que escribe un subagente se anota
  *   T27 la sonda que un subagente escribe por consola no entra al carril; su código sí
  *   T28 un archivo anotado que ya no existe y que git no sigue no mete su repo en el carril
+ *   T30 un destino con una variable sin resolver no gasta el cupo ni entra en la lista
  *
  * stable-data: crea repos de git en carpetas temporales con commits propios; nunca toca el repo real.
  * Correr: node --test skills/tycon-pipeline/scripts/tests/adhoc-high-risk.test.js
@@ -1039,4 +1040,46 @@ test('T28 ArchivoAnotadoQueYaNoExiste_NoMeteSuRepoEnElCarril', () => {
   fs.symlinkSync(puesto, enlace);
   const porEnlace = { ...leerCarril(state, 's28'), files: [propio, path.join(enlace, 'sub-borrada/probe.js')] };
   assert.deepStrictEqual(adhocBase.reposDelCarril(porEnlace), [dir], 'la sonda por un enlace no mete el puesto');
+});
+
+// 🔴 Falla con: un destino con una variable sin resolver (`$P/probe.js`, con P=$(mktemp -d)) cuenta como un archivo del
+// repo: frena por el tope del carril o entra en su lista.
+test('T30 DestinoConVariableSinResolver_NoGastaElCupo', () => {
+  const raiz = tmp('t30-');
+  const home = tmp('home-');
+  const dir = repoConOrigen(raiz, 'producto');
+  const propios = [1, 2].map((i) => { escribir(dir, `src/p${i}.js`); return path.join(dir, `src/p${i}.js`); });
+  const state = conCarril(home, 's30', { maxFiles: 2, files: propios, rutas: propios, bases: { [dir]: adhocBase.traerBase(dir) } });
+  const porConsola = (command, extra = {}) => bash.handle({ hook_event_name: 'PreToolUse', tool_name: 'Bash', session_id: 's30', cwd: dir,
+    tool_input: { command }, ...extra }, { stateDir: state, installedRoots: [] });
+  for (const extra of [{ agent_id: 'agente-del-pase', agent_type: 'general-purpose' }, {}]) {
+    const r = porConsola("P=$(mktemp -d) && cat > $P/probe.js <<'EOF'\nconsole.log(1);\nEOF", extra);
+    assert.ok(!r || !r.block, JSON.stringify(r));
+    assert.deepStrictEqual(leerCarril(state, 's30').files, propios, 'no entra en la lista');
+  }
+  // un archivo del repo con el carril lleno sigue frenando por el tope
+  const r = porConsola(`cat > ${path.join(dir, 'src/p3.js')} <<'EOF'\nx\nEOF`);
+  assert.ok(r && r.block && /cupo/.test(r.block), JSON.stringify(r));
+});
+
+// 🔴 Falla con: con la marca y las dos constancias vigentes, un guardado que trae una ruta de riesgo alto en un repo que el
+// carril no mide pasa sin revisores: la huella de las constancias no ve ese repo.
+test('T31 ConstanciasVigentes_RiesgoEnUnRepoQueElCarrilNoMide_Frena', () => {
+  const raiz = tmp('t31-');
+  const home = tmp('home-');
+  const prod = repoConOrigen(raiz, 'producto');
+  const mig = path.join(prod, 'db/migrations/001.sql');
+  escribir(prod, 'db/migrations/001.sql', 'select 1;\n');
+  const state = conCarril(home, 's31', { rutas: [mig], bases: { [prod]: adhocBase.traerBase(prod) },
+    riesgoAlto: { regla: 'porton-instalador-migracion', archivo: mig, motivo: 'de prueba', ts: new Date().toISOString() } });
+  const huella = adhocBase.huellaDelCarril(leerCarril(state, 's31'));
+  escribirCarril(state, 's31', { ...leerCarril(state, 's31'), revisores: { huella }, pase: { huella } });
+  const decidir = (command, cwd) => saveBrake.decidir({ command, cwd, sid: 's31', home });
+  const d0 = decidir('git add -A && git commit -m x', prod);
+  assert.ok(!d0 || !d0.texto, `con las constancias vigentes guarda: ${JSON.stringify(d0)}`);
+  const otro = repoConOrigen(raiz, 'otro');
+  escribir(otro, 'db/migrations/002.sql', 'select 2;\n');
+  const d = decidir(`git -C ${otro} add -A && git -C ${otro} commit -m y`, prod);
+  assert.ok(d && d.texto && /faltan los revisores/.test(d.texto), JSON.stringify(d));
+  assert.ok(Object.keys(leerCarril(state, 's31').bases).includes(otro), 'el repo entra al carril con su base');
 });

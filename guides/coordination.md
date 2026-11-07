@@ -404,6 +404,10 @@ falta ni saltea la ventana. Lo delicado lo cubre la firma de control del pedido,
 El arreglo rápido (un cambio de código sin historia) es la firma `adhoc-lane`: la pestaña que lo necesita corre
 `marker.js adhoc set '<json>'` y el dueño lo aprueba en la ventana, que le muestra el motivo y el cupo de archivos.
 
+**Declararlo de nuevo conserva todo.** Con otro cupo o con otro motivo, el carril sigue con su lista, su marca de riesgo
+y sus constancias, que valen mientras no cambie lo que miden. Una tarea nueva en la misma sesión va en una rama nueva desde
+`main`: en la rama de la anterior, sus commits cuentan para el cupo.
+
 - **En la misma máquina.** La sesión designada lo declara por la pestaña a la que le dio el trabajo, con
   `marker.js adhoc set '<json>' --for-session <sesión>`. Corre sin ventana sólo si el perfil delega `adhoc-lane` (no
   entra en ningún grupo: hay que nombrarla), la máquina está en la lista y el dueño confirmó la designación; si no, sale

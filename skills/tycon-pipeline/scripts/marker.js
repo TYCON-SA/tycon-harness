@@ -6230,6 +6230,10 @@ function cmdAdhoc(sub, payloadJson) {
       ...(existing && existing.frenoDatos ? { frenoDatos: existing.frenoDatos } : {}),
       ...(existing && existing.datosPermitido ? { datosPermitido: existing.datosPermitido } : {}),
       ...(existing && existing.untilAt ? { untilAt: existing.untilAt } : {}),
+      // las rutas anotadas, la marca de riesgo y las constancias, con el motivo que sea: valen por su huella, y declarar
+      // el carril de nuevo no las vence
+      ...(existing ? Object.fromEntries(['rutas', 'riesgoAlto', 'revisoresEsperados', 'revisores', 'pase']
+        .filter((k) => existing[k] !== undefined).map((k) => [k, existing[k]])) : {}),
     };
     io.writeAdhoc(STATE_DIR, destino, obj);
     syncSessionState(destino);

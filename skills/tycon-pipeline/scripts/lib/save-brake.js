@@ -1361,6 +1361,14 @@ function decidirRiesgo(a, sid, home, { medida: m, alDia, registrar }) {
       const r = require('./risk-paths.js').riesgoDeArchivos(porRepo[repo], { repo });
       if (r.value) { nueva = { repo, marca: { regla: r.rule, archivo: r.file ? path.join(repo, r.file) : repo, motivo: r.reason, ts: new Date().toISOString() } }; break; }
     }
+    // una ruta de riesgo alto en un repo del comando que el carril no mide: la huella de las constancias no lo ve, y con
+    // una marca ya vigente pasaría sin revisores. Su repo entra al carril con su base, y la huella cambia
+    if (marca) {
+      const delCarril = base.reposDelCarril(a);
+      for (const repo of Object.keys(porRepo)) {
+        if (!delCarril.includes(repo) && require('./risk-paths.js').riesgoDeArchivos(porRepo[repo], { repo }).value) a = base.conBase(a, repo).adhoc;
+      }
+    }
     if (!marca && !nueva && !m.fallas.length) {
       if (registrar) io.writeAdhoc(dir, sid, a);
       return null;
