@@ -1256,6 +1256,52 @@ else
   bad "T43 · corrida sin cerrar" "esperaba fin 11:20 y sin lo de otra corrida; salió hasta=$h43 · $OUT"
 fi
 
+# ── T44 Sanear_SinCaracteresDeControl ───────────────────────────────────────────────────────────
+# 🔴 Falla con: un texto saneado que todavía trae un carácter de control (una campana, un código de color de la
+#    terminal, un nulo, un DEL) o que perdió los saltos de línea y las tabulaciones, que un texto de varias líneas usa.
+#    Todo lo que viaja al sitio y a los informes pasa por sanear(): un carácter de control ahí se dibuja raro o, en una
+#    terminal, cambia lo que se ve.
+r44="$(node -e '
+const { sanear } = require(process.argv[1]);
+const s = sanear("a\u0007b \u001b[31mrojo\u001b[0m c\u0000d\u007fe\u001b]0;titulo\u0007f\u009b2Jg\nh\ti\r\nj", "/home/dev-a");
+// una clave partida por un carácter de control: si se sacara después de tapar, quedaría entera y a la vista
+const clave = ["ghp_", "a".repeat(18), "\u0007", "a".repeat(18)].join("");
+const t = sanear(`corre con ${clave} y sigue`, "/home/dev-a");
+const bordes = [
+  "riesgo\u0007sk-" + "a".repeat(20),
+  "AKIA" + "B".repeat(16) + "\u0007X",
+  "\u001b]0;t\u001b\\x",
+  "a\u001b]0;sin cierre\nb",
+  "a\u0085b\u009dc",
+  "x sk-" + "a".repeat(25) + "\u001b[31m" + "a".repeat(15) + " sigue",
+  "Password=" + "a".repeat(12) + "\u000b" + "a".repeat(10) + " sigue",
+  "x sk-" + "a".repeat(25) + "\u001b[31m" + "b".repeat(5) + "\u001b[0m" + "c".repeat(5) + " sigue",
+  ["x\n-----BEGIN RSA", "PRIVATE KEY-----\nCUERPO\n-----END RSA", "PRIVATE KEY-----\ny"].join(" "),
+  "a \u001b]0;ghp_A1b2C3d4E5f6\u0007G7h8I9j0K1l2M3n4O5p6Q7r8",
+  "riesgo\u001b[1msk-ant-api03-abcDEF123456abcDEF123456abcDEF fin",
+  "x eyJ" + "hbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.a\u0007bcdefghijklmnop12345 y",
+  "x eyJ" + "hbGciOiJIUzI1NiJ9.eyJzdWIi\u0007OiIxMjM0NTY3ODkwIn0.abcdefghijklmnop12345 y",
+  ["-----BEGIN\u0007 RSA", "PRIVATE KEY-----\nCUERPO\n-----END RSA", "PRIVATE KEY-----"].join(" "),
+  ["x\n-----BEGIN RSA", "PRIVATE KEY-----\nCUERPO sin cierre"].join(" "),
+  "x AKIA" + "B".repeat(16) + "\u0007ghp_" + "a".repeat(36) + " y",
+  ["-----BEGIN\u0007 RSA", "PRIVATE KEY-----\nCUERPO sin cierre"].join(" "),
+  "riesgo\u0007sk-" + "a".repeat(5) + "\u0007" + "a".repeat(30) + " fin",
+  "clave\u0007eyJ" + "hbGciOiJIUzI1NiJ9.eyJzd\u0007WIiOiIxMjM0NTY3ODkwIn0.abcdefghijklmnop12345 fin",
+  "x ghp_" + "a".repeat(36) + "\u0007 fin",
+  "riesgo\u0007sk-" + "a".repeat(5) + "\u0007" + "a".repeat(30) + " y riesgo\u0007sk-" + "b".repeat(5) + "\u0007" + "b".repeat(30) + " fin",
+  "a \u001b]0;ghp_" + "a".repeat(18) + "\u0001" + "a".repeat(18) + "\u0007 fin",
+  "t\u001b]0;x\u009b2Jy\u0003z\u0007w",
+  "Bearer\u0007abcdef123456",
+  "Basic\u0000dXNlcjpwYXNz fin",
+].map((x) => sanear(x, "/home/dev-a"));
+console.log(JSON.stringify([s, t.includes("a".repeat(36)), bordes]));
+' "$DIGEST" 2>&1)"
+if [ "$r44" = '["ab rojo cdetitulofg\nh\ti\r\nj",false,["riesgo<oculto>","<oculto>","tx","asin cierre\nb","abc","x <oculto> sigue","Password=<oculto> sigue","x <oculto> sigue","x\n<oculto>\ny","a <oculto>","riesgo<oculto> fin","x <oculto> y","x <oculto> y","<oculto>","x\n<oculto>","x <oculto> y","<oculto>","riesgo<oculto> fin","clave<oculto> fin","x <oculto> fin","riesgo<oculto> y riesgo<oculto> fin","a <oculto> fin","txyzw","Bearer<oculto>","Basic<oculto> fin"]]' ]; then
+  ok "T44 · sanear saca los caracteres de control y los códigos de la terminal sin dejar a medias una clave, y deja saltos de línea y tabulaciones"
+else
+  bad "T44 · caracteres de control" "salió: $r44"
+fi
+
 # ══════════════════════════════════════════════════════════════════════════════════════════════
 if [ "$fallos" -eq 0 ]; then echo "✅ tokens-digest: todo verde"; exit 0; fi
 echo "❌ tokens-digest: $fallos rojos"; exit 1
