@@ -157,6 +157,10 @@ test('T9 SetBatch_OnceAndValidated @story-8.239 @ac-5 — la tanda se anota una 
   r = E.correr('marker.js', ['set', JSON.stringify({ ...E.leer('s-t9') })], 's-t9');
   assert.strictEqual(r.status, 0, r.stderr);
   assert.strictEqual(E.leer('s-t9').batch, A);
+  // un set de OTRA historia que trae la misma tanda no la escribe: la tanda es de la historia que la anotó
+  r = E.correr('marker.js', ['set', JSON.stringify({ storyId: '9.10', storyPath: E.story, stepsPending: ['start'], batch: A }), '--replace'], 's-t9');
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.strictEqual(E.leer('s-t9').storyId, '9.9');
   // un set de OTRA historia borra la tanda: no se hereda
   r = E.correr('marker.js', ['set', JSON.stringify({ storyId: '9.10', storyPath: E.story, stepsPending: ['start'] }), '--replace'], 's-t9');
   assert.strictEqual(r.status, 0, r.stderr);
