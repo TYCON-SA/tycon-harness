@@ -692,7 +692,7 @@ test('RuntimeWaiver_ForSession_HistoriaDelDestino (T11) @story-8.142 @ac-7', (t)
   // el cartel trae los criterios de la historia de ses-a, y el guion la firma sobre su corrida
   const p = lab.pedir(lab.comando(paraD));
   assert.strictEqual(p.decision, 'ask', p.texto);
-  assert.match(p.texto, /AC 1: Given un pedido/);
+  assert.match(p.texto, /AC 1: .*el criterio: Given un pedido/);
   let r = lab.correr(paraD);
   assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
   assert.ok(lab.aprobaciones(DESTINO).some((l) => /AC 1 imposible/.test(l.que)), 'la aprobación quedó en la corrida de ses-a');
@@ -745,7 +745,7 @@ test('OtraSesion_HistoriaDelDestino_PorSuRepoYSuArchivo (T22) @story-8.142 @ac-6
   assert.notStrictEqual(path.resolve(relativa), lab.stories[DESTINO], 'la prueba corre fuera del repo de ses-a');
   const p = lab.pedir(lab.comando(paraD));
   assert.strictEqual(p.decision, 'ask', p.texto);
-  assert.match(p.texto, /AC 1: Given un pedido/);
+  assert.match(p.texto, /AC 1: .*el criterio: Given un pedido/);
   // check-count: otra historia con el mismo número, en otro archivo, no es la de la corrida
   vueltaSinRevisores(lab, DESTINO);
   const copia = path.join(lab.repo, 'specs', 'story-9.91-copia.md');

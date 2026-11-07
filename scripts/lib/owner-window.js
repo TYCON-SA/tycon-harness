@@ -692,6 +692,32 @@ function terminalDe(ids, sesion) {
 const TERMINAL_SIEMPRE = new Set(ONLY_IN_TERMINAL);
 const vaATerminal = (ids) => ids.some((id) => TERMINAL_SIEMPRE.has(id) || ((firmaDe(id) || {}).covers || []).some((c) => TERMINAL_SIEMPRE.has(c)));
 
+// la razón que declaró un criterio para no probarse en vivo, o null si no declaró ninguna
+const SIN_RAZON = '(sin razón declarada)';
+const razonDeclarada = (x) => { const r = una(x && x.reason); return r && r !== SIN_RAZON ? r : null; };
+// cuánto entra en lo que se aprueba: owner-approvals.js `cuadroDe` lo corta ahí, antes de sumarle «¿» y «?»
+const LARGO_DE_LO_QUE_SE_APRUEBA = 200;
+
+/**
+ * Lo que se aprueba en el cuadro de `runtime-waiver`, con la razón que declararon sus criterios: la que comparten todos,
+ * o que cada uno tiene la suya. La razón se recorta antes que el cuadro, así el corte no se come la comilla que la cierra.
+ */
+function queDeLaExcepcion(lista) {
+  const nums = [...new Set(lista.map((x) => x.ac))].sort((a, b) => a - b);
+  const acs = nums.length > 1 ? `los AC ${nums.slice(0, -1).join(', ')} y ${nums[nums.length - 1]}` : `el AC ${nums[0]}`;
+  const inicio = `aceptar sin prueba en vivo ${acs.length > 80 ? `${nums.length} criterios` : acs}`;
+  const razones = [...new Set(lista.map(razonDeclarada))];
+  if (razones.length > 1) return `${inicio}, cada uno por la razón que declaró`;
+  if (razones[0] === null) return `${inicio}, sin razón declarada`;
+  const lugar = LARGO_DE_LO_QUE_SE_APRUEBA - `${inicio}, porque «»`.length;
+  // `una` agrega «…» después de lo que deja: deja uno menos
+  return `${inicio}, porque «${una(razones[0], lugar - 1)}»`;
+}
+
+// el renglón de un criterio en el cuadro de `runtime-waiver`: la razón va primero, porque el renglón se corta a 200 y, al
+// final, no llegaba a verse
+const renglonDeLaExcepcion = (x) => `AC ${x.ac}: por qué no se prueba en vivo: ${una(razonDeclarada(x) || 'sin razón declarada', 150)}; lo cubre: ${una(x.coveredBy || '(ninguna prueba declarada)', 60)}; el criterio: ${una(x.text || '(sin texto en la historia)', 200)}`;
+
 /**
  * El cuadro de opciones de una firma, armado por este módulo y no por el agente (owner-approvals.js `cuadroDe`). El mismo
  * comando da el mismo cuadro: la huella y el detalle salen de sus palabras sin la ruta del guion ni `--for-session`, así da
@@ -712,13 +738,13 @@ function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion, memo
   if (firma === 'runtime-waiver') {
     const c = criteriosDelPedido(palabras, cwd, { casa, destino, sesion, memo });
     if (c.error) return { error: c.error };
-    const lineas = c.lista.map((x) => `AC ${x.ac}: ${una(x.text || '(sin texto en la historia)', 200)} (por qué no se prueba en vivo: ${una(x.reason || '(sin razón declarada)', 120)}; lo cubre: ${una(x.coveredBy || '(ninguna prueba declarada)', 60)})`);
-    partes = { criterios: c.lista.map((x) => x.ac), queHace: lineas, completo: c.historia, fuente: lineas.join('\n') };
+    const lineas = c.lista.map(renglonDeLaExcepcion);
+    partes = { criterios: c.lista.map((x) => x.ac), queHace: lineas, completo: c.historia, fuente: lineas.join('\n'), que: queDeLaExcepcion(c.lista) };
   }
   if (!partes) partes = { queHace: [detalleDe(firma, texto, palabras, cwd, casa)], fuente: '' };
   // la huella ata el click a lo que se mostró: el comando y la fuente de la pregunta
   const huella = sha256(`${texto}\0${partes.fuente || ''}`).slice(0, 8);
-  return require('./owner-approvals.js').cuadroDe({ firma, destino, que: s.approves, historia: fuentes.historiaDe(m), criterios: partes.criterios, queHace: partes.queHace, nota: partes.nota, archivos: partes.archivos,
+  return require('./owner-approvals.js').cuadroDe({ firma, destino, que: partes.que || s.approves, historia: fuentes.historiaDe(m), criterios: partes.criterios, queHace: partes.queHace, nota: partes.nota, archivos: partes.archivos,
     completo: partes.completo, revision: partes.revision, siSaleMal: s.ifWrong, cita: partes.cita, huella, soloClick: s.soloClick, clickDelDueno: s.clickDelDueno, descripciones: s.descripciones });
 }
 
@@ -1160,10 +1186,11 @@ function comoAprobar(firma, reg, casa) {
  * ¿El guion de `firma` (proceso `pid`, argumentos `argv` desde el guion) viene del «Sí» de una ventana? `{ ok, registro }`
  * consume el registro; `{ ok: false, motivo }` no escribe nada.
  */
-function verificar({ firma, argv = [], pid = process.pid, arbol, casa, ahora = Date.now(), userInfo, sesion, destino, antes, plataforma = process.platform, gitBash = buscarGitBash } = {}) {
+function verificar({ firma, argv = [], pid = process.pid, arbol, casa, ahora = Date.now(), userInfo, sesion, destino, antes, plataforma = process.platform, gitBash = buscarGitBash, terminal = null } = {}) {
   const enWindows = plataforma === 'win32';
   const s = firmaDe(firma);
-  const no = (m) => ({ ok: false, motivo: `esta firma no pasó por la ventana: ${m}. Pedila de nuevo: el comando solo, en su forma exacta; en una pestaña sin permisos se aprueba con un click en el cuadro de opciones o con un «aprobado» escrito. O en tu terminal: ${(s && s.terminal) || 'el mismo comando con --terminal'}` });
+  // `terminal`: el comando entero de la terminal, cuando el guion lo sabe armar (con su ruta y sus argumentos)
+  const no = (m) => ({ ok: false, motivo: `esta firma no pasó por la ventana: ${m}. Pedila de nuevo: el comando solo, en su forma exacta; en una pestaña sin permisos se aprueba con un click en el cuadro de opciones o con un «aprobado» escrito. O en tu terminal: ${terminal || (s && s.terminal) || 'el mismo comando con --terminal'}` });
   if (!s || s.kind !== 'guion') return no(`«${firma}» no es una firma de guion`);
   if (casa === undefined) {
     try { casa = casaDeLaCuenta(userInfo ? { userInfo } : undefined); } catch (e) { return no(`no se pudo resolver la casa de la cuenta (${e.message})`); }
@@ -1452,7 +1479,7 @@ function avisarHecho({ firma, sesion, destino, que, notificar }) {
   } catch (e) { console.error(`⚠️ hecho y avisado: el aviso no salió (${e.message}); queda en el registro de firmas`); }
 }
 
-function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = process.pid, arbol, casa, ahora, tty, anotar, propia, salir, antes, extra, aprobador, env, escribir, notificar, avisarSinAprobacion } = {}) {
+function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = process.pid, arbol, casa, ahora, tty, anotar, propia, salir, antes, extra, aprobador, env, escribir, notificar, avisarSinAprobacion, terminal = null } = {}) {
   // sin variable de sesión (la terminal del dueño) el guion no tiene sesión propia: la dice --for-session
   if (propia === '_nosession') propia = null;
   const i = argv.indexOf('--for-session');
@@ -1494,7 +1521,7 @@ function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = proce
     const r = porTerminal({ firma, sesion: propia || null, destino, resumen, casa, ahora, tty: t, anotar, extra, aprobador });
     return { ...r, destino, sesion: propia || null };
   }
-  const v = verificar({ firma, argv, pid, arbol, casa, ahora, sesion: propia || undefined, destino: destino || undefined, antes });
+  const v = verificar({ firma, argv, pid, arbol, casa, ahora, sesion: propia || undefined, destino: destino || undefined, antes, terminal });
   if (!v.ok) return { codigo: v.codigo || 1, motivo: v.motivo };
   // el registro que dejó el freno sin ventana (la delegación del perfil) firma con via: delegacion; si lo que comprobó el
   // guion antes (`antes`) la respalda con la revisión automática, con via: revision y el resumen de la revisión. El de una
@@ -1557,7 +1584,7 @@ function quienFirmo({ via, sesion } = {}, persona) {
   return { tipo: 'manual', quien: persona, via: via === 'terminal' ? 'terminal' : 'ventana' };
 }
 
-module.exports = { VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PRECHEQUEO_VIA, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
+module.exports = { VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PRECHEQUEO_VIA, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, queDeLaExcepcion, renglonDeLaExcepcion, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
   rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, esAnfitrionDeFondoDe, negarSinVentana };
 
 if (require.main === module) {
