@@ -1509,6 +1509,9 @@ function main() {
   // no el working tree — un ack agregado sin stagear no cuenta. `{ error }` si no corrió: cada chequeo decide qué
   // hacer con eso (C6 sigue fail-open logueado; el de evidencia vuelve a mirar sólo el archivo).
   const matrices = new Map();
+  // specRel → { nombres, antes }: las tandas que el commit pasa a done (sin pasar la historia a review/done) y los
+  // criterios que tenían en HEAD; la matriz mide ésas
+  const tandasQueCierran = new Map();
   const matrizDe = (specRel, staged) => {
     if (matrices.has(specRel)) return matrices.get(specRel);
     let out;
@@ -1528,7 +1531,9 @@ function main() {
         // repoRoot explícito: el cómputo corre sobre una COPIA tmp del spec (contenido staged)
         // y la discovery de repo desde /tmp no puede ver el repo real — sin esto, la matriz
         // degradaría a fail-closed (0 evidencia) con la evidencia intacta en disco.
-        out = { rm, specAbs, matrix: rm.compute({ storyPath: tmpSpec, keyStoryPath: specAbs, workspaceRoot, repoRoot: rm.discoverRepoRoot(specAbs) }) };
+        out = { rm, specAbs, matrix: rm.compute({ storyPath: tmpSpec, keyStoryPath: specAbs, workspaceRoot, repoRoot: rm.discoverRepoRoot(specAbs),
+          closingBatches: tandasQueCierran.has(specRel) ? tandasQueCierran.get(specRel).nombres : null,
+          closingAcsBefore: tandasQueCierran.has(specRel) ? tandasQueCierran.get(specRel).antes : null }) };
       } finally {
         try { fs.unlinkSync(tmpSpec); } catch { /* best effort */ }
       }
@@ -1585,6 +1590,35 @@ function main() {
     const headDone = (fmBlock(head).match(/^\s+status:\s*done\b/gm) || []).length;
     const stagedDone = (fmBlock(staged).match(/^\s+status:\s*done\b/gm) || []).length;
     const pipelineTransition = stagedDone > headDone;
+    // Un commit que cierra tandas sin pasar la historia a review/done mide las tandas que cierra: salen del diff de la
+    // historia (pasan a done en lo que se commitea y no lo estaban en HEAD), nunca del marcador de la sesión. Con paso
+    // de la historia, se miden todas.
+    // Sólo cuenta una tanda que ya estaba en HEAD sin estar done: una que aparece ya hecha no se cerró, y sin HEAD
+    // legible no se sabe qué cambió. En los dos casos se miden todas, y se dice.
+    if (pipelineTransition && !statusTransition) {
+      try {
+        const { parsePipelinesBlock } = require('./lib/story-checks.js');
+        const antes = head ? parsePipelinesBlock(head) : [];
+        if (!antes.length) {
+          process.stderr.write(`[on-pre-commit] ${specRel}: no pude leer las tandas de la historia en HEAD: se miden todas las tandas.\n`);
+        } else {
+          const enHead = new Map(antes.map((t) => [t.name, t]));
+          const ahora = parsePipelinesBlock(staged);
+          const nuevas = ahora.filter((t) => String(t.status || '').toLowerCase() === 'done' && !enHead.has(t.name)).map((t) => t.name);
+          const cierran = ahora.filter((t) => String(t.status || '').toLowerCase() === 'done' && enHead.has(t.name)
+            && String(enHead.get(t.name).status || '').toLowerCase() !== 'done').map((t) => t.name);
+          if (nuevas.length) {
+            process.stderr.write(`[on-pre-commit] ${specRel}: el commit agrega la tanda ${nuevas.join(', ')} ya done: no se cerró en este commit; se miden todas las tandas.\n`);
+          } else if (cierran.length) {
+            tandasQueCierran.set(specRel, { nombres: cierran,
+              antes: cierran.flatMap((n) => [...enHead.get(n).acs, ...enHead.get(n).acsPending]) });
+            process.stderr.write(`[on-pre-commit] ${specRel}: el commit cierra la tanda ${cierran.join(', ')}: se mide esa tanda (pasar la historia a review las pide todas).\n`);
+          }
+        }
+      } catch (e) {
+        process.stderr.write(`[on-pre-commit] ${specRel}: no pude leer las tandas que cierra el commit (${e.message}): se miden todas las tandas.\n`);
+      }
+    }
 
     // Sólo aviso cuando lo ÚNICO que pasa es la transición interna: si además se cierra una tanda
     // (`pipelines.X → done`), ésa nunca se juzgó y bloquea como siempre.
@@ -1689,9 +1723,12 @@ function main() {
     // Exigir que UN archivo nombre todos los ACs hace rebotar a las stories que reparten la evidencia,
     // y la salida es que el agente redacte un `-cierre.md` con la lista — más falsificable que las tres fuentes.
     // Si la matriz no corre, se mira sólo el archivo y el mensaje lo dice.
-    const acsInSpec = parseAcsFromSpec(staged) || [];
-    const acsInEvidence = new Set(evidence.esRegistro ? [] : parseAcsFromEvidence(evidence.content));
     const calc = matrizDe(specRel, staged);
+    // Al cerrar una tanda, se piden los criterios de la que se cierra (el universo de la matriz), no todos los de la
+    // sección: los de las otras tandas se piden al pasar la historia a review.
+    const universoDeTanda = calc.matrix && calc.matrix.batch ? new Set(calc.matrix.acs) : null;
+    const acsInSpec = (parseAcsFromSpec(staged) || []).filter((ac) => !universoDeTanda || universoDeTanda.has(Number(ac.slice(1))));
+    const acsInEvidence = new Set(evidence.esRegistro ? [] : parseAcsFromEvidence(evidence.content));
     const union = calc.matrix ? coberturaDeLaUnion(calc.matrix) : { porAc: new Map(), cubiertos: new Set() };
     const missingAcs = acsInSpec.filter(ac => !acsInEvidence.has(ac) && !union.cubiertos.has(Number(ac.slice(1))));
 

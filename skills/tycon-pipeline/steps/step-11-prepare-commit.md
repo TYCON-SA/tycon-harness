@@ -33,7 +33,8 @@ El comando frena en código lo siguiente (no hace falta repetir la verificación
   pasa y lo dice.
 - **Matriz de verificación en ejecución** (`checks.acmatrix`, DODRT-C6): tiene que estar en verde con `provenance:
   run-check` (`marker.js run-check acmatrix -- node <skill>/scripts/runtime-matrix.js --story <abs spec.md>`, que se
-  puebla en `step-10-live-check.md`).
+  puebla en `step-10-live-check.md`). Con una tanda anotada (`marker.js set-batch`), el freno mide sólo esa tanda y
+  dice qué tanda midió y qué dejó afuera.
 - **`findings.json` presente** (insumo del `tycon-retrospective-capturer`): si el run dir existe y el archivo falta o no
   es un array, bloquea. Se escribe con `pipeline.js write-findings` y después `write-followups`
   (`step-09-findings.md`); verlo antes: `pipeline.js findings-status --story <story_path> --repo <repo>` (exit 3 = falta).

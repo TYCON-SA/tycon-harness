@@ -580,6 +580,15 @@ function cmdSet(payloadJson) {
       appendLog('bypass.log', { kind: 'MARKER_SET_EXTERNAL_FLAG_DISCARDED', flag: k, storyId: payload.storyId });
     }
   }
+  // La tanda de la ejecución achica la matriz de «Preparar el commit»: la escribe sólo `set-batch`, que la valida
+  // contra la historia y no la cambia. Un `get | … | set` que la trae como estaba pasa.
+  for (const k of ['batch', 'batchSetAt']) {
+    if (!Object.prototype.hasOwnProperty.call(payload, k)) continue;
+    const tenia = existing && existing.storyId === payload.storyId ? existing[k] : undefined;
+    if (tenia !== undefined && payload[k] === tenia) continue;
+    console.error(`marker.js set: «${k}» no se escribe con set: la tanda se anota con marker.js set-batch <tanda>, una vez. No escribí nada.`);
+    process.exit(2);
+  }
   // 🔴 Anti-leak cross-story: el spread de abajo preserva
   // campos ante un `set` de la MISMA story — pero si esta sesión arranca una story NUEVA sobre un
   // marker viejo sin clear (pipeline cancelado, crash, "listo" antes de «Preparar el commit»), la story B
@@ -656,6 +665,8 @@ function cmdSet(payloadJson) {
       // las suites que fallaron son de la corrida: heredadas, la primera corrida completa de la story nueva se negaría
       // (76) por suites que sólo rompió la anterior
       testsFailed,
+      // la tanda es de la historia: heredada, la matriz de la nueva mediría una tanda que no es suya
+      batch, batchSetAt,
       ...carryOver
     } = existing;
     console.error(
@@ -1967,10 +1978,14 @@ function cmdCompleteStep(nRaw, flags) {
       } else {
         let matrix;
         try {
-          matrix = require('./runtime-matrix.js').compute({ storyPath });
+          // en una historia paraguas, la tanda que anotó `set-batch`: la matriz mide sus criterios
+          matrix = require('./runtime-matrix.js').compute({ storyPath, batch: marker.batch || null });
         } catch (e) {
           blocked = 'acmatrix-error';
           console.error(`marker.js complete-step ${n} BLOQUEADO — la matriz runtime no computó (fail-closed): ${e.message}`);
+        }
+        if (matrix && matrix.batch) {
+          console.error(`marker.js complete-step ${n}: la matriz mide la tanda ${matrix.batch}${matrix.fueraDeTanda.length ? `; fuera de esta tanda: ${matrix.fueraDeTanda.join(' · ')}` : ''}. Pasar la historia a review las pide todas.`);
         }
         if (matrix && matrix.structuralError) {
           blocked = 'acmatrix-struct';
@@ -2293,6 +2308,55 @@ function cmdSetAutonomous(valRaw) {
   marker.lastTouch = nowIso();
   writeMarker(marker);
   process.stdout.write(`autonomous: ${on}\n`);
+}
+
+/**
+ * `set-batch <tanda>`: anota la tanda de la ejecución en una historia paraguas. «Preparar el commit» le pasa esa tanda
+ * a la matriz, que mide sólo sus criterios. Se anota una vez: el mismo nombre otra vez no cambia nada; otro, o
+ * `--clear`, se niega (para otra tanda, otra ejecución). La tanda tiene que estar en el bloque `pipelines` de la
+ * historia del marcador y no estar `done`. Es la única forma de escribirla: `set` no la acepta.
+ */
+function cmdSetBatch(nombre) {
+  const uso = 'Uso: marker.js set-batch <tanda>';
+  const marker = readMarker();
+  if (!marker) {
+    console.error('marker.js set-batch: no hay una ejecución abierta en esta sesión (pipeline.js start primero).');
+    process.exit(2);
+  }
+  if (!nombre || nombre === '--clear') {
+    console.error(nombre === '--clear'
+      ? `marker.js set-batch: la tanda no se borra (anotada: ${marker.batch || 'ninguna'}). Para otra tanda, otra ejecución: marker.js clear y arrancar de nuevo.`
+      : `marker.js set-batch: falta la tanda. ${uso}`);
+    process.exit(2);
+  }
+  if (marker.batch !== undefined && marker.batch !== null) {
+    if (marker.batch === nombre) { process.stdout.write(`batch: ${nombre} (ya estaba anotada)\n`); return; }
+    console.error(`marker.js set-batch: esta ejecución ya anotó la tanda ${marker.batch}; no se cambia por ${nombre}. Para otra tanda, otra ejecución: marker.js clear y arrancar de nuevo.`);
+    process.exit(2);
+  }
+  const storyPath = resolveStoryPath(marker.storyPath, marker);
+  let texto;
+  try { texto = fs.readFileSync(storyPath, 'utf8'); } catch (e) {
+    console.error(`marker.js set-batch: no pude leer la historia del marcador (${nn(marker.storyPath, '(vacía)')}: ${e.code || e.message}): no anoté nada.`);
+    process.exit(2);
+  }
+  const tandas = require('./lib/story-checks.js').parsePipelinesBlock(texto);
+  const lista = tandas.map((t) => `${t.name} (${t.status || 'sin estado'})`).join(', ') || '(la historia no tiene bloque pipelines)';
+  const tanda = tandas.find((t) => t.name === nombre);
+  if (!tanda) {
+    console.error(`marker.js set-batch: la tanda «${nombre}» no está en la historia ${marker.storyId}. Tandas: ${lista}`);
+    process.exit(2);
+  }
+  if (String(tanda.status || '').toLowerCase() === 'done') {
+    console.error(`marker.js set-batch: la tanda ${nombre} está done: una tanda hecha no se entrega de nuevo. Tandas: ${lista}`);
+    process.exit(2);
+  }
+  marker.batch = nombre;
+  marker.batchSetAt = nowIso();
+  marker.lastTouch = marker.batchSetAt;
+  writeMarker(marker);
+  appendLog('gates.log', { name: 'set-batch', story: marker.storyId || null, batch: nombre, ts: marker.batchSetAt });
+  process.stdout.write(`batch: ${nombre}\n`);
 }
 
 // `tests-suite`: una suite sola de suites.json, repetida con `test-gate.sh --suite` después de un rojo. Nunca vale como
@@ -6436,6 +6500,9 @@ switch (cmd) {
     break;
   case 'set-autonomous':
     cmdSetAutonomous(arg1);
+    break;
+  case 'set-batch':
+    cmdSetBatch(arg1);
     break;
   case 'set-check':
     // la bandera puede ir en cualquier lugar después del estado (`--for-session <D> --force-manual`)

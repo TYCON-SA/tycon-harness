@@ -655,6 +655,14 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js run-check ac
   node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/runtime-matrix.js --story <abs spec.md>
 ```
 
+**En una historia paraguas** (varias tandas en `pipelines`), si la ejecución anotó su tanda (`marker.js set-batch`, ver
+«Arranque»), sumá `--batch <la tanda>`, copiada del campo `batch` de `marker.js get`. La matriz mide los criterios de esa
+tanda más los de ninguna tanda, y dice cuáles quedaron afuera («fuera de esta tanda: …»). «Preparar el commit» mide lo
+mismo con la tanda del marcador. Pasar la historia a review las pide todas.
+
+Límite: en una paraguas, un criterio de la propia tanda declarado imposible de probar no se puede firmar todavía. Los
+comandos de firma miden la historia entera y se niegan por los criterios sin correr de las otras tandas.
+
 - **VERDE** → todos los ACs tienen evidencia runtime (gate E2E / smokes vía
   `smoke-run.sh`) o son imposibles-declarados con la firma del dev vigente → avanzar.
 - **ROJO** → el artefacto `<sid>-runtime-matrix.md` lista los ACs `CODE-ONLY` /

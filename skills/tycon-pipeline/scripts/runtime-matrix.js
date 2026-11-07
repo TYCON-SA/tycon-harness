@@ -1071,13 +1071,61 @@ function compute(opts) {
   const acSet = new Set(acsFromSpec);
   for (const r of table.rows) for (const n of r.acRefs) acSet.add(n);
 
+  // La tanda medida: la de la ejecución (`opts.batch`, que la sesión anota con `marker.js set-batch`) o las que cierra
+  // un commit (`opts.closingBatches`, que el control del commit saca del diff). Sin ninguna, el universo es el de
+  // siempre: nunca se achica por no saber. `compute` no lee el marcador: la tanda le llega sólo como opción. Con tanda,
+  // el universo son sus criterios (`acs` ∪ `acs_pending`) más los de ninguna tanda; los de las otras salen y se dice.
+  // Un nombre que no existe, una tanda de la ejecución ya `done` o nombres repetidos son un error estructural: medir
+  // otra cosa que la pedida sería peor que no medir.
+  const tandas = sc.parsePipelinesBlock(content);
+  const pedidas = opts.batch != null ? [String(opts.batch)]
+    : (Array.isArray(opts.closingBatches) && opts.closingBatches.length ? opts.closingBatches.map(String) : null);
+  const deTanda = (t) => [...new Set([...t.acs, ...t.acsPending])];
+  const propios = new Set();
+  const avisosDeTanda = [];
+  if (pedidas) {
+    const nombres = tandas.map((t) => t.name);
+    const lista = `tandas: ${nombres.join(', ') || '(ninguna)'}`;
+    const repetidos = [...new Set(nombres.filter((n, i) => nombres.indexOf(n) !== i))];
+    if (repetidos.length) return { sid, structuralError: `el bloque pipelines tiene nombres repetidos (${repetidos.join(', ')}): no sé qué tanda medir (${lista})` };
+    for (const n of pedidas) {
+      const t = tandas.find((x) => x.name === n);
+      if (!t) return { sid, structuralError: `la tanda «${n}» no está en el bloque pipelines de la historia (${lista})` };
+      if (opts.batch != null && String(t.status || '').toLowerCase() === 'done') {
+        return { sid, structuralError: `la tanda «${n}» está done: una tanda hecha no se entrega de nuevo (${lista})` };
+      }
+      for (const a of deTanda(t)) propios.add(a);
+    }
+    // Al cerrar tandas, también los criterios que tenían antes del commit (`opts.closingAcsBefore`, del HEAD): mover un
+    // criterio a otra tanda en el mismo commit que la cierra no lo saca de lo que se mide.
+    if (opts.batch == null) for (const a of (opts.closingAcsBefore || [])) propios.add(Number(a));
+    const inexistentes = [...propios].filter((a) => !acSet.has(a));
+    for (const a of inexistentes) avisosDeTanda.push(`El criterio ${a} de la tanda ${pedidas.join(', ')} no está entre los criterios de la historia.`);
+    if (propios.size && inexistentes.length === propios.size) {
+      return { sid, structuralError: `ningún criterio de la tanda ${pedidas.join(', ')} (${[...propios].join(', ')}) está entre los criterios de la historia: medirla sería medir nada (${lista})` };
+    }
+    if (!propios.size) avisosDeTanda.push(`La tanda ${pedidas.join(', ')} no declara criterios (acs / acs_pending): mido todas las tandas.`);
+  }
+  const midiendoTanda = pedidas !== null && propios.size > 0;
+  const outOfBatchAcs = new Set();
+  const fueraDeTanda = [];
+  if (midiendoTanda) {
+    for (const t of tandas) {
+      if (pedidas.includes(t.name) || String(t.status || '').toLowerCase() === 'blocked') continue;
+      const ajenos = deTanda(t).filter((a) => !propios.has(a) && acSet.has(a));
+      for (const a of ajenos) outOfBatchAcs.add(a);
+      if (ajenos.length) fueraDeTanda.push(`${t.name} (AC ${ajenos.join(', ')})`);
+    }
+  }
+
   // Tandas declaradas BLOQUEADAS (story-format §1.1): los `acs_pending` de un pipeline con
   // `status: blocked` se EXCLUYEN del universo — su superficie no existe todavía por
   // definición (blocked_by lo documenta), así que "correrlos" es imposible y contarlos como
   // NOT-RUN bloquearía el commit-prep de toda story multi-tanda (p. ej. el frontend de una tanda
-  // bloqueada hasta mergear el backend). SOLO `blocked` a propósito:
+  // bloqueada hasta mergear el backend). Sin tanda medida, SOLO `blocked` a propósito:
   // una tanda `pending` puede ser exactamente la que se está entregando en ESTE run, y
-  // excluirla vaciaría el gate. La exclusión queda visible en `blockedAcs` + warning.
+  // excluirla vaciaría el gate. Con tanda medida, ésa se mide entera aunque esté bloqueada.
+  // La exclusión queda visible en `blockedAcs` + warning.
   // Lo declarado no alcanza: si el commit (o la corrida, desde `opts.baseSha`) cambia un archivo de pantalla de una
   // tanda bloqueada, sus criterios vuelven a la matriz, con la misma regla que la baja de la pantalla
   // (`ui-signal.js → blockedScreenTouched`). `opts.changed` da la lista; sin ella sale de git.
@@ -1088,15 +1136,17 @@ function compute(opts) {
   const blockedAcs = new Set();
   const blockedByPipeline = [];
   const blockedBack = [];
-  for (const p of sc.parsePipelinesBlock(content)) {
-    if (p.status === 'blocked' && p.acsPending.length && touched.names.includes(p.name)) {
-      blockedBack.push(`${p.name || '(sin nombre)'}: ACs ${p.acsPending.join(',')}`);
-    } else if (p.status === 'blocked' && p.acsPending.length) {
-      for (const n of p.acsPending) blockedAcs.add(n);
-      blockedByPipeline.push(`${p.name || '(sin nombre)'}: ACs ${p.acsPending.join(',')}`);
+  for (const p of tandas) {
+    if (midiendoTanda && pedidas.includes(p.name)) continue;
+    const pendientes = p.acsPending.filter((n) => !propios.has(n));
+    if (p.status === 'blocked' && pendientes.length && touched.names.includes(p.name)) {
+      blockedBack.push(`${p.name || '(sin nombre)'}: ACs ${pendientes.join(',')}`);
+    } else if (p.status === 'blocked' && pendientes.length) {
+      for (const n of pendientes) blockedAcs.add(n);
+      blockedByPipeline.push(`${p.name || '(sin nombre)'}: ACs ${pendientes.join(',')}`);
     }
   }
-  const acs = [...acSet].filter((n) => !blockedAcs.has(n)).sort((a, b) => a - b);
+  const acs = [...acSet].filter((n) => !blockedAcs.has(n) && !outOfBatchAcs.has(n)).sort((a, b) => a - b);
 
   if (acs.length === 0) {
     return { structuralError: `story sin ACs parseables ni tabla ### Tests con columna AC: ${storyPath}` };
@@ -1108,6 +1158,10 @@ function compute(opts) {
   if (blockedBack.length) {
     const lista = touched.screens.slice(0, 3).join(', ') + (touched.screens.length > 3 ? '…' : '');
     warnings.push(`ACs de tanda blocked que VUELVEN al gate porque el commit cambia su pantalla (${lista}): ${blockedBack.join(' · ')}.`);
+  }
+  warnings.push(...avisosDeTanda);
+  if (fueraDeTanda.length) {
+    warnings.push(`Se mide la tanda ${pedidas.join(', ')}: fuera de esta tanda: ${fueraDeTanda.join(' · ')}. Pasar la historia a review las pide todas.`);
   }
   if (blockedAcs.size) {
     warnings.push(`ACs EXCLUIDOS del gate por tanda blocked (deuda declarada con blocked_by, no "sin correr"): ${blockedByPipeline.join(' · ')}. Se re-incorporan solos cuando esa tanda deje de estar blocked.`);
@@ -1730,6 +1784,9 @@ function compute(opts) {
     exencionesC8: exenciones, sinImagen, avisos, simulados,
     hash, warnings, green, evidenceDirs, wsRoot, waivedAcs: [...waived], chainOk: chain.ok, waiverDiscarded,
     repoRoot,
+    // la tanda medida (la de la ejecución, o las que cierra el commit) y los criterios de las otras que quedaron afuera
+    batch: midiendoTanda ? pedidas.join(', ') : null, outOfBatchAcs: [...outOfBatchAcs].sort((a, b) => a - b),
+    blockedAcs: [...blockedAcs].sort((a, b) => a - b), fueraDeTanda,
     // la hora del último cambio de código declarado: la evidencia anterior no cuenta
     codeMtime: maxCodeMtime,
     // el código declarado que no está en ningún lugar de búsqueda: deja la matriz en rojo
@@ -1763,6 +1820,9 @@ function renderMd(r) {
   const sinImagenTxt = sinImagen.length ? ` · ${sinImagen.length} de pantalla sin captura ni grabación (bloquean)` : '';
   const sinCorrer = (r.notRun || []).filter((n) => !sinImagen.includes(n));
   L.push(`**Cobertura**: ${r.stats.runtime}/${r.stats.total} ACs corridos en runtime · ${sinCorrer.length} sin correr (bloquean)${sinImagenTxt}${parcialTxt} · ${r.stats.notVerifiable} imposibles-declarados (esperan waiver)${waivedTxt}${exentoTxt}`);
+  if (r.batch) {
+    L.push(`**Tanda medida**: ${r.batch}${(r.fueraDeTanda || []).length ? ` · fuera de esta tanda: ${r.fueraDeTanda.join(' · ')}` : ''} (pasar la historia a review las pide todas)`);
+  }
   L.push('');
   L.push('| AC | Veredicto | Evidencia runtime | Evidencia código | Razón (si imposible) |');
   L.push('|---|---|---|---|---|');
@@ -1949,14 +2009,17 @@ function main() {
   };
   const storyPath = opt('--story');
   if (!storyPath) {
-    console.error('uso: runtime-matrix.js --story <abs .md> [--workspace-root <dir>] [--evidence-dir <dir>] [--json] [--no-write]');
+    console.error('uso: runtime-matrix.js --story <abs .md> [--batch <tanda>] [--workspace-root <dir>] [--evidence-dir <dir>] [--json] [--no-write]');
     process.exit(2);
   }
   const evidenceDir = opt('--evidence-dir');
+  // `--batch`: la tanda de la ejecución en una historia paraguas, la misma que anotó `marker.js set-batch`
+  const batch = opt('--batch');
   const r = compute({
     storyPath: path.resolve(storyPath),
     workspaceRoot: opt('--workspace-root'),
     evidenceDirs: evidenceDir ? [path.resolve(evidenceDir)] : undefined,
+    batch,
   });
 
   if (r.structuralError) {
@@ -1982,6 +2045,7 @@ function main() {
   if (argv.includes('--json')) {
     console.log(JSON.stringify(r, null, 2));
   } else {
+    if (r.batch) console.log(`runtime-matrix: mide la tanda ${r.batch}${r.fueraDeTanda.length ? `; fuera de esta tanda: ${r.fueraDeTanda.join(' · ')}` : ''}`);
     console.log(md);
   }
   // exitCode y no exit(): con exit() una salida grande por pipe se trunca.
