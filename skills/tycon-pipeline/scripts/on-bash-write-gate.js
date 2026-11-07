@@ -3670,7 +3670,10 @@ function handleCarrilEHistoria(event, opts = {}) {
       if (!quizasCodigo && !enProtegido && !delegado) continue;
       if (isCodeFile(abs) || enProtegido || delegado) {
         const r = io.evaluate({ filePath: abs, sessionId, cwd, via, stateDir, installedRoots });
-        if (r.verdict.action === 'block') return { block: r.message + '\n' };
+        // un destino con una variable sin resolver no es un archivo del repo que se sepa (`$P/probe.js`, con
+        // P=$(mktemp -d)): no gasta el cupo del carril. El tope lo vuelve a medir el freno de guardar, con git
+        const sinCupo = r.verdict.kind === 'adhoc-cap' && sinResolverDe.has(abs);
+        if (r.verdict.action === 'block' && !sinCupo) return { block: r.message + '\n' };
       }
       if (quizasCodigo) passedCode.push(abs);
     }
@@ -3740,9 +3743,10 @@ function handleCarrilEHistoria(event, opts = {}) {
     // otra carpeta que la que queda al normalizarla). Ante cualquier falla del criterio, se anota.
     const textoDestinos = String(cmdDestinos);
     const noSeVe = /(^|[\s;&|(])ln\s[^;&|]*-[a-zA-Z]*s/.test(textoDestinos) || /(^|[\s/'"=])\.\.([\\/]|$)/.test(textoDestinos);
-    for (const abs of passedCode.filter((f) => isCodeFile(f))) {   // un destino sin resolver no suma al cupo: no se sabe cuál es
+    // un destino sin resolver no suma al cupo: no se sabe cuál es
+    for (const abs of passedCode.filter((f) => isCodeFile(f) && !sinResolverDe.has(f))) {
       let sonda = false;
-      if (!noSeVe && !sinResolverDe.has(abs)) {
+      if (!noSeVe) {
         try { sonda = require('./on-edit.js').esSondaDeSubagente(event, abs, sessionId, stateDir); } catch (e) { logHookError(e); }
       }
       if (sonda) continue;

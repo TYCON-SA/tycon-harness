@@ -270,6 +270,26 @@ test('marker.js adhoc set/get/clear', () => {
   assert.equal(markerCli(home, sid, ['adhoc', 'get']).status, 1);
 });
 
+// 🔴 Falla con: declarar el carril de nuevo (otro cupo, o el mismo con otro motivo) pierde sus rutas, su marca de riesgo o
+// sus constancias: la tarea que sigue en la sesión tiene que volver a correr los revisores y el pase.
+test('marker.js adhoc set: declararlo de nuevo, con el motivo que sea, conserva la marca y las constancias', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const sid = 'sess-constancias';
+  const A = 'tarea A: el combo muestra el nombre completo';
+  assert.equal(markerCli(home, sid, ['adhoc', 'set', JSON.stringify({ reason: A, datos: 'sin-cambio' })]).status, 0);
+  const archivo = path.join(estadoDe(home), 'adhoc', `${sid}.json`);
+  const huella = { huella: 'h-1', at: new Date().toISOString() };
+  const deA = { files: ['/repo/src/a.js'], rutas: ['/repo/db/1.sql'], bases: { '/repo': { sha: 'abc' } },
+    riesgoAlto: { regla: 'porton-instalador-migracion', archivo: '/repo/db/1.sql' }, revisoresEsperados: { expected: ['x'] }, revisores: huella, pase: huella };
+  fs.writeFileSync(archivo, JSON.stringify({ ...JSON.parse(fs.readFileSync(archivo, 'utf8')), ...deA }));
+  for (const pedido of [{ reason: A, maxFiles: 6 }, { reason: 'tarea B: otro motivo en la misma sesión' }]) {
+    const r = markerCli(home, sid, ['adhoc', 'set', JSON.stringify(pedido)]);
+    assert.equal(r.status, 0, r.stderr);
+    for (const [k, v] of Object.entries(deA)) assert.deepStrictEqual(JSON.parse(r.stdout)[k], v, `«${pedido.reason}» conserva ${k}`);
+  }
+  assert.deepStrictEqual(adhocLog(home).map((e) => e.kind), ['ADHOC_SET', 'ADHOC_UPDATE', 'ADHOC_UPDATE']);
+});
+
 // 8.141 T9 AdhocSet_SinFirma_NoEscribe @story-8.141 @ac-4 @ac-8 @ac-9
 // 🔴 Falla con: `adhoc set` que escribe sin la firma, la declaración sin `via`/`by`, o un renglón del registro sin `via`.
 test('8.141 T9 AdhocSet_SinFirma_NoEscribe', () => {
