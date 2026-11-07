@@ -1,13 +1,17 @@
 #!/usr/bin/env node
 'use strict';
 /*
- * heavy-turn.js — el turno de las ejecuciones grandes de pruebas en una máquina con coordinadora (guides/coordination.md).
+ * heavy-turn.js — el turno de tarea pesada de una máquina con coordinadora (guides/coordination.md), del lado de las
+ * ejecuciones grandes de pruebas.
  *
- * En la máquina corre una ejecución grande por vez: dos a la vez la saturan. Es grande por cuántas suites corre, no por
- * estar acotada o no: el corte lo pone quien pide el turno (`TURN_FROM_SUITES` de run-suites-json.js; las portables enteras
- * siempre). Una grande y un pase adversarial o una tanda de revisores de otra sesión sí pueden ir juntos (corren en la
- * nube). El corredor toma el turno al arrancar y lo suelta al terminar; con el turno tomado por otro proceso vivo, no
- * arranca y dice quién lo tiene. Al tomarlo se borra la espera que esa sesión anotó: ya no espera.
+ * En la máquina corre una tarea pesada por vez: una ejecución grande de pruebas o un pase adversarial, porque las sondas
+ * del pase corren en la máquina y, juntos, la saturan. Una ejecución es grande por cuántas suites corre, no por estar
+ * acotada o no: el corte lo pone quien pide el turno (`TURN_FROM_SUITES` de run-suites-json.js; las portables enteras
+ * siempre). Los revisores son llamadas al modelo y no piden turno. El corredor toma el turno al arrancar y lo suelta al
+ * terminar; con el turno tomado por otro proceso vivo, o con un pase en vuelo de cualquier sesión viva (también la
+ * propia), no arranca y dice quién lo tiene. El pase no deja archivo propio: está en vuelo mientras su marcador lo dice
+ * (`heavyPassesInFlight` de coordination.js), y se libera al anotar su resultado o su salteo. Al tomar el turno se borra
+ * la espera que esa sesión anotó: ya no espera.
  *
  *   take --what <qué corre> [--process <pid>]   0 = turno tomado (o no hay coordinadora) · 77 = lo tiene otro, y dice quién
  *   release [--process <pid>]                   suelta el turno si es de ese proceso; el de otro no lo toca
@@ -70,9 +74,16 @@ const readTurn = (file) => { try { return JSON.parse(fs.readFileSync(file, 'utf8
 // Vale el turno de un proceso vivo y de menos de TURN_MAX_MS: una suite colgada o un pid reusado no frenan para siempre.
 const inForce = (t, now) => Boolean(t && alive(Number(t.pid)) && !(Number.isFinite(t.at) && now - t.at >= TURN_MAX_MS));
 
-/** El turno vigente: `{ pid, sid, session, what, at }`, o null. */
-function holder({ home = require('os').homedir(), now = Date.now() } = {}) {
-  const t = readTurn(turnFile(home));
+/**
+ * El turno vigente: `{ pid, sid, session, what, at }`, o null. Con `problems`, un archivo del turno que está y no se puede
+ * leer se anota ahí: no es lo mismo que «no hay turno».
+ */
+function holder({ home = require('os').homedir(), now = Date.now(), problems = null } = {}) {
+  const file = turnFile(home);
+  let t = null;
+  try { t = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) {
+    if (e.code !== 'ENOENT' && problems) problems.push(`el turno de las ejecuciones grandes (${file}) no se puede leer (${e.code || oneLine(e.message)})`);
+  }
   return inForce(t, now) ? t : null;
 }
 
@@ -127,22 +138,51 @@ function clearWait(home, sid) {
   } catch { /* sin nota, o ilegible: no hay espera que borrar */ }
 }
 
-/** Toma el turno para `pid`. `{ ok, taken, message }`: ok false = lo tiene otro proceso vivo, y el mensaje dice quién. */
+const hhmmIso = (iso) => hhmm(Date.parse(iso));
+
+// El pase en vuelo que frena la ejecución grande, o null; `note` es lo que se dice aunque no frene (un pase de más de una
+// hora, o no haber podido mirar). Se carga acá y no al cargar el módulo: coordination.js ya carga éste.
+function passHolder({ home, env, now, sid }) {
+  let r;
+  try { r = require('./coordination.js').heavyPassesInFlight({ home, env, now, sessionId: sid, includeOwn: true }); } catch (e) {
+    return { pass: null, note: `no pude ver si hay un pase en vuelo: ${oneLine(e.message)}` };
+  }
+  // un pase cuya sesión no se sabe si vive (no se pudo leer todo) no frena: no poder mirar no frena, pero se dice
+  const pass = r.passes.find((p) => !p.stale && !p.uncertain) || null;
+  const stale = r.passes.filter((p) => p.stale);
+  const unsure = r.passes.filter((p) => !p.stale && p.uncertain);
+  const notes = [];
+  if (r.problems.length) notes.push(`no pude ver si hay un pase en vuelo: ${oneLine(r.problems.join(' · '))}`);
+  if (unsure.length) notes.push(`no sé si vive la sesión del pase de ${unsure.map((p) => `la ${oneLine(p.storyId) || 'sin story'} (${oneLine(p.session)})`).join(' · ')}: no frena`);
+  if (!pass && stale.length) notes.push(`hay un pase adversarial anotado hace más de una hora (${stale.map((p) => `la ${oneLine(p.storyId) || 'sin story'}, ${oneLine(p.session)}`).join(' · ')}): puede estar terminado o colgado, así que no frena`);
+  return { pass, note: notes.length ? notes.join('; ') : null };
+}
+
+/**
+ * Toma el turno para `pid`. `{ ok, taken, message, note }`: ok false = lo tiene otro proceso vivo o un pase en vuelo, y el
+ * mensaje dice quién; `note` es lo que hay que decir aunque se haya tomado (también va a la salida de errores).
+ */
 function take({ home = require('os').homedir(), env = process.env, arnes, pid = process.pid, what, now = Date.now() } = {}) {
   const role = coordinator({ home, env, arnes });
   if (!role) return { ok: true, taken: false, message: null };
+  const sid = env.CLAUDE_CODE_SESSION_ID || env.CODEX_SESSION_ID || null;
+  const { pass, note } = passHolder({ home, env, now, sid });
+  if (note) process.stderr.write(`heavy-turn: ${note}\n`);
+  if (pass) {
+    return { ok: false, taken: false, note, holder: { kind: 'pass', storyId: pass.storyId, session: pass.session, since: pass.since },
+      message: `Hay un pase adversarial en vuelo en esta máquina: pase adversarial de la ${oneLine(pass.storyId) || 'sin story'} (${oneLine(pass.session)}, desde las ${hhmmIso(pass.since)}). Va una tarea pesada por vez (guides/coordination.md, «Lo pesado, con turno»): esperá que su sesión anote el resultado, o pedile turno a la ${role}.` };
+  }
   const file = turnFile(home);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const sid = env.CLAUDE_CODE_SESSION_ID || env.CODEX_SESSION_ID || null;
   const mine = { pid, sid, session: sessionName(home, sid), what: oneLine(what) || 'ejecución grande', at: now };
   // unos pocos intentos: entre sacar un turno vencido y publicar el propio puede entrar otro, o estar sacándolo otro
   for (let i = 0; i < 20; i += 1) {
     if (i) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
-    if (publish(file, mine)) { clearWait(home, sid); return { ok: true, taken: true, message: null }; }
+    if (publish(file, mine)) { clearWait(home, sid); return { ok: true, taken: true, message: null, note }; }
     const t = readTurn(file);
     if (inForce(t, now)) {
-      if (Number(t.pid) === pid) { clearWait(home, sid); return { ok: true, taken: true, message: null }; }
-      return { ok: false, taken: false, holder: t, message: `Ya corre una ejecución grande de pruebas en esta máquina: ${describe(t)}. Va una por vez (guides/coordination.md, «Lo pesado, con turno»): esperá que termine, o pedile turno a la ${role}. Si quedó colgada, se destraba con heavy-turn.js release --process ${Number(t.pid)}.` };
+      if (Number(t.pid) === pid) { clearWait(home, sid); return { ok: true, taken: true, message: null, note }; }
+      return { ok: false, taken: false, note, holder: t, message: `Ya corre una ejecución grande de pruebas en esta máquina: ${describe(t)}. Va una por vez (guides/coordination.md, «Lo pesado, con turno»): esperá que termine, o pedile turno a la ${role}. Si quedó colgada, se destraba con heavy-turn.js release --process ${Number(t.pid)}.` };
     }
     evict(file, now);
   }

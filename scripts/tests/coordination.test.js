@@ -216,7 +216,7 @@ test('T4 Coordinate_Designated_ShowsStatus @story-8.122 @ac-4: la sesión design
   assert.strictEqual(r.code, 0, r.text);
   assert.match(r.text, /Trabajando: 2 de 3/);
   assert.match(r.text, /Esperando/);
-  assert.match(r.text, /Pase adversarial en vuelo: ninguno/);
+  assert.match(r.text, /Turno de tarea pesada: libre/);
   assert.match(r.text, /Firmas pendientes: 0 por la terminal · 0 por delegación/);
   assert.match(r.text, /Sin nombre puesto por una persona: sesion-3a/);
 });
@@ -1554,4 +1554,79 @@ test('T7 OwnerWait_UnaVezCadaDosMinutosYEntreProcesos @story-8.219 @ac-7: owner-
   } finally {
     OA.coordinadoraConfirmada = confirmada;
   }
+});
+
+// ── One heavy-work turn per machine: the pass and the large test run share it ────────────────────────────────────
+
+// The turn file of a large test run held by this process, as heavy-turn.js publishes it.
+function heavyRun(t, fields) {
+  fs.mkdirSync(path.join(t.state, 'coordination'), { recursive: true });
+  fs.writeFileSync(path.join(t.state, 'coordination', 'suite-turn.json'), JSON.stringify({ pid: process.pid, at: mins(10), ...fields }));
+}
+const passMarker = (t, sid, storyId, minutesAgo, extra = {}) => marker(t, sid, { storyId, adversarial: { launchedAt: new Date(mins(minutesAgo)).toISOString(), runId: 'wf_x' }, ...extra });
+
+// 🔴 mutación: mirar sólo los otros pases deja lanzar un pase al lado de una suite grande, que es lo que agotó la memoria.
+test('T3 AdversarialTurn_HeavySuiteRunning_GateWaits @story-8.228 @ac-2: con una ejecución grande de cualquier sesión, el pase espera y la línea dice cuál', () => {
+  const t = toy({ profile: { approvals: { relay_session: 'coordinadora' } } });
+  session(t, 'coord-1', 'Coordinadora', { status: 'busy' });
+  designate(t, 'coord-1');
+  session(t, 's-uma', 'Uma', { status: 'busy' });
+  heavyRun(t, { sid: 's-uma', session: 'Uma', what: '279 suites de repo' });
+  const r = C.adversarialTurn({ ...t.opts, sessionId: 's-b' });
+  assert.strictEqual(r.waiting_turn, true);
+  assert.deepStrictEqual(r.other_in_flight, []);
+  assert.deepStrictEqual(r.heavy_run, { session: 'Uma', what: '279 suites de repo', since: mins(10) });
+  assert.match(r.turn, /Corre una ejecución grande de pruebas \(Uma, 279 suites de repo, desde las \d\d:\d\d\)/);
+  assert.match(r.turn, /pedile turno a la coordinadora/);
+  // la de la propia sesión también: el turno es de la máquina
+  assert.strictEqual(C.adversarialTurn({ ...t.opts, sessionId: 's-uma' }).waiting_turn, true);
+  fs.rmSync(path.join(t.state, 'coordination', 'suite-turn.json'));
+  assert.strictEqual(C.adversarialTurn({ ...t.opts, sessionId: 's-b' }), null, 'sin la grande ni otro pase, nada');
+});
+
+// 🔴 mutación: tratar un turno ilegible como «no hay suite» deja lanzar el pase al lado de una grande sin decir nada.
+test('T3b AdversarialTurn_UnreadableHeavyTurn_SaysSo @story-8.228 @ac-7: un turno de suite que no se puede leer no frena el pase, pero se dice', () => {
+  const t = toy({ profile: { approvals: { relay_session: 'coordinadora' } } });
+  session(t, 'coord-1', 'Coordinadora', { status: 'busy' });
+  designate(t, 'coord-1');
+  fs.mkdirSync(path.join(t.state, 'coordination'), { recursive: true });
+  fs.writeFileSync(path.join(t.state, 'coordination', 'suite-turn.json'), '{ esto no es json');
+  const said = [];
+  const write = process.stderr.write;
+  process.stderr.write = (s) => { said.push(String(s)); return true; };
+  let r;
+  try { r = C.adversarialTurn({ ...t.opts, sessionId: 's-b' }); } finally { process.stderr.write = write; }
+  assert.strictEqual(r, null);
+  assert.match(said.join(''), /no pude ver todo lo que ocupa la máquina para el turno del pase \(el turno de las ejecuciones grandes .* no se puede leer/);
+  assert.ok(C.status(t.opts).problems.some((p) => /turno de las ejecuciones grandes/.test(p)), 'el estado también lo dice');
+});
+
+// 🔴 mutación: dejar los dos renglones separados vuelve a decir que el pase y la suite pueden ir juntos.
+test('T5 CoordinationStatus_OneHeavyTurnLine @story-8.228 @ac-4: un solo renglón de turno de tarea pesada, con quién lo tiene y qué es', () => {
+  const t = toy();
+  session(t, 'pase-1', 'ConPase', { status: 'busy' });
+  passMarker(t, 'pase-1', '7.7', 12);
+  const withPass = C.status(t.opts);
+  assert.deepStrictEqual(withPass.heavyTurn, { kind: 'pass', storyId: '7.7', session: 'ConPase', since: new Date(mins(12)).toISOString() });
+  const text = C.statusText(withPass);
+  assert.match(text, /^Turno de tarea pesada: pase adversarial de la 7\.7 \(ConPase, desde las \d\d:\d\d\)$/m);
+  assert.doesNotMatch(text, /Pase adversarial en vuelo|Suite completa en curso/);
+  fs.unlinkSync(path.join(t.state, 'active', 'pase-1.json'));
+  heavyRun(t, { sid: 'pase-1', session: 'ConPase', what: '279 suites de repo' });
+  const withSuite = C.status(t.opts);
+  assert.strictEqual(withSuite.heavyTurn.kind, 'suite');
+  assert.match(C.statusText(withSuite), /^Turno de tarea pesada: ConPase \(279 suites de repo, desde las \d\d:\d\d\)$/m);
+});
+
+// 🔴 mutación: seguir mirando `deepReviewDone` deja a un pase no medido frenando al de otra sesión.
+test('T11 AdversarialTurn_NoMedidoPass_DoesNotBlockAnother @story-8.228 @ac-3: un pase no medido ya terminó y no frena a otro; relanzado, sí', () => {
+  const t = toy({ profile: { approvals: { relay_session: 'coordinadora' } } });
+  session(t, 'coord-1', 'Coordinadora', { status: 'busy' });
+  designate(t, 'coord-1');
+  session(t, 'otra-2', 'Vecina', { status: 'busy' });
+  const noMedido = { adversarialPasses: [{ ts: new Date(mins(2)).toISOString(), tipo: '5b', veredicto: 'no-medido' }], deepReviewDone: false };
+  passMarker(t, 'otra-2', '9.2', 5, noMedido);
+  assert.strictEqual(C.adversarialTurn({ ...t.opts, sessionId: 'propia-1' }), null);
+  passMarker(t, 'otra-2', '9.2', 1, noMedido);
+  assert.strictEqual(C.adversarialTurn({ ...t.opts, sessionId: 'propia-1' }).waiting_turn, true);
 });

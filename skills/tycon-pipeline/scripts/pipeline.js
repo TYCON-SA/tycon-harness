@@ -3053,14 +3053,14 @@ function accionDelPase(marker, story, { sidNow, nextStep } = {}) {
     };
   }
   if (gate.run !== true) return {};
-  // con otra sesión en su pase, `next` tampoco pide lanzarlo: el mismo turno que frena al portón
+  // con otra sesión en su pase, o una ejecución grande en curso, `next` tampoco pide lanzarlo: el mismo turno que frena al portón
   try {
     const turno = require(path.join(__dirname, '..', '..', '..', 'scripts', 'tools', 'coordination.js')).adversarialTurn({ sessionId: sidNow });
     if (turno && turno.waiting_turn === true) {
       return { pending_action: { kind: 'esperar-turno-pase', message: `${turno.turn} No lo lances todavía: seguí con el paso que sigue. La coordinadora te avisa cuando se libere el lugar, y \`next\` deja de decir esto.` } };
     }
   } catch (e) {
-    process.stderr.write(`next: no pude ver si hay otro pase adversarial en vuelo (${String(e.message).split('\n')[0]})\n`);
+    process.stderr.write(`next: no pude ver si hay otro pase adversarial en vuelo o una ejecución grande de pruebas (${String(e.message).split('\n')[0]})\n`);
   }
   const archivos = Array.isArray(gate.files) ? gate.files : [];
   const cuando = String(nextStep) === 'reviewers' ? 'AHORA, antes del primer revisor' : 'AHORA';
@@ -7631,15 +7631,16 @@ function main() {
         process.stderr.write(`deep-review-gate: no pude anotar el veredicto en la corrida (${e.message.split('\n')[0]}) — \`next\` va a pedir consultar el portón otra vez\n`);
       }
     }
-    // Con otra sesión en su pase adversarial, va uno por vez (guides/coordination.md): sale 3 y dice quién tiene el lugar.
-    // Sin coordinadora designada, o sin otro pase, el veredicto sale igual que siempre.
+    // Con otra sesión en su pase adversarial, o una ejecución grande de pruebas en curso, va una tarea pesada por vez
+    // (guides/coordination.md): sale 3 y dice quién tiene el lugar.
+    // Sin coordinadora designada, o sin ninguna de las dos, el veredicto sale igual que siempre.
     if (result && result.run === true) {
       try {
         const turno = require(path.join(__dirname, '..', '..', '..', 'scripts', 'tools', 'coordination.js'))
           .adversarialTurn({ sessionId: (corrida && corrida.sessionId) || sessionIdFileKey() });
         if (turno) Object.assign(result, turno);
       } catch (e) {
-        process.stderr.write(`deep-review-gate: no pude ver si hay otro pase adversarial en vuelo (${String(e.message).split('\n')[0]})\n`);
+        process.stderr.write(`deep-review-gate: no pude ver si hay otro pase adversarial en vuelo o una ejecución grande de pruebas (${String(e.message).split('\n')[0]})\n`);
       }
     }
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
