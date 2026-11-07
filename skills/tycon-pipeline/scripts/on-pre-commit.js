@@ -177,6 +177,35 @@ function selectStorySpecs(diffFiles, readContent, idPattern, into) {
   });
 }
 
+/**
+ * Las historias del diff que el freno no juzga por la forma de su id, y que pasan a `review` o `done` en este commit:
+ * `[{ file, id }]`. Una historia nueva en el commit, ya en `review` o `done`, cuenta como cambio, igual que para las que
+ * sí se juzgan. Sin ellas, una historia `VH-1b` que se cierra sale 0 y muda, y nadie distingue «se juzgó y pasó» de
+ * «no se miró». Un archivo que no se pudo mirar va como `{ file, error }`: callarlo se vería igual que «no había nada».
+ */
+function storiesOutsidePattern(diffFiles, readStaged, readHead, idPattern) {
+  const out = [];
+  for (const f of new Set(diffFiles)) {
+    if (!f.endsWith('.md')) continue;
+    try {
+      const staged = readStaged(f);
+      if (typeof staged !== 'string' || !staged.startsWith('---')) continue;
+      const end = staged.indexOf('\n---', 3);
+      if (end < 0) continue;
+      const fm = staged.slice(3, end);
+      if (!/^status:\s*\S/m.test(fm)) continue;
+      const id = fm.match(/^story:\s*["']?([^"'\n]+?)["']?\s*$/m);
+      if (!id || isWorkStoryId(id[1], idPattern)) continue;
+      const before = String(parseFrontmatter(readHead(f)).status || '').trim().toLowerCase();
+      const after = String(parseFrontmatter(staged).status || '').trim().toLowerCase();
+      if (isCriticalStatusTransition(before, after) || (before === 'review' && after === 'done')) out.push({ file: f, id: id[1].trim() });
+    } catch (e) {
+      out.push({ file: f, error: e.message });
+    }
+  }
+  return out;
+}
+
 function readEvent() {
   try {
     const stdin = fs.readFileSync(0, 'utf8');
@@ -1448,6 +1477,22 @@ function main() {
   const stagedByFile = new Map();
   const specFiles = selectStorySpecs(diffFiles, (f) => getStagedFileContent(cwd, f), idPattern, stagedByFile);
 
+  // Lo que el freno deja fuera se dice, antes de la salida sin historias: avisa y no frena.
+  try {
+    const fuera = storiesOutsidePattern(diffFiles, (f) => stagedByFile.get(f) ?? getStagedFileContent(cwd, f),
+      (f) => getHeadFileContent(cwd, f), idPattern);
+    for (const { file, id, error } of fuera) {
+      if (error) console.error(`⚠ tycon-story-outside — ${file}: no pude leerlo (${error}): no sé si es una historia que queda fuera del freno.`);
+      else console.error(`⚠ tycon-story-outside — ${file}: la historia «${id}» pasa a review o done y no se juzgó: su id no entra en el patrón de historias.`);
+    }
+    if (fuera.some((x) => !x.error)) {
+      console.error('   Para que entre: declarar su forma en `stories.id_pattern` de `.tycon/advisors.yaml` (un regex), y commitearlo.');
+    }
+  } catch (e) {
+    // el aviso nunca rompe el commit, pero tampoco calla que no pudo mirar
+    console.error(`⚠ tycon-story-outside — no pude buscar las historias que quedan fuera del freno (${e.message}).`);
+  }
+
   if (specFiles.length === 0) {
     process.exit(0);
   }
@@ -1972,7 +2017,7 @@ function main() {
 module.exports = {
   prepararIndiceConLosAdd,
   isGitCommit, usaNoVerify, parseAcsFromSpec, parseAcsFromEvidence, findDodEvidence, evidenciaDeclaraFail, findAdvisorsEvidence,
-  looksLikeStorySpec, selectStorySpecs, revisarRosterLocal, checkSelfAudit, REGLA_DE_MOTIVO, storyIsUiStory, getStagedDiff,
+  looksLikeStorySpec, selectStorySpecs, storiesOutsidePattern, revisarRosterLocal, checkSelfAudit, REGLA_DE_MOTIVO, storyIsUiStory, getStagedDiff,
 };
 
 if (require.main === module) {

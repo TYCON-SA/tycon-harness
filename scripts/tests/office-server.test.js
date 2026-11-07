@@ -1330,3 +1330,24 @@ test('OfficeServer_PlazoPorVariable @story-8.230 @ac-13: el plazo para esperar a
   p.close();
   await new Promise((r) => mudo.close(r));
 });
+
+test('T47 Office_LaMarcaDeAusenteSeVe @story-8.221 @ac-36: con la marca puesta, la oficina dice desde qué hora y quién la puso', () => {
+  const m = toy();
+  const OA = require(path.join(ROOT, 'scripts', 'lib', 'owner-away.js'));
+  const foto = () => {
+    const r = spawnSync('node', [OFFICE, '--json'], { input: '', env: envOf(m.home), encoding: 'utf8', timeout: 20000 });
+    assert.strictEqual(r.status, 0, r.stderr);
+    return JSON.parse(r.stdout);
+  };
+  assert.strictEqual(foto().meta.ausente, null, 'sin marca, nada');
+  OA.set({ estado: m.sdir, quien: 'coordinadora', frase: 'me voy', ahora: Date.now() });
+  const a = foto().meta.ausente;
+  assert.ok(a, 'con la marca puesta, la trae');
+  assert.strictEqual(a.quien, 'coordinadora');
+  assert.match(a.desde, /^\d\d:\d\d$/);
+  assert.match(a.linea, /ausente desde las \d\d:\d\d.*coordinadora/);
+  OA.clear({ estado: m.sdir, motivo: 'prueba' });
+  assert.strictEqual(foto().meta.ausente, null, 'borrada, no la trae');
+  const html = fs.readFileSync(path.join(ROOT, 'scripts', 'tools', 'office', 'page.html'), 'utf8');
+  assert.match(html, /id="ausente"/, 'la página tiene dónde mostrarla');
+});

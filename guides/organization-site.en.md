@@ -702,8 +702,8 @@ be, to copy it and open the request by hand.
   cause that repeats runs at all (empty, on), its cap in dollars per run (empty, 5) and its material cap in characters
   (empty, 600,000). It never applies anything: a person decides each proposal. It lives in `team-repos.json`, in the
   profile repo. A maintainer reviews it.
-- **Reviewer rounds**: how many reviewer rounds a story gets before it stops (1 to 6; empty,
-  2). At the cap, a security or data critical is decided by a person and the rest stays as visible debt. You can also add
+- **Reviewer rounds**: how many reviewer rounds a story gets before it stops, and how many rejections of its plan in a
+  row before the owner decides (1 to 6; empty, 3). At the cap, a security or data critical is decided by a person and the rest stays as visible debt. You can also add
   rules that count as security or data. A repo can adjust the cap in its `.tycon/advisors.yaml`. It lives in
   `team-repos.json` → `review`, in the profile repo. A maintainer reviews it.
 - **Your technology**: what the harness already recognizes, the file endings your team adds as code,
@@ -840,6 +840,32 @@ be, to copy it and open the request by hand.
   story. There is no option to turn it off: skipping it is signed by the owner on each story. A repo that asks for
   automatic in its `.tycon/advisors.yaml` (`deep_review: auto`) wins over «always». It lives in `team-repos.json` →
   `deep_review`, in the profile repo. A maintainer reviews it.
+- **Plan review** and **What runs the review**, and the new options of **Adversarial pass** and of **Reviewer rounds**:
+  the automatic reviews, of the plan and of the code. When each one runs, who approves it, with what reviewer and when
+  the owner counts as away; the whole guide is `guides/revisiones-automaticas.en.md`. They live in `team-repos.json` →
+  `plan_review`, `review_runner`, `deep_review` and `review`, in the profile repo; a bad value falls back to the
+  built-in only in its key. A maintainer reviews it. The options:
+
+| Option | What it does | Key | Values | Built-in | When to change it |
+|---|---|---|---|---|---|
+| O1 | Plan review on delicate stories | `plan_review.delicate` | `always` · `ask` | `always` | `ask` if you prefer to decide each time, even on delicate ones |
+| O2 | Plan review on routine stories | `plan_review.routine` | `always` · `ask` · `never` | `ask` | `always` to never ask; `never` if your team does not want it |
+| O3 | Routine plan review with the owner away | `plan_review.routine_owner_away` | `review` · `wait` · `skip` | `review` | `wait` if you prefer it to wait; `skip` to go on without review |
+| O4 | The coordinator approves a routine plan reviewed with no bugs | `plan_review.coordinator_approves` | `true` · `false` | `true` | `false` if you want to sign every plan yourself |
+| O5 | A rejected plan reaches the owner right away | `plan_review.rejected_reaches_owner` | `true` · `false` | `false` | `true` if you want to see every rejection, not only at the cap |
+| O6 | Code review on delicate stories | `deep_review.delicate` | `always` · `ask` | `always` | `ask` if you prefer to decide each time |
+| O7 | Up to how many code files a change is small | `deep_review.small_max_files` | integer from 1 to 50 | `6` | higher if your stories touch many small files |
+| O8 | Code review, routine and small, with the owner around | `deep_review.small_routine_day` | `ask` · `run` · `skip` | `ask` | `run` to always run it; `skip` for the old behavior |
+| O9 | Code review, routine and small, with the owner away | `deep_review.small_routine_owner_away` | `run` · `skip` · `wait` | `run` | `wait` if you prefer it to wait for the owner |
+| O10 | Code review, routine and large | `deep_review.large_routine` | `run` · `ask` | `run` | `ask` if you prefer to decide each time |
+| O11 | The reviewer | `review_runner.order[0]` | `claude` · `codex` · `cursor` · `claude-ollama` · `custom` | `claude` | if your team works with another tool |
+| O12 | The reviewers' fallback order | `review_runner.order` | list of those values, no repeats | `["claude"]` | to have a fallback when one hits its usage limit |
+| O13 | Minutes without an answer to count the owner as away | `plan_review.owner_away_minutes` | integer from 5 to 240 | `20` | more if the owner usually answers late |
+| O14 | Your own reviewer's command (only with `custom`) | `review_runner.custom_command` | text | — | with a reviewer that is not a built-in one |
+| O15 | The rounds cap, the same for plan and code | `review.max_rounds` | integer from 1 to 6 | `3` | lower to stop sooner; higher if your stories are long |
+| O16 | How many verifiers | `review_runner.verifiers` | `per_lens` · `per_finding` | `per_lens` | `per_finding` to measure one per finding |
+| O17 | From what severity a confirmed finding blocks | `review.blocking_severity` | `bug` · `robustness` · `all` | `bug` | `robustness` or `all` to also block on the rest |
+| O18 | Which lenses the plan review runs | `plan_review.lenses` | list of `suposicion-falsa` · `ac-sin-cubrir` · `prueba-que-falta` · `riesgo-sin-defensa` | `["suposicion-falsa"]` | add lenses for a wider review, at the cost of more agents |
 
 ![How the agent works](sitio-de-la-organizacion/capturas/configuracion-claude.png)
 

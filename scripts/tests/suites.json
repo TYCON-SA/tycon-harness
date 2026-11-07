@@ -474,6 +474,12 @@
       "requiere": []
     },
     {
+      "__nota": "el freno del commit avisa, sin frenar, cuando una historia cuyo id no entra en el patrón pasa a review o done; corre el hook de verdad sobre un repo de git temporal, con una HOME temporal.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/pre-commit-story-outside.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.48: la clave `stack` de team-repos.json, leída desde el árbol del arnés.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/stack-config.test.js",
@@ -1389,6 +1395,36 @@
       "__nota": "story 7.54: la política del pase adversarial. Un freno del manifiesto de controles hace NORMAL la corrida; la organización pide «siempre» por argumento y el auto del repo gana; sin off de la organización.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/deep-review-policy.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "las revisiones automáticas: las matrices de la revisión del plan y la del código, como funciones puras, con la configuración de la organización clave por clave.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/review-policy.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "las revisiones automáticas: el revisor sale de la integración, el núcleo no nombra ninguno, y el respaldo pasa al siguiente ante el tope de uso o un error.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/review-runner.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "las revisiones automáticas: un verificador por lente, las lentes pedidas del modo plan y el corte de gravedad del guion del pase.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adversarial-verifiers.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "las revisiones automáticas: la marca del dueño ausente, quién la pone, qué la borra (también con el aviso apagado) y su registro.",
+      "raiz": "arnes",
+      "ruta": "tests/owner-away.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "las revisiones automáticas: la documentación dice lo que hace el código, y los valores de fábrica de sus tablas son los del lector.",
+      "raiz": "arnes",
+      "ruta": "tests/review-docs.test.js",
       "requiere": []
     },
     {

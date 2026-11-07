@@ -71,6 +71,7 @@
     "scripts/controls-bench/ultimo-suites.json",
     "adapters/codex/agents/MANIFEST.json",
     "adapters/codex/hooks.json",
+    "integrations/review-runner/integration.json",
     "packs/clients/pack.json",
     "scripts/ci/pipeline-debt.json",
     "scripts/ci/heavy-suites.json",

@@ -17,28 +17,57 @@ La opción vieja de aprobarlo solo sale 2 sin escribir nada. Lo aprueba:
   con un click en el cuadro de opciones o un «aprobado» escrito, según `guides/firmas-del-arnes.md`, «Aprobar sin
   terminal»; o en su terminal (`--approved "<su respuesta>"`, o `--terminal`); o
 - **la coordinadora, por delegación, sólo con la revisión automática.** La revisión es el pase adversarial en **modo
-  plan**: cuatro lentes (un AC sin cubrir, una suposición falsa sobre el código, un riesgo sin defensa, una prueba que
-  falta) con su verificador, sobre la story, el plan y el repo, nunca sobre el hilo de la sesión que planeó.
-  **La lanza la coordinadora**, nunca la sesión que hizo el plan:
-  1. `marker.js plan-review --for-session <sesión>` prepara la revisión y devuelve los args del pase (`modo: 'plan'`),
-     con su `pedido`: un número al azar de esta revisión. Los args se pasan tal cual, sin tocarlos.
-  2. Ella corre el pase con la herramienta Workflow (o `workflow-lite.js`) y anota el resultado:
-     `marker.js plan-review --for-session <sesión> --result <resultado.json> --model opus`. Un resultado sin ese número,
-     o con el de otra revisión, queda sin veredicto; uno que no se puede leer, también, y el comando sale 3. Sin
-     herramienta para correrlo: `--no-tool "<motivo>"`.
-  3. Con «aprobado», firma `complete-step approve-plan --for-session <sesión> --approved "<la revisión>"`: queda con la
-     vía `review` en el registro de firmas.
+  plan**, sobre la story, el plan y el repo, nunca sobre el hilo de la sesión que planeó. De fábrica corre una sola
+  lente, «suposición falsa» (lo que el plan cree del código y no es cierto); la organización puede sumar las otras
+  (`plan_review.lenses`). Corre con el revisor que elige la organización (`review_runner`; de fábrica, Claude) y sólo
+  un hallazgo confirmado de gravedad «defecto» la rechaza (`review.blocking_severity`); lo demás confirmado son notas
+  para implementar. La guía entera: `guides/revisiones-automaticas.md`.
 
-  Una sesión sola no tiene quién lance la revisión: su plan espera a una persona.
+**El flujo, paso por paso.**
+
+1. **La sesión termina el plan** y lo da por cerrado: `pipeline.js next` llega a «Aprobar el plan» y trae
+   `plan_review_action`, lo que dice la matriz de la organización (`plan_review`) para este plan: `run` (revisar),
+   `ask` (preguntarle al dueño), `wait` (esperar al dueño) o `skip` (seguir sin revisión), con el motivo y, si toca, el
+   comando. `complete-step approve-plan` lo vuelve a decir. La revisión corre sobre el plan cerrado, nunca por cada
+   edición.
+2. **Se pregunta o no.** En una delicada se revisa siempre (`plan_review.delicate: always`). En una de rutina, de
+   fábrica se le pregunta al dueño: justo antes de mostrarle el cuadro, `marker.js review-ask --kind plan`; con la
+   respuesta, `marker.js review-answer --kind plan --choice review|skip|wait` (la coordinadora, con `--for-session
+   <sesión>`). Con el dueño ausente (la marca de ausente, o la pregunta sin respuesta pasados los minutos de
+   `plan_review.owner_away_minutes`), según `plan_review.routine_owner_away`: revisar sin preguntar, esperar o seguir sin
+   revisión. Con «seguir sin revisión», el plan lo firma el dueño.
+3. **Quién lanza la revisión.**
+   - **Con coordinadora**, la lanza la coordinadora: `marker.js plan-review --for-session <sesión>` prepara la revisión y devuelve los args
+     del pase (`modo: 'plan'`, con su `pedido`, un número al azar de esta revisión) y en `comando` la línea que lo corre
+     con el revisor de la organización. Si la sesión tiene la herramienta Workflow, puede usarla con los mismos args.
+     Después: `marker.js plan-review --for-session <sesión> --result <resultado.json> --model opus`. Un resultado sin
+     ese número, o con el de otra revisión, queda sin veredicto; uno que no se puede leer, también, y el comando sale 3.
+     Sin herramienta para correrlo: `--no-tool "<motivo>"`.
+   - **Sin coordinadora**, la propia sesión: `marker.js plan-review` (sin `--for-session`) prepara una revisión
+     **informativa**, con el mismo comando y la misma forma de anotar el resultado. Informa y nunca firma: el plan lo
+     aprueba el dueño, y su cuadro dice el resultado.
+4. **Los cuatro resultados.**
+   - **4a. Aprobado** (o aprobado con notas). Con coordinadora, `plan_review.coordinator_approves` en sí y `plan-approval`
+     delegado, ella firma `complete-step approve-plan --for-session <sesión> --approved "<la revisión>"` (vía `review`
+     en el registro de firmas) y al dueño no le llega nada. Si falta cualquiera de las dos, le llega al dueño con
+     «revisado, sin hallazgos» (o con sus notas).
+   - **4b. Rechazado.** `pipeline.js next` le muestra los hallazgos a la sesión (`plan_review`). La sesión corrige el
+     plan y lo vuelve a cerrar, y la revisión vuelve a correr. No llega al dueño mientras siga rechazado, salvo con
+     `plan_review.rejected_reaches_owner` en sí o al llegar al tope de rechazos seguidos (`review.max_rounds`, de
+     fábrica 3): entonces llega con los hallazgos y «rechazado N veces seguidas», y el dueño decide partir la historia o
+     firmar una vuelta extra.
+   - **4c. Sin veredicto.** Llega al dueño con «no se pudo revisar: <motivo>». Si el motivo es que el plan cambió
+     mientras corría, se reintenta una sola vez sobre el plan cerrado; la segunda vez llega al dueño.
+   - **4d. Sin revisión.** Con `skip`, con `never` o eligiendo seguir sin revisión: el plan lo firma el dueño, y su
+     cuadro lo dice («sin revisión (se eligió seguir)» o «sin revisión (el perfil no revisa)»).
 
 **Un plan delicado espera al dev.** `pipeline.js risk-class --story <story_path>` dice si la story es **delicada**
 (`delicate`): rutas sensibles en la story o en el plan, la superficie compartida, producción, el portón de CI, el
 instalador, una migración, la constancia de controles, o `sensible:` en el frontmatter; en duda, delicada. Su plan es
-nivel 2: lo aprueba siempre el dev, también de noche. La revisión puede correr sobre él, pero sólo ataca y avisa.
+nivel 2: lo aprueba siempre el dev, también de noche. La revisión corre sobre él, pero sólo ataca y avisa.
 
-**Sin veredicto o rechazado, espera a una persona.** Si el pase no midió todo («sin veredicto»), si no hay con qué
-correrlo, o si la revisión rechazó el plan, la coordinadora no firma. Con un rechazo, `pipeline.js next` de la sesión
-muestra los hallazgos (`plan_review`) hasta que el plan cambie: corregí el plan y que vuelva a correr la revisión.
+**El cuadro de la firma dice el resultado.** La pregunta de `plan-approval` trae una línea «Revisión automática: …» con
+el resultado de la revisión de ese mismo plan, y si el plan cambió después, que la revisión es de otra versión.
 
 Al firmar, el guion vuelve a calcular la huella del plan y de la story, y si es delicada: una revisión de otro plan, de
 otra corrida o de otra sesión no cuenta.

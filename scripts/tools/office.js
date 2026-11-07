@@ -2125,6 +2125,17 @@ async function collect(opts = {}) {
     try { topics.writePending(sdir, topics.pendingWorks(workCards(data.kanban), savedTopics.temas)); } catch (e) { problems.push(`los trabajos por clasificar no se pudieron guardar (${e.code || e.message})`); }
   }
   data.tablero = board.board ? { actualizado: board.board.actualizado, teToca: board.board.teToca } : null;
+  // la marca del dueño ausente (lib/owner-away.js): mientras está puesta, las revisiones siguen la celda de «dueño ausente»
+  data.meta.ausente = null;
+  try {
+    const leida = require(path.join(__dirname, '..', 'lib', 'owner-away.js')).get({ estado: sdir, ahora: nowMs });
+    if (leida.problem) problems.push(`la marca del dueño ausente: ${leida.problem}`);
+    const marca = leida.mark;
+    if (marca) {
+      const desde = hhmm(Date.parse(marca.setAt));
+      data.meta.ausente = { desde, quien: marca.quien, frase: marca.frase, linea: `El dueño está ausente desde las ${desde} (la puso ${marca.quien})` };
+    }
+  } catch (e) { problems.push(`la marca del dueño ausente no se pudo leer (${e.code || e.message})`); }
   if (opts.envelopes) {
     opts.envelopes.coordinator = coordinatorSid ? { sid: coordinatorSid, name: coordinatorName } : null;
     data.sobres = readEnvelopes(opts.envelopes, wip, { home, nowMs, projectsDir: opts.projectsDir, sessions });

@@ -6,10 +6,10 @@
  * (`marker.iterations[N]`). Al llegar al tope con algo abierto, un crítico de seguridad o de datos lo decide una persona
  * (una vuelta extra con su ok, o eximirlo); lo demás queda como deuda visible y el recorrido sigue.
  *
- *   · `tope({ repo, env, home, stateDir, sinMaquina })`: `{ value, source, problems }`. El ajuste de la máquina
- *     (`review-max-rounds.json` en la carpeta de estado del arnés, donde el agente no escribe; de 1 a 99) ›
- *     `review.max_rounds` del repo (`.tycon/advisors.yaml`, lo commiteado: bajar el tope afloja y aflojar exige commit) ›
- *     la organización (`review.max_rounds` de team-repos.json) › 2. Un valor fuera de 1 a 6 no se usa y lo dice.
+ *   · `tope({ repo, env, home, stateDir })`: `{ value, source, problems }`. `review.max_rounds` del repo
+ *     (`.tycon/advisors.yaml`, lo commiteado: bajar el tope afloja y aflojar exige commit) › la organización
+ *     (`review.max_rounds` de team-repos.json, que se edita en el sitio) › 3. Un valor fuera de 1 a 6 no se usa y lo dice.
+ *     Vale para la revisión del plan y para la del código. No hay ajuste por máquina.
  *   · `clase(regla, { prefijos })`: 'seguridad' | 'datos' | null.
  *   · `abiertos(hallazgos, opts)`: los hallazgos abiertos o diferidos, con `bloquea` en los críticos de esas clases.
  *   · `vueltas(marker)`: cuántas vueltas lanzaron revisores.
@@ -20,7 +20,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const FABRICA = 2;
+const FABRICA = 3;
 const MINIMO = 1;
 const MAXIMO = 6;
 // lo que frena al tope sin la decisión de una persona (aprobado por la coordinadora, por delegación del dueño)
@@ -61,43 +61,44 @@ function deLaOrganizacion({ env = process.env, home = os.homedir() } = {}) {
     const r = require(reader).parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, ''));
     const sec = r.sectionProblems && r.sectionProblems.review;
     if (!r.ok) problems.push(`${file}: no se pudo usar (${r.problems.map((p) => `${p.path || '(archivo)'}: ${p.message}`).join('; ').slice(0, 200)})`);
-    else if (sec && sec.length) problems.push(`${sec[0].path}: ${sec[0].message}; no se usa`);
-    else if (r.data && r.data.review && typeof r.data.review === 'object') return { review: r.data.review, problems };
+    else if (sec && sec.length) {
+      // una clave mala cae sola: las demás de la sección siguen (cada lector valida la suya)
+      problems.push(...sec.map((p) => `${p.path}: ${p.message}; esa clave no se usa`));
+      let crudo = null;
+      try { crudo = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '')); } catch (_) { crudo = null; }
+      // la clave es el primer tramo de la ruta: un elemento malo de una lista (review.blocking_prefixes.1) tira la lista
+      const malas = new Set(sec.map((p) => String(p.path).replace(/^review\./, '').split('.')[0]));
+      if (crudo && crudo.review && typeof crudo.review === 'object' && !Array.isArray(crudo.review)) {
+        const review = {};
+        for (const [k, v] of Object.entries(crudo.review)) if (!malas.has(k)) review[k] = v;
+        return { review, problems };
+      }
+    } else if (r.data && r.data.review && typeof r.data.review === 'object') return { review: r.data.review, problems };
   } catch (e) {
     problems.push(`no pude leer la configuración de la organización (${e && e.message ? e.message : e})`);
   }
   return { review: null, problems };
 }
 
-function tope({ repo, env = process.env, home = os.homedir(), stateDir, sinMaquina = false } = {}) {
-  if (sinMaquina) return topeSinMaquina({ repo, env, home });
-  return topeConMaquina({ repo, env, home, stateDir });
+function tope({ repo, env = process.env, home = os.homedir(), stateDir } = {}) {
+  const r = topeSinMaquina({ repo, env, home });
+  const viejo = ajusteViejoDeLaMaquina({ home, stateDir });
+  return viejo ? { ...r, problems: [viejo, ...r.problems] } : r;
 }
+// El ajuste por máquina ya no existe: el tope lo fijan la organización (en el sitio) y el repo (por commit). Si el archivo
+// viejo sigue en la carpeta de estado, se ignora y se dice una vez por máquina (un renglón en gates.log lo recuerda).
 const ARCHIVO_MAQUINA = 'review-max-rounds.json';
-function topeConMaquina({ repo, env, home, stateDir }) {
-  const problems = [];
-  const r = leerMaquina({ home, stateDir, problems });
-  if (r) return r;
-  const resto = topeSinMaquina({ repo, env, home });
-  return { ...resto, problems: [...problems, ...resto.problems] };
+function ajusteViejoDeLaMaquina({ home, stateDir }) {
+  const dir = stateDir || require('./state-dir.js').stateDir(home);
+  if (!fs.existsSync(path.join(dir, ARCHIVO_MAQUINA))) return null;
+  const log = path.join(dir, 'gates.log');
+  let dicho = false;
+  try { dicho = fs.readFileSync(log, 'utf8').includes('"name":"review-cap-machine-ignored"'); } catch (_) { dicho = false; }
+  if (dicho) return null;
+  try { fs.appendFileSync(log, `${JSON.stringify({ ts: new Date().toISOString(), name: 'review-cap-machine-ignored', status: 'ok', file: ARCHIVO_MAQUINA })}\n`); } catch (_) { /* se vuelve a decir */ }
+  return `${path.join(dir, ARCHIVO_MAQUINA)}: el ajuste del tope por máquina ya no existe y se ignora; el tope lo fijan la organización (review.max_rounds en el sitio) y el repo (.tycon/advisors.yaml). Podés borrar el archivo`;
 }
-function leerMaquina({ home, stateDir, problems }) {
-  // El ajuste de la máquina vive en la carpeta de estado del arnés (review-max-rounds.json, { "max_rounds": N } de 1 a
-  // 99), donde el agente no escribe: lo pone una persona en su terminal, o una prueba en su HOME temporal. Una variable
-  // de ambiente la podría anteponer el propio agente al comando, y el tope dejaría de cortar.
-  const archivo = path.join(stateDir || require('./state-dir.js').stateDir(home), ARCHIVO_MAQUINA);
-  let crudo = null;
-  try { crudo = JSON.parse(fs.readFileSync(archivo, 'utf8')); } catch (e) {
-    if (e && e.code !== 'ENOENT') problems.push(`${archivo}: no se lee (${e.message || e}); no se usa`);
-  }
-  if (crudo !== null) {
-    const n = entero(crudo && crudo.max_rounds);
-    if (n !== null && n >= MINIMO && n <= 99) return { value: n, source: 'maquina', problems };
-    problems.push(`${archivo}: max_rounds tiene que ser un entero de ${MINIMO} a 99; no se usa`);
-  }
-  return null;
-}
-/** El tope sin el ajuste de la máquina: el repo › la organización › 2. */
+/** El tope: el repo › la organización › 3. */
 function topeSinMaquina({ repo, env, home }) {
   const problems = [];
   if (repo) {
@@ -228,9 +229,7 @@ function resumen(lista) {
 }
 
 /** La línea del cierre. Con `noMirado` (no se pudieron leer los hallazgos) no dice «nada»: dice que no se pudo mirar. */
-function linea({ n, max, abiertos: ab, noMirado, de }) {
-  // un tope que puso el ajuste de la máquina se dice: no es el de la organización ni el del repo
-  if (de === 'maquina') max = `${max}, puesto por el ajuste de esta máquina`;
+function linea({ n, max, abiertos: ab, noMirado }) {
   if (noMirado) return `${n} ${n === 1 ? 'vuelta' : 'vueltas'} de revisores (tope ${max}); lo abierto no lo pude mirar: ${noMirado}.`;
   const lista = ab || [];
   const bloq = lista.filter((a) => a.bloquea);

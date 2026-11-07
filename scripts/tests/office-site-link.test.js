@@ -2273,3 +2273,41 @@ test('T21 Sitio_NoRecibeTextoNiOfreceMandar @story-8.183 @ac-21: ni quién puede
   assert.ok(!fs.existsSync(path.join(m.sdir, 'office', 'inbox')), 'el sitio no deja nada en el buzón');
   link.stop();
 });
+
+test('T56 SiteLink_FilaConClaveYRuta_LlegaLimpia @story-8.234 @ac-1: lo que dice una fila del tablero viaja con el mismo limpiador que lo de las sesiones, por cada camino', () => {
+  const { pick, fitPhoto } = fields();
+  const home = '/home/dev-a';
+  const [, token] = LOOSE_TOKENS()[0];
+  const sucio = (campo) => `${campo} ${token} ${home}/SourceCode/acme-repo/nota.md`;
+  const tarjeta = { titulo: sucio('titulo'), quien: sucio('quien'), grupo: sucio('grupo'), espera: sucio('espera'), motivo: sucio('motivo'), nota: sucio('nota') };
+  const trabajo = { titulo: sucio('titulo'), numero: sucio('numero'), quien: sucio('quien'), como: sucio('como') };
+  const tabla = { titulo: sucio('tabla'), columnas: [sucio('col')], filas: [{ grupo: sucio('grupo'), que: sucio('que'), col: sucio('col'), trabajos: [trabajo] }], cruce: sucio('cruce') };
+  const foto = {
+    agents: [{ nombre: 'Alfa', haciendo: sucio('haciendo') }],
+    kanban: { linea: sucio('linea'), columnas: [{ id: 'curso', nombre: 'En curso', nota: sucio('nota'), tarjetas: [tarjeta] }], medioCamino: [{ titulo: sucio('titulo'), quien: sucio('quien'), accion: sucio('accion') }] },
+    tablas: { hoy: tabla, pendientes: tabla, hechos: tabla },
+    meta: { teToca: [sucio('teToca')], trabado: [{ titulo: sucio('trabado'), filas: [sucio('fila')] }] },
+  };
+  const sent = pick(foto, home);
+  const caminos = {
+    'kanban.tarjetas': sent.kanban.columnas[0].tarjetas[0],
+    'kanban.medioCamino': sent.kanban.medioCamino[0],
+    'tablas.filas.trabajos': [sent.tablas.hoy.filas[0], sent.tablas.pendientes.filas[0], sent.tablas.hechos.filas[0]],
+    'meta.trabado': sent.meta.trabado[0],
+    'meta.teToca': sent.meta.teToca,
+  };
+  for (const [camino, valor] of Object.entries(caminos)) {
+    const textos = allStrings(valor);
+    assert.ok(textos.length > 0, `${camino}: no llegó nada`);
+    for (const s of textos) {
+      assert.ok(!s.includes(token), `${camino}: la clave llegó: ${s}`);
+      assert.ok(!s.includes(home), `${camino}: la ruta de la casa llegó: ${s}`);
+    }
+  }
+  // la fila pasa por el mismo limpiador que lo que escribe una sesión: la misma frase sale igual por los dos lados
+  assert.strictEqual(sent.kanban.columnas[0].tarjetas[0].nota.replace(/^nota/, 'haciendo'), sent.agents[0].haciendo);
+  // achicada para entrar en el tope, tampoco aparece nada crudo
+  const chica = fitPhoto(JSON.parse(JSON.stringify(sent)), 4000);
+  const json = JSON.stringify(chica);
+  assert.ok(!json.includes(token) && !json.includes(home), json.slice(0, 200));
+});

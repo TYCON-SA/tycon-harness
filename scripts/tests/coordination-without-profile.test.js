@@ -303,14 +303,19 @@ test('T15 PerfilSinClave_Delegacion_DiceQueNo @story-8.199 @ac-13: las dos lista
   assert.strictEqual(delega(m, lists({ relay_session: 'coordinadora' })).ok, true, 'con la clave en el mismo perfil, delega');
 });
 
-test('T16 SinPerfil_PlanDeOtra_LoApruebaElDueno @story-8.199 @ac-14: la coordinadora no prepara la revisión del plan de otra sesión', (t) => {
+test('T16 SinPerfil_PlanDeOtra_LoApruebaElDueno @story-8.199 @ac-14: sin relay_session, el plan de otra sesión no se firma por delegación', (t) => {
   // the profile delegates the plan approval and lists this machine, but has no relay_session
   const m = toy(t, { profile: { approvals: lists() } });
   confirm(m, designate(m));
   const delegacion = (o) => DS.delegaSinVentana({ ...o, arnes: m.arnes, env: m.env, huella: () => ({ huella: 'a1b2c3d4e5f60718' }) });
-  const r = planReview.preparar({ lanza: COORD, destino: 'otra-1', estado: m.state, home: m.home, delegacion });
+  // launching the review does not ask for the delegation: it stops only because otra-1 has no run
+  const r = planReview.preparar({ lanza: COORD, destino: 'otra-1', estado: m.state, home: m.home });
   assert.strictEqual(r.codigo, 2, JSON.stringify(r));
-  assert.match(r.motivo, /approvals\.relay_session/);
+  assert.doesNotMatch(r.motivo, /approvals\.relay_session/);
+  // signing does: without relay_session the delegation says so, and the plan is signed by the owner
+  const d = delegacion({ firma: 'plan-approval', sesion: COORD, destino: 'otra-1', home: m.home, estado: m.state });
+  assert.strictEqual(d.ok, false);
+  assert.match(d.motivo, /approvals\.relay_session/);
 });
 
 // The signature list asks owner-approvals for the confirmed coordinator with the account home only, so it reads the

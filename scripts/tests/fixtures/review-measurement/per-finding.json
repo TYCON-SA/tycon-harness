@@ -1,0 +1,113 @@
+{
+  "plan": "el plan de la historia 8.223 (T-80), revisado con el modo plan del pase",
+  "model": "opus",
+  "lenses": [
+    "ac-sin-cubrir",
+    "suposicion-falsa",
+    "riesgo-sin-defensa",
+    "prueba-que-falta"
+  ],
+  "verifiers": "per_finding",
+  "medido": true,
+  "veredicto": "rechazado",
+  "hallazgos": 19,
+  "corredor": {
+    "agentes": {
+      "Hunt": 4,
+      "Verify": 19
+    },
+    "tokens": {
+      "total": 7097178,
+      "por_fase": {
+        "Hunt": 2661303,
+        "Verify": 4435875
+      }
+    }
+  },
+  "confirmed": [
+    {
+      "id": "pf-1",
+      "lens": "ac-sin-cubrir",
+      "severity": "bug",
+      "summary": "El plan trata como opcional el candado con dueño del AC 4: el Paso 4 dice «SÓLO si el dueño la aprueba». La story ya lo tiene aprobado. Los Archivos del plan no incluyen harness.js ni state.js, y el plan cuenta 9 verificaciones (10 con la propuesta) contra 10 fijas en la story."
+    },
+    {
+      "id": "pf-2",
+      "lens": "ac-sin-cubrir",
+      "severity": "bug",
+      "summary": "El AC 4 pide que state.write mire el candado antes de grabar, para todos los que graban. El plan sólo pone stillMine en harness.js antes de S.write. Así quedan sin guarda los que graban por su cuenta: el cambio de herramienta, release.js, repoint.js, move-home.js y uninstall.js."
+    },
+    {
+      "id": "pf-3",
+      "lens": "ac-sin-cubrir",
+      "severity": "bug",
+      "summary": "El AC 4 exige que ningún catch del camino convierta TYCON_LOCK_LOST en otra falla. Esto toca rollback, release, repoint, move-home, uninstall y los catch de harness.js. Ningún paso del plan lo cubre. Además, §Riesgos del plan prohíbe que el diff toque rollback.js."
+    },
+    {
+      "id": "pf-4",
+      "lens": "ac-sin-cubrir",
+      "severity": "nit",
+      "summary": "El AC 4 pide mirar el candado otra vez al volver del aplicador. El plan sólo lo mira antes del aplicador, antes de mover árboles y antes de grabar, así que la segunda mirada no se implementa."
+    },
+    {
+      "id": "pf-5",
+      "lens": "ac-sin-cubrir",
+      "severity": "robustness",
+      "summary": "El AC 4 fija el contrato de salida: error TYCON_LOCK_LOST por assertStillMine, withLock guarda el token, sale con código 3 y startup sale 0. El plan no nombra nada de esto, y su T10 integrado sólo pide que la operación se vaya sin grabar. No verifica el código 3."
+    },
+    {
+      "id": "pf-6",
+      "lens": "suposicion-falsa",
+      "severity": "bug",
+      "summary": "El Paso 4 da por hecho que el estado sólo se graba con `S.write` dentro de `harness.js`, y que basta poner `stillMine` antes de esas grabaciones. Además, en Riesgos, prohíbe tocar `rollback.js`. En el código hay muchas más grabaciones fuera de `harness.js`, y hay `catch` que se tragan el error. Con el plan tal cual, el dueño desplazado sigue escribiendo el estado."
+    },
+    {
+      "id": "pf-7",
+      "lens": "suposicion-falsa",
+      "severity": "robustness",
+      "summary": "El Paso 4 agrega un token «al lado del pid» y no prevé que la prueba T13 fija el formato del candado. Esa prueba exige que el candado tenga sólo el archivo `pid` y que su contenido sea exactamente `pid\\nhost\\n`. El plan dice que trae T13 de la rama y sólo cambia la parte de la edad. Con el token, esas dos aserciones quedan en rojo: si el token va en un archivo aparte, falla la primera; si va dentro del `pid`, falla la segunda."
+    },
+    {
+      "id": "pf-8",
+      "lens": "riesgo-sin-defensa",
+      "severity": "bug",
+      "summary": "El plan deja como opcional la única defensa del riesgo que él mismo abre, y la limita a harness.js. Esa defensa es el candado con dueño. El riesgo es pisar por el tope de 2 h a un dueño que sólo estaba suspendido."
+    },
+    {
+      "id": "pf-9",
+      "lens": "riesgo-sin-defensa",
+      "severity": "robustness",
+      "summary": "Si otro pisa el candado sin dejar token, la guarda falla en silencio. Pasa con una versión vieja del programa, como la copia fija que corren rollback y uninstall. stillMine da «mío» a cualquier candado sin token, así que el desplazado sigue escribiendo."
+    },
+    {
+      "id": "pf-10",
+      "lens": "prueba-que-falta",
+      "severity": "bug",
+      "summary": "El plan tiene la parte del token (Paso 4) como opcional, y su T10 no prueba lo que la historia ya aprobó. Faltan: la guarda en state.write, la segunda mirada al volver del aplicador, que rollback, move-home, repoint, uninstall y la vuelta atrás automática dejen pasar TYCON_LOCK_LOST, y la salida con 3 (T10L)."
+    },
+    {
+      "id": "pf-11",
+      "lens": "prueba-que-falta",
+      "severity": "robustness",
+      "summary": "El plan cambia lockOrphan y releaseLock de bootstrap.js, pero su T9 de no-regresión no corre harness-bootstrap.test.sh. Esa suite tiene las pruebas de punta a punta del candado del lanzador: T11 (dueño vivo, ocupado) y T38 (dueño muerto, lo pisa y lo dice el registro)."
+    }
+  ],
+  "equivalentes_en_per_lens": {
+    "pf-1": "pl-1",
+    "pf-2": "pl-2",
+    "pf-3": "pl-3",
+    "pf-4": "pl-14",
+    "pf-5": "pl-4",
+    "pf-6": "pl-6",
+    "pf-7": "pl-7",
+    "pf-8": "pl-11",
+    "pf-10": "pl-17",
+    "pf-11": "pl-15"
+  },
+  "diferencias": [
+    {
+      "id": "pf-9",
+      "motivo": "el cazador de per_lens no encontró el caso de una versión vieja que pisa el candado sin dejar token: los cazadores corren de nuevo en cada modo y no encuentran lo mismo; no es algo que el verificador por lente descartó"
+    }
+  ]
+}

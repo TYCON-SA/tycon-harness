@@ -1,0 +1,143 @@
+{
+  "plan": "el plan de la historia 8.223 (T-80), revisado con el modo plan del pase",
+  "model": "opus",
+  "lenses": [
+    "ac-sin-cubrir",
+    "suposicion-falsa",
+    "riesgo-sin-defensa",
+    "prueba-que-falta"
+  ],
+  "verifiers": "per_lens",
+  "medido": true,
+  "veredicto": "rechazado",
+  "hallazgos": 19,
+  "corredor": {
+    "agentes": {
+      "Hunt": 4,
+      "Verify": 4
+    },
+    "tokens": {
+      "total": 3249183,
+      "por_fase": {
+        "Hunt": 2326723,
+        "Verify": 922460
+      }
+    }
+  },
+  "confirmed": [
+    {
+      "id": "pl-1",
+      "lens": "ac-sin-cubrir",
+      "severity": "bug",
+      "summary": "El candado con dueño del AC 4 está aprobado, pero el plan lo deja como paso opcional («SÓLO si el dueño la aprueba») y fuera de sus archivos. Con el plan tal como está, la segunda mitad del AC 4 puede no implementarse."
+    },
+    {
+      "id": "pl-2",
+      "lens": "ac-sin-cubrir",
+      "severity": "bug",
+      "summary": "La guarda del AC 4 tiene que estar en state.write, para todos los que graban. Ningún paso del plan la pone ahí: sólo pone stillMine en harness.js antes de S.write. Falta además la segunda mirada al volver del aplicador. Quedan sin guarda las grabaciones de tool-change, release.js, move-home.js y repoint.js."
+    },
+    {
+      "id": "pl-3",
+      "lens": "ac-sin-cubrir",
+      "severity": "bug",
+      "summary": "El AC 4 pide un error TYCON_LOCK_LOST (assertStillMine) que ningún catch del camino convierta en otra falla. El plan no lo implementa ni lo prueba, y su sección de riesgos llega a prohibir tocar rollback.js. Así la vuelta atrás, las mudanzas y desinstalar seguirían diciendo «el aplicador falló» o «la etapa falló», y deshaciendo cambios."
+    },
+    {
+      "id": "pl-4",
+      "lens": "ac-sin-cubrir",
+      "severity": "bug",
+      "summary": "El AC 4 fija con qué código sale la operación desplazada: 3, y startup 0. El plan no fija ese código ni lo prueba; sólo pide «la operación se va sin grabar el estado». La story pide que T10L exija el 3, no sólo un código distinto de 0."
+    },
+    {
+      "id": "pl-5",
+      "lens": "ac-sin-cubrir",
+      "severity": "robustness",
+      "summary": "Para bootstrap.js, el AC 1 exige «su línea en el registro». La T8 del plan sólo compara las decisiones de las dos funciones puras y las constantes. Ninguna prueba mira la línea que escribe el lanzador al pisar un candado por arranque, tope o edad."
+    },
+    {
+      "id": "pl-6",
+      "lens": "suposicion-falsa",
+      "severity": "bug",
+      "summary": "El plan da por hecho que el estado sólo se graba desde harness.js. Por eso pone `stillMine` «antes de grabar el estado (`S.write`)» en harness.js, limita los archivos a tres y dice que el diff «no puede tocar rollback.js ni harness.js». Pero `S.write` se llama desde varios módulos, y hay catch que se tragan el error, así que un proceso desplazado seguiría grabando."
+    },
+    {
+      "id": "pl-7",
+      "lens": "suposicion-falsa",
+      "severity": "bug",
+      "summary": "El plan trae sin cambios la versión de T13 de la rama 8.160, y a la vez el Paso 4 escribe un token «al lado del pid». Esa T13 exige que el candado contenga sólo `['pid']` y que el pid tenga exactamente `pid\\nhost\\n`. Con el token, falla de cualquiera de las dos formas."
+    },
+    {
+      "id": "pl-8",
+      "lens": "suposicion-falsa",
+      "severity": "robustness",
+      "summary": "El plan supone que los únicos que sueltan el candado son `withLock` y `bootstrap.js`. Pero el instalador de Windows lo toma y lo suelta por su cuenta, con un `node -e` que llama a `release(homedir())` sin token. El plan no lo cubre: con «release sólo con el token propio», o ese instalador nunca suelta el candado, o se agrega una excepción sin token que anula la protección."
+    },
+    {
+      "id": "pl-9",
+      "lens": "suposicion-falsa",
+      "severity": "robustness",
+      "summary": "El plan supone que mirar el candado en `S.write` cubre todas las grabaciones del estado. Pero `bootstrap.js` graba el estado con su propio `writeStateAtomic` mientras tiene el candado, sin pasar por `state.write`. Para el lanzador, el Paso 4 sólo dice que el `release` usa token; no agrega ninguna mirada al candado antes de grabar."
+    },
+    {
+      "id": "pl-10",
+      "lens": "suposicion-falsa",
+      "severity": "nit",
+      "summary": "El plan deja el Paso 4 condicionado («SÓLO si el dueño la aprueba») y cuenta «9 verificaciones (10 con la propuesta)». La historia ya registra que el dueño lo aprobó y que son 10 verificaciones: el plan quedó desactualizado respecto de la historia que implementa."
+    },
+    {
+      "id": "pl-11",
+      "lens": "riesgo-sin-defensa",
+      "severity": "bug",
+      "summary": "El plan deja como condicional («SÓLO si el dueño la aprueba») la única defensa del riesgo nuevo, el candado con dueño. La historia ya la tiene aprobada y obligatoria en el AC 4. Sin token, el tope de 2 h deja que una sesión nueva pise a un dueño vivo pero suspendido: al despertar, la vieja sigue escribiendo y su release borra el candado de la nueva. Quedan dos escritores a la vez sobre los mismos árboles y el mismo estado."
+    },
+    {
+      "id": "pl-12",
+      "lens": "riesgo-sin-defensa",
+      "severity": "bug",
+      "summary": "La defensa del plan está en un solo punto, `S.write` dentro de harness.js. La historia la pone en `state.write` (state.js), que cubre a todos los que graban. El plan no la agrega a tool-change, release.js, repoint ni move-home: esas grabaciones escriben el estado aun con el candado perdido. Es la clase que el pase adversarial confirmó."
+    },
+    {
+      "id": "pl-13",
+      "lens": "riesgo-sin-defensa",
+      "severity": "bug",
+      "summary": "El plan no dice que los catch del camino tienen que dejar pasar TYCON_LOCK_LOST. Su sección de riesgos incluso prohíbe tocar rollback.js y harness.js. Con el candado perdido, move-home lo trata como «la etapa falló» y deshace: mueve árboles y graba, justo lo que «me voy sin escribir» prohíbe. Rollback, repoint y uninstall lo disfrazan de otra falla y salen con 1 en vez de 3."
+    },
+    {
+      "id": "pl-14",
+      "lens": "riesgo-sin-defensa",
+      "severity": "robustness",
+      "summary": "El plan nunca define `assertStillMine` ni el código TYCON_LOCK_LOST, y no mira el candado al volver del aplicador. Una sesión desplazada mientras corre el aplicador sigue a mover árboles y grabar sin volver a preguntar."
+    },
+    {
+      "id": "pl-15",
+      "lens": "prueba-que-falta",
+      "severity": "bug",
+      "summary": "En el plan, T8 sólo compara las dos funciones puras `orphanReason`. Ninguna prueba ejerce `lockOrphan` ni `acquireLock` de bootstrap.js contra un candado real en disco. Si `lockOrphan` no se recablea, T8 queda en verde con el lanzador todavía pisando a un dueño vivo de 11 minutos."
+    },
+    {
+      "id": "pl-16",
+      "lens": "prueba-que-falta",
+      "severity": "bug",
+      "summary": "El plan pide en bootstrap.js la línea del registro para toda toma que no sea por dueño muerto, con el mismo texto que lock.js. Ninguna prueba lo verifica. La story la exige en el AC 1 y en T8."
+    },
+    {
+      "id": "pl-17",
+      "lens": "prueba-que-falta",
+      "severity": "bug",
+      "summary": "El paso 4 del plan es condicional y se reduce a `stillMine` en harness.js. No prueba la guarda en `state.write`, ni que los `catch` de rollback.js, move-home.js, repoint.js, release.js y uninstall.js dejen pasar TYCON_LOCK_LOST. Tampoco prueba la segunda mirada al volver del aplicador. La story ya los aprobó y T10 tiene que cubrirlos."
+    },
+    {
+      "id": "pl-18",
+      "lens": "prueba-que-falta",
+      "severity": "bug",
+      "summary": "La parte integrada de T10 en el plan sólo exige que la operación «se va sin grabar el estado». No exige el código 3 ni el mensaje. Una operación que falla por cualquier otra causa (código 1, rollback, «la etapa falló») tampoco graba el estado y deja la prueba en verde."
+    },
+    {
+      "id": "pl-19",
+      "lens": "prueba-que-falta",
+      "severity": "robustness",
+      "summary": "El plan no prueba que `release` desplazado no borre el candado nuevo en bootstrap.js. Tampoco prueba el camino `startup` con el candado perdido, que tiene que salir 0."
+    }
+  ]
+}

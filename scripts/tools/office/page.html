@@ -36,7 +36,7 @@ h2{font:700 .8rem var(--display);text-transform:uppercase;letter-spacing:.08em;c
 .resumen{background:var(--surface);border:1px solid var(--line);border-left:6px solid var(--line);border-radius:6px}.resumen.pide{border-color:#a8640b}
 .resumen-linea{display:flex;align-items:center;gap:8px;width:100%;padding:10px 16px;border:0;background:none;color:var(--fg);font:600 1rem var(--body);text-align:left;cursor:pointer;border-radius:6px}.resumen-linea:disabled{cursor:default;color:var(--muted);font-weight:500}.resumen.pide .resumen-linea{color:#a8640b;font-weight:700}
 .resumen-listas{display:flex;flex-direction:column;gap:14px;padding:0 16px 14px}.resumen-listas[hidden]{display:none}
-.trabado[hidden]{display:none}.trabado h2{color:#b08a2e}.trabado h3{margin:8px 0 2px;font:600 .95rem var(--body)}.trabado ul{margin:0;padding-left:18px}
+.ausente{margin:6px 0;color:#b08a2e;font-weight:600}.ausente[hidden]{display:none}.trabado[hidden]{display:none}.trabado h2{color:#b08a2e}.trabado h3{margin:8px 0 2px;font:600 .95rem var(--body)}.trabado ul{margin:0;padding-left:18px}
 .una-linea{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .empty{color:var(--muted);padding:18px;background:var(--surface);border:1px dashed var(--line);border-radius:6px;margin:0}
 /* la sala 3D es siempre de noche: un mundo propio, igual en tema claro y oscuro */
@@ -266,6 +266,7 @@ tr:last-child td{border-bottom:0}
     <button type="button" class="resumen-linea" id="resumenLinea" aria-expanded="false" aria-controls="resumenListas"></button>
     <div class="resumen-listas" id="resumenListas" hidden>
       <div class="you" id="you"><h2>Te toca a vos</h2><ul id="youList"></ul></div>
+      <p class="ausente" id="ausente" hidden></p>
       <section class="trabado" id="trabado" hidden></section>
     </div>
   </div>

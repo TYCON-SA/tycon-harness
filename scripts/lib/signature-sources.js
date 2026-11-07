@@ -6,7 +6,8 @@
  * la firma, qué archivos toca y dónde está lo completo sale de lo mismo que el dueño firmaría si lo abriera: el plan
  * escrito, el diff de los controles, los criterios de la historia, el informe de hallazgos o la nota de la vuelta.
  *
- *   · `partesDe({ firma, palabras, cwd, marcador, estado })` → `{ queHace, archivos, completo, fuente, cita }`, o null si
+ *   · `partesDe({ firma, palabras, cwd, marcador, estado, destino })` → `{ queHace, archivos, completo, fuente, cita }` (el
+ *     plan suma `revision`, la línea del resultado de su revisión automática), o null si
  *     la firma no tiene fuente propia (la pregunta dice lo que hace el comando). `fuente` es el texto exacto que se
  *     mostró: entra a la huella del sello, así un click no vale si la fuente cambió después del cuadro.
  *   · `historiaDe(marcador)` → `{ id, titulo }` de la historia de la corrida, o null sin corrida.
@@ -89,14 +90,28 @@ function planDe(m) {
   return { ruta, texto: ruta ? leer(ruta) : null };
 }
 
-function delPlan(palabras, m) {
+/**
+ * La línea del resultado de la revisión automática de este plan (lib/plan-review.js), o null sin estado o sin destino. La
+ * línea entra en la fuente: la huella ata el click también a lo que dijo la revisión.
+ */
+function revisionDelPlan(m, estado, destino) {
+  if (!estado || !destino || !m) return null;
+  // si no se puede leer, el cuadro lo dice: sin la línea se leería como «no hubo revisión»
+  try { return require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'plan-review.js')).lineaDelCuadro({ estado, destino, marker: m }); } catch (e) {
+    return { linea: `no pude leer su resultado (${String((e && e.message) || e).split('\n')[0]})`, detalle: [] };
+  }
+}
+
+function delPlan(palabras, m, { estado, destino } = {}) {
   const cita = valor(palabras, '--approved') || valor(palabras, '--mockup-approved');
   const { ruta, texto } = planDe(m);
   // la nota de por qué no se leyó va aparte: la línea se recorta, y una ruta larga se la comería
   if (texto == null) return { queHace: [`no encuentro el plan escrito${ruta ? ` en ${ruta}` : ' (la sesión no tiene una ejecución con carpeta)'}`], nota: porQueNo(ruta).trim() || null, fuente: '', cita };
+  const revision = revisionDelPlan(m, estado, destino);
+  const fuente = revision ? `${texto}\n${revision.linea}\n${revision.detalle.join('\n')}` : texto;
   const s = seccionesDelPlan(texto);
-  if (s.error) return { queHace: [s.error], completo: ruta, fuente: texto, cita };
-  return { queHace: s.queHace, archivos: s.archivos, completo: ruta, fuente: texto, cita };
+  if (s.error) return { queHace: [s.error], completo: ruta, fuente, cita, revision };
+  return { queHace: s.queHace, archivos: s.archivos, completo: ruta, fuente, cita, revision };
 }
 
 // sin programas externos: el cuadro se arma antes de la firma, y el repo lo nombra el comando
@@ -300,7 +315,7 @@ function deLaDesignacion(firma, destino, cwd) {
 function partesDe({ firma, palabras, cwd, marcador, estado, destino } = {}) {
   if (firma === 'designation-set' || firma === 'designation-withdraw') return deLaDesignacion(firma, destino, cwd);
   if (!palabras) return null;
-  if (firma === 'plan-approval') return delPlan(palabras, marcador);
+  if (firma === 'plan-approval') return delPlan(palabras, marcador, { estado, destino });
   if (firma === 'control-change' || firma === 'refresh-after-main') return deControles(palabras, cwd, estado);
   if (firma === 'manual-test') return deLaPruebaAMano(palabras, marcador);
   if (firma === 'critical-waiver') return delCritico(palabras, marcador);

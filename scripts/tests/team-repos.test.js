@@ -637,7 +637,10 @@ test('T14 Review_ValidaSuSeccion @story-7.37 @ac-4 — el tope de vueltas y los 
     const r = TEAM.parse(JSON.stringify(Object.assign(goodTeam(), { review })));
     assert.equal(r.ok, true, `${ruta}: un problema de review no invalida el archivo`);
     assert.deepStrictEqual(r.problems, []);
-    assert.ok(r.data && !('review' in r.data), `${ruta}: data sin review`);
+    // cae sólo la clave mala: las demás de la sección siguen
+    const clave = ruta.split('.')[1];
+    assert.ok(r.data && (!r.data.review || !(clave in r.data.review)), `${ruta}: data sin esa clave`);
+    if (ruta === 'review.otra') assert.deepStrictEqual(r.data.review, { max_rounds: 2 });
     assert.ok(r.sectionProblems && r.sectionProblems.review.some((p) => p.path === ruta), `${ruta}: ${JSON.stringify(r.sectionProblems)}`);
   }
 });
@@ -946,4 +949,53 @@ test('DeepReviewDefault_EditableOnSite_NoOff_Validation @story-7.54 @ac-6 — la
     const r = TEAM.parse(JSON.stringify(Object.assign(goodTeam(), { deep_review: dr })));
     assert.ok(r.sectionProblems && r.sectionProblems.deep_review.some((x) => x.path === ruta), `${ruta}: ${JSON.stringify(r.sectionProblems)}`);
   }
+});
+
+test('TeamRepos_ReviewRunnerSeValida (T8) @story-8.221 @ac-8 @ac-26 @ac-45 @ac-46 — cada clave mala cae sola, con su problema', () => {
+  const ORG = require(path.join(ROOT, 'scripts', 'lib', 'org-config.js'));
+  const con = (extra) => TEAM.parse(JSON.stringify(Object.assign(goodTeam(), extra)));
+  // lo bueno pasa entero
+  const bien = con({ review_runner: { order: ['codex', 'claude', 'custom'], custom_command: 'mi-revisor --json', verifiers: 'per_finding' },
+    plan_review: { delicate: 'ask', routine: 'always', routine_owner_away: 'wait', coordinator_approves: false, rejected_reaches_owner: true, owner_away_minutes: 30, lenses: ['suposicion-falsa', 'ac-sin-cubrir'] },
+    deep_review: { default: 'auto', delicate: 'ask', small_max_files: 8, small_routine_day: 'run', small_routine_owner_away: 'wait', large_routine: 'ask' },
+    review: { max_rounds: 4, blocking_severity: 'robustness' } });
+  assert.equal(bien.ok, true, JSON.stringify(bien.problems));
+  assert.equal(bien.sectionProblems, undefined, JSON.stringify(bien.sectionProblems));
+  // review_runner: lista vacía, repetidos, desconocido, custom sin comando, verifiers desconocido
+  for (const [rr, ruta] of [[{ order: [] }, 'review_runner.order'], [{ order: ['claude', 'claude'] }, 'review_runner.order'], [{ order: ['otro'] }, 'review_runner.order'],
+    [{ order: ['custom'] }, 'review_runner.custom_command'], [{ verifiers: 'muchos' }, 'review_runner.verifiers']]) {
+    const r = con({ review_runner: { ...rr, ...(ruta === 'review_runner.verifiers' ? { order: ['codex'] } : {}) } });
+    assert.equal(r.ok, true);
+    assert.ok(r.sectionProblems && r.sectionProblems.review_runner.some((x) => x.path === ruta), `${ruta}: ${JSON.stringify(r.sectionProblems)}`);
+    // las otras claves de la sección siguen
+    if (ruta === 'review_runner.verifiers') assert.deepStrictEqual(r.data.review_runner, { order: ['codex'] });
+  }
+  // deep_review: un corte malo no tira la política
+  const deep = con({ deep_review: { default: 'always', small_max_files: 99, large_routine: 'nunca' } });
+  assert.deepStrictEqual(deep.data.deep_review, { default: 'always' });
+  assert.deepStrictEqual(deep.sectionProblems.deep_review.map((x) => x.path).sort(), ['deep_review.large_routine', 'deep_review.small_max_files']);
+  // review: un tope malo no tira la gravedad, y al revés
+  const rev = con({ review: { max_rounds: 9, blocking_severity: 'bug' } });
+  assert.deepStrictEqual(rev.data.review, { blocking_severity: 'bug' });
+  assert.ok(con({ review: { blocking_severity: 'todo' } }).sectionProblems.review.some((x) => x.path === 'review.blocking_severity'));
+  // T58: una gravedad mala no le quita el tope válido de la misma sección
+  assert.deepStrictEqual(con({ review: { max_rounds: 2, blocking_severity: 'todo' } }).data.review, { max_rounds: 2 });
+  // plan_review: una lente desconocida, minutos fuera de rango
+  const plan = con({ plan_review: { routine: 'always', lenses: ['otra'], owner_away_minutes: 2 } });
+  assert.deepStrictEqual(plan.data.plan_review, { routine: 'always' });
+  assert.deepStrictEqual(plan.sectionProblems.plan_review.map((x) => x.path).sort(), ['plan_review.lenses', 'plan_review.owner_away_minutes']);
+  // story_index y plan_review mal escritos en el mismo archivo: cada uno cae solo, con sus problemas en su lista
+  const juntas = con({ story_index: 'todo', plan_review: { routine: 'always', lenses: ['otra'] } });
+  assert.ok(juntas.ok, 'una sección mala no invalida el archivo');
+  assert.equal(juntas.data.story_index, undefined);
+  assert.deepStrictEqual(juntas.data.plan_review, { routine: 'always' });
+  assert.deepStrictEqual(juntas.sectionProblems.story_index.map((x) => x.path), ['story_index']);
+  assert.deepStrictEqual(juntas.sectionProblems.plan_review.map((x) => x.path), ['plan_review.lenses']);
+  // la versión: review_runner y plan_review piden la suya, y cada clave nueva de deep_review y review también
+  const v = (doc) => ORG.versionQuePide(doc).version;
+  assert.equal(v({ review_runner: { order: ['claude'] } }), ORG.REVIEW_RUNNER_SINCE);
+  assert.equal(v({ plan_review: { routine: 'ask' } }), ORG.PLAN_REVIEW_SINCE);
+  assert.equal(v({ deep_review: { small_max_files: 6 } }), ORG.DEEP_REVIEW_MATRIX_SINCE);
+  assert.equal(v({ review: { blocking_severity: 'bug' } }), ORG.REVIEW_SEVERITY_SINCE);
+  assert.notEqual(v({ deep_review: { default: 'always' } }), ORG.DEEP_REVIEW_MATRIX_SINCE, 'sólo la política vieja pide la de antes');
 });

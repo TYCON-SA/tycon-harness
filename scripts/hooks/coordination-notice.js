@@ -3,6 +3,8 @@
  * coordination-notice.js — hook `UserPromptSubmit`: el aviso del tope de sesiones y de las firmas viejas, sólo para la
  * coordinadora, y el de la lista de firmas. Hook `SessionStart`: después de compactar o de limpiar la conversación, le
  * pide a la coordinadora que lea sus reglas otra vez; si limpiarla le quitó la designación, le dice cómo recuperarla.
+ * En cualquier sesión, un mensaje tipeado por la persona borra la marca del dueño ausente (lib/owner-away.js), aun con el
+ * aviso apagado.
  *
  * En cada turno de la sesión designada como coordinadora (guides/coordination.md) cuenta las sesiones que trabajan.
  * En el tope dice quiénes son; pasado el tope, por cuánto y cuál trabaja hace menos. Debajo del tope, nada. Las firmas
@@ -20,18 +22,45 @@
 const path = require('path');
 const fs = require('fs');
 
+let event = {};
+let leido = true;
+try {
+  const stdin = fs.readFileSync(0, 'utf8');
+  event = stdin ? JSON.parse(stdin) : {};
+} catch {
+  leido = false;
+}
+
+/**
+ * La marca del dueño ausente se borra cuando escribe la persona. Va antes del opt-out: apagar el aviso, o la caja del
+ * banco, no deja la marca puesta con el dueño de vuelta. Sólo la tipeada en esta sesión, nunca un mensaje envuelto ni el
+ * encargo de una sesión de fondo.
+ */
+function borrarLaMarcaSiEscribioLaPersona() {
+  if (!leido || event.hook_event_name !== 'UserPromptSubmit' || event.turn_id) return;
+  const sid = event.session_id || event.sessionId;
+  if (!sid) return;
+  const home = process.env.HOME || process.env.USERPROFILE || require('os').homedir();
+  const marca = require(path.join(__dirname, '..', 'lib', 'owner-away.js'));
+  const g = marca.get({ home });
+  if (g.problem) process.stderr.write(`coordination-notice: la marca de ausente: ${g.problem}\n`);
+  if (!g.mark) return;
+  const lista = require(path.join(__dirname, '..', 'lib', 'signature-list.js'));
+  const s = lista.sesiones(home).mapa.get(sid);
+  if (!lista.esDeLaPersona({ prompt: event.prompt, kind: s ? s.kind || 'interactive' : null, transcript: event.transcript_path })) return;
+  const r = marca.clear({ home, motivo: `mensaje de la persona en la sesión ${String(sid).slice(0, 8)}` });
+  if (r.problem) process.stderr.write(`coordination-notice: la persona volvió y la marca de ausente sigue puesta: ${r.problem}\n`);
+}
+try { borrarLaMarcaSiEscribioLaPersona(); } catch (e) {
+  try { process.stderr.write(`coordination-notice: la marca de ausente: ${String((e && e.message) || e).split('\n')[0]}\n`); } catch { /* nada */ }
+}
+
 // Las corridas del banco lanzan `claude -p`: un aviso acá se leería como parte del caso.
 if (process.env.TYCON_EVAL_SANDBOX === '1' || process.env.TYCON_COORDINATION_NOTICE === '0') process.exit(0);
 
 function main() {
-  let event = {};
-  try {
-    const stdin = fs.readFileSync(0, 'utf8');
-    event = stdin ? JSON.parse(stdin) : {};
-  } catch {
-    // Sin el evento no se sabe qué sesión es, y el aviso es sólo para la coordinadora: no hay a quién decírselo.
-    return;
-  }
+  // Sin el evento no se sabe qué sesión es, y el aviso es sólo para la coordinadora: no hay a quién decírselo.
+  if (!leido) return;
   const sessionId = event.session_id || event.sessionId || null;
   if (!sessionId) return;
   const { capNotice, guideNotice, listNotice } = require(path.join(__dirname, '..', 'tools', 'coordination.js'));

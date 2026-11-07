@@ -3334,9 +3334,9 @@ test('foto de iteración: la llamada manual no pisa la automática, y el re-loop
   ].join('\n') + '\n');
 
   const env = { ...process.env, ...fakeHomeEnv(fakeHome), CLAUDE_CODE_SESSION_ID: SID };
-  // el tope de vueltas al máximo (el ajuste de la máquina): acá se mide la foto de la vuelta 12, no el tope
+  // las vueltas extra ya firmadas: acá se mide la foto de la vuelta 12, no el tope
   fs.mkdirSync(path.join(fakeHome, '.claude', '.tycon-pipeline'), { recursive: true });
-  fs.writeFileSync(path.join(fakeHome, '.claude', '.tycon-pipeline', 'review-max-rounds.json'), '{ "max_rounds": 99 }\n');
+  fs.appendFileSync(path.join(fakeHome, '.claude', '.tycon-pipeline', 'gates.log'), Array.from({ length: 30 }, (_, i) => JSON.stringify({ name: 'extra-round', status: 'ok', story: '2.5', iter: i + 1 })).join('\n') + '\n');
   const correr = (script, args, extraEnv) => cp.spawnSync(
     process.execPath, [path.join(SCRIPTS, script), ...args],
     { env: { ...env, ...(extraEnv || {}) }, cwd: repo, encoding: 'utf8' },

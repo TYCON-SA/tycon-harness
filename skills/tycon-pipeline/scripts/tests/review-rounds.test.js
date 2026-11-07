@@ -26,8 +26,11 @@ const FECHA = { GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z', GIT_COMMITTER_DATE: '20
 // stable-data: la conversación va después del arranque de la corrida, que se anota con el reloj real
 const T = (seg) => new Date(Date.now() + 60000 + seg * 1000).toISOString();
 
-/** Un repo con una story, la carpeta de la corrida y su marcador en una HOME propia. */
-function laboratorio({ findings = null, fotos = [], servidas = [], advisorsYaml = null, org = null } = {}) {
+// El tope de estas pruebas: 2 vueltas, puesto por el repo (commiteado). El de fábrica (3) lo mide Cap_Default_Three.
+const TOPE_DOS = 'review:\n  max_rounds: 2\n';
+
+/** Un repo con una story, la carpeta de la corrida y su marcador en una HOME propia. `advisorsYaml: null`: sin el archivo. */
+function laboratorio({ findings = null, fotos = [], servidas = [], advisorsYaml = TOPE_DOS, org = null } = {}) {
   const repo = tmp('rr-repo-');
   const home = tmp('rr-home-');
   const git = (...a) => execFileSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', repo, ...a], { stdio: 'ignore', env: { ...process.env, ...FECHA } });
@@ -67,7 +70,7 @@ function laboratorio({ findings = null, fotos = [], servidas = [], advisorsYaml 
     { encoding: 'utf8', env: ventana ? conVentana({ ...env, ...envExtra }) : { ...env, ...envExtra } });
   lab.cmd = (bin, args, envExtra = {}) => spawnSync(process.execPath, [bin, ...args], { encoding: 'utf8', cwd: repo, env: { ...env, ...envExtra } });
   lab.foto = (n) => { const m = JSON.parse(fs.readFileSync(markerFile, 'utf8')); m.iterations[n] = { ts: new Date().toISOString(), files: {} }; fs.writeFileSync(markerFile, JSON.stringify(m)); };
-  // el ajuste de la máquina: un archivo en la carpeta de estado, donde el agente no escribe
+  // el ajuste viejo de la máquina: un archivo en la carpeta de estado, que ya no sube el tope
   lab.maquina = (n) => fs.writeFileSync(path.join(state, 'review-max-rounds.json'), JSON.stringify({ max_rounds: n }));
   lab.servidas = () => { try { return JSON.parse(fs.readFileSync(path.join(run, 'rethink', 'served.json'), 'utf8')).served; } catch (_) { return []; } };
   lab.conversar = (regs) => {
@@ -89,17 +92,26 @@ test('Rounds_SameRoundTwice_DoesNotCount @story-7.37 @ac-1', () => {
   const b = lab.reloop(2);
   assert.equal(b.status, 0, `la misma vuelta pedida dos veces no es otra: ${b.stderr}`);
   assert.deepEqual(lab.servidas(), [1, 2]);
-  // con los revisores de la 2 lanzados, el pedido siguiente es la 3, como siempre (con el tope alto, pide la nota)
+  // con los revisores de la 2 lanzados, el pedido siguiente es la 3, como siempre: al tope de 2, lo dice
   lab.foto(2);
-  lab.maquina(6);
   const c = lab.reloop(2);
   assert.equal(c.status, 3, c.stderr);
   assert.match(c.stderr, /vuelta 3/i);
-  // subir el tope con el ajuste de la máquina pasa, pero queda anotado y se dice
-  assert.match(c.stderr, /el ajuste de esta máquina.*lo sube a 6: queda anotado/);
-  assert.ok(gates(lab).some((g) => g.name === 'review-cap-machine' && g.iter === 3));
-  const linea = lab.cmd(PIPELINE, ['review-rounds', '--story', lab.story, '--repo', lab.repo]);
-  assert.match(linea.stdout, /tope 6, puesto por el ajuste de esta máquina/);
+});
+
+test('Cap_MachineFile_IgnoredAndSaidOnce (T58) @story-8.221 @ac-46', () => {
+  // el ajuste por máquina ya no existe: el archivo viejo no sube el tope, y se dice una sola vez
+  const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2] });
+  lab.maquina(6);
+  const rr = () => JSON.parse(lab.cmd(PIPELINE, ['review-rounds', '--story', lab.story, '--repo', lab.repo, '--json']).stdout);
+  const a = rr();
+  assert.deepEqual([a.tope, a.tope_de], [2, 'repo']);
+  assert.match(a.problemas.join(' '), /review-max-rounds\.json.*ya no existe y se ignora/);
+  assert.doesNotMatch(rr().problemas.join(' '), /review-max-rounds/, 'una sola vez');
+  assert.equal(gates(lab).filter((g) => g.name === 'review-cap-machine-ignored').length, 1);
+  const r = lab.reloop(3);
+  assert.equal(r.status, 3, 'el archivo no sube el tope');
+  assert.match(r.stderr, /tope de 2 vueltas/);
 });
 
 test('Rounds_RunCost_CountsRoundsWithReviewers @story-7.37 @ac-2', () => {
@@ -179,21 +191,39 @@ test('RunCost_NoStart_OnlyThisStorySaid @story-7.49 @ac-1 @ac-3', () => {
   assert.equal(costo.sin_arranque, true);
 });
 
-test('Cap_Default_Two @story-7.37 @ac-3', () => {
-  const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2] });
-  const r = lab.reloop(3);
+test('Cap_OrgBadPrefixElement_DropsTheList (T58) @story-8.221 @ac-46 — un elemento malo de blocking_prefixes no queda contando', () => {
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'rounds-prefijos-')));
+  try {
+    const arbol = path.join(base, 'arbol');
+    fs.mkdirSync(arbol); fs.mkdirSync(path.join(base, 'home'));
+    const acme = (repo) => ({ platform: 'github', org: 'acme', repo });
+    fs.writeFileSync(path.join(arbol, 'team-repos.json'), JSON.stringify({ version: 1, public: acme('harness'), profile: acme('team-profile'), operations: acme('team-operations'),
+      review: { max_rounds: 2, blocking_prefixes: ['PAGOS', 'datos'] } }));
+    fs.symlinkSync(path.join(SCRIPTS, '..', '..', '..', 'scripts'), path.join(arbol, 'scripts'));
+    const RR = require(path.join(SCRIPTS, 'lib', 'review-rounds.js'));
+    const p = RR.prefijos({ env: { ...process.env, TYCON_GUIDES_DIR: arbol }, home: path.join(base, 'home') });
+    assert.match(p.problems.join(' '), /blocking_prefixes\.1/);
+    // la lista con un elemento malo cae entera: «datos» (DATOS-C1) no frena como seguridad, y PAGOS tampoco queda
+    assert.equal(RR.clase('DATOS-C1', { prefijos: p }), null);
+    assert.ok(!p.seguridad.includes('PAGOS'), JSON.stringify(p.seguridad));
+  } finally { fs.rmSync(base, { recursive: true, force: true }); }
+});
+
+test('Cap_Default_Three @story-7.37 @ac-3 @story-8.221 @ac-46', () => {
+  const lab = laboratorio({ fotos: [1, 2, 3], servidas: [1, 2, 3], advisorsYaml: null });
+  const r = lab.reloop(4);
   assert.equal(r.status, 3, r.stderr);
-  assert.match(r.stderr, /tope de 2 vueltas/);
+  assert.match(r.stderr, /tope de 3 vueltas/);
   assert.match(r.stderr, /no quedó nada abierto|quedó abierto/i);
   // una variable de ambiente antepuesta al comando (la podría poner el propio agente) no sube el tope
-  const v = lab.reloop(3, [], { TYCON_REVIEW_MAX_ROUNDS: '99' });
+  const v = lab.reloop(4, [], { TYCON_REVIEW_MAX_ROUNDS: '99' });
   assert.equal(v.status, 3);
-  assert.match(v.stderr, /tope de 2 vueltas/);
+  assert.match(v.stderr, /tope de 3 vueltas/);
 });
 
 test('Cap_OrgAndRepo_RepoWins_BadValueSaid @story-7.37 @ac-4', () => {
   const rr = (lab) => JSON.parse(lab.cmd(PIPELINE, ['review-rounds', '--story', lab.story, '--repo', lab.repo, '--json']).stdout);
-  const org = laboratorio({ org: { max_rounds: 3 } });
+  const org = laboratorio({ org: { max_rounds: 3 }, advisorsYaml: null });
   assert.deepEqual([rr(org).tope, rr(org).tope_de], [3, 'organizacion']);
   const repo = laboratorio({ org: { max_rounds: 3 }, advisorsYaml: 'review:\n  max_rounds: 4\n' });
   assert.deepEqual([rr(repo).tope, rr(repo).tope_de], [4, 'repo']);
