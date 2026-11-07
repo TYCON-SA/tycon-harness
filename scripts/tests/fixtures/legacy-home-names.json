@@ -5,165 +5,165 @@
       "path": "scripts/setup/harness/tycon-home.js",
       "why": "la única definición de dónde vive el arnés: en las tandas A1 y A2 cada función vale la ruta de hoy, bajo ~/.claude",
       "retire_with": "8.23 tanda B (las rutas pasan a ~/.tycon) y tanda E (el nombre viejo sale)",
-      "retire_after": "2026-11-07",
+      "retire_after": "2026-12-07",
       "retired_by": "8.24"
     },
     {
       "path": "scripts/setup/harness/bootstrap.js",
       "why": "la copia fija de arranque: corre fuera del árbol y no hace ningún require del árbol (lo durable no viaja por el camino roto)",
       "retire_with": "8.23 tanda D (la mudanza) y tanda E",
-      "retire_after": "2026-11-07",
+      "retire_after": "2026-12-07",
       "retired_by": "8.24"
     },
     {
       "path": "scripts/setup/harness/bootstrap-fallback.sh",
       "why": "el respaldo en shell de la copia fija: no carga nada del árbol ni tiene Node",
       "retire_with": "8.23 tanda D (la mudanza) y tanda E",
-      "retire_after": "2026-11-07",
+      "retire_after": "2026-12-07",
       "retired_by": "8.24"
     },
     {
       "path": "scripts/setup/harness/bootstrap-fallback.ps1",
       "why": "el respaldo en PowerShell de la copia fija: no carga nada del árbol ni tiene Node",
       "retire_with": "8.23 tanda D (la mudanza) y tanda E",
-      "retire_after": "2026-11-07",
+      "retire_after": "2026-12-07",
       "retired_by": "8.24"
     },
     {
       "path": "scripts/setup/harness/import-line.js",
       "why": "la línea de ~/.claude/CLAUDE.md que carga el índice de guías nombra el lugar viejo (~/.claude/tycon-harness); es vieja y la story 8.24 la pasa a nombrar ~/.tycon/harness (AC 6)",
       "retire_with": "8.24 (la línea de arranque pasa a nombrar ~/.tycon/harness)",
-      "retire_after": "2026-11-07",
+      "retire_after": "2026-12-07",
       "retired_by": "8.24"
     },
     {
       "path": "scripts/setup/npm/home-paths.json",
       "why": "las rutas del instalador de npx (story 8.40, AC 36): corre ANTES de que haya arnés y no puede importar tycon-home.js, así que lleva su copia de dónde está el estado, el de hoy y el viejo bajo ~/.claude, sólo para leerlo. Nunca lo escribe. Su paridad con tycon-home.js la mide npm-package.test.js (T43)",
       "retire_with": "8.24 (deja de mirar el estado viejo bajo ~/.claude)",
-      "retire_after": "2026-11-07",
+      "retire_after": "2026-12-07",
       "retired_by": "8.24"
     },
-    { "path": "scripts/setup/harness/team-stories/githooks-pre-commit", "why": "la plantilla del gancho de commit que el alta deja en el repo de stories de un producto: corre en la máquina de cada dev sin el arnés a mano y busca el arnés instalado en el lugar de siempre bajo ~/.claude (y en el de antes del cambio de lugar)", "retire_with": "8.24 (los productos buscan el arnés en ~/.tycon/harness)", "retire_after": "2026-11-07", "retired_by": "8.24" }
+    { "path": "scripts/setup/harness/team-stories/githooks-pre-commit", "why": "la plantilla del gancho de commit que el alta deja en el repo de stories de un producto: corre en la máquina de cada dev sin el arnés a mano y busca el arnés instalado en el lugar de siempre bajo ~/.claude (y en el de antes del cambio de lugar)", "retire_with": "8.24 (los productos buscan el arnés en ~/.tycon/harness)", "retire_after": "2026-12-07", "retired_by": "8.24" }
   ],
   "until_d": [
     {
       "path": "scripts/hooks/prod-access-guard.js",
       "why": "viaja al freno de producción en /opt: desde la tanda D (2026-10-08) le pide la carpeta del estado a tycon-home.js si está al lado (en /opt viaja su copia) y sólo sin ella arma la de siempre: la mención queda como respaldo",
-      "retire_after": "2026-11-07",
+      "retire_after": "2026-12-07",
       "retired_by": "8.24"
     },
     {
       "path": "scripts/lib/guard-record.js",
       "why": "viaja al freno de producción en /opt: desde la tanda D (2026-10-08) le pide la carpeta del estado a tycon-home.js si está al lado (en /opt viaja su copia) y sólo sin ella arma la de siempre: la mención queda como respaldo",
-      "retire_after": "2026-11-07",
+      "retire_after": "2026-12-07",
       "retired_by": "8.24"
     },
     {
       "path": "scripts/production/guard-libs/lib/guard-record.js",
       "why": "la copia propia del freno de producción (2026-10-14) de scripts/lib/guard-record.js: es la que viaja a /opt, byte a byte la compartida, con el mismo respaldo; se retira cuando la compartida lo saque y quien mantiene refresque la copia (guard-libs-check.js refresh)",
-      "retire_after": "2026-11-07",
+      "retire_after": "2026-12-07",
       "retired_by": "8.24"
     },
     {
       "path": "scripts/lib/legacy-names.js",
       "why": "viaja al freno de producción en /opt: desde la tanda D (2026-10-08) le pide la carpeta del estado a tycon-home.js si está al lado (en /opt viaja su copia) y sólo sin ella arma la de siempre: la mención queda como respaldo",
-      "retire_after": "2026-11-07",
+      "retire_after": "2026-12-07",
       "retired_by": "8.24"
     },
     {
       "path": "scripts/lib/tycon-config.js",
       "why": "viaja al freno de producción en /opt: desde la tanda D (2026-10-08) le pide la carpeta del estado a tycon-home.js si está al lado (en /opt viaja su copia) y sólo sin ella arma la de siempre: la mención queda como respaldo",
-      "retire_after": "2026-11-07",
+      "retire_after": "2026-12-07",
       "retired_by": "8.24"
     },
     {
       "path": "scripts/production/production-index.js",
       "why": "viaja al freno de producción en /opt: desde la tanda D (2026-10-08) le pide la carpeta del estado a tycon-home.js si está al lado (en /opt viaja su copia) y sólo sin ella arma la de siempre: la mención queda como respaldo",
-      "retire_after": "2026-11-07",
+      "retire_after": "2026-12-07",
       "retired_by": "8.24"
     },
     {
       "path": "scripts/production/node-shim.sh",
       "why": "viaja al freno de producción en /opt: desde la tanda D (2026-10-08) le pide la carpeta del estado a tycon-home.js si está al lado (en /opt viaja su copia) y sólo sin ella arma la de siempre: la mención queda como respaldo",
-      "retire_after": "2026-11-07",
+      "retire_after": "2026-12-07",
       "retired_by": "8.24"
     },
     {
       "path": "scripts/hooks/prod-firewall-close.js",
       "why": "el freno de producción corre fuera del arnés y necesita la ruta literal: el cierre de la regla de firewall corre desde los managed settings, le pide la carpeta del estado a tycon-home.js si está al lado y sólo sin él arma la de siempre bajo ~/.claude, como respaldo",
-      "retire_after": "2026-11-07",
+      "retire_after": "2026-12-07",
       "retired_by": "8.24"
     },
     {
       "path": "scripts/production/install-guard.sh",
       "why": "el freno de producción corre fuera del arnés y necesita la ruta literal: el instalador (con sudo, en shell) ubica el arnés bajo ~/.claude, lee ~/.claude/tycon.json y barre el estado viejo, sin poder importar tycon-home.js",
-      "retire_after": "2026-11-07",
+      "retire_after": "2026-12-07",
       "retired_by": "8.24"
     },
     {
       "path": "scripts/production/managed-settings.tycon-production.json.template",
       "why": "el freno de producción corre fuera del arnés y necesita la ruta literal: la plantilla de los managed settings es un JSON que lee Claude Code tal cual, sin poder importar nada",
-      "retire_after": "2026-11-07",
+      "retire_after": "2026-12-07",
       "retired_by": "8.24"
     },
     {
       "path": "scripts/setup/harness/startup-line.js",
       "why": "decisión de la tanda D (2026-10-08): la mudanza deja ~/.claude/.tycon-pipeline como ENLACE al estado (AC 28), así la línea de arranque escrita en cada máquina y los guiones de shell/PowerShell siguen valiendo sin reescribirse; se re-apuntan cuando se retire el enlace (story de retiro, AC 36)",
-      "retire_after": "2026-11-07",
+      "retire_after": "2026-12-07",
       "retired_by": "8.24"
     },
     {
       "path": "scripts/setup/harness/health.js",
       "why": "decisión de la tanda D (2026-10-08): la mudanza deja ~/.claude/.tycon-pipeline como ENLACE al estado (AC 28), así la línea de arranque escrita en cada máquina y los guiones de shell/PowerShell siguen valiendo sin reescribirse; se re-apuntan cuando se retire el enlace (story de retiro, AC 36)",
-      "retire_after": "2026-11-07",
+      "retire_after": "2026-12-07",
       "retired_by": "8.24"
     },
     {
       "path": "scripts/hooks/harness-bootstrap-heal.sh",
       "why": "decisión de la tanda D (2026-10-08): la mudanza deja ~/.claude/.tycon-pipeline como ENLACE al estado (AC 28), así la línea de arranque escrita en cada máquina y los guiones de shell/PowerShell siguen valiendo sin reescribirse; se re-apuntan cuando se retire el enlace (story de retiro, AC 36)",
-      "retire_after": "2026-11-07",
+      "retire_after": "2026-12-07",
       "retired_by": "8.24"
     },
     {
       "path": "scripts/install-tycon-hooks.sh",
       "why": "decisión de la tanda D (2026-10-08): la mudanza deja ~/.claude/.tycon-pipeline como ENLACE al estado (AC 28), así la línea de arranque escrita en cada máquina y los guiones de shell/PowerShell siguen valiendo sin reescribirse; se re-apuntan cuando se retire el enlace (story de retiro, AC 36)",
-      "retire_after": "2026-11-07",
+      "retire_after": "2026-12-07",
       "retired_by": "8.24"
     },
     {
       "path": "scripts/install-tycon-hooks.ps1",
       "why": "decisión de la tanda D (2026-10-08): la mudanza deja ~/.claude/.tycon-pipeline como ENLACE al estado (AC 28), así la línea de arranque escrita en cada máquina y los guiones de shell/PowerShell siguen valiendo sin reescribirse; se re-apuntan cuando se retire el enlace (story de retiro, AC 36)",
-      "retire_after": "2026-11-07",
+      "retire_after": "2026-12-07",
       "retired_by": "8.24"
     },
     {
       "path": "scripts/setup/ensure-sqlite3.sh",
       "why": "decisión de la tanda D (2026-10-08): la mudanza deja ~/.claude/.tycon-pipeline como ENLACE al estado (AC 28), así la línea de arranque escrita en cada máquina y los guiones de shell/PowerShell siguen valiendo sin reescribirse; se re-apuntan cuando se retire el enlace (story de retiro, AC 36)",
-      "retire_after": "2026-11-07",
+      "retire_after": "2026-12-07",
       "retired_by": "8.24"
     },
     {
       "path": "scripts/setup/ensure-sqlite3.ps1",
       "why": "decisión de la tanda D (2026-10-08): la mudanza deja ~/.claude/.tycon-pipeline como ENLACE al estado (AC 28), así la línea de arranque escrita en cada máquina y los guiones de shell/PowerShell siguen valiendo sin reescribirse; se re-apuntan cuando se retire el enlace (story de retiro, AC 36)",
-      "retire_after": "2026-11-07",
+      "retire_after": "2026-12-07",
       "retired_by": "8.24"
     },
     {
       "path": "skills/tycon-pipeline/scripts/smoke-run.sh",
       "why": "decisión de la tanda D (2026-10-08): la mudanza deja ~/.claude/.tycon-pipeline como ENLACE al estado (AC 28), así la línea de arranque escrita en cada máquina y los guiones de shell/PowerShell siguen valiendo sin reescribirse; se re-apuntan cuando se retire el enlace (story de retiro, AC 36)",
-      "retire_after": "2026-11-07",
+      "retire_after": "2026-12-07",
       "retired_by": "8.24"
     },
     {
       "path": "scripts/ci/nightly-dod-notice.sh",
       "why": "decisión de la tanda D (2026-10-08): la mudanza deja ~/.claude/.tycon-pipeline como ENLACE al estado (AC 28), así la línea de arranque escrita en cada máquina y los guiones de shell/PowerShell siguen valiendo sin reescribirse; se re-apuntan cuando se retire el enlace (story de retiro, AC 36)",
-      "retire_after": "2026-11-07",
+      "retire_after": "2026-12-07",
       "retired_by": "8.24"
     },
     {
       "path": "scripts/hooks/test-scope-guard-pre.sh",
       "why": "decisión de la tanda D (2026-10-08): la mudanza deja ~/.claude/.tycon-pipeline como ENLACE al estado (AC 28), así la línea de arranque escrita en cada máquina y los guiones de shell/PowerShell siguen valiendo sin reescribirse; se re-apuntan cuando se retire el enlace (story de retiro, AC 36)",
-      "retire_after": "2026-11-07",
+      "retire_after": "2026-12-07",
       "retired_by": "8.24"
     }
   ],
