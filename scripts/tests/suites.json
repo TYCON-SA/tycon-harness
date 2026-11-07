@@ -577,6 +577,12 @@
       "requiere": []
     },
     {
+      "__nota": "el freno de lanzamiento de revisores: niega con el criterio de next, deja pasar con su motivo, y on-advisor-run.js no anota el negado salvo sin el freno registrado. Todo en un HOME temporal.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/reviewer-launch-gate.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/approvals.test.js",
       "requiere": []
@@ -2622,6 +2628,18 @@
       "requiere": []
     },
     {
+      "__nota": "scripts/tools/story-index.js arma specs/epics.md y specs/sprint-status.yaml desde el frontmatter de cada historia, sobre el repo de juguete de fixtures/story-index/ (esperados byte por byte): orden por épica y número, la prosa desde epics-intro.md, --check, lo que no se puede leer o un escaneo incompleto no escribe, los lectores siguen andando, el freno del pre-commit en una rama (--guard), la regeneración en main con sus reintentos, la migración de un índice a mano y la clave story_index de team-repos.json.",
+      "raiz": "arnes",
+      "ruta": "tests/story-index.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "con story_index: generated, la skill que crea historias y el paso de acción de la revisión de desfase no leen ni escriben los índices (eligen y escriben desde el frontmatter); marker.js update-story-status sigue sin tocarlos.",
+      "raiz": "arnes",
+      "ruta": "tests/tycon-create-story-index.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "al commitear en el público, el inventario de los controles se compara con el pre-commit propio del repo privado (de su origin/main): avisa el mismo día lo que antes salía rojo de noche, y en el privado no aplica.",
       "raiz": "arnes",
       "ruta": "tests/private-inventory.test.js",
@@ -4123,6 +4141,12 @@
       "__nota": "2026-10-16, pedido del dueño («borrá solas las carpetas ya mergeadas»): scripts/hooks/worktree-sweep.js. Con git de verdad (remoto desnudo, clon y worktrees en una carpeta temporal) y un HOME de prueba por caso: al arrancar borra el worktree limpio y mergeado con su rama y nunca el checkout principal; nombra y no toca los que tienen archivos modificados o sin seguimiento y los que tienen commits sin mergear; calla ante uno usado hace poco, y deja el recién creado, el bloqueado y el de la sesión; sella el día y calla en el segundo arranque; apagado por variable y en seco no toca nada. Con --story borra sólo los de esa story, trae origin antes de juzgar y deja el que tiene cambios. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/worktree-sweep.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.164 (T2, T3): los textos que le muestran al agente cómo abrir un pedido en Azure DevOps (los tres del freno de pedidos y el paso de cierre) traen --delete-source-branch al lado de --auto-complete true --squash false; la guía de commits trae la tarea humana de GitHub («Automatically delete head branches») con su ruta. Sólo lee archivos.",
+      "raiz": "arnes",
+      "ruta": "tests/machine-cleanup-guides.test.js",
       "requiere": []
     },
     {

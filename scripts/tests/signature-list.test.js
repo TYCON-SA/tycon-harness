@@ -765,3 +765,63 @@ test('OwnerNext_SoloClickDeOtraSesion_NoLePasaALaCoordinadora — @story-8.207 @
   // el renglón sigue abierto para la sesión destino, que lo ve en su propia pestaña
   assert.ok(sl.abiertos(toy.casa, { arnes: toy.arnes, env: toy.env, ahora: AHORA }).filas.some((f) => f.destino === 'ses-b' && f.firma === 'designation-set'));
 });
+
+test('Lista_Reemplazada_DejaDeContar — @fix-T-207', (t) => {
+  const CARRIL = (cupo) => `node ${MARKER} adhoc set '{"reason":"arreglo","maxFiles":${cupo},"datos":"sin-cambio"}'`;
+  const pedido = (toy, firmaId, cupo, min, ses = 'ses-a') => firma(toy, { firmaId, ses, comando: CARRIL(cupo), titulo: firmaId, ahora: antes(min) });
+  const dada = (toy, firmaId, min, target = 'ses-a') => appendSignature({ signature: firmaId, via: 'click', target, home: toy.casa, now: antes(min), huella: () => ({ huella: 'h' }) });
+  const nueva = () => { const toy = casaNueva(t); sesion(toy.casa, 'ses-a'); sesion(toy.casa, 'ses-b'); return toy; };
+  const firmasAbiertas = (toy) => abiertos(toy).filas.map((f) => `${f.destino} ${f.firma}`).sort();
+
+  // la sesión pidió pasar el tope, después otro carril, y ése se firmó: los dos quedan cerrados
+  let toy = nueva();
+  pedido(toy, 'adhoc-lane:sobre-cupo', 10, 30);
+  pedido(toy, 'adhoc-lane', 8, 20);
+  dada(toy, 'adhoc-lane', 10);
+  assert.deepStrictEqual(firmasAbiertas(toy), []);
+
+  // reemplazada y sin firmar todavía: cuenta sólo la última
+  toy = nueva();
+  pedido(toy, 'adhoc-lane:sobre-cupo', 10, 30);
+  pedido(toy, 'adhoc-lane', 8, 20);
+  assert.deepStrictEqual(firmasAbiertas(toy), ['ses-a adhoc-lane']);
+
+  // una firma de su clase dada antes del pedido no lo cierra
+  toy = nueva();
+  dada(toy, 'adhoc-lane', 40);
+  pedido(toy, 'adhoc-lane:sobre-cupo', 10, 30);
+  assert.deepStrictEqual(firmasAbiertas(toy), ['ses-a adhoc-lane:sobre-cupo']);
+
+  // lo de otra sesión no reemplaza: ni su pedido ni su firma
+  toy = nueva();
+  pedido(toy, 'adhoc-lane:sobre-cupo', 10, 30);
+  pedido(toy, 'adhoc-lane', 8, 20, 'ses-b');
+  dada(toy, 'adhoc-lane', 10, 'ses-b');
+  assert.deepStrictEqual(firmasAbiertas(toy), ['ses-a adhoc-lane:sobre-cupo']);
+
+  // a la misma hora no hay uno posterior: cuentan los dos
+  toy = nueva();
+  pedido(toy, 'adhoc-lane:sobre-cupo', 10, 30);
+  pedido(toy, 'adhoc-lane', 8, 30);
+  assert.deepStrictEqual(firmasAbiertas(toy), ['ses-a adhoc-lane', 'ses-a adhoc-lane:sobre-cupo']);
+
+  // una firma de carril sin destino no reemplaza a nadie
+  toy = nueva();
+  pedido(toy, 'adhoc-lane:sobre-cupo', 10, 30);
+  dada(toy, 'adhoc-lane', 10, null);
+  assert.deepStrictEqual(firmasAbiertas(toy), ['ses-a adhoc-lane:sobre-cupo']);
+
+  // lo que no se pide de a uno no reemplaza: dos criterios probados a mano esperan los dos
+  toy = nueva();
+  pedido(toy, 'adhoc-lane:sobre-cupo', 10, 30);
+  firma(toy, { ahora: antes(25) });
+  firma(toy, { comando: `node ${MARKER} mark-tested --acs 4`, ahora: antes(20) });
+  assert.deepStrictEqual(firmasAbiertas(toy), ['ses-a adhoc-lane:sobre-cupo', 'ses-a manual-test', 'ses-a manual-test']);
+
+  // owner-next borra lo reemplazado del archivo
+  toy = nueva();
+  pedido(toy, 'adhoc-lane:sobre-cupo', 10, 30);
+  pedido(toy, 'adhoc-lane', 8, 20);
+  sl.siguiente(opts(toy, { sesion: 'ses-a', validar: () => ({ ok: false }) }));
+  assert.deepStrictEqual(crudas(toy).map((f) => f.firma), ['adhoc-lane']);
+});

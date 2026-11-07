@@ -35,6 +35,11 @@ function renderBoard(){const body=document.getElementById("boardBody"),k=DATA.ka
     if(!list.length)col.appendChild(el("p","none","Nada"));
     list.forEach(i=>{const card=el("div","item abre"),tit=el("b","una-linea",i.titulo||"");tit.title=i.titulo||"";if(typeof i.numero==="string"){card.setAttribute("data-numero",i.numero);card.appendChild(el("span","num",i.numero));if(typeof numeroMarcado==="string"&&i.numero===numeroMarcado)card.classList.add("marcada")}card.tabIndex=0;card.setAttribute("role","button");card.onclick=()=>{if(!String(window.getSelection?getSelection():""))abrirTarjeta(i,card);};card.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();abrirTarjeta(i,card);}};card.appendChild(tit);const line=[i.quien,i.hora,i.grupo].filter(Boolean).join(" · "),quienEs=(DATA.agents||[]).find(a=>a.nombre===String(i.quien||"").split(" · ")[0]),mod=quienEs&&(quienEs.modelo||quienEs.esfuerzo)?(quienEs.modelo||"sin dato")+" · "+(quienEs.esfuerzo||"sin dato"):"";if(mod)card.appendChild(el("span","m mod",mod));if(line)card.appendChild(el("span","m",line));const eh=c.id==="curso"&&estadoDeHora(i);if(eh){card.style.setProperty("--k",eh[1]);card.appendChild(el("span","estado-hora",eh[0]))}
       [i.espera?"Espera "+i.espera+".":"",i.marca,i.motivo,i.nota].forEach(v=>{if(v)card.appendChild(el("span","n",v))});if(i.mano)card.appendChild(el("span","mano "+i.mano,"✋ "+(i.mano==="coordinadora"?"Espera a la Coordinadora":"Espera tu firma")));col.appendChild(card)});
+    // «Terminados hoy» es sólo lo de hoy: lo de otros días, la tabla «Hechos», se abre debajo con «N anteriores»
+    const viejas=c.id==="hechos"&&DATA.tablas&&DATA.tablas.hechos?DATA.tablas.hechos.filas||[]:[];
+    if(viejas.length){const mas=el("button","none anteriores",viejas.length+(viejas.length===1?" anterior":" anteriores"));mas.type="button";mas.setAttribute("aria-expanded","false");const lista=el("div","anteriores-lista");lista.hidden=true;
+      viejas.forEach(f=>{const it=el("div","item");it.appendChild(el("b","una-linea",f.grupo||""));const m=[f.que,f.col].filter(Boolean).join(" · ");if(m)it.appendChild(el("span","m",m));lista.appendChild(it)});
+      mas.onclick=()=>{lista.hidden=!lista.hidden;mas.setAttribute("aria-expanded",String(!lista.hidden))};col.appendChild(mas);col.appendChild(lista)}
     cols.appendChild(col)});
   body.appendChild(cols);
 }
@@ -843,6 +848,9 @@ function arrancarOficinas(){
     f.stats.replaceChildren(chip(r.sesiones,r.sesiones===1?"sesión":"sesiones"),chip(r.trabajando,"trabajando"),chip(r.firma,"esperan tu firma","firma"),chip(r.esperanOLibres,"esperan o libres"));
     if(r.coordina){const s=el("span","stat");s.append("coordina ",el("b",null,r.coordina));f.stats.append(s)}
     if(o.sinConexionDesde)f.stats.append(el("span","stat apagada","sin conexión desde "+hhmmDe(o.sinConexionDesde)));
+    // conectada pero sin foto nueva: lo que se ve es de esa hora, no de ahora
+    else if(o.fotoDesde)f.stats.append(el("span","stat firma","foto de las "+hhmmDe(o.fotoDesde)+": no llegan fotos nuevas"));
+    if(o.foto&&o.foto.meta&&o.foto.meta.recorte)f.stats.append(el("span","stat",o.foto.meta.recorte));
     (o.marcas||[]).forEach(m=>f.stats.append(el("span","stat firma",m==="clave_copiada"?"posible clave copiada":m==="mas_nueva"?"más nueva que el sitio":m)));
     f.cover.setAttribute("aria-label","Agrandar la oficina de "+quien);f.stage.setAttribute("aria-label","La oficina de "+quien);f.titulo.textContent="Las sesiones de "+quien;
     // la ficha lee de DATA lo que no es de la persona (sus tokens): mientras se pintan, DATA es la foto de esta oficina

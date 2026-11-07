@@ -19,10 +19,15 @@
  *
  * QUÉ HACE. Para cada `az repos pr create` del comando —cada uno con SUS banderas, aunque vengan
  * varios encadenados— exige `--auto-complete true` y `--squash false` explícitos (sin el segundo la
- * estrategia la decide la política de la rama). Cierra además las otras dos puertas al mismo
- * resultado: un `az repos pr update` que APAGUE el auto-complete o PRENDA el squash, y el que
- * PUBLIQUE un borrador (`--draft false`) sin llevar las dos banderas. Mira sólo el texto del
- * comando —nada de red— con el lector de scripts/lib/az-pr.js.
+ * estrategia la decide la política de la rama), y `--delete-source-branch` explícito: `true` desde una rama efímera
+ * que se vea en `--source-branch`, o `false` sólo desde una de larga vida (sin borrarla, la rama queda viva después
+ * del merge; con `true` desde `dev`, la plataforma la borraría; la lista es la de §9b.4 del paso de merge). Cierra
+ * además las otras dos puertas al mismo resultado: un `az repos pr update` que APAGUE el auto-complete o PRENDA el
+ * squash, y el que PUBLIQUE un borrador (`--draft false`) sin llevar las tres banderas. El `update` no dice la rama de
+ * origen: con `--delete-source-branch true` frena siempre, y para publicar va `false`. Un `update` común sin la
+ * bandera no se juzga por ella: az conserva la que el pedido ya tenía. Lo que no puede leer (un valor que arma la
+ * terminal, un comodín, un `@archivo`) es una falta. Mira sólo el texto del comando —nada de red— con el lector de
+ * scripts/lib/az-pr.js (`faltasDe`).
  *
  * QUÉ NO HACE. Un borrador recién creado no se toca (no se completa solo por definición) y lo dice.
  * `--help`, listar, mostrar y abandonar tampoco. Salida para el caso puntual —incluido el legítimo
@@ -201,7 +206,7 @@ for (const seg of az.segmentos(cmd)) {
   // Una línea por tramo: un borrador con el prefijo dice las dos cosas en la misma línea.
   const SOBRA = 'TYCON_PR_BY_HAND=1: el prefijo sobra, este pedido pasa igual sin él; no lo anoto como salteo.';
   if (borrador) {
-    console.error(`${TAG} ${sobra ? SOBRA + ' ' : ''}borrador (--draft): no lo freno ahora, un borrador no se completa solo. Al publicarlo (--draft false) van a hacer falta --auto-complete true y --squash false.`);
+    console.error(`${TAG} ${sobra ? SOBRA + ' ' : ''}borrador (--draft): no lo freno ahora, un borrador no se completa solo. Al publicarlo (--draft false) van a hacer falta --auto-complete true --squash false --delete-source-branch <true|false>.`);
     continue;
   }
   if (sobra) console.error(`${TAG} ${SOBRA}`);
@@ -252,7 +257,7 @@ const soloUpdates = problemas.every((p) => p.verbo === 'update');
 const esperaAprobacion = problemas.some((p) => p.verbo === 'create' && !az.esCierto(az.flagDe(p.seg, 'auto-complete')));
 const retiene = problemas.some((p) => p.verbo === 'update' && az.esFalso(az.flagDe(p.seg, 'auto-complete')));
 const formas = [
-  esperaAprobacion ? 'Si el pedido espera una aprobación, crealo en borrador (`--draft true`) y, cuando se apruebe, publicalo con `--draft false --auto-complete true --squash false`.' : null,
+  esperaAprobacion ? 'Si el pedido espera una aprobación, crealo en borrador (`--draft true`) y, cuando se apruebe, publicalo con `--draft false --auto-complete true --squash false --delete-source-branch false` (el `update` no dice la rama, así que con `true` frena; la rama se borra a mano o con el skill de merge).' : null,
   retiene ? 'Para retener una entrega ya encolada (apagar la entrada automática), el prefijo es la salida: `TYCON_PR_BY_HAND=1` pegado a ese mismo `update`.' : null,
 ].filter(Boolean);
 console.error(`🔴 Este pull request se está armando A MANO y no va a quedar bien${soloUpdates ? '' : ' (va a main)'}:
@@ -263,9 +268,11 @@ el gate de build y tests y arma el mensaje que queda como descripción:
 
   Skill(skill="tycon-merge-to-main", args="source=${rama} target=main")
 
-Si de verdad tiene que ir a mano, el comando lleva las dos banderas, explícitas:
+Si de verdad tiene que ir a mano, el comando lleva las tres banderas, explícitas:
 
-  az repos pr create ... --auto-complete true --squash false
+  az repos pr create ... --source-branch <rama> --auto-complete true --squash false --delete-source-branch true
+
+(\`--delete-source-branch false\` sólo desde dev, develop, main o master: las demás ramas se borran al entrar.)
 ${formas.length ? `\n${formas.join('\n')}\n` : ''}
 Un borrador recién creado no se toca (sí al publicarlo). Para saltear este freno una sola vez, a
 propósito —por ejemplo para retener una entrega apagando el auto-complete—, el prefijo va PEGADO al

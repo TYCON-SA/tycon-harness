@@ -6620,7 +6620,7 @@ test('Regresion_PantallaDeOficinas_ConLosTextosDeLaMaqueta @story-8.171 @ac-9 �
   const r = await pantallaConPestanas({ secciones: TODAS.map((id) => (id === 'personas' ? SEC(id, { extras: { oficinas } }) : SEC(id))) });
   const caja = r.creados.filter((n) => n.attrs.id === 'seccion-personas').pop();
   const textos = textosDe(caja).join(' | ');
-  for (const t of ['La oficina de cada máquina', 'Solicitudes de alta', 'Máquinas con oficina', 'Retirar esta clave', 'Aprobar', 'Rechazar', 'Es la que vio el dev', 'Dar de baja', 'Reactivar', 'Borrar la marca', 'Posible clave copiada', 'Conectada', 'De baja', 'Dice llamarse «maquina-c»', 'Esperando que la máquina deje la huella con sus ejecuciones', 'Conflicto: confirmá la huella con el dev', 'Nada: la máquina dejó la misma huella con sus ejecuciones']) assert.ok(textos.includes(t), `falta «${t}»`);
+  for (const t of ['La oficina de cada máquina', 'Solicitudes de alta', 'Máquinas con oficina', 'Retirar esta clave', 'Aprobar', 'Rechazar', 'Es la que vio el dev', 'Dar de baja', 'Reactivar', 'Borrar la marca', 'Posible clave copiada', 'Conectada', 'De baja', 'Dice llamarse «maquina-c»', 'El sitio todavía no leyó la huella de esta máquina: la lee en su próxima pasada', 'Conflicto: confirmá la huella con el dev', 'Nada: la máquina dejó la misma huella con sus ejecuciones']) assert.ok(textos.includes(t), `falta «${t}»`);
   assert.ok(textos.includes('Más nueva que el sitio'));
   // sin pedidos y sin buzón
   const vacia = await pantallaConPestanas({ secciones: TODAS.map((id) => (id === 'personas' ? SEC(id, { extras: { oficinas: { conBuzon: false, sinDisco: true, pedidos: [], maquinas: [] } } }) : SEC(id))) });

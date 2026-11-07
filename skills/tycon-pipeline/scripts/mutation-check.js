@@ -22,7 +22,9 @@
  *     mutaría archivos ajenos al scope y seguiría symlinks
  *     fuera del repo). `--files` queda
  *     como override explícito. Las LÍNEAS a mutar sí salen del delta: diff
- *     contra HEAD para tracked, archivo entero para los nuevos.
+ *     contra la base de la corrida para tracked (lib/coverage-base.js: el
+ *     `baseSha` del marcador, la bifurcación con la rama principal o HEAD),
+ *     archivo entero para los nuevos.
  *   - Todo target (declarado o de --files) tiene que resolver DENTRO del repo
  *     tras symlinks (fs.realpathSync + prefijo con separador) → si no, exit 2
  *     SIN escribir nada. Un declarado que no existe en disco → `skipped` con
@@ -68,6 +70,7 @@ const mutantesPy = require(path.join(__dirname, 'lib', 'mutation-mutants-py.js')
 const { applyMutant } = mutantesJs;
 const { parseDeclaredFiles } = require(path.join(__dirname, 'lib', 'test-scope.js'));
 const { scopedRecipe } = require(path.join(__dirname, 'lib', 'test-runners.js'));
+const { resolver: resolverBase, leerMarcador } = require(path.join(__dirname, 'lib', 'coverage-base.js'));
 
 // Extensiones que este runner sabe mutar: JS/TS, C# y Python, cada una con su catálogo.
 const CODE_EXT_RE = /\.(js|jsx|ts|tsx|mjs|cjs|cs|py)$/i;
@@ -139,14 +142,17 @@ function git(repo, args) {
   return r.stdout;
 }
 
-// Líneas a mutar de UN target ya validado: delta contra HEAD si está tracked,
+// Líneas a mutar de UN target ya validado: delta contra la base de la corrida
+// (`base`, lo commiteado durante la corrida también es nuevo) si está tracked,
 // archivo entero si es nuevo (la story lo CREA — todas sus líneas son nuevas,
 // esté o no en `.gitignore`: si la story lo declara, está en scope).
-function addedLinesOf(repo, relFile) {
+function addedLinesOf(repo, relFile, base = 'HEAD') {
   const tracked = git(repo, ['ls-files', '--', relFile]);
   if (tracked && tracked.trim() !== '') {
-    const diff = git(repo, ['diff', '-U0', 'HEAD', '--', relFile]);
-    return parseAddedLines(diff || '');
+    const diff = git(repo, ['diff', '-U0', base, '--', relFile]);
+    // un diff que falla no es «nada agregado»: el que llama lo anota como no medido
+    if (diff === null) return null;
+    return parseAddedLines(diff);
   }
   let src = '';
   try { src = fs.readFileSync(path.join(repo, relFile), 'utf8'); } catch { return []; }
@@ -404,8 +410,16 @@ async function runMutationCheck({
   recipeOpts = {},
   // reloj de pared, sólo para los topes (nunca decide el orden de los mutantes)
   now = Date.now,
+  // el marcador de la corrida (su `baseSha`); sin él, la base es la bifurcación con la rama principal. `markerError`:
+  // por qué no se pudo leer
+  marker = null,
+  markerError = null,
 }) {
   let repo = repoOriginal;
+  // La base se resuelve en el repo original: la copia de trabajo tiene otras ramas remotas. Una base descartada se dice.
+  const resuelta = resolverBase({ repo: repoOriginal, env: process.env, marker, markerError });
+  const base = resuelta.ref || 'HEAD';
+  for (const d of resuelta.descartadas) log(`⚠️  mutation-check: base descartada (${d.source}): ${d.motivo}`);
   // Seam inyectable de fs para la sección SAGRADA del restore (DI con defaults
   // reales — en producción es fs puro, cero cambio de comportamiento). Existe
   // porque la verificación byte a byte del restore, sin un seam, no se puede cubrir con un test
@@ -418,7 +432,7 @@ async function runMutationCheck({
     ...(fsOps || {}),
   };
   // lo que se sabe del chequeo hasta acá (la receta, cuántos mutantes, el tope) viaja también en una salida estructural
-  const ctx = {};
+  const ctx = { base: resuelta.ref ? { ref: resuelta.ref, fuente: resuelta.source } : { ref: 'HEAD', fuente: 'sin-base' } };
   const fail2 = (motivo) => {
     log(`🔴 mutation-check: ${motivo}`);
     return { exitCode: 2, result: { motivo, ...ctx } };
@@ -545,7 +559,11 @@ async function runMutationCheck({
         `no se escribe nada fuera de ${realRepo}; no se mutó ningún archivo`
       );
     }
-    const addedLines = addedLinesOf(repo, rel);
+    const addedLines = addedLinesOf(repo, rel, base);
+    if (addedLines === null) {
+      skipped.push({ file: rel, reason: `git diff contra la base ${base} falló: sus líneas no se midieron` });
+      continue;
+    }
     if (!addedLines.length) continue;
     entries.push({ file: rel, source: fs.readFileSync(abs, 'utf8'), addedLines });
   }
@@ -806,6 +824,7 @@ if (require.main === module) {
         files: args.files,
         maxMutants: args.maxMutants,
         deadlineMs: Number.isInteger(args.deadlineMs) && args.deadlineMs > 0 ? args.deadlineMs : null,
+        ...(({ marker, error }) => ({ marker, markerError: error }))(leerMarcador()),
       });
     } catch (e) {
       // Cinturón extra — una excepción acá saldría con exit 1 de Node, que es
@@ -832,6 +851,6 @@ if (require.main === module) {
 }
 
 module.exports = {
-  looksLikeTestPath, parseAddedLines, runMutationCheck, parseArgs, defaultRunTests, runRecipe, countTests,
+  looksLikeTestPath, parseAddedLines, addedLinesOf, runMutationCheck, parseArgs, defaultRunTests, runRecipe, countTests,
   crearCopiaDeTrabajo, buscarArchivos, BUDGETS,
 };

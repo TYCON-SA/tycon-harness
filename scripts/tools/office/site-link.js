@@ -29,7 +29,7 @@ const https = require('https');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 
-const { MAX_MESSAGE_BYTES, CHARLA_EVERY_MS, CHARLA_GAP_MS, CLOSE, MESSAGES, signedText, validNonce, machineUrl, fingerprintOf, displayFingerprint, pick, pickCharla, sessionName } = require('./fields.js');
+const { MAX_MESSAGE_BYTES, CHARLA_EVERY_MS, CHARLA_GAP_MS, CLOSE, MESSAGES, signedText, validNonce, machineUrl, fingerprintOf, displayFingerprint, pick, fitPhoto, pickCharla, sessionName } = require('./fields.js');
 
 const HEARTBEAT_MS = 60 * 1000;
 const RETRY_MIN_MS = 2 * 1000;
@@ -327,6 +327,9 @@ function createLink({ site, sdir, home = os.homedir(), WebSocket = require('./ve
   let latest = null;
   let lastSent = null;
   let notedSize = null;
+  // desde cuándo la máquina tiene una foto que no pudo mandar (null: el sitio tiene la de ahora). Viaja en el latido: una
+  // oficina quieta no manda fotos, y el sitio no tiene otra forma de saber que la que muestra quedó vieja
+  let heldSince = null;
   let down = false;
 
   const note = (line) => appendLog(sdir, line, clock.now());
@@ -345,22 +348,30 @@ function createLink({ site, sdir, home = os.homedir(), WebSocket = require('./ve
       // un sitio que no contesta el latido anterior cuenta como caído: una conexión muda no se entera sola
       if (awaitingPong) { sock.terminate(); return; }
       awaitingPong = true;
-      sock.send(JSON.stringify({ type: 'ping' }));
+      sock.send(JSON.stringify(heldSince === null ? { type: 'ping' } : { type: 'ping', retenida: heldSince }));
       armBeat();
     }, HEARTBEAT_MS);
   }
 
   function sendFoto() {
     if (!sock || !authed || !latest) return;
-    const data = pick(latest, home);
-    const msg = JSON.stringify({ type: 'foto', data });
-    if (msg === lastSent) return;
+    let data = pick(latest, home);
+    let msg = JSON.stringify({ type: 'foto', data });
     const bytes = Buffer.byteLength(msg);
     if (bytes > MAX_MESSAGE_BYTES) {
-      if (notedSize !== bytes) { notedSize = bytes; note(`una foto de ${bytes} bytes pasa de 64 KB y no se mandó: el sitio sigue con la anterior`); }
-      return;
-    }
-    notedSize = null;
+      // el tablero crece más que el tope: se achica y dice qué recortó; sólo la que ni así entra se queda sin salir
+      const fit = fitPhoto(data, MAX_MESSAGE_BYTES);
+      if (!fit) {
+        if (notedSize !== bytes) { notedSize = bytes; note(`una foto de ${bytes} bytes pasa de 64 KB y ni achicada entra: no se mandó, el sitio sigue con la anterior`); }
+        if (heldSince === null) heldSince = clock.now();
+        return;
+      }
+      data = fit.data;
+      msg = JSON.stringify({ type: 'foto', data });
+      if (notedSize !== data.meta.recorte) { notedSize = data.meta.recorte; note(`una foto de ${bytes} bytes pasa de 64 KB: se achicó (${data.meta.recorte})`); }
+    } else notedSize = null;
+    heldSince = null;
+    if (msg === lastSent) return;
     sock.send(msg);
     lastSent = msg;
     // el sitio descarta la conversación de una sesión que su foto no nombra: la que ya había salido antes de la foto que

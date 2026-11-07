@@ -102,11 +102,25 @@ function writeMarker(sessionId, marker) {
  * Lo demás que escribe un subagente se anota como siempre, y también cuando el carril todavía no mide ningún repo o
  * no se puede saber: ante la duda, se anota.
  */
-function esSondaDeSubagente(event, filePath, sessionId) {
+function esSondaDeSubagente(event, filePath, sessionId, stateDir = STATE_DIR) {
   if (!event || !event.agent_id) return false;
+  // un `..` después de un enlace lleva a otra carpeta que la que se ve al normalizar: no se puede saber dónde cae
+  if (String(filePath).split(/[\\/]/).includes('..')) return false;
   try {
     const base = require('./lib/adhoc-base.js');
-    const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+    // por la consola el archivo, y a veces sus carpetas, todavía no existen: se resuelve la carpeta más cercana que sí
+    // existe y se le cuelga el resto, así un enlace en el camino (como /tmp en mac) no cambia la ruta
+    const real = (p) => {
+      let cerca = path.resolve(p);
+      const resto = [];
+      for (;;) {
+        try { return path.join(fs.realpathSync(cerca), ...resto); } catch { /* sube una carpeta */ }
+        const arriba = path.dirname(cerca);
+        if (arriba === cerca) return path.resolve(p);
+        resto.unshift(path.basename(cerca));
+        cerca = arriba;
+      }
+    };
     // la ruta real, sin `..` ni enlaces: lo que se mide es dónde quedó el archivo, no cómo se lo nombró
     const archivo = real(filePath);
     // git que no contesta no prueba que el archivo esté fuera: se anota
@@ -115,7 +129,7 @@ function esSondaDeSubagente(event, filePath, sessionId) {
       const partes = path.relative(real(donde.raiz), archivo).split(path.sep);
       if (partes.length > 4 && partes[0] === '.advisors' && partes[1] === 'pipeline-runs' && partes[3] === 'step-05b-probes') return true;
     }
-    const adhoc = require('./lib/story-gate-io.js').readAdhoc(STATE_DIR, sessionId);
+    const adhoc = require('./lib/story-gate-io.js').readAdhoc(stateDir, sessionId);
     if (!adhoc) return false;
     // una ruta del carril cuyo repo git no ubicó deja la lista incompleta: no prueba que el archivo esté fuera
     const repos = new Set(Object.keys(adhoc.bases || {}).map(real));
@@ -263,7 +277,7 @@ function handle(event) {
   return avisosDelCarril.length ? { reminder: avisosDelCarril.join('\n') } : null;
 }
 
-module.exports = { handle };
+module.exports = { handle, esSondaDeSubagente };
 
 // ── CLI shim (standalone) ──
 if (require.main === module) {

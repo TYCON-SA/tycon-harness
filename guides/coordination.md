@@ -224,26 +224,32 @@ El mismo aviso trae dos cosas más:
 - **La fila de la suite completa, parada.** Si no corre ninguna suite completa y alguna sesión anotó que espera turno
   (`marker.js doing --waiting-for` con «suite», «portón» o «turno»), sale «no corre ninguna suite completa y hay N
   esperando turno: dale el «arrancá» a X», con X la que espera hace más. Sin esa nota no sale: una sesión quieta no está
-  esperando turno. La espera de un pase no cuenta: el pase corre en la nube, con su propio turno. `status` muestra la
+  esperando turno. La espera de un pase no cuenta: a quien debe su pase lo despierta el aviso de arriba. `status` muestra la
   fila entera.
 
 ## Lo pesado, con turno: la suite completa y los pases adversariales
 
-En la máquina puede correr a la vez **una suite completa y un pase adversarial o una tanda de revisores de otra sesión**:
-el pase y los revisores corren en la nube y casi no usan la máquina. **Nunca dos ejecuciones grandes de pruebas ni dos pases a la vez.**
-Lo controla el arnés, no la memoria de nadie:
+En la máquina corre **una tarea pesada por vez**: una ejecución grande de pruebas o un pase adversarial, nunca dos, y
+tampoco una de cada una. Los cazadores y verificadores del pase corren sus sondas en la máquina, no en la nube: un pase y
+una suite grande juntos agotaron la memoria y Claude Code cerró sesiones. Los revisores, el banco y el examen son llamadas
+al modelo y no piden turno. Lo controla el arnés, no la memoria de nadie:
 
 - **La segunda ejecución grande no arranca.** Piden el turno (`scripts/tools/heavy-turn.js`) el corredor de las suites, cuando
   va a correr 100 suites o más, esté acotado o no, y las portables enteras. Con el turno de otro proceso vivo no corren (el
   portón de pruebas sale 75, su «esperá») y dicen quién lo tiene, cuántas suites corre, desde cuándo y cómo destrabarlo. Con
-  menos de 100 suites no se pide. El turno de un proceso muerto, o de más de tres horas, se libera solo.
-- **El segundo pase no se lanza.** Con otro en vuelo, el portón del pase (`pipeline.js deep-review-gate`) sale 3, y
-  `pipeline.js next` pide esperar en vez de lanzar. La respuesta trae `other_in_flight` (historia, sesión y hora) y la línea
-  que dice quién tiene el lugar. El pase de una sesión cerrada no cuenta.
-- **Cuánto puede tardar el lugar en liberarse.** Hasta una hora de más: el arnés sabe que un pase terminó cuando su sesión
-  lo recoge, no cuando termina en la nube. Pasada esa hora ya no frena, porque puede estar terminado o colgado, y se dice.
+  menos de 100 suites no se pide. Con un pase en vuelo de cualquier sesión viva, también la propia, tampoco corren, y dicen
+  de qué historia, de qué sesión y desde qué hora: el turno es de la máquina, no de la sesión.
+- **El pase no se lanza con la máquina ocupada.** Con otro pase en vuelo, o con una ejecución grande en curso, el portón
+  del pase (`pipeline.js deep-review-gate`) sale 3, y `pipeline.js next` pide esperar en vez de lanzar. La respuesta trae
+  `other_in_flight` (historia, sesión y hora) o `heavy_run` (sesión, cuántas suites y desde cuándo), y la línea que dice
+  quién tiene el lugar. El pase de una sesión cerrada no cuenta.
+- **Cómo se libera cada uno.** La ejecución grande suelta su turno al terminar; el de un proceso muerto, o de más de tres
+  horas, se libera solo. El pase no tiene archivo de turno: ocupa la máquina desde que se lanza hasta que su sesión anota
+  el resultado (`marker.js mark-adversarial-result`, con cualquier veredicto, también `no-medido`) o el salteo
+  (`marker.js mark-adversarial-skipped`). Si se relanza, vuelve a ocuparla. Una sesión que se cerró lo libera, y pasada una
+  hora ya no frena, porque puede estar terminado o colgado, y se dice.
 
-`coordination.js status` muestra la suite y el pase en curso. Sin coordinadora designada, todo responde como siempre: en la
+`coordination.js status` muestra un solo renglón, «Turno de tarea pesada», con quién lo tiene y qué es. Sin coordinadora designada, todo responde como siempre: en la
 CI y en la nube no hay turno. `TYCON_SUITE_TURN=0` apaga el de la suite, y `TYCON_SUITE_TURN=1` lo pide aunque no haya
 coordinadora: sólo puede frenar de más.
 
@@ -635,8 +641,8 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
   nombre del dueño que él no dio es una constancia falsa. Una pestaña que no pide permisos ya no firma por la ventana:
   el arnés lo niega. Un click o un «aprobado» que no anotó el gancho tampoco vale.
 - **Lo pesado, con turno.** La suite completa, el banco de controles, el examen de revisores y el portón corren de a uno
-  en la máquina, y el turno se le pide a la coordinadora. La suite completa y el pase además los frena el arnés (arriba, «Lo
-  pesado, con turno»). La historia que el dueño marcó como prioridad pasa adelante en la fila. Por qué: dos a la vez
+  en la máquina, y el turno se le pide a la coordinadora. La suite completa y el pase, que no van juntos, además los frena el arnés
+  (arriba, «Lo pesado, con turno»). La historia que el dueño marcó como prioridad pasa adelante en la fila. Por qué: dos a la vez
   saturan la máquina y los dos tardan más.
 - **Antes de aprobar un pedido ajeno, se mira el diff.** Y un ok que cubre archivos sensibles que nadie revisó no se da:
   primero se separan. Por qué: aprobar sin mirar es firmar lo que no se vio.

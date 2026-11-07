@@ -9,7 +9,10 @@
  *     corrida roja, cortada o muerta no cuenta: el arranque siguiente la vuelve a correr;
  *   · tope: a lo sumo la mitad de los núcleos a la vez, mínimo 1;
  *   · candado: una sola corrida por máquina. Con el candado tomado por un proceso vivo, sale 0 sin esperar ni correr y
- *     lo deja escrito en `<state-dir>/quick-suite.log`. Un candado de un proceso muerto se toma.
+ *     lo deja escrito en `<state-dir>/quick-suite.log`. Un candado de un proceso muerto se toma;
+ *   · turno: en una máquina con coordinadora pide el turno de las ejecuciones grandes, el de la suite completa
+ *     (scripts/tools/heavy-turn.js). Con el turno de otro, sale 0 sin correr y lo deja escrito: la corre el arranque
+ *     siguiente. Lo suelta al terminar o al cortarla.
  *
  * Por qué. Corrían enteras en cada arranque, un proceso por suite y sin candado: medido en una Mac, 15 s y 440 MB por
  * arranque; con cinco sesiones abriendo juntas, treinta procesos.
@@ -138,6 +141,29 @@ async function runSuites(files) {
   return rc;
 }
 
+/**
+ * El turno de las ejecuciones grandes de la máquina (scripts/tools/heavy-turn.js), el mismo de la suite completa: la
+ * suite rápida corre varias suites a la vez, y junto a una completa o a un pase deja la máquina sin memoria. Sin
+ * coordinadora no hay turno que pedir y corre como siempre. `{ ok, taken, message, ht }`. Sin poder pedirlo (una copia
+ * parcial sin el guion del turno, o un error al leerlo) corre igual y lo deja escrito: frenar el arranque por eso dejaría
+ * a la máquina sin su suite.
+ */
+function pedirTurno(stateDir) {
+  let ht;
+  try { ht = require(path.join(__dirname, '..', 'tools', 'heavy-turn.js')); } catch (e) {
+    logLine(stateDir, `no pude cargar el turno de las ejecuciones grandes (${String(e.message).split('\n')[0]}): la corro sin turno`);
+    return { ok: true, taken: false };
+  }
+  try { return { ...ht.take({ what: 'la suite rápida del arranque' }), ht }; } catch (e) {
+    logLine(stateDir, `no pude pedir el turno de las ejecuciones grandes (${String(e.message).split('\n')[0]}): la corro sin turno`);
+    return { ok: true, taken: false };
+  }
+}
+
+function soltarTurno(turno) {
+  if (turno && turno.taken && turno.ht) { try { turno.ht.release(); } catch (_) { /* un turno de un proceso muerto se libera solo */ } }
+}
+
 async function main() {
   const o = parseArgs(process.argv.slice(2));
   if (!o) { process.stderr.write('uso: node quick-suite-run.js --state-dir <carpeta> --watch <carpeta>… <suite.test.js>…\n'); return 2; }
@@ -148,7 +174,13 @@ async function main() {
   if (done === print) return 0;
   const holder = takeLock(o.stateDir);
   if (holder) { logLine(o.stateDir, `otra sesión (pid ${holder}) está corriendo la suite rápida: este arranque no la corre`); return 0; }
-  const cut = (sig) => { if (child) child.kill(sig); releaseLock(o.stateDir); process.exit(1); };
+  const turno = pedirTurno(o.stateDir);
+  if (!turno.ok) {
+    logLine(o.stateDir, `${turno.message}: este arranque no corre la suite rápida; la corre el siguiente`);
+    releaseLock(o.stateDir);
+    return 0;
+  }
+  const cut = (sig) => { if (child) child.kill(sig); soltarTurno(turno); releaseLock(o.stateDir); process.exit(1); };
   process.on('SIGTERM', () => cut('SIGTERM'));
   process.on('SIGINT', () => cut('SIGINT'));
   process.on('SIGHUP', () => cut('SIGHUP'));
@@ -158,6 +190,7 @@ async function main() {
     else { try { fs.rmSync(path.join(o.stateDir, STAMP), { force: true }); } catch (_) { /* no estaba */ } }
     return rc;
   } finally {
+    soltarTurno(turno);
     releaseLock(o.stateDir);
   }
 }

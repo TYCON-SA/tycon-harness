@@ -10,8 +10,8 @@
  * (`baseSha`). Orden:
  *   1. `TYCON_COVERAGE_BASE` (el que llama manda)
  *   2. `baseSha` del marcador, si el marcador es del MISMO repo git y el commit es ancestro de HEAD
- *   3. sin marcador de este repo (el portón corrido a mano, o una corrida cruzada con el marcador de otro repo): la
- *      bifurcación con su rama principal (`merge-base HEAD origin/HEAD` › `origin/main` › `main`). Lo que la rama cambió
+ *   3. sin una base del marcador que sirva (el portón corrido a mano, una corrida cruzada con el marcador de otro repo, o
+ *      un `baseSha` que no existe o no es ancestro): la bifurcación con su rama principal (`merge-base HEAD origin/HEAD` › `origin/main` › `main`). Lo que la rama cambió
  *      es lo posterior a la bifurcación, más lo sin commitear. En un repo que trabaja en `dev` trae también lo de otros:
  *      elige de más, nunca de menos.
  *   4. `HEAD` (sólo lo no commiteado), si no hay rama principal
@@ -91,14 +91,12 @@ function resolver({ repo, env = process.env, marker = null, markerError = null }
     }
   }
 
-  // Sin marcador de este repo (el portón corrido a mano, o la corrida cruzada) lo de la rama es lo posterior a la
-  // bifurcación con main. HEAD solo no ve lo commiteado y el portón terminaría corriendo todas las suites.
-  const delOtro = !marker || !marker.baseSha || descartadas.some((d) => d.source === 'marcador' && /otro repo/.test(d.motivo));
-  if (delOtro) {
-    const b = bifurcacion(top);
-    if (b.sha) return { ref: b.sha, source: 'bifurcacion', rama: b.rama, descartadas };
-    descartadas.push({ source: 'bifurcacion', motivo: b.motivo });
-  }
+  // Sin una base del marcador que sirva (el portón corrido a mano, la corrida cruzada, o un `baseSha` perdido o que no es
+  // ancestro) lo de la rama es lo posterior a la bifurcación con main. HEAD solo no ve lo commiteado: el portón del pase
+  // contaría 0 líneas y el de pruebas terminaría corriendo todas las suites.
+  const b = bifurcacion(top);
+  if (b.sha) return { ref: b.sha, source: 'bifurcacion', rama: b.rama, descartadas };
+  descartadas.push({ source: 'bifurcacion', motivo: b.motivo });
 
   const h = git(top, ['rev-parse', '--verify', 'HEAD^{commit}']);
   if (h.error) {
@@ -134,4 +132,4 @@ if (require.main === module) {
   process.stdout.write(JSON.stringify(out) + '\n');
 }
 
-module.exports = { resolver, bifurcacion };
+module.exports = { resolver, bifurcacion, leerMarcador };

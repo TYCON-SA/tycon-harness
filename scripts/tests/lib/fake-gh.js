@@ -49,14 +49,18 @@ if (argv[0] === '--version') { console.log('gh version 0.0.0 (de mentira)'); pro
 const stateFile = process.env.FAKE_GH_STATE;
 const st = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
 let method = 'GET', ruta = null, input = null;
+// `-f clave=valor` (como gh): pasa a POST y, en `graphql`, `query` es la consulta y el resto sus variables
+const campos = {};
 for (let i = 1; i < argv.length; i++) {
   const a = argv[i];
-  if (a === '--method' || a === '-X') method = argv[++i];
+  if (a === '-f' || a === '--raw-field') { const [k, ...v] = String(argv[++i]).split('='); campos[k] = v.join('='); if (method === 'GET') method = 'POST'; }
+  else if (a === '--method' || a === '-X') method = argv[++i];
   else if (a === '-H') i++;
   else if (a === '--input') input = argv[++i];
   else if (!a.startsWith('-') && ruta === null) ruta = a.replace(/^\//, '');
 }
-const cuerpo = input ? JSON.parse(fs.readFileSync(input, 'utf8')) : null;
+const { query: consulta, ...variables } = campos;
+const cuerpo = input ? JSON.parse(fs.readFileSync(input, 'utf8')) : consulta !== undefined ? { query: consulta, variables } : null;
 if (process.env.FAKE_GH_LOG) fs.appendFileSync(process.env.FAKE_GH_LOG, `${JSON.stringify({ method, ruta, cuerpo })}\n`);
 const save = () => fs.writeFileSync(stateFile, JSON.stringify(st, null, 2));
 const out = (v) => { process.stdout.write(`${JSON.stringify(v)}\n`); process.exit(0); };
@@ -330,6 +334,18 @@ if (method === 'POST' && base === 'graphql') {
     if (st.autoMerge === 'funciona') { x.p.auto_merge = { merge_method: String(vars.mergeMethod || '').toLowerCase(), enabled_by: { login: st.user } }; save(); }
     out({ data: { enablePullRequestAutoMerge: { pullRequest: { number: x.p.number } } } });
   }
+  // encolar un pull request (`enqueuePullRequest`): lo pone en la cola y cuenta las veces en `enqueue_calls`;
+  // "enqueue": "error" contesta el error de GitHub
+  if (/enqueuePullRequest/.test(qy)) {
+    st.enqueue_calls = (st.enqueue_calls || 0) + 1;
+    if (st.enqueue === 'error') { save(); gqlErr('UNPROCESSABLE', 'Pull request is not mergeable'); }
+    const todos = Object.entries(st.pulls || {}).flatMap(([repo, l]) => l.map((p) => ({ repo, p })));
+    const x = todos.find(({ repo, p }) => (p.node_id || `PR_${repo}#${p.number}`) === vars.id);
+    if (!x) { save(); gqlErr('NOT_FOUND', `Could not resolve to a node with the global id of '${vars.id}'`); }
+    x.p.merge_queue = { state: 'QUEUED' };
+    save();
+    out({ data: { enqueuePullRequest: { mergeQueueEntry: { state: 'QUEUED' } } } });
+  }
   // los abiertos de un repo de una sola vez (`pullRequests(states:OPEN`), con su lugar en la cola y su última caída:
   // `queue_drop` (`{ kind: 'removed' | 'auto_merge_disabled', reason, at }`) es el último evento de GitHub que lo sacó
   // de la cola o le apagó el auto-merge. `mergeable` sin decir sale UNKNOWN, como GitHub antes de calcularlo
@@ -340,7 +356,7 @@ if (method === 'POST' && base === 'graphql') {
       const d = p.queue_drop;
       const evento = !d ? [] : [d.kind === 'auto_merge_disabled'
         ? { __typename: 'AutoMergeDisabledEvent', reason: d.reason, reasonCode: d.reason, createdAt: d.at }
-        : { __typename: 'RemovedFromMergeQueueEvent', reason: d.reason, createdAt: d.at }];
+        : { __typename: 'RemovedFromMergeQueueEvent', reason: d.reason, createdAt: d.at, beforeCommit: d.before_sha ? { oid: d.before_sha } : null }];
       return {
         number: p.number, isDraft: p.draft === true,
         mergeable: p.mergeable === false ? 'CONFLICTING' : p.mergeable === true ? 'MERGEABLE' : 'UNKNOWN',
@@ -350,6 +366,10 @@ if (method === 'POST' && base === 'graphql') {
         autoMergeRequest: p.auto_merge ? { enabledAt: p.auto_merge.enabled_at || null } : null,
         mergeQueueEntry: p.merge_queue || null,
         timelineItems: { nodes: evento },
+        // `review_decision`, `committed_at` y `ci_state`: la aprobación, cuándo se hizo la punta y sus comprobaciones
+        id: p.node_id || `PR_${repo}#${p.number}`, reviewDecision: p.review_decision || null,
+        empujes: { nodes: p.force_pushed_at ? [{ createdAt: p.force_pushed_at }] : [] },
+        commits: { nodes: [{ commit: { committedDate: p.committed_at || null, statusCheckRollup: p.ci_state ? { state: p.ci_state } : null } }] },
       };
     });
     out({ data: { repository: { pullRequests: { nodes, pageInfo: { hasNextPage: false, endCursor: null } } } } });

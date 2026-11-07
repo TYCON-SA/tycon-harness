@@ -51,8 +51,23 @@ test('${nombre}', async () => {
 }
 
 function args(c, files) { return [RUNNER, '--state-dir', c.state, '--watch', c.watch, ...files]; }
+// con una HOME propia: el turno de las ejecuciones grandes de la máquina de quien corre la suite no entra al laboratorio
+function entorno(c, env = {}) {
+  const base = { ...process.env, HOME: path.join(c.base, 'home') };
+  for (const k of ['TYCON_HOME', 'TYCON_SUITE_TURN', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID']) delete base[k];
+  return { ...base, ...env };
+}
 function correr(c, files, env = {}) {
-  return spawnSync(process.execPath, args(c, files), { encoding: 'utf8', env: { ...process.env, ...env }, timeout: 60000 });
+  return spawnSync(process.execPath, args(c, files), { encoding: 'utf8', env: entorno(c, env), timeout: 60000 });
+}
+/** El archivo del turno de las ejecuciones grandes en la HOME del laboratorio. */
+function archivoDelTurno(c) {
+  const env = { ...process.env, HOME: path.join(c.base, 'home') };
+  delete env.TYCON_HOME;
+  const ht = path.join(__dirname, '..', 'tools', 'heavy-turn.js');
+  const r = spawnSync(process.execPath, ['-e', 'process.stdout.write(require(process.argv[1]).turnFile(process.argv[2]))', ht, env.HOME], { encoding: 'utf8', env });
+  assert.strictEqual(r.status, 0, r.stderr);
+  return r.stdout;
 }
 function corridas(c, nombre) {
   try { return fs.readFileSync(c.log, 'utf8').split('\n').filter((l) => l.startsWith(`empieza ${nombre} `)).length; } catch (_) { return 0; }
@@ -86,7 +101,7 @@ test('QuickSuite_Red_RunsAgainAndSaysSo — una suite roja sale 1 y el arranque 
 test('QuickSuite_Killed_RunsAgainAndReleasesLock — una corrida cortada no cuenta como probada ni deja el candado', async () => {
   const c = armar();
   const f = suite(c, 'lenta');
-  const p = spawn(process.execPath, args(c, [f]), { stdio: 'ignore', env: { ...process.env, QS_MS: '4000' } });
+  const p = spawn(process.execPath, args(c, [f]), { stdio: 'ignore', env: entorno(c, { QS_MS: '4000' }) });
   const deadline = Date.now() + 10000;
   while (corridas(c, 'lenta') === 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
   const fin = p.exitCode !== null ? Promise.resolve() : new Promise((r) => p.on('exit', r));
@@ -135,6 +150,66 @@ test('QuickSuite_StaleLock_Taken_ThenReleased — un candado de un proceso muert
   assert.strictEqual(correr(c, [f]).status, 0);
   assert.strictEqual(corridas(c, 'a'), 1, 'el candado huérfano trabó la suite');
   assert.ok(!fs.existsSync(lock), 'al terminar no soltó el candado');
+});
+
+test('QuickSuite_HeavyTurnTaken_NoRun_Logged — con el turno de las ejecuciones grandes de otro, no corre y lo escribe', () => {
+  const c = armar();
+  const f = suite(c, 'a');
+  const turno = archivoDelTurno(c);
+  fs.mkdirSync(path.dirname(turno), { recursive: true });
+  // otra ejecución grande viva: este proceso
+  fs.writeFileSync(turno, JSON.stringify({ pid: process.pid, sid: 'otra', session: 'Otra', what: 'suites portables', at: Date.now() }));
+  const r = correr(c, [f], { TYCON_SUITE_TURN: '1' });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(corridas(c, 'a'), 0, 'con el turno de otro, corrió igual');
+  assert.match(fs.readFileSync(path.join(c.state, 'quick-suite.log'), 'utf8'), /suites portables.*este arranque no corre la suite rápida/);
+  assert.ok(fs.existsSync(turno), 'soltó un turno que no era suyo');
+  assert.ok(!fs.existsSync(path.join(c.state, 'quick-suite.lock')), 'dejó tomado su candado');
+  // el arranque siguiente, con el turno libre, la corre
+  fs.unlinkSync(turno);
+  assert.strictEqual(correr(c, [f], { TYCON_SUITE_TURN: '1' }).status, 0);
+  assert.strictEqual(corridas(c, 'a'), 1, 'con el turno libre, no la corrió');
+});
+
+test('QuickSuite_HeavyTurn_TakenWhileRunning_ThenReleased — corre con el turno tomado a su nombre y al terminar lo suelta', () => {
+  const c = armar();
+  const turno = archivoDelTurno(c);
+  // la suite anota, mientras corre, quién tiene el turno
+  const f = path.join(c.watch, 'tests', 'mira.test.js');
+  fs.writeFileSync(f, `'use strict';
+const fs = require('fs');
+const { test } = require('node:test');
+test('mira', () => { fs.writeFileSync(${JSON.stringify(path.join(c.base, 'visto.json'))}, fs.readFileSync(${JSON.stringify(turno)}, 'utf8')); });
+`);
+  assert.strictEqual(correr(c, [f], { TYCON_SUITE_TURN: '1' }).status, 0);
+  assert.match(JSON.parse(fs.readFileSync(path.join(c.base, 'visto.json'), 'utf8')).what, /suite rápida del arranque/);
+  assert.ok(!fs.existsSync(turno), 'al terminar no soltó el turno');
+});
+
+test('QuickSuite_HeavyTurn_KilledReleasesIt — cortada mientras corre con el turno, lo suelta', async () => {
+  const c = armar();
+  const f = suite(c, 'lenta');
+  const turno = archivoDelTurno(c);
+  const p = spawn(process.execPath, args(c, [f]), { stdio: 'ignore', env: entorno(c, { QS_MS: '4000', TYCON_SUITE_TURN: '1' }) });
+  const deadline = Date.now() + 10000;
+  while (corridas(c, 'lenta') === 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+  assert.ok(fs.existsSync(turno), 'corría sin el turno tomado');
+  const fin = p.exitCode !== null ? Promise.resolve() : new Promise((r) => p.on('exit', r));
+  p.kill('SIGTERM');
+  await fin;
+  assert.ok(!fs.existsSync(turno), 'cortada, dejó el turno tomado');
+});
+
+test('QuickSuite_HeavyTurn_CannotAsk_RunsAndSaysSo — sin poder pedir el turno, corre igual y lo escribe', () => {
+  const c = armar();
+  const f = suite(c, 'a');
+  // donde va la carpeta del turno hay un archivo: pedirlo tira
+  const turno = archivoDelTurno(c);
+  fs.mkdirSync(path.dirname(path.dirname(turno)), { recursive: true });
+  fs.writeFileSync(path.dirname(turno), 'no es una carpeta');
+  assert.strictEqual(correr(c, [f], { TYCON_SUITE_TURN: '1' }).status, 0);
+  assert.strictEqual(corridas(c, 'a'), 1, 'sin poder pedir el turno, no corrió');
+  assert.match(fs.readFileSync(path.join(c.state, 'quick-suite.log'), 'utf8'), /no pude pedir el turno de las ejecuciones grandes .*: la corro sin turno/);
 });
 
 test('QuickSuite_Installer_UsesRunner — el aplicador corre la suite rápida por este guion, no con un node --test suelto', () => {

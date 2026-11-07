@@ -489,7 +489,7 @@ test('Q2 Notice_QuietButWaiting_NotNamed: su pase en vuelo, una nota reciente o 
   const s = C.status({ ...t.opts, noTranscripts: true });
   assert.deepStrictEqual(s.quiet, [], JSON.stringify(s.quiet));
   assert.strictEqual(s.suite.session, 'ConSuite');
-  assert.match(C.statusText(s), /Suite completa en curso: ConSuite \(suites portables, desde las \d\d:\d\d\)/);
+  assert.match(C.statusText(s), /Turno de tarea pesada: ConSuite \(suites portables, desde las \d\d:\d\d\)/);
   // una nota vieja ya no la tapa
   const old = new Date(NOW - 4 * 3600000);
   fs.utimesSync(path.join(doing, 'bg-nota.json'), old, old);
@@ -558,6 +558,28 @@ test('Q6 Notice_WaitingForPassTurn_WakeHerUp: quien debe su pase no sale como qu
   // ya lanzado, no debe nada
   marker(t, 'bg-debe', { storyId: '9.8', adversarialGate: { run: true }, adversarial: { launchedAt: new Date(mins(5)).toISOString() } });
   assert.strictEqual(C.capNotice(t.opts), null);
+});
+
+// 🔴 mutación: nombrar al primero de la lista dice que el lugar lo tiene un pase viejo que ya no frena.
+test('Q6c Notice_WaitingForPassTurn_NamesTheFreshPass @story-8.228 @ac-2: con un pase viejo y uno fresco, el aviso nombra al que frena', () => {
+  const t = toy();
+  bg(t, 'bg-debe', 'Rita', 40);
+  marker(t, 'bg-debe', { storyId: '9.8', adversarialGate: { run: true, files: ['a.js'] } });
+  session(t, 'a-vieja', 'Vieja', { status: 'busy' });
+  inFlight(t, 'a-vieja', '9.1', 120);
+  session(t, 'b-fresca', 'Fresca', { status: 'busy' });
+  inFlight(t, 'b-fresca', '9.2', 5);
+  assert.match(C.capNotice(t.opts), /Rita espera su turno de pase adversarial \(lo tiene Fresca\)/);
+});
+
+// 🔴 mutación: nombrar sólo al pase ajeno deja el aviso roto (o sin quién) cuando lo que ocupa la máquina es una suite.
+test('Q6b Notice_WaitingForPassTurn_HeavyRunHoldsIt @story-8.228 @ac-2: con una ejecución grande en curso, el aviso dice que la tiene esa suite', () => {
+  const t = toy();
+  bg(t, 'bg-debe', 'Rita', 40);
+  marker(t, 'bg-debe', { storyId: '9.8', adversarialGate: { run: true, files: ['a.js'] } });
+  fs.mkdirSync(path.join(t.state, 'coordination'), { recursive: true });
+  fs.writeFileSync(path.join(t.state, 'coordination', 'suite-turn.json'), JSON.stringify({ pid: process.pid, sid: 'otra-2', session: 'Vecina', what: '279 suites de repo', at: mins(10) }));
+  assert.match(C.capNotice(t.opts), /Coordinación: Rita espera su turno de pase adversarial \(lo tiene Vecina, con una ejecución grande de pruebas\): avisale cuando termine\./);
 });
 
 test('Q7 Notice_SuiteIdleWithQueue_SaysWhoStarts: sin suite completa en curso y con esperas anotadas de turno, nombra a la que espera hace más', () => {
@@ -663,6 +685,14 @@ test('Q5 DeepReviewGate_SecondPass_ExitsThreeAndSaysWho: el portón de verdad sa
   assert.match(skip.stderr, /el portón dice que el pase CORRE/);
   fs.unlinkSync(path.join(t.state, 'active', 'propia-1.json'));
   fs.unlinkSync(path.join(t.state, 'active', 'otra-2.json'));
+  // con una ejecución grande de pruebas en curso, el portón también sale 3 y la nombra
+  const turnFile = path.join(t.state, 'coordination', 'suite-turn.json');
+  fs.mkdirSync(path.dirname(turnFile), { recursive: true });
+  fs.writeFileSync(turnFile, JSON.stringify({ pid: process.pid, sid: 'otra-2', session: 'Vecina', what: '279 suites de repo', at: Date.now() - 60000 }));
+  const suite = gate();
+  assert.strictEqual(suite.status, 3, `${suite.stdout}\n${suite.stderr}`);
+  assert.match(suite.stderr, /deep-review-gate: Corre una ejecución grande de pruebas \(Vecina, 279 suites de repo/);
+  fs.unlinkSync(turnFile);
   const libre = gate();
   assert.strictEqual(libre.status, 0, `${libre.stdout}\n${libre.stderr}`);
   assert.strictEqual(JSON.parse(libre.stdout).run, true);

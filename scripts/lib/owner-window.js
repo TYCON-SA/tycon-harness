@@ -183,17 +183,42 @@ function esHerramienta(p) {
   return (NODES.has(base(nombre)) || base(nombre) === 'bun') && (/^claude(\.exe)?$/.test(crudo(resto[0])) || /claude-code[\\/]cli\.(m?js)$/.test(resto[0] || ''));
 }
 
-/** ¿La línea de la herramienta trae `-p` o `--print` (sin pantalla)? */
 /**
- * ¿`p` es un anfitrión de la sesión de fondo `tool`? Sólo si la herramienta es la de una sesión de fondo
- * (`claude bg-spare`) y `p` es su terminal virtual (`claude bg-pty-host`) o el daemon (`claude daemon`): un claude
- * abierto debajo de una sesión de fondo no tiene a esos procesos por anfitriones.
+ * La primera palabra después del programa, si el programa es `claude` (con su ruta, `.exe` o entre comillas); null si
+ * no. Sólo esa: un argumento posterior que diga `claude --bg-pty-host` no vuelve anfitrión a una herramienta.
  */
-function esAnfitrionDeFondoDe(tool, p) {
-  if (!/^claude(\.exe)?\s+bg-spare(\s|$)/.test(String((tool && tool.comando) || '').trim())) return false;
-  return /(^|[\\/\s])claude(\.exe)?\s+(daemon|bg-pty-host)(\s|$)/.test(String((p && p.comando) || ''));
+function primeraDeClaude(p) {
+  const linea = String((p && p.comando) || '').trim();
+  // el ejecutable sólo ayuda si es el de claude: uno renombrado (`claude bg-pty-host`) se lee por palabras
+  const exe = p && p.ejecutable && /^claude(\.exe)?$/i.test(String(p.ejecutable).split(/[\\/]/).pop()) ? String(p.ejecutable) : '';
+  let programa;
+  let resto;
+  if (exe && linea.startsWith(`"${exe}"`)) { programa = exe; resto = linea.slice(exe.length + 2); } else if (exe && linea.startsWith(exe)) { programa = exe; resto = linea.slice(exe.length); } else {
+    const m = linea.match(/^(?:"([^"]*)"|(\S+))(.*)$/s);
+    if (!m) return null;
+    programa = m[1] !== undefined ? m[1] : m[2];
+    resto = m[3];
+  }
+  if (!/^claude(\.exe)?$/i.test(String(programa).split(/[\\/]/).pop())) return null;
+  return String(resto).trim().split(/\s+/)[0] || null;
 }
 
+// la terminal virtual de una sesión de fondo: renombrada (`claude bg-pty-host`) o, la de una sesión retomada, con su
+// ruta y la bandera (`<ruta>/claude.exe --bg-pty-host <socket> …`)
+const esTerminalDeFondo = (p) => ['bg-pty-host', '--bg-pty-host'].includes(primeraDeClaude(p));
+
+/**
+ * ¿`p` es un anfitrión de la sesión de fondo `tool`? Sólo si la herramienta es la de una sesión de fondo
+ * (`claude bg-spare`, o una retomada colgando directo de su terminal virtual, `padre`) y `p` es esa terminal virtual o
+ * el daemon (`claude daemon`): un claude abierto debajo de una sesión de fondo no tiene a esos procesos por anfitriones.
+ */
+function esAnfitrionDeFondoDe(tool, p, padre = null) {
+  const deFondo = /^claude(\.exe)?\s+bg-spare(\s|$)/.test(String((tool && tool.comando) || '').trim()) || esTerminalDeFondo(padre);
+  if (!deFondo) return false;
+  return esTerminalDeFondo(p) || primeraDeClaude(p) === 'daemon';
+}
+
+/** ¿La línea de la herramienta trae `-p` o `--print` (sin pantalla)? */
 function sinPantalla(p) {
   return String(p.comando).trim().split(/\s+/).slice(1).some((w) => w === '-p' || w === '--print' || w.startsWith('--print='));
 }
@@ -757,10 +782,12 @@ function negarCon(motivo, ids, sesion) {
 /**
  * La lista de firmas (signature-list.js): lo que el freno niega con su cuadro a la propia sesión destino queda anotado, y
  * devuelve si la negativa dice «cuando te avisen, repetí». No dejan renglón lo que pide otra sesión, `designation-confirm`,
- * un escape ni lo irreversible. Nada de esto cambia lo que se decide: si falla, la negativa de siempre.
+ * un escape, lo irreversible ni, de fondo, lo que sólo aprueba un click en la propia pestaña: nadie la mira y la
+ * coordinadora no lo puede pasar. Nada de esto cambia lo que se decide: si falla, la negativa de siempre.
  */
 function anotarNegativa({ casa, sesion, destino, guion, pendientes, comando, palabras, cuadro, cwd, ahora, deFondo, lista = {} }) {
   if (!guion || !palabras || destino !== sesion || pendientes.length !== 1 || pendientes[0] === DESIGNACION || vaATerminal(pendientes) || !cuadro || cuadro.error) return false;
+  if (deFondo && (firmaDe(pendientes[0]) || {}).soloClick) return false;
   try {
     return require('./signature-list.js').alNegar({ casa, firma: pendientes[0], titulo: firmaDe(pendientes[0]).approves, sesion, destino, comando, palabras, cwd, ahora, deFondo, ...lista });
   } catch (_) { return false; }
@@ -973,7 +1000,7 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   // una sesión de fondo (`claude --bg`) corre debajo de sus anfitriones (el daemon y la terminal virtual): no son otra
   // herramienta, pero la ventana de permiso no le llega a nadie seguro. Ahí sólo vale la aprobación explícita
   const esConsola = (p) => (enWindows ? esConsolaDeWindows(p) : desenvolver(p.comando, casa) !== null);
-  const otra = (p) => (esHerramienta(p) && !esAnfitrionDeFondoDe(tool, p)) || esConsola(p);
+  const otra = (p) => (esHerramienta(p) && !esAnfitrionDeFondoDe(tool, p, arriba[i + 1])) || esConsola(p);
   if (arriba.slice(i + 1).some(otra)) return negar('la herramienta la lanzó otra herramienta o su consola', pendientes);
   const deFondo = arriba.slice(i + 1).some(esHerramienta);
   if (sinPantalla(tool)) return negar('la sesión no tiene pantalla (-p o --print): no hay ventana', pendientes);

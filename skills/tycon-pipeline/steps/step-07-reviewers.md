@@ -63,6 +63,13 @@ El script además:
   paralelo si supera 4. `check-count` no depende del orden (valida membership por nombre
   contra `expected[]`), así que la reposición por slot no toca el accounting.
 
+  🔴 **Los revisores esperan al pase**: con «Correr las pruebas» cerrado, el gancho `reviewer-launch-gate.js` niega
+  el lanzamiento de un revisor del arnés si `next` todavía pide consultar el portón del pase, lanzarlo o relanzar uno
+  sin medir. La negativa trae el comando. Se hace lo que dice y se vuelve a lanzar el revisor; si el pase ya salió en
+  este turno, sólo falta anotarlo (`mark-adversarial-launched`), no relanzarlo. Un revisor negado no queda en el
+  registro de revisores: no cuenta para `check-count` ni para el registro de autoría. Con el temprano apagado
+  (`TYCON_5B_EARLY=0`) el freno no frena.
+
   🔴 **Cap reducido con el pase adversarial en vuelo (Fase B, 2026-07-30)**: si `marker.adversarial`
   existe (visible en el output de `pipeline.js next`, o con `marker.js get`) y **todavía
   no llegó la notificación de término del workflow en esta sesión**, el pase adversarial

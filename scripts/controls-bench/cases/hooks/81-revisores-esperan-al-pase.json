@@ -1,0 +1,64 @@
+{
+  "__doc": "El freno de lanzamiento de revisores (reviewer-launch-gate.js). `pipeline.js next` pedía lanzar el pase adversarial antes del primer revisor, y el pedido no alcanzó: con el lanzamiento temprano prendido, el 65% de las corridas medidas lanzó el pase más de 2 minutos después del primer revisor. El freno niega el revisor con el mismo criterio que `next`. Estos casos fijan que niega con el portón diciendo «corre» y sin pase, y que deja pasar con el temprano apagado y con un subagente de exploración.",
+  "hooks": [
+    {
+      "hook": "reviewer-launch-gate.js (los revisores esperan al pase)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/reviewer-launch-gate.js",
+      "event": "PreToolUse",
+      "matcher": "Task|Agent",
+      "cases": [
+        {
+          "id": "niega-el-revisor-sin-el-pase-en-vuelo",
+          "type": "must-block",
+          "_por_que": "EL CASO: «Correr las pruebas» cerrado, el portón anotado con run y early en true, y sin pase lanzado. El revisor no sale, y la negativa trae el comando para anotar el lanzamiento del pase.",
+          "setup": [
+            "git init -q -b main . && mkdir -p docs && printf -- '---\\nstory: \"A\"\\nstatus: in-progress\\n---\\n\\n# A\\n' > docs/a.md",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/active';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-rlg1.json',JSON.stringify({sessionId:'bench-rlg1',storyId:'A',storyPath:process.env.FIXTURE+'/docs/a.md',repoPath:process.env.FIXTURE,stepsCompleted:[0,1,2,3,4],stepsPending:[5,6,7,8],lastTouch:new Date().toISOString(),adversarialGate:{run:true,early_launch:true,files:['scripts/x.js']}}))\""
+          ],
+          "stdin": {
+            "session_id": "bench-rlg1",
+            "tool_name": "Agent",
+            "tool_input": { "subagent_type": "tycon-plugin-security-basics", "prompt": "revisá el diff" }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": ["no sale todavía", "mark-adversarial-launched"],
+            "file_contains": [
+              { "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log", "re": "\"name\":\"reviewer-launch-blocked\"" }
+            ]
+          }
+        },
+        {
+          "id": "deja-pasar-con-el-temprano-apagado",
+          "type": "must-not-block",
+          "_por_que": "La vuelta atrás documentada: con el temprano apagado anotado por el portón, el freno no frena.",
+          "setup": [
+            "git init -q -b main . && mkdir -p docs && printf -- '---\\nstory: \"A\"\\nstatus: in-progress\\n---\\n\\n# A\\n' > docs/a.md",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/active';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-rlg2.json',JSON.stringify({sessionId:'bench-rlg2',storyId:'A',storyPath:process.env.FIXTURE+'/docs/a.md',repoPath:process.env.FIXTURE,stepsCompleted:[0,1,2,3,4],stepsPending:[5,6,7,8],lastTouch:new Date().toISOString(),adversarialGate:{run:true,early_launch:false,files:[]}}))\""
+          ],
+          "stdin": {
+            "session_id": "bench-rlg2",
+            "tool_name": "Agent",
+            "tool_input": { "subagent_type": "tycon-plugin-security-basics", "prompt": "revisá el diff" }
+          },
+          "expect": { "exit": 0 }
+        },
+        {
+          "id": "deja-pasar-la-exploracion",
+          "type": "must-not-block",
+          "_por_que": "Un subagente de exploración no es revisión: sale aunque el pase falte.",
+          "setup": [
+            "git init -q -b main . && mkdir -p docs && printf -- '---\\nstory: \"A\"\\nstatus: in-progress\\n---\\n\\n# A\\n' > docs/a.md",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/active';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-rlg3.json',JSON.stringify({sessionId:'bench-rlg3',storyId:'A',storyPath:process.env.FIXTURE+'/docs/a.md',repoPath:process.env.FIXTURE,stepsCompleted:[0,1,2,3,4],stepsPending:[5,6,7,8],lastTouch:new Date().toISOString(),adversarialGate:{run:true,early_launch:true,files:['scripts/x.js']}}))\""
+          ],
+          "stdin": {
+            "session_id": "bench-rlg3",
+            "tool_name": "Agent",
+            "tool_input": { "subagent_type": "Explore", "prompt": "buscá dónde está X" }
+          },
+          "expect": { "exit": 0 }
+        }
+      ]
+    }
+  ]
+}

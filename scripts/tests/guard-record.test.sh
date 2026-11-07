@@ -217,7 +217,7 @@ correr "$P2" 'az repos pr create --source-branch x --target-branch dev --title t
 correr "$P2" 'az repos pr create --source-branch x --target-branch main --title t --draft true' >/dev/null
 correr "$P2" 'az repos pr create --help' >/dev/null
 fuera=$(lineas)
-correr "$P2" 'az repos pr create --source-branch x --target-branch main --title t --auto-complete true --squash false' >/dev/null
+correr "$P2" 'az repos pr create --source-branch x --target-branch main --title t --auto-complete true --squash false --delete-source-branch true' >/dev/null
 dentro=$(lineas)
 if [ "$fuera" = "0" ] && [ "$dentro" = "1" ]; then
   ok "T10 lo declarado fuera de alcance no deja línea; lo que sí juzga, sí"

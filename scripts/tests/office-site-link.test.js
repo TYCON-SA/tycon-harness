@@ -307,6 +307,8 @@ function richFoto() {
   data.kanban.escrito = 'Tablero escrito a las 11:59';
   data.meta.pedidosLeidos = '11:59';
   data.meta.sitio = 'https://acme.example';
+  // lo que fitPhoto le agrega a una foto que achicó para el sitio
+  data.meta.recorte = 'foto achicada para el sitio: no viajaron las notas de 3 tarjetas';
   // lo que collect() le agrega con la oficina viva, y lo que buildOffice arma con agentes corriendo o con un pedido
   data.tokens = { Alfa: { contexto: '12k de 200k · 6 %', consumidos: 'Read 1k · Write 2k · Cache Read 3k', agentes: 1 } };
   data.sobres = [{ id: 'm0', de: 'Alfa', a: 'Beta', at: nowMs }];
@@ -510,6 +512,92 @@ test('T3 Foto_TopeDe64KB: una foto de más de 64 KB no sale y queda anotado; la 
   assert.strictEqual(site.connections[0].readyState, WebSocket.OPEN, 'la conexión sigue; el sitio se queda con la anterior');
   link.update(FOTO('chica otra vez'));
   assert.ok(await until(() => site.fotos.length === 2), 'la siguiente que entra, sale');
+  link.stop();
+  await site.stop();
+});
+
+// Una foto que se pasa por el tablero (muchas tarjetas sin empezar, notas largas, muchas filas de pendientes): un tablero
+// grande pasa el tope del sitio, y una foto que no sale deja al sitio con la de horas antes, sin avisar.
+const TABLERO_GRANDE = () => {
+  const tarjeta = (i) => ({ titulo: `Tarea pendiente número ${i} con un título largo`.padEnd(150, '.'), numero: `T-${i}`, quien: 'Sin sesión', hora: 'sin hora estimada', grupo: 'Pendientes', nota: 'n'.repeat(190) });
+  const fila = (i) => ({ grupo: 'Pendientes', que: `Fila ${i}`.padEnd(150, '.'), col: 'x', trabajos: [{ titulo: `Trabajo ${i}`.padEnd(150, '.'), numero: `T-${i}`, quien: 'Sin sesión', como: 'a mano' }] });
+  return { ...FOTO('con tablero grande'),
+    kanban: { escrito: '10:00', linea: '', columnas: [
+      { id: 'curso', nombre: 'En curso', tarjetas: [tarjeta(1), tarjeta(2)] },
+      { id: 'sinEmpezar', nombre: 'Sin empezar', tarjetas: Array.from({ length: 120 }, (_, i) => tarjeta(100 + i)) },
+      { id: 'hechos', nombre: 'Hechos', tarjetas: Array.from({ length: 30 }, (_, i) => tarjeta(500 + i)) },
+    ] },
+    tablas: { hoy: { titulo: 'Hoy', columnas: ['a'], filas: [fila(1)] }, pendientes: { titulo: 'Pendientes', columnas: ['a'], filas: Array.from({ length: 90 }, (_, i) => fila(200 + i)) }, hechos: { titulo: 'Hechos', columnas: ['a'], filas: [] } } };
+};
+
+test('Foto_PasaPorElTablero_SeAchicaYSaleConLoQueRecorto', async () => {
+  const { MAX_MESSAGE_BYTES, pick, fitPhoto } = fields();
+  const m = toy();
+  const grande = pick(TABLERO_GRANDE(), m.home);
+  assert.ok(Buffer.byteLength(JSON.stringify({ type: 'foto', data: grande })) > MAX_MESSAGE_BYTES, 'la prueba no arma una foto que pase el tope');
+  const r = fitPhoto(grande, MAX_MESSAGE_BYTES);
+  assert.ok(r, 'no la pudo achicar');
+  assert.ok(Buffer.byteLength(JSON.stringify({ type: 'foto', data: r.data })) <= MAX_MESSAGE_BYTES);
+  // lo de las sesiones y lo que está en curso no se toca; lo que se recortó se dice en la foto
+  assert.deepStrictEqual(r.data.agents, grande.agents);
+  assert.strictEqual(r.data.kanban.columnas.find((c) => c.id === 'curso').tarjetas.length, 2);
+  assert.match(r.data.meta.recorte, /no viaj/);
+  assert.match(r.data.meta.recorte, /notas/);
+  // el orden: lo hecho se va entero antes de tocar lo que falta hacer, y lo sin empezar antes que las filas de pendientes
+  const largo = (id) => r.data.kanban.columnas.find((c) => c.id === id).tarjetas.length;
+  assert.ok(largo('sinEmpezar') === 120 || largo('hechos') === 0, `se recortó lo sin empezar con ${largo('hechos')} hechos todavía`);
+  assert.ok(r.data.tablas.pendientes.filas.length === 90 || largo('sinEmpezar') === 0, 'se recortaron filas de pendientes con tarjetas sin empezar todavía');
+  assert.ok(largo('hechos') < 30, 'los hechos son lo primero que se va');
+  // la foto original no cambia (la oficina local la sigue mostrando entera)
+  assert.strictEqual(grande.kanban.columnas.find((c) => c.id === 'sinEmpezar').tarjetas.length, 120);
+  // una que entra, sale igual y sin la línea
+  const chica = pick(FOTO('chica'), m.home);
+  assert.deepStrictEqual(fitPhoto(chica, MAX_MESSAGE_BYTES).data, chica);
+});
+
+test('Foto_PasaPorElTablero_ElSitioLaRecibeAchicada', async () => {
+  const m = toy();
+  const site = await toySite();
+  const { link } = linkOf(m, site);
+  link.update(TABLERO_GRANDE());
+  link.start();
+  assert.ok(await until(() => site.fotos.length === 1), 'la foto que pasaba por el tablero no salió');
+  assert.ok(site.fotos[0].bytes <= 64 * 1024, String(site.fotos[0].bytes));
+  assert.match(site.fotos[0].data.meta.recorte, /no viaj/);
+  assert.match(logOf(m), /achic/);
+  link.stop();
+  await site.stop();
+});
+
+test('Foto_QueNoSale_ElLatidoLoDice_YLaSiguienteLoBorra', async () => {
+  // una oficina quieta no manda fotos nuevas (una igual no sale): el sitio sólo sabe que la que ve es vieja si la máquina
+  // se lo dice. El latido lleva desde cuándo tiene una foto que no pudo mandar; un sitio que no lo conoce lo ignora
+  const m = toy();
+  const site = await toySite();
+  const { link, clock } = linkOf(m, site);
+  const sesiones = (bytes) => {
+    const agents = [];
+    while (JSON.stringify(agents).length < bytes) agents.push({ nombre: `Sesión ${agents.length}`, estado: 'trabajando', haciendo: 'h'.repeat(180), titulo: 't'.repeat(180) });
+    return { agents, items: [], meta: { actualizado: '10:00' }, rows: [], free: [], unreadable: [] };
+  };
+  link.update(FOTO('uno'));
+  link.start();
+  assert.ok(await until(() => site.fotos.length === 1));
+  clock.advance(60000);
+  assert.ok(await until(() => site.pings.length === 1));
+  assert.strictEqual(site.pings[0].retenida, undefined, 'con todo mandado, el latido no dice nada');
+  const desde = clock.now();
+  link.update(sesiones(70000));
+  await sleep(100);
+  assert.strictEqual(site.fotos.length, 1, 'la que ni achicada entra no sale');
+  clock.advance(60000);
+  assert.ok(await until(() => site.pings.length === 2));
+  assert.strictEqual(site.pings[1].retenida, desde, 'el latido dice desde cuándo hay una foto sin mandar');
+  link.update(FOTO('dos'));
+  assert.ok(await until(() => site.fotos.length === 2), 'la siguiente que entra, sale');
+  clock.advance(60000);
+  assert.ok(await until(() => site.pings.length === 3));
+  assert.strictEqual(site.pings[2].retenida, undefined, 'y el latido deja de decirlo');
   link.stop();
   await site.stop();
 });

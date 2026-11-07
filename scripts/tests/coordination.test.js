@@ -18,6 +18,8 @@ const NOW = Date.parse('2026-10-25T14:00:00.000Z');
 // A project folder outside the temporary one: a derived name there is a real session, not an internal agent.
 const PROJECT = path.join(path.sep, 'srv', 'repos', 'proyecto');
 const mins = (n) => NOW - n * 60000;
+// espera sin ceder el turno: el registro de git va por segundos, y un caso necesita dos momentos distintos
+const esperar = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
 // A toy machine: HOME with its Claude folder, the pipeline state and a profile outside HOME.
 function toy({ profile = {}, machine = null } = {}) {
@@ -214,7 +216,7 @@ test('T4 Coordinate_Designated_ShowsStatus @story-8.122 @ac-4: la sesión design
   assert.strictEqual(r.code, 0, r.text);
   assert.match(r.text, /Trabajando: 2 de 3/);
   assert.match(r.text, /Esperando/);
-  assert.match(r.text, /Pase adversarial en vuelo: ninguno/);
+  assert.match(r.text, /Turno de tarea pesada: libre/);
   assert.match(r.text, /Firmas pendientes: 0 por la terminal · 0 por delegación/);
   assert.match(r.text, /Sin nombre puesto por una persona: sesion-3a/);
 });
@@ -1079,6 +1081,82 @@ test('Close_Slot: un puesto fijo tomado no cierra aunque la rama haya entrado; s
   assert.ok(fs.existsSync(slot), 'el puesto no se borra');
 });
 
+// 🔴 Falla con: la sesión soltó su puesto, otra lo tomó con su rama, y el cierre le cuenta a la primera el trabajo de la otra.
+test('Close_SlotTakenByAnother: el puesto que tomó otra sesión no es suyo; su rama wt/<nombre>, sí', () => {
+  const t = closeLab();
+  const slot = path.join(t.root, 'repo--slot-1');
+  git(t.repo, 'worktree', 'add', '-q', '--detach', slot, 'origin/main');
+  // la primera trabajó en el puesto con su rama, empujada, y lo soltó
+  git(slot, 'checkout', '-q', '-b', 'wt/primera');
+  commitIn(slot);
+  git(slot, 'push', '-q', 'origin', 'wt/primera');
+  git(slot, 'checkout', '-q', '--detach', 'origin/main');
+  bg(t, 'primera', slot);
+  // la otra lo tomó, viva y después (el registro de git va por segundos: un segundo entre una y otra): una rama que dejó
+  // al llegar, su rama, un commit sin empujar y un cambio sin commitear
+  esperar(1100);
+  bg(t, 'otra', slot, { startedAt: Date.now() });
+  esperar(1100);
+  git(slot, 'checkout', '-q', '-b', 'otra-de-paso');
+  commitIn(slot, 'c.txt');
+  git(slot, 'checkout', '-q', '-b', 'wt/otra');
+  commitIn(slot);
+  fs.writeFileSync(path.join(slot, 'a-medio-hacer.txt'), 'x\n');
+  const r = closeIt(t, 'primera');
+  assert.doesNotMatch(r.message, /sin commitear|sin empujar|wt\/otra|otra-de-paso/, `lo de la otra no es suyo: ${r.message}`);
+  assert.match(r.message, /la rama local wt\/primera .*no entró a main/, 'su propia rama sí se mira');
+  assert.deepStrictEqual(closed(t), []);
+  // con su rama en main, cierra, y el puesto de la otra queda como estaba
+  git(t.repo, 'fetch', '-q', 'origin', 'wt/primera');
+  git(t.repo, 'merge', '-q', '--ff-only', 'FETCH_HEAD');
+  git(t.repo, 'push', '-q', 'origin', 'main');
+  assert.strictEqual(closeIt(t, 'primera').closed, true);
+  assert.ok(fs.existsSync(path.join(slot, 'a-medio-hacer.txt')), 'el trabajo de la otra no se toca');
+});
+
+// 🔴 Falla con: una sesión abierta con su propia rama (`open --branch`) se da por limpia, sucia en su puesto o con la
+// rama que dejó sin entrar.
+test('Close_SlotOwnBranchWithAnyName: su rama, se llame como se llame, es suya hasta que otra sesión viva toma el puesto', () => {
+  const t = closeLab();
+  const slot = path.join(t.root, 'repo--slot-1');
+  git(t.repo, 'worktree', 'add', '-q', '--detach', slot, 'origin/main');
+  // sigue en su puesto, con una rama wt/ de otro nombre, sucia: no cierra
+  git(slot, 'checkout', '-q', '-b', 'wt/feature-1');
+  commitIn(slot);
+  fs.writeFileSync(path.join(slot, 'a-medio-hacer.txt'), 'x\n');
+  bg(t, 'propia', slot);
+  const r = closeIt(t, 'propia');
+  assert.match(r.message, /sin commitear/, r.message);
+  assert.match(r.message, /sin empujar/, r.message);
+  assert.match(r.message, /sigue tomado por la rama wt\/feature-1/, r.message);
+  assert.deepStrictEqual(closed(t), []);
+  // la deja empujada sin entrar, suelta el puesto y otra lo toma: su rama sigue siendo suya
+  fs.rmSync(path.join(slot, 'a-medio-hacer.txt'));
+  git(slot, 'push', '-q', 'origin', 'wt/feature-1');
+  git(slot, 'checkout', '-q', '--detach', 'origin/main');
+  bg(t, 'siguiente', slot, { startedAt: Date.now() + 1000 });
+  git(slot, 'checkout', '-q', '-b', 'wt/siguiente');
+  assert.match(closeIt(t, 'propia').message, /la rama local wt\/feature-1 .*no entró a main/);
+  assert.deepStrictEqual(closed(t), []);
+});
+
+// 🔴 Falla con: otra sesión abierta en el mismo puesto mientras la primera todavía lo tiene hace que la primera salga limpia.
+test('Close_SlotSharedWithoutRelease: sin soltar el puesto, otra sesión ahí no se lleva lo de la primera', () => {
+  const t = closeLab();
+  const slot = path.join(t.root, 'repo--slot-1');
+  git(t.repo, 'worktree', 'add', '-q', '--detach', slot, 'origin/main');
+  git(slot, 'checkout', '-q', '-b', 'wt/primera');
+  commitIn(slot);
+  fs.writeFileSync(path.join(slot, 'a-medio-hacer.txt'), 'x\n');
+  bg(t, 'primera', slot);
+  bg(t, 'intrusa', slot, { startedAt: Date.now() + 1000 });
+  const r = closeIt(t, 'primera');
+  assert.match(r.message, /sin commitear/, r.message);
+  assert.match(r.message, /sin empujar/, r.message);
+  assert.match(r.message, /sigue tomado por la rama wt\/primera/, r.message);
+  assert.deepStrictEqual(closed(t), []);
+});
+
 test('Close_OpenRun: con su corrida o su arreglo rápido abiertos no cierra', () => {
   const t = closeLab();
   bg(t, 'corrida', t.repo);
@@ -1476,4 +1554,79 @@ test('T7 OwnerWait_UnaVezCadaDosMinutosYEntreProcesos @story-8.219 @ac-7: owner-
   } finally {
     OA.coordinadoraConfirmada = confirmada;
   }
+});
+
+// ── One heavy-work turn per machine: the pass and the large test run share it ────────────────────────────────────
+
+// The turn file of a large test run held by this process, as heavy-turn.js publishes it.
+function heavyRun(t, fields) {
+  fs.mkdirSync(path.join(t.state, 'coordination'), { recursive: true });
+  fs.writeFileSync(path.join(t.state, 'coordination', 'suite-turn.json'), JSON.stringify({ pid: process.pid, at: mins(10), ...fields }));
+}
+const passMarker = (t, sid, storyId, minutesAgo, extra = {}) => marker(t, sid, { storyId, adversarial: { launchedAt: new Date(mins(minutesAgo)).toISOString(), runId: 'wf_x' }, ...extra });
+
+// 🔴 mutación: mirar sólo los otros pases deja lanzar un pase al lado de una suite grande, que es lo que agotó la memoria.
+test('T3 AdversarialTurn_HeavySuiteRunning_GateWaits @story-8.228 @ac-2: con una ejecución grande de cualquier sesión, el pase espera y la línea dice cuál', () => {
+  const t = toy({ profile: { approvals: { relay_session: 'coordinadora' } } });
+  session(t, 'coord-1', 'Coordinadora', { status: 'busy' });
+  designate(t, 'coord-1');
+  session(t, 's-uma', 'Uma', { status: 'busy' });
+  heavyRun(t, { sid: 's-uma', session: 'Uma', what: '279 suites de repo' });
+  const r = C.adversarialTurn({ ...t.opts, sessionId: 's-b' });
+  assert.strictEqual(r.waiting_turn, true);
+  assert.deepStrictEqual(r.other_in_flight, []);
+  assert.deepStrictEqual(r.heavy_run, { session: 'Uma', what: '279 suites de repo', since: mins(10) });
+  assert.match(r.turn, /Corre una ejecución grande de pruebas \(Uma, 279 suites de repo, desde las \d\d:\d\d\)/);
+  assert.match(r.turn, /pedile turno a la coordinadora/);
+  // la de la propia sesión también: el turno es de la máquina
+  assert.strictEqual(C.adversarialTurn({ ...t.opts, sessionId: 's-uma' }).waiting_turn, true);
+  fs.rmSync(path.join(t.state, 'coordination', 'suite-turn.json'));
+  assert.strictEqual(C.adversarialTurn({ ...t.opts, sessionId: 's-b' }), null, 'sin la grande ni otro pase, nada');
+});
+
+// 🔴 mutación: tratar un turno ilegible como «no hay suite» deja lanzar el pase al lado de una grande sin decir nada.
+test('T3b AdversarialTurn_UnreadableHeavyTurn_SaysSo @story-8.228 @ac-7: un turno de suite que no se puede leer no frena el pase, pero se dice', () => {
+  const t = toy({ profile: { approvals: { relay_session: 'coordinadora' } } });
+  session(t, 'coord-1', 'Coordinadora', { status: 'busy' });
+  designate(t, 'coord-1');
+  fs.mkdirSync(path.join(t.state, 'coordination'), { recursive: true });
+  fs.writeFileSync(path.join(t.state, 'coordination', 'suite-turn.json'), '{ esto no es json');
+  const said = [];
+  const write = process.stderr.write;
+  process.stderr.write = (s) => { said.push(String(s)); return true; };
+  let r;
+  try { r = C.adversarialTurn({ ...t.opts, sessionId: 's-b' }); } finally { process.stderr.write = write; }
+  assert.strictEqual(r, null);
+  assert.match(said.join(''), /no pude ver todo lo que ocupa la máquina para el turno del pase \(el turno de las ejecuciones grandes .* no se puede leer/);
+  assert.ok(C.status(t.opts).problems.some((p) => /turno de las ejecuciones grandes/.test(p)), 'el estado también lo dice');
+});
+
+// 🔴 mutación: dejar los dos renglones separados vuelve a decir que el pase y la suite pueden ir juntos.
+test('T5 CoordinationStatus_OneHeavyTurnLine @story-8.228 @ac-4: un solo renglón de turno de tarea pesada, con quién lo tiene y qué es', () => {
+  const t = toy();
+  session(t, 'pase-1', 'ConPase', { status: 'busy' });
+  passMarker(t, 'pase-1', '7.7', 12);
+  const withPass = C.status(t.opts);
+  assert.deepStrictEqual(withPass.heavyTurn, { kind: 'pass', storyId: '7.7', session: 'ConPase', since: new Date(mins(12)).toISOString() });
+  const text = C.statusText(withPass);
+  assert.match(text, /^Turno de tarea pesada: pase adversarial de la 7\.7 \(ConPase, desde las \d\d:\d\d\)$/m);
+  assert.doesNotMatch(text, /Pase adversarial en vuelo|Suite completa en curso/);
+  fs.unlinkSync(path.join(t.state, 'active', 'pase-1.json'));
+  heavyRun(t, { sid: 'pase-1', session: 'ConPase', what: '279 suites de repo' });
+  const withSuite = C.status(t.opts);
+  assert.strictEqual(withSuite.heavyTurn.kind, 'suite');
+  assert.match(C.statusText(withSuite), /^Turno de tarea pesada: ConPase \(279 suites de repo, desde las \d\d:\d\d\)$/m);
+});
+
+// 🔴 mutación: seguir mirando `deepReviewDone` deja a un pase no medido frenando al de otra sesión.
+test('T11 AdversarialTurn_NoMedidoPass_DoesNotBlockAnother @story-8.228 @ac-3: un pase no medido ya terminó y no frena a otro; relanzado, sí', () => {
+  const t = toy({ profile: { approvals: { relay_session: 'coordinadora' } } });
+  session(t, 'coord-1', 'Coordinadora', { status: 'busy' });
+  designate(t, 'coord-1');
+  session(t, 'otra-2', 'Vecina', { status: 'busy' });
+  const noMedido = { adversarialPasses: [{ ts: new Date(mins(2)).toISOString(), tipo: '5b', veredicto: 'no-medido' }], deepReviewDone: false };
+  passMarker(t, 'otra-2', '9.2', 5, noMedido);
+  assert.strictEqual(C.adversarialTurn({ ...t.opts, sessionId: 'propia-1' }), null);
+  passMarker(t, 'otra-2', '9.2', 1, noMedido);
+  assert.strictEqual(C.adversarialTurn({ ...t.opts, sessionId: 'propia-1' }).waiting_turn, true);
 });

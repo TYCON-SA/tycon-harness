@@ -78,6 +78,57 @@ function defaultInvokeCheck({ scriptPath, repo, storyPath, maxMutants, deadlineM
   return { code: r.status === null || r.status === undefined ? null : r.status, result, stderr, timedOut: false };
 }
 
+/** El `.git` común de un repo: dos worktrees del mismo repo lo comparten. null si git no contesta. */
+function gitComun(dir) {
+  const r = spawnSync('git', ['-C', dir, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8' });
+  return r.status === 0 ? r.stdout.trim() : null;
+}
+
+/**
+ * Los repos donde se miden los mutantes: los hermanos que la story toca (lib/companion-repos.js) y el de la story si
+ * tiene ahí un archivo declarado que no es un `.md`. Un hermano se mide en el worktree donde la sesión escribió
+ * (`tocados`, los archivos del marcador): el que elige companion-repos por la rama puede ser el checkout en `main`, que
+ * no tiene el código de la story. Sin hermanos, el de la story. Un repo que no existe se pasa tal cual: el chequeo lo
+ * dice. Si no se pueden leer los hermanos, se avisa y se mide el de la story.
+ */
+function destinosDeLaStory(repo, storyPath, log, tocados = []) {
+  if (!fs.existsSync(repo)) return [repo];
+  const cr = require('./companion-repos.js');
+  let raices;
+  let objetivos;
+  let aqui;
+  try {
+    const opts = {
+      warn: (t) => log(`⚠️  Chequeo de mutantes: ${t}`),
+      // un hermano declarado que no está en disco no se mide: se dice, no se calla
+      onMissing: (nombre, quien) => log(`⚠️  Chequeo de mutantes NO MEDIDO en ${nombre}: lo declara ${quien} y no está en disco`),
+    };
+    raices = cr.companionRoots(repo, storyPath, opts);
+    objetivos = new Set(cr.companionTargets(repo, storyPath, { warn: opts.warn }).map((t) => cr.real(t.root)));
+    aqui = cr.declaredHere(repo, storyPath).filter((f) => !/\.md$/i.test(f) && fs.existsSync(path.join(repo, f)));
+  } catch (e) {
+    log(`⚠️  Chequeo de mutantes: no pude leer los repos hermanos de la story (${(e && e.message) || e}): mido sólo ${repo}`);
+    return [repo];
+  }
+  const propio = cr.real(repo);
+  const escritos = [...new Set((tocados || []).map((f) => cr.gitRootOf(f)).filter(Boolean).map((r) => cr.real(r)))]
+    .filter((r) => r !== propio);
+  const hermanos = [];
+  for (const raiz of raices) {
+    const comun = gitComun(raiz);
+    if (!comun && escritos.length) log(`⚠️  Chequeo de mutantes: git no contestó en ${raiz}: no sé si la sesión escribió en otro worktree suyo`);
+    const donde = comun ? escritos.filter((r) => gitComun(r) === comun) : [];
+    if (donde.length === 1) { hermanos.push(donde[0]); continue; }
+    const deCompanion = objetivos.has(cr.real(raiz));
+    if (deCompanion) hermanos.push(cr.real(raiz));
+    if (donde.length > 1) {
+      log(`⚠️  Chequeo de mutantes: la sesión escribió en ${donde.length} worktrees de ${path.basename(raiz)}; ${deCompanion ? `mido ${raiz}, el que elige companion-repos` : `NO MEDIDO en ${path.basename(raiz)}: no sé cuál es`}`);
+    }
+  }
+  const destinos = [...new Set([...(aqui.length || !hermanos.length ? [propio] : []), ...hermanos])];
+  return destinos;
+}
+
 /**
  * runMutationGate({ marker, opts, env, appendLog, log, maxMutants, scriptPath, invokeCheck })
  *   → { invoked, block, reason }
@@ -93,6 +144,7 @@ function runMutationGate({
   scriptPath = path.join(__dirname, '..', 'mutation-check.js'),
   invokeCheck = null,
   today = new Date(),
+  destinosDe = null,
 }) {
   // Apagado global: no se invoca y no avisa, pero queda en bypass.log para que la revisión de la noche lo cuente.
   if (String(env.TYCON_MUTATION_CHECK || '').toLowerCase() === 'off') {
@@ -127,6 +179,17 @@ function runMutationGate({
     return { invoked: false, block: false, reason: 'script-ausente' };
   }
 
+  // El código y sus pruebas pueden vivir en un repo hermano (`evidence.companion_repos`), no en el de la story: se
+  // mide en cada hermano que la story toca, y en el de la story sólo si declara código ahí
+  const destinos = (destinosDe || destinosDeLaStory)(repo, storyPath, log, marker.filesTouched);
+  const ctx = { marker, storyPath, appendLog, log, maxMutants, scriptPath, invokeCheck, today };
+  const resultados = destinos.map((r) => medirEn(r, ctx));
+  // gana el que frena; si no frena ninguno, el que no salió limpio: un «no medido» en otro repo no queda tapado
+  return resultados.find((x) => x.block) || resultados.find((x) => x.reason !== 'ok') || resultados[0];
+}
+
+/** Una corrida del chequeo en `repo`, con su veredicto en gates.log y su aviso: `{ invoked, block, reason }`. */
+function medirEn(repo, { marker, storyPath, appendLog, log, maxMutants, scriptPath, invokeCheck, today }) {
   let out;
   try {
     out = (invokeCheck || defaultInvokeCheck)({ scriptPath, repo, storyPath, maxMutants });
@@ -145,6 +208,7 @@ function runMutationGate({
   const entryBase = {
     name: 'mutation',
     story: marker.storyId,
+    repo,
     total: res.total != null ? res.total : null,
     killed: res.killed != null ? res.killed : null,
     survived: survived.length,
@@ -254,7 +318,7 @@ function runMutationGate({
   if (code === 2) {
     const motivo = res.motivo || 'error estructural sin motivo';
     appendLog('gates.log', { ...entryBase, status: 'structural', reason: motivo });
-    log(`⚠️  Chequeo de mutantes no aplicable (${motivo}) — sigue sin frenar.`);
+    log(`⚠️  Chequeo de mutantes NO MEDIDO en ${repo} (${motivo}) — sigue sin frenar.`);
     // El stderr puede traer el grito de RESTORE FALLIDO del hijo — no tragarlo.
     volcarStderr();
     return { invoked: true, block: false, reason: 'estructural' };
@@ -267,4 +331,4 @@ function runMutationGate({
   return { invoked: true, block: false, reason: 'exit-raro' };
 }
 
-module.exports = { runMutationGate, defaultInvokeCheck, DEFAULT_MAX_MUTANTS, HARD_TIMEOUT_MS, MUTATION_NOTICE_UNTIL };
+module.exports = { runMutationGate, destinosDeLaStory, defaultInvokeCheck, DEFAULT_MAX_MUTANTS, HARD_TIMEOUT_MS, MUTATION_NOTICE_UNTIL };

@@ -31,7 +31,8 @@ corre(){ # <comando>
   echo $?
 }
 BASE='az repos pr create --organization https://dev.azure.com/org-del-equipo --project Ceibo --repository CeiboBackend --source-branch fix/health-build-info --target-branch main --title "fix(health): x"'
-BIEN="$BASE --auto-complete true --squash false"
+# Con la tercera bandera (8.164): sin `--delete-source-branch` explícito el pedido ya no está bien armado.
+BIEN="$BASE --auto-complete true --squash false --delete-source-branch true"
 
 # ---------------------------------------------------------------- 1. 🔴 EL COMANDO TAL CUAL SE TIPEÓ
 rc=$(corre "$BASE --description \"a\" \"\" \"b\" -o json")
@@ -41,8 +42,8 @@ grep -q "auto-complete true --squash false" "$TMP/err.txt" && ok "…y las dos b
 grep -q "source=fix/health-build-info" "$TMP/err.txt" && ok "…con la rama del comando ya puesta en la invocación del skill" || no "no propagó la rama"
 
 # ---------------------------------------------------------------- 2. el comando del skill pasa
-rc=$(corre "$BASE --description \"\$(cat /tmp/pr-body.md)\" --auto-complete true --delete-source-branch false --squash false -o json")
-[ "$rc" -eq 0 ] && ok "el comando que arma el skill (auto-complete true, squash false) pasa" || no "🔴 bloqueó al skill ($rc)"
+rc=$(corre "$BASE --description \"\$(cat /tmp/pr-body.md)\" --auto-complete true --delete-source-branch true --squash false -o json")
+[ "$rc" -eq 0 ] && ok "el comando que arma el skill (auto-complete true, squash false, borrar la rama) pasa" || no "🔴 bloqueó al skill ($rc)"
 
 # ---------------------------------------------------------------- 3. auto-complete puesto pero con squash → bloquea
 rc=$(corre "$BASE --auto-complete true --squash true")
@@ -54,7 +55,7 @@ rc=$(corre "$BASE --auto-complete false --squash false")
 [ "$rc" -eq 2 ] && ok "--auto-complete false explícito también bloquea" || no "🔴 dejó pasar --auto-complete false ($rc)"
 
 # ---------------------------------------------------------------- 5. la forma --flag=valor también se entiende
-rc=$(corre "$BASE --auto-complete=true --squash=false")
+rc=$(corre "$BASE --auto-complete=true --squash=false --delete-source-branch=true")
 [ "$rc" -eq 0 ] && ok "la forma --auto-complete=true se reconoce" || no "🔴 no entendió --flag=valor ($rc)"
 
 # ---------------------------------------------------------------- 6. un borrador no se toca, y lo dice
@@ -106,11 +107,11 @@ rc=$(corre "if [ -n \"\$ID\" ]; then az repos pr update --id \$ID --auto-complet
 # ---------------------------------------------------------------- 13. 🔴 la forma corta: `--squash` a secas vale true para az
 rc=$(corre "$BASE --auto-complete true --squash -o json")
 [ "$rc" -eq 2 ] && ok "🔴 '--squash' a secas (= true) BLOQUEA aunque le siga '-o json'" || no "🔴 leyó '--squash -o' como squash=-o y dejó pasar ($rc)"
-rc=$(corre "$BASE --auto-complete --squash false")
+rc=$(corre "$BASE --auto-complete --squash false --delete-source-branch")
 [ "$rc" -eq 0 ] && ok "'--auto-complete' a secas (= true) pasa" || no "🔴 bloqueó '--auto-complete' a secas, que para az es true ($rc)"
 
 # ---------------------------------------------------------------- 14. 🔴 los sinónimos de az: yes/no/1/0/y/n/t/f
-rc=$(corre "$BASE --auto-complete yes --squash no")
+rc=$(corre "$BASE --auto-complete yes --squash no --delete-source-branch y")
 [ "$rc" -eq 0 ] && ok "'--auto-complete yes --squash no' pasa (az los acepta)" || no "🔴 rechazó sinónimos válidos ($rc)"
 rc=$(corre "$BASE --auto-complete true --squash yes")
 [ "$rc" -eq 2 ] && ok "🔴 '--squash yes' BLOQUEA" || no "🔴 dejó pasar '--squash yes' ($rc)"
@@ -127,7 +128,7 @@ rc=$(corre "$BASE --auto-complete true")
 grep -q "política de la rama" "$TMP/err.txt" && ok "…y explica por qué hace falta explícito" || no "no explicó el squash implícito"
 
 # ---------------------------------------------------------------- 17. 🔴 el comando partido en varias líneas con \\ es UN comando
-rc=$(corre "$(printf 'az repos pr create --org https://x --project P --repository R \\\n  --source-branch fix/x --target-branch main --title t \\\n  --auto-complete \\\n  true \\\n  --squash false')")
+rc=$(corre "$(printf 'az repos pr create --org https://x --project P --repository R \\\n  --source-branch fix/x --target-branch main --title t \\\n  --auto-complete \\\n  true \\\n  --squash false --delete-source-branch true')")
 [ "$rc" -eq 0 ] && ok "🔴 con continuaciones de línea, el valor en la línea siguiente se lee bien" || no "🔴 leyó la barra de continuación como valor ($rc)"
 
 # ---------------------------------------------------------------- 18. 🔴 la otra puerta: `pr update` que apaga lo que hay que tener
@@ -141,7 +142,7 @@ rc=$(corre "az repos pr update --id 2859 --title \"otro título\"")
 [ "$rc" -eq 0 ] && ok "'pr update' que no toca esas dos banderas pasa" || no "🔴 bloqueó un update inocente ($rc)"
 
 # ---------------------------------------------------------------- 19. 🔴 el valor ENTRE COMILLAS es válido para az
-rc=$(corre "$BASE --auto-complete \"true\" --squash 'false'")
+rc=$(corre "$BASE --auto-complete \"true\" --squash 'false' --delete-source-branch \"true\"")
 [ "$rc" -eq 0 ] && ok "🔴 '--auto-complete \"true\"' (comillas en el VALOR) pasa: es válido para az" || no "🔴 bloqueó un comando correcto por las comillas ($rc) — un freno que corta el camino bueno se apaga"
 rc=$(corre "az repos pr update --id 5 --squash \"true\"")
 [ "$rc" -eq 2 ] && ok "🔴 …y '--squash \"true\"' en un update sigue BLOQUEANDO" || no "🔴 las comillas abrieron la puerta del update ($rc)"
@@ -162,8 +163,8 @@ rc=$(corre "az repos pr \\
 # ---------------------------------------------------------------- 22. 🔴 publicar un borrador es la tercera puerta
 rc=$(corre "az repos pr update --id 5 --draft false")
 [ "$rc" -eq 2 ] && ok "🔴 publicar un borrador ('--draft false') sin las banderas BLOQUEA" || no "🔴 el camino borrador→publicar quedó abierto ($rc)"
-rc=$(corre "az repos pr update --id 5 --draft false --auto-complete true --squash false")
-[ "$rc" -eq 0 ] && ok "…y publicarlo CON las dos banderas pasa" || no "🔴 bloqueó una publicación correcta ($rc)"
+rc=$(corre "az repos pr update --id 5 --draft false --auto-complete true --squash false --delete-source-branch false")
+[ "$rc" -eq 0 ] && ok "…y publicarlo CON las tres banderas pasa" || no "🔴 bloqueó una publicación correcta ($rc)"
 
 # ---------------------------------------------------------------- 23. 🔴 código adentro de una cadena que ejecuta otro intérprete
 rc=$(corre "bash -c \"az repos pr create --target-branch main --title t\"")
@@ -219,7 +220,7 @@ rc=$(corre "$(printf 'cat > f <<%sEOF%s\ntexto cualquiera\nEOF\naz repos pr crea
 # forma corta del destino, TODO PR a dev quedaría bloqueado y nadie se enteraría.
 rc=$(corre "az repos pr create --org https://x -s feat/x -t dev --title t")
 [ "$rc" -eq 0 ] && ok "🔴 un PR a dev con la forma CORTA del destino ('-t dev') tampoco se toca" || no "🔴 la forma corta del destino no se lee: todo PR a dev quedaría bloqueado ($rc)"
-rc=$(corre "$BASE --auto-complete true --squash false --target-branch refs/heads/main")
+rc=$(corre "$BASE --auto-complete true --squash false --delete-source-branch true --target-branch refs/heads/main")
 [ "$rc" -eq 0 ] && ok "el destino escrito como 'refs/heads/main' se reconoce igual" || no "🔴 no reconoció refs/heads/main ($rc)"
 rc=$(corre "az repos pr update --id 42 --auto-complete false")
 grep -q "va a main" "$TMP/err.txt" && no "🔴 el mensaje del update afirma 'va a main' y el update NO dice a qué rama apunta" || ok "🔴 el mensaje del update NO afirma 'a main': ese comando no lleva el destino"
@@ -242,7 +243,7 @@ while IFS='|' read -r esperado cmd; do
 done <<EOF
 paso|$BIEN
 ninguna|$BASE --draft true
-paso|az repos pr update $ORG --id 4919 --draft false --auto-complete true --squash false
+paso|az repos pr update $ORG --id 4919 --draft false --auto-complete true --squash false --delete-source-branch false
 paso|az repos pr update $ORG --id 4920 --description "otra descripción"
 ninguna|az repos pr create $ORG -s feat/x -t dev --title t
 EOF
@@ -303,7 +304,7 @@ g(){ GIT_AUTHOR_DATE="2026-01-01T00:00:00Z" GIT_COMMITTER_DATE="2026-01-01T00:00
 g init -q -b main; g add -A; g commit -qm base; g update-ref refs/remotes/origin/main HEAD; g checkout -qb fix/instalador
 echo cambio > "$JUG/scripts/setup/instalar.js"; g commit -qam "toca el instalador"
 GH_AUTO='gh pr merge 77 --merge --auto'
-AZ_PUBLICA="az repos pr update $ORG --id 6081 --draft false --auto-complete true --squash false -o json"
+AZ_PUBLICA="az repos pr update $ORG --id 6081 --draft false --auto-complete true --squash false --delete-source-branch false -o json"
 
 # E1 — encolar un cambio del instalador pasa, y el freno no menciona pruebas ni deja constancia de otro freno
 limpia; rc=$(correEn "$JUG" "$GH_AUTO")
@@ -325,6 +326,168 @@ limpia; rc=$(correEn "$JUG" "gh pr merge 77 --squash --auto")
 [ "$rc" -eq 2 ] && grep -q "aplasta los commits" "$TMP/err.txt" && ok "E4 un gh pr merge que aplasta sigue frenando" || no "E4 dejó pasar un merge que aplasta ($rc)"
 limpia; rc=$(correEn "$JUG" "az repos pr update $ORG --id 6081 --draft false -o json")
 [ "$rc" -eq 2 ] && grep -q "publica un borrador" "$TMP/err.txt" && ok "E4 publicar un borrador sin sus banderas sigue frenando" || no "E4 dejó pasar un borrador sin banderas ($rc)"
+
+# ---------------------------------------------------------------- 8.164-SinBorrarRama_Frena @story-8.164 @ac-1 (T1)
+# 🔴 Sin `--delete-source-branch` explícito, la rama sobrevive al pedido: el 1/11 había 1.019 ramas ya entradas. `false`
+# sólo vale desde una rama de larga vida (§9b.4 del paso de merge), que el freno tiene que poder VER en el comando.
+limpia
+AZM='az repos pr create --org https://x --project P --repository R --target-branch main --title t --auto-complete true --squash false'
+for caso in \
+  "frena|$AZM --source-branch story/x" \
+  "frena|$AZM --source-branch story/x --delete-source-branch false" \
+  "frena|$AZM --delete-source-branch false" \
+  "pasa|$AZM --source-branch dev --delete-source-branch false" \
+  "pasa|$AZM -s refs/heads/main --delete-source-branch false" \
+  "pasa|$AZM --source-branch story/x --delete-source-branch true" \
+  "frena|az repos pr update --id 5 --draft false --auto-complete true --squash false" \
+  "pasa|az repos pr update --id 5 --draft false --auto-complete true --squash false --delete-source-branch false" \
+  "pasa|az repos pr update --id 5 --auto-complete true --squash false" \
+  "frena|$AZM --source-branch dev --delete-source-branch true" \
+  "frena|$AZM -s refs/heads/main --delete-source-branch true" \
+  "frena|$AZM -s DEV --delete-source-branch true" \
+  "frena|$AZM -s Refs/Heads/Master --delete-source-branch true" \
+  "frena|$AZM --delete-source-branch true" \
+  "frena|$AZM -s dev --delete-source-branch" \
+  "pasa|$AZM -s story/dev --delete-source-branch true" \
+  "pasa|$AZM -s dev-fix --delete-source-branch true" \
+  "pasa|$AZM -s feature/master --delete-source-branch true" \
+  "frena|$AZM -s story/dev --delete-source-branch false" \
+  "frena|$AZM -s story/x --delete-source-branch maybe" \
+  "frena|$AZM -s story/x --delete-source-branch 2" \
+  "frena|$AZM -s story/x --delete-source-branch=" \
+  "pasa|$AZM --sour dev -s story/x --delete-source-branch true" \
+  "frena|$AZM -s story/x --sour dev --delete-source-branch true" \
+  "pasa|$AZM -s dev --delete-source-branch true --delete-source-branch false" \
+  "frena|$AZM -s dev --delete-source-branch false --delete-source-branch true" \
+  "frena|$AZM -sdev --delete-source-branch true" \
+  "pasa|$AZM -sstory/x --delete-source-branch true" \
+  "frena|$AZM -s=dev --delete-source-branch true" \
+  "frena|$AZM --sour=dev --delete-source-branch true" \
+  "pasa|$AZM --sour=story/x --delete-source-branch true" \
+  "frena|$AZM -s story/x --delete-source-branch=true -s=main" \
+  "pasa|az repos pr create --org https://x --project P --repository R -tdev --title t -s story/x" \
+  "frena-otra|az repos pr create --org https://x --project P --repository R -tmain --title t -s story/x" \
+  "frena-otra|az repos pr create --org https://x --project P --repository R -t story/y --target main --title t -s story/x" \
+  "frena|$AZM -s \"\$BRANCH\" --delete-source-branch true" \
+  "frena|$AZM -s \"\$(echo dev)\" --delete-source-branch true" \
+  "frena|$AZM -s 'de*' --delete-source-branch true" \
+  "frena|$AZM -s 'de?' --delete-source-branch true" \
+  "frena|$AZM -s 'd[e]v' --delete-source-branch true" \
+  "frena|$AZM -s @rama.txt --delete-source-branch true" \
+  "frena|az repos pr create --org https://x --project P --repository R -t \"\$T\" --title t -s story/x --auto-complete true --squash false --delete-source-branch true" \
+  "frena|$AZM -s story/x --delete-source-branch \"\$B\"" \
+  "frena|az repos pr create --org https://x --project P --repository R --target-branch main --title t -s story/x --auto-complete \"\$A\" --squash false --delete-source-branch true" \
+  "frena|az repos pr create --org https://x --project P --repository R --target-branch main --title t -s story/x --auto-complete true --squash \"\$Q\" --delete-source-branch true" \
+  "frena|az repos pr update --id 5 --draft \"\$D\" --auto-complete true --squash false --delete-source-branch false" \
+  "frena|az repos pr create --org https://x --project P --repository R --target-branch main --title \$T -s story/x --auto-complete true --squash false --delete-source-branch true" \
+  "pasa|az repos pr create --org https://x --project P --repository R --target-branch main --title \"\$T\" -s story/x --auto-complete true --squash false --delete-source-branch true" \
+  "pasa|az repos pr create --org https://x --project P --repository R --target-branch main --title=x\"\$T\" -s story/x --auto-complete true --squash false --delete-source-branch true" \
+  "pasa|$AZM -s story/x --delete-source-branch true --description \"\$(cat x)\"" \
+  "pasa|$AZM -s story/x --delete-source-branch true --description @desc.md" \
+  "frena|az repos pr update --id 5 --draft false --auto-complete true --squash false --delete-source-branch true" \
+  "frena|az repos pr update --id 5 --delete-source-branch true" \
+  "frena|az repos pr update --id 5 --delete-source-branch" \
+  "frena|az repos pr update --id 5 --draft false --auto-complete true --squash false --delete-source true" \
+  "frena|$AZM -s dev --delete-source-branch false '--delete-source-branch' true" \
+  "frena|$AZM -s story/x --delete-source-branch true '-s' dev" \
+  "frena|$AZM -s story/x --delete-source-branch true \"--source-branch\" dev" \
+  "frena|$AZM -s story/x --delete-source-branch false --draft true \$X" \
+  "frena|az repos pr create --org https://x --project P --repository R --target-branch dev --title t \$X" \
+  "frena|az repos pr update --id 5 \$X" \
+  "frena|$AZM --source-branch={feat,dev} --delete-source-branch true" \
+  "frena|$AZM -s{feature/x,dev} --delete-source-branch true" \
+  "frena|$AZM -s story/{a..c} --delete-source-branch true" \
+  "pasa|X=\$Y $AZM -s story/x --delete-source-branch true" \
+  "frena|timeout -s KILL 60 $AZM --delete-source-branch true" \
+  "pasa|timeout -s KILL 60 $AZM -s story/x --delete-source-branch true" \
+  "pasa|$AZM -s story/x --delete-source-branch true --description 'arreglo {a,b} y \$HOME'" \
+  "frena|$AZM -s{story/x,\"dev\"} --delete-source-branch true" \
+  "frena|$AZM -s ' dev' --delete-source-branch true" \
+  "frena|$AZM -s 'main ' --delete-source-branch true" \
+  "frena|$AZM -s DEV --delete-source-branch true" \
+  "frena|$AZM --delete-source-branch true -s story/x -s{\"a b\",dev}" \
+  "frena|$AZM --delete-source-branch true -s story/x '-s dev'" \
+  "frena|$AZM --delete-source-branch true -s story/x '--source-branch= main'" \
+  "frena|$AZM --delete-source-branch true -s story/x \"\$F\" dev" \
+  "frena|$AZM --delete-source-branch true -s story/x --draft \"\$F\" dev" \
+  "frena|az repos pr update --id 5 \"\$F\" true" \
+  "frena|$AZM -s story/x --delete-source-branch true \"-\$X\" dev" \
+  "frena|az repos pr update --id 5 \"--delete-source-\$X\" true" \
+  "frena|$AZM -s story/x --delete-source-branch true --open \"\$F\"" \
+  "frena|$AZM -s story/x --delete-source-branch true --verbose \"\$F\"" \
+  "frena|$AZM -s story/x --delete-source-branch true -tmain \"\$F\"" \
+  "frena|$AZM -s story/x --delete-source-branch true --description \"\$F\" true" \
+  "frena|$AZM -s story/x --delete-source-branch true --tit \"\$F\"" \
+  "frena|$AZM --delete-source-branch true -s{x,\\ dev}" \
+  "frena|$AZM --delete-source-branch true -s \"\"" \
+  "frena|$AZM --delete-source-branch true --source-branch=" \
+  "frena|$AZM --delete-source-branch true -s '  '" \
+  "frena|$AZM --delete-source-branch true -s ''" \
+  "frena|$AZM --delete-source-branch true -s ' '" \
+  "frena|'az' repos pr create -t main --title x --auto-complete true --squash false -s dev --delete-source-branch true" \
+  "frena|\"az\" repos pr create -t main --title x --auto-complete true --squash false -s dev --delete-source-branch true" \
+  "frena|az 'repos' pr create -t main --title x --auto-complete true --squash false -s dev --delete-source-branch true" \
+  "frena|az repos \"pr\" create -t main --title x --auto-complete true --squash false -s dev --delete-source-branch true" \
+  "frena|az repos pr 'create' -t main --title x --auto-complete true --squash false -s dev --delete-source-branch true" \
+  "frena|az re\"pos\" pr create -t main --title x --auto-complete true --squash false -s dev --delete-source-branch true" \
+  "frena|az repos pr \"update\" --id 5 --delete-source-branch true" \
+  "pasa|echo 'az repos pr create -t main -s dev --delete-source-branch true'" \
+  "frena|az re\\pos pr create -t main --title x --auto-complete true --squash false -s dev --delete-source-branch true" \
+  "frena|az repos pr cr\\eate -t main --title x --auto-complete true --squash false -s dev --delete-source-branch true" \
+  "frena|$AZM -s dev --delete-source-branch false {--delete-source-branch,true,--title,\"x\\\"y\"}" \
+  "frena|$AZM -s dev --delete-source-branch false --description x \\> \"\$F\" true" \
+  "frena|$AZM -s story/x --delete-source-branch true -d \"\$(cat cuerpo.md)\" \"\$F\"" \
+  "frena|$AZM -s story/x --delete-source-branch true --description \"\$(echo -sdev)\"" \
+  "frena|$AZM -s story/x --delete-source-branch true -d \"\$(cat cuerpo.md)\"" \
+  "pasa|$AZM -s story/x --delete-source-branch true 2> \"\$LOG\"" \
+  "pasa|$AZM -s story/x --delete-source-branch true > \"\$OUT\"" \
+  "pasa|$AZM -s story/x --delete-source-branch true >> \"\$OUT\" 2>&1" \
+  "pasa|$AZM -s story/x --delete-source-branch true --merge-commit-message \"\$M\"" \
+  "pasa|$AZM -s story/x --delete-source-branch true -o \"\$O\"" \
+  "pasa|$AZM -s story/x --delete-source-branch true --title \"\$T\"" \
+  "pasa|$AZM -s story/x --delete-source-branch true --title 'usá -s dev'"; do
+  esperado="${caso%%|*}"; cmd="${caso#*|}"
+  rc=$(corre "$cmd")
+  falta=$(node -e 'const az=require(process.argv[1]); const s=az.segmentos(process.argv[2])[0]; process.stdout.write(String(az.faltasDe(s).faltas.length > 0))' "$AQUI/scripts/lib/az-pr.js" "$cmd" 2>/dev/null)
+  # Un «frena» tiene que frenar por la regla de esta historia (la tercera bandera, lo que no se lee o una expansión
+  # partida), no por otra falta cualquiera. `frena-otra` es un caso que frena por las dos banderas de antes.
+  texto=$(node -e 'const az=require(process.argv[1]); process.stdout.write(az.faltasDe(az.segmentos(process.argv[2])[0]).faltas.join(" | "))' "$AQUI/scripts/lib/az-pr.js" "$cmd" 2>/dev/null)
+  if [ "$esperado" = frena ]; then
+    [ "$rc" -eq 2 ] && [ "$falta" = true ] && echo "$texto" | grep -E -- 'delete-source-branch|no puedo leer|fuera de comillas' >/dev/null \
+      && ok "8.164-SinBorrarRama_Frena frena por la regla nueva y faltasDe coincide: $cmd" || no "8.164-SinBorrarRama_Frena dejó pasar o frenó por otra cosa ($rc, faltasDe=$falta, «${texto}»): $cmd"
+  elif [ "$esperado" = frena-otra ]; then
+    [ "$rc" -eq 2 ] && [ "$falta" = true ] \
+      && ok "8.164-SinBorrarRama_Frena frena y faltasDe coincide: $cmd" || no "8.164-SinBorrarRama_Frena dejó pasar ($rc, faltasDe=$falta): $cmd"
+  else
+    [ "$rc" -eq 0 ] && [ "$falta" = false ] \
+      && ok "8.164-SinBorrarRama_Frena pasa y faltasDe coincide: $cmd" || no "8.164-SinBorrarRama_Frena frenó un pedido bien armado ($rc, faltasDe=$falta): $cmd"
+  fi
+done
+corre "$AZM --source-branch story/x" >/dev/null
+grep -q -- "--auto-complete true --squash false --delete-source-branch" "$TMP/err.txt" \
+  && ok "8.164-SinBorrarRama_Frena el mensaje trae el comando con las tres banderas" || no "8.164-SinBorrarRama_Frena el mensaje no trae las tres banderas juntas"
+# Un `update` no dice la rama: la falta pide `false` (o el skill, o el escape) y no recomienda `true`, que también frena.
+for cmd in "az repos pr update --id 5 --draft false --auto-complete true --squash false" \
+           "az repos pr update --id 5 --draft false --auto-complete true --squash false --delete-source-branch true"; do
+  texto=$(node -e 'const az=require(process.argv[1]); process.stdout.write(az.faltasDe(az.segmentos(process.argv[2])[0]).faltas.join(" | "))' "$AQUI/scripts/lib/az-pr.js" "$cmd" 2>/dev/null)
+  echo "$texto" | grep -- '--delete-source-branch false' >/dev/null && ! echo "$texto" | grep 'Va en `true`' >/dev/null \
+    && ok "8.164-SinBorrarRama_Frena la falta de un update pide false y no recomienda true: ${cmd:26:60}" \
+    || no "8.164-SinBorrarRama_Frena la falta de un update no pide false o recomienda true («${texto}»): ${cmd:26:60}"
+done
+# Lo que no se puede leer se nombra: el aviso dice cuál valor no pudo leer.
+corre "$AZM -s \"\$BRANCH\" --delete-source-branch true" >/dev/null
+grep -q 'no puedo leer' "$TMP/err.txt" && grep -q -- '\$BRANCH' "$TMP/err.txt" \
+  && ok "8.164-SinBorrarRama_Frena un origen ilegible se nombra en el aviso" || no "8.164-SinBorrarRama_Frena el aviso no nombra el valor ilegible: $(head -c 300 "$TMP/err.txt")"
+rm -f "$HOME/.claude/.tycon-pipeline/bypass.log"
+rc=$(corre "TYCON_PR_BY_HAND=1 $AZM --source-branch story/x")
+[ "$rc" -eq 0 ] && grep -q "PR_A_MANO" "$HOME/.claude/.tycon-pipeline/bypass.log" 2>/dev/null \
+  && ok "8.164-SinBorrarRama_Frena el escape lo saltea y queda registrado" || no "8.164-SinBorrarRama_Frena el escape no pasó o no dejó constancia ($rc)"
+# La lista de larga vida del freno es la del paso de merge, la única declarada (§9b.4).
+PASO="$AQUI/skills/tycon-merge-to-main/steps/step-09b-create-change-request.md"
+del_paso=$(grep -m1 'Declaradas acá' "$PASO" | grep -o '`[a-z]*`' | tr -d '`' | sort | tr '\n' ' ')
+del_freno=$(node -e 'process.stdout.write(require(process.argv[1]).RAMAS_DE_LARGA_VIDA.slice().sort().join(" ") + " ")' "$AQUI/scripts/lib/az-pr.js" 2>/dev/null)
+[ -n "$del_freno" ] && [ "$(echo "$del_paso" | tr -s ' ')" = "$(echo "$del_freno" | tr -s ' ')" ] \
+  && ok "8.164-SinBorrarRama_Frena la lista de larga vida del freno es la de §9b.4 ($del_freno)" || no "8.164-SinBorrarRama_Frena las listas difieren: paso «${del_paso}» · freno «${del_freno}»"
 
 echo "─────────────"
 [ "$fallos" -eq 0 ] && { echo "✅ pr-sin-auto-complete: todo verde ($casos casos)"; exit 0; } || { echo "❌ pr-sin-auto-complete: $fallos falla(s) de $casos"; exit 1; }
