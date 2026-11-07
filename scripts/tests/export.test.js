@@ -728,6 +728,42 @@ test('T45 Export_PairShortcut_ComputedOncePerPair — el atajo de los reemplazos
   assert.strictEqual(exp.parPuedeEstar(par, 'hay primero acá'), true, 'lo que busca el atajo se calcula una vez por par');
 });
 
+// La historia entera de un repo no entra en el búfer de una sola salida de git: leerObjetos lee por tandas, y cada objeto
+// sale igual que leído de una vez: también el vacío, el binario y el que solo ya pasa el tope.
+test('Export_ReadObjects_InBatchesUnderTheCap', () => {
+  const exp = require(EXPORTAR);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'export-tandas-'));
+  try {
+    const g = (...args) => spawnSync('git', ['-C', dir, '-c', 'user.name=Prueba', '-c', 'user.email=prueba@example.com', ...args], { encoding: 'utf8' });
+    assert.strictEqual(g('init', '-q').status, 0);
+    const files = {
+      'vacio.txt': Buffer.alloc(0),
+      'corto.txt': Buffer.from('hola\n'),
+      'binario.bin': Buffer.from([0, 10, 255, 10, 0]),
+      'grande.txt': Buffer.from('x'.repeat(40)),
+      'otro.txt': Buffer.from('chau\nchau\n'),
+    };
+    for (const [name, data] of Object.entries(files)) fs.writeFileSync(path.join(dir, name), data);
+    assert.strictEqual(g('add', '.').status, 0);
+    assert.strictEqual(g('commit', '-q', '-m', 'archivos').status, 0);
+    const objs = Object.fromEntries(g('ls-tree', 'HEAD').stdout.trim().split('\n').map((l) => [l.split('\t')[1], l.split(' ')[2].split('\t')[0]]));
+    const read = exp.leerObjetos({ dir }, Object.values(objs), { tope: 12 });
+    for (const [name, data] of Object.entries(files)) assert.ok(Buffer.from(read.get(objs[name])).equals(data), name);
+    assert.throws(() => exp.leerObjetos({ dir }, ['0'.repeat(40)], { tope: 12 }), /no devolvió el objeto/, 'un objeto que no está no se da por leído');
+    // lo ya leído no se vuelve a pedir: sin el repo, la segunda lectura sale igual
+    fs.rmSync(path.join(dir, '.git'), { recursive: true, force: true });
+    const again = exp.leerObjetos({ dir }, Object.values(objs), { tope: 12 });
+    for (const [name, data] of Object.entries(files)) assert.ok(Buffer.from(again.get(objs[name])).equals(data), `${name}, de lo ya leído`);
+    // las tandas: en orden, ninguna pasa el tope salvo la de un objeto solo, y ninguna vacía
+    assert.deepStrictEqual(exp.partirEnTandas(['a', 'b', 'c', 'd', 'e'], [5, 0, 5, 40, 10], 12), [['a', 'b', 'c'], ['d'], ['e']]);
+    assert.deepStrictEqual(exp.partirEnTandas(['a', 'b'], [40, 1], 12), [['a'], ['b']], 'el grande primero va solo');
+    assert.deepStrictEqual(exp.partirEnTandas(['a', 'b'], [6, 6], 12), [['a', 'b']], 'justo el tope entra');
+    assert.deepStrictEqual(exp.partirEnTandas([], [], 12), []);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // Con una marca de orden de bytes (BOM) delante del `#!`, node no carga el archivo
 // (el `#!` sólo vale en el primer carácter). Un atajo que sacara el BOM y después el `#!` lo daría por compilado.
 test('T44 — un .js con BOM delante del `#!` no se da por compilado en el mismo proceso: decide `node --check`, con el mismo informe', () => {
