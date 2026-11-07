@@ -425,11 +425,10 @@ pasar el cupo, el arreglo frena al editar y no guarda, y el mensaje recomienda l
 trabaja y lo que ya está en el disco. Trabajo armado en otra rama y empujado por su nombre, o creado en el mismo comando que
 empuja, no suma. Eso no lo deja entrar a `main`, porque el pedido sigue con su control y su revisión: esquiva el aviso, y hay
 que hacerlo a propósito. Al revés, en `dev` con `main` traído y sin empujar, lo ya integrado suma de más: se empuja, o se elige
-con el click. Un empuje con algo más en el comando (`| cat`, `&& echo`), o escrito con un alias o una variable delante, cuenta también lo que git no sigue, aunque sea de otra
-sesión: se repite el empuje solo. Una ruta real llamada `tests`, `e2e`, `cypress` o `playwright` cuenta como prueba, sin pedir
-maqueta. Con un carril sin nada anotado, un guardado en otra carpeta cobra el tope de la rama de la sesión: si de verdad no es de
-ese arreglo, se elige con el click. Y en un repo sin commits, un archivo con `git add -N` que sube con `git commit -a` no lleva
-la marca de riesgo.
+con el click. Un pedido abierto desde una carpeta que no es un repo (`cd F && gh pr create --repo o/r`) cobra la rama de la
+sesión, porque el pedido no dice de qué copia sale: si es de otro repo, se elige con el click. El riesgo mide, como el tope,
+desde la rama de integración más cercana: una ruta de riesgo alto que trajo `dev`, en una rama nacida de `dev`, ya pasó por su
+propio pedido y no pide revisores; lo de riesgo alto que la rama cambió, sí.
 
 **Un cambio de los datos no es camino corto.** Al abrir, la sesión responde si el cambio cambia de dónde sale un dato o
 quién lo puede ver (`"datos": "sin-cambio"` o `"cambian"`); con «cambian» no abre, y un carril abierto no cambia. Al

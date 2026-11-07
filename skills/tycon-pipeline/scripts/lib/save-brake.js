@@ -138,7 +138,9 @@ function finDeAnsi(texto, i) {
 // Los tramos de un comando de shell: corta en `;`, `&`, `|` y el salto de línea que están fuera de comillas y de una
 // sustitución (`$(…)`, `<(…)`, `>(…)`, las comillas invertidas). La barra antes de un salto de línea sigue el renglón.
 // El `&` y el `|` de una redirección (`2>&1`, `&>`, `>|`) no cortan.
-function tramosDelShell(texto) {
+function tramosDelShell(texto) { return tramosConSeparador(texto).map((t) => t.texto); }
+// Lo mismo, con el separador que sigue a cada tramo: `&&`, `||`, `;`, `&`, `|`, el salto de línea, o '' al final.
+function tramosConSeparador(texto) {
   const out = [];
   let cur = '';
   let prof = 0;
@@ -156,11 +158,17 @@ function tramosDelShell(texto) {
     if (prof && c === '(') prof += 1;
     if (prof && c === ')') prof -= 1;
     const redireccion = (c === '&' && (/[<>]/.test(texto[i - 1] || '') || texto[i + 1] === '>')) || (c === '|' && texto[i - 1] === '>');
-    if (!prof && !redireccion && /[;&|\n]/.test(c)) { out.push(cur); cur = ''; i += 1; continue; }
+    if (!prof && !redireccion && /[;&|\n]/.test(c)) {
+      const doble = (c === '&' || c === '|') && texto[i + 1] === c;
+      out.push({ texto: cur, sep: doble ? c + c : c });
+      cur = '';
+      i += doble ? 2 : 1;
+      continue;
+    }
     cur += c; i += 1;
   }
-  out.push(cur);
-  return out.map((s) => s.trim()).filter(Boolean);
+  out.push({ texto: cur, sep: '' });
+  return out.map((t) => ({ texto: t.texto.trim(), sep: t.sep })).filter((t) => t.texto);
 }
 
 // Una redirección escrita como palabra (`2>&1`, `>`, `2>/dev/null`, `&>log`, `<<<`): `{ salida, destino }`, con el
@@ -463,11 +471,13 @@ function conArgumentos(cuerpo, nombre, args) {
 }
 
 // el contexto del shell en una carpeta: las carpetas posibles, las variables de git del ambiente y las del shell
-const nuevoCtx = (dirs, dudas, home) => ({ dirs, cdOpaco: false, vars: {}, locales: {}, exportarTodo: false, dudas, home, expandidos: [] });
+// `pila`: las carpetas que `pushd` dejó para que `popd` vuelva. `movidas`: los cambios de carpeta que el lector siguió
+// dentro de otro texto (`bash -c`, `eval`, un alias): se comparte entre las copias, como `dudas`
+const nuevoCtx = (dirs, dudas, home) => ({ dirs, cdOpaco: false, vars: {}, locales: {}, exportarTodo: false, dudas, home, expandidos: [], pila: [], movidas: [] });
 // lo que hereda un subshell, una sustitución u otro shell: sus cambios no vuelven (las dudas, sí)
-const copiar = (ctx) => ({ ...ctx, dirs: [...ctx.dirs], vars: { ...ctx.vars }, locales: { ...ctx.locales } });
+const copiar = (ctx) => ({ ...ctx, dirs: [...ctx.dirs], vars: { ...ctx.vars }, locales: { ...ctx.locales }, pila: (ctx.pila || []).map((d) => [...d]) });
 function volver(ctx, previo) {
-  for (const k of ['dirs', 'cdOpaco', 'vars', 'locales', 'exportarTodo']) ctx[k] = previo[k];
+  for (const k of ['dirs', 'cdOpaco', 'vars', 'locales', 'exportarTodo', 'pila']) ctx[k] = previo[k];
 }
 
 /**
@@ -522,7 +532,11 @@ function porComando(command, cuerpo, depth = 0, ctx = nuevoCtx([process.cwd()], 
     }
     if (['declare', 'typeset', 'local', 'readonly'].includes(cmd)) { for (const a of ps.slice(1)) if (ASIGNACION.test(a)) anotarVariable(ctx, a, false); return cierra; }
     if (cmd === 'set' && ps.slice(1).some((x) => /^-\w*a/.test(x) || x === 'allexport')) { ctx.exportarTodo = true; return cierra; }
-    if (cmd === 'cd' || cmd === 'pushd') { moverCarpeta(ctx, ps); return cierra; }
+    if (MUEVEN.has(cmd) && depth > 0 && ctx.movidas) ctx.movidas.push(depth);
+    if (cmd === 'pushd') { ctx.pila = [...(ctx.pila || []), [...ctx.dirs]]; moverCarpeta(ctx, ps); return cierra; }
+    if (cmd === 'cd') { moverCarpeta(ctx, ps); return cierra; }
+    // `popd` vuelve a la carpeta que dejó su `pushd`; sin él, el lector no asegura la carpeta (carpetaSegura)
+    if (cmd === 'popd') { if (ctx.pila && ctx.pila.length) { ctx.dirs = ctx.pila[ctx.pila.length - 1]; ctx.pila = ctx.pila.slice(0, -1); } return cierra; }
     if (cmd === 'alias') { dudar(); return cierra; }
     if (cmd === 'eval') { if (depth < 4) porComando(ps.slice(1).join(' '), cuerpo, depth + 1, ctx); else dudar(); return cierra; }
     // un alias o una función de la copia del shell: se lee lo que corre (un alias no se expande dentro de sí mismo). Las
@@ -782,8 +796,39 @@ function rutasEscritas(args, dirs) {
   return out;
 }
 
+// los comandos que mueven la carpeta del shell
+const MUEVEN = new Set(['cd', 'pushd', 'popd']);
+const MUEVE_ADENTRO = /(\$\(|`|<\(|>\(|\(|\{)\s*(cd|pushd|popd)(\s|$|\))/;
 /**
- * `{ cs, dudas }`: los comandos que guardan (`comandosQueGuardan`) y si algo del comando no se pudo leer con certeza,
+ * ¿El lector asegura la carpeta donde corre cada guardado? Sólo si cada `cd`, `pushd` o `popd` está en la cadena inicial
+ * del comando, unida por `&&` o `;` y no seguida de `|` o `&`, y cada `popd` tiene su `pushd`. Un `cd` después de otro
+ * comando es condicional (`false && cd F`), y uno dentro de un `if`, un bucle, un grupo o una sustitución puede no
+ * ocurrir: el lector no intenta saber si ocurre, y quien mide mide también la carpeta de la sesión.
+ */
+function carpetaSegura(command) {
+  const tramos = tramosConSeparador(limpiar(String(command || '')).texto);
+  let enCadena = true;
+  let pushds = 0;
+  for (let i = 0; i < tramos.length; i++) {
+    const t = tramos[i];
+    const ws = palabrasDelShell(t.texto);
+    const mueve = ws.some((w) => MUEVEN.has(w)) || MUEVE_ADENTRO.test(t.texto);
+    const unido = i === 0 || ['&&', ';', '\n'].includes(tramos[i - 1].sep);
+    // un `cd` con opciones (`--`, `-P`, `-q`) el lector puede leerlo mal: no asegura la carpeta
+    const conOpciones = ws.slice(1).some((w) => w.startsWith('-'));
+    if (enCadena && MUEVEN.has(ws[0]) && unido && !conOpciones && !['|', '&', '||'].includes(t.sep) && ws.filter((w) => MUEVEN.has(w)).length === 1 && !MUEVE_ADENTRO.test(t.texto)) {
+      if (ws[0] === 'pushd') pushds += 1;
+      if (ws[0] === 'popd') { if (!pushds) return false; pushds -= 1; }
+      continue;
+    }
+    enCadena = false;
+    if (mueve) return false;
+  }
+  return true;
+}
+
+/**
+ * `{ cs, dudas, segura }`: los comandos que guardan (`comandosQueGuardan`) y si algo del comando no se pudo leer con certeza,
  * guarde o no (un alias de git encadenado o que no es de git, un programa que no se encuentra y dice guardar, además de
  * lo que anota `porComando`).
  */
@@ -794,11 +839,13 @@ function leerComando(command, cwd, depth = 0, dudas = [], home) {
   const escritos = [];
   let cambioLaRama = false;
   const guardar = (c) => out.push({ ...c, escritos: [...escritos] });
+  const ctx0 = nuevoCtx([cwd], dudas, home);
   porComando(command, (ps, cmd, ctx) => {
     leer(ps, cmd, ctx);
     escritos.push(...rutasEscritas(ctx.archivos, ctx.dirs));
-  }, 0, nuevoCtx([cwd], dudas, home));
-  return { cs: out, dudas };
+  }, 0, ctx0);
+  // un `cd` que el lector siguió dentro de otro texto no está en la cadena inicial: no asegura la carpeta
+  return { cs: out, dudas, segura: depth > 0 || (carpetaSegura(command) && !ctx0.movidas.length) };
 
   function leer(ps, cmd, ctx) {
     // el comando desde una variable: no se sabe qué corre
@@ -988,63 +1035,56 @@ function decidirCarril({ command, cwd, sid, home }) {
     return { pregunta: `¿GUARDO? no pude leer el registro del camino rápido de esta sesión (${ilegible.message}): no sé si le faltan los revisores. ${COMO_SE_AUTORIZA}` };
   }
   if (!a) return null;
-  const { cs, dudas } = leerComando(command, cwd || process.cwd(), 0, [], home);
+  const donde = cwd || process.cwd();
+  const { cs, dudas, segura } = leerComando(command, donde, 0, [], home);
   if (!cs.length && !dudas.length) return null;
-  const reposDelComando = cs.map((c) => { try { return SO().raizDe(c.dir); } catch (_) { return null; } }).filter(Boolean);
-  // los repos que el carril anotó, aunque ahí no haya anotado ningún archivo de implementación
-  const repos = [];
-  for (const f of [...(Array.isArray(a.files) ? a.files : []), ...(Array.isArray(a.rutas) ? a.rutas : [])]) {
-    // una variable sin expandir (`$L/p.js`) no es una ruta: no mete al carril el repo de la carpeta donde corrió el comando
-    if (require('./adhoc-base.js').sinExpandir(f)) continue;
-    let r = null;
-    try { r = SO().raizDe(path.dirname(String(f))); } catch (_) { r = null; }
-    if (r && !repos.includes(r)) repos.push(r);
+  const base = require('./adhoc-base.js');
+  const raiz = (p) => SO().raizDe(p);
+  // los repos se eligen en un solo lugar: el tope, la pantalla y los datos leen `delCarril`; el riesgo, también `delComando`
+  const { delCarril, delComando, anotados: repos, fallas: sinUbicar } = base.reposQueSeMiden({ adhoc: a, cs, dudas, cwd: donde, segura, raiz });
+  if (sinUbicar.length) {
+    const dir = path.dirname(path.dirname(require('./open-runs.js').markerPath(sid, home)));
+    require('./story-gate-io.js').appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `carril sin medir: ${sinUbicar[0]}` });
+    return { texto: `🔒 GUARDAR: no pude medir este camino corto (${sinUbicar[0]}). Sin medir no guarda: arreglá eso y repetí el comando.` };
   }
-  for (const b of Object.keys(a.bases || {})) if (!repos.includes(b) && fs.existsSync(b)) repos.push(b);
-  // el trabajo de otro repo no es de este carril: no le pide su maqueta. La pantalla va antes que el riesgo: la maqueta y
-  // la captura pueden ser archivos del repo, y los revisores tienen que medir lo que se guarda con ellas
-  const delCarril = !repos.length || dudas.length || reposDelComando.length < cs.length || cs.some((c) => c.opaco || c.tipo === 'pr') || reposDelComando.some((r) => repos.includes(r));
-  // los del carril, aunque la carpeta de lo anotado ya no esté (se borró con su pantalla); sin ninguno, los del comando; y sin
-  // ninguno, la carpeta de la sesión: el lector puede ubicar mal un `popd` o un `cd` que no ocurre. El costo está escrito en la
-  // guía: un guardado de verdad en otra carpeta cobra el tope de la rama de la sesión, y se sale con el click
-  let reposDeLoQueSeGuarda = repos.length ? repos : reposDelComando;
-  if (!reposDeLoQueSeGuarda.length) { try { const r = SO().raizDe(cwd); if (r) reposDeLoQueSeGuarda = [r]; } catch (_) { /* fuera de un repo: nada que medir */ } }
+  const conRaiz = cs.filter((c) => { try { return !!raiz(c.dir); } catch (_) { return false; } }).length;
+  // el trabajo de otro repo no es de este carril: no le pide su tope, su maqueta ni sus datos
+  const esDelCarril = !repos.length || dudas.length || conRaiz < cs.length || cs.some((c) => c.opaco || c.tipo === 'pr') || delComando.some((r) => repos.includes(r));
   // lo que git todavía no sigue puede subir en un solo comando que empuja después de hacer otra cosa, y este freno corre antes:
   // no hay un guardado siguiente que lo cuente. Sin empujar, el siguiente sí lo cuenta. No se busca el `git add` en el texto:
   // tiene sinónimos y atajos, y la palabra puede estar en un mensaje
-  const subeLoSinSeguir = dudas.length > 0 || cs.some((c) => c.opaco) || (cs.some((c) => c.tipo === 'push' || c.tipo === 'pr') && !esSoloEmpujar(command, cs));
-  let tope = delCarril ? frenoDelTope(a, sid, home, reposDeLoQueSeGuarda, subeLoSinSeguir, false) : null;
-  if (tope) {
-    // antes de frenar, con `main` traído otra vez: lo contado pudo venir de otro pedido, por una rama que ya lo tenía
-    a = basesAlDia(a, sid, home).adhoc;
-    tope = frenoDelTope(a, sid, home, reposDeLoQueSeGuarda, subeLoSinSeguir);
-    if (tope) return tope;
-    require('./story-gate-io.js').writeAdhoc(path.dirname(path.dirname(require('./open-runs.js').markerPath(sid, home))), sid, a);
-  }
-  let pantalla = delCarril ? frenoDePantalla(a, sid, home, reposDeLoQueSeGuarda) : null;
-  if (pantalla && pantalla.texto) {
-    // antes de frenar, con `main` traído otra vez: la pantalla pudo venir de otro pedido que la rama ya trajo
-    a = basesAlDia(a, sid, home).adhoc;
-    pantalla = frenoDePantalla(a, sid, home, reposDeLoQueSeGuarda);
-    if (pantalla && pantalla.texto) return pantalla;
-    require('./story-gate-io.js').writeAdhoc(path.dirname(path.dirname(require('./open-runs.js').markerPath(sid, home))), sid, a);
-  }
-  // los datos van después de la pantalla y antes del riesgo: un freno por vez, en ese orden
-  let datos = delCarril ? frenoDeDatos(a, sid, home, reposDeLoQueSeGuarda, { sinSeguir: subeLoSinSeguir }) : null;
-  if (datos && datos.texto) {
-    a = basesAlDia(a, sid, home).adhoc;
-    datos = frenoDeDatos(a, sid, home, reposDeLoQueSeGuarda, { sinSeguir: subeLoSinSeguir });
-    if (datos && datos.texto) return { texto: datos.texto };
-  }
-  const riesgo = frenoDelRiesgo(a, sid, home, reposDelComando);
-  if (riesgo) return riesgo;
+  const subeLoSinSeguir = dudas.length > 0 || cs.some((c) => c.opaco) || (cs.some((c) => c.tipo === 'push' || c.tipo === 'pr') && !esSoloEmpujar(command, cs, home, donde));
+  // una medida por vuelta, y los cuatro frenos la leen, en este orden: el tope, la pantalla (antes que el riesgo: la maqueta y
+  // la captura pueden ser archivos del repo, y los revisores tienen que medir lo que se guarda con ellas), los datos y el riesgo
+  const vuelta = (carril, registrar, alDia, medida) => {
+    const m = medida || base.medirLoPropio(carril, { repos: [...new Set([...delCarril, ...delComando])] });
+    const tope = esDelCarril ? frenoDelTope(carril, sid, home, delCarril, subeLoSinSeguir, registrar, m) : null;
+    if (registrar && tope) return { freno: tope };
+    const pantalla = esDelCarril ? frenoDePantalla(carril, sid, home, delCarril, { registrar, medida: m }) : null;
+    if (registrar && pantalla && pantalla.texto) return { freno: pantalla };
+    const datos = esDelCarril ? frenoDeDatos(carril, sid, home, delCarril, { sinSeguir: subeLoSinSeguir, registrar, medida: m }) : null;
+    if (registrar && datos && datos.texto) return { freno: { texto: datos.texto } };
+    const riesgo = frenoDelRiesgo(carril, sid, home, delComando, { registrar, medida: m, alDia });
+    if (registrar && riesgo) return { freno: riesgo };
+    return { m, frenaria: !!(tope || (pantalla && pantalla.texto) || (datos && datos.texto) || riesgo), pantalla, datos };
+  };
+  let v = vuelta(a, false, []);
+  if (v.frenaria) {
+    // antes de frenar, con `main` traído otra vez, una sola vez para los cuatro: lo que frena pudo venir de otro pedido, por
+    // una rama que ya lo tenía. Se registra sólo lo que frena después
+    const b = basesAlDia(a, sid, home);
+    a = b.adhoc;
+    v = vuelta(a, true, b.alDia);
+  } else v = vuelta(a, true, [], v.m);
+  if (v.freno) return v.freno;
+  const { pantalla, datos } = v;
   const de = `del camino rápido «${String(a.reason).slice(0, 160)}»`;
   const como = [pantalla && pantalla.mostrar, datos && datos.mostrar, COMO_SE_AUTORIZA].filter(Boolean).join(' ');
   if (dudas.length || cs.some((c) => c.opaco)) return { pregunta: `¿GUARDO? no pude leer este comando; si guarda, es ${de}. ${como}` };
   for (const c of cs) {
     if (c.tipo === 'pr') return { pregunta: `¿GUARDO? «${c.forma}», ${de}. ${como}` };
     let r = null;
-    try { r = SO().raizDe(c.dir); } catch (_) { return { pregunta: `¿GUARDO? «${c.forma}», ${de}. ${como}` }; }
+    try { r = raiz(c.dir); } catch (_) { return { pregunta: `¿GUARDO? «${c.forma}», ${de}. ${como}` }; }
     if (!repos.length || (r && repos.includes(r))) return { pregunta: `¿GUARDO? «${c.forma}»${r ? ` sobre ${r}` : ''}, ${de}. ${como}` };
   }
   return null;
@@ -1052,36 +1092,69 @@ function decidirCarril({ command, cwd, sid, home }) {
 
 // ── el tope del camino corto ────────────────────────────────────────────────────────────────────────────────────────
 
+// los subcomandos de git que sólo miran: no agregan nada a lo que se empuja
+const GIT_QUE_MIRA = new Set(['status', 'fetch', 'log', 'diff', 'show', 'rev-parse']);
+// los programas que sólo muestran texto: no corren otro programa ni escriben un archivo con sus opciones. Más corta que
+// INOFENSIVOS a propósito: `rg --pre`, `sort -o` o `uniq A B` corren o escriben, y con ellos lo sin seguir sumaría
+const SOLO_MUESTRAN = new Set(['echo', 'printf', 'cat', 'head', 'tail', 'wc', 'true', 'false', 'test', '[', 'grep']);
 /**
- * ¿El comando sólo empuja o abre el pedido? Cada tramo, un `git` o `gh` que empuja: moverse de carpeta no cuenta, y `2>&1` el
- * lector lo parte en dos. Lo demás puede agregar archivos: otro paso, un `bash -c` o un `eval`, lo que no se puede leer.
+ * ¿El comando sólo empuja o abre el pedido? Se recorre lo que el lector resolvió (las variables y los prefijos delante,
+ * la ruta del programa, los alias y las funciones de la copia del shell, los grupos): cada comando es un guardado que
+ * empuja o abre el pedido, un `git` que sólo mira, o un programa que sólo muestra texto sin escribir por una redirección.
+ * Un shell con `-c`, un `eval`, otro paso o lo que no se lee pueden agregar archivos: no es sólo empujar. `git push | tee x`
+ * o `git push | sort` frenan: no son de los que sólo muestran.
  */
-function esSoloEmpujar(command, guardados) {
-  const { tramos, subs, abierta } = require('./marker-command.js').tramos(String(command), 'bash');
-  if (subs.length || abierta || !guardados.every((c) => c.tipo === 'push' || c.tipo === 'pr')) return false;
-  const pasos = tramos.map((t) => t.palabras[0] && t.palabras[0].texto).filter((w) => w && !/^(cd|pushd|popd|\d+)$/.test(w));
-  return pasos.length === guardados.length && pasos.every((w) => w === 'git' || w === 'gh');
+function esSoloEmpujar(command, guardados, home, cwd = process.cwd()) {
+  if (!guardados.length || !guardados.every((c) => c.tipo === 'push' || c.tipo === 'pr')) return false;
+  const limpio = limpiar(String(command || ''));
+  if (limpio.duda) return false;
+  for (const t of tramosDelShell(limpio.texto)) {
+    const { ps } = sinPrefijos(sinRedirecciones(palabrasDelShell(t.replace(/^(?:[()\s]|[{}](?=\s|$))+/, ''))).ps);
+    const cmd = ps.length ? normal(ps[0]) : '';
+    if (cmd === 'eval' || SHELLS.test(cmd)) return false;
+  }
+  const dudas = [];
+  let solo = true;
+  const plataforma = deLaPlataforma();
+  porComando(limpio.texto, (ps, cmd, ctx) => {
+    if (!solo) return;
+    if (cmd === 'git') {
+      const sub = leerGit(ps, ctx).sub;
+      if (sub !== 'push' && !GIT_QUE_MIRA.has(sub)) solo = false;
+      return;
+    }
+    if (plataforma && plataforma.programas.has(cmd)) {
+      const p = pedidoDe(ps, cmd, plataforma.pedidos);
+      if (!p || p.opaco) solo = false;
+      return;
+    }
+    if (!SOLO_MUESTRAN.has(cmd) || (ctx.archivos && ctx.archivos.length)) solo = false;
+  }, 0, nuevoCtx([cwd], dudas, home));
+  return solo && !dudas.length;
 }
 
 /**
  * Un carril que cambió más archivos de implementación que su cupo no guarda: `{ texto }`, con los archivos contados. Mide
  * lo que el arreglo cambió de verdad, así que ve lo que el conteo al editar no vio, y cerrar y reabrir el carril en la misma
  * rama no empieza de cero. Dentro del cupo, null. Si git no contesta tampoco guarda: sin medir no hay verde.
+ * `registrar`: el freno y sus avisos quedan en el registro una vez, en la vuelta que decide, no en la que el reintento
+ * corrige. `medida`: la de esta vuelta.
  */
-// `registrar`: el freno queda en el registro una vez, en la medición que frena de verdad, no en la que el reintento corrige.
-function frenoDelTope(a, sid, home, repos, sinSeguir = false, registrar = true) {
+function frenoDelTope(a, sid, home, repos, sinSeguir = false, registrar = true, medida) {
   const io = require('./story-gate-io.js');
   const gate = require('./story-gate.js');
   const dir = path.dirname(path.dirname(require('./open-runs.js').markerPath(sid, home)));
   let c;
-  try { c = require('./adhoc-base.js').cuentaDelCarril(a, { repos, sinSeguir }); } catch (e) { c = { archivos: [], avisos: [], fallas: [e.message] }; }
+  try { c = require('./adhoc-base.js').cuentaDelCarril(a, { repos, sinSeguir, medida }); } catch (e) { c = { archivos: [], avisos: [], fallas: [e.message] }; }
   if (c.fallas.length) {
     if (registrar) io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `tope del carril sin medir: ${c.fallas[0]}` });
     return { texto: `🔒 GUARDAR: no pude medir cuántos archivos cambió este camino corto (${c.fallas[0]}). Sin medir no guarda: arreglá eso y repetí el comando.` };
   }
-  for (const m of c.avisos) {
-    process.stderr.write(`⚠️  ${m}\n`);
-    io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'unknown', reason: m });
+  if (registrar) {
+    for (const m of c.avisos) {
+      process.stderr.write(`⚠️  ${m}\n`);
+      io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'unknown', reason: m });
+    }
   }
   const cupo = gate.cupoDelCarril(a);
   if (c.archivos.length <= cupo) return null;
@@ -1095,25 +1168,25 @@ function frenoDelTope(a, sid, home, repos, sinSeguir = false, registrar = true) 
 /**
  * Un carril que toca una pantalla no guarda sin su maqueta aprobada y una captura posterior al último cambio: `{ texto }`.
  * Con las tres, `{ mostrar }`: las dos rutas para la ventana. Sin pantalla, null. Sin medir no hay verde: tampoco guarda.
+ * `registrar`: lo que frena o pasa queda en el registro sólo en la vuelta que decide. `medida`: la de esta vuelta.
  */
-function frenoDePantalla(a, sid, home, repos) {
+function frenoDePantalla(a, sid, home, repos, { registrar = true, medida } = {}) {
   const io = require('./story-gate-io.js');
-  const gate = require('./story-gate.js');
   const dir = path.dirname(path.dirname(require('./open-runs.js').markerPath(sid, home)));
   let r;
-  try { r = require('./adhoc-screen.js').revisar(a, repos); } catch (e) { r = { sinMedir: e.message }; }
+  try { r = require('./adhoc-screen.js').revisar(a, repos, medida); } catch (e) { r = { sinMedir: e.message }; }
   if (r.sinMedir) {
-    io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `pantalla del carril sin medir: ${r.sinMedir}` });
+    if (registrar) io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `pantalla del carril sin medir: ${r.sinMedir}` });
     if (r.deLaMaqueta) return { texto: `🔒 GUARDAR: no pude comparar la pantalla con su maqueta (${r.sinMedir}). Sin medir no guarda.` };
     return { texto: `🔒 GUARDAR: no pude medir si este camino rápido toca una pantalla (${r.sinMedir}). Sin medir no guarda: arreglá eso y repetí el comando.` };
   }
   // los avisos de lo que se midió con menos ya los dio el freno del tope, que mide lo mismo
   if (!r.pantallas.length) return null;
   if (!r.faltan.length) {
-    for (const reason of r.registro || []) io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'ok', reason });
+    if (registrar) for (const reason of r.registro || []) io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'ok', reason });
     return { mostrar: r.mostrar };
   }
-  if (r.textosQueFaltan) io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `faltan ${r.textosQueFaltan.total} textos de la maqueta` });
+  if (registrar && r.textosQueFaltan) io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `faltan ${r.textosQueFaltan.total} textos de la maqueta` });
   return { texto: textoDeLaMaqueta(r) };
 }
 
@@ -1157,38 +1230,41 @@ function textoDeLaMaqueta(r) {
  * huella (`datosPermitido`, de `marker.js adhoc allow-data-change`). Con sólo señales débiles, `{ mostrar }`: una línea
  * para la ventana. Sin señales, null. Sin medir no guarda. El freno queda anotado en el carril (`frenoDatos`): de ahí lo
  * leen el comando que pide el click y su cuadro. `opciones.cargar` y `opciones.medir` se pasan en las pruebas.
+ * `registrar`: el freno, sus avisos y `frenoDatos` quedan escritos sólo en la vuelta que decide. `medida`: la de esta vuelta.
  */
-function frenoDeDatos(a, sid, home, repos, { sinSeguir = false, cargar, medir } = {}) {
+function frenoDeDatos(a, sid, home, repos, { sinSeguir = false, cargar, medir, registrar = true, medida } = {}) {
   const io = require('./story-gate-io.js');
   const ss = require('./source-signals.js');
   const dir = path.dirname(path.dirname(require('./open-runs.js').markerPath(sid, home)));
+  const avisar = (m) => { if (registrar) avisarSinMedir(m, sid, home); };
   let r;
   try {
     const porRepo = new Map();
     const senales = (repo) => {
       if (!porRepo.has(repo)) {
         const c = (cargar || ss.cargar)({ repo });
-        for (const m of c.avisos) avisarSinMedir(m, sid, home);
+        for (const m of c.avisos) avisar(m);
         porRepo.set(repo, c.senales);
       }
       return porRepo.get(repo);
     };
-    r = (medir || ss.buscar)(a, senales, { repos, sinSeguir });
+    r = (medir || ss.buscar)(a, senales, { repos, sinSeguir, medida });
   } catch (e) { r = { hallazgos: [], avisos: [], fallas: [e.message] }; }
   if (r.fallas.length) {
-    io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `datos del carril sin medir: ${r.fallas[0]}` });
+    if (registrar) io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `datos del carril sin medir: ${r.fallas[0]}` });
     return { texto: `🔒 GUARDAR: no pude medir si este camino corto cambia de dónde sale un dato o quién lo ve (${r.fallas[0]}). Sin medir no guarda: arreglá eso y repetí el comando.` };
   }
-  for (const m of r.avisos) avisarSinMedir(m, sid, home);
+  for (const m of r.avisos) avisar(m);
   const fuertes = r.hallazgos.filter((h) => h.strength === 'strong');
   const debiles = r.hallazgos.filter((h) => h.strength !== 'strong');
   const mostrar = debiles.length ? `Aviso: el nombre de ${[...new Set(debiles.map((h) => h.file))].slice(0, 3).join(', ')} habla de roles o permisos; mirá que el cambio no toque quién ve qué.` : null;
   if (!fuertes.length) return mostrar ? { mostrar } : null;
   const huella = ss.huella(fuertes);
   if (a.datosPermitido && a.datosPermitido.huella === huella) {
-    io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'ok', reason: `datos del carril: los dejó pasar una persona (${huella})` });
+    if (registrar) io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'ok', reason: `datos del carril: los dejó pasar una persona (${huella})` });
     return mostrar ? { mostrar } : null;
   }
+  if (!registrar) return { huella, texto: 'frenaría' };
   io.writeAdhoc(dir, sid, { ...a, frenoDatos: { huella, hallazgos: fuertes.slice(0, 20), at: new Date().toISOString() } });
   io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `camino corto que cambia de dónde sale un dato o quién lo ve: ${ss.descripcion(fuertes[0])}`, huella });
   const marker = require('./story-gate.js').MARKER_JS;
@@ -1246,67 +1322,80 @@ function basesAlDia(a, sid, home) {
 
 /**
  * Un carril de riesgo alto no guarda sin las dos constancias vigentes: `{ texto }` o null. Marca el carril si lo que se
- * guarda trae una ruta de riesgo alto que la herramienta no vio. Vigente = la huella de los archivos de código del
- * carril es la de cada constancia. Antes de frenar trae `main` otra vez y vuelve a medir: la marca que ya no tiene de qué
- * agarrarse se levanta, y traer `main` a la rama no vence las constancias si lo propio no cambió. Lo que no se puede leer
- * sigue y avisa (nivel 1).
+ * guarda trae una ruta de riesgo alto que la herramienta no vio: la marca no entra a `rutas` (la puso el freno, no una
+ * edición) y su repo queda con su base, así la huella y los revisores lo miden. Vigente = la huella de los archivos de
+ * código del carril es la de cada constancia. Antes de frenar, quien lo llama trae `main` una vez y vuelve a medir: la
+ * marca que ya no tiene de qué agarrarse se levanta (y su ruta sale de `rutas` si una edición no la anotó), y traer `main`
+ * a la rama no vence las constancias si lo propio no cambió. Sin medir no hay verde.
+ *
+ * `opciones`: `medida` (la de esta vuelta, con los repos del carril y los del comando), `alDia` (los repos con `main` recién
+ * traído en esta vuelta), `registrar` (en false sólo dice si frenaría, sin escribir nada). Llamado suelto, sin medida,
+ * mide, trae `main` y vuelve a medir por su cuenta.
  */
-function frenoDelRiesgo(a, sid, home, reposDelComando = []) {
+function frenoDelRiesgo(a, sid, home, reposDelComando = [], { medida, alDia = [], registrar = true } = {}) {
+  const base = require('./adhoc-base.js');
+  if (!medida) {
+    const medir = (carril) => base.medirLoPropio(carril, { repos: reposDelComando });
+    if (!decidirRiesgo(a, sid, home, { medida: medir(a), alDia: [], registrar: false })) return null;
+    const b = basesAlDia(a, sid, home);
+    return decidirRiesgo(b.adhoc, sid, home, { medida: medir(b.adhoc), alDia: b.alDia, registrar: true });
+  }
+  return decidirRiesgo(a, sid, home, { medida, alDia, registrar });
+}
+function decidirRiesgo(a, sid, home, { medida: m, alDia, registrar }) {
   const io = require('./story-gate-io.js');
   const base = require('./adhoc-base.js');
   const dir = path.dirname(path.dirname(require('./open-runs.js').markerPath(sid, home)));
   let marca = a.riesgoAlto || null;
   try {
-    const dichas = new Set();
-    const medir = (carril) => {
-      const { porRepo, fallas } = base.archivosDelCarril(carril, { repos: reposDelComando });
-      // git que no contesta: se mide con lo que hay, y se dice (nivel 1: sigue y avisa)
-      for (const f of fallas) {
-        if (dichas.has(f)) continue;
-        dichas.add(f);
-        avisarSinMedir(f, sid, home);
-      }
-      for (const repo of Object.keys(porRepo)) {
-        const r = require('./risk-paths.js').riesgoDeArchivos(porRepo[repo], { repo });
-        if (r.value) return { porRepo, fallas, repo, nueva: { regla: r.rule, archivo: r.file ? path.join(repo, r.file) : repo, motivo: r.reason, ts: new Date().toISOString() } };
-      }
-      return { porRepo, fallas };
-    };
     const vigentes = (carril) => {
-      const huella = base.huellaDelCarril(carril);
+      const huella = base.huellaDelCarril(carril, m);
       // una huella medida con git caído no confirma nada: las constancias no valen contra ella
       const vigente = (c) => c && typeof c === 'object' && base.huellaCompleta(huella) && c.huella === huella;
       return vigente(carril.revisores) && vigente(carril.pase);
     };
-    const primera = marca ? null : medir(a);
-    // una medición que falló no dice que no haya riesgo: se trae `main` y se vuelve a medir
-    if (marca ? vigentes(a) : (!primera.nueva && !primera.fallas.length)) return null;
-    const { adhoc: traido, alDia: reposAlDia } = basesAlDia(a, sid, home);
-    const m = medir(traido);
-    a = traido;
-    if (!marca && !m.nueva && m.fallas.length) {
+    // lo que mide el riesgo: las dos rutas de cada cambio, lo anotado y todo lo que git no sigue, en cada repo medido
+    const porRepo = base.rutasDe(m, a, { como: 'todo' });
+    let nueva = null;
+    for (const repo of Object.keys(porRepo)) {
+      const r = require('./risk-paths.js').riesgoDeArchivos(porRepo[repo], { repo });
+      if (r.value) { nueva = { repo, marca: { regla: r.rule, archivo: r.file ? path.join(repo, r.file) : repo, motivo: r.reason, ts: new Date().toISOString() } }; break; }
+    }
+    if (!marca && !nueva && !m.fallas.length) {
+      if (registrar) io.writeAdhoc(dir, sid, a);
+      return null;
+    }
+    if (marca && vigentes(a)) {
+      if (registrar) io.writeAdhoc(dir, sid, a);
+      return null;
+    }
+    if (!registrar) return { frenaria: true };
+    for (const f of m.fallas) avisarSinMedir(f, sid, home);
+    if (!marca && !nueva) {
       io.writeAdhoc(dir, sid, a);
       return { texto: `🔒 GUARDAR: no pude medir si este camino corto toca una ruta de riesgo alto (${m.fallas[0]}). Sin medir no guarda: arreglá eso y repetí el comando.` };
     }
-    if (marca && base.marcaSinSustento(marca, m, reposAlDia, a.bases, (texto) => avisarSinMedir(texto, sid, home))) {
+    if (marca && base.marcaSinSustento(marca, m, alDia, a.bases, a, (texto) => avisarSinMedir(texto, sid, home))) {
       io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'ok', reason: `marca levantada: ${marca.archivo} (regla: ${marca.regla}) ya no es de este camino rápido` });
       const { riesgoAlto: _, ...sinMarca } = a;
+      // la ruta que un carril viejo anotó con la marca sale con ella, si ninguna edición la anotó
+      const files = Array.isArray(a.files) ? a.files : [];
+      if (Array.isArray(a.rutas)) sinMarca.rutas = a.rutas.filter((f) => f !== marca.archivo || files.includes(f));
       a = sinMarca;
       marca = null;
     }
-    if (!marca && m.nueva) {
-      marca = m.nueva;
-      // el archivo y su repo quedan en el carril: los revisores y el pase lo miden después
-      const rutas = Array.isArray(a.rutas) ? [...a.rutas] : [];
-      if (!rutas.includes(marca.archivo)) rutas.push(marca.archivo);
-      a = base.conBase({ ...a, riesgoAlto: marca, rutas }, m.repo).adhoc;
+    if (!marca && nueva) {
+      marca = nueva.marca;
+      // el repo de la marca queda en el carril con su base: los revisores y el pase lo miden después
+      a = base.conBase({ ...a, riesgoAlto: marca }, nueva.repo).adhoc;
     }
     io.writeAdhoc(dir, sid, a);
     if (!marca || vigentes(a)) return null;
   } catch (e) {
-    process.stderr.write(`⚠️  camino rápido: no pude medir el riesgo de lo que se guarda (${e.message}); sigue sin ese freno.\n`);
-    io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'unknown', reason: `riesgo del carril sin medir: ${e.message}` });
-    return null;
+    // sin medir no hay verde, como en el tope y los datos
+    if (!registrar) return { frenaria: true };
+    io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `riesgo del carril sin medir: ${e.message}` });
+    return { texto: `🔒 GUARDAR: no pude medir si este camino corto toca una ruta de riesgo alto (${e.message}). Sin medir no guarda: arreglá eso y repetí el comando.` };
   }
   const harness = (() => { try { return io.isHarnessRepo(marca.archivo); } catch (_) { return true; } })();
   return { texto: textoFaltanRevisoresYPase({ harness, regla: marca.regla, archivo: marca.archivo }) };

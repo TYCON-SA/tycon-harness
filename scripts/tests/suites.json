@@ -1571,6 +1571,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.190: una sola medida de lo propio en el camino corto — el tope, la pantalla, los datos y el riesgo leen la misma; la base en un solo lugar, el mismo origin en sus formas, qué repos se miden y el empuje que sólo empuja.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adhoc-measure.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el camino rápido que toca una pantalla: maqueta aprobada y captura posterior al último cambio, o no guarda.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/adhoc-screen.test.js",

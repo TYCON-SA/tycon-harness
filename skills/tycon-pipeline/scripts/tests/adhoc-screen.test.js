@@ -169,7 +169,9 @@ test('AdhocScreen_DobleDePrueba_NoEsPantalla @story-8.181 @ac-17', (t) => {
   const { r, h, m } = completo(t);
   const [uno] = textosDe(m);
   escribir(r, 'src/Combo.tsx', conLosTextosDe(m, [uno]));
-  for (const rel of ['src/__mocks__/Combo.tsx', 'src/comun/tests/Combo.tsx', 'src/e2e/Combo.tsx', 'src/Combo.cy.tsx', 'cypress/Combo.tsx', 'playwright/Combo.tsx', 'spec/Combo.tsx', 'src/Combo.stories.tsx', 'src/__fixtures__/Combo.tsx']) escribir(r, rel, `<p>${uno}</p>\n`);
+  // `src/comun/tests/` y `src/e2e/` ya no cuentan como pruebas: una carpeta así más adentro puede ser una pantalla de
+  // verdad (8.190, AC 26), y la prueba de esas rutas está en adhoc-measure.test.js (T41)
+  for (const rel of ['src/__mocks__/Combo.tsx', 'src/Combo.cy.tsx', 'cypress/Combo.tsx', 'playwright/Combo.tsx', 'spec/Combo.tsx', 'src/Combo.stories.tsx', 'src/__fixtures__/Combo.tsx']) escribir(r, rel, `<p>${uno}</p>\n`);
   git(r, 'add', '-A');
   const v = delCarril(h);
   assert.ok(v.faltan.some((f) => f.includes(`«${uno}»`)), JSON.stringify(v));
@@ -311,7 +313,7 @@ test('T40 AdhocScreen_ArchivosTraidosDeMain_NoPidenMaqueta @story-8.181 @ac-21',
   git(r, 'checkout', '-q', 'arreglo');
   git(r, 'merge', '-q', '--no-edit', 'main');
   const antes = git(r, 'rev-parse', 'HEAD~1');
-  carril(h, { files: [path.join(r, 'src', 'util.js')], bases: { [r]: { sha: antes, traida: true } } });
+  carril(h, { files: [path.join(r, 'src', 'util.js')], bases: { [r]: { sha: antes, traida: true, origen: null } } });
   const v = delCarril(h);
   assert.deepStrictEqual(v.pantallas, [], JSON.stringify(v));
   assert.deepStrictEqual(v.faltan, []);

@@ -143,9 +143,13 @@ function fechaDelCambio(abs) {
   }
 }
 
-// Una prueba por su nombre o por una carpeta de pruebas o de ejemplos. Una carpeta `test/`, `specs/` o `fixtures/` más adentro
-// puede ser una pantalla de verdad (la ruta `/test` de `src/app/test/page.tsx`): ésas cuentan como prueba sólo en la raíz.
-const esPrueba = (rel) => /\.(test|spec|cy|stories)\.[^./]+$/i.test(rel) || /(^|\/)(__tests__|__mocks__|__fixtures__|tests|e2e|cypress|playwright)\//i.test(rel) || /^(test|specs?|fixtures)\//i.test(rel);
+// Una prueba por su nombre (en cualquier lugar) o por una carpeta de pruebas o de ejemplos. `__tests__`, `__mocks__` y
+// `__fixtures__` lo son en cualquier lugar. `test/`, `tests/`, `specs/`, `e2e/`, `cypress/` o `playwright/` más adentro pueden
+// ser una pantalla de verdad (la ruta `/tests` de `src/app/tests/page.tsx`): ésas cuentan como prueba sólo en la raíz del
+// repo o de un paquete (`apps/*/`, `packages/*/`). El costo: una pantalla sin nombre de prueba en `src/components/e2e/` pide
+// maqueta; se sale nombrándola como prueba.
+const esPrueba = (rel) => /\.(test|spec|cy|stories)\.[^./]+$/i.test(rel) || /(^|\/)(__tests__|__mocks__|__fixtures__)\//i.test(rel)
+  || /^((apps|packages)\/[^/]+\/)?(tests?|specs?|fixtures|e2e|cypress|playwright)\//i.test(rel);
 
 const TANDA_DE_PANTALLAS = 50;
 const MAS_NOMBRADOS = 5;
@@ -216,17 +220,22 @@ function compararConLaMaqueta(adhoc, pantallas, repos) {
   return { faltan, declaradas, imposible: null };
 }
 
-function revisar(adhoc, repos = []) {
-  const { propiosDelCarril } = require('./adhoc-base.js');
+/**
+ * ¿El carril toca una pantalla, y tiene lo que pide? Lee la medida de esta vuelta del freno (`medida`; sin ella, mide):
+ * las dos rutas de cada cambio, lo anotado y todo lo que git no sigue. Lo traído de `main` no pide maqueta ni captura.
+ */
+function revisar(adhoc, repos = [], medida) {
+  const base = require('./adhoc-base.js');
   const { isCodeFile } = require('./story-gate.js');
   const { fileTouchesUi } = require('./ui-signal.js');
-  // lo que el arreglo cambió de verdad: lo traído de `main` no pide maqueta ni captura
   const regla = reglaDePantalla();
   const nombres = new Map();
   const nombreDe = (repo) => { if (!nombres.has(repo)) nombres.set(repo, nombreDelRepo(repo)); return nombres.get(repo); };
   const esDePantalla = (rel, repo) => !esPrueba(rel) && fileTouchesUi(rel, repo, regla, nombreDe(repo));
-  const { porRepo, fallas, avisos } = propiosDelCarril(adhoc, { repos, sinSeguir: true, soloCambiados: true, suma: esDePantalla });
-  if (fallas.length) return { sinMedir: fallas[0] };
+  const m = medida || base.medirLoPropio(adhoc, { repos });
+  if (m.fallas.length) return { sinMedir: m.fallas[0] };
+  const avisos = m.avisos;
+  const porRepo = base.rutasDe(m, adhoc, { como: 'todo', repos: [...new Set([...base.reposDelCarril(adhoc), ...repos])] });
   const anotadas = new Set([adhoc.mockup, adhoc.capture].filter((x) => x && typeof x.file === 'string').map((x) => rutaReal(x.file)));
   const pantallas = [];
   // `pantallas` va al texto que lee la persona; la comparación abre las rutas tal cual

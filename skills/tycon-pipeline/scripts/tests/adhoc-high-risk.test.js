@@ -42,6 +42,8 @@ const MARKER = path.join(SCRIPTS, 'marker.js');
 const ON_EDIT = path.join(SCRIPTS, 'on-edit.js');
 const riskPaths = require(path.join(SCRIPTS, 'lib', 'risk-paths.js'));
 const adhocBase = require(path.join(SCRIPTS, 'lib', 'adhoc-base.js'));
+/** Lo que mide el riesgo del carril: la medida, con las rutas que lee él (`{ porRepo, avisos, fallas }`). */
+const medidos = (carril) => { const m = adhocBase.medirLoPropio(carril); return { ...m, porRepo: adhocBase.rutasDe(m, carril, { como: 'todo' }) }; };
 const io = require(path.join(SCRIPTS, 'lib', 'story-gate-io.js'));
 const saveBrake = require(path.join(SCRIPTS, 'lib', 'save-brake.js'));
 const bash = require(path.join(SCRIPTS, 'on-bash-write-gate.js'));
@@ -185,7 +187,7 @@ test('T15 Base_LaTraeLaFuncion_SinRedAvisa — @story-8.174 @ac-14', () => {
   git(conBase, 'add', '.');
   commitear(conBase, 'en la rama');
   fs.writeFileSync(path.join(conBase, 'src/seguido.js'), 'b\n');
-  const medido = adhocBase.archivosDelCarril({ rutas: [], bases: { [conBase]: baseRama } }).porRepo[conBase];
+  const medido = medidos({ rutas: [], bases: { [conBase]: baseRama } }).porRepo[conBase];
   assert.ok(medido.includes('src/prev.js') && medido.includes('src/seguido.js'), JSON.stringify(medido));
   // «fuera de un repo» se reconoce con git en otro idioma
   const ub = spawnSync(process.execPath, ['-e', `console.log(JSON.stringify(require(${JSON.stringify(path.join(SCRIPTS, 'lib', 'adhoc-base.js'))}).ubicar(${JSON.stringify(tmp('nogit-'))})))`],
@@ -193,7 +195,7 @@ test('T15 Base_LaTraeLaFuncion_SinRedAvisa — @story-8.174 @ac-14', () => {
   assert.equal(JSON.parse(ub.stdout).fuera, true, ub.stdout + ub.stderr);
   // al medir sin base: lo registrado y el commit, y el aviso dice que la rama no se midió
   escribir(sinRed, 'src/a.js');
-  const m = adhocBase.archivosDelCarril({ rutas: [path.join(sinRed, 'src/a.js')], bases: { [sinRed]: n } });
+  const m = medidos({ rutas: [path.join(sinRed, 'src/a.js')], bases: { [sinRed]: n } });
   assert.ok(m.porRepo[sinRed].includes('src/a.js'));
   assert.ok(m.avisos.some((a) => /la rama no se midió/.test(a)));
   // el primer toque de un repo del carril trae la base y la anota (on-edit)
@@ -537,13 +539,13 @@ test('T16 RamaAtrasada_LoDeOtroPedidoNoEsPropio', () => {
   entraAMain('src/auth/x.ts');
   // la base se anota después de que el otro pedido entró: lo suyo no se mide como de la rama
   const b = adhocBase.traerBase(dir);
-  assert.deepStrictEqual(adhocBase.archivosDelCarril({ rutas: [propio], bases: { [dir]: b } }).porRepo[dir], ['src/propio.js']);
+  assert.deepStrictEqual(medidos({ rutas: [propio], bases: { [dir]: b } }).porRepo[dir], ['src/propio.js']);
   const state = conCarril(home, 's16', { rutas: [propio], bases: { [dir]: b } });
   const d = guardar(dir, 's16', home);
   assert.ok(d && !d.texto && d.pregunta, JSON.stringify(d));
   assert.equal(leerCarril(state, 's16').riesgoAlto, undefined);
   // una base que el repo no tiene es una medición incompleta, no «nada cambió»
-  const rota = adhocBase.archivosDelCarril({ rutas: [propio], bases: { [dir]: { sha: 'a'.repeat(40), traida: true } } });
+  const rota = medidos({ rutas: [propio], bases: { [dir]: { sha: 'a'.repeat(40), traida: true } } });
   assert.ok(rota.fallas.length, JSON.stringify(rota));
 });
 
@@ -563,7 +565,7 @@ test('T17 MarcaPegada_SeVuelveAMedirAntesDeFrenar', () => {
   const a = leerCarril(state, 's17');
   assert.equal(a.riesgoAlto, undefined);
   assert.equal(a.bases[dir].sha, ultimo);
-  assert.deepStrictEqual(adhocBase.archivosDelCarril(a).porRepo[dir], ['src/propio.js']);
+  assert.deepStrictEqual(medidos(a).porRepo[dir], ['src/propio.js']);
   // una edición de verdad, restaurada después: la marca era correcta, y ya no tiene de qué agarrarse
   const r = ramaAtrasada(raiz, 'restaurada');
   const x = path.join(r.dir, 'src/auth/x.ts');
@@ -680,7 +682,8 @@ test('T18 RamaAtrasada_LoPropioSigueFrenando', () => {
   });
   // git que falla a mitad de la medición (el freno de riesgo: el de pantalla mide desde `origin/main` y no usa esta base):
   // lo preparado se sigue midiendo y marca; con una marca puesta, no se levanta
-  const rota = { sha: 'a'.repeat(40), traida: true };
+  // la base lleva el `origin` de hoy: sin él sería un carril viejo, que no se mide (8.190, AC 15)
+  const rota = { sha: 'a'.repeat(40), traida: true, origen: path.join(raiz, 'no-existe.git') };
   const incompleta = (nombre, armar) => {
     const r = ramaAtrasada(raiz, nombre);
     git(r.dir, 'remote', 'set-url', 'origin', path.join(raiz, 'no-existe.git'));
@@ -779,16 +782,17 @@ test('RiesgoCommiteado_ConLaBaseAnotadaRota_SigueFrenando @story-8.181 @ac-13', 
   };
   // con red: trae `main`, mide de nuevo y pone la marca
   const conRed = armar('con-red');
-  const s1 = conCarril(home, 'con-red', { rutas: [conRed.propio], bases: { [conRed.dir]: rota } });
+  const s1 = conCarril(home, 'con-red', { rutas: [conRed.propio], bases: { [conRed.dir]: { ...rota, origen: git(conRed.dir, 'remote', 'get-url', 'origin') } } });
   const d1 = guardar(conRed.dir, 'con-red', home);
   assert.match(d1.texto, /auth\/nuevo\.ts/, d1.texto);
   assert.ok(leerCarril(s1, 'con-red').riesgoAlto);
   assert.notEqual(leerCarril(s1, 'con-red').bases[conRed.dir].sha, rota.sha);
-  // sin red: no pudo medir, y sin medir no guarda
+  // sin red, con la copia local de `main`: mide desde ella y frena por los revisores, no por «no pude medir» (8.190, AC 8)
   const sinRed = armar('sin-red');
-  git(sinRed.dir, 'remote', 'set-url', 'origin', path.join(raiz, 'no-existe.git'));
-  conCarril(home, 'sin-red', { rutas: [sinRed.propio], bases: { [sinRed.dir]: rota } });
-  assert.match(guardar(sinRed.dir, 'sin-red', home).texto, /no pude medir si este camino corto toca una ruta de riesgo alto/);
+  const noExiste = path.join(raiz, 'no-existe.git');
+  git(sinRed.dir, 'remote', 'set-url', 'origin', noExiste);
+  conCarril(home, 'sin-red', { rutas: [sinRed.propio], bases: { [sinRed.dir]: { ...rota, origen: noExiste } } });
+  assert.match(guardar(sinRed.dir, 'sin-red', home).texto, /faltan los revisores y el pase/);
 });
 
 // 🔴 Falla con: la marca de un worktree anidado borrado, que se levanta sola con su rama viva: lo de riesgo se empuja sin revisores.
