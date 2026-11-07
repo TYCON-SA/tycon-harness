@@ -354,3 +354,130 @@ test('HT9 Take_ClearsTheNotedWait — al tomar el turno de la suite, la espera a
   assert.strictEqual(note.waitingSince, undefined);
   HT.release({ home: m.home, pid: process.pid });
 });
+
+// ── The adversarial pass holds the same turn: its probes run on the machine ──────────────────────────────────────
+
+// A session file of the toy machine; alive with this process's pid unless another one is given.
+function addSession(m, sid, name, pid = process.pid) {
+  fs.writeFileSync(path.join(m.home, '.claude', 'sessions', `${sid}.json`), JSON.stringify({ pid, sessionId: sid, name, nameSource: 'user', status: 'busy', statusUpdatedAt: Date.now(), cwd: m.root }));
+}
+// The run marker of a session with its pass launched `minutesAgo` minutes ago; `extra` adds the result fields.
+function passMarker(m, sid, storyId, minutesAgo, extra = {}) {
+  const dir = path.join(stateDir(m.home), 'active');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${sid}.json`), JSON.stringify({ sessionId: sid, storyId, adversarial: { launchedAt: new Date(Date.now() - minutesAgo * 60000).toISOString(), runId: 'wf_x' }, ...extra }));
+}
+const result = (minutesAgo, veredicto) => ({ ts: new Date(Date.now() - minutesAgo * 60000).toISOString(), tipo: '5b', veredicto });
+const takeAs = (m, sid, extra = {}) => HT.take({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: sid }, pid: process.pid, what: '100 suites de repo', ...extra });
+
+// 🔴 mutación: mirar sólo las suites deja correr una grande al lado del pase, que es lo que agotó la memoria.
+test('HT10 HeavyTurn_AdversarialInFlight_FullSuiteWaits @story-8.228 @ac-1 — con un pase de otra sesión en vuelo, la grande no arranca y dice de quién', () => {
+  const m = toy();
+  addSession(m, 's-ana', 'Ana');
+  passMarker(m, 's-ana', '7.7', 5);
+  const r = takeAs(m, 's-uma');
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.holder.kind, 'pass');
+  assert.match(r.message, /pase adversarial de la 7\.7 \(Ana, desde las \d\d:\d\d\)/);
+  assert.ok(!fs.existsSync(HT.turnFile(m.home)), 'no publicó el turno');
+  const cli = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'tools', 'heavy-turn.js'), 'take', '--process', String(process.pid), '--what', 'x'], { env: { ...machineEnv(m), TYCON_SUITE_TURN: '1', CLAUDE_CODE_SESSION_ID: 's-uma' }, encoding: 'utf8' });
+  assert.strictEqual(cli.status, HT.BUSY_EXIT, cli.stderr);
+  assert.match(cli.stderr, /pase adversarial de la 7\.7/);
+});
+
+// 🔴 mutación: excluir la sesión propia (como entre dos pases) deja a un re-loop correr sus vecinas al lado de su pase.
+test('HT11 HeavyTurn_OwnSessionPass_AlsoCounts @story-8.228 @ac-1 — el pase de la misma sesión también frena: el turno es de la máquina', () => {
+  const m = toy();
+  passMarker(m, 's-uma', '7.7', 5);
+  const r = takeAs(m, 's-uma');
+  assert.strictEqual(r.ok, false);
+  assert.match(r.message, /pase adversarial de la 7\.7 \(Uma/);
+});
+
+// 🔴 mutación: mirar `deepReviewDone` en vez del resultado posterior al lanzamiento deja trabado el turno con un no-medido.
+test('HT12 HeavyTurn_PassResultNoted_TurnFree @story-8.228 @ac-3 — con su resultado anotado el turno queda libre; relanzado, vuelve a frenar', () => {
+  const m = toy();
+  addSession(m, 's-ana', 'Ana');
+  passMarker(m, 's-ana', '7.7', 30, { adversarialPasses: [result(2, 'listo')], deepReviewDone: true });
+  assert.strictEqual(takeAs(m, 's-uma').taken, true, 'medido');
+  HT.release({ home: m.home, pid: process.pid });
+  passMarker(m, 's-ana', '7.7', 30, { adversarialPasses: [result(2, 'no-medido')], deepReviewDone: false });
+  assert.strictEqual(takeAs(m, 's-uma').taken, true, 'no-medido: su workflow ya terminó');
+  HT.release({ home: m.home, pid: process.pid });
+  passMarker(m, 's-ana', '7.7', 1, { adversarialPasses: [result(2, 'no-medido')], deepReviewDone: false });
+  assert.strictEqual(takeAs(m, 's-uma').ok, false, 'relanzado después del no-medido');
+});
+
+// 🔴 mutación: sin el tope de la hora, un pase colgado traba las suites para siempre; sin mirar la sesión, uno abandonado.
+test('HT13 HeavyTurn_StaleOrDeadPass_DoesNotBlock @story-8.228 @ac-6 — un pase de más de una hora o de una sesión cerrada no frena', () => {
+  const m = toy();
+  addSession(m, 's-ana', 'Ana');
+  passMarker(m, 's-ana', '7.7', 61);
+  const r = takeAs(m, 's-uma');
+  assert.strictEqual(r.taken, true);
+  assert.match(r.note, /hace más de una hora.*no frena/);
+  HT.release({ home: m.home, pid: process.pid });
+  addSession(m, 's-ana', 'Ana', spawnSync(process.execPath, ['-e', '']).pid);
+  passMarker(m, 's-ana', '7.7', 5);
+  const dead = takeAs(m, 's-uma');
+  assert.strictEqual(dead.taken, true);
+  assert.strictEqual(dead.note, null);
+  HT.release({ home: m.home, pid: process.pid });
+});
+
+// 🔴 mutación: tragarse el error de lectura deja correr la grande sin que nadie sepa que no se miró.
+test('HT14 HeavyTurn_MarkersUnreadable_RunsAndSays @story-8.228 @ac-7 — sin poder leer los marcadores corre igual y lo dice', { skip: process.platform === 'win32' || (process.getuid && process.getuid() === 0) ? 'permisos POSIX' : false }, (t) => {
+  const m = toy();
+  const dir = path.join(stateDir(m.home), 'active');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.chmodSync(dir, 0o000);
+  t.after(() => fs.chmodSync(dir, 0o700));
+  const r = takeAs(m, 's-uma');
+  assert.strictEqual(r.taken, true);
+  assert.match(r.note, /no pude ver si hay un pase en vuelo: /);
+  HT.release({ home: m.home, pid: process.pid });
+});
+
+// 🔴 mutación: mirar el pase antes que la coordinadora frena en la CI y en la nube.
+test('HT15 HeavyTurn_NoCoordinator_PassIgnored @story-8.228 @ac-8 — sin coordinadora, o apagado, un pase en vuelo no cambia nada', () => {
+  const m = toy({ designated: false });
+  passMarker(m, 's-uma', '7.7', 5);
+  assert.deepStrictEqual(takeAs(m, 's-uma'), { ok: true, taken: false, message: null });
+  const off = toy();
+  passMarker(off, 's-uma', '7.7', 5);
+  assert.deepStrictEqual(takeAs(off, 's-uma', { env: { CLAUDE_CODE_SESSION_ID: 's-uma', TYCON_SUITE_TURN: '0' } }), { ok: true, taken: false, message: null });
+});
+
+// 🔴 mutación: contar en la duda como viva a una sesión sin archivo frena las suites hasta una hora por un archivo roto ajeno.
+test('HT17 HeavyTurn_UnsureIfAlive_DoesNotBlockAndSays @story-8.228 @ac-7 — con un archivo de sesión ilegible, el pase de una sesión sin archivo no frena la suite, y se dice', () => {
+  const m = toy();
+  fs.writeFileSync(path.join(m.home, '.claude', 'sessions', 'rota.json'), '{}');
+  passMarker(m, 's-sin-archivo', '9.9', 1);
+  const r = takeAs(m, 's-uma');
+  assert.strictEqual(r.taken, true, r.message || '');
+  assert.match(r.note, /no sé si vive la sesión del pase de la 9\.9.*no frena/);
+  HT.release({ home: m.home, pid: process.pid });
+  // con una sesión que sí se sabe viva, frena igual
+  addSession(m, 's-ana', 'Ana');
+  passMarker(m, 's-ana', '7.7', 5);
+  assert.strictEqual(takeAs(m, 's-uma').ok, false);
+});
+
+test('HT16 Guides_HeavyTurn_SuiteAndPassNotTogether @story-8.228 @ac-5 — las dos guías dicen que no van juntos, por qué y cómo se libera cada turno', () => {
+  const section = (file, heading) => {
+    const text = fs.readFileSync(path.join(ROOT, 'guides', file), 'utf8');
+    const start = text.indexOf(heading);
+    assert.ok(start >= 0, `${file}: falta «${heading}»`);
+    const end = text.indexOf('\n## ', start + 1);
+    // el corte de renglón de la guía no cambia lo que dice
+    return text.slice(start, end < 0 ? undefined : end).replace(/\s+/g, ' ');
+  };
+  const es = section('coordination.md', '## Lo pesado, con turno');
+  assert.doesNotMatch(es, /corren en la nube|pueden ir juntos|puede correr a la vez \*\*una suite completa y un pase/);
+  assert.match(es, /sondas/);
+  for (const k of ['mark-adversarial-result', 'mark-adversarial-skipped', 'tres horas']) assert.ok(es.includes(k), `es: ${k}`);
+  const en = section('coordination.en.md', '## Heavy work takes turns');
+  assert.doesNotMatch(en, /run in the cloud|can run at the same time \*\*one full suite and one adversarial pass/);
+  assert.match(en, /probes/);
+  for (const k of ['mark-adversarial-result', 'mark-adversarial-skipped', 'three hours']) assert.ok(en.includes(k), `en: ${k}`);
+});

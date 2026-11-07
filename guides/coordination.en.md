@@ -231,27 +231,33 @@ The same notice carries two more things:
 - **The full-suite queue, stalled.** If no full suite is running and some session noted that it waits for its turn
   (`marker.js doing --waiting-for` with «suite», «portón» or «turno»), it shows "no corre ninguna suite completa y hay N
   esperando turno: dale el «arrancá» a X", with X the one waiting longest. Without that note it does not show: an idle
-  session is not waiting for its turn. Waiting for a pass does not count: the pass runs in the cloud, with its own turn.
+  session is not waiting for its turn. Waiting for a pass does not count: the notice above wakes the session that owes its pass.
   `status` shows the whole queue.
 
 ## Heavy work takes turns: the full suite and adversarial passes
 
-The machine can run at the same time **one full suite and one adversarial pass or batch of reviewers from another session**:
-the pass and the reviewers run in the cloud and barely use the machine. **Never two full suites or two passes at once.**
-The harness controls this, not anyone's memory:
+The machine runs **one piece of heavy work at a time**: one large test run or one adversarial pass, never two, and not
+one of each either. The pass's hunters and verifiers run their probes on the machine, not in the cloud: a pass and a large
+suite together used up the memory and Claude Code closed sessions. The reviewers, the bench and the exam are calls to the
+model and ask for no turn. The harness controls this, not anyone's memory:
 
 - **The second large run does not start.** The turn (`scripts/tools/heavy-turn.js`) is requested by the suite runner, when it
   is about to run 100 suites or more, scoped or not, and by the whole portable run. With the turn held by another live
   process they do not run (the test gate exits 75, its "wait") and they say who holds it, how many suites it runs, since when
-  and how to free it. Below 100 suites it is not requested. The turn of a dead process, or one older than three hours, frees itself.
-- **The second pass is not launched.** With another in flight, the pass's gate (`pipeline.js deep-review-gate`) exits 3, and
-  `pipeline.js next` asks to wait instead of launching. The answer carries `other_in_flight` (story, session and time) and the
-  line saying who holds the place. The pass of a closed session does not count.
-- **How long the place can take to free up.** Up to an hour too long: the harness knows a pass finished when its session
-  collects it, not when it finishes in the cloud. After that hour it no longer stops anything, because it may be finished or
-  stuck, and that is said.
+  and how to free it. Below 100 suites it is not requested. With a pass in flight from any live session, the own one too,
+  they do not run either, and they say which story, which session and since when: the turn belongs to the machine, not
+  to the session.
+- **The pass is not launched with the machine busy.** With another pass in flight, or a large run going, the pass's gate
+  (`pipeline.js deep-review-gate`) exits 3, and `pipeline.js next` asks to wait instead of launching. The answer carries
+  `other_in_flight` (story, session and time) or `heavy_run` (session, how many suites and since when), and the line saying
+  who holds the place. The pass of a closed session does not count.
+- **How each one frees up.** The large run releases its turn when it ends; the turn of a dead process, or one older than
+  three hours, frees itself. The pass has no turn file: it holds the machine from its launch until its session notes the
+  result (`marker.js mark-adversarial-result`, with any verdict, `no-medido` too) or the skip
+  (`marker.js mark-adversarial-skipped`). Relaunched, it holds it again. A session that closed frees it, and after an hour
+  it no longer stops anything, because it may be finished or stuck, and that is said.
 
-`coordination.js status` shows the suite and the pass in progress. With no coordinator designated, everything answers as
+`coordination.js status` shows a single line, «Turno de tarea pesada», with who holds it and what it is. With no coordinator designated, everything answers as
 always: in CI and in the cloud there is no turn. `TYCON_SUITE_TURN=0` turns off the suite's, and `TYCON_SUITE_TURN=1` asks for
 it even with no coordinator: it can only stop too much.
 
@@ -631,8 +637,8 @@ They come from a whole day of coordinating several sessions. Each says what to d
   owner's name that they did not give is a false record. A tab that does not ask for permissions no longer signs
   through the window: the harness refuses it. A click or an «aprobado» the hook did not record does not count either.
 - **Heavy things, with a turn.** The full suite, the controls bench, the reviewers' exam and the gate run one at a time on
-  the machine, and the turn is asked from the coordinator. The harness also stops the full suite and the pass (above,
-  "Heavy work takes turns"). The story the owner marked as a priority goes first in the line. Why: two at once saturate the
+  the machine, and the turn is asked from the coordinator. The harness also stops the full suite and the pass, which do not go
+  together (above, "Heavy work takes turns"). The story the owner marked as a priority goes first in the line. Why: two at once saturate the
   machine and both take longer.
 - **Before approving someone else's request, look at the diff.** And an ok covering sensitive files nobody reviewed is
   not given: separate them first. Why: approving without looking is signing what was not seen.
