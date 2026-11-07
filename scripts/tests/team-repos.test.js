@@ -984,6 +984,13 @@ test('TeamRepos_ReviewRunnerSeValida (T8) @story-8.221 @ac-8 @ac-26 @ac-45 @ac-4
   const plan = con({ plan_review: { routine: 'always', lenses: ['otra'], owner_away_minutes: 2 } });
   assert.deepStrictEqual(plan.data.plan_review, { routine: 'always' });
   assert.deepStrictEqual(plan.sectionProblems.plan_review.map((x) => x.path).sort(), ['plan_review.lenses', 'plan_review.owner_away_minutes']);
+  // story_index y plan_review mal escritos en el mismo archivo: cada uno cae solo, con sus problemas en su lista
+  const juntas = con({ story_index: 'todo', plan_review: { routine: 'always', lenses: ['otra'] } });
+  assert.ok(juntas.ok, 'una sección mala no invalida el archivo');
+  assert.equal(juntas.data.story_index, undefined);
+  assert.deepStrictEqual(juntas.data.plan_review, { routine: 'always' });
+  assert.deepStrictEqual(juntas.sectionProblems.story_index.map((x) => x.path), ['story_index']);
+  assert.deepStrictEqual(juntas.sectionProblems.plan_review.map((x) => x.path), ['plan_review.lenses']);
   // la versión: review_runner y plan_review piden la suya, y cada clave nueva de deep_review y review también
   const v = (doc) => ORG.versionQuePide(doc).version;
   assert.equal(v({ review_runner: { order: ['claude'] } }), ORG.REVIEW_RUNNER_SINCE);
