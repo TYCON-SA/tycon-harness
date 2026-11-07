@@ -197,42 +197,80 @@ function commitear(E, contenido, sid) {
   });
 }
 
+// Los dos frenos del commit, por su texto: la Capa 5 («Criterios sin evidencia: …») y la matriz (DODRT-C6).
+const CAPA5 = /Criterios sin evidencia: ([^\n]*)/;
+const salida = (r) => r.stderr + r.stdout;
+const faltan = (r) => ((salida(r).match(CAPA5) || [])[1] || '');
+
 test('T11 PreCommit_ToReview_AsksAllBatches @story-8.239 @ac-8 — pasar a review pide todas, aunque el marcador tenga tanda', () => {
   const E = entorno();
   E.arrancar('s-t11');
   assert.strictEqual(E.correr('marker.js', ['set-batch', A], 's-t11').status, 0);
   E.humo([1]);
   const r = commitear(E, historia({ status: 'review' }), 's-t11');
-  assert.notStrictEqual(r.status, 0, r.stderr + r.stdout);
-  assert.match(r.stderr + r.stdout, /AC ?#?2|\bAC2\b|ACs?[^\n]*\b2\b/, r.stderr + r.stdout);
+  assert.notStrictEqual(r.status, 0, salida(r));
+  assert.match(faltan(r), /#2\b/, salida(r));
+  assert.doesNotMatch(faltan(r), /#1\b/, salida(r));
 });
 
 test('T12 PreCommit_BatchToDone_MeasuresThatBatch @story-8.239 @ac-9 — cerrar una tanda mide ésa (matriz y Capa 5)', () => {
-  // A a done, con su humo y B sin evidencia: no frena por B
+  // la primera tanda a done, con su humo y la segunda sin evidencia: ni la Capa 5 ni la matriz frenan
   let E = entorno();
   E.humo([1]);
   let r = commitear(E, historia({ estados: { [A]: 'done' } }), 's-t12');
-  assert.doesNotMatch(r.stderr + r.stdout, /incomplete-evidence|criterios? sin evidencia/i, r.stderr + r.stdout);
-  assert.strictEqual(r.status, 0, r.stderr + r.stdout);
-  assert.match(r.stderr + r.stdout, new RegExp(`tanda ${A}`));
-  // A y C a done, con la humo de los dos
+  assert.doesNotMatch(salida(r), CAPA5, salida(r));
+  assert.doesNotMatch(salida(r), /DODRT-C6/, salida(r));
+  assert.strictEqual(r.status, 0, salida(r));
+  assert.match(salida(r), new RegExp(`cierra la tanda ${A}`));
+  // dos tandas a done, con la humo de las dos
   E = entorno();
   E.humo([1, 3]);
   r = commitear(E, historia({ estados: { [A]: 'done', [C]: 'done' } }), 's-t12b');
-  assert.strictEqual(r.status, 0, r.stderr + r.stdout);
-  // A a done sin su evidencia: frena
+  assert.strictEqual(r.status, 0, salida(r));
+  // la tanda a done sin su evidencia (hay de otra tanda): la Capa 5 frena por su criterio, no por los de las otras
   E = entorno();
+  E.humo([3]);
   r = commitear(E, historia({ estados: { [A]: 'done' } }), 's-t12c');
-  assert.notStrictEqual(r.status, 0, r.stderr + r.stdout);
-  // A a done y la historia a review en el mismo commit: manda review, mide todas y frena por B
+  assert.notStrictEqual(r.status, 0, salida(r));
+  assert.match(faltan(r), /#1\b/, salida(r));
+  assert.doesNotMatch(faltan(r), /#2\b/, salida(r));
+  // la tanda a done y la historia a review en el mismo commit: manda review, mide todas y frena por la segunda
   E = entorno();
   E.humo([1]);
   r = commitear(E, historia({ estados: { [A]: 'done' }, status: 'review' }), 's-t12d');
-  assert.notStrictEqual(r.status, 0, r.stderr + r.stdout);
-  // una tanda que se cierra sin criterios no achica: mide todas y frena por B
+  assert.notStrictEqual(r.status, 0, salida(r));
+  assert.match(faltan(r), /#2\b/, salida(r));
+  // una tanda que se cierra sin criterios (tampoco en HEAD) no achica: mide todas y frena por la segunda
   E = entorno();
   E.humo([1]);
-  const sinCriterios = historia({ estados: { [A]: 'done' } }).replace(`  - name: ${A}\n    status: done\n    acs: [1]`, `  - name: ${A}\n    status: done`);
-  r = commitear(E, sinCriterios, 's-t12e');
-  assert.notStrictEqual(r.status, 0, r.stderr + r.stdout);
+  const sinCriterios = (estado) => historia({ estados: { [A]: estado } }).replace(`  - name: ${A}\n    status: ${estado}\n    acs: [1]`, `  - name: ${A}\n    status: ${estado}`);
+  fs.writeFileSync(E.story, sinCriterios('pending'));
+  E.git('commit', '-qam', 'la primera tanda sin criterios');
+  r = commitear(E, sinCriterios('done'), 's-t12e');
+  assert.notStrictEqual(r.status, 0, salida(r));
+  assert.match(faltan(r), /#2\b/, salida(r));
+  // una tanda que aparece ya done no se cerró en este commit: mide todas
+  E = entorno();
+  E.humo([3]);
+  const conNueva = historia().replace('---\n# Story', `  - name: D-la-nueva\n    status: done\n    acs: [3]\n---\n# Story`);
+  r = commitear(E, conNueva, 's-t12f');
+  assert.notStrictEqual(r.status, 0, salida(r));
+  assert.match(salida(r), /agrega la tanda D-la-nueva ya done/, salida(r));
+  assert.match(faltan(r), /#1\b/, salida(r));
+  // mover un criterio a otra tanda en el commit que cierra la primera no lo saca: se miden los que tenía en HEAD
+  E = entorno();
+  E.humo([3]);
+  const movido = historia({ estados: { [A]: 'done' } }).replace(`status: done\n    acs: [1]`, 'status: done\n    acs: [3]')
+    .replace(`  - name: ${C}\n    status: pending\n    acs: [3]`, `  - name: ${C}\n    status: pending\n    acs: [1]`);
+  r = commitear(E, movido, 's-t12g');
+  assert.notStrictEqual(r.status, 0, salida(r));
+  assert.match(faltan(r), /#1\b/, salida(r));
+  // sin la historia en HEAD no se sabe qué tanda se cierra: mide todas
+  E = entorno();
+  E.humo([1]);
+  E.git('rm', '-q', '--cached', E.story);
+  E.git('commit', '-qm', 'sin la historia');
+  r = commitear(E, historia({ estados: { [A]: 'done' } }), 's-t12h');
+  assert.notStrictEqual(r.status, 0, salida(r));
+  assert.match(salida(r), /no pude leer las tandas de la historia en HEAD/, salida(r));
 });

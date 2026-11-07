@@ -2080,12 +2080,14 @@ withWaiverLog(() => {
     const hecha = rm.compute({ storyPath: paraguas(['  - name: A-la-primera', '    status: done', '    acs: [1]']).storyPath, batch: 'A-la-primera' });
     const repetida = rm.compute({ storyPath: paraguas([...AB, '  - name: A-la-primera', '    status: pending', '    acs: [3]']).storyPath, batch: 'B-la-segunda' });
     const inexistente = rm.compute({ storyPath: paraguas(['  - name: A-la-primera', '    status: pending', '    acs: [1, 9]']).storyPath, batch: 'A-la-primera' });
+    const ninguno = rm.compute({ storyPath: paraguas([...AB, '  - name: C-otra', '    status: pending', '    acs: [8, 9]']).storyPath, batch: 'C-otra' });
     check('T6 Matrix_Batch_Invalid_StructuralError @story-8.239 @ac-4',
       /Z/.test(z.structuralError || '') && /A-la-primera/.test(z.structuralError || '') && /B-la-segunda/.test(z.structuralError || '')
         && /done/.test(hecha.structuralError || '')
         && /repetid/.test(repetida.structuralError || '')
-        && !inexistente.structuralError && inexistente.warnings.some((w) => /9/.test(w) && /no está entre los criterios/.test(w)),
-      JSON.stringify({ z: z.structuralError, hecha: hecha.structuralError, repetida: repetida.structuralError, inex: inexistente.structuralError || inexistente.warnings }));
+        && !inexistente.structuralError && inexistente.warnings.some((w) => /9/.test(w) && /no está entre los criterios/.test(w))
+        && /medirla sería medir nada/.test(ninguno.structuralError || ''),
+      JSON.stringify({ z: z.structuralError, hecha: hecha.structuralError, repetida: repetida.structuralError, inex: inexistente.structuralError || inexistente.warnings, ninguno: ninguno.structuralError }));
   }
   {
     const f = paraguas(['  - name: A-la-primera', '    status: pending', '    acs: [1]', '  - name: B-la-segunda', '    status: blocked', '    blocked_by: "espera"', '    acs_pending: [2]']);

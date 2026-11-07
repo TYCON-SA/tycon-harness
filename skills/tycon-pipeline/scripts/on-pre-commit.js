@@ -1509,7 +1509,8 @@ function main() {
   // no el working tree — un ack agregado sin stagear no cuenta. `{ error }` si no corrió: cada chequeo decide qué
   // hacer con eso (C6 sigue fail-open logueado; el de evidencia vuelve a mirar sólo el archivo).
   const matrices = new Map();
-  // specRel → las tandas que el commit pasa a done (sin pasar la historia a review/done): la matriz mide ésas
+  // specRel → { nombres, antes }: las tandas que el commit pasa a done (sin pasar la historia a review/done) y los
+  // criterios que tenían en HEAD; la matriz mide ésas
   const tandasQueCierran = new Map();
   const matrizDe = (specRel, staged) => {
     if (matrices.has(specRel)) return matrices.get(specRel);
@@ -1531,7 +1532,8 @@ function main() {
         // y la discovery de repo desde /tmp no puede ver el repo real — sin esto, la matriz
         // degradaría a fail-closed (0 evidencia) con la evidencia intacta en disco.
         out = { rm, specAbs, matrix: rm.compute({ storyPath: tmpSpec, keyStoryPath: specAbs, workspaceRoot, repoRoot: rm.discoverRepoRoot(specAbs),
-          closingBatches: tandasQueCierran.get(specRel) || null }) };
+          closingBatches: tandasQueCierran.has(specRel) ? tandasQueCierran.get(specRel).nombres : null,
+          closingAcsBefore: tandasQueCierran.has(specRel) ? tandasQueCierran.get(specRel).antes : null }) };
       } finally {
         try { fs.unlinkSync(tmpSpec); } catch { /* best effort */ }
       }
@@ -1591,14 +1593,30 @@ function main() {
     // Un commit que cierra tandas sin pasar la historia a review/done mide las tandas que cierra: salen del diff de la
     // historia (pasan a done en lo que se commitea y no lo estaban en HEAD), nunca del marcador de la sesión. Con paso
     // de la historia, se miden todas.
+    // Sólo cuenta una tanda que ya estaba en HEAD sin estar done: una que aparece ya hecha no se cerró, y sin HEAD
+    // legible no se sabe qué cambió. En los dos casos se miden todas, y se dice.
     if (pipelineTransition && !statusTransition) {
-      const { parsePipelinesBlock } = require('./lib/story-checks.js');
-      const antes = new Map(parsePipelinesBlock(head || '').map((t) => [t.name, String(t.status || '').toLowerCase()]));
-      const cierran = parsePipelinesBlock(staged)
-        .filter((t) => String(t.status || '').toLowerCase() === 'done' && antes.get(t.name) !== 'done').map((t) => t.name);
-      if (cierran.length) {
-        tandasQueCierran.set(specRel, cierran);
-        process.stderr.write(`[on-pre-commit] ${specRel}: el commit cierra la tanda ${cierran.join(', ')}: se mide esa tanda (pasar la historia a review las pide todas).\n`);
+      try {
+        const { parsePipelinesBlock } = require('./lib/story-checks.js');
+        const antes = head ? parsePipelinesBlock(head) : [];
+        if (!antes.length) {
+          process.stderr.write(`[on-pre-commit] ${specRel}: no pude leer las tandas de la historia en HEAD: se miden todas las tandas.\n`);
+        } else {
+          const enHead = new Map(antes.map((t) => [t.name, t]));
+          const ahora = parsePipelinesBlock(staged);
+          const nuevas = ahora.filter((t) => String(t.status || '').toLowerCase() === 'done' && !enHead.has(t.name)).map((t) => t.name);
+          const cierran = ahora.filter((t) => String(t.status || '').toLowerCase() === 'done' && enHead.has(t.name)
+            && String(enHead.get(t.name).status || '').toLowerCase() !== 'done').map((t) => t.name);
+          if (nuevas.length) {
+            process.stderr.write(`[on-pre-commit] ${specRel}: el commit agrega la tanda ${nuevas.join(', ')} ya done: no se cerró en este commit; se miden todas las tandas.\n`);
+          } else if (cierran.length) {
+            tandasQueCierran.set(specRel, { nombres: cierran,
+              antes: cierran.flatMap((n) => [...enHead.get(n).acs, ...enHead.get(n).acsPending]) });
+            process.stderr.write(`[on-pre-commit] ${specRel}: el commit cierra la tanda ${cierran.join(', ')}: se mide esa tanda (pasar la historia a review las pide todas).\n`);
+          }
+        }
+      } catch (e) {
+        process.stderr.write(`[on-pre-commit] ${specRel}: no pude leer las tandas que cierra el commit (${e.message}): se miden todas las tandas.\n`);
       }
     }
 

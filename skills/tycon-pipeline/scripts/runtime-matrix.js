@@ -1096,8 +1096,13 @@ function compute(opts) {
       }
       for (const a of deTanda(t)) propios.add(a);
     }
-    for (const a of propios) {
-      if (!acSet.has(a)) avisosDeTanda.push(`El criterio ${a} de la tanda ${pedidas.join(', ')} no está entre los criterios de la historia.`);
+    // Al cerrar tandas, también los criterios que tenían antes del commit (`opts.closingAcsBefore`, del HEAD): mover un
+    // criterio a otra tanda en el mismo commit que la cierra no lo saca de lo que se mide.
+    if (opts.batch == null) for (const a of (opts.closingAcsBefore || [])) propios.add(Number(a));
+    const inexistentes = [...propios].filter((a) => !acSet.has(a));
+    for (const a of inexistentes) avisosDeTanda.push(`El criterio ${a} de la tanda ${pedidas.join(', ')} no está entre los criterios de la historia.`);
+    if (propios.size && inexistentes.length === propios.size) {
+      return { sid, structuralError: `ningún criterio de la tanda ${pedidas.join(', ')} (${[...propios].join(', ')}) está entre los criterios de la historia: medirla sería medir nada (${lista})` };
     }
     if (!propios.size) avisosDeTanda.push(`La tanda ${pedidas.join(', ')} no declara criterios (acs / acs_pending): mido todas las tandas.`);
   }
@@ -1106,7 +1111,7 @@ function compute(opts) {
   const fueraDeTanda = [];
   if (midiendoTanda) {
     for (const t of tandas) {
-      if (pedidas.includes(t.name) || t.status === 'blocked') continue;
+      if (pedidas.includes(t.name) || String(t.status || '').toLowerCase() === 'blocked') continue;
       const ajenos = deTanda(t).filter((a) => !propios.has(a) && acSet.has(a));
       for (const a of ajenos) outOfBatchAcs.add(a);
       if (ajenos.length) fueraDeTanda.push(`${t.name} (AC ${ajenos.join(', ')})`);
