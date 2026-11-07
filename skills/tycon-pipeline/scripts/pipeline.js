@@ -1866,7 +1866,15 @@ function orgDeepReview(opts = {}) {
     if (!fs.existsSync(lector)) return { value: null, problem: `no pude leer la política del pase de la organización (${archivo}: el arnés no trae su lector, ${lector}): decide el riesgo` };
     const r = require(lector).parse(String(texto).replace(/^﻿/, ''));
     const sec = r.sectionProblems && r.sectionProblems.deep_review;
-    if (sec && sec.length) return { value: null, problem: `la política del pase de la organización no vale (${sec[0].path}: ${sec[0].message}): decide el riesgo` };
+    if (sec && sec.length) {
+      // una clave mala de la sección cae sola: la política (`default`) sigue si está bien escrita
+      let crudo = null;
+      try { crudo = JSON.parse(String(texto).replace(/^﻿/, '')); } catch (_) { crudo = null; }
+      const d = crudo && crudo.deep_review && crudo.deep_review.default;
+      const vale = d === 'always' || d === 'auto';
+      const malDefault = sec.some((p) => /deep_review(\.default)?$/.test(p.path));
+      return { value: vale && !malDefault ? d : null, problem: `la política del pase de la organización tiene un valor que no vale (${sec[0].path}: ${sec[0].message})${vale && !malDefault ? `: la política sigue (${d}) y esa clave cae a la de fábrica` : ': decide el riesgo'}` };
+    }
     if (!r.ok) {
       const p = (r.problems && r.problems[0]) || {};
       return { value: null, problem: `no pude usar team-repos.json de la organización (${p.path ? `${p.path}: ` : ''}${p.message || 'no es válido'}): decide el riesgo` };
@@ -1881,7 +1889,45 @@ function orgDeepReview(opts = {}) {
 /** Lo que la línea de comandos le pasa a las funciones que deciden: la configuración y el pedido de la corrida. */
 function conModelosDeLaCorrida(args) {
   const politica = orgDeepReview();
-  return { ...args, orgModels: orgModels(), modelRequests: pedidosDeModelos(readSessionMarker()), orgDeepReview: politica.value, orgDeepReviewProblem: politica.problem };
+  return { ...args, orgModels: orgModels(), modelRequests: pedidosDeModelos(readSessionMarker()), orgDeepReview: politica.value, orgDeepReviewProblem: politica.problem,
+    ...revisionDeLaOrganizacion() };
+}
+
+/**
+ * La configuración de las revisiones de la organización (lib/review-policy.js, clave por clave) y si el dueño está
+ * ausente para la pregunta del código de esta sesión: la marca puesta, o la pregunta sin respuesta pasados los minutos.
+ * La lee sólo la línea de comandos. Nunca tira: sin leerla, los valores de fábrica y el dueño presente.
+ */
+function revisionDeLaOrganizacion() {
+  const out = { reviewConfig: null, ownerAway: false, reviewConfigProblems: [] };
+  const causa = (e) => String((e && e.message) || e).split('\n')[0];
+  let PR;
+  try {
+    PR = require('./lib/plan-review.js');
+    const c = PR.configDeLaOrganizacion();
+    out.reviewConfig = c.values;
+    out.reviewConfigProblems = [...c.problems];
+  } catch (e) {
+    out.reviewConfigProblems.push({ path: 'review', message: `no pude leer la configuración de las revisiones (${causa(e)}): uso la de fábrica` });
+    return out;
+  }
+  // la configuración ya está leída: un fallo de acá en adelante sólo deja al dueño presente, y así se dice
+  try {
+    const estado = stateDirOf(os.homedir());
+    const leida = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-away.js')).get({ estado });
+    if (leida.problem) out.reviewConfigProblems.push({ path: 'owner-away', message: `${leida.problem}: el dueño cuenta como presente` });
+    const sid = sessionIdFileKey();
+    // la pregunta cuenta sólo si es sobre este mismo diff (como la del plan): una de una ejecución cerrada no vale
+    const h = PR.huellaDe({ estado, sesion: sid, kind: 'code' });
+    const pregunta = h.codigo ? null : PR.preguntasAbiertas({ estado }).find((p) => p.sesion === sid && p.kind === 'code' && p.huella === h.huella);
+    // la respuesta a la pregunta de este diff decide la celda que preguntaba o esperaba
+    if (!h.codigo) out.codeAnswer = PR.respuestaDe({ estado, sesion: sid, kind: 'code', huella: h.huella });
+    out.ownerAway = require('./lib/review-policy.js').ownerAway({ mark: leida.mark, askedAt: pregunta ? Date.parse(pregunta.ts) : null,
+      now: Date.now(), minutes: out.reviewConfig.plan_review.owner_away_minutes }).away;
+  } catch (e) {
+    out.reviewConfigProblems.push({ path: 'owner-away', message: `no pude saber si el dueño está ausente (${causa(e)}): cuenta como presente` });
+  }
+  return out;
 }
 
 function modelHintsForSet({ all, tier }) {
@@ -3052,7 +3098,16 @@ function accionDelPase(marker, story, { sidNow, nextStep } = {}) {
       },
     };
   }
-  if (gate.run !== true) return {};
+  if (gate.run !== true) {
+    // «preguntar» o «esperar» al dueño no es un salteo: queda pendiente hasta que alguien conteste
+    if (gate.decision === 'ask' || gate.decision === 'wait') {
+      return { pending_action: { kind: 'preguntar-revision-del-codigo',
+        message: gate.decision === 'ask'
+          ? 'el portón pide preguntarle al dueño si revisar el código: anotá la pregunta (marker.js review-ask --kind code) y esperá la respuesta (marker.js review-answer); con «review» se lanza el pase, con «skip» se anota el salteo'
+          : 'el portón pide esperar al dueño para decidir la revisión del código: no se lanza ni se saltea hasta su respuesta (marker.js review-answer)' } };
+    }
+    return {};
+  }
   // con otra sesión en su pase, `next` tampoco pide lanzarlo: el mismo turno que frena al portón
   try {
     const turno = require(path.join(__dirname, '..', '..', '..', 'scripts', 'tools', 'coordination.js')).adversarialTurn({ sessionId: sidNow });
@@ -4679,7 +4734,17 @@ function deepReviewGateDeLaCorrida({ args, corrida, casa, userInfo, mostrar = fa
   return { result, texto };
 }
 
-// El criterio de siempre (riesgo, superficie compartida, tamaño, densidad), sin los pedidos de saltear.
+// Los archivos que la story declara (`files_to_create` y `files_to_modify`), el alcance de risk-class sin `--files`.
+function historiaDeclara(story) {
+  if (!story || !fs.existsSync(story)) return [];
+  const content = readText(story);
+  // un comentario al final del renglón (`- a.js   # por qué`) no es parte de la ruta
+  return [...parseFrontmatterList(content, 'files_to_create'), ...parseFrontmatterList(content, 'files_to_modify')]
+    .map((f) => String(f).replace(/\s+#.*$/, '').trim()).filter(Boolean);
+}
+
+// El criterio de siempre (riesgo, superficie compartida, tamaño, densidad) y la matriz de la organización, sin los
+// pedidos de saltear.
 function criterioDelPase(args) {
   // Modelo — escalación mecánica por complejidad.
   // Default sonnet (recorta el $ ~5x vs Opus); story pesada (model-hint ≥2 señales)
@@ -4746,7 +4811,7 @@ function criterioDelPase(args) {
   if (runSize.size === 'liviana') {
     return { run: false, risk: 'liviana', model: null, run_size: 'liviana', reason: `corrida liviana (${runSize.reason}) → sin pase adversarial; override: --deep-review o marker.js set-size completa --reason "<por qué>"` };
   }
-  // 5) Default: gate por risk-class (siempre en NORMAL).
+  // 5) La matriz de la organización (lib/review-policy.js `codeReview`): delicada o no, chica o grande.
   const rc = computeRiskClass(args);
   // `computeRiskClass` devuelve `{risk:'NORMAL', error, ...}` SIN `criteria` cuando --story es
   // inválido/inexistente. Sin este guard, el `.filter` de abajo tiraría un TypeError con stack —
@@ -4758,18 +4823,22 @@ function criterioDelPase(args) {
       reason: `risk-class no computable (${rc.error || 'sin criteria'}) → deep-review corre por default seguro (NORMAL)`,
     };
   }
-  if (rc.risk === 'NORMAL') {
-    const failed = rc.criteria.filter((c) => !c.pass).map((c) => c.name);
-    return {
-      run: true, risk: 'NORMAL', model, ...extras,
-      reason: `risk-class NORMAL → deep-review corre (criterios NORMAL: ${failed.join(', ') || 'scope no declarado'})`,
-    };
-  }
-  // 4b) Densidad: el LOW por tamaño cuenta ARCHIVOS, no lógica. Una
-  //     story de 4 archivos de código puede salir LOW y tener 6 defectos
-  //     reales en esos mismos 4 archivos. Un diff angosto pero denso —muchas líneas agregadas en
-  //     archivos de código— corre igual. Umbral: `TYCON_DEEP_REVIEW_DENSE_LINES` (default 300); la
-  //     medición viaja en el veredicto para que el skip también la muestre.
+  // NORMAL por otro criterio que el tamaño (una migración, el alcance firmado, un camino sensible, un freno): cuenta
+  // como grande. El tamaño lo cuenta la matriz por su cuenta, con `small_max_files`.
+  const porOtro = rc.criteria.filter((c) => !c.pass && c.name !== 'superficie-chica').map((c) => c.name);
+  const POLITICA = require('./lib/review-policy.js');
+  const config = args.reviewConfig || POLITICA.normalize({}).values;
+  // el tamaño se cuenta sobre el mismo alcance que risk-class: los archivos del diff o, sin ellos, los de la story. Sin
+  // alcance declarado no se sabe el tamaño: cuenta como grande, como hoy cuenta NORMAL
+  const alcance = Array.isArray(args.files) && args.files.length ? args.files : historiaDeclara(args.story);
+  const archivosDeCodigo = alcance.filter((f) => codeFiles.isCode(f, { extra: stackConfig.orgExtra() })).length;
+  const delicada = args.delicate || computeDelicate({ story: args.story, repo: args.repo, planText: '' });
+  const celda = (dense) => POLITICA.codeReview({ delicate: !!delicada.value, codeFiles: archivosDeCodigo,
+    normalByOtherCriterion: rc.risk === 'NORMAL' && (porOtro.length > 0 || !alcance.length), dense, ownerAway: !!args.ownerAway, config });
+  const sinDensidad = celda(false);
+  // La densidad decide sólo un cambio chico que no es delicado: una delicada, o un cambio que ya es grande, no la espera.
+  const hayQueMedir = !delicada.value && sinDensidad.size === 'small';
+  // 6) Sin `--files` no hay nada que medir, y la celda depende de la medición.
   // 🔴 «No me dijiste qué mirar» NO es «no cambió nada».
   //
   // `densidadDelDiff` recorre `args.files`. Con la lista vacía el resultado es 0, y el
@@ -4789,7 +4858,7 @@ function criterioDelPase(args) {
   //
   //    Y distingue «no me pasaste `--files`» (`filesDeclarado` ausente) de «me pasaste la lista
   //    vacía a propósito», que es lo que hacen los casos del banco al probar el skip por LOW.
-  if (args.filesDeclarado === false) {
+  if (hayQueMedir && args.filesDeclarado === false) {
     return {
       run: null, risk: 'no-medible', model: null, ...extras,
       densidad_medida: false,
@@ -4800,23 +4869,20 @@ function criterioDelPase(args) {
         + '`--deep-review` (saltearlo lo firma una persona: `marker.js sign-adversarial-skip`).',
     };
   }
-  const densidad = densidadDelDiff(args.repo, args.files, { allowMissing: Boolean(args.allowMissingFiles) });
+  // Densidad: el tamaño cuenta ARCHIVOS, no lógica. Una story de 4 archivos de código puede tener 6 defectos reales en
+  // esos mismos 4 archivos: un diff angosto pero denso —muchas líneas agregadas en archivos de código— cuenta como
+  // grande. Umbral: `TYCON_DEEP_REVIEW_DENSE_LINES` (default 300); la medición viaja en el veredicto.
+  const densidad = hayQueMedir ? densidadDelDiff(args.repo, args.files, { allowMissing: Boolean(args.allowMissingFiles) })
+    : { lineas: 0, umbral: 0, noMedidos: [], ausentes: [], noHaceFalta: true };
   const noMedidos = {
     ...(densidad.noMedidos.length ? { archivos_no_medidos: densidad.noMedidos } : {}),
     ...(densidad.ausentes.length ? { archivos_ausentes_permitidos: densidad.ausentes } : {}),
   };
-  if (densidad.lineas >= densidad.umbral) {
-    return {
-      run: true, risk: 'dense', model, ...extras,
-      lineas_agregadas: densidad.lineas, umbral_lineas: densidad.umbral, ...noMedidos,
-      reason: `risk-class LOW por tamaño (${Array.isArray(args.files) ? args.files.length : 0} archivos) pero el diff es DENSO: ` +
-              `${densidad.lineas} líneas agregadas en archivos de código (umbral ${densidad.umbral}) → deep-review corre`,
-    };
-  }
-  // 🔴 Un archivo que no se pudo medir no es «0 líneas». Lo medido
-  //    es un piso: si ya pasa el umbral corre arriba; si no, saltear el pase con archivos sin medir sería
-  //    decidir a ciegas, igual que sin `--files`. Se corta con las rutas y el motivo a la vista.
-  if (densidad.noMedidos.length) {
+  const denso = hayQueMedir && densidad.lineas >= densidad.umbral;
+  // 🔴 Un archivo que no se pudo medir no es «0 líneas». Lo medido es un piso: si ya pasa el umbral cuenta como denso;
+  //    si no, decidir con archivos sin medir sería decidir a ciegas, igual que sin `--files`. Se corta con las rutas y el
+  //    motivo a la vista.
+  if (hayQueMedir && !denso && densidad.noMedidos.length) {
     return {
       run: null, risk: 'no-medible', model: null, ...extras,
       densidad_medida: false,
@@ -4828,6 +4894,18 @@ function criterioDelPase(args) {
         + 'el pase con `--deep-review` (saltearlo lo firma una persona: `marker.js sign-adversarial-skip`).',
     };
   }
+  const m = denso ? celda(true) : sinDensidad;
+  const medida = densidad.noHaceFalta ? {} : { lineas_agregadas: densidad.lineas, umbral_lineas: densidad.umbral, ...noMedidos };
+  const comun = { size: m.size, decision: m.decision, delicate: { value: !!delicada.value, reason: delicada.reason || null },
+    verifiers: config.review_runner.verifiers, blocking_severity: config.review.blocking_severity, ...medida };
+  const risk = delicada.value ? 'delicate' : denso && rc.risk !== 'NORMAL' ? 'dense' : rc.risk;
+  const porque = `risk-class ${rc.risk}${rc.risk === 'NORMAL' && porOtro.length ? ` (${porOtro.join(', ')})` : ''} → ${m.reason}`;
+  if (m.decision === 'run') return { run: true, risk, model, ...extras, ...comun, reason: porque };
+  // una celda que preguntaba o esperaba la decide la respuesta anotada para este mismo diff (marker.js review-answer)
+  if ((m.decision === 'ask' || m.decision === 'wait') && args.codeAnswer === 'review') {
+    return { run: true, risk, model, ...extras, ...comun, decision: 'run', reason: `${porque} → contestaron «review» (review-answer)` };
+  }
+  const contestoSkip = (m.decision === 'ask' || m.decision === 'wait') && args.codeAnswer === 'skip';
   // Constancia de que se decidió A CIEGAS.
   // La lista de superficie compartida es opt-in por repo, así que un repo que nunca la declaró NO
   // está cubierto — y sin esta línea eso se lee igual que "no hacía falta". Queda escrito en el
@@ -4836,21 +4914,25 @@ function criterioDelPase(args) {
   if (sinDeclarar) {
     logGate({
       repoPath: args.repo, name: 'deep-review-gate', check: 'shared-surface', status: 'undeclared',
-      decision: 'skip-por-LOW', files: Array.isArray(args.files) ? args.files.length : 0,
+      decision: m.decision === 'skip' ? 'skip-por-LOW' : m.decision, files: Array.isArray(args.files) ? args.files.length : 0,
     });
   }
-  return {
-    run: false, risk: 'LOW', model: null,
-    lineas_agregadas: densidad.lineas, umbral_lineas: densidad.umbral,
-    ...(sinDeclarar ? {
-      shared_surface_declared: false,
-      shared_surface_note:
-        'este repo NO declaró `deep_review_always_paths` en .tycon/advisors.yaml, así que el skip se ' +
-        'decidió SÓLO por tamaño de diff: si el cambio toca código que corre en nombre de todos los ' +
-        'plugins/clientes, este gate no lo puede saber. Declararlo es de una vez por repo.',
-    } : { shared_surface_declared: true }),
-    reason: `risk-class LOW → skip (superficie chica ≤6 files y ${densidad.lineas} líneas agregadas < ${densidad.umbral}; override: --deep-review)`,
-  };
+  const superficie = sinDeclarar ? {
+    shared_surface_declared: false,
+    shared_surface_note:
+      'este repo NO declaró `deep_review_always_paths` en .tycon/advisors.yaml, así que el skip se ' +
+      'decidió SÓLO por tamaño de diff: si el cambio toca código que corre en nombre de todos los ' +
+      'plugins/clientes, este gate no lo puede saber. Declararlo es de una vez por repo.',
+  } : { shared_surface_declared: true };
+  const lineas = densidad.noHaceFalta ? 'sin medir la densidad: no cambia la celda' : `${densidad.lineas} líneas agregadas < ${densidad.umbral}`;
+  // preguntar o esperar no es «no medible» (`run: null`, que corta con 2): el pase no corre todavía y la salida es 0
+  if (contestoSkip) return { run: false, risk, model: null, ...comun, ...superficie, decision: 'skip', reason: `${porque} → contestaron «skip» (review-answer)` };
+  if (m.decision === 'ask') {
+    return { run: false, risk, model: null, ...comun, ...superficie, question: '¿Corro el pase adversarial sobre este cambio? (antes de preguntar: marker.js review-ask --kind code)',
+      reason: `${porque} (${lineas}): se le pregunta al dueño` };
+  }
+  if (m.decision === 'wait') return { run: false, risk, model: null, ...comun, ...superficie, reason: `${porque} (${lineas}): espera al dueño` };
+  return { run: false, risk, model: null, ...comun, ...superficie, reason: `${porque} → skip (${lineas}; override: --deep-review)` };
 }
 
 /**
@@ -5781,14 +5863,7 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId }) {
   if (iter <= tope.value) {
     if (paraOtra) return sinFirmaPendiente;
     if (args.extraRound) return `🛑 La vuelta ${iter} no necesita la vuelta extra ni la firma: está dentro del tope de ${tope.value}. Pedí el set sin --extra-round.\n`;
-    // la variable de la máquina puede subir el tope por encima del de la organización y el repo: pasa, pero queda anotado
-    if (tope.source === 'maquina') {
-      const sinMaquina = rr.tope({ repo: repoAbs, sinMaquina: true });
-      if (iter > sinMaquina.value) {
-        anotar({ name: 'review-cap-machine', status: 'ok', value: tope.value, sin_la_maquina: sinMaquina.value });
-        process.stderr.write(`⚠️  La vuelta ${iter} pasa el tope de ${sinMaquina.value} porque el ajuste de esta máquina (review-max-rounds.json) lo sube a ${tope.value}: queda anotado.\n`);
-      }
-    }
+    for (const p of tope.problems || []) process.stderr.write(`⚠️  ${p}\n`);
     return null;
   }
   if (rr.extras({ stateDir, story: storyId }).some((e) => e.iter === iter)) {
@@ -6072,6 +6147,10 @@ function judgeRefutation({ disposition, ruleId, advisor, file, line, runDir, ros
 
 function normalizeFindingRecord(raw, warnings, ctx) {
   let severity = String(raw.severity || 'WARNING').toUpperCase().trim();
+  // Un confirmado del pase trae la gravedad del verificador (`adjusted_severity`, o `severity` en su escala): frena
+  // (CRITICAL) si está en el corte de la organización o por encima, y si no es WARNING. La misma regla que la revisión del plan.
+  const delPase = String(raw.adjusted_severity || (/^(bug|robustness|nit)$/i.test(String(raw.severity || '')) ? raw.severity : '')).toLowerCase().trim();
+  if (delPase) severity = require('./lib/review-policy.js').blocks(delPase, (ctx && ctx.corte) || 'bug') ? 'CRITICAL' : 'WARNING';
   if (!VALID_SEVERITY.has(severity)) severity = 'WARNING';
   let disposition = String(raw.disposition || 'open').toLowerCase().trim();
   // Sinónimos de «refuted»:
@@ -6349,7 +6428,13 @@ function writeFindings(args) {
     }
   }
   const errores = [];
-  const records = arr.map((r) => normalizeFindingRecord(r, normWarnings, { roster, errores, runDir }));
+  // el corte de gravedad de la organización para los confirmados del pase (review.blocking_severity)
+  let corte = 'bug';
+  try { corte = require('./lib/plan-review.js').configDeLaOrganizacion().values.review.blocking_severity; } catch (e) {
+    corte = 'bug';
+    normWarnings.push(`no pude leer review.blocking_severity de la organización (${String((e && e.message) || e).split('\n')[0]}): uso el corte de fábrica, bug`);
+  }
+  const records = arr.map((r) => normalizeFindingRecord(r, normWarnings, { roster, errores, runDir, corte }));
   if (errores.length) {
     return { error: errores.join('\n'), firmantes_invalidos: errores.length, run_dir: runDir,
       note: 'No se escribió nada: el findings.json se escribe entero o no se escribe.' };
@@ -7292,6 +7377,11 @@ function main() {
         result.note = `${result.note ? `${result.note} ` : ''}La revisión automática rechazó el plan (${c.hallazgos.length} hallazgo(s), plan_review): corregilo antes de que lo apruebe alguien.`;
       }
       if (c && c.aviso) result.plan_review_aviso = c.aviso;
+      // al llegar a «Aprobar el plan» con el plan cerrado: qué toca con su revisión según la matriz de la organización
+      if (m && result.next_step === 'approve-plan') {
+        const a = pr.accionDelPlan({ estado: stateDirOf(os.homedir()), sesion: sessionIdFileKey(), marker: m, home: os.homedir() });
+        if (a && a.decision) result.plan_review_action = a;
+      }
     } catch { /* sin la revisión, next sale igual */ }
     // Consultar `next` es el momento en que el orquestador ARRANCA ese paso — se anota la
     // hora. Lo escribe marker.js (un solo escritor del marker); él decide no mover un arranque ya
@@ -7563,6 +7653,8 @@ function main() {
     const { result, texto: textoDelPedido } = deepReviewGateDeLaCorrida({ args: conModelos, corrida, mostrar: true });
     if (textoDelPedido) process.stderr.write(textoDelPedido);
     if (conModelos.orgDeepReviewProblem) process.stderr.write(`deep-review-gate: ${conModelos.orgDeepReviewProblem}\n`);
+    for (const p of conModelos.reviewConfigProblems || []) process.stderr.write(`deep-review-gate: ${p.path}: ${p.message}\n`);
+    if (result && result.decision === 'ask' && result.question) process.stderr.write(`deep-review-gate: ${result.question}\n`);
     if (result) decirModelos(result, conModelos.orgModels, avisosDelPorton);
     if (result && result.run === null) {
       // 🔴 No se pudo medir: se dice y se CORTA. «Correr por las dudas» tampoco es gratis — una
@@ -7593,7 +7685,7 @@ function main() {
         && Array.isArray(args.files) && args.files.length && typeof result.run === 'boolean') {
       try {
         const out = require('child_process').execFileSync(process.execPath, [path.join(__dirname, 'marker.js'), 'mark-adversarial-gate',
-          JSON.stringify({ run: result.run, files: args.files, early_env: nn(process.env.TYCON_5B_EARLY, null) })],
+          JSON.stringify({ run: result.run, files: args.files, decision: result.decision || null, early_env: nn(process.env.TYCON_5B_EARLY, null) })],
         { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000 });
         const anotado = JSON.parse(out || '{}');
         if ('early_launch' in result && typeof anotado.early_launch === 'boolean' && anotado.early_launch !== result.early_launch) {

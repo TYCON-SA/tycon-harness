@@ -6663,3 +6663,79 @@ test('T53 Botones_ConEspacio @story-8.171 @ac-30 — los botones de una fila de 
   const pantalla = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'org-config.js'), 'utf8');
   assert.ok((pantalla.match(/var acciones = el\('span', \{ class: 'acc' \}\);/g) || []).length >= 2, 'los pedidos y las máquinas usan esa fila');
 });
+
+// ── las revisiones automáticas se configuran desde el sitio ────────────────────────────────────────────────────────
+const RA_TEXTOS = (prefijo) => {
+  const { TEXTOS } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  return Object.keys(TEXTOS).filter((k) => k.startsWith(prefijo)).map((k) => [k, TEXTOS[k]]);
+};
+const controlesDe = (r, id) => nodosDe(r, id, (x) => (x.tag === 'select' || x.tag === 'input') && x.attrs['data-path']).map((x) => x.attrs['data-path']);
+const opcionesRA = (r, id, p) => {
+  const s = nodosDe(r, id, (x) => x.tag === 'select' && x.attrs['data-path'] === p).pop();
+  return s ? s.hijos.filter((h) => h.tag === 'option').map((o) => (o.attrs.value !== undefined ? o.attrs.value : o.value)) : null;
+};
+const revisarCon = (seccion, borrador) => ORG.revisar({ seccion, texto: ORG.formatJson(TR_BASE), borrador, lectores: { 'team-repos.js': TR } });
+
+test('SiteConfig_LaSeccionDelRevisor (T9) @story-8.221 @ac-9 — el revisor, el orden, el comando propio y los verificadores', async () => {
+  const s = ORG.seccionPorId('conQueRevisa');
+  assert.ok(s, 'hay una sección «Con qué corre la revisión»');
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves], ['team-repos.json', 'perfil', 'team-repos.js', ['review_runner']]);
+  const pantalla = (borrador) => pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('conQueRevisa', { repo: 'perfil', borrador })] });
+  const vacia = await pantalla({});
+  assert.deepStrictEqual(controlesDe(vacia, 'conQueRevisa').sort(), ['review_runner.first', 'review_runner.verifiers'], 'sin custom, sin el comando propio');
+  assert.deepStrictEqual(opcionesRA(vacia, 'conQueRevisa', 'review_runner.verifiers'), ['', 'per_lens', 'per_finding']);
+  assert.deepStrictEqual(opcionesRA(vacia, 'conQueRevisa', 'review_runner.first'), ['', 'claude', 'codex', 'cursor', 'claude-ollama', 'custom']);
+  const conCustom = await pantalla({ review_runner: { order: ['custom', 'claude'], custom_command: 'mi-revisor' } });
+  assert.ok(controlesDe(conCustom, 'conQueRevisa').includes('review_runner.custom_command'), 'con custom, el comando propio');
+  assert.deepStrictEqual(nodosDe(conCustom, 'conQueRevisa', (x) => x.tag === 'input' && /^review_runner\.order\.\d+$/.test(x.attrs['data-path'] || '')).map((x) => x.attrs.value), ['custom', 'claude'], 'la lista del orden');
+  const bien = revisarCon('conQueRevisa', { review_runner: { order: ['codex', 'claude'], verifiers: 'per_lens' } });
+  assert.strictEqual(bien.ok, true, JSON.stringify(bien.problems));
+  assert.deepStrictEqual(JSON.parse(bien.texto).review_runner, { order: ['codex', 'claude'], verifiers: 'per_lens' });
+  assert.strictEqual(revisarCon('conQueRevisa', { review_runner: { order: ['custom'] } }).ok, false, 'custom sin comando no se propone');
+  assert.strictEqual(conCustom.panelDe('seccion-conQueRevisa').attrs.id, 'pestana-claude');
+  for (const [k, t] of RA_TEXTOS('pantalla.conQueRevisa')) assert.ok(t.es && t.en, `${k} en los dos idiomas`);
+  const para = RA_TEXTOS('pantalla.para.conQueRevisa');
+  assert.ok(para.length && /Para qué/.test(para[0][1].es) && /What for/.test(para[0][1].en), 'su «Para qué»');
+});
+
+test('SiteConfig_LaSeccionDeLaRevisionDelPlan (T28) @story-8.221 @ac-22 — siete controles, el JSON que acepta el lector y el valor malo', async () => {
+  const s = ORG.seccionPorId('revisionDelPlan');
+  assert.ok(s, 'hay una sección «Revisión del plan»');
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves], ['team-repos.json', 'perfil', 'team-repos.js', ['plan_review']]);
+  const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('revisionDelPlan', { repo: 'perfil', borrador: { plan_review: { lenses: ['suposicion-falsa'] } } })] });
+  const siete = ['plan_review.delicate', 'plan_review.routine', 'plan_review.routine_owner_away', 'plan_review.coordinator_approves', 'plan_review.rejected_reaches_owner', 'plan_review.owner_away_minutes', 'plan_review.lenses.0'];
+  for (const p of siete) assert.ok(nodosDe(r, 'revisionDelPlan', (x) => x.attrs['data-path'] === p).length, `el control ${p}`);
+  assert.deepStrictEqual(opcionesRA(r, 'revisionDelPlan', 'plan_review.routine'), ['', 'always', 'ask', 'never']);
+  const bien = revisarCon('revisionDelPlan', { plan_review: { routine: 'always', owner_away_minutes: 30, lenses: ['suposicion-falsa', 'prueba-que-falta'] } });
+  assert.strictEqual(bien.ok, true, JSON.stringify(bien.problems));
+  assert.deepStrictEqual(JSON.parse(bien.texto).plan_review, { routine: 'always', owner_away_minutes: 30, lenses: ['suposicion-falsa', 'prueba-que-falta'] });
+  const malo = revisarCon('revisionDelPlan', { plan_review: { owner_away_minutes: 500 } });
+  assert.strictEqual(malo.ok, false);
+  assert.ok(malo.problems.some((p) => p.path === 'plan_review.owner_away_minutes'));
+  for (const [k, t] of RA_TEXTOS('pantalla.revisionDelPlan')) assert.ok(t.es && t.en, `${k} en los dos idiomas`);
+  // los valores de fábrica, dichos en los textos
+  const { TEXTOS } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  assert.match(TEXTOS['pantalla.revisionDelPlanMinutos'].es, /20/);
+});
+
+test('SiteConfig_LasOpcionesDelPaseAdversarial (T38) @story-8.221 @ac-28 @ac-45 @ac-46 — cinco controles nuevos y la gravedad en las vueltas', async () => {
+  const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('paseAdversarial', { repo: 'perfil', borrador: {} }), SEC('revision', { repo: 'perfil', borrador: {} })] });
+  const cinco = ['deep_review.delicate', 'deep_review.small_max_files', 'deep_review.small_routine_day', 'deep_review.small_routine_owner_away', 'deep_review.large_routine'];
+  for (const p of cinco) assert.ok(controlesDe(r, 'paseAdversarial').includes(p), `el control ${p}`);
+  assert.deepStrictEqual(opcionesRA(r, 'paseAdversarial', 'deep_review.small_routine_owner_away'), ['', 'run', 'skip', 'wait']);
+  assert.deepStrictEqual(opcionesRA(r, 'revision', 'review.blocking_severity'), ['', 'bug', 'robustness', 'all']);
+  const bien = revisarCon('paseAdversarial', { deep_review: { default: 'auto', small_max_files: 8, small_routine_day: 'run' } });
+  assert.strictEqual(bien.ok, true, JSON.stringify(bien.problems));
+  assert.deepStrictEqual(JSON.parse(bien.texto).deep_review, { default: 'auto', small_max_files: 8, small_routine_day: 'run' });
+  assert.strictEqual(revisarCon('paseAdversarial', { deep_review: { small_max_files: 0 } }).ok, false);
+  const sev = revisarCon('revision', { review: { blocking_severity: 'robustness' } });
+  assert.strictEqual(sev.ok, true, JSON.stringify(sev.problems));
+  const { TEXTOS } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  assert.match(TEXTOS['pantalla.topeDeVueltasCampo'].es, /vacío: 3/);
+  assert.match(TEXTOS['pantalla.vueltasDeRevisoresAyuda'].es, /De fábrica, 3/);
+  // T58: el tope vale para las dos revisiones, en los dos idiomas
+  assert.match(TEXTOS['pantalla.topeDeVueltasCampo'].en, /empty: 3/);
+  assert.match(TEXTOS['pantalla.vueltasDeRevisoresAyuda'].en, /Built-in: 3/);
+  assert.match(TEXTOS['pantalla.vueltasDeRevisoresAyuda'].es, /revisan y corrigen.*rechazar su plan/);
+  assert.match(TEXTOS['pantalla.vueltasDeRevisoresAyuda'].en, /review and fix.*plan can be rejected/);
+});

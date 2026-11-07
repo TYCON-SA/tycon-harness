@@ -1386,6 +1386,36 @@
       "requiere": []
     },
     {
+      "__nota": "las revisiones automáticas: las matrices de la revisión del plan y la del código, como funciones puras, con la configuración de la organización clave por clave.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/review-policy.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "las revisiones automáticas: el revisor sale de la integración, el núcleo no nombra ninguno, y el respaldo pasa al siguiente ante el tope de uso o un error.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/review-runner.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "las revisiones automáticas: un verificador por lente, las lentes pedidas del modo plan y el corte de gravedad del guion del pase.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adversarial-verifiers.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "las revisiones automáticas: la marca del dueño ausente, quién la pone, qué la borra (también con el aviso apagado) y su registro.",
+      "raiz": "arnes",
+      "ruta": "tests/owner-away.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "las revisiones automáticas: la documentación dice lo que hace el código, y los valores de fábrica de sus tablas son los del lector.",
+      "raiz": "arnes",
+      "ruta": "tests/review-docs.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/e2e-gate-key.test.sh",
       "requiere": []

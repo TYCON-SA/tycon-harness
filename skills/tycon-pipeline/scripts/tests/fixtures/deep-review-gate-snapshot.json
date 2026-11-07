@@ -1,5 +1,5 @@
 {
-  "tomada_de": "el commit anterior a la story 7.19 (103b45d); liviana-off y pesada-interruptor, de la story 8.116 (sin la firma del dueño, el pedido de saltear no apaga el pase; si el pase no corría igual, no se pide nada)",
+  "tomada_de": "el commit anterior a la story 7.19 (103b45d); liviana-off y pesada-interruptor, de la story 8.116 (sin la firma del dueño, el pedido de saltear no apaga el pase; si el pase no corría igual, no se pide nada); con la matriz de la organización, la salida suma la celda (size, decision, delicate, verifiers, blocking_severity) y un cambio chico de rutina pregunta en vez de saltear: run y risk no cambian",
   "casos": [
     {
       "nombre": "liviana-sin-config",
@@ -8,11 +8,20 @@
         "run": false,
         "risk": "LOW",
         "model": null,
+        "size": "small",
+        "decision": "ask",
+        "delicate": {
+          "value": false,
+          "reason": "ninguna"
+        },
+        "verifiers": "per_lens",
+        "blocking_severity": "bug",
         "lineas_agregadas": 2,
         "umbral_lineas": 300,
         "shared_surface_declared": false,
         "shared_surface_note": "este repo NO declaró `deep_review_always_paths` en .tycon/advisors.yaml, así que el skip se decidió SÓLO por tamaño de diff: si el cambio toca código que corre en nombre de todos los plugins/clientes, este gate no lo puede saber. Declararlo es de una vez por repo.",
-        "reason": "risk-class LOW → skip (superficie chica ≤6 files y 2 líneas agregadas < 300; override: --deep-review)"
+        "question": "¿Corro el pase adversarial sobre este cambio? (antes de preguntar: marker.js review-ask --kind code)",
+        "reason": "risk-class LOW → chica (1 archivos de código, hasta 6): ask (deep_review.small_routine_day) (2 líneas agregadas < 300): se le pregunta al dueño"
       }
     },
     {
@@ -33,11 +42,20 @@
         "run": false,
         "risk": "LOW",
         "model": null,
+        "size": "small",
+        "decision": "ask",
+        "delicate": {
+          "value": false,
+          "reason": "ninguna"
+        },
+        "verifiers": "per_lens",
+        "blocking_severity": "bug",
         "lineas_agregadas": 2,
         "umbral_lineas": 300,
         "shared_surface_declared": false,
         "shared_surface_note": "este repo NO declaró `deep_review_always_paths` en .tycon/advisors.yaml, así que el skip se decidió SÓLO por tamaño de diff: si el cambio toca código que corre en nombre de todos los plugins/clientes, este gate no lo puede saber. Declararlo es de una vez por repo.",
-        "reason": "deep_review: off no hace falta: el pase no corre por el criterio de siempre · risk-class LOW → skip (superficie chica ≤6 files y 2 líneas agregadas < 300; override: --deep-review)"
+        "question": "¿Corro el pase adversarial sobre este cambio? (antes de preguntar: marker.js review-ask --kind code)",
+        "reason": "deep_review: off no hace falta: el pase no corre por el criterio de siempre · risk-class LOW → chica (1 archivos de código, hasta 6): ask (deep_review.small_routine_day) (2 líneas agregadas < 300): se le pregunta al dueño"
       }
     },
     {
@@ -71,7 +89,15 @@
         "model": "opus",
         "model_reason": "story pesada (2 señales model-hint) → hunters escalan a Opus (anunciar)",
         "early_launch": true,
-        "reason": "risk-class NORMAL → deep-review corre (criterios NORMAL: superficie-chica)"
+        "size": "large",
+        "decision": "run",
+        "delicate": {
+          "value": false,
+          "reason": "ninguna"
+        },
+        "verifiers": "per_lens",
+        "blocking_severity": "bug",
+        "reason": "risk-class NORMAL → grande (13 archivos de código, más de 6): corre (deep_review.large_routine: run)"
       }
     },
     {
@@ -105,7 +131,15 @@
         "model": "opus",
         "model_reason": "story pesada (2 señales model-hint) → hunters escalan a Opus (anunciar)",
         "early_launch": true,
-        "reason": "TYCON_NO_DEEP_REVIEW=1 es un pedido de saltear sin la firma de una persona (no hay una ejecución abierta de esta story): el pase sigue el criterio de siempre · risk-class NORMAL → deep-review corre (criterios NORMAL: superficie-chica)",
+        "size": "large",
+        "decision": "run",
+        "delicate": {
+          "value": false,
+          "reason": "ninguna"
+        },
+        "verifiers": "per_lens",
+        "blocking_severity": "bug",
+        "reason": "TYCON_NO_DEEP_REVIEW=1 es un pedido de saltear sin la firma de una persona (no hay una ejecución abierta de esta story): el pase sigue el criterio de siempre · risk-class NORMAL → grande (13 archivos de código, más de 6): corre (deep_review.large_routine: run)",
         "skip_request": {
           "camino": "TYCON_NO_DEEP_REVIEW=1",
           "firmado": false,

@@ -255,6 +255,29 @@ The harness controls this, not anyone's memory:
 always: in CI and in the cloud there is no turn. `TYCON_SUITE_TURN=0` turns off the suite's, and `TYCON_SUITE_TURN=1` asks for
 it even with no coordinator: it can only stop too much.
 
+## The automatic reviews: what the coordinator does
+
+When each review runs is set by the organization's configuration (`guides/revisiones-automaticas.en.md`). In each one,
+the coordinator:
+
+- **Asks or not.** If the matrix says to ask, she asks the owner, with the options box, and records it: the session
+  runs `marker.js review-ask --kind plan|code` before the box, and she records the answer with
+  `marker.js review-answer --for-session <session> --kind plan|code --choice review|skip|wait`. On each of her messages,
+  the harness shows her the questions without an answer, how many minutes they have been waiting and, past
+  `plan_review.owner_away_minutes`, what the «owner away» cell says.
+- **Launches the plan review**: `marker.js plan-review --for-session <session>`, with the command it returns (the
+  organization's reviewer), and records the result with `--result`.
+- **Approves on the owner's behalf only with «approved»** on that same plan, with `plan_review.coordinator_approves`
+  (O4) on and `plan-approval` delegated. Rejected or without a verdict, the plan waits; a delicate plan is always signed
+  by the owner.
+- **Gives the code pass its turn.** She launches nothing for the code: with the owner away, she answers the question on
+  the owner's behalf according to the cell (`review-answer --for-session`, with «owner away» as the reason), and the
+  session itself launches the pass with its turn, as always.
+- **Sets the away mark** when the owner says they are leaving («go on autonomously», «I'm off», «see you tomorrow» or
+  similar): `marker.js owner-away set --phrase "<what they said>"`. She judges it, not a list of phrases. The mark clears
+  itself when the owner comes back: a message of theirs, a verified office message, a signature of theirs, or after 24
+  hours. The office shows it while it is set.
+
 ## Signatures, by their three paths
 
 **Before asking for a signature, the coordinator confirms it is still missing.** Asking for a signature of something

@@ -856,3 +856,40 @@ test('T29 Porton_LentoLoDiceYAvisa — la coordinadora ve el portón lento vivo,
     assert.doesNotMatch(C.capNotice(t.opts) || '', /portón lento/);
   }
 });
+
+// ── The review questions without an answer ──────────────────────────────────────────────────────────────────────
+
+test('T56 CoordinationNotice_LasPreguntasDeRevisionSinRespuesta @story-8.221 @ac-37 @ac-47: la designada ve cada pregunta, sus minutos y su celda; otra sesión no', () => {
+  const t = toy();
+  session(t, 's-a', 'Uno');
+  const PR = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'plan-review.js'));
+  PR.anotarPregunta({ estado: t.state, sesion: 's-a', kind: 'plan', huella: 'h1', ahora: mins(5) });
+  let n = C.capNotice(t.opts) || '';
+  assert.match(n, /pregunta de revisar el plan de .*s-a.* sin respuesta hace 5 min/);
+  assert.doesNotMatch(n, /dueño ausente/, 'antes de los minutos, todavía no');
+  // pasados los minutos (de fábrica 20), con lo que dice la celda de «dueño ausente»
+  n = C.capNotice({ ...t.opts, now: mins(5) + 21 * 60000 }) || '';
+  assert.match(n, /sin respuesta hace 21 min/);
+  assert.match(n, /dueño ausente.*routine_owner_away: review/);
+  // la del código: se contesta en nombre del dueño ausente, no se lanza nada
+  PR.anotarPregunta({ estado: t.state, sesion: 's-a', kind: 'code', huella: 'h2', ahora: mins(30) });
+  n = C.capNotice(t.opts) || '';
+  assert.match(n, /revisar el código de .*s-a.*review-answer --for-session s-a --kind code/);
+  // otra sesión no ve nada
+  assert.ok(!/sin respuesta/.test(C.capNotice({ ...t.opts, sessionId: 's-a' }) || ''), 'sólo la designada');
+  // con su respuesta, deja de salir
+  PR.anotarRespuesta({ estado: t.state, sesion: 's-a', kind: 'plan', choice: 'review', quien: 'dueño', huella: 'h1', ahora: mins(1) });
+  PR.anotarRespuesta({ estado: t.state, sesion: 's-a', kind: 'code', choice: 'skip', quien: 'dueño', huella: 'h2', ahora: mins(1) });
+  assert.ok(!/sin respuesta/.test(C.capNotice(t.opts) || ''));
+  // una pregunta con la hora ilegible no se cuenta como dueño ausente: se dice
+  fs.appendFileSync(path.join(t.state, 'gates.log'), `${JSON.stringify({ ts: 'ayer', name: 'review-ask', status: 'ok', sesion: 's-a', kind: 'plan', huella: 'h3' })}\n`);
+  n = C.capNotice({ ...t.opts, now: mins(5) + 600 * 60000 }) || '';
+  assert.match(n, /revisar el plan de .*s-a.* su hora no se puede leer \("ayer"\): no la cuento como dueño ausente/);
+  assert.doesNotMatch(n, /NaN/);
+  assert.doesNotMatch(n, /routine_owner_away/);
+  // con la marca de ausente puesta, el dueño cuenta como ausente enseguida, sin esperar los minutos
+  PR.anotarPregunta({ estado: t.state, sesion: 's-a', kind: 'plan', huella: 'h4', ahora: mins(100) });
+  require(path.join(ROOT, 'scripts', 'lib', 'owner-away.js')).set({ estado: t.state, quien: 'coordinadora', frase: 'me voy', ahora: mins(100) });
+  n = C.capNotice({ ...t.opts, now: mins(101) }) || '';
+  assert.match(n, /marca de ausente puesta.*dueño ausente.*routine_owner_away: review/);
+});

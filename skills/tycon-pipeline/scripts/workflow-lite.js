@@ -44,6 +44,8 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 const JOBS = Math.max(1, parseInt(process.env.TYCON_WFLITE_JOBS || '4', 10));
+// intentos fallidos seguidos, sin tope de uso, con los que un corredor queda caído para el resto de la corrida
+const FALLOS_PARA_CAIDO = 3;
 
 function modelMap() {
   if (process.env.TYCON_WFLITE_MODEL_MAP) { try { return JSON.parse(process.env.TYCON_WFLITE_MODEL_MAP); } catch (_) {} }
@@ -123,53 +125,82 @@ function checkShape(obj, schema) {
   return schema.required.every((k) => k in obj);
 }
 
-function spawnAgent(cmdline, prompt, cwd, timeoutMs) {
+function spawnAgent(cmdline, prompt, cwd, timeoutMs, { stdin = false, env = {} } = {}) {
   return new Promise((resolve) => {
     const [bin, ...pre] = cmdline;
-    // El prompt viaja también por env: codex ya lo trae en su línea de comando y lo ignora; el stub
-    // de los tests lo lee de acá para poder verificar QUÉ se le pidió a cada agente.
-    const ch = spawn(bin, pre, { cwd, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, TYCON_WFLITE_PROMPT: prompt } });
+    // El prompt viaja siempre por env (el comando propio y el falso de las pruebas lo leen de ahí); además, por la
+    // entrada estándar o en la línea de comando, según lo que declara el corredor.
+    // Las corridas de un corredor no ven los ganchos del arnés: TYCON_EVAL_SANDBOX los calla.
+    const ch = spawn(bin, pre, { cwd, stdio: [stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'], env: { ...process.env, TYCON_EVAL_SANDBOX: '1', ...env, TYCON_WFLITE_PROMPT: prompt } });
     let out = '', err = '';
     const killer = setTimeout(() => ch.kill('SIGKILL'), timeoutMs);
     ch.stdout.on('data', (d) => (out += d));
     ch.stderr.on('data', (d) => (err += d));
-    ch.on('close', (code) => { clearTimeout(killer); resolve({ code, out, err }); });
-    // Sin el motivo (p. ej. `codex` no instalado: ENOENT) la causa diría «salió -1 sin escribir nada».
+    if (stdin) { ch.stdin.on('error', () => {}); ch.stdin.end(String(prompt)); }
+    // sin pid el proceso nunca arrancó: lo resuelve 'error', con su motivo (puede llegar después de 'close')
+    ch.on('close', (code) => { if (ch.pid === undefined) return; clearTimeout(killer); resolve({ code, out, err }); });
+    // Sin el motivo (p. ej. el corredor no instalado: ENOENT) la causa diría «salió -1 sin escribir nada».
     ch.on('error', (e) => { clearTimeout(killer); resolve({ code: -1, out, err: `${err}${err ? '\n' : ''}${(e && e.message) || 'no se pudo lanzar'}` }); });
   });
 }
 
+/** El nombre del corredor de modelos de OpenAI de la integración (para los avisos de `slugFor`), o «el corredor». */
+function openaiLabel() {
+  try {
+    const integ = require('./lib/review-runner.js').loadIntegration();
+    const r = Object.values(integ.runners).find((x) => x && x.models === 'openai');
+    return (r && r.label) || 'el corredor';
+  } catch (_) { return 'el corredor'; }
+}
+
 /**
- * El slug de Codex de un modelo: un modelo de Claude se traduce con equivalences.json; uno ya
+ * El modelo de OpenAI de un modelo de Claude: se traduce con equivalences.json; uno ya
  * traducido (un valor del mapa) pasa tal cual; sin modelo, el del pase (`DEFAULTS.adversarial.model` de
- * lib/models.js) traducido. Sin equivalente → null: `codex exec` corre sin `-m` (el modelo por defecto de Codex) y se
- * dice por `decir` (la salida de error).
+ * lib/models.js) traducido. Sin equivalente → null: el corredor corre sin modelo (el suyo por defecto) y se
+ * dice por `decir` (la salida de error), con el nombre del corredor que da la integración (`label`).
  */
-function slugFor(model, models, decir = (t) => process.stderr.write(`${t}\n`), { org = null, provider = null } = {}) {
+function slugFor(model, models, decir = (t) => process.stderr.write(`${t}\n`), { org = null, provider = null, label = null } = {}) {
+  const quien = label || openaiLabel();
   const map = models || {};
   const M = require('./lib/models.js');
   const pedido = model || M.DEFAULTS.adversarial.model;
-  // la tabla del proveedor de Codex:Ollama si la máquina lo declara; si no, OpenAI. Sin tabla de OpenAI,
-  // lo de siempre (abajo)
-  const prov = provider === 'ollama' ? 'ollama' : 'openai';
+  // la tabla del proveedor local de la máquina (uno que no es OpenAI ni Anthropic y que se aplica), si lo declara; si
+  // no, OpenAI. Sin tabla de OpenAI, lo de siempre (abajo)
+  const local = provider && provider !== 'openai' && provider !== 'anthropic' && M.isProvider(provider)
+    && M.resolveProviderModel({ provider }).applied ? provider : null;
+  const prov = local || 'openai';
   // con tabla o con lista de permitidos de OpenAI, el traductor único (la lista también vale sin tabla)
-  const conTabla = prov === 'ollama' || Boolean(org && ((org.providers && org.providers.openai) || (org.allowed && org.allowed.openai)));
+  const conTabla = Boolean(local) || Boolean(org && ((org.providers && org.providers.openai) || (org.allowed && org.allowed.openai)));
   if (conTabla && M.levelOf(pedido)) {
     const r = M.resolveProviderModel({ org, provider: prov, model: pedido, equivalences: map });
     if (r.model && r.model !== M.INHERIT) return r.model;
-    decir(r.outside ? `${r.outside} no está entre los permitidos de ${prov}: lanzo codex exec sin -m (el modelo del config.toml de la máquina)`
-      : prov === 'ollama' ? `la tabla de Ollama no trae modelo para ${r.level}: lanzo codex exec sin -m (el modelo del config.toml de la máquina)`
-        : `el modelo ${pedido} no tiene equivalente en Codex: uso el modelo por defecto de Codex`);
+    decir(r.outside ? `${r.outside} no está entre los permitidos de ${prov}: lanzo ${quien} sin -m (el modelo de la configuración de la máquina)`
+      : prov !== 'openai' ? `la tabla de ${prov} no trae modelo para ${r.level}: lanzo ${quien} sin -m (el modelo de la configuración de la máquina)`
+        : `el modelo ${pedido} no tiene equivalente en ${quien}: uso el modelo por defecto de ${quien}`);
     return null;
   }
   if (map[pedido]) return map[pedido];
   if (Object.values(map).includes(pedido)) return pedido;
-  decir(`el modelo ${pedido} no tiene equivalente en Codex: uso el modelo por defecto de Codex`);
+  decir(`el modelo ${pedido} no tiene equivalente en ${quien}: uso el modelo por defecto de ${quien}`);
   return null;
 }
 
-// El tope de uso de Codex (o de su proveedor): contra eso no sirve reintentar.
-const TOPE_RE = /usage limit|rate[ _-]?limit|quota|too many requests|\b429\b/i;
+/**
+ * El modelo que se le pasa a un corredor, según de qué proveedor salen sus modelos (`runner.models`): `openai` traduce
+ * como `slugFor`; `anthropic` y `ollama`, con el traductor único de lib/models.js; `none`, ninguno. null = sin modelo.
+ */
+function modelFor(runner, model, models, ctx, decir = (t) => process.stderr.write(`${t}\n`)) {
+  const fam = runner && runner.models;
+  if (fam === 'openai') return slugFor(model, models, decir, { ...ctx, label: runner.label });
+  const M = require('./lib/models.js');
+  if (!M.isProvider(fam)) return null;
+  const pedido = model || M.DEFAULTS.adversarial.model;
+  if (!M.levelOf(pedido)) return pedido;
+  const r = M.resolveProviderModel({ org: ctx && ctx.org, provider: fam, model: pedido, equivalences: models });
+  if (r.model && r.model !== M.INHERIT) return r.model;
+  decir(`${runner.label}: sin modelo para ${pedido}, uso el de la configuración de la máquina`);
+  return null;
+}
 
 // Lo que parece una credencial se tapa antes de guardar la causa: el error de un
 // proveedor puede repetir la clave o la cabecera con que se lo llamó, y la causa va al resultado de la corrida.
@@ -195,7 +226,7 @@ function causaDe(res) {
  */
 function esTope(res) {
   const err = ultimoRenglon(res && res.err);
-  return TOPE_RE.test(err || ultimoRenglon(res && res.out));
+  return require('./lib/review-runner.js').LIMIT_RE.test(err || ultimoRenglon(res && res.out));
 }
 
 const horaCorta = (d = new Date()) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -253,66 +284,122 @@ function providerContext() {
   }
 }
 
+/** La lista de corredores de la corrida: `--runners`, o la de la organización (team-repos.json → review_runner). */
+function runnersDeLaCorrida(opts) {
+  const RR = require('./lib/review-runner.js');
+  let order = null;
+  let customCommand = null;
+  try {
+    const TCG = require('./lib/harness-path.js').rutaArnes();
+    const reader = require(path.join(TCG, 'scripts', 'lib', 'team-repos.js'));
+    const file = path.join(TCG, 'team-repos.json');
+    if (fs.existsSync(file)) {
+      const r = reader.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, ''));
+      const o = RR.runnerOrder(r && r.data);
+      order = o.order;
+      customCommand = o.customCommand;
+    }
+  } catch (e) {
+    process.stderr.write(`no pude leer la lista de corredores de la organización (${String((e && e.message) || e).split('\n')[0]}): uso la de fábrica\n`);
+  }
+  if (Array.isArray(opts.runners) && opts.runners.length) order = opts.runners;
+  if (!order) order = RR.DEFAULT_ORDER.slice();
+  const integration = RR.loadIntegration();
+  if (integration.problem) process.stderr.write(`${integration.problem}\n`);
+  const elegidos = RR.pickRunners({ order, mode: opts.mode, integration, customCommand });
+  for (const s of elegidos.skipped) process.stderr.write(`wflite: no uso ${s.name}: ${s.reason}\n`);
+  return { ...elegidos, customCommand };
+}
+
 function makeAgent(opts, corredor) {
+  const RR = require('./lib/review-runner.js');
   const models = modelMap();
   const proveedor = providerContext();
   const seq = { n: 0 };
   const tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'wflite-io-'));
+  const stub = process.env.TYCON_WFLITE_AGENT_CMD;
+  // con el gancho de las pruebas puesto, gana sobre la lista: un solo corredor, el falso
+  const lista = stub ? { usable: [{ name: 'stub', runner: { label: 'el corredor de prueba', answer: 'stdout', prompt: 'env' } }], skipped: [], customCommand: null }
+    : runnersDeLaCorrida(opts);
+  corredor.lista = lista.usable.map((u) => u.name);
   return async function agent(prompt, aopts) {
     aopts = aopts || {};
     const id = ++seq.n;
     const label = aopts.label || `agent-${id}`;
-    const stub = process.env.TYCON_WFLITE_AGENT_CMD;
-    const muerto = (causa, hora = horaCorta()) => { corredor.muertos.push({ label, causa, hora }); return null; };
-    // Con el tope ya visto, no se lanza nada más: se anota con la causa y la hora del tope.
-    if (corredor.tope) return muerto(`no se lanzó: ${corredor.tope.causa}`, corredor.tope.hora);
-    const slug = slugFor(aopts.model, models, undefined, proveedor);
-    // 🔴 Salida estructurada NATIVA de codex: pedir el JSON por
-    // prompt y pescarlo de stdout con un escáner de llaves balanceadas se rompe cuando el
-    // JSON trae llaves DESBALANCEADAS dentro de strings (los `repro` con snippets de código).
-    // Los hunters fallan el parseo JUSTO PORQUE encuentran el bug
-    // (sus repros traen código). codex exec tiene los primitivos exactos: --output-schema <file>
-    // (el harness fuerza la forma) y -o <file> (el mensaje final SOLO, sin scraping de stdout).
+    const phase = aopts.phase || 'sin-fase';
+    const muerto = (causa, nombre, hora = horaCorta()) => { corredor.muertos.push({ label, corredor: nombre, causa, hora }); };
+    corredor.agentes[phase] = (corredor.agentes[phase] || 0) + 1;
     const outFile = path.join(tmpBase, `out-${id}.txt`);
     const schemaFile = aopts.schema ? path.join(tmpBase, `schema-${id}.json`) : null;
-    if (schemaFile) fs.writeFileSync(schemaFile, JSON.stringify(toStrictSchema(aopts.schema)));
-    let causa = null;
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      if (corredor.tope) break;
-      process.stderr.write(`wflite ▸ ${label} (intento ${attempt})\n`);
-      let raw;
-      let res;
-      if (stub) {
-        res = await spawnAgent(stub.split(' '), prompt, opts.cwd, opts.timeoutMs);
-        raw = res.out;
-      } else {
-        const cmd = ['codex', 'exec', '--sandbox', 'workspace-write', '--skip-git-repo-check', ...(slug ? ['-m', slug] : []), '-o', outFile];
-        if (schemaFile) cmd.push('--output-schema', schemaFile);
-        cmd.push(prompt);
+    const strict = aopts.schema ? toStrictSchema(aopts.schema) : null;
+    if (schemaFile) fs.writeFileSync(schemaFile, JSON.stringify(strict));
+    if (!lista.usable.length) { muerto('no hay ningún corredor para usar (mirá review_runner.order y la integración de los corredores)', null); return null; }
+    for (const { name, runner } of lista.usable) {
+      // un corredor en su tope no se vuelve a probar en esta corrida
+      if (corredor.topes[name]) { muerto(`no se lanzó: ${corredor.topes[name].causa}`, name, corredor.topes[name].hora); continue; }
+      // un corredor caído (no se pudo lanzar, o falló seguido sin tope) tampoco: cada agente gastaría sus intentos en él
+      if (corredor.caidos[name]) { muerto(`no se lanzó: ${corredor.caidos[name].causa}`, name, corredor.caidos[name].hora); continue; }
+      const modelo = stub ? null : modelFor(runner, aopts.model, models, proveedor);
+      let causa = null;
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        if (corredor.topes[name] || corredor.caidos[name]) break;
+        process.stderr.write(`wflite ▸ ${label} con ${runner.label} (intento ${attempt})\n`);
+        let res;
+        let leido;
         try { fs.rmSync(outFile, { force: true }); } catch (_) {}
-        res = await spawnAgent(cmd, prompt, opts.cwd, opts.timeoutMs);
-        try { raw = fs.readFileSync(outFile, 'utf8'); } catch (_) { raw = res.out; } // fallback: stdout
-      }
-      // Un agente que salió con error y no dejó una respuesta usable muere por la causa de SU error (y ahí se mira el
-      // tope), aunque haya escrito algo en la salida: `codex exec` puede repetir ahí el pedido.
-      const fallo = res.code !== 0;
-      const murioPorError = () => {
-        causa = causaDe(res);
-        if (esTope(res)) {
-          corredor.tope = { causa, hora: horaCorta(), label };
-          process.stderr.write(`wflite ✖ ${label}: Codex en su tope de uso (${causa}) — no reintento ni lanzo los agentes que faltan\n`);
+        if (stub) {
+          res = await spawnAgent(stub.split(' '), prompt, opts.cwd, opts.timeoutMs);
+          leido = { raw: res.out, structured: null, tokens: null, failed: res.code !== 0, cause: null, limit: false };
+          if (leido.failed) leido.limit = esTope(res);
+        } else {
+          const c = RR.commandFor(name, runner, { model: modelo, schema: strict, schemaFile, outFile, cwd: opts.cwd, customCommand: lista.customCommand, prompt });
+          res = await spawnAgent([c.bin, ...c.args], prompt, opts.cwd, opts.timeoutMs, { stdin: c.input === 'stdin', env: c.env });
+          let fileText = null;
+          if (c.answer === 'file' || c.answer === 'file-env') { try { fileText = fs.readFileSync(outFile, 'utf8'); } catch (_) { fileText = null; } }
+          leido = RR.readAnswer(runner, { stdout: res.out, stderr: res.err, code: res.code, fileText });
+          if (leido.failed && !leido.limit) leido.limit = esTope(res);
         }
-      };
-      if (fallo && !String(raw || '').trim()) { murioPorError(); continue; }
-      if (!aopts.schema) { const t = String(raw || '').trim(); if (t && !fallo) return t; if (fallo) murioPorError(); else causa = 'contestó vacío'; continue; }
-      let obj = null;
-      try { obj = JSON.parse(String(raw).trim()); } catch (_) { obj = lastJsonObject(raw); }
-      if (obj && checkShape(obj, aopts.schema)) return obj;
-      if (fallo) murioPorError();
-      else causa = `contestó sin las claves pedidas (${(aopts.schema.required || []).join(', ')})`;
+        if (leido.tokens !== null) {
+          corredor.tokensPorFase[phase] = (corredor.tokensPorFase[phase] || 0) + leido.tokens;
+          corredor.conTokens = true;
+        }
+        const raw = String(leido.raw || '');
+        const murioPorError = () => {
+          causa = leido.cause ? taparSecretos(leido.cause).slice(0, 300) : causaDe(res);
+          if (leido.limit) {
+            corredor.topes[name] = { causa, hora: horaCorta(), label };
+            if (!corredor.tope) corredor.tope = corredor.topes[name];
+            process.stderr.write(`wflite ✖ ${label}: ${runner.label} en su tope de uso (${causa}) — no lo vuelvo a probar en esta corrida\n`);
+            return;
+          }
+          corredor.fallosSeguidos[name] = (corredor.fallosSeguidos[name] || 0) + 1;
+          const noLanzo = res.code === -1;
+          if (noLanzo || corredor.fallosSeguidos[name] >= FALLOS_PARA_CAIDO) {
+            const por = noLanzo ? `no se pudo lanzar (${causa})` : `falló ${corredor.fallosSeguidos[name]} veces seguidas (${causa})`;
+            corredor.caidos[name] = { causa: por, hora: horaCorta(), label };
+            process.stderr.write(`wflite ✖ ${label}: ${runner.label} ${por} — no lo vuelvo a probar en esta corrida\n`);
+          }
+        };
+        const respondio = () => { corredor.fallosSeguidos[name] = 0; };
+        // Un agente que salió con error y no dejó una respuesta usable muere por la causa de SU error (y ahí se mira el
+        // tope), aunque haya escrito algo en la salida: un corredor puede repetir ahí el pedido.
+        if (leido.failed && !leido.structured && !raw.trim()) { murioPorError(); continue; }
+        if (!aopts.schema) {
+          const t = raw.trim();
+          if (t && !leido.failed) { respondio(); corredor.usado[label] = name; return t; }
+          if (leido.failed) murioPorError(); else causa = 'contestó vacío';
+          continue;
+        }
+        let obj = leido.structured;
+        if (!obj) { try { obj = JSON.parse(raw.trim()); } catch (_) { obj = lastJsonObject(raw); } }
+        if (obj && checkShape(obj, aopts.schema)) { respondio(); corredor.usado[label] = name; return obj; }
+        if (leido.failed) murioPorError();
+        else causa = `contestó sin las claves pedidas (${(aopts.schema.required || []).join(', ')})`;
+      }
+      muerto(causa || (corredor.topes[name] && corredor.topes[name].causa) || (corredor.caidos[name] && corredor.caidos[name].causa) || 'sin respuesta', name);
     }
     // semántica de la tool: agente muerto → null; el guion lo cuenta como lente sin medir o hallazgo sin veredicto
-    return muerto(corredor.tope && !causa ? corredor.tope.causa : (causa || 'sin respuesta'));
+    return null;
   };
 }
 
@@ -320,8 +407,10 @@ async function runWorkflow(scriptPath, argsValue, opts) {
   let source = fs.readFileSync(scriptPath, 'utf8');
   // neutralizar el export (ilegal dentro de una función): mismo objeto, sin exportar
   source = source.replace(/^export const meta =/m, 'const meta =');
-  const corredor = { nombre: opts.agentsDir ? 'agentes-claude' : 'workflow-lite', muertos: [], tope: null };
-  const agent = opts.agentsDir ? makeDirAgent(opts, corredor) : makeAgent(opts, corredor);
+  const corredor = { nombre: opts.agentsDir ? 'agentes-claude' : 'workflow-lite', muertos: [], tope: null, topes: {}, caidos: {}, fallosSeguidos: {}, usado: {}, agentes: {}, tokensPorFase: {}, conTokens: false };
+  // el modo del pase: el del plan revisa texto; el del código ejecuta pruebas y pide un corredor confinado
+  const modo = argsValue && typeof argsValue === 'object' && argsValue.modo === 'plan' ? 'plan' : 'code';
+  const agent = opts.agentsDir ? makeDirAgent(opts, corredor) : makeAgent({ ...opts, mode: opts.mode || modo }, corredor);
   const log = (m) => process.stderr.write(`wflite: ${m}\n`);
   const parallel = (thunks) => pool(thunks, JOBS);
   const pipelineFn = async (items, s1, s2) => {
@@ -336,7 +425,9 @@ async function runWorkflow(scriptPath, argsValue, opts) {
   const result = await fn(argsValue, log, agent, parallel, pipelineFn);
   if (typeof agent.cerrar === 'function') agent.cerrar();
   if (result && typeof result === 'object' && !Array.isArray(result)) {
-    result.corredor = { nombre: corredor.nombre, muertos: corredor.muertos, tope: corredor.tope,
+    const total = Object.values(corredor.tokensPorFase).reduce((a, b) => a + b, 0);
+    result.corredor = { nombre: corredor.nombre, lista: corredor.lista || [], usado: corredor.usado, muertos: corredor.muertos, tope: corredor.tope,
+      topes: corredor.topes, caidos: corredor.caidos, agentes: corredor.agentes, tokens: corredor.conTokens ? { total, por_fase: corredor.tokensPorFase } : null,
       ...(corredor.pendientes ? { pedidos_pendientes: corredor.pendientes.length, pedidos: path.join(path.resolve(opts.agentsDir), 'PEDIDOS.json') } : {}) };
   }
   return result;
@@ -398,7 +489,7 @@ async function main() {
   const argv = process.argv.slice(2);
   if (argv.includes('--selftest')) return selftest();
   const scriptPath = argv[0];
-  if (!scriptPath || !fs.existsSync(scriptPath)) { console.error('uso: workflow-lite.js <script.workflow.js> --args <json> [--out <file>]'); return 1; }
+  if (!scriptPath || !fs.existsSync(scriptPath)) { console.error('uso: workflow-lite.js <script.workflow.js> --args <json> [--out <file>] [--runners <a,b>] [--agents-dir <carpeta>]'); return 1; }
   const ai = argv.indexOf('--args');
   const rawArgs = ai >= 0 ? argv[ai + 1] : '{}';
   let argsValue; try { argsValue = JSON.parse(rawArgs); } catch (_) { argsValue = rawArgs; }
@@ -406,8 +497,12 @@ async function main() {
   const di = argv.indexOf('--agents-dir');
   const agentsDir = di >= 0 ? argv[di + 1] : null;
   if (di >= 0 && !agentsDir) { console.error('workflow-lite: --agents-dir sin carpeta'); return 1; }
+  // `--runners a,b`: la lista de corredores de esta corrida, en lugar de la de la organización
+  const ri = argv.indexOf('--runners');
+  const runners = ri >= 0 ? String(argv[ri + 1] || '').split(',').map((x) => x.trim()).filter(Boolean) : null;
+  if (ri >= 0 && !(runners && runners.length)) { console.error('workflow-lite: --runners sin lista'); return 1; }
   const cwd = (argsValue && argsValue.repo) || process.cwd();
-  const result = await runWorkflow(scriptPath, argsValue, { cwd, timeoutMs: 20 * 60 * 1000, agentsDir });
+  const result = await runWorkflow(scriptPath, argsValue, { cwd, timeoutMs: 20 * 60 * 1000, agentsDir, runners });
   const json = JSON.stringify(result, null, 1);
   if (oi >= 0) { fs.writeFileSync(argv[oi + 1], json + '\n'); console.log(`wflite: resultado → ${argv[oi + 1]}`); }
   else console.log(json);
@@ -415,7 +510,7 @@ async function main() {
   // plan (`args.modo: 'plan'`) es el veredicto `sin-veredicto`: la revisión no dio aprobado.
   if (result && (result.medido === false || result.veredicto === 'sin-veredicto')) {
     const c = result.corredor || {};
-    if (c.tope) process.stderr.write(`wflite: Codex en su tope de uso desde las ${c.tope.hora} (${c.tope.causa}).\n`);
+    for (const [nombre, t] of Object.entries(c.topes || {})) process.stderr.write(`wflite: ${nombre} en su tope de uso desde las ${t.hora} (${t.causa}).\n`);
     if (c.pedidos_pendientes) process.stderr.write(`wflite: quedan ${c.pedidos_pendientes} pedido(s) para agentes de Claude en ${c.pedidos}\n`);
     process.stderr.write(`${result.aviso || 'wflite: pase NO MEDIDO'}\n`);
     return 3;
@@ -423,7 +518,7 @@ async function main() {
   return 0;
 }
 
-module.exports = { slugFor };
+module.exports = { slugFor, modelFor };
 
 if (require.main === module) {
   main().then((c) => process.exit(c)).catch((e) => { console.error(`workflow-lite: ${e.message}`); process.exit(1); });

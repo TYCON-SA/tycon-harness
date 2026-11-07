@@ -559,9 +559,9 @@ si NO hubo cambios de código:
 **Condición de exit del loop**: cero fixes nuevos en la iteración, O CRITICAL residuales
 waiveados explícitamente por el user (con razón registrada — `had_override: true`), O el tope de vueltas.
 
-**El tope de vueltas** (`review.max_rounds`: 2 de fábrica; la organización lo cambia en el sitio, en Configuración; el
-repo, en `.tycon/advisors.yaml` commiteado; la máquina, con `review-max-rounds.json` en la carpeta de estado del arnés, que pone una persona y queda dicho en el
-cierre). Una vuelta es un número de
+**El tope de vueltas** (`review.max_rounds`: 3 de fábrica, el mismo para la revisión del plan y la del código; la
+organización lo cambia en el sitio, en Configuración; el repo, en `.tycon/advisors.yaml` commiteado; no hay ajuste por
+máquina: un `review-max-rounds.json` viejo se ignora y se dice una vez). Una vuelta es un número de
 iteración que llegó a lanzar revisores: pedir dos veces el set de la misma vuelta, sin lanzarla, no suma. Más allá del
 tope, `smart-reloop` no devuelve el set y dice qué quedó abierto:
 - **un crítico de seguridad o de datos** (reglas SEC, TENANT, AUTH, NEXTSEC, SIGNALR-C, MIGRATION, DRIZZLE, y las que

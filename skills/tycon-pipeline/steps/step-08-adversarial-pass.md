@@ -99,12 +99,41 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversa
 node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-skipped --files <archivos de código del diff>
 ```
 
-El gate (decisión "siempre en NORMAL"): **risk-class NORMAL → corre**; **LOW → skip** (superficie chica ≤6 files,
-ya barata). Con `run: true` el pase se lanza de fondo sin preguntar: se avisa en una línea qué corre y cuánto tarda (la
-duración es información, no una opción). Overrides, en precedencia: (1) la constancia firmada del salteo
-(`adversarial-skips.jsonl` de la corrida, que firma el dueño con `marker.js sign-adversarial-skip`): `--no-deep-review`,
-`TYCON_NO_DEEP_REVIEW` y `deep_review: off` sólo la piden, y sin ella no apagan nada; (2)
-`.tycon/advisors.yaml deep_review: always|auto`; (3) `--deep-review` / `--ultracode` fuerza on; (4) risk-class.
+**La matriz de la organización** (`deep_review` de `team-repos.json`, que se edita en el sitio; la guía entera:
+`guides/revisiones-automaticas.md`). El portón decide con dos preguntas: si la historia es delicada y si el cambio es
+chico o grande. Las cuatro celdas, con sus valores de fábrica:
+
+| | Dueño presente | Dueño ausente |
+|---|---|---|
+| **Delicada** (`deep_review.delicate`) | corre siempre (`always`); con `ask`, pregunta | corre |
+| **No delicada y grande** (`deep_review.large_routine`) | corre (`run`); con `ask`, pregunta | corre |
+| **No delicada y chica, de día** (`deep_review.small_routine_day`) | se pregunta (`ask`); `run` corre, `skip` saltea | — |
+| **No delicada y chica, dueño ausente** (`deep_review.small_routine_owner_away`) | — | corre (`run`); `skip` saltea, `wait` espera |
+
+**El corte es configurable**: un cambio es chico hasta `deep_review.small_max_files` archivos de código (de fábrica 6);
+también cuenta como grande uno chico pero denso, o uno que `risk-class` da NORMAL por otro criterio que el tamaño (una
+migración, el alcance firmado, un camino sensible, un freno). Con `ask`, el portón da `run: false` con `decision: 'ask'`
+y la pregunta, y sale 0: antes de preguntar, `marker.js review-ask --kind code`; con la respuesta,
+`marker.js review-answer --kind code --choice review|skip|wait`. Con `wait`, `decision: 'wait'`. Una celda `skip` no
+pide la firma del dueño: es la configuración, no un pedido. El dueño cuenta como ausente con la marca de ausente
+(`marker.js owner-away set --phrase "<lo que dijo>"`) o con la pregunta sin respuesta pasados los minutos de
+`plan_review.owner_away_minutes`; la coordinadora contesta por él según su celda, y el pase lo lanza la propia sesión
+con su turno.
+
+**Lo de siempre sigue ganando**, en este orden: (1) la constancia firmada del salteo (`adversarial-skips.jsonl` de la
+corrida, que firma el dueño con `marker.js sign-adversarial-skip`): `--no-deep-review`, `TYCON_NO_DEEP_REVIEW` y
+`deep_review: off` sólo la piden, y sin ella no apagan nada; (2) `.tycon/advisors.yaml deep_review: always` o
+`deep_review.default: always` de la organización (el `auto` del repo gana sobre la organización); (3) `--deep-review` /
+`--ultracode` fuerzan on; (4) `deep_review_always_paths`; (5) la corrida liviana, sin pase; (6) sin `--files`, «no
+medible» (`run: null`, sale 2); (7) la matriz. Con `run: true` el pase se lanza de fondo sin preguntar: se avisa en una
+línea qué corre y cuánto tarda.
+
+**La gravedad que frena** (`review.blocking_severity`, de fábrica `bug`): `pipeline.js write-findings` marca cada
+confirmado del pase CRITICAL si su gravedad está en el corte o por encima, y WARNING si no. El portón devuelve el corte
+(`blocking_severity`) y cuántos verificadores (`verifiers`): pasáselos al pase en sus args.
+
+**Con qué revisor corre** (`review_runner`, de fábrica Claude): la lista de la organización, con respaldo automático
+cuando uno llega a su tope de uso o falla. En el modo código, sólo un revisor que corre confinado.
 
 **Corre UNA sola vez por corrida** (lanzado al cierre de «Implementar» — o acá como fallback), **NUNCA por cada
 re-loop D.i** — re-correr el workflow sería ~N× su costo. Los fixes de sus findings los re-verifican los
@@ -213,9 +242,9 @@ su tope, un pase que no revisó nada salió «6 lentes limpias». Ahora:
 
 ## El modo plan: la revisión automática del plan
 
-El mismo guion corre **antes del código**, sobre el plan de otra sesión, con `args.modo: 'plan'`. No es este paso: lo
-lanza la coordinadora desde «Aprobar el plan» (`steps/step-04-approve-plan.md` §«Quién aprueba el plan»), con
-`marker.js plan-review --for-session <sesión>`, que le arma los args.
+El mismo guion corre **antes del código**, sobre el plan, con `args.modo: 'plan'`. No es este paso: lo lanza la
+coordinadora desde «Aprobar el plan» (`steps/step-04-approve-plan.md` §«Quién aprueba el plan»), con
+`marker.js plan-review --for-session <sesión>`, que le arma los args; sin coordinadora, la propia sesión, informativa.
 
 - **Qué recibe**: sólo el texto de la story, el del plan y la ruta del repo (`storyTexto`, `planTexto`, `repo`), nunca
   el hilo de la sesión que planeó. Los dos textos van entre marcas, como **datos no confiables**: una instrucción escrita
@@ -225,19 +254,28 @@ lanza la coordinadora desde «Aprobar el plan» (`steps/step-04-approve-plan.md`
 - **Lo que esto no frena**: la sesión que lanza la revisión puede leer su propio pedido. Si decide escribir a mano un
   resultado «aprobado» con ese número, ningún archivo lo distingue del pase real, como pasa con las otras constancias
   del arnés. El número frena el resultado copiado, el reusado de otra revisión y el que se escribe sin pedido.
-- **Las cuatro lentes**: un AC que el plan no cubre; una suposición falsa sobre el código, que se comprueba leyendo el
-  repo; un riesgo de seguridad o de producción sin su defensa ni su vuelta atrás; una prueba que falta. Cada hallazgo
-  pasa por su verificador (ante la duda, refutado).
+- **Las lentes**: de fábrica sólo una, la suposición falsa sobre el código, que se comprueba leyendo el repo
+  (`plan_review.lenses`). La organización puede sumar las otras tres: un AC que el plan no cubre, un riesgo de
+  seguridad o de producción sin su defensa ni su vuelta atrás, una prueba que falta. Cada hallazgo pasa por su
+  verificador (ante la duda, refutado); con `review_runner.verifiers: per_lens` (de fábrica), uno por lente.
 - **Sólo lectura**: los agentes leen, `git grep`, `git log`. Nunca corren un guion del repo destino. Es una orden del
   pedido, no un permiso quitado: el guion no puede sacarles herramientas a sus agentes.
 - **El veredicto**: `aprobado` sólo con el pase medido, sin hallazgos confirmados y sin hallazgos sin veredicto;
-  `rechazado` con algún confirmado; si no, `sin-veredicto`. `workflow-lite.js` sale 3 con `sin-veredicto`.
-- **El modelo**: Opus. Sin la herramienta Workflow, `workflow-lite.js` corre el mismo guion; sin ninguno, la revisión
-  se anota `--no-tool "<motivo>"` y queda sin veredicto: el plan espera a una persona.
+  `rechazado` con algún confirmado de gravedad en el corte (`review.blocking_severity`, de fábrica `bug`);
+  `aprobado-con-notas` si los confirmados quedan por debajo del corte; si no, `sin-veredicto`. `workflow-lite.js` sale
+  3 con `sin-veredicto`.
+- **El modelo**: Opus. Sin la herramienta Workflow, `workflow-lite.js` corre el mismo guion con el revisor de la
+  organización; sin ninguno, la revisión se anota `--no-tool "<motivo>"` y queda sin veredicto: el plan espera a una
+  persona.
 
 ## Sin Codex ni Workflow: el pase propio con agentes de Claude
 
-La salida aprobada cuando Codex no contesta y la sesión no tiene la herramienta Workflow:
+Sin la herramienta Workflow, el pase corre con el revisor de la lista de la organización (`review_runner.order`, de
+fábrica Claude): `workflow-lite.js` lanza cada agente con el primero de la lista y, si llega a su tope de uso o falla,
+con el siguiente; el resultado dice qué revisor contestó cada agente (`corredor.usado`) y cuál falló
+(`corredor.muertos`). Si ninguno de la lista puede correr, queda la salida de abajo.
+
+La salida aprobada cuando ningún revisor de la lista contesta y la sesión no tiene la herramienta Workflow:
 **un pase propio con agentes de Claude — cazadores con Sonnet, un verificador aparte por hallazgo que corre el código,
 juicio con Opus, nunca Fable**. Corre EL MISMO guion; `workflow-lite.js --agents-dir` no lanza nada: arma los pedidos y
 lee las respuestas, y el archivo de resultado sale del guion, no se escribe a mano.

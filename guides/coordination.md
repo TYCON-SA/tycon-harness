@@ -247,6 +247,29 @@ Lo controla el arnés, no la memoria de nadie:
 CI y en la nube no hay turno. `TYCON_SUITE_TURN=0` apaga el de la suite, y `TYCON_SUITE_TURN=1` lo pide aunque no haya
 coordinadora: sólo puede frenar de más.
 
+## Las revisiones automáticas: qué hace la coordinadora
+
+Cuándo corre cada revisión lo dice la configuración de la organización (`guides/revisiones-automaticas.md`). En cada
+una, la coordinadora:
+
+- **Pregunta o no.** Si la matriz dice preguntar, la pregunta al dueño la hace ella, con el cuadro de opciones, y la
+  anota: la sesión corre `marker.js review-ask --kind plan|code` antes del cuadro, y ella anota la respuesta con
+  `marker.js review-answer --for-session <sesión> --kind plan|code --choice review|skip|wait`. En cada mensaje suyo, el
+  arnés le muestra las preguntas sin respuesta, con los minutos que llevan y, pasados los de
+  `plan_review.owner_away_minutes`, lo que dice la celda de «dueño ausente».
+- **Lanza la revisión del plan**: `marker.js plan-review --for-session <sesión>`, con el comando que devuelve (el
+  revisor de la organización), y anota el resultado con `--result`.
+- **Aprueba en nombre del dueño sólo con «aprobado»** sobre ese mismo plan, con `plan_review.coordinator_approves`
+  (O4) en sí y `plan-approval` delegado. Rechazado o sin veredicto, el plan espera; un plan delicado lo firma siempre el
+  dueño.
+- **Da el turno del pase del código.** Del código no lanza nada: con el dueño ausente, contesta la pregunta en su
+  nombre según la celda (`review-answer --for-session`, con «dueño ausente» como motivo), y el pase lo lanza la propia
+  sesión con su turno, como siempre.
+- **Pone la marca de ausente** cuando el dueño dice que se va («seguí en autónomo», «me voy», «hasta mañana» o algo
+  parecido): `marker.js owner-away set --phrase "<lo que dijo>"`. Lo juzga ella, no una lista de frases. La marca se borra
+  sola cuando el dueño vuelve: un mensaje suyo, un mensaje de la oficina verificado, una firma suya o a las 24 horas. La
+  oficina la muestra mientras está puesta.
+
 ## Las firmas, por sus tres vías
 
 **Antes de pedir una firma, la coordinadora confirma que todavía falta.** Pedir una firma de algo ya firmado hace

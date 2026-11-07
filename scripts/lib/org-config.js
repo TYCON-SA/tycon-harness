@@ -108,6 +108,10 @@ const SECCIONES = Object.freeze([
   Object.freeze({ id: 'revisionSemanal', titulo: 'Revisión de la semana', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['weekly_review'], idCorto: 'repos', necesita: ['weekly_review'] }),
   // la política del pase adversarial de la organización: always o auto, sin off (saltearlo lo firma el dueño)
   Object.freeze({ id: 'paseAdversarial', titulo: 'Pase adversarial', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['deep_review'], idCorto: 'repos', necesita: ['deep_review'] }),
+  // la revisión automática del plan: cuándo corre, quién aprueba, el dueño ausente y las lentes
+  Object.freeze({ id: 'revisionDelPlan', titulo: 'Revisión del plan', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['plan_review'], idCorto: 'repos', necesita: ['plan_review'] }),
+  // con qué corre la revisión del plan y la del código: el revisor, el orden de respaldo, el comando propio y los verificadores
+  Object.freeze({ id: 'conQueRevisa', titulo: 'Con qué corre la revisión', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['review_runner'], idCorto: 'repos', necesita: ['review_runner'] }),
   // el umbral de cobertura de las líneas nuevas: el control de pruebas avisa por debajo de este porcentaje
   Object.freeze({ id: 'cobertura', titulo: 'Cobertura de las pruebas', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['coverage'], idCorto: 'repos', necesita: ['coverage'] }),
   // el tope de vueltas de revisores de una story y los prefijos de reglas que cuentan como seguridad o datos
@@ -219,7 +223,15 @@ const CONTEXT_NOTICE_SINCE = '2026.11.01.30';
 const DEEP_REVIEW_SINCE = '2026.11.01.30';
 // `weekly_review`: la etiqueta del merge que la trajo al lector
 const WEEKLY_REVIEW_SINCE = '2026.10.19.20';
-const CLAVES_CON_VERSION = Object.freeze([['merge_suites', MERGE_SUITES_SINCE], ['models', MODELS_SINCE], ['wait_notice', WAIT_NOTICE_SINCE], ['coverage', COVERAGE_SINCE], ['review', REVIEW_SINCE], ['stack', STACK_SINCE], ['estimates', ESTIMATES_SINCE], ['context_notice', CONTEXT_NOTICE_SINCE], ['deep_review', DEEP_REVIEW_SINCE], ['weekly_review', WEEKLY_REVIEW_SINCE]]);
+// Las revisiones automáticas: `review_runner` y `plan_review` (secciones nuevas), las claves de la matriz del código en
+// `deep_review` y `review.blocking_severity`. Un lector anterior las ve como claves desconocidas y descarta la sección o
+// el archivo. Provisorias hasta la etiqueta del merge que las trae al lector: están puestas para frenar de más, no de menos
+const REVIEW_RUNNER_SINCE = '2026.11.07.1';
+const PLAN_REVIEW_SINCE = '2026.11.07.1';
+const DEEP_REVIEW_MATRIX_SINCE = '2026.11.07.1';
+const REVIEW_SEVERITY_SINCE = '2026.11.07.1';
+const CLAVES_DE_LA_MATRIZ = Object.freeze(['delicate', 'small_max_files', 'small_routine_day', 'small_routine_owner_away', 'large_routine']);
+const CLAVES_CON_VERSION = Object.freeze([['review_runner', REVIEW_RUNNER_SINCE], ['plan_review', PLAN_REVIEW_SINCE], ['merge_suites', MERGE_SUITES_SINCE], ['models', MODELS_SINCE], ['wait_notice', WAIT_NOTICE_SINCE], ['coverage', COVERAGE_SINCE], ['review', REVIEW_SINCE], ['stack', STACK_SINCE], ['estimates', ESTIMATES_SINCE], ['context_notice', CONTEXT_NOTICE_SINCE], ['deep_review', DEEP_REVIEW_SINCE], ['weekly_review', WEEKLY_REVIEW_SINCE]]);
 /** La versión que tiene que pedir el perfil para este `team-repos.json` (sin archivo, la de siempre), y las claves por las que la pide. */
 function versionQuePide(doc) {
   let version = TEAM_REPOS_SINCE; const claves = [];
@@ -234,6 +246,8 @@ function versionQuePide(doc) {
   if (isObject(doc) && isObject(doc.wait_notice) && doc.wait_notice.enabled !== undefined && !versionAtLeast(version, WAIT_NOTICE_ENABLED_SINCE)) version = WAIT_NOTICE_ENABLED_SINCE;
   if (isObject(doc) && isObject(doc.wait_notice) && doc.wait_notice.owner_minutes !== undefined && !versionAtLeast(version, WAIT_NOTICE_OWNER_SINCE)) version = WAIT_NOTICE_OWNER_SINCE;
   if (isObject(doc) && isObject(doc.wait_notice) && doc.wait_notice.peer_owner_minutes !== undefined && !versionAtLeast(version, WAIT_NOTICE_PEER_SINCE)) version = WAIT_NOTICE_PEER_SINCE;
+  if (isObject(doc) && isObject(doc.deep_review) && CLAVES_DE_LA_MATRIZ.some((k) => doc.deep_review[k] !== undefined) && !versionAtLeast(version, DEEP_REVIEW_MATRIX_SINCE)) version = DEEP_REVIEW_MATRIX_SINCE;
+  if (isObject(doc) && isObject(doc.review) && doc.review.blocking_severity !== undefined && !versionAtLeast(version, REVIEW_SEVERITY_SINCE)) version = REVIEW_SEVERITY_SINCE;
   return { version, claves };
 }
 /** ¿`models` trae algún nivel (en cualquier clave, también adentro de un objeto)? Un comentario («_…») no cuenta. */
@@ -1674,6 +1688,8 @@ ${trabajandoJs}
     contexto: { t: T('pantalla.avisoDeContexto'), d: T('pantalla.avisoDeContextoAyuda'), corto: T('pantalla.avisoDeContexto') },
     revisionSemanal: { t: T('pantalla.revisionSemanal'), d: T('pantalla.revisionSemanalAyuda'), corto: T('pantalla.revisionSemanal') },
     paseAdversarial: { t: T('pantalla.paseAdversarialTitulo'), d: T('pantalla.paseAdversarialAyuda'), corto: T('pantalla.paseAdversarialTitulo') },
+    revisionDelPlan: { t: T('pantalla.revisionDelPlanTitulo'), d: T('pantalla.revisionDelPlanAyuda'), corto: T('pantalla.revisionDelPlanTitulo') },
+    conQueRevisa: { t: T('pantalla.conQueRevisaTitulo'), d: T('pantalla.conQueRevisaAyuda'), corto: T('pantalla.conQueRevisaTitulo') },
     estimaciones: { t: T('pantalla.estimaciones'), d: T('pantalla.estimacionesAyuda'), corto: T('pantalla.estimaciones') },
     tecnologia: { t: T('pantalla.tecTuTecnologia'), d: T('pantalla.tecLlegaATodasLasMaquinas'), corto: T('pantalla.tecTuTecnologia') },
     respuesta: { t: T('pantalla.comoContestaClaude'), d: T('pantalla.elIdiomaElEstiloY'), corto: T('pantalla.comoContestaClaude') },
@@ -1696,7 +1712,7 @@ ${trabajandoJs}
     aldia: { t: T('pantalla.comoSeActualizaElSitio'), d: T('pantalla.siElSitioSePone'), corto: T('pantalla.actualizacionDelSitio') },
   };
   // las pestañas: [id, nombre, secciones, tablas para mirar]. Se ve una por vez; el resumen de arriba, en todas
-  var PESTANAS = [['personas', T('pantalla.personas'), ['organizacion', 'sitio', 'aplicar', 'aldia', 'direccionSitio', 'personas', 'responsables'], []], ['repos', T('pantalla.reposYProductos'), ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', T('pantalla.avisosYLaNoche'), ['canal', 'espera', 'umbrales', 'fichas', 'pedidos', 'contexto'], []], ['claude', T('pantalla.comoTrabajaClaude'), ['respuesta', 'modelos', 'suites', 'cobertura', 'revisionSemanal', 'revision', 'tecnologia', 'aprobaciones', 'pruebaAMano', 'interruptores', 'coordinacion', 'oficina', 'integraciones', 'hilos', 'estimaciones', 'paseAdversarial'], []], ['instalacion', T('pantalla.instalacionYActualizacion'), ['actualizacion', 'instalacion', 'paquetes', 'frenoProduccion'], ['contenido', 'versiones']]];
+  var PESTANAS = [['personas', T('pantalla.personas'), ['organizacion', 'sitio', 'aplicar', 'aldia', 'direccionSitio', 'personas', 'responsables'], []], ['repos', T('pantalla.reposYProductos'), ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', T('pantalla.avisosYLaNoche'), ['canal', 'espera', 'umbrales', 'fichas', 'pedidos', 'contexto'], []], ['claude', T('pantalla.comoTrabajaClaude'), ['respuesta', 'modelos', 'suites', 'cobertura', 'revisionSemanal', 'revision', 'tecnologia', 'aprobaciones', 'pruebaAMano', 'interruptores', 'coordinacion', 'oficina', 'integraciones', 'hilos', 'estimaciones', 'paseAdversarial', 'revisionDelPlan', 'conQueRevisa'], []], ['instalacion', T('pantalla.instalacionYActualizacion'), ['actualizacion', 'instalacion', 'paquetes', 'frenoProduccion'], ['contenido', 'versiones']]];
   /** La pestaña de un ancla (#pestana-x, #seccion-x o una tabla para mirar); null si no es de ninguna. */
   function pestanaDe(ancla) {
     var id = String(ancla || '').replace(/^#/, '');
@@ -3780,6 +3796,12 @@ ${trabajandoJs}
       if (!esObjeto(d.review)) d.review = {};
       d.review.blocking_prefixes = l;
     }, 'review.blocking_prefixes', pr, T('pantalla.prefijoEjemplo'), T('pantalla.agregarPrefijo'), T('pantalla.ningunaAgregadaLoNormal')));
+    // desde qué gravedad un hallazgo confirmado frena: el mismo corte para la revisión del plan y la del código
+    box.appendChild(selector(T('pantalla.gravedadQueFrenaCampo'), r.blocking_severity, [['', T('pantalla.gravedadDeFabrica')], ['bug', T('pantalla.gravedadBug')], ['robustness', T('pantalla.gravedadRobustez')], ['all', T('pantalla.gravedadTodo')]], function (v) {
+      if (v === '') { if (esObjeto(d.review)) { delete d.review.blocking_severity; limpiar(); } return; }
+      if (!esObjeto(d.review)) d.review = {};
+      d.review.blocking_severity = v;
+    }, 'review.blocking_severity', pr));
     return box;
   }
   // el aviso de contexto: el umbral en tokens (100.000 a 900.000; vacío, el de fábrica, 300.000)
@@ -3810,12 +3832,61 @@ ${trabajandoJs}
   // el pase adversarial: la política de la organización, que sólo puede subir (vacío = de fábrica, auto); no hay «off»
   function editorPaseAdversarial(s, d, pr) {
     var p = esObjeto(d.deep_review) ? d.deep_review : {};
+    var poner = ponerEn(d, 'deep_review');
     var ops = [['', T('pantalla.paseAdversarialDeFabrica')], ['always', T('pantalla.paseAdversarialSiempre')], ['auto', T('pantalla.paseAdversarialAuto')]];
-    return el('div', { class: 'pila' }, selector(T('pantalla.paseAdversarialCampo'), p.default, ops, function (v) {
-      if (v === '') { if (esObjeto(d.deep_review)) { delete d.deep_review.default; if (!Object.keys(d.deep_review).length) delete d.deep_review; } return; }
-      if (!esObjeto(d.deep_review)) d.deep_review = {};
-      d.deep_review.default = v;
-    }, 'deep_review.default', pr));
+    // la matriz de la revisión del código: delicada o no, chica o grande, con el dueño presente o ausente
+    var deFab = T('pantalla.deFabrica');
+    return el('div', { class: 'pila' }, selector(T('pantalla.paseAdversarialCampo'), p.default, ops, function (v) { poner('default', v); }, 'deep_review.default', pr),
+      selector(T('pantalla.paseDelicadaCampo'), p.delicate, [['', deFab + ' (' + T('pantalla.opcionSiempre') + ')'], ['always', T('pantalla.opcionSiempre')], ['ask', T('pantalla.opcionPreguntar')]], function (v) { poner('delicate', v); }, 'deep_review.delicate', pr),
+      campo(T('pantalla.paseChicaHastaCampo'), p.small_max_files, function (v) { poner('small_max_files', v === '' ? '' : numOTexto(v)); }, 'deep_review.small_max_files', pr, { inputmode: 'numeric', placeholder: T('pantalla.paseChicaHastaDeFabrica') }),
+      selector(T('pantalla.paseChicaDeDiaCampo'), p.small_routine_day, [['', deFab + ' (' + T('pantalla.opcionPreguntar') + ')'], ['ask', T('pantalla.opcionPreguntar')], ['run', T('pantalla.opcionCorrer')], ['skip', T('pantalla.opcionSaltear')]], function (v) { poner('small_routine_day', v); }, 'deep_review.small_routine_day', pr),
+      selector(T('pantalla.paseChicaAusenteCampo'), p.small_routine_owner_away, [['', deFab + ' (' + T('pantalla.opcionCorrer') + ')'], ['run', T('pantalla.opcionCorrer')], ['skip', T('pantalla.opcionSaltear')], ['wait', T('pantalla.opcionEsperar')]], function (v) { poner('small_routine_owner_away', v); }, 'deep_review.small_routine_owner_away', pr),
+      selector(T('pantalla.paseGrandeCampo'), p.large_routine, [['', deFab + ' (' + T('pantalla.opcionCorrer') + ')'], ['run', T('pantalla.opcionCorrer')], ['ask', T('pantalla.opcionPreguntar')]], function (v) { poner('large_routine', v); }, 'deep_review.large_routine', pr));
+  }
+  // una clave de una sección: vacío la saca (y sin claves sale la sección); si no, la pone
+  function ponerEn(d, sec) {
+    return function (k, v) {
+      if (v === '' || v === undefined) { if (esObjeto(d[sec])) { delete d[sec][k]; if (!Object.keys(d[sec]).length) delete d[sec]; } return; }
+      if (!esObjeto(d[sec])) d[sec] = {};
+      d[sec][k] = v;
+    };
+  }
+  // la revisión del plan: cuándo corre (delicada, rutina, rutina con el dueño ausente), quién aprueba, qué pasa con un
+  // rechazo, los minutos que cuentan como dueño ausente y las lentes. Vacío: el de fábrica
+  function editorRevisionDelPlan(s, d, pr) {
+    var p = esObjeto(d.plan_review) ? d.plan_review : {};
+    var poner = ponerEn(d, 'plan_review');
+    var deFab = T('pantalla.deFabrica');
+    var siNo = function (v) { return v === true ? 'true' : v === false ? 'false' : ''; };
+    var lentes = Array.isArray(p.lenses) ? p.lenses : [];
+    return el('div', { class: 'pila' },
+      selector(T('pantalla.revisionDelPlanDelicada'), p.delicate, [['', deFab + ' (' + T('pantalla.opcionSiempre') + ')'], ['always', T('pantalla.opcionSiempre')], ['ask', T('pantalla.opcionPreguntar')]], function (v) { poner('delicate', v); }, 'plan_review.delicate', pr),
+      selector(T('pantalla.revisionDelPlanRutina'), p.routine, [['', deFab + ' (' + T('pantalla.opcionPreguntar') + ')'], ['always', T('pantalla.opcionSiempre')], ['ask', T('pantalla.opcionPreguntar')], ['never', T('pantalla.opcionNunca')]], function (v) { poner('routine', v); }, 'plan_review.routine', pr),
+      selector(T('pantalla.revisionDelPlanAusente'), p.routine_owner_away, [['', deFab + ' (' + T('pantalla.opcionRevisar') + ')'], ['review', T('pantalla.opcionRevisar')], ['wait', T('pantalla.opcionEsperar')], ['skip', T('pantalla.opcionSaltear')]], function (v) { poner('routine_owner_away', v); }, 'plan_review.routine_owner_away', pr),
+      selector(T('pantalla.revisionDelPlanCoordinadoraAprueba'), siNo(p.coordinator_approves), [['', deFab + ' (' + T('pantalla.opcionSi') + ')'], ['true', T('pantalla.opcionSi')], ['false', T('pantalla.opcionNo')]], function (v) { poner('coordinator_approves', v === '' ? '' : v === 'true'); }, 'plan_review.coordinator_approves', pr),
+      selector(T('pantalla.revisionDelPlanRechazoAlDueno'), siNo(p.rejected_reaches_owner), [['', deFab + ' (' + T('pantalla.opcionNo') + ')'], ['true', T('pantalla.opcionSi')], ['false', T('pantalla.opcionNo')]], function (v) { poner('rejected_reaches_owner', v === '' ? '' : v === 'true'); }, 'plan_review.rejected_reaches_owner', pr),
+      campo(T('pantalla.revisionDelPlanMinutos'), p.owner_away_minutes, function (v) { poner('owner_away_minutes', v === '' ? '' : numOTexto(v)); }, 'plan_review.owner_away_minutes', pr, { inputmode: 'numeric', placeholder: T('pantalla.revisionDelPlanMinutosDeFabrica') }),
+      listaDeTextos(T('pantalla.revisionDelPlanLentes'), T('pantalla.revisionDelPlanLentesAyuda'), lentes, function (l) { poner('lenses', l.length ? l : ''); }, 'plan_review.lenses', pr, 'suposicion-falsa', T('pantalla.agregarLente'), T('pantalla.revisionDelPlanLentesDeFabrica')));
+  }
+  // con qué corre la revisión: el revisor (el primero de la lista), el orden de respaldo, el comando propio (sólo con
+  // «custom») y cuántos verificadores. Vacío: el de fábrica (Claude, uno por clase)
+  function editorConQueRevisa(s, d, pr) {
+    var r = esObjeto(d.review_runner) ? d.review_runner : {};
+    var poner = ponerEn(d, 'review_runner');
+    var deFab = T('pantalla.deFabrica');
+    var orden = Array.isArray(r.order) ? r.order : [];
+    var corredores = [['', deFab + ' (Claude)'], ['claude', 'Claude'], ['codex', 'Codex'], ['cursor', 'Cursor'], ['claude-ollama', 'Claude + Ollama'], ['custom', T('pantalla.conQueRevisaPropio')]];
+    var box = el('div', { class: 'pila' },
+      selector(T('pantalla.conQueRevisaRevisor'), orden[0] || '', corredores, function (v) {
+        if (v === '') { poner('order', ''); return; }
+        poner('order', [v].concat(orden.filter(function (x) { return x !== v; })));
+      }, 'review_runner.first', pr),
+      listaDeTextos(T('pantalla.conQueRevisaOrden'), T('pantalla.conQueRevisaOrdenAyuda'), orden, function (l) { poner('order', l.length ? l : ''); }, 'review_runner.order', pr, 'claude', T('pantalla.agregarRevisor'), T('pantalla.conQueRevisaOrdenDeFabrica')));
+    if (orden.indexOf('custom') >= 0) {
+      box.appendChild(campo(T('pantalla.conQueRevisaComando'), r.custom_command, function (v) { poner('custom_command', v); }, 'review_runner.custom_command', pr, { placeholder: T('pantalla.conQueRevisaComandoEjemplo') }));
+    }
+    box.appendChild(selector(T('pantalla.conQueRevisaVerificadores'), r.verifiers, [['', deFab + ' (' + T('pantalla.verificadorPorClase') + ')'], ['per_lens', T('pantalla.verificadorPorClase')], ['per_finding', T('pantalla.verificadorPorHallazgo')]], function (v) { poner('verifiers', v); }, 'review_runner.verifiers', pr));
+    return box;
   }
   // las estimaciones: la unidad (vacío, horas) y sus dos tasas a horas; la línea de abajo dice lo que leen hoy las máquinas.
   // Una clave que queda vacía se saca: no se propone un «{}»
@@ -4007,7 +4078,7 @@ ${trabajandoJs}
       el('p', { class: 'sub-d', text: T('pantalla.tecIdiomaVacio') })));
     return box;
   }
-  var EDITORES = { pedidos: editorPedidos, tecnologia: editorTecnologia, fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, contexto: editorContexto, revisionSemanal: editorRevisionSemanal, paseAdversarial: editorPaseAdversarial, cobertura: editorCobertura, revision: editorRevision, estimaciones: editorEstimaciones, respuesta: editorRespuesta, integraciones: editorIntegraciones, aprobaciones: editorAprobaciones, direccionSitio: editorDireccionSitio, pruebaAMano: editorPruebaAMano, interruptores: editorInterruptores, coordinacion: editorCoordinacion, oficina: editorOficina, frenoProduccion: editorFrenoProduccion, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: editorCanal, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
+  var EDITORES = { pedidos: editorPedidos, tecnologia: editorTecnologia, fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, contexto: editorContexto, revisionSemanal: editorRevisionSemanal, paseAdversarial: editorPaseAdversarial, revisionDelPlan: editorRevisionDelPlan, conQueRevisa: editorConQueRevisa, cobertura: editorCobertura, revision: editorRevision, estimaciones: editorEstimaciones, respuesta: editorRespuesta, integraciones: editorIntegraciones, aprobaciones: editorAprobaciones, direccionSitio: editorDireccionSitio, pruebaAMano: editorPruebaAMano, interruptores: editorInterruptores, coordinacion: editorCoordinacion, oficina: editorOficina, frenoProduccion: editorFrenoProduccion, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: editorCanal, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
 
   // los editores de suites y modelos arman objetos vacíos para tener dónde escribir: no se mandan. Una clave vacía en el
   // archivo pediría al perfil una versión más nueva sin cambiar nada
@@ -4560,7 +4631,7 @@ ${trabajandoJs}
 
 module.exports = {
   extrasDeAprobaciones, nombreDeMaquina,
-  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, ESTIMATES_SINCE, CONTEXT_NOTICE_SINCE, DEEP_REVIEW_SINCE, WEEKLY_REVIEW_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, COORDINATION_SINCE, SWITCHES_SINCE, SITE_SINCE, SESSION_NAMES_SINCE, OFFICE_SINCE, SIGNATURE_LIST_SINCE, WAIT_NOTICE_ENABLED_SINCE, WAIT_NOTICE_OWNER_SINCE, WAIT_NOTICE_PEER_SINCE, DELEGATED_LIST_SINCE, OWNER_ONLY_SINCE, LEVELS_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, capaQueSube, clavesQuePidenVersion, pedidasDelPerfil, direccionDelSitio, leerPerfil, estadoDelPerfil, origenDe, nombresDeLaLista, diferenciaDeJson, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
+  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, ESTIMATES_SINCE, CONTEXT_NOTICE_SINCE, DEEP_REVIEW_SINCE, REVIEW_RUNNER_SINCE, PLAN_REVIEW_SINCE, DEEP_REVIEW_MATRIX_SINCE, REVIEW_SEVERITY_SINCE, WEEKLY_REVIEW_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, COORDINATION_SINCE, SWITCHES_SINCE, SITE_SINCE, SESSION_NAMES_SINCE, OFFICE_SINCE, SIGNATURE_LIST_SINCE, WAIT_NOTICE_ENABLED_SINCE, WAIT_NOTICE_OWNER_SINCE, WAIT_NOTICE_PEER_SINCE, DELEGATED_LIST_SINCE, OWNER_ONLY_SINCE, LEVELS_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, capaQueSube, clavesQuePidenVersion, pedidasDelPerfil, direccionDelSitio, leerPerfil, estadoDelPerfil, origenDe, nombresDeLaLista, diferenciaDeJson, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
   problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy, estimacionesDeHoy, modelosEnNiveles, equivalenciasDe, proveedoresDe,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia, reaplicar, versionDeTexto,
   SIN_NOTICIAS_DIAS, CLAVES_DEL_REPO, lectorDeClave, reemplazarBloque, revisarClaveDelRepo, idDeRepo, urlDeRepo,

@@ -71,7 +71,8 @@ const hallazgo = (rule, file, iter) => ({
 const home = () => {
   const h = fs.mkdtempSync(path.join(os.tmpdir(), 'rethink-home-'));
   fs.mkdirSync(path.join(h, '.claude', '.tycon-pipeline'), { recursive: true });
-  fs.writeFileSync(path.join(h, '.claude', '.tycon-pipeline', 'review-max-rounds.json'), '{ "max_rounds": 99 }\n');
+  // las vueltas extra ya firmadas: acá se mide la nota de la tercera vuelta, no el tope
+  fs.appendFileSync(path.join(h, '.claude', '.tycon-pipeline', 'gates.log'), Array.from({ length: 30 }, (_, i) => JSON.stringify({ name: 'extra-round', status: 'ok', story: '9.9', iter: i + 1 })).join('\n') + '\n');
   return h;
 };
 const env = (h) => ({ ...process.env, HOME: h, USERPROFILE: h, CLAUDE_CODE_SESSION_ID: SID, TYCON_TODAY: '2026-10-18' });

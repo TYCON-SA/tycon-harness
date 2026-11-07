@@ -80,8 +80,8 @@ function mkHome(repo, pasos, { marker = {}, conversacion = true, lineasCrudas = 
   const h = fs.mkdtempSync(path.join(os.tmpdir(), 'valrl-home-'));
   const activo = path.join(h, '.claude', '.tycon-pipeline', 'active');
   fs.mkdirSync(activo, { recursive: true });
-  // el tope de vueltas al máximo (el ajuste de la máquina): acá se mide qué revisores entran en cada vuelta, no el tope
-  fs.writeFileSync(path.join(h, '.claude', '.tycon-pipeline', 'review-max-rounds.json'), '{ "max_rounds": 99 }\n');
+  // las vueltas extra ya firmadas: acá se mide qué revisores entran en cada vuelta, no el tope
+  fs.appendFileSync(path.join(h, '.claude', '.tycon-pipeline', 'gates.log'), Array.from({ length: 30 }, (_, i) => JSON.stringify({ name: 'extra-round', status: 'ok', story: '9.9', iter: i + 1 })).join('\n') + '\n');
   const story = path.join(repo, 'specs', 'story-9.9-algo.md');
   const a = path.join(repo, 'src', 'a.js');
   fs.writeFileSync(path.join(activo, `${SID}.json`), JSON.stringify({
