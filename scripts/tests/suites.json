@@ -2711,6 +2711,18 @@
       "requiere": []
     },
     {
+      "__nota": "mergear salteando la cola y la CI de main lo aprueba una persona (regla GIT-C5): el lector de lo que saltea (scripts/lib/ci-bypass.js), el freno de la sesión de verdad con una casa de juguete y la decisión de la ventana con un árbol de juguete. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/ci-bypass-guard.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "las entradas a la rama principal sin su CI (scripts/nightly/main-entries/main-entries.js): GitHub es un servidor local que contesta como su API y Azure un az de mentira. No medido no es cero. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/main-entries.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la lista de lo que espera a la persona (scripts/lib/signature-list.js): el registro, lo que lo cierra, la pasada de a una y la llave.",
       "raiz": "arnes",
       "ruta": "tests/signature-list.test.js",

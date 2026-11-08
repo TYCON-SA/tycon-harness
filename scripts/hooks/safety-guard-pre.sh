@@ -752,6 +752,44 @@ if [[ "$_esc_cmd" == *[Mm][Aa][Rr][Kk][Ee][Rr]* || "$_esc_cmd" == *[Pp][Ii][Pp][
 fi
 ESC_CARTEL=""
 
+# --- GIT-C5: mergear salteando la cola, la CI o las políticas de main ---------
+# Un comando que nombra `gh` o `az`, o las palabras de una forma con el programa escondido, pasa por el lector
+# (lib/ci-bypass.js). Una forma legible suma la firma `escape:merge-bypass` a las que pide la ventana; una escondida
+# frena sin ventana; un lector que no está o que se cae frena: lo que no se leyó no pasa. Leer y el camino normal
+# (`gh pr merge <n> --merge`) no dan forma. Casos: scripts/tests/ci-bypass-guard.test.js.
+_c5_re='(^|[^A-Za-z0-9_.-])(gh|az)(\.exe|\.cmd)?($|[^A-Za-z0-9_.-])|pr[[:space:]]+merge|[[:space:]]api[[:space:]]|bypass-policy|repos[[:space:]]+policy|security[[:space:]]+permission|devops[[:space:]]+invoke|[[:space:]]rest[[:space:]]'
+_c5_mira=0
+shopt -s nocasematch
+if [[ "$_esc_cmd" =~ $_c5_re ]]; then _c5_mira=1; fi
+shopt -u nocasematch
+if [[ "$_c5_mira" == "1" ]]; then
+  _c5_lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/ci-bypass.js" || _c5_lib=""
+  _c5_out=""; _c5_ok=0
+  # en PowerShell la barra invertida es parte de las rutas (`C:\tools\gh.exe`): el lector lo tiene que saber
+  _c5_ps=""; if tool_is_ps; then _c5_ps="--windows-shell"; fi
+  if [[ -n "$_c5_lib" && -f "$_c5_lib" ]] && command -v "$HNODE" >/dev/null 2>&1; then
+    if _c5_out="$(printf '%s' "$CMD" | "$HNODE" "$_c5_lib" --command-stdin $_c5_ps 2>/dev/null)"; then _c5_ok=1; fi
+  fi
+  if [[ "$_c5_ok" != "1" ]]; then
+    block "GIT-C5" \
+      "No pude leer este comando: el lector de lo que saltea la CI (lib/ci-bypass.js) no está o se cayó. Un comando con gh o az puede mergear salteando la cola o aflojar una política de la rama." \
+      "Revisá el intérprete del arnés (el comando del arnés que muestra su versión dice si está bien instalado). Lo que no se leyó no pasa."
+  fi
+  _c5_escondido=""; _c5_forma=""
+  while IFS= read -r _c5_l; do
+    case "$_c5_l" in
+      escondido=*) [[ -n "$_c5_escondido" ]] || _c5_escondido="${_c5_l#escondido=}" ;;
+      forma=*) [[ -n "$_c5_forma" ]] || _c5_forma="${_c5_l#forma=}" ;;
+    esac
+  done <<< "$_c5_out"
+  if [[ -n "$_c5_escondido" ]]; then
+    block "GIT-C5" \
+      "Mergear salteando la cola y la CI de main, o aflojar las políticas de la rama, así escrito no se puede firmar: ${_c5_escondido%.}." \
+      "Corré el comando en su forma exacta, solo, sin bash -c, eval, \$(…), variables ni xargs: así la persona lo puede aprobar en la ventana. Para mergear, el camino normal es gh pr merge <n> --merge."
+  fi
+  if [[ -n "$_c5_forma" ]]; then OW_ESCAPES+=("escape:merge-bypass"); fi
+fi
+
 # --- La ventana de permiso: las firmas del dueño -----------------------------
 # Una sola consulta a lib/owner-window.js con las firmas `freno` que juntaron ESC-C1, ESC-C3 y ESC-C4; las de los
 # guiones (aprobar el plan, ESC-C6; aprobar un control, ESC-C7; eximir un crítico, la vuelta extra, …) las lee el propio
@@ -770,6 +808,7 @@ ow_regla() { # $1 = la firma → la regla con que frena o deja constancia
     escape:cerrar-como-deuda) echo "ESC-C4" ;;
     plan-approval) echo "ESC-C6" ;;
     control-change|refresh-after-main) echo "ESC-C7" ;;
+    escape:merge-bypass) echo "GIT-C5" ;;
     *) echo "ESC-C3" ;;
   esac
 }
@@ -811,6 +850,9 @@ Primero lo que no necesita a la persona: lo de «Alternativa». Si no se puede, 
     control-change|refresh-after-main) block "ESC-C7" \
         "Aprobar un cambio de los controles del repo es una firma de una persona, y este comando no la puede pedir en la ventana de permiso." \
         "Corré run-base-controls.sh approve en su forma exacta, sola: la persona lo aprueba en la ventana o, sin ventana, con un click en el cuadro de opciones o un «aprobado» escrito. La terminal queda como opción." ;;
+    escape:merge-bypass) block "GIT-C5" \
+        "Mergear salteando la cola y la CI de main, o aflojar las políticas de la rama, lo aprueba una persona, una vez por comando, y nunca por delegación." \
+        "El camino normal es encolar el pedido: gh pr merge <n> --merge. Si de verdad hace falta saltear, decíselo a la persona: lo aprueba en la ventana o, sin ventana, con un click en el cuadro de opciones o un «aprobado» escrito." ;;
     *) [ "$regla" = "ESC-C3" ] && BLOCK_MOTIVO="firma-fuera-de-la-ventana"; block "$regla" \
         "Esto lo firma la persona, y este comando no la puede pedir en la ventana de permiso." \
         "Corré el comando de la firma en su forma exacta, solo: la persona lo aprueba en la ventana o, sin ventana, con un click en el cuadro de opciones o un «aprobado» escrito (lo irreversible, en su terminal)." ;;

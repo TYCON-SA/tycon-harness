@@ -55,6 +55,29 @@ parameters:
     displayName: 'Sin aviso por hallazgo (el pull request alcanza); el resumen diario sale igual'
     type: boolean
     default: true
+  # Las entradas a la rama principal sin su CI (scripts/nightly/main-entries/main-entries.js). Vacíos, el paso no corre:
+  # la copia de la organización pone sus repos. GitHub: el repo (dueño/nombre) y el nombre del flujo de su CI. Azure
+  # DevOps: el proyecto, el repo y los números de las compilaciones que la rama principal exige.
+  - name: mainEntriesGithubRepo
+    displayName: 'Entradas a main sin su CI — repo de GitHub (dueño/nombre; vacío: no se mide)'
+    type: string
+    default: ''
+  - name: mainEntriesGithubWorkflow
+    displayName: 'Entradas a main sin su CI — nombre del flujo de la CI de GitHub'
+    type: string
+    default: ''
+  - name: mainEntriesAzureProject
+    displayName: 'Entradas a main sin su CI — proyecto de Azure DevOps'
+    type: string
+    default: ''
+  - name: mainEntriesAzureRepo
+    displayName: 'Entradas a main sin su CI — repo de Azure DevOps (vacío: no se mide)'
+    type: string
+    default: ''
+  - name: mainEntriesRequiredBuilds
+    displayName: 'Entradas a main sin su CI — compilaciones que exige la rama principal (números, separados por coma)'
+    type: string
+    default: ''
 
 resources:
   repositories:
@@ -181,6 +204,29 @@ jobs:
         env:
           AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
 
+      - ${{ if or(ne(parameters.mainEntriesGithubRepo, ''), ne(parameters.mainEntriesAzureRepo, '')) }}:
+        - script: |
+            # Las entradas a la rama principal sin su CI, en GitHub y en Azure DevOps: sólo LEE, y deja la línea que el
+            # resumen pega al final. Una parte que no se pudo consultar sale «?» en la línea y el paso queda naranja: el
+            # resumen se entrega igual. Los nombres llegan por el ambiente, nunca pegados al guion.
+            set -uo pipefail
+            ARGS=()
+            if [ -n "${MAIN_GH_REPO}" ]; then ARGS+=(github --repo "${MAIN_GH_REPO}" --workflow "${MAIN_GH_WORKFLOW}"); fi
+            if [ -n "${MAIN_AZ_REPO}" ]; then ARGS+=(azure --org "$(System.CollectionUri)" --project "${MAIN_AZ_PROJECT}" --repo "${MAIN_AZ_REPO}" --required-builds "${MAIN_AZ_BUILDS}"); fi
+            if ! node scripts/nightly/main-entries/main-entries.js "${ARGS[@]}" --hours 72 --out "$(Agent.TempDirectory)/main-sin-ci.txt"; then
+              echo "##vso[task.logissue type=warning]Las entradas a main sin su CI no se pudieron consultar del todo: el resumen lo va a decir."
+              exit 1
+            fi
+          displayName: 'Medir las entradas a main sin su CI'
+          continueOnError: true
+          env:
+            AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
+            MAIN_GH_REPO: ${{ parameters.mainEntriesGithubRepo }}
+            MAIN_GH_WORKFLOW: ${{ parameters.mainEntriesGithubWorkflow }}
+            MAIN_AZ_PROJECT: ${{ parameters.mainEntriesAzureProject }}
+            MAIN_AZ_REPO: ${{ parameters.mainEntriesAzureRepo }}
+            MAIN_AZ_BUILDS: ${{ parameters.mainEntriesRequiredBuilds }}
+
       # El perfil de la organización, para los canales del resumen y del aviso, y si su team-repos.json es el de operaciones
       # (la noche lee el de operaciones; las máquinas, el del perfil). Si difieren, o si el perfil no se pudo leer, la
       # corrida queda naranja (nunca roja) y lo dice; sin perfil, el aviso sale por el canal de operations.json → notify.
@@ -222,7 +268,14 @@ jobs:
           case "${TYCON_NOTIFY_WEBHOOK_URL:-}" in *'$('*) unset TYCON_NOTIFY_WEBHOOK_URL ;; esac
           # el perfil que bajó el paso del perfil; sin él, daily-summary lo intenta bajar y, si no puede, lo dice
           PF=(); [ -n "${TEAM_PROFILE:-}" ] && [ -f "$TEAM_PROFILE" ] && PF=(--profile "$TEAM_PROFILE")
-          EX=(); [ -f "$(Agent.TempDirectory)/prs-abiertos.txt" ] && EX=(--extra "$(Agent.TempDirectory)/prs-abiertos.txt")
+          # Las líneas de los pasos de arriba, siempre en el mismo orden y aunque el paso no haya dejado su archivo: el
+          # resumen dice «?» por lo que falta, nunca la saltea en silencio. La de main, sólo si el paso está configurado.
+          EX=(--extra "$(Agent.TempDirectory)/prs-abiertos.txt")
+          if [ "${MAIN_ENTRIES_ON:-}" = "True" ]; then
+            MAIN_TXT="$(Agent.TempDirectory)/main-sin-ci.txt"
+            [ -s "$MAIN_TXT" ] || echo "Main sin su CI (72 h): GitHub ? · Azure ? · reglas ?" > "$MAIN_TXT"
+            EX+=(--extra "$MAIN_TXT")
+          fi
           ERR=$(mktemp)
           node scripts/nightly/dependencies/daily-summary.js deliver --source vigilante --today "$HOY" ${PF[@]+"${PF[@]}"} ${EX[@]+"${EX[@]}"} \
             --operations "$(Build.SourcesDirectory)/operations.json" \
@@ -248,6 +301,8 @@ jobs:
           TYCON_MAIL_USER: $(TYCON_MAIL_USER)
           TYCON_MAIL_PASSWORD: $(TYCON_MAIL_PASSWORD)
           CLONE_TOKEN: $(System.AccessToken)
+          # True si el paso de las entradas a main está configurado: su línea va al resumen aunque el paso no la escriba
+          MAIN_ENTRIES_ON: ${{ or(ne(parameters.mainEntriesGithubRepo, ''), ne(parameters.mainEntriesAzureRepo, '')) }}
 
       - script: |
           set -eu

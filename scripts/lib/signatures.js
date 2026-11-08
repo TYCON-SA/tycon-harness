@@ -82,6 +82,7 @@ const LEVELS_EN = Object.freeze({
   'escape:TYCON_PROD_LINT': 'turn off the production query control',
   'escape:TYCON_NEW_NAMES': 'turn off the names check on what is published',
   emergency: 'the emergency exit: let one command that a brake stops go through, with a reason and for that command only',
+  'escape:merge-bypass': "merge skipping main's queue and CI, or loosen the branch policies: one command, never delegated",
 });
 
 // id, nivel, perfiles, qué aprueba
@@ -117,6 +118,7 @@ const LEVELS = Object.freeze([
   ['escape:TYCON_PROD_LINT', 3, AMBOS, 'apagar el control de consultas a producción'],
   ['escape:TYCON_NEW_NAMES', 3, MANT, 'apagar el control de nombres en lo que se publica'],
   ['emergency', 3, AMBOS, 'la salida de emergencia: dejar pasar un comando que un freno para, con motivo y para ese comando solo'],
+  ['escape:merge-bypass', 3, AMBOS, 'mergear salteando la cola y la CI de main, o aflojar las políticas de la rama: un comando, nunca por delegación'],
 ].map(([id, level, profiles, approves]) => Object.freeze({ id, level, profiles, approves, approvesEn: LEVELS_EN[id] || null })));
 
 // lo que cubre cada firma de hoy que no es su propio id de la tabla: las dos que juntan dos cosas de distinto peso y
@@ -160,6 +162,7 @@ const CON_NOMBRE = [
   ['dod_runtime_exempt', 'eximir una story de la prueba en vivo', 'file'],
   ['no-deep-review', 'saltear el pase adversarial de una ejecución', 'pipeline.js start --no-deep-review'],
   ['cambiar-el-estado', 'cambiar a mano el estado de una story', 'file'],
+  ['merge-bypass', 'mergear salteando la cola y la CI de main, o aflojar las políticas de la rama', 'gh pr merge <n> --admin (o un merge, una regla o una política por la API)'],
 ];
 
 // qué pasa si sale mal: lo dice el cuadro de opciones que arma el guion de la firma (owner-window.js `cuadroPara`). Cada
@@ -182,6 +185,7 @@ const SI_SALE_MAL = Object.freeze({
   'escape:trust-ran': 'los revisores cuentan como corridos sin constancia, y uno que no corrió pasa por corrido',
   'escape:ALLOW_DOD_EVIDENCE_WRITE': 'la evidencia de la prueba en vivo queda escrita a mano, y puede decir algo que no pasó',
   'escape:dod_runtime_exempt': 'la historia entera queda sin prueba en vivo, y un error puede llegar a producción',
+  'escape:merge-bypass': 'el cambio entra a main sin la cola ni la CI, o una política de la rama queda floja, y lo que la CI frenaba llega a main',
   'plan-approval': 'se implementa un plan que no querías; se frena la ejecución y se rehace, y nada entra a main sin revisión',
   'extra-round': 'se gasta una vuelta más de revisores; no cambia el código',
   'refresh-after-main': 'queda firmado un control con lo que trajo main; se revierte con otro pedido',
@@ -239,6 +243,7 @@ const APPROVES_EN = {
   'escape:dod_runtime_exempt': 'exempt a story from the live test',
   'escape:no-deep-review': "skip a run's adversarial pass",
   'escape:cambiar-el-estado': "change a story's status by hand",
+  'escape:merge-bypass': "merge skipping main's queue and CI, or loosen the branch policies",
 };
 
 // las firmas que se dan sobre un archivo (`file` en vez del comando, en CON_NOMBRE): `marker.js sign-file` las pide en
@@ -295,7 +300,9 @@ const SIGNATURES = Object.freeze([
 }));
 
 const ESCAPES = SIGNATURES.filter((s) => s.id.startsWith('escape:')).map((s) => s.id);
-const ESCAPES_DEL_GRUPO = ESCAPES.filter((id) => !POR_GUION.includes(id.slice('escape:'.length)));
+// lo que nunca se delega (delegated-signing.js NUNCA_DELEGABLES) tampoco entra al grupo que se delega junto
+const FUERA_DEL_GRUPO = Object.freeze(['merge-bypass']);
+const ESCAPES_DEL_GRUPO = ESCAPES.filter((id) => !POR_GUION.includes(id.slice('escape:'.length)) && !FUERA_DEL_GRUPO.includes(id.slice('escape:'.length)));
 
 const GROUPS = Object.freeze(Object.fromEntries(['refresh-after-main', 'adversarial-skip', 'critical-waiver', 'escape-phrases',
   'plan-approval', 'browser-test', 'runtime-waiver', 'manual-test', 'extra-round', 'control-change', 'lost-run']

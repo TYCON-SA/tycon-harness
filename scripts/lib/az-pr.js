@@ -163,12 +163,13 @@ function fichas(cmd, opts = {}) {
 
 /**
  * Los segmentos del comando: cada `az repos pr create` se juzga solo, con SUS banderas — nunca
- * con las del vecino encadenado por `&&`, `;` o `|`. Devuelve arreglos de fichas.
+ * con las del vecino encadenado por `&&`, `;` o `|`. Devuelve arreglos de fichas. `opts.powershell`: lo escribió la
+ * herramienta de PowerShell (ver `fichas`).
  */
-function segmentos(cmd) {
+function segmentos(cmd, opts = {}) {
   const out = [];
   let cur = [];
-  for (const f of fichas(cmd)) {
+  for (const f of fichas(cmd, opts)) {
     if (f.op !== undefined) { if (cur.length) out.push(cur); cur = []; continue; }
     cur.push(f);
   }
@@ -506,4 +507,4 @@ function faltasDe(seg) {
   return res;
 }
 
-module.exports = { fichas, pareceAzPr, segmentos, flagDe, esCierto, esFalso, verboDePr, pasaCodigoAUnInterprete, pideAyuda, textoDe, tieneEscape, faltasDe, ROMPE_SQUASH, RAMAS_DE_LARGA_VIDA };
+module.exports = { fichas, pareceAzPr, segmentos, flagDe, valorDe, esCierto, esFalso, verboDePr, pasaCodigoAUnInterprete, pideAyuda, textoDe, tieneEscape, faltasDe, ROMPE_SQUASH, RAMAS_DE_LARGA_VIDA };

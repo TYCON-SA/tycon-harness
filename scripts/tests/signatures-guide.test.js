@@ -33,7 +33,9 @@ const DE_LA_STORY = ['plan-approval', 'extra-round', 'refresh-after-main', 'cont
   'escape:force-manual', 'escape:trust-ran', 'escape:ALLOW_DOD_EVIDENCE_WRITE', 'escape:dod_runtime_exempt',
   'escape:no-deep-review', 'escape:cambiar-el-estado', 'save', 'designation-confirm',
   // nombrar y retirar a la coordinadora con un click
-  'designation-set', 'designation-withdraw'];
+  'designation-set', 'designation-withdraw',
+  // mergear salteando la cola y la CI de main (regla GIT-C5)
+  'escape:merge-bypass'];
 
 const OTRA_SESION = { yes: 'sí', no: 'no, en la pestaña de esa sesión', pending: 'todavía sin comando' };
 
@@ -229,7 +231,7 @@ const TABLA_DE_NIVELES = [
   ['escape:story-skill-bypass', 2, ['dev', 'mant']], ['escape:set-autonomous', 2, ['dev', 'mant']],
   ['designation-confirm', 2, ['dev', 'mant']], ['designation-set', 2, ['dev', 'mant']], ['designation-withdraw', 2, ['dev', 'mant']],
   ['control-change', 3, ['mant']], ['escape:TYCON_SAFETY_OFF', 3, ['dev', 'mant']], ['escape:TYCON_PROD_LINT', 3, ['dev', 'mant']],
-  ['escape:TYCON_NEW_NAMES', 3, ['mant']], ['emergency', 3, ['dev', 'mant']],
+  ['escape:TYCON_NEW_NAMES', 3, ['mant']], ['emergency', 3, ['dev', 'mant']], ['escape:merge-bypass', 3, ['dev', 'mant']],
 ];
 
 // Lo que cubre cada firma de hoy que no es su propio id de la tabla: las tres que se parten y los siete escapes que se
@@ -252,7 +254,7 @@ test('niveles T1 Catalogo_TablaDeNiveles', () => {
   const cat = require(CATALOGO);
   assert.deepStrictEqual(cat.LEVELS.map((l) => [l.id, l.level, [...l.profiles]]), TABLA_DE_NIVELES);
   const cuenta = [1, 2, 3].map((n) => cat.LEVELS.filter((l) => l.level === n).length);
-  assert.deepStrictEqual(cuenta, [7, 19, 5], '7 de rutina, 19 de excepción, 5 irreversibles');
+  assert.deepStrictEqual(cuenta, [7, 19, 6], '7 de rutina, 19 de excepción, 6 irreversibles');
   for (const l of cat.LEVELS) assert.ok(typeof l.approves === 'string' && l.approves.trim(), `${l.id}: falta qué aprueba`);
 });
 

@@ -73,6 +73,7 @@ en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.
 | `escape:TYCON_PROD_LINT` | 3 · irreversible | dev y mantenimiento | apagar el control de consultas a producción | `escape:TYCON_PROD_LINT` |
 | `escape:TYCON_NEW_NAMES` | 3 · irreversible | sólo mantenimiento | apagar el control de nombres en lo que se publica | `escape:TYCON_NEW_NAMES` |
 | `emergency` | 3 · irreversible | dev y mantenimiento | la salida de emergencia: dejar pasar un comando que un freno para, con motivo y para ese comando solo | todavía no se pide |
+| `escape:merge-bypass` | 3 · irreversible | dev y mantenimiento | mergear salteando la cola y la CI de main, o aflojar las políticas de la rama: un comando, nunca por delegación | `escape:merge-bypass` |
 <!-- fin: niveles -->
 
 `emergency` todavía no tiene una firma de hoy que la pida: se da con `harness.js sign emergency --reason "<por qué>"
@@ -311,6 +312,7 @@ vuelve a pedir la firma del dueño.
 | `escape:dod_runtime_exempt` | eximir una story de la prueba en vivo | `marker.js sign-file dod_runtime_exempt <archivo>` | no, en la pestaña de esa sesión | `marker.js sign-file dod_runtime_exempt <archivo> --terminal` |
 | `escape:no-deep-review` | saltear el pase adversarial de una ejecución | `pipeline.js start --no-deep-review` | no, en la pestaña de esa sesión | `el mismo comando` |
 | `escape:cambiar-el-estado` | cambiar a mano el estado de una story | `marker.js sign-file cambiar-el-estado <archivo>` | no, en la pestaña de esa sesión | `marker.js sign-file cambiar-el-estado <archivo> --terminal` |
+| `escape:merge-bypass` | mergear salteando la cola y la CI de main, o aflojar las políticas de la rama | `gh pr merge <n> --admin (o un merge, una regla o una política por la API)` | no, en la pestaña de esa sesión | `el mismo comando` |
 <!-- fin: firmas -->
 
 ## Los grupos de la 8.116
@@ -374,6 +376,13 @@ controles tras traer `main`.
 
 Tocar un freno es sólo del dueño: aprobar un cambio de los controles, los escapes que apagan un freno (salvo los dos de
 abajo), eximir pruebas o un crítico, aceptar un criterio imposible de probar y saltear el pase adversarial.
+
+**Mergear salteando la CI (`merge-bypass`) nunca se delega.** La pide el freno de la sesión (regla GIT-C5) cuando un
+comando saltea la cola y la CI de main o afloja las políticas de la rama: `gh pr merge --admin`, un merge o un cambio de
+reglas por la API, `--bypass-policy` en Azure DevOps. Es nivel 3: la aprueba la persona en la ventana o, sin ventana,
+con un click en el cuadro de opciones o un «aprobado», y vale para ese comando, una vez. En Codex se da en la terminal,
+como las demás. Aunque el perfil la nombre en `approvals.delegated_signing`, la coordinadora no la firma: saltear la CI
+es aflojar todos los controles juntos. El camino normal sigue siendo encolar el pedido: `gh pr merge <n> --merge`.
 
 **Un mensaje de la oficina nunca vale como firma ni como permiso para firmar por delegación.** Lo que el dueño le escribe a
 una sesión desde `/office` le llega como el aviso de un gancho, que la herramienta anota como aviso del sistema y no como la

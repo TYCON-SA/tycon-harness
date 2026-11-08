@@ -592,6 +592,30 @@ function nombreALaVista(comando) {
   return !!p && ['marker.js', 'pipeline.js'].includes(base(p[0]));
 }
 
+// mergear salteando la cola y la CI de main (regla GIT-C5): la pide el freno, no un guion
+const MERGE_BYPASS = 'escape:merge-bypass';
+/** ¿El comando trae la forma que saltea la CI, y entera a la vista? Lo decide el mismo lector que el freno. */
+function mergeALaVista(comando) {
+  let hs;
+  try { hs = require('./ci-bypass.js').leer(comando); } catch (_) { return false; }
+  return hs.length > 0 && hs.every((h) => h.legible);
+}
+/**
+ * El renglón del registro común de firmas cuando la persona aprobó con un click o un «aprobado». Con la ventana no hay
+ * renglón: el freno no ve el Sí. Si no se puede escribir, la firma ya se dio: avisa por el registro de fallos del freno.
+ */
+function anotarMergeBypass({ via, sesion, destino, comando, casa, ahora }) {
+  let quien = null;
+  try { quien = os.userInfo().username; } catch (_) { quien = null; }
+  let r;
+  try {
+    r = require('./signature-log.js').appendSignature({ signature: MERGE_BYPASS, via: VIA_COMUN[via] || via, signer: quien, orderedBy: sesion, target: destino,
+      reason: una(comando, 200), source: 'owner-window.js', home: casa, now: ahora });
+  } catch (e) { r = { ok: false, error: e.message }; }
+  if (r && r.ok) return;
+  try { fs.appendFileSync(path.join(stateDir(casa), 'hook-errors.log'), `[${new Date(ahora).toISOString()}] owner-window: la firma merge-bypass se dio y no quedó en el registro común (${(r && r.error) || 'sin respuesta'})\n`); } catch (_) { /* sin registro tampoco */ }
+}
+
 // --- los textos ---------------------------------------------------------------------------------------------------
 
 function storyDe(casa, destino) {
@@ -1023,7 +1047,8 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
     const nombre = id.slice('escape:'.length);
     const s = firmaDe(id);
     const porVariable = /^[A-Za-z_]\w*=\S+ <comando>$/.test(s.command);
-    const aLaVista = porVariable ? variableALaVista(nombre, s.command.split('=')[1].split(' ')[0], comando) : nombreALaVista(comando);
+    const aLaVista = id === MERGE_BYPASS ? mergeALaVista(comando)
+      : porVariable ? variableALaVista(nombre, s.command.split('=')[1].split(' ')[0], comando) : nombreALaVista(comando);
     if (!aLaVista) return negar(`el escape ${nombre} viene escondido (un nombre armado, env, export o una envoltura)`, pedidas);
   }
   if (enWindows && escapes.length) return negar('en Windows un escape no se aprueba en la pestaña', pedidas);
@@ -1172,6 +1197,7 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   }
   if (delegada) return { decision: 'allow', via: 'delegacion', relevo: sesion, firmas: pendientes, texto: 'firmada por la delegación del perfil' };
   if (aprobada) {
+    if (pendientes[0] === MERGE_BYPASS) anotarMergeBypass({ via: aprobada.via, sesion, destino, comando, casa, ahora });
     const como = aprobada.via === 'click' ? 'tu click en el cuadro de opciones' : `tu mensaje «${una(aprobada.aprobacion.texto, 80)}»`;
     return { decision: 'allow', via: aprobada.via, relevo: sesion, firmas: pendientes, texto: `aprobada por ${como}: ${firmaDe(pendientes[0]) ? firmaDe(pendientes[0]).approves : pendientes[0]}` };
   }
